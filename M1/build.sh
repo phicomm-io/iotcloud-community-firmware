@@ -2,7 +2,11 @@
 set -euo pipefail
 app_dir="$(cd "$(dirname "$0")" && pwd)"
 project_dir="$(dirname "$app_dir")"
-python3 "$project_dir/tools/check_version.py"
+version_args=()
+if [[ "${GITHUB_REF_TYPE:-}" == tag ]]; then
+    version_args=(--tag "$GITHUB_REF_NAME")
+fi
+python3 "$project_dir/tools/check_version.py" "${version_args[@]}"
 sdk_dir="${M1_SDK_DIR:-$project_dir/build/m1-sdk/mico-os}"
 tools_dir="${M1_TOOLS_DIR:-$project_dir/build/m1-tools}"
 workspace="$project_dir/build/m1-workspace"

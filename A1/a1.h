@@ -8,7 +8,8 @@
 #include <string.h>
 #include <stdlib.h>
 
-#define A1_VERSION "0.9.0"
+#include "../common/generated/build_version.h"
+#define A1_VERSION FIRMWARE_VERSION
 #define A1_PRODUCT "PHICOMM_A1_EMW3080"
 #define A1_CONFIG_MAGIC 0x41314346u
 #define A1_CONFIG_VERSION 3u
