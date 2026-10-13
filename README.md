@@ -24,6 +24,16 @@
 
 下载后按 Release 中的 `SHA256SUMS` 校验。`.all.bin` 为完整镜像，不能上传到网页 OTA，也不是通用首刷包。原厂或其他第三方固件的升级入口不保证接受上述 OTA 文件。
 
+## 构建
+
+在 Linux x86_64 上安装各型号构建说明中的系统依赖，然后执行：
+
+```sh
+./build.sh
+```
+
+根脚本依次构建 TC1、M1 和 A1，产物分别位于 `build/tc1-release/`、`build/m1-release/` 和 `build/a1-release/`。单独构建可运行对应目录内的 `build.sh`。工具链及 SDK 见 [构建依赖归档](https://github.com/FUjr/phicomm-community-firmware/releases/tag/0.0.0)。
+
 ## 文档
 
 - [刷机与失败恢复](https://github.com/FUjr/phicomm-community-firmware/wiki/刷机)：支持的升级方式、文件选择和首次安装限制。

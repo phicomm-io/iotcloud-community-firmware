@@ -15,10 +15,10 @@
 Linux x86_64，推荐 Ubuntu 22.04。安装 `build-essential bzip2 curl git perl python3 zlib1g-dev libncurses5 libtinfo5`，在仓库根目录执行：
 
 ```sh
-./build.sh
+./TC1/build.sh
 ```
 
-脚本使用仓库内的 TC1 SDK，下载并校验 ARM GCC 5.4.1 和 Python 2.7.18，生成网页资源后构建 `TC1@MK3031@moc`。可用绝对路径 `TC1_TOOLS_DIR` 指定工具缓存，或用 `TC1_PYTHON2` 指定 Python 2。SDK 与 M1/A1 的缓存相互独立。
+脚本从 [Release 0.0.0](https://github.com/FUjr/phicomm-community-firmware/releases/tag/0.0.0) 下载并校验 `TC1/sdk.json` 固定的 MiCO 3.5.4 SDK，缓存于 `build/tc1-sdk/`；下载并校验 ARM GCC 5.4.1 和 Python 2.7.18，生成网页资源后构建 `TC1@MK3031@moc`。可用绝对路径 `TC1_TOOLS_DIR` 指定工具缓存，或用 `TC1_PYTHON2` 指定 Python 2。可用 `TC1_SDK_DIR` 指定空的 SDK 缓存目录，用 `TC1_SDK_ARCHIVE` 指定已下载的 SDK 压缩包（绝对路径）。SDK 与 M1/A1 的缓存相互独立。私有仓库下载需先运行 `gh auth login`，或使用本地归档。
 
 产物在 `build/tc1-release/`：`phicomm_tc1_a1.ota.bin`、`phicomm_tc1_a1.all.bin`、应用及 ELF/MAP、`manifest.json`、`SHA256SUMS`。网页升级只选 `.ota.bin`。构建不会递增版本，也不会自动刷机。
 
