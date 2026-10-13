@@ -7,7 +7,7 @@
 #include <string.h>
 #include <stdlib.h>
 
-#define A1_VERSION "1.0.0"
+#define A1_VERSION "0.9.0"
 #define A1_PRODUCT "PHICOMM_A1_EMW3080"
 #define A1_CONFIG_MAGIC 0x41314346u
 #define A1_CONFIG_VERSION 2u

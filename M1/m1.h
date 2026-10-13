@@ -7,7 +7,7 @@
 #include <string.h>
 #include <stdlib.h>
 
-#define M1_VERSION "1.0.0"
+#define M1_VERSION "0.9.0"
 #define M1_PRODUCT "PHICOMM_M1_EMW3080"
 #define M1_CONFIG_MAGIC 0x4d314346u
 #define M1_CONFIG_VERSION 2u

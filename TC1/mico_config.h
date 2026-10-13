@@ -35,7 +35,7 @@
 
 #define APP_INFO   "MiCO BASIC Demo"
 
-#define FIRMWARE_REVISION   "ZYC_BASIC_1_0"
+#define FIRMWARE_REVISION   "0.9.0"
 #define MANUFACTURER        "ZYC Inc."
 #define SERIAL_NUMBER       "20190105"
 #define PROTOCOL            "com.zyc.basic"
