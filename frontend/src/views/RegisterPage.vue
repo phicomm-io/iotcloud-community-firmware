@@ -1,5 +1,6 @@
 <script setup>
 import { ref, onMounted } from "vue";
+import AuthShell from "../components/AuthShell.vue";
 import { api } from "../account";
 const username = ref(""),
   password = ref(""),
@@ -49,10 +50,11 @@ async function register() {
 }
 </script>
 <template>
-  <main class="account-page">
+  <AuthShell>
+    <span class="eyebrow">开始连接</span>
     <h1>注册账号</h1>
-    <p>可先注册，登录后再绑定设备。</p>
-    <form v-if="level" @submit.prevent="register">
+    <p>创建账号，自动同步设备列表。</p>
+    <form class="auth-form" v-if="level" @submit.prevent="register">
       <label
         >{{ level === 2 ? "邮箱" : "用户名"
         }}<input
@@ -71,11 +73,11 @@ async function register() {
       ><template v-if="level === 2"
         ><button type="button" @click="verify">发送验证码</button
         ><label>验证码<input v-model="code" required /></label></template
-      ><button :disabled="busy">注册</button>
+      ><button class="primary-button auth-submit" :disabled="busy">注册</button>
     </form>
     <p v-else>注册已关闭 {{ contact }}</p>
-    <p role="alert">{{ message }}</p>
+    <p role="alert" class="form-message">{{ message }}</p>
     <RouterLink to="/login">登录</RouterLink> ·
-    <RouterLink to="/">访客控制台</RouterLink>
-  </main>
+    <RouterLink to="/guest">进入访客模式</RouterLink>
+  </AuthShell>
 </template>

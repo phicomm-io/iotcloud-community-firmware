@@ -1,11 +1,9 @@
 <script setup>
-import { ref } from "vue";
-import { api } from "../account";
-import { modelName } from "../deviceProtocol";
-const username = ref("admin"),
-  password = ref(""),
-  token = ref(""),
-  message = ref(""),
+import { ref, onMounted, onBeforeUnmount, watch } from "vue";
+import { useRouter } from "vue-router";
+import { api, account, refreshAccountRole } from "../account";
+import { modelName, deviceKey } from "../deviceProtocol";
+const message = ref(""),
   users = ref([]),
   devices = ref([]),
   newUser = ref(""),
@@ -19,7 +17,6 @@ const username = ref("admin"),
 const request = (path, method = "GET", body) =>
   api("/admin" + path, {
     method,
-    headers: { Authorization: "Bearer " + token.value },
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
 async function refresh() {
@@ -42,21 +39,15 @@ async function run(fn) {
     message.value = e.message;
   }
 }
-async function login() {
-  try {
-    const r = await api("/admin/login", {
-      method: "POST",
-      body: JSON.stringify({
-        username: username.value,
-        password: password.value,
-      }),
-    });
-    token.value = r.token;
-    password.value = "";
-    await refresh();
-  } catch (e) {
-    message.value = e.message;
-  }
+const router = useRouter();
+let roleTimer;
+onMounted(() => { run(async () => {}); roleTimer = setInterval(() => refreshAccountRole().catch(() => {}), 3000); });
+onBeforeUnmount(() => clearInterval(roleTimer));
+watch(() => account.isAdmin, allowed => { if (!allowed) router.replace("/"); });
+function setRole(u) {
+ const role = u.role === "admin" ? "user" : "admin";
+ if (confirm(`${role === "admin" ? "授予" : "撤销"} ${u.username} 的管理权限？`))
+  run(() => request("/user/" + encodeURIComponent(u.username) + "/role", "PUT", { role }));
 }
 function addUser() {
   return run(async () => {
@@ -81,7 +72,7 @@ function removeUser(u) {
 }
 function removeDevice(d) {
   if (confirm("解绑并撤销权限：" + d.mac + "？"))
-    run(() => request("/device/" + d.mac, "DELETE"));
+    run(() => request("/device/" + (d.namespace ? "scoped/" : "") + d.mac + (d.namespace ? "?username=" + encodeURIComponent(d.username) : ""), "DELETE"));
 }
 function bind() {
   return run(async () => {
@@ -100,31 +91,9 @@ function bind() {
     <h1>账号与设备管理</h1>
     <RouterLink to="/">返回控制台</RouterLink>
     <p class="error" role="alert">{{ message }}</p>
-    <form v-if="!token" @submit.prevent="login">
-      <label
-        >管理员用户名<input
-          v-model="username"
-          autocomplete="username"
-          required /></label
-      ><label
-        >管理员密码<input
-          v-model="password"
-          type="password"
-          autocomplete="current-password"
-          required /></label
-      ><button>登录</button>
-    </form>
-    <template v-else
-      ><button @click="run(async () => {})">刷新</button
-      ><button
-        @click="
-          token = '';
-          users = [];
-          devices = [];
-        "
-      >
-        退出管理
-      </button>
+    <template v-if="account.isAdmin">
+      <p class="helper-text">当前账号：{{ account.username }} · 管理员。与设备控制台、MQTT 使用同一登录账号。</p>
+      <button @click="run(async () => {})">刷新</button>
       <section class="card">
         <h2>账号</h2>
         <form @submit.prevent="addUser">
@@ -139,7 +108,8 @@ function bind() {
         </form>
         <ul>
           <li v-for="u in users" :key="u.username">
-            {{ u.username }} · {{ u.status }}
+            {{ u.username }} · {{ u.status }} · {{ u.role === "admin" ? "管理员" : "普通用户" }}
+            <button @click="setRole(u)">{{ u.role === "admin" ? "撤销管理权限" : "设为管理员" }}</button>
             <button @click="reset(u.username)">重置密码</button>
             <button @click="removeUser(u.username)">删除</button>
           </li>
@@ -170,9 +140,10 @@ function bind() {
           ><button>绑定</button>
         </form>
         <ul>
-          <li v-for="d in devices" :key="d.mac">
+          <li v-for="d in devices" :key="deviceKey(d)">
             {{ d.username }} · {{ modelName(d.model) }} · {{ d.mac }} ·
             {{ d.version }} · {{ d.status }}
+            <span>{{ d.namespace ? "账号主题" : "旧主题" }}</span>
             <button @click="removeDevice(d)">解绑</button>
           </li>
         </ul>

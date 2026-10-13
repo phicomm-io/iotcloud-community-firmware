@@ -10,6 +10,7 @@ test("signup without MAC, cloud persistence, isolation, controls and guest prese
     errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
+  await expect(page).toHaveURL(/\/login$/);
   await page.evaluate(() =>
     localStorage.setItem(
       "ztc1_devices",
@@ -31,6 +32,9 @@ test("signup without MAC, cloud persistence, isolation, controls and guest prese
   await expect(
     page.getByRole("heading", { name: "我的云端设备" }),
   ).toBeVisible();
+  await expect(page.getByRole("link", { name: "管理", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "连接", exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("密码", { exact: true })).toHaveCount(0);
   await page.getByLabel("MAC", { exact: true }).fill("AA:BB:CC:DD:EE:FF");
   await page.getByLabel("型号", { exact: true }).selectOption("m1");
   await page.getByRole("button", { name: "添加设备", exact: true }).click();
@@ -40,7 +44,6 @@ test("signup without MAC, cloud persistence, isolation, controls and guest prese
       exact: true,
     }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "连接", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "MQTT 已连接", exact: true }),
   ).toBeVisible();
@@ -87,9 +90,9 @@ test("signup without MAC, cloud persistence, isolation, controls and guest prese
       exact: true,
     }),
   ).toBeVisible();
-  await expect(page.getByLabel("密码", { exact: true }).first()).toHaveValue(
-    "",
-  );
+  await expect(page.getByLabel("密码", { exact: true })).toHaveCount(0);
+  await page.locator(".connection-settings > summary").click();
+  await expect(page.getByRole("link", { name: "重新登录以恢复连接" })).toBeVisible();
   const second = await browser.newContext();
   const p = await second.newPage();
   await p.goto("/login");
@@ -126,7 +129,12 @@ test("signup without MAC, cloud persistence, isolation, controls and guest prese
   page.once("dialog", (d) => d.accept());
   await page.getByRole("button", { name: "解绑", exact: true }).click();
   await expect(page.getByText("尚无设备", { exact: true })).toBeVisible();
+  await page.goto("/admin");
+  await expect(page).not.toHaveURL(/\/admin$/);
+  expect((await page.request.get(origin + "/api/admin/users")).status()).toBe(403);
   await page.getByRole("button", { name: "退出", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "登录", exact: true })).toBeVisible();
+  await page.getByRole("link", { name: /进入访客模式/ }).click();
   await expect(
     page.getByRole("heading", { name: "本地设备", exact: true }),
   ).toBeVisible();
@@ -159,13 +167,14 @@ test("a1 and tc1(a1) protocol controls use actual MQTT topics", async ({
   const add = async (mac, model) => {
     await page.getByLabel("MAC", { exact: true }).fill(mac);
     await page.getByLabel("型号", { exact: true }).selectOption(model);
-    await page.getByRole("button", { name: "添加设备", exact: true }).click();
+    const [response] = await Promise.all([page.waitForResponse(r => r.url().endsWith("/api/devices") && r.request().method() === "POST"), page.getByRole("button", { name: "添加设备", exact: true }).click()]);
+    expect(response.ok()).toBeTruthy();
     await expect(
       page.getByRole("button", { name: new RegExp(mac.toLowerCase()) }),
     ).toBeVisible();
+    await page.getByRole("button", { name: new RegExp(mac.toLowerCase()) }).click();
   };
   const connect = async () => {
-    await page.getByRole("button", { name: "连接", exact: true }).click();
     await expect(
       page.getByRole("heading", { name: "MQTT 已连接", exact: true }),
     ).toBeVisible();
@@ -217,7 +226,6 @@ test("a1 and tc1(a1) protocol controls use actual MQTT topics", async ({
   });
   expect(light.retain).toBe(false);
   pub.end(true);
-  await page.getByRole("button", { name: "断开", exact: true }).click();
   await add("aa1122334477", "tc1");
   pub = await connect();
   pub.publish(
@@ -233,7 +241,7 @@ test("a1 and tc1(a1) protocol controls use actual MQTT topics", async ({
   pub.end(true);
 });
 
-test("admin structured account and device management", async ({ page }) => {
+test("admin structured account and device management", async ({ page, browser }) => {
   test.skip(
     !process.env.PHICOMM_TEST_ADMIN_FILE,
     "private Compose test admin secret required",
@@ -243,10 +251,12 @@ test("admin structured account and device management", async ({ page }) => {
     await readFile(process.env.PHICOMM_TEST_ADMIN_FILE, "utf8")
   ).trim();
   const user = "admin_test_" + Date.now();
-  await page.goto("/admin");
-  await page.getByLabel("管理员用户名").fill("admin");
-  await page.getByLabel("管理员密码").fill(secret);
+  await page.goto("/login");
+  await page.getByLabel("用户名").fill("admin");
+  await page.getByLabel("密码", { exact: true }).fill(secret);
   await page.getByRole("button", { name: "登录", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "MQTT 已连接", exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "管理", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "账号", exact: true }),
   ).toBeVisible();
@@ -256,6 +266,25 @@ test("admin structured account and device management", async ({ page }) => {
   await expect(
     page.getByText(user + " · active", { exact: false }),
   ).toBeVisible();
+  const memberContext = await browser.newContext();
+  const member = await memberContext.newPage();
+  await member.goto("/login");
+  await member.getByLabel("用户名").fill(user);
+  await member.getByLabel("密码", { exact: true }).fill("admin-created-password");
+  await member.getByRole("button", { name: "登录", exact: true }).click();
+  await expect(member.getByRole("heading", { name: "MQTT 已连接", exact: true })).toBeVisible();
+  await expect(member.getByRole("link", { name: "管理", exact: true })).toHaveCount(0);
+  const userRow = page.locator("li").filter({ hasText: user }).filter({ has: page.getByRole("button", { name: "重置密码", exact: true }) });
+  page.once("dialog", d => d.accept());
+  await userRow.getByRole("button", { name: "设为管理员", exact: true }).click();
+  await expect(member.getByRole("link", { name: "管理", exact: true })).toBeVisible({ timeout: 10000 });
+  await member.getByRole("link", { name: "管理", exact: true }).click();
+  await expect(member.getByRole("heading", { name: "账号与设备管理", exact: true })).toBeVisible();
+  page.once("dialog", d => d.accept());
+  await userRow.getByRole("button", { name: "撤销管理权限", exact: true }).click();
+  await expect(member).not.toHaveURL(/\/admin$/, { timeout: 10000 });
+  expect((await memberContext.request.get(origin + "/api/admin/users")).status()).toBe(403);
+  await memberContext.close();
   await page.getByLabel("账号", { exact: false }).selectOption(user);
   await page.getByLabel("MAC", { exact: true }).fill("aa9988776655");
   await page.getByLabel("型号", { exact: true }).selectOption("a1");
@@ -264,7 +293,7 @@ test("admin structured account and device management", async ({ page }) => {
     page.getByText(user + " · a1 · aa9988776655", { exact: false }),
   ).toBeVisible();
   page.once("dialog", (d) => d.accept());
-  await page.getByRole("button", { name: "解绑", exact: true }).last().click();
+  await page.locator("li").filter({ hasText: user + " · a1 · aa9988776655" }).getByRole("button", { name: "解绑", exact: true }).click();
   await expect(
     page.getByText(user + " · a1 · aa9988776655", { exact: false }),
   ).not.toBeVisible();
@@ -272,4 +301,60 @@ test("admin structured account and device management", async ({ page }) => {
   page.once("dialog", (d) => d.accept());
   await row.getByRole("button", { name: "删除", exact: true }).click();
   await expect(row).not.toBeVisible();
+});
+
+test("account announcement automatically appears, controls scoped device and preserves legacy same MAC", async ({page}) => {
+ const {userKey}=await import("../src/deviceProtocol.js");
+ const user="discover_"+Date.now(),password="discover-password",mac="123456abcdef";
+ const response=await page.request.post(origin+"/api/register",{headers:{Origin:origin},data:{username:user,password}});expect(response.ok()).toBeTruthy();
+ await page.goto("/login");await page.getByLabel("用户名").fill(user);await page.getByLabel("密码",{exact:true}).fill(password);await page.getByRole("button",{name:"登录",exact:true}).click();
+ await expect(page.getByText("尚无设备",{exact:true})).toBeVisible();
+ const pub=mqtt.connect(process.env.PHICOMM_MQTT_WS,{username:user,password,clientId:"discovery_fixture_"+Date.now()});
+ try {
+  await new Promise((resolve,reject)=>{pub.once("connect",resolve);pub.once("error",reject)});
+  const announcement=`phicomm/discovery/${userKey(user)}/${mac}`;
+  await new Promise((resolve,reject)=>pub.publish(announcement,JSON.stringify({schema:1,model:"a1",version:"community"}),{qos:1,retain:true},e=>e?reject(e):resolve()));
+  await expect(page.getByText("账号主题 · 自动发现",{exact:true})).toBeVisible({timeout:15000});
+  await expect(page.getByRole("heading",{name:"MQTT 已连接",exact:true})).toBeVisible();
+  const base=`phicomm/a1/${userKey(user)}/${mac}`;
+  await new Promise((resolve,reject)=>pub.publish(base+"/fan/state","OFF",{qos:1,retain:true},e=>e?reject(e):resolve()));
+  pub.publish(base+"/fan/percentage/state","0",{qos:1,retain:true});
+  await expect(page.getByText("风扇：OFF · 转速：0%",{exact:true})).toBeVisible();
+  await new Promise((resolve,reject)=>pub.subscribe(base+"/fan/set",{qos:1},e=>e?reject(e):resolve()));
+  const received=new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error("scoped command missing")),5000);pub.on("message",(topic,payload,packet)=>{if(topic===base+"/fan/set"){clearTimeout(timer);resolve({payload:String(payload),retain:packet.retain})}})});
+  await page.getByRole("button",{name:"切换风扇",exact:true}).click();expect(await received).toEqual({payload:"ON",retain:false});
+  await page.getByLabel("MAC",{exact:true}).fill(mac);await page.getByLabel("型号",{exact:true}).selectOption("a1");await page.getByRole("button",{name:"添加设备",exact:true}).click();
+  await expect(page.getByRole("button",{name:`a1 · ${mac} · community`,exact:true})).toHaveCount(2);
+  const scopedRow=page.locator("li").filter({hasText:"账号主题 · 自动发现"});page.once("dialog",d=>d.accept());await scopedRow.getByRole("button",{name:"解绑",exact:true}).click();
+  await expect(page.getByText("账号主题 · 自动发现",{exact:true})).not.toBeVisible();
+  pub.publish(announcement,JSON.stringify({schema:1,model:"a1"}),{qos:1,retain:true});
+  await expect.poll(async()=>{const r=await page.request.get(origin+"/api/devices");return (await r.json()).length}).toBe(1);
+  page.once("dialog",d=>d.accept(mac));await page.getByRole("button",{name:"恢复已解绑的账号主题设备",exact:true}).click();
+  await expect(page.getByText("账号主题 · 自动发现",{exact:true})).toBeVisible();
+  await page.reload();await expect(page.getByRole("button",{name:`a1 · ${mac} · community`,exact:true})).toHaveCount(2);
+ } finally { pub.end(true); }
+});
+
+
+test("guest custom MQTT works without account API and mobile layout fits", async ({ page }) => {
+  await page.goto("/");
+  await expect(page).toHaveURL(/\/login$/);
+  await page.route("**/api/**", route => route.abort());
+  await page.getByRole("link", { name: /进入访客模式/ }).click();
+  await expect(page.getByRole("heading", { name: "本地设备", exact: true })).toBeVisible();
+  const address = page.getByLabel("WebSocket 地址", { exact: true });
+  await expect(address).toBeEditable();
+  await address.fill("ws://custom.example.test:9001/mqtt");
+  await page.getByRole("button", { name: "连接", exact: true }).click();
+  await page.reload();
+  await expect(address).toHaveValue("ws://custom.example.test:9001/mqtt");
+  await page.getByLabel("MAC", { exact: true }).fill("020000001111");
+  await page.getByLabel("型号", { exact: true }).selectOption("a1");
+  await page.getByRole("button", { name: "添加设备", exact: true }).click();
+  await expect(page.getByRole("button", { name: "a1 · 020000001111 · community", exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+  await page.getByRole("link", { name: "登录", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "登录", exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
 });
