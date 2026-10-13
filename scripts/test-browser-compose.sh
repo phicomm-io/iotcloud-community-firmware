@@ -7,7 +7,6 @@ test_project="phicomm-browser-$$"
 compose() { HTTP_PORT=127.0.0.1:0 MQTT_PORT=127.0.0.1:0 PUBLIC_URL= MQTT_URI= MQTT_WS_URI= docker compose -p "$test_project" -f "$project_root/docker-compose.yaml" -f "$test_runtime/override.yaml" "$@"; }
 cleanup() { if [ "$?" -ne 0 ]; then compose logs --tail 25 >&2 || true; fi; compose down >/dev/null 2>&1 || true; rm -rf "$test_runtime"; }
 trap cleanup EXIT INT TERM
-# The caller explicitly invokes local builds and testing, never production deployment.
 (cd "$project_root" && docker compose build backend nginx)
 mkdir "$test_runtime/runtime"
 docker run --rm --user "$(id -u):$(id -g)" -v "$test_runtime/runtime:/runtime" phicomm-community-mqtt-backend:local init --output /runtime

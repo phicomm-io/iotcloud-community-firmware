@@ -14,7 +14,7 @@
 
 使用 Mosquitto 2.0 的官方 **Dynamic Security** 插件，后端通过验证服务器证书的内部 TLS 连接发送管理命令，并等待带关联 ID 的实际响应。新增设备、解绑、改密即时更新权限，不需要重载容器。
 
-**没有挂载 Docker socket，没有 Docker API 代理，后端镜像没有 Docker CLI。** 后端只有独立管理账号密码和 CA 公钥，不读取 Broker 动态安全文件、服务器私钥或旧密码文件。普通账号默认拒绝所有主题，仅获得自己设备对应的主题权限，不能访问 `$CONTROL` 管理主题。M1/A1 可只读订阅 Home Assistant 启动通知。
+后端使用独立 Broker 管理账号和 CA 公钥连接管理接口。普通账号默认拒绝所有主题，仅获得自己设备对应的主题权限，不能访问 `$CONTROL` 管理主题。M1/A1 可只读订阅 Home Assistant 启动通知。
 
 操作失败不会当作成功：设备保留 `pending` 或 `deleting` 状态，每 10 秒重试；成功收到权限撤销响应后才释放 MAC。两份状态（SQLite 与插件 JSON）需要一起备份、恢复。不要多实例运行后端；当前同步锁及限流为单实例设计。`trust_proxy: true` 仅适用于后端只可由可信 Nginx 访问的部署，Nginx 会覆盖 `X-Real-IP`；直接开放后端时必须关闭该选项。
 
@@ -77,7 +77,7 @@ docker compose run --rm --build setup migrate --output /runtime --passwd /legacy
 ./scripts/test-browser-compose.sh
 ```
 
-集成脚本只启动独立临时 Broker，使用随机本机端口，验证实际鉴权、主题隔离、解绑、改密与重启持久化，退出时清理自己的容器和临时数据。它通过宿主机 Docker CLI 启动测试环境，与运行服务的权限更新机制无关。
+集成测试使用临时 Broker 和随机本机端口，结束后自动清理测试容器与数据。
 
 浏览器测试需先启动一个独立后端和 Broker，开放注册，配置匹配的 `PUBLIC_URL`。前端开发服务支持 `API_TARGET` 和 `MQTT_TARGET`：
 
@@ -89,4 +89,4 @@ npx playwright install chromium
 PHICOMM_WEB_URL=http://127.0.0.1:25173 PHICOMM_MQTT_WS=ws://127.0.0.1:9001 npx playwright test
 ```
 
-浏览器测试会创建测试账号，需要使用独立测试数据目录。源码测试、模拟 MQTT 客户端和浏览器测试不代表实物设备验收；TC1/M1/A1 实机联网与硬件执行仍需在目标设备上验证。`build.sh` 仅构建本地镜像，不自动推送镜像或部署。
+浏览器测试会创建测试账号，请使用独立测试数据目录。`build.sh` 用于构建本地镜像。
