@@ -1,0 +1,174 @@
+diff --git a/MiCO/system/mico_system_para_storage.c b/MiCO/system/mico_system_para_storage.c
+index e54064f..1e95cbc 100644
+--- a/MiCO/system/mico_system_para_storage.c
++++ b/MiCO/system/mico_system_para_storage.c
+@@ -483,6 +483,7 @@ OSStatus mico_ota_switch_to_new_fw( int ota_data_len, uint16_t ota_data_crc )
+     switch_active_firmware();
+ #else
+     mico_logic_partition_t* ota_partition = MicoFlashGetInfo( MICO_PARTITION_OTA_TEMP );
++    boot_table_t previous_boot = sys_context->flashContentInRam.bootTable;
+ 
+     memset( &sys_context->flashContentInRam.bootTable, 0, sizeof(boot_table_t) );
+ #ifdef CONFIG_MX108
+@@ -497,7 +498,10 @@ OSStatus mico_ota_switch_to_new_fw( int ota_data_len, uint16_t ota_data_crc )
+     sys_context->flashContentInRam.bootTable.upgrade_type = 'U';
+     sys_context->flashContentInRam.bootTable.crc = ota_data_crc;
+ #endif
+-    mico_system_context_update( mico_context );
++    OSStatus status = mico_system_context_update( mico_context );
++    /* A failed commit must not arm a future configuration save in RAM. */
++    if (status != kNoErr) sys_context->flashContentInRam.bootTable = previous_boot;
++    return status;
+ #endif
+     return kNoErr;
+ }
+diff --git a/MiCO/system/qc_test/qc_test.mk b/MiCO/system/qc_test/qc_test.mk
+index ef901a2..b6d4746 100644
+--- a/MiCO/system/qc_test/qc_test.mk
++++ b/MiCO/system/qc_test/qc_test.mk
+@@ -13,9 +13,12 @@ NAME = Lib_MiCO_System_QC
+ $(NAME)_SOURCES := qc_test.c \
+                    internal/qc_test_tcpip.c \
+                    internal/qc_test_wlan.c \
+-                   internal/qc_test_ble.c \
+                    internal/qc_test_cli.c
+                    
++ifneq ($(DISABLE_MICO_BLUENRG),1)
++$(NAME)_SOURCES += internal/qc_test_ble.c
++endif
++
+ GLOBAL_INCLUDES := . 
+ $(NAME)_INCLUDES := internal
+ 
+diff --git a/MiCO/system/system_misc.c b/MiCO/system/system_misc.c
+index 51be9c8..f12b3db 100644
+--- a/MiCO/system/system_misc.c
++++ b/MiCO/system/system_misc.c
+@@ -93,6 +93,8 @@ static void micoNotify_WifiStatusHandler(WiFiEvent event, system_context_t * con
+   return;
+ }
+ 
++/* Application-owned Wi-Fi must not trigger background configuration flash writes. */
++#ifdef MICO_WLAN_CONNECTION_ENABLE
+ static void micoNotify_WiFIParaChangedHandler(apinfo_adv_t *ap_info, char *key, int key_len, system_context_t * const inContext)
+ {
+   system_log_trace();
+@@ -144,6 +146,8 @@ exit:
+   return;
+ }
+ 
++#endif
++
+ OSStatus system_notification_init( system_context_t * const inContext )
+ {
+   OSStatus err = kNoErr;
+@@ -163,8 +167,10 @@ OSStatus system_notification_init( system_context_t * const inContext )
+   err = mico_system_notify_register( mico_notify_WIFI_STATUS_CHANGED, (void *)micoNotify_WifiStatusHandler, inContext );
+   require_noerr( err, exit );
+ 
++#ifdef MICO_WLAN_CONNECTION_ENABLE
+   err = mico_system_notify_register( mico_notify_WiFI_PARA_CHANGED, (void *)micoNotify_WiFIParaChangedHandler, inContext );
+-  require_noerr( err, exit ); 
++  require_noerr( err, exit );
++#endif 
+ 
+ exit:
+   return err;
+diff --git a/board/MK3080B/platform.c b/board/MK3080B/platform.c
+index 08dfccd..dc7ce7c 100644
+--- a/board/MK3080B/platform.c
++++ b/board/MK3080B/platform.c
+@@ -72,6 +72,7 @@ extern WEAK void PlatformEasyLinkButtonLongPressedCallback(void);
+ ******************************************************/
+ const mico_gpio_init_t gpio_init[] =
+ {
++  {MICO_GPIO_19, INPUT_PULL_UP, 0}, /* Keep active-low motor disabled before app init. */
+   {MICO_GPIO_12, INPUT_PULL_UP, 0},
+   {MICO_GPIO_13, INPUT_PULL_UP, 0},
+   {MICO_GPIO_14, INPUT_PULL_UP, 0},
+@@ -143,58 +144,21 @@ const platform_peripherals_pinmap_t peripherals_pinmap =
+ ******************************************************/
+ void init_platform( void )
+ {
+-#if defined (MOC) && (MOC == 1)
+-    button_init_t init;
+-    extern int get_last_reset_reason(void);
+-    
+-    if ( get_last_reset_reason() & LAST_RST_CAUSE_WDT )
+-    {
+-       char *msg = malloc(1024);
+-       platform_log( "WARNING: Watchdog reset occured previously." );
+-       platform_log("msg return %p", msg);
+-       if (msg != NULL) {
+-            
+-            if (hardfault_get(msg, 1024) > 0) {
+-                platform_log("%s", msg);
+-            } else {
+-                platform_log("get 0");
+-            }
+-            free(msg);
+-       }
+-    }
+-
+-    MicoGpioInitialize( (mico_gpio_t)MICO_SYS_LED, OUTPUT_PUSH_PULL );
+-    MicoGpioOutputLow( (mico_gpio_t)MICO_SYS_LED );
+-
+-    MicoGpioInitialize( (mico_gpio_t)MICO_RF_LED, OUTPUT_PUSH_PULL );
+-    MicoGpioOutputHigh( (mico_gpio_t)MICO_RF_LED );
+-
+-    //	Initialise EasyLink buttons
+-    init.gpio = EasyLink_BUTTON;
+-    init.pressed_func = PlatformEasyLinkButtonClickedCallback;
+-    init.long_pressed_func = PlatformEasyLinkButtonLongPressedCallback;
+-    init.long_pressed_timeout = RestoreDefault_TimeOut;
+-
+-    button_init( IOBUTTON_EASYLINK, init );
+-#endif
++    /* A1 motor enable is active-low GPIO19, never a generic status LED. */
++    MicoGpioOutputHigh(MICO_GPIO_19);
++    MicoGpioInitialize(MICO_GPIO_19, OUTPUT_OPEN_DRAIN_NO_PULL);
++    MicoGpioOutputHigh(MICO_GPIO_12);
++    MicoGpioInitialize(MICO_GPIO_12, OUTPUT_PUSH_PULL);
+ }
+ 
+ void MicoSysLed(bool onoff)
+ {
+-  if (onoff) {
+-    MicoGpioOutputLow( (mico_gpio_t)MICO_SYS_LED );
+-  } else {
+-    MicoGpioOutputHigh( (mico_gpio_t)MICO_SYS_LED );
+-  }
++    UNUSED_PARAMETER(onoff);
+ }
+ 
+ void MicoRfLed(bool onoff)
+ {
+-  if (onoff) {
+-    MicoGpioOutputLow( (mico_gpio_t)MICO_RF_LED );
+-  } else {
+-    MicoGpioOutputHigh( (mico_gpio_t)MICO_RF_LED );
+-  }
++    UNUSED_PARAMETER(onoff);
+ }
+ 
+ 
+diff --git a/libraries/protocols/mqtt/MQTTClient.c b/libraries/protocols/mqtt/MQTTClient.c
+index 461a179..bbcc028 100755
+--- a/libraries/protocols/mqtt/MQTTClient.c
++++ b/libraries/protocols/mqtt/MQTTClient.c
+@@ -529,9 +529,13 @@ int MQTTYield(Client* c, int timeout_ms)
+ 
+   InitTimer(&timer);
+   countdown_ms(&timer, timeout_ms);
+-  if (cycle(c, &timer) == MQTT_FAILURE)
++  while (!expired(&timer))
+   {
+-    rc = MQTT_FAILURE;
++    if (cycle(c, &timer) < 0)
++    {
++      rc = MQTT_FAILURE;
++      break;
++    }
+   }
+ 
+   return rc;

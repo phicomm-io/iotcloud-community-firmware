@@ -23,7 +23,7 @@ env:
 
 jobs:
   tc1:
-    name: TC1 A1 firmware
+    name: TC1 firmware (A1 hardware variant)
     runs-on: ubuntu-22.04
 
     steps:
@@ -194,9 +194,43 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  a1:
+    name: A1 firmware
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential bzip2 curl git perl python3 zlib1g-dev libncurses5 libtinfo5
+      - uses: actions/cache@v4
+        with:
+          path: build/a1-tools
+          key: a1-tools-ubuntu22-gcc54-python2718-v1
+      - name: Set firmware version from git tag
+        if: github.ref_type == 'tag'
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          firmware_version="${TAG_NAME#v}"
+          sed -i -E "s/^#define (A1_VERSION|FIRMWARE_REVISION) \".*\"/#define \1 \"${firmware_version}\"/" A1/a1.h A1/mico_config.h
+      - name: Build A1 firmware
+        run: ./A1/build.sh
+      - name: Prepare release assets
+        run: |
+          mkdir -p release
+          cp build/a1-release/phicomm_a1.ota.bin build/a1-release/phicomm_a1.all.bin release/
+          (cd release && sha256sum *.bin > SHA256SUMS-a1)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: a1-firmware
+          path: release/
+          if-no-files-found: error
+          retention-days: 30
+
   release:
-    name: Release both products
-    needs: [tc1, m1]
+    name: Release all products
+    needs: [tc1, m1, a1]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-22.04
     permissions:
@@ -207,18 +241,24 @@ jobs:
           pattern: '*-firmware'
           merge-multiple: true
           path: release
-      - name: Publish both products
+      - name: Publish all products
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG_NAME: ${{ github.ref_name }}
         run: |
-          for name in phicomm_tc1_a1.ota.bin phicomm_tc1_a1.all.bin phicomm_m1.ota.bin phicomm_m1.all.bin; do
-            test -s "release/$name"
+          assets=(
+            release/phicomm_tc1_a1.ota.bin release/phicomm_tc1_a1.all.bin
+            release/phicomm_m1.ota.bin release/phicomm_m1.all.bin
+            release/phicomm_a1.ota.bin release/phicomm_a1.all.bin
+          )
+          for name in "${assets[@]}"; do
+            test -s "$name"
           done
-          cat release/SHA256SUMS-tc1 release/SHA256SUMS-m1 > release/SHA256SUMS
+          cat release/SHA256SUMS-tc1 release/SHA256SUMS-m1 release/SHA256SUMS-a1 > release/SHA256SUMS
+          (cd release && sha256sum -c SHA256SUMS)
           if gh release view "$TAG_NAME" >/dev/null 2>&1; then
-            gh release upload "$TAG_NAME" release/*.bin release/SHA256SUMS --clobber
+            gh release upload "$TAG_NAME" "${assets[@]}" release/SHA256SUMS --clobber
           else
-            gh release create "$TAG_NAME" release/*.bin release/SHA256SUMS --title "$TAG_NAME" --generate-notes
+            gh release create "$TAG_NAME" "${assets[@]}" release/SHA256SUMS --title "$TAG_NAME" --generate-notes
           fi

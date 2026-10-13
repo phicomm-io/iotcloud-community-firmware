@@ -3,3 +3,5 @@
 build
 zTC1.*
 *.rar
+/A1/generated/
+/A1/tools/__pycache__/

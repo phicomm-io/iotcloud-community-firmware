@@ -1,3 +1,5 @@
+A1 空气净化器（EMW3080B）独立固件：见 [A1/README.md](A1/README.md)，支持风机、原面板、RGB 灯环、WebUI、MQTT / HA 自动发现及 OTA。
+
 M1 空气质量检测器（EMW3080）独立固件：见 [M1/README.md](M1/README.md)，支持本地 WebUI、MQTT / Home Assistant 自动发现及 OTA。
 
 # 感谢原作者 [zogodo](https://github.com/zogodo/zTC1) 无私分享的代码

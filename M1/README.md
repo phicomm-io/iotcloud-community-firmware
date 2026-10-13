@@ -87,6 +87,6 @@ PWM 占空比采用 zM1 对应的 0.5/3/7/13/20%。联网启用 GPIO14，AP 启�
 
 实机验收依次检查：首刷启动和调试日志；UART 查询/实际传感器读数与原屏幕一致；亮度和物理事件；AP 配网、错误密码和断网恢复；HA 发现、断线遗嘱及传感器失效；NTP/时区；重启后配置；本地及 URL OTA，错误产品、损坏包和中断上传；升级期间运行内存余量。通过这些检查前应视为待实机验证固件。
 
-## 双产品 CI 与 Release
+## 三产品 CI 与 Release
 
-统一工作流 `.github/workflows/build.yml` 并行构建 TC1 A1 与 M1。分支推送、PR 和手动触发仅保存构建产物；推送 `v*` 标签且两个构建均成功后，统一 Release 发布 `phicomm_tc1_a1.ota.bin`、`phicomm_tc1_a1.all.bin`、`phicomm_m1.ota.bin`、`phicomm_m1.all.bin` 及 SHA256SUMS。
+统一工作流 `.github/workflows/build.yml` 独立构建 TC1（A1 硬件版本）、M1 和 A1 空气净化器。分支推送、PR 和手动触发保存构建产物；推送 `v*` 标签且三个构建均成功后，统一发布三个产品各自的 OTA/ALL 镜像及合并 SHA256SUMS。A1 空气净化器文档见 [A1/README.md](../A1/README.md)。
