@@ -13,6 +13,7 @@ import CommunityControl from "./components/CommunityControl.vue";
 import ImportExport from "./components/ImportExport.vue";
 import { account, api, restoreAccount } from "./account";
 import {
+  deviceKey,
   modelName,
   deviceEntry,
   localDevices,
@@ -47,10 +48,10 @@ watch(theme, value => {
   localStorage.setItem("ztc1_theme", value);
 }, { immediate: true });
 function toggleTheme() { theme.value = { auto: "light", light: "dark", dark: "auto" }[theme.value] || "auto"; }
-let client, timer;
+let client, timer, cloudTimer;
 const active = computed(() => {
-  const d = list.value.find((d) => d.mac === selected.value);
-  return d ? { ...states[d.mac], ...d } : null;
+  const d = list.value.find((d) => deviceKey(d) === selected.value);
+  return d ? { ...states[deviceKey(d)], ...d } : null;
 });
 function disconnect() {
   if (client) {
@@ -104,7 +105,7 @@ function connect() {
   });
   client.on("message", (topic, payload) => {
     for (const d of list.value) {
-      const s = (states[d.mac] ||= {});
+      const s = (states[deviceKey(d)] ||= {});
       if (applyMessage(d, s, topic, payload.toString())) break;
     }
   });
@@ -112,9 +113,12 @@ function connect() {
     localStorage.setItem("mqtt_config", JSON.stringify({ ...connection }));
 }
 function replaceList(value) {
-  list.value = value.map(deviceEntry);
-  if (!list.value.some((d) => d.mac === selected.value))
-    selected.value = list.value[0]?.mac || "";
+  const next = value.map(deviceEntry);
+  if (JSON.stringify(next) === JSON.stringify(list.value)) return;
+  if (client) for (const old of list.value) if (!next.some(d => deviceKey(d) === deviceKey(old))) client.unsubscribe(topics(old));
+  list.value = next;
+  if (!list.value.some((d) => deviceKey(d) === selected.value))
+    selected.value = list.value[0] ? deviceKey(list.value[0]) : "";
   subscribe();
 }
 async function refresh() {
@@ -169,6 +173,7 @@ watch(
   { deep: true },
 );
 onMounted(async () => {
+  cloudTimer = setInterval(() => { if (ready.value && account.username && !document.hidden) refresh(); }, 3000);
   await restoreAccount();
   await loadMode();
   timer = setInterval(() => (now.value = Date.now()), 1000);
@@ -176,7 +181,17 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   disconnect();
   clearInterval(timer);
+  clearInterval(cloudTimer);
 });
+async function restoreScoped() {
+  try {
+    const value = prompt("输入需要恢复的账号主题设备 MAC（恢复后固件可重新控制）");
+    if (!value) return;
+    const d = deviceEntry({ mac: value });
+    await api(`/devices/scoped/${d.mac}`, { method: "PUT", body: "{}" });
+    await refresh();
+  } catch (e) { error.value = e.message; }
+}
 async function add() {
   try {
     const d = deviceEntry({
@@ -193,7 +208,7 @@ async function add() {
       replaceList([...list.value, d]);
     }
     mac.value = "";
-    selected.value = d.mac;
+    selected.value = deviceKey(d);
     error.value = "";
   } catch (e) {
     error.value = e.message;
@@ -209,11 +224,11 @@ async function remove(d) {
     return;
   try {
     if (account.username) {
-      await api(`/devices/${d.mac}`, { method: "DELETE" });
+      await api(`/devices/${d.namespace === "account" ? "scoped/" : ""}${d.mac}`, { method: "DELETE" });
       await refresh();
-    } else replaceList(list.value.filter((x) => x.mac !== d.mac));
+    } else replaceList(list.value.filter((x) => deviceKey(x) !== deviceKey(d)));
     if (client) client.unsubscribe(topics(d));
-    delete states[d.mac];
+    delete states[deviceKey(d)];
   } catch (e) {
     error.value = e.message;
     if (account.username) await refresh();
@@ -229,13 +244,13 @@ async function edit(d) {
     const [model, version] = value.split("/");
     const next = deviceEntry({ mac: d.mac, model, version });
     if (account.username)
-      await api(`/devices/${d.mac}`, {
+      await api(`/devices/${d.namespace === "account" ? "scoped/" : ""}${d.mac}`, {
         method: "PUT",
         body: JSON.stringify(next),
       });
     else replaceList(list.value.map((x) => (x.mac === d.mac ? next : x)));
     if (client) client.unsubscribe(topics(d));
-    delete states[d.mac];
+    delete states[deviceKey(d)];
     await refresh();
   } catch (e) {
     error.value = e.message;
@@ -247,7 +262,7 @@ function send(cmd) {
     error.value = "请先连接 MQTT";
     return;
   }
-  const d = list.value.find((d) => d.mac === cmd.mac);
+  const d = list.value.find((d) => deviceKey(d) === selected.value && d.mac === cmd.mac);
   if (!d || (d.status && d.status !== "active")) return;
   try {
     const c = command(d, cmd);
@@ -377,6 +392,7 @@ async function changePassword() {
         ><button v-if="account.username" @click="uploadLocal">
           导入本地设备到账号</button
         ><button v-else @click="importRef?.open()">导入 / 导出 / 扫码</button>
+        <button v-if="account.username" @click="restoreScoped">恢复已解绑的账号主题设备</button>
         <form @submit.prevent="add">
           <label
             >MAC<input
@@ -397,17 +413,17 @@ async function changePassword() {
           ><button>添加设备</button>
         </form>
         <ul>
-          <li v-for="d in list" :key="d.mac">
+          <li v-for="d in list" :key="deviceKey(d)">
             <button
-              @click="selected = d.mac"
-              :aria-pressed="selected === d.mac"
+              @click="selected = deviceKey(d)"
+              :aria-pressed="selected === deviceKey(d)"
             >
               {{ modelName(d.model) }} · {{ d.mac }} · {{ d.version }}
             </button>
             <span v-if="d.status && d.status !== 'active'">{{
               d.status === "deleting" ? "解绑待同步" : "权限待同步"
             }}</span>
-            <button @click="edit(d)">修改型号 / 协议</button>
+            <button v-if="!d.namespace" @click="edit(d)">修改型号 / 协议</button>
             <button @click="remove(d)">解绑</button>
           </li>
         </ul>
@@ -415,12 +431,12 @@ async function changePassword() {
       </section>
       <DeviceControl
         v-if="active?.model === 'tc1'"
-        :key="active.mac + active.version + account.username"
+        :key="deviceKey(active) + active.version"
         :device="active"
         :account-name="account.username || ''"
         @send-cmd="send" /><CommunityControl
         v-else-if="active"
-        :key="active.mac"
+        :key="deviceKey(active)"
         :device="active"
         :connected="connected"
         :now="now"

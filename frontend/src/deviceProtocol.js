@@ -1,3 +1,5 @@
+export const userKey = username => "u_" + [...new TextEncoder().encode(username)].map(b => b.toString(16).padStart(2,"0")).join("");
+export const deviceKey = d => d.namespace === "account" ? `account:${d.username}:${d.mac}` : d.mac;
 export const modelName = (model) => (model === "tc1" ? "tc1(a1)" : model);
 export function normalizeMAC(value) {
   const s = String(value || "").trim();
@@ -21,7 +23,8 @@ export function deviceEntry(value) {
       : version === "community")
   )
     throw new Error("型号或协议不正确");
-  return { mac, model, version, ...(d.status ? { status: d.status } : {}) };
+  if (d.namespace && (d.namespace !== "account" || !d.username)) throw new Error("账号主题缺少归属");
+  return { mac, model, version, ...(d.namespace ? { namespace: d.namespace, username: d.username } : {}), ...(d.status ? { status: d.status } : {}) };
 }
 export function localDevices(storage = localStorage) {
   const list = JSON.parse(
@@ -33,11 +36,12 @@ export function localDevices(storage = localStorage) {
   const unique = new Map();
   for (const raw of list) {
     const d = deviceEntry(raw);
-    unique.set(d.mac, d);
+    unique.set(deviceKey(d), d);
   }
   return [...unique.values()];
 }
 export function topics(d) {
+  if (d.namespace === "account") return [`phicomm/${d.model}/${userKey(d.username)}/${d.mac}/#`, `homeassistant/+/${userKey(d.username)}/+/config`];
   if (d.model !== "tc1")
     return [
       `phicomm/${d.model}/${d.mac}/#`,
@@ -74,6 +78,7 @@ const merge = (state, data) => {
         "version",
         "status",
         "username",
+        "namespace",
       ].includes(key)
     )
       state[key] = value;
@@ -87,6 +92,23 @@ const json = (value) => {
   }
 };
 export function applyMessage(d, state, topic, message, now = Date.now()) {
+  if (d.namespace === "account") {
+    const p = topic.split("/"), key = userKey(d.username);
+    if (p[0] === "homeassistant") {
+      const prefix = `${d.model}_${d.mac}_`;
+      if (p.length !== 5 || p[2] !== key || !p[3].startsWith(prefix)) return false;
+      topic = `homeassistant/${p[1]}/${d.model === "tc1" ? d.mac : `${d.model}_${d.mac}`}/${p[3].slice(prefix.length)}/${p[4]}`;
+    } else {
+      if (p[0] !== "phicomm" || p[1] !== d.model || p[2] !== key || p[3] !== d.mac) return false;
+      const leaf = p.slice(4).join("/");
+      if (d.model === "tc1") {
+        if (leaf === "availability") { state.available = String(message) === "online"; return true; }
+        if (leaf === "sensor") topic = `homeassistant/sensor/${d.mac}/power/state`;
+        else if (/^\w+\/state$/.test(leaf)) topic = `homeassistant/switch/${d.mac}/${leaf}`;
+        else return false;
+      } else topic = `phicomm/${d.model}/${d.mac}/${leaf}`;
+    }
+  }
   const p = topic.split("/"),
     raw = String(message);
   let mac;
@@ -163,6 +185,11 @@ export function applyMessage(d, state, topic, message, now = Date.now()) {
   return true;
 }
 export function command(d, cmd) {
+  if (d.namespace === "account") {
+    const result = command({ ...d, namespace: undefined }, cmd);
+    result.topic = `phicomm/${d.model}/${userKey(d.username)}/${d.mac}/${d.model === "tc1" ? "set" : cmd.leaf}`;
+    return result;
+  }
   if (d.model === "tc1") {
     const mac = d.version === "v2" ? d.mac.toUpperCase() : d.mac;
     return {

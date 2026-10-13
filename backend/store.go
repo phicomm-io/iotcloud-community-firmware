@@ -30,11 +30,12 @@ func colonMAC(mac string) string {
 func isValidMAC(mac string) bool { return macRegex.MatchString(strings.TrimSpace(mac)) }
 
 type Device struct {
-	MAC      string `json:"mac"`
-	Model    string `json:"model"`
-	Version  string `json:"version"`
-	Status   string `json:"status"`
-	Username string `json:"username,omitempty"`
+	Namespace string `json:"namespace,omitempty"`
+	MAC       string `json:"mac"`
+	Model     string `json:"model"`
+	Version   string `json:"version"`
+	Status    string `json:"status"`
+	Username  string `json:"username,omitempty"`
 }
 
 func validateDevice(d *Device) error {
@@ -79,6 +80,7 @@ func openStore(path string) (*Store, error) {
  CREATE TABLE IF NOT EXISTS users(username TEXT PRIMARY KEY,state TEXT NOT NULL DEFAULT 'active');
  CREATE TABLE IF NOT EXISTS devices(mac TEXT PRIMARY KEY,username TEXT NOT NULL REFERENCES users(username) ON DELETE CASCADE,model TEXT NOT NULL,version TEXT NOT NULL,status TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY,username TEXT NOT NULL REFERENCES users(username) ON DELETE CASCADE,expires INTEGER NOT NULL);
+ CREATE TABLE IF NOT EXISTS scoped_devices(username TEXT NOT NULL REFERENCES users(username) ON DELETE CASCADE,mac TEXT NOT NULL,model TEXT NOT NULL,version TEXT NOT NULL,status TEXT NOT NULL,PRIMARY KEY(username,mac));
  CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);`)
 	if err != nil {
 		db.Close()
@@ -112,7 +114,12 @@ func (s *Store) devices(username string) ([]Device, error) {
 		}
 		list = append(list, d)
 	}
-	return list, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+	scoped, err := s.scopedDevices(username)
+	return append(list, scoped...), err
 }
 func (s *Store) device(mac string) (Device, error) {
 	var d Device
@@ -127,7 +134,10 @@ type Application struct {
 }
 
 func (a *Application) syncDevice(d Device) error {
-	role := "device_" + d.MAC
+	if d.Namespace != "" {
+		return a.syncScopedDevice(d)
+	}
+	role := deviceRole(d)
 	if d.Status == "deleting" {
 		_, err := a.broker.Command("removeClientRole", map[string]interface{}{"username": d.Username, "rolename": role})
 		if err != nil && !notFound(err) {
@@ -163,6 +173,9 @@ func (a *Application) syncDevice(d Device) error {
 	return err
 }
 func (a *Application) saveDevice(username string, d Device, update bool) error {
+	if d.Namespace != "" {
+		return errors.New("账号主题只能通过 MQTT 声明自动发现")
+	}
 	if err := validateDevice(&d); err != nil {
 		return err
 	}
@@ -238,10 +251,14 @@ func (a *Application) syncDeleteUser(username string) error {
 		return err
 	}
 	for _, d := range devices {
-		_, err = a.broker.Command("deleteRole", map[string]interface{}{"rolename": "device_" + d.MAC})
+		_, err = a.broker.Command("deleteRole", map[string]interface{}{"rolename": deviceRole(d)})
 		if err != nil && !notFound(err) {
 			return err
 		}
+	}
+	_, err = a.broker.Command("deleteRole", map[string]interface{}{"rolename": "account_" + userKey(username)})
+	if err != nil && !notFound(err) {
+		return err
 	}
 	_, err = a.store.Exec("DELETE FROM users WHERE username=?", username)
 	return err
@@ -274,6 +291,9 @@ func (a *Application) reconcile() error {
 	}
 	devices, err := a.store.devices("")
 	if err != nil {
+		return err
+	}
+	if err = a.syncAccounts(); err != nil {
 		return err
 	}
 	for _, d := range devices {

@@ -107,7 +107,7 @@ func setupCommand(command string, args []string) error {
 	if err = createCertificates(filepath.Join(*output, "broker", "certs")); err != nil {
 		return err
 	}
-	b := bootstrapConfig{DefaultACL: map[string]bool{"publishClientSend": false, "publishClientReceive": false, "subscribe": false, "unsubscribe": true}, Clients: []bootstrapClient{newBootstrapClient(serviceUser, brokerPass, []string{"manager"})}, Roles: []bootstrapRole{{"manager", []Rule{{"publishClientSend", "$CONTROL/dynamic-security/v1", true, 1}, {"publishClientReceive", "$CONTROL/dynamic-security/v1/response", true, 1}, {"subscribeLiteral", "$CONTROL/dynamic-security/v1/response", true, 1}}}}}
+	b := bootstrapConfig{DefaultACL: map[string]bool{"publishClientSend": false, "publishClientReceive": false, "subscribe": false, "unsubscribe": true}, Clients: []bootstrapClient{newBootstrapClient(serviceUser, brokerPass, []string{"manager"})}, Roles: []bootstrapRole{{"manager", managerRules()}}}
 	store, err := openStore(filepath.Join(*output, "app", "app.db"))
 	if err != nil {
 		return err

@@ -100,7 +100,7 @@ func handleAdminDevices(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, err.Error(), 400)
 			return
 		}
-		if d.Username == "" || reservedUser(d.Username) || d.Status != "" {
+		if d.Username == "" || reservedUser(d.Username) || d.Status != "" || d.Namespace != "" {
 			jsonError(w, "请选择有效账号", 400)
 			return
 		}
@@ -122,6 +122,15 @@ func handleAdminDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	mac := strings.TrimPrefix(r.URL.Path, "/api/admin/device/")
+	if strings.HasPrefix(mac, "scoped/") {
+		mac = strings.TrimPrefix(mac, "scoped/")
+		if !isValidMAC(mac) || reservedUser(r.URL.Query().Get("username")) {
+			jsonError(w, "设备标识不正确", 400)
+			return
+		}
+		handleScopedDeviceFor(w, r, normalizeMAC(mac), r.URL.Query().Get("username"))
+		return
+	}
 	if !isValidMAC(mac) {
 		jsonError(w, "MAC 地址格式不正确", 400)
 		return

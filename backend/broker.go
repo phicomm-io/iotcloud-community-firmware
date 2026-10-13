@@ -38,11 +38,12 @@ type Broker interface {
 	Authenticate(string, string) error
 }
 type DynamicBroker struct {
-	client  mqtt.Client
-	url     string
-	tls     *tls.Config
-	mu      sync.Mutex
-	pending map[string]chan brokerReply
+	client    mqtt.Client
+	url       string
+	tls       *tls.Config
+	mu        sync.Mutex
+	pending   map[string]chan brokerReply
+	discovery func(string, []byte)
 }
 
 func randomID() string {
@@ -82,6 +83,7 @@ func newDynamicBroker(url, ca, user, pass string) (*DynamicBroker, error) {
 		opts.SetTLSConfig(b.tls)
 	}
 	opts.OnConnect = func(c mqtt.Client) {
+		_ = b.subscribeDiscovery(c)
 		if err := waitToken(c.Subscribe("$CONTROL/dynamic-security/v1/response", 1, b.receive)); err != nil {
 			c.Disconnect(0)
 		}
@@ -89,6 +91,21 @@ func newDynamicBroker(url, ca, user, pass string) (*DynamicBroker, error) {
 	b.client = mqtt.NewClient(opts)
 	b.client.Connect()
 	return b, nil
+}
+func (b *DynamicBroker) watchDiscovery(handler func(string, []byte)) {
+	b.mu.Lock()
+	b.discovery = handler
+	b.mu.Unlock()
+}
+func (b *DynamicBroker) subscribeDiscovery(c mqtt.Client) error {
+	return waitToken(c.Subscribe("phicomm/discovery/+/+", 1, func(_ mqtt.Client, m mqtt.Message) {
+		b.mu.Lock()
+		handler := b.discovery
+		b.mu.Unlock()
+		if handler != nil {
+			handler(m.Topic(), append([]byte(nil), m.Payload()...))
+		}
+	}))
 }
 func (b *DynamicBroker) Close() { b.client.Disconnect(100) }
 func (b *DynamicBroker) receive(c mqtt.Client, m mqtt.Message) {

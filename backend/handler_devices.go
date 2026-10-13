@@ -15,7 +15,9 @@ func handleDevices(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for i := range list {
-			list[i].Username = ""
+			if list[i].Namespace == "" {
+				list[i].Username = ""
+			}
 		}
 		jsonResp(w, list)
 	case "POST":
@@ -24,7 +26,7 @@ func handleDevices(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, err.Error(), 400)
 			return
 		}
-		if d.Username != "" || d.Status != "" {
+		if d.Username != "" || d.Status != "" || d.Namespace != "" {
 			jsonError(w, "不能指定设备归属或状态", 400)
 			return
 		}
@@ -43,6 +45,10 @@ func handleDevices(w http.ResponseWriter, r *http.Request) {
 }
 func handleDevice(w http.ResponseWriter, r *http.Request) {
 	mac := strings.TrimPrefix(r.URL.Path, "/api/devices/")
+	if strings.HasPrefix(mac, "scoped/") {
+		handleScopedDevice(w, r, strings.TrimPrefix(mac, "scoped/"))
+		return
+	}
 	if !isValidMAC(mac) {
 		jsonError(w, "MAC 地址格式不正确", 400)
 		return
@@ -55,7 +61,7 @@ func handleDevice(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, err.Error(), 400)
 			return
 		}
-		if d.MAC != "" && normalizeMAC(d.MAC) != mac || d.Username != "" || d.Status != "" {
+		if d.MAC != "" && normalizeMAC(d.MAC) != mac || d.Username != "" || d.Status != "" || d.Namespace != "" {
 			jsonError(w, "不能修改 MAC、归属或状态", 400)
 			return
 		}

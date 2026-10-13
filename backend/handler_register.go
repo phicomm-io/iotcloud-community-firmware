@@ -37,7 +37,10 @@ func (a *Application) register(user, password string) error {
 		if state == "pending" {
 			if authErr := a.broker.Authenticate(user, password); authErr == nil {
 				_, err = a.store.Exec("UPDATE users SET state='active' WHERE username=?", user)
-				return err
+				if err != nil {
+					return err
+				}
+				return a.syncAccount(user)
 			}
 			_, lookup := a.broker.Command("getClient", map[string]interface{}{"username": user})
 			if lookup != nil && !notFound(lookup) {
@@ -63,7 +66,10 @@ func (a *Application) register(user, password string) error {
 		return err
 	}
 	_, err = a.store.Exec("UPDATE users SET state='active' WHERE username=?", user)
-	return err
+	if err != nil {
+		return err
+	}
+	return a.syncAccount(user)
 }
 func handleRegisterStatus(w http.ResponseWriter, r *http.Request) {
 	if !method(w, r, "GET") {

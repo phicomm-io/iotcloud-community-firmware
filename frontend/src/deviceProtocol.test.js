@@ -94,3 +94,23 @@ test("A1 HA light payload and model isolation", () => {
   );
   assert.throws(() => command(d, { leaf: "../../other/set", value: 1 }));
 });
+
+ test("account scoped topics preserve HA structure and isolate same MAC", async () => {
+  const { userKey, deviceKey } = await import("./deviceProtocol.js");
+  const alice = deviceEntry({mac:"aabbccddeeff",model:"m1",namespace:"account",username:"a+b@example.com"});
+  const bob = {...alice,username:"bob"};
+  assert.notEqual(deviceKey(alice),deviceKey(bob));
+  assert.ok(!userKey(alice.username).includes("+"));
+  const own = `phicomm/m1/${userKey(alice.username)}/${alice.mac}/sensor`;
+  const s={};assert.equal(applyMessage(alice,s,own,'{"temperature":24}'),true);assert.equal(s.temperature,24);
+  assert.equal(applyMessage(bob,{},own,'{"temperature":24}'),false);
+  assert.equal(applyMessage(alice,{},`phicomm/m1/${alice.mac}/sensor`,'{}'),false);
+  const ha = `homeassistant/sensor/${userKey(alice.username)}/m1_${alice.mac}_temperature/config`;
+  assert.equal(ha.split("/").length,5);assert.equal(applyMessage(alice,s,ha,'{"name":"温度"}'),true);
+  assert.equal(s.entityNames.temperature,"温度");
+  assert.equal(command(alice,{leaf:"brightness/set",value:0}).topic,`phicomm/m1/${userKey(alice.username)}/${alice.mac}/brightness/set`);
+  const tc1 = {...alice,model:"tc1",version:"v2"};
+  assert.equal(applyMessage(tc1,s,`phicomm/tc1/${userKey(tc1.username)}/${tc1.mac}/socket_5/state`,`set socket AABBCCDDEEFF 5 1`),true);
+  assert.equal(s.socket_5,1);
+  assert.equal(command(tc1,{payload:"set socket aabbccddeeff 5 0"}).topic,`phicomm/tc1/${userKey(tc1.username)}/${tc1.mac}/set`);
+ });

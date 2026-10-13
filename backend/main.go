@@ -174,6 +174,23 @@ func main() {
 	}
 	defer broker.Close()
 	app = &Application{store: store, broker: broker}
+	// Upgrade the manager role in place, including installations initialized before discovery support.
+	go func() {
+		for {
+			_, err := broker.Command("modifyRole", map[string]interface{}{"rolename": "manager", "acls": managerRules()})
+			if err == nil {
+				broker.watchDiscovery(func(topic string, payload []byte) {
+					if err := app.discover(topic, payload); err != nil {
+						log.Printf("discovery rejected: %v", err)
+					}
+				})
+				if err = broker.subscribeDiscovery(broker.client); err == nil {
+					break
+				}
+			}
+			time.Sleep(time.Second)
+		}
+	}()
 	loadSettings()
 	go func() {
 		for {

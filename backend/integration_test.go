@@ -159,13 +159,16 @@ func TestRealPersistence(t *testing.T) {
 				t.Fatal(e)
 			}
 		}
+		if e = a.discover("phicomm/discovery/"+userKey(user)+"/aa1111111111", []byte(`{"schema":1,"model":"tc1","version":"v2"}`)); e != nil {
+			t.Fatal(e)
+		}
 		return
 	}
 	if e = b.Authenticate(user, password); e != nil {
 		t.Fatal("password not persisted", e)
 	}
 	ds, e := s.devices(user)
-	if e != nil || len(ds) != 3 {
+	if e != nil || len(ds) != 4 {
 		t.Fatal("database not persisted", ds, e)
 	}
 	data, e := b.Command("getClient", map[string]interface{}{"username": user})
@@ -173,7 +176,7 @@ func TestRealPersistence(t *testing.T) {
 		t.Fatal(e)
 	}
 	for _, d := range ds {
-		if !hasRole(data, "device_"+d.MAC) {
+		if !hasRole(data, deviceRole(d)) {
 			t.Fatal("role not persisted", d)
 		}
 	}
@@ -218,5 +221,124 @@ func TestRealMigration(t *testing.T) {
 	data, e := b.Command("getClient", map[string]interface{}{"username": "legacy_test"})
 	if e != nil || !hasRole(data, "device_aabbccddeeff") {
 		t.Fatal("migrated role missing", e)
+	}
+}
+
+func TestRealDynamicSecurityDiscovery(t *testing.T) {
+	runtime := os.Getenv("PHICOMM_TEST_RUNTIME")
+	if runtime == "" {
+		t.Skip("isolated broker required")
+	}
+	pass, e := readSecret(runtime + "/secrets/broker-password")
+	if e != nil {
+		t.Fatal(e)
+	}
+	b, e := newDynamicBroker(os.Getenv("PHICOMM_TEST_BROKER"), runtime+"/broker/certs/ca.crt", serviceUser, pass)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer b.Close()
+	deadline := time.Now().Add(10 * time.Second)
+	for !b.client.IsConnectionOpen() && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+	}
+	s, e := openStore(runtime + "/discovery-test.db")
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer s.Close()
+	a := &Application{store: s, broker: b}
+	events := make(chan error, 20)
+	b.watchDiscovery(func(topic string, payload []byte) { events <- a.discover(topic, payload) })
+	if e = b.subscribeDiscovery(b.client); e != nil {
+		t.Fatal(e)
+	}
+	users := []string{"a+b@example.com", "scoped_bob"}
+	pw := "namespace-test-password"
+	for _, u := range users {
+		if e = a.register(u, pw); e != nil {
+			t.Fatal(e)
+		}
+		defer a.deleteUser(u)
+	}
+	connect := func(u string) mqtt.Client {
+		c := mqtt.NewClient(mqtt.NewClientOptions().AddBroker(b.url).SetTLSConfig(b.tls).SetUsername(u).SetPassword(pw).SetClientID("scope_" + randomID()[:12]).SetAutoReconnect(false))
+		if e := waitToken(c.Connect()); e != nil {
+			t.Fatal(e)
+		}
+		t.Cleanup(func() { c.Disconnect(0) })
+		return c
+	}
+	grant := func(c mqtt.Client, topic string) byte {
+		tok := c.Subscribe(topic, 1, nil)
+		if !tok.WaitTimeout(5 * time.Second) {
+			t.Fatal("timeout")
+		}
+		if tok.Error() != nil {
+			return 128
+		}
+		return tok.(*mqtt.SubscribeToken).Result()[topic]
+	}
+	const mac = "abcdeffedcba"
+	for _, u := range users {
+		c := connect(u)
+		topic := "phicomm/discovery/" + userKey(u) + "/" + mac
+		if e = waitToken(c.Publish(topic, 1, true, `{"schema":1,"model":"m1","version":"community"}`)); e != nil {
+			t.Fatal(e)
+		}
+		select {
+		case e = <-events:
+			if e != nil {
+				t.Fatal(e)
+			}
+		case <-time.After(6 * time.Second):
+			t.Fatal("discovery not delivered")
+		}
+		c.Disconnect(0)
+		c = connect(u)
+		if grant(c, "phicomm/m1/"+userKey(u)+"/"+mac+"/#") == 128 {
+			t.Fatal("scoped owner denied")
+		}
+		if grant(c, "phicomm/m1/"+userKey(users[1])+"/"+mac+"/#") != 128 && u != users[1] {
+			t.Fatal("other namespace allowed")
+		}
+		if grant(c, "phicomm/m1/"+mac+"/#") != 128 {
+			t.Fatal("legacy implicitly granted")
+		}
+		if grant(c, "homeassistant/+/"+userKey(u)+"/+/config") == 128 {
+			t.Fatal("HA subscription denied")
+		}
+	}
+	own := connect(users[0])
+	otherTopic := "phicomm/discovery/" + userKey(users[1]) + "/001122334455"
+	_ = waitToken(own.Publish(otherTopic, 1, true, `{"schema":1,"model":"a1"}`))
+	select {
+	case e = <-events:
+		t.Fatal("spoof reached manager", e)
+	case <-time.After(300 * time.Millisecond):
+	}
+	list, e := s.devices(users[1])
+	if e != nil || len(list) != 1 {
+		t.Fatal("spoof created device", list, e)
+	}
+	// A fresh manager connection must replay retained announcements safely.
+	b2, e := newDynamicBroker(b.url, runtime+"/broker/certs/ca.crt", serviceUser, pass)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer b2.Close()
+	replay := make(chan string, 10)
+	b2.watchDiscovery(func(topic string, payload []byte) {
+		if err := a.discover(topic, payload); err != nil {
+			t.Error(err)
+		}
+		replay <- topic
+	})
+	for i := 0; i < 2; i++ {
+		select {
+		case <-replay:
+		case <-time.After(6 * time.Second):
+			t.Fatal("retained replay missing")
+		}
 	}
 }
