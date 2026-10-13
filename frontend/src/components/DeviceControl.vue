@@ -6,7 +6,8 @@ const props = defineProps({
   device: {
     type: Object,
     required: true
-  }
+  },
+  accountName: { type: String, default: '' }
 })
 
 const emit = defineEmits(['send-cmd', 'update-remark'])
@@ -60,9 +61,13 @@ const loadRemarks = () => {
   // Clear previous remarks
   Object.keys(remarks).forEach(key => delete remarks[key])
   
-  const saved = localStorage.getItem(`ztc1_remarks_${props.device.mac}`)
+  const id = props.device.mac
+  const legacyIDs = [id, id.toUpperCase(), id.match(/../g)?.join(':'), id.match(/../g)?.join(':').toUpperCase()]
+  const saved = props.accountName
+    ? localStorage.getItem(`phicomm_remarks_${props.accountName}_${id}`)
+    : legacyIDs.map(mac => localStorage.getItem(`ztc1_remarks_${mac}`)).find(Boolean)
   if (saved) {
-    Object.assign(remarks, JSON.parse(saved))
+    try { Object.assign(remarks, JSON.parse(saved)) } catch { /* Ignore corrupt local remarks. */ }
   }
 }
 
@@ -101,7 +106,7 @@ const startEdit = (index) => {
 const saveV2Edit = (index) => {
   if (editingPlug.value === index) {
     remarks[index] = tempName.value
-    localStorage.setItem(`ztc1_remarks_${props.device.mac}`, JSON.stringify(remarks))
+    localStorage.setItem((props.accountName ? `phicomm_remarks_${props.accountName}_${props.device.mac}` : `ztc1_remarks_${props.device.mac}`), JSON.stringify(remarks))
     editingPlug.value = -1
   }
 }
@@ -113,7 +118,7 @@ const saveEdit = (index) => {
     
     // 2. Save locally
     remarks[index] = tempName.value
-    localStorage.setItem(`ztc1_remarks_${props.device.mac}`, JSON.stringify(remarks))
+    localStorage.setItem((props.accountName ? `phicomm_remarks_${props.accountName}_${props.device.mac}` : `ztc1_remarks_${props.device.mac}`), JSON.stringify(remarks))
     
     editingPlug.value = -1
   }
@@ -336,7 +341,7 @@ const gridStyle = computed(() => {
             <span class="version-tag">v2</span>
           </template>
           <template v-else-if="!deviceNameEditing">
-            {{ device.name || 'zTC1' }} <button @click="startDeviceEdit" class="icon-btn">✎</button>
+            {{ device.name || 'tc1(a1)' }} <button @click="startDeviceEdit" class="icon-btn">✎</button>
           </template>
           <template v-else>
             <input v-model="tempDeviceName" @keyup.enter="saveDeviceName" class="edit-input">

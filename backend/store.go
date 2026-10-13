@@ -1,320 +1,287 @@
 package main
 
 import (
-	"bufio"
-	"bytes"
-	"crypto/sha512"
-	"encoding/base64"
+	"database/sql"
+	"errors"
 	"fmt"
-	"os"
-	"strconv"
+	_ "modernc.org/sqlite"
+	"regexp"
 	"strings"
-
-	"golang.org/x/crypto/pbkdf2"
+	"sync"
 )
 
-// 从passwd文件读取所有用户名
-func listUsers() ([]string, error) {
-	f, err := os.Open(cfg.HostPasswdPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return []string{}, nil
-		}
-		return nil, err
-	}
-	defer f.Close()
+var macRegex = regexp.MustCompile(`^([0-9A-Fa-f]{12}|([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}|([0-9A-Fa-f]{2}-){5}[0-9A-Fa-f]{2})$`)
+var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
+var usernameRegex = regexp.MustCompile(`^[A-Za-z0-9_.@+\-]{3,254}$`)
 
-	var users []string
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
+func normalizeMAC(mac string) string {
+	return strings.ToLower(strings.NewReplacer(":", "", "-", "").Replace(strings.TrimSpace(mac)))
+}
+func colonMAC(mac string) string {
+	var b strings.Builder
+	for i := 0; i < len(mac); i += 2 {
+		if i > 0 {
+			b.WriteByte(':')
 		}
-		parts := strings.SplitN(line, ":", 2)
-		if len(parts) >= 1 && parts[0] != "" {
-			users = append(users, parts[0])
-		}
+		b.WriteString(mac[i : i+2])
 	}
-	return users, scanner.Err()
+	return b.String()
+}
+func isValidMAC(mac string) bool { return macRegex.MatchString(strings.TrimSpace(mac)) }
+
+type Device struct {
+	MAC      string `json:"mac"`
+	Model    string `json:"model"`
+	Version  string `json:"version"`
+	Status   string `json:"status"`
+	Username string `json:"username,omitempty"`
 }
 
-// 检查用户名是否存在
-func userExists(username string) bool {
-	users, err := listUsers()
-	if err != nil {
-		return false
+func validateDevice(d *Device) error {
+	if !isValidMAC(d.MAC) {
+		return errors.New("MAC 地址格式不正确")
 	}
-	for _, u := range users {
-		if u == username {
-			return true
+	d.MAC = normalizeMAC(d.MAC)
+	if d.Model == "" {
+		d.Model = "tc1"
+	}
+	switch d.Model {
+	case "tc1":
+		if d.Version == "" {
+			d.Version = "v2"
 		}
-	}
-	return false
-}
-
-// 从ACL文件解析，检查MAC是否已被使用
-func macExists(mac string) bool {
-	aclContent, err := os.ReadFile(cfg.ACLPath)
-	if err != nil {
-		return false
-	}
-
-	// 统一去掉分隔符后比较
-	clean := strings.ToLower(strings.NewReplacer(":", "", "-", "").Replace(mac))
-	content := strings.ToLower(string(aclContent))
-	return strings.Contains(content, clean)
-}
-
-// 添加ACL规则
-// mac 已由 normalizeMAC 标准化为 AA:BB:CC:DD:EE:FF 格式
-func addACLRules(username, mac string) error {
-	// 4 种 MAC 变体
-	macColonUpper := strings.ToUpper(mac)
-	macColonLower := strings.ToLower(mac)
-	macPlainUpper := strings.ReplaceAll(macColonUpper, ":", "")
-	macPlainLower := strings.ReplaceAll(macColonLower, ":", "")
-
-	variants := []string{macColonLower, macColonUpper, macPlainLower, macPlainUpper}
-
-	// 去重（若 pattern 无 %s 则四种结果相同）
-	seen := make(map[string]struct{})
-
-	var rules strings.Builder
-	rules.WriteString(fmt.Sprintf("\nuser %s\n", username))
-
-	for _, pattern := range cfg.ACLPatterns {
-		for _, v := range variants {
-			topic := fmt.Sprintf(pattern, v)
-			if _, exists := seen[topic]; !exists {
-				seen[topic] = struct{}{}
-				rules.WriteString(fmt.Sprintf("topic readwrite %s\n", topic))
-			}
+		if d.Version != "v1" && d.Version != "v2" {
+			return errors.New("TC1 协议必须为 v1/v2")
 		}
-	}
-
-	f, err := os.OpenFile(cfg.ACLPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	_, err = f.WriteString(rules.String())
-	return err
-}
-
-// 读取ACL文件内容
-func readACL() (string, error) {
-	data, err := os.ReadFile(cfg.ACLPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", nil
+	case "m1", "a1":
+		if d.Version == "" {
+			d.Version = "community"
 		}
-		return "", err
-	}
-	return string(data), nil
-}
-
-// 写入ACL文件
-func writeACL(content string) error {
-	return os.WriteFile(cfg.ACLPath, []byte(content), 0644)
-}
-
-// 获取用户的ACL规则
-func getUserACL(username string) []string {
-	data, err := os.ReadFile(cfg.ACLPath)
-	if err != nil {
-		return nil
-	}
-
-	lines := strings.Split(string(data), "\n")
-	var result []string
-	inUser := false
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == fmt.Sprintf("user %s", username) {
-			inUser = true
-			result = append(result, line)
-			continue
+		if d.Version != "community" {
+			return errors.New("M1/A1 协议必须为 community")
 		}
-		if inUser {
-			if strings.HasPrefix(trimmed, "user ") || trimmed == "" {
-				if strings.HasPrefix(trimmed, "user ") {
-					break
-				}
-				continue
-			}
-			result = append(result, line)
-		}
+	default:
+		return errors.New("设备型号不支持")
 	}
-	return result
+	return nil
 }
 
-// 删除用户的ACL规则
-func removeUserACL(username string) error {
-	data, err := os.ReadFile(cfg.ACLPath)
-	if err != nil {
-		return err
-	}
+type Store struct{ *sql.DB }
 
-	lines := strings.Split(string(data), "\n")
-	var result []string
-	inUser := false
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == fmt.Sprintf("user %s", username) {
-			inUser = true
-			continue
-		}
-		if inUser {
-			if strings.HasPrefix(trimmed, "user ") {
-				inUser = false
-				result = append(result, line)
-			} else if trimmed == "" {
-				// skip empty lines in user block
-				continue
-			}
-			// skip topic lines belonging to this user
-			continue
-		}
-		result = append(result, line)
-	}
-
-	return writeACL(strings.Join(result, "\n"))
-}
-
-type UserInfo struct {
-	Username string   `json:"username"`
-	ACLRules []string `json:"acl_rules"`
-}
-
-func getUserInfoList() ([]UserInfo, error) {
-	users, err := listUsers()
+func openStore(path string) (*Store, error) {
+	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, err
 	}
-
-	var result []UserInfo
-	for _, u := range users {
-		rules := getUserACL(u)
-		result = append(result, UserInfo{
-			Username: u,
-			ACLRules: rules,
-		})
+	db.SetMaxOpenConns(1)
+	s := &Store{db}
+	_, err = db.Exec(`PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL;
+ CREATE TABLE IF NOT EXISTS users(username TEXT PRIMARY KEY,state TEXT NOT NULL DEFAULT 'active');
+ CREATE TABLE IF NOT EXISTS devices(mac TEXT PRIMARY KEY,username TEXT NOT NULL REFERENCES users(username) ON DELETE CASCADE,model TEXT NOT NULL,version TEXT NOT NULL,status TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY,username TEXT NOT NULL REFERENCES users(username) ON DELETE CASCADE,expires INTEGER NOT NULL);
+ CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);`)
+	if err != nil {
+		db.Close()
+		return nil, err
 	}
-	return result, nil
+	return s, nil
+}
+func (s *Store) state(username string) (string, error) {
+	var state string
+	err := s.QueryRow("SELECT state FROM users WHERE username=?", username).Scan(&state)
+	return state, err
+}
+func (s *Store) devices(username string) ([]Device, error) {
+	q := "SELECT mac,username,model,version,status FROM devices"
+	args := []interface{}{}
+	if username != "" {
+		q += " WHERE username=?"
+		args = append(args, username)
+	}
+	q += " ORDER BY mac"
+	rows, err := s.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	list := []Device{}
+	for rows.Next() {
+		var d Device
+		if err = rows.Scan(&d.MAC, &d.Username, &d.Model, &d.Version, &d.Status); err != nil {
+			return nil, err
+		}
+		list = append(list, d)
+	}
+	return list, rows.Err()
+}
+func (s *Store) device(mac string) (Device, error) {
+	var d Device
+	err := s.QueryRow("SELECT mac,username,model,version,status FROM devices WHERE mac=?", mac).Scan(&d.MAC, &d.Username, &d.Model, &d.Version, &d.Status)
+	return d, err
 }
 
-// checkPasswdFile 从 mosquitto passwd 文件读取哈希并验证密码
-// mosquitto 2.x 默认使用 sha512-pbkdf2，格式: $7$<iterations>$<b64_salt>$<b64_key>
-// 注意：mosquitto_passwd 生成的 base64 会换行，同一条记录可能跨多行
-func checkPasswdFile(passwdPath, username, password string) bool {
-	data, err := os.ReadFile(passwdPath)
-	if err != nil {
-		return false
-	}
-
-	// mosquitto passwd 中只有含 ":" 的行是新条目起始行，
-	// 不含 ":" 的行是上一条目的 base64 续行，需拼回去
-	lines := strings.Split(string(data), "\n")
-	var entries []string
-	for _, raw := range lines {
-		line := strings.TrimSpace(raw)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		if strings.Contains(line, ":") {
-			entries = append(entries, line)
-		} else if len(entries) > 0 {
-			entries[len(entries)-1] += line
-		}
-	}
-
-	for _, entry := range entries {
-		parts := strings.SplitN(entry, ":", 2)
-		if len(parts) != 2 || parts[0] != username {
-			continue
-		}
-		return verifyMosquittoHash(password, parts[1])
-	}
-	return false
+type Application struct {
+	store  *Store
+	broker Broker
+	mu     sync.Mutex
 }
 
-// verifyMosquittoHash 验证 mosquitto passwd 哈希
-// 支持 $7$ (sha512-pbkdf2, mosquitto 2.x 默认格式)
-// 格式: $7$<iterations>$<base64_salt>$<base64_key>
-func verifyMosquittoHash(password, storedHash string) bool {
-	if !strings.HasPrefix(storedHash, "$7$") {
-		return false
-	}
-	// 分割 "" / "7" / iterations / salt_b64 / key_b64
-	fields := strings.Split(storedHash, "$")
-	if len(fields) != 5 {
-		return false
-	}
-	iterations, err := strconv.Atoi(fields[2])
-	if err != nil || iterations <= 0 {
-		return false
-	}
-	salt, err := base64.StdEncoding.DecodeString(fields[3])
-	if err != nil {
-		return false
-	}
-	storedKey, err := base64.StdEncoding.DecodeString(fields[4])
-	if err != nil {
-		return false
-	}
-	dk := pbkdf2.Key([]byte(password), salt, iterations, len(storedKey), sha512.New)
-	return bytes.Equal(dk, storedKey)
-}
-
-// appendACLRules 为已有用户在 ACL 文件中追加规则（不重复添加 user 行）
-func appendACLRules(username, mac string) error {
-	macColonUpper := strings.ToUpper(mac)
-	macColonLower := strings.ToLower(mac)
-	macPlainUpper := strings.ReplaceAll(macColonUpper, ":", "")
-	macPlainLower := strings.ReplaceAll(macColonLower, ":", "")
-	variants := []string{macColonLower, macColonUpper, macPlainLower, macPlainUpper}
-
-	seen := make(map[string]struct{})
-	var rules strings.Builder
-	for _, pattern := range cfg.ACLPatterns {
-		for _, v := range variants {
-			topic := fmt.Sprintf(pattern, v)
-			if _, exists := seen[topic]; !exists {
-				seen[topic] = struct{}{}
-				rules.WriteString(fmt.Sprintf("topic readwrite %s\n", topic))
-			}
+func (a *Application) syncDevice(d Device) error {
+	role := "device_" + d.MAC
+	if d.Status == "deleting" {
+		_, err := a.broker.Command("removeClientRole", map[string]interface{}{"username": d.Username, "rolename": role})
+		if err != nil && !notFound(err) {
+			return err
 		}
+		_, err = a.broker.Command("deleteRole", map[string]interface{}{"rolename": role})
+		if err != nil && !notFound(err) {
+			return err
+		}
+		_, err = a.store.Exec("DELETE FROM devices WHERE mac=?", d.MAC)
+		return err
 	}
-
-	// 找到用户块末尾，插入新规则；若用户块不存在则追加
-	data, err := os.ReadFile(cfg.ACLPath)
+	_, err := a.broker.Command("getRole", map[string]interface{}{"rolename": role})
+	if notFound(err) {
+		_, err = a.broker.Command("createRole", map[string]interface{}{"rolename": role, "acls": rulesFor(d)})
+	} else if err == nil {
+		_, err = a.broker.Command("modifyRole", map[string]interface{}{"rolename": role, "acls": rulesFor(d)})
+	}
 	if err != nil {
 		return err
 	}
-
-	content := string(data)
-	userHeader := fmt.Sprintf("\nuser %s\n", username)
-	if strings.Contains(content, userHeader) || strings.Contains(content, fmt.Sprintf("user %s\n", username)) {
-		// 追加到文件末尾也可以，mosquitto 按用户块最后出现的规则合并
-		f, err := os.OpenFile(cfg.ACLPath, os.O_APPEND|os.O_WRONLY, 0644)
+	data, err := a.broker.Command("getClient", map[string]interface{}{"username": d.Username})
+	if err != nil {
+		return err
+	}
+	if !hasRole(data, role) {
+		_, err = a.broker.Command("addClientRole", map[string]interface{}{"username": d.Username, "rolename": role})
 		if err != nil {
 			return err
 		}
-		defer f.Close()
-		_, err = fmt.Fprintf(f, "\nuser %s\n%s", username, rules.String())
+	}
+	_, err = a.store.Exec("UPDATE devices SET status='active' WHERE mac=?", d.MAC)
+	return err
+}
+func (a *Application) saveDevice(username string, d Device, update bool) error {
+	if err := validateDevice(&d); err != nil {
 		return err
 	}
-
-	// 用户块不存在，全新追加
-	f, err := os.OpenFile(cfg.ACLPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	state, err := a.store.state(username)
+	if err != nil || state != "active" {
+		return errCredentials
+	}
+	existing, err := a.store.device(d.MAC)
+	if update {
+		if err != nil || existing.Username != username {
+			return sql.ErrNoRows
+		}
+		if existing.Status == "deleting" {
+			return errors.New("设备正在解绑，请稍后重试")
+		}
+		_, err = a.store.Exec("UPDATE devices SET model=?,version=?,status='pending' WHERE mac=?", d.Model, d.Version, d.MAC)
+	} else {
+		if err == nil {
+			if existing.Username == username && existing.Status != "deleting" && existing.Model == d.Model && existing.Version == d.Version {
+				return a.syncDevice(existing)
+			}
+			return errConflict
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		_, err = a.store.Exec("INSERT INTO devices(mac,username,model,version,status) VALUES(?,?,?,?,'pending')", d.MAC, username, d.Model, d.Version)
+	}
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	_, err = fmt.Fprintf(f, "\nuser %s\n%s", username, rules.String())
+	d.Username = username
+	d.Status = "pending"
+	return a.syncDevice(d)
+}
+
+var errConflict = errors.New("该 MAC 或账号已被绑定")
+
+func (a *Application) removeDevice(username, mac string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	d, err := a.store.device(mac)
+	if err != nil || d.Username != username {
+		return sql.ErrNoRows
+	}
+	if _, err = a.store.Exec("UPDATE devices SET status='deleting' WHERE mac=?", mac); err != nil {
+		return err
+	}
+	d.Status = "deleting"
+	return a.syncDevice(d)
+}
+func (a *Application) deleteUser(username string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if _, err := a.store.state(username); err != nil {
+		return err
+	}
+	if _, err := a.store.Exec("UPDATE users SET state='deleting' WHERE username=?", username); err != nil {
+		return err
+	}
+	a.store.Exec("DELETE FROM sessions WHERE username=?", username)
+	return a.syncDeleteUser(username)
+}
+func (a *Application) syncDeleteUser(username string) error {
+	_, err := a.broker.Command("deleteClient", map[string]interface{}{"username": username})
+	if err != nil && !notFound(err) {
+		return err
+	}
+	devices, err := a.store.devices(username)
+	if err != nil {
+		return err
+	}
+	for _, d := range devices {
+		_, err = a.broker.Command("deleteRole", map[string]interface{}{"rolename": "device_" + d.MAC})
+		if err != nil && !notFound(err) {
+			return err
+		}
+	}
+	_, err = a.store.Exec("DELETE FROM users WHERE username=?", username)
 	return err
+}
+func (a *Application) reconcile() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	rows, err := a.store.Query("SELECT username FROM users WHERE state='deleting'")
+	if err != nil {
+		return err
+	}
+	var usernames []string
+	for rows.Next() {
+		var u string
+		if err = rows.Scan(&u); err != nil {
+			rows.Close()
+			return err
+		}
+		usernames = append(usernames, u)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	for _, u := range usernames {
+		if err = a.syncDeleteUser(u); err != nil {
+			return err
+		}
+	}
+	devices, err := a.store.devices("")
+	if err != nil {
+		return err
+	}
+	for _, d := range devices {
+		if d.Status != "active" {
+			if err = a.syncDevice(d); err != nil {
+				return fmt.Errorf("device %s: %w", d.MAC, err)
+			}
+		}
+	}
+	return nil
 }

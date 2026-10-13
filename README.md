@@ -1,162 +1,92 @@
-# MQTT 用户管理系统
+# phicomm-community-mqtt
 
-基于 **Go + Vue 3** 的 Mosquitto MQTT broker 用户管理工具，通过 Web 界面完成用户注册、管理和 ACL 规则维护，并以 Docker 容器化部署。
+支持 [phicomm-community-firmware](https://github.com/FUjr/phicomm-community-firmware) 的 MQTT 服务与网页控制台。设备显示为 **tc1(a1)**、**m1**、**a1**。tc1(a1) 表示 TC1 的 A1 硬件版本，与 A1 净化器是不同型号；兼容原 TC1 v1 JSON 协议和社区 TC1 v2 协议。
 
-## 功能特性
+## 账号与设备
 
-- **注册页** (`/register`)：用户自助注册，填写用户名、密码和设备 MAC 地址，后端自动创建 mosquitto 账户并生成 ACL 规则
-- **管理页** (`/admin`)：管理员登录后可增删改用户、手动编辑 ACL 文件、开关注册功能
-- **控制台** (`/`)：原有 MQTT 设备控制台（zTC1 智能插排）
-- 同一端口通过 nginx 反代 API (`/api`) 和 MQTT WebSocket (`/mqtt`)
+- 网站登录和 MQTT 使用同一用户名、密码。可先注册，再绑定设备；支持开放注册、邮箱验证码注册及关闭注册。
+- 登录后设备列表保存到服务器 SQLite，可跨浏览器恢复。云端仅保存 MAC、型号、协议版本、归属和同步状态，不保存备注、MQTT 明文密码或实时数据。
+- 同一 MAC 全局只能属于一个账号。解绑完成后撤销权限并释放 MAC；解绑待同步期间不会允许他人绑定。
+- 访客可连接任意 WebSocket MQTT 服务，本地列表、备注和连接配置继续保存在浏览器。登录不会自动上传本地设备；可明确点击“导入本地设备到账号”，不会覆盖云端列表。
+- 管理员独立登录，可创建、重置或删除账号、管理设备归属及注册模式。原始 ACL 编辑接口已移除。
 
-## 目录结构
+## 权限更新方式
 
-```
-mqtt_mgr/
-├── backend/            # Go 后端
-│   ├── main.go
-│   ├── auth.go         # 管理员 Token 认证
-│   ├── handler_register.go
-│   ├── handler_admin.go
-│   ├── store.go        # passwd/ACL 文件读写
-│   ├── config.yaml     # 配置文件
-│   └── Dockerfile
-├── frontend/           # Vue 3 + Vite 前端
-│   ├── src/
-│   │   ├── views/
-│   │   │   ├── RegisterPage.vue
-│   │   │   └── AdminPage.vue
-│   │   ├── components/ # 原有控制台组件
-│   │   └── router.js
-│   └── Dockerfile
-├── nginx/
-│   └── nginx.conf      # 反代配置
-├── mosquitto/
-│   └── config/         # mosquitto.conf（需手动创建）
-├── docker-compose.yaml
-└── build.sh            # 多架构镜像构建脚本
+使用 Mosquitto 2.0 的官方 **Dynamic Security** 插件，后端通过验证服务器证书的内部 TLS 连接发送管理命令，并等待带关联 ID 的实际响应。新增设备、解绑、改密即时更新权限，不需要重载容器。
+
+**没有挂载 Docker socket，没有 Docker API 代理，后端镜像没有 Docker CLI。** 后端只有独立管理账号密码和 CA 公钥，不读取 Broker 动态安全文件、服务器私钥或旧密码文件。普通账号默认拒绝所有主题，仅获得自己设备对应的主题权限，不能访问 `$CONTROL` 管理主题。M1/A1 可只读订阅 Home Assistant 启动通知。
+
+操作失败不会当作成功：设备保留 `pending` 或 `deleting` 状态，每 10 秒重试；成功收到权限撤销响应后才释放 MAC。两份状态（SQLite 与插件 JSON）需要一起备份、恢复。不要多实例运行后端；当前同步锁及限流为单实例设计。`trust_proxy: true` 仅适用于后端只可由可信 Nginx 访问的部署，Nginx 会覆盖 `X-Real-IP`；直接开放后端时必须关闭该选项。
+
+## 本地初始化
+
+要求 Docker Compose、可用的 TCP 1883 和 HTTP 80 端口。首次运行：
+
+```sh
+mkdir -p runtime legacy
+printf 'APP_UID=%s\nAPP_GID=%s\n' "$(id -u)" "$(id -g)" > .env
+docker compose run --rm --build setup init --output /runtime
+docker compose up -d --build mosquitto backend nginx
 ```
 
-## 快速开始
+打开 `http://服务器地址/`。管理员用户名默认 `admin`，初始随机密码在 **runtime/secrets/admin-password**，请在本机私下查看。Broker 管理密码、密码哈希、证书私钥和数据库均在被 Git 忽略的 `runtime/` 中。初始化不会输出密码，也不会覆盖已有配置。若初始化中途失败，请保留错误信息，使用新的空目录重新初始化；不要将初始化命令用于正在运行的数据目录。
 
-### 1. 配置 mosquitto
+设备固件设置 MQTT 地址、1883 端口和自己的网站账号密码。网页默认连接同站点 `/mqtt` WebSocket；账号模式使用站点公布的 MQTT 地址。`.env` 可设 `HTTP_PORT`、`MQTT_PORT`、`PUBLIC_URL`、`MQTT_URI`、`MQTT_WS_URI`。自定义远端 WebSocket 地址必须指向同一套账号 Broker。
 
-`mosquitto/config/mosquitto.conf` 示例：
+生产环境在前置代理终止 HTTPS，设置 `PUBLIC_URL=https://你的域名`，并将 `backend/config.yaml` 的 `cookie_secure` 设为 `true`。仅发布 HTTP 与设备所需 MQTT 端口；管理 TLS 8883、原始 WebSocket 9001 和后端 8080 不对外发布。1883 为兼容旧设备使用明文 TCP，请限制到可信设备网络。内部生成证书仅覆盖 `mosquitto`、`localhost`，服务器证书有效期两年；外部 MQTT TLS 需另行配置公网证书和监听器。
 
-```conf
-listener 1883
-listener 9001
-protocol websockets
-allow_anonymous false
-password_file /mosquitto/config/passwd
-acl_file /mosquitto/config/acl
+邮箱模式需配置 `backend/config.yaml` 的 SMTP 项，支持 TLS 直连或 STARTTLS。验证码仅驻留内存，有效期五分钟；重启后需要重发。
+
+## 从旧 tc1_mqtt 迁移
+
+迁移是离线工具，不读取或修改原服务，也不触发原容器重启：
+
+1. 在原环境停止账号/设备修改，安全备份原 `passwd`、`acl`。不要把它们提交到 Git。
+2. 将副本放入本项目 `legacy/passwd`、`legacy/acl`；使用新的空 `runtime/`。
+3. 运行：
+
+```sh
+mkdir -p runtime legacy
+printf 'APP_UID=%s\nAPP_GID=%s\n' "$(id -u)" "$(id -g)" > .env
+docker compose run --rm --build setup migrate --output /runtime --passwd /legacy/passwd --acl /legacy/acl
 ```
 
-初始化空 passwd/acl 文件：
+4. 检查迁移账号数量、设备数量，再启动新服务。保留原服务与备份，切换地址前验证客户端登录及设备权限。
 
-```bash
-mkdir -p mosquitto/config mosquitto/data mosquitto/log
-touch mosquitto/config/passwd mosquitto/config/acl
+支持 Mosquitto `$7$` PBKDF2-SHA512 密码哈希，原密码无需重置；保留所有重复 `user` ACL 段中的设备，统一大小写和 MAC 分隔符，检测重复归属。未知规则、宽泛通配符、旧管理账号冲突或不支持的哈希会直接报错，需人工处理，避免默默丢弃权限。支持原 `device/ztc1/<MAC>/#`、`homeassistant/+/<MAC>/#` 及 M1/A1 的设备主题；TC1 迁移后默认 v2，可在网页调整为 v1。旧密码/ACL 的私有快照保存在 `runtime/backup/`。
+
+浏览器旧 `ztc1_devices` 字符串数组和 `{mac,version}` 数组均可读取、按规范 MAC 去重。访客模式仍支持二维码和配置导入导出；导出的访客连接配置可能包含密码，应只在可信设备之间传递。
+
+## 协议与界面
+
+| 显示型号 | 协议 / 主题 | 控制与状态 |
+| --- | --- | --- |
+| tc1(a1) | v1 JSON 或 v2 `device/ztc1/<MAC>/set`、HA 状态 | 六路插座、总开关、童锁、指示灯及原 v1 功能 |
+| m1 | `phicomm/m1/<小写无分隔符MAC>/...` | 温湿度、甲醛、PM2.5、0–4 屏幕亮度 |
+| a1 | `phicomm/a1/<小写无分隔符MAC>/...` | 风扇开关/转速、RGB 灯光、童锁、指示灯常亮 |
+
+显示名去掉 zTC 前缀，但 **TC1 原有 `ztc1` 线协议主题保持兼容**。v2 命令使用大写无分隔符 MAC。M1 传感器超过 15 秒没有新数据、收到过期通知或 MQTT 断线后不再显示为有效数据；亮度状态表示设备请求值，不是硬件执行确认。所有命令 `retain=false`，避免固件丢弃保留命令或重连执行旧命令。
+
+## 验证与开发
+
+```sh
+(cd backend && go test -race ./... && go vet ./...)
+(cd frontend && npm ci && npm test && npm run build)
+./scripts/test-integration.sh
+# 安装 Chromium 后验证完整 Compose 和网页流程
+./scripts/test-browser-compose.sh
 ```
 
-### 2. 修改后端配置
+集成脚本只启动独立临时 Broker，使用随机本机端口，验证实际鉴权、主题隔离、解绑、改密与重启持久化，退出时清理自己的容器和临时数据。它通过宿主机 Docker CLI 启动测试环境，与运行服务的权限更新机制无关。
 
-编辑 `backend/config.yaml`：
+浏览器测试需先启动一个独立后端和 Broker，开放注册，配置匹配的 `PUBLIC_URL`。前端开发服务支持 `API_TARGET` 和 `MQTT_TARGET`：
 
-```yaml
-container_name: "mqtt-broker"        # docker container 名称
-container_passwd_path: "/mosquitto/config/passwd"
-host_passwd_path: "/data/passwd"     # 容器内挂载路径
-acl_path: "/data/acl"
-
-acl_patterns:                        # %s 替换为 MAC 地址（大小写各一份）
-  - "device/ztc1/%s/#"
-  - "homeassistant/+/%s/#"
-
-admin_username: "admin"
-admin_password: "your_password"      # 修改此项！
-allow_register: true
-
-listen_addr: ":8080"
-```
-
-### 3. 部署
-
-**方式一：从阿里云拉取镜像直接部署**
-
-```bash
-docker compose pull
-docker compose up -d
-```
-
-**方式二：本地构建**
-
-```bash
-# 构建前端
-cd frontend && npm ci && npm run build && cd ..
-
-# 构建并启动
-docker compose up -d --build
-```
-
-### 4. 多架构镜像构建推送
-
-```bash
-# 需先 docker login registry.cn-hangzhou.aliyuncs.com
-./build.sh          # tag=latest
-./build.sh v1.0.0   # 自定义 tag
-```
-
-构建目标：`linux/amd64` + `linux/arm64`，推送至：
-- `registry.cn-hangzhou.aliyuncs.com/fjrcn/mqtt-mgr-backend`
-- `registry.cn-hangzhou.aliyuncs.com/fjrcn/mqtt-mgr-nginx`
-
-## API 接口
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/ping` | 健康检查，WAF 拦截探测用 |
-| GET | `/api/register/status` | 是否开放注册 |
-| POST | `/api/register` | 用户注册 |
-| POST | `/api/admin/login` | 管理员登录，返回 Token |
-| GET | `/api/admin/users` | 获取用户列表（需 Token） |
-| POST | `/api/admin/users` | 创建用户（需 Token） |
-| DELETE | `/api/admin/user/:name` | 删除用户（需 Token） |
-| PUT | `/api/admin/user/:name` | 修改密码（需 Token） |
-| GET/PUT | `/api/admin/acl` | 读取/保存 ACL 文件（需 Token） |
-| GET/PUT | `/api/admin/config` | 查看/修改运行时配置（需 Token） |
-
-## 本地开发
-
-```bash
-# 启动后端
-cd backend
-go run .
-
-# 启动前端（/api 代理到 :8080）
+```sh
 cd frontend
-npm run dev
+API_TARGET=http://127.0.0.1:8080 MQTT_TARGET=ws://127.0.0.1:9001 npm run dev -- --host 127.0.0.1 --port 25173
+# 另一个终端
+npx playwright install chromium
+PHICOMM_WEB_URL=http://127.0.0.1:25173 PHICOMM_MQTT_WS=ws://127.0.0.1:9001 npx playwright test
 ```
 
-## WAF 配置说明
-
-若在 nginx 前部署了 WAF（如雷池 SafeLine、Cloudflare 等）并对路径启用了人机认证，需注意以下事项：
-
-### 问题背景
-
-Vue 使用 History 路由模式，前端页面切换（如直接进入 `/register`）不会发出新的 HTTP 请求，WAF 无法感知到路径变化，因此**不会触发人机认证**。
-
-### 解决方案
-
-本项目在应用启动时会自动调用 `GET /api/ping`。当 WAF 拦截该请求（返回非 200，或连接被阻断）时，前端会自动执行 `window.location.href = '/register'`，触发一次真实的浏览器跳转，从而让 WAF 完成人机验证。
-
-### WAF 规则配置建议
-
-| 防护路径 | 说明 |
-|----------|------|
-| `/register` | 用户注册页（兜底触发验证页） |
-| `/api` | 所有后端 API，含 `/api/ping` |
-
-两个路径都需要纳入 WAF 防护，**缺一不可**：
-- `/api` 被 WAF 拦截 → 前端探测到 → 跳转 `/register`
-- `/register` 触发人机认证 → 通过后 WAF 放行 Cookie → 后续 `/api` 请求正常
+浏览器测试会创建测试账号，需要使用独立测试数据目录。源码测试、模拟 MQTT 客户端和浏览器测试不代表实物设备验收；TC1/M1/A1 实机联网与硬件执行仍需在目标设备上验证。`build.sh` 仅构建本地镜像，不自动推送镜像或部署。

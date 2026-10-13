@@ -175,6 +175,7 @@ const processImport = (jsonStr) => {
         
         if (data.devices) {
             localStorage.setItem('ztc1_devices', JSON.stringify(data.devices))
+            localStorage.setItem('phicomm_devices', JSON.stringify(data.devices))
         }
         
         if (data.auto_connect) {

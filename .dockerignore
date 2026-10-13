@@ -1,0 +1,14 @@
+.git
+runtime
+legacy
+.env
+frontend/node_modules
+frontend/dist
+frontend/test-results
+frontend/playwright-report
+mosquitto/data
+mosquitto/log
+mosquitto/config/passwd
+mosquitto/config/acl
+backend/*.db*
+backend/mqtt_mgr

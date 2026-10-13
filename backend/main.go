@@ -1,11 +1,16 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"gopkg.in/yaml.v3"
 	"log"
 	"net/http"
 	"os"
-
-	"gopkg.in/yaml.v3"
+	"path/filepath"
+	"sync"
+	"time"
 )
 
 type SMTPConfig struct {
@@ -16,98 +21,169 @@ type SMTPConfig struct {
 	From     string `yaml:"from"`
 	TLS      bool   `yaml:"tls"`
 }
-
 type Config struct {
-	ContainerName       string     `yaml:"container_name"`
-	ContainerPasswdPath string     `yaml:"container_passwd_path"`
-	HostPasswdPath      string     `yaml:"host_passwd_path"`
-	ACLPath             string     `yaml:"acl_path"`
-	ACLPatterns         []string   `yaml:"acl_patterns"`
-	AdminUsername       string     `yaml:"admin_username"`
-	AdminPassword       string     `yaml:"admin_password"`
-	RegisterLevel       int        `yaml:"register_level"`
-	ContactInfo         string     `yaml:"contact_info"`
-	MQTTUri             string     `yaml:"mqtt_uri"`
-	MQTTWSUri           string     `yaml:"mqtt_ws_uri"`
-	SMTP                SMTPConfig `yaml:"smtp"`
-	ListenAddr          string     `yaml:"listen_addr"`
+	DBPath                  string     `yaml:"db_path"`
+	BrokerURL               string     `yaml:"broker_url"`
+	BrokerCA                string     `yaml:"broker_ca"`
+	BrokerAdminUsername     string     `yaml:"broker_admin_username"`
+	BrokerAdminPasswordFile string     `yaml:"broker_admin_password_file"`
+	AdminUsername           string     `yaml:"admin_username"`
+	AdminPasswordFile       string     `yaml:"admin_password_file"`
+	PublicURL               string     `yaml:"public_url"`
+	TrustProxy              bool       `yaml:"trust_proxy"`
+	CookieSecure            bool       `yaml:"cookie_secure"`
+	RegisterLevel           int        `yaml:"register_level"`
+	ContactInfo             string     `yaml:"contact_info"`
+	MQTTUri                 string     `yaml:"mqtt_uri"`
+	MQTTWSUri               string     `yaml:"mqtt_ws_uri"`
+	SMTP                    SMTPConfig `yaml:"smtp"`
+	ListenAddr              string     `yaml:"listen_addr"`
 }
 
 var cfg Config
+var cfgMu sync.RWMutex
+var app *Application
+var adminSecret string
 
 func safeReturnTo(raw string) string {
-	if raw == "" {
+	if len(raw) == 0 || raw[0] != '/' || (len(raw) > 1 && raw[1] == '/') {
 		return ""
 	}
-	if raw[0] != '/' {
-		return ""
-	}
-	if len(raw) > 1 && raw[1] == '/' {
-		return ""
+	for _, c := range raw {
+		if c == '\\' || c < 32 || c == 127 {
+			return ""
+		}
 	}
 	return raw
 }
-
 func loadConfig(path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
-	return yaml.Unmarshal(data, &cfg)
-}
-
-func main() {
-	configPath := "config.yaml"
-	if len(os.Args) > 1 {
-		configPath = os.Args[1]
+	if err = yaml.Unmarshal(data, &cfg); err != nil {
+		return err
 	}
-
-	if err := loadConfig(configPath); err != nil {
-		log.Fatalf("加载配置失败: %v", err)
+	if cfg.DBPath == "" {
+		cfg.DBPath = "/data/app.db"
 	}
-
-	// 从环境变量加载 MQTT URI（优先级高于配置文件）
-	if mqttUri := os.Getenv("MQTT_URI"); mqttUri != "" {
-		cfg.MQTTUri = mqttUri
+	if cfg.ListenAddr == "" {
+		cfg.ListenAddr = ":8080"
 	}
-	if mqttWsUri := os.Getenv("MQTT_WS_URI"); mqttWsUri != "" {
-		cfg.MQTTWSUri = mqttWsUri
-	}
-
-	// 确保ACL文件存在
-	if _, err := os.Stat(cfg.ACLPath); os.IsNotExist(err) {
-		if err := os.WriteFile(cfg.ACLPath, []byte(""), 0644); err != nil {
-			log.Fatalf("创建ACL文件失败: %v", err)
+	for _, item := range []struct {
+		key string
+		dst *string
+	}{{"MQTT_URI", &cfg.MQTTUri}, {"MQTT_WS_URI", &cfg.MQTTWSUri}, {"PUBLIC_URL", &cfg.PublicURL}, {"BROKER_URL", &cfg.BrokerURL}} {
+		if v := os.Getenv(item.key); v != "" {
+			*item.dst = v
 		}
 	}
-
+	if cfg.RegisterLevel < 0 || cfg.RegisterLevel > 2 {
+		return errors.New("invalid register_level")
+	}
+	return nil
+}
+func readSecret(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	s := string(data)
+	if len(s) > 0 && s[len(s)-1] == '\n' {
+		s = s[:len(s)-1]
+	}
+	if len(s) < 16 {
+		return "", errors.New("secret must be at least 16 bytes")
+	}
+	return s, nil
+}
+func digest(s string) string { h := sha256.Sum256([]byte(s)); return hex.EncodeToString(h[:]) }
+func routes() http.Handler {
 	mux := http.NewServeMux()
-
-	// API路由
 	mux.HandleFunc("/api/register", handleRegister)
+	mux.HandleFunc("/api/register/status", handleRegisterStatus)
 	mux.HandleFunc("/api/register/verify", handleVerifyEmail)
-	mux.HandleFunc("/api/register/add-mac", handleAddMac)
+	mux.HandleFunc("/api/auth/login", handleLogin)
+	mux.HandleFunc("/api/auth/logout", userAuth(handleLogout))
+	mux.HandleFunc("/api/auth/me", userAuth(handleMe))
+	mux.HandleFunc("/api/auth/password", userAuth(handlePassword))
+	mux.HandleFunc("/api/devices", userAuth(handleDevices))
+	mux.HandleFunc("/api/devices/", userAuth(handleDevice))
 	mux.HandleFunc("/api/admin/login", handleAdminLogin)
 	mux.HandleFunc("/api/admin/users", adminAuth(handleUsers))
 	mux.HandleFunc("/api/admin/user/", adminAuth(handleUserOps))
-	mux.HandleFunc("/api/admin/acl", adminAuth(handleACL))
+	mux.HandleFunc("/api/admin/devices", adminAuth(handleAdminDevices))
+	mux.HandleFunc("/api/admin/device/", adminAuth(handleAdminDevice))
 	mux.HandleFunc("/api/admin/config", adminAuth(handleConfig))
-	mux.HandleFunc("/api/register/status", handleRegisterStatus)
+	mux.HandleFunc("/api/admin/acl", adminAuth(func(w http.ResponseWriter, r *http.Request) {
+		jsonError(w, "已改为结构化设备权限管理", http.StatusGone)
+	}))
 	mux.HandleFunc("/api/ping", func(w http.ResponseWriter, r *http.Request) {
-		if returnTo := safeReturnTo(r.URL.Query().Get("return_to")); returnTo != "" {
-			http.Redirect(w, r, returnTo, http.StatusFound)
+		if r.Method != http.MethodGet {
+			jsonError(w, "方法不允许", 405)
 			return
 		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"ok":true}`))
+		if target := safeReturnTo(r.URL.Query().Get("return_to")); target != "" {
+			http.Redirect(w, r, target, 302)
+			return
+		}
+		jsonResp(w, map[string]bool{"ok": true})
 	})
-
-	// 前端静态文件
-	fs := http.FileServer(http.Dir("../frontend/dist"))
-	mux.Handle("/", fs)
-
-	log.Printf("服务启动在 %s", cfg.ListenAddr)
-	log.Fatal(http.ListenAndServe(cfg.ListenAddr, mux))
+	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { jsonError(w, "接口不存在", 404) })
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+		mux.ServeHTTP(w, r)
+	})
+}
+func main() {
+	if len(os.Args) > 1 && (os.Args[1] == "init" || os.Args[1] == "migrate") {
+		if err := setupCommand(os.Args[1], os.Args[2:]); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
+	path := "config.yaml"
+	if len(os.Args) > 1 {
+		path = os.Args[1]
+	}
+	if err := loadConfig(path); err != nil {
+		log.Fatal(err)
+	}
+	var err error
+	adminSecret, err = readSecret(cfg.AdminPasswordFile)
+	if err != nil {
+		log.Fatalf("read admin secret: %v", err)
+	}
+	pass, err := readSecret(cfg.BrokerAdminPasswordFile)
+	if err != nil {
+		log.Fatalf("read broker secret: %v", err)
+	}
+	if err = os.MkdirAll(filepath.Dir(cfg.DBPath), 0700); err != nil {
+		log.Fatal(err)
+	}
+	store, err := openStore(cfg.DBPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer store.Close()
+	broker, err := newDynamicBroker(cfg.BrokerURL, cfg.BrokerCA, cfg.BrokerAdminUsername, pass)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer broker.Close()
+	app = &Application{store: store, broker: broker}
+	loadSettings()
+	go func() {
+		for {
+			if err := app.reconcile(); err != nil {
+				log.Printf("权限同步未完成: %v", err)
+			}
+			time.Sleep(10 * time.Second)
+		}
+	}()
+	server := &http.Server{Addr: cfg.ListenAddr, Handler: routes(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second}
+	log.Printf("Listening on %s", cfg.ListenAddr)
+	log.Fatal(server.ListenAndServe())
 }

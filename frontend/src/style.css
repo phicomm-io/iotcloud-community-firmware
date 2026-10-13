@@ -103,3 +103,19 @@ body {
   background-color: var(--bg-body);
   color: var(--text-primary);
 }
+
+.console-page { max-width: 1100px; margin: auto; padding: 24px; }
+.console-page header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; }
+.console-page h1 { font-size: 1.5rem; overflow-wrap: anywhere; }
+.console-page .card { padding: 20px; margin: 16px 0; }
+.account-page { max-width: 480px; margin: 48px auto; padding: 24px; }
+.account-page form, .console-page form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; margin: 16px 0; }
+.account-page label, .console-page label { display: flex; flex-direction: column; gap: 6px; }
+.account-page input, .console-page input, .console-page select { padding: 8px; max-width: 100%; }
+.console-page button, .account-page button { padding: 8px 12px; cursor: pointer; }
+.console-page li { margin: 12px 0; overflow-wrap: anywhere; }
+.console-page dt { display: inline-block; width: 100px; }
+.console-page dd { display: inline-block; margin: 8px; }
+.error { color: #c54444; overflow-wrap: anywhere; }
+button:disabled { opacity: .5; cursor: default; }
+@media (max-width: 600px) { .console-page { padding: 12px; } .console-page form label { width: 100%; } }

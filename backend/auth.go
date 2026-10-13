@@ -1,98 +1,316 @@
 package main
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/subtle"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
 
-type AdminLoginReq struct {
+type loginReq struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 }
-
-type TokenPayload struct {
+type tokenPayload struct {
 	Username string `json:"username"`
+	Role     string `json:"role"`
 	Exp      int64  `json:"exp"`
 }
+type userContextKey struct{}
 
-func generateToken(username string) string {
-	payload := TokenPayload{
-		Username: username,
-		Exp:      time.Now().Add(24 * time.Hour).Unix(),
+func currentUser(r *http.Request) string {
+	u, _ := r.Context().Value(userContextKey{}).(string)
+	return u
+}
+func decode(r *http.Request, v interface{}) error {
+	d := json.NewDecoder(r.Body)
+	d.DisallowUnknownFields()
+	if err := d.Decode(v); err != nil {
+		return errors.New("请求格式错误")
 	}
-	data, _ := json.Marshal(payload)
-	encoded := hex.EncodeToString(data)
-
-	mac := hmac.New(sha256.New, []byte(cfg.AdminPassword))
-	mac.Write(data)
-	sig := hex.EncodeToString(mac.Sum(nil))
-
-	return encoded + "." + sig
+	if err := d.Decode(new(interface{})); err != io.EOF {
+		return errors.New("请求格式错误")
+	}
+	return nil
+}
+func method(w http.ResponseWriter, r *http.Request, expected string) bool {
+	if r.Method != expected {
+		w.Header().Set("Allow", expected)
+		jsonError(w, "方法不允许", 405)
+		return false
+	}
+	return true
+}
+func sameOrigin(w http.ResponseWriter, r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	u, err := url.Parse(origin)
+	cfgMu.RLock()
+	expected := cfg.PublicURL
+	cfgMu.RUnlock()
+	valid := err == nil && u.Host == r.Host && (u.Scheme == "http" || u.Scheme == "https") && u.Path == ""
+	if expected != "" {
+		valid = origin == strings.TrimRight(expected, "/")
+	}
+	if !valid {
+		jsonError(w, "请求来源不允许", 403)
+	}
+	return valid
+}
+func userAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		cookie, err := r.Cookie("phicomm_session")
+		if err != nil {
+			jsonError(w, "请先登录", 401)
+			return
+		}
+		var user string
+		err = app.store.QueryRow("SELECT s.username FROM sessions s JOIN users u ON s.username=u.username WHERE s.token=? AND s.expires>? AND u.state='active'", digest(cookie.Value), time.Now().Unix()).Scan(&user)
+		if err != nil {
+			jsonError(w, "会话已失效，请重新登录", 401)
+			return
+		}
+		if r.Method != http.MethodGet && !sameOrigin(w, r) {
+			return
+		}
+		next(w, r.WithContext(context.WithValue(r.Context(), userContextKey{}, user)))
+	}
+}
+func sessionCookie(value string, age int) *http.Cookie {
+	cfgMu.RLock()
+	secure := cfg.CookieSecure
+	cfgMu.RUnlock()
+	return &http.Cookie{Name: "phicomm_session", Value: value, Path: "/", HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode, MaxAge: age}
+}
+func createSession(w http.ResponseWriter, user string) error {
+	token := randomID()
+	app.store.Exec("DELETE FROM sessions WHERE expires<=?", time.Now().Unix())
+	_, err := app.store.Exec("INSERT INTO sessions(token,username,expires) VALUES(?,?,?)", digest(token), user, time.Now().Add(24*time.Hour).Unix())
+	if err != nil {
+		return err
+	}
+	http.SetCookie(w, sessionCookie(token, 86400))
+	return nil
 }
 
+var rateMu sync.Mutex
+var rates = map[string]struct {
+	start time.Time
+	n     int
+}{}
+
+func allowAttempt(r *http.Request, key string, limit int, period time.Duration) bool {
+	host, _, _ := net.SplitHostPort(r.RemoteAddr)
+	cfgMu.RLock()
+	trust := cfg.TrustProxy
+	cfgMu.RUnlock()
+	if trust {
+		if ip := net.ParseIP(r.Header.Get("X-Real-IP")); ip != nil {
+			host = ip.String()
+		}
+	}
+	key = host + ":" + key
+	rateMu.Lock()
+	defer rateMu.Unlock()
+	now := time.Now()
+	for k, v := range rates {
+		if now.Sub(v.start) > 10*time.Minute {
+			delete(rates, k)
+		}
+	}
+	v := rates[key]
+	if now.Sub(v.start) >= period {
+		v.start = now
+		v.n = 0
+	}
+	if v.n >= limit || len(rates) >= 10000 {
+		return false
+	}
+	v.n++
+	rates[key] = v
+	return true
+}
+func handleLogin(w http.ResponseWriter, r *http.Request) {
+	if !method(w, r, "POST") || !sameOrigin(w, r) {
+		return
+	}
+	if !allowAttempt(r, "login", 20, time.Minute) {
+		jsonError(w, "请求过于频繁", 429)
+		return
+	}
+	var req loginReq
+	if err := decode(r, &req); err != nil {
+		jsonError(w, err.Error(), 400)
+		return
+	}
+	req.Username = strings.TrimSpace(req.Username)
+	app.mu.Lock()
+	defer app.mu.Unlock()
+	state, err := app.store.state(req.Username)
+	if err != nil || state == "deleting" || reservedUser(req.Username) {
+		jsonError(w, errCredentials.Error(), 401)
+		return
+	}
+	if err = app.broker.Authenticate(req.Username, req.Password); err != nil {
+		operationError(w, err)
+		return
+	}
+	if state == "pending" {
+		if _, err = app.store.Exec("UPDATE users SET state='active' WHERE username=? AND state='pending'", req.Username); err != nil {
+			operationError(w, err)
+			return
+		}
+	}
+	if err = createSession(w, req.Username); err != nil {
+		operationError(w, err)
+		return
+	}
+	jsonResp(w, map[string]string{"username": req.Username})
+}
+func handleLogout(w http.ResponseWriter, r *http.Request) {
+	if !method(w, r, "POST") {
+		return
+	}
+	cookie, _ := r.Cookie("phicomm_session")
+	if _, err := app.store.Exec("DELETE FROM sessions WHERE token=?", digest(cookie.Value)); err != nil {
+		operationError(w, err)
+		return
+	}
+	http.SetCookie(w, sessionCookie("", -1))
+	jsonResp(w, map[string]bool{"ok": true})
+}
+func handleMe(w http.ResponseWriter, r *http.Request) {
+	if !method(w, r, "GET") {
+		return
+	}
+	jsonResp(w, map[string]string{"username": currentUser(r)})
+}
+func handlePassword(w http.ResponseWriter, r *http.Request) {
+	if !method(w, r, "POST") {
+		return
+	}
+	var req struct {
+		CurrentPassword string `json:"current_password"`
+		Password        string `json:"password"`
+	}
+	if err := decode(r, &req); err != nil {
+		jsonError(w, err.Error(), 400)
+		return
+	}
+	u := currentUser(r)
+	if err := app.broker.Authenticate(u, req.CurrentPassword); err != nil {
+		operationError(w, err)
+		return
+	}
+	if err := app.changePassword(u, req.Password); err != nil {
+		operationError(w, err)
+		return
+	}
+	http.SetCookie(w, sessionCookie("", -1))
+	jsonResp(w, map[string]string{"message": "密码已修改，请重新登录并更新设备 MQTT 密码"})
+}
+func (a *Application) changePassword(user, password string) error {
+	if len(password) < 6 || len(password) > 256 {
+		return errors.New("密码长度须为 6–256 字节")
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	state, err := a.store.state(user)
+	if err != nil || state != "active" {
+		return sql.ErrNoRows
+	}
+	// Revoke website sessions even if the broker changes the password but its response is lost.
+	if _, err = a.store.Exec("DELETE FROM sessions WHERE username=?", user); err != nil {
+		return err
+	}
+	_, err = a.broker.Command("setClientPassword", map[string]interface{}{"username": user, "password": password})
+	return err
+}
+func generateToken(username string) string {
+	data, _ := json.Marshal(tokenPayload{username, "admin", time.Now().Add(24 * time.Hour).Unix()})
+	mac := hmac.New(sha256.New, []byte(adminSecret))
+	mac.Write(data)
+	return hex.EncodeToString(data) + "." + hex.EncodeToString(mac.Sum(nil))
+}
 func validateToken(token string) bool {
-	parts := strings.SplitN(token, ".", 2)
+	parts := strings.Split(token, ".")
 	if len(parts) != 2 {
 		return false
 	}
-
 	data, err := hex.DecodeString(parts[0])
 	if err != nil {
 		return false
 	}
-
-	mac := hmac.New(sha256.New, []byte(cfg.AdminPassword))
+	sig, err := hex.DecodeString(parts[1])
+	if err != nil {
+		return false
+	}
+	mac := hmac.New(sha256.New, []byte(adminSecret))
 	mac.Write(data)
-	expectedSig := hex.EncodeToString(mac.Sum(nil))
-	if !hmac.Equal([]byte(parts[1]), []byte(expectedSig)) {
+	if !hmac.Equal(sig, mac.Sum(nil)) {
 		return false
 	}
-
-	var payload TokenPayload
-	if err := json.Unmarshal(data, &payload); err != nil {
+	var p tokenPayload
+	if json.Unmarshal(data, &p) != nil {
 		return false
 	}
-	return time.Now().Unix() < payload.Exp
+	return p.Role == "admin" && p.Username == cfg.AdminUsername && time.Now().Unix() < p.Exp
 }
-
 func adminAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		auth := r.Header.Get("Authorization")
-		if !strings.HasPrefix(auth, "Bearer ") {
-			jsonError(w, "未授权", http.StatusUnauthorized)
-			return
-		}
-		token := strings.TrimPrefix(auth, "Bearer ")
-		if !validateToken(token) {
-			jsonError(w, "令牌无效或已过期", http.StatusUnauthorized)
+		if !strings.HasPrefix(auth, "Bearer ") || !validateToken(strings.TrimPrefix(auth, "Bearer ")) {
+			jsonError(w, "管理员未授权", 401)
 			return
 		}
 		next(w, r)
 	}
 }
-
 func handleAdminLogin(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		jsonError(w, "方法不允许", http.StatusMethodNotAllowed)
+	if !method(w, r, "POST") || !sameOrigin(w, r) {
 		return
 	}
-
-	var req AdminLoginReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, "请求格式错误", http.StatusBadRequest)
+	if !allowAttempt(r, "admin-login", 10, time.Minute) {
+		jsonError(w, "请求过于频繁", 429)
 		return
 	}
-
-	if req.Username != cfg.AdminUsername || req.Password != cfg.AdminPassword {
-		jsonError(w, "用户名或密码错误", http.StatusUnauthorized)
+	var req loginReq
+	if err := decode(r, &req); err != nil {
+		jsonError(w, err.Error(), 400)
 		return
 	}
-
-	token := generateToken(req.Username)
-	jsonResp(w, map[string]string{"token": token})
+	if req.Username != cfg.AdminUsername || subtle.ConstantTimeCompare([]byte(req.Password), []byte(adminSecret)) != 1 {
+		jsonError(w, errCredentials.Error(), 401)
+		return
+	}
+	jsonResp(w, map[string]string{"token": generateToken(req.Username)})
+}
+func operationError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, errConflict):
+		jsonError(w, err.Error(), 409)
+	case errors.Is(err, sql.ErrNoRows):
+		jsonError(w, "记录不存在", 404)
+	case errors.Is(err, errCredentials):
+		jsonError(w, err.Error(), 401)
+	case errors.Is(err, errUnavailable):
+		jsonError(w, errUnavailable.Error(), 503)
+	default:
+		var brokerErr *brokerFailure
+		if errors.As(err, &brokerErr) {
+			jsonError(w, "Broker 权限同步未完成，请稍后重试", 503)
+		} else {
+			jsonError(w, "操作未完成，请检查服务日志", 500)
+		}
+	}
 }

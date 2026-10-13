@@ -20,3 +20,12 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# Account databases, dynamic-security hashes, certificates and secrets
+runtime/
+legacy/
+backend/*.db*
+backend/mqtt_mgr
+.env
+test-results/
+playwright-report/

@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
 const routes = [
+  { path: "/login", component: () => import("./views/LoginPage.vue"), meta: { requiresApiPing: true } },
   {
     path: '/',
     name: 'Console',

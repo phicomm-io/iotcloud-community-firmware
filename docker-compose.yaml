@@ -1,37 +1,51 @@
 services:
+  setup:
+    profiles: [tools]
+    image: phicomm-community-mqtt-backend:local
+    build: ./backend
+    user: "${APP_UID:-1000}:${APP_GID:-1000}"
+    volumes:
+      - ./runtime:/runtime
+      - ./legacy:/legacy:ro
+    command: [init, --output, /runtime]
   mosquitto:
-    image: eclipse-mosquitto:2.0.18
-    container_name: mqtt-broker
+    image: eclipse-mosquitto:2.0.22
+    user: "${APP_UID:-1000}:${APP_GID:-1000}"
     restart: unless-stopped
     ports:
-      - "1883:1883"
-      # 9001 仅供内部 nginx 反代，不对外暴露
+      - "${MQTT_PORT:-1883}:1883"
     volumes:
-      - ./mosquitto/config:/mosquitto/config
-      - ./mosquitto/data:/mosquitto/data
-      - ./mosquitto/log:/mosquitto/log
-
+      - ./mosquitto/config/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./runtime/broker:/mosquitto/security
+      - ./runtime/broker-data:/mosquitto/data
+    networks: [broker]
   backend:
-    image: registry.cn-hangzhou.aliyuncs.com/fjrcn/mqtt-mgr-backend:latest
-    container_name: mqtt-mgr-backend
+    image: phicomm-community-mqtt-backend:local
+    build: ./backend
+    user: "${APP_UID:-1000}:${APP_GID:-1000}"
     restart: unless-stopped
     volumes:
-      # 配置文件
-      - ./backend/config.yaml:/app/config.yaml
-      # 宿主机 passwd/acl 挂载进容器，供后端读写
-      - ./mosquitto/config/passwd:/data/passwd
-      - ./mosquitto/config/acl:/data/acl
-      # Docker socket，用于 docker exec mosquitto_passwd
-      - /var/run/docker.sock:/var/run/docker.sock
-    depends_on:
-      - mosquitto
-
+      - ./backend/config.yaml:/app/config.yaml:ro
+      - ./runtime/app:/data
+      - ./runtime/secrets/broker-password:/run/secrets/broker-password:ro
+      - ./runtime/secrets/admin-password:/run/secrets/admin-password:ro
+      - ./runtime/broker/certs/ca.crt:/run/broker-ca.crt:ro
+    environment:
+      MQTT_URI: "${MQTT_URI:-}"
+      MQTT_WS_URI: "${MQTT_WS_URI:-}"
+      PUBLIC_URL: "${PUBLIC_URL:-}"
+    depends_on: [mosquitto]
+    networks: [broker, web]
   nginx:
-    image: registry.cn-hangzhou.aliyuncs.com/fjrcn/mqtt-mgr-nginx:latest
-    container_name: mqtt-mgr-nginx
+    image: phicomm-community-mqtt-web:local
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
     restart: unless-stopped
     ports:
-      - "80:80"
-    depends_on:
-      - backend
-      - mosquitto
+      - "${HTTP_PORT:-80}:80"
+    depends_on: [backend, mosquitto]
+    networks: [broker, web]
+networks:
+  broker:
+  web:

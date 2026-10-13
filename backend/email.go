@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"net"
 	"net/smtp"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -69,7 +70,7 @@ func verifyCode(email, code string) bool {
 // 发送验证码邮件
 func sendVerificationEmail(to, code string) error {
 	s := cfg.SMTP
-	addr := fmt.Sprintf("%s:%d", s.Host, s.Port)
+	addr := net.JoinHostPort(s.Host, strconv.Itoa(s.Port))
 	log.Printf("[email] 尝试发送验证码 to=%s smtp=%s tls=%v", to, addr, s.TLS)
 
 	subject := "MQTT 用户注册验证码"
@@ -89,6 +90,7 @@ func sendVerificationEmail(to, code string) error {
 			return fmt.Errorf("TLS连接失败: %w", err)
 		}
 		defer conn.Close()
+		conn.SetDeadline(time.Now().Add(15 * time.Second))
 
 		client, err := smtp.NewClient(conn, s.Host)
 		if err != nil {
@@ -128,6 +130,8 @@ func sendVerificationEmail(to, code string) error {
 		log.Printf("[email] STARTTLS连接失败 smtp=%s err=%v", addr, err)
 		return fmt.Errorf("连接SMTP失败: %w", err)
 	}
+	defer conn.Close()
+	conn.SetDeadline(time.Now().Add(15 * time.Second))
 	client, err := smtp.NewClient(conn, s.Host)
 	if err != nil {
 		return err
