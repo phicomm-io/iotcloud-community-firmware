@@ -296,6 +296,60 @@ static void effective_controls(void) {
        "sleep priority passed");
 }
 #endif
+static char expected_key[MQTT_KEY_MAX];
+static unsigned account_ha;
+static int capture_account(const char *t,const char *body,bool retained) {
+  assert(t && body);
+  if(!strncmp(t,"homeassistant/",14)) {
+    assert(strstr(t,expected_key));
+    unsigned slashes=0;for(const char *p=t;*p;++p)slashes+=*p=='/';
+    assert(slashes==4); ++account_ha;
+#ifdef FEATURE_DEVICE_A1
+    assert(strstr(t,"/a1_000000000001_bound_"));
+#endif
+  } else {
+    assert(strstr(t,expected_key));
+    assert(!strncmp(t,"phicomm/",8));
+  }
+  (void)retained;return 0;
+}
+static void account_namespaces(void) {
+  mqtt_account_t alice,bob,legacy;
+  char user[64];memset(user,'x',63);user[63]=0;
+#ifdef FEATURE_DEVICE_A1
+  const char *model="a1";
+#else
+  const char *model="m1";
+#endif
+  assert(mqtt_account_init(&alice,1,model,user,LOCAL_ID));
+  assert(mqtt_account_init(&bob,1,model,"bob",LOCAL_ID));
+  assert(mqtt_account_init(&legacy,0,model,"",LOCAL_ID));
+  feature_defaults(&stored);strcpy(stored.group,"同名组");
+  stored.peer_count=1;strcpy(stored.peers[0].id,"112233445566");stored.peers[0].kind=FEATURE_M1;stored.peers[0].confirmed=1;
+  stored.member_count=1;strcpy(stored.members[0].id,"000000000001");
+  configuration=stored;
+  feature_mqtt_session(&alice);strcpy(expected_key,alice.key);
+  char filters[12][FEATURE_TOPIC_MAX],root[FEATURE_TOPIC_MAX];
+  unsigned count=feature_mqtt_filters(filters);assert(count>=3);
+  for(unsigned i=0;i<count;++i)assert(strstr(filters[i],alice.key));
+  root_for(&stored,0,root);assert(!strncmp(root,"phicomm/linkage/",16));assert(strstr(root,alice.key));
+  char t[FEATURE_TOPIC_MAX];mqtt_leaf(&alice,"binding/get",t,sizeof(t));
+  assert(feature_mqtt_input(t,"{}",2,false));
+  assert(queued);assert(feature_mqtt_service(capture_account,true)==0);
+  mqtt_leaf(&alice,"binding/get",t,sizeof(t));assert(feature_mqtt_input(t,"{}",2,false));assert(queued);
+  feature_mqtt_session(&bob);assert(!queued);
+  assert(!feature_mqtt_input(t,"{}",2,false));
+  json_object *o=obj("{}");assert(!enqueue(t,o,false));json_object_put(o);
+  mqtt_leaf(&bob,"binding/get",t,sizeof(t));
+  assert(feature_mqtt_input(t,"{}",2,true));assert(!queued); /* no retained RPC */
+  feature_mqtt_session(&legacy);
+  assert(!scoped_topic(t));
+#ifdef FEATURE_DEVICE_A1
+  assert(account_ha>0);
+#endif
+  puts("Long account namespaces, scoped RPC, stable HA owner and stale queue isolation passed");
+}
+
 int main(void) {
   feature_defaults(&stored);
   assert(feature_start() == 0);
@@ -328,6 +382,7 @@ int main(void) {
   transaction("time", "{\"timezone_minutes\":480}", 200);
   transaction("time", "{\"revision\":0}", 409);
 #endif
+  account_namespaces();
   (void)r;
   puts("runtime transactions, handshake, authentication and duplicate "
        "freshness passed");

@@ -6,15 +6,17 @@ import shutil
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
-from check_version import project_version
+from check_version import project_version, build_metadata
 
 source, output = map(Path, sys.argv[1:3])
 version = project_version()
+version_metadata = build_metadata()
 prefix = 'TC1@MK3031@moc'
 output.mkdir(parents=True, exist_ok=True)
 sdk = json.loads((Path(__file__).resolve().parents[1] / 'sdk.json').read_text())
 manifest = {'version': version, 'target': prefix, 'sdk': sdk,
             'toolchain': 'ARM GCC 5.4.1', 'files': {}}
+manifest.update(version_metadata)
 for suffix in ('.usr.bin', '.ota.bin', '.all.bin', '.elf', '.map'):
     original = source / (prefix + suffix)
     destination = output / ('phicomm_tc1_a1' + suffix)

@@ -2,7 +2,11 @@
 set -euo pipefail
 app_dir="$(cd "$(dirname "$0")" && pwd)"
 project_dir="$(dirname "$app_dir")"
-python3 "$project_dir/tools/check_version.py"
+version_args=()
+if [[ "${GITHUB_REF_TYPE:-}" == tag ]]; then
+    version_args=(--tag "$GITHUB_REF_NAME")
+fi
+python3 "$project_dir/tools/check_version.py" "${version_args[@]}"
 sdk_dir="${M1_SDK_DIR:-$project_dir/build/m1-sdk/mico-os}"
 tools_dir="${M1_TOOLS_DIR:-$project_dir/build/m1-tools}"
 workspace="$project_dir/build/m1-workspace"
@@ -26,6 +30,8 @@ if ! git -C "$sdk_dir" apply --reverse --check "$app_dir/features-sdk.patch" 2>/
     git -C "$sdk_dir" apply --check "$app_dir/features-sdk.patch"
     git -C "$sdk_dir" apply "$app_dir/features-sdk.patch"
 fi
+
+python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-mico36.patch"
 
 ln -sfn "$sdk_dir" "$workspace/mico-os"
 ln -sfn "$app_dir" "$workspace/M1"

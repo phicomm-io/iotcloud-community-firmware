@@ -38,6 +38,7 @@ $(NAME)_SOURCES := main.c\
 				   
 $(NAME)_COMPONENTS := protocols/SNTP\
 					protocols/mqtt\
+					utilities/json_c\
 					utilities/url\
 					daemons/http_server
 					

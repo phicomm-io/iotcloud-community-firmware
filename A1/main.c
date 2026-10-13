@@ -1,4 +1,6 @@
 #include "a1.h"
+#include "config_legacy.h"
+#include <stddef.h>
 
 mico_mutex_t a1_lock, a1_config_lock;
 a1_config_t *a1_config;
@@ -135,11 +137,19 @@ int application_start(void)
     if (!a1_context) return kNoMemoryErr;
     a1_config = mico_system_context_get_user_data(a1_context);
     if (!a1_config) return kNoMemoryErr;
-    a1_config_t c; a1_config_get(&c);
-    if (c.magic == A1_CONFIG_MAGIC && c.version == 1) {
-        c.version = A1_CONFIG_VERSION;
-        if (!a1_config_save(&c)) return kUnknownErr;
+    a1_config_t c;
+    /* The SDK validates the entire partition before loading these bytes. */
+    if (a1_config->magic == A1_CONFIG_MAGIC &&
+        (a1_config->version == 1 || a1_config->version == 2)) {
+        a1_storage_v2_t *old = malloc(sizeof(*old));
+        if (!old) return kNoMemoryErr;
+        memcpy(old, a1_config, sizeof(*old));
+        memset(a1_config, 0, sizeof(app_storage_t));
+        a1_migrate_v2(a1_config, &((app_storage_t *)a1_config)->features, old);
+        free(old);
+        if (mico_system_context_update(a1_context) != kNoErr) return kUnknownErr;
     }
+    a1_config_get(&c);
     if (c.magic != A1_CONFIG_MAGIC || c.version != A1_CONFIG_VERSION) {
         appRestoreDefault_callback(&c, sizeof(c));
         if (!a1_config_save(&c)) return kUnknownErr;

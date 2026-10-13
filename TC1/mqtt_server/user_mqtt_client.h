@@ -21,6 +21,8 @@
 #define MQTT_REPORT_FREQ  user_config->mqtt_report_freq
 #define MQTT_LED_ENABLED  user_config->power_led_enabled
 
+extern unsigned tc1_mqtt_status;
+extern bool tc1_mqtt_cleanup_warning;
 extern OSStatus UserMqttInit(void);
 extern OSStatus UserMqttDeInit(void);
 

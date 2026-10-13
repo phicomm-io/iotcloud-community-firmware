@@ -406,16 +406,17 @@
                             <label class="mdl-textfield__label" for="mqtt_port">端口</label>
                         </div>
                         <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
-                            <input class="mdl-textfield__input" type="text" id="mqtt_usr">
+                            <input class="mdl-textfield__input" type="text" id="mqtt_usr" maxlength="63">
                             <label class="mdl-textfield__label" for="mqtt_usr">用户名</label>
                         </div>
                         <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
-                            <input class="mdl-textfield__input" type="text" id="mqtt_pwd">
+                            <input class="mdl-textfield__input" type="password" id="mqtt_pwd" maxlength="256" autocomplete="new-password" placeholder="留空保留原密码">
                             <label class="mdl-textfield__label" for="mqtt_pwd">密码</label>
                         </div>
                     </form>
                 </div>
                 <div class="mdl-card__actions mdl-card--border">
+                    <label>主题模式 <select id="mqtt_topic_mode"><option value="legacy">legacy</option><option value="account">account（社区平台）</option></select></label><label><input type="checkbox" id="mqtt_clear_password">清除 MQTT 密码</label><p id="mqtt_status"></p><p>legacy 需手动绑定；account 上线后自动加入云端列表。切换账号或模式会清理旧 HA 实体；失败时请在旧 Broker 手动清理。</p>
                     <button type="button" id="mqtt_submit"
                        class="mdl-button mdl-button--colored ">
                         提交
@@ -898,7 +899,7 @@
         type: type,
         data: data,
         success: function(re) {
-          onsuccess(re.replace(/'/g, '"'));
+          onsuccess(url === "/status" ? re : re.replace(/'/g, '"'));
         },
         error: AjaxErr
       });
@@ -1019,7 +1020,9 @@
       mqtt_addr = status.mqtt_addr;
       mqtt_port = status.mqtt_port;
       mqtt_usr = status.mqtt_usr;
-      mqtt_pwd = status.mqtt_pwd;
+      mqtt_pwd = "";
+      $("#mqtt_topic_mode").val(status.mqtt_topic_mode || "legacy");
+      $("#mqtt_status").text((status.mqtt_status || "disconnected") + (status.mqtt_cleanup_warning ? "；旧 HA 实体清理失败，请手动清理" : ""));
       mqtt_freq = status.reportFreq;
       power_coefficient_x100 = status.powerCoefficientX100;
       var coefficientPreset = power_coefficient_x100 == 1710 || power_coefficient_x100 == 1395
@@ -1311,7 +1314,8 @@ componentHandler.upgradeDom();
       var mqtt_port = $("#mqtt_port").val();
       var mqtt_usr = $("#mqtt_usr").val();
       var mqtt_pwd = $("#mqtt_pwd").val();
-      var params = mqtt_addr + " " + mqtt_port + " " + mqtt_usr + " " + mqtt_pwd;
+      if(new TextEncoder().encode(mqtt_usr).length>63 || new TextEncoder().encode(mqtt_pwd).length>256) { ShowToast("用户名最多 63 字节，密码最多 256 字节"); return; }
+      var params = JSON.stringify({host:mqtt_addr,port:Number(mqtt_port),user:mqtt_usr,password:mqtt_pwd,topic_mode:$("#mqtt_topic_mode").val(),clear_password:$("#mqtt_clear_password")[0].checked});
       HttpPost("/mqtt/config", function (re) {
         ShowToast(re);
       }, params);

@@ -14,7 +14,7 @@
 
 ## 下载
 
-当前源码版本为 **0.9.0**；这不表示已发布对应 Release。请在 [Releases](https://github.com/FUjr/phicomm-community-firmware/releases) 中查看版本说明，下载与型号一致的文件：
+固件版本由 Git tag 自动生成，例如 tag `v0.9.0` 对应设备显示 `0.9.0-abcdef`；这不表示所有源码构建均有对应 Release。请在 [Releases](https://github.com/FUjr/phicomm-community-firmware/releases) 中查看版本说明，下载与型号一致的文件：
 
 | 设备 | 本社区固件网页升级文件 | 下载入口 |
 | --- | --- | --- |
@@ -39,4 +39,18 @@
 - [刷机与失败恢复](https://github.com/FUjr/phicomm-community-firmware/wiki/刷机)：支持的升级方式、文件选择和首次安装限制。
 - 各型号的功能、构建和使用方法见上表。
 - [M1 / A1 绑定与联动配置](common/README.md)。
+- [MQTT 平台账号主题、配置迁移和验证方法](docs/mqtt-account.md)。
 
+### 构建版本
+
+版本不依赖 `.version` 文件。推送 `vMAJOR.MINOR.PATCH` tag 会触发 CI 构建和发布；
+发布构建校验该 tag 指向 HEAD 且源码干净。main、PR 和手动构建仍然保留。
+普通构建使用 HEAD 历史中最近的合法版本 tag，拼接六位 commit ID；
+存在已暂存、未暂存或未忽略的新增文件时追加 `-dirty`。
+没有可达版本 tag 时基础版本为 `0.0.0`。非 Git 源码目录或 Git 不可用时，
+固定使用 `0.0.0-000000-dirty`，不会使用父目录仓库的版本。
+
+构建脚本自动生成 `common/generated/build_version.h` 和 `version.json`，
+统一供设备状态、网页、MQTT、日志和 SDK 固件版本字段使用。
+打包读取同一份版本快照，并将版本、完整 commit、tag 和 dirty 状态写入 manifest。
+这些生成文件不提交；版本变化会更新头文件，以触发依赖它的源码重新编译。

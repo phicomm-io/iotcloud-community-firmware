@@ -36,3 +36,6 @@ __pycache__/
 !.env.example
 *.local.json
 /node_modules/
+
+# Build-time Git version snapshot
+/common/generated/

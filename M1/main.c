@@ -1,4 +1,6 @@
 #include "m1.h"
+#include "config_legacy.h"
+#include <stddef.h>
 
 mico_mutex_t m1_lock;
 static mico_mutex_t config_lock;
@@ -79,11 +81,18 @@ int application_start(void)
     app_config = mico_system_context_get_user_data(m1_context);
     if (!app_config) return kNoMemoryErr;
     m1_config_t c;
-    m1_config_get(&c);
-    if (c.magic == M1_CONFIG_MAGIC && c.version == 1) {
-        c.version = M1_CONFIG_VERSION;
-        if (!m1_config_save(&c)) return kUnknownErr;
+    /* The SDK validates the entire partition before loading these bytes. */
+    if (app_config->magic == M1_CONFIG_MAGIC &&
+        (app_config->version == 1 || app_config->version == 2)) {
+        m1_storage_v2_t *old = malloc(sizeof(*old));
+        if (!old) return kNoMemoryErr;
+        memcpy(old, app_config, sizeof(*old));
+        memset(app_config, 0, sizeof(app_storage_t));
+        m1_migrate_v2(app_config, &((app_storage_t *)app_config)->features, old);
+        free(old);
+        if (mico_system_context_update(m1_context) != kNoErr) return kUnknownErr;
     }
+    m1_config_get(&c);
     if (c.magic != M1_CONFIG_MAGIC || c.version != M1_CONFIG_VERSION) {
         /* Reset only application data: never restore the whole device context. */
         appRestoreDefault_callback(&c, sizeof(c));
