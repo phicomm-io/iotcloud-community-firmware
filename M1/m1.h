@@ -10,11 +10,11 @@
 #define M1_VERSION "1.0.0"
 #define M1_PRODUCT "PHICOMM_M1_EMW3080"
 #define M1_CONFIG_MAGIC 0x4d314346u
-#define M1_CONFIG_VERSION 1u
+#define M1_CONFIG_VERSION 2u
 #define M1_APP_OFFSET 0x75000u
 #define M1_APP_CPU_ADDRESS 0x08088000u
 #define M1_APP_LIMIT 0x40000u
-#define M1_JSON_LIMIT 1536
+#define M1_JSON_LIMIT 8192
 
 typedef struct {
     uint32_t magic, version, revision;
@@ -67,3 +67,5 @@ int m1_socket_read(int fd, void *buf, size_t length, unsigned timeout_ms);
 bool m1_socket_send(int fd, const void *buf, size_t length);
 int m1_socket_line(int fd, char *buf, size_t capacity);
 
+
+#include "../common/phicomm_features.h"

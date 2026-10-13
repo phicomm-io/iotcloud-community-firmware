@@ -6,12 +6,15 @@ char a1_id[13];
 a1_state_t a1_state;
 mico_Context_t *a1_context;
 static uint32_t save_at;
+typedef struct { a1_config_t base; feature_config_t features; } app_storage_t;
+
 
 void appRestoreDefault_callback(void *data, uint32_t size)
 {
     if (size < sizeof(a1_config_t)) return;
     a1_config_t *c = data;
     memset(c, 0, sizeof(*c));
+    if (size >= sizeof(app_storage_t)) feature_defaults(&((app_storage_t *)data)->features);
     c->magic = A1_CONFIG_MAGIC; c->version = A1_CONFIG_VERSION;
     c->mqtt_port = 1883; c->speed = 60;
     c->led_enabled = 1; c->brightness = 255; c->blue = 255;
@@ -121,14 +124,30 @@ int application_start(void)
     if (err != kNoErr) return err;
     err = mico_rtos_init_mutex(&a1_config_lock);
     if (err != kNoErr) return err;
-    a1_context = mico_system_context_init(sizeof(a1_config_t));
+    const mico_logic_partition_t *parameter = MicoFlashGetInfo(MICO_PARTITION_PARAMETER_1);
+    const mico_logic_partition_t *backup = MicoFlashGetInfo(MICO_PARTITION_PARAMETER_2);
+    size_t required = sizeof(system_config_t) + sizeof(app_storage_t) + 2;
+    if (!parameter || !backup || parameter->partition_length < required || backup->partition_length < required) return kNoMemoryErr;
+#ifdef MICO_EXTRA_AP_NUM
+    if (sizeof(system_config_t) + sizeof(app_storage_t) > PARA_SYS_EXTRA_OFFSET) return kNoMemoryErr;
+#endif
+    a1_context = mico_system_context_init(sizeof(app_storage_t));
     if (!a1_context) return kNoMemoryErr;
     a1_config = mico_system_context_get_user_data(a1_context);
     if (!a1_config) return kNoMemoryErr;
     a1_config_t c; a1_config_get(&c);
+    if (c.magic == A1_CONFIG_MAGIC && c.version == 1) {
+        c.version = A1_CONFIG_VERSION;
+        if (!a1_config_save(&c)) return kUnknownErr;
+    }
     if (c.magic != A1_CONFIG_MAGIC || c.version != A1_CONFIG_VERSION) {
         appRestoreDefault_callback(&c, sizeof(c));
         if (!a1_config_save(&c)) return kUnknownErr;
+    }
+    feature_config_t *extension = &((app_storage_t *)a1_config)->features;
+    if (extension->magic != FEATURE_MAGIC) {
+        feature_defaults(extension);
+        if (mico_system_context_update(a1_context) != kNoErr) return kUnknownErr;
     }
     err = mico_system_init(a1_context);
     if (err != kNoErr) return err;
@@ -142,10 +161,36 @@ int application_start(void)
     snprintf(a1_state.ap_name, sizeof(a1_state.ap_name), "A1-AP-%s", a1_id + 6);
     strcpy(a1_state.ota_state, "idle");
     a1_state.led_until = mico_rtos_get_time() + 2000;
+    err = feature_start(); if (err != kNoErr) return err;
     err = a1_hardware_start(); if (err != kNoErr) return err;
     err = a1_network_start(); if (err != kNoErr) return err;
     err = a1_mqtt_start(); if (err != kNoErr) return err;
     err = a1_http_start(); if (err != kNoErr) return err;
     custom_log("A1", "Started %s, id %s", A1_VERSION, a1_id);
     return kNoErr;
+}
+
+void feature_config_get(feature_config_t *out)
+{
+    mico_rtos_lock_mutex(&a1_config_lock);
+    *out = ((app_storage_t *)a1_config)->features;
+    mico_rtos_unlock_mutex(&a1_config_lock);
+}
+bool feature_config_save(const feature_config_t *c)
+{
+    feature_config_t *old = malloc(sizeof(*old));
+    if (!old) return false;
+    mico_rtos_lock_mutex(&a1_config_lock);
+    feature_config_t *live = &((app_storage_t *)a1_config)->features;
+    mico_rtos_lock_mutex(&a1_lock);
+    bool busy = a1_state.ota_active || a1_state.reboot_pending;
+    mico_rtos_unlock_mutex(&a1_lock);
+    bool ok = !busy && c->magic == FEATURE_MAGIC && live->revision == c->revision;
+    if (ok) {
+        *old = *live; *live = *c; live->revision++;
+        ok = mico_system_context_update(a1_context) == kNoErr;
+        if (!ok) *live = *old;
+    }
+    mico_rtos_unlock_mutex(&a1_config_lock);
+    free(old); return ok;
 }

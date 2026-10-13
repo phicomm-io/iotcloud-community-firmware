@@ -27,6 +27,9 @@ static void command(MessageData *d)
 {
     MQTTMessage *m = d->message;
     if (m->retained || !m->payloadlen || m->payloadlen > A1_JSON_LIMIT) return;
+    MQTTString *ft=d->topicName; char ftopic[FEATURE_TOPIC_MAX];
+    unsigned fn=ft->cstring?strlen(ft->cstring):ft->lenstring.len;
+    if(fn<sizeof(ftopic)){memcpy(ftopic,ft->cstring?ft->cstring:ft->lenstring.data,fn);ftopic[fn]=0;if(feature_mqtt_input(ftopic,m->payload,m->payloadlen,m->retained))return;}
     /* Wildcard also receives our own states: dispatch only these exact commands. */
     const char *kind = NULL, *key = NULL;
     if (topic_is(d, "fan/set")) { kind = "fan"; key = "on"; }
@@ -53,9 +56,19 @@ static void command(MessageData *d)
             json_object_object_add(o, key, json_object_new_boolean(!strcmp(text, "ON")));
         else if (o) { json_object_put(o); o = NULL; }
     }
-    if (o) { a1_control_json(kind, o); json_object_put(o); }
+    if (o) { a1_control_local(kind, o); json_object_put(o); }
     free(text);
 }
+static void feature_command(MessageData *d)
+{
+    MQTTString *t = d->topicName;
+    char topic[FEATURE_TOPIC_MAX];
+    unsigned n = t->cstring ? strlen(t->cstring) : t->lenstring.len;
+    if (n >= sizeof(topic)) return;
+    memcpy(topic, t->cstring ? t->cstring : t->lenstring.data, n); topic[n] = 0;
+    feature_mqtt_input(topic, d->message->payload, d->message->payloadlen, d->message->retained);
+}
+static char feature_filters[12][FEATURE_TOPIC_MAX];
 static void ha_birth(MessageData *d)
 {
     if (d->message->payloadlen == 6 && !memcmp(d->message->payload, "online", 6)) rediscover = true;
@@ -72,6 +85,7 @@ static int discovery(const a1_config_t *c)
     const char *components[] = {"fan", "light", "switch", "switch"};
     const char *names[] = {"空气净化器", "灯环", "童锁", "灯环常亮"};
     for (unsigned i = 0; i < 4; i++) {
+        if (feature_bound()) { char path[128]; snprintf(path,sizeof(path),"homeassistant/%s/a1_%s/%s/config",components[i],a1_id,keys[i]); int rc=publish(path,"",true); if(rc!=MQTT_SUCCESS)return rc; continue; }
         json_object *o = json_object_new_object(), *device = json_object_new_object(), *ids = json_object_new_array();
         if (!o || !device || !ids) {
             if (o) json_object_put(o);
@@ -115,8 +129,9 @@ static int discovery(const a1_config_t *c)
 }
 static int states(const a1_config_t *c, const a1_state_t *s)
 {
-    int rc = leaf("fan/state", c->fan_on ? "ON" : "OFF");
-    char speed[4], light[192]; snprintf(speed, sizeof(speed), "%u", c->fan_on ? c->speed : 0);
+    bool on; unsigned desired;feature_effective_fan(c->fan_on,c->speed,&on,&desired);
+    int rc = leaf("fan/state", on ? "ON" : "OFF");
+    char speed[4], light[192]; snprintf(speed, sizeof(speed), "%u", on ? desired : 0);
     if (rc == MQTT_SUCCESS) rc = leaf("fan/percentage/state", speed);
     snprintf(light, sizeof(light), "{\"state\":\"%s\",\"color_mode\":\"rgb\",\"brightness\":%u,\"color\":{\"r\":%u,\"g\":%u,\"b\":%u}}",
         s->led_visible ? "ON" : "OFF", c->brightness, c->red, c->green, c->blue);
@@ -152,24 +167,35 @@ static void mqtt_worker(mico_thread_arg_t arg)
         connect.keepAliveInterval = 30; connect.cleansession = 1;
         connect.willFlag = 1; connect.will.topicName.cstring = availability_topic;
         connect.will.message.cstring = "offline"; connect.will.retained = 1; connect.will.qos = 1;
+        feature_config_t *fc = malloc(sizeof(*fc));
+        if (!fc) { net.disconnect(&net); MQTTClientDeinit(&client); mico_thread_msleep(3000); continue; }
+        feature_config_get(fc); uint32_t feature_revision=fc->revision; free(fc);
         bool connected = MQTTConnect(&client, &connect) == MQTT_SUCCESS;
         int rc = connected ? MQTTSubscribe(&client, wildcard, QOS0, command) : MQTT_FAILURE;
         if (rc == MQTT_SUCCESS) rc = MQTTSubscribe(&client, "homeassistant/status", QOS0, ha_birth);
+        unsigned count = feature_mqtt_filters(feature_filters);
+        for (unsigned i = 0; i < count && rc == MQTT_SUCCESS; i++) rc = MQTTSubscribe(&client, feature_filters[i], QOS0, feature_command);
         if (rc == MQTT_SUCCESS) rc = discovery(&cfg);
         if (rc == MQTT_SUCCESS) rc = publish(availability_topic, "online", true);
+        bool old_on=false;unsigned old_speed=0;
         bool sent = false, old_visible = false; uint32_t revision = 0; rediscover = false;
         while (rc == MQTT_SUCCESS) {
             mico_rtos_lock_mutex(&a1_lock); a1_state.mqtt_connected = true; mico_rtos_unlock_mutex(&a1_lock);
             a1_state_get(&state); a1_config_get(&current);
             if (!state.wifi_connected || !same_connection(&cfg, &current)) break;
-            if (rediscover) { rc = discovery(&current); rediscover = false; sent = false; }
-            if (rc == MQTT_SUCCESS && (!sent || revision != current.revision || old_visible != state.led_visible)) {
-                rc = states(&current, &state); revision = current.revision; old_visible = state.led_visible; sent = true;
+            fc=malloc(sizeof(*fc)); if (!fc) break; feature_config_get(fc);
+            bool feature_changed=feature_revision!=fc->revision; free(fc); if(feature_changed)break;
+            if (rediscover) { feature_mqtt_service(publish,false);rc = discovery(&current); rediscover = false; sent = false; }
+            bool on;unsigned speed;feature_effective_fan(current.fan_on,current.speed,&on,&speed);
+            if (rc == MQTT_SUCCESS && (!sent || revision != current.revision || old_visible != state.led_visible || old_on!=on || old_speed!=speed)) {
+                rc = states(&current, &state); revision = current.revision; old_visible = state.led_visible;old_on=on;old_speed=speed; sent = true;
             }
+            if (rc == MQTT_SUCCESS) feature_mqtt_service(publish, true);
             if (rc == MQTT_SUCCESS) rc = MQTTYield(&client, 100);
             mico_thread_msleep(50);
         }
         mico_rtos_lock_mutex(&a1_lock); a1_state.mqtt_connected = false; mico_rtos_unlock_mutex(&a1_lock);
+        feature_mqtt_service(publish, false);
         if (connected) { publish(availability_topic, "offline", true); MQTTDisconnect(&client); }
         net.disconnect(&net); MQTTClientDeinit(&client); mico_thread_msleep(3000);
     }

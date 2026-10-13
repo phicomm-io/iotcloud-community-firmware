@@ -45,7 +45,7 @@ static bool get_byte(json_object *o, const char *key, uint8_t *out, int max, boo
     *found = true; *out = n; return true;
 }
 
-bool a1_control_json(const char *kind, json_object *o)
+bool a1_control_local(const char *kind, json_object *o)
 {
     if (!o || !json_object_is_type(o, json_type_object)) return false;
     mico_rtos_lock_mutex(&a1_config_lock);
@@ -88,6 +88,7 @@ bool a1_control_json(const char *kind, json_object *o)
     if (valid && found) apply(&c);
     mico_rtos_unlock_mutex(&a1_lock);
     mico_rtos_unlock_mutex(&a1_config_lock);
+    if (valid && found && !strcmp(kind, "fan")) feature_manual_fan(c.fan_on);
     return valid && found;
 }
 
@@ -106,6 +107,7 @@ void a1_panel_event(bool toggle, int delta)
     }
     mico_rtos_unlock_mutex(&a1_lock);
     mico_rtos_unlock_mutex(&a1_config_lock);
+    if (toggle || delta) { a1_config_t c; a1_config_get(&c); feature_manual_fan(c.fan_on); }
 }
 
 void a1_request_ap(void)
@@ -116,4 +118,11 @@ void a1_request_ap(void)
         a1_state.led_until = mico_rtos_get_time() + 2000;
     }
     mico_rtos_unlock_mutex(&a1_lock);
+}
+
+bool a1_control_json(const char *kind, json_object *o)
+{
+    if (!a1_control_local(kind, o)) return false;
+    feature_group_control(kind, o);
+    return true;
 }

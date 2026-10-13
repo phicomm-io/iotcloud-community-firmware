@@ -141,8 +141,10 @@ json_object *a1_status_json(void)
     json_bool(o, "wifi_password_set", cfg.wifi_password[0] != 0);
     json_bool(o, "mqtt_password_set", cfg.mqtt_password[0] != 0);
     json_bool(o, "wifi_connected", s.wifi_connected); json_bool(o, "mqtt_connected", s.mqtt_connected);
-    json_bool(o, "ap_active", s.ap_active); json_bool(o, "fan_on", cfg.fan_on);
-    integer(o, "speed", cfg.speed); integer(o, "percentage", cfg.fan_on ? cfg.speed : 0);
+    bool effective_on; unsigned effective_speed; feature_effective_fan(cfg.fan_on,cfg.speed,&effective_on,&effective_speed);
+    json_bool(o,"requested_fan_on",cfg.fan_on); integer(o,"requested_speed",cfg.speed);
+    json_bool(o, "ap_active", s.ap_active); json_bool(o, "fan_on", effective_on);
+    integer(o, "speed", cfg.speed); integer(o, "percentage", effective_on ? effective_speed : 0);
     integer(o, "applied_speed", s.applied_speed); json_bool(o, "fan_ready", s.fan_ready);
     json_bool(o, "led_enabled", cfg.led_enabled); json_bool(o, "led_visible", s.led_visible);
     json_bool(o, "led_always_on", cfg.led_always_on); integer(o, "brightness", cfg.brightness);
@@ -223,13 +225,28 @@ static void scan_response(int fd)
     json_object_object_add(o, "networks", list); send_json(fd, o);
 }
 
+static const char *feature_domain(const char *path)
+{
+    if (!strcmp(path, "/binding/config")) return "binding";
+    if (!strcmp(path, "/binding/status")) return "status";
+    if (!strcmp(path, "/binding/probe")) return "probe";
+    if (!strcmp(path, "/linkage/config")) return "linkage";
+    if (!strcmp(path, "/light/advanced")) return "light";
+    if (!strcmp(path, "/schedule/config")) return "schedule";
+    if (!strcmp(path, "/sleep/config")) return "sleep";
+    if (!strcmp(path, "/time/config")) return "time";
+    return NULL;
+}
+
 static void handle(int fd)
 {
     request_t req; a1_config_t cfg;
     if (!read_request(fd, &req)) { message(fd, 400, "Invalid HTTP request"); return; }
     a1_config_get(&cfg);
     if (!authorized(&req, cfg.web_password)) { message(fd, 401, "Authentication required"); return; }
+    const char *domain = feature_domain(req.path);
     if (!strcmp(req.method, "GET")) {
+        if (domain) { send_json(fd, feature_json(domain)); return; }
         if (!strcmp(req.path, "/")) response(fd, 200, "text/html; charset=utf-8", a1_web_data, sizeof(a1_web_data), true);
         else if (!strcmp(req.path, "/wifi/scan")) scan_response(fd);
         else if (!strcmp(req.path, "/status") || !strcmp(req.path, "/wifi/config") ||
@@ -262,6 +279,14 @@ static void handle(int fd)
     if (!strcmp(req.path, "/reboot")) { bool ok = a1_reboot_later(1000); message(fd, ok ? 202 : 503, ok ? "Rebooting" : "Config save failed or busy"); return; }
     json_object *o = read_json(fd, req.length);
     if (!o) { message(fd, 400, "Expected a bounded JSON object"); return; }
+    if (domain) {
+        json_object *result = NULL; int code = feature_set(domain, o, &result);
+        json_object_put(o);
+        if (!result) { message(fd, 500, "Out of memory"); return; }
+        const char *body = json_object_to_json_string(result);
+        response(fd, code, "application/json", body, strlen(body), false);
+        json_object_put(result); return;
+    }
     bool valid = true, saved = false; int number;
     if (!strcmp(req.path, "/wifi/config")) {
         char old_ssid[33]; strcpy(old_ssid, cfg.ssid);

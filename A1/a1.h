@@ -10,11 +10,11 @@
 #define A1_VERSION "1.0.0"
 #define A1_PRODUCT "PHICOMM_A1_EMW3080"
 #define A1_CONFIG_MAGIC 0x41314346u
-#define A1_CONFIG_VERSION 1u
+#define A1_CONFIG_VERSION 2u
 #define A1_APP_OFFSET 0x75000u
 #define A1_APP_CPU_ADDRESS 0x08088000u
 #define A1_APP_LIMIT 0x40000u
-#define A1_JSON_LIMIT 1536
+#define A1_JSON_LIMIT 8192
 #define A1_SAVE_DELAY_MS 2000u
 
 typedef struct {
@@ -73,3 +73,7 @@ int a1_socket_line(int, char *, size_t);
 extern mico_mutex_t a1_config_lock;
 extern a1_config_t *a1_config;
 void a1_control_changed(void); /* caller holds both mutexes */
+
+#include "../common/phicomm_features.h"
+
+bool a1_control_local(const char *, json_object *);

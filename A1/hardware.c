@@ -116,6 +116,9 @@ static void hardware_worker(mico_thread_arg_t arg)
         a1_config_t cfg; a1_state_t state;
         a1_config_get(&cfg); a1_state_get(&state);
         if ((uint32_t)(now - fan_at) >= 100) {
+            bool on; unsigned desired;
+            feature_effective_fan(cfg.fan_on, cfg.speed, &on, &desired);
+            cfg.fan_on = on; cfg.speed = desired;
             fan_tick(&cfg, &speed); fan_at += 100;
             if ((uint32_t)(now - fan_at) >= 100) fan_at = now;
         }
@@ -141,6 +144,8 @@ static void hardware_worker(mico_thread_arg_t arg)
             /* Original Wi-Fi indicator slot; color follows connected/AP status. */
             colors[27] = state.wifi_connected && !state.ap_active ? cfg.brightness : (uint32_t)cfg.brightness << 8;
         }
+        feature_light_frame(colors, cfg.brightness, cfg.led_enabled,((uint32_t)cfg.green<<16)|((uint32_t)cfg.red<<8)|cfg.blue);
+        visible = false; for (unsigned i = 0; i < 32; i++) visible |= colors[i] != 0;
         if (!state.ota_active && (!frame_sent || memcmp(previous, colors, sizeof(colors)))) {
             ring_send(colors); memcpy(previous, colors, sizeof(colors)); frame_sent = true;
         }

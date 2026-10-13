@@ -21,6 +21,11 @@ else
 fi
 
 # Root TC1 SDK/version/build.sh are intentionally not part of this workspace.
+if ! git -C "$sdk_dir" apply --reverse --check "$app_dir/features-sdk.patch" 2>/dev/null; then
+    git -C "$sdk_dir" apply --check "$app_dir/features-sdk.patch"
+    git -C "$sdk_dir" apply "$app_dir/features-sdk.patch"
+fi
+
 ln -sfn "$sdk_dir" "$workspace/mico-os"
 ln -sfn "$app_dir" "$workspace/A1"
 python3 "$app_dir/tools/pack_web.py"

@@ -3,6 +3,8 @@
 mico_mutex_t m1_lock;
 static mico_mutex_t config_lock;
 static m1_config_t *app_config;
+typedef struct { m1_config_t base; feature_config_t features; } app_storage_t;
+
 char m1_id[13];
 m1_state_t m1_state;
 mico_Context_t *m1_context;
@@ -12,6 +14,7 @@ void appRestoreDefault_callback(void *data, uint32_t size)
     if (size < sizeof(m1_config_t)) return;
     m1_config_t *c = data;
     memset(c, 0, sizeof(*c));
+    if (size >= sizeof(app_storage_t)) feature_defaults(&((app_storage_t *)data)->features);
     c->magic = M1_CONFIG_MAGIC; c->version = M1_CONFIG_VERSION;
     strcpy(c->name, "Phicomm M1"); c->mqtt_port = 1883;
     c->brightness = c->last_on = 4; c->timezone_minutes = 480;
@@ -64,16 +67,32 @@ int application_start(void)
     if (err != kNoErr) return err;
     err = mico_rtos_init_mutex(&config_lock);
     if (err != kNoErr) return err;
-    m1_context = mico_system_context_init(sizeof(m1_config_t));
+    const mico_logic_partition_t *parameter = MicoFlashGetInfo(MICO_PARTITION_PARAMETER_1);
+    const mico_logic_partition_t *backup = MicoFlashGetInfo(MICO_PARTITION_PARAMETER_2);
+    size_t required = sizeof(system_config_t) + sizeof(app_storage_t) + 2;
+    if (!parameter || !backup || parameter->partition_length < required || backup->partition_length < required) return kNoMemoryErr;
+#ifdef MICO_EXTRA_AP_NUM
+    if (sizeof(system_config_t) + sizeof(app_storage_t) > PARA_SYS_EXTRA_OFFSET) return kNoMemoryErr;
+#endif
+    m1_context = mico_system_context_init(sizeof(app_storage_t));
     if (!m1_context) return kNoMemoryErr;
     app_config = mico_system_context_get_user_data(m1_context);
     if (!app_config) return kNoMemoryErr;
     m1_config_t c;
     m1_config_get(&c);
+    if (c.magic == M1_CONFIG_MAGIC && c.version == 1) {
+        c.version = M1_CONFIG_VERSION;
+        if (!m1_config_save(&c)) return kUnknownErr;
+    }
     if (c.magic != M1_CONFIG_MAGIC || c.version != M1_CONFIG_VERSION) {
         /* Reset only application data: never restore the whole device context. */
         appRestoreDefault_callback(&c, sizeof(c));
         if (!m1_config_save(&c)) return kUnknownErr;
+    }
+    feature_config_t *extension = &((app_storage_t *)app_config)->features;
+    if (extension->magic != FEATURE_MAGIC) {
+        feature_defaults(extension);
+        if (mico_system_context_update(m1_context) != kNoErr) return kUnknownErr;
     }
     err = mico_system_init(m1_context);
     if (err != kNoErr) return err;
@@ -84,10 +103,36 @@ int application_start(void)
     snprintf(m1_state.ap_name, sizeof(m1_state.ap_name), "M1-AP-%s", m1_id + 6);
     strcpy(m1_state.ota_state, "idle");
     m1_state.brightness_requested = c.brightness;
+    err = feature_start(); if (err != kNoErr) return err;
     err = m1_uart_start(); if (err != kNoErr) return err;
     err = m1_network_start(); if (err != kNoErr) return err;
     err = m1_mqtt_start(); if (err != kNoErr) return err;
     err = m1_http_start(); if (err != kNoErr) return err;
     custom_log("M1", "Started %s, id %s", M1_VERSION, m1_id);
     return kNoErr;
+}
+
+void feature_config_get(feature_config_t *out)
+{
+    mico_rtos_lock_mutex(&config_lock);
+    *out = ((app_storage_t *)app_config)->features;
+    mico_rtos_unlock_mutex(&config_lock);
+}
+bool feature_config_save(const feature_config_t *c)
+{
+    feature_config_t *old = malloc(sizeof(*old));
+    if (!old) return false;
+    mico_rtos_lock_mutex(&config_lock);
+    feature_config_t *live = &((app_storage_t *)app_config)->features;
+    mico_rtos_lock_mutex(&m1_lock);
+    bool busy = m1_state.ota_active || m1_state.reboot_pending;
+    mico_rtos_unlock_mutex(&m1_lock);
+    bool ok = !busy && c->magic == FEATURE_MAGIC && live->revision == c->revision;
+    if (ok) {
+        *old = *live; *live = *c; live->revision++;
+        ok = mico_system_context_update(m1_context) == kNoErr;
+        if (!ok) *live = *old;
+    }
+    mico_rtos_unlock_mutex(&config_lock);
+    free(old); return ok;
 }

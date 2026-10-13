@@ -97,6 +97,7 @@ static void network_worker(mico_thread_arg_t arg)
         mico_rtos_unlock_mutex(&a1_lock);
         if (reboot) MicoSystemReboot();
         a1_config_flush(false);
+        if (ready && !snapshot.ota_active && !snapshot.reboot_pending) feature_clock_tick();
         mico_thread_msleep(500);
     }
 }

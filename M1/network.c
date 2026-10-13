@@ -65,6 +65,7 @@ static bool clock_sync(int timezone)
     if (sntp_get_time(&address, &stamp) != kNoErr || stamp.seconds < 1577836800u) return false;
     mico_utc_time_ms_t utc_ms = (uint64_t)stamp.seconds * 1000 + stamp.microseconds / 1000;
     mico_time_set_utc_time_ms(&utc_ms);
+    feature_clock_valid();
     time_t local = stamp.seconds + timezone * 60;
     struct tm t = *gmtime(&local);
     return m1_uart_clock(t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec);

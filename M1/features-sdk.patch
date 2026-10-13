@@ -1,0 +1,14 @@
+diff --git a/libraries/protocols/mqtt/MQTTClient.h b/libraries/protocols/mqtt/MQTTClient.h
+index ffe8c26..64d296e 100755
+--- a/libraries/protocols/mqtt/MQTTClient.h
++++ b/libraries/protocols/mqtt/MQTTClient.h
+@@ -27,7 +27,9 @@
+ #define MQTT_LIB_VERSION        ((MQTT_MAIN_VERSION << 16) | (MQTT_SUB_VERSION << 8 ) | (MQTT_REV_VERSION))
+ 
+ #define MAX_PACKET_ID   (65535)
++#ifndef MAX_MESSAGE_HANDLERS
+ #define MAX_MESSAGE_HANDLERS    (5)
++#endif
+ #define DEFAULT_READBUF_SIZE  (512)
+ #define DEFAULT_SENDBUF_SIZE  (512)
+ #define MAX_SIZE_CLIENT_ID  (23+1)
