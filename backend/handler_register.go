@@ -15,10 +15,10 @@ type RegisterReq struct {
 }
 
 func reservedUser(u string) bool {
-	return u == cfg.BrokerAdminUsername || u == cfg.AdminUsername || strings.HasPrefix(u, "__")
+	return u == cfg.BrokerAdminUsername || strings.HasPrefix(u, "__")
 }
 func validateAccount(user, password string) error {
-	if !usernameRegex.MatchString(user) || reservedUser(user) {
+	if !usernameRegex.MatchString(user) || reservedUser(user) || user == cfg.AdminUsername {
 		return errors.New("用户名格式不正确或为保留账号")
 	}
 	if !emailRegex.MatchString(user) && len(user) > 32 {

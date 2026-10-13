@@ -9,20 +9,20 @@ import (
 func handleUsers(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
-		rows, err := app.store.Query("SELECT username,state FROM users ORDER BY username")
+		rows, err := app.store.Query("SELECT u.username,u.state,CASE WHEN r.role='admin' THEN 'admin' ELSE 'user' END FROM users u LEFT JOIN user_roles r ON r.username=u.username ORDER BY u.username")
 		if err != nil {
 			operationError(w, err)
 			return
 		}
 		list := []map[string]string{}
 		for rows.Next() {
-			var u, s string
-			if err = rows.Scan(&u, &s); err != nil {
+			var u, s, role string
+			if err = rows.Scan(&u, &s, &role); err != nil {
 				rows.Close()
 				operationError(w, err)
 				return
 			}
-			list = append(list, map[string]string{"username": u, "status": s})
+			list = append(list, map[string]string{"username": u, "status": s, "role": role})
 		}
 		err = rows.Err()
 		rows.Close()
@@ -52,7 +52,11 @@ func handleUsers(w http.ResponseWriter, r *http.Request) {
 	}
 }
 func handleUserOps(w http.ResponseWriter, r *http.Request) {
-	u := strings.TrimPrefix(r.URL.Path, "/api/admin/user/")
+	u, role := roleTarget(strings.TrimPrefix(r.URL.Path, "/api/admin/user/"))
+	if role {
+		handleUserRole(w, r, u)
+		return
+	}
 	if reservedUser(u) {
 		jsonError(w, "不能操作保留账号", 403)
 		return

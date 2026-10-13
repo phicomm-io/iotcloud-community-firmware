@@ -43,7 +43,6 @@ type Config struct {
 var cfg Config
 var cfgMu sync.RWMutex
 var app *Application
-var adminSecret string
 
 func safeReturnTo(raw string) string {
 	if len(raw) == 0 || raw[0] != '/' || (len(raw) > 1 && raw[1] == '/') {
@@ -109,7 +108,6 @@ func routes() http.Handler {
 	mux.HandleFunc("/api/auth/password", userAuth(handlePassword))
 	mux.HandleFunc("/api/devices", userAuth(handleDevices))
 	mux.HandleFunc("/api/devices/", userAuth(handleDevice))
-	mux.HandleFunc("/api/admin/login", handleAdminLogin)
 	mux.HandleFunc("/api/admin/users", adminAuth(handleUsers))
 	mux.HandleFunc("/api/admin/user/", adminAuth(handleUserOps))
 	mux.HandleFunc("/api/admin/devices", adminAuth(handleAdminDevices))
@@ -152,10 +150,6 @@ func main() {
 		log.Fatal(err)
 	}
 	var err error
-	adminSecret, err = readSecret(cfg.AdminPasswordFile)
-	if err != nil {
-		log.Fatalf("read admin secret: %v", err)
-	}
 	pass, err := readSecret(cfg.BrokerAdminPasswordFile)
 	if err != nil {
 		log.Fatalf("read broker secret: %v", err)
@@ -189,6 +183,16 @@ func main() {
 				}
 			}
 			time.Sleep(time.Second)
+		}
+	}()
+	go func() {
+		for {
+			if err := app.bootstrapAdmin(); err == nil {
+				return
+			} else {
+				log.Printf("管理员账号初始化未完成: %v", err)
+			}
+			time.Sleep(2 * time.Second)
 		}
 	}()
 	loadSettings()

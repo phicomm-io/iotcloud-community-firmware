@@ -155,7 +155,6 @@ func TestSessionsCSRFAndAdminSeparation(t *testing.T) {
 	app = testApp(t)
 	cfg.AdminUsername = "admin"
 	cfg.PublicURL = "http://example.test"
-	adminSecret = "a-test-admin-secret"
 	h := routes()
 	r := httptest.NewRequest("POST", "http://example.test/api/auth/login", strings.NewReader(`{"username":"alice","password":"secret123"}`))
 	r.Header.Set("Origin", "http://example.test")
@@ -182,7 +181,7 @@ func TestSessionsCSRFAndAdminSeparation(t *testing.T) {
 	if n := check("POST", "/api/devices", "https://evil.test", `{"mac":"aabbccddeeff"}`); n != 403 {
 		t.Fatal(n)
 	}
-	if n := check("GET", "/api/admin/users", "", ""); n != 401 {
+	if n := check("GET", "/api/admin/users", "", ""); n != 403 {
 		t.Fatal(n)
 	}
 	if n := check("POST", "/api/devices", "http://example.test", `{"mac":"aabbccddeeff","username":"bob"}`); n != 400 {

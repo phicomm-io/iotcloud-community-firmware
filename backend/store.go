@@ -78,6 +78,7 @@ func openStore(path string) (*Store, error) {
 	s := &Store{db}
 	_, err = db.Exec(`PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL;
  CREATE TABLE IF NOT EXISTS users(username TEXT PRIMARY KEY,state TEXT NOT NULL DEFAULT 'active');
+ CREATE TABLE IF NOT EXISTS user_roles(username TEXT PRIMARY KEY REFERENCES users(username) ON DELETE CASCADE,role TEXT NOT NULL CHECK(role='admin'));
  CREATE TABLE IF NOT EXISTS devices(mac TEXT PRIMARY KEY,username TEXT NOT NULL REFERENCES users(username) ON DELETE CASCADE,model TEXT NOT NULL,version TEXT NOT NULL,status TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY,username TEXT NOT NULL REFERENCES users(username) ON DELETE CASCADE,expires INTEGER NOT NULL);
  CREATE TABLE IF NOT EXISTS scoped_devices(username TEXT NOT NULL REFERENCES users(username) ON DELETE CASCADE,mac TEXT NOT NULL,model TEXT NOT NULL,version TEXT NOT NULL,status TEXT NOT NULL,PRIMARY KEY(username,mac));
@@ -233,6 +234,9 @@ func (a *Application) deleteUser(username string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if _, err := a.store.state(username); err != nil {
+		return err
+	}
+	if err := a.canRemoveAdmin(username); err != nil {
 		return err
 	}
 	if _, err := a.store.Exec("UPDATE users SET state='deleting' WHERE username=?", username); err != nil {

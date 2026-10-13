@@ -2,11 +2,7 @@ package main
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"crypto/subtle"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -21,11 +17,6 @@ import (
 type loginReq struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
-}
-type tokenPayload struct {
-	Username string `json:"username"`
-	Role     string `json:"role"`
-	Exp      int64  `json:"exp"`
 }
 type userContextKey struct{}
 
@@ -157,7 +148,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	app.mu.Lock()
 	defer app.mu.Unlock()
 	state, err := app.store.state(req.Username)
-	if err != nil || state == "deleting" || reservedUser(req.Username) {
+	if err != nil || (state != "active" && state != "pending") || reservedUser(req.Username) {
 		jsonError(w, errCredentials.Error(), 401)
 		return
 	}
@@ -175,7 +166,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		operationError(w, err)
 		return
 	}
-	jsonResp(w, map[string]string{"username": req.Username})
+	jsonResp(w, map[string]interface{}{"username": req.Username, "is_admin": app.store.isAdmin(req.Username)})
 }
 func handleLogout(w http.ResponseWriter, r *http.Request) {
 	if !method(w, r, "POST") {
@@ -193,7 +184,7 @@ func handleMe(w http.ResponseWriter, r *http.Request) {
 	if !method(w, r, "GET") {
 		return
 	}
-	jsonResp(w, map[string]string{"username": currentUser(r)})
+	jsonResp(w, map[string]interface{}{"username": currentUser(r), "is_admin": app.store.isAdmin(currentUser(r))})
 }
 func handlePassword(w http.ResponseWriter, r *http.Request) {
 	if !method(w, r, "POST") {
@@ -236,67 +227,19 @@ func (a *Application) changePassword(user, password string) error {
 	_, err = a.broker.Command("setClientPassword", map[string]interface{}{"username": user, "password": password})
 	return err
 }
-func generateToken(username string) string {
-	data, _ := json.Marshal(tokenPayload{username, "admin", time.Now().Add(24 * time.Hour).Unix()})
-	mac := hmac.New(sha256.New, []byte(adminSecret))
-	mac.Write(data)
-	return hex.EncodeToString(data) + "." + hex.EncodeToString(mac.Sum(nil))
-}
-func validateToken(token string) bool {
-	parts := strings.Split(token, ".")
-	if len(parts) != 2 {
-		return false
-	}
-	data, err := hex.DecodeString(parts[0])
-	if err != nil {
-		return false
-	}
-	sig, err := hex.DecodeString(parts[1])
-	if err != nil {
-		return false
-	}
-	mac := hmac.New(sha256.New, []byte(adminSecret))
-	mac.Write(data)
-	if !hmac.Equal(sig, mac.Sum(nil)) {
-		return false
-	}
-	var p tokenPayload
-	if json.Unmarshal(data, &p) != nil {
-		return false
-	}
-	return p.Role == "admin" && p.Username == cfg.AdminUsername && time.Now().Unix() < p.Exp
-}
 func adminAuth(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		auth := r.Header.Get("Authorization")
-		if !strings.HasPrefix(auth, "Bearer ") || !validateToken(strings.TrimPrefix(auth, "Bearer ")) {
-			jsonError(w, "管理员未授权", 401)
+	return userAuth(func(w http.ResponseWriter, r *http.Request) {
+		if !app.store.isAdmin(currentUser(r)) {
+			jsonError(w, "没有管理权限", http.StatusForbidden)
 			return
 		}
 		next(w, r)
-	}
-}
-func handleAdminLogin(w http.ResponseWriter, r *http.Request) {
-	if !method(w, r, "POST") || !sameOrigin(w, r) {
-		return
-	}
-	if !allowAttempt(r, "admin-login", 10, time.Minute) {
-		jsonError(w, "请求过于频繁", 429)
-		return
-	}
-	var req loginReq
-	if err := decode(r, &req); err != nil {
-		jsonError(w, err.Error(), 400)
-		return
-	}
-	if req.Username != cfg.AdminUsername || subtle.ConstantTimeCompare([]byte(req.Password), []byte(adminSecret)) != 1 {
-		jsonError(w, errCredentials.Error(), 401)
-		return
-	}
-	jsonResp(w, map[string]string{"token": generateToken(req.Username)})
+	})
 }
 func operationError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, errLastAdmin):
+		jsonError(w, err.Error(), 409)
 	case errors.Is(err, errConflict):
 		jsonError(w, err.Error(), 409)
 	case errors.Is(err, sql.ErrNoRows):

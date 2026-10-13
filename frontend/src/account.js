@@ -1,6 +1,7 @@
 import { reactive } from "vue";
 export const account = reactive({
   username: null,
+  isAdmin: false,
   password: "",
   loaded: false,
 });
@@ -14,9 +15,11 @@ export async function api(path, options = {}) {
   if (!response.ok) {
     if (response.status === 401 && !path.startsWith("/admin")) {
       account.username = null;
+      account.isAdmin = false;
       account.password = "";
       window.dispatchEvent(new Event("phicomm-session-expired"));
     }
+    if (response.status === 403 && path.startsWith("/admin") && data.error === "没有管理权限") account.isAdmin = false;
     throw new Error(
       data.error || data.message || `请求失败 (${response.status})`,
     );
@@ -28,8 +31,16 @@ export async function restoreAccount() {
   try {
     const data = await api("/auth/me");
     account.username = data.username;
+    account.isAdmin = data.is_admin === true;
   } catch {
     /* Guest access remains available. */
   }
   account.loaded = true;
+}
+
+export async function refreshAccountRole() {
+  const owner = account.username;
+  if (!owner) return;
+  const data = await api("/auth/me");
+  if (account.username === owner) account.isAdmin = data.is_admin === true;
 }
