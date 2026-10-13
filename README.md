@@ -1,3 +1,5 @@
+M1 空气质量检测器（EMW3080）独立固件：见 [M1/README.md](M1/README.md)，支持本地 WebUI、MQTT / Home Assistant 自动发现及 OTA。
+
 # 感谢原作者 [zogodo](https://github.com/zogodo/zTC1) 无私分享的代码
 # 斐讯TC1 A1智能排插第三方固件
 排插TC1因为服务器关闭,无法使用. 故而为其开发一个不需要服务器也能满足基本智能控制使用的固件.

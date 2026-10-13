@@ -1,4 +1,4 @@
-name: Build firmware
+name: Build community firmware
 
 on:
   push:
@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   PYTHON2_VERSION: 2.7.18
@@ -22,8 +22,8 @@ env:
   BUILD_TARGET: TC1@MK3031@moc
 
 jobs:
-  build:
-    name: TC1 firmware
+  tc1:
+    name: TC1 A1 firmware
     runs-on: ubuntu-22.04
 
     steps:
@@ -147,12 +147,10 @@ jobs:
       - name: Publish firmware to release directory
         run: |
           binary_dir="build/${BUILD_TARGET}/binary"
-          rm -rf release
           mkdir -p release
-          cp -a "${binary_dir}/." release/
-          cp "release/${BUILD_TARGET}.ota.bin" release/ota.bin
-          cp "release/${BUILD_TARGET}.all.bin" release/all.bin
-          find release -maxdepth 1 -type f -printf '%f %s bytes\n' | sort
+          cp "${binary_dir}/${BUILD_TARGET}.ota.bin" release/phicomm_tc1_a1.ota.bin
+          cp "${binary_dir}/${BUILD_TARGET}.all.bin" release/phicomm_tc1_a1.all.bin
+          (cd release && sha256sum *.bin > SHA256SUMS-tc1)
 
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
@@ -162,12 +160,65 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Create GitHub release
-        if: startsWith(github.ref, 'refs/tags/')
+  m1:
+    name: M1 firmware
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential bzip2 curl git perl python3 zlib1g-dev libncurses5 libtinfo5
+      - uses: actions/cache@v4
+        with:
+          path: build/m1-tools
+          key: m1-tools-ubuntu22-gcc54-python2718-v1
+      - name: Set firmware version from git tag
+        if: github.ref_type == 'tag'
         env:
-          GH_TOKEN: ${{ github.token }}
           TAG_NAME: ${{ github.ref_name }}
         run: |
-          gh release create "${TAG_NAME}" release/* \
-            --title "${TAG_NAME}" \
-            --generate-notes
+          firmware_version="${TAG_NAME#v}"
+          sed -i -E "s/^#define (M1_VERSION|FIRMWARE_REVISION) \".*\"/#define \1 \"${firmware_version}\"/" M1/m1.h M1/mico_config.h
+      - name: Build M1 firmware
+        run: ./M1/build.sh
+      - name: Prepare release assets
+        run: |
+          mkdir -p release
+          cp build/m1-release/phicomm_m1.ota.bin build/m1-release/phicomm_m1.all.bin release/
+          (cd release && sha256sum *.bin > SHA256SUMS-m1)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: m1-firmware
+          path: release/
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: Release both products
+    needs: [tc1, m1]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: '*-firmware'
+          merge-multiple: true
+          path: release
+      - name: Publish both products
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          for name in phicomm_tc1_a1.ota.bin phicomm_tc1_a1.all.bin phicomm_m1.ota.bin phicomm_m1.all.bin; do
+            test -s "release/$name"
+          done
+          cat release/SHA256SUMS-tc1 release/SHA256SUMS-m1 > release/SHA256SUMS
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release upload "$TAG_NAME" release/*.bin release/SHA256SUMS --clobber
+          else
+            gh release create "$TAG_NAME" release/*.bin release/SHA256SUMS --title "$TAG_NAME" --generate-notes
+          fi
