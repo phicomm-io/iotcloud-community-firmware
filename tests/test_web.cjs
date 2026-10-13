@@ -6,6 +6,7 @@ const flush=()=>new Promise(resolve=>setImmediate(resolve));
 (async()=>{for(const product of ['A1','M1']){
  const html=fs.readFileSync(product+'/web/index.html','utf8');
  const dom=new JSDOM(html,{runScripts:'outside-only',url:'http://device.local'}),w=dom.window;
+ w.TextEncoder=require("node:util").TextEncoder;
  const calls=[];
  const fixtures={
  '/binding/config':{revision:1,group:'',group_force_mqtt:false,group_recovery:true,group_timeout_ms:1000,group_recovery_seconds:60,peers:[],members:[]},
@@ -25,5 +26,14 @@ const flush=()=>new Promise(resolve=>setImmediate(resolve));
  for(let i=1;i<6;i++){tabs[i].click();await flush();await flush();assert.ok(w.document.getElementById('featureFields').textContent.length);}
  tabs[3].click();await flush();add=[...w.document.querySelectorAll('#featureFields button')].find(x=>x.textContent==='添加每周定时事件');add.click();w.document.getElementById('featureForm').dispatchEvent(new w.Event('submit',{cancelable:true}));await flush();assert.ok(calls.some(([p,b])=>p==='/schedule/config'&&b?.events[0]?.days===127));
  tabs[4].click();await flush();add=[...w.document.querySelectorAll('#featureFields button')].find(x=>x.textContent==='添加睡眠时段');add.click();w.document.getElementById('featureForm').dispatchEvent(new w.Event('submit',{cancelable:true}));await flush();assert.ok(calls.some(([p,b])=>p==='/sleep/config'&&b?.windows[0]?.start===1320&&b.windows[0].end===420));
+ const user="a+b.o'neil@example.com";
+ w.document.getElementById('mqttMode').value='account';
+ w.document.getElementById('mqttUser').value=user;
+ w.document.getElementById('mqttPassword').value='p'.repeat(256);
+ w.document.getElementById('mqttForm').dispatchEvent(new w.Event('submit',{cancelable:true}));await flush();await flush();
+ assert.ok(calls.some(([p,b])=>p==='/mqtt/config'&&b?.user===user&&b?.password.length===256&&b?.topic_mode==='account'));
+ w.document.getElementById('mqttPassword').value='';w.document.getElementById('clearMqttPassword').checked=true;
+ w.document.getElementById('mqttForm').dispatchEvent(new w.Event('submit',{cancelable:true}));await flush();await flush();
+ assert.ok(calls.some(([p,b])=>p==='/mqtt/config'&&b?.clear_password&&b?.password===''));
  dom.window.close();console.log(product+' WebUI tabs, binding edit, timer and cross-midnight sleep forms passed');
 }})().catch(error=>{console.error(error);process.exit(1)});

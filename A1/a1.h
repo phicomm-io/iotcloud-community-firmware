@@ -3,6 +3,7 @@
 #include "mico_system.h"
 #include "protocol.h"
 #include "json.h"
+#include "../common/mqtt_account.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -10,7 +11,7 @@
 #define A1_VERSION "0.9.0"
 #define A1_PRODUCT "PHICOMM_A1_EMW3080"
 #define A1_CONFIG_MAGIC 0x41314346u
-#define A1_CONFIG_VERSION 2u
+#define A1_CONFIG_VERSION 3u
 #define A1_APP_OFFSET 0x75000u
 #define A1_APP_CPU_ADDRESS 0x08088000u
 #define A1_APP_LIMIT 0x40000u
@@ -20,11 +21,12 @@
 typedef struct {
     uint32_t magic, version, revision;
     char ssid[33], wifi_password[65];
-    char mqtt_host[128], mqtt_user[64], mqtt_password[64];
+    char mqtt_host[128], mqtt_user[64], mqtt_password[MQTT_PASSWORD_MAX + 1];
     char name[64], web_password[33];
     uint16_t mqtt_port;
     uint8_t fan_on, speed, led_enabled, led_always_on;
     uint8_t brightness, red, green, blue, child_lock;
+    uint8_t mqtt_topic_mode;
 } a1_config_t;
 
 typedef struct {
@@ -34,6 +36,8 @@ typedef struct {
     bool fan_ready, panel_ready, led_visible, config_dirty;
     bool reboot_pending, ota_active, scan_busy;
     uint8_t applied_speed, panel_raw[3];
+    uint8_t mqtt_status;
+    bool mqtt_cleanup_warning;
     unsigned ota_progress, scan_count;
     char ip[16], ap_name[32], ota_state[16], ota_error[96], save_error[96];
     struct { char ssid[33]; int rssi; } scan[32];

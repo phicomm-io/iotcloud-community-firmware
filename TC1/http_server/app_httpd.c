@@ -53,6 +53,7 @@
 #include "timed_task/timed_task.h"
 #include "ota_server/user_ota.h"
 #include "mqtt_server/user_mqtt_client.h"
+#include "json.h"
 
 static bool is_http_init;
 static bool is_handlers_registered;
@@ -168,32 +169,52 @@ exit:
 }
 
 static int HttpGetTc1Status(httpd_request_t *req) {
-    char *sockets = GetSocketStatus();
-    char *short_click_config = GetButtonClickConfig();
-    char *tc1_status = malloc(1500);
-    char *socket_names = malloc(512);
-    sprintf(socket_names, "%s,%s,%s,%s,%s,%s",
-            user_config->socket_names[0],
-            user_config->socket_names[1],
-            user_config->socket_names[2],
-            user_config->socket_names[3],
-            user_config->socket_names[4],
-            user_config->socket_names[5]);
-    sprintf(tc1_status, TC1_STATUS_JSON, sockets, ip_status.mode,
-            sys_config->micoSystemConfig.ssid, sys_config->micoSystemConfig.user_key,
-            user_config->ap_name, user_config->ap_key, MQTT_SERVER, MQTT_SERVER_PORT,
-            MQTT_SERVER_USR, MQTT_SERVER_PWD,
-            VERSION, ip_status.ip, ip_status.mask, ip_status.gateway, user_config->mqtt_report_freq,
-            user_config->power_led_enabled, 0L, socket_names, childLockEnabled,
-            sys_config->micoSystemConfig.name,
-            (unsigned int) user_config->power_coefficient_x100, short_click_config);
-
+    json_object *status = json_object_new_object();
+    if (!status) return kGeneralErr;
+    char socket_names[512], number[16];
+    snprintf(socket_names, sizeof(socket_names), "%s,%s,%s,%s,%s,%s",
+             user_config->socket_names[0], user_config->socket_names[1],
+             user_config->socket_names[2], user_config->socket_names[3],
+             user_config->socket_names[4], user_config->socket_names[5]);
+#define STATUS_STRING(key, value) json_object_object_add(status, key, json_object_new_string(value))
+#define STATUS_INT(key, value) json_object_object_add(status, key, json_object_new_int(value))
+    STATUS_STRING("sockets", GetSocketStatus());
+    STATUS_INT("mode", ip_status.mode);
+    STATUS_STRING("station_ssid", sys_config->micoSystemConfig.ssid);
+    STATUS_STRING("station_pwd", sys_config->micoSystemConfig.user_key);
+    STATUS_STRING("ap_ssid", user_config->ap_name);
+    STATUS_STRING("ap_pwd", user_config->ap_key);
+    STATUS_STRING("mqtt_addr", MQTT_SERVER);
+    STATUS_INT("mqtt_port", MQTT_SERVER_PORT);
+    STATUS_STRING("mqtt_usr", MQTT_SERVER_USR);
+    STATUS_STRING("mqtt_pwd", "");
+    STATUS_STRING("version", VERSION);
+    STATUS_STRING("ip", ip_status.ip);
+    STATUS_STRING("mask", ip_status.mask);
+    STATUS_STRING("gateway", ip_status.gateway);
+    snprintf(number, sizeof(number), "%u", user_config->mqtt_report_freq);
+    STATUS_STRING("reportFreq", number);
+    STATUS_INT("ledEnabled", user_config->power_led_enabled);
+    STATUS_INT("up_time", 0);
+    STATUS_STRING("socketNames", socket_names);
+    STATUS_INT("child_lock_enabled", childLockEnabled);
+    STATUS_STRING("deviceName", sys_config->micoSystemConfig.name);
+    STATUS_INT("powerCoefficientX100", user_config->power_coefficient_x100);
+    char clicks[512];
+    snprintf(clicks, sizeof(clicks), "%s", GetButtonClickConfig());
+    for (char *c = clicks; *c; ++c) if (*c == 39) *c = 34;
+    json_object_object_add(status, "btnClicks", json_tokener_parse(clicks));
+    STATUS_STRING("mqtt_topic_mode", user_config->mqtt_topic_mode ? "account" : "legacy");
+    STATUS_STRING("mqtt_status", mqtt_status_name(tc1_mqtt_status));
+    json_object_object_add(status, "mqtt_password_set", json_object_new_boolean(user_config->mqtt_password[0] != 0));
+    json_object_object_add(status, "mqtt_cleanup_warning", json_object_new_boolean(tc1_mqtt_cleanup_warning));
+#undef STATUS_STRING
+#undef STATUS_INT
+    const char *body = json_object_to_json_string(status);
     OSStatus err = kNoErr;
-    send_http(tc1_status, strlen(tc1_status), exit, &err);
-
-    exit:
-    if (socket_names) free(socket_names);
-    if (tc1_status) free(tc1_status);
+    send_http(body, strlen(body), exit, &err);
+exit:
+    json_object_put(status);
     return err;
 }
 
@@ -554,28 +575,55 @@ static int HttpSetRebootSystem(httpd_request_t *req) {
     return err;
 }
 
+static bool mqtt_json_string(json_object *o, const char *key, char *out, size_t capacity, bool keep_blank) {
+    json_object *v=json_object_object_get(o,key);
+    if(!v) return true;
+    if(!json_object_is_type(v,json_type_string)) return false;
+    const char *text=json_object_get_string(v);
+    if(strlen(text)!=(size_t)json_object_get_string_len(v) || strlen(text)>=capacity || strpbrk(text,"\r\n")) return false;
+    if(*text || !keep_blank) strcpy(out,text);
+    return true;
+}
 static int HttpSetMqttConfig(httpd_request_t *req) {
-    OSStatus err = kNoErr;
-
-    int buf_size = 97;
-    char *buf = malloc(buf_size);
-
-    err = httpd_get_data(req, buf, buf_size);
-    require_noerr(err, exit);
-
-    sscanf(buf, "%s %d %s %s", MQTT_SERVER, &MQTT_SERVER_PORT, MQTT_SERVER_USR, MQTT_SERVER_PWD);
-    mico_system_context_update(sys_config);
-    if (!(MQTT_SERVER[0] < 0x20 || MQTT_SERVER[0] > 0x7f || MQTT_SERVER_PORT < 1)){
-    err = UserMqttInit();
-    require_noerr(err, exit);
+    OSStatus err=kNoErr;
+    char buf[2048]={0}, host[32], user[64], password[257];
+    strcpy(host,user_config->mqtt_ip); strcpy(user,user_config->mqtt_user); strcpy(password,user_config->mqtt_password);
+    int port=user_config->mqtt_port, mode=user_config->mqtt_topic_mode;
+    bool valid=false; json_object *o=NULL;
+    err=httpd_get_data(req,buf,sizeof(buf)-1); require_noerr(err,exit);
+    if(req->body_nbytes>=sizeof(buf) || memchr(buf,0,req->body_nbytes)) goto invalid;
+    if(buf[0]=='{') {
+        o=json_tokener_parse(buf);
+        if(!o || !json_object_is_type(o,json_type_object)) goto invalid;
+        valid=mqtt_json_string(o,"host",host,sizeof(host),false) && mqtt_json_string(o,"user",user,sizeof(user),false) && mqtt_json_string(o,"password",password,sizeof(password),true);
+        json_object *v=json_object_object_get(o,"port");
+        if(v) { if(!json_object_is_type(v,json_type_int)) valid=false; else port=json_object_get_int(v); }
+        v=json_object_object_get(o,"topic_mode");
+        if(v) {
+            if(!json_object_is_type(v,json_type_string) || json_object_get_string_len(v)!=(int)strlen(json_object_get_string(v)) || (strcmp(json_object_get_string(v),"legacy") && strcmp(json_object_get_string(v),"account"))) valid=false;
+            else mode=!strcmp(json_object_get_string(v),"account");
+        }
+        v=json_object_object_get(o,"clear_password");
+        if(v && json_object_is_type(v,json_type_boolean) && json_object_get_boolean(v)) password[0]=0;
+    } else {
+        /* Compatibility for old offline pages: bounded tokens; reject excess. */
+        char extra;
+        valid=sscanf(buf,"%31s %d %63s %256s %c",host,&port,user,password,&extra)==4;
     }
-    send_http("OK", 2, exit, &err);
-
-    exit:
-    if (buf) free(buf);
+    if(!valid || port<1 || port>65535 || (mode && !*user)) goto invalid;
+    mico_rtos_suspend_all_thread();
+    strcpy(user_config->mqtt_ip,host); strcpy(user_config->mqtt_user,user); strcpy(user_config->mqtt_password,password);
+    user_config->mqtt_port=port; user_config->mqtt_topic_mode=mode;
+    mico_rtos_resume_all_thread();
+    err=mico_system_context_update(sys_config); require_noerr(err,exit);
+    err=UserMqttInit(); require_noerr(err,exit);
+    send_http("OK",2,exit,&err); goto exit;
+invalid:
+    send_http("INVALID_MQTT_CONFIG",19,exit,&err);
+exit:
+    if(o) json_object_put(o);
     return err;
 }
-
 
 static int HttpSetMqttReportFreq(httpd_request_t *req) {
     OSStatus err = kNoErr;

@@ -137,6 +137,9 @@ json_object *a1_status_json(void)
     str(o, "version", A1_VERSION); str(o, "device_id", a1_id); str(o, "name", cfg.name);
     str(o, "ssid", cfg.ssid); str(o, "ip", s.ip); str(o, "ap_name", s.ap_name);
     str(o, "mqtt_host", cfg.mqtt_host); integer(o, "mqtt_port", cfg.mqtt_port); str(o, "mqtt_user", cfg.mqtt_user);
+    str(o, "mqtt_topic_mode", cfg.mqtt_topic_mode ? "account" : "legacy");
+    str(o, "mqtt_status", mqtt_status_name(s.mqtt_status));
+    json_bool(o, "mqtt_cleanup_warning", s.mqtt_cleanup_warning);
     json_bool(o, "web_password_set", cfg.web_password[0] != 0);
     json_bool(o, "wifi_password_set", cfg.wifi_password[0] != 0);
     json_bool(o, "mqtt_password_set", cfg.mqtt_password[0] != 0);
@@ -287,7 +290,7 @@ static void handle(int fd)
         response(fd, code, "application/json", body, strlen(body), false);
         json_object_put(result); return;
     }
-    bool valid = true, saved = false; int number;
+    bool valid = true, saved = false; int number = 0;
     if (!strcmp(req.path, "/wifi/config")) {
         char old_ssid[33]; strcpy(old_ssid, cfg.ssid);
         valid = get_string(o, "ssid", cfg.ssid, sizeof(cfg.ssid), false) && cfg.ssid[0];
@@ -307,6 +310,14 @@ static void handle(int fd)
         json_object *clear = json_object_object_get(o, "clear_password");
         if (clear && json_object_is_type(clear, json_type_boolean) && json_object_get_boolean(clear))
             cfg.mqtt_password[0] = 0;
+        json_object *mode = json_object_object_get(o, "topic_mode");
+        if (mode) {
+            if (!json_object_is_type(mode, json_type_string) ||
+                json_object_get_string_len(mode) != (int)strlen(json_object_get_string(mode)) ||
+                (strcmp(json_object_get_string(mode), "legacy") && strcmp(json_object_get_string(mode), "account"))) valid = false;
+            else cfg.mqtt_topic_mode = !strcmp(json_object_get_string(mode), "account");
+        }
+        if (cfg.mqtt_topic_mode && !cfg.mqtt_user[0]) valid = false;
         if (valid) { cfg.mqtt_port = number; saved = a1_config_save(&cfg); }
     } else if (!strcmp(req.path, "/deviceName")) {
         valid = get_string(o, "name", cfg.name, sizeof(cfg.name), false) && cfg.name[0];

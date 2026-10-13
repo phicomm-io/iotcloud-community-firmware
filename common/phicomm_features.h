@@ -7,7 +7,8 @@
 #define FEATURE_MAX_EVENTS 8
 #define FEATURE_MAX_SLEEP 4
 #define FEATURE_WIRE_MAX 1200
-#define FEATURE_TOPIC_MAX 128
+#include "mqtt_account.h"
+#define FEATURE_TOPIC_MAX MQTT_TOPIC_MAX
 #define FEATURE_PORT 11288
 #define FEATURE_MAGIC 0x42494e32u
 #define FEATURE_STALE_MS 15000u
@@ -127,8 +128,10 @@ json_object *feature_json(const char *domain);
 /* Returns HTTP status; response ownership passes to caller. */
 int feature_set(const char *domain, json_object *, json_object **response);
 bool feature_mqtt_input(const char *, const void *, size_t, bool);
-void feature_mqtt_service(int (*publish)(const char *, const char *, bool),
+int feature_mqtt_service(int (*publish)(const char *, const char *, bool),
                           bool);
+void feature_mqtt_session(const mqtt_account_t *);
+int feature_mqtt_cleanup(int (*publish)(const char *, const char *, bool));
 unsigned feature_mqtt_filters(char filters[12][FEATURE_TOPIC_MAX]);
 bool feature_bound(void);
 bool feature_is_coordinator(void);

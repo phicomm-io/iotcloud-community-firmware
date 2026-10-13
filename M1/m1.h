@@ -3,6 +3,7 @@
 #include "mico_system.h"
 #include "protocol.h"
 #include "json.h"
+#include "../common/mqtt_account.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -10,7 +11,7 @@
 #define M1_VERSION "0.9.0"
 #define M1_PRODUCT "PHICOMM_M1_EMW3080"
 #define M1_CONFIG_MAGIC 0x4d314346u
-#define M1_CONFIG_VERSION 2u
+#define M1_CONFIG_VERSION 3u
 #define M1_APP_OFFSET 0x75000u
 #define M1_APP_CPU_ADDRESS 0x08088000u
 #define M1_APP_LIMIT 0x40000u
@@ -19,11 +20,12 @@
 typedef struct {
     uint32_t magic, version, revision;
     char ssid[33], wifi_password[65];
-    char mqtt_host[128], mqtt_user[64], mqtt_password[64];
+    char mqtt_host[128], mqtt_user[64], mqtt_password[MQTT_PASSWORD_MAX + 1];
     char name[64], web_password[33];
     uint16_t mqtt_port;
     uint8_t brightness, last_on;
     int16_t timezone_minutes;
+    uint8_t mqtt_topic_mode;
 } m1_config_t;
 
 typedef struct {
@@ -33,6 +35,8 @@ typedef struct {
     uint32_t config_generation, reboot_at;
     bool wifi_connected, ap_active, mqtt_connected, uart_ready;
     bool reboot_pending, ota_active, scan_busy;
+    uint8_t mqtt_status;
+    bool mqtt_cleanup_warning;
     unsigned ota_progress, scan_count;
     char ip[16], ap_name[32], ota_state[16], ota_error[96];
     struct { char ssid[33]; int rssi; } scan[32];
