@@ -1,4 +1,13 @@
 #include "main.h"
+#include "config_legacy.h"
+#include <stddef.h>
+
+uint32_t app_config_legacy_size(void) { return sizeof(user_config_v10_t); }
+bool app_config_migrate_legacy(void *data, uint32_t size)
+{
+    return tc1_migrate_v10(data,size);
+}
+
 #include "stdio.h"
 #include "stdlib.h"
 #include "string.h"
@@ -69,6 +78,7 @@ void appRestoreDefault_callback(void *const user_config_data, uint32_t size) {
     userConfigDefault->mqtt_port = 0;
     userConfigDefault->mqtt_user[0] = 0;
     userConfigDefault->mqtt_password[0] = 0;
+    userConfigDefault->mqtt_topic_mode = MQTT_TOPIC_LEGACY;
     userConfigDefault->web_password[0] = 0;
     userConfigDefault->task_top = NULL;
     userConfigDefault->task_count = 0;

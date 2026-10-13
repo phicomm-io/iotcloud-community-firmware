@@ -42,8 +42,9 @@ static json_object *group_envelope(const feature_config_t *c, unsigned i,
   return o;
 }
 static void group_mqtt(unsigned i, const feature_config_t *c, json_object *o) {
-  char topic[96];
-  snprintf(topic, sizeof(topic), "phicomm/bind/%s", c->members[i].id);
+  char topic[FEATURE_TOPIC_MAX];
+  mqtt_account_t account=mqtt_snapshot();
+  if (!mqtt_aux(&account,"bind",c->members[i].id,topic,sizeof(topic))) return;
   enqueue(topic, o, false);
 }
 static void group_send(const feature_config_t *c, unsigned i, json_object *o) {

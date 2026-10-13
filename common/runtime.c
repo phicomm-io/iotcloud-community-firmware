@@ -14,6 +14,36 @@
 #include "config_json.c"
 #include "engine.c"
 static mico_mutex_t feature_lock;
+static mico_mutex_t namespace_lock;
+static mqtt_account_t feature_account;
+static int publish_error;
+static mqtt_account_t mqtt_snapshot(void) {
+  mqtt_account_t a;
+  mico_rtos_lock_mutex(&namespace_lock); a = feature_account;
+  mico_rtos_unlock_mutex(&namespace_lock); return a;
+}
+static bool scoped_topic(const char *topic) {
+  mqtt_account_t a = mqtt_snapshot();
+  if (!*topic) return false;
+  if (!a.mode) {
+    if (!strncmp(topic,"phicomm/linkage/",16)) return false;
+    const char *kinds[]={"bind","address","m1","a1"};
+    char prefix[32];
+    for(unsigned i=0;i<4;++i) {
+      mqtt_format(prefix,sizeof(prefix),"phicomm/%s/",kinds[i]);
+      if(!strncmp(topic,prefix,strlen(prefix)) && !strncmp(topic+strlen(prefix),"u_",2)) return false;
+    }
+    return true;
+  }
+  char prefix[192];
+  const char *kinds[] = {"bind", "address", "linkage", "m1", "a1"};
+  for (unsigned i=0; i<5; ++i) {
+    mqtt_format(prefix,sizeof(prefix),"phicomm/%s/%s/",kinds[i],a.key);
+    if (!strncmp(topic,prefix,strlen(prefix))) return true;
+  }
+  return false;
+}
+
 static feature_config_t configuration;
 static feature_sample_t samples[8], local_sample;
 static feature_pid_t pid;
@@ -53,6 +83,7 @@ static bool mqtt_online;
 static uint32_t mqtt_tick;
 static bool was_coordinator;
 static char published_root[FEATURE_TOPIC_MAX], published_ids[8][13];
+static feature_config_t *published_layout;
 static unsigned published_count;
 #else
 static uint32_t mirror_sequence;
@@ -79,6 +110,7 @@ static bool peer_current(const feature_config_t *c, unsigned i) {
 }
 
 static bool enqueue(const char *t, json_object *o, bool retain) {
+  if (!scoped_topic(t)) return false;
   const char *s = json_object_to_json_string(o);
   size_t n = strlen(s);
   if (n > 8192)
@@ -93,7 +125,7 @@ static bool enqueue(const char *t, json_object *o, bool retain) {
     free(b);
     return false;
   }
-  snprintf(queue[queued].topic, FEATURE_TOPIC_MAX, "%s", t);
+  mqtt_format(queue[queued].topic, FEATURE_TOPIC_MAX, "%s", t);
   queue[queued].body = b;
   queue[queued].retained = retain;
   queued++;
@@ -179,6 +211,10 @@ static void root_for(const feature_config_t *c, unsigned i,
                out, FEATURE_TOPIC_MAX);
 #endif
   UNUSED_PARAMETER(i);
+  mqtt_account_t account = mqtt_snapshot();
+  char original[128];
+  strcpy(original,out);
+  mqtt_linkage(&account,original,out,FEATURE_TOPIC_MAX);
 }
 static json_object *envelope(const feature_config_t *c, unsigned i,
                              const char *op, unsigned request) {
@@ -233,7 +269,7 @@ static bool send_udp(const char *ip, json_object *o) {
 }
 static bool send_peer(const feature_config_t *c, unsigned i, json_object *o,
                       bool mqtt_only) {
-  char topic[96];
+  char topic[FEATURE_TOPIC_MAX];
   bool lan;
   char ip[16];
   lock();
@@ -246,7 +282,8 @@ static bool send_peer(const feature_config_t *c, unsigned i, json_object *o,
   unlock();
   if (!mqtt_only && !c->peers[i].force_mqtt && lan && send_udp(ip, o))
     return true;
-  snprintf(topic, sizeof(topic), "phicomm/bind/%s", c->peers[i].id);
+  mqtt_account_t account = mqtt_snapshot();
+  if (!mqtt_aux(&account, "bind", c->peers[i].id, topic, sizeof(topic))) return false;
   return enqueue(topic, o, false);
 }
 static void group_config_changed(const feature_config_t *,
@@ -766,7 +803,7 @@ int feature_set(const char *d, json_object *o, json_object **response) {
     }
     char root[FEATURE_TOPIC_MAX], topic[FEATURE_TOPIC_MAX];
     root_for(c, 0, root);
-    snprintf(topic, sizeof(topic), "%s/%s/set", root, d);
+    mqtt_format(topic, sizeof(topic), "%s/%s/set", root, d);
     bool ok = rpc_send(c, primary_peer(c), "config_set", d, o);
     *response = json_object_new_object();
     number(*response, "code", ok ? 202 : 503);
@@ -948,8 +985,9 @@ void feature_light_frame(uint32_t out[32], unsigned brightness, bool enabled,
     }
 }
 unsigned feature_mqtt_filters(char filters[12][FEATURE_TOPIC_MAX]) {
-  snprintf(filters[0], FEATURE_TOPIC_MAX, "phicomm/bind/%s", LOCAL_ID);
-  strcpy(filters[1], "phicomm/address/+");
+  mqtt_account_t account = mqtt_snapshot();
+  mqtt_aux(&account,"bind",LOCAL_ID,filters[0],FEATURE_TOPIC_MAX);
+  mqtt_aux(&account,"address","+",filters[1],FEATURE_TOPIC_MAX);
   unsigned n = 2;
   feature_config_t *c = malloc(sizeof(*c));
   if (!c)
@@ -959,7 +997,7 @@ unsigned feature_mqtt_filters(char filters[12][FEATURE_TOPIC_MAX]) {
   char root[FEATURE_TOPIC_MAX];
   root_for(c, 0, root);
   if (c->peer_count || c->group[0]) {
-    snprintf(filters[n++], FEATURE_TOPIC_MAX, "%s/#", root);
+    mqtt_format(filters[n++], FEATURE_TOPIC_MAX, "%s/#", root);
   }
 #else
   for (unsigned i = 0; i < c->peer_count && n < 10; i++) {
@@ -968,11 +1006,11 @@ unsigned feature_mqtt_filters(char filters[12][FEATURE_TOPIC_MAX]) {
     bool duplicate = false;
     for (unsigned j = 2; j < n; j++) {
       char f[FEATURE_TOPIC_MAX];
-      snprintf(f, sizeof(f), "%s/#", root);
+      mqtt_format(f, sizeof(f), "%s/#", root);
       duplicate |= !strcmp(f, filters[j]);
     }
     if (!duplicate)
-      snprintf(filters[n++], FEATURE_TOPIC_MAX, "%s/#", root);
+      mqtt_format(filters[n++], FEATURE_TOPIC_MAX, "%s/#", root);
   }
 #endif
   free(c);
@@ -982,12 +1020,16 @@ static bool virtual_input(const char *t, const void *data, size_t n,
                           bool retained);
 bool feature_mqtt_input(const char *t, const void *data, size_t n,
                         bool retained) {
-  if (!strncmp(t, "phicomm/address/", 16)) {
+  mqtt_account_t account = mqtt_snapshot();
+  char address_prefix[192];
+  mqtt_aux(&account,"address","",address_prefix,sizeof(address_prefix));
+  size_t address_length = strlen(address_prefix);
+  if (!strncmp(t,address_prefix,address_length)) {
     json_object *o = parse(data, n);
     if (o) {
       char mac[13];
       const char *ip = string(o, "ip");
-      if (feature_mac(t + 16, mac) && strlen(ip) < 16 &&
+      if (feature_mac(t + address_length, mac) && strlen(ip) < 16 &&
           inet_addr(ip) != INADDR_NONE && inet_addr(ip) != 0) {
         lock();
         for (unsigned i = 0; i < configuration.peer_count; i++)
@@ -1038,8 +1080,8 @@ bool feature_mqtt_input(const char *t, const void *data, size_t n,
     }
     return true;
   }
-  char bind[96];
-  snprintf(bind, sizeof(bind), "phicomm/bind/%s", LOCAL_ID);
+  char bind[FEATURE_TOPIC_MAX];
+  mqtt_aux(&account,"bind",LOCAL_ID,bind,sizeof(bind));
   if (!strcmp(t, bind)) {
     json_object *o = parse(data, n);
     if (o) {
@@ -1048,19 +1090,19 @@ bool feature_mqtt_input(const char *t, const void *data, size_t n,
     }
     return true;
   }
-  char original[64];
+  char original[FEATURE_TOPIC_MAX];
 #ifdef FEATURE_DEVICE_A1
-  snprintf(original, sizeof(original), "phicomm/a1/%s/", LOCAL_ID);
+  mqtt_leaf(&account,"",original,sizeof(original));
 #else
-  snprintf(original, sizeof(original), "phicomm/m1/%s/", LOCAL_ID);
+  mqtt_leaf(&account,"",original,sizeof(original));
 #endif
   if (!strncmp(t, original, strlen(original))) {
     const char *leaf = t + strlen(original);
     const char *domains[] = {"binding",  "linkage", "light",
                              "schedule", "sleep",   "time"};
     for (unsigned d = 0; d < 6; d++) {
-      char action[40], result[96];
-      snprintf(action, sizeof(action), "%s/set", topic_domain(domains[d]));
+      char action[40], result[FEATURE_TOPIC_MAX];
+      mqtt_format(action, sizeof(action), "%s/set", topic_domain(domains[d]));
       if (!strcmp(leaf, action)) {
         if (retained)
           return true;
@@ -1069,7 +1111,7 @@ bool feature_mqtt_input(const char *t, const void *data, size_t n,
           feature_set(domains[d], o, &r);
           json_object_put(o);
           if (r) {
-            snprintf(result, sizeof(result), "%s%s/result", original,
+            mqtt_format(result, sizeof(result), "%s%s/result", original,
                      topic_domain(domains[d]));
             enqueue(result, r, false);
             json_object_put(r);
@@ -1077,13 +1119,13 @@ bool feature_mqtt_input(const char *t, const void *data, size_t n,
         }
         return true;
       }
-      snprintf(action, sizeof(action), "%s/get", topic_domain(domains[d]));
+      mqtt_format(action, sizeof(action), "%s/get", topic_domain(domains[d]));
       if (!strcmp(leaf, action)) {
         if (retained)
           return true;
         json_object *o = feature_json(domains[d]);
         if (o) {
-          snprintf(result, sizeof(result), "%s%s/state", original,
+          mqtt_format(result, sizeof(result), "%s%s/state", original,
                    topic_domain(domains[d]));
           enqueue(result, o, true);
           json_object_put(o);
@@ -1095,32 +1137,58 @@ bool feature_mqtt_input(const char *t, const void *data, size_t n,
   return virtual_input(t, data, n, retained);
 }
 static void virtual_service(int (*publish)(const char *, const char *, bool));
-void feature_mqtt_service(int (*publish)(const char *, const char *, bool),
-                          bool connected) {
-  if (!connected) {
-    mqtt_online = false;
-    return;
+void feature_mqtt_session(const mqtt_account_t *account) {
+  mico_rtos_lock_mutex(&namespace_lock);
+  bool changed=feature_account.mode!=account->mode || strcmp(feature_account.key,account->key) ||
+      strcmp(feature_account.model,account->model) || strcmp(feature_account.mac,account->mac);
+  feature_account = *account;
+  mico_rtos_unlock_mutex(&namespace_lock);
+  lock();
+  for (unsigned i=0; i<queued; ++i) free(queue[i].body);
+  queued=queued_bytes=0; mqtt_online=false;
+  /* A pending LAN RPC must not fall back into a different MQTT session. */
+  for (unsigned i=0; i<8; ++i) {
+    if (peers[i].rpc) json_object_put(peers[i].rpc);
+    peers[i].rpc=NULL;
+#ifdef FEATURE_DEVICE_A1
+    if (group_members[i].pending) json_object_put(group_members[i].pending);
+    group_members[i].pending=NULL;
+#endif
   }
-  virtual_service(publish);
-  for (unsigned i = 0; i < 4; i++) {
-    char topic[FEATURE_TOPIC_MAX];
-    char *body = NULL;
-    bool retained = false;
+#ifdef FEATURE_DEVICE_A1
+  mqtt_tick=0;
+  if(changed) {
+    published_root[0]=0; published_count=0;
+    free(published_layout); published_layout=NULL;
+  }
+#else
+  (void)changed; mirror_sequence=local_sample.sequence;
+#endif
+  unlock();
+}
+static int (*active_publish)(const char *, const char *, bool);
+static int checked_publish(const char *topic, const char *body, bool retain) {
+  if (publish_error) return publish_error;
+  publish_error=active_publish(topic,body,retain); return publish_error;
+}
+int feature_mqtt_service(int (*publish)(const char *, const char *, bool), bool connected) {
+  if (!connected) { mqtt_online=false; return 0; }
+  active_publish=publish; publish_error=0;
+  virtual_service(checked_publish);
+  for (unsigned i=0; i<4 && !publish_error; ++i) {
+    char topic[FEATURE_TOPIC_MAX]; char *body=NULL; bool retained=false;
     lock();
     if (queued) {
-      strcpy(topic, queue[0].topic);
-      body = queue[0].body;
-      retained = queue[0].retained;
-      queued--;
-      queued_bytes -= strlen(body) + 1;
-      memmove(queue, queue + 1, queued * sizeof(queue[0]));
+      strcpy(topic,queue[0].topic); body=queue[0].body; retained=queue[0].retained;
+      queued--; queued_bytes-=strlen(body)+1;
+      memmove(queue,queue+1,queued*sizeof(queue[0]));
     }
     unlock();
-    if (!body)
-      break;
-    publish(topic, body, retained);
+    if (!body) break;
+    if (scoped_topic(topic)) checked_publish(topic,body,retained);
     free(body);
   }
+  return publish_error;
 }
 static void rpc_poll(const feature_config_t *c, unsigned i, uint32_t now) {
   json_object *expired = NULL;
@@ -1185,8 +1253,9 @@ static void feature_worker(mico_thread_arg_t arg) {
 #endif
     if (state.mqtt_connected && (uint32_t)(now - announce_at) >= 5000) {
       announce_at = now;
-      char topic[96];
-      snprintf(topic, sizeof(topic), "phicomm/address/%s", LOCAL_ID);
+      char topic[FEATURE_TOPIC_MAX];
+      mqtt_account_t account = mqtt_snapshot();
+      mqtt_aux(&account,"address",LOCAL_ID,topic,sizeof(topic));
       json_object *o = json_object_new_object();
       js(o, "mac", LOCAL_ID);
       js(o, "ip", state.ip);
@@ -1358,7 +1427,7 @@ static void feature_worker(mico_thread_arg_t arg) {
           json_object *o = parse(wire, n);
           if (o) {
             char ip[16];
-            snprintf(ip, sizeof(ip), "%s", inet_ntoa(from.sin_addr));
+            mqtt_format(ip, sizeof(ip), "%s", inet_ntoa(from.sin_addr));
             incoming(o, true, false, ip);
             json_object_put(o);
           }
@@ -1393,9 +1462,16 @@ void feature_clock_tick(void) {
   free(c);
 }
 OSStatus feature_start(void) {
-  OSStatus e = mico_rtos_init_mutex(&feature_lock);
+  OSStatus e = mico_rtos_init_mutex(&namespace_lock);
+  if (e != kNoErr) return e;
+  e = mico_rtos_init_mutex(&feature_lock);
   if (e != kNoErr)
     return e;
+#ifdef FEATURE_DEVICE_A1
+  mqtt_account_init(&feature_account,MQTT_TOPIC_LEGACY,"a1","",LOCAL_ID);
+#else
+  mqtt_account_init(&feature_account,MQTT_TOPIC_LEGACY,"m1","",LOCAL_ID);
+#endif
   feature_config_get(&configuration);
   schedule_valid = configuration.scheduled_valid;
   scheduled_on = !configuration.scheduled_off;
@@ -1418,7 +1494,7 @@ static bool virtual_input(const char *t, const void *data, size_t n,
   const char *leaf = NULL;
 #ifndef FEATURE_DEVICE_A1
   char selected_root[FEATURE_TOPIC_MAX];
-  snprintf(selected_root, sizeof(selected_root), "%s", root);
+  mqtt_format(selected_root, sizeof(selected_root), "%s", root);
 #endif
 #ifdef FEATURE_DEVICE_A1
   if (!strncmp(t, root, strlen(root)) && t[strlen(root)] == '/')
@@ -1443,7 +1519,7 @@ static bool virtual_input(const char *t, const void *data, size_t n,
   }
   for (unsigned i = 0; i < COUNT(domains); i++) {
     char state[40];
-    snprintf(state, sizeof(state), "%s/state", topic_domain(domains[i]));
+    mqtt_format(state, sizeof(state), "%s/state", topic_domain(domains[i]));
     if (!strcmp(leaf, state)) {
       json_object *o = parse(data, n);
       if (o) {
@@ -1466,17 +1542,17 @@ static bool virtual_input(const char *t, const void *data, size_t n,
 #ifdef FEATURE_DEVICE_A1
   char member[20], member_mac[18];
   feature_colon_mac(LOCAL_ID, member_mac);
-  snprintf(member, sizeof(member), "%s/", member_mac);
+  mqtt_format(member, sizeof(member), "%s/", member_mac);
   if (!strncmp(leaf, member, strlen(member)))
     leaf += strlen(member);
   for (unsigned d = 0; d < COUNT(domains); d++) {
     char get[40], set[40], topic[FEATURE_TOPIC_MAX];
-    snprintf(get, sizeof(get), "%s/get", topic_domain(domains[d]));
-    snprintf(set, sizeof(set), "%s/set", topic_domain(domains[d]));
+    mqtt_format(get, sizeof(get), "%s/get", topic_domain(domains[d]));
+    mqtt_format(set, sizeof(set), "%s/set", topic_domain(domains[d]));
     if (!strcmp(leaf, get)) {
       if (feature_is_coordinator()) {
         json_object *o = feature_json(domains[d]);
-        snprintf(topic, sizeof(topic), "%s/%s/state", root,
+        mqtt_format(topic, sizeof(topic), "%s/%s/state", root,
                  topic_domain(domains[d]));
         if (o) {
           enqueue(topic, o, true);
@@ -1498,7 +1574,7 @@ static bool virtual_input(const char *t, const void *data, size_t n,
           json_object *state = feature_json(domains[d]);
           if (state) {
             js(state, "_source", LOCAL_ID);
-            snprintf(topic, sizeof(topic), "%s/%s/state", root,
+            mqtt_format(topic, sizeof(topic), "%s/%s/state", root,
                      topic_domain(domains[d]));
             enqueue(topic, state, true);
             json_object_put(state);
@@ -1506,7 +1582,7 @@ static bool virtual_input(const char *t, const void *data, size_t n,
         }
         json_object_put(o);
         if (r && feature_is_coordinator()) {
-          snprintf(topic, sizeof(topic), "%s/%s/result", root,
+          mqtt_format(topic, sizeof(topic), "%s/%s/result", root,
                    topic_domain(domains[d]));
           enqueue(topic, r, false);
         }
@@ -1520,7 +1596,7 @@ static bool virtual_input(const char *t, const void *data, size_t n,
   if (c->group[0])
     for (unsigned d = 0; d < COUNT(domains); d++) {
       char state[40];
-      snprintf(state, sizeof(state), "%s/state", topic_domain(domains[d]));
+      mqtt_format(state, sizeof(state), "%s/state", topic_domain(domains[d]));
       if (!strcmp(leaf, state)) {
         json_object *o = parse(data, n);
         if (o && strcmp(string(o, "_source"), LOCAL_ID) &&
@@ -1604,7 +1680,7 @@ static void direct_leaf(int (*p)(const char *, const char *, bool),
                         const char *root, const char *leaf, const char *body,
                         bool retain) {
   char topic[FEATURE_TOPIC_MAX];
-  snprintf(topic, sizeof(topic), "%s/%s", root, leaf);
+  mqtt_format(topic, sizeof(topic), "%s/%s", root, leaf);
   p(topic, body, retain);
 }
 #ifdef FEATURE_DEVICE_A1
@@ -1616,22 +1692,36 @@ static void discovery_virtual(int (*publish)(const char *, const char *, bool),
                         "pm25",          "formaldehyde"};
   const char *components[] = {"fan",    "light",  "switch", "switch",
                               "sensor", "sensor", "sensor", "sensor"};
+  mqtt_account_t account = mqtt_snapshot();
+  char owner[13]; strcpy(owner,LOCAL_ID);
+  for (unsigned i=0; i<c->member_count; ++i)
+    if (strcmp(c->members[i].id,owner)<0) strcpy(owner,c->members[i].id);
   char safe[FEATURE_TOPIC_MAX];
-  snprintf(safe, sizeof(safe), "%s", root);
+  mqtt_format(safe, sizeof(safe), "%s", root);
   for (char *p = safe; *p; p++)
     if (*p == ':')
       *p = '_';
+  if (account.mode) {
+    const char *b = root + strlen("phicomm/linkage/") + strlen(account.key) + 1;
+    if (!mqtt_hex(safe,sizeof(safe),b)) return;
+  }
   unsigned sets = c->peer_count > 1 ? c->peer_count + 1 : 1;
   for (unsigned set = 0; set < sets; set++)
     for (unsigned i = 0; i < 8; i++) {
       if (set && i < 4)
         continue;
-      char uid[240], path[300], sensor[FEATURE_TOPIC_MAX];
+      char uid[FEATURE_TOPIC_MAX], path[FEATURE_TOPIC_MAX], sensor[FEATURE_TOPIC_MAX];
       const char *sid = set ? c->peers[set - 1].id : "average";
-      snprintf(uid, sizeof(uid), "bound_%s_%s_%s", safe, i < 4 ? "device" : sid,
+      mqtt_format(uid, sizeof(uid), "bound_%s_%s_%s", safe, i < 4 ? "device" : sid,
                keys[i]);
-      snprintf(path, sizeof(path), "homeassistant/%s/%s/config", components[i],
+      mqtt_format(path, sizeof(path), "homeassistant/%s/%s/config", components[i],
                uid);
+      if (account.mode) {
+        char entity[240];
+        if (!mqtt_format(entity,sizeof(entity),"bound_%s_%s_%s",safe,i<4?"device":sid,keys[i])) return;
+        strcpy(account.mac,owner);
+        if (!mqtt_identity(&account,entity,uid,sizeof(uid)) || !mqtt_ha(&account,components[i],entity,path,sizeof(path))) return;
+      }
       if (remove) {
         publish(path, "", true);
         continue;
@@ -1648,23 +1738,27 @@ static void discovery_virtual(int (*publish)(const char *, const char *, bool),
           json_object_put(ids);
         return;
       }
-      json_object_array_add(ids, json_object_new_string(root));
+      char device_id[192];
+      if (account.mode) mqtt_identity(&account,"",device_id,sizeof(device_id));
+      else mqtt_format(device_id,sizeof(device_id),"%s",root);
+      json_object_array_add(ids, json_object_new_string(device_id));
       json_object_object_add(device, "identifiers", ids);
       js(device, "name", c->group[0] ? c->group : root);
       js(device, "manufacturer", "Phicomm");
       json_object_object_add(o, "device", device);
       js(o, "unique_id", uid);
+      json_object_object_add(o,"retain",json_object_new_boolean(false));
       js(o, "name", keys[i]);
       char topic[FEATURE_TOPIC_MAX];
       if (i < 4) {
-        snprintf(topic, sizeof(topic), "%s/%s/set", root, keys[i]);
+        mqtt_format(topic, sizeof(topic), "%s/%s/set", root, keys[i]);
         js(o, "command_topic", topic);
-        snprintf(topic, sizeof(topic), "%s/%s/state", root, keys[i]);
+        mqtt_format(topic, sizeof(topic), "%s/%s/state", root, keys[i]);
         js(o, "state_topic", topic);
         if (i == 0) {
-          snprintf(topic, sizeof(topic), "%s/fan/percentage/set", root);
+          mqtt_format(topic, sizeof(topic), "%s/fan/percentage/set", root);
           js(o, "percentage_command_topic", topic);
-          snprintf(topic, sizeof(topic), "%s/fan/percentage/state", root);
+          mqtt_format(topic, sizeof(topic), "%s/fan/percentage/state", root);
           js(o, "percentage_state_topic", topic);
           number(o, "speed_range_min", 1);
           number(o, "speed_range_max", 100);
@@ -1682,15 +1776,15 @@ static void discovery_virtual(int (*publish)(const char *, const char *, bool),
         }
       } else {
         if (c->peer_count == 1)
-          snprintf(sensor, sizeof(sensor), "%s/sensor", root);
+          mqtt_format(sensor, sizeof(sensor), "%s/sensor", root);
         else if (set) {
           char mac[18];
           feature_colon_mac(sid, mac);
-          snprintf(sensor, sizeof(sensor), "%s/%s/sensor", root, mac);
+          mqtt_format(sensor, sizeof(sensor), "%s/%s/sensor", root, mac);
         } else
-          snprintf(sensor, sizeof(sensor), "%s/average", root);
+          mqtt_format(sensor, sizeof(sensor), "%s/average", root);
         js(o, "state_topic", sensor);
-        snprintf(topic, sizeof(topic), "{{ value_json.%s }}", keys[i]);
+        mqtt_format(topic, sizeof(topic), "{{ value_json.%s }}", keys[i]);
         js(o, "value_template", topic);
         number(o, "expire_after", 15);
         js(o, "state_class", "measurement");
@@ -1708,7 +1802,11 @@ static void discovery_virtual(int (*publish)(const char *, const char *, bool),
         if (member && !strcmp(id, LOCAL_ID))
           continue;
         json_object *node = json_object_new_object();
-        snprintf(topic, sizeof(topic), "phicomm/a1/%s/availability", id);
+        mqtt_account_t member_account;
+        /* Reuse the already encoded owner namespace without decoding credentials. */
+        member_account=account;
+        mqtt_format(member_account.base,sizeof(member_account.base),account.mode?"phicomm/a1/%s/%s":"phicomm/a1/%s%s",account.mode?account.key:"",id);
+        mqtt_leaf(&member_account,"availability",topic,sizeof(topic));
         js(node, "topic", topic);
         json_object_array_add(availability, node);
       }
@@ -1734,22 +1832,17 @@ static void virtual_service(int (*publish)(const char *, const char *, bool)) {
        (!was_coordinator && coordinator)) &&
       coordinator) {
     bool layout_changed =
-        strcmp(published_root, root) || published_count != c->peer_count;
+        strcmp(published_root, root) || published_count != c->peer_count ||
+        (published_layout && (published_layout->member_count != c->member_count || memcmp(published_layout->members,c->members,sizeof(c->members))));
     for (unsigned i = 0; i < c->peer_count && !layout_changed; i++)
       layout_changed = strcmp(published_ids[i], c->peers[i].id) != 0;
     if (published_root[0] && (layout_changed || !bound)) {
-      feature_config_t *previous = malloc(sizeof(*previous));
-      if (previous) {
-        feature_defaults(previous);
-        previous->peer_count = published_count;
-        for (unsigned i = 0; i < published_count; i++)
-          strcpy(previous->peers[i].id, published_ids[i]);
-        discovery_virtual(publish, previous, published_root, true);
-        free(previous);
-      }
+      if (published_layout) discovery_virtual(publish,published_layout,published_root,true);
     }
     if (bound) {
       discovery_virtual(publish, c, root, false);
+      if(!published_layout) published_layout=malloc(sizeof(*published_layout));
+      if(published_layout) *published_layout=*c;
       strcpy(published_root, root);
       published_count = c->peer_count;
       for (unsigned i = 0; i < c->peer_count; i++)
@@ -1759,7 +1852,7 @@ static void virtual_service(int (*publish)(const char *, const char *, bool)) {
         if (o) {
           js(o, "_source", LOCAL_ID);
           char leaf[40];
-          snprintf(leaf, sizeof(leaf), "%s/state", topic_domain(domains[d]));
+          mqtt_format(leaf, sizeof(leaf), "%s/state", topic_domain(domains[d]));
           direct_leaf(publish, root, leaf, json_object_to_json_string(o), true);
           json_object_put(o);
         }
@@ -1789,14 +1882,14 @@ static void virtual_service(int (*publish)(const char *, const char *, bool)) {
       if (pass) {
         char mac[18];
         feature_colon_mac(LOCAL_ID, mac);
-        snprintf(prefix, sizeof(prefix), "%s/%s", root, mac);
+        mqtt_format(prefix, sizeof(prefix), "%s/%s", root, mac);
       } else
         strcpy(prefix, root);
       direct_leaf(publish, prefix, "fan/state", on ? "ON" : "OFF", true);
       char b[192];
-      snprintf(b, sizeof(b), "%u", on ? speed : 0);
+      mqtt_format(b, sizeof(b), "%u", on ? speed : 0);
       direct_leaf(publish, prefix, "fan/percentage/state", b, true);
-      snprintf(b, sizeof(b),
+      mqtt_format(b, sizeof(b),
                "{\"state\":\"%s\",\"brightness\":%u,\"color\":{\"r\":%u,\"g\":%"
                "u,\"b\":%u}}",
                state.led_visible ? "ON" : "OFF", light_brightness, cfg.red,
@@ -1835,7 +1928,7 @@ static void virtual_service(int (*publish)(const char *, const char *, bool)) {
           else {
             char mac[18];
             feature_colon_mac(c->peers[i].id, mac);
-            snprintf(leaf, sizeof(leaf), "%s/sensor", mac);
+            mqtt_format(leaf, sizeof(leaf), "%s/sensor", mac);
           }
           direct_leaf(publish, root, leaf, json_object_to_json_string(o),
                       false);
@@ -1858,7 +1951,7 @@ static void virtual_service(int (*publish)(const char *, const char *, bool)) {
         if (c->peers[i].sensor_count > 1) {
           char mac[18];
           feature_colon_mac(LOCAL_ID, mac);
-          snprintf(leaf, sizeof(leaf), "%s/sensor", mac);
+          mqtt_format(leaf, sizeof(leaf), "%s/sensor", mac);
         } else
           strcpy(leaf, "sensor");
         json_object *o = sample_body(&sample, now);
@@ -1873,4 +1966,15 @@ static void virtual_service(int (*publish)(const char *, const char *, bool)) {
   was_coordinator = coordinator;
 #endif
   free(c);
+}
+
+int feature_mqtt_cleanup(int (*publish)(const char *, const char *, bool)) {
+  active_publish=publish; publish_error=0;
+#ifdef FEATURE_DEVICE_A1
+  if (published_root[0]) {
+    if(!published_layout) return -1;
+    discovery_virtual(checked_publish,published_layout,published_root,true);
+  }
+#endif
+  return publish_error;
 }

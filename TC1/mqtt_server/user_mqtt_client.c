@@ -1,3 +1,4 @@
+#include "../../common/mqtt_cleanup.h"
 /**
  ******************************************************************************
  * @file    mqtt_client.c
@@ -26,9 +27,11 @@
 #include "user_gpio.h"
 #include "user_power.h"
 #include "user_mqtt_client.h"
+#include "json.h"
 
 typedef struct {
     char topic[MAX_MQTT_TOPIC_SIZE];
+    uint32_t generation;
     char qos;
     char retained;
 
@@ -49,6 +52,24 @@ OSStatus UserRecvHandler(void *arg);
 void ProcessHaCmd(char *cmd);
 
 bool isconnect = false;
+unsigned tc1_mqtt_status = MQTT_DISCONNECTED;
+bool tc1_mqtt_cleanup_warning;
+static mqtt_account_t account;
+static uint32_t generation;
+static bool synchronous_send, rediscover;
+static int synchronous_error;
+static char session_host[32], session_user[64], session_password[257];
+static unsigned session_port, session_mode;
+static char availability_topic[MQTT_TOPIC_MAX];
+static bool session_current(void) {
+    return session_port == (unsigned)user_config->mqtt_port && session_mode == user_config->mqtt_topic_mode &&
+        !strcmp(session_host,user_config->mqtt_ip) && !strcmp(session_user,user_config->mqtt_user) &&
+        !strcmp(session_password,user_config->mqtt_password);
+}
+static void ha_birth(MessageData *d) {
+    if (session_current() && d->message->payloadlen == 6 && !memcmp(d->message->payload,"online",6)) rediscover=true;
+}
+
 mico_queue_t mqtt_msg_send_queue = NULL;
 
 Client c;  // mqtt client object
@@ -217,7 +238,7 @@ static OSStatus MqttMsgPublish(Client *c, const char *topic, char qos, char reta
     int ret = 0;
     MQTTMessage publishData = MQTTMessage_publishData_initializer;
 
-    require(topic && msg_len && msg, exit);
+    require(topic && msg, exit);
 
     // upload data qos0
     publishData.qos = (enum QoS) qos;
@@ -247,192 +268,124 @@ if(timer_status !=0){
     mico_start_timer(&timer_handle);
 }
 
+/* Only the MQTT owner publishes. Peripheral/timer and receive workers enqueue,
+ * including while the initial snapshot is being assembled. */
+static void flush_snapshot(void) {
+    p_mqtt_send_msg_t msg=NULL;
+    while(mico_rtos_pop_from_queue(&mqtt_msg_send_queue,&msg,0)==kNoErr) {
+        if(msg->generation==generation && session_current()) {
+            int rc=MqttMsgPublish(&c,msg->topic,msg->qos,msg->retained,(const unsigned char *)msg->data,msg->datalen);
+            if(rc!=kNoErr) synchronous_error=rc;
+        }
+        free(msg); msg=NULL;
+    }
+}
+static void all_discovery(void) {
+    UserMqttHassAutoLed(); UserMqttHassAutoTotalSocket(); UserMqttHassAutoChildLock();
+    UserMqttHassAutoRebootButton(); UserMqttHassAutoSoftRebootButton(); flush_snapshot();
+    for (int i=1;i<=SOCKET_NUM;++i) { UserMqttHassAuto(i); flush_snapshot(); }
+    UserMqttHassAutoPower(); flush_snapshot();
+}
+static void all_states(void) {
+    for (int i=0;i<SOCKET_NUM;++i) { UserMqttSendSocketState(i); flush_snapshot(); }
+    UserMqttSendLedState(); UserMqttSendTotalSocketState(); UserMqttSendChildLockState(); UserMqttHassPower(); flush_snapshot();
+}
+static int cleanup_discovery(void) {
+    const char *entities[]={"socket_0","socket_1","socket_2","socket_3","socket_4","socket_5",
+        "total_socket","led","childLock","reboot","soft_reboot","power","powerConsumption",
+        "startupTime","powerConsumptionToday","powerConsumptionYesterday"};
+    int result=0;
+    for (unsigned i=0;i<sizeof(entities)/sizeof(entities[0]);++i) {
+        char topic[MQTT_TOPIC_MAX]; mqtt_ha(&account,i<9?"switch":i<11?"button":"sensor",entities[i],topic,sizeof(topic));
+        if(MqttMsgPublish(&c,topic,QOS1,1,(const unsigned char *)"",0)!=kNoErr) result=-1;
+    }
+    return result;
+}
 void MqttClientThread(mico_thread_arg_t arg) {
-    OSStatus err = kUnknownErr;
-
-    int rc = -1;
-    fd_set readfds;
-    bool timer_initialized = false;
-
-    ssl_opts ssl_settings;
-    MQTTPacket_connectData connectData = MQTTPacket_connectData_initializer;
-
-    p_mqtt_send_msg_t p_send_msg = NULL;
-    int msg_send_event_fd = -1;
-    bool no_mqtt_msg_exchange = true;
-
     UNUSED_PARAMETER(arg);
-
-    mqtt_log("MQTT client thread started...");
-
-    memset(&c, 0, sizeof(c));
-    memset(&n, 0, sizeof(n));
-
-    /* create msg send queue event fd */
-    msg_send_event_fd = mico_create_event_fd(mqtt_msg_send_queue);
-    require_action(msg_send_event_fd >= 0, exit,
-                   mqtt_log("ERROR: create msg send queue event fd failed!!!"));
-
-    err = mico_init_timer(&timer_handle, 150, UserMqttTimerFunc, NULL);
-    require_noerr_string(err, exit, "ERROR: Unable to initialize MQTT timer.");
-    timer_initialized = true;
-
-    MQTT_start:
-    clear_mqtt_msg_send_queue();
-    UserMqttClientRelease(&c, &n);
-
-    isconnect = false;
-    /* 1. create network connection */
-    ssl_settings.ssl_enable = false;
-    LinkStatusTypeDef LinkStatus = { 0 };
-    while (!mqtt_thread_should_exit) {
-        isconnect = false;
-        mico_rtos_thread_sleep(3);
-        if (MQTT_SERVER[0] < 0x20 || MQTT_SERVER[0] > 0x7f || MQTT_SERVER_PORT < 1)
-            continue;  //闂備礁鎼悧婊勭椤忓牆鍌ㄩ柕鍫濇川绾鹃箖鏌ｉ姀銏ｅ姌tt闂備礁鎼悧鍡欑矓鐎涙ɑ鍙忛柣鏃傚帶闂傤垶鏌曟繝蹇涙妞は佸啠妲堥柟鎯х－鍟哥紓浣虹帛閻╊垶鐛幒妤佹櫢?
-
-        micoWlanGetLinkStatus(&LinkStatus);
-        if (LinkStatus.is_connected != 1) { mqtt_log(
-                    "ERROR:WIFI not connect, waiting 3s for connecting and then connecting MQTT ");
-            mico_rtos_thread_sleep(3);
-            continue;
+    unsigned attempt=0; bool cleanup_pending=false;
+    char client_id[192];
+    for (;;) {
+        if(mqtt_thread_should_exit) break;
+        tc1_mqtt_status=MQTT_DISCONNECTED; isconnect=false;
+        clear_mqtt_msg_send_queue();
+        LinkStatusTypeDef link={0}; micoWlanGetLinkStatus(&link);
+        if(cleanup_pending && link.is_connected==1 && !session_current()) {
+            tc1_mqtt_cleanup_warning=mqtt_cleanup_reconnect(&c,&account,session_host,session_port,
+                session_user,session_password,cleanup_discovery)!=MQTT_SUCCESS;
+            cleanup_pending=false;
         }
-
-        rc = NewNetwork(&n, MQTT_SERVER, MQTT_SERVER_PORT, ssl_settings);
-        if (rc == MQTT_SUCCESS) break;
-
-        //mqtt_log("ERROR: MQTT network connect err=%d, reconnect after 3s...", rc);
-    }
-    if (mqtt_thread_should_exit) goto exit;
-    mqtt_log("MQTT network connect success!");
-
-    /* 2. init mqtt client */
-    //c.heartbeat_retry_max = 2;
-    rc = MQTTClientInit(&c, &n, MQTT_CMD_TIMEOUT);
-    require_noerr_string(rc, MQTT_reconnect, "ERROR: MQTT client init err.");
-
-    mqtt_log("MQTT client init success!");
-
-    /* 3. create mqtt client connection */
-    connectData.willFlag = 0;
-    connectData.MQTTVersion = 4;  // 3: 3.1, 4: v3.1.1
-    connectData.clientID.cstring = str_mac;
-    connectData.username.cstring = user_config->mqtt_user;
-    connectData.password.cstring = user_config->mqtt_password;
-    connectData.keepAliveInterval = MQTT_CLIENT_KEEPALIVE;
-    connectData.cleansession = 1;
-
-    rc = MQTTConnect(&c, &connectData);
-    require_noerr_string(rc, MQTT_reconnect, "ERROR: MQTT client connect err.");
-
-    mqtt_log("MQTT client connect success, result: %d ", rc);
-
-    UserLedSet(RelayOut() && user_config->power_led_enabled);
-
-    /* 4. mqtt client subscribe - 闂佺粯绮嶅妯猴耿椤忓嫅鎺曠疀鎼淬劌娈濋柣鐘辩劍閸庢娊藝椤掍礁顕辨慨妯诲墯閸氬倿姊婚崘銊﹀殌闁搞倖绮岄蹇旀綇閳哄倻鏆犳繛鎴炴尭椤兘銆?*/
-    rc = MQTTSubscribe(&c, topic_set, QOS0, MessageArrived);
-    require_noerr_string(rc, MQTT_reconnect, "ERROR: MQTT client subscribe err.");mqtt_log(
-            "MQTT client subscribe success! recv_topic=[%s].", topic_set);
-    /* 4.1 mark mqtt connected */
-    isconnect = true;
-
-    int i = 0;
-    for (; i < SOCKET_NUM; i++) {
-        UserMqttSendSocketState(i);
-    }
-
-    UserMqttSendLedState();
-    UserMqttSendTotalSocketState();
-    UserMqttSendChildLockState();
-
-    registerMqttEvents();
-    /* 5. client loop for recv msg && keepalive */
-    while (!mqtt_thread_should_exit) {
-        int max_fd;
-        struct timeval t = { MQTT_YIELD_TMIE / 1000,
-                             (MQTT_YIELD_TMIE % 1000) * 1000 };
-
-        isconnect = true;
-        no_mqtt_msg_exchange = true;
-        FD_ZERO(&readfds);
-        FD_SET(c.ipstack->my_socket, &readfds);
-        FD_SET(msg_send_event_fd, &readfds);
-        max_fd = c.ipstack->my_socket > msg_send_event_fd
-                 ? c.ipstack->my_socket : msg_send_event_fd;
-        select(max_fd + 1, &readfds, NULL, NULL, &t);
-
-        /* recv msg from server */
-        if (FD_ISSET(c.ipstack->my_socket, &readfds)) {
-            rc = MQTTYield(&c, (int) MQTT_YIELD_TMIE);
-            require_noerr(rc, MQTT_reconnect);
-            no_mqtt_msg_exchange = false;
+        if(!user_config->mqtt_ip[0] || link.is_connected!=1) { mico_rtos_thread_sleep(1); continue; }
+        mico_rtos_suspend_all_thread();
+        strcpy(session_host,user_config->mqtt_ip); strcpy(session_user,user_config->mqtt_user);
+        strcpy(session_password,user_config->mqtt_password); session_port=user_config->mqtt_port;
+        session_mode=user_config->mqtt_topic_mode; ++generation;
+        mico_rtos_resume_all_thread();
+        if(!mqtt_account_init(&account,session_mode,"tc1",session_user,str_mac)) {
+            tc1_mqtt_status=MQTT_CONFIG_ERROR; mico_rtos_thread_sleep(1); continue;
         }
-
-        /* recv msg from user worker thread to be sent to server */
-        if (FD_ISSET(msg_send_event_fd, &readfds)) {
-            while (mico_rtos_is_queue_empty(&mqtt_msg_send_queue) == false) {
-                // get msg from send queue
-                mico_rtos_pop_from_queue(&mqtt_msg_send_queue, &p_send_msg, 0);
-                require_string(p_send_msg, exit, "Wrong data point");
-
-                // send message to server
-                err = MqttMsgPublish(&c, p_send_msg->topic, p_send_msg->qos, p_send_msg->retained,
-                                     (const unsigned char *) p_send_msg->data,
-                                     p_send_msg->datalen);
-                free(p_send_msg);
-                p_send_msg = NULL;
-                require_noerr_string(err, MQTT_reconnect, "ERROR: MQTT publish data err");
-
-                //mqtt_log("MQTT publish data success! send_topic=[%s], msg=[%ld].", p_send_msg->topic, p_send_msg->datalen);
-                no_mqtt_msg_exchange = false;
+        mqtt_identity(&account,"",client_id,sizeof(client_id));
+        mqtt_leaf(&account,"availability",availability_topic,sizeof(availability_topic));
+        if(account.mode) { mqtt_leaf(&account,"set",topic_set,sizeof(topic_set)); mqtt_leaf(&account,"sensor",topic_state,sizeof(topic_state)); }
+        else { sprintf(topic_set,MQTT_CLIENT_SUB_TOPIC1,str_mac); sprintf(topic_state,MQTT_CLIENT_PUB_TOPIC,str_mac); }
+        memset(&c,0,sizeof(c)); memset(&n,0,sizeof(n)); n.my_socket=-1;
+        ssl_opts options={0}; tc1_mqtt_status=MQTT_CONNECTING;
+        int rc=NewNetwork(&n,session_host,session_port,options);
+        bool connected=false;
+        if(rc==MQTT_SUCCESS) rc=MQTTClientInit(&c,&n,MQTT_CMD_TIMEOUT);
+        if(rc==MQTT_SUCCESS) {
+            MQTTPacket_connectData data=MQTTPacket_connectData_initializer;
+            data.MQTTVersion=4; data.clientID.cstring=client_id;
+            data.username.cstring=session_user; data.password.cstring=session_password;
+            data.keepAliveInterval=30; data.cleansession=1;
+            data.willFlag=1; data.will.topicName.cstring=availability_topic;
+            data.will.message.cstring="offline"; data.will.qos=1; data.will.retained=1;
+            rc=MQTTConnect(&c,&data); connected=rc==MQTT_SUCCESS;
+            if(!connected) tc1_mqtt_status=rc==4||rc==5?MQTT_AUTH_FAILED:MQTT_DISCONNECTED;
+        }
+        if(connected && account.mode) {
+            char topic[MQTT_TOPIC_MAX]; mqtt_aux(&account,"discovery",account.mac,topic,sizeof(topic));
+            const char *payload=mqtt_announcement(&account);
+            rc=MqttMsgPublish(&c,topic,QOS1,1,(const unsigned char *)payload,strlen(payload));
+        }
+        if(rc==MQTT_SUCCESS) rc=MQTTSubscribe(&c,topic_set,QOS1,MessageArrived);
+        if(rc==MQTT_SUCCESS) rc=MQTTSubscribe(&c,"homeassistant/status",QOS1,ha_birth);
+        if(connected && rc!=MQTT_SUCCESS) tc1_mqtt_status=MQTT_WAITING_ACL;
+        if(rc==MQTT_SUCCESS) {
+            cleanup_pending=true; synchronous_send=true; synchronous_error=0; all_discovery(); all_states(); synchronous_send=false;
+            rc=synchronous_error;
+            if(rc==0) rc=MqttMsgPublish(&c,availability_topic,QOS1,1,(const unsigned char *)"online",6);
+        }
+        uint32_t acl_check=mico_rtos_get_time(); rediscover=false;
+        if(rc==MQTT_SUCCESS) { isconnect=true; tc1_mqtt_status=MQTT_READY; attempt=0; cleanup_pending=true; }
+        while(rc==MQTT_SUCCESS && !mqtt_thread_should_exit && session_current()) {
+            if(rediscover) {
+                synchronous_send=true; synchronous_error=0; all_discovery(); all_states(); synchronous_send=false;
+                rc=synchronous_error; rediscover=false;
             }
+            p_mqtt_send_msg_t msg=NULL;
+            while(rc==MQTT_SUCCESS && mico_rtos_pop_from_queue(&mqtt_msg_send_queue,&msg,0)==kNoErr) {
+                if(msg->generation==generation && session_current())
+                    rc=MqttMsgPublish(&c,msg->topic,msg->qos,msg->retained,(const unsigned char *)msg->data,msg->datalen);
+                free(msg); msg=NULL;
+            }
+            if(rc==MQTT_SUCCESS && account.mode && (uint32_t)(mico_rtos_get_time()-acl_check)>=30000) {
+                rc=MQTTSubscribe(&c,topic_set,QOS1,MessageArrived); acl_check=mico_rtos_get_time();
+                if(rc!=MQTT_SUCCESS) tc1_mqtt_status=MQTT_WAITING_ACL;
+            }
+            if(rc==MQTT_SUCCESS) rc=MQTTYield(&c,100);
+            mico_rtos_thread_msleep(50);
         }
-
-        /* if no msg exchange, we need to check ping msg to keep alive. */
-        if (no_mqtt_msg_exchange) {
-            rc = keepalive(&c);
-            require_noerr_string(rc, MQTT_reconnect, "ERROR: keepalive err");
+        isconnect=false;
+        if(connected) {
+            if(!session_current()) { tc1_mqtt_cleanup_warning=cleanup_discovery()!=0; cleanup_pending=false; }
+            MqttMsgPublish(&c,availability_topic,QOS1,1,(const unsigned char *)"offline",7);
         }
+        ++generation; clear_mqtt_msg_send_queue(); UserMqttClientRelease(&c,&n);
+        if(tc1_mqtt_status==MQTT_READY || tc1_mqtt_status==MQTT_CONNECTING) tc1_mqtt_status=MQTT_DISCONNECTED;
+        if(!mqtt_thread_should_exit) mico_rtos_thread_sleep(mqtt_retry_seconds(attempt++));
     }
-
-    MQTT_reconnect:
-
-    if (mqtt_thread_should_exit) goto exit;
-
-mqtt_log("Disconnect MQTT client, and reconnect after 5s, reason: mqtt_rc = %d, err = %d", rc, err);
-
-    timer_status = 100;
-    clear_mqtt_msg_send_queue();
-    UserMqttClientRelease(&c, &n);
-    isconnect = false;
-    UserLedSet(-1);
-    mico_rtos_thread_msleep(100);
-    UserLedSet(-1);
-    mico_rtos_thread_sleep(5);
-    if (mqtt_thread_should_exit) goto exit;
-    goto MQTT_start;
-
-exit:
-    isconnect = false;
-    mqtt_log("EXIT: MQTT client exit with err = %d.", err);
-    if (p_send_msg) {
-        free(p_send_msg);
-        p_send_msg = NULL;
-    }
-    if (timer_initialized) {
-        mico_stop_timer(&timer_handle);
-        mico_deinit_timer(&timer_handle);
-    }
-    if (msg_send_event_fd >= 0) {
-        mico_delete_event_fd(msg_send_event_fd);
-    }
-    clear_mqtt_msg_send_queue();
-    UserMqttClientRelease(&c, &n);
-    mico_rtos_suspend_all_thread();
-    mqtt_thread_running = false;
-    mico_rtos_resume_all_thread();
-    mico_rtos_delete_thread(NULL); // 闂佺厧顨庢禍婊堝垂?
-    return;
+    isconnect=false; mqtt_thread_running=false; mico_rtos_delete_thread(NULL);
 }
 
 // callback, msg received from mqtt server
@@ -441,11 +394,14 @@ static void MessageArrived(MessageData *md) {
     p_mqtt_recv_msg_t p_recv_msg = NULL;
     MQTTMessage *message = md->message;
 
+    if(!isconnect || !session_current() || message->retained || message->payloadlen >= MAX_MQTT_DATA_SIZE ||
+       md->topicName->lenstring.len >= MAX_MQTT_TOPIC_SIZE || memchr(message->payload,0,message->payloadlen)) return;
     p_recv_msg = (p_mqtt_recv_msg_t) calloc(1, sizeof(mqtt_recv_msg_t));
     require_action(p_recv_msg, exit, err = kNoMemoryErr);
 
     p_recv_msg->datalen = message->payloadlen >= MAX_MQTT_DATA_SIZE ?
                            MAX_MQTT_DATA_SIZE - 1 : message->payloadlen;
+    p_recv_msg->generation = generation;
     p_recv_msg->qos = (char) (message->qos);
     p_recv_msg->retained = message->retained;
     int topic_len = md->topicName->lenstring.len >= MAX_MQTT_TOPIC_SIZE ?
@@ -477,7 +433,7 @@ OSStatus UserRecvHandler(void *arg) {
              p_recv_msg->datalen);
     //UserFunctionCmdReceived(0, p_recv_msg->data);
 
-    ProcessHaCmd(p_recv_msg->data);
+    if(isconnect && session_current() && p_recv_msg->generation==generation && !p_recv_msg->retained && !strcmp(p_recv_msg->topic,topic_set)) ProcessHaCmd(p_recv_msg->data);
 
     free(p_recv_msg);
 
@@ -492,7 +448,7 @@ void ProcessHaCmd(char *cmd) {
     if (mqtt_cmd_starts_with(cmd, "set socket")) {
         int i, on;
         if (sscanf(cmd, "set socket %19s %d %d", mac, &i, &on) != 3) return;
-        if (strcmp(mac, str_mac)) return;mqtt_log("set socket[%d] on[%d]", i, on);
+        if (strcmp(mac, str_mac) || i<0 || i>=SOCKET_NUM || (on!=0 && on!=1)) return;mqtt_log("set socket[%d] on[%d]", i, on);
         UserRelaySet(i, on);
         UserMqttSendSocketState(i);
         UserMqttSendTotalSocketState();
@@ -500,7 +456,7 @@ void ProcessHaCmd(char *cmd) {
     } else if (mqtt_cmd_starts_with(cmd, "set led")) {
         int on;
         if (sscanf(cmd, "set led %19s %d", mac, &on) != 2) return;
-        if (strcmp(mac, str_mac)) return;mqtt_log("set led on[%d]", on);
+        if (strcmp(mac, str_mac) || (on!=0 && on!=1)) return;mqtt_log("set led on[%d]", on);
         user_config->power_led_enabled = on;
         if (RelayOut() && user_config->power_led_enabled) {
             UserLedSet(1);
@@ -512,7 +468,7 @@ void ProcessHaCmd(char *cmd) {
     } else if (mqtt_cmd_starts_with(cmd, "set total_socket")) {
         int on;
         if (sscanf(cmd, "set total_socket %19s %d", mac, &on) != 2) return;
-        if (strcmp(mac, str_mac)) return;mqtt_log("set total_socket on[%d]", on);
+        if (strcmp(mac, str_mac) || (on!=0 && on!=1)) return;mqtt_log("set total_socket on[%d]", on);
         UserRelaySetAll(on);
         int i = 0;
         for (i = 0; i < SOCKET_NUM; i++) {
@@ -523,7 +479,7 @@ void ProcessHaCmd(char *cmd) {
     }else if (mqtt_cmd_starts_with(cmd, "set childLock")) {
         int on;
         if (sscanf(cmd, "set childLock %19s %d", mac, &on) != 2) return;
-        if (strcmp(mac, str_mac)) return;mqtt_log("set childLock on[%d]", on);
+        if (strcmp(mac, str_mac) || (on!=0 && on!=1)) return;mqtt_log("set childLock on[%d]", on);
         user_config->user[0] = on;
         childLockEnabled = on;
         UserMqttSendChildLockState();
@@ -539,10 +495,49 @@ void ProcessHaCmd(char *cmd) {
     }
 }
 
+static bool account_message(const char *old_topic, const char *payload, char *topic, char *out) {
+    char component[24], mac[20], entity[64], suffix[16], leaf[80];
+    if(sscanf(old_topic,"homeassistant/%23[^/]/%19[^/]/%63[^/]/%15s",component,mac,entity,suffix)!=4) return false;
+    if(strcmp(mac,str_mac)) return false;
+    if(!strcmp(suffix,"state")) {
+        if(!strcmp(component,"sensor")) return false; /* power is published as a complete sensor snapshot */
+        mqtt_format(leaf,sizeof(leaf),"%s/state",entity);
+        return mqtt_leaf(&account,leaf,topic,MAX_MQTT_TOPIC_SIZE) && mqtt_format(out,MAX_MQTT_DATA_SIZE,"%s",payload);
+    }
+    if(strcmp(suffix,"config")) return false;
+    json_object *o=json_tokener_parse(payload);
+    if(!o) return false;
+    mqtt_ha(&account,component,entity,topic,MAX_MQTT_TOPIC_SIZE);
+    char value[MQTT_TOPIC_MAX]; mqtt_identity(&account,entity,value,sizeof(value));
+    json_object_object_add(o,"uniq_id",json_object_new_string(value));
+    json_object_object_add(o,"object_id",json_object_new_string(value));
+    json_object *device=json_object_object_get(o,"device");
+    if(device) {
+        json_object *ids=json_object_new_array(); mqtt_identity(&account,"",value,sizeof(value));
+        json_object_array_add(ids,json_object_new_string(value)); json_object_object_add(device,"identifiers",ids);
+    }
+    mqtt_leaf(&account,"availability",value,sizeof(value)); json_object_object_add(o,"availability_topic",json_object_new_string(value));
+    json_object_object_add(o,"retain",json_object_new_boolean(false));
+    if(strcmp(component,"sensor")) {
+        mqtt_leaf(&account,"set",value,sizeof(value)); json_object_object_add(o,"cmd_t",json_object_new_string(value));
+        mqtt_format(leaf,sizeof(leaf),"%s/state",entity); mqtt_leaf(&account,leaf,value,sizeof(value));
+        if(strcmp(component,"button")) json_object_object_add(o,"stat_t",json_object_new_string(value));
+    } else {
+        mqtt_leaf(&account,"sensor",value,sizeof(value)); json_object_object_add(o,"state_topic",json_object_new_string(value));
+    }
+    bool ok=mqtt_format(out,MAX_MQTT_DATA_SIZE,"%s",json_object_to_json_string(o)); json_object_put(o); return ok;
+}
+
 OSStatus UserMqttSendTopic(char *topic, char *arg, char retained) {
     OSStatus err = kUnknownErr;
     p_mqtt_send_msg_t p_send_msg = NULL;
-    if(mqtt_msg_send_queue == NULL|| !isconnect){
+    char scoped[MAX_MQTT_TOPIC_SIZE], payload[MAX_MQTT_DATA_SIZE];
+    if(strlen(topic)>=MAX_MQTT_TOPIC_SIZE || strlen(arg)>=MAX_MQTT_DATA_SIZE) { if(synchronous_send) synchronous_error=kParamErr; return kParamErr; }
+    if(account.mode && !strncmp(topic,"homeassistant/",14)) {
+        if(!account_message(topic,arg,scoped,payload)) { if(synchronous_send) synchronous_error=kParamErr; return kParamErr; }
+        topic=scoped; arg=payload; retained=1;
+    }
+    if(mqtt_msg_send_queue == NULL|| (!isconnect && !synchronous_send) || !session_current()){
     return err;
     }
 
@@ -559,7 +554,8 @@ OSStatus UserMqttSendTopic(char *topic, char *arg, char retained) {
     p_send_msg = (p_mqtt_send_msg_t) calloc(1, sizeof(mqtt_send_msg_t));
     require_action(p_send_msg, exit, err = kNoMemoryErr);
 
-    p_send_msg->qos = 0;
+    p_send_msg->generation = generation;
+    p_send_msg->qos = account.mode || !strncmp(topic,"homeassistant/",14) ? 1 : 0;
     p_send_msg->retained = retained;
     p_send_msg->datalen = strlen(arg) >= MAX_MQTT_DATA_SIZE ?
                            MAX_MQTT_DATA_SIZE - 1 : strlen(arg);
@@ -575,6 +571,7 @@ OSStatus UserMqttSendTopic(char *topic, char *arg, char retained) {
 
     exit:
     if (err != kNoErr && p_send_msg) free(p_send_msg);
+    if (err != kNoErr && synchronous_send) synchronous_error=err;
     return err;
 }
 
@@ -646,15 +643,27 @@ OSStatus UserMqttSendChildLockState(void) {
 }
 
 //hass mqtt闂備胶鍘ч〃搴㈢濠婂嫭鍙忛柍鍝勬噹閻鏌熺€电孝缂佺姵鐩弻鈩冩媴閸濆嫷鏆悗瑙勬尫缁€渚€顢氶敐澶嬫櫢濞寸姴顑呯粈鍌炴煕閹邦厼绲荤紒鍙夋そ濮婃椽顢曢浣割伓
+static void mqtt_json_name(char *out, size_t size, const char *name) {
+    json_object *o=json_object_new_string(name);
+    if(!o) { out[0]=0; synchronous_error=kNoMemoryErr; return; }
+    const char *quoted=json_object_to_json_string(o);
+    mqtt_format(out,size,"%.*s",(int)strlen(quoted)-2,quoted+1);
+    json_object_put(o);
+}
 void UserMqttHassAuto(char socket_id) {
+    char device_name[384];
+    mqtt_json_name(device_name, sizeof(device_name), sys_config->micoSystemConfig.name);
     socket_id--;
+    if(socket_id<0 || socket_id>=SOCKET_NUM) return;
+    char socket_name[384];
+    mqtt_json_name(socket_name, sizeof(socket_name), user_config->socket_names[(int)socket_id]);
     char *send_buf = NULL;
     char *topic_buf = NULL;
-    send_buf = (char *) malloc(600);
+    send_buf = (char *) malloc(MAX_MQTT_DATA_SIZE);
     topic_buf = (char *) malloc(64);
     if (send_buf != NULL && topic_buf != NULL) {
         sprintf(topic_buf, "homeassistant/switch/%s/socket_%d/config", str_mac, socket_id);
-        sprintf(send_buf,
+        snprintf(send_buf, MAX_MQTT_DATA_SIZE,
                 "{\"name\":\"%s\","
                 "\"uniq_id\":\"tc1_%s_s%d\","
                 "\"object_id\":\"tc1_%s_s%d\","
@@ -668,10 +677,10 @@ void UserMqttHassAuto(char socket_id) {
                 "\"name\":\"%s\","
                 "\"model\":\"TC1\","
                 "\"manufacturer\":\"PHICOMM\"}}",
-                user_config->socket_names[(int)socket_id], str_mac, socket_id,str_mac, socket_id, str_mac, socket_id,
+                socket_name, str_mac, socket_id,str_mac, socket_id, str_mac, socket_id,
                 str_mac,  // 濠电儑缍€椤曆勬叏閻愬灚濯奸柟顖嗗本校MAC闂侀潻闄勫妯侯焽閸愵喖绀嗛柡澶嬪閸ゆ帒霉閻橆喖鈧挾鈧潧鏈敍鎰熺涵鍛箑
                 str_mac,
-                socket_id, str_mac, socket_id, str_mac,sys_config->micoSystemConfig.name);
+                socket_id, str_mac, socket_id, str_mac,device_name);
         UserMqttSendTopic(topic_buf, send_buf, 1);
     }
     if (send_buf)
@@ -681,14 +690,16 @@ void UserMqttHassAuto(char socket_id) {
 }
 
 void UserMqttHassAutoRebootButton(void) {
+    char device_name[384];
+    mqtt_json_name(device_name, sizeof(device_name), sys_config->micoSystemConfig.name);
     char *send_buf = NULL;
     char *topic_buf = NULL;
-    send_buf = (char *) malloc(600);
+    send_buf = (char *) malloc(MAX_MQTT_DATA_SIZE);
     topic_buf = (char *) malloc(64);
     if (send_buf != NULL && topic_buf != NULL) {
         // 闂備焦褰冪粔鎾箚鎼淬劌绠板鑸靛姈鐏忥箓姊洪弶璺ㄐら柣?
         sprintf(topic_buf, "homeassistant/button/%s/reboot/config", str_mac);
-        sprintf(send_buf,
+        snprintf(send_buf, MAX_MQTT_DATA_SIZE,
                 "{\"name\":\"Reboot Device\","
                 "\"uniq_id\":\"tc1_%s_reboot\","
                 "\"object_id\":\"tc1_%s_reboot\","
@@ -700,7 +711,7 @@ void UserMqttHassAutoRebootButton(void) {
                 "\"name\":\"%s\","
                 "\"model\":\"TC1\","
                 "\"manufacturer\":\"PHICOMM\"}}",
-                str_mac, str_mac, str_mac, str_mac, str_mac, sys_config->micoSystemConfig.name);
+                str_mac, str_mac, str_mac, str_mac, str_mac, device_name);
         UserMqttSendTopic(topic_buf, send_buf, 1);
     }
     if (send_buf) free(send_buf);
@@ -708,14 +719,16 @@ void UserMqttHassAutoRebootButton(void) {
 }
 
 void UserMqttHassAutoSoftRebootButton(void) {
+    char device_name[384];
+    mqtt_json_name(device_name, sizeof(device_name), sys_config->micoSystemConfig.name);
     char *send_buf = NULL;
     char *topic_buf = NULL;
-    send_buf = (char *) malloc(600);
+    send_buf = (char *) malloc(MAX_MQTT_DATA_SIZE);
     topic_buf = (char *) malloc(64);
     if (send_buf != NULL && topic_buf != NULL) {
         // 闁哄鍎愰崹鍫曞闯閹间礁瑙︽い鏍ㄧ☉閻﹀姊虹粵瀣珝闁告ǜ鍊楃槐?
         sprintf(topic_buf, "homeassistant/button/%s/soft_reboot/config", str_mac);
-        sprintf(send_buf,
+        snprintf(send_buf, MAX_MQTT_DATA_SIZE,
                 "{\"name\":\"Soft Reboot\","
                 "\"uniq_id\":\"tc1_%s_soft_reboot\","
                 "\"object_id\":\"tc1_%s_soft_reboot\","
@@ -727,7 +740,7 @@ void UserMqttHassAutoSoftRebootButton(void) {
                 "\"name\":\"%s\","
                 "\"model\":\"TC1\","
                 "\"manufacturer\":\"PHICOMM\"}}",
-                str_mac, str_mac, str_mac, str_mac, str_mac, sys_config->micoSystemConfig.name);
+                str_mac, str_mac, str_mac, str_mac, str_mac, device_name);
         UserMqttSendTopic(topic_buf, send_buf, 1);
     }
     if (send_buf) free(send_buf);
@@ -735,13 +748,15 @@ void UserMqttHassAutoSoftRebootButton(void) {
 }
 
 void UserMqttHassAutoLed(void) {
+    char device_name[384];
+    mqtt_json_name(device_name, sizeof(device_name), sys_config->micoSystemConfig.name);
     char *send_buf = NULL;
     char *topic_buf = NULL;
-    send_buf = (char *) malloc(600);
+    send_buf = (char *) malloc(MAX_MQTT_DATA_SIZE);
     topic_buf = (char *) malloc(64);
     if (send_buf != NULL && topic_buf != NULL) {
         sprintf(topic_buf, "homeassistant/switch/%s/led/config", str_mac);
-        sprintf(send_buf,
+        snprintf(send_buf, MAX_MQTT_DATA_SIZE,
                 "{\"name\":\"LED Indicator\","
                 "\"uniq_id\":\"tc1_%s_led\","
                 "\"object_id\":\"tc1_%s_led\","
@@ -755,7 +770,7 @@ void UserMqttHassAutoLed(void) {
                 "\"name\":\"%s\","
                 "\"model\":\"TC1\","
                 "\"manufacturer\":\"PHICOMM\"}}",
-                str_mac,str_mac,str_mac, str_mac, str_mac, str_mac,str_mac,sys_config->micoSystemConfig.name);
+                str_mac,str_mac,str_mac, str_mac, str_mac, str_mac,str_mac,device_name);
         UserMqttSendTopic(topic_buf, send_buf, 1);
     }
     if (send_buf)
@@ -765,13 +780,15 @@ void UserMqttHassAutoLed(void) {
 }
 
 void UserMqttHassAutoChildLock(void) {
+    char device_name[384];
+    mqtt_json_name(device_name, sizeof(device_name), sys_config->micoSystemConfig.name);
     char *send_buf = NULL;
     char *topic_buf = NULL;
-    send_buf = (char *) malloc(600);
+    send_buf = (char *) malloc(MAX_MQTT_DATA_SIZE);
     topic_buf = (char *) malloc(64);
     if (send_buf != NULL && topic_buf != NULL) {
         sprintf(topic_buf, "homeassistant/switch/%s/childLock/config", str_mac);
-        sprintf(send_buf,
+        snprintf(send_buf, MAX_MQTT_DATA_SIZE,
                 "{\"name\":\"Child Lock\","
                 "\"uniq_id\":\"tc1_%s_child_lock\","
                 "\"object_id\":\"tc1_%s_child_lock\","
@@ -785,7 +802,7 @@ void UserMqttHassAutoChildLock(void) {
                 "\"name\":\"%s\","
                 "\"model\":\"TC1\","
                 "\"manufacturer\":\"PHICOMM\"}}",
-                str_mac,str_mac,str_mac, str_mac, str_mac, str_mac,str_mac,sys_config->micoSystemConfig.name);
+                str_mac,str_mac,str_mac, str_mac, str_mac, str_mac,str_mac,device_name);
         UserMqttSendTopic(topic_buf, send_buf, 1);
     }
     if (send_buf)
@@ -795,13 +812,15 @@ void UserMqttHassAutoChildLock(void) {
 }
 
 void UserMqttHassAutoTotalSocket(void) {
+    char device_name[384];
+    mqtt_json_name(device_name, sizeof(device_name), sys_config->micoSystemConfig.name);
     char *send_buf = NULL;
     char *topic_buf = NULL;
-    send_buf = (char *) malloc(600);
+    send_buf = (char *) malloc(MAX_MQTT_DATA_SIZE);
     topic_buf = (char *) malloc(64);
     if (send_buf != NULL && topic_buf != NULL) {
         sprintf(topic_buf, "homeassistant/switch/%s/total_socket/config", str_mac);
-        sprintf(send_buf,
+        snprintf(send_buf, MAX_MQTT_DATA_SIZE,
                 "{\"name\":\"Master Switch\","
                 "\"uniq_id\":\"tc1_%s_total_socket\","
                 "\"object_id\":\"tc1_%s_total_socket\","
@@ -815,7 +834,7 @@ void UserMqttHassAutoTotalSocket(void) {
                 "\"name\":\"%s\","
                 "\"model\":\"TC1\","
                 "\"manufacturer\":\"PHICOMM\"}}",
-                str_mac, str_mac, str_mac, str_mac, str_mac, str_mac, str_mac,sys_config->micoSystemConfig.name);
+                str_mac, str_mac, str_mac, str_mac, str_mac, str_mac, str_mac,device_name);
         UserMqttSendTopic(topic_buf, send_buf, 1);
     }
     if (send_buf)
@@ -826,13 +845,15 @@ void UserMqttHassAutoTotalSocket(void) {
 
 //hass mqtt闂備胶鍘ч〃搴㈢濠婂嫭鍙忛柍鍝勬噹閻鏌熺€电孝缂佺姵鐩弻鈩冩媴閸濆嫷鏆悗瑙勬尫缁舵艾鐣峰┑瀣亜闁告繂瀚慨鐢告⒑閸涘﹦鎳勯柛銊ユ健閺佹捇寮妶鍡楊伓
 void UserMqttHassAutoPower(void) {
+    char device_name[384];
+    mqtt_json_name(device_name, sizeof(device_name), sys_config->micoSystemConfig.name);
     char *send_buf = NULL;
     char *topic_buf = NULL;
-    send_buf = malloc(600);
+    send_buf = malloc(MAX_MQTT_DATA_SIZE);
     topic_buf = malloc(128);
     if (send_buf != NULL && topic_buf != NULL) {
         sprintf(topic_buf, "homeassistant/sensor/%s/power/config", str_mac);
-        sprintf(send_buf,
+        snprintf(send_buf, MAX_MQTT_DATA_SIZE,
                 "{\"name\":\"Power\","
                 "\"uniq_id\":\"tc1_%s_p\","
                 "\"object_id\":\"tc1_%s_p\","
@@ -844,10 +865,10 @@ void UserMqttHassAutoPower(void) {
                 "\"name\":\"%s\","
                 "\"model\":\"TC1\","
                 "\"manufacturer\":\"PHICOMM\"}}",
-                str_mac,str_mac, str_mac, str_mac,sys_config->micoSystemConfig.name);
+                str_mac,str_mac, str_mac, str_mac,device_name);
         UserMqttSendTopic(topic_buf, send_buf, 1);
         sprintf(topic_buf, "homeassistant/sensor/%s/powerConsumption/config", str_mac);
-        sprintf(send_buf,
+        snprintf(send_buf, MAX_MQTT_DATA_SIZE,
                 "{\"name\":\"Energy Total\","
                 "\"uniq_id\":\"tc1_%s_pc\","
                 "\"object_id\":\"tc1_%s_pc\","
@@ -859,12 +880,12 @@ void UserMqttHassAutoPower(void) {
                 "\"name\":\"%s\","
                 "\"model\":\"TC1\","
                 "\"manufacturer\":\"PHICOMM\"}}",
-                str_mac, str_mac, str_mac, str_mac,sys_config->micoSystemConfig.name);
+                str_mac, str_mac, str_mac, str_mac,device_name);
         UserMqttSendTopic(topic_buf, send_buf, 1);
 
 
         sprintf(topic_buf, "homeassistant/sensor/%s/startupTime/config", str_mac);
-        sprintf(send_buf,
+        snprintf(send_buf, MAX_MQTT_DATA_SIZE,
                 "{\"name\":\"Uptime\","
                 "\"uniq_id\":\"tc1_%s_sut\","
                 "\"object_id\":\"tc1_%s_sut\","
@@ -876,11 +897,11 @@ void UserMqttHassAutoPower(void) {
                 "\"name\":\"%s\","
                 "\"model\":\"TC1\","
                 "\"manufacturer\":\"PHICOMM\"}}",
-                str_mac, str_mac, str_mac, str_mac,sys_config->micoSystemConfig.name);
+                str_mac, str_mac, str_mac, str_mac,device_name);
         UserMqttSendTopic(topic_buf, send_buf, 1);
 
         sprintf(topic_buf, "homeassistant/sensor/%s/powerConsumptionToday/config", str_mac);
-        sprintf(send_buf,
+        snprintf(send_buf, MAX_MQTT_DATA_SIZE,
                 "{\"name\":\"Energy Today\","
                 "\"uniq_id\":\"tc1_%s_pc_today\","
                 "\"object_id\":\"tc1_%s_pc_today\","
@@ -892,11 +913,11 @@ void UserMqttHassAutoPower(void) {
                 "\"name\":\"%s\","
                 "\"model\":\"TC1\","
                 "\"manufacturer\":\"PHICOMM\"}}",
-                str_mac,str_mac, str_mac, str_mac,sys_config->micoSystemConfig.name);
+                str_mac,str_mac, str_mac, str_mac,device_name);
         UserMqttSendTopic(topic_buf, send_buf, 1);
 
         sprintf(topic_buf, "homeassistant/sensor/%s/powerConsumptionYesterday/config", str_mac);
-        sprintf(send_buf,
+        snprintf(send_buf, MAX_MQTT_DATA_SIZE,
                 "{\"name\":\"Energy Yesterday\","
                 "\"uniq_id\":\"tc1_%s_pc_yesterday\","
                 "\"object_id\":\"tc1_%s_pc_yesterday\","
@@ -908,7 +929,7 @@ void UserMqttHassAutoPower(void) {
                 "\"name\":\"%s\","
                 "\"model\":\"TC1\","
                 "\"manufacturer\":\"PHICOMM\"}}",
-                str_mac,str_mac, str_mac, str_mac,sys_config->micoSystemConfig.name);
+                str_mac,str_mac, str_mac, str_mac,device_name);
         UserMqttSendTopic(topic_buf, send_buf, 1);
     }
     if (send_buf) free(send_buf);
@@ -919,6 +940,15 @@ char topic_buf[128] = {0};
 char send_buf[128] = {0};
 
 extern void UserMqttHassPower(void) {
+    if(account.mode) {
+        uint32_t today=p_count>=(uint32_t)user_config->p_count_1_day_ago?p_count-user_config->p_count_1_day_ago:0;
+        uint32_t yesterday=user_config->p_count_1_day_ago>=user_config->p_count_2_days_ago?user_config->p_count_1_day_ago-user_config->p_count_2_days_ago:0;
+        mico_time_t ms=0; mico_time_get_time(&ms); unsigned sec=ms/1000;
+        char payload[512],topic[MQTT_TOPIC_MAX];
+        mqtt_format(payload,sizeof(payload),"{\"power\":%.3f,\"powerConsumption\":%.3f,\"powerConsumptionToday\":%.3f,\"powerConsumptionYesterday\":%.3f,\"startupTime\":\"%u - %02u:%02u:%02u\"}",
+            real_time_power/10,PowerPulseCountToKwh(p_count),PowerPulseCountToKwh(today),PowerPulseCountToKwh(yesterday),sec/86400,sec/3600%24,sec/60%60,sec%60);
+        mqtt_leaf(&account,"sensor",topic,sizeof(topic)); UserMqttSendTopic(topic,payload,1); return;
+    }
     uint32_t today_count = p_count >= (uint32_t) user_config->p_count_1_day_ago
                            ? p_count - (uint32_t) user_config->p_count_1_day_ago : 0;
     uint32_t yesterday_count = user_config->p_count_1_day_ago >= user_config->p_count_2_days_ago

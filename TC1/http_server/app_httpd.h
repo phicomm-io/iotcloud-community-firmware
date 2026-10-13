@@ -46,32 +46,6 @@
     *(P_ERR) = httpd_send_body(req->sock, (const unsigned char*)DATA, LEN);                           \
     require_noerr_action(*(P_ERR), LABEL, http_log("ERROR: Unable to send http DATA body."));    \
 
-#define TC1_STATUS_JSON \
-"{\
-    'sockets':'%s',\
-    'mode':%d,\
-    'station_ssid':'%s',\
-    'station_pwd':'%s',\
-    'ap_ssid':'%s',\
-    'ap_pwd':'%s',\
-    'mqtt_addr':'%s',\
-    'mqtt_port':%d,\
-    'mqtt_usr':'%s',\
-    'mqtt_pwd':'%s',\
-    'version':'%s',\
-    'ip':'%s',\
-    'mask':'%s',\
-    'gateway':'%s',\
-	'reportFreq':'%d',\
-    'ledEnabled':%d,\
-    'up_time':%ld,\
-    'socketNames':'%s',\
-    'child_lock_enabled':%d,\
-    'deviceName':'%s',\
-    'powerCoefficientX100':%u,\
-    'btnClicks':%s\
-}"
-
 #define POWER_INFO_JSON "{'sockets':'%s','idx':%d,'len':%d,'p_count':%ld,'powers':[%s],'up_time':'%s','led_enabled':%d,'total_switch_on':%d,'socketNames':'%s','p_count_1_day_ago':%d,'p_count_2_days_ago':%d,'child_lock_enabled':%d,'deviceName':'%s','powerCoefficientX100':%u,'btnClicks':%s}"
 
 extern int AppHttpdStart(void);

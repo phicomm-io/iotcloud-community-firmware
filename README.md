@@ -39,4 +39,5 @@
 - [刷机与失败恢复](https://github.com/FUjr/phicomm-community-firmware/wiki/刷机)：支持的升级方式、文件选择和首次安装限制。
 - 各型号的功能、构建和使用方法见上表。
 - [M1 / A1 绑定与联动配置](common/README.md)。
+- [MQTT 平台账号主题、配置迁移和验证方法](docs/mqtt-account.md)。
 

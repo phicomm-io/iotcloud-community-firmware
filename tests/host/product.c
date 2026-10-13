@@ -1,0 +1,95 @@
+/* Execute the unmodified firmware MQTT worker with a POSIX transport and fake
+ * peripheral/configuration APIs. This is protocol evidence, not hardware QA. */
+#include "mico.h"
+#include "mico_system.h"
+#include "../../common/phicomm_features.h"
+extern uint64_t host_now(void);
+static uint64_t started;
+static unsigned duration=10;
+static feature_config_t features;
+static unsigned controls;
+void feature_config_get(feature_config_t *out){*out=features;}
+bool feature_bound(void){return false;}
+unsigned feature_mqtt_filters(char f[12][FEATURE_TOPIC_MAX]){(void)f;return 0;}
+bool feature_mqtt_input(const char *t,const void *d,size_t n,bool retained){(void)t;(void)d;(void)n;(void)retained;return false;}
+void feature_mqtt_session(const mqtt_account_t *a){(void)a;}
+int feature_mqtt_service(int (*p)(const char *,const char *,bool),bool connected){(void)p;(void)connected;return 0;}
+int feature_mqtt_cleanup(int (*p)(const char *,const char *,bool)){(void)p;return 0;}
+void feature_effective_fan(bool a,unsigned b,bool *on,unsigned *speed){*on=a;*speed=b;}
+uint32_t mico_rtos_get_time(void){return host_now()-started;}
+static void trace_status(void);
+static void host_update(void);
+void mico_thread_msleep(unsigned ms){host_update();trace_status();if(mico_rtos_get_time()>duration*1000){printf("DONE controls=%u\n",controls);fflush(stdout);exit(0);}usleep(ms*1000);}
+void mico_rtos_thread_sleep(unsigned sec){mico_thread_msleep(sec*1000);}
+#ifdef HOST_M1
+#include "../../M1/mqtt.c"
+static m1_config_t config;
+char m1_id[13]="aabbccddeeff";mico_mutex_t m1_lock;m1_state_t m1_state;
+void m1_config_get(m1_config_t *out){*out=config;}
+void m1_state_get(m1_state_t *out){
+    if(mico_rtos_get_time()>=2000 && mico_rtos_get_time()<7000){m1_state.sample.received=true;m1_state.sample.sequence=1;m1_state.sample.updated_ms=2000;}
+    *out=m1_state;
+}
+bool m1_set_brightness(unsigned n){++controls;m1_state.brightness_requested=n;printf("CONTROL brightness=%u\n",n);fflush(stdout);return true;}
+bool m1_sample_fresh(const m1_sample_t *s,uint32_t now){return s->received && (uint32_t)(now-s->updated_ms)<15000;}
+#define WORKER mqtt_worker
+#elif defined(HOST_A1)
+#include "../../A1/mqtt.c"
+static a1_config_t config;
+char a1_id[13]="aabbccddeeff";mico_mutex_t a1_lock;a1_state_t a1_state;
+void a1_config_get(a1_config_t *out){*out=config;}
+void a1_state_get(a1_state_t *out){*out=a1_state;}
+bool a1_control_local(const char *kind,json_object *o){++controls;printf("CONTROL %s\n",kind);fflush(stdout);if(!strcmp(kind,"fan")){json_object *v=json_object_object_get(o,"on");if(v)config.fan_on=json_object_get_boolean(v);v=json_object_object_get(o,"speed");if(v)config.speed=json_object_get_int(v);}++config.revision;return true;}
+json_object *a1_json_parse(const char *s,size_t n){(void)n;return json_tokener_parse(s);}
+#define WORKER mqtt_worker
+#else
+#define WEB_LOG_H
+#define web_log(...) ((void)0)
+#include "../../TC1/mqtt_server/user_mqtt_client.c"
+static user_config_t config;
+static system_config_t system_config;
+user_config_t *user_config=&config;system_config_t *sys_config=&system_config;
+char str_mac[16]="AABBCCDDEEFF";int childLockEnabled;
+uint32_t p_count=100;float real_time_power=12.5;
+void UserLedSet(char n){(void)n;}
+void UserRelaySet(unsigned char i,char on){if(i>=6)return;++controls;config.socket_status[i]=on;printf("CONTROL socket=%u on=%d\n",i,on);fflush(stdout);}
+void UserRelaySetAll(char on){for(unsigned i=0;i<6;++i)UserRelaySet(i,on);}
+bool RelayOut(void){for(unsigned i=0;i<6;++i)if(config.socket_status[i])return true;return false;}
+void UserSoftReboot(void){}
+float PowerPulseCountToKwh(uint32_t count){return count/100.0;}
+#define WORKER MqttClientThread
+#endif
+static void host_update(void) {
+    static bool switched;
+    const char *user=getenv("HOST_SWITCH_USER");
+    if(user && !switched && mico_rtos_get_time()>=4000) {
+        switched=true; strcpy(config.mqtt_user,user);
+        printf("CONFIG account switch\n"); fflush(stdout);
+    }
+}
+static void trace_status(void) {
+    static int last=-1;
+#ifdef HOST_M1
+    unsigned status=m1_state.mqtt_status;
+#elif defined(HOST_A1)
+    unsigned status=a1_state.mqtt_status;
+#else
+    unsigned status=tc1_mqtt_status;
+#endif
+    if(last!=(int)status){printf("STATUS %s\n",mqtt_status_name(status));fflush(stdout);last=status;}
+}
+int main(int argc,char **argv){
+    if(argc<4){fprintf(stderr,"host-worker host port user [duration]\n");return 2;}
+    started=host_now();if(argc>4)duration=atoi(argv[4]);
+    const char *pw=getenv("HOST_MQTT_PASSWORD");if(!pw)pw="test-password";
+#ifdef HOST_M1
+    strcpy(config.mqtt_host,argv[1]);config.mqtt_port=atoi(argv[2]);strcpy(config.mqtt_user,argv[3]);strcpy(config.mqtt_password,pw);strcpy(config.name,"M1 test");config.mqtt_topic_mode=1;m1_state.wifi_connected=true;
+#elif defined(HOST_A1)
+    strcpy(config.mqtt_host,argv[1]);config.mqtt_port=atoi(argv[2]);strcpy(config.mqtt_user,argv[3]);strcpy(config.mqtt_password,pw);strcpy(config.name,"A1 test");config.mqtt_topic_mode=1;a1_state.wifi_connected=true;config.speed=60;
+#else
+    strcpy(config.mqtt_ip,argv[1]);config.mqtt_port=atoi(argv[2]);strcpy(config.mqtt_user,argv[3]);strcpy(config.mqtt_password,pw);strcpy(system_config.micoSystemConfig.name,"TC1 \"quoted\" test");config.mqtt_topic_mode=1;
+    for(unsigned i=0;i<6;++i)snprintf(config.socket_names[i],64,"Socket \"%u\"",i);
+    mico_rtos_init_queue(&mqtt_msg_send_queue,"host",sizeof(void *),10);
+#endif
+    WORKER(0);return 0;
+}
