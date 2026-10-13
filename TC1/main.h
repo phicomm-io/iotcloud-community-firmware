@@ -16,7 +16,8 @@
 #define wifi_log(M, ...) custom_log("WIFI", M, ##__VA_ARGS__); web_log("WIFI", M, ##__VA_ARGS__);
 #define power_log(M, ...) custom_log("POWER", M, ##__VA_ARGS__); web_log("POWER", M, ##__VA_ARGS__);
 
-#define VERSION "0.9.0"
+#include "../common/generated/build_version.h"
+#define VERSION FIRMWARE_VERSION
 
 #define TYPE 1
 #define TYPE_NAME "TC1"

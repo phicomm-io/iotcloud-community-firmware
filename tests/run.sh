@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
+python3 tools/check_version.py
+python3 -m unittest discover -s tests -p test_version.py
 output=$(mktemp -d)
 trap 'rm -rf "$output"' EXIT
 cc -DFEATURE_HOST -std=c99 -Wall -Wextra -Werror -Wno-misleading-indentation -Icommon common/engine.c tests/test_engine.c -lm -o "$output/engine"

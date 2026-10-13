@@ -1,7 +1,8 @@
 #pragma once
 
 #define APP_INFO "Phicomm A1 community firmware"
-#define FIRMWARE_REVISION "0.9.0"
+#include "../common/generated/build_version.h"
+#define FIRMWARE_REVISION FIRMWARE_VERSION
 #define MANUFACTURER "Phicomm Community"
 #define SERIAL_NUMBER "A1"
 #define PROTOCOL "phicomm.a1.local"

@@ -6,14 +6,16 @@ import sys
 from pathlib import Path
 from check_image import check
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
-from check_version import project_version
+from check_version import project_version, build_metadata
 
 source, output, sdk = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
 output.mkdir(parents=True, exist_ok=True)
 # Explicit artifact list; full image is packaged on request and contains ATE.
 prefix = "M1@MK3080B@moc"
 version = project_version()
+version_metadata = build_metadata()
 manifest = {"version": version, "sdk_commit": sdk, "target": prefix, "toolchain": "ARM GCC 5.4.1", "files": {}}
+manifest.update(version_metadata)
 for suffix in (".usr.bin", ".ota.bin", ".all.bin", ".elf", ".map"):
     original = source / (prefix + suffix)
     if not original.is_file():

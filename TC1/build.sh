@@ -10,7 +10,11 @@ ln -sfn "$sdk_dir" "$workspace/mico-os"
 ln -sfn "$app_dir" "$workspace/TC1"
 tools_dir="${TC1_TOOLS_DIR:-$project_dir/build/tc1-tools}"
 target=TC1@MK3031@moc
-python3 "$project_dir/tools/check_version.py"
+version_args=()
+if [[ "${GITHUB_REF_TYPE:-}" == tag ]]; then
+    version_args=(--tag "$GITHUB_REF_NAME")
+fi
+python3 "$project_dir/tools/check_version.py" "${version_args[@]}"
 mkdir -p "$tools_dir"
 gcc_dir="$tools_dir/gcc-arm-none-eabi-5_4-2016q2"
 python2="${TC1_PYTHON2:-$tools_dir/python2/bin/python2.7}"
