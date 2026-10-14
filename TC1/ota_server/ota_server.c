@@ -1,490 +1,132 @@
-/**
- ******************************************************************************
- * @file    ota_server.c
- * @author  QQ ding
- * @version V1.0.0
- * @date    19-Oct-2016
- * @brief   Create a OTA server thread, download update bin file. Reboot system
- *          if download success.
- ******************************************************************************
- *
- *  The MIT License
- *  Copyright (c) 2016 MXCHIP Inc.
- *
- *  Permission is hereby granted, free of charge, to any person obtaining a copy
- *  of this software and associated documentation files (the "Software"), to deal
- *  in the Software without restriction, including without limitation the rights
- *  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- *  copies of the Software, and to permit persons to whom the Software is furnished
- *  to do so, subject to the following conditions:
- *
- *  The above copyright notice and this permission notice shall be included in
- *  all copies or substantial portions of the Software.
- *
- *  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- *  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- *  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- *  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
- *  WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
- *  IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
- ******************************************************************************
- */
-#include "main.h"
-#include "HTTPUtils.h"
-#include "SocketUtils.h"
+/* Bounded direct HTTP transport. Authenticity comes from the signed package. */
+#include "mico.h"
 #include "ota_server.h"
-#include "url.h"
-#include "http_server/web_log.h"
-
-static ota_server_context_t *ota_server_context = NULL;
-static HTTPHeader_t *httpHeader = NULL;
-
-static CRC16_Context crc_context;
-static md5_context md5;
-static uint32_t offset = 0;
-
-static OSStatus OnReceivedData(struct _HTTPHeader_t * httpHeader,
-                                uint32_t pos,
-                                uint8_t *data,
-                                size_t len,
-                                void * userContext);
-
-static void Hex2Str(char *hex, int hex_len, char *str)
+#include "signed_adapter.h"
+#include "user_ota.h"
+#include "../../common/ota/signed_ota.h"
+#include <ctype.h>
+#include <string.h>
+static ota_server_cb_fn callback;
+int ota_socket_read(int fd, void *data, size_t n, unsigned timeout)
 {
-  int i = 0;
-  for(i=0; i<hex_len; i++){
-    sprintf(str+i*2, "%02x", hex[i]);
-  }
+    fd_set readfds; FD_ZERO(&readfds); FD_SET(fd, &readfds);
+    struct timeval tv = { timeout / 1000, (timeout % 1000) * 1000 };
+    if (select(fd + 1, &readfds, NULL, NULL, &tv) <= 0) return -1;
+    return recv(fd, data, n, 0);
 }
 
-static void Upper2Ower(char *str, int len)
+bool ota_socket_send(int fd, const void *data, size_t n)
 {
-  int i = 0;
-  for(i=0; i<len; i++)
-  {
-    if((*(str+i) >= 'A') &&  (*(str+i) <= 'Z')){
-      *(str+i) += 32;
+    const uint8_t *p = data;
+    while (n) {
+        fd_set writefds; FD_ZERO(&writefds); FD_SET(fd, &writefds);
+        struct timeval tv = {10, 0};
+        if (select(fd + 1, NULL, &writefds, NULL, &tv) <= 0) return false;
+        int sent = send(fd, p, n, 0);
+        if (sent <= 0) return false;
+        p += sent; n -= sent;
     }
-  }
+    return true;
 }
 
-static int OtaServerSend(char *data, int datalen)
+int ota_socket_line(int fd, char *line, size_t capacity)
 {
-    int res = 0;
-    if(ota_server_context->download_url.HTTP_SECURITY == HTTP_SECURITY_HTTP){
-        res = send(ota_server_context->download_url.ota_fd, data, datalen, 0);
+    uint32_t deadline = mico_rtos_get_time() + 10000;
+    size_t used = 0;
+    while (used + 1 < capacity) {
+        uint32_t now = mico_rtos_get_time();
+        if ((int32_t)(now - deadline) >= 0) return -1;
+        char c;
+        if (ota_socket_read(fd, &c, 1, deadline - now) != 1 || !c) return -1;
+        if (c == '\n') {
+            if (!used || line[used - 1] != '\r') return -1;
+            line[--used] = 0; return used;
+        }
+        line[used++] = c;
     }
-#if OTA_USE_HTTPS
-    if(ota_server_context->download_url.HTTP_SECURITY == HTTP_SECURITY_HTTPS){
-        res = ssl_send(ota_server_context->download_url.ota_ssl, data, datalen);
-    }
-#endif
-    return res;
+    return -1;
 }
 
-static OSStatus OtaServerConnect(struct sockaddr_in *addr, socklen_t addrlen)
+static void download_worker(mico_thread_arg_t arg)
 {
-    OSStatus err = kNoErr;
-#if OTA_USE_HTTPS
-    int ssl_errno = 0;
-#endif
-
-    err = connect(ota_server_context->download_url.ota_fd, (struct sockaddr *)addr, addrlen);
-    require_noerr_string(err, exit, "ERROR: connect ota server failed");
-
-#if OTA_USE_HTTPS
-    if(ota_server_context->download_url.HTTP_SECURITY == HTTP_SECURITY_HTTPS){
-        ota_server_context->download_url.ota_ssl = ssl_connect(ota_server_context->download_url.ota_fd, 0, NULL, &ssl_errno);
-        require_action_string(ota_server_context->download_url.ota_ssl != NULL, exit, err = kConnectionErr,"ERROR: ssl disconnect");
+    char *url = (char *)arg;
+    int fd = -1; const char *error = "HTTP download failed";
+    char host[128], path[384], line[640]; unsigned port = 80;
+    /* Direct HTTP URLs with Content-Length; no implicit redirect or TLS bypass. */
+    const char *authority = url + 7, *slash = strchr(authority, '/');
+    size_t authority_len = slash ? (size_t)(slash - authority) : strlen(authority);
+    if (!authority_len || authority_len >= sizeof(host)) goto fail;
+    memcpy(host, authority, authority_len); host[authority_len] = 0;
+    if (slash && strlen(slash) >= sizeof(path)) { error = "URL path too long"; goto fail; }
+    snprintf(path, sizeof(path), "%s", slash ? slash : "/");
+    char *colon = strchr(host, ':');
+    if (colon) {
+        char *last; unsigned long value = strtoul(colon + 1, &last, 10);
+        if (!value || value > 65535 || *last) goto fail;
+        port = value; *colon = 0;
     }
-#endif
-
-exit:
-    return err;
-}
-
-static int OtaServerReadHeader(HTTPHeader_t *httpHeader)
-{
-    int res = 0;
-    if(ota_server_context->download_url.HTTP_SECURITY == HTTP_SECURITY_HTTP){
-        res = SocketReadHTTPHeader(ota_server_context->download_url.ota_fd, httpHeader);
+    struct hostent *resolved = gethostbyname(host);
+    if (!resolved || !resolved->h_addr_list[0]) { error = "DNS lookup failed"; goto fail; }
+    struct sockaddr_in address = {0}; address.sin_family = AF_INET; address.sin_port = htons(port);
+    memcpy(&address.sin_addr, resolved->h_addr_list[0], 4);
+    fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (fd < 0 || connect(fd, (struct sockaddr *)&address, sizeof(address)) < 0) goto fail;
+    snprintf(line, sizeof(line), "GET %s HTTP/1.1\r\nHost: %s:%u\r\nConnection: close\r\nAccept-Encoding: identity\r\n\r\n", path, host, port);
+    if (!ota_socket_send(fd, line, strlen(line)) || ota_socket_line(fd, line, sizeof(line)) < 0 ||
+        (strncmp(line, "HTTP/1.1 200 ", 13) && strncmp(line, "HTTP/1.0 200 ", 13))) {
+        error = "Download requires a direct HTTP 200 response"; goto fail;
     }
-    if(ota_server_context->download_url.HTTP_SECURITY == HTTP_SECURITY_HTTPS){
-#if OTA_USE_HTTPS
-        res = SocketReadHTTPSHeader(ota_server_context->download_url.ota_ssl, httpHeader);
-#endif
-    }
-
-    return res;
-}
-
-static int OtaServerReadBody(HTTPHeader_t *httpHeader)
-{
-    int res = 0;
-    if(ota_server_context->download_url.HTTP_SECURITY == HTTP_SECURITY_HTTP){
-        res = SocketReadHTTPBody(ota_server_context->download_url.ota_fd, httpHeader);
-    }
-    if(ota_server_context->download_url.HTTP_SECURITY == HTTP_SECURITY_HTTPS){
-#if OTA_USE_HTTPS
-        res = SocketReadHTTPSBody(ota_server_context->download_url.ota_ssl, httpHeader);
-#endif
-    }
-    return res;
-}
-
-static int OtaServerSendHeader(void)
-{
-    char *header = NULL;
-    int j = 0;
-    int ret = 0;
-    header = malloc(OTA_SEND_HEAD_SIZE);
-    memset(header, 0x00, OTA_SEND_HEAD_SIZE);
-
-    j = sprintf(header, "GET ");
-    j += sprintf(header + j, "/%s HTTP/1.1\r\n", ota_server_context->download_url.url);
-
-    if (ota_server_context->download_url.port == 0)
-    {
-        j += sprintf(header + j, "Host: %s\r\n", ota_server_context->download_url.host);
-    } else
-    {
-        j += sprintf(header + j, "Host: %s:%d\r\n", ota_server_context->download_url.host, ota_server_context->download_url.port);
-    }
-
-    j += sprintf(header + j, "Connection: close\r\n");  //Keep-Alive close
-
-    //Range: bytes=start-end
-    if (ota_server_context->download_state.download_begin_pos > 0)
-    {
-        if (ota_server_context->download_state.download_end_pos > 0)
-        {
-            j += sprintf(header + j, "Range: bytes=%d-%d\r\n", ota_server_context->download_state.download_begin_pos,
-                          ota_server_context->download_state.download_end_pos);
-        } else
-        {
-            j += sprintf(header + j, "Range: bytes=%d-\r\n", ota_server_context->download_state.download_begin_pos);
+    uint32_t length = 0; bool have_length = false; unsigned headers = 0;
+    for (;;) {
+        int n = ota_socket_line(fd, line, sizeof(line));
+        if (n < 0 || (headers += n) > 4096) goto fail;
+        if (!n) break;
+        if (!strncasecmp(line, "Content-Length:", 15)) {
+            char *end; unsigned long parsed = strtoul(line + 15, &end, 10);
+            while (*end == ' ') end++;
+            if (have_length || *end || parsed > 0xa9000u + OTA_ENVELOPE_SIZE) goto fail;
+            length = parsed; have_length = true;
+        }
+        if (!strncasecmp(line, "Transfer-Encoding:", 18) ||
+            (!strncasecmp(line, "Content-Encoding:", 17) && strcmp(line + 18, "identity"))) {
+            error = "Chunked or compressed downloads are unsupported"; goto fail;
         }
     }
-
-    j += sprintf(header + j, "\r\n");
-
-    ret = OtaServerSend((char *) header, strlen(header));
-
-//  ota_log("send: %d\r\n%s", strlen(header), header);
-    if (header != NULL) free(header);
-    return ret;
+    if (!have_length) { error = "Download is missing Content-Length"; goto fail; }
+    if(!tc1_ota_begin(length,false)) {error="Invalid signed package length";goto fail;}
+    uint32_t received=0;
+    uint8_t data[512]; uint32_t deadline = mico_rtos_get_time() + 300000;
+    while (received < length) {
+        if ((int32_t)(mico_rtos_get_time() - deadline) >= 0) { error = "Download timed out"; goto fail; }
+        unsigned want = length - received > sizeof(data) ? sizeof(data) : length - received;
+        int n = ota_socket_read(fd, data, want, 15000);
+        if (n <= 0) { error = "Download interrupted"; goto fail; }
+        if (!tc1_ota_write(data,n)) {error="Signature or Flash write failed";goto fail;}
+        received+=n;
+        ota_progress=(float)received*100/length;
+        if(callback)callback(OTA_LOADING,ota_progress);
+    }
+    if(!tc1_ota_finish()) {error="OTA image or boot metadata validation failed";goto fail;}
+    ota_progress=100;
+    if(callback)callback(OTA_SUCCE,100);
+    mico_thread_msleep(1500);
+    mico_system_power_perform(mico_system_context_get(),eState_Software_Reset);
+    goto done;
+fail:
+    ota_progress=-1;
+    custom_log("OTA","%s",error);if(callback)callback(OTA_FAIL,0);
+    tc1_ota_abort();
+done:
+    if (fd >= 0) close(fd);
+    free(url); mico_rtos_delete_thread(NULL);
 }
 
-static void OtaServerSocketClose(void)
+OSStatus ota_server_start(char *url,char *md5,ota_server_cb_fn cb)
 {
-#if OTA_USE_HTTPS
-    if (ota_server_context->download_url.ota_ssl) ssl_close(ota_server_context->download_url.ota_ssl);
-#endif
-    SocketClose(&(ota_server_context->download_url.ota_fd));
-    ota_server_context->download_url.ota_fd = -1;
-}
-
-static int OtaServerConnectServer(struct in_addr in_addr)
-{
-    int err = 0;
-    struct sockaddr_in server_address;
-
-    if (ota_server_context->download_url.port == 0)
-    {
-        if (ota_server_context->download_url.HTTP_SECURITY == HTTP_SECURITY_HTTP)
-        {
-            server_address.sin_port = htons(80);
-        } else
-        {
-            server_address.sin_port = htons(443);
-        }
-    } else
-    {
-        server_address.sin_port = htons(ota_server_context->download_url.port);
-    }
-
-    server_address.sin_family = AF_INET;
-    server_address.sin_addr = in_addr;
-
-    err = OtaServerConnect(&server_address, sizeof(server_address));
-    if (err != 0)
-    {
-        mico_thread_sleep(1);
-        return -1;
-    }
-
-    ota_log("ota server connected!");
-    return 0;
-}
-
-static void OtaServerProgressSet(OTA_STATE_E state)
-{
-    float progress = 0.00;
-
-    progress =(float) ota_server_context->download_state.download_begin_pos / ota_server_context->download_state.download_len;
-    progress = progress*100;
-    if(ota_server_context->ota_server_cb != NULL)
-        ota_server_context->ota_server_cb(state, progress);
-}
-
-static void OtaServerThread(mico_thread_arg_t arg)
-{
-    OSStatus err;
-    uint16_t crc16 = 0;
-    char md5_value[16] = {0};
-    char md5_value_string[33] = {0};
-    fd_set readfds;
-    struct hostent* hostent_content = NULL;
-    char **pptr = NULL;
-    struct in_addr in_addr;
-
-    mico_logic_partition_t* ota_partition = MicoFlashGetInfo(MICO_PARTITION_OTA_TEMP);
-
-    ota_server_context->ota_control = OTA_CONTROL_START;
-
-    hostent_content = gethostbyname(ota_server_context->download_url.host);
-    require_action_quiet(hostent_content != NULL, DELETE, OtaServerProgressSet(OTA_FAIL));
-    pptr=hostent_content->h_addr_list;
-    in_addr.s_addr = *(uint32_t *)(*pptr);
-    strcpy(ota_server_context->download_url.ip, inet_ntoa(in_addr));
-    ota_log("OTA server address: %s, host ip: %s", ota_server_context->download_url.host, ota_server_context->download_url.ip);
-
-    offset = 0;
-    MicoFlashErase(MICO_PARTITION_OTA_TEMP, 0x0, ota_partition->partition_length);
-
-    CRC16_Init(&crc_context);
-    if(ota_server_context->ota_check.is_md5 == true){
-        InitMd5(&md5);
-    }
-
-    httpHeader = HTTPHeaderCreateWithCallback(512, OnReceivedData, NULL, NULL);
-    require_action(httpHeader, DELETE, OtaServerProgressSet(OTA_FAIL));
-
-    while (1)
-    {
-        if (ota_server_context->ota_control == OTA_CONTROL_PAUSE){
-            mico_thread_sleep(1);
-            continue;
-        }else if(ota_server_context->ota_control == OTA_CONTROL_STOP){
-            goto DELETE;
-        }
-
-        ota_server_context->download_url.ota_fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-        err = OtaServerConnectServer(in_addr);
-        require_noerr_action(err, RECONNECTED,  OtaServerProgressSet(OTA_FAIL));
-
-        /* Send HTTP Request */
-        OtaServerSendHeader();
-
-        FD_ZERO(&readfds);
-        FD_SET(ota_server_context->download_url.ota_fd, &readfds);
-
-        select(ota_server_context->download_url.ota_fd + 1, &readfds, NULL, NULL, NULL);
-        if (FD_ISSET(ota_server_context->download_url.ota_fd, &readfds))
-        {
-            /*parse header*/
-            err = OtaServerReadHeader(httpHeader);
-            if (ota_server_context->ota_control == OTA_CONTROL_START)
-            {
-                ota_server_context->download_state.download_len = httpHeader->contentLength;
-                ota_server_context->ota_control = OTA_CONTROL_CONTINUE;
-            }
-            switch (err)
-            {
-                case kNoErr:
-#if OTA_DEBUG
-                    PrintHTTPHeader(httpHeader);
-#endif
-                    err = OtaServerReadBody(httpHeader);/*get body data*/
-                    require_noerr(err, RECONNECTED);
-                    /*get data and print*/
-                    break;
-                case EWOULDBLOCK:
-                case kNoSpaceErr:
-                case kConnectionErr:
-                default:
-                    ota_log("ERROR: HTTP Header parse error: %d", err);
-                    break;
-            }
-        }
-
-        if (ota_server_context->download_state.download_len == ota_server_context->download_state.download_begin_pos)
-        {
-            if(httpHeader->statusCode != 200){
-                OtaServerProgressSet(OTA_FAIL);
-                goto DELETE;
-            }
-            CRC16_Final(&crc_context, &crc16);
-            if(ota_server_context->ota_check.is_md5 == true){
-                Md5Final(&md5, (unsigned char *) md5_value);
-                Hex2Str((char *)md5_value, 16, md5_value_string);
-            }
-            if (memcmp(md5_value_string, ota_server_context->ota_check.md5, OTA_MD5_LENTH) == 0){
-                OtaServerProgressSet(OTA_SUCCE);
-                mico_ota_switch_to_new_fw(ota_server_context->download_state.download_len, crc16);
-                mico_system_power_perform(mico_system_context_get(), eState_Software_Reset);
-            }else{
-                ota_log("OTA md5 check err, Calculation:%s, Get:%s", md5_value_string, ota_server_context->ota_check.md5);
-                OtaServerProgressSet(OTA_FAIL);
-            }
-            goto DELETE;
-        }
-
-    RECONNECTED:
-        OtaServerSocketClose();
-        mico_thread_sleep(2);
-        continue;
-
-    }
-DELETE:
-    HTTPHeaderDestory(&httpHeader);
-    OtaServerSocketClose();
-    if(ota_server_context != NULL){
-        if(ota_server_context->download_url.url != NULL){
-            free(ota_server_context->download_url.url);
-            ota_server_context->download_url.url = NULL;
-        }
-        free(ota_server_context);
-        ota_server_context = NULL;
-    }
-
-    ota_log("ota server thread will delete");
-    mico_rtos_delete_thread(NULL);
-}
-
-/*one request may receive multi reply*/
-static OSStatus OnReceivedData(struct _HTTPHeader_t * inHeader, uint32_t inPos, uint8_t * inData,
-                                size_t inLen, void * inUserContext)
-{
-    OSStatus err = kNoErr;
-
-    if (inLen == 0)
-        return err;
-
-    ota_server_context->download_state.download_begin_pos += inLen;
-
-    CRC16_Update(&crc_context, inData, inLen);
-    if(ota_server_context->ota_check.is_md5 == true){
-        Md5Update(&md5, inData, inLen);
-    }
-
-    MicoFlashWrite(MICO_PARTITION_OTA_TEMP, &offset, inData, inLen);
-
-    OtaServerProgressSet(OTA_LOADING);
-
-    if(ota_server_context->ota_control == OTA_CONTROL_PAUSE){
-        while(1){
-            if(ota_server_context->ota_control != OTA_CONTROL_PAUSE)
-                break;
-            mico_thread_msleep(100);
-        }
-    }
-
-    if(ota_server_context->ota_control == OTA_CONTROL_STOP){
-        err = kUnsupportedErr;
-    }
-
-    return err;
-}
-
-static OSStatus OtaServerSetUrl(char *url)
-{
-    OSStatus err = kNoErr;
-    url_field_t *url_t;
-    char *pos = NULL;
-
-    url_t = url_parse(url);
-    require_action(url, exit, err = kParamErr);
-#if OTA_DEBUG
-    url_field_print(url_t);
-#endif
-    if (!strcmp(url_t->schema, "https"))
-    {
-        ota_server_context->download_url.HTTP_SECURITY = HTTP_SECURITY_HTTPS;
-    } else
-    {
-        ota_server_context->download_url.HTTP_SECURITY = HTTP_SECURITY_HTTP;
-    }
-
-    strcpy(ota_server_context->download_url.host, url_t->host);
-    ota_server_context->download_url.port = atoi(url_t->port);
-    pos = strstr(url, url_t->path);
-    if (pos == NULL)
-    {
-        strcpy(ota_server_context->download_url.url, "");
-    } else
-    {
-        strcpy(ota_server_context->download_url.url, pos);
-    }
-
-exit:
-    url_free(url_t);
-    return err;
-}
-
-OSStatus ota_server_start(char *url, char *md5, ota_server_cb_fn call_back)
-{
-    OSStatus err = kNoErr;
-
-    require_action(url, exit, err = kParamErr);
-
-    if(ota_server_context != NULL){
-        if(ota_server_context->download_url.url != NULL){
-            free(ota_server_context->download_url.url);
-            ota_server_context->download_url.url = NULL;
-        }
-        free(ota_server_context);
-        ota_server_context = NULL;
-    }
-
-    ota_server_context = malloc(sizeof(ota_server_context_t));
-    require_action(ota_server_context, exit, err = kNoMemoryErr);
-    memset(ota_server_context, 0x00, sizeof(ota_server_context_t));
-
-    ota_server_context->download_url.url = malloc(strlen(url) + 1);
-    require_action(ota_server_context->download_url.url, exit, err = kNoMemoryErr);
-    memset(ota_server_context->download_url.url, 0x00, strlen(url) + 1);
-
-    err = OtaServerSetUrl(url);
-    require_noerr(err, exit);
-
-    if(md5 != NULL){
-        ota_server_context->ota_check.is_md5 = true;
-        memcpy(ota_server_context->ota_check.md5, md5, OTA_MD5_LENTH);
-        Upper2Ower(ota_server_context->ota_check.md5, OTA_MD5_LENTH);
-    }
-
-    ota_server_context->ota_server_cb = call_back;
-
-    err = mico_rtos_create_thread(NULL, MICO_APPLICATION_PRIORITY, "OTA", OtaServerThread, OTA_SERVER_THREAD_STACK_SIZE, 0);
-exit:
-    if (err != kNoErr && ota_server_context != NULL){
-        if(ota_server_context->download_url.url != NULL){
-            free(ota_server_context->download_url.url);
-            ota_server_context->download_url.url = NULL;
-        }
-        free(ota_server_context);
-        ota_server_context = NULL;
-    }
-    return err;
-}
-
-void OtaServerPause(void)
-{
-    ota_server_context->ota_control = OTA_CONTROL_PAUSE;
-}
-
-void OtaServerContinue(void)
-{
-    ota_server_context->ota_control = OTA_CONTROL_CONTINUE;
-}
-
-void OtaServerStop(void)
-{
-    ota_server_context->ota_control = OTA_CONTROL_STOP;
-}
-
-OTA_CONTROL_E OtaServerGet(void)
-{
-    return ota_server_context->ota_control;
+    (void)md5; /* A broker-supplied MD5 is never an authorization credential. */
+    if(!url || strncmp(url,"http://",7) || strlen(url)>=500 || strpbrk(url,"\r\n @#") || !tc1_ota_reserve())return kParamErr;
+    char *copy=malloc(strlen(url)+1);
+    if(!copy){tc1_ota_abort();return kNoMemoryErr;}strcpy(copy,url);callback=cb;ota_progress=0;
+    OSStatus err=mico_rtos_create_thread(NULL,MICO_APPLICATION_PRIORITY,"OTA",download_worker,6144,(mico_thread_arg_t)copy);
+    if(err!=kNoErr){free(copy);tc1_ota_abort();}return err;
 }

@@ -40,6 +40,9 @@ typedef struct {
     uint8_t mqtt_status;
     bool mqtt_cleanup_warning;
     unsigned ota_progress, scan_count;
+    bool ota_signature_verified, ota_image_verified;
+    uint32_t ota_key_id, ota_image_length;
+    char ota_release_counter[21], ota_version[32];
     char ip[16], ap_name[32], ota_state[16], ota_error[96], save_error[96];
     struct { char ssid[33]; int rssi; } scan[32];
 } a1_state_t;
@@ -65,6 +68,7 @@ OSStatus a1_mqtt_start(void);
 OSStatus a1_http_start(void);
 void a1_ota_status(const char *, const char *, unsigned);
 bool a1_ota_begin(uint32_t);
+bool a1_ota_begin_unsigned(uint32_t);
 bool a1_ota_write(const uint8_t *, size_t);
 bool a1_ota_finish(void);
 void a1_ota_abort(const char *);

@@ -1,3 +1,6 @@
+#include "../../common/ota/signed_ota.h"
+#include "ota_server/ota_server.h"
+#include "ota_server/signed_adapter.h"
 /**
  ******************************************************************************
  * @file    app_https.c
@@ -286,87 +289,23 @@ static int HttpSetButtonEvent(httpd_request_t *req) {
 
 #define OTA_BUF_SIZE 5120
 
-static int HttpSetOTAFile(httpd_request_t *req)
+static int HttpUploadOTA(httpd_request_t *req, bool rescue)
 {
-    tc1_log("[OTA] hdr_parsed=%d, remaining=%d, body_nbytes=%d, req.chunked=%d",
-        req->hdr_parsed, req->remaining_bytes, req->body_nbytes, req->chunked);
-    OSStatus err = kNoErr;
-
-    int total = 0;
-    int ret = 0;
-
-    // req->chunked = 1;
-
-    int total1 = req->remaining_bytes;
-    char *buffer = malloc(OTA_BUF_SIZE);
-    if (!buffer) return kNoMemoryErr;
-    uint32_t offset = 0;
-
-    mico_logic_partition_t* ota_partition = MicoFlashGetInfo(MICO_PARTITION_OTA_TEMP);
-    MicoFlashErase(MICO_PARTITION_OTA_TEMP, 0x0, ota_partition->partition_length);
-    CRC16_Context crc_context;
-    CRC16_Init(&crc_context);
-    // 灏濊瘯璇诲彇鍏ㄩ儴 POST 鏁版嵁
-    while (1) {
-        ret = httpd_get_data2(req, buffer,OTA_BUF_SIZE);
-
-        // ret = httpd_recv(req->sock, buffer, 128, 0);
-        total += ret;
-        // req->remaining_bytes -= ret;
-
-        if (ret > 0) {
-            CRC16_Update(&crc_context, buffer, ret);
-            err = MicoFlashWrite(MICO_PARTITION_OTA_TEMP, &offset, (uint8_t *)buffer, ret);
-            require_noerr_quiet(err, exit);
-            tc1_log("[OTA] 鏈璇诲彇 %d 瀛楄妭锛岀疮璁?%d 瀛楄妭", ret, total);
-        }
-
-        if (ret == 0 || req->remaining_bytes <= 0) {
-            // 璇诲彇瀹屾瘯
-            tc1_log("[OTA] 鏁版嵁璇诲彇瀹屾垚, 鎬昏 %d 瀛楄妭", total);
-            break;
-        } else if (ret < 0) {
-            tc1_log("[OTA] 鏁版嵁璇诲彇澶辫触, ret=%d", ret);
-            err = kConnectionErr;
-            break;
-        }
-
-        mico_rtos_thread_msleep(100);
-
-        // tc1_log("[OTA] %x", buffer);
-        // tc1_log("[OTA] hdr_parsed=%d, remaining=%d, body_nbytes=%d",
-        // req->hdr_parsed, req->remaining_bytes, req->body_nbytes);
+    OSStatus err=kGeneralErr; char buffer[512];
+    if (req->chunked || req->remaining_bytes<=0 || !tc1_ota_reserve()) return kParamErr;
+    if (!tc1_ota_begin(req->remaining_bytes,rescue)) {tc1_ota_abort();return kParamErr;}
+    while (req->remaining_bytes>0) {
+        int n=httpd_get_data2(req,buffer,sizeof(buffer));
+        if (n<=0 || !tc1_ota_write((uint8_t *)buffer,n)) { tc1_ota_abort(); return kConnectionErr; }
     }
-        // if (buffer) free(buffer);
-    uint16_t crc16;
-    CRC16_Final(&crc_context, &crc16);
-
-
-    err = mico_ota_switch_to_new_fw(total, crc16);
-    tc1_log("[OTA] mico_ota_switch_to_new_fw err=%d", err);
-    require_noerr(err, exit);
-
-    char resp[128];
-    snprintf(resp, sizeof(resp), "OK, total: %d bytes, req %d  %d", total, req->body_nbytes, total1);
-    send_http(resp, strlen(resp), exit, &err);
-
-    mico_system_power_perform(mico_system_context_get(), eState_Software_Reset);
+    if (!tc1_ota_finish()) {tc1_ota_abort();return kGeneralErr;}
+    send_http("OTA verified; rebooting",22,exit,&err);
+    mico_system_power_perform(mico_system_context_get(),eState_Software_Reset);
 exit:
-    if (buffer) free(buffer);
     return err;
-
-    // ota_file_req = req;
-
-    // OSStatus err = kNoErr;
-    // err = mico_rtos_create_thread(NULL, MICO_APPLICATION_PRIORITY, "OtaFileThread", OtaFileThread, 0x1000, 0);
-    // char buf[16] = {0};
-    // sprintf(buf, "%d", sizeof(ota_file_req));
-    // send_http(buf, strlen(buf), exit, &err);
-
-    // exit:
-    // if (buf) free(buf);
-    // return err;
 }
+static int HttpSetOTAFile(httpd_request_t *req) { return HttpUploadOTA(req,false); }
+static int HttpSetOTAUnsigned(httpd_request_t *req) { return HttpUploadOTA(req,true); }
 
 static int HttpSetDeviceName(httpd_request_t *req) {
     OSStatus err = kNoErr;
@@ -805,17 +744,32 @@ static int Otastatus(httpd_request_t *req) {
     return err;
 }
 
+static int OtaDetailedStatus(httpd_request_t *req) {
+    OSStatus err=kNoMemoryErr;char state[32],error[128],counter[21];unsigned progress;
+    tc1_ota_metadata_t meta;tc1_ota_metadata(&meta);tc1_ota_snapshot(state,error,&progress);
+    json_object *o=json_object_new_object();if(!o)return err;
+    json_object_object_add(o,"state",json_object_new_string(state));
+    json_object_object_add(o,"error",json_object_new_string(error));
+    json_object_object_add(o,"progress",json_object_new_int(progress));
+    json_object_object_add(o,"signature_verified",json_object_new_boolean(meta.signature_verified));
+    json_object_object_add(o,"image_verified",json_object_new_boolean(meta.image_verified));
+    json_object_object_add(o,"key_id",json_object_new_int(meta.key_id));
+    json_object_object_add(o,"image_length",json_object_new_int(meta.image_length));
+    json_object_object_add(o,"version",json_object_new_string(meta.version));
+    ota_counter_decimal(meta.release_counter,counter);
+    json_object_object_add(o,"release_counter",json_object_new_string(counter));
+    const char *text=json_object_to_json_string(o);
+    send_http(text,strlen(text),exit,&err);
+exit:json_object_put(o);return err;
+}
 static int OtaStart(httpd_request_t *req) {
-    OSStatus err = kNoErr;
-    char buf[64] = {0};
-    err = httpd_get_data(req, buf, 64);
-    require_noerr(err, exit);
-
-    http_log("OtaStart ota_url[%s]", buf);
-    UserOtaStart(buf, NULL);
-
-    send_http("OK", 2, exit, &err);
-    exit:
+    OSStatus err=kNoErr;char buf[500]={0};
+    if(req->chunked || req->remaining_bytes<=0 || req->remaining_bytes>=sizeof(buf))return kParamErr;
+    err=httpd_get_data(req,buf,req->remaining_bytes);
+    require_noerr(err,exit);
+    err=ota_server_start(buf,NULL,NULL);require_noerr(err,exit);
+    send_http("OK",2,exit,&err);
+exit:
     return err;
 }
 
@@ -905,6 +859,7 @@ const struct httpd_wsgi_call g_app_handlers[] = {
         {"/mqtt/report/freq", HTTPD_HDR_DEFORT, 0,                             HttpGetMqttReportFreq, HttpSetMqttReportFreq, NULL, NULL},
         {"/log",              HTTPD_HDR_DEFORT, 0,                             HttpGetLog,       NULL,                       NULL, NULL},
         {"/task",             HTTPD_HDR_DEFORT, APP_HTTP_FLAGS_NO_EXACT_MATCH, HttpGetTasks,          HttpAddTask,           NULL, HttpDelTask},
+        {"/ota/status", HTTPD_HDR_DEFORT, 0, OtaDetailedStatus, NULL, NULL, NULL},
         {"/ota",              HTTPD_HDR_DEFORT, 0,                             Otastatus,             OtaStart,              NULL, NULL},
         {"/led",              HTTPD_HDR_DEFORT, 0,                             LedStatus,             LedSetEnabled,         NULL, NULL},
         {"/socketAll",        HTTPD_HDR_DEFORT, 0, NULL,                                              TotalSocketSetEnabled, NULL, NULL},
@@ -912,6 +867,7 @@ const struct httpd_wsgi_call g_app_handlers[] = {
         {"/childLock",        HTTPD_HDR_DEFORT, 0, NULL,                                              HttpSetChildLock,      NULL, NULL},
         {"/deviceName",       HTTPD_HDR_DEFORT, 0, NULL,                                              HttpSetDeviceName,     NULL, NULL},
         {"/buttonEvents",     HTTPD_HDR_DEFORT, 0,                             HttpGetButtonEvents,   HttpSetButtonEvent,    NULL, NULL},
+        {"/ota/fileUploadUnsigned", HTTPD_HDR_DEFORT, 0, NULL, HttpSetOTAUnsigned, NULL, NULL},
         {"/ota/fileUpload",     HTTPD_HDR_DEFORT, 0,                             NULL,   HttpSetOTAFile,    NULL, NULL},
         {"/power/coefficient", HTTPD_HDR_DEFORT, 0, NULL,                                              HttpSetPowerCoefficient, NULL, NULL},
         {"/auth/password",    HTTPD_HDR_DEFORT, 0,                             NULL,   HttpSetWebPassword, NULL, NULL},

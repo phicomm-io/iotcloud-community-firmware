@@ -30,113 +30,12 @@
  */
 #ifndef __ota_server_H
 #define __ota_server_H
+#include "mico.h"
 
-#define OTA_DEBUG     (1)
-#define OTA_USE_HTTPS (1)
-
-#define OTA_MD5_LENTH 32
-#define OTA_SEND_HEAD_SIZE 256
-#if OTA_USE_HTTPS
-#define OTA_SERVER_THREAD_STACK_SIZE  0x2000
-#else
-#define OTA_SERVER_THREAD_STACK_SIZE 0x800
-#endif
-
-typedef enum _OTA_STATE_E{
-    OTA_LOADING,
-    OTA_SUCCE,
-    OTA_FAIL
-}OTA_STATE_E;
-
-typedef enum _HTTP_SECURITY_E{
-    HTTP_SECURITY_HTTP,
-    HTTP_SECURITY_HTTPS
-} HTTP_SECURITY_E;
-
-typedef enum _OTA_CONTROL_E{
-    OTA_CONTROL_IDLE,
-    OTA_CONTROL_START,
-    OTA_CONTROL_PAUSE,
-    OTA_CONTROL_CONTINUE,
-    OTA_CONTROL_STOP,
-} OTA_CONTROL_E;
-
-typedef struct _download_url_t{
-    char              *url;
-    HTTP_SECURITY_E   HTTP_SECURITY;
-    char              host[30];
-    char              ip[16];
-    int               port;
-    int               ota_fd;
-#if OTA_USE_HTTPS
-    mico_ssl_t        ota_ssl;
-#endif
-} download_url_t;
-
-typedef struct _download_state_t{
-    int               download_len;
-    int               download_begin_pos;
-    int               download_end_pos;
-} download_state_t;
-
-typedef struct _ota_check_t{
-    bool              is_md5;
-    char              md5[OTA_MD5_LENTH + 1];
-} ota_check_t;
-
-typedef void (*ota_server_cb_fn) (OTA_STATE_E state, float progress);
-
-typedef struct _ota_server_context_t{
-    download_url_t      download_url;
-    download_state_t    download_state;
-    ota_check_t         ota_check;
-    OTA_CONTROL_E       ota_control;
-    ota_server_cb_fn    ota_server_cb;
-} ota_server_context_t;
-
-
-/** @addtogroup OTA_SERVER_DAEMONS_APIs
-  * @{
-  */
-
-
-/** @brief    Start OTA server, Support resume from break point, MD5 check
-  *
-  * @param    url        : Download address, URL breakdown from RFC 3986
-  * @param    md5        : MD5 checksum result, must sting type, can be NULL
-  * @param    call_back  : call back function, can be NULL
-  *
-  * @return   kNoErr        : on success.
-  * @return   kGeneralErr   : if an error occurred
-  */
-OSStatus ota_server_start( char *url, char *md5, ota_server_cb_fn call_back );
-
-
-/** @brief    Get OTA server state
- *
- *  @return   OTA_CONTROL_E  : state
+/* Direct HTTP 200 + Content-Length only, with mandatory signed OTA V1.
+ * No redirects, compression, chunking, resume or broker-provided trust hashes.
  */
-OTA_CONTROL_E ota_server_state_get( void );
-
-
-/** @brief    Pause OTA server daemons
- *
- *  @return   No
- */
-void ota_server_pause( void );
-
-
-/** @brief    Continue OTA server daemons
- *
- *  @return   No
- */
-void ota_server_continue( void );
-
-
-/** @brief    Stop OTA server daemons
- *
- *  @return   No
- */
-void ota_server_stop( void );
-
+typedef enum { OTA_LOADING, OTA_SUCCE, OTA_FAIL } OTA_STATE_E;
+typedef void (*ota_server_cb_fn)(OTA_STATE_E,float);
+OSStatus ota_server_start(char *url,char *md5,ota_server_cb_fn callback);
 #endif

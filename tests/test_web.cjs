@@ -58,6 +58,29 @@ const flush=()=>new Promise(resolve=>setImmediate(resolve));
   w.location.hash='invalid';w.dispatchEvent(new w.Event('hashchange'));
   assert.equal(d.getElementById('homePage').hidden,false);
  }
+ // Exercise the real upload handler: one checkbox is sufficient for raw OTA.
+ const uploads=[];
+ w.confirm=()=>{throw new Error('OTA must not require a second confirmation');};
+ w.XMLHttpRequest=class {
+  constructor(){this.upload={};}
+  open(method,path){this.method=method;this.path=path;}
+  setRequestHeader(){}
+  send(file){uploads.push([this.method,this.path,file.name]);this.status=202;this.onload();this.onloadend();}
+ };
+ const firmware=w.document.getElementById('firmware');
+ const submitUpload=()=>w.document.getElementById('fileForm').dispatchEvent(new w.Event('submit',{cancelable:true}));
+ Object.defineProperty(firmware,'files',{configurable:true,value:[new w.File(['raw'],'ota.bin.raw')]});
+ w.document.getElementById('unsignedRescue').checked=true;submitUpload();
+ assert.deepEqual(uploads.pop(),['POST','/ota/fileUploadUnsigned','ota.bin.raw']);
+ Object.defineProperty(firmware,'files',{configurable:true,value:[new w.File(['signed'],'ota.bin.signed')]});
+ w.document.getElementById('unsignedRescue').checked=false;submitUpload();
+ assert.deepEqual(uploads.pop(),['POST','/ota/fileUpload','ota.bin.signed']);
+ // A raw file without the checkbox still uses the signed gate, never a fallback.
+ Object.defineProperty(firmware,'files',{configurable:true,value:[new w.File(['raw'],'ota.bin.raw')]});submitUpload();
+ assert.deepEqual(uploads.pop(),['POST','/ota/fileUpload','ota.bin.raw']);
+ w.document.getElementById('otaUrl').value='http://host/ota.bin.signed';
+ w.document.getElementById('urlForm').dispatchEvent(new w.Event('submit',{cancelable:true}));await flush();
+ assert.ok(calls.some(([path,body])=>path==='/ota'&&body?.url==='http://host/ota.bin.signed'));
  const tabs=[...w.document.querySelectorAll('#featureTabs button')];assert.equal(tabs.length,6);
  let add=[...w.document.querySelectorAll('#featureFields button')].find(x=>x.textContent==='添加绑定设备');assert.ok(add);add.click();
  const macInput=[...w.document.querySelectorAll('#featureFields input')].find(x=>x.previousElementSibling?.textContent==='MAC 地址');macInput.value='11:22:33:44:55:66';macInput.dispatchEvent(new w.Event('input'));

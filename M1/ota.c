@@ -1,5 +1,9 @@
 #include "m1.h"
 #include <ctype.h>
+#include "../common/ota/signed_ota.h"
+static signed_ota signed_session;
+static bool unsigned_session;
+static uint32_t wire_expected, wire_received;
 
 static uint32_t staged, expected;
 static uint16_t transport_crc;
@@ -24,7 +28,13 @@ static bool reserve(void)
 {
     mico_rtos_lock_mutex(&m1_lock);
     bool free = !m1_state.ota_active && !m1_state.reboot_pending;
-    if (free) m1_state.ota_active = true;
+    if (free) {
+        snprintf(m1_state.ota_state,sizeof(m1_state.ota_state),"authenticating");
+        m1_state.ota_error[0]=0;m1_state.ota_progress=0;
+        m1_state.ota_active=true;m1_state.ota_signature_verified=false;
+        m1_state.ota_image_verified=false;m1_state.ota_key_id=0;m1_state.ota_image_length=0;
+        m1_state.ota_release_counter[0]=0;m1_state.ota_version[0]=0;
+    }
     mico_rtos_unlock_mutex(&m1_lock);
     return free;
 }
@@ -50,10 +60,7 @@ static bool prepare(uint32_t length)
     return true;
 }
 
-bool m1_ota_begin(uint32_t length)
-{ return reserve() && prepare(length); }
-
-bool m1_ota_write(const uint8_t *data, size_t n)
+static bool native_write(const uint8_t *data, size_t n)
 {
     if (!n || n > expected - staged) { m1_ota_abort("OTA body exceeds advertised length"); return false; }
     uint32_t offset = staged;
@@ -66,6 +73,47 @@ bool m1_ota_write(const uint8_t *data, size_t n)
     return true;
 }
 
+static bool signed_erase(void *ctx)
+{ (void)ctx; return prepare(signed_session.image_length); }
+static bool signed_write(void *ctx, uint32_t offset, const uint8_t *data, size_t n)
+{ (void)ctx; if (offset != staged) return false; return native_write(data,n); }
+static bool signed_read(void *ctx, uint32_t offset, uint8_t *data, size_t n)
+{ (void)ctx; return MicoFlashRead(MICO_PARTITION_OTA_TEMP,&offset,data,n)==kNoErr; }
+bool m1_ota_begin(uint32_t length)
+{
+    if (!reserve()) return false;
+    unsigned_session=false; wire_expected=length; wire_received=0;
+    mico_logic_partition_t *part=MicoFlashGetInfo(MICO_PARTITION_OTA_TEMP);
+    signed_ota_io io={signed_erase,signed_write,signed_read,NULL};
+    if (!part || !signed_ota_begin(&signed_session,length,part->partition_length,2,1,io)) {
+        m1_ota_abort("Invalid signed package length"); return false;
+    }
+    m1_ota_status("authenticating",NULL,0); return true;
+}
+bool m1_ota_begin_unsigned(uint32_t length)
+{
+    if (!reserve()) return false;
+    unsigned_session=true; wire_expected=length; wire_received=0;
+    return prepare(length);
+}
+bool m1_ota_write(const uint8_t *data, size_t n)
+{
+    if (n>wire_expected-wire_received ||
+        !(unsigned_session ? native_write(data,n) : signed_ota_write(&signed_session,data,n))) {
+        m1_ota_abort("Invalid signature, package or Flash write"); return false;
+    }
+    if(!unsigned_session && signed_session.authenticated) {
+        const uint8_t *h=signed_session.envelope;
+        uint64_t counter=(uint64_t)le32(h+24)|((uint64_t)le32(h+28)<<32);
+        mico_rtos_lock_mutex(&m1_lock);
+        m1_state.ota_signature_verified=true;m1_state.ota_key_id=le32(h+12);
+        m1_state.ota_image_length=le32(h+20);
+        ota_counter_decimal(counter,m1_state.ota_release_counter);
+        memcpy(m1_state.ota_version,h+64,32);
+        mico_rtos_unlock_mutex(&m1_lock);
+    }
+    wire_received+=n; return true;
+}
 static bool read_at(uint32_t offset, void *data, unsigned length)
 {
     if (offset > expected || length > expected - offset) return false;
@@ -87,6 +135,11 @@ static bool md5_range(uint32_t start, uint32_t end, uint8_t digest[16])
 bool m1_ota_finish(void)
 {
     const char *error = NULL;
+    if (!unsigned_session && !signed_ota_finish(&signed_session)) {
+        m1_ota_abort("Signed image readback SHA-256 mismatch or incomplete package"); return false;
+    }
+    mico_rtos_lock_mutex(&m1_lock);m1_state.ota_image_verified=!unsigned_session;
+    mico_rtos_unlock_mutex(&m1_lock);
     uint8_t header[36], digest[16], tail[16], data[512];
     m1_ota_status("validating", NULL, 100);
     if (staged != expected) { error = "Truncated OTA body"; goto fail; }
@@ -166,7 +219,7 @@ static void download_worker(mico_thread_arg_t arg)
         if (!strncasecmp(line, "Content-Length:", 15)) {
             char *end; unsigned long parsed = strtoul(line + 15, &end, 10);
             while (*end == ' ') end++;
-            if (have_length || *end || parsed > M1_APP_OFFSET + M1_APP_LIMIT + 16) goto fail;
+            if (have_length || *end || parsed > M1_APP_OFFSET + M1_APP_LIMIT + 16 + OTA_ENVELOPE_SIZE) goto fail;
             length = parsed; have_length = true;
         }
         if (!strncasecmp(line, "Transfer-Encoding:", 18) ||
@@ -175,11 +228,16 @@ static void download_worker(mico_thread_arg_t arg)
         }
     }
     if (!have_length) { error = "Download is missing Content-Length"; goto fail; }
-    if (!prepare(length)) goto done;
+    unsigned_session=false; wire_expected=length; wire_received=0;
+    mico_logic_partition_t *part=MicoFlashGetInfo(MICO_PARTITION_OTA_TEMP);
+    signed_ota_io io={signed_erase,signed_write,signed_read,NULL};
+    if (!part || !signed_ota_begin(&signed_session,length,part->partition_length,2,1,io)) {
+        error="Invalid signed package length"; goto fail;
+    }
     uint8_t data[512]; uint32_t deadline = mico_rtos_get_time() + 300000;
-    while (staged < expected) {
+    while (wire_received < wire_expected) {
         if ((int32_t)(mico_rtos_get_time() - deadline) >= 0) { error = "Download timed out"; goto fail; }
-        unsigned want = expected - staged > sizeof(data) ? sizeof(data) : expected - staged;
+        unsigned want = wire_expected - wire_received > sizeof(data) ? sizeof(data) : wire_expected - wire_received;
         int n = m1_socket_read(fd, data, want, 15000);
         if (n <= 0) { error = "Download interrupted"; goto fail; }
         if (!m1_ota_write(data, n)) goto done;

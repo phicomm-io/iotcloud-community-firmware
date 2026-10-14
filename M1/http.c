@@ -1,4 +1,5 @@
 #include "m1.h"
+#include "../common/ota/signed_ota.h"
 #include "web_data.h"
 #include <ctype.h>
 #include <errno.h>
@@ -89,7 +90,7 @@ static bool read_request(int fd, request_t *req)
         if (!strcasecmp(line, "Content-Length")) {
             if (req->have_length || !isdigit((unsigned char)*colon)) return false;
             char *end; unsigned long length = strtoul(colon, &end, 10);
-            if (*end || length > M1_APP_OFFSET + M1_APP_LIMIT + 16) return false;
+            if (*end || length > M1_APP_OFFSET + M1_APP_LIMIT + 16 + OTA_ENVELOPE_SIZE) return false;
             req->length = length; req->have_length = true;
         } else if (!strcasecmp(line, "Transfer-Encoding")) req->chunked = true;
         else if (!strcasecmp(line, "Authorization")) {
@@ -169,7 +170,11 @@ json_object *m1_status_json(void)
     integer(o, "uart_errors", s.uart_errors); integer(o, "discarded_bytes", s.discarded_bytes);
     char frame[41];
     for (unsigned i = 0; i < 20; i++) snprintf(frame + i * 2, 3, "%02x", s.last_frame[i]);
-    str(o, "last_frame", frame); str(o, "ota_state", s.ota_state); str(o, "ota_error", s.ota_error);
+    str(o, "last_frame", frame); json_bool(o,"ota_signature_verified",s.ota_signature_verified);
+    json_bool(o,"ota_image_verified",s.ota_image_verified);
+    integer(o,"ota_key_id",s.ota_key_id);integer(o,"ota_image_length",s.ota_image_length);
+    str(o,"ota_release_counter",s.ota_release_counter);str(o,"ota_version",s.ota_version);
+    str(o, "ota_state", s.ota_state); str(o, "ota_error", s.ota_error);
     integer(o, "ota_progress", s.ota_progress); json_bool(o, "ota_active", s.ota_active);
     json_bool(o, "scan_busy", s.scan_busy);
     return o;
@@ -276,8 +281,9 @@ static void handle(int fd)
     bool busy = m1_state.ota_active || m1_state.reboot_pending;
     mico_rtos_unlock_mutex(&m1_lock);
     if (busy) { message(fd, 409, "OTA or reboot already in progress"); return; }
-    if (!strcmp(req.path, "/ota/fileUpload")) {
-        if (!req.have_length || !m1_ota_begin(req.length)) { message(fd, 400, "Invalid OTA size or busy"); return; }
+    if (!strcmp(req.path, "/ota/fileUpload") || !strcmp(req.path, "/ota/fileUploadUnsigned")) {
+        bool rescue=!strcmp(req.path,"/ota/fileUploadUnsigned");
+        if (!req.have_length || !(rescue ? m1_ota_begin_unsigned(req.length) : m1_ota_begin(req.length))) { message(fd, 400, "Invalid OTA size or busy"); return; }
         uint8_t data[512]; uint32_t received = 0, deadline = mico_rtos_get_time() + 300000;
         while (received < req.length) {
             if ((int32_t)(mico_rtos_get_time() - deadline) >= 0) { m1_ota_abort("Upload timed out"); break; }

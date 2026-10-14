@@ -1,0 +1,30 @@
+--- a/MiCO/system/config_server/config_server.c
++++ b/MiCO/system/config_server/config_server.c
+@@ -298,6 +298,7 @@
+ 
+ static OSStatus onReceivedData(struct _HTTPHeader_t * inHeader, uint32_t inPos, uint8_t * inData, size_t inLen, void * inUserContext )
+ {
++  if (HTTPHeaderMatchURL(inHeader, kCONFIGURLOTA)==kNoErr) return kUnsupportedErr;
+   OSStatus err = kUnknownErr;
+   const char *    value;
+   size_t          valueSize;
+@@ -533,7 +534,7 @@
+     }
+     goto exit;
+   }
+-  else if(HTTPHeaderMatchURL( inHeader, kCONFIGURLOTA ) == kNoErr && ota_partition->partition_owner != MICO_FLASH_NONE){
++  else if(false /* Signed OTA is handled by the application, never SDK config server. */){
+     if(inHeader->contentLength > 0){
+       system_log("Receive OTA data!");
+       CRC16_Final( &http_context->crc16_contex, &crc);
+--- a/MiCO/system/mico_system_para_storage.c
++++ b/MiCO/system/mico_system_para_storage.c
+@@ -486,7 +486,7 @@
+     UNUSED_PARAMETER( ota_data_len );
+     UNUSED_PARAMETER( ota_data_crc );
+     extern int switch_active_firmware(void);
+-    switch_active_firmware();
++    return switch_active_firmware();
+ #else
+     mico_logic_partition_t* ota_partition = MicoFlashGetInfo( MICO_PARTITION_OTA_TEMP );
+ 

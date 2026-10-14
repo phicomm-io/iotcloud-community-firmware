@@ -1,0 +1,10 @@
+--- a/MiCO/system/config_server/config_server.c
++++ b/MiCO/system/config_server/config_server.c
+@@ -307,6 +307,7 @@
+ 
+   err = HTTPGetHeaderField( inHeader->buf, inHeader->len, "Content-Type", NULL, NULL, &value, &valueSize, NULL );
+   if(err == kNoErr && strnicmpx( value, valueSize, kMIMEType_MXCHIP_OTA ) == 0){
++    return kUnsupportedErr; /* No MIME-based unsigned Flash writes, on any URL. */
+ 
+     if( ota_partition->partition_owner == MICO_FLASH_NONE ){
+       system_log("OTA storage is not exist");

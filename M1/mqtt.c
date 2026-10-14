@@ -40,6 +40,15 @@ static int publish_leaf(const char *leaf, const char *payload, bool retain)
     return publish(topic, payload, retain);
 }
 
+static bool ota_launch(const char *url) { return m1_ota_download(url); }
+static void ota_snapshot(char *state,char *error,unsigned *progress) {
+    mico_rtos_lock_mutex(&m1_lock);
+    snprintf(state,32,"%s",m1_state.ota_state);snprintf(error,128,"%s",m1_state.ota_error);
+    *progress=m1_state.ota_progress;mico_rtos_unlock_mutex(&m1_lock);
+}
+static int ota_publish(const char *leaf,const char *text,bool retained) { return publish_leaf(leaf,text,retained); }
+#include <ctype.h>
+#include "../common/ota/mqtt_ota.inc"
 static void brightness_command(MessageData *data)
 {
     MQTTMessage *m = data->message;
@@ -67,6 +76,8 @@ static void native_command(MessageData *d)
     unsigned n=t->cstring?strlen(t->cstring):t->lenstring.len;
     if(n>=sizeof(topic))return;
     memcpy(topic,t->cstring?t->cstring:t->lenstring.data,n);topic[n]=0;
+    char ota_topic[MQTT_TOPIC_MAX]; mqtt_leaf(&account,"ota/set",ota_topic,sizeof(ota_topic));
+    if(!strcmp(topic,ota_topic)) { ota_command(base,d->message->payload,d->message->payloadlen,d->message->retained);return; }
     if(feature_mqtt_input(topic,d->message->payload,d->message->payloadlen,d->message->retained))return;
     if(!strcmp(topic,command_topic))brightness_command(d);
 }
@@ -241,6 +252,7 @@ static void mqtt_worker(mico_thread_arg_t arg)
         uint32_t sequence = 0; int old_brightness = -1, old_fresh = -1;
         rediscover = false;
         while (rc == MQTT_SUCCESS) {
+            rc=ota_service(base); if(rc!=MQTT_SUCCESS)break;
             mico_rtos_lock_mutex(&m1_lock); m1_state.mqtt_connected = true; mico_rtos_unlock_mutex(&m1_lock);
             m1_state_get(&state); m1_config_get(&current);
             if (!state.wifi_connected || !same_connection(&cfg, &current)) break;
@@ -288,6 +300,7 @@ static void mqtt_worker(mico_thread_arg_t arg)
         }
         mico_rtos_lock_mutex(&m1_lock); m1_state.mqtt_connected = false; mico_rtos_unlock_mutex(&m1_lock);
         m1_config_get(&current);
+        if(!same_connection(&cfg,&current))ota_forget();
         if (connected && !same_connection(&cfg, &current)) {
             int cleanup = cleanup_all();
             cleanup_pending = false;

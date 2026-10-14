@@ -1,3 +1,4 @@
+#include "ota_server/signed_adapter.h"
 #include "main.h"
 #include "config_legacy.h"
 #include <stddef.h>
@@ -169,6 +170,7 @@ void reportMqttPowerInfoThread() {
 }
 
 int application_start(void) {
+    tc1_ota_init();
     int i;tc1_log("start version[%s]", VERSION);
 
     //char main_num=0;

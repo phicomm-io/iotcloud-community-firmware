@@ -703,11 +703,12 @@
                 <div class="mdl-card__supporting-text">
                     <form id="otaForm" action="/ota/fileUpload" method="post" enctype="multipart/form-data">
                         <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
-                            <input class="mdl-textfield__input" type="file" id="ota_file" name="ota_file">
+                            <input class="mdl-textfield__input" type="file" accept=".bin,.raw,.signed" id="ota_file" name="ota_file">
                         </div>
                     </form>
                 </div>
                 <div class="mdl-card__actions mdl-card--border">
+                    <label><input type="checkbox" id="unsignedRescue">允许未签名的固件</label>
                     <button type="button" onclick="OtaFileUpload();" class="mdl-button mdl-button--colored " id="submit-ota-file">
                         上传 OTA 文件
                     </button>
@@ -1662,11 +1663,13 @@ document.getElementById("submit-ota-link").disabled = true;
         ShowToast("请选择要上传的 OTA 文件");
         return;
     }
+var rescue=document.getElementById("unsignedRescue").checked;
+
 clearTimeout(powerTimerId);
 console.log(fileInput.files[0].size);  // 应显示 647168 左右
 document.getElementById("submit-ota-file").disabled = true;
 const xhr = new XMLHttpRequest();
-xhr.open("POST", "/ota/fileUpload");
+xhr.open("POST", rescue?"/ota/fileUploadUnsigned":"/ota/fileUpload");
 
 xhr.upload.onprogress = function (e) {
   if (e.lengthComputable) {

@@ -1,3 +1,6 @@
+#include "ota_server/signed_adapter.h"
+#include "ota_server/ota_server.h"
+#include <ctype.h>
 #include "../../common/mqtt_cleanup.h"
 /**
  ******************************************************************************
@@ -42,6 +45,9 @@ typedef struct {
 static void MqttClientThread(mico_thread_arg_t arg);
 
 static void MessageArrived(MessageData *md);
+static int ota_service(const char *);
+static void ota_forget(void);
+static char ota_topic[MQTT_TOPIC_MAX];
 
 static OSStatus
 MqttMsgPublish(Client *c, const char *topic, char qos, char retained, const unsigned char *msg,
@@ -324,6 +330,7 @@ void MqttClientThread(mico_thread_arg_t arg) {
         if(!mqtt_account_init(&account,session_mode,"tc1",session_user,str_mac)) {
             tc1_mqtt_status=MQTT_CONFIG_ERROR; mico_rtos_thread_sleep(1); continue;
         }
+        mqtt_leaf(&account,"ota/set",ota_topic,sizeof(ota_topic));
         mqtt_identity(&account,"",client_id,sizeof(client_id));
         mqtt_leaf(&account,"availability",availability_topic,sizeof(availability_topic));
         if(account.mode) { mqtt_leaf(&account,"set",topic_set,sizeof(topic_set)); mqtt_leaf(&account,"sensor",topic_state,sizeof(topic_state)); }
@@ -348,6 +355,7 @@ void MqttClientThread(mico_thread_arg_t arg) {
             const char *payload=mqtt_announcement(&account);
             rc=MqttMsgPublish(&c,topic,QOS1,1,(const unsigned char *)payload,strlen(payload));
         }
+        if(rc==MQTT_SUCCESS) rc=MQTTSubscribe(&c,ota_topic,QOS1,MessageArrived);
         if(rc==MQTT_SUCCESS) rc=MQTTSubscribe(&c,topic_set,QOS1,MessageArrived);
         if(rc==MQTT_SUCCESS) rc=MQTTSubscribe(&c,"homeassistant/status",QOS1,ha_birth);
         if(connected && rc!=MQTT_SUCCESS) tc1_mqtt_status=MQTT_WAITING_ACL;
@@ -359,6 +367,7 @@ void MqttClientThread(mico_thread_arg_t arg) {
         uint32_t acl_check=mico_rtos_get_time(); rediscover=false;
         if(rc==MQTT_SUCCESS) { isconnect=true; tc1_mqtt_status=MQTT_READY; attempt=0; cleanup_pending=true; }
         while(rc==MQTT_SUCCESS && !mqtt_thread_should_exit && session_current()) {
+            rc=ota_service(account.base);if(rc!=MQTT_SUCCESS)break;
             if(rediscover) {
                 synchronous_send=true; synchronous_error=0; all_discovery(); all_states(); synchronous_send=false;
                 rc=synchronous_error; rediscover=false;
@@ -377,6 +386,7 @@ void MqttClientThread(mico_thread_arg_t arg) {
             mico_rtos_thread_msleep(50);
         }
         isconnect=false;
+        if(!session_current())ota_forget();
         if(connected) {
             if(!session_current()) { tc1_mqtt_cleanup_warning=cleanup_discovery()!=0; cleanup_pending=false; }
             MqttMsgPublish(&c,availability_topic,QOS1,1,(const unsigned char *)"offline",7);
@@ -389,6 +399,13 @@ void MqttClientThread(mico_thread_arg_t arg) {
 }
 
 // callback, msg received from mqtt server
+static bool ota_launch(const char *url) { return ota_server_start((char *)url,NULL,NULL)==kNoErr; }
+static void ota_snapshot(char *state,char *error,unsigned *progress) { tc1_ota_snapshot(state,error,progress); }
+static int ota_publish(const char *leaf,const char *text,bool retained) {
+    char topic[MQTT_TOPIC_MAX];mqtt_leaf(&account,leaf,topic,sizeof(topic));
+    return MqttMsgPublish(&c,topic,QOS1,retained,(const unsigned char *)text,strlen(text));
+}
+#include "../../common/ota/mqtt_ota.inc"
 static void MessageArrived(MessageData *md) {
     OSStatus err = kUnknownErr;
     p_mqtt_recv_msg_t p_recv_msg = NULL;
@@ -396,6 +413,11 @@ static void MessageArrived(MessageData *md) {
 
     if(!isconnect || !session_current() || message->retained || message->payloadlen >= MAX_MQTT_DATA_SIZE ||
        md->topicName->lenstring.len >= MAX_MQTT_TOPIC_SIZE || memchr(message->payload,0,message->payloadlen)) return;
+    unsigned tn=md->topicName->cstring?strlen(md->topicName->cstring):md->topicName->lenstring.len;
+    const char *tp=md->topicName->cstring?md->topicName->cstring:md->topicName->lenstring.data;
+    if(tn==strlen(ota_topic) && !memcmp(tp,ota_topic,tn)) {
+        ota_command(account.base,message->payload,message->payloadlen,message->retained);return;
+    }
     p_recv_msg = (p_mqtt_recv_msg_t) calloc(1, sizeof(mqtt_recv_msg_t));
     require_action(p_recv_msg, exit, err = kNoMemoryErr);
 

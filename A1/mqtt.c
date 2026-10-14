@@ -32,10 +32,21 @@ static bool topic_is(MessageData *d, const char *suffix)
     if (t->cstring) return !strcmp(t->cstring, topic);
     return t->lenstring.len == (int)strlen(topic) && !memcmp(t->lenstring.data, topic, t->lenstring.len);
 }
+static bool ota_launch(const char *url) { return a1_ota_download(url); }
+static void ota_snapshot(char *state,char *error,unsigned *progress) {
+    mico_rtos_lock_mutex(&a1_lock);snprintf(state,32,"%s",a1_state.ota_state);
+    snprintf(error,128,"%s",a1_state.ota_error);*progress=a1_state.ota_progress;
+    mico_rtos_unlock_mutex(&a1_lock);
+}
+static int ota_publish(const char *leaf,const char *text,bool retained) {
+    char topic[MQTT_TOPIC_MAX];snprintf(topic,sizeof(topic),"%s/%s",base,leaf);return publish(topic,text,retained);
+}
+#include "../common/ota/mqtt_ota.inc"
 static void command(MessageData *d)
 {
     if (!session_current()) return;
     MQTTMessage *m = d->message;
+    if(topic_is(d,"ota/set")){ota_command(base,m->payload,m->payloadlen,m->retained);return;}
     if (m->retained || !m->payloadlen || m->payloadlen > A1_JSON_LIMIT) return;
     MQTTString *ft=d->topicName; char ftopic[FEATURE_TOPIC_MAX];
     unsigned fn=ft->cstring?strlen(ft->cstring):ft->lenstring.len;
@@ -236,6 +247,7 @@ static void mqtt_worker(mico_thread_arg_t arg)
         bool old_on=false;unsigned old_speed=0;
         bool sent = false, old_visible = false; uint32_t revision = 0; rediscover = false;
         while (rc == MQTT_SUCCESS) {
+            rc=ota_service(base);if(rc!=MQTT_SUCCESS)break;
             mico_rtos_lock_mutex(&a1_lock); a1_state.mqtt_connected = true; mico_rtos_unlock_mutex(&a1_lock);
             a1_state_get(&state); a1_config_get(&current);
             if (!state.wifi_connected || !same_connection(&cfg, &current)) break;
@@ -259,6 +271,7 @@ static void mqtt_worker(mico_thread_arg_t arg)
         }
         mico_rtos_lock_mutex(&a1_lock); a1_state.mqtt_connected = false; mico_rtos_unlock_mutex(&a1_lock);
         a1_config_get(&current);
+        if(!same_connection(&cfg,&current))ota_forget();
         if (connected && !same_connection(&cfg, &current)) {
             int cleanup = cleanup_all();
             cleanup_pending = false;
