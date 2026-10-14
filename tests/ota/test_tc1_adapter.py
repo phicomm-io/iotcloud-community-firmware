@@ -89,6 +89,23 @@ int reserve_again(void){tc1_ota_abort();return tc1_ota_reserve();}
   self.assertTrue(self.upload(self.signed(self.image)));self.assertEqual(self.count('switches'),1)
   self.assertFalse(self.lib.reserve_again())
   self.assertTrue(self.upload(self.image,rescue=True));self.assertEqual(self.count('switches'),1)
+ def test_raw_compatibility_skips_new_image_and_flash_read_checks(self):
+  data=bytearray(self.image);data[0]^=1;data[-1]^=1
+  self.assertTrue(self.upload(bytes(data),rescue=True))
+  self.assertEqual(self.count('switches'),1)
+  self.assertTrue(self.upload(self.image,fault=3,rescue=True))
+  self.assertEqual(self.count('switches'),1)
+ def test_raw_transport_failures_do_not_activate(self):
+  for fault in [1,2]:
+   self.assertFalse(self.upload(self.image,fault,rescue=True))
+   self.assertEqual(self.count('switches'),0)
+  self.assertTrue(self.lib.start(len(self.image),0,True))
+  self.assertTrue(self.lib.feed(self.image[:512],512))
+  self.assertFalse(self.lib.finish());self.assertEqual(self.count('switches'),0)
+  self.assertFalse(self.lib.start(0,0,True))
+  self.assertFalse(self.lib.start(0xa9001,0,True))
+  self.assertFalse(self.upload(self.image,fault=5,rescue=True))
+  self.assertFalse(self.lib.reserve_again())
  def test_no_activation_after_invalid_signature_or_body(self):
   data=bytearray(self.signed(self.image));data[128]^=1
   self.assertFalse(self.upload(bytes(data)));self.assertEqual(self.count('erases'),0);self.assertEqual(self.count('switches'),0)

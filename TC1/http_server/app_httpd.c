@@ -292,14 +292,18 @@ static int HttpSetButtonEvent(httpd_request_t *req) {
 static int HttpUploadOTA(httpd_request_t *req, bool rescue)
 {
     OSStatus err=kGeneralErr; char buffer[512];
-    if (req->chunked || req->remaining_bytes<=0 || !tc1_ota_reserve()) return kParamErr;
-    if (!tc1_ota_begin(req->remaining_bytes,rescue)) {tc1_ota_abort();return kParamErr;}
+    /* The SDK parses Content-Length lazily on the first body read. */
+    int first=httpd_get_data2(req,buffer,sizeof(buffer));
+    if (first<=0 || req->chunked || req->remaining_bytes<0 || !tc1_ota_reserve()) return kParamErr;
+    if (!tc1_ota_begin(req->remaining_bytes+first,rescue)) {tc1_ota_abort();return kParamErr;}
+    if (!tc1_ota_write((uint8_t *)buffer,first)) {tc1_ota_abort();return kConnectionErr;}
     while (req->remaining_bytes>0) {
         int n=httpd_get_data2(req,buffer,sizeof(buffer));
         if (n<=0 || !tc1_ota_write((uint8_t *)buffer,n)) { tc1_ota_abort(); return kConnectionErr; }
     }
     if (!tc1_ota_finish()) {tc1_ota_abort();return kGeneralErr;}
-    send_http("OTA verified; rebooting",22,exit,&err);
+    const char *response=rescue?"OTA uploaded; rebooting":"OTA verified; rebooting";
+    send_http(response,strlen(response),exit,&err);
     mico_system_power_perform(mico_system_context_get(),eState_Software_Reset);
 exit:
     return err;
@@ -765,6 +769,14 @@ exit:json_object_put(o);return err;
 }
 static int OtaStart(httpd_request_t *req) {
     OSStatus err=kNoErr;char buf[500]={0};
+    if (!req->hdr_parsed) {
+        char *headers=malloc(HTTPD_MAX_MESSAGE);
+        if (!headers) return kNoMemoryErr;
+        err=httpd_parse_hdr_tags(req,req->sock,headers,HTTPD_MAX_MESSAGE);
+        free(headers);
+        if (err!=kNoErr) return err;
+        req->hdr_parsed=1;
+    }
     if(req->chunked || req->remaining_bytes<=0 || req->remaining_bytes>=sizeof(buf))return kParamErr;
     err=httpd_get_data(req,buf,req->remaining_bytes);
     require_noerr(err,exit);

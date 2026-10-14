@@ -35,7 +35,7 @@ static uint16_t crc_step(uint16_t crc,const uint8_t *p,size_t n) {
 static bool erase(void *ctx) {
     (void)ctx; mico_logic_partition_t *part=MicoFlashGetInfo(MICO_PARTITION_OTA_TEMP);
     expected=unsigned_session?expected:session.image_length; staged=0; transport_crc=0;
-    return part && expected>=0x64000+144 && expected<=part->partition_length &&
+    return part && expected>=(unsigned_session?1u:0x64000u+144u) && expected<=part->partition_length &&
         MicoFlashErase(MICO_PARTITION_OTA_TEMP,0,part->partition_length)==kNoErr;
 }
 static bool write_image(void *ctx,uint32_t offset,const uint8_t *data,size_t n) {
@@ -123,6 +123,19 @@ bool tc1_ota_finish(void)
 {
     const char *error = NULL;
     mico_rtos_lock_mutex(&lock);ota_state="validating";mico_rtos_unlock_mutex(&lock);
+    /* Explicit raw compatibility mode follows the original SDK OTA flow.
+     * Do not apply signed-image ABI, product, kernel or boot-table checks. */
+    if (unsigned_session) {
+        if (staged != expected) return false;
+        if (mico_ota_switch_to_new_fw(expected, transport_crc) != kNoErr) {
+            mico_rtos_lock_mutex(&lock);
+            ota_state="failed"; commit_uncertain=true;
+            mico_rtos_unlock_mutex(&lock);
+            return false;
+        }
+        mico_rtos_lock_mutex(&lock); ota_state="ready"; mico_rtos_unlock_mutex(&lock);
+        return true;
+    }
     if (!unsigned_session && !signed_ota_finish(&session)) {
         return false;
     }
