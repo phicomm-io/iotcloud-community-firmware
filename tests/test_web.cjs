@@ -19,6 +19,23 @@ const flush=()=>new Promise(resolve=>setImmediate(resolve));
  w.fetch=async(path,options={})=>{calls.push([path,options.body?JSON.parse(options.body):null]);if(options.body&&fixtures[path])fixtures[path]={...JSON.parse(options.body),revision:2};return {ok:true,status:200,json:async()=>JSON.parse(JSON.stringify(fixtures[path]||{message:'Saved'}))};};
  w.setTimeout=()=>0;w.confirm=()=>true;
  for(const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g))w.eval(match[1]);await flush();await flush();
+ if(product==='M1'){
+  const d=w.document;
+  assert.equal(d.getElementById('homePage').hidden,false);
+  assert.equal(d.getElementById('settingsPage').hidden,true);
+  d.getElementById('mqttUser').value='unsaved-user';
+  for(const page of ['network','mqtt','device','binding','firmware','diagnostics']){
+   w.location.hash='settings/'+page;w.dispatchEvent(new w.Event('hashchange'));
+   assert.equal(d.getElementById('homePage').hidden,true);
+   assert.deepEqual([...d.querySelectorAll('[data-settings-page]')].filter(x=>!x.hidden).map(x=>x.dataset.settingsPage),[page]);
+   assert.equal(d.querySelector('.subnav [aria-current="page"]').hash,'#settings/'+page);
+  }
+  w.location.hash='home';w.dispatchEvent(new w.Event('hashchange'));
+  assert.equal(d.getElementById('settingsPage').hidden,true);
+  assert.equal(d.getElementById('mqttUser').value,'unsaved-user');
+  w.location.hash='invalid';w.dispatchEvent(new w.Event('hashchange'));
+  assert.equal(d.getElementById('homePage').hidden,false);
+ }
  const tabs=[...w.document.querySelectorAll('#featureTabs button')];assert.equal(tabs.length,6);
  let add=[...w.document.querySelectorAll('#featureFields button')].find(x=>x.textContent==='添加绑定设备');assert.ok(add);add.click();
  const macInput=[...w.document.querySelectorAll('#featureFields input')].find(x=>x.previousElementSibling?.textContent==='MAC 地址');macInput.value='11:22:33:44:55:66';macInput.dispatchEvent(new w.Event('input'));

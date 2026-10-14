@@ -3,8 +3,14 @@
 <title>M1 空气质量检测器</title>
 <style>
 :root{font-family:system-ui,sans-serif;color:#172b3a;background:#f0f4f7}body{max-width:900px;margin:auto;padding:20px}h1{margin:8px 0}h2{font-size:19px;margin-top:0}.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.card,section{background:white;border-radius:12px;padding:20px;margin:12px 0;box-shadow:0 2px 8px #17334c0b}.value{font-size:30px;font-weight:650;margin:12px 0}.unit,.hint{color:#667886;font-size:13px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}label{display:block;margin:12px 0 5px}input,select,button{font:inherit;box-sizing:border-box;padding:10px;border:1px solid #b9c7d0;border-radius:7px;width:100%}button{background:#126d96;color:white;border:0;cursor:pointer;margin-top:12px}button:disabled{opacity:.5;cursor:wait}input[type=checkbox]{width:auto}input[type=range]{padding:0}#notice{white-space:pre-wrap;min-height:24px;color:#126d96}.bad{color:#ae3434}.row{display:flex;gap:8px;align-items:center}.row{flex-wrap:wrap}fieldset{margin:12px 0;border:1px solid #b9c7d0;border-radius:7px}nav button{flex:1}textarea{width:100%}.row button{width:auto;white-space:nowrap;margin:0}details{margin-top:15px}pre{overflow:auto;white-space:pre-wrap;word-break:break-all;font-size:12px}.status{margin:10px 0}progress{width:100%;height:18px}a{color:#126d96}@media(max-width:650px){body{padding:12px}.cards{grid-template-columns:1fr 1fr}.grid{grid-template-columns:1fr}.value{font-size:26px}}
+[hidden]{display:none!important}.navigation{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}.navigation a{padding:10px 16px;border-radius:8px;text-decoration:none;background:#fff}.navigation a[aria-current=page]{background:#126d96;color:#fff}.subnav a{font-size:14px;padding:8px 12px}.page-heading{margin:20px 0 8px}
 </style>
 <h1 id="title">M1 空气质量检测器</h1><div id="connection" class="status">连接设备中…</div>
+<nav class="navigation" aria-label="主导航"><a id="homeLink" href="#home">首页</a><a id="settingsLink" href="#settings/network">设置</a></nav>
+<div id="notice" role="status" aria-live="polite"></div>
+<main>
+<div id="homePage">
+<h2 class="page-heading">实时空气信息</h2>
 <div class="cards">
 <div class="card">温度<div class="value" id="temperature">—</div><span class="unit">℃</span></div>
 <div class="card">湿度<div class="value" id="humidity">—</div><span class="unit">%</span></div>
@@ -12,19 +18,37 @@
 <div class="card">PM2.5<div class="value" id="pm25">—</div><span class="unit">µg/m³</span></div>
 </div><div id="freshness" class="hint">等待传感器数据</div>
 <section><h2>屏幕亮度</h2><div class="row"><input id="brightness" type="range" min="0" max="4" step="1"><span id="brightnessValue">4</span></div><p class="hint">0 为关闭，1～4 为亮度档位。这里显示最近发送的设置值。</p></section>
-<div id="notice" role="status" aria-live="polite"></div>
-<div class="grid">
-<section><h2>Wi-Fi 配网</h2><form id="wifiForm"><label for="ssid">网络名称</label><div class="row"><input id="ssid" maxlength="32" required autocomplete="off"><button id="scan" type="button">扫描</button></div><select id="networks" aria-label="扫描到的网络" hidden></select><label for="wifiPassword">密码</label><input id="wifiPassword" type="password" maxlength="63" autocomplete="new-password" placeholder="同一网络留空保留原密码"><label><input id="openNetwork" type="checkbox"> 此网络没有密码</label><button>保存并连接</button></form><p class="hint">保存后若热点断开，请切回家庭 Wi-Fi，在路由器中查找设备 IP。连接失败会重新开启配网热点。</p></section>
-<section><h2>MQTT / Home Assistant</h2><form id="mqttForm"><label for="mqttMode">主题模式</label><select id="mqttMode"><option value="legacy">legacy（原主题）</option><option value="account">account（社区平台）</option></select><p class="hint">legacy 需在平台手动绑定；account 上线后自动加入云端列表。切换账户或模式会尝试清理旧 HA 实体。失败时需在旧 Broker 手动清理。</p><label for="mqttHost">Broker 地址</label><input id="mqttHost" maxlength="127" placeholder="IP 或域名；留空停用"><label for="mqttPort">端口</label><input id="mqttPort" type="number" min="1" max="65535" value="1883" required><label for="mqttUser">用户名</label><input id="mqttUser" maxlength="63" autocomplete="off"><label for="mqttPassword">密码</label><input id="mqttPassword" type="password" maxlength="256" autocomplete="new-password" placeholder="留空保留原密码"><label><input id="clearMqttPassword" type="checkbox"> 清除已保存的 MQTT 密码</label><button>保存 MQTT 设置</button></form><p class="hint">HA 配置 MQTT 集成后，设备会自动创建四项传感器和亮度控制。</p></section>
 </div>
-<section><h2>设备设置</h2><div class="grid"><form id="nameForm"><label for="deviceName">设备名称</label><input id="deviceName" maxlength="63" required><button>保存名称</button></form><form id="timeForm"><label for="timezone">时区（与 UTC 的分钟差）</label><input id="timezone" type="number" min="-720" max="840" value="480" required><button>保存时区</button></form></div><details><summary>网页管理密码</summary><form id="authForm"><label for="webPassword">新密码（用户名：admin）</label><input id="webPassword" type="password" maxlength="32" autocomplete="new-password"><button>设置密码</button></form><p class="hint">密码留空将关闭网页认证；启用后浏览器会要求重新登录。</p></details><button id="reboot" type="button">重启设备</button></section>
-<section><h2>固件升级</h2><form id="fileForm"><label for="firmware">上传 M1 OTA 文件</label><input id="firmware" type="file" accept=".bin" required><button id="upload">上传并升级</button></form><form id="urlForm"><label for="otaUrl">更新文件直链（HTTP）</label><input id="otaUrl" type="url" maxlength="499" placeholder="http://服务器/M1.ota.bin" required><button>下载并升级</button></form><p class="hint">选择本项目的 M1 OTA 包。校验成功后设备自动重启，保留 Wi-Fi、MQTT 和亮度配置。</p><progress id="otaProgress" max="100" value="0"></progress><div id="otaStatus" class="hint"></div></section>
-<details><summary>设备诊断</summary><pre id="diagnostics"></pre></details>
-<section id="bindingPanel"><h2>绑定与联动</h2><p class="hint">先在任一端添加对方 MAC，两台设备使用同一个 MQTT Broker。握手成功后才启用联动。可填写局域网 IP；留空时通过 MQTT 地址公告查找。关闭恢复检查后，可手动探测；强制 MQTT 会停用局域网传输。</p><nav id="featureTabs" class="row"></nav><form id="featureForm"><div id="featureFields"></div><button>保存当前配置</button></form><button id="featureReload" type="button">重新读取配置</button><label for="probeMac">探测设备 MAC</label><div class="row"><input id="probeMac" maxlength="17"><button id="featureProbe" type="button">探测 LAN</button></div><pre id="bindingStatus"></pre></section>
+<div id="settingsPage" hidden>
+<nav class="navigation subnav" aria-label="设置菜单">
+<a href="#settings/network">Wi-Fi 配网</a><a href="#settings/mqtt">MQTT / HA</a><a href="#settings/device">设备</a><a href="#settings/binding">绑定与联动</a><a href="#settings/firmware">固件升级</a><a href="#settings/diagnostics">诊断</a>
+</nav>
+<div id="networkPage" data-settings-page="network" hidden>
+<section><h2>Wi-Fi 配网</h2><form id="wifiForm"><label for="ssid">网络名称</label><div class="row"><input id="ssid" maxlength="32" required autocomplete="off"><button id="scan" type="button">扫描</button></div><select id="networks" aria-label="扫描到的网络" hidden></select><label for="wifiPassword">密码</label><input id="wifiPassword" type="password" maxlength="63" autocomplete="new-password" placeholder="同一网络留空保留原密码"><label><input id="openNetwork" type="checkbox"> 此网络没有密码</label><button>保存并连接</button></form><p class="hint">保存后若热点断开，请切回家庭 Wi-Fi，在路由器中查找设备 IP。连接失败会重新开启配网热点。</p></section>
+</div>
+<div id="mqttPage" data-settings-page="mqtt" hidden><section><h2>MQTT / Home Assistant</h2><form id="mqttForm"><label for="mqttMode">主题模式</label><select id="mqttMode"><option value="legacy">legacy（原主题）</option><option value="account">account（社区平台）</option></select><p class="hint">legacy 需在平台手动绑定；account 上线后自动加入云端列表。切换账户或模式会尝试清理旧 HA 实体。失败时需在旧 Broker 手动清理。</p><label for="mqttHost">Broker 地址</label><input id="mqttHost" maxlength="127" placeholder="IP 或域名；留空停用"><label for="mqttPort">端口</label><input id="mqttPort" type="number" min="1" max="65535" value="1883" required><label for="mqttUser">用户名</label><input id="mqttUser" maxlength="63" autocomplete="off"><label for="mqttPassword">密码</label><input id="mqttPassword" type="password" maxlength="256" autocomplete="new-password" placeholder="留空保留原密码"><label><input id="clearMqttPassword" type="checkbox"> 清除已保存的 MQTT 密码</label><button>保存 MQTT 设置</button></form><p class="hint">HA 配置 MQTT 集成后，设备会自动创建四项传感器和亮度控制。</p></section>
+</div>
+<div id="devicePage" data-settings-page="device" hidden><section><h2>设备设置</h2><div class="grid"><form id="nameForm"><label for="deviceName">设备名称</label><input id="deviceName" maxlength="63" required><button>保存名称</button></form><form id="timeForm"><label for="timezone">时区（与 UTC 的分钟差）</label><input id="timezone" type="number" min="-720" max="840" value="480" required><button>保存时区</button></form></div><details><summary>网页管理密码</summary><form id="authForm"><label for="webPassword">新密码（用户名：admin）</label><input id="webPassword" type="password" maxlength="32" autocomplete="new-password"><button>设置密码</button></form><p class="hint">密码留空将关闭网页认证；启用后浏览器会要求重新登录。</p></details><button id="reboot" type="button">重启设备</button></section>
+</div>
+<div id="firmwarePage" data-settings-page="firmware" hidden><section><h2>固件升级</h2><form id="fileForm"><label for="firmware">上传 M1 OTA 文件</label><input id="firmware" type="file" accept=".bin" required><button id="upload">上传并升级</button></form><form id="urlForm"><label for="otaUrl">更新文件直链（HTTP）</label><input id="otaUrl" type="url" maxlength="499" placeholder="http://服务器/M1.ota.bin" required><button>下载并升级</button></form><p class="hint">选择本项目的 M1 OTA 包。校验成功后设备自动重启，保留 Wi-Fi、MQTT 和亮度配置。</p><progress id="otaProgress" max="100" value="0"></progress><div id="otaStatus" class="hint"></div></section>
+</div>
+<div id="diagnosticsPage" data-settings-page="diagnostics" hidden><section><h2>设备诊断</h2><pre id="diagnostics"></pre></section></div>
+<div id="bindingPage" data-settings-page="binding" hidden><section id="bindingPanel"><h2>绑定与联动</h2><p class="hint">先在任一端添加对方 MAC，两台设备使用同一个 MQTT Broker。握手成功后才启用联动。可填写局域网 IP；留空时通过 MQTT 地址公告查找。关闭恢复检查后，可手动探测；强制 MQTT 会停用局域网传输。</p><nav id="featureTabs" class="row"></nav><form id="featureForm"><div id="featureFields"></div><button>保存当前配置</button></form><button id="featureReload" type="button">重新读取配置</button><label for="probeMac">探测设备 MAC</label><div class="row"><input id="probeMac" maxlength="17"><button id="featureProbe" type="button">探测 LAN</button></div><pre id="bindingStatus"></pre></section>
 
+</div>
+</div>
+</main>
 <script>
 'use strict';
 const $=id=>document.getElementById(id);let initialized=false,uploading=false;
+function showPage(){
+ const route=location.hash.slice(1), match=/^settings\/(network|mqtt|device|binding|firmware|diagnostics)$/.exec(route);
+ const settings=!!match;
+ $('homePage').hidden=settings;$('settingsPage').hidden=!settings;
+ document.querySelectorAll('[data-settings-page]').forEach(page=>{page.hidden=!settings||page.dataset.settingsPage!==match[1];});
+ document.querySelectorAll('.navigation a').forEach(link=>{const active=link.id==='homeLink'?!settings:link.id==='settingsLink'?settings:settings&&link.hash===location.hash;if(active)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');});
+}
+window.addEventListener('hashchange',showPage);showPage();
 function notice(text,bad=false){$('notice').textContent=text;$('notice').className=bad?'bad':'';}
 async function api(path,data){const r=await fetch(path,{method:data===undefined?'GET':'POST',headers:data===undefined?{}:{'Content-Type':'application/json'},body:data===undefined?undefined:JSON.stringify(data),cache:'no-store'});const body=await r.json();if(!r.ok)throw Error(body.message||('HTTP '+r.status));return body;}
 function form(id,path,body){$(id).addEventListener('submit',async e=>{e.preventDefault();const button=e.target.querySelector('button');button.disabled=true;try{await api(path,body());notice('请求已接受');}catch(err){notice(err.message,true);}finally{button.disabled=false;}});}
