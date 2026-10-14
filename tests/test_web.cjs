@@ -4,7 +4,7 @@ const fs=require('fs');
 const assert=require('node:assert/strict');
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
 (async()=>{for(const product of ['A1','M1']){
- const html=fs.readFileSync(product+'/web/index.html','utf8');
+ const html=require('child_process').execFileSync('python3',['common/web/page.py',product+'/web/index.html'],{encoding:'utf8'});
  const dom=new JSDOM(html,{runScripts:'outside-only',url:'http://device.local'}),w=dom.window;
  w.TextEncoder=require("node:util").TextEncoder;
  const calls=[];
@@ -87,7 +87,7 @@ const flush=()=>new Promise(resolve=>setImmediate(resolve));
  w.document.getElementById('featureForm').dispatchEvent(new w.Event('submit',{cancelable:true}));await flush();await flush();assert.ok(calls.some(([p,b])=>p==='/binding/config'&&b?.peers[0]?.mac==='11:22:33:44:55:66'));
  for(let i=1;i<6;i++){tabs[i].click();await flush();await flush();assert.ok(w.document.getElementById('featureFields').textContent.length);}
  tabs[3].click();await flush();add=[...w.document.querySelectorAll('#featureFields button')].find(x=>x.textContent==='添加每周定时事件');add.click();w.document.getElementById('featureForm').dispatchEvent(new w.Event('submit',{cancelable:true}));await flush();assert.ok(calls.some(([p,b])=>p==='/schedule/config'&&b?.events[0]?.days===127));
- tabs[4].click();await flush();add=[...w.document.querySelectorAll('#featureFields button')].find(x=>x.textContent==='添加睡眠时段');add.click();w.document.getElementById('featureForm').dispatchEvent(new w.Event('submit',{cancelable:true}));await flush();assert.ok(calls.some(([p,b])=>p==='/sleep/config'&&b?.windows[0]?.start===1320&&b.windows[0].end===420));
+ tabs[4].click();await flush();add=[...w.document.querySelectorAll('#featureFields button')].find(x=>x.textContent==='添加夜间时段');add.click();w.document.getElementById('featureForm').dispatchEvent(new w.Event('submit',{cancelable:true}));await flush();assert.ok(calls.some(([p,b])=>p==='/sleep/config'&&b?.windows[0]?.start===1320&&b.windows[0].end===420));
  const user="a+b.o'neil@example.com";
  w.document.getElementById('mqttMode').value='account';
  w.document.getElementById('mqttUser').value=user;
