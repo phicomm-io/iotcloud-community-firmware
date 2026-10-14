@@ -5,6 +5,8 @@ python3 tools/check_version.py
 python3 -m unittest discover -s tests -p test_version.py
 output=$(mktemp -d)
 trap 'rm -rf "$output"' EXIT
+cc -std=c99 -Wall -Wextra -Werror tests/test_m1_indicator.c -o "$output/m1-indicator"
+"$output/m1-indicator"
 cc -DFEATURE_HOST -std=c99 -Wall -Wextra -Werror -Wno-misleading-indentation -Icommon common/engine.c tests/test_engine.c -lm -o "$output/engine"
 cc -std=c99 -Wall -Wextra -Werror tests/test_mqtt_account.c -o "$output/mqtt-account"
 "$output/mqtt-account"

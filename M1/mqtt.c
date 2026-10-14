@@ -2,6 +2,8 @@
 #include "MQTTClient.h"
 #include "../common/mqtt_cleanup.h"
 
+int m1_mqtt_read(Network *, unsigned char *, int, int);
+
 static Client client;
 static mqtt_account_t account;
 static char base[192], command_topic[MQTT_TOPIC_MAX], availability_topic[MQTT_TOPIC_MAX];
@@ -13,13 +15,23 @@ static bool session_current(void)
 static void mqtt_status(unsigned status)
 { mico_rtos_lock_mutex(&m1_lock); m1_state.mqtt_status = status; m1_state.mqtt_connected = status == MQTT_READY; mico_rtos_unlock_mutex(&m1_lock); }
 
+static void mqtt_error(const char *operation, int result)
+{
+    if (result == MQTT_SUCCESS) return;
+    mico_rtos_lock_mutex(&m1_lock);
+    m1_state.mqtt_errors++;
+    snprintf(m1_state.mqtt_last_error, sizeof(m1_state.mqtt_last_error), "%s: %d", operation, result);
+    mico_rtos_unlock_mutex(&m1_lock);
+}
 
 static int publish(const char *topic, const char *payload, bool retain)
 {
     MQTTMessage message = {0};
     message.qos = account.mode || !strncmp(topic,"homeassistant/",14) ? QOS1 : QOS0; message.retained = retain;
     message.payload = (void *)payload; message.payloadlen = strlen(payload);
-    return MQTTPublish(&client, topic, &message);
+    int result = MQTTPublish(&client, topic, &message);
+    mqtt_error(topic, result);
+    return result;
 }
 
 static int publish_leaf(const char *leaf, const char *payload, bool retain)
@@ -187,6 +199,7 @@ static void mqtt_worker(mico_thread_arg_t arg)
         if (NewNetwork(&net, cfg.mqtt_host, cfg.mqtt_port, options) != MQTT_SUCCESS) {
             mqtt_status(MQTT_DISCONNECTED); mico_thread_msleep(mqtt_retry_seconds(attempt++) * 1000); continue;
         }
+        net.mqttread = m1_mqtt_read;
         if (MQTTClientInit(&client, &net, 5000) != MQTT_SUCCESS) {
             net.disconnect(&net); mqtt_status(MQTT_DISCONNECTED); mico_thread_msleep(mqtt_retry_seconds(attempt++) * 1000); continue;
         }
@@ -267,9 +280,10 @@ static void mqtt_worker(mico_thread_arg_t arg)
                 for (unsigned i = 0; i < count && rc == MQTT_SUCCESS; ++i)
                     rc = MQTTSubscribe(&client, feature_filters[i], QOS1, feature_command);
                 acl_check = mico_rtos_get_time();
+                mqtt_error("ACL subscription check", rc);
                 if (rc != MQTT_SUCCESS) mqtt_status(MQTT_WAITING_ACL);
             }
-            if (rc == MQTT_SUCCESS) rc = MQTTYield(&client, 100);
+            if (rc == MQTT_SUCCESS) { rc = MQTTYield(&client, 100); mqtt_error("receive", rc); }
             mico_thread_msleep(50);
         }
         mico_rtos_lock_mutex(&m1_lock); m1_state.mqtt_connected = false; mico_rtos_unlock_mutex(&m1_lock);
