@@ -1,4 +1,5 @@
 #include "m1.h"
+#include "indicator.h"
 #include <time.h>
 
 typedef struct { uint8_t kind, level, frame[12]; } uart_command_t;
@@ -34,15 +35,26 @@ static bool transmit(const uint8_t *frame)
     return false;
 }
 
-static void pwm_update(unsigned level, unsigned mode, bool blink)
+static void indicator_output(mico_pwm_t pwm, mico_gpio_t gpio, float duty, bool on)
+{
+    MicoPwmStop(pwm);
+    if (on) {
+        MicoPwmInitialize(pwm, 50000, duty);
+        MicoPwmStart(pwm);
+    } else {
+        /* PWM stop does not specify an inactive output level. Drive it low. */
+        MicoGpioInitialize(gpio, OUTPUT_PUSH_PULL);
+        MicoGpioOutputLow(gpio);
+    }
+}
+
+static void pwm_update(unsigned level, bool wifi_connected, bool error_on)
 {
     static const float duty[5] = { 0.5f, 3.0f, 7.0f, 13.0f, 20.0f };
-    /* MK3080B: PWM4 = GPIO13, PWM5 = GPIO14. No generic board LED pins. */
-    MicoPwmStop(MICO_PWM_4); MicoPwmStop(MICO_PWM_5);
-    MicoPwmInitialize(MICO_PWM_4, 50000, duty[level]);
-    MicoPwmInitialize(MICO_PWM_5, 50000, duty[level]);
-    if (mode == 2) MicoPwmStart(MICO_PWM_4);
-    if (mode == 1 || mode == 2 || (mode == 3 && blink)) MicoPwmStart(MICO_PWM_5);
+    /* MK3080B PWM4/GPIO13 drives the error mark; PWM5/GPIO14
+     * drives Wi-Fi, as identified by the user on the physical M1. */
+    indicator_output(MICO_PWM_5, MICO_GPIO_14, duty[level], wifi_connected || error_on);
+    indicator_output(MICO_PWM_4, MICO_GPIO_13, duty[level], error_on);
 }
 
 static void uart_worker(mico_thread_arg_t arg)
@@ -66,7 +78,8 @@ static void uart_worker(mico_thread_arg_t arg)
     queue_ready = true;
     uint32_t next_query = mico_rtos_get_time();
     m1_decoder_t decoder = {0};
-    unsigned old_level = 255, old_mode = 255, old_blink = 255;
+    unsigned old_level = 255, old_mode = 255, old_error = 255, old_wifi = 255;
+    uint32_t mode_since = 0;
     for (;;) {
         uint32_t now = mico_rtos_get_time();
         if ((int32_t)(now - next_query) >= 0) {
@@ -107,16 +120,21 @@ static void uart_worker(mico_thread_arg_t arg)
             }
             mico_rtos_unlock_mutex(&m1_lock);
         }
+        m1_config_get(&cfg);
         mico_rtos_lock_mutex(&m1_lock);
         m1_state.discarded_bytes = decoder.discarded;
         unsigned level = m1_state.brightness_requested;
-        unsigned mode = m1_state.wifi_connected ? 1 : (m1_state.ap_active ? 2 : 3);
+        bool wifi_connected = m1_state.wifi_connected;
+        unsigned mode = m1_indicator_mode(cfg.ssid[0] != 0, m1_state.wifi_connected, cfg.mqtt_host[0] != 0,
+            m1_state.mqtt_connected && m1_state.mqtt_status == MQTT_READY);
         mico_rtos_unlock_mutex(&m1_lock);
-        unsigned blink = (now / 500) % 2;
-        if (level != old_level || mode != old_mode || (mode == 3 && blink != old_blink)) {
-            pwm_update(level, mode, blink);
-            old_level = level; old_mode = mode; old_blink = blink;
+        if (mode != old_mode) mode_since = now;
+        bool error_on = m1_indicator_on(mode, (uint32_t)(now - mode_since));
+        if (level != old_level || wifi_connected != old_wifi || error_on != old_error) {
+            pwm_update(level, wifi_connected, error_on);
+            old_level = level; old_wifi = wifi_connected; old_error = error_on;
         }
+        old_mode = mode;
         mico_thread_msleep(10);
     }
 }
