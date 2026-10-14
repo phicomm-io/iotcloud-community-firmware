@@ -209,13 +209,16 @@ static int HttpGetAssets(httpd_request_t *req) {
 
 static int HttpGetTc1Status(httpd_request_t *req) {
     unsigned long free_memory = (unsigned long)MicoGetMemoryInfo()->free_memory;
-    size_t capacity = 4096;
-    /* Account for worst-case JSON escaping in user-controlled fields and aliases. */
-    capacity += 12 * (strlen(sys_config->micoSystemConfig.name) +
-                      strlen(sys_config->micoSystemConfig.ssid) + strlen(user_config->ap_name) +
-                      strlen(MQTT_SERVER) + strlen(MQTT_SERVER_USR));
+    /* Fixed keys, numeric values and worst-case OTA error fit in 3072 bytes.
+     * Reserve actual escaped string sizes, including compatibility aliases,
+     * instead of twelve times every input byte on each polling request. */
+    size_t capacity = 3072;
+    capacity += 2 * (jb_string_size(sys_config->micoSystemConfig.name) +
+                     jb_string_size(sys_config->micoSystemConfig.ssid) +
+                     jb_string_size(user_config->ap_name) + jb_string_size(MQTT_SERVER) +
+                     jb_string_size(MQTT_SERVER_USR));
     for (int i = 0; i < SOCKET_NUM; ++i)
-        capacity += 12 * strlen(user_config->socket_names[i]);
+        capacity += 2 * jb_string_size(user_config->socket_names[i]);
     char *data = malloc(capacity);
     if (!data)
         return kNoMemoryErr;

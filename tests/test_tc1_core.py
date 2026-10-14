@@ -149,6 +149,6 @@ int main(void){
 #include <assert.h>
 #include <string.h>
 #include "json_buffer.h"
-int main(void){char data[64];JsonBuffer b={data,0,sizeof(data),true};jb_string(&b,"quote\" slash\\ line\n");assert(b.valid&&!strcmp(data,"\"quote\\\" slash\\\\ line\\u000a\""));char tiny[2];b=(JsonBuffer){tiny,0,2,true};jb_string(&b,"long");assert(!b.valid);}
+int main(void){char data[64];JsonBuffer b={data,0,sizeof(data),true};jb_string(&b,"quote\" slash\\ line\n");assert(b.used==jb_string_size("quote\" slash\\ line\n")+2);assert(b.valid&&!strcmp(data,"\"quote\\\" slash\\\\ line\\u000a\""));char tiny[2];b=(JsonBuffer){tiny,0,2,true};jb_string(&b,"long");assert(!b.valid);}
 ''')
 if __name__=='__main__':unittest.main()

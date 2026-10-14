@@ -21,6 +21,13 @@ static inline void jb_printf(JsonBuffer *b, const char *format, ...) {
     else
         b->used += n;
 }
+/* Bytes occupied by the string contents after JSON escaping (excluding quotes). */
+static inline size_t jb_string_size(const char *text) {
+    size_t size = 0;
+    for (const unsigned char *c = (const unsigned char *)text; *c; ++c)
+        size += *c < 32 ? 6 : (*c == '"' || *c == '\\' ? 2 : 1);
+    return size;
+}
 static inline void jb_string(JsonBuffer *b, const char *text) {
     jb_printf(b, "\"");
     for (const unsigned char *c = (const unsigned char *)text; *c; ++c) {
