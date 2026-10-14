@@ -57,15 +57,89 @@
 #include "ota_server/user_ota.h"
 #include "mqtt_server/user_mqtt_client.h"
 #include "json.h"
+#include "json_buffer.h"
 
+/* Parse headers once, reject truncation/chunked bodies and read all fragments.
+ * capacity includes the terminator. An incomplete request never mutates config. */
+static int read_body(httpd_request_t *req, char *out, int capacity) {
+    if (!out || capacity < 1)
+        return kParamErr;
+    out[0] = 0;
+    if (!req->hdr_parsed) {
+        char *headers = malloc(HTTPD_MAX_MESSAGE);
+        if (!headers)
+            return kNoMemoryErr;
+        int err = httpd_parse_hdr_tags(req, req->sock, headers, HTTPD_MAX_MESSAGE);
+        free(headers);
+        if (err != kNoErr)
+            return err;
+        req->hdr_parsed = 1;
+    }
+    int length = req->remaining_bytes;
+    if (req->chunked || length < 0 || length >= capacity)
+        return kParamErr;
+    int used = 0;
+    while (used < length) {
+        int n = httpd_recv(req->sock, out + used, length - used, 0);
+        if (n <= 0)
+            return kGeneralErr;
+        used += n;
+        req->remaining_bytes -= n;
+    }
+    out[used] = 0;
+    if (memchr(out, 0, used))
+        return kParamErr;
+    return kNoErr;
+}
+static int response_json(httpd_request_t *req, const char *code, const char *data, size_t size) {
+    int err = httpd_send_all_header(req, code, size, "application/json");
+    if (err != kNoErr)
+        return err;
+    return httpd_send_body(req->sock, (const unsigned char *)data, size);
+}
+static int result_message(httpd_request_t *req, bool valid, bool json) {
+    if (json) {
+        const char *text = valid ? "{\"message\":\"请求已接受\"}" : "{\"message\":\"配置无效\"}";
+        return response_json(req, valid ? HTTP_RES_200 : HTTP_RES_400, text, strlen(text));
+    }
+    const char *text = valid ? "OK" : "NO";
+    int err =
+        httpd_send_all_header(req, valid ? HTTP_RES_200 : HTTP_RES_400, strlen(text), "text/plain");
+    return err == kNoErr ? httpd_send_body(req->sock, (const unsigned char *)text, strlen(text))
+                         : err;
+}
+static json_object *body_json(const char *body) {
+    json_object *o = json_tokener_parse(body);
+    if (o && !json_object_is_type(o, json_type_object)) {
+        json_object_put(o);
+        o = NULL;
+    }
+    return o;
+}
+static bool json_integer(json_object *o, const char *key, int *value, int low, int high) {
+    json_object *v = json_object_object_get(o, key);
+    if (!v || !json_object_is_type(v, json_type_int))
+        return false;
+    *value = json_object_get_int(v);
+    return *value >= low && *value <= high;
+}
+static bool json_enabled(json_object *o, int *value) {
+    json_object *v = json_object_object_get(o, "enabled");
+    if (!v || !json_object_is_type(v, json_type_boolean))
+        return false;
+    *value = json_object_get_boolean(v);
+    return true;
+}
+static bool mqtt_json_string(json_object *o, const char *key, char *out, size_t capacity,
+                             bool keep_blank);
 static bool is_http_init;
 static bool is_handlers_registered;
 const struct httpd_wsgi_call g_app_handlers[];
-char power_info_json[2560] = {0};
+
 char up_time[16] = "00:00:00";
-#define CHUNK_SIZE 512  // 姣忔鍙戦€?512 瀛楄妭锛岄伩鍏?buffer 澶ぇ
+#define CHUNK_SIZE 512 // 姣忔鍙戦€?512 瀛楄妭锛岄伩鍏?buffer 澶ぇ
 #define OTA_BUFFER_SIZE 512
-#define MAX_OTA_SIZE 1024*1024
+#define MAX_OTA_SIZE 1024 * 1024
 
 /*
 void GetPraFromUrl(char* url, char* pra, char* val)
@@ -102,7 +176,6 @@ void GetPraFromUrl(char* url, char* pra, char* val)
 }
 */
 
-
 static OSStatus send_in_chunks(int sock, const uint8_t *data, int total_len) {
     OSStatus err = kNoErr;
     for (int offset = 0; offset < total_len; offset += CHUNK_SIZE) {
@@ -118,7 +191,6 @@ static int HttpGetIndexPage(httpd_request_t *req) {
     OSStatus err = kNoErr;
     int total_sz = sizeof(web_index_html);
 
-
     err = httpd_send_all_header(req, HTTP_RES_200, total_sz, HTTP_CONTENT_HTML_ZIP);
     require_noerr_action(err, exit, http_log("ERROR: Unable to send index headers."));
 
@@ -130,299 +202,331 @@ exit:
 }
 
 static int HttpGetAssets(httpd_request_t *req) {
-    OSStatus err = kNoErr;
-
-    char *file_name = strstr(req->filename, "/assets/");
-    if (!file_name) {
-        http_log("HttpGetAssets url[%s] err", req->filename);
-        return err;
-    }
-
-    int total_sz = 0;
-    const unsigned char *file_data = NULL;
-    const char *content_type = HTTP_CONTENT_JS_ZIP;
-
-    if (strcmp(file_name + 8, "js_pack.js") == 0) {
-        total_sz = sizeof(js_pack);
-        file_data = js_pack;
-    } else if (strcmp(file_name + 8, "css_pack.css") == 0) {
-        total_sz = sizeof(css_pack);
-        file_data = css_pack;
-        content_type = HTTP_CONTENT_CSS_ZIP;
-    } else if (strcmp(file_name + 8, "index.html") == 0) {
-        total_sz = sizeof(web_index_html);
-        file_data = web_index_html;
-        content_type = HTTP_CONTENT_HTML_ZIP;
-    }
-
-    if (total_sz == 0 || file_data == NULL) {
-        http_log("File not found: %s", req->filename);
-        return err;
-    }
-
-
-    err = httpd_send_all_header(req, HTTP_RES_200, total_sz, content_type);
-    require_noerr_action(err, exit, http_log("ERROR: Unable to send asset headers."));
-
-    err = send_in_chunks(req->sock, file_data, total_sz);
-    require_noerr_action(err, exit, http_log("ERROR: Unable to send asset body."));
-
-exit:
-    return err;
+    if (!strcmp(req->filename, "/assets/index.html"))
+        return HttpGetIndexPage(req);
+    return httpd_send_all_header(req, HTTP_RES_404, 0, "text/plain");
 }
 
 static int HttpGetTc1Status(httpd_request_t *req) {
-    json_object *status = json_object_new_object();
-    if (!status) return kGeneralErr;
-    char socket_names[512], number[16];
-    snprintf(socket_names, sizeof(socket_names), "%s,%s,%s,%s,%s,%s",
-             user_config->socket_names[0], user_config->socket_names[1],
-             user_config->socket_names[2], user_config->socket_names[3],
-             user_config->socket_names[4], user_config->socket_names[5]);
-#define STATUS_STRING(key, value) json_object_object_add(status, key, json_object_new_string(value))
-#define STATUS_INT(key, value) json_object_object_add(status, key, json_object_new_int(value))
-    STATUS_STRING("sockets", GetSocketStatus());
-    STATUS_INT("mode", ip_status.mode);
-    STATUS_STRING("station_ssid", sys_config->micoSystemConfig.ssid);
-    STATUS_STRING("station_pwd", sys_config->micoSystemConfig.user_key);
-    STATUS_STRING("ap_ssid", user_config->ap_name);
-    STATUS_STRING("ap_pwd", user_config->ap_key);
-    STATUS_STRING("mqtt_addr", MQTT_SERVER);
-    STATUS_INT("mqtt_port", MQTT_SERVER_PORT);
-    STATUS_STRING("mqtt_usr", MQTT_SERVER_USR);
-    STATUS_STRING("mqtt_pwd", "");
-    STATUS_STRING("version", VERSION);
-    STATUS_STRING("ip", ip_status.ip);
-    STATUS_STRING("mask", ip_status.mask);
-    STATUS_STRING("gateway", ip_status.gateway);
-    snprintf(number, sizeof(number), "%u", user_config->mqtt_report_freq);
-    STATUS_STRING("reportFreq", number);
-    STATUS_INT("ledEnabled", user_config->power_led_enabled);
-    STATUS_INT("up_time", 0);
-    STATUS_STRING("socketNames", socket_names);
-    STATUS_INT("child_lock_enabled", childLockEnabled);
-    STATUS_STRING("deviceName", sys_config->micoSystemConfig.name);
-    STATUS_INT("powerCoefficientX100", user_config->power_coefficient_x100);
-    char clicks[768];
-    snprintf(clicks, sizeof(clicks), "%s", GetButtonClickConfig());
-    for (char *c = clicks; *c; ++c) if (*c == 39) *c = 34;
-    /* Keep the already formatted array out of the heap-heavy JSON tree. */
-    STATUS_STRING("mqtt_topic_mode", user_config->mqtt_topic_mode ? "account" : "legacy");
-    STATUS_STRING("mqtt_status", mqtt_status_name(tc1_mqtt_status));
-    json_object_object_add(status, "mqtt_password_set", json_object_new_boolean(user_config->mqtt_password[0] != 0));
-    json_object_object_add(status, "mqtt_cleanup_warning", json_object_new_boolean(tc1_mqtt_cleanup_warning));
-#undef STATUS_STRING
-#undef STATUS_INT
-    OSStatus err = kNoMemoryErr;
-    const char *fields = json_object_to_json_string(status);
-    char *body = NULL;
-    if (!fields) goto exit;
-    size_t fields_len = strlen(fields);
-    size_t capacity = fields_len + strlen(clicks) + 32;
-    body = malloc(capacity);
-    if (!body || !fields_len || fields[fields_len-1] != 125) goto exit;
-    int length = snprintf(body, capacity, "%.*s, \"btnClicks\": %s }",
-                          (int)fields_len-1, fields, clicks);
-    if (length < 0 || (size_t)length >= capacity) goto exit;
-    send_http(body, length, exit, &err);
-exit:
-    free(body);
-    json_object_put(status);
+    unsigned long free_memory = (unsigned long)MicoGetMemoryInfo()->free_memory;
+    size_t capacity = 4096;
+    /* Account for worst-case JSON escaping in user-controlled fields and aliases. */
+    capacity += 12 * (strlen(sys_config->micoSystemConfig.name) +
+                      strlen(sys_config->micoSystemConfig.ssid) + strlen(user_config->ap_name) +
+                      strlen(MQTT_SERVER) + strlen(MQTT_SERVER_USR));
+    for (int i = 0; i < SOCKET_NUM; ++i)
+        capacity += 12 * strlen(user_config->socket_names[i]);
+    char *data = malloc(capacity);
+    if (!data)
+        return kNoMemoryErr;
+    JsonBuffer b = {data, 0, capacity, true};
+    mico_time_t now;
+    mico_time_get_time(&now);
+    jb_printf(&b, "{");
+    jb_printf(&b, "\"utc_time\":%ld,\"time_synced\":%s,", (long)time(NULL),
+              rtc_init == 1 ? "true" : "false");
+    jb_field(&b, "version", VERSION);
+    jb_field(&b, "device_id", str_mac);
+    jb_field(&b, "name", sys_config->micoSystemConfig.name);
+    jb_field(&b, "deviceName", sys_config->micoSystemConfig.name);
+    jb_field(&b, "ssid", sys_config->micoSystemConfig.ssid);
+    jb_field(&b, "station_ssid", sys_config->micoSystemConfig.ssid);
+    jb_field(&b, "station_pwd", "");
+    jb_field(&b, "ap_pwd", "");
+    jb_field(&b, "ip", ip_status.ip);
+    jb_field(&b, "mask", ip_status.mask);
+    jb_field(&b, "gateway", ip_status.gateway);
+    jb_field(&b, "ap_name", user_config->ap_name);
+    jb_field(&b, "ap_ssid", user_config->ap_name);
+    jb_field(&b, "mqtt_host", MQTT_SERVER);
+    jb_field(&b, "mqtt_addr", MQTT_SERVER);
+    jb_field(&b, "mqtt_user", MQTT_SERVER_USR);
+    jb_field(&b, "mqtt_usr", MQTT_SERVER_USR);
+    jb_field(&b, "mqtt_pwd", "");
+    jb_field(&b, "mqtt_topic_mode", user_config->mqtt_topic_mode ? "account" : "legacy");
+    jb_field(&b, "mqtt_status", mqtt_status_name(tc1_mqtt_status));
+    jb_field(&b, "sockets", GetSocketStatus());
+    char names[SOCKET_NUM * SOCKET_NAME_LENGTH + SOCKET_NUM];
+    snprintf(names, sizeof(names), "%s,%s,%s,%s,%s,%s", user_config->socket_names[0],
+             user_config->socket_names[1], user_config->socket_names[2],
+             user_config->socket_names[3], user_config->socket_names[4],
+             user_config->socket_names[5]);
+    jb_field(&b, "socketNames", names);
+    jb_printf(&b, "\"socket_names\":[");
+    for (int i = 0; i < SOCKET_NUM; ++i) {
+        if (i)
+            jb_printf(&b, ",");
+        jb_string(&b, user_config->socket_names[i]);
+    }
+    jb_printf(&b, "],");
+    jb_printf(&b, "\"socket_states\":[%s],\"btnClicks\":%s,", GetSocketStatus(),
+              GetButtonClickConfig());
+    jb_printf(&b,
+              "\"mqtt_port\":%d,\"mode\":%d,\"ledEnabled\":%d,\"led_enabled\":%s,\"child_lock_"
+              "enabled\":%d,\"child_lock\":%s,",
+              MQTT_SERVER_PORT, ip_status.mode, user_config->power_led_enabled,
+              user_config->power_led_enabled ? "true" : "false", childLockEnabled,
+              childLockEnabled ? "true" : "false");
+    jb_printf(&b,
+              "\"reportFreq\":\"%d\",\"report_seconds\":%d,\"powerCoefficientX100\":%u,\"up_time\":"
+              "%lu,\"uptime_seconds\":%lu,\"free_memory\":%lu,",
+              MQTT_REPORT_FREQ, MQTT_REPORT_FREQ, user_config->power_coefficient_x100,
+              (unsigned long)now / 1000, (unsigned long)now / 1000, free_memory);
+    jb_printf(&b,
+              "\"wifi_connected\":%s,\"ap_active\":%s,\"wifi_password_set\":%s,\"mqtt_password_"
+              "set\":%s,\"web_password_set\":%s,\"mqtt_cleanup_warning\":%s,\"mqtt_connected\":%s,",
+              wifi_status == WIFI_STATE_CONNECTED ? "true" : "false",
+              ip_status.mode == 0 ? "true" : "false",
+              sys_config->micoSystemConfig.user_key[0] ? "true" : "false",
+              user_config->mqtt_password[0] ? "true" : "false",
+              user_config->web_password[0] ? "true" : "false",
+              tc1_mqtt_cleanup_warning ? "true" : "false",
+              tc1_mqtt_status == MQTT_READY ? "true" : "false");
+    char state[32], error[128];
+    unsigned progress;
+    tc1_ota_snapshot(state, error, &progress);
+    jb_field(&b, "ota_state", state);
+    jb_field(&b, "ota_error", error);
+    jb_printf(&b, "\"ota_progress\":%u}", progress);
+    int err = b.valid ? response_json(req, HTTP_RES_200, b.data, b.used) : kNoMemoryErr;
+    free(data);
     return err;
 }
 
 static int HttpSetSocketStatus(httpd_request_t *req) {
-    OSStatus err = kNoErr;
-
-    int buf_size = 512;
-    char *buf = malloc(buf_size);
-
-    err = httpd_get_data(req, buf, buf_size);
-    require_noerr(err, exit);
-
-    SetSocketStatus(buf);
-
-    send_http("OK", 2, exit, &err);
-
-    exit:
-    if (buf) free(buf);
-    return err;
+    char buf[256];
+    int err = read_body(req, buf, sizeof(buf));
+    if (err)
+        return err;
+    if (buf[0] == '{') {
+        json_object *o = body_json(buf), *v = o ? json_object_object_get(o, "states") : NULL;
+        bool valid = v && json_object_is_type(v, json_type_array) &&
+                     json_object_array_length(v) == SOCKET_NUM;
+        int values[SOCKET_NUM];
+        for (int i = 0; valid && i < SOCKET_NUM; ++i) {
+            json_object *x = json_object_array_get_idx(v, i);
+            valid = json_object_is_type(x, json_type_boolean);
+            values[i] = json_object_get_boolean(x);
+        }
+        if (valid)
+            for (int i = 0; i < SOCKET_NUM; ++i) {
+                UserRelaySet(i, values[i]);
+                UserMqttSendSocketState(i);
+            }
+        if (valid) {
+            mico_system_context_update(sys_config);
+            UserMqttSendTotalSocketState();
+        }
+        if (o)
+            json_object_put(o);
+        return result_message(req, valid, true);
+    }
+    int values[6];
+    char extra;
+    bool valid = sscanf(buf, "%d,%d,%d,%d,%d,%d %c", &values[0], &values[1], &values[2], &values[3],
+                        &values[4], &values[5], &extra) == 6;
+    for (int i = 0; valid && i < 6; ++i)
+        valid = values[i] == 0 || values[i] == 1;
+    if (valid)
+        SetSocketStatus(buf);
+    return result_message(req, valid, false);
 }
 
 static int HttpSetSocketName(httpd_request_t *req) {
-    OSStatus err = kNoErr;
-
-    int buf_size = 70;
-    char *buf = malloc(buf_size);
-
-    err = httpd_get_data(req, buf, buf_size);
-    require_noerr(err, exit);
-    int index;
-    char name[64];
-    if (sscanf(buf, "%d %63s", &index, name) != 2 || index < 0 || index >= SOCKET_NUM) {
-        err=kParamErr;goto exit;
+    char buf[512], name[SOCKET_NAME_LENGTH] = {0};
+    int index = -1;
+    int err = read_body(req, buf, sizeof(buf));
+    if (err)
+        return err;
+    bool json = buf[0] == '{', valid = false;
+    json_object *o = json ? body_json(buf) : NULL;
+    if (o)
+        valid = json_integer(o, "index", &index, 0, SOCKET_NUM - 1) &&
+                mqtt_json_string(o, "name", name, sizeof(name), false) && name[0];
+    else if (!json) {
+        char extra;
+        valid = sscanf(buf, "%d %63s %c", &index, name, &extra) == 2 && index >= 0 &&
+                index < SOCKET_NUM;
     }
-    strcpy(user_config->socket_names[index], name);
-    mico_system_context_update(sys_config);
-    registerMqttEvents();
-    send_http("OK", 2, exit, &err);
-
-    exit:
-    if (buf) free(buf);
-    return err;
+    if (valid) {
+        strcpy(user_config->socket_names[index], name);
+        mico_system_context_update(sys_config);
+        registerMqttEvents();
+    }
+    if (o)
+        json_object_put(o);
+    return result_message(req, valid, json);
 }
 
 static int HttpSetButtonEvent(httpd_request_t *req) {
-    OSStatus err = kNoErr;
-
-    int buf_size = 16;
-    char *buf = calloc(1, buf_size);
-
-    err = httpd_get_data(req, buf, buf_size);
-    require_noerr(err, exit);
-    int index;
-    int func;
-    int longPress;
-    if (sscanf(buf, "%d %d %d", &index, &func, &longPress) != 3 ||
-        index < 1 || index > 30 || func < -1 || func > 10 ||
-        (longPress != 0 && longPress != 1)) {err=kParamErr;goto exit;}
-    if (longPress == 1) {
-        set_key_map(user_config->user,index, get_short_func(user_config->user[index]), func == -1 ? NO_FUNCTION : func);
-    } else {
-        set_key_map(user_config->user,index, func == -1 ? NO_FUNCTION : func, get_long_func(user_config->user[index]));
+    char buf[256];
+    int index = 0, func = -2, longPress = -1;
+    int err = read_body(req, buf, sizeof(buf));
+    if (err)
+        return err;
+    bool json = buf[0] == '{', valid = false;
+    json_object *o = json ? body_json(buf) : NULL;
+    if (o)
+        valid = json_integer(o, "index", &index, 1, 30) &&
+                json_integer(o, "operation", &func, -1, 13) &&
+                json_integer(o, "long_press", &longPress, 0, 1);
+    else if (!json) {
+        char extra;
+        valid = sscanf(buf, "%d %d %d %c", &index, &func, &longPress, &extra) == 3 && index >= 1 &&
+                index <= 30 && func >= -1 && func <= 13 && (longPress == 0 || longPress == 1);
     }
-    key_log("WARNGIN:set KEY func %d %d %d", index,get_short_func(user_config->user[index]),get_long_func(user_config->user[index]));
-    mico_system_context_update(sys_config);
-
-    send_http("OK", 2, exit, &err);
-
-    exit:
-    if (buf) free(buf);
-    return err;
+    if (valid) {
+        set_key_map(user_config->user, index,
+                    longPress    ? get_short_func(user_config->user[index])
+                    : func == -1 ? NO_FUNCTION
+                                 : func,
+                    longPress ? (func == -1 ? NO_FUNCTION : func)
+                              : get_long_func(user_config->user[index]));
+        mico_system_context_update(sys_config);
+    }
+    if (o)
+        json_object_put(o);
+    return result_message(req, valid, json);
 }
-
 #define OTA_BUF_SIZE 5120
 
-static int HttpUploadOTA(httpd_request_t *req, bool rescue)
-{
-    OSStatus err=kGeneralErr; char buffer[512];
+static int HttpUploadOTA(httpd_request_t *req, bool rescue) {
+    OSStatus err = kGeneralErr;
+    char buffer[512];
     /* The SDK parses Content-Length lazily on the first body read. */
-    int first=httpd_get_data2(req,buffer,sizeof(buffer));
-    if (first<=0 || req->chunked || req->remaining_bytes<0 || !tc1_ota_reserve()) return kParamErr;
-    if (!tc1_ota_begin(req->remaining_bytes+first,rescue)) {tc1_ota_abort();return kParamErr;}
-    if (!tc1_ota_write((uint8_t *)buffer,first)) {tc1_ota_abort();return kConnectionErr;}
-    while (req->remaining_bytes>0) {
-        int n=httpd_get_data2(req,buffer,sizeof(buffer));
-        if (n<=0 || !tc1_ota_write((uint8_t *)buffer,n)) { tc1_ota_abort(); return kConnectionErr; }
+    int first = httpd_get_data2(req, buffer, sizeof(buffer));
+    if (first <= 0 || req->chunked || req->remaining_bytes < 0 || !tc1_ota_reserve())
+        return kParamErr;
+    if (!tc1_ota_begin(req->remaining_bytes + first, rescue)) {
+        tc1_ota_abort();
+        return kParamErr;
     }
-    if (!tc1_ota_finish()) {tc1_ota_abort();return kGeneralErr;}
-    const char *response=rescue?"OTA uploaded; rebooting":"OTA verified; rebooting";
-    send_http(response,strlen(response),exit,&err);
-    mico_system_power_perform(mico_system_context_get(),eState_Software_Reset);
+    if (!tc1_ota_write((uint8_t *)buffer, first)) {
+        tc1_ota_abort();
+        return kConnectionErr;
+    }
+    while (req->remaining_bytes > 0) {
+        int n = httpd_get_data2(req, buffer, sizeof(buffer));
+        if (n <= 0 || !tc1_ota_write((uint8_t *)buffer, n)) {
+            tc1_ota_abort();
+            return kConnectionErr;
+        }
+    }
+    if (!tc1_ota_finish()) {
+        tc1_ota_abort();
+        return kGeneralErr;
+    }
+
+    err = response_json(req, "HTTP/1.1 202 Accepted\r\n",
+                        "{\"message\":\"文件校验通过，设备正在重启\"}",
+                        strlen("{\"message\":\"文件校验通过，设备正在重启\"}"));
+    require_noerr(err, exit);
+    mico_system_power_perform(mico_system_context_get(), eState_Software_Reset);
 exit:
     return err;
 }
-static int HttpSetOTAFile(httpd_request_t *req) { return HttpUploadOTA(req,false); }
-static int HttpSetOTAUnsigned(httpd_request_t *req) { return HttpUploadOTA(req,true); }
+static int HttpSetOTAFile(httpd_request_t *req) { return HttpUploadOTA(req, false); }
+static int HttpSetOTAUnsigned(httpd_request_t *req) { return HttpUploadOTA(req, true); }
 
 static int HttpSetDeviceName(httpd_request_t *req) {
-    OSStatus err = kNoErr;
-
-    int buf_size = 70;
-    char *buf = malloc(buf_size);
-
-    err = httpd_get_data(req, buf, buf_size);
-    require_noerr(err, exit);
-    char name[64];
-    sscanf(buf, "%s", name);
-    strcpy(sys_config->micoSystemConfig.name, name);
-    mico_system_context_update(sys_config);
-    registerMqttEvents();
-    send_http("OK", 2, exit, &err);
-
-    exit:
-    if (buf) free(buf);
-    return err;
+    char buf[512], name[64] = {0};
+    int err = read_body(req, buf, sizeof(buf));
+    if (err)
+        return err;
+    bool json = buf[0] == '{', valid = false;
+    json_object *o = json ? body_json(buf) : NULL;
+    if (o)
+        valid = mqtt_json_string(o, "name", name, sizeof(name), false) && name[0];
+    else if (!json) {
+        char extra;
+        valid = sscanf(buf, "%63s %c", name, &extra) == 1;
+    }
+    if (valid) {
+        strcpy(sys_config->micoSystemConfig.name, name);
+        mico_system_context_update(sys_config);
+        registerMqttEvents();
+    }
+    if (o)
+        json_object_put(o);
+    return result_message(req, valid, json);
 }
 
 static int HttpSetChildLock(httpd_request_t *req) {
-    OSStatus err = kNoErr;
-
-    int buf_size = 32;
-    char *buf = malloc(buf_size);
-
-    err = httpd_get_data(req, buf, buf_size);
-    require_noerr(err, exit);
-    int enableLock;
-    sscanf(buf, "%d", &enableLock);
-    user_config->user[0] = enableLock;
-    childLockEnabled = enableLock;
-    mico_system_context_update(sys_config);
-    UserMqttSendChildLockState();
-    send_http("OK", 2, exit, &err);
-
-    exit:
-    if (buf) free(buf);
-    return err;
+    char buf[128];
+    int value = 0;
+    int err = read_body(req, buf, sizeof(buf));
+    if (err)
+        return err;
+    bool json = buf[0] == '{';
+    json_object *o = json ? body_json(buf) : NULL;
+    char extra;
+    bool valid =
+        o ? json_enabled(o, &value)
+          : !json && sscanf(buf, "%d %c", &value, &extra) == 1 && (value == 0 || value == 1);
+    if (valid) {
+        user_config->user[0] = value;
+        childLockEnabled = value;
+        mico_system_context_update(sys_config);
+        UserMqttSendChildLockState();
+    }
+    if (o)
+        json_object_put(o);
+    return result_message(req, valid, json);
 }
 
 static int HttpGetPowerInfo(httpd_request_t *req) {
-    OSStatus err = kNoErr;
-    char buf[17] = {0};
-    if (req->type == HTTPD_REQ_TYPE_POST) {
-        err = httpd_get_data(req, buf, sizeof(buf)-1);
-        require_noerr(err, exit);
-    }
-
+    char buf[64] = {0};
     int idx = 0;
-    sscanf(buf, "%d", &idx);
-
-    //璁＄畻绯荤粺杩愯鏃堕棿
-    mico_time_t past_ms = 0;
-    mico_time_get_time(&past_ms);
-    int past = past_ms / 1000;
-    int d = past / 3600 / 24;
-    int h = past / 3600 % 24;
-    int m = past / 60 % 60;
-    int s = past % 60;
-    sprintf(up_time, "%d - %02d:%02d:%02d", d, h, m, s);
-
-    char *powers = GetPowerRecord(idx);
-    char *sockets = GetSocketStatus();
-    char *short_click_config = GetButtonClickConfig();
-    char *socket_names = malloc(512);
-    sprintf(socket_names, "%s,%s,%s,%s,%s,%s",
-            user_config->socket_names[0],
-            user_config->socket_names[1],
-            user_config->socket_names[2],
-            user_config->socket_names[3],
-            user_config->socket_names[4],
-            user_config->socket_names[5]);
-    sprintf(power_info_json, POWER_INFO_JSON, sockets, power_record.idx, PW_NUM, p_count, powers,
-            up_time, user_config->power_led_enabled, RelayOut() ? 1 : 0, socket_names,
-            user_config->p_count_1_day_ago, user_config->p_count_2_days_ago, childLockEnabled,
-            sys_config->micoSystemConfig.name,
-            (unsigned int) user_config->power_coefficient_x100, short_click_config);
-    send_http(power_info_json, strlen(power_info_json), exit, &err);
-    if (socket_names) free(socket_names);
-    exit:
+    if (req->type == HTTPD_REQ_TYPE_POST) {
+        int err = read_body(req, buf, sizeof(buf));
+        if (err)
+            return err;
+        sscanf(buf, "%d", &idx);
+    }
+    size_t capacity = 2048 + 6 * strlen(sys_config->micoSystemConfig.name);
+    for (int i = 0; i < SOCKET_NUM; ++i)
+        capacity += 6 * strlen(user_config->socket_names[i]);
+    char *data = malloc(capacity);
+    if (!data)
+        return kNoMemoryErr;
+    JsonBuffer b = {data, 0, capacity, true};
+    mico_time_t now;
+    mico_time_get_time(&now);
+    snprintf(up_time, sizeof(up_time), "%lu - %02lu:%02lu:%02lu", (unsigned long)now / 86400000,
+             (unsigned long)now / 3600000 % 24, (unsigned long)now / 60000 % 60,
+             (unsigned long)now / 1000 % 60);
+    jb_printf(&b, "{");
+    jb_field(&b, "sockets", GetSocketStatus());
+    jb_field(&b, "up_time", up_time);
+    jb_field(&b, "deviceName", sys_config->micoSystemConfig.name);
+    char names[SOCKET_NUM * SOCKET_NAME_LENGTH + SOCKET_NUM];
+    snprintf(names, sizeof(names), "%s,%s,%s,%s,%s,%s", user_config->socket_names[0],
+             user_config->socket_names[1], user_config->socket_names[2],
+             user_config->socket_names[3], user_config->socket_names[4],
+             user_config->socket_names[5]);
+    jb_field(&b, "socketNames", names);
+    jb_printf(
+        &b,
+        "\"idx\":%d,\"len\":%d,\"p_count\":%lu,\"powers\":[%s],\"power_watts\":%.2f,\"energy_kwh\":"
+        "%.5f,\"led_enabled\":%d,\"total_switch_on\":%d,\"p_count_1_day_ago\":%d,\"p_count_2_days_"
+        "ago\":%d,\"child_lock_enabled\":%d,\"powerCoefficientX100\":%u,\"btnClicks\":%s}",
+        power_record.idx, PW_NUM, (unsigned long)p_count, GetPowerRecord(idx), real_time_power,
+        PowerPulseCountToKwh(p_count), user_config->power_led_enabled, RelayOut() ? 1 : 0,
+        user_config->p_count_1_day_ago, user_config->p_count_2_days_ago, childLockEnabled,
+        user_config->power_coefficient_x100, GetButtonClickConfig());
+    int err = b.valid ? response_json(req, HTTP_RES_200, data, b.used) : kNoMemoryErr;
+    free(data);
     return err;
 }
-
-static int HttpGetWifiConfig(httpd_request_t *req) {
-    OSStatus err = kNoErr;
-    char *status = "test";
-    send_http(status, strlen(status), exit, &err);
-    exit:
-    return err;
-}
-
 
 // 鍗曚釜鍗佸叚杩涘埗瀛楃杞暟瀛楋紙瀹夊叏锛?
 static int hex_char_to_int(char c) {
-    if ('0' <= c && c <= '9') return c - '0';
-    if ('a' <= c && c <= 'f') return c - 'a' + 10;
-    if ('A' <= c && c <= 'F') return c - 'A' + 10;
+    if ('0' <= c && c <= '9')
+        return c - '0';
+    if ('a' <= c && c <= 'f')
+        return c - 'a' + 10;
+    if ('A' <= c && c <= 'F')
+        return c - 'A' + 10;
     return -1;
 }
 
@@ -431,7 +535,8 @@ void url_decode(const char *src, char *dest, size_t max_len) {
     size_t i = 0;
     while (*src && i < max_len - 1) {
         if (*src == '%') {
-            if (isxdigit((unsigned char)src[1]) && isxdigit((unsigned char)src[2])) {
+            if (src[1] && src[2] && isxdigit((unsigned char)src[1]) &&
+                isxdigit((unsigned char)src[2])) {
                 int high = hex_char_to_int(src[1]);
                 int low = hex_char_to_int(src[2]);
                 if (high >= 0 && low >= 0) {
@@ -453,168 +558,186 @@ void url_decode(const char *src, char *dest, size_t max_len) {
 }
 
 static int HttpSetWifiConfig(httpd_request_t *req) {
-    OSStatus err = kNoErr;
-
-  char *buf = malloc(256);
-  char *ssid_enc = malloc(128);
-  char *key_enc = malloc(128);
-  char *wifi_ssid = malloc(128);
-  char *wifi_key = malloc(128);
-  int mode = -1;
-    require_action(buf && ssid_enc && key_enc && wifi_ssid && wifi_key, exit, err = kNoMemoryErr);
-
-
-
-    err = httpd_get_data(req, buf, 256);
-    require_noerr(err, exit);
-  // 鍋囪 httpd_get_data(req, buf, 256);
-//  tc1_log("wifi config %s",buf);
-  if (sscanf(buf, "%d %127s %127s", &mode, ssid_enc, key_enc) != 3) {
-      err = kParamErr;
-      goto exit;
-  }
-//  tc1_log("wifi config %s %s",ssid_enc,key_enc);
-  url_decode(ssid_enc, wifi_ssid,128);
-  url_decode(key_enc, wifi_key,128);
-//  tc1_log("wifi config decode %s %s",wifi_ssid,wifi_key);
-    if (mode == 1) {
-        WifiConnect(wifi_ssid, wifi_key);
-    } else {
-        ApConfig(wifi_ssid, wifi_key);
+    char buf[768], ssid[33] = {0}, key[65] = {0};
+    int mode = 1;
+    int err = read_body(req, buf, sizeof(buf));
+    if (err)
+        return err;
+    bool json = buf[0] == '{', valid = false;
+    json_object *o = json ? body_json(buf) : NULL;
+    if (o) {
+        json_object *v = json_object_object_get(o, "ssid");
+        valid = v && mqtt_json_string(o, "ssid", ssid, sizeof(ssid), false) && ssid[0];
+        if (!strcmp(ssid, sys_config->micoSystemConfig.ssid))
+            snprintf(key, sizeof(key), "%s", sys_config->micoSystemConfig.user_key);
+        valid = valid && mqtt_json_string(o, "password", key, sizeof(key), true);
+        v = json_object_object_get(o, "open_network");
+        if (v && json_object_is_type(v, json_type_boolean) && json_object_get_boolean(v))
+            key[0] = 0;
+        if (v && !json_object_is_type(v, json_type_boolean))
+            valid = false;
+    } else if (!json) {
+        char ssid_enc[128], key_enc[192], extra;
+        valid = sscanf(buf, "%d %127s %191s %c", &mode, ssid_enc, key_enc, &extra) == 3 &&
+                (mode == 0 || mode == 1);
+        if (valid) {
+            url_decode(ssid_enc, ssid, sizeof(ssid));
+            url_decode(key_enc, key, sizeof(key));
+        }
     }
-
-    send_http("OK", 2, exit, &err);
-
-    exit:
-    if (buf) free(buf);
-    if (ssid_enc) free(ssid_enc);
-    if (key_enc) free(key_enc);
-    if (wifi_ssid) free(wifi_ssid);
-    if (wifi_key) free(wifi_key);
-    return err;
+    if (valid) {
+        if (mode == 1)
+            WifiConnect(ssid, key);
+        else
+            ApConfig(ssid, key);
+    }
+    if (o)
+        json_object_put(o);
+    return result_message(req, valid, json);
 }
 
 static int HttpGetWifiScan(httpd_request_t *req) {
-    OSStatus err = kNoErr;
-    if (scaned) {
-        scaned = false;
-        send_http(wifi_ret, strlen(wifi_ret), exit, &err);
-        free(wifi_ret);
-        wifi_ret = NULL;
-    } else {
-        send_http("NO", 2, exit, &err);
-    }
-
-    exit:
+    char *data = WifiScanJson();
+    if (!data)
+        return kNoMemoryErr;
+    int err = response_json(req, HTTP_RES_200, data, strlen(data));
+    free(data);
     return err;
 }
 
 static int HttpSetWifiScan(httpd_request_t *req) {
-    micoWlanStartScanAdv();
-    OSStatus err = kNoErr;
-    send_http("OK", 2, exit, &err);
-    exit:
-    return err;
+    char buf[16];
+    int err = read_body(req, buf, sizeof(buf));
+    if (err)
+        return err;
+    return result_message(req, WifiScanStart() == kNoErr, buf[0] == '{');
 }
 
 static int HttpSetRebootSystem(httpd_request_t *req) {
-    OSStatus err = kNoErr;
-    char buf[10] = {0};
-    httpd_get_data(req, buf, sizeof(buf));
-
-    send_http("OK", 2, exit, &err);
-
-    if (strstr(buf, "soft") != NULL) {
+    char buf[32];
+    int err = read_body(req, buf, sizeof(buf));
+    if (err)
+        return err;
+    err = result_message(req, true, buf[0] == '{');
+    if (err)
+        return err;
+    if (!strcmp(buf, "soft"))
         UserSoftReboot();
-    } else {
+    else
         MicoSystemReboot();
-    }
-
-    exit:
     return err;
 }
-
-static bool mqtt_json_string(json_object *o, const char *key, char *out, size_t capacity, bool keep_blank) {
-    json_object *v=json_object_object_get(o,key);
-    if(!v) return true;
-    if(!json_object_is_type(v,json_type_string)) return false;
-    const char *text=json_object_get_string(v);
-    if(strlen(text)!=(size_t)json_object_get_string_len(v) || strlen(text)>=capacity || strpbrk(text,"\r\n")) return false;
-    if(*text || !keep_blank) strcpy(out,text);
+static bool mqtt_json_string(json_object *o, const char *key, char *out, size_t capacity,
+                             bool keep_blank) {
+    json_object *v = json_object_object_get(o, key);
+    if (!v)
+        return true;
+    if (!json_object_is_type(v, json_type_string))
+        return false;
+    const char *text = json_object_get_string(v);
+    if (strlen(text) != (size_t)json_object_get_string_len(v) || strlen(text) >= capacity ||
+        strpbrk(text, "\r\n"))
+        return false;
+    if (*text || !keep_blank)
+        strcpy(out, text);
     return true;
 }
+
 static int HttpSetMqttConfig(httpd_request_t *req) {
-    OSStatus err=kNoErr;
-    char buf[2048]={0}, host[32], user[64], password[257];
-    strcpy(host,user_config->mqtt_ip); strcpy(user,user_config->mqtt_user); strcpy(password,user_config->mqtt_password);
-    int port=user_config->mqtt_port, mode=user_config->mqtt_topic_mode;
-    bool valid=false; json_object *o=NULL;
-    err=httpd_get_data(req,buf,sizeof(buf)-1); require_noerr(err,exit);
-    if(req->body_nbytes>=sizeof(buf) || memchr(buf,0,req->body_nbytes)) goto invalid;
-    if(buf[0]=='{') {
-        o=json_tokener_parse(buf);
-        if(!o || !json_object_is_type(o,json_type_object)) goto invalid;
-        valid=mqtt_json_string(o,"host",host,sizeof(host),false) && mqtt_json_string(o,"user",user,sizeof(user),false) && mqtt_json_string(o,"password",password,sizeof(password),true);
-        json_object *v=json_object_object_get(o,"port");
-        if(v) { if(!json_object_is_type(v,json_type_int)) valid=false; else port=json_object_get_int(v); }
-        v=json_object_object_get(o,"topic_mode");
-        if(v) {
-            if(!json_object_is_type(v,json_type_string) || json_object_get_string_len(v)!=(int)strlen(json_object_get_string(v)) || (strcmp(json_object_get_string(v),"legacy") && strcmp(json_object_get_string(v),"account"))) valid=false;
-            else mode=!strcmp(json_object_get_string(v),"account");
+    OSStatus err = kNoErr;
+    char buf[2048] = {0}, host[32], user[64], password[257];
+    strcpy(host, user_config->mqtt_ip);
+    strcpy(user, user_config->mqtt_user);
+    strcpy(password, user_config->mqtt_password);
+    int port = user_config->mqtt_port, mode = user_config->mqtt_topic_mode;
+    bool valid = false;
+    json_object *o = NULL;
+    err = read_body(req, buf, sizeof(buf) - 1);
+    require_noerr(err, exit);
+    if (req->body_nbytes >= sizeof(buf) || memchr(buf, 0, req->body_nbytes))
+        goto invalid;
+    if (buf[0] == '{') {
+        o = json_tokener_parse(buf);
+        if (!o || !json_object_is_type(o, json_type_object))
+            goto invalid;
+        valid = mqtt_json_string(o, "host", host, sizeof(host), false) &&
+                mqtt_json_string(o, "user", user, sizeof(user), false) &&
+                mqtt_json_string(o, "password", password, sizeof(password), true);
+        json_object *v = json_object_object_get(o, "port");
+        if (v) {
+            if (!json_object_is_type(v, json_type_int))
+                valid = false;
+            else
+                port = json_object_get_int(v);
         }
-        v=json_object_object_get(o,"clear_password");
-        if(v && json_object_is_type(v,json_type_boolean) && json_object_get_boolean(v)) password[0]=0;
+        v = json_object_object_get(o, "topic_mode");
+        if (v) {
+            if (!json_object_is_type(v, json_type_string) ||
+                json_object_get_string_len(v) != (int)strlen(json_object_get_string(v)) ||
+                (strcmp(json_object_get_string(v), "legacy") &&
+                 strcmp(json_object_get_string(v), "account")))
+                valid = false;
+            else
+                mode = !strcmp(json_object_get_string(v), "account");
+        }
+        v = json_object_object_get(o, "clear_password");
+        if (v && json_object_is_type(v, json_type_boolean) && json_object_get_boolean(v))
+            password[0] = 0;
     } else {
         /* Compatibility for old offline pages: bounded tokens; reject excess. */
         char extra;
-        valid=sscanf(buf,"%31s %d %63s %256s %c",host,&port,user,password,&extra)==4;
+        valid = sscanf(buf, "%31s %d %63s %256s %c", host, &port, user, password, &extra) == 4;
     }
-    if(!valid || port<1 || port>65535 || (mode && !*user)) goto invalid;
+    if (!valid || port < 1 || port > 65535 || (mode && !*user))
+        goto invalid;
     mico_rtos_suspend_all_thread();
-    strcpy(user_config->mqtt_ip,host); strcpy(user_config->mqtt_user,user); strcpy(user_config->mqtt_password,password);
-    user_config->mqtt_port=port; user_config->mqtt_topic_mode=mode;
-    tc1_mqtt_status=MQTT_DISCONNECTED;
+    strcpy(user_config->mqtt_ip, host);
+    strcpy(user_config->mqtt_user, user);
+    strcpy(user_config->mqtt_password, password);
+    user_config->mqtt_port = port;
+    user_config->mqtt_topic_mode = mode;
+    tc1_mqtt_status = MQTT_DISCONNECTED;
     mico_rtos_resume_all_thread();
-    err=mico_system_context_update(sys_config); require_noerr(err,exit);
-    err=UserMqttInit(); require_noerr(err,exit);
-    send_http("OK",2,exit,&err); goto exit;
+    err = mico_system_context_update(sys_config);
+    require_noerr(err, exit);
+    err = UserMqttInit();
+    require_noerr(err, exit);
+    err = result_message(req, true, buf[0] == '{');
+    goto exit;
 invalid:
-    send_http("INVALID_MQTT_CONFIG",19,exit,&err);
+    err = result_message(req, false, buf[0] == '{');
 exit:
-    if(o) json_object_put(o);
+    if (o)
+        json_object_put(o);
     return err;
 }
 
 static int HttpSetMqttReportFreq(httpd_request_t *req) {
-    OSStatus err = kNoErr;
-
-    int buf_size = 97;
-    char *buf = malloc(buf_size);
-
-    err = httpd_get_data(req, buf, buf_size);
-    require_noerr(err, exit);
-
-    sscanf(buf, "%d", &MQTT_REPORT_FREQ);
-    mico_system_context_update(sys_config);
-
-    send_http("OK", 2, exit, &err);
-
-    exit:
-    if (buf) free(buf);
-    return err;
+    char buf[128];
+    int value;
+    int err = read_body(req, buf, sizeof(buf));
+    if (err)
+        return err;
+    bool json = buf[0] == '{';
+    json_object *o = json ? body_json(buf) : NULL;
+    char extra;
+    bool valid =
+        o ? json_integer(o, "seconds", &value, 1, 3600)
+          : !json && sscanf(buf, "%d %c", &value, &extra) == 1 && value >= 1 && value <= 3600;
+    if (valid) {
+        MQTT_REPORT_FREQ = value;
+        mico_system_context_update(sys_config);
+    }
+    if (o)
+        json_object_put(o);
+    return result_message(req, valid, json);
 }
 
 static int HttpGetMqttReportFreq(httpd_request_t *req) {
-    OSStatus err = kNoErr;
-    int buf_size = 97;
-    char *freq = malloc(buf_size);
-    sprintf(freq, "%d", MQTT_REPORT_FREQ);
-
-    send_http(freq, strlen(freq), exit, &err);
-
-    exit:
-    if (freq) free(freq);
-    return err;
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%d", MQTT_REPORT_FREQ);
+    int err = httpd_send_all_header(req, HTTP_RES_200, strlen(buf), "text/plain");
+    return err ? err : httpd_send_body(req->sock, (const unsigned char *)buf, strlen(buf));
 }
 
 static int HttpGetLog(httpd_request_t *req) {
@@ -622,17 +745,20 @@ static int HttpGetLog(httpd_request_t *req) {
     char *logs = GetLogRecord();
     send_http(logs, strlen(logs), exit, &err);
 
-    exit:
+exit:
     return err;
 }
 
 static int HttpGetTasks(httpd_request_t *req) {
     OSStatus err = kNoErr;
     char *tasks_str = GetTaskStr();
+    if (!tasks_str)
+        return kNoMemoryErr;
     send_http(tasks_str, strlen(tasks_str), exit, &err);
 
-    exit:
-    if (tasks_str) free(tasks_str);
+exit:
+    if (tasks_str)
+        free(tasks_str);
     return err;
 }
 
@@ -641,119 +767,98 @@ static int HttpGetButtonEvents(httpd_request_t *req) {
     char *clicks = GetButtonClickConfig();
     send_http(clicks, strlen(clicks), exit, &err);
 
-    exit:
+exit:
     return err;
 }
 
 static int HttpAddTask(httpd_request_t *req) {
-    OSStatus err = kNoErr;
-
-    //1577369623 4 0
-    char buf[20] = {0};
-    err = httpd_get_data(req, buf, 20);
-    require_noerr(err, exit);
-
-    pTimedTask task = NewTask();
-    if (task == NULL) { http_log("NewTask() error, max task num = %d!", MAX_TASK_NUM);
-        char *mess = "NO SPACE";
-        send_http(mess, strlen(mess), exit, &err);
+    char buf[256];
+    long timestamp = 0;
+    int operation = 0, on = 0, weekday = 0;
+    int err = read_body(req, buf, sizeof(buf));
+    if (err)
         return err;
+    bool json = buf[0] == '{', valid = false;
+    json_object *o = json ? body_json(buf) : NULL;
+    if (o) {
+        int t = 0;
+        valid = json_integer(o, "timestamp", &t, 1, 2147483647) &&
+                json_integer(o, "operation", &operation, 0, 13) &&
+                json_integer(o, "on", &on, 0, 1) && json_integer(o, "weekday", &weekday, 0, 8);
+        timestamp = t;
+    } else if (!json) {
+        char extra;
+        valid =
+            sscanf(buf, "%ld %d %d %d %c", &timestamp, &operation, &on, &weekday, &extra) == 4 &&
+            timestamp > 0 && timestamp <= 2147483647L;
     }
-    int re = sscanf(buf, "%ld %d %d %d", &task->prs_time, &task->operation, &task->on,
-                    &task->weekday);http_log("AddTask buf[%s] re[%d] (%ld %d %d %d)",
-                                             buf, re, task->prs_time, task->operation, task->on,
-                                             task->weekday);
-    if (task->prs_time < 1577428136 || task->prs_time > 9577428136
-        || task->operation < 0 || task->operation > 11) { http_log("AddTask Error!");
-        re = 0;
-    }
-
-    char *mess = (re == 4 && AddTask(task)) ? "OK" : "NO";
-
-    send_http(mess, strlen(mess), exit, &err);
-
-    exit:
-    return err;
+    if (valid)
+        valid = AddTaskValue(timestamp, operation, on, weekday);
+    if (o)
+        json_object_put(o);
+    return result_message(req, valid, json);
 }
 
 static int HttpDelTask(httpd_request_t *req) {
-    OSStatus err = kNoErr;
-
-    char *time_str = strstr(req->filename, "/task/");
-    if (!time_str) { http_log("HttpDelTask url[%s] err", req->filename);
-        return err;
-    }http_log("HttpDelTask url[%s] time_str[%s][%s]", req->filename, time_str, time_str + 6);
-
-    int time1;
-    sscanf(time_str + 6, "%d", &time1);
-
-    char *mess = DelTask(time1) ? "OK" : "NO";
-
-    send_http(mess, strlen(mess), exit, &err);
-    exit:
-    return err;
+    const char *value = strstr(req->filename, "/task/");
+    int timestamp;
+    char extra;
+    bool valid = value && sscanf(value + 6, "%d %c", &timestamp, &extra) == 1 && timestamp > 0 &&
+                 DelTask(timestamp);
+    return result_message(req, valid, false);
 }
 
 static int LedStatus(httpd_request_t *req) {
-    OSStatus err = kNoErr;
-    int buf_size = 97;
-    char *led = malloc(buf_size);
-    sprintf(led, "%d", MQTT_LED_ENABLED);
-
-    send_http(led, strlen(led), exit, &err);
-
-    exit:
-    if (led) free(led);
-    return err;
+    char buf[2] = {MQTT_LED_ENABLED ? '1' : '0', 0};
+    int err = httpd_send_all_header(req, HTTP_RES_200, 1, "text/plain");
+    return err ? err : httpd_send_body(req->sock, (const unsigned char *)buf, 1);
 }
 
 static int LedSetEnabled(httpd_request_t *req) {
-    OSStatus err = kNoErr;
-
-    int buf_size = 97;
-    char *buf = malloc(buf_size);
-
-    err = httpd_get_data(req, buf, buf_size);
-    require_noerr(err, exit);
-
-    sscanf(buf, "%d", &MQTT_LED_ENABLED);
-    if (RelayOut() && MQTT_LED_ENABLED) {
-        UserLedSet(1);
-    } else {
-        UserLedSet(0);
+    char buf[128];
+    int value = 0;
+    int err = read_body(req, buf, sizeof(buf));
+    if (err)
+        return err;
+    bool json = buf[0] == '{';
+    json_object *o = json ? body_json(buf) : NULL;
+    char extra;
+    bool valid =
+        o ? json_enabled(o, &value)
+          : !json && sscanf(buf, "%d %c", &value, &extra) == 1 && (value == 0 || value == 1);
+    if (valid) {
+        MQTT_LED_ENABLED = value;
+        UserLedSet(RelayOut() && value);
+        UserMqttSendLedState();
+        mico_system_context_update(sys_config);
     }
-    UserMqttSendLedState();
-    mico_system_context_update(sys_config);
-
-    send_http("OK", 2, exit, &err);
-
-    exit:
-    if (buf) free(buf);
-    return err;
+    if (o)
+        json_object_put(o);
+    return result_message(req, valid, json);
 }
 
 static int TotalSocketSetEnabled(httpd_request_t *req) {
-    OSStatus err = kNoErr;
-
-    int buf_size = 97;
-    int on;
-    char *buf = malloc(buf_size);
-
-    err = httpd_get_data(req, buf, buf_size);
-    require_noerr(err, exit);
-
-    sscanf(buf, "%d", &on);
-    UserRelaySetAll(on);
-    int i = 0;
-    for (; i < SOCKET_NUM; i++) {
-        UserMqttSendSocketState(i);
+    char buf[128];
+    int value = 0;
+    int err = read_body(req, buf, sizeof(buf));
+    if (err)
+        return err;
+    bool json = buf[0] == '{';
+    json_object *o = json ? body_json(buf) : NULL;
+    char extra;
+    bool valid =
+        o ? json_enabled(o, &value)
+          : !json && sscanf(buf, "%d %c", &value, &extra) == 1 && (value == 0 || value == 1);
+    if (valid) {
+        UserRelaySetAll(value);
+        for (int i = 0; i < SOCKET_NUM; ++i)
+            UserMqttSendSocketState(i);
+        UserMqttSendTotalSocketState();
+        mico_system_context_update(sys_config);
     }
-    UserMqttSendTotalSocketState();
-    send_http("OK", 2, exit, &err);
-
-    exit:
-    if (buf) free(buf);
-    return err;
+    if (o)
+        json_object_put(o);
+    return result_message(req, valid, json);
 }
 
 static int Otastatus(httpd_request_t *req) {
@@ -761,45 +866,59 @@ static int Otastatus(httpd_request_t *req) {
     char buf[16] = {0};
     sprintf(buf, "%.2f", ota_progress);
     send_http(buf, strlen(buf), exit, &err);
-    exit:
+exit:
     return err;
 }
 
 static int OtaDetailedStatus(httpd_request_t *req) {
-    OSStatus err=kNoMemoryErr;char state[32],error[128],counter[21];unsigned progress;
-    tc1_ota_metadata_t meta;tc1_ota_metadata(&meta);tc1_ota_snapshot(state,error,&progress);
-    json_object *o=json_object_new_object();if(!o)return err;
-    json_object_object_add(o,"state",json_object_new_string(state));
-    json_object_object_add(o,"error",json_object_new_string(error));
-    json_object_object_add(o,"progress",json_object_new_int(progress));
-    json_object_object_add(o,"signature_verified",json_object_new_boolean(meta.signature_verified));
-    json_object_object_add(o,"image_verified",json_object_new_boolean(meta.image_verified));
-    json_object_object_add(o,"key_id",json_object_new_int(meta.key_id));
-    json_object_object_add(o,"image_length",json_object_new_int(meta.image_length));
-    json_object_object_add(o,"version",json_object_new_string(meta.version));
-    ota_counter_decimal(meta.release_counter,counter);
-    json_object_object_add(o,"release_counter",json_object_new_string(counter));
-    const char *text=json_object_to_json_string(o);
-    send_http(text,strlen(text),exit,&err);
-exit:json_object_put(o);return err;
+    OSStatus err = kNoMemoryErr;
+    char state[32], error[128], counter[21];
+    unsigned progress;
+    tc1_ota_metadata_t meta;
+    tc1_ota_metadata(&meta);
+    tc1_ota_snapshot(state, error, &progress);
+    json_object *o = json_object_new_object();
+    if (!o)
+        return err;
+    json_object_object_add(o, "state", json_object_new_string(state));
+    json_object_object_add(o, "error", json_object_new_string(error));
+    json_object_object_add(o, "progress", json_object_new_int(progress));
+    json_object_object_add(o, "signature_verified",
+                           json_object_new_boolean(meta.signature_verified));
+    json_object_object_add(o, "image_verified", json_object_new_boolean(meta.image_verified));
+    json_object_object_add(o, "key_id", json_object_new_int(meta.key_id));
+    json_object_object_add(o, "image_length", json_object_new_int(meta.image_length));
+    json_object_object_add(o, "version", json_object_new_string(meta.version));
+    ota_counter_decimal(meta.release_counter, counter);
+    json_object_object_add(o, "release_counter", json_object_new_string(counter));
+    const char *text = json_object_to_json_string(o);
+    send_http(text, strlen(text), exit, &err);
+exit:
+    json_object_put(o);
+    return err;
 }
 static int OtaStart(httpd_request_t *req) {
-    OSStatus err=kNoErr;char buf[500]={0};
-    if (!req->hdr_parsed) {
-        char *headers=malloc(HTTPD_MAX_MESSAGE);
-        if (!headers) return kNoMemoryErr;
-        err=httpd_parse_hdr_tags(req,req->sock,headers,HTTPD_MAX_MESSAGE);
-        free(headers);
-        if (err!=kNoErr) return err;
-        req->hdr_parsed=1;
-    }
-    if(req->chunked || req->remaining_bytes<=0 || req->remaining_bytes>=sizeof(buf))return kParamErr;
-    err=httpd_get_data(req,buf,req->remaining_bytes);
-    require_noerr(err,exit);
-    err=ota_server_start(buf,NULL,NULL);require_noerr(err,exit);
-    send_http("OK",2,exit,&err);
-exit:
-    return err;
+    char buf[500];
+    int err = read_body(req, buf, sizeof(buf));
+    if (err)
+        return err;
+    bool json = buf[0] == '{';
+    json_object *o = json ? body_json(buf) : NULL;
+    json_object *v = o ? json_object_object_get(o, "url") : NULL;
+    const char *url =
+        json ? (v && json_object_is_type(v, json_type_string) ? json_object_get_string(v) : NULL)
+             : buf;
+    bool valid = url && !strncmp(url, "http://", 7) &&
+                 (!json || (size_t)json_object_get_string_len(v) == strlen(url));
+    if (valid)
+        err = ota_server_start((char *)url, NULL, NULL);
+    if (o)
+        json_object_put(o);
+    if (!valid)
+        return result_message(req, false, json);
+    if (err != kNoErr)
+        return err;
+    return result_message(req, true, json);
 }
 
 static int HttpSetPowerCoefficient(httpd_request_t *req) {
@@ -808,7 +927,7 @@ static int HttpSetPowerCoefficient(httpd_request_t *req) {
     char extra;
     int coefficient_x100;
 
-    err = httpd_get_data(req, buf, sizeof(buf) - 1);
+    err = read_body(req, buf, sizeof(buf) - 1);
     require_noerr(err, exit);
 
     if (sscanf(buf, "%d %c", &coefficient_x100, &extra) != 1 ||
@@ -818,7 +937,7 @@ static int HttpSetPowerCoefficient(httpd_request_t *req) {
         goto exit;
     }
 
-    user_config->power_coefficient_x100 = (uint16_t) coefficient_x100;
+    user_config->power_coefficient_x100 = (uint16_t)coefficient_x100;
     err = mico_system_context_update(sys_config);
     require_noerr(err, exit);
     send_http("OK", 2, exit, &err);
@@ -828,91 +947,179 @@ exit:
 }
 
 static int HttpSetWebPassword(httpd_request_t *req) {
-    OSStatus err = kNoErr;
-    char password[WEB_PASSWORD_LENGTH_MAX + 2] = {0};
-
-    if (!req->hdr_parsed) {
-        char *header_buf = malloc(HTTPD_MAX_MESSAGE);
-        require_action(header_buf, exit, err = kNoMemoryErr);
-        err = httpd_parse_hdr_tags(req, req->sock, header_buf, HTTPD_MAX_MESSAGE);
-        free(header_buf);
-        require_noerr(err, exit);
-        req->hdr_parsed = 1;
+    char buf[256], password[WEB_PASSWORD_LENGTH_MAX + 1] = {0};
+    int err = read_body(req, buf, sizeof(buf));
+    if (err)
+        return err;
+    bool json = buf[0] == '{';
+    json_object *o = json ? body_json(buf) : NULL;
+    bool valid = o ? json_object_object_get(o, "password") &&
+                         mqtt_json_string(o, "password", password, sizeof(password), false)
+                   : !json && strlen(buf) < sizeof(password);
+    if (valid && !json)
+        strcpy(password, buf);
+    size_t n = strlen(password);
+    valid = valid && (!n || n >= 8);
+    for (size_t i = 0; valid && i < n; ++i)
+        valid = (unsigned char)password[i] >= 32 && (unsigned char)password[i] <= 126;
+    if (valid) {
+        strcpy(user_config->web_password, password);
+        err = mico_system_context_update(sys_config);
+        if (!err)
+            err = httpd_auth_init(n ? "admin" : "", password);
+        valid = err == kNoErr;
     }
-
-    if (req->body_nbytes > WEB_PASSWORD_LENGTH_MAX) {
-        send_http("PASSWORD_TOO_LONG", 17, exit, &err);
-        goto exit;
+    if (o)
+        json_object_put(o);
+    memset(password, 0, sizeof(password));
+    return result_message(req, valid, json);
+}
+/* Common schedule envelope; TC1 actions are device-specific operation codes.
+ * Weekly events share days/minute/on with A1 and M1. One-shot uses timestamp. */
+static int HttpScheduleGet(httpd_request_t *req) {
+    struct TimedTask *tasks = malloc(MAX_TASK_NUM * sizeof(*tasks));
+    if (!tasks)
+        return kNoMemoryErr;
+    int count = TaskSnapshot(tasks, MAX_TASK_NUM);
+    int days_mask[MAX_TASK_NUM] = {0};
+    for (int i = 0; i < count; ++i) {
+        days_mask[i] = tasks[i].weekday == 8 ? 127
+                       : tasks[i].weekday    ? 1 << (tasks[i].weekday - 1)
+                                             : 0;
+        for (int j = 0; days_mask[i] && j < i; ++j)
+            if (days_mask[j] > 0 && tasks[j].operation == tasks[i].operation &&
+                tasks[j].on == tasks[i].on &&
+                tasks[j].prs_time % 86400 == tasks[i].prs_time % 86400) {
+                days_mask[j] |= days_mask[i];
+                days_mask[i] = -1;
+                break;
+            }
     }
-    if (req->body_nbytes > 0) {
-        err = httpd_get_data(req, password, sizeof(password) - 1);
-        require_noerr(err, exit);
+    char *data = malloc(count * 128 + 32);
+    if (!data) {
+        free(tasks);
+        return kNoMemoryErr;
     }
-
-    size_t length = strlen(password);
-    if (length != 0 && length < 8) {
-        send_http("PASSWORD_TOO_SHORT", 18, exit, &err);
-        goto exit;
+    JsonBuffer b = {data, 0, count * 128 + 32, true};
+    jb_printf(&b, "{\"events\":[");
+    int written = 0;
+    for (int i = 0; i < count; ++i) {
+        if (days_mask[i] < 0)
+            continue;
+        struct TimedTask *t = &tasks[i];
+        int days = days_mask[i];
+        jb_printf(&b, "%s{\"timestamp\":%ld,\"days\":%d,\"minute\":%ld,\"operation\":%d,\"on\":%d}",
+                  written++ ? "," : "", (long)t->prs_time, days,
+                  (long)(t->prs_time + 28800) % 86400 / 60, t->operation, t->on);
     }
-    for (size_t i = 0; i < length; i++) {
-        if ((unsigned char) password[i] < 0x20 ||
-            (unsigned char) password[i] > 0x7e) {
-            send_http("PASSWORD_INVALID", 16, exit, &err);
-            goto exit;
+    jb_printf(&b, "]}");
+    int err = b.valid ? response_json(req, HTTP_RES_200, data, b.used) : kNoMemoryErr;
+    free(data);
+    free(tasks);
+    return err;
+}
+static int HttpScheduleSet(httpd_request_t *req) {
+    char buf[2048];
+    int err = read_body(req, buf, sizeof(buf));
+    if (err)
+        return err;
+    json_object *o = body_json(buf), *events = o ? json_object_object_get(o, "events") : NULL;
+    bool valid = events && json_object_is_type(events, json_type_array) &&
+                 json_object_array_length(events) <= 8 &&
+                 (!json_object_array_length(events) || rtc_init == 1);
+    struct TimedTask *tasks = calloc(56, sizeof(*tasks));
+    if (!tasks) {
+        if (o)
+            json_object_put(o);
+        return kNoMemoryErr;
+    }
+    int count = 0;
+    time_t now = time(NULL) + 28800;
+    for (int i = 0; valid && i < json_object_array_length(events); ++i) {
+        json_object *e = json_object_array_get_idx(events, i);
+        int days, minute, operation, on, timestamp = 0;
+        valid = json_object_is_type(e, json_type_object) &&
+                json_integer(e, "days", &days, 0, 127) &&
+                json_integer(e, "minute", &minute, 0, 1439) &&
+                json_integer(e, "operation", &operation, 0, 13) && json_integer(e, "on", &on, 0, 1);
+        if (!valid)
+            break;
+        if (!days) {
+            valid =
+                json_integer(e, "timestamp", &timestamp, 1, 2147483647) && timestamp > now - 28800;
+            if (!valid)
+                break;
+        }
+        for (int day = 1; day <= 7; ++day) {
+            if (days && !(days & (1 << (day - 1))))
+                continue;
+            struct TimedTask *t = &tasks[count++];
+            t->on_use = true;
+            t->operation = operation;
+            t->on = on;
+            if (!days) {
+                t->prs_time = timestamp;
+                break;
+            }
+            int today = (now / 86400 + 3) % 7 + 1, delta = (day - today + 7) % 7;
+            if (!delta && minute * 60 <= now % 86400)
+                delta = 7;
+            t->prs_time = now - now % 86400 + delta * 86400 + minute * 60 - 28800;
+            t->weekday = day;
         }
     }
-    memcpy(user_config->web_password, password, length + 1);
-    err = mico_system_context_update(sys_config);
-    require_noerr(err, exit);
-    err = httpd_auth_init(user_config->web_password[0] ? "admin" : "",
-                          user_config->web_password);
-    require_noerr(err, exit);
-    send_http("OK", 2, exit, &err);
-
-exit:
-    memset(password, 0, sizeof(password));
-    return err;
+    if (valid)
+        valid = TasksReplace(tasks, count);
+    free(tasks);
+    if (o)
+        json_object_put(o);
+    return result_message(req, valid, true);
 }
 
 const struct httpd_wsgi_call g_app_handlers[] = {
-        {"/",                 HTTPD_HDR_DEFORT, 0,                             HttpGetIndexPage, NULL,                       NULL, NULL},
-        {"/assets", HTTPD_HDR_ADD_SERVER |
-                    HTTPD_HDR_ADD_CONN_CLOSE,   APP_HTTP_FLAGS_NO_EXACT_MATCH, HttpGetAssets,    NULL,                       NULL, NULL},
-        {"/socket",           HTTPD_HDR_DEFORT, 0, NULL,                                              HttpSetSocketStatus,   NULL, NULL},
-        {"/status",           HTTPD_HDR_DEFORT, 0,                             HttpGetTc1Status, NULL,                       NULL, NULL},
-        {"/power",            HTTPD_HDR_DEFORT, 0,                             HttpGetPowerInfo,      HttpGetPowerInfo,      NULL, NULL},
-        {"/wifi/config",      HTTPD_HDR_DEFORT, 0,                             HttpGetWifiConfig,     HttpSetWifiConfig,     NULL, NULL},
-        {"/wifi/scan",        HTTPD_HDR_DEFORT, 0,                             HttpGetWifiScan,       HttpSetWifiScan,       NULL, NULL},
-        {"/mqtt/config",      HTTPD_HDR_DEFORT, 0, NULL,                                              HttpSetMqttConfig,     NULL, NULL},
-        {"/reboot",           HTTPD_HDR_DEFORT, 0, NULL,                                              HttpSetRebootSystem,   NULL, NULL},
-        {"/mqtt/report/freq", HTTPD_HDR_DEFORT, 0,                             HttpGetMqttReportFreq, HttpSetMqttReportFreq, NULL, NULL},
-        {"/log",              HTTPD_HDR_DEFORT, 0,                             HttpGetLog,       NULL,                       NULL, NULL},
-        {"/task",             HTTPD_HDR_DEFORT, APP_HTTP_FLAGS_NO_EXACT_MATCH, HttpGetTasks,          HttpAddTask,           NULL, HttpDelTask},
-        {"/ota/status", HTTPD_HDR_DEFORT, 0, OtaDetailedStatus, NULL, NULL, NULL},
-        {"/ota",              HTTPD_HDR_DEFORT, 0,                             Otastatus,             OtaStart,              NULL, NULL},
-        {"/led",              HTTPD_HDR_DEFORT, 0,                             LedStatus,             LedSetEnabled,         NULL, NULL},
-        {"/socketAll",        HTTPD_HDR_DEFORT, 0, NULL,                                              TotalSocketSetEnabled, NULL, NULL},
-        {"/socketNames",      HTTPD_HDR_DEFORT, 0, NULL,                                              HttpSetSocketName,     NULL, NULL},
-        {"/childLock",        HTTPD_HDR_DEFORT, 0, NULL,                                              HttpSetChildLock,      NULL, NULL},
-        {"/deviceName",       HTTPD_HDR_DEFORT, 0, NULL,                                              HttpSetDeviceName,     NULL, NULL},
-        {"/buttonEvents",     HTTPD_HDR_DEFORT, 0,                             HttpGetButtonEvents,   HttpSetButtonEvent,    NULL, NULL},
-        {"/ota/fileUploadUnsigned", HTTPD_HDR_DEFORT, 0, NULL, HttpSetOTAUnsigned, NULL, NULL},
-        {"/ota/fileUpload",     HTTPD_HDR_DEFORT, 0,                             NULL,   HttpSetOTAFile,    NULL, NULL},
-        {"/power/coefficient", HTTPD_HDR_DEFORT, 0, NULL,                                              HttpSetPowerCoefficient, NULL, NULL},
-        {"/auth/password",    HTTPD_HDR_DEFORT, 0,                             NULL,   HttpSetWebPassword, NULL, NULL},
+    {"/", HTTPD_HDR_DEFORT, 0, HttpGetIndexPage, NULL, NULL, NULL},
+    {"/assets", HTTPD_HDR_ADD_SERVER | HTTPD_HDR_ADD_CONN_CLOSE, APP_HTTP_FLAGS_NO_EXACT_MATCH,
+     HttpGetAssets, NULL, NULL, NULL},
+    {"/socket", HTTPD_HDR_DEFORT, 0, NULL, HttpSetSocketStatus, NULL, NULL},
+    {"/status", HTTPD_HDR_DEFORT, 0, HttpGetTc1Status, NULL, NULL, NULL},
+    {"/power", HTTPD_HDR_DEFORT, 0, HttpGetPowerInfo, HttpGetPowerInfo, NULL, NULL},
+    {"/wifi/config", HTTPD_HDR_DEFORT, 0, HttpGetTc1Status, HttpSetWifiConfig, NULL, NULL},
+    {"/wifi/scan", HTTPD_HDR_DEFORT, 0, HttpGetWifiScan, HttpSetWifiScan, NULL, NULL},
+    {"/mqtt/config", HTTPD_HDR_DEFORT, 0, NULL, HttpSetMqttConfig, NULL, NULL},
+    {"/reboot", HTTPD_HDR_DEFORT, 0, NULL, HttpSetRebootSystem, NULL, NULL},
+    {"/mqtt/report/freq", HTTPD_HDR_DEFORT, 0, HttpGetMqttReportFreq, HttpSetMqttReportFreq, NULL,
+     NULL},
+    {"/log", HTTPD_HDR_DEFORT, 0, HttpGetLog, NULL, NULL, NULL},
+    {"/schedule/config", HTTPD_HDR_DEFORT, 0, HttpScheduleGet, HttpScheduleSet, NULL, NULL},
+    {"/task", HTTPD_HDR_DEFORT, APP_HTTP_FLAGS_NO_EXACT_MATCH, HttpGetTasks, HttpAddTask, NULL,
+     HttpDelTask},
+    {"/ota/status", HTTPD_HDR_DEFORT, 0, OtaDetailedStatus, NULL, NULL, NULL},
+    {"/ota", HTTPD_HDR_DEFORT, 0, Otastatus, OtaStart, NULL, NULL},
+    {"/led", HTTPD_HDR_DEFORT, 0, LedStatus, LedSetEnabled, NULL, NULL},
+    {"/socketAll", HTTPD_HDR_DEFORT, 0, NULL, TotalSocketSetEnabled, NULL, NULL},
+    {"/socketNames", HTTPD_HDR_DEFORT, 0, NULL, HttpSetSocketName, NULL, NULL},
+    {"/childLock", HTTPD_HDR_DEFORT, 0, NULL, HttpSetChildLock, NULL, NULL},
+    {"/deviceName", HTTPD_HDR_DEFORT, 0, NULL, HttpSetDeviceName, NULL, NULL},
+    {"/buttonEvents", HTTPD_HDR_DEFORT, 0, HttpGetButtonEvents, HttpSetButtonEvent, NULL, NULL},
+    {"/ota/fileUploadUnsigned", HTTPD_HDR_DEFORT, 0, NULL, HttpSetOTAUnsigned, NULL, NULL},
+    {"/ota/fileUpload", HTTPD_HDR_DEFORT, 0, NULL, HttpSetOTAFile, NULL, NULL},
+    {"/power/coefficient", HTTPD_HDR_DEFORT, 0, NULL, HttpSetPowerCoefficient, NULL, NULL},
+    {"/auth/password", HTTPD_HDR_DEFORT, 0, NULL, HttpSetWebPassword, NULL, NULL},
 };
 
 static int g_app_handlers_no = sizeof(g_app_handlers) / sizeof(struct httpd_wsgi_call);
 
 static void AppHttpRegisterHandlers() {
     int rc;
-    rc = httpd_register_wsgi_handlers((struct httpd_wsgi_call *) g_app_handlers, g_app_handlers_no);
-    if (rc) { http_log("failed to register test web handler");
+    rc = httpd_register_wsgi_handlers((struct httpd_wsgi_call *)g_app_handlers, g_app_handlers_no);
+    if (rc) {
+        http_log("failed to register test web handler");
     }
 }
 
 static int _AppHttpdStart() {
-    OSStatus err = kNoErr;http_log("initializing web-services");
+    OSStatus err = kNoErr;
+    http_log("initializing web-services");
 
     /*Initialize HTTPD*/
     if (is_http_init == false) {
@@ -923,10 +1130,11 @@ static int _AppHttpdStart() {
 
     /*Start http thread*/
     err = httpd_start();
-    if (err != kNoErr) { http_log("failed to start httpd thread");
+    if (err != kNoErr) {
+        http_log("failed to start httpd thread");
         httpd_shutdown();
     }
-    exit:
+exit:
     return err;
 }
 
@@ -941,7 +1149,7 @@ int AppHttpdStart(void) {
         is_handlers_registered = true;
     }
 
-    exit:
+exit:
     return err;
 }
 
@@ -953,6 +1161,6 @@ int AppHttpdStop() {
     err = httpd_stop();
     require_noerr_action(err, exit, http_log("failed to halt httpd"));
 
-    exit:
+exit:
     return err;
 }

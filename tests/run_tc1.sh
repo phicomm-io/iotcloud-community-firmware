@@ -10,3 +10,5 @@ cc -std=gnu99 -Wall -Wextra -Wno-unused-parameter -Wno-unused-but-set-variable -
 "$output/tc1-packet"
 python3 tests/test_tc1_http.py
 python3 tests/test_tc1_gpio.py
+
+python3 tests/test_tc1_core.py

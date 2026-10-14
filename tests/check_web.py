@@ -1,7 +1,9 @@
 from pathlib import Path
-import subprocess, tempfile
+import subprocess, tempfile, sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "common/web"))
+from page import render_page
 for product in ('A1', 'M1', 'TC1'):
-    html = (Path(product) / ('http_server/web/index.html' if product == 'TC1' else 'web/index.html')).read_text()
+    html = render_page(Path(product) / ('http_server/web/index.html' if product == 'TC1' else 'web/index.html')).decode()
     scripts = html.split('<script>')[1:]
     for source in scripts:
         source = source.split('</script>')[0]
