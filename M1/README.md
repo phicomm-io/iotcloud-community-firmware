@@ -36,6 +36,8 @@ Linux x86_64，推荐 Ubuntu 22.04。安装 `build-essential bzip2 curl git perl
 
 WebUI 首页显示实时传感器数据、数据更新时间、连接状态及屏幕亮度。进入「设置」后，通过二级菜单访问 Wi-Fi、MQTT / HA、设备、绑定与联动、固件升级及诊断；切换页面不会清空未保存的输入。
 
+诊断页将 JSON 解析为设备、网络、MQTT、传感器、串口、时间同步及升级状态，显示最近校时源、成功时间（UTC）和重试倒计时，保留可折叠的原始 JSON；绑定传输状态同样按字段展示。`GET/POST /ntp/config` 管理本机首选服务器，POST 示例 `{"ntp_host":"ntp1.aliyun.com"}`；`/time/config` 管理本机时区，绑定设备的时钟设置使用 `/binding/time/config`。
+
 ### 实体按钮支持范围
 
 - 短按：原屏幕控制器处理屏幕亮灭，Wi-Fi 模块接收 `0x0f` 通知并同步亮度状态；已由用户确认实机正常。
