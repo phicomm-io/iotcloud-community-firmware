@@ -84,12 +84,14 @@ void RtcThread(mico_thread_arg_t arg)
 
     mico_utc_time_t utc_time;
     mico_utc_time_t utc_time_last = 0;
+    uint32_t boot_retry=0;
     while (1)
     {   //涓婄數鍚庤繛鎺ヤ簡wifi鎵嶅紑濮嬭蛋鏃跺惁鍒欑瓑寰呰繛鎺�
         micoWlanGetLinkStatus(&LinkStatus);
-        if (LinkStatus.is_connected == 1)
+        if (LinkStatus.is_connected == 1 && (int32_t)(mico_rtos_get_time()-boot_retry)>=0)
         {
             err = UserSntpGetTime();
+            boot_retry=mico_rtos_get_time()+60000u;
             if (err == kNoErr)
             {
                 rtc_log("sntp success!");
@@ -100,44 +102,19 @@ void RtcThread(mico_thread_arg_t arg)
         mico_rtos_thread_sleep(3);
     }
 
-    while (1)
-    {
+    uint32_t next_sync=mico_rtos_get_time()+3600000u;
+    while(1) {
         mico_time_get_utc_time(&utc_time);
-        utc_time += 28800;
-
-        if (utc_time_last != utc_time)
-        {
-            utc_time_last = utc_time;
-            total_time++;
-        }
-
-        struct tm * currentTime = localtime((const time_t *) &utc_time);
-//        rtc_time.sec = currentTime->tm_sec;
-//        rtc_time.min = currentTime->tm_min;
-//        rtc_time.hr = currentTime->tm_hour;
-//
-//        rtc_time.date = currentTime->tm_mday;
-//        rtc_time.weekday = currentTime->tm_wday;
-//        rtc_time.month = currentTime->tm_mon + 1;
-//        rtc_time.year = (currentTime->tm_year + 1900) % 100;
-
-        // MicoRtcSetTime(&rtc_time);      //MicoRtc涓嶈嚜鍔ㄨ蛋鏃�!
-
-        //SNTP鏈嶅姟 寮�鏈哄強姣忓皬鏃舵牎鍑嗕竴娆�
-        if (rtc_init != 1 || (currentTime->tm_sec == 0 && currentTime->tm_min == 0))
-        {
+        if(utc_time_last!=utc_time){utc_time_last=utc_time;total_time++;}
+        uint32_t now=mico_rtos_get_time();
+        if((int32_t)(now-next_sync)>=0){
             micoWlanGetLinkStatus(&LinkStatus);
-            if (LinkStatus.is_connected == 1)
-            {
-                err = UserSntpGetTime();
-                if (err == kNoErr)
-                    rtc_init = 1;
-                else
-                    rtc_init = 2;
-            }
+            err=LinkStatus.is_connected?UserSntpGetTime():kConnectionErr;
+            if(err==kNoErr)rtc_init=1;
+            else rtc_init=2;
+            next_sync=mico_rtos_get_time()+(err==kNoErr?3600000u:60000u);
         }
-
-        mico_rtos_thread_msleep(900);
+        mico_rtos_thread_msleep(1000);
     }
 
 //  exit:

@@ -112,40 +112,16 @@ void appRestoreDefault_callback(void *const user_config_data, uint32_t size) {
     mico_system_context_update(sys_config);
 }
 
-void recordDailyPCount() {
-    // 鑾峰彇褰撳墠鏃堕棿
-    mico_utc_time_t utc_time;
-    mico_time_get_utc_time(&utc_time);
-    utc_time += 28800;
-    struct tm *current_time = localtime((const time_t *) &utc_time);
-    // 鍒ゆ柇涓婃妫€鏌ョ殑鏃堕棿涓庡綋鍓嶆椂闂寸殑鏃ユ湡鏄惁涓嶅悓
-    if (last_check_day != 0) {
-        // 濡傛灉鏃ユ湡鍙戠敓鍙樺寲锛堝嵆璺ㄥぉ浜嗭級锛屽垯杩涜璁板綍
-        if (current_time->tm_mday != last_check_day) { tc1_log(
-                    "WARNGIN: pcount day changed! now day %d hour %d min %d ,lastCheck day %d",
-                    current_time->tm_mday, current_time->tm_hour, current_time->tm_min,
-                    last_check_day);
-
-//            tc1_log("WARNGIN: pcount day changed! ");
-            // 璁板綍鏁版嵁
-            if (user_config->p_count_1_day_ago != 0) {
-                user_config->p_count_2_days_ago = user_config->p_count_1_day_ago;
-            }
-            user_config->p_count_1_day_ago = p_count;
-
-            // 鏇存柊绯荤粺閰嶇疆
-            mico_system_context_update(sys_config);
-
-            tc1_log("WARNGIN: p_count record! p_count_1_day_ago:%d p_count_2_days_ago:%d",
-                    user_config->p_count_1_day_ago, user_config->p_count_2_days_ago);
-        } else {
-//        	tc1_log("WARNGIN: pcount day not changed , waiting for next run! ");
-        }
-    } else { tc1_log("WARNGIN: now day %d hour %d min %d ,lastCheck day %d", current_time->tm_mday,
-                     current_time->tm_hour, current_time->tm_min, last_check_day);
+void recordDailyPCount(void) {
+    if(rtc_init!=1)return;
+    mico_utc_time_t utc;mico_time_get_utc_time(&utc);
+    int day=(utc+28800)/86400;
+    if(last_check_day && day>last_check_day){
+        user_config->p_count_2_days_ago=user_config->p_count_1_day_ago;
+        user_config->p_count_1_day_ago=p_count;
+        mico_system_context_update(sys_config);
     }
-    // 鏇存柊涓婃妫€鏌ユ椂闂?
-    last_check_day = current_time->tm_mday;
+    last_check_day=day;
 }
 
 void schedule_p_count_task(mico_thread_arg_t arg) {
@@ -229,6 +205,7 @@ int application_start(void) {
     //tc1_log("mqtt_password:%s",user_config->mqtt_password);
     tc1_log("version:%d", user_config->version);
 
+    TasksInit();
     WifiInit();
     if (!open_ap) {
         WifiStartOnBoot();
@@ -255,10 +232,7 @@ int application_start(void) {
 
 
     while (1) {
-        time_t now = time(NULL);
-        if (user_config->task_top && now >= user_config->task_top->prs_time) {
-            ProcessTask();
-        }
+        ProcessTask();
         mico_thread_msleep(1000);
     }
 

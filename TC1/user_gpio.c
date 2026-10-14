@@ -41,7 +41,7 @@ char* get_func_name(char func_code) {
         case SWITCH_SOCKET_4:
         case SWITCH_SOCKET_5:
         case SWITCH_SOCKET_6:
-            sprintf(buffer, "Toggle Socket %d %s", func_code - 1,
+            snprintf(buffer, sizeof(buffer), "Toggle Socket %d %.12s", func_code - 1,
                     user_config->socket_names[func_code - 1]);
             return buffer;
         case SWITCH_LED_ENABLE:
@@ -107,7 +107,7 @@ char *GetButtonClickConfig() {
         char long_func  = get_long_func(user_config->user[i]);
 //    key_log("WARNGIN:KEY func %d %d %d", i,short_func,long_func);
 
-        snprintf(temp, sizeof(temp), "{'%d':[%d,%d]}%s", i, short_func, long_func, (i != 30) ? "," : "");
+        snprintf(temp, sizeof(temp), "{\"%d\":[%d,%d]}%s", i, short_func, long_func, (i != 30) ? "," : "");
         int written = snprintf(btn_click_config + len, max_len - len, "%s", temp);
         if (written < 0 || written >= max_len-len-1) {
             btn_click_config[0]=0; return btn_click_config;
