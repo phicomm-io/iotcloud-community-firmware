@@ -140,6 +140,7 @@ json_object *m1_status_json(void)
     str(o, "mqtt_host", cfg.mqtt_host); integer(o, "mqtt_port", cfg.mqtt_port); str(o, "mqtt_user", cfg.mqtt_user);
     str(o, "mqtt_topic_mode", cfg.mqtt_topic_mode ? "account" : "legacy");
     str(o, "mqtt_status", mqtt_status_name(s.mqtt_status));
+    integer(o, "mqtt_errors", s.mqtt_errors); str(o, "mqtt_last_error", s.mqtt_last_error);
     json_bool(o, "mqtt_cleanup_warning", s.mqtt_cleanup_warning);
     integer(o, "timezone_minutes", cfg.timezone_minutes);
     json_bool(o, "mqtt_password_set", cfg.mqtt_password[0] != 0);

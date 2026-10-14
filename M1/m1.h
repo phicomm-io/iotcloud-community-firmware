@@ -34,6 +34,8 @@ typedef struct {
     uint8_t last_frame[20], brightness_requested;
     uint32_t rx_frames, unknown_frames, uart_errors, discarded_bytes;
     uint32_t config_generation, reboot_at;
+    uint32_t mqtt_errors;
+    char mqtt_last_error[96];
     bool wifi_connected, ap_active, mqtt_connected, uart_ready;
     bool reboot_pending, ota_active, scan_busy;
     uint8_t mqtt_status;
