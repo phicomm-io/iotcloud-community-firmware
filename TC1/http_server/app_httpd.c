@@ -421,6 +421,8 @@ static int HttpUploadOTA(httpd_request_t *req, bool rescue) {
                         "{\"message\":\"文件校验通过，设备正在重启\"}",
                         strlen("{\"message\":\"文件校验通过，设备正在重启\"}"));
     require_noerr(err, exit);
+    /* Give the TCP stack time to transmit the accepted response before reset. */
+    mico_rtos_thread_msleep(300);
     mico_system_power_perform(mico_system_context_get(), eState_Software_Reset);
 exit:
     return err;
