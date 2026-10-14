@@ -120,62 +120,72 @@ static bool exclusive_begin(bool ota, uint32_t delay)
 bool a1_reboot_later(uint32_t ms) { return exclusive_begin(false, ms); }
 bool a1_upgrade_reserve(void) { return exclusive_begin(true, 0); }
 
+static OSStatus startup_result(const char *stage, OSStatus err)
+{
+    custom_log("A1", "Startup %s: %ld", stage, (long)err);
+    return err;
+}
+
 int application_start(void)
 {
+    custom_log("A1", "Starting %s", A1_VERSION);
     OSStatus err = mico_rtos_init_mutex(&a1_lock);
-    if (err != kNoErr) return err;
+    if (err != kNoErr) return startup_result("state mutex", err);
     err = mico_rtos_init_mutex(&a1_config_lock);
-    if (err != kNoErr) return err;
+    if (err != kNoErr) return startup_result("config mutex", err);
     const mico_logic_partition_t *parameter = MicoFlashGetInfo(MICO_PARTITION_PARAMETER_1);
     const mico_logic_partition_t *backup = MicoFlashGetInfo(MICO_PARTITION_PARAMETER_2);
     size_t required = sizeof(system_config_t) + sizeof(app_storage_t) + 2;
-    if (!parameter || !backup || parameter->partition_length < required || backup->partition_length < required) return kNoMemoryErr;
+    if (!parameter || !backup || parameter->partition_length < required || backup->partition_length < required) return startup_result("config allocation/layout", kNoMemoryErr);
 #ifdef MICO_EXTRA_AP_NUM
-    if (sizeof(system_config_t) + sizeof(app_storage_t) > PARA_SYS_EXTRA_OFFSET) return kNoMemoryErr;
+    if (sizeof(system_config_t) + sizeof(app_storage_t) > PARA_SYS_EXTRA_OFFSET) return startup_result("config allocation/layout", kNoMemoryErr);
 #endif
     a1_context = mico_system_context_init(sizeof(app_storage_t));
-    if (!a1_context) return kNoMemoryErr;
+    if (!a1_context) return startup_result("config allocation/layout", kNoMemoryErr);
     a1_config = mico_system_context_get_user_data(a1_context);
-    if (!a1_config) return kNoMemoryErr;
+    if (!a1_config) return startup_result("config allocation/layout", kNoMemoryErr);
     a1_config_t c;
     /* The SDK validates the entire partition before loading these bytes. */
     if (a1_config->magic == A1_CONFIG_MAGIC &&
         (a1_config->version == 1 || a1_config->version == 2)) {
         a1_storage_v2_t *old = malloc(sizeof(*old));
-        if (!old) return kNoMemoryErr;
+        if (!old) return startup_result("config allocation/layout", kNoMemoryErr);
         memcpy(old, a1_config, sizeof(*old));
         memset(a1_config, 0, sizeof(app_storage_t));
         a1_migrate_v2(a1_config, &((app_storage_t *)a1_config)->features, old);
         free(old);
-        if (mico_system_context_update(a1_context) != kNoErr) return kUnknownErr;
+        if (mico_system_context_update(a1_context) != kNoErr) return startup_result("config persist", kUnknownErr);
     }
     a1_config_get(&c);
     if (c.magic != A1_CONFIG_MAGIC || c.version != A1_CONFIG_VERSION) {
         appRestoreDefault_callback(&c, sizeof(c));
-        if (!a1_config_save(&c)) return kUnknownErr;
+        if (!a1_config_save(&c)) return startup_result("config persist", kUnknownErr);
     }
     feature_config_t *extension = &((app_storage_t *)a1_config)->features;
     if (extension->magic != FEATURE_MAGIC) {
         feature_defaults(extension);
-        if (mico_system_context_update(a1_context) != kNoErr) return kUnknownErr;
+        if (mico_system_context_update(a1_context) != kNoErr) return startup_result("config persist", kUnknownErr);
     }
-    err = mico_system_init(a1_context);
+    err = startup_result("MiCO system", mico_system_init(a1_context));
     if (err != kNoErr) return err;
     uint8_t mac[6]; mico_wlan_get_mac_address(mac);
     snprintf(a1_id, sizeof(a1_id), "%02x%02x%02x%02x%02x%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     a1_config_get(&c);
     if (!c.name[0]) {
         snprintf(c.name, sizeof(c.name), "phicomm_a1_%s", a1_id + 6);
-        if (!a1_config_save(&c)) return kUnknownErr;
+        if (!a1_config_save(&c)) return startup_result("config persist", kUnknownErr);
     }
     snprintf(a1_state.ap_name, sizeof(a1_state.ap_name), "A1-AP-%s", a1_id + 6);
     strcpy(a1_state.ota_state, "idle");
     a1_state.led_until = mico_rtos_get_time() + 2000;
-    err = feature_start(); if (err != kNoErr) return err;
-    err = a1_hardware_start(); if (err != kNoErr) return err;
-    err = a1_network_start(); if (err != kNoErr) return err;
-    err = a1_mqtt_start(); if (err != kNoErr) return err;
-    err = a1_http_start(); if (err != kNoErr) return err;
+    err = startup_result("features", feature_start()); if (err != kNoErr) return err;
+    err = startup_result("network", a1_network_start()); if (err != kNoErr) return err;
+    err = startup_result("HTTP", a1_http_start()); if (err != kNoErr) return err;
+    /* Keep provisioning available when peripheral initialization fails. */
+    err = startup_result("hardware", a1_hardware_start());
+    if (err != kNoErr) custom_log("A1", "Hardware unavailable; provisioning remains active");
+    err = startup_result("MQTT", a1_mqtt_start());
+    if (err != kNoErr) custom_log("A1", "MQTT unavailable; provisioning remains active");
     custom_log("A1", "Started %s, id %s", A1_VERSION, a1_id);
     return kNoErr;
 }
