@@ -175,27 +175,9 @@ void UserRelaySetAll(char y) {
 }
 
 void UserSoftReboot(void) {
-    mico_logic_partition_t *partition = MicoFlashGetInfo( MICO_PARTITION_APPLICATION );
-    if (partition == NULL) return;
-    uint32_t app_addr = partition->partition_start_addr;
-    uint32_t *p = (uint32_t *) app_addr;
-    
-    __asm volatile("cpsid i"); 
-    
-    // Disable SysTick
-    *(volatile uint32_t *)0xE000E010 = 0;
-    
-    // Disable NVIC interrupts
-    volatile uint32_t *icer = (volatile uint32_t *)0xE000E180;
-    volatile uint32_t *icpr = (volatile uint32_t *)0xE000E280;
-    for(int i = 0; i < 8; i++) {
-        icer[i] = 0xFFFFFFFF;
-        icpr[i] = 0xFFFFFFFF;
-    }
-
-    __asm volatile ("msr msp, %0" : : "r" (p[0]) : );
-    void (*reset_handler)(void) = (void (*)(void))p[1];
-    reset_handler();
+    /* MiCO application partitions are packaged images, not vector tables.
+     * Restart through the platform so RTOS, IRQs and Wi-Fi are reinitialized. */
+    MicoSystemReboot();
 }
 
 static void KeyEventHandler(int num, boolean longPress) {

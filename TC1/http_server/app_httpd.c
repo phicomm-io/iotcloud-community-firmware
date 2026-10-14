@@ -620,9 +620,16 @@ static int HttpSetRebootSystem(httpd_request_t *req) {
     int err = read_body(req, buf, sizeof(buf));
     if (err)
         return err;
-    err = result_message(req, true, buf[0] == '{');
+    bool json = buf[0] == '{';
+    json_object *o = json ? body_json(buf) : NULL;
+    if (json && !o)
+        return result_message(req, false, true);
+    if (o)
+        json_object_put(o);
+    err = result_message(req, true, json);
     if (err)
         return err;
+    mico_rtos_thread_msleep(300);
     if (!strcmp(buf, "soft"))
         UserSoftReboot();
     else
