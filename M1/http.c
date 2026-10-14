@@ -143,6 +143,17 @@ json_object *m1_status_json(void)
     integer(o, "mqtt_errors", s.mqtt_errors); str(o, "mqtt_last_error", s.mqtt_last_error);
     json_bool(o, "mqtt_cleanup_warning", s.mqtt_cleanup_warning);
     integer(o, "timezone_minutes", cfg.timezone_minutes);
+    char ntp_host[64]; m1_ntp_host_get(ntp_host);
+    str(o, "ntp_host", ntp_host);
+    str(o, "ntp_status", s.ntp_status[0] ? s.ntp_status : "waiting_network");
+    str(o, "ntp_server", s.ntp_server);
+    json_bool(o, "ntp_synced", s.ntp_synced);
+    json_bool(o, "ntp_screen_queued", s.ntp_screen_queued);
+    /* This SDK serializes doubles with %g (six significant digits), which
+     * rounds Unix timestamps by minutes. Preserve whole seconds as an integer. */
+    json_object_object_add(o, "ntp_last_success", s.ntp_synced ? json_object_new_int(s.ntp_last_success) : NULL);
+    integer(o, "ntp_next_seconds", s.wifi_connected && s.ntp_next_at &&
+        (int32_t)(s.ntp_next_at - now) > 0 ? (uint32_t)(s.ntp_next_at - now) / 1000 : 0);
     json_bool(o, "mqtt_password_set", cfg.mqtt_password[0] != 0);
     json_bool(o, "web_password_set", cfg.web_password[0] != 0);
     json_bool(o, "wifi_connected", s.wifi_connected); json_bool(o, "mqtt_connected", s.mqtt_connected);
@@ -238,7 +249,7 @@ static const char *feature_domain(const char *path)
     if (!strcmp(path, "/light/advanced")) return "light";
     if (!strcmp(path, "/schedule/config")) return "schedule";
     if (!strcmp(path, "/sleep/config")) return "sleep";
-    if (!strcmp(path, "/time/config")) return "time";
+    if (!strcmp(path, "/binding/time/config")) return "time";
     return NULL;
 }
 
@@ -255,7 +266,8 @@ static void handle(int fd)
         else if (!strcmp(req.path, "/wifi/scan")) scan_response(fd);
         else if (!strcmp(req.path, "/status") || !strcmp(req.path, "/wifi/config") ||
                  !strcmp(req.path, "/mqtt/config") || !strcmp(req.path, "/display/brightness") ||
-                 !strcmp(req.path, "/ota")) send_json(fd, m1_status_json());
+                 !strcmp(req.path, "/ota") || !strcmp(req.path, "/time/config") ||
+                 !strcmp(req.path, "/ntp/config")) send_json(fd, m1_status_json());
         else message(fd, 404, "Not found");
         return;
     }
@@ -326,6 +338,23 @@ static void handle(int fd)
         valid = get_string(o, "password", cfg.web_password, sizeof(cfg.web_password), false) &&
             json_object_object_get(o, "password");
         if (valid) saved = m1_config_save(&cfg);
+    } else if (!strcmp(req.path, "/ntp/config")) {
+        char host[64] = {0};
+        valid = get_string(o, "ntp_host", host, sizeof(host), false) && host[0];
+        for (unsigned i = 0; valid && host[i]; i++) {
+            char ch = host[i];
+            if (!((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+                  (ch >= '0' && ch <= '9') || ch == '-' || ch == '.')) valid = false;
+        }
+        if (valid) {
+            feature_config_t *features = malloc(sizeof(*features));
+            if (features) {
+                feature_config_get(features);
+                strcpy(features->ntp_host, host);
+                saved = feature_config_save(features);
+                free(features);
+            }
+        }
     } else if (!strcmp(req.path, "/time/config")) {
         valid = get_number(o, "timezone_minutes", &number, -720, 840);
         if (valid) { cfg.timezone_minutes = number; saved = m1_config_save(&cfg); }

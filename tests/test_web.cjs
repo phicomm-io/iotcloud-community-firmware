@@ -13,14 +13,36 @@ const flush=()=>new Promise(resolve=>setImmediate(resolve));
  '/linkage/config':{revision:1,enabled:0,mode:2,metrics:1,statistic:0,kp:20,ki:.02,kd:0},
  '/light/advanced':{revision:1,effect:4,segments:3,follow_fan:0,quality_pm:35,quality_hcho:.08,segment:[{source:0,display:2,minimum:-10,maximum:50,suitable_low:18,suitable_high:26,colors:[[0,0,255],[0,255,0],[255,0,0]]}]},
  '/schedule/config':{revision:1,events:[]},'/sleep/config':{revision:1,windows:[]},'/time/config':{revision:1,ntp_host:'pool.ntp.org',timezone_minutes:480},
+ '/binding/time/config':{revision:1,ntp_host:'pool.ntp.org',timezone_minutes:480},
  '/binding/status':{available:1,peers:[]},
- '/status':{name:product,version:'test',red:0,green:0,blue:255,scan_count:0,percentage:60,mqtt_port:1883,brightness:255,brightness_requested:4,sample:{temperature:20,humidity:50,formaldehyde:.08,pm25:35},temperature:20,humidity:50,formaldehyde:.08,pm25:35,ota_state:'idle',mqtt_host:'',mqtt_user:'',ssid:''}
+ '/status':{name:product,version:'test',red:0,green:0,blue:255,scan_count:0,percentage:60,mqtt_port:1883,brightness:255,brightness_requested:4,sample:{temperature:20,humidity:50,formaldehyde:.08,pm25:35},temperature:20,humidity:50,formaldehyde:.08,pm25:35,ota_state:'idle',ota_progress:0,timezone_minutes:480,ntp_host:'pool.ntp.org',mqtt_host:'',mqtt_user:'',ssid:''}
  };
  w.fetch=async(path,options={})=>{calls.push([path,options.body?JSON.parse(options.body):null]);if(options.body&&fixtures[path])fixtures[path]={...JSON.parse(options.body),revision:2};return {ok:true,status:200,json:async()=>JSON.parse(JSON.stringify(fixtures[path]||{message:'Saved'}))};};
  w.setTimeout=()=>0;w.confirm=()=>true;
- for(const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g))w.eval(match[1]);await flush();await flush();
+ for(const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g))w.eval(match[1]+(product==='M1'?'\nwindow.renderDiagnostics=renderDiagnostics;':''));await flush();await flush();
  if(product==='M1'){
   const d=w.document;
+  assert.equal(d.getElementById('ntpHost').value,'pool.ntp.org');
+  d.getElementById('ntpHost').value='192.168.1.2';
+  d.getElementById('ntpForm').dispatchEvent(new w.Event('submit',{cancelable:true}));await flush();
+  assert.ok(calls.some(([p,b])=>p==='/ntp/config'&&b?.ntp_host==='192.168.1.2'));
+  d.getElementById('timezone').value='0';
+  d.getElementById('timeForm').dispatchEvent(new w.Event('submit',{cancelable:true}));await flush();
+  assert.ok(calls.some(([p,b])=>p==='/time/config'&&b?.timezone_minutes===0));
+  w.renderDiagnostics({wifi_connected:true,mqtt_connected:false,ntp_status:'failed',ntp_last_success:null,temperature:null,mqtt_last_error:'<img src=x onerror=alert(1)>',future_field:{nested:[false,7]}});
+  const diagnostic=d.getElementById('diagnosticGroups');
+  assert.ok(diagnostic.textContent.includes('时间同步'));
+  assert.ok(diagnostic.textContent.includes('校时失败'));
+  assert.ok(diagnostic.textContent.includes('暂无数据'));
+  assert.ok(diagnostic.textContent.includes('future_field'));
+  assert.ok(diagnostic.textContent.includes('<img src=x onerror=alert(1)>'));
+  assert.equal(diagnostic.querySelector('img'),null);
+  assert.equal(JSON.parse(d.getElementById('diagnostics').textContent).mqtt_connected,false);
+  const raw=d.getElementById('diagnostics').parentElement;raw.open=true;
+  w.renderDiagnostics({ntp_status:'synced',ntp_last_success:1704067200});
+  assert.ok(diagnostic.textContent.includes('2024-01-01 00:00:00 UTC'));
+  assert.equal(raw.open,true);
+  assert.ok(!d.getElementById('bindingStatus').textContent.includes('{'));
   assert.equal(d.getElementById('homePage').hidden,false);
   assert.equal(d.getElementById('settingsPage').hidden,true);
   d.getElementById('mqttUser').value='unsaved-user';

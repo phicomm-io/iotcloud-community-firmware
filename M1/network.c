@@ -2,6 +2,17 @@
 #include "sntp.h"
 #include <time.h>
 
+#define CLOCK_SYNC_INTERVAL_MS (60u * 60u * 1000u)
+#define CLOCK_RETRY_INTERVAL_MS (60u * 1000u)
+
+static const char *const clock_servers[] = {
+    "ntp1.aliyun.com",
+    "time1.cloud.tencent.com",
+    "cn.ntp.org.cn",
+    "pool.ntp.org",
+    "cn.pool.ntp.org"
+};
+
 static void scan_done(ScanResult *list, void *arg)
 {
     UNUSED_PARAMETER(arg);
@@ -55,20 +66,51 @@ static bool ap_start(void)
     return micoWlanStart(&net) == kNoErr;
 }
 
-static bool clock_sync(int timezone)
+static bool clock_sync(int timezone, const char *preferred)
 {
-    struct hostent *host = gethostbyname("pool.ntp.org");
-    if (!host || !host->h_addr_list[0]) return false;
-    struct in_addr address;
-    memcpy(&address.s_addr, host->h_addr_list[0], 4);
-    ntp_timestamp_t stamp;
-    if (sntp_get_time(&address, &stamp) != kNoErr || stamp.seconds < 1577836800u) return false;
-    mico_utc_time_ms_t utc_ms = (uint64_t)stamp.seconds * 1000 + stamp.microseconds / 1000;
-    mico_time_set_utc_time_ms(&utc_ms);
-    feature_clock_valid();
-    time_t local = stamp.seconds + timezone * 60;
-    struct tm t = *gmtime(&local);
-    return m1_uart_clock(t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec);
+    /* Try every source before scheduling a retry; never replace valid time
+     * with a failed or implausible NTP response. */
+    mico_rtos_lock_mutex(&m1_lock);
+    strcpy(m1_state.ntp_status, "syncing");
+    mico_rtos_unlock_mutex(&m1_lock);
+    for (unsigned i = 0; i <= sizeof(clock_servers) / sizeof(clock_servers[0]); i++) {
+        const char *server = i ? clock_servers[i - 1] : preferred;
+        if (!server[0] || (i && !strcmp(server, preferred))) continue;
+        mico_rtos_lock_mutex(&m1_lock);
+        snprintf(m1_state.ntp_server, sizeof(m1_state.ntp_server), "%s", server);
+        mico_rtos_unlock_mutex(&m1_lock);
+        struct hostent *host = gethostbyname(server);
+        if (!host || !host->h_addr_list || !host->h_addr_list[0]) {
+            custom_log("M1 NTP", "%s: DNS failed", server);
+            continue;
+        }
+        struct in_addr address;
+        memcpy(&address.s_addr, host->h_addr_list[0], 4);
+        ntp_timestamp_t stamp;
+        if (sntp_get_time(&address, &stamp) != kNoErr || stamp.seconds < 1577836800u) {
+            custom_log("M1 NTP", "%s: request failed or invalid time", server);
+            continue;
+        }
+        mico_utc_time_ms_t utc_ms = (uint64_t)stamp.seconds * 1000 + stamp.microseconds / 1000;
+        mico_time_set_utc_time_ms(&utc_ms);
+        feature_clock_valid();
+        time_t local = stamp.seconds + timezone * 60;
+        struct tm t = *gmtime(&local);
+        bool queued = m1_uart_clock(t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec);
+        mico_rtos_lock_mutex(&m1_lock);
+        m1_state.ntp_synced = true;
+        m1_state.ntp_screen_queued = queued;
+        m1_state.ntp_last_success = stamp.seconds;
+        strcpy(m1_state.ntp_status, queued ? "synced" : "screen_queue_failed");
+        mico_rtos_unlock_mutex(&m1_lock);
+        custom_log("M1 NTP", "%s: UTC %lu, screen queued %d", server, (unsigned long)stamp.seconds, queued);
+        return queued;
+    }
+    custom_log("M1 NTP", "All sources failed; retry in 60 seconds");
+    mico_rtos_lock_mutex(&m1_lock);
+    strcpy(m1_state.ntp_status, "failed");
+    mico_rtos_unlock_mutex(&m1_lock);
+    return false;
 }
 
 static void network_worker(mico_thread_arg_t arg)
@@ -80,11 +122,16 @@ static void network_worker(mico_thread_arg_t arg)
     uint32_t next_clock = lost_since, scan_since = 0;
     bool ap = false, linked = false, clock_attempted = false;
     int clock_timezone = started.timezone_minutes;
+    char clock_host[64]; m1_ntp_host_get(clock_host);
     if (started.ssid[0]) station_start(&started);
     else ap = ap_start();
     for (;;) {
         uint32_t now = mico_rtos_get_time();
         m1_config_get(&current);
+        char preferred[64]; m1_ntp_host_get(preferred);
+        if (strcmp(clock_host, preferred)) {
+            strcpy(clock_host, preferred); clock_attempted = false;
+        }
         if (strcmp(current.ssid, started.ssid) || strcmp(current.wifi_password, started.wifi_password)) {
             micoWlanSuspendStation();
             started = current; linked = false; lost_since = now; next_retry = now;
@@ -119,8 +166,13 @@ static void network_worker(mico_thread_arg_t arg)
         mico_rtos_unlock_mutex(&m1_lock);
         if (reboot) MicoSystemReboot();
         if (ready && !upgrading && (!clock_attempted || (int32_t)(now - next_clock) >= 0)) {
-            bool synced = clock_sync(current.timezone_minutes);
-            clock_attempted = true; next_clock = mico_rtos_get_time() + (synced ? 3600000u : 60000u);
+            bool synced = clock_sync(current.timezone_minutes, clock_host);
+            clock_attempted = true;
+            /* Use monotonic ticks, so correcting wall time cannot move the deadline. */
+            next_clock = mico_rtos_get_time() + (synced ? CLOCK_SYNC_INTERVAL_MS : CLOCK_RETRY_INTERVAL_MS);
+            mico_rtos_lock_mutex(&m1_lock);
+            m1_state.ntp_next_at = next_clock;
+            mico_rtos_unlock_mutex(&m1_lock);
         }
         mico_thread_msleep(500);
     }

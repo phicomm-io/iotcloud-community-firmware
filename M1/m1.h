@@ -36,6 +36,9 @@ typedef struct {
     uint32_t config_generation, reboot_at;
     uint32_t mqtt_errors;
     char mqtt_last_error[96];
+    bool ntp_synced, ntp_screen_queued;
+    uint32_t ntp_last_success, ntp_next_at;
+    char ntp_server[64], ntp_status[24];
     bool wifi_connected, ap_active, mqtt_connected, uart_ready;
     bool reboot_pending, ota_active, scan_busy;
     uint8_t mqtt_status;
@@ -51,6 +54,7 @@ extern m1_state_t m1_state;
 extern mico_Context_t *m1_context;
 
 void m1_config_get(m1_config_t *);
+void m1_ntp_host_get(char out[64]);
 bool m1_config_save(const m1_config_t *);
 void m1_state_get(m1_state_t *);
 void m1_reboot_later(uint32_t ms);
