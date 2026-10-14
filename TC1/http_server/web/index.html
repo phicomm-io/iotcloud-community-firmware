@@ -393,11 +393,6 @@
                 <div class="mdl-card__supporting-text">
                     <form action="#">
                         <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
-                            <input class="mdl-textfield__input" type="text" id="web_username"
-                                   value="admin" readonly>
-                            <label class="mdl-textfield__label" for="web_username">用户名</label>
-                        </div>
-                        <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
                             <input class="mdl-textfield__input" type="text" id="mqtt_addr">
                             <label class="mdl-textfield__label" for="mqtt_addr">地址</label>
                         </div>
@@ -737,6 +732,11 @@
                 </div>
                 <div class="mdl-card__supporting-text">
                     <form action="#">
+                        <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
+                            <input class="mdl-textfield__input" type="text" id="web_username"
+                                   value="admin" readonly>
+                            <label class="mdl-textfield__label" for="web_username">网页登录用户名（固定）</label>
+                        </div>
                         <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
                             <input class="mdl-textfield__input" type="password" id="web_password"
                                    minlength="8" maxlength="32" autocomplete="new-password">

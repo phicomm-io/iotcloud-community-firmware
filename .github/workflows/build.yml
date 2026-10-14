@@ -29,7 +29,7 @@ jobs:
           path: |
             build/tc1-tools
             build/tc1-sdk
-          key: tc1-tools-ubuntu22-gcc54-python2718-${{ hashFiles('TC1/sdk.json') }}
+          key: tc1-tools-ubuntu22-gcc54-python2718-${{ hashFiles('TC1/sdk.json', 'TC1/*.patch', 'common/mqtt-mico35.patch') }}
       - name: Verify project version
         env:
           TAG_NAME: ${{ github.ref_name }}
@@ -44,6 +44,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: ./TC1/build.sh
+      - name: Test TC1 protocol and HTTP regressions
+        run: tests/run_tc1.sh
       - name: Prepare release assets
         run: |
           mkdir -p release

@@ -8,6 +8,9 @@ cc -std=gnu99 -Wall -Wextra -Werror -Itests/host -I"$sdk" -I"$sdk/MQTTPacket" te
 "$output/m1-transport"
 cc -std=gnu99 -Wall -Wextra -Wno-unused-parameter -Wno-unused-but-set-variable -Wno-sign-compare -Wno-misleading-indentation -Wno-pointer-sign -Wno-implicit-fallthrough -Itests/host -I"$sdk" -I"$sdk/MQTTPacket" tests/test_m1_packet.c tests/host/network.c "$sdk/MQTTClient.c" "$sdk"/MQTTPacket/*.c -o "$output/m1-packet"
 "$output/m1-packet"
+sdk=build/tc1-sdk/mico-os/libraries/protocols/mqtt
+cc -std=gnu99 -Wall -Wextra -Wno-unused-parameter -Wno-unused-but-set-variable -Wno-sign-compare -Wno-misleading-indentation -Wno-pointer-sign -Wno-implicit-fallthrough -Itests/host -I"$sdk" -I"$sdk/MQTTPacket" tests/test_tc1_packet.c tests/host/network.c "$sdk/MQTTClient.c" "$sdk"/MQTTPacket/*.c -o "$output/tc1-packet"
+"$output/tc1-packet"
 for model in M1 A1 TC1; do
     sdk="build/${model,,}-sdk/mico-os/libraries/protocols/mqtt"
     json="build/${model,,}-sdk/mico-os/libraries/utilities/json_c"

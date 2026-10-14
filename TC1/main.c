@@ -170,6 +170,7 @@ void reportMqttPowerInfoThread() {
 }
 
 int application_start(void) {
+    WebLogInit();
     tc1_ota_init();
     int i;tc1_log("start version[%s]", VERSION);
 
@@ -249,7 +250,7 @@ int application_start(void) {
 
     err = mico_rtos_create_thread(NULL, MICO_APPLICATION_PRIORITY, "mqtt_power_report",
                                   (mico_thread_function_t) reportMqttPowerInfoThread,
-                                  0x800, 0);
+                                  0x1000, 0);
     require_noerr_string(err, exit, "ERROR: Unable to start the mqtt_power_report thread.");
 
 

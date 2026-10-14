@@ -9,7 +9,7 @@
 
 mico_gpio_t relay[Relay_NUM] = {Relay_0, Relay_1, Relay_2, Relay_3, Relay_4, Relay_5};
 char socket_status[32] = {0};
-char btn_click_config[500] = {0};
+char btn_click_config[768] = {0};
 
 void UserLedSet(char x) {
     if (x == -1)
@@ -108,9 +108,11 @@ char *GetButtonClickConfig() {
 //    key_log("WARNGIN:KEY func %d %d %d", i,short_func,long_func);
 
         snprintf(temp, sizeof(temp), "{'%d':[%d,%d]}%s", i, short_func, long_func, (i != 30) ? "," : "");
-        len += snprintf(btn_click_config + len, max_len - len, "%s", temp);
-
-        if (len >= max_len - 1) break;
+        int written = snprintf(btn_click_config + len, max_len - len, "%s", temp);
+        if (written < 0 || written >= max_len-len-1) {
+            btn_click_config[0]=0; return btn_click_config;
+        }
+        len += written;
     }
     snprintf(btn_click_config + len, max_len - len, "]");
 
@@ -118,13 +120,12 @@ char *GetButtonClickConfig() {
 }
 
 void SetSocketStatus(char *socket_status) {
-    sscanf(socket_status, "%d,%d,%d,%d,%d,%d,",
-           (int *) &user_config->socket_status[0],
-           (int *) &user_config->socket_status[1],
-           (int *) &user_config->socket_status[2],
-           (int *) &user_config->socket_status[3],
-           (int *) &user_config->socket_status[4],
-           (int *) &user_config->socket_status[5]);
+    int values[SOCKET_NUM];
+    if (sscanf(socket_status, "%d,%d,%d,%d,%d,%d",
+               &values[0], &values[1], &values[2], &values[3],
+               &values[4], &values[5]) != SOCKET_NUM) return;
+    for (int n=0;n<SOCKET_NUM;++n) if(values[n]!=0 && values[n]!=1) return;
+    for (int n=0;n<SOCKET_NUM;++n) user_config->socket_status[n]=(char)values[n];
     int i = 0;
     for (i = 0; i < SOCKET_NUM; i++) {
         UserRelaySet(i, user_config->socket_status[i]);

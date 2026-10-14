@@ -13,6 +13,8 @@
 typedef int OSStatus;
 typedef unsigned mico_mutex_t;
 typedef uintptr_t mico_thread_arg_t;
+typedef uintptr_t mico_thread_t;
+static inline bool mico_rtos_is_current_thread(mico_thread_t *thread){(void)thread;return true;}
 typedef uint32_t mico_time_t;
 typedef int mico_gpio_t, WiFiEvent;
 #define maxNameLen 64

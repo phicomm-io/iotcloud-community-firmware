@@ -203,20 +203,30 @@ static int HttpGetTc1Status(httpd_request_t *req) {
     STATUS_INT("child_lock_enabled", childLockEnabled);
     STATUS_STRING("deviceName", sys_config->micoSystemConfig.name);
     STATUS_INT("powerCoefficientX100", user_config->power_coefficient_x100);
-    char clicks[512];
+    char clicks[768];
     snprintf(clicks, sizeof(clicks), "%s", GetButtonClickConfig());
     for (char *c = clicks; *c; ++c) if (*c == 39) *c = 34;
-    json_object_object_add(status, "btnClicks", json_tokener_parse(clicks));
+    /* Keep the already formatted array out of the heap-heavy JSON tree. */
     STATUS_STRING("mqtt_topic_mode", user_config->mqtt_topic_mode ? "account" : "legacy");
     STATUS_STRING("mqtt_status", mqtt_status_name(tc1_mqtt_status));
     json_object_object_add(status, "mqtt_password_set", json_object_new_boolean(user_config->mqtt_password[0] != 0));
     json_object_object_add(status, "mqtt_cleanup_warning", json_object_new_boolean(tc1_mqtt_cleanup_warning));
 #undef STATUS_STRING
 #undef STATUS_INT
-    const char *body = json_object_to_json_string(status);
-    OSStatus err = kNoErr;
-    send_http(body, strlen(body), exit, &err);
+    OSStatus err = kNoMemoryErr;
+    const char *fields = json_object_to_json_string(status);
+    char *body = NULL;
+    if (!fields) goto exit;
+    size_t fields_len = strlen(fields);
+    size_t capacity = fields_len + strlen(clicks) + 32;
+    body = malloc(capacity);
+    if (!body || !fields_len || fields[fields_len-1] != 125) goto exit;
+    int length = snprintf(body, capacity, "%.*s, \"btnClicks\": %s }",
+                          (int)fields_len-1, fields, clicks);
+    if (length < 0 || (size_t)length >= capacity) goto exit;
+    send_http(body, length, exit, &err);
 exit:
+    free(body);
     json_object_put(status);
     return err;
 }
@@ -249,7 +259,9 @@ static int HttpSetSocketName(httpd_request_t *req) {
     require_noerr(err, exit);
     int index;
     char name[64];
-    sscanf(buf, "%d %s", &index, name);
+    if (sscanf(buf, "%d %63s", &index, name) != 2 || index < 0 || index >= SOCKET_NUM) {
+        err=kParamErr;goto exit;
+    }
     strcpy(user_config->socket_names[index], name);
     mico_system_context_update(sys_config);
     registerMqttEvents();
@@ -263,15 +275,17 @@ static int HttpSetSocketName(httpd_request_t *req) {
 static int HttpSetButtonEvent(httpd_request_t *req) {
     OSStatus err = kNoErr;
 
-    int buf_size = 10;
-    char *buf = malloc(buf_size);
+    int buf_size = 16;
+    char *buf = calloc(1, buf_size);
 
     err = httpd_get_data(req, buf, buf_size);
     require_noerr(err, exit);
     int index;
     int func;
     int longPress;
-    sscanf(buf, "%d %d %d", &index, &func, &longPress);
+    if (sscanf(buf, "%d %d %d", &index, &func, &longPress) != 3 ||
+        index < 1 || index > 30 || func < -1 || func > 10 ||
+        (longPress != 0 && longPress != 1)) {err=kParamErr;goto exit;}
     if (longPress == 1) {
         set_key_map(user_config->user,index, get_short_func(user_config->user[index]), func == -1 ? NO_FUNCTION : func);
     } else {
@@ -292,14 +306,18 @@ static int HttpSetButtonEvent(httpd_request_t *req) {
 static int HttpUploadOTA(httpd_request_t *req, bool rescue)
 {
     OSStatus err=kGeneralErr; char buffer[512];
-    if (req->chunked || req->remaining_bytes<=0 || !tc1_ota_reserve()) return kParamErr;
-    if (!tc1_ota_begin(req->remaining_bytes,rescue)) {tc1_ota_abort();return kParamErr;}
+    /* The SDK parses Content-Length lazily on the first body read. */
+    int first=httpd_get_data2(req,buffer,sizeof(buffer));
+    if (first<=0 || req->chunked || req->remaining_bytes<0 || !tc1_ota_reserve()) return kParamErr;
+    if (!tc1_ota_begin(req->remaining_bytes+first,rescue)) {tc1_ota_abort();return kParamErr;}
+    if (!tc1_ota_write((uint8_t *)buffer,first)) {tc1_ota_abort();return kConnectionErr;}
     while (req->remaining_bytes>0) {
         int n=httpd_get_data2(req,buffer,sizeof(buffer));
         if (n<=0 || !tc1_ota_write((uint8_t *)buffer,n)) { tc1_ota_abort(); return kConnectionErr; }
     }
     if (!tc1_ota_finish()) {tc1_ota_abort();return kGeneralErr;}
-    send_http("OTA verified; rebooting",22,exit,&err);
+    const char *response=rescue?"OTA uploaded; rebooting":"OTA verified; rebooting";
+    send_http(response,strlen(response),exit,&err);
     mico_system_power_perform(mico_system_context_get(),eState_Software_Reset);
 exit:
     return err;
@@ -350,9 +368,11 @@ static int HttpSetChildLock(httpd_request_t *req) {
 
 static int HttpGetPowerInfo(httpd_request_t *req) {
     OSStatus err = kNoErr;
-    char buf[16];
-    err = httpd_get_data(req, buf, 16);
-    require_noerr(err, exit);
+    char buf[17] = {0};
+    if (req->type == HTTPD_REQ_TYPE_POST) {
+        err = httpd_get_data(req, buf, sizeof(buf)-1);
+        require_noerr(err, exit);
+    }
 
     int idx = 0;
     sscanf(buf, "%d", &idx);
@@ -553,6 +573,7 @@ static int HttpSetMqttConfig(httpd_request_t *req) {
     mico_rtos_suspend_all_thread();
     strcpy(user_config->mqtt_ip,host); strcpy(user_config->mqtt_user,user); strcpy(user_config->mqtt_password,password);
     user_config->mqtt_port=port; user_config->mqtt_topic_mode=mode;
+    tc1_mqtt_status=MQTT_DISCONNECTED;
     mico_rtos_resume_all_thread();
     err=mico_system_context_update(sys_config); require_noerr(err,exit);
     err=UserMqttInit(); require_noerr(err,exit);
@@ -764,6 +785,14 @@ exit:json_object_put(o);return err;
 }
 static int OtaStart(httpd_request_t *req) {
     OSStatus err=kNoErr;char buf[500]={0};
+    if (!req->hdr_parsed) {
+        char *headers=malloc(HTTPD_MAX_MESSAGE);
+        if (!headers) return kNoMemoryErr;
+        err=httpd_parse_hdr_tags(req,req->sock,headers,HTTPD_MAX_MESSAGE);
+        free(headers);
+        if (err!=kNoErr) return err;
+        req->hdr_parsed=1;
+    }
     if(req->chunked || req->remaining_bytes<=0 || req->remaining_bytes>=sizeof(buf))return kParamErr;
     err=httpd_get_data(req,buf,req->remaining_bytes);
     require_noerr(err,exit);
