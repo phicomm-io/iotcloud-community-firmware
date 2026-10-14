@@ -170,6 +170,7 @@ void reportMqttPowerInfoThread() {
 }
 
 int application_start(void) {
+    WebLogInit();
     tc1_ota_init();
     int i;tc1_log("start version[%s]", VERSION);
 
