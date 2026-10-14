@@ -553,6 +553,7 @@ static int HttpSetMqttConfig(httpd_request_t *req) {
     mico_rtos_suspend_all_thread();
     strcpy(user_config->mqtt_ip,host); strcpy(user_config->mqtt_user,user); strcpy(user_config->mqtt_password,password);
     user_config->mqtt_port=port; user_config->mqtt_topic_mode=mode;
+    tc1_mqtt_status=MQTT_DISCONNECTED;
     mico_rtos_resume_all_thread();
     err=mico_system_context_update(sys_config); require_noerr(err,exit);
     err=UserMqttInit(); require_noerr(err,exit);

@@ -1,0 +1,35 @@
+--- a/libraries/protocols/mqtt/MQTTClient.c
++++ b/libraries/protocols/mqtt/MQTTClient.c
+@@ -192,9 +192,13 @@
+     else{}
+ 
+     len = 1;
++    /* Once the first byte arrives, finish the packet on the command deadline. */
++    Timer packet_timer;
++    InitTimer(&packet_timer);
++    countdown_ms(&packet_timer, c->command_timeout_ms);
+ 
+     /* 2. read the remaining length.  This is variable in itself */
+-    if(decodePacket(c, &rem_len, left_ms(timer)) <= 0){
++    if(decodePacket(c, &rem_len, left_ms(&packet_timer)) <= 0){
+       rc = MQTT_SOCKET_ERR;
+       goto exit;
+     }
+@@ -215,7 +219,7 @@
+     }
+ 
+     /* 3. read the rest of the buffer using a callback to supply the rest of the data */
+-    if (rem_len > 0 && (c->ipstack->mqttread(c->ipstack, c->readbuf + len, rem_len, left_ms(timer)) != rem_len))
++    if (rem_len > 0 && (c->ipstack->mqttread(c->ipstack, c->readbuf + len, rem_len, left_ms(&packet_timer)) != rem_len))
+         goto exit;
+ 
+     header.byte = c->readbuf[0];
+@@ -375,6 +379,8 @@
+   // read the socket, see what work is due
+   memset((void*)(c->readbuf), '\0', c->readbuf_size);
+   packet_type = readPacket(c, timer);  // return 0 means no data, else packet_type > =1, error < 0
++  /* A packet received near the yield deadline still needs time for its ACK. */
++  if (packet_type > 0) countdown_ms(timer, c->command_timeout_ms);
+ 
+   switch (packet_type)
+   {

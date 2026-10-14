@@ -40,7 +40,41 @@ typedef struct {
 
     char data[MAX_MQTT_DATA_SIZE];
     uint32_t datalen;
-} mqtt_recv_msg_t, *p_mqtt_recv_msg_t, mqtt_send_msg_t, *p_mqtt_send_msg_t;
+} mqtt_recv_msg_t, *p_mqtt_recv_msg_t;
+
+/* Short telemetry must not reserve a full 2 KiB payload per queue entry. */
+typedef struct {
+    char topic[MAX_MQTT_TOPIC_SIZE];
+    uint32_t generation;
+    char qos, retained;
+    uint32_t datalen;
+    char data[];
+} mqtt_send_msg_t, *p_mqtt_send_msg_t;
+
+
+/* The moc SDK socket has a five-second receive timeout. Poll first so MQTT's
+ * shorter yield deadline is honored and an idle connection is not an error. */
+static int tc1_mqtt_read(Network *network, unsigned char *buffer, int length, int timeout_ms)
+{
+    Timer deadline;
+    InitTimer(&deadline);
+    countdown_ms(&deadline, timeout_ms > 0 ? timeout_ms : 0);
+    int received = 0;
+    while (received < length) {
+        int remaining = left_ms(&deadline);
+        if (remaining <= 0) return received;
+        fd_set reads;
+        FD_ZERO(&reads); FD_SET(network->my_socket, &reads);
+        struct timeval wait = { remaining / 1000, (remaining % 1000) * 1000 };
+        int ready = select(network->my_socket + 1, &reads, NULL, NULL, &wait);
+        if (!ready) return received;
+        if (ready < 0) return -1;
+        int count = recv(network->my_socket, buffer + received, length - received, 0);
+        if (count <= 0) return -1;
+        received += count;
+    }
+    return received;
+}
 
 static void MqttClientThread(mico_thread_arg_t arg);
 
@@ -63,6 +97,7 @@ bool tc1_mqtt_cleanup_warning;
 static mqtt_account_t account;
 static uint32_t generation;
 static bool synchronous_send, rediscover;
+static mico_thread_t mqtt_owner_thread;
 static int synchronous_error;
 static char session_host[32], session_user[64], session_password[257];
 static unsigned session_port, session_mode;
@@ -188,12 +223,12 @@ OSStatus UserMqttInit(void) {
     /* The receive worker must exist before the MQTT thread can dispatch to it. */
     if (!mqtt_worker_initialized) {
         err = mico_rtos_create_worker_thread(&mqtt_client_worker_thread,
-                                             MICO_APPLICATION_PRIORITY, 0x800, 5);
+                                             MICO_APPLICATION_PRIORITY, 0x1000, 5);
         require_noerr_string(err, exit, "ERROR: Unable to start the mqtt client worker thread.");
         mqtt_worker_initialized = true;
     }
 
-    err = mico_rtos_create_thread(NULL, MICO_APPLICATION_PRIORITY, "mqtt_client",
+    err = mico_rtos_create_thread(&mqtt_owner_thread, MICO_APPLICATION_PRIORITY, "mqtt_client",
                                   (mico_thread_function_t) MqttClientThread,
                                   mqtt_thread_stack_size, 0);
     if (err != kNoErr) goto exit;
@@ -278,7 +313,7 @@ if(timer_status !=0){
  * including while the initial snapshot is being assembled. */
 static void flush_snapshot(void) {
     p_mqtt_send_msg_t msg=NULL;
-    while(mico_rtos_pop_from_queue(&mqtt_msg_send_queue,&msg,0)==kNoErr) {
+    for(unsigned batch=0;batch<MAX_MQTT_SEND_QUEUE_SIZE && mico_rtos_pop_from_queue(&mqtt_msg_send_queue,&msg,0)==kNoErr;++batch) {
         if(msg->generation==generation && session_current()) {
             int rc=MqttMsgPublish(&c,msg->topic,msg->qos,msg->retained,(const unsigned char *)msg->data,msg->datalen);
             if(rc!=kNoErr) synchronous_error=rc;
@@ -337,9 +372,11 @@ void MqttClientThread(mico_thread_arg_t arg) {
         else { sprintf(topic_set,MQTT_CLIENT_SUB_TOPIC1,str_mac); sprintf(topic_state,MQTT_CLIENT_PUB_TOPIC,str_mac); }
         memset(&c,0,sizeof(c)); memset(&n,0,sizeof(n)); n.my_socket=-1;
         ssl_opts options={0}; tc1_mqtt_status=MQTT_CONNECTING;
+        const char *stage="network";
         int rc=NewNetwork(&n,session_host,session_port,options);
+        if(rc==MQTT_SUCCESS) n.mqttread=tc1_mqtt_read;
         bool connected=false;
-        if(rc==MQTT_SUCCESS) rc=MQTTClientInit(&c,&n,MQTT_CMD_TIMEOUT);
+        if(rc==MQTT_SUCCESS) { stage="client-init"; rc=MQTTClientInit(&c,&n,MQTT_CMD_TIMEOUT); }
         if(rc==MQTT_SUCCESS) {
             MQTTPacket_connectData data=MQTTPacket_connectData_initializer;
             data.MQTTVersion=4; data.clientID.cstring=client_id;
@@ -347,7 +384,7 @@ void MqttClientThread(mico_thread_arg_t arg) {
             data.keepAliveInterval=30; data.cleansession=1;
             data.willFlag=1; data.will.topicName.cstring=availability_topic;
             data.will.message.cstring="offline"; data.will.qos=1; data.will.retained=1;
-            rc=MQTTConnect(&c,&data); connected=rc==MQTT_SUCCESS;
+            stage="connect"; rc=MQTTConnect(&c,&data); connected=rc==MQTT_SUCCESS;
             if(!connected) tc1_mqtt_status=rc==4||rc==5?MQTT_AUTH_FAILED:MQTT_DISCONNECTED;
         }
         if(connected && account.mode) {
@@ -355,15 +392,16 @@ void MqttClientThread(mico_thread_arg_t arg) {
             const char *payload=mqtt_announcement(&account);
             rc=MqttMsgPublish(&c,topic,QOS1,1,(const unsigned char *)payload,strlen(payload));
         }
-        if(rc==MQTT_SUCCESS) rc=MQTTSubscribe(&c,ota_topic,QOS1,MessageArrived);
-        if(rc==MQTT_SUCCESS) rc=MQTTSubscribe(&c,topic_set,QOS1,MessageArrived);
-        if(rc==MQTT_SUCCESS) rc=MQTTSubscribe(&c,"homeassistant/status",QOS1,ha_birth);
+        if(rc==MQTT_SUCCESS) { stage="subscribe-ota"; rc=MQTTSubscribe(&c,ota_topic,QOS1,MessageArrived); }
+        if(rc==MQTT_SUCCESS) { stage="subscribe-control"; rc=MQTTSubscribe(&c,topic_set,QOS1,MessageArrived); }
+        if(rc==MQTT_SUCCESS) { stage="subscribe-ha"; rc=MQTTSubscribe(&c,"homeassistant/status",QOS1,ha_birth); }
         if(connected && rc!=MQTT_SUCCESS) tc1_mqtt_status=MQTT_WAITING_ACL;
         if(rc==MQTT_SUCCESS) {
-            cleanup_pending=true; synchronous_send=true; synchronous_error=0; all_discovery(); all_states(); synchronous_send=false;
+            stage="initial-publish"; cleanup_pending=true; synchronous_send=true; synchronous_error=0; all_discovery(); all_states(); synchronous_send=false;
             rc=synchronous_error;
             if(rc==0) rc=MqttMsgPublish(&c,availability_topic,QOS1,1,(const unsigned char *)"online",6);
         }
+        if(rc==MQTT_SUCCESS) stage="running";
         uint32_t acl_check=mico_rtos_get_time(); rediscover=false;
         if(rc==MQTT_SUCCESS) { isconnect=true; tc1_mqtt_status=MQTT_READY; attempt=0; cleanup_pending=true; }
         while(rc==MQTT_SUCCESS && !mqtt_thread_should_exit && session_current()) {
@@ -373,7 +411,7 @@ void MqttClientThread(mico_thread_arg_t arg) {
                 rc=synchronous_error; rediscover=false;
             }
             p_mqtt_send_msg_t msg=NULL;
-            while(rc==MQTT_SUCCESS && mico_rtos_pop_from_queue(&mqtt_msg_send_queue,&msg,0)==kNoErr) {
+            for(unsigned batch=0;batch<MAX_MQTT_SEND_QUEUE_SIZE && rc==MQTT_SUCCESS && mico_rtos_pop_from_queue(&mqtt_msg_send_queue,&msg,0)==kNoErr;++batch) {
                 if(msg->generation==generation && session_current())
                     rc=MqttMsgPublish(&c,msg->topic,msg->qos,msg->retained,(const unsigned char *)msg->data,msg->datalen);
                 free(msg); msg=NULL;
@@ -385,6 +423,7 @@ void MqttClientThread(mico_thread_arg_t arg) {
             if(rc==MQTT_SUCCESS) rc=MQTTYield(&c,100);
             mico_rtos_thread_msleep(50);
         }
+        if(rc!=MQTT_SUCCESS) mqtt_log("MQTT failed stage=%s rc=%d heap=%lu retry=%u", stage, rc, (unsigned long)MicoGetMemoryInfo()->free_memory, attempt);
         isconnect=false;
         if(!session_current())ota_forget();
         if(connected) {
@@ -553,15 +592,12 @@ static bool account_message(const char *old_topic, const char *payload, char *to
 OSStatus UserMqttSendTopic(char *topic, char *arg, char retained) {
     OSStatus err = kUnknownErr;
     p_mqtt_send_msg_t p_send_msg = NULL;
-    char scoped[MAX_MQTT_TOPIC_SIZE], payload[MAX_MQTT_DATA_SIZE];
-    if(strlen(topic)>=MAX_MQTT_TOPIC_SIZE || strlen(arg)>=MAX_MQTT_DATA_SIZE) { if(synchronous_send) synchronous_error=kParamErr; return kParamErr; }
-    if(account.mode && !strncmp(topic,"homeassistant/",14)) {
-        if(!account_message(topic,arg,scoped,payload)) { if(synchronous_send) synchronous_error=kParamErr; return kParamErr; }
-        topic=scoped; arg=payload; retained=1;
+    if (!topic || !arg || strlen(topic)>=MAX_MQTT_TOPIC_SIZE || strlen(arg)>=MAX_MQTT_DATA_SIZE) {
+        if(synchronous_send) synchronous_error=kParamErr;
+        return kParamErr;
     }
-    if(mqtt_msg_send_queue == NULL|| (!isconnect && !synchronous_send) || !session_current()){
-    return err;
-    }
+    if(mqtt_msg_send_queue == NULL || (!isconnect && !synchronous_send) || !session_current())
+        return err;
 
 //  mqtt_log("======App prepare to send ![%d]======", MicoGetMemoryInfo()->free_memory);
 
@@ -573,19 +609,36 @@ OSStatus UserMqttSendTopic(char *topic, char *arg, char retained) {
     }
 
     /* Push the latest data into send queue*/
-    p_send_msg = (p_mqtt_send_msg_t) calloc(1, sizeof(mqtt_send_msg_t));
+    p_send_msg = (p_mqtt_send_msg_t) calloc(1, sizeof(mqtt_send_msg_t) + ((account.mode && !strncmp(topic,"homeassistant/",14)) ? MAX_MQTT_DATA_SIZE : strlen(arg)+1));
     require_action(p_send_msg, exit, err = kNoMemoryErr);
 
     p_send_msg->generation = generation;
     p_send_msg->qos = account.mode || !strncmp(topic,"homeassistant/",14) ? 1 : 0;
     p_send_msg->retained = retained;
-    p_send_msg->datalen = strlen(arg) >= MAX_MQTT_DATA_SIZE ?
-                           MAX_MQTT_DATA_SIZE - 1 : strlen(arg);
-    memcpy(p_send_msg->data, arg, p_send_msg->datalen);
-    p_send_msg->data[p_send_msg->datalen] = 0;
-    strncpy(p_send_msg->topic, topic, MAX_MQTT_TOPIC_SIZE - 1);
-    p_send_msg->topic[MAX_MQTT_TOPIC_SIZE - 1] = 0;
+    /* Format into the already allocated queue item, avoiding large stack buffers. */
+    if(account.mode && !strncmp(topic,"homeassistant/",14)) {
+        if(!account_message(topic,arg,p_send_msg->topic,p_send_msg->data)) {
+            err=kParamErr; goto exit;
+        }
+        p_send_msg->retained=1;
+    } else {
+        strcpy(p_send_msg->topic,topic);
+        strcpy(p_send_msg->data,arg);
+    }
+    p_send_msg->datalen = strlen(p_send_msg->data);
+    if(account.mode && !strncmp(topic,"homeassistant/",14)) {
+        p_mqtt_send_msg_t compact=realloc(p_send_msg,sizeof(*p_send_msg)+p_send_msg->datalen+1);
+        if(compact) p_send_msg=compact;
+    }
 
+    /* Initial discovery already runs in the MQTT owner: publish one item at a
+     * time instead of retaining several JSON conversions in the queue. */
+    if (synchronous_send && mico_rtos_is_current_thread(&mqtt_owner_thread)) {
+        err=MqttMsgPublish(&c,p_send_msg->topic,p_send_msg->qos,p_send_msg->retained,
+                           (const unsigned char *)p_send_msg->data,p_send_msg->datalen);
+        free(p_send_msg);p_send_msg=NULL;
+        goto exit;
+    }
     err = mico_rtos_push_to_queue(&mqtt_msg_send_queue, &p_send_msg, 0);
     require_noerr(err, exit);
 
@@ -958,10 +1011,9 @@ void UserMqttHassAutoPower(void) {
     if (topic_buf) free(topic_buf);
 }
 
-char topic_buf[128] = {0};
-char send_buf[128] = {0};
-
 extern void UserMqttHassPower(void) {
+    if (!isconnect && !synchronous_send) return;
+    char topic_buf[128], send_buf[128];
     if(account.mode) {
         uint32_t today=p_count>=(uint32_t)user_config->p_count_1_day_ago?p_count-user_config->p_count_1_day_ago:0;
         uint32_t yesterday=user_config->p_count_1_day_ago>=user_config->p_count_2_days_ago?user_config->p_count_1_day_ago-user_config->p_count_2_days_ago:0;
