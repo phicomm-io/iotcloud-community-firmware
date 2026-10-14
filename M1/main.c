@@ -29,6 +29,14 @@ void m1_config_get(m1_config_t *out)
     mico_rtos_unlock_mutex(&config_lock);
 }
 
+void m1_ntp_host_get(char out[64])
+{
+    mico_rtos_lock_mutex(&config_lock);
+    memcpy(out, ((app_storage_t *)app_config)->features.ntp_host, 64);
+    out[63] = 0;
+    mico_rtos_unlock_mutex(&config_lock);
+}
+
 bool m1_config_save(const m1_config_t *c)
 {
     mico_rtos_lock_mutex(&config_lock);
