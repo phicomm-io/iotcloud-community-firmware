@@ -44,6 +44,7 @@ const ACTIONS={M1:['schedules.get','schedules.put','schedules.delete','schedules
  assert(!d.querySelector('#spark')?.innerHTML.includes('NaN'),'single-point power chart must remain finite');
  if(model==='TC1')assert.equal(d.querySelector('#mqttMode').options.length,2);else assert.equal(d.querySelector('#mqttMode'),null,'M1/A1 only support TMCP');
  assert.equal(d.querySelector('#mqttHost').maxLength,127);
+ assert.equal(d.querySelector('#otaSource'),null,'built-in update controls are absent when no source capability is advertised');
  // Navigation keeps unsaved input, and each page is reachable by hash.
  d.querySelector('#mqttUser').value='unsaved';
  for(const page of PAGES[model]){
