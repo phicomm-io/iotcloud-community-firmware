@@ -21,7 +21,7 @@ void appRestoreDefault_callback(void *data, uint32_t size)
     if (size >= sizeof(app_storage_t)) feature_defaults(&((app_storage_t *)data)->features);
     if (size >= sizeof(app_storage_t)) automation_defaults(&((app_storage_t *)data)->automation);
     c->magic = M1_CONFIG_MAGIC; c->version = M1_CONFIG_VERSION;
-    strcpy(c->name, "Phicomm M1"); c->mqtt_port = 1883; c->mqtt_topic_mode = MQTT_TOPIC_TMCP;
+    c->mqtt_port = 1883; c->mqtt_topic_mode = MQTT_TOPIC_TMCP;
     c->brightness = c->last_on = 4; c->timezone_minutes = 480;
 }
 
@@ -178,6 +178,10 @@ int application_start(void)
     mico_wlan_get_mac_address(mac);
     snprintf(m1_id, sizeof(m1_id), "%02x%02x%02x%02x%02x%02x",
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    if (!c.name[0]) {
+        snprintf(c.name, sizeof(c.name), "M1-%02X%02X", mac[4], mac[5]);
+        if (!m1_config_save(&c)) return kUnknownErr;
+    }
     snprintf(m1_state.ap_name, sizeof(m1_state.ap_name), "M1-AP-%s", m1_id + 6);
     for (char *p = m1_state.ap_name; *p; ++p)
         if (*p >= 'a' && *p <= 'f') *p -= 'a' - 'A';
