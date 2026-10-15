@@ -14,8 +14,9 @@ const ACTIONS={M1:['schedules.get','schedules.put','schedules.delete','schedules
  const path=model==='TC1'?'TC1/http_server/web/index.html':model+'/web/index.html';
  const html=cp.execFileSync('python3',['common/web/page.py',path],{encoding:'utf8'});
  const dom=new JSDOM(html,{runScripts:'outside-only',url:'http://device.local'}),w=dom.window,d=w.document,calls=[];
+ const missing=[];w.console.warn=(...args)=>{if(args[0]==='i18n missing')missing.push(args[1]);};
  w.TextEncoder=require('node:util').TextEncoder;w.setTimeout=()=>0;w.confirm=()=>true;w.scrollTo=()=>{};
- const state={name:'test <img>',device_id:'aabbccddeeff',version:'test',ip:'1.2.3.4',ssid:'home',wifi_connected:true,mqtt_status:'ready',mqtt_host:'broker',mqtt_user:'user',mqtt_port:1883,
+ const state={mqtt_topic_mode:model==='TC1'?'legacy':'tmcp',name:'test <img>',device_id:'aabbccddeeff',version:'test',ip:'1.2.3.4',ssid:'home',wifi_connected:true,mqtt_status:'ready',mqtt_host:'broker',mqtt_user:'user',mqtt_port:1883,
   brightness_requested:4,brightness:128,red:1,green:2,blue:3,speed:60,percentage:60,applied_speed:60,requested_speed:60,fan_on:true,fan_ready:true,panel_ready:true,
   sensor_received:true,sensor_valid:true,age_ms:1000,temperature:25,humidity:50,formaldehyde:0.02,pm25:20,time_synced:true,timezone_minutes:480,ntp_host:'pool.ntp.org',ntp_status:'synced',ntp_synced:true,
   ota_progress:0,ota_state:'idle',socket_names:['one','two','three','four','five','six'],socket_states:[1,1,1,1,1,1],report_seconds:2,powerCoefficientX100:1710,free_memory:30000};
@@ -94,6 +95,7 @@ const ACTIONS={M1:['schedules.get','schedules.put','schedules.delete','schedules
   assert.deepEqual(uploads,['/api/v1/ota/upload','/api/v1/ota/upload-unsigned']);
  }
  assert(!html.includes("fetch('/log'"),'the old log endpoint must not be used');
+ assert.deepEqual(missing,[],'all displayed strings need a shared translation');
  console.log(model+': unified command API, navigation, typed tasks, logs, controls, safe names and explicit OTA passed');
  dom.window.close();
 }})().catch(e=>{console.error(e);process.exit(1)});
