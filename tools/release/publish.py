@@ -26,7 +26,7 @@ def verify(release):
                     if r.url!=req.full_url or r.status!=200 or r.headers.get('Transfer-Encoding') or r.headers.get('Content-Encoding') or int(r.headers['Content-Length'])!=asset['size']:raise ValueError('not a direct fixed-length download')
                     body=r.read()
                 if hashlib.sha256(body).hexdigest()!=asset['sha256']:raise ValueError('mirror hash mismatch')
-                if kind=='signed':verify_signature(body,model_name,release['version'],release['commit'])
+                if kind=='signed':verify_signature(body,model_name,release['version'],model.get('source_commit',release['commit']))
 def smoke(release):
     opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
     for base in ['http://phicomm.fjrcn.com','http://phicomm.fjrcn.cn']:

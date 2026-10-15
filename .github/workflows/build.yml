@@ -293,7 +293,7 @@ jobs:
       - name: Test OTA release tooling and Worker
         run: |
           python3 -m unittest discover -s tests -p test_release.py
-          node --experimental-default-type=module --test tests/test_ota_worker.mjs
+          node --test tests/test_ota_worker.mjs
       - name: Test engines, binding runtime and WebUI syntax
         run: tests/run.sh
       - name: Test WebUI configuration forms

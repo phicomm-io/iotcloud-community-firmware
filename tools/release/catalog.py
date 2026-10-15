@@ -17,6 +17,17 @@ def make(tag, commit, directory, notes, legacy=False):
             if not body:raise ValueError(f'empty asset {name}')
             files[kind]={'path':f'/releases/{tag}/{name}','size':len(body),'sha256':hashlib.sha256(body).hexdigest()}
         release['models'][model]={**files.get('signed',files['raw']),'downloads':files,'release_log':release['notes']}
+        if legacy and 'signed' in files:
+            signed=(directory/Path(files['signed']['path']).name).read_bytes()
+            source=signed[96:116].hex()
+            from verify import verify
+            verify(signed,model,tag,source)
+            import subprocess
+            if source!=commit:
+                changed=subprocess.check_output(['git','diff','--name-only',source,commit],text=True).splitlines()
+                if any(not name.startswith('localdocs/') for name in changed):raise ValueError('historical tag/source differ in build inputs')
+                release['models'][model]['source_commit']=source
+                release['models'][model]['source_relation']='documentation_only_difference'
     (directory/'notes.md').write_text(notes)
     (directory/'index.html').write_text('<!doctype html><meta charset="utf-8"><title>'+tag+'</title><h1>'+tag+'</h1><pre>'+html.escape(notes)+'</pre>')
     (directory/'release.json').write_text(json.dumps(release,ensure_ascii=False,indent=2)+'\n')
