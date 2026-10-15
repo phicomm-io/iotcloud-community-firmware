@@ -8,6 +8,7 @@ mkdir -p build/pages/demos/platform
 cp -a platform/frontend/dist/. build/pages/demos/platform/
 target=$(mktemp -d)
 trap 'rm -rf "$target"' EXIT
+if [[ -n "${GH_TOKEN:-}" ]]; then gh auth setup-git; fi
 gh repo clone FUjr/phicomm-community-pages "$target/public" -- --depth=1
 # Only generated public output may cross the private/public boundary.
 find "$target/public" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf -- {} +
