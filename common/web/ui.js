@@ -137,6 +137,30 @@ function tzLabel(m){const sg=m<0?'−':'+',a=Math.abs(m);return 'UTC'+sg+String(
 
 /* ---------- Header, navigation, banners ---------- */
 const UI=window.UI={$,h,icon,toast,run,onSubmit,confirm:confirmDialog,switchRow,seg,daysPicker,presetDays,daysText,hhmm,toMinutes,duration,summary,card,info,pageHead,saveBar,num,flag,slider,normalizeMac,prettyMac,clone,AIR,grade,airScale,tzLabel,state:null,caps:null,pages:{},device:null,clockCard,maintenancePage,scanNetworks};
+// Keep requested output visible until a fresh read confirms it. Polls may still
+// contain the pre-write state while the device applies an accepted command.
+let pendingControl=null;
+UI.acceptStatus=s=>{UI.confirmed=s;UI.state=pendingControl?{...s,...pendingControl}:s;return UI.state;};
+UI.control=async(action,params,patch)=>{
+ if(pendingControl){UI.device.onStatus?.(UI.state);throw Error(t('control.pending'));}
+ pendingControl=patch;UI.controlBusy=true;
+ const render=()=>{if(UI.device.onStatus)UI.device.onStatus(UI.state);};
+ UI.state={...UI.state,...patch};render();
+ let sendError,last;
+ const matches=s=>s&&Object.entries(patch).every(([k,v])=>Object.hasOwn(s,k)&&(Array.isArray(v)?Array.isArray(s[k])&&v.length===s[k].length&&v.every((x,i)=>!!x===!!s[k][i]):typeof v==='boolean'?!!s[k]===v:s[k]===v));
+ try{
+  try{await command(action,params);}catch(e){sendError=e;if(e.code&&!['timeout','offline'].includes(e.code))throw e;}
+  const until=Date.now()+20000;
+  do{
+   last=await UI.reload();
+   if(matches(last))return last;
+   await new Promise(resolve=>setTimeout(resolve,750));
+  }while(Date.now()<until);
+  throw Error(t('control.unconfirmed')+(sendError?' · '+sendError.message:''));
+ }finally{
+  pendingControl=null;UI.controlBusy=false;UI.state=last||UI.confirmed||UI.state;render();
+ }
+};
 function header(dev){
  const lang=h('select',{id:'langPick','aria-label':'Language'},
   h('option',{value:'auto','data-i18n':'pref.lang_auto'},t('pref.lang_auto')),h('option',{value:'en'},'English'),h('option',{value:'zh-CN'},'简体中文'));
@@ -382,19 +406,21 @@ function clockCard({load,save,status}){
 }
 
 /* ---------- Boot ---------- */
-let initialized=false,failures=0;
+let initialized=false,failures=0,lastSuccess=0,loading=null;
 async function load(){
  try{
-  const s=await command('status.get');failures=0;UI.state=s;
+  const raw=await command('status.get');failures=0;lastSuccess=Date.now();const s=UI.acceptStatus(raw);
   $('title').textContent=UI.device.model+' '+(s.name||'');
   renderChips(s);renderBanners(s,false);
   if(!initialized){for(const p of Object.values(UI.pages))if(p.init)p.init(s);initialized=true;}
   for(const p of Object.values(UI.pages))if(p.status)p.status(s);
   if(UI.device.onStatus)UI.device.onStatus(s);
- }catch(e){if(++failures>1)renderBanners(null,true);}
+  return raw;
+ }catch(e){if(++failures>=3&&(!lastSuccess||Date.now()-lastSuccess>=30000))renderBanners(null,true);return null;}
 }
-async function refresh(){await load();setTimeout(refresh,UI.device.interval||2000);}
-UI.reload=load;
+function pollLoad(){if(!loading)loading=load().finally(()=>{loading=null;});return loading;}
+async function refresh(){await pollLoad();setTimeout(refresh,UI.device.interval||2000);}
+UI.reload=async()=>{if(loading)await loading;return pollLoad();};
 UI.start=async dev=>{
  UI.device=dev;
  const first=dev.groups.flatMap(g=>g[1])[0];

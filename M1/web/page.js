@@ -16,7 +16,7 @@ $('metrics').append(...METRICS.map(k=>{
  return h('section',{class:'card metric'},h('div',{class:'row between'},h('span',{class:'label','data-i18n':'m.'+k},t('m.'+k)),badge),
   h('div',{class:'stat'},value,h('small',{},UI.AIR[k].unit)),scale);
 }));
-const screen=seg([[0,'state.off'],[1,'1'],[2,'2'],[3,'3'],[4,'4']],v=>run(null,()=>api('/display/brightness',{level:v}),'toast.accepted'),{full:true,aria:t('m1.screen')});
+const screen=seg([[0,'state.off'],[1,'1'],[2,'2'],[3,'3'],[4,'4']],v=>run(null,()=>UI.control('display.set',{brightness:v*25},{brightness_requested:v}),'toast.accepted'),{full:true,aria:t('m1.screen')});
 screen.dataset.control='brightness';
 $('screenSeg').replaceWith(screen);
 const RANK={ok:0,warn:1,bad:2};
@@ -122,5 +122,5 @@ UI.start({
 I18N.onChange(()=>{renderPeers();const p=document.querySelector('[data-settings-page="binding"]');if(p&&!p.hidden)showBinding();});
 // The linked list is small and changes rarely; refresh it with the status.
 (async function poll(){try{bindingStatus=await api('/binding/status');renderPeers();}catch{}setTimeout(poll,4000);})();
-api('/binding/config').then(c=>{binding=c;renderPeers();});
+api('/binding/config').then(c=>{binding=c;renderPeers();}).catch(e=>toast(e.message,true));
 })();

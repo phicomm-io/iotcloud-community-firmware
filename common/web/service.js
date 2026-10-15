@@ -1,10 +1,13 @@
 async function command(action,params={}){
  const request={action,params};
  if(!action.endsWith('.get'))request.request_id=globalThis.crypto?.randomUUID?crypto.randomUUID():Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);
- const response=await fetch('/api/v1/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(request),cache:'no-store'});
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),20000);
+ try{
+ const response=await fetch('/api/v1/command',{method:'POST',signal:controller.signal,headers:{'Content-Type':'application/json'},body:JSON.stringify(request),cache:'no-store'});
  const reply=await response.json();
- if(!response.ok||!['ok','accepted'].includes(reply.code))throw Error(reply.message||reply.code||('HTTP '+response.status));
+ if(!response.ok||!['ok','accepted'].includes(reply.code)){const error=Error(reply.message||reply.code||('HTTP '+response.status));error.code=reply.code;throw error;}
  return reply.data||{};
+ }finally{clearTimeout(timer);}
 }
 async function api(path,data){
  if(path==='/status')return command('status.get');

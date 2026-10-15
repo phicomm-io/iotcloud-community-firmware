@@ -19,10 +19,11 @@ for(let i=0;i<6;i++){
  tiles.push({tile,name,state});
  $('tiles').append(h('div',{class:'tile-wrap'},tile,edit));
 }
-function lock(){for(const {tile} of tiles)tile.disabled=busy;$('allOn').disabled=busy;$('allOff').disabled=busy;}
+function lock(){const pending=busy||UI.controlBusy;for(const {tile} of tiles){tile.disabled=pending;tile.setAttribute('aria-busy',String(!!pending));}$('allOn').disabled=pending;$('allOff').disabled=pending;}
 async function setStates(params){
  if(busy)return;busy=true;lock();
- try{await command('outlet.set',params);await UI.reload();}catch(e){toast(e.message,true);}finally{busy=false;lock();}
+ const states=Array.from(UI.state.socket_states,Boolean);if(params.index===undefined)states.fill(params.on);else states[params.index]=params.on;
+ try{await UI.control('outlet.set',params,{socket_states:states});}catch(e){toast(e.message,true);}finally{busy=false;lock();renderSockets(UI.state);}
 }
 function toggle(i){setStates({index:i,on:!UI.state.socket_states[i]});}
 $('allOn').onclick=()=>setStates({on:true});
@@ -37,15 +38,16 @@ async function rename(i){
  d.addEventListener('close',()=>{if(d.returnValue==='ok'&&input.value.trim())run(null,()=>api('/socketNames',{index:i,name:input.value.trim()}).then(UI.reload),'common.saved');d.remove();});
 }
 function renderSockets(s){
+ lock();
  const states=s.socket_states||[0,0,0,0,0,0];
  $('onCount').textContent=t('tc1.on_count',{n:states.filter(Boolean).length});
- states.forEach((v,i)=>{const x=tiles[i];if(!busy)x.tile.setAttribute('aria-pressed',String(!!v));
-  x.name.textContent=(s.socket_names||[])[i]||t('tc1.socket_n',{n:i+1});x.state.textContent=t(v?'tc1.on':'tc1.off');});
- for(const id of ['childLock','childLockDevice'])if(document.activeElement!==$(id))$(id).checked=!!s.child_lock;
- for(const id of ['ledEnabled','ledEnabledDevice'])if(document.activeElement!==$(id))$(id).checked=!!s.led_enabled;
+ states.forEach((v,i)=>{const x=tiles[i];x.tile.setAttribute('aria-pressed',String(!!v));
+  x.name.textContent=(s.socket_names||[])[i]||t('tc1.socket_n',{n:i+1});x.state.textContent=t(v?'tc1.on':'tc1.off')+(busy?' · '+t('control.syncing'):'');});
+ for(const id of ['childLock','childLockDevice'])$(id).checked=!!s.child_lock;
+ for(const id of ['ledEnabled','ledEnabledDevice'])$(id).checked=!!s.led_enabled;
 }
-for(const id of ['childLock','childLockDevice'])$(id).onchange=e=>run(null,()=>api('/childLock',{enabled:e.target.checked}).then(UI.reload));
-for(const id of ['ledEnabled','ledEnabledDevice'])$(id).onchange=e=>run(null,()=>api('/led',{enabled:e.target.checked}).then(UI.reload));
+for(const id of ['childLock','childLockDevice'])$(id).onchange=e=>run(null,()=>UI.control('child_lock.set',{enabled:e.target.checked},{child_lock:e.target.checked}));
+for(const id of ['ledEnabled','ledEnabledDevice'])$(id).onchange=e=>run(null,()=>UI.control('indicator.set',{enabled:e.target.checked},{led_enabled:e.target.checked}));
 
 /* ---------- Home: power trend ---------- */
 const powerHistory=[];

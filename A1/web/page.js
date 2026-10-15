@@ -16,10 +16,10 @@ $('presets').replaceWith(presets);
 function setSpeed(v){speed.value=v;$('speedValue').textContent=v+'%';return run(null,()=>api('/fan/config',{speed:Number(v)}).then(refresh),null);}
 speed.addEventListener('input',()=>{dragging=true;$('speedValue').textContent=speed.value+'%';presets.set(Number(speed.value));});
 speed.addEventListener('change',()=>{dragging=false;setSpeed(speed.value);});
-power.onclick=()=>{const on=!UI.state.fan_on;power.setAttribute('aria-pressed',String(on));run(power,()=>api('/fan/config',{on}).then(refresh),null);};
-for(const id of ['childLock','childLockDevice'])$(id).onchange=e=>run(null,()=>api('/childLock',{enabled:e.target.checked}).then(refresh),e.target.checked?'a1.lock_on':'a1.lock_off');
+power.onclick=()=>{const on=!UI.state.fan_on;power.setAttribute('aria-pressed',String(on));run(power,()=>UI.control('fan.set',{on},{fan_on:on}),null);};
+for(const id of ['childLock','childLockDevice'])$(id).onchange=e=>run(null,()=>UI.control('child_lock.set',{enabled:e.target.checked},{child_lock:e.target.checked}),e.target.checked?'a1.lock_on':'a1.lock_off');
 function renderFan(s){
- const locked=s.ota_active||s.reboot_pending;
+ const locked=s.ota_active||s.reboot_pending||UI.controlBusy;
  power.setAttribute('aria-pressed',String(s.fan_on));power.disabled=locked;speed.disabled=locked;
  presets.querySelectorAll('button').forEach(b=>b.disabled=locked);
  const auto=bindingStatus.linkage_status==='active'&&bindingStatus.automatic_on;
@@ -29,7 +29,7 @@ function renderFan(s){
  $('outBar').style.width=s.applied_speed+'%';$('targetBar').style.width=s.percentage+'%';$('targetBar').hidden=!s.percentage;
  $('outText').textContent=!s.fan_on&&!s.applied_speed?t('a1.out_stopped'):s.applied_speed!==s.percentage?t('a1.out_ramp',{a:s.applied_speed,p:s.percentage}):t('a1.out_steady',{a:s.applied_speed});
  for(const [id,badge] of [['panelBadge',$('panelBadge')],['panelBadge2',$('panelBadge2')]]){badge.className='badge '+(s.panel_ready?'ok':'bad');badge.textContent=t(s.panel_ready?'a1.panel_ok':'a1.panel_bad');}
- for(const id of ['childLock','childLockDevice'])if(document.activeElement!==$(id))$(id).checked=s.child_lock;
+ for(const id of ['childLock','childLockDevice'])$(id).checked=s.child_lock;
 }
 
 /* ---------- Home: automatic control summary ---------- */
@@ -246,5 +246,5 @@ UI.start({
 I18N.onChange(()=>{if(UI.state){renderAuto();for(const key of ['device','light','binding','linkage'])if(!document.querySelector('[data-settings-page="'+key+'"]').hidden&&UI.pages[key].show)UI.pages[key].show();}});
 // Keep the automatic-control summary fresh even while the home page is idle.
 (async function poll(){try{bindingStatus=await api('/binding/status');if(UI.state)renderFan(UI.state);renderAuto();}catch{}setTimeout(poll,3000);})();
-api('/light/advanced').then(a=>{advanced=a;if(UI.state)renderLight(UI.state);});
+api('/light/advanced').then(a=>{advanced=a;if(UI.state)renderLight(UI.state);}).catch(e=>toast(e.message,true));
 })();
