@@ -86,6 +86,8 @@ static int service_mqtt_snapshot(int (*)(const char *,const char *,bool),const m
 static int service_mqtt_capabilities(int (*)(const char *,const char *,bool),const mqtt_account_t *);
 static void ota_forget(void);
 static char ota_topic[MQTT_TOPIC_MAX];
+/* MQTTSubscribe retains this pointer for the entire connection. */
+static char command_topic[MQTT_TOPIC_MAX];
 
 static OSStatus
 MqttMsgPublish(Client *c, const char *topic, char qos, char retained, const unsigned char *msg,
@@ -396,7 +398,7 @@ void MqttClientThread(mico_thread_arg_t arg) {
             const char *payload=mqtt_announcement(&account);
             rc=MqttMsgPublish(&c,topic,QOS1,1,(const unsigned char *)payload,strlen(payload));
         }
-        if(rc==MQTT_SUCCESS && account.mode){char command_topic[MQTT_TOPIC_MAX];mqtt_leaf(&account,"command",command_topic,sizeof(command_topic));rc=MQTTSubscribe(&c,command_topic,QOS1,MessageArrived);}
+        if(rc==MQTT_SUCCESS && account.mode){mqtt_leaf(&account,"command",command_topic,sizeof(command_topic));rc=MQTTSubscribe(&c,command_topic,QOS1,MessageArrived);}
         if(rc==MQTT_SUCCESS && !account.mode){stage="subscribe-ota";rc=MQTTSubscribe(&c,ota_topic,QOS1,MessageArrived);}
         if(rc==MQTT_SUCCESS && !account.mode){stage="subscribe-control";rc=MQTTSubscribe(&c,topic_set,QOS1,MessageArrived);}
         if(rc==MQTT_SUCCESS) { stage="subscribe-ha"; rc=MQTTSubscribe(&c,"homeassistant/status",QOS1,ha_birth); }
@@ -426,7 +428,7 @@ void MqttClientThread(mico_thread_arg_t arg) {
                 free(msg); msg=NULL;
             }
             if(rc==MQTT_SUCCESS && account.mode && (uint32_t)(mico_rtos_get_time()-acl_check)>=30000) {
-                char command_topic[MQTT_TOPIC_MAX];mqtt_leaf(&account,"command",command_topic,sizeof(command_topic));rc=MQTTSubscribe(&c,command_topic,QOS1,MessageArrived); acl_check=mico_rtos_get_time();
+                mqtt_leaf(&account,"command",command_topic,sizeof(command_topic));rc=MQTTSubscribe(&c,command_topic,QOS1,MessageArrived); acl_check=mico_rtos_get_time();
                 if(rc!=MQTT_SUCCESS) tc1_mqtt_status=MQTT_WAITING_ACL;
             }
             if(rc==MQTT_SUCCESS && account.mode) rc=service_mqtt_flush(service_sender);
