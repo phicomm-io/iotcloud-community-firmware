@@ -23,5 +23,5 @@ int main(void)
     assert(offset == 4);
     assert(client.readbuf[3] == 7);
     MQTTClientDeinit(&client);
-    puts("M1 completes fragmented MQTT packets beyond the idle yield deadline");
+    puts("M1/A1 complete fragmented MQTT packets beyond the idle yield deadline");
 }
