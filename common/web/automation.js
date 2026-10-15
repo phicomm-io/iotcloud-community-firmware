@@ -18,11 +18,14 @@ const sel=(parent,labelKey,options)=>{const s=h('select',{},options.map(([v,k])=
 function actionEditor(host,{keys=false}={}){
  const caps=UI.caps||{},available=Object.keys(ACTIONS).filter(a=>(caps.actions||[]).includes(a));
  const box=h('div',{class:'stack'}),fields=h('div',{class:'stack'});
- const pick=seg([...(keys?[['none','op.none']]:[]),...available.map(a=>[a,actKey(a)])],v=>draw(v),{full:true});
- host.append(pick,box);box.append(fields);
+ const options=[...(keys?[['none','op.none']]:[]),...available.map(a=>[a,actKey(a)])];
+ const pick=keys?sel(host,'btn.action',options):seg(options,v=>draw(v),{full:true});
+ if(keys){pick.set=v=>{pick.value=v;};pick.addEventListener('change',()=>draw(pick.value));host.append(box);}
+ else host.append(pick,box);
+ box.append(fields);
  let read=()=>({}),current=keys?'none':(available[0]||'none');
  function draw(a,params={}){
-  fields.replaceChildren();read=()=>({});
+  current=a;fields.replaceChildren();read=()=>({});
   if(a==='none'||!a)return;
   const parts=[];
   if(a==='outlet.set'){
@@ -127,32 +130,79 @@ function schedulePage(dev){
 
 /* ---------- Custom button events ---------- */
 function buttonsPage(dev){
- const listBox=h('div',{class:'list'});
- const key=sel(h('div',{class:'fields'}),'btn.key',dev.model==='A1'?[['0','btn.key_power'],['1','btn.key_wifi']]:[['0','btn.key_fn']]);
- const keyHost=key.closest('.fields');
- const kind=seg([['clicks','btn.click'],['seconds','btn.hold']],v=>{count.max=v==='seconds'?4:30;count.value=Math.min(Number(count.value)||1,Number(count.max));},{full:true});
+ const listBox=h('div',{class:'stack'}),keyHost=h('div',{class:'fields'});
+ const key=sel(keyHost,'btn.key',dev.model==='A1'?[['0','btn.key_power'],['1','btn.key_wifi']]:[['0','btn.key_fn']]);
  const count=h('input',{type:'number',min:1,max:30,value:1,required:true});
- keyHost.append(h('div',{class:'field'},h('span',{i18n:'btn.kind'}),kind),h('label',{class:'field'},h('span',{i18n:'btn.count'}),count));
+ const countLabel=h('span',{},t('btn.click_count'));
+ const kind=seg([['clicks','btn.click'],['seconds','btn.hold']],v=>{
+  count.max=v==='seconds'?4:30;count.value=Math.min(Number(count.value)||1,Number(count.max));
+  countLabel.textContent=t(v==='seconds'?'btn.hold_count':'btn.click_count');preview();
+ },{full:true});kind.set('clicks');
+ keyHost.append(h('div',{class:'field'},h('span',{i18n:'btn.kind'}),kind),h('label',{class:'field'},countLabel,count));
  const editorHost=h('div',{class:'stack'}),editor=actionEditor(editorHost,{keys:true});
- const keyName=k=>t(dev.model==='A1'?(k==='0'?'btn.key_power':'btn.key_wifi'):'btn.key_fn');
- async function load(){
-  const d={items:[]};let offset=0;
-  do{const page=await command('buttons.get',{offset,limit:8});d.items.push(...page.items);if(page.next==null||page.next<=offset)break;offset=page.next;}while(offset<68);
-  listBox.replaceChildren(d.items.length?h('div',{class:'list'},d.items.map(v=>h('div',{class:'item'},
-   icon('sliders'),h('div',{class:'grow'},h('b',{},keyName(String(v.key))),
-    h('span',{},v.seconds?t('btn.hold_n',{n:v.seconds}):t('btn.click_n',{n:v.clicks}))),
-   h('span',{class:'badge info'},t(actKey(v.action)))))):h('div',{class:'empty'},t('btn.empty')));
+ const keyName=k=>t(dev.model==='A1'?(Number(k)===0?'btn.key_power':'btn.key_wifi'):'btn.key_fn');
+ const gesture=v=>v.seconds?t('btn.hold_full',{n:v.seconds}):t(v.clicks===1?'btn.single':'btn.click_full',{n:v.clicks});
+ function actionText(v){
+  if(v.action==='none')return t('op.none');
+  const p=v.params||{},state=t(p.toggle?'op.toggle':p.on===false||p.enabled===false?'op.off':'op.on');
+  const target=v.action==='outlet.set'?(p.index==null?t('op.all'):(UI.state?.socket_names?.[p.index]||t('tc1.socket_n',{n:p.index+1}))):t(actKey(v.action));
+  if(v.action==='system.reboot')return target;
+  let text=v.action==='display.set'?target:state+' · '+target;
+  if(p.speed!=null)text+=' · '+p.speed+'%';
+  if(p.brightness!=null)text+=' · '+p.brightness+'%';
+  return text;
  }
- const save=h('button',{type:'button',class:'btn primary'},h('span',{i18n:'common.save'}));
- save.onclick=()=>run(save,async()=>{
-  const a=editor.get();if(a.action==='none')throw Error(t('btn.pick_action'));
-  await command('buttons.set',{key:Number(key.value),[kind.value]:Number(count.value),...a});await load();
- },'common.saved');
- return {el:h('div',{class:'stack'},pageHead('nav.buttons','btn.lead'),
-  card('btn.current',null,listBox),
-  h('section',{class:'card'},h('div',{class:'card-head'},h('h2',{i18n:'btn.edit'})),keyHost,editorHost,
-   info('btn.reset_note'),h('div',{class:'form-actions'},save))),
-  async show(){await load();}};
+ const previewBox=h('div',{class:'button-preview','aria-live':'polite'});
+ function preview(){
+  const v={key:Number(key.value),[kind.value]:Number(count.value),...editor.get()};
+  previewBox.textContent=keyName(v.key)+' · '+gesture(v)+' → '+actionText(v);
+ }
+ const editorCard=h('form',{class:'card stack','data-button-editor':''});
+ const selected=()=>({key:Number(key.value),[kind.value]:Number(count.value)});
+ function edit(v){
+  key.value=String(v.key);kind.set(v.seconds?'seconds':'clicks');count.max=v.seconds?4:30;
+  countLabel.textContent=t(v.seconds?'btn.hold_count':'btn.click_count');count.value=v.seconds||v.clicks;
+  editor.set(v.action,v.params);preview();editorCard.scrollIntoView({block:'nearest',behavior:'smooth'});count.focus();
+ }
+ function row(v){
+  return h('div',{class:'button-mapping'},h('b',{class:'button-gesture'},gesture(v)),
+   h('span',{class:'button-result'},actionText(v)),h('div',{class:'row'},
+    h('button',{type:'button',class:'btn ghost',onclick:()=>edit(v)},t('sch.edit')),
+    h('button',{type:'button',class:'btn ghost','aria-label':t('common.delete')+' '+gesture(v),onclick:e=>run(e.currentTarget,async()=>{
+     await command('buttons.set',{key:v.key,...(v.seconds?{seconds:v.seconds}:{clicks:v.clicks}),action:'none',params:{}});await load();
+    },'common.deleted')},t('common.delete'))));
+ }
+ async function load(){
+  const items=[];let offset=0;
+  do{const page=await command('buttons.get',{offset,limit:8});items.push(...page.items);if(page.next==null||page.next<=offset)break;offset=page.next;}while(offset<68);
+  listBox.replaceChildren();
+  for(const k of (dev.model==='A1'?[0,1]:[0])){
+   const groups=[];
+   for(const type of ['clicks','seconds']){
+    const values=items.filter(v=>Number(v.key)===k&&v[type]>0).sort((a,b)=>a[type]-b[type]);
+    const runs=[];
+    for(const v of values){const last=runs[runs.length-1];
+     if(last&&v[type]===last[last.length-1][type]+1&&JSON.stringify([v.action,v.params])===JSON.stringify([last[0].action,last[0].params]))last.push(v);
+     else runs.push([v]);
+    }
+    if(runs.length)groups.push(h('section',{class:'button-group'},h('h3',{},t(type==='clicks'?'btn.click':'btn.hold')),runs.map(run=>run.length===1?row(run[0]):
+     h('details',{class:'button-range'},h('summary',{},h('b',{},t(type==='clicks'?'btn.click_range':'btn.hold_range',{a:run[0][type],b:run[run.length-1][type]})),h('span',{},actionText(run[0])),h('span',{class:'help'},t('btn.expand'))),run.map(row)))));
+   }
+   listBox.append(h('section',{class:'stack'},h('h3',{},keyName(k)),groups.length?groups:h('div',{class:'empty'},t('btn.empty'))));
+  }
+ }
+ const save=h('button',{type:'submit',class:'btn primary'},t('common.save'));
+ editorCard.append(h('h2',{i18n:'btn.edit'}),keyHost,editorHost,previewBox,h('div',{class:'form-actions'},save));
+ editorCard.addEventListener('input',preview);editorCard.addEventListener('change',preview);editorCard.addEventListener('click',()=>preview());
+ editorCard.addEventListener('submit',e=>{e.preventDefault();if(!editorCard.reportValidity())return;
+  run(save,async()=>{const a=editor.get();if(a.action==='none')throw Error(t('btn.pick_action'));
+   await command('buttons.set',{...selected(),...a});await load();},'common.saved');
+ });
+ preview();
+ return {el:h('div',{class:'stack'},pageHead('nav.buttons','btn.lead'),card('btn.current',null,listBox),
+  card('btn.recovery',null,h('div',{class:'button-mapping'},h('b',{},t('btn.hold_full',{n:5})),h('span',{},t('btn.reset_wifi'))),
+   h('div',{class:'button-mapping'},h('b',{},t('btn.hold_full',{n:10})),h('span',{},t('op.10'))),info('btn.reset_note')),editorCard),
+  async show(){await load();preview();}};
 }
 
 /* ---------- Night mode ---------- */
