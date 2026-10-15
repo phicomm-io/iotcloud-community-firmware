@@ -29,12 +29,13 @@ char *GetPowerRecord(int idx) {
 
     int i = idx > 0 ? idx : (power_record.idx - PW_NUM + 1);
     i = i < 0 ? 0 : i;
-    char *tmp = power_record_str;
-    for (; i <= power_record.idx; i++) {
-        sprintf(tmp, "%lu,", power_record.powers[i % PW_NUM]);
-        tmp += strlen(tmp);
+    size_t used=0; power_record_str[0]=0;
+    int last=power_record.idx;
+    for (; i <= last; i++) {
+        int n=snprintf(power_record_str+used,sizeof(power_record_str)-used,"%s%lu",used?",":"",(unsigned long)power_record.powers[i%PW_NUM]);
+        if(n<0 || (size_t)n>=sizeof(power_record_str)-used)break;
+        used+=n;
     }
-    *(--tmp) = 0;
     return power_record_str;
 }
 
@@ -67,6 +68,9 @@ static void PowerIrqHandler(void *arg) {
     SetPowerRecord(&power_record, (int) real_time_power);
 
     int i = 0;
+    /* Only the last ring capacity is observable; a long idle gap must not
+     * spend minutes filling history in interrupt context. */
+    if(n>PW_NUM){power_record.idx+=n-PW_NUM;n=PW_NUM;}
     for (; i < n; i++) {
         real_time_power = GetPowerCoefficient() * NS / spend_ns;
         SetPowerRecord(&power_record, (int) real_time_power);

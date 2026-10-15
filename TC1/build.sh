@@ -52,7 +52,7 @@ done
 ln -sfn "$(command -v make)" "$micoder/cmd/Linux64/make"
 (
     cd "$project_dir/TC1/http_server"
-    "$python2" ./test.py > /dev/null
+    python3 ./test.py
 )
 (
     cd "$workspace"

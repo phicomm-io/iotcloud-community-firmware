@@ -20,8 +20,8 @@ enum
 #define ZZ_AP_NET_MASK   "255.255.255.0"
 
 #define WIFI_SCAN_RESULT_JSON "{'success':%d,'ssids':[%s],'secs':[%s]}"
-extern bool scaned;
-extern char* wifi_ret;
+OSStatus WifiScanStart(void);
+char *WifiScanJson(void);
 extern char wifi_status;
 
 typedef struct {

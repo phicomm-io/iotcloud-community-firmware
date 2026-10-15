@@ -1,6 +1,7 @@
 #include "user_wifi.h"
 
 #include "main.h"
+#include "http_server/json_buffer.h"
 #include "mico_socket.h"
 #include "user_gpio.h"
 #include "http_server/web_log.h"
@@ -104,87 +105,45 @@ static void WifiStatusCallback(WiFiEvent status, void* arg)
     }
 }
 
-bool scaned = false;
-char* wifi_ret = NULL;
-//wifi鎵弿缁撴灉鍥炶皟
-void WifiScanCallback(ScanResult_adv* scan_ret, void* arg)
-{
-    int count = (int)scan_ret->ApNum;
-    bool boot_scan = wifi_boot_scan_pending;
-    wifi_log("wifi_scan_callback ApNum[%d]", count);
-
-    wifi_boot_scan_pending = false;
-    for (int i = 0; i < count; i++)
-    {
-        if (WifiHasSavedConfig()
-            && strncmp(scan_ret->ApList[i].ssid, sys_config->micoSystemConfig.ssid,
-                       sizeof(scan_ret->ApList[i].ssid)) == 0)
-        {
-            wifi_saved_ssid_seen = true;
-            break;
-        }
-    }
-
-    /* Internal boot scans must not race the HTTP-owned scan result buffer. */
-    if (boot_scan) return;
-
-    int i = 0;
-    int result_size = sizeof(char)*count * (32 + 2) + 50;
-    int ssids_size = sizeof(char)*count * 35 + 1;
-    int secs_size = sizeof(char)*count * 2 + 1;
-    if (wifi_ret)
-    {
-        free(wifi_ret);
-        wifi_ret = NULL;
-    }
-    wifi_ret = malloc(result_size);
-    char* ssids = malloc(ssids_size);
-    char* secs = malloc(secs_size);
-    if (wifi_ret == NULL || ssids == NULL || secs == NULL)
-    {
-        if (wifi_ret) free(wifi_ret);
-        if (ssids) free(ssids);
-        if (secs) free(secs);
-        wifi_ret = NULL;
-        scaned = false;
-        wifi_log("wifi_scan_callback malloc failed");
-        return;
-    }
-    ssids[0] = 0;
-    secs[0] = 0;
-    char* tmp1 = ssids;
-    char* tmp2 = secs;
-    int valid_count = 0;
-    for (; i < count; i++)
-    {
-        /*
-        ApInfo* ap = (ApInfo*)&scan_ret->ApList[i];
-        uint8_t* mac = (uint8_t*)ap->bssid;
-        wifi_log("wifi_scan_callback ssid[%16s] bssid[%02X-%02X-%02X-%02X-%02X-%02X] security[%d]",
-            ap->ssid, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], ap->security);
-        */
-        char* ssid = scan_ret->ApList[i].ssid;
-        //鎺掗櫎闅愯棌鐨剋ifi鍜孲SID甯?鎴?鐨勬垜wifi
-        if (ssid[0] == 0 || strstr(ssid, "'") || strstr(ssid, "\"")) continue;
-        sprintf(tmp1, "'%s',", ssid);
-        tmp1 += (strlen(ssid) + 3);
-        sprintf(tmp2, "%d,", scan_ret->ApList[i].security%10);
-        tmp2 += 2;
-        valid_count++;
-    }
-    if (valid_count > 0)
-    {
-        *(--tmp1) = 0;
-        *(--tmp2) = 0;
-    }
-
-    sprintf(wifi_ret, WIFI_SCAN_RESULT_JSON, 1, ssids, secs);
-
-    scaned = true;
-    free(ssids);
-    free(secs);
+#define WIFI_SCAN_MAX 24
+static mico_mutex_t scan_lock;
+static struct {char ssid[33];int rssi,security;} scan_results[WIFI_SCAN_MAX];
+static int scan_count;
+static bool scan_busy;
+static mico_time_t scan_started;
+OSStatus WifiScanStart(void) {
+    mico_rtos_lock_mutex(&scan_lock);
+    if(scan_busy){mico_rtos_unlock_mutex(&scan_lock);return kNoErr;}
+    scan_busy=true;scan_count=0;mico_time_get_time(&scan_started);mico_rtos_unlock_mutex(&scan_lock);
+    micoWlanStartScanAdv();return kNoErr;
 }
-
+char *WifiScanJson(void) {
+    mico_rtos_lock_mutex(&scan_lock);
+    mico_time_t now;mico_time_get_time(&now);
+    if(scan_busy && (mico_time_t)(now-scan_started)>=20000)scan_busy=false;
+    size_t capacity=64+(size_t)scan_count*256;
+    char *data=malloc(capacity);if(!data){mico_rtos_unlock_mutex(&scan_lock);return NULL;}
+    JsonBuffer b={data,0,capacity,true};
+    jb_printf(&b,"{\"scanning\":%s,\"networks\":[",scan_busy?"true":"false");
+    for(int i=0;i<scan_count;++i){jb_printf(&b,"%s{",i?",":"");jb_field(&b,"ssid",scan_results[i].ssid);jb_printf(&b,"\"rssi\":%d,\"security\":%d}",scan_results[i].rssi,scan_results[i].security);}
+    jb_printf(&b,"]}");mico_rtos_unlock_mutex(&scan_lock);
+    if(!b.valid){free(data);return NULL;}return data;
+}
+void WifiScanCallback(ScanResult_adv *result,void *arg) {
+    if(!result)return;
+    bool boot_scan=wifi_boot_scan_pending;wifi_boot_scan_pending=false;
+    for(int i=0;i<result->ApNum;++i)if(WifiHasSavedConfig() && !strncmp(result->ApList[i].ssid,sys_config->micoSystemConfig.ssid,sizeof(result->ApList[i].ssid)))wifi_saved_ssid_seen=true;
+    mico_rtos_lock_mutex(&scan_lock);
+    if(boot_scan && !scan_busy){mico_rtos_unlock_mutex(&scan_lock);return;}
+    scan_count=0;
+    for(int i=0;i<result->ApNum && scan_count<WIFI_SCAN_MAX;++i){
+        if(!result->ApList[i].ssid[0])continue;
+        memcpy(scan_results[scan_count].ssid,result->ApList[i].ssid,32);scan_results[scan_count].ssid[32]=0;
+        scan_results[scan_count].rssi=result->ApList[i].rssi;
+        scan_results[scan_count++].security=result->ApList[i].security;
+    }
+    scan_busy=false;mico_rtos_unlock_mutex(&scan_lock);
+}
 
 //100ms瀹氭椂鍣ㄥ洖璋?
 static void WifiLedTimerCallback(void* arg)
@@ -332,6 +291,7 @@ void WifiConnect(char* wifi_ssid, char* wifi_key)
 
 void WifiInit(void)
 {
+    mico_rtos_init_mutex(&scan_lock);
     //wifi鐘舵€佷笅led闂儊瀹氭椂鍣ㄥ垵濮嬪寲
     mico_rtos_init_timer(&wifi_led_timer, 100, (void*)WifiLedTimerCallback, NULL);
     //wifi宸茶繛鎺ヨ幏鍙栧埌IP鍦板潃 鍥炶皟

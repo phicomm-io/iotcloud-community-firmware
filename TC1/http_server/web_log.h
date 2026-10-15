@@ -3,17 +3,16 @@
 #ifndef WEB_LOG_H
 #define WEB_LOG_H
 
-#define LOG_NUM 100
+#define LOG_NUM 64
 #define LOG_LEN 128
 #define TIME_LEN 22
 
 typedef struct
 {
     int idx;
-    char* logs[LOG_NUM];
+    char logs[LOG_NUM][LOG_LEN];
 } LogRecord;
 
-void SetLogRecord(LogRecord* lr, char* log);
 char* GetLogRecord();
 void WebLogInit(void);
 void WebLog(const char *M, ...);
