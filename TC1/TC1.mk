@@ -47,3 +47,6 @@ $(NAME)_COMPONENTS := protocols/SNTP\
 					daemons/http_server
 
 GLOBAL_DEFINES += DEV_MODEL=\"PHICOMM_TC1_A1\"
+
+# json-c parses decimal JSON numbers with sscanf("%lf").
+GLOBAL_LDFLAGS += -u _scanf_float

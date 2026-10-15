@@ -6,3 +6,6 @@ GLOBAL_DEFINES += DEV_MODEL=\"PHICOMM_M1_EMW3080\" DISABLE_MICO_BLUENRG=1
 
 
 GLOBAL_DEFINES += MAX_MESSAGE_HANDLERS=12
+
+# json-c parses decimal JSON numbers with sscanf("%lf").
+GLOBAL_LDFLAGS += -u _scanf_float
