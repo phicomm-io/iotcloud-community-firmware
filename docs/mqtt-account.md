@@ -1,54 +1,56 @@
-# MQTT 平台账号主题
+# MQTT 协议与账号隔离
 
-TC1（A1 硬件版本）、M1 和 A1 可在离线网页的 MQTT 设置中选择主题模式：
+MQTT 协议只有两种：**TMCP（Tom MQTT Cloud Protocol，v2）** 和 **Legacy（v1）**。`community` 和 `account` 不再是协议版本名称。
 
-- `legacy`：保留原主题；平台中需手动绑定。已有配置升级和恢复出厂设置均默认此模式。
-- `account`：填写平台返回的实际 `mqtt_username` 和账号密码；上线后自动加入该账号的设备列表。TC1 使用 v2 文本协议。
+M1/A1 固定使用 TMCP，旧配置迁移后也使用 TMCP。TC1 新配置默认 TMCP，已保存的 Legacy 配置保留 Legacy。TC1 可在 MQTT 高级设置中选择协议（config.set 的 mqtt values.protocol）；省略该字段保持原模式。M1/A1 不提供协议切换。配置迁移不会擅自改变 TC1 已保存的模式。切换协议或账号会改变 HA 设备与实体标识，需要重新发现。
 
-用户名大小写和空白原样保留，最多 63 个 UTF-8 字节；密码最多 256 个 UTF-8 字节。密码留空保留已保存的密码，勾选“清除 MQTT 密码”才清除。读取设置只返回是否已保存 MQTT 密码，不返回密码。
+用户名大小写、空白原样保留，最多 63 个 UTF-8 字节；密码最多 256 个 UTF-8 字节。空白密码输入保留原密码，显式清除才删除。查询只返回密码是否已保存。
 
-## 主题与授权
+## TMCP（v2）主题
 
-`user_key = u_ + hex_lower(UTF8(username))`，MAC 为 12 位小写十六进制。原生业务根为 `phicomm/<tc1|m1|a1>/<user_key>/<mac>`。
+`user_key = u_ + hex_lower(UTF8(username))`；无用户名时为 `local`。MAC 使用 12 位小写十六进制。
 
-每次 CONNECT 后首先以 QoS 1、retain=true 发布 `phicomm/discovery/<user_key>/<mac>`：TC1 的载荷为 `{"schema":1,"model":"tc1","version":"v2"}`；M1/A1 使用相应型号和 `version=community`。
+设备根：`phicomm/v2/<user_key>/<tc1|m1|a1>/<mac>`。
 
-只有 SDK 检查真实 SUBACK 授权后，才发布 HA 配置、完整当前状态及 retained `availability=online`。授权失败按 1、2、4、8、15、30 秒退避重连，每次重发声明；不会降级为旧主题。LWT 为同根 `availability=offline`，QoS 1、retain=true。
+| 后缀 | 用途 |
+| --- | --- |
+| `command` | 统一命令，不接受 retained 控制 |
+| `result` | 命令响应，不保留 |
+| `state` | 当前状态，retained |
+| `capabilities` | 动作列表和协议元数据，retained |
+| `availability` | online/offline，retained，LWT 为 offline |
 
-状态接口提供 `disconnected`、`connecting`、`config_error`、`auth_failed`、`waiting_acl`、`ready`。平台解绑后设备会等待权限，明确恢复后自动重试上线。普通授权等待不会删除 HA 配置。
+HTTP 使用 `POST /api/v1/command`，与 MQTT command 共用 JSON 命令和响应。HTTP 路径中的 v1 是 HTTP 接口版本，不是 MQTT Legacy 版本。
 
-HA 配置为标准五段 `homeassistant/<component>/<user_key>/<model>_<mac>_<entity>/config`，标识包含账号、型号、MAC 和实体。`homeassistant/status` 仅订阅读取，收到 `online` 后重发配置和有效状态。
+请求：`{"request_id":"query-1","action":"sensors.average.get","params":{}}`。
+响应：`{"request_id":"query-1","code":"ok","message":"ok","data":{...}}`。
 
-所有控制均为绝对设置，订阅 QoS 1，拒绝 retained 命令。账号状态 retained；M1 只接受有效新采样，零值有效，超过 15 秒后传感器离线并清除 retained 测量。重连先初始化传感器离线，缓存采样不会重新续期。
+状态、设置查询、能力查询中的 `mqtt_protocol` 为 `tmcp` 或 `legacy`，`mqtt_protocol_version` 为 2 或 1。历史 `mqtt_topic_mode` 字段保留，值为同样的小写协议名。能力中的 `protocol:2` 指统一命令协议版本；状态中的 `version` 仍是固件版本。
 
-绑定和组通信分别使用 `phicomm/bind/<user_key>/<目标MAC>`、`phicomm/address/<user_key>/<本机MAC>`、`phicomm/linkage/<user_key>/<原逻辑根>`。组 HA 标识由配置中的最小 MAC 固定，避免随成员在线状态变化；绑定令牌、LAN UDP、定时及本地控制保持原机制。
+上线公告使用 `phicomm/v2/<user_key>/discovery/<mac>`，QoS 1、retained：
 
-## 升级与切换
-
-M1/A1 的旧 v1/v2 配置和 TC1 v10 配置迁移保留原设置，模式为 legacy。TC1 SDK 会按冻结的旧参数长度验证主/备份分区 CRC，再迁移新布局。
-
-修改 Broker、账号、密码或模式会终止旧会话并清除旧发送及待回退请求。固件使用旧连接和旧凭据向旧 HA config 发送空 retained 消息，并尝试宣布旧设备离线；离线期间修改设置也会尝试使用保留的旧凭据清理。清理失败不阻塞保存，网页提示手动清理旧 Broker 中的 HA 实体。固件不会使用新账号删除其他账号主题，也不会用删除发现声明请求平台解绑。
-
-## 可复现验证
-
-```sh
-# SDK 准备完成后：配置迁移、主题边界、绑定/组/UDP/RPC 及网页语法
-./tests/run.sh
-npm install --prefix build/ui-tests jsdom@30.1.2
-NODE_PATH="$PWD/build/ui-tests/node_modules" node tests/test_web.cjs
-
-# 三型号实际 MQTT worker + 各自实际 SDK，POSIX 网络和外设桩
-./tests/build_host.sh
-python3 -m venv build/account-host/venv
-build/account-host/venv/bin/pip install paho-mqtt==2.1.0
-build/account-host/venv/bin/python tests/test_broker.py --platform ../phicomm-community-mqtt
-
-# 固件构建（串行）
-./M1/build.sh
-./A1/build.sh
-./TC1/build.sh
+```json
+{"schema":1,"model":"a1","protocol":"tmcp","protocol_version":2,"version":"v2"}
 ```
 
-Broker 测试使用临时目录、随机本机端口、隔离的 Mosquitto 2.0.22 动态安全实例及真实平台 Go 后端；不修改平台业务代码或生产服务。场景覆盖首次 SUBACK 拒绝、声明与自动登记、延迟授权、256 字节密码、三型号 HA 配置与状态、retained 控制拒绝、正常命令分发、跨账号订阅拒绝、断线 LWT、M1 零值与采样过期、解绑/恢复，以及切换账号时的旧 HA 清理。
+`model` 按实际型号变化；Legacy 为 `protocol:"legacy"`、`protocol_version:1`、`version:"v1"`。`schema:1` 是公告结构版本。
 
-上述测试验证协议和主机构建。外设由桩模拟，尚未进行真实 TC1 继电器/计量、M1 传感器或 A1 风机/RGB 的设备验收；参数迁移的实际 Flash 读写和真实 HA 重启也仍需实机验证。
+**平台配套要求：** 当前相邻仓库 `phicomm-community-mqtt` 的 M1/A1 校验仍要求 `version:"community"`，账号 ACL/业务主题仍使用旧根。平台必须同步支持 v2 元数据和 `phicomm/v2` 根，才能完成自动登记和授权。本次固件修改未部署或修改生产平台；不能据固件构建通过宣称现有平台可直接使用。
+
+账号隔离需要 Broker ACL 实际限制对应 user_key；仅主题带用户名不构成授权。连接后先公告，再检查真实 SUBACK；授权不足会退避重试，不降级。HA 发现主题为 `homeassistant/<component>/<user_key>/<model>_<mac>_<entity>/config`，设备/实体 ID 包含账号、型号与 MAC。HA online 后重发发现配置。
+
+绑定/地址等辅助根为 `phicomm/v2/<user_key>/<kind>/<id>`；点对点联动为 `phicomm/v2/<user_key>/<model>/<mac>/link/<peer>/<leaf>`。M1 联动仅响应配置允许的查询，不接受联动写操作。
+
+## A1 实时平均值
+
+`sensors.average.get` 仅由 A1 提供，params 必须为空。HTTP 和 MQTT 均可查询。`binding.status.get` 的 `average` 字段和联动虚拟设备的 `average` Topic 使用同一数据结构：
+
+```json
+{"valid":true,"sample_count":2,"configured_count":3,"temperature":25,"humidity":50,"pm25":20,"formaldehyde":0.1}
+```
+
+仅统计已绑定、数值合法且未过期的 M1；按四项分别计算算术平均值，不受自动联动配置的最大值/中值等策略影响。单位依次为 °C、%、µg/m³、mg/m³。没有有效采样时 `valid:false`、`sample_count:0`，四项值均为 null。查询时重新检查新鲜度；零值是有效测量。平均值不保留发布，失效时也发布无效结构，避免沿用旧值。
+
+## 验证边界
+
+`tests/run.sh` 验证协议、配置迁移、采样新鲜度、联动与命令行为；`tests/test_web.cjs` 验证离线页面和命令映射；`tests/build_host.sh`、`tests/test_mqtt_v2.py <隔离 Broker 端口>` 验证实际 SDK MQTT worker（外设为桩）。这些不能替代真实 HA 加载、Flash 迁移和物理设备验收。

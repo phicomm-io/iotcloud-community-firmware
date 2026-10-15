@@ -6,6 +6,7 @@
 #include "user_gpio.h"
 #include "http_server/web_log.h"
 #include "mqtt_server/user_mqtt_client.h"
+#include "ota_server/signed_adapter.h"
 
 char wifi_status = WIFI_STATE_NOCONNECT;
 
@@ -15,6 +16,10 @@ static volatile bool wifi_reconnect_thread_running = false;
 static volatile bool wifi_config_ap_active = false;
 static volatile bool wifi_saved_ssid_seen = false;
 static volatile bool wifi_boot_scan_pending = false;
+static volatile bool wifi_ever_connected = false;
+static struct { char ssid[33], key[65]; volatile bool active, dhcp; } wifi_trial;
+static const char *wifi_trial_status = "idle";
+const char *WifiTrialStatus(void) { return wifi_trial_status; }
 
 #define WIFI_BOOT_SCAN_TIMEOUT_SECONDS 300
 #define WIFI_RECONNECT_INTERVAL_SECONDS 10
@@ -54,8 +59,10 @@ static void WifiGetIpCallback(IPStatusTypedef *pnet, void * arg)
     strcpy(ip_status.gateway, pnet->gate);
     strcpy(ip_status.mask, pnet->mask);
 
+    if (wifi_trial.active && pnet->ip[0] && strcmp(pnet->ip,"0.0.0.0")) wifi_trial.dhcp = true;
     wifi_log("got IP:%s", pnet->ip);
     wifi_status = WIFI_STATE_CONNECTED;
+    wifi_ever_connected = true;
     wifi_config_ap_active = false;
     wifi_saved_ssid_seen = true;
     //UserFunctionCmdReceived(1,"{\"cmd\":\"device report\"}");
@@ -67,8 +74,7 @@ static void WifiStatusCallback(WiFiEvent status, void* arg)
     if (status == NOTIFY_STATION_UP) //wifi杩炴帴鎴愬姛
     {
         //user_config->last_wifi_status = status;
-        sys_config->micoSystemConfig.reserved = status;
-        mico_system_context_update(sys_config);
+        /* Link notifications must not persist unverified credentials. */
 
         OSStatus status = micoWlanSuspendSoftAP(); //鍏抽棴AP
         if (status != kNoErr)
@@ -148,35 +154,9 @@ void WifiScanCallback(ScanResult_adv *result,void *arg) {
 //100ms瀹氭椂鍣ㄥ洖璋?
 static void WifiLedTimerCallback(void* arg)
 {
-    static unsigned int num = 0;
-    num++;
-
-    switch (wifi_status)
-    {
-        case WIFI_STATE_FAIL:
-            wifi_log("wifi connect fail");
-            UserLedSet(0);
-            mico_rtos_stop_timer(&wifi_led_timer);
-            break;
-        case WIFI_STATE_NOCONNECT:
-            //wifi_connect_sys_config();
-            break;
-        case WIFI_STATE_CONNECTING:
-            num = 0;
-            UserLedSet(-1);
-            break;
-        case WIFI_STATE_CONNECTED:
-            if (!(MQTT_SERVER[0] < 0x20 || MQTT_SERVER[0] > 0x7f || MQTT_SERVER_PORT < 1)){
-                UserMqttInit();
-            }
-            UserLedSet(0);
-            mico_rtos_stop_timer(&wifi_led_timer);
-            if (RelayOut()&&user_config->power_led_enabled)
-                UserLedSet(1);
-            else
-                UserLedSet(0);
-            break;
-    }
+    if (wifi_status == WIFI_STATE_CONNECTED && user_config->mqtt_ip[0] && user_config->mqtt_port > 0)
+        UserMqttInit();
+    UserLedRefresh();
 }
 
 static void WifiReconnectThread(mico_thread_arg_t arg)
@@ -202,14 +182,16 @@ static void WifiReconnectThread(mico_thread_arg_t arg)
     wifi_log("WiFi reconnect started");
 
     /* Restart Station once; micoWlanStart keeps retrying in the background. */
-    micoWlanSuspendStation();
-    mico_thread_msleep(100);
-    WifiStartStationFromSavedConfig();
+    if (!wifi_trial.active) {
+        micoWlanSuspendStation();
+        mico_thread_msleep(100);
+        if (!wifi_trial.active) WifiStartStationFromSavedConfig();
+    }
 
     while (1)
     {
         if (wifi_status == WIFI_STATE_CONNECTED) break;
-        if (wifi_config_ap_active) break;
+        /* Temporary AP does not terminate Station retries. */
 
         if (!WifiHasSavedConfig())
         {
@@ -217,21 +199,13 @@ static void WifiReconnectThread(mico_thread_arg_t arg)
             break;
         }
 
-        if (allow_boot_ap && !wifi_saved_ssid_seen && !wifi_boot_scan_pending)
-        {
-            wifi_boot_scan_pending = true;
-            micoWlanStartScanAdv();
-        }
-
         mico_thread_sleep(WIFI_RECONNECT_INTERVAL_SECONDS);
         elapsed += WIFI_RECONNECT_INTERVAL_SECONDS;
-
-        if (allow_boot_ap && !wifi_saved_ssid_seen
-            && elapsed >= WIFI_BOOT_SCAN_TIMEOUT_SECONDS)
+        if (allow_boot_ap && !wifi_ever_connected && !wifi_config_ap_active &&
+            elapsed >= WIFI_BOOT_SCAN_TIMEOUT_SECONDS)
         {
-            wifi_log("Saved WiFi not found during boot, switching to configuration AP");
+            wifi_log("Boot connection timed out; temporary AP, retaining Station configuration");
             ApInit(true);
-            break;
         }
     }
 
@@ -272,21 +246,58 @@ static void WifiStartReconnect(bool allow_boot_ap)
     }
 }
 
-void WifiConnect(char* wifi_ssid, char* wifi_key)
+static void WifiTrialWorker(mico_thread_arg_t arg)
 {
-    wifi_log("WifiConnect wifi_ssid[%s] wifi_key[******]", wifi_ssid);
-    //wifi閰嶇疆鍒濆鍖?
-    //淇濆瓨wifi鍙婂瘑鐮佸埌Flash
-    snprintf(sys_config->micoSystemConfig.ssid, sizeof(sys_config->micoSystemConfig.ssid), "%s", wifi_ssid);
-    snprintf(sys_config->micoSystemConfig.user_key, sizeof(sys_config->micoSystemConfig.user_key), "%s", wifi_key);
-    sys_config->micoSystemConfig.user_keyLength = strlen(wifi_key);
-    mico_system_context_update(sys_config);
-    wifi_config_ap_active = true;
-    wifi_status = WIFI_STATE_NOCONNECT;
-    micoWlanSuspend();
-    mico_thread_msleep(100);
-    WifiStartStationFromSavedConfig();
-    wifi_config_ap_active = false;
+    network_InitTypeDef_st net = {0};
+    strcpy(net.wifi_ssid,wifi_trial.ssid);strcpy(net.wifi_key,wifi_trial.key);
+    net.wifi_mode=Station;net.dhcpMode=DHCP_Client;net.wifi_retry_interval=1000;
+    micoWlanSuspendStation();wifi_trial.dhcp=false;
+    uint32_t since=mico_rtos_get_time();
+    bool verified=false;
+    if (micoWlanStart(&net)==kNoErr) {
+        while ((uint32_t)(mico_rtos_get_time()-since)<30000u) {
+            LinkStatusTypeDef link={0};IPStatusTypedef ip={0};
+            if (wifi_trial.dhcp && micoWlanGetLinkStatus(&link)==kNoErr && link.is_connected &&
+                !strncmp((const char *)link.ssid,wifi_trial.ssid,sizeof(link.ssid)) &&
+                micoWlanGetIPStatus(&ip,Station)==kNoErr && ip.ip[0] && strcmp(ip.ip,"0.0.0.0")) {
+                verified=true;break;
+            }
+            mico_thread_msleep(100);
+        }
+    }
+    bool saved=false;
+    if (verified) {
+        __typeof__(sys_config->micoSystemConfig) old=sys_config->micoSystemConfig;
+        snprintf(sys_config->micoSystemConfig.ssid,sizeof(sys_config->micoSystemConfig.ssid),"%s",wifi_trial.ssid);
+        snprintf(sys_config->micoSystemConfig.user_key,sizeof(sys_config->micoSystemConfig.user_key),"%s",wifi_trial.key);
+        sys_config->micoSystemConfig.user_keyLength=strlen(wifi_trial.key);
+        /* Invalidate the old derived PSK/BSSID: app starts from the verified passphrase. */
+        sys_config->micoSystemConfig.keyLength=0;
+        memset(sys_config->micoSystemConfig.bssid,0,6);
+        saved=mico_system_context_update(sys_config)==kNoErr;
+        if(!saved)sys_config->micoSystemConfig=old;
+    }
+    wifi_trial_status=saved?"success":verified?"storage_failure":"timeout_rollback";
+    if (!saved) {
+        micoWlanSuspendStation();
+        if(WifiHasSavedConfig())WifiStartStationFromSavedConfig();else ApInit(true);
+    }
+    memset(wifi_trial.key,0,sizeof(wifi_trial.key));wifi_trial.active=false;
+    tc1_config_release();
+    mico_rtos_delete_thread(NULL);
+}
+
+bool WifiConnect(char* wifi_ssid, char* wifi_key)
+{
+    size_t n=strlen(wifi_key);
+    if(!wifi_ssid[0] || strlen(wifi_ssid)>32 || (n && (n<8 || n>63)) || !tc1_config_reserve())return false;
+    strcpy(wifi_trial.ssid,wifi_ssid);strcpy(wifi_trial.key,wifi_key);
+    wifi_trial.active=true;wifi_trial.dhcp=false;wifi_trial_status="pending";
+    if(mico_rtos_create_thread(NULL,MICO_APPLICATION_PRIORITY,"wifi_trial",WifiTrialWorker,4096,0)!=kNoErr) {
+        memset(&wifi_trial,0,sizeof(wifi_trial));wifi_trial_status="storage_failure";
+        tc1_config_release();return false;
+    }
+    return true;
 }
 
 void WifiInit(void)
@@ -348,6 +359,8 @@ void ApInit(bool use_defaul)
     if (use_defaul)
     {
         sprintf(user_config->ap_name, ZZ_AP_NAME, str_mac + 6);
+        for (char *p = user_config->ap_name; *p; ++p)
+            if (*p >= 'a' && *p <= 'f') *p -= 'a' - 'A';
         sprintf(user_config->ap_key, "%s", ZZ_AP_KEY);
         wifi_log("ApInit use_defaul[true] key[]");
     }
@@ -355,9 +368,7 @@ void ApInit(bool use_defaul)
     wifi_config_ap_active = true;
     wifi_status = WIFI_STATE_NOCONNECT;
 
-    /* Stop background station retries before creating the DHCP server. */
-    micoWlanSuspend();
-    mico_thread_msleep(100);
+    /* SoftAP coexists with Station retries; never erase saved credentials. */
 
     network_InitTypeDef_st wNetConfig;
     memset(&wNetConfig, 0x0, sizeof(network_InitTypeDef_st));

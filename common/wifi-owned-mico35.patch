@@ -1,0 +1,31 @@
+--- a/MiCO/system/system_misc.c
++++ b/MiCO/system/system_misc.c
+@@ -93,6 +93,8 @@
+   return;
+ }
+ 
++/* Wi-Fi credentials are committed only after application DHCP verification. */
++#ifdef MICO_WLAN_CONNECTION_ENABLE
+ static void micoNotify_WiFIParaChangedHandler(apinfo_adv_t *ap_info, char *key, int key_len, system_context_t * const inContext)
+ {
+   system_log_trace();
+@@ -137,6 +139,8 @@
+   return;
+ }
+ 
++#endif
++
+ OSStatus system_notification_init( system_context_t * const inContext )
+ {
+   OSStatus err = kNoErr;
+@@ -156,8 +160,10 @@
+   err = mico_system_notify_register( mico_notify_WIFI_STATUS_CHANGED, (void *)micoNotify_WifiStatusHandler, inContext );
+   require_noerr( err, exit );
+ 
++#ifdef MICO_WLAN_CONNECTION_ENABLE
+   err = mico_system_notify_register( mico_notify_WiFI_PARA_CHANGED, (void *)micoNotify_WiFIParaChangedHandler, inContext );
+   require_noerr( err, exit ); 
++#endif
+ 
+ exit:
+   return err;

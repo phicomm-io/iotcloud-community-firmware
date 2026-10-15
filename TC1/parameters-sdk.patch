@@ -1,23 +1,24 @@
 --- a/MiCO/system/mico_system_para_storage.c
 +++ b/MiCO/system/mico_system_para_storage.c
-@@ -34,6 +34,9 @@
+@@ -34,6 +34,10 @@
  
  #define para_log(M, ...)
  
 +WEAK uint32_t app_config_legacy_size(void) { return 0; }
++WEAK uint32_t app_config_legacy_next_size(uint32_t size) { return 0; }
 +WEAK bool app_config_migrate_legacy(void *data, uint32_t size) { return false; }
 +
  WEAK void appRestoreDefault_callback(void *user_data, uint32_t size)
  {
  
-@@ -279,6 +282,35 @@
+@@ -279,6 +283,35 @@
    if( is_crc_match( crc_result, crc_target ) == false ){
      /* Data collapsed at main partition and backup partition both, restore to default */
      if( is_crc_match( crc_backup_result, crc_backup_target ) == false ){
 +      /* A larger application layout moves its CRC. Try both frozen legacy
 +       * layouts before restoring defaults; never accept an unchecked prefix. */
-+      uint32_t legacy_size = app_config_legacy_size();
-+      if (legacy_size && legacy_size < inContext->user_config_data_size) {
++      uint32_t legacy_size;
++      for (legacy_size=app_config_legacy_size(); legacy_size && legacy_size < inContext->user_config_data_size; legacy_size=app_config_legacy_next_size(legacy_size)) {
 +        unsigned int slot;
 +        for (slot = 0; slot < 2; ++slot) {
 +          mico_partition_t part = slot ? MICO_PARTITION_PARAMETER_2 : MICO_PARTITION_PARAMETER_1;
@@ -46,7 +47,7 @@
        para_log("Config failed on both partition, restore to default settings!");
        err = mico_system_context_restore( &inContext->flashContentInRam );
        require_noerr(err, exit);
-@@ -339,6 +371,7 @@
+@@ -339,6 +372,7 @@
      }
    }
  

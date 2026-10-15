@@ -30,7 +30,7 @@ static inline void a1_migrate_v2(a1_config_t *next, feature_config_t *features, 
     next->blue = old->base.blue;
     next->child_lock = old->base.child_lock;
     next->version = A1_CONFIG_VERSION;
-    next->mqtt_topic_mode = MQTT_TOPIC_LEGACY;
+    next->mqtt_topic_mode = MQTT_TOPIC_TMCP;
     if (old->base.version == 2 && old->features.magic == FEATURE_MAGIC) *features = old->features;
     else feature_defaults(features);
 }

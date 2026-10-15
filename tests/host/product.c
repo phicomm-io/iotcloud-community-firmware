@@ -23,6 +23,8 @@ void mico_thread_msleep(unsigned ms){host_update();trace_status();if(mico_rtos_g
 void mico_rtos_thread_sleep(unsigned sec){mico_thread_msleep(sec*1000);}
 #ifdef HOST_M1
 #include "../../M1/mqtt.c"
+/* Network protocol harness never launches a firmware download. */
+bool m1_ota_download(const char *url){(void)url;return false;}
 static m1_config_t config;
 char m1_id[13]="aabbccddeeff";mico_mutex_t m1_lock;m1_state_t m1_state;
 void m1_config_get(m1_config_t *out){*out=config;}
@@ -35,6 +37,7 @@ bool m1_sample_fresh(const m1_sample_t *s,uint32_t now){return s->received && (u
 #define WORKER mqtt_worker
 #elif defined(HOST_A1)
 #include "../../A1/mqtt.c"
+bool a1_ota_download(const char *url){(void)url;return false;}
 static a1_config_t config;
 char a1_id[13]="aabbccddeeff";mico_mutex_t a1_lock;a1_state_t a1_state;
 void a1_config_get(a1_config_t *out){*out=config;}
@@ -46,10 +49,13 @@ json_object *a1_json_parse(const char *s,size_t n){(void)n;return json_tokener_p
 #define WEB_LOG_H
 #define web_log(...) ((void)0)
 #include "../../TC1/mqtt_server/user_mqtt_client.c"
+OSStatus ota_server_start(char *url,char *hash,ota_server_cb_fn callback){(void)url;(void)hash;(void)callback;return -1;}
+void tc1_ota_snapshot(char *state,char *error,unsigned *progress){strcpy(state,"idle");error[0]=0;*progress=0;}
 static user_config_t config;
 static system_config_t system_config;
 user_config_t *user_config=&config;system_config_t *sys_config=&system_config;
 char str_mac[16]="AABBCCDDEEFF";int childLockEnabled;
+volatile uint32_t power_session_pulses=100;
 uint32_t p_count=100;float real_time_power=12.5;
 void UserLedSet(char n){(void)n;}
 void UserRelaySet(unsigned char i,char on){if(i>=6)return;++controls;config.socket_status[i]=on;printf("CONTROL socket=%u on=%d\n",i,on);fflush(stdout);}
@@ -59,6 +65,7 @@ void UserSoftReboot(void){}
 float PowerPulseCountToKwh(uint32_t count){return count/100.0;}
 #define WORKER MqttClientThread
 #endif
+#include "service_adapter.inc"
 static void host_update(void) {
     static bool switched;
     const char *user=getenv("HOST_SWITCH_USER");
@@ -80,14 +87,14 @@ static void trace_status(void) {
 }
 int main(int argc,char **argv){
     if(argc<4){fprintf(stderr,"host-worker host port user [duration]\n");return 2;}
-    started=host_now();if(argc>4)duration=atoi(argv[4]);
+    service_init();started=host_now();if(argc>4)duration=atoi(argv[4]);
     const char *pw=getenv("HOST_MQTT_PASSWORD");if(!pw)pw="test-password";
 #ifdef HOST_M1
     strcpy(config.mqtt_host,argv[1]);config.mqtt_port=atoi(argv[2]);strcpy(config.mqtt_user,argv[3]);strcpy(config.mqtt_password,pw);strcpy(config.name,"M1 test");config.mqtt_topic_mode=1;m1_state.wifi_connected=true;
 #elif defined(HOST_A1)
     strcpy(config.mqtt_host,argv[1]);config.mqtt_port=atoi(argv[2]);strcpy(config.mqtt_user,argv[3]);strcpy(config.mqtt_password,pw);strcpy(config.name,"A1 test");config.mqtt_topic_mode=1;a1_state.wifi_connected=true;config.speed=60;
 #else
-    strcpy(config.mqtt_ip,argv[1]);config.mqtt_port=atoi(argv[2]);strcpy(config.mqtt_user,argv[3]);strcpy(config.mqtt_password,pw);strcpy(system_config.micoSystemConfig.name,"TC1 \"quoted\" test");config.mqtt_topic_mode=1;
+    strcpy(config.mqtt_host,argv[1]);config.mqtt_port=atoi(argv[2]);strcpy(config.mqtt_user,argv[3]);strcpy(config.mqtt_password,pw);strcpy(system_config.micoSystemConfig.name,"TC1 \"quoted\" test");config.mqtt_topic_mode=getenv("TC1_TEST_LEGACY")?0:1;
     for(unsigned i=0;i<6;++i)snprintf(config.socket_names[i],64,"Socket \"%u\"",i);
     mico_rtos_init_queue(&mqtt_msg_send_queue,"host",sizeof(void *),10);
 #endif

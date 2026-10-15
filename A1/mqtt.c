@@ -16,7 +16,7 @@ static void mqtt_status(unsigned status)
 
 static int publish(const char *topic, const char *payload, bool retain)
 {
-    MQTTMessage m = {0}; m.qos = account.mode || !strncmp(topic,"homeassistant/",14) ? QOS1 : QOS0; m.retained = retain;
+    MQTTMessage m = {0}; m.qos = QOS1; m.retained = retain;
     m.payload = (void *)payload; m.payloadlen = strlen(payload);
     return MQTTPublish(&client, topic, &m);
 }
@@ -32,6 +32,7 @@ static bool topic_is(MessageData *d, const char *suffix)
     if (t->cstring) return !strcmp(t->cstring, topic);
     return t->lenstring.len == (int)strlen(topic) && !memcmp(t->lenstring.data, topic, t->lenstring.len);
 }
+#include "../common/mqtt_service.inc"
 static bool ota_launch(const char *url) { return a1_ota_download(url); }
 static void ota_snapshot(char *state,char *error,unsigned *progress) {
     mico_rtos_lock_mutex(&a1_lock);snprintf(state,32,"%s",a1_state.ota_state);
@@ -46,6 +47,7 @@ static void command(MessageData *d)
 {
     if (!session_current()) return;
     MQTTMessage *m = d->message;
+    if(topic_is(d,"command")){service_mqtt_input(publish,&account,m->payload,m->payloadlen,m->retained);return;}
     if(topic_is(d,"ota/set")){ota_command(base,m->payload,m->payloadlen,m->retained);return;}
     if (m->retained || !m->payloadlen || m->payloadlen > A1_JSON_LIMIT) return;
     MQTTString *ft=d->topicName; char ftopic[FEATURE_TOPIC_MAX];
@@ -125,24 +127,35 @@ static int discovery(const a1_config_t *c)
         json_object_object_add(o, "device", device); str(o, "name", names[i]);
         mqtt_identity(&account, keys[i], text, sizeof(text)); str(o, "unique_id", text);
         str(o, "availability_topic", availability_topic);
+        topic(o,"json_attributes_topic","state");
+        str(o,"json_attributes_template","{{ {\"ip\": value_json.ip, \"firmware\": value_json.version, \"config_dirty\": value_json.config_dirty} | tojson }}");
         json_object_object_add(o, "retain", json_object_new_boolean(false));
-        snprintf(text, sizeof(text), "%s/set", keys[i]); topic(o, "command_topic", text);
+        topic(o, "command_topic", "command");
         snprintf(text, sizeof(text), "%s/state", keys[i]); topic(o, "state_topic", text);
         if (i == 0) {
             str(o, "icon", "mdi:air-purifier");
-            topic(o, "percentage_command_topic", "fan/percentage/set");
+            topic(o, "percentage_command_topic", "command");
+            str(o,"command_template","{\"action\":\"fan.set\",\"params\":{\"on\":{{ 'true' if value == 'ON' else 'false' }}}}");
+            str(o,"percentage_command_template","{\"action\":\"fan.set\",\"params\":{\"speed\":{{ value | int }}}}");
             topic(o, "percentage_state_topic", "fan/percentage/state");
             json_object_object_add(o, "speed_range_min", json_object_new_int(1));
             json_object_object_add(o, "speed_range_max", json_object_new_int(100));
         }
         if (i == 1) {
-            str(o, "schema", "json");
-            json_object_object_add(o, "brightness", json_object_new_boolean(true));
-            json_object *modes = json_object_new_array();
-            if (!modes) { json_object_put(o); return MQTT_FAILURE; }
-            json_object_array_add(modes, json_object_new_string("rgb"));
-            json_object_object_add(o, "supported_color_modes", modes);
-        } else { str(o, "payload_on", "ON"); str(o, "payload_off", "OFF"); }
+            str(o,"schema","template");
+            str(o,"command_on_template","{\"action\":\"light.set\",\"params\":{\"enabled\":true{% if brightness is defined %},\"brightness\":{{ ((brightness | int) * 100 / 255) | round | int }}{% endif %}{% if red is defined %},\"color\":{\"r\":{{ red }},\"g\":{{ green }},\"b\":{{ blue }}}{% endif %}}}");
+            str(o,"command_off_template","{\"action\":\"light.set\",\"params\":{\"enabled\":false}}");
+            str(o,"state_template","{{ value_json.state | lower }}");
+            str(o,"brightness_template","{{ value_json.brightness }}");
+            str(o,"red_template","{{ value_json.color.r }}");
+            str(o,"green_template","{{ value_json.color.g }}");
+            str(o,"blue_template","{{ value_json.color.b }}");
+        } else if(i==0) { str(o,"payload_on","ON");str(o,"payload_off","OFF"); }
+        else {
+            const char *on=i==2?"{\"action\":\"child_lock.set\",\"params\":{\"enabled\":true}}":"{\"action\":\"light.set\",\"params\":{\"always_on\":true}}";
+            const char *off=i==2?"{\"action\":\"child_lock.set\",\"params\":{\"enabled\":false}}":"{\"action\":\"light.set\",\"params\":{\"always_on\":false}}";
+            str(o,"payload_on",on);str(o,"payload_off",off);str(o,"state_on","ON");str(o,"state_off","OFF");
+        }
         if (i >= 2) str(o, "entity_category", "config");
         mqtt_ha(&account, components[i], keys[i], path, sizeof(path));
         int rc = publish(path, json_object_to_json_string(o), true); json_object_put(o);
@@ -161,6 +174,7 @@ static int states(const a1_config_t *c, const a1_state_t *s)
     if (rc == MQTT_SUCCESS) rc = leaf("light/state", light);
     if (rc == MQTT_SUCCESS) rc = leaf("child_lock/state", c->child_lock ? "ON" : "OFF");
     if (rc == MQTT_SUCCESS) rc = leaf("led_always_on/state", c->led_always_on ? "ON" : "OFF");
+    if(rc==MQTT_SUCCESS)rc=service_mqtt_snapshot(publish,&account);
     return rc;
 }
 static int cleanup_discovery(void)
@@ -183,7 +197,7 @@ static int cleanup_all(void)
 static bool same_connection(const a1_config_t *a, const a1_config_t *b)
 {
     return a->mqtt_port == b->mqtt_port && !strcmp(a->mqtt_host, b->mqtt_host) &&
-        !strcmp(a->mqtt_user, b->mqtt_user) && !strcmp(a->mqtt_password, b->mqtt_password) && !strcmp(a->name, b->name) && a->mqtt_topic_mode == b->mqtt_topic_mode;
+        !strcmp(a->mqtt_user, b->mqtt_user) && !strcmp(a->mqtt_password, b->mqtt_password) && !strcmp(a->name, b->name);
 }
 static void mqtt_worker(mico_thread_arg_t arg)
 {
@@ -191,7 +205,9 @@ static void mqtt_worker(mico_thread_arg_t arg)
     char client_id[192], wildcard[MQTT_TOPIC_MAX];
     unsigned attempt = 0;
     for (;;) {
-        a1_config_t cfg, current; a1_state_t state;
+        /* Only the MQTT owner uses these snapshots. Keep them off its nested
+         * discovery/service call stack (over 4 KiB before JSON formatting). */
+        static a1_config_t cfg, current; static a1_state_t state;
         a1_config_get(&cfg); a1_state_get(&state);
         if (cleanup_pending && state.wifi_connected && !same_connection(&session_config, &cfg)) {
             int result = mqtt_cleanup_reconnect(&client, &account, session_config.mqtt_host,
@@ -200,13 +216,12 @@ static void mqtt_worker(mico_thread_arg_t arg)
             cleanup_pending = false;
         }
         if (!cfg.mqtt_host[0] || !state.wifi_connected) { mqtt_status(MQTT_DISCONNECTED); mico_thread_msleep(1000); continue; }
-        if (!mqtt_account_init(&account, cfg.mqtt_topic_mode, "a1", cfg.mqtt_user, a1_id)) {
+        if (!mqtt_account_init(&account, MQTT_TOPIC_TMCP, "a1", cfg.mqtt_user, a1_id)) {
             mqtt_status(MQTT_CONFIG_ERROR); mico_thread_msleep(1000); continue;
         }
         strcpy(base, account.base);
         mqtt_identity(&account, "", client_id, sizeof(client_id));
-        if (!account.mode) snprintf(client_id, sizeof(client_id), "phicomm_a1_%s", a1_id);
-        mqtt_leaf(&account, "#", wildcard, sizeof(wildcard));
+        mqtt_leaf(&account, "command", wildcard, sizeof(wildcard));
         mqtt_leaf(&account, "availability", availability_topic, sizeof(availability_topic));
         session_config = cfg;
         feature_mqtt_session(&account);
@@ -229,14 +244,15 @@ static void mqtt_worker(mico_thread_arg_t arg)
         bool connected = connect_result == MQTT_SUCCESS;
         if (!connected) mqtt_status(connect_result == 4 || connect_result == 5 ? MQTT_AUTH_FAILED : MQTT_DISCONNECTED);
         int announced = MQTT_SUCCESS;
-        if (connected && account.mode) {
+        if (connected) {
             char topic[MQTT_TOPIC_MAX]; mqtt_aux(&account, "discovery", account.mac, topic, sizeof(topic));
             announced = publish(topic, mqtt_announcement(&account), true);
         }
-        int rc = connected && announced == MQTT_SUCCESS ? MQTTSubscribe(&client, wildcard, account.mode ? QOS1 : QOS0, command) : MQTT_FAILURE;
+        int rc = connected && announced == MQTT_SUCCESS ? MQTTSubscribe(&client, wildcard, QOS1, command) : MQTT_FAILURE;
         if (rc == MQTT_SUCCESS) rc = MQTTSubscribe(&client, "homeassistant/status", QOS0, ha_birth);
+        if(rc==MQTT_SUCCESS)rc=service_mqtt_capabilities(publish,&account);
         unsigned count = feature_mqtt_filters(feature_filters);
-        for (unsigned i = 0; i < count && rc == MQTT_SUCCESS; i++) rc = MQTTSubscribe(&client, feature_filters[i], account.mode ? QOS1 : QOS0, feature_command);
+        for (unsigned i = 0; i < count && rc == MQTT_SUCCESS; i++) rc = MQTTSubscribe(&client, feature_filters[i], QOS1, feature_command);
         if (connected && rc != MQTT_SUCCESS) mqtt_status(MQTT_WAITING_ACL);
         if (rc == MQTT_SUCCESS) { cleanup_pending = true; rc = discovery(&cfg); }
         if (rc == MQTT_SUCCESS) rc = states(&cfg, &state);
@@ -259,7 +275,7 @@ static void mqtt_worker(mico_thread_arg_t arg)
                 rc = states(&current, &state); revision = current.revision; old_visible = state.led_visible;old_on=on;old_speed=speed; sent = true;
             }
             if (rc == MQTT_SUCCESS) rc = feature_mqtt_service(publish, true);
-            if (rc == MQTT_SUCCESS && account.mode && (uint32_t)(mico_rtos_get_time() - acl_check) >= 30000) {
+            if (rc == MQTT_SUCCESS && (uint32_t)(mico_rtos_get_time() - acl_check) >= 30000) {
                 rc = MQTTSubscribe(&client, wildcard, QOS1, command);
                 for (unsigned i = 0; i < count && rc == MQTT_SUCCESS; ++i)
                     rc = MQTTSubscribe(&client, feature_filters[i], QOS1, feature_command);
@@ -285,4 +301,4 @@ static void mqtt_worker(mico_thread_arg_t arg)
     }
 }
 OSStatus a1_mqtt_start(void)
-{ return mico_rtos_create_thread(NULL, MICO_APPLICATION_PRIORITY, "a1_mqtt", mqtt_worker, 12288, 0); }
+{ return mico_rtos_create_thread(NULL, MICO_APPLICATION_PRIORITY, "a1_mqtt", mqtt_worker, 16384, 0); }

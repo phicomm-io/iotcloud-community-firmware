@@ -25,6 +25,7 @@
 NAME := App_TC1
 
 $(NAME)_SOURCES := main.c\
+                   service.c\
                    ota_signature.c\
                    ota_crypto.c\
                    ota_server/signed_adapter.c\

@@ -14,7 +14,7 @@
 #define MAX_MQTT_DATA_SIZE          (2048)
 #define MAX_MQTT_SEND_QUEUE_SIZE    (10)
 
-#define MQTT_SERVER      user_config->mqtt_ip
+#define MQTT_SERVER      user_config->mqtt_host
 #define MQTT_SERVER_PORT user_config->mqtt_port
 #define MQTT_SERVER_USR  user_config->mqtt_user
 #define MQTT_SERVER_PWD  user_config->mqtt_password

@@ -24,6 +24,7 @@ extern char socket_status[32];
 
 void UserSoftReboot(void);
 void UserLedSet(char x);
+void UserLedRefresh(void);
 void KeyInit(void);
 void UserRelaySet(unsigned char x, char y);
 void UserRelaySetAll(char y);

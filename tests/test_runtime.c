@@ -1,6 +1,7 @@
 #include "../common/phicomm_features.h"
 #include "json.h"
 #include "mico.h"
+void automation_poll(bool valid){(void)valid;}
 uint32_t test_now;
 static feature_config_t stored;
 void feature_config_get(feature_config_t *out) { *out = stored; }
@@ -34,6 +35,10 @@ char m1_id[13] = "aabbccddee02";
 void m1_state_get(m1_state_t *out) { memset(out, 0, sizeof(*out)); }
 #endif
 #include "../common/runtime.c"
+json_object *automation_command(const char *a,json_object *p,const char **code,bool *handled){(void)a;(void)p;(void)code;*handled=false;return NULL;}
+json_object *service_product_capabilities(void){return json_object_new_object();}
+json_object *service_product(const char *a,json_object *p,const char **code){(void)a;(void)p;*code="unsupported";return NULL;}
+
 static unsigned publications;
 static int capture(const char *t, const char *b, bool r) {
   assert(t && b);
@@ -59,13 +64,13 @@ static void binding(void) {
       "{\"peers\":[{\"mac\":\"11:22:33:44:55:66\",\"ip\":\"127.0.0.1\"}]}",
       200);
   char filters[12][FEATURE_TOPIC_MAX];
-  assert(feature_mqtt_filters(filters) == 3);
+  assert(feature_mqtt_filters(filters) == 4);
   char root[FEATURE_TOPIC_MAX];
   root_for(&stored, 0, root);
 #ifdef FEATURE_DEVICE_A1
-  assert(!strcmp(root, "aa:bb:cc:dd:ee:01:11:22:33:44:55:66"));
+  assert(!strcmp(root, "phicomm/v2/local/a1/aabbccddee01/linkage"));
 #else
-  assert(!strcmp(root, "11:22:33:44:55:66:aa:bb:cc:dd:ee:02"));
+  assert(!strcmp(root, "phicomm/v2/local/a1/112233445566/linkage"));
 #endif
   json_object *o = envelope(&stored, 0, "bound", 1);
   js(o, "src", stored.peers[0].id);
@@ -191,60 +196,7 @@ static void group_transport(void) {
        "recovery passed");
 }
 #endif
-#ifndef FEATURE_DEVICE_A1
-static void proxy_transport(void) {
-  transaction("binding",
-              "{\"peers\":[{\"mac\":\"112233445566\",\"ip\":\"127.0.0.1\"}]}",
-              200);
-  stored.peers[0].confirmed = 1;
-  configuration = stored;
-  peers[0].lan = true;
-  int receiver = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-  assert(receiver >= 0);
-  struct sockaddr_in a;
-  memset(&a, 0, sizeof(a));
-  a.sin_family = AF_INET;
-  a.sin_port = htons(FEATURE_PORT);
-  a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-  assert(bind(receiver, (struct sockaddr *)&a, sizeof(a)) == 0);
-  udp = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-  assert(udp >= 0);
-  transaction("light", "{\"effect\":4,\"request_id\":\"proxy-1\"}", 202);
-  assert(peers[0].rpc);
-  char wire[FEATURE_WIRE_MAX + 1];
-  fd_set fds;
-  FD_ZERO(&fds);
-  FD_SET(receiver, &fds);
-  struct timeval wait = {1, 0};
-  assert(select(receiver + 1, &fds, NULL, NULL, &wait) == 1);
-  int n = recv(receiver, wire, sizeof(wire), 0);
-  assert(n > 0);
-  json_object *o = parse(wire, n);
-  assert(o && !strcmp(string(o, "op"), "config_set") &&
-         !strcmp(string(o, "domain"), "light"));
-  assert(integer(json_object_object_get(o, "body"), "effect") == 4);
-  json_object_put(o);
-  test_now += 1001;
-  rpc_poll(&stored, 0, test_now);
-  assert(!peers[0].rpc && !peers[0].lan && queued);
-  feature_mqtt_service(capture, true);
-  o = envelope(&stored, 0, "config_result", 1);
-  js(o, "src", stored.peers[0].id);
-  js(o, "dst", LOCAL_ID);
-  json_object_object_add(o, "body",
-                         obj("{\"code\":200,\"request_id\":\"proxy-1\"}"));
-  incoming(o, false, false, NULL);
-  assert(remote_result && integer(remote_result, "code") == 200);
-  json_object_put(o);
-  assert(stored.light.effect == EFFECT_FAN);
-  close(receiver);
-  close(udp);
-  udp = -1;
-  transaction("binding", "{\"peers\":[]}", 200);
-  puts(
-      "M1 LAN configuration RPC, MQTT fallback and asynchronous result passed");
-}
-#endif
+
 #ifdef FEATURE_DEVICE_A1
 static void effective_controls(void) {
   feature_config_t c = stored;
@@ -282,7 +234,7 @@ static void effective_controls(void) {
   c.last_event = 123;
   assert(install_config(&c));
   feature_effective_fan(true, 100, &on, &speed);
-  assert(!on);
+  assert(on && speed == 30); /* Old timer latch never overrides a new command. */
   feature_manual_fan(true);
   assert(!stored.scheduled_off && !stored.scheduled_valid &&
          stored.last_event == 123);
@@ -332,7 +284,7 @@ static void account_namespaces(void) {
   char filters[12][FEATURE_TOPIC_MAX],root[FEATURE_TOPIC_MAX];
   unsigned count=feature_mqtt_filters(filters);assert(count>=3);
   for(unsigned i=0;i<count;++i)assert(strstr(filters[i],alice.key));
-  root_for(&stored,0,root);assert(!strncmp(root,"phicomm/linkage/",16));assert(strstr(root,alice.key));
+  root_for(&stored,0,root);assert(!strncmp(root,"phicomm/v2/",11));assert(strstr(root,alice.key));
   char t[FEATURE_TOPIC_MAX];mqtt_leaf(&alice,"binding/get",t,sizeof(t));
   assert(feature_mqtt_input(t,"{}",2,false));
   assert(queued);assert(feature_mqtt_service(capture_account,true)==0);
@@ -350,10 +302,26 @@ static void account_namespaces(void) {
   puts("Long account namespaces, scoped RPC, stable HA owner and stale queue isolation passed");
 }
 
+#ifndef FEATURE_DEVICE_A1
+#include "passive_scenarios.inc"
+#endif
 int main(void) {
+  service_init();
   feature_defaults(&stored);
   assert(feature_start() == 0);
   json_object *r = NULL;
+#ifdef FEATURE_DEVICE_A1
+  feature_sample_t readings[3] = {0};
+  for (unsigned i=0;i<2;i++) { readings[i].valid=true;readings[i].received_ms=test_now;
+    readings[i].value[0]=20+10*i;readings[i].value[1]=40+20*i;readings[i].value[2]=10+20*i;readings[i].value[3]=0.1f+0.2f*i; }
+  json_object *mean=average_body(readings,3,test_now);
+  assert(json_object_get_int(json_object_object_get(mean,"sample_count"))==2);
+  assert(json_object_get_double(json_object_object_get(mean,"temperature"))==25);
+  assert(json_object_get_double(json_object_object_get(mean,"pm25"))==20);
+  json_object_put(mean);
+  mean=average_body(readings,3,test_now+180001);
+  assert(!json_object_get_boolean(json_object_object_get(mean,"valid")));
+  assert(!json_object_object_get(mean,"temperature"));json_object_put(mean);
   transaction("binding", "{\"peers\":[{\"mac\":\"bad\"}]}", 400);
   assert(!stored.peer_count);
   transaction("binding", "{\"group\":\"bad/#\"}", 400);
@@ -361,9 +329,6 @@ int main(void) {
               "{\"peers\":[{\"mac\":\"112233445566\",\"ip\":\"garbage\"}]}",
               400);
   binding();
-#ifndef FEATURE_DEVICE_A1
-  proxy_transport();
-#endif
 #ifdef FEATURE_DEVICE_A1
   group_transport();
   effective_controls();
@@ -383,6 +348,9 @@ int main(void) {
   transaction("time", "{\"revision\":0}", 409);
 #endif
   account_namespaces();
+#else
+  passive_scenarios();
+#endif
   (void)r;
   puts("runtime transactions, handshake, authentication and duplicate "
        "freshness passed");

@@ -96,7 +96,8 @@ void a1_panel_event(bool toggle, int delta)
 {
     mico_rtos_lock_mutex(&a1_config_lock);
     mico_rtos_lock_mutex(&a1_lock);
-    if (!a1_config->child_lock && !a1_state.ota_active && !a1_state.reboot_pending) {
+    bool accepted = !a1_config->child_lock && !a1_state.ota_active && !a1_state.reboot_pending;
+    if (accepted) {
         a1_config_t c = *a1_config;
         if (toggle) c.fan_on = !c.fan_on;
         if (delta) {
@@ -107,7 +108,7 @@ void a1_panel_event(bool toggle, int delta)
     }
     mico_rtos_unlock_mutex(&a1_lock);
     mico_rtos_unlock_mutex(&a1_config_lock);
-    if (toggle || delta) { a1_config_t c; a1_config_get(&c); feature_manual_fan(c.fan_on); }
+    if (accepted && (toggle || delta)) { a1_config_t c; a1_config_get(&c); feature_manual_fan(c.fan_on); }
 }
 
 void a1_request_ap(void)

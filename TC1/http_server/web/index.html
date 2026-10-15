@@ -1,57 +1,77 @@
 <!doctype html>
-<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>TC1 智能插座</title><style>/* @include style.css */</style>
-<h1 id="title">TC1 智能插座</h1><div id="connection" class="status">连接设备中…</div>
-<nav class="navigation" aria-label="主导航"><a id="homeLink" href="#home">首页</a><a id="settingsLink" href="#settings/network">设置</a></nav>
-<div id="notice" role="status" aria-live="polite"></div>
-<main id="homePage"><section><h2>插座控制</h2><div class="row"><button id="allOn" type="button">全部开启</button><button id="allOff" type="button">全部关闭</button></div><div id="sockets" class="grid"></div><p class="hint">这里显示设备的输出设置；实际供电请以插座和负载为准。</p></section>
-<div class="cards"><div class="card">实时功率<div id="power" class="value">—</div><span class="unit">W</span></div><div class="card">累计电量<div id="energy" class="value">—</div><span class="unit">kWh</span></div></div></main>
-<div id="settingsPage" hidden><nav class="navigation subnav" aria-label="设置菜单">
-<a href="#settings/network">Wi-Fi</a><a href="#settings/mqtt">MQTT</a><a href="#settings/device">设备</a><a href="#settings/schedule">定时任务</a><a href="#settings/buttons">按键事件</a><a href="#settings/firmware">固件升级</a><a href="#settings/diagnostics">诊断</a></nav>
-<div data-settings-page="network" hidden><section><h2>Wi-Fi 配网</h2><!-- @include wifi.html --><p class="hint">保存后若热点断开，请切回家庭 Wi-Fi，在路由器中查找设备 IP。连接失败会重新开启配网热点。</p></section></div>
-<div data-settings-page="mqtt" hidden><section><h2>MQTT / Home Assistant</h2><!-- @include mqtt.html --><p class="hint">HA 配置 MQTT 集成后，设备会自动创建六路插座、功率、指示灯和童锁控制。</p></section></div>
-<div data-settings-page="firmware" hidden><section><h2>固件升级</h2><form id="fileForm"><label for="firmware">上传 TC1 签名 OTA 文件</label><input id="firmware" type="file" accept=".bin,.raw,.signed" required><label><input id="unsignedRescue" type="checkbox">允许未签名的固件</label><button id="upload">上传并升级</button></form><form id="urlForm"><label for="otaUrl">更新文件直链（HTTP）</label><input id="otaUrl" type="url" maxlength="499" placeholder="http://服务器/phicomm_tc1_a1.ota.bin.signed" required><button>下载并升级</button></form><p class="hint">选择本项目的 TC1 OTA 包。校验成功后设备自动重启，保留 Wi-Fi、MQTT 、插座和按键配置。</p><progress id="otaProgress" max="100" value="0"></progress><div id="otaStatus" class="hint"></div></section></div>
-<div data-settings-page="device" hidden><section><h2>设备设置</h2><form id="nameForm"><label for="deviceName">设备名称</label><input id="deviceName" maxlength="63" required><button>保存名称</button></form>
-<label><input id="childLock" type="checkbox"> 童锁（锁定面板按键）</label><label><input id="ledEnabled" type="checkbox"> 启用指示灯</label>
-<form id="socketNamesForm"><h3>插座名称</h3><div id="socketNames" class="grid"></div><button>保存插座名称</button></form>
-<form id="reportForm"><label for="reportSeconds">MQTT 上报间隔（秒）</label><input id="reportSeconds" type="number" min="1" max="3600" required><button>保存上报间隔</button></form>
-<form id="coefficientForm"><label for="coefficient">功率系数（×100）</label><input id="coefficient" type="number" min="100" max="10000" required><button>保存功率系数</button></form><p class="hint">仅在已知计量芯片和校准值时修改。空载读数不能验证计量精度。</p>
-<!-- @include auth.html --><button id="reboot" type="button">重启设备</button></section></div>
-<div data-settings-page="schedule" hidden><section><h2>定时任务</h2><p class="hint">时间按北京时间显示。每周任务可选多个星期；不选星期为一次任务。时钟尚未校准时请勿创建任务。</p><form id="taskForm"><label for="taskTime">执行时间</label><input id="taskTime" type="datetime-local" required><label for="taskDays">重复</label><select id="taskDays"><option value="0">仅一次</option><option value="127">每天</option><option value="31">工作日</option><option value="96">周末</option><option value="1">周一</option><option value="2">周二</option><option value="4">周三</option><option value="8">周四</option><option value="16">周五</option><option value="32">周六</option><option value="64">周日</option></select><label for="taskOperation">操作</label><select id="taskOperation"></select><label><input id="taskOn" type="checkbox" checked> 开启（取消勾选为关闭）</label><button>添加任务</button></form><div id="tasks"></div></section></div>
-<div data-settings-page="buttons" hidden><section><h2>自定义按键事件</h2><p class="hint">短按序号表示连续点击次数，长按序号表示按住秒数。童锁期间面板按键不执行控制。</p><form id="buttonForm"><label for="buttonIndex">序号（1～30）</label><input id="buttonIndex" type="number" min="1" max="30" value="1" required><label for="buttonKind">事件</label><select id="buttonKind"><option value="0">短按</option><option value="1">长按</option></select><label for="buttonOperation">操作</label><select id="buttonOperation"></select><button>保存按键事件</button></form><div id="buttonMappings"></div></section></div>
-<div data-settings-page="diagnostics" hidden><section><h2>设备诊断</h2><div id="diagnosticGroups" class="diagnostic-grid"></div><details><summary>原始 JSON</summary><pre id="diagnostics"></pre></details><h3>系统日志</h3><button id="logsRefresh" type="button">刷新日志</button><pre id="logs"></pre></section></div></div>
-<script>
-'use strict';
-const $=id=>document.getElementById(id);let initialized=false,uploading=false,state=null,busy=false;
-function notice(text,bad=false){$('notice').textContent=text;$('notice').className=bad?'bad':'';}
-async function api(path,data,method){const r=await fetch(path,{method:method||(data===undefined?'GET':'POST'),headers:data===undefined?{}:{'Content-Type':typeof data==='string'?'text/plain':'application/json'},body:data===undefined?undefined:typeof data==='string'?data:JSON.stringify(data),cache:'no-store'});const text=await r.text();let body;try{body=JSON.parse(text);}catch{body={message:text};}if(!r.ok)throw Error(body.message||('HTTP '+r.status));return body;}
-function form(id,path,body){$(id).addEventListener('submit',async e=>{e.preventDefault();const button=e.target.querySelector('button');button.disabled=true;try{await api(path,body());notice('请求已接受');}catch(err){notice(err.message,true);}finally{button.disabled=false;}});}
-function showPage(){const match=/^settings\/(network|mqtt|device|schedule|buttons|firmware|diagnostics)$/.exec(location.hash.slice(1)),settings=!!match;$('homePage').hidden=settings;$('settingsPage').hidden=!settings;document.querySelectorAll('[data-settings-page]').forEach(page=>{page.hidden=!settings||page.dataset.settingsPage!==match[1];});document.querySelectorAll('.navigation a').forEach(link=>{const active=link.id==='homeLink'?!settings:link.id==='settingsLink'?settings:settings&&link.hash===location.hash;if(active)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');});if(settings&&match[1]==='schedule')loadTasks();if(settings&&match[1]==='diagnostics')loadLogs();}
-window.addEventListener('hashchange',showPage);
-const operations=['全部插座','插座 1','插座 2','插座 3','插座 4','插座 5','插座 6','指示灯','重启设备','开启配网热点','恢复出厂设置','童锁','重启网页服务','软件重启'];
-for(const id of ['taskOperation','buttonOperation']){if(id==='buttonOperation'){const o=document.createElement('option');o.value=-1;o.textContent='未配置';$(id).append(o);}operations.forEach((text,i)=>{const o=document.createElement('option');o.value=i;o.textContent=text;$(id).append(o);});}
-const controls=[],nameInputs=[];
-function setControlBusy(value){busy=value;for(const button of [...controls,$('allOn'),$('allOff')])button.disabled=value||uploading;}
-for(let i=0;i<6;i++){const wrap=document.createElement('div'),label=document.createElement('label'),button=document.createElement('button');label.id='socketName'+i;button.id='socket'+i;button.type='button';button.disabled=true;wrap.append(label,button);$('sockets').append(wrap);controls.push(button);button.onclick=async()=>{if(!state||busy)return;setControlBusy(true);try{const states=state.socket_states.map(Boolean);states[i]=!states[i];await api('/socket',{states});await refresh(false);notice('插座设置已接受');}catch(e){notice(e.message,true);}finally{setControlBusy(false);}};const box=document.createElement('div'),l=document.createElement('label'),input=document.createElement('input');l.textContent='插座 '+(i+1);input.id='name'+i;input.maxLength=63;input.required=true;l.htmlFor=input.id;box.append(l,input);$('socketNames').append(box);nameInputs.push(input);}
-$('socketNamesForm').onsubmit=async e=>{e.preventDefault();const button=e.target.querySelector('button');button.disabled=true;try{for(let i=0;i<6;i++)await api('/socketNames',{index:i,name:nameInputs[i].value});notice('插座名称已保存');}catch(e){notice(e.message,true);}finally{button.disabled=false;}};
-for(const [id,enabled] of [['allOn',true],['allOff',false]])$(id).onclick=async()=>{if(busy)return;setControlBusy(true);try{await api('/socket',{states:Array(6).fill(enabled)});await refresh(false);}catch(e){notice(e.message,true);}finally{setControlBusy(false);}};
-form('wifiForm','/wifi/config',()=>({ssid:$('ssid').value,password:$('wifiPassword').value,open_network:$('openNetwork').checked}));
-form('mqttForm','/mqtt/config',()=>({host:$('mqttHost').value,port:Number($('mqttPort').value),topic_mode:$('mqttMode').value,user:$('mqttUser').value,password:$('mqttPassword').value,clear_password:$('clearMqttPassword').checked}));
-form('nameForm','/deviceName',()=>({name:$('deviceName').value}));form('authForm','/auth/password',()=>({password:$('webPassword').value}));form('urlForm','/ota',()=>({url:$('otaUrl').value}));
-form('reportForm','/mqtt/report/freq',()=>({seconds:Number($('reportSeconds').value)}));form('coefficientForm','/power/coefficient',()=>String($('coefficient').value));
-for(const [id,path] of [['childLock','/childLock'],['ledEnabled','/led']])$(id).onchange=async()=>{try{await api(path,{enabled:$(id).checked});notice('请求已接受');}catch(e){notice(e.message,true);}};
-form('buttonForm','/buttonEvents',()=>({index:Number($('buttonIndex').value),long_press:Number($('buttonKind').value),operation:Number($('buttonOperation').value)}));
-let tasks=[];
-async function loadTasks(){try{tasks=(await api('/schedule/config')).events;$('tasks').replaceChildren();for(let i=0;i<tasks.length;i++){const t=tasks[i],row=document.createElement('div'),text=document.createElement('span'),button=document.createElement('button');row.className='row';const repeat=t.days===0?'仅一次':t.days===127?'每天':'星期 '+[1,2,3,4,5,6,7].filter(d=>t.days&(1<<(d-1))).join('、');text.textContent=new Date((t.timestamp+28800)*1000).toISOString().slice(0,16).replace('T',' ')+' ｜ '+operations[t.operation]+' '+(t.on?'开启':'关闭')+' ｜ '+repeat;button.type='button';button.textContent='删除';button.onclick=async()=>{try{if(tasks.length>8){await api('/task/'+t.timestamp,undefined,'DELETE');}else{await api('/schedule/config',{events:tasks.filter((_,index)=>index!==i)});}await loadTasks();}catch(e){notice(e.message,true);}};row.append(text,button);$('tasks').append(row);}}catch(e){notice(e.message,true);}}
-$('taskForm').onsubmit=async e=>{e.preventDefault();const button=e.target.querySelector('button');button.disabled=true;try{if(!state.time_synced)throw Error('时钟尚未校准，请稍后再试');await loadTasks();if(tasks.length>=8)throw Error('最多 8 个定时事件');const date=new Date($('taskTime').value+'+08:00'),timestamp=Math.floor(date.getTime()/1000),days=Number($('taskDays').value),operation=Number($('taskOperation').value),on=Number($('taskOn').checked),minute=date.getUTCHours()*60+date.getUTCMinutes()+480;if(!Number.isFinite(timestamp)||(!days&&timestamp<=state.utc_time))throw Error('请选择未来时间');await api('/schedule/config',{events:[...tasks,{timestamp,days,minute:minute%1440,operation,on}]});await loadTasks();notice('任务已保存');}catch(e){notice(e.message,true);}finally{button.disabled=false;}};
-$('networks').onchange=()=>{$('ssid').value=$('networks').value;};
-$('scan').onclick=async()=>{const button=$('scan');button.disabled=true;try{await api('/wifi/scan',{});notice('扫描网络中…');for(let i=0;i<25;i++){await new Promise(r=>setTimeout(r,800));const s=await api('/wifi/scan');if(s.scanning)continue;$('networks').replaceChildren();s.networks.sort((a,b)=>b.rssi-a.rssi).forEach(n=>{const o=document.createElement('option');o.value=n.ssid;o.textContent=n.ssid+' ('+n.rssi+' dBm)';$('networks').append(o);});$('networks').hidden=!s.networks.length;notice(s.networks.length?'请选择网络':'未发现网络，可手动填写名称');return;}throw Error('扫描超时');}catch(e){notice(e.message,true);}finally{button.disabled=false;}};
-$('reboot').onclick=async()=>{if(!confirm('重启 TC1？'))return;try{await api('/reboot',{});notice('设备正在重启…');}catch(e){notice(e.message,true);}};
-$('fileForm').onsubmit=e=>{e.preventDefault();const file=$('firmware').files[0];if(!file||uploading)return;uploading=true;$('upload').disabled=true;const xhr=new XMLHttpRequest();xhr.open('POST',$('unsignedRescue').checked?'/ota/fileUploadUnsigned':'/ota/fileUpload');xhr.setRequestHeader('Content-Type','application/octet-stream');xhr.timeout=310000;xhr.upload.onprogress=e=>{if(e.lengthComputable){$('otaProgress').value=e.loaded/e.total*100;notice('正在上传 '+Math.round(e.loaded/e.total*100)+'%');}};xhr.onload=()=>notice([200,202].includes(xhr.status)?'文件校验通过，设备正在重启':'升级失败：'+xhr.responseText,![200,202].includes(xhr.status));xhr.onerror=()=>notice('连接中断，请重新连接设备查看升级状态',true);xhr.ontimeout=()=>notice('上传超时',true);xhr.onloadend=()=>{uploading=false;$('upload').disabled=false;};xhr.send(file);};
-async function loadLogs(){try{const r=await fetch('/log',{cache:'no-store'});if(!r.ok)throw Error('日志读取失败');$('logs').textContent=await r.text();}catch(e){notice(e.message,true);}}
-$('logsRefresh').onclick=loadLogs;
-/* @include diagnostics.js */
-function renderDiagnostics(s){renderCommonDiagnostics(s,[['插座与指示灯',['socket_states','socket_names','child_lock','led_enabled']],['时间同步',['time_synced','utc_time']]]);}
-async function refresh(schedule=true){try{if(uploading)return;const s=await api('/status');state=s;$('title').textContent='TC1 '+s.name;$('connection').textContent='Wi-Fi：'+(s.wifi_connected?'已连接 '+s.ip:'连接中')+' ｜ MQTT：'+s.mqtt_status+' ｜ 固件 '+s.version;for(let i=0;i<6;i++){$('socketName'+i).textContent=s.socket_names[i];controls[i].textContent=s.socket_states[i]?'关闭':'开启';controls[i].disabled=busy||uploading;}$('childLock').checked=s.child_lock;$('ledEnabled').checked=s.led_enabled;renderDiagnostics(s);$('otaProgress').value=s.ota_progress;$('otaStatus').textContent='升级状态：'+s.ota_state+(s.ota_error?'；'+s.ota_error:'');$('buttonMappings').replaceChildren();for(const mapping of s.btnClicks){const [key,v]=Object.entries(mapping)[0];if(v[0]===-1&&v[1]===-1)continue;const p=document.createElement('p');p.textContent='序号 '+key+' ｜ 短按：'+(operations[v[0]]||'未配置')+' ｜ 长按：'+(operations[v[1]]||'未配置');$('buttonMappings').append(p);}if(!initialized){$('ssid').value=s.ssid;$('mqttHost').value=s.mqtt_host;$('mqttPort').value=s.mqtt_port;$('mqttUser').value=s.mqtt_user;$('mqttMode').value=s.mqtt_topic_mode;$('deviceName').value=s.name;$('reportSeconds').value=s.report_seconds;$('coefficient').value=s.powerCoefficientX100;nameInputs.forEach((input,i)=>input.value=s.socket_names[i]);initialized=true;}if(!location.hash||location.hash==='#home'){const p=await api('/power');$('power').textContent=Number(p.power_watts).toFixed(1);$('energy').textContent=Number(p.energy_kwh).toFixed(3);}}catch(e){$('connection').textContent='设备连接中断；如正在升级，请等待重启后重新连接。';}finally{if(schedule)setTimeout(refresh,3000);}}
-showPage();refresh();
-</script></html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TC1 智能插座</title>
+<style>/* @include style.css */</style>
+</head>
+<body>
+<main id="homePage" class="home tc1-home">
+ <section class="card" style="grid-area:sockets">
+  <div class="card-head">
+   <div><h2 data-i18n="tc1.sockets"></h2><p class="help" id="onCount"></p></div>
+   <div class="row" style="gap:8px"><button id="allOn" class="btn" type="button" data-i18n="tc1.all_on"></button><button id="allOff" class="btn" type="button" data-i18n="tc1.all_off"></button></div>
+  </div>
+  <div class="tiles" id="tiles"></div>
+  <p class="help" style="margin-top:12px" data-i18n="tc1.output_hint"></p>
+ </section>
+ <section class="card" style="grid-area:power">
+  <div class="card-head"><h2 data-i18n="tc1.power"></h2><span class="dot ok live"></span></div>
+  <div class="stat" id="watts">—<small>W</small></div>
+  <svg id="spark" class="spark" viewBox="0 0 300 64" preserveAspectRatio="none" aria-hidden="true"></svg>
+  <div class="row between help"><span id="sparkRange"></span><span data-i18n="tc1.recent"></span></div>
+  <dl class="summary" style="margin-top:14px">
+   <div><dt data-i18n="tc1.energy"></dt><dd class="num" id="energy">—</dd></div>
+   <div><dt data-i18n="tc1.peak"></dt><dd class="num" id="peak">—</dd></div>
+  </dl>
+ </section>
+ <section class="card" style="grid-area:panel">
+  <div class="card-head"><h2 data-i18n="a1.panel"></h2></div>
+  <label class="switch"><span class="text"><b data-i18n="a1.child_lock"></b><span data-i18n="tc1.lock_desc"></span></span><input type="checkbox" role="switch" id="childLock"></label>
+  <label class="switch"><span class="text"><b data-i18n="tc1.led"></b><span data-i18n="tc1.led_desc"></span></span><input type="checkbox" role="switch" id="ledEnabled"></label>
+ </section>
+</main>
+
+<div id="settingsPage" class="settings" hidden>
+ <nav class="side" id="side" aria-label="Settings"></nav>
+ <div id="pages">
+  <div data-settings-page="device" class="stack">
+   <div><h2 class="page-title" data-i18n="nav.general"></h2><p class="page-lead" data-i18n="gen.lead"></p></div>
+   <div data-slot="name"></div>
+   <section class="card">
+    <div class="card-head"><div><h2 data-i18n="tc1.names"></h2><p class="help" data-i18n="tc1.names_desc"></p></div></div>
+    <form id="socketNamesForm"><div class="fields" id="nameFields"></div>
+     <div class="form-actions"><button class="btn primary" type="submit" data-i18n="common.save"></button></div></form>
+   </section>
+   <section class="card">
+    <div class="card-head"><h2 data-i18n="a1.panel"></h2></div>
+    <label class="switch"><span class="text"><b data-i18n="a1.child_lock"></b><span data-i18n="tc1.lock_desc"></span></span><input type="checkbox" role="switch" id="childLockDevice"></label>
+    <label class="switch"><span class="text"><b data-i18n="tc1.led"></b><span data-i18n="tc1.led_desc"></span></span><input type="checkbox" role="switch" id="ledEnabledDevice"></label>
+   </section>
+   <section class="card">
+    <div class="card-head"><h2 data-i18n="tc1.metering"></h2></div>
+    <form id="reportForm" class="field"><span data-i18n="tc1.report"></span>
+     <div class="row"><span class="input-unit grow"><input id="reportSeconds" type="number" min="1" max="3600" required><em data-i18n="unit.s"></em></span>
+      <button class="btn primary" type="submit" data-i18n="common.save"></button></div>
+     <p class="help" data-i18n="tc1.report_help"></p></form>
+    <details class="more"><summary data-i18n="tc1.calibration"></summary>
+     <div class="banner warn"><span data-i18n="tc1.coef_warn"></span></div>
+     <form id="coefForm" class="field"><span data-i18n="tc1.coef"></span>
+      <div class="row"><span class="input-unit grow"><input id="coef" type="number" min="100" max="10000" required><em>×0.01</em></span>
+       <button class="btn" type="submit" data-i18n="common.save"></button></div></form>
+    </details>
+   </section>
+   <div data-slot="auth"></div>
+  </div>
+  <div data-settings-page="schedule" class="stack"></div>
+  <div data-settings-page="buttons" class="stack"></div>
+ </div>
+</div>
+
+<script>/* @include i18n.js */</script>
+<script>/* @include service.js */</script>
+<script>/* @include ui.js */</script>
+<script>/* @include automation.js */</script>
+<script>/* @include page.js */</script>
+</body>
+</html>

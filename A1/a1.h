@@ -12,7 +12,7 @@
 #define A1_VERSION FIRMWARE_VERSION
 #define A1_PRODUCT "PHICOMM_A1_EMW3080"
 #define A1_CONFIG_MAGIC 0x41314346u
-#define A1_CONFIG_VERSION 3u
+#define A1_CONFIG_VERSION 4u
 #define A1_APP_OFFSET 0x75000u
 #define A1_APP_CPU_ADDRESS 0x08088000u
 #define A1_APP_LIMIT 0x40000u
@@ -27,7 +27,7 @@ typedef struct {
     uint16_t mqtt_port;
     uint8_t fan_on, speed, led_enabled, led_always_on;
     uint8_t brightness, red, green, blue, child_lock;
-    uint8_t mqtt_topic_mode;
+    uint8_t mqtt_topic_mode; /* ABI retained; always MQTT_TOPIC_TMCP. */
 } a1_config_t;
 
 typedef struct {
@@ -36,6 +36,8 @@ typedef struct {
     bool wifi_connected, ap_active, ap_requested, mqtt_connected;
     bool fan_ready, panel_ready, led_visible, config_dirty;
     bool reboot_pending, ota_active, scan_busy;
+    bool wifi_trial_active;
+    char wifi_trial_status[24];
     uint8_t applied_speed, panel_raw[3];
     uint8_t mqtt_status;
     bool mqtt_cleanup_warning;
@@ -54,6 +56,7 @@ extern mico_Context_t *a1_context;
 void a1_config_get(a1_config_t *);
 bool a1_config_save(const a1_config_t *);
 bool a1_config_flush(bool force);
+bool a1_reset(bool full);
 void a1_state_get(a1_state_t *);
 bool a1_reboot_later(uint32_t ms);
 bool a1_upgrade_reserve(void);
@@ -64,6 +67,7 @@ void a1_request_ap(void);
 OSStatus a1_hardware_start(void);
 OSStatus a1_network_start(void);
 bool a1_scan_start(void);
+bool a1_wifi_trial(const a1_config_t *);
 OSStatus a1_mqtt_start(void);
 OSStatus a1_http_start(void);
 void a1_ota_status(const char *, const char *, unsigned);

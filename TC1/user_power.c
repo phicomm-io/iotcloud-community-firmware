@@ -7,6 +7,7 @@
 #include "user_power.h"
 
 uint32_t p_count = 0;
+volatile uint32_t power_session_pulses;
 PowerRecord power_record = {1, {0}};
 char power_record_str[1101] = {0};
 float real_time_power = 0;
@@ -51,6 +52,7 @@ static void PowerIrqHandler(void *arg) {
     }
 
     p_count++;
+    power_session_pulses++;
 
     //mico_time_get_time(&past_ns); //系统运行毫秒数
     past_ns = mico_nanosecond_clock_value(); //系统运行纳秒数

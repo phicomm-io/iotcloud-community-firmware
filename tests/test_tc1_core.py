@@ -117,7 +117,7 @@ int main(void){
 }
 """)
     def test_http_fragments_oversize_embedded_null_and_close(self):
-        src=(ROOT/'TC1/http_server/app_httpd.c').read_text();func=src[src.index('static int read_body('):src.index('static int response_json(')]
+        src=(ROOT/'TC1/http_server/app_httpd.c').read_text();func=src[src.index('static int read_headers('):src.index('static int response_json(')]
         execute(r'''
 #include <stdio.h>
 #include <stdlib.h>

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Apply a versioned SDK overlay once, rejecting incompatible cache contents."""
+from pathlib import Path
 import subprocess
 import sys
-sdk, patch = sys.argv[1:]
+sdk, patch = [str(Path(p).resolve()) for p in sys.argv[1:]]
 check = subprocess.run(['git', 'apply', '--reverse', '--check', patch], cwd=sdk,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 if check.returncode:

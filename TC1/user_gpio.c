@@ -3,6 +3,9 @@
 #include "main.h"
 #include "user_gpio.h"
 #include <stdint.h>
+#include "../common/gesture.h"
+#include "../common/indicator.h"
+#include "ota_server/signed_adapter.h"
 #include "user_wifi.h"
 #include "mqtt_server/user_mqtt_client.h"
 #include "http_server/app_httpd.h"
@@ -11,13 +14,24 @@ mico_gpio_t relay[Relay_NUM] = {Relay_0, Relay_1, Relay_2, Relay_3, Relay_4, Rel
 char socket_status[32] = {0};
 char btn_click_config[768] = {0};
 
+static bool business_led;
+static bool key_feedback_active, key_feedback_on;
+void UserLedRefresh(void) {
+    static unsigned old_mode = INDICATOR_READY;
+    static uint32_t since;
+    uint32_t now = mico_rtos_get_time();
+    unsigned mode = indicator_mode(sys_config->micoSystemConfig.ssid[0] != 0,
+        wifi_status == WIFI_STATE_CONNECTED, user_config->mqtt_host[0] != 0 && user_config->mqtt_port > 0,
+        tc1_mqtt_status == MQTT_READY);
+    if (mode != old_mode) since = now;
+    old_mode = mode;
+    bool on = mode == INDICATOR_READY ? business_led : indicator_on(mode, now - since);
+    if (key_feedback_active) on = key_feedback_on;
+    if (on) MicoGpioOutputHigh(Led); else MicoGpioOutputLow(Led);
+}
 void UserLedSet(char x) {
-    if (x == -1)
-        MicoGpioOutputTrigger(Led);
-    else if (x)
-        MicoGpioOutputHigh(Led);
-    else
-        MicoGpioOutputLow(Led);
+    business_led = x == -1 ? !business_led : x != 0;
+    UserLedRefresh();
 }
 
 bool RelayOut(void) {
@@ -180,9 +194,37 @@ void UserSoftReboot(void) {
     MicoSystemReboot();
 }
 
+static void FixedRecovery(bool full) {
+    if (!tc1_config_reserve()) return;
+    user_config_t *old_user = malloc(sizeof(*old_user));
+    if (!old_user) { tc1_config_release(); return; }
+    *old_user = *user_config;
+    __typeof__(sys_config->micoSystemConfig) old_system = sys_config->micoSystemConfig;
+    OSStatus err = kNoErr;
+    if (full) {
+        err = mico_system_context_restore(sys_config);
+    } else {
+        sys_config->micoSystemConfig.ssid[0] = 0;
+        sys_config->micoSystemConfig.user_key[0] = 0;
+        sys_config->micoSystemConfig.user_keyLength = 0;
+        sys_config->micoSystemConfig.key[0] = 0;
+        sys_config->micoSystemConfig.keyLength = 0;
+        user_config->web_password[0] = 0;
+    }
+    if (err == kNoErr) err = mico_system_context_update(sys_config);
+    if (err != kNoErr) {
+        *user_config = *old_user;
+        sys_config->micoSystemConfig = old_system;
+        free(old_user); tc1_config_release(); return;
+    }
+    free(old_user);
+    MicoSystemReboot();
+}
+
 static void KeyEventHandler(int num, boolean longPress) {
     key_log("WARNGIN:Power key %s %d %s", !longPress ? "quick clicked" : "longPressed", num,
             num > 1 ? (longPress ? "seconds" : "times") : (longPress ? "second" : "time"));
+    if (childLockEnabled) return;
     if (num > 30 || num <= 0)
         return;
     int function = !longPress ? get_short_func(user_config->user[num]) : get_long_func(
@@ -332,77 +374,20 @@ static void ClickEndTimeoutHandler(void *arg) {
     click_count = 0;
 }
 
+static key_gesture_t key_gesture;
 static void KeyTimeoutHandler(void *arg) {
-    static char key_trigger, key_continue;
-    static uint8_t key_time = 0;
-
-    char tmp = ~(0xfe | MicoGpioInputGet(Button));
-    key_trigger = tmp & (tmp ^ key_continue);
-    key_continue = tmp;
-
-    if (key_trigger != 0)
-        key_time = 0;
-
-    if (key_continue != 0) {
-        key_time++;
-//        if (key_time > BUTTON_LONG_PRESS_TIME) {
-//            if (key_time == 50) {
-//                KeyLong5sPress();
-//            } else if (key_time > 50 && key_time < 57) {
-//                switch (key_time) {
-//                    case 51:
-//                        UserLedSet(1);
-//                        break;
-//                    case 52:
-//                        UserLedSet(0);
-//                        break;
-//                    case 53:
-//                        UserLedSet(1);
-//                        break;
-//                    case 54:
-//                        UserLedSet(0);
-//                        break;
-//                    case 55:
-//                        UserLedSet(1);
-//                        break;
-//                    case 56:
-//                        UserLedSet(0);
-//                        break;
-//                }
-//            } else if (key_time == 57) {
-//                UserLedSet(RelayOut() && user_config->power_led_enabled);
-//            } else if (key_time == 100) {
-//                KeyLong10sPress();
-//            } else if (key_time == 102) {
-//                UserLedSet(1);
-//            } else if (key_time == 103) {
-//                UserLedSet(0);
-//                key_time = 101;
-//            }
-//        }
-    } else {
-        if (key_time < BUTTON_LONG_PRESS_TIME) {
-            click_count++;
-
-            // 重启 click_end_timer（300ms）
-            mico_rtos_stop_timer(&click_end_timer);
-            mico_rtos_start_timer(&click_end_timer);
-        } else {
-            KeyEventHandler(key_time/10,true);
-        }
-
-        mico_rtos_stop_timer(&user_key_timer);
-    }
+    (void)arg;
+    uint32_t now=mico_rtos_get_time();
+    key_event_t event=key_gesture_sample(&key_gesture,true,!MicoGpioInputGet(Button),now,true);
+    key_feedback_active=key_gesture.stable && key_gesture.candidate;
+    key_feedback_on=key_hold_feedback(&key_gesture,now);
+    UserLedRefresh();
+    if(event.type==KEY_EVENT_NETWORK_RESET || event.type==KEY_EVENT_FULL_RESET) FixedRecovery(event.type==KEY_EVENT_FULL_RESET);
+    else if(event.type==KEY_EVENT_CLICKS) automation_button(0,event.count,0);
+    else if(event.type==KEY_EVENT_HOLD) automation_button(0,0,event.count);
 }
-
-static void KeyFallingIrqHandler(void *arg) {
-    mico_rtos_start_timer(&user_key_timer);
-}
-
 void KeyInit(void) {
     MicoGpioInitialize(Button, INPUT_PULL_UP);
-    mico_rtos_init_timer(&user_key_timer, 100, KeyTimeoutHandler, NULL);
-    mico_rtos_init_timer(&click_end_timer, 400, ClickEndTimeoutHandler, NULL);
-    MicoGpioEnableIRQ(Button, IRQ_TRIGGER_FALLING_EDGE, KeyFallingIrqHandler, NULL);
-
+    mico_rtos_init_timer(&user_key_timer, 40, KeyTimeoutHandler, NULL);
+    mico_rtos_start_timer(&user_key_timer);
 }

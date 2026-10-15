@@ -25,7 +25,7 @@
 
 #define ZTC1_NAME "TC1-%s"
 
-#define USER_CONFIG_VERSION 11
+#define USER_CONFIG_VERSION 12
 #define SETTING_MQTT_STRING_LENGTH_MAX 32 //必须4字节对齐。
 #define WEB_PASSWORD_LENGTH_MAX 32
 
@@ -49,6 +49,9 @@
 #define Relay_NUM SOCKET_NUM
 
 #define MAX_TASK_NUM 128
+
+#define AUTOMATION_TC1
+#include "../common/automation.h"
 
 //用户保存参数结构体
 typedef struct
@@ -76,6 +79,8 @@ typedef struct
     char mqtt_user[MQTT_USER_MAX + 1];
     char mqtt_password[MQTT_PASSWORD_MAX + 1];
     uint8_t mqtt_topic_mode;
+    char mqtt_host[128];
+    automation_config_t automation;
 } user_config_t;
 
 extern char rtc_init;
