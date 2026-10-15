@@ -1,5 +1,6 @@
 #include "a1.h"
 #include "MQTTClient.h"
+#include "../common/mqtt_transport.h"
 #include "../common/mqtt_cleanup.h"
 #include <ctype.h>
 
@@ -229,6 +230,7 @@ static void mqtt_worker(mico_thread_arg_t arg)
         Network net = {0}; net.my_socket = -1; memset(&client, 0, sizeof(client));
         ssl_opts options = {0};
         if (NewNetwork(&net, cfg.mqtt_host, cfg.mqtt_port, options) != MQTT_SUCCESS) { mqtt_status(MQTT_DISCONNECTED); mico_thread_msleep(mqtt_retry_seconds(attempt++) * 1000); continue; }
+        net.mqttread = mqtt_socket_read;
         if (MQTTClientInit(&client, &net, 5000) != MQTT_SUCCESS) { net.disconnect(&net); mqtt_status(MQTT_DISCONNECTED); mico_thread_msleep(mqtt_retry_seconds(attempt++) * 1000); continue; }
         MQTTPacket_connectData connect = MQTTPacket_connectData_initializer;
         connect.MQTTVersion = 4; connect.clientID.cstring = client_id;
@@ -248,6 +250,7 @@ static void mqtt_worker(mico_thread_arg_t arg)
             char topic[MQTT_TOPIC_MAX]; mqtt_aux(&account, "discovery", account.mac, topic, sizeof(topic));
             announced = publish(topic, mqtt_announcement(&account), true);
         }
+        const char *stage="initial";
         int rc = connected && announced == MQTT_SUCCESS ? MQTTSubscribe(&client, wildcard, QOS1, command) : MQTT_FAILURE;
         if (rc == MQTT_SUCCESS) rc = MQTTSubscribe(&client, "homeassistant/status", QOS0, ha_birth);
         if(rc==MQTT_SUCCESS)rc=service_mqtt_capabilities(publish,&account);
@@ -263,7 +266,7 @@ static void mqtt_worker(mico_thread_arg_t arg)
         bool old_on=false;unsigned old_speed=0;
         bool sent = false, old_visible = false; uint32_t revision = 0; rediscover = false;
         while (rc == MQTT_SUCCESS) {
-            rc=ota_service(base);if(rc!=MQTT_SUCCESS)break;
+            stage="ota"; rc=ota_service(base);if(rc!=MQTT_SUCCESS)break;
             mico_rtos_lock_mutex(&a1_lock); a1_state.mqtt_connected = true; mico_rtos_unlock_mutex(&a1_lock);
             a1_state_get(&state); a1_config_get(&current);
             if (!state.wifi_connected || !same_connection(&cfg, &current)) break;
@@ -272,18 +275,23 @@ static void mqtt_worker(mico_thread_arg_t arg)
             if (rediscover) { feature_mqtt_service(publish,false);rc = discovery(&current); rediscover = false; sent = false; }
             bool on;unsigned speed;feature_effective_fan(current.fan_on,current.speed,&on,&speed);
             if (rc == MQTT_SUCCESS && (!sent || revision != current.revision || old_visible != state.led_visible || old_on!=on || old_speed!=speed)) {
-                rc = states(&current, &state); revision = current.revision; old_visible = state.led_visible;old_on=on;old_speed=speed; sent = true;
+                stage="state"; rc = states(&current, &state); revision = current.revision; old_visible = state.led_visible;old_on=on;old_speed=speed; sent = true;
             }
-            if (rc == MQTT_SUCCESS) rc = feature_mqtt_service(publish, true);
+            if (rc == MQTT_SUCCESS) {stage="link";rc = feature_mqtt_service(publish, true);}
+            if (rc == MQTT_SUCCESS) {stage="result";rc = service_mqtt_flush(publish);}
             if (rc == MQTT_SUCCESS && (uint32_t)(mico_rtos_get_time() - acl_check) >= 30000) {
-                rc = MQTTSubscribe(&client, wildcard, QOS1, command);
+                stage="subscribe";rc = MQTTSubscribe(&client, wildcard, QOS1, command);
                 for (unsigned i = 0; i < count && rc == MQTT_SUCCESS; ++i)
                     rc = MQTTSubscribe(&client, feature_filters[i], QOS1, feature_command);
                 acl_check = mico_rtos_get_time();
                 if (rc != MQTT_SUCCESS) mqtt_status(MQTT_WAITING_ACL);
             }
-            if (rc == MQTT_SUCCESS) rc = MQTTYield(&client, 100);
+            if (rc == MQTT_SUCCESS) {stage="receive";rc = MQTTYield(&client, 100);}
             mico_thread_msleep(50);
+        }
+        if (rc != MQTT_SUCCESS) {
+            char event[40]; snprintf(event,sizeof(event),"%s_error_%d",stage,rc);
+            service_event("warn","mqtt",event);
         }
         mico_rtos_lock_mutex(&a1_lock); a1_state.mqtt_connected = false; mico_rtos_unlock_mutex(&a1_lock);
         a1_config_get(&current);

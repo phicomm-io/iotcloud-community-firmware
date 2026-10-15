@@ -1,0 +1,42 @@
+--- a/libraries/protocols/mqtt/MQTTClient.c
++++ b/libraries/protocols/mqtt/MQTTClient.c
+@@ -381,6 +381,12 @@
+   memset((void*)(c->readbuf), '\0', c->readbuf_size);
+   packet_type = readPacket(c, timer);  // return 0 means no data, else packet_type > =1, error < 0
+ 
++  /* Completing an incoming packet may outlive the idle yield deadline.
++   * Its protocol acknowledgement needs its own bounded send deadline. */
++  Timer response_timer;
++  InitTimer(&response_timer);
++  countdown_ms(&response_timer, c->command_timeout_ms);
++
+   switch (packet_type)
+   {
+   case CONNACK:
+@@ -407,7 +413,7 @@
+         if (len <= 0)
+           rc = MQTT_FAILURE;
+         else
+-          rc = sendPacket(c, len, timer);
++          rc = sendPacket(c, len, &response_timer);
+         // response failed
+         if (MQTT_FAILURE == rc)
+             goto exit; // there was a problem
+@@ -422,7 +428,7 @@
+         rc = MQTT_FAILURE;
+       else if ((len = MQTTSerialize_ack(c->buf, c->buf_size, PUBREL, 0, mypacketid)) <= 0)
+         rc = MQTT_FAILURE;
+-      else if ((rc = sendPacket(c, len, timer)) != MQTT_SUCCESS) // send the PUBREL packet
++      else if ((rc = sendPacket(c, len, &response_timer)) != MQTT_SUCCESS) // send the PUBREL packet
+         rc = MQTT_FAILURE; // there was a problem
+       // response failed
+       if (MQTT_FAILURE == rc)
+@@ -437,7 +443,7 @@
+         rc = MQTT_FAILURE;
+       else if ((len = MQTTSerialize_ack(c->buf, c->buf_size, PUBCOMP, 0, mypacketid)) <= 0)
+         rc = MQTT_FAILURE;
+-      else if ((rc = sendPacket(c, len, timer)) != MQTT_SUCCESS) // send the PUBCOMP packet
++      else if ((rc = sendPacket(c, len, &response_timer)) != MQTT_SUCCESS) // send the PUBCOMP packet
+         rc = MQTT_FAILURE; // there was a problem
+       // response failed
+       if (MQTT_FAILURE == rc)

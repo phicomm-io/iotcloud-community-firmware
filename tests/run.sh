@@ -27,6 +27,8 @@ for p in pathlib.Path(sys.argv[1]).glob('*.c'):
 PYHOST
 json_dir="$output/json_c"
 cc -std=gnu99 -Wall -Wextra -Werror -Wno-misleading-indentation -Itests/stubs -I"$json_dir" common/service.c tests/test_service.c "$json_dir"/*.c -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -o "$output/service"
+cc -std=gnu99 -Wall -Wextra -Werror -Wno-misleading-indentation -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -Itests/stubs -Icommon -I"$json_dir" tests/test_mqtt_service.c "$json_dir"/*.c -o "$output/mqtt-service"
+"$output/mqtt-service"
 "$output/service"
 for define in -DFEATURE_DEVICE_A1 -DAUTOMATION_TC1; do
 cc "$define" -std=gnu99 -Wall -Wextra -Wno-misleading-indentation -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-value -Wno-nonnull-compare -Itests/stubs -I"$json_dir" common/service.c tests/test_automation.c "$json_dir"/*.c -o "$output/automation"

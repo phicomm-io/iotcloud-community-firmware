@@ -3,11 +3,40 @@
 static int service_mqtt_publish(int (*sender)(const char *,const char *,bool),const mqtt_account_t *scope,const char *leaf,json_object *o,bool retain){
  if(!o)return MQTT_FAILURE;char topic[MQTT_TOPIC_MAX];mqtt_leaf(scope,leaf,topic,sizeof(topic));int rc=sender(topic,json_object_to_json_string(o),retain);json_object_put(o);return rc;
 }
+/* SDK publish waits for PUBACK by dispatching incoming callbacks. Publishing
+ * a result from such a callback would consume the outer publish's ACK. Queue
+ * replies and flush only from the owner loop, outside MQTT packet dispatch. */
+static struct { char topic[MQTT_TOPIC_MAX]; json_object *reply; } service_mqtt_replies[4];
+static unsigned service_mqtt_reply_count;
+static void service_mqtt_clear(void){
+ for(unsigned i=0;i<service_mqtt_reply_count;i++)json_object_put(service_mqtt_replies[i].reply);
+ service_mqtt_reply_count=0;
+}
+static int service_mqtt_flush(int (*sender)(const char *,const char *,bool)){
+ unsigned count=service_mqtt_reply_count;
+ while(count-- && service_mqtt_reply_count){
+  char topic[MQTT_TOPIC_MAX];strcpy(topic,service_mqtt_replies[0].topic);
+  json_object *r=service_mqtt_replies[0].reply;
+  service_mqtt_reply_count--;
+  memmove(service_mqtt_replies,service_mqtt_replies+1,service_mqtt_reply_count*sizeof(service_mqtt_replies[0]));
+  int rc=sender(topic,json_object_to_json_string(r),false);json_object_put(r);
+  if(rc!=MQTT_SUCCESS)return rc;
+ }
+ return MQTT_SUCCESS;
+}
 static int service_mqtt_input(int (*sender)(const char *,const char *,bool),const mqtt_account_t *scope,const void *payload,size_t length,bool retained){
- if(retained)return MQTT_SUCCESS;json_object *q=service_parse(payload,length),*r=service_command(q);if(q)json_object_put(q);return service_mqtt_publish(sender,scope,"result",r,false);
+ (void)sender;
+ if(retained)return MQTT_SUCCESS;
+ if(service_mqtt_reply_count==4)return MQTT_FAILURE;
+ json_object *q=service_parse(payload,length),*r=service_command(q);if(q)json_object_put(q);
+ if(!r)return MQTT_FAILURE;
+ mqtt_leaf(scope,"result",service_mqtt_replies[service_mqtt_reply_count].topic,MQTT_TOPIC_MAX);
+ service_mqtt_replies[service_mqtt_reply_count++].reply=r;
+ return MQTT_SUCCESS;
 }
 static int service_mqtt_snapshot(int (*sender)(const char *,const char *,bool),const mqtt_account_t *scope){
+ int rc=service_mqtt_flush(sender);if(rc!=MQTT_SUCCESS)return rc;
  json_object *r=service_query("status.get");if(!r)return MQTT_FAILURE;json_object *data=json_object_object_get(r,"data");if(data)json_object_get(data);json_object_put(r);
  return service_mqtt_publish(sender,scope,"state",data,true);
 }
-static int service_mqtt_capabilities(int (*sender)(const char *,const char *,bool),const mqtt_account_t *scope){return service_mqtt_publish(sender,scope,"capabilities",service_product_capabilities(),true);}
+static int service_mqtt_capabilities(int (*sender)(const char *,const char *,bool),const mqtt_account_t *scope){service_mqtt_clear();return service_mqtt_publish(sender,scope,"capabilities",service_product_capabilities(),true);}
