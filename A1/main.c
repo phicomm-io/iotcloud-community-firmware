@@ -225,7 +225,7 @@ int application_start(void)
     snprintf(a1_id, sizeof(a1_id), "%02x%02x%02x%02x%02x%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     a1_config_get(&c);
     if (!c.name[0]) {
-        snprintf(c.name, sizeof(c.name), "phicomm_a1_%s", a1_id + 6);
+        snprintf(c.name, sizeof(c.name), "A1-%02X%02X", mac[4], mac[5]);
         if (!a1_config_save(&c)) return startup_result("config persist", kUnknownErr);
     }
     snprintf(a1_state.ap_name, sizeof(a1_state.ap_name), "A1-AP-%s", a1_id + 6);

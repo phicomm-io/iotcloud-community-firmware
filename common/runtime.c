@@ -230,15 +230,17 @@ static bool send_udp(const char *ip, json_object *o) {
   if (a.sin_addr.s_addr == INADDR_NONE || a.sin_addr.s_addr == 0)
     return false;
   const char *b = json_object_to_json_string(o);
-  char wire[FEATURE_WIRE_MAX];
+  /* UDP replies also run on the 6 KiB binding task. Keep packet storage
+   * off that stack, which already holds the worker and protocol frames. */
+  char *wire = malloc(FEATURE_WIRE_MAX);
+  if (!wire) return false;
   size_t n = 0;
   bool quoted = false, escape = false;
   for (; *b; b++) {
     char ch = *b;
     if (!quoted && (ch == ' ' || ch == '\n' || ch == '\r' || ch == '\t'))
       continue;
-    if (n == sizeof(wire))
-      return false;
+    if (n == FEATURE_WIRE_MAX) { free(wire); return false; }
     wire[n++] = ch;
     if (escape)
       escape = false;
@@ -247,7 +249,9 @@ static bool send_udp(const char *ip, json_object *o) {
     else if (ch == '"')
       quoted = !quoted;
   }
-  return sendto(udp, wire, n, 0, (struct sockaddr *)&a, sizeof(a)) == (int)n;
+  bool sent = sendto(udp, wire, n, 0, (struct sockaddr *)&a, sizeof(a)) == (int)n;
+  free(wire);
+  return sent;
 }
 static bool send_peer(const feature_config_t *c, unsigned i, json_object *o,
                       bool mqtt_only) {
@@ -395,8 +399,11 @@ static void passive_incoming(json_object *o, bool lan, bool retained, const char
   unlock();
   if (permitted) {
     json_object *r = envelope(c, i, handshake ? "bound" : !strcmp(op,"probe") ? "pong" : "sample", integer(o,"id"));
-    m1_state_t state; m1_state_get(&state);
-    js(r, "ip", state.ip);
+    m1_state_t *state = malloc(sizeof(*state));
+    if (!r || !state) { if (r) json_object_put(r); free(state); free(c); return; }
+    m1_state_get(state);
+    js(r, "ip", state->ip);
+    free(state);
     if (!strcmp(op,"read")) json_object_object_add(r,"body",sample_body(&sample,now_ms()));
     if (lan) send_udp(ip,r); else send_peer(c,i,r,true);
     json_object_put(r);

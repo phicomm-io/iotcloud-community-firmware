@@ -81,6 +81,7 @@ static void MqttClientThread(mico_thread_arg_t arg);
 static void MessageArrived(MessageData *md);
 static int ota_service(const char *);
 static int service_sender(const char *,const char *,bool);
+static int service_mqtt_flush(int (*)(const char *,const char *,bool));
 static int service_mqtt_snapshot(int (*)(const char *,const char *,bool),const mqtt_account_t *);
 static int service_mqtt_capabilities(int (*)(const char *,const char *,bool),const mqtt_account_t *);
 static void ota_forget(void);
@@ -428,6 +429,7 @@ void MqttClientThread(mico_thread_arg_t arg) {
                 char command_topic[MQTT_TOPIC_MAX];mqtt_leaf(&account,"command",command_topic,sizeof(command_topic));rc=MQTTSubscribe(&c,command_topic,QOS1,MessageArrived); acl_check=mico_rtos_get_time();
                 if(rc!=MQTT_SUCCESS) tc1_mqtt_status=MQTT_WAITING_ACL;
             }
+            if(rc==MQTT_SUCCESS && account.mode) rc=service_mqtt_flush(service_sender);
             if(rc==MQTT_SUCCESS) rc=MQTTYield(&c,100);
             mico_rtos_thread_msleep(50);
         }

@@ -297,6 +297,7 @@ static void mqtt_worker(mico_thread_arg_t arg)
                 old_brightness = state.brightness_requested;
             }
             if (rc == MQTT_SUCCESS) rc = feature_mqtt_service(publish, true);
+            if (rc == MQTT_SUCCESS) rc = service_mqtt_flush(publish);
             if (rc == MQTT_SUCCESS && (uint32_t)(mico_rtos_get_time() - acl_check) >= 30000) {
                 rc = MQTTSubscribe(&client, wildcard, QOS1, native_command);
                 for (unsigned i = 0; i < count && rc == MQTT_SUCCESS; ++i)

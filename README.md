@@ -54,3 +54,7 @@
 统一供设备状态、网页、MQTT、日志和 SDK 固件版本字段使用。
 打包读取同一份版本快照，并将版本、完整 commit、tag 和 dirty 状态写入 manifest。
 这些生成文件不提交；版本变化会更新头文件，以触发依赖它的源码重新编译。
+
+## TMCP 平台
+
+MQTT 服务与网页控制台位于 [platform/](platform/README.md)，与固件共同管理。账号迁移和回退流程见 [平台迁移文档](platform/docs/MIGRATION_TMCP.md)。

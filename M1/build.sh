@@ -34,6 +34,7 @@ fi
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/wifi-owned-mico36.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-mico36.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/mqtt-packet-deadline.patch"
+python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-response-deadline.patch"
 
 ln -sfn "$sdk_dir" "$workspace/mico-os"
 ln -sfn "$app_dir" "$workspace/M1"
@@ -73,5 +74,6 @@ ln -sfn "$(command -v make)" "$micoder/cmd/Linux64/make"
         DISABLE_MICO_BLUENRG=1 -f mico-os/makefiles/Makefile "$target" total
 )
 python3 "$app_dir/tools/check_image.py" "$workspace/build/$target/binary/$target.ota.bin"
+python3 "$project_dir/tools/check_json_float.py" "$gcc_dir/bin/arm-none-eabi-nm" "$workspace/build/$target/binary/$target.elf"
 python3 "$app_dir/tools/package.py" "$workspace/build/$target/binary" "$project_dir/build/m1-release" "$sdk_commit"
 

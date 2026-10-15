@@ -32,6 +32,9 @@ if ! git -C "$sdk_dir" apply --reverse --check "$app_dir/features-sdk.patch" 2>/
 fi
 
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-mico36.patch"
+# Complete started MQTT packets even when the short yield deadline expires.
+python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/M1/mqtt-packet-deadline.patch"
+python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-response-deadline.patch"
 
 ln -sfn "$sdk_dir" "$workspace/mico-os"
 ln -sfn "$app_dir" "$workspace/A1"
@@ -71,4 +74,5 @@ ln -sfn "$(command -v make)" "$micoder/cmd/Linux64/make"
         DISABLE_MICO_BLUENRG=1 -f mico-os/makefiles/Makefile "$target" total
 )
 python3 "$app_dir/tools/check_image.py" "$workspace/build/$target/binary/$target.ota.bin"
+python3 "$project_dir/tools/check_json_float.py" "$gcc_dir/bin/arm-none-eabi-nm" "$workspace/build/$target/binary/$target.elf"
 python3 "$app_dir/tools/package.py" "$workspace/build/$target/binary" "$project_dir/build/a1-release" "$sdk_commit"

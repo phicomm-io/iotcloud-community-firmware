@@ -60,4 +60,5 @@ ln -sfn "$(command -v make)" "$micoder/cmd/Linux64/make"
     make HOST_OS=Linux64 TOOLS_ROOT="$micoder" PYTHON="$python2" TLS=mocSSL \
         -f mico-os/makefiles/Makefile "$target" total
 )
+python3 "$project_dir/tools/check_json_float.py" "$gcc_dir/bin/arm-none-eabi-nm" "$workspace/build/$target/binary/$target.elf"
 python3 "$app_dir/tools/package.py" "$workspace/build/$target/binary" "$project_dir/build/tc1-release"
