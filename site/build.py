@@ -17,7 +17,7 @@ sys.path.insert(0,str(ROOT/'common/web'))
 from page import render_page
 for model,source in [('tc1','TC1/http_server/web/index.html'),('m1','M1/web/index.html'),('a1','A1/web/index.html')]:
  dest=out/'demos'/model;dest.mkdir(parents=True,exist_ok=True)
- adapter=(ROOT/'site/demo.js').read_text().replace('__MODEL__',model)
+ adapter=(ROOT/'common/web/demo.js').read_text().replace('__MODEL__',model)
  text=render_page(ROOT/source).decode();text=text.replace('<head>','<head><script>'+adapter+'</script>',1)
  (dest/'index.html').write_text(text)
 
