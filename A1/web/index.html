@@ -1,66 +1,78 @@
 <!doctype html>
-<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>A1 空气净化器</title>
-<style>
-/* @include style.css */
-</style>
-<h1 id="title">A1 空气净化器</h1><div id="connection" class="status">连接设备中…</div>
-<nav class="navigation" aria-label="主导航"><a id="homeLink" href="#home">首页</a><a id="settingsLink" href="#settings/network">设置</a></nav>
-<div id="notice" role="status" aria-live="polite"></div>
-<main id="homePage"><section><h2>空气净化器</h2><div class="row"><button id="fanToggle" type="button">连接中…</button><span id="fanStatus"></span></div><label for="speed">风速 <span id="speedValue">60</span>%</label><input id="speed" type="range" min="0" max="100" step="1"><p class="hint">0 为关闭。显示设置百分比；风机逐步调整输出，设备没有转速回读。</p></section><section><h2>灯环</h2><form id="lightForm"><div class="grid"><div><label><input id="ledEnabled" type="checkbox"> 启用灯环</label><label><input id="ledAlwaysOn" type="checkbox"> 常亮</label></div><div><label for="color">颜色</label><input id="color" type="color" value="#0000ff"></div></div><label for="brightness">亮度（0～255）</label><input id="brightness" type="range" min="0" max="255" step="1"><button>应用灯环设置</button></form><p class="hint">未启用常亮时，控制后显示两秒。风机开启时显示风速条，关闭时显示整圈；Wi-Fi 指示位置单独显示连接状态。</p><div id="lightStatus" class="hint"></div></section></main>
-<div id="settingsPage" hidden><nav class="navigation subnav" aria-label="设置菜单"><a href="#settings/network">Wi-Fi</a><a href="#settings/mqtt">MQTT</a><a href="#settings/device">设备</a><a href="#settings/binding">绑定与联动</a><a href="#settings/firmware">固件升级</a><a href="#settings/diagnostics">诊断</a></nav><div data-settings-page="network" hidden><section><h2>Wi-Fi 配网</h2><!-- @include wifi.html --><p class="hint">验证成功并取得 IP 后才保存；30 秒失败后恢复之前的网络。</p></section></div><div data-settings-page="mqtt" hidden><section><h2>MQTT / Home Assistant</h2><!-- @include mqtt.html --><p class="hint">HA 配置 MQTT 集成后，设备会自动创建空气净化器控制、RGB 灯环、童锁和常亮开关。</p></section></div><div data-settings-page="device" hidden><section><h2>设备设置</h2><label><input id="childLock" type="checkbox"> 童锁（锁定面板电源和调速）</label><p class="hint">长按面板 Wi-Fi 键 2.5 秒可开启配网热点，童锁期间仍可使用。</p><div class="grid"><form id="nameForm"><label for="deviceName">设备名称</label><input id="deviceName" maxlength="63" required><button>保存名称</button></form></div><!-- @include auth.html --><button id="reboot" type="button">重启设备</button><button id="factoryReset" type="button">恢复默认配置</button></section></div><div data-settings-page="binding" hidden><section id="bindingPanel"><h2>绑定与联动</h2><p class="hint">先在任一端添加对方 MAC，两台设备使用同一个 MQTT Broker。握手成功后才启用联动。可填写局域网 IP；留空时通过 MQTT 地址公告查找。关闭恢复检查后，可手动探测；强制 MQTT 会停用局域网传输。</p><nav id="featureTabs" class="row"></nav><form id="featureForm"><div id="featureFields"></div><button>保存当前配置</button></form><button id="featureReload" type="button">重新读取配置</button><label for="probeMac">探测设备 MAC</label><div class="row"><input id="probeMac" maxlength="17"><button id="featureProbe" type="button">探测 LAN</button></div><pre id="bindingStatus"></pre></section></div><div data-settings-page="firmware" hidden><section><h2>固件升级</h2><form id="fileForm"><label for="firmware">上传 A1 签名 OTA 文件</label><input id="firmware" type="file" accept=".bin,.raw,.signed" required><label><input id="unsignedRescue" type="checkbox">允许未签名的固件</label><button id="upload">上传并升级</button></form><form id="urlForm"><label for="otaUrl">更新文件直链（HTTP）</label><input id="otaUrl" type="url" maxlength="499" placeholder="http://服务器/A1.ota.bin.signed" required><button>下载并升级</button></form><p class="hint">选择本项目的 A1 OTA 包。校验成功后设备自动重启，保留 Wi-Fi、MQTT 、风机和灯环配置。</p><progress id="otaProgress" max="100" value="0"></progress><div id="otaStatus" class="hint"></div></section></div><div data-settings-page="diagnostics" hidden><section><h2>设备诊断</h2><p class="hint">风机输出表示软件 PWM 设置，不能确认实际转速。面板通信状态请查看 panel_ready 和 panel_errors。</p><div id="diagnosticGroups" class="diagnostic-grid"></div><details><summary>原始 JSON</summary><pre id="diagnostics"></pre></details></section></div></div>
-<script>
-/* @include diagnostics.js */
-'use strict';
-const $=id=>document.getElementById(id);let initialized=false,uploading=false,currentFanOn=false,lightDirty=false;
-function showPage(){
- const route=location.hash.slice(1), match=/^settings\/(network|mqtt|device|binding|firmware|diagnostics)$/.exec(route);
- const settings=!!match;
- $('homePage').hidden=settings;$('settingsPage').hidden=!settings;
- document.querySelectorAll('[data-settings-page]').forEach(page=>{page.hidden=!settings||page.dataset.settingsPage!==match[1];});
- document.querySelectorAll('.navigation a').forEach(link=>{const active=link.id==='homeLink'?!settings:link.id==='settingsLink'?settings:settings&&link.hash===location.hash;if(active)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');});
-}
-window.addEventListener('hashchange',showPage);showPage();
-function notice(text,bad=false){$('notice').textContent=text;$('notice').className=bad?'bad':'';}
-async function api(path,data){const r=await fetch(path,{method:data===undefined?'GET':'POST',headers:data===undefined?{}:{'Content-Type':'application/json'},body:data===undefined?undefined:JSON.stringify(data),cache:'no-store'});const body=await r.json();if(!r.ok)throw Error(body.message||('HTTP '+r.status));return body;}
-function form(id,path,body){$(id).addEventListener('submit',async e=>{e.preventDefault();const button=e.target.querySelector('button');button.disabled=true;try{await api(path,body());if(id==='lightForm')lightDirty=false;notice('请求已接受');}catch(err){notice(err.message,true);}finally{button.disabled=false;}});}
-form('wifiForm','/wifi/config',()=>({ssid:$('ssid').value,password:$('wifiPassword').value,open_network:$('openNetwork').checked}));
-form('mqttForm','/mqtt/config',()=>{if(new TextEncoder().encode($('mqttUser').value).length>63||new TextEncoder().encode($('mqttPassword').value).length>256)throw new Error('用户名最多 63 字节，密码最多 256 字节');return ({host:$('mqttHost').value,port:Number($('mqttPort').value),topic_mode:$('mqttMode').value,user:$('mqttUser').value,password:$('mqttPassword').value,clear_password:$('clearMqttPassword').checked});});
-form('nameForm','/deviceName',()=>({name:$('deviceName').value}));
-form('authForm','/auth/password',()=>({password:$('webPassword').value}));form('urlForm','/ota',()=>({url:$('otaUrl').value}));
-$('lightForm').addEventListener('input',()=>{lightDirty=true;});
-form('lightForm','/light/config',()=>{const c=$('color').value;return {enabled:$('ledEnabled').checked,always_on:$('ledAlwaysOn').checked,brightness:Number($('brightness').value),color:{r:parseInt(c.slice(1,3),16),g:parseInt(c.slice(3,5),16),b:parseInt(c.slice(5,7),16)}};});
-$('speed').addEventListener('input',()=>{$('speedValue').textContent=$('speed').value;});
-$('speed').addEventListener('change',async()=>{try{await api('/fan/config',{speed:Number($('speed').value)});notice('风速设置已接受');}catch(e){notice(e.message,true);}});
-$('fanToggle').addEventListener('click',async()=>{try{await api('/fan/config',{on:!currentFanOn});notice('风机设置已接受');}catch(e){notice(e.message,true);}});
-$('childLock').addEventListener('change',async()=>{try{await api('/childLock',{enabled:$('childLock').checked});notice('童锁设置已接受');}catch(e){notice(e.message,true);}});
-$('networks').addEventListener('change',()=>{$('ssid').value=$('networks').value;});
-$('scan').addEventListener('click',async()=>{const button=$('scan');button.disabled=true;try{await api('/wifi/scan',{});notice('扫描网络中…');const deadline=Date.now()+20000;while(Date.now()<deadline){await new Promise(r=>setTimeout(r,700));const s=await api('/wifi/scan');if(s.scanning)continue;const list=$('networks');list.replaceChildren();s.networks.sort((a,b)=>b.rssi-a.rssi).forEach(n=>{const o=document.createElement('option');o.value=n.ssid;o.textContent=n.ssid+' ('+n.rssi+' dBm)';list.append(o);});list.hidden=!s.networks.length;if(s.networks.length)$('ssid').value=list.value;notice(s.networks.length?'请选择网络':'未发现网络，可手动填写名称');return;}throw Error('扫描超时');}catch(e){notice(e.message,true);}finally{button.disabled=false;}});
-$('factoryReset').addEventListener('click',async()=>{if(!confirm('清除全部配置并重启设备？'))return;try{await api('/device/reset',{full:true});notice('配置已重置，设备正在重启…');}catch(e){notice(e.message,true);}});
-$('reboot').addEventListener('click',async()=>{if(!confirm('重启 A1？'))return;try{await api('/reboot',{});notice('设备正在重启…');}catch(e){notice(e.message,true);}});
-$('fileForm').addEventListener('submit',e=>{e.preventDefault();const file=$('firmware').files[0];if(!file||uploading)return;const rescue=$('unsignedRescue').checked;uploading=true;$('upload').disabled=true;const xhr=new XMLHttpRequest();xhr.open('POST',rescue?'/ota/fileUploadUnsigned':'/ota/fileUpload');xhr.setRequestHeader('Content-Type','application/octet-stream');xhr.timeout=310000;xhr.upload.onprogress=e=>{if(e.lengthComputable){$('otaProgress').value=e.loaded/e.total*100;notice('正在上传 '+Math.round(e.loaded/e.total*100)+'%');}};xhr.onload=()=>{notice(xhr.status===202?'文件校验通过，设备正在重启':('升级失败：'+xhr.responseText),xhr.status!==202);};xhr.onerror=()=>notice('连接中断，请重新连接设备查看升级状态',true);xhr.ontimeout=()=>notice('上传超时',true);xhr.onloadend=()=>{uploading=false;$('upload').disabled=false;};xhr.send(file);});
-async function refresh(){try{const s=await api('/status');$('title').textContent='A1 '+s.name;$('connection').textContent='Wi-Fi：'+(s.wifi_connected?'已连接 '+s.ip:s.ap_active?'配网热点 '+s.ap_name:'连接中')+' ｜ MQTT：'+(s.mqtt_status||'disconnected')+(s.mqtt_cleanup_warning?' ｜ 旧 HA 实体清理失败，请手动清理':'')+' ｜ 固件 '+s.version;currentFanOn=s.fan_on;$('fanToggle').textContent=s.fan_on?'关闭净化器':'开启净化器';$('fanToggle').disabled=s.ota_active||s.reboot_pending;$('fanStatus').textContent='设置 '+s.percentage+'% ｜ 输出 '+s.applied_speed+'%';if(document.activeElement!==$('speed')){$('speed').value=s.percentage;$('speedValue').textContent=s.percentage;}if(document.activeElement!==$('childLock'))$('childLock').checked=s.child_lock;$('lightStatus').textContent='灯环：'+(s.led_visible?'显示中':'已熄灭')+(s.config_dirty?' ｜ 设置保存中…':'')+(s.save_error?' ｜ '+s.save_error:'');if(!lightDirty){$('ledEnabled').checked=s.led_enabled;$('ledAlwaysOn').checked=s.led_always_on;$('brightness').value=s.brightness;$('color').value='#'+[s.red,s.green,s.blue].map(n=>n.toString(16).padStart(2,'0')).join('');}$('otaProgress').value=s.ota_progress;$('otaStatus').textContent='升级状态：'+s.ota_state+(s.ota_error?'；'+s.ota_error:'');renderCommonDiagnostics(s,[['风机与面板',['fan_on','speed','applied_speed','fan_ready','child_lock','panel_ready','panel_errors','hardware_errors']],['灯环',['led_enabled','led_visible','led_always_on','brightness','red','green','blue']]]);if(!initialized){$('ssid').value=s.ssid;$('mqttHost').value=s.mqtt_host;$('mqttPort').value=s.mqtt_port;$('mqttUser').value=s.mqtt_user;$('mqttMode').value=s.mqtt_topic_mode;$('deviceName').value=s.name;initialized=true;}}catch(e){$('connection').textContent='设备连接中断；如正在升级，请等待重启后重新连接。';}finally{setTimeout(refresh,2000);}}
-refresh();
-(()=>{
- const definitions=[['binding','绑定','/binding/config'],['linkage','风机联动','/linkage/config'],['light','灯带效果','/light/advanced'],['schedule','定时任务','/schedule/config'],['sleep','夜间模式','/sleep/config'],['time','时钟','/time/config']];
- const labels={group:'净化器组名称（留空为独立设备）',group_force_mqtt:'组成员强制 MQTT',group_recovery:'检查组成员 LAN 恢复',group_timeout_ms:'组通信超时（毫秒）',group_recovery_seconds:'组通信恢复间隔（秒）',quality_pm:'综合空气质量 PM2.5 基准',quality_hcho:'综合空气质量甲醛基准',peers:'绑定设备',members:'净化器组成员',mac:'MAC 地址',ip:'局域网 IPv4 地址',kind:'设备类型',confirmed:'已确认绑定',force_mqtt:'强制 MQTT',recovery:'自动检查 LAN 恢复',timeout_ms:'LAN 超时（毫秒）',recovery_seconds:'恢复检查间隔（秒）',enabled:'启用',mode:'风量调节',metrics:'风量调节指标',on_metrics:'启动监测指标',off_metrics:'关闭监测指标',statistic:'多检测器策略',on_enabled:'启用阈值启动',off_enabled:'启用阈值关闭',on_all:'启动条件均满足（否则任一）',off_all:'关闭条件均满足（否则任一）',fixed_speed:'固定风量（%）',min_speed:'最低风量（%）',max_speed:'最高风量（%）',debounce_seconds:'条件持续时间（秒）',min_switch_seconds:'最短开关间隔（秒）',on_pm:'启动 PM2.5 阈值',off_pm:'关闭 PM2.5 阈值',on_hcho:'启动甲醛阈值（mg/m³）',off_hcho:'关闭甲醛阈值（mg/m³）',target_pm:'PM2.5 目标',target_hcho:'甲醛目标',low_pm:'线性最低 PM2.5',high_pm:'线性最高 PM2.5',low_hcho:'线性最低甲醛',high_hcho:'线性最高甲醛',kp:'PID Kp',ki:'PID Ki',kd:'PID Kd',effect:'默认灯效',segments:'分段数量',follow_fan:'亮度随风量变化',segment:'分段显示',source:'数据来源',display:'显示方式',minimum:'数值下限',maximum:'数值上限',suitable_low:'适宜下限',suitable_high:'适宜上限',colors:'低 / 适宜 / 高颜色（RGB）',events:'每周定时事件',windows:'夜间时段',days:'星期掩码（周一 1 至周日 64，相加；每天 127）',minute:'执行时间（当天分钟数，例如 08:00 = 480）',on:'开启风机',speed:'风量（%）',fan:'风机睡眠',light:'灯带睡眠',brightness:'灯带亮度上限（0 为关闭）',block_start:'睡眠时禁止联动自动启动',start:'开始时间（分钟数）',end:'结束时间（分钟数，可跨午夜）',ntp_host:'NTP 服务器',timezone_minutes:'UTC 时差（分钟；北京时间 480）'};
- const options={mode:['固定风量','线性调节','PID'],metrics:{1:'PM2.5',2:'甲醛',3:'PM2.5 和甲醛'},statistic:['平均','最高','最低','中位数（有效检测器 > 3）','去最高最低平均','按列表顺序故障切换'],kind:{1:'M1',2:'A1',3:'组'},effect:['风速条（原默认）','固定颜色','呼吸','彩虹','分段数据'],source:['温度','湿度','PM2.5','甲醛','综合空气质量','风量'],display:['固定颜色 + 数值亮度','适宜程度颜色 + 固定亮度','适宜程度颜色 + 数值亮度']};
- options.on_metrics=options.off_metrics=options.metrics;
- const flags=new Set(['group_force_mqtt','group_recovery','enabled','force_mqtt','recovery','on_enabled','off_enabled','on_all','off_all','follow_fan','on','fan','light','block_start']);
- let selected=0,model=null;
- function input(value,key,change){const wrap=document.createElement('div'),label=document.createElement('label');label.textContent=labels[key]||key;wrap.append(label);let el;
- if(options[key]){el=document.createElement('select');Object.entries(options[key]).forEach(([v,text])=>{const o=document.createElement('option');o.value=v;o.textContent=text;el.append(o);});el.value=value;el.onchange=()=>change(Number(el.value));}
- else{el=document.createElement('input');el.type=flags.has(key)?'checkbox':typeof value==='number'?'number':'text';if(el.type==='number'){el.step='any';el.value=value;el.oninput=()=>{if(el.value!==''&&Number.isFinite(Number(el.value)))change(Number(el.value));};}else if(el.type==='checkbox'){el.checked=!!value;el.onchange=()=>change(typeof value==='boolean'?el.checked:Number(el.checked));}else{el.value=value;el.oninput=()=>change(el.value);}}wrap.append(el);return wrap;}
- function render(value,parent,rootKey=''){if(Array.isArray(value)){value.forEach((v,i)=>{const box=document.createElement('fieldset'),legend=document.createElement('legend');legend.textContent=(labels[rootKey]||rootKey)+' '+(i+1);box.append(legend);if(typeof v==='number')box.append(input(v,String(i),n=>value[i]=n));else render(v,box,rootKey);if(['peers','members','events','windows'].includes(rootKey)){const b=document.createElement('button');b.type='button';b.textContent='删除';b.onclick=()=>{value.splice(i,1);draw();};box.append(b);}parent.append(box);});if(['peers','members','events','windows'].includes(rootKey)){const b=document.createElement('button');b.type='button';b.textContent='添加'+(labels[rootKey]||'');b.onclick=()=>{const max=rootKey==='windows'?4:8;if(value.length>=max){notice('最多 '+max+' 项',true);return;}const defaults={peers:{mac:'',ip:'',kind:document.title.startsWith('M1')?2:1,force_mqtt:false,recovery:true,timeout_ms:1000,recovery_seconds:60},members:{mac:'',ip:''},events:{days:127,on:1,speed:60,minute:480},windows:{days:127,fan:1,light:1,max_speed:30,brightness:0,block_start:1,start:1320,end:420}};value.push(defaults[rootKey]);draw();};parent.append(b);}return;}
- if(value&&typeof value==='object'){Object.entries(value).forEach(([key,v])=>{if(['revision','_source','pending','confirmed','code','message','request_id','response_ids'].includes(key))return;if(v&&typeof v==='object'){const box=document.createElement('details');box.open=true;const title=document.createElement('summary');title.textContent=labels[key]||key;box.append(title);render(v,box,key);parent.append(box);}else parent.append(input(v,key,n=>value[key]=n));});return;}
- // RGB array components are numeric leaves.
- parent.append(input(value,rootKey,()=>{}));}
- function draw(){$('featureFields').replaceChildren();if(model?.response_ids?.length){const label=document.createElement('label'),ids=document.createElement('textarea');label.textContent='组合 MAC（复制到对应 M1）';ids.readOnly=true;ids.value=model.response_ids.join('\n');$('featureFields').append(label,ids);}if(model?.pending){$('featureFields').textContent='等待远端配置，请稍后重新读取。M1 使用绑定列表中的第一个 A1 / 组。';return;}render(model,$('featureFields'));}
- async function load(){try{model=await api(definitions[selected][2]);draw();}catch(e){notice(e.message,true);}}
- definitions.forEach((d,i)=>{const b=document.createElement('button');b.type='button';b.textContent=d[1];b.onclick=()=>{selected=i;load();};$('featureTabs').append(b);});
- $('featureReload').onclick=load;$('featureForm').onsubmit=async e=>{e.preventDefault();if(!model||model.pending)return;try{await api(definitions[selected][2],model);notice('配置已提交；M1 远端配置请稍后重新读取');await load();}catch(e){notice(e.message,true);}};
- $('featureProbe').onclick=async()=>{try{await api('/binding/probe',{mac:$('probeMac').value});notice('探测已请求，请查看传输状态');}catch(e){notice(e.message,true);}};
- async function status(){try{$('bindingStatus').textContent=JSON.stringify(await api('/binding/status'),null,2);}catch{}setTimeout(status,3000);}load();status();
-})();
+<style>/* @include style.css */</style>
+</head>
+<body>
+<main id="homePage" class="home a1-home">
+ <section class="card" style="grid-area:fan">
+  <div class="fan-hero">
+   <button id="power" class="power" type="button" aria-pressed="false" data-i18n-aria="a1.power"></button>
+   <div class="grow">
+    <div class="eyebrow" data-i18n="a1.fan"></div>
+    <div class="stat" id="fanState">—</div>
+    <p class="help" id="fanSub"></p>
+   </div>
+  </div>
+  <div class="stack" style="margin-top:20px">
+   <div class="row between"><span class="label" data-i18n="a1.speed"></span><b class="num" id="speedValue">—</b></div>
+   <div id="presets"></div>
+   <input id="speed" type="range" min="1" max="100" step="1" data-i18n-aria="a1.speed">
+   <div>
+    <div class="bar"><i id="outBar" style="width:0"></i><i id="targetBar" class="target" style="width:0"></i></div>
+    <p class="help" id="outText" style="margin-top:6px"></p>
+   </div>
+   <details class="info"><summary><span data-i18n="common.more_info"></span></summary><p data-i18n="a1.fan_hint"></p></details>
+  </div>
+ </section>
 
-</script></html>
+ <section class="card" style="grid-area:panel">
+  <div class="card-head"><h2 data-i18n="a1.panel"></h2><span id="panelBadge" class="badge"></span></div>
+  <label class="switch"><span class="text"><b data-i18n="a1.child_lock"></b><span data-i18n="a1.child_lock_desc"></span></span><input type="checkbox" role="switch" id="childLock"></label>
+ </section>
+
+ <section class="card" id="autoCard" style="grid-area:auto"></section>
+
+ <section class="card" style="grid-area:light">
+  <div class="card-head"><div><h2 data-i18n="a1.ring"></h2><p class="help" id="effectNote"></p></div><span id="lightSave" class="help"></span></div>
+  <div class="light-layout">
+   <svg id="ring" class="ring" viewBox="0 0 200 200" aria-hidden="true"></svg>
+   <div class="stack grow">
+    <label class="switch"><span class="text"><b data-i18n="a1.ring_on"></b></span><input type="checkbox" role="switch" id="ledEnabled"></label>
+    <label class="switch"><span class="text"><b data-i18n="a1.always_on"></b><span data-i18n="a1.always_on_desc"></span></span><input type="checkbox" role="switch" id="ledAlways"></label>
+    <div><span class="label" data-i18n="a1.color"></span><div class="swatches" id="swatches"></div></div>
+    <div><div class="row between"><span class="label" data-i18n="a1.brightness"></span><b class="num" id="brightValue"></b></div><input id="bright" type="range" min="0" max="255" step="1" data-i18n-aria="a1.brightness"></div>
+   </div>
+  </div>
+ </section>
+</main>
+
+<div id="settingsPage" class="settings" hidden>
+ <nav class="side" id="side" aria-label="Settings"></nav>
+ <div id="pages">
+  <div data-settings-page="device" class="stack">
+   <div><h2 class="page-title" data-i18n="nav.general"></h2><p class="page-lead" data-i18n="gen.lead"></p></div>
+   <div data-slot="name"></div>
+   <section class="card">
+    <div class="card-head"><h2 data-i18n="a1.panel"></h2><span id="panelBadge2" class="badge"></span></div>
+    <label class="switch"><span class="text"><b data-i18n="a1.child_lock"></b><span data-i18n="a1.child_lock_desc"></span></span><input type="checkbox" role="switch" id="childLockDevice"></label>
+    <p class="help" style="margin-top:8px" data-i18n="a1.button_hint"></p>
+   </section>
+   <section class="card" id="clockCard"></section>
+   <div data-slot="auth"></div>
+  </div>
+  <div data-settings-page="light" class="stack"></div>
+  <div data-settings-page="binding" class="stack"></div>
+  <div data-settings-page="linkage" class="stack"></div>
+ </div>
+</div>
+
+<script>/* @include i18n.js */</script>
+<script>/* @include service.js */</script>
+<script>/* @include ui.js */</script>
+<script>/* @include automation.js */</script>
+<script>/* @include page.js */</script>
+</body>
+</html>

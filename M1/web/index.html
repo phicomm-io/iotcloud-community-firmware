@@ -1,86 +1,44 @@
 <!doctype html>
-<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>M1 空气质量检测器</title>
-<style>
-/* @include style.css */
-</style>
-<h1 id="title">M1 空气质量检测器</h1><div id="connection" class="status">连接设备中…</div>
-<nav class="navigation" aria-label="主导航"><a id="homeLink" href="#home">首页</a><a id="settingsLink" href="#settings/network">设置</a></nav>
-<div id="notice" role="status" aria-live="polite"></div>
-<main>
-<div id="homePage">
-<h2 class="page-heading">实时空气信息</h2>
-<div class="cards">
-<div class="card">温度<div class="value" id="temperature">—</div><span class="unit">℃</span></div>
-<div class="card">湿度<div class="value" id="humidity">—</div><span class="unit">%</span></div>
-<div class="card">甲醛<div class="value" id="formaldehyde">—</div><span class="unit">mg/m³</span></div>
-<div class="card">PM2.5<div class="value" id="pm25">—</div><span class="unit">µg/m³</span></div>
-</div><div id="freshness" class="hint">等待传感器数据</div>
-<section><h2>屏幕亮度</h2><div class="row"><input id="brightness" type="range" min="0" max="4" step="1"><span id="brightnessValue">4</span></div><p class="hint">0 为关闭，1～4 为亮度档位。这里显示最近发送的设置值。</p></section>
-</div>
-<div id="settingsPage" hidden>
-<nav class="navigation subnav" aria-label="设置菜单">
-<a href="#settings/network">Wi-Fi</a><a href="#settings/mqtt">MQTT</a><a href="#settings/device">设备</a><a href="#settings/binding">绑定与联动</a><a href="#settings/firmware">固件升级</a><a href="#settings/diagnostics">诊断</a>
-</nav>
-<div id="networkPage" data-settings-page="network" hidden>
-<section><h2>Wi-Fi 配网</h2><!-- @include wifi.html --><p class="hint">验证成功并取得 IP 后才保存；30 秒失败后恢复之前的网络。</p></section>
-</div>
-<div id="mqttPage" data-settings-page="mqtt" hidden><section><h2>MQTT / Home Assistant</h2><!-- @include mqtt.html --><p class="hint">HA 配置 MQTT 集成后，设备会自动创建四项传感器和亮度控制。</p></section>
-</div>
-<div id="devicePage" data-settings-page="device" hidden><section><h2>设备设置</h2><div class="grid"><form id="nameForm"><label for="deviceName">设备名称</label><input id="deviceName" maxlength="63" required><button>保存名称</button></form><form id="timeForm"><label for="timezone">时区（与 UTC 的分钟差）</label><input id="timezone" type="number" min="-720" max="840" value="480" required><button>保存时区</button></form></div><form id="ntpForm"><label for="ntpHost">首选 NTP 服务器</label><input id="ntpHost" maxlength="63" pattern="[A-Za-z0-9.\-]+" required placeholder="例如 ntp1.aliyun.com"><p class="hint">填写域名或 IPv4 地址，不含协议和端口。失败后自动尝试阿里、腾讯、国内及全球 NTP 池；每小时校时，失败后 60 秒重试。保存新地址后立即尝试校时。</p><button>保存 NTP 设置</button></form><!-- @include auth.html --><button id="reboot" type="button">重启设备</button><button id="factoryReset" type="button">恢复默认配置</button></section>
-</div>
-<div id="firmwarePage" data-settings-page="firmware" hidden><section><h2>固件升级</h2><form id="fileForm"><label for="firmware">上传 M1 签名 OTA 文件</label><input id="firmware" type="file" accept=".bin,.raw,.signed" required><label><input id="unsignedRescue" type="checkbox">允许未签名的固件</label><button id="upload">上传并升级</button></form><form id="urlForm"><label for="otaUrl">更新文件直链（HTTP）</label><input id="otaUrl" type="url" maxlength="499" placeholder="http://服务器/M1.ota.bin.signed" required><button>下载并升级</button></form><p class="hint">选择本项目的 M1 OTA 包。校验成功后设备自动重启，保留 Wi-Fi、MQTT 和亮度配置。</p><progress id="otaProgress" max="100" value="0"></progress><div id="otaStatus" class="hint"></div></section>
-</div>
-<div id="diagnosticsPage" data-settings-page="diagnostics" hidden><section><h2>设备诊断</h2><p id="diagnosticUpdated" class="hint"></p><div id="diagnosticGroups" class="diagnostic-grid"></div><details><summary>原始 JSON</summary><pre id="diagnostics"></pre></details></section></div>
-<div id="bindingPage" data-settings-page="binding" hidden><section id="bindingPanel"><h2>绑定与联动</h2><p class="hint">在 A1 添加本机 MAC 后，复制 A1 生成的组合 MAC 到这里。每行一个，最多 8 个。M1 仅响应查询；联动规则、设备组和风量控制请在 A1 设置。</p><form id="responseForm"><label for="responseIds">允许响应的组合 MAC</label><textarea id="responseIds" rows="8" spellcheck="false" placeholder="A1的12位MAC:M1的12位MAC"></textarea><button>保存许可列表</button></form><h3>响应状态</h3><div id="bindingStatus"></div></section>
-
-</div>
-</div>
+<style>/* @include style.css */</style>
+</head>
+<body>
+<main id="homePage" class="home">
+ <!-- Verdict first, then the four readings, then the one control. -->
+ <section class="card verdict" id="verdict">
+  <div class="grow"><div class="eyebrow" data-i18n="m1.overall"></div><div class="stat" id="overall">—</div><p class="help" id="overallWhy"></p></div>
+  <div class="fresh"><span class="dot live" id="freshDot"></span><span id="freshText" class="help"></span></div>
+ </section>
+ <div class="metrics" id="metrics"></div>
+ <div class="grid">
+  <section class="card">
+   <div class="card-head"><div><h2 data-i18n="m1.screen"></h2><p class="help" data-i18n="m1.screen_desc"></p></div></div>
+   <div id="screenSeg"></div>
+  </section>
+  <section class="card" id="peerCard"></section>
+ </div>
 </main>
-<script>
-'use strict';
-const $=id=>document.getElementById(id);let initialized=false,uploading=false;
-function showPage(){
- const route=location.hash.slice(1), match=/^settings\/(network|mqtt|device|binding|firmware|diagnostics)$/.exec(route);
- const settings=!!match;
- $('homePage').hidden=settings;$('settingsPage').hidden=!settings;
- document.querySelectorAll('[data-settings-page]').forEach(page=>{page.hidden=!settings||page.dataset.settingsPage!==match[1];});
- document.querySelectorAll('.navigation a').forEach(link=>{const active=link.id==='homeLink'?!settings:link.id==='settingsLink'?settings:settings&&link.hash===location.hash;if(active)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');});
-}
-window.addEventListener('hashchange',showPage);showPage();
-function notice(text,bad=false){$('notice').textContent=text;$('notice').className=bad?'bad':'';}
-async function api(path,data){const r=await fetch(path,{method:data===undefined?'GET':'POST',headers:data===undefined?{}:{'Content-Type':'application/json'},body:data===undefined?undefined:JSON.stringify(data),cache:'no-store'});const body=await r.json();if(!r.ok)throw Error(body.message||('HTTP '+r.status));return body;}
-function form(id,path,body){$(id).addEventListener('submit',async e=>{e.preventDefault();const button=e.target.querySelector('button');button.disabled=true;try{await api(path,body());notice('请求已接受');}catch(err){notice(err.message,true);}finally{button.disabled=false;}});}
-form('wifiForm','/wifi/config',()=>({ssid:$('ssid').value,password:$('wifiPassword').value,open_network:$('openNetwork').checked}));
-form('mqttForm','/mqtt/config',()=>{if(new TextEncoder().encode($('mqttUser').value).length>63||new TextEncoder().encode($('mqttPassword').value).length>256)throw new Error('用户名最多 63 字节，密码最多 256 字节');return ({host:$('mqttHost').value,port:Number($('mqttPort').value),topic_mode:$('mqttMode').value,user:$('mqttUser').value,password:$('mqttPassword').value,clear_password:$('clearMqttPassword').checked});});
-form('nameForm','/deviceName',()=>({name:$('deviceName').value}));form('timeForm','/time/config',()=>({timezone_minutes:Number($('timezone').value)}));
-form('ntpForm','/ntp/config',()=>({ntp_host:$('ntpHost').value.trim()}));
-form('authForm','/auth/password',()=>({password:$('webPassword').value}));form('urlForm','/ota',()=>({url:$('otaUrl').value}));
-$('brightness').addEventListener('input',()=>{$('brightnessValue').textContent=$('brightness').value;});
-$('brightness').addEventListener('change',async()=>{try{await api('/display/brightness',{level:Number($('brightness').value)});notice('亮度设置已排队');}catch(e){notice(e.message,true);}});
-$('networks').addEventListener('change',()=>{$('ssid').value=$('networks').value;});
-$('scan').addEventListener('click',async()=>{const button=$('scan');button.disabled=true;try{await api('/wifi/scan',{});notice('扫描网络中…');const deadline=Date.now()+20000;while(Date.now()<deadline){await new Promise(r=>setTimeout(r,700));const s=await api('/wifi/scan');if(s.scanning)continue;const list=$('networks');list.replaceChildren();s.networks.sort((a,b)=>b.rssi-a.rssi).forEach(n=>{const o=document.createElement('option');o.value=n.ssid;o.textContent=n.ssid+' ('+n.rssi+' dBm)';list.append(o);});list.hidden=!s.networks.length;if(s.networks.length)$('ssid').value=list.value;notice(s.networks.length?'请选择网络':'未发现网络，可手动填写名称');return;}throw Error('扫描超时');}catch(e){notice(e.message,true);}finally{button.disabled=false;}});
-$('factoryReset').addEventListener('click',async()=>{if(!confirm('清除全部配置并重启设备？'))return;try{await api('/device/reset',{full:true});notice('配置已重置，设备正在重启…');}catch(e){notice(e.message,true);}});
-$('reboot').addEventListener('click',async()=>{if(!confirm('重启 M1？'))return;try{await api('/reboot',{});notice('设备正在重启…');}catch(e){notice(e.message,true);}});
-$('fileForm').addEventListener('submit',e=>{e.preventDefault();const file=$('firmware').files[0];if(!file||uploading)return;const rescue=$('unsignedRescue').checked;uploading=true;$('upload').disabled=true;const xhr=new XMLHttpRequest();xhr.open('POST',rescue?'/ota/fileUploadUnsigned':'/ota/fileUpload');xhr.setRequestHeader('Content-Type','application/octet-stream');xhr.timeout=310000;xhr.upload.onprogress=e=>{if(e.lengthComputable){$('otaProgress').value=e.loaded/e.total*100;notice('正在上传 '+Math.round(e.loaded/e.total*100)+'%');}};xhr.onload=()=>{notice(xhr.status===202?'文件校验通过，设备正在重启':('升级失败：'+xhr.responseText),xhr.status!==202);};xhr.onerror=()=>notice('连接中断，请重新连接设备查看升级状态',true);xhr.ontimeout=()=>notice('上传超时',true);xhr.onloadend=()=>{uploading=false;$('upload').disabled=false;};xhr.send(file);});
 
-/* @include diagnostics.js */
-function renderDiagnostics(s){renderCommonDiagnostics(s,[['传感器',['sensor_received','sensor_valid','age_ms','temperature','humidity','formaldehyde','pm25']],['串口通信',['uart_ready','rx_frames','unknown_frames','uart_errors','discarded_bytes','last_frame']],['时间同步',['ntp_host','ntp_status','ntp_server','ntp_synced','ntp_last_success','ntp_screen_queued','ntp_next_seconds','timezone_minutes']]],'屏幕时间入队不代表已收到屏幕确认。');}
+<div id="settingsPage" class="settings" hidden>
+ <nav class="side" id="side" aria-label="Settings"></nav>
+ <div id="pages">
+  <div data-settings-page="device" class="stack">
+   <div><h2 class="page-title" data-i18n="nav.general"></h2><p class="page-lead" data-i18n="gen.lead"></p></div>
+   <div data-slot="name"></div>
+   <section class="card" id="clockCard"></section>
+   <div data-slot="auth"></div>
+  </div>
+  <div data-settings-page="binding" class="stack"></div>
+ </div>
+</div>
 
-async function refresh(){try{const s=await api('/status');$('title').textContent='M1 '+s.name;$('connection').textContent='Wi-Fi：'+(s.wifi_connected?'已连接 '+s.ip:s.ap_active?'配网热点 '+s.ap_name:'连接中')+' ｜ MQTT：'+(s.mqtt_status||'disconnected')+(s.mqtt_cleanup_warning?' ｜ 旧 HA 实体清理失败，请手动清理':'')+' ｜ 固件 '+s.version;for(const key of ['temperature','humidity','formaldehyde','pm25'])$(''+key).textContent=s[key]===null?'—':Number(s[key]).toFixed(key==='formaldehyde'?3:key==='pm25'?0:1);$('freshness').textContent=!s.sensor_received?'等待传感器回包':(s.sensor_valid?'数据正常，':'数据已过期，')+Math.floor(s.age_ms/1000)+' 秒前更新';$('freshness').className=s.sensor_received&&!s.sensor_valid?'hint bad':'hint';if(document.activeElement!==$('brightness')){$('brightness').value=s.brightness_requested;$('brightnessValue').textContent=s.brightness_requested;}$('otaProgress').value=s.ota_progress;$('otaStatus').textContent='升级状态：'+s.ota_state+(s.ota_error?'；'+s.ota_error:'');renderDiagnostics(s);if(!initialized){$('ssid').value=s.ssid;$('mqttHost').value=s.mqtt_host;$('mqttPort').value=s.mqtt_port;$('mqttUser').value=s.mqtt_user;$('mqttMode').value=s.mqtt_topic_mode;$('deviceName').value=s.name;$('timezone').value=s.timezone_minutes;$('ntpHost').value=s.ntp_host||'pool.ntp.org';initialized=true;}}catch(e){$('connection').textContent='设备连接中断；如正在升级，请等待重启后重新连接。';}finally{setTimeout(refresh,2000);}}
-refresh();
-(()=>{
- let loaded=false;
- $('responseForm').onsubmit=async e=>{e.preventDefault();try{
-  const ids=$('responseIds').value.split(/\s+/).filter(Boolean);
-  if(ids.length>8)throw Error('最多 8 个组合 MAC');
-  await api('/binding/config',{response_ids:ids});notice('许可列表已保存');
- }catch(e){notice(e.message,true);}};
- async function status(){try{
-  if(!loaded){const config=await api('/binding/config');$('responseIds').value=(config.response_ids||[]).join('\n');loaded=true;}
-  const state=await api('/binding/status');$('bindingStatus').replaceChildren();renderDiagnosticTree(state,$('bindingStatus'));
- }catch{}setTimeout(status,3000);}status();
-})();
-
-</script></html>
-
+<script>/* @include i18n.js */</script>
+<script>/* @include service.js */</script>
+<script>/* @include ui.js */</script>
+<script>/* @include automation.js */</script>
+<script>/* @include page.js */</script>
+</body>
+</html>
