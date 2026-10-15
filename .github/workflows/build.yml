@@ -269,7 +269,10 @@ jobs:
           python3 TC1/tools/prepare_sdk.py build/tc1-sdk/mico-os
           python3 tools/apply_sdk_patch.py build/m1-sdk/mico-os common/mqtt-mico36.patch
           python3 tools/apply_sdk_patch.py build/m1-sdk/mico-os M1/mqtt-packet-deadline.patch
+          python3 tools/apply_sdk_patch.py build/m1-sdk/mico-os common/mqtt-response-deadline.patch
           python3 tools/apply_sdk_patch.py build/a1-sdk/mico-os common/mqtt-mico36.patch
+          python3 tools/apply_sdk_patch.py build/a1-sdk/mico-os M1/mqtt-packet-deadline.patch
+          python3 tools/apply_sdk_patch.py build/a1-sdk/mico-os common/mqtt-response-deadline.patch
           python3 tools/apply_sdk_patch.py build/tc1-sdk/mico-os common/mqtt-mico35.patch
           python3 tools/apply_sdk_patch.py build/tc1-sdk/mico-os TC1/mqtt-packet-deadline.patch
       - name: Test TMCP using real SDK workers and an isolated broker
