@@ -1,5 +1,6 @@
 #define AUTOMATION_TC1
 #include "main.h"
+#include "httpd.h"
 #include "user_gpio.h"
 #include "user_wifi.h"
 #include "user_power.h"
@@ -76,6 +77,15 @@ json_object *service_product(const char *action,json_object *p,const char **code
         }
     }else{*code="unsupported";free(before);tc1_config_release();return NULL;}
     if(valid)saved=mico_system_context_update(sys_config)==kNoErr;
+    /* The SDK caches the HTTP credentials; persistence alone only takes
+       effect after reboot. Update the live cache after the Flash commit. */
+    if(valid && saved && strcmp(before->web_password,user_config->web_password) &&
+       httpd_auth_init(user_config->web_password[0]?"admin":"",user_config->web_password)!=kNoErr){
+        *user_config=*before;
+        mico_system_context_update(sys_config);
+        httpd_auth_init(before->web_password[0]?"admin":"",before->web_password);
+        saved=false;
+    }
     if(valid && !saved){*user_config=*before;strcpy(sys_config->micoSystemConfig.name,old_name);childLockEnabled=user_config->user[0];for(unsigned i=0;i<6;i++)UserRelaySet(i,user_config->socket_status[i]);UserLedSet(RelayOut() && user_config->power_led_enabled);}
     free(before);tc1_config_release();*code=!valid?"invalid_params":saved?"accepted":"storage_error";return NULL;
 }
