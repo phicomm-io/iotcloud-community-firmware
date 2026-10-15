@@ -37,6 +37,21 @@ static void passive_scenarios(void) {
   char wire[FEATURE_WIRE_MAX+1];int length=recv(receiver,wire,sizeof(wire)-1,0);assert(length>0);wire[length]=0;
   json_object *reply=parse(wire,length);assert(reply && !strcmp(string(reply,"op"),"sample"));
   assert(integer(json_object_object_get(reply,"body"),"sequence")==9);json_object_put(reply);
+  /* Repeated manual probes and sample reads share the UDP reply path. */
+  for (unsigned attempt=0; attempt<32; attempt++) {
+    const char *op=attempt%2 ? "read" : "probe";
+    js(o,"op",op);incoming(o,true,false,"127.0.0.1");
+    FD_ZERO(&fds);FD_SET(receiver,&fds);timeout=(struct timeval){1,0};
+    assert(select(receiver+1,&fds,NULL,NULL,&timeout)==1);
+    length=recv(receiver,wire,sizeof(wire)-1,0);assert(length>0);
+    reply=parse(wire,length);assert(reply);
+    assert(!strcmp(string(reply,"op"),attempt%2 ? "sample" : "pong"));
+    json_object_put(reply);
+  }
+  char oversized[FEATURE_WIRE_MAX+1];memset(oversized,'x',sizeof(oversized)-1);oversized[sizeof(oversized)-1]=0;
+  json_object *large=json_object_new_object();js(large,"body",oversized);
+  assert(!send_udp("127.0.0.1",large));json_object_put(large);
+  assert(stored.revision==revision && stored.peer_count==1);
   close(receiver);close(udp);udp=-1;
   js(o,"token","cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd");incoming(o,false,false,NULL);assert(!queued);
   js(o,"token","abababababababababababababababab");
