@@ -16,6 +16,7 @@ typedef struct
 
 extern PowerRecord power_record;
 extern uint32_t p_count;
+extern volatile uint32_t power_session_pulses;
 extern float real_time_power;
 
 char* GetPowerRecord(int idx);

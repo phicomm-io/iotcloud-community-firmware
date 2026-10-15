@@ -80,6 +80,9 @@ static void MqttClientThread(mico_thread_arg_t arg);
 
 static void MessageArrived(MessageData *md);
 static int ota_service(const char *);
+static int service_sender(const char *,const char *,bool);
+static int service_mqtt_snapshot(int (*)(const char *,const char *,bool),const mqtt_account_t *);
+static int service_mqtt_capabilities(int (*)(const char *,const char *,bool),const mqtt_account_t *);
 static void ota_forget(void);
 static char ota_topic[MQTT_TOPIC_MAX];
 
@@ -99,12 +102,12 @@ static uint32_t generation;
 static bool synchronous_send, rediscover;
 static mico_thread_t mqtt_owner_thread;
 static int synchronous_error;
-static char session_host[32], session_user[64], session_password[257];
+static char session_host[128], session_user[64], session_password[257];
 static unsigned session_port, session_mode;
 static char availability_topic[MQTT_TOPIC_MAX];
 static bool session_current(void) {
     return session_port == (unsigned)user_config->mqtt_port && session_mode == user_config->mqtt_topic_mode &&
-        !strcmp(session_host,user_config->mqtt_ip) && !strcmp(session_user,user_config->mqtt_user) &&
+        !strcmp(session_host,user_config->mqtt_host) && !strcmp(session_user,user_config->mqtt_user) &&
         !strcmp(session_password,user_config->mqtt_password);
 }
 static void ha_birth(MessageData *d) {
@@ -334,7 +337,7 @@ static void all_states(void) {
 static int cleanup_discovery(void) {
     const char *entities[]={"socket_0","socket_1","socket_2","socket_3","socket_4","socket_5",
         "total_socket","led","childLock","reboot","soft_reboot","power","powerConsumption",
-        "startupTime","powerConsumptionToday","powerConsumptionYesterday"};
+        "startupTime","powerConsumptionToday","powerConsumptionYesterday","energySession"};
     int result=0;
     for (unsigned i=0;i<sizeof(entities)/sizeof(entities[0]);++i) {
         char topic[MQTT_TOPIC_MAX]; mqtt_ha(&account,i<9?"switch":i<11?"button":"sensor",entities[i],topic,sizeof(topic));
@@ -356,9 +359,9 @@ void MqttClientThread(mico_thread_arg_t arg) {
                 session_user,session_password,cleanup_discovery)!=MQTT_SUCCESS;
             cleanup_pending=false;
         }
-        if(!user_config->mqtt_ip[0] || link.is_connected!=1) { mico_rtos_thread_sleep(1); continue; }
+        if(!user_config->mqtt_host[0] || link.is_connected!=1) { mico_rtos_thread_sleep(1); continue; }
         mico_rtos_suspend_all_thread();
-        strcpy(session_host,user_config->mqtt_ip); strcpy(session_user,user_config->mqtt_user);
+        strcpy(session_host,user_config->mqtt_host); strcpy(session_user,user_config->mqtt_user);
         strcpy(session_password,user_config->mqtt_password); session_port=user_config->mqtt_port;
         session_mode=user_config->mqtt_topic_mode; ++generation;
         mico_rtos_resume_all_thread();
@@ -392,19 +395,24 @@ void MqttClientThread(mico_thread_arg_t arg) {
             const char *payload=mqtt_announcement(&account);
             rc=MqttMsgPublish(&c,topic,QOS1,1,(const unsigned char *)payload,strlen(payload));
         }
-        if(rc==MQTT_SUCCESS) { stage="subscribe-ota"; rc=MQTTSubscribe(&c,ota_topic,QOS1,MessageArrived); }
-        if(rc==MQTT_SUCCESS) { stage="subscribe-control"; rc=MQTTSubscribe(&c,topic_set,QOS1,MessageArrived); }
+        if(rc==MQTT_SUCCESS && account.mode){char command_topic[MQTT_TOPIC_MAX];mqtt_leaf(&account,"command",command_topic,sizeof(command_topic));rc=MQTTSubscribe(&c,command_topic,QOS1,MessageArrived);}
+        if(rc==MQTT_SUCCESS && !account.mode){stage="subscribe-ota";rc=MQTTSubscribe(&c,ota_topic,QOS1,MessageArrived);}
+        if(rc==MQTT_SUCCESS && !account.mode){stage="subscribe-control";rc=MQTTSubscribe(&c,topic_set,QOS1,MessageArrived);}
         if(rc==MQTT_SUCCESS) { stage="subscribe-ha"; rc=MQTTSubscribe(&c,"homeassistant/status",QOS1,ha_birth); }
         if(connected && rc!=MQTT_SUCCESS) tc1_mqtt_status=MQTT_WAITING_ACL;
         if(rc==MQTT_SUCCESS) {
+            rc=account.mode?service_mqtt_capabilities(service_sender,&account):MQTT_SUCCESS;
+            if(rc!=MQTT_SUCCESS){UserMqttClientRelease(&c,&n);continue;}
             stage="initial-publish"; cleanup_pending=true; synchronous_send=true; synchronous_error=0; all_discovery(); all_states(); synchronous_send=false;
             rc=synchronous_error;
             if(rc==0) rc=MqttMsgPublish(&c,availability_topic,QOS1,1,(const unsigned char *)"online",6);
         }
         if(rc==MQTT_SUCCESS) stage="running";
+        uint32_t snapshot_at=mico_rtos_get_time()-5000u;
         uint32_t acl_check=mico_rtos_get_time(); rediscover=false;
         if(rc==MQTT_SUCCESS) { isconnect=true; tc1_mqtt_status=MQTT_READY; attempt=0; cleanup_pending=true; }
         while(rc==MQTT_SUCCESS && !mqtt_thread_should_exit && session_current()) {
+            if(account.mode && (uint32_t)(mico_rtos_get_time()-snapshot_at)>=5000){snapshot_at=mico_rtos_get_time();rc=service_mqtt_snapshot(service_sender,&account);if(rc!=MQTT_SUCCESS)break;}
             rc=ota_service(account.base);if(rc!=MQTT_SUCCESS)break;
             if(rediscover) {
                 synchronous_send=true; synchronous_error=0; all_discovery(); all_states(); synchronous_send=false;
@@ -417,7 +425,7 @@ void MqttClientThread(mico_thread_arg_t arg) {
                 free(msg); msg=NULL;
             }
             if(rc==MQTT_SUCCESS && account.mode && (uint32_t)(mico_rtos_get_time()-acl_check)>=30000) {
-                rc=MQTTSubscribe(&c,topic_set,QOS1,MessageArrived); acl_check=mico_rtos_get_time();
+                char command_topic[MQTT_TOPIC_MAX];mqtt_leaf(&account,"command",command_topic,sizeof(command_topic));rc=MQTTSubscribe(&c,command_topic,QOS1,MessageArrived); acl_check=mico_rtos_get_time();
                 if(rc!=MQTT_SUCCESS) tc1_mqtt_status=MQTT_WAITING_ACL;
             }
             if(rc==MQTT_SUCCESS) rc=MQTTYield(&c,100);
@@ -445,6 +453,8 @@ static int ota_publish(const char *leaf,const char *text,bool retained) {
     return MqttMsgPublish(&c,topic,QOS1,retained,(const unsigned char *)text,strlen(text));
 }
 #include "../../common/ota/mqtt_ota.inc"
+static int service_sender(const char *topic,const char *body,bool retain){return MqttMsgPublish(&c,topic,QOS1,retain,(const unsigned char *)body,strlen(body));}
+#include "../../common/mqtt_service.inc"
 static void MessageArrived(MessageData *md) {
     OSStatus err = kUnknownErr;
     p_mqtt_recv_msg_t p_recv_msg = NULL;
@@ -454,6 +464,8 @@ static void MessageArrived(MessageData *md) {
        md->topicName->lenstring.len >= MAX_MQTT_TOPIC_SIZE || memchr(message->payload,0,message->payloadlen)) return;
     unsigned tn=md->topicName->cstring?strlen(md->topicName->cstring):md->topicName->lenstring.len;
     const char *tp=md->topicName->cstring?md->topicName->cstring:md->topicName->lenstring.data;
+    char cmd[MQTT_TOPIC_MAX];mqtt_leaf(&account,"command",cmd,sizeof(cmd));
+    if(tn==strlen(cmd) && !memcmp(tp,cmd,tn)){service_mqtt_input(service_sender,&account,message->payload,message->payloadlen,message->retained);return;}
     if(tn==strlen(ota_topic) && !memcmp(tp,ota_topic,tn)) {
         ota_command(account.base,message->payload,message->payloadlen,message->retained);return;
     }
@@ -472,7 +484,7 @@ static void MessageArrived(MessageData *md) {
     memcpy(p_recv_msg->data, message->payload, p_recv_msg->datalen);
     p_recv_msg->data[p_recv_msg->datalen] = 0;
 
-    mqtt_log("MessageArrived topic[%s] data[%s]", p_recv_msg->topic, p_recv_msg->data);
+    mqtt_log("Command received");
     err = mico_rtos_send_asynchronous_event(&mqtt_client_worker_thread, UserRecvHandler,
                                             p_recv_msg);
     require_noerr(err, exit);
@@ -563,6 +575,8 @@ static bool account_message(const char *old_topic, const char *payload, char *to
     if(!strcmp(suffix,"state")) {
         if(!strcmp(component,"sensor")) return false; /* power is published as a complete sensor snapshot */
         mqtt_format(leaf,sizeof(leaf),"%s/state",entity);
+        const char *last=strrchr(payload,' ');
+        if(!strcmp(component,"switch") && last && (!strcmp(last," 0") || !strcmp(last," 1")))payload=last[1]=='1'?"ON":"OFF";
         return mqtt_leaf(&account,leaf,topic,MAX_MQTT_TOPIC_SIZE) && mqtt_format(out,MAX_MQTT_DATA_SIZE,"%s",payload);
     }
     if(strcmp(suffix,"config")) return false;
@@ -580,12 +594,36 @@ static bool account_message(const char *old_topic, const char *payload, char *to
     mqtt_leaf(&account,"availability",value,sizeof(value)); json_object_object_add(o,"availability_topic",json_object_new_string(value));
     json_object_object_add(o,"retain",json_object_new_boolean(false));
     if(strcmp(component,"sensor")) {
-        mqtt_leaf(&account,"set",value,sizeof(value)); json_object_object_add(o,"cmd_t",json_object_new_string(value));
+        mqtt_leaf(&account,"command",value,sizeof(value)); json_object_object_add(o,"cmd_t",json_object_new_string(value));
+        const char *action=NULL,*field="enabled";int index=-1;
+        if(sscanf(entity,"socket_%d",&index)==1 && index>=0 && index<6){action="outlet.set";field="on";}
+        else if(!strcmp(entity,"total_socket")){action="outlet.set";field="on";}
+        else if(!strcmp(entity,"led"))action="indicator.set";
+        else if(!strcmp(entity,"childLock"))action="child_lock.set";
+        else if(!strcmp(component,"button"))action="system.reboot";
+        if(action){
+            char command[192];
+            if(!strcmp(component,"button")){
+                snprintf(command,sizeof(command),"{\"action\":\"%s\",\"params\":{}}",action);
+                json_object_object_add(o,"pl_prs",json_object_new_string(command));
+            }else{
+                for(unsigned enabled=0;enabled<2;enabled++){
+                    if(index>=0)snprintf(command,sizeof(command),"{\"action\":\"%s\",\"params\":{\"%s\":%s,\"index\":%d}}",action,field,enabled?"true":"false",index);
+                    else snprintf(command,sizeof(command),"{\"action\":\"%s\",\"params\":{\"%s\":%s}}",action,field,enabled?"true":"false");
+                    json_object_object_add(o,enabled?"pl_on":"pl_off",json_object_new_string(command));
+                }
+                json_object_object_add(o,"stat_on",json_object_new_string("ON"));
+                json_object_object_add(o,"stat_off",json_object_new_string("OFF"));
+            }
+        }
         mqtt_format(leaf,sizeof(leaf),"%s/state",entity); mqtt_leaf(&account,leaf,value,sizeof(value));
         if(strcmp(component,"button")) json_object_object_add(o,"stat_t",json_object_new_string(value));
     } else {
         mqtt_leaf(&account,"sensor",value,sizeof(value)); json_object_object_add(o,"state_topic",json_object_new_string(value));
     }
+    mqtt_leaf(&account,"state",value,sizeof(value));
+    json_object_object_add(o,"json_attributes_topic",json_object_new_string(value));
+    json_object_object_add(o,"json_attributes_template",json_object_new_string("{{ {\"ip\": value_json.ip, \"firmware\": value_json.version} | tojson }}"));
     bool ok=mqtt_format(out,MAX_MQTT_DATA_SIZE,"%s",json_object_to_json_string(o)); json_object_put(o); return ok;
 }
 
@@ -839,7 +877,7 @@ void UserMqttHassAutoLed(void) {
                 "\"cmd_t\":\"device/ztc1/%s/set\","  // 婵烇絽娴傞崰妤呭极婵傜宸濋柟瀛樺笚婵垹鈽夐幘鎰佺吋妞わ綀濮ょ粋鎺楀Ψ閵夈儳鍩嶉梻浣规緲缁夌兘顢欓弴鐔风窞闁搞儜鍕婵炴垶鎸撮崑鎾绘煛瀹ュ懏绌块柣?
                 "\"pl_on\":\"set led %s 1\","
                 "\"pl_off\":\"set led %s 0\","
-                "\"device_class\":\"outlet\","
+                "\"entity_category\":\"config\","
                 "\"device\":{"
                 "\"identifiers\":[\"tc1_%s\"],"
                 "\"name\":\"%s\","
@@ -871,7 +909,7 @@ void UserMqttHassAutoChildLock(void) {
                 "\"cmd_t\":\"device/ztc1/%s/set\","  // 婵烇絽娴傞崰妤呭极婵傜宸濋柟瀛樺笚婵垹鈽夐幘鎰佺吋妞わ綀濮ょ粋鎺楀Ψ閵夈儳鍩嶉梻浣规緲缁夌兘顢欓弴鐔风窞闁搞儜鍕婵炴垶鎸撮崑鎾绘煛瀹ュ懏绌块柣?
                 "\"pl_on\":\"set childLock %s 1\","
                 "\"pl_off\":\"set childLock %s 0\","
-                "\"device_class\":\"outlet\","
+                "\"entity_category\":\"config\","
                 "\"device\":{"
                 "\"identifiers\":[\"tc1_%s\"],"
                 "\"name\":\"%s\","
@@ -933,7 +971,7 @@ void UserMqttHassAutoPower(void) {
                 "\"uniq_id\":\"tc1_%s_p\","
                 "\"object_id\":\"tc1_%s_p\","
                 "\"state_topic\":\"homeassistant/sensor/%s/power/state\","
-                "\"unit_of_measurement\":\"W\","
+                "\"unit_of_measurement\":\"W\",\"device_class\":\"power\",\"state_class\":\"measurement\","
                 "\"icon\":\"mdi:gauge\","
                 "\"value_template\":\"{{ value_json.power }}\",""\"device\":{"
                 "\"identifiers\":[\"tc1_%s\"],"
@@ -948,7 +986,7 @@ void UserMqttHassAutoPower(void) {
                 "\"uniq_id\":\"tc1_%s_pc\","
                 "\"object_id\":\"tc1_%s_pc\","
                 "\"state_topic\":\"homeassistant/sensor/%s/powerConsumption/state\","
-                "\"unit_of_measurement\":\"kWh\","
+                "\"unit_of_measurement\":\"kWh\",\"device_class\":\"energy\","
                 "\"icon\":\"mdi:fence-electric\","
                 "\"value_template\":\"{{ value_json.powerConsumption }}\",""\"device\":{"
                 "\"identifiers\":[\"tc1_%s\"],"
@@ -958,6 +996,12 @@ void UserMqttHassAutoPower(void) {
                 str_mac, str_mac, str_mac, str_mac,device_name);
         UserMqttSendTopic(topic_buf, send_buf, 1);
 
+
+        sprintf(topic_buf,"homeassistant/sensor/%s/energySession/config",str_mac);
+        snprintf(send_buf,MAX_MQTT_DATA_SIZE,
+            "{\"name\":\"Energy Since Boot\",\"uniq_id\":\"tc1_%s_energy_session\",\"state_topic\":\"homeassistant/sensor/%s/energySession/state\",\"unit_of_measurement\":\"kWh\",\"device_class\":\"energy\",\"state_class\":\"total_increasing\",\"value_template\":\"{{ value_json.energySession }}\",\"device\":{\"identifiers\":[\"tc1_%s\"],\"name\":\"%s\",\"model\":\"TC1\",\"manufacturer\":\"PHICOMM\"}}",
+            str_mac,str_mac,str_mac,device_name);
+        UserMqttSendTopic(topic_buf,send_buf,1);
 
         sprintf(topic_buf, "homeassistant/sensor/%s/startupTime/config", str_mac);
         snprintf(send_buf, MAX_MQTT_DATA_SIZE,
@@ -981,7 +1025,7 @@ void UserMqttHassAutoPower(void) {
                 "\"uniq_id\":\"tc1_%s_pc_today\","
                 "\"object_id\":\"tc1_%s_pc_today\","
                 "\"state_topic\":\"homeassistant/sensor/%s/powerConsumptionToday/state\","
-                "\"unit_of_measurement\":\"kWh\","
+                "\"unit_of_measurement\":\"kWh\",\"device_class\":\"energy\","
                 "\"icon\":\"mdi:fence-electric\","
                 "\"value_template\":\"{{ value_json.powerConsumptionToday }}\",""\"device\":{"
                 "\"identifiers\":[\"tc1_%s\"],"
@@ -997,7 +1041,7 @@ void UserMqttHassAutoPower(void) {
                 "\"uniq_id\":\"tc1_%s_pc_yesterday\","
                 "\"object_id\":\"tc1_%s_pc_yesterday\","
                 "\"state_topic\":\"homeassistant/sensor/%s/powerConsumptionYesterday/state\","
-                "\"unit_of_measurement\":\"kWh\","
+                "\"unit_of_measurement\":\"kWh\",\"device_class\":\"energy\","
                 "\"icon\":\"mdi:fence-electric\","
                 "\"value_template\":\"{{ value_json.powerConsumptionYesterday }}\",""\"device\":{"
                 "\"identifiers\":[\"tc1_%s\"],"
@@ -1019,8 +1063,8 @@ extern void UserMqttHassPower(void) {
         uint32_t yesterday=user_config->p_count_1_day_ago>=user_config->p_count_2_days_ago?user_config->p_count_1_day_ago-user_config->p_count_2_days_ago:0;
         mico_time_t ms=0; mico_time_get_time(&ms); unsigned sec=ms/1000;
         char payload[512],topic[MQTT_TOPIC_MAX];
-        mqtt_format(payload,sizeof(payload),"{\"power\":%.3f,\"powerConsumption\":%.3f,\"powerConsumptionToday\":%.3f,\"powerConsumptionYesterday\":%.3f,\"startupTime\":\"%u - %02u:%02u:%02u\"}",
-            real_time_power/10,PowerPulseCountToKwh(p_count),PowerPulseCountToKwh(today),PowerPulseCountToKwh(yesterday),sec/86400,sec/3600%24,sec/60%60,sec%60);
+        mqtt_format(payload,sizeof(payload),"{\"power\":%.3f,\"energySession\":%.6f,\"powerConsumption\":%.3f,\"powerConsumptionToday\":%.3f,\"powerConsumptionYesterday\":%.3f,\"startupTime\":\"%u - %02u:%02u:%02u\"}",
+            real_time_power/10,PowerPulseCountToKwh(power_session_pulses),PowerPulseCountToKwh(p_count),PowerPulseCountToKwh(today),PowerPulseCountToKwh(yesterday),sec/86400,sec/3600%24,sec/60%60,sec%60);
         mqtt_leaf(&account,"sensor",topic,sizeof(topic)); UserMqttSendTopic(topic,payload,1); return;
     }
     uint32_t today_count = p_count >= (uint32_t) user_config->p_count_1_day_ago

@@ -1,3 +1,4 @@
+#include "../common/service.h"
 #include "a1.h"
 #include "../common/ota/signed_ota.h"
 #include "web_data.h"
@@ -140,7 +141,8 @@ json_object *a1_status_json(void)
     str(o, "wifi_trial_status", s.wifi_trial_status);
     str(o, "ssid", cfg.ssid); str(o, "ip", s.ip); str(o, "ap_name", s.ap_name);
     str(o, "mqtt_host", cfg.mqtt_host); integer(o, "mqtt_port", cfg.mqtt_port); str(o, "mqtt_user", cfg.mqtt_user);
-    str(o, "mqtt_topic_mode", cfg.mqtt_topic_mode ? "account" : "legacy");
+    str(o, "mqtt_topic_mode", "tmcp");
+    str(o, "mqtt_protocol", "tmcp"); integer(o, "mqtt_protocol_version", 2);
     str(o, "mqtt_status", mqtt_status_name(s.mqtt_status));
     json_bool(o, "mqtt_cleanup_warning", s.mqtt_cleanup_warning);
     json_bool(o, "web_password_set", cfg.web_password[0] != 0);
@@ -190,7 +192,7 @@ static json_object *read_json(int fd, uint32_t length)
         received += n;
     }
     body[received] = 0;
-    json_object *o = received == length && !memchr(body, 0, received) ? a1_json_parse(body, received) : NULL;
+    json_object *o = received == length && !memchr(body, 0, received) ? service_parse(body, received) : NULL;
     free(body);
     if (o && !json_object_is_type(o, json_type_object)) { json_object_put(o); o = NULL; }
     return o;
@@ -254,22 +256,24 @@ static void handle(int fd)
     if (!read_request(fd, &req)) { message(fd, 400, "Invalid HTTP request"); return; }
     a1_config_get(&cfg);
     if (!authorized(&req, cfg.web_password)) { message(fd, 401, "Authentication required"); return; }
-    const char *domain = feature_domain(req.path);
-    if (!strcmp(req.method, "GET")) {
-        if (domain) { send_json(fd, feature_json(domain)); return; }
-        if (!strcmp(req.path, "/")) response(fd, 200, "text/html; charset=utf-8", a1_web_data, sizeof(a1_web_data), true);
-        else if (!strcmp(req.path, "/wifi/scan")) scan_response(fd);
-        else if (!strcmp(req.path, "/status") || !strcmp(req.path, "/wifi/config") ||
-                 !strcmp(req.path, "/mqtt/config") || !strcmp(req.path, "/fan/config") || !strcmp(req.path, "/light/config") || !strcmp(req.path, "/childLock") ||
-                 !strcmp(req.path, "/ota")) send_json(fd, a1_status_json());
-        else message(fd, 404, "Not found");
-        return;
+    if(strncmp(req.path,"/api/v1/",8) && strcmp(req.path,"/") && strcmp(req.path,"/index.html")){message(fd,404,"Not found");return;}
+    if (!strncmp(req.path, "/api/v1/", 8)) {
+        if (!strcmp(req.method, "GET")) {
+            const char *action = !strcmp(req.path,"/api/v1/status")?"status.get":!strcmp(req.path,"/api/v1/capabilities")?"capabilities.get":!strcmp(req.path,"/api/v1/config")?"config.get":!strcmp(req.path,"/api/v1/logs")?"logs.get":!strcmp(req.path,"/api/v1/schedules")?"schedules.get":NULL;
+            if(action) send_json(fd,service_query(action)); else message(fd,404,"Not found");
+            return;
+        }
+        if (!strcmp(req.method,"POST") && !strcmp(req.path,"/api/v1/command")) {
+            json_object *request=read_json(fd,req.length),*reply=service_command(request);
+            if(request)json_object_put(request);send_json(fd,reply);return;
+        }
+        if (strcmp(req.path,"/api/v1/ota/upload") && strcmp(req.path,"/api/v1/ota/upload-unsigned")) { message(fd,404,"Not found");return; }
+        strcpy(req.path,!strcmp(req.path,"/api/v1/ota/upload")?"/ota/fileUpload":"/ota/fileUploadUnsigned");
     }
-    if (strcmp(req.method, "POST")) { message(fd, 405, "Use GET or POST"); return; }
-    mico_rtos_lock_mutex(&a1_lock);
-    bool busy = a1_state.ota_active || a1_state.reboot_pending;
-    mico_rtos_unlock_mutex(&a1_lock);
-    if (busy) { message(fd, 409, "OTA or reboot already in progress"); return; }
+    if (!strcmp(req.method,"GET") && (!strcmp(req.path,"/") || !strcmp(req.path,"/index.html"))) {
+        response(fd,200,"text/html; charset=utf-8",a1_web_data,sizeof(a1_web_data),true);return;
+    }
+    if(strcmp(req.method,"POST")){message(fd,404,"Not found");return;}
     if (!strcmp(req.path, "/ota/fileUpload") || !strcmp(req.path, "/ota/fileUploadUnsigned")) {
         bool rescue=!strcmp(req.path,"/ota/fileUploadUnsigned");
         if (!req.have_length || !(rescue ? a1_ota_begin_unsigned(req.length) : a1_ota_begin(req.length))) { message(fd, 400, "Invalid OTA size or busy"); return; }
@@ -286,71 +290,7 @@ static void handle(int fd)
         else message(fd, 400, "OTA rejected; see /ota for details");
         return;
     }
-    if (!strcmp(req.path, "/wifi/scan")) { message(fd, a1_scan_start() ? 202 : 409, "Scan requested"); return; }
-    if (!strcmp(req.path, "/reboot")) { bool ok = a1_reboot_later(1000); message(fd, ok ? 202 : 503, ok ? "Rebooting" : "Config save failed or busy"); return; }
-    json_object *o = read_json(fd, req.length);
-    if (!o) { message(fd, 400, "Expected a bounded JSON object"); return; }
-    if (!strcmp(req.path,"/device/reset")) {
-        json_object *full=json_object_object_get(o,"full");
-        bool valid=full && json_object_is_type(full,json_type_boolean);
-        bool ok=valid && a1_reset(json_object_get_boolean(full));
-        json_object_put(o);message(fd,!valid?400:ok?202:409,ok?"Reset saved; rebooting":"Invalid request or device busy");return;
-    }
-    if (domain) {
-        json_object *result = NULL; int code = feature_set(domain, o, &result);
-        json_object_put(o);
-        if (!result) { message(fd, 500, "Out of memory"); return; }
-        const char *body = json_object_to_json_string(result);
-        response(fd, code, "application/json", body, strlen(body), false);
-        json_object_put(result); return;
-    }
-    bool valid = true, saved = false; int number = 0;
-    if (!strcmp(req.path, "/wifi/config")) {
-        char old_ssid[33]; strcpy(old_ssid, cfg.ssid);
-        valid = get_string(o, "ssid", cfg.ssid, sizeof(cfg.ssid), false) && cfg.ssid[0];
-        if (strcmp(old_ssid, cfg.ssid)) cfg.wifi_password[0] = 0;
-        valid = valid && get_string(o, "password", cfg.wifi_password, sizeof(cfg.wifi_password), !strcmp(old_ssid, cfg.ssid));
-        json_object *open = json_object_object_get(o, "open_network");
-        if (open && json_object_is_type(open, json_type_boolean) && json_object_get_boolean(open)) cfg.wifi_password[0] = 0;
-        size_t n = strlen(cfg.wifi_password);
-        valid = valid && (n == 0 || (n >= 8 && n <= 63));
-        if (valid) saved = a1_wifi_trial(&cfg);
-        if (saved) { mico_rtos_lock_mutex(&a1_lock); a1_state.ap_requested = false; mico_rtos_unlock_mutex(&a1_lock); }
-    } else if (!strcmp(req.path, "/mqtt/config")) {
-        valid = get_string(o, "host", cfg.mqtt_host, sizeof(cfg.mqtt_host), false) &&
-            get_string(o, "user", cfg.mqtt_user, sizeof(cfg.mqtt_user), false) &&
-            get_string(o, "password", cfg.mqtt_password, sizeof(cfg.mqtt_password), true) &&
-            get_number(o, "port", &number, 1, 65535);
-        json_object *clear = json_object_object_get(o, "clear_password");
-        if (clear && json_object_is_type(clear, json_type_boolean) && json_object_get_boolean(clear))
-            cfg.mqtt_password[0] = 0;
-        json_object *mode = json_object_object_get(o, "topic_mode");
-        if (mode) {
-            if (!json_object_is_type(mode, json_type_string) ||
-                json_object_get_string_len(mode) != (int)strlen(json_object_get_string(mode)) ||
-                (strcmp(json_object_get_string(mode), "legacy") && strcmp(json_object_get_string(mode), "account"))) valid = false;
-            else cfg.mqtt_topic_mode = !strcmp(json_object_get_string(mode), "account");
-        }
-        if (cfg.mqtt_topic_mode && !cfg.mqtt_user[0]) valid = false;
-        if (valid) { cfg.mqtt_port = number; saved = a1_config_save(&cfg); }
-    } else if (!strcmp(req.path, "/deviceName")) {
-        valid = get_string(o, "name", cfg.name, sizeof(cfg.name), false) && cfg.name[0];
-        if (valid) saved = a1_config_save(&cfg);
-    } else if (!strcmp(req.path, "/auth/password")) {
-        valid = get_string(o, "password", cfg.web_password, sizeof(cfg.web_password), false) &&
-            json_object_object_get(o, "password");
-        if (valid) saved = a1_config_save(&cfg);
-    } else if (!strcmp(req.path, "/fan/config") || !strcmp(req.path, "/light/config") || !strcmp(req.path, "/childLock")) {
-        const char *kind = !strcmp(req.path, "/fan/config") ? "fan" : !strcmp(req.path, "/light/config") ? "light" : "child_lock";
-        valid = a1_control_json(kind, o); saved = valid;
-    } else if (!strcmp(req.path, "/ota")) {
-        json_object *url = json_object_object_get(o, "url");
-        valid = url && json_object_is_type(url, json_type_string);
-        saved = valid && a1_ota_download(json_object_get_string(url));
-    } else { message(fd, 404, "Not found"); json_object_put(o); return; }
-    json_object_put(o);
-    message(fd, !valid ? 400 : saved ? 202 : 503,
-            !valid ? "Invalid parameters" : saved ? "Accepted" : "Unable to save or queue request");
+    message(fd,404,"Not found");
 }
 
 static void http_worker(mico_thread_arg_t arg)

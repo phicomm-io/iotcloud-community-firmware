@@ -1,0 +1,34 @@
+#pragma once
+#include <stdint.h>
+#include <stdbool.h>
+#include "service.h"
+#define AUTOMATION_MAGIC 0x41555432u
+#ifdef AUTOMATION_TC1
+#define AUTOMATION_TASKS 128
+#else
+#define AUTOMATION_TASKS 8
+#endif
+enum { AUTO_NONE, AUTO_OUTLET, AUTO_FAN, AUTO_LIGHT, AUTO_CHILD_LOCK, AUTO_INDICATOR, AUTO_DISPLAY, AUTO_REBOOT };
+enum { AUTO_WAITING, AUTO_EXECUTED, AUTO_MISSED, AUTO_BUSY, AUTO_MIGRATED_DISABLED };
+/* Stable fixed-width Flash ABI: never stores pointers or JSON. */
+typedef struct { uint8_t kind, target, value, speed, red, green, blue, reserved; } automation_action_t;
+typedef struct {
+    uint16_t id, minute;
+    uint8_t enabled, days, once, state;
+    uint32_t at, last;
+    automation_action_t action;
+} automation_task_t;
+typedef struct {
+    uint32_t magic, revision;
+    uint16_t next_id;
+    int16_t timezone;
+    automation_task_t tasks[AUTOMATION_TASKS];
+    automation_action_t buttons[2][34]; /* clicks 1..30; holds 1..4 */
+} automation_config_t;
+void automation_defaults(automation_config_t *);
+void automation_load(automation_config_t *);
+bool automation_save(const automation_config_t *);
+/* Uses same transport dispatcher; unknown action leaves handled=false. */
+json_object *automation_command(const char *,json_object *,const char **,bool *handled);
+void automation_poll(bool clock_valid);
+void automation_button(unsigned key,unsigned clicks,unsigned seconds);

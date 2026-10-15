@@ -1,3 +1,4 @@
+#include "../common/automation.h"
 #include "a1.h"
 #include "../common/indicator.h"
 #include "../common/gesture.h"
@@ -83,6 +84,7 @@ static bool panel_init(void)
 static void panel_tick(uint32_t now, uint8_t *last_key, uint8_t *last_slider,
                        uint32_t *wifi_since, bool *wifi_sent)
 {
+    static key_gesture_t gestures[2];
     uint8_t reg = 0, raw[3] = {0}; mico_i2c_message_t message;
     OSStatus err = MicoI2cBuildCombinedMessage(&message, &reg, raw, 1, 3, 5);
     if (err == kNoErr) err = MicoI2cTransfer(&panel, &message, 1);
@@ -91,15 +93,16 @@ static void panel_tick(uint32_t now, uint8_t *last_key, uint8_t *last_slider,
     if (err != kNoErr) a1_state.panel_errors++;
     else memcpy(a1_state.panel_raw, raw, sizeof(raw));
     mico_rtos_unlock_mutex(&a1_lock);
-    if (err != kNoErr) { *last_key = *last_slider = 0; *wifi_sent = false; return; }
+    if (err != kNoErr) { for(unsigned i=0;i<2;i++)key_gesture_sample(&gestures[i],false,false,now,i==1); *last_key = *last_slider = 0; *wifi_sent = false; return; }
     uint8_t key = raw[1] == 1 ? 1 : raw[2] == 1 ? 2 : 0;
     uint8_t slider = !key && raw[0] <= 99 ? raw[0] : 0;
-    if (key == 1 && *last_key != 1) a1_panel_event(true, 0);
-    if (key == 2 && *last_key != 2) *wifi_since = now;
-    if (key != 2 && *last_key == 2) {
-        unsigned gesture = gesture_release(*wifi_since, now);
-        if (gesture != GESTURE_ORDINARY) a1_reset(gesture == GESTURE_FULL_RESET);
+    for(unsigned i=0;i<2;i++) {
+        key_event_t event=key_gesture_sample(&gestures[i],true,key==i+1,now,i==1);
+        if(event.type==KEY_EVENT_NETWORK_RESET || event.type==KEY_EVENT_FULL_RESET) a1_reset(event.type==KEY_EVENT_FULL_RESET);
+        else if(event.type==KEY_EVENT_CLICKS) automation_button(i,event.count,0);
+        else if(event.type==KEY_EVENT_HOLD) automation_button(i,0,event.count);
     }
+    (void)wifi_since;
     *wifi_sent = false;
     if (slider && *last_slider && slider != *last_slider)
         a1_panel_event(false, (int)slider - *last_slider);

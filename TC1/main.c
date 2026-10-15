@@ -1,12 +1,14 @@
+#include "../common/service.h"
 #include "ota_server/signed_adapter.h"
 #include "main.h"
 #include "config_legacy.h"
 #include <stddef.h>
 
-uint32_t app_config_legacy_size(void) { return sizeof(user_config_v10_t); }
+uint32_t app_config_legacy_size(void) { return sizeof(user_config_v11_t); }
+uint32_t app_config_legacy_next_size(uint32_t size) { return size==sizeof(user_config_v11_t)?sizeof(user_config_v10_t):0; }
 bool app_config_migrate_legacy(void *data, uint32_t size)
 {
-    return tc1_migrate_v10(data,size);
+    return tc1_migrate_v11(data,size) || tc1_migrate_v10(data,size);
 }
 
 #include "stdio.h"
@@ -74,12 +76,14 @@ void appRestoreDefault_callback(void *const user_config_data, uint32_t size) {
     mico_system_context_get()->micoSystemConfig.name[1] = 0;
 
     user_config_t *userConfigDefault = user_config_data;
+    memset(userConfigDefault,0,sizeof(*userConfigDefault));
+    automation_defaults(&userConfigDefault->automation);
     userConfigDefault->user[0] = 0;
     userConfigDefault->mqtt_ip[0] = 0;
     userConfigDefault->mqtt_port = 0;
     userConfigDefault->mqtt_user[0] = 0;
     userConfigDefault->mqtt_password[0] = 0;
-    userConfigDefault->mqtt_topic_mode = MQTT_TOPIC_LEGACY;
+    userConfigDefault->mqtt_topic_mode = MQTT_TOPIC_TMCP;
     userConfigDefault->web_password[0] = 0;
     userConfigDefault->task_top = NULL;
     userConfigDefault->task_count = 0;
@@ -146,6 +150,7 @@ void reportMqttPowerInfoThread() {
 }
 
 int application_start(void) {
+    service_init();
     WebLogInit();
     tc1_ota_init();
     int i;tc1_log("start version[%s]", VERSION);
@@ -154,10 +159,35 @@ int application_start(void) {
     OSStatus err = kNoErr;
 
     // Create mico system context and read application's config data from flash
+    const mico_logic_partition_t *parameter=MicoFlashGetInfo(MICO_PARTITION_PARAMETER_1);
+    const mico_logic_partition_t *backup=MicoFlashGetInfo(MICO_PARTITION_PARAMETER_2);
+    require_action(parameter && backup && sizeof(system_config_t)+sizeof(user_config_t)+2 <= parameter->partition_length && sizeof(system_config_t)+sizeof(user_config_t)+2 <= backup->partition_length,exit,err=kNoMemoryErr);
     sys_config = mico_system_context_init(sizeof(user_config_t));
+    require_action(sys_config,exit,err=kNoMemoryErr);
     user_config = ((system_context_t *) sys_config)->user_config_data;
     require_action(user_config, exit, err = kNoMemoryErr);
 
+    if (user_config->automation.magic != AUTOMATION_MAGIC) {
+        automation_defaults(&user_config->automation);
+        for(unsigned i=0,n=0;i<MAX_TASK_NUM;i++) if(user_config->timed_tasks[i].on_use) {
+            struct TimedTask *old=&user_config->timed_tasks[i];automation_task_t *t=&user_config->automation.tasks[n++];
+            t->id=user_config->automation.next_id++;t->action.target=255;t->action.value=old->on!=0;
+            if(old->operation<=6){t->action.kind=AUTO_OUTLET;if(old->operation)t->action.target=old->operation-1;}
+            else if(old->operation==7)t->action.kind=AUTO_INDICATOR;
+            else if(old->operation==8)t->action.kind=AUTO_REBOOT;
+            else if(old->operation==11)t->action.kind=AUTO_CHILD_LOCK;
+            t->enabled=t->action.kind!=AUTO_NONE;t->state=t->enabled?AUTO_WAITING:AUTO_MIGRATED_DISABLED;
+            if(old->weekday){t->days=old->weekday==8?127:1u<<(old->weekday-1);t->minute=((old->prs_time+28800)%86400)/60;}
+            else{t->once=1;t->at=old->prs_time;}
+        }
+        for(unsigned i=1;i<=30;i++) for(unsigned hold=0;hold<2;hold++) {
+            if(hold && i>4)continue;int op=hold?get_long_func(user_config->user[i]):get_short_func(user_config->user[i]);
+            automation_action_t *a=&user_config->automation.buttons[0][hold?i+29:i-1];memset(a,0,sizeof(*a));a->value=2;a->target=255;
+            if(op<=6){a->kind=AUTO_OUTLET;if(op)a->target=op-1;}else if(op==8){a->kind=AUTO_REBOOT;a->value=0;}
+        }
+        memset(user_config->timed_tasks,0,sizeof(user_config->timed_tasks));user_config->task_count=0;user_config->task_top=NULL;
+        err=mico_system_context_update(sys_config);require_noerr(err,exit);
+    }
     err = mico_system_init(sys_config);
     require_noerr(err, exit);
 
@@ -199,7 +229,7 @@ int application_start(void) {
 
     tc1_log("device name:%s",
             sys_config->micoSystemConfig.name);tc1_log(
-            "mqtt_ip:%s", user_config->mqtt_ip);tc1_log("mqtt_port:%d",
+            "mqtt_ip:%s", user_config->mqtt_host);tc1_log("mqtt_port:%d",
                                                         user_config->mqtt_port);tc1_log(
             "mqtt_user:%s", user_config->mqtt_user);
     //tc1_log("mqtt_password:%s",user_config->mqtt_password);
@@ -232,7 +262,7 @@ int application_start(void) {
 
 
     while (1) {
-        ProcessTask();
+        automation_poll(rtc_init == 1);
         mico_thread_msleep(1000);
     }
 

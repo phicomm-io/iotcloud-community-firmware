@@ -1,3 +1,5 @@
+#include "../common/automation.h"
+#include "../common/service.h"
 #include "m1.h"
 #include "config_legacy.h"
 #include <stddef.h>
@@ -5,7 +7,7 @@
 mico_mutex_t m1_lock;
 static mico_mutex_t config_lock;
 static m1_config_t *app_config;
-typedef struct { m1_config_t base; feature_config_t features; } app_storage_t;
+typedef struct { m1_config_t base; feature_config_t features; automation_config_t automation; } app_storage_t;
 
 char m1_id[13];
 m1_state_t m1_state;
@@ -17,8 +19,9 @@ void appRestoreDefault_callback(void *data, uint32_t size)
     m1_config_t *c = data;
     memset(c, 0, sizeof(*c));
     if (size >= sizeof(app_storage_t)) feature_defaults(&((app_storage_t *)data)->features);
+    if (size >= sizeof(app_storage_t)) automation_defaults(&((app_storage_t *)data)->automation);
     c->magic = M1_CONFIG_MAGIC; c->version = M1_CONFIG_VERSION;
-    strcpy(c->name, "Phicomm M1"); c->mqtt_port = 1883;
+    strcpy(c->name, "Phicomm M1"); c->mqtt_port = 1883; c->mqtt_topic_mode = MQTT_TOPIC_TMCP;
     c->brightness = c->last_on = 4; c->timezone_minutes = 480;
 }
 
@@ -102,6 +105,7 @@ bool m1_reboot_later(uint32_t ms)
 
 int application_start(void)
 {
+    service_init();
     OSStatus err = mico_rtos_init_mutex(&m1_lock);
     if (err != kNoErr) return err;
     err = mico_rtos_init_mutex(&config_lock);
@@ -119,6 +123,9 @@ int application_start(void)
     if (!app_config) return kNoMemoryErr;
     m1_config_t c;
     /* The SDK validates the entire partition before loading these bytes. */
+    if (app_config->magic != M1_CONFIG_MAGIC || app_config->version < 1 || app_config->version > M1_CONFIG_VERSION) {
+        service_event("error","config","unsupported_layout");return kUnknownErr;
+    }
     if (app_config->magic == M1_CONFIG_MAGIC &&
         (app_config->version == 1 || app_config->version == 2)) {
         m1_storage_v2_t *old = malloc(sizeof(*old));
@@ -134,11 +141,31 @@ int application_start(void)
         m1_migrate_response_permissions(app_config, &((app_storage_t *)app_config)->features);
         if (mico_system_context_update(m1_context) != kNoErr) return kUnknownErr;
     }
+    if (app_config->magic == M1_CONFIG_MAGIC && app_config->version == 4) {
+        ((app_storage_t *)app_config)->automation.magic=0;
+        app_config->version = M1_CONFIG_VERSION;
+    }
+    if (((app_storage_t *)app_config)->automation.magic != AUTOMATION_MAGIC) {
+        automation_config_t *next=&((app_storage_t *)app_config)->automation;
+        automation_defaults(next);
+        feature_config_t *f=&((app_storage_t *)app_config)->features;
+        for(unsigned i=0;i<f->event_count && i<8;i++) {
+            automation_task_t *t=&next->tasks[i];t->id=next->next_id++;t->days=f->events[i].days;t->minute=f->events[i].minute;
+            t->action.kind=AUTO_FAN;t->action.value=f->events[i].on;t->action.speed=f->events[i].speed;
+            t->enabled=0;t->state=AUTO_MIGRATED_DISABLED;
+        }
+        f->event_count=0;f->scheduled_off=f->scheduled_valid=0;
+        if (mico_system_context_update(m1_context) != kNoErr) return kUnknownErr;
+    }
+    /* Normalize the retained ABI byte without changing credentials or layout. */
+    if (app_config->mqtt_topic_mode != MQTT_TOPIC_TMCP) {
+        app_config->mqtt_topic_mode = MQTT_TOPIC_TMCP;
+        if (mico_system_context_update(m1_context) != kNoErr) return kUnknownErr;
+    }
     m1_config_get(&c);
     if (c.magic != M1_CONFIG_MAGIC || c.version != M1_CONFIG_VERSION) {
-        /* Reset only application data: never restore the whole device context. */
-        appRestoreDefault_callback(&c, sizeof(c));
-        if (!m1_config_save(&c)) return kUnknownErr;
+        service_event("error","config","unsupported_layout");
+        return kUnknownErr;
     }
     feature_config_t *extension = &((app_storage_t *)app_config)->features;
     if (extension->magic != FEATURE_MAGIC) {
@@ -198,4 +225,17 @@ bool feature_config_save(const feature_config_t *c)
     }
     mico_rtos_unlock_mutex(&config_lock);
     free(old); return ok;
+}
+
+void automation_load(automation_config_t *out) {
+    mico_rtos_lock_mutex(&config_lock);*out=((app_storage_t *)app_config)->automation;out->timezone=((app_storage_t *)app_config)->features.timezone_minutes;mico_rtos_unlock_mutex(&config_lock);
+}
+bool automation_save(const automation_config_t *next) {
+    automation_config_t *old=malloc(sizeof(*old));if(!old)return false;
+    mico_rtos_lock_mutex(&config_lock);
+    automation_config_t *live=&((app_storage_t *)app_config)->automation;
+    mico_rtos_lock_mutex(&m1_lock);bool busy=m1_state.ota_active || m1_state.reboot_pending || m1_state.wifi_trial_active;mico_rtos_unlock_mutex(&m1_lock);
+    bool ok=!busy && next->magic==AUTOMATION_MAGIC && next->revision==live->revision+1;
+    if(ok){*old=*live;*live=*next;ok=mico_system_context_update(m1_context)==kNoErr;if(!ok)*live=*old;}
+    mico_rtos_unlock_mutex(&config_lock);free(old);return ok;
 }

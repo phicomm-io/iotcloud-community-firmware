@@ -1,3 +1,4 @@
+#include "../../common/service.h"
 #include "../../common/ota/signed_ota.h"
 #include "ota_server/ota_server.h"
 #include "ota_server/signed_adapter.h"
@@ -61,10 +62,7 @@
 
 /* Parse headers once, reject truncation/chunked bodies and read all fragments.
  * capacity includes the terminator. An incomplete request never mutates config. */
-static int read_body(httpd_request_t *req, char *out, int capacity) {
-    if (!out || capacity < 1)
-        return kParamErr;
-    out[0] = 0;
+static int read_headers(httpd_request_t *req) {
     if (!req->hdr_parsed) {
         char *headers = malloc(HTTPD_MAX_MESSAGE);
         if (!headers)
@@ -75,6 +73,13 @@ static int read_body(httpd_request_t *req, char *out, int capacity) {
             return err;
         req->hdr_parsed = 1;
     }
+    return kNoErr;
+}
+static int read_body(httpd_request_t *req, char *out, int capacity) {
+    if (!out || capacity < 1) return kParamErr;
+    out[0] = 0;
+    int err = read_headers(req);
+    if (err != kNoErr) return err;
     int length = req->remaining_bytes;
     if (req->chunked || length < 0 || length >= capacity)
         return kParamErr;
@@ -207,21 +212,19 @@ static int HttpGetAssets(httpd_request_t *req) {
     return httpd_send_all_header(req, HTTP_RES_404, 0, "text/plain");
 }
 
-static int HttpGetTc1Status(httpd_request_t *req) {
+json_object *tc1_status_json(void) {
     unsigned long free_memory = (unsigned long)MicoGetMemoryInfo()->free_memory;
-    /* Fixed keys, numeric values and worst-case OTA error fit in 3072 bytes.
-     * Reserve actual escaped string sizes, including compatibility aliases,
-     * instead of twelve times every input byte on each polling request. */
-    size_t capacity = 3072;
-    capacity += 2 * (jb_string_size(sys_config->micoSystemConfig.name) +
+    /* Keep the v1 command status free of obsolete duplicate fields. */
+    size_t capacity = 2048;
+    capacity += (jb_string_size(sys_config->micoSystemConfig.name) +
                      jb_string_size(sys_config->micoSystemConfig.ssid) +
                      jb_string_size(user_config->ap_name) + jb_string_size(MQTT_SERVER) +
                      jb_string_size(MQTT_SERVER_USR));
     for (int i = 0; i < SOCKET_NUM; ++i)
-        capacity += 2 * jb_string_size(user_config->socket_names[i]);
+        capacity += jb_string_size(user_config->socket_names[i]);
     char *data = malloc(capacity);
     if (!data)
-        return kNoMemoryErr;
+        return NULL;
     JsonBuffer b = {data, 0, capacity, true};
     mico_time_t now;
     mico_time_get_time(&now);
@@ -232,30 +235,17 @@ static int HttpGetTc1Status(httpd_request_t *req) {
     jb_field(&b, "version", VERSION);
     jb_field(&b, "device_id", str_mac);
     jb_field(&b, "name", sys_config->micoSystemConfig.name);
-    jb_field(&b, "deviceName", sys_config->micoSystemConfig.name);
     jb_field(&b, "ssid", sys_config->micoSystemConfig.ssid);
-    jb_field(&b, "station_ssid", sys_config->micoSystemConfig.ssid);
-    jb_field(&b, "station_pwd", "");
-    jb_field(&b, "ap_pwd", "");
     jb_field(&b, "ip", ip_status.ip);
     jb_field(&b, "mask", ip_status.mask);
     jb_field(&b, "gateway", ip_status.gateway);
     jb_field(&b, "ap_name", user_config->ap_name);
-    jb_field(&b, "ap_ssid", user_config->ap_name);
     jb_field(&b, "mqtt_host", MQTT_SERVER);
-    jb_field(&b, "mqtt_addr", MQTT_SERVER);
     jb_field(&b, "mqtt_user", MQTT_SERVER_USR);
-    jb_field(&b, "mqtt_usr", MQTT_SERVER_USR);
-    jb_field(&b, "mqtt_pwd", "");
-    jb_field(&b, "mqtt_topic_mode", user_config->mqtt_topic_mode ? "account" : "legacy");
+    jb_field(&b, "mqtt_topic_mode", user_config->mqtt_topic_mode ? "tmcp" : "legacy");
+    jb_field(&b, "mqtt_protocol", user_config->mqtt_topic_mode ? "tmcp" : "legacy");
+    jb_printf(&b, "\"mqtt_protocol_version\":%d,", user_config->mqtt_topic_mode ? 2 : 1);
     jb_field(&b, "mqtt_status", mqtt_status_name(tc1_mqtt_status));
-    jb_field(&b, "sockets", GetSocketStatus());
-    char names[SOCKET_NUM * SOCKET_NAME_LENGTH + SOCKET_NUM];
-    snprintf(names, sizeof(names), "%s,%s,%s,%s,%s,%s", user_config->socket_names[0],
-             user_config->socket_names[1], user_config->socket_names[2],
-             user_config->socket_names[3], user_config->socket_names[4],
-             user_config->socket_names[5]);
-    jb_field(&b, "socketNames", names);
     jb_printf(&b, "\"socket_names\":[");
     for (int i = 0; i < SOCKET_NUM; ++i) {
         if (i)
@@ -263,19 +253,13 @@ static int HttpGetTc1Status(httpd_request_t *req) {
         jb_string(&b, user_config->socket_names[i]);
     }
     jb_printf(&b, "],");
-    jb_printf(&b, "\"socket_states\":[%s],\"btnClicks\":%s,", GetSocketStatus(),
-              GetButtonClickConfig());
-    jb_printf(&b,
-              "\"mqtt_port\":%d,\"mode\":%d,\"ledEnabled\":%d,\"led_enabled\":%s,\"child_lock_"
-              "enabled\":%d,\"child_lock\":%s,",
-              MQTT_SERVER_PORT, ip_status.mode, user_config->power_led_enabled,
-              user_config->power_led_enabled ? "true" : "false", childLockEnabled,
+    jb_printf(&b, "\"socket_states\":[%s],", GetSocketStatus());
+    jb_printf(&b, "\"mqtt_port\":%d,\"led_enabled\":%s,\"child_lock\":%s,",
+              MQTT_SERVER_PORT, user_config->power_led_enabled ? "true" : "false",
               childLockEnabled ? "true" : "false");
-    jb_printf(&b,
-              "\"reportFreq\":\"%d\",\"report_seconds\":%d,\"powerCoefficientX100\":%u,\"up_time\":"
-              "%lu,\"uptime_seconds\":%lu,\"free_memory\":%lu,",
-              MQTT_REPORT_FREQ, MQTT_REPORT_FREQ, user_config->power_coefficient_x100,
-              (unsigned long)now / 1000, (unsigned long)now / 1000, free_memory);
+    jb_printf(&b, "\"report_seconds\":%d,\"powerCoefficientX100\":%u,\"uptime_seconds\":%lu,\"free_memory\":%lu,",
+              MQTT_REPORT_FREQ, user_config->power_coefficient_x100,
+              (unsigned long)now / 1000, free_memory);
     jb_printf(&b,
               "\"wifi_connected\":%s,\"ap_active\":%s,\"wifi_password_set\":%s,\"mqtt_password_"
               "set\":%s,\"web_password_set\":%s,\"mqtt_cleanup_warning\":%s,\"mqtt_connected\":%s,",
@@ -292,9 +276,28 @@ static int HttpGetTc1Status(httpd_request_t *req) {
     jb_field(&b, "ota_state", state);
     jb_field(&b, "ota_error", error);
     jb_printf(&b, "\"ota_progress\":%u}", progress);
-    int err = b.valid ? response_json(req, HTTP_RES_200, b.data, b.used) : kNoMemoryErr;
+    json_object *out = b.valid ? service_parse(b.data,b.used) : NULL;
     free(data);
-    return err;
+    return out;
+}
+
+static int HttpGetTc1Status(httpd_request_t *req) {
+    json_object *o=tc1_status_json();if(!o)return kNoMemoryErr;
+    const char *s=json_object_to_json_string(o);int rc=response_json(req,HTTP_RES_200,s,strlen(s));json_object_put(o);return rc;
+}
+static int HttpV1Reply(httpd_request_t *req,json_object *o){if(!o)return kNoMemoryErr;const char *s=json_object_to_json_string(o);int rc=response_json(req,HTTP_RES_200,s,strlen(s));json_object_put(o);return rc;}
+static int HttpV1Status(httpd_request_t *r){return HttpV1Reply(r,service_query("status.get"));}
+static int HttpV1Capabilities(httpd_request_t *r){return HttpV1Reply(r,service_query("capabilities.get"));}
+static int HttpV1Config(httpd_request_t *r){return HttpV1Reply(r,service_query("config.get"));}
+static int HttpV1Schedules(httpd_request_t *r){return HttpV1Reply(r,service_query("schedules.get"));}
+static int HttpV1Logs(httpd_request_t *r){return HttpV1Reply(r,service_query("logs.get"));}
+static int HttpV1Command(httpd_request_t *r){
+    int rc=read_headers(r);
+    if(rc || r->chunked || r->remaining_bytes<1 || r->remaining_bytes>8192)return kParamErr;
+    size_t capacity=(size_t)r->remaining_bytes+1;
+    char *body=malloc(capacity);if(!body)return kNoMemoryErr;
+    rc=read_body(r,body,capacity);json_object *request=rc?NULL:service_parse(body,strlen(body));free(body);
+    json_object *reply=service_command(request);if(request)json_object_put(request);return HttpV1Reply(r,reply);
 }
 
 static int HttpSetSocketStatus(httpd_request_t *req) {
@@ -659,7 +662,7 @@ static bool mqtt_json_string(json_object *o, const char *key, char *out, size_t 
 static int HttpSetMqttConfig(httpd_request_t *req) {
     OSStatus err = kNoErr;
     char buf[2048] = {0}, host[32], user[64], password[257];
-    strcpy(host, user_config->mqtt_ip);
+    strcpy(host, user_config->mqtt_host);
     strcpy(user, user_config->mqtt_user);
     strcpy(password, user_config->mqtt_password);
     int port = user_config->mqtt_port, mode = user_config->mqtt_topic_mode;
@@ -688,10 +691,11 @@ static int HttpSetMqttConfig(httpd_request_t *req) {
             if (!json_object_is_type(v, json_type_string) ||
                 json_object_get_string_len(v) != (int)strlen(json_object_get_string(v)) ||
                 (strcmp(json_object_get_string(v), "legacy") &&
+                 strcmp(json_object_get_string(v), "tmcp") &&
                  strcmp(json_object_get_string(v), "account")))
                 valid = false;
             else
-                mode = !strcmp(json_object_get_string(v), "account");
+                mode = strcmp(json_object_get_string(v), "legacy") != 0;
         }
         v = json_object_object_get(o, "clear_password");
         if (v && json_object_is_type(v, json_type_boolean) && json_object_get_boolean(v))
@@ -701,10 +705,10 @@ static int HttpSetMqttConfig(httpd_request_t *req) {
         char extra;
         valid = sscanf(buf, "%31s %d %63s %256s %c", host, &port, user, password, &extra) == 4;
     }
-    if (!valid || port < 1 || port > 65535 || (mode && !*user))
+    if (!valid || port < 1 || port > 65535)
         goto invalid;
     mico_rtos_suspend_all_thread();
-    strcpy(user_config->mqtt_ip, host);
+    strcpy(user_config->mqtt_host, host);
     strcpy(user_config->mqtt_user, user);
     strcpy(user_config->mqtt_password, password);
     user_config->mqtt_port = port;
@@ -1090,34 +1094,18 @@ static int HttpScheduleSet(httpd_request_t *req) {
 }
 
 const struct httpd_wsgi_call g_app_handlers[] = {
+    {"/api/v1/status", HTTPD_HDR_DEFORT, 0, HttpV1Status, NULL, NULL, NULL},
+    {"/api/v1/capabilities", HTTPD_HDR_DEFORT, 0, HttpV1Capabilities, NULL, NULL, NULL},
+    {"/api/v1/config", HTTPD_HDR_DEFORT, 0, HttpV1Config, NULL, NULL, NULL},
+    {"/api/v1/schedules", HTTPD_HDR_DEFORT, 0, HttpV1Schedules, NULL, NULL, NULL},
+    {"/api/v1/logs", HTTPD_HDR_DEFORT, 0, HttpV1Logs, NULL, NULL, NULL},
+    {"/api/v1/command", HTTPD_HDR_DEFORT, 0, NULL, HttpV1Command, NULL, NULL},
+    {"/api/v1/ota/upload", HTTPD_HDR_DEFORT, 0, NULL, HttpSetOTAFile, NULL, NULL},
+    {"/api/v1/ota/upload-unsigned", HTTPD_HDR_DEFORT, 0, NULL, HttpSetOTAUnsigned, NULL, NULL},
     {"/", HTTPD_HDR_DEFORT, 0, HttpGetIndexPage, NULL, NULL, NULL},
     {"/assets", HTTPD_HDR_ADD_SERVER | HTTPD_HDR_ADD_CONN_CLOSE, APP_HTTP_FLAGS_NO_EXACT_MATCH,
      HttpGetAssets, NULL, NULL, NULL},
-    {"/socket", HTTPD_HDR_DEFORT, 0, NULL, HttpSetSocketStatus, NULL, NULL},
-    {"/status", HTTPD_HDR_DEFORT, 0, HttpGetTc1Status, NULL, NULL, NULL},
-    {"/power", HTTPD_HDR_DEFORT, 0, HttpGetPowerInfo, HttpGetPowerInfo, NULL, NULL},
-    {"/wifi/config", HTTPD_HDR_DEFORT, 0, HttpGetTc1Status, HttpSetWifiConfig, NULL, NULL},
-    {"/wifi/scan", HTTPD_HDR_DEFORT, 0, HttpGetWifiScan, HttpSetWifiScan, NULL, NULL},
-    {"/mqtt/config", HTTPD_HDR_DEFORT, 0, NULL, HttpSetMqttConfig, NULL, NULL},
-    {"/reboot", HTTPD_HDR_DEFORT, 0, NULL, HttpSetRebootSystem, NULL, NULL},
-    {"/mqtt/report/freq", HTTPD_HDR_DEFORT, 0, HttpGetMqttReportFreq, HttpSetMqttReportFreq, NULL,
-     NULL},
-    {"/log", HTTPD_HDR_DEFORT, 0, HttpGetLog, NULL, NULL, NULL},
-    {"/schedule/config", HTTPD_HDR_DEFORT, 0, HttpScheduleGet, HttpScheduleSet, NULL, NULL},
-    {"/task", HTTPD_HDR_DEFORT, APP_HTTP_FLAGS_NO_EXACT_MATCH, HttpGetTasks, HttpAddTask, NULL,
-     HttpDelTask},
-    {"/ota/status", HTTPD_HDR_DEFORT, 0, OtaDetailedStatus, NULL, NULL, NULL},
-    {"/ota", HTTPD_HDR_DEFORT, 0, Otastatus, OtaStart, NULL, NULL},
-    {"/led", HTTPD_HDR_DEFORT, 0, LedStatus, LedSetEnabled, NULL, NULL},
-    {"/socketAll", HTTPD_HDR_DEFORT, 0, NULL, TotalSocketSetEnabled, NULL, NULL},
-    {"/socketNames", HTTPD_HDR_DEFORT, 0, NULL, HttpSetSocketName, NULL, NULL},
-    {"/childLock", HTTPD_HDR_DEFORT, 0, NULL, HttpSetChildLock, NULL, NULL},
-    {"/deviceName", HTTPD_HDR_DEFORT, 0, NULL, HttpSetDeviceName, NULL, NULL},
-    {"/buttonEvents", HTTPD_HDR_DEFORT, 0, HttpGetButtonEvents, HttpSetButtonEvent, NULL, NULL},
-    {"/ota/fileUploadUnsigned", HTTPD_HDR_DEFORT, 0, NULL, HttpSetOTAUnsigned, NULL, NULL},
-    {"/ota/fileUpload", HTTPD_HDR_DEFORT, 0, NULL, HttpSetOTAFile, NULL, NULL},
-    {"/power/coefficient", HTTPD_HDR_DEFORT, 0, NULL, HttpSetPowerCoefficient, NULL, NULL},
-    {"/auth/password", HTTPD_HDR_DEFORT, 0, NULL, HttpSetWebPassword, NULL, NULL},
+
 };
 
 static int g_app_handlers_no = sizeof(g_app_handlers) / sizeof(struct httpd_wsgi_call);

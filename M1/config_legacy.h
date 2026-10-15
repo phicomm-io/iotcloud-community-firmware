@@ -24,7 +24,7 @@ static inline void m1_migrate_v2(m1_config_t *next, feature_config_t *features, 
     next->last_on = old->base.last_on;
     next->timezone_minutes = old->base.timezone_minutes;
     next->version = M1_CONFIG_VERSION;
-    next->mqtt_topic_mode = MQTT_TOPIC_LEGACY;
+    next->mqtt_topic_mode = MQTT_TOPIC_TMCP;
     if (old->base.version == 2 && old->features.magic == FEATURE_MAGIC) *features = old->features;
     else feature_defaults(features);
 }
