@@ -41,6 +41,8 @@ def version(tag):return tuple(map(int,tag.removeprefix('v').split('.')))
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('directory',type=Path);p.add_argument('--promote',action='store_true');p.add_argument('--archive-only',action='store_true');a=p.parse_args()
     release=json.loads((a.directory/'release.json').read_text());tag=release['tag'];print('R2 account bytes:',usage())
+    stable=get('stable.json')
+    if not a.archive_only and stable and version(json.loads(stable)['tag'])>version(tag):raise ValueError('refuse to publish a version older than stable')
     if not a.promote:
         for f in sorted(a.directory.iterdir()):
             if f.is_file() and not f.name.startswith('SHA256SUMS-'):put(f'releases/{tag}/{f.name}',f.read_bytes(),True)

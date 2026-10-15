@@ -19,7 +19,10 @@ def main():
     entry=next((r for r in rulesets if r['phase']==phase and r['kind']=='zone'),None)
     if entry:
         existing=api(f'/zones/{ZONE}/rulesets/{entry["id"]}')
-        if not any(r.get('ref')==rule['ref'] for r in existing['rules']):
+        current=next((r for r in existing['rules'] if r.get('ref')==rule['ref']),None)
+        if current:
+            api(f'/zones/{ZONE}/rulesets/{entry["id"]}/rules/{current["id"]}','PATCH',rule)
+        else:
             api(f'/zones/{ZONE}/rulesets/{entry["id"]}/rules','POST',rule)
     else:api(f'/zones/{ZONE}/rulesets','POST',{'name':'Selective HTTPS','kind':'zone','phase':phase,'rules':[rule]})
     # The replacement redirect exists before removing the global redirect.

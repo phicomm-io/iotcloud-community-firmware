@@ -18,10 +18,13 @@
 static const char *update_bases[]={PHICOMM_OTA_CN_BASE_URL,PHICOMM_OTA_GLOBAL_BASE_URL};
 static const char *update_sources[]={"cn","global"};
 static bool update_busy, update_available;
+static uint32_t update_deadline;
 static unsigned update_source;
 static char update_state[24]="idle", update_version[32], update_path[200], update_notes[200];
 static int update_read(int fd,void *out,size_t n) {
-    fd_set f;FD_ZERO(&f);FD_SET(fd,&f);struct timeval tv={10,0};
+    int32_t remaining=(int32_t)(update_deadline-mico_rtos_get_time());if(remaining<=0)return -1;
+    unsigned wait=remaining>10000?10000:(unsigned)remaining;
+    fd_set f;FD_ZERO(&f);FD_SET(fd,&f);struct timeval tv={wait/1000,(wait%1000)*1000};
     if(select(fd+1,&f,NULL,NULL,&tv)<=0)return -1;return recv(fd,out,n,0);
 }
 static int update_line(int fd,char *out,size_t cap) {
@@ -41,7 +44,7 @@ static bool update_relative(const char *s) {
     for(;*s;s++)if(!isalnum((unsigned char)*s)&&!strchr("/._-",*s))return false;return true;
 }
 static void update_worker(mico_thread_arg_t arg) {
-    (void)arg;int fd=-1;json_object *meta=NULL;char *body=NULL;
+    (void)arg;update_deadline=mico_rtos_get_time()+30000;int fd=-1;json_object *meta=NULL;char *body=NULL;
     char host[161],line[512];unsigned selected=update_source,port=80;
     const char *base=update_bases[selected];snprintf(host,sizeof(host),"%s",base+7);
     char *colon=strchr(host,':');if(colon){*colon++=0;port=(unsigned)atoi(colon);}
