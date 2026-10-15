@@ -11,7 +11,19 @@ for product in ('A1', 'M1', 'TC1'):
             f.write(source)
             f.flush()
             subprocess.run(['node', '--check', f.name], check=True)
-    assert 'phicomm.appearance' in html
-    if product == 'A1': assert 'featureForm' in html and 'response_ids' in html
-    if product == 'M1': assert 'responseForm' in html and 'featureForm' not in html
+    if product in ('M1','A1'):
+        server=(Path(product)/'http.c').read_text()
+        assert 'sizeof('+product.lower()+'_web_data),true)' in server, 'compressed HTML requires Content-Encoding: gzip'
+    # Every page carries the shared framework, the theme bootstrap and the
+    # settings pages the product advertises.
+    for required in ('phicomm.appearance', 'window.UI', 'window.I18N', 'window.automationPages'):
+        assert required in html, f'{product}: {required} missing'
+    # Product-specific markup: the A1 has light effects and M1 binding, the
+    # M1 has no power control, the TC1 has socket tiles.
+    if product == 'A1':
+        assert 'id="power"' in html and 'id="ring"' in html
+    if product == 'M1':
+        assert 'id="metrics"' in html and 'id="power"' not in html and 'id="tiles"' not in html
+    if product == 'TC1':
+        assert 'id="tiles"' in html and 'id="socketNamesForm"' in html and 'id="power"' not in html
 print('TC1, A1 and M1 embedded WebUI JavaScript syntax passed')

@@ -41,7 +41,7 @@ int main(void){
 #else
         A1_CONFIG_VERSION
 #endif
-        && next.mqtt_topic_mode==0 && next.revision==99);
+        && next.mqtt_topic_mode==MQTT_TOPIC_TMCP && next.revision==99);
     assert(!strcmp(next.ssid,old.base.ssid) && !strcmp(next.wifi_password,old.base.wifi_password));
     assert(!strcmp(next.mqtt_host,old.base.mqtt_host) && !strcmp(next.mqtt_user,old.base.mqtt_user));
     assert(strlen(next.mqtt_password)==63 && !strcmp(next.name,old.base.name) && !strcmp(next.web_password,old.base.web_password));
@@ -68,12 +68,16 @@ int main(void){
     old.power_coefficient_x100=1710;strcpy(old.web_password,"web secret");
     user_config_t next;memset(&next,0xee,sizeof(next));memcpy(&next,&old,sizeof(old));
     assert(tc1_migrate_v10(&next,sizeof(old)));
-    assert(next.version==11 && next.mqtt_topic_mode==0);
+    assert(next.version==USER_CONFIG_VERSION && next.mqtt_topic_mode==0);
     assert(!strcmp(next.mqtt_user,old.mqtt_user) && !strcmp(next.mqtt_password,old.mqtt_password));
     assert(!strcmp(next.mqtt_ip,old.mqtt_ip) && next.mqtt_port==1883 && next.task_count==128);
     assert(next.timed_tasks[127].operation==6 && next.socket_status[5]==1 && next.power_coefficient_x100==1710);
     assert(!strcmp(next.socket_names[5],"Kitchen") && !strcmp(next.web_password,"web secret"));
     assert(!tc1_migrate_v10(&next,sizeof(old))); /* no repeated migration */
+    user_config_v11_t v11={0};v11.version=11;strcpy(v11.mqtt_ip,"v11.example");strcpy(v11.mqtt_password,"preserve");v11.mqtt_topic_mode=1;v11.task_count=128;v11.timed_tasks[127].on_use=true;
+    memset(&next,0xee,sizeof(next));memcpy(&next,&v11,sizeof(v11));assert(tc1_migrate_v11(&next,sizeof(v11)));assert(next.version==USER_CONFIG_VERSION);assert(!strcmp(next.mqtt_host,"v11.example"));assert(!strcmp(next.mqtt_password,"preserve"));assert(next.task_count==128 && next.timed_tasks[127].on_use && next.mqtt_topic_mode==1);
+    assert(!tc1_migrate_v11(&next,sizeof(v11)));
+
 #endif
-    puts("Frozen old configuration migration preserves settings and selects legacy");
+    puts("Frozen configuration migration preserves settings and normalizes M1/A1 TMCP mode");
 }

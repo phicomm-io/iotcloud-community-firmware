@@ -1,6 +1,6 @@
 # WebUI 设计与接口约定
 
-TC1、A1、M1 的离线页面由 `common/web/page.py` 展开公共片段后压缩，浏览器无需 CDN。`style.css` 是唯一公共样式来源，`wifi.html`、`mqtt.html`、`auth.html` 是公共表单，`diagnostics.js` 是公共状态词表与诊断呈现。直接打开源码 HTML 不会展开片段；请使用构建产物或 `python3 common/web/page.py <页面路径>`。
+TC1、A1、M1 的离线页面由 `common/web/page.py` 展开公共片段后压缩，浏览器无需 CDN，不使用 Web 字体或外部资源。公共部分为：`style.css`（唯一公共样式来源）、`i18n.js`（中英文词表与语言检测）、`service.js`（`/api/v1/command` 传输）、`ui.js`（页头、路由、反馈控件与三端公共设置页）、`automation.js`（定时、按键、夜间模式）与 `appearance.js`（首屏主题）。每个页面另有自己的 `page.js` 负责产品专属页面，页面不引用产品目录以外的资源。直接打开源码 HTML 不会展开片段；请使用构建产物或 `python3 common/web/page.py <页面路径>`。
 
 ## 页面与词表
 
@@ -12,40 +12,37 @@ TC1、A1、M1 的离线页面由 `common/web/page.py` 展开公共片段后压�
 
 ## 公共 HTTP 定义
 
-配置请求使用 `Content-Type: application/json`，成功响应包含 `message`。输入必须在完整接收、类型与长度校验后才生效。TC1 保留旧纯文本接口作为兼容入口，但新页面只发送 JSON（TC1 特有功率系数保留旧接口）。
+普通查询和控制统一使用 `POST /api/v1/command`，`Content-Type: application/json`。请求为 `{request_id?, action, params}`，响应为 `{request_id?, code, message, data}`；成功码为 `ok` 或 `accepted`。输入须完整接收并通过类型、长度和参数校验后才生效。写命令使用唯一 request_id，重试保持相同请求；已用 ID 对应不同内容返回 conflict。具体可用动作由 `capabilities.get.actions` 提供。
 
-| 方法与路径 | 请求/响应约定 |
+| 动作 | 用途 |
 | --- | --- |
-| GET `/status` | `version`, `device_id`, `name`, `ssid`, `ip`, `wifi_connected`, `mqtt_host`, `mqtt_port`, `mqtt_user`, `mqtt_topic_mode`, `mqtt_status`, `mqtt_connected`, `web_password_set`, `wifi_password_set`, `mqtt_password_set`, `ota_state`, `ota_error`, `ota_progress`；设备专用字段额外提供 |
-| POST `/deviceName` | `{"name":"设备名称"}` |
-| POST `/wifi/config` | `{"ssid":"网络名称","password":"","open_network":false}`；同一网络密码留空保留原值 |
-| POST / GET `/wifi/scan` | 启动扫描 `{}`；查询 `{"scanning":false,"networks":[{"ssid":"...","rssi":-50,"security":...}]}` |
-| POST `/mqtt/config` | `host`, `port`, `user`, `password`, `topic_mode` (`legacy`/`account`), `clear_password`；留空地址停用，留空密码保留，显式清除独立控制 |
-| POST `/auth/password` | `{"password":"..."}`；8–32 字节可打印 ASCII，空密码关闭认证 |
-| POST `/reboot` | `{}` |
-| POST `/childLock` | `{"enabled":true}`（TC1、A1） |
-| POST `/ota` | `{"url":"http://..."}`；签名 OTA 直链 |
-| POST `/ota/fileUpload` | 原始字节流，强制签名验证；完成返回 HTTP 202，随后重启 |
-| POST `/ota/fileUploadUnsigned` | 仅用户勾选“允许未签名的固件”后使用；raw 分支不加载签名验证上下文，仍检查设备镜像与写入结果 |
-| GET / POST `/schedule/config` | `{"events":[...]}`；每周语义统一 `days` 位掩码（周一 bit0）、`minute`（当地时间分钟）、`on`（0/1）；设备动作字段按能力扩展 |
+| `status.get`, `config.get`, `capabilities.get` | 状态、脱敏设置、能力 |
+| `config.set` | `{section,values}`；device/auth/mqtt/wifi/ntp 及产品专用设置 |
+| `wifi.scan`, `wifi.scan.get` | 启动扫描、读取结果 |
+| `logs.get` | `{after,limit}`；分页读取公共 RAM 日志，最多 8 条/页 |
+| `schedules.get/put/delete/enable` | 稳定 ID 的任务查询、保存、删除、启停 |
+| `buttons.get/set` | 自定义按键映射；get 使用 offset/limit（最多 8 条），next/capacity/count；是否可写见能力列表 |
+| `system.reboot/reset`, `ota.start` | 重启、重置、签名 OTA URL |
+| `night.get/set`, `time.get/set` | 夜间模式（A1/M1）与时区 |
+| `binding.get/set`, `binding.status.get` | A1/M1 绑定设置、运行状态 |
+| `sensors.average.get` | A1 多 M1 实时平均值 |
 
-密码不通过状态接口返回。保留的 TC1 `station_pwd`、`ap_pwd`、`mqtt_pwd` 兼容键始终为空。
+文件 OTA 独立于 JSON 命令：`POST /api/v1/ota/upload` 上传签名原始字节流；仅显式选择未签名更新时使用 `/api/v1/ota/upload-unsigned`。两者仍校验产品镜像和写入结果。
 
-TC1 持久化结构保持原布局，因此 Broker 地址上限仍为 31 字节（A1/M1 为 127）；不通过改动 Flash 结构冒险扩大容量。TC1 名称按 UTF-8 字节限制为 63，插座名称相同。
+密码不通过查询返回。MQTT 用户名最多 63 UTF-8 字节，密码最多 256 字节，Broker 最多 127 字节。网页省略空白密码输入以保留旧值，显式清除则传空字符串。Wi-Fi 开放网络同样须显式确认。网页认证用户名固定 admin。
 
 ## 能力区别
 
 | 能力 | TC1 | A1 | M1 |
 | --- | --- | --- | --- |
 | 核心功能 | 六路插座、总开关、功率、电量 | 风机、RGB 灯环 | 空气参数、屏幕亮度 |
-| MQTT、认证、重启、签名/raw OTA、状态诊断 | 支持 | 支持 | 支持 |
-| 童锁 | 面板按键 | 面板电源/调速；配网键保留 | 不提供 |
-| 定时任务 | 本机动作；8 个页面事件；一次任务扩展 `timestamp`，动作扩展 `operation` | 现有调度引擎 | 现有调度引擎 |
-| 夜间模式 | 不提供 | 现有 `/sleep/config` | 现有 `/sleep/config` |
-| 自定义按键事件 | 短按/长按映射，序号 1–30 | 保留现有固定面板行为 | 保留现有固定面板行为 |
-| 文本系统日志 | 最近 64 条，每条 128 字节，GET `/log` | 现有串口日志与状态 | 现有串口日志与状态 |
+| 统一命令、认证、重启、OTA、日志诊断 | 支持 | 支持 | 支持 |
+| 童锁 | 面板按键 | 电源/调速，配网键保留 | 不提供 |
+| 完整定时任务 | 128 项 | 8 项 | 8 项 |
+| 夜间模式 | 不提供 | 支持 | 支持 |
+| 自定义按键事件 | 默认无映射，点击 1–30 / 长按 1–4 秒 | 按键能力见 capabilities | 不提供自定义写入 |
 
-TC1 每周任务按北京时间 UTC+8，网页与设备时间一致；未校时不能创建新页面事件。原 Flash 中最多 128 个旧任务仍可读取、执行和通过旧 `/task/<timestamp>` 删除。重复任务错过多个周期时直接推进至下一次未来执行，避免逐秒补执行。恢复出厂、配网和重启类动作保留旧能力，不在自动实机测试中执行恢复出厂。
+任务支持周循环和一次性触发。时间按配置时区；失去时钟有效性时不执行；错过的触发不补执行。动作依据各产品能力校验，重启类动作最后执行。公共日志为 64 条 RAM 环，重启不保留，不包含密码。
 
 ## TC1 资源与兼容边界
 
@@ -57,3 +54,13 @@ TC1 每周任务按北京时间 UTC+8，网页与设备时间一致；未校时�
 - HTTP 与 MQTT 线程栈未凭推测缩小；没有物理按键、负载计量及长期耐久测试证据时，不宣称这些硬件边界已通过。
 
 网页重启与旧 `soft` 请求均先发送响应，再通过 SDK 重启；软件重启不再把打包镜像头当向量表直接跳转。
+
+## 当前统一接口补充
+
+新前端所有普通查询/设置通过 `POST /api/v1/command`，动作名见 `capabilities.get`；旧产品 HTTP 路径仅作兼容，不是新前端接口。HTTP v1 与 MQTT 的 TMCP(v2)/Legacy(v1) 独立编号。MQTT 主题、公告、版本字段和平均值结构以 [MQTT 协议约定](mqtt-account.md) 为准。
+
+A1 首页展示已绑定且新鲜的 M1 四项实时算术平均值；`sensors.average.get` 和 `binding.status.get.average` 同构。无有效采样显示破折号，不显示零值冒充数据。
+
+日志查询使用 `logs.get`，列表字段为 `records`，游标为 `next/latest`。TC1 单插座控制仅发一个指定 index 的 `outlet.set`，全开/全关不带 index。功率接口返回 `power_watts` 和 `energy_kwh`；首页趋势是本浏览器本次打开期间最多 60 个采样点，不是持久历史。单个采样点的 SVG 坐标也必须有效。
+
+SDK 基础 Wi-Fi 扫描未提供安全类型时，网页不会推断为空密码网络；由用户显式选择开放网络，避免清除已保存的密码。

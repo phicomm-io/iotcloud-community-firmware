@@ -1,6 +1,7 @@
 #include "../common/phicomm_features.h"
 #include "json.h"
 #include "mico.h"
+void automation_poll(bool valid){(void)valid;}
 uint32_t test_now;
 static feature_config_t stored;
 void feature_config_get(feature_config_t *out) { *out = stored; }
@@ -34,6 +35,10 @@ char m1_id[13] = "aabbccddee02";
 void m1_state_get(m1_state_t *out) { memset(out, 0, sizeof(*out)); }
 #endif
 #include "../common/runtime.c"
+json_object *automation_command(const char *a,json_object *p,const char **code,bool *handled){(void)a;(void)p;(void)code;*handled=false;return NULL;}
+json_object *service_product_capabilities(void){return json_object_new_object();}
+json_object *service_product(const char *a,json_object *p,const char **code){(void)a;(void)p;*code="unsupported";return NULL;}
+
 static unsigned publications;
 static int capture(const char *t, const char *b, bool r) {
   assert(t && b);
@@ -59,13 +64,13 @@ static void binding(void) {
       "{\"peers\":[{\"mac\":\"11:22:33:44:55:66\",\"ip\":\"127.0.0.1\"}]}",
       200);
   char filters[12][FEATURE_TOPIC_MAX];
-  assert(feature_mqtt_filters(filters) == 3);
+  assert(feature_mqtt_filters(filters) == 4);
   char root[FEATURE_TOPIC_MAX];
   root_for(&stored, 0, root);
 #ifdef FEATURE_DEVICE_A1
-  assert(!strcmp(root, "aa:bb:cc:dd:ee:01:11:22:33:44:55:66"));
+  assert(!strcmp(root, "phicomm/v2/local/a1/aabbccddee01/linkage"));
 #else
-  assert(!strcmp(root, "11:22:33:44:55:66:aa:bb:cc:dd:ee:02"));
+  assert(!strcmp(root, "phicomm/v2/local/a1/112233445566/linkage"));
 #endif
   json_object *o = envelope(&stored, 0, "bound", 1);
   js(o, "src", stored.peers[0].id);
@@ -229,7 +234,7 @@ static void effective_controls(void) {
   c.last_event = 123;
   assert(install_config(&c));
   feature_effective_fan(true, 100, &on, &speed);
-  assert(!on);
+  assert(on && speed == 30); /* Old timer latch never overrides a new command. */
   feature_manual_fan(true);
   assert(!stored.scheduled_off && !stored.scheduled_valid &&
          stored.last_event == 123);
@@ -279,7 +284,7 @@ static void account_namespaces(void) {
   char filters[12][FEATURE_TOPIC_MAX],root[FEATURE_TOPIC_MAX];
   unsigned count=feature_mqtt_filters(filters);assert(count>=3);
   for(unsigned i=0;i<count;++i)assert(strstr(filters[i],alice.key));
-  root_for(&stored,0,root);assert(!strncmp(root,"phicomm/linkage/",16));assert(strstr(root,alice.key));
+  root_for(&stored,0,root);assert(!strncmp(root,"phicomm/v2/",11));assert(strstr(root,alice.key));
   char t[FEATURE_TOPIC_MAX];mqtt_leaf(&alice,"binding/get",t,sizeof(t));
   assert(feature_mqtt_input(t,"{}",2,false));
   assert(queued);assert(feature_mqtt_service(capture_account,true)==0);
@@ -301,10 +306,22 @@ static void account_namespaces(void) {
 #include "passive_scenarios.inc"
 #endif
 int main(void) {
+  service_init();
   feature_defaults(&stored);
   assert(feature_start() == 0);
   json_object *r = NULL;
 #ifdef FEATURE_DEVICE_A1
+  feature_sample_t readings[3] = {0};
+  for (unsigned i=0;i<2;i++) { readings[i].valid=true;readings[i].received_ms=test_now;
+    readings[i].value[0]=20+10*i;readings[i].value[1]=40+20*i;readings[i].value[2]=10+20*i;readings[i].value[3]=0.1f+0.2f*i; }
+  json_object *mean=average_body(readings,3,test_now);
+  assert(json_object_get_int(json_object_object_get(mean,"sample_count"))==2);
+  assert(json_object_get_double(json_object_object_get(mean,"temperature"))==25);
+  assert(json_object_get_double(json_object_object_get(mean,"pm25"))==20);
+  json_object_put(mean);
+  mean=average_body(readings,3,test_now+180001);
+  assert(!json_object_get_boolean(json_object_object_get(mean,"valid")));
+  assert(!json_object_object_get(mean,"temperature"));json_object_put(mean);
   transaction("binding", "{\"peers\":[{\"mac\":\"bad\"}]}", 400);
   assert(!stored.peer_count);
   transaction("binding", "{\"group\":\"bad/#\"}", 400);
