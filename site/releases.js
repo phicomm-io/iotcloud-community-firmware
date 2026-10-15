@@ -1,6 +1,5 @@
 'use strict';
 const status=document.getElementById('release-status'),source=document.getElementById('source');
-const api='https://phicomm.fjrcn.com';
 const el=(tag,text)=>{const n=document.createElement(tag);if(text)n.textContent=text;return n;};
 function link(label,path){const a=el('a',label);a.href=source.value+path;a.rel='noopener';return a;}
 let catalog=null;
@@ -17,7 +16,7 @@ function releaseCard(release,latest){
  }
  box.append(table,link('SHA256 校验文件',`/releases/${release.tag}/SHA256SUMS`));
  const note=el('pre');note.className='notes';
- const load=async()=>{if(note.dataset.loaded)return;try{const r=await fetch(api+release.notes);if(!r.ok)throw Error('HTTP '+r.status);note.textContent=await r.text();note.dataset.loaded='1';}catch{note.textContent='发布说明暂时无法读取，请稍后重试。';}};
+ const load=async()=>{if(note.dataset.loaded)return;try{const r=await fetch(source.value+release.notes);if(!r.ok)throw Error('HTTP '+r.status);note.textContent=await r.text();note.dataset.loaded='1';}catch{note.textContent='发布说明暂时无法读取，请稍后重试。';}};
  box.append(link('发布说明 ↗',release.notes),note);
  if(latest)load();else box.addEventListener('toggle',()=>{if(box.open)load();});
  return box;
@@ -33,4 +32,10 @@ function render(){
  status.textContent=releases.length?`共 ${releases.length} 个版本 · 历史文件按版本保留`:'尚无已发布固件。';
 }
 source.addEventListener('change',()=>{if(catalog)render();});
-fetch(api+'/releases/index.json').then(r=>{if(!r.ok)throw Error('HTTP '+r.status);return r.json();}).then(data=>{catalog=data;render();}).catch(()=>{status.textContent='暂时无法连接发布服务器，请稍后重试。';});
+async function loadCatalog(){
+ status.textContent='正在读取版本归档…';
+ try{const r=await fetch(source.value+'/releases/index.json');if(!r.ok)throw Error('HTTP '+r.status);catalog=await r.json();render();}
+ catch{status.textContent='暂时无法连接发布服务器，请切换来源重试。';}
+}
+source.addEventListener('change',loadCatalog);
+loadCatalog();
