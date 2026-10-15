@@ -26,7 +26,9 @@ function render(){
  const releases=catalog.releases;document.getElementById('latest').replaceChildren();document.getElementById('archive').replaceChildren();
  // Catalog is descending numeric SemVer. Every published version remains in
  // the archive, including stable, so it is a permanent lookup surface.
- if(releases.length)document.getElementById('latest').append(releaseCard(releases.find(r=>r.tag===catalog.stable)||releases[0],true));
+ const stable=releases.find(r=>r.tag===catalog.stable);
+ if(stable)document.getElementById('latest').append(releaseCard(stable,true));
+ else document.getElementById('latest').append(el('p','正式最新版正在同步，请先查看历史归档。'));
  for(const r of releases)document.getElementById('archive').append(releaseCard(r,false));
  status.textContent=releases.length?`共 ${releases.length} 个版本 · 历史文件按版本保留`:'尚无已发布固件。';
 }
