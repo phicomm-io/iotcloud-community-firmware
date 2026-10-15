@@ -5,7 +5,7 @@
 static signed_ota session;
 static tc1_ota_metadata_t metadata;
 void tc1_ota_metadata(tc1_ota_metadata_t *out);
-static bool active, unsigned_session, commit_uncertain;
+static bool active, config_busy, unsigned_session, commit_uncertain;
 static const char *ota_state="idle";
 static mico_mutex_t lock;
 static uint32_t expected, staged, wire_total, wire_done;
@@ -14,8 +14,13 @@ static uint16_t transport_crc;
 static const uint8_t kernel_md5[16]={0xdf,0x26,0x41,0xdc,0xca,0x61,0xb3,0x0b,0xe1,0x54,0xb5,0x0b,0xcd,0xf2,0x50,0x03};
 void tc1_ota_metadata(tc1_ota_metadata_t *out) {mico_rtos_lock_mutex(&lock);*out=metadata;mico_rtos_unlock_mutex(&lock);}
 void tc1_ota_init(void) { mico_rtos_init_mutex(&lock); }
+bool tc1_config_reserve(void) {
+    mico_rtos_lock_mutex(&lock); bool ok=!active && !config_busy; if(ok)config_busy=true;
+    mico_rtos_unlock_mutex(&lock);return ok;
+}
+void tc1_config_release(void) {mico_rtos_lock_mutex(&lock);config_busy=false;mico_rtos_unlock_mutex(&lock);}
 bool tc1_ota_reserve(void) {
-    mico_rtos_lock_mutex(&lock); bool ok=!active; if(ok) {active=true;ota_state="receiving";}
+    mico_rtos_lock_mutex(&lock); bool ok=!active && !config_busy; if(ok) {active=true;ota_state="receiving";}
     mico_rtos_unlock_mutex(&lock); return ok;
 }
 void tc1_ota_snapshot(char *state,char *error,unsigned *progress) {

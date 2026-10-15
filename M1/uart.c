@@ -6,6 +6,12 @@ typedef struct { uint8_t kind, level, frame[12]; } uart_command_t;
 static mico_queue_t tx_queue;
 static bool queue_ready;
 
+static unsigned effective_level(unsigned desired)
+{
+    unsigned cap = feature_light_cap(255) * 4u / 255u;
+    return desired < cap ? desired : cap;
+}
+
 bool m1_set_brightness(unsigned level)
 {
     if (level > 4 || !queue_ready) return false;
@@ -48,19 +54,20 @@ static void indicator_output(mico_pwm_t pwm, mico_gpio_t gpio, float duty, bool 
     }
 }
 
-static void pwm_update(unsigned level, bool wifi_connected, bool error_on)
+static void pwm_update(unsigned level, bool wifi_on, bool error_on)
 {
     static const float duty[5] = { 0.5f, 3.0f, 7.0f, 13.0f, 20.0f };
     /* MK3080B PWM4/GPIO13 drives the error mark; PWM5/GPIO14
      * drives Wi-Fi, as identified by the user on the physical M1. */
-    indicator_output(MICO_PWM_5, MICO_GPIO_14, duty[level], wifi_connected || error_on);
-    indicator_output(MICO_PWM_4, MICO_GPIO_13, duty[level], error_on);
+    indicator_output(MICO_PWM_5, MICO_GPIO_14, duty[level], level && wifi_on);
+    indicator_output(MICO_PWM_4, MICO_GPIO_13, duty[level], level && error_on);
 }
 
 static void uart_worker(mico_thread_arg_t arg)
 {
     UNUSED_PARAMETER(arg);
     uint8_t storage[128], frame[20];
+    bool reset_seen = false;
     ring_buffer_t ring;
     ring_buffer_init(&ring, storage, sizeof(storage));
     mico_uart_config_t config = { 115200, DATA_WIDTH_8BIT, NO_PARITY,
@@ -80,6 +87,7 @@ static void uart_worker(mico_thread_arg_t arg)
     m1_decoder_t decoder = {0};
     unsigned old_level = 255, old_mode = 255, old_error = 255, old_wifi = 255;
     uint32_t mode_since = 0;
+    unsigned applied_display = cfg.brightness;
     for (;;) {
         uint32_t now = mico_rtos_get_time();
         if ((int32_t)(now - next_query) >= 0) {
@@ -89,7 +97,7 @@ static void uart_worker(mico_thread_arg_t arg)
         if (mico_rtos_pop_from_queue(&tx_queue, &command, 0) == kNoErr) {
             if (command.kind == 2) {
                 m1_config_get(&cfg);
-                m1_brightness_frame(command.frame, command.level, cfg.last_on);
+                m1_brightness_frame(command.frame, effective_level(command.level), cfg.last_on);
                 if (transmit(command.frame)) {
                     for (unsigned attempt = 0; attempt < 3; attempt++) {
                         m1_config_get(&cfg);
@@ -110,6 +118,12 @@ static void uart_worker(mico_thread_arg_t arg)
             uint8_t byte;
             if (MicoUartRecv(MICO_UART_1, &byte, 1, i ? 0 : 10) != kNoErr) break;
             if (!m1_decode_byte(&decoder, byte, frame)) continue;
+            if (frame[1] == 0x18) {
+                static const uint8_t ack[12] = {0x23,0x16,0x00,0x10,0x14,0x00,0x03,0x10,0xf1,0xff,0xff,0x21};
+                transmit(ack);
+                if (!reset_seen) { reset_seen = true; m1_reset(false); }
+                continue;
+            }
             mico_rtos_lock_mutex(&m1_lock);
             memcpy(m1_state.last_frame, frame, 20);
             m1_state.rx_frames++;
@@ -124,12 +138,18 @@ static void uart_worker(mico_thread_arg_t arg)
         mico_rtos_lock_mutex(&m1_lock);
         m1_state.discarded_bytes = decoder.discarded;
         unsigned level = m1_state.brightness_requested;
-        bool wifi_connected = m1_state.wifi_connected;
         unsigned mode = m1_indicator_mode(cfg.ssid[0] != 0, m1_state.wifi_connected, cfg.mqtt_host[0] != 0,
             m1_state.mqtt_connected && m1_state.mqtt_status == MQTT_READY);
         mico_rtos_unlock_mutex(&m1_lock);
+        level = effective_level(level);
+        if (level != applied_display) {
+            m1_brightness_frame(frame, level, cfg.last_on);
+            if (transmit(frame)) applied_display = level;
+        }
         if (mode != old_mode) mode_since = now;
-        bool error_on = m1_indicator_on(mode, (uint32_t)(now - mode_since));
+        uint32_t elapsed = (uint32_t)(now - mode_since);
+        bool wifi_connected = m1_indicator_wifi(mode, elapsed);
+        bool error_on = m1_indicator_error(mode, elapsed);
         if (level != old_level || wifi_connected != old_wifi || error_on != old_error) {
             pwm_update(level, wifi_connected, error_on);
             old_level = level; old_wifi = wifi_connected; old_error = error_on;

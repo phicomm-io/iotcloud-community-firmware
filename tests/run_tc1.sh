@@ -12,3 +12,5 @@ python3 tests/test_tc1_http.py
 python3 tests/test_tc1_gpio.py
 
 python3 tests/test_tc1_core.py
+
+python3 tests/test_tc1_wifi.py

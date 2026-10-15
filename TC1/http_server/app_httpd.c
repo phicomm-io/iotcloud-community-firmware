@@ -228,6 +228,7 @@ static int HttpGetTc1Status(httpd_request_t *req) {
     jb_printf(&b, "{");
     jb_printf(&b, "\"utc_time\":%ld,\"time_synced\":%s,", (long)time(NULL),
               rtc_init == 1 ? "true" : "false");
+    jb_field(&b, "wifi_trial_status", WifiTrialStatus());
     jb_field(&b, "version", VERSION);
     jb_field(&b, "device_id", str_mac);
     jb_field(&b, "name", sys_config->micoSystemConfig.name);
@@ -592,7 +593,7 @@ static int HttpSetWifiConfig(httpd_request_t *req) {
     }
     if (valid) {
         if (mode == 1)
-            WifiConnect(ssid, key);
+            valid = WifiConnect(ssid, key);
         else
             ApConfig(ssid, key);
     }

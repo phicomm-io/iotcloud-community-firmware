@@ -12,7 +12,7 @@
 #define M1_VERSION FIRMWARE_VERSION
 #define M1_PRODUCT "PHICOMM_M1_EMW3080"
 #define M1_CONFIG_MAGIC 0x4d314346u
-#define M1_CONFIG_VERSION 3u
+#define M1_CONFIG_VERSION 4u
 #define M1_APP_OFFSET 0x75000u
 #define M1_APP_CPU_ADDRESS 0x08088000u
 #define M1_APP_LIMIT 0x40000u
@@ -41,6 +41,8 @@ typedef struct {
     char ntp_server[64], ntp_status[24];
     bool wifi_connected, ap_active, mqtt_connected, uart_ready;
     bool reboot_pending, ota_active, scan_busy;
+    bool wifi_trial_active;
+    char wifi_trial_status[24];
     uint8_t mqtt_status;
     bool mqtt_cleanup_warning;
     unsigned ota_progress, scan_count;
@@ -59,13 +61,15 @@ extern mico_Context_t *m1_context;
 void m1_config_get(m1_config_t *);
 void m1_ntp_host_get(char out[64]);
 bool m1_config_save(const m1_config_t *);
+bool m1_reset(bool full);
 void m1_state_get(m1_state_t *);
-void m1_reboot_later(uint32_t ms);
+bool m1_reboot_later(uint32_t ms);
 OSStatus m1_uart_start(void);
 bool m1_set_brightness(unsigned);
 bool m1_uart_clock(unsigned, unsigned, unsigned, unsigned, unsigned, unsigned);
 OSStatus m1_network_start(void);
 bool m1_scan_start(void);
+bool m1_wifi_trial(const m1_config_t *);
 OSStatus m1_mqtt_start(void);
 OSStatus m1_http_start(void);
 void m1_ota_status(const char *state, const char *error, unsigned progress);

@@ -1,26 +1,18 @@
 #pragma once
-#include <stdbool.h>
-#include <stdint.h>
-
-enum { M1_LED_UNCONFIGURED, M1_LED_WIFI_DOWN, M1_LED_MQTT_DOWN, M1_LED_READY };
-
-static inline unsigned m1_indicator_mode(bool configured, bool wifi, bool mqtt_configured, bool mqtt)
+#include "../common/indicator.h"
+#define M1_LED_UNCONFIGURED INDICATOR_UNCONFIGURED
+#define M1_LED_WIFI_DOWN INDICATOR_WIFI_DOWN
+#define M1_LED_MQTT_DOWN INDICATOR_MQTT_DOWN
+#define M1_LED_READY INDICATOR_READY
+#define m1_indicator_mode indicator_mode
+#define m1_indicator_on indicator_on
+static inline bool m1_indicator_wifi(unsigned mode, uint32_t elapsed)
 {
-    if (!configured) return M1_LED_UNCONFIGURED;
-    if (!wifi) return M1_LED_WIFI_DOWN;
-    return !mqtt_configured || mqtt ? M1_LED_READY : M1_LED_MQTT_DOWN;
+    return mode == M1_LED_READY || mode == M1_LED_MQTT_DOWN ||
+           m1_indicator_on(mode, elapsed);
 }
-
-/* Elapsed time is relative to entry into the current mode. */
-static inline bool m1_indicator_on(unsigned mode, uint32_t elapsed)
+static inline bool m1_indicator_error(unsigned mode, uint32_t elapsed)
 {
-    if (mode == M1_LED_UNCONFIGURED || mode == M1_LED_WIFI_DOWN)
-        return elapsed % 1000u < 500u;
-    if (mode == M1_LED_MQTT_DOWN) {
-        uint32_t phase = elapsed % 3600u;
-        return phase < 800u || (phase >= 1000u && phase < 1800u) ||
-               (phase >= 2000u && phase < 2200u) ||
-               (phase >= 2400u && phase < 2600u);
-    }
-    return false;
+    return (mode == M1_LED_WIFI_DOWN || mode == M1_LED_MQTT_DOWN) &&
+           m1_indicator_on(mode, elapsed);
 }

@@ -57,6 +57,14 @@ static bool ap_start(void)
     return err == kNoErr;
 }
 
+#define WIFI_PREFIX a1
+#define WIFI_CONFIG a1_config_t
+#define WIFI_STATE a1_state
+#define WIFI_LOCK a1_lock
+#define WIFI_GET a1_config_get
+#define WIFI_SAVE a1_config_save
+#include "../common/wifi_trial.inc"
+
 static void network_worker(mico_thread_arg_t arg)
 {
     UNUSED_PARAMETER(arg);
@@ -64,6 +72,7 @@ static void network_worker(mico_thread_arg_t arg)
     a1_config_get(&started);
     uint32_t lost_since = mico_rtos_get_time(), next_retry = lost_since;
     uint32_t scan_since = 0;
+    bool ever_connected = false;
     bool ap = false, linked = false, station_requested = false;
     if (started.ssid[0]) {
         station_requested = station_start(&started);
@@ -73,6 +82,14 @@ static void network_worker(mico_thread_arg_t arg)
     for (;;) {
         uint32_t now = mico_rtos_get_time();
         a1_config_get(&current);
+        bool trial_started = wifi_trial_prepare(&current, now);
+        if (trial_started) {
+            micoWlanSuspendStation();
+            started = current;
+            station_requested = station_start(&started);
+            next_retry = now + 30000u;
+        }
+
         if (strcmp(current.ssid, started.ssid) || strcmp(current.wifi_password, started.wifi_password)) {
             micoWlanSuspendStation();
             started = current; linked = false; lost_since = now;
@@ -82,6 +99,18 @@ static void network_worker(mico_thread_arg_t arg)
         LinkStatusTypeDef link = {0}; IPStatusTypedef ip = {0};
         bool ready = micoWlanGetLinkStatus(&link) == kNoErr && link.is_connected &&
             micoWlanGetIPStatus(&ip, Station) == kNoErr && ip.ip[0] && strcmp(ip.ip, "0.0.0.0");
+        /* DHCP must belong to the requested SSID, never the previous AP. */
+        ready = ready && !strncmp((const char *)link.ssid, current.ssid, sizeof(link.ssid));
+        int trial_result = wifi_trial_finish(ready, now);
+        if (trial_result < 0) {
+            micoWlanSuspendStation();
+            a1_config_get(&current);
+            started = current;
+            station_requested = station_start(&current);
+            ready = false;
+            next_retry = now + 30000u;
+            if (!current.ssid[0] && !ap) ap = ap_start();
+        }
         /* Do not put the scan results and OTA strings on the network stack. */
         mico_rtos_lock_mutex(&a1_lock);
         bool ap_requested = a1_state.ap_requested;
@@ -91,10 +120,11 @@ static void network_worker(mico_thread_arg_t arg)
         if (ap_requested && !ap) ap = ap_start();
         if (ready) {
             if (ap && !ap_requested) { micoWlanSuspendSoftAP(); ap = false; }
+            ever_connected = true;
             linked = true; lost_since = now;
         } else {
             if (linked) { lost_since = now; linked = false; }
-            if (!ap && (!current.ssid[0] || (uint32_t)(now - lost_since) >= 60000)) ap = ap_start();
+            if (!ap && (!current.ssid[0] || (!ever_connected && (uint32_t)(now - lost_since) >= 300000u))) ap = ap_start();
             /* An accepted request reconnects in the SDK. Reissuing it while
              * disconnected starts overlapping application/SDK retry cycles.
              * Only retry here if the initial API request was rejected. */
@@ -122,6 +152,8 @@ static void network_worker(mico_thread_arg_t arg)
 OSStatus a1_network_start(void)
 {
     OSStatus err = mico_system_notify_register(mico_notify_WIFI_SCAN_COMPLETED, (void *)scan_done, NULL);
+    if (err != kNoErr) return err;
+    err = mico_system_notify_register(mico_notify_DHCP_COMPLETED, (void *)wifi_trial_dhcp, NULL);
     if (err != kNoErr) return err;
     /* micoWlanStart and clock/config work also consume this thread's stack. */
     return mico_rtos_create_thread(NULL, MICO_APPLICATION_PRIORITY, "a1_network", network_worker, 8192, 0);

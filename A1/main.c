@@ -29,6 +29,31 @@ void a1_config_get(a1_config_t *out)
     mico_rtos_unlock_mutex(&a1_config_lock);
 }
 
+bool a1_reset(bool full)
+{
+    app_storage_t *old = malloc(sizeof(*old));
+    if (!old) return false;
+    mico_rtos_lock_mutex(&a1_config_lock);
+    mico_rtos_lock_mutex(&a1_lock);
+    bool ok = !a1_state.ota_active && !a1_state.reboot_pending && !a1_state.wifi_trial_active;
+    if (ok) { a1_state.reboot_pending = true; a1_state.reboot_at = mico_rtos_get_time() + 0x7fffffffu; }
+    mico_rtos_unlock_mutex(&a1_lock);
+    if (ok) {
+        memcpy(old, a1_config, sizeof(*old));
+        if (full) appRestoreDefault_callback(a1_config, sizeof(*old));
+        else { a1_config->ssid[0] = 0; a1_config->wifi_password[0] = 0; a1_config->web_password[0] = 0; }
+        ok = mico_system_context_update(a1_context) == kNoErr;
+        if (!ok) memcpy(a1_config, old, sizeof(*old));
+        mico_rtos_lock_mutex(&a1_lock);
+        a1_state.reboot_pending = ok;
+        if (ok) a1_state.reboot_at = mico_rtos_get_time() + 1000u;
+        mico_rtos_unlock_mutex(&a1_lock);
+    }
+    mico_rtos_unlock_mutex(&a1_config_lock);
+    free(old);
+    return ok;
+}
+
 void a1_state_get(a1_state_t *out)
 {
     mico_rtos_lock_mutex(&a1_lock);
@@ -96,7 +121,7 @@ static bool exclusive_begin(bool ota, uint32_t delay)
 {
     mico_rtos_lock_mutex(&a1_config_lock);
     mico_rtos_lock_mutex(&a1_lock);
-    bool free = !a1_state.ota_active && !a1_state.reboot_pending;
+    bool free = !a1_state.ota_active && !a1_state.reboot_pending && !a1_state.wifi_trial_active;
     bool dirty = a1_state.config_dirty;
     if (free) {
         a1_state.ota_active = ota; a1_state.reboot_pending = !ota;
@@ -176,6 +201,8 @@ int application_start(void)
         if (!a1_config_save(&c)) return startup_result("config persist", kUnknownErr);
     }
     snprintf(a1_state.ap_name, sizeof(a1_state.ap_name), "A1-AP-%s", a1_id + 6);
+    for (char *p = a1_state.ap_name; *p; ++p)
+        if (*p >= 'a' && *p <= 'f') *p -= 'a' - 'A';
     strcpy(a1_state.ota_state, "idle");
     a1_state.led_until = mico_rtos_get_time() + 2000;
     err = startup_result("features", feature_start()); if (err != kNoErr) return err;

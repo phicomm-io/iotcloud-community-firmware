@@ -1,4 +1,6 @@
 #include "a1.h"
+#include "../common/indicator.h"
+#include "../common/gesture.h"
 #if !defined(CONFIG_CPU_MX1290) || !defined(MOC) || MOC != 1
 #error "A1 hardware requires the MK3080B MX1290 MOC target"
 #endif
@@ -93,12 +95,12 @@ static void panel_tick(uint32_t now, uint8_t *last_key, uint8_t *last_slider,
     uint8_t key = raw[1] == 1 ? 1 : raw[2] == 1 ? 2 : 0;
     uint8_t slider = !key && raw[0] <= 99 ? raw[0] : 0;
     if (key == 1 && *last_key != 1) a1_panel_event(true, 0);
-    if (key == 2) {
-        if (*last_key != 2) { *wifi_since = now; *wifi_sent = false; }
-        if (!*wifi_sent && (uint32_t)(now - *wifi_since) >= 2500) {
-            a1_request_ap(); *wifi_sent = true;
-        }
-    } else *wifi_sent = false;
+    if (key == 2 && *last_key != 2) *wifi_since = now;
+    if (key != 2 && *last_key == 2) {
+        unsigned gesture = gesture_release(*wifi_since, now);
+        if (gesture != GESTURE_ORDINARY) a1_reset(gesture == GESTURE_FULL_RESET);
+    }
+    *wifi_sent = false;
     if (slider && *last_slider && slider != *last_slider)
         a1_panel_event(false, (int)slider - *last_slider);
     *last_key = key; *last_slider = slider;
@@ -111,6 +113,8 @@ static void hardware_worker(mico_thread_arg_t arg)
     uint32_t fan_at = mico_rtos_get_time(), wifi_since = 0, probe_at = fan_at;
     bool wifi_sent = false, initialized = panel_init(), frame_sent = false;
     uint32_t previous[32] = {0};
+    unsigned old_mode = INDICATOR_READY;
+    uint32_t mode_since = fan_at;
     for (;;) {
         uint32_t now = mico_rtos_get_time();
         a1_config_t cfg; a1_state_t state;
@@ -141,10 +145,17 @@ static void hardware_worker(mico_thread_arg_t arg)
             unsigned count = cfg.fan_on ? cfg.speed / 3 + 1 : 31;
             if (count > 31) count = 31;
             for (unsigned i = 0; i < count; i++) colors[(26 + 31 - i) % 31 + 1] = color;
-            /* Original Wi-Fi indicator slot; color follows connected/AP status. */
-            colors[27] = state.wifi_connected && !state.ap_active ? cfg.brightness : (uint32_t)cfg.brightness << 8;
         }
         feature_light_frame(colors, cfg.brightness, cfg.led_enabled,((uint32_t)cfg.green<<16)|((uint32_t)cfg.red<<8)|cfg.blue);
+        unsigned mode = indicator_mode(cfg.ssid[0] != 0, state.wifi_connected,
+            cfg.mqtt_host[0] != 0, state.mqtt_connected && state.mqtt_status == MQTT_READY);
+        if (mode != old_mode) mode_since = now;
+        old_mode = mode;
+        /* Overlay after business rendering. Night mode remains the final cap.
+         * Slot 27 is the original Wi-Fi slot; physical centre needs DUT proof. */
+        if (mode != INDICATOR_READY)
+            colors[27] = indicator_on(mode, (uint32_t)(now - mode_since))
+                ? (uint32_t)feature_light_cap(64) << 8 : 0;
         visible = false; for (unsigned i = 0; i < 32; i++) visible |= colors[i] != 0;
         if (!state.ota_active && (!frame_sent || memcmp(previous, colors, sizeof(colors)))) {
             ring_send(colors); memcpy(previous, colors, sizeof(colors)); frame_sent = true;

@@ -11,5 +11,7 @@ for product in ('A1', 'M1', 'TC1'):
             f.write(source)
             f.flush()
             subprocess.run(['node', '--check', f.name], check=True)
-    if product != 'TC1': assert 'featureForm' in html and '/binding/config' in html
+    assert 'phicomm.appearance' in html
+    if product == 'A1': assert 'featureForm' in html and 'response_ids' in html
+    if product == 'M1': assert 'responseForm' in html and 'featureForm' not in html
 print('TC1, A1 and M1 embedded WebUI JavaScript syntax passed')

@@ -35,13 +35,28 @@ int main(void){
     old.base.fan_on=1;old.base.speed=60;old.base.red=50;old.base.green=100;old.base.blue=150;old.base.child_lock=1;
 #endif
     MIGRATE(&next,&f,&old);
-    assert(next.version==3 && next.mqtt_topic_mode==0 && next.revision==99);
+    assert(next.version==
+#ifdef HOST_M1
+        M1_CONFIG_VERSION
+#else
+        A1_CONFIG_VERSION
+#endif
+        && next.mqtt_topic_mode==0 && next.revision==99);
     assert(!strcmp(next.ssid,old.base.ssid) && !strcmp(next.wifi_password,old.base.wifi_password));
     assert(!strcmp(next.mqtt_host,old.base.mqtt_host) && !strcmp(next.mqtt_user,old.base.mqtt_user));
     assert(strlen(next.mqtt_password)==63 && !strcmp(next.name,old.base.name) && !strcmp(next.web_password,old.base.web_password));
     assert(next.mqtt_port==1883 && !memcmp(&f,&old.features,sizeof(f)));
 #ifdef HOST_M1
     assert(next.brightness==3 && next.last_on==4 && next.timezone_minutes==480);
+    memset(&f,0,sizeof(f));f.magic=FEATURE_MAGIC;f.peer_count=3;
+    strcpy(f.peers[0].id,"AABBCCDDEEFF");f.peers[0].kind=FEATURE_A1;memset(f.peers[0].token,1,16);
+    strcpy(f.peers[0].ip,"192.168.1.1");f.peers[1]=f.peers[0];f.peers[2]=f.peers[0];f.peers[2].kind=FEATURE_M1;
+    f.sleep_count=1;f.sleeps[0].brightness=0;strcpy(f.ntp_host,"ntp.example");
+    m1_migrate_response_permissions(&next,&f);
+    assert(f.peer_count==1 && !strcmp(f.peers[0].id,"aabbccddeeff") && !f.peers[0].ip[0] && !f.peers[0].confirmed);
+    assert(!memcmp(f.peers[0].token,(uint8_t[16]){0},16));
+    assert(f.sleep_count==1 && !strcmp(f.ntp_host,"ntp.example") && next.timezone_minutes==480);
+    assert(!strcmp(next.ssid,"old wifi") && !strcmp(next.name,"Old name"));
 #else
     assert(next.fan_on==1 && next.speed==60 && next.red==50 && next.green==100 && next.blue==150 && next.child_lock==1);
 #endif

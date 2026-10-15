@@ -98,7 +98,6 @@ static int discovery(const m1_config_t *c)
     static const char *units[] = {"°C", "%", "mg/m³", "µg/m³"};
     static const char *classes[] = {"temperature", "humidity", NULL, "pm25"};
     for (unsigned i = 0; i < 5; i++) {
-        if (feature_bound()) { char path[MQTT_TOPIC_MAX]; mqtt_ha(&account, i<4?"sensor":"number", keys[i], path, sizeof(path)); int rc=publish(path,"",true); if(rc!=MQTT_SUCCESS)return rc; continue; }
         char topic[MQTT_TOPIC_MAX], text[MQTT_TOPIC_MAX];
         json_object *o = json_object_new_object();
         if (!o) return MQTT_FAILURE;

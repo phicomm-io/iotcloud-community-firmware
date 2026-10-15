@@ -13,7 +13,7 @@ enum
    WIFI_STATE_CONNECTED,
 };
 
-#define ZZ_AP_NAME       "TC1-AP-%s"
+#define ZZ_AP_NAME       "TC1_A1-AP-%s"
 #define ZZ_AP_KEY        ""
 #define ZZ_AP_LOCAL_IP   "192.168.0.1"
 #define ZZ_AP_DNS_SERVER "192.168.0.1"
@@ -44,7 +44,8 @@ extern IpStatus ip_status;
 extern void WifiInit(void);
 extern void ApInit(bool use_defaul);
 extern void ApConfig(char* name, char* key);
-extern void WifiConnect(char* wifi_ssid, char* wifi_key);
+extern bool WifiConnect(char* wifi_ssid, char* wifi_key);
 extern void WifiStartOnBoot(void);
+const char *WifiTrialStatus(void);
 
 #endif

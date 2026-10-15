@@ -9,7 +9,7 @@ const flush=()=>new Promise(resolve=>setImmediate(resolve));
  w.TextEncoder=require("node:util").TextEncoder;
  const calls=[];
  const fixtures={
- '/binding/config':{revision:1,group:'',group_force_mqtt:false,group_recovery:true,group_timeout_ms:1000,group_recovery_seconds:60,peers:[],members:[]},
+ '/binding/config':{response_ids:[],revision:1,group:'',group_force_mqtt:false,group_recovery:true,group_timeout_ms:1000,group_recovery_seconds:60,peers:[],members:[]},
  '/linkage/config':{revision:1,enabled:0,mode:2,metrics:1,statistic:0,kp:20,ki:.02,kd:0},
  '/light/advanced':{revision:1,effect:4,segments:3,follow_fan:0,quality_pm:35,quality_hcho:.08,segment:[{source:0,display:2,minimum:-10,maximum:50,suitable_low:18,suitable_high:26,colors:[[0,0,255],[0,255,0],[255,0,0]]}]},
  '/schedule/config':{revision:1,events:[]},'/sleep/config':{revision:1,windows:[]},'/time/config':{revision:1,ntp_host:'pool.ntp.org',timezone_minutes:480},
@@ -81,6 +81,7 @@ const flush=()=>new Promise(resolve=>setImmediate(resolve));
  w.document.getElementById('otaUrl').value='http://host/ota.bin.signed';
  w.document.getElementById('urlForm').dispatchEvent(new w.Event('submit',{cancelable:true}));await flush();
  assert.ok(calls.some(([path,body])=>path==='/ota'&&body?.url==='http://host/ota.bin.signed'));
+ if(product==='A1'){
  const tabs=[...w.document.querySelectorAll('#featureTabs button')];assert.equal(tabs.length,6);
  let add=[...w.document.querySelectorAll('#featureFields button')].find(x=>x.textContent==='添加绑定设备');assert.ok(add);add.click();
  const macInput=[...w.document.querySelectorAll('#featureFields input')].find(x=>x.previousElementSibling?.textContent==='MAC 地址');macInput.value='11:22:33:44:55:66';macInput.dispatchEvent(new w.Event('input'));
@@ -88,6 +89,17 @@ const flush=()=>new Promise(resolve=>setImmediate(resolve));
  for(let i=1;i<6;i++){tabs[i].click();await flush();await flush();assert.ok(w.document.getElementById('featureFields').textContent.length);}
  tabs[3].click();await flush();add=[...w.document.querySelectorAll('#featureFields button')].find(x=>x.textContent==='添加每周定时事件');add.click();w.document.getElementById('featureForm').dispatchEvent(new w.Event('submit',{cancelable:true}));await flush();assert.ok(calls.some(([p,b])=>p==='/schedule/config'&&b?.events[0]?.days===127));
  tabs[4].click();await flush();add=[...w.document.querySelectorAll('#featureFields button')].find(x=>x.textContent==='添加夜间时段');add.click();w.document.getElementById('featureForm').dispatchEvent(new w.Event('submit',{cancelable:true}));await flush();assert.ok(calls.some(([p,b])=>p==='/sleep/config'&&b?.windows[0]?.start===1320&&b.windows[0].end===420));
+ }else{
+  const ids=w.document.getElementById('responseIds');assert.ok(ids);
+  ids.value='112233445566:aabbccddeeff';
+  w.document.getElementById('responseForm').dispatchEvent(new w.Event('submit',{cancelable:true}));await flush();
+  assert.ok(calls.some(([p,b])=>p==='/binding/config'&&b?.response_ids?.[0]==='112233445566:aabbccddeeff'));
+  assert.equal(w.document.getElementById('featureForm'),null);
+ }
+ const theme=w.document.getElementById('appearance');assert.ok(theme);
+ theme.value='dark';theme.dispatchEvent(new w.Event('change'));
+ assert.equal(w.document.documentElement.dataset.theme,'dark');assert.equal(w.localStorage.getItem('phicomm.appearance'),'dark');
+ theme.value='system';theme.dispatchEvent(new w.Event('change'));assert.equal(w.document.documentElement.hasAttribute('data-theme'),false);
  const user="a+b.o'neil@example.com";
  w.document.getElementById('mqttMode').value='account';
  w.document.getElementById('mqttUser').value=user;

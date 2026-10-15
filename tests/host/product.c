@@ -23,6 +23,8 @@ void mico_thread_msleep(unsigned ms){host_update();trace_status();if(mico_rtos_g
 void mico_rtos_thread_sleep(unsigned sec){mico_thread_msleep(sec*1000);}
 #ifdef HOST_M1
 #include "../../M1/mqtt.c"
+/* Network protocol harness never launches a firmware download. */
+bool m1_ota_download(const char *url){(void)url;return false;}
 static m1_config_t config;
 char m1_id[13]="aabbccddeeff";mico_mutex_t m1_lock;m1_state_t m1_state;
 void m1_config_get(m1_config_t *out){*out=config;}
@@ -35,6 +37,7 @@ bool m1_sample_fresh(const m1_sample_t *s,uint32_t now){return s->received && (u
 #define WORKER mqtt_worker
 #elif defined(HOST_A1)
 #include "../../A1/mqtt.c"
+bool a1_ota_download(const char *url){(void)url;return false;}
 static a1_config_t config;
 char a1_id[13]="aabbccddeeff";mico_mutex_t a1_lock;a1_state_t a1_state;
 void a1_config_get(a1_config_t *out){*out=config;}
@@ -46,6 +49,8 @@ json_object *a1_json_parse(const char *s,size_t n){(void)n;return json_tokener_p
 #define WEB_LOG_H
 #define web_log(...) ((void)0)
 #include "../../TC1/mqtt_server/user_mqtt_client.c"
+OSStatus ota_server_start(char *url,char *hash,ota_server_cb_fn callback){(void)url;(void)hash;(void)callback;return -1;}
+void tc1_ota_snapshot(char *state,char *error,unsigned *progress){strcpy(state,"idle");error[0]=0;*progress=0;}
 static user_config_t config;
 static system_config_t system_config;
 user_config_t *user_config=&config;system_config_t *sys_config=&system_config;

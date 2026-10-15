@@ -6,6 +6,8 @@ void tc1_ota_metadata(tc1_ota_metadata_t *);
 void tc1_ota_init(void);
 void tc1_ota_snapshot(char *,char *,unsigned *);
 bool tc1_ota_reserve(void);
+bool tc1_config_reserve(void);
+void tc1_config_release(void);
 void tc1_ota_abort(void);
 bool tc1_ota_begin(uint32_t total, bool unsigned_rescue);
 bool tc1_ota_write(const uint8_t *, size_t);

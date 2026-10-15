@@ -46,14 +46,42 @@ bool m1_config_save(const m1_config_t *c)
     m1_config_t old = *app_config;
     memcpy(app_config, c, sizeof(*c));
     app_config->revision = old.revision + 1;
+    feature_config_t *features = &((app_storage_t *)app_config)->features;
+    int16_t old_timezone = features->timezone_minutes;
+    features->timezone_minutes = c->timezone_minutes;
     OSStatus err = mico_system_context_update(m1_context);
-    if (err != kNoErr) memcpy(app_config, &old, sizeof(old));
+    if (err != kNoErr) { memcpy(app_config, &old, sizeof(old)); features->timezone_minutes = old_timezone; }
     mico_rtos_unlock_mutex(&config_lock);
     if (err != kNoErr) return false;
     mico_rtos_lock_mutex(&m1_lock);
     m1_state.config_generation++;
     mico_rtos_unlock_mutex(&m1_lock);
     return true;
+}
+
+bool m1_reset(bool full)
+{
+    app_storage_t *old = malloc(sizeof(*old));
+    if (!old) return false;
+    mico_rtos_lock_mutex(&config_lock);
+    mico_rtos_lock_mutex(&m1_lock);
+    bool ok = !m1_state.ota_active && !m1_state.reboot_pending && !m1_state.wifi_trial_active;
+    if (ok) { m1_state.reboot_pending = true; m1_state.reboot_at = mico_rtos_get_time() + 0x7fffffffu; }
+    mico_rtos_unlock_mutex(&m1_lock);
+    if (ok) {
+        memcpy(old, app_config, sizeof(*old));
+        if (full) appRestoreDefault_callback(app_config, sizeof(*old));
+        else { app_config->ssid[0] = 0; app_config->wifi_password[0] = 0; app_config->web_password[0] = 0; }
+        ok = mico_system_context_update(m1_context) == kNoErr;
+        if (!ok) memcpy(app_config, old, sizeof(*old));
+        mico_rtos_lock_mutex(&m1_lock);
+        m1_state.reboot_pending = ok;
+        if (ok) m1_state.reboot_at = mico_rtos_get_time() + 1000u;
+        mico_rtos_unlock_mutex(&m1_lock);
+    }
+    mico_rtos_unlock_mutex(&config_lock);
+    free(old);
+    return ok;
 }
 
 void m1_state_get(m1_state_t *out)
@@ -63,12 +91,13 @@ void m1_state_get(m1_state_t *out)
     mico_rtos_unlock_mutex(&m1_lock);
 }
 
-void m1_reboot_later(uint32_t ms)
+bool m1_reboot_later(uint32_t ms)
 {
     mico_rtos_lock_mutex(&m1_lock);
-    m1_state.reboot_pending = true;
-    m1_state.reboot_at = mico_rtos_get_time() + ms;
+    bool ok = !m1_state.ota_active && !m1_state.reboot_pending && !m1_state.wifi_trial_active;
+    if (ok) { m1_state.reboot_pending = true; m1_state.reboot_at = mico_rtos_get_time() + ms; }
     mico_rtos_unlock_mutex(&m1_lock);
+    return ok;
 }
 
 int application_start(void)
@@ -98,6 +127,11 @@ int application_start(void)
         memset(app_config, 0, sizeof(app_storage_t));
         m1_migrate_v2(app_config, &((app_storage_t *)app_config)->features, old);
         free(old);
+        m1_migrate_response_permissions(app_config, &((app_storage_t *)app_config)->features);
+        if (mico_system_context_update(m1_context) != kNoErr) return kUnknownErr;
+    }
+    if (app_config->magic == M1_CONFIG_MAGIC && app_config->version == 3) {
+        m1_migrate_response_permissions(app_config, &((app_storage_t *)app_config)->features);
         if (mico_system_context_update(m1_context) != kNoErr) return kUnknownErr;
     }
     m1_config_get(&c);
@@ -118,6 +152,8 @@ int application_start(void)
     snprintf(m1_id, sizeof(m1_id), "%02x%02x%02x%02x%02x%02x",
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     snprintf(m1_state.ap_name, sizeof(m1_state.ap_name), "M1-AP-%s", m1_id + 6);
+    for (char *p = m1_state.ap_name; *p; ++p)
+        if (*p >= 'a' && *p <= 'f') *p -= 'a' - 'A';
     strcpy(m1_state.ota_state, "idle");
     m1_state.brightness_requested = c.brightness;
     err = feature_start(); if (err != kNoErr) return err;
@@ -146,9 +182,19 @@ bool feature_config_save(const feature_config_t *c)
     mico_rtos_unlock_mutex(&m1_lock);
     bool ok = !busy && c->magic == FEATURE_MAGIC && live->revision == c->revision;
     if (ok) {
+        int16_t previous_timezone = app_config->timezone_minutes;
+        uint32_t previous_revision = app_config->revision;
         *old = *live; *live = *c; live->revision++;
+        if (app_config->timezone_minutes != c->timezone_minutes) {
+            app_config->timezone_minutes = c->timezone_minutes;
+            app_config->revision++;
+        }
         ok = mico_system_context_update(m1_context) == kNoErr;
-        if (!ok) *live = *old;
+        if (!ok) {
+            *live = *old;
+            app_config->timezone_minutes = previous_timezone;
+            app_config->revision = previous_revision;
+        }
     }
     mico_rtos_unlock_mutex(&config_lock);
     free(old); return ok;

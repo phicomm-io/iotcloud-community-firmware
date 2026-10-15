@@ -1,0 +1,34 @@
+diff --git a/MiCO/system/system_misc.c b/MiCO/system/system_misc.c
+index 51be9c8..f12b3db 100644
+--- a/MiCO/system/system_misc.c
++++ b/MiCO/system/system_misc.c
+@@ -93,6 +93,8 @@ static void micoNotify_WifiStatusHandler(WiFiEvent event, system_context_t * con
+   return;
+ }
+ 
++/* Application-owned Wi-Fi must not trigger background configuration flash writes. */
++#ifdef MICO_WLAN_CONNECTION_ENABLE
+ static void micoNotify_WiFIParaChangedHandler(apinfo_adv_t *ap_info, char *key, int key_len, system_context_t * const inContext)
+ {
+   system_log_trace();
+@@ -144,6 +146,8 @@ exit:
+   return;
+ }
+ 
++#endif
++
+ OSStatus system_notification_init( system_context_t * const inContext )
+ {
+   OSStatus err = kNoErr;
+@@ -163,8 +167,10 @@ OSStatus system_notification_init( system_context_t * const inContext )
+   err = mico_system_notify_register( mico_notify_WIFI_STATUS_CHANGED, (void *)micoNotify_WifiStatusHandler, inContext );
+   require_noerr( err, exit );
+ 
++#ifdef MICO_WLAN_CONNECTION_ENABLE
+   err = mico_system_notify_register( mico_notify_WiFI_PARA_CHANGED, (void *)micoNotify_WiFIParaChangedHandler, inContext );
+-  require_noerr( err, exit ); 
++  require_noerr( err, exit );
++#endif 
+ 
+ exit:
+   return err;

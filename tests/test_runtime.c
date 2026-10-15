@@ -191,60 +191,7 @@ static void group_transport(void) {
        "recovery passed");
 }
 #endif
-#ifndef FEATURE_DEVICE_A1
-static void proxy_transport(void) {
-  transaction("binding",
-              "{\"peers\":[{\"mac\":\"112233445566\",\"ip\":\"127.0.0.1\"}]}",
-              200);
-  stored.peers[0].confirmed = 1;
-  configuration = stored;
-  peers[0].lan = true;
-  int receiver = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-  assert(receiver >= 0);
-  struct sockaddr_in a;
-  memset(&a, 0, sizeof(a));
-  a.sin_family = AF_INET;
-  a.sin_port = htons(FEATURE_PORT);
-  a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-  assert(bind(receiver, (struct sockaddr *)&a, sizeof(a)) == 0);
-  udp = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-  assert(udp >= 0);
-  transaction("light", "{\"effect\":4,\"request_id\":\"proxy-1\"}", 202);
-  assert(peers[0].rpc);
-  char wire[FEATURE_WIRE_MAX + 1];
-  fd_set fds;
-  FD_ZERO(&fds);
-  FD_SET(receiver, &fds);
-  struct timeval wait = {1, 0};
-  assert(select(receiver + 1, &fds, NULL, NULL, &wait) == 1);
-  int n = recv(receiver, wire, sizeof(wire), 0);
-  assert(n > 0);
-  json_object *o = parse(wire, n);
-  assert(o && !strcmp(string(o, "op"), "config_set") &&
-         !strcmp(string(o, "domain"), "light"));
-  assert(integer(json_object_object_get(o, "body"), "effect") == 4);
-  json_object_put(o);
-  test_now += 1001;
-  rpc_poll(&stored, 0, test_now);
-  assert(!peers[0].rpc && !peers[0].lan && queued);
-  feature_mqtt_service(capture, true);
-  o = envelope(&stored, 0, "config_result", 1);
-  js(o, "src", stored.peers[0].id);
-  js(o, "dst", LOCAL_ID);
-  json_object_object_add(o, "body",
-                         obj("{\"code\":200,\"request_id\":\"proxy-1\"}"));
-  incoming(o, false, false, NULL);
-  assert(remote_result && integer(remote_result, "code") == 200);
-  json_object_put(o);
-  assert(stored.light.effect == EFFECT_FAN);
-  close(receiver);
-  close(udp);
-  udp = -1;
-  transaction("binding", "{\"peers\":[]}", 200);
-  puts(
-      "M1 LAN configuration RPC, MQTT fallback and asynchronous result passed");
-}
-#endif
+
 #ifdef FEATURE_DEVICE_A1
 static void effective_controls(void) {
   feature_config_t c = stored;
@@ -350,10 +297,14 @@ static void account_namespaces(void) {
   puts("Long account namespaces, scoped RPC, stable HA owner and stale queue isolation passed");
 }
 
+#ifndef FEATURE_DEVICE_A1
+#include "passive_scenarios.inc"
+#endif
 int main(void) {
   feature_defaults(&stored);
   assert(feature_start() == 0);
   json_object *r = NULL;
+#ifdef FEATURE_DEVICE_A1
   transaction("binding", "{\"peers\":[{\"mac\":\"bad\"}]}", 400);
   assert(!stored.peer_count);
   transaction("binding", "{\"group\":\"bad/#\"}", 400);
@@ -361,9 +312,6 @@ int main(void) {
               "{\"peers\":[{\"mac\":\"112233445566\",\"ip\":\"garbage\"}]}",
               400);
   binding();
-#ifndef FEATURE_DEVICE_A1
-  proxy_transport();
-#endif
 #ifdef FEATURE_DEVICE_A1
   group_transport();
   effective_controls();
@@ -383,6 +331,9 @@ int main(void) {
   transaction("time", "{\"revision\":0}", 409);
 #endif
   account_namespaces();
+#else
+  passive_scenarios();
+#endif
   (void)r;
   puts("runtime transactions, handshake, authentication and duplicate "
        "freshness passed");

@@ -7,6 +7,8 @@ def render_page(path):
         content = (ROOT / "common/web" / name).read_text()
         for marker in ("/* @include " + name + " */", "<!-- @include " + name + " -->"):
             text = text.replace(marker, content)
+    appearance = (ROOT / "common/web/appearance.js").read_text()
+    text = text.replace("</html>", "<script>" + appearance + "</script></html>")
     product = path.resolve().relative_to(ROOT).parts[0]
     text = text.replace("{{mqtt_host_max}}", "31" if product == "TC1" else "127")
     return text.encode("utf-8")

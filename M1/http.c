@@ -137,6 +137,8 @@ json_object *m1_status_json(void)
     json_object *o = json_object_new_object();
     if (!o) return NULL;
     str(o, "version", M1_VERSION); str(o, "device_id", m1_id); str(o, "name", cfg.name);
+    json_bool(o, "wifi_trial_active", s.wifi_trial_active);
+    str(o, "wifi_trial_status", s.wifi_trial_status);
     str(o, "ssid", cfg.ssid); str(o, "ip", s.ip); str(o, "ap_name", s.ap_name);
     str(o, "mqtt_host", cfg.mqtt_host); integer(o, "mqtt_port", cfg.mqtt_port); str(o, "mqtt_user", cfg.mqtt_user);
     str(o, "mqtt_topic_mode", cfg.mqtt_topic_mode ? "account" : "legacy");
@@ -298,9 +300,15 @@ static void handle(int fd)
         return;
     }
     if (!strcmp(req.path, "/wifi/scan")) { message(fd, m1_scan_start() ? 202 : 409, "Scan requested"); return; }
-    if (!strcmp(req.path, "/reboot")) { message(fd, 202, "Rebooting"); m1_reboot_later(1000); return; }
+    if (!strcmp(req.path, "/reboot")) { bool ok = m1_reboot_later(1000); message(fd, ok ? 202 : 409, ok ? "Rebooting" : "Device busy"); return; }
     json_object *o = read_json(fd, req.length);
     if (!o) { message(fd, 400, "Expected a bounded JSON object"); return; }
+    if (!strcmp(req.path,"/device/reset")) {
+        json_object *full=json_object_object_get(o,"full");
+        bool valid=full && json_object_is_type(full,json_type_boolean);
+        bool ok=valid && m1_reset(json_object_get_boolean(full));
+        json_object_put(o);message(fd,!valid?400:ok?202:409,ok?"Reset saved; rebooting":"Invalid request or device busy");return;
+    }
     if (domain) {
         json_object *result = NULL; int code = feature_set(domain, o, &result);
         json_object_put(o);
@@ -319,7 +327,7 @@ static void handle(int fd)
         if (open && json_object_is_type(open, json_type_boolean) && json_object_get_boolean(open)) cfg.wifi_password[0] = 0;
         size_t n = strlen(cfg.wifi_password);
         valid = valid && (n == 0 || (n >= 8 && n <= 63));
-        if (valid) saved = m1_config_save(&cfg);
+        if (valid) saved = m1_wifi_trial(&cfg);
     } else if (!strcmp(req.path, "/mqtt/config")) {
         valid = get_string(o, "host", cfg.mqtt_host, sizeof(cfg.mqtt_host), false) &&
             get_string(o, "user", cfg.mqtt_user, sizeof(cfg.mqtt_user), false) &&
