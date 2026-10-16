@@ -15,8 +15,7 @@
 如果你还没有安装本项目固件，请按对应型号的刷机文档操作：
 
 - [TC1 刷机](tc1-flash)：EMW3031，J-Link 烧录
-- [M1 刷机](m1-flash)：EMW3080B，保留 Bootloader 的首刷
-- [A1 刷机](a1-flash)：EMW3080B，完整地址烧录
+- [A1 / M1 刷机](a1-m1-flash)：EMW3080B，J-Link 或串口 Bootloader
 
 ## 首次配网
 

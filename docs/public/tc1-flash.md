@@ -8,13 +8,29 @@
 
 **工具：** Windows 电脑、支持 SWD 的 J-Link、[SEGGER J-Link 驱动](https://www.segger.com/downloads/jlink/)、FlashPlus、独立 3.3V 电源、导线、合适的螺丝刀和焊接工具。
 
-FlashPlus 使用 Marvell 的 EMW3031 烧录配置。可从[资源来源](sources)下载 FlashPlus v1.0.10；[EMW3031 / FlashPlus 工具说明镜像](https://github.com/IoTDevice/phicomm_tc1_a1/blob/master/工具和文档/EMW3031说明文档_flashplus.pdf)包含工具配置与 Flash 布局。
+FlashPlus 使用 Marvell 的 EMW3031 烧录配置。可从[资源来源](sources)下载 FlashPlus；[EMW3031 / FlashPlus 工具说明镜像](https://github.com/IoTDevice/phicomm_tc1_a1/blob/master/工具和文档/EMW3031说明文档_flashplus.pdf)包含工具配置与 Flash 布局。
 
 ![FlashPlus 芯片与 Flash 配置（工具说明 PDF 配图裁剪）](assets/images/flashplus-config.png)
 
 **拆机：** 拆开底部防水垫，拧下螺丝；轻敲底下中部，直到外壳脱开。取出电路板后**确认模块为 EMW3031**。
 
-## 接线
+## 接线：模块飞线或工厂测试点
+
+两种接法使用同一套 SWD 信号，任选一种，不必同时连接。
+
+### 方法一：在模块焊盘飞线
+
+按下图的 **3.3V、GND、DIO、CLK** 标记焊接导线。图片方向以标签和天线位置为准；不要翻面后直接套用左右位置。
+
+![TC1 A1 的 EMW3031 模块刷机点位：3.3V、GND、DIO、CLK](assets/images/tc1-a1-module.png)
+
+### 方法二：使用主板工厂测试点（更方便）
+
+不用在模块边缘焊盘上飞线，可使用下图红框内主板的 **3V3、DIO、CLK、GND** 测试点连接下载器和电源。图中文字方向是倒置的，必须逐个核对丝印；使用探针、夹具或焊线保持可靠接触，不要在擦写中移动。
+
+![TC1 A1 主板工厂刷机测试点，红框内为 3V3、DIO、CLK、GND](assets/images/tc1-a1-test-points.png)
+
+### 信号对应关系
 
 接线时按**主板丝印和模块引脚**核对，不按线的颜色判断。
 
