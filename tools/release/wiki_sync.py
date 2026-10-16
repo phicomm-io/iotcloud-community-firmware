@@ -20,7 +20,8 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'site'))
 from pages import GROUPS, PAGES, SITE_URL  # noqa: E402
 
-WIKI_ASSETS = 'https://raw.githubusercontent.com/wiki/phicomm-io/phicomm-community-firmware/assets/'
+# Public guide assets also work when the source repository or Wiki is private.
+WIKI_ASSETS = SITE_URL + 'guides/assets/'
 PAGE_BY_SLUG = {slug: wiki for slug, _, _, wiki in PAGES}
 
 # Release-Log.md flows the other way: it is authored in the Wiki and frozen into
