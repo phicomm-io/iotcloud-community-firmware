@@ -51,7 +51,7 @@ A1 对已绑定且 15 秒内有效的 M1 数据计算实时算术平均；没有
 
 [phicomm-community-mqtt](https://github.com/phicomm-io/phicomm-community-mqtt) 提供账号登录、设备列表、MQTT 连接与 Legacy / TMCP 设备管理，支持批量管理设备。
 
-- 网站登录和 MQTT 使用同一用户名、密码；登录后自动连接 MQTT，断网后自动重连。
+- 网站与 MQTT 使用同一用户名；MQTT 初始使用注册密码，之后可在设置中独立修改。登录后自动连接 MQTT，断网后自动重连。
 - 设备控制界面沿用本地 WebUI 的风格与操作习惯。
 - 支持[将平台账号预填到本地设备](iotcloud-deploy#将平台账号填写到本地设备)，在设备页检查并保存后生效。
 - **第三方 MQTT 模式与平台账号模式的设备列表、连接凭据相互独立。**
@@ -60,3 +60,5 @@ A1 对已绑定且 15 秒内有效的 M1 数据计算实时算术平均；没有
 自建 MQTT 服务的账号主题、配置迁移和权限说明见平台的 [文档目录](https://github.com/phicomm-io/phicomm-community-mqtt#readme)。
 
 可以先在[在线演示]({{SITE_URL}}#demos)中体验远程集中管理平台界面：演示全部使用模拟数据，不连接真实设备。
+
+在平台顶部可选择 China（`mqtt.fjrcn.cn`）或 US（`mqtt.fjrcn.com`）。两个节点的账号、设备与数据独立，需分别注册；设备须连接对应节点的 Broker。切换节点不会迁移数据。

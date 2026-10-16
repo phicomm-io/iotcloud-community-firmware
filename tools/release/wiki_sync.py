@@ -18,7 +18,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'site'))
-from pages import GROUPS, PAGES, SITE_URL  # noqa: E402
+from pages import GROUPS, PAGES, SITE_URL, EN_GROUPS, EN_PAGES, validate_translations  # noqa: E402
 
 # Public guide assets also work when the source repository or Wiki is private.
 WIKI_ASSETS = SITE_URL + 'guides/assets/'
@@ -35,7 +35,8 @@ def wiki_link_target(slug):
     return slug.replace(' ', '-')
 
 
-def rewrite(text):
+def rewrite(text, language="zh"):
+    page_by_slug = {slug: wiki for slug, _, _, wiki in (EN_PAGES if language == "en" else PAGES)}
     """Turn site link targets into Wiki link targets."""
     text = text.replace('{{SITE_URL}}', SITE_URL)
 
@@ -47,17 +48,30 @@ def rewrite(text):
             anchor = '#' + frag
         if target.startswith('assets/'):
             return f']({WIKI_ASSETS}{target[len("assets/"):]}{anchor})'
-        if target in PAGE_BY_SLUG:
-            return f']({wiki_link_target(PAGE_BY_SLUG[target])}{anchor})'
-        if target.endswith('.md') and target[:-3] in PAGE_BY_SLUG:
-            return f']({wiki_link_target(PAGE_BY_SLUG[target[:-3]])}{anchor})'
+        if target in page_by_slug:
+            return f']({wiki_link_target(page_by_slug[target])}{anchor})'
+        if target.endswith('.md') and target[:-3] in page_by_slug:
+            return f']({wiki_link_target(page_by_slug[target[:-3]])}{anchor})'
         return match.group(0)
 
     return re.sub(r'\]\(([^)\s]+)(\s+"[^"]*")?\)', one, text)
 
 
-def home_page():
-    lines = ['# 斐讯社区固件', '',
+def home_page(language="zh"):
+    if language == "en":
+        lines = ['# Phicomm Community Firmware', '', '[简体中文](Home) · English', '',
+                 'Community firmware for the TC1 power strip, M1 air quality monitor and A1 air purifier.',
+                 'Local web control, MQTT and Home Assistant integration, with free firmware downloads.', '']
+        for _, title, items in EN_GROUPS:
+            lines += ['## ' + title, '']
+            lines += [f'- [{name}]({wiki}): {summary}' for _, name, summary, wiki in items]
+            lines += ['']
+        lines += ['## Links', '', f'- [Project site and downloads]({SITE_URL})',
+                  f'- [English website guides]({SITE_URL}guides/en/)',
+                  '- [Firmware source](https://github.com/phicomm-io/phicomm-community-firmware)',
+                  '- [MQTT platform](https://github.com/phicomm-io/phicomm-community-mqtt)', '']
+        return '\n'.join(lines)
+    lines = ['# 斐讯社区固件', '', '简体中文 · [English](EN-Home)', '',
              '本项目为斐讯 TC1 智能排插、M1 空气检测仪和 A1 空气净化器维护社区固件。',
              '本地网页控制、MQTT 与 Home Assistant 接入，固件免费下载。', '']
     lines += [f'- [打开 IotCloud 设备管理]({SITE_URL}iotcloud/)',
@@ -85,7 +99,8 @@ def source_for(slug):
 
 
 def expected_pages():
-    pages = {'Home.md': home_page()}
+    validate_translations(ROOT)
+    pages = {'Home.md': home_page(), 'EN-Home.md': home_page('en'), '_Sidebar.md': '[简体中文](Home) · [English](EN-Home)\n'}
     for slug, _, _, wiki in PAGES:
         if slug in WIKI_AUTHORED:
             continue
@@ -95,7 +110,15 @@ def expected_pages():
         text = rewrite(source.read_text(encoding='utf-8'))
         # The Wiki derives its title from the file name; drop the duplicate H1.
         text = re.sub(r'^#\s+.*\n+', '', text, count=1)
-        pages[f'{wiki}.md'] = text
+        pages[f'{wiki}.md'] = f'[English](EN-{slug}) · [目录](Home)\n\n' + text
+    for slug, _, _, wiki in EN_PAGES:
+        source = ROOT / 'docs' / 'public' / 'en' / f'{slug}.md'
+        if not source.is_file():
+            raise FileNotFoundError(f'Missing English guide: {source}')
+        text = rewrite(source.read_text(encoding='utf-8'), 'en')
+        text = re.sub(r'^#\s+.*\n+', '', text, count=1)
+        chinese = PAGE_BY_SLUG[slug]
+        pages[f'{wiki}.md'] = f'[简体中文]({wiki_link_target(chinese)}) · [Contents](EN-Home)\n\n' + text
     return pages
 
 

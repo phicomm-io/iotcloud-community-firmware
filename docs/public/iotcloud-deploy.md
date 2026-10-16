@@ -54,3 +54,14 @@ allowed_origins:
 跳转 URL 的 fragment 仅携带 Broker 主机名、端口、用户名及一次性握手信息，不含密码；密码在用户点击接收后通过窗口通信传递。握手两分钟内有效，取消或过期后清除未保存的导入信息。仅向已核对的设备 IP 发送，并仅在可信局域网使用：HTTP 设备无法防止网络窃听或篡改。浏览器阻止弹窗、隔离窗口或设备版本不支持时，请手动填写，不会降级为 URL 携带密码。
 
 首页 MQTT Host 提醒可点击“我知道了”关闭；设置中仍能查看设备接入地址及说明。设备 Broker 设置中的“打开 IotCloud”只打开平台入口，不附带账号密码。
+
+## China / US 独立节点
+
+| 节点 | 网站 / API | 设备 MQTT | 浏览器 MQTT |
+| --- | --- | --- | --- |
+| China | https://mqtt.fjrcn.cn | mqtt.fjrcn.cn:1883 | wss://mqtt.fjrcn.cn/mqtt |
+| US | https://mqtt.fjrcn.com | mqtt.fjrcn.com:1883 | wss://mqtt.fjrcn.com/mqtt |
+
+在平台顶部选择节点。**两个节点的账号、密码、设备和数据不互通，需分别注册。** 切换会重新加载页面并使用目标节点自己的登录状态和 MQTT 凭据，不会迁移数据。同名账号也不会关联。设备须填写所选节点的 Broker 主机名与该节点账号。
+
+自建多个节点时，每个节点独立初始化数据库、Broker 和 secrets，不复制其他节点的 `runtime/`。可信跨域前端可逐项加入 `allowed_origins`，例如 `https://phicomm-io.github.io`、`https://mqtt.fjrcn.cn` 和 `https://mqtt.fjrcn.com`；`public_url` 仍为当前节点自己的公网地址。
