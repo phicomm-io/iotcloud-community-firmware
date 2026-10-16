@@ -2,6 +2,15 @@
 
 English translation of the published release history. Historical validation statements apply to the release named in each section, not to later firmware. Release notes are authored in the Wiki and frozen into the source repository before tagging.
 
+## v0.9.6
+
+- Devices can check versions, read release notes and download signed OTA directly from GitHub Pages HTTPS. The WebUI also retains both domestic and international HTTP mirror buttons.
+- Downloads can be cancelled, and DNS, connection and I/O waits are bounded. Normal services resume after cancellation or failure. Final image commit cannot be cancelled; retries restart the download.
+- OTA releases A1/M1 linkage workers and dynamic resources while MQTT/HTTP keep update status and cancellation available. Dictionary logs save 3584 bytes of RAM; TC1 HTTP stack use is reduced by about 12 KiB.
+- Fix TC1 signed OTA boot-slot validation while retaining firmware signatures, model checks and Flash readback validation. HTTPS skips certificate validation; firmware signatures remain mandatory.
+- Includes main-branch changes since v0.9.5: A1 panel, speed-ring and touch feedback fixes; A1/M1 stability and critical-worker watchdogs; independently pinned frontend releases, consent-based IotCloud connection and bilingual guides.
+- A1, M1 and TC1 development candidates passed normal-load GitHub HTTPS signed updates, reboot, release notes, cancellation, bad-signature/tamper/truncation rejection and recovery. Sustained six-client pressure updating has not passed full acceptance: TC1 downloads can fail, and A1/M1 lack complete commit evidence. Reduce concurrent access during updates. Power-loss and complete resource-watermark tests remain outside this acceptance scope.
+
 ## v0.9.5
 
 - Unified the three device WebUIs and Chinese / English interactions, improving status, averages, schedules and button mappings.

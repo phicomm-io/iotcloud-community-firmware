@@ -54,6 +54,9 @@ python3 tools/release/archive_pages.py build/pages || {
  fi
  echo "Keeping the existing GitHub archive; upstream refresh failed." >&2
 }
+# The retained archive must still provide the small device manifests when an
+# upstream refresh fails; otherwise a site-only publish removes OTA discovery.
+python3 tools/release/archive_pages.py build/pages --existing
 # Keep the public site's independent MQTT release automation and platform demo.
 for entry in .github tools; do
  if [[ -d "$target/public/$entry" ]]; then

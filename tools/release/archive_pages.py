@@ -70,5 +70,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('output')
     parser.add_argument('--source', default='https://phicomm.fjrcn.com')
+    parser.add_argument('--existing', action='store_true', help='Regenerate device manifests from the retained local release catalog')
     args = parser.parse_args()
-    mirror(args.source, args.output)
+    if args.existing:
+        output = Path(args.output)
+        write_latest(json.loads((output / 'releases/index.json').read_text()), output)
+    else:
+        mirror(args.source, args.output)

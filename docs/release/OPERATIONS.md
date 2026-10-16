@@ -2,7 +2,7 @@
 
 ## 来源与密钥
 
-境外源：`http://phicomm.fjrcn.com`；境内缓存：`http://phicomm.fjrcn.cn`。
+GitHub Pages：`https://phicomm-io.github.io`；境外源：`http://phicomm.fjrcn.com`；境内缓存：`http://phicomm.fjrcn.cn`。
 浏览器访问元数据使用相应 HTTPS 入口，避免 HTTPS Pages 的混合内容限制。
 
 本机签名私钥：`/home/fjr/.config/phicomm-ota/release-p256-key-1.pem`（0600）。
@@ -55,7 +55,7 @@ python3 site/build.py build/pages
 tools/release/pages.sh --preview
 ```
 
-线上 `main` 只在发布流程末尾由 `tools/release/pages.sh --publish` 更新。
+线上 `main` 在发布流程末尾由 `tools/release/pages.sh` 更新。公开站点由 `wiki-demo.yml` Actions 工作流部署，白名单必须包含 `ota/`。发布后检查该工作流与三个 `/ota/MODEL/latest.json`；必要时用 `gh workflow run wiki-demo.yml --repo phicomm-io/phicomm-io.github.io` 重新部署，再读回线上文件。
 
 ## 术语
 

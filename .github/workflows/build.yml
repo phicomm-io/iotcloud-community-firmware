@@ -306,6 +306,12 @@ jobs:
         run: |
           python3 -m unittest discover -s tests -p test_release.py
           node --test tests/test_ota_worker.mjs
+      - name: Test production TLS transport with real TLS and sanitizers
+        run: |
+          curl -fsSL --retry 3 https://bearssl.org/bearssl-0.6.tar.gz -o "$RUNNER_TEMP/bearssl.tar.gz"
+          echo "6705bba1714961b41a728dfc5debbe348d2966c117649392f8c8139efc83ff14  $RUNNER_TEMP/bearssl.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/bearssl.tar.gz" -C "$RUNNER_TEMP"
+          OTA_BEARSSL_DIR="$RUNNER_TEMP/bearssl-0.6" python3 tests/test_ota_fetch.py
       - name: Test engines, binding runtime and WebUI syntax
         run: |
           python3 -m pip install Markdown==3.7
