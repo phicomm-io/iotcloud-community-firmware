@@ -13,6 +13,7 @@ void feature_defaults(feature_config_t *f){memset(f,0,sizeof(*f));f->magic=FEATU
 #elif defined(HOST_A1)
 #include "../A1/a1.h"
 #include "../A1/config_legacy.h"
+#include "../A1/storage.h"
 #define OLD a1_storage_v2_t
 #define NEW a1_config_t
 #define MIGRATE a1_migrate_v2
@@ -59,6 +60,15 @@ int main(void){
     assert(!strcmp(next.ssid,"old wifi") && !strcmp(next.name,"Old name"));
 #else
     assert(next.fan_on==1 && next.speed==60 && next.red==50 && next.green==100 && next.blue==150 && next.child_lock==1);
+    app_storage_t v4, saved;
+    memset(&v4, 0xab, sizeof(v4));
+    v4.base = next; v4.base.version = 4; saved = v4;
+    assert(a1_storage_upgrade_v4(&v4));
+    saved.base.version = A1_CONFIG_VERSION;
+    assert(!memcmp(&v4, &saved, offsetof(app_storage_t, automation.buttons[2])));
+    for (unsigned i=0;i<34;i++) assert(v4.automation.buttons[2][i].kind==AUTO_NONE);
+    assert(v4.filter.magic==A1_FILTER_MAGIC && !v4.filter.used_seconds && v4.filter.lifetime_hours==6000);
+    assert(!a1_storage_upgrade_v4(&v4));
 #endif
     old.base.version=1;MIGRATE(&next,&f,&old);assert(f.magic==FEATURE_MAGIC && !f.peer_count);
 #else

@@ -2,6 +2,7 @@
 #include "../common/watchdog.h"
 #include "../common/service.h"
 #include "a1.h"
+#include "filter.h"
 #include "../common/ota/signed_ota.h"
 #include "web_data.h"
 #include <ctype.h>
@@ -224,7 +225,6 @@ static void integer(json_object *o, const char *key, int value)
 { json_build_object_add(o, key, json_object_new_int(value)); }
 static void json_bool(json_object *o, const char *key, bool value)
 { json_build_object_add(o, key, json_object_new_boolean(value)); }
-
 json_object *a1_status_json(void)
 {
     a1_config_t cfg; a1_state_t s;
@@ -281,6 +281,9 @@ json_object *a1_status_json(void)
     json_bool(o, "led_enabled", cfg.led_enabled); json_bool(o, "led_visible", s.led_visible);
     json_bool(o, "led_always_on", cfg.led_always_on); integer(o, "brightness", cfg.brightness);
     integer(o, "red", cfg.red); integer(o, "green", cfg.green); integer(o, "blue", cfg.blue);
+    a1_filter_config_t filter; a1_filter_get(&filter);
+    integer(o, "filter_used_seconds", filter.used_seconds);
+    integer(o, "filter_lifetime_hours", filter.lifetime_hours);
     json_bool(o, "child_lock", cfg.child_lock); json_bool(o, "panel_ready", s.panel_ready);
     integer(o, "panel_errors", s.panel_errors); integer(o, "hardware_errors", s.hardware_errors);
     integer(o, "panel_last_error", s.panel_last_error);

@@ -12,7 +12,7 @@ The ring shows air quality, connection progress and operation feedback. Configur
 
 ## Child lock and night mode
 
-Child lock blocks custom physical-button actions. Night mode reduces brightness during the configured time period. An end time earlier than the start means the period crosses midnight.
+Child lock blocks normal physical-button actions; a configured child-lock gesture can still unlock the device. Night mode reduces brightness during the configured time period. An end time earlier than the start means the period crosses midnight.
 
 ## M1 automation
 
@@ -26,7 +26,15 @@ A1 computes the arithmetic mean of bound M1 readings no older than 15 seconds. W
 
 ## Buttons
 
-A1 has a function button and a Wi-Fi button. By default, a single function-button click cycles the fan speed. Custom mappings support 1–30 clicks, executed after the click interval, and 1–4 second long presses. Five seconds and above are reserved. Child lock blocks custom actions; identical consecutive mappings are folded in the UI.
+A1 has a power button and a Wi-Fi button. By default, a single power-button click toggles the fan. In **Settings → Automation → Button events**, select power, Wi-Fi or both buttons, then choose a gesture and action. A combination requires both buttons to overlap; it cancels the single-button gestures for that interaction. Releasing the buttons at different times does not trigger Wi-Fi recovery.
+
+Custom mappings support 1–30 clicks, executed after the click interval, and 1–4 second long presses, executed on release. Five seconds and above are reserved. Actions include cycling or selecting a light effect, resetting filter usage, fan power and speed, ring power and brightness, always-on lighting, child lock and reboot. Switch actions support on, off and toggle; ring toggles can preserve brightness. Identical consecutive mappings are folded in the UI.
+
+### Filter life
+
+The button-events page shows accumulated fan runtime and estimated remaining filter life. Adjust the rated lifetime, reset usage after replacing the filter, or bind reset to a button gesture.
+
+Counting starts when this feature is enabled and only includes fan runtime; previous filter use cannot be recovered. The default rating is 6000 hours and should be adjusted for the installed filter. The remaining percentage is a time estimate, not a measurement of contamination. A sudden power loss may lose up to about one hour of recent runtime.
 
 ### Recovery gestures
 

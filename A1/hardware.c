@@ -4,7 +4,8 @@
 #include "ring_feedback.h"
 #include "light.h"
 #include "../common/indicator.h"
-#include "../common/gesture.h"
+#include "buttons.h"
+#include "filter.h"
 #if !defined(CONFIG_CPU_MX1290) || !defined(MOC) || MOC != 1
 #error "A1 hardware requires the MK3080B MX1290 MOC target"
 #endif
@@ -119,8 +120,9 @@ static bool panel_init(void)
 static bool panel_tick(uint32_t now, uint8_t *last_key, uint8_t *last_slider,
                        uint32_t *wifi_since, bool *wifi_sent)
 {
-    static key_gesture_t gestures[2];
-    static uint32_t feedback_second[2];
+    static a1_buttons_t buttons;
+    key_gesture_t *gestures = buttons.keys;
+    static uint32_t feedback_second[3];
     uint8_t reg = 0, raw[3] = {0}; mico_i2c_message_t message;
     OSStatus err = MicoI2cBuildCombinedMessage(&message, &reg, raw, 1, 3, 5);
     if (err == kNoErr) err = MicoI2cTransfer(&panel, &message, 1);
@@ -135,13 +137,16 @@ static bool panel_tick(uint32_t now, uint8_t *last_key, uint8_t *last_slider,
     if (err != kNoErr) a1_state.panel_errors++;
     else memcpy(a1_state.panel_raw, raw, sizeof(raw));
     mico_rtos_unlock_mutex(&a1_lock);
-    if (err != kNoErr) { for(unsigned i=0;i<2;i++)key_gesture_sample(&gestures[i],false,false,now,i==1); key_light.active = false; *last_key = 0; *last_slider = 255; *wifi_sent = false; return false; }
+    bool was_down[3];
+    for (unsigned i = 0; i < 3; i++) was_down[i] = gestures[i].stable;
+    key_event_t events[3];
+    a1_buttons_sample(&buttons, err == kNoErr, raw[1] == 1, raw[2] == 1, now, events);
+    if (err != kNoErr) { key_light.active = false; *last_key = 0; *last_slider = 255; *wifi_sent = false; return false; }
     uint8_t key = raw[1] == 1 ? 1 : raw[2] == 1 ? 2 : 0;
     uint8_t slider = !key && raw[0] <= 99 ? raw[0] : 255;
-    for(unsigned i=0;i<2;i++) {
-        bool was_down = gestures[i].stable;
-        key_event_t event=key_gesture_sample(&gestures[i],true,key==i+1,now,i==1);
-        bool pressed = !was_down && gestures[i].stable && !gestures[i].blocked;
+    for(unsigned i=0;i<3;i++) {
+        key_event_t event=events[i];
+        bool pressed = !was_down[i] && gestures[i].stable && !gestures[i].blocked;
         uint32_t held = now - gestures[i].pressed_at;
         /* Start one short pulse per held second, not on every polling tick. */
         if (pressed) feedback_second[i] = 0;
@@ -152,7 +157,7 @@ static bool panel_tick(uint32_t now, uint8_t *last_key, uint8_t *last_slider,
             mico_rtos_lock_mutex(&a1_config_lock);
             bool locked = a1_config->child_lock;
             mico_rtos_unlock_mutex(&a1_config_lock);
-            a1_key_light_start(&key_light, i, locked, !pressed, now);
+            a1_key_light_start(&key_light, i == 2 ? 0 : i, locked, !pressed, now);
             mico_rtos_lock_mutex(&a1_lock);
             a1_state.fan_feedback_until = 0;
             mico_rtos_unlock_mutex(&a1_lock);
@@ -206,6 +211,7 @@ static void hardware_worker(mico_thread_arg_t arg)
             fan_tick(&cfg, &speed); fan_at += 100;
             if ((uint32_t)(now - fan_at) >= 100) fan_at = now;
         }
+        a1_filter_tick(now, speed > 0);
         if (!initialized && (int32_t)(now - probe_at) >= 0) {
             initialized = panel_init(); probe_at = now + 3000;
             if (!initialized) {

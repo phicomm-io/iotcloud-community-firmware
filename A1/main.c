@@ -1,8 +1,11 @@
+#define FEATURE_DEVICE_A1
+#include "filter.h"
 #include "../common/automation.h"
 #include "../common/service.h"
 #include "../common/watchdog.h"
 #include "a1.h"
 #include "config_legacy.h"
+#include "storage.h"
 #include <stddef.h>
 
 mico_mutex_t a1_lock, a1_config_lock;
@@ -11,7 +14,8 @@ char a1_id[13];
 a1_state_t a1_state;
 mico_Context_t *a1_context;
 static uint32_t save_at;
-typedef struct { a1_config_t base; feature_config_t features; automation_config_t automation; } app_storage_t;
+static a1_filter_clock_t filter_clock;
+static uint32_t filter_checkpoint;
 
 
 void appRestoreDefault_callback(void *data, uint32_t size)
@@ -20,7 +24,10 @@ void appRestoreDefault_callback(void *data, uint32_t size)
     a1_config_t *c = data;
     memset(c, 0, sizeof(*c));
     if (size >= sizeof(app_storage_t)) feature_defaults(&((app_storage_t *)data)->features);
-    if (size >= sizeof(app_storage_t)) automation_defaults(&((app_storage_t *)data)->automation);
+    if (size >= sizeof(app_storage_t)) {
+        automation_defaults(&((app_storage_t *)data)->automation);
+        ((app_storage_t *)data)->filter = (a1_filter_config_t){ A1_FILTER_MAGIC, 0, A1_FILTER_DEFAULT_HOURS };
+    }
     c->magic = A1_CONFIG_MAGIC; c->version = A1_CONFIG_VERSION;
     c->mqtt_port = 1883; c->mqtt_topic_mode = MQTT_TOPIC_TMCP; c->speed = 60;
     c->led_enabled = 1; c->brightness = 255; c->blue = 255;
@@ -126,7 +133,7 @@ static bool exclusive_begin(bool ota, uint32_t delay)
     mico_rtos_lock_mutex(&a1_config_lock);
     mico_rtos_lock_mutex(&a1_lock);
     bool free = !a1_state.ota_active && !a1_state.reboot_pending && !a1_state.wifi_trial_active;
-    bool dirty = a1_state.config_dirty;
+    bool dirty = a1_state.config_dirty || ((app_storage_t *)a1_config)->filter.used_seconds != filter_checkpoint;
     if (free) {
         a1_state.ota_active = ota; a1_state.reboot_pending = !ota;
         a1_state.reboot_at = mico_rtos_get_time() + 0x7fffffffu;
@@ -197,7 +204,10 @@ int application_start(void)
     }
     if (a1_config->magic == A1_CONFIG_MAGIC && a1_config->version == 3) {
         ((app_storage_t *)a1_config)->automation.magic=0;
-        a1_config->version = A1_CONFIG_VERSION;
+        a1_config->version = 4;
+    }
+    if (a1_storage_upgrade_v4((app_storage_t *)a1_config)) {
+        if (mico_system_context_update(a1_context) != kNoErr) return kUnknownErr;
     }
     if (((app_storage_t *)a1_config)->automation.magic != AUTOMATION_MAGIC) {
         automation_config_t *next=&((app_storage_t *)a1_config)->automation;
@@ -216,6 +226,11 @@ int application_start(void)
         a1_config->mqtt_topic_mode = MQTT_TOPIC_TMCP;
         if (mico_system_context_update(a1_context) != kNoErr) return kUnknownErr;
     }
+    if (((app_storage_t *)a1_config)->filter.magic != A1_FILTER_MAGIC) {
+        ((app_storage_t *)a1_config)->filter = (a1_filter_config_t){ A1_FILTER_MAGIC, 0, A1_FILTER_DEFAULT_HOURS };
+        if (mico_system_context_update(a1_context) != kNoErr) return kUnknownErr;
+    }
+    filter_checkpoint = ((app_storage_t *)a1_config)->filter.used_seconds;
     a1_config_get(&c);
     if (c.magic != A1_CONFIG_MAGIC || c.version != A1_CONFIG_VERSION) {
         service_event("error","config","unsupported_layout");
@@ -289,4 +304,52 @@ bool automation_save(const automation_config_t *next) {
     bool ok=!busy && next->magic==AUTOMATION_MAGIC && next->revision==live->revision+1;
     if(ok){*old=*live;*live=*next;ok=mico_system_context_update(a1_context)==kNoErr;if(!ok)*live=*old;}
     mico_rtos_unlock_mutex(&a1_config_lock);free(old);return ok;
+}
+
+/* The estimate counts applied motor-on time. Checkpoint at most hourly;
+ * controlled OTA/reboot flushes the remaining seconds. Sudden power loss can
+ * lose up to one hour since the last saved checkpoint. */
+void a1_filter_tick(uint32_t now, bool running)
+{
+    mico_rtos_lock_mutex(&a1_config_lock);
+    a1_filter_config_t *c = &((app_storage_t *)a1_config)->filter;
+    a1_filter_advance(c, &filter_clock, now, running);
+    if (c->used_seconds - filter_checkpoint >= 3600u) {
+        mico_rtos_lock_mutex(&a1_lock);
+        if (!a1_state.config_dirty) {
+            a1_state.config_dirty = true;
+            save_at = now + A1_SAVE_DELAY_MS;
+        }
+        mico_rtos_unlock_mutex(&a1_lock);
+        filter_checkpoint = c->used_seconds;
+    }
+    mico_rtos_unlock_mutex(&a1_config_lock);
+}
+
+void a1_filter_get(a1_filter_config_t *out)
+{
+    mico_rtos_lock_mutex(&a1_config_lock);
+    *out = ((app_storage_t *)a1_config)->filter;
+    mico_rtos_unlock_mutex(&a1_config_lock);
+}
+
+bool a1_filter_update(bool reset, unsigned lifetime_hours)
+{
+    mico_rtos_lock_mutex(&a1_config_lock);
+    mico_rtos_lock_mutex(&a1_lock);
+    bool ok = !a1_state.ota_active && !a1_state.reboot_pending && !a1_state.wifi_trial_active;
+    mico_rtos_unlock_mutex(&a1_lock);
+    a1_filter_config_t *c = &((app_storage_t *)a1_config)->filter, old = *c;
+    if (ok) {
+        if (reset) c->used_seconds = 0;
+        if (lifetime_hours) c->lifetime_hours = lifetime_hours;
+        ok = flush_locked();
+        if (!ok) *c = old;
+        else {
+            filter_checkpoint = c->used_seconds;
+            if (reset) { filter_clock.remainder = 0; filter_clock.at = mico_rtos_get_time(); }
+        }
+    }
+    mico_rtos_unlock_mutex(&a1_config_lock);
+    return ok;
 }

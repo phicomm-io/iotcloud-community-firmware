@@ -2,6 +2,7 @@
 #include "service.h"
 #ifdef FEATURE_DEVICE_A1
 #include "a1.h"
+#include "filter.h"
 #define DEVICE_MODEL "a1"
 #define CONFIG a1_config_t
 #define STATE a1_state_t
@@ -44,11 +45,18 @@ json_object *service_product_capabilities(void){
     json_object *o=json_object_new_object(),*a=json_object_new_array();svc_string(o,"model",DEVICE_MODEL);json_build_object_add(o,"protocol",json_object_new_int(2));svc_string(o,"mqtt_protocol","tmcp");json_build_object_add(o,"mqtt_protocol_version",json_object_new_int(2));
     const char *actions[]={"schedules.get","schedules.put","schedules.delete","schedules.enable","buttons.get","status.get","capabilities.get","config.get","logs.get","config.set","wifi.scan","wifi.scan.get","binding.status.get","system.reboot","system.reset","ota.start","night.get","night.set","time.get","time.set","binding.get","binding.set",
 #ifdef FEATURE_DEVICE_A1
-    "sensors.average.get","buttons.set","binding.probe","light_effect.get","light_effect.set","fan.set","light.set","child_lock.set","linkage.get","linkage.set",
+    "filter.get","filter.set","filter.reset","light_effect.next","light_effect.select","light_always.set","sensors.average.get","buttons.set","binding.probe","light_effect.get","light_effect.set","fan.set","light.set","child_lock.set","linkage.get","linkage.set",
 #else
     "display.set",
 #endif
-    NULL};for(unsigned i=0;actions[i];i++)json_build_array_add(a,json_object_new_string(actions[i]));json_build_object_add(o,"actions",a);return o;
+    NULL};for(unsigned i=0;actions[i];i++)json_build_array_add(a,json_object_new_string(actions[i]));json_build_object_add(o,"actions",a);
+#ifdef FEATURE_DEVICE_A1
+    json_object *keys=json_object_new_array();
+    const char *names[]={"power","wifi","combination"};
+    for(unsigned i=0;i<3;i++)json_build_array_add(keys,json_object_new_string(names[i]));
+    json_build_object_add(o,"button_keys",keys);
+#endif
+    return o;
 }
 static __attribute__((noinline)) json_object *service_product_inner(const char *action,json_object *p,const char **code){
     *code="invalid_params";
@@ -66,6 +74,14 @@ static __attribute__((noinline)) json_object *service_product_inner(const char *
     }
     if(!strcmp(action,"binding.status.get")){if(!svc_keys(p,""))return NULL;*code="ok";return feature_json("status");}
 #ifdef FEATURE_DEVICE_A1
+    if(!strcmp(action,"filter.get")){
+        if(!svc_keys(p,""))return NULL;a1_filter_config_t c;a1_filter_get(&c);
+        json_object *o=json_object_new_object();uint32_t total=c.lifetime_hours*3600u;
+        json_build_object_add(o,"used_seconds",json_object_new_int(c.used_seconds));
+        json_build_object_add(o,"lifetime_hours",json_object_new_int(c.lifetime_hours));
+        json_build_object_add(o,"remaining_percent",json_object_new_int(c.used_seconds>=total?0:(int)((uint64_t)(total-c.used_seconds)*100/total)));
+        svc_string(o,"basis","motor_runtime");*code="ok";return o;
+    }
     if(!strcmp(action,"sensors.average.get")){if(!svc_keys(p,""))return NULL;*code="ok";return feature_json("average");}
     if(!strcmp(action,"binding.probe")){json_object *out=NULL;int rc=feature_set("probe",p,&out);*code=rc<300?"accepted":"invalid_params";return out;}
 #endif
@@ -87,6 +103,27 @@ static __attribute__((noinline)) json_object *service_product_inner(const char *
     else if(!strcmp(action,"wifi.scan")){if(!svc_keys(p,""))return NULL;ok=SCAN();}
     else if(!strcmp(action,"ota.start")){char url[512];if(!svc_keys(p,"|url|") || !svc_text(p,"url",url,sizeof(url),true))return NULL;ok=DOWNLOAD(url);}
 #ifdef FEATURE_DEVICE_A1
+    else if(!strcmp(action,"filter.reset") || !strcmp(action,"filter.set")){
+        bool reset=!strcmp(action,"filter.reset");
+        if(reset?!svc_keys(p,""):(!svc_keys(p,"|lifetime_hours|") || !svc_int(p,"lifetime_hours",&number,1,100000)))return NULL;
+        *code=a1_filter_update(reset,reset?0:number)?"accepted":"storage_error";return NULL;
+    }
+    else if(!strcmp(action,"light_effect.next") || !strcmp(action,"light_effect.select")){
+        bool next=!strcmp(action,"light_effect.next");
+        if(next?!svc_keys(p,""):(!svc_keys(p,"|effect|") || !svc_int(p,"effect",&number,0,4)))return NULL;
+        json_object *current=feature_json("light"),*update=json_object_new_object();
+        if(!current || !update){if(current)json_object_put(current);if(update)json_object_put(update);*code="busy";return NULL;}
+        if(next)number=(json_object_get_int(json_object_object_get(current,"effect"))+1)%5;
+        json_build_object_add(update,"effect",json_object_new_int(number));
+        json_build_object_add(update,"revision",json_object_get(json_object_object_get(current,"revision")));
+        json_object_put(current);json_object *out=NULL;int rc=feature_set("light",update,&out);json_object_put(update);
+        *code=rc<300?"accepted":rc==409?"busy":rc>=500?"storage_error":"invalid_params";return out;
+    }
+    else if(!strcmp(action,"light_always.set")){
+        if(!svc_keys(p,"|enabled|") || !svc_bool(p,"enabled",&value))return NULL;
+        json_object *local=json_object_new_object();if(!local){*code="busy";return NULL;}
+        json_build_object_add(local,"always_on",json_object_new_boolean(value));ok=a1_control_json("light",local);json_object_put(local);
+    }
     else if(!strcmp(action,"fan.set")){if(!svc_keys(p,"|on||speed|"))return NULL;if(json_object_object_get(p,"on")&&!svc_bool(p,"on",&value))return NULL;if(json_object_object_get(p,"speed")&&!svc_int(p,"speed",&number,0,100))return NULL;ok=a1_control_json("fan",p);}
     else if(!strcmp(action,"child_lock.set")){if(!svc_keys(p,"|enabled|") || !svc_bool(p,"enabled",&value))return NULL;ok=a1_control_json("child_lock",p);}
     else if(!strcmp(action,"light.set")){

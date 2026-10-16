@@ -26,6 +26,9 @@ TC1、A1、M1 的离线页面统一由 [前端仓库](https://github.com/phicomm
 | `night.get/set`, `time.get/set` | 夜间模式（A1/M1）与时区 |
 | `binding.get/set`, `binding.status.get` | A1/M1 绑定设置、运行状态 |
 | `sensors.average.get` | A1 多 M1 实时平均值 |
+| `light_effect.next/select` | A1 轮换灯效或选择 `{effect:0..4}`，保留其他灯效配置 |
+| `light_always.set` | A1 灯环常亮 `{enabled:boolean}` |
+| `filter.get/set/reset` | A1 运行时间估算；set 接受额定寿命 `{lifetime_hours:1..100000}`；reset 清零用量 |
 
 文件 OTA 独立于 JSON 命令：`POST /api/v1/ota/upload` 上传签名原始字节流；仅显式选择未签名更新时使用 `/api/v1/ota/upload-unsigned`。两者仍校验产品镜像和写入结果。
 
@@ -43,6 +46,8 @@ TC1、A1、M1 的离线页面统一由 [前端仓库](https://github.com/phicomm
 | 自定义按键事件 | 默认无映射，点击 1–30 / 长按 1–4 秒 | 按键能力见 capabilities | 不提供自定义写入 |
 
 任务支持周循环和一次性触发。时间按配置时区；失去时钟有效性时不执行；错过的触发不补执行。动作依据各产品能力校验，重启类动作最后执行。公共日志为 64 条 RAM 环，重启不保留，不包含密码。
+
+A1 `capabilities.get.button_keys` 为 `power/wifi/combination`，对应 `buttons.set.key` 的 `0/1/2`。每键支持点击 1–30 次或长按 1–4 秒，共 102 个槽位；分页按返回的 `next/capacity` 继续。示例：`{"action":"buttons.set","params":{"key":2,"clicks":1,"action":"light_effect.next","params":{}}}`。`filter.reset` 同样使用空动作参数。A1 开关动作可用 `{toggle:true}`，`light.set` 可省略 brightness 保留亮度。灯效轮换、指定灯效及滤芯清零只用于按键事件。童锁阻止普通按键动作，但允许配置的童锁动作解锁；Wi-Fi 单键的 5/10 秒恢复手势独立保留。
 
 ## TC1 资源与兼容边界
 

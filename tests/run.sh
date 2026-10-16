@@ -15,6 +15,8 @@ output=$(mktemp -d)
 trap 'rm -rf "$output"' EXIT
 "${compiler[@]}" -std=c99 -Wall -Wextra -Werror tests/test_gesture.c -o "$output/gesture"
 "$output/gesture"
+"${compiler[@]}" -std=c99 -Wall -Wextra -Werror tests/test_a1_buttons.c -o "$output/a1-buttons"
+"$output/a1-buttons"
 "${compiler[@]}" -std=c99 -Wall -Wextra -Werror tests/test_a1_light.c -o "$output/a1-light"
 "$output/a1-light"
 "${compiler[@]}" -std=c99 -Wall -Wextra -Werror tests/test_wifi_trial.c -o "$output/wifi-trial"

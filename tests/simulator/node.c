@@ -8,6 +8,7 @@ void watchdog_beat(watchdog_slot_t slot) { (void)slot; }
 #include "../../common/automation.h"
 #ifdef HOST_A1
 #include "../../A1/a1.h"
+#include "../../A1/filter.h"
 #define CFG a1_config_t
 #define STATE a1_state_t
 #define config_get a1_config_get
@@ -65,7 +66,7 @@ bool config_save(const CFG *c){BASE_LOCK();bool ok=c->revision==base_config.revi
 void feature_config_get(feature_config_t *c){pthread_mutex_lock(&store_lock);*c=features;pthread_mutex_unlock(&store_lock);}
 bool feature_config_save(const feature_config_t *c){pthread_mutex_lock(&store_lock);bool ok=c->revision==features.revision;if(ok){features=*c;++features.revision;}pthread_mutex_unlock(&store_lock);return ok;}
 void automation_load(automation_config_t *c){pthread_mutex_lock(&store_lock);*c=automations;pthread_mutex_unlock(&store_lock);}
-bool automation_save(const automation_config_t *c){pthread_mutex_lock(&store_lock);bool ok=c->revision==automations.revision;if(ok){automations=*c;++automations.revision;}pthread_mutex_unlock(&store_lock);return ok;}
+bool automation_save(const automation_config_t *c){pthread_mutex_lock(&store_lock);bool ok=c->revision==automations.revision+1;if(ok)automations=*c;pthread_mutex_unlock(&store_lock);return ok;}
 void state_get(STATE *s){mico_rtos_lock_mutex(&device_lock);
 #ifndef HOST_A1
  if(sensor_enabled){device_state.sample.received=true;device_state.sample.updated_ms=mico_rtos_get_time();device_state.sample.sequence=device_state.sample.updated_ms/1000+1;device_state.sample.temperature_deci_c=sensor_values[0]*10;device_state.sample.humidity_deci_pct=sensor_values[1]*10;device_state.sample.pm25_ug_m3=sensor_values[2];device_state.sample.hcho_ug_m3=sensor_values[3]*1000;}
@@ -73,12 +74,22 @@ void state_get(STATE *s){mico_rtos_lock_mutex(&device_lock);
  *s=device_state;mico_rtos_unlock_mutex(&device_lock);}
 json_object *status_json(void){CFG c;STATE s;config_get(&c);state_get(&s);json_object *o=json_object_new_object();json_object_object_add(o,"id",json_object_new_string(device_id));json_object_object_add(o,"mqtt_connected",json_object_new_boolean(s.mqtt_connected));json_object_object_add(o,"mqtt_errors",json_object_new_int(s.mqtt_errors));json_object_object_add(o,"uptime_ms",json_object_new_int(mico_rtos_get_time()));
 #ifdef HOST_A1
+ json_object_object_add(o,"requested_fan_on",json_object_new_boolean(c.fan_on));
+ json_object_object_add(o,"child_lock",json_object_new_boolean(c.child_lock));
+ json_object_object_add(o,"led_enabled",json_object_new_boolean(c.led_enabled));
+ json_object_object_add(o,"led_always_on",json_object_new_boolean(c.led_always_on));
+ json_object_object_add(o,"brightness",json_object_new_int(c.brightness));
  json_object_object_add(o,"coordinator",json_object_new_boolean(feature_is_coordinator()));bool on;unsigned speed;feature_effective_fan(c.fan_on,c.speed,&on,&speed);json_object_object_add(o,"on",json_object_new_boolean(on));json_object_object_add(o,"speed",json_object_new_int(speed));
 #else
  json_object_object_add(o,"brightness",json_object_new_int(s.brightness_requested));
 #endif
  return o;}
 #ifdef HOST_A1
+static a1_filter_config_t filter={A1_FILTER_MAGIC,0,A1_FILTER_DEFAULT_HOURS};
+static a1_filter_clock_t filter_clock;
+void a1_filter_tick(uint32_t now,bool running){pthread_mutex_lock(&store_lock);a1_filter_advance(&filter,&filter_clock,now,running);pthread_mutex_unlock(&store_lock);}
+void a1_filter_get(a1_filter_config_t *out){pthread_mutex_lock(&store_lock);*out=filter;pthread_mutex_unlock(&store_lock);}
+bool a1_filter_update(bool reset,unsigned hours){pthread_mutex_lock(&store_lock);if(reset){filter.used_seconds=0;filter_clock.remainder=0;}if(hours)filter.lifetime_hours=hours;pthread_mutex_unlock(&store_lock);return true;}
 a1_config_t *a1_config=&base_config;
 void a1_control_changed(void){++base_config.revision;}
 bool a1_config_flush(bool f){(void)f;return true;}
@@ -101,4 +112,9 @@ int main(int argc,char **argv){if(argc!=6){fprintf(stderr,"node id ip broker por
  mico_rtos_init_mutex(&a1_config_lock);base_config.speed=60;base_config.brightness=255;base_config.led_enabled=1;
 #endif
  snprintf(device_state.ip,sizeof(device_state.ip),"%s",argv[2]);device_state.wifi_connected=true;snprintf(base_config.mqtt_host,sizeof(base_config.mqtt_host),"%s",argv[3]);base_config.mqtt_port=atoi(argv[4]);snprintf(base_config.mqtt_user,sizeof(base_config.mqtt_user),"%s",argv[5]);strcpy(base_config.name,"Runtime simulator");base_config.mqtt_topic_mode=1;feature_defaults(&features);automation_defaults(&automations);service_init();if(feature_start()||mqtt_start())return 3;
- char *line=NULL;size_t capacity=0;while(getline(&line,&capacity,stdin)>0){json_object *q=service_parse(line,strlen(line));if(!q){puts("{}");fflush(stdout);continue;}json_object *meta=json_object_object_get(q,"sim_sensor");if(meta){mico_rtos_lock_mutex(&device_lock);json_object *v=json_object_object_get(meta,"enabled");if(v)sensor_enabled=json_object_get_boolean(v);v=json_object_object_get(meta,"values");if(v)for(unsigned i=0;i<4;i++)sensor_values[i]=json_object_get_double(json_object_array_get_idx(v,i));mico_rtos_unlock_mutex(&device_lock);puts("{\"code\":\"ok\"}");}else{json_object *r=service_command(q);puts(json_object_to_json_string(r));json_object_put(r);}json_object_put(q);fflush(stdout);}free(line);return 0;}
+ char *line=NULL;size_t capacity=0;while(getline(&line,&capacity,stdin)>0){json_object *q=service_parse(line,strlen(line));if(!q){puts("{}");fflush(stdout);continue;}json_object *press=json_object_object_get(q,"sim_button");
+ if(press){automation_button(json_object_get_int(json_object_object_get(press,"key")),json_object_get_int(json_object_object_get(press,"clicks")),json_object_get_int(json_object_object_get(press,"seconds")));puts("{\"code\":\"ok\"}");}
+#ifdef HOST_A1
+ else if(json_object_object_get(q,"sim_filter_seconds")){uint32_t n=json_object_get_int(json_object_object_get(q,"sim_filter_seconds"));a1_filter_tick(0,true);a1_filter_tick(n*1000,false);puts("{\"code\":\"ok\"}");}
+#endif
+ else {json_object *meta=json_object_object_get(q,"sim_sensor");if(meta){mico_rtos_lock_mutex(&device_lock);json_object *v=json_object_object_get(meta,"enabled");if(v)sensor_enabled=json_object_get_boolean(v);v=json_object_object_get(meta,"values");if(v)for(unsigned i=0;i<4;i++)sensor_values[i]=json_object_get_double(json_object_array_get_idx(v,i));mico_rtos_unlock_mutex(&device_lock);puts("{\"code\":\"ok\"}");}else{json_object *r=service_command(q);puts(json_object_to_json_string(r));json_object_put(r);}}json_object_put(q);fflush(stdout);}free(line);return 0;}

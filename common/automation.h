@@ -9,6 +9,14 @@
 #define AUTOMATION_TASKS 8
 #endif
 enum { AUTO_NONE, AUTO_OUTLET, AUTO_FAN, AUTO_LIGHT, AUTO_CHILD_LOCK, AUTO_INDICATOR, AUTO_DISPLAY, AUTO_REBOOT };
+/* Append action IDs: existing persisted actions retain their meaning. */
+enum { AUTO_LIGHT_EFFECT = AUTO_REBOOT + 1, AUTO_FILTER_RESET, AUTO_LIGHT_ALWAYS, AUTO_ACTION_MAX = AUTO_LIGHT_ALWAYS };
+#if defined(FEATURE_DEVICE_A1) || defined(HOST_A1)
+#define AUTOMATION_KEYS 3
+#else
+#define AUTOMATION_KEYS 2
+#endif
+#define AUTOMATION_BUTTON_SLOTS (AUTOMATION_KEYS * 34)
 enum { AUTO_WAITING, AUTO_EXECUTED, AUTO_MISSED, AUTO_BUSY, AUTO_MIGRATED_DISABLED };
 /* Stable fixed-width Flash ABI: never stores pointers or JSON. */
 typedef struct { uint8_t kind, target, value, speed, red, green, blue, reserved; } automation_action_t;
@@ -23,7 +31,7 @@ typedef struct {
     uint16_t next_id;
     int16_t timezone;
     automation_task_t tasks[AUTOMATION_TASKS];
-    automation_action_t buttons[2][34]; /* clicks 1..30; holds 1..4 */
+    automation_action_t buttons[AUTOMATION_KEYS][34]; /* A1: power, Wi-Fi, both. Append-only ABI. */
 } automation_config_t;
 void automation_defaults(automation_config_t *);
 void automation_load(automation_config_t *);
