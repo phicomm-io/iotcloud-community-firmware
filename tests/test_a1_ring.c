@@ -24,14 +24,14 @@ int main(void)
         a1_ring_feedback(frame, speed, 255, 0xffffff);
         for (unsigned i = 0; i < 31; i++) assert(frame[i] >= previous[i]);
         for (unsigned d = 1; d <= 15; d++)
-            assert(frame[(10 + 31 - d) % 31] == frame[(10 + d) % 31]);
+            assert(frame[(9 + 31 - d) % 31] == frame[(9 + d) % 31]);
         memcpy(previous, frame, sizeof(frame));
     }
     a1_ring_feedback(frame, 2, 255, 0xffffff);
-    assert(frame[10] == 0x7f7f7f);
-    for (unsigned i = 0; i < 32; i++) if (i != 10) assert(frame[i] == 0);
+    assert(frame[9] == 0x7f7f7f);
+    for (unsigned i = 0; i < 32; i++) if (i != 9) assert(frame[i] == 0);
     a1_ring_feedback(frame, 6, 255, 0xffffff);
-    assert(frame[10] == 0xffffff && frame[9] == 0x7f7f7f && frame[11] == 0x7f7f7f);
+    assert(frame[9] == 0xffffff && frame[8] == 0x7f7f7f && frame[10] == 0x7f7f7f);
     a1_ring_feedback(frame, 100, 255, 0xffffff);
     for (unsigned i = 0; i < 31; i++) assert(frame[i] == 0xffffff);
     assert(frame[31] == 0);

@@ -18,28 +18,28 @@ int main(void)
         assert(energy >= previous);
         previous = energy;
         for (unsigned d = 1; d <= 15; d++) {
-            assert(colors[(10 + 31 - d) % 31] == colors[(10 + d) % 31]);
-            if (d > 1 && colors[(10 + d) % 31])
-                assert(colors[(10 + d - 1) % 31] == color);
+            assert(colors[(9 + 31 - d) % 31] == colors[(9 + d) % 31]);
+            if (d > 1 && colors[(9 + d) % 31])
+                assert(colors[(9 + d - 1) % 31] == color);
         }
     }
     a1_fan_frame(colors, 0, color);
     for (unsigned i = 0; i < 32; i++) assert(colors[i] == 0);
     a1_fan_frame(colors, 2, color);
-    assert(colors[10] == half && colors[9] == 0 && colors[11] == 0);
+    assert(colors[9] == half && colors[8] == 0 && colors[10] == 0);
     a1_fan_frame(colors, 6, color);
-    assert(colors[10] == color && colors[9] == half && colors[11] == half);
+    assert(colors[9] == color && colors[8] == half && colors[10] == half);
     a1_fan_frame(colors, 10, color);
-    assert(colors[10] == color && colors[9] == color && colors[11] == color);
+    assert(colors[9] == color && colors[8] == color && colors[10] == color);
     a1_fan_frame(colors, 99, color);
-    assert(colors[25] == half && colors[26] == half);
+    assert(colors[24] == half && colors[25] == half);
     a1_fan_frame(colors, 150, color);
     for (unsigned i = 0; i < 31; i++) assert(colors[i] == color);
     assert(colors[31] == 0);
     a1_fan_frame(colors, 100, 0);
     for (unsigned i = 0; i < 32; i++) assert(colors[i] == 0);
     a1_fan_frame(colors, 2, 0xff0103);
-    assert(colors[10] == 0x7f0001);
+    assert(colors[9] == 0x7f0001);
     for (unsigned slot = 1; slot <= 32; slot++) {
         assert(a1_test_frame(colors, slot, 100, 200, false));
         for (unsigned i = 0; i < 32; i++)
