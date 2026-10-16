@@ -35,6 +35,9 @@ typedef struct {
     uint32_t config_generation, reboot_at, led_until, fan_feedback_until;
     uint32_t panel_errors, hardware_errors, mqtt_errors;
     char mqtt_last_error[96];
+    uint32_t light_test_until;
+    uint8_t light_test_slot;
+    bool light_test_neighbors;
     int panel_last_error;
     bool wifi_connected, ap_active, ap_requested, mqtt_connected;
     bool fan_ready, panel_ready, led_visible, config_dirty, touch_active;

@@ -394,6 +394,33 @@ static void handle(int fd)
             if(action) send_json(fd,service_query(action)); else message(fd,404,"Not found");
             return;
         }
+        /* Volatile, authenticated physical mapping aid. Slot 0 exits. */
+        if (!strcmp(req.method,"POST") && !strcmp(req.path,"/api/v1/light/test")) {
+            json_object *body = read_json(fd, req.length);
+            json_object *slot = body ? json_object_object_get(body, "slot") : NULL;
+            if (!slot || !json_object_is_type(slot, json_type_int) ||
+                json_object_get_int(slot) < 0 || json_object_get_int(slot) > 32) {
+                if (body) json_object_put(body);
+                message(fd, 400, "slot must be 0 (exit) or 1..32"); return;
+            }
+            json_object *neighbors = json_object_object_get(body, "neighbors");
+            if (neighbors && !json_object_is_type(neighbors, json_type_boolean)) {
+                json_object_put(body); message(fd, 400, "neighbors must be boolean"); return;
+            }
+            unsigned n = json_object_get_int(slot);
+            bool adjacent = neighbors && json_object_get_boolean(neighbors);
+            mico_rtos_lock_mutex(&a1_lock);
+            bool busy = a1_state.ota_active || a1_state.reboot_pending;
+            if (!busy) {
+                a1_state.light_test_slot = n;
+                a1_state.light_test_neighbors = adjacent;
+                a1_state.light_test_until = n ? mico_rtos_get_time() + 120000 : 0;
+            }
+            mico_rtos_unlock_mutex(&a1_lock);
+            json_object_put(body);
+            message(fd, busy ? 409 : 200, busy ? "Device busy" : "Light test updated");
+            return;
+        }
         if (!strcmp(req.method,"POST") && !strcmp(req.path,"/api/v1/command")) {
             json_object *request=read_json(fd,req.length),*reply=service_command(request);
             if(request)json_object_put(request);send_json(fd,reply);return;

@@ -40,6 +40,20 @@ int main(void)
     for (unsigned i = 0; i < 32; i++) assert(colors[i] == 0);
     a1_fan_frame(colors, 2, 0xff0103);
     assert(colors[10] == 0x7f0001);
+    for (unsigned slot = 1; slot <= 32; slot++) {
+        assert(a1_test_frame(colors, slot, 100, 200, false));
+        for (unsigned i = 0; i < 32; i++)
+            assert(colors[i] == (i == 0 ? 0x002000u : i + 1 == slot ? 0x202020u : 0));
+    }
+    colors[0] = color;
+    assert(!a1_test_frame(colors, 0, 100, 200, false));
+    assert(!a1_test_frame(colors, 33, 100, 200, false));
+    assert(!a1_test_frame(colors, 1, 200, 200, false));
+    assert(colors[0] == color);
+    assert(a1_test_frame(colors, 1, UINT32_MAX - 50, 50, false));
+    assert(a1_test_frame(colors, 11, 100, 200, true));
+    for (unsigned i = 0; i < 32; i++)
+        assert(colors[i] == (i == 10 ? 0x202020u : i == 9 || i == 11 ? 0x200000u : 0));
     a1_key_light_t feedback = {0};
     colors[0] = 0x123456;
     assert(!a1_key_light_frame(&feedback, 0, 64, colors));

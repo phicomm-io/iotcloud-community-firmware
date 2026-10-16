@@ -56,4 +56,17 @@ static inline void a1_fan_frame(uint32_t colors[32], unsigned speed, uint32_t co
         colors[(10 + distance) % A1_RING_POSITIONS] = level;
     }
 }
+/* One-based physical mapping test; zero exits without changing business frame. */
+static inline bool a1_test_frame(uint32_t colors[32], unsigned slot,
+                                uint32_t now, uint32_t until, bool neighbors)
+{
+    if (!slot || slot > 32 || (int32_t)(until - now) <= 0) return false;
+    for (unsigned i = 0; i < 32; i++) colors[i] = neighbors ? 0 : i == 0 ? 0x002000 : 0;
+    colors[slot - 1] = slot == 1 && !neighbors ? 0x002000 : 0x202020;
+    if (neighbors) {
+        colors[(slot + 30) % 32] = 0x200000;
+        colors[slot % 32] = 0x200000;
+    }
+    return true;
+}
 #endif

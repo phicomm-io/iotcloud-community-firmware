@@ -229,6 +229,9 @@ static void hardware_worker(mico_thread_arg_t arg)
          * Night mode still caps it; configured LED state stays untouched. */
         a1_key_light_frame(&key_light, now,
             feature_light_cap(cfg.brightness ? cfg.brightness : 64), colors);
+        /* Diagnostic frame overrides every overlay; never saved to Flash. */
+        a1_test_frame(colors, state.light_test_slot, now, state.light_test_until,
+            state.light_test_neighbors);
         visible = false; for (unsigned i = 0; i < 32; i++) visible |= colors[i] != 0;
         if (!state.ota_active && (!frame_sent || memcmp(previous, colors, sizeof(colors)))) {
             ring_send(colors); memcpy(previous, colors, sizeof(colors)); frame_sent = true;
