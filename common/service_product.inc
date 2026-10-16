@@ -44,7 +44,7 @@ json_object *service_product_capabilities(void){
     json_object *o=json_object_new_object(),*a=json_object_new_array();svc_string(o,"model",DEVICE_MODEL);json_build_object_add(o,"protocol",json_object_new_int(2));svc_string(o,"mqtt_protocol","tmcp");json_build_object_add(o,"mqtt_protocol_version",json_object_new_int(2));
     const char *actions[]={"schedules.get","schedules.put","schedules.delete","schedules.enable","buttons.get","status.get","capabilities.get","config.get","logs.get","config.set","wifi.scan","wifi.scan.get","binding.status.get","system.reboot","system.reset","ota.start","night.get","night.set","time.get","time.set","binding.get","binding.set",
 #ifdef FEATURE_DEVICE_A1
-    "sensors.average.get","buttons.set","binding.probe","light_effect.get","light_effect.set","fan.set","light.set","child_lock.set","linkage.get","linkage.set",
+    "filter.get","filter.set","filter.reset","sensors.average.get","buttons.set","binding.probe","light_effect.get","light_effect.set","fan.set","light.set","child_lock.set","linkage.get","linkage.set",
 #else
     "display.set",
 #endif
@@ -66,11 +66,22 @@ static __attribute__((noinline)) json_object *service_product_inner(const char *
     }
     if(!strcmp(action,"binding.status.get")){if(!svc_keys(p,""))return NULL;*code="ok";return feature_json("status");}
 #ifdef FEATURE_DEVICE_A1
+    if(!strcmp(action,"filter.get")){if(!svc_keys(p,""))return NULL;*code="ok";return a1_filter_json();}
     if(!strcmp(action,"sensors.average.get")){if(!svc_keys(p,""))return NULL;*code="ok";return feature_json("average");}
     if(!strcmp(action,"binding.probe")){json_object *out=NULL;int rc=feature_set("probe",p,&out);*code=rc<300?"accepted":"invalid_params";return out;}
 #endif
     bool query=strlen(action)>4 && !strcmp(action+strlen(action)-4,".get");
     if(!query && (state.ota_active || state.reboot_pending || state.wifi_trial_active)){*code="busy";return NULL;}
+#ifdef FEATURE_DEVICE_A1
+    if(!strcmp(action,"filter.reset")){
+        if(!svc_keys(p,""))return NULL;
+        *code=a1_filter_change(0,true);return !strcmp(*code,"accepted")?a1_filter_json():NULL;
+    }
+    if(!strcmp(action,"filter.set")){
+        int hours;if(!svc_keys(p,"|lifetime_hours|") || !svc_int(p,"lifetime_hours",&hours,1,A1_FILTER_MAX_HOURS))return NULL;
+        *code=a1_filter_change(hours,false);return !strcmp(*code,"accepted")?a1_filter_json():NULL;
+    }
+#endif
     const char *domains[]={"binding","night","time","linkage","light_effect",NULL};
     const char *native[]={"binding","sleep","time","linkage","light",NULL};
     for(unsigned i=0;domains[i];i++){
@@ -135,3 +146,14 @@ json_object *service_product(const char *action,json_object *p,const char **code
     }
     return service_product_inner(action,p,code);
 }
+
+#ifdef FEATURE_DEVICE_A1
+json_object *a1_filter_json(void){
+    a1_filter_storage_t f;a1_filter_get(&f);json_object *o=json_object_new_object();
+    unsigned remaining=a1_filter_remaining(&f);
+    json_build_object_add(o,"used_seconds",json_object_new_int(f.used_seconds));
+    json_build_object_add(o,"lifetime_hours",json_object_new_int(f.lifetime_hours));
+    json_build_object_add(o,"remaining_percent",json_object_new_int(remaining));
+    json_build_object_add(o,"replacement_due",json_object_new_boolean(remaining<=10));return o;
+}
+#endif

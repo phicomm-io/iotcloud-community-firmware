@@ -73,12 +73,18 @@ void state_get(STATE *s){mico_rtos_lock_mutex(&device_lock);
  *s=device_state;mico_rtos_unlock_mutex(&device_lock);}
 json_object *status_json(void){CFG c;STATE s;config_get(&c);state_get(&s);json_object *o=json_object_new_object();json_object_object_add(o,"id",json_object_new_string(device_id));json_object_object_add(o,"mqtt_connected",json_object_new_boolean(s.mqtt_connected));json_object_object_add(o,"mqtt_errors",json_object_new_int(s.mqtt_errors));json_object_object_add(o,"uptime_ms",json_object_new_int(mico_rtos_get_time()));
 #ifdef HOST_A1
+ json_object_object_add(o,"filter",a1_filter_json());
  json_object_object_add(o,"coordinator",json_object_new_boolean(feature_is_coordinator()));bool on;unsigned speed;feature_effective_fan(c.fan_on,c.speed,&on,&speed);json_object_object_add(o,"on",json_object_new_boolean(on));json_object_object_add(o,"speed",json_object_new_int(speed));
 #else
  json_object_object_add(o,"brightness",json_object_new_int(s.brightness_requested));
 #endif
  return o;}
 #ifdef HOST_A1
+static a1_filter_storage_t sim_filter={A1_FILTER_MAGIC,0,A1_FILTER_DEFAULT_HOURS};
+static a1_filter_clock_t sim_filter_clock;
+void a1_filter_tick(bool running){BASE_LOCK();a1_filter_advance(&sim_filter,&sim_filter_clock,mico_rtos_get_time(),running);BASE_UNLOCK();}
+void a1_filter_get(a1_filter_storage_t *out){CFG c;config_get(&c);bool on;unsigned speed;feature_effective_fan(c.fan_on,c.speed,&on,&speed);a1_filter_tick(on&&speed);BASE_LOCK();*out=sim_filter;BASE_UNLOCK();}
+const char *a1_filter_change(unsigned hours,bool reset){a1_filter_storage_t f;a1_filter_get(&f);BASE_LOCK();if(reset){sim_filter.used_seconds=0;sim_filter_clock.remainder_ms=0;}else sim_filter.lifetime_hours=hours;BASE_UNLOCK();return "accepted";}
 a1_config_t *a1_config=&base_config;
 void a1_control_changed(void){++base_config.revision;}
 bool a1_config_flush(bool f){(void)f;return true;}

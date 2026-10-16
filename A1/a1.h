@@ -12,7 +12,7 @@
 #define A1_VERSION FIRMWARE_VERSION
 #define A1_PRODUCT "PHICOMM_A1_EMW3080"
 #define A1_CONFIG_MAGIC 0x41314346u
-#define A1_CONFIG_VERSION 4u
+#define A1_CONFIG_VERSION 5u
 #define A1_APP_OFFSET 0x75000u
 #define A1_APP_CPU_ADDRESS 0x08088000u
 #define A1_APP_LIMIT 0x40000u
@@ -92,6 +92,13 @@ int a1_socket_line(int, char *, size_t);
 extern mico_mutex_t a1_config_lock;
 extern a1_config_t *a1_config;
 void a1_control_changed(void); /* caller holds both mutexes */
+
+#include "filter.h"
+void a1_filter_tick(bool running);
+void a1_filter_get(a1_filter_storage_t *);
+/* Returns accepted, busy, or storage_error; parameters are prevalidated. */
+const char *a1_filter_change(unsigned lifetime_hours, bool reset);
+json_object *a1_filter_json(void);
 
 #include "../common/phicomm_features.h"
 

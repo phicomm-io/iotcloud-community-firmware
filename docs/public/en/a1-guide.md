@@ -6,6 +6,14 @@ A1 provides fan control, a light ring, child lock, night mode and automatic cont
 
 The home page has power and fan-speed controls. Turn the purifier on or off, select a manual speed, or use automatic control based on M1 readings and configured rules.
 
+## Estimated filter life
+
+The home page shows remaining life and accumulated fan running hours. Standby and stopped time do not count; manual, scheduled, night and automatic operation all count equally, regardless of speed. The default estimate is **4320 hours** (180 days continuously). Expand “Adjust rated lifetime” to set 1–20000 hours according to your filter specification; changing this value preserves accumulated usage. Filter condition and air quality also affect when replacement is needed.
+
+At 10% or less, the page recommends replacement; at exhaustion it stays at 0% and fan controls remain available. After installing a new filter, select “Reset after replacing filter” and confirm. This clears usage and restores 100%, preserving the configured lifetime.
+
+Usage is saved every hour of operation, when the fan stops, and before a normal restart or update. Sudden power loss may lose the most recent partial hour. A network reset preserves usage; a factory reset clears it and restores the default lifetime. The first upgrade starts at zero because previous filter usage is unknown.
+
 ## Light ring
 
 The ring shows air quality, connection progress and operation feedback. Configure air-quality colors, segment ranges and the colors corresponding to reading ranges. Connection warnings override normal lighting after normal effects are rendered and remain subject to the night brightness limit. Normal lighting regains control when connectivity is healthy. See [connection indicators](faq#connection-indicators).

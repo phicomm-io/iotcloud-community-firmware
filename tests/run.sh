@@ -22,6 +22,9 @@ trap 'rm -rf "$output"' EXIT
 "$output/m1-indicator"
 "${compiler[@]}" -std=c99 -Wall -Wextra -Werror tests/test_a1_ring.c -o "$output/a1-ring"
 "$output/a1-ring"
+"${compiler[@]}" -std=c99 -Wall -Wextra -Werror tests/test_a1_filter.c -o "$output/a1-filter"
+"$output/a1-filter"
+python3 -m unittest tests.test_a1_filter_storage
 "${compiler[@]}" -DFEATURE_HOST -std=c99 -Wall -Wextra -Werror -Wno-misleading-indentation -Icommon common/engine.c tests/test_engine.c -lm -o "$output/engine"
 "${compiler[@]}" -std=c99 -Wall -Wextra -Werror tests/test_mqtt_account.c -o "$output/mqtt-account"
 "$output/mqtt-account"
