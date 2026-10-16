@@ -1,6 +1,10 @@
 /* Production service, automation, binding worker and MQTT worker run unchanged.
  * Only RTOS, Flash and physical peripherals are replaced by POSIX/RAM shims. */
 #include "mico.h"
+#include "../../common/watchdog.h"
+/* This POSIX simulator has no hardware watchdog; deadline behavior is covered
+ * by the production monitor tests in test_watchdog.c. */
+void watchdog_beat(watchdog_slot_t slot) { (void)slot; }
 #include "../../common/automation.h"
 #ifdef HOST_A1
 #include "../../A1/a1.h"
