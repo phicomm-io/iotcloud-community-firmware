@@ -62,4 +62,4 @@
 
 ## TMCP 平台
 
-MQTT 服务与网页控制台位于 [platform/](platform/README.md)，与固件共同管理。账号迁移和回退流程见 [平台迁移文档](platform/docs/MIGRATION_TMCP.md)。
+MQTT 服务与网页控制台位于 [独立平台仓库](https://github.com/phicomm-io/phicomm-community-mqtt)，包含前后端与部署配置。账号迁移和回退流程见 [平台迁移文档](https://github.com/phicomm-io/phicomm-community-mqtt/blob/main/docs/MIGRATION_TMCP.md)。

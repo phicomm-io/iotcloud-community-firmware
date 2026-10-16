@@ -1,4 +1,4 @@
-const {chromium}=require('../platform/frontend/node_modules/@playwright/test');
+const {chromium}=require('@playwright/test');
 const assert=require('node:assert/strict');
 (async()=>{const browser=await chromium.launch({headless:true});
 for(const model of ['tc1','m1','a1','platform']){

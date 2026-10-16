@@ -44,14 +44,3 @@ test('TC1 accepted write that never applies returns to actual state with an unco
  await new Promise(r=>setTimeout(r,15));
  assert.equal(d.querySelector('#socket0').getAttribute('aria-pressed'),'true');assert.equal(d.querySelector('#socket0').disabled,false);assert.match(d.querySelector('#toasts').textContent,/not confirmed|尚未确认/);dom.window.close();
 });
-test('platform homepage retains usable last state on transient read failures and recovers',async()=>{
- const dom=new JSDOM('<div id="homePage"><button>control</button></div>',{runScripts:'outside-only',url:'http://host.local'}),w=dom.window;
- let poll,fail=false,now=1000,calls=0;
- w.ResizeObserver=class{observe(){}};w.UI={acceptStatus:s=>s};w.I18N={set(){},apply(){}};w.setTimeout=fn=>{poll=fn;};w.Date.now=()=>now;
- w.command=async()=>{calls++;if(fail)throw Error('timeout');return {socket_states:[1]};};
- vm.runInContext(fs.readFileSync('platform/frontend/src/deviceHomeRuntime.js','utf8'),dom.getInternalVMContext());
- w.UI.start({onStatus(){}});await flush();fail=true;
- for(let i=0;i<2;i++){now+=10000;await poll();await flush();assert.equal(w.document.querySelector('p').hidden,true);assert.equal(w.document.querySelector('button').disabled,false);}
- now+=15000;await poll();await flush();assert.equal(w.document.querySelector('p').hidden,false);assert.equal(w.document.querySelector('button').disabled,true);
- fail=false;await poll();await flush();assert.equal(w.document.querySelector('p').hidden,true);assert.equal(w.document.querySelector('button').disabled,false);assert.equal(calls,5);dom.window.close();
-});
