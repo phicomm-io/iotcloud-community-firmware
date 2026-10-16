@@ -41,4 +41,4 @@ GROUP_OF = {slug: (gid, gtitle) for gid, gtitle, items in GROUPS for slug, _, _,
 
 # Public site base URL, used wherever documentation links to the live site
 # (downloads, the demo index). One place to change if the site moves hosts.
-SITE_URL = 'https://fujr.github.io/phicomm-community-pages/'
+SITE_URL = 'https://phicomm-io.github.io/'

@@ -18,7 +18,7 @@ Linux x86_64，推荐 Ubuntu 22.04。安装 `build-essential bzip2 curl git perl
 ./TC1/build.sh
 ```
 
-脚本从 [Release 0.0.0](https://github.com/FUjr/phicomm-community-firmware/releases/tag/0.0.0) 下载并校验 `TC1/sdk.json` 固定的 MiCO 3.5.4 SDK，缓存于 `build/tc1-sdk/`；下载并校验 ARM GCC 5.4.1 和 Python 2.7.18，生成网页资源后构建 `TC1@MK3031@moc`。可用绝对路径 `TC1_TOOLS_DIR` 指定工具缓存，或用 `TC1_PYTHON2` 指定 Python 2。可用 `TC1_SDK_DIR` 指定空的 SDK 缓存目录，用 `TC1_SDK_ARCHIVE` 指定已下载的 SDK 压缩包（绝对路径）。SDK 与 M1/A1 的缓存相互独立。私有仓库下载需先运行 `gh auth login`，或使用本地归档。
+脚本从 [Release 0.0.0](https://github.com/phicomm-io/phicomm-community-firmware/releases/tag/0.0.0) 下载并校验 `TC1/sdk.json` 固定的 MiCO 3.5.4 SDK，缓存于 `build/tc1-sdk/`；下载并校验 ARM GCC 5.4.1 和 Python 2.7.18，生成网页资源后构建 `TC1@MK3031@moc`。可用绝对路径 `TC1_TOOLS_DIR` 指定工具缓存，或用 `TC1_PYTHON2` 指定 Python 2。可用 `TC1_SDK_DIR` 指定空的 SDK 缓存目录，用 `TC1_SDK_ARCHIVE` 指定已下载的 SDK 压缩包（绝对路径）。SDK 与 M1/A1 的缓存相互独立。私有仓库下载需先运行 `gh auth login`，或使用本地归档。
 
 产物在 `build/tc1-release/`：`phicomm_tc1_a1.ota.bin`、`phicomm_tc1_a1.all.bin`、应用及 ELF/MAP、`manifest.json`、`SHA256SUMS`。网页升级只选 `.ota.bin`。构建不会递增版本，也不会自动刷机。
 
@@ -28,4 +28,4 @@ Linux x86_64，推荐 Ubuntu 22.04。安装 `build-essential bzip2 curl git perl
 
 填写 MQTT Broker 后，在 Home Assistant 启用 MQTT 自动发现。插口名称、设备名称、童锁、功率和电量可在网页与 HA 中配置或查看。按键动作可自定义；默认长按约 5 秒配网，约 10 秒恢复出厂，恢复出厂会清除配置。童锁开启时，可在上电时按住电源键进入配网热点。
 
-固件升级选择 Releases 中的 `phicomm_tc1_a1.ota.bin`，详细步骤见 [Wiki：TC1 刷机](https://github.com/FUjr/phicomm-community-firmware/wiki/TC1-刷机)（首次安装的通用要求见 [刷机前准备](https://github.com/FUjr/phicomm-community-firmware/wiki/刷机前准备)）。TC1 OTA 不提供 M1/A1 的完整产品校验，务必核对型号和下载校验和。
+固件升级选择 Releases 中的 `phicomm_tc1_a1.ota.bin`，详细步骤见 [Wiki：TC1 刷机](https://github.com/phicomm-io/phicomm-community-firmware/wiki/TC1-刷机)（首次安装的通用要求见 [刷机前准备](https://github.com/phicomm-io/phicomm-community-firmware/wiki/刷机前准备)）。TC1 OTA 不提供 M1/A1 的完整产品校验，务必核对型号和下载校验和。

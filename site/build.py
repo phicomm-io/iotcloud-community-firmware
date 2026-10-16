@@ -50,8 +50,8 @@ def footer():
             '<li><a href="build-deps.html">构建依赖</a></li>'
             '<li><a href="release-log.html">Release Log</a></li></ul></div>'
             '<div><b>源码</b><ul>'
-            '<li><a href="https://github.com/FUjr/phicomm-community-firmware" rel="noopener noreferrer">固件仓库</a></li>'
-            '<li><a href="https://github.com/FUjr/phicomm-community-mqtt" rel="noopener noreferrer">管理平台</a></li>'
+            '<li><a href="https://github.com/phicomm-io/phicomm-community-firmware" rel="noopener noreferrer">固件仓库</a></li>'
+            '<li><a href="https://github.com/phicomm-io/phicomm-community-mqtt" rel="noopener noreferrer">管理平台</a></li>'
             '</ul></div></div></footer>')
 
 

@@ -47,13 +47,13 @@ A1 对已绑定且 15 秒内有效的 M1 数据计算实时算术平均；没有
 
 ## MQTT 远程集中管理平台
 
-[phicomm-community-mqtt](https://github.com/FUjr/phicomm-community-mqtt) 提供账号登录、设备列表、MQTT 连接与 Legacy / TMCP 设备管理，支持批量管理设备。
+[phicomm-community-mqtt](https://github.com/phicomm-io/phicomm-community-mqtt) 提供账号登录、设备列表、MQTT 连接与 Legacy / TMCP 设备管理，支持批量管理设备。
 
 - 网站登录和 MQTT 使用同一用户名、密码；登录后自动连接 MQTT，断网后自动重连。
 - 设备控制界面沿用本地 WebUI 的风格与操作习惯。
 - **第三方 MQTT 模式与平台账号模式的设备列表、连接凭据相互独立。**
 - 未登录时可进入访客模式，使用本地设备列表。
 
-自建 MQTT 服务的账号主题、配置迁移和权限说明见平台的 [文档目录](https://github.com/FUjr/phicomm-community-mqtt#readme)。
+自建 MQTT 服务的账号主题、配置迁移和权限说明见平台的 [文档目录](https://github.com/phicomm-io/phicomm-community-mqtt#readme)。
 
 可以先在[在线演示]({{SITE_URL}}#demos)中体验远程集中管理平台界面：演示全部使用模拟数据，不连接真实设备。

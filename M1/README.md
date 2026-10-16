@@ -63,4 +63,4 @@ WebUI 首页显示实时传感器数据、数据更新时间、连接状态及�
 
 两长两短的周期为 3.6 秒：亮 800、灭 200、亮 800、灭 200、亮 200、灭 200、亮 200、灭 1000 ms。状态变化时从新灯效的起点开始，不阻塞 UART 传感器通信。指示灯亮度沿用现有屏幕亮度对应的 PWM 占空比；PWM5（GPIO14）控制 Wi-Fi 图标：Wi-Fi 已连接时常亮；未连接时随异常标志的亮相同时亮起；PWM4 控制异常标志，按上表显示。熄灭时将对应引脚切换为推挽低电平，避免停止 PWM 后输出电平不确定。用户已在 OTA 后确认正常连接时 Wi-Fi 常亮、异常标志熄灭；故障闪烁时序由主机测试覆盖，故障状态的实物显示尚未逐项验证。
 
-OTA 选择 `phicomm_m1.ota.bin`；HTTP URL 必须是直接文件地址，不支持 HTTPS、重定向或分块传输。首次安装和恢复限制见 [Wiki：M1 刷机](https://github.com/FUjr/phicomm-community-firmware/wiki/M1-刷机)（接线与供电的通用要求见 [刷机前准备](https://github.com/FUjr/phicomm-community-firmware/wiki/刷机前准备)）。
+OTA 选择 `phicomm_m1.ota.bin`；HTTP URL 必须是直接文件地址，不支持 HTTPS、重定向或分块传输。首次安装和恢复限制见 [Wiki：M1 刷机](https://github.com/phicomm-io/phicomm-community-firmware/wiki/M1-刷机)（接线与供电的通用要求见 [刷机前准备](https://github.com/phicomm-io/phicomm-community-firmware/wiki/刷机前准备)）。

@@ -14,13 +14,13 @@
 
 ## 下载
 
-固件版本由 Git tag 自动生成，例如 tag `v0.9.0` 对应设备显示 `0.9.0-abcdef`；这不表示所有源码构建均有对应 Release。请在 [Releases](https://github.com/FUjr/phicomm-community-firmware/releases) 中查看版本说明，下载与型号一致的文件：
+固件版本由 Git tag 自动生成，例如 tag `v0.9.0` 对应设备显示 `0.9.0-abcdef`；这不表示所有源码构建均有对应 Release。请在 [Releases](https://github.com/phicomm-io/phicomm-community-firmware/releases) 中查看版本说明，下载与型号一致的文件：
 
 | 设备 | 本社区固件网页升级文件 | 下载入口 |
 | --- | --- | --- |
-| TC1（A1 硬件版本） | `phicomm_tc1_a1.ota.bin` | [TC1 固件](https://github.com/FUjr/phicomm-community-firmware/releases) |
-| M1 | `phicomm_m1.ota.bin` | [M1 固件](https://github.com/FUjr/phicomm-community-firmware/releases) |
-| A1 空气净化器 | `phicomm_a1.ota.bin` | [A1 固件](https://github.com/FUjr/phicomm-community-firmware/releases) |
+| TC1（A1 硬件版本） | `phicomm_tc1_a1.ota.bin` | [TC1 固件](https://github.com/phicomm-io/phicomm-community-firmware/releases) |
+| M1 | `phicomm_m1.ota.bin` | [M1 固件](https://github.com/phicomm-io/phicomm-community-firmware/releases) |
+| A1 空气净化器 | `phicomm_a1.ota.bin` | [A1 固件](https://github.com/phicomm-io/phicomm-community-firmware/releases) |
 
 下载后按 Release 中的 `SHA256SUMS` 校验。`.all.bin` 为完整镜像，不能上传到网页 OTA，也不是通用首刷包。原厂或其他第三方固件的升级入口不保证接受上述 OTA 文件。
 
@@ -32,11 +32,11 @@
 ./build.sh
 ```
 
-根脚本依次构建 TC1、M1 和 A1，产物分别位于 `build/tc1-release/`、`build/m1-release/` 和 `build/a1-release/`。单独构建可运行对应目录内的 `build.sh`。工具链及 SDK 见 [构建依赖归档](https://github.com/FUjr/phicomm-community-firmware/releases/tag/0.0.0)。
+根脚本依次构建 TC1、M1 和 A1，产物分别位于 `build/tc1-release/`、`build/m1-release/` 和 `build/a1-release/`。单独构建可运行对应目录内的 `build.sh`。工具链及 SDK 见 [构建依赖归档](https://github.com/phicomm-io/phicomm-community-firmware/releases/tag/0.0.0)。
 
 ## 文档
 
-公开文档的唯一来源是 `docs/public/`，同时生成[公开站点](https://fujr.github.io/phicomm-community-pages/)与 [Wiki](https://github.com/FUjr/phicomm-community-firmware/wiki)，页面清单见 `site/pages.py`。
+公开文档的唯一来源是 `docs/public/`，同时生成[公开站点](https://phicomm-io.github.io/)与 [Wiki](https://github.com/phicomm-io/phicomm-community-firmware/wiki)，页面清单见 `site/pages.py`。
 
 - [快速开始](docs/public/quick-start.md)：认识三款设备、配网与访问方式。
 - [刷机前准备](docs/public/flash-prep.md)：供电、接线与模块下载接口的通用要求，以及各型号首刷方式的选择。

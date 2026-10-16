@@ -35,4 +35,4 @@ Linux x86_64，推荐 Ubuntu 22.04。安装 `build-essential bzip2 curl git perl
 
 网页密码默认关闭；启用后用户名为 `admin`，密码最多 32 字节。网页和 MQTT 为明文连接，请在可信网络使用。
 
-OTA 选择 `phicomm_a1.ota.bin`；HTTP URL 必须是直接文件地址，不支持 HTTPS、重定向或分块传输。首次安装和恢复限制见 [Wiki：A1 刷机](https://github.com/FUjr/phicomm-community-firmware/wiki/A1-刷机)（接线与供电的通用要求见 [刷机前准备](https://github.com/FUjr/phicomm-community-firmware/wiki/刷机前准备)）。
+OTA 选择 `phicomm_a1.ota.bin`；HTTP URL 必须是直接文件地址，不支持 HTTPS、重定向或分块传输。首次安装和恢复限制见 [Wiki：A1 刷机](https://github.com/phicomm-io/phicomm-community-firmware/wiki/A1-刷机)（接线与供电的通用要求见 [刷机前准备](https://github.com/phicomm-io/phicomm-community-firmware/wiki/刷机前准备)）。

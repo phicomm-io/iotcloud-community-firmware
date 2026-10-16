@@ -74,4 +74,4 @@ TC1 主按键及 A1 Wi-Fi 键保留这两个恢复手势。M1 使用原面板长
 ## 还没解决？
 
 - 查阅对应型号的操作文档：[TC1](tc1-guide) · [M1](m1-guide) · [A1](a1-guide)
-- 在 [固件仓库 Issues](https://github.com/FUjr/phicomm-community-firmware/issues) 中搜索或提问，并附上型号、固件版本和复现步骤
+- 在 [固件仓库 Issues](https://github.com/phicomm-io/phicomm-community-firmware/issues) 中搜索或提问，并附上型号、固件版本和复现步骤

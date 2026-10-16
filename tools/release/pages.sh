@@ -24,7 +24,7 @@ case "${1:-}" in
  *) echo "usage: $0 [--preview|--build-only]" >&2; exit 2 ;;
 esac
 
-: "${PHICOMM_PAGES_REPO:=FUjr/phicomm-community-pages}"
+: "${PHICOMM_PAGES_REPO:=phicomm-io/phicomm-io.github.io}"
 : "${PHICOMM_PAGES_BRANCH:=main}"
 
 python3 -m pip install --quiet Markdown==3.7

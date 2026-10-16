@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'site'))
 from pages import GROUPS, PAGES, SITE_URL  # noqa: E402
 
-WIKI_ASSETS = 'https://raw.githubusercontent.com/wiki/FUjr/phicomm-community-firmware/assets/'
+WIKI_ASSETS = 'https://raw.githubusercontent.com/wiki/phicomm-io/phicomm-community-firmware/assets/'
 PAGE_BY_SLUG = {slug: wiki for slug, _, _, wiki in PAGES}
 
 # Release-Log.md flows the other way: it is authored in the Wiki and frozen into
@@ -67,8 +67,8 @@ def home_page():
         lines.append('')
     lines += ['## 相关链接', '',
               f'- [项目主页与历史版本归档]({SITE_URL})',
-              '- [固件源码仓库](https://github.com/FUjr/phicomm-community-firmware)',
-              '- [MQTT 远程集中管理平台](https://github.com/FUjr/phicomm-community-mqtt)',
+              '- [固件源码仓库](https://github.com/phicomm-io/phicomm-community-firmware)',
+              '- [MQTT 远程集中管理平台](https://github.com/phicomm-io/phicomm-community-mqtt)',
               '']
     return '\n'.join(lines)
 
