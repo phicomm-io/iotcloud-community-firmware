@@ -34,6 +34,10 @@ def check(directory, header):
             'feature_mqtt_service', 'discovery_virtual', 'feature_command',
             'feature_mqtt_input', 'service_command', 'service_product',
             'service_product_inner', 'a1_control_local'])
+        paths['MQTT nested filter command'] = (mqtt_budget, 4096, ['mqtt_worker',
+            'discovery', 'filter_discovery', 'feature_command', 'feature_mqtt_input',
+            'service_command', 'service_product', 'service_product_inner',
+            'a1_control_local'])
     else:
         paths['MQTT nested command'] = (mqtt_budget, 4096, ['mqtt_worker', 'discovery',
             'native_command', 'service_command', 'service_product', 'service_product_inner'])
@@ -41,7 +45,7 @@ def check(directory, header):
     accept_budget = int(re.search(r'http_accept_worker,\s*(\d+)', http_source).group(1))
     paths['HTTP accept'] = (accept_budget, 1536, ['http_accept_worker'])
     if directory.name == 'A1':
-        for label in ('scheduled control', 'MQTT nested virtual command'):
+        for label in ('scheduled control', 'MQTT nested virtual command', 'MQTT nested filter command'):
             paths[label][2].extend(['feature_group_control', 'group_send', 'parse'])
     for label, (budget, reserve, names) in paths.items():
         missing = set(names) - frames.keys()

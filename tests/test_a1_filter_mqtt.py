@@ -21,7 +21,15 @@ def main(port):
     base = f'phicomm/v2/{key}/a1/aabbccddeeff'
     records = []
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-    client.on_message = lambda c, u, m: records.append((m.topic, m.payload.decode(), m.retain))
+    reconnect_birth = {'parent': None, 'sent': False}
+    def receive(c, u, message):
+        payload = message.payload.decode()
+        records.append((message.topic, payload, message.retain))
+        if reconnect_birth['parent'] and not reconnect_birth['sent'] and message.topic.endswith('_filter_remaining/config') and payload:
+            if json.loads(payload)['device']['identifiers'] == [reconnect_birth['parent']]:
+                reconnect_birth['sent'] = True
+                c.publish('homeassistant/status', 'online', retain=False)
+    client.on_message = receive
     client.connect('127.0.0.1', port)
     client.subscribe('#', 1)
     client.loop_start()
@@ -40,6 +48,14 @@ def main(port):
     def publish(topic, payload):
         client.publish(topic, payload, qos=1, retain=False).wait_for_publish()
 
+    def bind(params):
+        # Changing subscription roots reconnects MQTT; install via the service
+        # input and require its acknowledgement before checking rediscovery.
+        worker.stdin.write(json.dumps({'action': 'binding.set', 'params': params}).encode()+b'\n')
+        worker.stdin.flush()
+        assert select.select([worker.stdout], [], [], 12)[0], 'binding setup timeout'
+        assert json.loads(worker.stdout.readline())['code'] == 'accepted'
+
     def states(start):
         return [json.loads(p)['filter'] for t, p, r in records[start:]
                 if t == base + '/state']
@@ -50,9 +66,10 @@ def main(port):
                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE)
         prefix = 'homeassistant/'
         def configs():
+            latest = {t: p for t, p, r in records if t.startswith(prefix)
+                      and '/'+key+'/' in t and '_filter_' in t and t.endswith('/config')}
             return {t.rsplit('_filter_', 1)[-1].split('/')[0]: json.loads(p)
-                    for t, p, r in records if t.startswith(prefix) and '/'+key+'/' in t
-                    and '_filter_' in t and t.endswith('/config') and p}
+                    for t, p in latest.items() if p}
         wait(lambda: len(configs()) == 5 and bool(states(0)))
         by = configs()
         assert set(by) == {'remaining', 'used', 'replacement', 'lifetime', 'reset'}
@@ -105,30 +122,62 @@ def main(port):
             late.loop_stop()
         start = len(records)
         publish('homeassistant/status', 'online')
-        wait(lambda: len([t for t, p, r in records[start:] if '_filter_' in t
-                          and t.startswith(prefix) and '/'+key+'/' in t and p]) == 5)
+        wait(lambda: {t.rsplit('_filter_', 1)[-1].split('/')[0]
+                      for t, p, r in records[start:] if '_filter_' in t
+                      and t.startswith(prefix) and '/'+key+'/' in t and p} == set(by))
         print('PASS A1 five HA discovery templates, control commands, reset, retained replay and HA birth', flush=True)
-        # A grouped fan has shared controls, but each physical A1 wears its own filter.
+
+        original_ids = {k: v['unique_id'] for k, v in by.items()}
+        group = '客厅净化组'
+        parent = f'v2_{key}_group_{("g_" + group.encode().hex()).encode().hex()}'
+        group_start = len(records)
+        reconnect_birth['parent'] = parent
+        bind({'group': group})
+        wait(lambda: len(configs()) == 5 and all(
+            v['device']['identifiers'] == [parent] for v in configs().values()))
+        controls = {}
+        def virtual_configs():
+            for t, p, r in records:
+                if t.startswith(prefix) and '_bound_' in t:
+                    if p: controls[t] = json.loads(p)
+                    else: controls.pop(t, None)
+            return controls
+        wait(lambda: len(virtual_configs()) == 8)
+        # Birth injected during initial discovery must survive startup and
+        # produce a complete second set of all five physical filter configs.
+        wait(lambda: reconnect_birth['sent'] and all(
+            sum(t.endswith('_filter_'+k+'/config') and bool(p)
+                for t, p, r in records[group_start:]) >= 2 for k in by))
+        names = {o['name'] for o in controls.values()}
+        assert names == {'空气净化器', '灯环', '童锁', '灯环常亮', '温度', '湿度', 'PM2.5', '甲醛'}
+        for obj in controls.values():
+            assert obj['device']['identifiers'] == [parent]
+            assert obj['device']['model'] == 'A1 Air Purifier (EMW3080B)'
+            if obj['name'] == '空气净化器': assert obj['icon'] == 'mdi:air-purifier'
+        for k, obj in configs().items():
+            assert obj['unique_id'] == original_ids[k]
+            assert obj['name'].startswith('Runtime simulator ')
+            assert obj['device']['name'] == group
+            assert obj['availability_topic'] == base+'/availability'
+            if k != 'reset': assert obj['state_topic'] == base+'/state'
+            if k in ('lifetime', 'reset'): assert obj['command_topic'] == base+'/command'
         start = len(records)
-        # Install the binding through the service input independently of the
-        # MQTT reconnect that changing subscription roots requires.
-        worker.stdin.write(json.dumps({'action': 'binding.set',
-                                       'params': {'group': 'filter-test'}}).encode()+b'\n')
-        worker.stdin.flush()
-        assert select.select([worker.stdout], [], [], 12)[0], 'binding setup timeout'
-        assert json.loads(worker.stdout.readline())['code'] == 'accepted'
-        wait(lambda: any(t.startswith(prefix) and '_bound_' in t and p
-                         for t, p, r in records[start:]))
-        wait(lambda: len([t for t, p, r in records[start:] if '_filter_' in t
-                          and t.startswith(prefix) and '/'+key+'/' in t and p]) >= 5)
-        assert not any(not p for t, p, r in records[start:]
-                       if t.startswith(prefix) and '_filter_' in t)
+        publish('homeassistant/status', 'online')
+        wait(lambda: {t.rsplit('_filter_', 1)[-1].split('/')[0]
+                      for t, p, r in records[start:] if '_filter_' in t
+                      and t.startswith(prefix) and '/'+key+'/' in t and p} == set(by))
+        assert len(configs()) == 5  # bound HA birth must not delete filter entities
+        # A grouped fan shares controls; reset still targets this physical filter.
         start = len(records)
         publish(base+'/command', command)
         publish(base+'/command', reset)
         wait(lambda: any(s['used_seconds'] == 0 and s['lifetime_hours'] == 6000
                          for s in states(start)), 5)
-        print('PASS bound A1 retains physical filter discovery and reset controls', flush=True)
+        bind({'group': '', 'members': [], 'peers': []})
+        wait(lambda: len(configs()) == 5 and all(v['device']['identifiers'] ==
+            [key+'_a1_aabbccddeeff'] for v in configs().values()))
+        assert {k: v['unique_id'] for k, v in configs().items()} == original_ids
+        print('PASS bound/unbound filters retain identity, share the purifier parent and keep per-A1 commands', flush=True)
     finally:
         if worker:
             worker.terminate()

@@ -1667,6 +1667,47 @@ static void direct_leaf(int (*p)(const char *, const char *, bool),
   p(topic, body, retain);
 }
 #ifdef FEATURE_DEVICE_A1
+/* Shared by virtual controls and per-A1 filter entities. Keep their parent
+ * identity identical while preserving each physical filter's own state/control. */
+static bool virtual_identity(const feature_config_t *c, const char *root,
+                             const mqtt_account_t *account, char owner[13],
+                             char *safe, size_t safe_size, char *id, size_t id_size) {
+  strcpy(owner, LOCAL_ID);
+  for (unsigned i = 0; i < c->member_count; ++i)
+    if (strcmp(c->members[i].id, owner) < 0) strcpy(owner, c->members[i].id);
+  if (!mqtt_format(safe, safe_size, "%s", root)) return false;
+  for (char *p = safe; *p; ++p) if (*p == ':') *p = '_';
+  if (account->mode) {
+    const char *leaf = strrchr(root, '/');
+    if (!mqtt_hex(safe, safe_size, leaf ? leaf + 1 : root)) return false;
+    return mqtt_format(id, id_size, "v2_%s_%s_%s", account->key,
+                       c->group[0] ? "group" : owner, safe);
+  }
+  return mqtt_format(id, id_size, "%s", root);
+}
+static const char *virtual_device_name(const feature_config_t *c,
+                                       const a1_config_t *device) {
+  return c->group[0] ? c->group : (device->name[0] ? device->name : "Phicomm A1");
+}
+bool feature_ha_device(char *id, size_t id_size, char *name, size_t name_size,
+                       bool *grouped) {
+  feature_config_t *c = malloc(sizeof(*c));
+  if (!c) return false;
+  feature_config_get(c);
+  /* Called only by the MQTT owner, like discovery_virtual. */
+  static mqtt_account_t account;
+  static a1_config_t device;
+  static char root[FEATURE_TOPIC_MAX], safe[FEATURE_TOPIC_MAX];
+  char owner[13];
+  account = mqtt_snapshot();
+  a1_config_get(&device);
+  root_for(c, 0, root);
+  bool ok = virtual_identity(c, root, &account, owner, safe, sizeof(safe), id, id_size) &&
+            mqtt_format(name, name_size, "%s", virtual_device_name(c, &device));
+  *grouped = c->group[0] || c->member_count;
+  free(c);
+  return ok;
+}
 static void discovery_virtual(int (*publish)(const char *, const char *, bool),
                               const feature_config_t *c, const char *root,
                               bool remove) {
@@ -1675,27 +1716,21 @@ static void discovery_virtual(int (*publish)(const char *, const char *, bool),
                         "pm25",          "formaldehyde"};
   const char *components[] = {"fan",    "light",  "switch", "switch",
                               "sensor", "sensor", "sensor", "sensor"};
+  const char *names[] = {"空气净化器", "灯环", "童锁", "灯环常亮",
+                         "温度", "湿度", "PM2.5", "甲醛"};
+  const char *icons[] = {"mdi:air-purifier", "mdi:led-strip-variant", "mdi:lock",
+                         "mdi:led-on", NULL, NULL, NULL, "mdi:molecule"};
   /* MQTT-owner-only scratch: publishing may dispatch callbacks on this stack. */
   static mqtt_account_t account;
   account = mqtt_snapshot();
   /* The MQTT owner publishes discovery; keep the device snapshot off its stack. */
   static a1_config_t device_config;
   a1_config_get(&device_config);
-  const char *device_name = c->group[0] ? c->group :
-      (device_config.name[0] ? device_config.name : "Phicomm A1");
-  char owner[13]; strcpy(owner,LOCAL_ID);
-  for (unsigned i=0; i<c->member_count; ++i)
-    if (strcmp(c->members[i].id,owner)<0) strcpy(owner,c->members[i].id);
+  const char *device_name = virtual_device_name(c, &device_config);
+  char owner[13], device_id[192];
   static char safe[FEATURE_TOPIC_MAX];
-  mqtt_format(safe, sizeof(safe), "%s", root);
-  for (char *p = safe; *p; p++)
-    if (*p == ':')
-      *p = '_';
-  if (account.mode) {
-    const char *b = strrchr(root, '/');
-    b = b ? b + 1 : root;
-    if (!mqtt_hex(safe,sizeof(safe),b)) return;
-  }
+  if (!virtual_identity(c, root, &account, owner, safe, sizeof(safe),
+                        device_id, sizeof(device_id))) return;
   unsigned sets = c->peer_count > 1 ? c->peer_count + 1 : 1;
   for (unsigned set = 0; set < sets; set++)
     for (unsigned i = 0; i < 8; i++) {
@@ -1729,17 +1764,16 @@ static void discovery_virtual(int (*publish)(const char *, const char *, bool),
           json_object_put(ids);
         return;
       }
-      char device_id[192];
-      if (account.mode) mqtt_format(device_id,sizeof(device_id),"v2_%s_%s_%s",account.key,c->group[0]?"group":owner,safe);
-      else mqtt_format(device_id,sizeof(device_id),"%s",root);
       json_build_array_add(ids, json_object_new_string(device_id));
       json_build_object_add(device, "identifiers", ids);
       js(device, "name", device_name);
       js(device, "manufacturer", "Phicomm");
+      js(device, "model", "A1 Air Purifier (EMW3080B)");
       json_build_object_add(o, "device", device);
       js(o, "unique_id", uid);
       json_build_object_add(o,"retain",json_object_new_boolean(false));
-      js(o, "name", keys[i]);
+      js(o, "name", names[i]);
+      if (icons[i]) js(o, "icon", icons[i]);
       static char topic[FEATURE_TOPIC_MAX];
       if (i < 4) {
         mqtt_format(topic, sizeof(topic), "%s/command", root);

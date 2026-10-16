@@ -319,6 +319,11 @@ static int capture_discovery_name(const char *topic, const char *body, bool reta
   assert(retained && named_discoveries < 8);
   json_object *o = obj(body), *device = json_object_object_get(o, "device");
   assert(!strcmp(string(device, "name"), expected_device_name));
+  const char *names[] = {"空气净化器", "灯环", "童锁", "灯环常亮",
+                         "温度", "湿度", "PM2.5", "甲醛"};
+  assert(!strcmp(string(o, "name"), names[named_discoveries]));
+  assert(!strcmp(string(device, "model"), "A1 Air Purifier (EMW3080B)"));
+  if (!named_discoveries) assert(!strcmp(string(o, "icon"), "mdi:air-purifier"));
   const char *id = json_object_get_string(json_object_array_get_idx(
       json_object_object_get(device, "identifiers"), 0));
   if (compare_discovery_identity) {
@@ -346,6 +351,14 @@ static void discovery_device_names(void) {
     compare_discovery_identity = i != 0;
     discovery_virtual(capture_discovery_name, &config, root, false);
     assert(named_discoveries == 8);
+    feature_config_t saved = stored;
+    stored = config;
+    char parent[192], name[FEATURE_TOPIC_MAX];
+    bool grouped;
+    assert(feature_ha_device(parent, sizeof(parent), name, sizeof(name), &grouped));
+    assert(!grouped && !strcmp(parent, discovery_ids[0]) &&
+           !strcmp(name, expected_device_name));
+    stored = saved;
   }
   strcpy(config.group, "客厅净化组");
   root_for(&config, 0, root);
@@ -354,8 +367,15 @@ static void discovery_device_names(void) {
   compare_discovery_identity = false;
   discovery_virtual(capture_discovery_name, &config, root, false);
   assert(named_discoveries == 8);
+  feature_config_t saved = stored;
+  stored = config;
+  char parent[192], name[FEATURE_TOPIC_MAX];
+  bool grouped;
+  assert(feature_ha_device(parent, sizeof(parent), name, sizeof(name), &grouped));
+  assert(grouped && !strcmp(parent, discovery_ids[0]) && !strcmp(name, config.group));
+  stored = saved;
   test_a1_name = names[0];
-  puts("Bound A1 discovery uses device/group names and preserves identity on rename");
+  puts("Bound A1 discovery uses Chinese names, purifier metadata and a shared filter parent");
 }
 #endif
 static int capture_account(const char *t,const char *body,bool retained) {
@@ -392,6 +412,16 @@ static void account_namespaces(void) {
   stored.member_count=1;strcpy(stored.members[0].id,"000000000001");
   configuration=stored;
   feature_mqtt_session(&alice);strcpy(expected_key,alice.key);
+#ifdef FEATURE_DEVICE_A1
+  char parent[192], parent_name[FEATURE_TOPIC_MAX], expected_parent[192];
+  bool grouped;
+  assert(feature_ha_device(parent, sizeof(parent), parent_name, sizeof(parent_name), &grouped));
+  char encoded[FEATURE_TOPIC_MAX], parent_root[FEATURE_TOPIC_MAX];
+  root_for(&stored, 0, parent_root);
+  assert(mqtt_hex(encoded, sizeof(encoded), strrchr(parent_root, '/') + 1));
+  assert(mqtt_format(expected_parent, sizeof(expected_parent), "v2_%s_group_%s", alice.key, encoded));
+  assert(grouped && !strcmp(parent, expected_parent) && !strcmp(parent_name, stored.group));
+#endif
   char filters[12][FEATURE_TOPIC_MAX],root[FEATURE_TOPIC_MAX];
   unsigned count=feature_mqtt_filters(filters);assert(count>=3);
   for(unsigned i=0;i<count;++i)assert(strstr(filters[i],alice.key));

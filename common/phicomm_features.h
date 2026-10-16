@@ -137,6 +137,9 @@ int feature_mqtt_cleanup(int (*publish)(const char *, const char *, bool));
 unsigned feature_mqtt_filters(char filters[12][FEATURE_TOPIC_MAX]);
 bool feature_mqtt_filters_current(char filters[12][FEATURE_TOPIC_MAX], unsigned count);
 bool feature_bound(void);
+/* MQTT-owner only: the parent device shared by bound controls and filters. */
+bool feature_ha_device(char *id, size_t id_size, char *name, size_t name_size,
+                       bool *grouped);
 bool feature_is_coordinator(void);
 void feature_local_sample(const feature_sample_t *);
 void feature_effective_fan(bool requested_on, unsigned requested_speed, bool *,
