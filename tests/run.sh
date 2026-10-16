@@ -30,15 +30,12 @@ json_dir=${PHICOMM_TEST_JSON_DIR:-build/a1-sdk/mico-os/libraries/utilities/json_
 if [[ ! -f "$json_dir/json.h" ]]; then echo 'Set PHICOMM_TEST_JSON_DIR to the pinned MiCO json_c directory' >&2; exit 1; fi
 # MiCO's json-c assumes 32-bit long. Adapt its printf/scanf formats only in
 # a disposable host copy, leaving firmware sources byte-for-byte untouched.
-cp -R "$json_dir" "$output/json_c"
-if ! patch --silent --dry-run --reverse --force --batch --directory="$output/json_c" -p4 < common/json-printbuf-oom.patch >/dev/null 2>&1; then
-    patch --silent --dry-run --batch --directory="$output/json_c" -p4 < common/json-printbuf-oom.patch
-    patch --silent --batch --directory="$output/json_c" -p4 < common/json-printbuf-oom.patch
-fi
-if ! patch --silent --dry-run --reverse --force --batch --directory="$output/json_c" -p4 < common/json-allocation-safety.patch >/dev/null 2>&1; then
-    patch --silent --dry-run --batch --directory="$output/json_c" -p4 < common/json-allocation-safety.patch
-    patch --silent --batch --directory="$output/json_c" -p4 < common/json-allocation-safety.patch
-fi
+mkdir -p "$output/sdk/libraries/utilities"
+cp -R "$json_dir" "$output/sdk/libraries/utilities/json_c"
+python3 tools/apply_sdk_patch.py "$output/sdk" \
+    common/json-newlib-reent.patch common/json-printbuf-oom.patch \
+    common/json-allocation-safety.patch
+ln -s sdk/libraries/utilities/json_c "$output/json_c"
 python3 - "$output/json_c" <<'PYHOST'
 import pathlib, sys
 for p in pathlib.Path(sys.argv[1]).glob('*.c'):
