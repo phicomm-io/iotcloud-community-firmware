@@ -60,6 +60,8 @@ def home_page():
     lines = ['# 斐讯社区固件', '',
              '本项目为斐讯 TC1 智能排插、M1 空气检测仪和 A1 空气净化器维护社区固件。',
              '本地网页控制、MQTT 与 Home Assistant 接入，固件免费下载。', '']
+    lines += [f'- [打开 IotCloud 设备管理]({SITE_URL}iotcloud/)',
+              '- [部署 IotCloud](IotCloud-部署)', '']
     for _, title, items in GROUPS:
         lines.append(f'## {title}')
         lines.append('')

@@ -29,6 +29,7 @@ GROUPS = [
         ("a1-m1-flash", "刷机：J-Link / Bootloader", "共用教程：模组飞线、工厂测试点与串口刷机", "A1-M1-刷机"),
     ]),
     ("dev", "开发与维护", [
+        ("iotcloud-deploy", "IotCloud 部署", "静态前端托管、独立后端与 MQTT 连接", "IotCloud-部署"),
         ("build-deps", "构建依赖", "工具链、SDK 归档与本地构建", "构建依赖"),
         ("sources", "资源来源", "刷机图片与工具的来源与校验", "资源来源"),
         ("release-log", "Release Log", "各版本发布说明", "Release-Log"),
