@@ -36,10 +36,15 @@
 
 ## 文档
 
-- [刷机与失败恢复](https://github.com/FUjr/phicomm-community-firmware/wiki/刷机)：支持的升级方式、文件选择和首次安装限制。
-- 各型号的功能、构建和使用方法见上表。
+公开文档的唯一来源是 `docs/public/`，同时生成[公开站点](https://fujr.github.io/phicomm-community-pages/)与 [Wiki](https://github.com/FUjr/phicomm-community-firmware/wiki)，页面清单见 `site/pages.py`。
+
+- [快速开始](docs/public/quick-start.md)：认识三款设备、配网与访问方式。
+- [刷机前准备](docs/public/flash-prep.md)：供电、接线与模块下载接口的通用要求，以及各型号首刷方式的选择。
+- 各型号的刷机与操作文档见上表对应的设备目录；构建方法见[构建依赖](docs/public/build-deps.md)。
 - [M1 / A1 绑定与联动配置](common/README.md)。
 - [MQTT 平台账号主题、配置迁移和验证方法](docs/mqtt-account.md)。
+
+新增或改名页面时同步修改 `site/pages.py`，并运行 `python3 -m unittest discover -s tests -p test_site_docs.py` 校验。
 
 ### 构建版本
 

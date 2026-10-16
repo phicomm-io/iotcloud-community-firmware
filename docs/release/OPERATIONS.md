@@ -12,13 +12,57 @@ GitHub Environment `signed-ota-production` 的 `OTA_SIGNING_KEY_PEM` 负责 CI �
 
 ## 准备新版本
 
-1. 在私有 Wiki `Release-Log.md` 编辑唯一的 `## vMAJOR.MINOR.PATCH` 章节并提交、推送 Wiki。
-2. 运行 `python3 tools/release/notes.py vMAJOR.MINOR.PATCH --wiki /path/to/wiki`，把 `docs/release/Release-Log.md` 和 `wiki-snapshot.json` 一起提交。
-3. 测试、审核并合并主分支。确认新版本严格递增后才在该主分支提交上创建 tag。
-4. tag CI 构建三个型号、测试并签名。发布任务先创建草稿，上传不可变版本目录，通过国内外下载哈希及签名验证后才公开 GitHub Release，并更新一个 `stable.json`。
-5. 最后同步公开 Pages 的明确文件白名单。Pages 的历史归档读取 `/releases/index.json`，保留所有已导入历史版本。
+1. 编辑 `docs/public/` 下对应的页面（公开文档的唯一来源），提交并合并。
+2. 在私有 Wiki `Release-Log.md` 编辑唯一的 `## vMAJOR.MINOR.PATCH` 章节并提交、推送 Wiki。
+3. 运行 `python3 tools/release/notes.py vMAJOR.MINOR.PATCH --wiki /path/to/wiki`，把 `docs/release/Release-Log.md` 和 `wiki-snapshot.json` 一起提交。
+4. 测试、审核并合并主分支。确认新版本严格递增后才在该主分支提交上创建 tag。
+5. tag CI 构建三个型号、测试并签名。发布任务先创建草稿，上传不可变版本目录，通过国内外下载哈希及签名验证后才公开 GitHub Release，并更新一个 `stable.json`。
+6. 最后同步公开 Pages 的明确文件白名单。Pages 的历史归档读取 `/releases/index.json`，保留所有已导入历史版本。
 
 发布说明缺失、重复、未完成或快照哈希不匹配会阻止发布。相同版本目录中的不同内容会被拒绝覆盖；重试应使用已上传的签名产物，不能重新签名后强行覆盖。所有生产发布共用 Actions concurrency group，禁止手工并发运行发布脚本。
+
+## 公开文档的单一来源
+
+`site/pages.py` 定义公开文档的页面清单（分组、文件名、标题、摘要、对应 Wiki 页面），两个公开界面都从这里生成，不再各维护一份：
+
+| 产物 | 生成方式 |
+| --- | --- |
+| 公开站点 | `python3 site/build.py build/pages` 读取 `docs/public/*.md` 与 `site/pages.py` |
+| GitHub Wiki | `python3 tools/release/wiki_sync.py <wiki clone>` 从同一批 markdown 重写链接后写出 |
+
+因此页面标题、导航顺序和链接只需改一处。新增或改名页面时同步修改 `site/pages.py`，再运行 `tests/test_site_docs.py` 校验：
+
+```sh
+python3 -m unittest discover -s tests -p test_site_docs.py
+```
+
+该测试会阻止两类静默错误：清单里有条目但没有对应 markdown，以及 `docs/public/` 有页面但清单没有收录（后者会导致页面在站点和 Wiki 上都不出现）。
+
+**`Release-Log.md` 是例外**，它从 Wiki 流向仓库（步骤 2、3），不由 `wiki_sync.py` 生成，以免覆盖作者刚写的版本章节。
+
+### 预发布
+
+改动站点后先在本地构建并预览，确认无误再推送：
+
+```sh
+python3 site/build.py build/pages
+(cd build/pages && python3 -m http.server 18767)   # 打开 http://127.0.0.1:18767/
+```
+
+需要可分享的地址时推送到 `preview` 分支（只影响预览，不动线上 `main`）：
+
+```sh
+tools/release/pages.sh --preview
+```
+
+线上 `main` 只在发布流程末尾由 `tools/release/pages.sh --publish` 更新。
+
+## 术语
+
+公开文档统一使用设备的完整名称。注意区分两个容易混淆的概念：
+
+- **本地 WebUI**：设备自身在局域网提供的网页，直连设备。
+- **MQTT 远程集中管理平台**：`phicomm-community-mqtt` 提供的账号与设备集中管理服务，经 MQTT 接入。首次出现写全称，其后可用「集中管理平台」简称。
 
 ## 元数据
 
