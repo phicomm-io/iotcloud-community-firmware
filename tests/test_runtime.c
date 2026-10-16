@@ -1,8 +1,12 @@
+#include "../common/watchdog.h"
 #include "../common/phicomm_features.h"
 #include "json.h"
 #include "mico.h"
 void automation_poll(bool valid){(void)valid;}
 uint32_t test_now;
+/* Runtime harness does not launch RTOS workers; watchdog deadlines are tested
+ * with the production monitor in test_watchdog.c. */
+void watchdog_beat(watchdog_slot_t slot) { (void)slot; }
 static feature_config_t stored;
 void feature_config_get(feature_config_t *out) { *out = stored; }
 bool feature_config_save(const feature_config_t *c) {

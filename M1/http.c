@@ -1,3 +1,4 @@
+#include "../common/watchdog.h"
 #include "../common/service.h"
 #include "m1.h"
 #include "../common/ota/signed_ota.h"
@@ -137,6 +138,7 @@ json_object *m1_status_json(void)
     uint32_t now = mico_rtos_get_time(); bool fresh = m1_sample_fresh(&s.sample, now);
     json_object *o = json_object_new_object();
     if (!o) return NULL;
+    watchdog_status_json(o);
     str(o, "version", M1_VERSION); str(o, "device_id", m1_id); str(o, "name", cfg.name);
     json_bool(o, "wifi_trial_active", s.wifi_trial_active);
     str(o, "wifi_trial_status", s.wifi_trial_status);

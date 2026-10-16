@@ -16,3 +16,5 @@ cc -std=gnu99 -include stdint.h -Itests/stubs -Wno-unused-value -Wno-format -I"$
 "$output/mqtt-ota"
 
 python3 tests/ota/test_tc1_adapter.py
+
+python3 tests/ota/test_mico_adapter.py

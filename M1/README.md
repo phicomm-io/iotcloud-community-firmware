@@ -12,6 +12,8 @@
 
 适用于原装 EMW3080B / MK3080B（MX1290）Wi-Fi 模块，保留 ATSAMD20 传感器和屏幕控制器，不适用于 ESP32 转接方案。
 
+关键业务线程由硬件看门狗保护；诊断页显示复位原因，若上次因看门狗超时重启会明确提示。断网和传感器暂无数据不会单独触发重启。详见[看门狗机制与验证](../docs/watchdog.md)。
+
 ## 构建方法
 
 Linux x86_64，推荐 Ubuntu 22.04。安装 `build-essential bzip2 curl git perl python3 zlib1g-dev libncurses5 libtinfo5`，在仓库根目录执行：

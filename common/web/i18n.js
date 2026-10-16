@@ -4,6 +4,23 @@
 (()=>{
 'use strict';
 const D={
+/* Application watchdog diagnostics (A1/M1). */
+'diag.g_watchdog':['Restart & watchdog','复位与看门狗'],
+'diag.c_watchdog':['Watchdog','看门狗'],
+'diag.watchdog_reboot':['Last restart was caused by watchdog timeout','上次因看门狗超时重启'],
+'d.reset_reason':['Last reset reason','上次复位原因'],
+'d.reset_reason_raw':['Raw reset reason','原始复位原因码'],
+'d.watchdog_enabled':['Watchdog enabled','看门狗已启用'],
+'d.watchdog_state':['Watchdog state','看门狗状态'],
+'d.watchdog_fault':['Unresponsive worker','无响应的处理线程'],
+'s.watchdog':['Watchdog timeout','看门狗超时'],
+'s.lockup':['CPU lockup','CPU 锁死'],
+'s.software':['Software reset','软件复位'],
+'s.power_on':['Power-related reset','电源相关复位'],
+'s.unknown':['Unknown','未知'],
+'s.healthy':['Healthy','正常'],
+'s.starting':['Starting','启动中'],
+'s.fault':['Heartbeat timeout or watchdog error','心跳超时或看门狗错误'],
 'average.temperature':['Mean temperature','平均温度'],'average.humidity':['Mean humidity','平均湿度'],'average.pm25':['Mean PM2.5','平均 PM2.5'],'average.formaldehyde':['Mean formaldehyde','平均甲醛'],
 /* common */
 'btn.key':['Key','按键'],'btn.key_fn':['Function key','功能键'],'btn.key_power':['Power key','电源键'],'btn.key_wifi':['Wi-Fi key','Wi-Fi 键'],'btn.pick_action':['Choose an action','请选择动作'],

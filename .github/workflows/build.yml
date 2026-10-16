@@ -246,12 +246,24 @@ jobs:
         with:
           name: tc1-firmware
           path: release
+      - uses: actions/download-artifact@v4
+        with:
+          name: a1-firmware
+          path: release
+      - uses: actions/download-artifact@v4
+        with:
+          name: m1-firmware
+          path: release
       - name: Test signed OTA vectors and Flash faults
         env:
           TC1_TEST_IMAGE: release/phicomm_tc1_a1.ota.bin.raw
+          A1_TEST_IMAGE: release/phicomm_a1.ota.bin.raw
+          M1_TEST_IMAGE: release/phicomm_m1.ota.bin.raw
         run: |
           python3 -m pip install cryptography==46.0.3
           test -s "$TC1_TEST_IMAGE"
+          test -s "$A1_TEST_IMAGE"
+          test -s "$M1_TEST_IMAGE"
           tests/ota/run.sh
       - name: Test engines, binding runtime and WebUI syntax
         run: tests/run.sh

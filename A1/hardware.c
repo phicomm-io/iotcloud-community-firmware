@@ -1,3 +1,4 @@
+#include "../common/watchdog.h"
 #include "../common/automation.h"
 #include "a1.h"
 #include "../common/indicator.h"
@@ -109,9 +110,26 @@ static void panel_tick(uint32_t now, uint8_t *last_key, uint8_t *last_slider,
     *last_key = key; *last_slider = slider;
 }
 
+static OSStatus hardware_init(void)
+{
+    OSStatus err = MicoGpioOutputHigh(MICO_GPIO_19);
+    if (err == kNoErr) err = MicoGpioInitialize(MICO_GPIO_19, OUTPUT_OPEN_DRAIN_NO_PULL);
+    if (err == kNoErr) err = MicoGpioOutputHigh(MICO_GPIO_12);
+    if (err == kNoErr) err = MicoGpioInitialize(MICO_GPIO_12, OUTPUT_PUSH_PULL);
+    if (err == kNoErr) err = MicoGpioInitialize(MICO_GPIO_13, OUTPUT_PUSH_PULL);
+    if (err == kNoErr) err = MicoGpioOutputLow(MICO_GPIO_13);
+    if (err == kNoErr) err = MicoGpioInitialize(MICO_GPIO_14, INPUT_PULL_UP);
+    return err;
+}
+
 static void hardware_worker(mico_thread_arg_t arg)
 {
     UNUSED_PARAMETER(arg);
+    while (hardware_init() != kNoErr) {
+        fault();
+        watchdog_beat(WATCHDOG_HARDWARE);
+        mico_thread_msleep(3000);
+    }
     uint8_t speed = 0, key = 0, slider = 0;
     uint32_t fan_at = mico_rtos_get_time(), wifi_since = 0, probe_at = fan_at;
     bool wifi_sent = false, initialized = panel_init(), frame_sent = false;
@@ -166,19 +184,12 @@ static void hardware_worker(mico_thread_arg_t arg)
         if (!state.ota_active) {
             mico_rtos_lock_mutex(&a1_lock); a1_state.led_visible = visible; mico_rtos_unlock_mutex(&a1_lock);
         }
+        watchdog_beat(WATCHDOG_HARDWARE);
         mico_thread_msleep(40);
     }
 }
 
 OSStatus a1_hardware_start(void)
 {
-    OSStatus err = MicoGpioOutputHigh(MICO_GPIO_19);
-    if (err == kNoErr) err = MicoGpioInitialize(MICO_GPIO_19, OUTPUT_OPEN_DRAIN_NO_PULL);
-    if (err == kNoErr) err = MicoGpioOutputHigh(MICO_GPIO_12);
-    if (err == kNoErr) err = MicoGpioInitialize(MICO_GPIO_12, OUTPUT_PUSH_PULL);
-    if (err == kNoErr) err = MicoGpioInitialize(MICO_GPIO_13, OUTPUT_PUSH_PULL);
-    if (err == kNoErr) err = MicoGpioOutputLow(MICO_GPIO_13);
-    if (err == kNoErr) err = MicoGpioInitialize(MICO_GPIO_14, INPUT_PULL_UP);
-    if (err != kNoErr) { fault(); return err; }
     return mico_rtos_create_thread(NULL, MICO_APPLICATION_PRIORITY, "a1_hardware", hardware_worker, 4096, 0);
 }

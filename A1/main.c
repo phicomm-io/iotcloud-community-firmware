@@ -1,5 +1,6 @@
 #include "../common/automation.h"
 #include "../common/service.h"
+#include "../common/watchdog.h"
 #include "a1.h"
 #include "config_legacy.h"
 #include <stddef.h>
@@ -156,7 +157,13 @@ static OSStatus startup_result(const char *stage, OSStatus err)
 
 int application_start(void)
 {
+    OSStatus watchdog_err = watchdog_start();
+    if (watchdog_err != kNoErr) {
+        custom_log("Watchdog", "Startup failed: %ld", (long)watchdog_err);
+        return watchdog_err;
+    }
     service_init();
+    watchdog_boot_event();
     custom_log("A1", "Starting %s", A1_VERSION);
     OSStatus err = mico_rtos_init_mutex(&a1_lock);
     if (err != kNoErr) return startup_result("state mutex", err);
@@ -241,6 +248,7 @@ int application_start(void)
     if (err != kNoErr) custom_log("A1", "Hardware unavailable; provisioning remains active");
     err = startup_result("MQTT", a1_mqtt_start());
     if (err != kNoErr) custom_log("A1", "MQTT unavailable; provisioning remains active");
+    watchdog_startup_complete();
     custom_log("A1", "Started %s, id %s", A1_VERSION, a1_id);
     return kNoErr;
 }
