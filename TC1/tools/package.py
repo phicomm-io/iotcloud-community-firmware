@@ -17,6 +17,7 @@ sdk = json.loads((Path(__file__).resolve().parents[1] / 'sdk.json').read_text())
 manifest = {'version': version, 'target': prefix, 'sdk': sdk,
             'toolchain': 'ARM GCC 5.4.1', 'files': {}}
 manifest.update(version_metadata)
+manifest['frontend'] = json.loads((Path(__file__).resolve().parents[2] / 'frontend.lock.json').read_text())
 for suffix in ('.usr.bin', '.ota.bin', '.all.bin', '.elf', '.map'):
     original = source / (prefix + suffix)
     destination = output / ('phicomm_tc1_a1' + suffix)

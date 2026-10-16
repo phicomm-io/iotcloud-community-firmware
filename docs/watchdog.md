@@ -33,7 +33,7 @@ OTA 每次同步 begin-unsigned、write、finish 期间激活独立进度槽。�
 
 主机回归：`tests/run.sh` 编译实际公共监控实现，覆盖逐个线程缺失、超时锁存、启动期限、32 位时钟回绕、NTP 宽限、OTA 进度与其他线程隔离、擦除块进度、复位原因、初始化和监控线程创建失败。`tests/ota/run.sh` 验证签名协议，并使用构建的 A1/M1 原生镜像运行实际 OTA 核心；可用 `A1_TEST_IMAGE` / `M1_TEST_IMAGE` 指定镜像，缺少镜像时对应适配器用例会跳过。CI 下载两款构建镜像并要求其存在。
 
-`node tests/test_web.cjs` 验证 A1/M1 提示与 TC1 兼容；`./A1/build.sh`、`./M1/build.sh` 验证 SDK 补丁、实际 ARM 实现和链接。
+前端仓库的 `node tests/test_web.cjs` 验证 A1/M1 提示与 TC1 兼容；`./A1/build.sh`、`./M1/build.sh` 验证 SDK 补丁、实际 ARM 实现和链接。
 
 实机验收需使用可恢复的专用测试固件并明确设备与刷写授权，本实现不提供生产远程故障注入接口。以下场景尚需在目标设备执行：
 

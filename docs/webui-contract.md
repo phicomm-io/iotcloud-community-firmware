@@ -1,6 +1,6 @@
 # WebUI 设计与接口约定
 
-TC1、A1、M1 的离线页面由 `common/web/page.py` 展开公共片段后压缩，浏览器无需 CDN，不使用 Web 字体或外部资源。公共部分为：`style.css`（唯一公共样式来源）、`i18n.js`（中英文词表与语言检测）、`service.js`（`/api/v1/command` 传输）、`ui.js`（页头、路由、反馈控件与三端公共设置页）、`automation.js`（定时、按键、夜间模式）与 `appearance.js`（首屏主题）。每个页面另有自己的 `page.js` 负责产品专属页面，页面不引用产品目录以外的资源。直接打开源码 HTML 不会展开片段；请使用构建产物或 `python3 common/web/page.py <页面路径>`。
+TC1、A1、M1 的离线页面统一由 [前端仓库](https://github.com/phicomm-io/phicomm-community-frontend) 构建。固件提交 `frontend.lock.json` 锁定完整 commit 的 Release 与 SHA-256，`tools/frontend_release.py` 下载校验全部文件，`tools/pack_frontend.py` 直接嵌入其中的确定性 gzip，不再从固件仓库展开前端源码。浏览器无需 CDN。公共样式、词表、服务层、设置页及产品 `page.js` 均在前端仓库维护。`common/web/page.py` 仅为已有工具保留命令兼容入口，输出锁定 Release 中的 HTML。
 
 ## 页面与词表
 

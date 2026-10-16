@@ -63,3 +63,9 @@
 ## TMCP 平台
 
 MQTT 服务与网页控制台位于 [独立平台仓库](https://github.com/phicomm-io/phicomm-community-mqtt)，包含前后端与部署配置。账号迁移和回退流程见 [平台迁移文档](https://github.com/phicomm-io/phicomm-community-mqtt/blob/main/docs/MIGRATION_TMCP.md)。
+
+## 前端版本
+
+设备 WebUI、管理平台和 demo 统一在 [phicomm-community-frontend](https://github.com/phicomm-io/phicomm-community-frontend) 维护。本仓库通过 `frontend.lock.json` 锁定完整 commit 的 Release 及 SHA-256，构建脚本下载验证后直接嵌入该 Release 的 gzip 页面。前端构建不在固件侧执行，不需要 Node。更新前端时复制目标 Release 的锁文件，三款固件 manifest 会记录对应前端身份。
+
+离线准备：`python3 tools/frontend_release.py --archive /path/frontend.tar.gz`。压缩包仍必须匹配已提交的锁文件。页面接口约定见 [WebUI 契约](docs/webui-contract.md)。

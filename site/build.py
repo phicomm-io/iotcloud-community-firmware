@@ -14,7 +14,7 @@ import markdown
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(HERE))
-sys.path.insert(0, str(ROOT / 'common' / 'web'))
+sys.path.insert(0, str(ROOT / 'tools'))
 from pages import GROUPS, PAGES, SITE_URL  # noqa: E402
 
 EXTENSIONS = ['tables', 'fenced_code', 'attr_list']
@@ -181,17 +181,10 @@ def main():
     if missing:
         print('Missing guide sources: ' + ', '.join(missing), file=sys.stderr)
 
-    # Demos render the same firmware sources through an isolated adapter.
-    from page import render_page
-    for model, source in [('tc1', 'TC1/http_server/web/index.html'),
-                          ('m1', 'M1/web/index.html'),
-                          ('a1', 'A1/web/index.html')]:
-        dest = out / 'demos' / model
-        dest.mkdir(parents=True, exist_ok=True)
-        adapter = (ROOT / 'common' / 'web' / 'demo.js').read_text(encoding='utf-8').replace('__MODEL__', model)
-        text = render_page(ROOT / source).decode()
-        text = text.replace('<head>', '<head><script>' + adapter + '</script>', 1)
-        (dest / 'index.html').write_text(text, encoding='utf-8')
+    # Every demo comes from the same pinned frontend release as firmware UI.
+    from frontend_release import fetch
+    bundle = fetch(ROOT / 'frontend.lock.json')
+    shutil.copytree(bundle / 'demos', out / 'demos', dirs_exist_ok=True)
 
     shutil.copytree(ROOT / 'docs' / 'public' / 'assets', guides / 'assets', dirs_exist_ok=True)
     print(f'Wrote {len(PAGES) - len(missing)} guide pages to {out}')
