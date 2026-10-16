@@ -20,8 +20,10 @@ bool feature_config_save(const feature_config_t *c) {
 #include "a1.h"
 char a1_id[13] = "aabbccddee01";
 static unsigned local_controls;
+static const char *test_a1_name = "Living Room A1";
 void a1_config_get(a1_config_t *out) {
   memset(out, 0, sizeof(*out));
+  snprintf(out->name, sizeof(out->name), "%s", test_a1_name);
   out->speed = 60;
   out->brightness = 255;
   out->led_enabled = true;
@@ -308,6 +310,54 @@ static void effective_controls(void) {
 #endif
 static char expected_key[MQTT_KEY_MAX];
 static unsigned account_ha;
+#ifdef FEATURE_DEVICE_A1
+static const char *expected_device_name;
+static unsigned named_discoveries;
+static char discovery_ids[8][192], discovery_topics[8][FEATURE_TOPIC_MAX];
+static bool compare_discovery_identity;
+static int capture_discovery_name(const char *topic, const char *body, bool retained) {
+  assert(retained && named_discoveries < 8);
+  json_object *o = obj(body), *device = json_object_object_get(o, "device");
+  assert(!strcmp(string(device, "name"), expected_device_name));
+  const char *id = json_object_get_string(json_object_array_get_idx(
+      json_object_object_get(device, "identifiers"), 0));
+  if (compare_discovery_identity) {
+    assert(!strcmp(discovery_ids[named_discoveries], id));
+    assert(!strcmp(discovery_topics[named_discoveries], topic));
+  } else {
+    snprintf(discovery_ids[named_discoveries], sizeof(discovery_ids[0]), "%s", id);
+    snprintf(discovery_topics[named_discoveries], sizeof(discovery_topics[0]), "%s", topic);
+  }
+  named_discoveries++;
+  json_object_put(o);
+  return 0;
+}
+static void discovery_device_names(void) {
+  feature_config_t config;
+  feature_defaults(&config);
+  config.peer_count = 1;
+  char root[FEATURE_TOPIC_MAX];
+  root_for(&config, 0, root);
+  const char *names[] = {"Living Room A1", "Bedroom A1", ""};
+  for (unsigned i = 0; i < 3; i++) {
+    test_a1_name = names[i];
+    expected_device_name = *names[i] ? names[i] : "Phicomm A1";
+    named_discoveries = 0;
+    compare_discovery_identity = i != 0;
+    discovery_virtual(capture_discovery_name, &config, root, false);
+    assert(named_discoveries == 8);
+  }
+  strcpy(config.group, "客厅净化组");
+  root_for(&config, 0, root);
+  expected_device_name = config.group;
+  named_discoveries = 0;
+  compare_discovery_identity = false;
+  discovery_virtual(capture_discovery_name, &config, root, false);
+  assert(named_discoveries == 8);
+  test_a1_name = names[0];
+  puts("Bound A1 discovery uses device/group names and preserves identity on rename");
+}
+#endif
 static int capture_account(const char *t,const char *body,bool retained) {
   assert(t && body);
   if(!strncmp(t,"homeassistant/",14)) {
@@ -324,6 +374,9 @@ static int capture_account(const char *t,const char *body,bool retained) {
   (void)retained;return 0;
 }
 static void account_namespaces(void) {
+#ifdef FEATURE_DEVICE_A1
+  discovery_device_names();
+#endif
   mqtt_account_t alice,bob,legacy;
   char user[64];memset(user,'x',63);user[63]=0;
 #ifdef FEATURE_DEVICE_A1

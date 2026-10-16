@@ -1678,6 +1678,11 @@ static void discovery_virtual(int (*publish)(const char *, const char *, bool),
   /* MQTT-owner-only scratch: publishing may dispatch callbacks on this stack. */
   static mqtt_account_t account;
   account = mqtt_snapshot();
+  /* The MQTT owner publishes discovery; keep the device snapshot off its stack. */
+  static a1_config_t device_config;
+  a1_config_get(&device_config);
+  const char *device_name = c->group[0] ? c->group :
+      (device_config.name[0] ? device_config.name : "Phicomm A1");
   char owner[13]; strcpy(owner,LOCAL_ID);
   for (unsigned i=0; i<c->member_count; ++i)
     if (strcmp(c->members[i].id,owner)<0) strcpy(owner,c->members[i].id);
@@ -1729,7 +1734,7 @@ static void discovery_virtual(int (*publish)(const char *, const char *, bool),
       else mqtt_format(device_id,sizeof(device_id),"%s",root);
       json_build_array_add(ids, json_object_new_string(device_id));
       json_build_object_add(device, "identifiers", ids);
-      js(device, "name", c->group[0] ? c->group : root);
+      js(device, "name", device_name);
       js(device, "manufacturer", "Phicomm");
       json_build_object_add(o, "device", device);
       js(o, "unique_id", uid);
