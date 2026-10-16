@@ -58,6 +58,9 @@ const ACTIONS={M1:['schedules.get','schedules.put','schedules.delete','schedules
  d.querySelector('#deviceName').value='new name';
  d.querySelector('#nameForm').dispatchEvent(new w.Event('submit',{cancelable:true}));await flush();
  assert(calls.some(r=>r.action==='config.set'&&r.params.section==='device'&&r.params.values.name==='new name'));
+ d.querySelector('#deviceName').value='';
+ d.querySelector('#nameForm').dispatchEvent(new w.Event('submit',{cancelable:true}));await flush();
+ assert(calls.some(r=>r.action==='config.set'&&r.params.section==='device'&&r.params.values.name===''),'empty device name must restore the device default');
  // Weekly schedule maps the weekday chips and time picker onto the wire format.
  w.location.hash='settings/schedule';w.dispatchEvent(new w.Event('hashchange'));await flush();
  const task=d.querySelector('[data-settings-page="schedule"] form');
