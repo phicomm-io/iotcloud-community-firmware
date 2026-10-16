@@ -295,7 +295,9 @@ jobs:
           python3 -m unittest discover -s tests -p test_release.py
           node --test tests/test_ota_worker.mjs
       - name: Test engines, binding runtime and WebUI syntax
-        run: tests/run.sh
+        run: |
+          python3 -m pip install Markdown==3.7
+          tests/run.sh
       - name: Test WebUI configuration forms
         run: |
           npm install --prefix "$RUNNER_TEMP/phicomm-ui-tests" jsdom@30.1.2

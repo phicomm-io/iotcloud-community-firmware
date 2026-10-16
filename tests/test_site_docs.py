@@ -44,8 +44,18 @@ class ManifestTests(unittest.TestCase):
 
 
 class BuildTests(unittest.TestCase):
+    """Build-output checks. Skipped where the Markdown dependency is absent.
+
+    The firmware host-test job runs this file without the site's Python
+    dependencies; a missing optional package must not fail that job.
+    """
+
     @classmethod
     def setUpClass(cls):
+        try:
+            import markdown  # noqa: F401
+        except ImportError:
+            raise unittest.SkipTest('Markdown is not installed; skipping site build checks')
         cls._tmp = tempfile.TemporaryDirectory()
         cls.out = Path(cls._tmp.name) / 'pages'
         import subprocess
