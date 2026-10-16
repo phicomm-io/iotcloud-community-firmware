@@ -335,6 +335,9 @@ static void mqtt_worker(mico_thread_arg_t arg)
             char topic[MQTT_TOPIC_MAX]; mqtt_aux(&account, "discovery", account.mac, topic, sizeof(topic));
             announced = publish(topic, mqtt_announcement(&account), true);
         }
+        /* HA birth can arrive while initial QoS1 discovery awaits PUBACK.
+         * Preserve it until the owner loop services rediscovery. */
+        rediscover = false;
         const char *stage="initial";
         int rc = connected && announced == MQTT_SUCCESS ? MQTTSubscribe(&client, wildcard, QOS1, command) : MQTT_FAILURE;
         if (rc == MQTT_SUCCESS) rc = MQTTSubscribe(&client, "homeassistant/status", QOS0, ha_birth);
@@ -349,7 +352,7 @@ static void mqtt_worker(mico_thread_arg_t arg)
         if (rc == MQTT_SUCCESS) { attempt = 0; cleanup_pending = true; mqtt_status(MQTT_READY); }
         uint32_t acl_check = mico_rtos_get_time();
         bool old_on=false;unsigned old_speed=0;
-        bool sent = false, old_visible = false; uint32_t revision = 0; rediscover = false;
+        bool sent = false, old_visible = false; uint32_t revision = 0;
         a1_filter_storage_t sent_filter = {0}; uint32_t filter_sent_at = 0;
         while (rc == MQTT_SUCCESS) {
             stage="ota"; rc=ota_service(base);if(rc!=MQTT_SUCCESS)break;

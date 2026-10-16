@@ -21,7 +21,15 @@ def main(port):
     base = f'phicomm/v2/{key}/a1/aabbccddeeff'
     records = []
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-    client.on_message = lambda c, u, m: records.append((m.topic, m.payload.decode(), m.retain))
+    reconnect_birth = {'parent': None, 'sent': False}
+    def receive(c, u, message):
+        payload = message.payload.decode()
+        records.append((message.topic, payload, message.retain))
+        if reconnect_birth['parent'] and not reconnect_birth['sent'] and message.topic.endswith('_filter_remaining/config') and payload:
+            if json.loads(payload)['device']['identifiers'] == [reconnect_birth['parent']]:
+                reconnect_birth['sent'] = True
+                c.publish('homeassistant/status', 'online', retain=False)
+    client.on_message = receive
     client.connect('127.0.0.1', port)
     client.subscribe('#', 1)
     client.loop_start()
@@ -114,13 +122,16 @@ def main(port):
             late.loop_stop()
         start = len(records)
         publish('homeassistant/status', 'online')
-        wait(lambda: len([t for t, p, r in records[start:] if '_filter_' in t
-                          and t.startswith(prefix) and '/'+key+'/' in t and p]) == 5)
+        wait(lambda: {t.rsplit('_filter_', 1)[-1].split('/')[0]
+                      for t, p, r in records[start:] if '_filter_' in t
+                      and t.startswith(prefix) and '/'+key+'/' in t and p} == set(by))
         print('PASS A1 five HA discovery templates, control commands, reset, retained replay and HA birth', flush=True)
 
         original_ids = {k: v['unique_id'] for k, v in by.items()}
         group = '客厅净化组'
         parent = f'v2_{key}_group_{("g_" + group.encode().hex()).encode().hex()}'
+        group_start = len(records)
+        reconnect_birth['parent'] = parent
         bind({'group': group})
         wait(lambda: len(configs()) == 5 and all(
             v['device']['identifiers'] == [parent] for v in configs().values()))
@@ -132,6 +143,11 @@ def main(port):
                     else: controls.pop(t, None)
             return controls
         wait(lambda: len(virtual_configs()) == 8)
+        # Birth injected during initial discovery must survive startup and
+        # produce a complete second set of all five physical filter configs.
+        wait(lambda: reconnect_birth['sent'] and all(
+            sum(t.endswith('_filter_'+k+'/config') and bool(p)
+                for t, p, r in records[group_start:]) >= 2 for k in by))
         names = {o['name'] for o in controls.values()}
         assert names == {'空气净化器', '灯环', '童锁', '灯环常亮', '温度', '湿度', 'PM2.5', '甲醛'}
         for obj in controls.values():
@@ -147,8 +163,9 @@ def main(port):
             if k in ('lifetime', 'reset'): assert obj['command_topic'] == base+'/command'
         start = len(records)
         publish('homeassistant/status', 'online')
-        wait(lambda: len([t for t, p, r in records[start:] if '_filter_' in t
-                          and t.startswith(prefix) and '/'+key+'/' in t and p]) == 5)
+        wait(lambda: {t.rsplit('_filter_', 1)[-1].split('/')[0]
+                      for t, p, r in records[start:] if '_filter_' in t
+                      and t.startswith(prefix) and '/'+key+'/' in t and p} == set(by))
         assert len(configs()) == 5  # bound HA birth must not delete filter entities
         # A grouped fan shares controls; reset still targets this physical filter.
         start = len(records)
