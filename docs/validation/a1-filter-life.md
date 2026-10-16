@@ -35,3 +35,15 @@
 - 再次正常重启，滤芯使用量仍为 0 秒、额定寿命仍为 4320 小时；风机、灯光和童锁设置与升级前一致，Wi-Fi、MQTT、面板与 watchdog 正常，配置无待保存或保存错误。
 
 本地证据保存在忽略目录 `build/evidence/a1-filter-deploy/`，含候选清单、升级前后状态、上传响应、计时记录、浏览器验收与截图。截图和配置证据不纳入版本库。
+
+## MQTT 最终实机验收
+
+同日继续在同一台 A1 验证提交 `d8fb96b99a601829d891838eba9a1a0cafeea8c2`，运行版本 `0.9.6-d8fb96`。原生 OTA 为 695932 字节，SHA-256 `3daa1033e3d255daaaab7e9fa9295f4378f69f709f99f5c5be6dcc0ce7700c54`；可信签名包为 696124 字节，SHA-256 `1d7037191eabb9f2dbc28362cab8b2ad305d0ec6253d7d03c44c679040a9f70b`。
+
+- PASS：前一版本直接 HTTP 上传出现 `Upload interrupted`，改由 `ota.start` 下载同一可信签名候选后成功；读回新版本、相同设备身份、既有配置及 M1 绑定。
+- PASS：发现实机绑定 M1 时原先会隐藏滤芯 HA 实体，已修正为每台实际 A1 始终保留五个滤芯实体。真实 Broker 收到全部发现配置。
+- PASS：通过真实 MQTT 将额定寿命改为 6000 小时并及时收到 retained 状态；20% 风速持续运行一分钟，使用量主动上报至 94 秒；停止后计时暂停。用 HA 重置按钮的实际报文归零，再恢复 4320 小时与原风机、灯光和童锁设置。
+- PASS：正式 Release 中的 IotCloud 页面，通过生产 MQTT/WebSocket 控制该实机，验证寿命保存、取消/确认重置、状态同步、操作后控件恢复可用及 390px 手机布局；无页面脚本异常。
+- PASS：正常重启后仍为 0 秒 / 4320 小时，配置、绑定和原控制设置保留；MQTT、面板和 watchdog 正常，无待保存配置或保存错误。
+
+前端和平台消费端均已合入各自 main，固定前端 Release 与平台 main 镜像已发布。上述页面验收使用正式前端构建与生产 Broker，未更新线上平台运行实例；运行中的 Home Assistant UI 仍为 NOT_RUN。证据在忽略目录 `build/evidence/a1-filter-mqtt/` 与 `build/evidence/a1-filter-mqtt-pull/`。

@@ -4,6 +4,7 @@
 Run via run_mqtt_v2.sh; never uses the device's configured broker.
 """
 import json
+import select
 from pathlib import Path
 import subprocess
 import sys
@@ -39,6 +40,14 @@ def main(port):
     def publish(topic, payload):
         client.publish(topic, payload, qos=1, retain=False).wait_for_publish()
 
+    def bind(params):
+        # Changing subscription roots reconnects MQTT; install via the service
+        # input and require its acknowledgement before checking rediscovery.
+        worker.stdin.write(json.dumps({'action': 'binding.set', 'params': params}).encode()+b'\n')
+        worker.stdin.flush()
+        assert select.select([worker.stdout], [], [], 12)[0], 'binding setup timeout'
+        assert json.loads(worker.stdout.readline())['code'] == 'accepted'
+
     def states(start):
         return [json.loads(p)['filter'] for t, p, r in records[start:]
                 if t == base + '/state']
@@ -46,7 +55,7 @@ def main(port):
     try:
         worker = subprocess.Popen([str(root / 'build/simulator/A1'), 'aabbccddeeff',
                                    '127.0.0.1', '127.0.0.1', str(port), user],
-                                  stdin=subprocess.PIPE, stdout=subprocess.DEVNULL)
+                                  stdin=subprocess.PIPE, stdout=subprocess.PIPE)
         prefix = 'homeassistant/'
         def configs():
             latest = {t: p for t, p, r in records if t.startswith(prefix)
@@ -112,7 +121,7 @@ def main(port):
         original_ids = {k: v['unique_id'] for k, v in by.items()}
         group = '客厅净化组'
         parent = f'v2_{key}_group_{("g_" + group.encode().hex()).encode().hex()}'
-        publish(base+'/command', json.dumps({'action': 'binding.set', 'params': {'group': group}}))
+        bind({'group': group})
         wait(lambda: len(configs()) == 5 and all(
             v['device']['identifiers'] == [parent] for v in configs().values()))
         controls = {}
@@ -147,8 +156,7 @@ def main(port):
         publish(base+'/command', reset)
         wait(lambda: any(s['used_seconds'] == 0 and s['lifetime_hours'] == 6000
                          for s in states(start)), 5)
-        publish(base+'/command', json.dumps({'action': 'binding.set',
-                'params': {'group': '', 'members': [], 'peers': []}}))
+        bind({'group': '', 'members': [], 'peers': []})
         wait(lambda: len(configs()) == 5 and all(v['device']['identifiers'] ==
             [key+'_a1_aabbccddeeff'] for v in configs().values()))
         assert {k: v['unique_id'] for k, v in configs().items()} == original_ids
