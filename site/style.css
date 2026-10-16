@@ -212,9 +212,9 @@ select{font:inherit;background:var(--surface);border:1px solid var(--border);bor
  .grid-3,.features{grid-template-columns:repeat(2,minmax(0,1fr))}
  .doc-groups{grid-template-columns:repeat(2,minmax(0,1fr))}
  .guide-layout{grid-template-columns:1fr;gap:20px;padding-top:24px}
- .guide-nav{position:static;flex-direction:row;flex-wrap:wrap;max-height:none;gap:4px}
- .guide-group{display:none}
- .guide-nav a{border:1px solid var(--border);white-space:nowrap}
+ .guide-nav{position:static;max-height:none}
+ .guide-nav a{min-height:44px;padding:10px 14px;border-radius:0;border-left:2px solid transparent;white-space:normal}
+ .guide-nav a[aria-current=page]{border-left-color:var(--accent);background:transparent}
 }
 @media(max-width:680px){
  .wrap{padding:0 18px}
