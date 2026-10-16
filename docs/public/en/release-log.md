@@ -2,6 +2,14 @@
 
 English translation of the published release history. Historical validation statements apply to the release named in each section, not to later firmware. Release notes are authored in the Wiki and frozen into the source repository before tagging.
 
+## v0.9.7
+
+- A1 estimates filter life from fan running time. Adjust the rated lifetime and reset usage after replacing the filter; device pages, MQTT and Home Assistant show the same data.
+- Configure A1 power-key, Wi-Fi-key and two-key combination gestures for effects, fan, light ring, child lock, filter reset and restart. Combination gestures suppress single-key actions and unintended network recovery.
+- Improve A1 Chinese entity names, purifier icon and model in Home Assistant. Bound controls and physical filter entities share one device; filter commands still address the individual A1.
+- Unify all three products on MiCO 3.6.4, preserve unassigned TC1 keys during legacy migration, and restore general settings navigation with improved touch interaction.
+- Preserve Wi-Fi, MQTT, bindings, schedules and button settings while migrating filter data and the additional combination-key map.
+
 ## v0.9.6
 
 - Devices can check versions, read release notes and download signed OTA directly from GitHub Pages HTTPS. The WebUI also retains both domestic and international HTTP mirror buttons.
