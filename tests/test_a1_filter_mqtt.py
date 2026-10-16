@@ -141,6 +141,12 @@ def main(port):
         wait(lambda: len([t for t, p, r in records[start:] if '_filter_' in t
                           and t.startswith(prefix) and '/'+key+'/' in t and p]) == 5)
         assert len(configs()) == 5  # bound HA birth must not delete filter entities
+        # A grouped fan shares controls; reset still targets this physical filter.
+        start = len(records)
+        publish(base+'/command', command)
+        publish(base+'/command', reset)
+        wait(lambda: any(s['used_seconds'] == 0 and s['lifetime_hours'] == 6000
+                         for s in states(start)), 5)
         publish(base+'/command', json.dumps({'action': 'binding.set',
                 'params': {'group': '', 'members': [], 'peers': []}}))
         wait(lambda: len(configs()) == 5 and all(v['device']['identifiers'] ==
