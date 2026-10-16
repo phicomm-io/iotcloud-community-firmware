@@ -26,6 +26,7 @@ TC1、A1、M1 的离线页面统一由 [前端仓库](https://github.com/phicomm
 | `night.get/set`, `time.get/set` | 夜间模式（A1/M1）与时区 |
 | `binding.get/set`, `binding.status.get` | A1/M1 绑定设置、运行状态 |
 | `sensors.average.get` | A1 多 M1 实时平均值 |
+| `filter.get/set/reset` | A1 滤芯寿命查询、额定寿命调整及更换后清零 |
 
 文件 OTA 独立于 JSON 命令：`POST /api/v1/ota/upload` 上传签名原始字节流；仅显式选择未签名更新时使用 `/api/v1/ota/upload-unsigned`。两者仍校验产品镜像和写入结果。
 
@@ -60,6 +61,10 @@ TC1、A1、M1 的离线页面统一由 [前端仓库](https://github.com/phicomm
 新前端所有普通查询/设置通过 `POST /api/v1/command`，动作名见 `capabilities.get`；旧产品 HTTP 路径仅作兼容，不是新前端接口。HTTP v1 与 MQTT 的 TMCP(v2)/Legacy(v1) 独立编号。MQTT 主题、公告、版本字段和平均值结构以 [MQTT 协议约定](mqtt-account.md) 为准。
 
 A1 首页展示已绑定且新鲜的 M1 四项实时算术平均值；`sensors.average.get` 和 `binding.status.get.average` 同构。无有效采样显示破折号，不显示零值冒充数据。
+
+A1 的 `status.get.filter` 与 `filter.get` 同构：`{used_seconds,lifetime_hours,remaining_percent,replacement_due}`。额定寿命默认 4320 小时；`filter.set` 仅接受 `{lifetime_hours:整数}`，范围 1–20000，不清除计时。`filter.reset` 仅接受空参数，清零计时、保留额定寿命；成功落盘后返回 `accepted` 和更新后的滤芯状态，落盘失败返回 `storage_error` 并回滚。OTA、重启和 Wi-Fi 试连接期间返回 `busy`。这些动作只作用于当前 A1，不同步至群组。HTTP 和 MQTT 使用相同命令入口及 request_id 去重规则。
+
+计时依据风机已经施加的非零输出，精确累计秒数，不依赖网络校时或浏览器在线。百分比向上取整，耗尽后保持 0%；不超过 10% 时 `replacement_due=true`。每累计运行一小时、风机停止、正常重启/升级预留前保存；突发断电可能丢失最近不足一小时，闪存写入失败时的未保存区间可能更长（可从 `save_error` 诊断）。首次升级从零开始，网络重置保留，出厂恢复清零并恢复额定寿命默认值。旧固件无 `filter` 字段时前端隐藏卡片。
 
 日志查询使用 `logs.get`，列表字段为 `records`，游标为 `next/latest`。TC1 单插座控制仅发一个指定 index 的 `outlet.set`，全开/全关不带 index。功率接口返回 `power_watts` 和 `energy_kwh`；首页趋势是本浏览器本次打开期间最多 60 个采样点，不是持久历史。单个采样点的 SVG 坐标也必须有效。
 

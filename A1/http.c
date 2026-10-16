@@ -258,6 +258,7 @@ json_object *a1_status_json(void)
     if (diag.connections_get_rc == 0) json_build_object_add(o, "http_tcp_connections",json_object_new_int(diag.connections));
     else json_object_object_add(o, "http_tcp_connections", NULL);
     watchdog_status_json(o);
+    json_build_object_add(o, "filter", a1_filter_json());
     str(o, "version", A1_VERSION); str(o, "device_id", a1_id); str(o, "name", cfg.name);
     json_bool(o, "wifi_trial_active", s.wifi_trial_active);
     str(o, "wifi_trial_status", s.wifi_trial_status);
