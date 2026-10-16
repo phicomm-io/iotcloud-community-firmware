@@ -33,7 +33,7 @@
 #define DEVICE_NAME_PREFIX "M1"
 #define DEVICE_ID m1_id
 #endif
-static void svc_string(json_object *o,const char *key,const char *value){json_object_object_add(o,key,json_object_new_string(value));}
+static void svc_string(json_object *o,const char *key,const char *value){json_build_object_add(o,key,json_object_new_string(value));}
 static bool svc_keys(json_object *p,const char *allowed){
     json_object_object_foreach(p,key,value){char needle[80];snprintf(needle,sizeof(needle),"|%s|",key);if(!value || !strstr(allowed,needle))return false;}return true;
 }
@@ -41,28 +41,28 @@ static bool svc_int(json_object *p,const char *key,int *out,int lo,int hi){json_
 static bool svc_bool(json_object *p,const char *key,bool *out){json_object *v=json_object_object_get(p,key);if(!v || !json_object_is_type(v,json_type_boolean))return false;*out=json_object_get_boolean(v);return true;}
 static bool svc_text(json_object *p,const char *key,char *out,size_t capacity,bool required){json_object *v=json_object_object_get(p,key);if(!v)return !required;if(!json_object_is_type(v,json_type_string))return false;size_t n=json_object_get_string_len(v);if(n>=capacity || n!=strlen(json_object_get_string(v)))return false;memcpy(out,json_object_get_string(v),n+1);return true;}
 json_object *service_product_capabilities(void){
-    json_object *o=json_object_new_object(),*a=json_object_new_array();svc_string(o,"model",DEVICE_MODEL);json_object_object_add(o,"protocol",json_object_new_int(2));svc_string(o,"mqtt_protocol","tmcp");json_object_object_add(o,"mqtt_protocol_version",json_object_new_int(2));
+    json_object *o=json_object_new_object(),*a=json_object_new_array();svc_string(o,"model",DEVICE_MODEL);json_build_object_add(o,"protocol",json_object_new_int(2));svc_string(o,"mqtt_protocol","tmcp");json_build_object_add(o,"mqtt_protocol_version",json_object_new_int(2));
     const char *actions[]={"schedules.get","schedules.put","schedules.delete","schedules.enable","buttons.get","status.get","capabilities.get","config.get","logs.get","config.set","wifi.scan","wifi.scan.get","binding.status.get","system.reboot","system.reset","ota.start","night.get","night.set","time.get","time.set","binding.get","binding.set",
 #ifdef FEATURE_DEVICE_A1
     "sensors.average.get","buttons.set","binding.probe","light_effect.get","light_effect.set","fan.set","light.set","child_lock.set","linkage.get","linkage.set",
 #else
     "display.set",
 #endif
-    NULL};for(unsigned i=0;actions[i];i++)json_object_array_add(a,json_object_new_string(actions[i]));json_object_object_add(o,"actions",a);return o;
+    NULL};for(unsigned i=0;actions[i];i++)json_build_array_add(a,json_object_new_string(actions[i]));json_build_object_add(o,"actions",a);return o;
 }
 static __attribute__((noinline)) json_object *service_product_inner(const char *action,json_object *p,const char **code){
     *code="invalid_params";
     if(!strcmp(action,"config.get")){
         if(!svc_keys(p,""))return NULL;CONFIG c;GET_CONFIG(&c);json_object *o=json_object_new_object();
-        svc_string(o,"name",c.name);svc_string(o,"ssid",c.ssid);svc_string(o,"mqtt_host",c.mqtt_host);svc_string(o,"mqtt_user",c.mqtt_user);svc_string(o,"mqtt_protocol","tmcp");json_object_object_add(o,"mqtt_protocol_version",json_object_new_int(2));json_object_object_add(o,"mqtt_port",json_object_new_int(c.mqtt_port));
-        json_object_object_add(o,"wifi_password_set",json_object_new_boolean(c.wifi_password[0]));json_object_object_add(o,"mqtt_password_set",json_object_new_boolean(c.mqtt_password[0]));json_object_object_add(o,"web_password_set",json_object_new_boolean(c.web_password[0]));*code="ok";return o;
+        svc_string(o,"name",c.name);svc_string(o,"ssid",c.ssid);svc_string(o,"mqtt_host",c.mqtt_host);svc_string(o,"mqtt_user",c.mqtt_user);svc_string(o,"mqtt_protocol","tmcp");json_build_object_add(o,"mqtt_protocol_version",json_object_new_int(2));json_build_object_add(o,"mqtt_port",json_object_new_int(c.mqtt_port));
+        json_build_object_add(o,"wifi_password_set",json_object_new_boolean(c.wifi_password[0]));json_build_object_add(o,"mqtt_password_set",json_object_new_boolean(c.mqtt_password[0]));json_build_object_add(o,"web_password_set",json_object_new_boolean(c.web_password[0]));*code="ok";return o;
     }
     STATE state;GET_STATE(&state);
     if(!strcmp(action,"wifi.scan.get")){
         if(!svc_keys(p,""))return NULL;json_object *o=json_object_new_object(),*list=json_object_new_array();
-        json_object_object_add(o,"scanning",json_object_new_boolean(state.scan_busy));
-        for(unsigned i=0;i<state.scan_count;i++){json_object *ap=json_object_new_object();svc_string(ap,"ssid",state.scan[i].ssid);json_object_object_add(ap,"rssi",json_object_new_int(state.scan[i].rssi));json_object_array_add(list,ap);}
-        json_object_object_add(o,"networks",list);*code="ok";return o;
+        json_build_object_add(o,"scanning",json_object_new_boolean(state.scan_busy));
+        for(unsigned i=0;i<state.scan_count;i++){json_object *ap=json_object_new_object();svc_string(ap,"ssid",state.scan[i].ssid);json_build_object_add(ap,"rssi",json_object_new_int(state.scan[i].rssi));json_build_array_add(list,ap);}
+        json_build_object_add(o,"networks",list);*code="ok";return o;
     }
     if(!strcmp(action,"binding.status.get")){if(!svc_keys(p,""))return NULL;*code="ok";return feature_json("status");}
 #ifdef FEATURE_DEVICE_A1
@@ -91,8 +91,8 @@ static __attribute__((noinline)) json_object *service_product_inner(const char *
     else if(!strcmp(action,"child_lock.set")){if(!svc_keys(p,"|enabled|") || !svc_bool(p,"enabled",&value))return NULL;ok=a1_control_json("child_lock",p);}
     else if(!strcmp(action,"light.set")){
         if(!svc_keys(p,"|enabled||always_on||brightness||color|"))return NULL;
-        json_object *copy=service_parse(json_object_to_json_string(p),strlen(json_object_to_json_string(p)));if(!copy){*code="busy";return NULL;}
-        if(json_object_object_get(p,"brightness")){if(!svc_int(p,"brightness",&number,0,100)){json_object_put(copy);return NULL;}json_object_object_add(copy,"brightness",json_object_new_int((number*255+50)/100));}
+        const char *wire=json_object_to_json_string(p);json_object *copy=wire?service_parse(wire,strlen(wire)):NULL;if(!copy){*code="busy";return NULL;}
+        if(json_object_object_get(p,"brightness")){if(!svc_int(p,"brightness",&number,0,100)){json_object_put(copy);return NULL;}json_build_object_add(copy,"brightness",json_object_new_int((number*255+50)/100));}
         ok=a1_control_json("light",copy);json_object_put(copy);
     }
 #else

@@ -73,7 +73,7 @@ static json_object *encode_fields(const void *data, const field_t *f,
     return NULL;
   for (unsigned i = 0; i < n; i++) {
     const unsigned char *p = (const unsigned char *)data + f[i].offset;
-    json_object_object_add(
+    json_build_object_add(
         o, f[i].key,
         f[i].type == 3
             ? json_object_new_double(*(const float *)p)
@@ -124,7 +124,7 @@ static bool string_field(json_object *o, const char *key, char *dst, size_t n) {
   return true;
 }
 static void js(json_object *o, const char *k, const char *v) {
-  json_object_object_add(o, k, json_object_new_string(v));
+  json_build_object_add(o, k, json_object_new_string(v));
 }
 static json_object *config_encode(const feature_config_t *c, const char *d) {
   json_object *o = NULL, *a;
@@ -140,40 +140,40 @@ static json_object *config_encode(const feature_config_t *c, const char *d) {
       for (unsigned j = 0; j < 3; j++) {
         json_object *rgb = json_object_new_array();
         for (unsigned k = 0; k < 3; k++)
-          json_object_array_add(
+          json_build_array_add(
               rgb, json_object_new_int(c->light.segment[i].colors[j][k]));
-        json_object_array_add(colors, rgb);
+        json_build_array_add(colors, rgb);
       }
-      json_object_object_add(s, "colors", colors);
-      json_object_array_add(a, s);
+      json_build_object_add(s, "colors", colors);
+      json_build_array_add(a, s);
     }
-    json_object_object_add(o, "segment", a);
+    json_build_object_add(o, "segment", a);
   } else if (!strcmp(d, "schedule") || !strcmp(d, "sleep")) {
     bool sleep = !strcmp(d, "sleep");
     o = json_object_new_object();
     a = json_object_new_array();
     for (unsigned i = 0; i < (sleep ? c->sleep_count : c->event_count); i++)
-      json_object_array_add(a, sleep
+      json_build_array_add(a, sleep
                                    ? encode_fields(&c->sleeps[i], sleep_fields,
                                                    COUNT(sleep_fields))
                                    : encode_fields(&c->events[i], event_fields,
                                                    COUNT(event_fields)));
-    json_object_object_add(o, sleep ? "windows" : "events", a);
+    json_build_object_add(o, sleep ? "windows" : "events", a);
   } else if (!strcmp(d, "time")) {
     o = json_object_new_object();
     js(o, "ntp_host", c->ntp_host);
-    json_object_object_add(o, "timezone_minutes",
+    json_build_object_add(o, "timezone_minutes",
                            json_object_new_int(c->timezone_minutes));
   } else if (!strcmp(d, "binding")) {
     o = json_object_new_object();
     js(o, "group", c->group);
-    json_object_object_add(o, "group_force_mqtt",
+    json_build_object_add(o, "group_force_mqtt",
                            json_object_new_boolean(c->group_force_mqtt));
-    json_object_object_add(o, "group_recovery",
+    json_build_object_add(o, "group_recovery",
                            json_object_new_boolean(c->group_recovery));
-    json_object_object_add(o, "group_timeout_ms",
+    json_build_object_add(o, "group_timeout_ms",
                            json_object_new_int(c->group_timeout_ms));
-    json_object_object_add(o, "group_recovery_seconds",
+    json_build_object_add(o, "group_recovery_seconds",
                            json_object_new_int(c->group_recovery_seconds));
 
     a = json_object_new_array();
@@ -183,31 +183,31 @@ static json_object *config_encode(const feature_config_t *c, const char *d) {
       js(s, "mac", p->id);
       js(s, "ip", p->ip);
       js(s, "group", p->group);
-      json_object_object_add(s, "kind", json_object_new_int(p->kind));
-      json_object_object_add(s, "confirmed",
+      json_build_object_add(s, "kind", json_object_new_int(p->kind));
+      json_build_object_add(s, "confirmed",
                              json_object_new_boolean(p->confirmed));
-      json_object_object_add(s, "force_mqtt",
+      json_build_object_add(s, "force_mqtt",
                              json_object_new_boolean(p->force_mqtt));
-      json_object_object_add(s, "recovery",
+      json_build_object_add(s, "recovery",
                              json_object_new_boolean(p->recovery));
-      json_object_object_add(s, "timeout_ms",
+      json_build_object_add(s, "timeout_ms",
                              json_object_new_int(p->timeout_ms));
-      json_object_object_add(s, "recovery_seconds",
+      json_build_object_add(s, "recovery_seconds",
                              json_object_new_int(p->recovery_seconds));
-      json_object_array_add(a, s);
+      json_build_array_add(a, s);
     }
-    json_object_object_add(o, "peers", a);
+    json_build_object_add(o, "peers", a);
     a = json_object_new_array();
     for (unsigned i = 0; i < c->member_count; i++) {
       json_object *s = json_object_new_object();
       js(s, "mac", c->members[i].id);
       js(s, "ip", c->members[i].ip);
-      json_object_array_add(a, s);
+      json_build_array_add(a, s);
     }
-    json_object_object_add(o, "members", a);
+    json_build_object_add(o, "members", a);
   }
   if (o)
-    json_object_object_add(o, "revision", json_object_new_int(c->revision));
+    json_build_object_add(o, "revision", json_object_new_int(c->revision));
   return o;
 }
 static bool config_decode(feature_config_t *c, const char *d, json_object *o) {

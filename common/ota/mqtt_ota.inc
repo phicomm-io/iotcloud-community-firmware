@@ -1,6 +1,8 @@
 /* Included by each MQTT service. All state and publication stay on its MQTT thread.
  * Requires ota_launch(url), ota_snapshot(state,error,progress), ota_publish(leaf,json,retain).
  */
+#include "../json_build.h"
+
 static char ota_request[33], ota_seen[8][33], ota_owner[192], ota_last[384];
 static unsigned ota_seen_next;
 static bool ota_result_pending;
@@ -48,11 +50,12 @@ static int ota_service(const char *owner)
     char state[32],error[128],text[384];unsigned progress;
     ota_snapshot(state,error,&progress);
     json_object *o=json_object_new_object();if(!o)return -1;
-    json_object_object_add(o,"request_id",json_object_new_string(ota_request));
-    json_object_object_add(o,"state",json_object_new_string(state));
-    json_object_object_add(o,"error",json_object_new_string(error));
-    json_object_object_add(o,"progress",json_object_new_int(progress));
-    snprintf(text,sizeof(text),"%s",json_object_to_json_string(o));json_object_put(o);
+    json_build_object_add(o,"request_id",json_object_new_string(ota_request));
+    json_build_object_add(o,"state",json_object_new_string(state));
+    json_build_object_add(o,"error",json_object_new_string(error));
+    json_build_object_add(o,"progress",json_object_new_int(progress));
+    const char *wire=json_object_to_json_string(o);if(!wire){json_object_put(o);return -1;}
+    snprintf(text,sizeof(text),"%s",wire);json_object_put(o);
     int result=0;
     if(strcmp(text,ota_last)) {
         result=ota_publish("ota/state",text,true);

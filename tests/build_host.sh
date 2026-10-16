@@ -3,20 +3,43 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 output=${1:-build/account-host}
 mkdir -p "$output"
-sdk=build/m1-sdk/mico-os/libraries/protocols/mqtt
+python3 -m unittest discover -s tests -p test_apply_sdk_patch.py
+sdk_a1=${A1_SDK_DIR:-build/a1-sdk/mico-os}
+sdk_m1=${M1_SDK_DIR:-build/m1-sdk/mico-os}
+sdk_tc1=${TC1_SDK_DIR:-build/tc1-sdk/mico-os}
+for model in A1 M1 TC1; do
+    case "$model" in
+        A1) sdk="$sdk_a1" ;;
+        M1) sdk="$sdk_m1" ;;
+        TC1) sdk="$sdk_tc1" ;;
+    esac
+    python3 tools/apply_sdk_patch.py "$sdk" common/mqtt-publish-bounds.patch
+    mqtt="$sdk/libraries/protocols/mqtt"
+    cc -std=gnu99 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
+        -I"$mqtt/MQTTPacket" tests/test_mqtt_publish_bounds.c \
+        "$mqtt/MQTTPacket/MQTTDeserializePublish.c" \
+        "$mqtt/MQTTPacket/MQTTPacket.c" -o "$output/$model-mqtt-publish-bounds"
+    "$output/$model-mqtt-publish-bounds"
+done
+sdk="$sdk_m1/libraries/protocols/mqtt"
 cc -std=gnu99 -Wall -Wextra -Werror -Itests/host -I"$sdk" -I"$sdk/MQTTPacket" tests/test_m1_transport.c tests/host/network.c M1/mqtt_transport.c -o "$output/m1-transport"
 "$output/m1-transport"
 for model in m1 a1; do
-    sdk="build/$model-sdk/mico-os/libraries/protocols/mqtt"
+    if [[ "$model" == m1 ]]; then sdk="$sdk_m1/libraries/protocols/mqtt"; else sdk="$sdk_a1/libraries/protocols/mqtt"; fi
 cc -std=gnu99 -Wall -Wextra -Wno-unused-parameter -Wno-unused-but-set-variable -Wno-sign-compare -Wno-misleading-indentation -Wno-pointer-sign -Wno-implicit-fallthrough -Itests/host -I"$sdk" -I"$sdk/MQTTPacket" tests/test_m1_packet.c tests/host/network.c "$sdk/MQTTClient.c" "$sdk"/MQTTPacket/*.c -o "$output/$model-packet"
 "$output/$model-packet"
 done
-sdk=build/tc1-sdk/mico-os/libraries/protocols/mqtt
+sdk="$sdk_tc1/libraries/protocols/mqtt"
 cc -std=gnu99 -Wall -Wextra -Wno-unused-parameter -Wno-unused-but-set-variable -Wno-sign-compare -Wno-misleading-indentation -Wno-pointer-sign -Wno-implicit-fallthrough -Itests/host -I"$sdk" -I"$sdk/MQTTPacket" tests/test_tc1_packet.c tests/host/network.c "$sdk/MQTTClient.c" "$sdk"/MQTTPacket/*.c -o "$output/tc1-packet"
 "$output/tc1-packet"
 for model in M1 A1 TC1; do
-    sdk="build/${model,,}-sdk/mico-os/libraries/protocols/mqtt"
-    json="build/${model,,}-sdk/mico-os/libraries/utilities/json_c"
+    case "$model" in
+        A1) sdk_root="$sdk_a1" ;;
+        M1) sdk_root="$sdk_m1" ;;
+        TC1) sdk_root="$sdk_tc1" ;;
+    esac
+    sdk="$sdk_root/libraries/protocols/mqtt"
+    json="$sdk_root/libraries/utilities/json_c"
     transport=()
     if [[ "$model" == M1 ]]; then transport=(M1/mqtt_transport.c); fi
     mkdir -p "$output/json-$model"
