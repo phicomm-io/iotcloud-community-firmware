@@ -34,13 +34,13 @@ static inline bool a1_key_light_frame(a1_key_light_t *feedback, uint32_t now,
     return true;
 }
 
-/* One-based LED 10 is the start; LEDs 9/11 are symmetric.
- * Slots 25/26 flank the opposite axis. Tests found 31 independent positions;
+/* Array index 11 (one-based LED 12) is the start; LEDs 11/13 are symmetric.
+ * Slots 27/28 flank the opposite axis. Tests found 31 independent positions;
  * slot 32 overlapped slot 1, so do not drive it as another physical LED.
  * Keep 32-element buffers for the shared renderer; the spare is always off.
  */
 #define A1_RING_POSITIONS 31u
-#define A1_RING_ORIGIN 9u
+#define A1_RING_ORIGIN 11u
 static inline void a1_fan_frame(uint32_t colors[32], unsigned speed, uint32_t color)
 {
     if (speed > 100) speed = 100;
