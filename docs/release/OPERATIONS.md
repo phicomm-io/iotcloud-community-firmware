@@ -94,3 +94,9 @@ Pages 默认从本站 `/releases/` 下载历史固件，不依赖个人域名或
 `tools/release/archive_pages.py` 从现有发布目录复制文件，逐个核对固件大小与 SHA-256 后写入索引；不重建、不补签旧包。发布时保留上一次 Pages 归档，上游停机时继续使用已有归档。新版本发布仍需配置签名、存储及跨仓库发布凭据。
 
 固件内置 OTA 检查和 MQTT 远程集中管理服务仍使用各自的服务端；静态归档支持下载后本地上传升级。
+
+## 锁定前端 Release
+
+前端仓库 `phicomm-io/phicomm-community-frontend` 是设备 WebUI、Vue 平台和 demo 的唯一源码。先等待目标 commit 的 `frontend-<完整40位commit>` Release，通过测试后将其 `frontend.lock.json` 提交到固件仓库。锁文件包含仓库、完整 commit、Release、产物名和 SHA-256，禁止 latest 或分支回退。三款固件直接嵌入 `devices/<model>/index.html.gz`，生成的固件 manifest 记录锁文件；文档站只复制同一产物的 `demos/`。
+
+`python3 tools/frontend_release.py --archive /path/frontend.tar.gz` 可预填离线缓存，仍要求与锁文件一致。前端单元测试、设备表单测试和 demo 浏览器测试归前端仓库 CI；固件 CI 验证锁定页面的嵌入及 HTTP 行为。后端仓库有自己的锁文件，可独立选择兼容版本。
