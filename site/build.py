@@ -184,7 +184,9 @@ def main():
     # Every demo comes from the same pinned frontend release as firmware UI.
     from frontend_release import fetch
     bundle = fetch(ROOT / 'frontend.lock.json')
-    shutil.copytree(bundle / 'demos', out / 'demos', dirs_exist_ok=True)
+    if (out / 'demos').exists():
+        shutil.rmtree(out / 'demos')
+    shutil.copytree(bundle / 'demos', out / 'demos')
 
     shutil.copytree(ROOT / 'docs' / 'public' / 'assets', guides / 'assets', dirs_exist_ok=True)
     print(f'Wrote {len(PAGES) - len(missing)} guide pages to {out}')
