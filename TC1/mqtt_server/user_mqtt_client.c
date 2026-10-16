@@ -1,3 +1,4 @@
+#include "../../common/ota/mode.h"
 #include "ota_server/signed_adapter.h"
 #include "ota_server/ota_server.h"
 #include <ctype.h>
@@ -415,8 +416,9 @@ void MqttClientThread(mico_thread_arg_t arg) {
         uint32_t acl_check=mico_rtos_get_time(); rediscover=false;
         if(rc==MQTT_SUCCESS) { isconnect=true; tc1_mqtt_status=MQTT_READY; attempt=0; cleanup_pending=true; }
         while(rc==MQTT_SUCCESS && !mqtt_thread_should_exit && session_current()) {
-            if(account.mode && (uint32_t)(mico_rtos_get_time()-snapshot_at)>=5000){snapshot_at=mico_rtos_get_time();rc=service_mqtt_snapshot(service_sender,&account);if(rc!=MQTT_SUCCESS)break;}
+            if(!ota_job_active() && account.mode && (uint32_t)(mico_rtos_get_time()-snapshot_at)>=5000){snapshot_at=mico_rtos_get_time();rc=service_mqtt_snapshot(service_sender,&account);if(rc!=MQTT_SUCCESS)break;}
             rc=ota_service(account.base);if(rc!=MQTT_SUCCESS)break;
+            if(ota_job_active()){rc=service_mqtt_flush(service_sender);if(rc!=MQTT_SUCCESS)break;rc=MQTTYield(&c,100);mico_thread_msleep(50);continue;}
             if(rediscover) {
                 synchronous_send=true; synchronous_error=0; all_discovery(); all_states(); synchronous_send=false;
                 rc=synchronous_error; rediscover=false;
@@ -473,6 +475,7 @@ static void MessageArrived(MessageData *md) {
     if(tn==strlen(ota_topic) && !memcmp(tp,ota_topic,tn)) {
         ota_command(account.base,message->payload,message->payloadlen,message->retained);return;
     }
+    if(ota_job_active())return;
     p_recv_msg = (p_mqtt_recv_msg_t) calloc(1, sizeof(mqtt_recv_msg_t));
     require_action(p_recv_msg, exit, err = kNoMemoryErr);
 

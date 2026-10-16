@@ -206,6 +206,20 @@ class HttpTcpIntegration(unittest.TestCase):
                                clients_per_burst=[9, 8], controlled_503=controlled,
                                reset_failures=0, final=state)
 
+    def test_ota_listener_limit_restores(self):
+        # The host only verifies listener-owner configuration; SDK admission and
+        # TCP memory savings are exercised on physical devices separately.
+        for product in ('A1', 'M1'):
+            with self.subTest(product=product), self.server(product) as server:
+                normal = server.command('REPORT')['tcp_limit']
+                self.assertGreater(normal, 4)
+                server.command('OTA ON')
+                self.assert_response(server.request())  # Wake blocking accept.
+                server.wait(lambda s: s['tcp_limit'] == 4)
+                server.command('OTA OFF')
+                self.assert_response(server.request())
+                server.wait(lambda s: s['tcp_limit'] == normal)
+
     def test_queued_output_survives_nonblocking_close(self):
         for product in ('A1', 'M1'):
             for policy in (0, 1):

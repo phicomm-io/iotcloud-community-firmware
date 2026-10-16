@@ -149,3 +149,9 @@ bool feature_group_control(const char *kind, json_object *);
 void feature_clock_valid(void);
 void feature_clock_tick(void);
 #endif
+
+#ifdef PHICOMM_DEVICE_OTA
+bool feature_pause(unsigned timeout_ms);
+OSStatus feature_resume(void);
+bool feature_running(void);
+#endif

@@ -66,6 +66,7 @@ if [[ ! -x "$python2" ]]; then
         make install >> "$tools_dir/python-build.log" 2>&1
     )
 fi
+bash "$project_dir/tools/build_ota_tls.sh" M1 "$gcc_dir/bin/arm-none-eabi-"
 compiler_version="$($gcc_dir/bin/arm-none-eabi-gcc -dumpversion)"
 [[ "$compiler_version" == 5.4.1 ]] || { echo 'Expected ARM GCC 5.4.1' >&2; exit 1; }
 

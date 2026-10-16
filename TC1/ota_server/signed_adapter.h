@@ -9,6 +9,7 @@ bool tc1_ota_reserve(void);
 bool tc1_config_reserve(void);
 void tc1_config_release(void);
 void tc1_ota_abort(void);
+void tc1_ota_failure(const char *reason);
 bool tc1_ota_begin(uint32_t total, bool unsigned_rescue);
 bool tc1_ota_write(const uint8_t *, size_t);
 bool tc1_ota_finish(void);

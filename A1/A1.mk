@@ -9,3 +9,8 @@ GLOBAL_DEFINES += MAX_MESSAGE_HANDLERS=12 PHICOMM_APPLICATION_WATCHDOG=1
 
 # json-c parses decimal JSON numbers with sscanf("%lf").
 GLOBAL_LDFLAGS += -u _scanf_float
+
+$(NAME)_SOURCES += ota_fetch.c ota_mode.c
+$(NAME)_INCLUDES += generated/tls-include
+$(NAME)_PREBUILT_LIBRARY := generated/libbearssl.a
+GLOBAL_DEFINES += PHICOMM_DEVICE_OTA=1

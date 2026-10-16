@@ -230,3 +230,9 @@ void watchdog_status_json(struct json_object *out)
     json_object_object_add(out, "watchdog_state", json_object_new_string(bad ? "fault" : ready ? "healthy" : "starting"));
     json_object_object_add(out, "watchdog_fault", json_object_new_string(why));
 }
+
+void watchdog_binding_enable(bool on){
+    uint32_t mask=watchdog_lock();heartbeat_t *p=&points[WATCHDOG_BINDING];
+    p->active=on;p->updated=mico_rtos_get_time();p->deferred=false;p->delay=WATCHDOG_LOCAL_MS;
+    watchdog_unlock(mask);
+}

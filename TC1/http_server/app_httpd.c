@@ -48,6 +48,8 @@
 #include "mico.h"
 #include "httpd_priv.h"
 #include "app_httpd.h"
+#include "../../common/ota/mode.h"
+#include "../../common/ota/fetch.h"
 #include "user_gpio.h"
 #include "user_wifi.h"
 #include "user_power.h"
@@ -76,6 +78,7 @@ static int read_headers(httpd_request_t *req) {
     return kNoErr;
 }
 static int read_body(httpd_request_t *req, char *out, int capacity) {
+    if(ota_job_active() && strcmp(req->filename,"/api/v1/command"))return kGeneralErr;
     if (!out || capacity < 1) return kParamErr;
     out[0] = 0;
     int err = read_headers(req);
@@ -285,7 +288,8 @@ static int HttpGetTc1Status(httpd_request_t *req) {
     json_object *o=tc1_status_json();if(!o)return kNoMemoryErr;
     const char *s=json_object_to_json_string(o);int rc=response_json(req,HTTP_RES_200,s,strlen(s));json_object_put(o);return rc;
 }
-static int HttpV1Reply(httpd_request_t *req,json_object *o){if(!o)return kNoMemoryErr;const char *s=json_object_to_json_string(o);int rc=response_json(req,HTTP_RES_200,s,strlen(s));json_object_put(o);return rc;}
+int phicomm_http_client_limit(void){return ota_job_active()?2:5;}
+static int HttpV1Reply(httpd_request_t *req,json_object *o){if(ota_job_active())mico_thread_msleep(10);if(!o)return kNoMemoryErr;const char *s=json_object_to_json_string(o);int rc=response_json(req,HTTP_RES_200,s,strlen(s));json_object_put(o);return rc;}
 static int HttpV1Status(httpd_request_t *r){return HttpV1Reply(r,service_query("status.get"));}
 static int HttpV1Capabilities(httpd_request_t *r){return HttpV1Reply(r,service_query("capabilities.get"));}
 static int HttpV1Config(httpd_request_t *r){return HttpV1Reply(r,service_query("config.get"));}
@@ -293,7 +297,7 @@ static int HttpV1Schedules(httpd_request_t *r){return HttpV1Reply(r,service_quer
 static int HttpV1Logs(httpd_request_t *r){return HttpV1Reply(r,service_query("logs.get"));}
 static int HttpV1Command(httpd_request_t *r){
     int rc=read_headers(r);
-    if(rc || r->chunked || r->remaining_bytes<1 || r->remaining_bytes>8192)return kParamErr;
+    if(rc || r->chunked || r->remaining_bytes<1 || r->remaining_bytes>(ota_job_active()?1024:8192))return kParamErr;
     size_t capacity=(size_t)r->remaining_bytes+1;
     char *body=malloc(capacity);if(!body)return kNoMemoryErr;
     rc=read_body(r,body,capacity);json_object *request=rc?NULL:service_parse(body,strlen(body));free(body);
@@ -402,25 +406,28 @@ static int HttpUploadOTA(httpd_request_t *req, bool rescue) {
     char buffer[512];
     /* The SDK parses Content-Length lazily on the first body read. */
     int first = httpd_get_data2(req, buffer, sizeof(buffer));
-    if (first <= 0 || req->chunked || req->remaining_bytes < 0 || !tc1_ota_reserve())
+    if (first <= 0 || req->chunked || req->remaining_bytes < 0 )
         return kParamErr;
+    if(!ota_job_claim())return kGeneralErr;
+    if(!tc1_ota_reserve()){ota_job_release();return kGeneralErr;}
+    if(!ota_job_enter()){tc1_ota_abort();ota_job_release();return kGeneralErr;}
     if (!tc1_ota_begin(req->remaining_bytes + first, rescue)) {
-        tc1_ota_abort();
+        tc1_ota_abort();ota_job_release();
         return kParamErr;
     }
     if (!tc1_ota_write((uint8_t *)buffer, first)) {
-        tc1_ota_abort();
+        tc1_ota_abort();ota_job_release();
         return kConnectionErr;
     }
     while (req->remaining_bytes > 0) {
         int n = httpd_get_data2(req, buffer, sizeof(buffer));
         if (n <= 0 || !tc1_ota_write((uint8_t *)buffer, n)) {
-            tc1_ota_abort();
+            tc1_ota_abort();ota_job_release();
             return kConnectionErr;
         }
     }
     if (!tc1_ota_finish()) {
-        tc1_ota_abort();
+        tc1_ota_abort();ota_job_release();
         return kGeneralErr;
     }
 
@@ -930,7 +937,7 @@ static int OtaStart(httpd_request_t *req) {
     const char *url =
         json ? (v && json_object_is_type(v, json_type_string) ? json_object_get_string(v) : NULL)
              : buf;
-    bool valid = url && !strncmp(url, "http://", 7) &&
+    bool valid = url && ota_url_valid(url) &&
                  (!json || (size_t)json_object_get_string_len(v) == strlen(url));
     if (valid)
         err = ota_server_start((char *)url, NULL, NULL);

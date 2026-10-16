@@ -48,6 +48,7 @@ static int accept_calls, diag_reads, handled, client_closes, sleeps;
 static int queued[8], queued_count, popped;
 static void (*accept_entry)(mico_thread_arg_t), (*worker_entry)(mico_thread_arg_t);
 static jmp_buf stop;
+static bool ota_job_active(void) { return false; }
 static void mico_rtos_lock_mutex(int *lock) { assert(!*lock); *lock=1; }
 static void mico_rtos_unlock_mutex(int *lock) { assert(*lock); *lock=0; }
 static uint32_t mico_rtos_get_time(void) { return 100; }

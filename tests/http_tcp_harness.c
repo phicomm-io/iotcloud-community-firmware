@@ -49,7 +49,10 @@ static bool released;
 static __thread int role; /* listener/accept=1; request=2 */
 static pthread_t accept_thread, request_thread;
 static _Atomic bool request_created, stopping;
-static int listener_fd, tcp_limit, close_policy, host_send_buffer;
+static _Atomic bool ota_active;
+static bool ota_job_active(void) { return ota_active; }
+static int listener_fd, close_policy, host_send_buffer;
+static _Atomic int tcp_limit;
 static unsigned open_clients, accepted, closed, unread_closes, close_errors;
 static unsigned nonblocking_closes, send_failures, handled, active, queue_peak;
 static unsigned accepted_requests, rejected_requests, body_allocations;
@@ -230,10 +233,10 @@ static void report(void) {
            "\"nonblocking_closes\":%u,\"close_errors\":%u,\"send_failures\":%u,"
            "\"handled\":%u,\"active\":%u,\"queue_peak\":%u,\"enqueued\":%u,"
            "\"rejected\":%u,\"body_allocations\":%u,\"queued_output_closes\":%u,"
-           "\"maximum_queued_output\":%u}\n", accepted, closed, open_clients,
+           "\"maximum_queued_output\":%u,\"tcp_limit\":%d}\n", accepted, closed, open_clients,
            unread_closes, nonblocking_closes, close_errors, send_failures, handled, active,
            queue_peak, accepted_requests, rejected_requests, body_allocations,
-           queued_output_closes, maximum_queued_output);
+           queued_output_closes, maximum_queued_output, (int)tcp_limit);
     pthread_mutex_unlock(&ledger_lock); fflush(stdout);
 }
 int main(int argc, char **argv) {
@@ -250,6 +253,8 @@ int main(int argc, char **argv) {
             pthread_mutex_lock(&hold_lock); released = true; pthread_cond_broadcast(&hold_ready);
             pthread_mutex_unlock(&hold_lock); puts("{\"released\":true}"); fflush(stdout);
         } else if (!strcmp(command, "REPORT\n")) report();
+        else if (!strcmp(command, "OTA ON\n")) { ota_active = true; puts("{\"ota_active\":true}"); fflush(stdout); }
+        else if (!strcmp(command, "OTA OFF\n")) { ota_active = false; puts("{\"ota_active\":false}"); fflush(stdout); }
         else if (!strcmp(command, "STOP\n")) break;
         else assert(0);
     }

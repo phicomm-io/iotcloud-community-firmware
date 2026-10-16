@@ -10,6 +10,8 @@ python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-publish-bounds.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/mqtt-packet-deadline.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/http-connection-sdk.patch"
+python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/http-resource-sdk.patch"
+python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/http-client-limit-sdk.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/parameters-sdk.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/signed-ota-sdk.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/no-unsigned-sdk-write.patch"
@@ -42,6 +44,7 @@ if [[ ! -x "$python2" ]]; then
         make install >> "$tools_dir/python-build.log" 2>&1
     )
 fi
+bash "$project_dir/tools/build_ota_tls.sh" TC1 "$gcc_dir/bin/arm-none-eabi-"
 compiler_version="$($gcc_dir/bin/arm-none-eabi-gcc -dumpversion)"
 [[ "$compiler_version" == 5.4.1 ]] || { echo 'Expected ARM GCC 5.4.1' >&2; exit 1; }
 

@@ -1,5 +1,6 @@
 #include "service.h"
 #include "automation.h"
+#include "ota/mode.h"
 #include "mico.h"
 #include <ctype.h>
 #include <stdio.h>
@@ -9,7 +10,8 @@
 #include "generated/build_ota.h"
 #define LOG_COUNT 64
 /* Fixed vocabulary events never accept credentials, payloads or URLs. */
-typedef struct { uint32_t sequence, uptime, utc; char level[8], module[16], event[40]; } service_record_t;
+typedef struct { uint32_t sequence, uptime, utc; int32_t argument; uint8_t level,module,event,reserved; } service_record_t;
+#include "log_dictionary.h"
 static service_record_t records[LOG_COUNT];
 static uint32_t sequence;
 static mico_mutex_t service_lock, command_lock;
@@ -25,6 +27,7 @@ static void string(json_object *o,const char *k,const char *v) { json_build_obje
 void service_init(void) {
     if (ready) return;
     ready = mico_rtos_init_mutex(&service_lock)==kNoErr && mico_rtos_init_mutex(&command_lock)==kNoErr;
+    ota_job_init();
     service_event("info","system","boot");
 }
 static bool identifier(const char *s,size_t max) {
@@ -34,11 +37,11 @@ static bool identifier(const char *s,size_t max) {
 }
 void service_event(const char *level,const char *module,const char *event) {
     if (!ready || !identifier(level,8) || !identifier(module,16) || !identifier(event,40)) return;
+    service_record_t encoded={0};if(!log_encode(level,module,event,&encoded))return;
     mico_rtos_lock_mutex(&service_lock);
-    service_record_t *r=&records[sequence%LOG_COUNT]; memset(r,0,sizeof(*r));
+    service_record_t *r=&records[sequence%LOG_COUNT]; *r=encoded;
     r->sequence=++sequence; r->uptime=mico_rtos_get_time();
     time_t utc=time(NULL); if (utc>=1577836800) r->utc=(uint32_t)utc;
-    strcpy(r->level,level);strcpy(r->module,module);strcpy(r->event,event);
     mico_rtos_unlock_mutex(&service_lock);
 }
 json_object *service_parse(const void *data,size_t n) {
@@ -74,7 +77,8 @@ static json_object *logs(json_object *p,const char **code) {
         const service_record_t *r=&records[(i-1)%LOG_COUNT];json_object *v=json_object_new_object();
         json_build_object_add(v,"sequence",json_object_new_int(r->sequence));json_build_object_add(v,"uptime_ms",json_object_new_int(r->uptime));
         if(r->utc)json_build_object_add(v,"utc",json_object_new_int(r->utc));
-        string(v,"level",r->level);string(v,"module",r->module);string(v,"event",r->event);string(v,"message",r->event);
+        char text[40];const char *event=log_event_text(r,text);
+        string(v,"level",log_levels[r->level]);string(v,"module",log_modules[r->module]);string(v,"event",event);string(v,"message",event);
         json_build_array_add(a,v);next=i;limit--;
     }
     json_build_object_add(o,"next",json_object_new_int(next));json_build_object_add(o,"latest",json_object_new_int(sequence));
@@ -88,7 +92,14 @@ json_object *service_command(json_object *req) {
     if(rid){if(!json_object_is_type(rid,json_type_string) || json_object_get_string_len(rid)!=(int)strlen(json_object_get_string(rid)) || !identifier(json_object_get_string(rid),65))return result(NULL,code,NULL);id=json_object_get_string(rid);}
     if(!a || !json_object_is_type(a,json_type_string) || json_object_get_string_len(a)!=(int)strlen(json_object_get_string(a)) || !identifier(json_object_get_string(a),48) || !p || !json_object_is_type(p,json_type_object))return result(id,code,NULL);
     json_object_object_foreach(req,key,value){(void)value;if(strcmp(key,"action")&&strcmp(key,"params")&&strcmp(key,"request_id"))return result(id,code,NULL);}
-    action=json_object_get_string(a);bool query=strlen(action)>4 && !strcmp(action+strlen(action)-4,".get");
+    action=json_object_get_string(a);
+#ifdef PHICOMM_DEVICE_OTA
+    if(!strcmp(action,"ota.cancel"))return result(id,ota_job_cancel()?"accepted":"busy",NULL);
+    if(!strcmp(action,"ota.status.get") || (ota_job_active() && !strcmp(action,"status.get")))return result(id,"ok",ota_job_status());
+    if(ota_job_active() && !strcmp(action,"capabilities.get")){json_object *o=json_object_new_object(),*a=json_object_new_array();const char *names[]={"status.get","ota.sources.get","ota.check.get","ota.notes.get","ota.status.get","ota.cancel"};for(unsigned i=0;i<6;i++)json_build_array_add(a,json_object_new_string(names[i]));json_build_object_add(o,"actions",a);return result(id,"ok",o);}
+    if(ota_job_active() && strcmp(action,"ota.check.get") && strcmp(action,"ota.sources.get") && strcmp(action,"ota.notes.get"))return result(id,"busy",NULL);
+#endif
+    bool query=strlen(action)>4 && !strcmp(action+strlen(action)-4,".get");
     /* Receipt stores only control requests. Configuration requests can contain
        passwords and are never retained in the replay cache. */
     bool cache=id && !query && strncmp(action,"config.",7) && strncmp(action,"wifi.",5) && strncmp(action,"ota.",4);

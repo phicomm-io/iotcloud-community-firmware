@@ -42,3 +42,5 @@ __pycache__/
 
 # Retain local runtime and browser artifacts left by the platform extraction.
 /platform/
+
+/TC1/generated/

@@ -133,5 +133,10 @@ int main(void)
     assert(watchdog_start() == -1 && failed && !enabled); watchdog_poll(); assert(feeds == 0);
     boot(0,1); enabled = false; started = false; thread_error = -2;
     assert(watchdog_start() == -2 && failed && enabled); watchdog_poll(); assert(feeds == 0);
+    /* Recreating an intentionally paused binding worker after the boot
+     * grace period must preserve its first-heartbeat history. */
+    boot(0,0);ready();advance(90000,0);
+    watchdog_binding_enable(false);advance(20000,1u<<WATCHDOG_BINDING);
+    watchdog_binding_enable(true);watchdog_beat(WATCHDOG_BINDING);watchdog_poll();assert(!failed);
     puts("Watchdog: worker deadlines, latch, startup, wraparound, NTP/OTA bounds, Flash progress, reset reasons and daemon failures passed");
 }

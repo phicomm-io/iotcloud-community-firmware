@@ -1,3 +1,6 @@
+#ifdef PHICOMM_DEVICE_OTA
+#include "device_update.inc"
+#else
 /* Built-in discovery is absent unless a source was compiled in. Manual signed
  * URL/file OTA remains a separate recovery path. Included by service.c. */
 #if defined(PHICOMM_OTA_CN_BASE_URL) || defined(PHICOMM_OTA_GLOBAL_BASE_URL)
@@ -101,4 +104,6 @@ static json_object *update_command(const char *action,json_object *p,const char 
 #else
 static void update_capabilities(json_object *o){(void)o;}
 static json_object *update_command(const char *a,json_object *p,const char **code,bool *handled){(void)a;(void)p;(void)code;(void)handled;return NULL;}
+#endif
+
 #endif

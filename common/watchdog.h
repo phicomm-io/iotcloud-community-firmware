@@ -29,3 +29,5 @@ bool watchdog_ota_progress(void);
 void watchdog_ota_end(void);
 struct json_object;
 void watchdog_status_json(struct json_object *out);
+
+void watchdog_binding_enable(bool enabled);
