@@ -16,3 +16,5 @@ cc -std=gnu99 -Werror=implicit-function-declaration -include stdint.h -Itests/st
 "$output/mqtt-ota"
 
 python3 tests/ota/test_tc1_adapter.py
+
+python3 tests/ota/test_mico_adapter.py

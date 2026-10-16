@@ -1,3 +1,4 @@
+#include "../common/watchdog_flash.h"
 #include "m1.h"
 #include <ctype.h>
 #include "../common/ota/signed_ota.h"
@@ -41,6 +42,7 @@ static bool reserve(void)
 
 void m1_ota_abort(const char *why)
 {
+    watchdog_ota_end();
     m1_ota_status("failed", why, 0);
     mico_rtos_lock_mutex(&m1_lock); m1_state.ota_active = false; mico_rtos_unlock_mutex(&m1_lock);
 }
@@ -54,7 +56,7 @@ static bool prepare(uint32_t length)
     }
     expected = length; staged = 0; transport_crc = 0;
     m1_ota_status("receiving", NULL, 0);
-    if (MicoFlashErase(MICO_PARTITION_OTA_TEMP, 0, part->partition_length) != kNoErr) {
+    if (!watchdog_erase_ota(part->partition_length)) {
         m1_ota_abort("OTA flash erase failed"); return false;
     }
     return true;
@@ -63,12 +65,16 @@ static bool prepare(uint32_t length)
 static bool native_write(const uint8_t *data, size_t n)
 {
     if (!n || n > expected - staged) { m1_ota_abort("OTA body exceeds advertised length"); return false; }
-    uint32_t offset = staged;
-    if (MicoFlashWrite(MICO_PARTITION_OTA_TEMP, &offset, (uint8_t *)data, n) != kNoErr) {
-        m1_ota_abort("OTA flash write failed"); return false;
+    while (n) {
+        unsigned take = n > 512 ? 512 : n;
+        uint32_t offset = staged;
+        if (MicoFlashWrite(MICO_PARTITION_OTA_TEMP, &offset, (uint8_t *)data, take) != kNoErr ||
+            !watchdog_ota_progress()) {
+            m1_ota_abort("OTA flash write failed"); return false;
+        }
+        transport_crc = m1_crc16(transport_crc, data, take);
+        staged += take; data += take; n -= take;
     }
-    transport_crc = m1_crc16(transport_crc, data, n);
-    staged += n;
     m1_ota_status("receiving", NULL, (unsigned)((uint64_t)staged * 100 / expected));
     return true;
 }
@@ -78,7 +84,7 @@ static bool signed_erase(void *ctx)
 static bool signed_write(void *ctx, uint32_t offset, const uint8_t *data, size_t n)
 { (void)ctx; if (offset != staged) return false; return native_write(data,n); }
 static bool signed_read(void *ctx, uint32_t offset, uint8_t *data, size_t n)
-{ (void)ctx; return MicoFlashRead(MICO_PARTITION_OTA_TEMP,&offset,data,n)==kNoErr; }
+{ (void)ctx; return watchdog_read_ota(offset,data,n); }
 bool m1_ota_begin(uint32_t length)
 {
     if (!reserve()) return false;
@@ -94,10 +100,14 @@ bool m1_ota_begin_unsigned(uint32_t length)
 {
     if (!reserve()) return false;
     unsigned_session=true; wire_expected=length; wire_received=0;
-    return prepare(length);
+    if (!watchdog_ota_begin()) { m1_ota_abort("Watchdog unavailable"); return false; }
+    bool ok = prepare(length);
+    watchdog_ota_end();
+    return ok;
 }
 bool m1_ota_write(const uint8_t *data, size_t n)
 {
+    if (!watchdog_ota_begin()) { m1_ota_abort("Watchdog unavailable"); return false; }
     if (n>wire_expected-wire_received ||
         !(unsigned_session ? native_write(data,n) : signed_ota_write(&signed_session,data,n))) {
         m1_ota_abort("Invalid signature, package or Flash write"); return false;
@@ -112,12 +122,14 @@ bool m1_ota_write(const uint8_t *data, size_t n)
         memcpy(m1_state.ota_version,h+64,32);
         mico_rtos_unlock_mutex(&m1_lock);
     }
-    wire_received+=n; return true;
+    wire_received+=n;
+    watchdog_ota_end();
+    return true;
 }
 static bool read_at(uint32_t offset, void *data, unsigned length)
 {
     if (offset > expected || length > expected - offset) return false;
-    return MicoFlashRead(MICO_PARTITION_OTA_TEMP, &offset, data, length) == kNoErr;
+    return watchdog_read_ota(offset,data,length);
 }
 
 static bool md5_range(uint32_t start, uint32_t end, uint8_t digest[16])
@@ -134,6 +146,7 @@ static bool md5_range(uint32_t start, uint32_t end, uint8_t digest[16])
 
 bool m1_ota_finish(void)
 {
+    if (!watchdog_ota_begin()) { m1_ota_abort("Watchdog unavailable"); return false; }
     const char *error = NULL;
     if (!unsigned_session && !signed_ota_finish(&signed_session)) {
         m1_ota_abort("Signed image readback SHA-256 mismatch or incomplete package"); return false;
@@ -177,6 +190,7 @@ bool m1_ota_finish(void)
     strcpy(m1_state.ota_state, "ready"); m1_state.ota_active = false;
     m1_state.reboot_pending = true; m1_state.reboot_at = mico_rtos_get_time() + 1500;
     mico_rtos_unlock_mutex(&m1_lock);
+    watchdog_ota_end();
     return true;
 fail:
     m1_ota_abort(error); return false;

@@ -1,3 +1,4 @@
+#include "watchdog.h"
 #include "automation.h"
 #include "phicomm_features.h"
 #include "sntp.h"
@@ -1367,6 +1368,7 @@ static void feature_worker(mico_thread_arg_t arg) {
       }
     } else
       mico_thread_msleep(100);
+    watchdog_beat(WATCHDOG_BINDING);
   }
 }
 void feature_clock_tick(void) {

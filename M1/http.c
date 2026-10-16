@@ -1,3 +1,4 @@
+#include "../common/watchdog.h"
 #include "../common/service.h"
 #include "m1.h"
 #include "../common/ota/signed_ota.h"
@@ -255,6 +256,7 @@ json_object *m1_status_json(void)
     integer(o, "http_tcp_connections_get_rc", diag.connections_get_rc);
     if (diag.connections_get_rc == 0) json_build_object_add(o, "http_tcp_connections",json_object_new_int(diag.connections));
     else json_object_object_add(o, "http_tcp_connections", NULL);
+    watchdog_status_json(o);
     str(o, "version", M1_VERSION); str(o, "device_id", m1_id); str(o, "name", cfg.name);
     json_bool(o, "wifi_trial_active", s.wifi_trial_active);
     str(o, "wifi_trial_status", s.wifi_trial_status);

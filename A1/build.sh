@@ -31,6 +31,7 @@ if ! git -C "$sdk_dir" apply --reverse --check "$app_dir/features-sdk.patch" 2>/
     git -C "$sdk_dir" apply "$app_dir/features-sdk.patch"
 fi
 
+python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/watchdog-mico36.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-mico36.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-publish-bounds.patch"
 # Complete started MQTT packets even when the short yield deadline expires.

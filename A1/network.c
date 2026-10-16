@@ -1,3 +1,4 @@
+#include "../common/watchdog.h"
 #include "a1.h"
 
 static void scan_done(ScanResult *list, void *arg)
@@ -144,7 +145,11 @@ static void network_worker(mico_thread_arg_t arg)
         mico_rtos_unlock_mutex(&a1_lock);
         if (reboot) MicoSystemReboot();
         a1_config_flush(false);
-        if (ready && !ota_active && !reboot_pending) feature_clock_tick();
+        watchdog_beat(WATCHDOG_NETWORK);
+        if (ready && !ota_active && !reboot_pending && watchdog_network_begin()) {
+            feature_clock_tick();
+            watchdog_network_end();
+        }
         mico_thread_msleep(500);
     }
 }

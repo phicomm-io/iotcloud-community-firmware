@@ -72,3 +72,9 @@ SDK 基础 Wi-Fi 扫描未提供安全类型时，网页不会推断为空密码
 同一设备相同参数的在途查询由管理平台合并；状态轮询不并发叠加。一次查询失败保留上次状态，不立即判定设备离线。首页仅在连续三次失败且距最后成功至少 30 秒后提示暂时无法更新，恢复成功即清除提示。传感器是否有效仍遵循设备报告，不用放宽通信提示代替传感器有效性判断。
 
 回归：`node --test tests/test_web_control.cjs` 覆盖即时反馈、旧状态覆盖、拒绝回滚、未生效回滚和通信恢复。
+
+## A1 / M1 看门狗诊断
+
+`status.get` 新增 `reset_reason`（`watchdog` / `lockup` / `software` / `power_on` / `unknown`）、`reset_reason_raw`（SDK 原始位掩码）、`watchdog_enabled`、`watchdog_state`（`starting` / `healthy` / `fault`）、`watchdog_fault`（空字符串或故障槽名）。复位原因启动时读取一次，本次运行保持不变。
+
+诊断页按上述字段显示“看门狗与复位原因”。上次是 watchdog 复位时显示“上次因看门狗超时重启”；当前故障槽仅在等待硬件复位的短暂窗口内可读，不写 Flash。启动日志事件为 `{module:"system",event:"watchdog"}`，日志页补充对应说明。启动时重建日志，下一次上电会重新读取原因；此功能不提供持久故障历史。TC1 不发布上述字段。

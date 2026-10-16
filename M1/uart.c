@@ -1,3 +1,4 @@
+#include "../common/watchdog.h"
 #include "m1.h"
 #include "indicator.h"
 #include <time.h>
@@ -72,8 +73,10 @@ static void uart_worker(mico_thread_arg_t arg)
     ring_buffer_init(&ring, storage, sizeof(storage));
     mico_uart_config_t config = { 115200, DATA_WIDTH_8BIT, NO_PARITY,
                                   STOP_BITS_1, FLOW_CONTROL_DISABLED };
-    if (MicoUartInitialize(MICO_UART_1, &config, &ring) != kNoErr) {
-        uart_error(); queue_ready = false; mico_rtos_delete_thread(NULL); return;
+    while (MicoUartInitialize(MICO_UART_1, &config, &ring) != kNoErr) {
+        uart_error(); queue_ready = false;
+        watchdog_beat(WATCHDOG_HARDWARE);
+        mico_thread_msleep(3000);
     }
     m1_config_t cfg;
     m1_config_get(&cfg);
@@ -155,6 +158,7 @@ static void uart_worker(mico_thread_arg_t arg)
             old_level = level; old_wifi = wifi_connected; old_error = error_on;
         }
         old_mode = mode;
+        watchdog_beat(WATCHDOG_HARDWARE);
         mico_thread_msleep(10);
     }
 }

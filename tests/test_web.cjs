@@ -21,10 +21,11 @@ const ACTIONS={M1:['schedules.get','schedules.put','schedules.delete','schedules
   sensor_received:true,sensor_valid:true,age_ms:1000,temperature:25,humidity:50,formaldehyde:0.02,pm25:20,time_synced:true,timezone_minutes:480,ntp_host:'pool.ntp.org',ntp_status:'synced',ntp_synced:true,
   ota_progress:0,ota_state:'idle',socket_names:['one','two','three','four','five','six'],socket_states:[1,1,1,1,1,1],report_seconds:2,powerCoefficientX100:1710,free_memory:30000};
  const buttonItems=Array.from({length:30},(_,i)=>({key:0,clicks:i+1,seconds:0,action:model==='A1'?'fan.set':'outlet.set',params:{toggle:true}}));
+ if(model!=='TC1')Object.assign(state,{reset_reason:'watchdog',reset_reason_raw:32,watchdog_enabled:true,watchdog_state:'healthy',watchdog_fault:''});
  const actions=['status.get','capabilities.get','config.get','config.set','logs.get','ota.start',...ACTIONS[model]];
  const fixtures={'status.get':state,'capabilities.get':{model:model.toLowerCase(),actions},
   'schedules.get':{items:[],capacity:model==='TC1'?128:8,count:0,next:8},'buttons.get':{items:[]},'time.get':{timezone_minutes:480},
-  'night.get':{windows:[],revision:1},'logs.get':{records:[{sequence:1,event:'boot'}],next:1,latest:1},
+  'night.get':{windows:[],revision:1},'logs.get':{records:[{sequence:1,event:'boot'},...(model==='TC1'?[]:[{sequence:2,module:'system',event:'watchdog'}])],next:model==='TC1'?1:2,latest:model==='TC1'?1:2},
   'power.get':{power_watts:0,energy_kwh:0,powers:[0]},'binding.get':{response_ids:[],peers:[],members:[],group:'',revision:1},
   'binding.status.get':{average:{valid:true,sample_count:2,configured_count:2,temperature:25,humidity:50,pm25:20,formaldehyde:0.1},peers:[{mac:'112233445566',fresh:true,transport:'mqtt'}],members:[],linkage_status:'disabled',clock_valid:true,available:0,automatic_on:false,automatic_speed:0},
   'linkage.get':{enabled:0,mode:0,metrics:1,on_metrics:1,off_metrics:1,statistic:0,on_enabled:0,off_enabled:0,on_all:0,off_all:1,fixed_speed:60,min_speed:20,max_speed:100,debounce_seconds:15,min_switch_seconds:60,on_pm:50,off_pm:35,on_hcho:.1,off_hcho:.08,target_pm:35,target_hcho:.08,low_pm:35,high_pm:150,low_hcho:.08,high_hcho:.3,kp:20,ki:.02,kd:0,revision:1},
@@ -90,6 +91,12 @@ const ACTIONS={M1:['schedules.get','schedules.put','schedules.delete','schedules
   assert.deepEqual([...d.querySelectorAll('[data-settings-page]')].filter(x=>!x.hidden).map(x=>x.dataset.settingsPage),[page],model+' shows the wrong page for '+page);
  }
  assert.equal(d.querySelector('#mqttUser').value,'unsaved','navigation must not discard unsaved input');
+ if(model!=='TC1'){
+  w.location.hash='settings/diagnostics';w.dispatchEvent(new w.Event('hashchange'));await w.UI.reload();await flush();
+  const text=d.querySelector('[data-settings-page="diagnostics"]').textContent;
+  assert(text.includes('watchdog timeout')||text.includes('看门狗超时'), 'watchdog reset is explained in diagnostics');
+  assert(text.includes('32'),'raw reset reason is visible');
+ }else assert(!d.querySelector('[data-key="diag.g_watchdog"]'),'TC1 does not advertise the A1/M1 watchdog');
  // Device name round-trips through config.set.
  d.querySelector('#deviceName').value='new name';
  d.querySelector('#nameForm').dispatchEvent(new w.Event('submit',{cancelable:true}));await flush();
@@ -112,6 +119,7 @@ const ACTIONS={M1:['schedules.get','schedules.put','schedules.delete','schedules
  w.location.hash='settings/logs';w.dispatchEvent(new w.Event('hashchange'));await flush();
  const log=d.querySelector('[data-settings-page="logs"] button');log.click();await flush();
  assert(d.querySelector('[data-settings-page="logs"] pre').textContent.includes('boot'));
+ if(model!=='TC1')assert(/watchdog timeout|看门狗超时/.test(d.querySelector('[data-settings-page="logs"] pre').textContent));
  if(model==='TC1'){
   w.location.hash='#home';w.dispatchEvent(new w.Event('hashchange'));await flush();
   const before=calls.filter(r=>r.action==='outlet.set').length;

@@ -1,0 +1,13 @@
+diff --git a/board/MK3080B/platform_config.h b/board/MK3080B/platform_config.h
+--- a/board/MK3080B/platform_config.h
++++ b/board/MK3080B/platform_config.h
+@@ -51,7 +51,9 @@
+ #define MICO_DEFAULT_TICK_RATE_HZ                   (1000) 
+ /************************************************************************
+  * Uncomment to disable watchdog. For debugging only */
++#ifndef PHICOMM_APPLICATION_WATCHDOG
+ #define MICO_DISABLE_WATCHDOG
++#endif
+ 
+ /************************************************************************
+  * Uncomment to disable standard IO, i.e. printf(), etc. */

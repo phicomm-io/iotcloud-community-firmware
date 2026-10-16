@@ -1,3 +1,4 @@
+#include "../common/watchdog.h"
 #include "m1.h"
 #include "sntp.h"
 #include <time.h>
@@ -195,8 +196,11 @@ static void network_worker(mico_thread_arg_t arg)
         bool reboot = m1_state.reboot_pending && (int32_t)(now - m1_state.reboot_at) >= 0;
         mico_rtos_unlock_mutex(&m1_lock);
         if (reboot) MicoSystemReboot();
-        if (ready && !upgrading && (!clock_attempted || (int32_t)(now - next_clock) >= 0)) {
+        watchdog_beat(WATCHDOG_NETWORK);
+        if (ready && !upgrading && (!clock_attempted || (int32_t)(now - next_clock) >= 0) &&
+            watchdog_network_begin()) {
             bool synced = clock_sync(current.timezone_minutes, clock_host);
+            watchdog_network_end();
             clock_attempted = true;
             /* Use monotonic ticks, so correcting wall time cannot move the deadline. */
             next_clock = mico_rtos_get_time() + (synced ? CLOCK_SYNC_INTERVAL_MS : CLOCK_RETRY_INTERVAL_MS);
