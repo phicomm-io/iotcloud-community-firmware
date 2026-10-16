@@ -49,9 +49,10 @@ def main(port):
                                   stdin=subprocess.PIPE, stdout=subprocess.DEVNULL)
         prefix = 'homeassistant/'
         def configs():
+            latest = {t: p for t, p, r in records if t.startswith(prefix)
+                      and '/'+key+'/' in t and '_filter_' in t and t.endswith('/config')}
             return {t.rsplit('_filter_', 1)[-1].split('/')[0]: json.loads(p)
-                    for t, p, r in records if t.startswith(prefix) and '/'+key+'/' in t
-                    and '_filter_' in t and t.endswith('/config') and p}
+                    for t, p in latest.items() if p}
         wait(lambda: len(configs()) == 5 and bool(states(0)))
         by = configs()
         assert set(by) == {'remaining', 'used', 'replacement', 'lifetime', 'reset'}
@@ -107,6 +108,44 @@ def main(port):
         wait(lambda: len([t for t, p, r in records[start:] if '_filter_' in t
                           and t.startswith(prefix) and '/'+key+'/' in t and p]) == 5)
         print('PASS A1 five HA discovery templates, control commands, reset, retained replay and HA birth', flush=True)
+
+        original_ids = {k: v['unique_id'] for k, v in by.items()}
+        group = '客厅净化组'
+        parent = f'v2_{key}_group_{("g_" + group.encode().hex()).encode().hex()}'
+        publish(base+'/binding/set', json.dumps({'group': group}))
+        wait(lambda: len(configs()) == 5 and all(
+            v['device']['identifiers'] == [parent] for v in configs().values()))
+        controls = {}
+        def virtual_configs():
+            for t, p, r in records:
+                if t.startswith(prefix) and '_bound_' in t:
+                    if p: controls[t] = json.loads(p)
+                    else: controls.pop(t, None)
+            return controls
+        wait(lambda: len(virtual_configs()) == 8)
+        names = {o['name'] for o in controls.values()}
+        assert names == {'空气净化器', '灯环', '童锁', '灯环常亮', '温度', '湿度', 'PM2.5', '甲醛'}
+        for obj in controls.values():
+            assert obj['device']['identifiers'] == [parent]
+            assert obj['device']['model'] == 'A1 Air Purifier (EMW3080B)'
+            if obj['name'] == '空气净化器': assert obj['icon'] == 'mdi:air-purifier'
+        for k, obj in configs().items():
+            assert obj['unique_id'] == original_ids[k]
+            assert obj['name'].startswith('Runtime simulator ')
+            assert obj['device']['name'] == group
+            assert obj['availability_topic'] == base+'/availability'
+            if k != 'reset': assert obj['state_topic'] == base+'/state'
+            if k in ('lifetime', 'reset'): assert obj['command_topic'] == base+'/command'
+        start = len(records)
+        publish('homeassistant/status', 'online')
+        wait(lambda: len([t for t, p, r in records[start:] if '_filter_' in t
+                          and t.startswith(prefix) and '/'+key+'/' in t and p]) == 5)
+        assert len(configs()) == 5  # bound HA birth must not delete filter entities
+        publish(base+'/binding/set', json.dumps({'group': '', 'members': [], 'peers': []}))
+        wait(lambda: len(configs()) == 5 and all(v['device']['identifiers'] ==
+            [key+'_a1_aabbccddeeff'] for v in configs().values()))
+        assert {k: v['unique_id'] for k, v in configs().items()} == original_ids
+        print('PASS bound/unbound filters retain identity, share the purifier parent and keep per-A1 commands', flush=True)
     finally:
         if worker:
             worker.terminate()
