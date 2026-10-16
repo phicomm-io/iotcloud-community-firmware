@@ -1,6 +1,6 @@
-# 图片与刷机工具
+# 资源来源
 
-刷机教程中的资源保存于本 Wiki 的 `assets/` 目录。[SHA256SUMS](assets/SHA256SUMS) 包含图片与安装包校验和。
+刷机教程中的图片与工具保存在本站 `guides/assets/` 目录。[SHA256SUMS](assets/SHA256SUMS) 包含图片与安装包校验和。
 
 | 文件 | 来源 |
 | --- | --- |
@@ -9,6 +9,6 @@
 | `images/flashplus-config.png` | [EMW3031 / FlashPlus 工具说明 PDF](https://github.com/IoTDevice/phicomm_tc1_a1/blob/master/工具和文档/EMW3031说明文档_flashplus.pdf)，第 2 页配置区域裁剪；仅用于识别芯片与 Flash 配置，擦除及校验选项以本项目教程为准 |
 | `tools/FlashPlus_v1.0.10.msi` | Marvell FlashPlus v1.0.10，[IoTDevice 工具镜像](https://github.com/IoTDevice/phicomm_tc1_a1/blob/master/工具和文档/FlashPlus_v1.0.10.msi)，安装包保持原样 |
 
-图片与第三方工具的版权属于原作者及供应商，保存副本不改变原有授权；FlashPlus 不属于本项目固件源码。EMW3031 数据手册明确限制配图转载，因此教程仅链接原文。
+图片与第三方工具的版权属于原作者及供应商，保存副本不改变原有授权；FlashPlus 不属于本项目固件源码。**EMW3031 数据手册明确限制配图转载，因此教程仅链接原文。**
 
-构建所需的工具链与 SDK 见[构建依赖](构建依赖)。
+构建所需的工具链与 SDK 见[构建依赖](build-deps)。

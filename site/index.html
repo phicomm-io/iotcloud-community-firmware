@@ -1,7 +1,86 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="斐讯 TC1、M1、A1 社区固件：本地控制、设备联动、签名更新与开放管理平台。"><title>Phicomm · 社区固件</title><link rel="stylesheet" href="style.css"></head><body>
-<header><a class="brand" href="#">PHICOMM <span>COMMUNITY</span></a><nav><a href="#devices">设备</a><a href="#design">功能设计</a><a href="#demos">在线演示</a><a href="#releases">下载与归档</a></nav></header>
-<main><section class="hero"><p class="eyebrow">熟悉的硬件，新的可能</p><h1>让好硬件<br><span>继续好用。</span></h1><p class="lead">为 TC1 智能排插、M1 空气检测仪和 A1 空气净化器打造的社区固件。让本地控制、设备联动和日常管理回到你手中。</p><div class="actions"><a class="button" href="#releases">下载固件 ↗</a><a class="button secondary" href="#demos">体验 WebUI →</a></div><p class="muted">无需厂商云服务 · 本地 WebUI · MQTT / Home Assistant</p></section>
-<section id="devices"><p class="eyebrow">三款设备，一个操作习惯</p><h2>从插座，到空气。</h2><div class="grid products"><article><div class="illustration tc1" aria-label="TC1 排插示意图"><i></i><i></i><i></i><i></i><i></i><i></i></div><p class="eyebrow">01 / POWER</p><h3>TC1 智能排插</h3><p>独立插座控制、电量监测、定时任务与童锁，把日常用电安排得更清楚。</p></article><article><div class="illustration m1" aria-label="M1 检测仪示意图"><b>12</b><span>PM2.5</span></div><p class="eyebrow">02 / SENSE</p><h3>M1 空气检测仪</h3><p>查看 PM2.5、甲醛、温湿度与平均读数，按需调节屏幕亮度，为 A1 提供联动读数。</p></article><article><div class="illustration a1" aria-label="A1 净化器示意图"><i></i></div><p class="eyebrow">03 / BREATHE</p><h3>A1 空气净化器</h3><p>管理风速、自动联动、灯环与夜间模式，让净化器适应你的作息。</p></article></div><p class="muted">配图为产品外形示意，不代表硬件改造。</p></section>
-<section id="design"><p class="eyebrow">不止于重新联网</p><h2>让每一次交互，都有回应。</h2><div class="grid features"><article><span>01</span><h3>会表达的灯光</h3><p>A1 灯环呈现空气状态、连接进度和操作反馈；M1 与 TC1 使用各自指示方式，区分常态与异常。</p></article><article><span>02</span><h3>A1 × M1 联动</h3><p>M1 负责检测与应答，A1 按绑定关系获取读数并执行规则。联动配置集中在净化器端。</p></article><article><span>03</span><h3>开放的管理平台</h3><p>批量管理设备，兼容 Legacy 与 TMCP 协议。<a href="https://github.com/FUjr/phicomm-community-mqtt">查看管理平台源码 ↗</a></p></article><article><span>04</span><h3>统一的语言与设计</h3><p>三个固件 WebUI 均支持中文与英文，采用一致的导航、控件和反馈方式。管理平台延续同一套操作习惯。</p></article><article><span>05</span><h3>为嵌入式设备而做</h3><p>紧凑页面、按需查询与共享命令接口，在有限资源上保持清晰直接的操作体验。</p></article><article><span>06</span><h3>可验证的更新</h3><p>固件下载后验证签名与镜像，国内外双来源可选；本地文件升级仍然保留。</p></article></div></section>
-<section id="demos"><p class="eyebrow">先体验，再安装</p><h2>在浏览器里，认识你的设备。</h2><p>演示使用模拟数据，操作不会连接或控制真实设备。刷新即可重置。</p><div class="demo-links"><a href="demos/tc1/">TC1 排插 <span>进入演示 ↗</span></a><a href="demos/m1/">M1 检测仪 <span>进入演示 ↗</span></a><a href="demos/a1/">A1 净化器 <span>进入演示 ↗</span></a><a href="demos/platform/">管理平台 <span>进入演示 ↗</span></a></div></section>
-<section id="releases"><p class="eyebrow">发布与下载</p><h2>最新版，以及每一个历史版本。</h2><div class="release-toolbar"><label>下载来源 <select id="source"><option value="https://phicomm.fjrcn.com">境外服务器</option><option value="https://phicomm.fjrcn.cn">境内镜像</option></select></label><a href="guides/使用说明.html">使用说明 ↗</a><a href="guides/刷机.html">刷机说明 ↗</a></div><p id="release-status" role="status">正在读取版本归档…</p><div id="latest"></div><h3 class="archive-heading">历史版本归档</h3><p class="muted">旧版本仅供查阅和恢复；升级前请确认型号及该版本支持的固件格式。</p><div id="archive"></div></section></main><footer><span>PHICOMM COMMUNITY</span><p>社区维护项目，与原厂无隶属关系。固件、指南及发布说明以对应版本为准。</p><a href="https://github.com/FUjr/phicomm-community-mqtt">管理平台开源仓库 ↗</a></footer><script src="releases.js"></script></body></html>
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="斐讯 TC1、M1、A1 社区固件：本地网页控制、MQTT / Home Assistant 接入、签名 OTA 更新与开放管理平台。"><title>Phicomm 社区固件 · 下载、刷机与使用文档</title><link rel="stylesheet" href="style.css"><script src="theme.js"></script></head><body>
+<a class="skip" href="#main">跳到主要内容</a>
+<header class="site-header"><div class="wrap">
+<a class="brand" href="./"><span class="mark" aria-hidden="true">斐</span><span class="word"><b>PHICOMM COMMUNITY</b><span>社区固件</span></span></a>
+<nav class="site-nav" aria-label="主导航"><a href="#devices">设备</a><a href="#features">功能</a><a href="#demos">在线演示</a><a href="#docs">文档</a><a href="#releases">下载</a></nav>
+<div class="prefs"><label class="sr" for="themePick">主题</label><select id="themePick"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></div>
+</div></header>
+
+<main id="main">
+<section class="hero"><div class="wrap">
+<div>
+<p class="eyebrow">熟悉的硬件，新的可能</p>
+<h1>让好硬件<br><em>继续好用。</em></h1>
+<p class="lead">为 TC1 智能排插、M1 空气检测仪和 A1 空气净化器维护的社区固件。本地网页控制、MQTT 与 Home Assistant 接入，固件免费下载。</p>
+<div class="actions"><a class="btn primary" href="#releases">下载固件</a><a class="btn" href="guides/quick-start.html">第一次使用</a></div>
+<div class="trust"><span class="chip"><span class="dot ok"></span>无需厂商云服务</span><span class="chip">本地 WebUI</span><span class="chip">MQTT / Home Assistant</span><span class="chip">签名 OTA</span></div>
+</div>
+<div class="rack" aria-hidden="true">
+<div class="rack-card"><div class="rack-head"><span class="dot ok"></span>TC1 智能排插<b>在线</b></div><div class="rack-body"><span class="stat">38.4<small>W</small></span><span class="sockets"><i class="on"></i><i class="on"></i><i></i><i class="on"></i><i></i><i></i></span></div></div>
+<div class="rack-card"><div class="rack-head"><span class="dot ok"></span>M1 空气检测仪<b>12 μg/m³</b></div><div class="rack-body"><span class="ring-mini"><span>优</span></span><span class="bars"><i></i><i></i><i></i><i></i></span><span class="muted small">PM2.5 · 甲醛 · 温湿度</span></div></div>
+<div class="rack-card"><div class="rack-head"><span class="dot ok"></span>A1 空气净化器<b>自动</b></div><div class="rack-body"><span class="stat">2<small>档</small></span><span class="muted small">已按 M1 读数联动</span></div></div>
+</div>
+</div></section>
+
+<section class="section" id="devices"><div class="wrap">
+<p class="eyebrow">三款设备，一个操作习惯</p>
+<h2>你的设备是哪一台？</h2>
+<p class="lead">三款固件共用同一套界面语言：相同的导航、控件与反馈方式。先确认型号，再按对应文档安装。</p>
+<div class="grid-3">
+<article class="card"><div class="art"><span class="strip"><i class="on"></i><i class="on"></i><i></i><i></i><i></i><i></i></span></div><p class="num">01 / POWER</p><h3>TC1 智能排插</h3><p>六路独立开关与总开关、功率与电量统计、定时任务、童锁与按键映射。</p><p class="small" style="margin-top:12px"><a href="guides/tc1-guide.html">功能与操作</a> · <a href="guides/tc1-flash.html">刷机</a></p></article>
+<article class="card"><div class="art"><span class="panel"><b>12</b><span>PM2.5</span></span></div><p class="num">02 / SENSE</p><h3>M1 空气检测仪</h3><p>PM2.5、甲醛、温湿度读数与平均读数，屏幕亮度设置，为 A1 提供联动数据。</p><p class="small" style="margin-top:12px"><a href="guides/m1-guide.html">功能与操作</a> · <a href="guides/m1-flash.html">刷机</a></p></article>
+<article class="card"><div class="art"><span class="tower"><i></i></span></div><p class="num">03 / BREATHE</p><h3>A1 空气净化器</h3><p>风机调速、灯环与空气状态、童锁、夜间模式，以及与 M1 的自动联动。</p><p class="small" style="margin-top:12px"><a href="guides/a1-guide.html">功能与操作</a> · <a href="guides/a1-flash.html">刷机</a></p></article>
+</div>
+<p class="muted small" style="margin-top:20px">注：<b>TC1 的 A1 硬件版本</b>与 <b>A1 空气净化器</b>是两个不同产品。TC1 A2 硬件不受支持。</p>
+</div></section>
+
+<section class="section" id="features"><div class="wrap">
+<p class="eyebrow">不止于重新联网</p>
+<h2>让每一次交互，都有回应。</h2>
+<div class="features">
+<article><p class="num">01</p><h3>会表达的灯光</h3><p>A1 灯环呈现空气状态、连接进度与操作反馈；M1 与 TC1 用各自指示方式区分常态与异常。连接异常提示优先于业务灯光。</p></article>
+<article><p class="num">02</p><h3>A1 × M1 联动</h3><p>M1 只负责检测与应答，A1 按绑定关系获取读数并执行规则。联动配置集中在净化器端，M1 不主动控制设备。</p></article>
+<article><p class="num">03</p><h3>统一的设计语言</h3><p>三款固件 WebUI 共用颜色、排版、表单与导航组件，支持中文、英文与明暗主题。MQTT 远程集中管理平台延续同一套操作习惯。</p></article>
+<article><p class="num">04</p><h3>MQTT 远程集中管理平台</h3><p>账号登录、设备列表与批量管理，兼容 Legacy 与 TMCP 协议。<a href="https://github.com/FUjr/phicomm-community-mqtt" rel="noopener noreferrer">查看平台源码</a></p></article>
+<article><p class="num">05</p><h3>为嵌入式而做</h3><p>紧凑页面、按需查询与共享命令接口，在有限资源上保持清晰直接的操作体验，不依赖外部 CDN 与在线脚本。</p></article>
+<article><p class="num">06</p><h3>可验证的更新</h3><p>固件下载后校验签名与镜像，国内外双来源可选；手动文件与 URL 升级方式仍然保留。</p></article>
+</div>
+</div></section>
+
+<section class="section" id="demos"><div class="wrap">
+<p class="eyebrow">先体验，再安装</p>
+<h2>在浏览器里，认识你的设备。</h2>
+<p class="lead">演示使用模拟数据，操作不会连接或控制真实设备。刷新即可重置。</p>
+<div class="demo-grid">
+<a class="demo-link" href="demos/tc1/"><span><b>TC1 排插</b><span>六路开关、计量与定时</span></span><span class="go">进入演示</span></a>
+<a class="demo-link" href="demos/m1/"><span><b>M1 检测仪</b><span>空气质量读数与亮度</span></span><span class="go">进入演示</span></a>
+<a class="demo-link" href="demos/a1/"><span><b>A1 净化器</b><span>风机、灯环与联动</span></span><span class="go">进入演示</span></a>
+<a class="demo-link" href="demos/platform/"><span><b>集中管理平台</b><span>账号、设备列表与控制</span></span><span class="go">进入演示</span></a>
+</div>
+</div></section>
+
+<section class="section" id="docs"><div class="wrap">
+<p class="eyebrow">文档</p>
+<h2>按用途查找。</h2>
+<p class="lead">安装、使用和开发文档按主题分组。首次安装请从「快速开始」进入。</p>
+<div class="doc-groups" id="docs-index"></div>
+</div></section>
+
+<section class="section" id="releases"><div class="wrap">
+<p class="eyebrow">发布与下载</p>
+<h2>最新版，以及每一个历史版本。</h2>
+<div class="release-toolbar"><label for="source">下载来源 <select id="source"><option value="https://phicomm.fjrcn.com">境外服务器</option><option value="https://phicomm.fjrcn.cn">境内镜像</option></select></label><a href="guides/quick-start.html">快速开始</a><a href="guides/flash-prep.html">刷机前准备</a><a href="guides/firmware-update.html">固件更新</a></div>
+<p id="release-status" role="status" aria-live="polite">正在读取版本归档…</p>
+<div id="latest"></div>
+<h3 class="sub-heading">历史版本归档</h3>
+<p class="muted small">旧版本仅供查阅和恢复；升级前请确认型号及该版本支持的固件格式。每个版本保留对应型号的固件、发布说明与校验文件。</p>
+<div id="archive"></div>
+</div></section>
+</main>
+
+<footer class="site-footer"><div class="wrap">
+<div><b>PHICOMM COMMUNITY</b><p style="margin-top:8px">社区维护项目，与原厂无隶属关系。固件、指南及发布说明以对应版本为准。本仓库没有覆盖全部代码的统一许可证。</p></div>
+<div><b>文档</b><ul><li><a href="guides/quick-start.html">快速开始</a></li><li><a href="guides/faq.html">故障排查</a></li><li><a href="guides/build-deps.html">构建依赖</a></li><li><a href="guides/release-log.html">Release Log</a></li></ul></div>
+<div><b>源码</b><ul><li><a href="https://github.com/FUjr/phicomm-community-firmware" rel="noopener noreferrer">固件仓库</a></li><li><a href="https://github.com/FUjr/phicomm-community-mqtt" rel="noopener noreferrer">管理平台</a></li></ul></div>
+</div></footer>
+<script src="releases.js"></script><script src="site.js"></script></body></html>

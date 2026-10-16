@@ -50,3 +50,4 @@ for device in A1 M1; do
 done
 python3 tests/check_web.py
 python3 tests/test_m1_clock.py
+python3 -m unittest discover -s tests -p test_site_docs.py
