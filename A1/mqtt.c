@@ -127,12 +127,13 @@ static int filter_discovery(const a1_config_t *c, bool clear)
     static const char *components[] = {"sensor", "sensor", "binary_sensor", "number", "button"};
     static const char *names[] = {"滤芯剩余寿命", "滤芯使用时间", "滤芯更换提醒", "滤芯额定寿命", "更换滤芯后重置"};
     bool bound = feature_bound(), grouped = false;
-    char parent_id[192], parent_name[FEATURE_TOPIC_MAX];
+    /* MQTT-owner scratch: PUBACK waiting can dispatch nested commands. */
+    static char parent_id[192], parent_name[FEATURE_TOPIC_MAX];
     if (!clear && bound && !feature_ha_device(parent_id, sizeof(parent_id),
                                              parent_name, sizeof(parent_name), &grouped))
         return MQTT_FAILURE;
     for (unsigned i = 0; i < 5; ++i) {
-        char path[MQTT_TOPIC_MAX], identity[MQTT_TOPIC_MAX];
+        static char path[MQTT_TOPIC_MAX], identity[MQTT_TOPIC_MAX];
         mqtt_ha(&account, components[i], keys[i], path, sizeof(path));
         if (clear) { if (publish(path, "", true) != MQTT_SUCCESS) return MQTT_FAILURE; continue; }
         json_object *o = json_object_new_object(), *device = json_object_new_object(), *ids = json_object_new_array();
@@ -149,7 +150,7 @@ static int filter_discovery(const a1_config_t *c, bool clear)
         str(device, "manufacturer", "Phicomm"); str(device, "sw_version", A1_VERSION);
         json_build_object_add(o, "device", device);
         if (bound && grouped) {
-            char label[160];
+            static char label[160];
             snprintf(label, sizeof(label), "%s %s", c->name, names[i]);
             str(o, "name", label);
         } else str(o, "name", names[i]);
