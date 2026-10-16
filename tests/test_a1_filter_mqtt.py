@@ -112,7 +112,7 @@ def main(port):
         original_ids = {k: v['unique_id'] for k, v in by.items()}
         group = '客厅净化组'
         parent = f'v2_{key}_group_{("g_" + group.encode().hex()).encode().hex()}'
-        publish(base+'/binding/set', json.dumps({'group': group}))
+        publish(base+'/command', json.dumps({'action': 'binding.set', 'params': {'group': group}}))
         wait(lambda: len(configs()) == 5 and all(
             v['device']['identifiers'] == [parent] for v in configs().values()))
         controls = {}
@@ -141,7 +141,8 @@ def main(port):
         wait(lambda: len([t for t, p, r in records[start:] if '_filter_' in t
                           and t.startswith(prefix) and '/'+key+'/' in t and p]) == 5)
         assert len(configs()) == 5  # bound HA birth must not delete filter entities
-        publish(base+'/binding/set', json.dumps({'group': '', 'members': [], 'peers': []}))
+        publish(base+'/command', json.dumps({'action': 'binding.set',
+                'params': {'group': '', 'members': [], 'peers': []}}))
         wait(lambda: len(configs()) == 5 and all(v['device']['identifiers'] ==
             [key+'_a1_aabbccddeeff'] for v in configs().values()))
         assert {k: v['unique_id'] for k, v in configs().items()} == original_ids
