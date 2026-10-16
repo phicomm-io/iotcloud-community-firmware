@@ -9,6 +9,38 @@ def execute(source):
         subprocess.run([str(p/'test')],check=True,timeout=8,env={**os.environ,"UBSAN_OPTIONS":"halt_on_error=1"})
 
 class Core(unittest.TestCase):
+    def test_legacy_unassigned_keys_stay_unassigned(self):
+        main=(ROOT/'TC1/main.c').read_text()
+        start=main.index('for(unsigned i=1;i<=30;i++)')
+        loop=main[start:main.index('memset(user_config->timed_tasks',start)]
+        gpio=(ROOT/'TC1/user_gpio.c').read_text()
+        decoders=gpio[gpio.index('char get_short_func('):gpio.index('char *GetSocketStatus(')]
+        execute(r'''
+#include <assert.h>
+#include <stdint.h>
+#include <string.h>
+#define NO_FUNCTION 15
+enum { AUTO_NONE, AUTO_OUTLET, AUTO_FAN, AUTO_LIGHT, AUTO_CHILD_LOCK, AUTO_INDICATOR, AUTO_DISPLAY, AUTO_REBOOT };
+typedef struct { uint8_t kind,target,value,speed,red,green,blue,reserved; } automation_action_t;
+static struct { char user[32]; struct { automation_action_t buttons[2][34]; } automation; } config;
+#define user_config (&config)
+'''+decoders+'\nstatic void migrate(void) {\n'+loop+r'''
+}
+int main(void) {
+ memset(&config,0,sizeof config);memset(config.user,255,sizeof config.user);migrate();
+ for(unsigned n=0;n<34;n++)assert(config.automation.buttons[0][n].kind==AUTO_NONE);
+ for(int op=0;op<=15;op++) {
+  memset(&config,0,sizeof config);memset(config.user,(op<<4)|op,sizeof config.user);migrate();
+  for(unsigned n=0;n<34;n++) {
+   automation_action_t *a=&config.automation.buttons[0][n];
+   if(op<=6)assert(a->kind==AUTO_OUTLET && a->value==2 && a->target==(op?op-1:255));
+   else if(op==8)assert(a->kind==AUTO_REBOOT && !a->value);
+   else assert(a->kind==AUTO_NONE);
+  }
+ }
+}
+''')
+
     def test_tasks_empty_delete_rebuild_capacity_and_atomic_replacement(self):
         src=(ROOT/'TC1/timed_task/timed_task.c').read_text()
         funcs=src[src.index('static const int day_sec'):src.index('void ProcessTask()')]+src[src.index('char *GetTaskStr('):]

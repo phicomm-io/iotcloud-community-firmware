@@ -183,7 +183,7 @@ int application_start(void) {
         for(unsigned i=1;i<=30;i++) for(unsigned hold=0;hold<2;hold++) {
             if(hold && i>4)continue;int op=hold?get_long_func(user_config->user[i]):get_short_func(user_config->user[i]);
             automation_action_t *a=&user_config->automation.buttons[0][hold?i+29:i-1];memset(a,0,sizeof(*a));a->value=2;a->target=255;
-            if(op<=6){a->kind=AUTO_OUTLET;if(op)a->target=op-1;}else if(op==8){a->kind=AUTO_REBOOT;a->value=0;}
+            if(op>=0 && op<=6){a->kind=AUTO_OUTLET;if(op)a->target=op-1;}else if(op==8){a->kind=AUTO_REBOOT;a->value=0;}
         }
         memset(user_config->timed_tasks,0,sizeof(user_config->timed_tasks));user_config->task_count=0;user_config->task_top=NULL;
         err=mico_system_context_update(sys_config);require_noerr(err,exit);
