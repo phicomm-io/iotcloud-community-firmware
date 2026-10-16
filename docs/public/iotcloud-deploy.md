@@ -39,7 +39,7 @@ allowed_origins:
 
 来源只包含协议和域名（有非默认端口时包含端口），不带 `/iotcloud/` 路径或末尾斜线；`public_url` 仍填写后端自己的公网地址。只添加自己信任的前端来源。
 
-平台账号模式应连接与该后端配套的 Broker；连接其他 Broker 时使用访客模式。HTTPS 网页需要使用 WSS。设备固件中的 MQTT Host 填写设备可访问的 Broker 主机名和对应端口，不要填写网页地址或 WSS 路径。前端域名与 MQTT Host 不同时，页面会提醒检查连接设置。
+平台账号模式应连接与该后端配套的 Broker；连接其他 Broker 时使用访客模式。HTTPS 网页需要使用 WSS。设备固件中的 MQTT Host 填写设备可访问的 Broker 主机名和对应端口，不要填写网页地址或 WSS 路径。前端域名与 MQTT Host 不同时，页面会提醒在 IoT 设备本地网页的 MQTT 设置中填写正确的 Broker 主机名。
 
 ## 安装为 Web App
 
