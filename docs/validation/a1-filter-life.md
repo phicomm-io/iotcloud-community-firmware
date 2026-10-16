@@ -10,15 +10,18 @@
 - PASS：前端单元测试、设备页面语法检查、滤芯页面交互测试和全部四个 demo 的 Chromium 测试。A1 覆盖额定寿命修改、取消/确认重置和移动端无横向溢出。
 - PASS：`bash A1/build.sh`，ARM GCC 5.4.1 编译、镜像校验、JSON 浮点支持和按键/定时/MQTT/HTTP 栈预算检查。
 - PASS：真实 A1（`10.117.152.111` / `b0f893303134`）标准签名 OTA、重启上线、既有配置保留，及下述滤芯功能验收。
+- PASS：隔离 Broker 与生产 MQTT/service worker：五个 HA 实体模板、修改与重置命令、持续运行一分钟主动上报、retained 重放及 HA birth 重新发现。
+- PASS：IotCloud Chromium 通过真实 MQTT Broker 发现模拟 A1，显示滤芯状态，保存额定寿命，取消/确认重置并同步状态。修正嵌入页沙箱禁止表单提交的问题，前端 CI 增加平台内表单与重置回归。
 - NOT_RUN：真实 A1 的长时间累计、硬断电保存窗口和 Flash 故障。
+- NOT_RUN：运行中的 Home Assistant 实例加载及 UI 操作；现有覆盖验证实际发现报文、Jinja 模板和命令闭环。
 
 运行时每累计一小时保存，停止和正常重启/升级预留前也保存；突然断电可能丢失最近不足一小时。Flash 写失败会在状态中报告并重试，此时未保存区间可能更长。PWM 输出是软件施加状态，设备没有转速传感器，本功能不检测风机机械故障或滤芯污染。
 
 ## 前端交付状态
 
-前端改动位于相邻工作树 `../phicomm-community-frontend`，分支 `feat/a1-filter-life`，提交 `4a3bd3a1e182e97827527d50970c3d1e0b4ddcbf`。设备 WebUI、平台复用页和 demo 均由这一源码构建。
+前端已通过 PR #2 合入 `phicomm-io/phicomm-community-frontend` 的 main，提交 `264bfcd2810a7597e2f059d7fb8e2a1c39ff2084`。设备 WebUI、平台复用页和 demo 均由这一源码构建，PR 与 main 的前端 CI 均通过。
 
-`frontend.lock.json` 已锁定该提交的本地候选包，SHA-256 为 `8d8ab3d62efb086efc21ef35691ebbfd8d4ad78e376bb2520a49025d0fb28ad1`。候选包通过 `tools/frontend_release.py --archive ../phicomm-community-frontend/build/frontend.tar.gz` 完整验证并用于本地固件构建。该候选包**尚无正式 Release**；在其他环境构建前，需要先导入该离线候选包，或将前端合入并发布后更新为正式 Release 锁文件。
+`frontend.lock.json` 锁定正式 Release `frontend-264bfcd2810a7597e2f059d7fb8e2a1c39ff2084`，SHA-256 为 `ce48d4864aa294794189bd3046056484a3b295f106317f98443ff0344cbde6c2`。已从 GitHub 下载，通过 SHA256SUMS 及 `tools/frontend_release.py` 的归档、清单与各文件校验。其他环境可以直接取得该固定版本。
 
 ## 实机刷写与验收
 
