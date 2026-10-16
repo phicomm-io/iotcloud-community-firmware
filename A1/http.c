@@ -1,3 +1,4 @@
+#include "../common/ota/mode.h"
 #include "../common/watchdog.h"
 #include "../common/service.h"
 #include "a1.h"
@@ -398,6 +399,7 @@ static void handle(int fd)
         }
         /* Volatile, authenticated physical mapping aid. Slot 0 exits. */
         if (!strcmp(req.method,"POST") && !strcmp(req.path,"/api/v1/light/test")) {
+            if(ota_job_active()){message(fd,409,"OTA in progress");return;}
             json_object *body = read_json(fd, req.length);
             json_object *slot = body ? json_object_object_get(body, "slot") : NULL;
             if (!slot || !json_object_is_type(slot, json_type_int) ||
@@ -424,6 +426,7 @@ static void handle(int fd)
             return;
         }
         if (!strcmp(req.method,"POST") && !strcmp(req.path,"/api/v1/command")) {
+            if(ota_job_active() && req.length>1024){message(fd,409,"OTA in progress");return;}
             json_object *request=read_json(fd,req.length),*reply=service_command(request);
             if(request)json_object_put(request);send_json(fd,reply);return;
         }
@@ -494,6 +497,13 @@ static void http_accept_worker(mico_thread_arg_t arg)
         "Content-Type: application/json\r\nContent-Length: 15\r\n"
         "Connection: close\r\n\r\n{\"code\":\"busy\"}";
     for (;;) {
+        /* Bound queued TCP buffers during OTA; only this thread owns listener. */
+        int wanted=ota_job_active()?4:HTTP_TCP_CLIENT_LIMIT;
+        if(wanted!=clients){
+            int rc=setsockopt(listener,IPPROTO_TCP,TCP_MAX_CONN_NUM,&wanted,sizeof(wanted));
+            if(rc==0)clients=wanted;
+            http_diag_sample(listener,rc,rc<0?errno:0,true);
+        }
         int fd = accept(listener, NULL, NULL);
         int accept_error = fd < 0 ? errno : 0;
         if (fd < 0) {

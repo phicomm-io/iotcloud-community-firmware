@@ -1,3 +1,4 @@
+#include "ota/mode.h"
 /* Included by the MQTT owner only; never call the socket from HTTP or a timer. */
 #include "service.h"
 #include "printbuf.h"
@@ -35,6 +36,7 @@ static int service_mqtt_flush(int (*sender)(const char *,const char *,bool)){
 }
 static int service_mqtt_input(int (*sender)(const char *,const char *,bool),const mqtt_account_t *scope,const void *payload,size_t length,bool retained){
  (void)sender;
+ if(ota_job_active() && length>1024)return MQTT_SUCCESS;
  if(retained)return MQTT_SUCCESS;
  if(service_mqtt_reply_count==4)return MQTT_FAILURE;
  json_object *q=service_parse(payload,length),*r=service_command(q);if(q)json_object_put(q);

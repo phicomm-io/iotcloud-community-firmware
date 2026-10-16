@@ -4,16 +4,17 @@ Web OTA is available **only after this community firmware is installed**. Phicom
 
 ## Check for updates on the device
 
-Official builds provide domestic and international update sources. Choose a source in the firmware settings and check:
+Official builds provide GitHub Pages HTTPS and domestic/international HTTP update sources. Choose a source in the firmware settings and check:
 
 - The UI distinguishes **a new version**, **already up to date** and **network failure**.
 - Switch sources and retry if a network request fails.
 - Check the model, version and release notes, then explicitly download and install. **Checking never installs an update automatically.**
 
-Custom builds receive their sources through `PHICOMM_OTA_CN_BASE_URL` and `PHICOMM_OTA_GLOBAL_BASE_URL`. Without those settings, built-in checking is hidden; manual URL and file uploads remain available.
+You can read release notes for the selected version. Use **Cancel download** during transfer; cancellation, network timeout or failure restores normal services. A retry starts from the beginning. Cancellation is unavailable after the final commit starts.
 
 | Source | Address |
 | --- | --- |
+| GitHub Pages | `https://phicomm-io.github.io` |
 | China mirror | `http://phicomm.fjrcn.cn` |
 | International source | `http://phicomm.fjrcn.com` |
 
@@ -39,5 +40,7 @@ Online demos use simulated data. On a real device:
 A first transition from older firmware may require `.ota.bin.raw`. New firmware accepts it after selecting **Allow unsigned firmware**, without a second confirmation dialog.
 
 ## Recovery
+
+Updates pause linkage and other business responses while keeping update status and cancellation available. Reduce concurrent access during an update; sustained multi-client pressure updating has not passed full acceptance.
 
 If the WebUI is reachable, check the file, model, version and network, then retry. If the device cannot boot, use the corresponding wired recovery guide: [TC1](tc1-flash), [M1 / A1](a1-m1-flash). Normal OTA updates do not require opening the device.

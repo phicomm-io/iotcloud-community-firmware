@@ -44,8 +44,10 @@ typedef int mico_mutex_t;
 static int mico_rtos_init_mutex(mico_mutex_t *m){return 0;}
 static void mico_rtos_lock_mutex(mico_mutex_t *m){}
 static void mico_rtos_unlock_mutex(mico_mutex_t *m){}
+static void mico_thread_msleep(unsigned ms){}
 #define MICO_PARTITION_OTA_TEMP 1
 #define MICO_PARTITION_BOOTLOADER 2
+#define MICO_PARTITION_APPLICATION 3
 #define kNoErr 0
 typedef struct {uint32_t partition_start_addr,partition_length;} mico_logic_partition_t;
 mico_logic_partition_t *MicoFlashGetInfo(int);
@@ -54,26 +56,26 @@ int MicoFlashWrite(int,uint32_t *,uint8_t *,unsigned);
 int MicoFlashErase(int,uint32_t,unsigned);
 int mico_ota_switch_to_new_fw(int,uint16_t);
 ''')
-  adapter=(ROOT/'TC1/ota_server/signed_adapter.c').read_text().replace('../../common/ota/signed_ota.h','signed_ota.h')
+  adapter=(ROOT/'TC1/ota_server/signed_adapter.c').read_text().replace('../../common/ota/signed_ota.h','signed_ota.h').replace('#include "../../common/ota/mode.h"','bool ota_job_cancelled(void); bool ota_job_commit(void);')
   (d/'adapter.c').write_text(adapter)
   (d/'harness.c').write_text('''#include "adapter.c"
-static uint8_t flash[0xa9000],boot[0x6000];
-static mico_logic_partition_t part={0xaf000,0xa9000};
+static uint8_t flash[0xa9000];
+static mico_logic_partition_t part={0xaf000,0xa9000},current={0x6000,0xa9000};
 int erases,writes,switches,fault;
-mico_logic_partition_t *MicoFlashGetInfo(int p){return &part;}
-int MicoFlashRead(int p,uint32_t *o,void *d,unsigned n){if(fault==3)return -1;unsigned size=p==2?sizeof boot:sizeof flash;if(*o>size || n>size-*o)return -1;memcpy(d,(p==2?boot:flash)+*o,n);*o+=n;return 0;}
+bool ota_job_cancelled(void){return fault==7 && erases>=2;}
+bool ota_job_commit(void){return fault!=8 && !ota_job_cancelled();}
+mico_logic_partition_t *MicoFlashGetInfo(int p){if(p==3)return &current;return &part;}
+int MicoFlashRead(int p,uint32_t *o,void *d,unsigned n){if(fault==3 || p==2)return -1;if(*o>sizeof flash || n>sizeof flash-*o)return -1;memcpy(d,flash+*o,n);*o+=n;return 0;}
 int MicoFlashWrite(int p,uint32_t *o,uint8_t *d,unsigned n){writes++;if(fault==2)return -1;if(*o>sizeof flash || n>sizeof flash-*o)return -1;memcpy(flash+*o,d,n);*o+=n;return 0;}
 int MicoFlashErase(int p,uint32_t o,unsigned n){erases++;if(fault==1)return -1;memset(flash,255,sizeof flash);return 0;}
-static void put32(uint8_t *p,uint32_t n){p[0]=n;p[1]=n>>8;p[2]=n>>16;p[3]=n>>24;}
-static void table(unsigned off,unsigned generation,bool new_slot){uint8_t *h=boot+off;memset(h,0,68);memcpy(h,"WMPT",4);h[4]=1;h[6]=2;put32(h+8,generation);put32(h+12,table_crc(h,12));for(unsigned i=0;i<2;i++){uint8_t *e=h+16+i*24;e[0]=1;put32(e+12,i?0xaf000:0x6000);put32(e+16,0xa9000);put32(e+20,(i==new_slot)?1:0);}put32(h+64,table_crc(h+16,48));}
-int mico_ota_switch_to_new_fw(int n,uint16_t crc){switches++;if(fault==5)return -1;if(fault!=6)table(0x5000,1,true);return 0;}
-int start(unsigned n,unsigned failure,int rescue){active=commit_uncertain=false;ota_state="idle";erases=writes=switches=0;fault=failure;table(0x4000,0,false);table(0x5000,0,false);tc1_ota_init();return tc1_ota_reserve() && tc1_ota_begin(n,rescue);}
+int mico_ota_switch_to_new_fw(int n,uint16_t crc){switches++;return fault==5?-1:0;}
+int start(unsigned n,unsigned failure,int rescue){active=commit_uncertain=false;ota_state="idle";erases=writes=switches=0;fault=failure;current.partition_start_addr=fault==6?0xaf000:0x6000;tc1_ota_init();return tc1_ota_reserve() && tc1_ota_begin(n,rescue);}
 int feed(const uint8_t *p,unsigned n){return tc1_ota_write(p,n);}
 int finish(void){return tc1_ota_finish();}
 void corrupt_flash(void){flash[123]^=1;}
 int reserve_again(void){tc1_ota_abort();return tc1_ota_reserve();}
 ''')
-  subprocess.run(['cc','-shared','-fPIC','-O2','-Wno-deprecated-declarations','-I'+str(d),'-I'+str(ROOT/'common/ota'),'-I'+str(ROOT/'TC1/ota_server'),str(d/'signed_ota.c'),str(ROOT/'common/ota/crypto.c'),str(d/'harness.c'),'-lcrypto','-o',str(d/'test.so')],check=True)
+  subprocess.run(['cc','-DPHICOMM_DEVICE_OTA=1','-shared','-fPIC','-O2','-Wno-deprecated-declarations','-I'+str(d),'-I'+str(ROOT/'common/ota'),'-I'+str(ROOT/'TC1/ota_server'),str(d/'signed_ota.c'),str(ROOT/'common/ota/crypto.c'),str(d/'harness.c'),'-lcrypto','-o',str(d/'test.so')],check=True)
   cls.lib=ctypes.CDLL(str(d/'test.so'));cls.lib.feed.argtypes=[ctypes.c_void_p,ctypes.c_uint]
  @classmethod
  def tearDownClass(cls):cls.tmp.cleanup()
@@ -121,8 +123,16 @@ int reserve_again(void){tc1_ota_abort();return tc1_ota_reserve();}
    self.assertFalse(self.upload(self.signed(self.image),fault));self.assertEqual(self.count('switches'),0)
   data=self.signed(self.image);self.assertTrue(self.lib.start(len(data),0,False))
   self.assertTrue(self.lib.feed(data[:1000],1000));self.assertFalse(self.lib.finish());self.assertEqual(self.count('switches'),0)
- def test_commit_error_and_false_success_inhibit_retry(self):
-  for fault in [5,6]:
+ def test_commit_error_inhibits_retry(self):
+  for fault in [5]:
    self.assertFalse(self.upload(self.signed(self.image),fault));self.assertEqual(self.count('switches'),1)
    self.assertFalse(self.lib.reserve_again())
+ def test_active_slot_cannot_be_update_target(self):
+  self.assertFalse(self.upload(self.signed(self.image),6));self.assertEqual(self.count('switches'),0)
+ def test_cancel_during_erase_and_before_commit(self):
+  for rescue in [False,True]:
+   data=self.image if rescue else self.signed(self.image)
+   self.assertFalse(self.upload(data,7,rescue));self.assertEqual(self.count('switches'),0)
+   self.assertLess(self.count('erases'),3)
+   self.assertFalse(self.upload(data,8,rescue));self.assertEqual(self.count('switches'),0)
 if __name__=='__main__':unittest.main()

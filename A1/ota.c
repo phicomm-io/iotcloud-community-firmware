@@ -1,6 +1,9 @@
 #include "../common/watchdog_flash.h"
 #include "a1.h"
 #include <ctype.h>
+#include "../common/ota/fetch.h"
+#include "../common/ota/mode.h"
+static bool download_running;
 #include "../common/ota/signed_ota.h"
 static signed_ota signed_session;
 static bool unsigned_session;
@@ -27,7 +30,8 @@ void a1_ota_status(const char *state, const char *error, unsigned progress)
 
 static bool reserve(void)
 {
-    if(!a1_upgrade_reserve())return false;
+    if(!ota_job_claim())return false;
+    if(!a1_upgrade_reserve()){ota_job_release();return false;}
     mico_rtos_lock_mutex(&a1_lock);
     snprintf(a1_state.ota_state,sizeof(a1_state.ota_state),"authenticating");
     a1_state.ota_error[0]=0;a1_state.ota_progress=0;
@@ -42,6 +46,7 @@ void a1_ota_abort(const char *why)
     watchdog_ota_end();
     a1_ota_status("failed", why, 0);
     mico_rtos_lock_mutex(&a1_lock); a1_state.ota_active = false; mico_rtos_unlock_mutex(&a1_lock);
+    if(!download_running && ota_job_active())ota_job_release();
 }
 
 static bool prepare(uint32_t length)
@@ -85,6 +90,7 @@ static bool signed_read(void *ctx, uint32_t offset, uint8_t *data, size_t n)
 bool a1_ota_begin(uint32_t length)
 {
     if (!reserve()) return false;
+    if(!ota_job_enter()){a1_ota_abort("Cannot stop linkage worker");return false;}
     unsigned_session=false; wire_expected=length; wire_received=0;
     mico_logic_partition_t *part=MicoFlashGetInfo(MICO_PARTITION_OTA_TEMP);
     signed_ota_io io={signed_erase,signed_write,signed_read,NULL};
@@ -96,6 +102,7 @@ bool a1_ota_begin(uint32_t length)
 bool a1_ota_begin_unsigned(uint32_t length)
 {
     if (!reserve()) return false;
+    if(!ota_job_enter()){a1_ota_abort("Cannot stop linkage worker");return false;}
     unsigned_session=true; wire_expected=length; wire_received=0;
     if (!watchdog_ota_begin()) { a1_ota_abort("Watchdog unavailable"); return false; }
     bool ok = prepare(length);
@@ -104,6 +111,7 @@ bool a1_ota_begin_unsigned(uint32_t length)
 }
 bool a1_ota_write(const uint8_t *data, size_t n)
 {
+    if(ota_job_cancelled()){a1_ota_abort("Cancelled");return false;}
     if (!watchdog_ota_begin()) { a1_ota_abort("Watchdog unavailable"); return false; }
     if (n>wire_expected-wire_received ||
         !(unsigned_session ? native_write(data,n) : signed_ota_write(&signed_session,data,n))) {
@@ -180,6 +188,7 @@ bool a1_ota_finish(void)
     if (!md5_range(0, expected - 16, digest) || !read_at(expected - 16, tail, 16) || memcmp(digest, tail, 16)) {
         error = "OTA MD5 mismatch"; goto fail;
     }
+    if(!ota_job_commit()){error="Cancelled";goto fail;}
     if (mico_ota_switch_to_new_fw(expected, transport_crc) != kNoErr) {
         error = "Failed to persist OTA boot metadata"; goto fail;
     }
@@ -193,84 +202,36 @@ fail:
     a1_ota_abort(error); return false;
 }
 
-static void download_worker(mico_thread_arg_t arg)
-{
-    char *url = (char *)arg;
-    int fd = -1; const char *error = "HTTP download failed";
-    char host[128], path[384], line[640]; unsigned port = 80;
-    /* Direct HTTP URLs with Content-Length; no implicit redirect or TLS bypass. */
-    const char *authority = url + 7, *slash = strchr(authority, '/');
-    size_t authority_len = slash ? (size_t)(slash - authority) : strlen(authority);
-    if (!authority_len || authority_len >= sizeof(host)) goto fail;
-    memcpy(host, authority, authority_len); host[authority_len] = 0;
-    if (slash && strlen(slash) >= sizeof(path)) { error = "URL path too long"; goto fail; }
-    snprintf(path, sizeof(path), "%s", slash ? slash : "/");
-    char *colon = strchr(host, ':');
-    if (colon) {
-        char *last; unsigned long value = strtoul(colon + 1, &last, 10);
-        if (!value || value > 65535 || *last) goto fail;
-        port = value; *colon = 0;
-    }
-    struct hostent *resolved = gethostbyname(host);
-    if (!resolved || !resolved->h_addr_list[0]) { error = "DNS lookup failed"; goto fail; }
-    struct sockaddr_in address = {0}; address.sin_family = AF_INET; address.sin_port = htons(port);
-    memcpy(&address.sin_addr, resolved->h_addr_list[0], 4);
-    fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (fd < 0 || connect(fd, (struct sockaddr *)&address, sizeof(address)) < 0) goto fail;
-    snprintf(line, sizeof(line), "GET %s HTTP/1.1\r\nHost: %s:%u\r\nConnection: close\r\nAccept-Encoding: identity\r\n\r\n", path, host, port);
-    if (!a1_socket_send(fd, line, strlen(line)) || a1_socket_line(fd, line, sizeof(line)) < 0 ||
-        (strncmp(line, "HTTP/1.1 200 ", 13) && strncmp(line, "HTTP/1.0 200 ", 13))) {
-        error = "Download requires a direct HTTP 200 response"; goto fail;
-    }
-    uint32_t length = 0; bool have_length = false; unsigned headers = 0;
-    for (;;) {
-        int n = a1_socket_line(fd, line, sizeof(line));
-        if (n < 0 || (headers += n) > 4096) goto fail;
-        if (!n) break;
-        if (!strncasecmp(line, "Content-Length:", 15)) {
-            char *end; unsigned long parsed = strtoul(line + 15, &end, 10);
-            while (*end == ' ') end++;
-            if (have_length || *end || parsed > A1_APP_OFFSET + A1_APP_LIMIT + 16 + OTA_ENVELOPE_SIZE) goto fail;
-            length = parsed; have_length = true;
-        }
-        if (!strncasecmp(line, "Transfer-Encoding:", 18) ||
-            (!strncasecmp(line, "Content-Encoding:", 17) && strcmp(line + 18, "identity"))) {
-            error = "Chunked or compressed downloads are unsupported"; goto fail;
-        }
-    }
-    if (!have_length) { error = "Download is missing Content-Length"; goto fail; }
-    unsigned_session=false; wire_expected=length; wire_received=0;
+static bool fetch_begin(void *ctx,uint32_t length){
+    (void)ctx;unsigned_session=false;wire_expected=length;wire_received=0;
     mico_logic_partition_t *part=MicoFlashGetInfo(MICO_PARTITION_OTA_TEMP);
     signed_ota_io io={signed_erase,signed_write,signed_read,NULL};
-    if (!part || !signed_ota_begin(&signed_session,length,part->partition_length,3,1,io)) {
-        error="Invalid signed package length"; goto fail;
+    return part && signed_ota_begin(&signed_session,length,part->partition_length,3,1,io);
+}
+static bool fetch_write(void *ctx,uint32_t offset,const uint8_t *data,size_t n){
+    (void)ctx;return offset==wire_received && a1_ota_write(data,n);
+}
+static void download_worker(mico_thread_arg_t arg){
+    char *url=(char *)arg;const char *error="Cannot stop linkage worker";bool ok=false;
+    if(ota_job_enter()){
+        ok=ota_fetch(url,A1_APP_OFFSET+A1_APP_LIMIT+16+OTA_ENVELOPE_SIZE,fetch_begin,fetch_write,NULL,&error);
+        if(ok)ok=a1_ota_finish();
     }
-    uint8_t data[512]; uint32_t deadline = mico_rtos_get_time() + 300000;
-    while (wire_received < wire_expected) {
-        if ((int32_t)(mico_rtos_get_time() - deadline) >= 0) { error = "Download timed out"; goto fail; }
-        unsigned want = wire_expected - wire_received > sizeof(data) ? sizeof(data) : wire_expected - wire_received;
-        int n = a1_socket_read(fd, data, want, 15000);
-        if (n <= 0) { error = "Download interrupted"; goto fail; }
-        if (!a1_ota_write(data, n)) goto done;
-    }
-    a1_ota_finish(); goto done;
-fail:
-    a1_ota_abort(error);
-done:
-    if (fd >= 0) close(fd);
-    free(url); mico_rtos_delete_thread(NULL);
+    if(!ok && error)a1_ota_abort(error);
+    free(url);download_running=false;
+    if(!ok)ota_job_release();
+    mico_rtos_delete_thread(NULL);
 }
 
 bool a1_ota_download(const char *url)
 {
-    if (!url || strncmp(url, "http://", 7) || strlen(url) >= 500 ||
-        strpbrk(url, "\r\n @#") || !reserve()) return false;
+    if (!ota_url_valid(url) || !reserve()) return false;
     char *copy = malloc(strlen(url) + 1);
     if (!copy) { a1_ota_abort("No memory for download"); return false; }
-    strcpy(copy, url); a1_ota_status("connecting", NULL, 0);
+    strcpy(copy, url); download_running=true; a1_ota_status("connecting", NULL, 0);
     if (mico_rtos_create_thread(NULL, MICO_APPLICATION_PRIORITY, "a1_ota", download_worker, 6144,
                                 (mico_thread_arg_t)copy) != kNoErr) {
-        free(copy); a1_ota_abort("Cannot start OTA worker"); return false;
+        download_running=false; free(copy); a1_ota_abort("Cannot start OTA worker"); return false;
     }
     return true;
 }

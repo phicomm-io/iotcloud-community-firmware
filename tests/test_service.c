@@ -24,5 +24,14 @@ int main(void){
  service_event("info","test","password=secret");
  json_object *r=run("{\"action\":\"logs.get\",\"params\":{\"after\":1,\"limit\":8}}","ok");
  json_object *d=json_object_object_get(r,"data"),*a=json_object_object_get(d,"records");assert(json_object_get_boolean(json_object_object_get(d,"overwritten")));assert(json_object_array_length(a)==8);assert(!strstr(json_object_to_json_string(r),"secret"));json_object_put(r);
+ r=run("{\"action\":\"logs.get\",\"params\":{}}","ok");
+ d=json_object_object_get(r,"data");unsigned latest=json_object_get_int(json_object_object_get(d,"latest"));json_object_put(r);
+ service_event("warn","mqtt","receive_error_-2147483648");
+ service_event("warn","mqtt","subscribe_error_2147483647");
+ service_event("info","test","unregistered_event");
+ char request[160];snprintf(request,sizeof request,"{\"action\":\"logs.get\",\"params\":{\"after\":%u}}",latest);
+ r=run(request,"ok");d=json_object_object_get(r,"data");a=json_object_object_get(d,"records");assert(json_object_array_length(a)==2);
+ assert(!strcmp(json_object_get_string(json_object_object_get(json_object_array_get_idx(a,0),"event")),"receive_error_-2147483648"));
+ assert(!strcmp(json_object_get_string(json_object_object_get(json_object_array_get_idx(a,1),"event")),"subscribe_error_2147483647"));json_object_put(r);
  puts("PASS shared service: envelope, replay, conflict, bounded paging and redaction");
 }

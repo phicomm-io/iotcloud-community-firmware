@@ -1149,6 +1149,10 @@ static void rpc_poll(const feature_config_t *c, unsigned i, uint32_t now) {
     json_object_put(expired);
   }
 }
+#ifdef PHICOMM_DEVICE_OTA
+static bool worker_running, worker_stop, worker_exiting, worker_ready;
+bool feature_running(void){lock();bool yes=worker_running;unlock();return yes;}
+#endif
 static void feature_worker(mico_thread_arg_t arg) {
   UNUSED_PARAMETER(arg);
   char *wire = malloc(FEATURE_WIRE_MAX + 1);
@@ -1156,8 +1160,17 @@ static void feature_worker(mico_thread_arg_t arg) {
   if (!wire || !c) {
     free(wire);
     free(c);
+#ifdef PHICOMM_DEVICE_OTA
+    watchdog_binding_enable(false);lock();worker_running=false;worker_ready=false;unlock();
+#endif
+#ifdef PHICOMM_DEVICE_OTA
+    mico_rtos_delete_thread(NULL);
+#endif
     return;
   }
+#ifdef PHICOMM_DEVICE_OTA
+  lock();worker_ready=true;unlock();
+#endif
   udp = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
   if (udp >= 0) {
     struct sockaddr_in a;
@@ -1171,6 +1184,9 @@ static void feature_worker(mico_thread_arg_t arg) {
     }
   }
   for (;;) {
+#ifdef PHICOMM_DEVICE_OTA
+    lock();bool stop=worker_stop;if(stop)worker_exiting=true;unlock();if(stop)break;
+#endif
     uint32_t now = now_ms();
     feature_config_get(c);
 #ifdef FEATURE_DEVICE_A1
@@ -1370,7 +1386,47 @@ static void feature_worker(mico_thread_arg_t arg) {
       mico_thread_msleep(100);
     watchdog_beat(WATCHDOG_BINDING);
   }
+#ifdef PHICOMM_DEVICE_OTA
+  if(udp>=0){close(udp);udp=-1;}
+  free(wire);free(c);
+  lock();
+  for(unsigned i=0;i<queued;i++)free(queue[i].body);
+  queued=queued_bytes=0;
+  for(unsigned i=0;i<8;i++){
+    if(peers[i].rpc)json_object_put(peers[i].rpc);peers[i].rpc=NULL;
+#ifdef FEATURE_DEVICE_A1
+    if(group_members[i].pending)json_object_put(group_members[i].pending);group_members[i].pending=NULL;
+#endif
+  }
+#ifdef FEATURE_DEVICE_A1
+  free(published_layout);published_layout=NULL;published_root[0]=0;published_count=0;
+#endif
+  watchdog_binding_enable(false);
+  worker_running=worker_ready=worker_exiting=false;unlock();
+  mico_rtos_delete_thread(NULL);
+#endif
 }
+#ifdef PHICOMM_DEVICE_OTA
+bool feature_pause(unsigned timeout_ms){
+  lock();worker_stop=true;unlock();
+  uint32_t start=now_ms();
+  while(feature_running() && (uint32_t)(now_ms()-start)<timeout_ms)mico_thread_msleep(20);
+  if(feature_running()){lock();if(!worker_exiting)worker_stop=false;unlock();return false;}
+  /* Let the RTOS finish deleting/reclaiming the old worker before recreating. */
+  mico_thread_msleep(20);return true;
+}
+OSStatus feature_resume(void){
+  /* Once exit was acknowledged it cannot be cancelled. Wait for cleanup. */
+  for(;;){lock();bool exiting=worker_exiting;unlock();if(!exiting)break;mico_thread_msleep(20);}
+  mico_thread_msleep(20);
+  lock();if(worker_running){bool ready=worker_ready;worker_stop=false;unlock();return ready?kNoErr:kNoMemoryErr;}
+  worker_stop=worker_ready=false;worker_running=true;unlock();watchdog_binding_enable(true);
+  OSStatus e=mico_rtos_create_thread(NULL,MICO_APPLICATION_PRIORITY,"binding",feature_worker,FEATURE_WORKER_STACK_SIZE,0);
+  if(e!=kNoErr){watchdog_binding_enable(false);lock();worker_running=false;unlock();return e;}
+  uint32_t start=now_ms();
+  for(;;){lock();bool ready=worker_ready,running=worker_running;unlock();if(ready)return kNoErr;if(!running||(uint32_t)(now_ms()-start)>5000)return kNoMemoryErr;mico_thread_msleep(20);}
+}
+#endif
 void feature_clock_tick(void) {
   static uint32_t next = 0;
   uint32_t now = now_ms();
@@ -1412,8 +1468,12 @@ OSStatus feature_start(void) {
   scheduled_speed = configuration.scheduled_speed;
   if (MicoRandomNumberRead((uint8_t *)&boot_id, sizeof(boot_id)) != kNoErr)
     return kUnknownErr;
+#ifdef PHICOMM_DEVICE_OTA
+  return feature_resume();
+#else
   return mico_rtos_create_thread(NULL, MICO_APPLICATION_PRIORITY, "binding",
                                  feature_worker, FEATURE_WORKER_STACK_SIZE, 0);
+#endif
 }
 static const char *domains[] = {"binding",  "linkage", "light",
                                 "schedule", "sleep",   "time"};

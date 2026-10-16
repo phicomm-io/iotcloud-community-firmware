@@ -66,6 +66,14 @@ static void mico_rtos_lock_mutex(int *m){}
 static void mico_rtos_unlock_mutex(int *m){}
 static uint32_t mico_rtos_get_time(void){return 1000;}
 static int device_lock;
+static bool job_active;
+static bool ota_job_claim(void){if(job_active)return false;job_active=true;return true;}
+static bool ota_job_active(void){return job_active;}
+static bool ota_job_enter(void){return true;}
+static void ota_job_release(void){job_active=false;}
+static bool ota_job_cancelled(void){return false;}
+static bool ota_job_commit(void){return true;}
+
 static struct {char ota_state[32],ota_error[128],ota_release_counter[21],ota_version[32];
  unsigned ota_progress,ota_key_id,ota_image_length,reboot_at;
  bool ota_active,ota_signature_verified,ota_image_verified,reboot_pending,wifi_trial_active;} device_state;
@@ -73,10 +81,11 @@ static bool device_upgrade_reserve(void){if(device_state.ota_active)return false
 ''')
             # Keep actual validation, Flash helpers and product constants. Only
             # replace the board state dependency and omit socket transport.
-            source = (ROOT / model.upper() / 'ota.c').read_text().split('static void download_worker')[0]
+            source = (ROOT / model.upper() / 'ota.c').read_text().split('static bool fetch_begin')[0]
             source = source.replace(f'#include "{model}.h"', '#include "mico.h"')
             source = source.replace('"../common/watchdog_flash.h"', f'"{ROOT}/common/watchdog_flash.h"')
             source = source.replace('"../common/ota/signed_ota.h"', '"signed_ota.h"')
+            source = source.replace('#include "../common/ota/fetch.h"', '').replace('#include "../common/ota/mode.h"','')
             source = source.replace(f'{model}_state', 'device_state').replace(f'{model}_lock', 'device_lock').replace(f'{model}_upgrade_reserve', 'device_upgrade_reserve')
             constants = '\n'.join(line for line in (ROOT / model.upper() / f'{model}.h').read_text().splitlines() if re.match(r'#define \w+_(PRODUCT|APP_OFFSET|APP_CPU_ADDRESS|APP_LIMIT) ', line))
             crc = (ROOT / 'A1/protocol.c').read_text().split('uint16_t a1_crc16', 1)[1]
@@ -94,7 +103,7 @@ int MicoFlashRead(int p,uint32_t *o,void *d,unsigned n){assert(lease && n<=512);
 int MicoFlashWrite(int p,uint32_t *o,uint8_t *d,unsigned n){assert(lease && n<=512);writes++;if(fault==2)return -1;assert(*o+n<=sizeof flash);memcpy(flash+*o,d,n);*o+=n;return 0;}
 int MicoFlashErase(int p,uint32_t o,unsigned n){assert(lease && n==4096 && o==(unsigned)erases*4096);erases++;if(fault==1 && erases==2)return -1;memset(flash+o,255,n);return 0;}
 int mico_ota_switch_to_new_fw(int n,uint16_t crc){assert(lease);switches++;return fault==5?-1:0;}
-int start(unsigned n,int failure,int rescue){memset(&device_state,0,sizeof device_state);erases=writes=reads=switches=progress=lease=0;fault=failure;return rescue?MODEL_ota_begin_unsigned(n):MODEL_ota_begin(n);}
+int start(unsigned n,int failure,int rescue){job_active=false;memset(&device_state,0,sizeof device_state);erases=writes=reads=switches=progress=lease=0;fault=failure;return rescue?MODEL_ota_begin_unsigned(n):MODEL_ota_begin(n);}
 int feed(const uint8_t *p,unsigned n){return MODEL_ota_write(p,n);}
 int finish(void){return MODEL_ota_finish();}
 void corrupt_flash(void){flash[123]^=1;}

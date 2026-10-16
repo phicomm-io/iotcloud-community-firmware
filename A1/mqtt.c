@@ -1,3 +1,4 @@
+#include "../common/ota/mode.h"
 #include "a1.h"
 #include "MQTTClient.h"
 #include "../common/mqtt_transport.h"
@@ -62,6 +63,7 @@ static void command(MessageData *d)
     MQTTMessage *m = d->message;
     if(topic_is(d,"command")){service_mqtt_input(publish,&account,m->payload,m->payloadlen,m->retained);return;}
     if(topic_is(d,"ota/set")){ota_command(base,m->payload,m->payloadlen,m->retained);return;}
+    if(ota_job_active())return;
     if (m->retained || !m->payloadlen || m->payloadlen > A1_JSON_LIMIT) return;
     MQTTString *ft=d->topicName; char ftopic[FEATURE_TOPIC_MAX];
     unsigned fn=ft->cstring?strlen(ft->cstring):ft->lenstring.len;
@@ -97,6 +99,7 @@ static void command(MessageData *d)
 }
 static void feature_command(MessageData *d)
 {
+    if(ota_job_active())return;
     if (!session_current()) return;
     MQTTString *t = d->topicName;
     char topic[FEATURE_TOPIC_MAX];
@@ -108,6 +111,7 @@ static void feature_command(MessageData *d)
 static char feature_filters[12][FEATURE_TOPIC_MAX];
 static void ha_birth(MessageData *d)
 {
+    if(ota_job_active())return;
     if (!session_current()) return;
     if (d->message->payloadlen == 6 && !memcmp(d->message->payload, "online", 6)) rediscover = true;
 }
@@ -279,6 +283,7 @@ static void mqtt_worker(mico_thread_arg_t arg)
         bool sent = false, old_visible = false; uint32_t revision = 0; rediscover = false;
         while (rc == MQTT_SUCCESS) {
             stage="ota"; rc=ota_service(base);if(rc!=MQTT_SUCCESS)break;
+            if(ota_job_active()){rc=service_mqtt_flush(publish);if(rc!=MQTT_SUCCESS)break;rc=MQTTYield(&client,100);mico_thread_msleep(50);continue;}
             mico_rtos_lock_mutex(&a1_lock); a1_state.mqtt_connected = true; mico_rtos_unlock_mutex(&a1_lock);
             a1_state_get(&state); a1_config_get(&current);
             if (!state.wifi_connected || !same_connection(&cfg, &current)) break;

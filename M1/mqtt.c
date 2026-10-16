@@ -1,3 +1,4 @@
+#include "../common/ota/mode.h"
 #include "m1.h"
 #include "MQTTClient.h"
 #include "../common/mqtt_cleanup.h"
@@ -53,6 +54,7 @@ static int ota_publish(const char *leaf,const char *text,bool retained) { return
 #include "../common/ota/mqtt_ota.inc"
 static void brightness_command(MessageData *data)
 {
+    if(ota_job_active())return;
     MQTTMessage *m = data->message;
     /* Controls are never retained; ignore replayed commands from old clients. */
     if (m->retained || m->payloadlen != 1) return;
@@ -62,6 +64,7 @@ static void brightness_command(MessageData *data)
 
 static void feature_command(MessageData *d)
 {
+    if(ota_job_active())return;
     if (!session_current()) return;
     MQTTString *t = d->topicName;
     char topic[FEATURE_TOPIC_MAX];
@@ -82,6 +85,7 @@ static void native_command(MessageData *d)
     if(!strcmp(topic,cmd)){service_mqtt_input(publish,&account,d->message->payload,d->message->payloadlen,d->message->retained);return;}
     char ota_topic[MQTT_TOPIC_MAX]; mqtt_leaf(&account,"ota/set",ota_topic,sizeof(ota_topic));
     if(!strcmp(topic,ota_topic)) { ota_command(base,d->message->payload,d->message->payloadlen,d->message->retained);return; }
+    if(ota_job_active())return;
     if(feature_mqtt_input(topic,d->message->payload,d->message->payloadlen,d->message->retained))return;
     if(!strcmp(topic,command_topic))brightness_command(d);
 }
@@ -263,8 +267,9 @@ static void mqtt_worker(mico_thread_arg_t arg)
         uint32_t snapshot_at=mico_rtos_get_time()-5000u;
         rediscover = false;
         while (rc == MQTT_SUCCESS) {
-            if((uint32_t)(mico_rtos_get_time()-snapshot_at)>=5000){snapshot_at=mico_rtos_get_time();rc=service_mqtt_snapshot(publish,&account);if(rc!=MQTT_SUCCESS)break;}
+            if(!ota_job_active() && (uint32_t)(mico_rtos_get_time()-snapshot_at)>=5000){snapshot_at=mico_rtos_get_time();rc=service_mqtt_snapshot(publish,&account);if(rc!=MQTT_SUCCESS)break;}
             rc=ota_service(base); if(rc!=MQTT_SUCCESS)break;
+            if(ota_job_active()){rc=service_mqtt_flush(publish);if(rc!=MQTT_SUCCESS)break;rc=MQTTYield(&client,100);mico_thread_msleep(50);continue;}
             mico_rtos_lock_mutex(&m1_lock); m1_state.mqtt_connected = true; mico_rtos_unlock_mutex(&m1_lock);
             m1_state_get(&state); m1_config_get(&current);
             if (!state.wifi_connected || !same_connection(&cfg, &current)) break;

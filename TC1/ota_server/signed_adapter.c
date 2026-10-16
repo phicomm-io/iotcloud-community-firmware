@@ -1,4 +1,5 @@
 #include "signed_adapter.h"
+#include "../../common/ota/mode.h"
 #include "../../common/ota/signed_ota.h"
 #include <string.h>
 #define TC1_PRODUCT "PHICOMM_TC1_A1"
@@ -6,7 +7,8 @@ static signed_ota session;
 static tc1_ota_metadata_t metadata;
 void tc1_ota_metadata(tc1_ota_metadata_t *out);
 static bool active, config_busy, unsigned_session, commit_uncertain;
-static const char *ota_state="idle";
+static const char *ota_state="idle", *ota_error="";
+static char transfer_error[96];
 static mico_mutex_t lock;
 static uint32_t expected, staged, wire_total, wire_done;
 static unsigned ota_percent;
@@ -20,17 +22,23 @@ bool tc1_config_reserve(void) {
 }
 void tc1_config_release(void) {mico_rtos_lock_mutex(&lock);config_busy=false;mico_rtos_unlock_mutex(&lock);}
 bool tc1_ota_reserve(void) {
-    mico_rtos_lock_mutex(&lock); bool ok=!active && !config_busy; if(ok) {active=true;ota_state="receiving";}
+    mico_rtos_lock_mutex(&lock); bool ok=!active && !config_busy; if(ok) {active=true;ota_state="receiving";ota_error="";}
     mico_rtos_unlock_mutex(&lock); return ok;
 }
 void tc1_ota_snapshot(char *state,char *error,unsigned *progress) {
     mico_rtos_lock_mutex(&lock);snprintf(state,32,"%s",ota_state);
-    snprintf(error,128,"%s",!strcmp(ota_state,"failed")?"OTA rejected":"");
+    snprintf(error,128,"%s",!strcmp(ota_state,"failed")?(*ota_error?ota_error:"OTA rejected"):"");
     *progress=ota_percent;
     mico_rtos_unlock_mutex(&lock);
 }
 void tc1_ota_abort(void) {
     mico_rtos_lock_mutex(&lock); if(!commit_uncertain && strcmp(ota_state,"ready"))active=false; if(strcmp(ota_state,"ready"))ota_state="failed"; mico_rtos_unlock_mutex(&lock);
+}
+void tc1_ota_failure(const char *reason) {
+    mico_rtos_lock_mutex(&lock);
+    if(!*ota_error){snprintf(transfer_error,sizeof(transfer_error),"%s",reason?reason:"Image validation failed");ota_error=transfer_error;}
+    mico_rtos_unlock_mutex(&lock);
+    tc1_ota_abort();
 }
 static uint16_t crc_step(uint16_t crc,const uint8_t *p,size_t n) {
     while(n--) { unsigned i; crc^=(uint16_t)*p++<<8;
@@ -40,8 +48,17 @@ static uint16_t crc_step(uint16_t crc,const uint8_t *p,size_t n) {
 static bool erase(void *ctx) {
     (void)ctx; mico_logic_partition_t *part=MicoFlashGetInfo(MICO_PARTITION_OTA_TEMP);
     expected=unsigned_session?expected:session.image_length; staged=0; transport_crc=0;
-    return part && expected>=(unsigned_session?1u:0x64000u+144u) && expected<=part->partition_length &&
-        MicoFlashErase(MICO_PARTITION_OTA_TEMP,0,part->partition_length)==kNoErr;
+    if(!part || expected<(unsigned_session?1u:0x64000u+144u) || expected>part->partition_length)return false;
+#ifdef PHICOMM_DEVICE_OTA
+    if(part->partition_length%4096)return false;
+    for(uint32_t at=0;at<part->partition_length;at+=4096){
+        if(ota_job_cancelled() || MicoFlashErase(MICO_PARTITION_OTA_TEMP,at,4096)!=kNoErr)return false;
+        mico_thread_msleep(10);
+    }
+    return true;
+#else
+    return MicoFlashErase(MICO_PARTITION_OTA_TEMP,0,part->partition_length)==kNoErr;
+#endif
 }
 static bool write_image(void *ctx,uint32_t offset,const uint8_t *data,size_t n) {
     (void)ctx; if(offset!=staged || n>expected-staged ||
@@ -60,6 +77,9 @@ bool tc1_ota_begin(uint32_t total,bool rescue) {
     return ok;
 }
 bool tc1_ota_write(const uint8_t *data,size_t n) {
+#ifdef PHICOMM_DEVICE_OTA
+    if(ota_job_cancelled())return false;
+#endif
     bool ok=unsigned_session?write_image(NULL,staged,data,n):signed_ota_write(&session,data,n);
     if(ok) {wire_done+=n;mico_rtos_lock_mutex(&lock);
         ota_percent=(unsigned)((uint64_t)wire_done*100/wire_total);
@@ -95,34 +115,16 @@ static bool md5_range(uint32_t start, uint32_t end, uint8_t digest[16])
     Md5Final(&md5, digest); return true;
 }
 
-/* MW300 boot2 uses CRC with initial zero and no final XOR. */
-static uint32_t table_crc(const uint8_t *data,size_t n) {
-    uint32_t crc=0;
-    while(n--) {crc^=*data++;for(unsigned i=0;i<8;i++)crc=(crc>>1)^((crc&1)?0xedb88320u:0);}
-    return crc;
-}
-static bool selected_slot(uint32_t *selected) {
-    uint32_t table_gen[2]={0,0}, slot[2]={0,0};bool valid[2]={false,false};
-    for(unsigned t=0;t<2;t++) {
-        uint8_t h[16],entries[24*16+4];uint32_t offset=0x4000+t*0x1000;
-        if(MicoFlashRead(MICO_PARTITION_BOOTLOADER,&offset,h,sizeof(h))!=kNoErr)return false;
-        unsigned count=le16(h+6);
-        if(memcmp(h,"WMPT",4) || le16(h+4)!=1 || !count || count>16 || table_crc(h,16))continue;
-        table_gen[t]=le32(h+8);
-        if(MicoFlashRead(MICO_PARTITION_BOOTLOADER,&offset,entries,count*24+4)!=kNoErr)return false;
-        if(table_crc(entries,count*24+4))continue;
-        unsigned fw_count=0;uint32_t generation=0;
-        for(unsigned i=0;i<count;i++) {
-            const uint8_t *e=entries+i*24;if(e[0]!=1)continue;
-            uint32_t start=le32(e+12),size=le32(e+16),gen=le32(e+20);
-            if(e[1]!=0 || (start!=0x6000 && start!=0xaf000) || size!=0xa9000)return false;
-            if(!fw_count || gen>generation){slot[t]=start;generation=gen;}
-            fw_count++;
-        }
-        valid[t]=fw_count==2;
-    }
-    unsigned t=table_gen[1]>table_gen[0]?1:0;
-    if(!valid[t])return false;*selected=slot[t];return true;
+/* MW300 exposes the running and passive slots through the MiCO API.
+ * BOOTLOADER has MICO_FLASH_NONE on this platform; reading partition tables
+ * through that partition always fails. Let the SDK own boot-table activation. */
+static bool passive_slot_valid(void) {
+    mico_logic_partition_t *current=MicoFlashGetInfo(MICO_PARTITION_APPLICATION);
+    mico_logic_partition_t *target=MicoFlashGetInfo(MICO_PARTITION_OTA_TEMP);
+    if(!current || !target)return false;
+    uint32_t a=current->partition_start_addr,b=target->partition_start_addr;
+    return current->partition_length==0xa9000 && target->partition_length==0xa9000 &&
+        ((a==0x6000 && b==0xaf000)||(a==0xaf000 && b==0x6000));
 }
 bool tc1_ota_finish(void)
 {
@@ -132,6 +134,9 @@ bool tc1_ota_finish(void)
      * Do not apply signed-image ABI, product, kernel or boot-table checks. */
     if (unsigned_session) {
         if (staged != expected) return false;
+#ifdef PHICOMM_DEVICE_OTA
+        if(!ota_job_commit())return false;
+#endif
         if (mico_ota_switch_to_new_fw(expected, transport_crc) != kNoErr) {
             mico_rtos_lock_mutex(&lock);
             ota_state="failed"; commit_uncertain=true;
@@ -175,11 +180,11 @@ bool tc1_ota_finish(void)
     if (!md5_range(0, expected - 16, digest) || !read_at(expected - 16, tail, 16) || memcmp(digest, tail, 16)) {
         error = "OTA MD5 mismatch"; goto fail;
     }
-    mico_logic_partition_t *target=MicoFlashGetInfo(MICO_PARTITION_OTA_TEMP);
-    uint32_t before=0,after=0,target_start=target?target->partition_start_addr:0;
-    if(!target || !selected_slot(&before) || before==target_start) {error="Invalid boot partition metadata";goto fail;}
-    if(mico_ota_switch_to_new_fw(expected,transport_crc)!=kNoErr ||
-       !selected_slot(&after) || after!=target_start) {
+    if(!passive_slot_valid()) {error="Invalid active/passive partitions";goto fail;}
+#ifdef PHICOMM_DEVICE_OTA
+    if(!ota_job_commit()){error="Cancelled";goto fail;}
+#endif
+    if(mico_ota_switch_to_new_fw(expected,transport_crc)!=kNoErr) {
         /* Commit may have partially persisted: inhibit further OTA until manual reboot. */
         mico_rtos_lock_mutex(&lock);ota_state="failed";commit_uncertain=true;mico_rtos_unlock_mutex(&lock);
         return false;
@@ -188,6 +193,6 @@ bool tc1_ota_finish(void)
     /* Keep the reservation until reset, preventing another OTA from replacing the verified slot. */
     return true;
 fail:
-    (void)error; return false;
+    mico_rtos_lock_mutex(&lock);ota_error=error;mico_rtos_unlock_mutex(&lock);return false;
 }
 

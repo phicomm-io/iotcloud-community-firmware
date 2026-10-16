@@ -53,10 +53,11 @@ def resolve_version(root=ROOT, tag=None):
 
 def ota_config():
     lines = ['/* Generated build-time OTA sources. */', '#pragma once']
-    for name in ('PHICOMM_OTA_CN_BASE_URL', 'PHICOMM_OTA_GLOBAL_BASE_URL'):
+    for name in ('PHICOMM_OTA_CN_BASE_URL', 'PHICOMM_OTA_GLOBAL_BASE_URL', 'PHICOMM_OTA_GITHUB_BASE_URL'):
         value = os.environ.get(name, '').rstrip('/')
         if not value: continue
-        if not re.fullmatch(r'http://[A-Za-z0-9.-]+(?::[0-9]+)?', value) or len(value)>160:
+        pattern = r'https://[A-Za-z0-9.-]+(?::[0-9]+)?(?:/[A-Za-z0-9._-]+)*' if name.endswith('GITHUB_BASE_URL') else r'http://[A-Za-z0-9.-]+(?::[0-9]+)?'
+        if not re.fullmatch(pattern, value) or len(value)>160:
             raise ValueError(name + ': expected a direct HTTP origin without path')
         lines.extend(['#ifndef '+name, '#define '+name+' '+json.dumps(value), '#endif'])
     return '\n'.join(lines)+'\n'

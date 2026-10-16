@@ -21,7 +21,7 @@ def main():
     p.add_argument('tag');p.add_argument('--wiki',type=Path);p.add_argument('--output',type=Path)
     a=p.parse_args();dest=ROOT/'docs/release'
     if a.wiki:
-        tags=subprocess.check_output(['git','-C',str(ROOT),'tag','--list','v*'],text=True).splitlines()
+        tags=subprocess.check_output(['git','-C',str(ROOT),'tag','--merged','HEAD','--list','v*'],text=True).splitlines()
         versions=[tuple(map(int,t[1:].split('.'))) for t in tags if TAG.fullmatch(t)]
         if not TAG.fullmatch(a.tag) or (versions and tuple(map(int,a.tag[1:].split('.')))<=max(versions)):
             p.error('new release must increment the latest existing SemVer tag')
