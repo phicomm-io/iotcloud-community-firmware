@@ -29,8 +29,13 @@ const ACTIONS={M1:['schedules.get','schedules.put','schedules.delete','schedules
   'linkage.get':{enabled:0,mode:0,metrics:1,on_metrics:1,off_metrics:1,statistic:0,on_enabled:0,off_enabled:0,on_all:0,off_all:1,fixed_speed:60,min_speed:20,max_speed:100,debounce_seconds:15,min_switch_seconds:60,on_pm:50,off_pm:35,on_hcho:.1,off_hcho:.08,target_pm:35,target_hcho:.08,low_pm:35,high_pm:150,low_hcho:.08,high_hcho:.3,kp:20,ki:.02,kd:0,revision:1},
   'light_effect.get':{effect:0,segments:1,follow_fan:0,quality_pm:35,quality_hcho:.08,segment:[{source:0,display:2,minimum:-10,maximum:50,suitable_low:18,suitable_high:26,colors:[[0,0,255],[0,255,0],[255,0,0]]}],revision:1},
   'wifi.scan.get':{scanning:false,networks:[]}};
+ let holdOutlet;
  w.fetch=async(url,o={})=>{assert.equal(url,'/api/v1/command');const req=JSON.parse(o.body);calls.push(req);
   assert.equal(o.method,'POST');assert.equal(typeof req.params,'object');if(!req.action.endsWith('.get'))assert(req.request_id);
+  if(req.action==='outlet.set'){
+   if(holdOutlet)await holdOutlet(req);
+   if(req.params.index===undefined)state.socket_states.fill(Number(req.params.on));else state.socket_states[req.params.index]=Number(req.params.on);
+  }
   return {ok:true,status:200,json:async()=>({code:req.action.endsWith('.get')?'ok':'accepted',data:fixtures[req.action]||{}})};};
  for(const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g))require('node:vm').runInContext(match[1],dom.getInternalVMContext());
  for(let i=0;i<12;i++)await flush();
@@ -71,9 +76,17 @@ const ACTIONS={M1:['schedules.get','schedules.put','schedules.delete','schedules
  if(model==='TC1'){
   w.location.hash='#home';w.dispatchEvent(new w.Event('hashchange'));await flush();
   const before=calls.filter(r=>r.action==='outlet.set').length;
+  const releases=[];holdOutlet=()=>new Promise(resolve=>releases.push(resolve));
   d.querySelector('#socket0').click();await flush();
   assert.equal(calls.filter(r=>r.action==='outlet.set').length-before,1,'one socket must produce exactly one command');
   assert(calls.some(r=>r.action==='outlet.set'&&r.params.index===0&&r.params.on===false),'a socket tile must toggle one socket');
+  assert.equal(d.querySelector('#socket1').disabled,false,'another socket stays usable while the first command is pending');
+  d.querySelector('#socket1').click();await flush();
+  await w.UI.reload();
+  for(const id of ['socket0','socket1'])assert.equal(d.querySelector('#'+id).getAttribute('aria-pressed'),'false','stale status must not overwrite pending socket output');
+  for(const release of releases)release();holdOutlet=null;
+  for(let i=0;i<4;i++)await flush();
+  for(const id of ['socket0','socket1'])assert.equal(d.querySelector('#'+id).disabled,false,'acknowledged sockets become usable again');
   w.location.hash='settings/buttons';w.dispatchEvent(new w.Event('hashchange'));await flush();
   const key=d.querySelector('[data-settings-page="buttons"] form, [data-settings-page="buttons"] .card');
   assert(key);assert(d.querySelector('[data-settings-page="buttons"]').textContent.length>0);
