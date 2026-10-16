@@ -2,7 +2,6 @@
 #define A1_LIGHT_H
 #include <stdint.h>
 #include <stdbool.h>
-#include "ring_feedback.h"
 
 typedef struct {
     uint32_t started, duration, color;
@@ -35,13 +34,27 @@ static inline bool a1_key_light_frame(a1_key_light_t *feedback, uint32_t now,
     return true;
 }
 
+/* DUT calibration: one-based 11 is bottom centre; 10/12 are symmetric.
+ * Slots 26/27 flank the top axis. Tests found 31 independent positions;
+ * slot 32 overlapped slot 1, so do not drive it as another physical LED.
+ * Keep 32-element buffers for the shared renderer; the spare is always off.
+ */
 #define A1_RING_POSITIONS 31u
-
-/* Use the same physical LED-10 origin and percentage edge as touch feedback.
- * The wire-slot mapping belongs to ring_feedback.h, not a second renderer. */
 static inline void a1_fan_frame(uint32_t colors[32], unsigned speed, uint32_t color)
 {
-    a1_ring_feedback(colors, speed, 255, color);
+    if (speed > 100) speed = 100;
+    unsigned units = (speed * 62 + 50) / 100;
+    uint32_t half = (color & 0xfefefeu) >> 1;
+    for (unsigned i = 0; i < 32; i++) colors[i] = 0;
+    colors[10] = units >= 2 ? color : units ? half : 0;
+    unsigned remaining = units > 2 ? units - 2 : 0;
+    for (unsigned distance = 1; distance <= 15; distance++) {
+        unsigned consumed = (distance - 1) * 4;
+        uint32_t level = remaining >= consumed + 4 ? color :
+            remaining >= consumed + 2 ? half : 0;
+        colors[(10 + A1_RING_POSITIONS - distance) % A1_RING_POSITIONS] = level;
+        colors[(10 + distance) % A1_RING_POSITIONS] = level;
+    }
 }
 /* One-based physical mapping test; zero exits without changing business frame. */
 static inline bool a1_test_frame(uint32_t colors[32], unsigned slot,
