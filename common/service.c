@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include "generated/build_ota.h"
 #define LOG_COUNT 64
 /* Fixed vocabulary events never accept credentials, payloads or URLs. */
 typedef struct { uint32_t sequence, uptime, utc; char level[8], module[16], event[40]; } service_record_t;
@@ -75,6 +76,7 @@ static json_object *logs(json_object *p,const char **code) {
     json_object_object_add(o,"next",json_object_new_int(next));json_object_object_add(o,"latest",json_object_new_int(sequence));
     mico_rtos_unlock_mutex(&service_lock);json_object_object_add(o,"records",a);return o;
 }
+#include "ota/update.inc"
 json_object *service_command(json_object *req) {
     const char *code="invalid_params",*id=NULL,*action=NULL;
     if(!ready || !req || !json_object_is_type(req,json_type_object))return result(NULL,code,NULL);
@@ -95,11 +97,11 @@ json_object *service_command(json_object *req) {
     }
     /* Serialization covers mutation + receipt insertion across HTTP/MQTT. */
     json_object *data=NULL;
-    if(!strcmp(action,"capabilities.get")){data=service_product_capabilities();code="ok";}
+    if(!strcmp(action,"capabilities.get")){data=service_product_capabilities();update_capabilities(data);code="ok";}
     else if(!strcmp(action,"logs.get")){
         /* logs() locks the same mutex: queries do not hold the dispatch lock. */
         mico_rtos_unlock_mutex(&command_lock);data=logs(p,&code);if(data)code="ok";return result(id,code,data);
-    } else { bool handled=false;data=automation_command(action,p,&code,&handled);if(!handled)data=service_product(action,p,&code); }
+    } else { bool handled=false;data=update_command(action,p,&code,&handled);if(!handled)data=automation_command(action,p,&code,&handled);if(!handled)data=service_product(action,p,&code); }
     json_object *out=result(id,code,data);
     if(cache && out){receipt_t *r=&receipts[receipt_next++%8];free(r->request);free(r->response);memset(r,0,sizeof(*r));strcpy(r->id,id);r->request=canonical;canonical=NULL;r->response=strdup(json_object_to_json_string(out));if(!r->response){free(r->request);memset(r,0,sizeof(*r));}}
     mico_rtos_unlock_mutex(&command_lock);free(canonical);

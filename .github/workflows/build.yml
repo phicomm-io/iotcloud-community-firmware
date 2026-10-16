@@ -12,6 +12,10 @@ on:
 permissions:
   contents: read
 
+env:
+  PHICOMM_OTA_CN_BASE_URL: http://phicomm.fjrcn.cn
+  PHICOMM_OTA_GLOBAL_BASE_URL: http://phicomm.fjrcn.com
+
 jobs:
   tc1:
     name: TC1 firmware (A1 hardware variant)
@@ -168,6 +172,8 @@ jobs:
       - run: pip install cryptography==46.0.3
       - name: Sign and verify production packages
         env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           OTA_KEY: ${{ secrets.OTA_SIGNING_KEY_PEM }}
           TAG_NAME: ${{ github.ref_name }}
         run: |
@@ -177,12 +183,21 @@ jobs:
           trap 'rm -f "$key_file"' EXIT
           printf '%s\n' "$OTA_KEY" > "$key_file"
           unset OTA_KEY
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release download "$TAG_NAME" --pattern "*.signed" --dir previous
+          fi
           for model in tc1 m1 a1; do
             product="$model"
             if [ "$model" = tc1 ]; then product=tc1_a1; fi
-            python3 tools/ota/package.py --key "$key_file" --model "$model" \
-              --version "$TAG_NAME" --commit "$(git rev-parse HEAD)" \
-              "release/phicomm_$product.ota.bin.raw" "release/phicomm_$product.ota.bin.signed"
+            if test -s "previous/phicomm_$product.ota.bin.signed"; then
+              cp "previous/phicomm_$product.ota.bin.signed" release/
+              tail -c +193 "release/phicomm_$product.ota.bin.signed" | cmp - "release/phicomm_$product.ota.bin.raw"
+            else
+              python3 tools/ota/package.py --key "$key_file" --model "$model" \
+                --version "$TAG_NAME" --commit "$(git rev-parse HEAD)" \
+                "release/phicomm_$product.ota.bin.raw" "release/phicomm_$product.ota.bin.signed"
+            fi
+            python3 tools/release/verify.py "release/phicomm_$product.ota.bin.signed" "$model" "$TAG_NAME" "$(git rev-parse HEAD)"
           done
           (cd release && sha256sum *.bin *.bin.raw *.bin.signed > SHA256SUMS && sha256sum -c SHA256SUMS)
       - uses: actions/upload-artifact@v4
@@ -193,39 +208,61 @@ jobs:
           retention-days: 30
 
   release:
-    name: Release all products
+    name: Publish OTA and Pages
     needs: [sign-ota]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-22.04
+    environment: signed-ota-production
+    concurrency:
+      group: production-ota-release
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/download-artifact@v4
         with:
           name: signed-release
           path: release
-      - name: Publish all products
+      - run: pip install cryptography==46.0.3
+      - name: Extract frozen Wiki release notes
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          python3 tools/release/notes.py "$TAG_NAME" --output release-notes.md
+          python3 tools/release/catalog.py "$TAG_NAME" "$GITHUB_SHA" release release-notes.md
+          (cd release && sha256sum -c SHA256SUMS)
+      - name: Stage GitHub release and immutable OTA assets
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG_NAME: ${{ github.ref_name }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
-          assets=(
-            release/phicomm_tc1_a1.ota.bin.raw release/phicomm_tc1_a1.all.bin release/phicomm_tc1_a1.ota.bin.signed
-            release/phicomm_m1.ota.bin.raw release/phicomm_m1.all.bin release/phicomm_m1.ota.bin.signed
-            release/phicomm_a1.ota.bin.raw release/phicomm_a1.all.bin release/phicomm_a1.ota.bin.signed
-          )
-          for name in "${assets[@]}"; do
-            test -s "$name"
-          done
-          (cd release && sha256sum -c SHA256SUMS)
-          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
-            gh release upload "$TAG_NAME" "${assets[@]}" release/SHA256SUMS --clobber
+          if ! gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release create "$TAG_NAME" --draft --title "$TAG_NAME" --notes-file release-notes.md release/*
           else
-            gh release create "$TAG_NAME" "${assets[@]}" release/SHA256SUMS --title "$TAG_NAME" --generate-notes
+            gh release download "$TAG_NAME" --dir existing
+            for file in release/*.bin* release/SHA256SUMS; do cmp "$file" "existing/$(basename "$file")"; done
           fi
+          python3 tools/release/deploy_worker.py
+          python3 tools/release/publish.py release
+          gh release edit "$TAG_NAME" --draft=false --latest
+          python3 tools/release/publish.py release --promote
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Build and publish public Pages allowlist
+        env:
+          GH_TOKEN: ${{ secrets.PAGES_DEPLOY_TOKEN }}
+        run: tools/release/pages.sh
 
   feature-tests:
+    env:
+      PHICOMM_OTA_CN_BASE_URL: ""
+      PHICOMM_OTA_GLOBAL_BASE_URL: ""
     name: Binding and automation host scenarios
     needs: [tc1, m1, a1]
     runs-on: ubuntu-22.04
@@ -253,6 +290,10 @@ jobs:
           python3 -m pip install cryptography==46.0.3
           test -s "$TC1_TEST_IMAGE"
           tests/ota/run.sh
+      - name: Test OTA release tooling and Worker
+        run: |
+          python3 -m unittest discover -s tests -p test_release.py
+          node --test tests/test_ota_worker.mjs
       - name: Test engines, binding runtime and WebUI syntax
         run: tests/run.sh
       - name: Test WebUI configuration forms

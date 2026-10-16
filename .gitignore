@@ -39,3 +39,6 @@ __pycache__/
 
 # Build-time Git version snapshot
 /common/generated/
+
+/platform/frontend/dist/
+/platform/frontend/node_modules/

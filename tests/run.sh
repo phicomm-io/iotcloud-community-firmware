@@ -29,6 +29,8 @@ for p in pathlib.Path(sys.argv[1]).glob('*.c'):
 PYHOST
 json_dir="$output/json_c"
 cc -std=gnu99 -Wall -Wextra -Werror -Wno-misleading-indentation -Itests/stubs -I"$json_dir" common/service.c tests/test_service.c "$json_dir"/*.c -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -o "$output/service"
+cc -std=gnu99 -DPHICOMM_OTA_CN_BASE_URL='"http://127.0.0.1:18766"' -Itests/stubs -I"$json_dir" tests/test_update.c "$json_dir"/*.c -o "$output/update"
+python3 tests/test_update.py "$output/update"
 cc -std=gnu99 -Wall -Wextra -Werror -Wno-misleading-indentation -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -Itests/stubs -Icommon -I"$json_dir" tests/test_mqtt_service.c "$json_dir"/*.c -o "$output/mqtt-service"
 "$output/mqtt-service"
 "$output/service"

@@ -20,6 +20,7 @@ const ACTIONS={M1:['schedules.get','schedules.put','schedules.delete','schedules
   brightness_requested:4,brightness:255,led_enabled:true,led_always_on:true,red:1,green:2,blue:3,speed:60,percentage:60,applied_speed:60,requested_speed:60,fan_on:true,fan_ready:true,panel_ready:true,
   sensor_received:true,sensor_valid:true,age_ms:1000,temperature:25,humidity:50,formaldehyde:0.02,pm25:20,time_synced:true,timezone_minutes:480,ntp_host:'pool.ntp.org',ntp_status:'synced',ntp_synced:true,
   ota_progress:0,ota_state:'idle',socket_names:['one','two','three','four','five','six'],socket_states:[1,1,1,1,1,1],report_seconds:2,powerCoefficientX100:1710,free_memory:30000};
+ const buttonItems=Array.from({length:30},(_,i)=>({key:0,clicks:i+1,seconds:0,action:model==='A1'?'fan.set':'outlet.set',params:{toggle:true}}));
  const actions=['status.get','capabilities.get','config.get','config.set','logs.get','ota.start',...ACTIONS[model]];
  const fixtures={'status.get':state,'capabilities.get':{model:model.toLowerCase(),actions},
   'schedules.get':{items:[],capacity:model==='TC1'?128:8,count:0,next:8},'buttons.get':{items:[]},'time.get':{timezone_minutes:480},
@@ -31,6 +32,9 @@ const ACTIONS={M1:['schedules.get','schedules.put','schedules.delete','schedules
   'wifi.scan.get':{scanning:false,networks:[]}};
  let holdOutlet;
  w.fetch=async(url,o={})=>{assert.equal(url,'/api/v1/command');const req=JSON.parse(o.body);calls.push(req);
+  if(req.action==='buttons.get'){const {offset=0,limit=8}=req.params;fixtures['buttons.get']={items:buttonItems.slice(offset,offset+limit),next:offset+limit};}
+  if(req.action==='buttons.set'){const p=req.params,i=buttonItems.findIndex(v=>v.key===p.key&&(p.clicks?v.clicks===p.clicks:v.seconds===p.seconds));if(i>=0)buttonItems.splice(i,1);if(p.action!=='none')buttonItems.push({...p});}
+
   assert.equal(o.method,'POST');assert.equal(typeof req.params,'object');if(!req.action.endsWith('.get'))assert(req.request_id);
   if(req.action==='outlet.set'){
    if(holdOutlet)await holdOutlet(req);
@@ -76,6 +80,7 @@ const ACTIONS={M1:['schedules.get','schedules.put','schedules.delete','schedules
   assert(calls.some(r=>r.action==='fan.set'&&r.params.speed===72),'preview speed control sends the real fan speed command');
   assert.equal(previewRing.dataset.feedbackSource,'pwm','release restores current PWM feedback');
  }
+ assert.equal(d.querySelector('#otaSource'),null,'built-in update controls are absent when no source capability is advertised');
  // Navigation keeps unsaved input, and each page is reachable by hash.
  d.querySelector('#mqttUser').value='unsaved';
  for(const page of PAGES[model]){
@@ -143,6 +148,27 @@ const ACTIONS={M1:['schedules.get','schedules.put','schedules.delete','schedules
  }
  assert(!html.includes("fetch('/log'"),'the old log endpoint must not be used');
  assert.deepEqual(missing,[],'all displayed strings need a shared translation');
+ if(model!=='M1'){
+  w.HTMLElement.prototype.scrollIntoView=()=>{};
+  w.location.hash='settings/buttons';w.dispatchEvent(new w.Event('hashchange'));for(let i=0;i<12;i++)await flush();
+  const page=d.querySelector('[data-settings-page="buttons"]'),range=page.querySelector('details.button-range');
+  assert(range,'identical consecutive gestures are collapsed');assert.equal(range.open,false);
+  assert(range.querySelector('summary').textContent.includes('1–30'));
+  assert(range.querySelector('summary').textContent.includes('Toggle'),'summary includes the concrete operation');
+  range.open=true;range.querySelector('button').click();
+  const form=page.querySelector('[data-button-editor]'),count=form.querySelector('input[type=number]');
+  assert.equal(count.value,'1');assert(form.querySelector('.button-preview').textContent.includes('Toggle'));
+  const action=[...form.querySelectorAll('select')].find(s=>[...s.options].some(o=>o.value==='indicator.set'||o.value==='light.set'));
+  action.value=model==='TC1'?'indicator.set':'light.set';action.dispatchEvent(new w.Event('change',{bubbles:true}));
+  form.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));for(let i=0;i<12;i++)await flush();
+  assert(calls.some(r=>r.action==='buttons.set'&&r.params.clicks===1&&r.params.action===action.value),'edit saves exact gesture and action');
+  const remove=page.querySelector('.button-mapping button[aria-label]');remove.click();for(let i=0;i<12;i++)await flush();
+  assert(calls.some(r=>r.action==='buttons.set'&&r.params.action==='none'),'delete clears only the selected mapping');
+  form.querySelector('[data-value="seconds"]').click();assert.equal(count.max,'4');
+  count.value='5';const before=calls.length;form.dispatchEvent(new w.Event('submit',{cancelable:true}));await flush();
+  assert.equal(calls.length,before,'reserved recovery hold cannot be saved');
+  assert.equal(missing.length,0,'new button UI has no missing translations');
+ }
  console.log(model+': unified command API, navigation, typed tasks, logs, controls, safe names and explicit OTA passed');
  dom.window.close();
 }})().catch(e=>{console.error(e);process.exit(1)});
