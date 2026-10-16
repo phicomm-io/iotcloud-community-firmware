@@ -8,7 +8,6 @@ void watchdog_beat(watchdog_slot_t slot) { (void)slot; }
 #include "../../common/automation.h"
 #ifdef HOST_A1
 #include "../../A1/a1.h"
-#include "../../A1/filter.h"
 #define CFG a1_config_t
 #define STATE a1_state_t
 #define config_get a1_config_get
@@ -75,21 +74,31 @@ void state_get(STATE *s){mico_rtos_lock_mutex(&device_lock);
 json_object *status_json(void){CFG c;STATE s;config_get(&c);state_get(&s);json_object *o=json_object_new_object();json_object_object_add(o,"id",json_object_new_string(device_id));json_object_object_add(o,"mqtt_connected",json_object_new_boolean(s.mqtt_connected));json_object_object_add(o,"mqtt_errors",json_object_new_int(s.mqtt_errors));json_object_object_add(o,"uptime_ms",json_object_new_int(mico_rtos_get_time()));
 #ifdef HOST_A1
  json_object_object_add(o,"requested_fan_on",json_object_new_boolean(c.fan_on));
- json_object_object_add(o,"child_lock",json_object_new_boolean(c.child_lock));
+ json_object_object_add(o,"filter",a1_filter_json());
+ json_object_object_add(o,"coordinator",json_object_new_boolean(feature_is_coordinator()));bool on;unsigned speed;feature_effective_fan(c.fan_on,c.speed,&on,&speed);json_object_object_add(o,"on",json_object_new_boolean(on));json_object_object_add(o,"speed",json_object_new_int(speed));
+ /* Keep the actual home renderer usable over MQTT, including its light controls. */
+ json_object_object_add(o,"fan_on",json_object_new_boolean(on));
+ json_object_object_add(o,"requested_speed",json_object_new_int(c.speed));
+ json_object_object_add(o,"percentage",json_object_new_int(on?speed:0));
+ json_object_object_add(o,"applied_speed",json_object_new_int(on?speed:0));
+ json_object_object_add(o,"panel_ready",json_object_new_boolean(true));
  json_object_object_add(o,"led_enabled",json_object_new_boolean(c.led_enabled));
  json_object_object_add(o,"led_always_on",json_object_new_boolean(c.led_always_on));
  json_object_object_add(o,"brightness",json_object_new_int(c.brightness));
- json_object_object_add(o,"coordinator",json_object_new_boolean(feature_is_coordinator()));bool on;unsigned speed;feature_effective_fan(c.fan_on,c.speed,&on,&speed);json_object_object_add(o,"on",json_object_new_boolean(on));json_object_object_add(o,"speed",json_object_new_int(speed));
+ json_object_object_add(o,"red",json_object_new_int(c.red));
+ json_object_object_add(o,"green",json_object_new_int(c.green));
+ json_object_object_add(o,"blue",json_object_new_int(c.blue));
+ json_object_object_add(o,"child_lock",json_object_new_boolean(c.child_lock));
 #else
  json_object_object_add(o,"brightness",json_object_new_int(s.brightness_requested));
 #endif
  return o;}
 #ifdef HOST_A1
-static a1_filter_config_t filter={A1_FILTER_MAGIC,0,A1_FILTER_DEFAULT_HOURS};
-static a1_filter_clock_t filter_clock;
-void a1_filter_tick(uint32_t now,bool running){pthread_mutex_lock(&store_lock);a1_filter_advance(&filter,&filter_clock,now,running);pthread_mutex_unlock(&store_lock);}
-void a1_filter_get(a1_filter_config_t *out){pthread_mutex_lock(&store_lock);*out=filter;pthread_mutex_unlock(&store_lock);}
-bool a1_filter_update(bool reset,unsigned hours){pthread_mutex_lock(&store_lock);if(reset){filter.used_seconds=0;filter_clock.remainder=0;}if(hours)filter.lifetime_hours=hours;pthread_mutex_unlock(&store_lock);return true;}
+static a1_filter_storage_t sim_filter={A1_FILTER_MAGIC,0,A1_FILTER_DEFAULT_HOURS};
+static a1_filter_clock_t sim_filter_clock;
+void a1_filter_tick(bool running){BASE_LOCK();a1_filter_advance(&sim_filter,&sim_filter_clock,mico_rtos_get_time(),running);BASE_UNLOCK();}
+void a1_filter_get(a1_filter_storage_t *out){CFG c;config_get(&c);bool on;unsigned speed;feature_effective_fan(c.fan_on,c.speed,&on,&speed);a1_filter_tick(on&&speed);BASE_LOCK();*out=sim_filter;BASE_UNLOCK();}
+const char *a1_filter_change(unsigned hours,bool reset){a1_filter_storage_t f;a1_filter_get(&f);BASE_LOCK();if(reset){sim_filter.used_seconds=0;sim_filter_clock.remainder_ms=0;}else sim_filter.lifetime_hours=hours;BASE_UNLOCK();return "accepted";}
 a1_config_t *a1_config=&base_config;
 void a1_control_changed(void){++base_config.revision;}
 bool a1_config_flush(bool f){(void)f;return true;}
@@ -115,6 +124,6 @@ int main(int argc,char **argv){if(argc!=6){fprintf(stderr,"node id ip broker por
  char *line=NULL;size_t capacity=0;while(getline(&line,&capacity,stdin)>0){json_object *q=service_parse(line,strlen(line));if(!q){puts("{}");fflush(stdout);continue;}json_object *press=json_object_object_get(q,"sim_button");
  if(press){automation_button(json_object_get_int(json_object_object_get(press,"key")),json_object_get_int(json_object_object_get(press,"clicks")),json_object_get_int(json_object_object_get(press,"seconds")));puts("{\"code\":\"ok\"}");}
 #ifdef HOST_A1
- else if(json_object_object_get(q,"sim_filter_seconds")){uint32_t n=json_object_get_int(json_object_object_get(q,"sim_filter_seconds"));a1_filter_tick(0,true);a1_filter_tick(n*1000,false);puts("{\"code\":\"ok\"}");}
+ else if(json_object_object_get(q,"sim_filter_seconds")){BASE_LOCK();sim_filter.used_seconds=json_object_get_int(json_object_object_get(q,"sim_filter_seconds"));BASE_UNLOCK();puts("{\"code\":\"ok\"}");}
 #endif
  else {json_object *meta=json_object_object_get(q,"sim_sensor");if(meta){mico_rtos_lock_mutex(&device_lock);json_object *v=json_object_object_get(meta,"enabled");if(v)sensor_enabled=json_object_get_boolean(v);v=json_object_object_get(meta,"values");if(v)for(unsigned i=0;i<4;i++)sensor_values[i]=json_object_get_double(json_object_array_get_idx(v,i));mico_rtos_unlock_mutex(&device_lock);puts("{\"code\":\"ok\"}");}else{json_object *r=service_command(q);puts(json_object_to_json_string(r));json_object_put(r);}}json_object_put(q);fflush(stdout);}free(line);return 0;}

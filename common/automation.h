@@ -26,13 +26,26 @@ typedef struct {
     uint32_t at, last;
     automation_action_t action;
 } automation_task_t;
+/* On-flash v4/v5 prefix remains fixed at two keys, including on A1. */
 typedef struct {
     uint32_t magic, revision;
     uint16_t next_id;
     int16_t timezone;
     automation_task_t tasks[AUTOMATION_TASKS];
-    automation_action_t buttons[AUTOMATION_KEYS][34]; /* A1: power, Wi-Fi, both. Append-only ABI. */
+    automation_action_t buttons[2][34];
+} automation_storage_t;
+#if defined(FEATURE_DEVICE_A1) || defined(HOST_A1)
+/* Working copy: A1 storage adapters append the third map after the v5 filter. */
+typedef struct {
+    uint32_t magic, revision;
+    uint16_t next_id;
+    int16_t timezone;
+    automation_task_t tasks[AUTOMATION_TASKS];
+    automation_action_t buttons[3][34];
 } automation_config_t;
+#else
+typedef automation_storage_t automation_config_t;
+#endif
 void automation_defaults(automation_config_t *);
 void automation_load(automation_config_t *);
 bool automation_save(const automation_config_t *);

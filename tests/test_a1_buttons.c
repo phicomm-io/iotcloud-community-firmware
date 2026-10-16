@@ -57,16 +57,5 @@ int main(void)
     sample(true, false, false, 19700);
     assert(counts[2] == 2 && !counts[0] && !counts[1] && recoveries == 1);
 
-    a1_filter_config_t filter = {A1_FILTER_MAGIC, 0, 6000};
-    a1_filter_clock_t clock = {0};
-    a1_filter_advance(&filter, &clock, UINT32_MAX - 499, true);
-    a1_filter_advance(&filter, &clock, 500, false); assert(filter.used_seconds == 1);
-    a1_filter_advance(&filter, &clock, 10500, true); assert(filter.used_seconds == 1);
-    a1_filter_advance(&filter, &clock, 11000, false);
-    a1_filter_advance(&filter, &clock, 12000, true);
-    a1_filter_advance(&filter, &clock, 12500, false); assert(filter.used_seconds == 2);
-    filter.used_seconds = UINT32_MAX;
-    a1_filter_advance(&filter, &clock, 13000, true);
-    a1_filter_advance(&filter, &clock, 14000, true); assert(filter.used_seconds == UINT32_MAX);
-    puts("A1 chord arbitration, staggered release, recovery isolation and filter runtime passed");
+    puts("A1 chord arbitration, staggered release, recovery isolation passed");
 }

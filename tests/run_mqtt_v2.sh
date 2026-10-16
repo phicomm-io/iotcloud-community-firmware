@@ -20,3 +20,5 @@ for attempt in range(50):
 else:raise RuntimeError('isolated MQTT broker did not start')
 PY
 "${MQTT_TEST_PYTHON:-python3}" tests/test_mqtt_v2.py "$port"
+bash tests/simulator/build.sh
+"${MQTT_TEST_PYTHON:-python3}" tests/test_a1_filter_mqtt.py "$port"

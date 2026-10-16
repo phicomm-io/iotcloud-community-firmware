@@ -258,6 +258,7 @@ json_object *a1_status_json(void)
     if (diag.connections_get_rc == 0) json_build_object_add(o, "http_tcp_connections",json_object_new_int(diag.connections));
     else json_object_object_add(o, "http_tcp_connections", NULL);
     watchdog_status_json(o);
+    json_build_object_add(o, "filter", a1_filter_json());
     str(o, "version", A1_VERSION); str(o, "device_id", a1_id); str(o, "name", cfg.name);
     json_bool(o, "wifi_trial_active", s.wifi_trial_active);
     str(o, "wifi_trial_status", s.wifi_trial_status);
@@ -281,9 +282,6 @@ json_object *a1_status_json(void)
     json_bool(o, "led_enabled", cfg.led_enabled); json_bool(o, "led_visible", s.led_visible);
     json_bool(o, "led_always_on", cfg.led_always_on); integer(o, "brightness", cfg.brightness);
     integer(o, "red", cfg.red); integer(o, "green", cfg.green); integer(o, "blue", cfg.blue);
-    a1_filter_config_t filter; a1_filter_get(&filter);
-    integer(o, "filter_used_seconds", filter.used_seconds);
-    integer(o, "filter_lifetime_hours", filter.lifetime_hours);
     json_bool(o, "child_lock", cfg.child_lock); json_bool(o, "panel_ready", s.panel_ready);
     integer(o, "panel_errors", s.panel_errors); integer(o, "hardware_errors", s.hardware_errors);
     integer(o, "panel_last_error", s.panel_last_error);

@@ -16,6 +16,8 @@ for p in pathlib.Path(sys.argv[1]).glob('*.c'): p.write_text(p.read_text().repla
 PY
 for model in A1 M1; do
  if [[ $model == A1 ]]; then sdk="$sdk_a1"; else sdk="$sdk_m1"; fi
+ # Match production builds: bound A1 needs more than five subscription handlers.
+ python3 tools/apply_sdk_patch.py "$sdk" "$model/features-sdk.patch"
  sdk="$sdk/libraries/protocols/mqtt"
  extra=()
  if [[ $model == A1 ]]; then extra=(A1/control.c); else extra=(M1/mqtt_transport.c); fi

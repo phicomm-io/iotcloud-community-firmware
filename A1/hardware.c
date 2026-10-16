@@ -208,10 +208,11 @@ static void hardware_worker(mico_thread_arg_t arg)
             bool on; unsigned desired;
             feature_effective_fan(cfg.fan_on, cfg.speed, &on, &desired);
             cfg.fan_on = on; cfg.speed = desired;
-            fan_tick(&cfg, &speed); fan_at += 100;
+            fan_tick(&cfg, &speed);
+            a1_filter_tick(speed > 0);
+            fan_at += 100;
             if ((uint32_t)(now - fan_at) >= 100) fan_at = now;
         }
-        a1_filter_tick(now, speed > 0);
         if (!initialized && (int32_t)(now - probe_at) >= 0) {
             initialized = panel_init(); probe_at = now + 3000;
             if (!initialized) {

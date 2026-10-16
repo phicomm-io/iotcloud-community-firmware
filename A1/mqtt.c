@@ -121,6 +121,62 @@ static void topic(json_object *o, const char *key, const char *suffix)
 {
     char value[MQTT_TOPIC_MAX]; snprintf(value, sizeof(value), "%s/%s", base, suffix); str(o, key, value);
 }
+static int filter_discovery(const a1_config_t *c, bool clear)
+{
+    static const char *keys[] = {"filter_remaining", "filter_used", "filter_replacement", "filter_lifetime", "filter_reset"};
+    static const char *components[] = {"sensor", "sensor", "binary_sensor", "number", "button"};
+    static const char *names[] = {"滤芯剩余寿命", "滤芯使用时间", "滤芯更换提醒", "滤芯额定寿命", "更换滤芯后重置"};
+    for (unsigned i = 0; i < 5; ++i) {
+        char path[MQTT_TOPIC_MAX], identity[MQTT_TOPIC_MAX];
+        mqtt_ha(&account, components[i], keys[i], path, sizeof(path));
+        /* Wear belongs to this physical A1 even when fan control is grouped. */
+        if (clear) { if (publish(path, "", true) != MQTT_SUCCESS) return MQTT_FAILURE; continue; }
+        json_object *o = json_object_new_object(), *device = json_object_new_object(), *ids = json_object_new_array();
+        if (!o || !device || !ids) {
+            if (o) json_object_put(o);
+            if (device) json_object_put(device);
+            if (ids) json_object_put(ids);
+            return MQTT_FAILURE;
+        }
+        mqtt_identity(&account, "", identity, sizeof(identity));
+        json_build_array_add(ids, json_object_new_string(identity));
+        json_build_object_add(device, "identifiers", ids);
+        str(device, "name", c->name); str(device, "model", "A1 Air Purifier (EMW3080B)");
+        str(device, "manufacturer", "Phicomm"); str(device, "sw_version", A1_VERSION);
+        json_build_object_add(o, "device", device); str(o, "name", names[i]);
+        mqtt_identity(&account, keys[i], identity, sizeof(identity)); str(o, "unique_id", identity);
+        str(o, "availability_topic", availability_topic); str(o, "icon", "mdi:air-filter");
+        str(o, "entity_category", i < 3 ? "diagnostic" : "config");
+        json_build_object_add(o, "retain", json_object_new_boolean(false));
+        topic(o, "json_attributes_topic", "state");
+        str(o, "json_attributes_template", "{{ {\"ip\": value_json.ip, \"firmware\": value_json.version, \"config_dirty\": value_json.config_dirty} | tojson }}");
+        if (i < 4) topic(o, "state_topic", "state");
+        if (i == 0) {
+            str(o, "value_template", "{{ value_json.filter.remaining_percent }}");
+            str(o, "unit_of_measurement", "%"); str(o, "state_class", "measurement");
+        } else if (i == 1) {
+            str(o, "value_template", "{{ (value_json.filter.used_seconds / 3600) | round(1) }}");
+            str(o, "unit_of_measurement", "h"); str(o, "device_class", "duration");
+        } else if (i == 2) {
+            str(o, "value_template", "{{ 'ON' if value_json.filter.replacement_due else 'OFF' }}");
+            str(o, "device_class", "problem");
+        } else if (i == 3) {
+            str(o, "value_template", "{{ value_json.filter.lifetime_hours }}");
+            topic(o, "command_topic", "command");
+            str(o, "command_template", "{\"action\":\"filter.set\",\"params\":{\"lifetime_hours\":{{ value | int }}}}");
+            str(o, "unit_of_measurement", "h"); str(o, "mode", "box");
+            json_build_object_add(o, "min", json_object_new_int(1));
+            json_build_object_add(o, "max", json_object_new_int(A1_FILTER_MAX_HOURS));
+            json_build_object_add(o, "step", json_object_new_int(1));
+        } else {
+            topic(o, "command_topic", "command");
+            str(o, "payload_press", "{\"action\":\"filter.reset\",\"params\":{}}");
+        }
+        int rc = publish(path, json_object_to_json_string(o), true); json_object_put(o);
+        if (rc != MQTT_SUCCESS) return rc;
+    }
+    return MQTT_SUCCESS;
+}
 static int discovery(const a1_config_t *c)
 {
     const char *keys[] = {"fan", "light", "child_lock", "led_always_on"};
@@ -178,7 +234,7 @@ static int discovery(const a1_config_t *c)
         int rc = publish(path, json_object_to_json_string(o), true); json_object_put(o);
         if (rc != MQTT_SUCCESS) return rc;
     }
-    return MQTT_SUCCESS;
+    return filter_discovery(c, false);
 }
 static int states(const a1_config_t *c, const a1_state_t *s)
 {
@@ -208,6 +264,7 @@ static int cleanup_discovery(void)
 static int cleanup_all(void)
 {
     int result = cleanup_discovery();
+    if (filter_discovery(&session_config, true) != MQTT_SUCCESS) result = MQTT_FAILURE;
     if (feature_mqtt_cleanup(publish) != MQTT_SUCCESS) result = MQTT_FAILURE;
     return result;
 }
@@ -281,6 +338,7 @@ static void mqtt_worker(mico_thread_arg_t arg)
         uint32_t acl_check = mico_rtos_get_time();
         bool old_on=false;unsigned old_speed=0;
         bool sent = false, old_visible = false; uint32_t revision = 0; rediscover = false;
+        a1_filter_storage_t sent_filter = {0}; uint32_t filter_sent_at = 0;
         while (rc == MQTT_SUCCESS) {
             stage="ota"; rc=ota_service(base);if(rc!=MQTT_SUCCESS)break;
             if(ota_job_active()){rc=service_mqtt_flush(publish);if(rc!=MQTT_SUCCESS)break;rc=MQTTYield(&client,100);mico_thread_msleep(50);continue;}
@@ -293,8 +351,13 @@ static void mqtt_worker(mico_thread_arg_t arg)
             if(feature_changed && !feature_mqtt_filters_current(feature_filters,count))break;
             if (rediscover) { feature_mqtt_service(publish,false);rc = discovery(&current); rediscover = false; sent = false; }
             bool on;unsigned speed;feature_effective_fan(current.fan_on,current.speed,&on,&speed);
+            a1_filter_storage_t filter; a1_filter_get(&filter);
             if (rc == MQTT_SUCCESS && (!sent || revision != current.revision || old_visible != state.led_visible || old_on!=on || old_speed!=speed)) {
                 stage="state"; rc = states(&current, &state); revision = current.revision; old_visible = state.led_visible;old_on=on;old_speed=speed; sent = true;
+                if (rc == MQTT_SUCCESS) { sent_filter = filter; filter_sent_at = mico_rtos_get_time(); }
+            } else if (rc == MQTT_SUCCESS && a1_filter_mqtt_due(&filter, &sent_filter, mico_rtos_get_time(), filter_sent_at)) {
+                stage="filter"; rc = service_mqtt_snapshot(publish, &account);
+                if (rc == MQTT_SUCCESS) { sent_filter = filter; filter_sent_at = mico_rtos_get_time(); }
             }
             if (rc == MQTT_SUCCESS) {stage="link";rc = feature_mqtt_service(publish, true);}
             if (rc == MQTT_SUCCESS) {stage="result";rc = service_mqtt_flush(publish);}

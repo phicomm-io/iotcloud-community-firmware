@@ -41,6 +41,7 @@ bool m1_sample_fresh(const m1_sample_t *s,uint32_t now){return s->received && (u
 bool a1_ota_download(const char *url){(void)url;return false;}
 static a1_config_t config;
 char a1_id[13]="aabbccddeeff";mico_mutex_t a1_lock;a1_state_t a1_state;
+void a1_filter_get(a1_filter_storage_t *out){a1_filter_defaults(out);}
 void a1_config_get(a1_config_t *out){*out=config;}
 void a1_state_get(a1_state_t *out){*out=a1_state;}
 bool a1_control_local(const char *kind,json_object *o){++controls;printf("CONTROL %s\n",kind);fflush(stdout);if(!strcmp(kind,"fan")){json_object *v=json_object_object_get(o,"on");if(v)config.fan_on=json_object_get_boolean(v);v=json_object_object_get(o,"speed");if(v)config.speed=json_object_get_int(v);}++config.revision;return true;}

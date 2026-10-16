@@ -74,19 +74,22 @@ static __attribute__((noinline)) json_object *service_product_inner(const char *
     }
     if(!strcmp(action,"binding.status.get")){if(!svc_keys(p,""))return NULL;*code="ok";return feature_json("status");}
 #ifdef FEATURE_DEVICE_A1
-    if(!strcmp(action,"filter.get")){
-        if(!svc_keys(p,""))return NULL;a1_filter_config_t c;a1_filter_get(&c);
-        json_object *o=json_object_new_object();uint32_t total=c.lifetime_hours*3600u;
-        json_build_object_add(o,"used_seconds",json_object_new_int(c.used_seconds));
-        json_build_object_add(o,"lifetime_hours",json_object_new_int(c.lifetime_hours));
-        json_build_object_add(o,"remaining_percent",json_object_new_int(c.used_seconds>=total?0:(int)((uint64_t)(total-c.used_seconds)*100/total)));
-        svc_string(o,"basis","motor_runtime");*code="ok";return o;
-    }
+    if(!strcmp(action,"filter.get")){if(!svc_keys(p,""))return NULL;*code="ok";return a1_filter_json();}
     if(!strcmp(action,"sensors.average.get")){if(!svc_keys(p,""))return NULL;*code="ok";return feature_json("average");}
     if(!strcmp(action,"binding.probe")){json_object *out=NULL;int rc=feature_set("probe",p,&out);*code=rc<300?"accepted":"invalid_params";return out;}
 #endif
     bool query=strlen(action)>4 && !strcmp(action+strlen(action)-4,".get");
     if(!query && (state.ota_active || state.reboot_pending || state.wifi_trial_active)){*code="busy";return NULL;}
+#ifdef FEATURE_DEVICE_A1
+    if(!strcmp(action,"filter.reset")){
+        if(!svc_keys(p,""))return NULL;
+        *code=a1_filter_change(0,true);return !strcmp(*code,"accepted")?a1_filter_json():NULL;
+    }
+    if(!strcmp(action,"filter.set")){
+        int hours;if(!svc_keys(p,"|lifetime_hours|") || !svc_int(p,"lifetime_hours",&hours,1,A1_FILTER_MAX_HOURS))return NULL;
+        *code=a1_filter_change(hours,false);return !strcmp(*code,"accepted")?a1_filter_json():NULL;
+    }
+#endif
     const char *domains[]={"binding","night","time","linkage","light_effect",NULL};
     const char *native[]={"binding","sleep","time","linkage","light",NULL};
     for(unsigned i=0;domains[i];i++){
@@ -103,11 +106,6 @@ static __attribute__((noinline)) json_object *service_product_inner(const char *
     else if(!strcmp(action,"wifi.scan")){if(!svc_keys(p,""))return NULL;ok=SCAN();}
     else if(!strcmp(action,"ota.start")){char url[512];if(!svc_keys(p,"|url|") || !svc_text(p,"url",url,sizeof(url),true))return NULL;ok=DOWNLOAD(url);}
 #ifdef FEATURE_DEVICE_A1
-    else if(!strcmp(action,"filter.reset") || !strcmp(action,"filter.set")){
-        bool reset=!strcmp(action,"filter.reset");
-        if(reset?!svc_keys(p,""):(!svc_keys(p,"|lifetime_hours|") || !svc_int(p,"lifetime_hours",&number,1,100000)))return NULL;
-        *code=a1_filter_update(reset,reset?0:number)?"accepted":"storage_error";return NULL;
-    }
     else if(!strcmp(action,"light_effect.next") || !strcmp(action,"light_effect.select")){
         bool next=!strcmp(action,"light_effect.next");
         if(next?!svc_keys(p,""):(!svc_keys(p,"|effect|") || !svc_int(p,"effect",&number,0,4)))return NULL;
@@ -172,3 +170,14 @@ json_object *service_product(const char *action,json_object *p,const char **code
     }
     return service_product_inner(action,p,code);
 }
+
+#ifdef FEATURE_DEVICE_A1
+json_object *a1_filter_json(void){
+    a1_filter_storage_t f;a1_filter_get(&f);json_object *o=json_object_new_object();
+    unsigned remaining=a1_filter_remaining(&f);
+    json_build_object_add(o,"used_seconds",json_object_new_int(f.used_seconds));
+    json_build_object_add(o,"lifetime_hours",json_object_new_int(f.lifetime_hours));
+    json_build_object_add(o,"remaining_percent",json_object_new_int(remaining));
+    json_build_object_add(o,"replacement_due",json_object_new_boolean(remaining<=10));return o;
+}
+#endif

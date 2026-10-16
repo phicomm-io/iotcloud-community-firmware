@@ -51,6 +51,16 @@ HTTP 使用 `POST /api/v1/command`，与 MQTT command 共用 JSON 命令和响�
 
 仅统计已绑定、数值合法且未过期的 M1；按四项分别计算算术平均值，不受自动联动配置的最大值/中值等策略影响。单位依次为 °C、%、µg/m³、mg/m³。没有有效采样时 `valid:false`、`sample_count:0`，四项值均为 null。查询时重新检查新鲜度；零值是有效测量。平均值不保留发布，失效时也发布无效结构，避免沿用旧值。
 
+## A1 滤芯寿命
+
+`state` 和 `status.get` 的 `filter` 包含 `used_seconds`、`lifetime_hours`、`remaining_percent`、`replacement_due`。默认额定寿命 4320 小时，按风机非零输出累计；剩余不超过 10% 时提示更换。
+
+`filter.get` 查询；`filter.set` 接受 `{"lifetime_hours":6000}`（1–20000 小时）；更换滤芯后发送 `filter.reset`（空 params），使用量归零并保留额定寿命。HTTP 与 MQTT 使用相同命令。修改和重置成功后及时发布 retained 状态；持续运行期间每分钟更新使用量，无变化时不重复上报。
+
+A1 通过 HA Discovery 提供 `filter_remaining`（百分比）、`filter_used`（小时）、`filter_replacement`（更换提醒）、`filter_lifetime`（可配置小时数）和 `filter_reset`（重置按钮）。滤芯损耗属于实际 A1，绑定 M1 或编组后仍保留这五个实体；HA 重启后重新发现。命令不保留，订阅者重新连接时可读取 retained 状态。
+
 ## 验证边界
 
 `tests/run.sh` 验证协议、配置迁移、采样新鲜度、联动与命令行为；`tests/test_web.cjs` 验证离线页面和命令映射；`tests/build_host.sh`、`tests/test_mqtt_v2.py <隔离 Broker 端口>` 验证实际 SDK MQTT worker（外设为桩）。这些不能替代真实 HA 加载、Flash 迁移和物理设备验收。
+
+`tests/run_mqtt_v2.sh` 还构建模拟器并运行 `test_a1_filter_mqtt.py`，覆盖五个 HA 实体模板、配置与重置命令、无查询情况下的一分钟主动上报、retained 重放和 HA birth 后重新发现。
