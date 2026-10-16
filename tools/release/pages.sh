@@ -54,6 +54,16 @@ python3 tools/release/archive_pages.py build/pages || {
  fi
  echo "Keeping the existing GitHub archive; upstream refresh failed." >&2
 }
+# Keep the public site's independent MQTT release automation and platform demo.
+for entry in .github tools; do
+ if [[ -d "$target/public/$entry" ]]; then
+  cp -a "$target/public/$entry" build/pages/
+ fi
+done
+if [[ -f "$target/public/demos/platform/release.json" ]]; then
+ rm -rf build/pages/demos/platform
+ cp -a "$target/public/demos/platform" build/pages/demos/
+fi
 # Only generated public output may cross the private/public boundary.
 find "$target/public" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf -- {} +
 cp -a build/pages/. "$target/public/"
