@@ -6,8 +6,10 @@
 #include "user_power.h"
 #include "ota_server/signed_adapter.h"
 #include "ota_server/ota_server.h"
+#include <stdio.h>
 #include "../common/service.c"
 extern json_object *tc1_status_json(void);
+extern char str_mac[16];
 static void text(json_object *o,const char *k,const char *v){json_object_object_add(o,k,json_object_new_string(v));}
 static bool keys(json_object *p,const char *allowed){json_object_object_foreach(p,k,v){char needle[80];snprintf(needle,sizeof(needle),"|%s|",k);if(!v || !strstr(allowed,needle))return false;}return true;}
 static bool boolparam(json_object *p,const char *k,bool *b){json_object *v=json_object_object_get(p,k);if(!v || !json_object_is_type(v,json_type_boolean))return false;*b=json_object_get_boolean(v);return true;}
@@ -64,7 +66,7 @@ json_object *service_product(const char *action,json_object *p,const char **code
         json_object *section=json_object_object_get(p,"section"),*v=json_object_object_get(p,"values");
         if(keys(p,"|section||values|") && section && json_object_is_type(section,json_type_string) && v && json_object_is_type(v,json_type_object)){
             const char *s=json_object_get_string(section);
-            if(!strcmp(s,"device")){char name[maxNameLen];valid=keys(v,"|name|") && strparam(v,"name",name,sizeof(name),true) && name[0];if(valid)strcpy(sys_config->micoSystemConfig.name,name);}
+            if(!strcmp(s,"device")){char name[maxNameLen];valid=keys(v,"|name|") && strparam(v,"name",name,sizeof(name),true);if(valid){if(name[0])strcpy(sys_config->micoSystemConfig.name,name);else snprintf(sys_config->micoSystemConfig.name,sizeof(sys_config->micoSystemConfig.name),ZTC1_NAME,str_mac+8);}}
             else if(!strcmp(s,"socket")){char name[SOCKET_NAME_LENGTH];valid=keys(v,"|index||name|") && number(v,"index",&index,0,5) && strparam(v,"name",name,sizeof(name),true) && name[0];if(valid)strcpy(user_config->socket_names[index],name);}
             else if(!strcmp(s,"meter")){int n;valid=keys(v,"|coefficient_x100|") && number(v,"coefficient_x100",&n,POWER_COEFFICIENT_MIN_X100,POWER_COEFFICIENT_MAX_X100);if(valid)user_config->power_coefficient_x100=n;}
             else if(!strcmp(s,"report")){int n;valid=keys(v,"|seconds|") && number(v,"seconds",&n,1,3600);if(valid)user_config->mqtt_report_freq=n;}

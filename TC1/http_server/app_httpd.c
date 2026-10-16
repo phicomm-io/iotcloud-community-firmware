@@ -445,13 +445,18 @@ static int HttpSetDeviceName(httpd_request_t *req) {
     bool json = buf[0] == '{', valid = false;
     json_object *o = json ? body_json(buf) : NULL;
     if (o)
-        valid = mqtt_json_string(o, "name", name, sizeof(name), false) && name[0];
+        valid = mqtt_json_string(o, "name", name, sizeof(name), false);
     else if (!json) {
         char extra;
         valid = sscanf(buf, "%63s %c", name, &extra) == 1;
     }
     if (valid) {
-        strcpy(sys_config->micoSystemConfig.name, name);
+        if (name[0])
+            strcpy(sys_config->micoSystemConfig.name, name);
+        else
+            snprintf(sys_config->micoSystemConfig.name,
+                     sizeof(sys_config->micoSystemConfig.name), ZTC1_NAME,
+                     str_mac + 8);
         mico_system_context_update(sys_config);
         registerMqttEvents();
     }

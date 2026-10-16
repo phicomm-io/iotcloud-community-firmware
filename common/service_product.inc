@@ -14,6 +14,8 @@
 #define WIFI_TRIAL a1_wifi_trial
 #define SCAN a1_scan_start
 #define DOWNLOAD a1_ota_download
+#define DEVICE_NAME_PREFIX "A1"
+#define DEVICE_ID a1_id
 #else
 #include "m1.h"
 #define DEVICE_MODEL "m1"
@@ -28,6 +30,8 @@
 #define WIFI_TRIAL m1_wifi_trial
 #define SCAN m1_scan_start
 #define DOWNLOAD m1_ota_download
+#define DEVICE_NAME_PREFIX "M1"
+#define DEVICE_ID m1_id
 #endif
 static void svc_string(json_object *o,const char *key,const char *value){json_object_object_add(o,key,json_object_new_string(value));}
 static bool svc_keys(json_object *p,const char *allowed){
@@ -98,7 +102,11 @@ static __attribute__((noinline)) json_object *service_product_inner(const char *
         json_object *section=json_object_object_get(p,"section"),*values=json_object_object_get(p,"values");
         if(!svc_keys(p,"|section||values|") || !section || !json_object_is_type(section,json_type_string) || !values || !json_object_is_type(values,json_type_object))return NULL;
         const char *s=json_object_get_string(section);CONFIG c;GET_CONFIG(&c);
-        if(!strcmp(s,"device")){if(!svc_keys(values,"|name|") || !svc_text(values,"name",c.name,sizeof(c.name),true) || !c.name[0])return NULL;ok=SAVE_CONFIG(&c);}
+        if(!strcmp(s,"device")){
+            if(!svc_keys(values,"|name|") || !svc_text(values,"name",c.name,sizeof(c.name),true))return NULL;
+            if(!c.name[0]){unsigned suffix=(unsigned)strtoul(DEVICE_ID+8,NULL,16);snprintf(c.name,sizeof(c.name),DEVICE_NAME_PREFIX "-%04X",suffix);}
+            ok=SAVE_CONFIG(&c);
+        }
         else if(!strcmp(s,"auth")){if(!svc_keys(values,"|password|") || !svc_text(values,"password",c.web_password,sizeof(c.web_password),true))return NULL;ok=SAVE_CONFIG(&c);}
         else if(!strcmp(s,"mqtt")){
             if(!svc_keys(values,"|host||port||user||password|") || !svc_text(values,"host",c.mqtt_host,sizeof(c.mqtt_host),true) || !svc_text(values,"user",c.mqtt_user,sizeof(c.mqtt_user),true) || !svc_text(values,"password",c.mqtt_password,sizeof(c.mqtt_password),false) || !svc_int(values,"port",&number,1,65535))return NULL;

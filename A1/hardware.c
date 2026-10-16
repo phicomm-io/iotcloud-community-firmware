@@ -1,5 +1,6 @@
 #include "../common/automation.h"
 #include "a1.h"
+#include "ring_feedback.h"
 #include "../common/indicator.h"
 #include "../common/gesture.h"
 #if !defined(CONFIG_CPU_MX1290) || !defined(MOC) || MOC != 1
@@ -88,8 +89,13 @@ static void panel_tick(uint32_t now, uint8_t *last_key, uint8_t *last_slider,
     uint8_t reg = 0, raw[3] = {0}; mico_i2c_message_t message;
     OSStatus err = MicoI2cBuildCombinedMessage(&message, &reg, raw, 1, 3, 5);
     if (err == kNoErr) err = MicoI2cTransfer(&panel, &message, 1);
+    a1_config_t cfg; a1_config_get(&cfg);
     mico_rtos_lock_mutex(&a1_lock);
     a1_state.panel_ready = err == kNoErr;
+    a1_state.touch_active = err == kNoErr && raw[0] > 0 && raw[0] <= 99 &&
+        !raw[1] && !raw[2] && !cfg.child_lock &&
+        !a1_state.ota_active && !a1_state.reboot_pending;
+    if (a1_state.touch_active) a1_state.led_until = now + 2000;
     if (err != kNoErr) a1_state.panel_errors++;
     else memcpy(a1_state.panel_raw, raw, sizeof(raw));
     mico_rtos_unlock_mutex(&a1_lock);
@@ -141,15 +147,13 @@ static void hardware_worker(mico_thread_arg_t arg)
         bool visible = cfg.led_enabled && cfg.brightness &&
             (cfg.led_always_on || (int32_t)(state.led_until - now) > 0);
         uint32_t colors[32] = {0};
-        if (visible) {
-            uint32_t r = cfg.red * cfg.brightness / 255, g = cfg.green * cfg.brightness / 255;
-            uint32_t b = cfg.blue * cfg.brightness / 255;
-            uint32_t color = (g << 16) | (r << 8) | b;
-            unsigned count = cfg.fan_on ? cfg.speed / 3 + 1 : 31;
-            if (count > 31) count = 31;
-            for (unsigned i = 0; i < count; i++) colors[(26 + 31 - i) % 31 + 1] = color;
-        }
+        uint32_t color = ((uint32_t)cfg.green << 16) | ((uint32_t)cfg.red << 8) | cfg.blue;
+        if (visible) a1_ring_feedback(colors, state.applied_speed, cfg.brightness, color);
         feature_light_frame(colors, cfg.brightness, cfg.led_enabled,((uint32_t)cfg.green<<16)|((uint32_t)cfg.red<<8)|cfg.blue);
+        /* Touch feedback shows the requested setting immediately, even while
+         * PWM catches up or another effect is selected. Release restores it. */
+        if (state.touch_active && visible)
+            a1_ring_feedback(colors, cfg.speed, feature_light_cap(cfg.brightness), color);
         unsigned mode = indicator_mode(cfg.ssid[0] != 0, state.wifi_connected,
             cfg.mqtt_host[0] != 0, state.mqtt_connected && state.mqtt_status == MQTT_READY);
         if (mode != old_mode) mode_since = now;
