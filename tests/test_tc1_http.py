@@ -1,9 +1,9 @@
 """Exercise the TC1-patched SDK sender after running TC1/build.sh."""
-import pathlib, subprocess, tempfile, unittest
+import os, pathlib, subprocess, tempfile, unittest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 class HttpSender(unittest.TestCase):
     def test_partial_send_and_bounded_failures(self):
-        path = ROOT / 'build/tc1-sdk/mico-os/libraries/daemons/http_server/httpd_handle.c'
+        path = pathlib.Path(os.environ.get('TC1_SDK_DIR', ROOT / 'build/tc1-sdk-3.6.4/mico-os')) / 'libraries/daemons/http_server/httpd_handle.c'
         if not path.exists(): self.skipTest('build the TC1 SDK first')
         source = path.read_text()
         function = source[source.index('int httpd_send(int conn,'):source.index('int httpd_recv(', source.index('int httpd_send(int conn,'))]
@@ -43,7 +43,7 @@ int main(void) {
             subprocess.run(['cc','-std=c99','-Wall','-Wextra','-Werror',str(src),'-o',str(binary)],check=True)
             subprocess.run([str(binary)],check=True,timeout=5)
     def test_receive_timeout_peer_close_and_data(self):
-        path = ROOT / 'build/tc1-sdk/mico-os/libraries/daemons/http_server/httpd_handle.c'
+        path = pathlib.Path(os.environ.get('TC1_SDK_DIR', ROOT / 'build/tc1-sdk-3.6.4/mico-os')) / 'libraries/daemons/http_server/httpd_handle.c'
         if not path.exists(): self.skipTest('build the TC1 SDK first')
         source = path.read_text()
         function = source[source.index('int httpd_recv('):source.index('int httpd_send_hdr_from_code(')]

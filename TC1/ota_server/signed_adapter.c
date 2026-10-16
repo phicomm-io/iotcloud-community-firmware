@@ -13,7 +13,8 @@ static mico_mutex_t lock;
 static uint32_t expected, staged, wire_total, wire_done;
 static unsigned ota_percent;
 static uint16_t transport_crc;
-static const uint8_t kernel_md5[16]={0xdf,0x26,0x41,0xdc,0xca,0x61,0xb3,0x0b,0xe1,0x54,0xb5,0x0b,0xcd,0xf2,0x50,0x03};
+/* MiCO 3.6.4 / 6c465211: MK3031 kernel padded to the application offset. */
+static const uint8_t kernel_md5[16]={0x06,0x77,0xcf,0x68,0xfc,0xa7,0xdf,0xdc,0x9b,0x81,0x22,0x8d,0x2a,0x1b,0x7e,0xc3};
 void tc1_ota_metadata(tc1_ota_metadata_t *out) {mico_rtos_lock_mutex(&lock);*out=metadata;mico_rtos_unlock_mutex(&lock);}
 void tc1_ota_init(void) { mico_rtos_init_mutex(&lock); }
 bool tc1_config_reserve(void) {

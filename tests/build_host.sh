@@ -6,7 +6,7 @@ mkdir -p "$output"
 python3 -m unittest discover -s tests -p test_apply_sdk_patch.py
 sdk_a1=${A1_SDK_DIR:-build/a1-sdk/mico-os}
 sdk_m1=${M1_SDK_DIR:-build/m1-sdk/mico-os}
-sdk_tc1=${TC1_SDK_DIR:-build/tc1-sdk/mico-os}
+sdk_tc1=${TC1_SDK_DIR:-build/tc1-sdk-3.6.4/mico-os}
 for model in A1 M1 TC1; do
     case "$model" in
         A1) sdk="$sdk_a1" ;;

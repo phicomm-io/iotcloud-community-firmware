@@ -22,7 +22,7 @@ Linux x86_64，推荐 Ubuntu 22.04。安装 `build-essential bzip2 curl git perl
 ./M1/build.sh
 ```
 
-脚本下载固定提交的 MiCO 3.6.4 SDK、ARM GCC 5.4.1 和 Python 2.7.18，构建 `M1@MK3080B@moc`。SDK 提交为 `6c465211d3ff8797cd835e400ec54a06530dd476`。可用绝对路径 `M1_SDK_DIR`、`M1_TOOLS_DIR`、`M1_PYTHON2` 指定依赖；SDK checkout 不要与 A1 共用。
+脚本按公共 `common/mico-sdk.json` 准备 MiCO 3.6.4 SDK（与 TC1 共用来源缓存 `build/mico-upstream.git`）、ARM GCC 5.4.1 和 Python 2.7.18，构建 `M1@MK3080B@moc`。SDK 提交为 `6c465211d3ff8797cd835e400ec54a06530dd476`。可用绝对路径 `M1_SDK_DIR`、`M1_TOOLS_DIR`、`M1_PYTHON2` 指定依赖；SDK checkout 不要与 A1 共用。
 
 产物在 `build/m1-release/`：`phicomm_m1.ota.bin`、`phicomm_m1.all.bin`、应用及 ELF/MAP、`manifest.json`、`SHA256SUMS`。网页升级只选 `.ota.bin`，完整镜像不作为通用首刷包。
 

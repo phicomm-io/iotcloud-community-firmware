@@ -18,7 +18,11 @@ Linux x86_64，推荐 Ubuntu 22.04。安装 `build-essential bzip2 curl git perl
 ./TC1/build.sh
 ```
 
-脚本从 [Release 0.0.0](https://github.com/phicomm-io/phicomm-community-firmware/releases/tag/0.0.0) 下载并校验 `TC1/sdk.json` 固定的 MiCO 3.5.4 SDK，缓存于 `build/tc1-sdk/`；下载并校验 ARM GCC 5.4.1 和 Python 2.7.18，生成网页资源后构建 `TC1@MK3031@moc`。可用绝对路径 `TC1_TOOLS_DIR` 指定工具缓存，或用 `TC1_PYTHON2` 指定 Python 2。可用 `TC1_SDK_DIR` 指定空的 SDK 缓存目录，用 `TC1_SDK_ARCHIVE` 指定已下载的 SDK 压缩包（绝对路径）。SDK 与 M1/A1 的缓存相互独立。私有仓库下载需先运行 `gh auth login`，或使用本地归档。
+三款固件统一使用 `common/mico-sdk.json` 固定的 MiCO 3.6.4（提交 `6c465211d3ff8797cd835e400ec54a06530dd476`）。共享下载源缓存为 `build/mico-upstream.git`；TC1 板级补丁应用于 `build/tc1-sdk-3.6.4/mico-os`，构建目录为 `build/tc1-workspace-3.6.4/`。旧版 `build/tc1-sdk/` 缓存不受影响。
+
+脚本下载并校验 ARM GCC 5.4.1 和 Python 2.7.18，生成网页资源后构建 `TC1@MK3031@moc`。可用绝对路径 `TC1_TOOLS_DIR` 指定工具缓存，用 `TC1_PYTHON2` 指定 Python 2，用 `TC1_SDK_DIR` 指定该提交的独立 Git checkout。离线 SDK 和共享缓存用法见[构建依赖](../docs/public/build-deps.md)。`TC1_SDK_ARCHIVE` 已由公共 Git 来源替代。
+
+MiCO 升级涉及参数 CRC 格式和闭源内核更新，差异及验证见[迁移说明](../docs/validation/mico-sdk-unification-20261016.md)。旧固件的签名 OTA 校验固定了旧内核摘要，不能直接通过该路径安装新内核；已在一台用户授权的 TC1 上通过未签名恢复通道验证迁移与配置读回保留，其他设备及长期运行尚未验证。
 
 产物在 `build/tc1-release/`：`phicomm_tc1_a1.ota.bin`、`phicomm_tc1_a1.all.bin`、应用及 ELF/MAP、`manifest.json`、`SHA256SUMS`。网页升级只选 `.ota.bin`。构建不会递增版本，也不会自动刷机。
 

@@ -18,6 +18,7 @@ version = project_version()
 version_metadata = build_metadata()
 manifest = {"version": version, "sdk_commit": sdk, "target": prefix, "toolchain": "ARM GCC 5.4.1", "files": {}}
 manifest.update(version_metadata)
+manifest['sdk'] = json.loads((Path(__file__).resolve().parents[2] / 'common/mico-sdk.json').read_text())
 manifest['frontend'] = json.loads((Path(__file__).resolve().parents[2] / 'frontend.lock.json').read_text())
 for suffix in (".usr.bin", ".ota.bin", ".all.bin", ".elf", ".map"):
     original = source / (prefix + suffix)

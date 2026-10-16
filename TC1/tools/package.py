@@ -13,8 +13,9 @@ version = project_version()
 version_metadata = build_metadata()
 prefix = 'TC1@MK3031@moc'
 output.mkdir(parents=True, exist_ok=True)
-sdk = json.loads((Path(__file__).resolve().parents[1] / 'sdk.json').read_text())
-manifest = {'version': version, 'target': prefix, 'sdk': sdk,
+(output / 'phicomm_tc1_a1.ota.bin.signed').unlink(missing_ok=True)
+sdk = json.loads((Path(__file__).resolve().parents[2] / 'common/mico-sdk.json').read_text())
+manifest = {'version': version, 'target': prefix, 'sdk': sdk, 'sdk_commit': sdk['commit'],
             'toolchain': 'ARM GCC 5.4.1', 'files': {}}
 manifest.update(version_metadata)
 manifest['frontend'] = json.loads((Path(__file__).resolve().parents[2] / 'frontend.lock.json').read_text())

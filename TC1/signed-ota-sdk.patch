@@ -1,6 +1,6 @@
 --- a/MiCO/system/config_server/config_server.c
 +++ b/MiCO/system/config_server/config_server.c
-@@ -298,6 +298,7 @@
+@@ -304,6 +304,7 @@
  
  static OSStatus onReceivedData(struct _HTTPHeader_t * inHeader, uint32_t inPos, uint8_t * inData, size_t inLen, void * inUserContext )
  {
@@ -8,9 +8,9 @@
    OSStatus err = kUnknownErr;
    const char *    value;
    size_t          valueSize;
-@@ -533,7 +534,7 @@
-     }
-     goto exit;
+@@ -601,7 +602,7 @@
+           _uap_configured_cb( easylinkIndentifier );
+       }
    }
 -  else if(HTTPHeaderMatchURL( inHeader, kCONFIGURLOTA ) == kNoErr && ota_partition->partition_owner != MICO_FLASH_NONE){
 +  else if(false /* Signed OTA is handled by the application, never SDK config server. */){
@@ -19,7 +19,7 @@
        CRC16_Final( &http_context->crc16_contex, &crc);
 --- a/MiCO/system/mico_system_para_storage.c
 +++ b/MiCO/system/mico_system_para_storage.c
-@@ -486,7 +486,7 @@
+@@ -484,7 +484,7 @@
      UNUSED_PARAMETER( ota_data_len );
      UNUSED_PARAMETER( ota_data_crc );
      extern int switch_active_firmware(void);

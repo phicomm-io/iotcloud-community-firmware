@@ -3,6 +3,7 @@
 #include "json.h"
 #include "mico.h"
 typedef struct {
+  char name[64];
   bool fan_on, led_enabled, child_lock, led_always_on;
   unsigned speed, brightness, red, green, blue;
 } a1_config_t;

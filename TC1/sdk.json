@@ -1,8 +1,0 @@
-{
-  "version": "3.5.4",
-  "repository": "phicomm-io/phicomm-community-firmware",
-  "release": "0.0.0",
-  "asset": "tc1-mico-sdk.tar.gz",
-  "url": "https://github.com/phicomm-io/phicomm-community-firmware/releases/download/0.0.0/tc1-mico-sdk.tar.gz",
-  "sha256": "53f43e7456f2476c131c9aa4053cf5828d935ca07e0689ebafa1b14122096339"
-}
