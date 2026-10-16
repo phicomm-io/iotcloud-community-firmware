@@ -121,7 +121,8 @@ static void topic(json_object *o, const char *key, const char *suffix)
 {
     char value[MQTT_TOPIC_MAX]; snprintf(value, sizeof(value), "%s/%s", base, suffix); str(o, key, value);
 }
-static int filter_discovery(const a1_config_t *c, bool clear)
+/* Keep this frame visible to the production MQTT stack-budget check. */
+static __attribute__((noinline)) int filter_discovery(const a1_config_t *c, bool clear)
 {
     static const char *keys[] = {"filter_remaining", "filter_used", "filter_replacement", "filter_lifetime", "filter_reset"};
     static const char *components[] = {"sensor", "sensor", "binary_sensor", "number", "button"};
