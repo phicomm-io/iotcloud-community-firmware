@@ -1,52 +1,59 @@
 # 斐讯设备社区固件
 
-为斐讯 TC1 智能排插、M1 空气检测仪和 A1 空气净化器提供本地网页控制、MQTT 与 Home Assistant 接入。
+为斐讯 **TC1 智能排插、M1 空气检测仪和 A1 空气净化器**维护社区固件，让设备通过本地网页继续使用，也能接入 MQTT、Home Assistant 和远程管理平台。固件免费，无需原厂云服务；仅在局域网使用时，不需要部署平台。
+
+**[项目主页与下载](https://phicomm-io.github.io/) · [使用文档](https://phicomm-io.github.io/#docs) · [在线演示](https://phicomm-io.github.io/#demos) · [发布说明](https://phicomm-io.github.io/guides/release-log.html)**
+
+## 项目提供什么
+
+- **本地控制**：手机或电脑浏览器直接访问设备，完成配网、日常操作与固件升级。
+- **智能家居接入**：支持 MQTT 与 Home Assistant 自动发现，也可通过 TMCP 管理平台集中查看和控制设备。
+- **设备联动**：M1 提供空气质量数据，A1 可按绑定的 M1 读数自动调整风机。
+- **统一网页体验**：设备 WebUI、管理平台和在线演示由独立前端仓库维护；固件构建锁定指定前端 Release。
 
 ## 支持的设备
 
-| 设备 | 主要功能 | 使用与构建 |
-| --- | --- | --- |
-| **TC1（A1 硬件版本）** | 六路插口与总开关、功率及电量统计、定时任务、童锁、按键设置、MQTT / HA、网页 OTA | [TC1](TC1/README.md) |
-| **M1 空气检测仪** | 温度、湿度、PM2.5、甲醛读数，屏幕亮度与时间设置、MQTT / HA、与净化器绑定联动 | [M1](M1/README.md) |
-| **A1 空气净化器** | 风机调速、触摸面板、RGB 灯带、童锁、定时与睡眠、多 M1 联动、MQTT / HA | [A1](A1/README.md) |
+| 设备 | 主要功能 | 刷机教程 | 使用指南 |
+| --- | --- | --- | --- |
+| **TC1 智能排插（A1 硬件版本）** | 六路插口与总开关、功率和电量统计、定时、童锁、按键设置 | [J-Link 刷机](https://phicomm-io.github.io/guides/tc1-flash.html) | [TC1 操作](https://phicomm-io.github.io/guides/tc1-guide.html) |
+| **M1 空气检测仪** | 温湿度、PM2.5、甲醛读数，屏幕亮度、时间设置及净化器联动 | [J-Link / Bootloader 刷机](https://phicomm-io.github.io/guides/a1-m1-flash.html) | [M1 操作](https://phicomm-io.github.io/guides/m1-guide.html) |
+| **A1 空气净化器** | 风机调速、触摸面板、RGB 灯环、童锁、定时、夜间模式及多 M1 联动 | [J-Link / Bootloader 刷机](https://phicomm-io.github.io/guides/a1-m1-flash.html) | [A1 操作](https://phicomm-io.github.io/guides/a1-guide.html) |
 
-`tc1(a1)` 指 **TC1 的 A1 硬件版本**，不是 A1 空气净化器。TC1 A2 硬件不支持；M1 和 A1 空气净化器适用于 EMW3080B / MK3080B 原装 Wi-Fi 模块。
+**TC1 的 A1 硬件版本与 A1 空气净化器是两个产品，固件不能混用。** TC1 A2 硬件不支持；M1 和 A1 空气净化器适用于 EMW3080B / MK3080B 原装 Wi-Fi 模块。
 
-## 下载
+## 开始使用
 
-固件版本由 Git tag 自动生成，例如 tag `v0.9.0` 对应设备显示 `0.9.0-abcdef`；这不表示所有源码构建均有对应 Release。请在 [Releases](https://github.com/phicomm-io/phicomm-community-firmware/releases) 中查看版本说明，下载与型号一致的文件：
+1. 阅读[刷机前准备](https://phicomm-io.github.io/guides/flash-prep.html)，确认型号、接线方式与供电要求。
+2. 从[下载页](https://phicomm-io.github.io/#releases)选择对应产品的固件，按附带的 `SHA256SUMS` 校验，并依照上表教程刷入。
+3. 按[快速开始](https://phicomm-io.github.io/guides/quick-start.html)连接设备热点、完成配网，再通过浏览器访问设备。
+4. 按需配置 [MQTT、Home Assistant 与设备联动](https://phicomm-io.github.io/guides/mqtt-link.html)。后续升级见[固件更新](https://phicomm-io.github.io/guides/firmware-update.html)。
 
-| 设备 | 本社区固件网页升级文件 | 下载入口 |
-| --- | --- | --- |
-| TC1（A1 硬件版本） | `phicomm_tc1_a1.ota.bin` | [TC1 固件](https://github.com/phicomm-io/phicomm-community-firmware/releases) |
-| M1 | `phicomm_m1.ota.bin` | [M1 固件](https://github.com/phicomm-io/phicomm-community-firmware/releases) |
-| A1 空气净化器 | `phicomm_a1.ota.bin` | [A1 固件](https://github.com/phicomm-io/phicomm-community-firmware/releases) |
+网页升级使用对应产品的 `.ota.bin` 签名包；`.all.bin` 用于完整镜像刷写，不能上传到网页 OTA。原厂或其他第三方固件不保证接受本项目 OTA 包，首次安装请遵循对应教程。
 
-下载后按 Release 中的 `SHA256SUMS` 校验。`.all.bin` 为完整镜像，不能上传到网页 OTA，也不是通用首刷包。原厂或其他第三方固件的升级入口不保证接受上述 OTA 文件。
+## 项目仓库
 
-## 构建
+| 仓库 | 负责内容 |
+| --- | --- |
+| [phicomm-community-firmware](https://github.com/phicomm-io/phicomm-community-firmware)（本仓库） | TC1 / M1 / A1 固件、构建脚本与使用文档 |
+| [phicomm-community-frontend](https://github.com/phicomm-io/phicomm-community-frontend) | 设备 WebUI、平台管理界面及在线演示的前端源码与 Release |
+| [phicomm-community-mqtt](https://github.com/phicomm-io/phicomm-community-mqtt) | TMCP 平台服务、MQTT 接入及部署配置 |
 
-在 Linux x86_64 上安装各型号构建说明中的系统依赖，然后执行：
+## 构建与参与
+
+在 Linux x86_64 上按[构建依赖](docs/public/build-deps.md)安装工具链与依赖后，执行：
 
 ```sh
 ./build.sh
 ```
 
-根脚本依次构建 TC1、M1 和 A1，产物分别位于 `build/tc1-release/`、`build/m1-release/` 和 `build/a1-release/`。单独构建可运行对应目录内的 `build.sh`。工具链及 SDK 见 [构建依赖归档](https://github.com/phicomm-io/phicomm-community-firmware/releases/tag/0.0.0)。
+该脚本依次构建 TC1、M1 和 A1，产物分别位于 `build/tc1-release/`、`build/m1-release/` 和 `build/a1-release/`。单独构建见 [TC1](TC1/README.md)、[M1](M1/README.md)、[A1](A1/README.md)；工具链与 SDK 见[依赖归档](https://github.com/phicomm-io/phicomm-community-firmware/releases/tag/0.0.0)。
 
-## 文档
+固件通过 `frontend.lock.json` 锁定前端 Release 的完整 commit 和 SHA-256，下载验证后嵌入对应页面，固件侧不需要 Node。离线准备可运行 `python3 tools/frontend_release.py --archive /path/frontend.tar.gz`，压缩包必须与锁文件匹配。接口约定见 [WebUI 契约](docs/webui-contract.md)。
 
-公开文档的唯一来源是 `docs/public/`，同时生成[公开站点](https://phicomm-io.github.io/)与 [Wiki](https://github.com/phicomm-io/phicomm-community-firmware/wiki)，页面清单见 `site/pages.py`。
+文档源位于 `docs/public/`，目录由 `site/pages.py` 维护。修改后运行 `python3 -m unittest discover -s tests -p test_site_docs.py` 校验。设备绑定见 [M1 / A1 联动](common/README.md)，平台账号与迁移见 [MQTT 配置](docs/mqtt-account.md)。
 
-- [快速开始](docs/public/quick-start.md)：认识三款设备、配网与访问方式。
-- [刷机前准备](docs/public/flash-prep.md)：供电、接线与模块下载接口的通用要求，以及各型号首刷方式的选择。
-- 各型号的刷机与操作文档见上表对应的设备目录；构建方法见[构建依赖](docs/public/build-deps.md)。
-- [M1 / A1 绑定与联动配置](common/README.md)。
-- [MQTT 平台账号主题、配置迁移和验证方法](docs/mqtt-account.md)。
-
-新增或改名页面时同步修改 `site/pages.py`，并运行 `python3 -m unittest discover -s tests -p test_site_docs.py` 校验。
-
-### 构建版本
+<details>
+<summary>构建版本规则</summary>
 
 版本不依赖 `.version` 文件。推送 `vMAJOR.MINOR.PATCH` tag 会触发 CI 构建和发布；
 发布构建校验该 tag 指向 HEAD 且源码干净。main、PR 和手动构建仍然保留。
@@ -60,12 +67,5 @@
 打包读取同一份版本快照，并将版本、完整 commit、tag 和 dirty 状态写入 manifest。
 这些生成文件不提交；版本变化会更新头文件，以触发依赖它的源码重新编译。
 
-## TMCP 平台
+</details>
 
-MQTT 服务与网页控制台位于 [独立平台仓库](https://github.com/phicomm-io/phicomm-community-mqtt)，包含前后端与部署配置。账号迁移和回退流程见 [平台迁移文档](https://github.com/phicomm-io/phicomm-community-mqtt/blob/main/docs/MIGRATION_TMCP.md)。
-
-## 前端版本
-
-设备 WebUI、管理平台和 demo 统一在 [phicomm-community-frontend](https://github.com/phicomm-io/phicomm-community-frontend) 维护。本仓库通过 `frontend.lock.json` 锁定完整 commit 的 Release 及 SHA-256，构建脚本下载验证后直接嵌入该 Release 的 gzip 页面。前端构建不在固件侧执行，不需要 Node。更新前端时复制目标 Release 的锁文件，三款固件 manifest 会记录对应前端身份。
-
-离线准备：`python3 tools/frontend_release.py --archive /path/frontend.tar.gz`。压缩包仍必须匹配已提交的锁文件。页面接口约定见 [WebUI 契约](docs/webui-contract.md)。
