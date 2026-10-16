@@ -1,6 +1,6 @@
 # 构建依赖
 
-本页说明如何获取工具链与 SDK，以及如何用本地副本构建三款固件。只使用预编译固件的用户不需要这一页，请直接[下载固件](https://fujr.github.io/phicomm-community-pages/#releases)。
+本页说明如何获取工具链与 SDK，以及如何用本地副本构建三款固件。只使用预编译固件的用户不需要这一页，请直接[下载固件]({{SITE_URL}}#releases)。
 
 在 [0.0.0 构建依赖归档](https://github.com/FUjr/phicomm-community-firmware/releases/tag/0.0.0) 下载工具链和 SDK，并使用随包 `SHA256SUMS` 校验：
 

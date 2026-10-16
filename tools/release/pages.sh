@@ -6,7 +6,15 @@
 #   tools/release/pages.sh --build-only   build only, output stays in build/pages
 #
 # No argument publishes, because the release workflow calls this script bare
-# after a tag ships. Preview never touches `main`.
+# after a tag ships. Preview never touches the publish branch.
+#
+# Target repository and branch are configurable so the site can move to a
+# user/organization root domain without editing this script:
+#
+#   PHICOMM_PAGES_REPO=phicomm-io/phicomm-io.github.io \
+#   PHICOMM_PAGES_BRANCH=main tools/release/pages.sh
+#
+# A <owner>/<owner>.github.io repository serves at https://<owner>.github.io/.
 set -euo pipefail
 mode=publish
 case "${1:-}" in
@@ -15,6 +23,9 @@ case "${1:-}" in
  "") ;;
  *) echo "usage: $0 [--preview|--build-only]" >&2; exit 2 ;;
 esac
+
+: "${PHICOMM_PAGES_REPO:=FUjr/phicomm-community-pages}"
+: "${PHICOMM_PAGES_BRANCH:=main}"
 
 python3 -m pip install --quiet Markdown==3.7
 python3 site/build.py build/pages
@@ -28,11 +39,15 @@ if [[ "$mode" == build ]]; then
  exit 0
 fi
 
-branch=$([[ "$mode" == preview ]] && echo preview || echo main)
+if [[ "$mode" == preview ]]; then
+ branch=preview
+else
+ branch="$PHICOMM_PAGES_BRANCH"
+fi
 target=$(mktemp -d)
 trap 'rm -rf "$target"' EXIT
 if [[ -n "${GH_TOKEN:-}" ]]; then gh auth setup-git; fi
-gh repo clone FUjr/phicomm-community-pages "$target/public" -- --depth=1
+gh repo clone "$PHICOMM_PAGES_REPO" "$target/public" -- --depth=1
 # Only generated public output may cross the private/public boundary.
 find "$target/public" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf -- {} +
 cp -a build/pages/. "$target/public/"
@@ -42,7 +57,7 @@ if ! git -C "$target/public" diff --cached --quiet; then
  git -C "$target/public" -c user.name='Phicomm release' -c user.email='release@users.noreply.github.com' \
   commit -m "Publish site from ${GITHUB_SHA:-$(git rev-parse HEAD)}"
  git -C "$target/public" push --force-with-lease origin "HEAD:${branch}"
- echo "Pushed ${branch}."
+ echo "Pushed ${branch} to ${PHICOMM_PAGES_REPO}."
 else
  echo "No site changes to publish."
 fi

@@ -18,7 +18,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'site'))
-from pages import GROUPS, PAGES  # noqa: E402
+from pages import GROUPS, PAGES, SITE_URL  # noqa: E402
 
 WIKI_ASSETS = 'https://raw.githubusercontent.com/wiki/FUjr/phicomm-community-firmware/assets/'
 PAGE_BY_SLUG = {slug: wiki for slug, _, _, wiki in PAGES}
@@ -36,6 +36,8 @@ def wiki_link_target(slug):
 
 def rewrite(text):
     """Turn site link targets into Wiki link targets."""
+    text = text.replace('{{SITE_URL}}', SITE_URL)
+
     def one(match):
         target, rest = match.group(1).strip(), match.group(2)
         anchor = ''
@@ -64,7 +66,7 @@ def home_page():
             lines.append(f'- [{page_title}]({wiki_link_target(wiki)})：{summary}')
         lines.append('')
     lines += ['## 相关链接', '',
-              '- [项目主页与历史版本归档](https://fujr.github.io/phicomm-community-pages/)',
+              f'- [项目主页与历史版本归档]({SITE_URL})',
               '- [固件源码仓库](https://github.com/FUjr/phicomm-community-firmware)',
               '- [MQTT 远程集中管理平台](https://github.com/FUjr/phicomm-community-mqtt)',
               '']

@@ -38,3 +38,7 @@ GROUPS = [
 PAGES = [page for _, _, items in GROUPS for page in items]
 BY_SLUG = {slug: (title, summary, wiki) for slug, title, summary, wiki in PAGES}
 GROUP_OF = {slug: (gid, gtitle) for gid, gtitle, items in GROUPS for slug, _, _, _ in items}
+
+# Public site base URL, used wherever documentation links to the live site
+# (downloads, the demo index). One place to change if the site moves hosts.
+SITE_URL = 'https://fujr.github.io/phicomm-community-pages/'

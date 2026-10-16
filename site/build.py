@@ -15,7 +15,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(ROOT / 'common' / 'web'))
-from pages import GROUPS, PAGES  # noqa: E402
+from pages import GROUPS, PAGES, SITE_URL  # noqa: E402
 
 EXTENSIONS = ['tables', 'fenced_code', 'attr_list']
 SITE_NAME = 'PHICOMM COMMUNITY'
@@ -113,8 +113,14 @@ def rewrite_links(text):
     return re.sub(r'\]\(([^\s)]+)\)', one, text)
 
 
+def expand_site_url(text):
+    """Fill the {{SITE_URL}} placeholder that docs use to link the live site."""
+    return text.replace('{{SITE_URL}}', SITE_URL)
+
+
 def render_guide(slug, title, summary, source):
-    body = markdown.markdown(rewrite_links(source.read_text(encoding='utf-8')), extensions=EXTENSIONS)
+    body = markdown.markdown(
+        rewrite_links(expand_site_url(source.read_text(encoding='utf-8'))), extensions=EXTENSIONS)
     return (f'<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width,initial-scale=1">'
             f'<meta name="description" content="{esc(summary)}">'

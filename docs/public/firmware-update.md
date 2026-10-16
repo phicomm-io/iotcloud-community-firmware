@@ -25,7 +25,7 @@
 | `.ota.bin.raw` | 原始镜像，仅用于明确选择的无签名救援流程 |
 | `.all.bin` | **完整镜像，用于有线刷机。不要当作 OTA 上传** |
 
-在 [项目主页与历史版本归档](https://fujr.github.io/phicomm-community-pages/#releases) 下载对应型号的文件，并按同版本 `SHA256SUMS` 校验。设备擦除前会验证头部签名，Flash 读回 SHA-256 与兼容性检查全部通过后才启用新镜像。
+在 [项目主页与历史版本归档]({{SITE_URL}}#releases) 下载对应型号的文件，并按同版本 `SHA256SUMS` 校验。设备擦除前会验证头部签名，Flash 读回 SHA-256 与兼容性检查全部通过后才启用新镜像。
 
 ## 本地文件升级
 

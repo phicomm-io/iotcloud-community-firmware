@@ -56,4 +56,4 @@ A1 对已绑定且 15 秒内有效的 M1 数据计算实时算术平均；没有
 
 自建 MQTT 服务的账号主题、配置迁移和权限说明见平台的 [文档目录](https://github.com/FUjr/phicomm-community-mqtt#readme)。
 
-可以先在[在线演示](https://fujr.github.io/phicomm-community-pages/#demos)中体验远程集中管理平台界面：演示全部使用模拟数据，不连接真实设备。
+可以先在[在线演示]({{SITE_URL}}#demos)中体验远程集中管理平台界面：演示全部使用模拟数据，不连接真实设备。
