@@ -10,14 +10,11 @@ python3 "$project_dir/tools/check_version.py" "${version_args[@]}"
 sdk_dir="${A1_SDK_DIR:-$project_dir/build/a1-sdk/mico-os}"
 tools_dir="${A1_TOOLS_DIR:-$project_dir/build/a1-tools}"
 workspace="$project_dir/build/a1-workspace"
-sdk_commit=6c465211d3ff8797cd835e400ec54a06530dd476
+sdk_commit="$(python3 "$project_dir/tools/prepare_sdk.py" --commit)"
 target=A1@MK3080B@moc
 mkdir -p "$tools_dir" "$workspace" "$(dirname "$sdk_dir")"
 
-if [[ ! -d "$sdk_dir/.git" ]]; then
-    git clone --depth 1 --branch 3.6.4 https://github.com/MXCHIP/mico-os.git "$sdk_dir"
-fi
-[[ "$(git -C "$sdk_dir" rev-parse HEAD)" == "$sdk_commit" ]] || { echo 'A1 SDK commit mismatch' >&2; exit 1; }
+python3 "$project_dir/tools/prepare_sdk.py" "$sdk_dir"
 if git -C "$sdk_dir" apply --reverse --check "$app_dir/sdk.patch" 2>/dev/null; then
     : # already applied
 else
@@ -25,7 +22,7 @@ else
     git -C "$sdk_dir" apply "$app_dir/sdk.patch"
 fi
 
-# Root TC1 SDK/version/build.sh are intentionally not part of this workspace.
+# Product board overlays stay in separate checkouts of the shared SDK pin.
 if ! git -C "$sdk_dir" apply --reverse --check "$app_dir/features-sdk.patch" 2>/dev/null; then
     git -C "$sdk_dir" apply --check "$app_dir/features-sdk.patch"
     git -C "$sdk_dir" apply "$app_dir/features-sdk.patch"
@@ -34,6 +31,7 @@ fi
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/watchdog-mico36.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-mico36.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-publish-bounds.patch"
+python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-socket-close.patch"
 # Complete started MQTT packets even when the short yield deadline expires.
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/M1/mqtt-packet-deadline.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-response-deadline.patch"

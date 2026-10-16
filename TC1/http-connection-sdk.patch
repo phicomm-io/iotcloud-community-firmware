@@ -138,11 +138,45 @@
  	}
  	/* scratch will now have the JSON data */
  	content[ret] = '\0';
-@@ -564,6 +565,7 @@
+--- a/libraries/daemons/http_server/httpd_wsgi.c
++++ b/libraries/daemons/http_server/httpd_wsgi.c
+@@ -542,6 +542,27 @@
+ out:
+ 	free(buf);
+ 	return req->remaining_bytes;
++}
++
++/* Binary upload reader: return bytes consumed without appending a NUL byte. */
++int httpd_get_data2(httpd_request_t *req, char *content, int length)
++{
++    if (length <= 0) return -kInProgressErr;
++    if (!req->hdr_parsed) {
++        char *scratch = malloc(HTTPD_MAX_MESSAGE);
++        if (!scratch) return -kInProgressErr;
++        int status = httpd_parse_hdr_tags(req, req->sock, scratch, HTTPD_MAX_MESSAGE);
++        free(scratch);
++        if (status != kNoErr) return -kInProgressErr;
++        req->hdr_parsed = 1;
++    }
++    if (req->chunked || req->remaining_bytes < 0) return -kInProgressErr;
++    if (length > req->remaining_bytes) length = req->remaining_bytes;
++    if (!length) return 0;
++    int received = httpd_recv(req->sock, content, length, 0);
++    if (received <= 0) return -kInProgressErr;
++    req->remaining_bytes -= received;
++    return received;
+ }
  
- 		if (ret != kNoErr) {
- 			system_log("Unable to parse header tags");
-+			free(buf);
- 			goto out;
- 		} else {
- 			system_log("Headers parsed successfully\r\n");
+ static int get_matching_chars(const char *s1, const char *s2)
+--- a/libraries/daemons/http_server/httpd.h
++++ b/libraries/daemons/http_server/httpd.h
+@@ -1125,6 +1125,9 @@
+  */
+ int httpd_get_data(httpd_request_t *req, char *content, int length);
+ 
++/* Read binary uploads without a trailing NUL; returns bytes read or an error. */
++int httpd_get_data2(httpd_request_t *req, char *content, int length);
++
+ /** @brief Get the incoming JSON data in case of HTTP POST request
+  *
+  *  @note  This function is an extension to \ref httpd_get_data. Additionally this

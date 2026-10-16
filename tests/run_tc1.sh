@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-sdk=build/tc1-sdk/mico-os/libraries/protocols/mqtt
+sdk=${TC1_SDK_DIR:-build/tc1-sdk-3.6.4/mico-os}/libraries/protocols/mqtt
 output=$(mktemp -d)
 trap 'rm -rf "$output"' EXIT
 cc -std=gnu99 -Wall -Wextra -Wno-unused-parameter -Wno-unused-but-set-variable -Wno-sign-compare -Wno-misleading-indentation -Wno-pointer-sign -Wno-implicit-fallthrough \
@@ -14,3 +14,5 @@ python3 tests/test_tc1_gpio.py
 python3 tests/test_tc1_core.py
 
 python3 tests/test_tc1_wifi.py
+
+python3 -m unittest tests.test_tc1_sdk_migration tests.test_tc1_binary_upload tests.test_tc1_sdk_auth tests.test_mico_network_close

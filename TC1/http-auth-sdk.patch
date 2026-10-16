@@ -1,0 +1,94 @@
+--- a/libraries/daemons/http_server/httpd.h
++++ b/libraries/daemons/http_server/httpd.h
+@@ -521,6 +521,8 @@
+ 	char version[HTTPD_MAX_VAL_LENGTH + 1];	/* +1 for null termination */
+ } httpd_useragent_t;
+ 
++#define HTTPD_MAX_AUTH_LENGTH 64
++
+ struct httpd_wsgi_call;
+ 
+ /** Request structure representing various properties of an HTTP request
+@@ -535,6 +537,8 @@
+ 	int sock;
+ 	/** Indicator notifying whether the HTTP headers are parsed or not */
+ 	unsigned char hdr_parsed;
++	/** Base64 credentials from an HTTP Basic Authorization header */
++	char authorization[HTTPD_MAX_AUTH_LENGTH + 1];
+ 	/** The number of data bytes not yet parsed */
+ 	int remaining_bytes;
+ 	/** The size of data in the incoming HTTP Request */
+--- a/libraries/daemons/http_server/http_parse.c
++++ b/libraries/daemons/http_server/http_parse.c
+@@ -341,6 +341,13 @@
+     if (!strncasecmp(&data_p[sizeof(http_encoding) - 1],
+                      HTTP_CHUNKED, sizeof(HTTP_CHUNKED) - 1))
+       req_p->chunked = 1;
++  } else if (strncasecmp(data_p, "Authorization: Basic ", 21) == 0) {
++    char *value = data_p + 21;
++    size_t value_len = strcspn(value, "\r\n");
++    if (value_len > HTTPD_MAX_AUTH_LENGTH)
++      value_len = HTTPD_MAX_AUTH_LENGTH;
++    memcpy(req_p->authorization, value, value_len);
++    req_p->authorization[value_len] = 0;
+   }
+   return kNoErr;
+ }
+--- a/libraries/daemons/http_server/httpd_wsgi.c
++++ b/libraries/daemons/http_server/httpd_wsgi.c
+@@ -284,8 +284,8 @@
+ 	int ret;
+ 
+ 	/* Parse the header tags. This is valid only for GET or HEAD request */
+-	if (req->type == HTTPD_REQ_TYPE_GET ||
+-		req->type == HTTPD_REQ_TYPE_HEAD) {
++	if (!req->hdr_parsed && (req->type == HTTPD_REQ_TYPE_GET ||
++		req->type == HTTPD_REQ_TYPE_HEAD)) {
+ 		ret = httpd_purge_headers(req->sock);
+ 
+ 		if (ret != kNoErr) {
+@@ -368,8 +368,8 @@
+   int ret;
+ 
+   /* Parse the header tags. This is valid only for GET or HEAD request */
+-  if (req->type == HTTPD_REQ_TYPE_GET ||
+-    req->type == HTTPD_REQ_TYPE_HEAD) {
++  if (!req->hdr_parsed && (req->type == HTTPD_REQ_TYPE_GET ||
++    req->type == HTTPD_REQ_TYPE_HEAD)) {
+     ret = httpd_purge_headers(req->sock);
+ 
+     if (ret != kNoErr) {
+@@ -428,8 +428,8 @@
+ 	int ret;
+ 
+ 	/* Parse the header tags. This is valid only for GET or HEAD request */
+-	if (req->type == HTTPD_REQ_TYPE_GET ||
+-		req->type == HTTPD_REQ_TYPE_HEAD) {
++	if (!req->hdr_parsed && (req->type == HTTPD_REQ_TYPE_GET ||
++		req->type == HTTPD_REQ_TYPE_HEAD)) {
+ 		ret = httpd_purge_headers(req->sock);
+ 
+ 		if (ret != kNoErr) {
+@@ -697,6 +697,22 @@
+ 
+ 	/* Match found. So map the wsgi to this request */
+ 	req_p->wsgi = calls[match_index];
++	if (get_httpd_auth()) {
++		char *header_buf = malloc(HTTPD_MAX_MESSAGE);
++		if (!header_buf)
++			return -kInProgressErr;
++		ret = httpd_parse_hdr_tags(req_p, req_p->sock, header_buf,
++				HTTPD_MAX_MESSAGE);
++		free(header_buf);
++		if (ret != kNoErr)
++			return ret;
++		req_p->hdr_parsed = 1;
++		if (strcmp(req_p->authorization, get_httpd_auth()) != 0) {
++			httpd_send(req_p->sock, httpd_authrized,
++					strlen(httpd_authrized));
++			return HTTPD_DONE;
++		}
++	}
+ 	switch (req_p->type) {
+ 	case HTTPD_REQ_TYPE_HEAD:
+ 	case HTTPD_REQ_TYPE_GET:

@@ -8,50 +8,105 @@
 +WEAK uint32_t app_config_legacy_next_size(uint32_t size) { return 0; }
 +WEAK bool app_config_migrate_legacy(void *data, uint32_t size) { return false; }
 +
+ static OSStatus try_old_para(system_context_t *inContext);
+ 
  WEAK void appRestoreDefault_callback(void *user_data, uint32_t size)
- {
+@@ -502,58 +506,44 @@
+     return kNoErr;
+ }
  
-@@ -279,6 +283,35 @@
-   if( is_crc_match( crc_result, crc_target ) == false ){
-     /* Data collapsed at main partition and backup partition both, restore to default */
-     if( is_crc_match( crc_backup_result, crc_backup_target ) == false ){
-+      /* A larger application layout moves its CRC. Try both frozen legacy
-+       * layouts before restoring defaults; never accept an unchecked prefix. */
-+      uint32_t legacy_size;
-+      for (legacy_size=app_config_legacy_size(); legacy_size && legacy_size < inContext->user_config_data_size; legacy_size=app_config_legacy_next_size(legacy_size)) {
+-static int is_old_part_crc_match(system_context_t *inContext, mico_partition_t part)
+-{
+-    uint32_t para_offset = 0x0;
+-    //uint32_t config_offset = CONFIG_OFFSET;
+-    uint32_t crc_offset = mico_context_section_offsets[ PARA_APP_DATA_SECTION ] + inContext->user_config_data_size;;
+-    CRC16_Context crc_context;
+-    uint16_t crc_result, crc_target;
+-    
+-    para_offset = 0x0;
+-    MicoFlashRead( part, &para_offset, (uint8_t *)&inContext->flashContentInRam, sizeof( system_config_t ) );
+-    para_offset = mico_context_section_offsets[ PARA_APP_DATA_SECTION ];
+-    MicoFlashRead( part, &para_offset, (uint8_t *)inContext->user_config_data, inContext->user_config_data_size );
+-
+-    CRC16_Init( &crc_context );
+-    CRC16_Update( &crc_context, (uint8_t *)&inContext->flashContentInRam.micoSystemConfig, SYS_CONFIG_SIZE );
+-    CRC16_Update( &crc_context, inContext->user_config_data, inContext->user_config_data_size );
+-    CRC16_Final( &crc_context, &crc_result );
+-    para_log( "crc_result = %d", crc_result);
+-
+-    crc_offset = mico_context_section_offsets[ PARA_APP_DATA_SECTION ] + inContext->user_config_data_size;;
+-    MicoFlashRead( part, &crc_offset, (uint8_t *)&crc_target, CRC_SIZE );
+-    para_log( "crc_target = %d", crc_target);
+-
+-    if( is_crc_match( crc_result, crc_target ) == true ) {
+-        return true;
+-    } else {
+-        return false;
++/* Read the 3.5 CRC after application data, including frozen TC1 layouts.
++ * Validate both slots before restoring defaults; never migrate an unchecked prefix.
++ * A read/write failure is returned to the caller, not treated as corrupt settings.
++ */
++static OSStatus try_old_para(system_context_t *inContext)
++{
++    uint32_t size;
++    for (size = inContext->user_config_data_size; size;
++         size = size == inContext->user_config_data_size ? app_config_legacy_size() : app_config_legacy_next_size(size)) {
 +        unsigned int slot;
++        if (size > inContext->user_config_data_size) return kSizeErr;
 +        for (slot = 0; slot < 2; ++slot) {
-+          mico_partition_t part = slot ? MICO_PARTITION_PARAMETER_2 : MICO_PARTITION_PARAMETER_1;
-+          para_offset = 0;
-+          err = MicoFlashRead(part, &para_offset, (uint8_t *)&inContext->flashContentInRam, sizeof(system_config_t));
-+          require_noerr(err, exit);
-+          para_offset = mico_context_section_offsets[PARA_APP_DATA_SECTION];
-+          err = MicoFlashRead(part, &para_offset, inContext->user_config_data, legacy_size);
-+          require_noerr(err, exit);
-+          err = MicoFlashRead(part, &para_offset, (uint8_t *)&crc_target, CRC_SIZE);
-+          require_noerr(err, exit);
-+          CRC16_Init(&crc_context);
-+          CRC16_Update(&crc_context, &inContext->flashContentInRam.micoSystemConfig, SYS_CONFIG_SIZE);
-+          CRC16_Update(&crc_context, inContext->user_config_data, legacy_size);
-+          CRC16_Final(&crc_context, &crc_result);
-+          if (is_crc_match(crc_result, crc_target) &&
-+              inContext->flashContentInRam.micoSystemConfig.magic_number == SYS_MAGIC_NUMBR &&
-+              app_config_migrate_legacy(inContext->user_config_data, legacy_size)) {
-+            seedNum = inContext->flashContentInRam.micoSystemConfig.seed;
-+            err = internal_update_config(inContext);
++            mico_partition_t part = slot ? MICO_PARTITION_PARAMETER_2 : MICO_PARTITION_PARAMETER_1;
++            uint32_t offset = 0;
++            uint16_t expected, actual;
++            CRC16_Context crc;
++            OSStatus err;
++            err = MicoFlashRead(part, &offset, (uint8_t *)&inContext->flashContentInRam, sizeof(system_config_t));
 +            require_noerr(err, exit);
-+            goto config_loaded;
-+          }
++            offset = mico_context_section_offsets[PARA_APP_DATA_SECTION];
++            err = MicoFlashRead(part, &offset, inContext->user_config_data, size);
++            require_noerr(err, exit);
++            err = MicoFlashRead(part, &offset, (uint8_t *)&expected, CRC_SIZE);
++            require_noerr(err, exit);
++            CRC16_Init(&crc);
++            CRC16_Update(&crc, &inContext->flashContentInRam.micoSystemConfig, SYS_CONFIG_SIZE);
++            CRC16_Update(&crc, inContext->user_config_data, size);
++            CRC16_Final(&crc, &actual);
++            if (actual && actual == expected &&
++                inContext->flashContentInRam.micoSystemConfig.magic_number == SYS_MAGIC_NUMBR &&
++                (size == inContext->user_config_data_size || app_config_migrate_legacy(inContext->user_config_data, size))) {
++                seedNum = inContext->flashContentInRam.micoSystemConfig.seed;
++                return internal_update_config(inContext);
++            }
++            continue;
++exit:
++            return err;
 +        }
-+      }
-       para_log("Config failed on both partition, restore to default settings!");
-       err = mico_system_context_restore( &inContext->flashContentInRam );
-       require_noerr(err, exit);
-@@ -339,6 +372,7 @@
      }
-   }
- 
-+config_loaded:
-   para_log(" Config read, seed = %d!", inContext->flashContentInRam.micoSystemConfig.seed);
- 
-   seedNum = inContext->flashContentInRam.micoSystemConfig.seed;
+-}
+-
+-/* Try to use the OLD mico para save method */
+-static OSStatus try_old_para(system_context_t *inContext)
+-{
+-    OSStatus err = kNoErr;
+-    mico_Context_t *mico_context = mico_system_context_get();
+-    
+-    /* Load data and crc from main partition */
+-    if (is_old_part_crc_match(inContext, MICO_PARTITION_PARAMETER_1) == true) {
+-        para_log("Main partition CRC correct");
+-        mico_system_context_update(mico_context);
+-        return kNoErr;
+-    }
+-    /* Load data and crc from backup partition */
+-    if (is_old_part_crc_match(inContext, MICO_PARTITION_PARAMETER_2) == true) {
+-        para_log("Backup partition CRC correct");
+-        mico_system_context_update(mico_context);
+-        return kNoErr;
+-    }
+-    para_log("Config failed on both partition, restore to default settings!");
+-    err = mico_system_context_restore( mico_context );
+-    
+-    return err;
+-} 
+-
+-
++    return mico_system_context_restore(mico_system_context_get());
++}

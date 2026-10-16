@@ -32,8 +32,9 @@ jobs:
         with:
           path: |
             build/tc1-tools
-            build/tc1-sdk
-          key: tc1-tools-ubuntu22-gcc54-python2718-${{ hashFiles('TC1/sdk.json', 'TC1/*.patch', 'common/mqtt-mico35.patch') }}
+            build/tc1-sdk-3.6.4
+            build/mico-upstream.git
+          key: tc1-tools-ubuntu22-gcc54-python2718-${{ hashFiles('common/mico-sdk.json', 'TC1/*.patch', 'common/*.patch') }}
       - name: Verify project version
         env:
           TAG_NAME: ${{ github.ref_name }}
@@ -270,12 +271,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Checkout pinned firmware JSON library
-        uses: actions/checkout@v4
-        with:
-          repository: MXCHIP/mico-os
-          ref: 6c465211d3ff8797cd835e400ec54a06530dd476
-          path: build/a1-sdk/mico-os
+      - name: Prepare pinned firmware JSON library
+        run: python3 tools/prepare_sdk.py build/a1-sdk/mico-os
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -320,17 +317,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          mkdir -p build/m1-sdk
-          cp -a build/a1-sdk/mico-os build/m1-sdk/mico-os
-          python3 TC1/tools/prepare_sdk.py build/tc1-sdk/mico-os
+          python3 tools/prepare_sdk.py build/m1-sdk/mico-os
+          python3 tools/prepare_sdk.py build/tc1-sdk-3.6.4/mico-os
           python3 tools/apply_sdk_patch.py build/m1-sdk/mico-os common/mqtt-mico36.patch
+          python3 tools/apply_sdk_patch.py build/m1-sdk/mico-os common/mqtt-socket-close.patch
           python3 tools/apply_sdk_patch.py build/m1-sdk/mico-os M1/mqtt-packet-deadline.patch
           python3 tools/apply_sdk_patch.py build/m1-sdk/mico-os common/mqtt-response-deadline.patch
           python3 tools/apply_sdk_patch.py build/a1-sdk/mico-os common/mqtt-mico36.patch
+          python3 tools/apply_sdk_patch.py build/a1-sdk/mico-os common/mqtt-socket-close.patch
           python3 tools/apply_sdk_patch.py build/a1-sdk/mico-os M1/mqtt-packet-deadline.patch
           python3 tools/apply_sdk_patch.py build/a1-sdk/mico-os common/mqtt-response-deadline.patch
-          python3 tools/apply_sdk_patch.py build/tc1-sdk/mico-os common/mqtt-mico35.patch
-          python3 tools/apply_sdk_patch.py build/tc1-sdk/mico-os TC1/mqtt-packet-deadline.patch
+          python3 tools/apply_sdk_patch.py build/tc1-sdk-3.6.4/mico-os common/mqtt-mico36.patch
+          python3 tools/apply_sdk_patch.py build/tc1-sdk-3.6.4/mico-os common/mqtt-socket-close.patch
+          python3 tools/apply_sdk_patch.py build/tc1-sdk-3.6.4/mico-os M1/mqtt-packet-deadline.patch
+          python3 tools/apply_sdk_patch.py build/tc1-sdk-3.6.4/mico-os common/mqtt-response-deadline.patch
       - name: Test TMCP using real SDK workers and an isolated broker
         run: |
           python3 -m pip install paho-mqtt==2.1.0 Jinja2==3.1.6
