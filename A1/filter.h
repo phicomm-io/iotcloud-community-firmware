@@ -8,6 +8,7 @@
 #define A1_FILTER_DEFAULT_HOURS 4320u
 #define A1_FILTER_MAX_HOURS 20000u
 #define A1_FILTER_CHECKPOINT_SECONDS 3600u
+#define A1_FILTER_MQTT_INTERVAL_MS 60000u
 
 typedef struct {
     uint32_t magic, used_seconds, lifetime_hours;
@@ -43,4 +44,16 @@ static inline unsigned a1_filter_remaining(const a1_filter_storage_t *f)
     if (!total || f->used_seconds >= total) return 0;
     /* Keep 0% for exhaustion, rounding partial percentage points upward. */
     return (unsigned)(((uint64_t)(total - f->used_seconds) * 100u + total - 1) / total);
+}
+
+/* Reset and lifetime edits must reach other subscribers without a status poll.
+ * Accumulating seconds are coalesced to avoid publishing on every fan tick. */
+static inline bool a1_filter_mqtt_due(const a1_filter_storage_t *current,
+                                     const a1_filter_storage_t *sent,
+                                     uint32_t now, uint32_t sent_at)
+{
+    return current->lifetime_hours != sent->lifetime_hours ||
+        current->used_seconds < sent->used_seconds ||
+        (current->used_seconds != sent->used_seconds &&
+         (uint32_t)(now - sent_at) >= A1_FILTER_MQTT_INTERVAL_MS);
 }

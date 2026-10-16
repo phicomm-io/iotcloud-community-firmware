@@ -32,5 +32,18 @@ int main(void)
     a1_filter_advance(&f,&c,0,true);
     a1_filter_advance(&f,&c,5000,true);
     assert(f.used_seconds==INT_MAX && a1_filter_remaining(&f)==0);
+    a1_filter_defaults(&f);a1_filter_storage_t sent=f;
+    assert(!a1_filter_mqtt_due(&f,&sent,60000,0)); /* Idle: no traffic. */
+    f.used_seconds=1;
+    assert(!a1_filter_mqtt_due(&f,&sent,59999,0));
+    assert(a1_filter_mqtt_due(&f,&sent,60000,0));
+    sent=f;f.lifetime_hours=6000;
+    assert(a1_filter_mqtt_due(&f,&sent,60001,60000));
+    sent=f;f.used_seconds=0;
+    assert(a1_filter_mqtt_due(&f,&sent,60002,60001));
+    sent=f;f.used_seconds=60;
+    assert(a1_filter_mqtt_due(&f,&sent,29999,UINT32_MAX-30000));
+    assert(!a1_filter_mqtt_due(&f,&sent,29998,UINT32_MAX-30000));
     puts("A1 filter elapsed time, pause/resume, tick wrap, warning, exhaustion, saturation: OK");
+    puts("A1 MQTT filter updates: coalesced runtime, immediate edit/reset, idle and tick wrap: OK");
 }

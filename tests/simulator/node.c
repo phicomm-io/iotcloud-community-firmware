@@ -75,6 +75,19 @@ json_object *status_json(void){CFG c;STATE s;config_get(&c);state_get(&s);json_o
 #ifdef HOST_A1
  json_object_object_add(o,"filter",a1_filter_json());
  json_object_object_add(o,"coordinator",json_object_new_boolean(feature_is_coordinator()));bool on;unsigned speed;feature_effective_fan(c.fan_on,c.speed,&on,&speed);json_object_object_add(o,"on",json_object_new_boolean(on));json_object_object_add(o,"speed",json_object_new_int(speed));
+ /* Keep the actual home renderer usable over MQTT, including its light controls. */
+ json_object_object_add(o,"fan_on",json_object_new_boolean(on));
+ json_object_object_add(o,"requested_speed",json_object_new_int(c.speed));
+ json_object_object_add(o,"percentage",json_object_new_int(on?speed:0));
+ json_object_object_add(o,"applied_speed",json_object_new_int(on?speed:0));
+ json_object_object_add(o,"panel_ready",json_object_new_boolean(true));
+ json_object_object_add(o,"led_enabled",json_object_new_boolean(c.led_enabled));
+ json_object_object_add(o,"led_always_on",json_object_new_boolean(c.led_always_on));
+ json_object_object_add(o,"brightness",json_object_new_int(c.brightness));
+ json_object_object_add(o,"red",json_object_new_int(c.red));
+ json_object_object_add(o,"green",json_object_new_int(c.green));
+ json_object_object_add(o,"blue",json_object_new_int(c.blue));
+ json_object_object_add(o,"child_lock",json_object_new_boolean(c.child_lock));
 #else
  json_object_object_add(o,"brightness",json_object_new_int(s.brightness_requested));
 #endif
