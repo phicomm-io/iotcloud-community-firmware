@@ -51,3 +51,5 @@ done
 python3 tests/check_web.py
 python3 tests/test_m1_clock.py
 python3 -m unittest discover -s tests -p test_site_docs.py
+
+python3 -m unittest discover -s tests -p test_archive_pages.py

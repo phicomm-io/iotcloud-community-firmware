@@ -1,0 +1,49 @@
+#!/usr/bin/env python3
+"""Copy the published catalog and hash-verified firmware to static hosting."""
+import argparse
+import hashlib
+import json
+from pathlib import Path, PurePosixPath
+from urllib.request import Request, urlopen
+
+
+def mirror(source, output):
+    output = Path(output)
+    def fetch(path):
+        parts = PurePosixPath(path)
+        if not path.startswith('/releases/') or '..' in parts.parts:
+            raise ValueError(f'Invalid release path: {path}')
+        with urlopen(Request(source.rstrip('/') + path, headers={'User-Agent': 'curl/8.5.0'}), timeout=60) as response:
+            return response.read()
+    catalog_bytes = fetch('/releases/index.json')
+    catalog = json.loads(catalog_bytes)
+    for release in catalog['releases']:
+        assets = {}
+        for model in release['models'].values():
+            for value in model['downloads'].values():
+                assets[value['path']] = value
+        for path, value in assets.items():
+            target = output / path.lstrip('/')
+            data = target.read_bytes() if target.exists() else b''
+            if hashlib.sha256(data).hexdigest() != value['sha256']:
+                data = fetch(path)
+            if len(data) != value['size'] or hashlib.sha256(data).hexdigest() != value['sha256']:
+                raise ValueError(f'Firmware checksum mismatch: {path}')
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+        for path in (release['notes'], f"/releases/{release['tag']}/SHA256SUMS"):
+            target = output / path.lstrip('/')
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(fetch(path))
+    target = output / 'releases/index.json'
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(catalog_bytes)
+    print(f"Archived {len(catalog['releases'])} releases with verified firmware hashes")
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('output')
+    parser.add_argument('--source', default='https://phicomm.fjrcn.com')
+    args = parser.parse_args()
+    mirror(args.source, args.output)

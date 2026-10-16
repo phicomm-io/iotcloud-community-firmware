@@ -61,6 +61,17 @@ target=$(mktemp -d)
 trap 'rm -rf "$target"' EXIT
 if [[ -n "${GH_TOKEN:-}" ]]; then gh auth setup-git; fi
 gh repo clone "$PHICOMM_PAGES_REPO" "$target/public" -- --depth=1
+# Preserve the static archive even when the external mirrors are retired.
+if [[ -d "$target/public/releases" ]]; then
+ cp -a "$target/public/releases" build/pages/
+fi
+python3 tools/release/archive_pages.py build/pages || {
+ if [[ ! -s build/pages/releases/index.json ]]; then
+  echo "No verified static archive is available." >&2
+  exit 1
+ fi
+ echo "Keeping the existing GitHub archive; upstream refresh failed." >&2
+}
 # Only generated public output may cross the private/public boundary.
 find "$target/public" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf -- {} +
 cp -a build/pages/. "$target/public/"
