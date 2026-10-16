@@ -101,8 +101,10 @@ void a1_panel_event(bool toggle, int delta)
         a1_config_t c = *a1_config;
         if (toggle) c.fan_on = !c.fan_on;
         if (delta) {
-            int speed = c.speed + delta;
+            int speed = (c.fan_on ? c.speed : 0) + delta;
+            c.fan_on = speed > 0;
             c.speed = speed < 1 ? 1 : speed > 100 ? 100 : speed;
+            a1_state.fan_feedback_until = mico_rtos_get_time() + 3000;
         }
         if (toggle || delta) apply(&c);
     }

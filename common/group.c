@@ -29,6 +29,7 @@ static bool group_token_empty(const uint8_t t[16]) {
 static json_object *group_envelope(const feature_config_t *c, unsigned i,
                                    const char *op) {
   json_object *o = json_object_new_object();
+  if (!o) return NULL;
   number(o, "v", 1);
   js(o, "src", LOCAL_ID);
   js(o, "dst", c->members[i].id);
@@ -48,16 +49,25 @@ static void group_mqtt(unsigned i, const feature_config_t *c, json_object *o) {
   enqueue(topic, o, false);
 }
 static void group_send(const feature_config_t *c, unsigned i, json_object *o) {
+  if (!o) return;
   char ip[16];
   bool lan;
   lock();
   strcpy(ip, c->members[i].ip[0] ? c->members[i].ip : group_members[i].ip);
   lan = group_members[i].lan && !c->group_force_mqtt;
   unlock();
-  if (lan && send_udp(ip, o)) {
+  /* json-c reference counts are not atomic. The caller still owns o/body,
+   * while an acknowledgement on another thread can release pending. Give
+   * the retry slot an independent tree, including all nested body objects. */
+  json_object *pending = NULL;
+  if (lan) {
+    const char *wire = json_object_to_json_string(o);
+    if (wire) pending = parse(wire, strlen(wire));
+  }
+  if (pending && send_udp(ip, o)) {
     lock();
     json_object *old = group_members[i].pending;
-    group_members[i].pending = json_object_get(o);
+    group_members[i].pending = pending;
     group_members[i].request = integer(o, "id");
     group_members[i].sent = now_ms();
     unlock();
@@ -65,8 +75,10 @@ static void group_send(const feature_config_t *c, unsigned i, json_object *o) {
       group_mqtt(i, c, old);
       json_object_put(old);
     }
-  } else
+  } else {
+    if (pending) json_object_put(pending);
     group_mqtt(i, c, o);
+  }
 }
 static bool group_input(json_object *o, bool lan, bool retained,
                         const char *ip) {
@@ -231,9 +243,14 @@ static void group_poll(const feature_config_t *c, uint32_t now) {
       json_object *o = group_envelope(c, i, "group_probe");
       if (send_udp(ip, o)) {
         lock();
-        group_members[i].pending = json_object_get(o);
-        group_members[i].request = integer(o, "id");
-        group_members[i].sent = now;
+        /* A concurrent control may have filled the slot since the snapshot.
+         * Never overwrite its owned tree. Transfer the probe only if vacant. */
+        if (!group_members[i].pending) {
+          group_members[i].pending = o;
+          group_members[i].request = integer(o, "id");
+          group_members[i].sent = now;
+          o = NULL;
+        }
         unlock();
       }
       json_object_put(o);
@@ -268,7 +285,7 @@ static void group_broadcast_config(const char *d, json_object *b) {
       if (strcmp(c->members[i].id, LOCAL_ID)) {
         json_object *o = group_envelope(c, i, "group_config");
         js(o, "domain", d);
-        json_object_object_add(o, "body", json_object_get(b));
+        json_build_object_add(o, "body", json_object_get(b));
         group_send(c, i, o);
         json_object_put(o);
       }
@@ -285,7 +302,7 @@ bool feature_group_control(const char *k, json_object *b) {
       if (strcmp(c->members[i].id, LOCAL_ID)) {
         json_object *o = group_envelope(c, i, "group_control");
         js(o, "kind", k);
-        json_object_object_add(o, "body", json_object_get(b));
+        json_build_object_add(o, "body", json_object_get(b));
         group_send(c, i, o);
         json_object_put(o);
       }

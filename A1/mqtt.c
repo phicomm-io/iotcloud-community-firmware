@@ -15,11 +15,23 @@ static bool session_current(void)
 static void mqtt_status(unsigned status)
 { mico_rtos_lock_mutex(&a1_lock); a1_state.mqtt_status = status; a1_state.mqtt_connected = status == MQTT_READY; mico_rtos_unlock_mutex(&a1_lock); }
 
+static void mqtt_error(const char *operation, int result)
+{
+    if (result == MQTT_SUCCESS) return;
+    mico_rtos_lock_mutex(&a1_lock);
+    a1_state.mqtt_errors++;
+    snprintf(a1_state.mqtt_last_error, sizeof(a1_state.mqtt_last_error), "%s: %d", operation, result);
+    mico_rtos_unlock_mutex(&a1_lock);
+}
+
 static int publish(const char *topic, const char *payload, bool retain)
 {
+    if (!payload) { mqtt_error("serialize", MQTT_FAILURE); return MQTT_FAILURE; }
     MQTTMessage m = {0}; m.qos = QOS1; m.retained = retain;
     m.payload = (void *)payload; m.payloadlen = strlen(payload);
-    return MQTTPublish(&client, topic, &m);
+    int result = MQTTPublish(&client, topic, &m);
+    mqtt_error("publish", result);
+    return result;
 }
 static int leaf(const char *name, const char *payload)
 {
@@ -75,9 +87,9 @@ static void command(MessageData *d)
             while (isspace((unsigned char)*end)) end++;
             if (end == text || *end || n < 0 || n > 100 || !isdigit((unsigned char)text[0])) {
                 json_object_put(o); o = NULL;
-            } else json_object_object_add(o, key, json_object_new_int(n));
+            } else json_build_object_add(o, key, json_object_new_int(n));
         } else if (o && (!strcmp(text, "ON") || !strcmp(text, "OFF")))
-            json_object_object_add(o, key, json_object_new_boolean(!strcmp(text, "ON")));
+            json_build_object_add(o, key, json_object_new_boolean(!strcmp(text, "ON")));
         else if (o) { json_object_put(o); o = NULL; }
     }
     if (o) { a1_control_local(kind, o); json_object_put(o); }
@@ -100,7 +112,7 @@ static void ha_birth(MessageData *d)
     if (d->message->payloadlen == 6 && !memcmp(d->message->payload, "online", 6)) rediscover = true;
 }
 static void str(json_object *o, const char *key, const char *value)
-{ json_object_object_add(o, key, json_object_new_string(value)); }
+{ json_build_object_add(o, key, json_object_new_string(value)); }
 static void topic(json_object *o, const char *key, const char *suffix)
 {
     char value[MQTT_TOPIC_MAX]; snprintf(value, sizeof(value), "%s/%s", base, suffix); str(o, key, value);
@@ -121,16 +133,16 @@ static int discovery(const a1_config_t *c)
         }
         char text[MQTT_TOPIC_MAX], path[MQTT_TOPIC_MAX];
         mqtt_identity(&account, "", text, sizeof(text));
-        json_object_array_add(ids, json_object_new_string(text));
-        json_object_object_add(device, "identifiers", ids);
+        json_build_array_add(ids, json_object_new_string(text));
+        json_build_object_add(device, "identifiers", ids);
         str(device, "name", c->name); str(device, "model", "A1 Air Purifier (EMW3080B)");
         str(device, "manufacturer", "Phicomm"); str(device, "sw_version", A1_VERSION);
-        json_object_object_add(o, "device", device); str(o, "name", names[i]);
+        json_build_object_add(o, "device", device); str(o, "name", names[i]);
         mqtt_identity(&account, keys[i], text, sizeof(text)); str(o, "unique_id", text);
         str(o, "availability_topic", availability_topic);
         topic(o,"json_attributes_topic","state");
         str(o,"json_attributes_template","{{ {\"ip\": value_json.ip, \"firmware\": value_json.version, \"config_dirty\": value_json.config_dirty} | tojson }}");
-        json_object_object_add(o, "retain", json_object_new_boolean(false));
+        json_build_object_add(o, "retain", json_object_new_boolean(false));
         topic(o, "command_topic", "command");
         snprintf(text, sizeof(text), "%s/state", keys[i]); topic(o, "state_topic", text);
         if (i == 0) {
@@ -139,8 +151,8 @@ static int discovery(const a1_config_t *c)
             str(o,"command_template","{\"action\":\"fan.set\",\"params\":{\"on\":{{ 'true' if value == 'ON' else 'false' }}}}");
             str(o,"percentage_command_template","{\"action\":\"fan.set\",\"params\":{\"speed\":{{ value | int }}}}");
             topic(o, "percentage_state_topic", "fan/percentage/state");
-            json_object_object_add(o, "speed_range_min", json_object_new_int(1));
-            json_object_object_add(o, "speed_range_max", json_object_new_int(100));
+            json_build_object_add(o, "speed_range_min", json_object_new_int(1));
+            json_build_object_add(o, "speed_range_max", json_object_new_int(100));
         }
         if (i == 1) {
             str(o,"schema","template");
@@ -271,7 +283,9 @@ static void mqtt_worker(mico_thread_arg_t arg)
             a1_state_get(&state); a1_config_get(&current);
             if (!state.wifi_connected || !same_connection(&cfg, &current)) break;
             fc=malloc(sizeof(*fc)); if (!fc) break; feature_config_get(fc);
-            bool feature_changed=feature_revision!=fc->revision; free(fc); if(feature_changed)break;
+            bool feature_changed=feature_revision!=fc->revision;
+            feature_revision=fc->revision; free(fc);
+            if(feature_changed && !feature_mqtt_filters_current(feature_filters,count))break;
             if (rediscover) { feature_mqtt_service(publish,false);rc = discovery(&current); rediscover = false; sent = false; }
             bool on;unsigned speed;feature_effective_fan(current.fan_on,current.speed,&on,&speed);
             if (rc == MQTT_SUCCESS && (!sent || revision != current.revision || old_visible != state.led_visible || old_on!=on || old_speed!=speed)) {
@@ -284,9 +298,9 @@ static void mqtt_worker(mico_thread_arg_t arg)
                 for (unsigned i = 0; i < count && rc == MQTT_SUCCESS; ++i)
                     rc = MQTTSubscribe(&client, feature_filters[i], QOS1, feature_command);
                 acl_check = mico_rtos_get_time();
-                if (rc != MQTT_SUCCESS) mqtt_status(MQTT_WAITING_ACL);
+                if (rc != MQTT_SUCCESS) { mqtt_error("subscription", rc); mqtt_status(MQTT_WAITING_ACL); }
             }
-            if (rc == MQTT_SUCCESS) {stage="receive";rc = MQTTYield(&client, 100);}
+            if (rc == MQTT_SUCCESS) {stage="receive";rc = MQTTYield(&client, 100); mqtt_error("receive", rc);}
             mico_thread_msleep(50);
         }
         if (rc != MQTT_SUCCESS) {

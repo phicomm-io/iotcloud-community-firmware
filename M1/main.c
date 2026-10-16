@@ -1,5 +1,6 @@
 #include "../common/automation.h"
 #include "../common/service.h"
+#include "../common/watchdog.h"
 #include "m1.h"
 #include "config_legacy.h"
 #include <stddef.h>
@@ -105,7 +106,13 @@ bool m1_reboot_later(uint32_t ms)
 
 int application_start(void)
 {
+    OSStatus watchdog_err = watchdog_start();
+    if (watchdog_err != kNoErr) {
+        custom_log("Watchdog", "Startup failed: %ld", (long)watchdog_err);
+        return watchdog_err;
+    }
     service_init();
+    watchdog_boot_event();
     OSStatus err = mico_rtos_init_mutex(&m1_lock);
     if (err != kNoErr) return err;
     err = mico_rtos_init_mutex(&config_lock);
@@ -192,6 +199,7 @@ int application_start(void)
     err = m1_network_start(); if (err != kNoErr) return err;
     err = m1_mqtt_start(); if (err != kNoErr) return err;
     err = m1_http_start(); if (err != kNoErr) return err;
+    watchdog_startup_complete();
     custom_log("M1", "Started %s, id %s", M1_VERSION, m1_id);
     return kNoErr;
 }

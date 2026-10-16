@@ -201,7 +201,7 @@ async function showLight(){
     h('details',{class:'more'},h('summary',{i18n:'common.advanced'}),h('p',{class:'help',i18n:'fx.quality_hint'}),
      h('div',{class:'fields'},h('label',{class:'field'},h('span',{i18n:'fx.quality_pm'}),num(m,'quality_pm',{unit:'µg/m³',step:0.01})),
       h('label',{class:'field'},h('span',{i18n:'fx.quality_hcho'}),num(m,'quality_hcho',{unit:'mg/m³',step:0.001})))),
-   saveBar(async()=>{await api('/light/advanced',m);advanced=clone(m);updateRingAnimation();if(UI.state)renderLight(UI.state);})));
+   saveBar(async()=>{const saved=await api('/light/advanced',m);m.revision=saved.revision;advanced=clone(m);updateRingAnimation();if(UI.state)renderLight(UI.state);})));
   if(UI.state)renderRing(UI.state);
  };
  draw();

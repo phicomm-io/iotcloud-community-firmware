@@ -12,6 +12,8 @@
 #define FEATURE_PORT 11288
 #define FEATURE_MAGIC 0x42494e32u
 #define FEATURE_STALE_MS 15000u
+/* Binding also executes scheduled actions through the common dispatcher. */
+#define FEATURE_WORKER_STACK_SIZE 12288u
 
 enum { FEATURE_M1 = 1, FEATURE_A1 = 2, FEATURE_GROUP = 3 };
 enum {
@@ -119,7 +121,7 @@ void feature_render(const feature_light_t *, const float[4], const bool[4],
                     unsigned, unsigned, bool, uint32_t, uint32_t out[32]);
 
 #ifndef FEATURE_HOST
-#include "json.h"
+#include "json_build.h"
 #include "mico.h"
 void feature_config_get(feature_config_t *);
 bool feature_config_save(const feature_config_t *);
@@ -133,6 +135,7 @@ int feature_mqtt_service(int (*publish)(const char *, const char *, bool),
 void feature_mqtt_session(const mqtt_account_t *);
 int feature_mqtt_cleanup(int (*publish)(const char *, const char *, bool));
 unsigned feature_mqtt_filters(char filters[12][FEATURE_TOPIC_MAX]);
+bool feature_mqtt_filters_current(char filters[12][FEATURE_TOPIC_MAX], unsigned count);
 bool feature_bound(void);
 bool feature_is_coordinator(void);
 void feature_local_sample(const feature_sample_t *);

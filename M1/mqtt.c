@@ -26,6 +26,7 @@ static void mqtt_error(const char *operation, int result)
 
 static int publish(const char *topic, const char *payload, bool retain)
 {
+    if (!payload) { mqtt_error("serialize", MQTT_FAILURE); return MQTT_FAILURE; }
     MQTTMessage message = {0};
     message.qos = QOS1; message.retained = retain;
     message.payload = (void *)payload; message.payloadlen = strlen(payload);
@@ -92,7 +93,7 @@ static void ha_birth(MessageData *data)
 }
 
 static void str(json_object *o, const char *key, const char *value)
-{ json_object_object_add(o, key, json_object_new_string(value)); }
+{ json_build_object_add(o, key, json_object_new_string(value)); }
 
 static int discovery(const m1_config_t *c)
 {
@@ -107,7 +108,7 @@ static int discovery(const m1_config_t *c)
         str(o, "name", names[i]);
         mqtt_leaf(&account,"state",text,sizeof(text));str(o,"json_attributes_topic",text);
         str(o,"json_attributes_template","{{ {\"ip\": value_json.ip, \"firmware\": value_json.version, \"sensor_valid\": value_json.sensor_valid} | tojson }}");
-        json_object_object_add(o, "retain", json_object_new_boolean(false));
+        json_build_object_add(o, "retain", json_object_new_boolean(false));
         mqtt_identity(&account, keys[i], text, sizeof(text)); str(o, "unique_id", text);
         json_object *device = json_object_new_object(), *ids = json_object_new_array();
         if (!device || !ids) {
@@ -116,17 +117,17 @@ static int discovery(const m1_config_t *c)
             json_object_put(o); return MQTT_FAILURE;
         }
         mqtt_identity(&account, "", text, sizeof(text));
-        json_object_array_add(ids, json_object_new_string(text));
-        json_object_object_add(device, "identifiers", ids);
+        json_build_array_add(ids, json_object_new_string(text));
+        json_build_object_add(device, "identifiers", ids);
         str(device, "name", c->name); str(device, "model", "M1 EMW3080B");
         str(device, "manufacturer", "Phicomm"); str(device, "sw_version", M1_VERSION);
-        json_object_object_add(o, "device", device);
+        json_build_object_add(o, "device", device);
         if (i < 4) {
             snprintf(text, sizeof(text), "%s/sensor", base); str(o, "state_topic", text);
             snprintf(text, sizeof(text), "{{ value_json.%s }}", keys[i]); str(o, "value_template", text);
             str(o, "unit_of_measurement", units[i]); str(o, "state_class", "measurement");
             if (classes[i]) str(o, "device_class", classes[i]);
-            json_object_object_add(o, "expire_after", json_object_new_int(15));
+            json_build_object_add(o, "expire_after", json_object_new_int(15));
             json_object *availability = json_object_new_array();
             json_object *node = json_object_new_object(), *sensor = json_object_new_object();
             if (!availability || !node || !sensor) {
@@ -137,16 +138,16 @@ static int discovery(const m1_config_t *c)
             }
             str(node, "topic", availability_topic);
             snprintf(text, sizeof(text), "%s/sensor_availability", base); str(sensor, "topic", text);
-            json_object_array_add(availability, node); json_object_array_add(availability, sensor);
-            json_object_object_add(o, "availability", availability);
+            json_build_array_add(availability, node); json_build_array_add(availability, sensor);
+            json_build_object_add(o, "availability", availability);
             str(o, "availability_mode", "all");
         } else {
             str(o, "command_topic", command_topic);
             snprintf(text, sizeof(text), "%s/brightness/state", base); str(o, "state_topic", text);
             str(o, "availability_topic", availability_topic);
-            json_object_object_add(o, "min", json_object_new_int(0));
-            json_object_object_add(o, "max", json_object_new_int(100));
-            json_object_object_add(o, "step", json_object_new_int(25));
+            json_build_object_add(o, "min", json_object_new_int(0));
+            json_build_object_add(o, "max", json_object_new_int(100));
+            json_build_object_add(o, "step", json_object_new_int(25));
             str(o, "mode", "slider");
             str(o,"command_template","{\"action\":\"display.set\",\"params\":{\"brightness\":{{ value | int }}}}");
             str(o,"value_template","{{ (value | int) * 25 }}");
@@ -187,11 +188,12 @@ static bool same_connection(const m1_config_t *a, const m1_config_t *b)
 static void mqtt_worker(mico_thread_arg_t arg)
 {
     UNUSED_PARAMETER(arg);
-    char client_id[192], wildcard[MQTT_TOPIC_MAX];
+    static char client_id[192], wildcard[MQTT_TOPIC_MAX];
     unsigned attempt = 0;
     for (;;) {
-        m1_config_t cfg, current;
-        m1_state_t state;
+        /* MQTT callbacks may nest service/JSON formatting on this task. */
+        static m1_config_t cfg, current;
+        static m1_state_t state;
         m1_config_get(&cfg); m1_state_get(&state);
         if (cleanup_pending && state.wifi_connected && !same_connection(&session_config, &cfg)) {
             int result = mqtt_cleanup_reconnect(&client, &account, session_config.mqtt_host,
@@ -267,7 +269,9 @@ static void mqtt_worker(mico_thread_arg_t arg)
             m1_state_get(&state); m1_config_get(&current);
             if (!state.wifi_connected || !same_connection(&cfg, &current)) break;
             fc=malloc(sizeof(*fc)); if (!fc) break; feature_config_get(fc);
-            bool feature_changed=feature_revision!=fc->revision; free(fc); if(feature_changed)break;
+            bool feature_changed=feature_revision!=fc->revision;
+            feature_revision=fc->revision; free(fc);
+            if(feature_changed && !feature_mqtt_filters_current(feature_filters,count))break;
             if (rediscover) {
                 feature_mqtt_service(publish,false);
                 rc = discovery(&current); rediscover = false;
@@ -330,4 +334,4 @@ static void mqtt_worker(mico_thread_arg_t arg)
 }
 
 OSStatus m1_mqtt_start(void)
-{ return mico_rtos_create_thread(NULL, MICO_APPLICATION_PRIORITY, "m1_mqtt", mqtt_worker, 12288, 0); }
+{ return mico_rtos_create_thread(NULL, MICO_APPLICATION_PRIORITY, "m1_mqtt", mqtt_worker, 16384, 0); }

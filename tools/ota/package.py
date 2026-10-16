@@ -38,6 +38,57 @@ def sign(image, model, version, commit, key, key_id=1):
     s = min(s, order - s)
     return h + r.to_bytes(32, 'big') + s.to_bytes(32, 'big') + image
 
+def trusted_public_key(key_id=1, keyring_path=None):
+    keyring_path = keyring_path or Path(__file__).resolve().parents[2] / 'common/ota/keyring.h'
+    keyring = Path(keyring_path).read_text()
+    matches = re.findall(r'\{\s*' + str(key_id) + r'\s*,\s*\{([^}]+)\}\s*\}', keyring)
+    if len(matches) != 1:
+        raise ValueError(f'Expected one trusted OTA key with id {key_id}')
+    values = re.findall(r'0x([0-9a-fA-F]{2})', matches[0])
+    if len(values) != 64:
+        raise ValueError(f'Invalid trusted OTA key with id {key_id}')
+    raw = bytes(int(value, 16) for value in values)
+    numbers = ec.EllipticCurvePublicNumbers(
+        int.from_bytes(raw[:32], 'big'), int.from_bytes(raw[32:], 'big'), ec.SECP256R1())
+    return numbers.public_key()
+
+def verify_package(package, model, keyring_path=None):
+    if model not in MODELS or len(package) < 192:
+        raise ValueError('Invalid model or truncated signed OTA package')
+    header = package[:128]
+    magic, fmt, header_size, key_id, model_id, hardware, length, counter, digest, version, commit, channel, reserved = struct.unpack(
+        '<8sHHIHHIQ32s32s20sB11s', header)
+    if (magic != b'PHOTA001' or fmt != 1 or header_size != 128 or
+            model_id != MODELS[model] or hardware != 1 or length != len(package) - 192 or
+            channel not in (1, 2) or reserved != bytes(11)):
+        raise ValueError('Signed OTA header does not match package or target model')
+    version_raw = version.split(b'\0', 1)[0]
+    if not version_raw or version_raw + bytes(32 - len(version_raw)) != version:
+        raise ValueError('Invalid signed OTA version field')
+    try:
+        version_text = version_raw.decode('ascii')
+        version_match = re.fullmatch(r'v?(\d+)\.(\d+)\.(\d+)', version_text)
+    except UnicodeDecodeError as error:
+        raise ValueError('Invalid signed OTA version') from error
+    if not version_match:
+        raise ValueError('Invalid signed OTA version')
+    expected_counter = sum(int(part) << shift for part, shift in zip(version_match.groups(), (40, 20, 0)))
+    if counter != expected_counter or any(int(part) >= 1 << 20 for part in version_match.groups()):
+        raise ValueError('Signed OTA version counter mismatch')
+    payload = package[192:]
+    if hashlib.sha256(payload).digest() != digest:
+        raise ValueError('Signed OTA payload digest mismatch')
+    signature = utils.encode_dss_signature(int.from_bytes(package[128:160], 'big'),
+                                           int.from_bytes(package[160:192], 'big'))
+    try:
+        trusted_public_key(key_id, keyring_path).verify(
+            signature, DOMAIN + header, ec.ECDSA(hashes.SHA256()))
+    except Exception as error:
+        raise ValueError('Signed OTA signature is not trusted or is invalid') from error
+    return {'key_id': key_id, 'model': model, 'version': version_text,
+            'commit': commit.hex(), 'payload_size': length,
+            'payload_sha256': digest.hex()}
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--key', type=Path, required=True)
@@ -53,16 +104,11 @@ def main():
     key = serialization.load_pem_private_key(args.key.read_bytes(), None)
     public = key.public_key().public_numbers()
     raw = public.x.to_bytes(32, 'big') + public.y.to_bytes(32, 'big')
-    keyring = (Path(__file__).resolve().parents[2] / 'common/ota/keyring.h').read_text()
-    trusted = re.search(r'\{' + str(args.key_id) + r', \{([^}]+)\}', keyring)
-    if not trusted or bytes(int(x, 16) for x in re.findall(r'0x[0-9a-f]{2}', trusted[1])) != raw:
+    trusted = trusted_public_key(args.key_id).public_numbers()
+    if (trusted.x.to_bytes(32, 'big') + trusted.y.to_bytes(32, 'big')) != raw:
         p.error('Signing key does not match the firmware trusted key_id')
     package = sign(args.input.read_bytes(), args.model, args.version, args.commit, key, args.key_id)
-    r, signature_s = int.from_bytes(package[128:160], 'big'), int.from_bytes(package[160:192], 'big')
-    key.public_key().verify(utils.encode_dss_signature(r, signature_s),
-                            DOMAIN + package[:128], ec.ECDSA(hashes.SHA256()))
-    if hashlib.sha256(package[192:]).digest() != package[32:64]:
-        raise ValueError('Signed package digest self-check failed')
+    verify_package(package, args.model)
     args.output.write_bytes(package)
 
 if __name__ == '__main__':

@@ -76,12 +76,12 @@ done:
     mico_rtos_delete_thread(NULL);
 }
 static void update_capabilities(json_object *o) {
-    json_object *a=json_object_object_get(o,"actions");if(a){const char *names[]={"ota.sources.get","ota.check","ota.check.get","ota.install"};for(unsigned i=0;i<4;i++)json_object_array_add(a,json_object_new_string(names[i]));}
+    json_object *a=json_object_object_get(o,"actions");if(a){const char *names[]={"ota.sources.get","ota.check","ota.check.get","ota.install"};for(unsigned i=0;i<4;i++)json_build_array_add(a,json_object_new_string(names[i]));}
 }
 static json_object *update_command(const char *action,json_object *p,const char **code,bool *handled) {
     if(strcmp(action,"ota.sources.get")&&strcmp(action,"ota.check")&&strcmp(action,"ota.check.get")&&strcmp(action,"ota.install"))return NULL;
     *handled=true;*code="ok";json_object *o=json_object_new_object();
-    if(!strcmp(action,"ota.sources.get")){json_object *a=json_object_new_array();for(unsigned i=0;i<2;i++)if(*update_bases[i])json_object_array_add(a,json_object_new_string(update_sources[i]));json_object_object_add(o,"sources",a);return o;}
+    if(!strcmp(action,"ota.sources.get")){json_object *a=json_object_new_array();for(unsigned i=0;i<2;i++)if(*update_bases[i])json_build_array_add(a,json_object_new_string(update_sources[i]));json_build_object_add(o,"sources",a);return o;}
     mico_rtos_lock_mutex(&service_lock);
     if(!strcmp(action,"ota.check")){
         const char *source=update_text(p,"source");int selected=!strcmp(source,"cn")?0:!strcmp(source,"global")?1:-1;
@@ -96,7 +96,7 @@ static json_object *update_command(const char *action,json_object *p,const char 
     }
     string(o,"state",update_state);string(o,"version",update_version);string(o,"source",update_sources[update_source]);
     if(*update_notes){char url[400];snprintf(url,sizeof(url),"%s%s",update_bases[update_source],update_notes);string(o,"release_log",url);}
-    json_object_object_add(o,"available",json_object_new_boolean(update_available));mico_rtos_unlock_mutex(&service_lock);return o;
+    json_build_object_add(o,"available",json_object_new_boolean(update_available));mico_rtos_unlock_mutex(&service_lock);return o;
 }
 #else
 static void update_capabilities(json_object *o){(void)o;}

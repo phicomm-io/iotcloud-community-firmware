@@ -1,0 +1,82 @@
+--- a/libraries/utilities/json_c/json_object.c
++++ b/libraries/utilities/json_c/json_object.c
+@@ -26,6 +26,7 @@
+ #include "json_util.h"
+ 
+ #include "StringUtils.h"
++#include "json_number_reent.h"
+ 
+ #if !HAVE_STRNDUP
+ char* strndup(const char* str, size_t n);
+@@ -402,7 +403,18 @@
+ static int json_object_double_to_json_string(struct json_object* jso,
+ 					     struct printbuf *pb)
+ {
++#ifdef __NEWLIB__
++  /* mocOS does not supply a per-thread newlib reentrancy context. */
++  struct _reent context;
++  char number[32];
++  _REENT_INIT_PTR(&context);
++  int length = _snprintf_r(&context, number, sizeof(number), "%g", jso->o.c_double);
++  _reclaim_reent(&context);
++  if(length < 0 || length >= (int)sizeof(number)) return -1;
++  return printbuf_memappend(pb, number, length);
++#else
+   return sprintbuf(pb, "%g", jso->o.c_double);
++#endif
+ }
+ 
+ struct json_object* json_object_new_double(double d)
+@@ -427,7 +439,7 @@
+   case json_type_boolean:
+     return jso->o.c_boolean;
+   case json_type_string:
+-    if(sscanf(jso->o.c_string.str, "%lf", &cdouble) == 1) return cdouble;
++    if(json_number_scan(jso->o.c_string.str, &cdouble) == 1) return cdouble;
+   default:
+     return 0.0;
+   }
+--- a/libraries/utilities/json_c/json_tokener.c
++++ b/libraries/utilities/json_c/json_tokener.c
+@@ -32,6 +32,7 @@
+ #include "json_util.h"
+ 
+ #include "StringUtils.h"
++#include "json_number_reent.h"
+ 
+ #if !HAVE_STRNCASECMP && defined(_MSC_VER)
+   /* MSC has the version as _strnicmp */
+@@ -566,7 +567,7 @@
+ 	double  numd;
+ 	if (!tok->is_double && json_parse_int64(tok->pb->buf, &num64) == 0) {
+ 		current = json_object_new_int64(num64);
+-	} else if(tok->is_double && sscanf(tok->pb->buf, "%lf", &numd) == 1) {
++	} else if(tok->is_double && json_number_scan(tok->pb->buf, &numd) == 1) {
+           current = json_object_new_double(numd);
+         } else {
+           tok->err = json_tokener_error_parse_number;
+--- /dev/null
++++ b/libraries/utilities/json_c/json_number_reent.h
+@@ -0,0 +1,22 @@
++/* Keep dtoa/strtod scratch private when the RTOS has no newlib task context.
++ * Reclaim the context on every path: newlib allocates conversion scratch lazily.
++ */
++#ifndef JSON_NUMBER_REENT_H
++#define JSON_NUMBER_REENT_H
++#ifdef __NEWLIB__
++#include <reent.h>
++static int json_number_scan(const char *text, double *value)
++{
++  struct _reent context;
++  _REENT_INIT_PTR(&context);
++  int result = _sscanf_r(&context, text, "%lf", value);
++  _reclaim_reent(&context);
++  return result;
++}
++#else
++static int json_number_scan(const char *text, double *value)
++{
++  return sscanf(text, "%lf", value);
++}
++#endif
++#endif

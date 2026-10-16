@@ -1,8 +1,12 @@
+#include "../common/watchdog.h"
 #include "../common/phicomm_features.h"
 #include "json.h"
 #include "mico.h"
 void automation_poll(bool valid){(void)valid;}
 uint32_t test_now;
+/* Runtime harness does not launch RTOS workers; watchdog deadlines are tested
+ * with the production monitor in test_watchdog.c. */
+void watchdog_beat(watchdog_slot_t slot) { (void)slot; }
 static feature_config_t stored;
 void feature_config_get(feature_config_t *out) { *out = stored; }
 bool feature_config_save(const feature_config_t *c) {
@@ -34,7 +38,14 @@ bool a1_control_local(const char *k, json_object *o) {
 char m1_id[13] = "aabbccddee02";
 void m1_state_get(m1_state_t *out) { memset(out, 0, sizeof(*out)); }
 #endif
+static unsigned fail_runtime_object;
+static json_object *runtime_new_object(void) {
+  if (fail_runtime_object) { --fail_runtime_object; return NULL; }
+  return json_object_new_object();
+}
+#define json_object_new_object runtime_new_object
 #include "../common/runtime.c"
+#undef json_object_new_object
 json_object *automation_command(const char *a,json_object *p,const char **code,bool *handled){(void)a;(void)p;(void)code;*handled=false;return NULL;}
 json_object *service_product_capabilities(void){return json_object_new_object();}
 json_object *service_product(const char *a,json_object *p,const char **code){(void)a;(void)p;*code="unsupported";return NULL;}
@@ -133,6 +144,46 @@ static void binding(void) {
   assert(!feature_bound());
 }
 #ifdef FEATURE_DEVICE_A1
+static void assert_group_quiet(int receiver) {
+  assert(!queued && !group_members[0].pending);
+  fd_set readable; FD_ZERO(&readable); FD_SET(receiver, &readable);
+  struct timeval immediate = {0, 0};
+  assert(select(receiver + 1, &readable, NULL, NULL, &immediate) == 0);
+}
+static void group_allocation_failure(int receiver, json_object *body) {
+  feature_mqtt_service(capture, true);
+  assert(!queued);
+  /* A missing protocol envelope must never become a successful wire "null".
+   * Keep the SDK's legitimate JSON-null serialization unchanged. */
+  assert(!strcmp(json_object_to_json_string(NULL), "null"));
+  assert(!send_udp("127.0.0.1", NULL));
+  char topic[FEATURE_TOPIC_MAX];
+  mqtt_account_t account = mqtt_snapshot();
+  assert(mqtt_link_topic(&account, "a1", stored.members[0].id, LOCAL_ID,
+                        "request", topic, sizeof(topic)));
+  assert(!enqueue(topic, NULL, false));
+  assert_group_quiet(receiver);
+
+  for (unsigned mqtt_only = 0; mqtt_only < 2; mqtt_only++) {
+    stored.group_force_mqtt = mqtt_only;
+    fail_runtime_object = 1;
+    assert(feature_group_control("fan", body));
+    assert(!fail_runtime_object);
+    assert_group_quiet(receiver);
+    fail_runtime_object = 1;
+    group_broadcast_config("light", body);
+    assert(!fail_runtime_object);
+    assert_group_quiet(receiver);
+  }
+  stored.group_force_mqtt = 0;
+  group_members[0].lan = false;
+  fail_runtime_object = 1;
+  group_poll(&stored, test_now); /* Recovery probe root allocation fails. */
+  assert(!fail_runtime_object);
+  assert_group_quiet(receiver);
+  group_members[0].lan = true;
+  puts("Group envelope allocation failure emits no MQTT/UDP null payload");
+}
 static void group_transport(void) {
   transaction("binding",
               "{\"group\":\"room\",\"members\":[{\"mac\":\"112233445566\","
@@ -153,7 +204,14 @@ static void group_transport(void) {
   group_members[0].joined = true;
   group_members[0].lan = true;
   json_object *b = obj("{\"speed\":60}");
+  group_allocation_failure(receiver, b);
   assert(feature_group_control("fan", b));
+  /* Retry ownership must not retain the caller's non-atomic JSON references.
+   * The UDP/MQTT acknowledgement can destroy the pending tree concurrently. */
+  assert(group_members[0].pending);
+  number(b, "speed", 99);
+  assert(integer(json_object_object_get(group_members[0].pending, "body"),
+                 "speed") == 60);
   json_object_put(b);
   char wire[FEATURE_WIRE_MAX + 1];
   fd_set fds;
@@ -284,6 +342,12 @@ static void account_namespaces(void) {
   char filters[12][FEATURE_TOPIC_MAX],root[FEATURE_TOPIC_MAX];
   unsigned count=feature_mqtt_filters(filters);assert(count>=3);
   for(unsigned i=0;i<count;++i)assert(strstr(filters[i],alice.key));
+  assert(feature_mqtt_filters_current(filters,count));
+  stored.revision++;configuration=stored;
+  assert(feature_mqtt_filters_current(filters,count));
+  stored.peer_count=0;stored.group[0]=0;configuration=stored;
+  assert(!feature_mqtt_filters_current(filters,count));
+  stored.peer_count=1;strcpy(stored.group,"同名组");configuration=stored;
   root_for(&stored,0,root);assert(!strncmp(root,"phicomm/v2/",11));assert(strstr(root,alice.key));
   char t[FEATURE_TOPIC_MAX];mqtt_leaf(&alice,"binding/get",t,sizeof(t));
   assert(feature_mqtt_input(t,"{}",2,false));

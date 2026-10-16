@@ -2,7 +2,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include "json.h"
+#include "json_build.h"
 /* All transports share this dispatcher. The returned object belongs to caller. */
 void service_init(void);
 json_object *service_parse(const void *, size_t);

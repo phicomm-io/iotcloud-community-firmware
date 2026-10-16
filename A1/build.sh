@@ -31,10 +31,18 @@ if ! git -C "$sdk_dir" apply --reverse --check "$app_dir/features-sdk.patch" 2>/
     git -C "$sdk_dir" apply "$app_dir/features-sdk.patch"
 fi
 
+python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/watchdog-mico36.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-mico36.patch"
+python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-publish-bounds.patch"
 # Complete started MQTT packets even when the short yield deadline expires.
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/M1/mqtt-packet-deadline.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-response-deadline.patch"
+# Isolate newlib floating conversion scratch across HTTP/MQTT/runtime threads.
+# Validate these overlapping overlays together, including on repeated builds.
+python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \
+    "$project_dir/common/json-newlib-reent.patch" \
+    "$project_dir/common/json-printbuf-oom.patch" \
+    "$project_dir/common/json-allocation-safety.patch"
 
 ln -sfn "$sdk_dir" "$workspace/mico-os"
 ln -sfn "$app_dir" "$workspace/A1"
@@ -73,6 +81,8 @@ ln -sfn "$(command -v make)" "$micoder/cmd/Linux64/make"
     make HOST_OS=Linux64 TOOLS_ROOT="$micoder" PYTHON="$python2" TLS=mocSSL \
         DISABLE_MICO_BLUENRG=1 -f mico-os/makefiles/Makefile "$target" total
 )
+python3 "$app_dir/tools/check_button_stack.py" "$workspace/build/$target/Modules/A1" "$app_dir/a1.h"
+python3 "$project_dir/tools/check_worker_stack.py" "$workspace/build/$target/Modules/A1" "$project_dir/common/phicomm_features.h"
 python3 "$app_dir/tools/check_image.py" "$workspace/build/$target/binary/$target.ota.bin"
 python3 "$project_dir/tools/check_json_float.py" "$gcc_dir/bin/arm-none-eabi-nm" "$workspace/build/$target/binary/$target.elf"
 python3 "$app_dir/tools/package.py" "$workspace/build/$target/binary" "$project_dir/build/a1-release" "$sdk_commit"

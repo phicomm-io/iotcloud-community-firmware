@@ -1,0 +1,107 @@
+diff --git a/libraries/protocols/mqtt/MQTTPacket/MQTTDeserializePublish.c b/libraries/protocols/mqtt/MQTTPacket/MQTTDeserializePublish.c
+index dbc9e5d..a3344fd 100755
+--- a/libraries/protocols/mqtt/MQTTPacket/MQTTDeserializePublish.c
++++ b/libraries/protocols/mqtt/MQTTPacket/MQTTDeserializePublish.c
+@@ -37,31 +37,84 @@ int MQTTDeserialize_publish(unsigned char* dup, int* qos, unsigned char* retaine
+ 		unsigned char** payload, int* payloadlen, unsigned char* buf, int buflen)
+ {
+ 	MQTTHeader header = {0};
+-	unsigned char* curdata = buf;
+-	unsigned char* enddata = NULL;
+ 	int rc = 0;
+-	int mylen = 0;
++	int offset = 0;
++	int remaining = 0;
++	int multiplier = 1;
++	int length_bytes;
++	int topic_length;
++	int payload_offset;
++	int packet_qos;
++	int packet_dup;
++	int packet_retained;
++	unsigned short packet_identifier = 0;
++	unsigned char* packet_payload;
++	int packet_payloadlen;
++	MQTTString packet_topic = MQTTString_initializer;
+ 
+ 	FUNC_ENTRY;
+-	header.byte = readChar(&curdata);
++	if (!buf || buflen < 2 || !dup || !qos || !retained || !packetid ||
++		!topicName || !payload || !payloadlen)
++		goto exit;
++	header.byte = buf[offset++];
+ 	if (header.bits.type != PUBLISH)
+ 		goto exit;
+-	*dup = header.bits.dup;
+-	*qos = header.bits.qos;
+-	*retained = header.bits.retain;
+-
+-	curdata += (rc = MQTTPacket_decodeBuf(curdata, &mylen)); /* read remaining length */
+-	enddata = curdata + mylen;
+-
+-	if (!readMQTTLenString(topicName, &curdata, enddata) ||
+-		enddata - curdata < 0) /* do we have enough data to read the protocol version byte? */
++	packet_qos = header.bits.qos;
++	if (packet_qos == 3)
++		goto exit;
++	packet_dup = header.bits.dup;
++	packet_retained = header.bits.retain;
++
++	/* Decode only bytes present in this buffer; the generic SDK decoder is unbounded. */
++	for (length_bytes = 0; length_bytes < 4; ++length_bytes)
++	{
++		unsigned char encoded;
++		if (offset >= buflen)
++			goto exit;
++		encoded = buf[offset++];
++		remaining += (encoded & 0x7f) * multiplier;
++		if ((encoded & 0x80) == 0)
++			break;
++		if (length_bytes == 3)
++			goto exit;
++		multiplier *= 128;
++	}
++	if (length_bytes == 4 || remaining > buflen - offset)
++		goto exit;
++	if (length_bytes > 0 && remaining < multiplier)
++		goto exit;
++	if (remaining < 2)
+ 		goto exit;
+ 
+-	if (*qos > 0)
+-		*packetid = readInt(&curdata);
+-
+-	*payloadlen = enddata - curdata;
+-	*payload = curdata;
++	/* Topic length and data must fit within the declared packet body. */
++	topic_length = (buf[offset] << 8) | buf[offset + 1];
++	if (topic_length == 0 || topic_length > remaining - 2)
++		goto exit;
++	packet_topic.lenstring.len = topic_length;
++	packet_topic.lenstring.data = (char *)&buf[offset + 2];
++	packet_topic.cstring = NULL;
++	payload_offset = offset + 2 + topic_length;
++
++	if (packet_qos > 0)
++	{
++		if (offset + remaining - payload_offset < 2)
++			goto exit;
++		packet_identifier = (buf[payload_offset] << 8) | buf[payload_offset + 1];
++		if (packet_identifier == 0)
++			goto exit;
++		payload_offset += 2;
++	}
++
++	packet_payloadlen = offset + remaining - payload_offset;
++	packet_payload = &buf[payload_offset];
++	*dup = packet_dup;
++	*qos = packet_qos;
++	*retained = packet_retained;
++	*topicName = packet_topic;
++	if (packet_qos > 0)
++		*packetid = packet_identifier;
++	*payloadlen = packet_payloadlen;
++	*payload = packet_payload;
+ 	rc = 1;
+ exit:
+ 	FUNC_EXIT_RC(rc);
