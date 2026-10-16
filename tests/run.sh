@@ -3,16 +3,25 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 python3 tools/check_version.py
 python3 -m unittest discover -s tests -p test_version.py
+python3 -m unittest tests.test_package_stale_signature
+python3 -m unittest tests.test_http_overload
+python3 -m unittest tests.test_http_tcp_integration
+compiler=("${CC:-cc}")
+if [[ "${SANITIZE:-0}" == 1 ]]; then
+    compiler+=(-g -fno-omit-frame-pointer -fsanitize=address,undefined)
+fi
 output=$(mktemp -d)
 trap 'rm -rf "$output"' EXIT
-cc -std=c99 -Wall -Wextra -Werror tests/test_gesture.c -o "$output/gesture"
+"${compiler[@]}" -std=c99 -Wall -Wextra -Werror tests/test_gesture.c -o "$output/gesture"
 "$output/gesture"
-cc -std=c99 -Wall -Wextra -Werror tests/test_wifi_trial.c -o "$output/wifi-trial"
+"${compiler[@]}" -std=c99 -Wall -Wextra -Werror tests/test_a1_light.c -o "$output/a1-light"
+"$output/a1-light"
+"${compiler[@]}" -std=c99 -Wall -Wextra -Werror tests/test_wifi_trial.c -o "$output/wifi-trial"
 "$output/wifi-trial"
-cc -std=c99 -Wall -Wextra -Werror tests/test_m1_indicator.c -o "$output/m1-indicator"
+"${compiler[@]}" -std=c99 -Wall -Wextra -Werror tests/test_m1_indicator.c -o "$output/m1-indicator"
 "$output/m1-indicator"
-cc -DFEATURE_HOST -std=c99 -Wall -Wextra -Werror -Wno-misleading-indentation -Icommon common/engine.c tests/test_engine.c -lm -o "$output/engine"
-cc -std=c99 -Wall -Wextra -Werror tests/test_mqtt_account.c -o "$output/mqtt-account"
+"${compiler[@]}" -DFEATURE_HOST -std=c99 -Wall -Wextra -Werror -Wno-misleading-indentation -Icommon common/engine.c tests/test_engine.c -lm -o "$output/engine"
+"${compiler[@]}" -std=c99 -Wall -Wextra -Werror tests/test_mqtt_account.c -o "$output/mqtt-account"
 "$output/mqtt-account"
 "$output/engine"
 json_dir=${PHICOMM_TEST_JSON_DIR:-build/a1-sdk/mico-os/libraries/utilities/json_c}
@@ -20,30 +29,53 @@ if [[ ! -f "$json_dir/json.h" ]]; then echo 'Set PHICOMM_TEST_JSON_DIR to the pi
 # MiCO's json-c assumes 32-bit long. Adapt its printf/scanf formats only in
 # a disposable host copy, leaving firmware sources byte-for-byte untouched.
 cp -R "$json_dir" "$output/json_c"
+if ! patch --silent --dry-run --reverse --force --batch --directory="$output/json_c" -p4 < common/json-printbuf-oom.patch >/dev/null 2>&1; then
+    patch --silent --dry-run --batch --directory="$output/json_c" -p4 < common/json-printbuf-oom.patch
+    patch --silent --batch --directory="$output/json_c" -p4 < common/json-printbuf-oom.patch
+fi
+if ! patch --silent --dry-run --reverse --force --batch --directory="$output/json_c" -p4 < common/json-allocation-safety.patch >/dev/null 2>&1; then
+    patch --silent --dry-run --batch --directory="$output/json_c" -p4 < common/json-allocation-safety.patch
+    patch --silent --batch --directory="$output/json_c" -p4 < common/json-allocation-safety.patch
+fi
 python3 - "$output/json_c" <<'PYHOST'
 import pathlib, sys
 for p in pathlib.Path(sys.argv[1]).glob('*.c'):
     p.write_text(p.read_text().replace('%ld', '%d'))
 PYHOST
 json_dir="$output/json_c"
-cc -std=gnu99 -Wall -Wextra -Werror -Wno-misleading-indentation -Itests/stubs -I"$json_dir" common/service.c tests/test_service.c "$json_dir"/*.c -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -o "$output/service"
-cc -std=gnu99 -DPHICOMM_OTA_CN_BASE_URL='"http://127.0.0.1:18766"' -Itests/stubs -I"$json_dir" tests/test_update.c "$json_dir"/*.c -o "$output/update"
+PHICOMM_TEST_JSON_DIR="$json_dir" python3 -m unittest tests.test_http_json_lifetime
+for target in portable moc-mx1290; do
+    target_defines=()
+    if [[ "$target" == moc-mx1290 ]]; then target_defines=(-DMOC=1 -DCONFIG_CPU_MX1290); fi
+    "${compiler[@]}" "${target_defines[@]}" -std=gnu99 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -Itests/stubs -I"$json_dir" tests/test_runtime_metrics.c "$json_dir"/*.c -o "$output/runtime-metrics-$target"
+    "$output/runtime-metrics-$target"
+done
+"${compiler[@]}" -std=gnu99 -Wall -Wextra -Werror -Wno-misleading-indentation -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -Itests/stubs -I"$json_dir" tests/test_json_printbuf_failure.c "$json_dir"/*.c -Wl,--wrap=realloc -o "$output/json-printbuf-failure"
+"$output/json-printbuf-failure"
+"${compiler[@]}" -std=gnu99 -Wall -Wextra -Werror -Wno-misleading-indentation -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -Itests/stubs -I"$json_dir" tests/test_json_allocation_failure.c "$json_dir"/*.c -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc -Wl,--wrap=strdup -o "$output/json-allocation-failure"
+"$output/json-allocation-failure"
+"${compiler[@]}" -std=gnu99 -Wall -Wextra -Werror -Wno-misleading-indentation -Itests/stubs -I"$json_dir" common/service.c tests/test_service.c "$json_dir"/*.c -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -o "$output/service"
+ota_port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')
+export PHICOMM_TEST_OTA_PORT="$ota_port"
+"${compiler[@]}" -std=gnu99 -DPHICOMM_OTA_CN_BASE_URL='"http://127.0.0.1:'"$ota_port"'"' -Itests/stubs -I"$json_dir" tests/test_update.c "$json_dir"/*.c -o "$output/update"
 python3 tests/test_update.py "$output/update"
-cc -std=gnu99 -Wall -Wextra -Werror -Wno-misleading-indentation -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -Itests/stubs -Icommon -I"$json_dir" tests/test_mqtt_service.c "$json_dir"/*.c -o "$output/mqtt-service"
+"${compiler[@]}" -std=gnu99 -Wall -Wextra -Werror -Wno-misleading-indentation -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -Itests/stubs -Icommon -I"$json_dir" tests/test_mqtt_service.c "$json_dir"/*.c -Wl,--wrap=free -Wl,--wrap=realloc -o "$output/mqtt-service"
 "$output/mqtt-service"
 "$output/service"
+"${compiler[@]}" -std=gnu99 -Wall -Wextra -Wno-misleading-indentation -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-value -Wno-nonnull-compare -Itests/stubs -I"$json_dir" tests/test_service_failure.c "$json_dir"/*.c -o "$output/service-failure"
+"$output/service-failure"
 for define in -DFEATURE_DEVICE_A1 -DAUTOMATION_TC1; do
-cc "$define" -std=gnu99 -Wall -Wextra -Wno-misleading-indentation -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-value -Wno-nonnull-compare -Itests/stubs -I"$json_dir" common/service.c tests/test_automation.c "$json_dir"/*.c -o "$output/automation"
+"${compiler[@]}" "$define" -std=gnu99 -Wall -Wextra -Wno-misleading-indentation -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-value -Wno-nonnull-compare -Itests/stubs -I"$json_dir" common/service.c tests/test_automation.c "$json_dir"/*.c -o "$output/automation"
 "$output/automation"
 done
 for device in M1 A1 TC1; do
-    cc -std=gnu99 -Wall -Wextra -Werror -DHOST_$device -Itests/host -I"$json_dir" tests/test_migration.c -o "$output/migrate-$device"
+    "${compiler[@]}" -std=gnu99 -Wall -Wextra -Werror -DHOST_$device -Itests/host -I"$json_dir" tests/test_migration.c -o "$output/migrate-$device"
     "$output/migrate-$device"
 done
 for device in A1 M1; do
     define=()
     if [[ "$device" == A1 ]]; then define=(-DFEATURE_DEVICE_A1); fi
-    cc -std=gnu99 -Wall -Wextra -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter -Wno-misleading-indentation -Wno-format-truncation -Wno-sign-compare -Wno-implicit-fallthrough -Wno-nonnull-compare -Wno-unused-value -Itests/stubs -I"$json_dir" "${define[@]}" tests/test_runtime.c common/service.c "$json_dir"/*.c -lm -o "$output/runtime-$device"
+    "${compiler[@]}" -std=gnu99 -Wall -Wextra -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter -Wno-misleading-indentation -Wno-format-truncation -Wno-sign-compare -Wno-implicit-fallthrough -Wno-nonnull-compare -Wno-unused-value -Itests/stubs -I"$json_dir" "${define[@]}" tests/test_runtime.c common/service.c "$json_dir"/*.c -lm -o "$output/runtime-$device"
     "$output/runtime-$device"
 done
 python3 tests/check_web.py

@@ -10,6 +10,8 @@ from check_version import project_version, build_metadata
 
 source, output, sdk = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
 output.mkdir(parents=True, exist_ok=True)
+# A newly packaged raw image invalidates any envelope produced for the prior image.
+(output / "phicomm_m1.ota.bin.signed").unlink(missing_ok=True)
 # Explicit artifact list; full image is packaged on request and contains ATE.
 prefix = "M1@MK3080B@moc"
 version = project_version()

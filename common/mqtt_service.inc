@@ -1,7 +1,16 @@
 /* Included by the MQTT owner only; never call the socket from HTTP or a timer. */
 #include "service.h"
+#include "printbuf.h"
+static int service_mqtt_send(int (*sender)(const char *,const char *,bool),const char *topic,json_object *o,bool retain){
+ /* PUBACK waiting can dispatch callbacks or overlap an HTTP status request.
+  * Keep only independent wire bytes while waiting, not the JSON object graph. */
+ struct printbuf *wire=o?json_object_to_json_string_ex(o):NULL;
+ if(o)json_object_put(o);
+ if(!wire)return MQTT_FAILURE;
+ int rc=sender(topic,wire->buf,retain);printbuf_free(wire);return rc;
+}
 static int service_mqtt_publish(int (*sender)(const char *,const char *,bool),const mqtt_account_t *scope,const char *leaf,json_object *o,bool retain){
- if(!o)return MQTT_FAILURE;char topic[MQTT_TOPIC_MAX];mqtt_leaf(scope,leaf,topic,sizeof(topic));int rc=sender(topic,json_object_to_json_string(o),retain);json_object_put(o);return rc;
+ if(!o)return MQTT_FAILURE;char topic[MQTT_TOPIC_MAX];mqtt_leaf(scope,leaf,topic,sizeof(topic));return service_mqtt_send(sender,topic,o,retain);
 }
 /* SDK publish waits for PUBACK by dispatching incoming callbacks. Publishing
  * a result from such a callback would consume the outer publish's ACK. Queue
@@ -19,7 +28,7 @@ static int service_mqtt_flush(int (*sender)(const char *,const char *,bool)){
   json_object *r=service_mqtt_replies[0].reply;
   service_mqtt_reply_count--;
   memmove(service_mqtt_replies,service_mqtt_replies+1,service_mqtt_reply_count*sizeof(service_mqtt_replies[0]));
-  int rc=sender(topic,json_object_to_json_string(r),false);json_object_put(r);
+  int rc=service_mqtt_send(sender,topic,r,false);
   if(rc!=MQTT_SUCCESS)return rc;
  }
  return MQTT_SUCCESS;

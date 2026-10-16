@@ -17,7 +17,11 @@ static bool ready;
 typedef struct { char id[65]; char *request, *response; } receipt_t;
 static receipt_t receipts[8];
 static unsigned receipt_next;
-static void string(json_object *o,const char *k,const char *v) { json_object_object_add(o,k,json_object_new_string(v)); }
+static char *receipt_json_copy(json_object *o) {
+    const char *wire = o ? json_object_to_json_string(o) : NULL;
+    return wire ? strdup(wire) : NULL;
+}
+static void string(json_object *o,const char *k,const char *v) { json_build_object_add(o,k,json_object_new_string(v)); }
 void service_init(void) {
     if (ready) return;
     ready = mico_rtos_init_mutex(&service_lock)==kNoErr && mico_rtos_init_mutex(&command_lock)==kNoErr;
@@ -53,7 +57,7 @@ static json_object *result(const char *id,const char *code,json_object *data) {
     json_object *o=json_object_new_object(); if (!o) { if(data)json_object_put(data);return NULL; }
     if(id)string(o,"request_id",id);string(o,"code",code);
     const char *message=!strcmp(code,"ok")?"操作成功":!strcmp(code,"accepted")?"请求已接受":!strcmp(code,"busy")?"设备忙":!strcmp(code,"unsupported")?"不支持此功能":!strcmp(code,"conflict")?"请求编号冲突":!strcmp(code,"storage_error")?"配置保存失败":"参数无效";
-    string(o,"message",message);json_object_object_add(o,"data",data?data:json_object_new_object());return o;
+    string(o,"message",message);json_build_object_add(o,"data",data?data:json_object_new_object());return o;
 }
 static bool uint_param(json_object *p,const char *k,int *v,int max) {
     json_object *o=json_object_object_get(p,k); if(!o)return true;
@@ -65,16 +69,16 @@ static json_object *logs(json_object *p,const char **code) {
     json_object *o=json_object_new_object(),*a=json_object_new_array();
     mico_rtos_lock_mutex(&service_lock);
     uint32_t first=sequence>=LOG_COUNT?sequence-LOG_COUNT+1:1, next=(uint32_t)after;
-    json_object_object_add(o,"overwritten",json_object_new_boolean(after && (uint32_t)after<first-1));
+    json_build_object_add(o,"overwritten",json_object_new_boolean(after && (uint32_t)after<first-1));
     for(uint32_t i=first;i<=sequence && limit;i++) if(i>(uint32_t)after) {
         const service_record_t *r=&records[(i-1)%LOG_COUNT];json_object *v=json_object_new_object();
-        json_object_object_add(v,"sequence",json_object_new_int(r->sequence));json_object_object_add(v,"uptime_ms",json_object_new_int(r->uptime));
-        if(r->utc)json_object_object_add(v,"utc",json_object_new_int(r->utc));
+        json_build_object_add(v,"sequence",json_object_new_int(r->sequence));json_build_object_add(v,"uptime_ms",json_object_new_int(r->uptime));
+        if(r->utc)json_build_object_add(v,"utc",json_object_new_int(r->utc));
         string(v,"level",r->level);string(v,"module",r->module);string(v,"event",r->event);string(v,"message",r->event);
-        json_object_array_add(a,v);next=i;limit--;
+        json_build_array_add(a,v);next=i;limit--;
     }
-    json_object_object_add(o,"next",json_object_new_int(next));json_object_object_add(o,"latest",json_object_new_int(sequence));
-    mico_rtos_unlock_mutex(&service_lock);json_object_object_add(o,"records",a);return o;
+    json_build_object_add(o,"next",json_object_new_int(next));json_build_object_add(o,"latest",json_object_new_int(sequence));
+    mico_rtos_unlock_mutex(&service_lock);json_build_object_add(o,"records",a);return o;
 }
 #include "ota/update.inc"
 json_object *service_command(json_object *req) {
@@ -89,10 +93,10 @@ json_object *service_command(json_object *req) {
        passwords and are never retained in the replay cache. */
     bool cache=id && !query && strncmp(action,"config.",7) && strncmp(action,"wifi.",5) && strncmp(action,"ota.",4);
     char *canonical=NULL;
-    if(cache){canonical=strdup(json_object_to_json_string(req));if(!canonical)return result(id,"busy",NULL);}
+    if(cache){canonical=receipt_json_copy(req);if(!canonical)return result(id,"busy",NULL);}
     mico_rtos_lock_mutex(&command_lock);
     if(cache)for(unsigned i=0;i<8;i++)if(!strcmp(receipts[i].id,id)){
-        json_object *out=!strcmp(receipts[i].request,canonical)?service_parse(receipts[i].response,strlen(receipts[i].response)):result(id,"conflict",NULL);
+        json_object *out=!strcmp(receipts[i].request,canonical)?(receipts[i].response?service_parse(receipts[i].response,strlen(receipts[i].response)):result(id,"busy",NULL)):result(id,"conflict",NULL);
         mico_rtos_unlock_mutex(&command_lock);free(canonical);return out;
     }
     /* Serialization covers mutation + receipt insertion across HTTP/MQTT. */
@@ -103,11 +107,11 @@ json_object *service_command(json_object *req) {
         mico_rtos_unlock_mutex(&command_lock);data=logs(p,&code);if(data)code="ok";return result(id,code,data);
     } else { bool handled=false;data=update_command(action,p,&code,&handled);if(!handled)data=automation_command(action,p,&code,&handled);if(!handled)data=service_product(action,p,&code); }
     json_object *out=result(id,code,data);
-    if(cache && out){receipt_t *r=&receipts[receipt_next++%8];free(r->request);free(r->response);memset(r,0,sizeof(*r));strcpy(r->id,id);r->request=canonical;canonical=NULL;r->response=strdup(json_object_to_json_string(out));if(!r->response){free(r->request);memset(r,0,sizeof(*r));}}
+    if(cache){receipt_t *r=&receipts[receipt_next++%8];free(r->request);free(r->response);memset(r,0,sizeof(*r));strcpy(r->id,id);r->request=canonical;canonical=NULL;r->response=receipt_json_copy(out);/* Keep the ID/request if response allocation fails: the mutation already ran. */}
     mico_rtos_unlock_mutex(&command_lock);free(canonical);
     if(!query)service_event(!strcmp(code,"accepted")||!strcmp(code,"ok")?"info":"warn","command",!strcmp(code,"accepted")||!strcmp(code,"ok")?"accepted":"rejected");
     return out;
 }
 json_object *service_query(const char *action) {
-    json_object *req=json_object_new_object();string(req,"action",action);json_object_object_add(req,"params",json_object_new_object());json_object *r=service_command(req);json_object_put(req);return r;
+    json_object *req=json_object_new_object();string(req,"action",action);json_build_object_add(req,"params",json_object_new_object());json_object *r=service_command(req);json_object_put(req);return r;
 }

@@ -5,7 +5,7 @@ uint32_t test_now;
 static unsigned installed;
 json_object *automation_command(const char *a,json_object *p,const char **c,bool *h){(void)a;(void)p;(void)c;*h=false;return NULL;}
 json_object *service_product_capabilities(void){json_object *o=json_object_new_object();json_object_object_add(o,"actions",json_object_new_array());return o;}
-json_object *service_product(const char *a,json_object *p,const char **code){assert(!strcmp(a,"ota.start"));assert(strstr(update_text(p,"url"),"http://127.0.0.1:18766/releases/v"));installed++;*code="accepted";return json_object_new_object();}
+json_object *service_product(const char *a,json_object *p,const char **code){assert(!strcmp(a,"ota.start"));const char *url=update_text(p,"url");assert(strstr(url,"http://127.0.0.1:")&&strstr(url,"/releases/v"));installed++;*code="accepted";return json_object_new_object();}
 int main(int argc,char **argv){
  assert(argc==2);service_init();unsigned v[3];assert(update_semver("0.10.0",v)&&v[1]==10);assert(!update_semver("latest",v));assert(!update_relative("/releases/v1/../../escape"));
  const char *code="ok";bool handled=false;json_object *p=json_object_new_object();string(p,"source","missing");

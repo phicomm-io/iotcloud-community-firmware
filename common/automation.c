@@ -15,7 +15,7 @@ c->buttons[0][0].kind=AUTO_FAN;c->buttons[0][0].value=2;
 #endif
 }
 static void auto_init(void){if(!automation_ready)automation_ready=mico_rtos_init_mutex(&automation_lock)==kNoErr;}
-static void auto_text(json_object *o,const char *k,const char *s){json_object_object_add(o,k,json_object_new_string(s));}
+static void auto_text(json_object *o,const char *k,const char *s){json_build_object_add(o,k,json_object_new_string(s));}
 static bool auto_integer(json_object *o,const char *k,int *v,int lo,int hi){json_object *p=json_object_object_get(o,k);if(!p || !json_object_is_type(p,json_type_int))return false;*v=json_object_get_int(p);return *v>=lo && *v<=hi;}
 static bool auto_flag(json_object *o,const char *k,uint8_t *v){json_object *p=json_object_object_get(o,k);if(!p || !json_object_is_type(p,json_type_boolean))return false;*v=json_object_get_boolean(p);return true;}
 static bool auto_only(json_object *o,const char *allowed){json_object_object_foreach(o,k,v){char n[80];snprintf(n,sizeof(n),"|%s|",k);if(!v || !strstr(allowed,n))return false;}return true;}
@@ -52,14 +52,14 @@ static bool auto_action_parse(json_object *o,automation_action_t *a,bool button)
 static json_object *auto_action_json(const automation_action_t *a){
  json_object *o=json_object_new_object(),*p=json_object_new_object();unsigned k=a->kind<=AUTO_REBOOT?a->kind:0;auto_text(o,"action",auto_names[k]);
  if(k==AUTO_OUTLET || k==AUTO_FAN){
-  if(a->value==2)json_object_object_add(p,"toggle",json_object_new_boolean(true));else json_object_object_add(p,"on",json_object_new_boolean(a->value));
-  if(k==AUTO_OUTLET && a->target<6)json_object_object_add(p,"index",json_object_new_int(a->target));if(k==AUTO_FAN && a->speed)json_object_object_add(p,"speed",json_object_new_int(a->speed));
- }else if(k==AUTO_DISPLAY)json_object_object_add(p,"brightness",json_object_new_int(a->value));
- else if(k==AUTO_LIGHT){json_object_object_add(p,"enabled",json_object_new_boolean(a->value));json_object_object_add(p,"brightness",json_object_new_int(a->speed));}
- else if(k==AUTO_CHILD_LOCK || k==AUTO_INDICATOR)json_object_object_add(p,"enabled",json_object_new_boolean(a->value));
- json_object_object_add(o,"params",p);return o;
+  if(a->value==2)json_build_object_add(p,"toggle",json_object_new_boolean(true));else json_build_object_add(p,"on",json_object_new_boolean(a->value));
+  if(k==AUTO_OUTLET && a->target<6)json_build_object_add(p,"index",json_object_new_int(a->target));if(k==AUTO_FAN && a->speed)json_build_object_add(p,"speed",json_object_new_int(a->speed));
+ }else if(k==AUTO_DISPLAY)json_build_object_add(p,"brightness",json_object_new_int(a->value));
+ else if(k==AUTO_LIGHT){json_build_object_add(p,"enabled",json_object_new_boolean(a->value));json_build_object_add(p,"brightness",json_object_new_int(a->speed));}
+ else if(k==AUTO_CHILD_LOCK || k==AUTO_INDICATOR)json_build_object_add(p,"enabled",json_object_new_boolean(a->value));
+ json_build_object_add(o,"params",p);return o;
 }
-static json_object *auto_task_json(const automation_task_t *t){json_object *o=auto_action_json(&t->action);json_object_object_add(o,"id",json_object_new_int(t->id));json_object_object_add(o,"enabled",json_object_new_boolean(t->enabled));auto_text(o,"trigger",t->once?"once":"weekly");json_object_object_add(o,"days",json_object_new_int(t->days));json_object_object_add(o,"minute",json_object_new_int(t->minute));json_object_object_add(o,"at",json_object_new_int(t->at));json_object_object_add(o,"last",json_object_new_int(t->last));const char *states[]={"waiting","executed","missed","busy","migration_disabled"};auto_text(o,"state",states[t->state<=AUTO_MIGRATED_DISABLED?t->state:0]);return o;}
+static json_object *auto_task_json(const automation_task_t *t){json_object *o=auto_action_json(&t->action);json_build_object_add(o,"id",json_object_new_int(t->id));json_build_object_add(o,"enabled",json_object_new_boolean(t->enabled));auto_text(o,"trigger",t->once?"once":"weekly");json_build_object_add(o,"days",json_object_new_int(t->days));json_build_object_add(o,"minute",json_object_new_int(t->minute));json_build_object_add(o,"at",json_object_new_int(t->at));json_build_object_add(o,"last",json_object_new_int(t->last));const char *states[]={"waiting","executed","missed","busy","migration_disabled"};auto_text(o,"state",states[t->state<=AUTO_MIGRATED_DISABLED?t->state:0]);return o;}
 json_object *automation_command(const char *name,json_object *p,const char **code,bool *handled){
  *handled=!strncmp(name,"schedules.",10) || !strncmp(name,"buttons.",8);if(!*handled)return NULL;
  auto_init();*code="invalid_params";automation_config_t *c=malloc(sizeof(*c));if(!c){*code="busy";return NULL;}
@@ -68,8 +68,8 @@ json_object *automation_command(const char *name,json_object *p,const char **cod
  if(!strcmp(name,"schedules.get")){
   int offset=0,limit=8;if(!auto_only(p,"|offset||limit|") || (json_object_object_get(p,"offset")&&!auto_integer(p,"offset",&offset,0,AUTOMATION_TASKS)) || (json_object_object_get(p,"limit")&&!auto_integer(p,"limit",&limit,1,8)))goto done;
   out=json_object_new_object();json_object *a=json_object_new_array();unsigned count=0;for(unsigned i=0;i<AUTOMATION_TASKS;i++)if(c->tasks[i].id)count++;
-  for(unsigned i=offset;i<AUTOMATION_TASKS && limit;i++)if(c->tasks[i].id){json_object_array_add(a,auto_task_json(&c->tasks[i]));index=i+1;limit--;}
-  if(!index)index=AUTOMATION_TASKS;json_object_object_add(out,"items",a);json_object_object_add(out,"next",json_object_new_int(index));json_object_object_add(out,"capacity",json_object_new_int(AUTOMATION_TASKS));json_object_object_add(out,"count",json_object_new_int(count));*code="ok";
+  for(unsigned i=offset;i<AUTOMATION_TASKS && limit;i++)if(c->tasks[i].id){json_build_array_add(a,auto_task_json(&c->tasks[i]));index=i+1;limit--;}
+  if(!index)index=AUTOMATION_TASKS;json_build_object_add(out,"items",a);json_build_object_add(out,"next",json_object_new_int(index));json_build_object_add(out,"capacity",json_object_new_int(AUTOMATION_TASKS));json_build_object_add(out,"count",json_object_new_int(count));*code="ok";
  }else if(!strcmp(name,"schedules.put")){
   if(!auto_only(p,"|id||enabled||trigger||days||minute||at||action||params|"))goto done;
   if(json_object_object_get(p,"id")&&!auto_integer(p,"id",&id,1,65535))goto done;
@@ -80,7 +80,7 @@ json_object *automation_command(const char *name,json_object *p,const char **cod
   const char *t=json_object_get_string(trigger);
   if(!strcmp(t,"once")){task.once=1;if(!auto_integer(p,"at",&index,1577836800,2147483647))goto done;task.at=index;}
   else if(!strcmp(t,"weekly")){if(!auto_integer(p,"days",&index,1,127))goto done;task.days=index;if(!auto_integer(p,"minute",&index,0,1439))goto done;task.minute=index;}else goto done;
-  json_object *a=json_object_new_object();json_object *an=json_object_object_get(p,"action"),*ap=json_object_object_get(p,"params");if(an)json_object_object_add(a,"action",json_object_get(an));if(ap)json_object_object_add(a,"params",json_object_get(ap));bool valid=auto_action_parse(a,&task.action,false) && task.action.kind!=AUTO_NONE;json_object_put(a);if(!valid)goto done;
+  json_object *a=json_object_new_object();json_object *an=json_object_object_get(p,"action"),*ap=json_object_object_get(p,"params");if(an)json_build_object_add(a,"action",json_object_get(an));if(ap)json_build_object_add(a,"params",json_object_get(ap));bool valid=auto_action_parse(a,&task.action,false) && task.action.kind!=AUTO_NONE;json_object_put(a);if(!valid)goto done;
   if(!id){for(unsigned tries=0;tries<65535;tries++){id=c->next_id++;if(!id)continue;bool used=false;for(unsigned i=0;i<AUTOMATION_TASKS;i++)used|=c->tasks[i].id==id;if(!used)break;}task.id=id;}
   c->tasks[slot]=task;out=auto_task_json(&task);save=true;
  }else if(!strcmp(name,"schedules.delete") || !strcmp(name,"schedules.enable")){
@@ -91,8 +91,8 @@ json_object *automation_command(const char *name,json_object *p,const char **cod
   int offset=0,limit=8;if(!auto_only(p,"|offset||limit|") || (json_object_object_get(p,"offset")&&!auto_integer(p,"offset",&offset,0,68)) || (json_object_object_get(p,"limit")&&!auto_integer(p,"limit",&limit,1,8)))goto done;
   out=json_object_new_object();json_object *a=json_object_new_array();unsigned count=0;index=68;
   for(unsigned n=0;n<68;n++)if(c->buttons[n/34][n%34].kind)count++;
-  for(unsigned n=offset;n<68 && limit;n++)if(c->buttons[n/34][n%34].kind){unsigned k=n/34,i=n%34;json_object *v=auto_action_json(&c->buttons[k][i]);json_object_object_add(v,"key",json_object_new_int(k));json_object_object_add(v,"clicks",json_object_new_int(i<30?i+1:0));json_object_object_add(v,"seconds",json_object_new_int(i>=30?i-29:0));json_object_array_add(a,v);index=n+1;limit--;}
-  json_object_object_add(out,"items",a);json_object_object_add(out,"next",json_object_new_int(index));json_object_object_add(out,"capacity",json_object_new_int(68));json_object_object_add(out,"count",json_object_new_int(count));*code="ok";
+  for(unsigned n=offset;n<68 && limit;n++)if(c->buttons[n/34][n%34].kind){unsigned k=n/34,i=n%34;json_object *v=auto_action_json(&c->buttons[k][i]);json_build_object_add(v,"key",json_object_new_int(k));json_build_object_add(v,"clicks",json_object_new_int(i<30?i+1:0));json_build_object_add(v,"seconds",json_object_new_int(i>=30?i-29:0));json_build_array_add(a,v);index=n+1;limit--;}
+  json_build_object_add(out,"items",a);json_build_object_add(out,"next",json_object_new_int(index));json_build_object_add(out,"capacity",json_object_new_int(68));json_build_object_add(out,"count",json_object_new_int(count));*code="ok";
  }else if(!strcmp(name,"buttons.set")){
 #ifndef FEATURE_DEVICE_A1
 #ifndef AUTOMATION_TC1
@@ -107,7 +107,7 @@ json_object *automation_command(const char *name,json_object *p,const char **cod
   0
 #endif
   ) || (json_object_object_get(p,"clicks")&&!auto_integer(p,"clicks",&clicks,0,30)) || (json_object_object_get(p,"seconds")&&!auto_integer(p,"seconds",&seconds,0,4)) || (!!clicks==!!seconds))goto done;
-  json_object *a=json_object_new_object(),*an=json_object_object_get(p,"action"),*ap=json_object_object_get(p,"params");if(an)json_object_object_add(a,"action",json_object_get(an));if(ap)json_object_object_add(a,"params",json_object_get(ap));automation_action_t action;bool valid=auto_action_parse(a,&action,true);json_object_put(a);if(!valid)goto done;c->buttons[key][clicks?clicks-1:seconds+29]=action;save=true;
+  json_object *a=json_object_new_object(),*an=json_object_object_get(p,"action"),*ap=json_object_object_get(p,"params");if(an)json_build_object_add(a,"action",json_object_get(an));if(ap)json_build_object_add(a,"params",json_object_get(ap));automation_action_t action;bool valid=auto_action_parse(a,&action,true);json_object_put(a);if(!valid)goto done;c->buttons[key][clicks?clicks-1:seconds+29]=action;save=true;
  }else *code="unsupported";
  if(save){c->revision++;*code=automation_save(c)?"accepted":"storage_error";}
  done:mico_rtos_unlock_mutex(&automation_lock);free(c);return out;
@@ -119,7 +119,7 @@ static bool auto_execute(const automation_action_t *a,bool button){
   json_object *locked=json_object_object_get(s,"child_lock");if(locked && json_object_get_boolean(locked)){json_object_put(status);json_object_put(q);service_event("info","button","child_locked");return false;}
   if(a->value==2 && (a->kind==AUTO_FAN || a->kind==AUTO_OUTLET)){
    bool on=false;if(a->kind==AUTO_FAN){json_object *v=json_object_object_get(s,"requested_fan_on");on=v&&json_object_get_boolean(v);}else{json_object *states=json_object_object_get(s,"socket_states");if(states)for(unsigned i=0;i<json_object_array_length(states);i++)if(a->target==255 || a->target==i)on|=json_object_get_int(json_object_array_get_idx(states,i))!=0;}
-   json_object *p=json_object_object_get(q,"params");json_object_object_del(p,"toggle");json_object_object_add(p,"on",json_object_new_boolean(!on));
+   json_object *p=json_object_object_get(q,"params");json_object_object_del(p,"toggle");json_build_object_add(p,"on",json_object_new_boolean(!on));
   }json_object_put(status);
  }
  json_object *r=service_command(q);json_object_put(q);const char *code=r?json_object_get_string(json_object_object_get(r,"code")):"busy";bool ok=!strcmp(code,"ok")||!strcmp(code,"accepted");if(r)json_object_put(r);return ok;
