@@ -13,10 +13,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'site'))
-from pages import GROUPS, PAGES  # noqa: E402
+from pages import GROUPS, PAGES, EN_PAGES, validate_translations  # noqa: E402
 
 
 class ManifestTests(unittest.TestCase):
+    def test_english_sources_are_current(self):
+        validate_translations(ROOT)
+        self.assertEqual({p[0] for p in PAGES}, {p[0] for p in EN_PAGES})
+
     def test_slugs_unique(self):
         slugs = [slug for slug, _, _, _ in PAGES]
         self.assertEqual(len(slugs), len(set(slugs)), 'duplicate slug in site/pages.py')
@@ -115,6 +119,23 @@ class BuildTests(unittest.TestCase):
         for alias in ('a1-flash', 'm1-flash'):
             html = (self.out / 'guides' / f'{alias}.html').read_text()
             self.assertIn('url=a1-m1-flash.html', html)
+
+    def test_english_navigation_assets_and_language_switches(self):
+        from urllib.parse import urlsplit, unquote
+        for slug, _, _, _ in EN_PAGES:
+            path = self.out / 'guides/en' / f'{slug}.html'
+            text = path.read_text()
+            self.assertIn('<html lang="en">', text)
+            self.assertIn(f'../{slug}.html', text)
+            chinese = (self.out / 'guides' / f'{slug}.html').read_text()
+            self.assertIn(f'en/{slug}.html', chinese)
+            for target in re.findall(r'(?:href|src)="([^"]+)"', text):
+                url = urlsplit(target)
+                if url.scheme or url.netloc or not url.path:
+                    continue
+                dest = path.parent / unquote(url.path)
+                self.assertTrue(dest.exists(), f'{slug}: missing {target}')
+        self.assertTrue((self.out / 'guides/en/index.html').is_file())
 
     def test_assets_ship(self):
         self.assertTrue((self.out / 'guides' / 'assets' / 'SHA256SUMS').exists())

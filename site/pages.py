@@ -47,3 +47,43 @@ GROUP_OF = {slug: (gid, gtitle) for gid, gtitle, items in GROUPS for slug, _, _,
 # Public site base URL, used wherever documentation links to the live site
 # (downloads, the demo index). One place to change if the site moves hosts.
 SITE_URL = 'https://phicomm-io.github.io/'
+
+# English guides share the same slugs, ordering and asset collection.
+EN_TITLES = {
+ 'quick-start': ('Quick start', 'Devices, Wi-Fi setup and local access'),
+ 'flash-prep': ('Before flashing', 'Power, backups and image selection'),
+ 'firmware-update': ('Firmware updates', 'OTA sources, packages and recovery'),
+ 'mqtt-link': ('MQTT and automation', 'Home Assistant, IotCloud and A1 / M1 pairing'),
+ 'faq': ('Troubleshooting', 'Indicators, recovery and common questions'),
+ 'tc1-guide': ('TC1 operation', 'Outlets, metering, schedules and buttons'),
+ 'tc1-flash': ('Flash TC1', 'EMW3031 first installation and recovery'),
+ 'm1-guide': ('M1 operation', 'Readings, brightness, icons and recovery'),
+ 'a1-guide': ('A1 operation', 'Fan, ring, night mode and automation'),
+ 'a1-m1-flash': ('Flash A1 / M1', 'SWD, factory points and serial bootloader'),
+ 'iotcloud-deploy': ('Deploy IotCloud', 'China / US nodes, hosting and local devices'),
+ 'build-deps': ('Build dependencies', 'Toolchains, SDK archives and local builds'),
+ 'sources': ('Asset sources', 'Image / tool provenance and checksums'),
+ 'release-log': ('Release Log', 'Release notes and historical validation scope'),
+}
+EN_GROUP_NAMES = {'common':'Getting started','tc1':'TC1 power strip',
+                  'm1':'M1 air quality monitor','a1':'A1 air purifier',
+                  'dev':'Development and maintenance'}
+EN_GROUPS = [(gid, EN_GROUP_NAMES[gid], [
+    (slug, *EN_TITLES[slug], 'EN-' + slug) for slug, _, _, _ in items
+]) for gid, _, items in GROUPS]
+EN_PAGES = list({page[0]: page for _, _, items in EN_GROUPS for page in items}.values())
+
+
+def validate_translations(root):
+    """Reject missing or stale English guides before publishing either surface."""
+    import hashlib
+    import json
+    sources = json.loads((root / 'docs/public/en/source-hashes.json').read_text())
+    expected = {slug for slug, _, _, _ in PAGES}
+    if set(sources) != expected:
+        raise ValueError('English translation manifest does not match guide manifest')
+    for slug in expected:
+        chinese = root / ('docs/release/Release-Log.md' if slug == 'release-log' else f'docs/public/{slug}.md')
+        english = root / f'docs/public/en/{slug}.md'
+        if not english.is_file() or sources[slug] != hashlib.sha256(chinese.read_bytes()).hexdigest():
+            raise ValueError(f'English translation needs review: {slug}')

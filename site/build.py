@@ -16,7 +16,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(ROOT / 'tools'))
-from pages import ALIASES, GROUPS, PAGES, SITE_URL  # noqa: E402
+from pages import ALIASES, GROUPS, PAGES, SITE_URL, EN_GROUPS, EN_PAGES, validate_translations  # noqa: E402
 
 EXTENSIONS = ['tables', 'fenced_code', 'attr_list', 'toc']
 SITE_NAME = 'PHICOMM COMMUNITY'
@@ -29,7 +29,10 @@ def esc(text):
     return html.escape(str(text), quote=True)
 
 
-def header(base):
+def header(base, language="zh"):
+    if language == "en":
+        nav = "".join(f'<a href="{base}#{anchor}">{label}</a>' for anchor, label in [("devices","Devices"),("features","Features"),("demos","Demos"),("docs","Documentation"),("releases","Downloads")])
+        return (f'<header class="site-header"><div class="wrap"><a class="brand" href="{base}"><span class="mark">P</span><span class="word"><b>{SITE_NAME}</b><span>Community firmware</span></span></a><nav class="site-nav" aria-label="Main navigation">{nav}</nav><div class="prefs"><label class="sr" for="themePick">Theme</label><select id="themePick"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></div></div></header>')
     nav = ''.join(f'<a href="{base}#{anchor}">{esc(label)}</a>' for anchor, label in HOME_ANCHORS)
     return (f'<header class="site-header"><div class="wrap">'
             f'<a class="brand" href="{base}./"><span class="mark" aria-hidden="true">斐</span>'
@@ -41,7 +44,15 @@ def header(base):
             f'</div></header>')
 
 
-def footer():
+def footer(language="zh"):
+    if language == "en":
+        return ('<footer class="site-footer"><div class="wrap">'
+                '<div><b>PHICOMM COMMUNITY</b><p>Community-maintained, not affiliated with the manufacturer. '
+                'Check the documentation for your release. The firmware repository has no single license covering all code.</p></div>'
+                '<div><b>Documentation</b><ul><li><a href="quick-start.html">Quick start</a></li>'
+                '<li><a href="faq.html">Troubleshooting</a></li><li><a href="release-log.html">Release Log</a></li></ul></div>'
+                '<div><b>Source</b><ul><li><a href="https://github.com/phicomm-io/phicomm-community-firmware">Firmware</a></li>'
+                '<li><a href="https://github.com/phicomm-io/phicomm-community-mqtt">MQTT platform</a></li></ul></div></div></footer>')
     return ('<footer class="site-footer"><div class="wrap">'
             f'<div><b>{esc(SITE_NAME)}</b><p style="margin-top:8px">社区维护项目，与原厂无隶属关系。'
             '固件、指南及发布说明以对应版本为准。本仓库没有覆盖全部代码的统一许可证。</p></div>'
@@ -56,26 +67,28 @@ def footer():
             '</ul></div></div></footer>')
 
 
-def guide_nav(active_slug):
+def guide_nav(active_slug, language="zh"):
     out = []
-    for _, title, items in GROUPS:
+    for _, title, items in (EN_GROUPS if language == "en" else GROUPS):
         out.append(f'<p class="guide-group">{esc(title)}</p>')
         for slug, page_title, _, _ in items:
             current = ' aria-current="page"' if slug == active_slug else ''
             out.append(f'<a href="{slug}.html"{current}>{esc(page_title)}</a>')
-    return f'<nav class="guide-nav" aria-label="文档导航">{"".join(out)}</nav>'
+    label = 'Documentation navigation' if language == 'en' else '文档导航'
+    return f'<nav class="guide-nav" aria-label="{label}">{"".join(out)}</nav>'
 
 
-def pager(slug):
-    order = [page[0] for page in PAGES]
+def pager(slug, language="zh"):
+    pages = EN_PAGES if language == "en" else PAGES
+    order = [page[0] for page in pages]
     index = order.index(slug)
     parts = []
     if index > 0:
-        prev = PAGES[index - 1]
-        parts.append(f'<a href="{prev[0]}.html">上一页<b>{esc(prev[1])}</b></a>')
-    if index < len(PAGES) - 1:
-        nxt = PAGES[index + 1]
-        parts.append(f'<a class="next" href="{nxt[0]}.html">下一页<b>{esc(nxt[1])}</b></a>')
+        prev = pages[index - 1]
+        parts.append(f'<a href="{prev[0]}.html">{"Previous" if language == "en" else "上一页"}<b>{esc(prev[1])}</b></a>')
+    if index < len(pages) - 1:
+        nxt = pages[index + 1]
+        parts.append(f'<a class="next" href="{nxt[0]}.html">{"Next" if language == "en" else "下一页"}<b>{esc(nxt[1])}</b></a>')
     return f'<div class="guide-pager">{"".join(parts)}</div>' if parts else ''
 
 
@@ -119,25 +132,32 @@ def expand_site_url(text):
     return text.replace('{{SITE_URL}}', SITE_URL)
 
 
-def render_guide(slug, title, summary, source):
+def render_guide(slug, title, summary, source, language="zh"):
+    english = language == "en"
+    base = "../../" if english else "../"
+    text = source.read_text(encoding="utf-8")
+    if english:
+        text = text.replace("](assets/", "](../assets/")
+    switch = (f'<a href="../{slug}.html" lang="zh-CN">简体中文</a> · English' if english else
+              f'简体中文 · <a href="en/{slug}.html" lang="en">English</a>')
     body = markdown.markdown(
-        rewrite_links(expand_site_url(source.read_text(encoding='utf-8'))), extensions=EXTENSIONS,
+        rewrite_links(expand_site_url(text)), extensions=EXTENSIONS,
         extension_configs={'toc': {'slugify': slugify_unicode}})
-    return (f'<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
+    return (f'<!doctype html><html lang="{"en" if english else "zh-CN"}"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width,initial-scale=1">'
             f'<meta name="description" content="{esc(summary)}">'
             f'<title>{esc(title)} · {esc(SITE_NAME)}</title>'
-            f'<link rel="stylesheet" href="../style.css"><script src="../theme.js"></script></head><body>'
-            f'<a class="skip" href="#main">跳到主要内容</a>'
-            f'{header("../")}'
+            f'<link rel="stylesheet" href="{base}style.css"><script src="{base}theme.js"></script></head><body>'
+            f'<a class="skip" href="#main">{"Skip to content" if english else "跳到主要内容"}</a>'
+            f'{header(base, language)}'
             f'<div class="guide-layout">'
-            f'{guide_nav(slug)}'
+            f'{guide_nav(slug, language)}'
             f'<main class="guide-main" id="main">'
-            f'<article class="prose">{body}</article>'
-            f'{pager(slug)}'
+            f'<p class="guide-language" aria-label="Language">{switch}</p><article class="prose">{body}</article>'
+            f'{pager(slug, language)}'
             f'</main></div>'
-            f'{footer()}'
-            f'<script src="../site.js"></script></body></html>')
+            f'{footer(language)}'
+            f'<script src="{base}site.js"></script></body></html>')
 
 
 def markdown_sources():
@@ -157,6 +177,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('output', type=Path)
     args = parser.parse_args()
+    validate_translations(ROOT)
     out = args.output
     out.mkdir(parents=True, exist_ok=True)
 
@@ -171,6 +192,24 @@ def main():
     home = home.replace(placeholder, f'<div class="doc-groups" id="docs-index">{docs_index()}</div>')
     (out / 'index.html').write_text(home, encoding='utf-8')
 
+    # Both languages are built together, so missing translations fail publication.
+    english_dir = out / 'guides' / 'en'
+    english_dir.mkdir(parents=True, exist_ok=True)
+    for slug, title, summary, _ in EN_PAGES:
+        source = ROOT / 'docs' / 'public' / 'en' / f'{slug}.md'
+        if not source.is_file():
+            raise SystemExit(f'Missing English guide: {source}')
+        (english_dir / f'{slug}.html').write_text(render_guide(slug, title, summary, source, 'en'), encoding='utf-8')
+    english_links = ''.join(f'<section><h2>{esc(title)}</h2><ul>' + ''.join(
+        f'<li><a href="{slug}.html">{esc(name)}</a> — {esc(summary)}</li>' for slug, name, summary, _ in items) + '</ul></section>'
+        for _, title, items in EN_GROUPS)
+    (english_dir / 'index.html').write_text(
+        '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<title>English documentation · PHICOMM COMMUNITY</title><link rel="stylesheet" href="../../style.css">'
+        '<script src="../../theme.js"></script></head><body>' + header('../../', 'en') +
+        '<main class="wrap prose" id="main"><p><a href="../../#docs" lang="zh-CN">简体中文</a> · English</p>'
+        '<h1>English documentation</h1><p>Guides for TC1, M1, A1 and IotCloud.</p>' + english_links + '</main>' + footer('en') +
+        '<script src="../../site.js"></script></body></html>', encoding='utf-8')
     sources = markdown_sources()
     missing, guides = [], out / 'guides'
     guides.mkdir(exist_ok=True)
