@@ -4,6 +4,7 @@
 Run via run_mqtt_v2.sh; never uses the device's configured broker.
 """
 import json
+import select
 from pathlib import Path
 import subprocess
 import sys
@@ -46,7 +47,7 @@ def main(port):
     try:
         worker = subprocess.Popen([str(root / 'build/simulator/A1'), 'aabbccddeeff',
                                    '127.0.0.1', '127.0.0.1', str(port), user],
-                                  stdin=subprocess.PIPE, stdout=subprocess.DEVNULL)
+                                  stdin=subprocess.PIPE, stdout=subprocess.PIPE)
         prefix = 'homeassistant/'
         def configs():
             return {t.rsplit('_filter_', 1)[-1].split('/')[0]: json.loads(p)
@@ -109,8 +110,13 @@ def main(port):
         print('PASS A1 five HA discovery templates, control commands, reset, retained replay and HA birth', flush=True)
         # A grouped fan has shared controls, but each physical A1 wears its own filter.
         start = len(records)
-        publish(base+'/command', json.dumps({'action': 'binding.set',
-                                            'params': {'group': 'filter-test'}}))
+        # Install the binding through the service input independently of the
+        # MQTT reconnect that changing subscription roots requires.
+        worker.stdin.write(json.dumps({'action': 'binding.set',
+                                       'params': {'group': 'filter-test'}}).encode()+b'\n')
+        worker.stdin.flush()
+        assert select.select([worker.stdout], [], [], 12)[0], 'binding setup timeout'
+        assert json.loads(worker.stdout.readline())['code'] == 'accepted'
         wait(lambda: any(t.startswith(prefix) and '_bound_' in t and p
                          for t, p, r in records[start:]))
         wait(lambda: len([t for t, p, r in records[start:] if '_filter_' in t
