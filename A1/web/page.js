@@ -55,7 +55,7 @@ function renderAuto(){
 
 /* ---------- Home: light ring ---------- */
 const SWATCHES=[[217,80,0],[255,255,255],[255,170,60],[0,90,255],[0,200,120],[170,60,255],[255,30,60]];
-let lightDirty=false,lightTimer=null,ringAnimationTimer=null,color=[0,0,255];
+let lightDirty=false,lightTimer=null,ringAnimationTimer=null,previewTarget=null,ringPolling=false,ringPolledAt=0,color=[0,0,255];
 const hex=c=>'#'+c.map(n=>n.toString(16).padStart(2,'0')).join('');
 const custom=h('input',{type:'color','aria-label':'custom'});
 $('swatches').append(...SWATCHES.map(c=>h('button',{type:'button',class:'swatch',style:'--c:'+hex(c),'aria-label':hex(c),onclick:()=>{color=c;lightChanged();}})),custom);
@@ -79,20 +79,19 @@ function renderLightControls(){
 }
 function renderRing(s){
  if(!s)return;const N=31,svgs=document.querySelectorAll('.ring-preview-svg'),enabled=$('ledEnabled').checked,brightness=Number($('bright').value)/255;
- const eff=advanced.effect,now=performance.now(),speed=Number(s.percentage??s.speed??s.requested_speed??s.applied_speed??0),sources=Array.from({length:N},()=>[0,0,0]);
+ const touching=previewTarget!==null||!!s.touch_active,eff=touching?0:advanced.effect,now=performance.now(),speed=Number(s.percentage??s.speed??s.requested_speed??0),sources=Array.from({length:N},()=>[0,0,0]);
+ const feedbackSpeed=Math.max(0,Math.min(100,Number(touching?(previewTarget??s.requested_speed??s.speed??0):(s.applied_speed??0))));
  const followSpeed=s.fan_on?speed:0;
  // Physical LEDs 1..31 occupy output slots 18..31,1..17; slot 0 is not on the ring.
  const slotForLed=index=>((index+17)%N)+1;
  const slotColors=Array.from({length:32},()=>[0,0,0]);
  const clip=v=>Math.max(0,Math.min(1,v));
  if(enabled&&brightness&&eff===0){
-  const fanOn=!!(s.fan_on??s.requested_fan_on),effectiveSpeed=Number(s.percentage??s.speed??s.requested_speed??speed);
-  const count=Math.min(N,fanOn?Math.floor(effectiveSpeed/3)+1:N),rgb=color.map(v=>v/255*brightness*(advanced.follow_fan?followSpeed/100:1));
-  const radius=Math.floor((count-1)/2);
-  sources[9]=rgb;
-  for(let distance=1;distance<=radius;distance++){
-   const clockwise=(10+distance-1)%N,counterclockwise=(10-distance-1+N*2)%N;
-   sources[clockwise]=rgb;sources[counterclockwise]=rgb;
+  for(let i=0;i<N;i++){
+   const delta=Math.abs(i-9),distance=Math.min(delta,N-delta);
+   const x=Math.max(0,Math.min(200,16*feedbackSpeed-100*(distance-1)));
+   const level=!feedbackSpeed?0:!distance?255:Math.floor((255*x*x*(600-2*x)+4000000)/8000000);
+   sources[i]=color.map(v=>Math.floor(Math.floor(v*brightness)*level/255)/255*(advanced.follow_fan&&!touching?followSpeed/100:1));
   }
  }else if(enabled&&brightness&&eff===4){
   const cfg=advanced,n=Math.max(1,Math.min(4,Number(cfg.segments)||1)),avg=bindingStatus.average||{};let at=0;
@@ -146,11 +145,22 @@ function renderRing(s){
   }
  }
  for(const svg of svgs){
+  svg.dataset.feedbackSpeed=String(feedbackSpeed);svg.dataset.feedbackSource=touching?'target':'pwm';
   svg.setAttribute('role','img');svg.removeAttribute('aria-hidden');svg.setAttribute('aria-label','A1 圆环导光预览：31 颗光源均匀分布，10 号在 6 点，25 和 26 号分列 12 点两侧');
-  svg.innerHTML=parts.join('')+'<text x="100" y="98" text-anchor="middle" class="ring-v">'+(enabled?Math.round(brightness*100)+'%':t('state.off'))+'</text><text x="100" y="122" text-anchor="middle" class="ring-l">'+t('a1.effect.'+eff)+'</text>';
+  svg.innerHTML=parts.join('')+'<text x="100" y="98" text-anchor="middle" class="ring-v">'+(enabled?(eff===0?feedbackSpeed:Math.round(brightness*100))+'%':t('state.off'))+'</text><text x="100" y="122" text-anchor="middle" class="ring-l">'+(eff===0?t(touching?'a1.feedback_target':'a1.feedback_pwm'):t('a1.effect.'+eff))+'</text>';
  }
 }
-function updateRingAnimation(){clearInterval(ringAnimationTimer);ringAnimationTimer=null;if(advanced.effect===2||advanced.effect===3)ringAnimationTimer=setInterval(()=>{if(UI.state)renderRing(UI.state);},50);}
+function updateRingAnimation(){
+ clearInterval(ringAnimationTimer);
+ ringAnimationTimer=setInterval(()=>{
+  if(!UI.state)return;
+  const lightPage=document.querySelector('[data-settings-page="light"]'),ramping=UI.state.applied_speed!==UI.state.percentage;
+  if(!document.hidden&&(ramping||lightPage&&!lightPage.hidden)&&!ringPolling&&performance.now()-ringPolledAt>=(ramping?200:500)){
+   ringPolling=true;ringPolledAt=performance.now();UI.reload().finally(()=>{ringPolling=false;});
+  }
+  if(advanced.effect===2||advanced.effect===3||previewTarget!==null)renderRing(UI.state);
+ },50);
+}
 function renderLight(s){
  if(!lightDirty){$('ledEnabled').checked=s.led_enabled;$('ledAlways').checked=s.led_always_on;$('bright').value=s.brightness;color=[s.red,s.green,s.blue];renderLightControls();}
  $('effectNote').replaceChildren(t('a1.effect_note',{e:t('a1.effect.'+advanced.effect)})+' ',h('a',{href:'#settings/light'},t('a1.effect_change')));
@@ -178,7 +188,9 @@ async function showLight(){
    :null;
   if(segs)segs.querySelector('.seg').set(m.segments);
   const previewSpeed=h('input',{id:'previewSpeed',type:'range',min:1,max:100,step:1,value:UI.state?.fan_on?UI.state.percentage:UI.state?.requested_speed||60,'aria-label':t('a1.speed'),
-   oninput:e=>{$('previewSpeedValue').textContent=e.target.value+'%';},onchange:()=>run(previewSpeed,()=>setSpeed(previewSpeed.value),null)});
+   oninput:e=>{previewTarget=Number(e.target.value);$('previewSpeedValue').textContent=e.target.value+'%';renderRing(UI.state);},
+   onchange:()=>run(previewSpeed,async()=>{try{await setSpeed(previewSpeed.value);}finally{previewTarget=null;renderRing(UI.state);}},null),
+   onblur:()=>{previewTarget=null;if(UI.state)renderRing(UI.state);}});
   const previewRing=document.createElementNS('http://www.w3.org/2000/svg','svg');
   previewRing.setAttribute('class','ring ring-preview-svg');previewRing.setAttribute('viewBox','0 0 200 200');
   page.replaceChildren(pageHead('nav.light','fx.lead'),

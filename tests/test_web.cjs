@@ -49,11 +49,18 @@ const ACTIONS={M1:['schedules.get','schedules.put','schedules.delete','schedules
   assert(ring.querySelectorAll('.ring-light-segment').length>31,'A1 preview samples continuous guide illumination');
   assert.equal(ring.querySelectorAll('circle:not(.ring-guide):not(.ring-edge)').length,0,'A1 preview does not render LED particles');
   for(const percentage of [1,3,6,9,45,90,100]){
-   w.UI.device.onStatus({...state,percentage});
+   w.UI.device.onStatus({...state,percentage:100,applied_speed:percentage});
+   assert.equal(ring.dataset.feedbackSpeed,String(percentage),'normal feedback uses current PWM rather than the target');
    const segments=[...ring.querySelectorAll('.ring-light-segment')],starts=new Map();
    for(const path of segments){const p=path.getAttribute('d').match(/-?[\d.]+/g).map(Number);starts.set(p[0].toFixed(3)+','+p[1].toFixed(3),path.getAttribute('stroke-opacity'));}
    for(const path of segments){const p=path.getAttribute('d').match(/-?[\d.]+/g).map(Number),mirror=(200-p[7]).toFixed(3)+','+p[8].toFixed(3);assert.equal(starts.get(mirror),path.getAttribute('stroke-opacity'),'fan light must expand symmetrically around LED 10 at '+percentage+'%');}
   }
+  w.UI.device.onStatus({...state,applied_speed:0});
+  assert.equal(ring.querySelectorAll('.ring-light-segment').length,0,'stopped PWM must not show a full speed ring');
+  w.UI.device.onStatus({...state,applied_speed:20,requested_speed:80,touch_active:true});
+  assert.equal(ring.dataset.feedbackSource,'target');assert.equal(ring.dataset.feedbackSpeed,'80');
+  w.UI.device.onStatus({...state,applied_speed:20,requested_speed:80,touch_active:false});
+  assert.equal(ring.dataset.feedbackSource,'pwm');assert.equal(ring.dataset.feedbackSpeed,'20');
  }
  assert(!d.querySelector('#spark')?.innerHTML.includes('NaN'),'single-point power chart must remain finite');
  if(model==='TC1')assert.equal(d.querySelector('#mqttMode').options.length,2);else assert.equal(d.querySelector('#mqttMode'),null,'M1/A1 only support TMCP');
@@ -63,8 +70,11 @@ const ACTIONS={M1:['schedules.get','schedules.put','schedules.delete','schedules
   const previewRing=d.querySelector('.ring-effect-preview svg');
   assert.equal(previewRing.namespaceURI,'http://www.w3.org/2000/svg','preview uses a real SVG namespace');
   assert(d.querySelector('.ring-effect-preview .ring-light-segment'),'light effects page shows the live ring preview');
-  const previewSpeed=d.querySelector('#previewSpeed');previewSpeed.value='72';previewSpeed.dispatchEvent(new w.Event('change',{bubbles:true}));await flush();
+  const previewSpeed=d.querySelector('#previewSpeed');previewSpeed.value='72';previewSpeed.dispatchEvent(new w.Event('input',{bubbles:true}));
+  assert.equal(previewRing.dataset.feedbackSpeed,'72');assert.equal(previewRing.dataset.feedbackSource,'target');
+  previewSpeed.dispatchEvent(new w.Event('change',{bubbles:true}));await flush();
   assert(calls.some(r=>r.action==='fan.set'&&r.params.speed===72),'preview speed control sends the real fan speed command');
+  assert.equal(previewRing.dataset.feedbackSource,'pwm','release restores current PWM feedback');
  }
  // Navigation keeps unsaved input, and each page is reachable by hash.
  d.querySelector('#mqttUser').value='unsaved';

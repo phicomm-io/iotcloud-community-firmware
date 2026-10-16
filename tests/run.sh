@@ -11,6 +11,8 @@ cc -std=c99 -Wall -Wextra -Werror tests/test_wifi_trial.c -o "$output/wifi-trial
 "$output/wifi-trial"
 cc -std=c99 -Wall -Wextra -Werror tests/test_m1_indicator.c -o "$output/m1-indicator"
 "$output/m1-indicator"
+cc -std=c99 -Wall -Wextra -Werror tests/test_a1_ring.c -o "$output/a1-ring"
+"$output/a1-ring"
 cc -DFEATURE_HOST -std=c99 -Wall -Wextra -Werror -Wno-misleading-indentation -Icommon common/engine.c tests/test_engine.c -lm -o "$output/engine"
 cc -std=c99 -Wall -Wextra -Werror tests/test_mqtt_account.c -o "$output/mqtt-account"
 "$output/mqtt-account"

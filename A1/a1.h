@@ -34,7 +34,7 @@ typedef struct {
     uint32_t config_generation, reboot_at, led_until;
     uint32_t panel_errors, hardware_errors;
     bool wifi_connected, ap_active, ap_requested, mqtt_connected;
-    bool fan_ready, panel_ready, led_visible, config_dirty;
+    bool fan_ready, panel_ready, led_visible, config_dirty, touch_active;
     bool reboot_pending, ota_active, scan_busy;
     bool wifi_trial_active;
     char wifi_trial_status[24];
