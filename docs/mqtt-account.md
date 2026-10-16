@@ -57,7 +57,7 @@ HTTP 使用 `POST /api/v1/command`，与 MQTT command 共用 JSON 命令和响�
 
 `filter.get` 查询；`filter.set` 接受 `{"lifetime_hours":6000}`（1–20000 小时）；更换滤芯后发送 `filter.reset`（空 params），使用量归零并保留额定寿命。HTTP 与 MQTT 使用相同命令。修改和重置成功后及时发布 retained 状态；持续运行期间每分钟更新使用量，无变化时不重复上报。
 
-未绑定的 A1 通过 HA Discovery 提供 `filter_remaining`（百分比）、`filter_used`（小时）、`filter_replacement`（更换提醒）、`filter_lifetime`（可配置小时数）和 `filter_reset`（重置按钮）。绑定时按既有策略隐藏本机 HA 实体；解绑或 HA 重启后重新发现。命令不保留，订阅者重新连接时可读取 retained 状态。
+A1 通过 HA Discovery 提供 `filter_remaining`（百分比）、`filter_used`（小时）、`filter_replacement`（更换提醒）、`filter_lifetime`（可配置小时数）和 `filter_reset`（重置按钮）。滤芯损耗属于实际 A1，绑定 M1 或编组后仍保留这五个实体；HA 重启后重新发现。命令不保留，订阅者重新连接时可读取 retained 状态。
 
 ## 验证边界
 

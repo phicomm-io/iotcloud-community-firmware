@@ -107,6 +107,22 @@ def main(port):
         wait(lambda: len([t for t, p, r in records[start:] if '_filter_' in t
                           and t.startswith(prefix) and '/'+key+'/' in t and p]) == 5)
         print('PASS A1 five HA discovery templates, control commands, reset, retained replay and HA birth', flush=True)
+        # A grouped fan has shared controls, but each physical A1 wears its own filter.
+        start = len(records)
+        publish(base+'/command', json.dumps({'action': 'binding.set',
+                                            'params': {'group': 'filter-test'}}))
+        wait(lambda: any(t.startswith(prefix) and '_bound_' in t and p
+                         for t, p, r in records[start:]))
+        wait(lambda: len([t for t, p, r in records[start:] if '_filter_' in t
+                          and t.startswith(prefix) and '/'+key+'/' in t and p]) >= 5)
+        assert not any(not p for t, p, r in records[start:]
+                       if t.startswith(prefix) and '_filter_' in t)
+        start = len(records)
+        publish(base+'/command', command)
+        publish(base+'/command', reset)
+        wait(lambda: any(s['used_seconds'] == 0 and s['lifetime_hours'] == 6000
+                         for s in states(start)), 5)
+        print('PASS bound A1 retains physical filter discovery and reset controls', flush=True)
     finally:
         if worker:
             worker.terminate()

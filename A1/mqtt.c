@@ -129,7 +129,8 @@ static int filter_discovery(const a1_config_t *c, bool clear)
     for (unsigned i = 0; i < 5; ++i) {
         char path[MQTT_TOPIC_MAX], identity[MQTT_TOPIC_MAX];
         mqtt_ha(&account, components[i], keys[i], path, sizeof(path));
-        if (clear || feature_bound()) { if (publish(path, "", true) != MQTT_SUCCESS) return MQTT_FAILURE; continue; }
+        /* Wear belongs to this physical A1 even when fan control is grouped. */
+        if (clear) { if (publish(path, "", true) != MQTT_SUCCESS) return MQTT_FAILURE; continue; }
         json_object *o = json_object_new_object(), *device = json_object_new_object(), *ids = json_object_new_array();
         if (!o || !device || !ids) {
             if (o) json_object_put(o);
