@@ -10,14 +10,15 @@ import argparse, html, re, shutil, sys
 from pathlib import Path
 
 import markdown
+from markdown.extensions.toc import slugify_unicode
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(ROOT / 'tools'))
-from pages import GROUPS, PAGES, SITE_URL  # noqa: E402
+from pages import ALIASES, GROUPS, PAGES, SITE_URL  # noqa: E402
 
-EXTENSIONS = ['tables', 'fenced_code', 'attr_list']
+EXTENSIONS = ['tables', 'fenced_code', 'attr_list', 'toc']
 SITE_NAME = 'PHICOMM COMMUNITY'
 # Nav anchors live on the home page, so guides reach them through '../'.
 HOME_ANCHORS = [('devices', '设备'), ('features', '功能'), ('demos', '在线演示'),
@@ -120,7 +121,8 @@ def expand_site_url(text):
 
 def render_guide(slug, title, summary, source):
     body = markdown.markdown(
-        rewrite_links(expand_site_url(source.read_text(encoding='utf-8'))), extensions=EXTENSIONS)
+        rewrite_links(expand_site_url(source.read_text(encoding='utf-8'))), extensions=EXTENSIONS,
+        extension_configs={'toc': {'slugify': slugify_unicode}})
     return (f'<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width,initial-scale=1">'
             f'<meta name="description" content="{esc(summary)}">'
@@ -180,6 +182,14 @@ def main():
         (guides / f'{slug}.html').write_text(render_guide(slug, title, summary, source), encoding='utf-8')
     if missing:
         print('Missing guide sources: ' + ', '.join(missing), file=sys.stderr)
+
+    for alias, target in ALIASES.items():
+        (guides / f'{alias}.html').write_text(
+            '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
+            f'<meta http-equiv="refresh" content="0;url={target}.html">'
+            f'<link rel="canonical" href="{target}.html"><title>刷机教程</title>'
+            f'</head><body><a href="{target}.html">查看 A1 / M1 刷机教程</a></body></html>',
+            encoding='utf-8')
 
     # Every demo comes from the same pinned frontend release as firmware UI.
     from frontend_release import fetch

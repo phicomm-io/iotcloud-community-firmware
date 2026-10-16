@@ -96,6 +96,26 @@ class BuildTests(unittest.TestCase):
         for slug, title, _, _ in PAGES:
             self.assertIn(f'guides/{slug}.html', home, f'home page does not link {slug}')
 
+    def test_home_local_html_links_exist(self):
+        from urllib.parse import urlsplit, unquote
+        for target in re.findall(r'href="([^"]+)"', (self.out / 'index.html').read_text()):
+            url = urlsplit(target)
+            if not url.scheme and not url.netloc and url.path.endswith('.html'):
+                self.assertTrue((self.out / unquote(url.path)).is_file(), target)
+
+    def test_shared_flashing_guide_under_both_products(self):
+        for gid in ('a1', 'm1'):
+            items = next(items for group, _, items in GROUPS if group == gid)
+            self.assertIn('a1-m1-flash', [item[0] for item in items])
+        html = (self.out / 'guides' / 'a1-m1-flash.html').read_text()
+        for anchor in ('j-link-刷机', 'bootloader-刷机'):
+            self.assertIn(f'id="{anchor}"', html)
+
+    def test_old_flashing_urls_reach_shared_guide(self):
+        for alias in ('a1-flash', 'm1-flash'):
+            html = (self.out / 'guides' / f'{alias}.html').read_text()
+            self.assertIn('url=a1-m1-flash.html', html)
+
     def test_assets_ship(self):
         self.assertTrue((self.out / 'guides' / 'assets' / 'SHA256SUMS').exists())
         self.assertTrue((self.out / 'style.css').exists())
