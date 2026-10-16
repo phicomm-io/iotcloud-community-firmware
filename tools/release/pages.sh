@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 # Build the public site and push it to the public Pages repository.
 #
-#   tools/release/pages.sh              build only, output stays in build/pages
-#   tools/release/pages.sh --preview    push to the `preview` branch (no deploy)
-#   tools/release/pages.sh --publish    push to `main` (the live site)
+#   tools/release/pages.sh                build and publish to `main` (live site)
+#   tools/release/pages.sh --preview      build and push the `preview` branch
+#   tools/release/pages.sh --build-only   build only, output stays in build/pages
 #
-# Preview never touches `main`; the live site only changes on --publish, which
-# the release workflow runs after a tag ships.
+# No argument publishes, because the release workflow calls this script bare
+# after a tag ships. Preview never touches `main`.
 set -euo pipefail
-mode=build
+mode=publish
 case "${1:-}" in
  --preview) mode=preview ;;
- --publish) mode=publish ;;
+ --build-only) mode=build ;;
  "") ;;
- *) echo "usage: $0 [--preview|--publish]" >&2; exit 2 ;;
+ *) echo "usage: $0 [--preview|--build-only]" >&2; exit 2 ;;
 esac
 
 python3 -m pip install --quiet Markdown==3.7
@@ -24,7 +24,7 @@ mkdir -p build/pages/demos/platform
 cp -a platform/frontend/dist/. build/pages/demos/platform/
 
 if [[ "$mode" == build ]]; then
- echo "Built build/pages (serve it locally, or pass --preview/--publish to push)."
+ echo "Built build/pages (serve it locally, or run without --build-only to push)."
  exit 0
 fi
 
