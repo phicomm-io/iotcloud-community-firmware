@@ -25,6 +25,8 @@ function renderFan(s){
  const auto=bindingStatus.linkage_status==='active'&&bindingStatus.automatic_on;
  $('fanState').textContent=s.fan_on?t('a1.running'):t('a1.off');
  $('fanSub').textContent=locked?t('a1.locked_ota'):s.fan_on?t(auto?'a1.sub_auto':'a1.sub_manual',{p:s.percentage}):t('a1.sub_off',{p:s.requested_speed});
+ const previewSpeed=$('previewSpeed');
+ if(previewSpeed&&document.activeElement!==previewSpeed){const value=s.fan_on?s.percentage:s.requested_speed;previewSpeed.value=value;$('previewSpeedValue').textContent=value+'%';}
  if(!dragging&&document.activeElement!==speed){const v=s.fan_on?s.percentage:s.requested_speed;speed.value=v;$('speedValue').textContent=v+'%';presets.set(s.fan_on?s.percentage:null);}
  $('outBar').style.width=s.applied_speed+'%';$('targetBar').style.width=s.percentage+'%';$('targetBar').hidden=!s.percentage;
  $('outText').textContent=!s.fan_on&&!s.applied_speed?t('a1.out_stopped'):s.applied_speed!==s.percentage?t('a1.out_ramp',{a:s.applied_speed,p:s.percentage}):t('a1.out_steady',{a:s.applied_speed});
@@ -53,7 +55,7 @@ function renderAuto(){
 
 /* ---------- Home: light ring ---------- */
 const SWATCHES=[[217,80,0],[255,255,255],[255,170,60],[0,90,255],[0,200,120],[170,60,255],[255,30,60]];
-let lightDirty=false,lightTimer=null,color=[0,0,255];
+let lightDirty=false,lightTimer=null,ringAnimationTimer=null,previewTarget=null,ringPolling=false,ringPolledAt=0,color=[0,0,255];
 const hex=c=>'#'+c.map(n=>n.toString(16).padStart(2,'0')).join('');
 const custom=h('input',{type:'color','aria-label':'custom'});
 $('swatches').append(...SWATCHES.map(c=>h('button',{type:'button',class:'swatch',style:'--c:'+hex(c),'aria-label':hex(c),onclick:()=>{color=c;lightChanged();}})),custom);
@@ -76,17 +78,88 @@ function renderLightControls(){
  for(const el of [$('ledAlways'),$('bright'),custom,...document.querySelectorAll('.swatch')])el.disabled=!on;
 }
 function renderRing(s){
- if(!s)return;const N=24,svg=$('ring'),on=$('ledEnabled').checked,bright=Number($('bright').value)/255;
- const eff=advanced.effect;let lit=N;
- if(eff===0&&s.fan_on)lit=Math.max(1,Math.round(s.applied_speed/100*N));
- const parts=[];
- for(let i=0;i<N;i++){const a=(i/N)*Math.PI*2-Math.PI/2,x=100+78*Math.cos(a),y=100+78*Math.sin(a);
-  let fill=hex(color),op=on&&i<lit?0.25+0.75*bright:0.12;
-  if(!on||i>=lit)fill='var(--muted)';
-  else if(eff===3)fill='hsl('+(i*15)+' 90% 55%)';
-  else if(eff===4){const seg2=advanced.segment[Math.floor(i/(N/Math.max(1,advanced.segments)))];if(seg2)fill=hex(seg2.colors[1]);}
-  parts.push('<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="7" fill="'+fill+'" opacity="'+op.toFixed(2)+'"'+(on&&eff===2?' class="breathe"':'')+'/>');}
- svg.innerHTML=parts.join('')+'<text x="100" y="98" text-anchor="middle" class="ring-v">'+(on?Math.round(bright*100)+'%':t('state.off'))+'</text><text x="100" y="122" text-anchor="middle" class="ring-l">'+t('a1.effect.'+eff)+'</text>';
+ if(!s)return;const N=31,svgs=document.querySelectorAll('.ring-preview-svg'),enabled=$('ledEnabled').checked,brightness=Number($('bright').value)/255;
+ const touching=previewTarget!==null||!!s.touch_active,eff=touching?0:advanced.effect,now=performance.now(),speed=Number(s.percentage??s.speed??s.requested_speed??0),sources=Array.from({length:N},()=>[0,0,0]);
+ const feedbackSpeed=Math.max(0,Math.min(100,Number(touching?(previewTarget??s.requested_speed??s.speed??0):(s.applied_speed??0))));
+ const followSpeed=s.fan_on?speed:0;
+ // Physical LEDs 1..31 occupy output slots 18..31,1..17; slot 0 is not on the ring.
+ const slotForLed=index=>((index+17)%N)+1;
+ const slotColors=Array.from({length:32},()=>[0,0,0]);
+ const clip=v=>Math.max(0,Math.min(1,v));
+ if(enabled&&brightness&&eff===0){
+  for(let i=0;i<N;i++){
+   const delta=Math.abs(i-9),distance=Math.min(delta,N-delta);
+   const x=Math.max(0,Math.min(200,16*feedbackSpeed-100*(distance-1)));
+   const level=!feedbackSpeed?0:!distance?255:Math.floor((255*x*x*(600-2*x)+4000000)/8000000);
+   sources[i]=color.map(v=>Math.floor(Math.floor(v*brightness)*level/255)/255*(advanced.follow_fan&&!touching?followSpeed/100:1));
+  }
+ }else if(enabled&&brightness&&eff===4){
+  const cfg=advanced,n=Math.max(1,Math.min(4,Number(cfg.segments)||1)),avg=bindingStatus.average||{};let at=0;
+  for(let part=0;part<n;part++){
+   const length=Math.floor(32/n)+(part<32%n?1:0),lit=length-(n>1?1:0),segment=cfg.segment?.[part];
+   if(segment){
+    let value=0,valid=true;
+    if(segment.source<4){const key=['temperature','humidity','pm25','formaldehyde'][segment.source];value=Number(avg[key]??s[key]??0);valid=avg.valid===true||s.sensor_valid===true;}
+    else if(segment.source===5)value=followSpeed;
+    else{valid=avg.valid===true||s.sensor_valid===true;value=Math.max((Number(avg.pm25??s.pm25??0)/Math.max(Number(cfg.quality_pm)||1,0.01)),(Number(avg.formaldehyde??s.formaldehyde??0)/Math.max(Number(cfg.quality_hcho)||1,0.001)));}
+    if(valid){
+     let colorIndex=value<segment.suitable_low?0:value>segment.suitable_high?2:1;if(segment.display===0)colorIndex=1;
+     const range=Number(segment.maximum)-Number(segment.minimum),level=segment.display===1?1:range>0?clip((value-Number(segment.minimum))/range):0;
+     const levelBrightness=brightness*level*(cfg.follow_fan?followSpeed/100:1),rgb=(segment.colors?.[colorIndex]||[0,0,0]).map(v=>Number(v)*levelBrightness/255);
+     for(let i=0;i<lit;i++)slotColors[at+i]=rgb;
+    }
+   }
+   at+=length;
+  }
+  for(let i=0;i<N;i++)sources[i]=slotColors[slotForLed(i)];
+ }else if(enabled&&brightness){
+  let level=brightness*(advanced.follow_fan?followSpeed/100:1);
+  if(eff===2)level*=((1+Math.sin(now/2000))/2);
+  for(let i=0;i<N;i++){
+   let rgb=color;
+   if(eff===3){const p=(Math.floor(slotForLed(i)*768/32)+Math.floor(now/30))%768;rgb=[p<256?255-p:p>512?p-512:0,p<256?p:p<512?511-p:0,p<256?0:p<512?p-256:767-p];}
+   sources[i]=rgb.map(v=>v/255*level);
+  }
+ }
+ const step=Math.PI*2/N,base=Math.PI/2-9*step,radius=77,samples=24,parts=[
+  '<circle class="ring-guide" cx="100" cy="100" r="77"></circle>',
+  '<circle class="ring-edge" cx="100" cy="100" r="85"></circle>',
+  '<circle class="ring-edge" cx="100" cy="100" r="69"></circle>',
+  '<text class="ring-anchor" x="100" y="198" text-anchor="middle">10</text>'
+ ];
+ // Wendland C2 gives a smooth, compact light spread that reaches zero at two LED pitches.
+ const falloff=d=>{const r=d/2;if(r>=1)return 0;const q=1-r;return q*q*q*q*(4*r+1);};
+ const point=a=>[100+radius*Math.cos(a),100+radius*Math.sin(a)];
+ for(let sample=0;sample<N*samples;sample++){
+  const position=(sample+0.5)/samples,a0=base+sample/samples*step,a1=base+(sample+1)/samples*step,[x0,y0]=point(a0),[x1,y1]=point(a1),mix=[0,0,0];
+  for(let i=0;i<N;i++){
+   if(!sources[i].some(v=>v>0))continue;
+   const raw=Math.abs(position-i),distance=Math.min(raw,N-raw),weight=falloff(distance);
+   if(!weight)continue;
+   for(let c=0;c<3;c++)mix[c]=Math.min(1,mix[c]+sources[i][c]*weight);
+  }
+  const strength=Math.max(...mix);
+  if(strength>0.00001){
+   const rgb=mix.map(v=>Math.round(v/strength*255));
+   parts.push('<path class="ring-light-segment" d="M'+x0.toFixed(3)+' '+y0.toFixed(3)+' A'+radius+' '+radius+' 0 0 1 '+x1.toFixed(3)+' '+y1.toFixed(3)+'" stroke="rgb('+rgb.join(',')+')" stroke-opacity="'+strength.toFixed(4)+'"></path>');
+  }
+ }
+ for(const svg of svgs){
+  svg.dataset.feedbackSpeed=String(feedbackSpeed);svg.dataset.feedbackSource=touching?'target':'pwm';
+  svg.setAttribute('role','img');svg.removeAttribute('aria-hidden');svg.setAttribute('aria-label','A1 圆环导光预览：31 颗光源均匀分布，10 号在 6 点，25 和 26 号分列 12 点两侧');
+  svg.innerHTML=parts.join('')+'<text x="100" y="98" text-anchor="middle" class="ring-v">'+(enabled?(eff===0?feedbackSpeed:Math.round(brightness*100))+'%':t('state.off'))+'</text><text x="100" y="122" text-anchor="middle" class="ring-l">'+(eff===0?t(touching?'a1.feedback_target':'a1.feedback_pwm'):t('a1.effect.'+eff))+'</text>';
+ }
+}
+function updateRingAnimation(){
+ clearInterval(ringAnimationTimer);
+ ringAnimationTimer=setInterval(()=>{
+  if(!UI.state)return;
+  const lightPage=document.querySelector('[data-settings-page="light"]'),ramping=UI.state.applied_speed!==UI.state.percentage;
+  if(!document.hidden&&(ramping||lightPage&&!lightPage.hidden)&&!ringPolling&&performance.now()-ringPolledAt>=(ramping?200:500)){
+   ringPolling=true;ringPolledAt=performance.now();UI.reload().finally(()=>{ringPolling=false;});
+  }
+  if(advanced.effect===2||advanced.effect===3||previewTarget!==null)renderRing(UI.state);
+ },50);
 }
 function renderLight(s){
  if(!lightDirty){$('ledEnabled').checked=s.led_enabled;$('ledAlways').checked=s.led_always_on;$('bright').value=s.brightness;color=[s.red,s.green,s.blue];renderLightControls();}
@@ -98,9 +171,11 @@ function renderLight(s){
 const EFFECTS=[0,1,2,3,4];
 async function showLight(){
  const page=document.querySelector('[data-settings-page="light"]');
- const m=clone(advanced=await api('/light/advanced'));
+ const m=clone(advanced=await api('/light/advanced'));updateRingAnimation();
+ const refreshDraft=()=>{advanced=clone(m);updateRingAnimation();if(UI.state)renderRing(UI.state);};
+ page.oninput=refreshDraft;page.onchange=refreshDraft;
  const draw=()=>{
-  const opts=h('div',{class:'options',role:'radiogroup'},EFFECTS.map(e=>h('label',{class:'option'},h('input',{type:'radio',name:'effect',value:e,checked:m.effect===e,onchange:()=>{m.effect=e;draw();}}),
+  const opts=h('div',{class:'options',role:'radiogroup'},EFFECTS.map(e=>h('label',{class:'option'},h('input',{type:'radio',name:'effect',value:e,checked:m.effect===e,onchange:()=>{m.effect=e;refreshDraft();draw();}}),
    h('b',{},t('a1.effect.'+e)),h('span',{},t('a1.effect_desc.'+e)))));
   const segs=m.effect===4?h('div',{class:'stack'},
    h('div',{class:'row between'},h('span',{class:'label',i18n:'fx.count'}),seg([1,2,3,4].map(n=>[n,String(n)]),n=>{m.segments=n;draw();})),
@@ -112,13 +187,22 @@ async function showLight(){
     h('div',{class:'row',style:'margin-top:12px'},['fx.low','fx.ok','fx.high'].map((k,j)=>h('label',{class:'row small'},h('input',{type:'color',value:hex(sg.colors[j]),oninput:e=>{const v=e.target.value;sg.colors[j]=[1,3,5].map(x=>parseInt(v.slice(x,x+2),16));}}),t(k)))))))
    :null;
   if(segs)segs.querySelector('.seg').set(m.segments);
+  const previewSpeed=h('input',{id:'previewSpeed',type:'range',min:1,max:100,step:1,value:UI.state?.fan_on?UI.state.percentage:UI.state?.requested_speed||60,'aria-label':t('a1.speed'),
+   oninput:e=>{previewTarget=Number(e.target.value);$('previewSpeedValue').textContent=e.target.value+'%';renderRing(UI.state);},
+   onchange:()=>run(previewSpeed,async()=>{try{await setSpeed(previewSpeed.value);}finally{previewTarget=null;renderRing(UI.state);}},null),
+   onblur:()=>{previewTarget=null;if(UI.state)renderRing(UI.state);}});
+  const previewRing=document.createElementNS('http://www.w3.org/2000/svg','svg');
+  previewRing.setAttribute('class','ring ring-preview-svg');previewRing.setAttribute('viewBox','0 0 200 200');
   page.replaceChildren(pageHead('nav.light','fx.lead'),
+   h('div',{class:'ring-effect-preview'},previewRing,
+    h('div',{class:'ring-preview-controls'},h('div',{class:'row between'},h('span',{class:'label',i18n:'a1.speed'}),h('b',{class:'num',id:'previewSpeedValue'},previewSpeed.value+'%')),previewSpeed)),
    h('section',{class:'card'},h('div',{class:'card-head'},h('h2',{i18n:'fx.effect'})),opts,
     h('div',{style:'margin-top:16px'},flag(m,'follow_fan','fx.follow','fx.follow_desc')),segs,
     h('details',{class:'more'},h('summary',{i18n:'common.advanced'}),h('p',{class:'help',i18n:'fx.quality_hint'}),
      h('div',{class:'fields'},h('label',{class:'field'},h('span',{i18n:'fx.quality_pm'}),num(m,'quality_pm',{unit:'µg/m³',step:0.01})),
       h('label',{class:'field'},h('span',{i18n:'fx.quality_hcho'}),num(m,'quality_hcho',{unit:'mg/m³',step:0.001})))),
-    saveBar(async()=>{await api('/light/advanced',m);advanced=clone(m);if(UI.state)renderLight(UI.state);})));
+   saveBar(async()=>{await api('/light/advanced',m);advanced=clone(m);updateRingAnimation();if(UI.state)renderLight(UI.state);})));
+  if(UI.state)renderRing(UI.state);
  };
  draw();
 }
@@ -246,5 +330,5 @@ UI.start({
 I18N.onChange(()=>{if(UI.state){renderAuto();for(const key of ['device','light','binding','linkage'])if(!document.querySelector('[data-settings-page="'+key+'"]').hidden&&UI.pages[key].show)UI.pages[key].show();}});
 // Keep the automatic-control summary fresh even while the home page is idle.
 (async function poll(){try{bindingStatus=await api('/binding/status');if(UI.state)renderFan(UI.state);renderAuto();}catch{}setTimeout(poll,3000);})();
-api('/light/advanced').then(a=>{advanced=a;if(UI.state)renderLight(UI.state);}).catch(e=>toast(e.message,true));
+api('/light/advanced').then(a=>{advanced=a;updateRingAnimation();if(UI.state)renderLight(UI.state);}).catch(e=>toast(e.message,true));
 })();

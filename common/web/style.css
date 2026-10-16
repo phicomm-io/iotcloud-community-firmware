@@ -193,8 +193,13 @@ pre{overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;bac
 .mini-metrics .badge{align-self:flex-start}
 .light-layout{display:flex;gap:28px;align-items:center}
 .ring{width:180px;height:180px;flex:none}
+.ring-effect-preview{display:flex;justify-content:center;align-items:center;gap:24px;min-height:196px}
+.ring-preview-controls{width:min(280px,100%)}
 .ring .ring-v{font-size:26px;font-weight:650;fill:var(--text)}.ring .ring-l{font-size:12px;fill:var(--muted)}
-.ring .breathe{animation:pulse 3s infinite}
+.ring .ring-anchor{font-size:7px;font-weight:700;fill:var(--muted)}
+.ring .ring-guide{fill:none;stroke:var(--surface-muted);stroke-width:15}
+.ring .ring-edge{fill:none;stroke:var(--muted);stroke-width:1;opacity:.45}
+.ring .ring-light-segment{fill:none;stroke-width:12;stroke-linecap:butt;transition:stroke-opacity .12s linear}
 .swatches{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;align-items:center}
 .swatch{width:32px;height:32px;min-height:32px;border-radius:50%;border:2px solid var(--surface);background:var(--c);box-shadow:0 0 0 1px var(--border);cursor:pointer;padding:0}
 .swatch[aria-pressed=true]{box-shadow:0 0 0 2px var(--accent)}
@@ -239,7 +244,7 @@ pre{overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;bac
  .side .group{display:none}.side a{white-space:nowrap;border:1px solid var(--border)}
  .a1-home,.tc1-home{grid-template-columns:1fr;grid-template-areas:none}
  .a1-home>*,.tc1-home>*{grid-area:auto!important}
- .light-layout{flex-direction:column;align-items:stretch}.ring{align-self:center;width:150px;height:150px}
+ .light-layout{flex-direction:column;align-items:stretch}.ring{align-self:center;width:150px;height:150px}.ring-effect-preview{flex-direction:column;gap:8px}
  .tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
  .power{width:80px;height:80px}
  .verdict{flex-direction:column;align-items:flex-start}

@@ -20,8 +20,11 @@ const route=useRoute(),router=useRouter();
 const home=ref(null),nameDialog=ref(null),aliases=ref({});
 function displayName(d){const name=aliases.value[deviceKey(d)]||states[deviceKey(d)]?.name||d.name;if(name)return name;const peers=list.value.filter(x=>x.model===d.model);return deviceType(d)+(peers.length>1?' '+(peers.findIndex(x=>deviceKey(x)===deviceKey(d))+1):'');}
 function renameDevice(d,name,done){
- if(d.version==='v1'){aliases.value[deviceKey(d)]=name;localStorage.setItem('phicomm.names.'+(account.username||'guest'),JSON.stringify(aliases.value));done();return;}
- deviceCommand({action:'config.set',params:{section:'device',values:{name}}},reply=>{if(!['ok','accepted'].includes(reply.code)){done(reply.message||'保存失败');return;}const state=states[deviceKey(d)]||={};state.name=name;done();},d);
+ if(d.version==='v1'){
+  if(name)aliases.value[deviceKey(d)]=name;else delete aliases.value[deviceKey(d)];
+  localStorage.setItem('phicomm.names.'+(account.username||'guest'),JSON.stringify(aliases.value));done();return;
+ }
+ deviceCommand({action:'config.set',params:{section:'device',values:{name}}},reply=>{if(!['ok','accepted'].includes(reply.code)){done(reply.message||'保存失败');return;}const state=states[deviceKey(d)]||={};if(name)state.name=name;else{delete state.name;sendTo(d,'status.get');}done();},d);
 }
 const page=ref('home'),thirdParty=ref(route.name==='Guest'),list=ref([]),selected=ref(''),states=reactive({}),connected=ref(false),error=ref(''),notice=ref(''),busy=ref(false),now=ref(Date.now());
 const connection=reactive({host:`${location.protocol==='https:'?'wss':'ws'}://${location.host}/mqtt`,username:'',password:''});

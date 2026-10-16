@@ -154,6 +154,7 @@ json_object *a1_status_json(void)
     json_bool(o, "ap_active", s.ap_active); json_bool(o, "fan_on", effective_on);
     integer(o, "speed", cfg.speed); integer(o, "percentage", effective_on ? effective_speed : 0);
     integer(o, "applied_speed", s.applied_speed); json_bool(o, "fan_ready", s.fan_ready);
+    json_bool(o, "touch_active", s.touch_active);
     json_bool(o, "led_enabled", cfg.led_enabled); json_bool(o, "led_visible", s.led_visible);
     json_bool(o, "led_always_on", cfg.led_always_on); integer(o, "brightness", cfg.brightness);
     integer(o, "red", cfg.red); integer(o, "green", cfg.green); integer(o, "blue", cfg.blue);

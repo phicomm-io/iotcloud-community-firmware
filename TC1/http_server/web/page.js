@@ -4,7 +4,7 @@
 'use strict';
 const {t}=I18N;
 const {$,h,icon,toast,run,onSubmit,switchRow,summary,card,pageHead,seg}=UI;
-let busy=false;
+const pendingSockets=new Map();
 const names=()=>(UI.state&&UI.state.socket_names)||Array.from({length:6},(_,i)=>t('tc1.socket_n',{n:i+1}));
 
 /* ---------- Home: sockets ---------- */
@@ -19,11 +19,15 @@ for(let i=0;i<6;i++){
  tiles.push({tile,name,state});
  $('tiles').append(h('div',{class:'tile-wrap'},tile,edit));
 }
-function lock(){const pending=busy||UI.controlBusy;for(const {tile} of tiles){tile.disabled=pending;tile.setAttribute('aria-busy',String(!!pending));}$('allOn').disabled=pending;$('allOff').disabled=pending;}
+function lock(){for(let i=0;i<tiles.length;i++){const pending=pendingSockets.has(i)||pendingSockets.has('all');tiles[i].tile.disabled=pending;tiles[i].tile.setAttribute('aria-busy',String(pending));}$('allOn').disabled=pendingSockets.size>0;$('allOff').disabled=pendingSockets.size>0;}
 async function setStates(params){
- if(busy)return;busy=true;lock();
- const states=Array.from(UI.state.socket_states,Boolean);if(params.index===undefined)states.fill(params.on);else states[params.index]=params.on;
- try{await UI.control('outlet.set',params,{socket_states:states});}catch(e){toast(e.message,true);}finally{busy=false;lock();renderSockets(UI.state);}
+ const key=params.index===undefined?'all':params.index;if(pendingSockets.has(key)||(key==='all'&&pendingSockets.size)||pendingSockets.has('all'))return;
+ pendingSockets.set(key,params.on);lock();
+ const states=Array.from(UI.state.socket_states||[],Boolean);if(params.index===undefined)states.fill(params.on);else states[params.index]=params.on;
+ UI.state={...UI.state,socket_states:states};renderSockets(UI.state);
+ try{await api('/outlet',params);}
+ catch(e){toast(e.message,true);}
+ finally{pendingSockets.delete(key);lock();UI.reload().catch(()=>{});}
 }
 function toggle(i){setStates({index:i,on:!UI.state.socket_states[i]});}
 $('allOn').onclick=()=>setStates({on:true});
@@ -39,10 +43,12 @@ async function rename(i){
 }
 function renderSockets(s){
  lock();
- const states=s.socket_states||[0,0,0,0,0,0];
+ const states=Array.from(s.socket_states||[0,0,0,0,0,0]);
+ for(const [key,on] of pendingSockets){if(key==='all')states.fill(on);else states[key]=on;}
+ UI.state={...s,socket_states:states};
  $('onCount').textContent=t('tc1.on_count',{n:states.filter(Boolean).length});
  states.forEach((v,i)=>{const x=tiles[i];x.tile.setAttribute('aria-pressed',String(!!v));
-  x.name.textContent=(s.socket_names||[])[i]||t('tc1.socket_n',{n:i+1});x.state.textContent=t(v?'tc1.on':'tc1.off')+(busy?' · '+t('control.syncing'):'');});
+  x.name.textContent=(s.socket_names||[])[i]||t('tc1.socket_n',{n:i+1});x.state.textContent=t(v?'tc1.on':'tc1.off')+(pendingSockets.has(i)||pendingSockets.has('all')?' · '+t('control.syncing'):'');});
  for(const id of ['childLock','childLockDevice'])$(id).checked=!!s.child_lock;
  for(const id of ['ledEnabled','ledEnabledDevice'])$(id).checked=!!s.led_enabled;
 }
