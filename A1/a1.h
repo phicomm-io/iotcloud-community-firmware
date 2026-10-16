@@ -18,6 +18,7 @@
 #define A1_APP_LIMIT 0x40000u
 #define A1_JSON_LIMIT 8192
 #define A1_SAVE_DELAY_MS 2000u
+#define A1_HARDWARE_STACK_SIZE 12288u
 
 typedef struct {
     uint32_t magic, version, revision;
@@ -31,8 +32,12 @@ typedef struct {
 } a1_config_t;
 
 typedef struct {
-    uint32_t config_generation, reboot_at, led_until;
+    uint32_t config_generation, reboot_at, led_until, fan_feedback_until;
     uint32_t panel_errors, hardware_errors;
+    uint32_t light_test_until;
+    uint8_t light_test_slot;
+    bool light_test_neighbors;
+    int panel_last_error;
     bool wifi_connected, ap_active, ap_requested, mqtt_connected;
     bool fan_ready, panel_ready, led_visible, config_dirty;
     bool reboot_pending, ota_active, scan_busy;

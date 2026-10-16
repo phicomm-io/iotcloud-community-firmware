@@ -7,6 +7,8 @@ output=$(mktemp -d)
 trap 'rm -rf "$output"' EXIT
 cc -std=c99 -Wall -Wextra -Werror tests/test_gesture.c -o "$output/gesture"
 "$output/gesture"
+cc -std=c99 -Wall -Wextra -Werror tests/test_a1_light.c -o "$output/a1-light"
+"$output/a1-light"
 cc -std=c99 -Wall -Wextra -Werror tests/test_wifi_trial.c -o "$output/wifi-trial"
 "$output/wifi-trial"
 cc -std=c99 -Wall -Wextra -Werror tests/test_m1_indicator.c -o "$output/m1-indicator"

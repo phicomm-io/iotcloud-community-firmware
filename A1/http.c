@@ -159,6 +159,7 @@ json_object *a1_status_json(void)
     integer(o, "red", cfg.red); integer(o, "green", cfg.green); integer(o, "blue", cfg.blue);
     json_bool(o, "child_lock", cfg.child_lock); json_bool(o, "panel_ready", s.panel_ready);
     integer(o, "panel_errors", s.panel_errors); integer(o, "hardware_errors", s.hardware_errors);
+    integer(o, "panel_last_error", s.panel_last_error);
     char raw[7];
     for (unsigned i = 0; i < 3; i++) snprintf(raw + 2 * i, 3, "%02x", s.panel_raw[i]);
     str(o, "panel_raw", raw); json_bool(o, "config_dirty", s.config_dirty); str(o, "save_error", s.save_error);
@@ -261,6 +262,33 @@ static void handle(int fd)
         if (!strcmp(req.method, "GET")) {
             const char *action = !strcmp(req.path,"/api/v1/status")?"status.get":!strcmp(req.path,"/api/v1/capabilities")?"capabilities.get":!strcmp(req.path,"/api/v1/config")?"config.get":!strcmp(req.path,"/api/v1/logs")?"logs.get":!strcmp(req.path,"/api/v1/schedules")?"schedules.get":NULL;
             if(action) send_json(fd,service_query(action)); else message(fd,404,"Not found");
+            return;
+        }
+        /* Volatile, authenticated physical mapping aid. Slot 0 exits. */
+        if (!strcmp(req.method,"POST") && !strcmp(req.path,"/api/v1/light/test")) {
+            json_object *body = read_json(fd, req.length);
+            json_object *slot = body ? json_object_object_get(body, "slot") : NULL;
+            if (!slot || !json_object_is_type(slot, json_type_int) ||
+                json_object_get_int(slot) < 0 || json_object_get_int(slot) > 32) {
+                if (body) json_object_put(body);
+                message(fd, 400, "slot must be 0 (exit) or 1..32"); return;
+            }
+            json_object *neighbors = json_object_object_get(body, "neighbors");
+            if (neighbors && !json_object_is_type(neighbors, json_type_boolean)) {
+                json_object_put(body); message(fd, 400, "neighbors must be boolean"); return;
+            }
+            unsigned n = json_object_get_int(slot);
+            bool adjacent = neighbors && json_object_get_boolean(neighbors);
+            mico_rtos_lock_mutex(&a1_lock);
+            bool busy = a1_state.ota_active || a1_state.reboot_pending;
+            if (!busy) {
+                a1_state.light_test_slot = n;
+                a1_state.light_test_neighbors = adjacent;
+                a1_state.light_test_until = n ? mico_rtos_get_time() + 120000 : 0;
+            }
+            mico_rtos_unlock_mutex(&a1_lock);
+            json_object_put(body);
+            message(fd, busy ? 409 : 200, busy ? "Device busy" : "Light test updated");
             return;
         }
         if (!strcmp(req.method,"POST") && !strcmp(req.path,"/api/v1/command")) {
