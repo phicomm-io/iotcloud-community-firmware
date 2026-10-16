@@ -74,6 +74,12 @@ static void fan_tick(const a1_config_t *c, uint8_t *speed)
     mico_rtos_unlock_mutex(&a1_lock);
 }
 
+static unsigned ring_slot_for_led(unsigned led)
+{
+    /* Slot 27 maps to physical LED 10 on the supplied ring orientation. */
+    return ((led + 16) % 31) + 1;
+}
+
 static bool panel_init(void)
 {
     MicoGpioInitialize(MICO_GPIO_7, OUTPUT_PUSH_PULL);
@@ -138,6 +144,9 @@ static void hardware_worker(mico_thread_arg_t arg)
         if (initialized) panel_tick(now, &key, &slider, &wifi_since, &wifi_sent);
         /* Panel updates may have changed desired state and wake deadline. */
         a1_config_get(&cfg); a1_state_get(&state);
+        bool effective_on; unsigned effective_speed;
+        feature_effective_fan(cfg.fan_on, cfg.speed, &effective_on, &effective_speed);
+        cfg.fan_on = effective_on; cfg.speed = effective_speed;
         bool visible = cfg.led_enabled && cfg.brightness &&
             (cfg.led_always_on || (int32_t)(state.led_until - now) > 0);
         uint32_t colors[32] = {0};
@@ -147,7 +156,14 @@ static void hardware_worker(mico_thread_arg_t arg)
             uint32_t color = (g << 16) | (r << 8) | b;
             unsigned count = cfg.fan_on ? cfg.speed / 3 + 1 : 31;
             if (count > 31) count = 31;
-            for (unsigned i = 0; i < count; i++) colors[(26 + 31 - i) % 31 + 1] = color;
+            unsigned radius = (count - 1) / 2;
+            colors[ring_slot_for_led(10)] = color;
+            for (unsigned distance = 1; distance <= radius; distance++) {
+                unsigned clockwise = (10 + distance - 1) % 31 + 1;
+                unsigned counterclockwise = (10 + 31 - distance - 1) % 31 + 1;
+                colors[ring_slot_for_led(clockwise)] = color;
+                colors[ring_slot_for_led(counterclockwise)] = color;
+            }
         }
         feature_light_frame(colors, cfg.brightness, cfg.led_enabled,((uint32_t)cfg.green<<16)|((uint32_t)cfg.red<<8)|cfg.blue);
         unsigned mode = indicator_mode(cfg.ssid[0] != 0, state.wifi_connected,

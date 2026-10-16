@@ -17,7 +17,7 @@ const ACTIONS={M1:['schedules.get','schedules.put','schedules.delete','schedules
  const missing=[];w.console.warn=(...args)=>{if(args[0]==='i18n missing')missing.push(args[1]);};
  w.TextEncoder=require('node:util').TextEncoder;w.setTimeout=()=>0;w.confirm=()=>true;w.scrollTo=()=>{};
  const state={mqtt_topic_mode:model==='TC1'?'legacy':'tmcp',name:'test <img>',device_id:'aabbccddeeff',version:'test',ip:'1.2.3.4',ssid:'home',wifi_connected:true,mqtt_status:'ready',mqtt_host:'broker',mqtt_user:'user',mqtt_port:1883,
-  brightness_requested:4,brightness:128,red:1,green:2,blue:3,speed:60,percentage:60,applied_speed:60,requested_speed:60,fan_on:true,fan_ready:true,panel_ready:true,
+  brightness_requested:4,brightness:255,led_enabled:true,led_always_on:true,red:1,green:2,blue:3,speed:60,percentage:60,applied_speed:60,requested_speed:60,fan_on:true,fan_ready:true,panel_ready:true,
   sensor_received:true,sensor_valid:true,age_ms:1000,temperature:25,humidity:50,formaldehyde:0.02,pm25:20,time_synced:true,timezone_minutes:480,ntp_host:'pool.ntp.org',ntp_status:'synced',ntp_synced:true,
   ota_progress:0,ota_state:'idle',socket_names:['one','two','three','four','five','six'],socket_states:[1,1,1,1,1,1],report_seconds:2,powerCoefficientX100:1710,free_memory:30000};
  const actions=['status.get','capabilities.get','config.get','config.set','logs.get','ota.start',...ACTIONS[model]];
@@ -42,9 +42,30 @@ const ACTIONS={M1:['schedules.get','schedules.put','schedules.delete','schedules
  assert.equal(d.querySelector('#title').textContent,model+' test <img>');
  assert.equal(d.querySelector('img'),null,'device-supplied names must not be injected as markup');
  if(model==='A1')assert(d.querySelector('#autoCard').textContent.includes('25.0 °C'),'homepage displays the live M1 mean even when linkage is disabled');
+ if(model==='A1'){
+  const ring=d.querySelector('#ring'),label=ring.getAttribute('aria-label');
+  assert.match(label,/31.*10.*6 点.*25.*26/,'A1 preview documents the real 31-source ring orientation');
+  assert.equal(ring.querySelectorAll('.ring-guide').length,1,'A1 preview renders a continuous light guide');
+  assert(ring.querySelectorAll('.ring-light-segment').length>31,'A1 preview samples continuous guide illumination');
+  assert.equal(ring.querySelectorAll('circle:not(.ring-guide):not(.ring-edge)').length,0,'A1 preview does not render LED particles');
+  for(const percentage of [1,3,6,9,45,90,100]){
+   w.UI.device.onStatus({...state,percentage});
+   const segments=[...ring.querySelectorAll('.ring-light-segment')],starts=new Map();
+   for(const path of segments){const p=path.getAttribute('d').match(/-?[\d.]+/g).map(Number);starts.set(p[0].toFixed(3)+','+p[1].toFixed(3),path.getAttribute('stroke-opacity'));}
+   for(const path of segments){const p=path.getAttribute('d').match(/-?[\d.]+/g).map(Number),mirror=(200-p[7]).toFixed(3)+','+p[8].toFixed(3);assert.equal(starts.get(mirror),path.getAttribute('stroke-opacity'),'fan light must expand symmetrically around LED 10 at '+percentage+'%');}
+  }
+ }
  assert(!d.querySelector('#spark')?.innerHTML.includes('NaN'),'single-point power chart must remain finite');
  if(model==='TC1')assert.equal(d.querySelector('#mqttMode').options.length,2);else assert.equal(d.querySelector('#mqttMode'),null,'M1/A1 only support TMCP');
  assert.equal(d.querySelector('#mqttHost').maxLength,127);
+ if(model==='A1'){
+  w.location.hash='settings/light';w.dispatchEvent(new w.Event('hashchange'));await flush();
+  const previewRing=d.querySelector('.ring-effect-preview svg');
+  assert.equal(previewRing.namespaceURI,'http://www.w3.org/2000/svg','preview uses a real SVG namespace');
+  assert(d.querySelector('.ring-effect-preview .ring-light-segment'),'light effects page shows the live ring preview');
+  const previewSpeed=d.querySelector('#previewSpeed');previewSpeed.value='72';previewSpeed.dispatchEvent(new w.Event('change',{bubbles:true}));await flush();
+  assert(calls.some(r=>r.action==='fan.set'&&r.params.speed===72),'preview speed control sends the real fan speed command');
+ }
  // Navigation keeps unsaved input, and each page is reachable by hash.
  d.querySelector('#mqttUser').value='unsaved';
  for(const page of PAGES[model]){
