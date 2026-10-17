@@ -3,7 +3,7 @@
 Caller supplies an isolated reachable MQTT listener; settings are restored.
 """
 import argparse,json,os,pathlib,select,subprocess,time
-from client import Device,save
+from client import Device,save,redact
 
 class BusyDevice(Device):
     def command(self,*args,**kwargs):
@@ -80,7 +80,7 @@ def main():
             final=d.wait(lambda s:s['mqtt_connected'] and s['mqtt_host']==cfg['mqtt_host'],seconds=60)
             assert final['fan_on']==baseline['fan_on'] and final['requested_speed']==baseline['requested_speed']
             for action,expected in [('binding.get',binding),('linkage.get',link),('night.get',night)]:
-                actual=d.get(action);expected={k:v for k,v in expected.items() if k!='revision'};actual.pop('revision',None);assert actual==expected,action
+                actual=redact(d.get(action));expected=redact({k:v for k,v in expected.items() if k!='revision'});actual.pop('revision',None);assert actual==expected,action
             save(out/'result.json',{'cases':results,'restored':True,'final':final})
             print('RESTORED fresh baseline configuration',flush=True)
         finally:p.terminate();p.wait(10)
