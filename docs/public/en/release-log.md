@@ -4,6 +4,8 @@ English translation of the published release history. Historical validation stat
 
 ## v0.9.10
 
+- Power-key presses while running no longer overlay green feedback on the mode/airflow display; green feedback is reserved for turning on from off.
+
 - The default A1 power key starts the purifier when off and shows mode and actual airflow when on. Hold for 1–4 seconds, then release to power off. Double-click still toggles auto/manual mode while keeping the power state.
 - Status feedback first confirms auto with two cyan pulses or manual with one warm amber pulse, then shows actual airflow with a speed bar in the same color. Auto idle shows zero airflow. The normal effect resumes afterward; child lock and night brightness limits apply.
 - Migrate previous default power-key mappings while preserving custom gestures and other settings. Local and management pages can assign “Power on / show current mode and airflow”.
