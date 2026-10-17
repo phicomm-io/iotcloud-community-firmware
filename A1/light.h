@@ -41,6 +41,43 @@ static inline bool a1_key_light_frame(a1_key_light_t *feedback, uint32_t now,
  */
 #define A1_RING_POSITIONS 31u
 #define A1_RING_ORIGIN 11u
+typedef struct {
+    uint32_t started, revision;
+    bool initialized, automatic, active;
+} a1_mode_light_t;
+
+/* Auto: two cyan pulses. Manual: one warm amber pulse. Observe both the
+ * committed mode and explicit selections (including selecting it again).
+ * Booting into a saved mode is silent. All state belongs to the LED worker.
+ */
+static inline bool a1_mode_light_frame(a1_mode_light_t *feedback,
+    uint32_t revision, bool automatic, uint32_t now, unsigned brightness,
+    uint32_t colors[32])
+{
+    bool changed = feedback->initialized
+        ? feedback->revision != revision || feedback->automatic != automatic
+        : revision != 0;
+    feedback->initialized = true;
+    feedback->revision = revision;
+    feedback->automatic = automatic;
+    if (changed) { feedback->started = now; feedback->active = true; }
+    if (!feedback->active) return false;
+    uint32_t elapsed = now - feedback->started;
+    if (elapsed >= 1200) { feedback->active = false; return false; }
+    unsigned phase = automatic ? elapsed % 600 : elapsed;
+    unsigned width = automatic ? 450 : 1200;
+    unsigned level = phase >= width ? 0 :
+        (phase <= width / 2 ? phase : width - phase) * 255 / (width / 2);
+    level = level * brightness / 255;
+    unsigned g = automatic ? 160 : 110, r = automatic ? 0 : 255;
+    unsigned b = automatic ? 255 : 0;
+    uint32_t color = ((g * level / 255) << 16) |
+        ((r * level / 255) << 8) | (b * level / 255);
+    for (unsigned i = 0; i < A1_RING_POSITIONS; i++) colors[i] = color;
+    colors[31] = 0;
+    return true;
+}
+
 static inline void a1_fan_frame(uint32_t colors[32], unsigned speed, uint32_t color)
 {
     if (speed > 100) speed = 100;

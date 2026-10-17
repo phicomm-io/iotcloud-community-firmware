@@ -33,6 +33,7 @@ typedef struct {
 
 typedef struct {
     uint32_t config_generation, reboot_at, led_until, fan_feedback_until;
+    uint32_t mode_feedback_revision; /* Accepted explicit mode selections; RAM only. */
     uint32_t panel_errors, hardware_errors, mqtt_errors;
     char mqtt_last_error[96];
     uint32_t light_test_until;

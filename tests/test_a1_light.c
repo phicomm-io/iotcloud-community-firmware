@@ -77,5 +77,34 @@ int main(void)
     unsigned lit = 0;
     for (unsigned i = 0; i < 32; i++) lit += colors[i] != 0;
     assert(lit == 15);
+
+    a1_mode_light_t mode = {0};
+    colors[0] = color;
+    assert(!a1_mode_light_frame(&mode, 0, true, 100, 64, colors));
+    assert(colors[0] == color); /* Saved auto at boot does not flash. */
+    assert(a1_mode_light_frame(&mode, 1, true, 1000, 64, colors));
+    const unsigned times[] = {225, 450, 600, 825, 1050, 1199};
+    for (unsigned i = 0; i < sizeof(times) / sizeof(times[0]); i++) {
+        assert(a1_mode_light_frame(&mode, 1, true, 1000 + times[i], 64, colors));
+        for (unsigned j = 0; j < 31; j++)
+            assert(colors[j] == (i == 0 || i == 3 ? 0x280040u : 0));
+        assert(colors[31] == 0);
+    }
+    colors[0] = color;
+    assert(!a1_mode_light_frame(&mode, 1, true, 2200, 64, colors));
+    assert(colors[0] == color); /* Business rendering regains the frame. */
+    assert(a1_mode_light_frame(&mode, 2, false, 3000, 64, colors));
+    assert(a1_mode_light_frame(&mode, 2, false, 3600, 64, colors));
+    for (unsigned i = 0; i < 31; i++) assert(colors[i] == 0x1b4000);
+    assert(!a1_mode_light_frame(&mode, 2, false, 4200, 64, colors));
+    /* A configuration-driven transition is detected without a command event. */
+    assert(a1_mode_light_frame(&mode, 2, true, 5000, 64, colors));
+    assert(a1_mode_light_frame(&mode, 2, true, 5225, 0, colors));
+    for (unsigned i = 0; i < 32; i++) assert(colors[i] == 0);
+    /* Re-selecting the same mode restarts feedback and handles tick rollover. */
+    assert(a1_mode_light_frame(&mode, 3, true, UINT32_MAX - 100, 64, colors));
+    assert(a1_mode_light_frame(&mode, 3, true, 124, 16, colors));
+    for (unsigned i = 0; i < 31; i++) assert(colors[i] == 0x0a0010);
+    assert(!a1_mode_light_frame(&mode, 3, true, 1099, 64, colors));
     return 0;
 }

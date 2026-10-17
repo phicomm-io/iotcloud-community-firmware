@@ -32,6 +32,8 @@ A1 固件提供风机调速、灯环、童锁、夜间模式，以及与 M1 空�
 
 灯环呈现空气状态、连接进度和操作反馈。
 
+选择模式成功后，**自动模式为青色双脉冲，手动模式为暖橙色单脉冲**，约 1.2 秒后恢复原灯效。网页、按键和 Home Assistant 的模式操作均有提示；重复选择同一模式也会确认。关机或关闭业务灯光时仍短暂提示，不会因此启动风机或更改灯光设置；夜间亮度上限仍生效。
+
 | 设置 | 说明 |
 | --- | --- |
 | 空气质量灯光 | 按读数呈现颜色 |
@@ -103,4 +105,15 @@ A1 固定使用 **TMCP（v2）** 主题，不提供 Legacy 模式选择。Home A
 
 Home Assistant 的净化器实体提供 `auto` 与 `manual` 模式，网页、机身按键和 HA 切换后会同步状态；关闭电源后仍保留所选模式。HA 的风速操作进入手动模式并设定风速；网页与机身滑环在自动模式下调整上限。
 
-通过 HomeKit Bridge 暴露为空气净化器时，HomeKit 的自动模式对应 HA 的 `auto`。当前 HA 桥接在选择手动时会发送风速命令，因此会进入手动并应用 HomeKit 显示的风速；若要恢复上次手动风速，请直接选择 HA 或网页中的手动模式。桥接可能把零风速待机显示为净化中或最低风速，设备的实际待机状态以网页为准。
+若 HomeKit 中仍显示为普通风扇，请在已有 HomeKit Bridge 的 `entity_config` 中将 A1 设置为 `air_purifier`，实体 ID 换成 HA 中的实际名称：
+
+```yaml
+entity_config:
+  fan.your_a1:
+    type: air_purifier
+    linked_pm25_sensor: sensor.your_a1_pm25
+```
+
+PM2.5 关联项可选；未绑定 M1 时可以省略。配置方式参见 [Home Assistant HomeKit Bridge 文档](https://www.home-assistant.io/integrations/homekit/)。
+
+通过 HomeKit Bridge 暴露为空气净化器时，HomeKit 的自动模式对应 HA 的 `auto`。当前 HA 桥接在选择手动时会发送风速命令，因此会进入手动并应用 HomeKit 显示的风速；这条风速命令在关机时也可能开启电源。若要恢复上次手动风速并保留关机状态，请直接选择 HA 或网页中的手动模式。桥接可能把零风速待机显示为净化中或最低风速，设备的实际待机状态以网页为准。

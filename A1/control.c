@@ -96,7 +96,11 @@ bool a1_control_local(const char *kind, json_object *o)
     } else if (!strcmp(kind, "child_lock")) {
         valid = valid && get_bool(o, "enabled", &c.child_lock, &found);
     } else valid = false;
-    if (valid && found) apply(&c);
+    if (valid && found) {
+        apply(&c);
+        if (!strcmp(kind, "fan") && json_object_object_get(o, "mode"))
+            ++a1_state.mode_feedback_revision;
+    }
     mico_rtos_unlock_mutex(&a1_lock);
     mico_rtos_unlock_mutex(&a1_config_lock);
     if (valid && found && !strcmp(kind, "fan")) feature_manual_fan(c.fan_on);

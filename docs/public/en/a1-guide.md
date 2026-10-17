@@ -25,6 +25,8 @@ Usage is saved every hour of operation, when the fan stops, and before a normal 
 
 ## Light ring
 
+Successful mode selections show a brief confirmation: **two cyan pulses for auto, one warm amber pulse for manual**. The ring returns to its normal effect after about 1.2 seconds. Web, button and Home Assistant selections all receive feedback, including selecting the current mode again. Confirmation can briefly light the ring with power or normal lighting off, without starting the fan or changing saved lighting settings. The night brightness limit still applies.
+
 The ring shows air quality, connection progress and operation feedback. Configure air-quality colors, segment ranges and the colors corresponding to reading ranges. Connection warnings override normal lighting after normal effects are rendered and remain subject to the night brightness limit. Normal lighting regains control when connectivity is healthy. See [connection indicators](faq#connection-indicators).
 
 ## Child lock and night mode
@@ -71,4 +73,15 @@ A1 uses TMCP (v2) topics only, with no Legacy selector. See [MQTT and automation
 
 The HA purifier entity exposes `auto` and `manual` presets. Web, physical buttons and HA report the same mode, including while power is off. HA speed changes select manual and set its speed; the web and ring adjust the cap while in auto.
 
-When exposed as an air purifier through HomeKit Bridge, automatic maps to HA's `auto` preset. The current bridge sends a speed command when manual is selected, so it applies HomeKit's displayed speed. To restore the last manual speed, select manual directly in HA or the web page. The bridge can display zero-speed idle as purifying or minimum speed; use the device page to confirm actual idle state.
+If HomeKit still shows a generic fan, set A1's type in the existing HomeKit Bridge's `entity_config`. Replace the entity IDs with the actual HA entities:
+
+```yaml
+entity_config:
+  fan.your_a1:
+    type: air_purifier
+    linked_pm25_sensor: sensor.your_a1_pm25
+```
+
+The PM2.5 link is optional and can be omitted without a bound M1. See the [Home Assistant HomeKit Bridge documentation](https://www.home-assistant.io/integrations/homekit/).
+
+When exposed as an air purifier through HomeKit Bridge, automatic maps to HA's `auto` preset. The current bridge sends a speed command when manual is selected, so it applies HomeKit's displayed speed. That speed command can also turn on a powered-off device. To restore the last manual speed while preserving power state, select manual directly in HA or the web page. The bridge can display zero-speed idle as purifying or minimum speed; use the device page to confirm actual idle state.

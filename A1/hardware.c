@@ -200,6 +200,7 @@ static void hardware_worker(mico_thread_arg_t arg)
     uint32_t previous[32] = {0};
     unsigned old_mode = INDICATOR_READY;
     uint32_t mode_since = fan_at;
+    a1_mode_light_t mode_light = {0};
     for (;;) {
         uint32_t now = mico_rtos_get_time();
         a1_config_t cfg; a1_state_t state;
@@ -253,6 +254,13 @@ static void hardware_worker(mico_thread_arg_t arg)
         /* Interaction feedback can briefly wake a disabled business light.
          * Night mode still caps it; configured LED state stays untouched. */
         a1_key_light_frame(&key_light, now,
+            feature_light_cap(cfg.brightness ? cfg.brightness : 64), colors);
+        /* Confirm completed mode selections from buttons, web, HA or groups.
+         * Briefly visible even with power/business LEDs off; no saved changes.
+         * Priority over the generic key pulse makes double-click unambiguous.
+         */
+        a1_mode_light_frame(&mode_light, state.mode_feedback_revision,
+            feature_fan_auto(), now,
             feature_light_cap(cfg.brightness ? cfg.brightness : 64), colors);
         /* Diagnostic frame overrides every overlay; never saved to Flash. */
         a1_test_frame(colors, state.light_test_slot, now, state.light_test_until,
