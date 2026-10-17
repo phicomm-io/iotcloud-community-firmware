@@ -39,7 +39,7 @@ def main():
         sim(raw={'sim_sensor':{'values':[22,45,40,.09]}})
         d.set('config.set',{'section':'mqtt','values':{'host':a.broker,'port':int(a.port),'user':'auto_test'}})
         check('connect isolated broker',lambda s:s['mqtt_connected'] and s['mqtt_host']==a.broker)
-        d.set('binding.set',{'peers':binding['peers']+[{'mac':ident,'ip':a.broker,'force_mqtt':True,'recovery_seconds':5}]})
+        d.set('binding.set',{'peers':[{'mac':ident,'ip':a.broker,'force_mqtt':True,'recovery_seconds':5}]})
         d.wait(lambda s:s['data_valid'],action='binding.status.get',seconds=60)
         d.set('night.set',{'windows':[]})
         d.set('fan.set',{'mode':'manual','speed':64,'on':False})
