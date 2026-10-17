@@ -121,13 +121,20 @@ static void topic(json_object *o, const char *key, const char *suffix)
 {
     char value[MQTT_TOPIC_MAX]; snprintf(value, sizeof(value), "%s/%s", base, suffix); str(o, key, value);
 }
-static int filter_discovery(const a1_config_t *c, bool clear)
+/* Keep this frame visible to the production MQTT stack-budget check. */
+static __attribute__((noinline)) int filter_discovery(const a1_config_t *c, bool clear)
 {
     static const char *keys[] = {"filter_remaining", "filter_used", "filter_replacement", "filter_lifetime", "filter_reset"};
     static const char *components[] = {"sensor", "sensor", "binary_sensor", "number", "button"};
     static const char *names[] = {"滤芯剩余寿命", "滤芯使用时间", "滤芯更换提醒", "滤芯额定寿命", "更换滤芯后重置"};
+    bool bound = feature_bound(), grouped = false;
+    /* MQTT-owner scratch: PUBACK waiting can dispatch nested commands. */
+    static char parent_id[192], parent_name[FEATURE_TOPIC_MAX];
+    if (!clear && bound && !feature_ha_device(parent_id, sizeof(parent_id),
+                                             parent_name, sizeof(parent_name), &grouped))
+        return MQTT_FAILURE;
     for (unsigned i = 0; i < 5; ++i) {
-        char path[MQTT_TOPIC_MAX], identity[MQTT_TOPIC_MAX];
+        static char path[MQTT_TOPIC_MAX], identity[MQTT_TOPIC_MAX];
         mqtt_ha(&account, components[i], keys[i], path, sizeof(path));
         /* Wear belongs to this physical A1 even when fan control is grouped. */
         if (clear) { if (publish(path, "", true) != MQTT_SUCCESS) return MQTT_FAILURE; continue; }
@@ -139,11 +146,16 @@ static int filter_discovery(const a1_config_t *c, bool clear)
             return MQTT_FAILURE;
         }
         mqtt_identity(&account, "", identity, sizeof(identity));
-        json_build_array_add(ids, json_object_new_string(identity));
+        json_build_array_add(ids, json_object_new_string(bound ? parent_id : identity));
         json_build_object_add(device, "identifiers", ids);
-        str(device, "name", c->name); str(device, "model", "A1 Air Purifier (EMW3080B)");
+        str(device, "name", bound ? parent_name : c->name); str(device, "model", "A1 Air Purifier (EMW3080B)");
         str(device, "manufacturer", "Phicomm"); str(device, "sw_version", A1_VERSION);
-        json_build_object_add(o, "device", device); str(o, "name", names[i]);
+        json_build_object_add(o, "device", device);
+        if (bound && grouped) {
+            static char label[160];
+            snprintf(label, sizeof(label), "%s %s", c->name, names[i]);
+            str(o, "name", label);
+        } else str(o, "name", names[i]);
         mqtt_identity(&account, keys[i], identity, sizeof(identity)); str(o, "unique_id", identity);
         str(o, "availability_topic", availability_topic); str(o, "icon", "mdi:air-filter");
         str(o, "entity_category", i < 3 ? "diagnostic" : "config");
@@ -331,6 +343,9 @@ static void mqtt_worker(mico_thread_arg_t arg)
             char topic[MQTT_TOPIC_MAX]; mqtt_aux(&account, "discovery", account.mac, topic, sizeof(topic));
             announced = publish(topic, mqtt_announcement(&account), true);
         }
+        /* HA birth can arrive while initial QoS1 discovery awaits PUBACK.
+         * Preserve it until the owner loop services rediscovery. */
+        rediscover = false;
         const char *stage="initial";
         int rc = connected && announced == MQTT_SUCCESS ? MQTTSubscribe(&client, wildcard, QOS1, command) : MQTT_FAILURE;
         if (rc == MQTT_SUCCESS) rc = MQTTSubscribe(&client, "homeassistant/status", QOS0, ha_birth);
@@ -345,7 +360,7 @@ static void mqtt_worker(mico_thread_arg_t arg)
         if (rc == MQTT_SUCCESS) { attempt = 0; cleanup_pending = true; mqtt_status(MQTT_READY); }
         uint32_t acl_check = mico_rtos_get_time();
         bool old_on=false;unsigned old_speed=0;
-        bool sent = false, old_visible = false; uint32_t revision = 0; rediscover = false;
+        bool sent = false, old_visible = false; uint32_t revision = 0;
         a1_filter_storage_t sent_filter = {0}; uint32_t filter_sent_at = 0;
         while (rc == MQTT_SUCCESS) {
             stage="ota"; rc=ota_service(base);if(rc!=MQTT_SUCCESS)break;

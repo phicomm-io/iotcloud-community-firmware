@@ -13,6 +13,11 @@ bool feature_fan_auto(void){return features.linkage.enabled;}
 unsigned feature_fan_limit(void){return features.linkage.max_speed;}
 int feature_fan_command(json_object *o){(void)o;return 1;}
 bool feature_bound(void){return false;}
+#ifdef HOST_A1
+bool feature_ha_device(char *id,size_t ni,char *name,size_t nn,bool *grouped){
+ (void)id;(void)ni;(void)name;(void)nn;(void)grouped;return false;
+}
+#endif
 unsigned feature_mqtt_filters(char f[12][FEATURE_TOPIC_MAX]){(void)f;return 0;}
 bool feature_mqtt_input(const char *t,const void *d,size_t n,bool retained){(void)t;(void)d;(void)n;(void)retained;return false;}
 bool feature_mqtt_filters_current(char f[12][FEATURE_TOPIC_MAX], unsigned n){(void)f;(void)n;return true;}
