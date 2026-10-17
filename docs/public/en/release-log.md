@@ -2,6 +2,12 @@
 
 English translation of the published release history. Historical validation statements apply to the release named in each section, not to later firmware. Release notes are authored in the Wiki and frozen into the source repository before tagging.
 
+## v0.9.9
+
+- A1 adds an independent Chinese “Operating mode” selector in Home Assistant. Automatic/manual selection preserves power and continues to synchronize fan presets and HomeKit Bridge.
+- The management platform automatic-control card has an explicit settings button and clickable heading. Loading appears immediately, failed reads can be retried, and settings remain accessible while the purifier is off.
+- Clarify the mode controls and refreshing HomeKit Bridge capabilities. Preserve Wi-Fi, MQTT, bindings, speed, automatic rules, filter, button and schedule settings.
+
 ## v0.9.8
 
 - A1 automatic and manual modes are independent of power. Configure automatic speed limits, sensor-offline speed and independent night ranges. Air quality never turns on a purifier switched off by the user.
