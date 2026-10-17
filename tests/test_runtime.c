@@ -325,7 +325,30 @@ static void automatic_profiles(void) {
   assert(feature_fan_limit()==22);
   automatic_night=-1;automatic_valid=false;automatic_immediate=true;
   feature_effective_fan(true,64,&on,&speed);assert(on && speed==80);
-  c=stored;c.linkage.enabled=0;c.sleep_count=0;assert(install_config(&c));
+  c=stored;c.linkage.hysteresis_enabled=1;c.linkage.mode=0;
+  c.linkage.fixed_speed=55;c.linkage.on_pm=50;c.linkage.target_pm=35;
+  c.linkage.debounce_seconds=5;c.linkage.min_switch_seconds=10;
+  assert(install_config(&c));data_valid=true;aggregate[2]=40;
+  feature_effective_fan(true,64,&on,&speed);assert(on && speed==0);
+  aggregate[2]=50;automatic_valid=false;test_now=1000;
+  feature_effective_fan(true,64,&on,&speed);assert(on && speed==0);
+  automatic_valid=false;test_now=6000;
+  feature_effective_fan(true,64,&on,&speed);assert(on && speed==55);
+  aggregate[2]=40;
+  command=obj("{\"speed\":45}");assert(feature_fan_command(command)==2);json_object_put(command);
+  feature_manual_fan(true);
+  feature_effective_fan(true,64,&on,&speed);assert(on && speed==45 && pid.gate_running);
+  aggregate[2]=35;test_now=7000;automatic_valid=false;
+  feature_effective_fan(true,64,&on,&speed);assert(speed==45);
+  test_now=16000;automatic_valid=false;
+  feature_effective_fan(true,64,&on,&speed);assert(on && speed==0);
+  /* Missing sensor overrides the gate; recovery cancels pending conditions. */
+  data_valid=false;automatic_valid=false;
+  feature_effective_fan(true,64,&on,&speed);assert(speed==45);
+  data_valid=true;aggregate[2]=40;automatic_valid=false;
+  feature_effective_fan(true,64,&on,&speed);assert(on && speed==0);
+  feature_manual_fan(false);assert(!pid.gate_running && !pid.switched);
+  c=stored;c.linkage.enabled=0;c.linkage.hysteresis_enabled=0;c.sleep_count=0;assert(install_config(&c));
   puts("Independent day/night automatic ranges, zero fallback, power latch and active cap passed");
 }
 #endif
@@ -501,6 +524,11 @@ int main(void) {
   group_transport();
   effective_controls();
   automatic_profiles();
+  transaction("linkage", "{\"hysteresis_enabled\":1,\"on_pm\":35,\"target_pm\":35}", 400);
+  transaction("linkage", "{\"hysteresis_enabled\":1,\"metrics\":3,\"on_pm\":50,\"target_pm\":35,\"on_hcho\":0.08,\"target_hcho\":0.08}", 400);
+  transaction("linkage", "{\"hysteresis_enabled\":1,\"metrics\":1,\"on_pm\":50,\"target_pm\":35}", 200);
+  transaction("linkage", "{\"hysteresis_enabled\":2}", 400);
+  transaction("linkage", "{\"hysteresis_enabled\":0}", 200);
   transaction("linkage", "{\"target_pm\":0}", 400);
   transaction("linkage", "{\"kp\":true}", 400);
   transaction("linkage", "{\"enabled\":1}", 200);

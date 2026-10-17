@@ -15,6 +15,7 @@ typedef struct {
 #define F(T, k, lo, hi) {#k, offsetof(T, k), 3, lo, hi}
 static const field_t linkage_fields[] = {
     U(feature_linkage_t, enabled, 0, 1),
+    U(feature_linkage_t, hysteresis_enabled, 0, 1),
     U(feature_linkage_t, mode, 0, 2),
     U(feature_linkage_t, metrics, 1, 3),
     U(feature_linkage_t, on_metrics, 1, 3),
@@ -236,7 +237,10 @@ static bool config_decode(feature_config_t *c, const char *d, json_object *o) {
     static const field_t automatic_fields[] = {U(feature_auto_config_t, fallback_speed, 0, 100)};
     if (!decode_fields(o, &c->automatic, automatic_fields, COUNT(automatic_fields))) return false;
     return l->min_speed <= l->max_speed && l->low_pm < l->high_pm &&
-           l->low_hcho < l->high_hcho;
+           l->low_hcho < l->high_hcho &&
+           (!l->hysteresis_enabled ||
+            ((!(l->metrics & 1) || l->on_pm > l->target_pm) &&
+             (!(l->metrics & 2) || l->on_hcho > l->target_hcho)));
   }
   if (!strcmp(d, "light")) {
     if (!decode_fields(o, &c->light, light_fields, COUNT(light_fields)))

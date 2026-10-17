@@ -11,6 +11,10 @@ The home page provides independent power and operating-mode controls.
 - Selecting a mode while off preserves power-off. Worsening air quality never turns on a powered-off purifier.
 - The ring and web slider set speed in manual mode and the active period's maximum in auto mode. Changing speed also turns power on.
 
+Optional **start/idle hysteresis** adds a target and a higher start threshold. For a PM2.5 target of 35 and start threshold of 50, the motor starts at 50, idles at 35, and retains its state between them. Powering on inside this band initially idles. Any selected pollutant can trigger start; all must meet their targets to idle. Conditions must remain true for the configured duration, and transitions respect minimum run/idle time.
+
+While running, the chosen fixed, linear or PID algorithm adjusts speed; PID shares the same target. Running speed is at least 1%, while idle is 0% regardless of the minimum speed. Night limits still apply. Changing a speed cap or night profile preserves the latch. Disabling hysteresis restores continuous speed control. Both the local WebUI and the MQTT remote management platform display mode and running/idle state and can edit these settings.
+
 Configure minimum, maximum and sensor-offline speeds. A minimum of **0%** allows the motor to idle while logical power stays on; worsening air quality resumes operation after the debounce and minimum switching intervals. Fixed, linear and PID strategies remain available. Missing, unbound or stale sensor data uses the offline speed clamped to the current range; fresh data restores automatic control. Offline fallback never turns on a powered-off purifier.
 
 Each night window independently overrides minimum, maximum and offline speeds while sharing the daytime algorithm. The last matching fan window wins in auto mode; manual speed remains capped by night limits. Before clock synchronization the daytime settings apply.

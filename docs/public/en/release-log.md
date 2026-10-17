@@ -2,6 +2,14 @@
 
 English translation of the published release history. Historical validation statements apply to the release named in each section, not to later firmware. Release notes are authored in the Wiki and frozen into the source repository before tagging.
 
+## v0.9.8
+
+- A1 automatic and manual modes are independent of power. Configure automatic speed limits, sensor-offline speed and independent night ranges. Air quality never turns on a purifier switched off by the user.
+- Optional start/idle hysteresis runs at the start threshold and idles at the target, retaining state between them. PM2.5, formaldehyde and combined metrics support condition duration and minimum run/idle time. Fixed, linear or PID control adjusts speed while running.
+- Local pages and the management platform support mode switching, automatic caps, targets and start thresholds. Platform device lists show automatic/manual mode and running, idle or off state.
+- Double-clicking the power key switches modes by default. Cyan double pulses confirm automatic mode; one warm amber pulse confirms manual mode. Home Assistant modes synchronize with HomeKit Bridge while preserving power and remembered manual speed.
+- Preserve Wi-Fi, MQTT, bindings, filter, button and schedule settings. Hysteresis defaults off and can be enabled after upgrading.
+
 ## v0.9.7
 
 - A1 estimates filter life from fan running time. Adjust the rated lifetime and reset usage after replacing the filter; device pages, MQTT and Home Assistant show the same data.
