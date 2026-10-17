@@ -67,7 +67,7 @@ static void fault(void)
 static void fan_tick(const a1_config_t *c, uint8_t *speed)
 {
     OSStatus err;
-    if (!c->fan_on) {
+    if (!c->fan_on || !c->speed) {
         err = MicoGpioOutputHigh(MICO_GPIO_19);
         OSStatus stop = *speed ? MicoPwmStop(MICO_PWM_3) : kNoErr;
         *speed = 0;
@@ -200,6 +200,7 @@ static void hardware_worker(mico_thread_arg_t arg)
     uint32_t previous[32] = {0};
     unsigned old_mode = INDICATOR_READY;
     uint32_t mode_since = fan_at;
+    a1_mode_light_t mode_light = {0};
     for (;;) {
         uint32_t now = mico_rtos_get_time();
         a1_config_t cfg; a1_state_t state;
@@ -233,7 +234,7 @@ static void hardware_worker(mico_thread_arg_t arg)
         /* Touch feedback shows the requested setting immediately, even while
          * PWM catches up or another effect is selected. Release restores it. */
         if (state.touch_active && visible)
-            a1_ring_feedback(colors, cfg.speed, feature_light_cap(cfg.brightness), color);
+            a1_ring_feedback(colors, feature_fan_auto()?feature_fan_limit():cfg.speed, feature_light_cap(cfg.brightness), color);
         unsigned mode = indicator_mode(cfg.ssid[0] != 0, state.wifi_connected,
             cfg.mqtt_host[0] != 0, state.mqtt_connected && state.mqtt_status == MQTT_READY);
         if (mode != old_mode) mode_since = now;
@@ -248,11 +249,18 @@ static void hardware_worker(mico_thread_arg_t arg)
             unsigned brightness = cfg.led_enabled ? feature_light_cap(cfg.brightness) : 0;
             uint32_t color = ((uint32_t)(cfg.green * brightness / 255) << 16) |
                 ((uint32_t)(cfg.red * brightness / 255) << 8) | (cfg.blue * brightness / 255);
-            a1_fan_frame(colors, cfg.fan_on ? cfg.speed : 0, color);
+            a1_fan_frame(colors, cfg.fan_on ? (feature_fan_auto()?feature_fan_limit():cfg.speed) : 0, color);
         }
         /* Interaction feedback can briefly wake a disabled business light.
          * Night mode still caps it; configured LED state stays untouched. */
         a1_key_light_frame(&key_light, now,
+            feature_light_cap(cfg.brightness ? cfg.brightness : 64), colors);
+        /* Confirm completed mode selections from buttons, web, HA or groups.
+         * Briefly visible even with power/business LEDs off; no saved changes.
+         * Priority over the generic key pulse makes double-click unambiguous.
+         */
+        a1_mode_light_frame(&mode_light, state.mode_feedback_revision,
+            feature_fan_auto(), now,
             feature_light_cap(cfg.brightness ? cfg.brightness : 64), colors);
         /* Diagnostic frame overrides every overlay; never saved to Flash. */
         a1_test_frame(colors, state.light_test_slot, now, state.light_test_until,

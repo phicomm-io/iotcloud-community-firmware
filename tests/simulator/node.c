@@ -78,6 +78,9 @@ json_object *status_json(void){CFG c;STATE s;config_get(&c);state_get(&s);json_o
  json_object_object_add(o,"coordinator",json_object_new_boolean(feature_is_coordinator()));bool on;unsigned speed;feature_effective_fan(c.fan_on,c.speed,&on,&speed);json_object_object_add(o,"on",json_object_new_boolean(on));json_object_object_add(o,"speed",json_object_new_int(speed));
  /* Keep the actual home renderer usable over MQTT, including its light controls. */
  json_object_object_add(o,"fan_on",json_object_new_boolean(on));
+ json_object_object_add(o,"fan_mode",json_object_new_string(feature_fan_auto()?"auto":"manual"));
+ json_object_object_add(o,"fan_state",json_object_new_string(!on?"off":speed?"running":"idle"));
+ json_object_object_add(o,"auto_max_speed",json_object_new_int(feature_fan_limit()));
  json_object_object_add(o,"requested_speed",json_object_new_int(c.speed));
  json_object_object_add(o,"percentage",json_object_new_int(on?speed:0));
  json_object_object_add(o,"applied_speed",json_object_new_int(on?speed:0));
@@ -124,6 +127,7 @@ int main(int argc,char **argv){if(argc!=6){fprintf(stderr,"node id ip broker por
  char *line=NULL;size_t capacity=0;while(getline(&line,&capacity,stdin)>0){json_object *q=service_parse(line,strlen(line));if(!q){puts("{}");fflush(stdout);continue;}json_object *press=json_object_object_get(q,"sim_button");
  if(press){automation_button(json_object_get_int(json_object_object_get(press,"key")),json_object_get_int(json_object_object_get(press,"clicks")),json_object_get_int(json_object_object_get(press,"seconds")));puts("{\"code\":\"ok\"}");}
 #ifdef HOST_A1
+ else if(json_object_object_get(q,"sim_panel")){a1_panel_event(false,json_object_get_int(json_object_object_get(q,"sim_panel")));puts("{\"code\":\"ok\"}");}
  else if(json_object_object_get(q,"sim_filter_seconds")){BASE_LOCK();sim_filter.used_seconds=json_object_get_int(json_object_object_get(q,"sim_filter_seconds"));BASE_UNLOCK();puts("{\"code\":\"ok\"}");}
 #endif
  else {json_object *meta=json_object_object_get(q,"sim_sensor");if(meta){mico_rtos_lock_mutex(&device_lock);json_object *v=json_object_object_get(meta,"enabled");if(v)sensor_enabled=json_object_get_boolean(v);v=json_object_object_get(meta,"values");if(v)for(unsigned i=0;i<4;i++)sensor_values[i]=json_object_get_double(json_object_array_get_idx(v,i));mico_rtos_unlock_mutex(&device_lock);puts("{\"code\":\"ok\"}");}else{json_object *r=service_command(q);puts(json_object_to_json_string(r));json_object_put(r);}}json_object_put(q);fflush(stdout);}free(line);return 0;}

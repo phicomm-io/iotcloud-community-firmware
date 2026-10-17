@@ -12,7 +12,7 @@
 #define A1_VERSION FIRMWARE_VERSION
 #define A1_PRODUCT "PHICOMM_A1_EMW3080"
 #define A1_CONFIG_MAGIC 0x41314346u
-#define A1_CONFIG_VERSION 6u
+#define A1_CONFIG_VERSION 7u
 #define A1_APP_OFFSET 0x75000u
 #define A1_APP_CPU_ADDRESS 0x08088000u
 #define A1_APP_LIMIT 0x40000u
@@ -33,6 +33,7 @@ typedef struct {
 
 typedef struct {
     uint32_t config_generation, reboot_at, led_until, fan_feedback_until;
+    uint32_t mode_feedback_revision; /* Accepted explicit mode selections; RAM only. */
     uint32_t panel_errors, hardware_errors, mqtt_errors;
     char mqtt_last_error[96];
     uint32_t light_test_until;

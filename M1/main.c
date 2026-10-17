@@ -8,7 +8,7 @@
 mico_mutex_t m1_lock;
 static mico_mutex_t config_lock;
 static m1_config_t *app_config;
-typedef struct { m1_config_t base; feature_config_t features; automation_config_t automation; } app_storage_t;
+typedef struct { m1_config_t base; feature_config_storage_t features; automation_config_t automation; } app_storage_t;
 
 char m1_id[13];
 m1_state_t m1_state;
@@ -19,7 +19,7 @@ void appRestoreDefault_callback(void *data, uint32_t size)
     if (size < sizeof(m1_config_t)) return;
     m1_config_t *c = data;
     memset(c, 0, sizeof(*c));
-    if (size >= sizeof(app_storage_t)) feature_defaults(&((app_storage_t *)data)->features);
+    if (size >= sizeof(app_storage_t)) { feature_config_t next; feature_defaults(&next); memcpy(&((app_storage_t *)data)->features, &next, sizeof(feature_config_storage_t)); }
     if (size >= sizeof(app_storage_t)) automation_defaults(&((app_storage_t *)data)->automation);
     c->magic = M1_CONFIG_MAGIC; c->version = M1_CONFIG_VERSION;
     c->mqtt_port = 1883; c->mqtt_topic_mode = MQTT_TOPIC_TMCP;
@@ -50,7 +50,7 @@ bool m1_config_save(const m1_config_t *c)
     m1_config_t old = *app_config;
     memcpy(app_config, c, sizeof(*c));
     app_config->revision = old.revision + 1;
-    feature_config_t *features = &((app_storage_t *)app_config)->features;
+    feature_config_storage_t *features = &((app_storage_t *)app_config)->features;
     int16_t old_timezone = features->timezone_minutes;
     features->timezone_minutes = c->timezone_minutes;
     OSStatus err = mico_system_context_update(m1_context);
@@ -139,13 +139,16 @@ int application_start(void)
         if (!old) return kNoMemoryErr;
         memcpy(old, app_config, sizeof(*old));
         memset(app_config, 0, sizeof(app_storage_t));
-        m1_migrate_v2(app_config, &((app_storage_t *)app_config)->features, old);
+        feature_config_t next; m1_migrate_v2(app_config, &next, old);
+        memcpy(&((app_storage_t *)app_config)->features, &next, sizeof(feature_config_storage_t));
         free(old);
-        m1_migrate_response_permissions(app_config, &((app_storage_t *)app_config)->features);
+        { feature_config_t next; memcpy(&next, &((app_storage_t *)app_config)->features, sizeof(feature_config_storage_t));
+        m1_migrate_response_permissions(app_config, &next); memcpy(&((app_storage_t *)app_config)->features, &next, sizeof(feature_config_storage_t)); }
         if (mico_system_context_update(m1_context) != kNoErr) return kUnknownErr;
     }
     if (app_config->magic == M1_CONFIG_MAGIC && app_config->version == 3) {
-        m1_migrate_response_permissions(app_config, &((app_storage_t *)app_config)->features);
+        { feature_config_t next; memcpy(&next, &((app_storage_t *)app_config)->features, sizeof(feature_config_storage_t));
+        m1_migrate_response_permissions(app_config, &next); memcpy(&((app_storage_t *)app_config)->features, &next, sizeof(feature_config_storage_t)); }
         if (mico_system_context_update(m1_context) != kNoErr) return kUnknownErr;
     }
     if (app_config->magic == M1_CONFIG_MAGIC && app_config->version == 4) {
@@ -155,7 +158,7 @@ int application_start(void)
     if (((app_storage_t *)app_config)->automation.magic != AUTOMATION_MAGIC) {
         automation_config_t *next=&((app_storage_t *)app_config)->automation;
         automation_defaults(next);
-        feature_config_t *f=&((app_storage_t *)app_config)->features;
+        feature_config_storage_t *f=&((app_storage_t *)app_config)->features;
         for(unsigned i=0;i<f->event_count && i<8;i++) {
             automation_task_t *t=&next->tasks[i];t->id=next->next_id++;t->days=f->events[i].days;t->minute=f->events[i].minute;
             t->action.kind=AUTO_FAN;t->action.value=f->events[i].on;t->action.speed=f->events[i].speed;
@@ -174,9 +177,9 @@ int application_start(void)
         service_event("error","config","unsupported_layout");
         return kUnknownErr;
     }
-    feature_config_t *extension = &((app_storage_t *)app_config)->features;
+    feature_config_storage_t *extension = &((app_storage_t *)app_config)->features;
     if (extension->magic != FEATURE_MAGIC) {
-        feature_defaults(extension);
+        feature_config_t next; feature_defaults(&next); memcpy(extension, &next, sizeof(*extension));
         if (mico_system_context_update(m1_context) != kNoErr) return kUnknownErr;
     }
     err = mico_system_init(m1_context);
@@ -207,15 +210,16 @@ int application_start(void)
 void feature_config_get(feature_config_t *out)
 {
     mico_rtos_lock_mutex(&config_lock);
-    *out = ((app_storage_t *)app_config)->features;
+    memset(out, 0, sizeof(*out));
+    memcpy(out, &((app_storage_t *)app_config)->features, sizeof(feature_config_storage_t));
     mico_rtos_unlock_mutex(&config_lock);
 }
 bool feature_config_save(const feature_config_t *c)
 {
-    feature_config_t *old = malloc(sizeof(*old));
+    feature_config_storage_t *old = malloc(sizeof(*old));
     if (!old) return false;
     mico_rtos_lock_mutex(&config_lock);
-    feature_config_t *live = &((app_storage_t *)app_config)->features;
+    feature_config_storage_t *live = &((app_storage_t *)app_config)->features;
     mico_rtos_lock_mutex(&m1_lock);
     bool busy = m1_state.ota_active || m1_state.reboot_pending;
     mico_rtos_unlock_mutex(&m1_lock);
@@ -223,7 +227,7 @@ bool feature_config_save(const feature_config_t *c)
     if (ok) {
         int16_t previous_timezone = app_config->timezone_minutes;
         uint32_t previous_revision = app_config->revision;
-        *old = *live; *live = *c; live->revision++;
+        *old = *live; memcpy(live, c, sizeof(*live)); live->revision++;
         if (app_config->timezone_minutes != c->timezone_minutes) {
             app_config->timezone_minutes = c->timezone_minutes;
             app_config->revision++;

@@ -6,10 +6,11 @@
 /* Append extensions only: the v3/v4 base/features/automation offsets are ABI. */
 typedef struct {
     a1_config_t base;
-    feature_config_t features;
+    feature_config_storage_t features;
     automation_storage_t automation;
     a1_filter_storage_t filter;
     automation_action_t combination_buttons[34];
+    feature_auto_config_t automatic;
 } app_storage_t;
 
 /* These copies intentionally skip the filter between the retained key maps
@@ -29,4 +30,22 @@ static inline void a1_storage_automation_defaults(app_storage_t *s)
     automation_config_t next;
     automation_defaults(&next);
     a1_storage_automation_put(s, &next);
+}
+
+static inline void a1_storage_features_get(const app_storage_t *s, feature_config_t *out)
+{
+    memset(out, 0, sizeof(*out));
+    memcpy(out, &s->features, sizeof(s->features));
+    out->automatic = s->automatic;
+}
+static inline void a1_storage_features_put(app_storage_t *s, const feature_config_t *in)
+{
+    memcpy(&s->features, in, sizeof(s->features));
+    s->automatic = in->automatic;
+}
+static inline void a1_storage_features_defaults(app_storage_t *s)
+{
+    feature_config_t next;
+    feature_defaults(&next);
+    a1_storage_features_put(s, &next);
 }

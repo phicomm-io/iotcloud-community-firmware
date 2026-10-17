@@ -274,6 +274,9 @@ json_object *a1_status_json(void)
     json_bool(o, "mqtt_password_set", cfg.mqtt_password[0] != 0);
     json_bool(o, "wifi_connected", s.wifi_connected); json_bool(o, "mqtt_connected", s.mqtt_connected);
     bool effective_on; unsigned effective_speed; feature_effective_fan(cfg.fan_on,cfg.speed,&effective_on,&effective_speed);
+    str(o,"fan_mode",feature_fan_auto()?"auto":"manual");
+    str(o,"fan_state",!effective_on?"off":effective_speed?"running":"idle");
+    integer(o,"auto_max_speed",feature_fan_limit());
     json_bool(o,"requested_fan_on",cfg.fan_on); integer(o,"requested_speed",cfg.speed);
     json_bool(o, "ap_active", s.ap_active); json_bool(o, "fan_on", effective_on);
     integer(o, "speed", cfg.speed); integer(o, "percentage", effective_on ? effective_speed : 0);

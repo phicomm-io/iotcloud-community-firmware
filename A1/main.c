@@ -42,7 +42,7 @@ void appRestoreDefault_callback(void *data, uint32_t size)
     if (size < sizeof(a1_config_t)) return;
     a1_config_t *c = data;
     memset(c, 0, sizeof(*c));
-    if (size >= sizeof(app_storage_t)) feature_defaults(&((app_storage_t *)data)->features);
+    if (size >= sizeof(app_storage_t)) a1_storage_features_defaults((app_storage_t *)data);
     if (size >= sizeof(app_storage_t)) a1_storage_automation_defaults((app_storage_t *)data);
     if (size >= sizeof(app_storage_t)) a1_filter_defaults(&((app_storage_t *)data)->filter);
     c->magic = A1_CONFIG_MAGIC; c->version = A1_CONFIG_VERSION;
@@ -239,6 +239,7 @@ int application_start(void)
     if (a1_config->magic != A1_CONFIG_MAGIC || a1_config->version < 1 || a1_config->version > A1_CONFIG_VERSION) {
         service_event("error","config","unsupported_layout");return kUnknownErr;
     }
+    bool auto_migration = a1_config->version < 7;
     bool button_migration = a1_config->version < 6;
     if (button_migration) memset(((app_storage_t *)a1_config)->combination_buttons, 0,
                                  sizeof(((app_storage_t *)a1_config)->combination_buttons));
@@ -250,25 +251,37 @@ int application_start(void)
         if (!old) return startup_result("config allocation/layout", kNoMemoryErr);
         memcpy(old, a1_config, sizeof(*old));
         memset(a1_config, 0, sizeof(app_storage_t));
-        a1_migrate_v2(a1_config, &((app_storage_t *)a1_config)->features, old);
+        feature_config_t next; a1_migrate_v2(a1_config, &next, old);
+        a1_storage_features_put((app_storage_t *)a1_config, &next);
         free(old);
         if (mico_system_context_update(a1_context) != kNoErr) return startup_result("config persist", kUnknownErr);
     }
     if (a1_config->magic == A1_CONFIG_MAGIC && a1_config->version == 3) {
         ((app_storage_t *)a1_config)->automation.magic=0;
     }
-    if (a1_config->version == 3 || a1_config->version == 4 || a1_config->version == 5) a1_config->version = A1_CONFIG_VERSION;
+    if (a1_config->version == 3 || a1_config->version == 4 || a1_config->version == 5 || a1_config->version == 6) a1_config->version = A1_CONFIG_VERSION;
     if (filter_storage()->magic != A1_FILTER_MAGIC || !filter_storage()->lifetime_hours ||
         filter_storage()->lifetime_hours > A1_FILTER_MAX_HOURS) {
         a1_filter_defaults(filter_storage()); filter_migration = true;
     }
     filter_clock.saved_seconds = filter_storage()->used_seconds;
-    if ((filter_migration || button_migration) && mico_system_context_update(a1_context) != kNoErr) return startup_result("filter persist", kUnknownErr);
+    if (auto_migration) {
+        app_storage_t *s = (app_storage_t *)a1_config;
+        memset(&s->automatic, 0, sizeof(s->automatic));
+        s->automatic.fallback_speed = 30;
+        for (unsigned i=0;i<4;i++) {
+            s->automatic.night[i].min_speed = 0;
+            s->automatic.night[i].fallback_speed = 30;
+        }
+        if (s->automation.magic == AUTOMATION_MAGIC && s->automation.buttons[0][1].kind == AUTO_NONE)
+            s->automation.buttons[0][1].kind = AUTO_FAN_MODE_TOGGLE;
+    }
+    if ((filter_migration || button_migration || auto_migration) && mico_system_context_update(a1_context) != kNoErr) return startup_result("filter persist", kUnknownErr);
     if (((app_storage_t *)a1_config)->automation.magic != AUTOMATION_MAGIC) {
         automation_config_t *next=malloc(sizeof(*next));
         if (!next) return startup_result("automation allocation", kNoMemoryErr);
         automation_defaults(next);
-        feature_config_t *f=&((app_storage_t *)a1_config)->features;
+        feature_config_storage_t *f=&((app_storage_t *)a1_config)->features;
         for(unsigned i=0;i<f->event_count && i<8;i++) {
             automation_task_t *t=&next->tasks[i];t->id=next->next_id++;t->days=f->events[i].days;t->minute=f->events[i].minute;
             t->action.kind=AUTO_FAN;t->action.value=f->events[i].on;t->action.speed=f->events[i].speed;
@@ -288,9 +301,9 @@ int application_start(void)
         service_event("error","config","unsupported_layout");
         return kUnknownErr;
     }
-    feature_config_t *extension = &((app_storage_t *)a1_config)->features;
+    feature_config_storage_t *extension = &((app_storage_t *)a1_config)->features;
     if (extension->magic != FEATURE_MAGIC) {
-        feature_defaults(extension);
+        a1_storage_features_defaults((app_storage_t *)a1_config);
         if (mico_system_context_update(a1_context) != kNoErr) return startup_result("config persist", kUnknownErr);
     }
     err = startup_result("MiCO system", mico_system_init(a1_context));
@@ -323,7 +336,7 @@ int application_start(void)
 void feature_config_get(feature_config_t *out)
 {
     mico_rtos_lock_mutex(&a1_config_lock);
-    *out = ((app_storage_t *)a1_config)->features;
+    a1_storage_features_get((app_storage_t *)a1_config, out);
     mico_rtos_unlock_mutex(&a1_config_lock);
 }
 bool feature_config_save(const feature_config_t *c)
@@ -331,15 +344,16 @@ bool feature_config_save(const feature_config_t *c)
     feature_config_t *old = malloc(sizeof(*old));
     if (!old) return false;
     mico_rtos_lock_mutex(&a1_config_lock);
-    feature_config_t *live = &((app_storage_t *)a1_config)->features;
+    app_storage_t *storage = (app_storage_t *)a1_config;
+    feature_config_storage_t *live = &storage->features;
     mico_rtos_lock_mutex(&a1_lock);
     bool busy = a1_state.ota_active || a1_state.reboot_pending;
     mico_rtos_unlock_mutex(&a1_lock);
     bool ok = !busy && c->magic == FEATURE_MAGIC && live->revision == c->revision;
     if (ok) {
-        *old = *live; *live = *c; live->revision++;
+        a1_storage_features_get(storage, old); a1_storage_features_put(storage, c); live->revision++;
         ok = mico_system_context_update(a1_context) == kNoErr;
-        if (!ok) *live = *old;
+        if (!ok) a1_storage_features_put(storage, old);
     }
     mico_rtos_unlock_mutex(&a1_config_lock);
     free(old); return ok;

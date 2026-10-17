@@ -25,7 +25,7 @@ static const field_t linkage_fields[] = {
     U(feature_linkage_t, on_all, 0, 1),
     U(feature_linkage_t, off_all, 0, 1),
     U(feature_linkage_t, fixed_speed, 1, 100),
-    U(feature_linkage_t, min_speed, 1, 100),
+    U(feature_linkage_t, min_speed, 0, 100),
     U(feature_linkage_t, max_speed, 1, 100),
     W(feature_linkage_t, debounce_seconds, 0, 3600),
     W(feature_linkage_t, min_switch_seconds, 0, 3600),
@@ -206,6 +206,16 @@ static json_object *config_encode(const feature_config_t *c, const char *d) {
     }
     json_build_object_add(o, "members", a);
   }
+  if (o && !strcmp(d, "linkage"))
+    json_build_object_add(o, "fallback_speed", json_object_new_int(c->automatic.fallback_speed));
+  if (o && !strcmp(d, "sleep")) {
+    json_object *windows = json_object_object_get(o, "windows");
+    for (unsigned i=0;i<c->sleep_count;i++) {
+      json_object *w = json_object_array_get_idx(windows,i);
+      json_build_object_add(w,"min_speed",json_object_new_int(c->automatic.night[i].min_speed));
+      json_build_object_add(w,"fallback_speed",json_object_new_int(c->automatic.night[i].fallback_speed));
+    }
+  }
   if (o)
     json_build_object_add(o, "revision", json_object_new_int(c->revision));
   return o;
@@ -223,6 +233,8 @@ static bool config_decode(feature_config_t *c, const char *d, json_object *o) {
       if (!json_object_object_get(o, "off_metrics"))
         l->off_metrics = l->metrics;
     }
+    static const field_t automatic_fields[] = {U(feature_auto_config_t, fallback_speed, 0, 100)};
+    if (!decode_fields(o, &c->automatic, automatic_fields, COUNT(automatic_fields))) return false;
     return l->min_speed <= l->max_speed && l->low_pm < l->high_pm &&
            l->low_hcho < l->high_hcho;
   }
@@ -279,6 +291,11 @@ static bool config_decode(feature_config_t *c, const char *d, json_object *o) {
                            COUNT(sleep_fields)) ||
             w.start == w.end)
           return false;
+        feature_auto_night_t night = {0,30};
+        static const field_t night_fields[] = {U(feature_auto_night_t,min_speed,0,100),U(feature_auto_night_t,fallback_speed,0,100)};
+        if (!decode_fields(json_object_array_get_idx(a, i), &night, night_fields, COUNT(night_fields))) return false;
+        if (night.min_speed > w.max_speed) return false;
+        c->automatic.night[i] = night;
         c->sleeps[i] = w;
       } else {
         feature_event_t e = {127, 1, 60, 0, 480};

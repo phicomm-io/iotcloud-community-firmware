@@ -69,22 +69,35 @@ typedef struct {
   uint8_t days, fan, light, max_speed, brightness, block_start;
   uint16_t start, end;
 } feature_sleep_t;
-typedef struct {
-  uint32_t magic, revision;
-  char group[33], ntp_host[64];
-  uint8_t group_token[16], peer_count, member_count, event_count, sleep_count;
-  int16_t timezone_minutes;
-  uint8_t scheduled_off, scheduled_valid, scheduled_speed, group_force_mqtt,
-      group_recovery, reserved;
-  uint16_t group_timeout_ms, group_recovery_seconds;
-  uint64_t last_event;
-  feature_peer_t peers[8];
-  feature_member_t members[8];
-  feature_linkage_t linkage;
-  feature_light_t light;
-  feature_event_t events[8];
+#define FEATURE_CONFIG_FIELDS \
+  uint32_t magic, revision; \
+  char group[33], ntp_host[64]; \
+  uint8_t group_token[16], peer_count, member_count, event_count, sleep_count; \
+  int16_t timezone_minutes; \
+  uint8_t scheduled_off, scheduled_valid, scheduled_speed, group_force_mqtt, \
+      group_recovery, reserved; \
+  uint16_t group_timeout_ms, group_recovery_seconds; \
+  uint64_t last_event; \
+  feature_peer_t peers[8]; \
+  feature_member_t members[8]; \
+  feature_linkage_t linkage; \
+  feature_light_t light; \
+  feature_event_t events[8]; \
   feature_sleep_t sleeps[4];
+/* Frozen prefix: changing it moves automation and filter data in Flash. */
+typedef struct { FEATURE_CONFIG_FIELDS } feature_config_storage_t;
+typedef struct { uint8_t min_speed, fallback_speed; } feature_auto_night_t;
+typedef struct {
+  uint8_t fallback_speed, reserved[3];
+  feature_auto_night_t night[FEATURE_MAX_SLEEP];
+} feature_auto_config_t;
+typedef struct {
+  FEATURE_CONFIG_FIELDS
+  union { feature_auto_config_t automatic; uint64_t automatic_alignment; };
 } feature_config_t;
+#undef FEATURE_CONFIG_FIELDS
+typedef char feature_prefix_boundary[(offsetof(feature_config_t, automatic) == sizeof(feature_config_storage_t)) ? 1 : -1];
+
 typedef struct {
   float value[4];
   uint32_t sequence, boot, received_ms, age_ms;
@@ -148,6 +161,10 @@ void feature_light_frame(uint32_t out[32], unsigned brightness, bool enabled,
                          uint32_t color);
 unsigned feature_light_cap(unsigned brightness);
 void feature_manual_fan(bool on);
+bool feature_fan_auto(void);
+unsigned feature_fan_limit(void);
+/* Validated mode/cap update; 0=failure, 1=manual, 2=auto. */
+int feature_fan_command(json_object *);
 bool feature_group_control(const char *kind, json_object *);
 void feature_clock_valid(void);
 void feature_clock_tick(void);
