@@ -96,6 +96,7 @@ typedef struct {
   union { feature_auto_config_t automatic; uint64_t automatic_alignment; };
 } feature_config_t;
 #undef FEATURE_CONFIG_FIELDS
+typedef char feature_prefix_boundary[(offsetof(feature_config_t, automatic) == sizeof(feature_config_storage_t)) ? 1 : -1];
 
 typedef struct {
   float value[4];

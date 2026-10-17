@@ -25,7 +25,7 @@ static int flash_update(void *ctx){(void)ctx;writes++;if(fail_write)return -1;ex
 #define mico_system_context_update flash_update
 bool feature_fan_auto(void){return false;}
 void feature_defaults(feature_config_t *c){memset(c,0,sizeof(*c));c->magic=FEATURE_MAGIC;}
-void automation_defaults(automation_config_t *c){memset(c,0,sizeof(*c));c->magic=AUTOMATION_MAGIC;c->next_id=1;}
+void automation_defaults(automation_config_t *c){memset(c,0,sizeof(*c));c->magic=AUTOMATION_MAGIC;c->next_id=1;c->buttons[0][1].kind=AUTO_FAN_MODE_TOGGLE;}
 void service_event(const char *l,const char *m,const char *e){(void)l;(void)m;(void)e;}
 static int startup_result(const char *s,int err){(void)s;return err;}
 PRODUCTION
@@ -82,17 +82,20 @@ int main(void){
  a1_state.reboot_pending=false;assert(a1_reset(true));assert(!flash.filter.used_seconds && flash.filter.lifetime_hours==4320);
  init();a1_filter_tick(true);now=3600000;fail_write=1;assert(!a1_config_flush(false));int before=writes;
  now+=100;assert(a1_config_flush(false));assert(writes==before);now+=2000;fail_write=0;assert(a1_config_flush(false));assert(writes==before+1);
- for(unsigned v=1;v<=5;v++){
-  init();live.base.version=v;strcpy(live.base.ssid,"preserved-wifi");strcpy(live.base.name,"old-device");live.filter.magic=v==5?A1_FILTER_MAGIC:0;if(v==5)live.filter.used_seconds=123;
+ for(unsigned v=1;v<=6;v++){
+  init();live.base.version=v;strcpy(live.base.ssid,"preserved-wifi");strcpy(live.base.name,"old-device");live.filter.magic=v==5?A1_FILTER_MAGIC:0;if(v>=5){live.filter.magic=A1_FILTER_MAGIC;live.filter.used_seconds=123;}
   memset(live.combination_buttons,0xab,sizeof(live.combination_buttons));
+  if(v==6){live.automation.buttons[0][1].kind=AUTO_REBOOT;live.combination_buttons[0].kind=AUTO_FILTER_RESET;}
   if(v<3){a1_storage_v2_t old={0};old.base.magic=A1_CONFIG_MAGIC;old.base.version=v;strcpy(old.base.ssid,"preserved-wifi");strcpy(old.base.name,"old-device");memcpy(&live,&old,sizeof(old));}
   else {live.features.sleep_count=1;live.automation.tasks[0].id=42;}
   assert(migrate()==0 && live.base.version==A1_CONFIG_VERSION && live.filter.magic==A1_FILTER_MAGIC && live.filter.lifetime_hours==4320);
-  assert(live.combination_buttons[0].kind==AUTO_NONE);if(v==5)assert(live.filter.used_seconds==123);
+  assert(live.combination_buttons[0].kind==(v==6?AUTO_FILTER_RESET:AUTO_NONE));if(v>=5)assert(live.filter.used_seconds==123);
+  assert(live.automatic.fallback_speed==30);
+  assert(live.automation.buttons[0][1].kind==(v==6?AUTO_REBOOT:AUTO_FAN_MODE_TOGGLE));
   assert(!strcmp(live.base.ssid,"preserved-wifi")&&!strcmp(live.base.name,"old-device"));
-  if(v==4 || v==5)assert(live.automation.tasks[0].id==42 && live.features.sleep_count==1);
+  if(v>=4)assert(live.automation.tasks[0].id==42 && live.features.sleep_count==1);
  }
- puts("A1 filter production persistence, Flash failure/retry, commands, resets and v1-v5 migration: OK");
+ puts("A1 filter production persistence, Flash failure/retry, commands, resets and v1-v6 migration: OK");
 }
 '''.replace('PRODUCTION', prefix).replace('MIGRATION', migration)
         json_dir = Path(os.environ.get('PHICOMM_TEST_JSON_DIR', ROOT / 'build/a1-sdk/mico-os/libraries/utilities/json_c'))

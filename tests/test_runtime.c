@@ -307,6 +307,27 @@ static void effective_controls(void) {
   puts("Effective fan cap, persisted timer latch, manual resume and light "
        "sleep priority passed");
 }
+static void automatic_profiles(void) {
+  feature_config_t c=stored;
+  c.linkage.enabled=1;c.linkage.min_speed=10;c.linkage.max_speed=80;
+  c.automatic.fallback_speed=90;c.sleep_count=1;
+  c.sleeps[0].max_speed=35;c.automatic.night[0].min_speed=0;
+  c.automatic.night[0].fallback_speed=0;
+  assert(install_config(&c));data_valid=false;automatic_night=-1;
+  bool on;unsigned speed;
+  feature_effective_fan(true,64,&on,&speed);assert(on && speed==80);
+  automatic_night=0;automatic_valid=false;automatic_immediate=true;
+  feature_effective_fan(true,64,&on,&speed);assert(on && speed==0);
+  feature_effective_fan(false,64,&on,&speed);assert(!on && speed==0);
+  json_object *command=obj("{\"speed\":22}");
+  assert(feature_fan_command(command)==2);json_object_put(command);
+  assert(stored.sleeps[0].max_speed==22 && stored.linkage.max_speed==80);
+  assert(feature_fan_limit()==22);
+  automatic_night=-1;automatic_valid=false;automatic_immediate=true;
+  feature_effective_fan(true,64,&on,&speed);assert(on && speed==80);
+  c=stored;c.linkage.enabled=0;c.sleep_count=0;assert(install_config(&c));
+  puts("Independent day/night automatic ranges, zero fallback, power latch and active cap passed");
+}
 #endif
 static char expected_key[MQTT_KEY_MAX];
 static unsigned account_ha;
@@ -479,6 +500,7 @@ int main(void) {
 #ifdef FEATURE_DEVICE_A1
   group_transport();
   effective_controls();
+  automatic_profiles();
   transaction("linkage", "{\"target_pm\":0}", 400);
   transaction("linkage", "{\"kp\":true}", 400);
   transaction("linkage", "{\"enabled\":1}", 200);

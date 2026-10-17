@@ -63,6 +63,22 @@ static void controls(void) {
     assert(speed >= 20 && speed <= 100 && isfinite(p.integral));
   }
 }
+static void idle_control(void) {
+  feature_config_t c;feature_defaults(&c);
+  c.linkage.enabled=1;c.linkage.min_speed=0;c.linkage.max_speed=70;
+  c.linkage.debounce_seconds=5;c.linkage.min_switch_seconds=10;
+  feature_pid_t p={0};float v[4]={22,45,0,.01};bool on;unsigned speed;
+  feature_control(&c.linkage,&p,v,1000,true,40,&on,&speed);assert(on && speed==40);
+  feature_control(&c.linkage,&p,v,6000,true,40,&on,&speed);assert(on && speed==0);
+  v[2]=1000;
+  feature_control(&c.linkage,&p,v,7000,true,0,&on,&speed);assert(on && speed==0);
+  feature_control(&c.linkage,&p,v,12000,true,0,&on,&speed);assert(on && speed==0);
+  feature_control(&c.linkage,&p,v,16000,true,0,&on,&speed);assert(on && speed==70);
+  feature_control(&c.linkage,&p,v,30000,false,70,&on,&speed);assert(!on && speed==0);
+  c.linkage.mode=2; c.linkage.kp=20;c.linkage.ki=.1f;
+  memset(&p,0,sizeof(p));
+  feature_control(&c.linkage,&p,v,1000,true,0,&on,&speed);assert(isfinite(p.integral) && fabsf(p.integral)<1000);
+}
 static void schedules(void) {
   feature_config_t c;
   feature_defaults(&c);
@@ -116,6 +132,7 @@ int main(void) {
   assert(!strcmp(root, "room:11:22:33:44:55:66"));
   statistics();
   controls();
+  idle_control();
   schedules();
   lights();
   puts("engine scenarios passed");

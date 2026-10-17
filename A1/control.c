@@ -113,8 +113,9 @@ void a1_panel_event(bool toggle, int delta)
     if (!accepted || (!toggle && !delta)) return;
     json_object *o=json_object_new_object();
     if (delta) {
-        int speed=(feature_fan_auto() ? feature_fan_limit() : (c.fan_on?c.speed:0))+delta;
-        if (speed<1) speed=1; if (speed>100) speed=100;
+        bool automatic=feature_fan_auto();
+        int speed=(automatic ? feature_fan_limit() : (c.fan_on?c.speed:0))+delta;
+        if (speed<(automatic?1:0)) speed=automatic?1:0; if (speed>100) speed=100;
         json_build_object_add(o,"speed",json_object_new_int(speed));
     }
     if (toggle) json_build_object_add(o,"on",json_object_new_boolean(!c.fan_on));

@@ -64,3 +64,26 @@ A1 通过 HA Discovery 提供 `filter_remaining`（百分比）、`filter_used`�
 `tests/run.sh` 验证协议、配置迁移、采样新鲜度、联动与命令行为；`tests/test_web.cjs` 验证离线页面和命令映射；`tests/build_host.sh`、`tests/test_mqtt_v2.py <隔离 Broker 端口>` 验证实际 SDK MQTT worker（外设为桩）。这些不能替代真实 HA 加载、Flash 迁移和物理设备验收。
 
 `tests/run_mqtt_v2.sh` 还构建模拟器并运行 `test_a1_filter_mqtt.py`，覆盖五个 HA 实体模板、配置与重置命令、无查询情况下的一分钟主动上报、retained 重放和 HA birth 后重新发现。
+
+
+### A1 operating mode
+
+`fan.mode.set {"mode":"auto"|"manual"}` selects a persisted mode without changing power.
+`fan.mode.toggle {}` resolves to an explicit mode before group fan-out. `fan.set` accepts
+an optional `mode` for an explicit manual speed operation. Without it, positive `speed`
+in auto mode adjusts the current night/day maximum and powers on; `speed:0` turns off,
+and an explicit `on:false` takes precedence. Automatic output never changes stored manual speed.
+`linkage.enabled` remains a legacy alias for mode; numeric `linkage.mode` selects fixed/linear/PID.
+Legacy air-quality on/off threshold fields are retained for compatibility but no longer control power.
+
+HA discovery advertises `preset_modes: ["auto","manual"]`, with a command template for
+`fan.mode.set` and retained `fan/mode/state`. Percentage commands include `mode:"manual"`
+for compatibility with HomeKit Bridge's manual-state fallback to `fan.set_percentage`.
+Direct API, web and panel speed commands retain the automatic-cap semantics.
+Top-level state exposes `fan_mode`, `fan_state` (`off`, `idle`, `running`) and `auto_max_speed`.
+`fan_on` represents logical power, including idle; `percentage` represents requested motor output.
+`applied_speed` is the PWM setting, without a physical tachometer.
+
+`linkage.fallback_speed` is clamped to the active min/max. Each night window accepts
+`min_speed`, `max_speed`, `fallback_speed`; the last matching fan window wins in auto.
+Night `block_start` is retained for older clients but does not prevent automatic idle recovery.

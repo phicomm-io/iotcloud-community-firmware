@@ -375,7 +375,7 @@ static void mqtt_worker(mico_thread_arg_t arg)
             if (rediscover) { feature_mqtt_service(publish,false);rc = discovery(&current); rediscover = false; sent = false; }
             bool on;unsigned speed;feature_effective_fan(current.fan_on,current.speed,&on,&speed);
             a1_filter_storage_t filter; a1_filter_get(&filter);
-            if (rc == MQTT_SUCCESS && (!sent || revision != current.revision || old_visible != state.led_visible || old_on!=on || old_speed!=speed)) {
+            if (rc == MQTT_SUCCESS && (!sent || feature_changed || revision != current.revision || old_visible != state.led_visible || old_on!=on || old_speed!=speed)) {
                 stage="state"; rc = states(&current, &state); revision = current.revision; old_visible = state.led_visible;old_on=on;old_speed=speed; sent = true;
                 if (rc == MQTT_SUCCESS) { sent_filter = filter; filter_sent_at = mico_rtos_get_time(); }
             } else if (rc == MQTT_SUCCESS && a1_filter_mqtt_due(&filter, &sent_filter, mico_rtos_get_time(), filter_sent_at)) {

@@ -4,7 +4,16 @@ A1 provides fan control, a light ring, child lock, night mode and automatic cont
 
 ## Power and fan
 
-The home page has power and fan-speed controls. Turn the purifier on or off, select a manual speed, or use automatic control based on M1 readings and configured rules.
+The home page provides independent power and operating-mode controls.
+
+- Manual mode runs at your chosen speed. Returning to manual restores the last manual speed.
+- Auto mode adjusts speed while powered on, using PM2.5, formaldehyde, or the higher demand of both.
+- Selecting a mode while off preserves power-off. Worsening air quality never turns on a powered-off purifier.
+- The ring and web slider set speed in manual mode and the active period's maximum in auto mode. Changing speed also turns power on.
+
+Configure minimum, maximum and sensor-offline speeds. A minimum of **0%** allows the motor to idle while logical power stays on; worsening air quality resumes operation after the debounce and minimum switching intervals. Fixed, linear and PID strategies remain available. Missing, unbound or stale sensor data uses the offline speed clamped to the current range; fresh data restores automatic control. Offline fallback never turns on a powered-off purifier.
+
+Each night window independently overrides minimum, maximum and offline speeds while sharing the daytime algorithm. The last matching fan window wins in auto mode; manual speed remains capped by night limits. Before clock synchronization the daytime settings apply.
 
 ## Estimated filter life
 
@@ -27,14 +36,14 @@ Child lock blocks normal physical-button actions; a configured child-lock gestur
 All automation configuration lives on A1; M1 only measures and responds.
 
 1. Add authorized M1 members.
-2. Configure enable switches, thresholds, fan policy, debounce and minimum switching intervals.
-3. Confirm valid average readings before enabling automation.
+2. Configure automatic speed range, offline speed, algorithm, debounce and minimum switching intervals.
+3. Select auto mode and turn on power. Without valid data the offline speed applies.
 
 A1 computes the arithmetic mean of bound M1 readings no older than 15 seconds. With no valid data, readings are `null`. A1 initiates sessions, probes and reads, preferring LAN and falling back to MQTT. It periodically reinitializes sessions after M1 restarts without manual token entry. **Upgrade both sides together.** See [pairing instructions](mqtt-link#a1-and-m1-automation).
 
 ## Buttons
 
-A1 has a power button and a Wi-Fi button. By default, a single power-button click toggles the fan. In **Settings → Automation → Button events**, select power, Wi-Fi or both buttons, then choose a gesture and action. A combination requires both buttons to overlap; it cancels the single-button gestures for that interaction. Releasing the buttons at different times does not trigger Wi-Fi recovery.
+A1 has a power button and a Wi-Fi button. By default, a single power-button click toggles power and a double click toggles auto/manual mode. Upgrades preserve existing custom double-click actions; these can be reassigned in button settings. In **Settings → Automation → Button events**, select power, Wi-Fi or both buttons, then choose a gesture and action. A combination requires both buttons to overlap; it cancels the single-button gestures for that interaction. Releasing the buttons at different times does not trigger Wi-Fi recovery.
 
 Custom mappings support 1–30 clicks, executed after the click interval, and 1–4 second long presses, executed on release. Five seconds and above are reserved. Actions include cycling or selecting a light effect, resetting filter usage, fan power and speed, ring power and brightness, always-on lighting, child lock and reboot. Switch actions support on, off and toggle; ring toggles can preserve brightness. Identical consecutive mappings are folded in the UI.
 
@@ -56,3 +65,10 @@ A short pulse marks each full second held without changing saved lighting settin
 ## MQTT
 
 A1 uses TMCP (v2) topics only, with no Legacy selector. See [MQTT and automation](mqtt-link).
+
+
+## Home Assistant and HomeKit modes
+
+The HA purifier entity exposes `auto` and `manual` presets. Web, physical buttons and HA report the same mode, including while power is off. HA speed changes select manual and set its speed; the web and ring adjust the cap while in auto.
+
+When exposed as an air purifier through HomeKit Bridge, automatic maps to HA's `auto` preset. The current bridge sends a speed command when manual is selected, so it applies HomeKit's displayed speed. To restore the last manual speed, select manual directly in HA or the web page. The bridge can display zero-speed idle as purifying or minimum speed; use the device page to confirm actual idle state.

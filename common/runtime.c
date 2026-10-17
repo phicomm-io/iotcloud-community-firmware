@@ -42,6 +42,8 @@ static bool automatic_on, automatic_valid, scheduled_on, schedule_valid,
 static unsigned automatic_speed, scheduled_speed;
 static int automatic_night = -1;
 static bool effective_on;
+static unsigned effective_speed;
+static bool automatic_immediate = true;
 
 static feature_sleep_state_t sleep_state;
 static float aggregate[4];
@@ -340,6 +342,7 @@ static bool install_config(feature_config_t *c) {
   }
   group_config_changed(&configuration, c);
   configuration = *c;
+  automatic_immediate = true;
   automatic_valid = false;
   memset(&pid, 0, sizeof(pid));
   unlock();
@@ -861,6 +864,7 @@ end:
 void feature_manual_fan(bool on) {
   lock();
   automatic_valid = false;
+  automatic_immediate = true;
   memset(&pid,0,sizeof(pid));
   schedule_valid = false;
   if (on)
@@ -897,10 +901,12 @@ void feature_effective_fan(bool requested_on, unsigned requested_speed,
     if (!automatic_valid) {
       if (data_valid) {
         bool ignored;
+        if (automatic_immediate) policy.debounce_seconds=policy.min_switch_seconds=0;
         feature_control(&policy, &pid, aggregate, now_ms(), true,
                         automatic_speed, &ignored, &automatic_speed);
       } else automatic_speed = (unsigned)clip(fallback, policy.min_speed, policy.max_speed);
       automatic_valid = true;
+      automatic_immediate = false;
     }
     *speed = (unsigned)clip(automatic_speed,policy.min_speed,policy.max_speed);
   } else
@@ -908,6 +914,7 @@ void feature_effective_fan(bool requested_on, unsigned requested_speed,
   if (requested_on && sleep_state.fan_sleep && *speed > sleep_state.max_speed)
     *speed = sleep_state.max_speed;
   if (!requested_on) *speed = 0;
+  effective_speed = *speed;
   automatic_on = *on;
   effective_on = *on;
   unlock();
@@ -926,7 +933,7 @@ int feature_fan_command(json_object *o) {
   bool automatic = c->linkage.enabled;
   json_object *mode = json_object_object_get(o,"mode");
   if (mode) {
-    if (!json_object_is_type(mode,json_type_string)) {free(c);return 0;}
+    if (!json_object_is_type(mode,json_type_string) || strlen(json_object_get_string(mode)) != (size_t)json_object_get_string_len(mode)) {free(c);return 0;}
     const char *v=json_object_get_string(mode);
     if (!strcmp(v,"auto")) automatic=true;
     else if (!strcmp(v,"manual")) automatic=false;
@@ -965,7 +972,7 @@ void feature_light_frame(uint32_t out[32], unsigned brightness, bool enabled,
   float values[4];
   memcpy(values, aggregate, sizeof(values));
   bool valid[4] = {data_valid, data_valid, data_valid, data_valid};
-  unsigned speed = effective_on ? automatic_speed : 0;
+  unsigned speed = effective_on ? effective_speed : 0;
   feature_sleep_state_t sleep = sleep_state;
   unlock();
   unsigned original_brightness = brightness;
@@ -1276,11 +1283,11 @@ static void feature_worker(mico_thread_arg_t arg) {
           : ((w->days & (1u<<local_day)) && minute>=w->start) || ((w->days & (1u<<((local_day+6)%7))) && minute<w->end);
         if (w->fan && active) selected = i;
       }
-      if (automatic_night != selected) { automatic_night=selected; automatic_valid=false; memset(&pid,0,sizeof(pid)); }
+      if (automatic_night != selected) { automatic_night=selected; automatic_immediate=true; automatic_valid=false; memset(&pid,0,sizeof(pid)); }
       unlock();
     } else {
       lock(); sleep_state = (feature_sleep_state_t){false,false,false,100,255};
-      if (automatic_night != -1) { automatic_night=-1; automatic_valid=false; memset(&pid,0,sizeof(pid)); }
+      if (automatic_night != -1) { automatic_night=-1; automatic_immediate=true; automatic_valid=false; memset(&pid,0,sizeof(pid)); }
       unlock();
     }
 #ifdef FEATURE_DEVICE_A1
