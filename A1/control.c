@@ -48,6 +48,16 @@ static bool get_byte(json_object *o, const char *key, uint8_t *out, int max, boo
 bool a1_control_local(const char *kind, json_object *o)
 {
     if (!o || !json_object_is_type(o, json_type_object)) return false;
+    int fan_mode = 1;
+    if (!strcmp(kind,"fan")) {
+        uint8_t check=0; bool found_check=false;
+        if (!get_byte(o,"speed",&check,100,&found_check) || !get_bool(o,"on",&check,&found_check)) return false;
+        if (!found_check && !json_object_object_get(o,"mode")) return false;
+        mico_rtos_lock_mutex(&a1_lock);
+        bool busy=a1_state.ota_active || a1_state.reboot_pending;
+        mico_rtos_unlock_mutex(&a1_lock);
+        if (busy || !(fan_mode=feature_fan_command(o))) return false;
+    }
     mico_rtos_lock_mutex(&a1_config_lock);
     mico_rtos_lock_mutex(&a1_lock);
     a1_config_t c = *a1_config;
@@ -56,9 +66,10 @@ bool a1_control_local(const char *kind, json_object *o)
         uint8_t speed = c.speed;
         valid = valid && get_byte(o, "speed", &speed, 100, &found);
         if (json_object_object_get(o, "speed")) {
-            c.fan_on = speed != 0; if (speed) c.speed = speed;
+            c.fan_on = speed != 0; if (speed && fan_mode == 1) c.speed = speed;
         }
         valid = valid && get_bool(o, "on", &c.fan_on, &found);
+        found |= json_object_object_get(o,"mode") != NULL;
     } else if (!strcmp(kind, "light")) {
         valid = valid && get_bool(o, "enabled", &c.led_enabled, &found) &&
             get_bool(o, "always_on", &c.led_always_on, &found) && get_byte(o, "brightness", &c.brightness, 255, &found);
@@ -94,23 +105,20 @@ bool a1_control_local(const char *kind, json_object *o)
 
 void a1_panel_event(bool toggle, int delta)
 {
-    mico_rtos_lock_mutex(&a1_config_lock);
+    a1_config_t c; a1_config_get(&c);
     mico_rtos_lock_mutex(&a1_lock);
-    bool accepted = !a1_config->child_lock && !a1_state.ota_active && !a1_state.reboot_pending;
-    if (accepted) {
-        a1_config_t c = *a1_config;
-        if (toggle) c.fan_on = !c.fan_on;
-        if (delta) {
-            int speed = (c.fan_on ? c.speed : 0) + delta;
-            c.fan_on = speed > 0;
-            c.speed = speed < 1 ? 1 : speed > 100 ? 100 : speed;
-            a1_state.fan_feedback_until = mico_rtos_get_time() + 3000;
-        }
-        if (toggle || delta) apply(&c);
-    }
+    bool accepted = !c.child_lock && !a1_state.ota_active && !a1_state.reboot_pending;
+    if (accepted && delta) a1_state.fan_feedback_until = mico_rtos_get_time()+3000;
     mico_rtos_unlock_mutex(&a1_lock);
-    mico_rtos_unlock_mutex(&a1_config_lock);
-    if (accepted && (toggle || delta)) { a1_config_t c; a1_config_get(&c); feature_manual_fan(c.fan_on); }
+    if (!accepted || (!toggle && !delta)) return;
+    json_object *o=json_object_new_object();
+    if (delta) {
+        int speed=(feature_fan_auto() ? feature_fan_limit() : (c.fan_on?c.speed:0))+delta;
+        if (speed<1) speed=1; if (speed>100) speed=100;
+        json_build_object_add(o,"speed",json_object_new_int(speed));
+    }
+    if (toggle) json_build_object_add(o,"on",json_object_new_boolean(!c.fan_on));
+    a1_control_json("fan",o); json_object_put(o);
 }
 
 void a1_request_ap(void)

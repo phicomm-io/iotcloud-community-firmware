@@ -207,9 +207,16 @@ static int discovery(const a1_config_t *c)
         snprintf(text, sizeof(text), "%s/state", keys[i]); topic(o, "state_topic", text);
         if (i == 0) {
             str(o, "icon", "mdi:air-purifier");
+            topic(o,"preset_mode_command_topic","command");
+            topic(o,"preset_mode_state_topic","fan/mode/state");
+            str(o,"preset_mode_command_template","{\"action\":\"fan.mode.set\",\"params\":{\"mode\":{{ value | tojson }}}}");
+            json_object *modes=json_object_new_array();
+            json_build_array_add(modes,json_object_new_string("auto"));
+            json_build_array_add(modes,json_object_new_string("manual"));
+            json_build_object_add(o,"preset_modes",modes);
             topic(o, "percentage_command_topic", "command");
             str(o,"command_template","{\"action\":\"fan.set\",\"params\":{\"on\":{{ 'true' if value == 'ON' else 'false' }}}}");
-            str(o,"percentage_command_template","{\"action\":\"fan.set\",\"params\":{\"speed\":{{ value | int }}}}");
+            str(o,"percentage_command_template","{\"action\":\"fan.set\",\"params\":{\"mode\":\"manual\",\"speed\":{{ value | int }}}}");
             topic(o, "percentage_state_topic", "fan/percentage/state");
             json_build_object_add(o, "speed_range_min", json_object_new_int(1));
             json_build_object_add(o, "speed_range_max", json_object_new_int(100));
@@ -242,6 +249,7 @@ static int states(const a1_config_t *c, const a1_state_t *s)
     int rc = leaf("fan/state", on ? "ON" : "OFF");
     char speed[4], light[192]; snprintf(speed, sizeof(speed), "%u", on ? desired : 0);
     if (rc == MQTT_SUCCESS) rc = leaf("fan/percentage/state", speed);
+    if (rc == MQTT_SUCCESS) rc = leaf("fan/mode/state",feature_fan_auto()?"auto":"manual");
     snprintf(light, sizeof(light), "{\"state\":\"%s\",\"color_mode\":\"rgb\",\"brightness\":%u,\"color\":{\"r\":%u,\"g\":%u,\"b\":%u}}",
         s->led_visible ? "ON" : "OFF", c->brightness, c->red, c->green, c->blue);
     if (rc == MQTT_SUCCESS) rc = leaf("light/state", light);

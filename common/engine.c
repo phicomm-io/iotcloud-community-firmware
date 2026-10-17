@@ -16,6 +16,9 @@ void feature_defaults(feature_config_t *c) {
   c->linkage.metrics = c->linkage.on_metrics = c->linkage.off_metrics = 1;
   c->scheduled_speed = 60;
   c->linkage.fixed_speed = 60;
+  c->linkage.mode = 1;
+  c->automatic.fallback_speed = 30;
+  for (unsigned i=0;i<4;i++) c->automatic.night[i].fallback_speed = 30;
   c->linkage.min_speed = 20;
   c->linkage.max_speed = 100;
   c->linkage.debounce_seconds = 15;
@@ -185,18 +188,6 @@ unsigned feature_aggregate(const feature_sample_t *s, unsigned count,
   }
   return n;
 }
-static bool threshold(const feature_linkage_t *c, const float *v, bool start) {
-  bool a = start ? v[2] >= c->on_pm : v[2] <= c->off_pm;
-  bool b = start ? v[3] >= c->on_hcho : v[3] <= c->off_hcho;
-  unsigned metrics = start ? c->on_metrics : c->off_metrics;
-  if (!metrics)
-    metrics = c->metrics;
-  if (metrics == 1)
-    return a;
-  if (metrics == 2)
-    return b;
-  return (start ? c->on_all : c->off_all) ? a && b : a || b;
-}
 bool feature_control(const feature_linkage_t *c, feature_pid_t *p,
                      const float v[4], uint32_t now, bool on, unsigned speed,
                      bool *next_on, unsigned *next_speed) {
@@ -204,28 +195,10 @@ bool feature_control(const feature_linkage_t *c, feature_pid_t *p,
     return false;
   *next_on = on;
   *next_speed = speed;
-  bool start = c->on_enabled && threshold(c, v, true),
-       stop = c->off_enabled && threshold(c, v, false);
-  int desired = start ? 1 : stop ? -1 : 0;
-  if (desired != p->condition) {
-    p->condition = desired;
-    p->condition_since = now;
-  }
-  if (desired &&
-      (uint32_t)(now - p->condition_since) >= c->debounce_seconds * 1000u &&
-      (!p->switch_ms ||
-       (uint32_t)(now - p->switch_ms) >= c->min_switch_seconds * 1000u)) {
-    bool target = desired > 0;
-    if (target != on) {
-      *next_on = target;
-      p->switch_ms = now;
-    }
-  }
-  if (!c->on_enabled && !c->off_enabled)
-    *next_on = true;
-  if (!*next_on) {
-    p->integral = 0;
-    p->initialized = false;
+  /* Power is owned by the user, including while the automatic motor idles. */
+  if (!on) {
+    *next_speed = 0;
+    memset(p, 0, sizeof(*p));
     return true;
   }
   float output = c->fixed_speed;
@@ -243,7 +216,7 @@ bool feature_control(const feature_linkage_t *c, feature_pid_t *p,
       p->initialized = false;
     }
     if (!p->initialized) {
-      p->integral = (speed - c->min_speed - c->kp * e);
+      p->integral = ((float)speed - c->min_speed - c->kp * e);
       p->previous = e;
       p->derivative = 0;
     }
@@ -259,7 +232,15 @@ bool feature_control(const feature_linkage_t *c, feature_pid_t *p,
     p->last_ms = now;
     p->initialized = true;
   }
-  *next_speed = (unsigned)(clip(output, c->min_speed, c->max_speed) + .5f);
+  unsigned target = (unsigned)(clip(output, c->min_speed, c->max_speed) + .5f);
+  int desired = target > 0 ? 1 : -1;
+  if (desired != p->condition) { p->condition = desired; p->condition_since = now; }
+  if ((target == 0) != (speed == 0) &&
+      ((uint32_t)(now-p->condition_since) < c->debounce_seconds*1000u ||
+       (p->switch_ms && (uint32_t)(now-p->switch_ms) < c->min_switch_seconds*1000u)))
+    target = speed;
+  else if ((target == 0) != (speed == 0)) p->switch_ms = now;
+  *next_speed = (unsigned)clip(target, c->min_speed, c->max_speed);
   return true;
 }
 feature_sleep_state_t feature_sleep_at(const feature_config_t *c, unsigned day,

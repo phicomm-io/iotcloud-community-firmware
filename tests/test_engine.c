@@ -45,12 +45,12 @@ static void controls(void) {
   feature_control(&c.linkage, &p, v, 1000, false, 60, &on, &speed);
   assert(!on);
   feature_control(&c.linkage, &p, v, 16000, false, 60, &on, &speed);
-  assert(on && speed == 60);
+  assert(!on && speed == 0);
   v[2] = 20;
   feature_control(&c.linkage, &p, v, 17000, true, 60, &on, &speed);
   assert(on);
   feature_control(&c.linkage, &p, v, 77000, true, 60, &on, &speed);
-  assert(!on);
+  assert(on && speed == 20);
   c.linkage.on_enabled = c.linkage.off_enabled = 0;
   c.linkage.mode = 1;
   v[2] = 1000;

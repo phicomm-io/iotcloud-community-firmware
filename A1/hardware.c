@@ -67,7 +67,7 @@ static void fault(void)
 static void fan_tick(const a1_config_t *c, uint8_t *speed)
 {
     OSStatus err;
-    if (!c->fan_on) {
+    if (!c->fan_on || !c->speed) {
         err = MicoGpioOutputHigh(MICO_GPIO_19);
         OSStatus stop = *speed ? MicoPwmStop(MICO_PWM_3) : kNoErr;
         *speed = 0;
@@ -233,7 +233,7 @@ static void hardware_worker(mico_thread_arg_t arg)
         /* Touch feedback shows the requested setting immediately, even while
          * PWM catches up or another effect is selected. Release restores it. */
         if (state.touch_active && visible)
-            a1_ring_feedback(colors, cfg.speed, feature_light_cap(cfg.brightness), color);
+            a1_ring_feedback(colors, feature_fan_auto()?feature_fan_limit():cfg.speed, feature_light_cap(cfg.brightness), color);
         unsigned mode = indicator_mode(cfg.ssid[0] != 0, state.wifi_connected,
             cfg.mqtt_host[0] != 0, state.mqtt_connected && state.mqtt_status == MQTT_READY);
         if (mode != old_mode) mode_since = now;
@@ -248,7 +248,7 @@ static void hardware_worker(mico_thread_arg_t arg)
             unsigned brightness = cfg.led_enabled ? feature_light_cap(cfg.brightness) : 0;
             uint32_t color = ((uint32_t)(cfg.green * brightness / 255) << 16) |
                 ((uint32_t)(cfg.red * brightness / 255) << 8) | (cfg.blue * brightness / 255);
-            a1_fan_frame(colors, cfg.fan_on ? cfg.speed : 0, color);
+            a1_fan_frame(colors, cfg.fan_on ? (feature_fan_auto()?feature_fan_limit():cfg.speed) : 0, color);
         }
         /* Interaction feedback can briefly wake a disabled business light.
          * Night mode still caps it; configured LED state stays untouched. */

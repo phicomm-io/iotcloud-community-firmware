@@ -46,7 +46,7 @@ int main(void){
     assert(!strcmp(next.ssid,old.base.ssid) && !strcmp(next.wifi_password,old.base.wifi_password));
     assert(!strcmp(next.mqtt_host,old.base.mqtt_host) && !strcmp(next.mqtt_user,old.base.mqtt_user));
     assert(strlen(next.mqtt_password)==63 && !strcmp(next.name,old.base.name) && !strcmp(next.web_password,old.base.web_password));
-    assert(next.mqtt_port==1883 && !memcmp(&f,&old.features,sizeof(f)));
+    assert(next.mqtt_port==1883 && !memcmp(&f,&old.features,sizeof(old.features)));
 #ifdef HOST_M1
     assert(next.brightness==3 && next.last_on==4 && next.timezone_minutes==480);
     memset(&f,0,sizeof(f));f.magic=FEATURE_MAGIC;f.peer_count=3;

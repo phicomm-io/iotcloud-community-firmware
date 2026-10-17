@@ -9,7 +9,7 @@ typedef struct {
     uint8_t brightness, last_on;
     int16_t timezone_minutes;
 } m1_config_v2_t;
-typedef struct { m1_config_v2_t base; feature_config_t features; } m1_storage_v2_t;
+typedef struct { m1_config_v2_t base; feature_config_storage_t features; } m1_storage_v2_t;
 
 #include <stddef.h>
 static inline void m1_migrate_v2(m1_config_t *next, feature_config_t *features, const m1_storage_v2_t *old)
@@ -25,8 +25,8 @@ static inline void m1_migrate_v2(m1_config_t *next, feature_config_t *features, 
     next->timezone_minutes = old->base.timezone_minutes;
     next->version = M1_CONFIG_VERSION;
     next->mqtt_topic_mode = MQTT_TOPIC_TMCP;
-    if (old->base.version == 2 && old->features.magic == FEATURE_MAGIC) *features = old->features;
-    else feature_defaults(features);
+    feature_defaults(features);
+    if (old->base.version == 2 && old->features.magic == FEATURE_MAGIC) memcpy(features, &old->features, sizeof(old->features));
 }
 
 /* v3 -> v4 keeps the base ABI. Only local response permissions survive from

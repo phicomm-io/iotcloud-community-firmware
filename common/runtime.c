@@ -40,6 +40,7 @@ static uint32_t tick_at;
 static bool automatic_on, automatic_valid, scheduled_on, schedule_valid,
     clock_ok;
 static unsigned automatic_speed, scheduled_speed;
+static int automatic_night = -1;
 static bool effective_on;
 
 static feature_sleep_state_t sleep_state;
@@ -339,6 +340,7 @@ static bool install_config(feature_config_t *c) {
   }
   group_config_changed(&configuration, c);
   configuration = *c;
+  automatic_valid = false;
   memset(&pid, 0, sizeof(pid));
   unlock();
   free(next);
@@ -681,7 +683,7 @@ json_object *feature_json(const char *d) {
                            json_object_new_boolean(data_valid));
     json_build_object_add(o, "clock_valid", json_object_new_boolean(clock_ok));
     json_build_object_add(o, "automatic_on",
-                           json_object_new_boolean(automatic_on));
+                           json_object_new_boolean(effective_on));
     number(o, "automatic_speed", automatic_speed);
     json_object *a = json_object_new_array();
     for (unsigned i = 0; i < c->peer_count; i++) {
@@ -813,12 +815,7 @@ int feature_set(const char *d, json_object *o, json_object **response) {
     code = 400;
     goto end;
   }
-#ifdef FEATURE_DEVICE_A1
-  if (!strcmp(d, "linkage") && c->linkage.enabled && !data_bound()) {
-    code = 409;
-    goto end;
-  }
-#endif
+
   if (!strcmp(d, "binding")) {
     feature_config_t *old = malloc(sizeof(*old));
     if (!old) {
@@ -864,6 +861,7 @@ end:
 void feature_manual_fan(bool on) {
   lock();
   automatic_valid = false;
+  memset(&pid,0,sizeof(pid));
   schedule_valid = false;
   if (on)
     configuration.scheduled_off = 0;
@@ -885,18 +883,73 @@ void feature_manual_fan(bool on) {
 void feature_effective_fan(bool requested_on, unsigned requested_speed,
                            bool *on, unsigned *speed) {
   lock();
-  *on = automatic_valid  ? automatic_on
-        : schedule_valid ? scheduled_on
-                         : requested_on;
-
-  *speed = automatic_valid  ? automatic_speed
-           : schedule_valid ? scheduled_speed
-                            : requested_speed;
-  if (sleep_state.fan_sleep && *speed > sleep_state.max_speed)
+  *on = requested_on;
+  *speed = requested_on ? requested_speed : 0;
+#ifdef FEATURE_DEVICE_A1
+  if (configuration.linkage.enabled && requested_on) {
+    feature_linkage_t policy = configuration.linkage;
+    unsigned fallback = configuration.automatic.fallback_speed;
+    if (automatic_night >= 0 && (unsigned)automatic_night < configuration.sleep_count) {
+      policy.min_speed = configuration.automatic.night[automatic_night].min_speed;
+      policy.max_speed = configuration.sleeps[automatic_night].max_speed;
+      fallback = configuration.automatic.night[automatic_night].fallback_speed;
+    }
+    if (!automatic_valid) {
+      if (data_valid) {
+        bool ignored;
+        feature_control(&policy, &pid, aggregate, now_ms(), true,
+                        automatic_speed, &ignored, &automatic_speed);
+      } else automatic_speed = (unsigned)clip(fallback, policy.min_speed, policy.max_speed);
+      automatic_valid = true;
+    }
+    *speed = (unsigned)clip(automatic_speed,policy.min_speed,policy.max_speed);
+  } else
+#endif
+  if (requested_on && sleep_state.fan_sleep && *speed > sleep_state.max_speed)
     *speed = sleep_state.max_speed;
-  automatic_speed = *speed;
+  if (!requested_on) *speed = 0;
+  automatic_on = *on;
   effective_on = *on;
   unlock();
+}
+bool feature_fan_auto(void) {
+  lock(); bool automatic = configuration.linkage.enabled; unlock(); return automatic;
+}
+unsigned feature_fan_limit(void) {
+  lock(); unsigned value = automatic_night >= 0 && (unsigned)automatic_night < configuration.sleep_count
+    ? configuration.sleeps[automatic_night].max_speed : configuration.linkage.max_speed;
+  unlock(); return value;
+}
+int feature_fan_command(json_object *o) {
+  feature_config_t *c = malloc(sizeof(*c)); if (!c) return 0;
+  feature_config_get(c);
+  bool automatic = c->linkage.enabled;
+  json_object *mode = json_object_object_get(o,"mode");
+  if (mode) {
+    if (!json_object_is_type(mode,json_type_string)) {free(c);return 0;}
+    const char *v=json_object_get_string(mode);
+    if (!strcmp(v,"auto")) automatic=true;
+    else if (!strcmp(v,"manual")) automatic=false;
+    else {free(c);return 0;}
+  }
+  bool changed = automatic != (bool)c->linkage.enabled;
+  c->linkage.enabled = automatic;
+  json_object *speed=json_object_object_get(o,"speed");
+  if (automatic && speed && json_object_get_int(speed)>0) {
+    unsigned maximum=json_object_get_int(speed);
+    lock(); int night=automatic_night; unlock();
+    if (night>=0 && (unsigned)night<c->sleep_count) {
+      changed |= c->sleeps[night].max_speed != maximum;
+      c->sleeps[night].max_speed=maximum;
+      if(c->automatic.night[night].min_speed>maximum) c->automatic.night[night].min_speed=maximum;
+    } else {
+      changed |= c->linkage.max_speed != maximum;
+      c->linkage.max_speed=maximum;
+      if(c->linkage.min_speed>maximum) c->linkage.min_speed=maximum;
+    }
+  }
+  bool ok=!changed || install_config(c);
+  free(c);return ok?(automatic?2:1):0;
 }
 unsigned feature_light_cap(unsigned brightness) {
   lock();
@@ -1192,8 +1245,7 @@ static void feature_worker(mico_thread_arg_t arg) {
 #ifdef FEATURE_DEVICE_A1
     a1_state_t state;
     a1_state_get(&state);
-    a1_config_t basecfg;
-    a1_config_get(&basecfg);
+
 #else
     m1_state_t state;
     m1_state_get(&state);
@@ -1213,9 +1265,23 @@ static void feature_worker(mico_thread_arg_t arg) {
     /* Local night windows apply on both products, independent of linkage. */
     mico_utc_time_ms_t local_utc = 0;
     if (clock_ok && mico_time_get_utc_time_ms(&local_utc) == kNoErr && local_utc / 1000 >= 1577836800) {
-      uint64_t local_time = local_utc / 1000 + c->timezone_minutes * 60;
+      int64_t local_time = (int64_t)(local_utc / 1000) + c->timezone_minutes * 60;
       unsigned local_day = (local_time / 86400 + 3) % 7;
-      lock(); sleep_state = feature_sleep_at(c,local_day,(local_time / 60) % 1440); unlock();
+      unsigned minute = (local_time / 60) % 1440;
+      lock(); sleep_state = feature_sleep_at(c,local_day,minute);
+      int selected = -1;
+      for (unsigned i=0;i<c->sleep_count;i++) {
+        const feature_sleep_t *w = &c->sleeps[i];
+        bool active = w->start < w->end ? ((w->days & (1u<<local_day)) && minute>=w->start && minute<w->end)
+          : ((w->days & (1u<<local_day)) && minute>=w->start) || ((w->days & (1u<<((local_day+6)%7))) && minute<w->end);
+        if (w->fan && active) selected = i;
+      }
+      if (automatic_night != selected) { automatic_night=selected; automatic_valid=false; memset(&pid,0,sizeof(pid)); }
+      unlock();
+    } else {
+      lock(); sleep_state = (feature_sleep_state_t){false,false,false,100,255};
+      if (automatic_night != -1) { automatic_night=-1; automatic_valid=false; memset(&pid,0,sizeof(pid)); }
+      unlock();
     }
 #ifdef FEATURE_DEVICE_A1
     if (state.mqtt_connected && (uint32_t)(now - announce_at) >= 5000) {
@@ -1329,36 +1395,12 @@ static void feature_worker(mico_thread_arg_t arg) {
       float v[4];
       unsigned n = feature_aggregate(current, c->peer_count, now,
                                      c->linkage.statistic, v, NULL);
-      bool on;
-      unsigned speed;
-      feature_effective_fan(basecfg.fan_on, basecfg.speed, &on, &speed);
-      mico_utc_time_ms_t utc = 0;
-      bool utc_valid =
-          mico_time_get_utc_time_ms(&utc) == kNoErr && utc / 1000 >= 1577836800;
-      if (clock_ok && utc_valid) {
-        int64_t local = (int64_t)(utc / 1000) + c->timezone_minutes * 60;
-        unsigned day = (local / 86400 + 3) % 7, minute = (local % 86400) / 60;
-        lock();
-        sleep_state = feature_sleep_at(c, day, minute);
-        unlock();
-      }
       lock();
       available = n;
       data_valid = n > 0;
-      if (n) {
-        memcpy(aggregate, v, sizeof(v));
-        bool nexton;
-        unsigned nextspeed;
-        if (feature_control(&c->linkage, &pid, v, now, on, speed, &nexton,
-                            &nextspeed)) {
-          if (!on && sleep_state.fan_sleep && sleep_state.block_start)
-            nexton = false;
-          automatic_on = nexton;
-          automatic_speed = nextspeed;
-          automatic_valid = c->linkage.enabled;
-        }
-      } else
-        memset(&pid, 0, sizeof(pid));
+      if (n) memcpy(aggregate,v,sizeof(v));
+      else memset(&pid,0,sizeof(pid));
+      automatic_valid = false;
       unlock();
     }
 #endif
@@ -1749,8 +1791,16 @@ static void discovery_virtual(int (*publish)(const char *, const char *, bool),
         if (i == 0) {
           mqtt_format(topic, sizeof(topic), "%s/command", root);
           js(o, "percentage_command_topic", topic);
+          js(o,"preset_mode_command_topic",topic);
+          js(o,"preset_mode_command_template","{\"action\":\"fan.mode.set\",\"params\":{\"mode\":{{ value | tojson }}}}");
+          mqtt_format(topic,sizeof(topic),"%s/fan/mode/state",root);
+          js(o,"preset_mode_state_topic",topic);
+          json_object *modes=json_object_new_array();
+          json_build_array_add(modes,json_object_new_string("auto"));
+          json_build_array_add(modes,json_object_new_string("manual"));
+          json_build_object_add(o,"preset_modes",modes);
           js(o,"command_template","{\"action\":\"fan.set\",\"params\":{\"on\":{{ 'true' if value == 'ON' else 'false' }}}}");
-          js(o,"percentage_command_template","{\"action\":\"fan.set\",\"params\":{\"speed\":{{ value | int }}}}");
+          js(o,"percentage_command_template","{\"action\":\"fan.set\",\"params\":{\"mode\":\"manual\",\"speed\":{{ value | int }}}}");
           mqtt_format(topic, sizeof(topic), "%s/fan/percentage/state", root);
           js(o, "percentage_state_topic", topic);
           number(o, "speed_range_min", 1);
@@ -1888,6 +1938,7 @@ static void virtual_service(int (*publish)(const char *, const char *, bool)) {
       } else
         strcpy(prefix, root);
       direct_leaf(publish, prefix, "fan/state", on ? "ON" : "OFF", true);
+      direct_leaf(publish,prefix,"fan/mode/state",feature_fan_auto()?"auto":"manual",true);
       char b[192];
       mqtt_format(b, sizeof(b), "%u", on ? speed : 0);
       direct_leaf(publish, prefix, "fan/percentage/state", b, true);

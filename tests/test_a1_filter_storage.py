@@ -23,6 +23,7 @@ static app_storage_t flash;
 uint32_t mico_rtos_get_time(void){return now;}
 static int flash_update(void *ctx){(void)ctx;writes++;if(fail_write)return -1;extern a1_config_t *a1_config;memcpy(&flash,a1_config,sizeof(flash));return 0;}
 #define mico_system_context_update flash_update
+bool feature_fan_auto(void){return false;}
 void feature_defaults(feature_config_t *c){memset(c,0,sizeof(*c));c->magic=FEATURE_MAGIC;}
 void automation_defaults(automation_config_t *c){memset(c,0,sizeof(*c));c->magic=AUTOMATION_MAGIC;c->next_id=1;}
 void service_event(const char *l,const char *m,const char *e){(void)l;(void)m;(void)e;}

@@ -451,7 +451,8 @@ int main(void) {
   effective_controls();
   transaction("linkage", "{\"target_pm\":0}", 400);
   transaction("linkage", "{\"kp\":true}", 400);
-  transaction("linkage", "{\"enabled\":1}", 409);
+  transaction("linkage", "{\"enabled\":1}", 200);
+  transaction("linkage", "{\"enabled\":0}", 200);
   transaction("linkage", "{\"kp\":30}", 200);
   transaction("light", "{\"segments\":5}", 400);
   transaction("light", "{\"segment\":[{\"minimum\":10,\"maximum\":5}]}", 400);

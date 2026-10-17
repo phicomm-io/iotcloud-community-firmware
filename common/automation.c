@@ -12,6 +12,7 @@ void automation_defaults(automation_config_t *c){memset(c,0,sizeof(*c));c->magic
 /* TC1 has no default custom key action. Fixed recovery is separate. */
 #elif defined(FEATURE_DEVICE_A1)
 c->buttons[0][0].kind=AUTO_FAN;c->buttons[0][0].value=2;
+c->buttons[0][1].kind=AUTO_FAN_MODE_TOGGLE;
 #endif
 }
 static void auto_init(void){if(!automation_ready)automation_ready=mico_rtos_init_mutex(&automation_lock)==kNoErr;}
@@ -19,12 +20,12 @@ static void auto_text(json_object *o,const char *k,const char *s){json_build_obj
 static bool auto_integer(json_object *o,const char *k,int *v,int lo,int hi){json_object *p=json_object_object_get(o,k);if(!p || !json_object_is_type(p,json_type_int))return false;*v=json_object_get_int(p);return *v>=lo && *v<=hi;}
 static bool auto_flag(json_object *o,const char *k,uint8_t *v){json_object *p=json_object_object_get(o,k);if(!p || !json_object_is_type(p,json_type_boolean))return false;*v=json_object_get_boolean(p);return true;}
 static bool auto_only(json_object *o,const char *allowed){json_object_object_foreach(o,k,v){char n[80];snprintf(n,sizeof(n),"|%s|",k);if(!v || !strstr(allowed,n))return false;}return true;}
-static const char *auto_names[]={"none","outlet.set","fan.set","light.set","child_lock.set","indicator.set","display.set","system.reboot","light_effect.select","filter.reset","light_always.set"};
+static const char *auto_names[]={"none","outlet.set","fan.set","light.set","child_lock.set","indicator.set","display.set","system.reboot","light_effect.select","filter.reset","light_always.set","fan.mode.set","fan.mode.toggle"};
 static bool auto_supported(unsigned k){
 #ifdef AUTOMATION_TC1
  return k==AUTO_NONE || k==AUTO_OUTLET || k==AUTO_CHILD_LOCK || k==AUTO_INDICATOR || k==AUTO_REBOOT;
 #elif defined(FEATURE_DEVICE_A1)
- return k==AUTO_NONE || k==AUTO_FAN || k==AUTO_LIGHT || k==AUTO_CHILD_LOCK || k==AUTO_REBOOT || k==AUTO_LIGHT_EFFECT || k==AUTO_FILTER_RESET || k==AUTO_LIGHT_ALWAYS;
+ return k==AUTO_NONE || k==AUTO_FAN || k==AUTO_LIGHT || k==AUTO_CHILD_LOCK || k==AUTO_REBOOT || k==AUTO_LIGHT_EFFECT || k==AUTO_FILTER_RESET || k==AUTO_LIGHT_ALWAYS || k==AUTO_FAN_MODE || k==AUTO_FAN_MODE_TOGGLE;
 #else
  return k==AUTO_NONE || k==AUTO_DISPLAY || k==AUTO_REBOOT;
 #endif
@@ -35,6 +36,8 @@ static bool auto_action_parse(json_object *o,automation_action_t *a,bool button)
  if(!strcmp(json_object_get_string(name),"light_effect.next")){if(!button || !auto_supported(AUTO_LIGHT_EFFECT) || !auto_only(p,""))return false;a->kind=AUTO_LIGHT_EFFECT;a->value=255;return true;}
  unsigned k;for(k=0;k<=AUTO_ACTION_MAX;k++)if(!strcmp(auto_names[k],json_object_get_string(name)))break;
  if(k>AUTO_ACTION_MAX || !auto_supported(k))return false;a->kind=k;int n=0;
+ if(k==AUTO_FAN_MODE_TOGGLE)return button && auto_only(p,"");
+ if(k==AUTO_FAN_MODE){json_object *m=json_object_object_get(p,"mode");if(!auto_only(p,"|mode|") || !m || !json_object_is_type(m,json_type_string))return false;const char *v=json_object_get_string(m);if(strcmp(v,"auto") && strcmp(v,"manual"))return false;a->value=!strcmp(v,"auto");return true;}
  if(k==AUTO_NONE || k==AUTO_REBOOT || k==AUTO_FILTER_RESET)return (k!=AUTO_FILTER_RESET || button) && auto_only(p,"");
  if(k==AUTO_LIGHT_EFFECT){if(!button || !auto_only(p,"|effect|") || !auto_integer(p,"effect",&n,0,4))return false;a->value=n;return true;}
  if(k==AUTO_FAN || k==AUTO_OUTLET){
@@ -60,7 +63,8 @@ static bool auto_action_parse(json_object *o,automation_action_t *a,bool button)
 }
 static json_object *auto_action_json(const automation_action_t *a){
  json_object *o=json_object_new_object(),*p=json_object_new_object();unsigned k=a->kind<=AUTO_ACTION_MAX?a->kind:0;auto_text(o,"action",k==AUTO_LIGHT_EFFECT && a->value==255?"light_effect.next":auto_names[k]);
- if(k==AUTO_OUTLET || k==AUTO_FAN){
+ if(k==AUTO_FAN_MODE)auto_text(p,"mode",a->value?"auto":"manual");
+ else if(k==AUTO_OUTLET || k==AUTO_FAN){
   if(a->value==2)json_build_object_add(p,"toggle",json_object_new_boolean(true));else json_build_object_add(p,"on",json_object_new_boolean(a->value));
   if(k==AUTO_OUTLET && a->target<6)json_build_object_add(p,"index",json_object_new_int(a->target));if(k==AUTO_FAN && a->speed)json_build_object_add(p,"speed",json_object_new_int(a->speed));
  }else if(k==AUTO_DISPLAY)json_build_object_add(p,"brightness",json_object_new_int(a->value));
