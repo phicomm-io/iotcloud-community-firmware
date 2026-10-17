@@ -124,16 +124,16 @@ static void topic(json_object *o, const char *key, const char *suffix)
 /* Keep this frame visible to the production MQTT stack-budget check. */
 static __attribute__((noinline)) int filter_discovery(const a1_config_t *c, bool clear)
 {
-    static const char *keys[] = {"filter_remaining", "filter_used", "filter_replacement", "filter_lifetime", "filter_reset"};
-    static const char *components[] = {"sensor", "sensor", "binary_sensor", "number", "button"};
-    static const char *names[] = {"滤芯剩余寿命", "滤芯使用时间", "滤芯更换提醒", "滤芯额定寿命", "更换滤芯后重置"};
+    static const char *keys[] = {"filter_remaining", "filter_used", "filter_replacement", "filter_lifetime", "filter_reset", "fan_mode"};
+    static const char *components[] = {"sensor", "sensor", "binary_sensor", "number", "button", "select"};
+    static const char *names[] = {"滤芯剩余寿命", "滤芯使用时间", "滤芯更换提醒", "滤芯额定寿命", "更换滤芯后重置", "运行模式"};
     bool bound = feature_bound(), grouped = false;
     /* MQTT-owner scratch: PUBACK waiting can dispatch nested commands. */
     static char parent_id[192], parent_name[FEATURE_TOPIC_MAX];
     if (!clear && bound && !feature_ha_device(parent_id, sizeof(parent_id),
                                              parent_name, sizeof(parent_name), &grouped))
         return MQTT_FAILURE;
-    for (unsigned i = 0; i < 5; ++i) {
+    for (unsigned i = 0; i < 6; ++i) {
         static char path[MQTT_TOPIC_MAX], identity[MQTT_TOPIC_MAX];
         mqtt_ha(&account, components[i], keys[i], path, sizeof(path));
         /* Wear belongs to this physical A1 even when fan control is grouped. */
@@ -157,12 +157,12 @@ static __attribute__((noinline)) int filter_discovery(const a1_config_t *c, bool
             str(o, "name", label);
         } else str(o, "name", names[i]);
         mqtt_identity(&account, keys[i], identity, sizeof(identity)); str(o, "unique_id", identity);
-        str(o, "availability_topic", availability_topic); str(o, "icon", "mdi:air-filter");
-        str(o, "entity_category", i < 3 ? "diagnostic" : "config");
+        str(o, "availability_topic", availability_topic); str(o, "icon", i == 5 ? "mdi:fan-auto" : "mdi:air-filter");
+        if (i < 5) str(o, "entity_category", i < 3 ? "diagnostic" : "config");
         json_build_object_add(o, "retain", json_object_new_boolean(false));
         topic(o, "json_attributes_topic", "state");
         str(o, "json_attributes_template", "{{ {\"ip\": value_json.ip, \"firmware\": value_json.version, \"config_dirty\": value_json.config_dirty} | tojson }}");
-        if (i < 4) topic(o, "state_topic", "state");
+        if (i < 4 || i == 5) topic(o, "state_topic", "state");
         if (i == 0) {
             str(o, "value_template", "{{ value_json.filter.remaining_percent }}");
             str(o, "unit_of_measurement", "%"); str(o, "state_class", "measurement");
@@ -180,9 +180,17 @@ static __attribute__((noinline)) int filter_discovery(const a1_config_t *c, bool
             json_build_object_add(o, "min", json_object_new_int(1));
             json_build_object_add(o, "max", json_object_new_int(A1_FILTER_MAX_HOURS));
             json_build_object_add(o, "step", json_object_new_int(1));
-        } else {
+        } else if (i == 4) {
             topic(o, "command_topic", "command");
             str(o, "payload_press", "{\"action\":\"filter.reset\",\"params\":{}}");
+        } else {
+            topic(o, "command_topic", "command");
+            str(o, "value_template", "{{ '自动' if value_json.fan_mode == 'auto' else '手动' }}");
+            str(o, "command_template", "{\"action\":\"fan.mode.set\",\"params\":{\"mode\":\"{{ 'auto' if value == '自动' else 'manual' }}\"}}");
+            json_object *options = json_object_new_array();
+            json_build_array_add(options, json_object_new_string("自动"));
+            json_build_array_add(options, json_object_new_string("手动"));
+            json_build_object_add(o, "options", options);
         }
         int rc = publish(path, json_object_to_json_string(o), true); json_object_put(o);
         if (rc != MQTT_SUCCESS) return rc;

@@ -73,8 +73,19 @@ def main(port):
             return configs[-1] if configs else None
         config=wait(fan_config)
         assert config['preset_modes']==['auto','manual'] and config['preset_mode_state_topic']==base+'/fan/mode/state'
+        # HA also exposes a normal select entity, visible without opening fan details.
+        select_config=wait(lambda:next((json.loads(p) for t,p,r in reversed(records)
+            if t.startswith('homeassistant/select/') and p and json.loads(p).get('command_topic')==base+'/command'),None))
+        assert select_config['options']==['自动','手动']
+        assert 'entity_category' not in select_config
         call(a,'fan.set',{'on':False})
         env=Environment(undefined=StrictUndefined)
+        for label,mode in [('手动','manual'),('自动','auto')]:
+            wire=env.from_string(select_config['command_template']).render(value=label)
+            assert json.loads(wire)=={'action':'fan.mode.set','params':{'mode':mode}}
+            publish(base+'/command',wire);wait(lambda:state()['fan_mode']==mode)
+            assert not state()['fan_on']
+            assert env.from_string(select_config['value_template']).render(value_json=state())==label
         for mode in ('manual','auto'):
             wire=env.from_string(config['preset_mode_command_template']).render(value=mode)
             assert json.loads(wire)=={'action':'fan.mode.set','params':{'mode':mode}}
