@@ -19,6 +19,8 @@ Configure minimum, maximum and sensor-offline speeds. A minimum of **0%** allows
 
 Each night window independently overrides minimum, maximum and offline speeds while sharing the daytime algorithm. The last matching fan window wins in auto mode; manual speed remains capped by night limits. Before clock synchronization the daytime settings apply.
 
+The management platform’s **Automatic speed settings** button and automatic-control card heading both open the settings. A loading message appears while reading; failed reads can be retried. The A1 device in Home Assistant has an independent **运行模式** (operating mode) selector: **自动** (auto) and **手动** (manual) preserve the power state. Fan details also provide preset modes. HomeKit Bridge synchronizes the fan’s auto/manual presets. If Apple Home still shows old controls after upgrading, reload HomeKit Bridge in HA and reopen Apple Home.
+
 ## Estimated filter life
 
 The home page shows remaining life and accumulated fan running hours. Standby and stopped time do not count; manual, scheduled, night and automatic operation all count equally, regardless of speed. The default estimate is **4320 hours** (180 days continuously). Expand “Adjust rated lifetime” to set 1–20000 hours according to your filter specification; changing this value preserves accumulated usage. Filter condition and air quality also affect when replacement is needed.
