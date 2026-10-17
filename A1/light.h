@@ -9,12 +9,15 @@ typedef struct {
 } a1_key_light_t;
 
 static inline void a1_key_light_start(a1_key_light_t *feedback, unsigned key,
-                                     bool locked, bool hold, uint32_t now)
+                                     bool locked, bool powered, bool hold, uint32_t now)
 {
+    /* An unlocked power press while running belongs to the mode/airflow
+     * display. Only a press from off gets the generic green confirmation. */
+    if (key == 0 && powered && !locked) { feedback->active = false; return; }
     feedback->started = now;
     feedback->duration = hold ? 160 : 300;
     /* Shared packed format is GGRRBB: power green, Wi-Fi blue, locked red. */
-    feedback->color = locked ? 0x00ff00u : key == 0 ? 0xff0000u : 0x0000ffu;
+    feedback->color = locked ? 0x00ff00u : key == 1 ? 0x0000ffu : 0xff0000u;
     feedback->active = true;
 }
 

@@ -157,7 +157,7 @@ static bool panel_tick(uint32_t now, uint8_t *last_key, uint8_t *last_slider,
             mico_rtos_lock_mutex(&a1_config_lock);
             bool locked = a1_config->child_lock;
             mico_rtos_unlock_mutex(&a1_config_lock);
-            a1_key_light_start(&key_light, i == 2 ? 0 : i, locked, !pressed, now);
+            a1_key_light_start(&key_light, i, locked, cfg.fan_on, !pressed, now);
             mico_rtos_lock_mutex(&a1_lock);
             a1_state.fan_feedback_until = 0;
             mico_rtos_unlock_mutex(&a1_lock);
