@@ -32,6 +32,7 @@ static bool scoped_topic(const char *topic) {
 static feature_config_t configuration;
 static feature_sample_t samples[8], local_sample;
 static feature_pid_t pid;
+static void reset_controller(bool preserve_gate);
 static uint32_t boot_id, serial, announce_at, handshake_at;
 static unsigned handshake_cursor;
 #ifdef FEATURE_DEVICE_A1
@@ -341,10 +342,12 @@ static bool install_config(feature_config_t *c) {
     memset(peers, 0, sizeof(peers));
   }
   group_config_changed(&configuration, c);
+  bool preserve_gate = configuration.linkage.enabled && c->linkage.enabled &&
+                       configuration.linkage.hysteresis_enabled && c->linkage.hysteresis_enabled;
   configuration = *c;
   automatic_immediate = true;
   automatic_valid = false;
-  memset(&pid, 0, sizeof(pid));
+  reset_controller(preserve_gate);
   unlock();
   free(next);
   return true;
@@ -861,11 +864,24 @@ end:
   free(c);
   return code;
 }
+/* Reinitialize PID math without erasing the hysteresis latch or dwell time
+ * when a limit, night profile, or unrelated setting changes. */
+static void reset_controller(bool preserve_gate) {
+  feature_pid_t old = pid;
+  memset(&pid, 0, sizeof(pid));
+  if (preserve_gate) {
+    pid.gate_running = old.gate_running;
+    pid.switched = old.switched;
+    pid.switch_ms = old.switch_ms;
+    pid.condition = old.condition;
+    pid.condition_since = old.condition_since;
+  }
+}
 void feature_manual_fan(bool on) {
   lock();
   automatic_valid = false;
   automatic_immediate = true;
-  memset(&pid,0,sizeof(pid));
+  reset_controller(on && configuration.linkage.enabled && configuration.linkage.hysteresis_enabled);
   schedule_valid = false;
   if (on)
     configuration.scheduled_off = 0;
@@ -901,19 +917,25 @@ void feature_effective_fan(bool requested_on, unsigned requested_speed,
     if (!automatic_valid) {
       if (data_valid) {
         bool ignored;
-        if (automatic_immediate) policy.debounce_seconds=policy.min_switch_seconds=0;
+        if (automatic_immediate && !policy.hysteresis_enabled) policy.debounce_seconds=policy.min_switch_seconds=0;
         feature_control(&policy, &pid, aggregate, now_ms(), true,
                         automatic_speed, &ignored, &automatic_speed);
       } else automatic_speed = (unsigned)clip(fallback, policy.min_speed, policy.max_speed);
       automatic_valid = true;
       automatic_immediate = false;
     }
-    *speed = (unsigned)clip(automatic_speed,policy.min_speed,policy.max_speed);
+    *speed = policy.hysteresis_enabled && data_valid && !pid.gate_running ? 0 :
+             (unsigned)clip(automatic_speed,policy.min_speed,policy.max_speed);
   } else
 #endif
   if (requested_on && sleep_state.fan_sleep && *speed > sleep_state.max_speed)
     *speed = sleep_state.max_speed;
-  if (!requested_on) *speed = 0;
+  if (!requested_on) {
+    *speed = 0;
+    reset_controller(false);
+    automatic_valid = false;
+    automatic_speed = 0;
+  }
   effective_speed = *speed;
   automatic_on = *on;
   effective_on = *on;
@@ -1283,11 +1305,11 @@ static void feature_worker(mico_thread_arg_t arg) {
           : ((w->days & (1u<<local_day)) && minute>=w->start) || ((w->days & (1u<<((local_day+6)%7))) && minute<w->end);
         if (w->fan && active) selected = i;
       }
-      if (automatic_night != selected) { automatic_night=selected; automatic_immediate=true; automatic_valid=false; memset(&pid,0,sizeof(pid)); }
+      if (automatic_night != selected) { automatic_night=selected; automatic_immediate=true; automatic_valid=false; reset_controller(configuration.linkage.hysteresis_enabled); }
       unlock();
     } else {
       lock(); sleep_state = (feature_sleep_state_t){false,false,false,100,255};
-      if (automatic_night != -1) { automatic_night=-1; automatic_immediate=true; automatic_valid=false; memset(&pid,0,sizeof(pid)); }
+      if (automatic_night != -1) { automatic_night=-1; automatic_immediate=true; automatic_valid=false; reset_controller(configuration.linkage.hysteresis_enabled); }
       unlock();
     }
 #ifdef FEATURE_DEVICE_A1
@@ -1406,7 +1428,7 @@ static void feature_worker(mico_thread_arg_t arg) {
       available = n;
       data_valid = n > 0;
       if (n) memcpy(aggregate,v,sizeof(v));
-      else memset(&pid,0,sizeof(pid));
+      else { reset_controller(configuration.linkage.hysteresis_enabled); pid.condition=0; }
       automatic_valid = false;
       unlock();
     }

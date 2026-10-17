@@ -79,6 +79,63 @@ static void idle_control(void) {
   memset(&p,0,sizeof(p));
   feature_control(&c.linkage,&p,v,1000,true,0,&on,&speed);assert(isfinite(p.integral) && fabsf(p.integral)<1000);
 }
+static void hysteresis(void) {
+  feature_config_t c; feature_defaults(&c);
+  c.linkage.enabled=1; c.linkage.hysteresis_enabled=1;
+  c.linkage.on_pm=50; c.linkage.target_pm=35;
+  c.linkage.min_speed=20; c.linkage.max_speed=70;
+  c.linkage.fixed_speed=57; c.linkage.debounce_seconds=5;
+  c.linkage.min_switch_seconds=10;
+  float v[4]={22,45,40,.09f}; bool on; unsigned speed;
+  for (unsigned mode=0; mode<3; mode++) {
+    c.linkage.mode=mode; feature_pid_t p={0};
+    feature_control(&c.linkage,&p,v,1000,true,60,&on,&speed);
+    assert(on && speed==0); /* Boot inside band: wait for start threshold. */
+    v[2]=50;
+    feature_control(&c.linkage,&p,v,2000,true,0,&on,&speed); assert(speed==0);
+    v[2]=49;
+    feature_control(&c.linkage,&p,v,6000,true,0,&on,&speed); assert(speed==0);
+    v[2]=50;
+    feature_control(&c.linkage,&p,v,7000,true,0,&on,&speed); assert(speed==0);
+    feature_control(&c.linkage,&p,v,12000,true,0,&on,&speed);
+    assert(on && speed>=20 && speed<=70 && p.gate_running);
+    unsigned running=speed;
+    v[2]=40;
+    feature_control(&c.linkage,&p,v,13000,true,running,&on,&speed);
+    assert(speed>=20 && p.gate_running);
+    v[2]=35;
+    feature_control(&c.linkage,&p,v,14000,true,speed,&on,&speed);
+    feature_control(&c.linkage,&p,v,19000,true,speed,&on,&speed);
+    assert(speed>=20); /* Minimum run time still active. */
+    feature_control(&c.linkage,&p,v,22000,true,speed,&on,&speed);
+    assert(on && speed==0 && !p.gate_running && !p.initialized);
+    v[2]=50;
+    feature_control(&c.linkage,&p,v,23000,true,0,&on,&speed);
+    feature_control(&c.linkage,&p,v,28000,true,0,&on,&speed); assert(speed==0);
+    feature_control(&c.linkage,&p,v,32000,true,0,&on,&speed); assert(speed>=20);
+    feature_control(&c.linkage,&p,v,33000,false,speed,&on,&speed);
+    assert(!on && speed==0 && !p.gate_running);
+    v[2]=40;
+  }
+  feature_pid_t p={0}; c.linkage.metrics=3; c.linkage.mode=0;
+  c.linkage.debounce_seconds=c.linkage.min_switch_seconds=0;
+  c.linkage.on_hcho=.1f; c.linkage.target_hcho=.08f;
+  v[2]=40; v[3]=.1f;
+  feature_control(&c.linkage,&p,v,1000,true,0,&on,&speed); assert(speed==57);
+  v[2]=35; v[3]=.09f;
+  feature_control(&c.linkage,&p,v,2000,true,speed,&on,&speed); assert(speed==57);
+  v[3]=.08f;
+  feature_control(&c.linkage,&p,v,3000,true,speed,&on,&speed); assert(on && speed==0);
+  /* A zero inner demand cannot bypass the outer running latch. */
+  c.linkage.mode=1; c.linkage.min_speed=0; c.linkage.low_pm=200;
+  c.linkage.high_pm=300; v[2]=50;
+  feature_control(&c.linkage,&p,v,4000,true,0,&on,&speed); assert(speed==1);
+  /* Unsigned timers remain valid across the millisecond counter rollover. */
+  memset(&p,0,sizeof(p)); c.linkage.debounce_seconds=5;
+  feature_control(&c.linkage,&p,v,UINT32_MAX-2000,true,0,&on,&speed); assert(speed==0);
+  feature_control(&c.linkage,&p,v,3000,true,0,&on,&speed); assert(speed==1);
+  puts("hysteresis: all algorithms, boundaries, cancellation, dwell, multi-metric, power and rollover passed");
+}
 static void schedules(void) {
   feature_config_t c;
   feature_defaults(&c);
@@ -133,6 +190,7 @@ int main(void) {
   statistics();
   controls();
   idle_control();
+  hysteresis();
   schedules();
   lights();
   puts("engine scenarios passed");
