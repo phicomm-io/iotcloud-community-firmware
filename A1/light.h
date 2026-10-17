@@ -46,6 +46,12 @@ typedef struct {
     bool initialized, automatic, active;
 } a1_mode_light_t;
 
+/* Packed GGRRBB, shared by mode confirmation and the current airflow bar. */
+static inline uint32_t a1_mode_color(bool automatic)
+{
+    return automatic ? 0xa000ffu : 0x6eff00u;
+}
+
 /* Auto: two cyan pulses. Manual: one warm amber pulse. Observe both the
  * committed mode and explicit selections (including selecting it again).
  * Booting into a saved mode is silent. All state belongs to the LED worker.
@@ -69,8 +75,9 @@ static inline bool a1_mode_light_frame(a1_mode_light_t *feedback,
     unsigned level = phase >= width ? 0 :
         (phase <= width / 2 ? phase : width - phase) * 255 / (width / 2);
     level = level * brightness / 255;
-    unsigned g = automatic ? 160 : 110, r = automatic ? 0 : 255;
-    unsigned b = automatic ? 255 : 0;
+    uint32_t base = a1_mode_color(automatic);
+    unsigned g = (base >> 16) & 255, r = (base >> 8) & 255;
+    unsigned b = base & 255;
     uint32_t color = ((g * level / 255) << 16) |
         ((r * level / 255) << 8) | (b * level / 255);
     for (unsigned i = 0; i < A1_RING_POSITIONS; i++) colors[i] = color;

@@ -12,7 +12,7 @@
 #define A1_VERSION FIRMWARE_VERSION
 #define A1_PRODUCT "PHICOMM_A1_EMW3080"
 #define A1_CONFIG_MAGIC 0x41314346u
-#define A1_CONFIG_VERSION 7u
+#define A1_CONFIG_VERSION 8u
 #define A1_APP_OFFSET 0x75000u
 #define A1_APP_CPU_ADDRESS 0x08088000u
 #define A1_APP_LIMIT 0x40000u
@@ -33,6 +33,7 @@ typedef struct {
 
 typedef struct {
     uint32_t config_generation, reboot_at, led_until, fan_feedback_until;
+    uint32_t panel_feedback_until; /* Power-key status overlay; RAM only. */
     uint32_t mode_feedback_revision; /* Accepted explicit mode selections; RAM only. */
     uint32_t panel_errors, hardware_errors, mqtt_errors;
     char mqtt_last_error[96];
@@ -70,6 +71,7 @@ bool a1_upgrade_reserve(void);
 json_object *a1_json_parse(const char *, size_t);
 bool a1_control_json(const char *kind, json_object *object);
 void a1_panel_event(bool toggle, int delta);
+bool a1_panel_inspect(void);
 void a1_request_ap(void);
 OSStatus a1_hardware_start(void);
 OSStatus a1_network_start(void);

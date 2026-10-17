@@ -13,6 +13,24 @@ typedef struct {
     feature_auto_config_t automatic;
 } app_storage_t;
 
+/* Only replace the previous default power toggle, never a custom action.
+ * Empty hold slots get power-off defaults; explicit hold mappings survive. */
+static inline void a1_storage_panel_buttons_migrate(app_storage_t *s)
+{
+    if (s->automation.magic != AUTOMATION_MAGIC) return;
+    automation_action_t *short_press = &s->automation.buttons[0][0];
+    automation_action_t old = {0}; old.kind = AUTO_FAN; old.value = 2;
+    old.target = short_press->target; /* Factory default 0; saved UI toggle 255. */
+    if ((old.target != 0 && old.target != 255) || memcmp(short_press, &old, sizeof(old))) return;
+    memset(short_press, 0, sizeof(*short_press)); short_press->kind = AUTO_FAN_PANEL;
+    for (unsigned i = 30; i < 34; i++) {
+        automation_action_t *hold = &s->automation.buttons[0][i];
+        if (hold->kind != AUTO_NONE) continue;
+        memset(hold, 0, sizeof(*hold)); hold->kind = AUTO_FAN; hold->target = 255;
+    }
+    ++s->automation.revision;
+}
+
 /* These copies intentionally skip the filter between the retained key maps
  * and the appended combination map. Caller holds the configuration mutex. */
 static inline void a1_storage_automation_get(const app_storage_t *s, automation_config_t *out)

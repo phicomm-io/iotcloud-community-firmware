@@ -251,6 +251,13 @@ static void hardware_worker(mico_thread_arg_t arg)
                 ((uint32_t)(cfg.red * brightness / 255) << 8) | (cfg.blue * brightness / 255);
             a1_fan_frame(colors, cfg.fan_on ? (feature_fan_auto()?feature_fan_limit():cfg.speed) : 0, color);
         }
+        /* Short power press: actual applied airflow, never the auto ceiling or
+         * remembered manual speed. The mode pulse below comes first (1.2 s),
+         * then this bar remains for 3 s, including an empty bar while idle. */
+        if ((int32_t)(state.panel_feedback_until - now) > 0)
+            a1_ring_feedback(colors, state.applied_speed,
+                feature_light_cap(cfg.brightness ? cfg.brightness : 64),
+                a1_mode_color(feature_fan_auto()));
         /* Interaction feedback can briefly wake a disabled business light.
          * Night mode still caps it; configured LED state stays untouched. */
         a1_key_light_frame(&key_light, now,

@@ -37,5 +37,16 @@ int main(void)
     assert(frame[31] == 0);
     a1_ring_feedback(frame, 0, 255, 0xffffff);
     for (unsigned i = 0; i < 32; i++) assert(frame[i] == 0);
+    /* Inspection colors share mode confirmations; zero actual airflow is dark. */
+    for (unsigned mode = 0; mode < 2; mode++) {
+        uint32_t color = a1_mode_color(mode);
+        a1_ring_feedback(frame, 0, 255, color);
+        for (unsigned i = 0; i < 32; i++) assert(!frame[i]);
+        a1_ring_feedback(frame, 50, 255, color);
+        assert(frame[11] == color && !frame[27] && !frame[31]);
+        a1_ring_feedback(frame, 100, 0, color);
+        for (unsigned i = 0; i < 32; i++) assert(!frame[i]);
+    }
+    assert(a1_mode_color(true) != a1_mode_color(false));
     puts("A1 speed ring matches original touch origin, growth, brightness and boundaries");
 }

@@ -51,7 +51,20 @@ A1 computes the arithmetic mean of bound M1 readings no older than 15 seconds. W
 
 ## Buttons
 
-A1 has a power button and a Wi-Fi button. By default, a single power-button click toggles power and a double click toggles auto/manual mode. Upgrades preserve existing custom double-click actions; these can be reassigned in button settings. In **Settings → Automation → Button events**, select power, Wi-Fi or both buttons, then choose a gesture and action. A combination requires both buttons to overlap; it cancels the single-button gestures for that interaction. Releasing the buttons at different times does not trigger Wi-Fi recovery.
+A1 has a power button and a Wi-Fi button. The default power-button actions are:
+
+| Gesture | Action |
+| --- | --- |
+| Single click while off | Power on, keeping the selected auto/manual mode |
+| Single click while on | Show the current mode and airflow, keeping power on |
+| Double click | Toggle auto/manual mode, keeping the power state |
+| Hold for 1–4 seconds, then release | Power off |
+
+When showing status, the ring first confirms the mode with **two cyan pulses for auto or one warm amber pulse for manual**. After about 1.2 seconds, a speed bar in the same color shows actual airflow for about 3 seconds. Auto idle has zero airflow, so the bar is dark after the mode confirmation. The bar shows actual airflow rather than the automatic ceiling or remembered manual speed. The normal effect resumes afterward. Feedback can briefly wake disabled normal lighting and still obeys the night brightness limit. Inspection leaves mode, speed and lighting settings unchanged and is blocked by child lock.
+
+Upgrades replace the previous default single-click power toggle with “Power on / show current mode and airflow” and assign power-off to empty power-button hold slots. Existing custom single, double, hold and combination actions are preserved and can be reassigned in button settings.
+
+ In **Settings → Automation → Button events**, select power, Wi-Fi or both buttons, then choose a gesture and action. A combination requires both buttons to overlap; it cancels the single-button gestures for that interaction. Releasing the buttons at different times does not trigger Wi-Fi recovery.
 
 Custom mappings support 1–30 clicks, executed after the click interval, and 1–4 second long presses, executed on release. Five seconds and above are reserved. Actions include cycling or selecting a light effect, resetting filter usage, fan power and speed, ring power and brightness, always-on lighting, child lock and reboot. Switch actions support on, off and toggle; ring toggles can preserve brightness. Identical consecutive mappings are folded in the UI.
 
