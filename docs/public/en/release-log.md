@@ -2,6 +2,15 @@
 
 English translation of the published release history. Historical validation statements apply to the release named in each section, not to later firmware. Release notes are authored in the Wiki and frozen into the source repository before tagging.
 
+## v0.9.10
+
+- Power-key presses while running no longer overlay green feedback on the mode/airflow display; green feedback is reserved for turning on from off.
+
+- The default A1 power key starts the purifier when off and shows mode and actual airflow when on. Hold for 1–4 seconds, then release to power off. Double-click still toggles auto/manual mode while keeping the power state.
+- Status feedback first confirms auto with two cyan pulses or manual with one warm amber pulse, then shows actual airflow with a speed bar in the same color. Auto idle shows zero airflow. The normal effect resumes afterward; child lock and night brightness limits apply.
+- Migrate previous default power-key mappings while preserving custom gestures and other settings. Local and management pages can assign “Power on / show current mode and airflow”.
+- Fix repeated automatic-control saves on the same page by updating the acknowledged configuration revision. Update Chinese and English guides and Wiki pages.
+
 ## v0.9.9
 
 - A1 adds an independent Chinese “Operating mode” selector in Home Assistant. Automatic/manual selection preserves power and continues to synchronize fan presets and HomeKit Bridge.

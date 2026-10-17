@@ -47,7 +47,7 @@ TC1、A1、M1 的离线页面统一由 [前端仓库](https://github.com/phicomm
 
 任务支持周循环和一次性触发。时间按配置时区；失去时钟有效性时不执行；错过的触发不补执行。动作依据各产品能力校验，重启类动作最后执行。公共日志为 64 条 RAM 环，重启不保留，不包含密码。
 
-A1 `capabilities.get.button_keys` 为 `power/wifi/combination`，对应 `buttons.set.key` 的 `0/1/2`。每键支持点击 1–30 次或长按 1–4 秒，共 102 个槽位；分页按返回的 `next/capacity` 继续。示例：`{"action":"buttons.set","params":{"key":2,"clicks":1,"action":"light_effect.next","params":{}}}`。`filter.reset` 同样使用空动作参数。A1 开关动作可用 `{toggle:true}`，`light.set` 可省略 brightness 保留亮度。灯效轮换、指定灯效及滤芯清零只用于按键事件。童锁阻止普通按键动作，但允许配置的童锁动作解锁；Wi-Fi 单键的 5/10 秒恢复手势独立保留。
+A1 `capabilities.get.button_keys` 为 `power/wifi/combination`，对应 `buttons.set.key` 的 `0/1/2`。每键支持点击 1–30 次或长按 1–4 秒，共 102 个槽位；分页按返回的 `next/capacity` 继续。示例：`{"action":"buttons.set","params":{"key":2,"clicks":1,"action":"light_effect.next","params":{}}}`。`filter.reset` 同样使用空动作参数。A1 默认电源单击使用 `fan.panel`（空参数）：关机时开机，开机时仅提示当前模式与实际风量；电源长按 1–4 秒默认 `fan.set` / `{on:false}`，松手执行。`fan.panel` 仅用于按键映射，不用于定时任务，受童锁与升级忙状态限制。A1 开关动作可用 `{toggle:true}`，`light.set` 可省略 brightness 保留亮度。灯效轮换、指定灯效及滤芯清零只用于按键事件。童锁阻止普通按键动作，但允许配置的童锁动作解锁；Wi-Fi 单键的 5/10 秒恢复手势独立保留。
 
 ## TC1 资源与兼容边界
 

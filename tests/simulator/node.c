@@ -127,6 +127,7 @@ int main(int argc,char **argv){if(argc!=6){fprintf(stderr,"node id ip broker por
  char *line=NULL;size_t capacity=0;while(getline(&line,&capacity,stdin)>0){json_object *q=service_parse(line,strlen(line));if(!q){puts("{}");fflush(stdout);continue;}json_object *press=json_object_object_get(q,"sim_button");
  if(press){automation_button(json_object_get_int(json_object_object_get(press,"key")),json_object_get_int(json_object_object_get(press,"clicks")),json_object_get_int(json_object_object_get(press,"seconds")));puts("{\"code\":\"ok\"}");}
 #ifdef HOST_A1
+ else if(json_object_object_get(q,"sim_panel_feedback")){a1_state_t s;a1_config_t c;a1_state_get(&s);a1_config_get(&c);printf("{\"code\":\"ok\",\"data\":{\"until\":%u,\"revision\":%u,\"config_revision\":%u}}\n",s.panel_feedback_until,s.mode_feedback_revision,c.revision);}
  else if(json_object_object_get(q,"sim_panel")){a1_panel_event(false,json_object_get_int(json_object_object_get(q,"sim_panel")));puts("{\"code\":\"ok\"}");}
  else if(json_object_object_get(q,"sim_filter_seconds")){BASE_LOCK();sim_filter.used_seconds=json_object_get_int(json_object_object_get(q,"sim_filter_seconds"));BASE_UNLOCK();puts("{\"code\":\"ok\"}");}
 #endif

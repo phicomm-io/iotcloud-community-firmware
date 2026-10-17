@@ -36,6 +36,35 @@ def main():
         raw({'sim_button': dict(key=key, clicks=clicks)})
 
     try:
+        # Factory power key: wake while off, inspect while on; no mode/speed/Flash changes.
+        command('fan.mode.set', {'mode': 'auto'}, 'accepted')
+        command('fan.set', {'on': False}, 'accepted')
+        press(0)
+        baseline = command('status.get')
+        assert baseline['requested_fan_on'] and baseline['fan_mode'] == 'auto'
+        feedback = raw({'sim_panel_feedback': True})
+        assert feedback['until'] > 0 and feedback['revision'] > 0
+        press(0)
+        assert raw({'sim_panel_feedback': True})['config_revision'] == feedback['config_revision']
+        inspected = command('status.get')
+        assert all(inspected[k] == baseline[k] for k in ('requested_fan_on','fan_mode','requested_speed'))
+        command('fan.panel', {'on': False}, 'invalid_params')
+        command('child_lock.set', {'enabled': True}, 'accepted')
+        feedback = raw({'sim_panel_feedback': True})
+        press(0)
+        assert raw({'sim_panel_feedback': True}) == feedback
+        command('child_lock.set', {'enabled': False}, 'accepted')
+        for seconds in range(1,5):
+            raw({'sim_button': dict(key=0,seconds=seconds)})
+            assert not command('status.get')['requested_fan_on']
+            assert raw({'sim_panel_feedback': True})['until'] == 0
+            # Double-click while off changes mode without turning power on.
+            mode = command('status.get')['fan_mode']
+            press(0,2)
+            off = command('status.get')
+            assert not off['requested_fan_on'] and off['fan_mode'] != mode
+            press(0)
+        command('fan.set', {'on': False}, 'accepted')
         caps = command('capabilities.get')
         assert caps['button_keys'] == ['power', 'wifi', 'combination']
         command('light_effect.set', {'effect': 4, 'segments': 3}, 'accepted')

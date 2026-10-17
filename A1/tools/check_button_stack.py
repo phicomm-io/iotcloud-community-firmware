@@ -25,6 +25,9 @@ def check(directory, header):
         'button status': common + ['service_query', 'a1_status_json'],
         'button control': common + ['service_product_inner', 'a1_control_local',
                                     'feature_group_control', 'group_send', 'parse'],
+        'button inspect / power on': common + ['service_product_inner',
+            'a1_panel_inspect', 'a1_control_json', 'a1_control_local',
+            'feature_group_control', 'group_send', 'parse'],
     }
     for label, names in paths.items():
         missing = set(names) - frames.keys()
