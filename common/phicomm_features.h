@@ -108,8 +108,6 @@ typedef struct {
   float co2;
   uint32_t co2_received_ms, co2_age_ms;
   bool co2_supported, co2_valid;
-  float scd40_temperature, scd40_humidity;
-  bool scd40_aux_supported, scd40_aux_valid;
 } feature_sample_t;
 typedef struct {
   float integral, previous, derivative;

@@ -66,12 +66,9 @@ def main(port):
         wait(lambda:available(entity)=='online')
         wait(lambda:sensor_payload(entity).get('co2')==1400)
         assert float(render(entity,'value_template',sensor_payload(entity)))==1400
-        aux=wait(lambda:[v for v in entities().values() if v.get('name','').startswith('SCD40 ')])
-        assert len(aux)==2
-        for e in aux:
-            assert available(e)=='online'
-            expected=24.5 if e['device_class']=='temperature' else 52.3
-            assert abs(float(render(e,'value_template',sensor_payload(e)))-expected)<.001
+        assert not [v for v in entities().values() if v.get('name','').startswith('SCD40 ')]
+        assert not any(k.startswith('scd40_') for k in avg())
+        assert not any(k.startswith('scd40_') for k in sensor_payload(entity))
 
         call(m,raw={'sim_co2':{'enabled':True,'ppm':2200}})
         wait(lambda:state()['percentage']==80)
@@ -91,8 +88,8 @@ def main(port):
         call(m,raw={'sim_co2':{'enabled':False}})
         wait(lambda:not avg()['co2_valid'],35)
         wait(lambda:available(entity)=='offline')
-        assert co2_entity() is not None and len([v for v in entities().values() if v.get('name','').startswith('SCD40 ')])==2
-        assert avg()['scd40_temperature'] is None and avg()['scd40_humidity'] is None
+        assert co2_entity() is not None
+        assert not any(k.startswith('scd40_') for k in avg())
         assert avg()['co2_supported'] and avg()['co2'] is None and avg()['valid']
         wait(lambda:state()['percentage']==23)
         call(a,'linkage.set',{'metrics':1,'hysteresis_enabled':0,'mode':1,'low_pm':10,'high_pm':110})

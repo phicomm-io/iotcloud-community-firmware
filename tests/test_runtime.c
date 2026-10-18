@@ -362,6 +362,7 @@ static unsigned named_discoveries;
 static char discovery_ids[8][192], discovery_topics[8][FEATURE_TOPIC_MAX];
 static bool compare_discovery_identity;
 static int capture_discovery_name(const char *topic, const char *body, bool retained) {
+  if(!*body) { assert(retained && strstr(topic,"scd40_")); return 0; }
   assert(retained && named_discoveries < 8);
   json_object *o = obj(body), *device = json_object_object_get(o, "device");
   assert(!strcmp(string(device, "name"), expected_device_name));
@@ -388,7 +389,7 @@ static bool remove_sensor_entities;
 static int capture_sensor_discovery(const char *topic, const char *body, bool retained) {
   assert(retained && strstr(topic,"homeassistant/"));
   if(remove_sensor_entities) { assert(!*body); sensor_entities++; return 0; }
-  assert(*body);
+  if(!*body) { assert(strstr(topic,"scd40_")); aux_entities++; return 0; }
   json_object *o=obj(body);
   if(!strcmp(string(o,"device_class"),"carbon_dioxide")) {
     assert(!strcmp(string(o,"unit_of_measurement"),"ppm"));
@@ -413,11 +414,10 @@ static void optional_sensor_discovery(void) {
   strcpy(config.peers[0].id,"020000dd0001"); strcpy(config.peers[1].id,"020000dd0002");
   configuration=config; memset(samples,0,sizeof(samples));
   samples[0].co2_supported=samples[1].co2_supported=true;
-  samples[0].scd40_aux_supported=true;
   char root[FEATURE_TOPIC_MAX];root_for(&config,0,root);
-  assert(discovery_sensors(&config)==(1u|2u|256u));
+  assert(discovery_sensors(&config)==(1u|2u));
   discovery_virtual(capture_sensor_discovery,&config,root,false);
-  assert(sensor_entities==23 && co2_entities==3 && aux_entities==4);
+  assert(sensor_entities==19 && co2_entities==3 && aux_entities==6);
   /* Freshness does not remove registered entities. Layout cleanup removes all optional IDs. */
   remove_sensor_entities=true; sensor_entities=0;
   discovery_virtual(capture_sensor_discovery,&config,root,true);
