@@ -47,7 +47,8 @@ static unsigned effective_speed;
 static bool automatic_immediate = true;
 
 static feature_sleep_state_t sleep_state;
-static float aggregate[4];
+static float aggregate[4], aggregate_co2;
+static unsigned available_co2;
 static bool data_valid;
 static unsigned available;
 typedef struct {
@@ -352,10 +353,18 @@ static bool install_config(feature_config_t *c) {
   free(next);
   return true;
 }
+static void co2_body(json_object *o, const feature_sample_t *s, uint32_t now) {
+  json_build_object_add(o,"co2_supported",json_object_new_boolean(s->co2_supported));
+  json_build_object_add(o,"co2_valid",json_object_new_boolean(feature_co2_fresh(s,now)));
+  number(o,"co2_age_ms",s->co2_age_ms+(uint32_t)(now-s->co2_received_ms));
+  if(feature_co2_fresh(s,now)) json_build_object_add(o,"co2",json_object_new_double(s->co2));
+  else json_object_object_add(o,"co2",NULL);
+}
 static json_object *sample_body(const feature_sample_t *s, uint32_t now) {
   json_object *o = json_object_new_object();
   if (!o)
     return NULL;
+  co2_body(o,s,now);
   number(o, "sequence", s->sequence);
   number(o, "boot", s->boot);
   number(o, "age_ms", s->age_ms + (uint32_t)(now - s->received_ms));
@@ -373,6 +382,13 @@ static json_object *average_body(const feature_sample_t *current, unsigned count
   unsigned n = feature_aggregate(current, count, now, STAT_MEAN, mean, NULL);
   json_object *o = json_object_new_object();
   number(o, "sample_count", n);
+  float co2=0; unsigned nc=feature_co2_aggregate(current,count,now,STAT_MEAN,&co2);
+  bool supported=false; for(unsigned i=0;i<count && i<8;i++) supported |= current[i].co2_supported;
+  json_build_object_add(o,"co2_supported",json_object_new_boolean(supported));
+  json_build_object_add(o,"co2_valid",json_object_new_boolean(nc != 0));
+  number(o,"co2_sample_count",nc);
+  if(nc) json_build_object_add(o,"co2",json_object_new_double(co2));
+  else json_object_object_add(o,"co2",NULL);
   number(o, "configured_count", count);
   json_build_object_add(o, "valid", json_object_new_boolean(n != 0));
   const char *keys[] = {"temperature", "humidity", "pm25", "formaldehyde"};
@@ -594,6 +610,12 @@ static void incoming(json_object *o, bool lan, bool retained, const char *ip) {
         valid = false;
       s.value[k] = json_object_get_double(v);
     }
+    json_object *co2=json_object_object_get(b,"co2"), *age=json_object_object_get(b,"co2_age_ms");
+    s.co2_supported=integer(b,"co2_supported");
+    s.co2_valid=s.co2_supported && integer(b,"co2_valid") && co2 && age &&
+      (json_object_is_type(co2,json_type_double)||json_object_is_type(co2,json_type_int)) &&
+      json_object_is_type(age,json_type_int) && json_object_get_int64(age)>=0 && json_object_get_int64(age)<20000;
+    s.co2=json_object_get_double(co2); s.co2_age_ms=integer(b,"co2_age_ms"); s.co2_received_ms=now_ms();
     s.sequence = integer(b, "sequence");
     s.boot = integer(b, "boot");
     s.age_ms = integer(b, "age_ms");
@@ -685,6 +707,7 @@ json_object *feature_json(const char *d) {
     o = json_object_new_object();
     lock();
     number(o, "available", available);
+    number(o, "co2_available", available_co2);
     json_build_object_add(o, "data_valid",
                            json_object_new_boolean(data_valid));
     json_build_object_add(o, "clock_valid", json_object_new_boolean(clock_ok));
@@ -695,6 +718,8 @@ json_object *feature_json(const char *d) {
     for (unsigned i = 0; i < c->peer_count; i++) {
       json_object *p = json_object_new_object();
       js(p, "mac", c->peers[i].id);
+      json_build_object_add(p,"co2_supported",json_object_new_boolean(samples[i].co2_supported));
+      json_build_object_add(p,"co2_valid",json_object_new_boolean(feature_co2_fresh(&samples[i],now_ms())));
 #ifndef FEATURE_DEVICE_A1
       json_build_object_add(p,"session_ready",json_object_new_boolean(peers[i].session_valid));
 #endif
@@ -914,17 +939,19 @@ void feature_effective_fan(bool requested_on, unsigned requested_speed,
       policy.max_speed = configuration.sleeps[automatic_night].max_speed;
       fallback = configuration.automatic.night[automatic_night].fallback_speed;
     }
+    bool selected_valid = data_valid && (!(policy.metrics & 3) || available > 0) &&
+                          (!(policy.metrics & 4) || available_co2 > 0);
     if (!automatic_valid) {
-      if (data_valid) {
+      if (selected_valid) {
         bool ignored;
         if (automatic_immediate && !policy.hysteresis_enabled) policy.debounce_seconds=policy.min_switch_seconds=0;
-        feature_control(&policy, &pid, aggregate, now_ms(), true,
+        feature_control_co2(&policy, &configuration.co2, &pid, aggregate, aggregate_co2, now_ms(), true,
                         automatic_speed, &ignored, &automatic_speed);
       } else automatic_speed = (unsigned)clip(fallback, policy.min_speed, policy.max_speed);
       automatic_valid = true;
       automatic_immediate = false;
     }
-    *speed = policy.hysteresis_enabled && data_valid && !pid.gate_running ? 0 :
+    *speed = policy.hysteresis_enabled && selected_valid && !pid.gate_running ? 0 :
              (unsigned)clip(automatic_speed,policy.min_speed,policy.max_speed);
   } else
 #endif
@@ -993,7 +1020,7 @@ void feature_light_frame(uint32_t out[32], unsigned brightness, bool enabled,
   feature_light_t l = configuration.light;
   float values[4];
   memcpy(values, aggregate, sizeof(values));
-  bool valid[4] = {data_valid, data_valid, data_valid, data_valid};
+  bool valid[4] = {available > 0, available > 0, available > 0, available > 0};
   unsigned speed = effective_on ? effective_speed : 0;
   feature_sleep_state_t sleep = sleep_state;
   unlock();
@@ -1284,7 +1311,15 @@ static void feature_worker(mico_thread_arg_t arg) {
     local.value[1] = state.sample.humidity_deci_pct / 10.0f;
     local.value[2] = state.sample.pm25_ug_m3;
     local.value[3] = state.sample.hcho_ug_m3 / 1000.0f;
-    local.sequence = state.sample.sequence;
+    local.co2_supported=state.scd40.ready || state.scd40.received;
+    local.co2_valid=state.scd40.ready && state.scd40.received;
+    local.co2=state.scd40.co2_ppm; local.co2_received_ms=state.scd40.updated_ms;
+    static uint32_t wire_sequence, uart_sequence, co2_sequence;
+    static bool co2_ready;
+    if(!wire_sequence || uart_sequence!=state.sample.sequence || co2_sequence!=state.scd40.samples || co2_ready!=state.scd40.ready) {
+      ++wire_sequence; uart_sequence=state.sample.sequence; co2_sequence=state.scd40.samples; co2_ready=state.scd40.ready;
+    }
+    local.sequence = wire_sequence;
     local.boot = boot_id;
     local.received_ms = state.sample.updated_ms;
     local.valid = state.sample.received;
@@ -1419,16 +1454,19 @@ static void feature_worker(mico_thread_arg_t arg) {
       memcpy(current, samples, sizeof(current));
       unlock();
       for (unsigned i = 0; i < c->peer_count; i++)
-        if (!c->peers[i].confirmed)
-          current[i].valid = false;
-      float v[4];
+        if (!c->peers[i].confirmed) {
+          current[i].valid = false; current[i].co2_valid = false;
+        }
+      float v[4] = {0}, co2=0;
+      unsigned nc=feature_co2_aggregate(current,c->peer_count,now,c->linkage.statistic,&co2);
       unsigned n = feature_aggregate(current, c->peer_count, now,
                                      c->linkage.statistic, v, NULL);
       lock();
       available = n;
-      data_valid = n > 0;
-      if (n) memcpy(aggregate,v,sizeof(v));
-      else { reset_controller(configuration.linkage.hysteresis_enabled); pid.condition=0; }
+      available_co2=nc; aggregate_co2=co2;
+      data_valid = (!(c->linkage.metrics & 3) || n > 0) && (!(c->linkage.metrics & 4) || nc > 0);
+      memcpy(aggregate,v,sizeof(v));
+      if (!data_valid) { reset_controller(configuration.linkage.hysteresis_enabled); pid.condition=0; }
       automatic_valid = false;
       unlock();
     }

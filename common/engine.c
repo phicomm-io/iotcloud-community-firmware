@@ -7,10 +7,14 @@
 static float clip(float v, float lo, float hi) {
   return v < lo ? lo : v > hi ? hi : v;
 }
+void feature_co2_defaults(feature_co2_config_t *c) {
+  *c = (feature_co2_config_t){1500, 1000, 800, 2000};
+}
 void feature_defaults(feature_config_t *c) {
   memset(c, 0, sizeof(*c));
   c->magic = FEATURE_MAGIC;
   c->revision = 1;
+  feature_co2_defaults(&c->co2);
   strcpy(c->ntp_host, "pool.ntp.org");
   c->timezone_minutes = 480;
   c->linkage.metrics = c->linkage.on_metrics = c->linkage.off_metrics = 1;
@@ -188,7 +192,21 @@ unsigned feature_aggregate(const feature_sample_t *s, unsigned count,
   }
   return n;
 }
-bool feature_control(const feature_linkage_t *c, feature_pid_t *p,
+bool feature_co2_fresh(const feature_sample_t *s, uint32_t now) {
+  return s->co2_supported && s->co2_valid && isfinite(s->co2) && s->co2 > 0 && s->co2 <= 65535 &&
+         s->co2_age_ms < 20000u && (uint32_t)(now-s->co2_received_ms) < 20000u-s->co2_age_ms;
+}
+unsigned feature_co2_aggregate(const feature_sample_t *samples, unsigned count, uint32_t now, unsigned method, float *out) {
+  feature_sample_t fresh[8] = {0};
+  unsigned n = 0;
+  for (unsigned i=0; i<count && i<8; i++) if (feature_co2_fresh(&samples[i],now)) {
+    fresh[n].valid=true; fresh[n].received_ms=now; fresh[n++].value[0]=samples[i].co2;
+  }
+  float values[4]; unsigned result=feature_aggregate(fresh,n,now,method,values,NULL);
+  if(result) *out=values[0];
+  return result;
+}
+static bool control(const feature_linkage_t *c, const feature_co2_config_t *co2, float ppm, feature_pid_t *p,
                      const float v[4], uint32_t now, bool on, unsigned speed,
                      bool *next_on, unsigned *next_speed) {
   if (!c->enabled)
@@ -206,9 +224,11 @@ bool feature_control(const feature_linkage_t *c, feature_pid_t *p,
    * before it stops. A cancelled condition restarts the continuous timer. */
   if (c->hysteresis_enabled) {
     bool start = ((c->metrics & 1) && v[2] >= c->on_pm) ||
-                 ((c->metrics & 2) && v[3] >= c->on_hcho);
+                 ((c->metrics & 2) && v[3] >= c->on_hcho) ||
+                 ((c->metrics & 4) && co2 && ppm >= co2->on_co2);
     bool stop = (!(c->metrics & 1) || v[2] <= c->target_pm) &&
-                (!(c->metrics & 2) || v[3] <= c->target_hcho);
+                (!(c->metrics & 2) || v[3] <= c->target_hcho) &&
+                (!(c->metrics & 4) || (co2 && ppm <= co2->target_co2));
     bool desired = p->gate_running ? !stop : start;
     int condition = desired == p->gate_running ? 0 : desired ? 1 : -1;
     if (condition != p->condition) {
@@ -234,11 +254,18 @@ bool feature_control(const feature_linkage_t *c, feature_pid_t *p,
   if (c->mode == 1) {
     float a = (v[2] - c->low_pm) / (c->high_pm - c->low_pm),
           b = (v[3] - c->low_hcho) / (c->high_hcho - c->low_hcho);
-    float r = c->metrics == 1 ? a : c->metrics == 2 ? b : fmaxf(a, b);
+    float r = -INFINITY;
+    if(c->metrics & 1) r=fmaxf(r,a);
+    if(c->metrics & 2) r=fmaxf(r,b);
+    if((c->metrics & 4) && co2) r=fmaxf(r,(ppm-co2->low_co2)/(co2->high_co2-co2->low_co2));
     output = c->min_speed + clip(r, 0, 1) * (c->max_speed - c->min_speed);
   } else if (c->mode == 2) {
     float a = v[2] / c->target_pm, b = v[3] / c->target_hcho;
-    float e = (c->metrics == 1 ? a : c->metrics == 2 ? b : fmaxf(a, b)) - 1;
+    float ratio = -INFINITY;
+    if(c->metrics & 1) ratio=fmaxf(ratio,a);
+    if(c->metrics & 2) ratio=fmaxf(ratio,b);
+    if((c->metrics & 4) && co2) ratio=fmaxf(ratio,ppm/co2->target_co2);
+    float e = ratio - 1;
     float dt = p->initialized ? (uint32_t)(now - p->last_ms) / 1000.f : 5.f;
     if (dt <= 0 || dt > 15) {
       dt = 5;
@@ -277,6 +304,13 @@ bool feature_control(const feature_linkage_t *c, feature_pid_t *p,
   *next_speed = (unsigned)clip(target, c->min_speed, c->max_speed);
   return true;
 }
+bool feature_control(const feature_linkage_t *c, feature_pid_t *p, const float v[4], uint32_t now, bool on, unsigned speed, bool *next_on, unsigned *next_speed) {
+  return control(c,NULL,0,p,v,now,on,speed,next_on,next_speed);
+}
+bool feature_control_co2(const feature_linkage_t *c, const feature_co2_config_t *co2, feature_pid_t *p, const float v[4], float ppm, uint32_t now, bool on, unsigned speed, bool *next_on, unsigned *next_speed) {
+  return control(c,co2,ppm,p,v,now,on,speed,next_on,next_speed);
+}
+
 feature_sleep_state_t feature_sleep_at(const feature_config_t *c, unsigned day,
                                        unsigned minute) {
   feature_sleep_state_t s = {false, false, false, 100, 255};

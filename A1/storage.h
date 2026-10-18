@@ -11,6 +11,7 @@ typedef struct {
     a1_filter_storage_t filter;
     automation_action_t combination_buttons[34];
     feature_auto_config_t automatic;
+    feature_co2_config_t co2;
 } app_storage_t;
 
 /* Only replace the previous default power toggle, never a custom action.
@@ -55,11 +56,13 @@ static inline void a1_storage_features_get(const app_storage_t *s, feature_confi
     memset(out, 0, sizeof(*out));
     memcpy(out, &s->features, sizeof(s->features));
     out->automatic = s->automatic;
+    out->co2 = s->co2;
 }
 static inline void a1_storage_features_put(app_storage_t *s, const feature_config_t *in)
 {
     memcpy(&s->features, in, sizeof(s->features));
     s->automatic = in->automatic;
+    s->co2 = in->co2;
 }
 static inline void a1_storage_features_defaults(app_storage_t *s)
 {
