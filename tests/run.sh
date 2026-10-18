@@ -9,6 +9,7 @@ python3 -m unittest tests.test_http_overload
 python3 -m unittest tests.test_http_tcp_integration
 python3 -m unittest tests.test_a1_provision_memory
 python3 -m unittest tests.test_a1_web_assets
+python3 -m unittest tests.test_m1_boot_config
 compiler=("${CC:-cc}")
 if [[ "${SANITIZE:-0}" == 1 ]]; then
     compiler+=(-g -fno-omit-frame-pointer -fsanitize=address,undefined)

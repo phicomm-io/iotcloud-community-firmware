@@ -4,6 +4,7 @@
 #include "m1.h"
 #include "../common/ota/signed_ota.h"
 #include "web_data.h"
+#include "favicon.h"
 #include <ctype.h>
 #include <errno.h>
 #include "../common/runtime_metrics.h"
@@ -12,9 +13,11 @@
 #define HTTP_PENDING_CLIENTS 8u
 #define HTTP_TCP_CLIENT_LIMIT 24
 #define HTTP_RESPONSE_TIMEOUT_MS 10000u
+#define HTTP_SEND_CHUNK_SIZE 1024u
 
 typedef struct {
     char method[8], path[96], authorization[128];
+    char if_none_match[80];
     uint32_t length;
     bool have_length, chunked;
 } request_t;
@@ -122,7 +125,10 @@ static bool response_send_until(int fd, const void *data, size_t length, uint32_
         int ready = select(fd + 1, NULL, &writable, NULL, &tv);
         if (ready < 0 && errno == EINTR) continue;
         if (ready <= 0 || (int32_t)(mico_rtos_get_time() - deadline) >= 0) return false;
-        int sent = send(fd, p, length, 0);
+        /* A writable MiCO socket need not have room for the entire page.
+         * Bound each enqueue so a large response can make forward progress. */
+        size_t chunk = length < HTTP_SEND_CHUNK_SIZE ? length : HTTP_SEND_CHUNK_SIZE;
+        int sent = send(fd, p, chunk, 0);
         if (sent < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)) continue;
         if (sent <= 0) return false;
         p += sent; length -= sent;
@@ -136,6 +142,10 @@ static bool response_send(int fd, const void *header, size_t header_length, cons
      * one shared header/body deadline effective even after select says ready. */
     uint32_t deadline = mico_rtos_get_time() + HTTP_RESPONSE_TIMEOUT_MS;
     if (fcntl(fd, F_SETFL, O_NONBLOCK) < 0) return false;
+    /* Small bounded writes otherwise can wait for Nagle/delayed ACK cycles.
+     * Keep the existing send deadline even if this optional setting fails. */
+    int no_delay = 1;
+    setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &no_delay, sizeof(no_delay));
     return response_send_until(fd, header, header_length, deadline) &&
            response_send_until(fd, body, length, deadline);
 }
@@ -188,6 +198,10 @@ static bool read_request(int fd, request_t *req)
             if (*end || length > M1_APP_OFFSET + M1_APP_LIMIT + 16 + OTA_ENVELOPE_SIZE) return false;
             req->length = length; req->have_length = true;
         } else if (!strcasecmp(line, "Transfer-Encoding")) req->chunked = true;
+        else if (!strcasecmp(line, "If-None-Match")) {
+            /* Ignore validators too long for our generated SHA-256 tag. */
+            if (strlen(colon) < sizeof(req->if_none_match)) strcpy(req->if_none_match, colon);
+        }
         else if (!strcasecmp(line, "Authorization")) {
             if (strlen(colon) >= sizeof(req->authorization)) return false;
             strcpy(req->authorization, colon);
@@ -417,15 +431,58 @@ static const char *feature_domain(const char *path)
     return NULL;
 }
 
+static bool asset_response(int fd, const char *type, const void *body, size_t length,
+                           bool gzip, const char *etag, const char *if_none_match)
+{
+    char header[320];
+    /* Private caches must revalidate, including the normal authentication
+     * check in handle(). The tag identifies the actual compressed bytes. */
+    bool unchanged = !strcmp(etag, if_none_match) ||
+        (!strncmp(if_none_match, "W/", 2) && !strcmp(etag, if_none_match + 2));
+    if (unchanged) {
+        snprintf(header, sizeof(header),
+            "HTTP/1.1 304 Not Modified\r\nConnection: close\r\n"
+            "Cache-Control: private, no-cache\r\nVary: Authorization\r\nETag: %s\r\n\r\n", etag);
+        return response_send(fd, header, strlen(header), NULL, 0);
+    }
+    snprintf(header, sizeof(header),
+        "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %u\r\nConnection: close\r\n"
+        "Cache-Control: private, no-cache\r\nVary: Authorization\r\nETag: %s\r\n%s\r\n",
+        type, (unsigned)length, etag, gzip ? "Content-Encoding: gzip\r\n" : "");
+    return response_send(fd, header, strlen(header), body, length);
+}
+
+static void memory_response(int fd)
+{
+    /* Keep diagnostics usable when building the full status JSON fails.
+     * Authentication is applied by handle() before reaching this route. */
+    const micoMemInfo_t *memory = MicoGetMemoryInfo();
+    if (!memory) {
+        static const char unavailable[] = "{\"code\":\"unavailable\"}";
+        response(fd, 503, "application/json", unavailable, sizeof(unavailable) - 1, false);
+        return;
+    }
+    micoMemInfo_t snapshot = *memory;
+    char body[256];
+    int length = snprintf(body, sizeof(body),
+        "{\"code\":\"ok\",\"data\":{\"free_memory\":%d,\"allocated_memory\":%d,"
+        "\"free_memory_chunks\":%d,\"uptime_ms\":%lu}}",
+        snapshot.free_memory, snapshot.allocted_memory, snapshot.num_of_chunks,
+        (unsigned long)mico_rtos_get_time());
+    if (length > 0 && (size_t)length < sizeof(body))
+        response(fd, 200, "application/json", body, (size_t)length, false);
+}
+
 static void handle(int fd)
 {
     request_t req; m1_config_t cfg;
     if (!read_request(fd, &req)) { message(fd, 400, "Invalid HTTP request"); return; }
     m1_config_get(&cfg);
     if (!authorized(&req, cfg.web_password)) { message(fd, 401, "Authentication required"); return; }
-    if(strncmp(req.path,"/api/v1/",8) && strcmp(req.path,"/") && strcmp(req.path,"/index.html")){message(fd,404,"Not found");return;}
+    if(strncmp(req.path,"/api/v1/",8) && strcmp(req.path,"/") && strcmp(req.path,"/index.html") && strcmp(req.path,"/favicon.ico")){message(fd,404,"Not found");return;}
     if (!strncmp(req.path, "/api/v1/", 8)) {
         if (!strcmp(req.method, "GET")) {
+            if (!strcmp(req.path, "/api/v1/memory")) { memory_response(fd); return; }
             const char *action = !strcmp(req.path,"/api/v1/status")?"status.get":!strcmp(req.path,"/api/v1/capabilities")?"capabilities.get":!strcmp(req.path,"/api/v1/config")?"config.get":!strcmp(req.path,"/api/v1/logs")?"logs.get":!strcmp(req.path,"/api/v1/schedules")?"schedules.get":NULL;
             if(action) send_json(fd,service_query(action)); else message(fd,404,"Not found");
             return;
@@ -439,7 +496,10 @@ static void handle(int fd)
         strcpy(req.path,!strcmp(req.path,"/api/v1/ota/upload")?"/ota/fileUpload":"/ota/fileUploadUnsigned");
     }
     if (!strcmp(req.method,"GET") && (!strcmp(req.path,"/") || !strcmp(req.path,"/index.html"))) {
-        response(fd,200,"text/html; charset=utf-8",m1_web_data,sizeof(m1_web_data),true);return;
+        asset_response(fd,"text/html; charset=utf-8",m1_web_data,sizeof(m1_web_data),true,M1_WEB_ETAG,req.if_none_match);return;
+    }
+    if (!strcmp(req.method,"GET") && !strcmp(req.path,"/favicon.ico")) {
+        asset_response(fd,"image/x-icon",m1_favicon_data,sizeof(m1_favicon_data),false,M1_FAVICON_ETAG,req.if_none_match);return;
     }
     if(strcmp(req.method,"POST")){message(fd,404,"Not found");return;}
     if (!strcmp(req.path, "/ota/fileUpload") || !strcmp(req.path, "/ota/fileUploadUnsigned")) {
