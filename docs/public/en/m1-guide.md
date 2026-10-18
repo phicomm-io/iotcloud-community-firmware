@@ -14,6 +14,10 @@ Hardware has produced valid readings, but continuous sampling has also stopped d
 
 Disconnect power and identify solder points on the actual board. These are SDK GPIO names, not connector pin numbers:
 
+![M1 external SCD40 wiring photo](assets/images/m1-scd40-wiring.png)
+
+The handwritten **7 / 8 mean GPIO7 / GPIO8**, corresponding to SCL / SDA below, not module physical pin numbers. GND / VCC arrows locate the supply pads; confirm voltage and polarity on your board before connecting.
+
 | M1 signal | SCD40 module |
 | --- | --- |
 | GPIO8 (I²C1 SDA) | SDA |

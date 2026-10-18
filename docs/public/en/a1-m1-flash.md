@@ -8,7 +8,7 @@ Read [Before flashing](flash-prep). Disconnect mains, original supplies and load
 
 | Method | Requirements |
 | --- | --- |
-| J-Link | J-Link plus MXCHIP mflash; writes a full image for first installation / recovery. A1 factory points can accept jumper wires |
+| J-Link | J-Link plus OpenOCD (Windows / Linux); validates and writes full-image segments for first installation / recovery. A1 factory points can accept jumper wires |
 | Serial bootloader | 3.3 V USB-TTL and YMODEM software; original bootloader must work. M1 has more room around its module and does not require buying J-Link |
 
 | Product | J-Link full image | Input for preparing serial images |
@@ -39,19 +39,133 @@ VTref is a sensing input, not a power output. Do not connect J-Link's 5 V output
 
 ### A1 factory points
 
-A1's JP9 GND / 3V3 supply points and nearby DIO / CLK points avoid soldering to module pads. JP9 also has UART TX / RX: do not confuse them with SWD. Check the photo and silkscreen; make firm jumper / header contacts.
+A1's JP9 GND / 3V3 supply points and nearby DIO / CLK points avoid soldering to module pads. JP9 also has UART TX / RX: do not confuse them with SWD. In the red box, **DIO is above CLK in the photo orientation**. Check the photo and silkscreen; make firm jumper / header contacts.
 
-![A1 factory programming points](assets/images/a1-factory-test-points.png)
+![A1 factory programming points](assets/images/a1-jlink-points.png)
 
 VCC here means module **3.3 V**, not the original supply input. Disconnect the original supply and fan. Wire colors are only visual references. M1 uses the module pads above.
 
-### Programming steps
+### Prepare OpenOCD and the helper scripts
 
-1. Install [SEGGER drivers](https://www.segger.com/downloads/jlink/) and prepare mflash using the [MXCHIP instructions](https://docs.mxchip.com/zh/foiwqd8gbgh23xu2/bwyo0fs5t2rquekz/antua5wkt8m3qx7l/lqdz2h5zpp117imt.html).
-2. With power off, wire SWD, common ground and independent 3.3 V; connect J-Link. Select **MX1290** and **jlink_swd**.
-3. Save a complete Flash backup using the tool's read function before erase / write. Stop if reads fail or the connection is unstable.
-4. Choose the product's `.all.bin`, set **Write Address = 0** (Flash offset), verify model and checksum, and click **Write**. Wait for writing and verification. Do not enter a CPU-mapped address or try whole-chip erase.
-5. If automatic verification is unavailable, read back from address `0` for the written length and compare every byte to the image. Disconnect only after a match. Never move wires or cut power during writing.
+Use **OpenOCD + J-Link over SWD**. No mlink / mflash application is needed. Windows uses the legacy OpenOCD included in the tool package; Linux uses OpenOCD 0.11 / 0.12 with the new configuration. Both need the matching `flash_prog.elf`; installing stock OpenOCD and running `program all.bin` is insufficient.
+
+Download and extract into a short working path, such as `C:\phicomm` or `~/phicomm`:
+
+- [EMW3080 helper scripts](assets/tools/emw3080-openocd.zip): Python 3 validation, splitting and flashing helper, plus a modern OpenOCD configuration.
+- [zA1 3080_JLINK tool package](https://github.com/a2633063/zA1/raw/f4f67ee88d9287fd1badff55ccd7704bb0f748c4/Jlink烧录文档/3080_JLINK烧录.zip): retain `openocd/`, `sflash_write.tcl` and `flash_prog.elf`, and rename the outer directory to `3080-tool`. Do not run its old firmware or batch files.
+- Your product's `.all.bin` and `SHA256SUMS` from the **same release**. Signed web packages and other products are not accepted.
+
+Extract the helper files into the working directory, outside `3080-tool`:
+
+```text
+phicomm/
+  emw3080.py
+  mx1290-modern.cfg
+  phicomm_m1.all.bin       # phicomm_a1.all.bin for A1
+  SHA256SUMS
+  3080-tool/
+    flash_prog.elf
+    sflash_write.tcl
+    openocd/
+      win32/openocd_mico.exe
+      scripts/interface/jlink_swd.cfg
+      scripts/target/MX1290/...
+```
+
+**Back up before writing.** The helper does not provide complete Flash backup or factory restoration. Use an appropriate full-read tool first if factory recovery is required. The old package's `sflash_read_file` has argument and external-command problems and must not be used as a cross-platform backup command. The connection check identifies the debug interface without writing Flash. The flash command overwrites the bootloader, kernel, application and ATE.
+
+### Windows: install, check and flash
+
+1. Install [Python 3](https://www.python.org/downloads/windows/) version 3.9 or newer. Confirm `py -3 --version` works.
+2. OpenOCD accesses J-Link through libusb. If it already detects J-Link, keep the driver. For `LIBUSB_ERROR_NOT_SUPPORTED`, follow the [OpenOCD Windows instructions](https://github.com/openocd-org/openocd/blob/master/README.Windows.md) and use [Zadig](https://zadig.akeo.ie/) to install WinUSB **for J-Link only**. SEGGER applications may need their original driver restored afterward.
+3. With power off, connect SWD, VTref, common ground and independent 3.3 V power. Power the module and close other J-Link applications. Open PowerShell in the working directory and check the connection:
+
+```powershell
+cd C:\phicomm
+py -3 .\emw3080.py check --tool-dir .\3080-tool --engine legacy
+```
+
+Look for approximately 3.3 V `Vref`, a SWD ID and `MX1290.cpu`, followed by a successful exit. Fix wiring, power or driver problems before proceeding.
+
+For **M1**:
+
+```powershell
+py -3 .\emw3080.py flash .\phicomm_m1.all.bin --model m1 --checksums .\SHA256SUMS --tool-dir .\3080-tool --engine legacy
+```
+
+For the **A1 purifier**, change both the filename and model:
+
+```powershell
+py -3 .\emw3080.py flash .\phicomm_a1.all.bin --model a1 --checksums .\SHA256SUMS --tool-dir .\3080-tool --engine legacy
+```
+
+### Linux: install, check and flash
+
+On Debian / Ubuntu:
+
+```sh
+sudo apt update
+sudo apt install openocd python3
+openocd --version
+cd ~/phicomm
+python3 emw3080.py check --tool-dir ./3080-tool --engine modern
+```
+
+Use **OpenOCD 0.11 / 0.12**. This mode loads the helper's `mx1290-modern.cfg`, not the legacy package's `MX1290.cfg`. For USB permission errors, check your distribution's OpenOCD udev rules and group permissions, log in again and reconnect J-Link. Install equivalent packages and USB rules on other distributions.
+
+For M1:
+
+```sh
+python3 emw3080.py flash phicomm_m1.all.bin --model m1 --checksums SHA256SUMS --tool-dir ./3080-tool --engine modern
+```
+
+For the A1 purifier:
+
+```sh
+python3 emw3080.py flash phicomm_a1.all.bin --model a1 --checksums SHA256SUMS --tool-dir ./3080-tool --engine modern
+```
+
+Use `--openocd /absolute/path/openocd` if OpenOCD is outside PATH. The Linux configuration supports the newer DAP interface. This Linux procedure has not completed physical-device flashing validation; connection success does not establish successful writing or booting.
+
+### Split files and verify flashing
+
+Before accessing J-Link, `flash` validates the release SHA256, product, image boundaries, application CRC and embedded raw OTA MD5, then splits and writes the image. Validation failure exits without erasing. Only this project's current `.all.bin` layout is supported. Original tool files are also checked to prevent mixing in a programmer for another board.
+
+To split without connecting a device (replace `python3` with `py -3` on Windows):
+
+```sh
+python3 emw3080.py split phicomm_m1.all.bin --model m1 --checksums SHA256SUMS --output firmware
+```
+
+For A1, change both the filename and `--model`. The output directory must not exist; existing files are never overwritten.
+
+| Output | Full-image range (end exclusive) | Programmer partition ID | Offset within partition |
+| --- | --- | --- | --- |
+| `boot.bin` | `0x000000`–`0x012000` (72 KiB) | `1` | `0x0` |
+| `ota.bin` | `0x013000`–`0x0C8000` (724 KiB including padding) | `2` | `0x0` |
+| `ate.bin` | `0x0D0000`–end of file (up to 256 KiB) | `3` | `0x0` |
+
+The split `ota.bin` is for this SWD process only; do not upload it to the web updater. The three writes exclude `0x012000`–`0x013000` and parameters at `0x0C8000`–`0x0D0000`. **Partition IDs are not raw Flash addresses.** Never change the three `0x0` arguments to `0x13000` or `0xD0000`.
+
+The helper runs these operations using erase-as-needed and programmer post-write verification, without whole-chip erase:
+
+```text
+sflash_write_file firmware/boot.bin 1 0x0 MK3080B 0
+sflash_write_file firmware/ota.bin 2 0x0 MK3080B 0
+sflash_write_file firmware/ate.bin 3 0x0 MK3080B 0
+reset run
+shutdown
+```
+
+`flash` uses an automatically cleaned temporary directory. Every chunk must return `Result: OK` and OpenOCD must exit successfully. `Verify after write failed`, `Error during Write` or a nonzero exit means failure: stabilize power and repair the connection before rewriting. `Result: OK` establishes programmer post-write verification only. Check normal boot, provisioning and device functions as described below.
+
+| Problem | Action |
+| --- | --- |
+| Missing `flash_prog.elf` / tool hash mismatch | Point `--tool-dir` at the original package root and retain its matching files; do not substitute another board's ELF |
+| `target requires -dap` | Use `--engine modern` with the included `mx1290-modern.cfg` for newer OpenOCD |
+| `couldn't bind to socket` | The helper uses `23333 / 24444 / 26666`. Check occupied or Windows reserved ports with `netsh interface ipv4 show excludedportrange protocol=tcp` |
+| Legacy `Named pipes currently not supported` | Use numeric ports; do not set legacy `gdb_port` to `disabled` |
+| Verification succeeds but no setup hotspot | Power off, remove programming wires, restore normal wiring and power; check the product image and collect boot logs if necessary. Do not try whole-chip erase |
 
 ## Bootloader flashing
 
@@ -188,4 +302,4 @@ That frame is M1-specific. On A1, restore wiring and check the setup hotspot, We
 3. Join `A1-AP-<last six MAC digits>` or `M1-AP-<last six MAC digits>` and open `http://192.168.0.1/`.
 4. Verify model and connectivity. Check A1's fan, ring and panel, or M1's readings and screen. Configure MQTT if needed and confirm connection.
 
-See [A1 operation](a1-guide), [M1 operation](m1-guide) and [firmware updates](firmware-update). Wiring, mflash and serial procedures reference the [MXCHIP EMW3080 flashing guide](https://docs.mxchip.com/zh/foiwqd8gbgh23xu2/bwyo0fs5t2rquekz/antua5wkt8m3qx7l/lqdz2h5zpp117imt.html).
+See [A1 operation](a1-guide), [M1 operation](m1-guide) and [firmware updates](firmware-update). Module wiring and serial procedures reference the [MXCHIP EMW3080 flashing guide](https://docs.mxchip.com/zh/foiwqd8gbgh23xu2/bwyo0fs5t2rquekz/antua5wkt8m3qx7l/lqdz2h5zpp117imt.html).

@@ -11,7 +11,7 @@
 
 | 方式 | 工具与适用情况 |
 | --- | --- |
-| J-Link | J-Link + 庆科 mflash；直接写入完整镜像，适用于首刷和恢复。A1 可以使用工厂测试点接杜邦线 |
+| J-Link | J-Link + OpenOCD（Windows / Linux）；校验并分段写入完整镜像，适用于首刷和恢复。A1 可以使用工厂测试点接杜邦线 |
 | 串口 Bootloader | 3.3V USB-TTL + YMODEM 软件；要求原 Bootloader 正常。M1 模块附近空间较充裕，不想购买 J-Link 时可选此方法 |
 
 | 设备 | J-Link 完整镜像 | 串口镜像准备的输入文件 |
@@ -42,19 +42,133 @@
 
 ### A1 工厂测试点：可直接插杜邦线
 
-A1 可使用下图标出的工厂点位，免去在模块焊盘飞线：**JP9 的 GND / 3V3 用于供电，DIO / CLK 用于 SWD**。图中 JP9 同时有 UART TX/RX，不要把它们误接到 SWD。DIO、CLK 按图中标记及板上丝印核对；杜邦线或排针接触必须牢固。
+A1 可使用下图标出的工厂点位，免去在模块焊盘飞线：**JP9 的 GND / 3V3 用于供电，DIO / CLK 用于 SWD**。图中 JP9 同时有 UART TX/RX，不要把它们误接到 SWD。DIO、CLK 按新版照片的红框定位：**以照片方向为准，上方为 DIO，下方为 CLK**；杜邦线或排针接触必须牢固。
 
-![A1 工厂点位：JP9 的 GND、3V3 与旁边的 DIO、CLK](assets/images/a1-factory-test-points.png)
+![A1 工厂点位：JP9 的 GND、3V3 与旁边的 DIO、CLK](assets/images/a1-jlink-points.png)
 
 图中的 VCC 指模块 **3.3V**，不是原机电源输入。接线前断开原电源和风机；照片中的线色仅供定位，以丝印与信号名为准。M1 使用上方模块 SWD 点位。
 
-### 烧录步骤
+### 准备 OpenOCD 工具与脚本
 
-1. 安装 [SEGGER J-Link 驱动](https://www.segger.com/downloads/jlink/)，按照[庆科官方说明](https://docs.mxchip.com/zh/foiwqd8gbgh23xu2/bwyo0fs5t2rquekz/antua5wkt8m3qx7l/lqdz2h5zpp117imt.html)中的“mflash 软件烧录”准备 mflash。
-2. 断电接好 SWD、共地和独立 3.3V 电源，再连接 J-Link。芯片选 **MX1290**，Debugger 选 **jlink_swd**。
-3. 擦写前使用工具的读取功能保存本机完整 Flash。不能读取或连接不稳定时，先排查，不要直接擦除。
-4. 文件选择对应产品的 **`.all.bin`**，**Write Address 填 `0`**（Flash 偏移）。确认型号及文件校验和后点击 **Write**，等待写入及工具校验结束。不要把 CPU 映射地址填到此处，不要整片擦除试错。
-5. 工具未提供自动校验时，按写入长度从地址 `0` 回读，与原镜像逐字节比较；一致后再断电拆线。写入中不要移动导线或断电。
+本节使用 **OpenOCD + J-Link（SWD）**，不需要安装或打开 mlink / mflash。Windows 使用工具包自带的旧版 OpenOCD；Linux 使用 OpenOCD 0.11 / 0.12 和配套的新配置。两者都需要同一份 `flash_prog.elf`，不能仅安装系统 OpenOCD 后直接运行 `program all.bin`。
+
+下载并解压到短路径（例如 Windows 的 `C:\phicomm`、Linux 的 `~/phicomm`）：
+
+- [EMW3080 脚本包](assets/tools/emw3080-openocd.zip)：含 Python 3 校验、切分和烧录脚本，以及新版 OpenOCD 配置。
+- [zA1 的 3080_JLINK 烧录工具包](https://github.com/a2633063/zA1/raw/f4f67ee88d9287fd1badff55ccd7704bb0f748c4/Jlink烧录文档/3080_JLINK烧录.zip)：保留其中的 `openocd/`、`sflash_write.tcl`、`flash_prog.elf`，将外层目录改名为 `3080-tool`。不要运行包内旧固件或旧批处理。
+- 下载对应产品的 `.all.bin` 与**同一版本**的 `SHA256SUMS`，放到工作目录。不要拿网页签名包或其他产品的文件替代。
+
+目录应如下（脚本包解压在工作目录，不放进 `3080-tool`）：
+
+```text
+phicomm/
+  emw3080.py
+  mx1290-modern.cfg
+  phicomm_m1.all.bin       # A1 则为 phicomm_a1.all.bin
+  SHA256SUMS
+  3080-tool/
+    flash_prog.elf
+    sflash_write.tcl
+    openocd/
+      win32/openocd_mico.exe
+      scripts/interface/jlink_swd.cfg
+      scripts/target/MX1290/...
+```
+
+**备份先于写入。** 此脚本不提供完整 Flash 备份或原厂恢复；需要保留原厂时，应先通过适用的完整读取工具保存本机备份。旧工具包自带的 `sflash_read_file` 存在参数和外部命令问题，不能直接当作跨平台备份命令。连接检查只识别调试接口，不写 Flash；烧录命令会覆盖 Bootloader、内核、应用及 ATE。
+
+### Windows：安装、检查与烧录
+
+1. 安装 [Python 3](https://www.python.org/downloads/windows/)（3.9 或更新版本），确认 `py -3 --version` 可用。
+2. OpenOCD 通过 libusb 访问 J-Link。若已能识别 J-Link，无需更换驱动；若出现 `LIBUSB_ERROR_NOT_SUPPORTED`，按 [OpenOCD Windows 说明](https://github.com/openocd-org/openocd/blob/master/README.Windows.md)，使用 [Zadig](https://zadig.akeo.ie/) **只为 J-Link** 安装 WinUSB 驱动。切换后，SEGGER 软件可能需要恢复原驱动才能使用。
+3. 断电接好 SWD、VTref、共地与独立 3.3V 电源，接通模块电源，关闭占用 J-Link 的其他软件。在 PowerShell 中进入工作目录，先检查连接：
+
+```powershell
+cd C:\phicomm
+py -3 .\emw3080.py check --tool-dir .\3080-tool --engine legacy
+```
+
+应看到 `Vref` 约为 3.3V、SWD ID 和 `MX1290.cpu`，命令正常退出。连接失败先排查接线、供电和驱动。
+
+确认是 **M1** 后执行：
+
+```powershell
+py -3 .\emw3080.py flash .\phicomm_m1.all.bin --model m1 --checksums .\SHA256SUMS --tool-dir .\3080-tool --engine legacy
+```
+
+**A1 空气净化器**使用以下命令，不能只改文件名而遗漏型号：
+
+```powershell
+py -3 .\emw3080.py flash .\phicomm_a1.all.bin --model a1 --checksums .\SHA256SUMS --tool-dir .\3080-tool --engine legacy
+```
+
+### Linux：安装、检查与烧录
+
+Debian / Ubuntu 安装系统工具：
+
+```sh
+sudo apt update
+sudo apt install openocd python3
+openocd --version
+cd ~/phicomm
+python3 emw3080.py check --tool-dir ./3080-tool --engine modern
+```
+
+使用 **OpenOCD 0.11 / 0.12**。此模式加载脚本包中的 `mx1290-modern.cfg`，不要替换成旧包的 `MX1290.cfg`。若报 USB 权限错误，检查发行版的 OpenOCD udev 规则及其用户组权限；重新登录并拔插 J-Link 后再试。其他 Linux 发行版安装同名软件包及相应 USB 规则。
+
+M1 烧录：
+
+```sh
+python3 emw3080.py flash phicomm_m1.all.bin --model m1 --checksums SHA256SUMS --tool-dir ./3080-tool --engine modern
+```
+
+A1 空气净化器烧录：
+
+```sh
+python3 emw3080.py flash phicomm_a1.all.bin --model a1 --checksums SHA256SUMS --tool-dir ./3080-tool --engine modern
+```
+
+如 OpenOCD 不在 PATH，可追加 `--openocd /绝对路径/openocd`。Linux 配置已适配新版 DAP 接口；本教程的 Linux 流程尚未完成实机烧录验证，连接通过并不等于写入和启动已验证。
+
+### 切分文件与烧录校验
+
+`flash` 在访问 J-Link 前校验发布 SHA256、产品、镜像边界、应用 CRC 和内嵌原始 OTA MD5，再自动切分写入。校验失败会退出，不尝试擦除；只接受本项目当前布局的 `.all.bin`。原工具文件也会校验，防止混用其他板子的 Flash 编程器。
+
+若只需切分、不连接设备，可执行（Windows 将 `python3` 换成 `py -3`）：
+
+```sh
+python3 emw3080.py split phicomm_m1.all.bin --model m1 --checksums SHA256SUMS --output firmware
+```
+
+A1 同时将文件名和 `--model` 改为 A1 对应值。输出目录必须不存在，脚本不会覆盖已有文件。
+
+| 输出 | 完整镜像内的范围（结束地址不包含） | 烧录分区 ID | 分区内偏移 |
+| --- | --- | --- | --- |
+| `boot.bin` | `0x000000`～`0x012000`（72 KiB） | `1` | `0x0` |
+| `ota.bin` | `0x013000`～`0x0C8000`（724 KiB，含填充） | `2` | `0x0` |
+| `ate.bin` | `0x0D0000`～文件末尾（最多 256 KiB） | `3` | `0x0` |
+
+切分后的 `ota.bin` 仅供此 SWD 流程使用，不能上传到网页升级。`0x012000`～`0x013000` 和参数区 `0x0C8000`～`0x0D0000` 不在这三段的写入范围内。**分区 ID 与原始 Flash 地址不是一回事**，不要把命令中的三个 `0x0` 改为 `0x13000` 或 `0xD0000`。
+
+底层依次执行以下命令，使用编程器的按需擦除和写后校验，不做整片擦除：
+
+```text
+sflash_write_file firmware/boot.bin 1 0x0 MK3080B 0
+sflash_write_file firmware/ota.bin 2 0x0 MK3080B 0
+sflash_write_file firmware/ate.bin 3 0x0 MK3080B 0
+reset run
+shutdown
+```
+
+实际 `flash` 使用临时目录，运行结束后自动清理。每段写入必须持续返回 `Result: OK`，最后正常退出。`Verify after write failed`、`Error during Write` 或非零退出都表示失败，应保持供电稳定、修复连接后重新写入。`Result: OK` 只证明编程器写后校验通过，随后仍要按文末步骤检查正常启动、配网与设备功能。
+
+| 问题 | 处理 |
+| --- | --- |
+| 找不到 `flash_prog.elf` / 工具包校验失败 | 确认 `--tool-dir` 指向原包根目录，保留配套文件，不使用其他板型 ELF |
+| `target requires -dap` | 新版 OpenOCD 使用 `--engine modern`，保留配套 `mx1290-modern.cfg` |
+| `couldn't bind to socket` | 脚本已使用 `23333 / 24444 / 26666`；仍报错时检查占用或 Windows 保留端口（`netsh interface ipv4 show excludedportrange protocol=tcp`） |
+| 旧版报 `Named pipes currently not supported` | 使用数字端口，不要把旧版 `gdb_port` 改成 `disabled` |
+| 已校验但无配网热点 | 断电后拆除下载线并恢复原接线，正常上电；核对产品文件，必要时收集启动日志，不要整片擦除试错 |
 
 ## Bootloader 刷机
 
@@ -214,4 +328,4 @@ PY
 
 日常操作见 [A1 功能与操作](a1-guide)、[M1 功能与操作](m1-guide)，后续升级见[固件更新](firmware-update)。
 
-接线、mflash 和串口完整镜像流程参考[庆科 EMW3080 系列模组固件烧录方法](https://docs.mxchip.com/zh/foiwqd8gbgh23xu2/bwyo0fs5t2rquekz/antua5wkt8m3qx7l/lqdz2h5zpp117imt.html)。
+模块点位与串口流程参考[庆科 EMW3080 系列模组固件烧录方法](https://docs.mxchip.com/zh/foiwqd8gbgh23xu2/bwyo0fs5t2rquekz/antua5wkt8m3qx7l/lqdz2h5zpp117imt.html)。
