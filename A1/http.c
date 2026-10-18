@@ -14,6 +14,7 @@
 #define HTTP_PENDING_CLIENTS 8u
 #define HTTP_TCP_CLIENT_LIMIT 24
 #define HTTP_RESPONSE_TIMEOUT_MS 10000u
+#define HTTP_SEND_CHUNK_SIZE 1024u
 
 typedef struct {
     char method[8], path[96], authorization[128];
@@ -124,7 +125,10 @@ static bool response_send_until(int fd, const void *data, size_t length, uint32_
         int ready = select(fd + 1, NULL, &writable, NULL, &tv);
         if (ready < 0 && errno == EINTR) continue;
         if (ready <= 0 || (int32_t)(mico_rtos_get_time() - deadline) >= 0) return false;
-        int sent = send(fd, p, length, 0);
+        /* A writable MiCO socket need not have room for the entire page.
+         * Bound each enqueue so a large response can make forward progress. */
+        size_t chunk = length < HTTP_SEND_CHUNK_SIZE ? length : HTTP_SEND_CHUNK_SIZE;
+        int sent = send(fd, p, chunk, 0);
         if (sent < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)) continue;
         if (sent <= 0) return false;
         p += sent; length -= sent;
