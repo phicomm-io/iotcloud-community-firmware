@@ -19,6 +19,7 @@ PRELUDE = r'''
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #define socket fake_socket
 #define bind fake_bind
 #define listen fake_listen
@@ -139,15 +140,22 @@ int main(void) {
 SEND = PRELUDE + r'''
 static uint32_t now, start;
 static unsigned selects, sends, send_step, send_limit, timeout_call, select_interrupt;
-static unsigned timeouts[32], fail_fcntl, nonblocking, transient, fatal_send, late_select;
-static char output[512];static size_t used;
+static unsigned timeouts[256], fail_fcntl, nonblocking, transient, fatal_send, late_select, send_capacity;
+static char output[65536];static size_t used;
 static uint32_t mico_rtos_get_time(void) { return now; }
+#ifdef HTTP_SEND_CHUNK_SIZE
+static unsigned no_delay_calls, fail_no_delay;
+static int setsockopt(int fd,int level,int option,const void *value,socklen_t n) {
+    assert(fd==7 && level==IPPROTO_TCP && option==TCP_NODELAY && n==sizeof(int));
+    assert(*(const int *)value==1);++no_delay_calls;return fail_no_delay?-1:0;
+}
+#endif
 static int fcntl(int fd,int command,int flags) {
     assert(fd==7 && command==F_SETFL && flags==O_NONBLOCK);
     if(fail_fcntl)return -1;nonblocking=1;return 0;
 }
 static int select(int n,fd_set *r,fd_set *w,fd_set *e,struct timeval *t) {
-    assert(n==8 && !r && w && !e && FD_ISSET(7,w) && selects<32);
+    assert(n==8 && !r && w && !e && FD_ISSET(7,w) && selects<256);
     unsigned ms=t->tv_sec*1000+t->tv_usec/1000;
     assert(ms>0 && ms<=HTTP_RESPONSE_TIMEOUT_MS);
     timeouts[selects++]=ms;
@@ -161,13 +169,18 @@ static int send(int fd,const void *p,size_t n,int flags) {
     ++sends;
     if(fatal_send) { errno=EPIPE;return -1; }
     if(transient) { errno=transient--==2?EAGAIN:EINTR;return -1; }
+    /* Model a writable embedded socket that cannot enqueue an oversized write. */
+    if(send_capacity && n>send_capacity) { now+=1000;errno=EAGAIN;return -1; }
     if(send_limit && n>send_limit)n=send_limit;
     assert(used+n<sizeof(output));memcpy(output+used,p,n);used+=n;now+=send_step;return n;
 }
 FUNCTIONS
 static void reset(uint32_t initial) {
     start=now=initial;selects=sends=send_step=send_limit=timeout_call=select_interrupt=0;
-    fail_fcntl=nonblocking=transient=fatal_send=late_select=0;used=0;memset(output,0,sizeof(output));
+    fail_fcntl=nonblocking=transient=fatal_send=late_select=send_capacity=0;used=0;memset(output,0,sizeof(output));
+#ifdef HTTP_SEND_CHUNK_SIZE
+    no_delay_calls=fail_no_delay=0;
+#endif
 }
 int main(void) {
     reset(100);send_limit=1;transient=2;select_interrupt=1;
@@ -190,6 +203,12 @@ int main(void) {
     reset(100);assert(response_send(7,"head",4,NULL,0) && sends==1);
     reset(100);assert(response(7,200,"text/plain","payload",7,false));
     assert(strstr(output,"HTTP/1.1 200 OK\r\n") && strstr(output,"\r\n\r\npayload"));
+#ifdef HTTP_SEND_CHUNK_SIZE
+    assert(no_delay_calls==1);
+    reset(100);fail_no_delay=1;
+    assert(response_send(7,"head",4,"body",4) && !strcmp(output,"headbody") && no_delay_calls==1);
+#endif
+    EXTRA_CASES
     puts("A1 nonblocking response: partial/EAGAIN/EINTR/error/shared deadline/tick wrap: OK");
 }
 '''
@@ -230,7 +249,29 @@ class A1HttpOwnerTest(unittest.TestCase):
                 source = (ROOT / product / 'http.c').read_text()
                 functions = fragment(source, 'static bool response_send_until(', 'static void message(')
                 harness = SEND.replace('A1 ', product + ' ').replace(PRELUDE, PRELUDE + '\n/*DEFINES*/\n')
-                self.run_harness(harness.replace('FUNCTIONS', functions), source)
+                self.run_harness(harness.replace('FUNCTIONS', functions).replace('EXTRA_CASES', ''), source)
+
+    def test_large_page_with_limited_send_capacity(self):
+        cases = r'''
+    static unsigned char page[58267];
+    for(size_t i=0;i<sizeof(page);i++)page[i]=(unsigned char)(i*37u+i/251u);
+    for(unsigned short_write=0;short_write<2;short_write++) {
+        reset(100);send_capacity=1024;transient=2;send_step=1;
+        send_limit=short_write?509:0;
+        assert(response(7,200,"text/html; charset=utf-8",page,sizeof(page),true));
+        const char *body=strstr(output,"\r\n\r\n");assert(body);body+=4;
+        assert(strstr(output,"Content-Length: 58267\r\n"));
+        assert(strstr(output,"Content-Encoding: gzip\r\n"));
+        assert(used-(size_t)(body-output)==sizeof(page));
+        assert(!memcmp(body,page,sizeof(page)) && now-start<10000);
+    }
+'''
+        harness = SEND.replace(PRELUDE, PRELUDE + '\n/*DEFINES*/\n')
+        for product in ('A1', 'M1'):
+            with self.subTest(product=product):
+                source = (ROOT / product / 'http.c').read_text()
+                functions = fragment(source, 'static bool response_send_until(', 'static void message(')
+                self.run_harness(harness.replace('FUNCTIONS', functions).replace('EXTRA_CASES', cases), source)
 
 
 if __name__ == '__main__':

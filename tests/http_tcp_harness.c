@@ -20,6 +20,7 @@
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -128,6 +129,10 @@ static int host_listen(int fd, int backlog) {
     return listen(fd, 64);
 }
 static int host_setsockopt(int fd, int level, int option, const void *value, socklen_t length) {
+    if (option == TCP_NODELAY) {
+        check_client(fd); assert(role == 2 && level == IPPROTO_TCP);
+        return setsockopt(fd, level, option, value, length);
+    }
     assert(role == 1 && fd == listener_fd && level == IPPROTO_TCP);
     assert(option == TCP_MAX_CONN_NUM && length == sizeof(int)); tcp_limit = *(const int *)value; return 0;
 }

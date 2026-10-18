@@ -129,8 +129,15 @@ int application_start(void)
     app_config = mico_system_context_get_user_data(m1_context);
     if (!app_config) return kNoMemoryErr;
     m1_config_t c;
-    /* The SDK validates the entire partition before loading these bytes. */
-    if (app_config->magic != M1_CONFIG_MAGIC || app_config->version < 1 || app_config->version > M1_CONFIG_VERSION) {
+    /* MiCO validates its partition, not the previous firmware's app layout.
+     * Reset only foreign application data; preserve the SDK network settings. */
+    if (app_config->magic != M1_CONFIG_MAGIC) {
+        memset(app_config, 0, sizeof(app_storage_t));
+        appRestoreDefault_callback(app_config, sizeof(app_storage_t));
+        if (mico_system_context_update(m1_context) != kNoErr) return kUnknownErr;
+        service_event("info", "config", "foreign_layout_reset");
+    }
+    if (app_config->version < 1 || app_config->version > M1_CONFIG_VERSION) {
         service_event("error","config","unsupported_layout");return kUnknownErr;
     }
     if (app_config->magic == M1_CONFIG_MAGIC &&
@@ -199,9 +206,8 @@ int application_start(void)
     m1_state.brightness_requested = c.brightness;
     err = feature_start(); if (err != kNoErr) return err;
     err = m1_uart_start(); if (err != kNoErr) return err;
-    err = m1_network_start(); if (err != kNoErr) return err;
-    err = m1_mqtt_start(); if (err != kNoErr) return err;
     err = m1_http_start(); if (err != kNoErr) return err;
+    err = m1_network_start(); if (err != kNoErr) return err;
     watchdog_startup_complete();
     custom_log("M1", "Started %s, id %s", M1_VERSION, m1_id);
     return kNoErr;

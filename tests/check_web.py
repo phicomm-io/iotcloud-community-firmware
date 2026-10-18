@@ -1,5 +1,5 @@
 from pathlib import Path
-import subprocess, tempfile, sys
+import subprocess, tempfile, sys, re
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "common/web"))
 from page import render_page
 for product in ('A1', 'M1', 'TC1'):
@@ -13,7 +13,7 @@ for product in ('A1', 'M1', 'TC1'):
             subprocess.run(['node', '--check', f.name], check=True)
     if product in ('M1','A1'):
         server=(Path(product)/'http.c').read_text()
-        assert 'sizeof('+product.lower()+'_web_data),true)' in server, 'compressed HTML requires Content-Encoding: gzip'
+        assert re.search(r'sizeof\(' + product.lower() + r'_web_data\),true[,)]', server), 'compressed HTML requires Content-Encoding: gzip'
     # Every page carries the shared framework, the theme bootstrap and the
     # settings pages the product advertises.
     for required in ('phicomm.appearance', 'window.UI', 'window.I18N', 'window.automationPages'):
