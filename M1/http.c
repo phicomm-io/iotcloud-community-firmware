@@ -288,6 +288,29 @@ json_object *m1_status_json(void)
     json_bool(o, "sensor_valid", fresh); json_bool(o, "sensor_received", s.sample.received);
     if (s.sample.received) json_build_object_add(o, "age_ms",json_object_new_double((uint32_t)(now - s.sample.updated_ms)));
     else json_object_object_add(o, "age_ms", NULL);
+    json_object *co2 = json_object_new_object();
+    bool co2_fresh = s.scd40.ready && s.scd40.received &&
+        (uint32_t)(now - s.scd40.updated_ms) < 20000;
+    json_bool(co2, "ready", s.scd40.ready); json_bool(co2, "valid", co2_fresh);
+    str(co2, "serial", s.scd40.serial);
+    integer(co2, "samples", s.scd40.samples); integer(co2, "errors", s.scd40.errors);
+    integer(co2, "crc_errors", s.scd40.crc_errors);
+    integer(co2, "last_error", s.scd40.last_error);
+    json_bool(co2, "bus_initialized", s.scd40.bus_initialized);
+    integer(co2, "last_command", s.scd40.last_command);
+    integer(co2, "error_phase", s.scd40.error_phase);
+    if (s.scd40.received) integer(co2, "age_ms", (uint32_t)(now - s.scd40.updated_ms));
+    else json_object_object_add(co2, "age_ms", NULL);
+    if (co2_fresh) {
+        integer(co2, "co2_ppm", s.scd40.co2_ppm);
+        json_build_object_add(co2, "temperature", json_object_new_double(s.scd40.temperature_milli_c / 1000.0));
+        json_build_object_add(co2, "humidity", json_object_new_double(s.scd40.humidity_milli_pct / 1000.0));
+    } else {
+        json_object_object_add(co2, "co2_ppm", NULL);
+        json_object_object_add(co2, "temperature", NULL);
+        json_object_object_add(co2, "humidity", NULL);
+    }
+    json_build_object_add(o, "scd40", co2);
     integer(o, "brightness_requested", s.brightness_requested);
     if (s.sample.received) json_build_object_add(o, "temperature",json_object_new_double(s.sample.temperature_deci_c / 10.0));
     else json_object_object_add(o, "temperature", NULL);

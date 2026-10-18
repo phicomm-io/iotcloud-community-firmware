@@ -24,3 +24,5 @@ bash tests/simulator/build.sh
 "${MQTT_TEST_PYTHON:-python3}" tests/test_a1_filter_mqtt.py "$port"
 
 "${MQTT_TEST_PYTHON:-python3}" tests/test_a1_auto_mqtt.py "$port"
+
+"${MQTT_TEST_PYTHON:-python3}" tests/test_m1_co2_mqtt.py "$port"
