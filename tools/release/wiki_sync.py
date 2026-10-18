@@ -66,7 +66,10 @@ def home_page(language="zh"):
             lines += ['## ' + title, '']
             lines += [f'- [{name}]({wiki}): {summary}' for _, name, summary, wiki in items]
             lines += ['']
-        lines += ['## Links', '', f'- [Project site and downloads]({SITE_URL})',
+        lines += ['## Community', '', '- QQ group: **1021750178** (Chinese)',
+                  '- [Join the QQ group](https://qm.qq.com/q/9L150V85kk?from=tim)',
+                  '- If the link does not open, search for the group number in QQ.', '',
+                  '## Links', '', f'- [Project site and downloads]({SITE_URL})',
                   f'- [English website guides]({SITE_URL}guides/en/)',
                   '- [Firmware source](https://github.com/phicomm-io/phicomm-community-firmware)',
                   '- [MQTT platform](https://github.com/phicomm-io/phicomm-community-mqtt)', '']
@@ -82,7 +85,10 @@ def home_page(language="zh"):
         for slug, page_title, summary, wiki in items:
             lines.append(f'- [{page_title}]({wiki_link_target(wiki)})：{summary}')
         lines.append('')
-    lines += ['## 相关链接', '',
+    lines += ['## 交流与反馈', '', '- QQ 交流群：**1021750178**',
+              '- [点击加入 QQ 群](https://qm.qq.com/q/9L150V85kk?from=tim)；链接无法打开时，可在 QQ 中搜索群号。',
+              '- 反馈问题请附上型号、固件版本和复现步骤，并遮去密码与令牌等信息。', '',
+              '## 相关链接', '',
               f'- [项目主页与历史版本归档]({SITE_URL})',
               '- [固件源码仓库](https://github.com/phicomm-io/phicomm-community-firmware)',
               '- [MQTT 远程集中管理平台](https://github.com/phicomm-io/phicomm-community-mqtt)',

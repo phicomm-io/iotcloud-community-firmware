@@ -52,7 +52,8 @@ def footer(language="zh"):
                 '<div><b>Documentation</b><ul><li><a href="quick-start.html">Quick start</a></li>'
                 '<li><a href="faq.html">Troubleshooting</a></li><li><a href="release-log.html">Release Log</a></li></ul></div>'
                 '<div><b>Source</b><ul><li><a href="https://github.com/phicomm-io/phicomm-community-firmware">Firmware</a></li>'
-                '<li><a href="https://github.com/phicomm-io/phicomm-community-mqtt">MQTT platform</a></li></ul></div></div></footer>')
+                '<li><a href="https://github.com/phicomm-io/phicomm-community-mqtt">MQTT platform</a></li></ul></div>'
+                '<div><b>Community</b><p>QQ group: 1021750178</p><a href="https://qm.qq.com/q/9L150V85kk?from=tim" target="_blank" rel="noopener noreferrer">Join the QQ group (Chinese)</a></div></div></footer>')
     return ('<footer class="site-footer"><div class="wrap">'
             f'<div><b>{esc(SITE_NAME)}</b><p style="margin-top:8px">社区维护项目，与原厂无隶属关系。'
             '固件、指南及发布说明以对应版本为准。本仓库没有覆盖全部代码的统一许可证。</p></div>'
@@ -64,7 +65,8 @@ def footer(language="zh"):
             '<div><b>源码</b><ul>'
             '<li><a href="https://github.com/phicomm-io/phicomm-community-firmware" rel="noopener noreferrer">固件仓库</a></li>'
             '<li><a href="https://github.com/phicomm-io/phicomm-community-mqtt" rel="noopener noreferrer">管理平台</a></li>'
-            '</ul></div></div></footer>')
+            '</ul></div><div><b>交流与反馈</b><p>QQ 群：1021750178</p>'
+            '<a href="https://qm.qq.com/q/9L150V85kk?from=tim" target="_blank" rel="noopener noreferrer">加入 QQ 群</a></div></div></footer>')
 
 
 def guide_nav(active_slug, language="zh"):
