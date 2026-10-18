@@ -75,6 +75,8 @@ static void network_worker(mico_thread_arg_t arg)
     uint32_t scan_since = 0;
     bool ever_connected = false;
     bool ap = false, linked = false, station_requested = false;
+    bool mqtt_started = false, mqtt_retry_pending = false;
+    uint32_t mqtt_retry_at = 0;
     if (started.ssid[0]) {
         station_requested = station_start(&started);
         next_retry = mico_rtos_get_time() + 30000;
@@ -146,6 +148,19 @@ static void network_worker(mico_thread_arg_t arg)
         if (reboot) MicoSystemReboot();
         a1_config_flush(false);
         watchdog_beat(WATCHDOG_NETWORK);
+        /* Do not reserve the 16 KiB MQTT stack while first-time provisioning
+         * needs the heap for SoftAP, HTTP and Wi-Fi credential validation.
+         * This worker is the sole creator; reconnects stay with MQTT's owner. */
+        if (ready && !ota_active && !reboot_pending && !mqtt_started &&
+            (!mqtt_retry_pending || (int32_t)(now - mqtt_retry_at) >= 0)) {
+            OSStatus err = a1_mqtt_start();
+            if (err == kNoErr) mqtt_started = true;
+            else {
+                mqtt_retry_pending = true;
+                mqtt_retry_at = mico_rtos_get_time() + 30000u;
+                custom_log("A1", "MQTT start deferred: %ld", (long)err);
+            }
+        }
         if (ready && !ota_active && !reboot_pending && watchdog_network_begin()) {
             feature_clock_tick();
             watchdog_network_end();
