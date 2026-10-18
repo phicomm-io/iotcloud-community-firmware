@@ -1,4 +1,4 @@
-"""Execute production A1 static routes/parser; verify content-based validators."""
+"""Execute production A1/M1 static routes/parser; verify content-based validators."""
 import hashlib
 import importlib.util
 import os
@@ -20,8 +20,10 @@ def fragment(source, start, end):
 
 
 class A1WebAssetsTest(unittest.TestCase):
+    PRODUCT = "A1"
+
     def test_authenticated_assets_revalidate_without_redownloading(self):
-        source = (ROOT / 'A1/http.c').read_text()
+        source = (ROOT / self.PRODUCT / 'http.c').read_text()
         parser = fragment(source, 'static bool read_request(', 'static bool authorized(')
         auth = fragment(source, 'static bool authorized(', 'static void str(')
         asset = fragment(source, 'static bool asset_response(', 'static void memory_response(')
@@ -31,7 +33,7 @@ class A1WebAssetsTest(unittest.TestCase):
         route += fragment(source, '    if (!strcmp(req.method,"GET") && (!strcmp(req.path,"/")', '    if(strcmp(req.method,"POST"))')
         route += '    message(fd,404,"Not found");\n}\n'
         request = fragment(source, 'typedef struct {', 'static volatile uint32_t http_accept_ok;')
-        line = fragment(source, 'int a1_socket_line(', 'static bool response_send_until(')
+        line = fragment(source, f'int {self.PRODUCT.lower()}_socket_line(', 'static bool response_send_until(')
         harness = r'''
 #include <assert.h>
 #include <stdbool.h>
@@ -110,6 +112,7 @@ int main(void) {
     puts("A1 assets: icon bytes, gzip, 304, changed tag, authentication and JSON no-store: OK");
 }
 '''
+        harness = harness.replace("A1", self.PRODUCT).replace("a1", self.PRODUCT.lower())
         for token, text in [('RESPONSE', response), ('REQUEST', request), ('LINE', line), ('PARSER', parser),
                             ('AUTH', auth), ('ASSET', asset), ('ROUTE', route)]:
             harness = harness.replace('\n' + token + '\n', '\n' + text + '\n')
@@ -130,20 +133,20 @@ int main(void) {
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             bundle = root / 'verified'
-            page = bundle / 'devices/a1/index.html.gz'
+            page = bundle / 'devices' / self.PRODUCT.lower() / 'index.html.gz'
             page.parent.mkdir(parents=True)
             with patch.object(module, 'ROOT', root), patch.object(module, 'fetch', return_value=bundle):
                 previous = None
                 for data in (b'original-gzip', b'updated-gzip'):
                     page.write_bytes(data)
-                    module.pack('a1')
-                    header = (root / 'A1/generated/web_data.h').read_text()
+                    module.pack(self.PRODUCT.lower())
+                    header = (root / self.PRODUCT / 'generated/web_data.h').read_text()
                     digest = hashlib.sha256(data).hexdigest()
-                    self.assertIn('#define A1_WEB_ETAG "\\\"' + digest + '\\\""', header)
+                    self.assertIn(f'#define {self.PRODUCT}_WEB_ETAG "\\\"' + digest + '\\\""', header)
                     self.assertNotEqual(previous, digest)
                     previous = digest
         # ICO directory and tag must match the actual image bytes.
-        header = (ROOT / 'A1/favicon.h').read_text()
+        header = (ROOT / self.PRODUCT / 'favicon.h').read_text()
         data = bytes(int(x,16) for x in re.findall(r'0x([0-9a-f]{2})', header))
         self.assertIn(hashlib.sha256(data).hexdigest(), header)
         reserved, kind, count = struct.unpack_from('<HHH', data)
@@ -152,3 +155,7 @@ int main(void) {
             size, offset = struct.unpack_from('<II', data, 6+i*16+8)
             self.assertLessEqual(offset+size, len(data))
             self.assertEqual(data[offset:offset+8], b'\x89PNG\r\n\x1a\n')
+
+
+class M1WebAssetsTest(A1WebAssetsTest):
+    PRODUCT = "M1"

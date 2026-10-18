@@ -30,7 +30,8 @@ static struct {
 } a1_state;
 static unsigned a1_lock, mqtt_calls, mqtt_failures, suspend_ap_calls, station_calls, ap_calls;
 static unsigned loops, limit, ready_from, ready_until, blocked_until;
-static bool saved_ssid;
+static bool saved_ssid, wrong_ssid, pending_reboot;
+static unsigned ip_mode;
 static uint32_t now, mqtt_times[8];
 static jmp_buf done;
 static void mico_rtos_lock_mutex(unsigned *m) { assert(!*m);*m=1; }
@@ -52,10 +53,10 @@ static bool wifi_trial_prepare(a1_config_t *c,uint32_t t) {
 static int wifi_trial_finish(bool r,uint32_t t) { (void)r;(void)t;return 0; }
 static int micoWlanGetLinkStatus(LinkStatusTypeDef *link) {
     link->is_connected=loops>=ready_from && loops<ready_until;
-    strcpy((char *)link->ssid,"router");return 0;
+    strcpy((char *)link->ssid,wrong_ssid?"old-router":"router");return 0;
 }
 static int micoWlanGetIPStatus(IPStatusTypedef *ip,int mode) {
-    assert(mode==Station);strcpy(ip->ip,"192.168.1.2");return 0;
+    assert(mode==Station);strcpy(ip->ip,ip_mode==1?"":ip_mode==2?"0.0.0.0":"192.168.1.2");return 0;
 }
 static void MicoSystemReboot(void) { assert(0); }
 static void a1_config_flush(bool force) { assert(!force); }
@@ -79,6 +80,7 @@ static void run(uint32_t initial,unsigned n,unsigned first_ready,unsigned end_re
     ready_from=first_ready;ready_until=end_ready;blocked_until=blocked;saved_ssid=saved;
     mqtt_calls=suspend_ap_calls=station_calls=ap_calls=0;mqtt_failures=failures;
     a1_state.ota_active=blocked>0;
+    a1_state.reboot_pending=pending_reboot;a1_state.reboot_at=initial+100000u;
     if(!setjmp(done))network_worker(0);
     assert(!a1_lock);
 }
@@ -93,6 +95,13 @@ int main(void) {
     run(UINT32_MAX-10000u,80,0,1000,0,true,1);
     assert(mqtt_calls==2 && mqtt_times[1]-mqtt_times[0]==30000);
     run(100,80,0,5,0,true,1);assert(mqtt_calls==1); /* No allocation retries offline. */
+    for(ip_mode=1;ip_mode<=2;ip_mode++) {
+        run(100,10,0,1000,0,true,0);assert(!mqtt_calls);
+    }
+    ip_mode=0;wrong_ssid=true;
+    run(100,10,0,1000,0,true,0);assert(!mqtt_calls);wrong_ssid=false;
+    pending_reboot=true;
+    run(100,10,0,1000,0,true,0);assert(!mqtt_calls);pending_reboot=false;
     puts("A1 MQTT deferred until DHCP; single owner, OTA gate, failed allocation retry/tick wrap: OK");
 }
 '''
@@ -136,6 +145,8 @@ int main(void) {
 
 
 class A1ProvisionMemoryTest(unittest.TestCase):
+    PRODUCT = "A1"
+
     def run_c(self, source):
         with tempfile.TemporaryDirectory() as temp:
             probe = Path(temp) / 'probe.c'
@@ -149,12 +160,24 @@ class A1ProvisionMemoryTest(unittest.TestCase):
             subprocess.run([str(binary)], check=True)
 
     def test_network_owns_deferred_mqtt_start(self):
-        source = (ROOT / 'A1/network.c').read_text()
-        worker = source[source.index('static void network_worker('):source.index('OSStatus a1_network_start(')]
-        self.run_c(NETWORK.replace('WORKER', worker))
+        source = (ROOT / self.PRODUCT / 'network.c').read_text()
+        worker = source[source.index('static void network_worker('):source.index(f'OSStatus {self.PRODUCT.lower()}_network_start(')]
+        harness = NETWORK
+        if self.PRODUCT == 'M1':
+            harness = harness.replace('char ssid[33], wifi_password[65];', 'char ssid[33], wifi_password[65]; int timezone_minutes;')
+            harness = harness.replace('char ip[16]; uint32_t reboot_at;', 'char ip[16]; uint32_t reboot_at, ntp_next_at;')
+            harness = harness.replace('WORKER', r'''
+#define CLOCK_SYNC_INTERVAL_MS 3600000u
+#define CLOCK_RETRY_INTERVAL_MS 60000u
+static void a1_ntp_host_get(char *host) { strcpy(host,"ntp.example"); }
+static bool clock_sync(int timezone,const char *host) { (void)timezone;(void)host;return true; }
+WORKER
+''')
+            harness = harness.replace('a1_', 'm1_').replace('A1 ', 'M1 ')
+        self.run_c(harness.replace('WORKER', worker))
 
     def test_memory_diagnostics_need_no_heap(self):
-        source = (ROOT / 'A1/http.c').read_text()
+        source = (ROOT / self.PRODUCT / 'http.c').read_text()
         function = source[source.index('static void memory_response('):source.index('static void handle(')]
         self.run_c(MEMORY.replace('FUNCTION', function))
 
@@ -187,10 +210,11 @@ int main(void) {
 '''.replace('STARTUP', startup))
 
     def test_memory_route_keeps_authentication(self):
-        source = (ROOT / 'A1/http.c').read_text()
+        source = (ROOT / self.PRODUCT / 'http.c').read_text()
         function = source[source.index('static void memory_response('):source.index('static void handle(')]
         auth = source[source.index('static bool authorized('):source.index('static void str(')]
-        route = source[source.index('static void handle('):source.index('        /* Volatile, authenticated physical mapping aid.')]
+        end = '        /* Volatile, authenticated physical mapping aid.' if self.PRODUCT == 'A1' else '        if (!strcmp(req.method,"POST") && !strcmp(req.path,"/api/v1/command"))'
+        route = source[source.index('static void handle('):source.index(end)]
         harness = MEMORY[:MEMORY.index('FUNCTION')] + r'''
 typedef struct { char method[8],path[96],authorization[128]; } request_t;
 typedef struct { char web_password[33]; } a1_config_t;
@@ -218,5 +242,36 @@ int main(void) {
     puts("A1 memory route: existing Basic auth enforced, only GET accepted: OK");
 }
 '''
+        harness = harness.replace('a1_', self.PRODUCT.lower() + '_')
         self.run_c(harness.replace('AUTH', auth).replace('FUNCTION', function).replace('ROUTE', route))
 
+
+
+class M1ProvisionMemoryTest(A1ProvisionMemoryTest):
+    PRODUCT = "M1"
+
+    def test_startup_reserves_http_and_control_before_network(self):
+        source = (ROOT / 'M1/main.c').read_text()
+        startup = source[source.index('    err = feature_start();'):source.index('    watchdog_startup_complete();')]
+        self.run_c(r'''
+#include <assert.h>
+#include <stdio.h>
+#define kNoErr 0
+typedef int OSStatus;
+static unsigned stage, features, uart, http, network;
+static int feature_start(void) { features++;return stage==1?-1:0; }
+static int m1_uart_start(void) { assert(features);uart++;return stage==2?-1:0; }
+static int m1_http_start(void) { assert(uart);http++;return stage==3?-1:0; }
+static int m1_network_start(void) { assert(http && uart);network++;return stage==4?-1:0; }
+static int startup(void) { OSStatus err;STARTUP return 0; }
+int main(void) {
+    for(stage=0;stage<5;stage++) {
+        features=uart=http=network=0;
+        assert(startup()==(stage?-1:0));
+        assert(features==1 && uart==(stage!=1));
+        assert(http==(stage!=1 && stage!=2));
+        assert(network==(stage!=1 && stage!=2 && stage!=3));
+    }
+    puts("M1 startup: local control and HTTP precede networking, failures stop later allocations: OK");
+}
+'''.replace('STARTUP', startup))

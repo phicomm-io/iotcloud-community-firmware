@@ -251,9 +251,7 @@ class A1HttpOwnerTest(unittest.TestCase):
                 harness = SEND.replace('A1 ', product + ' ').replace(PRELUDE, PRELUDE + '\n/*DEFINES*/\n')
                 self.run_harness(harness.replace('FUNCTIONS', functions).replace('EXTRA_CASES', ''), source)
 
-    def test_a1_large_page_with_limited_send_capacity(self):
-        source = (ROOT / 'A1/http.c').read_text()
-        functions = fragment(source, 'static bool response_send_until(', 'static void message(')
+    def test_large_page_with_limited_send_capacity(self):
         cases = r'''
     static unsigned char page[58267];
     for(size_t i=0;i<sizeof(page);i++)page[i]=(unsigned char)(i*37u+i/251u);
@@ -269,7 +267,11 @@ class A1HttpOwnerTest(unittest.TestCase):
     }
 '''
         harness = SEND.replace(PRELUDE, PRELUDE + '\n/*DEFINES*/\n')
-        self.run_harness(harness.replace('FUNCTIONS', functions).replace('EXTRA_CASES', cases), source)
+        for product in ('A1', 'M1'):
+            with self.subTest(product=product):
+                source = (ROOT / product / 'http.c').read_text()
+                functions = fragment(source, 'static bool response_send_until(', 'static void message(')
+                self.run_harness(harness.replace('FUNCTIONS', functions).replace('EXTRA_CASES', cases), source)
 
 
 if __name__ == '__main__':
