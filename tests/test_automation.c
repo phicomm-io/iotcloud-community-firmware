@@ -33,6 +33,13 @@ int main(void){automation_defaults(&stored);service_init();
  for(unsigned k=0;k<AUTOMATION_KEYS;k++)for(unsigned i=0;i<34;i++)assert(stored.buttons[k][i].kind==AUTO_NONE);
  automation_button(0,1,0);automation_button(0,0,1);assert(calls==0);
 #endif
+#ifdef FEATURE_DEVICE_A1
+ assert(stored.buttons[0][0].kind==AUTO_FAN_PANEL);
+ for(unsigned s=30;s<34;s++)assert(stored.buttons[0][s].kind==AUTO_FAN && stored.buttons[0][s].value==0);
+ CHECK("{\"action\":\"buttons.set\",\"params\":{\"key\":0,\"clicks\":30,\"action\":\"fan.panel\",\"params\":{}}}","accepted");
+ CHECK("{\"action\":\"buttons.set\",\"params\":{\"key\":0,\"clicks\":30,\"action\":\"fan.panel\",\"params\":{\"on\":true}}}","invalid_params");
+ CHECK("{\"action\":\"schedules.put\",\"params\":{\"enabled\":true,\"trigger\":\"once\",\"at\":1800000010,\"action\":\"fan.panel\",\"params\":{}}}","invalid_params");
+#endif
  CHECK("{\"action\":\"schedules.put\",\"params\":{\"enabled\":true,\"trigger\":\"once\",\"at\":1800000010,\"action\":\"system.reset\",\"params\":{\"full\":true}}}","invalid_params");
  CHECK("{\"action\":\"schedules.put\",\"params\":{\"enabled\":true,\"trigger\":\"once\",\"at\":1800000010,\"action\":\"system.reboot\",\"params\":{}}}","accepted");
  CHECK("{\"action\":\"schedules.put\",\"params\":{\"enabled\":true,\"trigger\":\"once\",\"at\":1800000010,\"action\":\"" CONTROL "\",\"params\":{" CONTROL_PARAMS "}}}","accepted");

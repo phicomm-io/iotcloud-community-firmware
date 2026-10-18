@@ -98,6 +98,7 @@ bool a1_control_local(const char *kind, json_object *o)
     } else valid = false;
     if (valid && found) {
         apply(&c);
+        if (!strcmp(kind, "fan") && !c.fan_on) a1_state.panel_feedback_until = 0;
         if (!strcmp(kind, "fan") && json_object_object_get(o, "mode"))
             ++a1_state.mode_feedback_revision;
     }
@@ -105,6 +106,34 @@ bool a1_control_local(const char *kind, json_object *o)
     mico_rtos_unlock_mutex(&a1_config_lock);
     if (valid && found && !strcmp(kind, "fan")) feature_manual_fan(c.fan_on);
     return valid && found;
+}
+
+/* The default short press starts an off purifier, or inspects an on one.
+ * Inspecting never restarts automatic control or writes configuration. */
+bool a1_panel_inspect(void)
+{
+    a1_config_t c; a1_config_get(&c);
+    mico_rtos_lock_mutex(&a1_lock);
+    bool accepted = !c.child_lock && !a1_state.ota_active && !a1_state.reboot_pending;
+    mico_rtos_unlock_mutex(&a1_lock);
+    if (!accepted) return false;
+    if (!c.fan_on) {
+        json_object *q = json_object_new_object();
+        if (!q) return false;
+        json_build_object_add(q, "on", json_object_new_boolean(true));
+        accepted = a1_control_json("fan", q);
+        json_object_put(q);
+        if (!accepted) return false;
+    }
+    mico_rtos_lock_mutex(&a1_lock);
+    accepted = !a1_state.ota_active && !a1_state.reboot_pending;
+    if (accepted) {
+        ++a1_state.mode_feedback_revision;
+        a1_state.panel_feedback_until = mico_rtos_get_time() + 4200;
+        a1_state.fan_feedback_until = 0;
+    }
+    mico_rtos_unlock_mutex(&a1_lock);
+    return accepted;
 }
 
 void a1_panel_event(bool toggle, int delta)

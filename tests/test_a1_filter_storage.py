@@ -31,6 +31,7 @@ static int startup_result(const char *s,int err){(void)s;return err;}
 PRODUCTION
 static int migrate(void){MIGRATION return 0;}
 json_object *a1_status_json(void){return json_object_new_object();}
+bool a1_panel_inspect(void){return false;}
 bool a1_scan_start(void){return false;}
 bool a1_wifi_trial(const a1_config_t *c){(void)c;return false;}
 bool a1_ota_download(const char *u){(void)u;return false;}
@@ -116,6 +117,20 @@ int main(void){
   assert(migrate()!=0 && writes==0 && !memcmp(&live,&before,sizeof(live)));
  }
  puts("A1 persistence, Flash failure/retry, commands, resets, v1-v6 migration and foreign firmware startup: OK");
+ /* v7 power defaults migrate once; custom gestures and unrelated data survive. */
+ init();live.base.version=7;live.automation.buttons[0][0]=(automation_action_t){.kind=AUTO_FAN,.value=2};
+ live.automation.buttons[0][31]=(automation_action_t){.kind=AUTO_REBOOT};
+ live.automatic.fallback_speed=47;live.filter.used_seconds=456;
+ assert(migrate()==0 && live.base.version==8);
+ assert(live.automation.buttons[0][0].kind==AUTO_FAN_PANEL);
+ assert(live.automation.buttons[0][30].kind==AUTO_FAN && !live.automation.buttons[0][30].value);
+ assert(live.automation.buttons[0][31].kind==AUTO_REBOOT);
+ assert(live.automatic.fallback_speed==47 && live.filter.used_seconds==456);
+ init();live.base.version=7;live.automation.buttons[0][0]=(automation_action_t){.kind=AUTO_LIGHT};
+ assert(migrate()==0 && live.automation.buttons[0][0].kind==AUTO_LIGHT && live.automation.buttons[0][30].kind==AUTO_NONE);
+ init();live.base.version=7;live.automation.buttons[0][0]=(automation_action_t){.kind=AUTO_FAN,.value=2,.speed=42};
+ assert(migrate()==0 && live.automation.buttons[0][0].kind==AUTO_FAN && live.automation.buttons[0][0].speed==42);
+ puts("A1 filter production persistence, Flash failure/retry, commands, resets and v1-v6 migration: OK");
 }
 '''.replace('PRODUCTION', prefix).replace('MIGRATION', migration)
         json_dir = Path(os.environ.get('PHICOMM_TEST_JSON_DIR', ROOT / 'build/a1-sdk/mico-os/libraries/utilities/json_c'))

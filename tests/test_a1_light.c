@@ -1,4 +1,6 @@
 #include <assert.h>
+#include <string.h>
+#include "../A1/ring_feedback.h"
 #include "../A1/light.h"
 
 int main(void)
@@ -60,14 +62,29 @@ int main(void)
     assert(colors[0] == 0x123456);
     const uint32_t expected[] = {0x400000, 0x000040, 0x004000};
     for (unsigned kind = 0; kind < 3; kind++) {
-        a1_key_light_start(&feedback, kind == 1, kind == 2, false, 1000);
+        a1_key_light_start(&feedback, kind == 1, kind == 2, false, false, 1000);
         assert(a1_key_light_frame(&feedback, 1000, 64, colors));
         for (unsigned i = 0; i < 32; i++) assert(colors[i] == expected[kind]);
         assert(a1_key_light_frame(&feedback, 1299, 64, colors));
         assert(!a1_key_light_frame(&feedback, 1300, 64, colors));
         assert(!feedback.active);
     }
-    a1_key_light_start(&feedback, 0, false, true, UINT32_MAX - 79);
+    /* Running power taps and hold pulses must not cover mode/airflow frames. */
+    for (unsigned hold = 0; hold < 2; hold++) {
+        a1_key_light_start(&feedback, 0, false, false, false, 2000);
+        a1_ring_feedback(colors, 46, 64, a1_mode_color(false));
+        uint32_t before[32]; memcpy(before, colors, sizeof(before));
+        a1_key_light_start(&feedback, 0, false, true, hold, 2001);
+        assert(!a1_key_light_frame(&feedback, 2001, 64, colors));
+        assert(memcmp(before, colors, sizeof(before)) == 0);
+    }
+    /* Child-lock refusal stays red, and Wi-Fi/combination feedback survives. */
+    for (unsigned key = 0; key < 3; key++) {
+        a1_key_light_start(&feedback, key, key == 0, true, false, 2000);
+        assert(a1_key_light_frame(&feedback, 2000, 64, colors));
+        assert(colors[0] == (key == 0 ? 0x004000u : key == 1 ? 0x000040u : 0x400000u));
+    }
+    a1_key_light_start(&feedback, 0, false, false, true, UINT32_MAX - 79);
     assert(a1_key_light_frame(&feedback, 79, 0, colors));
     for (unsigned i = 0; i < 32; i++) assert(colors[i] == 0);
     assert(!a1_key_light_frame(&feedback, 80, 64, colors));

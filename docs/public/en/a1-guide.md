@@ -11,9 +11,15 @@ The home page provides independent power and operating-mode controls.
 - Selecting a mode while off preserves power-off. Worsening air quality never turns on a powered-off purifier.
 - The ring and web slider set speed in manual mode and the active period's maximum in auto mode. Changing speed also turns power on.
 
+Optional **start/idle hysteresis** adds a target and a higher start threshold. For a PM2.5 target of 35 and start threshold of 50, the motor starts at 50, idles at 35, and retains its state between them. Powering on inside this band initially idles. Any selected pollutant can trigger start; all must meet their targets to idle. Conditions must remain true for the configured duration, and transitions respect minimum run/idle time.
+
+While running, the chosen fixed, linear or PID algorithm adjusts speed; PID shares the same target. Running speed is at least 1%, while idle is 0% regardless of the minimum speed. Night limits still apply. Changing a speed cap or night profile preserves the latch. Disabling hysteresis restores continuous speed control. Both the local WebUI and the MQTT remote management platform display mode and running/idle state and can edit these settings.
+
 Configure minimum, maximum and sensor-offline speeds. A minimum of **0%** allows the motor to idle while logical power stays on; worsening air quality resumes operation after the debounce and minimum switching intervals. Fixed, linear and PID strategies remain available. Missing, unbound or stale sensor data uses the offline speed clamped to the current range; fresh data restores automatic control. Offline fallback never turns on a powered-off purifier.
 
 Each night window independently overrides minimum, maximum and offline speeds while sharing the daytime algorithm. The last matching fan window wins in auto mode; manual speed remains capped by night limits. Before clock synchronization the daytime settings apply.
+
+The management platform’s **Automatic speed settings** button and automatic-control card heading both open the settings. A loading message appears while reading; failed reads can be retried. The A1 device in Home Assistant has an independent **运行模式** (operating mode) selector: **自动** (auto) and **手动** (manual) preserve the power state. Fan details also provide preset modes. HomeKit Bridge synchronizes the fan’s auto/manual presets. If Apple Home still shows old controls after upgrading, reload HomeKit Bridge in HA and reopen Apple Home.
 
 ## Estimated filter life
 
@@ -45,7 +51,20 @@ A1 computes the arithmetic mean of bound M1 readings no older than 15 seconds. W
 
 ## Buttons
 
-A1 has a power button and a Wi-Fi button. By default, a single power-button click toggles power and a double click toggles auto/manual mode. Upgrades preserve existing custom double-click actions; these can be reassigned in button settings. In **Settings → Automation → Button events**, select power, Wi-Fi or both buttons, then choose a gesture and action. A combination requires both buttons to overlap; it cancels the single-button gestures for that interaction. Releasing the buttons at different times does not trigger Wi-Fi recovery.
+A1 has a power button and a Wi-Fi button. The default power-button actions are:
+
+| Gesture | Action |
+| --- | --- |
+| Single click while off | Power on, keeping the selected auto/manual mode |
+| Single click while on | Show the current mode and airflow, keeping power on |
+| Double click | Toggle auto/manual mode, keeping the power state |
+| Hold for 1–4 seconds, then release | Power off |
+
+When showing status, the ring first confirms the mode with **two cyan pulses for auto or one warm amber pulse for manual**. After about 1.2 seconds, a speed bar in the same color shows actual airflow for about 3 seconds. Auto idle has zero airflow, so the bar is dark after the mode confirmation. The bar shows actual airflow rather than the automatic ceiling or remembered manual speed. The normal effect resumes afterward. Feedback can briefly wake disabled normal lighting and still obeys the night brightness limit. A power-button press while running no longer adds a green key flash; the green bar is kept only when turning on from off. Inspection leaves mode, speed and lighting settings unchanged and is blocked by child lock.
+
+Upgrades replace the previous default single-click power toggle with “Power on / show current mode and airflow” and assign power-off to empty power-button hold slots. Existing custom single, double, hold and combination actions are preserved and can be reassigned in button settings.
+
+ In **Settings → Automation → Button events**, select power, Wi-Fi or both buttons, then choose a gesture and action. A combination requires both buttons to overlap; it cancels the single-button gestures for that interaction. Releasing the buttons at different times does not trigger Wi-Fi recovery.
 
 Custom mappings support 1–30 clicks, executed after the click interval, and 1–4 second long presses, executed on release. Five seconds and above are reserved. Actions include cycling or selecting a light effect, resetting filter usage, fan power and speed, ring power and brightness, always-on lighting, child lock and reboot. Switch actions support on, off and toggle; ring toggles can preserve brightness. Identical consecutive mappings are folded in the UI.
 

@@ -45,7 +45,7 @@ json_object *service_product_capabilities(void){
     json_object *o=json_object_new_object(),*a=json_object_new_array();svc_string(o,"model",DEVICE_MODEL);json_build_object_add(o,"protocol",json_object_new_int(2));svc_string(o,"mqtt_protocol","tmcp");json_build_object_add(o,"mqtt_protocol_version",json_object_new_int(2));
     const char *actions[]={"schedules.get","schedules.put","schedules.delete","schedules.enable","buttons.get","status.get","capabilities.get","config.get","logs.get","config.set","wifi.scan","wifi.scan.get","binding.status.get","system.reboot","system.reset","ota.start","night.get","night.set","time.get","time.set","binding.get","binding.set",
 #ifdef FEATURE_DEVICE_A1
-    "filter.get","filter.set","filter.reset","light_effect.next","light_effect.select","light_always.set","sensors.average.get","buttons.set","binding.probe","light_effect.get","light_effect.set","fan.set","fan.mode.set","fan.mode.toggle","light.set","child_lock.set","linkage.get","linkage.set",
+    "filter.get","filter.set","filter.reset","light_effect.next","light_effect.select","light_always.set","sensors.average.get","buttons.set","binding.probe","light_effect.get","light_effect.set","fan.set","fan.mode.set","fan.mode.toggle","fan.panel","light.set","child_lock.set","linkage.get","linkage.set",
 #else
     "display.set",
 #endif
@@ -130,6 +130,10 @@ static __attribute__((noinline)) json_object *service_product_inner(const char *
         json_object *q=json_object_new_object();
         json_build_object_add(q,"mode",toggle?json_object_new_string(feature_fan_auto()?"manual":"auto"):json_object_get(mode));
         ok=a1_control_json("fan",q);json_object_put(q);
+    }
+    else if(!strcmp(action,"fan.panel")){
+        if(!svc_keys(p,""))return NULL;
+        ok=a1_panel_inspect();
     }
     else if(!strcmp(action,"fan.set")){if(!svc_keys(p,"|on||speed||mode|"))return NULL;if(json_object_object_get(p,"on")&&!svc_bool(p,"on",&value))return NULL;if(json_object_object_get(p,"speed")&&!svc_int(p,"speed",&number,0,100))return NULL;ok=a1_control_json("fan",p);}
     else if(!strcmp(action,"child_lock.set")){if(!svc_keys(p,"|enabled|") || !svc_bool(p,"enabled",&value))return NULL;ok=a1_control_json("child_lock",p);}

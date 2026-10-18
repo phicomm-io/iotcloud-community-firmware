@@ -64,3 +64,7 @@ A factory reset clears user settings and requires Wi-Fi provisioning again. A fu
 ## More help
 
 Read the [TC1](tc1-guide), [M1](m1-guide) or [A1](a1-guide) guide. Search or open a [firmware issue](https://github.com/phicomm-io/phicomm-community-firmware/issues), including the product, firmware version and reproduction steps.
+
+Join the Chinese-speaking QQ community: **1021750178** · [Join the group](https://qm.qq.com/q/9L150V85kk?from=tim). If the link does not open, search for the group number in QQ.
+
+Include the product, firmware version, whether you use the local WebUI or MQTT / Home Assistant, reproduction steps and screenshots. Remove passwords and tokens before sharing.

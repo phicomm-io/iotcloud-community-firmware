@@ -75,3 +75,7 @@ TC1 主按键及 A1 Wi-Fi 键保留这两个恢复手势。M1 使用原面板长
 
 - 查阅对应型号的操作文档：[TC1](tc1-guide) · [M1](m1-guide) · [A1](a1-guide)
 - 在 [固件仓库 Issues](https://github.com/phicomm-io/phicomm-community-firmware/issues) 中搜索或提问，并附上型号、固件版本和复现步骤
+
+- QQ 交流群：**1021750178** · [点击加入](https://qm.qq.com/q/9L150V85kk?from=tim)。链接无法打开时，可在 QQ 中搜索群号。
+
+反馈时请附上型号、固件版本、使用本地网页还是 MQTT / Home Assistant、复现步骤和报错截图；请遮去 Wi-Fi / MQTT 密码、令牌等信息。

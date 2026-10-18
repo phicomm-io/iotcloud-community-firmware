@@ -47,7 +47,8 @@ typedef struct {
 typedef struct {
   uint8_t enabled, mode, metrics, statistic, on_enabled, off_enabled, on_all,
       off_all;
-  uint8_t fixed_speed, min_speed, max_speed, reserved, on_metrics, off_metrics;
+  /* hysteresis_enabled uses the previously zero-filled reserved byte. */
+  uint8_t fixed_speed, min_speed, max_speed, hysteresis_enabled, on_metrics, off_metrics;
   uint16_t debounce_seconds, min_switch_seconds;
   float on_pm, off_pm, on_hcho, off_hcho, target_pm, target_hcho;
   float low_pm, high_pm, low_hcho, high_hcho, kp, ki, kd;
@@ -107,7 +108,7 @@ typedef struct {
   float integral, previous, derivative;
   uint32_t last_ms, condition_since, switch_ms;
   int condition;
-  bool initialized;
+  bool initialized, gate_running, switched;
 } feature_pid_t;
 typedef struct {
   bool fan_sleep, light_sleep, block_start;

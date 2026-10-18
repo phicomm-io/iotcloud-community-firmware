@@ -73,8 +73,19 @@ def main(port):
             return configs[-1] if configs else None
         config=wait(fan_config)
         assert config['preset_modes']==['auto','manual'] and config['preset_mode_state_topic']==base+'/fan/mode/state'
+        # HA also exposes a normal select entity, visible without opening fan details.
+        select_config=wait(lambda:next((json.loads(p) for t,p,r in reversed(records)
+            if t.startswith('homeassistant/select/') and p and json.loads(p).get('command_topic')==base+'/command'),None))
+        assert select_config['options']==['自动','手动']
+        assert 'entity_category' not in select_config
         call(a,'fan.set',{'on':False})
         env=Environment(undefined=StrictUndefined)
+        for label,mode in [('手动','manual'),('自动','auto')]:
+            wire=env.from_string(select_config['command_template']).render(value=label)
+            assert json.loads(wire)=={'action':'fan.mode.set','params':{'mode':mode}}
+            publish(base+'/command',wire);wait(lambda:state()['fan_mode']==mode)
+            assert not state()['fan_on']
+            assert env.from_string(select_config['value_template']).render(value_json=state())==label
         for mode in ('manual','auto'):
             wire=env.from_string(config['preset_mode_command_template']).render(value=mode)
             assert json.loads(wire)=={'action':'fan.mode.set','params':{'mode':mode}}
@@ -116,6 +127,36 @@ def main(port):
         wait(lambda:state()['percentage']==23,35)
         call(m,raw={'sim_sensor':{'enabled':True}})
         wait(lambda:call(a,'binding.status.get').get('data_valid'),35)
+        # Optional hysteresis wraps the production speed algorithms. Positive
+        # minimum must not prevent idle, and cap edits must not reset the latch.
+        call(m,raw={'sim_sensor':{'values':[22,45,40,.09]}})
+        wait(lambda:call(a,'sensors.average.get').get('pm25')==40)
+        call(a,'linkage.set',{'hysteresis_enabled':1,'mode':0,'metrics':1,'min_speed':20,'max_speed':80,'fixed_speed':57,'on_pm':50,'target_pm':35,'debounce_seconds':2,'min_switch_seconds':10})
+        wait(lambda:state()['fan_state']=='idle')
+        def sensor(pm,hcho=.09):
+            call(m,raw={'sim_sensor':{'values':[22,45,pm,hcho]}})
+            wait(lambda:call(a,'sensors.average.get').get('pm25')==pm)
+        sensor(50);wait(lambda:state()['percentage']==57)
+        sensor(40);time.sleep(6);assert state()['percentage']==57
+        call(a,'fan.set',{'speed':45});assert state()['percentage']==45
+        sensor(35);wait(lambda:state()['fan_state']=='idle')
+        sensor(40);time.sleep(6);assert state()['fan_state']=='idle'
+        sensor(50);wait(lambda:state()['percentage']==45)
+        call(a,'linkage.set',{'mode':1,'low_pm':10,'high_pm':110})
+        assert state()['percentage']==30
+        call(a,'linkage.set',{'mode':2});assert 20<=state()['percentage']<=45
+        call(a,'fan.set',{'on':False});time.sleep(6);assert not state()['fan_on']
+        call(a,'fan.set',{'on':True});wait(lambda:state()['percentage']>=20)
+        call(a,'linkage.set',{'metrics':3,'mode':0,'fixed_speed':40,'on_hcho':.1,'target_hcho':.08})
+        sensor(35,.09);time.sleep(6);assert state()['percentage']==40
+        sensor(35,.08);wait(lambda:state()['fan_state']=='idle')
+        call(m,raw={'sim_sensor':{'enabled':False}})
+        wait(lambda:state()['percentage']==23,35)
+        call(m,raw={'sim_sensor':{'enabled':True,'values':[22,45,40,.09]}})
+        wait(lambda:state()['fan_state']=='idle',35)
+        call(a,'linkage.set',{'hysteresis_enabled':0})
+        assert state()['percentage']==40
+        print('PASS production hysteresis start/target/deadband, positive-minimum idle, cap preservation, algorithms, combined stop, off latch and sensor fallback',flush=True)
         call(a,'fan.mode.set',{'mode':'manual'});assert state()['percentage']==47
         print('PASS fresh sensor fixed/linear/PM/HCHO/combined/PID, idle/resume, off latch, stale fallback and recovery',flush=True)
     finally:

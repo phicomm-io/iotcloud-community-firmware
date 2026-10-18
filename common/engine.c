@@ -201,6 +201,35 @@ bool feature_control(const feature_linkage_t *c, feature_pid_t *p,
     memset(p, 0, sizeof(*p));
     return true;
   }
+  /* The gate owns motor idle independently of the speed controller. Any
+   * selected pollutant can start it; all selected pollutants must meet target
+   * before it stops. A cancelled condition restarts the continuous timer. */
+  if (c->hysteresis_enabled) {
+    bool start = ((c->metrics & 1) && v[2] >= c->on_pm) ||
+                 ((c->metrics & 2) && v[3] >= c->on_hcho);
+    bool stop = (!(c->metrics & 1) || v[2] <= c->target_pm) &&
+                (!(c->metrics & 2) || v[3] <= c->target_hcho);
+    bool desired = p->gate_running ? !stop : start;
+    int condition = desired == p->gate_running ? 0 : desired ? 1 : -1;
+    if (condition != p->condition) {
+      p->condition = condition;
+      p->condition_since = now;
+    }
+    if (condition &&
+        (uint32_t)(now - p->condition_since) >= c->debounce_seconds * 1000u &&
+        (!p->switched || (uint32_t)(now - p->switch_ms) >= c->min_switch_seconds * 1000u)) {
+      p->gate_running = desired;
+      p->switch_ms = now;
+      p->switched = true;
+      p->condition = 0;
+      p->initialized = false;
+    }
+    if (!p->gate_running) {
+      p->initialized = false;
+      *next_speed = 0;
+      return true;
+    }
+  }
   float output = c->fixed_speed;
   if (c->mode == 1) {
     float a = (v[2] - c->low_pm) / (c->high_pm - c->low_pm),
@@ -233,6 +262,11 @@ bool feature_control(const feature_linkage_t *c, feature_pid_t *p,
     p->initialized = true;
   }
   unsigned target = (unsigned)(clip(output, c->min_speed, c->max_speed) + .5f);
+  if (c->hysteresis_enabled) {
+    /* While the gate is open even a zero-minimum algorithm must keep running. */
+    *next_speed = target ? target : 1;
+    return true;
+  }
   int desired = target > 0 ? 1 : -1;
   if (desired != p->condition) { p->condition = desired; p->condition_since = now; }
   if ((target == 0) != (speed == 0) &&
