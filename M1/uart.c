@@ -158,6 +158,7 @@ static void uart_worker(mico_thread_arg_t arg)
             old_level = level; old_wifi = wifi_connected; old_error = error_on;
         }
         old_mode = mode;
+        m1_scd40_tick();
         watchdog_beat(WATCHDOG_HARDWARE);
         mico_thread_msleep(10);
     }

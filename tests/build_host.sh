@@ -3,6 +3,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 output=${1:-build/account-host}
 mkdir -p "$output"
+cc -std=c99 -Wall -Wextra -Werror tests/test_m1_scd40.c -o "$output/m1-scd40"
+"$output/m1-scd40"
 python3 -m unittest discover -s tests -p test_apply_sdk_patch.py
 sdk_a1=${A1_SDK_DIR:-build/a1-sdk/mico-os}
 sdk_m1=${M1_SDK_DIR:-build/m1-sdk/mico-os}

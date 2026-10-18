@@ -49,6 +49,10 @@ static feature_config_t features;
 static automation_config_t automations;
 static pthread_mutex_t store_lock=PTHREAD_MUTEX_INITIALIZER;
 static bool sensor_enabled=true;
+#ifndef HOST_A1
+static bool co2_enabled=false;
+static unsigned co2_ppm=700;
+#endif
 static float sensor_values[4]={22,45,50,.05};
 uint32_t mico_rtos_get_time(void){return host_now()-started;}
 void mico_thread_msleep(unsigned n){usleep(n*1000);}
@@ -68,6 +72,7 @@ void automation_load(automation_config_t *c){pthread_mutex_lock(&store_lock);*c=
 bool automation_save(const automation_config_t *c){pthread_mutex_lock(&store_lock);bool ok=c->revision==automations.revision+1;if(ok)automations=*c;pthread_mutex_unlock(&store_lock);return ok;}
 void state_get(STATE *s){mico_rtos_lock_mutex(&device_lock);
 #ifndef HOST_A1
+ if(co2_enabled){device_state.scd40.ready=true;device_state.scd40.received=true;device_state.scd40.updated_ms=mico_rtos_get_time();device_state.scd40.samples=device_state.scd40.updated_ms/1000+1;device_state.scd40.co2_ppm=co2_ppm;strcpy(device_state.scd40.serial,"f701a3073b32");}
  if(sensor_enabled){device_state.sample.received=true;device_state.sample.updated_ms=mico_rtos_get_time();device_state.sample.sequence=device_state.sample.updated_ms/1000+1;device_state.sample.temperature_deci_c=sensor_values[0]*10;device_state.sample.humidity_deci_pct=sensor_values[1]*10;device_state.sample.pm25_ug_m3=sensor_values[2];device_state.sample.hcho_ug_m3=sensor_values[3]*1000;}
 #endif
  *s=device_state;mico_rtos_unlock_mutex(&device_lock);}
@@ -130,5 +135,7 @@ int main(int argc,char **argv){if(argc!=6){fprintf(stderr,"node id ip broker por
  else if(json_object_object_get(q,"sim_panel_feedback")){a1_state_t s;a1_config_t c;a1_state_get(&s);a1_config_get(&c);printf("{\"code\":\"ok\",\"data\":{\"until\":%u,\"revision\":%u,\"config_revision\":%u}}\n",s.panel_feedback_until,s.mode_feedback_revision,c.revision);}
  else if(json_object_object_get(q,"sim_panel")){a1_panel_event(false,json_object_get_int(json_object_object_get(q,"sim_panel")));puts("{\"code\":\"ok\"}");}
  else if(json_object_object_get(q,"sim_filter_seconds")){BASE_LOCK();sim_filter.used_seconds=json_object_get_int(json_object_object_get(q,"sim_filter_seconds"));BASE_UNLOCK();puts("{\"code\":\"ok\"}");}
+#else
+ else if(json_object_object_get(q,"sim_co2")){json_object *meta=json_object_object_get(q,"sim_co2");mico_rtos_lock_mutex(&device_lock);co2_enabled=json_object_get_boolean(json_object_object_get(meta,"enabled"));json_object *v=json_object_object_get(meta,"ppm");if(v)co2_ppm=json_object_get_int(v);mico_rtos_unlock_mutex(&device_lock);puts("{\"code\":\"ok\"}");}
 #endif
  else {json_object *meta=json_object_object_get(q,"sim_sensor");if(meta){mico_rtos_lock_mutex(&device_lock);json_object *v=json_object_object_get(meta,"enabled");if(v)sensor_enabled=json_object_get_boolean(v);v=json_object_object_get(meta,"values");if(v)for(unsigned i=0;i<4;i++)sensor_values[i]=json_object_get_double(json_object_array_get_idx(v,i));mico_rtos_unlock_mutex(&device_lock);puts("{\"code\":\"ok\"}");}else{json_object *r=service_command(q);puts(json_object_to_json_string(r));json_object_put(r);}}json_object_put(q);fflush(stdout);}free(line);return 0;}

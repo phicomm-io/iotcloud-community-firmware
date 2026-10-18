@@ -235,8 +235,15 @@ int application_start(void)
     a1_config = mico_system_context_get_user_data(a1_context);
     if (!a1_config) return startup_result("config allocation/layout", kNoMemoryErr);
     a1_config_t c;
-    /* The SDK validates the entire partition before loading these bytes. */
-    if (a1_config->magic != A1_CONFIG_MAGIC || a1_config->version < 1 || a1_config->version > A1_CONFIG_VERSION) {
+    /* The SDK validates MiCO's partition, not the application's layout.
+     * zA1's J-Link installer preserves parameters from the previous firmware. */
+    if (a1_config->magic != A1_CONFIG_MAGIC) {
+        memset(a1_config, 0, sizeof(app_storage_t));
+        appRestoreDefault_callback(a1_config, sizeof(app_storage_t));
+        if (mico_system_context_update(a1_context) != kNoErr) return startup_result("config persist", kUnknownErr);
+        service_event("info", "config", "foreign_layout_reset");
+    }
+    if (a1_config->version < 1 || a1_config->version > A1_CONFIG_VERSION) {
         service_event("error","config","unsupported_layout");return kUnknownErr;
     }
     bool panel_migration = a1_config->version < 8;

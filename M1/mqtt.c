@@ -101,11 +101,13 @@ static void str(json_object *o, const char *key, const char *value)
 
 static int discovery(const m1_config_t *c)
 {
-    static const char *keys[] = {"temperature", "humidity", "formaldehyde", "pm25", "brightness"};
-    static const char *names[] = {"温度", "湿度", "甲醛", "PM2.5", "屏幕亮度"};
-    static const char *units[] = {"°C", "%", "mg/m³", "µg/m³"};
-    static const char *classes[] = {"temperature", "humidity", NULL, "pm25"};
-    for (unsigned i = 0; i < 5; i++) {
+    static const char *keys[] = {"temperature", "humidity", "formaldehyde", "pm25", "co2", "brightness"};
+    static const char *names[] = {"温度", "湿度", "甲醛", "PM2.5", "二氧化碳", "屏幕亮度"};
+    static const char *units[] = {"°C", "%", "mg/m³", "µg/m³", "ppm"};
+    static const char *classes[] = {"temperature", "humidity", NULL, "pm25", "carbon_dioxide"};
+    m1_state_t snapshot; m1_state_get(&snapshot);
+    for (unsigned i = 0; i < 6; i++) {
+        if (i == 4 && !snapshot.scd40.received) continue;
         char topic[MQTT_TOPIC_MAX], text[MQTT_TOPIC_MAX];
         json_object *o = json_object_new_object();
         if (!o) return MQTT_FAILURE;
@@ -126,12 +128,12 @@ static int discovery(const m1_config_t *c)
         str(device, "name", c->name); str(device, "model", "M1 EMW3080B");
         str(device, "manufacturer", "Phicomm"); str(device, "sw_version", M1_VERSION);
         json_build_object_add(o, "device", device);
-        if (i < 4) {
-            snprintf(text, sizeof(text), "%s/sensor", base); str(o, "state_topic", text);
+        if (i < 5) {
+            snprintf(text, sizeof(text), "%s/%s", base, i == 4 ? "co2" : "sensor"); str(o, "state_topic", text);
             snprintf(text, sizeof(text), "{{ value_json.%s }}", keys[i]); str(o, "value_template", text);
             str(o, "unit_of_measurement", units[i]); str(o, "state_class", "measurement");
             if (classes[i]) str(o, "device_class", classes[i]);
-            json_build_object_add(o, "expire_after", json_object_new_int(15));
+            json_build_object_add(o, "expire_after", json_object_new_int(i == 4 ? 20 : 15));
             json_object *availability = json_object_new_array();
             json_object *node = json_object_new_object(), *sensor = json_object_new_object();
             if (!availability || !node || !sensor) {
@@ -141,7 +143,7 @@ static int discovery(const m1_config_t *c)
                 json_object_put(o); return MQTT_FAILURE;
             }
             str(node, "topic", availability_topic);
-            snprintf(text, sizeof(text), "%s/sensor_availability", base); str(sensor, "topic", text);
+            snprintf(text, sizeof(text), "%s/%s", base, i == 4 ? "co2_availability" : "sensor_availability"); str(sensor, "topic", text);
             json_build_array_add(availability, node); json_build_array_add(availability, sensor);
             json_build_object_add(o, "availability", availability);
             str(o, "availability_mode", "all");
@@ -157,7 +159,7 @@ static int discovery(const m1_config_t *c)
             str(o,"value_template","{{ (value | int) * 25 }}");
             str(o,"entity_category","config");
         }
-        mqtt_ha(&account, i < 4 ? "sensor" : "number", keys[i], topic, sizeof(topic));
+        mqtt_ha(&account, i < 5 ? "sensor" : "number", keys[i], topic, sizeof(topic));
         int rc = publish(topic, json_object_to_json_string(o), true);
         json_object_put(o);
         if (rc != MQTT_SUCCESS) return rc;
@@ -167,8 +169,8 @@ static int discovery(const m1_config_t *c)
 
 static int cleanup_discovery(void)
 {
-    const char *keys[] = {"temperature","humidity","formaldehyde","pm25","brightness"};
-    const char *components[] = {"sensor","sensor","sensor","sensor","number"};
+    const char *keys[] = {"temperature","humidity","formaldehyde","pm25","co2","brightness"};
+    const char *components[] = {"sensor","sensor","sensor","sensor","sensor","number"};
     int result = MQTT_SUCCESS;
     for (unsigned i = 0; i < sizeof(keys)/sizeof(keys[0]); ++i) {
         char path[MQTT_TOPIC_MAX]; mqtt_ha(&account, components[i], keys[i], path, sizeof(path));
@@ -263,6 +265,9 @@ static void mqtt_worker(mico_thread_arg_t arg)
         if (rc == MQTT_SUCCESS) { attempt = 0; cleanup_pending = true; mqtt_status(MQTT_READY); }
         uint32_t acl_check = mico_rtos_get_time();
         uint32_t connect_sequence = state.sample.sequence;
+        uint32_t co2_sequence = 0;
+        bool co2_discovered = state.scd40.received;
+        int old_co2_fresh = -1;
         uint32_t sequence = 0; int old_brightness = -1, old_fresh = -1;
         uint32_t snapshot_at=mico_rtos_get_time()-5000u;
         rediscover = false;
@@ -277,10 +282,11 @@ static void mqtt_worker(mico_thread_arg_t arg)
             bool feature_changed=feature_revision!=fc->revision;
             feature_revision=fc->revision; free(fc);
             if(feature_changed && !feature_mqtt_filters_current(feature_filters,count))break;
+            if (state.scd40.received && !co2_discovered) { rediscover = true; co2_discovered = true; }
             if (rediscover) {
                 feature_mqtt_service(publish,false);
                 rc = discovery(&current); rediscover = false;
-                old_brightness = old_fresh = -1; sequence = 0;
+                old_brightness = old_fresh = old_co2_fresh = -1; sequence = co2_sequence = 0;
             }
             bool fresh = m1_sample_fresh(&state.sample, mico_rtos_get_time()) &&
                 (state.sample.sequence != connect_sequence);
@@ -299,6 +305,18 @@ static void mqtt_worker(mico_thread_arg_t arg)
                     s->hcho_ug_m3 / 1000, s->hcho_ug_m3 % 1000, s->pm25_ug_m3);
                 rc = publish_leaf("sensor", payload, true);
                 sequence = state.sample.sequence;
+            }
+            bool co2_fresh = state.scd40.ready && state.scd40.received &&
+                (uint32_t)(mico_rtos_get_time() - state.scd40.updated_ms) < 20000;
+            if (rc == MQTT_SUCCESS && co2_fresh && co2_sequence != state.scd40.samples) {
+                char value[32]; snprintf(value, sizeof(value), "{\"co2\":%u}", state.scd40.co2_ppm);
+                /* Do not replay an old measurement as fresh after HA restarts. */
+                rc = publish_leaf("co2", value, false);
+                if (rc == MQTT_SUCCESS) co2_sequence = state.scd40.samples;
+            }
+            if (rc == MQTT_SUCCESS && co2_fresh != old_co2_fresh) {
+                rc = publish_leaf("co2_availability", co2_fresh ? "online" : "offline", true);
+                if (rc == MQTT_SUCCESS) old_co2_fresh = co2_fresh;
             }
             if (rc == MQTT_SUCCESS && old_brightness != state.brightness_requested) {
                 char value[4]; snprintf(value, sizeof(value), "%u", state.brightness_requested);

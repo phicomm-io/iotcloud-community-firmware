@@ -96,6 +96,27 @@ int main(void){
   assert(!strcmp(live.base.ssid,"preserved-wifi")&&!strcmp(live.base.name,"old-device"));
   if(v>=4)assert(live.automation.tasks[0].id==42 && live.features.sleep_count==1);
  }
+ /* A valid MiCO partition may still contain another firmware's app data.
+  * zA1's J-Link script deliberately preserves both parameter partitions. */
+ init();memset(&live,0xa5,sizeof(live));
+ assert(migrate()==0 && writes>0);
+ assert(flash.base.magic==A1_CONFIG_MAGIC && flash.base.version==A1_CONFIG_VERSION);
+ assert(!flash.base.ssid[0] && !flash.base.wifi_password[0] && !flash.base.web_password[0]);
+ assert(!flash.base.fan_on && flash.base.speed==60 && flash.base.led_enabled);
+ assert(flash.filter.magic==A1_FILTER_MAGIC && flash.filter.lifetime_hours==4320 && !flash.filter.used_seconds);
+ assert(flash.features.magic==FEATURE_MAGIC && flash.automation.magic==AUTOMATION_MAGIC);
+ assert(flash.automation.buttons[0][1].kind==AUTO_FAN_MODE_TOGGLE);
+ assert(flash.combination_buttons[0].kind==AUTO_NONE && !flash.automatic.reserved[0]);
+ live=flash;writes=0;
+ assert(migrate()==0 && writes==0 && !memcmp(&live,&flash,sizeof(live)));
+ init();memset(&live,0xa5,sizeof(live));fail_write=1;
+ assert(migrate()!=0 && writes==1);
+ for(unsigned v=0;v<=A1_CONFIG_VERSION+1;v+=A1_CONFIG_VERSION+1){
+  init();live.base.version=v;strcpy(live.base.ssid,"keep-unsupported-config");
+  app_storage_t before=live;
+  assert(migrate()!=0 && writes==0 && !memcmp(&live,&before,sizeof(live)));
+ }
+ puts("A1 persistence, Flash failure/retry, commands, resets, v1-v6 migration and foreign firmware startup: OK");
  /* v7 power defaults migrate once; custom gestures and unrelated data survive. */
  init();live.base.version=7;live.automation.buttons[0][0]=(automation_action_t){.kind=AUTO_FAN,.value=2};
  live.automation.buttons[0][31]=(automation_action_t){.kind=AUTO_REBOOT};
