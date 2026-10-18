@@ -114,11 +114,13 @@ static void binding(void) {
                              .sequence = 9,
                              .boot = 7,
                              .received_ms = 100,
-                             .valid = true};
+                             .valid = true, .co2_supported=true, .co2_valid=true, .co2=1234, .co2_received_ms=100};
   test_now = 200;
   json_object_object_add(o, "body", sample_body(&sample, test_now));
   incoming(o, false, false, NULL);
   assert(samples[0].valid && samples[0].received_ms == 200);
+  assert(samples[0].co2==1234 && feature_co2_fresh(&samples[0],200));
+  assert(!feature_co2_fresh(&samples[0],20100));
   test_now = 300;
   incoming(o, false, false, NULL);
   assert(samples[0].received_ms == 200);
@@ -328,7 +330,7 @@ static void automatic_profiles(void) {
   c=stored;c.linkage.hysteresis_enabled=1;c.linkage.mode=0;
   c.linkage.fixed_speed=55;c.linkage.on_pm=50;c.linkage.target_pm=35;
   c.linkage.debounce_seconds=5;c.linkage.min_switch_seconds=10;
-  assert(install_config(&c));data_valid=true;aggregate[2]=40;
+  assert(install_config(&c));data_valid=true;available=1;aggregate[2]=40;
   feature_effective_fan(true,64,&on,&speed);assert(on && speed==0);
   aggregate[2]=50;automatic_valid=false;test_now=1000;
   feature_effective_fan(true,64,&on,&speed);assert(on && speed==0);
@@ -360,6 +362,7 @@ static unsigned named_discoveries;
 static char discovery_ids[8][192], discovery_topics[8][FEATURE_TOPIC_MAX];
 static bool compare_discovery_identity;
 static int capture_discovery_name(const char *topic, const char *body, bool retained) {
+  if(!*body) { assert(retained && strstr(topic,"scd40_")); return 0; }
   assert(retained && named_discoveries < 8);
   json_object *o = obj(body), *device = json_object_object_get(o, "device");
   assert(!strcmp(string(device, "name"), expected_device_name));
@@ -380,6 +383,48 @@ static int capture_discovery_name(const char *topic, const char *body, bool reta
   named_discoveries++;
   json_object_put(o);
   return 0;
+}
+static unsigned sensor_entities, co2_entities, aux_entities;
+static bool remove_sensor_entities;
+static int capture_sensor_discovery(const char *topic, const char *body, bool retained) {
+  assert(retained && strstr(topic,"homeassistant/"));
+  if(remove_sensor_entities) { assert(!*body); sensor_entities++; return 0; }
+  if(!*body) { assert(strstr(topic,"scd40_")); aux_entities++; return 0; }
+  json_object *o=obj(body);
+  if(!strcmp(string(o,"device_class"),"carbon_dioxide")) {
+    assert(!strcmp(string(o,"unit_of_measurement"),"ppm"));
+    assert(strstr(string(o,"value_template"),"co2")); co2_entities++;
+  }
+  if(strstr(string(o,"name"),"SCD40")) {
+    assert(strstr(string(o,"value_template"),"scd40_")); aux_entities++;
+    assert(!strstr(topic,"020000dd0002_scd40_"));
+  }
+  if(strstr(topic,"/sensor/")) {
+    json_object *node=json_object_array_get_idx(json_object_object_get(o,"availability"),0);
+    assert(!strcmp(string(node,"topic"),string(o,"state_topic")));
+    assert(strstr(string(node,"value_template"),"valid"));
+    assert(integer(o,"expire_after")==15);
+  }
+  sensor_entities++; json_object_put(o); return 0;
+}
+static void optional_sensor_discovery(void) {
+  feature_config_t saved=configuration, config;
+  feature_sample_t saved_samples[8]; memcpy(saved_samples,samples,sizeof(samples));
+  feature_defaults(&config); config.peer_count=2;
+  strcpy(config.peers[0].id,"020000dd0001"); strcpy(config.peers[1].id,"020000dd0002");
+  configuration=config; memset(samples,0,sizeof(samples));
+  samples[0].co2_supported=samples[1].co2_supported=true;
+  char root[FEATURE_TOPIC_MAX];root_for(&config,0,root);
+  assert(discovery_sensors(&config)==(1u|2u));
+  discovery_virtual(capture_sensor_discovery,&config,root,false);
+  assert(sensor_entities==19 && co2_entities==3 && aux_entities==6);
+  /* Freshness does not remove registered entities. Layout cleanup removes all optional IDs. */
+  remove_sensor_entities=true; sensor_entities=0;
+  discovery_virtual(capture_sensor_discovery,&config,root,true);
+  assert(sensor_entities==25);
+  remove_sensor_entities=false;
+  configuration=saved;memcpy(samples,saved_samples,sizeof(samples));
+  puts("Optional HA sensors: mixed M1 capabilities, averages, independent availability and retained cleanup passed");
 }
 static void discovery_device_names(void) {
   feature_config_t config;
@@ -440,6 +485,7 @@ static int capture_account(const char *t,const char *body,bool retained) {
 static void account_namespaces(void) {
 #ifdef FEATURE_DEVICE_A1
   discovery_device_names();
+  optional_sensor_discovery();
 #endif
   mqtt_account_t alice,bob,legacy;
   char user[64];memset(user,'x',63);user[63]=0;
@@ -510,6 +556,12 @@ int main(void) {
   assert(json_object_get_double(json_object_object_get(mean,"temperature"))==25);
   assert(json_object_get_double(json_object_object_get(mean,"pm25"))==20);
   json_object_put(mean);
+  readings[2].co2_supported=readings[2].co2_valid=true;
+  readings[2].co2=1400;readings[2].co2_received_ms=test_now;
+  mean=average_body(readings,3,test_now);
+  assert(json_object_get_int(json_object_object_get(mean,"co2_sample_count"))==1);
+  assert(json_object_get_double(json_object_object_get(mean,"co2"))==1400);
+  json_object_put(mean);
   mean=average_body(readings,3,test_now+180001);
   assert(!json_object_get_boolean(json_object_object_get(mean,"valid")));
   assert(!json_object_object_get(mean,"temperature"));json_object_put(mean);
@@ -528,6 +580,10 @@ int main(void) {
   transaction("linkage", "{\"hysteresis_enabled\":1,\"metrics\":3,\"on_pm\":50,\"target_pm\":35,\"on_hcho\":0.08,\"target_hcho\":0.08}", 400);
   transaction("linkage", "{\"hysteresis_enabled\":1,\"metrics\":1,\"on_pm\":50,\"target_pm\":35}", 200);
   transaction("linkage", "{\"hysteresis_enabled\":2}", 400);
+  transaction("linkage", "{\"metrics\":4,\"target_co2\":1000,\"on_co2\":900}", 400);
+  transaction("linkage", "{\"metrics\":4,\"low_co2\":2000,\"high_co2\":800}", 400);
+  transaction("linkage", "{\"metrics\":4,\"on_co2\":1500,\"target_co2\":1000}", 200);
+  transaction("linkage", "{\"metrics\":1}", 200);
   transaction("linkage", "{\"hysteresis_enabled\":0}", 200);
   transaction("linkage", "{\"target_pm\":0}", 400);
   transaction("linkage", "{\"kp\":true}", 400);

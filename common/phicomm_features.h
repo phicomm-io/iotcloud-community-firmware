@@ -92,9 +92,11 @@ typedef struct {
   uint8_t fallback_speed, reserved[3];
   feature_auto_night_t night[FEATURE_MAX_SLEEP];
 } feature_auto_config_t;
+typedef struct { float on_co2, target_co2, low_co2, high_co2; } feature_co2_config_t;
 typedef struct {
   FEATURE_CONFIG_FIELDS
   union { feature_auto_config_t automatic; uint64_t automatic_alignment; };
+  feature_co2_config_t co2;
 } feature_config_t;
 #undef FEATURE_CONFIG_FIELDS
 typedef char feature_prefix_boundary[(offsetof(feature_config_t, automatic) == sizeof(feature_config_storage_t)) ? 1 : -1];
@@ -103,6 +105,9 @@ typedef struct {
   float value[4];
   uint32_t sequence, boot, received_ms, age_ms;
   bool valid;
+  float co2;
+  uint32_t co2_received_ms, co2_age_ms;
+  bool co2_supported, co2_valid;
 } feature_sample_t;
 typedef struct {
   float integral, previous, derivative;
@@ -115,7 +120,11 @@ typedef struct {
   uint8_t max_speed, brightness;
 } feature_sleep_state_t;
 
+void feature_co2_defaults(feature_co2_config_t *);
 void feature_defaults(feature_config_t *);
+bool feature_co2_fresh(const feature_sample_t *, uint32_t);
+unsigned feature_co2_aggregate(const feature_sample_t *, unsigned, uint32_t, unsigned, float *);
+bool feature_control_co2(const feature_linkage_t *, const feature_co2_config_t *, feature_pid_t *, const float[4], float, uint32_t, bool, unsigned, bool *, unsigned *);
 void feature_light_layout(feature_light_t *, unsigned);
 bool feature_mac(const char *, char out[13]);
 void feature_colon_mac(const char *, char out[18]);

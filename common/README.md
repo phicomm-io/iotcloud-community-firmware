@@ -38,6 +38,7 @@ MAC 在逻辑主题中采用小写冒号格式，原生主题仍采用 12 位紧
 - `B/fan/{set,state}` 和 `B/fan/percentage/{set,state}`：ON/OFF、0–100%。
 - `B/light/{set,state}`：HA JSON 灯控制；`B/child_lock/{set,state}`、`B/led_always_on/{set,state}`：ON/OFF。
 - 单 M1：`B/sensor`；多 M1：`B/<m1mac>/sensor`；测量键为 `temperature`、`humidity`、`pm25`、`formaldehyde`，单位分别为 °C、%、µg/m³、mg/m³。
+- 可选 CO₂：样本和平均值包含 `co2_supported`、`co2_valid`、`co2`（ppm），平均值另含 `co2_sample_count`。无效 CO₂ 为 JSON null，20 秒过期，独立于原四项读数的有效期。联动 `metrics` 位掩码为 1=PM2.5、2=甲醛、4=CO₂，可组合为 1–7；CO₂ 阈值为 `on_co2`、`target_co2`、`low_co2`、`high_co2`。
 - `B/average`：新鲜且有效 M1 的算术平均值，与联动选用的统计策略无关。
 - 组设备高级控制：`B/<a1mac>/fan/...`、`light/...`、`child_lock/...`、`led_always_on/...`。
 

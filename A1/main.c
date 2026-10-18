@@ -246,6 +246,7 @@ int application_start(void)
     if (a1_config->version < 1 || a1_config->version > A1_CONFIG_VERSION) {
         service_event("error","config","unsupported_layout");return kUnknownErr;
     }
+    bool co2_migration = a1_config->version < 9;
     bool panel_migration = a1_config->version < 8;
     bool auto_migration = a1_config->version < 7;
     bool button_migration = a1_config->version < 6;
@@ -267,7 +268,7 @@ int application_start(void)
     if (a1_config->magic == A1_CONFIG_MAGIC && a1_config->version == 3) {
         ((app_storage_t *)a1_config)->automation.magic=0;
     }
-    if (a1_config->version == 3 || a1_config->version == 4 || a1_config->version == 5 || a1_config->version == 6 || a1_config->version == 7) a1_config->version = A1_CONFIG_VERSION;
+    if (a1_config->version == 3 || a1_config->version == 4 || a1_config->version == 5 || a1_config->version == 6 || a1_config->version == 7 || a1_config->version == 8) a1_config->version = A1_CONFIG_VERSION;
     if (filter_storage()->magic != A1_FILTER_MAGIC || !filter_storage()->lifetime_hours ||
         filter_storage()->lifetime_hours > A1_FILTER_MAX_HOURS) {
         a1_filter_defaults(filter_storage()); filter_migration = true;
@@ -284,8 +285,9 @@ int application_start(void)
         if (s->automation.magic == AUTOMATION_MAGIC && s->automation.buttons[0][1].kind == AUTO_NONE)
             s->automation.buttons[0][1].kind = AUTO_FAN_MODE_TOGGLE;
     }
+    if (co2_migration) feature_co2_defaults(&((app_storage_t *)a1_config)->co2);
     if (panel_migration) a1_storage_panel_buttons_migrate((app_storage_t *)a1_config);
-    if ((filter_migration || button_migration || auto_migration || panel_migration) && mico_system_context_update(a1_context) != kNoErr) return startup_result("filter persist", kUnknownErr);
+    if ((filter_migration || button_migration || auto_migration || panel_migration || co2_migration) && mico_system_context_update(a1_context) != kNoErr) return startup_result("filter persist", kUnknownErr);
     if (((app_storage_t *)a1_config)->automation.magic != AUTOMATION_MAGIC) {
         automation_config_t *next=malloc(sizeof(*next));
         if (!next) return startup_result("automation allocation", kNoMemoryErr);

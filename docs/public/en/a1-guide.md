@@ -104,3 +104,15 @@ entity_config:
 The PM2.5 link is optional and can be omitted without a bound M1. See the [Home Assistant HomeKit Bridge documentation](https://www.home-assistant.io/integrations/homekit/).
 
 When exposed as an air purifier through HomeKit Bridge, automatic maps to HA's `auto` preset. The current bridge sends a speed command when manual is selected, so it applies HomeKit's displayed speed. That speed command can also turn on a powered-off device. To restore the last manual speed while preserving power state, select manual directly in HA or the web page. The bridge can display zero-speed idle as purifying or minimum speed; use the device page to confirm actual idle state.
+
+## Optional CO₂ linkage
+
+When a linked M1 has an SCD40, A1 shows mean CO₂ in ppm and offers CO₂ alone or combined with PM2.5 and formaldehyde for automatic speed control. Upgrade both A1 and M1 to firmware supporting CO₂ linkage. M1 units without a CO₂ sensor do not contribute to the CO₂ average. CO₂ has an independent freshness deadline: when selected and all CO₂ readings are missing or stale, A1 uses the configured offline speed rather than treating missing readings as zero. PM2.5/formaldehyde-only control continues independently.
+
+Default CO₂ thresholds are 1500 ppm to start and 1000 ppm to idle; the default linear range is 800–2000 ppm. These values are adjustable. Combined control uses the highest speed demand. With start/idle hysteresis, any selected metric may start the fan, while all selected metrics must reach their targets before idling.
+
+### Home Assistant / HomeKit through A1
+
+A1 publishes HA discovery for linked M1 temperature, humidity, PM2.5 and formaldehyde. An SCD40 adds CO₂ (ppm) only. SCD40 temperature/humidity are not displayed or forwarded to HA; temperature and humidity continue to use the original M1 sensors. A single M1 exposes its own readings; multiple M1 units expose per-device readings and valid-sample means. Unsupported devices do not create CO₂ entities or contribute zeroes.
+
+UART and CO₂ freshness are independent. Stale readings become unavailable while their entities remain registered. CO₂ uses the standard HA `carbon_dioxide` device class and `ppm`, allowing selection in HA HomeKit Bridge alongside the original M1 temperature/humidity. M1 display brightness is a device control and is not duplicated as an A1 environmental measurement. Upgrades remove SCD40 temperature/humidity discovery entries published by earlier firmware.

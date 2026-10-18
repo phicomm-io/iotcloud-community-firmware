@@ -2,6 +2,15 @@
 
 English translation of the published release history. Historical validation statements apply to the release named in each section, not to later firmware. Release notes are authored in the Wiki and frozen into the source repository before tagging.
 
+## v0.9.12
+
+- A1 automatic fan control accepts linked M1 CO₂ alone or combined with PM2.5 and formaldehyde in fixed, linear or PID mode. Combined control uses the highest demand; hysteresis starts on any selected metric and idles after all targets are met.
+- CO₂ freshness is independent. Unsupported M1 units do not contribute to its mean; missing selected CO₂ uses the configured offline speed. Expired UART readings do not block fresh CO₂.
+- A1 publishes standard HA CO₂ discovery in ppm for selection in HomeKit Bridge. Existing explicit export lists must include the new CO₂ entity.
+- SCD40 exports CO₂ only. Its auxiliary temperature/humidity are not displayed or forwarded to HA; temperature/humidity continue using the original M1 sensors. Upgrades remove auxiliary SCD40 discovery entries from earlier firmware.
+- The shared local/IotCloud A1 page supports CO₂ means, combined metrics and ppm thresholds. Existing Wi-Fi, MQTT, bindings, schedules, effects, filter runtime and other settings are preserved.
+- Includes existing main-branch A1/M1 provisioning-memory and web-response repairs, favicons, cache revalidation and bounded nonblocking HTTP writes, retaining the dad0514 first-flash initialization fix.
+
 ## v0.9.11
 
 - M1 supports an optional external SCD40 CO₂ sensor over I²C. Connect SDA to GPIO8 and SCL to GPIO7, with signal pull-ups to 3.3 V; see the M1 guide for wiring.

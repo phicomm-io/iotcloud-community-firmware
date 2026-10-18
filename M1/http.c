@@ -317,12 +317,8 @@ json_object *m1_status_json(void)
     else json_object_object_add(co2, "age_ms", NULL);
     if (co2_fresh) {
         integer(co2, "co2_ppm", s.scd40.co2_ppm);
-        json_build_object_add(co2, "temperature", json_object_new_double(s.scd40.temperature_milli_c / 1000.0));
-        json_build_object_add(co2, "humidity", json_object_new_double(s.scd40.humidity_milli_pct / 1000.0));
     } else {
         json_object_object_add(co2, "co2_ppm", NULL);
-        json_object_object_add(co2, "temperature", NULL);
-        json_object_object_add(co2, "humidity", NULL);
     }
     json_build_object_add(o, "scd40", co2);
     integer(o, "brightness_requested", s.brightness_requested);

@@ -24,7 +24,8 @@ uint32_t mico_rtos_get_time(void){return now;}
 static int flash_update(void *ctx){(void)ctx;writes++;if(fail_write)return -1;extern a1_config_t *a1_config;memcpy(&flash,a1_config,sizeof(flash));return 0;}
 #define mico_system_context_update flash_update
 bool feature_fan_auto(void){return false;}
-void feature_defaults(feature_config_t *c){memset(c,0,sizeof(*c));c->magic=FEATURE_MAGIC;}
+void feature_co2_defaults(feature_co2_config_t *c){*c=(feature_co2_config_t){1500,1000,800,2000};}
+void feature_defaults(feature_config_t *c){memset(c,0,sizeof(*c));c->magic=FEATURE_MAGIC;feature_co2_defaults(&c->co2);}
 void automation_defaults(automation_config_t *c){memset(c,0,sizeof(*c));c->magic=AUTOMATION_MAGIC;c->next_id=1;c->buttons[0][1].kind=AUTO_FAN_MODE_TOGGLE;}
 void service_event(const char *l,const char *m,const char *e){(void)l;(void)m;(void)e;}
 static int startup_result(const char *s,int err){(void)s;return err;}
@@ -113,15 +114,24 @@ int main(void){
  assert(migrate()!=0 && writes==1);
  for(unsigned v=0;v<=A1_CONFIG_VERSION+1;v+=A1_CONFIG_VERSION+1){
   init();live.base.version=v;strcpy(live.base.ssid,"keep-unsupported-config");
-  app_storage_t before=live;
-  assert(migrate()!=0 && writes==0 && !memcmp(&live,&before,sizeof(live)));
+  app_storage_t co2_before=live;
+  assert(migrate()!=0 && writes==0 && !memcmp(&live,&co2_before,sizeof(live)));
  }
  puts("A1 persistence, Flash failure/retry, commands, resets, v1-v6 migration and foreign firmware startup: OK");
+ /* v8 appends CO2 thresholds without moving or rewriting existing settings. */
+ init();live.base.version=8;live.filter.used_seconds=789;live.automatic.fallback_speed=47;
+ memset(&live.co2,0xab,sizeof(live.co2));
+ app_storage_t co2_before=live;
+ assert(migrate()==0 && live.base.version==A1_CONFIG_VERSION);
+ assert(live.co2.on_co2==1500 && live.co2.target_co2==1000 && live.co2.low_co2==800 && live.co2.high_co2==2000);
+ co2_before.base.version=A1_CONFIG_VERSION;co2_before.co2=live.co2;
+ assert(!memcmp(&co2_before,&live,sizeof(live)));
+ live.co2.target_co2=900;assert(migrate()==0 && live.co2.target_co2==900);
  /* v7 power defaults migrate once; custom gestures and unrelated data survive. */
  init();live.base.version=7;live.automation.buttons[0][0]=(automation_action_t){.kind=AUTO_FAN,.value=2};
  live.automation.buttons[0][31]=(automation_action_t){.kind=AUTO_REBOOT};
  live.automatic.fallback_speed=47;live.filter.used_seconds=456;
- assert(migrate()==0 && live.base.version==8);
+ assert(migrate()==0 && live.base.version==A1_CONFIG_VERSION);
  assert(live.automation.buttons[0][0].kind==AUTO_FAN_PANEL);
  assert(live.automation.buttons[0][30].kind==AUTO_FAN && !live.automation.buttons[0][30].value);
  assert(live.automation.buttons[0][31].kind==AUTO_REBOOT);

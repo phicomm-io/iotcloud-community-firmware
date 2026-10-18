@@ -17,9 +17,9 @@ static const field_t linkage_fields[] = {
     U(feature_linkage_t, enabled, 0, 1),
     U(feature_linkage_t, hysteresis_enabled, 0, 1),
     U(feature_linkage_t, mode, 0, 2),
-    U(feature_linkage_t, metrics, 1, 3),
-    U(feature_linkage_t, on_metrics, 1, 3),
-    U(feature_linkage_t, off_metrics, 1, 3),
+    U(feature_linkage_t, metrics, 1, 7),
+    U(feature_linkage_t, on_metrics, 1, 7),
+    U(feature_linkage_t, off_metrics, 1, 7),
     U(feature_linkage_t, statistic, 0, 5),
     U(feature_linkage_t, on_enabled, 0, 1),
     U(feature_linkage_t, off_enabled, 0, 1),
@@ -43,6 +43,9 @@ static const field_t linkage_fields[] = {
     F(feature_linkage_t, kp, 0, 1000),
     F(feature_linkage_t, ki, 0, 100),
     F(feature_linkage_t, kd, 0, 1000)};
+static const field_t co2_fields[] = {
+    F(feature_co2_config_t, on_co2, 1, 65535), F(feature_co2_config_t, target_co2, 1, 65535),
+    F(feature_co2_config_t, low_co2, 0, 65535), F(feature_co2_config_t, high_co2, 1, 65535)};
 static const field_t light_fields[] = {
     U(feature_light_t, effect, 0, 4), U(feature_light_t, segments, 1, 4),
     U(feature_light_t, follow_fan, 0, 1),
@@ -207,8 +210,10 @@ static json_object *config_encode(const feature_config_t *c, const char *d) {
     }
     json_build_object_add(o, "members", a);
   }
-  if (o && !strcmp(d, "linkage"))
+  if (o && !strcmp(d, "linkage")) {
     json_build_object_add(o, "fallback_speed", json_object_new_int(c->automatic.fallback_speed));
+    for(unsigned i=0;i<COUNT(co2_fields);i++) json_build_object_add(o,co2_fields[i].key,json_object_new_double(*(const float *)((const char *)&c->co2+co2_fields[i].offset)));
+  }
   if (o && !strcmp(d, "sleep")) {
     json_object *windows = json_object_object_get(o, "windows");
     for (unsigned i=0;i<c->sleep_count;i++) {
@@ -236,7 +241,8 @@ static bool config_decode(feature_config_t *c, const char *d, json_object *o) {
     }
     static const field_t automatic_fields[] = {U(feature_auto_config_t, fallback_speed, 0, 100)};
     if (!decode_fields(o, &c->automatic, automatic_fields, COUNT(automatic_fields))) return false;
-    return l->min_speed <= l->max_speed && l->low_pm < l->high_pm &&
+    if (!decode_fields(o, &c->co2, co2_fields, COUNT(co2_fields))) return false;
+    return (!(l->metrics & 4) || (c->co2.low_co2 < c->co2.high_co2 && c->co2.target_co2 > 0 && (!l->hysteresis_enabled || c->co2.on_co2 > c->co2.target_co2))) && l->min_speed <= l->max_speed && l->low_pm < l->high_pm &&
            l->low_hcho < l->high_hcho &&
            (!l->hysteresis_enabled ||
             ((!(l->metrics & 1) || l->on_pm > l->target_pm) &&

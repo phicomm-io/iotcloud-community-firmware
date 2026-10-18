@@ -179,6 +179,43 @@ static void lights(void) {
   for (unsigned i = 0; i < 32; i++)
     assert(!pixels[i]);
 }
+static void co2_linkage(void) {
+  feature_sample_t s[8]={0}; float ppm=0;
+  for(unsigned i=0;i<3;i++) {s[i].co2_supported=true;s[i].co2_valid=true;s[i].co2=800+400*i;s[i].co2_received_ms=100;}
+  assert(feature_co2_aggregate(s,4,200,STAT_MEAN,&ppm)==3 && ppm==1200);
+  s[1].co2_age_ms=19900;
+  assert(!feature_co2_fresh(&s[1],200));
+  assert(feature_co2_aggregate(s,4,200,STAT_MEAN,&ppm)==2 && ppm==1200);
+  s[0].co2=NAN;s[2].co2=0;
+  assert(feature_co2_aggregate(s,4,200,STAT_MEAN,&ppm)==0);
+  s[0].co2=900;s[0].co2_received_ms=UINT32_MAX-100;s[0].co2_age_ms=0;
+  assert(feature_co2_fresh(&s[0],100));
+  assert(!feature_co2_fresh(&s[0],20000));
+  feature_config_t c;feature_defaults(&c);
+  c.linkage.enabled=1;c.linkage.metrics=4;c.linkage.min_speed=0;c.linkage.max_speed=80;
+  c.linkage.debounce_seconds=0;c.linkage.min_switch_seconds=0;
+  float v[4]={20,40,1000,1};bool on;unsigned speed;feature_pid_t p={0};
+  c.linkage.mode=1;
+  feature_control_co2(&c.linkage,&c.co2,&p,v,800,1000,true,0,&on,&speed);assert(on && speed==0);
+  feature_control_co2(&c.linkage,&c.co2,&p,v,2000,6000,true,0,&on,&speed);assert(on && speed==80);
+  for(unsigned mask=1;mask<=7;mask++) {
+    c.linkage.metrics=mask;c.linkage.mode=0;c.linkage.fixed_speed=55;c.linkage.hysteresis_enabled=1;
+    memset(&p,0,sizeof(p));v[2]=0;v[3]=0;
+    feature_control_co2(&c.linkage,&c.co2,&p,v,500,1000,true,0,&on,&speed);assert(speed==0);
+    if(mask&1)v[2]=c.linkage.on_pm;
+    else if(mask&2)v[3]=c.linkage.on_hcho;
+    feature_control_co2(&c.linkage,&c.co2,&p,v,(mask&3)?500:2000,2000,true,0,&on,&speed);assert(speed==55);
+    v[2]=v[3]=0;
+    feature_control_co2(&c.linkage,&c.co2,&p,v,500,3000,true,55,&on,&speed);assert(speed==0);
+  }
+  c.linkage.metrics=4;c.linkage.hysteresis_enabled=0;c.linkage.mode=2;memset(&p,0,sizeof(p));
+  for(unsigned i=0;i<100;i++) {
+    feature_control_co2(&c.linkage,&c.co2,&p,v,2500,1000+i*5000,true,0,&on,&speed);
+    assert(on && speed<=80 && isfinite(p.integral));
+  }
+  feature_control_co2(&c.linkage,&c.co2,&p,v,2500,600000,false,80,&on,&speed);assert(!on && speed==0);
+  puts("Optional CO2 aggregation, independent freshness, rollover and seven control metric combinations passed");
+}
 int main(void) {
   char id[13], root[128];
   assert(feature_mac("AA:BB:CC:DD:EE:01", id));
@@ -187,6 +224,7 @@ int main(void) {
   assert(!feature_group_valid("bad/#"));
   feature_root("aabbccddee01", "room", "112233445566", 1, root, sizeof(root));
   assert(!strcmp(root, "room:11:22:33:44:55:66"));
+  co2_linkage();
   statistics();
   controls();
   idle_control();
