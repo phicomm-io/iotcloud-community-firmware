@@ -49,6 +49,10 @@ M1 uses the original panel's `0x18` long-press event, acknowledges it with fixed
 
 M1 measures, reports and answers authorized A1 requests. It does not control or poll the purifier. Add `A1_MAC:M1_MAC` in M1 binding settings; at most eight unique pairs are accepted. Configuration reads / writes, unbinding and sensor pushes are rejected on the binding channel. See [A1 and M1 automation](mqtt-link#a1-and-m1-automation).
 
+## IotCloud and Home Assistant
+
+IotCloud reuses the M1 CO₂ detail card and shows fresh CO₂ readings in device summaries. Once SCD40 produces a valid reading, Home Assistant discovers a carbon dioxide MQTT sensor in ppm. After 20 seconds without an update, only that sensor becomes unavailable; the original M1 sensors remain independent.
+
 ## MQTT
 
 M1 uses TMCP (v2) topics only, with no Legacy selector. See [MQTT and automation](mqtt-link).

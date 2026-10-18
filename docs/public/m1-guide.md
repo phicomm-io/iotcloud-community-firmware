@@ -70,6 +70,10 @@ M1 只检测、上报并应答**已授权**的 A1，不主动控制净化器，�
 
 绑定与联动规则见 [MQTT 与联动](mqtt-link#a1-与-m1-联动)。
 
+## IotCloud 与 Home Assistant
+
+IotCloud 的 M1 详情页支持同样的 CO₂ 卡片，设备列表显示有效 CO₂ 摘要。识别并取得 SCD40 有效读数后，Home Assistant 通过 MQTT 自动发现“二氧化碳”实体（ppm）；超过 20 秒未更新时，该实体变为不可用，不影响 M1 原有传感器实体。
+
 ## MQTT
 
 M1 固定使用 **TMCP（v2）** 主题，不提供 Legacy 模式选择。Home Assistant 接入与平台配置见 [MQTT 与联动](mqtt-link)。
