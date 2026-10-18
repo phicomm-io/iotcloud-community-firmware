@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Embed the verified gzip bytes from the locked frontend release."""
 from pathlib import Path
+import hashlib
 from frontend_release import fetch
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,7 +16,9 @@ def pack(model):
         text = 'const unsigned char web_index_html[] = {' + ','.join(f'0x{b:02x}' for b in data) + '};\n'
     else:
         output = ROOT / model.upper() / 'generated/web_data.h'
-        lines = ['#pragma once', f'static const unsigned char {model}_web_data[] = {{']
+        etag = hashlib.sha256(data).hexdigest()
+        lines = ['#pragma once', f'#define {model.upper()}_WEB_ETAG "\\\"{etag}\\\""',
+                 f'static const unsigned char {model}_web_data[] = {{']
         for i in range(0, len(data), 16):
             lines.append('    ' + ','.join(f'0x{b:02x}' for b in data[i:i+16]) + ',')
         lines.append('};\n')

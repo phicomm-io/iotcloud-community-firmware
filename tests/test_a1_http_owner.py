@@ -19,6 +19,7 @@ PRELUDE = r'''
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #define socket fake_socket
 #define bind fake_bind
 #define listen fake_listen
@@ -142,6 +143,13 @@ static unsigned selects, sends, send_step, send_limit, timeout_call, select_inte
 static unsigned timeouts[256], fail_fcntl, nonblocking, transient, fatal_send, late_select, send_capacity;
 static char output[65536];static size_t used;
 static uint32_t mico_rtos_get_time(void) { return now; }
+#ifdef HTTP_SEND_CHUNK_SIZE
+static unsigned no_delay_calls, fail_no_delay;
+static int setsockopt(int fd,int level,int option,const void *value,socklen_t n) {
+    assert(fd==7 && level==IPPROTO_TCP && option==TCP_NODELAY && n==sizeof(int));
+    assert(*(const int *)value==1);++no_delay_calls;return fail_no_delay?-1:0;
+}
+#endif
 static int fcntl(int fd,int command,int flags) {
     assert(fd==7 && command==F_SETFL && flags==O_NONBLOCK);
     if(fail_fcntl)return -1;nonblocking=1;return 0;
@@ -170,6 +178,9 @@ FUNCTIONS
 static void reset(uint32_t initial) {
     start=now=initial;selects=sends=send_step=send_limit=timeout_call=select_interrupt=0;
     fail_fcntl=nonblocking=transient=fatal_send=late_select=send_capacity=0;used=0;memset(output,0,sizeof(output));
+#ifdef HTTP_SEND_CHUNK_SIZE
+    no_delay_calls=fail_no_delay=0;
+#endif
 }
 int main(void) {
     reset(100);send_limit=1;transient=2;select_interrupt=1;
@@ -192,6 +203,11 @@ int main(void) {
     reset(100);assert(response_send(7,"head",4,NULL,0) && sends==1);
     reset(100);assert(response(7,200,"text/plain","payload",7,false));
     assert(strstr(output,"HTTP/1.1 200 OK\r\n") && strstr(output,"\r\n\r\npayload"));
+#ifdef HTTP_SEND_CHUNK_SIZE
+    assert(no_delay_calls==1);
+    reset(100);fail_no_delay=1;
+    assert(response_send(7,"head",4,"body",4) && !strcmp(output,"headbody") && no_delay_calls==1);
+#endif
     EXTRA_CASES
     puts("A1 nonblocking response: partial/EAGAIN/EINTR/error/shared deadline/tick wrap: OK");
 }

@@ -5,6 +5,7 @@
 #include "filter.h"
 #include "../common/ota/signed_ota.h"
 #include "web_data.h"
+#include "favicon.h"
 #include <ctype.h>
 #include <errno.h>
 #include "../common/runtime_metrics.h"
@@ -18,6 +19,7 @@
 
 typedef struct {
     char method[8], path[96], authorization[128];
+    char if_none_match[80];
     uint32_t length;
     bool have_length, chunked;
 } request_t;
@@ -142,6 +144,10 @@ static bool response_send(int fd, const void *header, size_t header_length, cons
      * one shared header/body deadline effective even after select says ready. */
     uint32_t deadline = mico_rtos_get_time() + HTTP_RESPONSE_TIMEOUT_MS;
     if (fcntl(fd, F_SETFL, O_NONBLOCK) < 0) return false;
+    /* Small bounded writes otherwise can wait for Nagle/delayed ACK cycles.
+     * Keep the existing send deadline even if this optional setting fails. */
+    int no_delay = 1;
+    setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &no_delay, sizeof(no_delay));
     return response_send_until(fd, header, header_length, deadline) &&
            response_send_until(fd, body, length, deadline);
 }
@@ -194,6 +200,10 @@ static bool read_request(int fd, request_t *req)
             if (*end || length > A1_APP_OFFSET + A1_APP_LIMIT + 16 + OTA_ENVELOPE_SIZE) return false;
             req->length = length; req->have_length = true;
         } else if (!strcasecmp(line, "Transfer-Encoding")) req->chunked = true;
+        else if (!strcasecmp(line, "If-None-Match")) {
+            /* Ignore validators too long for our generated SHA-256 tag. */
+            if (strlen(colon) < sizeof(req->if_none_match)) strcpy(req->if_none_match, colon);
+        }
         else if (!strcasecmp(line, "Authorization")) {
             if (strlen(colon) >= sizeof(req->authorization)) return false;
             strcpy(req->authorization, colon);
@@ -392,6 +402,27 @@ static const char *feature_domain(const char *path)
     return NULL;
 }
 
+static bool asset_response(int fd, const char *type, const void *body, size_t length,
+                           bool gzip, const char *etag, const char *if_none_match)
+{
+    char header[320];
+    /* Private caches must revalidate, including the normal authentication
+     * check in handle(). The tag identifies the actual compressed bytes. */
+    bool unchanged = !strcmp(etag, if_none_match) ||
+        (!strncmp(if_none_match, "W/", 2) && !strcmp(etag, if_none_match + 2));
+    if (unchanged) {
+        snprintf(header, sizeof(header),
+            "HTTP/1.1 304 Not Modified\r\nConnection: close\r\n"
+            "Cache-Control: private, no-cache\r\nVary: Authorization\r\nETag: %s\r\n\r\n", etag);
+        return response_send(fd, header, strlen(header), NULL, 0);
+    }
+    snprintf(header, sizeof(header),
+        "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %u\r\nConnection: close\r\n"
+        "Cache-Control: private, no-cache\r\nVary: Authorization\r\nETag: %s\r\n%s\r\n",
+        type, (unsigned)length, etag, gzip ? "Content-Encoding: gzip\r\n" : "");
+    return response_send(fd, header, strlen(header), body, length);
+}
+
 static void memory_response(int fd)
 {
     /* Keep diagnostics usable when building the full status JSON fails.
@@ -419,7 +450,7 @@ static void handle(int fd)
     if (!read_request(fd, &req)) { message(fd, 400, "Invalid HTTP request"); return; }
     a1_config_get(&cfg);
     if (!authorized(&req, cfg.web_password)) { message(fd, 401, "Authentication required"); return; }
-    if(strncmp(req.path,"/api/v1/",8) && strcmp(req.path,"/") && strcmp(req.path,"/index.html")){message(fd,404,"Not found");return;}
+    if(strncmp(req.path,"/api/v1/",8) && strcmp(req.path,"/") && strcmp(req.path,"/index.html") && strcmp(req.path,"/favicon.ico")){message(fd,404,"Not found");return;}
     if (!strncmp(req.path, "/api/v1/", 8)) {
         if (!strcmp(req.method, "GET")) {
             if (!strcmp(req.path, "/api/v1/memory")) { memory_response(fd); return; }
@@ -464,7 +495,10 @@ static void handle(int fd)
         strcpy(req.path,!strcmp(req.path,"/api/v1/ota/upload")?"/ota/fileUpload":"/ota/fileUploadUnsigned");
     }
     if (!strcmp(req.method,"GET") && (!strcmp(req.path,"/") || !strcmp(req.path,"/index.html"))) {
-        response(fd,200,"text/html; charset=utf-8",a1_web_data,sizeof(a1_web_data),true);return;
+        asset_response(fd,"text/html; charset=utf-8",a1_web_data,sizeof(a1_web_data),true,A1_WEB_ETAG,req.if_none_match);return;
+    }
+    if (!strcmp(req.method,"GET") && !strcmp(req.path,"/favicon.ico")) {
+        asset_response(fd,"image/x-icon",a1_favicon_data,sizeof(a1_favicon_data),false,A1_FAVICON_ETAG,req.if_none_match);return;
     }
     if(strcmp(req.method,"POST")){message(fd,404,"Not found");return;}
     if (!strcmp(req.path, "/ota/fileUpload") || !strcmp(req.path, "/ota/fileUploadUnsigned")) {
