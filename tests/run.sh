@@ -7,6 +7,7 @@ python3 -m unittest discover -s tests -p test_version.py
 python3 -m unittest tests.test_package_stale_signature
 python3 -m unittest tests.test_http_overload
 python3 -m unittest tests.test_http_tcp_integration
+python3 -m unittest tests.test_a1_provision_memory
 compiler=("${CC:-cc}")
 if [[ "${SANITIZE:-0}" == 1 ]]; then
     compiler+=(-g -fno-omit-frame-pointer -fsanitize=address,undefined)

@@ -330,13 +330,13 @@ int application_start(void)
     strcpy(a1_state.ota_state, "idle");
     a1_state.led_until = mico_rtos_get_time() + 2000;
     err = startup_result("features", feature_start()); if (err != kNoErr) return err;
-    err = startup_result("network", a1_network_start()); if (err != kNoErr) return err;
     err = startup_result("HTTP", a1_http_start()); if (err != kNoErr) return err;
     /* Keep provisioning available when peripheral initialization fails. */
     err = startup_result("hardware", a1_hardware_start());
     if (err != kNoErr) custom_log("A1", "Hardware unavailable; provisioning remains active");
-    err = startup_result("MQTT", a1_mqtt_start());
-    if (err != kNoErr) custom_log("A1", "MQTT unavailable; provisioning remains active");
+    /* Start network last: its owner may launch MQTT after acquiring an IP.
+     * Provisioning HTTP and local control must have their stacks first. */
+    err = startup_result("network", a1_network_start()); if (err != kNoErr) return err;
     watchdog_startup_complete();
     custom_log("A1", "Started %s, id %s", A1_VERSION, a1_id);
     return kNoErr;

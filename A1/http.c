@@ -392,6 +392,27 @@ static const char *feature_domain(const char *path)
     return NULL;
 }
 
+static void memory_response(int fd)
+{
+    /* Keep diagnostics usable when building the full status JSON fails.
+     * Authentication is applied by handle() before reaching this route. */
+    const micoMemInfo_t *memory = MicoGetMemoryInfo();
+    if (!memory) {
+        static const char unavailable[] = "{\"code\":\"unavailable\"}";
+        response(fd, 503, "application/json", unavailable, sizeof(unavailable) - 1, false);
+        return;
+    }
+    micoMemInfo_t snapshot = *memory;
+    char body[256];
+    int length = snprintf(body, sizeof(body),
+        "{\"code\":\"ok\",\"data\":{\"free_memory\":%d,\"allocated_memory\":%d,"
+        "\"free_memory_chunks\":%d,\"uptime_ms\":%lu}}",
+        snapshot.free_memory, snapshot.allocted_memory, snapshot.num_of_chunks,
+        (unsigned long)mico_rtos_get_time());
+    if (length > 0 && (size_t)length < sizeof(body))
+        response(fd, 200, "application/json", body, (size_t)length, false);
+}
+
 static void handle(int fd)
 {
     request_t req; a1_config_t cfg;
@@ -401,6 +422,7 @@ static void handle(int fd)
     if(strncmp(req.path,"/api/v1/",8) && strcmp(req.path,"/") && strcmp(req.path,"/index.html")){message(fd,404,"Not found");return;}
     if (!strncmp(req.path, "/api/v1/", 8)) {
         if (!strcmp(req.method, "GET")) {
+            if (!strcmp(req.path, "/api/v1/memory")) { memory_response(fd); return; }
             const char *action = !strcmp(req.path,"/api/v1/status")?"status.get":!strcmp(req.path,"/api/v1/capabilities")?"capabilities.get":!strcmp(req.path,"/api/v1/config")?"config.get":!strcmp(req.path,"/api/v1/logs")?"logs.get":!strcmp(req.path,"/api/v1/schedules")?"schedules.get":NULL;
             if(action) send_json(fd,service_query(action)); else message(fd,404,"Not found");
             return;
