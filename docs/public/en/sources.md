@@ -16,4 +16,8 @@ Guide images and tools are hosted under `guides/assets/`. [SHA256SUMS](assets/SH
 
 Images and third-party tools remain copyrighted by their authors and vendors; hosting copies does not change their licenses. FlashPlus is not part of this project's firmware source. The EMW3031 datasheet restricts reproduction of its illustrations, so the guide links to it instead.
 
+## Operating notes
+
+The A1 filter and power interlock note comes from [zA1 Issue #3](https://github.com/a2633063/zA1/issues/3). Users reported that the purifier would not power on without its filter; the original project maintainer confirmed adding the reminder to the documentation.
+
 See [Build dependencies](build-deps) for toolchains and SDKs.

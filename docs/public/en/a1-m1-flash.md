@@ -297,6 +297,8 @@ That frame is M1-specific. On A1, restore wiring and check the setup hotspot, We
 
 ## Finish and provision Wi-Fi
 
+> **Install the A1 filter before powering on.** An interlock switch at the filter can prevent the purifier from powering on when the filter is absent. If A1 appears unresponsive after flashing, first check that the filter is seated correctly and engages the switch. Source: [zA1 Issue #3](https://github.com/a2633063/zA1/issues/3).
+
 1. Power off, release BOOT ground if used and remove programming wires.
 2. Restore original wiring, reassemble, then reconnect the normal supply.
 3. Join `A1-AP-<last six MAC digits>` or `M1-AP-<last six MAC digits>` and open `http://192.168.0.1/`.
