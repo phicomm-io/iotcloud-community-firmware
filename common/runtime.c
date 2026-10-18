@@ -79,6 +79,7 @@ static bool was_coordinator;
 static char published_root[FEATURE_TOPIC_MAX], published_ids[8][13];
 static feature_config_t *published_layout;
 static unsigned published_count;
+static unsigned published_sensors;
 #endif
 static int udp = -1;
 static void lock(void) { mico_rtos_lock_mutex(&feature_lock); }
@@ -353,9 +354,18 @@ static bool install_config(feature_config_t *c) {
   free(next);
   return true;
 }
+static bool scd40_aux_fresh(const feature_sample_t *s, uint32_t now) {
+  return s->scd40_aux_supported && s->scd40_aux_valid && feature_co2_fresh(s, now) &&
+    isfinite(s->scd40_temperature) && s->scd40_temperature >= -45 && s->scd40_temperature <= 130 &&
+    isfinite(s->scd40_humidity) && s->scd40_humidity >= 0 && s->scd40_humidity <= 100;
+}
 static void co2_body(json_object *o, const feature_sample_t *s, uint32_t now) {
   json_build_object_add(o,"co2_supported",json_object_new_boolean(s->co2_supported));
   json_build_object_add(o,"co2_valid",json_object_new_boolean(feature_co2_fresh(s,now)));
+  json_build_object_add(o,"scd40_aux_supported",json_object_new_boolean(s->scd40_aux_supported));
+  json_build_object_add(o,"scd40_aux_valid",json_object_new_boolean(scd40_aux_fresh(s,now)));
+  json_object_object_add(o,"scd40_temperature",scd40_aux_fresh(s,now)?json_object_new_double(s->scd40_temperature):NULL);
+  json_object_object_add(o,"scd40_humidity",scd40_aux_fresh(s,now)?json_object_new_double(s->scd40_humidity):NULL);
   number(o,"co2_age_ms",s->co2_age_ms+(uint32_t)(now-s->co2_received_ms));
   if(feature_co2_fresh(s,now)) json_build_object_add(o,"co2",json_object_new_double(s->co2));
   else json_object_object_add(o,"co2",NULL);
@@ -372,7 +382,7 @@ static json_object *sample_body(const feature_sample_t *s, uint32_t now) {
                          json_object_new_boolean(feature_sample_fresh(s, now)));
   const char *keys[] = {"temperature", "humidity", "pm25", "formaldehyde"};
   for (unsigned i = 0; i < 4; i++)
-    json_build_object_add(o, keys[i], json_object_new_double(s->value[i]));
+    json_object_object_add(o, keys[i], feature_sample_fresh(s,now)?json_object_new_double(s->value[i]):NULL);
   return o;
 }
 #ifdef FEATURE_DEVICE_A1
@@ -389,6 +399,16 @@ static json_object *average_body(const feature_sample_t *current, unsigned count
   number(o,"co2_sample_count",nc);
   if(nc) json_build_object_add(o,"co2",json_object_new_double(co2));
   else json_object_object_add(o,"co2",NULL);
+  float st=0, sh=0; unsigned ns=0; bool aux_supported=false;
+  for(unsigned i=0;i<count && i<8;i++) {
+    aux_supported |= current[i].scd40_aux_supported;
+    if(scd40_aux_fresh(&current[i],now)) { st+=current[i].scd40_temperature; sh+=current[i].scd40_humidity; ns++; }
+  }
+  json_build_object_add(o,"scd40_aux_supported",json_object_new_boolean(aux_supported));
+  json_build_object_add(o,"scd40_aux_valid",json_object_new_boolean(ns != 0));
+  number(o,"scd40_sample_count",ns);
+  json_object_object_add(o,"scd40_temperature",ns?json_object_new_double(st/ns):NULL);
+  json_object_object_add(o,"scd40_humidity",ns?json_object_new_double(sh/ns):NULL);
   number(o, "configured_count", count);
   json_build_object_add(o, "valid", json_object_new_boolean(n != 0));
   const char *keys[] = {"temperature", "humidity", "pm25", "formaldehyde"};
@@ -616,6 +636,12 @@ static void incoming(json_object *o, bool lan, bool retained, const char *ip) {
       (json_object_is_type(co2,json_type_double)||json_object_is_type(co2,json_type_int)) &&
       json_object_is_type(age,json_type_int) && json_object_get_int64(age)>=0 && json_object_get_int64(age)<20000;
     s.co2=json_object_get_double(co2); s.co2_age_ms=integer(b,"co2_age_ms"); s.co2_received_ms=now_ms();
+    json_object *st=json_object_object_get(b,"scd40_temperature"), *sh=json_object_object_get(b,"scd40_humidity");
+    s.scd40_aux_supported=integer(b,"scd40_aux_supported");
+    s.scd40_aux_valid=integer(b,"scd40_aux_valid") && st && sh &&
+      (json_object_is_type(st,json_type_double)||json_object_is_type(st,json_type_int)) &&
+      (json_object_is_type(sh,json_type_double)||json_object_is_type(sh,json_type_int));
+    s.scd40_temperature=json_object_get_double(st); s.scd40_humidity=json_object_get_double(sh);
     s.sequence = integer(b, "sequence");
     s.boot = integer(b, "boot");
     s.age_ms = integer(b, "age_ms");
@@ -1313,6 +1339,10 @@ static void feature_worker(mico_thread_arg_t arg) {
     local.value[3] = state.sample.hcho_ug_m3 / 1000.0f;
     local.co2_supported=state.scd40.ready || state.scd40.received;
     local.co2_valid=state.scd40.ready && state.scd40.received;
+    local.scd40_aux_supported=local.co2_supported;
+    local.scd40_aux_valid=local.co2_valid;
+    local.scd40_temperature=state.scd40.temperature_milli_c/1000.0f;
+    local.scd40_humidity=state.scd40.humidity_milli_pct/1000.0f;
     local.co2=state.scd40.co2_ppm; local.co2_received_ms=state.scd40.updated_ms;
     static uint32_t wire_sequence, uart_sequence, co2_sequence;
     static bool co2_ready;
@@ -1817,18 +1847,30 @@ bool feature_ha_device(char *id, size_t id_size, char *name, size_t name_size,
   free(c);
   return ok;
 }
+/* Capability persists through stale readings; only the configured peer owns its slot. */
+static unsigned discovery_sensors(const feature_config_t *c) {
+  unsigned mask=0;
+  lock();
+  for(unsigned i=0;i<c->peer_count && i<8;i++) {
+    if(strcmp(c->peers[i].id,configuration.peers[i].id)) continue;
+    if(samples[i].co2_supported) mask |= 1u<<i;
+    if(samples[i].scd40_aux_supported) mask |= 1u<<(i+8);
+  }
+  unlock();
+  return mask;
+}
 static void discovery_virtual(int (*publish)(const char *, const char *, bool),
                               const feature_config_t *c, const char *root,
                               bool remove) {
   const char *keys[] = {"fan",           "light",       "child_lock",
                         "led_always_on", "temperature", "humidity",
-                        "pm25",          "formaldehyde"};
+                        "pm25",          "formaldehyde", "co2", "scd40_temperature", "scd40_humidity"};
   const char *components[] = {"fan",    "light",  "switch", "switch",
-                              "sensor", "sensor", "sensor", "sensor"};
+                              "sensor", "sensor", "sensor", "sensor", "sensor", "sensor", "sensor"};
   const char *names[] = {"空气净化器", "灯环", "童锁", "灯环常亮",
-                         "温度", "湿度", "PM2.5", "甲醛"};
+                         "温度", "湿度", "PM2.5", "甲醛", "二氧化碳", "SCD40 温度", "SCD40 湿度"};
   const char *icons[] = {"mdi:air-purifier", "mdi:led-strip-variant", "mdi:lock",
-                         "mdi:led-on", NULL, NULL, NULL, "mdi:molecule"};
+                         "mdi:led-on", NULL, NULL, NULL, "mdi:molecule", "mdi:molecule-co2", NULL, NULL};
   /* MQTT-owner-only scratch: publishing may dispatch callbacks on this stack. */
   static mqtt_account_t account;
   account = mqtt_snapshot();
@@ -1840,9 +1882,12 @@ static void discovery_virtual(int (*publish)(const char *, const char *, bool),
   static char safe[FEATURE_TOPIC_MAX];
   if (!virtual_identity(c, root, &account, owner, safe, sizeof(safe),
                         device_id, sizeof(device_id))) return;
+  unsigned sensors=discovery_sensors(c);
   unsigned sets = c->peer_count > 1 ? c->peer_count + 1 : 1;
   for (unsigned set = 0; set < sets; set++)
-    for (unsigned i = 0; i < 8; i++) {
+    for (unsigned i = 0; i < 11; i++) {
+      unsigned bits=i>=9 ? sensors>>8 : sensors & 255;
+      bool supported=i<8 || (set ? (bits & (1u<<(set-1))) != 0 : bits != 0);
       if (set && i < 4)
         continue;
       static char uid[FEATURE_TOPIC_MAX], path[FEATURE_TOPIC_MAX], sensor[FEATURE_TOPIC_MAX];
@@ -1857,8 +1902,8 @@ static void discovery_virtual(int (*publish)(const char *, const char *, bool),
         strcpy(account.mac,owner);
         if (!mqtt_identity(&account,entity,uid,sizeof(uid)) || !mqtt_ha(&account,components[i],entity,path,sizeof(path))) return;
       }
-      if (remove) {
-        publish(path, "", true);
+      if (remove || !supported) {
+        if(remove || (published_sensors & (i>=9 ? 0xff00u : 0xffu))) publish(path, "", true);
         continue;
       }
       json_object *o = json_object_new_object(),
@@ -1937,18 +1982,26 @@ static void discovery_virtual(int (*publish)(const char *, const char *, bool),
         number(o, "expire_after", 15);
         js(o, "state_class", "measurement");
         js(o, "unit_of_measurement",
-           i == 4   ? "°C"
-           : i == 5 ? "%"
+           (i == 4 || i == 9) ? "°C"
+           : (i == 5 || i == 10) ? "%"
            : i == 6 ? "µg/m³"
+           : i == 8 ? "ppm"
                     : "mg/m³");
         if (i != 7)
-          js(o, "device_class", keys[i]);
+          js(o, "device_class", i==8 ? "carbon_dioxide" : i==9 ? "temperature" : i==10 ? "humidity" : keys[i]);
       }
       mqtt_leaf(&account,"state",topic,sizeof(topic));js(o,"json_attributes_topic",topic);
       js(o,"json_attributes_template","{{ {\"ip\": value_json.ip, \"firmware\": value_json.version} | tojson }}");
       if(i==2 || i==3)js(o,"entity_category","config");
       json_object *availability = json_object_new_array();
-      for (unsigned member = 0; member <= c->member_count; member++) {
+      if(i>=4) {
+        json_object *node=json_object_new_object();
+        js(node,"topic",sensor);
+        mqtt_format(topic,sizeof(topic),"{{ 'online' if value_json.%s else 'offline' }}",i>=9?"scd40_aux_valid":i==8?"co2_valid":"valid");
+        js(node,"value_template",topic);
+        json_build_array_add(availability,node);
+      }
+      for (unsigned member = 0; i<4 && member <= c->member_count; member++) {
         const char *id = member ? c->members[member - 1].id : LOCAL_ID;
         if (member && !strcmp(id, LOCAL_ID))
           continue;
@@ -1980,7 +2033,8 @@ static void virtual_service(int (*publish)(const char *, const char *, bool)) {
   char root[FEATURE_TOPIC_MAX];
   root_for(c, 0, root);
   bool coordinator = feature_is_coordinator();
-  if ((!mqtt_online || mqtt_revision != c->revision ||
+  unsigned sensor_mask=discovery_sensors(c);
+  if ((!mqtt_online || mqtt_revision != c->revision || published_sensors != sensor_mask ||
        (!was_coordinator && coordinator)) &&
       coordinator) {
     bool layout_changed =
@@ -1993,6 +2047,7 @@ static void virtual_service(int (*publish)(const char *, const char *, bool)) {
     }
     if (bound) {
       discovery_virtual(publish, c, root, false);
+      published_sensors=sensor_mask;
       if(!published_layout) published_layout=malloc(sizeof(*published_layout));
       if(published_layout) *published_layout=*c;
       strcpy(published_root, root);
@@ -2064,7 +2119,7 @@ static void virtual_service(int (*publish)(const char *, const char *, bool)) {
       direct_leaf(publish, root, "average", json_object_to_json_string(average), false);
       json_object_put(average);
       for (unsigned i = 0; i < c->peer_count; i++)
-        if (feature_sample_fresh(&current[i], now)) {
+        {
           json_object *o = sample_body(&current[i], now);
           char leaf[64];
           if (c->peer_count == 1)

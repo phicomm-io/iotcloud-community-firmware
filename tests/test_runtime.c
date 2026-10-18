@@ -383,6 +383,49 @@ static int capture_discovery_name(const char *topic, const char *body, bool reta
   json_object_put(o);
   return 0;
 }
+static unsigned sensor_entities, co2_entities, aux_entities;
+static bool remove_sensor_entities;
+static int capture_sensor_discovery(const char *topic, const char *body, bool retained) {
+  assert(retained && strstr(topic,"homeassistant/"));
+  if(remove_sensor_entities) { assert(!*body); sensor_entities++; return 0; }
+  assert(*body);
+  json_object *o=obj(body);
+  if(!strcmp(string(o,"device_class"),"carbon_dioxide")) {
+    assert(!strcmp(string(o,"unit_of_measurement"),"ppm"));
+    assert(strstr(string(o,"value_template"),"co2")); co2_entities++;
+  }
+  if(strstr(string(o,"name"),"SCD40")) {
+    assert(strstr(string(o,"value_template"),"scd40_")); aux_entities++;
+    assert(!strstr(topic,"020000dd0002_scd40_"));
+  }
+  if(strstr(topic,"/sensor/")) {
+    json_object *node=json_object_array_get_idx(json_object_object_get(o,"availability"),0);
+    assert(!strcmp(string(node,"topic"),string(o,"state_topic")));
+    assert(strstr(string(node,"value_template"),"valid"));
+    assert(integer(o,"expire_after")==15);
+  }
+  sensor_entities++; json_object_put(o); return 0;
+}
+static void optional_sensor_discovery(void) {
+  feature_config_t saved=configuration, config;
+  feature_sample_t saved_samples[8]; memcpy(saved_samples,samples,sizeof(samples));
+  feature_defaults(&config); config.peer_count=2;
+  strcpy(config.peers[0].id,"020000dd0001"); strcpy(config.peers[1].id,"020000dd0002");
+  configuration=config; memset(samples,0,sizeof(samples));
+  samples[0].co2_supported=samples[1].co2_supported=true;
+  samples[0].scd40_aux_supported=true;
+  char root[FEATURE_TOPIC_MAX];root_for(&config,0,root);
+  assert(discovery_sensors(&config)==(1u|2u|256u));
+  discovery_virtual(capture_sensor_discovery,&config,root,false);
+  assert(sensor_entities==23 && co2_entities==3 && aux_entities==4);
+  /* Freshness does not remove registered entities. Layout cleanup removes all optional IDs. */
+  remove_sensor_entities=true; sensor_entities=0;
+  discovery_virtual(capture_sensor_discovery,&config,root,true);
+  assert(sensor_entities==25);
+  remove_sensor_entities=false;
+  configuration=saved;memcpy(samples,saved_samples,sizeof(samples));
+  puts("Optional HA sensors: mixed M1 capabilities, averages, independent availability and retained cleanup passed");
+}
 static void discovery_device_names(void) {
   feature_config_t config;
   feature_defaults(&config);
@@ -442,6 +485,7 @@ static int capture_account(const char *t,const char *body,bool retained) {
 static void account_namespaces(void) {
 #ifdef FEATURE_DEVICE_A1
   discovery_device_names();
+  optional_sensor_discovery();
 #endif
   mqtt_account_t alice,bob,legacy;
   char user[64];memset(user,'x',63);user[63]=0;

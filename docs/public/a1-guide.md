@@ -138,3 +138,9 @@ entity_config:
 PM2.5 关联项可选；未绑定 M1 时可以省略。配置方式参见 [Home Assistant HomeKit Bridge 文档](https://www.home-assistant.io/integrations/homekit/)。
 
 通过 HomeKit Bridge 暴露为空气净化器时，HomeKit 的自动模式对应 HA 的 `auto`。当前 HA 桥接在选择手动时会发送风速命令，因此会进入手动并应用 HomeKit 显示的风速；这条风速命令在关机时也可能开启电源。若要恢复上次手动风速并保留关机状态，请直接选择 HA 或网页中的手动模式。桥接可能把零风速待机显示为净化中或最低风速，设备的实际待机状态以网页为准。
+
+### 经 A1 接入 Home Assistant / HomeKit
+
+A1 会为绑定 M1 的温度、湿度、PM2.5、甲醛发布 HA 自动发现。检测到 SCD40 后，还会自动增加二氧化碳（ppm）、SCD40 温度和 SCD40 湿度，后两项单独命名，不替换 M1 原有温湿度。单台 M1 显示该机读数；多台 M1 同时提供各机读数和有效样本均值。未安装 SCD40 的 M1 不产生这些附加实体，也不参与相应均值。旧版仅传输 CO₂ 的 M1 仍兼容，不会虚构 SCD40 温湿度。
+
+各类读数分别判断有效性：M1 原有传感器过期不会阻断有效的 SCD40 读数；SCD40 过期后实体保留并标记为不可用，不上报 0。CO₂ 使用 HA 标准 `carbon_dioxide` 类型及 `ppm` 单位，可在 HA 的 HomeKit Bridge 中选入；温湿度也可选入。Apple 家庭实际显示哪些其他指标取决于 HomeKit 的支持。M1 屏幕亮度属于设备控制，不会作为 A1 的环境读数重复转发。

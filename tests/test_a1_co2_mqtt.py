@@ -2,9 +2,32 @@
 """Exercise optional CO2 linkage using production A1/M1 MQTT workers."""
 import json, os, select, subprocess, sys, time
 from pathlib import Path
+import paho.mqtt.client as mqtt
+from jinja2 import Environment
 ROOT=Path(__file__).resolve().parents[1]
 def main(port):
     nodes=[]
+    messages={}
+    observer=mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+    def received(client, userdata, message):
+        messages[message.topic]=message.payload.decode()
+    observer.on_message=received
+    observer.connect('127.0.0.1',port)
+    observer.subscribe('#',qos=1)
+    observer.loop_start()
+    def entities():
+        return {k:json.loads(v) for k,v in list(messages.items()) if k.startswith('homeassistant/') and v and 'bound_' in k}
+    def co2_entity():
+        return next((v for v in entities().values() if v.get('device_class')=='carbon_dioxide'),None)
+    def render(entity, field, payload):
+        return Environment().from_string(entity[field]).render(value_json=payload)
+    def sensor_payload(entity):
+        body=messages.get(entity['state_topic'])
+        return json.loads(body) if body else {}
+    def available(entity):
+        node=entity['availability'][0]
+        body=messages.get(node['topic'])
+        return render(node,'value_template',json.loads(body)) if body else ''
     def launch(model, ident, ip):
         p=subprocess.Popen([str(ROOT/'build/simulator'/model),ident,ip,'127.0.0.1',str(port),'co2_linkage'],env={**os.environ,'SIM_BIND_IP':ip},stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True,bufsize=1)
         nodes.append(p);return p
@@ -29,6 +52,7 @@ def main(port):
         call(m,'binding.set',{'response_ids':['020000cc0001:020000dd0001']})
         call(a,'binding.set',{'peers':[{'mac':'020000dd0001','ip':'127.77.1.2'}]})
         wait(lambda:avg().get('sample_count')==1)
+        assert co2_entity() is None, 'legacy M1 must not create CO2 discovery'
         assert not avg()['co2_supported'] and not avg()['co2_valid'] and avg()['co2'] is None
         call(a,'linkage.set',{'enabled':1,'metrics':4,'mode':1,'min_speed':0,'max_speed':80,'fallback_speed':23,'low_co2':800,'high_co2':2000,'debounce_seconds':0,'min_switch_seconds':0})
         call(a,'fan.set',{'on':True});call(a,'fan.mode.set',{'mode':'auto'})
@@ -37,6 +61,18 @@ def main(port):
         wait(lambda:avg().get('co2')==1400)
         assert avg()['co2_sample_count']==1 and avg()['co2_valid']
         wait(lambda:state()['percentage']==40)
+        entity=wait(co2_entity)
+        assert entity['unit_of_measurement']=='ppm' and entity['state_class']=='measurement'
+        wait(lambda:available(entity)=='online')
+        wait(lambda:sensor_payload(entity).get('co2')==1400)
+        assert float(render(entity,'value_template',sensor_payload(entity)))==1400
+        aux=wait(lambda:[v for v in entities().values() if v.get('name','').startswith('SCD40 ')])
+        assert len(aux)==2
+        for e in aux:
+            assert available(e)=='online'
+            expected=24.5 if e['device_class']=='temperature' else 52.3
+            assert abs(float(render(e,'value_template',sensor_payload(e)))-expected)<.001
+
         call(m,raw={'sim_co2':{'enabled':True,'ppm':2200}})
         wait(lambda:state()['percentage']==80)
         call(a,'linkage.set',{'mode':0,'fixed_speed':55,'hysteresis_enabled':1,'on_co2':1500,'target_co2':1000})
@@ -47,11 +83,16 @@ def main(port):
         wait(lambda:state()['percentage']==55)
         call(m,raw={'sim_sensor':{'enabled':False}})
         wait(lambda:not avg()['valid'],30)
+        wait(lambda:sensor_payload(entity).get('valid') is False)
+        assert sensor_payload(entity)['temperature'] is None and available(entity)=='online'
         assert avg()['co2_valid'] and state()['percentage']==55, 'CO2 remains usable without UART samples'
         call(m,raw={'sim_sensor':{'enabled':True}})
         wait(lambda:avg()['valid'])
         call(m,raw={'sim_co2':{'enabled':False}})
         wait(lambda:not avg()['co2_valid'],35)
+        wait(lambda:available(entity)=='offline')
+        assert co2_entity() is not None and len([v for v in entities().values() if v.get('name','').startswith('SCD40 ')])==2
+        assert avg()['scd40_temperature'] is None and avg()['scd40_humidity'] is None
         assert avg()['co2_supported'] and avg()['co2'] is None and avg()['valid']
         wait(lambda:state()['percentage']==23)
         call(a,'linkage.set',{'metrics':1,'hysteresis_enabled':0,'mode':1,'low_pm':10,'high_pm':110})
@@ -62,6 +103,7 @@ def main(port):
         wait(lambda:state()['percentage']==40)
         print('PASS optional CO2 wire data, legacy M1, linear/hysteresis, stale fallback, recovery and combined metrics',flush=True)
     finally:
+        observer.loop_stop();observer.disconnect()
         for p in nodes:p.terminate()
         for p in nodes:p.wait(timeout=5)
 if __name__=='__main__':main(int(sys.argv[1]))
