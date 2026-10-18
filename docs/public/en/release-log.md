@@ -2,6 +2,14 @@
 
 English translation of the published release history. Historical validation statements apply to the release named in each section, not to later firmware. Release notes are authored in the Wiki and frozen into the source repository before tagging.
 
+## v0.9.11
+
+- M1 supports an optional external SCD40 CO₂ sensor over I²C. Connect SDA to GPIO8 and SCL to GPIO7, with signal pull-ups to 3.3 V; see the M1 guide for wiring.
+- The local page automatically shows detected CO₂ in the existing metric area, aligns metric titles and quality badges, and displays CO₂ comfort ranges. An open page keeps expired readings in gray; reopening hides an expired CO₂ card.
+- IotCloud device summaries show fresh CO₂ readings. Home Assistant discovers a CO₂ sensor in ppm, marks expired readings unavailable, and recovers when fresh data arrives.
+- Retains the A1 first-flash configuration initialization fix for migration from other firmware (dad0514), plus existing automatic control, power-button behavior, and configuration migration.
+- Preserves Wi-Fi, MQTT, bindings, and schedules. M1 devices without an SCD40 keep the original four metrics.
+
 ## v0.9.10
 
 - Power-key presses while running no longer overlay green feedback on the mode/airflow display; green feedback is reserved for turning on from off.
