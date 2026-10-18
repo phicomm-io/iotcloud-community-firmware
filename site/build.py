@@ -21,7 +21,7 @@ from pages import ALIASES, GROUPS, PAGES, SITE_URL, EN_GROUPS, EN_PAGES, validat
 EXTENSIONS = ['tables', 'fenced_code', 'attr_list', 'toc']
 SITE_NAME = 'PHICOMM COMMUNITY'
 # Nav anchors live on the home page, so guides reach them through '../'.
-HOME_ANCHORS = [('devices', '设备'), ('features', '功能'), ('demos', '在线演示'),
+HOME_ANCHORS = [('devices', '设备'), ('features', '功能'), ('iotcloud', 'IotCloud'), ('demos', '在线演示'),
                 ('docs', '文档'), ('releases', '下载')]
 
 
@@ -31,7 +31,7 @@ def esc(text):
 
 def header(base, language="zh"):
     if language == "en":
-        nav = "".join(f'<a href="{base}#{anchor}">{label}</a>' for anchor, label in [("devices","Devices"),("features","Features"),("demos","Demos"),("docs","Documentation"),("releases","Downloads")])
+        nav = "".join(f'<a href="{base}#{anchor}">{label}</a>' for anchor, label in [("devices","Devices"),("features","Features"),("iotcloud","IotCloud"),("demos","Demos"),("docs","Documentation"),("releases","Downloads")])
         return (f'<header class="site-header"><div class="wrap"><a class="brand" href="{base}"><span class="mark">P</span><span class="word"><b>{SITE_NAME}</b><span>Community firmware</span></span></a><nav class="site-nav" aria-label="Main navigation">{nav}</nav><div class="prefs"><label class="sr" for="themePick">Theme</label><select id="themePick"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></div></div></header>')
     nav = ''.join(f'<a href="{base}#{anchor}">{esc(label)}</a>' for anchor, label in HOME_ANCHORS)
     return (f'<header class="site-header"><div class="wrap">'

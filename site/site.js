@@ -1,5 +1,13 @@
 'use strict';
 (()=>{
+ // The navigation wraps on narrow screens; keep anchored headings visible.
+ const header=document.querySelector('.site-header');
+ if(header){
+  const measure=()=>document.documentElement.style.setProperty('--header-offset',`${header.offsetHeight+20}px`);
+  measure();
+  if('ResizeObserver'in window)new ResizeObserver(measure).observe(header);
+  else window.addEventListener('resize',measure);
+ }
  const key='phicomm.appearance',choices=['system','light','dark'];
  const pick=document.getElementById('themePick');
  if(pick){

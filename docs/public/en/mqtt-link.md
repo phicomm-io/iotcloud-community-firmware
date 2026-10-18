@@ -41,7 +41,7 @@ A1 computes the live arithmetic mean of bound M1 readings that are valid and no 
 
 ## IotCloud remote management
 
-[Open IotCloud]({{SITE_URL}}iotcloud/) · [Deploy IotCloud](iotcloud-deploy)
+[Connect devices to IotCloud](iotcloud-connect) · [Open IotCloud]({{SITE_URL}}iotcloud/) · [Deploy IotCloud](iotcloud-deploy)
 
 The [MQTT platform](https://github.com/phicomm-io/phicomm-community-mqtt) provides accounts, device lists and Legacy / TMCP controls. It reuses the local device UI. MQTT initially uses the registration password and can later have a separate password; website and MQTT passwords are managed independently.
 

@@ -47,7 +47,7 @@ A1 对已绑定且 15 秒内有效的 M1 数据计算实时算术平均；没有
 
 ## MQTT 远程集中管理平台
 
-[打开本站 IotCloud 设备管理]({{SITE_URL}}iotcloud/) · [部署自己的 IotCloud](iotcloud-deploy)
+[接入 IotCloud：从注册到设备上线](iotcloud-connect) · [打开本站 IotCloud 设备管理]({{SITE_URL}}iotcloud/) · [部署自己的 IotCloud](iotcloud-deploy)
 
 [phicomm-community-mqtt](https://github.com/phicomm-io/phicomm-community-mqtt) 提供账号登录、设备列表、MQTT 连接与 Legacy / TMCP 设备管理，支持批量管理设备。
 

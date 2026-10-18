@@ -1,5 +1,7 @@
 # Deploy IotCloud
 
+To manage devices on the hosted platform, start with [Connect to IotCloud](iotcloud-connect). This page covers hosting your own services.
+
 [Open IotCloud]({{SITE_URL}}iotcloud/) · [Frontend source and releases](https://github.com/phicomm-io/phicomm-community-frontend) · [Backend and Broker deployment](https://github.com/phicomm-io/phicomm-community-mqtt#readme)
 
 ## China and US nodes

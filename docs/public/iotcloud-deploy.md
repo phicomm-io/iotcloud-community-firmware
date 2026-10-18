@@ -1,5 +1,7 @@
 # IotCloud 部署
 
+直接使用现有平台管理设备，请先看[接入 IotCloud](iotcloud-connect)。本页介绍自行部署与托管。
+
 [打开本站 IotCloud]({{SITE_URL}}iotcloud/) · [前端源码与发布](https://github.com/phicomm-io/phicomm-community-frontend) · [后端与 Broker 部署](https://github.com/phicomm-io/phicomm-community-mqtt#本地初始化)
 
 ## 选择部署方式

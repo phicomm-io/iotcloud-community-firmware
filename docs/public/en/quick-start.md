@@ -36,5 +36,6 @@ Theme preferences are stored locally in the browser and shared with the device U
 
 - Daily operation: [TC1](tc1-guide), [M1](m1-guide), [A1](a1-guide).
 - [Firmware updates](firmware-update).
-- [MQTT, Home Assistant and automation](mqtt-link).
+- [Connect to IotCloud](iotcloud-connect) for remote device management.
+- [MQTT, Home Assistant and A1 / M1 automation](mqtt-link).
 - [Troubleshooting](faq).

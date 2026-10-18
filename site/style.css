@@ -28,7 +28,7 @@
  --warn:#f2c46b;--warn-soft:#3a2e16;--focus:#91afff;--shadow:none;
 }}
 *{box-sizing:border-box}
-html{scroll-behavior:smooth;scroll-padding-top:92px}
+html{scroll-behavior:smooth;scroll-padding-top:var(--header-offset,92px)}
 body{margin:0;background:var(--bg);color:var(--text);font:16px/1.65 var(--font)}
 img{max-width:100%;height:auto}
 a{color:var(--accent);text-underline-offset:3px}

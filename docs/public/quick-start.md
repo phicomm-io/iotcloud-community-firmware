@@ -41,5 +41,6 @@ WebUI 顶部可切换中文、英文及明暗主题。设置按**网络、设备
 
 - 日常操作、灯语与按键：[TC1](tc1-guide) · [M1](m1-guide) · [A1](a1-guide)
 - 更新固件：[固件更新](firmware-update)
-- 接入 Home Assistant 或远程集中管理平台：[MQTT 与联动](mqtt-link)
+- 远程集中管理设备：[接入 IotCloud](iotcloud-connect)
+- 接入 Home Assistant 或配置 A1 × M1 联动：[MQTT 与联动](mqtt-link)
 - 遇到问题：[故障排查](faq)

@@ -62,6 +62,8 @@ def home_page(language="zh"):
         lines = ['# Phicomm Community Firmware', '', '[简体中文](Home) · English', '',
                  'Community firmware for the TC1 power strip, M1 air quality monitor and A1 air purifier.',
                  'Local web control, MQTT and Home Assistant integration, with free firmware downloads.', '']
+        lines += [f'- [Open IotCloud]({SITE_URL}iotcloud/)',
+                  '- [Connect devices to IotCloud](EN-iotcloud-connect)', '']
         for _, title, items in EN_GROUPS:
             lines += ['## ' + title, '']
             lines += [f'- [{name}]({wiki}): {summary}' for _, name, summary, wiki in items]
@@ -78,7 +80,7 @@ def home_page(language="zh"):
              '本项目为斐讯 TC1 智能排插、M1 空气检测仪和 A1 空气净化器维护社区固件。',
              '本地网页控制、MQTT 与 Home Assistant 接入，固件免费下载。', '']
     lines += [f'- [打开 IotCloud 设备管理]({SITE_URL}iotcloud/)',
-              '- [部署 IotCloud](IotCloud-部署)', '']
+              '- [接入 IotCloud](接入-IotCloud) · [自行部署](IotCloud-部署)', '']
     for _, title, items in GROUPS:
         lines.append(f'## {title}')
         lines.append('')
