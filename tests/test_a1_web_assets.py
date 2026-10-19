@@ -178,3 +178,28 @@ int main(void) {
 
 class M1WebAssetsTest(A1WebAssetsTest):
     PRODUCT = "M1"
+
+
+class TC1WebQueueAssetsTest(unittest.TestCase):
+    def test_both_variants_embed_the_queue_in_the_c_array(self):
+        import gzip
+        sys.path.insert(0, str(ROOT / 'tools'))
+        import pack_frontend as module
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bundle = root / 'verified'
+            pages = bundle / 'devices/tc1'
+            pages.mkdir(parents=True)
+            (root / 'common/web').mkdir(parents=True)
+            adapter = (ROOT / 'common/web/http_queue.js').read_bytes()
+            (root / 'common/web/http_queue.js').write_bytes(adapter)
+            with patch.object(module, 'ROOT', root), patch.object(module, 'fetch', return_value=bundle):
+                for variant, name in [('full', 'index.html.gz'), ('no-frontend-resources', 'setup.html.gz')]:
+                    raw = gzip.compress(b'<html><head></head><body>' + name.encode() + b'</body></html>', mtime=0)
+                    (pages / name).write_bytes(raw)
+                    with patch.dict(os.environ, {'PHICOMM_FIRMWARE_VARIANT': variant}):
+                        module.pack('tc1')
+                    source = (root / 'TC1/generated/web_data.c').read_text()
+                    embedded = bytes(int(x, 16) for x in re.findall(r'0x([0-9a-f]{2})', source))
+                    self.assertEqual(gzip.decompress(embedded).count(adapter), 1)
+                    self.assertEqual(embedded, module.adapt_http_queue(raw, 'tc1'))

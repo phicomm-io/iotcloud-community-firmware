@@ -10,8 +10,6 @@ from frontend_release import fetch
 ROOT = Path(__file__).resolve().parents[1]
 
 def adapt_http_queue(data, model):
-    if model not in ('a1', 'm1'):
-        return data
     html = gzip.decompress(data)
     marker = b'<head>'
     if html.count(marker) != 1:
@@ -47,4 +45,4 @@ def pack(model):
         text = '\n'.join(lines)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(text)
-    print(f'{model.upper()} verified UI {len(data)} bytes gzip, frontend {bundle.name}, HTTP FIFO={model in ("a1", "m1")}')
+    print(f'{model.upper()} verified UI {len(data)} bytes gzip, frontend {bundle.name}, HTTP FIFO=True')

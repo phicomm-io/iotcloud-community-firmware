@@ -23,6 +23,7 @@ manifest = {'version': version, 'target': prefix, 'sdk': sdk, 'sdk_commit': sdk[
             'toolchain': 'ARM GCC 5.4.1', 'files': {}}
 manifest.update(version_metadata)
 manifest['firmware_variant'] = variant
+manifest['frontend_http_queue_sha256'] = hashlib.sha256((Path(__file__).resolve().parents[2] / 'common/web/http_queue.js').read_bytes()).hexdigest()
 manifest['frontend'] = json.loads((Path(__file__).resolve().parents[2] / 'frontend.lock.json').read_text())
 for suffix in ('.usr.bin', '.ota.bin', '.all.bin', '.elf', '.map'):
     original = source / (prefix + suffix)
