@@ -70,6 +70,50 @@ int main(void){
 }
 ''')
 
+    def test_tc1_listener_configured_once_before_listen_and_fails_closed(self):
+        source = (ROOT / 'build/tc1-sdk-3.6.4/mico-os/libraries/daemons/http_server/httpd.c').read_text()
+        self.run_c(r'''
+#include <assert.h>
+#include <stdbool.h>
+#include <setjmp.h>
+#include <sys/select.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#define kNoErr 0
+#define kInProgressErr 12
+#define TCP_MAX_CONN_NUM 7
+#define UNUSED_PARAMETER(x) (void)(x)
+#define httpd_d(...) ((void)0)
+typedef unsigned mico_thread_arg_t;
+static int http_sockfd, configured, listened, closed, fail_option, cycles;
+static jmp_buf done;
+static int phicomm_http_client_limit(void){return 2;}
+static int net_get_sock_error(int fd){(void)fd;return -12;}
+#define socket fake_socket
+#define bind fake_bind
+#define listen fake_listen
+#define setsockopt fake_setsockopt
+#define close fake_close
+static int socket(int a,int b,int c){assert(a==AF_INET&&b==SOCK_STREAM&&c==IPPROTO_TCP);return 3;}
+static int bind(int fd,const struct sockaddr *a,socklen_t n){assert(fd==3&&a&&n==sizeof(struct sockaddr_in));return 0;}
+static int setsockopt(int fd,int level,int name,const void *v,socklen_t n){
+ assert(fd==3&&n==sizeof(int));if(level==IPPROTO_TCP){assert(name==TCP_MAX_CONN_NUM&&*(const int*)v==2&&!listened);configured++;return fail_option?-1:0;}return 0;
+}
+static int listen(int fd,int n){assert(fd==3&&n==2&&configured==1);listened++;return 0;}
+static int close(int fd){assert(fd==3);closed++;return 0;}
+SETUP
+static int httpd_setup_main_sockets(void){http_sockfd=httpd_setup_new_socket(80);return http_sockfd<0?-12:0;}
+static void httpd_suspend_thread(bool b){(void)b;assert(0);}
+static int httpd_select(int max,fd_set *r,fd_set *a,int timeout){assert(max==3&&r&&a&&timeout==-1);if(++cycles==4)longjmp(done,1);return 1;}
+static void httpd_handle_client_connection(fd_set *s){assert(s&&configured==1&&listened==1);}
+MAIN
+int main(void){
+ if(!setjmp(done))httpd_main(0);
+ assert(configured==1&&listened==1&&cycles==4&&!closed);
+ configured=listened=0;fail_option=1;assert(httpd_setup_new_socket(80)<0);assert(configured==1&&!listened&&closed==1);
+}
+'''.replace('SETUP', function(source, 'static int httpd_setup_new_socket(')).replace('MAIN', function(source, 'static void httpd_main(')))
+
     def test_http_retains_fd_until_recovery_and_never_executes_timeout(self):
         for model in ('A1','M1'):
             source=(ROOT/model/'http.c').read_text()
