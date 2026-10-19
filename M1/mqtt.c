@@ -292,6 +292,9 @@ static void mqtt_worker(mico_thread_arg_t arg)
         uint32_t snapshot_at=mico_rtos_get_time()-5000u;
         rediscover = false;
         while (rc == MQTT_SUCCESS) {
+            /* A command may rename the device or change its subscriptions.
+             * Deliver its queued result before reconnect resets the queue. */
+            rc=service_mqtt_flush(publish);if(rc!=MQTT_SUCCESS)break;
             if(!ota_job_active() && (uint32_t)(mico_rtos_get_time()-snapshot_at)>=5000){snapshot_at=mico_rtos_get_time();rc=service_mqtt_snapshot(publish,&account);if(rc!=MQTT_SUCCESS)break;}
             rc=ota_service(base); if(rc!=MQTT_SUCCESS)break;
             if(ota_job_active()){rc=service_mqtt_flush(publish);if(rc!=MQTT_SUCCESS)break;rc=MQTTYield(&client,100);mico_thread_msleep(50);continue;}

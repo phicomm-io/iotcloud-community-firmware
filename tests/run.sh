@@ -7,7 +7,7 @@ python3 -m unittest discover -s tests -p test_version.py
 python3 -m unittest tests.test_package_stale_signature
 python3 -m unittest tests.test_http_overload
 python3 -m unittest tests.test_http_tcp_integration
-python3 -m unittest tests.test_memory_admission tests.test_http_browser_queue
+python3 -m unittest tests.test_memory_admission tests.test_http_browser_queue tests.test_tc1_http_recovery
 python3 -m unittest tests.test_a1_provision_memory
 python3 -m unittest tests.test_a1_web_assets
 python3 -m unittest tests.test_m1_boot_config
@@ -15,6 +15,9 @@ compiler=("${CC:-cc}")
 if [[ "${SANITIZE:-0}" == 1 ]]; then
     compiler+=(-g -fno-omit-frame-pointer -fsanitize=address,undefined)
 fi
+root="$PWD"
+source tests/host_hash.sh
+compiler+=("${hash_sources[@]}")
 output=$(mktemp -d)
 trap 'rm -rf "$output"' EXIT
 "${compiler[@]}" -std=c99 -Wall -Wextra -Werror tests/test_gesture.c -o "$output/gesture"

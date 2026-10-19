@@ -39,8 +39,8 @@ static void command(const char *id, const char *code) {
 }
 int main(void) {
     service_init();
-    fail_at=1;command("before","busy");assert(!mutations);
-    allocation=0;fail_at=2;command("after","accepted");assert(mutations==1);
+    fail_serialization=1;command("before","busy");assert(!mutations);
+    fail_serialization=0;allocation=0;fail_at=1;command("after","accepted");assert(mutations==1);
     fail_at=0;command("after","busy");assert(mutations==1);
     command("before","accepted");assert(mutations==2);
     command("before","accepted");assert(mutations==2);

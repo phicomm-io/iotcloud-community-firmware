@@ -66,6 +66,25 @@ def main(port):
 
     try:
         wait(lambda: any(t == base + '/sensor' for t, p, r in records))
+        # Renaming changes the MQTT session/HA discovery. Its result must be
+        # flushed on the original connection before reconnect clears the queue.
+        for index in range(3):
+            request_id = f'rename-before-reconnect-{index}'
+            start = len(records)
+            publish(base + '/command', {'request_id': request_id, 'action': 'config.set',
+                                       'params': {'section': 'device',
+                                                  'values': {'name': f'M1 MQTT QA {index}'}}})
+            wait(lambda: any(t == base + '/result' and json.loads(p).get('request_id') == request_id
+                             for t, p, r in records[start:]))
+            result_index = next(i for i in range(start, len(records))
+                                if records[i][0] == base + '/result'
+                                and json.loads(records[i][1]).get('request_id') == request_id)
+            assert json.loads(records[result_index][1])['code'] == 'accepted'
+            wait(lambda: any(t == base + '/availability' and p == 'online'
+                             for t, p, r in records[result_index + 1:]))
+            offline = next(i for i in range(start, len(records))
+                           if records[i][0] == base + '/availability' and records[i][1] == 'offline')
+            assert result_index < offline, 'rename result lost until after reconnect'
         command = {'action': 'binding.set',
                    'params': {'response_ids': [f'{peer}:{identity}' for peer in peers]}}
         worker.stdin.write(json.dumps(command).encode() + b'\n')
@@ -88,7 +107,7 @@ def main(port):
                          for t, p, r in records))
         assert all(not retained for topic, payload, retained in records
                    if topic.endswith('/response') or topic == base + '/result')
-        print('PASS M1 four actual MQTT subscriptions, long account, bind/sample routing, IP snapshot and command result')
+        print('PASS M1 rename results before reconnect, four actual MQTT subscriptions, long account, bind/sample routing, IP snapshot and command result')
     finally:
         worker.terminate()
         worker.wait(timeout=5)

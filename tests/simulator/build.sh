@@ -6,6 +6,9 @@ compiler=("${CC:-cc}")
 if [[ "${SANITIZE:-0}" == 1 ]]; then
  compiler+=(-fsanitize=address,undefined -fno-omit-frame-pointer)
 fi
+root="$PWD"
+source tests/host_hash.sh
+compiler+=("${hash_sources[@]}")
 mkdir -p "$out"
 json_sdk=$(mktemp -d)
 trap 'rm -rf "$json_sdk"' EXIT

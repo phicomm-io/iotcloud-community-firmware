@@ -20,7 +20,7 @@ json_object *service_product(const char *a,json_object *p,const char **c){
  json_build_object_add(o,"second",json_object_new_string("required"));
  return o;
 }
-static void empty(void){json_heap_stats_t s;json_heap_snapshot(&s);unsigned retained=0;for(unsigned i=0;i<8;i++)retained+=(receipts[i].request!=NULL)+(receipts[i].response!=NULL);assert(s.live_blocks==retained);service_memory_state_t m;service_memory_snapshot(&m);assert(!m.active && !m.reserved);}
+static void empty(void){json_heap_stats_t s;json_heap_snapshot(&s);unsigned retained=0;for(unsigned i=0;i<8;i++)retained+=(receipts[i].response!=NULL);assert(s.live_blocks==retained);service_memory_state_t m;service_memory_snapshot(&m);assert(!m.active && !m.reserved);}
 int main(void){
  heap.free_memory=64000;service_init();assert(ready);
  service_memory_mqtt(7,false,900);service_memory_state_t diagnostics;
@@ -42,11 +42,25 @@ int main(void){
  q=service_parse(text,strlen(text));assert(q);json_object *r=service_command(q);assert(r);
  assert(!strcmp(json_object_get_string(json_object_object_get(r,"code")),"busy"));
  json_object_put(q);json_object_put(r);assert(mutations==1);empty();
+ /* Large canonical requests must not remain on the heap after dispatch.
+  * Replays still return the saved result, and a one-byte change conflicts. */
+ char large[7600],payload[7001];memset(payload,'x',7000);payload[7000]=0;
+ for(unsigned i=0;i<8;i++){
+  snprintf(large,sizeof(large),"{\"action\":\"fan.set\",\"request_id\":\"large-%u\",\"params\":{\"payload\":\"%s\"}}",i,payload);
+  q=service_parse(large,strlen(large));assert(q);r=service_command(q);assert(r);json_object_put(r);
+  unsigned previous=mutations;r=service_command(q);assert(r && mutations==previous);json_object_put(r);json_object_put(q);empty();
+ }
+ payload[6999]='y';
+ snprintf(large,sizeof(large),"{\"action\":\"fan.set\",\"request_id\":\"large-7\",\"params\":{\"payload\":\"%s\"}}",payload);
+ q=service_parse(large,strlen(large));assert(q);r=service_command(q);assert(r);
+ assert(!strcmp(json_object_get_string(json_object_object_get(r,"code")),"conflict"));
+ json_object_put(r);json_object_put(q);empty();
+ r=service_query("status.get");assert(r);json_object_put(r);empty();
  /* Live free bytes, not an active count, determine admission. */
  unsigned claims[64];
  for(unsigned i=0;i<64;i++){claims[i]=service_memory_claim(0);assert(claims[i]);}
  for(unsigned i=0;i<64;i++)service_memory_release(claims[i]);empty();
  heap.free_memory=SERVICE_MEMORY_RESERVE+511;assert(!service_memory_claim(0));
- heap.free_memory=64000;for(unsigned i=0;i<8;i++){json_heap_free(receipts[i].request);json_heap_free(receipts[i].response);memset(&receipts[i],0,sizeof(receipts[i]));}
+ heap.free_memory=64000;for(unsigned i=0;i<8;i++){json_heap_free(receipts[i].response);memset(&receipts[i],0,sizeof(receipts[i]));}
  empty();puts("Dispatcher: 10000 cleanup cycles, allocation pressure returns NULL/busy, incomplete response suppressed, at-most-once retained, byte-based admission 64 requests: OK");
 }

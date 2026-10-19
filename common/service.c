@@ -10,6 +10,7 @@
 #include <time.h>
 #include "generated/build_ota.h"
 #include "json_heap.h"
+#include "bearssl_hash.h"
 #define LOG_COUNT 64
 /* Fixed vocabulary events never accept credentials, payloads or URLs. */
 typedef struct { uint32_t sequence, uptime, utc; int32_t argument; uint8_t level,module,event,reserved; } service_record_t;
@@ -82,7 +83,9 @@ void service_memory_mqtt(unsigned pending, bool overflow, uint32_t delay_ms) {
     if (delay_ms>memory_state.mqtt_max_delay) memory_state.mqtt_max_delay=delay_ms;
     mico_rtos_unlock_mutex(&service_lock);
 }
-typedef struct { char id[65]; char *request, *response; } receipt_t;
+/* Retain a fixed digest, never an arbitrarily large control payload. The
+ * fingerprint and response preserve the eight-request replay/conflict window. */
+typedef struct { char id[65]; unsigned char digest[32]; char *response; } receipt_t;
 static receipt_t receipts[8];
 static unsigned receipt_next;
 static char *receipt_json_copy(json_object *o) {
@@ -182,12 +185,17 @@ static json_object *service_command_execute(json_object *req) {
     /* Receipt stores only control requests. Configuration requests can contain
        passwords and are never retained in the replay cache. */
     bool cache=id && !query && strncmp(action,"config.",7) && strncmp(action,"wifi.",5) && strncmp(action,"ota.",4);
-    char *canonical=NULL;
-    if(cache){canonical=receipt_json_copy(req);if(!canonical)return result(id,"busy",NULL);}
+    unsigned char digest[32];
+    if(cache){
+        const char *canonical=json_object_to_json_string(req);
+        if(!canonical)return result(id,"busy",NULL);
+        br_sha256_context sha; br_sha256_init(&sha);
+        br_sha256_update(&sha,canonical,strlen(canonical));br_sha256_out(&sha,digest);
+    }
     mico_rtos_lock_mutex(&command_lock);
     if(cache)for(unsigned i=0;i<8;i++)if(!strcmp(receipts[i].id,id)){
-        json_object *out=!strcmp(receipts[i].request,canonical)?(receipts[i].response?service_parse(receipts[i].response,strlen(receipts[i].response)):result(id,"busy",NULL)):result(id,"conflict",NULL);
-        mico_rtos_unlock_mutex(&command_lock);json_heap_free(canonical);return out;
+        json_object *out=!memcmp(receipts[i].digest,digest,sizeof(digest))?(receipts[i].response?service_parse(receipts[i].response,strlen(receipts[i].response)):result(id,"busy",NULL)):result(id,"conflict",NULL);
+        mico_rtos_unlock_mutex(&command_lock);return out;
     }
     /* Serialization covers mutation + receipt insertion across HTTP/MQTT. */
     json_object *data=NULL;
@@ -197,8 +205,8 @@ static json_object *service_command_execute(json_object *req) {
         mico_rtos_unlock_mutex(&command_lock);data=logs(p,&code);if(data)code="ok";return result(id,code,data);
     } else { bool handled=false;data=update_command(action,p,&code,&handled);if(!handled)data=automation_command(action,p,&code,&handled);if(!handled)data=service_product(action,p,&code); }
     json_object *out=result(id,code,data);
-    if(cache){receipt_t *r=&receipts[receipt_next++%8];json_heap_free(r->request);json_heap_free(r->response);memset(r,0,sizeof(*r));strcpy(r->id,id);r->request=canonical;canonical=NULL;r->response=receipt_json_copy(out);/* Keep the ID/request if response allocation fails: the mutation already ran. */}
-    mico_rtos_unlock_mutex(&command_lock);json_heap_free(canonical);
+    if(cache){receipt_t *r=&receipts[receipt_next++%8];json_heap_free(r->response);memset(r,0,sizeof(*r));strcpy(r->id,id);memcpy(r->digest,digest,sizeof(digest));r->response=receipt_json_copy(out);/* Keep the ID/digest if response allocation fails: the mutation already ran. */}
+    mico_rtos_unlock_mutex(&command_lock);
     if(!query)service_event(!strcmp(code,"accepted")||!strcmp(code,"ok")?"info":"warn","command",!strcmp(code,"accepted")||!strcmp(code,"ok")?"accepted":"rejected");
     return out;
 }
