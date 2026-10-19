@@ -35,14 +35,18 @@ class ApplySdkPatchTests(unittest.TestCase):
             self.assertIn('SDK left unchanged', result.stderr)
             self.assertEqual(target.read_text(), 'int value = 77;\n')
 
-    def test_real_json_stack_reruns_from_every_prefix_for_both_products(self):
+    def test_real_json_stack_reruns_from_every_prefix_for_available_products(self):
         patches = [ROOT / 'common' / name for name in (
-            'json-newlib-reent.patch', 'json-printbuf-oom.patch', 'json-allocation-safety.patch')]
+            'json-newlib-reent.patch', 'json-printbuf-oom.patch', 'json-allocation-safety.patch',
+            'json-heap-budget.patch', 'json-newlib-nano-abi.patch')]
         paths = set().union(*(changed_paths(p.read_bytes()) for p in patches))
-        for product in ['a1', 'm1']:
-            sdk_source = ROOT / 'build' / f'{product}-sdk' / 'mico-os'
-            if not (sdk_source / '.git').exists():
-                self.skipTest(f'pinned {product} SDK checkout unavailable')
+        candidates = [ROOT / 'build' / name / 'mico-os' for name in
+                      ('a1-sdk', 'm1-sdk', 'tc1-sdk-3.6.4')]
+        available = [sdk for sdk in candidates if (sdk / '.git').exists()]
+        if not available:
+            self.skipTest('pinned product SDK checkout unavailable')
+        for sdk_source in available:
+            product = sdk_source.parent.name
             baseline = {}
             for path in paths:
                 result = subprocess.run(['git', '-C', str(sdk_source), 'show', f'HEAD:{path}'],
@@ -50,7 +54,8 @@ class ApplySdkPatchTests(unittest.TestCase):
                 if result.returncode == 0:
                     baseline[path] = result.stdout
                 else:
-                    self.assertEqual(path, 'libraries/utilities/json_c/json_number_reent.h')
+                    self.assertIn(path, {'libraries/utilities/json_c/' + name for name in
+                                         ('json_number_reent.h', 'json_heap.c', 'json_heap.h')})
             for prefix in range(len(patches) + 1):
                 with self.subTest(product=product, prefix=prefix), tempfile.TemporaryDirectory() as temporary:
                     sdk = Path(temporary) / 'sdk'

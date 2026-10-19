@@ -2,6 +2,11 @@
 
 English translation of the published release history. Historical validation statements apply to the release named in each section, not to later firmware. Release notes are authored in the Wiki and frozen into the source repository before tagging.
 
+## v0.9.15
+
+- Fix TC1 freezes or reboots when opening the device page or reading live power and energy usage.
+- Also improve reading and communication stability on A1 and M1, preserving existing Wi-Fi, MQTT, schedules, buttons and device settings.
+
 ## v0.9.14
 
 - Reduce memory used by device linkage and MQTT communication. A1 application static RAM usage is reduced by about 10.8 KiB, and TC1 by about 1.0 KiB.
