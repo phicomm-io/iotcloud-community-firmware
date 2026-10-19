@@ -46,8 +46,8 @@ static bool busy_identifier(const char *p) {
     for(;*p;p++)if(!((*p>='a'&&*p<='z')||(*p>='A'&&*p<='Z')||(*p>='0'&&*p<='9')||*p=='_'||*p=='.'||*p=='-'))return false;
     return true;
 }
-static void service_busy_wire(const void *payload,size_t length,char out[SERVICE_BUSY_BYTES]) {
-    const unsigned char *p=payload,*end;char id[65]="";bool valid=false,complete=false;
+static void service_busy_id(const void *payload,size_t length,char id[65]) {
+    const unsigned char *p=payload,*end;bool valid=false,complete=false;id[0]=0;
     if(!payload)goto done;end=p+length;
     if(length>8192)goto done;
     busy_space(&p,end);if(p==end||*p++!='{')goto done;
@@ -60,7 +60,7 @@ static void service_busy_wire(const void *payload,size_t length,char out[SERVICE
         busy_space(&p,end);if(p==end||*p++!=':')goto done;busy_space(&p,end);
         const unsigned char *value=p;
         if(key_ok && !strcmp(key,"request_id")) {
-            valid=busy_string(&p,end,id,sizeof(id)) && busy_identifier(id);
+            valid=busy_string(&p,end,id,65) && busy_identifier(id);
             p=value;
         }
         unsigned depth=0;bool consumed=false;
@@ -77,6 +77,12 @@ static void service_busy_wire(const void *payload,size_t length,char out[SERVICE
     }
     busy_space(&p,end);complete=p==end;
  done:
-    if(valid && complete) {strcpy(out,"{\"request_id\":\"");strcat(out,id);strcat(out,"\",\"code\":\"busy\",\"data\":{}}");}
+    if(!valid || !complete)id[0]=0;
+}
+static void service_busy_format(const char *id,char out[SERVICE_BUSY_BYTES]) {
+    if(*id) {strcpy(out,"{\"request_id\":\"");strcat(out,id);strcat(out,"\",\"code\":\"busy\",\"data\":{}}");}
     else strcpy(out,"{\"code\":\"busy\",\"data\":{}}");
+}
+static inline void service_busy_wire(const void *payload,size_t length,char out[SERVICE_BUSY_BYTES]) {
+    char id[65];service_busy_id(payload,length,id);service_busy_format(id,out);
 }

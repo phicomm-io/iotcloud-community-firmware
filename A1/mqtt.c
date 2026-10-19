@@ -381,6 +381,7 @@ static void mqtt_worker(mico_thread_arg_t arg)
         bool sent = false, old_visible = false; uint32_t revision = 0;
         a1_filter_storage_t sent_filter = {0}; uint32_t filter_sent_at = 0;
         while (rc == MQTT_SUCCESS) {
+            stage="result";rc=service_mqtt_flush(publish);if(rc!=MQTT_SUCCESS)break;
             stage="ota"; rc=ota_service(base);if(rc!=MQTT_SUCCESS)break;
             if(ota_job_active()){rc=service_mqtt_flush(publish);if(rc!=MQTT_SUCCESS)break;rc=MQTTYield(&client,100);mico_thread_msleep(50);continue;}
             mico_rtos_lock_mutex(&a1_lock); a1_state.mqtt_connected = true; mico_rtos_unlock_mutex(&a1_lock);
@@ -410,8 +411,10 @@ static void mqtt_worker(mico_thread_arg_t arg)
                 if (rc != MQTT_SUCCESS) { mqtt_error("subscription", rc); mqtt_status(MQTT_WAITING_ACL); }
             }
             if (rc == MQTT_SUCCESS) {stage="receive";rc = MQTTYield(&client, 100); mqtt_error("receive", rc);}
+            if (rc == MQTT_SUCCESS) {stage="result";rc=service_mqtt_flush(publish);}
             mico_thread_msleep(50);
         }
+        service_mqtt_clear();
         if (rc != MQTT_SUCCESS) {
             char event[40]; snprintf(event,sizeof(event),"%s_error_%d",stage,rc);
             service_event("warn","mqtt",event);

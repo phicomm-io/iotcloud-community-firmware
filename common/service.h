@@ -14,6 +14,8 @@ unsigned service_memory_claim(size_t input_bytes);
 void service_memory_release(unsigned claim);
 void service_memory_waiting(bool enter);
 void service_memory_snapshot(service_memory_state_t *out);
+/* MQTT owner reports only scalar queue diagnostics; no allocation or socket IO. */
+void service_memory_mqtt(unsigned pending, bool overflow, uint32_t delay_ms);
 uint64_t service_memory_failures(void);
 /* Product adapter: only static action names and validated parameters reach it. */
 json_object *service_product(const char *, json_object *, const char **code);

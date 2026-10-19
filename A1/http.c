@@ -456,20 +456,23 @@ static void memory_response(int fd)
     }
     micoMemInfo_t snapshot = *memory;
     service_memory_state_t budget; service_memory_snapshot(&budget);
-    char body[640];
+    char body[768];
     int length = snprintf(body, sizeof(body),
         "{\"code\":\"ok\",\"data\":{\"free_memory\":%d,\"allocated_memory\":%d,"
         "\"free_memory_chunks\":%d,\"uptime_ms\":%lu,\"memory_reserve\":%u,"
         "\"memory_reserved\":%lu,\"memory_active\":%lu,\"memory_waiting\":%lu,"
         "\"memory_denied\":%lu,\"minimum_sampled_free\":%lu,"
-        "\"json_live_blocks\":%lu,\"json_peak_blocks\":%lu,\"json_alloc_failures\":%lu,\"json_guard_denied\":%lu}}",
+        "\"json_live_blocks\":%lu,\"json_peak_blocks\":%lu,\"json_alloc_failures\":%lu,\"json_guard_denied\":%lu,"
+        "\"mqtt_pending\":%lu,\"mqtt_peak\":%lu,\"mqtt_overflow\":%lu,\"mqtt_max_delay_ms\":%lu}}",
         snapshot.free_memory, snapshot.allocted_memory, snapshot.num_of_chunks,
         (unsigned long)mico_rtos_get_time(), SERVICE_MEMORY_RESERVE,
         (unsigned long)budget.reserved, (unsigned long)budget.active,
         (unsigned long)budget.waiting, (unsigned long)budget.denied,
         (unsigned long)budget.minimum_free,
         (unsigned long)budget.json_live, (unsigned long)budget.json_peak,
-        (unsigned long)budget.json_failed, (unsigned long)budget.json_denied);
+        (unsigned long)budget.json_failed, (unsigned long)budget.json_denied,
+        (unsigned long)budget.mqtt_pending, (unsigned long)budget.mqtt_peak,
+        (unsigned long)budget.mqtt_overflow, (unsigned long)budget.mqtt_max_delay);
     if (length > 0 && (size_t)length < sizeof(body))
         response(fd, 200, "application/json", body, (size_t)length, false);
 }

@@ -57,6 +57,37 @@ int main(void){
 }
 ''')
 
+    def test_memory_diagnostics_fit_even_at_maximum_counters(self):
+        for model in ('A1','TC1'):
+            path='A1/http.c' if model=='A1' else 'TC1/http_server/app_httpd.c'
+            source=(ROOT/path).read_text()
+            signature='static void memory_response(' if model=='A1' else 'static int HttpV1Memory('
+            harness=r'''
+#include <assert.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#include "common/memory_budget.h"
+typedef struct {int free_memory,allocted_memory,num_of_chunks;} micoMemInfo_t;
+static const micoMemInfo_t *MicoGetMemoryInfo(void){static micoMemInfo_t m={2147483647,2147483647,2147483647};return &m;}
+static void service_memory_snapshot(service_memory_state_t *b){memset(b,0xff,sizeof(*b));}
+static uint32_t mico_rtos_get_time(void){return UINT32_MAX;}
+static unsigned sent;
+static void check(const char *body,size_t n){assert(n<768 && n==strlen(body));assert(strstr(body,"\"mqtt_overflow\":4294967295"));assert(strstr(body,"\"mqtt_max_delay_ms\":4294967295"));sent++;}
+'''
+            if model=='A1':
+                harness+=r'''
+static void response(int fd,unsigned code,const char *type,const void *body,size_t n,bool gzip){assert(fd==7 && code==200 && !strcmp(type,"application/json") && !gzip);check(body,n);}
+'''+function(source,signature)+'\nint main(void){memory_response(7);assert(sent==1);}'
+            else:
+                harness+=r'''
+typedef int httpd_request_t;
+#define HTTP_RES_200 "200"
+static int response_json(httpd_request_t *r,const char *status,const char *body,size_t n){assert(*r==7 && !strcmp(status,"200"));check(body,n);return 0;}
+static int HttpV1Busy(httpd_request_t *r){(void)r;assert(0);return -1;}
+'''+function(source,signature)+'\nint main(void){httpd_request_t r=7;assert(!HttpV1Memory(&r) && sent==1);}'
+            self.run_c(harness)
+
     def test_fixed_busy_identifiers(self):
         self.run_c(r'''
 #include <assert.h>

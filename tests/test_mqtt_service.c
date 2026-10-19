@@ -8,6 +8,12 @@
 static void *watched[2];
 static unsigned freed[2], wire_calls;
 static bool fail_realloc;
+static bool low_memory;
+uint32_t test_now;
+static unsigned observed_pending,observed_overflow;
+static uint32_t observed_delay;
+int json_heap_permit(size_t bytes){(void)bytes;return !low_memory;}
+void service_memory_mqtt(unsigned pending,bool overflow,uint32_t delay){observed_pending=pending;observed_overflow+=overflow;if(delay>observed_delay)observed_delay=delay;}
 void __real_free(void *);
 void *__real_realloc(void *,size_t);
 void __wrap_free(void *pointer){
@@ -22,7 +28,6 @@ void *__wrap_realloc(void *pointer,size_t size){
 #define MQTT_FAILURE -1
 #include "../common/mqtt_service.inc"
 uint64_t service_memory_failures(void){return 0;}
-static bool low_memory;
 static unsigned claims;
 unsigned service_memory_claim(size_t n){if(low_memory || n>8192)return 0;claims++;return 1;}
 void service_memory_release(unsigned n){assert(n==1 && claims);claims--;}
@@ -107,8 +112,8 @@ static void test_queued_wire(void){
  }
  assert(service_mqtt_reply_count==4);
  /* A failed send releases its bytes, retaining siblings for owner cleanup. */
- watched[0]=service_mqtt_replies[0].wire;
- watched[1]=service_mqtt_replies[0].wire->buf;
+ watched[0]=service_mqtt_head->body.wire;
+ watched[1]=service_mqtt_head->body.wire->buf;
  freed[0]=freed[1]=0;fail_realloc=true;
  assert(service_mqtt_flush(send_failed)==MQTT_FAILURE);
  assert(fail_realloc && freed[0]==1 && freed[1]==1);
@@ -118,7 +123,7 @@ static void test_queued_wire(void){
  /* Failed serialization uses the fixed busy envelope, never a partial wire. */
  fail_realloc=true;
  assert(service_mqtt_input(send_reply,&scope,"{}",2,false)==MQTT_SUCCESS);
- assert(!fail_realloc && service_mqtt_reply_count==1 && !service_mqtt_replies[0].wire);
+ assert(!fail_realloc && service_mqtt_reply_count==1 && !service_mqtt_head->body.wire);
  service_mqtt_clear();
  assert(freed[0]==1 && freed[1]==1);
  watched[0]=watched[1]=NULL;owned_command=false;
@@ -154,7 +159,43 @@ static void test_low_memory(void){
  assert(executions==before && fail_realloc);fail_realloc=false;low_memory=false;
  puts("MQTT pressure: fixed busy queue, correlated IDs, no command execution/allocation/reconnect");
 }
+static unsigned burst_sent;
+static bool burst_nested;
+static int send_burst(const char *topic,const char *body,bool retain){
+ assert(strstr(topic,"/result") && body && !retain);burst_sent++;
+ if(burst_nested){
+  burst_nested=false;
+  for(unsigned i=0;i<4;i++)assert(service_mqtt_input(send_burst,&scope,"{}",2,false)==0);
+ }
+ return MQTT_SUCCESS;
+}
+static void test_dynamic_backlog(void){
+ assert(mqtt_account_init(&scope,1,"tc1","test","aabbccddeeff"));
+ for(unsigned round=0;round<1000;round++){
+  for(unsigned i=0;i<16;i++)assert(service_mqtt_input(send_burst,&scope,"{}",2,false)==0);
+  assert(service_mqtt_reply_count==16 && observed_pending==16);
+  unsigned before=burst_sent;burst_nested=true;
+  assert(service_mqtt_flush(send_burst)==0);
+  assert(burst_sent==before+16 && service_mqtt_reply_count==4);
+  assert(service_mqtt_flush(send_burst)==0 && !service_mqtt_reply_count);
+  assert(!observed_pending && !claims);
+  json_heap_stats_t h;json_heap_snapshot(&h);assert(!h.live_blocks);
+ }
+ unsigned before=executions;low_memory=true;
+ const char *p="{\"request_id\":\"overload-1\",\"action\":\"config.set\"}";
+ test_now=UINT32_MAX-20;
+ for(unsigned i=0;i<4;i++)assert(service_mqtt_input(send_busy,&scope,p,strlen(p),false)==0);
+ unsigned overflow=observed_overflow;
+ assert(service_mqtt_input(send_busy,&scope,p,strlen(p),false)==MQTT_FAILURE);
+ assert(observed_overflow==overflow+1 && executions==before && !claims);
+ test_now=29;
+ assert(service_mqtt_flush(send_busy)==0 && !observed_pending);
+ assert(observed_delay>=50 && !service_mqtt_emergency_used);
+ low_memory=false;
+ puts("Dynamic MQTT backlog: 1000 rounds of 16+4 nested replies, byte guards, allocation-free emergency busy, explicit overflow, tick wrap and zero live allocations passed");
+}
 int main(void){
+ test_dynamic_backlog();
  test_telemetry_oom();
  test_low_memory();
  test_owned_wire();
@@ -167,7 +208,7 @@ int main(void){
  nested=true;assert(service_mqtt_flush(send_reply)==0);assert(calls==1 && service_mqtt_reply_count==1);
  assert(service_mqtt_flush(send_reply)==0);assert(calls==2 && !service_mqtt_reply_count);
  for(unsigned i=0;i<4;i++)assert(service_mqtt_input(send_reply,&scope,"{}",2,false)==0);
- unsigned before=executions;assert(service_mqtt_input(send_reply,&scope,"{}",2,false)==-1);assert(executions==before);
+ unsigned before=executions;assert(service_mqtt_input(send_reply,&scope,"{}",2,false)==0);assert(executions==before+1 && service_mqtt_reply_count==5);
  service_mqtt_clear();assert(!service_mqtt_reply_count);
  assert(!claims);
  json_heap_stats_t heap;json_heap_snapshot(&heap);assert(!heap.live_blocks);

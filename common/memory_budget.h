@@ -12,6 +12,7 @@
 typedef struct {
     uint32_t reserved, active, denied, waiting, minimum_free;
     uint32_t json_live, json_peak, json_failed, json_denied;
+    uint32_t mqtt_pending, mqtt_peak, mqtt_overflow, mqtt_max_delay;
 } service_memory_state_t;
 static inline unsigned service_memory_cost(size_t input) {
     return input <= 8192 ? SERVICE_MEMORY_WORK + (unsigned)input : 0;

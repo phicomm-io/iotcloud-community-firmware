@@ -73,6 +73,15 @@ void service_memory_snapshot(service_memory_state_t *out) {
     out->json_failed = json.allocation_failures; out->json_denied = json.guard_denied;
     mico_rtos_unlock_mutex(&service_lock);
 }
+void service_memory_mqtt(unsigned pending, bool overflow, uint32_t delay_ms) {
+    if (!ready) return;
+    mico_rtos_lock_mutex(&service_lock);
+    memory_state.mqtt_pending=pending;
+    if (pending>memory_state.mqtt_peak) memory_state.mqtt_peak=pending;
+    if (overflow && memory_state.mqtt_overflow!=UINT32_MAX) memory_state.mqtt_overflow++;
+    if (delay_ms>memory_state.mqtt_max_delay) memory_state.mqtt_max_delay=delay_ms;
+    mico_rtos_unlock_mutex(&service_lock);
+}
 typedef struct { char id[65]; char *request, *response; } receipt_t;
 static receipt_t receipts[8];
 static unsigned receipt_next;

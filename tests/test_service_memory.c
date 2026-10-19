@@ -23,6 +23,10 @@ json_object *service_product(const char *a,json_object *p,const char **c){
 static void empty(void){json_heap_stats_t s;json_heap_snapshot(&s);unsigned retained=0;for(unsigned i=0;i<8;i++)retained+=(receipts[i].request!=NULL)+(receipts[i].response!=NULL);assert(s.live_blocks==retained);service_memory_state_t m;service_memory_snapshot(&m);assert(!m.active && !m.reserved);}
 int main(void){
  heap.free_memory=64000;service_init();assert(ready);
+ service_memory_mqtt(7,false,900);service_memory_state_t diagnostics;
+ service_memory_snapshot(&diagnostics);assert(diagnostics.mqtt_pending==7 && diagnostics.mqtt_peak==7 && diagnostics.mqtt_max_delay==900);
+ service_memory_mqtt(0,true,50);service_memory_snapshot(&diagnostics);
+ assert(!diagnostics.mqtt_pending && diagnostics.mqtt_peak==7 && diagnostics.mqtt_overflow==1 && diagnostics.mqtt_max_delay==900);
  for(unsigned i=0;i<10000;i++){json_object *r=service_query("status.get");assert(r);json_object_put(r);empty();}
  uint64_t before=service_memory_failures();exhaust_during_build=true;
  assert(!service_query("status.get"));assert(service_memory_failures()>before);empty();
