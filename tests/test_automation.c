@@ -76,5 +76,8 @@ int main(void){automation_defaults(&stored);service_init();
  while(offset<AUTOMATION_BUTTON_SLOTS){char query[128];snprintf(query,sizeof(query),"{\"action\":\"buttons.get\",\"params\":{\"offset\":%u}}",offset);json_object *r=request(query,"ok"),*d=json_object_object_get(r,"data"),*items=json_object_object_get(d,"items");unsigned count=json_object_array_length(items);assert(count<=8);total+=count;unsigned next=json_object_get_int(json_object_object_get(d,"next"));assert(next>offset);offset=next;json_object_put(r);}
  assert(total==AUTOMATION_BUTTON_SLOTS);
  CHECK("{\"action\":\"buttons.get\",\"params\":{\"limit\":9}}","invalid_params");
+#ifdef FEATURE_DEVICE_A1
+#include "countdown_scenarios.inc"
+#endif
  puts("PASS automation: stable IDs, persistence before action, reboot last, no catch-up/replay, busy and bounds");
 }

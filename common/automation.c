@@ -7,6 +7,31 @@ static mico_mutex_t automation_lock;
 static bool automation_ready;
 static uint32_t previous, highwater, previous_ms;
 static bool armed;
+#ifdef FEATURE_DEVICE_A1
+typedef struct { uint16_t id; uint32_t started; } auto_countdown_t;
+static auto_countdown_t countdowns[AUTOMATION_TASKS];
+static bool countdown_ready;
+/* Called with automation_lock held. Flash records describe the duration, never
+ * an uptime deadline that could accidentally restart after a reboot. */
+static bool auto_countdown_boot(automation_config_t *c) {
+ if(countdown_ready)return true;
+ bool changed=false;
+ for(unsigned i=0;i<AUTOMATION_TASKS;i++)if(c->tasks[i].once==2 && c->tasks[i].enabled){
+  c->tasks[i].enabled=0;c->tasks[i].state=AUTO_CANCELLED;changed=true;
+ }
+ if(changed){c->revision++;if(!automation_save(c))return false;}
+ countdown_ready=true;return true;
+}
+static unsigned auto_remaining(const automation_task_t *t) {
+ if(!t->enabled)return 0;
+ for(unsigned i=0;i<AUTOMATION_TASKS;i++)if(countdowns[i].id==t->id){
+  uint32_t elapsed=(uint32_t)(mico_rtos_get_time()-countdowns[i].started)/1000;
+  return elapsed<t->at?t->at-elapsed:0;
+ }
+ return 0;
+}
+#endif
+
 void automation_defaults(automation_config_t *c){memset(c,0,sizeof(*c));c->magic=AUTOMATION_MAGIC;c->timezone=480;c->next_id=1;
 #ifdef AUTOMATION_TC1
 /* TC1 has no default custom key action. Fixed recovery is separate. */
@@ -75,28 +100,40 @@ static json_object *auto_action_json(const automation_action_t *a){
  }else if(k==AUTO_LIGHT_EFFECT && a->value!=255)json_build_object_add(p,"effect",json_object_new_int(a->value));
  json_build_object_add(o,"params",p);return o;
 }
-static json_object *auto_task_json(const automation_task_t *t){json_object *o=auto_action_json(&t->action);json_build_object_add(o,"id",json_object_new_int(t->id));json_build_object_add(o,"enabled",json_object_new_boolean(t->enabled));auto_text(o,"trigger",t->once?"once":"weekly");json_build_object_add(o,"days",json_object_new_int(t->days));json_build_object_add(o,"minute",json_object_new_int(t->minute));json_build_object_add(o,"at",json_object_new_int(t->at));json_build_object_add(o,"last",json_object_new_int(t->last));const char *states[]={"waiting","executed","missed","busy","migration_disabled"};auto_text(o,"state",states[t->state<=AUTO_MIGRATED_DISABLED?t->state:0]);return o;}
+static json_object *auto_task_json(const automation_task_t *t){json_object *o=auto_action_json(&t->action);json_build_object_add(o,"id",json_object_new_int(t->id));json_build_object_add(o,"enabled",json_object_new_boolean(t->enabled));auto_text(o,"trigger",t->once==2?"countdown":t->once?"once":"weekly");json_build_object_add(o,"days",json_object_new_int(t->days));json_build_object_add(o,"minute",json_object_new_int(t->minute));json_build_object_add(o,"at",json_object_new_int(t->at));json_build_object_add(o,"last",json_object_new_int(t->last));const char *states[]={"waiting","executed","missed","busy","migration_disabled","cancelled"};auto_text(o,"state",states[t->state<=AUTO_CANCELLED?t->state:0]);
+#ifdef FEATURE_DEVICE_A1
+ if(t->once==2){json_build_object_add(o,"seconds",json_object_new_int(t->at));json_build_object_add(o,"remaining_seconds",json_object_new_int(auto_remaining(t)));}
+#endif
+ return o;}
 json_object *automation_command(const char *name,json_object *p,const char **code,bool *handled){
  *handled=!strncmp(name,"schedules.",10) || !strncmp(name,"buttons.",8);if(!*handled)return NULL;
  auto_init();*code="invalid_params";automation_config_t *c=malloc(sizeof(*c));if(!c){*code="busy";return NULL;}
  mico_rtos_lock_mutex(&automation_lock);automation_load(c);json_object *out=NULL;bool save=false;
  int id=0,index=0;int slot=-1;
+#ifdef FEATURE_DEVICE_A1
+ if(!auto_countdown_boot(c)){*code="storage_error";goto done;}
+#endif
  if(!strcmp(name,"schedules.get")){
   int offset=0,limit=8;if(!auto_only(p,"|offset||limit|") || (json_object_object_get(p,"offset")&&!auto_integer(p,"offset",&offset,0,AUTOMATION_TASKS)) || (json_object_object_get(p,"limit")&&!auto_integer(p,"limit",&limit,1,8)))goto done;
   out=json_object_new_object();json_object *a=json_object_new_array();unsigned count=0;for(unsigned i=0;i<AUTOMATION_TASKS;i++)if(c->tasks[i].id)count++;
   for(unsigned i=offset;i<AUTOMATION_TASKS && limit;i++)if(c->tasks[i].id){json_build_array_add(a,auto_task_json(&c->tasks[i]));index=i+1;limit--;}
   if(!index)index=AUTOMATION_TASKS;json_build_object_add(out,"items",a);json_build_object_add(out,"next",json_object_new_int(index));json_build_object_add(out,"capacity",json_object_new_int(AUTOMATION_TASKS));json_build_object_add(out,"count",json_object_new_int(count));*code="ok";
  }else if(!strcmp(name,"schedules.put")){
-  if(!auto_only(p,"|id||enabled||trigger||days||minute||at||action||params|"))goto done;
+  if(!auto_only(p,"|id||enabled||trigger||days||minute||at||seconds||action||params|"))goto done;
   if(json_object_object_get(p,"id")&&!auto_integer(p,"id",&id,1,65535))goto done;
   for(unsigned i=0;i<AUTOMATION_TASKS;i++){if(id && c->tasks[i].id==id){slot=i;break;}if(!id && !c->tasks[i].id && slot<0)slot=i;}
   if(slot<0){*code=id?"not_found":"capacity";goto done;}
   automation_task_t task;memset(&task,0,sizeof(task));task.id=id;
   if(!auto_flag(p,"enabled",&task.enabled))goto done;json_object *trigger=json_object_object_get(p,"trigger");if(!trigger || !json_object_is_type(trigger,json_type_string))goto done;
   const char *t=json_object_get_string(trigger);
+#ifdef FEATURE_DEVICE_A1
+  if(!strcmp(t,"countdown")){task.once=2;if(!auto_integer(p,"seconds",&index,1,AUTOMATION_COUNTDOWN_MAX))goto done;task.at=index;}
+  else
+#endif
   if(!strcmp(t,"once")){task.once=1;if(!auto_integer(p,"at",&index,1577836800,2147483647))goto done;task.at=index;}
   else if(!strcmp(t,"weekly")){if(!auto_integer(p,"days",&index,1,127))goto done;task.days=index;if(!auto_integer(p,"minute",&index,0,1439))goto done;task.minute=index;}else goto done;
   json_object *a=json_object_new_object();json_object *an=json_object_object_get(p,"action"),*ap=json_object_object_get(p,"params");if(an)json_build_object_add(a,"action",json_object_get(an));if(ap)json_build_object_add(a,"params",json_object_get(ap));bool valid=auto_action_parse(a,&task.action,false) && task.action.kind!=AUTO_NONE;json_object_put(a);if(!valid)goto done;
+  if(task.once==2 && (task.action.kind!=AUTO_FAN || task.action.value!=0 || task.action.speed))goto done;
   if(!id){for(unsigned tries=0;tries<65535;tries++){id=c->next_id++;if(!id)continue;bool used=false;for(unsigned i=0;i<AUTOMATION_TASKS;i++)used|=c->tasks[i].id==id;if(!used)break;}task.id=id;}
   c->tasks[slot]=task;out=auto_task_json(&task);save=true;
  }else if(!strcmp(name,"schedules.delete") || !strcmp(name,"schedules.enable")){
@@ -125,7 +162,15 @@ json_object *automation_command(const char *name,json_object *p,const char **cod
   ) || (json_object_object_get(p,"clicks")&&!auto_integer(p,"clicks",&clicks,0,30)) || (json_object_object_get(p,"seconds")&&!auto_integer(p,"seconds",&seconds,0,4)) || (!!clicks==!!seconds))goto done;
   json_object *a=json_object_new_object(),*an=json_object_object_get(p,"action"),*ap=json_object_object_get(p,"params");if(an)json_build_object_add(a,"action",json_object_get(an));if(ap)json_build_object_add(a,"params",json_object_get(ap));automation_action_t action;bool valid=auto_action_parse(a,&action,true);json_object_put(a);if(!valid)goto done;c->buttons[key][clicks?clicks-1:seconds+29]=action;save=true;
  }else *code="unsupported";
- if(save){c->revision++;*code=automation_save(c)?"accepted":"storage_error";}
+ if(save){c->revision++;*code=automation_save(c)?"accepted":"storage_error";
+#ifdef FEATURE_DEVICE_A1
+  if(!strcmp(*code,"accepted") && slot>=0){
+   automation_task_t *t=&c->tasks[slot];countdowns[slot].id=0;
+   if(t->id && t->once==2 && t->enabled){countdowns[slot].id=t->id;countdowns[slot].started=mico_rtos_get_time();}
+   if(out){json_object_put(out);out=auto_task_json(t);}
+  }
+#endif
+ }
  done:mico_rtos_unlock_mutex(&automation_lock);free(c);return out;
 }
 static bool auto_execute(const automation_action_t *a,bool button){
@@ -147,8 +192,39 @@ static bool auto_execute(const automation_action_t *a,bool button){
  json_object *r=service_command(q);json_object_put(q);const char *code=r?json_object_get_string(json_object_object_get(r,"code")):"busy";bool ok=!strcmp(code,"ok")||!strcmp(code,"accepted");if(r)json_object_put(r);return ok;
 }
 void automation_button(unsigned key,unsigned clicks,unsigned seconds){if(key>=AUTOMATION_KEYS || clicks>30 || seconds>4 || (!!clicks==!!seconds))return;auto_init();automation_config_t *c=malloc(sizeof(*c));if(!c)return;mico_rtos_lock_mutex(&automation_lock);automation_load(c);automation_action_t a=c->buttons[key][clicks?clicks-1:seconds+29];mico_rtos_unlock_mutex(&automation_lock);free(c);service_event("info","button","gesture");auto_execute(&a,true);}
+#ifdef FEATURE_DEVICE_A1
+static void auto_countdown_poll(void) {
+ /* Avoid configuration allocation/copy on every worker tick with no timer. */
+ mico_rtos_lock_mutex(&automation_lock);bool active=!countdown_ready;
+ for(unsigned i=0;i<AUTOMATION_TASKS;i++)active|=countdowns[i].id!=0;
+ mico_rtos_unlock_mutex(&automation_lock);if(!active)return;
+ automation_config_t *c=malloc(sizeof(*c));if(!c)return;
+ for(unsigned i=0;i<AUTOMATION_TASKS;i++){
+  mico_rtos_lock_mutex(&automation_lock);automation_load(c);
+  if(!auto_countdown_boot(c)){mico_rtos_unlock_mutex(&automation_lock);break;}
+  automation_task_t *t=&c->tasks[i];
+  if(t->once!=2 || !t->id || !t->enabled || countdowns[i].id!=t->id || auto_remaining(t)){
+   mico_rtos_unlock_mutex(&automation_lock);continue;
+  }
+  uint16_t id=t->id;automation_action_t action=t->action;t->enabled=0;t->state=AUTO_EXECUTED;c->revision++;
+  bool saved=automation_save(c);if(saved)countdowns[i].id=0;
+  mico_rtos_unlock_mutex(&automation_lock);
+  if(!saved){service_event("error","schedule","storage_error");break;}
+  bool ok=auto_execute(&action,false);service_event(ok?"info":"warn","schedule",ok?"executed":"busy");
+  if(!ok){mico_rtos_lock_mutex(&automation_lock);automation_load(c);
+   if(c->tasks[i].id==id && !c->tasks[i].enabled && c->tasks[i].state==AUTO_EXECUTED){c->tasks[i].state=AUTO_BUSY;c->revision++;automation_save(c);}
+   mico_rtos_unlock_mutex(&automation_lock);
+  }
+ }
+ free(c);
+}
+#endif
 void automation_poll(bool valid){
- auto_init();uint32_t now=(uint32_t)time(NULL),ms=mico_rtos_get_time();if(!valid || now<1577836800){armed=false;return;}
+ auto_init();
+#ifdef FEATURE_DEVICE_A1
+ auto_countdown_poll();
+#endif
+ uint32_t now=(uint32_t)time(NULL),ms=mico_rtos_get_time();if(!valid || now<1577836800){armed=false;return;}
  bool jump=armed && ((int64_t)now-previous-(uint32_t)(ms-previous_ms)/1000>2 || (int64_t)now-previous-(uint32_t)(ms-previous_ms)/1000< -2);
  if(!armed || jump){previous=now;previous_ms=ms;if(now>highwater)highwater=now;armed=true;return;}previous_ms=ms;if(now<=previous){previous=now;return;}
  automation_config_t *c=malloc(sizeof(*c));if(!c)return;
@@ -158,7 +234,7 @@ void automation_poll(bool valid){
   for(unsigned count=0;count<AUTOMATION_TASKS;count++){
    mico_rtos_lock_mutex(&automation_lock);automation_load(c);int selected=-1;unsigned id=65536;uint32_t occurrence=0;
    for(unsigned i=0;i<AUTOMATION_TASKS;i++){
-    automation_task_t *t=&c->tasks[i];if(!t->id || !t->enabled || t->id<=last_id || t->id>=id || ((t->action.kind==AUTO_REBOOT)!=(pass==1)))continue;
+    automation_task_t *t=&c->tasks[i];if(t->once==2 || !t->id || !t->enabled || t->id<=last_id || t->id>=id || ((t->action.kind==AUTO_REBOOT)!=(pass==1)))continue;
     uint32_t at=t->at;
     if(!t->once){int64_t local=(int64_t)now+c->timezone*60;int64_t day=local/86400;unsigned weekday=(day+3)%7;if(!(t->days&(1u<<weekday)))continue;at=day*86400+t->minute*60-c->timezone*60;}
     if(at>now || at<=t->last || (!t->once && (at<=previous || at<=highwater)))continue;

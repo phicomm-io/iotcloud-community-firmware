@@ -51,6 +51,7 @@ json_object *service_product_capabilities(void){
 #endif
     NULL};for(unsigned i=0;actions[i];i++)json_build_array_add(a,json_object_new_string(actions[i]));json_build_object_add(o,"actions",a);
 #ifdef FEATURE_DEVICE_A1
+    json_build_object_add(o,"schedule_countdown",json_object_new_boolean(true));
     json_object *keys=json_object_new_array();
     const char *names[]={"power","wifi","combination"};
     for(unsigned i=0;i<3;i++)json_build_array_add(keys,json_object_new_string(names[i]));
