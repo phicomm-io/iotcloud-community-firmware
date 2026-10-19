@@ -30,6 +30,8 @@ TC1、A1、M1 的离线页面统一由 [前端仓库](https://github.com/phicomm
 | `light_always.set` | A1 灯环常亮 `{enabled:boolean}` |
 | `filter.get/set/reset` | A1 运行时间估算；set 接受额定寿命 `{lifetime_hours:1..20000}`；reset 清零用量 |
 
+A1 最多绑定 4 台 M1；M1 最多授权 4 台 A1。`binding.get.data.max_peers` 返回 `4`；超过上限的 `binding.set` 返回 `invalid_params`，原绑定保持不变。升级旧的八条绑定配置时，只启用原顺序的前四条，Flash 存储布局不变。
+
 文件 OTA 独立于 JSON 命令：`POST /api/v1/ota/upload` 上传签名原始字节流；仅显式选择未签名更新时使用 `/api/v1/ota/upload-unsigned`。两者仍校验产品镜像和写入结果。
 
 密码不通过查询返回。MQTT 用户名最多 63 UTF-8 字节，密码最多 256 字节，Broker 最多 127 字节。网页省略空白密码输入以保留旧值，显式清除则传空字符串。Wi-Fi 开放网络同样须显式确认。网页认证用户名固定 admin。

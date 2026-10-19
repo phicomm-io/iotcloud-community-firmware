@@ -351,11 +351,11 @@ static bool config_decode(feature_config_t *c, const char *d, json_object *o) {
     json_object *a = json_object_object_get(o, "peers");
     if (a) {
       if (!json_object_is_type(a, json_type_array) ||
-          json_object_array_length(a) > 8)
+          json_object_array_length(a) > FEATURE_MAX_PEERS)
         return false;
-      feature_peer_t old[8];
+      feature_peer_t old[FEATURE_MAX_PEERS];
       memcpy(old, c->peers, sizeof(old));
-      unsigned oldn = c->peer_count;
+      unsigned oldn = c->peer_count < FEATURE_MAX_PEERS ? c->peer_count : FEATURE_MAX_PEERS;
       c->peer_count = json_object_array_length(a);
       for (unsigned i = 0; i < c->peer_count; i++) {
         json_object *v = json_object_array_get_idx(a, i);

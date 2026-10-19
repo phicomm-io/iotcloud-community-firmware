@@ -8,7 +8,7 @@ static uint64_t started;
 static unsigned duration=10;
 static feature_config_t features;
 static unsigned controls;
-void feature_config_get(feature_config_t *out){*out=features;}
+void feature_config_get(feature_config_t *out){*out=features;feature_config_limit_peers(out);}
 bool feature_fan_auto(void){return features.linkage.enabled;}
 unsigned feature_fan_limit(void){return features.linkage.max_speed;}
 int feature_fan_command(json_object *o){(void)o;return 1;}

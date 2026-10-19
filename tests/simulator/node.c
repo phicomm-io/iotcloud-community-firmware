@@ -67,7 +67,7 @@ int mico_rtos_create_thread(void *out,int priority,const char *name,void (*fn)(m
 int simulator_bind(int fd,const struct sockaddr *a,socklen_t n){struct sockaddr_in copy=*(const struct sockaddr_in *)a;const char *ip=getenv("SIM_BIND_IP");if(ip && copy.sin_addr.s_addr==INADDR_ANY)inet_aton(ip,&copy.sin_addr);return bind(fd,(struct sockaddr *)&copy,n);}
 void config_get(CFG *c){BASE_LOCK();*c=base_config;BASE_UNLOCK();}
 bool config_save(const CFG *c){BASE_LOCK();bool ok=c->revision==base_config.revision;if(ok){base_config=*c;++base_config.revision;}BASE_UNLOCK();return ok;}
-void feature_config_get(feature_config_t *c){pthread_mutex_lock(&store_lock);*c=features;pthread_mutex_unlock(&store_lock);}
+void feature_config_get(feature_config_t *c){pthread_mutex_lock(&store_lock);*c=features;feature_config_limit_peers(c);pthread_mutex_unlock(&store_lock);}
 bool feature_config_save(const feature_config_t *c){pthread_mutex_lock(&store_lock);bool ok=c->revision==features.revision;if(ok){features=*c;++features.revision;}pthread_mutex_unlock(&store_lock);return ok;}
 void automation_load(automation_config_t *c){pthread_mutex_lock(&store_lock);*c=automations;pthread_mutex_unlock(&store_lock);}
 bool automation_save(const automation_config_t *c){pthread_mutex_lock(&store_lock);bool ok=c->revision==automations.revision+1;if(ok)automations=*c;pthread_mutex_unlock(&store_lock);return ok;}

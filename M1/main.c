@@ -218,10 +218,12 @@ void feature_config_get(feature_config_t *out)
     mico_rtos_lock_mutex(&config_lock);
     memset(out, 0, sizeof(*out));
     memcpy(out, &((app_storage_t *)app_config)->features, sizeof(feature_config_storage_t));
+    feature_config_limit_peers(out);
     mico_rtos_unlock_mutex(&config_lock);
 }
 bool feature_config_save(const feature_config_t *c)
 {
+    if (c->peer_count > FEATURE_MAX_PEERS) return false;
     feature_config_storage_t *old = malloc(sizeof(*old));
     if (!old) return false;
     mico_rtos_lock_mutex(&config_lock);

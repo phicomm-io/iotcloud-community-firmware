@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise all eight M1 subscriptions with a 63-byte account on a local broker."""
+"""Exercise all four M1 subscriptions with a 63-byte account on a local broker."""
 import json
 from pathlib import Path
 import select
@@ -16,7 +16,7 @@ def main(port):
     key = 'u_' + user.encode().hex()
     identity = 'aabbccddeeff'
     base = f'phicomm/v2/{key}/m1/{identity}'
-    peers = [f'{i:012x}' for i in range(1, 9)]
+    peers = [f'{i:012x}' for i in range(1, 5)]
     records = []
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
     client.on_message = lambda c, u, m: records.append((m.topic, m.payload.decode(), m.retain))
@@ -72,6 +72,12 @@ def main(port):
         worker.stdin.flush()
         assert select.select([worker.stdout], [], [], 15)[0], 'binding setup timeout'
         assert json.loads(worker.stdout.readline())['code'] == 'accepted'
+        # A fifth peer is rejected before storage/subscription changes.
+        command['params']['response_ids'].append(f'000000000005:{identity}')
+        worker.stdin.write(json.dumps(command).encode() + b'\n')
+        worker.stdin.flush()
+        assert select.select([worker.stdout], [], [], 15)[0], 'fifth-peer rejection timeout'
+        assert json.loads(worker.stdout.readline())['code'] == 'invalid_params'
         for index, peer in enumerate(peers):
             reply(peer, 'bind', index * 1000)
             sample = reply(peer, 'read', index * 1000 + 100)
@@ -82,7 +88,7 @@ def main(port):
                          for t, p, r in records))
         assert all(not retained for topic, payload, retained in records
                    if topic.endswith('/response') or topic == base + '/result')
-        print('PASS M1 eight actual MQTT subscriptions, long account, bind/sample routing, IP snapshot and command result')
+        print('PASS M1 four actual MQTT subscriptions, long account, bind/sample routing, IP snapshot and command result')
     finally:
         worker.terminate()
         worker.wait(timeout=5)
