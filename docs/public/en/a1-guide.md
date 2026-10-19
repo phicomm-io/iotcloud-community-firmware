@@ -35,6 +35,14 @@ Successful mode selections show a brief confirmation: **two cyan pulses for auto
 
 The ring shows air quality, connection progress and operation feedback. Configure air-quality colors, segment ranges and the colors corresponding to reading ranges. Connection warnings override normal lighting after normal effects are rendered and remain subject to the night brightness limit. Normal lighting regains control when connectivity is healthy. See [connection indicators](faq#connection-indicators).
 
+Breathing and rainbow effects have an animation speed control under Settings → Light effects. Levels 1–10 run from slow to fast; level 5 preserves the original speed. Save to keep the setting after a restart.
+
+## Shutdown countdown
+
+Open Settings → Schedules, choose Shutdown countdown, enter hours and minutes, and save. Durations range from 1 minute to 24 hours. The purifier turns off when time is up in either manual or auto mode. The list shows remaining time and lets you cancel or restart from the full configured duration.
+
+Countdowns work without clock sync and continue after closing the browser. A power loss or restart cancels them. They share the eight schedule slots with normal tasks. If the device is busy when due, the task is marked as skipped and is not repeated. Weekly and dated tasks still require clock sync.
+
 ## Child lock and night mode
 
 Child lock blocks normal physical-button actions; a configured child-lock gesture can still unlock the device. Night mode reduces brightness during the configured time period. An end time earlier than the start means the period crosses midnight.

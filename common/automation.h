@@ -17,7 +17,10 @@ enum { AUTO_LIGHT_EFFECT = AUTO_REBOOT + 1, AUTO_FILTER_RESET, AUTO_LIGHT_ALWAYS
 #define AUTOMATION_KEYS 2
 #endif
 #define AUTOMATION_BUTTON_SLOTS (AUTOMATION_KEYS * 34)
-enum { AUTO_WAITING, AUTO_EXECUTED, AUTO_MISSED, AUTO_BUSY, AUTO_MIGRATED_DISABLED };
+enum { AUTO_WAITING, AUTO_EXECUTED, AUTO_MISSED, AUTO_BUSY, AUTO_MIGRATED_DISABLED, AUTO_CANCELLED };
+/* once: 0=weekly, 1=wall-clock once, 2=volatile countdown (at=duration seconds).
+ * The fixed Flash layout stays unchanged. A reboot cancels active countdowns. */
+#define AUTOMATION_COUNTDOWN_MAX 86400u
 /* Stable fixed-width Flash ABI: never stores pointers or JSON. */
 typedef struct { uint8_t kind, target, value, speed, red, green, blue, reserved; } automation_action_t;
 typedef struct {

@@ -87,3 +87,9 @@ SDK 基础 Wi-Fi 扫描未提供安全类型时，网页不会推断为空密码
 `status.get` 新增 `reset_reason`（`watchdog` / `lockup` / `software` / `power_on` / `unknown`）、`reset_reason_raw`（SDK 原始位掩码）、`watchdog_enabled`、`watchdog_state`（`starting` / `healthy` / `fault`）、`watchdog_fault`（空字符串或故障槽名）。复位原因启动时读取一次，本次运行保持不变。
 
 诊断页按上述字段显示“看门狗与复位原因”。上次是 watchdog 复位时显示“上次因看门狗超时重启”；当前故障槽仅在等待硬件复位的短暂窗口内可读，不写 Flash。启动日志事件为 `{module:"system",event:"watchdog"}`，日志页补充对应说明。启动时重建日志，下一次上电会重新读取原因；此功能不提供持久故障历史。TC1 不发布上述字段。
+
+### A1 灯效速度与关闭倒计时
+
+`light_effect.get/set` 新增整数 `speed:1..10`，默认 `5`，影响呼吸和彩虹跑马灯。旧配置中的零值读取为 `5`；部分更新保留原速度。占用原保留字节，不移动现有 Flash 字段。
+
+A1 `capabilities.get.schedule_countdown:true` 时，`schedules.put` 可传 `{"enabled":true,"trigger":"countdown","seconds":1800,"action":"fan.set","params":{"on":false}}`。接口时长为整数 `1..86400` 秒；网页使用 1 分钟至 24 小时。不接受开机或设置风速。结果与列表返回 `seconds` 和 `remaining_seconds`，以设备单调时钟计时，不要求 NTP。禁用或删除取消计时，再次启用、编辑保存从完整时长开始；重启将活动记录置为 `cancelled`。到期先持久化停用，再执行一次关闭动作；设备忙标记 `busy`。共用原 8 项容量及固定大小存储，旧的每周/单次任务格式保留。

@@ -49,6 +49,7 @@ static const field_t co2_fields[] = {
 static const field_t light_fields[] = {
     U(feature_light_t, effect, 0, 4), U(feature_light_t, segments, 1, 4),
     U(feature_light_t, follow_fan, 0, 1),
+    U(feature_light_t, speed, 1, 10),
     F(feature_light_t, quality_pm, .01, 5000),
     F(feature_light_t, quality_hcho, .001, 10)};
 static const field_t segment_fields[] = {
@@ -136,6 +137,7 @@ static json_object *config_encode(const feature_config_t *c, const char *d) {
     o = encode_fields(&c->linkage, linkage_fields, COUNT(linkage_fields));
   else if (!strcmp(d, "light")) {
     o = encode_fields(&c->light, light_fields, COUNT(light_fields));
+    json_build_object_add(o, "speed", json_object_new_int(feature_light_speed(&c->light)));
     a = json_object_new_array();
     for (unsigned i = 0; i < 4; i++) {
       json_object *s = encode_fields(&c->light.segment[i], segment_fields,

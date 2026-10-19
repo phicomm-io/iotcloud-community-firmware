@@ -542,6 +542,36 @@ static void account_namespaces(void) {
 #ifndef FEATURE_DEVICE_A1
 #include "passive_scenarios.inc"
 #endif
+#ifdef FEATURE_DEVICE_A1
+static void animation_speed(void) {
+  feature_config_t original=configuration;
+  uint32_t original_ms=test_now, normal[32], fast[32], slow[32];
+  configuration.light.follow_fan=0;
+  for(unsigned effect=EFFECT_BREATHE;effect<=EFFECT_RAINBOW;effect++){
+    configuration.light.effect=effect;configuration.light.speed=0;test_now=3000;
+    feature_light_frame(normal,255,true,0x1122ff);
+    configuration.light.speed=5;feature_light_frame(fast,255,true,0x1122ff);
+    assert(!memcmp(normal,fast,sizeof(normal))); /* zero-filled legacy byte */
+    configuration.light.speed=10;test_now=1500;feature_light_frame(fast,255,true,0x1122ff);
+    assert(!memcmp(normal,fast,sizeof(normal)));
+    configuration.light.speed=1;test_now=15000;feature_light_frame(slow,255,true,0x1122ff);
+    assert(!memcmp(normal,slow,sizeof(normal)));
+    test_now=3000;feature_light_frame(slow,255,true,0x1122ff);
+    assert(memcmp(normal,slow,sizeof(normal)));
+  }
+  configuration=original;test_now=original_ms;
+  stored.light.speed=0;json_object *o=config_encode(&stored,"light");
+  assert(json_object_get_int(json_object_object_get(o,"speed"))==5);json_object_put(o);
+  transaction("light","{\"speed\":0}",400);
+  transaction("light","{\"speed\":11}",400);
+  transaction("light","{\"speed\":1.5}",400);
+  transaction("light","{\"speed\":true}",400);
+  transaction("light","{\"speed\":1}",200);assert(stored.light.speed==1);
+  transaction("light","{\"speed\":10}",200);assert(stored.light.speed==10);
+  transaction("light","{\"effect\":2}",200);assert(stored.light.speed==10);
+  puts("Animation speed: legacy default, render timing, bounds and persistence passed");
+}
+#endif
 int main(void) {
   service_init();
   feature_defaults(&stored);
@@ -576,6 +606,7 @@ int main(void) {
   group_transport();
   effective_controls();
   automatic_profiles();
+  animation_speed();
   transaction("linkage", "{\"hysteresis_enabled\":1,\"on_pm\":35,\"target_pm\":35}", 400);
   transaction("linkage", "{\"hysteresis_enabled\":1,\"metrics\":3,\"on_pm\":50,\"target_pm\":35,\"on_hcho\":0.08,\"target_hcho\":0.08}", 400);
   transaction("linkage", "{\"hysteresis_enabled\":1,\"metrics\":1,\"on_pm\":50,\"target_pm\":35}", 200);

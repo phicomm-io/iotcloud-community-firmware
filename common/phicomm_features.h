@@ -58,10 +58,14 @@ typedef struct {
   float minimum, maximum, suitable_low, suitable_high;
 } feature_segment_t;
 typedef struct {
-  uint8_t effect, segments, follow_fan, reserved;
+  /* speed occupies the former zero-filled reserved byte; zero means legacy 5. */
+  uint8_t effect, segments, follow_fan, speed;
   float quality_pm, quality_hcho;
   feature_segment_t segment[4];
 } feature_light_t;
+static inline unsigned feature_light_speed(const feature_light_t *light) {
+  return light->speed >= 1 && light->speed <= 10 ? light->speed : 5;
+}
 typedef struct {
   uint8_t days, on, speed, reserved;
   uint16_t minute;
