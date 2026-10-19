@@ -20,6 +20,10 @@ void *__wrap_realloc(void *pointer,size_t size){
 #define MQTT_SUCCESS 0
 #define MQTT_FAILURE -1
 #include "../common/mqtt_service.inc"
+static bool low_memory;
+static unsigned claims;
+unsigned service_memory_claim(size_t n){if(low_memory || n>8192)return 0;claims++;return 1;}
+void service_memory_release(unsigned n){assert(n==1 && claims);claims--;}
 static unsigned calls, executions;
 static bool nested,switch_scope,owned_command;
 static json_object *owned_reply(void);
@@ -30,7 +34,7 @@ json_object *service_parse(const void *p,size_t n){(void)p;(void)n;return json_o
 json_object *service_command(json_object *q){(void)q;executions++;
  if(switch_scope){switch_scope=false;assert(mqtt_account_init(&scope,1,"m1","changed","aabbccddeeff"));}
  return owned_command?owned_reply():json_object_new_object();}
-json_object *service_query(const char *a){(void)a;json_object *r=json_object_new_object();json_object_object_add(r,"data",json_object_new_object());return r;}
+json_object *service_query(const char *a){(void)a;json_object *r=json_object_new_object();json_object *data=json_object_new_object();char text[128];memset(text,'x',sizeof(text)-1);text[sizeof(text)-1]=0;json_build_object_add(data,"value",json_object_new_string(text));json_build_object_add(r,"data",data);return r;}
 json_object *service_product_capabilities(void){return json_object_new_object();}
 static int send_reply(const char *topic,const char *body,bool retained){
  assert(strstr(topic,"/result"));assert(body);assert(!retained);calls++;
@@ -109,17 +113,48 @@ static void test_queued_wire(void){
  watched[0]=watched[1]=NULL;fail_realloc=false;
  assert(service_mqtt_reply_count==3);service_mqtt_clear();
  assert(!service_mqtt_reply_count);
- /* Failed serialization cannot insert a partial wire or consume a slot. */
+ /* Failed serialization uses the fixed busy envelope, never a partial wire. */
  fail_realloc=true;
- assert(service_mqtt_input(send_reply,&scope,"{}",2,false)==MQTT_FAILURE);
- assert(!fail_realloc && !service_mqtt_reply_count);
+ assert(service_mqtt_input(send_reply,&scope,"{}",2,false)==MQTT_SUCCESS);
+ assert(!fail_realloc && service_mqtt_reply_count==1 && !service_mqtt_replies[0].wire);
+ service_mqtt_clear();
  assert(freed[0]==1 && freed[1]==1);
  watched[0]=watched[1]=NULL;owned_command=false;
  assert(service_mqtt_input(send_reply,&scope,"{}",2,false)==MQTT_SUCCESS);
  service_mqtt_clear();
  puts("Pending MQTT results retain only wire bytes; graphs freed at enqueue, OOM/send cleanup passed");
 }
+static int send_busy(const char *topic,const char *body,bool retained){
+ assert(strstr(topic,"/result") && !retained);
+ assert(!strcmp(body,"{\"request_id\":\"overload-1\",\"code\":\"busy\",\"data\":{}}"));
+ return MQTT_SUCCESS;
+}
+static int telemetry_calls;
+static int send_telemetry(const char *topic,const char *body,bool retained){
+ assert(strstr(topic,"/state") && body && retained);telemetry_calls++;return MQTT_FAILURE;
+}
+static void test_telemetry_oom(void){
+ assert(mqtt_account_init(&scope,1,"a1","test","aabbccddeeff"));
+ fail_realloc=true;assert(service_mqtt_snapshot(send_telemetry,&scope)==MQTT_SUCCESS);
+ assert(!fail_realloc && !telemetry_calls && !claims);
+ assert(service_mqtt_snapshot(send_telemetry,&scope)==MQTT_FAILURE);
+ assert(telemetry_calls==1 && !claims); /* real transport errors still propagate */
+}
+static void test_low_memory(void){
+ assert(mqtt_account_init(&scope,1,"a1","test","aabbccddeeff"));
+ unsigned before=executions;low_memory=true;fail_realloc=true;
+ const char *p="{\"request_id\":\"overload-1\",\"action\":\"config.set\"}";
+ for(unsigned i=0;i<4;i++)assert(service_mqtt_input(send_busy,&scope,p,strlen(p),false)==MQTT_SUCCESS);
+ assert(executions==before && !claims && fail_realloc);
+ assert(service_mqtt_input(send_busy,&scope,p,strlen(p),false)==MQTT_FAILURE);
+ assert(service_mqtt_flush(send_busy)==MQTT_SUCCESS && !service_mqtt_reply_count);
+ assert(service_mqtt_snapshot(send_busy,&scope)==MQTT_SUCCESS);
+ assert(executions==before && fail_realloc);fail_realloc=false;low_memory=false;
+ puts("MQTT pressure: fixed busy queue, correlated IDs, no command execution/allocation/reconnect");
+}
 int main(void){
+ test_telemetry_oom();
+ test_low_memory();
  test_owned_wire();
  test_queued_wire();
  test_targets();
@@ -132,6 +167,7 @@ int main(void){
  for(unsigned i=0;i<4;i++)assert(service_mqtt_input(send_reply,&scope,"{}",2,false)==0);
  unsigned before=executions;assert(service_mqtt_input(send_reply,&scope,"{}",2,false)==-1);assert(executions==before);
  service_mqtt_clear();assert(!service_mqtt_reply_count);
+ assert(!claims);
  (void)service_mqtt_snapshot;(void)service_mqtt_capabilities;
  puts("MQTT result callbacks defer publication, bound the queue and clear stale replies");
  puts("MQTT owned JSON graphs released before sender; serialization/send failures clean up");

@@ -1,0 +1,112 @@
+"""Run actual no-heap admission/wait/HTTP paths with a changing heap budget."""
+import os
+from pathlib import Path
+import subprocess
+import tempfile
+import unittest
+from tests.test_tc1_sdk_migration import function
+ROOT = Path(__file__).resolve().parents[1]
+
+class MemoryAdmission(unittest.TestCase):
+    def run_c(self, source):
+        with tempfile.TemporaryDirectory() as directory:
+            p=Path(directory)/'test.c'; p.write_text(source)
+            cmd=[os.environ.get('CC','cc'),'-std=c99','-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-I'+str(ROOT),str(p),'-o',str(p.with_suffix(''))]
+            if os.environ.get('SANITIZE')=='1': cmd+=['-g','-fno-omit-frame-pointer','-fsanitize=address,undefined']
+            subprocess.run(cmd,check=True);subprocess.run([str(p.with_suffix(''))],check=True)
+
+    def test_budget_overlap_boundaries_and_wait_recovery(self):
+        self.run_c(r'''
+#include <assert.h>
+#include <stdio.h>
+#include "common/memory_budget.h"
+static service_memory_state_t state;
+static uint32_t now,free_bytes,recover_at;
+static unsigned sleeps;
+static unsigned service_memory_claim(size_t n){return memory_budget_claim(&state,free_bytes,n);}
+static void service_memory_waiting(bool enter){if(enter)state.waiting++;else{assert(state.waiting);state.waiting--;}}
+static uint32_t mico_rtos_get_time(void){return now;}
+static void mico_thread_msleep(unsigned ms){assert(ms==25 && state.waiting==1);sleeps++;now+=ms;if(sleeps==recover_at)free_bytes=40000;}
+#include "common/memory_wait.h"
+int main(void){
+ state.minimum_free=UINT32_MAX;
+ assert(!memory_budget_claim(&state,0,0));assert(!memory_budget_claim(&state,28671,0));
+ unsigned a=memory_budget_claim(&state,28672,0);assert(a==12288 && state.active==1);
+ assert(!memory_budget_claim(&state,40000,0)); /* competing builders share the budget */
+ unsigned b=memory_budget_claim(&state,40960,0);assert(b && state.active==2);
+ memory_budget_release(&state,a);memory_budget_release(&state,b);assert(!state.active && !state.reserved);
+ assert(!memory_budget_claim(&state,UINT32_MAX,SIZE_MAX));
+ a=memory_budget_claim(&state,45056,8192);assert(a==28672);memory_budget_release(&state,a);
+ now=UINT32_MAX-50;free_bytes=1000;recover_at=4;
+ a=service_memory_wait(0);assert(a && sleeps==4 && now==49 && !state.waiting);memory_budget_release(&state,a);
+ sleeps=0;recover_at=UINT32_MAX;free_bytes=1000;now=UINT32_MAX-50;
+ assert(!service_memory_wait(0) && sleeps==80 && !state.waiting);
+ assert(!state.active && !state.reserved && state.minimum_free==0);
+ puts("Shared reservations: floor/overlap/overflow; wait keeps descriptor, resumes, times out across tick wrap: OK");
+}
+''')
+
+    def test_fixed_busy_identifiers(self):
+        self.run_c(r'''
+#include <assert.h>
+#include <stdio.h>
+#include "common/busy_reply.h"
+static void check(const char *s,const char *id){char out[SERVICE_BUSY_BYTES];service_busy_wire(s,s?strlen(s):0,out);assert(strstr(out,"\"code\":\"busy\""));if(id)assert(strstr(out,id));else assert(!strstr(out,"request_id"));}
+int main(void){
+ check(NULL,NULL);check("",NULL);check("{}",NULL);
+ check("{\"x\":[{\"request_id\":\"nested\"}],\"request_id\":\"real-1\"}","real-1");
+ check("{\"request_id\":\"escaped\\u002d1\"}","escaped-1");
+ check("{\"request_id\":null}",NULL);check("{\"request_id\":\"bad\\u0000tail\"}",NULL);
+ check("{\"request_id\":\"bad\\\"tail\"}",NULL);check("{\"request_id\":\"valid\"}trailing",NULL);
+ check("{\"request_id\":\"valid\",",NULL);
+ char p[512];snprintf(p,sizeof(p),"{\"request_id\":\"%080d\"}",1);check(p,NULL);
+ /* Truncation and arbitrary escaped bytes cannot overflow fixed buffers. */
+ for(unsigned c=1;c<256;c++){snprintf(p,sizeof(p),"{\"request_id\":\"\\%c\"}",c);check(p,NULL);}
+ puts("Fixed overload replies: top-level request ID, escaping, truncation and oversized ID bounded: OK");
+}
+''')
+
+    def test_http_retains_fd_until_recovery_and_never_executes_timeout(self):
+        for model in ('A1','M1'):
+            source=(ROOT/model/'http.c').read_text()
+            helpers=source[source.index('static void memory_busy(int fd)\n'):source.index('static void light_execute(') if model=='A1' else source.index('/* Keep accept responsive')]
+            self.run_c(r'''
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+#include "common/memory_budget.h"
+#define MODEL_JSON_LIMIT 8192
+static uint32_t now;static unsigned attempts,recover_at,waiting,active,reads,queries,commands,sends,status;
+typedef int json_object;
+static unsigned service_memory_claim(size_t n){assert(n<=8192);if(++attempts<recover_at)return 0;active++;return 12288;}
+static void service_memory_release(unsigned n){assert(n==12288 && active==1);active--;}
+static void service_memory_waiting(bool enter){if(enter)waiting++;else waiting--;}
+static uint32_t mico_rtos_get_time(void){return now;}
+static void mico_thread_msleep(unsigned n){assert(n==25 && waiting==1 && !reads && !queries && !commands && !sends);now+=n;}
+#include "common/memory_wait.h"
+static void response(int fd,int code,const char *type,const void *p,size_t n,bool gzip){assert(fd==7 && code==503 && !gzip && !strcmp(type,"application/json"));assert(n==15 && !memcmp(p,"{\"code\":\"busy\"}",n));sends++;status=code;}
+static json_object *service_query(const char *a){assert(active==1 && !strcmp(a,"status.get"));queries++;return (void*)1;}
+static json_object *read_json(int fd,uint32_t n){assert(fd==7 && n==100 && active==1);reads++;return (void*)1;}
+static json_object *service_command(json_object *q){assert(q && active==1);commands++;return (void*)2;}
+static void json_object_put(json_object *q){assert(q==(void*)1);}
+static void send_json(int fd,json_object *q){assert(fd==7 && q && active==1);sends++;status=200;}
+HELPERS
+static void reset(unsigned after){now=attempts=waiting=active=reads=queries=commands=sends=status=0;recover_at=after;}
+int main(void){
+ reset(5);command_response(7,100);assert(now==100 && reads==1 && commands==1 && status==200 && !active && !waiting);
+ reset(5);query_response(7,"status.get");assert(now==100 && queries==1 && !reads && status==200 && !active);
+ reset(1000);command_response(7,100);assert(now==2000 && !reads && !commands && status==503 && !active && !waiting);
+ reset(1);query_response(7,"status.get");assert(!now && queries==1 && status==200 && !active);
+ puts("MODEL HTTP actual helpers: no body/query allocation while waiting, same FD resumes; timeout no execution; release: OK");
+}
+'''.replace('MODEL',model).replace('HELPERS',helpers))
+
+    def test_tc1_options_full_request_line(self):
+        source=(ROOT/'build/tc1-sdk-3.6.4/mico-os/libraries/daemons/http_server/http_parse.c').read_text()
+        constants='\n'.join('#define HTTPD_REQ_TYPE_'+name+' '+str(i) for i,name in enumerate(('GET','POST','HEAD','PUT','DELETE','OPTIONS'),1))
+        # This function sees the whole first line, rather than a NUL-terminated method.
+        self.run_c('#include <assert.h>\n#include <string.h>\n#define HTTPD_REQ_TYPE_UNKNOWN 0\n#define kNoErr 0\n#define kInProgressErr 1\n'+constants+r'''
+static const char http_post[]="POST",http_get[]="GET",http_head[]="HEAD",http_put[]="PUT",http_delete[]="DELETE";
+'''+function(source,'static int httpd_verify_req_type(')+r'''
+int main(void){int type=0;assert(!httpd_verify_req_type("OPTIONS /api/v1/info HTTP/1.1",&type));assert(type==HTTPD_REQ_TYPE_OPTIONS);assert(httpd_verify_req_type("OPTIONSX / HTTP/1.1",&type)<0);}
+''')

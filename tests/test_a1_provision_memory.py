@@ -115,6 +115,8 @@ MEMORY = r'''
 #include <limits.h>
 #include <stdlib.h>
 typedef struct { int allocted_memory,free_memory,num_of_chunks; } micoMemInfo_t;
+#include "common/memory_budget.h"
+static void service_memory_snapshot(service_memory_state_t *s) { memset(s,0,sizeof(*s)); }
 static micoMemInfo_t info;
 static bool unavailable;
 static char output[512];static unsigned status;
@@ -153,7 +155,7 @@ class A1ProvisionMemoryTest(unittest.TestCase):
             binary = Path(temp) / 'probe'
             probe.write_text(source)
             command = [os.environ.get('CC', 'cc'), '-std=c99', '-Wall', '-Wextra', '-Werror',
-                       '-Wno-unused-function', str(probe), '-o', str(binary)]
+                       '-Wno-unused-function', '-I'+str(ROOT), str(probe), '-o', str(binary)]
             if os.environ.get('SANITIZE') == '1':
                 command += ['-g', '-fno-omit-frame-pointer', '-fsanitize=address,undefined']
             subprocess.run(command, check=True)
@@ -228,6 +230,7 @@ static void message(int fd,unsigned code,const char *text) {
 }
 static void *service_query(const char *action) { (void)action;assert(0);return NULL; }
 static void send_json(int fd,void *o) { (void)fd;(void)o;assert(0); }
+static void query_response(int fd,const char *a) { send_json(fd,service_query(a)); }
 AUTH
 FUNCTION
 ROUTE

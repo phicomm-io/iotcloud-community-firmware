@@ -13,6 +13,12 @@
 #include "../common/runtime_metrics.h"
 #include <limits.h>
 #include "printbuf.h"
+#include "../common/memory_wait.h"
+
+static void query_response(int fd, const char *action);
+static void command_response(int fd, uint32_t length);
+static void memory_busy(int fd);
+static void light_response(int fd, uint32_t length);
 
 #define HTTP_PENDING_CLIENTS 8u
 #define HTTP_TCP_CLIENT_LIMIT 24
@@ -327,7 +333,10 @@ json_object *a1_status_json(void)
 
 static void send_json(int fd, json_object *o)
 {
-    if (!o) { message(fd, 500, "Out of memory"); return; }
+    if (!o) {
+        static const char busy[] = "{\"code\":\"busy\"}";
+        response(fd, 503, "application/json", busy, sizeof(busy)-1, false); return;
+    }
     /* A slow socket must not retain the full status/config object graph while
      * another owner builds a status snapshot. The wire buffer owns its bytes. */
     struct printbuf *wire = json_object_to_json_string_ex(o);
@@ -444,12 +453,18 @@ static void memory_response(int fd)
         return;
     }
     micoMemInfo_t snapshot = *memory;
-    char body[256];
+    service_memory_state_t budget; service_memory_snapshot(&budget);
+    char body[512];
     int length = snprintf(body, sizeof(body),
         "{\"code\":\"ok\",\"data\":{\"free_memory\":%d,\"allocated_memory\":%d,"
-        "\"free_memory_chunks\":%d,\"uptime_ms\":%lu}}",
+        "\"free_memory_chunks\":%d,\"uptime_ms\":%lu,\"memory_reserve\":%u,"
+        "\"memory_reserved\":%lu,\"memory_active\":%lu,\"memory_waiting\":%lu,"
+        "\"memory_denied\":%lu,\"minimum_sampled_free\":%lu}}",
         snapshot.free_memory, snapshot.allocted_memory, snapshot.num_of_chunks,
-        (unsigned long)mico_rtos_get_time());
+        (unsigned long)mico_rtos_get_time(), SERVICE_MEMORY_RESERVE,
+        (unsigned long)budget.reserved, (unsigned long)budget.active,
+        (unsigned long)budget.waiting, (unsigned long)budget.denied,
+        (unsigned long)budget.minimum_free);
     if (length > 0 && (size_t)length < sizeof(body))
         response(fd, 200, "application/json", body, (size_t)length, false);
 }
@@ -468,41 +483,17 @@ static void handle(int fd)
         if (!strcmp(req.method, "GET")) {
             if (!strcmp(req.path, "/api/v1/memory")) { memory_response(fd); return; }
             const char *action = !strcmp(req.path,"/api/v1/info")?"info.get":!strcmp(req.path,"/api/v1/status")?"status.get":!strcmp(req.path,"/api/v1/capabilities")?"capabilities.get":!strcmp(req.path,"/api/v1/config")?"config.get":!strcmp(req.path,"/api/v1/logs")?"logs.get":!strcmp(req.path,"/api/v1/schedules")?"schedules.get":NULL;
-            if(action) send_json(fd,service_query(action)); else message(fd,404,"Not found");
+            if(action) query_response(fd,action); else message(fd,404,"Not found");
             return;
         }
         /* Volatile, authenticated physical mapping aid. Slot 0 exits. */
         if (!strcmp(req.method,"POST") && !strcmp(req.path,"/api/v1/light/test")) {
             if(ota_job_active()){message(fd,409,"OTA in progress");return;}
-            json_object *body = read_json(fd, req.length);
-            json_object *slot = body ? json_object_object_get(body, "slot") : NULL;
-            if (!slot || !json_object_is_type(slot, json_type_int) ||
-                json_object_get_int(slot) < 0 || json_object_get_int(slot) > 32) {
-                if (body) json_object_put(body);
-                message(fd, 400, "slot must be 0 (exit) or 1..32"); return;
-            }
-            json_object *neighbors = json_object_object_get(body, "neighbors");
-            if (neighbors && !json_object_is_type(neighbors, json_type_boolean)) {
-                json_object_put(body); message(fd, 400, "neighbors must be boolean"); return;
-            }
-            unsigned n = json_object_get_int(slot);
-            bool adjacent = neighbors && json_object_get_boolean(neighbors);
-            mico_rtos_lock_mutex(&a1_lock);
-            bool busy = a1_state.ota_active || a1_state.reboot_pending;
-            if (!busy) {
-                a1_state.light_test_slot = n;
-                a1_state.light_test_neighbors = adjacent;
-                a1_state.light_test_until = n ? mico_rtos_get_time() + 120000 : 0;
-            }
-            mico_rtos_unlock_mutex(&a1_lock);
-            json_object_put(body);
-            message(fd, busy ? 409 : 200, busy ? "Device busy" : "Light test updated");
-            return;
+            light_response(fd,req.length);return;
         }
         if (!strcmp(req.method,"POST") && !strcmp(req.path,"/api/v1/command")) {
             if(ota_job_active() && req.length>1024){message(fd,409,"OTA in progress");return;}
-            json_object *request=read_json(fd,req.length),*reply=service_command(request);
-            if(request)json_object_put(request);send_json(fd,reply);return;
+            command_response(fd,req.length);return;
         }
         if (strcmp(req.path,"/api/v1/ota/upload") && strcmp(req.path,"/api/v1/ota/upload-unsigned")) { message(fd,404,"Not found");return; }
         strcpy(req.path,!strcmp(req.path,"/api/v1/ota/upload")?"/ota/fileUpload":"/ota/fileUploadUnsigned");
@@ -531,6 +522,61 @@ static void handle(int fd)
         return;
     }
     message(fd,404,"Not found");
+}
+
+/* Waiting retains only the accepted descriptor and stack metadata. The
+ * already bounded FIFO remains owned by the single HTTP request worker. */
+static void memory_busy(int fd)
+{
+    static const char busy[] = "{\"code\":\"busy\"}";
+    response(fd,503,"application/json",busy,sizeof(busy)-1,false);
+}
+static void query_response(int fd, const char *action)
+{
+    unsigned claim=service_memory_wait(0);
+    if(!claim){memory_busy(fd);return;}
+    send_json(fd,service_query(action));service_memory_release(claim);
+}
+static void command_response(int fd, uint32_t length)
+{
+    unsigned claim=service_memory_wait(length <= A1_JSON_LIMIT ? length : 0);
+    if(!claim){memory_busy(fd);return;}
+    json_object *request=read_json(fd,length),*reply=service_command(request);
+    if(request)json_object_put(request);
+    send_json(fd,reply);service_memory_release(claim);
+}
+static void light_execute(int fd, uint32_t length)
+{
+    json_object *body = read_json(fd, length);
+    json_object *slot = body ? json_object_object_get(body, "slot") : NULL;
+    if (!slot || !json_object_is_type(slot, json_type_int) ||
+        json_object_get_int(slot) < 0 || json_object_get_int(slot) > 32) {
+        if (body) json_object_put(body);
+        message(fd, 400, "slot must be 0 (exit) or 1..32"); return;
+    }
+    json_object *neighbors = json_object_object_get(body, "neighbors");
+    if (neighbors && !json_object_is_type(neighbors, json_type_boolean)) {
+        json_object_put(body); message(fd, 400, "neighbors must be boolean"); return;
+    }
+    unsigned n = json_object_get_int(slot);
+    bool adjacent = neighbors && json_object_get_boolean(neighbors);
+    mico_rtos_lock_mutex(&a1_lock);
+    bool busy = a1_state.ota_active || a1_state.reboot_pending;
+    if (!busy) {
+        a1_state.light_test_slot = n;
+        a1_state.light_test_neighbors = adjacent;
+        a1_state.light_test_until = n ? mico_rtos_get_time() + 120000 : 0;
+    }
+    mico_rtos_unlock_mutex(&a1_lock);
+    json_object_put(body);
+    message(fd, busy ? 409 : 200, busy ? "Device busy" : "Light test updated");
+    return;
+}
+static void light_response(int fd, uint32_t length)
+{
+    unsigned claim=service_memory_wait(length <= A1_JSON_LIMIT ? length : 0);
+    if(!claim){memory_busy(fd);return;}
+    light_execute(fd,length);service_memory_release(claim);
 }
 
 /* Keep accept responsive while the single request worker reads a slow client.

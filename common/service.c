@@ -17,6 +17,43 @@ static service_record_t records[LOG_COUNT];
 static uint32_t sequence;
 static mico_mutex_t service_lock, command_lock;
 static bool ready;
+static service_memory_state_t memory_state = {.minimum_free = UINT32_MAX};
+static uint32_t service_free_memory(void) {
+#if defined(MOC) && MOC == 1
+    const micoMemInfo_t *m = MicoGetMemoryInfo();
+    return m && m->free_memory > 0 ? (uint32_t)m->free_memory : 0;
+#else
+    return UINT32_MAX; /* Host simulators use the policy's injectable unit tests. */
+#endif
+}
+unsigned service_memory_claim(size_t input_bytes) {
+    if (!ready) return 0;
+    mico_rtos_lock_mutex(&service_lock);
+    unsigned claim = memory_budget_claim(&memory_state, service_free_memory(), input_bytes);
+    mico_rtos_unlock_mutex(&service_lock);
+    return claim;
+}
+void service_memory_release(unsigned claim) {
+    if (!ready) return;
+    mico_rtos_lock_mutex(&service_lock);
+    memory_budget_release(&memory_state, claim);
+    mico_rtos_unlock_mutex(&service_lock);
+}
+void service_memory_waiting(bool enter) {
+    if (!ready) return;
+    mico_rtos_lock_mutex(&service_lock);
+    if (enter) memory_state.waiting++;
+    else if (memory_state.waiting) memory_state.waiting--;
+    mico_rtos_unlock_mutex(&service_lock);
+}
+void service_memory_snapshot(service_memory_state_t *out) {
+    if (!ready) { memset(out, 0, sizeof(*out)); return; }
+    mico_rtos_lock_mutex(&service_lock);
+    uint32_t free_bytes = service_free_memory();
+    if (free_bytes < memory_state.minimum_free) memory_state.minimum_free = free_bytes;
+    *out = memory_state;
+    mico_rtos_unlock_mutex(&service_lock);
+}
 typedef struct { char id[65]; char *request, *response; } receipt_t;
 static receipt_t receipts[8];
 static unsigned receipt_next;

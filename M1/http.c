@@ -356,7 +356,10 @@ json_object *m1_status_json(void)
 
 static void send_json(int fd, json_object *o)
 {
-    if (!o) { message(fd, 500, "Out of memory"); return; }
+    if (!o) {
+        static const char busy[] = "{\"code\":\"busy\"}";
+        response(fd, 503, "application/json", busy, sizeof(busy)-1, false); return;
+    }
     const char *body = json_object_to_json_string(o);
     if (!body) {
         static const char busy[] = "{\"code\":\"busy\"}";
@@ -469,12 +472,18 @@ static void memory_response(int fd)
         return;
     }
     micoMemInfo_t snapshot = *memory;
-    char body[256];
+    service_memory_state_t budget; service_memory_snapshot(&budget);
+    char body[512];
     int length = snprintf(body, sizeof(body),
         "{\"code\":\"ok\",\"data\":{\"free_memory\":%d,\"allocated_memory\":%d,"
-        "\"free_memory_chunks\":%d,\"uptime_ms\":%lu}}",
+        "\"free_memory_chunks\":%d,\"uptime_ms\":%lu,\"memory_reserve\":%u,"
+        "\"memory_reserved\":%lu,\"memory_active\":%lu,\"memory_waiting\":%lu,"
+        "\"memory_denied\":%lu,\"minimum_sampled_free\":%lu}}",
         snapshot.free_memory, snapshot.allocted_memory, snapshot.num_of_chunks,
-        (unsigned long)mico_rtos_get_time());
+        (unsigned long)mico_rtos_get_time(), SERVICE_MEMORY_RESERVE,
+        (unsigned long)budget.reserved, (unsigned long)budget.active,
+        (unsigned long)budget.waiting, (unsigned long)budget.denied,
+        (unsigned long)budget.minimum_free);
     if (length > 0 && (size_t)length < sizeof(body))
         response(fd, 200, "application/json", body, (size_t)length, false);
 }
@@ -493,13 +502,12 @@ static void handle(int fd)
         if (!strcmp(req.method, "GET")) {
             if (!strcmp(req.path, "/api/v1/memory")) { memory_response(fd); return; }
             const char *action = !strcmp(req.path,"/api/v1/info")?"info.get":!strcmp(req.path,"/api/v1/status")?"status.get":!strcmp(req.path,"/api/v1/capabilities")?"capabilities.get":!strcmp(req.path,"/api/v1/config")?"config.get":!strcmp(req.path,"/api/v1/logs")?"logs.get":!strcmp(req.path,"/api/v1/schedules")?"schedules.get":NULL;
-            if(action) send_json(fd,service_query(action)); else message(fd,404,"Not found");
+            if(action) query_response(fd,action); else message(fd,404,"Not found");
             return;
         }
         if (!strcmp(req.method,"POST") && !strcmp(req.path,"/api/v1/command")) {
             if(ota_job_active() && req.length>1024){message(fd,409,"OTA in progress");return;}
-            json_object *request=read_json(fd,req.length),*reply=service_command(request);
-            if(request)json_object_put(request);send_json(fd,reply);return;
+            command_response(fd,req.length);return;
         }
         if (strcmp(req.path,"/api/v1/ota/upload") && strcmp(req.path,"/api/v1/ota/upload-unsigned")) { message(fd,404,"Not found");return; }
         strcpy(req.path,!strcmp(req.path,"/api/v1/ota/upload")?"/ota/fileUpload":"/ota/fileUploadUnsigned");
@@ -528,6 +536,28 @@ static void handle(int fd)
         return;
     }
     message(fd,404,"Not found");
+}
+
+/* Waiting retains only the accepted descriptor and stack metadata. The
+ * already bounded FIFO remains owned by the single HTTP request worker. */
+static void memory_busy(int fd)
+{
+    static const char busy[] = "{\"code\":\"busy\"}";
+    response(fd,503,"application/json",busy,sizeof(busy)-1,false);
+}
+static void query_response(int fd, const char *action)
+{
+    unsigned claim=service_memory_wait(0);
+    if(!claim){memory_busy(fd);return;}
+    send_json(fd,service_query(action));service_memory_release(claim);
+}
+static void command_response(int fd, uint32_t length)
+{
+    unsigned claim=service_memory_wait(length <= M1_JSON_LIMIT ? length : 0);
+    if(!claim){memory_busy(fd);return;}
+    json_object *request=read_json(fd,length),*reply=service_command(request);
+    if(request)json_object_put(request);
+    send_json(fd,reply);service_memory_release(claim);
 }
 
 /* Keep accept responsive while the single request worker reads a slow client.
