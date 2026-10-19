@@ -110,3 +110,52 @@ static const char http_post[]="POST",http_get[]="GET",http_head[]="HEAD",http_pu
 '''+function(source,'static int httpd_verify_req_type(')+r'''
 int main(void){int type=0;assert(!httpd_verify_req_type("OPTIONS /api/v1/info HTTP/1.1",&type));assert(type==HTTPD_REQ_TYPE_OPTIONS);assert(httpd_verify_req_type("OPTIONSX / HTTP/1.1",&type)<0);}
 ''')
+
+    def test_tc1_rejected_post_delivers_busy_without_reset(self):
+        source=(ROOT/'TC1/http_server/app_httpd.c').read_text()
+        self.run_c(r'''
+#define _POSIX_C_SOURCE 200809L
+#include <assert.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/select.h>
+#include <sys/socket.h>
+#include <sys/wait.h>
+#include <netinet/in.h>
+#include <time.h>
+typedef struct {int sock,remaining_bytes;} httpd_request_t;
+static uint32_t mico_rtos_get_time(void){struct timespec ts;assert(!clock_gettime(CLOCK_MONOTONIC,&ts));return (uint32_t)(ts.tv_sec*1000u+ts.tv_nsec/1000000u);}
+static int HttpV1Busy(httpd_request_t *r){
+ const char busy[]="HTTP/1.1 503 Service Unavailable\r\nContent-Length: 15\r\nConnection: close\r\n\r\n{\"code\":\"busy\"}";
+ size_t n=0;while(n<sizeof(busy)-1){int rc=send(r->sock,busy+n,sizeof(busy)-1-n,0);assert(rc>0);n+=rc;}return 0;
+}
+'''+function(source,'static int HttpV1CommandBusy(')+r'''
+int main(void){
+ for(int full=0;full<=1;full++){
+  int listener=socket(AF_INET,SOCK_STREAM,0);assert(listener>=0);
+  struct sockaddr_in addr={.sin_family=AF_INET,.sin_addr.s_addr=htonl(INADDR_LOOPBACK)};
+  assert(!bind(listener,(void*)&addr,sizeof(addr)) && !listen(listener,1));
+  socklen_t size=sizeof(addr);assert(!getsockname(listener,(void*)&addr,&size));
+  pid_t child=fork();assert(child>=0);
+  if(!child){
+   int fd=accept(listener,NULL,NULL);assert(fd>=0);close(listener);
+   httpd_request_t r={fd,8192};uint32_t start=mico_rtos_get_time();
+   assert(!HttpV1CommandBusy(&r));assert(mico_rtos_get_time()-start<500);
+   assert(r.remaining_bytes==(full?0:8192));close(fd);_exit(0);
+  }
+  close(listener);int fd=socket(AF_INET,SOCK_STREAM,0);assert(fd>=0);
+  assert(!connect(fd,(void*)&addr,sizeof(addr)));
+  char body[8192];memset(body,' ',sizeof(body));
+  if(full){size_t sent=0;while(sent<sizeof(body)){int rc=send(fd,body+sent,sizeof(body)-sent,0);assert(rc>0);sent+=rc;}}
+  char out[256];int used=0,n;
+  while((n=recv(fd,out+used,sizeof(out)-1-used,0))>0)used+=n;
+  assert(n==0);out[used]=0;assert(strstr(out,"503 Service Unavailable") && strstr(out,"{\"code\":\"busy\"}"));
+  close(fd);int status;assert(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==0);
+ }
+ puts("TC1 actual TCP rejected POST: complete busy, no reset, no heap; omitted body bounded at 100 ms: OK");
+}
+''')

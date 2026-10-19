@@ -299,6 +299,27 @@ static int HttpV1Busy(httpd_request_t *r){
     static const char busy[]="{\"code\":\"busy\"}";
     return response_json(r,"HTTP/1.1 503 Service Unavailable\r\n",busy,sizeof(busy)-1);
 }
+/* A rejected POST still has unread TCP data. Consume only bounded bytes
+ * without heap storage before the SDK closes the socket, avoiding a reset
+ * which can hide an otherwise complete busy response from the peer. */
+static int HttpV1CommandBusy(httpd_request_t *r){
+    int rc=HttpV1Busy(r);
+    if(rc || r->remaining_bytes<=0 || fcntl(r->sock,F_SETFL,O_NONBLOCK)!=0)return rc;
+    uint32_t deadline=mico_rtos_get_time()+100u;
+    char discard[128];
+    for(unsigned reads=0;reads<64 && r->remaining_bytes>0;reads++){
+        uint32_t now=mico_rtos_get_time();
+        if((int32_t)(now-deadline)>=0)break;
+        fd_set readable;FD_ZERO(&readable);FD_SET(r->sock,&readable);
+        struct timeval tv={0,(deadline-now)*1000};
+        if(select(r->sock+1,&readable,NULL,NULL,&tv)<=0)break;
+        size_t n=r->remaining_bytes<(int)sizeof(discard)?(size_t)r->remaining_bytes:sizeof(discard);
+        int got=recv(r->sock,discard,n,0);
+        if(got<=0)break;
+        r->remaining_bytes-=got;
+    }
+    return rc;
+}
 static int HttpV1Reply(httpd_request_t *req,json_object *o){
     if(ota_job_active())mico_thread_msleep(10);
     struct printbuf *wire=o?json_object_to_json_string_ex(o):NULL;
@@ -334,9 +355,9 @@ static int HttpV1Memory(httpd_request_t *r){
 static int HttpV1Command(httpd_request_t *r){
     int rc=read_headers(r);
     if(rc || r->chunked || r->remaining_bytes<1 || r->remaining_bytes>(ota_job_active()?1024:8192))return kParamErr;
-    unsigned claim=service_memory_wait(r->remaining_bytes);if(!claim)return HttpV1Busy(r);
+    unsigned claim=service_memory_wait(r->remaining_bytes);if(!claim)return HttpV1CommandBusy(r);
     size_t capacity=(size_t)r->remaining_bytes+1;
-    char *body=malloc(capacity);if(!body){service_memory_release(claim);return HttpV1Busy(r);}
+    char *body=malloc(capacity);if(!body){service_memory_release(claim);return HttpV1CommandBusy(r);}
     rc=read_body(r,body,capacity);json_object *request=rc?NULL:service_parse(body,strlen(body));free(body);
     json_object *reply=service_command(request);if(request)json_object_put(request);
     rc=HttpV1Reply(r,reply);service_memory_release(claim);return rc;
