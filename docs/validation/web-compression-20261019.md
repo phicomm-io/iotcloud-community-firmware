@@ -15,7 +15,7 @@
 - 工具：esbuild `0.28.2`，Python zopfli `0.2.3.post1`，15 iterations；ARM GCC `5.4.1`，MiCO `6c465211d3ff8797cd835e400ec54a06530dd476`。
 - 前端归档 SHA-256：`018a658ef4a14e5b7cb00f9e26e65bf12ca62d8ddd600fb42d4b8cb3fb4c9783`。
 
-未合并分支、未发布生产 Release。此提交的前端归档当前位于本地，固件使用相同完整 commit、SHA-256 与 manifest 进行离线校验后构建，未绕过锁文件验证。再次构建需要该归档，或待前端正式发布后在线下载。
+实机验收时尚未合并分支、未发布生产 Release；当时的前端归档保存在本地，固件使用相同完整 commit、SHA-256 与 manifest 进行离线校验后构建，未绕过锁文件验证。下方命令用于复现实机验收提交；后续 main 集成状态见文末。
 
 ```sh
 # frontend worktree
@@ -77,3 +77,11 @@ bash TC1/build.sh
 - 单次部署与只读测试脚本：`build/deploy-compression.py`、`build/compression-device-browser.cjs`、`build/controlled-layout-comparison.cjs`、`build/compression-health*.py`。原始失败记录未删除。
 
 私有快照与截图可能包含本地网络/配置，只保存于构建证据目录，不提交到 Git。
+
+## main 集成补充（2026-10-19）
+
+前端 [PR #11](https://github.com/phicomm-io/phicomm-community-frontend/pull/11) 已合并，main 提交 `c557fea8d70dbf517da26156d09c52b078a53c46` 与实测前端提交的文件树完全一致。[main CI](https://github.com/phicomm-io/phicomm-community-frontend/actions/runs/39198294488) 全部通过，并自动发布按提交寻址的前端构建包。
+
+固件锁文件改为该 [main 前端构建包](https://github.com/phicomm-io/phicomm-community-frontend/releases/tag/frontend-c557fea8d70dbf517da26156d09c52b078a53c46)，归档 SHA-256 为 `8c1a21df918d7cbda16d911e1becafae9da81913f657d9a69fd4a441002e8fae`。发布包已通过完整锁文件/manifest/逐文件校验，三款 `devices/*/index.html` 及 `index.html.gz` 均与上述已实测资源逐字节一致。归档的提交元数据因此更新；设备页面内容与 Flash 节省量不变。
+
+此锁文件支持直接在线获取公开前端构建包，无需本地验收归档。不发布新的生产固件版本，不重复升级实机；三台实机仍对应上文的 `ae2f59e` 构建，保留的并行超时和手机溢出结论不变。
