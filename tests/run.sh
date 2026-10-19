@@ -15,6 +15,9 @@ compiler=("${CC:-cc}")
 if [[ "${SANITIZE:-0}" == 1 ]]; then
     compiler+=(-g -fno-omit-frame-pointer -fsanitize=address,undefined)
 fi
+root="$PWD"
+source tests/host_hash.sh
+compiler+=("${hash_sources[@]}")
 output=$(mktemp -d)
 trap 'rm -rf "$output"' EXIT
 "${compiler[@]}" -std=c99 -Wall -Wextra -Werror tests/test_gesture.c -o "$output/gesture"
