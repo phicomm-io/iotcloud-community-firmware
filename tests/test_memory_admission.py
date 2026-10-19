@@ -8,6 +8,13 @@ from tests.test_tc1_sdk_migration import function
 ROOT = Path(__file__).resolve().parents[1]
 
 class MemoryAdmission(unittest.TestCase):
+    def sdk_http_source(self, filename):
+        sdk = Path(os.environ.get('TC1_SDK_DIR', ROOT / 'build/tc1-sdk-3.6.4/mico-os'))
+        path = sdk / 'libraries/daemons/http_server' / filename
+        if not path.is_file():
+            self.skipTest('build TC1 first to test the applied SDK overlay')
+        return path.read_text()
+
     def run_c(self, source):
         with tempfile.TemporaryDirectory() as directory:
             p=Path(directory)/'test.c'; p.write_text(source)
@@ -71,7 +78,7 @@ int main(void){
 ''')
 
     def test_tc1_listener_configured_once_before_listen_and_fails_closed(self):
-        source = (ROOT / 'build/tc1-sdk-3.6.4/mico-os/libraries/daemons/http_server/httpd.c').read_text()
+        source = self.sdk_http_source('httpd.c')
         self.run_c(r'''
 #include <assert.h>
 #include <stdbool.h>
@@ -154,7 +161,7 @@ int main(void){
 '''.replace('MODEL',model).replace('HELPERS',helpers))
 
     def test_tc1_options_full_request_line(self):
-        source=(ROOT/'build/tc1-sdk-3.6.4/mico-os/libraries/daemons/http_server/http_parse.c').read_text()
+        source=self.sdk_http_source('http_parse.c')
         constants='\n'.join('#define HTTPD_REQ_TYPE_'+name+' '+str(i) for i,name in enumerate(('GET','POST','HEAD','PUT','DELETE','OPTIONS'),1))
         # This function sees the whole first line, rather than a NUL-terminated method.
         self.run_c('#include <assert.h>\n#include <string.h>\n#define HTTPD_REQ_TYPE_UNKNOWN 0\n#define kNoErr 0\n#define kInProgressErr 1\n'+constants+r'''
