@@ -17,8 +17,8 @@ static void query_response(int fd, const char *action);
 static void command_response(int fd, uint32_t length);
 static void memory_busy(int fd);
 
-#define HTTP_PENDING_CLIENTS 8u
-#define HTTP_TCP_CLIENT_LIMIT 24
+#define HTTP_PENDING_CLIENTS 4u
+#define HTTP_TCP_CLIENT_LIMIT 8
 #define HTTP_RESPONSE_TIMEOUT_MS 10000u
 #define HTTP_SEND_CHUNK_SIZE 1024u
 
@@ -672,6 +672,8 @@ static void http_accept_worker(mico_thread_arg_t arg)
         }
         http_accept_count(&http_accept_overflow_close);
         close(fd);
+        /* Let the network owner/ACK timers progress under continuous overflow. */
+        mico_thread_msleep(1);
     }
 }
 

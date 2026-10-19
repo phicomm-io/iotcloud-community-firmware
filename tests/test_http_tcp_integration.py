@@ -197,7 +197,13 @@ class HttpTcpIntegration(unittest.TestCase):
                                 self.assert_response(result)
                         second = [pool.submit(server.request) for _ in range(8)]
                         for future in second:
-                            self.assert_response(future.result())
+                            result = future.result()
+                            if result[0].startswith(b'HTTP/1.1 503 '):
+                                self.assertFalse(result[1])
+                                self.assertTrue(result[0].endswith(b'{"code":"busy"}'))
+                                controlled += 1
+                            else:
+                                self.assert_response(result)
                 state = server.wait(lambda s: s['closed'] == 204)
                 self.assertEqual(state['rejected'], controlled)
                 self.assertEqual(state['send_failures'], 0)
@@ -296,10 +302,10 @@ class HttpTcpIntegration(unittest.TestCase):
                     hold = server.connect(); clients.append(hold)
                     hold.sendall(b'GET /hold HTTP/1.1\r\nHost: localhost\r\n\r\n')
                     server.wait(lambda s: s['active'] == 1)
-                    for i in range(8):
+                    for i in range(4):
                         client = server.connect(); clients.append(client)
                         client.sendall(b'GET /api/v1/schedules HTTP/1.1\r\nHost: localhost\r\n\r\n')
-                    server.wait(lambda s: s['enqueued'] == 9)
+                    server.wait(lambda s: s['enqueued'] == 5)
                     raw, reset = server.request()
                     self.assertFalse(reset)
                     self.assertIn(b'HTTP/1.1 503 ', raw)
@@ -307,9 +313,9 @@ class HttpTcpIntegration(unittest.TestCase):
                     server.command('RELEASE')
                     for client in clients:
                         self.assert_response(server.read(client))
-                    state = server.wait(lambda s: s['closed'] == 10)
+                    state = server.wait(lambda s: s['closed'] == 6)
                     self.assertEqual(state['rejected'], 1)
-                    self.assertEqual(state['queue_peak'], 8)
+                    self.assertEqual(state['queue_peak'], 4)
                     server.observe('queue_overflow', http_status=503, reset=reset,
                                    busy_body_complete=True, final=state)
                 finally:
