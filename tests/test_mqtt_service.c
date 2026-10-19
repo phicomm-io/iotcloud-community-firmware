@@ -21,14 +21,15 @@ void *__wrap_realloc(void *pointer,size_t size){
 #define MQTT_FAILURE -1
 #include "../common/mqtt_service.inc"
 static unsigned calls, executions;
-static bool nested,switch_scope;
+static bool nested,switch_scope,owned_command;
+static json_object *owned_reply(void);
 static char expected_topics[4][MQTT_TOPIC_MAX];
 static unsigned topic_index;
 static mqtt_account_t scope;
 json_object *service_parse(const void *p,size_t n){(void)p;(void)n;return json_object_new_object();}
 json_object *service_command(json_object *q){(void)q;executions++;
  if(switch_scope){switch_scope=false;assert(mqtt_account_init(&scope,1,"m1","changed","aabbccddeeff"));}
- return json_object_new_object();}
+ return owned_command?owned_reply():json_object_new_object();}
 json_object *service_query(const char *a){(void)a;json_object *r=json_object_new_object();json_object_object_add(r,"data",json_object_new_object());return r;}
 json_object *service_product_capabilities(void){return json_object_new_object();}
 static int send_reply(const char *topic,const char *body,bool retained){
@@ -83,8 +84,44 @@ static void test_owned_wire(void){
  assert(!fail_realloc && wire_calls==1 && freed[0]==1 && freed[1]==1);
  watched[0]=watched[1]=NULL;
 }
+static int send_failed(const char *topic,const char *body,bool retained){
+ assert(strstr(topic,"/result") && !retained);
+ assert(strstr(body,"independent wire bytes"));
+ /* Flush sends the already serialized bytes, with no new reallocations. */
+ assert(fail_realloc);return MQTT_FAILURE;
+}
+static void test_queued_wire(void){
+ assert(mqtt_account_init(&scope,1,"a1","test","aabbccddeeff"));
+ owned_command=true;
+ for(unsigned i=0;i<4;i++){
+  assert(service_mqtt_input(send_reply,&scope,"{}",2,false)==MQTT_SUCCESS);
+  /* Every response graph is released before the next command is accepted. */
+  assert(freed[0]==1 && freed[1]==1);
+  watched[0]=watched[1]=NULL;
+ }
+ assert(service_mqtt_reply_count==4);
+ /* A failed send releases its bytes, retaining siblings for owner cleanup. */
+ watched[0]=service_mqtt_replies[0].wire;
+ watched[1]=service_mqtt_replies[0].wire->buf;
+ freed[0]=freed[1]=0;fail_realloc=true;
+ assert(service_mqtt_flush(send_failed)==MQTT_FAILURE);
+ assert(fail_realloc && freed[0]==1 && freed[1]==1);
+ watched[0]=watched[1]=NULL;fail_realloc=false;
+ assert(service_mqtt_reply_count==3);service_mqtt_clear();
+ assert(!service_mqtt_reply_count);
+ /* Failed serialization cannot insert a partial wire or consume a slot. */
+ fail_realloc=true;
+ assert(service_mqtt_input(send_reply,&scope,"{}",2,false)==MQTT_FAILURE);
+ assert(!fail_realloc && !service_mqtt_reply_count);
+ assert(freed[0]==1 && freed[1]==1);
+ watched[0]=watched[1]=NULL;owned_command=false;
+ assert(service_mqtt_input(send_reply,&scope,"{}",2,false)==MQTT_SUCCESS);
+ service_mqtt_clear();
+ puts("Pending MQTT results retain only wire bytes; graphs freed at enqueue, OOM/send cleanup passed");
+}
 int main(void){
  test_owned_wire();
+ test_queued_wire();
  test_targets();
  executions=0;
  assert(mqtt_account_init(&scope,1,"m1","test","aabbccddeeff"));
