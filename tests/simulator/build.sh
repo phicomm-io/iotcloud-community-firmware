@@ -6,11 +6,18 @@ compiler=("${CC:-cc}")
 if [[ "${SANITIZE:-0}" == 1 ]]; then
  compiler+=(-fsanitize=address,undefined -fno-omit-frame-pointer)
 fi
-mkdir -p "$out/json"
+mkdir -p "$out"
+json_sdk=$(mktemp -d)
+trap 'rm -rf "$json_sdk"' EXIT
+json="$json_sdk/libraries/utilities/json_c"
+mkdir -p "$json"
 sdk_m1=${M1_SDK_DIR:-build/m1-sdk/mico-os}
 sdk_a1=${A1_SDK_DIR:-build/a1-sdk/mico-os}
-cp -R "$sdk_m1/libraries/utilities/json_c/." "$out/json/"
-python3 - "$out/json" <<'PY'
+cp -R "$sdk_m1/libraries/utilities/json_c/." "$json/"
+python3 tools/apply_sdk_patch.py "$json_sdk" \
+ common/json-newlib-reent.patch common/json-printbuf-oom.patch \
+ common/json-allocation-safety.patch common/json-heap-budget.patch
+python3 - "$json" <<'PY'
 import pathlib,sys
 for p in pathlib.Path(sys.argv[1]).glob('*.c'): p.write_text(p.read_text().replace('%ld','%d'))
 PY
@@ -21,5 +28,5 @@ for model in A1 M1; do
  sdk="$sdk/libraries/protocols/mqtt"
  extra=()
  if [[ $model == A1 ]]; then extra=(A1/control.c); else extra=(M1/mqtt_transport.c); fi
- "${compiler[@]}" -std=gnu99 -g -pthread -DHOST_$model -DMAX_MESSAGE_HANDLERS=12 -Itests/simulator -Itests/host -I"$model" -I"$out/json" -I"$sdk" -I"$sdk/MQTTPacket" tests/simulator/node.c "$model/features.c" "$model/service.c" "$model/mqtt.c" "${extra[@]}" tests/simulator/network.c "$sdk/MQTTClient.c" "$sdk"/MQTTPacket/*.c "$out/json"/*.c -lm -o "$out/$model"
+ "${compiler[@]}" -std=gnu99 -g -pthread -DHOST_$model -DMAX_MESSAGE_HANDLERS=12 -Itests/simulator -Itests/host -I"$model" -I"$json" -I"$sdk" -I"$sdk/MQTTPacket" tests/simulator/node.c "$model/features.c" "$model/service.c" "$model/mqtt.c" "${extra[@]}" tests/simulator/network.c "$sdk/MQTTClient.c" "$sdk"/MQTTPacket/*.c "$json"/*.c -lm -o "$out/$model"
 done
