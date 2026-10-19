@@ -294,8 +294,8 @@ static int HttpGetTc1Status(httpd_request_t *req) {
     json_object *o=tc1_status_json();if(!o)return kNoMemoryErr;
     const char *s=json_object_to_json_string(o);int rc=response_json(req,HTTP_RES_200,s,strlen(s));json_object_put(o);return rc;
 }
-/* One SDK pending connection bounds RX storage on the 192 KiB target. */
-int phicomm_http_client_limit(void){return 1;}
+/* Bound SDK RX storage while allowing a completed browser socket to close. */
+int phicomm_http_client_limit(void){return 2;}
 static int HttpV1Busy(httpd_request_t *r){
     static const char busy[]="{\"code\":\"busy\"}";
     return response_json(r,"HTTP/1.1 503 Service Unavailable\r\n",busy,sizeof(busy)-1);
