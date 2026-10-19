@@ -1,4 +1,7 @@
 #include "../../common/service.h"
+#include "../../common/firmware_variant.h"
+#include "../../common/http_cors.h"
+const char *phicomm_http_cors(const char *origin){return phicomm_cors_headers(origin);}
 #include "../../common/ota/signed_ota.h"
 #include "ota_server/ota_server.h"
 #include "ota_server/signed_adapter.h"
@@ -54,7 +57,7 @@
 #include "user_wifi.h"
 #include "user_power.h"
 #include "main.h"
-#include "web_data.c"
+#include <web_data.c>
 #include "web_log.h"
 #include "timed_task/timed_task.h"
 #include "ota_server/user_ota.h"
@@ -281,6 +284,7 @@ json_object *tc1_status_json(void) {
     jb_printf(&b, "\"ota_progress\":%u}", progress);
     json_object *out = b.valid ? service_parse(b.data,b.used) : NULL;
     free(data);
+    if(out){phicomm_variant_json(out);json_build_object_add(out,"model",json_object_new_string("tc1"));}
     return out;
 }
 
@@ -290,6 +294,7 @@ static int HttpGetTc1Status(httpd_request_t *req) {
 }
 int phicomm_http_client_limit(void){return ota_job_active()?2:5;}
 static int HttpV1Reply(httpd_request_t *req,json_object *o){if(ota_job_active())mico_thread_msleep(10);if(!o)return kNoMemoryErr;const char *s=json_object_to_json_string(o);int rc=response_json(req,HTTP_RES_200,s,strlen(s));json_object_put(o);return rc;}
+static int HttpV1Info(httpd_request_t *r){return HttpV1Reply(r,service_query("info.get"));}
 static int HttpV1Status(httpd_request_t *r){return HttpV1Reply(r,service_query("status.get"));}
 static int HttpV1Capabilities(httpd_request_t *r){return HttpV1Reply(r,service_query("capabilities.get"));}
 static int HttpV1Config(httpd_request_t *r){return HttpV1Reply(r,service_query("config.get"));}
@@ -1106,6 +1111,7 @@ static int HttpScheduleSet(httpd_request_t *req) {
 }
 
 const struct httpd_wsgi_call g_app_handlers[] = {
+    {"/api/v1/info", HTTPD_HDR_DEFORT, 0, HttpV1Info, NULL, NULL, NULL},
     {"/api/v1/status", HTTPD_HDR_DEFORT, 0, HttpV1Status, NULL, NULL, NULL},
     {"/api/v1/capabilities", HTTPD_HDR_DEFORT, 0, HttpV1Capabilities, NULL, NULL, NULL},
     {"/api/v1/config", HTTPD_HDR_DEFORT, 0, HttpV1Config, NULL, NULL, NULL},

@@ -7,9 +7,18 @@ if [[ "${GITHUB_REF_TYPE:-}" == tag ]]; then
     version_args=(--tag "$GITHUB_REF_NAME")
 fi
 python3 "$project_dir/tools/check_version.py" "${version_args[@]}"
+variant="${PHICOMM_FIRMWARE_VARIANT:-full}"
+case "$variant" in
+    full) variant_suffix=""; PHICOMM_FULL_RESOURCES=1 ;;
+    no-frontend-resources) variant_suffix="-no-frontend-resources"; PHICOMM_FULL_RESOURCES=0 ;;
+    *) echo "Unknown firmware variant: $variant" >&2; exit 1 ;;
+esac
+export PHICOMM_FULL_RESOURCES
+export PHICOMM_WEB_OUTPUT_DIR="$project_dir/build/m1${variant_suffix}-web"
+
 sdk_dir="${M1_SDK_DIR:-$project_dir/build/m1-sdk/mico-os}"
 tools_dir="${M1_TOOLS_DIR:-$project_dir/build/m1-tools}"
-workspace="$project_dir/build/m1-workspace"
+workspace="$project_dir/build/m1${variant_suffix}-workspace"
 sdk_commit="$(python3 "$project_dir/tools/prepare_sdk.py" --commit)"
 target=M1@MK3080B@moc
 mkdir -p "$tools_dir" "$workspace" "$(dirname "$sdk_dir")"
@@ -83,5 +92,5 @@ ln -sfn "$(command -v make)" "$micoder/cmd/Linux64/make"
 python3 "$project_dir/tools/check_worker_stack.py" "$workspace/build/$target/Modules/M1" "$project_dir/common/phicomm_features.h"
 python3 "$app_dir/tools/check_image.py" "$workspace/build/$target/binary/$target.ota.bin"
 python3 "$project_dir/tools/check_json_float.py" "$gcc_dir/bin/arm-none-eabi-nm" "$workspace/build/$target/binary/$target.elf"
-python3 "$app_dir/tools/package.py" "$workspace/build/$target/binary" "$project_dir/build/m1-release" "$sdk_commit"
+python3 "$app_dir/tools/package.py" "$workspace/build/$target/binary" "$project_dir/build/m1${variant_suffix}-release" "$sdk_commit"
 

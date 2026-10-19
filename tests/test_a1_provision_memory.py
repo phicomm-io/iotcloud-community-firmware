@@ -121,7 +121,7 @@ static char output[512];static unsigned status;
 static const micoMemInfo_t *MicoGetMemoryInfo(void) { return unavailable?NULL:&info; }
 static uint32_t mico_rtos_get_time(void) { return UINT32_MAX; }
 static bool response(int fd,unsigned code,const char *type,const void *body,size_t n,bool gzip) {
-    assert(fd==7 && !strcmp(type,"application/json") && !gzip && n<sizeof(output));
+    assert(fd==7 && (!strcmp(type,"application/json")||!strcmp(type,"text/plain")) && !gzip && n<sizeof(output));
     memcpy(output,body,n);output[n]=0;status=code;return true;
 }
 /* Neither diagnostic formatting nor its failure path may allocate. */
@@ -216,8 +216,10 @@ int main(void) {
         end = '        /* Volatile, authenticated physical mapping aid.' if self.PRODUCT == 'A1' else '        if (!strcmp(req.method,"POST") && !strcmp(req.path,"/api/v1/command"))'
         route = source[source.index('static void handle('):source.index(end)]
         harness = MEMORY[:MEMORY.index('FUNCTION')] + r'''
-typedef struct { char method[8],path[96],authorization[128]; } request_t;
+typedef struct { char method[8],path[96],authorization[128],origin[160]; } request_t;
 typedef struct { char web_password[33]; } a1_config_t;
+static const char *response_cors="";
+static const char *phicomm_cors_headers(const char *origin){return *origin?"allowed":"";}
 static request_t incoming;
 static bool read_request(int fd,request_t *r) { assert(fd==7);*r=incoming;return true; }
 static void a1_config_get(a1_config_t *c) { strcpy(c->web_password,"secret"); }
@@ -234,7 +236,9 @@ ROUTE
 }
 int main(void) {
     strcpy(incoming.method,"GET");strcpy(incoming.path,"/api/v1/memory");
-    handle(7);assert(status==401);
+    strcpy(incoming.method,"OPTIONS");strcpy(incoming.origin,"https://mqtt.fjrcn.cn");handle(7);assert(status==200);
+    incoming.origin[0]=0;handle(7);assert(status==403);
+    strcpy(incoming.method,"GET");handle(7);assert(status==401);
     strcpy(incoming.authorization,"Basic YWRtaW46c2VjcmV0");
     info.free_memory=1234;handle(7);assert(status==200 && strstr(output,"\"free_memory\":1234"));
     strcpy(incoming.method,"POST");handle(7);assert(status==404);

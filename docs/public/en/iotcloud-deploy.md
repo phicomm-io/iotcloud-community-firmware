@@ -13,6 +13,12 @@ To manage devices on the hosted platform, start with [Connect to IotCloud](iotcl
 
 Choose a node at the top of IotCloud. **Accounts, passwords, devices and data are independent. Register separately on each node.** Switching reloads the page and reconnects using the selected node's own session and MQTT credentials; it does not migrate data. Configure devices with that node's Broker hostname and account. The same username on two nodes does not link them.
 
+## Local access without login
+
+[Open local device management]({{SITE_URL}}local/) and enter the device LAN IPv4 address and web administration password. Control the device and configure Wi-Fi and MQTT without an account, backend or Broker. Compatible device firmware and browser local network permission are required. The web password stays in the current page session; enter it again after refreshing.
+
+For standalone static hosting, publish the complete `local/` directory from the frontend release. It skips login and needs no backend address. The regular login page also accepts device IPs. After login, use Settings → Device management → Details to set each LAN address and choose automatic transport or always MQTT. Automatic mode verifies device identity and authentication before using LAN; failed probes keep MQTT available.
+
 ## Deployment options
 
 Use [the hosted frontend]({{SITE_URL}}iotcloud/) and choose China / US, host the frontend on GitHub Pages or another static service, or run your own backend and Broker. The frontend repository documents static deployment; the [platform repository](https://github.com/phicomm-io/phicomm-community-mqtt#readme) documents server initialization and cross-origin access.

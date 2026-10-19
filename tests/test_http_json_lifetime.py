@@ -15,6 +15,7 @@ HARNESS = r'''
 #include "json.h"
 #include "printbuf.h"
 #include "common/json_build.h"
+static const char *response_cors="";
 static char output[8192];
 static size_t used;
 static void *watched[2];

@@ -4,6 +4,12 @@
 
 [打开本站 IotCloud]({{SITE_URL}}iotcloud/) · [前端源码与发布](https://github.com/phicomm-io/phicomm-community-frontend) · [后端与 Broker 部署](https://github.com/phicomm-io/phicomm-community-mqtt#本地初始化)
 
+## 无需登录的本地直连
+
+[打开本地设备管理]({{SITE_URL}}local/)，填写设备内网 IP 和网页管理密码，即可控制设备并配置 Wi-Fi、MQTT。无需账号、后端或 Broker；页面与完整管理平台风格一致。设备需要运行支持本地直连的新版固件，浏览器需要允许访问本地网络。网页密码只保留在当前页面会话，刷新后重新填写。
+
+独立部署时，将前端发布包的 `local/` 整目录发布到静态服务器，默认跳过登录，不需要填写后端地址。普通平台登录前也可填写设备 IP；登录后可在“设置 → 设备管理 → 详情”配置各设备内网地址，并选择自动连接或始终 MQTT。自动连接会先验证设备身份和网页密码，探测失败时继续使用 MQTT。
+
 ## 选择部署方式
 
 | 需求 | 入口 |

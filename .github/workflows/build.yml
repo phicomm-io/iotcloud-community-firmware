@@ -19,6 +19,12 @@ env:
 jobs:
   tc1:
     name: TC1 firmware (A1 hardware variant)
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [full, no-frontend-resources]
+    env:
+      PHICOMM_FIRMWARE_VARIANT: ${{ matrix.variant }}
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -54,18 +60,26 @@ jobs:
       - name: Prepare release assets
         run: |
           mkdir -p release
-          cp build/tc1-release/phicomm_tc1_a1.ota.bin release/phicomm_tc1_a1.ota.bin.raw
-          cp build/tc1-release/phicomm_tc1_a1.all.bin release/
-          (cd release && sha256sum *.bin *.bin.raw > SHA256SUMS-tc1)
+          suffix=""
+          if [ "$PHICOMM_FIRMWARE_VARIANT" != full ]; then suffix="-$PHICOMM_FIRMWARE_VARIANT"; fi
+          cp build/tc1${suffix}-release/phicomm_tc1_a1${suffix}.ota.bin release/phicomm_tc1_a1${suffix}.ota.bin.raw
+          cp build/tc1${suffix}-release/phicomm_tc1_a1${suffix}.all.bin release/
+          (cd release && sha256sum *.bin *.bin.raw > SHA256SUMS-tc1${suffix})
       - uses: actions/upload-artifact@v4
         with:
-          name: tc1-firmware
+          name: tc1-${{ matrix.variant }}-firmware
           path: release/
           if-no-files-found: error
           retention-days: 30
 
   m1:
     name: M1 firmware
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [full, no-frontend-resources]
+    env:
+      PHICOMM_FIRMWARE_VARIANT: ${{ matrix.variant }}
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -94,18 +108,26 @@ jobs:
       - name: Prepare release assets
         run: |
           mkdir -p release
-          cp build/m1-release/phicomm_m1.ota.bin release/phicomm_m1.ota.bin.raw
-          cp build/m1-release/phicomm_m1.all.bin release/
-          (cd release && sha256sum *.bin *.bin.raw > SHA256SUMS-m1)
+          suffix=""
+          if [ "$PHICOMM_FIRMWARE_VARIANT" != full ]; then suffix="-$PHICOMM_FIRMWARE_VARIANT"; fi
+          cp build/m1${suffix}-release/phicomm_m1${suffix}.ota.bin release/phicomm_m1${suffix}.ota.bin.raw
+          cp build/m1${suffix}-release/phicomm_m1${suffix}.all.bin release/
+          (cd release && sha256sum *.bin *.bin.raw > SHA256SUMS-m1${suffix})
       - uses: actions/upload-artifact@v4
         with:
-          name: m1-firmware
+          name: m1-${{ matrix.variant }}-firmware
           path: release/
           if-no-files-found: error
           retention-days: 30
 
   a1:
     name: A1 firmware
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [full, no-frontend-resources]
+    env:
+      PHICOMM_FIRMWARE_VARIANT: ${{ matrix.variant }}
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -134,12 +156,14 @@ jobs:
       - name: Prepare release assets
         run: |
           mkdir -p release
-          cp build/a1-release/phicomm_a1.ota.bin release/phicomm_a1.ota.bin.raw
-          cp build/a1-release/phicomm_a1.all.bin release/
-          (cd release && sha256sum *.bin *.bin.raw > SHA256SUMS-a1)
+          suffix=""
+          if [ "$PHICOMM_FIRMWARE_VARIANT" != full ]; then suffix="-$PHICOMM_FIRMWARE_VARIANT"; fi
+          cp build/a1${suffix}-release/phicomm_a1${suffix}.ota.bin release/phicomm_a1${suffix}.ota.bin.raw
+          cp build/a1${suffix}-release/phicomm_a1${suffix}.all.bin release/
+          (cd release && sha256sum *.bin *.bin.raw > SHA256SUMS-a1${suffix})
       - uses: actions/upload-artifact@v4
         with:
-          name: a1-firmware
+          name: a1-${{ matrix.variant }}-firmware
           path: release/
           if-no-files-found: error
           retention-days: 30
@@ -188,8 +212,10 @@ jobs:
             gh release download "$TAG_NAME" --pattern "*.signed" --dir previous
           fi
           for model in tc1 m1 a1; do
+           for variant in full no-frontend-resources; do
             product="$model"
             if [ "$model" = tc1 ]; then product=tc1_a1; fi
+            if [ "$variant" != full ]; then product="$product-$variant"; fi
             if test -s "previous/phicomm_$product.ota.bin.signed"; then
               cp "previous/phicomm_$product.ota.bin.signed" release/
               tail -c +193 "release/phicomm_$product.ota.bin.signed" | cmp - "release/phicomm_$product.ota.bin.raw"
@@ -199,6 +225,7 @@ jobs:
                 "release/phicomm_$product.ota.bin.raw" "release/phicomm_$product.ota.bin.signed"
             fi
             python3 tools/release/verify.py "release/phicomm_$product.ota.bin.signed" "$model" "$TAG_NAME" "$(git rev-parse HEAD)"
+           done
           done
           (cd release && sha256sum *.bin *.bin.raw *.bin.signed > SHA256SUMS && sha256sum -c SHA256SUMS)
       - uses: actions/upload-artifact@v4
@@ -278,15 +305,15 @@ jobs:
           node-version: '24'
       - uses: actions/download-artifact@v4
         with:
-          name: tc1-firmware
+          name: tc1-full-firmware
           path: release
       - uses: actions/download-artifact@v4
         with:
-          name: a1-firmware
+          name: a1-full-firmware
           path: release
       - uses: actions/download-artifact@v4
         with:
-          name: m1-firmware
+          name: m1-full-firmware
           path: release
       - name: Test signed OTA vectors and Flash faults
         env:

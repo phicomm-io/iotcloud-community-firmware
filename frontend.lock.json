@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "repository": "phicomm-io/phicomm-community-frontend",
-  "commit": "c557fea8d70dbf517da26156d09c52b078a53c46",
-  "release": "frontend-c557fea8d70dbf517da26156d09c52b078a53c46",
+  "commit": "1a6abe00f515141bb882d3e942a2ed273751b91a",
+  "release": "frontend-1a6abe00f515141bb882d3e942a2ed273751b91a",
   "asset": "frontend.tar.gz",
-  "sha256": "8c1a21df918d7cbda16d911e1becafae9da81913f657d9a69fd4a441002e8fae"
+  "sha256": "854fce46bdd34f6262cb301c0a7d7828cebc3a33d738c04fec9d49536abb284f"
 }
