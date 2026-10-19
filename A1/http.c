@@ -5,6 +5,8 @@
 #include "filter.h"
 #include "../common/ota/signed_ota.h"
 #include "web_data.h"
+#include "../common/firmware_variant.h"
+#include "../common/http_cors.h"
 #include "favicon.h"
 #include <ctype.h>
 #include <errno.h>
@@ -19,10 +21,13 @@
 
 typedef struct {
     char method[8], path[96], authorization[128];
-    char if_none_match[80];
+    char if_none_match[80], origin[160];
     uint32_t length;
     bool have_length, chunked;
 } request_t;
+
+/* Only the serial HTTP worker uses response headers; accept rejects use raw sends. */
+static const char *response_cors = "";
 
 static volatile uint32_t http_accept_ok;
 static volatile uint32_t http_accept_fail;
@@ -154,13 +159,13 @@ static bool response_send(int fd, const void *header, size_t header_length, cons
 
 static bool response(int fd, unsigned code, const char *type, const void *body, size_t length, bool gzip)
 {
-    char header[320];
+    char header[768];
     snprintf(header, sizeof(header),
         "HTTP/1.1 %u %s\r\nContent-Type: %s\r\nContent-Length: %u\r\nConnection: close\r\n"
-        "Cache-Control: no-store\r\n%s%s\r\n", code,
+        "Cache-Control: no-store\r\n%s%s%s\r\n", code,
         code == 200 ? "OK" : code == 202 ? "Accepted" : code == 401 ? "Unauthorized" : "Error",
         type, (unsigned)length, gzip ? "Content-Encoding: gzip\r\n" : "",
-        code == 401 ? "WWW-Authenticate: Basic realm=\"A1\"\r\n" : "");
+        response_cors, code == 401 ? "WWW-Authenticate: Basic realm=\"A1\"\r\n" : "");
     return response_send(fd, header, strlen(header), body, length);
 }
 
@@ -207,6 +212,9 @@ static bool read_request(int fd, request_t *req)
         else if (!strcasecmp(line, "Authorization")) {
             if (strlen(colon) >= sizeof(req->authorization)) return false;
             strcpy(req->authorization, colon);
+        } else if (!strcasecmp(line, "Origin")) {
+            if (strlen(colon) >= sizeof(req->origin)) return false;
+            strcpy(req->origin, colon);
         } else if (!strcasecmp(line, "Expect")) return false;
     }
 }
@@ -245,6 +253,8 @@ json_object *a1_status_json(void)
     a1_config_get(&cfg); a1_state_get(&s);
     json_object *o = json_object_new_object();
     if (!o) return NULL;
+    phicomm_variant_json(o);
+    str(o,"model","a1");
     runtime_metrics_json(o);
     http_diag_t diag = http_diag_snapshot();
     integer(o, "http_accept_ok", (int)http_accept_ok);
@@ -405,7 +415,7 @@ static const char *feature_domain(const char *path)
 static bool asset_response(int fd, const char *type, const void *body, size_t length,
                            bool gzip, const char *etag, const char *if_none_match)
 {
-    char header[320];
+    char header[768];
     /* Private caches must revalidate, including the normal authentication
      * check in handle(). The tag identifies the actual compressed bytes. */
     bool unchanged = !strcmp(etag, if_none_match) ||
@@ -447,14 +457,17 @@ static void memory_response(int fd)
 static void handle(int fd)
 {
     request_t req; a1_config_t cfg;
+    response_cors = "";
     if (!read_request(fd, &req)) { message(fd, 400, "Invalid HTTP request"); return; }
+    response_cors = phicomm_cors_headers(req.origin);
+    if (!strcmp(req.method,"OPTIONS")) { response(fd, *response_cors ? 200 : 403, "text/plain", "", 0, false); return; }
     a1_config_get(&cfg);
     if (!authorized(&req, cfg.web_password)) { message(fd, 401, "Authentication required"); return; }
     if(strncmp(req.path,"/api/v1/",8) && strcmp(req.path,"/") && strcmp(req.path,"/index.html") && strcmp(req.path,"/favicon.ico")){message(fd,404,"Not found");return;}
     if (!strncmp(req.path, "/api/v1/", 8)) {
         if (!strcmp(req.method, "GET")) {
             if (!strcmp(req.path, "/api/v1/memory")) { memory_response(fd); return; }
-            const char *action = !strcmp(req.path,"/api/v1/status")?"status.get":!strcmp(req.path,"/api/v1/capabilities")?"capabilities.get":!strcmp(req.path,"/api/v1/config")?"config.get":!strcmp(req.path,"/api/v1/logs")?"logs.get":!strcmp(req.path,"/api/v1/schedules")?"schedules.get":NULL;
+            const char *action = !strcmp(req.path,"/api/v1/info")?"info.get":!strcmp(req.path,"/api/v1/status")?"status.get":!strcmp(req.path,"/api/v1/capabilities")?"capabilities.get":!strcmp(req.path,"/api/v1/config")?"config.get":!strcmp(req.path,"/api/v1/logs")?"logs.get":!strcmp(req.path,"/api/v1/schedules")?"schedules.get":NULL;
             if(action) send_json(fd,service_query(action)); else message(fd,404,"Not found");
             return;
         }

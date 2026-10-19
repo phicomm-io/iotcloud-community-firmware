@@ -29,6 +29,8 @@ class SDKAuth(unittest.TestCase):
 #define HTTPD_MAX_AUTH_LENGTH 64
 #define MAX_WSGI_HANDLERS 1
 #define APP_HTTP_FLAGS_NO_EXACT_MATCH 1
+#define HTTPD_REQ_TYPE_OPTIONS 32
+#define HTTP_RES_200 "HTTP/1.1 200 OK\r\n"
 #define HTTPD_REQ_TYPE_HEAD 1
 #define HTTPD_REQ_TYPE_GET 2
 #define HTTPD_REQ_TYPE_POST 3
@@ -41,17 +43,18 @@ class SDKAuth(unittest.TestCase):
 #define httpd_d(...) ((void)0)
 typedef struct httpd_request httpd_request_t;
 struct httpd_wsgi_call { const char *uri; int http_flags; int (*get_handler)(httpd_request_t*),(*set_handler)(httpd_request_t*),(*put_handler)(httpd_request_t*),(*delete_handler)(httpd_request_t*); };
-struct httpd_request { char filename[32]; int sock,type,hdr_parsed; char authorization[65]; int remaining_bytes,body_nbytes,agent; char content_type[128]; bool if_none_match;unsigned etag_val;int chunked;const struct httpd_wsgi_call *wsgi; };
+struct httpd_request { char filename[32]; int sock,type,hdr_parsed; char authorization[65];char origin[160]; int remaining_bytes,body_nbytes,agent; char content_type[128]; bool if_none_match;unsigned etag_val;int chunked;const struct httpd_wsgi_call *wsgi; };
 static struct httpd_wsgi_call *calls[1];
 static const char http_content_len[]="Content-Length:",http_user_agent[]="User-Agent:",http_content_type[]="Content-Type:",http_encoding[]="Transfer-Encoding:";
-static const char httpd_authrized[]="HTTP/1.1 401 Authorization Required\r\n";
+
 static int handlers,denied,parse_error;
 static char header[256];
 static const char *credential="YWRtaW46c2VjcmV0";
 static const char *get_httpd_auth(void) {return credential;}
 static char *httpd_skip_absolute_http_path(char *p) {return p;}
 static void httpd_parse_useragent(char *p,int *agent) {(void)p;(void)agent;}
-static int httpd_send(int fd,const char *p,int n) {(void)fd;(void)n;assert(strstr(p,"401"));denied++;return 0;}
+static const char *phicomm_http_cors(const char *origin) {return !strcmp(origin,"https://phicomm-io.github.io")?"Access-Control-Allow-Origin: https://phicomm-io.github.io\r\n":"";}
+static int httpd_send_all_header(httpd_request_t *r,const char *p,int n,const char *mime) {(void)r;(void)n;(void)mime;if(strstr(p,"401"))denied++;return 0;}
 '''
         harness += function((path / 'http_parse.c').read_text(), 'static int __httpd_parse_hdr_tags(')
         harness += r'''

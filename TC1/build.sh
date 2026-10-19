@@ -2,8 +2,17 @@
 set -euo pipefail
 app_dir="$(cd "$(dirname "$0")" && pwd)"
 project_dir="$(dirname "$app_dir")"
+variant="${PHICOMM_FIRMWARE_VARIANT:-full}"
+case "$variant" in
+    full) variant_suffix=""; PHICOMM_FULL_RESOURCES=1 ;;
+    no-frontend-resources) variant_suffix="-no-frontend-resources"; PHICOMM_FULL_RESOURCES=0 ;;
+    *) echo "Unknown firmware variant: $variant" >&2; exit 1 ;;
+esac
+export PHICOMM_FULL_RESOURCES
+export PHICOMM_WEB_OUTPUT_DIR="$project_dir/build/tc1${variant_suffix}-web"
+
 sdk_dir="${TC1_SDK_DIR:-$project_dir/build/tc1-sdk-3.6.4/mico-os}"
-workspace="$project_dir/build/tc1-workspace-3.6.4"
+workspace="$project_dir/build/tc1${variant_suffix}-workspace-3.6.4"
 python3 "$project_dir/tools/prepare_sdk.py" "$sdk_dir"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/wifi-owned-mico36.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-mico36.patch"
@@ -11,10 +20,10 @@ python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-socket-close.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/M1/mqtt-packet-deadline.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-response-deadline.patch"
-python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/http-connection-sdk.patch"
-python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/http-resource-sdk.patch"
-python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/http-client-limit-sdk.patch"
-python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/http-auth-sdk.patch"
+python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \
+    "$app_dir/http-connection-sdk.patch" "$app_dir/http-resource-sdk.patch" \
+    "$app_dir/http-client-limit-sdk.patch" "$app_dir/http-auth-sdk.patch" \
+    "$app_dir/http-cors-sdk.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/parameters-sdk.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/signed-ota-sdk.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/no-unsigned-sdk-write.patch"
@@ -68,4 +77,4 @@ ln -sfn "$(command -v make)" "$micoder/cmd/Linux64/make"
         -f mico-os/makefiles/Makefile "$target" total
 )
 python3 "$project_dir/tools/check_json_float.py" "$gcc_dir/bin/arm-none-eabi-nm" "$workspace/build/$target/binary/$target.elf"
-python3 "$app_dir/tools/package.py" "$workspace/build/$target/binary" "$project_dir/build/tc1-release"
+python3 "$app_dir/tools/package.py" "$workspace/build/$target/binary" "$project_dir/build/tc1${variant_suffix}-release"

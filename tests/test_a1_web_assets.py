@@ -44,6 +44,8 @@ class A1WebAssetsTest(unittest.TestCase):
 #include <strings.h>
 #include <ctype.h>
 #include "A1/favicon.h"
+#include "common/http_cors.h"
+static const char *response_cors;
 #define A1_APP_OFFSET 0
 #define A1_APP_LIMIT 262144
 #define OTA_ENVELOPE_SIZE 128
@@ -100,6 +102,16 @@ int main(void) {
     get("GET /favicon.ico HTTP/1.1\r\nIf-None-Match: " A1_FAVICON_ETAG "\r\n\r\n");
     assert(!strncmp(output,"HTTP/1.1 304 ",13));
     password=true;
+    get("OPTIONS /api/v1/info HTTP/1.1\r\nOrigin: https://phicomm-io.github.io\r\n\r\n");
+    assert(!strncmp(output,"HTTP/1.1 200 ",13));
+    assert(strstr(output,"Access-Control-Allow-Origin: https://phicomm-io.github.io\r\n"));
+    assert(strstr(output,"Access-Control-Allow-Headers: Authorization, Content-Type\r\n"));
+    get("GET /api/v1/info HTTP/1.1\r\nOrigin: https://mqtt.fjrcn.cn\r\n\r\n");
+    assert(!strncmp(output,"HTTP/1.1 401 ",13));
+    assert(strstr(output,"Access-Control-Allow-Origin: https://mqtt.fjrcn.cn\r\n"));
+    get("OPTIONS /api/v1/info HTTP/1.1\r\nOrigin: https://phicomm-io.github.io.evil.example\r\n\r\n");
+    assert(!strncmp(output,"HTTP/1.1 403 ",13) && !strstr(output,"Access-Control-Allow-Origin:"));
+
     get("GET / HTTP/1.1\r\nIf-None-Match: " A1_WEB_ETAG "\r\n\r\n");
     assert(!strncmp(output,"HTTP/1.1 401 ",13) && strstr(output,"Cache-Control: no-store"));
     get("GET /favicon.ico HTTP/1.1\r\n\r\n");assert(!strncmp(output,"HTTP/1.1 401 ",13));

@@ -14,21 +14,22 @@ def write_latest(catalog, output):
     if stable and release is None:
         raise ValueError('Stable release is absent from catalog')
     for model in ('tc1', 'm1', 'a1'):
-        target = output / 'ota' / model / 'latest.json'
         item = release.get('models', {}).get(model, {}) if release else {}
-        signed = item.get('downloads', {}).get('signed')
-        if not signed:
-            target.unlink(missing_ok=True)
-            continue
-        document = dict(schema=1, tag=release['tag'], version=release['version'],
-                        commit=release['commit'], model=model,
-                        path=signed['path'], size=signed['size'], sha256=signed['sha256'],
-                        release_log=release['notes'])
-        data = (json.dumps(document, ensure_ascii=False, separators=(',', ':')) + '\n').encode()
-        if len(data) > 4096:
-            raise ValueError('Device manifest exceeds 4096 bytes')
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(data)
+        for variant, entry in [('full', item), ('no-frontend-resources', item.get('variants', {}).get('no-frontend-resources', {}))]:
+            folder = output / 'ota' / model
+            if variant != 'full': folder /= variant
+            target = folder / 'latest.json'
+            signed = entry.get('downloads', {}).get('signed')
+            if not signed:
+                target.unlink(missing_ok=True)
+                continue
+            document = dict(schema=1, tag=release['tag'], version=release['version'],
+                            commit=release['commit'], model=model, firmware_variant=variant,
+                            **signed, release_log=release['notes'])
+            data = (json.dumps(document, ensure_ascii=False, separators=(',', ':')) + '\n').encode()
+            if len(data) > 4096: raise ValueError('Device manifest exceeds 4096 bytes')
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
 
 
 def mirror(source, output):
@@ -44,8 +45,9 @@ def mirror(source, output):
     for release in catalog['releases']:
         assets = {}
         for model in release['models'].values():
-            for value in model['downloads'].values():
-                assets[value['path']] = value
+            for entry in [model, *model.get('variants', {}).values()]:
+                for value in entry['downloads'].values():
+                    assets[value['path']] = value
         for path, value in assets.items():
             target = output / path.lstrip('/')
             data = target.read_bytes() if target.exists() else b''

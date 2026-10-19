@@ -238,6 +238,11 @@ def main():
     if (out / 'demos').exists():
         shutil.rmtree(out / 'demos')
     shutil.copytree(bundle / 'demos', out / 'demos')
+    if not (bundle / 'local/index.html').is_file():
+        raise SystemExit('Pinned frontend release has no standalone local console')
+    if (out / 'local').exists():
+        shutil.rmtree(out / 'local')
+    shutil.copytree(bundle / 'local', out / 'local')
 
     shutil.copytree(ROOT / 'docs' / 'public' / 'assets', guides / 'assets', dirs_exist_ok=True)
     print(f'Wrote {len(PAGES) - len(missing)} guide pages to {out}')

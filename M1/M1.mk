@@ -15,3 +15,8 @@ $(NAME)_SOURCES += ota_fetch.c ota_mode.c
 $(NAME)_INCLUDES += generated/tls-include
 $(NAME)_PREBUILT_LIBRARY := generated/libbearssl.a
 GLOBAL_DEFINES += PHICOMM_DEVICE_OTA=1
+
+# Each variant has its own generated resource directory and build workspace.
+PHICOMM_FULL_RESOURCES ?= 1
+GLOBAL_DEFINES += PHICOMM_FULL_RESOURCES=$(PHICOMM_FULL_RESOURCES)
+$(NAME)_CFLAGS += -I$(PHICOMM_WEB_OUTPUT_DIR)

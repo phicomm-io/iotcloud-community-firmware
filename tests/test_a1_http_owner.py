@@ -224,7 +224,8 @@ class A1HttpOwnerTest(unittest.TestCase):
         defines = '\n'.join(line for line in source.splitlines() if line.startswith('#define HTTP_'))
         with tempfile.TemporaryDirectory() as temporary:
             probe = Path(temporary) / 'probe.c'
-            probe.write_text(harness.replace('/*DEFINES*/', defines))
+            prefix = 'static const char *response_cors="";\n' if 'response_cors' in harness and 'static const char *response_cors' not in harness else ''
+            probe.write_text(prefix + harness.replace('/*DEFINES*/', defines))
             binary = Path(temporary) / 'probe'
             command = [os.environ.get('CC', 'cc'), '-std=c99', '-Wall', '-Wextra', '-Werror',
                        '-Wno-misleading-indentation', str(probe), '-o', str(binary)]

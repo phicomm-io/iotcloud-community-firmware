@@ -21,4 +21,19 @@ class ReleaseTests(unittest.TestCase):
     self.assertEqual(len(model['sha256']),64)
    (root/'phicomm_a1.ota.bin.signed').write_bytes(b'')
    with self.assertRaises(ValueError):make('v0.9.5','a'*40,root,'notes')
+ def test_six_variants_are_required_for_new_releases(self):
+  with tempfile.TemporaryDirectory() as tmp:
+   root=Path(tmp)
+   for product in ['tc1_a1','m1','a1']:
+    for variant in ['', '-no-frontend-resources']:
+     for suffix in ['ota.bin.signed','ota.bin.raw','all.bin']:
+      (root/f'phicomm_{product}{variant}.{suffix}').write_bytes((product+variant+suffix).encode())
+   r=make('v0.9.5','a'*40,root,'Notes',require_variants=True)
+   for model in r['models'].values():
+    slim=model['variants']['no-frontend-resources']
+    self.assertEqual(slim['firmware_variant'],'no-frontend-resources')
+    self.assertIn('-no-frontend-resources.',slim['path'])
+    self.assertNotEqual(slim['sha256'],model['sha256'])
+   (root/'phicomm_a1-no-frontend-resources.ota.bin.raw').unlink()
+   with self.assertRaises(FileNotFoundError):make('v0.9.5','a'*40,root,'Notes',require_variants=True)
 if __name__=='__main__':unittest.main()

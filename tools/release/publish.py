@@ -19,7 +19,8 @@ def put(key,body,immutable=False):
     api(BUCKET+urllib.parse.quote(key,safe=''),'PUT',body,'application/octet-stream')
 def verify(release):
     for base in ['http://phicomm.fjrcn.com','http://phicomm.fjrcn.cn']:
-        for model_name,model in release['models'].items():
+        for model_name,original in release['models'].items():
+          for model in [original, *original.get('variants', {}).values()]:
             for kind,asset in model['downloads'].items():
                 req=urllib.request.Request(base+asset['path'],headers={'Accept-Encoding':'identity','User-Agent':''})
                 with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req,timeout=120) as r:
@@ -30,11 +31,13 @@ def verify(release):
 def smoke(release):
     opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
     for base in ['http://phicomm.fjrcn.com','http://phicomm.fjrcn.cn']:
-        for model in release['models']:
-            url=f"{base}/ota/{model}/latest.json?release={release['tag']}"
+        for model, original in release['models'].items():
+          for variant, entry in [('full',original), *original.get('variants',{}).items()]:
+            suffix = '' if variant == 'full' else '/' + variant
+            url=f"{base}/ota/{model}{suffix}/latest.json?release={release['tag']}"
             with opener.open(urllib.request.Request(url,headers={'User-Agent':'','Accept-Encoding':'identity'}),timeout=30) as response:
                 latest=json.load(response)
-            if latest['tag']!=release['tag'] or latest['model']!=model or latest['sha256']!=release['models'][model]['sha256']:
+            if latest['tag']!=release['tag'] or latest['model']!=model or latest['sha256']!=entry['sha256'] or latest.get('firmware_variant','full')!=variant:
                 raise ValueError('latest manifest smoke test failed')
 
 def version(tag):return tuple(map(int,tag.removeprefix('v').split('.')))

@@ -44,3 +44,9 @@ A first transition from older firmware may require `.ota.bin.raw`. New firmware 
 Updates pause linkage and other business responses while keeping update status and cancellation available. Reduce concurrent access during an update; sustained multi-client pressure updating has not passed full acceptance.
 
 If the WebUI is reachable, check the file, model, version and network, then retry. If the device cannot boot, use the corresponding wired recovery guide: [TC1](tc1-flash), [M1 / A1](a1-m1-flash). Normal OTA updates do not require opening the device.
+
+## Full and slim firmware
+
+Default files include the complete device UI. Files containing `-no-frontend-resources` keep an offline setup page for Wi-Fi, initial MQTT settings and the web password, available through the device hotspot or LAN address. Use [local device management]({{SITE_URL}}local/) or IotCloud for full controls and settings. Both share the same appearance. MQTT is not required to complete Wi-Fi setup.
+
+Online checks stay on the current firmware variant. To switch variants manually, select the signed package for the same physical product.

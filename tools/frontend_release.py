@@ -56,6 +56,11 @@ def unpack(data, lock, output):
         required = {'platform/index.html', 'demos/platform/index.html'}
         for model in ('tc1', 'm1', 'a1'):
             required.update({f'devices/{model}/index.html', f'devices/{model}/index.html.gz', f'demos/{model}/index.html'})
+        if 'local-console' in manifest.get('features', []):
+            required.add('local/index.html')
+        if 'bootstrap-ui' in manifest.get('features', []):
+            for model in ('tc1', 'm1', 'a1'):
+                required.update({f'devices/{model}/setup.html', f'devices/{model}/setup.html.gz'})
         if not required <= names:
             raise ValueError('Frontend release is missing required products')
         for member in members:

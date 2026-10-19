@@ -93,3 +93,11 @@ SDK 基础 Wi-Fi 扫描未提供安全类型时，网页不会推断为空密码
 `light_effect.get/set` 新增整数 `speed:1..10`，默认 `5`，影响呼吸和彩虹跑马灯。旧配置中的零值读取为 `5`；部分更新保留原速度。占用原保留字节，不移动现有 Flash 字段。
 
 A1 `capabilities.get.schedule_countdown:true` 时，`schedules.put` 可传 `{"enabled":true,"trigger":"countdown","seconds":1800,"action":"fan.set","params":{"on":false}}`。接口时长为整数 `1..86400` 秒；网页使用 1 分钟至 24 小时。不接受开机或设置风速。结果与列表返回 `seconds` 和 `remaining_seconds`，以设备单调时钟计时，不要求 NTP。禁用或删除取消计时，再次启用、编辑保存从完整时长开始；重启将活动记录置为 `cancelled`。到期先持久化停用，再执行一次关闭动作；设备忙标记 `busy`。共用原 8 项容量及固定大小存储，旧的每周/单次任务格式保留。
+
+## Firmware resources and browser LAN transport
+
+Authenticated `GET /api/v1/info` returns `model`, `device_id`, `version`, `api_version: 1`, `firmware_variant` (`full` or `no-frontend-resources`), `full_resources` and `bootstrap_ui`. Status and capabilities include the resource flags too. Official HTTPS platform origins receive explicit CORS headers, including on authentication errors; OPTIONS preflight precedes authentication and never runs a command. Other origins require an explicit build-time allowlist entry.
+
+Both variants retain HTTP APIs. The slim variant serves an offline setup page for Wi-Fi, MQTT and the web password; the full platform and standalone `/local/` static frontend provide full controls. Per-device LAN addresses are browser-local, scoped by node/account/device; credentials stay in page memory. LAN is selected only after authenticated model/MAC/status verification. Always-MQTT disables probing; unconfirmed LAN writes and uploads are not replayed over MQTT.
+
+Online OTA stays on `/ota/<model>/latest.json` for full resources and `/ota/<model>/no-frontend-resources/latest.json` for slim resources. Slim metadata must explicitly name the variant; old metadata without a variant is accepted only by full builds. OTA signatures retain the physical product model, and manual variant switching uses that model's signed package.

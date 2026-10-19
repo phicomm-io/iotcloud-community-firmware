@@ -1,4 +1,5 @@
 #include "service.h"
+#include "firmware_variant.h"
 #include "automation.h"
 #include "ota/mode.h"
 #include "mico.h"
@@ -93,10 +94,18 @@ json_object *service_command(json_object *req) {
     if(!a || !json_object_is_type(a,json_type_string) || json_object_get_string_len(a)!=(int)strlen(json_object_get_string(a)) || !identifier(json_object_get_string(a),48) || !p || !json_object_is_type(p,json_type_object))return result(id,code,NULL);
     json_object_object_foreach(req,key,value){(void)value;if(strcmp(key,"action")&&strcmp(key,"params")&&strcmp(key,"request_id"))return result(id,code,NULL);}
     action=json_object_get_string(a);
+    if(!strcmp(action,"info.get")){
+        const char *status_code="ok";json_object *status=service_product("status.get",p,&status_code);
+        if(!status)return result(id,status_code,NULL);
+        json_object *info=json_object_new_object();
+        const char *keys[]={"model","device_id","version"};
+        for(unsigned i=0;i<3;i++){json_object *v=json_object_object_get(status,keys[i]);if(v)json_build_object_add(info,keys[i],json_object_get(v));}
+        phicomm_variant_json(info);json_object_put(status);return result(id,"ok",info);
+    }
 #ifdef PHICOMM_DEVICE_OTA
     if(!strcmp(action,"ota.cancel"))return result(id,ota_job_cancel()?"accepted":"busy",NULL);
     if(!strcmp(action,"ota.status.get") || (ota_job_active() && !strcmp(action,"status.get")))return result(id,"ok",ota_job_status());
-    if(ota_job_active() && !strcmp(action,"capabilities.get")){json_object *o=json_object_new_object(),*a=json_object_new_array();const char *names[]={"status.get","ota.sources.get","ota.check.get","ota.notes.get","ota.status.get","ota.cancel"};for(unsigned i=0;i<6;i++)json_build_array_add(a,json_object_new_string(names[i]));json_build_object_add(o,"actions",a);return result(id,"ok",o);}
+    if(ota_job_active() && !strcmp(action,"capabilities.get")){json_object *o=json_object_new_object(),*a=json_object_new_array();const char *names[]={"status.get","ota.sources.get","ota.check.get","ota.notes.get","ota.status.get","ota.cancel"};for(unsigned i=0;i<6;i++)json_build_array_add(a,json_object_new_string(names[i]));json_build_object_add(o,"actions",a);phicomm_variant_json(o);return result(id,"ok",o);}
     if(ota_job_active() && strcmp(action,"ota.check.get") && strcmp(action,"ota.sources.get") && strcmp(action,"ota.notes.get"))return result(id,"busy",NULL);
 #endif
     bool query=strlen(action)>4 && !strcmp(action+strlen(action)-4,".get");
@@ -112,7 +121,7 @@ json_object *service_command(json_object *req) {
     }
     /* Serialization covers mutation + receipt insertion across HTTP/MQTT. */
     json_object *data=NULL;
-    if(!strcmp(action,"capabilities.get")){data=service_product_capabilities();update_capabilities(data);code="ok";}
+    if(!strcmp(action,"capabilities.get")){data=service_product_capabilities();update_capabilities(data);phicomm_variant_json(data);code="ok";}
     else if(!strcmp(action,"logs.get")){
         /* logs() locks the same mutex: queries do not hold the dispatch lock. */
         mico_rtos_unlock_mutex(&command_lock);data=logs(p,&code);if(data)code="ok";return result(id,code,data);
