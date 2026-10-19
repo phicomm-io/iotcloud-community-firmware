@@ -1,0 +1,22 @@
+--- a/libraries/utilities/json_c/json_c.mk
++++ b/libraries/utilities/json_c/json_c.mk
+@@ -21,4 +21,7 @@
+                    json_heap.c
+                    
+ $(NAME)_CFLAGS   += -Wno-unused-value
++# The firmware links libc_nano. Private reentrancy contexts must use its ABI
++# at compile time too; link-only nano.specs leaves the full newlib headers.
++$(NAME)_CFLAGS   += --specs=nano.specs
+ 
+--- a/libraries/utilities/json_c/json_number_reent.h
++++ b/libraries/utilities/json_c/json_number_reent.h
+@@ -5,6 +5,9 @@
+ #define JSON_NUMBER_REENT_H
+ #ifdef __NEWLIB__
+ #include <reent.h>
++#ifndef _REENT_SMALL
++#error "JSON private contexts require newlib-nano headers (--specs=nano.specs)"
++#endif
+ static int json_number_scan(const char *text, double *value)
+ {
+   struct _reent context;
