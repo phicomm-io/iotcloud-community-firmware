@@ -41,6 +41,10 @@ int main(void){
  a=service_memory_wait(0);assert(a && sleeps==4 && now==49 && !state.waiting);memory_budget_release(&state,a);
  sleeps=0;recover_at=UINT32_MAX;free_bytes=1000;now=UINT32_MAX-50;
  assert(!service_memory_wait(0) && sleeps==80 && !state.waiting);
+ sleeps=0;assert(!service_memory_wait(1025) && !sleeps && !state.waiting);
+ assert(!service_memory_wait(8192) && !sleeps && !state.waiting);
+ free_bytes=45056;a=service_memory_wait(8192);assert(a==28672 && !sleeps);memory_budget_release(&state,a);
+ free_bytes=1000;assert(!service_memory_wait(1024) && sleeps==80 && !state.waiting);
  assert(!state.active && !state.reserved && state.minimum_free==0);
  puts("Shared reservations: floor/overlap/overflow; wait keeps descriptor, resumes, times out across tick wrap: OK");
 }
@@ -99,6 +103,7 @@ int main(void){
  reset(5);command_response(7,100);assert(now==100 && reads==1 && commands==1 && status==200 && !active && !waiting);
  reset(5);query_response(7,"status.get");assert(now==100 && queries==1 && !reads && status==200 && !active);
  reset(1000);command_response(7,100);assert(now==2000 && !reads && !commands && status==503 && !active && !waiting);
+ reset(1000);command_response(7,8192);assert(!now && !reads && !commands && status==503 && !active && !waiting);
  reset(1);query_response(7,"status.get");assert(!now && queries==1 && status==200 && !active);
  puts("MODEL HTTP actual helpers: no body/query allocation while waiting, same FD resumes; timeout no execution; release: OK");
 }
