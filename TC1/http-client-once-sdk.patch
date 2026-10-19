@@ -1,0 +1,37 @@
+--- a/libraries/daemons/http_server/httpd.c
++++ b/libraries/daemons/http_server/httpd.c
+@@ -141,6 +141,8 @@
+     mico_rtos_suspend_thread( NULL );
+ }
+ 
++int phicomm_http_client_limit(void);
++
+ static int httpd_setup_new_socket( int port )
+ {
+     int one = 1;
+@@ -171,7 +173,13 @@
+         return status;
+     }
+ 
+-    status = listen( sockfd, HTTPD_MAX_BACKLOG_CONN );
++    /* Configure admission once, before accepting any queued clients. */
++    int limit = phicomm_http_client_limit();
++    if (setsockopt(sockfd, IPPROTO_TCP, TCP_MAX_CONN_NUM, &limit, sizeof(limit)) < 0) {
++        close(sockfd);
++        return -kInProgressErr;
++    }
++    status = listen( sockfd, limit );
+     if ( status < 0 )
+     {
+         status = net_get_sock_error( sockfd );
+@@ -416,10 +424,6 @@
+ 
+     while ( 1 )
+     {
+-        int limit = phicomm_http_client_limit();
+-        /* The HTTP owner alone changes the listener's admission limit. */
+-        setsockopt(http_sockfd, IPPROTO_TCP, TCP_MAX_CONN_NUM,
+-                   &limit, sizeof(limit));
+         httpd_d("Waiting on main socket");
+         httpd_select( max_sockfd, &readfds, &active_readfds, -1 );
+         httpd_handle_client_connection( &active_readfds );

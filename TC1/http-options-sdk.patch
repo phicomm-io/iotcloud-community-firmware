@@ -1,0 +1,11 @@
+--- a/libraries/daemons/http_server/http_parse.c
++++ b/libraries/daemons/http_server/http_parse.c
+@@ -467,7 +467,7 @@
+ {
+   //	ASSERT(token_p != NULL);
+   
+-  if (!strcmp(token_p, "OPTIONS"))
++  if (!strncmp(token_p, "OPTIONS ", 8))
+     *type = HTTPD_REQ_TYPE_OPTIONS;
+   else if (strncmp(token_p, http_post, sizeof(http_post) - 1) == 0)
+     *type = HTTPD_REQ_TYPE_POST;

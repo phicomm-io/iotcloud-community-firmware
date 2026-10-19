@@ -94,6 +94,58 @@ int main(void) {
                             str(directory / 'auth.c'), '-o', str(directory / 'auth')], check=True)
             subprocess.run([str(directory / 'auth')], check=True, timeout=10)
 
+    def test_response_headers_without_origin_never_send_empty_buffer(self):
+        sdk = Path(os.environ.get('TC1_SDK_DIR', ROOT / 'build/tc1-sdk-3.6.4/mico-os'))
+        path = sdk / 'libraries/daemons/http_server/httpd_wsgi.c'
+        if not path.exists():
+            self.skipTest('build TC1 first')
+        harness = r'''
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+#define kNoErr 0
+#define HTTPD_REQ_TYPE_GET 1
+#define HTTPD_REQ_TYPE_HEAD 2
+#define httpd_d(...) ((void)0)
+struct route {int hdr_fields;const char *uri;};
+typedef struct {int sock,type,hdr_parsed;char origin[160];struct route *wsgi;} httpd_request_t;
+static char output[2048];
+static const char *http_header_keep_alive_ctrl="Connection: close\r\n";
+static const char *phicomm_http_cors(const char *origin){return !strcmp(origin,"https://phicomm-io.github.io")?"Access-Control-Allow-Origin: https://phicomm-io.github.io\r\n":"";}
+/* SDK httpd_send treats send(..., 0) == 0 as a transport failure. */
+static int httpd_send(int sock,const char *buf,int n){(void)sock;assert(n>0);strncat(output,buf,n);return 0;}
+static int httpd_purge_headers(int sock){(void)sock;return 0;}
+static int httpd_send_default_headers(int sock,int flags){(void)sock;(void)flags;return 0;}
+static int httpd_send_header(int sock,const char *key,const char *value){(void)sock;strcat(output,key);strcat(output,": ");strcat(output,value);strcat(output,"\r\n");return 0;}
+static int httpd_send_crlf(int sock){(void)sock;strcat(output,"\r\n");return 0;}
+static int chunked_encoding(httpd_request_t *r){(void)r;return 0;}
+static int httpd_send_chunk(int sock,const char *body,int n){(void)sock;(void)body;(void)n;assert(0);return -1;}
+'''
+        source=path.read_text()
+        harness += function(source, 'int httpd_send_all_header(')
+        harness += function(source, 'int httpd_send_response(')
+        harness += r'''
+int main(void){
+ struct route route={0,"/api/v1/info"};
+ const char *origins[]={"","https://untrusted.example","https://phicomm-io.github.io"};
+ for(int i=0;i<3;i++){
+  httpd_request_t r={.type=HTTPD_REQ_TYPE_GET,.hdr_parsed=1,.wsgi=&route};strcpy(r.origin,origins[i]);
+  for(int mode=0;mode<2;mode++){
+   output[0]=0;
+   int rc=mode?httpd_send_response(&r,"HTTP/1.1 200 OK\r\n","{}",2,"application/json"):httpd_send_all_header(&r,"HTTP/1.1 200 OK\r\n",2,"application/json");
+   assert(rc==0 && strstr(output,"Content-Length: 2\r\n") && strstr(output,"Content-Type: application/json\r\n"));
+   assert((strstr(output,"Access-Control-Allow-Origin:")!=NULL)==(i==2));
+   if(mode)assert(strstr(output,"\r\n\r\n{}"));
+  }
+ }
+}
+'''
+        with tempfile.TemporaryDirectory() as temporary:
+            directory=Path(temporary)
+            (directory/'cors.c').write_text(harness)
+            subprocess.run(['cc','-std=c99','-Wall','-Wextra','-Werror',str(directory/'cors.c'),'-o',str(directory/'cors')],check=True)
+            subprocess.run([str(directory/'cors')],check=True,timeout=10)
+
 
 if __name__ == '__main__':
     unittest.main()

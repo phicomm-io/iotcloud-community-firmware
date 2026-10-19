@@ -1,0 +1,22 @@
+--- a/libraries/daemons/http_server/httpd_wsgi.c
++++ b/libraries/daemons/http_server/httpd_wsgi.c
+@@ -380,7 +380,8 @@
+   }
+ 
+   ret = httpd_send(req->sock, first_line, strlen(first_line));
+-  if (ret == kNoErr) ret = httpd_send(req->sock, phicomm_http_cors(req->origin), strlen(phicomm_http_cors(req->origin)));
++  const char *cors = phicomm_http_cors(req->origin);
++  if (ret == kNoErr && *cors) ret = httpd_send(req->sock, cors, strlen(cors));
+   if (ret != kNoErr) {
+       httpd_d("Error in sending the first line");
+       return ret;
+@@ -441,7 +442,8 @@
+ 	}
+ 
+ 	ret = httpd_send(req->sock, first_line, strlen(first_line));
+-  if (ret == kNoErr) ret = httpd_send(req->sock, phicomm_http_cors(req->origin), strlen(phicomm_http_cors(req->origin)));
++  const char *cors = phicomm_http_cors(req->origin);
++  if (ret == kNoErr && *cors) ret = httpd_send(req->sock, cors, strlen(cors));
+ 	if (ret != kNoErr) {
+ 		httpd_d("Error in sending the first line");
+ 		return ret;

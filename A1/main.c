@@ -348,10 +348,12 @@ void feature_config_get(feature_config_t *out)
 {
     mico_rtos_lock_mutex(&a1_config_lock);
     a1_storage_features_get((app_storage_t *)a1_config, out);
+    feature_config_limit_peers(out);
     mico_rtos_unlock_mutex(&a1_config_lock);
 }
 bool feature_config_save(const feature_config_t *c)
 {
+    if (c->peer_count > FEATURE_MAX_PEERS) return false;
     feature_config_t *old = malloc(sizeof(*old));
     if (!old) return false;
     mico_rtos_lock_mutex(&a1_config_lock);

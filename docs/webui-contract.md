@@ -30,6 +30,8 @@ TC1、A1、M1 的离线页面统一由 [前端仓库](https://github.com/phicomm
 | `light_always.set` | A1 灯环常亮 `{enabled:boolean}` |
 | `filter.get/set/reset` | A1 运行时间估算；set 接受额定寿命 `{lifetime_hours:1..20000}`；reset 清零用量 |
 
+A1 最多绑定 4 台 M1；M1 最多授权 4 台 A1。`binding.get.data.max_peers` 返回 `4`；超过上限的 `binding.set` 返回 `invalid_params`，原绑定保持不变。升级旧的八条绑定配置时，只启用原顺序的前四条，Flash 存储布局不变。
+
 文件 OTA 独立于 JSON 命令：`POST /api/v1/ota/upload` 上传签名原始字节流；仅显式选择未签名更新时使用 `/api/v1/ota/upload-unsigned`。两者仍校验产品镜像和写入结果。
 
 密码不通过查询返回。MQTT 用户名最多 63 UTF-8 字节，密码最多 256 字节，Broker 最多 127 字节。网页省略空白密码输入以保留旧值，显式清除则传空字符串。Wi-Fi 开放网络同样须显式确认。网页认证用户名固定 admin。
@@ -97,6 +99,10 @@ A1 `capabilities.get.schedule_countdown:true` 时，`schedules.put` 可传 `{"en
 ## Firmware resources and browser LAN transport
 
 Authenticated `GET /api/v1/info` returns `model`, `device_id`, `version`, `api_version: 1`, `firmware_variant` (`full` or `no-frontend-resources`), `full_resources` and `bootstrap_ui`. Status and capabilities include the resource flags too. Official HTTPS platform origins receive explicit CORS headers, including on authentication errors; OPTIONS preflight precedes authentication and never runs a command. Other origins require an explicit build-time allowlist entry.
+
+Authenticated `GET /api/v1/memory` returns `{code:"ok",data:{free_memory,allocated_memory,free_memory_chunks,uptime_ms,memory_reserve,memory_reserved,memory_active,memory_waiting,memory_denied,minimum_sampled_free}}`. Memory sizes are bytes. The reserve is an admission target, and reserved bytes are estimates rather than additional allocated buffers. `minimum_sampled_free` is the lowest heap reading at admission/snapshot points since boot; it is not a continuous allocator watermark. `memory_denied` includes wait retries. This endpoint formats a fixed stack buffer and shares the HTTP worker, so it may be delayed under load; monitoring clients should keep one poll outstanding at a time.
+
+The embedded pages serialize command fetches through complete response bodies. Device HTTP queues retain bounded connection descriptors before body/JSON allocation. If admission fails, bodies up to 1024 bytes and bodyless queries may wait up to two seconds after dispatch; larger bodies are rejected promptly. Exhausted admission returns HTTP 503 `{code:"busy"}`. TCP capacity rejection can occur before an application response. MQTT uses four fixed reply slots with preallocated busy responses; a full queue drops excess commands while leaving the existing connection in place. Busy responses and transport failures do not trigger automatic replay of writes.
 
 Both variants retain HTTP APIs. The slim variant serves an offline setup page for Wi-Fi, MQTT and the web password; the full platform and standalone `/local/` static frontend provide full controls. Per-device LAN addresses are browser-local, scoped by node/account/device; credentials stay in page memory. LAN is selected only after authenticated model/MAC/status verification. Always-MQTT disables probing; unconfirmed LAN writes and uploads are not replayed over MQTT.
 

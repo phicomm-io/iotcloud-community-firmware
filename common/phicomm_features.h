@@ -3,7 +3,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define FEATURE_MAX_PEERS 8
+#define FEATURE_MAX_PEERS 4
+/* Retain the eight-slot Flash prefix for existing installations. */
+#define FEATURE_STORAGE_PEERS 8
 #define FEATURE_MAX_EVENTS 8
 #define FEATURE_MAX_SLEEP 4
 #define FEATURE_WIRE_MAX 1200
@@ -83,7 +85,7 @@ typedef struct {
       group_recovery, reserved; \
   uint16_t group_timeout_ms, group_recovery_seconds; \
   uint64_t last_event; \
-  feature_peer_t peers[8]; \
+  feature_peer_t peers[FEATURE_STORAGE_PEERS]; \
   feature_member_t members[8]; \
   feature_linkage_t linkage; \
   feature_light_t light; \
@@ -103,6 +105,10 @@ typedef struct {
   feature_co2_config_t co2;
 } feature_config_t;
 #undef FEATURE_CONFIG_FIELDS
+/* Old configurations use only their first four links; loading never writes Flash. */
+static inline void feature_config_limit_peers(feature_config_t *c) {
+  if (c->peer_count > FEATURE_MAX_PEERS) c->peer_count = FEATURE_MAX_PEERS;
+}
 typedef char feature_prefix_boundary[(offsetof(feature_config_t, automatic) == sizeof(feature_config_storage_t)) ? 1 : -1];
 
 typedef struct {
@@ -161,8 +167,12 @@ int feature_mqtt_service(int (*publish)(const char *, const char *, bool),
                           bool);
 void feature_mqtt_session(const mqtt_account_t *);
 int feature_mqtt_cleanup(int (*publish)(const char *, const char *, bool));
-unsigned feature_mqtt_filters(char filters[12][FEATURE_TOPIC_MAX]);
-bool feature_mqtt_filters_current(char filters[12][FEATURE_TOPIC_MAX], unsigned count);
+#define FEATURE_MQTT_FILTER_ERROR (~0u)
+#define FEATURE_MQTT_A1_FILTER_MAX 4u
+#define FEATURE_MQTT_M1_FILTER_MAX FEATURE_MAX_PEERS
+/* Returns FEATURE_MQTT_FILTER_ERROR on allocation/capacity failure. */
+unsigned feature_mqtt_filters(char filters[][FEATURE_TOPIC_MAX], unsigned capacity);
+bool feature_mqtt_filters_current(char filters[][FEATURE_TOPIC_MAX], unsigned count);
 bool feature_bound(void);
 /* MQTT-owner only: the parent device shared by bound controls and filters. */
 bool feature_ha_device(char *id, size_t id_size, char *name, size_t name_size,

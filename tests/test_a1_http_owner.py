@@ -74,15 +74,15 @@ static int bind(int fd,const struct sockaddr *addr,socklen_t n) {
 static int listen(int fd,int backlog) { assert(thread==1 && fd==3 && backlog==0); return fail_stage==3?-1:0; }
 static int setsockopt(int fd,int level,int option,const void *value,socklen_t n) {
     assert(thread==1 && fd==3 && level==IPPROTO_TCP && option==TCP_MAX_CONN_NUM);
-    assert(n==sizeof(int) && *(const int *)value==24); return 0;
+    assert(n==sizeof(int) && *(const int *)value==2); return 0;
 }
 static int getsockopt(int fd,int level,int option,void *value,socklen_t *n) {
     assert(thread==1 && fd==3 && level==IPPROTO_TCP && *n==sizeof(int));
     assert(option==TCP_MAX_CONN_NUM || option==TCP_CONN_NUM);
-    *(int *)value=option==TCP_MAX_CONN_NUM?24:2; ++diag_reads; return 0;
+    *(int *)value=option==TCP_MAX_CONN_NUM?2:2; ++diag_reads; return 0;
 }
 static int mico_rtos_init_queue(mico_queue_t *q,const char *name,unsigned size,unsigned count) {
-    (void)q; (void)name; assert(thread==1 && size==sizeof(int) && count==8);
+    (void)q; (void)name; assert(thread==1 && size==sizeof(int) && count==1);
     return fail_stage==4?-1:0;
 }
 static void mico_rtos_deinit_queue(mico_queue_t *q) { (void)q; assert(thread==1); ++deinit; }
@@ -132,7 +132,7 @@ int main(void) {
     assert(worker_entry && queued_count==2 && sleeps==1 && diag_reads==4);
     thread=2;if(!setjmp(stop))worker_entry(0);
     assert(handled==2 && client_closes==2 && !listener_closes && !deletes);
-    assert(http_diag_snapshot().limit==24);
+    assert(http_diag_snapshot().limit==2);
     puts("A1 listener ownership, queued fd handoff, startup cleanup: OK");
 }
 '''

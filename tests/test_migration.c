@@ -24,6 +24,11 @@ void feature_defaults(feature_config_t *f){memset(f,0,sizeof(*f));f->magic=FEATU
 #endif
 int main(void){
 #if defined(HOST_M1) || defined(HOST_A1)
+    assert(FEATURE_MAX_PEERS==4 && FEATURE_STORAGE_PEERS==8);
+    assert(sizeof(feature_config_storage_t)==1376);
+    assert(offsetof(feature_config_storage_t,members)==856);
+    assert(offsetof(feature_config_storage_t,linkage)==1088);
+    assert(offsetof(feature_config_t,automatic)==1376);
     OLD old={0};NEW next;feature_config_t f;
     old.base.magic=MAGIC;old.base.version=2;old.base.revision=99;
     strcpy(old.base.ssid,"old wifi");strcpy(old.base.wifi_password,"wifi secret");

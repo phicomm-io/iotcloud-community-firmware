@@ -55,7 +55,8 @@ static unsigned co2_ppm=700;
 #endif
 static float sensor_values[4]={22,45,50,.05};
 uint32_t mico_rtos_get_time(void){return host_now()-started;}
-void mico_thread_msleep(unsigned n){usleep(n*1000);}
+static void sensor_tick(void);
+void mico_thread_msleep(unsigned n){usleep(n*1000);sensor_tick();}
 void mico_rtos_thread_sleep(unsigned n){sleep(n);}
 struct launch {void (*fn)(mico_thread_arg_t);int arg;};
 static void *launch_thread(void *p){struct launch l=*(struct launch *)p;free(p);l.fn(l.arg);return NULL;}
@@ -66,16 +67,17 @@ int mico_rtos_create_thread(void *out,int priority,const char *name,void (*fn)(m
 int simulator_bind(int fd,const struct sockaddr *a,socklen_t n){struct sockaddr_in copy=*(const struct sockaddr_in *)a;const char *ip=getenv("SIM_BIND_IP");if(ip && copy.sin_addr.s_addr==INADDR_ANY)inet_aton(ip,&copy.sin_addr);return bind(fd,(struct sockaddr *)&copy,n);}
 void config_get(CFG *c){BASE_LOCK();*c=base_config;BASE_UNLOCK();}
 bool config_save(const CFG *c){BASE_LOCK();bool ok=c->revision==base_config.revision;if(ok){base_config=*c;++base_config.revision;}BASE_UNLOCK();return ok;}
-void feature_config_get(feature_config_t *c){pthread_mutex_lock(&store_lock);*c=features;pthread_mutex_unlock(&store_lock);}
+void feature_config_get(feature_config_t *c){pthread_mutex_lock(&store_lock);*c=features;feature_config_limit_peers(c);pthread_mutex_unlock(&store_lock);}
 bool feature_config_save(const feature_config_t *c){pthread_mutex_lock(&store_lock);bool ok=c->revision==features.revision;if(ok){features=*c;++features.revision;}pthread_mutex_unlock(&store_lock);return ok;}
 void automation_load(automation_config_t *c){pthread_mutex_lock(&store_lock);*c=automations;pthread_mutex_unlock(&store_lock);}
 bool automation_save(const automation_config_t *c){pthread_mutex_lock(&store_lock);bool ok=c->revision==automations.revision+1;if(ok)automations=*c;pthread_mutex_unlock(&store_lock);return ok;}
-void state_get(STATE *s){mico_rtos_lock_mutex(&device_lock);
+static void sensor_tick(void){mico_rtos_lock_mutex(&device_lock);
 #ifndef HOST_A1
  if(co2_enabled){device_state.scd40.ready=true;device_state.scd40.received=true;device_state.scd40.updated_ms=mico_rtos_get_time();device_state.scd40.samples=device_state.scd40.updated_ms/1000+1;device_state.scd40.co2_ppm=co2_ppm;device_state.scd40.temperature_milli_c=24500;device_state.scd40.humidity_milli_pct=52300;strcpy(device_state.scd40.serial,"f701a3073b32");}
  if(sensor_enabled){device_state.sample.received=true;device_state.sample.updated_ms=mico_rtos_get_time();device_state.sample.sequence=device_state.sample.updated_ms/1000+1;device_state.sample.temperature_deci_c=sensor_values[0]*10;device_state.sample.humidity_deci_pct=sensor_values[1]*10;device_state.sample.pm25_ug_m3=sensor_values[2];device_state.sample.hcho_ug_m3=sensor_values[3]*1000;}
 #endif
- *s=device_state;mico_rtos_unlock_mutex(&device_lock);}
+ mico_rtos_unlock_mutex(&device_lock);}
+void state_get(STATE *s){mico_rtos_lock_mutex(&device_lock);*s=device_state;mico_rtos_unlock_mutex(&device_lock);}
 json_object *status_json(void){CFG c;STATE s;config_get(&c);state_get(&s);json_object *o=json_object_new_object();json_object_object_add(o,"id",json_object_new_string(device_id));json_object_object_add(o,"mqtt_connected",json_object_new_boolean(s.mqtt_connected));json_object_object_add(o,"mqtt_errors",json_object_new_int(s.mqtt_errors));json_object_object_add(o,"uptime_ms",json_object_new_int(mico_rtos_get_time()));
 #ifdef HOST_A1
  json_object_object_add(o,"requested_fan_on",json_object_new_boolean(c.fan_on));

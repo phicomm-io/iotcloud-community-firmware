@@ -17,3 +17,6 @@ void a1_state_get(a1_state_t *);
 bool a1_control_json(const char *, json_object *);
 
 bool a1_control_local(const char *, json_object *);
+
+extern mico_mutex_t a1_lock;
+extern a1_state_t a1_state;

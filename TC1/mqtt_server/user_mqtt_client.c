@@ -83,6 +83,7 @@ static void MessageArrived(MessageData *md);
 static int ota_service(const char *);
 static int service_sender(const char *,const char *,bool);
 static int service_mqtt_flush(int (*)(const char *,const char *,bool));
+static void service_mqtt_clear(void);
 static int service_mqtt_snapshot(int (*)(const char *,const char *,bool),const mqtt_account_t *);
 static int service_mqtt_capabilities(int (*)(const char *,const char *,bool),const mqtt_account_t *);
 static void ota_forget(void);
@@ -416,6 +417,7 @@ void MqttClientThread(mico_thread_arg_t arg) {
         uint32_t acl_check=mico_rtos_get_time(); rediscover=false;
         if(rc==MQTT_SUCCESS) { isconnect=true; tc1_mqtt_status=MQTT_READY; attempt=0; cleanup_pending=true; }
         while(rc==MQTT_SUCCESS && !mqtt_thread_should_exit && session_current()) {
+            if(account.mode){rc=service_mqtt_flush(service_sender);if(rc!=MQTT_SUCCESS)break;}
             if(!ota_job_active() && account.mode && (uint32_t)(mico_rtos_get_time()-snapshot_at)>=5000){snapshot_at=mico_rtos_get_time();rc=service_mqtt_snapshot(service_sender,&account);if(rc!=MQTT_SUCCESS)break;}
             rc=ota_service(account.base);if(rc!=MQTT_SUCCESS)break;
             if(ota_job_active()){rc=service_mqtt_flush(service_sender);if(rc!=MQTT_SUCCESS)break;rc=MQTTYield(&c,100);mico_thread_msleep(50);continue;}
@@ -435,8 +437,10 @@ void MqttClientThread(mico_thread_arg_t arg) {
             }
             if(rc==MQTT_SUCCESS && account.mode) rc=service_mqtt_flush(service_sender);
             if(rc==MQTT_SUCCESS) rc=MQTTYield(&c,100);
+            if(rc==MQTT_SUCCESS && account.mode) rc=service_mqtt_flush(service_sender);
             mico_rtos_thread_msleep(50);
         }
+        service_mqtt_clear();
         if(rc!=MQTT_SUCCESS) mqtt_log("MQTT failed stage=%s rc=%d heap=%lu retry=%u", stage, rc, (unsigned long)MicoGetMemoryInfo()->free_memory, attempt);
         isconnect=false;
         if(!session_current())ota_forget();

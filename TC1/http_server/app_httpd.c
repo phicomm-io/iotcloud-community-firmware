@@ -64,6 +64,9 @@ const char *phicomm_http_cors(const char *origin){return phicomm_cors_headers(or
 #include "mqtt_server/user_mqtt_client.h"
 #include "json.h"
 #include "json_buffer.h"
+#include "printbuf.h"
+#include "json_heap.h"
+#include "../../common/memory_wait.h"
 
 /* Parse headers once, reject truncation/chunked bodies and read all fragments.
  * capacity includes the terminator. An incomplete request never mutates config. */
@@ -292,21 +295,81 @@ static int HttpGetTc1Status(httpd_request_t *req) {
     json_object *o=tc1_status_json();if(!o)return kNoMemoryErr;
     const char *s=json_object_to_json_string(o);int rc=response_json(req,HTTP_RES_200,s,strlen(s));json_object_put(o);return rc;
 }
-int phicomm_http_client_limit(void){return ota_job_active()?2:5;}
-static int HttpV1Reply(httpd_request_t *req,json_object *o){if(ota_job_active())mico_thread_msleep(10);if(!o)return kNoMemoryErr;const char *s=json_object_to_json_string(o);int rc=response_json(req,HTTP_RES_200,s,strlen(s));json_object_put(o);return rc;}
-static int HttpV1Info(httpd_request_t *r){return HttpV1Reply(r,service_query("info.get"));}
-static int HttpV1Status(httpd_request_t *r){return HttpV1Reply(r,service_query("status.get"));}
-static int HttpV1Capabilities(httpd_request_t *r){return HttpV1Reply(r,service_query("capabilities.get"));}
-static int HttpV1Config(httpd_request_t *r){return HttpV1Reply(r,service_query("config.get"));}
-static int HttpV1Schedules(httpd_request_t *r){return HttpV1Reply(r,service_query("schedules.get"));}
-static int HttpV1Logs(httpd_request_t *r){return HttpV1Reply(r,service_query("logs.get"));}
+/* Bound SDK RX storage while allowing a completed browser socket to close. */
+int phicomm_http_client_limit(void){return 2;}
+static int HttpV1Busy(httpd_request_t *r){
+    static const char busy[]="{\"code\":\"busy\"}";
+    return response_json(r,"HTTP/1.1 503 Service Unavailable\r\n",busy,sizeof(busy)-1);
+}
+/* A rejected POST still has unread TCP data. Consume only bounded bytes
+ * without heap storage before the SDK closes the socket, avoiding a reset
+ * which can hide an otherwise complete busy response from the peer. */
+static int HttpV1CommandBusy(httpd_request_t *r){
+    int rc=HttpV1Busy(r);
+    if(rc || r->remaining_bytes<=0 || fcntl(r->sock,F_SETFL,O_NONBLOCK)!=0)return rc;
+    uint32_t deadline=mico_rtos_get_time()+100u;
+    char discard[128];
+    for(unsigned reads=0;reads<64 && r->remaining_bytes>0;reads++){
+        uint32_t now=mico_rtos_get_time();
+        if((int32_t)(now-deadline)>=0)break;
+        fd_set readable;FD_ZERO(&readable);FD_SET(r->sock,&readable);
+        struct timeval tv={0,(deadline-now)*1000};
+        if(select(r->sock+1,&readable,NULL,NULL,&tv)<=0)break;
+        size_t n=r->remaining_bytes<(int)sizeof(discard)?(size_t)r->remaining_bytes:sizeof(discard);
+        int got=recv(r->sock,discard,n,0);
+        if(got<=0)break;
+        r->remaining_bytes-=got;
+    }
+    return rc;
+}
+static int HttpV1Reply(httpd_request_t *req,json_object *o){
+    if(ota_job_active())mico_thread_msleep(10);
+    struct printbuf *wire=o?json_object_to_json_string_ex(o):NULL;
+    if(o)json_object_put(o);
+    if(!wire)return HttpV1Busy(req);
+    int rc=response_json(req,HTTP_RES_200,wire->buf,wire->bpos);
+    printbuf_free(wire);return rc;
+}
+static int HttpV1Query(httpd_request_t *r,const char *action){
+    unsigned claim=service_memory_wait(0);if(!claim)return HttpV1Busy(r);
+    int rc=HttpV1Reply(r,service_query(action));service_memory_release(claim);return rc;
+}
+static int HttpV1Info(httpd_request_t *r){return HttpV1Query(r,"info.get");}
+static int HttpV1Status(httpd_request_t *r){return HttpV1Query(r,"status.get");}
+static int HttpV1Capabilities(httpd_request_t *r){return HttpV1Query(r,"capabilities.get");}
+static int HttpV1Config(httpd_request_t *r){return HttpV1Query(r,"config.get");}
+static int HttpV1Schedules(httpd_request_t *r){return HttpV1Query(r,"schedules.get");}
+static int HttpV1Logs(httpd_request_t *r){return HttpV1Query(r,"logs.get");}
+static int HttpV1Memory(httpd_request_t *r){
+    const micoMemInfo_t *m=MicoGetMemoryInfo();if(!m)return HttpV1Busy(r);
+    micoMemInfo_t snapshot=*m;service_memory_state_t b;service_memory_snapshot(&b);
+    char out[768];int n=snprintf(out,sizeof(out),
+        "{\"code\":\"ok\",\"data\":{\"free_memory\":%d,\"allocated_memory\":%d,"
+        "\"free_memory_chunks\":%d,\"uptime_ms\":%lu,\"memory_reserve\":%u,"
+        "\"memory_reserved\":%lu,\"memory_active\":%lu,\"memory_waiting\":%lu,"
+        "\"memory_denied\":%lu,\"minimum_sampled_free\":%lu,"
+        "\"json_live_blocks\":%lu,\"json_peak_blocks\":%lu,\"json_alloc_failures\":%lu,\"json_guard_denied\":%lu,"
+        "\"mqtt_pending\":%lu,\"mqtt_peak\":%lu,\"mqtt_overflow\":%lu,\"mqtt_max_delay_ms\":%lu}}",
+        snapshot.free_memory,snapshot.allocted_memory,snapshot.num_of_chunks,
+        (unsigned long)mico_rtos_get_time(),SERVICE_MEMORY_RESERVE,
+        (unsigned long)b.reserved,(unsigned long)b.active,(unsigned long)b.waiting,
+        (unsigned long)b.denied,(unsigned long)b.minimum_free,
+        (unsigned long)b.json_live,(unsigned long)b.json_peak,
+        (unsigned long)b.json_failed,(unsigned long)b.json_denied,
+        (unsigned long)b.mqtt_pending,(unsigned long)b.mqtt_peak,
+        (unsigned long)b.mqtt_overflow,(unsigned long)b.mqtt_max_delay);
+    return n>0 && (size_t)n<sizeof(out)?response_json(r,HTTP_RES_200,out,n):HttpV1Busy(r);
+}
 static int HttpV1Command(httpd_request_t *r){
     int rc=read_headers(r);
     if(rc || r->chunked || r->remaining_bytes<1 || r->remaining_bytes>(ota_job_active()?1024:8192))return kParamErr;
+    unsigned claim=service_memory_wait(r->remaining_bytes);if(!claim)return HttpV1CommandBusy(r);
     size_t capacity=(size_t)r->remaining_bytes+1;
-    char *body=malloc(capacity);if(!body)return kNoMemoryErr;
-    rc=read_body(r,body,capacity);json_object *request=rc?NULL:service_parse(body,strlen(body));free(body);
-    json_object *reply=service_command(request);if(request)json_object_put(request);return HttpV1Reply(r,reply);
+    uint64_t failures=service_memory_failures();
+    char *body=json_heap_malloc(capacity);if(!body){service_memory_release(claim);return HttpV1CommandBusy(r);}
+    rc=read_body(r,body,capacity);json_object *request=rc?NULL:service_parse(body,strlen(body));json_heap_free(body);
+    json_object *reply=service_memory_failures()==failures?service_command(request):NULL;if(request)json_object_put(request);
+    rc=HttpV1Reply(r,reply);service_memory_release(claim);return rc;
 }
 
 static int HttpSetSocketStatus(httpd_request_t *req) {
@@ -1111,6 +1174,7 @@ static int HttpScheduleSet(httpd_request_t *req) {
 }
 
 const struct httpd_wsgi_call g_app_handlers[] = {
+    {"/api/v1/memory", HTTPD_HDR_DEFORT, 0, HttpV1Memory, NULL, NULL, NULL},
     {"/api/v1/info", HTTPD_HDR_DEFORT, 0, HttpV1Info, NULL, NULL, NULL},
     {"/api/v1/status", HTTPD_HDR_DEFORT, 0, HttpV1Status, NULL, NULL, NULL},
     {"/api/v1/capabilities", HTTPD_HDR_DEFORT, 0, HttpV1Capabilities, NULL, NULL, NULL},

@@ -11,9 +11,15 @@
 #include <errno.h>
 #include "../common/runtime_metrics.h"
 #include <limits.h>
+#include "../common/memory_wait.h"
 
-#define HTTP_PENDING_CLIENTS 8u
-#define HTTP_TCP_CLIENT_LIMIT 24
+static void query_response(int fd, const char *action);
+static void command_response(int fd, uint32_t length);
+static void memory_busy(int fd);
+
+/* Browser API reads are queued; retain at most two inbound TCP bodies. */
+#define HTTP_PENDING_CLIENTS 1u
+#define HTTP_TCP_CLIENT_LIMIT 2
 #define HTTP_RESPONSE_TIMEOUT_MS 10000u
 #define HTTP_SEND_CHUNK_SIZE 1024u
 
@@ -356,7 +362,10 @@ json_object *m1_status_json(void)
 
 static void send_json(int fd, json_object *o)
 {
-    if (!o) { message(fd, 500, "Out of memory"); return; }
+    if (!o) {
+        static const char busy[] = "{\"code\":\"busy\"}";
+        response(fd, 503, "application/json", busy, sizeof(busy)-1, false); return;
+    }
     const char *body = json_object_to_json_string(o);
     if (!body) {
         static const char busy[] = "{\"code\":\"busy\"}";
@@ -369,7 +378,7 @@ static void send_json(int fd, json_object *o)
 static json_object *read_json(int fd, uint32_t length)
 {
     if (!length || length > M1_JSON_LIMIT) return NULL;
-    char *body = malloc(length + 1);
+    char *body = json_heap_malloc(length + 1);
     if (!body) return NULL;
     size_t received = 0;
     uint32_t deadline = mico_rtos_get_time() + 15000;
@@ -380,7 +389,7 @@ static json_object *read_json(int fd, uint32_t length)
     }
     body[received] = 0;
     json_object *o = received == length && !memchr(body, 0, received) ? service_parse(body,received) : NULL;
-    free(body);
+    json_heap_free(body);
     if (o && !json_object_is_type(o, json_type_object)) { json_object_put(o); o = NULL; }
     return o;
 }
@@ -469,12 +478,21 @@ static void memory_response(int fd)
         return;
     }
     micoMemInfo_t snapshot = *memory;
-    char body[256];
+    service_memory_state_t budget; service_memory_snapshot(&budget);
+    char body[640];
     int length = snprintf(body, sizeof(body),
         "{\"code\":\"ok\",\"data\":{\"free_memory\":%d,\"allocated_memory\":%d,"
-        "\"free_memory_chunks\":%d,\"uptime_ms\":%lu}}",
+        "\"free_memory_chunks\":%d,\"uptime_ms\":%lu,\"memory_reserve\":%u,"
+        "\"memory_reserved\":%lu,\"memory_active\":%lu,\"memory_waiting\":%lu,"
+        "\"memory_denied\":%lu,\"minimum_sampled_free\":%lu,"
+        "\"json_live_blocks\":%lu,\"json_peak_blocks\":%lu,\"json_alloc_failures\":%lu,\"json_guard_denied\":%lu}}",
         snapshot.free_memory, snapshot.allocted_memory, snapshot.num_of_chunks,
-        (unsigned long)mico_rtos_get_time());
+        (unsigned long)mico_rtos_get_time(), SERVICE_MEMORY_RESERVE,
+        (unsigned long)budget.reserved, (unsigned long)budget.active,
+        (unsigned long)budget.waiting, (unsigned long)budget.denied,
+        (unsigned long)budget.minimum_free,
+        (unsigned long)budget.json_live, (unsigned long)budget.json_peak,
+        (unsigned long)budget.json_failed, (unsigned long)budget.json_denied);
     if (length > 0 && (size_t)length < sizeof(body))
         response(fd, 200, "application/json", body, (size_t)length, false);
 }
@@ -493,13 +511,12 @@ static void handle(int fd)
         if (!strcmp(req.method, "GET")) {
             if (!strcmp(req.path, "/api/v1/memory")) { memory_response(fd); return; }
             const char *action = !strcmp(req.path,"/api/v1/info")?"info.get":!strcmp(req.path,"/api/v1/status")?"status.get":!strcmp(req.path,"/api/v1/capabilities")?"capabilities.get":!strcmp(req.path,"/api/v1/config")?"config.get":!strcmp(req.path,"/api/v1/logs")?"logs.get":!strcmp(req.path,"/api/v1/schedules")?"schedules.get":NULL;
-            if(action) send_json(fd,service_query(action)); else message(fd,404,"Not found");
+            if(action) query_response(fd,action); else message(fd,404,"Not found");
             return;
         }
         if (!strcmp(req.method,"POST") && !strcmp(req.path,"/api/v1/command")) {
             if(ota_job_active() && req.length>1024){message(fd,409,"OTA in progress");return;}
-            json_object *request=read_json(fd,req.length),*reply=service_command(request);
-            if(request)json_object_put(request);send_json(fd,reply);return;
+            command_response(fd,req.length);return;
         }
         if (strcmp(req.path,"/api/v1/ota/upload") && strcmp(req.path,"/api/v1/ota/upload-unsigned")) { message(fd,404,"Not found");return; }
         strcpy(req.path,!strcmp(req.path,"/api/v1/ota/upload")?"/ota/fileUpload":"/ota/fileUploadUnsigned");
@@ -528,6 +545,49 @@ static void handle(int fd)
         return;
     }
     message(fd,404,"Not found");
+}
+
+/* Waiting retains only the accepted descriptor and stack metadata. The
+ * already bounded FIFO remains owned by the single HTTP request worker. */
+static void memory_busy(int fd)
+{
+    static const char busy[] = "{\"code\":\"busy\"}";
+    response(fd,503,"application/json",busy,sizeof(busy)-1,false);
+}
+/* A busy POST must not leave its body queued in the TCP stack at close. */
+static void memory_busy_body(int fd,uint32_t remaining)
+{
+    memory_busy(fd);
+    if(!remaining || fcntl(fd,F_SETFL,O_NONBLOCK)!=0)return;
+    uint32_t deadline=mico_rtos_get_time()+100u;
+    char discard[128];
+    for(unsigned reads=0;reads<64 && remaining;reads++){
+        uint32_t now=mico_rtos_get_time();
+        if((int32_t)(now-deadline)>=0)break;
+        fd_set readable;FD_ZERO(&readable);FD_SET(fd,&readable);
+        struct timeval tv={0,(deadline-now)*1000};
+        if(select(fd+1,&readable,NULL,NULL,&tv)<=0)break;
+        size_t n=remaining<sizeof(discard)?remaining:sizeof(discard);
+        int got=recv(fd,discard,n,0);
+        if(got<=0)break;
+        remaining-=(unsigned)got;
+    }
+}
+static void query_response(int fd, const char *action)
+{
+    unsigned claim=service_memory_wait(0);
+    if(!claim){memory_busy(fd);return;}
+    send_json(fd,service_query(action));service_memory_release(claim);
+}
+static void command_response(int fd, uint32_t length)
+{
+    unsigned claim=service_memory_wait(length <= M1_JSON_LIMIT ? length : 0);
+    if(!claim){memory_busy_body(fd,length);return;}
+    uint64_t failures=service_memory_failures();
+    json_object *request=read_json(fd,length);
+    json_object *reply=service_memory_failures()==failures?service_command(request):NULL;
+    if(request)json_object_put(request);
+    send_json(fd,reply);service_memory_release(claim);
 }
 
 /* Keep accept responsive while the single request worker reads a slow client.
@@ -572,7 +632,7 @@ static void http_accept_worker(mico_thread_arg_t arg)
         "Connection: close\r\n\r\n{\"code\":\"busy\"}";
     for (;;) {
         /* Bound queued TCP buffers during OTA; only this thread owns listener. */
-        int wanted=ota_job_active()?4:HTTP_TCP_CLIENT_LIMIT;
+        int wanted=ota_job_active()?2:HTTP_TCP_CLIENT_LIMIT;
         if(wanted!=clients){
             int rc=setsockopt(listener,IPPROTO_TCP,TCP_MAX_CONN_NUM,&wanted,sizeof(wanted));
             if(rc==0)clients=wanted;
@@ -637,6 +697,8 @@ static void http_accept_worker(mico_thread_arg_t arg)
         }
         http_accept_count(&http_accept_overflow_close);
         close(fd);
+        /* Let the network owner/ACK timers progress under continuous overflow. */
+        mico_thread_msleep(1);
     }
 }
 

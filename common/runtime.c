@@ -18,19 +18,15 @@
 static mico_mutex_t feature_lock;
 static mico_mutex_t namespace_lock;
 static mqtt_account_t feature_account;
+static uint32_t mqtt_generation;
 static int publish_error;
 static mqtt_account_t mqtt_snapshot(void) {
   mqtt_account_t a;
   mico_rtos_lock_mutex(&namespace_lock); a = feature_account;
   mico_rtos_unlock_mutex(&namespace_lock); return a;
 }
-static bool scoped_topic(const char *topic) {
-  mqtt_account_t a=mqtt_snapshot();char prefix[160];mqtt_format(prefix,sizeof(prefix),"phicomm/v2/%s/",a.key);
-  return !strncmp(topic,prefix,strlen(prefix));
-}
-
 static feature_config_t configuration;
-static feature_sample_t samples[8], local_sample;
+static feature_sample_t samples[FEATURE_MAX_PEERS], local_sample;
 static feature_pid_t pid;
 static void reset_controller(bool preserve_gate);
 static uint32_t boot_id, serial, announce_at, handshake_at;
@@ -63,9 +59,12 @@ typedef struct {
   bool session_valid;
 #endif
 } peer_runtime_t;
-static peer_runtime_t peers[8];
+static peer_runtime_t peers[FEATURE_MAX_PEERS];
 static struct {
-  char topic[FEATURE_TOPIC_MAX];
+  /* Relative destination under the session's account namespace. The longest
+   * current route is a 33-byte group encoded as hex plus a domain/state leaf. */
+  char destination[128];
+  uint32_t generation;
   char *body;
   bool retained;
 } queue[4];
@@ -76,7 +75,7 @@ static bool mqtt_online;
 #ifdef FEATURE_DEVICE_A1
 static uint32_t mqtt_tick;
 static bool was_coordinator;
-static char published_root[FEATURE_TOPIC_MAX], published_ids[8][13];
+static char published_root[FEATURE_TOPIC_MAX], published_ids[FEATURE_MAX_PEERS][13];
 static feature_config_t *published_layout;
 static unsigned published_count;
 static unsigned published_sensors;
@@ -100,7 +99,15 @@ static bool peer_current(const feature_config_t *c, unsigned i) {
 }
 
 static bool enqueue(const char *t, json_object *o, bool retain) {
-  if (!o || !scoped_topic(t)) return false;
+  if (!o) return false;
+  char prefix[160];uint32_t generation;
+  mico_rtos_lock_mutex(&namespace_lock);
+  mqtt_format(prefix,sizeof(prefix),"phicomm/v2/%s/",feature_account.key);
+  generation=mqtt_generation;
+  mico_rtos_unlock_mutex(&namespace_lock);
+  size_t prefix_length=strlen(prefix);
+  if (strncmp(t,prefix,prefix_length) ||
+      strlen(t+prefix_length)>=sizeof(queue[0].destination)) return false;
   const char *s = json_object_to_json_string(o);
   if (!s) return false;
   size_t n = strlen(s);
@@ -116,7 +123,8 @@ static bool enqueue(const char *t, json_object *o, bool retain) {
     free(b);
     return false;
   }
-  mqtt_format(queue[queued].topic, FEATURE_TOPIC_MAX, "%s", t);
+  strcpy(queue[queued].destination,t+prefix_length);
+  queue[queued].generation=generation;
   queue[queued].body = b;
   queue[queued].retained = retain;
   queued++;
@@ -290,6 +298,7 @@ static bool send_peer(const feature_config_t *c, unsigned i, json_object *o,
 static void group_config_changed(const feature_config_t *,
                                  const feature_config_t *);
 static bool install_config(feature_config_t *c) {
+  if (c->peer_count > FEATURE_MAX_PEERS) return false;
   for (unsigned i = 0; i < c->peer_count; i++) {
 #ifdef FEATURE_DEVICE_A1
     unsigned n = 0;
@@ -314,8 +323,8 @@ static bool install_config(feature_config_t *c) {
     return false;
   c->revision++;
   struct mapping {
-    feature_sample_t samples[8];
-    peer_runtime_t peers[8];
+    feature_sample_t samples[FEATURE_MAX_PEERS];
+    peer_runtime_t peers[FEATURE_MAX_PEERS];
   } *next = calloc(1, sizeof(*next));
   lock();
   if (next) {
@@ -327,9 +336,9 @@ static bool install_config(feature_config_t *c) {
           next->peers[i] = peers[j];
           break;
         }
-    for (unsigned j = 0; j < 8; j++) {
+    for (unsigned j = 0; j < FEATURE_MAX_PEERS; j++) {
       bool retained = false;
-      for (unsigned i = 0; i < 8; i++)
+      for (unsigned i = 0; i < FEATURE_MAX_PEERS; i++)
         retained |= next->peers[i].rpc && next->peers[i].rpc == peers[j].rpc;
       if (!retained && peers[j].rpc)
         json_object_put(peers[j].rpc);
@@ -337,7 +346,7 @@ static bool install_config(feature_config_t *c) {
     memcpy(samples, next->samples, sizeof(samples));
     memcpy(peers, next->peers, sizeof(peers));
   } else {
-    for (unsigned i = 0; i < 8; i++)
+    for (unsigned i = 0; i < FEATURE_MAX_PEERS; i++)
       if (peers[i].rpc)
         json_object_put(peers[i].rpc);
     memset(samples, 0, sizeof(samples));
@@ -384,7 +393,7 @@ static json_object *average_body(const feature_sample_t *current, unsigned count
   json_object *o = json_object_new_object();
   number(o, "sample_count", n);
   float co2=0; unsigned nc=feature_co2_aggregate(current,count,now,STAT_MEAN,&co2);
-  bool supported=false; for(unsigned i=0;i<count && i<8;i++) supported |= current[i].co2_supported;
+  bool supported=false; for(unsigned i=0;i<count && i<FEATURE_MAX_PEERS;i++) supported |= current[i].co2_supported;
   json_build_object_add(o,"co2_supported",json_object_new_boolean(supported));
   json_build_object_add(o,"co2_valid",json_object_new_boolean(nc != 0));
   number(o,"co2_sample_count",nc);
@@ -428,11 +437,11 @@ static void passive_incoming(json_object *o, bool lan, bool retained, const char
   unlock();
   if (permitted) {
     json_object *r = envelope(c, i, handshake ? "bound" : !strcmp(op,"probe") ? "pong" : "sample", integer(o,"id"));
-    m1_state_t *state = malloc(sizeof(*state));
-    if (!r || !state) { if (r) json_object_put(r); free(state); free(c); return; }
-    m1_state_get(state);
-    js(r, "ip", state->ip);
-    free(state);
+    if (!r) { free(c); return; }
+    char local_ip[sizeof(m1_state.ip)];
+    mico_rtos_lock_mutex(&m1_lock);memcpy(local_ip,m1_state.ip,sizeof(local_ip));
+    mico_rtos_unlock_mutex(&m1_lock);
+    js(r, "ip", local_ip);
     if (!strcmp(op,"read")) json_build_object_add(r,"body",sample_body(&sample,now_ms()));
     if (lan) send_udp(ip,r); else send_peer(c,i,r,true);
     json_object_put(r);
@@ -466,7 +475,7 @@ static void incoming(json_object *o, bool lan, bool retained, const char *ip) {
     if (!token_read(string(o, "token"), token))
       goto done;
     if (i == c->peer_count) {
-      if (i == 8)
+      if (i >= FEATURE_MAX_PEERS)
         goto done;
       memset(&c->peers[i], 0, sizeof(c->peers[i]));
       strcpy(c->peers[i].id, src);
@@ -699,7 +708,7 @@ json_object *feature_json(const char *d) {
   json_object *o;
 #ifdef FEATURE_DEVICE_A1
   if (!strcmp(d, "average")) {
-    feature_sample_t current[8];
+    feature_sample_t current[FEATURE_MAX_PEERS];
     lock(); memcpy(current, samples, sizeof(current)); unlock();
     o = average_body(current, c->peer_count, now_ms());
   } else
@@ -775,6 +784,7 @@ json_object *feature_json(const char *d) {
       json_build_array_add(ids,json_object_new_string(id));
     }
     json_build_object_add(o,"response_ids",ids);
+    number(o,"max_peers",FEATURE_MAX_PEERS);
   }
   free(c);
   return o;
@@ -797,8 +807,8 @@ int feature_set(const char *d, json_object *o, json_object **response) {
   }
   if (!strcmp(d,"binding")) {
     json_object *ids=json_object_object_get(o,"response_ids");
-    bool valid=ids && json_object_is_type(ids,json_type_array) && json_object_array_length(ids)<=8;
-    feature_peer_t allowed[8]; memset(allowed,0,sizeof(allowed)); unsigned count=0;
+    bool valid=ids && json_object_is_type(ids,json_type_array) && json_object_array_length(ids)<=FEATURE_MAX_PEERS;
+    feature_peer_t allowed[FEATURE_MAX_PEERS]; memset(allowed,0,sizeof(allowed)); unsigned count=0;
     for (unsigned i=0; valid && i<(unsigned)json_object_array_length(ids); i++) {
       json_object *v=json_object_array_get_idx(ids,i);
       const char *id=json_object_get_string(v);
@@ -810,7 +820,7 @@ int feature_set(const char *d, json_object *o, json_object **response) {
       bool duplicate=false;for(unsigned j=0;j<count;j++) duplicate|=!strcmp(allowed[j].id,mac);
       if (!duplicate) {strcpy(allowed[count].id,mac);allowed[count++].kind=FEATURE_A1;}
     }
-    if (valid) {c->peer_count=count;memcpy(c->peers,allowed,sizeof(allowed));valid=install_config(c);}
+    if (valid) {c->peer_count=count;memset(c->peers,0,sizeof(c->peers));memcpy(c->peers,allowed,sizeof(allowed));valid=install_config(c);}
     *response=json_object_new_object();number(*response,"code",valid?200:400);
     free(c);return valid?200:400;
   }
@@ -1068,25 +1078,37 @@ void feature_light_frame(uint32_t out[32], unsigned brightness, bool enabled,
           (b * brightness / (original_brightness ? original_brightness : 1));
     }
 }
-unsigned feature_mqtt_filters(char filters[12][FEATURE_TOPIC_MAX]) {
+unsigned feature_mqtt_filters(char filters[][FEATURE_TOPIC_MAX], unsigned capacity) {
   mqtt_account_t a=mqtt_snapshot();unsigned n=0;
-  feature_config_t *c=malloc(sizeof(*c));if(!c)return 0;feature_config_get(c);
+  feature_config_t *c=malloc(sizeof(*c));if(!c)return FEATURE_MQTT_FILTER_ERROR;feature_config_get(c);
+#ifdef FEATURE_DEVICE_A1
+  unsigned required=3u+(c->peer_count || c->group[0] ? 1u : 0u);
+#else
+  unsigned required=c->peer_count<FEATURE_MQTT_M1_FILTER_MAX?c->peer_count:FEATURE_MQTT_M1_FILTER_MAX;
+#endif
+  if(capacity<required){free(c);return FEATURE_MQTT_FILTER_ERROR;}
 #ifdef FEATURE_DEVICE_A1
   mqtt_link_topic(&a,"a1",LOCAL_ID,"+","response",filters[n++],FEATURE_TOPIC_MAX);
   mqtt_link_topic(&a,"a1",LOCAL_ID,"+","request",filters[n++],FEATURE_TOPIC_MAX);
   mqtt_aux(&a,"address","+",filters[n++],FEATURE_TOPIC_MAX);
-  if(c->peer_count || c->group[0]) {char root[FEATURE_TOPIC_MAX];root_for(c,0,root);mqtt_format(filters[n++],FEATURE_TOPIC_MAX,"%s/#",root);}
+  if(required==4) {char root[FEATURE_TOPIC_MAX];root_for(c,0,root);mqtt_format(filters[n++],FEATURE_TOPIC_MAX,"%s/#",root);}
 #else
-  for(unsigned i=0;i<c->peer_count && i<8;i++)mqtt_link_topic(&a,"m1",LOCAL_ID,c->peers[i].id,"request",filters[n++],FEATURE_TOPIC_MAX);
+  for(unsigned i=0;i<required;i++)mqtt_link_topic(&a,"m1",LOCAL_ID,c->peers[i].id,"request",filters[n++],FEATURE_TOPIC_MAX);
 #endif
   free(c);return n;
 }
-/* Reconnect only when the subscription set changes, not on every rule save.
- * Keep the 12-topic comparison off the nested MQTT callback stack. */
-bool feature_mqtt_filters_current(char filters[12][FEATURE_TOPIC_MAX], unsigned count) {
-  char (*next)[FEATURE_TOPIC_MAX] = calloc(12, FEATURE_TOPIC_MAX);
+/* Reconnect only when the subscription set changes. Bound temporary storage
+ * to the product's real maximum, outside the nested MQTT callback stack. */
+bool feature_mqtt_filters_current(char filters[][FEATURE_TOPIC_MAX], unsigned count) {
+#ifdef FEATURE_DEVICE_A1
+  const unsigned capacity=FEATURE_MQTT_A1_FILTER_MAX;
+#else
+  const unsigned capacity=FEATURE_MQTT_M1_FILTER_MAX;
+#endif
+  if(count>capacity)return false;
+  char (*next)[FEATURE_TOPIC_MAX] = calloc(capacity, FEATURE_TOPIC_MAX);
   if (!next) return false;
-  unsigned n = feature_mqtt_filters(next);
+  unsigned n = feature_mqtt_filters(next,capacity);
   bool same = n == count;
   for (unsigned i = 0; same && i < n; ++i)
     same = !strcmp(filters[i], next[i]);
@@ -1193,19 +1215,22 @@ void feature_mqtt_session(const mqtt_account_t *account) {
   bool changed=feature_account.mode!=account->mode || strcmp(feature_account.key,account->key) ||
       strcmp(feature_account.model,account->model) || strcmp(feature_account.mac,account->mac);
   feature_account = *account;
+  ++mqtt_generation;
   mico_rtos_unlock_mutex(&namespace_lock);
   lock();
   for (unsigned i=0; i<queued; ++i) free(queue[i].body);
   queued=queued_bytes=0; mqtt_online=false;
   /* A pending LAN RPC must not fall back into a different MQTT session. */
-  for (unsigned i=0; i<8; ++i) {
+  for (unsigned i=0; i<FEATURE_MAX_PEERS; ++i) {
     if (peers[i].rpc) json_object_put(peers[i].rpc);
     peers[i].rpc=NULL;
+  }
 #ifdef FEATURE_DEVICE_A1
+  for (unsigned i=0; i<8; ++i) {
     if (group_members[i].pending) json_object_put(group_members[i].pending);
     group_members[i].pending=NULL;
-#endif
   }
+#endif
 #ifdef FEATURE_DEVICE_A1
   mqtt_tick=0;
   if(changed) {
@@ -1213,7 +1238,7 @@ void feature_mqtt_session(const mqtt_account_t *account) {
     free(published_layout); published_layout=NULL;
   }
 #else
-  if(changed) for(unsigned i=0;i<8;i++) {
+  if(changed) for(unsigned i=0;i<FEATURE_MAX_PEERS;i++) {
     peers[i].session_valid=false;memset(peers[i].session_token,0,16);
   }
 #endif
@@ -1229,16 +1254,22 @@ int feature_mqtt_service(int (*publish)(const char *, const char *, bool), bool 
   active_publish=publish; publish_error=0;
   virtual_service(checked_publish);
   for (unsigned i=0; i<4 && !publish_error; ++i) {
-    char topic[FEATURE_TOPIC_MAX]; char *body=NULL; bool retained=false;
+    char topic[FEATURE_TOPIC_MAX],destination[sizeof(queue[0].destination)];
+    uint32_t generation=0;char *body=NULL; bool retained=false;
     lock();
     if (queued) {
-      strcpy(topic,queue[0].topic); body=queue[0].body; retained=queue[0].retained;
+      strcpy(destination,queue[0].destination);generation=queue[0].generation;
+      body=queue[0].body; retained=queue[0].retained;
       queued--; queued_bytes-=strlen(body)+1;
       memmove(queue,queue+1,queued*sizeof(queue[0]));
     }
     unlock();
     if (!body) break;
-    if (scoped_topic(topic)) checked_publish(topic,body,retained);
+    mico_rtos_lock_mutex(&namespace_lock);
+    bool valid=generation==mqtt_generation &&
+        mqtt_format(topic,sizeof(topic),"phicomm/v2/%s/%s",feature_account.key,destination);
+    mico_rtos_unlock_mutex(&namespace_lock);
+    if (valid) checked_publish(topic,body,retained);
     free(body);
   }
   return publish_error;
@@ -1301,12 +1332,22 @@ static void feature_worker(mico_thread_arg_t arg) {
     uint32_t now = now_ms();
     feature_config_get(c);
 #ifdef FEATURE_DEVICE_A1
-    a1_state_t state;
-    a1_state_get(&state);
+    struct { bool mqtt_connected; char ip[16]; } state;
+    mico_rtos_lock_mutex(&a1_lock);
+    state.mqtt_connected=a1_state.mqtt_connected;memcpy(state.ip,a1_state.ip,sizeof(state.ip));
+    mico_rtos_unlock_mutex(&a1_lock);
 
 #else
-    m1_state_t state;
-    m1_state_get(&state);
+    struct {
+      m1_sample_t sample;
+      struct { bool ready, received; uint16_t co2_ppm; uint32_t updated_ms, samples; } scd40;
+    } state;
+    mico_rtos_lock_mutex(&m1_lock);
+    state.sample=m1_state.sample;
+    state.scd40.ready=m1_state.scd40.ready;state.scd40.received=m1_state.scd40.received;
+    state.scd40.co2_ppm=m1_state.scd40.co2_ppm;state.scd40.updated_ms=m1_state.scd40.updated_ms;
+    state.scd40.samples=m1_state.scd40.samples;
+    mico_rtos_unlock_mutex(&m1_lock);
     feature_sample_t local;
     memset(&local, 0, sizeof(local));
     local.value[0] = state.sample.temperature_deci_c / 10.0f;
@@ -1451,7 +1492,7 @@ static void feature_worker(mico_thread_arg_t arg) {
 #ifdef FEATURE_DEVICE_A1
     if ((uint32_t)(now - tick_at) >= 5000) {
       tick_at = now;
-      feature_sample_t current[8];
+      feature_sample_t current[FEATURE_MAX_PEERS];
       lock();
       memcpy(current, samples, sizeof(current));
       unlock();
@@ -1503,13 +1544,13 @@ static void feature_worker(mico_thread_arg_t arg) {
   lock();
   for(unsigned i=0;i<queued;i++)free(queue[i].body);
   queued=queued_bytes=0;
-  for(unsigned i=0;i<8;i++){
+  for(unsigned i=0;i<FEATURE_MAX_PEERS;i++){
     if(peers[i].rpc)json_object_put(peers[i].rpc);peers[i].rpc=NULL;
-#ifdef FEATURE_DEVICE_A1
-    if(group_members[i].pending)json_object_put(group_members[i].pending);group_members[i].pending=NULL;
-#endif
   }
 #ifdef FEATURE_DEVICE_A1
+  for(unsigned i=0;i<8;i++){
+    if(group_members[i].pending)json_object_put(group_members[i].pending);group_members[i].pending=NULL;
+  }
   free(published_layout);published_layout=NULL;published_root[0]=0;published_count=0;
 #endif
   watchdog_binding_enable(false);
@@ -1823,7 +1864,7 @@ bool feature_ha_device(char *id, size_t id_size, char *name, size_t name_size,
 static unsigned discovery_sensors(const feature_config_t *c) {
   unsigned mask=0;
   lock();
-  for(unsigned i=0;i<c->peer_count && i<8;i++) {
+  for(unsigned i=0;i<c->peer_count && i<FEATURE_MAX_PEERS;i++) {
     if(strcmp(c->peers[i].id,configuration.peers[i].id)) continue;
     if(samples[i].co2_supported) mask |= 1u<<i;
   }
@@ -2046,8 +2087,8 @@ static void virtual_service(int (*publish)(const char *, const char *, bool)) {
     /* These snapshots are only used by the MQTT owner. */
     static a1_config_t cfg;
     a1_config_get(&cfg);
-    static a1_state_t state;
-    a1_state_get(&state);
+    mico_rtos_lock_mutex(&a1_lock);bool led_visible=a1_state.led_visible;
+    mico_rtos_unlock_mutex(&a1_lock);
     unsigned light_brightness = cfg.brightness;
     lock();
     if (sleep_state.light_sleep && light_brightness > sleep_state.brightness)
@@ -2073,7 +2114,7 @@ static void virtual_service(int (*publish)(const char *, const char *, bool)) {
       mqtt_format(b, sizeof(b),
                "{\"state\":\"%s\",\"brightness\":%u,\"color\":{\"r\":%u,\"g\":%"
                "u,\"b\":%u}}",
-               state.led_visible ? "ON" : "OFF", light_brightness, cfg.red,
+               led_visible ? "ON" : "OFF", light_brightness, cfg.red,
                cfg.green, cfg.blue);
       direct_leaf(publish, prefix, "light/state", b, true);
       direct_leaf(publish, prefix, "child_lock/state",
@@ -2083,7 +2124,7 @@ static void virtual_service(int (*publish)(const char *, const char *, bool)) {
       direct_leaf(publish, prefix, "availability", "online", true);
     }
     if (leader) {
-      static feature_sample_t current[8];
+      static feature_sample_t current[FEATURE_MAX_PEERS];
       lock();
       memcpy(current, samples, sizeof(current));
       unlock();
