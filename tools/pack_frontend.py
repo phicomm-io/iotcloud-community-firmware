@@ -1,11 +1,28 @@
 #!/usr/bin/env python3
-"""Embed the verified gzip bytes from the locked frontend release."""
+"""Embed the verified frontend with the firmware HTTP queue adapter."""
 from pathlib import Path
 import hashlib
+import gzip
+import io
 import os
 from frontend_release import fetch
 
 ROOT = Path(__file__).resolve().parents[1]
+
+def adapt_http_queue(data, model):
+    if model not in ('a1', 'm1'):
+        return data
+    html = gzip.decompress(data)
+    marker = b'<head>'
+    if html.count(marker) != 1:
+        raise ValueError('Locked frontend has no unique head insertion point')
+    adapter = (ROOT / 'common/web/http_queue.js').read_bytes()
+    html = html.replace(marker, marker + b'<script>' + adapter + b'</script>', 1)
+    output = io.BytesIO()
+    with gzip.GzipFile(fileobj=output, mode='wb', filename='', mtime=0) as stream:
+        stream.write(html)
+    return output.getvalue()
+
 
 def pack(model):
     if model not in ('tc1', 'm1', 'a1'):
@@ -14,7 +31,7 @@ def pack(model):
     variant = os.environ.get('PHICOMM_FIRMWARE_VARIANT', 'full')
     if variant not in ('full', 'no-frontend-resources'): raise ValueError('Unknown variant')
     page = 'index.html.gz' if variant == 'full' else 'setup.html.gz'
-    data = (bundle / 'devices' / model / page).read_bytes()
+    data = adapt_http_queue((bundle / 'devices' / model / page).read_bytes(), model)
     generated = Path(os.environ.get('PHICOMM_WEB_OUTPUT_DIR', str(ROOT / model.upper() / 'generated')))
     if model == 'tc1':
         output = generated / 'web_data.c'
@@ -30,4 +47,4 @@ def pack(model):
         text = '\n'.join(lines)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(text)
-    print(f'{model.upper()} locked UI {len(data)} bytes gzip, frontend {bundle.name}')
+    print(f'{model.upper()} verified UI {len(data)} bytes gzip, frontend {bundle.name}, HTTP FIFO={model in ("a1", "m1")}')

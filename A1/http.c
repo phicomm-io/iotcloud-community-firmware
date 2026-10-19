@@ -20,9 +20,9 @@ static void command_response(int fd, uint32_t length);
 static void memory_busy(int fd);
 static void light_response(int fd, uint32_t length);
 
-/* Bound retained TCP bodies while accommodating the UI startup reads. */
-#define HTTP_PENDING_CLIENTS 2u
-#define HTTP_TCP_CLIENT_LIMIT 3
+/* Browser API reads are queued; retain at most two inbound TCP bodies. */
+#define HTTP_PENDING_CLIENTS 1u
+#define HTTP_TCP_CLIENT_LIMIT 2
 #define HTTP_RESPONSE_TIMEOUT_MS 10000u
 #define HTTP_SEND_CHUNK_SIZE 1024u
 

@@ -148,12 +148,19 @@ int main(void) {
             page = bundle / 'devices' / self.PRODUCT.lower() / 'index.html.gz'
             page.parent.mkdir(parents=True)
             with patch.object(module, 'ROOT', root), patch.object(module, 'fetch', return_value=bundle):
+                (root / 'common/web').mkdir(parents=True)
+                (root / 'common/web/http_queue.js').write_bytes((ROOT / 'common/web/http_queue.js').read_bytes())
                 previous = None
-                for data in (b'original-gzip', b'updated-gzip'):
+                import gzip
+                for text in (b'original', b'updated'):
+                    data=gzip.compress(b'<html><head></head><body>'+text+b'</body></html>',mtime=0)
                     page.write_bytes(data)
                     module.pack(self.PRODUCT.lower())
                     header = (root / self.PRODUCT / 'generated/web_data.h').read_text()
-                    digest = hashlib.sha256(data).hexdigest()
+                    adapted=module.adapt_http_queue(data,self.PRODUCT.lower())
+                    self.assertIn(b"const nativeFetch=window.fetch.bind(window)",gzip.decompress(adapted))
+                    self.assertEqual(adapted,module.adapt_http_queue(data,self.PRODUCT.lower()))
+                    digest = hashlib.sha256(adapted).hexdigest()
                     self.assertIn(f'#define {self.PRODUCT}_WEB_ETAG "\\\"' + digest + '\\\""', header)
                     self.assertNotEqual(previous, digest)
                     previous = digest

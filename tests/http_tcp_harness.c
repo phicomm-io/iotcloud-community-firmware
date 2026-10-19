@@ -29,7 +29,7 @@ typedef uintptr_t mico_thread_arg_t;
 typedef struct {
     pthread_mutex_t lock;
     pthread_cond_t ready;
-    int fds[2];
+    int fds[1];
     unsigned head, count;
 } mico_queue_t;
 #define kNoErr 0
@@ -82,7 +82,7 @@ static int mico_rtos_create_thread(void *p, int priority, const char *name,
     return rc;
 }
 static int mico_rtos_init_queue(mico_queue_t *q, const char *name, unsigned size, unsigned count) {
-    (void)name; assert(role == 1 && size == sizeof(int) && count == 2);
+    (void)name; assert(role == 1 && size == sizeof(int) && count == 1);
     memset(q, 0, sizeof(*q)); assert(!pthread_mutex_init(&q->lock, NULL));
     assert(!pthread_cond_init(&q->ready, NULL)); return 0;
 }
@@ -91,12 +91,12 @@ static void mico_rtos_deinit_queue(mico_queue_t *q) {
 }
 static int mico_rtos_push_to_queue(mico_queue_t *q, void *value, uint32_t timeout) {
     assert(role == 1 && timeout == 0); pthread_mutex_lock(&q->lock);
-    if (q->count == 2) { pthread_mutex_unlock(&q->lock); return -1; }
+    if (q->count == 1) { pthread_mutex_unlock(&q->lock); return -1; }
     int fd = *(int *)value;
     pthread_mutex_lock(&ledger_lock); assert(owners[fd] == 1); owners[fd] = 2;
     accepted_requests++; if (q->count + 1 > queue_peak) queue_peak = q->count + 1;
     pthread_mutex_unlock(&ledger_lock);
-    q->fds[(q->head + q->count++) % 2] = fd;
+    q->fds[(q->head + q->count++) % 1] = fd;
     pthread_cond_signal(&q->ready); pthread_mutex_unlock(&q->lock); return 0;
 }
 static void unlock_cleanup(void *p) { pthread_mutex_unlock(p); }
@@ -106,7 +106,7 @@ static int mico_rtos_pop_from_queue(mico_queue_t *q, void *value, uint32_t timeo
     pthread_cleanup_push(unlock_cleanup, &q->lock);
     while (!q->count && !stopping) pthread_cond_wait(&q->ready, &q->lock);
     if (stopping) pthread_exit(NULL);
-    *(int *)value = q->fds[q->head]; q->head = (q->head + 1) % 2; q->count--;
+    *(int *)value = q->fds[q->head]; q->head = (q->head + 1) % 1; q->count--;
     pthread_cleanup_pop(1);
     return 0;
 }
