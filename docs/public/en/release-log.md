@@ -2,6 +2,14 @@
 
 English translation of the published release history. Historical validation statements apply to the release named in each section, not to later firmware. Release notes are authored in the Wiki and frozen into the source repository before tagging.
 
+## v0.9.13
+
+- A1 breathing and rainbow marquee effects offer speed levels 1–10. Level 5 keeps the previous speed; the page preview follows the selected level and saved settings survive reboot.
+- Scheduled tasks support shutdown countdowns from 1 minute to 24 hours, show remaining time and allow cancellation, deletion and restart in manual or automatic mode.
+- Countdowns continue with the page closed and do not depend on network time. Editing or enabling a countdown restarts its full duration; reboot cancels active countdowns.
+- The shared local/management A1 page exposes these controls. Chinese and English guides are updated, retaining existing CO₂ linkage and other settings.
+- Host regression and Chromium/WebKit desktop/mobile tests passed. Physical A1 light, fan and upgrade acceptance was not performed for this release.
+
 ## v0.9.12
 
 - A1 automatic fan control accepts linked M1 CO₂ alone or combined with PM2.5 and formaldehyde in fixed, linear or PID mode. Combined control uses the highest demand; hysteresis starts on any selected metric and idles after all targets are met.

@@ -27,6 +27,6 @@
 
 A1 本地候选产物：`build/a1-release/phicomm_a1.ota.bin`，709188 bytes，SHA-256 `5374d79ab2d7b090894be691e455898921e600aa4b53c2c5a313c71e7255a8e2`。构建基于固件 `193652f` 加本次改动，标记 `0.9.11-193652-dirty`，完整信息见同目录 `manifest.json`。历史构建备份位于验证目录的 `previous-release/`。
 
-这些提交及 Release 尚未推送或发布；当前前端锁对应的公开 Release 尚不存在。离线重建须提供前端本地 `build/frontend.tar.gz`：`python3 tools/frontend_release.py --archive /home/fjr/hobbies/phicomm-community-frontend/build/frontend.tar.gz`。正式发布需先发布该前端 commit 的 Release，再发布引用它的固件。
+上述为首次本地验证时的候选构建记录，并非正式 Release 产物。正式发布在最新主分支整合后，由前端 CI 发布不可变归档，再将公开归档的完整 commit 和 SHA-256 写入固件锁文件。固件由 tag CI 重新构建并签名；以正式 Release 的校验和为准。
 
 未升级、重启或操作物理设备；主机及演示中的停机测试不代表真实风机或光学效果验证。未部署 IotCloud 节点或公开文档。
