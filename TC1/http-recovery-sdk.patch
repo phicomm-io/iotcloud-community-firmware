@@ -1,0 +1,51 @@
+--- a/libraries/daemons/http_server/httpd.c
++++ b/libraries/daemons/http_server/httpd.c
+@@ -222,7 +222,9 @@
+   activefds_cnt = select(max_sock + 1, &local_readfds, NULL, NULL, timeout_secs >= 0 ? &timeout : NULL);
+   if (activefds_cnt < 0) {
+         httpd_d("Select failed: %d", timeout_secs);
+-        httpd_suspend_thread( true );
++        /* A reset client is recoverable; keep the listener owner alive. */
++        if (active_readfds) FD_ZERO(active_readfds);
++        return -1;
+     }
+ 
+     if ( httpd_stop_req )
+@@ -352,7 +354,7 @@
+             httpd_suspend_thread( false );
+         }
+ 
+-        if ( activefds_cnt == HTTPD_TIMEOUT_EVENT )
++        if ( activefds_cnt <= HTTPD_TIMEOUT_EVENT )
+         {
+             /* Timeout has occured */
+             httpd_d("Client socket timeout occurred. " "Force closing socket");
+@@ -362,7 +364,7 @@
+             {
+                 status = net_get_sock_error( client_sockfd );
+                 httpd_d("Failed to close socket %d", status);
+-                httpd_suspend_thread( true );
++                /* The peer/SDK may already have released this descriptor. */
+             }
+ 
+             client_sockfd = -1;
+@@ -397,7 +399,7 @@
+         {
+             status = net_get_sock_error( client_sockfd );
+             httpd_d("Failed to close socket %d", status);
+-            httpd_suspend_thread( true );
++            /* A failed close must not permanently suspend HTTP service. */
+         }
+         client_sockfd = -1;
+ 
+@@ -425,7 +427,9 @@
+     while ( 1 )
+     {
+         httpd_d("Waiting on main socket");
+-        httpd_select( max_sockfd, &readfds, &active_readfds, -1 );
++        if (httpd_select(max_sockfd, &readfds, &active_readfds, -1) <= 0) {
++            mico_thread_msleep(20); continue;
++        }
+         httpd_handle_client_connection( &active_readfds );
+     }
+ 

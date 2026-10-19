@@ -142,6 +142,7 @@ static int close(int fd){assert(fd==3);closed++;return 0;}
 SETUP
 static int httpd_setup_main_sockets(void){http_sockfd=httpd_setup_new_socket(80);return http_sockfd<0?-12:0;}
 static void httpd_suspend_thread(bool b){(void)b;assert(0);}
+static void mico_thread_msleep(unsigned n){assert(n==20);}
 static int httpd_select(int max,fd_set *r,fd_set *a,int timeout){assert(max==3&&r&&a&&timeout==-1);if(++cycles==4)longjmp(done,1);return 1;}
 static void httpd_handle_client_connection(fd_set *s){assert(s&&configured==1&&listened==1);}
 MAIN
