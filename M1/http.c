@@ -11,6 +11,11 @@
 #include <errno.h>
 #include "../common/runtime_metrics.h"
 #include <limits.h>
+#include "../common/memory_wait.h"
+
+static void query_response(int fd, const char *action);
+static void command_response(int fd, uint32_t length);
+static void memory_busy(int fd);
 
 #define HTTP_PENDING_CLIENTS 8u
 #define HTTP_TCP_CLIENT_LIMIT 24
