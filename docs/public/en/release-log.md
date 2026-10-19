@@ -2,6 +2,17 @@
 
 English translation of the published release history. Historical validation statements apply to the release named in each section, not to later firmware. Release notes are authored in the Wiki and frozen into the source repository before tagging.
 
+## v0.9.14
+
+- Reduce memory used by device linkage and MQTT communication. A1 application static RAM usage is reduced by about 10.8 KiB, and TC1 by about 1.0 KiB.
+- A1 and M1 support up to four linked devices. After upgrading, existing configurations with more than four linked devices use only the first four.
+- Improve web request queuing and MQTT command replies to reduce resource use during simultaneous operations. A busy device or one with insufficient memory can return `busy`, prompting you to retry later.
+- Add memory headroom and command reply queue diagnostics to help investigate busy devices. Preserve existing Wi-Fi, MQTT, schedule, button and automatic-control settings.
+- Compress the built-in A1, M1 and TC1 pages to reduce their firmware footprint while retaining existing features, Chinese and English languages, and controls.
+- Offer full and slim firmware. Full firmware includes the complete device page, accessible at the device IP. Slim firmware, identified by `no-frontend-resources` in the filename, retains offline provisioning, initial MQTT setup and web password configuration; use the local device management page or IotCloud for everyday controls and complete settings. Online upgrades retain the current firmware variant.
+- Both full and slim firmware support LAN management: enter the device LAN IP and web management password in the local device management page to control it directly, without an account, backend or MQTT service. Allow local network access in your browser.
+- IotCloud lets you configure a device LAN address and prefers a direct LAN connection. It continues using MQTT when the direct connection is unavailable, and also offers an always-use-MQTT option.
+
 ## v0.9.13
 
 - A1 breathing and rainbow marquee effects offer speed levels 1–10. Level 5 keeps the previous speed; the page preview follows the selected level and saved settings survive reboot.
