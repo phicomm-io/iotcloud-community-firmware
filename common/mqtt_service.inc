@@ -58,7 +58,9 @@ static int service_mqtt_input(int (*sender)(const char *,const char *,bool),cons
  unsigned claim=service_memory_claim(length);
  struct printbuf *wire=NULL;
  if(claim){
-  json_object *q=service_parse(payload,length),*r=service_command(q);if(q)json_object_put(q);
+  uint64_t failures=service_memory_failures();
+  json_object *q=service_parse(payload,length);
+  json_object *r=service_memory_failures()==failures?service_command(q):NULL;if(q)json_object_put(q);
   wire=service_mqtt_wire(r);service_memory_release(claim);
  }
  if(!wire)service_busy_wire(payload,length,service_mqtt_replies[service_mqtt_reply_count].busy);

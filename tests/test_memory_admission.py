@@ -37,20 +37,20 @@ static void mico_thread_msleep(unsigned ms){assert(ms==25 && state.waiting==1);s
 #include "common/memory_wait.h"
 int main(void){
  state.minimum_free=UINT32_MAX;
- assert(!memory_budget_claim(&state,0,0));assert(!memory_budget_claim(&state,28671,0));
- unsigned a=memory_budget_claim(&state,28672,0);assert(a==12288 && state.active==1);
- assert(!memory_budget_claim(&state,40000,0)); /* competing builders share the budget */
- unsigned b=memory_budget_claim(&state,40960,0);assert(b && state.active==2);
+ assert(!memory_budget_claim(&state,0,0));assert(!memory_budget_claim(&state,16895,0));
+ unsigned a=memory_budget_claim(&state,16896,0);assert(a==512 && state.active==1);
+ assert(!memory_budget_claim(&state,17407,0)); /* competing builders share the budget */
+ unsigned b=memory_budget_claim(&state,17408,0);assert(b && state.active==2);
  memory_budget_release(&state,a);memory_budget_release(&state,b);assert(!state.active && !state.reserved);
  assert(!memory_budget_claim(&state,UINT32_MAX,SIZE_MAX));
- a=memory_budget_claim(&state,45056,8192);assert(a==28672);memory_budget_release(&state,a);
+ a=memory_budget_claim(&state,25088,8192);assert(a==8704);memory_budget_release(&state,a);
  now=UINT32_MAX-50;free_bytes=1000;recover_at=4;
  a=service_memory_wait(0);assert(a && sleeps==4 && now==49 && !state.waiting);memory_budget_release(&state,a);
  sleeps=0;recover_at=UINT32_MAX;free_bytes=1000;now=UINT32_MAX-50;
  assert(!service_memory_wait(0) && sleeps==80 && !state.waiting);
  sleeps=0;assert(!service_memory_wait(1025) && !sleeps && !state.waiting);
  assert(!service_memory_wait(8192) && !sleeps && !state.waiting);
- free_bytes=45056;a=service_memory_wait(8192);assert(a==28672 && !sleeps);memory_budget_release(&state,a);
+ free_bytes=25088;a=service_memory_wait(8192);assert(a==8704 && !sleeps);memory_budget_release(&state,a);
  free_bytes=1000;assert(!service_memory_wait(1024) && sleeps==80 && !state.waiting);
  assert(!state.active && !state.reserved && state.minimum_free==0);
  puts("Shared reservations: floor/overlap/overflow; wait keeps descriptor, resumes, times out across tick wrap: OK");
@@ -136,6 +136,7 @@ int main(void){
 #define MODEL_JSON_LIMIT 8192
 static uint32_t now;static unsigned attempts,recover_at,waiting,active,reads,queries,commands,sends,status;
 typedef int json_object;
+static uint64_t service_memory_failures(void){return 0;}
 static unsigned service_memory_claim(size_t n){assert(n<=8192);if(++attempts<recover_at)return 0;active++;return 12288;}
 static void service_memory_release(unsigned n){assert(n==12288 && active==1);active--;}
 static void service_memory_waiting(bool enter){if(enter)waiting++;else waiting--;}

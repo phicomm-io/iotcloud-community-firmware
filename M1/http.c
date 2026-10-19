@@ -378,7 +378,7 @@ static void send_json(int fd, json_object *o)
 static json_object *read_json(int fd, uint32_t length)
 {
     if (!length || length > M1_JSON_LIMIT) return NULL;
-    char *body = malloc(length + 1);
+    char *body = json_heap_malloc(length + 1);
     if (!body) return NULL;
     size_t received = 0;
     uint32_t deadline = mico_rtos_get_time() + 15000;
@@ -389,7 +389,7 @@ static json_object *read_json(int fd, uint32_t length)
     }
     body[received] = 0;
     json_object *o = received == length && !memchr(body, 0, received) ? service_parse(body,received) : NULL;
-    free(body);
+    json_heap_free(body);
     if (o && !json_object_is_type(o, json_type_object)) { json_object_put(o); o = NULL; }
     return o;
 }
@@ -479,17 +479,20 @@ static void memory_response(int fd)
     }
     micoMemInfo_t snapshot = *memory;
     service_memory_state_t budget; service_memory_snapshot(&budget);
-    char body[512];
+    char body[640];
     int length = snprintf(body, sizeof(body),
         "{\"code\":\"ok\",\"data\":{\"free_memory\":%d,\"allocated_memory\":%d,"
         "\"free_memory_chunks\":%d,\"uptime_ms\":%lu,\"memory_reserve\":%u,"
         "\"memory_reserved\":%lu,\"memory_active\":%lu,\"memory_waiting\":%lu,"
-        "\"memory_denied\":%lu,\"minimum_sampled_free\":%lu}}",
+        "\"memory_denied\":%lu,\"minimum_sampled_free\":%lu,"
+        "\"json_live_blocks\":%lu,\"json_peak_blocks\":%lu,\"json_alloc_failures\":%lu,\"json_guard_denied\":%lu}}",
         snapshot.free_memory, snapshot.allocted_memory, snapshot.num_of_chunks,
         (unsigned long)mico_rtos_get_time(), SERVICE_MEMORY_RESERVE,
         (unsigned long)budget.reserved, (unsigned long)budget.active,
         (unsigned long)budget.waiting, (unsigned long)budget.denied,
-        (unsigned long)budget.minimum_free);
+        (unsigned long)budget.minimum_free,
+        (unsigned long)budget.json_live, (unsigned long)budget.json_peak,
+        (unsigned long)budget.json_failed, (unsigned long)budget.json_denied);
     if (length > 0 && (size_t)length < sizeof(body))
         response(fd, 200, "application/json", body, (size_t)length, false);
 }
@@ -580,7 +583,9 @@ static void command_response(int fd, uint32_t length)
 {
     unsigned claim=service_memory_wait(length <= M1_JSON_LIMIT ? length : 0);
     if(!claim){memory_busy_body(fd,length);return;}
-    json_object *request=read_json(fd,length),*reply=service_command(request);
+    uint64_t failures=service_memory_failures();
+    json_object *request=read_json(fd,length);
+    json_object *reply=service_memory_failures()==failures?service_command(request):NULL;
     if(request)json_object_put(request);
     send_json(fd,reply);service_memory_release(claim);
 }

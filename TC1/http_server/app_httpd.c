@@ -65,6 +65,7 @@ const char *phicomm_http_cors(const char *origin){return phicomm_cors_headers(or
 #include "json.h"
 #include "json_buffer.h"
 #include "printbuf.h"
+#include "json_heap.h"
 #include "../../common/memory_wait.h"
 
 /* Parse headers once, reject truncation/chunked bodies and read all fragments.
@@ -342,15 +343,18 @@ static int HttpV1Logs(httpd_request_t *r){return HttpV1Query(r,"logs.get");}
 static int HttpV1Memory(httpd_request_t *r){
     const micoMemInfo_t *m=MicoGetMemoryInfo();if(!m)return HttpV1Busy(r);
     micoMemInfo_t snapshot=*m;service_memory_state_t b;service_memory_snapshot(&b);
-    char out[512];int n=snprintf(out,sizeof(out),
+    char out[640];int n=snprintf(out,sizeof(out),
         "{\"code\":\"ok\",\"data\":{\"free_memory\":%d,\"allocated_memory\":%d,"
         "\"free_memory_chunks\":%d,\"uptime_ms\":%lu,\"memory_reserve\":%u,"
         "\"memory_reserved\":%lu,\"memory_active\":%lu,\"memory_waiting\":%lu,"
-        "\"memory_denied\":%lu,\"minimum_sampled_free\":%lu}}",
+        "\"memory_denied\":%lu,\"minimum_sampled_free\":%lu,"
+        "\"json_live_blocks\":%lu,\"json_peak_blocks\":%lu,\"json_alloc_failures\":%lu,\"json_guard_denied\":%lu}}",
         snapshot.free_memory,snapshot.allocted_memory,snapshot.num_of_chunks,
         (unsigned long)mico_rtos_get_time(),SERVICE_MEMORY_RESERVE,
         (unsigned long)b.reserved,(unsigned long)b.active,(unsigned long)b.waiting,
-        (unsigned long)b.denied,(unsigned long)b.minimum_free);
+        (unsigned long)b.denied,(unsigned long)b.minimum_free,
+        (unsigned long)b.json_live,(unsigned long)b.json_peak,
+        (unsigned long)b.json_failed,(unsigned long)b.json_denied);
     return n>0 && (size_t)n<sizeof(out)?response_json(r,HTTP_RES_200,out,n):HttpV1Busy(r);
 }
 static int HttpV1Command(httpd_request_t *r){
@@ -358,9 +362,10 @@ static int HttpV1Command(httpd_request_t *r){
     if(rc || r->chunked || r->remaining_bytes<1 || r->remaining_bytes>(ota_job_active()?1024:8192))return kParamErr;
     unsigned claim=service_memory_wait(r->remaining_bytes);if(!claim)return HttpV1CommandBusy(r);
     size_t capacity=(size_t)r->remaining_bytes+1;
-    char *body=malloc(capacity);if(!body){service_memory_release(claim);return HttpV1CommandBusy(r);}
-    rc=read_body(r,body,capacity);json_object *request=rc?NULL:service_parse(body,strlen(body));free(body);
-    json_object *reply=service_command(request);if(request)json_object_put(request);
+    uint64_t failures=service_memory_failures();
+    char *body=json_heap_malloc(capacity);if(!body){service_memory_release(claim);return HttpV1CommandBusy(r);}
+    rc=read_body(r,body,capacity);json_object *request=rc?NULL:service_parse(body,strlen(body));json_heap_free(body);
+    json_object *reply=service_memory_failures()==failures?service_command(request):NULL;if(request)json_object_put(request);
     rc=HttpV1Reply(r,reply);service_memory_release(claim);return rc;
 }
 

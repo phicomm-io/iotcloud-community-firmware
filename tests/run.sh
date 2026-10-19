@@ -46,7 +46,7 @@ mkdir -p "$output/sdk/libraries/utilities"
 cp -R "$json_dir" "$output/sdk/libraries/utilities/json_c"
 python3 tools/apply_sdk_patch.py "$output/sdk" \
     common/json-newlib-reent.patch common/json-printbuf-oom.patch \
-    common/json-allocation-safety.patch
+    common/json-allocation-safety.patch common/json-heap-budget.patch
 ln -s sdk/libraries/utilities/json_c "$output/json_c"
 python3 - "$output/json_c" <<'PYHOST'
 import pathlib, sys
@@ -67,6 +67,8 @@ done
 "$output/json-printbuf-failure"
 "${compiler[@]}" -std=gnu99 -Wall -Wextra -Werror -Wno-misleading-indentation -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -Itests/stubs -I"$json_dir" tests/test_json_allocation_failure.c "$json_dir"/*.c -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc -Wl,--wrap=strdup -o "$output/json-allocation-failure"
 "$output/json-allocation-failure"
+"${compiler[@]}" -std=gnu99 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -Itests/stubs -I"$json_dir" -pthread tests/test_json_heap.c "$json_dir"/*.c -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc -Wl,--wrap=strdup -Wl,--wrap=free -o "$output/json-heap"
+"$output/json-heap"
 "${compiler[@]}" -std=gnu99 -Wall -Wextra -Werror -Wno-misleading-indentation -Itests/stubs -I"$json_dir" common/service.c tests/test_service.c "$json_dir"/*.c -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -o "$output/service"
 ota_port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')
 export PHICOMM_TEST_OTA_PORT="$ota_port"
@@ -77,6 +79,8 @@ python3 tests/test_update.py "$output/update"
 "$output/service"
 "${compiler[@]}" -std=gnu99 -Wall -Wextra -Wno-misleading-indentation -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-value -Wno-nonnull-compare -Itests/stubs -I"$json_dir" tests/test_service_failure.c "$json_dir"/*.c -o "$output/service-failure"
 "$output/service-failure"
+"${compiler[@]}" -std=gnu99 -Wall -Wextra -Werror -Wno-misleading-indentation -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -Itests/stubs -I"$json_dir" tests/test_service_memory.c "$json_dir"/*.c -o "$output/service-memory"
+"$output/service-memory"
 for define in -DFEATURE_DEVICE_A1 -DAUTOMATION_TC1; do
 "${compiler[@]}" "$define" -std=gnu99 -Wall -Wextra -Wno-misleading-indentation -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-value -Wno-nonnull-compare -Itests/stubs -I"$json_dir" common/service.c tests/test_automation.c "$json_dir"/*.c -o "$output/automation"
 "$output/automation"

@@ -1,0 +1,209 @@
+--- /dev/null
++++ b/libraries/utilities/json_c/json_heap.h
+@@ -0,0 +1,20 @@
++#ifndef PHICOMM_JSON_HEAP_H
++#define PHICOMM_JSON_HEAP_H
++#include <stddef.h>
++#include <stdint.h>
++/* These counters cover this JSON library only, not the closed SDK allocator. */
++typedef struct {
++    uint32_t live_blocks, peak_blocks, allocation_failures, guard_denied;
++} json_heap_stats_t;
++void json_heap_snapshot(json_heap_stats_t *out);
++void *json_heap_malloc(size_t size);
++void *json_heap_calloc(size_t count, size_t size);
++void *json_heap_realloc(void *pointer, size_t size);
++char *json_heap_strdup(const char *text);
++void json_heap_free(void *pointer);
++/* Platform hooks: called under a separate allocator mutex, never service_lock.
++ * The permit hook protects headroom; it cannot reserve the SDK's own heap. */
++void json_heap_lock(void);
++void json_heap_unlock(void);
++int json_heap_permit(size_t bytes);
++#endif
+--- /dev/null
++++ b/libraries/utilities/json_c/json_heap.c
+@@ -0,0 +1,59 @@
++#include <stdlib.h>
++#include <string.h>
++#include <stdint.h>
++#include "json_heap.h"
++extern char *strdup(const char *);
++static json_heap_stats_t stats;
++__attribute__((weak)) void json_heap_lock(void) {}
++__attribute__((weak)) void json_heap_unlock(void) {}
++__attribute__((weak)) int json_heap_permit(size_t bytes) { (void)bytes; return 1; }
++static void increment(uint32_t *n) { if (*n != UINT32_MAX) ++*n; }
++static int permit(size_t bytes) {
++    if (!json_heap_permit(bytes)) { increment(&stats.guard_denied); return 0; }
++    return 1;
++}
++static void created(void *pointer) {
++    if (!pointer) { increment(&stats.allocation_failures); return; }
++    increment(&stats.live_blocks);
++    if (stats.live_blocks > stats.peak_blocks) stats.peak_blocks = stats.live_blocks;
++}
++void *json_heap_malloc(size_t size) {
++    void *pointer = NULL;
++    json_heap_lock();
++    if (permit(size)) { pointer = malloc(size); created(pointer); }
++    json_heap_unlock(); return pointer;
++}
++void *json_heap_calloc(size_t count, size_t size) {
++    void *pointer = NULL;
++    json_heap_lock();
++    if (size && count > SIZE_MAX / size) increment(&stats.guard_denied);
++    else if (permit(count * size)) { pointer = calloc(count, size); created(pointer); }
++    json_heap_unlock(); return pointer;
++}
++void json_heap_free(void *pointer) {
++    if (!pointer) return;
++    json_heap_lock();
++    free(pointer);
++    if (stats.live_blocks) --stats.live_blocks;
++    json_heap_unlock();
++}
++void *json_heap_realloc(void *pointer, size_t size) {
++    if (!pointer) return json_heap_malloc(size);
++    if (!size) { json_heap_free(pointer); return NULL; }
++    void *resized = NULL;
++    json_heap_lock();
++    /* Reserve the full replacement: an allocator may copy before freeing old. */
++    if (permit(size)) { resized = realloc(pointer, size); if (!resized) increment(&stats.allocation_failures); }
++    json_heap_unlock(); return resized;
++}
++char *json_heap_strdup(const char *text) {
++    char *pointer = NULL;
++    size_t size = strlen(text);
++    json_heap_lock();
++    if (size == SIZE_MAX) increment(&stats.guard_denied);
++    else if (permit(size + 1)) { pointer = strdup(text); created(pointer); }
++    json_heap_unlock(); return pointer;
++}
++void json_heap_snapshot(json_heap_stats_t *out) {
++    json_heap_lock(); *out = stats; json_heap_unlock();
++}
+--- a/libraries/utilities/json_c/arraylist.c
++++ b/libraries/utilities/json_c/arraylist.c
+@@ -23,6 +23,12 @@
+ 
+ #include "bits.h"
+ #include "arraylist.h"
++
++#include "json_heap.h"
++#define malloc(n) json_heap_malloc(n)
++#define calloc(n,s) json_heap_calloc(n,s)
++#define realloc(p,n) json_heap_realloc(p,n)
++#define free(p) json_heap_free(p)
+ 
+ struct array_list*
+ array_list_new(array_list_free_fn *free_fn)
+--- a/libraries/utilities/json_c/json_object.c
++++ b/libraries/utilities/json_c/json_object.c
+@@ -28,6 +28,13 @@
+ 
+ #include "StringUtils.h"
+ #include "json_number_reent.h"
++
++#include "json_heap.h"
++#define malloc(n) json_heap_malloc(n)
++#define calloc(n,s) json_heap_calloc(n,s)
++#define realloc(p,n) json_heap_realloc(p,n)
++#define free(p) json_heap_free(p)
++#define strdup json_heap_strdup
+ 
+ #if !HAVE_STRNDUP
+ char* strndup(const char* str, size_t n);
+--- a/libraries/utilities/json_c/json_tokener.c
++++ b/libraries/utilities/json_c/json_tokener.c
+@@ -34,6 +34,13 @@
+ 
+ #include "StringUtils.h"
+ #include "json_number_reent.h"
++
++#include "json_heap.h"
++#define malloc(n) json_heap_malloc(n)
++#define calloc(n,s) json_heap_calloc(n,s)
++#define realloc(p,n) json_heap_realloc(p,n)
++#define free(p) json_heap_free(p)
++#define strdup json_heap_strdup
+ 
+ #if !HAVE_STRNCASECMP && defined(_MSC_VER)
+   /* MSC has the version as _strnicmp */
+@@ -159,7 +166,8 @@
+   if(str) {
+     size_t len = strlen(str);
+     size_t nn = json_min(len,n);
+-    char* s = (char*)malloc(sizeof(char) * (nn + 1));
++    /* Native ABI helper also serves non-JSON URL callers. */
++    char* s = (char*)(malloc)(sizeof(char) * (nn + 1));
+ 
+     if(s) {
+       memcpy(s, str, nn);
+--- a/libraries/utilities/json_c/json_util.c
++++ b/libraries/utilities/json_c/json_util.c
+@@ -130,6 +130,12 @@
+ //   fclose(fd);
+ //   return 0;
+ // }
++
++#include "json_heap.h"
++#define malloc(n) json_heap_malloc(n)
++#define calloc(n,s) json_heap_calloc(n,s)
++#define realloc(p,n) json_heap_realloc(p,n)
++#define free(p) json_heap_free(p)
+ 
+ int json_parse_int64(const char *buf, int64_t *retval)
+ {
+--- a/libraries/utilities/json_c/linkhash.c
++++ b/libraries/utilities/json_c/linkhash.c
+@@ -19,6 +19,12 @@
+ #include "common.h"
+ 
+ #include "linkhash.h"
++
++#include "json_heap.h"
++#define malloc(n) json_heap_malloc(n)
++#define calloc(n,s) json_heap_calloc(n,s)
++#define realloc(p,n) json_heap_realloc(p,n)
++#define free(p) json_heap_free(p)
+ 
+ void lh_abort(const char *msg, ...)
+ {
+--- a/libraries/utilities/json_c/printbuf.c
++++ b/libraries/utilities/json_c/printbuf.c
+@@ -28,6 +28,12 @@
+ #include "bits.h"
+ #include "json_debug.h"
+ #include "printbuf.h"
++
++#include "json_heap.h"
++#define malloc(n) json_heap_malloc(n)
++#define calloc(n,s) json_heap_calloc(n,s)
++#define realloc(p,n) json_heap_realloc(p,n)
++#define free(p) json_heap_free(p)
+ 
+ struct printbuf* printbuf_new(void)
+ {
+@@ -73,7 +79,8 @@
+ #endif /* !HAVE_VSNPRINTF && defined(WIN32) */
+ 
+ 
+-#if !HAVE_VASPRINTF
++#define vasprintf json_heap_vasprintf
++#if 1
+ /* CAW: compliant version of vasprintf */
+ int vasprintf(char **buf, const char *fmt, va_list ap)
+ {
+--- a/libraries/utilities/json_c/json_c.mk
++++ b/libraries/utilities/json_c/json_c.mk
+@@ -17,7 +17,8 @@
+                    json_tokener.c \
+                    json_util.c \
+                    linkhash.c \
+-                   printbuf.c
++                   printbuf.c \
++                   json_heap.c
+                    
+ $(NAME)_CFLAGS   += -Wno-unused-value
+ 

@@ -14,6 +14,11 @@ export PHICOMM_WEB_OUTPUT_DIR="$project_dir/build/tc1${variant_suffix}-web"
 sdk_dir="${TC1_SDK_DIR:-$project_dir/build/tc1-sdk-3.6.4/mico-os}"
 workspace="$project_dir/build/tc1${variant_suffix}-workspace-3.6.4"
 python3 "$project_dir/tools/prepare_sdk.py" "$sdk_dir"
+python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \
+    "$project_dir/common/json-newlib-reent.patch" \
+    "$project_dir/common/json-printbuf-oom.patch" \
+    "$project_dir/common/json-allocation-safety.patch" \
+    "$project_dir/common/json-heap-budget.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/wifi-owned-mico36.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-mico36.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-publish-bounds.patch"

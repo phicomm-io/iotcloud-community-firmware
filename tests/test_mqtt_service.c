@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdio.h>
 #include "json.h"
+#include "json_heap.h"
 #include "../common/mqtt_account.h"
 static void *watched[2];
 static unsigned freed[2], wire_calls;
@@ -20,6 +21,7 @@ void *__wrap_realloc(void *pointer,size_t size){
 #define MQTT_SUCCESS 0
 #define MQTT_FAILURE -1
 #include "../common/mqtt_service.inc"
+uint64_t service_memory_failures(void){return 0;}
 static bool low_memory;
 static unsigned claims;
 unsigned service_memory_claim(size_t n){if(low_memory || n>8192)return 0;claims++;return 1;}
@@ -168,6 +170,7 @@ int main(void){
  unsigned before=executions;assert(service_mqtt_input(send_reply,&scope,"{}",2,false)==-1);assert(executions==before);
  service_mqtt_clear();assert(!service_mqtt_reply_count);
  assert(!claims);
+ json_heap_stats_t heap;json_heap_snapshot(&heap);assert(!heap.live_blocks);
  (void)service_mqtt_snapshot;(void)service_mqtt_capabilities;
  puts("MQTT result callbacks defer publication, bound the queue and clear stale replies");
  puts("MQTT owned JSON graphs released before sender; serialization/send failures clean up");

@@ -3,16 +3,18 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* Reservations are conservative: in-flight allocations also reduce free heap.
- * Keep system/network headroom, and serialize competing JSON builders when
- * their estimates no longer fit. This is admission control, not an allocator. */
+/* Reserve unmaterialized input and small dispatch scratch only. The JSON
+ * allocator checks the live heap on every allocation instead of assuming a
+ * full 12 KiB graph per request. No active-request count controls admission.
+ * Core/network headroom is a soft floor, not a closed-SDK heap partition. */
 #define SERVICE_MEMORY_RESERVE 16384u
-#define SERVICE_MEMORY_WORK 12288u
+#define SERVICE_MEMORY_WORK 512u
 typedef struct {
     uint32_t reserved, active, denied, waiting, minimum_free;
+    uint32_t json_live, json_peak, json_failed, json_denied;
 } service_memory_state_t;
 static inline unsigned service_memory_cost(size_t input) {
-    return input <= 8192 ? SERVICE_MEMORY_WORK + (unsigned)input * 2u : 0;
+    return input <= 8192 ? SERVICE_MEMORY_WORK + (unsigned)input : 0;
 }
 static inline unsigned memory_budget_claim(service_memory_state_t *s, uint32_t free_bytes, size_t input) {
     unsigned cost = service_memory_cost(input);

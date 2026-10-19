@@ -49,7 +49,8 @@ python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \
     "$project_dir/common/json-newlib-reent.patch" \
     "$project_dir/common/json-printbuf-oom.patch" \
-    "$project_dir/common/json-allocation-safety.patch"
+    "$project_dir/common/json-allocation-safety.patch" \
+    "$project_dir/common/json-heap-budget.patch"
 
 ln -sfn "$sdk_dir" "$workspace/mico-os"
 ln -sfn "$app_dir" "$workspace/A1"

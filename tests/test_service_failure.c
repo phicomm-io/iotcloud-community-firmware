@@ -1,5 +1,6 @@
 #include "mico.h"
 #include "../common/service.h"
+#include "json_heap.h"
 static unsigned allocation, fail_at, mutations;
 static bool fail_result;
 static unsigned serialization, fail_serialization;
@@ -13,17 +14,14 @@ static json_object *result_object(void) {
 }
 static char *receipt_copy(const char *s) {
     if (++allocation == fail_at) return NULL;
-    size_t n = strlen(s) + 1;
-    char *copy = malloc(n);
-    if (copy) memcpy(copy, s, n);
-    return copy;
+    return json_heap_strdup(s);
 }
 #define json_object_to_json_string serialize
-#define strdup receipt_copy
+#define json_heap_strdup receipt_copy
 #define json_object_new_object result_object
 #include "../common/service.c"
 #undef json_object_to_json_string
-#undef strdup
+#undef json_heap_strdup
 #undef json_object_new_object
 uint32_t test_now;
 json_object *automation_command(const char *a,json_object *p,const char **c,bool *h)

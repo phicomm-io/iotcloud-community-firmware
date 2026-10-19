@@ -9,6 +9,7 @@
 #include <string.h>
 #include <time.h>
 #include "generated/build_ota.h"
+#include "json_heap.h"
 #define LOG_COUNT 64
 /* Fixed vocabulary events never accept credentials, payloads or URLs. */
 typedef struct { uint32_t sequence, uptime, utc; int32_t argument; uint8_t level,module,event,reserved; } service_record_t;
@@ -16,7 +17,9 @@ typedef struct { uint32_t sequence, uptime, utc; int32_t argument; uint8_t level
 static service_record_t records[LOG_COUNT];
 static uint32_t sequence;
 static mico_mutex_t service_lock, command_lock;
-static bool ready;
+static bool ready, service_lock_ready;
+static mico_mutex_t json_lock;
+static bool json_ready;
 static service_memory_state_t memory_state = {.minimum_free = UINT32_MAX};
 static uint32_t service_free_memory(void) {
 #if defined(MOC) && MOC == 1
@@ -25,6 +28,19 @@ static uint32_t service_free_memory(void) {
 #else
     return UINT32_MAX; /* Host simulators use the policy's injectable unit tests. */
 #endif
+}
+void json_heap_lock(void) { if (json_ready) mico_rtos_lock_mutex(&json_lock); }
+void json_heap_unlock(void) { if (json_ready) mico_rtos_unlock_mutex(&json_lock); }
+int json_heap_permit(size_t bytes) {
+    uint32_t free_bytes = service_free_memory();
+    /* Include allocator metadata/alignment. SDK/network allocations can still
+     * race this check; allocation failure remains a handled result. */
+    return free_bytes >= SERVICE_MEMORY_RESERVE + 32u &&
+        bytes <= free_bytes - SERVICE_MEMORY_RESERVE - 32u;
+}
+uint64_t service_memory_failures(void) {
+    json_heap_stats_t s; json_heap_snapshot(&s);
+    return (uint64_t)s.allocation_failures + s.guard_denied;
 }
 unsigned service_memory_claim(size_t input_bytes) {
     if (!ready) return 0;
@@ -52,6 +68,9 @@ void service_memory_snapshot(service_memory_state_t *out) {
     uint32_t free_bytes = service_free_memory();
     if (free_bytes < memory_state.minimum_free) memory_state.minimum_free = free_bytes;
     *out = memory_state;
+    json_heap_stats_t json; json_heap_snapshot(&json);
+    out->json_live = json.live_blocks; out->json_peak = json.peak_blocks;
+    out->json_failed = json.allocation_failures; out->json_denied = json.guard_denied;
     mico_rtos_unlock_mutex(&service_lock);
 }
 typedef struct { char id[65]; char *request, *response; } receipt_t;
@@ -59,12 +78,17 @@ static receipt_t receipts[8];
 static unsigned receipt_next;
 static char *receipt_json_copy(json_object *o) {
     const char *wire = o ? json_object_to_json_string(o) : NULL;
-    return wire ? strdup(wire) : NULL;
+    return wire ? json_heap_strdup(wire) : NULL;
 }
 static void string(json_object *o,const char *k,const char *v) { json_build_object_add(o,k,json_object_new_string(v)); }
 void service_init(void) {
     if (ready) return;
-    ready = mico_rtos_init_mutex(&service_lock)==kNoErr && mico_rtos_init_mutex(&command_lock)==kNoErr;
+    if (!json_ready) json_ready = mico_rtos_init_mutex(&json_lock)==kNoErr;
+    if (!json_ready) return;
+    if (!service_lock_ready) service_lock_ready = mico_rtos_init_mutex(&service_lock)==kNoErr;
+    if (!service_lock_ready) return;
+    ready = mico_rtos_init_mutex(&command_lock)==kNoErr;
+    if (!ready) return;
     ota_job_init();
     service_event("info","system","boot");
 }
@@ -123,7 +147,7 @@ static json_object *logs(json_object *p,const char **code) {
     mico_rtos_unlock_mutex(&service_lock);json_build_object_add(o,"records",a);return o;
 }
 #include "ota/update.inc"
-json_object *service_command(json_object *req) {
+static json_object *service_command_execute(json_object *req) {
     const char *code="invalid_params",*id=NULL,*action=NULL;
     if(!ready || !req || !json_object_is_type(req,json_type_object))return result(NULL,code,NULL);
     json_object *a=json_object_object_get(req,"action"),*p=json_object_object_get(req,"params"),*rid=json_object_object_get(req,"request_id");
@@ -154,7 +178,7 @@ json_object *service_command(json_object *req) {
     mico_rtos_lock_mutex(&command_lock);
     if(cache)for(unsigned i=0;i<8;i++)if(!strcmp(receipts[i].id,id)){
         json_object *out=!strcmp(receipts[i].request,canonical)?(receipts[i].response?service_parse(receipts[i].response,strlen(receipts[i].response)):result(id,"busy",NULL)):result(id,"conflict",NULL);
-        mico_rtos_unlock_mutex(&command_lock);free(canonical);return out;
+        mico_rtos_unlock_mutex(&command_lock);json_heap_free(canonical);return out;
     }
     /* Serialization covers mutation + receipt insertion across HTTP/MQTT. */
     json_object *data=NULL;
@@ -164,11 +188,21 @@ json_object *service_command(json_object *req) {
         mico_rtos_unlock_mutex(&command_lock);data=logs(p,&code);if(data)code="ok";return result(id,code,data);
     } else { bool handled=false;data=update_command(action,p,&code,&handled);if(!handled)data=automation_command(action,p,&code,&handled);if(!handled)data=service_product(action,p,&code); }
     json_object *out=result(id,code,data);
-    if(cache){receipt_t *r=&receipts[receipt_next++%8];free(r->request);free(r->response);memset(r,0,sizeof(*r));strcpy(r->id,id);r->request=canonical;canonical=NULL;r->response=receipt_json_copy(out);/* Keep the ID/request if response allocation fails: the mutation already ran. */}
-    mico_rtos_unlock_mutex(&command_lock);free(canonical);
+    if(cache){receipt_t *r=&receipts[receipt_next++%8];json_heap_free(r->request);json_heap_free(r->response);memset(r,0,sizeof(*r));strcpy(r->id,id);r->request=canonical;canonical=NULL;r->response=receipt_json_copy(out);/* Keep the ID/request if response allocation fails: the mutation already ran. */}
+    mico_rtos_unlock_mutex(&command_lock);json_heap_free(canonical);
     if(!query)service_event(!strcmp(code,"accepted")||!strcmp(code,"ok")?"info":"warn","command",!strcmp(code,"accepted")||!strcmp(code,"ok")?"accepted":"rejected");
     return out;
 }
+json_object *service_command(json_object *req) {
+    uint64_t before = service_memory_failures();
+    json_object *out = service_command_execute(req);
+    /* A concurrent failure can conservatively shed this response as well.
+     * Never publish an incomplete but apparently successful JSON response. */
+    if (service_memory_failures() != before) { if (out) json_object_put(out); return NULL; }
+    return out;
+}
 json_object *service_query(const char *action) {
-    json_object *req=json_object_new_object();string(req,"action",action);json_build_object_add(req,"params",json_object_new_object());json_object *r=service_command(req);json_object_put(req);return r;
+    uint64_t failures=service_memory_failures();
+    json_object *req=json_object_new_object();string(req,"action",action);json_build_object_add(req,"params",json_object_new_object());
+    json_object *r=service_memory_failures()==failures?service_command(req):NULL;json_object_put(req);return r;
 }
