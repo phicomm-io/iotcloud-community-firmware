@@ -106,3 +106,27 @@ static inline unsigned mqtt_retry_seconds(unsigned attempt)
 static inline bool mqtt_link_topic(const mqtt_account_t *a,const char *model,const char *mac,const char *peer,const char *leaf,char *out,size_t n) {
  return mqtt_format(out,n,"phicomm/v2/%s/%s/%s/link/%s/%s",a->key,model,mac,peer,leaf);
 }
+
+/* A queued reply owns its original destination, without the derived base and
+ * uppercase MAC copies in mqtt_account_t. This also permits mixed sessions. */
+typedef struct {
+    char key[MQTT_KEY_MAX], model[4], mac[13];
+    uint8_t mode;
+} mqtt_target_t;
+static inline void mqtt_target_set(mqtt_target_t *target, const mqtt_account_t *a)
+{
+    strcpy(target->key,a->key);strcpy(target->model,a->model);
+    strcpy(target->mac,a->mac);target->mode=a->mode;
+}
+static inline bool mqtt_target_leaf(const mqtt_target_t *target, const char *leaf,
+                                    char *out, size_t n)
+{
+    if (target->mode)
+        return mqtt_format(out,n,"phicomm/v2/%s/%s/%s/%s",
+                           target->key,target->model,target->mac,leaf);
+    char upper[13];
+    for(unsigned i=0;i<13;i++) {
+        char c=target->mac[i];upper[i]=c>='a'&&c<='f'?c-('a'-'A'):c;
+    }
+    return mqtt_format(out,n,"device/ztc1/%s/%s",upper,leaf);
+}

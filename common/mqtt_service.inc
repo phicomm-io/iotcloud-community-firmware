@@ -16,7 +16,7 @@ static int service_mqtt_publish(int (*sender)(const char *,const char *,bool),co
 /* SDK publish waits for PUBACK by dispatching incoming callbacks. Publishing
  * a result from such a callback would consume the outer publish's ACK. Queue
  * replies and flush only from the owner loop, outside MQTT packet dispatch. */
-static struct { char topic[MQTT_TOPIC_MAX]; json_object *reply; } service_mqtt_replies[4];
+static struct { mqtt_target_t target; json_object *reply; } service_mqtt_replies[4];
 static unsigned service_mqtt_reply_count;
 static void service_mqtt_clear(void){
  for(unsigned i=0;i<service_mqtt_reply_count;i++)json_object_put(service_mqtt_replies[i].reply);
@@ -25,10 +25,12 @@ static void service_mqtt_clear(void){
 static int service_mqtt_flush(int (*sender)(const char *,const char *,bool)){
  unsigned count=service_mqtt_reply_count;
  while(count-- && service_mqtt_reply_count){
-  char topic[MQTT_TOPIC_MAX];strcpy(topic,service_mqtt_replies[0].topic);
+  char topic[MQTT_TOPIC_MAX];
+  bool valid=mqtt_target_leaf(&service_mqtt_replies[0].target,"result",topic,sizeof(topic));
   json_object *r=service_mqtt_replies[0].reply;
   service_mqtt_reply_count--;
   memmove(service_mqtt_replies,service_mqtt_replies+1,service_mqtt_reply_count*sizeof(service_mqtt_replies[0]));
+  if(!valid){json_object_put(r);return MQTT_FAILURE;}
   int rc=service_mqtt_send(sender,topic,r,false);
   if(rc!=MQTT_SUCCESS)return rc;
  }
@@ -39,9 +41,9 @@ static int service_mqtt_input(int (*sender)(const char *,const char *,bool),cons
  if(ota_job_active() && length>1024)return MQTT_SUCCESS;
  if(retained)return MQTT_SUCCESS;
  if(service_mqtt_reply_count==4)return MQTT_FAILURE;
+ mqtt_target_set(&service_mqtt_replies[service_mqtt_reply_count].target,scope);
  json_object *q=service_parse(payload,length),*r=service_command(q);if(q)json_object_put(q);
  if(!r)return MQTT_FAILURE;
- mqtt_leaf(scope,"result",service_mqtt_replies[service_mqtt_reply_count].topic,MQTT_TOPIC_MAX);
  service_mqtt_replies[service_mqtt_reply_count++].reply=r;
  return MQTT_SUCCESS;
 }

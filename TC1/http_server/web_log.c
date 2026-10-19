@@ -6,11 +6,14 @@
 
 #include "http_server/web_log.h"
 
-LogRecord log_record = {.idx = 1};
+LogRecord log_record;
 char log_record_str[LOG_NUM * LOG_LEN + 64] = {0};
 static mico_mutex_t log_lock;
 static bool log_ready;
-void WebLogInit(void) { log_ready = mico_rtos_init_mutex(&log_lock) == kNoErr; }
+void WebLogInit(void) {
+    log_record.idx = 1;
+    log_ready = mico_rtos_init_mutex(&log_lock) == kNoErr;
+}
 
 char *GetLogRecord(void) {
     if (!log_ready)

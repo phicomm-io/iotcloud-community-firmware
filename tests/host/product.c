@@ -18,9 +18,9 @@ bool feature_ha_device(char *id,size_t ni,char *name,size_t nn,bool *grouped){
  (void)id;(void)ni;(void)name;(void)nn;(void)grouped;return false;
 }
 #endif
-unsigned feature_mqtt_filters(char f[12][FEATURE_TOPIC_MAX]){(void)f;return 0;}
+unsigned feature_mqtt_filters(char f[][FEATURE_TOPIC_MAX],unsigned capacity){(void)capacity;(void)f;return 0;}
 bool feature_mqtt_input(const char *t,const void *d,size_t n,bool retained){(void)t;(void)d;(void)n;(void)retained;return false;}
-bool feature_mqtt_filters_current(char f[12][FEATURE_TOPIC_MAX], unsigned n){(void)f;(void)n;return true;}
+bool feature_mqtt_filters_current(char f[][FEATURE_TOPIC_MAX], unsigned n){(void)f;(void)n;return true;}
 void feature_mqtt_session(const mqtt_account_t *a){(void)a;}
 int feature_mqtt_service(int (*p)(const char *,const char *,bool),bool connected){(void)p;(void)connected;return 0;}
 int feature_mqtt_cleanup(int (*p)(const char *,const char *,bool)){(void)p;return 0;}
@@ -38,7 +38,6 @@ static m1_config_t config;
 char m1_id[13]="aabbccddeeff";mico_mutex_t m1_lock;m1_state_t m1_state;
 void m1_config_get(m1_config_t *out){*out=config;}
 void m1_state_get(m1_state_t *out){
-    if(mico_rtos_get_time()>=2000 && mico_rtos_get_time()<7000){m1_state.sample.received=true;m1_state.sample.sequence=1;m1_state.sample.updated_ms=2000;}
     *out=m1_state;
 }
 bool m1_set_brightness(unsigned n){++controls;m1_state.brightness_requested=n;printf("CONTROL brightness=%u\n",n);fflush(stdout);return true;}
@@ -77,6 +76,10 @@ float PowerPulseCountToKwh(uint32_t count){return count/100.0;}
 #endif
 #include "service_adapter.inc"
 static void host_update(void) {
+#ifdef HOST_M1
+    /* Simulated UART production is independent of any state getter. */
+    if(mico_rtos_get_time()>=2000 && mico_rtos_get_time()<7000){m1_state.sample.received=true;m1_state.sample.sequence=1;m1_state.sample.updated_ms=2000;}
+#endif
     static bool switched;
     const char *user=getenv("HOST_SWITCH_USER");
     if(user && !switched && mico_rtos_get_time()>=4000) {

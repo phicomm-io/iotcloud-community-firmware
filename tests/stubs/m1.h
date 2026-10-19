@@ -16,3 +16,6 @@ typedef struct {
 } m1_state_t;
 extern char m1_id[13];
 void m1_state_get(m1_state_t *);
+
+extern mico_mutex_t m1_lock;
+extern m1_state_t m1_state;

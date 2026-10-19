@@ -10,7 +10,7 @@ static void passive_scenarios(void) {
   transaction("sleep","{\"windows\":[{\"days\":127,\"start\":1320,\"end\":420,\"brightness\":0}]}",200);
   uint32_t revision=stored.revision;
   char filters[12][FEATURE_TOPIC_MAX];
-  assert(feature_mqtt_filters(filters)==1);
+  assert(feature_mqtt_filters(filters,sizeof(filters)/sizeof(filters[0]))==1);
   assert(!strchr(filters[0],'#') && !strchr(filters[0],'+'));
   json_object *o=envelope(&stored,0,"bind",1);
   js(o,"src",stored.peers[0].id);js(o,"dst",LOCAL_ID);
@@ -18,8 +18,10 @@ static void passive_scenarios(void) {
   incoming(o,false,true,NULL);assert(!peers[0].session_valid);
   js(o,"op","config_set");incoming(o,false,false,NULL);assert(!peers[0].session_valid);
   js(o,"op","read");incoming(o,true,false,"127.0.0.1");assert(!peers[0].session_valid);
+  strcpy(m1_state.ip,"192.0.2.42");
   js(o,"op","bind");incoming(o,false,false,NULL);
   assert(peers[0].session_valid && feature_bound() && queued==1 && stored.revision==revision);
+  assert(strstr(queue[0].body,"192.0.2.42"));
   assert(!memcmp(stored.peers[0].token,(uint8_t[16]){0},16));
   feature_mqtt_service(capture,true);assert(!queued);
   feature_sample_t sample={.value={20,50,100,.1},.sequence=9,.boot=7,.received_ms=100,.valid=true};

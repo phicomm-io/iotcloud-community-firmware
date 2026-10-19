@@ -34,6 +34,8 @@ python3 -m unittest tests.test_a1_filter_storage
 "${compiler[@]}" -DFEATURE_HOST -std=c99 -Wall -Wextra -Werror -Wno-misleading-indentation -Icommon common/engine.c tests/test_engine.c -lm -o "$output/engine"
 "${compiler[@]}" -std=c99 -Wall -Wextra -Werror tests/test_mqtt_account.c -o "$output/mqtt-account"
 "$output/mqtt-account"
+"${compiler[@]}" -std=c99 -Wall -Wextra -Werror -Itests/stubs -ITC1 tests/test_web_log.c -o "$output/web-log"
+"$output/web-log"
 "$output/engine"
 json_dir=${PHICOMM_TEST_JSON_DIR:-build/a1-sdk/mico-os/libraries/utilities/json_c}
 if [[ ! -f "$json_dir/json.h" ]]; then echo 'Set PHICOMM_TEST_JSON_DIR to the pinned MiCO json_c directory' >&2; exit 1; fi

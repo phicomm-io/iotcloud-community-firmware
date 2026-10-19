@@ -28,6 +28,7 @@ void a1_config_get(a1_config_t *out) {
   out->brightness = 255;
   out->led_enabled = true;
 }
+mico_mutex_t a1_lock; a1_state_t a1_state;
 void a1_state_get(a1_state_t *out) { memset(out, 0, sizeof(*out)); }
 bool a1_control_local(const char *k, json_object *o) {
   local_controls++;
@@ -38,6 +39,7 @@ bool a1_control_local(const char *k, json_object *o) {
 #else
 #include "m1.h"
 char m1_id[13] = "aabbccddee02";
+mico_mutex_t m1_lock; m1_state_t m1_state;
 void m1_state_get(m1_state_t *out) { memset(out, 0, sizeof(*out)); }
 #endif
 static unsigned fail_runtime_object;
@@ -48,6 +50,10 @@ static json_object *runtime_new_object(void) {
 #define json_object_new_object runtime_new_object
 #include "../common/runtime.c"
 #undef json_object_new_object
+static bool scoped_topic(const char *topic) {
+ mqtt_account_t a=mqtt_snapshot();char prefix[160];mqtt_format(prefix,sizeof(prefix),"phicomm/v2/%s/",a.key);
+ return !strncmp(topic,prefix,strlen(prefix));
+}
 json_object *automation_command(const char *a,json_object *p,const char **code,bool *handled){(void)a;(void)p;(void)code;*handled=false;return NULL;}
 json_object *service_product_capabilities(void){return json_object_new_object();}
 json_object *service_product(const char *a,json_object *p,const char **code){(void)a;(void)p;*code="unsupported";return NULL;}
@@ -77,7 +83,7 @@ static void binding(void) {
       "{\"peers\":[{\"mac\":\"11:22:33:44:55:66\",\"ip\":\"127.0.0.1\"}]}",
       200);
   char filters[12][FEATURE_TOPIC_MAX];
-  assert(feature_mqtt_filters(filters) == 4);
+  assert(feature_mqtt_filters(filters,sizeof(filters)/sizeof(filters[0])) == 4);
   char root[FEATURE_TOPIC_MAX];
   root_for(&stored, 0, root);
 #ifdef FEATURE_DEVICE_A1
@@ -513,7 +519,7 @@ static void account_namespaces(void) {
   assert(grouped && !strcmp(parent, expected_parent) && !strcmp(parent_name, stored.group));
 #endif
   char filters[12][FEATURE_TOPIC_MAX],root[FEATURE_TOPIC_MAX];
-  unsigned count=feature_mqtt_filters(filters);assert(count>=3);
+  unsigned count=feature_mqtt_filters(filters,sizeof(filters)/sizeof(filters[0]));assert(count>=3);
   for(unsigned i=0;i<count;++i)assert(strstr(filters[i],alice.key));
   assert(feature_mqtt_filters_current(filters,count));
   stored.revision++;configuration=stored;
@@ -537,6 +543,74 @@ static void account_namespaces(void) {
   assert(account_ha>0);
 #endif
   puts("Long account namespaces, scoped RPC, stable HA owner and stale queue isolation passed");
+}
+
+/* The production limits are tested with canaries, including all eight M1
+ * peers. Exercise every queued route with a maximum-length account/group. */
+static char route_expected[FEATURE_TOPIC_MAX];
+static unsigned route_calls;
+static int capture_route(const char *topic,const char *body,bool retained){
+ assert(!strcmp(topic,route_expected));assert(body && retained);route_calls++;return 0;
+}
+static void compact_resources(void){
+ feature_config_t saved=stored;mqtt_account_t account=mqtt_snapshot();
+ feature_defaults(&stored);configuration=stored;
+ char user[64];memset(user,'x',63);user[63]=0;
+ mqtt_account_t longest;assert(mqtt_account_init(&longest,1,account.model,user,LOCAL_ID));
+ feature_mqtt_session(&longest);
+#ifdef FEATURE_DEVICE_A1
+ enum { capacity=FEATURE_MQTT_A1_FILTER_MAX };
+#else
+ enum { capacity=FEATURE_MQTT_M1_FILTER_MAX };
+#endif
+ struct { unsigned before;char topics[capacity][FEATURE_TOPIC_MAX];unsigned after; } filters;
+ filters.before=0x12345678;filters.after=0x87654321;
+ for(unsigned count=0;count<=8;count++){
+  stored.peer_count=count;configuration=stored;
+  for(unsigned i=0;i<count;i++)snprintf(stored.peers[i].id,sizeof(stored.peers[i].id),"%012x",i+1);
+#ifdef FEATURE_DEVICE_A1
+  unsigned expected=3u+(count?1u:0u);
+#else
+  unsigned expected=count;
+#endif
+  assert(feature_mqtt_filters(filters.topics,capacity)==expected);
+  assert(feature_mqtt_filters_current(filters.topics,expected));
+  assert(!feature_mqtt_filters_current(filters.topics,capacity+1));
+  if(expected){
+   char saved_topics[sizeof(filters.topics)];memcpy(saved_topics,filters.topics,sizeof(saved_topics));
+   assert(feature_mqtt_filters(filters.topics,expected-1)==FEATURE_MQTT_FILTER_ERROR);
+   assert(!memcmp(saved_topics,filters.topics,sizeof(saved_topics)));
+  }
+  assert(filters.before==0x12345678 && filters.after==0x87654321);
+ }
+ stored.peer_count=0;memset(stored.group,'g',sizeof(stored.group)-1);stored.group[sizeof(stored.group)-1]=0;
+ configuration=stored;
+ char root[FEATURE_TOPIC_MAX];root_for(&stored,0,root);
+ stored.group[0]=0;configuration=stored;
+ const char *leaves[]={"result","binding/state","linkage/result","light/state","schedule/result","sleep/state","time/state"};
+ json_object *body=obj("{\"ok\":true}");
+ for(unsigned i=0;i<sizeof(leaves)/sizeof(leaves[0]);i++){
+  assert(mqtt_format(route_expected,sizeof(route_expected),"%s/%s",root,leaves[i]));
+  assert(enqueue(route_expected,body,true));
+  assert(feature_mqtt_service(capture_route,true)==0 && !queued);
+ }
+ assert(mqtt_link_topic(&longest,"m1","112233445566",LOCAL_ID,"request",route_expected,sizeof(route_expected)));
+ assert(enqueue(route_expected,body,true));assert(feature_mqtt_service(capture_route,true)==0);
+ assert(mqtt_aux(&longest,"address",LOCAL_ID,route_expected,sizeof(route_expected)));
+ for(unsigned i=0;i<4;i++)assert(enqueue(route_expected,body,true));
+ assert(!enqueue(route_expected,body,true) && queued==4);
+ assert(feature_mqtt_service(capture_route,true)==0 && !queued);
+ /* Reject oversized relative routes instead of truncating a destination. */
+ char oversized[FEATURE_TOPIC_MAX],prefix[160];
+ assert(mqtt_format(prefix,sizeof(prefix),"phicomm/v2/%s/",longest.key));
+ strcpy(oversized,prefix);memset(oversized+strlen(prefix),'a',128);oversized[strlen(prefix)+128]=0;
+ assert(!enqueue(oversized,body,true));
+ assert(enqueue(route_expected,body,true));
+ ++mqtt_generation; /* Simulate an enqueue racing a session reset. */
+ unsigned before=route_calls;
+ assert(feature_mqtt_service(capture_route,true)==0 && !queued && route_calls==before);
+ json_object_put(body);stored=saved;configuration=saved;feature_mqtt_session(&account);
+ puts("Compact resources: 4/8 filter bounds, full queue, long routes and stale session rejection passed");
 }
 
 #ifndef FEATURE_DEVICE_A1
@@ -636,6 +710,7 @@ int main(void) {
 #else
   passive_scenarios();
 #endif
+  compact_resources();
   (void)r;
   puts("runtime transactions, handshake, authentication and duplicate "
        "freshness passed");
