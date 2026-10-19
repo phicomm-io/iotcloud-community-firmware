@@ -51,7 +51,8 @@ for model in M1 A1 TC1; do
     cp -R "$json/." "$json_copy/"
     python3 tools/apply_sdk_patch.py "$json_sdk/$model" \
         common/json-newlib-reent.patch common/json-printbuf-oom.patch \
-        common/json-allocation-safety.patch common/json-heap-budget.patch
+        common/json-allocation-safety.patch common/json-heap-budget.patch \
+        common/json-newlib-nano-abi.patch
     json="$json_copy"
     transport=()
     if [[ "$model" == M1 ]]; then transport=(M1/mqtt_transport.c); fi

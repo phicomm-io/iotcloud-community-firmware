@@ -46,7 +46,8 @@ mkdir -p "$output/sdk/libraries/utilities"
 cp -R "$json_dir" "$output/sdk/libraries/utilities/json_c"
 python3 tools/apply_sdk_patch.py "$output/sdk" \
     common/json-newlib-reent.patch common/json-printbuf-oom.patch \
-    common/json-allocation-safety.patch common/json-heap-budget.patch
+    common/json-allocation-safety.patch common/json-heap-budget.patch \
+    common/json-newlib-nano-abi.patch
 ln -s sdk/libraries/utilities/json_c "$output/json_c"
 python3 - "$output/json_c" <<'PYHOST'
 import pathlib, sys
