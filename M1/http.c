@@ -17,9 +17,9 @@ static void query_response(int fd, const char *action);
 static void command_response(int fd, uint32_t length);
 static void memory_busy(int fd);
 
-/* Keep at most one worker and one queued TCP body in the small idle heap. */
-#define HTTP_PENDING_CLIENTS 1u
-#define HTTP_TCP_CLIENT_LIMIT 2
+/* Bound retained TCP bodies while accommodating the UI startup reads. */
+#define HTTP_PENDING_CLIENTS 2u
+#define HTTP_TCP_CLIENT_LIMIT 3
 #define HTTP_RESPONSE_TIMEOUT_MS 10000u
 #define HTTP_SEND_CHUNK_SIZE 1024u
 

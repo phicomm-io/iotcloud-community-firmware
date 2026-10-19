@@ -218,7 +218,7 @@ class HttpTcpIntegration(unittest.TestCase):
         for product in ('A1', 'M1'):
             with self.subTest(product=product), self.server(product) as server:
                 normal = server.command('REPORT')['tcp_limit']
-                self.assertEqual(normal, 2)
+                self.assertEqual(normal, 3)
                 server.command('OTA ON')
                 self.assert_response(server.request())  # Wake blocking accept.
                 server.wait(lambda s: s['tcp_limit'] == 2)
@@ -302,10 +302,10 @@ class HttpTcpIntegration(unittest.TestCase):
                     hold = server.connect(); clients.append(hold)
                     hold.sendall(b'GET /hold HTTP/1.1\r\nHost: localhost\r\n\r\n')
                     server.wait(lambda s: s['active'] == 1)
-                    for i in range(1):
+                    for i in range(2):
                         client = server.connect(); clients.append(client)
                         client.sendall(b'GET /api/v1/schedules HTTP/1.1\r\nHost: localhost\r\n\r\n')
-                    server.wait(lambda s: s['enqueued'] == 2)
+                    server.wait(lambda s: s['enqueued'] == 3)
                     raw, reset = server.request()
                     self.assertFalse(reset)
                     self.assertIn(b'HTTP/1.1 503 ', raw)
@@ -313,9 +313,9 @@ class HttpTcpIntegration(unittest.TestCase):
                     server.command('RELEASE')
                     for client in clients:
                         self.assert_response(server.read(client))
-                    state = server.wait(lambda s: s['closed'] == 3)
+                    state = server.wait(lambda s: s['closed'] == 4)
                     self.assertEqual(state['rejected'], 1)
-                    self.assertEqual(state['queue_peak'], 1)
+                    self.assertEqual(state['queue_peak'], 2)
                     server.observe('queue_overflow', http_status=503, reset=reset,
                                    busy_body_complete=True, final=state)
                 finally:
