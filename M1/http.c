@@ -551,6 +551,25 @@ static void memory_busy(int fd)
     static const char busy[] = "{\"code\":\"busy\"}";
     response(fd,503,"application/json",busy,sizeof(busy)-1,false);
 }
+/* A busy POST must not leave its body queued in the TCP stack at close. */
+static void memory_busy_body(int fd,uint32_t remaining)
+{
+    memory_busy(fd);
+    if(!remaining || fcntl(fd,F_SETFL,O_NONBLOCK)!=0)return;
+    uint32_t deadline=mico_rtos_get_time()+100u;
+    char discard[128];
+    for(unsigned reads=0;reads<64 && remaining;reads++){
+        uint32_t now=mico_rtos_get_time();
+        if((int32_t)(now-deadline)>=0)break;
+        fd_set readable;FD_ZERO(&readable);FD_SET(fd,&readable);
+        struct timeval tv={0,(deadline-now)*1000};
+        if(select(fd+1,&readable,NULL,NULL,&tv)<=0)break;
+        size_t n=remaining<sizeof(discard)?remaining:sizeof(discard);
+        int got=recv(fd,discard,n,0);
+        if(got<=0)break;
+        remaining-=(unsigned)got;
+    }
+}
 static void query_response(int fd, const char *action)
 {
     unsigned claim=service_memory_wait(0);
@@ -560,7 +579,7 @@ static void query_response(int fd, const char *action)
 static void command_response(int fd, uint32_t length)
 {
     unsigned claim=service_memory_wait(length <= M1_JSON_LIMIT ? length : 0);
-    if(!claim){memory_busy(fd);return;}
+    if(!claim){memory_busy_body(fd,length);return;}
     json_object *request=read_json(fd,length),*reply=service_command(request);
     if(request)json_object_put(request);
     send_json(fd,reply);service_memory_release(claim);

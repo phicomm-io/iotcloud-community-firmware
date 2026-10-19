@@ -75,6 +75,9 @@ int main(void){
 #include <stdio.h>
 #include <string.h>
 #include "common/memory_budget.h"
+#include <fcntl.h>
+#include <sys/select.h>
+#include <sys/socket.h>
 #define MODEL_JSON_LIMIT 8192
 static uint32_t now;static unsigned attempts,recover_at,waiting,active,reads,queries,commands,sends,status;
 typedef int json_object;
@@ -111,9 +114,12 @@ static const char http_post[]="POST",http_get[]="GET",http_head[]="HEAD",http_pu
 int main(void){int type=0;assert(!httpd_verify_req_type("OPTIONS /api/v1/info HTTP/1.1",&type));assert(type==HTTPD_REQ_TYPE_OPTIONS);assert(httpd_verify_req_type("OPTIONSX / HTTP/1.1",&type)<0);}
 ''')
 
-    def test_tc1_rejected_post_delivers_busy_without_reset(self):
-        source=(ROOT/'TC1/http_server/app_httpd.c').read_text()
-        self.run_c(r'''
+    def test_rejected_posts_deliver_busy_without_reset(self):
+        for product in ('TC1','A1','M1'):
+            source=(ROOT/('TC1/http_server/app_httpd.c' if product=='TC1' else product+'/http.c')).read_text()
+            helper=function(source,'static int HttpV1CommandBusy(') if product=='TC1' else 'static void memory_busy(int fd){httpd_request_t r={fd,0};assert(!HttpV1Busy(&r));}\n'+function(source,'static void memory_busy_body(')
+            invoke='assert(!HttpV1CommandBusy(&r));assert(r.remaining_bytes==(full?0:8192));' if product=='TC1' else 'memory_busy_body(r.sock,8192);'
+            self.run_c(r'''
 #define _POSIX_C_SOURCE 200809L
 #include <assert.h>
 #include <stdbool.h>
@@ -133,7 +139,7 @@ static int HttpV1Busy(httpd_request_t *r){
  const char busy[]="HTTP/1.1 503 Service Unavailable\r\nContent-Length: 15\r\nConnection: close\r\n\r\n{\"code\":\"busy\"}";
  size_t n=0;while(n<sizeof(busy)-1){int rc=send(r->sock,busy+n,sizeof(busy)-1-n,0);assert(rc>0);n+=rc;}return 0;
 }
-'''+function(source,'static int HttpV1CommandBusy(')+r'''
+'''+helper+r'''
 int main(void){
  for(int full=0;full<=1;full++){
   int listener=socket(AF_INET,SOCK_STREAM,0);assert(listener>=0);
@@ -144,8 +150,7 @@ int main(void){
   if(!child){
    int fd=accept(listener,NULL,NULL);assert(fd>=0);close(listener);
    httpd_request_t r={fd,8192};uint32_t start=mico_rtos_get_time();
-   assert(!HttpV1CommandBusy(&r));assert(mico_rtos_get_time()-start<500);
-   assert(r.remaining_bytes==(full?0:8192));close(fd);_exit(0);
+   INVOKE assert(mico_rtos_get_time()-start<500);close(fd);_exit(0);
   }
   close(listener);int fd=socket(AF_INET,SOCK_STREAM,0);assert(fd>=0);
   assert(!connect(fd,(void*)&addr,sizeof(addr)));
@@ -156,6 +161,6 @@ int main(void){
   assert(n==0);out[used]=0;assert(strstr(out,"503 Service Unavailable") && strstr(out,"{\"code\":\"busy\"}"));
   close(fd);int status;assert(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==0);
  }
- puts("TC1 actual TCP rejected POST: complete busy, no reset, no heap; omitted body bounded at 100 ms: OK");
+ puts("Actual TCP rejected POST: complete busy, no reset, no heap; omitted body bounded at 100 ms: OK");
 }
-''')
+'''.replace('INVOKE',invoke))
