@@ -17,8 +17,9 @@ static void query_response(int fd, const char *action);
 static void command_response(int fd, uint32_t length);
 static void memory_busy(int fd);
 
-#define HTTP_PENDING_CLIENTS 4u
-#define HTTP_TCP_CLIENT_LIMIT 8
+/* Keep at most one worker and one queued TCP body in the small idle heap. */
+#define HTTP_PENDING_CLIENTS 1u
+#define HTTP_TCP_CLIENT_LIMIT 2
 #define HTTP_RESPONSE_TIMEOUT_MS 10000u
 #define HTTP_SEND_CHUNK_SIZE 1024u
 
@@ -607,7 +608,7 @@ static void http_accept_worker(mico_thread_arg_t arg)
         "Connection: close\r\n\r\n{\"code\":\"busy\"}";
     for (;;) {
         /* Bound queued TCP buffers during OTA; only this thread owns listener. */
-        int wanted=ota_job_active()?4:HTTP_TCP_CLIENT_LIMIT;
+        int wanted=ota_job_active()?2:HTTP_TCP_CLIENT_LIMIT;
         if(wanted!=clients){
             int rc=setsockopt(listener,IPPROTO_TCP,TCP_MAX_CONN_NUM,&wanted,sizeof(wanted));
             if(rc==0)clients=wanted;

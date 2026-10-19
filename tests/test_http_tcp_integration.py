@@ -212,16 +212,16 @@ class HttpTcpIntegration(unittest.TestCase):
                                clients_per_burst=[9, 8], controlled_503=controlled,
                                reset_failures=0, final=state)
 
-    def test_ota_listener_limit_restores(self):
+    def test_ota_does_not_raise_listener_limit(self):
         # The host only verifies listener-owner configuration; SDK admission and
         # TCP memory savings are exercised on physical devices separately.
         for product in ('A1', 'M1'):
             with self.subTest(product=product), self.server(product) as server:
                 normal = server.command('REPORT')['tcp_limit']
-                self.assertGreater(normal, 4)
+                self.assertEqual(normal, 2)
                 server.command('OTA ON')
                 self.assert_response(server.request())  # Wake blocking accept.
-                server.wait(lambda s: s['tcp_limit'] == 4)
+                server.wait(lambda s: s['tcp_limit'] == 2)
                 server.command('OTA OFF')
                 self.assert_response(server.request())
                 server.wait(lambda s: s['tcp_limit'] == normal)
@@ -302,10 +302,10 @@ class HttpTcpIntegration(unittest.TestCase):
                     hold = server.connect(); clients.append(hold)
                     hold.sendall(b'GET /hold HTTP/1.1\r\nHost: localhost\r\n\r\n')
                     server.wait(lambda s: s['active'] == 1)
-                    for i in range(4):
+                    for i in range(1):
                         client = server.connect(); clients.append(client)
                         client.sendall(b'GET /api/v1/schedules HTTP/1.1\r\nHost: localhost\r\n\r\n')
-                    server.wait(lambda s: s['enqueued'] == 5)
+                    server.wait(lambda s: s['enqueued'] == 2)
                     raw, reset = server.request()
                     self.assertFalse(reset)
                     self.assertIn(b'HTTP/1.1 503 ', raw)
@@ -313,9 +313,9 @@ class HttpTcpIntegration(unittest.TestCase):
                     server.command('RELEASE')
                     for client in clients:
                         self.assert_response(server.read(client))
-                    state = server.wait(lambda s: s['closed'] == 6)
+                    state = server.wait(lambda s: s['closed'] == 3)
                     self.assertEqual(state['rejected'], 1)
-                    self.assertEqual(state['queue_peak'], 4)
+                    self.assertEqual(state['queue_peak'], 1)
                     server.observe('queue_overflow', http_status=503, reset=reset,
                                    busy_body_complete=True, final=state)
                 finally:
