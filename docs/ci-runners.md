@@ -42,3 +42,29 @@ registered or that a self-hosted build has passed.
 References: [runner labels and expressions](https://docs.github.com/en/actions/how-tos/write-workflows/choose-where-workflows-run/choose-the-runner-for-a-job),
 [dispatch choice inputs](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#onworkflow_dispatchinputs),
 [expression JSON conversion](https://docs.github.com/en/actions/reference/workflows-and-actions/expressions#fromjson).
+
+## Model matrix and caches
+
+Three parallel jobs (`tc1`, `m1`, `a1`) each build both variants in sequence.
+This preserves all six artifact names and binaries while sharing setup within a
+model. Compared with six parallel jobs, GitHub-hosted cold builds may have a
+longer critical path, but need three SDK/tool preparations instead of six. A
+single self-hosted runner also avoids repeating setup between each variant.
+The second variant is attempted after a first-variant failure when preparation
+succeeded and the run was not cancelled; the first failure still fails the job.
+TC1 host regressions run once. Signing and host scenarios require the complete
+firmware matrix to succeed.
+
+Only the pinned raw bare SDK repository is cached, keyed by
+`common/mico-sdk.json`. Product-patched SDK checkouts are separate per model;
+the two variants reuse the same model's idempotent patch stack but have separate
+build workspaces. Patched SDKs, objects, generated files and MiCoder absolute
+symlinks are never cached. Existing product scripts recreate MiCoder links.
+
+GCC 5.4.1 and installed Python 2.7.18 share `build/ci-tools` within each job.
+Their cache key includes architecture and the absolute checkout path because
+Python's configured prefix is not assumed relocatable. Restored GCC version and
+Python version/prefix are checked; incompatible installations are discarded so
+existing product scripts rebuild them. Source trees and Python build logs are
+not cached. Dependencies explicitly include `libc6-i386`: the pinned GCC Linux
+executables require the 32-bit loader even on an x64 runner.

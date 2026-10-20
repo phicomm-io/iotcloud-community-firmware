@@ -27,14 +27,16 @@ env:
   PHICOMM_OTA_GLOBAL_BASE_URL: http://phicomm.fjrcn.com
 
 jobs:
-  tc1:
-    name: TC1 firmware (A1 hardware variant)
+  firmware:
+    name: ${{ matrix.model }} firmware (both variants)
     strategy:
       fail-fast: false
       matrix:
-        variant: [full, no-frontend-resources]
+        model: [tc1, m1, a1]
     env:
-      PHICOMM_FIRMWARE_VARIANT: ${{ matrix.variant }}
+      TC1_TOOLS_DIR: ${{ github.workspace }}/build/ci-tools
+      M1_TOOLS_DIR: ${{ github.workspace }}/build/ci-tools
+      A1_TOOLS_DIR: ${{ github.workspace }}/build/ci-tools
     runs-on: >-
       ${{ fromJSON(
         github.ref_type != 'tag' &&
@@ -50,158 +52,92 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential bzip2 curl git perl python3 zlib1g-dev libncurses5 libtinfo5 qemu-user
+          sudo apt-get install -y build-essential bzip2 curl git perl python3 zlib1g-dev libncurses5 libtinfo5 libc6-i386 qemu-user
+      - name: Identify tool cache location
+        id: tool-path
+        run: echo "key=$(printf '%s' "$GITHUB_WORKSPACE" | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: build/mico-upstream.git
+          key: mico-bare-${{ hashFiles('common/mico-sdk.json') }}
       - uses: actions/cache@v4
         with:
           path: |
-            build/tc1-tools
-            build/tc1-sdk-3.6.4
-            build/mico-upstream.git
-          key: tc1-tools-ubuntu22-gcc54-python2718-${{ hashFiles('common/mico-sdk.json', 'TC1/*.patch', 'common/*.patch') }}
-      - name: Verify project version
+            build/ci-tools/gcc-arm-none-eabi-5_4-2016q2
+            build/ci-tools/python2
+          key: ci-tools-ubuntu22-${{ runner.arch }}-gcc541-python2718-v1-${{ steps.tool-path.outputs.key }}
+      - name: Validate restored tools and project version
+        id: prep
         env:
           TAG_NAME: ${{ github.ref_name }}
           REF_TYPE: ${{ github.ref_type }}
         run: |
+          bash tools/ci/check_cached_tools.sh
           if [ "$REF_TYPE" = tag ]; then
             python3 tools/check_version.py --tag "$TAG_NAME"
           else
             python3 tools/check_version.py
           fi
-      - name: Build TC1 firmware
+      - name: Build full firmware
+        id: full
         env:
+          MODEL: ${{ matrix.model }}
+          PHICOMM_FIRMWARE_VARIANT: full
           GH_TOKEN: ${{ github.token }}
-        run: ./TC1/build.sh
+        run: ./"${MODEL^^}"/build.sh
+      - name: Build firmware without frontend resources
+        id: slim
+        if: ${{ !cancelled() && steps.prep.outcome == 'success' }}
+        env:
+          MODEL: ${{ matrix.model }}
+          PHICOMM_FIRMWARE_VARIANT: no-frontend-resources
+          GH_TOKEN: ${{ github.token }}
+        run: ./"${MODEL^^}"/build.sh
       - name: Test TC1 protocol and HTTP regressions
+        if: ${{ !cancelled() && matrix.model == 'tc1' && steps.prep.outcome == 'success' }}
         run: tests/run_tc1.sh
-      - name: Prepare release assets
+      - name: Prepare full release assets
+        if: ${{ !cancelled() && steps.full.outcome == 'success' }}
+        env:
+          MODEL: ${{ matrix.model }}
         run: |
-          mkdir -p release
-          suffix=""
-          if [ "$PHICOMM_FIRMWARE_VARIANT" != full ]; then suffix="-$PHICOMM_FIRMWARE_VARIANT"; fi
-          cp build/tc1${suffix}-release/phicomm_tc1_a1${suffix}.ota.bin release/phicomm_tc1_a1${suffix}.ota.bin.raw
-          cp build/tc1${suffix}-release/phicomm_tc1_a1${suffix}.all.bin release/
-          (cd release && sha256sum *.bin *.bin.raw > SHA256SUMS-tc1${suffix})
+          product="$MODEL"
+          if [ "$MODEL" = tc1 ]; then product=tc1_a1; fi
+          directory="release/full"
+          mkdir -p "$directory"
+          cp "build/${MODEL}-release/phicomm_${product}.ota.bin" "$directory/phicomm_${product}.ota.bin.raw"
+          cp "build/${MODEL}-release/phicomm_${product}.all.bin" "$directory/"
+          (cd "$directory" && sha256sum *.bin *.bin.raw > "SHA256SUMS-${MODEL}")
       - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() && steps.full.outcome == 'success' }}
         with:
-          name: tc1-${{ matrix.variant }}-firmware
-          path: release/
+          name: ${{ matrix.model }}-full-firmware
+          path: release/full/
           if-no-files-found: error
           retention-days: 30
-
-  m1:
-    name: M1 firmware
-    strategy:
-      fail-fast: false
-      matrix:
-        variant: [full, no-frontend-resources]
-    env:
-      PHICOMM_FIRMWARE_VARIANT: ${{ matrix.variant }}
-    runs-on: >-
-      ${{ fromJSON(
-        github.ref_type != 'tag' &&
-        (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
-        ((github.event_name == 'workflow_dispatch' && inputs.runner == 'self-hosted') ||
-         (vars.PHICOMM_CI_RUNNER == 'self-hosted' &&
-          (github.event_name != 'workflow_dispatch' || inputs.runner == 'auto'))) &&
-        '["self-hosted","linux","x64","phicomm-build"]' || '["ubuntu-22.04"]') }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential bzip2 curl git perl python3 zlib1g-dev libncurses5 libtinfo5
-      - uses: actions/cache@v4
-        with:
-          path: build/m1-tools
-          key: m1-tools-ubuntu22-gcc54-python2718-v1
-      - name: Verify project version
+      - name: Prepare no-frontend-resources release assets
+        if: ${{ !cancelled() && steps.slim.outcome == 'success' }}
         env:
-          TAG_NAME: ${{ github.ref_name }}
-          REF_TYPE: ${{ github.ref_type }}
+          MODEL: ${{ matrix.model }}
         run: |
-          if [ "$REF_TYPE" = tag ]; then
-            python3 tools/check_version.py --tag "$TAG_NAME"
-          else
-            python3 tools/check_version.py
-          fi
-      - name: Build M1 firmware
-        run: ./M1/build.sh
-      - name: Prepare release assets
-        run: |
-          mkdir -p release
-          suffix=""
-          if [ "$PHICOMM_FIRMWARE_VARIANT" != full ]; then suffix="-$PHICOMM_FIRMWARE_VARIANT"; fi
-          cp build/m1${suffix}-release/phicomm_m1${suffix}.ota.bin release/phicomm_m1${suffix}.ota.bin.raw
-          cp build/m1${suffix}-release/phicomm_m1${suffix}.all.bin release/
-          (cd release && sha256sum *.bin *.bin.raw > SHA256SUMS-m1${suffix})
+          product="$MODEL"
+          if [ "$MODEL" = tc1 ]; then product=tc1_a1; fi
+          directory="release/no-frontend-resources"
+          mkdir -p "$directory"
+          cp "build/${MODEL}-no-frontend-resources-release/phicomm_${product}-no-frontend-resources.ota.bin" "$directory/phicomm_${product}-no-frontend-resources.ota.bin.raw"
+          cp "build/${MODEL}-no-frontend-resources-release/phicomm_${product}-no-frontend-resources.all.bin" "$directory/"
+          (cd "$directory" && sha256sum *.bin *.bin.raw > "SHA256SUMS-${MODEL}-no-frontend-resources")
       - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() && steps.slim.outcome == 'success' }}
         with:
-          name: m1-${{ matrix.variant }}-firmware
-          path: release/
-          if-no-files-found: error
-          retention-days: 30
-
-  a1:
-    name: A1 firmware
-    strategy:
-      fail-fast: false
-      matrix:
-        variant: [full, no-frontend-resources]
-    env:
-      PHICOMM_FIRMWARE_VARIANT: ${{ matrix.variant }}
-    runs-on: >-
-      ${{ fromJSON(
-        github.ref_type != 'tag' &&
-        (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
-        ((github.event_name == 'workflow_dispatch' && inputs.runner == 'self-hosted') ||
-         (vars.PHICOMM_CI_RUNNER == 'self-hosted' &&
-          (github.event_name != 'workflow_dispatch' || inputs.runner == 'auto'))) &&
-        '["self-hosted","linux","x64","phicomm-build"]' || '["ubuntu-22.04"]') }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential bzip2 curl git perl python3 zlib1g-dev libncurses5 libtinfo5
-      - uses: actions/cache@v4
-        with:
-          path: build/a1-tools
-          key: a1-tools-ubuntu22-gcc54-python2718-v1
-      - name: Verify project version
-        env:
-          TAG_NAME: ${{ github.ref_name }}
-          REF_TYPE: ${{ github.ref_type }}
-        run: |
-          if [ "$REF_TYPE" = tag ]; then
-            python3 tools/check_version.py --tag "$TAG_NAME"
-          else
-            python3 tools/check_version.py
-          fi
-      - name: Build A1 firmware
-        run: ./A1/build.sh
-      - name: Prepare release assets
-        run: |
-          mkdir -p release
-          suffix=""
-          if [ "$PHICOMM_FIRMWARE_VARIANT" != full ]; then suffix="-$PHICOMM_FIRMWARE_VARIANT"; fi
-          cp build/a1${suffix}-release/phicomm_a1${suffix}.ota.bin release/phicomm_a1${suffix}.ota.bin.raw
-          cp build/a1${suffix}-release/phicomm_a1${suffix}.all.bin release/
-          (cd release && sha256sum *.bin *.bin.raw > SHA256SUMS-a1${suffix})
-      - uses: actions/upload-artifact@v4
-        with:
-          name: a1-${{ matrix.variant }}-firmware
-          path: release/
+          name: ${{ matrix.model }}-no-frontend-resources-firmware
+          path: release/no-frontend-resources/
           if-no-files-found: error
           retention-days: 30
 
   sign-ota:
     name: Sign production OTA packages
-    needs: [tc1, m1, a1, feature-tests]
+    needs: [firmware, feature-tests]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-22.04
     environment: signed-ota-production
@@ -323,7 +259,7 @@ jobs:
       PHICOMM_OTA_CN_BASE_URL: ""
       PHICOMM_OTA_GLOBAL_BASE_URL: ""
     name: Binding and automation host scenarios
-    needs: [tc1, m1, a1]
+    needs: [firmware]
     runs-on: >-
       ${{ fromJSON(
         github.ref_type != 'tag' &&
