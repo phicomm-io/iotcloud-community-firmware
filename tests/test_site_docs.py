@@ -100,6 +100,30 @@ class BuildTests(unittest.TestCase):
         for slug, title, _, _ in PAGES:
             self.assertIn(f'guides/{slug}.html', home, f'home page does not link {slug}')
 
+    def test_published_tc1_no_disassembly_urls_survive_rebuild(self):
+        for language in ('', 'en/'):
+            guide = self.out / 'guides' / language / 'tc1-no-disassembly.html'
+            self.assertTrue(guide.is_file(), f'published URL removed: {guide.name} ({language})')
+            text = guide.read_text()
+            self.assertIn('PHICOMM_OTA_AP', text)
+            self.assertIn('mico_ota.bin', text)
+            sibling = (self.out / 'guides' / language / 'tc1-flash.html').read_text()
+            self.assertIn('href="tc1-no-disassembly.html"', sibling)
+        self.assertIn('guides/tc1-no-disassembly.html', (self.out / 'index.html').read_text())
+
+    def test_home_first_use_remains_primary_and_local_follows_iotcloud(self):
+        home = (self.out / 'index.html').read_text()
+        hero = home.split('<section class="hero">', 1)[1].split('</section>', 1)[0]
+        actions = re.search(r'<div class="actions">(.*?)</div>', hero).group(1)
+        links = re.findall(r'<a class="([^"]+)" href="([^"]+)">([^<]+)</a>', actions)
+        self.assertEqual(links[0], ('btn primary', 'guides/quick-start.html', '第一次使用'))
+        self.assertEqual([text for css, _, text in links if 'primary' in css.split()], ['第一次使用'])
+        targets = [href for _, href, _ in links]
+        self.assertEqual(targets.index('local/'), targets.index('iotcloud/') + 1)
+        nav = re.search(r'<nav class="site-nav"[^>]*>(.*?)</nav>', home).group(1)
+        nav_targets = re.findall(r'href="([^"]+)"', nav)
+        self.assertEqual(nav_targets.index('local/'), nav_targets.index('#iotcloud') + 1)
+
     def test_home_local_html_links_exist(self):
         from urllib.parse import urlsplit, unquote
         for target in re.findall(r'href="([^"]+)"', (self.out / 'index.html').read_text()):

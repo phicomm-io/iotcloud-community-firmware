@@ -27,6 +27,8 @@ esac
 : "${PHICOMM_PAGES_REPO:=phicomm-io/phicomm-io.github.io}"
 : "${PHICOMM_PAGES_BRANCH:=main}"
 python3 -m pip install --quiet Markdown==3.7
+# Verify published guide URLs and homepage priorities before replacing the site.
+python3 tests/test_site_docs.py
 python3 site/build.py build/pages
 
 if [[ "$mode" == build ]]; then
