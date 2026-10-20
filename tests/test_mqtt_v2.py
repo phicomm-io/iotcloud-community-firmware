@@ -2,21 +2,20 @@
 """Real broker + SDK workers; fake hardware. No production platform/ACL changes.
 Run after build_host.sh with paho-mqtt and Jinja2, passing isolated broker port.
 """
-import json,os,pathlib,subprocess,sys,time
-import paho.mqtt.client as mqtt
+import json,os,pathlib,subprocess,sys,uuid
+from mqtt_observer import Observer
 from jinja2 import Environment,StrictUndefined
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 port=int(sys.argv[1]);records=[]
-c=mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-c.on_message=lambda c,u,m:records.append((m.topic,m.payload.decode(),m.retain))
-c.connect('127.0.0.1',port);c.subscribe('#',1);c.loop_start()
-def wait(f,seconds=12):
- end=time.monotonic()+seconds
- while time.monotonic()<end:
-  if f():return
-  time.sleep(.03)
- raise AssertionError('timeout')
-def publish(t,o,retain=False):c.publish(t,json.dumps(o) if isinstance(o,dict) else o,qos=1,retain=retain).wait_for_publish()
+observer=Observer(port,lambda c,u,m:records.append((m.topic,m.payload.decode(),m.retain)))
+observer.start('#')
+def wait(f,seconds=12):observer.wait(f,seconds)
+def publish(t,o,retain=False):observer.publish(t,json.dumps(o) if isinstance(o,dict) else o,retain)
+def clear_retained(base,failing):
+ try:publish(base+'/command','',True)
+ except Exception as exc:
+  if not failing:raise
+  print('MQTT retained cleanup failed:',type(exc).__name__,flush=True)
 def finish_worker(worker, failing, start):
  exit_before=worker.poll()
  try:
@@ -70,15 +69,26 @@ try:
    command['request_id']='same';publish(base+'/command',command);wait(lambda:any(t==base+'/result' and json.loads(p).get('request_id')=='same' for t,p,r in records[start:]));publish(base+'/command',command)
    command['params']={**params,**({'brightness':75} if model=='M1' else {'on':False})};publish(base+'/command',command)
    wait(lambda:any(t==base+'/result' and json.loads(p)['code']=='conflict' for t,p,r in records[start:]))
-   snapshot=mqtt.Client(mqtt.CallbackAPIVersion.VERSION2);retained=[];snapshot.on_message=lambda c,u,m:retained.append((m.topic,m.retain));snapshot.connect('127.0.0.1',port);snapshot.subscribe(base+'/#',1);snapshot.loop_start();time.sleep(.2);snapshot.disconnect();snapshot.loop_stop()
+   retained=[]
+   snapshot=Observer(port,lambda c,u,m:retained.append((m.topic,m.retain)))
+   try:
+    snapshot.start(base+'/#')
+    # Our isolated Mosquitto queues subscription replay before a subsequent
+    # publication on this connection. Its unique nonretained echo marks the
+    # end of that queue, rather than guessing a retained replay sleep duration.
+    marker=base+'/_test_snapshot/'+uuid.uuid4().hex
+    snapshot.publish(marker,'barrier')
+    snapshot.wait(lambda:any(t==marker for t,r in retained))
+   finally:snapshot.close(failing=sys.exc_info()[0] is not None)
    assert (base+'/state',True) in retained and (base+'/capabilities',True) in retained;assert not any(t==base+'/result' for t,r in retained)
    publish('homeassistant/status','online');before=len([1 for t,p,r in records[start:] if t.startswith('homeassistant/') and t.endswith('/config')]);wait(lambda:len([1 for t,p,r in records[start:] if t.startswith('homeassistant/') and t.endswith('/config')])>before)
    print(model,'PASS discovery commands/templates/attributes, retained state, command replay rejection, request dedup/conflict and HA birth recovery',flush=True)
   finally:
    failing=sys.exc_info()[0] is not None
-   out=finish_worker(worker,failing,start)
-   if not failing:assert 'CONTROL' in out,out
-   publish(base+'/command','',True)
+   try:
+    out=finish_worker(worker,failing,start)
+    if not failing:assert 'CONTROL' in out,out
+   finally:clear_retained(base,sys.exc_info()[0] is not None)
  # TC1 Legacy keeps its original command topic and HA identifiers.
  start=len(records);legacy='device/ztc1/AABBCCDDEEFF'
  worker=subprocess.Popen([str(ROOT/'build/account-host/TC1'),'127.0.0.1',str(port),'legacy_test','12'],env={**os.environ,'TC1_TEST_LEGACY':'1'},stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
@@ -94,4 +104,4 @@ try:
   failing=sys.exc_info()[0] is not None
   out=finish_worker(worker,failing,start)
   if not failing:assert 'CONTROL socket=0 on=1' in out,out
-finally:c.disconnect();c.loop_stop()
+finally:observer.close(failing=sys.exc_info()[0] is not None)
