@@ -2,19 +2,15 @@
 """Exercise optional CO2 linkage using production A1/M1 MQTT workers."""
 import json, os, select, subprocess, sys, time
 from pathlib import Path
-import paho.mqtt.client as mqtt
+from mqtt_observer import Observer, cleanup
 from jinja2 import Environment
 ROOT=Path(__file__).resolve().parents[1]
 def main(port):
     nodes=[]
     messages={}
-    observer=mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
     def received(client, userdata, message):
         messages[message.topic]=message.payload.decode()
-    observer.on_message=received
-    observer.connect('127.0.0.1',port)
-    observer.subscribe('#',qos=1)
-    observer.loop_start()
+    observer=Observer(port,received).start('#')
     def entities():
         return {k:json.loads(v) for k,v in list(messages.items()) if k.startswith('homeassistant/') and v and 'bound_' in k}
     def co2_entity():
@@ -40,8 +36,11 @@ def main(port):
     def wait(fn,seconds=45):
         end=time.monotonic()+seconds
         while time.monotonic()<end:
+            observer.check()
             value=fn()
-            if value:return value
+            if value:
+                observer.check()
+                return value
             time.sleep(.2)
         raise AssertionError('CO2 linkage convergence timeout')
     try:
@@ -100,7 +99,5 @@ def main(port):
         wait(lambda:state()['percentage']==40)
         print('PASS optional CO2 wire data, legacy M1, linear/hysteresis, stale fallback, recovery and combined metrics',flush=True)
     finally:
-        observer.loop_stop();observer.disconnect()
-        for p in nodes:p.terminate()
-        for p in nodes:p.wait(timeout=5)
+        cleanup(observer, nodes, failing=sys.exc_info()[0] is not None)
 if __name__=='__main__':main(int(sys.argv[1]))

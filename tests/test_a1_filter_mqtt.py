@@ -10,7 +10,7 @@ import subprocess
 import sys
 import time
 
-import paho.mqtt.client as mqtt
+from mqtt_observer import Observer, cleanup
 from jinja2 import Environment, StrictUndefined
 
 
@@ -20,7 +20,6 @@ def main(port):
     key = 'u_' + user.encode().hex()
     base = f'phicomm/v2/{key}/a1/aabbccddeeff'
     records = []
-    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
     reconnect_birth = {'parent': None, 'sent': False}
     def receive(c, u, message):
         payload = message.payload.decode()
@@ -28,17 +27,17 @@ def main(port):
         if reconnect_birth['parent'] and not reconnect_birth['sent'] and message.topic.endswith('_filter_remaining/config') and payload:
             if json.loads(payload)['device']['identifiers'] == [reconnect_birth['parent']]:
                 reconnect_birth['sent'] = True
-                c.publish('homeassistant/status', 'online', retain=False)
-    client.on_message = receive
-    client.connect('127.0.0.1', port)
-    client.subscribe('#', 1)
-    client.loop_start()
+                info = c.publish('homeassistant/status', 'online', retain=False)
+                assert info.rc == 0, 'callback birth publish failed'
+    client = Observer(port, receive).start('#')
     worker = None
 
     def wait(predicate, seconds=12):
         deadline = time.monotonic() + seconds
         while time.monotonic() < deadline:
+            client.check()
             if predicate():
+                client.check()
                 return
             if worker and worker.poll() is not None:
                 raise AssertionError('simulator exited')
@@ -46,7 +45,7 @@ def main(port):
         raise AssertionError('MQTT filter timeout')
 
     def publish(topic, payload):
-        client.publish(topic, payload, qos=1, retain=False).wait_for_publish()
+        client.publish(topic, payload)
 
     def bind(params):
         # Changing subscription roots reconnects MQTT; install via the service
@@ -108,18 +107,15 @@ def main(port):
         wait(lambda: any(s['used_seconds'] == 0 and s['lifetime_hours'] == 6000
                          for s in states(start)), 5)
         retained = []
-        late = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-        late.on_message = lambda c, u, m: retained.append((m.topic, m.payload.decode(), m.retain))
+        late = Observer(port, lambda c, u, m: retained.append((m.topic, m.payload.decode(), m.retain)))
         try:
-            late.connect('127.0.0.1', port)
-            late.subscribe(base+'/state', 1)
-            late.loop_start()
-            wait(lambda: bool(retained))
+            late.start(base+'/state')
+            late.wait(lambda: bool(retained))
+            client.check()
             assert retained[0][2] is True
             assert json.loads(retained[0][1])['filter']['used_seconds'] == 0
         finally:
-            late.disconnect()
-            late.loop_stop()
+            late.close(failing=sys.exc_info()[0] is not None)
         start = len(records)
         publish('homeassistant/status', 'online')
         wait(lambda: {t.rsplit('_filter_', 1)[-1].split('/')[0]
@@ -179,11 +175,7 @@ def main(port):
         assert {k: v['unique_id'] for k, v in configs().items()} == original_ids
         print('PASS bound/unbound filters retain identity, share the purifier parent and keep per-A1 commands', flush=True)
     finally:
-        if worker:
-            worker.terminate()
-            worker.wait(timeout=5)
-        client.disconnect()
-        client.loop_stop()
+        cleanup(client, [worker], failing=sys.exc_info()[0] is not None)
 
 
 if __name__ == '__main__':

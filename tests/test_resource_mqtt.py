@@ -7,7 +7,7 @@ import subprocess
 import sys
 import time
 
-import paho.mqtt.client as mqtt
+from mqtt_observer import Observer, cleanup
 
 
 def main(port):
@@ -18,26 +18,22 @@ def main(port):
     base = f'phicomm/v2/{key}/m1/{identity}'
     peers = [f'{i:012x}' for i in range(1, 5)]
     records = []
-    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-    client.on_message = lambda c, u, m: records.append((m.topic, m.payload.decode(), m.retain))
-    client.connect('127.0.0.1', port)
-    client.subscribe(f'phicomm/v2/{key}/#', 1)
-    client.loop_start()
-    worker = subprocess.Popen([str(root / 'build/simulator/M1'), identity,
-                               '127.0.0.1', '127.0.0.1', str(port), user],
-                              stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    client = Observer(port, lambda c, u, m: records.append((m.topic, m.payload.decode(), m.retain))).start(f'phicomm/v2/{key}/#')
+    worker = None
 
     def wait(predicate, seconds=15):
         deadline = time.monotonic() + seconds
         while time.monotonic() < deadline:
+            client.check()
             if predicate():
+                client.check()
                 return
             assert worker.poll() is None, 'M1 simulator exited'
             time.sleep(.03)
         raise AssertionError('M1 resource MQTT timeout')
 
     def publish(topic, payload):
-        client.publish(topic, json.dumps(payload), qos=1).wait_for_publish()
+        client.publish(topic, json.dumps(payload))
 
     def reply(peer, operation, request_id):
         topic = f'phicomm/v2/{key}/a1/{peer}/link/{identity}/response'
@@ -52,6 +48,7 @@ def main(port):
             publish(f'{base}/link/{peer}/request', payload)
             sent_id = payload['id']
             for _ in range(10):
+                client.check()
                 matches = [json.loads(p) for t, p, r in records[start:]
                            if t == topic and json.loads(p).get('id') == sent_id]
                 if matches:
@@ -65,6 +62,9 @@ def main(port):
         raise AssertionError(f'No {operation} reply from subscription {peer}')
 
     try:
+        worker = subprocess.Popen([str(root / 'build/simulator/M1'), identity,
+                                   '127.0.0.1', '127.0.0.1', str(port), user],
+                                  stdin=subprocess.PIPE, stdout=subprocess.PIPE)
         wait(lambda: any(t == base + '/sensor' for t, p, r in records))
         # Renaming changes the MQTT session/HA discovery. Its result must be
         # flushed on the original connection before reconnect clears the queue.
@@ -109,10 +109,7 @@ def main(port):
                    if topic.endswith('/response') or topic == base + '/result')
         print('PASS M1 rename results before reconnect, four actual MQTT subscriptions, long account, bind/sample routing, IP snapshot and command result')
     finally:
-        worker.terminate()
-        worker.wait(timeout=5)
-        client.loop_stop()
-        client.disconnect()
+        cleanup(client, [worker], failing=sys.exc_info()[0] is not None)
 
 
 if __name__ == '__main__':

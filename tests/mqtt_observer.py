@@ -57,7 +57,7 @@ class Observer:
         if failure is not None:
             raise AssertionError('MQTT observer ' + failure)
 
-    def wait(self, predicate, seconds=None):
+    def wait(self, predicate, seconds=None, *, label="condition"):
         deadline = time.monotonic() + (self.timeout if seconds is None else seconds)
         while True:
             self.check()
@@ -65,7 +65,7 @@ class Observer:
                 self.check()
                 return
             if time.monotonic() >= deadline:
-                raise AssertionError('MQTT observer timeout')
+                raise AssertionError('MQTT observer '+label+' timeout')
             time.sleep(.03)
 
     def _connection_ready(self):
@@ -85,11 +85,11 @@ class Observer:
             rc = self.client.loop_start()
             if rc != mqtt.MQTT_ERR_SUCCESS:
                 raise AssertionError('MQTT observer loop_start rc=' + str(rc))
-            self.wait(self._connection_ready)
+            self.wait(self._connection_ready, label="CONNACK")
             rc, mid = self.client.subscribe(topic, 1)
             if rc != mqtt.MQTT_ERR_SUCCESS:
                 raise AssertionError('MQTT observer subscribe rc=' + str(rc))
-            self.wait(lambda: self._subscription_ready(mid))
+            self.wait(lambda: self._subscription_ready(mid), label="SUBACK")
             with self._lock:
                 reasons = self._subacks.pop(mid)
             if len(reasons) != 1 or reasons[0] != 1:
@@ -107,7 +107,7 @@ class Observer:
             if info.rc != mqtt.MQTT_ERR_SUCCESS:
                 raise AssertionError('MQTT observer publish rc=' + str(info.rc))
             return info.is_published()
-        self.wait(acknowledged)
+        self.wait(acknowledged, label="publish ACK")
 
     def close(self, failing=False):
         # Atomically classify the last callback before marking our own shutdown.
@@ -128,3 +128,32 @@ class Observer:
                 raise first_error
         elif first_error is not None:
             print('MQTT observer cleanup failed: ' + type(first_error).__name__, file=sys.stderr)
+
+
+def cleanup(observer, workers, *, failing):
+    """Stop every owned worker and observer, preserving an active scenario error."""
+    import subprocess
+    first_error = None
+    for worker in workers:
+        if worker is None:
+            continue
+        try:
+            if worker.poll() is None:
+                worker.terminate()
+            try:
+                worker.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                worker.kill()
+                worker.wait(timeout=5)
+        except Exception as exc:
+            if first_error is None:
+                first_error = exc
+    try:
+        observer.close(failing=failing or first_error is not None)
+    except Exception as exc:
+        if first_error is None:
+            first_error = exc
+    if first_error is not None:
+        if not failing:
+            raise first_error
+        print('MQTT worker cleanup failed: ' + type(first_error).__name__, file=sys.stderr)

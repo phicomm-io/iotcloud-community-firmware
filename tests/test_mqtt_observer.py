@@ -6,7 +6,7 @@ import threading
 import unittest
 from types import SimpleNamespace
 
-from tests.mqtt_observer import Observer
+from tests.mqtt_observer import Observer, cleanup
 
 
 class FakeClient:
@@ -147,6 +147,24 @@ class ObserverLifecycle(unittest.TestCase):
                 self.fail('original exception lost')
         self.assertTrue(client.stopped)
         self.assertIn('cleanup failed', log.getvalue())
+
+    def test_worker_cleanup_preserves_scenario_error_and_closes_observer(self):
+        observer, client = self.make()
+        observer.start('#')
+        worker = SimpleNamespace(poll=lambda: None,
+                                 terminate=lambda: (_ for _ in ()).throw(RuntimeError('worker cleanup')))
+        original = ValueError('scenario')
+        with contextlib.redirect_stderr(io.StringIO()):
+            try:
+                try:
+                    raise original
+                finally:
+                    cleanup(observer, [worker], failing=sys.exc_info()[0] is not None)
+            except ValueError as exc:
+                self.assertIs(exc, original)
+            else:
+                self.fail('original exception lost')
+        self.assertTrue(client.disconnected and client.stopped)
 
     def test_late_disconnect_is_not_hidden_by_close(self):
         observer, client = self.make()
