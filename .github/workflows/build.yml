@@ -13,8 +13,9 @@ on:
         description: Build/test runner (tag builds always use GitHub-hosted)
         required: true
         type: choice
-        default: github-hosted
+        default: auto
         options:
+          - auto
           - github-hosted
           - self-hosted
 
@@ -34,7 +35,14 @@ jobs:
         variant: [full, no-frontend-resources]
     env:
       PHICOMM_FIRMWARE_VARIANT: ${{ matrix.variant }}
-    runs-on: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.runner == 'self-hosted' && github.ref_type != 'tag' && '["self-hosted","linux","x64","phicomm-build"]' || '["ubuntu-22.04"]') }}
+    runs-on: >-
+      ${{ fromJSON(
+        github.ref_type != 'tag' &&
+        (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
+        ((github.event_name == 'workflow_dispatch' && inputs.runner == 'self-hosted') ||
+         (vars.PHICOMM_CI_RUNNER == 'self-hosted' &&
+          (github.event_name != 'workflow_dispatch' || inputs.runner == 'auto'))) &&
+        '["self-hosted","linux","x64","phicomm-build"]' || '["ubuntu-22.04"]') }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -89,7 +97,14 @@ jobs:
         variant: [full, no-frontend-resources]
     env:
       PHICOMM_FIRMWARE_VARIANT: ${{ matrix.variant }}
-    runs-on: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.runner == 'self-hosted' && github.ref_type != 'tag' && '["self-hosted","linux","x64","phicomm-build"]' || '["ubuntu-22.04"]') }}
+    runs-on: >-
+      ${{ fromJSON(
+        github.ref_type != 'tag' &&
+        (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
+        ((github.event_name == 'workflow_dispatch' && inputs.runner == 'self-hosted') ||
+         (vars.PHICOMM_CI_RUNNER == 'self-hosted' &&
+          (github.event_name != 'workflow_dispatch' || inputs.runner == 'auto'))) &&
+        '["self-hosted","linux","x64","phicomm-build"]' || '["ubuntu-22.04"]') }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -137,7 +152,14 @@ jobs:
         variant: [full, no-frontend-resources]
     env:
       PHICOMM_FIRMWARE_VARIANT: ${{ matrix.variant }}
-    runs-on: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.runner == 'self-hosted' && github.ref_type != 'tag' && '["self-hosted","linux","x64","phicomm-build"]' || '["ubuntu-22.04"]') }}
+    runs-on: >-
+      ${{ fromJSON(
+        github.ref_type != 'tag' &&
+        (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
+        ((github.event_name == 'workflow_dispatch' && inputs.runner == 'self-hosted') ||
+         (vars.PHICOMM_CI_RUNNER == 'self-hosted' &&
+          (github.event_name != 'workflow_dispatch' || inputs.runner == 'auto'))) &&
+        '["self-hosted","linux","x64","phicomm-build"]' || '["ubuntu-22.04"]') }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -302,7 +324,14 @@ jobs:
       PHICOMM_OTA_GLOBAL_BASE_URL: ""
     name: Binding and automation host scenarios
     needs: [tc1, m1, a1]
-    runs-on: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.runner == 'self-hosted' && github.ref_type != 'tag' && '["self-hosted","linux","x64","phicomm-build"]' || '["ubuntu-22.04"]') }}
+    runs-on: >-
+      ${{ fromJSON(
+        github.ref_type != 'tag' &&
+        (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
+        ((github.event_name == 'workflow_dispatch' && inputs.runner == 'self-hosted') ||
+         (vars.PHICOMM_CI_RUNNER == 'self-hosted' &&
+          (github.event_name != 'workflow_dispatch' || inputs.runner == 'auto'))) &&
+        '["self-hosted","linux","x64","phicomm-build"]' || '["ubuntu-22.04"]') }}
     steps:
       - uses: actions/checkout@v4
         with:
