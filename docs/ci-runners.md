@@ -68,3 +68,12 @@ Python version/prefix are checked; incompatible installations are discarded so
 existing product scripts rebuild them. Source trees and Python build logs are
 not cached. Dependencies explicitly include `libc6-i386`: the pinned GCC Linux
 executables require the 32-bit loader even on an x64 runner.
+
+Both firmware and host-test jobs explicitly point `ARM_CC` at the shared pinned
+compiler. TC1 regressions and host tests require compiler version/target, hard
+and soft ABI compile probes, and QEMU before running tests, so a missing shared
+compiler cannot silently remove ARM coverage. Host tests restore the same tool
+cache and fetch the checksum-pinned compiler if the cache is unavailable.
+Earlier optimized runs produced six firmware artifacts but skipped ARM suites
+because they still looked under `build/tc1-tools`; those runs are not ARM test
+acceptance evidence.

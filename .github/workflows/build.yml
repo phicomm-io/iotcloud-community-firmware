@@ -37,6 +37,7 @@ jobs:
       TC1_TOOLS_DIR: ${{ github.workspace }}/build/ci-tools
       M1_TOOLS_DIR: ${{ github.workspace }}/build/ci-tools
       A1_TOOLS_DIR: ${{ github.workspace }}/build/ci-tools
+      ARM_CC: ${{ github.workspace }}/build/ci-tools/gcc-arm-none-eabi-5_4-2016q2/bin/arm-none-eabi-gcc
     runs-on: >-
       ${{ fromJSON(
         github.ref_type != 'tag' &&
@@ -95,7 +96,9 @@ jobs:
         run: ./"${MODEL^^}"/build.sh
       - name: Test TC1 protocol and HTTP regressions
         if: ${{ !cancelled() && matrix.model == 'tc1' && steps.prep.outcome == 'success' }}
-        run: tests/run_tc1.sh
+        run: |
+          bash tools/ci/require_arm_tools.sh
+          tests/run_tc1.sh
       - name: Prepare full release assets
         if: ${{ !cancelled() && steps.full.outcome == 'success' }}
         env:
@@ -256,6 +259,7 @@ jobs:
 
   feature-tests:
     env:
+      ARM_CC: ${{ github.workspace }}/build/ci-tools/gcc-arm-none-eabi-5_4-2016q2/bin/arm-none-eabi-gcc
       PHICOMM_OTA_CN_BASE_URL: ""
       PHICOMM_OTA_GLOBAL_BASE_URL: ""
     name: Binding and automation host scenarios
@@ -275,7 +279,30 @@ jobs:
       - name: Install host test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential libssl-dev openssl python3-pip curl git qemu-user
+          sudo apt-get install -y build-essential libssl-dev openssl python3-pip curl git qemu-user libc6-i386 bzip2 libncurses5 libtinfo5
+      - name: Identify tool cache location
+        id: tool-path
+        run: echo "key=$(printf '%s' "$GITHUB_WORKSPACE" | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: build/mico-upstream.git
+          key: mico-bare-${{ hashFiles('common/mico-sdk.json') }}
+      - uses: actions/cache@v4
+        with:
+          path: |
+            build/ci-tools/gcc-arm-none-eabi-5_4-2016q2
+            build/ci-tools/python2
+          key: ci-tools-ubuntu22-${{ runner.arch }}-gcc541-python2718-v1-${{ steps.tool-path.outputs.key }}
+      - name: Require pinned ARM host test tools
+        run: |
+          bash tools/ci/check_cached_tools.sh
+          if [ ! -x "$ARM_CC" ]; then
+            mkdir -p build/ci-tools
+            curl -fsSL --retry 3 'https://launchpad.net/gcc-arm-embedded/5.0/5-2016-q2-update/+download/gcc-arm-none-eabi-5_4-2016q2-20160622-linux.tar.bz2' -o "$RUNNER_TEMP/gcc.tar.bz2"
+            echo "9910b6b5df12efe564dbb3856bf1599d4c16178a6f28bd8a23c9e5c3edc219e4  $RUNNER_TEMP/gcc.tar.bz2" | sha256sum -c -
+            tar -xjf "$RUNNER_TEMP/gcc.tar.bz2" -C build/ci-tools
+          fi
+          bash tools/ci/require_arm_tools.sh
       - name: Prepare pinned firmware JSON library
         run: python3 tools/prepare_sdk.py build/a1-sdk/mico-os
       - uses: actions/setup-node@v4
