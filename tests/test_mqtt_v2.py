@@ -17,6 +17,26 @@ def wait(f,seconds=12):
   time.sleep(.03)
  raise AssertionError('timeout')
 def publish(t,o,retain=False):c.publish(t,json.dumps(o) if isinstance(o,dict) else o,qos=1,retain=retain).wait_for_publish()
+def finish_worker(worker, failing, start):
+ exit_before=worker.poll()
+ try:
+  worker.terminate()
+  try:out=worker.communicate(timeout=5)[0]
+  except subprocess.TimeoutExpired:
+   worker.kill();out=worker.communicate(timeout=5)[0]
+ except Exception as exc:
+  if not failing:raise
+  # Diagnostic cleanup must not replace the original scenario failure.
+  print('MQTT worker cleanup failed:',type(exc).__name__,
+        'exit_before_cleanup=',exit_before,flush=True)
+  return ''
+ if failing:
+  print('MQTT worker failure diagnostics:',
+        'exit_before_cleanup=',exit_before,'exit_after_cleanup=',worker.returncode,
+        'received_messages=',len(records)-start,'stdout_chars=',len(out),flush=True)
+  print('MQTT worker stdout tail (max 16384 chars):\n'+out[-16384:],flush=True)
+ return out
+
 try:
  for model in ('M1','A1','TC1'):
   user='v2_'+model.lower();key='u_'+user.encode().hex();base=f'phicomm/v2/{key}/{model.lower()}/aabbccddeeff';start=len(records)
@@ -56,7 +76,7 @@ try:
    print(model,'PASS discovery commands/templates/attributes, retained state, command replay rejection, request dedup/conflict and HA birth recovery',flush=True)
   finally:
    failing=sys.exc_info()[0] is not None
-   worker.terminate();out=worker.communicate(timeout=5)[0]
+   out=finish_worker(worker,failing,start)
    if not failing:assert 'CONTROL' in out,out
    publish(base+'/command','',True)
  # TC1 Legacy keeps its original command topic and HA identifiers.
@@ -71,6 +91,7 @@ try:
   assert not any(t==legacy+'/capabilities' for t,p,r in records[start:])
   print('TC1 Legacy PASS original subscription, HA identity and text control',flush=True)
  finally:
-  worker.terminate();out=worker.communicate(timeout=5)[0]
-  if sys.exc_info()[0] is None:assert 'CONTROL socket=0 on=1' in out,out
+  failing=sys.exc_info()[0] is not None
+  out=finish_worker(worker,failing,start)
+  if not failing:assert 'CONTROL socket=0 on=1' in out,out
 finally:c.disconnect();c.loop_stop()
