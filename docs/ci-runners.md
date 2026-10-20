@@ -77,3 +77,9 @@ cache and fetch the checksum-pinned compiler if the cache is unavailable.
 Earlier optimized runs produced six firmware artifacts but skipped ARM suites
 because they still looked under `build/tc1-tools`; those runs are not ARM test
 acceptance evidence.
+
+The early feature-test SDK setup also applies the existing TC1 HTTP overlay
+stack when `TC1/build.sh` still invokes that stack. Main's HTTP admission and
+recovery tests inspect those patched functions directly. Shared-HTTP builds that
+no longer invoke the legacy stack leave that SDK code untouched; leftover patch
+files alone do not select the legacy preparation path.

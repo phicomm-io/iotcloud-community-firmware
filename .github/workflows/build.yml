@@ -310,6 +310,16 @@ jobs:
             python3 tools/prepare_sdk.py "build/$sdk/mico-os"
             test -s "build/$sdk/mico-os/include/mico.h"
           done
+          # Main still tests the legacy TC1 HTTP SDK overlays directly.
+          # Shared-HTTP builds no longer apply this legacy patch family.
+          if grep -Fq '"$app_dir/http-connection-sdk.patch"' TC1/build.sh; then
+            python3 tools/apply_sdk_patch.py build/tc1-sdk-3.6.4/mico-os \
+              TC1/http-connection-sdk.patch TC1/http-resource-sdk.patch \
+              TC1/http-client-limit-sdk.patch TC1/http-auth-sdk.patch \
+              TC1/http-cors-sdk.patch TC1/http-cors-empty-sdk.patch \
+              TC1/http-options-sdk.patch TC1/http-client-once-sdk.patch \
+              TC1/http-recovery-sdk.patch
+          fi
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
