@@ -98,6 +98,7 @@ jobs:
         if: ${{ !cancelled() && matrix.model == 'tc1' && steps.prep.outcome == 'success' }}
         run: |
           bash tools/ci/require_arm_tools.sh
+          test -s build/tc1-sdk-3.6.4/mico-os/libraries/utilities/json_c/json_number_reent.h
           tests/run_tc1.sh
       - name: Prepare full release assets
         if: ${{ !cancelled() && steps.full.outcome == 'success' }}
@@ -303,8 +304,12 @@ jobs:
             tar -xjf "$RUNNER_TEMP/gcc.tar.bz2" -C build/ci-tools
           fi
           bash tools/ci/require_arm_tools.sh
-      - name: Prepare pinned firmware JSON library
-        run: python3 tools/prepare_sdk.py build/a1-sdk/mico-os
+      - name: Prepare all pinned SDKs for early ARM and JSON tests
+        run: |
+          for sdk in a1-sdk m1-sdk tc1-sdk-3.6.4; do
+            python3 tools/prepare_sdk.py "build/$sdk/mico-os"
+            test -s "build/$sdk/mico-os/include/mico.h"
+          done
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
