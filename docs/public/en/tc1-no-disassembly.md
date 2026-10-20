@@ -15,7 +15,30 @@ Flashing erases the inactive application slot and reboots the device. The retain
 
 Any OS will do. One computer or phone can join the TC1 AP while another computer, travel router or wireless AP carries the OTA network. TFTP can run on the AP itself or on a computer behind a bridge.
 
-If one device carries both roles it must run a Wi-Fi client and an AP at the same time: create the OTA AP first, then join the TC1 AP. Not every wireless device supports that combination; two separate devices are easier.
+### Recommended: one computer with Ethernet and Wi-Fi, plus a router
+
+Use a computer with both Ethernet and Wi-Fi adapters, and a wireless router. Ethernet serves the firmware, Wi-Fi connects to the TC1 provisioning AP and sends the trigger, and the router provides the OTA AP. **Any topology with the same connectivity also works.**
+
+```text
+Computer Ethernet (10.0.0.2/8, TFTP server) ──cable── router LAN port
+Computer Wi-Fi ──Wi-Fi── TC1 provisioning AP Phicomm_TC1_XXXX
+TC1 after entering factory OTA mode ──Wi-Fi── router PHICOMM_OTA_AP
+```
+
+Prepare the OTA network before triggering the flash:
+
+1. Prepare `mico_ota.bin` using “Build the image” below. Set the router's **2.4 GHz Wi-Fi** name to exactly **`PHICOMM_OTA_AP`**, with **no password** and no client isolation. Bridge this Wi-Fi network to the LAN ports.
+2. Connect the computer's Ethernet adapter to a router **LAN port**. Set its address to **`10.0.0.2` / `255.0.0.0` (/8)**; no gateway or DNS is needed. Check that the router and other devices do not already use `10.0.0.2`.
+3. Start **tftpd or another TFTP server** on the computer. Put `mico_ota.bin` in its serving directory and bind it to the Ethernet address `10.0.0.2`. Follow “Create the OTA AP and TFTP service” below to allow traffic and verify a download. Keep the service and its log window open.
+4. Follow “Enter provisioning mode” below to reset the **TC1 A1 hardware power strip**. Once `Phicomm_TC1_XXXX` appears, connect the computer's **Wi-Fi adapter** to it, obtain `10.10.10.x/24` and read back the stock firmware identity. Keep Ethernet and TFTP running.
+5. Under “Trigger the flash”, run the Python script to generate the stack-overflow payload, then send it with the following `curl` command. The computer reaches `10.10.10.1` over Wi-Fi and serves files at `10.0.0.2` over Ethernet; the adapters need no Internet sharing or bridge between them.
+6. After entering factory OTA mode, the device leaves its provisioning AP and joins the router's `PHICOMM_OTA_AP`. The computer losing its Wi-Fi connection is expected. Watch the **TFTP logs** for the device requesting and downloading `mico_ota.bin`. Wait for transfer, verification and reboot, then check the new firmware AP and local web UI as described below.
+
+The **computer sends the file to TC1, and TC1 downloads the firmware from the computer**. TFTP tools typically show a read request (RRQ) or a file-sent record. The computer's Wi-Fi adapter does not need to join the router's AP.
+
+### Other device combinations
+
+Two separate devices can carry the provisioning and OTA roles. If a single Wi-Fi adapter both joins the TC1 AP and provides the OTA AP, its hardware and driver must support simultaneous client and AP operation. Create the OTA AP first, then join the TC1 AP.
 
 ## Build the image
 
