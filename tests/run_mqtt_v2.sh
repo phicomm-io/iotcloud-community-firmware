@@ -4,7 +4,18 @@ cd "$(dirname "$0")/.."
 # Separate temporary broker; never connect tests to the user's configured broker.
 output=$(mktemp -d)
 container="phicomm-tmcp-test-$$"
-trap 'docker rm -f "$container" >/dev/null 2>&1 || true; rm -rf "$output"' EXIT
+cleanup() {
+    result=$?
+    if (( result != 0 )); then
+        # Synthetic isolated broker only; preserve a bounded tail before removal.
+        echo 'Isolated MQTT broker failure log (last 120 lines):' >&2
+        docker logs --tail 120 "$container" >&2 2>&1 || true
+    fi
+    docker rm -f "$container" >/dev/null 2>&1 || true
+    rm -rf "$output"
+    exit "$result"
+}
+trap cleanup EXIT
 printf 'listener 1883\nallow_anonymous true\npersistence false\n' > "$output/mosquitto.conf"
 chmod 755 "$output"
 chmod 644 "$output/mosquitto.conf"
@@ -19,6 +30,7 @@ for attempt in range(50):
     except OSError:time.sleep(.1)
 else:raise RuntimeError('isolated MQTT broker did not start')
 PY
+"${MQTT_TEST_PYTHON:-python3}" -m unittest tests.test_mqtt_observer
 "${MQTT_TEST_PYTHON:-python3}" tests/test_mqtt_v2.py "$port"
 bash tests/simulator/build.sh
 "${MQTT_TEST_PYTHON:-python3}" tests/test_a1_filter_mqtt.py "$port"

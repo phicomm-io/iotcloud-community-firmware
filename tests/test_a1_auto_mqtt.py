@@ -7,7 +7,7 @@ import select
 import subprocess
 import sys
 import time
-import paho.mqtt.client as mqtt
+from mqtt_observer import Observer, cleanup
 from jinja2 import Environment, StrictUndefined
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,9 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def main(port):
     records=[]
-    client=mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-    client.on_message=lambda c,u,m:records.append((m.topic,m.payload.decode(),m.retain))
-    client.connect('127.0.0.1',port);client.subscribe('#',1);client.loop_start()
+    client=Observer(port,lambda c,u,m:records.append((m.topic,m.payload.decode(),m.retain))).start('#')
     nodes=[]
     def launch(model,ident,ip):
         env={**os.environ,'SIM_BIND_IP':ip}
@@ -33,11 +31,14 @@ def main(port):
     def wait(fn,seconds=25):
         end=time.monotonic()+seconds
         while time.monotonic()<end:
+            client.check()
             value=fn()
-            if value:return value
+            if value:
+                client.check()
+                return value
             time.sleep(.15)
         raise AssertionError('automatic control timeout')
-    def publish(topic,payload):client.publish(topic,payload,qos=1).wait_for_publish()
+    def publish(topic,payload):client.publish(topic,payload)
     try:
         a=launch('A1','020000aa0001','127.75.1.1')
         m=launch('M1','020000bb0001','127.75.1.2')
@@ -97,11 +98,12 @@ def main(port):
         assert json.loads(wire)=={'action':'fan.set','params':{'mode':'manual','speed':47}}
         start=len(records);publish(base+'/command',wire);wait(lambda:state()['fan_mode']=='manual' and state()['percentage']==47)
         wait(lambda:any(t==base+'/fan/mode/state' and p=='manual' for t,p,r in records[start:]))
-        late=[];reader=mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-        reader.on_message=lambda c,u,m:late.append((m.payload.decode(),m.retain))
-        reader.connect('127.0.0.1',port);reader.subscribe(base+'/fan/mode/state',1);reader.loop_start()
-        try:wait(lambda:('manual',True) in late)
-        finally:reader.loop_stop();reader.disconnect()
+        late=[];reader=Observer(port,lambda c,u,m:late.append((m.payload.decode(),m.retain)))
+        try:
+            reader.start(base+'/fan/mode/state')
+            reader.wait(lambda:('manual',True) in late,seconds=25)
+            client.check()
+        finally:reader.close(failing=sys.exc_info()[0] is not None)
         print('PASS HA preset discovery, rendered mode/speed commands, state convergence and retained late subscription',flush=True)
         call(m,'binding.set',{'response_ids':['020000aa0001:020000bb0001']})
         call(a,'binding.set',{'peers':[{'mac':'020000bb0001','ip':'127.75.1.2'}]})
@@ -160,12 +162,7 @@ def main(port):
         call(a,'fan.mode.set',{'mode':'manual'});assert state()['percentage']==47
         print('PASS fresh sensor fixed/linear/PM/HCHO/combined/PID, idle/resume, off latch, stale fallback and recovery',flush=True)
     finally:
-        for node in nodes:
-            node.terminate()
-        for node in nodes:
-            try:node.wait(5)
-            except subprocess.TimeoutExpired:node.kill();node.wait()
-        client.loop_stop();client.disconnect()
+        cleanup(client, nodes, failing=sys.exc_info()[0] is not None)
 
 
 if __name__=='__main__':main(int(sys.argv[1]))
