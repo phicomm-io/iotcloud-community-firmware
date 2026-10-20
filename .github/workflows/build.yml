@@ -8,6 +8,15 @@ on:
       - 'v*'
   pull_request:
   workflow_dispatch:
+    inputs:
+      runner:
+        description: Build/test runner (tag builds always use GitHub-hosted)
+        required: true
+        type: choice
+        default: github-hosted
+        options:
+          - github-hosted
+          - self-hosted
 
 permissions:
   contents: read
@@ -25,7 +34,7 @@ jobs:
         variant: [full, no-frontend-resources]
     env:
       PHICOMM_FIRMWARE_VARIANT: ${{ matrix.variant }}
-    runs-on: ubuntu-22.04
+    runs-on: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.runner == 'self-hosted' && github.ref_type != 'tag' && '["self-hosted","linux","x64","phicomm-build"]' || '["ubuntu-22.04"]') }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -80,7 +89,7 @@ jobs:
         variant: [full, no-frontend-resources]
     env:
       PHICOMM_FIRMWARE_VARIANT: ${{ matrix.variant }}
-    runs-on: ubuntu-22.04
+    runs-on: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.runner == 'self-hosted' && github.ref_type != 'tag' && '["self-hosted","linux","x64","phicomm-build"]' || '["ubuntu-22.04"]') }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -128,7 +137,7 @@ jobs:
         variant: [full, no-frontend-resources]
     env:
       PHICOMM_FIRMWARE_VARIANT: ${{ matrix.variant }}
-    runs-on: ubuntu-22.04
+    runs-on: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.runner == 'self-hosted' && github.ref_type != 'tag' && '["self-hosted","linux","x64","phicomm-build"]' || '["ubuntu-22.04"]') }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -293,7 +302,7 @@ jobs:
       PHICOMM_OTA_GLOBAL_BASE_URL: ""
     name: Binding and automation host scenarios
     needs: [tc1, m1, a1]
-    runs-on: ubuntu-22.04
+    runs-on: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.runner == 'self-hosted' && github.ref_type != 'tag' && '["self-hosted","linux","x64","phicomm-build"]' || '["ubuntu-22.04"]') }}
     steps:
       - uses: actions/checkout@v4
         with:
