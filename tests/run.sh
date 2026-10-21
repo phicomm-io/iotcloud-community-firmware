@@ -7,7 +7,7 @@ python3 -m unittest discover -s tests -p test_version.py
 python3 -m unittest tests.test_package_stale_signature
 python3 -m unittest tests.test_readonly_stress tests.test_readonly_input_edges tests.test_readonly_shared_httpd tests.test_readonly_http_scheduling tests.test_summarize_readonly_evidence
 python3 -m unittest tests.test_http_core tests.test_http_core_tcp tests.test_shared_http_adversarial tests.test_shared_http_arm tests.test_shared_http_soak tests.test_shared_http_tcp_soak tests.test_http_mico_sdk_abi
-python3 -m unittest tests.test_http_json_owned tests.test_http_json_budget tests.test_tc1_mqtt_stack
+python3 -m unittest tests.test_http_json_owned tests.test_http_json_budget tests.test_background_json tests.test_tc1_mqtt_stack
 python3 -m unittest tests.test_memory_admission tests.test_http_browser_queue tests.test_tc1_http_trace
 python3 -m unittest tests.test_a1_provision_memory
 python3 -m unittest tests.test_m1_boot_config
@@ -98,7 +98,7 @@ done
 for device in A1 M1; do
     define=()
     if [[ "$device" == A1 ]]; then define=(-DFEATURE_DEVICE_A1); fi
-    "${compiler[@]}" -std=gnu99 -Wall -Wextra -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter -Wno-misleading-indentation -Wno-format-truncation -Wno-sign-compare -Wno-implicit-fallthrough -Wno-nonnull-compare -Wno-unused-value -Itests/stubs -I"$json_dir" "${define[@]}" tests/test_runtime.c common/service.c "$json_dir"/*.c -lm -o "$output/runtime-$device"
+    "${compiler[@]}" -std=gnu99 -Wall -Wextra -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter -Wno-misleading-indentation -Wno-format-truncation -Wno-sign-compare -Wno-implicit-fallthrough -Wno-nonnull-compare -Wno-unused-value -Itests/stubs -I"$json_dir" "${define[@]}" tests/test_runtime.c common/service.c common/json_owned.c "$json_dir"/*.c -lm -o "$output/runtime-$device"
     "$output/runtime-$device"
 done
 python3 tests/check_web.py

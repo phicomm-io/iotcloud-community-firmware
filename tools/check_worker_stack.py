@@ -12,7 +12,7 @@ from pathlib import Path
 def check(directory, header):
     directory = Path(directory)
     frames = {}
-    for path in directory.glob('*.su'):
+    for path in list(directory.glob('*.su')) + list((directory.parent/'phicomm_httpd').glob('*.su')):
         for line in path.read_text().splitlines():
             location, size, kind = line.split('\t')
             name = location.rsplit(':', 1)[-1].split('.')[0]
@@ -32,23 +32,27 @@ def check(directory, header):
     }
     if directory.name == 'A1':
         paths['MQTT nested virtual command'] = (mqtt_budget, 4096, ['mqtt_worker',
-            'feature_mqtt_service', 'discovery_virtual', 'feature_command',
+            'feature_mqtt_service', 'discovery_virtual', 'json_owned_publish', 'checked_publish', 'publish', 'feature_command',
             'feature_mqtt_input', 'service_command', 'service_product',
             'service_product_inner', 'a1_control_local'])
         paths['MQTT nested filter command'] = (mqtt_budget, 4096, ['mqtt_worker',
-            'discovery', 'filter_discovery', 'feature_command', 'feature_mqtt_input',
+            'discovery', 'filter_discovery', 'json_owned_publish', 'publish', 'feature_command', 'feature_mqtt_input',
             'service_command', 'service_product', 'service_product_inner',
             'a1_control_local'])
     else:
-        paths['MQTT nested command'] = (mqtt_budget, 4096, ['mqtt_worker', 'discovery',
+        paths['MQTT nested command'] = (mqtt_budget, 4096, ['mqtt_worker', 'discovery', 'json_owned_publish', 'publish',
             'native_command', 'service_command', 'service_product', 'service_product_inner'])
+    if directory.name == 'A1':
+        virtual = paths['MQTT nested virtual command']
+        paths['MQTT nested telemetry command'] = (virtual[0], virtual[1],
+            ['direct_json' if n == 'discovery_virtual' else n for n in virtual[2]])
     status = 'a1_status_json' if directory.name == 'A1' else 'm1_status_json'
     paths['MQTT result nested status'] = (mqtt_budget, 4096, ['mqtt_worker',
         'service_mqtt_flush', 'publish',
         'command' if directory.name == 'A1' else 'native_command',
         'service_command', 'service_product', status, status+'_view'])
     if directory.name == 'A1':
-        for label in ('scheduled control', 'MQTT nested virtual command', 'MQTT nested filter command'):
+        for label in ('scheduled control', 'MQTT nested virtual command', 'MQTT nested filter command', 'MQTT nested telemetry command'):
             paths[label][2].extend(['feature_group_control', 'group_send', 'parse'])
     for label, (budget, reserve, names) in paths.items():
         missing = set(names) - frames.keys()

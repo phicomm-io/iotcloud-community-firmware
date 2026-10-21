@@ -179,8 +179,7 @@ static int discovery(const m1_config_t *c)
             str(o,"entity_category","config");
         }
         mqtt_ha(&account, i < 5 ? "sensor" : "number", keys[i], topic, sizeof(topic));
-        int rc = publish(topic, json_object_to_json_string(o), true);
-        json_object_put(o);
+        int rc = json_owned_publish(publish,topic,o,true);
         if (rc != MQTT_SUCCESS) return rc;
     }
     return MQTT_SUCCESS;

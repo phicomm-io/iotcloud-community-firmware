@@ -71,13 +71,6 @@ static __attribute__((noinline)) json_object *a1_status_json_view(bool live)
         integer(o, "http_tcp_connections_get_rc", diag.connections_get_rc);
         if (diag.connections_get_rc == 0) json_build_object_add(o, "http_tcp_connections",json_object_new_int(diag.connections));
         else json_object_object_add(o, "http_tcp_connections", NULL);
-        integer(o,"http_core_owner_state",diag.owner_state);
-        integer(o,"http_core_restarts",diag.restarts);
-        integer(o,"http_core_close_failures",diag.close_failures);
-        integer(o,"http_core_last_close_rc",diag.last_close_rc);
-        integer(o,"http_core_last_close_errno",diag.last_close_errno);
-        integer(o,"http_core_slot_bytes",diag.slot_bytes);
-        integer(o,"http_core_server_bytes",diag.server_bytes);
         watchdog_status_json(o);
         json_build_object_add(o, "filter", a1_filter_json());
     } else integer(o, "uptime_seconds", mico_rtos_get_time()/1000);

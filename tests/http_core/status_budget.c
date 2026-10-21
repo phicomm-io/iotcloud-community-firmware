@@ -89,7 +89,7 @@ static void measure(bool modern,unsigned longest,bool post,size_t budget,bool ex
  if(modern){ph_http_json(&p,&x,response);wire=p.wire;}else{wire=json_object_to_json_string_ex(response);json_object_put(response);}
  assert((wire!=NULL)==expect_ok);
  size_t output=wire?(size_t)wire->bpos:0;
- if(wire){assert(strstr(wire->buf,"\"model\": \"a1\""));assert(strstr(wire->buf,"http_core_close_failures"));}
+ if(wire){assert(strstr(wire->buf,"\"model\": \"a1\""));assert(strstr(wire->buf,"http_accept_ok"));assert(!strstr(wire->buf,"http_core_"));}
  if(modern)ph_http_product_release(&p);else printbuf_free(wire);
  json_object_put(request);healthy_stats();
  char out[256];int n=snprintf(out,sizeof(out),"%s %s %s capacity=%u graph=%u peak=%u@%u denied=%u phase=%u bytes=%u live=%u\n",modern?"consume":"legacy",longest==2?"escaped-text":longest?"maxstrings":"ordinary",post?"POST":"GET",(unsigned)budget,(unsigned)graph,(unsigned)(peak-libc_baseline),(unsigned)peak_phase,(unsigned)fail_size,(unsigned)fail_phase,(unsigned)output,(unsigned)(live-libc_baseline));_write(1,out,n);
@@ -134,6 +134,11 @@ int main(void){
  measure(true,true,true,29116,true);
  /* More than 1 KiB below observed mature A1 free heap, ordinary full still fits. */
  measure(true,false,true,28000,true);
+ /* Redundant core diagnostics remain on memory, not the full graph. */
+ measure(true,false,false,27000,true);
+ measure(true,false,true,27500,true);
+ measure(true,false,false,26400,false);
+ measure(true,false,true,26400,false);
  measure(true,2,false,29116,true);
  measure(true,2,true,29116,true);
  /* Stronger pressure remains fail-closed, and does not poison recovery. */

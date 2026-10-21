@@ -1,5 +1,6 @@
 /* Execute the real HTTP owned JSON serializer with the pinned SDK json-c. */
 #include "common/httpd/product.h"
+#include "common/json_owned.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -29,6 +30,15 @@ static json_object *fixture(void){
  return o;
 }
 static struct printbuf *golden(void){json_object *o=fixture();struct printbuf *p=json_object_to_json_string_ex(o);assert(p);json_object_put(o);return p;}
+static unsigned published;
+static int publish_result;
+static const char *publish_expected;
+static unsigned publish_baseline;
+static int publish_owned(const char *topic,const char *body,bool retain){
+ assert(!strcmp(topic,"test/state")&&retain&&!strcmp(body,publish_expected));
+ json_heap_stats_t s;json_heap_snapshot(&s);assert(s.live_blocks==publish_baseline+2);
+ published++;return publish_result;
+}
 static void parity(json_object *o,const char *expected){
  ph_http_product p={0};ph_http_exchange x={0};ph_http_json(&p,&x,o);
  assert(p.wire&&x.response.status==200&&!strcmp(x.response.body,expected));
@@ -37,6 +47,18 @@ static void parity(json_object *o,const char *expected){
 int main(void){
  struct printbuf *expected=golden();
  parity(fixture(),expected->buf);
+ /* Only owned wire bytes cross synchronous transport/reentrant callback waits. */
+ json_heap_stats_t baseline;json_heap_snapshot(&baseline);publish_baseline=baseline.live_blocks;
+ publish_expected=expected->buf;publish_result=-7;
+ assert(json_owned_publish(publish_owned,"test/state",fixture(),true)==-7);
+ assert(published==1);
+ for(unsigned i=1;i<1000;i++){
+  json_object *message=fixture();unsigned before=published;
+  allocation=0;fail_at=i;
+  int rc=json_owned_publish(publish_owned,"test/state",message,true);fail_at=0;
+  if(rc==-7){assert(published==before+1);break;}
+  assert(rc==-1&&published==before);
+ }
  /* A shared root and every descendant remain unchanged. */
  json_object *root=fixture();parity(json_object_get(root),expected->buf);
  assert(!strcmp(json_object_to_json_string(root),expected->buf));json_object_put(root);

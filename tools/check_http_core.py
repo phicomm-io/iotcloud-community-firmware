@@ -67,11 +67,21 @@ def check(modules, model, nm, elf):
         source=(Path(__file__).resolve().parents[1]/model/'mqtt.c').read_text()
         mqtt_budget=int(re.search(r'mqtt_worker, (\d+), 0',source).group(1))
         callback='command' if model=='A1' else 'native_command'
-        outer=['feature_mqtt_service','discovery_virtual'] if model=='A1' else ['discovery']
+        # Owned encoding returns before the synchronous publish/Paho callback.
+        # Keep each reachable outer branch separate, including its live topic
+        # scratch, rather than summing mutually exclusive discovery/telemetry.
+        outers={'discovery':['discovery','json_owned_publish']}
+        if model=='A1':
+            outers['virtual discovery']=['feature_mqtt_service','discovery_virtual','json_owned_publish','checked_publish']
+            outers['virtual telemetry']=['feature_mqtt_service','direct_json','json_owned_publish','checked_publish']
+            outers['filter discovery']=['discovery','filter_discovery','json_owned_publish']
         mqtt_paths={
-          'MQTT nested JSON encode':(['mqtt_worker']+outer+['publish',callback]+encode,4096),
           'MQTT flush nested JSON encode':(['mqtt_worker','service_mqtt_flush','publish',callback]+encode,4096),
         }
+        for branch,outer in outers.items():
+            mqtt_paths['MQTT '+branch+' nested JSON encode']=(['mqtt_worker']+outer+['publish',callback]+encode,4096)
+            mqtt_paths['MQTT '+branch+' nested status build']=(['mqtt_worker']+outer+['publish',callback,'service_command','service_command_execute','service_product',status,status+'_view'],4096)
+            mqtt_paths['MQTT '+branch+' owned encode']=(['mqtt_worker']+[n for n in outer if n!='checked_publish']+encode,4096)
     for label,(names,reserve) in mqtt_paths.items():
         missing=set(names)-frames.keys()
         if missing:raise ValueError(f'{label}: missing actual .su frames: {sorted(missing)}')

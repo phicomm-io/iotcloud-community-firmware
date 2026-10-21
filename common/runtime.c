@@ -1,5 +1,6 @@
 #include "watchdog.h"
 #include "automation.h"
+#include "json_owned.h"
 #include "phicomm_features.h"
 #include "sntp.h"
 #include <math.h>
@@ -1818,6 +1819,14 @@ static void direct_leaf(int (*p)(const char *, const char *, bool),
   mqtt_format(topic, sizeof(topic), "%s/%s", root, leaf);
   p(topic, body, retain);
 }
+/* Newly built telemetry/discovery graphs have no users after publication.
+ * Retire them before the MQTT owner can block or dispatch packet callbacks. */
+static void direct_json(int (*p)(const char *, const char *, bool),
+                        const char *root,const char *leaf,json_object *o,bool retain) {
+  char topic[FEATURE_TOPIC_MAX];
+  mqtt_format(topic,sizeof(topic),"%s/%s",root,leaf);
+  json_owned_publish(p,topic,o,retain);
+}
 #ifdef FEATURE_DEVICE_A1
 /* Shared by virtual controls and per-A1 filter entities. Keep their parent
  * identity identical while preserving each physical filter's own state/control. */
@@ -2029,9 +2038,7 @@ static void discovery_virtual(int (*publish)(const char *, const char *, bool),
       }
       json_build_object_add(o, "availability", availability);
       js(o, "availability_mode", "any");
-      const char *wire = json_object_to_json_string(o);
-      if (wire) publish(path, wire, true);
-      json_object_put(o);
+      json_owned_publish(publish,path,o,true);
     }
 }
 #endif
@@ -2073,8 +2080,7 @@ static void virtual_service(int (*publish)(const char *, const char *, bool)) {
           js(o, "_source", LOCAL_ID);
           char leaf[40];
           mqtt_format(leaf, sizeof(leaf), "%s/state", topic_domain(domains[d]));
-          direct_leaf(publish, root, leaf, json_object_to_json_string(o), true);
-          json_object_put(o);
+          direct_json(publish,root,leaf,o,true);
         }
       }
     } else
@@ -2129,8 +2135,7 @@ static void virtual_service(int (*publish)(const char *, const char *, bool)) {
       memcpy(current, samples, sizeof(current));
       unlock();
       json_object *average = average_body(current, c->peer_count, now);
-      direct_leaf(publish, root, "average", json_object_to_json_string(average), false);
-      json_object_put(average);
+      direct_json(publish,root,"average",average,false);
       for (unsigned i = 0; i < c->peer_count; i++)
         {
           json_object *o = sample_body(&current[i], now);
@@ -2142,9 +2147,7 @@ static void virtual_service(int (*publish)(const char *, const char *, bool)) {
             feature_colon_mac(c->peers[i].id, mac);
             mqtt_format(leaf, sizeof(leaf), "%s/sensor", mac);
           }
-          direct_leaf(publish, root, leaf, json_object_to_json_string(o),
-                      false);
-          json_object_put(o);
+          direct_json(publish,root,leaf,o,false);
         }
     }
   }

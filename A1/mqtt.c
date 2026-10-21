@@ -201,7 +201,7 @@ static __attribute__((noinline)) int filter_discovery(const a1_config_t *c, bool
             json_build_array_add(options, json_object_new_string("手动"));
             json_build_object_add(o, "options", options);
         }
-        int rc = publish(path, json_object_to_json_string(o), true); json_object_put(o);
+        int rc = json_owned_publish(publish,path,o,true);
         if (rc != MQTT_SUCCESS) return rc;
     }
     return MQTT_SUCCESS;
@@ -267,7 +267,7 @@ static int discovery(const a1_config_t *c)
         }
         if (i >= 2) str(o, "entity_category", "config");
         mqtt_ha(&account, components[i], keys[i], path, sizeof(path));
-        int rc = publish(path, json_object_to_json_string(o), true); json_object_put(o);
+        int rc = json_owned_publish(publish,path,o,true);
         if (rc != MQTT_SUCCESS) return rc;
     }
     return filter_discovery(c, false);

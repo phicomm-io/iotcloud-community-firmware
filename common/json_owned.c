@@ -107,3 +107,13 @@ struct printbuf *json_owned_to_wire(json_object *o)
     json_object_put(o);
     return pb;
 }
+
+int json_owned_publish(int (*publish)(const char *,const char *,bool),
+                       const char *topic,json_object *o,bool retain)
+{
+    struct printbuf *wire=json_owned_to_wire(o);
+    if(!wire)return -1;
+    int rc=publish(topic,wire->buf,retain);
+    printbuf_free(wire);
+    return rc;
+}

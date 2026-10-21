@@ -10,3 +10,8 @@
  * Graphs must be acyclic JSON values; nesting beyond 32 nodes fails closed.
  * Cycles are rejected by the depth limit, not reclaimed by reference counting. */
 struct printbuf *json_owned_to_wire(json_object *);
+/* Consume one reference before calling a synchronous transport. Only independent
+ * wire bytes survive callback re-entry/PUBACK waiting. -1 means encoding failed;
+ * otherwise preserve the callback's return value, topic and retain policy. */
+int json_owned_publish(int (*)(const char *, const char *, bool),
+                       const char *, json_object *, bool);

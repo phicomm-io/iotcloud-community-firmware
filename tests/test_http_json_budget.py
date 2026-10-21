@@ -73,7 +73,55 @@ static int mqtt_sender(const char *topic,const char *wire,bool retain){
     return fixture.replace('/* PRODUCTION_WATCHDOG_FILTER */', snapshots+watchdog+'\n'+filter_fn).replace('/* PRODUCTION_BUILDERS */', builders).replace('/* PRODUCTION_RESULT_QUERY */', result+'\n'+query)
 
 
+def background_fixture():
+    runtime=(ROOT/'common/runtime.c').read_text()
+    engine=(ROOT/'common/engine.c').read_text()
+    functions='\n'.join(function(engine,s) for s in (
+        'bool feature_sample_fresh(', 'unsigned feature_aggregate(',
+        'bool feature_co2_fresh(', 'unsigned feature_co2_aggregate('))
+    functions+='\n#define number integer\n'+'\n'.join(function(runtime,s) for s in (
+        'static void co2_body(', 'static json_object *sample_body(',
+        'static json_object *average_body(', 'static void direct_json('))+'\n#undef number\n'
+    fixture=status_fixture();fixture=fixture[:fixture.index('int main(void){')]
+    return fixture+'\n#include <math.h>\n'+functions+r'''
+static char background_golden[2048];
+static bool nested_ok,owned_background;
+static int nested_status(const char *topic,const char *body,bool retain){
+ assert(!strcmp(topic,"test/average")&&!retain&&!strcmp(body,background_golden));
+ json_heap_stats_t stats;json_heap_snapshot(&stats);
+ assert(owned_background?stats.live_blocks==2:stats.live_blocks>2);
+ json_object *reply=service_query("status.get");
+ struct printbuf *wire=json_owned_to_wire(reply);
+ nested_ok=wire!=NULL;if(wire)printbuf_free(wire);
+ assert(!strcmp(body,background_golden));return -7;
+}
+static json_object *background_graph(void){
+ feature_sample_t samples[3]={{.valid=true,.received_ms=100,.value={22,45,100,.05},
+  .co2_supported=true,.co2_valid=true,.co2=1100,.co2_received_ms=100}};
+ return average_body(samples,3,100);
+}
+int main(void){
+ char warm[64];snprintf(warm,sizeof(warm),"%f",1.25);libc_baseline=live;healthy_stats();
+ json_object *golden=background_graph();const char *text=json_object_to_json_string(golden);
+ assert(text&&strlen(text)<sizeof(background_golden));strcpy(background_golden,text);
+ json_object_put(golden);healthy_stats();
+ for(unsigned owned=0;owned<2;owned++){
+  setup(0);capacity=28364+libc_baseline;peak=fail_size=fail_phase=0;owned_background=owned;
+  json_object *o=background_graph();assert(o);
+  if(owned)direct_json(nested_status,"test","average",o,false);
+  else {const char *wire=json_object_to_json_string(o);assert(wire);nested_status("test/average",wire,false);json_object_put(o);}
+  assert(nested_ok==owned);healthy_stats();
+  char report[160];int n=snprintf(report,sizeof(report),"background %s actual-average+nested-full capacity=28364 peak=%u guard=%u full=%u live=0\n",owned?"owned":"legacy",(unsigned)(peak-libc_baseline),(unsigned)fail_size,nested_ok);_write(1,report,n);
+ }
+ return 0;
+}
+'''
+
+
 class JsonBudget(unittest.TestCase):
+    def test_arm32_background_overlap(self):
+        self.compile_arm('A1', background_fixture(), budget=True)
+
     def test_arm32_actual_status_budget(self):
         self.compile_arm('A1', status_fixture(), budget=True)
 
