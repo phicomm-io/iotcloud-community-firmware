@@ -7,6 +7,7 @@
 #define MQTT_SUCCESS 0
 #define MQTT_FAILURE -1
 #define PH_MQTT_MORE 2
+static mico_thread_t *ph_mqtt_owner_thread(void){static __thread mico_thread_t owner;owner=(uintptr_t)pthread_self();return &owner;}
 /* PRODUCTION_MQTT_TELEMETRY */
 #include <pthread.h>
 uint32_t test_now;
@@ -62,9 +63,9 @@ static int capabilities_sender(const char*t,const char*b,bool retained){
 }
 static void deferred_capabilities(void){
  unsigned token=service_json_claim();assert(token);
- assert(service_mqtt_capabilities(forbidden_sender,&account)==0);
+ assert(service_mqtt_capabilities(forbidden_sender,&account)==PH_MQTT_MORE);
  assert(service_mqtt_capabilities_pending&&!capabilities_sent);
- service_json_release(token);
+ service_json_release(token);test_now+=1000;
  assert(service_mqtt_snapshot(capabilities_sender,&account)==-19);
  assert(service_mqtt_capabilities_pending&&capabilities_sent==1);
  assert(service_mqtt_try_capabilities(capabilities_sender,&account)==0);

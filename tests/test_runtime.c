@@ -77,6 +77,41 @@ int ph_mqtt_enqueue_send_generation(const char*t,const void*b,size_t n,unsigned 
 #define json_object_new_object runtime_new_object
 #include "../common/runtime.c"
 #undef json_object_new_object
+#ifndef RUNTIME_EXTERNAL_MQTT_SCOPE
+/* Runtime-only harness transport seam. Production optional-encoding and failure
+ * attribution are exercised by test_background_json and test_mqtt_optional_json. */
+#include "../common/json_owned.h"
+static mico_thread_t runtime_owner=1;
+mico_thread_t *ph_mqtt_owner_thread(void){return &runtime_owner;}
+bool service_mqtt_json_begin(service_mqtt_json_scope *s,mico_thread_t *owner){
+  s->token=service_json_claim();s->claim=s->token?service_memory_claim(0):0;
+  if(s->token&&s->claim&&service_json_scope_begin(s->token,owner))return true;
+  service_json_release(s->token);service_memory_release(s->claim);s->token=s->claim=0;return false;
+}
+static unsigned runtime_scope_end(service_mqtt_json_scope *s){
+  unsigned why=service_json_scope_end(s->token);service_json_release(s->token);
+  service_memory_release(s->claim);s->token=s->claim=0;return why;
+}
+void service_mqtt_json_end(service_mqtt_json_scope *s){(void)runtime_scope_end(s);}
+int service_mqtt_json_error(service_mqtt_json_scope *s,unsigned stage){(void)stage;return runtime_scope_end(s)&3u?PH_MQTT_MORE:-1;}
+int service_mqtt_optional_send(int(*send)(const char*,const char*,bool),const char*t,json_object*o,bool r,service_mqtt_json_scope*s){
+  struct printbuf *w=json_owned_to_wire(o);unsigned why=runtime_scope_end(s);
+  if(!w||why){if(w)printbuf_free(w);return why&3u?PH_MQTT_MORE:-1;}
+  int rc=send(t,w->buf,r);printbuf_free(w);return rc;
+}
+#endif
+#ifdef FEATURE_DEVICE_A1
+static void host_discovery_virtual(int(*send)(const char*,const char*,bool),const feature_config_t*c,const char*root,bool remove){
+  discovery_layout_t layout;discovery_layout_capture(&layout,c);unsigned cursor=0;
+  for(unsigned i=0;i<128;i++){
+    unsigned prior=cursor;
+    if(discovery_virtual_step(send,&layout,root,remove,&cursor,discovery_sensors(c)))return;
+    if(publish_error||cursor==prior)return;
+  }
+  assert(!"Discovery harness exceeded fixed topology");
+}
+#define discovery_virtual host_discovery_virtual
+#endif
 #define queued (test_mqtt_queue.count[PH_MQTT_SEND])
 static void host_feature_mqtt_session(const mqtt_account_t *account){
  ph_mqtt_send_generation();assert(ph_mqtt_clear(&test_mqtt_queue));feature_mqtt_session(account);

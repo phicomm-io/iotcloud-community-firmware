@@ -57,7 +57,17 @@ int ph_close(int fd){
  if(fd>3){assert(!client_closed[fd]);client_closed[fd]=1;}
  return mode==9?-1:0;
 }
-int mico_rtos_create_thread(void*a,int p,const char*n,void(*fn)(mico_thread_arg_t),unsigned stack,mico_thread_arg_t arg){(void)a;(void)p;(void)n;assert(stack==12288);if(mode==10)return -7;fn(arg);return 0;}
+static void (*pending_thread)(mico_thread_arg_t);
+static mico_thread_arg_t pending_arg;
+int mico_rtos_create_thread(void*a,int p,const char*n,void(*fn)(mico_thread_arg_t),unsigned stack,mico_thread_arg_t arg){(void)p;(void)n;assert(a&&stack==12288);if(mode==10)return -7;*(mico_thread_t*)a=1;pending_thread=fn;pending_arg=arg;return 0;}
+/* The production creator publishes the returned handle before the scheduled
+ * owner runs. Execute deterministically after that publication in this fake. */
+static int start_then_run(const ph_http_app *application,unsigned cap){
+ int rc=ph_http_start(application,cap);
+ if(!rc){assert(pending_thread);void(*fn)(mico_thread_arg_t)=pending_thread;pending_thread=NULL;fn(pending_arg);}
+ return rc;
+}
+#define ph_http_start start_then_run
 void mico_rtos_delete_thread(void*p){assert(!p);deleted++;}
 void mico_thread_msleep(unsigned n){assert(n==100||n==1);tick+=n;if(n==1)retry_yields++;}
 uint32_t mico_rtos_get_time(void){return tick;}

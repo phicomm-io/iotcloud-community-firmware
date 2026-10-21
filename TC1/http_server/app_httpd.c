@@ -205,7 +205,7 @@ static void complete(ph_http_exchange *x)
         ph_http_message(&product,x,upload_verified?202:400,upload_verified?"文件校验通过，设备正在重启":"OTA rejected");return;
     }
     json_object *request=ph_http_body_json(&product,x);
-    json_object *reply=service_memory_failures()==product.failures?service_command(request):NULL;
+    json_object *reply=!ph_http_graph_failed(&product)?service_command(request):NULL;
     /* The reply owns its references; retire input before growing its wire. */
     json_object_put(request);
     ph_http_json(&product,x,reply);

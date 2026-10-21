@@ -51,6 +51,17 @@ def check(modules, model, nm, elf):
     paths={
       'HTTP status':(3072,status_path),
       'HTTP JSON admission':(3072,base+['ph_http_claim','service_json_claim']),
+      'HTTP GET JSON scope':(3072,base+['ph_http_claim']+[n for n in ('graph_begin',) if n in frames]+['service_json_scope_begin','json_heap_lock']),
+      'HTTP POST JSON scope':(3072,['owner','ph_http_server_step','read_body','complete','ph_http_body_json']+[n for n in ('graph_begin',) if n in frames]+['service_json_scope_begin','json_heap_lock']),
+      'HTTP GET scope owner':(3072,base+['ph_http_claim']+[n for n in ('graph_begin',) if n in frames]+['ph_http_json_owner']),
+      'HTTP POST scope owner':(3072,['owner','ph_http_server_step','read_body','complete','ph_http_body_json']+[n for n in ('graph_begin',) if n in frames]+['ph_http_json_owner']),
+      'HTTP command failure attribution':(3072,['owner','ph_http_server_step','read_body','complete','service_command','service_caller_graph_failed','json_heap_lock']),
+      'HTTP query failure attribution':(3072,base+['service_query','service_command','service_caller_graph_failed','json_heap_lock']),
+      'HTTP command failure check':(3072,['owner','ph_http_server_step','read_body','complete','ph_http_graph_failed','service_json_scope_failed','json_heap_lock']),
+      'HTTP response failure check':(3072,base+['ph_http_json','ph_http_graph_failed','service_json_scope_failed','json_heap_lock']),
+      'HTTP response scope cleanup':(3072,base+['ph_http_json']+[n for n in ('graph_end',) if n in frames]+['service_json_scope_end','json_heap_lock']),
+      'HTTP request scope cleanup':(3072,['owner','ph_http_server_step']+[n for n in ('close_slot',) if n in frames]+['release','ph_http_product_release']+[n for n in ('graph_end',) if n in frames]+['service_json_scope_end','json_heap_lock']),
+      'HTTP lease cleanup':(3072,['owner','ph_http_server_step']+[n for n in ('close_slot',) if n in frames]+['release','ph_http_product_release','service_json_release','json_heap_lock']),
       'HTTP command status':(3072,command+[status]+([status+'_view'] if status+'_view' in frames else [])),
       # Builder frames have returned before encoding. Count the bounded
       # automatic traversal explicitly, outside SDK/native/RTOS reserve.
@@ -85,6 +96,7 @@ def check(modules, model, nm, elf):
             encode=['device_status_encode','encode_'+model.lower()]
             # These helpers may be inlined into their emitted parent frame.
             encode += [n for n in ('device_runtime_encode','device_http_encode','device_filter_encode','watchdog_status_encode') if n in frames and model!='TC1']
+            encode += [n for n in ('status_bool',) if n in frames]
             expanded[label+' encode']=(reserve,common+encode)
         return expanded
     # memory_response is inlined into prepare by pinned GCC; its local

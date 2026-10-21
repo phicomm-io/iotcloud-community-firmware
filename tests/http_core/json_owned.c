@@ -9,6 +9,9 @@ static unsigned allocation, fail_at;
 int json_heap_permit(size_t n){(void)n;return !fail_at || ++allocation!=fail_at;}
 unsigned service_json_claim(void){return 1;}
 void service_json_release(unsigned token){(void)token;}
+bool service_json_scope_begin(unsigned token,void *owner){(void)token;(void)owner;return false;}
+unsigned service_json_scope_failed(unsigned token){(void)token;return 4;}
+unsigned service_json_scope_end(unsigned token){(void)token;return 4;}
 unsigned service_memory_claim(size_t n){return (unsigned)n+1;}
 void service_memory_release(unsigned n){(void)n;}
 void service_memory_waiting(bool on){(void)on;}

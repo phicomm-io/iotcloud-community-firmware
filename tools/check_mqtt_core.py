@@ -45,6 +45,7 @@ def check(frames,model):
     telemetry=cycle+leaf+['service_mqtt_snapshot','service_query']+execute+[status,status+'_view',model.lower()+'_status_full']
     captures=[model.lower()+'_status_capture']+[n for n in ('runtime_metrics_capture','feature_fan_snapshot','watchdog_status_capture','a1_filter_get','ph_http_snapshot','tc1_status_begin','tc1_ota_snapshot','reset_name','device_status_text') if n in frames]
     pure=['device_status_encode','encode_'+model.lower()]+[n for n in ('device_runtime_encode','device_http_encode','device_filter_encode','watchdog_status_encode') if n in frames and model!='TC1']
+    pure += [n for n in ('status_bool',) if n in frames]
     paths['MQTT status capture']=(common+captures,reserve)
     paths['MQTT status pure encode']=(common+pure,reserve)
     paths['MQTT periodic status capture']=(telemetry+captures,reserve)
@@ -53,7 +54,9 @@ def check(frames,model):
         paths['MQTT deferred control'][0].extend(['a1_control_local','feature_group_control','group_send','parse'])
         paths['MQTT feature deferred control']=(owner+['ph_mqtt_poll','feature_command','feature_mqtt_input']+execute+['service_product_inner','a1_control_local','feature_group_control','group_send','parse'],reserve)
         virtual=cycle+['feature_mqtt_service','virtual_service']
-        paths['MQTT virtual discovery encode']=(virtual+['discovery_virtual_step','json_owned_publish']+encode,reserve)
+        paths['MQTT virtual discovery encode']=(virtual+['discovery_virtual_step','service_mqtt_optional_send']+encode[1:],reserve)
+        paths['MQTT virtual domain encode']=(virtual+['direct_json_optional','service_mqtt_optional_send']+encode[1:],reserve)
+        paths['MQTT virtual layout capture']=(virtual+[n for n in ('discovery_layout_capture',) if n in frames],reserve)
         paths['MQTT virtual telemetry encode']=(virtual+[n for n in ('direct_json_claimed',) if n in frames]+encode,reserve)
         paths['MQTT virtual telemetry ingress']=(virtual+(['direct_leaf'] if 'direct_leaf' in frames else [])+['checked_publish','publish']+transport,reserve)
 
@@ -79,16 +82,40 @@ def check(frames,model):
         optional_sources['discovery'] = native
         if model == 'A1':
             optional_sources['filter discovery'] = native + ['filter_discovery']
+            optional_sources['virtual discovery'] = virtual + ['discovery_virtual_step']
+            optional_sources['virtual domain'] = virtual
         paths['MQTT discovery admission'] = (cycle + ([ 'discovery' ] if 'discovery' in frames else []) + ['service_mqtt_json_begin'], reserve)
-        paths['MQTT discovery final cleanup'] = (cycle + ([ 'discovery' ] if 'discovery' in frames else []) + ['service_mqtt_json_end'] + finish, reserve)
+        paths['MQTT discovery final cleanup'] = (cycle + ([ 'discovery' ] if 'discovery' in frames else []) + ['service_mqtt_json_end'] + finish + ['service_json_scope_end','json_heap_lock'], reserve)
         for label, retained in optional_sources.items():
-            encoder = retained + ['service_mqtt_optional_send', 'json_owned_to_wire_result', 'json_write', 'json_primitive', 'json_append']
+            send_prefix=retained+(['direct_json_optional'] if label=='virtual domain' else [])
+            paths['MQTT '+label+' scope admission'] = (retained + ['service_mqtt_json_begin','service_json_scope_begin','json_heap_lock'], reserve)
+            paths['MQTT '+label+' scope owner'] = (retained + ['ph_mqtt_owner_thread','ph_mqtt_owner','current','mutex_lock'], reserve)
+            encoder = send_prefix + ['service_mqtt_optional_send', 'json_owned_to_wire_result', 'json_write', 'json_primitive', 'json_append']
             paths['MQTT '+label+' encode'] = (encoder, reserve)
             paths['MQTT '+label+' allocation observation'] = (encoder + ['json_heap_failure'], reserve)
             paths['MQTT '+label+' graph allocation observation'] = (retained + ['json_heap_failure'], reserve)
-            paths['MQTT '+label+' graph cleanup'] = (retained + ['service_mqtt_json_error'] + finish, reserve)
-            paths['MQTT '+label+' encoding cleanup'] = (retained + ['service_mqtt_optional_send'] + finish, reserve)
-            paths['MQTT '+label+' PUBACK ingress'] = (retained + ['service_mqtt_optional_send', 'publish'] + transport, reserve)
+            paths['MQTT '+label+' graph cleanup'] = (retained + ['service_mqtt_json_error'] + finish + ['service_json_scope_end','json_heap_lock'], reserve)
+            paths['MQTT '+label+' encoding cleanup'] = (send_prefix + ['service_mqtt_optional_send'] + finish + ['service_json_scope_end','json_heap_lock'], reserve)
+            paths['MQTT '+label+' PUBACK ingress'] = (send_prefix + ['service_mqtt_optional_send'] + (['checked_publish'] if label.startswith('virtual ') else []) + ['publish'] + transport, reserve)
+    # Known-owner attribution is a bounded application tail. Include both its
+    # lease/scope operations and owner-handle lookup; SDK thread/mutex internals
+    # remain in the unchanged reserve. Builder and attribution are siblings.
+    scope_sources = {
+        'command': dispatch,
+        'snapshot': cycle+leaf+['service_mqtt_snapshot'],
+        'capabilities': cycle+leaf+['service_mqtt_snapshot','service_mqtt_try_capabilities'],
+    }
+    for label, retained in scope_sources.items():
+        for tail in ('service_json_scope_begin','service_json_scope_failed','service_json_scope_end','service_json_release'):
+            paths['MQTT '+label+' '+tail] = (retained+[tail,'json_heap_lock'],reserve)
+        paths['MQTT '+label+' owner handle'] = (retained+['ph_mqtt_owner_thread','ph_mqtt_owner','current','mutex_lock'],reserve)
+    # Successful snapshot cleanup occurs inside the noinline publication
+    # wrapper, before the sender. Its frame remains live for both scope tails.
+    publication=cycle+leaf+['service_mqtt_snapshot','service_mqtt_publish']
+    for tail in ('service_json_scope_end','service_json_release'):
+        paths['MQTT snapshot publication '+tail]=(publication+[tail,'json_heap_lock'],reserve)
+    paths['MQTT command failure attribution'] = (dispatch+['service_command','service_caller_graph_failed','json_heap_lock'],reserve)
+    paths['MQTT snapshot failure attribution'] = (cycle+leaf+['service_mqtt_snapshot','service_query','service_command','service_caller_graph_failed','json_heap_lock'],reserve)
     if model!='TC1':paths['MQTT OTA recovery']=(cycle+['ota_job_poll','feature_resume_step'],reserve)
     # Protocol error recording runs AFTER Paho returns. Adapter callbacks run
     # WITH Paho live (covered by the unchanged SDK reserve), but are application
@@ -116,7 +143,7 @@ def check(frames,model):
             sites[label.removeprefix('MQTT ')] = retained + ['ph_mqtt_publish']
     sites['external SEND'] = owner + ['ph_mqtt_poll'] + (['outgoing', 'send_owned', 'MqttMsgPublish'] if model == 'TC1' else []) + ['ph_mqtt_publish']
     if model == 'A1':
-        sites['virtual discovery'] = virtual + ['discovery_virtual_step', 'json_owned_publish', 'checked_publish', 'publish', 'ph_mqtt_publish']
+        sites['virtual discovery'] = virtual + ['discovery_virtual_step', 'service_mqtt_optional_send', 'checked_publish', 'publish', 'ph_mqtt_publish']
         # Native optional publication sites were derived from PUBACK paths above.
     elif model == 'M1':
         pass  # Native optional sites above already account for emitted wrappers.
@@ -143,7 +170,7 @@ def check(frames,model):
         for label, retained in optional_sources.items():
             app_sites[label+' graph'] = retained + ['service_mqtt_json_error']
             app_sites[label+' identity'] = retained
-            app_sites[label+' encoding'] = retained + ['service_mqtt_optional_send']
+            app_sites[label+' encoding'] = retained + (['direct_json_optional'] if label=='virtual domain' else []) + ['service_mqtt_optional_send']
     else:
         app_sites['send conversion'] = owner + ['ph_mqtt_poll', 'outgoing']
         # Void legacy command replies ignore conversion errors; only synchronous

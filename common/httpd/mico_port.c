@@ -18,6 +18,13 @@ static unsigned initial_cap;
 static int listener_fd=-1;
 static bool listener_ready;
 static unsigned owner_state, restarts;
+static mico_thread_t owner_thread;
+static unsigned owner_published;
+void *ph_http_json_owner(void)
+{
+    return __atomic_load_n(&owner_published,__ATOMIC_ACQUIRE) &&
+        mico_rtos_is_current_thread(&owner_thread) ? &owner_thread : NULL;
+}
 /* The closed socket kernel has a separate errno store. No public getter
  * bridges it to application newlib; classify only by operation/deadline. */
 static bool io_retry, accept_failed;
@@ -149,6 +156,9 @@ static const ph_http_io io={now,open_listener,limit,accept_one,nonblock,wait_rea
 static void owner(mico_thread_arg_t arg)
 {
     (void)arg;
+    /* MiCO may schedule this thread before create_thread returns its handle.
+     * The creator publishes that handle before any request can use it. */
+    while(!__atomic_load_n(&owner_published,__ATOMIC_ACQUIRE))mico_thread_msleep(1);
     owner_state=1;restarts=0;
     for(unsigned attempt=0;attempt<3 && lifecycle==1;++attempt) {
         if(ph_http_server_open(&server,&io,application,initial_cap)) {
@@ -160,6 +170,7 @@ static void owner(mico_thread_arg_t arg)
     }
     owner_state=server.diagnostics.close_failures?3:lifecycle==2?0:2;
     publish(&server.diagnostics);
+    __atomic_store_n(&owner_published,0,__ATOMIC_RELEASE);
     unsigned mask=irq_lock();lifecycle=0;irq_unlock(mask);
     mico_rtos_delete_thread(NULL);
 }
@@ -170,7 +181,9 @@ int ph_http_start(const ph_http_app *app,unsigned cap)
     application=app;initial_cap=cap;lifecycle=1;owner_state=1;
     cached.owner_state=1;cached.restarts=0;
     irq_unlock(mask);
-    int rc=mico_rtos_create_thread(NULL,MICO_APPLICATION_PRIORITY,"http_core",owner,PH_HTTP_STACK_BYTES,0);
+    __atomic_store_n(&owner_published,0,__ATOMIC_RELEASE);
+    int rc=mico_rtos_create_thread(&owner_thread,MICO_APPLICATION_PRIORITY,"http_core",owner,PH_HTTP_STACK_BYTES,0);
+    if(rc==kNoErr)__atomic_store_n(&owner_published,1,__ATOMIC_RELEASE);
     if(rc!=kNoErr) { mask=irq_lock();lifecycle=0;owner_state=2;cached.owner_state=2;irq_unlock(mask); }
     return rc;
 }

@@ -17,6 +17,15 @@ void service_memory_waiting(bool enter);
  * retain a token across socket IO/PUBACK; a stale release cannot clear its heir. */
 unsigned service_json_claim(void);
 void service_json_release(unsigned token);
+/* One bounded attempt within a live JSON lease. known_owner is a stable MiCO
+ * mico_thread_t*, tested with the exported is_current_thread API. No scope may
+ * cross socket I/O. Optional publishers may scope their encoding; command
+ * callers end before encoding and rely on the encoder's own graph checks. */
+bool service_json_scope_begin(unsigned token, void *known_owner);
+unsigned service_json_scope_failed(unsigned token);
+unsigned service_json_scope_end(unsigned token);
+/* Scoped caller failures, or the original global comparison for legacy callers. */
+bool service_caller_graph_failed(uint64_t global_before);
 void service_memory_snapshot(service_memory_state_t *out);
 /* MQTT owner reports only scalar queue diagnostics; no allocation or socket IO. */
 void service_memory_mqtt(unsigned pending, bool overflow, uint32_t delay_ms);

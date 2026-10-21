@@ -52,12 +52,22 @@ char *__wrap_strdup(const char*s){size_t n=strlen(s)+1;void*p=__wrap_malloc(n);i
 int json_heap_permit(size_t n){int ok=live+16384+32<=capacity && n<=capacity-live-16384-32;if(!ok&&!fail_size){fail_size=n;fail_phase=phase;}return ok;}
 micoMemInfo_t *MicoGetMemoryInfo(void){static micoMemInfo_t m;m.free_memory=capacity-live;m.allocted_memory=live;m.num_of_chunks=3;return &m;}
 json_object *service_parse(const void*s,size_t n){(void)n;return json_tokener_parse(s);}
+static unsigned fixture_scope_token,fixture_scope_failed;
 unsigned service_json_claim(void){return 1;}
 void service_json_release(unsigned token){(void)token;}
+static mico_thread_t fixture_owner;
+bool mico_rtos_is_current_thread(mico_thread_t *owner){return owner==&fixture_owner;}
+mico_thread_t *ph_mqtt_owner_thread(void){return &fixture_owner;}
+bool service_json_scope_begin(unsigned token,void *owner){assert(token && owner==&fixture_owner && !fixture_scope_token);fixture_scope_token=token;fixture_scope_failed=0;return true;}
+unsigned service_json_scope_failed(unsigned token){assert(token==fixture_scope_token);return fixture_scope_failed;}
+unsigned service_json_scope_end(unsigned token){assert(token==fixture_scope_token);unsigned failed=fixture_scope_failed;fixture_scope_token=fixture_scope_failed=0;return failed;}
+void json_heap_failure(unsigned reason){if(fixture_scope_token)fixture_scope_failed|=reason;}
+
 unsigned service_memory_claim(size_t n){return service_memory_cost(n);}
 void service_memory_release(unsigned n){(void)n;}
 void service_memory_waiting(bool b){(void)b;}
 uint64_t service_memory_failures(void){json_heap_stats_t s;json_heap_snapshot(&s);return s.guard_denied+s.allocation_failures;}
+bool service_caller_graph_failed(uint64_t before){return service_memory_failures()!=before;}
 
 /* PRODUCTION_BUILDERS */
 /* PRODUCTION_RESULT_QUERY */
@@ -98,7 +108,7 @@ static void measure(bool modern,unsigned longest,bool post,size_t budget,bool ex
 }
 static void measure_mqtt(bool modern,unsigned longest,bool reply,size_t budget,bool expect_ok){
  setup(longest);capacity=budget+libc_baseline;peak=fail_size=fail_phase=0;phase=2;
- mqtt_modern=modern;mqtt_bytes=0;
+ mqtt_modern=modern;mqtt_bytes=0;snapshot_deferred=false;
  if(reply){
   json_object *request=json_tokener_parse("{\"action\":\"status.get\",\"params\":{},\"request_id\":\"0123456789012345678901234567890123456789012345678901234567890123\"}");
   json_object *response=service_command(request);json_object_put(request);phase=4;
@@ -139,7 +149,11 @@ int main(void){
  /* Redundant core diagnostics remain on memory, not the full graph. */
  measure(true,false,false,27000,true);
  measure(true,false,true,27500,true);
- measure(true,false,false,26400,false);
+ measure(true,false,true,26500,true);
+ measure(true,true,true,27700,true);
+ measure(true,2,true,27700,true);
+ measure(true,2,true,27000,true);
+ measure(true,false,false,26400,true);
  measure(true,false,true,26400,false);
  measure(true,2,false,29116,true);
  measure(true,2,true,29116,true);

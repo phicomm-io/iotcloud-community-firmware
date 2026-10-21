@@ -14,6 +14,8 @@
 typedef int OSStatus;
 typedef unsigned mico_mutex_t;
 typedef uintptr_t mico_thread_arg_t;
+typedef uintptr_t mico_thread_t;
+static inline bool mico_rtos_is_current_thread(mico_thread_t *thread) { return thread && *thread==1; }
 typedef uint64_t mico_utc_time_ms_t;
 #define UNUSED_PARAMETER(x) (void)(x)
 #define kNoErr 0

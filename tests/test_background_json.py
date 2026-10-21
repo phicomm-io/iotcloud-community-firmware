@@ -17,8 +17,11 @@ class BackgroundJson(unittest.TestCase):
         with self.subTest(model=model):
             source=(ROOT/model/'mqtt.c').read_text()
             service=(ROOT/'common/mqtt/service.c').read_text()
-            functions='static mico_thread_t *json_attempt_owner;\nstatic unsigned json_attempt_failure;\n'+'\n'.join(function(service,n) for n in
-                ('void json_heap_failure(', 'bool service_mqtt_json_begin(', 'static unsigned service_mqtt_json_finish(', 'void service_mqtt_json_end(', 'int service_mqtt_json_error(', 'int service_mqtt_optional_send('))+'\n'
+            generic=(ROOT/'common/service.c').read_text()
+            functions='static struct {unsigned token,failed;void *owner;} json_scope;\n'+'\n'.join(function(generic,n) for n in
+                ('void json_heap_failure(', 'bool service_json_scope_begin(', 'unsigned service_json_scope_failed(', 'unsigned service_json_scope_end('))+'\n'
+            functions+='\n'.join(function(service,n) for n in
+                ('bool service_mqtt_json_begin(', 'static unsigned service_mqtt_json_finish(', 'void service_mqtt_json_end(', 'int service_mqtt_json_error(', 'int service_mqtt_optional_send('))+'\n'
             functions+=function(source,'static void str(')+'\n'
             if model=='A1':
                 functions+=function(source,'static void topic(')+'\n'
@@ -33,15 +36,13 @@ class BackgroundJson(unittest.TestCase):
 #define MQTT_SUCCESS 0
 #define MQTT_FAILURE -1
 #define PH_MQTT_MORE 2
-typedef unsigned mico_thread_t;
-static mico_thread_t mqtt_owner_thread;
+static mico_thread_t mqtt_owner_thread=1;
 typedef struct {unsigned token,claim;}service_mqtt_json_scope;
-static bool token_active,claim_active;
+static bool token_active,claim_active,ready=true;static unsigned json_owner,service_lock;
 void service_mqtt_json_end(service_mqtt_json_scope *);
-static bool mico_rtos_is_current_thread(mico_thread_t *p){return p==&mqtt_owner_thread;}
-static unsigned service_json_claim(void){assert(!token_active);token_active=true;return 1;}
+static unsigned service_json_claim(void){assert(!token_active);token_active=true;json_owner=1;return 1;}
 static unsigned service_memory_claim(size_t n){(void)n;assert(!claim_active);claim_active=true;return 1;}
-static void service_json_release(unsigned t){assert(t&&token_active);token_active=false;}
+static void service_json_release(unsigned t){assert(t&&token_active);token_active=false;json_owner=0;}
 static void service_memory_release(unsigned t){assert(t&&claim_active);claim_active=false;}
 #define PH_MQTT_ERROR_APP_DISCOVERY_GRAPH 8
 #define PH_MQTT_ERROR_APP_DISCOVERY_IDENTITY 9
@@ -142,9 +143,16 @@ static int legacy_publish(int(*p)(const char*,const char*,bool),const char*t,jso
 #include "mico.h"
 static uint32_t graph_test_time(void);
 #define mico_rtos_get_time graph_test_time
+#include "common/mqtt/service.h"
+#define RUNTIME_EXTERNAL_MQTT_SCOPE
+#define MQTT_FAILURE -1
 #define main unused_runtime_scenarios
 #include "tests/test_runtime.c"
 #undef main
+static mico_thread_t mqtt_owner_handle=1;
+mico_thread_t *ph_mqtt_owner_thread(void){return &mqtt_owner_handle;}
+static int ph_mqtt_app_error(unsigned stage,int rc){(void)stage;return rc;}
+/* OPTIONAL_SCOPE_FUNCTIONS */
 static bool update_on_clock;
 static unsigned clock_reads;
 static uint32_t graph_test_time(void){
@@ -266,6 +274,15 @@ int main(void){
  return 0;
 }
 '''
+        mqtt=(ROOT/'common/mqtt/service.c').read_text()
+        optional='\n'.join(function(mqtt,n) for n in ('bool service_mqtt_json_begin(', 'static unsigned service_mqtt_json_finish(', 'void service_mqtt_json_end(', 'int service_mqtt_json_error('))
+        optional+='\n#ifdef LEGACY_PUBLISH\n'+r'''
+int service_mqtt_optional_send(int(*p)(const char*,const char*,bool),const char*t,json_object*o,bool r,service_mqtt_json_scope *scope){
+ const char *wire=o?json_object_to_json_string(o):NULL;service_mqtt_json_end(scope);
+ int rc=wire?p(t,wire,r):-1;json_object_put(o);return rc;
+}
+'''+ '\n#else\n'+function(mqtt,'int service_mqtt_optional_send(')+'\n#endif\n'
+        fixture=fixture.replace('/* OPTIONAL_SCOPE_FUNCTIONS */',optional)
         sdk = Path(os.environ.get('PHICOMM_TEST_JSON_DIR', ROOT/'build/a1-sdk/mico-os/libraries/utilities/json_c'))
         with tempfile.TemporaryDirectory() as directory:
             temp=Path(directory);json=copy_patched_json(sdk,temp/'sdk')

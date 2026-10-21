@@ -8,7 +8,19 @@ static void status_string(struct json_object *o,const char *k,const char *s)
 static void status_int(struct json_object *o,const char *k,int n)
 {json_build_object_add(o,k,json_object_new_int(n));}
 static void status_bool(struct json_object *o,const char *k,bool b)
-{json_build_object_add(o,k,json_object_new_boolean(b));}
+{
+    if(!o)return;
+    /* Share only a primitive already owned by this response. The fixed schema
+     * bounds this scan; no persistent JSON/cache or mutable node is shared. */
+    json_object_object_foreach(o,key,value) {
+        (void)key;
+        if(value && json_object_is_type(value,json_type_boolean) &&
+           json_object_get_boolean(value)==b) {
+            json_build_object_add(o,k,json_object_get(value));return;
+        }
+    }
+    json_build_object_add(o,k,json_object_new_boolean(b));
+}
 static const char *device_mqtt_status(unsigned state)
 {
     static const char *const names[]={"disconnected","connecting","config_error","auth_failed","waiting_acl","ready"};

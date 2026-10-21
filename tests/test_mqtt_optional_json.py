@@ -55,13 +55,16 @@ static int states_step(const a1_config_t*c,const mqtt_state_t*s,bool b,bool*out)
 /* PRODUCTION */
 int main(void){
  now=UINT32_MAX-500;state_pending=127;
- for(unsigned i=0;i<250;i++){assert(session_cycle(NULL)==0);assert(!discovery_index);now+=20;}
+ for(unsigned i=0;i<250;i++){assert(session_cycle(NULL)==PH_MQTT_MORE);assert(!discovery_index);now+=20;}
  assert(attempts==5 && !builds && normal==250 && features==250);
  deny=false;
  for(unsigned i=0;i<10;i++){assert(session_cycle(NULL)==0);now+=20;}
  assert(builds==10 && discovery_index==10 && attempts==15);
  /* No duplicated discovery after completion, ordinary work continues. */
  assert(session_cycle(NULL)==0 && builds==10 && normal==251 && features==251);
+ /* Even after discovery completed, native full pressure cannot stop features. */
+ deny=true;for(unsigned i=0;i<100;i++){assert(session_cycle(NULL)==PH_MQTT_MORE);now+=20;}
+ assert(normal==351 && features==351 && discovery_index==10);
 }
 """.replace('/* PRODUCTION */',body)
         with tempfile.TemporaryDirectory() as d:
@@ -85,6 +88,7 @@ int main(void){
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 #include <stdlib.h>
 #define MQTT_SUCCESS 0
 #define PH_MQTT_MORE 2
@@ -145,10 +149,11 @@ int main(void){
 
     def test_scoped_resource_and_structural_failures(self):
         source=(ROOT/'common/mqtt/service.c').read_text()
-        names=('void json_heap_failure(', 'bool service_mqtt_json_begin(',
+        names=('bool service_mqtt_json_begin(',
                'static unsigned service_mqtt_json_finish(', 'void service_mqtt_json_end(',
                'int service_mqtt_json_error(', 'int service_mqtt_optional_send(')
-        functions='static mico_thread_t *json_attempt_owner;\nstatic unsigned json_attempt_failure;\n'+'\n'.join(function(source,n) for n in names)
+        service=(ROOT/'common/service.c').read_text()
+        functions='static struct {unsigned token,failed;void *owner;} json_scope;\n'+'\n'.join(function(service,n) for n in ('void json_heap_failure(', 'bool service_json_scope_begin(', 'unsigned service_json_scope_failed(', 'unsigned service_json_scope_end('))+'\n'+'\n'.join(function(source,n) for n in names)
         fixture=r'''
 #include <assert.h>
 #include <pthread.h>
@@ -156,6 +161,7 @@ int main(void){
 #include <stdbool.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include "common/json_owned.h"
 #include "common/json_build.h"
 #include "json_heap.h"
@@ -167,7 +173,10 @@ int main(void){
 #define PH_MQTT_ERROR_APP_DISCOVERY_GRAPH 8
 typedef pthread_t mico_thread_t;
 typedef struct {unsigned token,claim;}service_mqtt_json_scope;
-static pthread_mutex_t lock=PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t lock=PTHREAD_MUTEX_INITIALIZER,service_lock=PTHREAD_MUTEX_INITIALIZER;
+static bool ready=true;static unsigned json_owner;
+static void mico_rtos_lock_mutex(pthread_mutex_t *m){assert(!pthread_mutex_lock(m));}
+static void mico_rtos_unlock_mutex(pthread_mutex_t *m){assert(!pthread_mutex_unlock(m));}
 static bool busy,deny_claim,token_live,claim_live,deny_alloc,oom;
 static unsigned tags,sends;
 void json_heap_lock(void){assert(!pthread_mutex_lock(&lock));}
@@ -178,16 +187,16 @@ void *__real_calloc(size_t n,size_t m);
 void *__wrap_calloc(size_t n,size_t m){if(oom){oom=false;return NULL;}return __real_calloc(n,m);}
 void *__wrap_malloc(size_t n){if(oom){oom=false;return NULL;}return __real_malloc(n);}
 static bool mico_rtos_is_current_thread(mico_thread_t *t){return pthread_equal(*t,pthread_self());}
-static unsigned service_json_claim(void){if(busy)return 0;assert(!token_live);token_live=true;return 1;}
+static unsigned service_json_claim(void){if(busy)return 0;assert(!token_live);token_live=true;json_owner=1;return 1;}
 static unsigned service_memory_claim(size_t n){(void)n;if(deny_claim)return 0;assert(!claim_live);claim_live=true;return 1;}
-static void service_json_release(unsigned t){assert(t&&token_live);token_live=false;}
+static void service_json_release(unsigned t){assert(t&&token_live);token_live=false;json_owner=0;}
 static void service_memory_release(unsigned t){assert(t&&claim_live);claim_live=false;}
 static int ph_mqtt_app_error(unsigned stage,int rc){assert(stage==8||stage==10);tags++;return rc;}
 /* PRODUCTION */
 static mico_thread_t owner;
 static service_mqtt_json_scope scope;
-static void clean(void){json_heap_stats_t s;json_heap_snapshot(&s);assert(!s.live_blocks&&!token_live&&!claim_live&&!json_attempt_owner);}
-static int send(const char *t,const char *w,bool r){assert(t&&w&&r&&!token_live&&!claim_live&&!json_attempt_owner);sends++;return -17;}
+static void clean(void){json_heap_stats_t s;json_heap_snapshot(&s);assert(!s.live_blocks&&!token_live&&!claim_live&&!json_scope.owner);}
+static int send(const char *t,const char *w,bool r){assert(t&&w&&r&&!token_live&&!claim_live&&!json_scope.owner);sends++;return -17;}
 static int bad_encoder(json_object *o,struct printbuf *p){(void)o;(void)p;return -1;}
 static void *foreign(void *arg){(void)arg;deny_alloc=true;assert(!json_object_new_object());deny_alloc=false;return NULL;}
 int main(void){
@@ -212,6 +221,11 @@ int main(void){
  assert(service_mqtt_optional_send(send,"topic",o,true,&scope)==-1&&tags==3&&!sends);clean();
  assert(service_mqtt_json_begin(&scope,&owner));deny_alloc=true;assert(!json_object_new_object());deny_alloc=false;
  assert(!json_heap_calloc(SIZE_MAX,2));assert(service_mqtt_json_error(&scope,8)==-1&&tags==4);clean();
+ /* An own failed temporary allocation is sticky even when the final graph
+  * happens to encode: never publish an incomplete optional attempt. */
+ assert(service_mqtt_json_begin(&scope,&owner));deny_alloc=true;assert(!json_object_new_object());deny_alloc=false;
+ o=json_object_new_object();json_build_object_add(o,"value",json_object_new_int(1));
+ assert(service_mqtt_optional_send(send,"topic",o,true,&scope)==PH_MQTT_MORE&&!sends&&tags==4);clean();
  assert(service_mqtt_json_begin(&scope,&owner));o=json_object_new_object();json_build_object_add(o,"value",json_object_new_int(1));
  assert(service_mqtt_optional_send(send,"topic",o,true,&scope)==-17&&sends==1&&tags==4);clean();
  puts("actual allocator owner-scoped guard/NULL/foreign-thread/invalid-depth/overflow/sender cleanup PASS");

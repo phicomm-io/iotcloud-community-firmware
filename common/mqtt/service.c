@@ -8,15 +8,6 @@
 #include "../busy_reply.h"
 #include "json_heap.h"
 #include "mico.h"
-/* Protected by the existing JSON allocator mutex. The hook never acquires
- * service/core locks; unrelated HTTP/OTA allocation failures cannot taint an
- * MQTT-owner attempt. The static owner handle outlives every bounded scope. */
-static mico_thread_t *json_attempt_owner;
-static unsigned json_attempt_failure;
-void json_heap_failure(unsigned reason) {
-    if (json_attempt_owner && mico_rtos_is_current_thread(json_attempt_owner))
-        json_attempt_failure |= reason;
-}
 bool service_mqtt_json_begin(service_mqtt_json_scope *scope,mico_thread_t *owner) {
     scope->token=scope->claim=0;
     if(!owner || !mico_rtos_is_current_thread(owner))return false;
@@ -24,17 +15,14 @@ bool service_mqtt_json_begin(service_mqtt_json_scope *scope,mico_thread_t *owner
     if(!scope->token)return false;
     scope->claim=service_memory_claim(0);
     if(!scope->claim) { service_json_release(scope->token);scope->token=0;return false; }
-    json_heap_lock();
-    json_attempt_owner=owner;json_attempt_failure=0;
-    json_heap_unlock();
-    return true;
+    if(service_json_scope_begin(scope->token,owner))return true;
+    service_json_release(scope->token);service_memory_release(scope->claim);
+    scope->token=scope->claim=0;return false;
 }
 static unsigned service_mqtt_json_finish(service_mqtt_json_scope *scope) {
     unsigned failure=0;
     if(scope->token) {
-        json_heap_lock();
-        failure=json_attempt_failure;json_attempt_owner=NULL;json_attempt_failure=0;
-        json_heap_unlock();
+        failure=service_json_scope_end(scope->token);
         service_json_release(scope->token);service_memory_release(scope->claim);
         scope->token=scope->claim=0;
     }
@@ -49,7 +37,8 @@ int service_mqtt_optional_send(int(*sender)(const char *,const char *,bool),cons
     enum json_owned_error error;
     struct printbuf *wire=json_owned_to_wire_result(o,&error);
     unsigned failure=service_mqtt_json_finish(scope);
-    if(!wire) {
+    if(!wire || failure) {
+        if(wire)printbuf_free(wire);
         if(error!=JSON_OWNED_INVALID && (failure & 3u) && !(failure & 4u))return PH_MQTT_MORE;
         return ph_mqtt_app_error(PH_MQTT_ERROR_APP_DISCOVERY_ENCODING,MQTT_FAILURE);
     }
@@ -72,13 +61,25 @@ int service_mqtt_send(int(*sender)(const char *, const char *, bool), const char
     return rc;
 }
 
+/* Owner-only and wrap-safe; an allocation refusal must not rebuild at the
+ * 10 ms owner cadence. Commands still run before this optional work. */
+static bool snapshot_deferred;
+static uint32_t snapshot_retry_at;
+static int snapshot_resource_wait(void) {
+    snapshot_deferred=true;snapshot_retry_at=mico_rtos_get_time();
+    return PH_MQTT_MORE;
+}
 __attribute__((noinline)) static int service_mqtt_publish(int(*sender)(const char *, const char *, bool), const mqtt_account_t *scope, const char *leaf, json_object *o, bool retain, unsigned claim, unsigned json_claim) {
     /* Telemetry allocation failure must not tear down an otherwise live socket. */
     struct printbuf *wire = service_mqtt_wire(o);
+    unsigned failure=service_json_scope_end(json_claim);
     service_json_release(json_claim);
     service_memory_release(claim);
-    if (!wire)
-        return PH_MQTT_MORE;
+    if (!wire || failure) {
+        if(wire)printbuf_free(wire);
+        return snapshot_resource_wait();
+    }
+    snapshot_deferred=false;
     char topic[MQTT_TOPIC_MAX];
     mqtt_leaf(scope, leaf, topic, sizeof(topic));
     int rc = sender(topic, wire->buf, retain);
@@ -91,6 +92,7 @@ __attribute__((noinline)) static int service_mqtt_publish(int(*sender)(const cha
 static bool service_mqtt_capabilities_pending;
 void service_mqtt_clear(void) {
     service_mqtt_capabilities_pending = false;
+    snapshot_deferred=false;
     ph_mqtt_pending_clear();
 }
 
@@ -111,14 +113,16 @@ int service_mqtt_input(int(*sender)(const char *, const char *, bool), const mqt
     unsigned token = service_json_claim();
     unsigned claim = token ? service_memory_claim(length) : 0;
     struct printbuf *wire = NULL;
-    uint64_t failures = service_memory_failures();
-    json_object *q = claim ? service_parse(payload, length) : NULL;
+    bool scoped=claim && service_json_scope_begin(token,ph_mqtt_owner_thread());
+    json_object *q = scoped ? service_parse(payload, length) : NULL;
     /* Everything borrowed is now copied (including the fixed failure wire).
      * Do not use payload/length/MessageData again after consuming the entry. */
     bool admitted = ph_mqtt_input_consumed();
-    json_object *r = claim && admitted && service_memory_failures() == failures ? service_command(q) : NULL;
+    json_object *r = scoped && admitted && !service_json_scope_failed(token) ? service_command(q) : NULL;
     if (q)
         json_object_put(q);
+    unsigned failure=scoped?service_json_scope_end(token):0;
+    if(failure && r){json_object_put(r);r=NULL;}
     wire = service_mqtt_wire(r);
     service_memory_release(claim);
     service_json_release(token);
@@ -138,27 +142,37 @@ int service_mqtt_input(int(*sender)(const char *, const char *, bool), const mqt
 __attribute__((noinline)) static int service_mqtt_try_capabilities(int(*sender)(const char *, const char *, bool), const mqtt_account_t *scope) {
     unsigned token = service_json_claim();
     if (!token)
-        return MQTT_SUCCESS;
+        return snapshot_resource_wait();
     unsigned claim = service_memory_claim(0);
     if (!claim) {
         service_json_release(token);
-        return MQTT_SUCCESS;
+        return snapshot_resource_wait();
+    }
+    if(!service_json_scope_begin(token,ph_mqtt_owner_thread())) {
+        service_json_release(token);service_memory_release(claim);return snapshot_resource_wait();
     }
     struct printbuf *wire = service_mqtt_wire(service_product_capabilities());
+    unsigned failure=service_json_scope_end(token);
     service_json_release(token);
     service_memory_release(claim);
-    if (!wire)
-        return MQTT_SUCCESS;
+    if (!wire || failure) {
+        if(wire)printbuf_free(wire);
+        return snapshot_resource_wait();
+    }
     char topic[MQTT_TOPIC_MAX];
     mqtt_leaf(scope, "capabilities", topic, sizeof(topic));
     int rc = sender(topic, wire->buf, true);
-    if (rc == MQTT_SUCCESS)
+    if (rc == MQTT_SUCCESS) {
         service_mqtt_capabilities_pending = false;
+        snapshot_deferred=false;
+    }
     printbuf_free(wire);
     return rc;
 }
 
 __attribute__((noinline)) int service_mqtt_snapshot(int(*sender)(const char *, const char *, bool), const mqtt_account_t *scope) {
+    if(snapshot_deferred && (uint32_t)(mico_rtos_get_time()-snapshot_retry_at)<1000u)
+        return PH_MQTT_MORE;
     int rc = MQTT_SUCCESS;
     /* One command was serviced above. A stream of further commands must not
      * starve this bounded periodic snapshot indefinitely. */
@@ -171,17 +185,21 @@ __attribute__((noinline)) int service_mqtt_snapshot(int(*sender)(const char *, c
     }
     unsigned json_claim = service_json_claim();
     if (!json_claim)
-        return PH_MQTT_MORE;
+        return snapshot_resource_wait();
     unsigned claim = service_memory_claim(0);
     if (!claim) {
         service_json_release(json_claim);
-        return PH_MQTT_MORE;
+        return snapshot_resource_wait();
+    }
+    if(!service_json_scope_begin(json_claim,ph_mqtt_owner_thread())) {
+        service_memory_release(claim);service_json_release(json_claim);return snapshot_resource_wait();
     }
     json_object *r = service_query("status.get");
     if (!r) {
+        service_json_scope_end(json_claim);
         service_memory_release(claim);
         service_json_release(json_claim);
-        return PH_MQTT_MORE;
+        return snapshot_resource_wait();
     }
     json_object *code = json_object_object_get(r, "code");
     json_object *data = json_object_object_get(r, "data");
@@ -195,9 +213,10 @@ __attribute__((noinline)) int service_mqtt_snapshot(int(*sender)(const char *, c
         json_object_get(data);
     json_object_put(r);
     if (!valid) {
+        service_json_scope_end(json_claim);
         service_memory_release(claim);
         service_json_release(json_claim);
-        return PH_MQTT_MORE;
+        return snapshot_resource_wait();
     }
     return service_mqtt_publish(sender, scope, "state", data, true, claim, json_claim);
 }

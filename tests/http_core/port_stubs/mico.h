@@ -9,6 +9,8 @@
 #include <unistd.h>
 #include <fcntl.h>
 typedef uintptr_t mico_thread_arg_t;
+typedef uintptr_t mico_thread_t;
+static inline bool mico_rtos_is_current_thread(mico_thread_t *thread) { return thread && *thread==1; }
 #define kNoErr 0
 #define kInProgressErr 1
 #define MICO_APPLICATION_PRIORITY 1

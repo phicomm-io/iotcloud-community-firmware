@@ -66,7 +66,8 @@ json_object *service_command(json_object *request){
     mqtt_fixture=r'''
 #define MQTT_SUCCESS 0
 #define MQTT_FAILURE -1
-#define PH_MQTT_MORE 2
+#include "common/mqtt/owner.h"
+static bool snapshot_deferred;static uint32_t snapshot_retry_at;
 static bool mqtt_modern,service_mqtt_capabilities_pending;static unsigned mqtt_bytes,service_mqtt_reply_count;
 static int service_mqtt_flush(int (*sender)(const char*,const char*,bool)){(void)sender;return MQTT_SUCCESS;}
 ''' + wire + r'''
@@ -78,7 +79,7 @@ static struct printbuf *service_mqtt_wire(json_object *o){
 static int mqtt_sender(const char *topic,const char *wire,bool retain){
  assert(retain&&strstr(topic,"/state"));assert(strstr(wire,"\"model\": \"a1\""));mqtt_bytes=strlen(wire);return MQTT_SUCCESS;
 }
-''' + function(mqtt,'static int service_mqtt_publish(') + '\n' + function(mqtt,'static int service_mqtt_try_capabilities(') + '\n' + function(mqtt,'int service_mqtt_snapshot(')
+''' + function(mqtt,'static int snapshot_resource_wait(') + '\n' + function(mqtt,'static int service_mqtt_publish(') + '\n' + function(mqtt,'static int service_mqtt_try_capabilities(') + '\n' + function(mqtt,'int service_mqtt_snapshot(')
     fixture = (ROOT/'tests/http_core/status_budget.c').read_text().replace('/* PRODUCTION_MQTT_WIRE */',mqtt_fixture)
     return fixture.replace('/* PRODUCTION_WATCHDOG_FILTER */', snapshots+watchdog+'\n'+filter_fn).replace('/* PRODUCTION_BUILDERS */', builders).replace('/* PRODUCTION_RESULT_QUERY */', result+'\n'+query)
 
@@ -91,7 +92,7 @@ def background_fixture():
         'bool feature_co2_fresh(', 'unsigned feature_co2_aggregate('))
     functions+='\n#define number integer\n'+'\n'.join(function(runtime,s) for s in (
         'static void co2_body(', 'static json_object *sample_body(',
-        'static json_object *average_body(', 'static int direct_json('))+'\n#undef number\n'
+        'static json_object *average_body('))+'\n#undef number\n'
     fixture=status_fixture();fixture=fixture[:fixture.index('int main(void){')]
     return fixture+'\n#include <math.h>\n'+functions+r'''
 static char background_golden[2048];
@@ -116,12 +117,12 @@ int main(void){
  assert(text&&strlen(text)<sizeof(background_golden));strcpy(background_golden,text);
  json_object_put(golden);healthy_stats();
  for(unsigned owned=0;owned<2;owned++){
-  setup(0);capacity=28364+libc_baseline;peak=fail_size=fail_phase=0;owned_background=owned;
+  setup(0);capacity=27400+libc_baseline;peak=fail_size=fail_phase=0;owned_background=owned;
   json_object *o=background_graph();assert(o);
-  if(owned)direct_json(nested_status,"test","average",o,false);
+  if(owned)json_owned_publish(nested_status,"test/average",o,false);
   else {const char *wire=json_object_to_json_string(o);assert(wire);nested_status("test/average",wire,false);json_object_put(o);}
   assert(nested_ok==owned);healthy_stats();
-  char report[160];int n=snprintf(report,sizeof(report),"background %s actual-average+nested-full capacity=28364 peak=%u guard=%u full=%u live=0\n",owned?"owned":"legacy",(unsigned)(peak-libc_baseline),(unsigned)fail_size,nested_ok);_write(1,report,n);
+  char report[160];int n=snprintf(report,sizeof(report),"background %s actual-average+nested-full capacity=27400 peak=%u guard=%u full=%u live=0\n",owned?"owned":"legacy",(unsigned)(peak-libc_baseline),(unsigned)fail_size,nested_ok);_write(1,report,n);
  }
  return 0;
 }
@@ -137,14 +138,17 @@ def virtual_fixture(retain_config=False):
     fixture=fixture.replace('unsigned service_json_claim(void){return 1;}\nvoid service_json_release(unsigned token){(void)token;}',r'''
 static bool ready=true;static mico_mutex_t service_lock;
 static unsigned json_owner,json_generation;
-'''+function(service,'unsigned service_json_claim(')+'\n'+function(service,'void service_json_release('))
+'''+function(service,'unsigned service_json_claim(')+'\n'+function(service,'void service_json_release(').replace('if (json_scope.token==token) memset(&json_scope,0,sizeof(json_scope));','if(fixture_scope_token==token)fixture_scope_token=fixture_scope_failed=0;'))
     fixture=fixture.replace('uint32_t mico_rtos_get_time(void){return 25000;}','static uint32_t now=25000;\nuint32_t mico_rtos_get_time(void){return now;}')
     fixtures=r'''
 #define FEATURE_DEVICE_A1
 #define a1_state state
 #define LOCAL_ID a1_id
 #define COUNT(x) (sizeof(x)/sizeof(*(x)))
-static feature_config_t configuration,*published_layout;
+static feature_config_t configuration;
+/* DISCOVERY_LAYOUT */
+static discovery_layout_t *published_layout;
+static uint32_t mqtt_discovery_retry_at;static bool mqtt_discovery_deferred,mqtt_capture_deferred;
 static feature_sample_t samples[FEATURE_MAX_PEERS];
 static uint32_t mqtt_tick,mqtt_graph_retry,mqtt_revision;
 static unsigned mqtt_graph_pending,mqtt_leaf_pending,published_count,published_sensors;
@@ -162,7 +166,7 @@ bool feature_bound(void){return true;}
 bool feature_is_coordinator(void){return true;}
 static unsigned discovery_sensors(const feature_config_t*c){(void)c;return 0;}
 static void root_for(const feature_config_t*c,unsigned i,char*out){(void)c;(void)i;strcpy(out,"test");}
-static bool discovery_virtual_step(int(*p)(const char*,const char*,bool),const feature_config_t*c,const char*r,bool b,unsigned*cursor){(void)p;(void)c;(void)r;(void)b;(void)cursor;abort();}
+static bool discovery_virtual_step(int(*p)(const char*,const char*,bool),const discovery_layout_t*c,const char*r,bool b,unsigned*cursor,unsigned sensors){(void)p;(void)c;(void)r;(void)b;(void)cursor;(void)sensors;abort();}
 static json_object *config_encode(const feature_config_t*c,const char*d){(void)c;(void)d;abort();}
 static const char *topic_domain(const char*d){return d;}
 static void js(json_object*o,const char*k,const char*v){json_build_object_add(o,k,json_object_new_string(v));}
@@ -174,7 +178,11 @@ static bool mqtt_format(char*out,size_t n,const char*format,...){va_list args;va
     fixtures=fixtures.replace('static bool mqtt_format(', 'static bool fixture_format(').replace('static bool fixture_format(', 'static bool fixture_format(')
     # mqtt_account.h already implements mqtt_format, so use it unchanged.
     fixtures=fixtures[:fixtures.index('static bool fixture_format(')]
-    functions='\n'.join(function(runtime,s) for s in ('static int direct_leaf(', 'static bool direct_json_claimed(', 'static void virtual_service(int (*publish)(const char *, const char *, bool)) {'))
+    fixtures=fixtures.replace('/* DISCOVERY_LAYOUT */',runtime[runtime.index('typedef struct {\n  char group[33];'):runtime.index('static discovery_layout_t *published_layout;')])
+    mqtt=(ROOT/'common/mqtt/service.c').read_text()
+    fixtures += '\n#include \"common/mqtt/service.h\"\n#define PH_MQTT_ERROR_APP_DISCOVERY_GRAPH 8\n#define PH_MQTT_ERROR_APP_DISCOVERY_ENCODING 10\nstatic int ph_mqtt_app_error(unsigned stage,int rc){(void)stage;return rc;}\n'+ '\n'.join(function(mqtt,k) for k in ('bool service_mqtt_json_begin(', 'static unsigned service_mqtt_json_finish(', 'void service_mqtt_json_end(', 'int service_mqtt_json_error(', 'int service_mqtt_optional_send('))
+    fixtures += '\n'+function(runtime,'static void discovery_layout_capture(')+'\n'+function(runtime,'static void discovery_resource_wait(')
+    functions='\n'.join(function(runtime,s) for s in ('static int direct_leaf(', 'static bool direct_json_claimed(', 'static __attribute__((noinline)) int direct_json_optional(', 'static void virtual_service(int (*publish)(const char *, const char *, bool)) {'))
     if retain_config:
         functions=functions.replace('free(c);c=NULL;service_json_release(snapshot_token);','service_json_release(snapshot_token);')
     return fixture+fixtures+'\n'+('#define RETAIN_CONFIG\n' if retain_config else '')+functions+r'''
@@ -213,7 +221,7 @@ int main(void){
  samples[0]=(feature_sample_t){.valid=true,.received_ms=25000,.value={22,45,100,.05},
   .co2_supported=true,.co2_valid=true,.co2=1100,.co2_received_ms=25000};
  for(unsigned trial=0;trial<2;trial++){
-  size_t budget=trial?28364:26400;setup(0);capacity=budget+libc_baseline;peak=fail_size=0;callbacks=full_ok=0;
+  size_t budget=trial?27400:25300;setup(0);capacity=budget+libc_baseline;peak=fail_size=0;callbacks=full_ok=0;
   mqtt_tick=0;now=25000;expect_full=trial;
 #ifdef RETAIN_CONFIG
   expect_full=false;
@@ -236,7 +244,7 @@ int main(void){
  /* Native config allocation failure releases its snapshot token as well. */
  native_fail_size=sizeof(feature_config_t);now+=6000;unsigned before=callbacks;
  virtual_service(nested_sender);assert(callbacks==before&&!json_owner);healthy_stats();
- native_fail_size=0;virtual_service(nested_sender);assert(callbacks>before&&!json_owner);healthy_stats();
+ native_fail_size=0;now+=1000;virtual_service(nested_sender);assert(callbacks>before&&!json_owner);healthy_stats();
  /* Busy snapshot admission does no native allocation/marking, then recovers. */
  unsigned token=service_json_claim();assert(token);now+=6000;unsigned sent=callbacks;
  virtual_service(nested_sender);assert(callbacks==sent);service_json_release(token);

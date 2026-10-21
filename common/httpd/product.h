@@ -10,7 +10,7 @@
 /* One business lease, never one allocation per pending connection. */
 typedef struct {
     unsigned claim, json_claim;
-    bool waiting, ota;
+    bool waiting, ota, json_scoped, graph_denied;
     char *body;
     size_t used, capacity;
     uint64_t failures;
@@ -24,6 +24,7 @@ void ph_http_json(ph_http_product *, ph_http_exchange *, json_object *);
 ph_http_action ph_http_claim(ph_http_product *, ph_http_exchange *, size_t input, bool read_body);
 bool ph_http_body_copy(ph_http_product *, const void *, size_t);
 json_object *ph_http_body_json(ph_http_product *, ph_http_exchange *);
+bool ph_http_graph_failed(const ph_http_product *);
 void ph_http_product_release(ph_http_product *);
 
 size_t ph_http_diag_append(char *, size_t capacity, size_t used, const ph_http_diagnostics *);

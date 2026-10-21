@@ -9,7 +9,7 @@
 #include "json_heap.h"
 static unsigned mutations;
 static bool rename_target;
-static unsigned status_mode;
+static unsigned status_mode,status_builds;
 json_object *automation_command(const char*a,json_object*p,const char**c,bool*h){(void)a;(void)p;(void)c;*h=false;return NULL;}
 json_object *service_product_capabilities(void){return json_object_new_object();}
 json_object *service_product(const char*a,json_object*p,const char**code){
@@ -17,6 +17,7 @@ json_object *service_product(const char*a,json_object*p,const char**code){
  if(!strcmp(a,"fan.set")){mutations++;if(rename_target)strcpy(account.base,"renamed");}
  json_object *out=json_object_new_object();
  if(!strcmp(a,"status.get")){
+  status_builds++;
   if(status_mode==1)*code="busy";
   if(status_mode!=2)json_object_object_add(out,"model",json_object_new_string("a1"));
  }
@@ -63,12 +64,21 @@ int main(void){
  /* Busy and incomplete product captures must preserve the previous retained
   * state; they are retryable work, never a successful empty publication. */
  for(status_mode=1;status_mode<=2;status_mode++){
+  now_ms+=1000;
   unsigned before=publications;
   assert(service_mqtt_snapshot(sender,&account)==PH_MQTT_MORE);
   assert(publications==before&&!json_owner);
   service_memory_state_t m;service_memory_snapshot(&m);assert(!m.active&&!m.reserved);
  }
- status_mode=0;unsigned before=publications;
+ /* A failed full capture is capped to one attempt per second across wrap;
+  * callback dispatch remains available throughout the delay. */
+ now_ms=UINT32_MAX-500;status_mode=1;
+ unsigned captures=status_builds;
+ for(unsigned i=0;i<250;i++){assert(service_mqtt_snapshot(sender,&account)==PH_MQTT_MORE);now_ms+=20;}
+ assert(status_builds-captures==5 && !json_owner);
+ assert(command("{\"action\":\"fan.set\",\"request_id\":\"during-snapshot-wait\",\"params\":{}} ")==0);
+ assert(mutations==1);mutations=0;clear_receipts();
+ status_mode=0;now_ms+=1000;unsigned before=publications;
  assert(service_mqtt_snapshot(sender,&account)==0&&publications==before+1);
  assert(strstr(last_body,"a1"));finish();clear_receipts();assert(!native_live);
  start();rename_target=true;

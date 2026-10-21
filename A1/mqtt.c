@@ -528,10 +528,12 @@ static int session_cycle(void *context) {
                 rc=states_step(&current,&state,false,&snapshot_sent);
                 if (snapshot_sent) { sent_filter = filter; filter_sent_at = mico_rtos_get_time(); }
             }
-            /* A deferred full-status JSON leaf must not also suppress the
-             * independent feature publisher while optional discovery waits. */
-            if (rc == PH_MQTT_MORE && discovery_deferred)rc=MQTT_SUCCESS;
-            if (rc == MQTT_SUCCESS) {rc = feature_mqtt_service(publish, true);}
+            /* Pending native work retains its cursor, but cannot suppress the
+             * independent feature producer during resource backoff or quota. */
+            if (rc == MQTT_SUCCESS || rc == PH_MQTT_MORE) {
+                int feature_rc=feature_mqtt_service(publish,true);
+                if(feature_rc!=MQTT_SUCCESS)rc=feature_rc;
+            }
     return rc;
 }
 static bool session_valid(void *context) {

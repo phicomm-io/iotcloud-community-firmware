@@ -22,14 +22,15 @@ class JsonBuildGate(unittest.TestCase):
 static inline void mico_rtos_lock_mutex(mico_mutex_t*m){assert(!pthread_mutex_lock(m));}
 static inline void mico_rtos_unlock_mutex(mico_mutex_t*m){assert(!pthread_mutex_unlock(m));}
 '''+header[end:]
+            header=header.replace('return thread && *thread==1;', 'return thread && *thread==(uintptr_t)pthread_self();')
             header=header.replace('typedef unsigned mico_mutex_t;','#include <pthread.h>\ntypedef pthread_mutex_t mico_mutex_t;')
             (temp/'mico.h').write_text(header)
             # Inject single-allocation failure through the pinned real allocator
             # permit callback, while retaining the actual service floor policy.
             source=(ROOT/'tests/http_core/json_gate.c').read_text()
             mqtt=(ROOT/'common/mqtt/service.c').read_text()
-            telemetry='static bool service_mqtt_capabilities_pending;\n'+'\n'.join(function(mqtt,n) for n in (
-                'static struct printbuf *service_mqtt_wire(', 'static int service_mqtt_publish(',
+            telemetry='static bool service_mqtt_capabilities_pending,snapshot_deferred;static uint32_t snapshot_retry_at;\n'+'\n'.join(function(mqtt,n) for n in (
+                'static int snapshot_resource_wait(', 'static struct printbuf *service_mqtt_wire(', 'static int service_mqtt_publish(',
                 'static int service_mqtt_try_capabilities(', 'int service_mqtt_snapshot(', 'int service_mqtt_capabilities('))
             source=source.replace('/* PRODUCTION_MQTT_TELEMETRY */',telemetry)
             source=source.replace('static int test_gate_permit(size_t n)', 'int test_gate_permit(size_t n)')

@@ -23,6 +23,9 @@ static mico_mutex_t json_lock;
 static bool json_ready;
 static service_memory_state_t memory_state = {.minimum_free = UINT32_MAX};
 static unsigned json_owner, json_generation;
+/* One lease already excludes competing graph producers. The allocator mutex
+ * protects this attribution record; the hook never takes a service/core lock. */
+static struct { unsigned token, failed; void *owner; } json_scope;
 static uint32_t service_free_memory(void) {
 #if defined(MOC) && MOC == 1
     const micoMemInfo_t *m = MicoGetMemoryInfo();
@@ -43,6 +46,44 @@ int json_heap_permit(size_t bytes) {
 uint64_t service_memory_failures(void) {
     json_heap_stats_t s; json_heap_snapshot(&s);
     return (uint64_t)s.allocation_failures + s.guard_denied;
+}
+void json_heap_failure(unsigned reason) {
+    /* Called with json_lock held, including overflow/guard failures. */
+    if (json_scope.owner && mico_rtos_is_current_thread(json_scope.owner))
+        json_scope.failed |= reason;
+}
+bool service_json_scope_begin(unsigned token, void *known_owner) {
+    if (!ready || !token || !known_owner || !mico_rtos_is_current_thread(known_owner)) return false;
+    mico_rtos_lock_mutex(&service_lock);
+    json_heap_lock();
+    bool valid = json_owner == token && !json_scope.token;
+    if (valid) { json_scope.token=token;json_scope.owner=known_owner;json_scope.failed=0; }
+    json_heap_unlock();
+    mico_rtos_unlock_mutex(&service_lock);
+    return valid;
+}
+unsigned service_json_scope_failed(unsigned token) {
+    json_heap_lock();
+    unsigned failed = token && json_scope.token==token && json_scope.owner &&
+        mico_rtos_is_current_thread(json_scope.owner) ? json_scope.failed : 4u;
+    json_heap_unlock();
+    return failed;
+}
+unsigned service_json_scope_end(unsigned token) {
+    json_heap_lock();
+    unsigned failed=4u;
+    if (token && json_scope.token==token && json_scope.owner && mico_rtos_is_current_thread(json_scope.owner)) {
+        failed=json_scope.failed;memset(&json_scope,0,sizeof(json_scope));
+    }
+    json_heap_unlock();
+    return failed;
+}
+bool service_caller_graph_failed(uint64_t global_before) {
+    json_heap_lock();
+    bool scoped=json_scope.owner && mico_rtos_is_current_thread(json_scope.owner);
+    bool failed=json_scope.failed!=0;
+    json_heap_unlock();
+    return scoped ? failed : service_memory_failures()!=global_before;
 }
 unsigned service_memory_claim(size_t input_bytes) {
     if (!ready) return 0;
@@ -65,7 +106,12 @@ unsigned service_json_claim(void) {
 void service_json_release(unsigned token) {
     if (!ready || !token) return;
     mico_rtos_lock_mutex(&service_lock);
-    if (json_owner == token) json_owner = 0;
+    if (json_owner == token) {
+        json_heap_lock();
+        if (json_scope.token==token) memset(&json_scope,0,sizeof(json_scope));
+        json_heap_unlock();
+        json_owner = 0;
+    }
     mico_rtos_unlock_mutex(&service_lock);
 }
 void service_memory_release(unsigned claim) {
@@ -230,14 +276,15 @@ static json_object *service_command_execute(json_object *req) {
 }
 json_object *service_command(json_object *req) {
     uint64_t before = service_memory_failures();
+    if (service_caller_graph_failed(before)) return NULL;
     json_object *out = service_command_execute(req);
-    /* A concurrent failure can conservatively shed this response as well.
-     * Never publish an incomplete but apparently successful JSON response. */
-    if (service_memory_failures() != before) { if (out) json_object_put(out); return NULL; }
+    /* Failed temporary graphs (e.g. info.get's status) must poison the caller
+     * even when the returned envelope itself has no failed descendants. */
+    if (service_caller_graph_failed(before)) { if (out) json_object_put(out); return NULL; }
     return out;
 }
 json_object *service_query(const char *action) {
     uint64_t failures=service_memory_failures();
     json_object *req=json_object_new_object();string(req,"action",action);json_build_object_add(req,"params",json_object_new_object());
-    json_object *r=service_memory_failures()==failures?service_command(req):NULL;json_object_put(req);return r;
+    json_object *r=!service_caller_graph_failed(failures)?service_command(req):NULL;json_object_put(req);return r;
 }

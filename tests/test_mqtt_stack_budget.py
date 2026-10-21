@@ -24,7 +24,9 @@ ph_mqtt_error ph_mqtt_record_failure ph_mqtt_is_owner current mutex_lock guarded
 guarded_write ph_mqtt_protocol_buffers mqtt_socket_read ph_mqtt_record_ingress_drop
 service_mqtt_optional_send service_mqtt_json_begin service_mqtt_json_end
 service_mqtt_json_error json_heap_failure json_heap_malloc json_heap_calloc
-json_heap_realloc json_heap_strdup json_heap.permit json_heap.created discovery_build ph_mqtt_app_error ph_mqtt_record_operation'''.split()
+json_heap_realloc json_heap_strdup json_heap.permit json_heap.created discovery_build ph_mqtt_app_error ph_mqtt_record_operation
+service_json_scope_begin service_json_scope_failed service_json_scope_end service_json_release
+service_caller_graph_failed json_heap_lock ph_mqtt_owner_thread ph_mqtt_owner direct_json_optional'''.split()
 
 class MqttStackBudget(unittest.TestCase):
     def run_budget(self, sizes=None, missing=None):
@@ -35,6 +37,23 @@ class MqttStackBudget(unittest.TestCase):
         with contextlib.redirect_stdout(output): check(frames,'A1')
         return output.getvalue()
 
+    def test_caller_scope_and_boolean_helper_tails_are_counted(self):
+        output=self.run_budget({'service_caller_graph_failed':40,'json_heap_lock':8,
+                                'service_json_scope_end':32,'status_bool':24,'direct_json_optional':96})
+        self.assertIn('MQTT command failure attribution: 48 application',output)
+        self.assertIn('MQTT filter discovery encoding cleanup: 40 application',output)
+        self.assertIn('MQTT status pure encode: 24 application',output)
+        self.assertIn('MQTT virtual domain encoding cleanup: 136 application',output)
+        for name in ('service_json_scope_begin','service_json_scope_failed',
+                     'service_json_scope_end','service_json_release',
+                     'service_caller_graph_failed','json_heap_lock',
+                     'ph_mqtt_owner_thread','ph_mqtt_owner','direct_json_optional'):
+            with self.subTest(name=name),self.assertRaisesRegex(ValueError,'missing actual .su'):
+                self.run_budget(missing=name)
+        for name in ('service_caller_graph_failed','service_json_scope_end','status_bool','direct_json_optional'):
+            with self.subTest(name=name),self.assertRaisesRegex(ValueError,'>16384'):
+                self.run_budget({name:13000})
+
     def test_application_source_tail_is_required_and_exclusive(self):
         output=self.run_budget({'json_write':6000,'ph_mqtt_app_error':6000})
         self.assertIn('MQTT filter discovery encoding source marker: 6000 application',output)
@@ -43,6 +62,16 @@ class MqttStackBudget(unittest.TestCase):
                 self.run_budget(missing=name)
         with self.assertRaisesRegex(ValueError,'>16384'):
             self.run_budget({'ph_mqtt_app_error':13000})
+
+    def test_snapshot_publication_retains_wrapper_during_cleanup(self):
+        output=self.run_budget({'service_mqtt_publish':96,'service_json_scope_end':32,
+                                'service_json_release':24,'json_heap_lock':8})
+        self.assertIn('MQTT snapshot publication service_json_scope_end: 136 application',output)
+        self.assertIn('MQTT snapshot publication service_json_release: 128 application',output)
+        # Neither frame alone exceeds the budget. Their real nesting does.
+        for tail in ('service_json_scope_end','service_json_release'):
+            with self.subTest(tail=tail),self.assertRaisesRegex(ValueError,'>16384'):
+                self.run_budget({'service_mqtt_publish':6000,tail:6300})
 
     def test_optional_scope_and_allocator_tails_are_required(self):
         output=self.run_budget({'json_heap_failure':32,'service_mqtt_json_finish':24,

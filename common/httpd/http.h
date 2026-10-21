@@ -119,3 +119,5 @@ void ph_http_server_close(ph_http_server *);
 int ph_http_start(const ph_http_app *, unsigned cap);
 int ph_http_stop(void);
 ph_http_diagnostics ph_http_snapshot(void);
+/* Stable MiCO owner handle, available only on the published HTTP thread. */
+void *ph_http_json_owner(void);

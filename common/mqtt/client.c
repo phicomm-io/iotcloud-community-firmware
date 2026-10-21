@@ -120,6 +120,10 @@ bool ph_mqtt_owner(void) {
     return initialized() && current(NULL);
 }
 
+mico_thread_t *ph_mqtt_owner_thread(void) {
+    return ph_mqtt_owner() ? &port.owner : NULL;
+}
+
 void ph_mqtt_owner_end(void) {
     if (!ph_mqtt_owner() || port.client || port.core.protocol_depth || port.core.dispatch_depth)
         return;

@@ -30,6 +30,9 @@ static void mico_thread_msleep(unsigned n){tick+=n;}
 static unsigned json_token,json_serial;
 unsigned service_json_claim(void){if(json_token)return 0;return json_token=++json_serial;}
 void service_json_release(unsigned token){if(token==json_token)json_token=0;}
+bool service_json_scope_begin(unsigned token,void *owner){(void)token;(void)owner;return false;}
+unsigned service_json_scope_failed(unsigned token){(void)token;return 4;}
+unsigned service_json_scope_end(unsigned token){(void)token;return 4;}
 unsigned service_memory_claim(size_t n){if(deny)return 0;claims++;return service_memory_cost(n);}
 void service_memory_release(unsigned c){assert(c&&claims);claims--;}
 void service_memory_waiting(bool enter){if(enter)waiting++;else{assert(waiting);waiting--;}}

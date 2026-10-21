@@ -4,6 +4,28 @@
 #include <string.h>
 #include <stdio.h>
 
+/* Portable HTTP fixtures have no MiCO owner; retain their strict global gate. */
+__attribute__((weak)) void *ph_http_json_owner(void) { return NULL; }
+static void graph_begin(ph_http_product *p)
+{
+    void *owner=ph_http_json_owner();
+    if(owner && !p->json_scoped) {
+        p->json_scoped=service_json_scope_begin(p->json_claim,owner);
+        p->graph_denied=!p->json_scoped;
+    }
+}
+bool ph_http_graph_failed(const ph_http_product *p)
+{
+    if(p->graph_denied)return true;
+    return p->json_scoped ? service_json_scope_failed(p->json_claim)!=0 :
+        service_memory_failures()!=p->failures;
+}
+static void graph_end(ph_http_product *p)
+{
+    if(p->json_scoped)service_json_scope_end(p->json_claim);
+    p->json_scoped=false;
+}
+
 
 void ph_http_busy(ph_http_exchange *x)
 {
@@ -15,6 +37,8 @@ void ph_http_product_init(ph_http_product *p,ph_http_exchange *x)
 { memset(p,0,sizeof(*p));ph_http_busy(x); }
 void ph_http_json(ph_http_product *p,ph_http_exchange *x,json_object *o)
 {
+    if((p->json_scoped || p->graph_denied) && ph_http_graph_failed(p)) { json_object_put(o);o=NULL; }
+    graph_end(p);
     p->wire=json_owned_to_wire(o);
     service_json_release(p->json_claim);p->json_claim=0;
     if(!p->wire) { ph_http_busy(x);return; }
@@ -46,6 +70,7 @@ ph_http_action ph_http_claim(ph_http_product *p,ph_http_exchange *x,size_t input
         p->body=json_heap_malloc(input+1);
         if(!p->body) { ph_http_busy(x);return PH_HTTP_REPLY; }
     }
+    if(!read_body)graph_begin(p);
     return read_body?PH_HTTP_READ_BODY:PH_HTTP_REPLY;
 }
 bool ph_http_body_copy(ph_http_product *p,const void *data,size_t n)
@@ -55,8 +80,10 @@ bool ph_http_body_copy(ph_http_product *p,const void *data,size_t n)
 }
 json_object *ph_http_body_json(ph_http_product *p,ph_http_exchange *x)
 {
+    /* Input has finished arriving: scope only synchronous parse + dispatch. */
+    graph_begin(p);
     json_object *o=NULL;
-    if(p->body && p->used==x->request->length && !memchr(p->body,0,p->used)) {
+    if(!p->graph_denied && p->body && p->used==x->request->length && !memchr(p->body,0,p->used)) {
         p->body[p->used]=0;
         o=service_parse(p->body,p->used);
     }
@@ -67,6 +94,7 @@ json_object *ph_http_body_json(ph_http_product *p,ph_http_exchange *x)
 }
 void ph_http_product_release(ph_http_product *p)
 {
+    graph_end(p);
     if(p->waiting)service_memory_waiting(false);
     if(p->body)json_heap_free(p->body);
     if(p->wire)printbuf_free(p->wire);
