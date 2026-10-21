@@ -103,7 +103,7 @@ def check(modules, model, nm, elf):
       'HTTP POST JSON encode':(3072,['owner','ph_http_server_step','read_body','complete','ph_http_command','service_command_wire','json_owned_to_wire','json_owned_to_wire_result','json_write','json_primitive','json_append']),
       'HTTP MQTT diagnostics':(3072,base+(['memory_response'] if 'memory_response' in frames else [])+['ph_mqtt_diag_append','ph_mqtt_snapshot','ph_mqtt_core_snapshot']),
       'HTTP response':(3072,['owner','ph_http_server_step','respond','transmit']),
-      'HTTP OTA stream':(4096,['owner','ph_http_server_step','read_body','body_chunk',model.lower()+'_ota_write','signed_ota_write','uECC_verify','EccPoint_mult']),
+      'HTTP OTA stream':(4096,['owner','ph_http_server_step','read_body','body_chunk',model.lower()+'_ota_write','signed_ota_write','uECC_verify','EccPoint_mult']+[n for n in ('uECC_vli_modMult_fast','uECC_vli_modMult','uECC_vli_mmod','uECC_vli_mult') if n in frames]),
       'HTTP OTA validation':(4096,['owner','ph_http_server_step','read_body','complete',('tc1_ota_verify' if model=='TC1' else model.lower()+'_ota_finish'),'signed_ota_finish']),
     }
     if model=='TC1':
@@ -114,6 +114,7 @@ def check(modules, model, nm, elf):
         control=['a1_control_json','a1_control_apply']+[n for n in ('control_broadcast','control_parse','control_value','control_busy','panel_state','a1_control_light_percent') if n in frames]
         paths['HTTP command control']=(3072,command+control+['feature_group_control','group_send','parse'])
         paths['HTTP control persistence']=(3072,command+control+['feature_fan_apply','install_config','feature_config_save'])
+        paths['HTTP light effect persistence']=(3072,command+['feature_light_select','install_config','feature_config_save']+[n for n in ('feature_result',) if n in frames])
     if model in ('A1','TC1'):
         for helper in ('bemfa_config_encode','bemfa_config_values','a1_mqtt_config_save'):
             if helper in frames:
