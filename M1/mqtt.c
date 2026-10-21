@@ -215,6 +215,7 @@ static void mqtt_worker(mico_thread_arg_t arg)
     static char client_id[192], wildcard[MQTT_TOPIC_MAX];
     unsigned attempt = 0;
     for (;;) {
+        ota_job_poll();
         /* MQTT callbacks may nest service/JSON formatting on this task. */
         static m1_config_t cfg, current;
         static mqtt_state_t state;
@@ -291,6 +292,7 @@ static void mqtt_worker(mico_thread_arg_t arg)
         uint32_t snapshot_at=mico_rtos_get_time()-5000u;
         rediscover = false;
         while (rc == MQTT_SUCCESS) {
+            ota_job_poll();
             /* A command may rename the device or change its subscriptions.
              * Deliver its queued result before reconnect resets the queue. */
             rc=service_mqtt_flush(publish);if(rc!=MQTT_SUCCESS)break;

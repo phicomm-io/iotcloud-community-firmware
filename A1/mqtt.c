@@ -316,6 +316,7 @@ static void mqtt_worker(mico_thread_arg_t arg)
     char client_id[192], wildcard[MQTT_TOPIC_MAX];
     unsigned attempt = 0;
     for (;;) {
+        ota_job_poll();
         /* Only the MQTT owner uses these snapshots. Keep them off its nested
          * discovery/service call stack (over 4 KiB before JSON formatting). */
         static a1_config_t cfg, current; static mqtt_state_t state;
@@ -381,6 +382,7 @@ static void mqtt_worker(mico_thread_arg_t arg)
         bool sent = false, old_visible = false; uint32_t revision = 0;
         a1_filter_storage_t sent_filter = {0}; uint32_t filter_sent_at = 0;
         while (rc == MQTT_SUCCESS) {
+            ota_job_poll();
             stage="result";rc=service_mqtt_flush(publish);if(rc!=MQTT_SUCCESS)break;
             stage="ota"; rc=ota_service(base);if(rc!=MQTT_SUCCESS)break;
             if(ota_job_active()){rc=service_mqtt_flush(publish);if(rc!=MQTT_SUCCESS)break;rc=MQTTYield(&client,100);mico_thread_msleep(50);continue;}

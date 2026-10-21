@@ -49,30 +49,32 @@ void a1_ota_abort(const char *why)
     if(!download_running && ota_job_active())ota_job_release();
 }
 
-static bool prepare(uint32_t length)
+/* Low-level Flash helpers never release job ownership. Only their top-level
+ * caller may abort, after the complete synchronous operation has returned. */
+static const char *prepare(uint32_t length)
 {
     mico_logic_partition_t *part = MicoFlashGetInfo(MICO_PARTITION_OTA_TEMP);
     if (!part || length < A1_APP_OFFSET + 128 + 16 || length > A1_APP_OFFSET + A1_APP_LIMIT + 16 ||
         length > part->partition_length) {
-        a1_ota_abort("Invalid OTA length or partition capacity"); return false;
+        return "Invalid OTA length or partition capacity";
     }
     expected = length; staged = 0; transport_crc = 0;
     a1_ota_status("receiving", NULL, 0);
     if (!watchdog_erase_ota(part->partition_length)) {
-        a1_ota_abort("OTA flash erase failed"); return false;
+        return "OTA flash erase failed";
     }
-    return true;
+    return NULL;
 }
 
 static bool native_write(const uint8_t *data, size_t n)
 {
-    if (!n || n > expected - staged) { a1_ota_abort("OTA body exceeds advertised length"); return false; }
+    if (!n || n > expected - staged) return false;
     while (n) {
         unsigned take = n > 512 ? 512 : n;
         uint32_t offset = staged;
         if (MicoFlashWrite(MICO_PARTITION_OTA_TEMP, &offset, (uint8_t *)data, take) != kNoErr ||
             !watchdog_ota_progress()) {
-            a1_ota_abort("OTA flash write failed"); return false;
+            return false;
         }
         transport_crc = a1_crc16(transport_crc, data, take);
         staged += take; data += take; n -= take;
@@ -82,7 +84,7 @@ static bool native_write(const uint8_t *data, size_t n)
 }
 
 static bool signed_erase(void *ctx)
-{ (void)ctx; return prepare(signed_session.image_length); }
+{ (void)ctx; return prepare(signed_session.image_length)==NULL; }
 static bool signed_write(void *ctx, uint32_t offset, const uint8_t *data, size_t n)
 { (void)ctx; if (offset != staged) return false; return native_write(data,n); }
 static bool signed_read(void *ctx, uint32_t offset, uint8_t *data, size_t n)
@@ -105,9 +107,10 @@ bool a1_ota_begin_unsigned(uint32_t length)
     if(!ota_job_enter()){a1_ota_abort("Cannot stop linkage worker");return false;}
     unsigned_session=true; wire_expected=length; wire_received=0;
     if (!watchdog_ota_begin()) { a1_ota_abort("Watchdog unavailable"); return false; }
-    bool ok = prepare(length);
+    const char *error = prepare(length);
     watchdog_ota_end();
-    return ok;
+    if(error){a1_ota_abort(error);return false;}
+    return true;
 }
 bool a1_ota_write(const uint8_t *data, size_t n)
 {

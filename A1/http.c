@@ -249,6 +249,8 @@ static bool body_chunk(ph_http_exchange *x,const void *data,size_t n)
 {
     if(operation==UPLOAD) {
         if(a1_ota_write(data,n))return true;
+        /* The product writer has already aborted/released this upload. */
+        upload_open=false;
         ph_http_message(&product,x,400,"OTA rejected; see /ota for details");return false;
     }
     return ph_http_body_copy(&product,data,n);
@@ -274,6 +276,6 @@ static void release(ph_http_exchange *x,bool sent)
     (void)x;(void)sent;if(upload_open)a1_ota_abort("Upload interrupted");upload_open=false;upload_pending=false;
     ph_http_product_release(&product);
 }
-static unsigned admission(void) { return (upload_pending || ota_job_active())?2:HTTP_TCP_CLIENT_LIMIT; }
+static unsigned admission(void) { ota_job_poll();return (upload_pending || ota_job_active())?2:HTTP_TCP_CLIENT_LIMIT; }
 static const ph_http_app app={begin,prepare,body_chunk,complete,release,admission};
 OSStatus a1_http_start(void) { return ph_http_start(&app,HTTP_TCP_CLIENT_LIMIT); }

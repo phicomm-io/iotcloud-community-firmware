@@ -67,10 +67,12 @@ static void mico_rtos_unlock_mutex(int *m){}
 static uint32_t mico_rtos_get_time(void){return 1000;}
 static int device_lock;
 static bool job_active;
+int job_releases;
+static bool replace_job_on_release;
 static bool ota_job_claim(void){if(job_active)return false;job_active=true;return true;}
 static bool ota_job_active(void){return job_active;}
 static bool ota_job_enter(void){return true;}
-static void ota_job_release(void){job_active=false;}
+static void ota_job_release(void){assert(job_releases++==0);job_active=replace_job_on_release;}
 static bool ota_job_cancelled(void){return false;}
 static bool ota_job_commit(void){return true;}
 
@@ -103,7 +105,7 @@ int MicoFlashRead(int p,uint32_t *o,void *d,unsigned n){assert(lease && n<=512);
 int MicoFlashWrite(int p,uint32_t *o,uint8_t *d,unsigned n){assert(lease && n<=512);writes++;if(fault==2)return -1;assert(*o+n<=sizeof flash);memcpy(flash+*o,d,n);*o+=n;return 0;}
 int MicoFlashErase(int p,uint32_t o,unsigned n){assert(lease && n==4096 && o==(unsigned)erases*4096);erases++;if(fault==1 && erases==2)return -1;memset(flash+o,255,n);return 0;}
 int mico_ota_switch_to_new_fw(int n,uint16_t crc){assert(lease);switches++;return fault==5?-1:0;}
-int start(unsigned n,int failure,int rescue){job_active=false;memset(&device_state,0,sizeof device_state);erases=writes=reads=switches=progress=lease=0;fault=failure;return rescue?MODEL_ota_begin_unsigned(n):MODEL_ota_begin(n);}
+int start(unsigned n,int failure,int rescue){job_active=false;job_releases=0;replace_job_on_release=true;memset(&device_state,0,sizeof device_state);erases=writes=reads=switches=progress=lease=0;fault=failure;return rescue?MODEL_ota_begin_unsigned(n):MODEL_ota_begin(n);}
 int feed(const uint8_t *p,unsigned n){return MODEL_ota_write(p,n);}
 int finish(void){return MODEL_ota_finish();}
 void corrupt_flash(void){flash[123]^=1;}
@@ -128,6 +130,7 @@ int reboot_pending(void){return device_state.reboot_pending;}
                         lib.corrupt_flash()
                     ok = bool(lib.finish())
                 self.assertEqual(count('lease'), 0)
+                self.assertEqual(count('job_releases'), 0 if ok else 1)
                 self.assertEqual(bool(lib.reboot_pending()), ok)
                 return ok
 

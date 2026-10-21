@@ -197,5 +197,6 @@ void feature_clock_tick(void);
 #ifdef PHICOMM_DEVICE_OTA
 bool feature_pause(unsigned timeout_ms);
 OSStatus feature_resume(void);
+OSStatus feature_resume_step(void);
 bool feature_running(void);
 #endif

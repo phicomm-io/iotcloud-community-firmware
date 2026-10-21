@@ -38,6 +38,7 @@ def check(modules, model, nm, elf):
       'HTTP OTA stream':(4096,['owner','ph_http_server_step','read_body','body_chunk',model.lower()+'_ota_write','signed_ota_write','uECC_verify','EccPoint_mult']),
       'HTTP OTA validation':(4096,['owner','ph_http_server_step','read_body','complete',model.lower()+'_ota_finish','signed_ota_finish']),
     }
+    if model!='TC1':paths['HTTP OTA recovery']=(4096,['owner','ph_http_server_step','admission','ota_job_poll','feature_resume_step'])
     if model=='A1':paths['HTTP command control']=(3072,command+['a1_control_local','feature_group_control','group_send','parse'])
     # GCC inlines send_part into step in the pinned optimized build. A separate
     # frame must be counted if a compiler/optimization change emits it.
@@ -82,6 +83,7 @@ def check(modules, model, nm, elf):
             mqtt_paths['MQTT '+branch+' nested JSON encode']=(['mqtt_worker']+outer+['publish',callback]+encode,4096)
             mqtt_paths['MQTT '+branch+' nested status build']=(['mqtt_worker']+outer+['publish',callback,'service_command','service_command_execute','service_product',status,status+'_view'],4096)
             mqtt_paths['MQTT '+branch+' owned encode']=(['mqtt_worker']+[n for n in outer if n!='checked_publish']+encode,4096)
+    if model!='TC1':mqtt_paths['MQTT OTA recovery']=(['mqtt_worker','ota_job_poll','feature_resume_step'],4096)
     for label,(names,reserve) in mqtt_paths.items():
         missing=set(names)-frames.keys()
         if missing:raise ValueError(f'{label}: missing actual .su frames: {sorted(missing)}')

@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
+root="$PWD"
+# The background JSON scenarios also compile the production SHA-256 service.
+source tests/host_hash.sh
 python3 -m unittest tests.test_prepare_sdk tests.test_apply_sdk_patch
 python3 tools/check_version.py
 python3 -m unittest discover -s tests -p test_version.py
 python3 -m unittest tests.test_package_stale_signature
 python3 -m unittest tests.test_readonly_stress tests.test_readonly_input_edges tests.test_readonly_shared_httpd tests.test_readonly_http_scheduling tests.test_summarize_readonly_evidence
 python3 -m unittest tests.test_http_core tests.test_http_core_tcp tests.test_shared_http_adversarial tests.test_shared_http_arm tests.test_shared_http_soak tests.test_shared_http_tcp_soak tests.test_http_mico_sdk_abi
-python3 -m unittest tests.test_http_json_owned tests.test_http_json_budget tests.test_background_json tests.test_tc1_mqtt_stack
+python3 -m unittest tests.test_http_json_owned tests.test_http_json_budget tests.test_background_json tests.test_tc1_mqtt_stack tests.test_ota_recovery
 python3 -m unittest tests.test_memory_admission tests.test_http_browser_queue tests.test_tc1_http_trace
 python3 -m unittest tests.test_a1_provision_memory
 python3 -m unittest tests.test_m1_boot_config
@@ -15,8 +18,6 @@ compiler=("${CC:-cc}")
 if [[ "${SANITIZE:-0}" == 1 ]]; then
     compiler+=(-g -fno-omit-frame-pointer -fsanitize=address,undefined)
 fi
-root="$PWD"
-source tests/host_hash.sh
 compiler+=("${hash_sources[@]}")
 output=$(mktemp -d)
 trap 'rm -rf "$output"' EXIT

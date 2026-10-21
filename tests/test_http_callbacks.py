@@ -22,8 +22,8 @@ class Callbacks(unittest.TestCase):
   rounds=soak_rounds()
   timeout=max(60,min(900,30+rounds//250))
   sdk=Path(os.environ.get('PHICOMM_TEST_JSON_DIR',ROOT/'build/a1-sdk/mico-os/libraries/utilities/json_c'))
-  for model in ('A1','M1','TC1'):
-   with self.subTest(model=model),tempfile.TemporaryDirectory() as temp:
+  for model,slots in (('A1',3),('M1',4),('TC1',3),('TC1',4)):
+   with self.subTest(model=model,slots=slots),tempfile.TemporaryDirectory() as temp:
     temp=Path(temp);json=temp/'json';shutil.copytree(sdk,json)
     for p in json.glob('*.c'):p.write_text(p.read_text().replace('%ld','%d'))
     source=(ROOT/(model+'/http.c' if model!='TC1' else 'TC1/http_server/app_httpd.c')).read_text()
@@ -38,7 +38,8 @@ typedef struct {char web_password[33];} app_config_t;
 static void app_config_get(app_config_t*c){strcpy(c->web_password,password);}
 static bool app_ota_begin(uint32_t n){assert(n);ota_begins++;job=true;return true;}
 static bool app_ota_begin_unsigned(uint32_t n){return app_ota_begin(n);}
-static bool app_ota_write(const void*p,size_t n){assert(p&&n<=512);written+=n;return !fail_write;}
+static void app_ota_abort(const char*r);
+static bool app_ota_write(const void*p,size_t n){assert(p&&n<=512);written+=n;if(fail_write){app_ota_abort("write failed");return false;}return true;}
 static bool app_ota_finish(void){finishes++;job=false;return true;}
 static void app_ota_abort(const char*r){assert(r);aborts++;job=false;}
 #define OSStatus int
@@ -80,7 +81,7 @@ static ph_http_action start_auth(const char*method,const char*path,unsigned leng
  if(auth)strncpy(r.authorization,auth,sizeof(r.authorization)-1);memset(&x,0,sizeof(x));x.request=&r;return app.begin(&x);
 }
 static ph_http_action start(const char*method,const char*path,unsigned length){return start_auth(method,path,length,"Basic YWRtaW46cHc=");}
-static void finish(bool sent){app.release(&x,sent);assert(!claims&&!waiting);json_heap_stats_t stats;json_heap_snapshot(&stats);assert(!stats.live_blocks);}
+static void finish(bool sent){app.release(&x,sent);assert(app.admission()==(job?2:PH_HTTP_CLIENT_SLOTS));assert(!claims&&!waiting);json_heap_stats_t stats;json_heap_snapshot(&stats);assert(!stats.live_blocks);}
 static void assert_clean(void){json_heap_stats_t stats;assert(!claims&&!waiting);json_heap_snapshot(&stats);assert(!stats.live_blocks);}
 static void assert_json_response(unsigned status,const char*needle){if(x.response.status!=status)fprintf(stderr,"response status %u expected %u body=%.*s\n",x.response.status,status,(int)x.response.length,(const char*)(x.response.body?x.response.body:(const void*)""));assert(x.response.status==status);assert(x.response.body&&x.response.length);assert(strstr(x.response.body,needle));}
 static void execute_wire(const char*wire){
@@ -91,10 +92,11 @@ static void execute_wire(const char*wire){
 }
 int main(int argc,char**argv){
  assert(argc==2);char*end=NULL;unsigned long rounds=strtoul(argv[1],&end,10);assert(end&&*end==0&&rounds>=1&&rounds<=100000);
- strcpy(password,"pw");
+ strcpy(password,"pw");assert(MODEL_START()==0);assert(app.admission()==PH_HTTP_CLIENT_SLOTS);
  execute_wire("GET / HTTP/1.1\r\nAuthorization: Basic YWRtaW46cHc=\r\n\r\n");assert(strstr(wire_output,"Content-Length: 4\r\n"));
  execute_wire("OPTIONS /api/v1/status HTTP/1.1\r\nOrigin: https://mqtt.fjrcn.cn\r\n\r\n");assert(strstr(wire_output,"200 OK")&&strstr(wire_output,"Access-Control-Allow-Origin: https://mqtt.fjrcn.cn"));
  fail_cap=true;execute_wire("POST /api/v1/ota/upload HTTP/1.1\r\nAuthorization: Basic YWRtaW46cHc=\r\nContent-Length: 3\r\n\r\n123");assert(!ota_begins&&!job);aborts=0;fail_cap=false;
+ WRITE_FAILURE_CHECK
  HEAD_CHECK
  assert(start("GET","/api/v1/memory",0)==PH_HTTP_REPLY);assert(x.response.status==200&&!claims&&!product.wire);assert(strstr(x.response.body,"http_core_close_failures"));finish(true);
  memory.free_memory=memory.allocted_memory=memory.num_of_chunks=INT32_MAX;maximum=true;assert(start("GET","/api/v1/memory",0)==PH_HTTP_REPLY);assert(x.response.status==200&&x.response.length<sizeof(product.scalar));printf("maximum memory JSON: %zu bytes\n",x.response.length);json_object *diagnostic=json_tokener_parse(x.response.body);assert(diagnostic);json_object_put(diagnostic);finish(true);maximum=false;
@@ -124,9 +126,9 @@ int main(int argc,char**argv){
  printf("mixed read-only callback soak: %lu rounds; status GET/POST, truncated release, deny-retry, auth failure, unknown route\n",rounds);
  return 0;
 }
-'''.replace('OTA_ACTION','PH_HTTP_WAIT').replace('OPTIONS_UNKNOWN','404' if model=='TC1' else '403').replace('HEAD_CHECK','assert(start("GET","/api/v1/status?view=full",0)==PH_HTTP_REPLY&&x.response.status==200);finish(true);assert(start("GET","/api/v1/status///",0)==PH_HTTP_REPLY&&x.response.status==200);finish(true);assert(start("HEAD","/api/v1/status?probe=1",0)==PH_HTTP_REPLY&&x.response.status==200&&x.response.suppress_body);finish(true);assert(start("POST","/api/v1/command///",2)==PH_HTTP_READ_BODY);finish(false);assert(start("GET","/api/v1/statusx",0)==PH_HTTP_REPLY&&x.response.status==404);finish(true);assert(start("GET","/assetsunknown",0)==PH_HTTP_REPLY&&x.response.status==404);finish(true);execute_wire("HEAD / HTTP/1.1\\r\\nAuthorization: Basic YWRtaW46cHc=\\r\\n\\r\\n");assert(strstr(wire_output,"Content-Length: 4\\r\\n"));assert(!strcmp(strstr(wire_output,"\\r\\n\\r\\n")+4,""));' if model=='TC1' else '').replace('ASSET_CHECK','assert(x.response.private_cache&&x.response.etag);strcpy(r.if_none_match,"W/\\\"page\\\"");assert(app.begin(&x)==PH_HTTP_REPLY&&x.response.status==304);' if model!='TC1' else '')
+'''.replace('MODEL_START','AppHttpdStart' if model=='TC1' else model.lower()+'_http_start').replace('WRITE_FAILURE_CHECK','' if model=='TC1' else 'assert(start("POST","/api/v1/ota/upload",3)==PH_HTTP_WAIT);assert(app.retry(&x)==PH_HTTP_READ_BODY);fail_write=true;unsigned before_aborts=aborts;assert(!app.body(&x,"123",3));assert(aborts==before_aborts+1&&!job);job=true;finish(false);assert(job&&aborts==before_aborts+1);job=false;fail_write=false;aborts=0;').replace('OTA_ACTION','PH_HTTP_WAIT').replace('OPTIONS_UNKNOWN','404' if model=='TC1' else '403').replace('HEAD_CHECK','assert(start("GET","/api/v1/status?view=full",0)==PH_HTTP_REPLY&&x.response.status==200);finish(true);assert(start("GET","/api/v1/status///",0)==PH_HTTP_REPLY&&x.response.status==200);finish(true);assert(start("HEAD","/api/v1/status?probe=1",0)==PH_HTTP_REPLY&&x.response.status==200&&x.response.suppress_body);finish(true);assert(start("POST","/api/v1/command///",2)==PH_HTTP_READ_BODY);finish(false);assert(start("GET","/api/v1/statusx",0)==PH_HTTP_REPLY&&x.response.status==404);finish(true);assert(start("GET","/assetsunknown",0)==PH_HTTP_REPLY&&x.response.status==404);finish(true);execute_wire("HEAD / HTTP/1.1\\r\\nAuthorization: Basic YWRtaW46cHc=\\r\\n\\r\\n");assert(strstr(wire_output,"Content-Length: 4\\r\\n"));assert(!strcmp(strstr(wire_output,"\\r\\n\\r\\n")+4,""));' if model=='TC1' else '').replace('ASSET_CHECK','assert(x.response.private_cache&&x.response.etag);strcpy(r.if_none_match,"W/\\\"page\\\"");assert(app.begin(&x)==PH_HTTP_REPLY&&x.response.status==304);' if model!='TC1' else '')
     probe=temp/'probe.c';probe.write_text(PREFIX+stubs+globals+tail+main)
-    cmd=[os.environ.get('CC','cc'),'-DPH_HTTP_SCALAR_BYTES='+('1536' if model=='TC1' else '1280'),'-std=gnu99','-g','-fsanitize=address,undefined','-fno-omit-frame-pointer','-no-pie','-I'+str(ROOT),'-I'+str(ROOT/'tests/stubs'),'-I'+str(json),str(probe),str(ROOT/'common/httpd/product.c'),str(ROOT/'common/json_owned.c'),str(ROOT/'common/httpd/parser.c'),str(ROOT/'common/httpd/core.c'),*map(str,json.glob('*.c')),'-o',str(temp/'probe')]
+    cmd=[os.environ.get('CC','cc'),'-DPH_HTTP_CLIENT_SLOTS='+str(slots),'-DPH_HTTP_SCALAR_BYTES='+('1536' if model=='TC1' else '1280'),'-std=gnu99','-g','-fsanitize=address,undefined','-fno-omit-frame-pointer','-no-pie','-I'+str(ROOT),'-I'+str(ROOT/'tests/stubs'),'-I'+str(json),str(probe),str(ROOT/'common/httpd/product.c'),str(ROOT/'common/json_owned.c'),str(ROOT/'common/httpd/parser.c'),str(ROOT/'common/httpd/core.c'),*map(str,json.glob('*.c')),'-o',str(temp/'probe')]
     subprocess.run(cmd,check=True,timeout=120)
     result=subprocess.run([temp/'probe',str(rounds)],capture_output=True,text=True,timeout=timeout)
     self.assertEqual(result.returncode,0,result.stdout+'\n'+result.stderr)

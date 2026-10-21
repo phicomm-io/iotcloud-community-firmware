@@ -28,7 +28,8 @@ json_object *service_query(const char*a){assert(a);queries++;json_object*o=json_
 json_object *service_command(json_object*r){commands++;return command_alias?json_object_get(r):r?service_query("command"):NULL;}
 json_object *service_parse(const void*p,size_t n){char*copy=malloc(n+1);memcpy(copy,p,n);copy[n]=0;json_object*o=json_tokener_parse(copy);free(copy);return o;}
 static bool ota_job_active(void){return job;}
-int ph_http_start(const ph_http_app*a,unsigned n){(void)a;(void)n;return 0;}
+static void ota_job_poll(void){}
+int ph_http_start(const ph_http_app*a,unsigned n){assert(a&&n==PH_HTTP_CLIENT_SLOTS);return 0;}
 
 /* Real production scheduler below calls the inserted production adapter. */
 static const char *wire_input;
