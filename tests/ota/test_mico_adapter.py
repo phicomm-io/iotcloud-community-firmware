@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Exercise A1/M1 production OTA cores with real build images and mocked Flash.
-The socket worker is excluded; watchdog timing is tested in test_watchdog.c.
+The real download worker uses an in-memory fetch transport; watchdog timing is tested in test_watchdog.c.
 Disposable signing keys never touch the production keyring.
 """
 import ctypes
@@ -49,6 +49,11 @@ static int SHA256Result(SHA256Context *s,uint8_t *p){return !SHA256_Final(p,s);}
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
+#include <stdlib.h>
+#include "fetch.h"
+typedef uintptr_t mico_thread_arg_t;
+static unsigned deleted;
+static void mico_rtos_delete_thread(void *t){deleted++;}
 #include <openssl/md5.h>
 typedef MD5_CTX md5_context;
 #define InitMd5 MD5_Init
@@ -83,7 +88,7 @@ static bool device_upgrade_reserve(void){if(device_state.ota_active)return false
 ''')
             # Keep actual validation, Flash helpers and product constants. Only
             # replace the board state dependency and omit socket transport.
-            source = (ROOT / model.upper() / 'ota.c').read_text().split('static bool fetch_begin')[0]
+            source = (ROOT / model.upper() / 'ota.c').read_text().split(f'bool {model}_ota_download')[0]
             source = source.replace(f'#include "{model}.h"', '#include "mico.h"')
             source = source.replace('"../common/watchdog_flash.h"', f'"{ROOT}/common/watchdog_flash.h"')
             source = source.replace('"../common/ota/signed_ota.h"', '"signed_ota.h"')
@@ -105,16 +110,36 @@ int MicoFlashRead(int p,uint32_t *o,void *d,unsigned n){assert(lease && n<=512);
 int MicoFlashWrite(int p,uint32_t *o,uint8_t *d,unsigned n){assert(lease && n<=512);writes++;if(fault==2)return -1;assert(*o+n<=sizeof flash);memcpy(flash+*o,d,n);*o+=n;return 0;}
 int MicoFlashErase(int p,uint32_t o,unsigned n){assert(lease && n==4096 && o==(unsigned)erases*4096);erases++;if(fault==1 && erases==2)return -1;memset(flash+o,255,n);return 0;}
 int mico_ota_switch_to_new_fw(int n,uint16_t crc){assert(lease);switches++;return fault==5?-1:0;}
-int start(unsigned n,int failure,int rescue){job_active=false;job_releases=0;replace_job_on_release=true;memset(&device_state,0,sizeof device_state);erases=writes=reads=switches=progress=lease=0;fault=failure;return rescue?MODEL_ota_begin_unsigned(n):MODEL_ota_begin(n);}
+static void reset(int failure){commit_uncertain=false;download_running=false;deleted=0;job_active=false;job_releases=0;replace_job_on_release=true;memset(&device_state,0,sizeof device_state);erases=writes=reads=switches=progress=lease=0;fault=failure;}
+int start(unsigned n,int failure,int rescue){reset(failure);return rescue?MODEL_ota_begin_unsigned(n):MODEL_ota_begin(n);}
 int feed(const uint8_t *p,unsigned n){return MODEL_ota_write(p,n);}
 int finish(void){return MODEL_ota_finish();}
 void corrupt_flash(void){flash[123]^=1;}
 int reboot_pending(void){return device_state.reboot_pending;}
+int reboot_time(void){return device_state.reboot_at;}
+int uncertain(void){return activation_uncertain();}
+int active(void){return job_active && device_state.ota_active;}
+int error_visible(void){return !strcmp(device_state.ota_state,"failed") && strstr(device_state.ota_error,"boot metadata uncertain")!=NULL;}
+void abort_again(void){MODEL_ota_abort("late transport error");}
+int retry(unsigned n){return MODEL_ota_begin(n);}
+static const uint8_t *fetch_data;static unsigned fetch_length;
+bool ota_fetch(const char *url,uint32_t limit,ota_fetch_begin begin,ota_fetch_write write,void *ctx,const char **error){
+ assert(fetch_length<=limit);*error="fetch cleanup diagnostic";
+ if(!begin(ctx,fetch_length))return false;
+ for(unsigned i=0;i<fetch_length;i+=2048){unsigned n=fetch_length-i>2048?2048:fetch_length-i;if(!write(ctx,i,fetch_data+i,n))return false;}
+ return true;
+}
+int download(const uint8_t *data,unsigned n,int failure){
+ reset(failure);assert(reserve());download_running=true;fetch_data=data;fetch_length=n;
+ char *url=malloc(2);assert(url);strcpy(url,"x");download_worker((mico_thread_arg_t)url);
+ assert(deleted==1 && !download_running);return device_state.reboot_pending;
+}
 '''.replace('MODEL', model)
             (d / 'harness.c').write_text(harness)
             subprocess.run(['cc', '-shared', '-fPIC', '-O2', '-Wno-deprecated-declarations', '-I'+str(d), '-I'+str(ROOT/'common/ota'), str(d/'signed_ota.c'), str(ROOT/'common/ota/crypto.c'), str(d/'harness.c'), '-lcrypto', '-o', str(d/'test.so')], check=True)
             lib = ctypes.CDLL(str(d/'test.so'))
             lib.feed.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+            lib.download.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_int]
             count = lambda name: ctypes.c_int.in_dll(lib, name).value
 
             def upload(data, failure=0, rescue=False, corrupt=False):
@@ -130,8 +155,9 @@ int reboot_pending(void){return device_state.reboot_pending;}
                         lib.corrupt_flash()
                     ok = bool(lib.finish())
                 self.assertEqual(count('lease'), 0)
-                self.assertEqual(count('job_releases'), 0 if ok else 1)
+                self.assertEqual(count('job_releases'), 0 if ok or failure == 5 else 1)
                 self.assertEqual(bool(lib.reboot_pending()), ok)
+                if ok: self.assertEqual(lib.reboot_time(),2500)
                 return ok
 
             signed = package.sign(image, model, '0.9.4', 'a'*40, key)
@@ -144,7 +170,39 @@ int reboot_pending(void){return device_state.reboot_pending;}
                 for failure in (1, 2, 3, 7):
                     self.assertFalse(upload(data, failure, rescue))
                     self.assertEqual(count('switches'), 0)
-            self.assertFalse(upload(signed, 5))
+            # Metadata errors may follow a completed primary Flash commit.
+            # Late aborts, repeated finish/write and new uploads must not erase
+            # the potentially selected image or release either reservation.
+            for rescue, data in ((False, signed), (True, image)):
+                self.assertFalse(upload(data, 5, rescue))
+                self.assertTrue(lib.uncertain())
+                self.assertTrue(lib.active())
+                self.assertTrue(lib.error_visible())
+                before = tuple(count(n) for n in ('erases','writes','reads','switches'))
+                lib.abort_again()
+                self.assertFalse(lib.finish())
+                self.assertFalse(lib.feed(b'x', 1))
+                self.assertFalse(lib.retry(len(signed)))
+                self.assertTrue(lib.active())
+                self.assertTrue(lib.error_visible())
+                self.assertEqual(count('job_releases'), 0)
+                self.assertEqual(before, tuple(count(n) for n in ('erases','writes','reads','switches')))
+                self.assertFalse(lib.reboot_pending())
+            # Execute the production download worker's final cleanup too.
+            self.assertFalse(lib.download(signed,len(signed),5))
+            self.assertTrue(lib.active())
+            self.assertTrue(lib.error_visible())
+            self.assertEqual(count('job_releases'),0)
+            lib.abort_again()
+            self.assertTrue(lib.active())
+            self.assertTrue(lib.download(signed,len(signed),0))
+            self.assertEqual(lib.reboot_time(),2500)
+            self.assertEqual(count('job_releases'),0)
+            for failure in (1,2,3,7):
+                self.assertFalse(lib.download(signed,len(signed),failure))
+                self.assertFalse(lib.active())
+                self.assertFalse(lib.uncertain())
+                self.assertEqual(count('job_releases'),1)
             self.assertFalse(upload(signed, corrupt=True))
             self.assertEqual(count('switches'), 0)
             invalid = bytearray(signed)

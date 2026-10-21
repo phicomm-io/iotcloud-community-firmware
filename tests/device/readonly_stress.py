@@ -81,6 +81,7 @@ class Runner:
         self.stop = threading.Event()
         self.lock = threading.Lock()
         self.rows, self.blockers, self.before, self.memory = [], [], {}, []
+        self.uptime_observations = {}
         self.phases, self.recoveries, self.scenarios = [], [], []
         self.completion_checks = {
             'network_restore': False,
@@ -104,13 +105,32 @@ class Runner:
         self.stop.set()
         print('BLOCKER', ip, reason, flush=True)
 
-    def check(self, ip, state, start):
+    def observe_uptime(self, ip, uptime, start, end, source):
+        """Compare only disjoint request intervals, including reordered replies."""
+        if type(uptime) not in (int, float) or not math.isfinite(uptime) or uptime < 0:
+            self.block(ip, 'missing or invalid '+source+' uptime')
+            return
+        decreased = False
+        with self.lock:
+            previous = self.uptime_observations.get((ip, source))
+            if previous is not None:
+                old_start, old_end, old_uptime = previous
+                decreased = ((start >= old_end and uptime < old_uptime) or
+                             (end <= old_start and uptime > old_uptime))
+            if previous is None or end > previous[1]:
+                self.uptime_observations[ip, source] = (start, end, uptime)
+        if decreased:
+            self.block(ip, source+' uptime decreased between non-overlapping requests')
+
+    def check(self, ip, state, start, end=None):
         ref = self.before[ip]
         if state.get('device_id', '').lower() != ref['id'].lower() or state.get('version') != self.versions.get(ip, self.version):
             self.block(ip, 'identity/version changed')
         uptime = state.get('uptime_seconds')
-        if uptime is None or start-uptime > ref['boot_origin']+5:
+        if (type(uptime) not in (int, float) or not math.isfinite(uptime) or
+                uptime < 0 or start-uptime > ref['boot_origin']+5):
             self.block(ip, 'unexpected uptime reset or missing uptime')
+        self.observe_uptime(ip, uptime, start, start if end is None else end, 'status')
         model = ref['state'].get('model')
         for key in CONTROL_KEYS_BY_MODEL.get(model, ()):
             if key not in ref['state'] or key not in state:
@@ -124,7 +144,9 @@ class Runner:
         row = {'ip': ip, 'phase': phase, 'action': action, 'params': params or {}, 'at': time.time()}
         try:
             status, reply, size, elapsed, start = request(ip, action, params)
-            row.update(http=status, code=reply.get('code'), bytes=size, ms=elapsed)
+            end = start + elapsed/1000
+            row.update(http=status, code=reply.get('code'), bytes=size, ms=elapsed,
+                       request_started_monotonic=start, request_ended_monotonic=end)
             row['ok'] = status == 200 and reply.get('code') == expected
             if status == 200 and reply.get('code') not in (expected, 'busy'):
                 self.block(ip, 'unexpected command result: '+str(reply.get('code')))
@@ -134,7 +156,7 @@ class Runner:
                 state = reply['data']
                 row.update(uptime=state.get('uptime_seconds'), free_memory=state.get('free_memory'),
                            wifi_connected=state.get('wifi_connected'), mqtt_connected=state.get('mqtt_connected'))
-                self.check(ip, state, start)
+                self.check(ip, state, start, end)
         except ProtocolError as e:
             row.update(ok=False, http=e.status, error=str(e), raw_base64=base64.b64encode(e.raw).decode())
             self.block(ip, 'malformed successful HTTP response')
@@ -146,7 +168,7 @@ class Runner:
 
     def initialize(self):
         for ip, ident in self.targets.items():
-            status, reply, _, _, start, capture = self._initialize_request(ip, 'status.get')
+            status, reply, _, elapsed, start, capture = self._initialize_request(ip, 'status.get')
             if status != 200 or reply.get('code') != 'ok':
                 self._fail_initialize(ip, 'status.get', status, reply,
                                        'baseline status request was not successful', capture)
@@ -163,7 +185,8 @@ class Runner:
             if not required or any(key not in state for key in required):
                 self._fail_initialize(ip, 'status.get', status, reply,
                                        'baseline status missing required control fields', capture)
-            if not isinstance(state.get('uptime_seconds'), (int, float)):
+            if (type(state.get('uptime_seconds')) not in (int, float) or
+                    not math.isfinite(state['uptime_seconds']) or state['uptime_seconds'] < 0):
                 self._fail_initialize(ip, 'status.get', status, reply,
                                        'baseline status missing uptime', capture)
 
@@ -172,7 +195,14 @@ class Runner:
                 self._fail_initialize(ip, 'config.get', cfg_status, cfg,
                                        'baseline configuration request was not successful', capture)
             self.before[ip] = {'id': ident, 'state': state, 'config': cfg['data'],
-                               'boot_origin': start-state['uptime_seconds']}
+                               'boot_origin': start-state['uptime_seconds'],
+                               'status_request_started_monotonic': start,
+                               'status_request_ended_monotonic': start+elapsed/1000}
+            self.observe_uptime(ip, state['uptime_seconds'], start, start+elapsed/1000, 'status')
+            # The status counter is whole seconds. Its floor is a conservative
+            # lower bound for the first millisecond memory sample after boot.
+            self.observe_uptime(ip, state['uptime_seconds']*1000, start,
+                                start+elapsed/1000, 'memory')
         self.save()
         self.memory_window('baseline')
         if not self.stop.is_set() and not self.wait_idle_quiescence('baseline'):
@@ -221,13 +251,18 @@ class Runner:
     def memory_sample(self, ip, phase, timeout=5):
         c = http.client.HTTPConnection(ip, timeout=timeout)
         row = {'ip': ip, 'phase': phase, 'at': time.time()}
+        start = time.monotonic()
         try:
             c.request('GET', '/api/v1/memory')
             r = c.getresponse()
             reply = json.loads(r.read())
+            end = time.monotonic()
+            row.update(request_started_monotonic=start, request_ended_monotonic=end)
             row.update(http=r.status, ok=r.status == 200 and reply.get('code') == 'ok')
             if row['ok']:
                 row['data'] = reply['data']
+                if self.require_shared_core or 'uptime_ms' in row['data']:
+                    self.observe_uptime(ip, row['data'].get('uptime_ms'), start, end, 'memory')
                 if self.require_shared_core:
                     self.check_shared_core(ip, row['data'])
         except (OSError, ValueError, http.client.HTTPException) as e:
@@ -276,15 +311,27 @@ class Runner:
             if row.get('ip') != ip or row.get('phase') != phase:
                 continue
             data = row.get('data') if row.get('ok') else None
-            zero = isinstance(data, dict) and all(
-                data.get(key) == 0 for key in
-                ('json_live_blocks', 'memory_active', 'memory_reserved', 'memory_waiting'))
+            zero = self.steady_memory_data(data)
             if not zero:
                 return False
             streak += 1
             if streak >= required:
                 return True
         return False
+
+    def steady_memory_data(self, data):
+        if not isinstance(data, dict) or not all(
+                type(data.get(key)) is int and data[key] == 0 for key in
+                ('json_live_blocks', 'memory_active', 'memory_reserved', 'memory_waiting')):
+            return False
+        if not self.require_shared_core:
+            return True
+        return (all(type(data.get(key)) is int and data[key] == value
+                    for key, value in (('http_core_owner_state', 1),
+                                       ('http_core_close_failures', 0),
+                                       ('http_core_restarts', 0), ('http_core_tcp_rc', 0))) and
+                type(data.get('http_core_occupied')) is int and
+                0 <= data['http_core_occupied'] <= 1)
 
     def wait_idle_quiescence(self, phase, extra_seconds=10):
         deadline = time.monotonic() + extra_seconds
@@ -410,7 +457,10 @@ class Runner:
                 self.sample(ip, phase, params={'view': 'invalid-read-only-view'}, expected='invalid_params')
             self.stop.wait(period)
 
-    def recover(self, phase, seconds=45):
+    def recover(self, phase, seconds=45, targets=None):
+        selected = tuple(self.targets if targets is None else targets)
+        if not selected or len(set(selected)) != len(selected) or not set(selected) <= set(self.targets):
+            raise ValueError('Recovery targets must be unique planned devices')
         record = {
             'name': phase,
             'started_at': time.time(),
@@ -421,7 +471,7 @@ class Runner:
         }
         self.recoveries.append(record)
         try:
-            for ip in self.targets:
+            for ip in selected:
                 deadline, good, attempts = time.monotonic()+seconds, 0, 0
                 try:
                     while time.monotonic() < deadline and not self.stop.is_set():
@@ -442,7 +492,7 @@ class Runner:
         finally:
             record['completed'] = (not self.stop.is_set() and
                                    all(v['completed'] for v in record['targets'].values()) and
-                                   set(record['targets']) == set(self.targets))
+                                   set(record['targets']) == set(selected))
             record['ended_at'] = time.time()
             record['elapsed_seconds'] = time.monotonic() - record.pop('started_monotonic')
             self.save()
@@ -510,7 +560,7 @@ class Runner:
             finally:
                 for sock in sockets:
                     sock.close()
-            self.recover('incomplete-headers-recovery')
+            self.recover('incomplete-headers-recovery', targets=(ip,))
 
     def aborted_clients(self):
         print('START reset/half-closed read connections', flush=True)
@@ -531,7 +581,7 @@ class Runner:
                 except OSError:
                     pass
                 self.stop.wait(.1)
-            self.recover('aborted-connections-recovery')
+            self.recover('aborted-connections-recovery', targets=(ip,))
 
     def buffered_read_clients(self):
         """Bound pending TCP input using only a padded status.get request."""
@@ -565,7 +615,7 @@ class Runner:
                 self.save()
                 for job in jobs:
                     job.result()
-            self.recover('buffered-read-input-recovery')
+            self.recover('buffered-read-input-recovery', targets=(ip,))
 
     def missing_read_clients(self):
         """Exercise SDK cleanup when an unknown GET body ends at EOF."""
@@ -583,7 +633,7 @@ class Runner:
                         sock.recv(1024)
                 except OSError:
                     pass
-            self.recover('missing-read-eof-recovery')
+            self.recover('missing-read-eof-recovery', targets=(ip,))
 
     def save(self):
         with self.lock:
@@ -654,11 +704,11 @@ class Runner:
                     if not self.idle_zero_tail(ip, phase):
                         self.block(ip, 'idle window lacks three terminal zero-allocation samples: '+phase)
                 initial_values = [v['free_memory'] for v in windows['baseline']
-                                  if isinstance(v.get('free_memory'), (int, float))]
+                                  if self.steady_memory_data(v) and type(v.get('free_memory')) is int]
                 final_values = [v['free_memory'] for v in windows['final']
-                                if isinstance(v.get('free_memory'), (int, float))]
-                if not initial_values or not final_values:
-                    self.block(ip, 'missing heap samples for baseline/final comparison')
+                                if self.steady_memory_data(v) and type(v.get('free_memory')) is int]
+                if len(initial_values) < 3 or len(final_values) < 3:
+                    self.block(ip, 'insufficient steady heap samples for baseline/final comparison')
                 elif statistics.median(initial_values)-statistics.median(final_values) > 1024:
                     self.block(ip, 'unexplained persistent heap loss greater than 1024 bytes; investigate')
         self.completion_checks['idle_quiescence'] = idle_ok and not self.stop.is_set()

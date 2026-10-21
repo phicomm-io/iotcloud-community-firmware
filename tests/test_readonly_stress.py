@@ -218,6 +218,104 @@ class ReadonlyStressTest(unittest.TestCase):
             runner.memory.append(row(8, dict(zero, memory_waiting=1)))
             self.assertFalse(runner.idle_zero_tail('127.0.0.1', 'final'))
 
+    def test_early_uptime_reset_is_not_hidden_by_boot_origin_tolerance(self):
+        ip = '127.0.0.1'
+        state = {'model': 'tc1', 'device_id': 'test', 'version': 'test',
+                 'uptime_seconds': 2, 'socket_states': [0] * 6,
+                 'child_lock': False, 'led_enabled': True}
+        with tempfile.TemporaryDirectory() as directory:
+            runner = Runner({ip: 'test'}, 'test', Path(directory))
+            runner.before[ip] = {'id': 'test', 'state': state, 'boot_origin': 98}
+            runner.check(ip, state, 100)
+            runner.check(ip, dict(state, uptime_seconds=1), 103)
+            self.assertTrue(runner.stop.is_set())
+            self.assertIn('uptime decreased', runner.blockers[0]['reason'])
+
+    def test_active_baseline_samples_cannot_hide_idle_heap_loss(self):
+        ip = '127.0.0.1'
+        zero = {'json_live_blocks': 0, 'memory_active': 0,
+                'memory_reserved': 0, 'memory_waiting': 0}
+        with tempfile.TemporaryDirectory() as directory:
+            runner = Runner({ip: 'test'}, 'test', Path(directory))
+            runner.before[ip] = {'config': {}}
+            for index in range(10):
+                data = dict(zero, free_memory=30000)
+                if index < 7:
+                    data.update(json_live_blocks=27, memory_active=1,
+                                memory_reserved=512, free_memory=25000)
+                runner.memory.append({'ip': ip, 'phase': 'baseline', 'ok': True,
+                                      'http': 200, 'data': data})
+                runner.memory.append({'ip': ip, 'phase': 'final', 'ok': True,
+                                      'http': 200, 'data': dict(zero, free_memory=28000)})
+            with patch.object(runner, 'restore_connectivity', return_value=True), \
+                 patch.object(runner, 'memory_window'), \
+                 patch.object(runner, 'wait_idle_quiescence', return_value=True), \
+                 patch('tests.device.readonly_stress.request',
+                       return_value=(200, {'code': 'ok', 'data': {}})):
+                with self.assertRaises(SystemExit):
+                    runner.finish()
+            self.assertTrue(any('persistent heap loss' in row['reason']
+                                for row in runner.blockers))
+
+    def test_overlapping_status_replies_do_not_report_a_false_reset(self):
+        ip = '127.0.0.1'
+        state = {'model': 'tc1', 'device_id': 'test', 'version': 'test',
+                 'uptime_seconds': 5, 'socket_states': [0] * 6,
+                 'child_lock': False, 'led_enabled': True}
+        with tempfile.TemporaryDirectory() as directory:
+            runner = Runner({ip: 'test'}, 'test', Path(directory))
+            runner.before[ip] = {'id': 'test', 'state': state, 'boot_origin': 95}
+            runner.check(ip, state, 100, end=110)
+            runner.check(ip, dict(state, uptime_seconds=4), 99, end=105)
+            runner.check(ip, dict(state, uptime_seconds=16), 111, end=112)
+            self.assertFalse(runner.stop.is_set())
+
+    def test_memory_uptime_reset_blocks_without_a_status_probe(self):
+        for uptimes, blocked in (((2000, 1000), True), ((2000, 3000), False)):
+            with self.subTest(uptimes=uptimes), tempfile.TemporaryDirectory() as directory:
+                runner = Runner({'127.0.0.1': 'test'}, 'test', Path(directory))
+                connection = Mock()
+                response = connection.getresponse.return_value
+                response.status = 200
+                response.read.side_effect = [json.dumps({
+                    'code': 'ok', 'data': {'uptime_ms': uptime}}).encode()
+                    for uptime in uptimes]
+                with patch('tests.device.readonly_stress.http.client.HTTPConnection',
+                           return_value=connection), \
+                     patch('tests.device.readonly_stress.time.monotonic',
+                           side_effect=(100, 100.1, 101, 101.1)):
+                    runner.memory_sample('127.0.0.1', 'idle')
+                    runner.memory_sample('127.0.0.1', 'idle')
+                self.assertEqual(runner.stop.is_set(), blocked)
+                if blocked:
+                    self.assertIn('uptime decreased', runner.blockers[0]['reason'])
+                self.assertTrue(all('request_ended_monotonic' in row for row in runner.memory))
+
+    def test_initial_status_seeds_the_first_memory_uptime_comparison(self):
+        ip = '127.0.0.1'
+        state = {'model': 'tc1', 'device_id': 'test', 'version': 'test',
+                 'uptime_seconds': 2, 'socket_states': [0] * 6,
+                 'child_lock': False, 'led_enabled': True}
+        replies = [(200, {'code': 'ok', 'data': state}, 1, 5, 100),
+                   (200, {'code': 'ok', 'data': {}}, 1, 5, 100.1)]
+        with tempfile.TemporaryDirectory() as directory:
+            runner = Runner({ip: 'test'}, 'test', Path(directory))
+            with patch('tests.device.readonly_stress.request', side_effect=replies), \
+                 patch.object(runner, 'memory_window'), \
+                 patch.object(runner, 'wait_idle_quiescence', return_value=True):
+                runner.initialize()
+            connection = Mock()
+            response = connection.getresponse.return_value
+            response.status = 200
+            response.read.return_value = b'{"code":"ok","data":{"uptime_ms":1000}}'
+            with patch('tests.device.readonly_stress.http.client.HTTPConnection',
+                       return_value=connection), \
+                 patch('tests.device.readonly_stress.time.monotonic',
+                       side_effect=(101, 101.1)):
+                runner.memory_sample(ip, 'idle')
+            self.assertTrue(runner.stop.is_set())
+            self.assertIn('memory uptime decreased', runner.blockers[0]['reason'])
+
     def test_shared_core_requires_healthy_owner_and_actual_admission(self):
         healthy = {'http_core_owner_state': 1, 'http_core_close_failures': 0,
                    'http_core_restarts': 0, 'http_core_tcp_limit': 3,
@@ -285,6 +383,32 @@ class ReadonlyStressTest(unittest.TestCase):
                 'targets': {ips[0]: {'completed': True}},
             })
             self.assertFalse(runner._planned_steps_complete())
+
+    def test_anomaly_scenarios_recover_each_target_exactly_once(self):
+        ips = ('127.0.0.1', '127.0.0.2', '127.0.0.3')
+        scenarios = (
+            ('slow_clients', 'incomplete-headers-recovery'),
+            ('aborted_clients', 'aborted-connections-recovery'),
+            ('buffered_read_clients', 'buffered-read-input-recovery'),
+            ('missing_read_clients', 'missing-read-eof-recovery'),
+        )
+        for method, recovery in scenarios:
+            with self.subTest(method=method), tempfile.TemporaryDirectory() as directory:
+                plan = {'steps': [method], 'phases': [], 'recovery_steps': [
+                    {'name': recovery, 'targets': list(ips)}]}
+                runner = Runner({ip: ip for ip in ips}, 'test', Path(directory), plan=plan)
+                # Exercise the real scenario/recovery wiring without physical
+                # sockets, delays, status parsing or filesystem churn.
+                with patch('tests.device.readonly_stress.socket.create_connection'), \
+                     patch.object(runner.stop, 'wait'), \
+                     patch.object(runner, 'save'), \
+                     patch.object(runner, 'memory_sample'), \
+                     patch.object(runner, 'sample', return_value={'ok': True}) as sample:
+                    runner.scenario(method, getattr(runner, method))
+                self.assertEqual(sample.call_count, 3 * len(ips))
+                self.assertEqual([list(record['targets']) for record in runner.recoveries],
+                                 [[ip] for ip in ips])
+                self.assertTrue(runner._planned_steps_complete())
 
     def test_unplanned_short_runner_does_not_require_full_stress_plan(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -4,6 +4,16 @@
 #include "../common/ota/fetch.h"
 #include "../common/ota/mode.h"
 static bool download_running;
+/* A failed metadata commit may already have selected OTA_TEMP on Flash.
+ * There is no supported rollback/readback contract: keep both reservations. */
+static bool commit_uncertain;
+static bool activation_uncertain(void)
+{
+    mico_rtos_lock_mutex(&m1_lock);
+    bool uncertain = commit_uncertain;
+    mico_rtos_unlock_mutex(&m1_lock);
+    return uncertain;
+}
 #include "../common/ota/signed_ota.h"
 static signed_ota signed_session;
 static bool unsigned_session;
@@ -48,6 +58,7 @@ static bool reserve(void)
 void m1_ota_abort(const char *why)
 {
     watchdog_ota_end();
+    if (activation_uncertain()) return;
     m1_ota_status("failed", why, 0);
     mico_rtos_lock_mutex(&m1_lock); m1_state.ota_active = false; mico_rtos_unlock_mutex(&m1_lock);
     if(!download_running && ota_job_active())ota_job_release();
@@ -118,6 +129,7 @@ bool m1_ota_begin_unsigned(uint32_t length)
 }
 bool m1_ota_write(const uint8_t *data, size_t n)
 {
+    if (activation_uncertain()) return false;
     if(ota_job_cancelled()){m1_ota_abort("Cancelled");return false;}
     if (!watchdog_ota_begin()) { m1_ota_abort("Watchdog unavailable"); return false; }
     if (n>wire_expected-wire_received ||
@@ -158,6 +170,7 @@ static bool md5_range(uint32_t start, uint32_t end, uint8_t digest[16])
 
 bool m1_ota_finish(void)
 {
+    if (activation_uncertain()) return false;
     if (!watchdog_ota_begin()) { m1_ota_abort("Watchdog unavailable"); return false; }
     const char *error = NULL;
     if (!unsigned_session && !signed_ota_finish(&signed_session)) {
@@ -197,7 +210,11 @@ bool m1_ota_finish(void)
     }
     if(!ota_job_commit()){error="Cancelled";goto fail;}
     if (mico_ota_switch_to_new_fw(expected, transport_crc) != kNoErr) {
-        error = "Failed to persist OTA boot metadata"; goto fail;
+        mico_rtos_lock_mutex(&m1_lock); commit_uncertain = true;
+        mico_rtos_unlock_mutex(&m1_lock);
+        m1_ota_status("failed", "Failed to activate verified image; boot metadata uncertain", 0);
+        watchdog_ota_end();
+        return false;
     }
     mico_rtos_lock_mutex(&m1_lock);
     strcpy(m1_state.ota_state, "ready"); m1_state.ota_active = false;
@@ -226,7 +243,7 @@ static void download_worker(mico_thread_arg_t arg){
     }
     if(!ok && error)m1_ota_abort(error);
     free(url);download_running=false;
-    if(!ok)ota_job_release();
+    if(!ok && !activation_uncertain())ota_job_release();
     mico_rtos_delete_thread(NULL);
 }
 
