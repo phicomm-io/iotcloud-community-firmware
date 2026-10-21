@@ -1,7 +1,9 @@
 #pragma once
 #include <stdbool.h>
 /* Thread-context state copies only. Never hold over allocation, JSON, GPIO,
- * network, Flash or an RTOS wait other than acquiring this mutex. */
+ * network or Flash. The sole nested lock is the OTA/config metadata mutex:
+ * status -> OTA, each held only for copies/flags. Never acquire status while
+ * holding OTA; OTA callbacks release their metadata lock before any state call. */
 bool tc1_status_guard_init(void);
 bool tc1_status_guard_ready(void);
 void tc1_status_lock(void);

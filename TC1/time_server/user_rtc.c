@@ -1,5 +1,6 @@
 #include "http_server/web_log.h"
 #include "main.h"
+#include "status_guard.h"
 #include "user_gpio.h"
 #include "sntp.h"
 #include "mqtt_server/user_mqtt_client.h"
@@ -95,7 +96,7 @@ void RtcThread(mico_thread_arg_t arg)
             if (err == kNoErr)
             {
                 rtc_log("sntp success!");
-                rtc_init = 1;
+                TC1_STATUS_WRITE(rtc_init=1);
                 break;
             }
         }
@@ -110,8 +111,8 @@ void RtcThread(mico_thread_arg_t arg)
         if((int32_t)(now-next_sync)>=0){
             micoWlanGetLinkStatus(&LinkStatus);
             err=LinkStatus.is_connected?UserSntpGetTime():kConnectionErr;
-            if(err==kNoErr)rtc_init=1;
-            else rtc_init=2;
+            if(err==kNoErr)TC1_STATUS_WRITE(rtc_init=1);
+            else TC1_STATUS_WRITE(rtc_init=2);
             next_sync=mico_rtos_get_time()+(err==kNoErr?3600000u:60000u);
         }
         mico_rtos_thread_msleep(1000);
