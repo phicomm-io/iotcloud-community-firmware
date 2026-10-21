@@ -26,7 +26,7 @@ bool feature_group_active(void){return false;}
 bool feature_group_control(const char *kind,json_object *o){(void)kind;(void)o;abort();}
 bool feature_fan_auto(void){return automatic;}
 unsigned feature_fan_limit(void){return limit;}
-int feature_fan_apply(unsigned mode,int speed){if(mode)automatic=mode==3?!automatic:mode==2;if(automatic && speed>0)limit=speed;return automatic?2:1;}
+int feature_fan_apply(unsigned mode,int speed){assert(service_locked);if(mode)automatic=mode==3?!automatic:mode==2;if(automatic && speed>0)limit=speed;return automatic?2:1;}
 void feature_manual_fan(bool on){(void)on;}
 bool feature_light_select(unsigned v){effect=v==255?(effect+1)%5:v;return true;}
 const char *a1_filter_change(unsigned h,bool reset){(void)h;assert(reset);++actions;return "accepted";}
@@ -90,6 +90,10 @@ int main(void)
     assert(a1_input_push(A1_INPUT_FULL_RESET,0,0,0,0));a1_input_poll();assert(resets==2 && reset_full==1);
     assert(!a1_input_push(A1_INPUT_BUTTON,3,1,0,0));
     assert(!a1_input_push(A1_INPUT_BUTTON,0,1,1,0));
+    /* Native MQTT/group adapters join the same serializer as panel actions. */
+    json_object *native=json_tokener_parse("{\"speed\":33}");assert(native);
+    assert(a1_control_local("fan",native));json_object_put(native);
+    assert(config.fan_on && config.speed==33);
     assert(json_attempts==0 && !service_locked);
     puts("PASS A1 typed controls without JSON: gestures, toggles, lock, bounded FIFO, overflow, expiry, busy, reset, wrap");
     return 0;

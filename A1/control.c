@@ -175,7 +175,10 @@ static bool control_parse(const char *kind, json_object *o, a1_control_t *r)
 }
 bool a1_control_local(const char *kind, json_object *o)
 {
-    a1_control_t r;return control_parse(kind,o,&r) && a1_control_apply(&r,false,false);
+    a1_control_t r;
+    if(!control_parse(kind,o,&r) || !service_control_begin())return false;
+    bool ok=a1_control_apply(&r,false,false);
+    service_control_end();return ok;
 }
 bool a1_control_json(const char *kind, json_object *o)
 {
