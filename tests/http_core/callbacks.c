@@ -26,3 +26,21 @@ json_object *service_command(json_object*r){commands++;return r?service_query("c
 json_object *service_parse(const void*p,size_t n){char*copy=malloc(n+1);memcpy(copy,p,n);copy[n]=0;json_object*o=json_tokener_parse(copy);free(copy);return o;}
 static bool ota_job_active(void){return job;}
 int ph_http_start(const ph_http_app*a,unsigned n,bool nd){(void)a;(void)n;(void)nd;return 0;}
+
+/* Real production scheduler below calls the inserted production adapter. */
+static const char *wire_input;
+static size_t wire_position,wire_size;
+static char wire_output[4096];
+static bool wire_accepted,wire_closed;
+static int wire_open(unsigned cap){(void)cap;return 0;}
+static int wire_limit(int fd,unsigned cap,ph_http_diagnostics*d){(void)fd;d->limit=cap;return 0;}
+static int wire_accept(int fd){assert(fd==0&&!wire_accepted);wire_accepted=true;return 1;}
+static int wire_nonblock(int fd){(void)fd;return 0;}
+static int wire_wait(uint64_t r,uint64_t w,uint64_t*rr,uint64_t*ww,unsigned ms){tick+=ms;*rr=*ww=0;if(!wire_accepted&&(r&1))*rr|=1;if(wire_accepted&&!wire_closed&&(r&2))*rr|=2;if(w&2)*ww|=2;return !!(*rr||*ww);}
+static int wire_recv(int fd,void*p,size_t n){assert(fd==1);size_t left=strlen(wire_input)-wire_position;if(n>left)n=left;memcpy(p,wire_input+wire_position,n);wire_position+=n;return n;}
+static int wire_send(int fd,const void*p,size_t n){assert(fd==1);if(n>3)n=3;assert(wire_size+n<sizeof(wire_output));memcpy(wire_output+wire_size,p,n);wire_size+=n;return n;}
+static int wire_close(int fd){if(fd==1)wire_closed=true;return 0;}
+static bool wire_retry(void){return false;}
+static int wire_error(void){return 0;}
+static void wire_yield(void){tick++;}
+static const ph_http_io wire_io={mico_rtos_get_time,wire_open,wire_limit,wire_accept,wire_nonblock,wire_wait,wire_recv,wire_send,wire_close,wire_retry,wire_error,wire_yield,NULL};

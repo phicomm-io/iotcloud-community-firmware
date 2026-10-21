@@ -69,8 +69,16 @@ static ph_http_action start(const char*method,const char*path,unsigned length){
  strcpy(r.authorization,"Basic YWRtaW46cHc=");memset(&x,0,sizeof(x));x.request=&r;return app.begin(&x);
 }
 static void finish(bool sent){app.release(&x,sent);assert(!claims&&!waiting);json_heap_stats_t stats;json_heap_snapshot(&stats);assert(!stats.live_blocks);}
+static void execute_wire(const char*wire){
+ ph_http_server server;wire_input=wire;wire_position=wire_size=0;wire_accepted=wire_closed=false;memset(wire_output,0,sizeof(wire_output));
+ assert(ph_http_server_open(&server,&wire_io,&app,3));
+ for(unsigned n=0;n<2000&&!wire_closed;n++)ph_http_server_step(&server);
+ assert(wire_closed);ph_http_server_close(&server);assert(!claims&&!waiting);
+}
 int main(void){
  strcpy(password,"pw");
+ execute_wire("GET / HTTP/1.1\r\nAuthorization: Basic YWRtaW46cHc=\r\n\r\n");assert(strstr(wire_output,"Content-Length: 4\r\n"));
+ HEAD_CHECK
  assert(start("GET","/api/v1/status",0)==PH_HTTP_REPLY);assert(x.response.status==200&&claims&&product.wire);assert(strstr(x.response.body,"status.get"));finish(true);
  deny=true;assert(start("GET","/api/v1/status",0)==PH_HTTP_WAIT);assert(waiting&&!claims);deny=false;assert(app.retry(&x)==PH_HTTP_REPLY);assert(!waiting&&claims);finish(false);
  assert(start("POST","/api/v1/command",2)==PH_HTTP_READ_BODY);assert(product.body&&claims);assert(app.body(&x,"{}",2));app.complete(&x);assert(commands==1&&product.wire);finish(true);
@@ -83,8 +91,8 @@ int main(void){
  assert(start("GET","/legacy-unregistered",0)==PH_HTTP_REPLY);assert(x.response.status==404||x.response.status==401);finish(true);
  return 0;
 }
-'''.replace('OTA_ACTION','PH_HTTP_WAIT' if model=='TC1' else 'PH_HTTP_READ_BODY').replace('OPTIONS_UNKNOWN','404' if model=='TC1' else '403').replace('ASSET_CHECK','assert(x.response.private_cache&&x.response.etag);' if model!='TC1' else '')
+'''.replace('OTA_ACTION','PH_HTTP_WAIT' if model=='TC1' else 'PH_HTTP_READ_BODY').replace('OPTIONS_UNKNOWN','404' if model=='TC1' else '403').replace('HEAD_CHECK','execute_wire("HEAD / HTTP/1.1\\r\\nAuthorization: Basic YWRtaW46cHc=\\r\\n\\r\\n");assert(strstr(wire_output,"Content-Length: 4\\r\\n"));assert(!strcmp(strstr(wire_output,"\\r\\n\\r\\n")+4,""));' if model=='TC1' else '').replace('ASSET_CHECK','assert(x.response.private_cache&&x.response.etag);' if model!='TC1' else '')
     probe=temp/'probe.c';probe.write_text(PREFIX+stubs+globals+tail+main)
-    cmd=[os.environ.get('CC','cc'),'-std=gnu99','-g','-fsanitize=address,undefined','-fno-omit-frame-pointer','-no-pie','-I'+str(ROOT),'-I'+str(ROOT/'tests/stubs'),'-I'+str(json),str(probe),str(ROOT/'common/httpd/product.c'),str(ROOT/'common/httpd/parser.c'),*map(str,json.glob('*.c')),'-o',str(temp/'probe')]
+    cmd=[os.environ.get('CC','cc'),'-std=gnu99','-g','-fsanitize=address,undefined','-fno-omit-frame-pointer','-no-pie','-I'+str(ROOT),'-I'+str(ROOT/'tests/stubs'),'-I'+str(json),str(probe),str(ROOT/'common/httpd/product.c'),str(ROOT/'common/httpd/parser.c'),str(ROOT/'common/httpd/core.c'),*map(str,json.glob('*.c')),'-o',str(temp/'probe')]
     subprocess.run(cmd,check=True);subprocess.run([temp/'probe'],check=True)
 if __name__=='__main__':unittest.main()

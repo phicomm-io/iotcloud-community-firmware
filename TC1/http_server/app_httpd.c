@@ -223,6 +223,7 @@ static ph_http_action begin(ph_http_exchange *x)
         response(x,401,"text/plain","",0);x->response.realm="TC1";return PH_HTTP_REPLY;
     }
     if(!strcmp(r->method,"GET") || !strcmp(r->method,"HEAD")) {
+        x->response.suppress_body=!strcmp(r->method,"HEAD");
         if(query_action) { operation=QUERY;return prepare(x); }
         if(memory) { memory_response(x);return PH_HTTP_REPLY; }
         if(trace) {
