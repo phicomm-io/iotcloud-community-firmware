@@ -81,6 +81,12 @@ unsigned tc1_mqtt_status = MQTT_DISCONNECTED;
 bool tc1_mqtt_cleanup_warning;
 static mqtt_account_t account;
 static bool synchronous_send, rediscover;
+/* External periodic producer requests work only. Account/topic/cursors remain
+ * exclusively owned by the MQTT worker, including during reconfiguration. */
+static bool power_pending;
+static bool power_requested(void) {
+    return __atomic_exchange_n(&power_pending, false, __ATOMIC_ACQ_REL);
+}
 static mico_thread_t mqtt_owner_thread;
 static ph_mqtt_startup mqtt_startup;
 static int synchronous_error;
@@ -355,6 +361,10 @@ static int session_cycle(void *context) {
     if(ota_job_active())return MQTT_SUCCESS;
     if(rediscover){discovery_index=state_index=publication_cursor=0;rediscover=false;}
     if(discovery_index<12 || state_index<10)return snapshot_step();
+    if(power_requested()) {
+        state_index=9;publication_cursor=0;
+        return snapshot_step();
+    }
     if(account.mode && (uint32_t)(mico_rtos_get_time()-snapshot_at)>=5000) {
         snapshot_at=mico_rtos_get_time();rc=service_mqtt_snapshot(service_sender,&account);
         if(rc!=MQTT_SUCCESS)return rc;
@@ -944,6 +954,10 @@ void UserMqttHassAutoPower(void) {
 }
 
 extern void UserMqttHassPower(void) {
+    if (!ph_mqtt_owner()) {
+        __atomic_store_n(&power_pending, true, __ATOMIC_RELEASE);
+        return;
+    }
     if (!__atomic_load_n(&isconnect,__ATOMIC_ACQUIRE) && !synchronous_send) return;
     char topic_buf[128], send_buf[128];
     if(account.mode) {
