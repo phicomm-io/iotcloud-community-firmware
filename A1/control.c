@@ -271,10 +271,11 @@ void a1_request_ap(void)
 #define A1_INPUT_MAX_AGE_MS 2000u
 typedef struct {uint32_t at;uint8_t kind,key,clicks,seconds;int16_t delta;} a1_input_t;
 static a1_input_t inputs[A1_INPUT_CAPACITY];
-static unsigned input_head,input_count,input_dropped;
+static unsigned input_head,input_count;
+static bool input_dropped;
 void a1_input_clear(void)
 {
-    mico_rtos_lock_mutex(&a1_lock);input_head=input_count=0;mico_rtos_unlock_mutex(&a1_lock);
+    mico_rtos_lock_mutex(&a1_lock);input_count=0;mico_rtos_unlock_mutex(&a1_lock);
 }
 bool a1_input_push(unsigned kind,unsigned key,unsigned clicks,unsigned seconds,int delta)
 {
@@ -282,17 +283,18 @@ bool a1_input_push(unsigned kind,unsigned key,unsigned clicks,unsigned seconds,i
        (key>=AUTOMATION_KEYS || clicks>30 || seconds>4 || (!!clicks==!!seconds))))return false;
     mico_rtos_lock_mutex(&a1_lock);
     bool ok=!a1_state.ota_active && !a1_state.reboot_pending && !a1_state.wifi_trial_active;
+    uint32_t now=mico_rtos_get_time();
     if(ok && kind==A1_INPUT_SLIDER && input_count){
         a1_input_t *last=&inputs[(input_head+input_count-1)%A1_INPUT_CAPACITY];
         /* Same-direction slider runs can merge without changing clamp order. */
         if(last->kind==kind && ((last->delta>0 && delta>0) || (last->delta<0 && delta<0))){
             int sum=last->delta+delta;last->delta=sum>100?100:sum< -100?-100:sum;
-            last->at=mico_rtos_get_time();mico_rtos_unlock_mutex(&a1_lock);return true;
+            last->at=now;mico_rtos_unlock_mutex(&a1_lock);return true;
         }
     }
     if(ok && input_count<A1_INPUT_CAPACITY){
-        inputs[(input_head+input_count++)%A1_INPUT_CAPACITY]=(a1_input_t){mico_rtos_get_time(),kind,key,clicks,seconds,delta};
-    }else{if(ok)++input_dropped;ok=false;}
+        inputs[(input_head+input_count++)%A1_INPUT_CAPACITY]=(a1_input_t){now,kind,key,clicks,seconds,delta};
+    }else{if(ok)input_dropped=true;ok=false;}
     mico_rtos_unlock_mutex(&a1_lock);return ok;
 }
 void a1_input_poll(void)
@@ -301,8 +303,8 @@ void a1_input_poll(void)
     for(unsigned n=0;n<8;n++){
         mico_rtos_lock_mutex(&a1_lock);
         bool busy=a1_state.ota_active || a1_state.reboot_pending || a1_state.wifi_trial_active;
-        if(busy){input_head=input_count=0;}
-        bool dropped=input_dropped!=0;input_dropped=0;
+        if(busy){input_count=0;}
+        bool dropped=input_dropped;input_dropped=false;
         bool present=input_count!=0;a1_input_t e;
         if(present){e=inputs[input_head];input_head=(input_head+1)%A1_INPUT_CAPACITY;--input_count;}
         mico_rtos_unlock_mutex(&a1_lock);
