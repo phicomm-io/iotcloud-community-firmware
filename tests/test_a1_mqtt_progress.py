@@ -64,22 +64,25 @@ int main(void){
             subprocess.run([str(binary)],check=True,timeout=10)
 
 class FeatureRevision(unittest.TestCase):
-    def test_authoritative_revision_without_snapshot_allocation(self):
-        for model, lock, config in [('A1', 'a1_config_lock', 'a1_config'),
-                                    ('M1', 'config_lock', 'app_config')]:
-            with self.subTest(model=model):
-                main = (ROOT/model/'main.c').read_text()
-                getter = function(main, 'uint32_t feature_config_revision(')
-                mqtt = (ROOT/model/'mqtt.c').read_text()
-                cycle = function(mqtt, 'static int session_cycle(')
-                start = cycle.index('mqtt_state_get(&state);')
-                end = cycle.index('if(discovery_index<')
-                # Include the real connection/revision/filter decision, excluding
-                # unrelated birth scheduling and publication after that decision.
-                decision_end = cycle.index('return PH_MQTT_RECONFIGURE;', cycle.index('feature_mqtt_filters_current',start))+len('return PH_MQTT_RECONFIGURE;')
-                prefix = cycle[start:decision_end]
-                self.assertLess(start, end)
-                fixture = r'''
+    def test_a1_authoritative_revision_without_snapshot_allocation(self):
+        self.check_authoritative_revision('A1','a1_config_lock','a1_config')
+    def test_m1_authoritative_revision_without_snapshot_allocation(self):
+        self.check_authoritative_revision('M1','config_lock','app_config')
+    def check_authoritative_revision(self, model, lock, config):
+
+        with self.subTest(model=model):
+            main = (ROOT/model/'main.c').read_text()
+            getter = function(main, 'uint32_t feature_config_revision(')
+            mqtt = (ROOT/model/'mqtt.c').read_text()
+            cycle = function(mqtt, 'static int session_cycle(')
+            start = cycle.index('mqtt_state_get(&state);')
+            end = cycle.index('if(discovery_index<')
+            # Include the real connection/revision/filter decision, excluding
+            # unrelated birth scheduling and publication after that decision.
+            decision_end = cycle.index('return PH_MQTT_RECONFIGURE;', cycle.index('feature_mqtt_filters_current',start))+len('return PH_MQTT_RECONFIGURE;')
+            prefix = cycle[start:decision_end]
+            self.assertLess(start, end)
+            fixture = r'''
 #include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -125,22 +128,22 @@ int main(void){
  assert(!held&&allocations==0);return 0;
 }
 '''.replace('/* GETTER */', getter).replace('/* PREFIX */', prefix)
-                fixture=fixture.replace('__LOCK__',lock).replace('__CONFIG__',config).replace('MODEL',model.lower())
-                with tempfile.TemporaryDirectory() as d:
-                    c=Path(d)/'probe.c';c.write_text(fixture);binary=Path(d)/'probe'
-                    subprocess.run([os.environ.get('CC','cc'),'-std=c99','-Wall','-Wextra',
-                        '-Wno-unused-function','-fsanitize=address,undefined','-fno-pie','-no-pie',
-                        str(c),'-o',str(binary)],check=True)
-                    subprocess.run([str(binary)],check=True,timeout=10)
-                    # Restore the former allocating decision: forced OOM must
-                    # fail the healthy-cycle assertion, not silently pass.
-                    old_prefix=prefix.replace('uint32_t current_feature_revision=feature_config_revision();',
-                        'feature_config_t *fc=malloc(sizeof(*fc)); if(!fc)return PH_MQTT_RECONFIGURE; feature_config_get(fc); uint32_t current_feature_revision=fc->revision; free(fc);')
-                    negative=fixture.replace(prefix,old_prefix)
-                    self.assertNotEqual(negative,fixture)
-                    c.write_text(negative)
-                    subprocess.run([os.environ.get('CC','cc'),'-std=c99',str(c),'-o',str(binary)],check=True)
-                    run=subprocess.run([str(binary)],stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=10)
-                    self.assertNotEqual(run.returncode,0,'old heap-refusal path must fail')
-                prepare=function(mqtt,'static int session_prepare(')
-                self.assertIn('feature_revision=feature_config_revision();',prepare)
+            fixture=fixture.replace('__LOCK__',lock).replace('__CONFIG__',config).replace('MODEL',model.lower())
+            with tempfile.TemporaryDirectory() as d:
+                c=Path(d)/'probe.c';c.write_text(fixture);binary=Path(d)/'probe'
+                subprocess.run([os.environ.get('CC','cc'),'-std=c99','-Wall','-Wextra',
+                    '-Wno-unused-function','-fsanitize=address,undefined','-fno-pie','-no-pie',
+                    str(c),'-o',str(binary)],check=True)
+                subprocess.run([str(binary)],check=True,timeout=10)
+                # Restore the former allocating decision: forced OOM must
+                # fail the healthy-cycle assertion, not silently pass.
+                old_prefix=prefix.replace('uint32_t current_feature_revision=feature_config_revision();',
+                    'feature_config_t *fc=malloc(sizeof(*fc)); if(!fc)return PH_MQTT_RECONFIGURE; feature_config_get(fc); uint32_t current_feature_revision=fc->revision; free(fc);')
+                negative=fixture.replace(prefix,old_prefix)
+                self.assertNotEqual(negative,fixture)
+                c.write_text(negative)
+                subprocess.run([os.environ.get('CC','cc'),'-std=c99',str(c),'-o',str(binary)],check=True)
+                run=subprocess.run([str(binary)],stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=10)
+                self.assertNotEqual(run.returncode,0,'old heap-refusal path must fail')
+            prepare=function(mqtt,'static int session_prepare(')
+            self.assertIn('feature_revision=feature_config_revision();',prepare)

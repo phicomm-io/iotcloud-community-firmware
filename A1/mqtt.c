@@ -137,7 +137,7 @@ static void topic(json_object *o, const char *key, const char *suffix)
     char value[MQTT_TOPIC_MAX]; snprintf(value, sizeof(value), "%s/%s", base, suffix); str(o, key, value);
 }
 /* Keep this frame visible to the production MQTT stack-budget check. */
-static __attribute__((noinline)) int filter_discovery(const a1_config_t *c, bool clear,unsigned index)
+static __attribute__((noinline)) int filter_discovery(const a1_config_t *c, bool clear,unsigned index,service_mqtt_json_scope *scope)
 {
     static const char *keys[] = {"filter_remaining", "filter_used", "filter_replacement", "filter_lifetime", "filter_reset", "fan_mode"};
     static const char *components[] = {"sensor", "sensor", "binary_sensor", "number", "button", "select"};
@@ -158,7 +158,7 @@ static __attribute__((noinline)) int filter_discovery(const a1_config_t *c, bool
             if (o) json_object_put(o);
             if (device) json_object_put(device);
             if (ids) json_object_put(ids);
-            return ph_mqtt_app_error(PH_MQTT_ERROR_APP_DISCOVERY_GRAPH, MQTT_FAILURE);
+            return service_mqtt_json_error(scope, PH_MQTT_ERROR_APP_DISCOVERY_GRAPH);
         }
         mqtt_identity(&account, "", identity, sizeof(identity));
         json_build_array_add(ids, json_object_new_string(bound ? parent_id : identity));
@@ -207,12 +207,12 @@ static __attribute__((noinline)) int filter_discovery(const a1_config_t *c, bool
             json_build_array_add(options, json_object_new_string("手动"));
             json_build_object_add(o, "options", options);
         }
-        int rc = service_mqtt_send(publish,path,o,true);
+        int rc = service_mqtt_optional_send(publish,path,o,true,scope);
         if (rc != MQTT_SUCCESS) return rc;
     }
     return MQTT_SUCCESS;
 }
-static int discovery(const a1_config_t *c,unsigned index)
+static int discovery_build(const a1_config_t *c,unsigned index,service_mqtt_json_scope *scope)
 {
     const char *keys[] = {"fan", "light", "child_lock", "led_always_on"};
     const char *components[] = {"fan", "light", "switch", "switch"};
@@ -224,7 +224,7 @@ static int discovery(const a1_config_t *c,unsigned index)
             if (o) json_object_put(o);
             if (device) json_object_put(device);
             if (ids) json_object_put(ids);
-            return ph_mqtt_app_error(PH_MQTT_ERROR_APP_DISCOVERY_GRAPH, MQTT_FAILURE);
+            return service_mqtt_json_error(scope, PH_MQTT_ERROR_APP_DISCOVERY_GRAPH);
         }
         char text[MQTT_TOPIC_MAX], path[MQTT_TOPIC_MAX];
         mqtt_identity(&account, "", text, sizeof(text));
@@ -273,10 +273,10 @@ static int discovery(const a1_config_t *c,unsigned index)
         }
         if (i >= 2) str(o, "entity_category", "config");
         mqtt_ha(&account, components[i], keys[i], path, sizeof(path));
-        int rc = service_mqtt_send(publish,path,o,true);
+        int rc = service_mqtt_optional_send(publish,path,o,true,scope);
         if (rc != MQTT_SUCCESS) return rc;
     }
-    return index>=4?filter_discovery(c,false,index-4):MQTT_SUCCESS;
+    return index>=4?filter_discovery(c,false,index-4,scope):MQTT_SUCCESS;
 }
 static int states(const a1_config_t *c, const mqtt_state_t *s,unsigned index)
 {
@@ -293,6 +293,24 @@ static int states(const a1_config_t *c, const mqtt_state_t *s,unsigned index)
     if(index==6 && rc==MQTT_SUCCESS)rc=service_mqtt_snapshot(publish,&account);
     return rc;
 }
+static bool discovery_deferred;
+static uint32_t discovery_retry_at;
+static int discovery(const a1_config_t *c,unsigned index)
+{
+    /* Resource pressure never retains a graph or retries at owner-loop rate.
+     * One fixed index is retried at most once/second; normal state keeps moving. */
+    uint32_t now=mico_rtos_get_time();
+    if(discovery_deferred && (uint32_t)(now-discovery_retry_at)<1000u)return PH_MQTT_MORE;
+    service_mqtt_json_scope scope;
+    int rc=PH_MQTT_MORE;
+    if(service_mqtt_json_begin(&scope,&mqtt_owner_thread)) {
+        rc=discovery_build(c,index,&scope);
+        service_mqtt_json_end(&scope);
+    }
+    discovery_deferred=rc==PH_MQTT_MORE;
+    if(discovery_deferred)discovery_retry_at=now;
+    return rc;
+}
 static int cleanup_discovery(void)
 {
     const char *keys[] = {"fan","light","child_lock","led_always_on"};
@@ -307,7 +325,7 @@ static int cleanup_discovery(void)
 static int cleanup_all(void)
 {
     int result = cleanup_discovery();
-    for(unsigned i=0;i<6;i++)if(filter_discovery(&session_config,true,i)!=MQTT_SUCCESS)result=MQTT_FAILURE;
+    for(unsigned i=0;i<6;i++)if(filter_discovery(&session_config,true,i,NULL)!=MQTT_SUCCESS)result=MQTT_FAILURE;
     if (feature_mqtt_cleanup(publish) != MQTT_SUCCESS) result = MQTT_FAILURE;
     return result;
 }
@@ -461,6 +479,7 @@ static int session_initial(void *context) {
     feature_mqtt_session(&account);
     (void)context;
     int rc=service_mqtt_capabilities(publish,&account);
+    discovery_deferred=false;discovery_retry_at=0;
     discovery_index=state_index=0;state_pending=0x7fu;state_seen=0;
     old_on=sent=old_visible=filter_turn=false;old_speed=revision=filter_sent_at=0;
     memset(&sent_filter,0,sizeof(sent_filter));
@@ -484,7 +503,8 @@ static int session_cycle(void *context) {
             if(discovery_index<10) {
                 rc=discovery(&current,discovery_index);
                 if(rc==MQTT_SUCCESS)++discovery_index;
-                return rc;
+                if(rc!=PH_MQTT_MORE)return rc;
+                rc=MQTT_SUCCESS;
             }
             bool on;unsigned speed;feature_effective_fan(current.fan_on,current.speed,&on,&speed);
             a1_filter_storage_t filter; a1_filter_get(&filter);
@@ -508,6 +528,9 @@ static int session_cycle(void *context) {
                 rc=states_step(&current,&state,false,&snapshot_sent);
                 if (snapshot_sent) { sent_filter = filter; filter_sent_at = mico_rtos_get_time(); }
             }
+            /* A deferred full-status JSON leaf must not also suppress the
+             * independent feature publisher while optional discovery waits. */
+            if (rc == PH_MQTT_MORE && discovery_deferred)rc=MQTT_SUCCESS;
             if (rc == MQTT_SUCCESS) {rc = feature_mqtt_service(publish, true);}
     return rc;
 }

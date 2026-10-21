@@ -8,6 +8,55 @@
 #include "../busy_reply.h"
 #include "json_heap.h"
 #include "mico.h"
+/* Protected by the existing JSON allocator mutex. The hook never acquires
+ * service/core locks; unrelated HTTP/OTA allocation failures cannot taint an
+ * MQTT-owner attempt. The static owner handle outlives every bounded scope. */
+static mico_thread_t *json_attempt_owner;
+static unsigned json_attempt_failure;
+void json_heap_failure(unsigned reason) {
+    if (json_attempt_owner && mico_rtos_is_current_thread(json_attempt_owner))
+        json_attempt_failure |= reason;
+}
+bool service_mqtt_json_begin(service_mqtt_json_scope *scope,mico_thread_t *owner) {
+    scope->token=scope->claim=0;
+    if(!owner || !mico_rtos_is_current_thread(owner))return false;
+    scope->token=service_json_claim();
+    if(!scope->token)return false;
+    scope->claim=service_memory_claim(0);
+    if(!scope->claim) { service_json_release(scope->token);scope->token=0;return false; }
+    json_heap_lock();
+    json_attempt_owner=owner;json_attempt_failure=0;
+    json_heap_unlock();
+    return true;
+}
+static unsigned service_mqtt_json_finish(service_mqtt_json_scope *scope) {
+    unsigned failure=0;
+    if(scope->token) {
+        json_heap_lock();
+        failure=json_attempt_failure;json_attempt_owner=NULL;json_attempt_failure=0;
+        json_heap_unlock();
+        service_json_release(scope->token);service_memory_release(scope->claim);
+        scope->token=scope->claim=0;
+    }
+    return failure;
+}
+void service_mqtt_json_end(service_mqtt_json_scope *scope) { (void)service_mqtt_json_finish(scope); }
+int service_mqtt_json_error(service_mqtt_json_scope *scope,unsigned stage) {
+    unsigned failure=service_mqtt_json_finish(scope);
+    return (failure & 3u) && !(failure & 4u) ? PH_MQTT_MORE : ph_mqtt_app_error(stage,MQTT_FAILURE);
+}
+int service_mqtt_optional_send(int(*sender)(const char *,const char *,bool),const char *topic,json_object *o,bool retain,service_mqtt_json_scope *scope) {
+    enum json_owned_error error;
+    struct printbuf *wire=json_owned_to_wire_result(o,&error);
+    unsigned failure=service_mqtt_json_finish(scope);
+    if(!wire) {
+        if(error!=JSON_OWNED_INVALID && (failure & 3u) && !(failure & 4u))return PH_MQTT_MORE;
+        return ph_mqtt_app_error(PH_MQTT_ERROR_APP_DISCOVERY_ENCODING,MQTT_FAILURE);
+    }
+    int rc=sender(topic,wire->buf,retain);
+    printbuf_free(wire);
+    return rc;
+}
 static struct printbuf *service_mqtt_wire(json_object *o) {
     /* PUBACK waiting can dispatch callbacks or overlap an HTTP status request.
      * Keep only independent wire bytes while waiting, not the JSON object graph. */

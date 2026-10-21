@@ -316,6 +316,93 @@ class NetworkReadinessTests(unittest.TestCase):
         self.monitor.observe(self.ip, data, phase, source, started,
                              can_restore=can_restore)
 
+    def _recover_with_dequeued_false(self, confirmation_ready=True, *, response_delay=0.01,
+                                    during_confirmation_false=False,
+                                    confirmation_behavior='ok'):
+        runner, clients, roots, evidence = _recovery_fixture(self.directory.name)
+        clock = [10.0]
+        monitor = MIXED.NetworkReadiness(
+            runner, evidence, monotonic=lambda: clock[0])
+        runner.mixed_network_readiness = monitor
+        original_sample = runner.sample
+        confirmation_rows = []
+        confirmation_deadlines = []
+        injected = []
+
+        def sample(ip, phase, action='status.get', params=None, expected='ok', deadline=None):
+            if not phase.endswith('-http-network-confirmation'):
+                return original_sample(ip, phase, params)
+            self.assertEqual(action, 'status.get')
+            self.assertEqual(params, {'view': 'full'})
+            confirmation_deadlines.append(deadline)
+            start = clock[0]
+            if confirmation_behavior == 'transport':
+                confirmation_rows.append({'request_started_monotonic': start,
+                                          'request_error': 'ConnectionError'})
+                raise ConnectionError('fixture transport failure')
+            if during_confirmation_false:
+                clock[0] = start + 0.0005
+                monitor.observe(ip, dict(_state(ip, VERSION), mqtt_connected=False),
+                                phase, 'mqtt-telemetry', now=clock[0])
+            end = (deadline + 0.001 if confirmation_behavior == 'after_deadline'
+                   else start + 0.001)
+            clock[0] = end
+            data = dict(_state(ip, VERSION), uptime_seconds=1002,
+                        mqtt_connected=confirmation_ready)
+            busy = confirmation_behavior == 'busy'
+            runner.check(ip, data, start, end)
+            row = {'ip': ip, 'phase': phase, 'action': 'status.get',
+                   'params': params or {}, 'ok': not busy,
+                   'http': 503 if busy else 200, 'code': 'busy' if busy else 'ok',
+                   'request_started_monotonic': start,
+                   'request_ended_monotonic': end,
+                   'uptime': data['uptime_seconds'],
+                   'wifi_connected': data['wifi_connected'],
+                   'mqtt_connected': data['mqtt_connected']}
+            if confirmation_behavior != 'missing_times':
+                row['request_started_monotonic'] = start
+                row['request_ended_monotonic'] = end
+            else:
+                row.pop('request_started_monotonic')
+                row.pop('request_ended_monotonic')
+            if not busy and confirmation_behavior != 'after_deadline':
+                monitor.observe(ip, row, phase, 'http-status', start,
+                                can_restore=True, now=end)
+            runner.rows.append(row)
+            confirmation_rows.append(row)
+            return row
+
+        runner.sample = sample
+        self._last_ordering_fixture = (runner, clients, roots, evidence, clock,
+                                       confirmation_rows, confirmation_deadlines)
+
+        def receive(client, request_id, result_topic, _state_topic, _timeout,
+                    telemetry, ip, phase, _runner, **kwargs):
+            if ip == self.ip and not injected:
+                request_started = kwargs['window_started']
+                clock[0] = request_started + 0.005
+                false_data = dict(_state(ip, VERSION), mqtt_connected=False)
+                monitor.observe(ip, false_data, phase, 'mqtt-telemetry', now=clock[0])
+                telemetry.append({
+                    'ip': ip, 'phase': phase, 'collection_stage': 'recovery',
+                    'retained': False, 'fresh': True, 'validated': True,
+                    'consumer_observed_monotonic': clock[0],
+                    'mqtt_connected': False,
+                })
+                injected.append({'request_started': request_started,
+                                 'false_observed': clock[0]})
+                clock[0] = request_started + response_delay
+            data = dict(_state(ip, VERSION), uptime_seconds=1002)
+            body = {'request_id': request_id, 'code': 'ok', 'data': data}
+            raw = json.dumps(body).encode()
+            return (result_topic, body, False, raw) if kwargs.get('include_raw') else (
+                result_topic, body, False)
+
+        with mock.patch.object(MIXED, 'receive_correlated', side_effect=receive):
+            MIXED.recover(runner, clients, roots, evidence, 'ordered-recovery',
+                          monotonic=lambda: clock[0], sleep=lambda _seconds: None)
+        return runner, evidence, clock, injected, confirmation_rows, confirmation_deadlines
+
     def test_short_false_then_fresh_true_records_safe_fields_and_recovers(self):
         self.clock[0] = 1
         self.observe(False)
@@ -333,6 +420,180 @@ class NetworkReadinessTests(unittest.TestCase):
                                                self.ip, self.good, VERSION)
         self.assertIs(validated['mqtt_connected'], False)
         self.assertIn('uptime_seconds', validated)
+
+    def test_five_millisecond_dequeued_false_is_not_cleared_by_older_request(self):
+        request_started = 1.0
+        self.clock[0] = request_started + 0.005
+        self.observe(False, source='mqtt-telemetry', started=None)
+        false_observed = self.clock[0]
+        self.clock[0] = request_started + 0.01
+        self.observe(True, started=request_started, source='mqtt-correlated')
+        self.assertEqual(self.monitor.state[self.ip]['degraded_since_monotonic'],
+                         false_observed)
+        self.assertEqual(
+            self.monitor.state[self.ip]['last_not_ready_observed_monotonic'],
+            false_observed)
+        self.monitor.require_ready('old-correlated-request', self.ip)
+        self.assertTrue(self.runner.stop.is_set())
+        self.assertNotIn('network-ready', [row['event'] for row in
+                                           self.evidence.data['network_events']])
+
+    def test_recovery_confirms_once_after_correlated_request_predates_false_observation(self):
+        runner, evidence, _clock, injected, confirmations, deadlines = \
+            self._recover_with_dequeued_false()
+        self.assertEqual(len(injected), 1)
+        self.assertAlmostEqual(injected[0]['false_observed']-
+                               injected[0]['request_started'], 0.005)
+        self.assertEqual(len(confirmations), 1)
+        confirmation = confirmations[0]
+        self.assertGreaterEqual(confirmation['request_started_monotonic'],
+                                injected[0]['false_observed'])
+        self.assertTrue(confirmation['ok'])
+        self.assertEqual(len(runner.rows), 10)  # 9 planned recovery reads plus one confirmation
+        recovery = evidence.data['recovery'][0]
+        self.assertTrue(recovery['completed'])
+        first = next(row for row in recovery['mqtt_results'] if row['ip'] == self.ip)
+        proof = first['network_confirmation']
+        self.assertEqual(proof['outcome'], 'ready')
+        self.assertEqual(proof['reason'],
+                         'correlated-status-started-before-not-ready-observation')
+        self.assertLess(proof['mqtt_request_started_monotonic'],
+                        proof['not_ready_observed_monotonic'])
+        self.assertGreaterEqual(proof['request_started_monotonic'],
+                                proof['not_ready_observed_monotonic'])
+        self.assertEqual(deadlines, [MIXED.RECOVERY_BUSY_TOTAL_TIMEOUT+10.0])
+        self.assertGreaterEqual(proof['request_started_monotonic'],
+                                proof['latest_not_ready_observed_monotonic_after_request'])
+        events = [row for row in evidence.data['network_events']
+                  if row.get('ip') == self.ip]
+        self.assertEqual([row['event'] for row in events],
+                         ['network-degraded', 'network-ready'])
+        self.assertEqual(events[-1]['source'], 'http-status')
+
+    def test_false_observed_during_confirmation_still_fails_once(self):
+        with self.assertRaisesRegex(RuntimeError, 'confirmation failed'):
+            self._recover_with_dequeued_false(during_confirmation_false=True)
+        runner, _clients, _roots, evidence, _clock, confirmations, _deadlines = \
+            self._last_ordering_fixture
+        self.assertEqual(len(confirmations), 1)
+        self.assertEqual(evidence.data['network_confirmations'][0]['outcome'],
+                         'failed_confirmation')
+        self.assertNotIn('network-ready', [row['event'] for row in
+                                           evidence.data['network_events']])
+        self.assertTrue(runner.stop.is_set())
+
+    def test_recovery_deadline_prevents_followup_confirmation(self):
+        with self.assertRaisesRegex(TimeoutError, 'busy retry deadline'):
+            self._recover_with_dequeued_false(response_delay=
+                                              MIXED.RECOVERY_BUSY_TOTAL_TIMEOUT+1)
+        runner, _clients, _roots, evidence, _clock, confirmations, _deadlines = \
+            self._last_ordering_fixture
+        self.assertEqual(confirmations, [])
+        self.assertEqual(evidence.data['network_confirmations'], [])
+        self.assertEqual(len(runner.check_calls), 0)
+        self.assertTrue(runner.stop.is_set())
+
+    def test_http_confirmation_failures_are_bounded_and_preserve_original_deadline(self):
+        cases = (
+            ('busy', RuntimeError, 'confirmation failed', 'failed_confirmation'),
+            ('transport', ConnectionError, 'fixture transport failure', 'request_error'),
+            ('missing_times', RuntimeError, 'confirmation failed', 'failed_confirmation'),
+            ('after_deadline', RuntimeError, 'confirmation failed', 'failed_confirmation'),
+        )
+        for behavior, error_type, message, outcome in cases:
+            with self.subTest(behavior=behavior):
+                with self.assertRaisesRegex(error_type, message):
+                    self._recover_with_dequeued_false(
+                        confirmation_behavior=behavior)
+                runner, clients, _roots, evidence, _clock, confirmations, deadlines = \
+                    self._last_ordering_fixture
+                self.assertEqual(len(confirmations), 1)
+                self.assertEqual(len(deadlines), 1)
+                self.assertEqual(evidence.data['network_confirmations'][0]['outcome'],
+                                 outcome)
+                self.assertEqual(len(clients[self.ip].published_requests), 1)
+                self.assertTrue(runner.stop.is_set())
+
+    def test_degradation_seen_before_recovery_request_needs_no_extra_http(self):
+        runner, clients, roots, evidence = _recovery_fixture(self.directory.name)
+        clock = [10.0]
+        monitor = MIXED.NetworkReadiness(
+            runner, evidence, monotonic=lambda: clock[0])
+        runner.mixed_network_readiness = monitor
+        monitor.observe(self.ip, dict(self.good, mqtt_connected=False), 'before-recovery',
+                        'mqtt-telemetry', now=9.0)
+        def receive(client, request_id, result_topic, _state_topic, _timeout,
+                    _telemetry, ip, _phase, _runner, **kwargs):
+            body = {'request_id': request_id, 'code': 'ok',
+                    'data': dict(_state(ip, VERSION), uptime_seconds=1002)}
+            raw = json.dumps(body).encode()
+            return (result_topic, body, False, raw) if kwargs.get('include_raw') else (
+                result_topic, body, False)
+
+        with mock.patch.object(MIXED, 'receive_correlated', side_effect=receive):
+            MIXED.recover(runner, clients, roots, evidence, 'fresh-recovery',
+                          monotonic=lambda: clock[0], sleep=lambda _seconds: None)
+        self.assertEqual(evidence.data['network_confirmations'], [])
+        self.assertIsNone(monitor.state[self.ip]['degraded_since_monotonic'])
+
+    def test_single_http_confirmation_not_ready_fails_without_retry(self):
+        runner = FakeRunner(TARGETS, VERSION, self.directory.name)
+        runner.initialize()
+        clients, roots = {}, {}
+        for ip, (_ident, model) in MIXED.TARGETS.items():
+            root = 'phicomm/user/'+model+'/'+TARGETS[ip]
+            client = FakeMQTTClient('broker', 1883, 'offline-'+model)
+            client.state, client.root = _state(ip, VERSION), root
+            clients[ip], roots[ip] = client, root
+        evidence = MIXED.Evidence(Path(self.directory.name)/'failed-confirmation.json',
+                                  'offline', VERSION, 'short', [])
+        clock = [10.0]
+        monitor = MIXED.NetworkReadiness(runner, evidence,
+                                         monotonic=lambda: clock[0])
+        runner.mixed_network_readiness = monitor
+        original_sample = runner.sample
+        confirmations = []
+
+        def sample(ip, phase, action='status.get', params=None, expected='ok', deadline=None):
+            if not phase.endswith('-http-network-confirmation'):
+                return original_sample(ip, phase, params)
+            start = clock[0]
+            clock[0] += 0.001
+            row = {'ip': ip, 'phase': phase, 'action': 'status.get',
+                   'params': params or {}, 'ok': True, 'http': 200, 'code': 'ok',
+                   'request_started_monotonic': start,
+                   'request_ended_monotonic': clock[0], 'uptime': 1002,
+                   'wifi_connected': True, 'mqtt_connected': False}
+            monitor.observe(ip, row, phase, 'http-status', start,
+                            can_restore=True, now=clock[0])
+            runner.rows.append(row)
+            confirmations.append(row)
+            return row
+
+        runner.sample = sample
+
+        def receive(client, request_id, result_topic, _state_topic, _timeout,
+                    _telemetry, ip, phase, _runner, **kwargs):
+            if ip == self.ip:
+                request_started = kwargs['window_started']
+                clock[0] = request_started + 0.005
+                monitor.observe(ip, dict(_state(ip, VERSION), mqtt_connected=False),
+                                phase, 'mqtt-telemetry', now=clock[0])
+                clock[0] = request_started + 0.01
+            body = {'request_id': request_id, 'code': 'ok',
+                    'data': dict(_state(ip, VERSION), uptime_seconds=1002)}
+            raw = json.dumps(body).encode()
+            return (result_topic, body, False, raw) if kwargs.get('include_raw') else (
+                result_topic, body, False)
+
+        with mock.patch.object(MIXED, 'receive_correlated', side_effect=receive):
+            with self.assertRaisesRegex(RuntimeError, 'not ready'):
+                MIXED.recover(runner, clients, roots, evidence, 'not-ready-confirmation',
+                              monotonic=lambda: clock[0], sleep=lambda _seconds: None)
+        self.assertEqual(len(confirmations), 1)
+        self.assertEqual(len(clients[self.ip].published_requests), 1)
+        self.assertEqual(evidence.data['network_confirmations'][0]['outcome'], 'not_ready')
+        self.assertTrue(runner.stop.is_set())
 
     def test_strict_bool_missing_and_nonbool_are_protocol_errors(self):
         for key in ('wifi_connected', 'mqtt_connected'):

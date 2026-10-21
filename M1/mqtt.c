@@ -122,7 +122,7 @@ static void ha_birth(MessageData *data)
 static void str(json_object *o, const char *key, const char *value)
 { json_build_object_add(o, key, json_object_new_string(value)); }
 
-static int discovery(const m1_config_t *c,unsigned index)
+static int discovery_build(const m1_config_t *c,unsigned index,service_mqtt_json_scope *scope)
 {
     static const char *keys[] = {"temperature", "humidity", "formaldehyde", "pm25", "co2", "brightness"};
     static const char *names[] = {"温度", "湿度", "甲醛", "PM2.5", "二氧化碳", "屏幕亮度"};
@@ -134,7 +134,7 @@ static int discovery(const m1_config_t *c,unsigned index)
         if (i == 4 && !co2_received) continue;
         char topic[MQTT_TOPIC_MAX], text[MQTT_TOPIC_MAX];
         json_object *o = json_object_new_object();
-        if (!o) return ph_mqtt_app_error(PH_MQTT_ERROR_APP_DISCOVERY_GRAPH, MQTT_FAILURE);
+        if (!o) return service_mqtt_json_error(scope, PH_MQTT_ERROR_APP_DISCOVERY_GRAPH);
         str(o, "name", names[i]);
         mqtt_leaf(&account,"state",text,sizeof(text));str(o,"json_attributes_topic",text);
         str(o,"json_attributes_template","{{ {\"ip\": value_json.ip, \"firmware\": value_json.version, \"sensor_valid\": value_json.sensor_valid} | tojson }}");
@@ -144,7 +144,7 @@ static int discovery(const m1_config_t *c,unsigned index)
         if (!device || !ids) {
             if (device) json_object_put(device);
             if (ids) json_object_put(ids);
-            json_object_put(o); return ph_mqtt_app_error(PH_MQTT_ERROR_APP_DISCOVERY_GRAPH, MQTT_FAILURE);
+            json_object_put(o); return service_mqtt_json_error(scope, PH_MQTT_ERROR_APP_DISCOVERY_GRAPH);
         }
         mqtt_identity(&account, "", text, sizeof(text));
         json_build_array_add(ids, json_object_new_string(text));
@@ -164,7 +164,7 @@ static int discovery(const m1_config_t *c,unsigned index)
                 if (availability) json_object_put(availability);
                 if (node) json_object_put(node);
                 if (sensor) json_object_put(sensor);
-                json_object_put(o); return ph_mqtt_app_error(PH_MQTT_ERROR_APP_DISCOVERY_GRAPH, MQTT_FAILURE);
+                json_object_put(o); return service_mqtt_json_error(scope, PH_MQTT_ERROR_APP_DISCOVERY_GRAPH);
             }
             str(node, "topic", availability_topic);
             snprintf(text, sizeof(text), "%s/%s", base, i == 4 ? "co2_availability" : "sensor_availability"); str(sensor, "topic", text);
@@ -184,12 +184,30 @@ static int discovery(const m1_config_t *c,unsigned index)
             str(o,"entity_category","config");
         }
         mqtt_ha(&account, i < 5 ? "sensor" : "number", keys[i], topic, sizeof(topic));
-        int rc = service_mqtt_send(publish,topic,o,true);
+        int rc = service_mqtt_optional_send(publish,topic,o,true,scope);
         if (rc != MQTT_SUCCESS) return rc;
     }
     return MQTT_SUCCESS;
 }
 
+static bool discovery_deferred;
+static uint32_t discovery_retry_at;
+static int discovery(const m1_config_t *c,unsigned index)
+{
+    /* Resource pressure never retains a graph or retries at owner-loop rate.
+     * One fixed index is retried at most once/second; normal state keeps moving. */
+    uint32_t now=mico_rtos_get_time();
+    if(discovery_deferred && (uint32_t)(now-discovery_retry_at)<1000u)return PH_MQTT_MORE;
+    service_mqtt_json_scope scope;
+    int rc=PH_MQTT_MORE;
+    if(service_mqtt_json_begin(&scope,&mqtt_owner_thread)) {
+        rc=discovery_build(c,index,&scope);
+        service_mqtt_json_end(&scope);
+    }
+    discovery_deferred=rc==PH_MQTT_MORE;
+    if(discovery_deferred)discovery_retry_at=now;
+    return rc;
+}
 static int cleanup_discovery(void)
 {
     const char *keys[] = {"temperature","humidity","formaldehyde","pm25","co2","brightness"};
@@ -267,6 +285,7 @@ static int session_initial(void *context) {
     (void)context;
     int rc=service_mqtt_capabilities(publish,&account);
     if(rc==MQTT_SUCCESS)rc=publish_leaf("sensor_availability","offline",true);
+    discovery_deferred=false;discovery_retry_at=0;
     discovery_index=initial_index=0;
     connect_sequence=state.sample.sequence;co2_sequence=sequence=0;
     co2_discovered=state.scd40.received;
@@ -278,7 +297,15 @@ static int session_cycle(void *context) {
     (void)context;
             ota_job_poll();
             int rc=MQTT_SUCCESS;
-            if(!ota_job_active() && (uint32_t)(mico_rtos_get_time()-snapshot_at)>=5000){rc=service_mqtt_snapshot(publish,&account);if(rc!=MQTT_SUCCESS)return rc;snapshot_at=mico_rtos_get_time();}
+            if(!ota_job_active() && (uint32_t)(mico_rtos_get_time()-snapshot_at)>=5000) {
+                /* Resource pressure on the optional full snapshot must not
+                 * suppress independent bounded sensor/feature publication.
+                 * Retry on the existing period, not every owner turn. */
+                snapshot_at=mico_rtos_get_time();
+                rc=service_mqtt_snapshot(publish,&account);
+                if(rc!=MQTT_SUCCESS && rc!=PH_MQTT_MORE)return rc;
+                rc=MQTT_SUCCESS;
+            }
             rc=ota_service(base); if(rc!=MQTT_SUCCESS)return rc;
             if(ota_job_active())return MQTT_SUCCESS;
             mqtt_state_get(&state); m1_config_get(&current);
@@ -298,7 +325,8 @@ static int session_cycle(void *context) {
             if(discovery_index<6) {
                 rc=discovery(&current,discovery_index);
                 if(rc==MQTT_SUCCESS)++discovery_index;
-                return rc;
+                if(rc!=PH_MQTT_MORE)return rc;
+                rc=MQTT_SUCCESS;
             }
             if(initial_index<2) {
                 char value[4];snprintf(value,sizeof(value),"%u",state.brightness_requested);

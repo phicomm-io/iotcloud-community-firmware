@@ -9,6 +9,8 @@
  * unchanged. The caller frees the result with printbuf_free after transport.
  * Graphs must be acyclic JSON values; nesting beyond 32 nodes fails closed.
  * Cycles are rejected by the depth limit, not reclaimed by reference counting. */
+enum json_owned_error { JSON_OWNED_OK, JSON_OWNED_RESOURCE, JSON_OWNED_GRAPH, JSON_OWNED_INVALID };
+struct printbuf *json_owned_to_wire_result(json_object *, enum json_owned_error *);
 struct printbuf *json_owned_to_wire(json_object *);
 /* Consume one reference before calling a synchronous transport. Only independent
  * wire bytes survive callback re-entry/PUBACK waiting. -1 means encoding failed;

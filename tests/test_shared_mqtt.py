@@ -64,26 +64,41 @@ class SharedMQTT(unittest.TestCase):
                              (['-DMAX_MESSAGE_HANDLERS=12', '-DPH_EXPECTED_MESSAGE_HANDLERS=12'] if model != 'TC1'
                               else ['-DPH_EXPECTED_MESSAGE_HANDLERS=5']) +
                              ['-Wl,--wrap=malloc,--wrap=free,--wrap=realloc,--wrap=calloc,--wrap=strdup'])
-    def test_session_pacing(self):
-        self.check_session_fixture('pacing')
-    def test_ingress_overload(self):
-        self.check_session_fixture('overload')
-    def test_failure_evidence(self):
-        self.check_session_fixture('failure_evidence')
-    def test_session_first_cause(self):
-        self.check_session_fixture('firstcause')
-    def check_session_fixture(self, name):
-        for model in ('A1', 'M1', 'TC1'):
-            with self.subTest(model=model), self.protocol(model) as protocol:
-                self.compile_run([ROOT / ('tests/mqtt_core/' + name + '.c'),
-                                  ROOT / 'common/mqtt/core.c', ROOT / 'common/mqtt/client.c',
-                                  ROOT / 'common/mqtt/session.c', ROOT / 'common/mqtt/diagnostics.c', protocol / 'MQTTClient.c',
-                                  *sorted((protocol / 'MQTTPacket').glob('*.c'))],
-                                 [ROOT / 'tests/mqtt_core/stubs', protocol,
-                                  protocol / 'mico', protocol / 'MQTTPacket'],
-                                 (['-DMAX_MESSAGE_HANDLERS=12', '-DPH_EXPECTED_MESSAGE_HANDLERS=12']
-                                  if model != 'TC1' else ['-DPH_EXPECTED_MESSAGE_HANDLERS=5']) +
-                                 ['-Wl,--wrap=malloc,--wrap=free,--wrap=realloc,--wrap=calloc,--wrap=strdup'])
+    def test_a1_session_pacing(self):
+        self.check_session_fixture('pacing','A1')
+    def test_m1_session_pacing(self):
+        self.check_session_fixture('pacing','M1')
+    def test_tc1_session_pacing(self):
+        self.check_session_fixture('pacing','TC1')
+    def test_a1_ingress_overload(self):
+        self.check_session_fixture('overload','A1')
+    def test_m1_ingress_overload(self):
+        self.check_session_fixture('overload','M1')
+    def test_tc1_ingress_overload(self):
+        self.check_session_fixture('overload','TC1')
+    def test_a1_failure_evidence(self):
+        self.check_session_fixture('failure_evidence','A1')
+    def test_m1_failure_evidence(self):
+        self.check_session_fixture('failure_evidence','M1')
+    def test_tc1_failure_evidence(self):
+        self.check_session_fixture('failure_evidence','TC1')
+    def test_a1_session_first_cause(self):
+        self.check_session_fixture('firstcause','A1')
+    def test_m1_session_first_cause(self):
+        self.check_session_fixture('firstcause','M1')
+    def test_tc1_session_first_cause(self):
+        self.check_session_fixture('firstcause','TC1')
+    def check_session_fixture(self, name, model):
+        with self.subTest(model=model), self.protocol(model) as protocol:
+            self.compile_run([ROOT / ('tests/mqtt_core/' + name + '.c'),
+                              ROOT / 'common/mqtt/core.c', ROOT / 'common/mqtt/client.c',
+                              ROOT / 'common/mqtt/session.c', ROOT / 'common/mqtt/diagnostics.c', protocol / 'MQTTClient.c',
+                              *sorted((protocol / 'MQTTPacket').glob('*.c'))],
+                             [ROOT / 'tests/mqtt_core/stubs', protocol,
+                              protocol / 'mico', protocol / 'MQTTPacket'],
+                             (['-DMAX_MESSAGE_HANDLERS=12', '-DPH_EXPECTED_MESSAGE_HANDLERS=12']
+                              if model != 'TC1' else ['-DPH_EXPECTED_MESSAGE_HANDLERS=5']) +
+                             ['-Wl,--wrap=malloc,--wrap=free,--wrap=realloc,--wrap=calloc,--wrap=strdup'])
     def test_a1_ingress_self_feedback(self):
         from tests.test_http_json_budget import function
         product=(ROOT/'A1/mqtt.c').read_text()
@@ -221,11 +236,21 @@ int main(void){
         source=(ROOT/'A1/mqtt.c').read_text()
         builders='\n'.join(function(source,name) for name in
             ('static void str(', 'static void topic(',
-             'static __attribute__((noinline)) int filter_discovery(', 'static int discovery('))
+             'static __attribute__((noinline)) int filter_discovery(', 'static int discovery_build(', 'static int discovery('))
         fixture=(ROOT/'tests/mqtt_core/a1_builders.in').read_text().replace('/* BUILDERS */',builders)
         with tempfile.TemporaryDirectory() as temp:
             Path(temp,'a1_builders.inc').write_text(fixture)
             self.check_service_fixture([ROOT,Path(temp)], ['-DA1_BUILDERS_FIXTURE'])
+            # Restore the pre-fix fatal allocation policy as a negative control.
+            old_builders=builders.replace(
+                'service_mqtt_json_error(scope, PH_MQTT_ERROR_APP_DISCOVERY_GRAPH)',
+                'ph_mqtt_app_error(PH_MQTT_ERROR_APP_DISCOVERY_GRAPH,MQTT_FAILURE)')
+            self.assertNotEqual(old_builders,builders)
+            Path(temp,'a1_builders.inc').write_text(
+                (ROOT/'tests/mqtt_core/a1_builders.in').read_text().replace('/* BUILDERS */',old_builders))
+            with self.assertRaises(subprocess.CalledProcessError):
+                self.check_service_fixture([ROOT,Path(temp)], ['-DA1_BUILDERS_FIXTURE'])
+
     def check_service_fixture(self, extra_includes=(), extra_defines=()):
         sdk = ROOT/'build/a1-sdk/mico-os'
         protocol=sdk/'libraries/protocols/mqtt'
@@ -244,7 +269,9 @@ int main(void){
     def test_m1_protocol(self): self.check_protocol('M1')
     def test_tc1_protocol(self): self.check_protocol('TC1')
 
-    def test_product_publish_quota_diagnostics(self):
+    def test_a1_product_publish_quota_diagnostics(self): self.check_product_publish_quota_diagnostics('A1')
+    def test_m1_product_publish_quota_diagnostics(self): self.check_product_publish_quota_diagnostics('M1')
+    def check_product_publish_quota_diagnostics(self, model):
         """Real adapter functions, shared turn budget and pinned Paho; no sockets."""
         from tests.test_http_json_budget import function
         fixture = r'''
@@ -308,19 +335,19 @@ int main(void) {
  return 0;
 }
 '''
-        for model in ('A1', 'M1'):
-            with self.subTest(model=model), self.protocol(model) as protocol, tempfile.TemporaryDirectory() as d:
-                product = (ROOT/model/'mqtt.c').read_text()
-                functions = (function(product, 'static void mqtt_error(') + '\n' +
-                             function(product, 'static int publish('))
-                source = Path(d)/'diagnostics.c'
-                source.write_text(fixture.replace('/* PRODUCTION */', functions)
-                                  .replace('PRODUCT', model.lower()).replace('MODEL', model.lower()))
-                self.compile_run([source, ROOT/'common/mqtt/core.c', ROOT/'common/mqtt/client.c',
-                                  ROOT/'common/mqtt/session.c', protocol/'MQTTClient.c',
-                                  *sorted((protocol/'MQTTPacket').glob('*.c'))],
-                                 [ROOT, ROOT/'tests/mqtt_core/stubs', protocol, protocol/'mico',
-                                  protocol/'MQTTPacket'],
-                                 ['-DMAX_MESSAGE_HANDLERS=12', '-DPH_EXPECTED_MESSAGE_HANDLERS=12',
-                                  '-Wl,--wrap=malloc,--wrap=free,--wrap=realloc,--wrap=calloc,--wrap=strdup'])
+
+        with self.subTest(model=model), self.protocol(model) as protocol, tempfile.TemporaryDirectory() as d:
+            product = (ROOT/model/'mqtt.c').read_text()
+            functions = (function(product, 'static void mqtt_error(') + '\n' +
+                         function(product, 'static int publish('))
+            source = Path(d)/'diagnostics.c'
+            source.write_text(fixture.replace('/* PRODUCTION */', functions)
+                              .replace('PRODUCT', model.lower()).replace('MODEL', model.lower()))
+            self.compile_run([source, ROOT/'common/mqtt/core.c', ROOT/'common/mqtt/client.c',
+                              ROOT/'common/mqtt/session.c', protocol/'MQTTClient.c',
+                              *sorted((protocol/'MQTTPacket').glob('*.c'))],
+                             [ROOT, ROOT/'tests/mqtt_core/stubs', protocol, protocol/'mico',
+                              protocol/'MQTTPacket'],
+                             ['-DMAX_MESSAGE_HANDLERS=12', '-DPH_EXPECTED_MESSAGE_HANDLERS=12',
+                              '-Wl,--wrap=malloc,--wrap=free,--wrap=realloc,--wrap=calloc,--wrap=strdup'])
 if __name__ == '__main__': unittest.main()

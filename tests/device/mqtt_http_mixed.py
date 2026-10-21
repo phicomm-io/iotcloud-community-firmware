@@ -229,7 +229,7 @@ class Evidence:
             'targets': {ip: {'device_id': ident, 'model': model}
                         for ip, (ident, model) in TARGETS.items()},
             'plan': plan, 'phases': [], 'http': [], 'mqtt': [], 'telemetry': [],
-            'recovery': [], 'recovery_attempts': [],
+            'recovery': [], 'recovery_attempts': [], 'network_confirmations': [],
             'protocol_errors': [], 'unmatched_mqtt': [],
             'queue_drops': [], 'queue_overflow_events': [], 'blockers': [],
         }
@@ -323,6 +323,7 @@ class NetworkReadiness:
         self.runner, self.evidence, self.monotonic = runner, evidence, monotonic
         self.lock = threading.Lock()
         self.state = {ip: {'degraded_since_monotonic': None,
+                           'last_not_ready_observed_monotonic': None,
                            'maximum_not_ready_seconds': 0.0, 'expired': False}
                       for ip in TARGETS}
         self.evidence.data.setdefault('network_events', [])
@@ -382,13 +383,16 @@ class NetworkReadiness:
             state.update(last_observation_source=source, last_observed_monotonic=now,
                          last_request_started_monotonic=started,
                          last_observation_can_restore=can_restore)
-            if not ready and since is None:
-                state['degraded_since_monotonic'] = now
-                self.evidence.append('network_events', {
-                    'ip': ip, 'phase': phase, 'event': 'network-degraded',
-                    'source': source, 'observed_monotonic': now, **network})
+            if not ready:
+                state['last_not_ready_observed_monotonic'] = now
+                if since is None:
+                    state['degraded_since_monotonic'] = now
+                    self.evidence.append('network_events', {
+                        'ip': ip, 'phase': phase, 'event': 'network-degraded',
+                        'source': source, 'observed_monotonic': now, **network})
             elif (ready and since is not None and not state['expired'] and
-                  can_restore and started is not None and started >= since):
+                  can_restore and started is not None and
+                  started >= state['last_not_ready_observed_monotonic']):
                 self.evidence.append('network_events', {
                     'ip': ip, 'phase': phase, 'event': 'network-ready',
                     'source': source, 'observed_monotonic': now,
@@ -1123,10 +1127,113 @@ def recover(runner, clients, roots, evidence, name, *, monotonic=time.monotonic,
         runner.check(ip, checked, started, now)
         _observe_network(runner, checked, ip, name, 'mqtt-recovery',
                          attempt_started, can_restore=True)
+        network_confirmation = None
         if checked['wifi_connected'] is not True or checked['mqtt_connected'] is not True:
             runner.block(ip, 'MQTT recovery status network is not ready')
         monitor = getattr(runner, 'mixed_network_readiness', None)
         if monitor is not None:
+            network_state = monitor.state[ip]
+            degraded_since = network_state['degraded_since_monotonic']
+            not_ready_observed = network_state['last_not_ready_observed_monotonic']
+            stale_correlated_status = (
+                degraded_since is not None and
+                not_ready_observed is not None and
+                attempt_started < not_ready_observed and
+                not network_state['expired'] and
+                not runner.stop.is_set() and
+                checked['wifi_connected'] is True and
+                checked['mqtt_connected'] is True)
+            if stale_correlated_status:
+                confirmation_deadline = min(
+                    deadline, degraded_since + NETWORK_NOT_READY_LIMIT)
+                confirmation = {
+                    'ip': ip, 'phase': name,
+                    'reason': 'correlated-status-started-before-not-ready-observation',
+                    'mqtt_request_started_monotonic': attempt_started,
+                    'degraded_since_monotonic': degraded_since,
+                    'not_ready_observed_monotonic': not_ready_observed,
+                    'deadline_monotonic': confirmation_deadline,
+                    'request_started_monotonic': None,
+                    'request_ended_monotonic': None,
+                    'outcome': 'pending',
+                }
+                evidence.append('network_confirmations', confirmation)
+                evidence.save()
+                if monotonic() >= confirmation_deadline:
+                    confirmation.update(outcome='deadline_expired_before_request')
+                    evidence.save()
+                    runner.block(ip, 'Fresh HTTP network confirmation deadline expired')
+                    raise TimeoutError('Fresh HTTP network confirmation deadline expired')
+                try:
+                    confirmation_row = runner.sample(
+                        ip, name+'-http-network-confirmation', action='status.get',
+                        params={'view': 'full'}, deadline=confirmation_deadline)
+                except Exception as exc:
+                    confirmation.update(outcome='request_error',
+                                        error_type=type(exc).__name__)
+                    evidence.save()
+                    if not runner.stop.is_set():
+                        runner.block(ip, 'Fresh HTTP network confirmation request failed: '+
+                                     type(exc).__name__)
+                    raise
+                request_start = confirmation_row.get('request_started_monotonic')
+                request_end = confirmation_row.get('request_ended_monotonic')
+                confirmation.update(
+                    request_started_monotonic=request_start,
+                    request_ended_monotonic=request_end,
+                    http=confirmation_row.get('http'),
+                    code=confirmation_row.get('code'),
+                    request_ok=confirmation_row.get('ok') is True,
+                    wifi_connected=confirmation_row.get('wifi_connected'),
+                    mqtt_connected=confirmation_row.get('mqtt_connected'),
+                    uptime_seconds=confirmation_row.get('uptime'))
+                latest_not_ready_after_request = network_state[
+                    'last_not_ready_observed_monotonic']
+                confirmation['latest_not_ready_observed_monotonic_after_request'] = \
+                    latest_not_ready_after_request
+                evidence.save()
+                valid_times = (
+                    type(request_start) in (int, float) and math.isfinite(request_start) and
+                    type(request_end) in (int, float) and math.isfinite(request_end) and
+                    request_end >= request_start and
+                    request_end <= confirmation_deadline)
+                if not confirmation_row.get('ok') or not valid_times:
+                    confirmation.update(outcome='failed_confirmation')
+                    evidence.save()
+                    if not runner.stop.is_set():
+                        runner.block(ip, 'Fresh HTTP network confirmation failed')
+                    raise RuntimeError('Fresh HTTP network confirmation failed')
+                try:
+                    confirmed_network = _network_fields(confirmation_row)
+                except ValueError as exc:
+                    confirmation.update(outcome='invalid_network_fields')
+                    evidence.save()
+                    runner.block(ip, 'Fresh HTTP network confirmation fields invalid')
+                    raise RuntimeError('Fresh HTTP network confirmation failed') from exc
+                if not all(confirmed_network.values()):
+                    confirmation.update(outcome='not_ready')
+                    evidence.save()
+                    runner.block(ip, 'Fresh HTTP network confirmation is not ready')
+                    raise RuntimeError('Fresh HTTP network confirmation is not ready')
+                if request_start < latest_not_ready_after_request:
+                    confirmation.update(outcome='failed_confirmation')
+                    evidence.save()
+                    runner.block(ip, 'Fresh HTTP network confirmation predates a new not-ready observation')
+                    raise RuntimeError('Fresh HTTP network confirmation failed')
+                confirmation.update(outcome='ready')
+                evidence.save()
+                network_confirmation = {
+                    'reason': confirmation['reason'],
+                    'degraded_since_monotonic': degraded_since,
+                    'not_ready_observed_monotonic': not_ready_observed,
+                    'latest_not_ready_observed_monotonic_after_request':
+                        latest_not_ready_after_request,
+                    'mqtt_request_started_monotonic': attempt_started,
+                    'request_started_monotonic': request_start,
+                    'request_ended_monotonic': request_end,
+                    'deadline_monotonic': confirmation_deadline,
+                    'outcome': confirmation['outcome'],
+                }
             monitor.require_ready(name+'-mqtt-recovery', ip)
         if runner.stop.is_set():
             raise RuntimeError('MQTT recovery state gate failed')
@@ -1134,7 +1241,8 @@ def recover(runner, clients, roots, evidence, name, *, monotonic=time.monotonic,
                             'retained': False, 'elapsed_ms': (now-started)*1000,
                             'attempt_count': len(attempt_request_ids),
                             'busy_attempt_count': len(busy_attempts),
-                            'attempt_request_ids': attempt_request_ids, **summary})
+                            'attempt_request_ids': attempt_request_ids,
+                            'network_confirmation': network_confirmation, **summary})
     evidence.data['recovery'].append({'phase': name, 'http_completed': True,
                                       'mqtt_results': result_rows,
                                       'telemetry_observation': {

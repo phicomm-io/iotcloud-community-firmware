@@ -10,17 +10,20 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class BirthProgress(unittest.TestCase):
-    def test_a1_m1_birth_finishes_current_batch_before_replay(self):
-        for model, count, tail in [('A1', 10, '            bool on;'),
-                                   ('M1', 6, '            if(initial_index<2)')]:
-            with self.subTest(model=model):
-                source = (ROOT/model/'mqtt.c').read_text()
-                cycle = function(source, 'static int session_cycle(')
-                # Keep the unmodified production entry, admission, config and
-                # discovery path. Later state encoding is a separate test.
-                self.assertIn(tail, cycle)
-                cycle = cycle[:cycle.index(tail)] + 'return rc;\n}'
-                fixture = r'''
+    def test_a1_birth_finishes_current_batch_before_replay(self):
+        self.check_birth_batch('A1',10,'            bool on;')
+    def test_m1_birth_finishes_current_batch_before_replay(self):
+        self.check_birth_batch('M1',6,'            if(initial_index<2)')
+    def check_birth_batch(self, model, count, tail):
+
+        with self.subTest(model=model):
+            source = (ROOT/model/'mqtt.c').read_text()
+            cycle = function(source, 'static int session_cycle(')
+            # Keep the unmodified production entry, admission, config and
+            # discovery path. Later state encoding is a separate test.
+            self.assertIn(tail, cycle)
+            cycle = cycle[:cycle.index(tail)] + 'return rc;\n}'
+            fixture = r'''
 #include <assert.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -74,7 +77,7 @@ int main(void){
  return 0;
 }
 '''.replace('/* COUNT */', str(count)).replace('/* PRODUCTION */', cycle)
-                self.compile_run(fixture)
+            self.compile_run(fixture)
 
     def test_tc1_birth_finishes_snapshot_batch_before_replay(self):
         cycle = function((ROOT/'TC1/mqtt_server/user_mqtt_client.c').read_text(),

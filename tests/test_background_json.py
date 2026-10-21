@@ -10,19 +10,21 @@ from tests.test_http_json_budget import function
 ROOT = Path(__file__).resolve().parents[1]
 
 class BackgroundJson(unittest.TestCase):
-    def test_native_discovery_callbacks(self):
-        for model in ('A1','M1'):
-            with self.subTest(model=model):
-                source=(ROOT/model/'mqtt.c').read_text()
-                service=(ROOT/'common/mqtt/service.c').read_text()
-                functions='\n'.join(function(service,n) for n in
-                    ('static struct printbuf *service_mqtt_wire(', 'int service_mqtt_send('))+'\n'
-                functions+=function(source,'static void str(')+'\n'
-                if model=='A1':
-                    functions+=function(source,'static void topic(')+'\n'
-                    functions+=function(source,'static __attribute__((noinline)) int filter_discovery(')+'\n'
-                functions+=function(source,'static int discovery(')
-                fixture=r'''
+    def test_a1_native_discovery_callbacks(self): self.check_native_discovery_callbacks('A1')
+    def test_m1_native_discovery_callbacks(self): self.check_native_discovery_callbacks('M1')
+    def check_native_discovery_callbacks(self, model):
+
+        with self.subTest(model=model):
+            source=(ROOT/model/'mqtt.c').read_text()
+            service=(ROOT/'common/mqtt/service.c').read_text()
+            functions='static mico_thread_t *json_attempt_owner;\nstatic unsigned json_attempt_failure;\n'+'\n'.join(function(service,n) for n in
+                ('void json_heap_failure(', 'bool service_mqtt_json_begin(', 'static unsigned service_mqtt_json_finish(', 'void service_mqtt_json_end(', 'int service_mqtt_json_error(', 'int service_mqtt_optional_send('))+'\n'
+            functions+=function(source,'static void str(')+'\n'
+            if model=='A1':
+                functions+=function(source,'static void topic(')+'\n'
+                functions+=function(source,'static __attribute__((noinline)) int filter_discovery(')+'\n'
+            functions+='static bool discovery_deferred;\nstatic uint32_t discovery_retry_at;\n'+function(source,'static int discovery_build(')+'\n'+function(source,'static int discovery(')
+            fixture=r'''
 #include "common/json_owned.h"
 #include "common/mqtt_account.h"
 #include "json_heap.h"
@@ -30,6 +32,17 @@ class BackgroundJson(unittest.TestCase):
 #include "PLATFORM_HEADER"
 #define MQTT_SUCCESS 0
 #define MQTT_FAILURE -1
+#define PH_MQTT_MORE 2
+typedef unsigned mico_thread_t;
+static mico_thread_t mqtt_owner_thread;
+typedef struct {unsigned token,claim;}service_mqtt_json_scope;
+static bool token_active,claim_active;
+void service_mqtt_json_end(service_mqtt_json_scope *);
+static bool mico_rtos_is_current_thread(mico_thread_t *p){return p==&mqtt_owner_thread;}
+static unsigned service_json_claim(void){assert(!token_active);token_active=true;return 1;}
+static unsigned service_memory_claim(size_t n){(void)n;assert(!claim_active);claim_active=true;return 1;}
+static void service_json_release(unsigned t){assert(t&&token_active);token_active=false;}
+static void service_memory_release(unsigned t){assert(t&&claim_active);claim_active=false;}
 #define PH_MQTT_ERROR_APP_DISCOVERY_GRAPH 8
 #define PH_MQTT_ERROR_APP_DISCOVERY_IDENTITY 9
 #define PH_MQTT_ERROR_APP_DISCOVERY_ENCODING 10
@@ -37,6 +50,7 @@ static int ph_mqtt_app_error(unsigned stage,int rc){assert(stage>=8 && stage<=10
 #define A1_VERSION "fixture"
 #define M1_VERSION "fixture"
 #define A1_FILTER_MAX_HOURS 20000u
+uint32_t test_now;
 static unsigned allocation,fail_at,callbacks;static bool quiet;static int callback_rc;
 int json_heap_permit(size_t n){(void)n;return !fail_at||++allocation!=fail_at;}
 static mqtt_account_t account;static char base[192],availability_topic[MQTT_TOPIC_MAX],command_topic[MQTT_TOPIC_MAX];
@@ -48,7 +62,7 @@ typedef struct{char name[64];}m1_config_t;
 mico_mutex_t m1_lock;m1_state_t m1_state;
 #endif
 static int publish(const char*t,const char*b,bool r){
- assert(t&&b&&r);json_heap_stats_t s;json_heap_snapshot(&s);
+ assert(t&&b&&r&&!token_active&&!claim_active);json_heap_stats_t s;json_heap_snapshot(&s);
 #ifndef LEGACY_PUBLISH
  assert(s.live_blocks==2);
 #endif
@@ -57,17 +71,17 @@ static int publish(const char*t,const char*b,bool r){
  if(!quiet)printf("%u %s %u %s\n",callbacks,t,r,b);callbacks++;return callback_rc;
 }
 #ifdef LEGACY_PUBLISH
-static int legacy_publish(int(*p)(const char*,const char*,bool),const char*t,json_object*o,bool r){
- const char*w=json_object_to_json_string(o);assert(w);int rc=p(t,w,r);json_object_put(o);return rc;
+static int legacy_publish(int(*p)(const char*,const char*,bool),const char*t,json_object*o,bool r,service_mqtt_json_scope *scope){
+ const char*w=json_object_to_json_string(o);assert(w);service_mqtt_json_end(scope);int rc=p(t,w,r);json_object_put(o);return rc;
 }
 #define discovery_sender legacy_publish
 #else
-#define discovery_sender service_mqtt_send
+#define discovery_sender service_mqtt_optional_send
 #endif
 /* PRODUCTION_FUNCTIONS */
 static int discovery_all(MODEL_CONFIG*c){
  for(unsigned i=0;i<EXPECTED_CALLBACKS;i++){
-  unsigned before=callbacks;int rc=discovery(c,i);assert(callbacks-before<=1);if(rc)return rc;
+  test_now+=1000u;unsigned before=callbacks;int rc=discovery(c,i);assert(callbacks-before<=1);if(rc)return rc;
  }return 0;
 }
 static void empty(void){json_heap_stats_t s;json_heap_snapshot(&s);assert(!s.live_blocks);}
@@ -86,30 +100,30 @@ int main(void){
  for(unsigned i=1;i<10000;i++){
   allocation=callbacks=0;fail_at=i;int rc=discovery_all(&c);fail_at=0;empty();
   if(!rc){assert(callbacks==EXPECTED_CALLBACKS);break;}
-  assert(rc==-1);failures++;assert(i<9999);
+  assert(rc==PH_MQTT_MORE);failures++;assert(i<9999);
  }
  assert(failures>100);
 #endif
  return 0;
 }
 '''
-                functions=functions.replace('int rc = service_mqtt_send(', 'int rc = discovery_sender(')
-                fixture=fixture.replace('/* PRODUCTION_FUNCTIONS */',functions)
-                fixture=fixture.replace('PLATFORM_HEADER',model.lower()+'.h').replace('MODEL_LOWER',model.lower()).replace('MODEL_CONFIG',model.lower()+'_config_t').replace('EXPECTED_CALLBACKS','10' if model=='A1' else '6')
-                sdk=Path(os.environ.get('PHICOMM_TEST_JSON_DIR',ROOT/'build/a1-sdk/mico-os/libraries/utilities/json_c'))
-                with tempfile.TemporaryDirectory() as directory:
-                    temp=Path(directory);json=copy_patched_json(sdk,temp/'sdk')
-                    for path in json.glob('*.c'):path.write_text(path.read_text().replace('%ld','%d'))
-                    src=temp/'probe.c';src.write_text(fixture);results=[]
-                    for legacy in (True,False):
-                        binary=temp/('legacy' if legacy else 'owned')
-                        flags=['-DLEGACY_PUBLISH'] if legacy else []
-                        subprocess.run([os.environ.get('CC','cc'),'-std=gnu99','-g','-DMODEL_'+model,
-                            '-fsanitize=address,undefined','-fno-omit-frame-pointer','-no-pie',*flags,
-                            '-I'+str(ROOT),'-I'+str(ROOT/'tests/stubs'),'-I'+str(json),str(src),
-                            str(ROOT/'common/json_owned.c'),*map(str,json.glob('*.c')),'-lm','-o',str(binary)],check=True)
-                        results.append(subprocess.run([str(binary)],check=True,stdout=subprocess.PIPE,timeout=60).stdout)
-                    self.assertEqual(results[0],results[1])
+            functions=functions.replace('int rc = service_mqtt_optional_send(', 'int rc = discovery_sender(')
+            fixture=fixture.replace('/* PRODUCTION_FUNCTIONS */',functions)
+            fixture=fixture.replace('PLATFORM_HEADER',model.lower()+'.h').replace('MODEL_LOWER',model.lower()).replace('MODEL_CONFIG',model.lower()+'_config_t').replace('EXPECTED_CALLBACKS','10' if model=='A1' else '6')
+            sdk=Path(os.environ.get('PHICOMM_TEST_JSON_DIR',ROOT/'build/a1-sdk/mico-os/libraries/utilities/json_c'))
+            with tempfile.TemporaryDirectory() as directory:
+                temp=Path(directory);json=copy_patched_json(sdk,temp/'sdk')
+                for path in json.glob('*.c'):path.write_text(path.read_text().replace('%ld','%d'))
+                src=temp/'probe.c';src.write_text(fixture);results=[]
+                for legacy in (True,False):
+                    binary=temp/('legacy' if legacy else 'owned')
+                    flags=['-DLEGACY_PUBLISH'] if legacy else []
+                    subprocess.run([os.environ.get('CC','cc'),'-std=gnu99','-g','-DMODEL_'+model,
+                        '-fsanitize=address,undefined','-fno-omit-frame-pointer','-no-pie',*flags,
+                        '-I'+str(ROOT),'-I'+str(ROOT/'tests/stubs'),'-I'+str(json),str(src),
+                        str(ROOT/'common/json_owned.c'),*map(str,json.glob('*.c')),'-lm','-o',str(binary)],check=True)
+                    results.append(subprocess.run([str(binary)],check=True,stdout=subprocess.PIPE,timeout=60).stdout)
+                self.assertEqual(results[0],results[1])
 
     def test_virtual_production_callbacks(self):
         # Include the existing platform shim, whose runtime.c include is the real

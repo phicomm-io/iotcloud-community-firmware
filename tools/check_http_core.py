@@ -8,6 +8,19 @@ import re
 import subprocess
 import sys
 
+def read_json_allocator_frames(modules,frames):
+    # Only json_heap.su is imported from the SDK JSON module. Static allocator
+    # helpers must not collide with unrelated permit/created symbols. Ignore its
+    # weak hook stubs: actual strong application hooks above are authoritative.
+    allocator_files=list(Path(modules).rglob('json_heap.su'))
+    if len(allocator_files)!=1:raise ValueError('Expected one actual SDK json_heap.su')
+    for line in allocator_files[0].read_text().splitlines():
+        location,size,kind=line.split('\t')
+        name=location.rsplit(':',1)[-1].split('.')[0]
+        if kind!='static' or name in ('json_heap_lock','json_heap_unlock','json_heap_permit','json_heap_failure'):continue
+        if name in ('permit','created','increment'):name='json_heap.'+name
+        frames[name]=max(frames.get(name,0),int(size))
+
 def check(modules, model, nm, elf):
     modules=Path(modules)
     frames={}
@@ -21,6 +34,7 @@ def check(modules, model, nm, elf):
                 if kind=='static':
                     frames[name]=max(frames.get(name,0),int(size))
                     if name=='tc1_ota_verify':verify_frames[emitted]=max(verify_frames.get(emitted,0),int(size))
+    read_json_allocator_frames(modules,frames)
     # The pinned compiler splits verification into an 8-byte entry and a
     # 632-byte .part body; both can be live, unlike alternative clones.
     if verify_frames:frames['tc1_ota_verify']=sum(verify_frames.values())
@@ -40,8 +54,8 @@ def check(modules, model, nm, elf):
       'HTTP command status':(3072,command+[status]+([status+'_view'] if status+'_view' in frames else [])),
       # Builder frames have returned before encoding. Count the bounded
       # automatic traversal explicitly, outside SDK/native/RTOS reserve.
-      'HTTP GET JSON encode':(3072,base+['ph_http_json','json_owned_to_wire','json_write','json_primitive','json_append']),
-      'HTTP POST JSON encode':(3072,['owner','ph_http_server_step','read_body','complete','ph_http_json','json_owned_to_wire','json_write','json_primitive','json_append']),
+      'HTTP GET JSON encode':(3072,base+['ph_http_json','json_owned_to_wire','json_owned_to_wire_result','json_write','json_primitive','json_append']),
+      'HTTP POST JSON encode':(3072,['owner','ph_http_server_step','read_body','complete','ph_http_json','json_owned_to_wire','json_owned_to_wire_result','json_write','json_primitive','json_append']),
       'HTTP MQTT diagnostics':(3072,base+(['memory_response'] if 'memory_response' in frames else [])+['ph_mqtt_diag_append','ph_mqtt_snapshot','ph_mqtt_core_snapshot']),
       'HTTP response':(3072,['owner','ph_http_server_step','respond','transmit']),
       'HTTP OTA stream':(4096,['owner','ph_http_server_step','read_body','body_chunk',model.lower()+'_ota_write','signed_ota_write','uECC_verify','EccPoint_mult']),
@@ -77,6 +91,15 @@ def check(modules, model, nm, elf):
     # POD/scratch frame is already included there. Count a separate emitted
     # frame if a compiler change stops inlining it.
     paths=status_paths(paths)
+    # Allocator failure observation can also run on HTTP's thread while an
+    # MQTT optional scope exists. Count the strong hook and actual allocator
+    # frames, retaining the caller's graph/encoder path; no new RTOS allowance.
+    for label,(reserve,names) in list(paths.items()):
+        if 'json_write' not in names and 'device_status_encode' not in names:continue
+        for api in ('json_heap_malloc','json_heap_calloc','json_heap_realloc','json_heap_strdup'):
+            allocator=[api]+(['json_heap_malloc'] if api=='json_heap_realloc' else [])
+            for tail in ('permit','created'):
+                paths[label+' allocator '+api+' '+tail]=(reserve,names+allocator+['json_heap.'+tail,'json_heap_failure'])
     for label,(reserve,names) in paths.items():
         missing=set(names)-frames.keys()
         if missing:raise ValueError(f'{label}: missing actual .su frames: {sorted(missing)}')
