@@ -6,10 +6,6 @@
  * On any failure *value remains untouched. errno is only compatibility
  * metadata; the explicit return and scope attribution govern success. */
 #ifdef __NEWLIB__
-#include <reent.h>
-#ifndef _REENT_SMALL
-#error "JSON private contexts require newlib-nano headers (--specs=nano.specs)"
-#endif
 int json_number_scan(const char *, double *);
 #endif
 /* Fixed native nano %g (precision6). Returns length or -1; failure preserves

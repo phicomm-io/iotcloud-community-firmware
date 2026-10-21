@@ -93,12 +93,14 @@ class JsonNumberCache(unittest.TestCase):
                 if 'json_number_reclaim' in line or 'json_object_double_to_json_string' in line))
 
     def test_glibc_preprocessed_production_unchanged(self):
-        # Only __NEWLIB__ code changed. Compare complete object/tokener inputs
-        # with the previous seven-overlay stack, not a handwritten host stub.
+        # Historical cache-only change: compare complete object/tokener inputs
+        # with its preceding overlay stack. The later checked numeric overlay
+        # supersedes those native call sites and has its own coverage.
         for model in selected_models():
             with self.subTest(model=model), tempfile.TemporaryDirectory() as temporary:
                 directory = Path(temporary)
-                fixed = copy_patched_json(self.sdk_source(model), directory/'fixed')
+                fixed = copy_patched_json(self.sdk_source(model), directory/'fixed',
+                                          checked_numeric=False)
                 shutil.copytree(directory/'fixed', directory/'before')
                 subprocess.run(['git', 'apply', '--reverse', '--ignore-whitespace',
                     str(ROOT/'common/json-number-cache-cleanup.patch')],

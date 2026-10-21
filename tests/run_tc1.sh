@@ -17,7 +17,7 @@ cc -std=gnu99 -Wall -Wextra -Wno-unused-parameter -Wno-unused-but-set-variable -
     tests/test_tc1_packet.c tests/host/network.c "$sdk/MQTTClient.c" "$sdk"/MQTTPacket/*.c -o "$output/tc1-packet"
 "$output/tc1-packet"
 python3 -m unittest tests.test_http_core tests.test_http_core_tcp tests.test_http_callbacks tests.test_shared_http_adversarial tests.test_shared_http_arm
-python3 -m unittest tests.test_json_newlib_nano tests.test_json_integer_parse
+python3 -m unittest tests.test_json_numeric_link tests.test_json_newlib_nano tests.test_json_integer_parse
 JSON_NUMBER_CACHE_MODELS=TC1 python3 -m unittest tests.test_json_number_cache
 JSON_NUMERIC_MODELS=TC1 python3 -m unittest tests.test_json_numeric_checked
 python3 -m unittest tests.test_tc1_mqtt_stack tests.test_tc1_checked_number_calls

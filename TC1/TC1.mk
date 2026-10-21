@@ -50,8 +50,7 @@ $(NAME)_COMPONENTS := protocols/SNTP\
 
 GLOBAL_DEFINES += DEV_MODEL=\"PHICOMM_TC1_A1\"
 
-# json-c parses decimal JSON numbers with sscanf("%lf").
-GLOBAL_LDFLAGS += -u _scanf_float
+# JSON decimal parsing uses the private checked numeric component.
 
 $(NAME)_SOURCES += ota_fetch.c ota_mode.c
 $(NAME)_INCLUDES += generated/tls-include

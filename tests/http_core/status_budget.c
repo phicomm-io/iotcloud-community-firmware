@@ -144,14 +144,14 @@ int main(void){
  assert(_sscanf_r(&context,"1.234567890123456789e20","%lg",&number)==1);
  _snprintf_r(&context,warm,sizeof(warm),"%g",number);_reclaim_reent(&context);
  assert(native_reentrant_allocations>counted);healthy_stats();
- /* Exercise the actual SDK parser and owned primitive callback too, not only
-  * direct libc controls. Their local reentrant scratch must enter the ledger. */
+ /* Exercise the actual SDK parser and owned primitive callback too. Checked
+  * numeric scratch must enter the ledger without native reentrant conversion. */
  counted=native_reentrant_allocations;peak=live;
  json_object *floating=json_tokener_parse("{\"number\":1.234567890123456789e20}");
  assert(floating&&json_object_is_type(json_object_object_get(floating,"number"),json_type_double));
  struct printbuf *float_wire=json_owned_to_wire(floating);assert(float_wire&&strstr(float_wire->buf,"number"));
- printbuf_free(float_wire);assert(native_reentrant_allocations>counted);healthy_stats();
- char native_report[96];int native_length=snprintf(native_report,sizeof(native_report),"SDK float parse+encode native peak=%u baseline=%u live=0\n",(unsigned)(peak-libc_baseline),(unsigned)libc_baseline);_write(1,native_report,native_length);
+ printbuf_free(float_wire);assert(native_reentrant_allocations==counted);assert(peak>libc_baseline);healthy_stats();
+ char native_report[96];int native_length=snprintf(native_report,sizeof(native_report),"SDK checked float parse+encode peak=%u baseline=%u live=0\n",(unsigned)(peak-libc_baseline),(unsigned)libc_baseline);_write(1,native_report,native_length);
  measure(false,false,false,100000,true);
  measure(false,false,false,29116,false);
  measure(true,false,false,29116,true);

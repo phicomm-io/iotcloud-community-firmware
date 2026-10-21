@@ -313,7 +313,9 @@ class JsonBudget(unittest.TestCase):
             obj=directory/'json_owned.o'
             subprocess.run([str(cc),*flags,'-fstack-usage','-c',str(ROOT/'common/json_owned.c'),'-o',str(obj)],check=True,timeout=30)
             json_objects=[]
-            for path in json.glob('*.c'):
+            # Embedded JSON uses the checked private numeric implementation;
+            # the host shim below deliberately needs only the top-level files.
+            for path in [*json.glob('*.c'), *(json/'json_numeric').glob('*.c')]:
                 target=directory/(path.stem+'.o');json_objects.append(str(target))
                 subprocess.run([str(cc),*flags,'-fstack-usage','-c',str(path),'-o',str(target)],check=True,timeout=30)
             subprocess.run([str(cc),*flags,str(source),str(ROOT/'tests/http_core/json_arm_runtime.c'),

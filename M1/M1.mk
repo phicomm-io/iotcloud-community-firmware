@@ -10,8 +10,7 @@ GLOBAL_DEFINES += DEV_MODEL=\"PHICOMM_M1_EMW3080\" DISABLE_MICO_BLUENRG=1
 
 GLOBAL_DEFINES += MAX_MESSAGE_HANDLERS=12 PHICOMM_APPLICATION_WATCHDOG=1
 
-# json-c parses decimal JSON numbers with sscanf("%lf").
-GLOBAL_LDFLAGS += -u _scanf_float
+# JSON decimal parsing uses the private checked numeric component.
 
 $(NAME)_SOURCES += ota_fetch.c ota_mode.c
 $(NAME)_INCLUDES += generated/tls-include
