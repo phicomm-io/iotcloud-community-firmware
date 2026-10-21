@@ -83,17 +83,19 @@ int main(void){
 #include <stdint.h>
 #define PH_MQTT_RECONFIGURE 1
 #define MQTT_SUCCESS 0
+#define PH_MQTT_MORE 3
 static struct{int mode;char base[8];}account={1,"base"};
 static bool power_pending,power_turn,rediscover;
 static unsigned discovery_index=12,state_index=10,publication_cursor,snapshot_at,now;
-static unsigned powers,statuses;
+static unsigned powers,statuses,attempts;
+static bool busy;
 #define service_sender 0
 static bool session_current(void){return true;}
 static int ota_service(const char*s){(void)s;return 0;}
 static bool ota_job_active(void){return false;}
 static unsigned mico_rtos_get_time(void){return now;}
 static int snapshot_step(void){powers++;now+=6000;state_index=10;return 0;}
-static int service_mqtt_snapshot(int sender,const void*a){(void)sender;(void)a;statuses++;now+=6000;return 0;}
+static int service_mqtt_snapshot(int sender,const void*a){(void)sender;(void)a;attempts++;if(busy)return PH_MQTT_MORE;statuses++;now+=6000;return 0;}
 /* PRODUCTION */
 int main(void){
  for(unsigned i=0;i<100;i++){
@@ -101,7 +103,18 @@ int main(void){
   assert(!session_cycle(0));assert(powers+statuses==i+1);
   if(i%2)assert(powers==statuses);
  }
- assert(powers==50&&statuses==50);return 0;
+ assert(powers==50&&statuses==50);
+ /* A busy typed producer remains due, yet cannot starve power. */
+ busy=true;unsigned old_at=snapshot_at,old_powers=powers,old_attempts=attempts;
+ for(unsigned i=0;i<20;i++){
+  __atomic_store_n(&power_pending,true,__ATOMIC_RELEASE);
+  int rc=session_cycle(0);assert(rc==0||rc==PH_MQTT_MORE);
+  assert(snapshot_at==old_at);
+ }
+ assert(powers==old_powers+10&&attempts==old_attempts+10);
+ busy=false;__atomic_store_n(&power_pending,true,__ATOMIC_RELEASE);
+ unsigned before=statuses;for(unsigned i=0;i<2;i++)assert(!session_cycle(0));
+ assert(statuses==before+1&&snapshot_at>old_at);return 0;
 }
 '''.replace('/* PRODUCTION */',functions)
         with tempfile.TemporaryDirectory() as d:

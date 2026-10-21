@@ -365,8 +365,12 @@ static int session_cycle(void *context) {
     /* A slow PUBACK can make both producers due on every turn. Alternate
      * completed publication batches instead of starving either one. */
     if(status_due && (!power_turn || !__atomic_load_n(&power_pending,__ATOMIC_ACQUIRE))) {
-        power_turn=true;snapshot_at=mico_rtos_get_time();
-        return service_mqtt_snapshot(service_sender,&account);
+        /* The turn tracks attempts for fairness; completion time advances only
+         * after a real send. MORE keeps the typed snapshot due for retry. */
+        power_turn=true;
+        int snapshot_rc=service_mqtt_snapshot(service_sender,&account);
+        if(snapshot_rc==MQTT_SUCCESS)snapshot_at=mico_rtos_get_time();
+        return snapshot_rc;
     }
     if(power_requested()) {
         power_turn=false;state_index=9;publication_cursor=0;
