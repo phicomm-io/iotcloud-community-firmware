@@ -110,11 +110,12 @@ int main(void){
 }
 ''')
 
-    def test_tc1_listener_configured_once_before_listen_and_fails_closed(self):
+    def test_tc1_listener_verifies_limit_after_listen_and_fails_closed(self):
         source = self.sdk_http_source('httpd.c')
         self.run_c(r'''
 #include <assert.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <setjmp.h>
 #include <sys/select.h>
 #include <sys/socket.h>
@@ -125,7 +126,7 @@ int main(void){
 #define UNUSED_PARAMETER(x) (void)(x)
 #define httpd_d(...) ((void)0)
 typedef unsigned mico_thread_arg_t;
-static int http_sockfd, configured, listened, closed, fail_option, cycles;
+static int http_sockfd, configured, listened, closed, fail_option, fail_get, wrong_limit, short_option, fail_bind, fail_listen, actual_limit, cycles;
 static jmp_buf done;
 static int phicomm_http_client_limit(void){return 2;}
 static int net_get_sock_error(int fd){(void)fd;return -12;}
@@ -133,13 +134,18 @@ static int net_get_sock_error(int fd){(void)fd;return -12;}
 #define bind fake_bind
 #define listen fake_listen
 #define setsockopt fake_setsockopt
+#define getsockopt fake_getsockopt
 #define close fake_close
 static int socket(int a,int b,int c){assert(a==AF_INET&&b==SOCK_STREAM&&c==IPPROTO_TCP);return 3;}
-static int bind(int fd,const struct sockaddr *a,socklen_t n){assert(fd==3&&a&&n==sizeof(struct sockaddr_in));return 0;}
+static int bind(int fd,const struct sockaddr *a,socklen_t n){assert(fd==3&&a&&n==sizeof(struct sockaddr_in));return fail_bind?-1:0;}
 static int setsockopt(int fd,int level,int name,const void *v,socklen_t n){
- assert(fd==3&&n==sizeof(int));if(level==IPPROTO_TCP){assert(name==TCP_MAX_CONN_NUM&&*(const int*)v==2&&!listened);configured++;return fail_option?-1:0;}return 0;
+ assert(fd==3&&n==sizeof(int));if(level==IPPROTO_TCP){assert(name==TCP_MAX_CONN_NUM&&*(const int*)v==2&&listened==1);configured++;if(fail_option)return -1;actual_limit=wrong_limit?5:*(const int*)v;return 0;}return 0;
 }
-static int listen(int fd,int n){assert(fd==3&&n==2&&configured==1);listened++;return 0;}
+static int listen(int fd,int n){assert(fd==3&&n==2&&!configured);listened++;actual_limit=5;return fail_listen?-1:0;}
+static int getsockopt(int fd,int level,int name,void *v,socklen_t *n){
+ assert(fd==3&&level==IPPROTO_TCP&&name==TCP_MAX_CONN_NUM&&*n==sizeof(int)&&listened==1&&configured==1);
+ if(fail_get)return -1;*(int*)v=actual_limit;if(short_option)*n=1;return 0;
+}
 static int close(int fd){assert(fd==3);closed++;return 0;}
 SETUP
 static int httpd_setup_main_sockets(void){http_sockfd=httpd_setup_new_socket(80);return http_sockfd<0?-12:0;}
@@ -149,9 +155,16 @@ static int httpd_select(int max,fd_set *r,fd_set *a,int timeout){assert(max==3&&
 static void httpd_handle_client_connection(fd_set *s){assert(s&&configured==1&&listened==1);}
 MAIN
 int main(void){
+ (void)getsockopt;
  if(!setjmp(done))httpd_main(0);
  assert(configured==1&&listened==1&&cycles==4&&!closed);
- configured=listened=0;fail_option=1;assert(httpd_setup_new_socket(80)<0);assert(configured==1&&!listened&&closed==1);
+ for(int fault=0;fault<6;fault++){
+ configured=listened=closed=0;
+ fail_option=fault==0;fail_get=fault==1;wrong_limit=fault==2;short_option=fault==3;fail_bind=fault==4;fail_listen=fault==5;
+ assert(httpd_setup_new_socket(80)<0);assert(closed==1);
+ assert(configured==(fault<4));assert(listened==(fault!=4));
+}
+puts("TC1 listen default reset reproduced; post-listen readback enforced; set/get/mismatch/short/bind/listen failures close: OK");
 }
 '''.replace('SETUP', function(source, 'static int httpd_setup_new_socket(')).replace('MAIN', function(source, 'static void httpd_main(')))
 
