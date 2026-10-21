@@ -71,7 +71,7 @@ size_t tc1_http_trace_format(char *output, size_t capacity)
         uint32_t seq=previous.sequence-(TRACE_SLOTS-1-index);
         if (!seq) continue;
         const trace_record_t *r=&previous.records[(seq-1)%TRACE_SLOTS];
-        if (r->sequence!=seq || r->seal!=~seq || r->phase<1 || r->phase>HTTP_TRACE_REPLY_RETURN) continue;
+        if (r->sequence!=seq || r->seal!=~seq || r->phase<1 || r->phase>HTTP_TRACE_CLIENT_SELECT_RETURN) continue;
         n=snprintf(output+used,capacity-used,"%s{\"seq\":%lu,\"stage\":%lu,\"ms\":%lu,\"fd\":%ld,\"detail\":%ld,\"heap\":%lu}",
             count?",":"",(unsigned long)seq,(unsigned long)r->phase,(unsigned long)r->milliseconds,
             (long)r->fd,(long)r->detail,(unsigned long)r->free_memory);

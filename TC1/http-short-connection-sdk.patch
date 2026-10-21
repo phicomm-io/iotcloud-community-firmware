@@ -1,0 +1,75 @@
+--- a/libraries/daemons/http_server/httpd.c
++++ b/libraries/daemons/http_server/httpd.c
+@@ -312,47 +312,9 @@
+         return -kInProgressErr;
+     }
+ 
+-    /*
+-     * Enable TCP Keep-alive for accepted client connection
+-     *  -- By enabling this feature TCP sends probe packet if there is
+-     *  inactivity over connection for specfied interval
+-     *  -- If there is no response to probe packet for specified retries
+-     *  then connection is closed with RST packet to peer end
+-     *  -- Ref: http://tldp.org/HOWTO/html_single/TCP-Keepalive-HOWTO/
+-     *
+-     * We are doing this as we have single threaded web server with
+-     * synchronous (blocking) API usage like send, recv and they might get
+-     * blocked due to un-availability of peer end, causing web server to
+-     * be in-responsive forever.
+-     */
+-    int optval = true;
+-    if ( setsockopt( client_sockfd, SOL_SOCKET, 0x0008, &optval, sizeof(optval) ) == -1 )
+-    {
+-        httpd_d("Unsupported option SO_KEEPALIVE: %d", net_get_sock_error(client_sockfd));
+-    }
+-    
+-    /* TCP Keep-alive idle/inactivity timeout is 10 seconds */
+-    optval = 10;
+-    if ( setsockopt( client_sockfd, IPPROTO_TCP, 0x03, &optval, sizeof(optval) ) == -1 )
+-    {
+-        httpd_d("Unsupported option TCP_KEEPIDLE: %d", net_get_sock_error(client_sockfd));
+-    }
+-    
+-    /* TCP Keep-alive retry count is 5 */
+-    optval = 5;
+-    if ( setsockopt( client_sockfd, IPPROTO_TCP, 0x05, &optval, sizeof(optval) ) == -1 )
+-    {
+-        httpd_d("Unsupported option TCP_KEEPCNT: %d", net_get_sock_error(client_sockfd));
+-    }
+-    
+-    /* TCP Keep-alive retry interval (in case no response for probe
+-     * packet) is 1 second.
+-     */
+-    optval = 1;
+-    if ( setsockopt( client_sockfd, IPPROTO_TCP, 0x04, &optval, sizeof(optval) ) == -1 )
+-    {
+-        httpd_d("Unsupported option TCP_KEEPINTVL: %d", net_get_sock_error(client_sockfd));
+-    }
++    /* HTTP closes each response, bounds idle to 2 s and I/O to 5 s.
++     * The former keepalive starts after 10 s and cannot protect this path.
++     * Avoid four optional kernel PCB operations after a peer may have reset. */
+ 
+     httpd_d("connecting %d to %d.", client_sockfd, addr_from.s_port);
+     
+@@ -389,7 +351,9 @@
+         }
+ 
+         httpd_d("Waiting on client socket");
++        HTTP_TRACE(HTTP_TRACE_CLIENT_SELECT_ENTER,client_sockfd,HTTPD_CLIENT_SOCK_TIMEOUT);
+         activefds_cnt = httpd_select( client_sockfd, &readfds, NULL, HTTPD_CLIENT_SOCK_TIMEOUT );
++        HTTP_TRACE(HTTP_TRACE_CLIENT_SELECT_RETURN,client_sockfd,activefds_cnt);
+ 
+         if ( httpd_stop_req )
+         {
+--- a/libraries/daemons/http_server/http_trace_hooks.h
++++ b/libraries/daemons/http_server/http_trace_hooks.h
+@@ -14,7 +14,8 @@
+  HTTP_TRACE_BODY_ENTER, HTTP_TRACE_BODY_RETURN,
+  HTTP_TRACE_PARSE_ENTER, HTTP_TRACE_PARSE_RETURN,
+  HTTP_TRACE_DISPATCH_ENTER, HTTP_TRACE_DISPATCH_RETURN,
+- HTTP_TRACE_REPLY_ENTER, HTTP_TRACE_REPLY_RETURN
++ HTTP_TRACE_REPLY_ENTER, HTTP_TRACE_REPLY_RETURN,
++ HTTP_TRACE_CLIENT_SELECT_ENTER, HTTP_TRACE_CLIENT_SELECT_RETURN
+ };
+ #ifdef PHICOMM_HTTP_TRACE
+ void phicomm_http_trace(unsigned phase, int fd, int detail);

@@ -88,13 +88,13 @@ static bool https_active;
 static int fake_accept(int fd,struct sockaddr *addr,socklen_t *n){assert(fd==3&&addr&&n);return 7;}
 static int fake_fcntl(int fd,int op,int value){assert(fd==7&&op==F_SETFL&&value==O_NONBLOCK);configured++;return fcntl_failure?-1:0;}
 static int fake_close(int fd){assert(fd==7);closes++;return 0;}
-static int fake_setsockopt(int fd,int level,int key,const void *p,socklen_t n){(void)level;(void)key;assert(fd==7&&p&&n==sizeof(int));return 0;}
+static int fake_setsockopt(int fd,int level,int key,const void *p,socklen_t n){(void)level;(void)key;assert(fd==7&&p&&n==sizeof(int));assert(!"optional keepalive must not touch a reset TCP PCB");return -1;}
 #define accept fake_accept
 #define fcntl fake_fcntl
 #define close fake_close
 #define setsockopt fake_setsockopt
 ACCEPT
-int main(void){fd_set fds;FD_ZERO(&fds);FD_SET(3,&fds);
+int main(void){(void)fake_setsockopt;fd_set fds;FD_ZERO(&fds);FD_SET(3,&fds);
  fcntl_failure=1;assert(httpd_accept_client_socket(&fds)<0&&client_sockfd==-1&&closes==1&&configured==1);
  fcntl_failure=0;assert(!httpd_accept_client_socket(&fds)&&client_sockfd==7&&closes==1&&configured==2);
 }
