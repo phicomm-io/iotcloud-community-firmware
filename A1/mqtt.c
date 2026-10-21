@@ -314,9 +314,59 @@ static bool same_connection(const a1_config_t *a, const a1_config_t *b)
     return a->mqtt_port == b->mqtt_port && !strcmp(a->mqtt_host, b->mqtt_host) &&
         !strcmp(a->mqtt_user, b->mqtt_user) && !strcmp(a->mqtt_password, b->mqtt_password) && !strcmp(a->name, b->name);
 }
+/* The broad virtual-device subscription also echoes our own live telemetry.
+ * Admit only leaves with a deferred business consumer; a broker's transport
+ * PUBACK must not turn outgoing state into a flood of no-op commands. */
+static bool feature_ingress_topic(const char *topic, size_t length)
+{
+    for (unsigned i = 0; i < 3; ++i)
+        if (feature_filters[i][0] && ph_mqtt_topic_matches(feature_filters[i], topic, length))
+            return true; /* Link RPC request/response and retained address. */
+    size_t filter_length = strlen(feature_filters[3]);
+    if (filter_length < 2)
+        return false;
+    size_t root_length = filter_length - 2; /* Session-owned root + "/#". */
+    if (length <= root_length || memcmp(topic, feature_filters[3], root_length) ||
+        topic[root_length] != '/')
+        return false;
+    const char *leaf = topic + root_length + 1;
+    size_t leaf_length = length - root_length - 1;
+    /* The non-group virtual root shares the physical linkage domain. Its
+     * original base/linkage/get and set consumers run before virtual_input. */
+    size_t base_length = strlen(base);
+    if (root_length == base_length + 8 && !memcmp(topic, base, base_length) &&
+        !memcmp(topic + base_length, "/linkage", 8) && leaf_length == 3 &&
+        (!memcmp(leaf, "get", 3) || !memcmp(leaf, "set", 3)))
+        return true;
+    /* Group controls may address a colon-separated member MAC. The deferred
+     * parser retains the authoritative membership/authorization checks. */
+    if (leaf_length > 18 && leaf[2] == ':' && leaf[5] == ':' &&
+        leaf[8] == ':' && leaf[11] == ':' && leaf[14] == ':' && leaf[17] == '/') {
+        leaf += 18;
+        leaf_length -= 18;
+    }
+    static const char *const leaves[] = {
+        "command", "fan/set", "fan/percentage/set", "light/set", "child_lock/set",
+        "led_always_on/set", "binding/get", "binding/set", "binding/state",
+        "linkage/get", "linkage/set", "linkage/state", "light/config/get",
+        "light/config/set", "light/config/state", "schedule/get", "schedule/set",
+        "schedule/state", "sleep/get", "sleep/set", "sleep/state",
+        "time/get", "time/set", "time/state"
+    };
+    for (unsigned i = 0; i < sizeof(leaves) / sizeof(leaves[0]); ++i)
+        if (strlen(leaves[i]) == leaf_length && !memcmp(leaf, leaves[i], leaf_length))
+            return true;
+    return false;
+}
+
 static bool ingress_accept(MessageData *d,messageHandler handler) {
     if(handler==ha_birth)return true;
-    if(handler==feature_command)return true;
+    if(handler==feature_command) {
+        MQTTString *t = d->topicName;
+        const char *topic = t->cstring ? t->cstring : t->lenstring.data;
+        size_t length = t->cstring ? strlen(t->cstring) : (size_t)t->lenstring.len;
+        return feature_ingress_topic(topic, length);
+    }
     if(d->message->retained)return false;
     if(topic_is(d,"command") || topic_is(d,"ota/set") || topic_is(d,"fan/set") ||
        topic_is(d,"fan/percentage/set") || topic_is(d,"light/set") ||
@@ -428,7 +478,9 @@ static int session_cycle(void *context) {
             bool feature_changed=feature_revision!=fc->revision;
             feature_revision=fc->revision; free(fc);
             if(feature_changed && !feature_mqtt_filters_current(feature_filters,count))return PH_MQTT_RECONFIGURE;
-            if(rediscover) {feature_mqtt_service(publish,false);discovery_index=0;rediscover=false;sent=false;state_index=0;state_pending=0x7fu;state_seen=0;}
+            /* A birth received during a batch requests a complete subsequent pass.
+             * Do not consume it by restarting the partially published pass. */
+            if(rediscover && discovery_index==10) {feature_mqtt_service(publish,false);discovery_index=0;rediscover=false;sent=false;state_index=0;state_pending=0x7fu;state_seen=0;}
             if(discovery_index<10) {
                 rc=discovery(&current,discovery_index);
                 if(rc==MQTT_SUCCESS)++discovery_index;

@@ -5,6 +5,10 @@
 #include "MQTTPublish.h"
 #include <assert.h>
 #include <stdio.h>
+#ifdef PH_EXPECTED_MESSAGE_HANDLERS
+_Static_assert(MAX_MESSAGE_HANDLERS == PH_EXPECTED_MESSAGE_HANDLERS,
+               "fixture must match the product SDK subscription capacity");
+#endif
 void *__real_malloc(size_t);void __real_free(void *);void *__real_realloc(void *,size_t);
 typedef union { long double align; struct { size_t size,charge; } entry; } allocation;
 static size_t native_live,native_peak,charged_live,charged_peak;static unsigned native_allocs,fail_allocation;

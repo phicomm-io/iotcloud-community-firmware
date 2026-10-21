@@ -8,6 +8,7 @@ python3 -m unittest tests.test_prepare_sdk tests.test_apply_sdk_patch
 python3 tools/check_version.py
 python3 -m unittest discover -s tests -p test_version.py
 python3 -m unittest tests.test_package_stale_signature
+python3 -m unittest tests.test_mixed_candidate_completion
 python3 -m unittest tests.test_readonly_stress tests.test_readonly_input_edges tests.test_readonly_shared_httpd tests.test_readonly_http_scheduling tests.test_summarize_readonly_evidence tests.test_audit_shared_candidate_completion
 python3 -m unittest tests.test_http_core tests.test_http_core_tcp tests.test_shared_http_adversarial tests.test_shared_http_arm tests.test_shared_http_soak tests.test_shared_http_tcp_soak tests.test_http_mico_sdk_abi
 python3 -m unittest tests.test_json_build_gate tests.test_http_json_owned tests.test_http_json_budget tests.test_background_json tests.test_tc1_mqtt_stack tests.test_ota_recovery
@@ -66,7 +67,7 @@ PHICOMM_TEST_JSON_DIR="$json_dir" python3 -m unittest tests.test_json_integer_pa
 for sdk in build/a1-sdk/mico-os build/m1-sdk/mico-os build/tc1-sdk-3.6.4/mico-os; do
     python3 tools/prepare_sdk.py "$sdk"
 done
-PHICOMM_TEST_JSON_DIR="$json_dir" python3 -m unittest tests.test_shared_mqtt tests.test_mqtt_http_mixed tests.test_mixed_report tests.test_a1_mqtt_progress tests.test_tc1_mqtt_lifecycle
+PHICOMM_TEST_JSON_DIR="$json_dir" python3 -m unittest tests.test_shared_mqtt tests.test_mqtt_http_mixed tests.test_mixed_report tests.test_a1_mqtt_progress tests.test_mqtt_birth_progress tests.test_tc1_mqtt_lifecycle
 "${compiler[@]}" -std=gnu99 -Wall -Wextra -Werror -DWATCHDOG_HOST -Itests/watchdog -Itests/stubs -I"$json_dir" tests/test_watchdog.c "$json_dir"/*.c -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -o "$output/watchdog"
 "$output/watchdog"
 for target in portable moc-mx1290; do

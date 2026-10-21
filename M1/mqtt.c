@@ -288,7 +288,9 @@ static int session_cycle(void *context) {
             feature_revision=fc->revision; free(fc);
             if(feature_changed && !feature_mqtt_filters_current(feature_filters,count))return PH_MQTT_RECONFIGURE;
             if (state.scd40.received && !co2_discovered) { rediscover = true; co2_discovered = true; }
-            if (rediscover) {
+            /* A birth received during a batch requests a complete subsequent pass.
+             * Do not consume it by restarting the partially published pass. */
+            if (rediscover && discovery_index==6) {
                 feature_mqtt_service(publish,false);
                 discovery_index=0;rediscover=false;
                 old_brightness = old_fresh = old_co2_fresh = -1; sequence = co2_sequence = 0;

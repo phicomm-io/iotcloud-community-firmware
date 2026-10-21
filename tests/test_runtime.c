@@ -93,6 +93,18 @@ static int host_feature_mqtt_service(int(*publish)(const char*,const char*,bool)
 #define feature_mqtt_session host_feature_mqtt_session
 #define feature_mqtt_service host_feature_mqtt_service
 
+/* Discovery is resumable now. Exercise its real cursor to completion rather
+ * than assuming the first turn publishes (stage zero may only retire state).
+ * 256 exceeds the maximum fixed topology's entity and domain steps; failure
+ * to finish remains an assertion, not an unbounded harness wait. */
+static void bootstrap_mqtt(int (*publish)(const char *, const char *, bool)) {
+  for (unsigned step = 0; step < 256; ++step) {
+    assert(feature_mqtt_service(publish, true) == 0);
+    if (feature_mqtt_initial_ready()) return;
+  }
+  assert(!"MQTT bootstrap failed to complete in bounded owner turns");
+}
+
 static bool scoped_topic(const char *topic) {
  mqtt_account_t a=mqtt_snapshot();char prefix[160];mqtt_format(prefix,sizeof(prefix),"phicomm/v2/%s/",a.key);
  return !strncmp(topic,prefix,strlen(prefix));
@@ -191,7 +203,7 @@ static void binding(void) {
   json_object_put(o);
   feature_local_sample(&sample);
   assert(!feature_mqtt_input("unrelated/topic", "{}", 2, false));
-  feature_mqtt_service(capture, true);
+  bootstrap_mqtt(capture);
   assert(publications);
   transaction("binding", "{\"peers\":[]}", 200);
   assert(!feature_bound());
@@ -424,7 +436,12 @@ static unsigned named_discoveries;
 static char discovery_ids[8][192], discovery_topics[8][FEATURE_TOPIC_MAX];
 static bool compare_discovery_identity;
 static int capture_discovery_name(const char *topic, const char *body, bool retained) {
-  if(!*body) { assert(retained && strstr(topic,"scd40_")); return 0; }
+  /* A previously advertised CO2 capability also needs a retained tombstone
+   * after the preceding lifecycle scenario removed that peer. */
+  if(!*body) {
+    assert(retained && (strstr(topic,"scd40_") || strstr(topic,"_co2/config")));
+    return 0;
+  }
   assert(retained && named_discoveries < 8);
   json_object *o = obj(body), *device = json_object_object_get(o, "device");
   assert(!strcmp(string(device, "name"), expected_device_name));
@@ -587,6 +604,7 @@ static void account_namespaces(void) {
   char t[FEATURE_TOPIC_MAX];mqtt_leaf(&alice,"binding/get",t,sizeof(t));
   assert(feature_mqtt_input(t,"{}",2,false));
   assert(queued);assert(feature_mqtt_service(capture_account,true)==0);
+  bootstrap_mqtt(capture_account);
   mqtt_leaf(&alice,"binding/get",t,sizeof(t));assert(feature_mqtt_input(t,"{}",2,false));assert(queued);
   feature_mqtt_session(&bob);assert(!queued);
   assert(!feature_mqtt_input(t,"{}",2,false));
@@ -750,6 +768,11 @@ int main(void) {
   service_init();
   feature_defaults(&stored);
   assert(feature_start() == 0);
+  /* The production owner binds a queue generation before dispatching any
+   * feature traffic. Model that lifecycle here too: generation zero rejects
+   * stale/unbound producers by design. */
+  mqtt_account_t initial_account = mqtt_snapshot();
+  feature_mqtt_session(&initial_account);
   json_object *r = NULL;
 #ifdef FEATURE_DEVICE_A1
   feature_sample_t readings[3] = {0};

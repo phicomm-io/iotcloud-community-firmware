@@ -69,6 +69,7 @@ static bool mqtt_online;
 #ifdef FEATURE_DEVICE_A1
 static uint32_t mqtt_tick, mqtt_graph_retry;
 static unsigned mqtt_graph_pending, mqtt_leaf_pending;
+static uint8_t mqtt_telemetry_cursor;
 /* Owner-only resumable publication positions. No bodies or JSON are retained. */
 static unsigned mqtt_discovery_stage, mqtt_discovery_cursor, mqtt_domain_cursor;
 static uint32_t mqtt_discovery_revision;
@@ -1221,7 +1222,7 @@ void feature_mqtt_session(const mqtt_account_t *account) {
   }
 #endif
 #ifdef FEATURE_DEVICE_A1
-  mqtt_tick=0;mqtt_graph_pending=0;mqtt_leaf_pending=0;
+  mqtt_tick=0;mqtt_graph_pending=0;mqtt_leaf_pending=0;mqtt_telemetry_cursor=0;
   mqtt_discovery_pending=false;
   if(changed) {
     published_root[0]=0; published_count=0;
@@ -2144,71 +2145,103 @@ static void virtual_service(int (*publish)(const char *, const char *, bool)) {
     if(coordinator)mqtt_graph_pending|=(1u<<(peer_count+1))-1u;
     mqtt_graph_retry=now-100u;
   }
-  if(bound && mqtt_leaf_pending) {
-    bool on;
-    unsigned speed;
-    /* These snapshots are only used by the MQTT owner. */
-    static a1_config_t cfg;
-    a1_config_get(&cfg);
-    mico_rtos_lock_mutex(&a1_lock);bool led_visible=a1_state.led_visible;
-    mico_rtos_unlock_mutex(&a1_lock);
-    unsigned light_brightness = cfg.brightness;
-    lock();
-    if (sleep_state.light_sleep && light_brightness > sleep_state.brightness)
-      light_brightness = sleep_state.brightness;
-    unlock();
-    feature_effective_fan(cfg.fan_on, cfg.speed, &on, &speed);
-    char prefix[FEATURE_TOPIC_MAX];
-    bool leader = feature_is_coordinator();
-    for (unsigned pass = 0; pass < (grouped ? 2u : 1u); pass++) {
-      if (!pass && !leader)
-        continue;
-      if (pass) {
-        char mac[18];
-        feature_colon_mac(LOCAL_ID, mac);
-        mqtt_format(prefix, sizeof(prefix), "%s/%s", root, mac);
-      } else
-        strcpy(prefix, root);
-      char b[192];
-      const char *leaves[]={"fan/state","fan/mode/state","fan/percentage/state",
-          "light/state","child_lock/state","led_always_on/state","availability"};
-      for(unsigned leaf=0;leaf<7;leaf++) {
-        unsigned bit=1u<<(pass*7+leaf);if(!(mqtt_leaf_pending&bit))continue;
-        const char *body=NULL;
-        switch(leaf) {
-          case 0:body=on?"ON":"OFF";break;
-          case 1:body=feature_fan_auto()?"auto":"manual";break;
-          case 2:mqtt_format(b,sizeof(b),"%u",on?speed:0);body=b;break;
-          case 3:mqtt_format(b,sizeof(b),
-              "{\"state\":\"%s\",\"brightness\":%u,\"color\":{\"r\":%u,\"g\":%u,\"b\":%u}}",
-              led_visible?"ON":"OFF",light_brightness,cfg.red,cfg.green,cfg.blue);body=b;break;
-          case 4:body=cfg.child_lock?"ON":"OFF";break;
-          case 5:body=cfg.led_always_on?"ON":"OFF";break;
-          default:body="online";break;
-        }
-        if(direct_leaf(publish,prefix,leaves[leaf],body,true))break;
-        mqtt_leaf_pending&=~bit;
-      }
-      if(publish_error)break;
-    }
-  }
+  /* A cursor spans scalar leaves and graphs. Refreshing the latest data must
+   * not put the same scalar prefix ahead of sensors after every slow ACK.
+   * Use at most four available sends; the shared owner enforces the remaining
+   * global turn budget. Resume a quota-rejected item first on the next turn. */
   if(!bound){mqtt_leaf_pending=0;mqtt_graph_pending=0;}
   if(!coordinator)mqtt_graph_pending=0;
-  if(mqtt_graph_pending && (uint32_t)(now-mqtt_graph_retry)>=100u) {
-    mqtt_graph_retry=now;
-    static feature_sample_t current[FEATURE_MAX_PEERS];
-    lock();memcpy(current,samples,sizeof(current));unlock();
-    for(unsigned i=0;i<=peer_count;i++) {
-      unsigned bit=1u<<i;if(!(mqtt_graph_pending&bit))continue;
-      if(publish_error)break;
-      unsigned token=service_json_claim();if(!token)break;
-      json_object *o=i?sample_body(&current[i-1],now):average_body(current,peer_count,now);
-      char leaf[64];
-      if(!i)strcpy(leaf,"average");
-      else if(peer_count==1)strcpy(leaf,"sensor");
-      else {char mac[18];feature_colon_mac(peer_ids[i-1],mac);mqtt_format(leaf,sizeof(leaf),"%s/sensor",mac);}
-      if(direct_json_claimed(publish,root,leaf,o,false,token))mqtt_graph_pending&=~bit;
+  for(unsigned attempt=0;attempt<4 && !publish_error;attempt++) {
+    unsigned selected_leaf=0,selected_graph=0,selected_work=0;
+    unsigned eligible_leaves=mqtt_leaf_pending & ((1u<<(grouped?14:7))-1u);
+    if(!coordinator)eligible_leaves&=~127u;
+    unsigned eligible_graphs=coordinator && (uint32_t)(now-mqtt_graph_retry)>=100u
+        ? mqtt_graph_pending & ((1u<<(peer_count+1))-1u) : 0;
+    const unsigned work_count=14+FEATURE_MAX_PEERS+1;
+    if(bound)for(unsigned offset=0;offset<work_count;offset++) {
+      unsigned work=(mqtt_telemetry_cursor+offset)%work_count;
+      if(work<14)selected_leaf=eligible_leaves&(1u<<work);
+      else selected_graph=eligible_graphs&(1u<<(work-14));
+      if(selected_leaf || selected_graph) {
+        selected_work=work;
+        mqtt_telemetry_cursor=(uint8_t)((work+1)%work_count);
+        break;
+      }
     }
+    if(!selected_leaf && !selected_graph)break;
+    if(bound && selected_leaf) {
+      bool on;
+      unsigned speed;
+      /* These snapshots are only used by the MQTT owner. */
+      static a1_config_t cfg;
+      a1_config_get(&cfg);
+      mico_rtos_lock_mutex(&a1_lock);bool led_visible=a1_state.led_visible;
+      mico_rtos_unlock_mutex(&a1_lock);
+      unsigned light_brightness = cfg.brightness;
+      lock();
+      if (sleep_state.light_sleep && light_brightness > sleep_state.brightness)
+        light_brightness = sleep_state.brightness;
+      unlock();
+      feature_effective_fan(cfg.fan_on, cfg.speed, &on, &speed);
+      char prefix[FEATURE_TOPIC_MAX];
+      bool leader = feature_is_coordinator();
+      for (unsigned pass = 0; pass < (grouped ? 2u : 1u); pass++) {
+        if (!pass && !leader)
+          continue;
+        if (pass) {
+          char mac[18];
+          feature_colon_mac(LOCAL_ID, mac);
+          mqtt_format(prefix, sizeof(prefix), "%s/%s", root, mac);
+        } else
+          strcpy(prefix, root);
+        char b[192];
+        const char *leaves[]={"fan/state","fan/mode/state","fan/percentage/state",
+            "light/state","child_lock/state","led_always_on/state","availability"};
+        for(unsigned leaf=0;leaf<7;leaf++) {
+          unsigned bit=1u<<(pass*7+leaf);if(!(selected_leaf&bit))continue;
+          const char *body=NULL;
+          switch(leaf) {
+            case 0:body=on?"ON":"OFF";break;
+            case 1:body=feature_fan_auto()?"auto":"manual";break;
+            case 2:mqtt_format(b,sizeof(b),"%u",on?speed:0);body=b;break;
+            case 3:mqtt_format(b,sizeof(b),
+                "{\"state\":\"%s\",\"brightness\":%u,\"color\":{\"r\":%u,\"g\":%u,\"b\":%u}}",
+                led_visible?"ON":"OFF",light_brightness,cfg.red,cfg.green,cfg.blue);body=b;break;
+            case 4:body=cfg.child_lock?"ON":"OFF";break;
+            case 5:body=cfg.led_always_on?"ON":"OFF";break;
+            default:body="online";break;
+          }
+          if(direct_leaf(publish,prefix,leaves[leaf],body,true))break;
+          mqtt_leaf_pending&=~bit;
+        }
+        if(publish_error)break;
+      }
+    }
+    if(selected_graph) {
+      /* Only memory contention is throttled. A successful graph or exhausted
+       * send quota must leave the next graph immediately eligible, otherwise
+       * a refreshed scalar prefix can repeatedly overtake the sensor. */
+      static feature_sample_t current[FEATURE_MAX_PEERS];
+      lock();memcpy(current,samples,sizeof(current));unlock();
+      /* Samples may advance while earlier leaf PUBACKs are outstanding. Take
+       * the graph clock after copying them so fresh timestamps never appear
+       * to be almost UINT32_MAX milliseconds old. */
+      uint32_t captured_now=now_ms();
+      for(unsigned i=0;i<=peer_count;i++) {
+        unsigned bit=1u<<i;if(!(selected_graph&bit))continue;
+        if(publish_error)break;
+        unsigned token=service_json_claim();
+        if(!token){mqtt_graph_retry=now;break;}
+        json_object *o=i?sample_body(&current[i-1],captured_now):average_body(current,peer_count,captured_now);
+        char leaf[64];
+        if(!i)strcpy(leaf,"average");
+        else if(peer_count==1)strcpy(leaf,"sensor");
+        else {char mac[18];feature_colon_mac(peer_ids[i-1],mac);mqtt_format(leaf,sizeof(leaf),"%s/sensor",mac);}
+        if(direct_json_claimed(publish,root,leaf,o,false,token))mqtt_graph_pending&=~bit;
+        else if(!publish_error)mqtt_graph_retry=now;
+      }
+    }
+    if(publish_error)mqtt_telemetry_cursor=(uint8_t)selected_work;
   }
 #endif
   mqtt_revision = revision;

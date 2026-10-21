@@ -115,16 +115,50 @@ static int legacy_publish(int(*p)(const char*,const char*,bool),const char*t,jso
 }
 #define json_owned_publish legacy_publish
 #endif
+#include "mico.h"
+static uint32_t graph_test_time(void);
+#define mico_rtos_get_time graph_test_time
 #define main unused_runtime_scenarios
 #include "tests/test_runtime.c"
 #undef main
+static bool update_on_clock;
+static unsigned clock_reads;
+static uint32_t graph_test_time(void){
+ if(update_on_clock&&++clock_reads==2){
+  update_on_clock=false;test_now+=1500;
+  samples[0].received_ms=test_now;samples[0].co2_received_ms=test_now;
+ }
+ return test_now;
+}
 static unsigned graph_callbacks,wire_callbacks,callbacks,averages,sensors,blocked_token;
-static bool hold_after_average;
-static unsigned quota;
+static bool hold_after_average,update_during_leaf,check_fresh_graph,slow_ack;
+static unsigned leaf_seen;
+static unsigned quota,turn_quota=4,max_turn_outputs;
 static void turn(void);
 static void drain(void);
 static int output(const char*t,const char*b,bool r){
- assert(t&&b);if(!quota)return 2;--quota;json_heap_stats_t s;json_heap_snapshot(&s);
+ assert(t&&b);if(!quota)return 2;--quota;
+ if(slow_ack){
+  test_now+=1500;
+  const char *leaves[]={"/fan/state","/fan/mode/state","/fan/percentage/state",
+   "/light/state","/child_lock/state","/led_always_on/state","/availability"};
+  for(unsigned i=0;i<7;i++){
+   size_t n=strlen(leaves[i]),length=strlen(t);
+   if(length>=n&&!strcmp(t+length-n,leaves[i]))leaf_seen|=1u<<i;
+  }
+ }
+
+ if(update_during_leaf&&strstr(t,"/fan/state")){
+  update_during_leaf=false;test_now+=1500;
+  samples[0].received_ms=test_now;samples[0].co2_received_ms=test_now;
+ }
+ if(check_fresh_graph&&(strstr(t,"/average")||strstr(t,"/sensor"))&&!r){
+  json_object *o=json_tokener_parse(b);assert(o);
+  assert(json_object_get_boolean(json_object_object_get(o,"co2_valid")));
+  assert(json_object_get_int(json_object_object_get(o,"age_ms"))<10000);
+  json_object_put(o);
+ }
+json_heap_stats_t s;json_heap_snapshot(&s);
  unsigned token=service_json_claim();assert(token);service_json_release(token);
  if(strstr(t,"/average")){averages++;if(hold_after_average){hold_after_average=false;blocked_token=service_json_claim();assert(blocked_token);}}
  if(strstr(t,"/sensor")&&!r)sensors++;
@@ -134,8 +168,8 @@ static int output(const char*t,const char*b,bool r){
  if(s.live_blocks>2)graph_callbacks++;if(s.live_blocks==2)wire_callbacks++;
  printf("%u %s %u %s\n",callbacks++,t,r,b);return 0;
 }
-static void turn(void){quota=4;unsigned before=callbacks;
- int rc=feature_mqtt_service(output,true);assert(rc==0||rc==2);assert(callbacks-before<=4);
+static void turn(void){quota=turn_quota;unsigned before=callbacks;
+ int rc=feature_mqtt_service(output,true);assert(rc==0||rc==2);assert(callbacks-before<=turn_quota);if(callbacks-before>max_turn_outputs)max_turn_outputs=callbacks-before;
 }
 static void drain(void){for(unsigned i=0;i<300;i++){
  turn();if(blocked_token)return;
@@ -172,6 +206,32 @@ int main(void){
  assert(!feature_is_coordinator()&&!mqtt_discovery_pending&&feature_mqtt_initial_ready());
  member_seen[0]=0;turn();assert(mqtt_discovery_pending);
  drain();assert(!mqtt_discovery_pending&&feature_mqtt_initial_ready());
+ /* A UDP update may occur while a leaf PUBACK is outstanding. The graph
+  * capture clock must follow the copied timestamps, never precede them. */
+ test_now=60000;mqtt_tick=60000;mqtt_leaf_pending=1;mqtt_graph_pending=3;
+ mqtt_graph_retry=59900;update_during_leaf=check_fresh_graph=true;
+ turn();assert(!update_during_leaf);drain();check_fresh_graph=false;
+ /* A writer can also update after entry now but before graph copy without
+  * a leaf in this turn (e.g. while a short config lock was contended). */
+ mqtt_tick=test_now;mqtt_leaf_pending=0;mqtt_graph_pending=3;
+ mqtt_graph_retry=test_now-100;mqtt_telemetry_cursor=14;
+ update_on_clock=check_fresh_graph=true;clock_reads=0;
+ turn();assert(!update_on_clock);drain();check_fresh_graph=false;
+ /* Valid slow ACKs take more than one 5s production interval per turn.
+  * Replenishing the latest data must not restart a fixed leaf prefix forever. */
+ old_average=averages;old_sensor=sensors;slow_ack=true;leaf_seen=0;max_turn_outputs=0;
+ mqtt_tick=test_now-5000;
+ for(unsigned i=0;i<60;i++){turn();test_now+=50;}
+ assert(max_turn_outputs==4);
+ assert(leaf_seen==127&&averages>old_average+1&&sensors>old_sensor+1);
+ /* Physical publications may leave only one or two global slots. Quota
+  * rejection must resume the rejected virtual item rather than skip it. */
+ for(turn_quota=1;turn_quota<=2;turn_quota++){
+  old_average=averages;old_sensor=sensors;leaf_seen=0;
+  for(unsigned i=0;i<100;i++){turn();test_now+=50;}
+  assert(leaf_seen==127&&averages>old_average+1&&sensors>old_sensor+1);
+ }
+ turn_quota=4;slow_ack=false;
  free(published_layout);published_layout=NULL;
  json_heap_stats_t s;json_heap_snapshot(&s);assert(!s.live_blocks);
 #ifdef LEGACY_PUBLISH

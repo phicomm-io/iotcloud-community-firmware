@@ -148,6 +148,7 @@ static feature_config_t configuration,*published_layout;
 static feature_sample_t samples[FEATURE_MAX_PEERS];
 static uint32_t mqtt_tick,mqtt_graph_retry,mqtt_revision;
 static unsigned mqtt_graph_pending,mqtt_leaf_pending,published_count,published_sensors;
+static uint8_t mqtt_telemetry_cursor;
 static unsigned mqtt_discovery_stage,mqtt_discovery_cursor,mqtt_domain_cursor,mqtt_discovery_sensors;
 static uint32_t mqtt_discovery_revision;static bool mqtt_discovery_pending;
 static int publish_error;
@@ -217,7 +218,12 @@ int main(void){
 #ifdef RETAIN_CONFIG
   expect_full=false;
 #endif
-  virtual_service(nested_sender);
+  for(unsigned turn=0;turn<16;turn++){
+    virtual_service(nested_sender);
+    if(!mqtt_graph_pending&&!mqtt_leaf_pending)break;
+    now+=100;
+  }
+  assert(!mqtt_leaf_pending);
   assert(callbacks>=9 && full_ok==(expect_full?callbacks:0));assert(!json_owner&&!mqtt_graph_pending);healthy_stats();
   char report[256];int n=snprintf(report,sizeof(report),"actual virtual_service retained=%u config=%u budget=%u callbacks=%u full=%u peak=%u denied=%u last_sender_wire=%u live=0\n",
 #ifdef RETAIN_CONFIG
