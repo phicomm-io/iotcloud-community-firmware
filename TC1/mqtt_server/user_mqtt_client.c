@@ -416,7 +416,9 @@ static __attribute__((noinline)) void tc1_ota_message(MQTTMessage *message) {
 }
 static void MessageArrived(MessageData *md) {
     MQTTMessage *message=md->message;
-    if(!__atomic_load_n(&isconnect,__ATOMIC_ACQUIRE) || !session_current() || message->retained)return;
+    /* Subscriptions are live before public READY. This deferred owner path
+     * must service admitted commands throughout batched initial publication. */
+    if(session_stop(NULL) || !session_current() || message->retained)return;
     const char *topic=md->topicName->cstring;
     unsigned length=strlen(topic);
     if(tc1_command_topic(topic,length)) {

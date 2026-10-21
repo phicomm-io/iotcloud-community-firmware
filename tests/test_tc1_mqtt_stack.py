@@ -31,7 +31,7 @@ class Tc1MqttStack(unittest.TestCase):
 #include "common/mqtt_account.h"
 #define MAX_MQTT_DATA_SIZE 2048
 #define service_sender NULL
-static bool isconnect=true,current=true,ota_active,rediscover;
+static bool isconnect=true,current=true,ota_active,rediscover,stopping;
 static unsigned commands,otas,legacy;
 static mqtt_account_t account;
 static char ota_topic[512],topic_set[]="legacy";
@@ -40,6 +40,7 @@ typedef struct {const char *cstring;struct{const char *data;unsigned len;}lenstr
 typedef struct {MQTTMessage *message;MQTTString *topicName;} MessageData;
 typedef void (*messageHandler)(MessageData *);
 static bool session_current(void){return current;}
+static bool session_stop(void*x){(void)x;return stopping;}
 static bool ota_job_active(void){return ota_active;}
 static int service_mqtt_input(void *sender,const mqtt_account_t *scope,const void *data,size_t n,bool retained){assert(!sender&&scope==&account&&!retained&&n==2&&!memcmp(data,"{}",2));commands++;return 0;}
 static void ota_command(const char *owner,const void *data,size_t n,bool retained){assert(owner==account.base&&!retained&&n==2&&!memcmp(data,"{}",2));otas++;}
@@ -53,10 +54,12 @@ int main(void){
  assert(ingress_accept(&data,MessageArrived));MessageArrived(&data);assert(commands==1&&!otas&&!legacy);
  message.retained=true;assert(!ingress_accept(&data,MessageArrived));MessageArrived(&data);assert(commands==1);message.retained=false;
  current=false;MessageArrived(&data);assert(commands==1);current=true;
- isconnect=false;MessageArrived(&data);assert(commands==1);isconnect=true;
+ /* CONNECTING is a live subscribed session, despite public READY=false. */
+ isconnect=false;MessageArrived(&data);assert(commands==2);isconnect=true;
+ stopping=true;MessageArrived(&data);assert(commands==2);stopping=false;
  message.payload="\0x";assert(!ingress_accept(&data,MessageArrived));message.payload="{}";
  message.payloadlen=2048;assert(!ingress_accept(&data,MessageArrived));message.payloadlen=2;
- topic.cstring=ota_topic;MessageArrived(&data);assert(otas==1&&commands==1);
+ topic.cstring=ota_topic;MessageArrived(&data);assert(otas==1&&commands==2);
  topic.cstring=topic_set;ota_active=true;MessageArrived(&data);assert(!legacy);ota_active=false;
  MessageArrived(&data);assert(legacy==1);
  message.payload="online";message.payloadlen=6;message.retained=true;
