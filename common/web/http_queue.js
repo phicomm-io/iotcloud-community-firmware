@@ -1,4 +1,3 @@
-/* Serialize API requests through body completion. */
 (()=>{
  const nativeFetch=window.fetch.bind(window);
  let tail=Promise.resolve();

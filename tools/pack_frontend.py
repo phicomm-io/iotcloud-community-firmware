@@ -14,6 +14,8 @@ def adapt_http_queue(data, model):
     marker = b'<head>'
     if html.count(marker) != 1:
         raise ValueError('Locked frontend has no unique head insertion point')
+    # Serialize API requests through body completion. Keep explanatory comments
+    # here: every byte in the injected adapter consumes device OTA capacity.
     adapter = (ROOT / 'common/web/http_queue.js').read_bytes()
     html = html.replace(marker, marker + b'<script>' + adapter + b'</script>', 1)
     # Compress the final bytes after injection, just like the frontend release.
