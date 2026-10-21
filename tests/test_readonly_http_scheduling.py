@@ -350,6 +350,55 @@ class ReadonlyHTTPSchedulingTest(unittest.TestCase):
         self.assertEqual(row['error'], 'ConnectionResetError')
         self.assertFalse(runner.blockers)
 
+    def test_probe_unexpected_http_blocks_but_503_and_transport_failure_degrade(self):
+        from tests.device.readonly_http_scheduling import probe_once
+
+        class FakeRunner:
+            def __init__(self):
+                self.stop = threading.Event()
+                self.blockers = []
+
+            def block(self, ip, reason):
+                self.blockers.append(reason)
+
+            def check(self, *_args):
+                pass
+
+        for status, category, should_block in (
+                (401, 'http_other', True), (503, 'http_503', False)):
+            with self.subTest(status=status):
+                sock = unittest.mock.MagicMock()
+                runner = FakeRunner()
+                facts = {'status': status, 'body': b'', 'complete': True}
+                with patch('tests.device.readonly_http_scheduling.socket.create_connection',
+                           return_value=sock), \
+                        patch('tests.device.readonly_http_scheduling._read_response',
+                              return_value=(facts, 0)):
+                    row = probe_once('10.117.152.102', runner,
+                                     time.monotonic() + 5, 0)
+                self.assertEqual(row['category'], category)
+                self.assertEqual(bool(runner.blockers), should_block)
+
+    def test_run_case_blocks_http_other_from_probe_batch(self):
+        from tests.device.readonly_http_scheduling import run_case
+
+        class FakeRunner:
+            def __init__(self):
+                self.stop = threading.Event()
+                self.scheduling_cases = []
+                self.blockers = []
+
+            def block(self, ip, reason):
+                self.blockers.append(reason)
+
+        runner = FakeRunner()
+        with patch('tests.device.readonly_http_scheduling.run_probe_batch',
+                   return_value=[{'category': 'http_other', 'elapsed_ms': 8.0}]):
+            result = run_case('10.117.152.102', runner, 'baseline')
+        self.assertEqual(result['summary']['http_other'], 1)
+        self.assertTrue(any('unexpected HTTP status' in reason
+                            for reason in runner.blockers))
+
 
 if __name__ == '__main__':
     unittest.main()

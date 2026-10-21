@@ -1,14 +1,133 @@
 """Keep corrupt successful replies distinct from recoverable overload."""
+import base64
 import json
+import http.client
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
-from tests.device.readonly_stress import ProtocolError, Runner, request
+from tests.device.readonly_stress import InitializationError, ProtocolError, Runner, request
 
 
 class ReadonlyStressTest(unittest.TestCase):
+    def _assert_init_failure_evidence(self, runner, directory, ip, action, status,
+                                      code, raw=None):
+        evidence_path = Path(directory) / 'evidence.json'
+        self.assertTrue(evidence_path.exists())
+        self.assertEqual(evidence_path.stat().st_mode & 0o777, 0o600)
+        evidence = json.loads(evidence_path.read_text(encoding='utf-8'))
+        self.assertEqual(evidence['run']['status'], 'failed')
+        self.assertFalse(evidence['run']['completed'])
+        self.assertEqual(evidence['run']['failure_type'], 'InitializationError')
+        self.assertEqual(evidence['rows'][-1]['ip'], ip)
+        self.assertEqual(evidence['rows'][-1]['phase'], 'initialize')
+        self.assertEqual(evidence['rows'][-1]['action'], action)
+        self.assertEqual(evidence['rows'][-1]['http'], status)
+        self.assertEqual(evidence['rows'][-1]['code'], code)
+        if raw is not None:
+            self.assertEqual(evidence['rows'][-1]['raw_base64'],
+                             base64.b64encode(raw).decode())
+        self.assertTrue(evidence['blockers'])
+        self.assertFalse(evidence['run']['completed'])
+        return evidence
+
+    def test_initialize_503_fails_once_and_saves_before_baseline(self):
+        ip = '127.0.0.1'
+        raw = b'{"code":"busy"}'
+        with tempfile.TemporaryDirectory() as directory:
+            runner = Runner({ip: 'device'}, 'candidate', Path(directory))
+
+            def request_busy(target, action='status.get', params=None, timeout=5,
+                             capture=None):
+                capture.update(http=503, raw=raw)
+                return 503, {'code': 'busy'}, len(raw), 1.5, 12.0
+
+            with patch('tests.device.readonly_stress.request', side_effect=request_busy) as mocked:
+                with self.assertRaises(InitializationError):
+                    runner.initialize()
+
+            mocked.assert_called_once()
+            evidence = self._assert_init_failure_evidence(
+                runner, directory, ip, 'status.get', 503, 'busy', raw)
+            self.assertEqual(evidence['before'], {})
+            self.assertEqual(len(evidence['rows']), 1)
+
+    def test_initialize_malformed_success_response_is_preserved_and_blocks(self):
+        ip = '127.0.0.1'
+        raw = b'{malformed'
+        with tempfile.TemporaryDirectory() as directory:
+            runner = Runner({ip: 'device'}, 'candidate', Path(directory))
+
+            def malformed(target, action='status.get', params=None, timeout=5,
+                          capture=None):
+                capture.update(http=200, raw=raw)
+                raise ProtocolError(200, raw)
+
+            with patch('tests.device.readonly_stress.request', side_effect=malformed) as mocked:
+                with self.assertRaises(InitializationError):
+                    runner.initialize()
+
+            mocked.assert_called_once()
+            evidence = self._assert_init_failure_evidence(
+                runner, directory, ip, 'status.get', 200, None, raw)
+            self.assertEqual(evidence['before'], {})
+
+    def test_initialize_transport_exception_is_saved_without_retry(self):
+        ip = '127.0.0.1'
+        with tempfile.TemporaryDirectory() as directory:
+            runner = Runner({ip: 'device'}, 'candidate', Path(directory))
+            with patch('tests.device.readonly_stress.request',
+                       side_effect=http.client.RemoteDisconnected('closed')) as mocked:
+                with self.assertRaises(InitializationError):
+                    runner.initialize()
+
+            mocked.assert_called_once()
+            evidence = self._assert_init_failure_evidence(
+                runner, directory, ip, 'status.get', None, None)
+            self.assertIn('RemoteDisconnected', evidence['rows'][-1]['error'])
+            self.assertNotIn('raw_base64', evidence['rows'][-1])
+
+    def test_initialize_partial_targets_records_later_target_failure(self):
+        targets = {'127.0.0.1': 'device-a', '127.0.0.2': 'device-b'}
+        raw_busy = b'{"code":"busy"}'
+        state = {
+            'model': 'tc1', 'device_id': 'device-a', 'version': 'candidate',
+            'uptime_seconds': 20, 'socket_states': [0] * 6,
+            'child_lock': False, 'led_enabled': True,
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            runner = Runner(targets, 'candidate', Path(directory))
+            calls = []
+
+            def request_partial(ip, action='status.get', params=None, timeout=5,
+                                capture=None):
+                calls.append((ip, action))
+                if ip == '127.0.0.1' and action == 'status.get':
+                    body, reply = json.dumps({'code': 'ok', 'data': state}).encode(), {
+                        'code': 'ok', 'data': state}
+                    capture.update(http=200, raw=body)
+                    return 200, reply, len(body), 1.0, 100.0
+                if ip == '127.0.0.1' and action == 'config.get':
+                    body, reply = b'{"code":"ok","data":{}}', {'code': 'ok', 'data': {}}
+                    capture.update(http=200, raw=body)
+                    return 200, reply, len(body), 1.0, 101.0
+                capture.update(http=503, raw=raw_busy)
+                return 503, {'code': 'busy'}, len(raw_busy), 1.0, 102.0
+
+            with patch('tests.device.readonly_stress.request', side_effect=request_partial) as mocked:
+                with self.assertRaises(InitializationError):
+                    runner.initialize()
+
+            self.assertEqual(calls, [
+                ('127.0.0.1', 'status.get'), ('127.0.0.1', 'config.get'),
+                ('127.0.0.2', 'status.get'),
+            ])
+            self.assertEqual(mocked.call_count, 3)
+            evidence = self._assert_init_failure_evidence(
+                runner, directory, '127.0.0.2', 'status.get', 503, 'busy', raw_busy)
+            self.assertEqual(set(evidence['before']), {'127.0.0.1'})
+
     def test_response_classification_and_connection_cleanup(self):
         for status, body, corrupt in (
             (200, b'not JSON', True),
@@ -88,13 +207,37 @@ class ReadonlyStressTest(unittest.TestCase):
             def row(at, values, ok=True):
                 return {'ip': '127.0.0.1', 'phase': 'final', 'at': at,
                         'ok': ok, 'data': values}
-            zero = {'json_live_blocks': 0, 'memory_active': 0, 'memory_reserved': 0}
-            nonzero = {'json_live_blocks': 1, 'memory_active': 0, 'memory_reserved': 0}
+            zero = {'json_live_blocks': 0, 'memory_active': 0, 'memory_reserved': 0,
+                    'memory_waiting': 0}
+            nonzero = dict(zero, json_live_blocks=1)
             runner.memory = [row(1, zero), row(2, zero), row(3, zero),
                              row(4, nonzero)]
             self.assertFalse(runner.idle_zero_tail('127.0.0.1', 'final'))
             runner.memory.extend([row(5, zero), row(6, zero), row(7, zero)])
             self.assertTrue(runner.idle_zero_tail('127.0.0.1', 'final'))
+            runner.memory.append(row(8, dict(zero, memory_waiting=1)))
+            self.assertFalse(runner.idle_zero_tail('127.0.0.1', 'final'))
+
+    def test_shared_core_requires_healthy_owner_and_actual_admission(self):
+        healthy = {'http_core_owner_state': 1, 'http_core_close_failures': 0,
+                   'http_core_restarts': 0, 'http_core_tcp_limit': 3,
+                   'http_core_tcp_rc': 0, 'http_core_occupied': 1,
+                   'http_core_server_bytes': 4636, 'http_tcp_sample_ms': 1000}
+        for changed, blocked in (({}, False),
+                                 ({'http_core_owner_state': 2}, True),
+                                 ({'http_core_owner_state': 3}, True),
+                                 ({'http_core_close_failures': 1}, True),
+                                 ({'http_core_restarts': 1}, True),
+                                 ({'http_core_tcp_limit': 5}, True),
+                                 ({'http_core_tcp_rc': -1}, True),
+                                 ({'http_core_occupied': 4}, True),
+                                 ({'http_core_server_bytes': None}, True)):
+            with self.subTest(changed=changed), tempfile.TemporaryDirectory() as directory:
+                runner = Runner({'127.0.0.1': 'test'}, 'test', Path(directory),
+                                require_shared_core=True)
+                runner.before = {'127.0.0.1': {'state': {'model': 'tc1'}}}
+                runner.check_shared_core('127.0.0.1', dict(healthy, **changed))
+                self.assertEqual(runner.stop.is_set(), blocked)
 
     def test_planned_completion_rejects_missing_or_short_phases_and_recovery(self):
         plan = {

@@ -49,7 +49,7 @@ static __attribute__((noinline)) json_object *a1_status_json_view(bool live)
         http_diag_t diag = http_diag_snapshot();
         integer(o, "http_accept_ok", (int)diag.accepted);
         integer(o, "http_accept_fail", (int)diag.accept_failures);
-        integer(o, "http_accept_errno", diag.last_errno);
+        integer(o, "http_accept_errno", diag.accept_errno);
         integer(o, "http_accept_last_fd", diag.last_fd);
         integer(o, "http_accept_queue_ok", (int)diag.queued);
         integer(o, "http_accept_queue_reject", (int)diag.rejected);
@@ -58,7 +58,7 @@ static __attribute__((noinline)) json_object *a1_status_json_view(bool live)
         integer(o, "http_accept_busy_drained", (int)diag.drained);
         integer(o, "http_accept_busy_send_ok", (int)diag.busy_sent);
         integer(o, "http_accept_busy_send_fail", (int)diag.busy_failed);
-        integer(o, "http_accept_busy_send_errno", diag.last_errno);
+        integer(o, "http_accept_busy_send_errno", diag.busy_errno);
         integer(o, "http_accept_busy_send_bytes", (int)diag.busy_bytes);
         integer(o, "http_accept_overflow_close", (int)diag.rejected);
         integer(o, "http_accept_queue_capacity", HTTP_PENDING_CLIENTS);
@@ -278,4 +278,4 @@ static void release(ph_http_exchange *x,bool sent)
 }
 static unsigned admission(void) { return (upload_pending || ota_job_active())?2:HTTP_TCP_CLIENT_LIMIT; }
 static const ph_http_app app={begin,prepare,body_chunk,complete,release,admission};
-OSStatus a1_http_start(void) { return ph_http_start(&app,HTTP_TCP_CLIENT_LIMIT,true); }
+OSStatus a1_http_start(void) { return ph_http_start(&app,HTTP_TCP_CLIENT_LIMIT); }

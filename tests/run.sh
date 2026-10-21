@@ -6,7 +6,7 @@ python3 tools/check_version.py
 python3 -m unittest discover -s tests -p test_version.py
 python3 -m unittest tests.test_package_stale_signature
 python3 -m unittest tests.test_readonly_stress tests.test_readonly_input_edges tests.test_readonly_shared_httpd tests.test_readonly_http_scheduling tests.test_summarize_readonly_evidence
-python3 -m unittest tests.test_http_core tests.test_http_core_tcp tests.test_http_callbacks tests.test_shared_http_adversarial tests.test_shared_http_arm
+python3 -m unittest tests.test_http_core tests.test_http_core_tcp tests.test_shared_http_adversarial tests.test_shared_http_arm tests.test_shared_http_soak tests.test_shared_http_tcp_soak tests.test_http_mico_sdk_abi
 python3 -m unittest tests.test_memory_admission tests.test_http_browser_queue tests.test_tc1_http_trace
 python3 -m unittest tests.test_a1_provision_memory
 python3 -m unittest tests.test_m1_boot_config
@@ -57,7 +57,9 @@ for p in pathlib.Path(sys.argv[1]).glob('*.c'):
     p.write_text(p.read_text().replace('%ld', '%d'))
 PYHOST
 json_dir="$output/json_c"
-PHICOMM_TEST_JSON_DIR="$json_dir" python3 -m unittest tests.test_json_integer_parse
+# Product callbacks need the actual JSON lifetime overlays, including their
+# headers. CI starts with a pristine SDK, so run after preparing this copy.
+PHICOMM_TEST_JSON_DIR="$json_dir" python3 -m unittest tests.test_json_integer_parse tests.test_http_callbacks
 "${compiler[@]}" -std=gnu99 -Wall -Wextra -Werror -DWATCHDOG_HOST -Itests/watchdog -Itests/stubs -I"$json_dir" tests/test_watchdog.c "$json_dir"/*.c -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -o "$output/watchdog"
 "$output/watchdog"
 for target in portable moc-mx1290; do

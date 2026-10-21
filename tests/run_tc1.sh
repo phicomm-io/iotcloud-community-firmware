@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-sdk=${TC1_SDK_DIR:-build/tc1-sdk-3.6.4/mico-os}/libraries/protocols/mqtt
+tc1_sdk=${TC1_SDK_DIR:-build/tc1-sdk-3.6.4/mico-os}
+sdk=$tc1_sdk/libraries/protocols/mqtt
+# This job builds only TC1; shared product callbacks must use its prepared
+# pinned JSON library instead of silently depending on an A1 build tree.
+export PHICOMM_TEST_JSON_DIR=${PHICOMM_TEST_JSON_DIR:-$tc1_sdk/libraries/utilities/json_c}
 output=$(mktemp -d)
 trap 'rm -rf "$output"' EXIT
 cc -std=gnu99 -Wall -Wextra -Wno-unused-parameter -Wno-unused-but-set-variable -Wno-sign-compare -Wno-misleading-indentation -Wno-pointer-sign -Wno-implicit-fallthrough \

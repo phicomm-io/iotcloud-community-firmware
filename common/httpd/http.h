@@ -60,6 +60,7 @@ typedef enum {
 typedef struct {
     uint32_t accepted, rejected, accept_failures, nonblock_failures, drained, busy_sent, busy_failed, closed[PH_HTTP_CLOSE_REASONS];
     int last_fd, last_read_rc, last_select_rc, last_errno;
+    int accept_errno, busy_errno, read_errno;
     uint32_t close_failures; int last_close_rc, last_close_errno;
     int set_rc, set_errno, limit_get_rc, limit, connections_get_rc, connections;
     uint32_t slot_bytes, server_bytes, queued, busy_bytes;
@@ -88,7 +89,6 @@ typedef enum { PH_SLOT_FREE, PH_SLOT_HEADER, PH_SLOT_READY, PH_SLOT_WAIT,
                PH_SLOT_BODY, PH_SLOT_SEND, PH_SLOT_DRAIN } ph_http_state;
 typedef struct {
     ph_http_parser parser;
-    unsigned char input[128];
     uint16_t in_used, in_pos;
     int fd;
     ph_http_state state;
@@ -116,6 +116,6 @@ void ph_http_server_step(ph_http_server *);
 void ph_http_server_close(ph_http_server *);
 /* MiCO binding: starts one owner; stop is cooperative and never deletes a live
  * owner. Socket/core storage remains owned until that thread acknowledges. */
-int ph_http_start(const ph_http_app *, unsigned cap, bool nodelay);
+int ph_http_start(const ph_http_app *, unsigned cap);
 int ph_http_stop(void);
 ph_http_diagnostics ph_http_snapshot(void);

@@ -15,6 +15,13 @@ MEMORY_METRICS = (
     'json_alloc_failures', 'json_guard_denied', 'http_tcp_limit',
     'http_tcp_connections', 'http_tcp_get_rc', 'mqtt_pending', 'mqtt_peak',
     'mqtt_overflow', 'mqtt_max_delay_ms',
+    'http_core_owner_state', 'http_core_restarts', 'http_core_close_failures',
+    'http_core_last_close_rc', 'http_core_last_close_errno',
+    'http_core_slot_bytes', 'http_core_server_bytes',
+    'http_core_last_select_rc', 'http_core_last_read_rc', 'http_core_occupied',
+    'http_tcp_sample_ms', 'http_core_accepted', 'http_core_rejected',
+    'http_core_tcp_limit', 'http_core_tcp_connections', 'http_core_tcp_rc',
+    'http_core_read_errno',
 )
 
 
@@ -42,6 +49,8 @@ def _classify_row(row):
         return 'no_http'
     if status == 503:
         return 'http_503'
+    if status != 200:
+        return 'unexpected'
     if code == 'busy':
         return 'busy'
     if row.get('ok') is True:
@@ -288,7 +297,7 @@ def summarize_evidence(evidence, test_complete=False):
         })
         group['requests'] += 1
         category = _classify_row(row)
-        if row.get('ok') is True:
+        if category == 'success':
             group['success'] += 1
             latency = _number(row.get('ms'))
             if latency is not None and latency >= 0:

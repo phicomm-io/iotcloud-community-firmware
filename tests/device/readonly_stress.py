@@ -36,7 +36,13 @@ class ProtocolError(ValueError):
         self.status, self.raw = status, raw
 
 
-def request(ip, action='status.get', params=None, timeout=5):
+class InitializationError(RuntimeError):
+    def __init__(self, ip, action, reason):
+        super().__init__('Initialization failed for '+ip+' '+action+': '+reason)
+        self.ip, self.action, self.reason = ip, action, reason
+
+
+def request(ip, action='status.get', params=None, timeout=5, capture=None):
     if action not in ACTIONS:
         raise ValueError('Only allowlisted read actions are permitted')
     c = http.client.HTTPConnection(ip, timeout=timeout)
@@ -44,7 +50,11 @@ def request(ip, action='status.get', params=None, timeout=5):
     try:
         c.request('POST', '/api/v1/command', json.dumps({'action': action, 'params': params or {}}), {'Content-Type': 'application/json'})
         r = c.getresponse()
+        if capture is not None:
+            capture['http'] = r.status
         raw = r.read()
+        if capture is not None:
+            capture['raw'] = raw
         try:
             reply = json.loads(raw)
             if not isinstance(reply, dict) or not isinstance(reply.get('code'), str):
@@ -61,11 +71,13 @@ def request(ip, action='status.get', params=None, timeout=5):
 
 
 class Runner:
-    def __init__(self, targets, version, output, versions=None, plan=None):
+    def __init__(self, targets, version, output, versions=None, plan=None,
+                 require_shared_core=False):
         self.targets, self.version, self.output = targets, version, output
         self.versions = versions or {}
         self.plan = plan or {}
         self.plan_completion_required = plan is not None
+        self.require_shared_core = require_shared_core
         self.stop = threading.Event()
         self.lock = threading.Lock()
         self.rows, self.blockers, self.before, self.memory = [], [], {}, []
@@ -82,6 +94,7 @@ class Runner:
             'completed': False,
             'plan': self.plan,
             'plan_completion_required': self.plan_completion_required,
+            'require_shared_core': require_shared_core,
         }
         output.mkdir(parents=True, exist_ok=True)
 
@@ -133,22 +146,77 @@ class Runner:
 
     def initialize(self):
         for ip, ident in self.targets.items():
-            status, reply, _, _, start = request(ip)
-            assert status == 200 and reply['code'] == 'ok'
+            status, reply, _, _, start, capture = self._initialize_request(ip, 'status.get')
+            if status != 200 or reply.get('code') != 'ok':
+                self._fail_initialize(ip, 'status.get', status, reply,
+                                       'baseline status request was not successful', capture)
             state = reply['data']
-            assert state['device_id'].lower() == ident.lower() and state['version'] == self.versions.get(ip, self.version)
-            assert state.get('watchdog_state') in (None, 'healthy')
+            if (not isinstance(state.get('device_id'), str) or
+                    state['device_id'].lower() != ident.lower() or
+                    state.get('version') != self.versions.get(ip, self.version)):
+                self._fail_initialize(ip, 'status.get', status, reply,
+                                       'baseline identity or version mismatch', capture)
+            if state.get('watchdog_state') not in (None, 'healthy'):
+                self._fail_initialize(ip, 'status.get', status, reply,
+                                       'baseline watchdog is unhealthy', capture)
             required = CONTROL_KEYS_BY_MODEL.get(state.get('model'), ())
-            status, cfg, *_ = request(ip, 'config.get')
-            assert status == 200 and cfg['code'] == 'ok'
-            self.before[ip] = {'id': ident, 'state': state, 'config': cfg['data'], 'boot_origin': start-state['uptime_seconds']}
             if not required or any(key not in state for key in required):
-                self.block(ip, 'baseline status missing required control fields')
-                break
+                self._fail_initialize(ip, 'status.get', status, reply,
+                                       'baseline status missing required control fields', capture)
+            if not isinstance(state.get('uptime_seconds'), (int, float)):
+                self._fail_initialize(ip, 'status.get', status, reply,
+                                       'baseline status missing uptime', capture)
+
+            cfg_status, cfg, _, _, _, capture = self._initialize_request(ip, 'config.get')
+            if cfg_status != 200 or cfg.get('code') != 'ok':
+                self._fail_initialize(ip, 'config.get', cfg_status, cfg,
+                                       'baseline configuration request was not successful', capture)
+            self.before[ip] = {'id': ident, 'state': state, 'config': cfg['data'],
+                               'boot_origin': start-state['uptime_seconds']}
         self.save()
         self.memory_window('baseline')
         if not self.stop.is_set() and not self.wait_idle_quiescence('baseline'):
             self.block('', 'baseline idle state did not reach three zero-allocation samples')
+
+    def _initialize_request(self, ip, action):
+        capture = {}
+        try:
+            result = request(ip, action, capture=capture)
+        except ProtocolError as exc:
+            capture.update(http=exc.status, raw=exc.raw)
+            self._fail_initialize(ip, action, exc.status, {}, str(exc), capture)
+        except (OSError, ValueError, http.client.HTTPException) as exc:
+            self._fail_initialize(ip, action, capture.get('http'), {},
+                                   type(exc).__name__+': '+str(exc), capture)
+        status, reply, size, elapsed, start = result
+        capture.setdefault('http', status)
+        return status, reply, size, elapsed, start, capture
+
+    def _fail_initialize(self, ip, action, status, reply, reason, capture=None):
+        capture = capture or {}
+        raw = capture.get('raw')
+        row = {
+            'ip': ip,
+            'phase': 'initialize',
+            'action': action,
+            'params': {},
+            'at': time.time(),
+            'ok': False,
+            'http': status,
+            'code': reply.get('code') if isinstance(reply, dict) else None,
+            'error': reason,
+        }
+        if raw is not None:
+            row['bytes'] = len(raw)
+            row['raw_base64'] = base64.b64encode(raw).decode()
+        self.rows.append(row)
+        self.block(ip, 'initialization failed: '+reason)
+        self.run.update(
+            status='failed', completed=False, ended_at=time.time(),
+            failure_type='InitializationError', failure_reason=reason,
+        )
+        self.save()
+        raise InitializationError(ip, action, reason)
 
     def memory_sample(self, ip, phase, timeout=5):
         c = http.client.HTTPConnection(ip, timeout=timeout)
@@ -160,11 +228,37 @@ class Runner:
             row.update(http=r.status, ok=r.status == 200 and reply.get('code') == 'ok')
             if row['ok']:
                 row['data'] = reply['data']
+                if self.require_shared_core:
+                    self.check_shared_core(ip, row['data'])
         except (OSError, ValueError, http.client.HTTPException) as e:
             row.update(ok=False, error=str(e))
         finally:
             c.close()
         self.memory.append(row)
+
+    def check_shared_core(self, ip, data):
+        """Require actual owner diagnostics, without inferring SDK heap bounds."""
+        if not isinstance(data, dict):
+            self.block(ip, 'missing shared HTTP diagnostics')
+            return
+        required = ('http_core_owner_state', 'http_core_close_failures',
+                    'http_core_restarts', 'http_core_tcp_limit',
+                    'http_core_tcp_rc', 'http_core_occupied',
+                    'http_core_server_bytes', 'http_tcp_sample_ms')
+        if any(type(data.get(key)) is not int for key in required):
+            self.block(ip, 'missing or invalid shared HTTP diagnostics')
+            return
+        if data['http_core_owner_state'] != 1 or data['http_core_close_failures'] != 0:
+            self.block(ip, 'shared HTTP owner unavailable or uncertain close')
+        if data['http_core_restarts'] != 0:
+            self.block(ip, 'shared HTTP owner restarted; investigate before acceptance')
+        model = self.before.get(ip, {}).get('state', {}).get('model')
+        expected = {'a1': 3, 'tc1': 3, 'm1': 4}.get(model)
+        if (expected is None or data['http_core_tcp_limit'] != expected or
+                data['http_core_tcp_rc'] != 0 or
+                not 0 <= data['http_core_occupied'] <= expected or
+                data['http_core_server_bytes'] <= 0):
+            self.block(ip, 'shared HTTP admission diagnostics invalid')
 
     def memory_window(self, phase):
         print('MEMORY idle window', phase, flush=True)
@@ -184,7 +278,7 @@ class Runner:
             data = row.get('data') if row.get('ok') else None
             zero = isinstance(data, dict) and all(
                 data.get(key) == 0 for key in
-                ('json_live_blocks', 'memory_active', 'memory_reserved'))
+                ('json_live_blocks', 'memory_active', 'memory_reserved', 'memory_waiting'))
             if not zero:
                 return False
             streak += 1
@@ -612,6 +706,8 @@ def main():
                     help='Minimum delay after each worker request, seconds')
     ap.add_argument('--soak-only', action='store_true',
                     help='Additional stability stage after the same candidate passed load/recovery')
+    ap.add_argument('--require-shared-core', action='store_true',
+                    help='Require healthy shared owner and verified model admission diagnostics')
     a = ap.parse_args()
     if not 60 <= a.soak_seconds <= 14400 or not 10 <= a.phase_seconds <= 300:
         ap.error('soak 60..14400 seconds; phase 10..300 seconds')
@@ -677,7 +773,8 @@ def main():
         ))
     with open('/tmp/phicomm-readonly-stress.lock', 'w') as guard:
         fcntl.flock(guard, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        runner = Runner(targets, a.version, a.output, versions, plan)
+        runner = Runner(targets, a.version, a.output, versions, plan,
+                        require_shared_core=a.require_shared_core)
 
         def interrupted(signum, _frame):
             runner.stop.set()

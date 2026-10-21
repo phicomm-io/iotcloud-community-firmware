@@ -14,6 +14,7 @@ from tests.device.readonly_input_edges import (
     LIVE_BODY,
     MAX_REQUEST_BYTES,
     InputRunner,
+    ProtocolError,
     build_scenarios,
     main,
     send_scenario,
@@ -58,6 +59,20 @@ class FakeSocket:
 
 
 class ReadonlyInputEdgesTest(unittest.TestCase):
+    def prime_runner(self, runner, ip):
+        state = {
+            'device_id': AUTHORIZED_TARGETS[ip], 'version': 'db113f',
+            'model': AUTHORIZED_MODELS[ip], 'uptime_seconds': 500,
+            'watchdog_state': 'healthy', 'wifi_connected': True,
+            'mqtt_connected': True, 'socket_states': [0, 0, 0, 0],
+            'requested_fan_on': False, 'requested_speed': 0,
+            'child_lock': False, 'led_enabled': True,
+            'brightness_requested': 30,
+        }
+        runner.before[ip] = {'id': AUTHORIZED_TARGETS[ip], 'state': state,
+                             'boot_origin': 995}
+        return state
+
     def test_allowlisted_scenarios_are_bounded_and_only_post_live_status(self):
         expected = {
             'user-agent-empty', 'user-agent-compatible',
@@ -176,6 +191,69 @@ class ReadonlyInputEdgesTest(unittest.TestCase):
             self.assertTrue(row['ok'])
             self.assertTrue(runner.before[ip]['state']['wifi_connected'])
             self.assertEqual(row['model'], AUTHORIZED_MODELS[ip])
+
+    def test_malformed_success_is_blocking_even_if_later_recovery_succeeds(self):
+        ip = '10.117.152.102'
+        with tempfile.TemporaryDirectory() as directory:
+            runner = InputRunner({ip: AUTHORIZED_TARGETS[ip]}, 'db113f',
+                                 Path(directory))
+            state = self.prime_runner(runner, ip)
+            healthy = (200, {'code': 'ok', 'data': state}, 100, 5, 1000)
+            with patch('tests.device.readonly_input_edges.request',
+                       side_effect=[ProtocolError(200, b'{'), healthy]):
+                malformed = runner.sample(ip, 'malformed')
+                recovered = runner.sample(ip, 'later-recovery')
+            self.assertFalse(malformed['ok'])
+            self.assertEqual(malformed['http'], 200)
+            self.assertFalse(recovered.get('error'))
+            self.assertTrue(recovered['ok'])
+            self.assertTrue(runner.stop.is_set())
+            self.assertTrue(any('malformed successful HTTP response' in item['reason']
+                                for item in runner.blockers))
+
+    def test_sample_classifies_success_busy_503_and_transport_degradation(self):
+        ip = '10.117.152.102'
+        with tempfile.TemporaryDirectory() as directory:
+            runner = InputRunner({ip: AUTHORIZED_TARGETS[ip]}, 'db113f',
+                                 Path(directory))
+            state = self.prime_runner(runner, ip)
+            good = (200, {'code': 'ok', 'data': state}, 100, 5, 1000)
+            busy = (200, {'code': 'busy'}, 4, 2, 1000)
+            overloaded = (503, {}, 0, 2, 1000)
+            with patch('tests.device.readonly_input_edges.request',
+                       side_effect=[good, busy, overloaded, OSError('reset')]):
+                success = runner.sample(ip, 'normal')
+                busy_row = runner.sample(ip, 'busy')
+                overload_row = runner.sample(ip, 'overload')
+                transport_row = runner.sample(ip, 'transport')
+            self.assertTrue(success['ok'])
+            self.assertFalse(busy_row['ok'])
+            self.assertEqual(busy_row['degraded'], 'busy')
+            self.assertFalse(overload_row['ok'])
+            self.assertEqual(overload_row['degraded'], 'http_503')
+            self.assertEqual(transport_row['error'], 'OSError')
+            self.assertFalse(runner.blockers)
+            self.assertFalse(runner.stop.is_set())
+
+    def test_unexpected_http_and_command_results_are_blocking(self):
+        ip = '10.117.152.102'
+        responses = [
+            (401, {}, 0, 2, 1000),
+            (500, {}, 0, 2, 1000),
+            (200, {'code': 'error'}, 10, 2, 1000),
+        ]
+        for response in responses:
+            with self.subTest(response=response[0:2]), \
+                    tempfile.TemporaryDirectory() as directory:
+                runner = InputRunner({ip: AUTHORIZED_TARGETS[ip]}, 'db113f',
+                                     Path(directory))
+                self.prime_runner(runner, ip)
+                with patch('tests.device.readonly_input_edges.request',
+                           return_value=response):
+                    row = runner.sample(ip, 'unexpected')
+                self.assertFalse(row['ok'])
+                self.assertTrue(runner.stop.is_set())
+                self.assertEqual(len(runner.blockers), 1)
 
     def test_slow_drip_requires_server_close_and_never_finishes_request(self):
         ip = '10.117.152.102'

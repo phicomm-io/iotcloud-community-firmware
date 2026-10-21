@@ -125,6 +125,20 @@ def complete_run_evidence(mode='full'):
 
 
 class SummarizeReadonlyEvidenceTest(unittest.TestCase):
+    def test_http_errors_are_not_hidden_by_busy_code_or_success_flag(self):
+        evidence = sample_evidence()
+        evidence['rows'] = [
+            {'ip': '10.117.152.102', 'phase': 'soak', 'http': 500,
+             'code': 'busy', 'ok': False, 'ms': 2},
+            {'ip': '10.117.152.102', 'phase': 'soak', 'http': 404,
+             'code': 'ok', 'ok': True, 'ms': 3},
+        ]
+        phase, = summarize_evidence(evidence)['model_phase_summary']
+        self.assertEqual(phase['unexpected'], 2)
+        self.assertEqual(phase['success'], 0)
+        self.assertEqual(phase['busy'], 0)
+        self.assertEqual(phase['success_latency_ms']['sample_count'], 0)
+
     def test_phase_summary_separates_degradation_categories_and_success_latency(self):
         result = summarize_evidence(sample_evidence())
         phase, = result['model_phase_summary']

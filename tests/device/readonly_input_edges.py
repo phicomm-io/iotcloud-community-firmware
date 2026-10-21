@@ -21,7 +21,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from tests.device.readonly_stress import Runner, request
+from tests.device.readonly_stress import ProtocolError, Runner, request
 
 
 AUTHORIZED_TARGETS = {
@@ -270,13 +270,20 @@ class InputRunner(Runner):
         try:
             status, reply, size, elapsed, start = request(
                 ip, 'status.get', timeout=IO_TIMEOUT)
-            row.update(http=status, bytes=size, ms=elapsed,
-                       ok=status == 200 and reply.get('code') == expected)
-            if row['ok']:
+            row.update(http=status, code=reply.get('code'), bytes=size, ms=elapsed,
+                       ok=False)
+            if status == 503:
+                row['degraded'] = 'http_503'
+            elif status != 200:
+                self.block(ip, 'unexpected HTTP status: ' + str(status))
+            elif reply.get('code') not in (expected, 'busy'):
+                self.block(ip, 'unexpected command result: ' + str(reply.get('code')))
+            elif reply.get('code') == 'busy':
+                row['degraded'] = 'busy'
+            else:
                 state = reply.get('data')
                 if not isinstance(state, dict):
                     self.block(ip, 'status.get data missing during recovery')
-                    row['ok'] = False
                 else:
                     row.update(
                         uptime=state.get('uptime_seconds'),
@@ -285,6 +292,10 @@ class InputRunner(Runner):
                         mqtt_connected=state.get('mqtt_connected'),
                     )
                     self.check(ip, state, start)
+                    row['ok'] = True
+        except ProtocolError as exc:
+            row.update(ok=False, http=exc.status, error=type(exc).__name__)
+            self.block(ip, 'malformed successful HTTP response')
         except (OSError, ValueError, RuntimeError, http.client.HTTPException) as exc:
             row.update(ok=False, error=type(exc).__name__)
         with self.lock:

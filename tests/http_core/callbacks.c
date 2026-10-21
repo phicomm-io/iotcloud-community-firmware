@@ -8,7 +8,7 @@
 #include "common/http_cors.h"
 #include "json.h"
 static bool maximum;
-ph_http_diagnostics ph_http_snapshot(void){ph_http_diagnostics d;memset(&d,maximum?0xff:0,sizeof(d));return d;}
+ph_http_diagnostics ph_http_snapshot(void){ph_http_diagnostics d;memset(&d,maximum?0xff:0,sizeof(d));if(maximum){d.last_close_rc=d.last_close_errno=d.last_select_rc=d.last_read_rc=d.limit=d.connections=d.connections_get_rc=d.read_errno=INT32_MIN;}return d;}
 static unsigned claims,waiting,queries,commands,aborts,written,finishes,entered,reboots;
 static bool deny,job,fail_write,fail_cap;
 static unsigned ota_begins;
@@ -28,7 +28,7 @@ json_object *service_query(const char*a){assert(a);queries++;json_object*o=json_
 json_object *service_command(json_object*r){commands++;return r?service_query("command"):NULL;}
 json_object *service_parse(const void*p,size_t n){char*copy=malloc(n+1);memcpy(copy,p,n);copy[n]=0;json_object*o=json_tokener_parse(copy);free(copy);return o;}
 static bool ota_job_active(void){return job;}
-int ph_http_start(const ph_http_app*a,unsigned n,bool nd){(void)a;(void)n;(void)nd;return 0;}
+int ph_http_start(const ph_http_app*a,unsigned n){(void)a;(void)n;return 0;}
 
 /* Real production scheduler below calls the inserted production adapter. */
 static const char *wire_input;

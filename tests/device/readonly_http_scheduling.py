@@ -290,6 +290,8 @@ def probe_once(ip, runner, case_deadline, index):
                 runner.check(ip, classified['state'], started)
             elif classified['category'] == 'illegal_200':
                 runner.block(ip, 'HTTP 200 lacked a complete status.get ok envelope')
+            elif classified['category'] == 'http_other':
+                runner.block(ip, 'unexpected HTTP status: ' + str(facts['status']))
         except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError) as exc:
             row.update(category='no_http', error=type(exc).__name__,
                        http_status=None, response_bytes=0)
@@ -388,6 +390,8 @@ def run_case(ip, runner, phase, slow_connection=False, round_number=1):
         runner.block(ip, 'scheduling case exceeded its 18-second deadline')
     if any(row.get('category') == 'illegal_200' for row in probes):
         runner.block(ip, 'illegal HTTP 200 status response')
+    if any(row.get('category') == 'http_other' for row in probes):
+        runner.block(ip, 'unexpected HTTP status in scheduling probe')
     runner.scheduling_cases.append(result)
     return result
 

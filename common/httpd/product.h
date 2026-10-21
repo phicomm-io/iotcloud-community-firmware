@@ -4,6 +4,9 @@
 #include "../service.h"
 #include "json_heap.h"
 #include "printbuf.h"
+#ifndef PH_HTTP_SCALAR_BYTES
+#define PH_HTTP_SCALAR_BYTES 1536
+#endif
 /* One business lease, never one allocation per pending connection. */
 typedef struct {
     unsigned claim;
@@ -12,7 +15,7 @@ typedef struct {
     size_t used, capacity;
     uint64_t failures;
     struct printbuf *wire;
-    char scalar[1536];
+    char scalar[PH_HTTP_SCALAR_BYTES];
 } ph_http_product;
 void ph_http_product_init(ph_http_product *, ph_http_exchange *);
 void ph_http_busy(ph_http_exchange *);

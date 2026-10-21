@@ -78,8 +78,14 @@ size_t ph_http_diag_append(char *body,size_t capacity,size_t used,const ph_http_
         "\"http_core_close_failures\":%lu,\"http_core_last_close_rc\":%d,\"http_core_last_close_errno\":%d,"
         "\"http_core_slot_bytes\":%lu,\"http_core_server_bytes\":%lu,"
         "\"http_core_last_select_rc\":%d,\"http_core_last_read_rc\":%d,"
-        "\"http_core_occupied\":%lu,\"http_tcp_sample_ms\":%lu}}",
+        "\"http_core_occupied\":%lu,\"http_tcp_sample_ms\":%lu,"
+        "\"http_core_accepted\":%lu,\"http_core_rejected\":%lu,"
+        "\"http_core_tcp_limit\":%d,\"http_core_tcp_connections\":%d,\"http_core_tcp_rc\":%d,"
+        "\"http_core_read_errno\":%d,\"http_core_closed\":[%lu,%lu,%lu,%lu,%lu,%lu,%lu]}}",
         d->owner_state,d->restarts,(unsigned long)d->close_failures,d->last_close_rc,d->last_close_errno,
-        (unsigned long)d->slot_bytes,(unsigned long)d->server_bytes,d->last_select_rc,d->last_read_rc,(unsigned long)d->occupied,(unsigned long)d->connections_sample_ms);
+        (unsigned long)d->slot_bytes,(unsigned long)d->server_bytes,d->last_select_rc,d->last_read_rc,(unsigned long)d->occupied,(unsigned long)d->connections_sample_ms,
+        (unsigned long)d->accepted,(unsigned long)d->rejected,d->limit,d->connections,d->connections_get_rc,d->read_errno,
+        (unsigned long)d->closed[0],(unsigned long)d->closed[1],(unsigned long)d->closed[2],
+        (unsigned long)d->closed[3],(unsigned long)d->closed[4],(unsigned long)d->closed[5],(unsigned long)d->closed[6]);
     return n>0 && (size_t)n<capacity-used+2?used-2+(size_t)n:0;
 }

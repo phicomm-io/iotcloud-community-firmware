@@ -148,28 +148,33 @@ void ph_http_server_close(ph_http_server *s)
 static void read_header(ph_http_server *s, unsigned i)
 {
     ph_http_slot *c=&s->slots[i];
-    int n=s->io->recv(c->fd,c->input,sizeof(c->input));
-    s->diagnostics.last_read_rc=n;
+    /* The owner scratch holds raw header input. After the header finishes,
+     * its line buffer is dead: reuse it for at most 127 carried body bytes. */
+    int n=s->io->recv(c->fd,s->scratch,128);
+    s->diagnostics.last_read_rc=n;s->diagnostics.read_errno=n<0?s->io->error():0;
     if(n<=0) {
         if(n<0 && s->io->retry()) { s->io->yield(); return; }
         close_slot(s,i,n==0?PH_HTTP_CLOSED_PEER:PH_HTTP_CLOSED_IO,false);return;
     }
-    c->in_used=(uint16_t)n; c->in_pos=0;
-    while(c->in_pos<c->in_used) {
-        int r=ph_http_parser_feed(&c->parser,c->input[c->in_pos++]);
+    for(unsigned pos=0;pos<(unsigned)n;++pos) {
+        int r=ph_http_parser_feed(&c->parser,s->scratch[pos]);
         if(r<0) { simple_reply(s,i,false);return; }
-        if(r>0) { ready(s,i);return; }
+        if(r>0) {
+            c->in_pos=0;c->in_used=(uint16_t)((unsigned)n-pos-1);
+            memcpy(c->parser.line,s->scratch+pos+1,c->in_used);
+            ready(s,i);return;
+        }
     }
     c->in_used=c->in_pos=0;
 }
 static void read_body(ph_http_server *s, unsigned i)
 {
     ph_http_slot *c=&s->slots[i]; const void *data; int n;
-    if(c->in_pos<c->in_used) { data=c->input+c->in_pos; n=c->in_used-c->in_pos; c->in_pos=c->in_used; }
+    if(c->in_pos<c->in_used) { data=c->parser.line+c->in_pos; n=c->in_used-c->in_pos; c->in_pos=c->in_used; }
     else {
         size_t want=c->remaining<sizeof(s->scratch)?c->remaining:sizeof(s->scratch);
         n=s->io->recv(c->fd,s->scratch,want); data=s->scratch;
-        s->diagnostics.last_read_rc=n;
+        s->diagnostics.last_read_rc=n;s->diagnostics.read_errno=n<0?s->io->error():0;
         if(n<=0) {
             if(n<0 && s->io->retry()) { s->io->yield();return; }
             close_slot(s,i,n==0?PH_HTTP_CLOSED_PEER:PH_HTTP_CLOSED_IO,false);return;
@@ -197,6 +202,7 @@ static void send_part(ph_http_server *s, unsigned i)
     if(length) {
         if(length>1024)length=1024;
         int n=s->io->send(c->fd,data,length);
+        if(c->simple && c->reason==PH_HTTP_CLOSED_BUSY)s->diagnostics.busy_errno=n<0?s->io->error():0;
         if(n<0 && s->io->retry()) { s->io->yield();return; }
         if(n<=0) { close_slot(s,i,PH_HTTP_CLOSED_IO,false);return; }
         if(c->simple && c->reason==PH_HTTP_CLOSED_BUSY)s->diagnostics.busy_bytes+=(unsigned)n;
@@ -273,8 +279,9 @@ void ph_http_server_step(ph_http_server *s)
                 c->fd=fd;c->state=PH_SLOT_HEADER;c->deadline=s->io->now()+PH_HTTP_HEADER_MS;
                 ph_http_parser_init(&c->parser);
             }
-        } else if(s->io->retry())s->io->yield();
+        } else if(s->io->retry()) { s->diagnostics.accept_errno=s->io->error();s->io->yield(); }
         else {
+            s->diagnostics.accept_errno=s->io->error();
             s->diagnostics.last_errno=s->io->error();count(&s->diagnostics.accept_failures);
             if(++s->accept_streak>=3)ph_http_server_close(s);else s->io->yield();
         }
