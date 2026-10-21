@@ -1,19 +1,10 @@
 #include "a1.h"
-#include <ctype.h>
 #include "../common/automation.h"
 
 json_object *a1_json_parse(const char *data, size_t length)
 {
-    if (!length || length > A1_JSON_LIMIT || memchr(data, 0, length)) return NULL;
-    struct json_tokener *tok = json_tokener_new();
-    if (!tok) return NULL;
-    json_object *o = json_tokener_parse_ex(tok, data, length);
-    int consumed = tok->char_offset;
-    bool valid = tok->err == json_tokener_success && o && json_object_is_type(o, json_type_object);
-    while (consumed < (int)length && isspace((unsigned char)data[consumed])) consumed++;
-    valid = valid && consumed == (int)length;
-    json_tokener_free(tok);
-    if (!valid) { if (o) json_object_put(o); return NULL; }
+    json_object *o=service_parse(data,length);
+    if(!o)return NULL;
     /* json-c represents both missing fields and null as NULL. Reject explicit null. */
     json_object_object_foreach(o, key, value) {
         UNUSED_PARAMETER(key);
@@ -22,28 +13,27 @@ json_object *a1_json_parse(const char *data, size_t length)
     return o;
 }
 
-/* caller holds both mutexes; repeated commands wake LEDs without wearing Flash. */
-static void apply(const a1_config_t *c)
+/* One schema for JSON transport validation and group encoding. Local actions
+ * use the typed request directly and never walk this table. max=0 is boolean. */
+static const struct {
+    const char *key;
+    uint8_t offset,field,max,kinds;
+} control_fields[]={
+#define FIELD(key,member,flag,max,kinds) {key,offsetof(a1_control_t,member),flag,max,kinds}
+    FIELD("on",on,A1_SET_ON,0,1<<A1_CONTROL_FAN),
+    FIELD("speed",speed,A1_SET_SPEED,100,1<<A1_CONTROL_FAN),
+    FIELD("enabled",enabled,A1_SET_ENABLED,0,(1<<A1_CONTROL_LIGHT)|(1<<A1_CONTROL_LOCK)),
+    FIELD("always_on",always_on,A1_SET_ALWAYS,0,1<<A1_CONTROL_LIGHT),
+    FIELD("brightness",brightness,A1_SET_BRIGHTNESS,255,1<<A1_CONTROL_LIGHT),
+#undef FIELD
+};
+static const char *color_keys[]={"r","g","b"};
+static bool control_value(json_object *v,uint8_t *out,unsigned max)
 {
-    if (memcmp(c, a1_config, sizeof(*c))) { *a1_config = *c; a1_control_changed(); }
-    else a1_state.led_until = mico_rtos_get_time() + 2000;
-}
-
-static bool get_bool(json_object *o, const char *key, uint8_t *out, bool *found)
-{
-    json_object *v = json_object_object_get(o, key);
-    if (!v) return true;
-    if (!json_object_is_type(v, json_type_boolean)) return false;
-    *found = true; *out = json_object_get_boolean(v) ? 1 : 0; return true;
-}
-static bool get_byte(json_object *o, const char *key, uint8_t *out, int max, bool *found)
-{
-    json_object *v = json_object_object_get(o, key);
-    if (!v) return true;
-    if (!json_object_is_type(v, json_type_int)) return false;
-    int n = json_object_get_int(v);
-    if (n < 0 || n > max) return false;
-    *found = true; *out = n; return true;
+    if(!v || !json_object_is_type(v,max?json_type_int:json_type_boolean))return false;
+    int n=max?json_object_get_int(v):json_object_get_boolean(v);
+    if(n<0 || (max && (unsigned)n>max))return false;
+    *out=n;return true;
 }
 
 static bool control_busy(void)
@@ -62,17 +52,15 @@ static void control_broadcast(const a1_control_t *r)
     uint64_t failures=service_memory_failures();
     json_object *o=json_object_new_object();
     if (!o) return;
-    if (r->fields&A1_SET_ON) json_build_object_add(o,"on",json_object_new_boolean(r->on));
-    if (r->fields&A1_SET_SPEED) json_build_object_add(o,"speed",json_object_new_int(r->speed));
-    if (r->fields&A1_SET_MODE) json_build_object_add(o,"mode",json_object_new_string(r->mode==2?"auto":"manual"));
-    if (r->fields&A1_SET_ENABLED) json_build_object_add(o,"enabled",json_object_new_boolean(r->enabled));
-    if (r->fields&A1_SET_ALWAYS) json_build_object_add(o,"always_on",json_object_new_boolean(r->always_on));
-    if (r->fields&A1_SET_BRIGHTNESS) json_build_object_add(o,"brightness",json_object_new_int(r->brightness));
-    if (r->fields&A1_SET_COLOR) {
+    for(unsigned i=0;i<sizeof(control_fields)/sizeof(control_fields[0]);i++){
+        if(!(r->fields&control_fields[i].field))continue;
+        unsigned v=*((const uint8_t *)r+control_fields[i].offset);
+        json_build_object_add(o,control_fields[i].key,control_fields[i].max?json_object_new_int(v):json_object_new_boolean(v));
+    }
+    if(r->fields&A1_SET_MODE)json_build_object_add(o,"mode",json_object_new_string(r->mode==2?"auto":"manual"));
+    if(r->fields&A1_SET_COLOR){
         json_object *color=json_object_new_object();
-        json_build_object_add(color,"r",json_object_new_int(r->red));
-        json_build_object_add(color,"g",json_object_new_int(r->green));
-        json_build_object_add(color,"b",json_object_new_int(r->blue));
+        for(unsigned i=0;i<3;i++)json_build_object_add(color,color_keys[i],json_object_new_int(((const uint8_t *)r)[offsetof(a1_control_t,red)+i]));
         json_build_object_add(o,"color",color);
     }
     if(!service_caller_graph_failed(failures))
@@ -80,11 +68,17 @@ static void control_broadcast(const a1_control_t *r)
     json_object_put(o);
 }
 
+static bool panel_state(bool *on,uint8_t *speed)
+{
+    mico_rtos_lock_mutex(&a1_config_lock);
+    bool locked=a1_config->child_lock;
+    if(on)*on=a1_config->fan_on;if(speed)*speed=a1_config->speed;
+    mico_rtos_unlock_mutex(&a1_config_lock);return locked;
+}
 bool a1_control_apply(a1_control_t *r, bool button, bool broadcast)
 {
     if (!r || !r->fields || r->kind>A1_CONTROL_LOCK || control_busy()) return false;
-    a1_config_t before; a1_config_get(&before);
-    if (button && before.child_lock && r->kind!=A1_CONTROL_LOCK) return false;
+    if(button && r->kind!=A1_CONTROL_LOCK && panel_state(NULL,NULL))return false;
     int fan_mode=1;
     if (r->kind==A1_CONTROL_FAN) {
         if (r->speed>100 || r->mode>3 || r->on>2) return false;
@@ -95,36 +89,42 @@ bool a1_control_apply(a1_control_t *r, bool button, bool broadcast)
     }
     mico_rtos_lock_mutex(&a1_config_lock);
     mico_rtos_lock_mutex(&a1_lock);
-    a1_config_t c=*a1_config;
+    a1_config_t *c=a1_config;
+    /* All control fields occupy this byte range in the persisted ABI. Keep
+     * unrelated credentials out of the control snapshot and worker stack. */
+    uint8_t before[offsetof(a1_config_t,mqtt_topic_mode)-offsetof(a1_config_t,fan_on)];
+    memcpy(before,&c->fan_on,sizeof(before));
     bool accepted=!a1_state.ota_active && !a1_state.reboot_pending && !a1_state.wifi_trial_active &&
-        (!button || !c.child_lock || r->kind==A1_CONTROL_LOCK);
+        (!button || !c->child_lock || r->kind==A1_CONTROL_LOCK);
     if (accepted) {
         if (r->kind==A1_CONTROL_FAN) {
-            bool was_on=c.fan_on;
+            bool was_on=c->fan_on;
             if (r->fields&A1_SET_SPEED) {
-                c.fan_on=r->speed!=0;
-                if (r->speed && fan_mode==1) c.speed=r->speed;
+                c->fan_on=r->speed!=0;
+                if (r->speed && fan_mode==1) c->speed=r->speed;
             }
-            if (r->fields&A1_SET_ON) c.fan_on=r->on==2?!was_on:r->on;
-            r->on=c.fan_on;
-            if (!c.fan_on) a1_state.panel_feedback_until=0;
+            if (r->fields&A1_SET_ON) c->fan_on=r->on==2?!was_on:r->on;
+            r->on=c->fan_on;
+            if (!c->fan_on) a1_state.panel_feedback_until=0;
             if (r->fields&A1_SET_MODE) ++a1_state.mode_feedback_revision;
         } else if (r->kind==A1_CONTROL_LIGHT) {
-            if (r->fields&A1_SET_ENABLED) c.led_enabled=r->enabled==2?!c.led_enabled:r->enabled;
-            else if (r->fields&(A1_SET_COLOR|A1_SET_BRIGHTNESS)) c.led_enabled=1;
-            if (r->fields&A1_SET_ALWAYS) c.led_always_on=r->always_on==2?!c.led_always_on:r->always_on;
-            if (r->fields&A1_SET_BRIGHTNESS) c.brightness=r->brightness;
-            if (r->fields&A1_SET_COLOR) {c.red=r->red;c.green=r->green;c.blue=r->blue;}
-            r->enabled=c.led_enabled;r->always_on=c.led_always_on;
+            if (r->fields&A1_SET_ENABLED) c->led_enabled=r->enabled==2?!c->led_enabled:r->enabled;
+            else if (r->fields&(A1_SET_COLOR|A1_SET_BRIGHTNESS)) c->led_enabled=1;
+            if (r->fields&A1_SET_ALWAYS) c->led_always_on=r->always_on==2?!c->led_always_on:r->always_on;
+            if (r->fields&A1_SET_BRIGHTNESS) c->brightness=r->brightness;
+            if (r->fields&A1_SET_COLOR) {c->red=r->red;c->green=r->green;c->blue=r->blue;}
+            r->enabled=c->led_enabled;r->always_on=c->led_always_on;
         } else {
-            c.child_lock=r->enabled==2?!c.child_lock:r->enabled;
-            r->enabled=c.child_lock;
+            c->child_lock=r->enabled==2?!c->child_lock:r->enabled;
+            r->enabled=c->child_lock;
         }
-        apply(&c);
+        if(memcmp(before,&c->fan_on,sizeof(before)))a1_control_changed();
+        else a1_state.led_until=mico_rtos_get_time()+2000;
     }
+    bool fan_on=c->fan_on;
     mico_rtos_unlock_mutex(&a1_lock);
     mico_rtos_unlock_mutex(&a1_config_lock);
-    if (accepted && r->kind==A1_CONTROL_FAN) feature_manual_fan(c.fan_on);
+    if (accepted && r->kind==A1_CONTROL_FAN) feature_manual_fan(fan_on);
     if (accepted && broadcast) control_broadcast(r);
     return accepted;
 }
@@ -132,14 +132,20 @@ bool a1_control_apply(a1_control_t *r, bool button, bool broadcast)
 /* JSON adapters validate completely before entering the typed business path. */
 static bool control_parse(const char *kind, json_object *o, a1_control_t *r)
 {
-    if (!o || !json_object_is_type(o,json_type_object)) return false;
+    if (!json_object_is_type(o,json_type_object)) return false;
     memset(r,0,sizeof(*r));
-    bool found=false;
-#define BOOL_FIELD(key,member,flag) do {found=false;if(!get_bool(o,key,&r->member,&found))return false;if(found)r->fields|=flag;}while(0)
-#define BYTE_FIELD(key,member,flag,max) do {found=false;if(!get_byte(o,key,&r->member,max,&found))return false;if(found)r->fields|=flag;}while(0)
-    if (!strcmp(kind,"fan")) {
-        r->kind=A1_CONTROL_FAN;
-        BOOL_FIELD("on",on,A1_SET_ON);BYTE_FIELD("speed",speed,A1_SET_SPEED,100);
+    if(!strcmp(kind,"fan"))r->kind=A1_CONTROL_FAN;
+    else if(!strcmp(kind,"light"))r->kind=A1_CONTROL_LIGHT;
+    else if(!strcmp(kind,"child_lock"))r->kind=A1_CONTROL_LOCK;
+    else return false;
+    for(unsigned i=0;i<sizeof(control_fields)/sizeof(control_fields[0]);i++){
+        if(!(control_fields[i].kinds&(1<<r->kind)))continue;
+        json_object *v=json_object_object_get(o,control_fields[i].key);
+        if(!v)continue;
+        if(!control_value(v,(uint8_t *)r+control_fields[i].offset,control_fields[i].max))return false;
+        r->fields|=control_fields[i].field;
+    }
+    if(r->kind==A1_CONTROL_FAN){
         json_object *m=json_object_object_get(o,"mode");
         if(m){
             if(!json_object_is_type(m,json_type_string) || strlen(json_object_get_string(m))!=(size_t)json_object_get_string_len(m))return false;
@@ -147,30 +153,21 @@ static bool control_parse(const char *kind, json_object *o, a1_control_t *r)
             if(!strcmp(v,"auto"))r->mode=2;else if(!strcmp(v,"manual"))r->mode=1;else return false;
             r->fields|=A1_SET_MODE;
         }
-    } else if (!strcmp(kind,"light")) {
-        r->kind=A1_CONTROL_LIGHT;
-        BOOL_FIELD("enabled",enabled,A1_SET_ENABLED);BOOL_FIELD("always_on",always_on,A1_SET_ALWAYS);
-        BYTE_FIELD("brightness",brightness,A1_SET_BRIGHTNESS,255);
+    }else if(r->kind==A1_CONTROL_LIGHT){
         json_object *color=json_object_object_get(o,"color");
         if(color){
-            bool red=false,green=false,blue=false;
-            if(!json_object_is_type(color,json_type_object) ||
-               !get_byte(color,"r",&r->red,255,&red) || !get_byte(color,"g",&r->green,255,&green) ||
-               !get_byte(color,"b",&r->blue,255,&blue) || !red || !green || !blue)return false;
+            if(!json_object_is_type(color,json_type_object))return false;
+            for(unsigned i=0;i<3;i++)if(!control_value(json_object_object_get(color,color_keys[i]),(uint8_t *)r+offsetof(a1_control_t,red)+i,255))return false;
             r->fields|=A1_SET_COLOR;
         }
         json_object *state=json_object_object_get(o,"state");
         if(state){
             if(!json_object_is_type(state,json_type_string))return false;
-            const char *s=json_object_get_string(state);
-            if(!strcmp(s,"ON"))r->enabled=1;else if(!strcmp(s,"OFF"))r->enabled=0;else return false;
+            const char *v=json_object_get_string(state);
+            if(!strcmp(v,"ON"))r->enabled=1;else if(!strcmp(v,"OFF"))r->enabled=0;else return false;
             r->fields|=A1_SET_ENABLED;
         }
-    } else if (!strcmp(kind,"child_lock")) {
-        r->kind=A1_CONTROL_LOCK;BOOL_FIELD("enabled",enabled,A1_SET_ENABLED);
-    } else return false;
-#undef BOOL_FIELD
-#undef BYTE_FIELD
+    }
     return r->fields!=0;
 }
 bool a1_control_local(const char *kind, json_object *o)
@@ -185,11 +182,20 @@ bool a1_control_json(const char *kind, json_object *o)
     a1_control_t r;return control_parse(kind,o,&r) && a1_control_apply(&r,false,true);
 }
 
+/* Public HTTP brightness is a percentage; native MQTT remains 0..255. */
+bool a1_control_light_percent(json_object *o)
+{
+    a1_control_t r;
+    if(!control_parse("light",o,&r) || r.brightness>100)return false;
+    r.brightness=(r.brightness*255+50)/100;
+    return a1_control_apply(&r,false,true);
+}
+
 bool a1_panel_inspect(void)
 {
-    a1_config_t c;a1_config_get(&c);
-    if(c.child_lock || control_busy())return false;
-    if(!c.fan_on){
+    bool on;
+    if(panel_state(&on,NULL) || control_busy())return false;
+    if(!on){
         a1_control_t r={.kind=A1_CONTROL_FAN,.fields=A1_SET_ON,.on=1};
         if(!a1_control_apply(&r,true,true))return false;
     }
@@ -201,11 +207,11 @@ bool a1_panel_inspect(void)
 void a1_panel_event(bool toggle, int delta)
 {
     if((!toggle && !delta) || !service_control_begin())return;
-    a1_config_t c;a1_config_get(&c);
+    bool on;uint8_t current_speed;panel_state(&on,&current_speed);
     a1_control_t r={.kind=A1_CONTROL_FAN};
     if(delta){
         bool automatic=feature_fan_auto();
-        int speed=(automatic?feature_fan_limit():(c.fan_on?c.speed:0))+delta;
+        int speed=(automatic?feature_fan_limit():(on?current_speed:0))+delta;
         if(speed<(automatic?1:0))speed=automatic?1:0;if(speed>100)speed=100;
         r.fields|=A1_SET_SPEED;r.speed=speed;
     }
@@ -221,9 +227,8 @@ bool a1_automation_execute(const automation_action_t *a, bool button)
     if(!a || a->kind>AUTO_ACTION_MAX)return false;
     if(a->kind==AUTO_NONE)return true;
     if(!service_control_begin())return false;
-    a1_config_t c;a1_config_get(&c);
     bool ok=false;
-    if(button && c.child_lock && a->kind!=AUTO_CHILD_LOCK){service_event("info","button","child_locked");goto done;}
+    if(button && panel_state(NULL,NULL) && a->kind!=AUTO_CHILD_LOCK){service_event("info","button","child_locked");goto done;}
     if(control_busy())goto done;
     a1_control_t r={0};
     switch(a->kind){
@@ -240,7 +245,7 @@ bool a1_automation_execute(const automation_action_t *a, bool button)
     case AUTO_FAN_MODE:case AUTO_FAN_MODE_TOGGLE:
         r.kind=A1_CONTROL_FAN;r.fields=A1_SET_MODE;r.mode=a->kind==AUTO_FAN_MODE_TOGGLE?3:a->value?2:1;break;
     case AUTO_FAN_PANEL:ok=a1_panel_inspect();goto done;
-    case AUTO_LIGHT_EFFECT:ok=feature_light_select(a->value);goto done;
+    case AUTO_LIGHT_EFFECT:ok=feature_light_select(a->value,NULL)==200;goto done;
     case AUTO_FILTER_RESET:ok=!strcmp(a1_filter_change(0,true),"accepted");goto done;
     case AUTO_REBOOT:ok=a1_reboot_later(1500);goto done;
     default:goto done;
@@ -297,7 +302,7 @@ void a1_input_poll(void)
         bool busy=a1_state.ota_active || a1_state.reboot_pending || a1_state.wifi_trial_active;
         if(busy){input_head=input_count=0;}
         bool dropped=input_dropped!=0;input_dropped=0;
-        bool present=input_count!=0;a1_input_t e={0};
+        bool present=input_count!=0;a1_input_t e;
         if(present){e=inputs[input_head];input_head=(input_head+1)%A1_INPUT_CAPACITY;--input_count;}
         mico_rtos_unlock_mutex(&a1_lock);
         if(dropped)service_event("warn","button","busy");

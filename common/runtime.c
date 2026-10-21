@@ -790,6 +790,21 @@ json_object *feature_json(const char *d) {
   free(c);
   return o;
 }
+static json_object *feature_result(int code,unsigned revision,json_object *o) {
+  json_object *result;
+  result = json_object_new_object();
+  number(result, "code", code);
+  number(result, "revision", revision);
+  js(result, "message",
+     code == 200 ? "Saved"
+     : code == 409
+         ? "Revision conflict, binding required, or persistence unavailable"
+         : "Invalid configuration");
+  json_object *request = json_object_object_get(o, "request_id");
+  if (request)
+    json_build_object_add(result, "request_id", json_object_get(request));
+  return result;
+}
 int feature_set(const char *d, json_object *o, json_object **response) {
   int code = 200;
   if (!strcmp(d, "status")) {
@@ -887,17 +902,7 @@ int feature_set(const char *d, json_object *o, json_object **response) {
   else
     group_broadcast_config(d, o);
 end:
-  *response = json_object_new_object();
-  number(*response, "code", code);
-  number(*response, "revision", c->revision);
-  js(*response, "message",
-     code == 200 ? "Saved"
-     : code == 409
-         ? "Revision conflict, binding required, or persistence unavailable"
-         : "Invalid configuration");
-  json_object *request = json_object_object_get(o, "request_id");
-  if (request)
-    json_build_object_add(*response, "request_id", json_object_get(request));
+  *response=feature_result(code,c->revision,o);
   free(c);
   return code;
 }
@@ -1042,13 +1047,14 @@ int feature_fan_apply(unsigned mode, int speed) {
 bool feature_group_active(void) {
   lock();bool active=configuration.group[0] && configuration.member_count;unlock();return active;
 }
-bool feature_light_select(unsigned effect) {
-  if(effect>4 && effect!=255)return false;
-  feature_config_t *c=malloc(sizeof(*c));if(!c)return false;
+int feature_light_select(unsigned effect,json_object **response) {
+  if(effect>4 && effect!=255)return 400;
+  feature_config_t *c=malloc(sizeof(*c));if(!c)return 500;
   feature_config_get(c);
   c->light.effect=effect==255?(c->light.effect+1)%5:effect;
   unsigned selected=c->light.effect;
   bool ok=install_config(c);
+  unsigned revision=c->revision;
   free(c);
   /* Group serialization is optional delivery, after local persistence. */
   if(ok && feature_group_active()){
@@ -1057,7 +1063,9 @@ bool feature_light_select(unsigned effect) {
     if(o){number(o,"effect",selected);
       if(!service_caller_graph_failed(failures))group_broadcast_config("light",o);json_object_put(o);}
   }
-  return ok;
+  int code=ok?200:409;
+  if(response)*response=feature_result(code,revision,NULL);
+  return code;
 }
 unsigned feature_light_cap(unsigned brightness) {
   lock();

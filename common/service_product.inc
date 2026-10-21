@@ -136,27 +136,25 @@ static __attribute__((noinline)) json_object *service_product_inner(const char *
     else if(!strcmp(action,"light_effect.next") || !strcmp(action,"light_effect.select")){
         bool next=!strcmp(action,"light_effect.next");
         if(next?!svc_keys(p,""):(!svc_keys(p,"|effect|") || !svc_int(p,"effect",&number,0,4)))return NULL;
-        json_object *current=feature_json("light"),*update=json_object_new_object();
-        if(!current || !update){if(current)json_object_put(current);if(update)json_object_put(update);*code="busy";return NULL;}
-        if(next)number=(json_object_get_int(json_object_object_get(current,"effect"))+1)%5;
-        json_build_object_add(update,"effect",json_object_new_int(number));
-        json_build_object_add(update,"revision",json_object_get(json_object_object_get(current,"revision")));
-        json_object_put(current);json_object *out=NULL;int rc=feature_set("light",update,&out);json_object_put(update);
+        json_object *out=NULL;int rc=feature_light_select(next?255:number,&out);
         *code=rc<300?"accepted":rc==409?"busy":rc>=500?"storage_error":"invalid_params";return out;
     }
     else if(!strcmp(action,"light_always.set")){
         if(!svc_keys(p,"|enabled|") || !svc_bool(p,"enabled",&value))return NULL;
-        json_object *local=json_object_new_object();if(!local){*code="busy";return NULL;}
-        json_build_object_add(local,"always_on",json_object_new_boolean(value));ok=a1_control_json("light",local);json_object_put(local);
+        a1_control_t r={.kind=A1_CONTROL_LIGHT,.fields=A1_SET_ALWAYS,.always_on=value};
+        ok=a1_control_apply(&r,false,true);
     }
     else if(!strcmp(action,"fan.mode.set") || !strcmp(action,"fan.mode.toggle")) {
         bool toggle=!strcmp(action,"fan.mode.toggle");
         if(!svc_keys(p,toggle?"":"|mode|"))return NULL;
-        json_object *mode=json_object_object_get(p,"mode");
-        if(!toggle && (!mode || !json_object_is_type(mode,json_type_string)))return NULL;
-        json_object *q=json_object_new_object();
-        json_build_object_add(q,"mode",toggle?json_object_new_string(feature_fan_auto()?"manual":"auto"):json_object_get(mode));
-        ok=a1_control_json("fan",q);json_object_put(q);
+        if(toggle){
+            a1_control_t r={.kind=A1_CONTROL_FAN,.fields=A1_SET_MODE,.mode=3};
+            ok=a1_control_apply(&r,false,true);
+        }else{
+            json_object *mode=json_object_object_get(p,"mode");
+            if(!mode || !json_object_is_type(mode,json_type_string))return NULL;
+            ok=a1_control_json("fan",p);
+        }
     }
     else if(!strcmp(action,"fan.panel")){
         if(!svc_keys(p,""))return NULL;
@@ -166,9 +164,8 @@ static __attribute__((noinline)) json_object *service_product_inner(const char *
     else if(!strcmp(action,"child_lock.set")){if(!svc_keys(p,"|enabled|") || !svc_bool(p,"enabled",&value))return NULL;ok=a1_control_json("child_lock",p);}
     else if(!strcmp(action,"light.set")){
         if(!svc_keys(p,"|enabled||always_on||brightness||color|"))return NULL;
-        const char *wire=json_object_to_json_string(p);json_object *copy=wire?service_parse(wire,strlen(wire)):NULL;if(!copy){*code="busy";return NULL;}
-        if(json_object_object_get(p,"brightness")){if(!svc_int(p,"brightness",&number,0,100)){json_object_put(copy);return NULL;}json_build_object_add(copy,"brightness",json_object_new_int((number*255+50)/100));}
-        ok=a1_control_json("light",copy);json_object_put(copy);
+        if(json_object_object_get(p,"brightness") && !svc_int(p,"brightness",&number,0,100))return NULL;
+        ok=a1_control_light_percent(p);
     }
 #else
     else if(!strcmp(action,"display.set")){if(!svc_keys(p,"|brightness|") || !svc_int(p,"brightness",&number,0,100) || number%25)return NULL;ok=m1_set_brightness(number/25);}

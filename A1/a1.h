@@ -80,6 +80,7 @@ typedef struct {
     uint8_t kind, on, speed, mode, enabled, always_on, brightness, red, green, blue;
 } a1_control_t;
 bool a1_control_apply(a1_control_t *, bool button, bool broadcast);
+bool a1_control_light_percent(json_object *);
 enum { A1_INPUT_BUTTON, A1_INPUT_SLIDER, A1_INPUT_NETWORK_RESET, A1_INPUT_FULL_RESET };
 bool a1_input_push(unsigned kind, unsigned key, unsigned clicks, unsigned seconds, int delta);
 void a1_input_poll(void);

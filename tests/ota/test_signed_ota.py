@@ -14,6 +14,7 @@ package = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(package)
 
 class SignedOTA(unittest.TestCase):
+    crypto_source=ROOT/'common/ota/crypto.c'
     @classmethod
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
@@ -48,7 +49,7 @@ void counter_decimal(uint64_t value,char *out){ota_counter_decimal(value,out);}
             extra=['-I'+sha_dir,str(Path(sha_dir)/'sha224-256.c')]
         subprocess.run(['cc', '-shared', '-fPIC', '-O2', '-Wno-deprecated-declarations',
                         '-I'+str(d), '-I'+str(ROOT/'common/ota'),
-                        str(d/'signed_ota.c'), str(ROOT/'common/ota/crypto.c'),
+                        str(d/'signed_ota.c'), str(cls.crypto_source),
                         str(d/'harness.c'), *extra, '-lcrypto', '-o', str(d/'test.so')], check=True)
         cls.lib = ctypes.CDLL(str(d/'test.so'))
         cls.lib.feed.argtypes = [ctypes.c_void_p, ctypes.c_uint]
@@ -117,6 +118,10 @@ void counter_decimal(uint64_t value,char *out){ota_counter_decimal(value,out);}
     def test_reinstall_and_downgrade_allowed(self):
         for version in ['2.3.5', '2.3.5', '1.0.0']:
             self.assertTrue(self.run_package(package.sign(self.image, 'tc1', version, 'a'*40, self.key)))
+
+class A1CompactSignedOTA(SignedOTA):
+    # Build the actual product wrapper, including its compact arithmetic setting.
+    crypto_source=ROOT/'A1/ota_crypto.c'
 
 if __name__ == '__main__':
     unittest.main()

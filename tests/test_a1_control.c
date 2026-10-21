@@ -28,12 +28,18 @@ bool feature_fan_auto(void){return automatic;}
 unsigned feature_fan_limit(void){return limit;}
 int feature_fan_apply(unsigned mode,int speed){assert(service_locked);if(mode)automatic=mode==3?!automatic:mode==2;if(automatic && speed>0)limit=speed;return automatic?2:1;}
 void feature_manual_fan(bool on){(void)on;}
-bool feature_light_select(unsigned v){effect=v==255?(effect+1)%5:v;return true;}
+int feature_light_select(unsigned v,json_object **response){assert(!response);effect=v==255?(effect+1)%5:v;return 200;}
 const char *a1_filter_change(unsigned h,bool reset){(void)h;assert(reset);++actions;return "accepted";}
 bool a1_reboot_later(uint32_t n){(void)n;++actions;return true;}
 bool a1_reset(bool full){++resets;reset_full+=full;return true;}
 void automation_load(automation_config_t *out){*out=automations;}
 bool automation_save(const automation_config_t *c){automations=*c;return true;}
+json_object *service_parse(const void *data,size_t n){
+    if(!data || !n || n>8192 || memchr(data,0,n))return NULL;
+    for(size_t i=0;i+6<=n;i++)if(!memcmp((const char *)data+i,"\\u0000",6))return NULL;
+    struct json_tokener *t=json_tokener_new();assert(t);
+    json_object *o=json_tokener_parse_ex(t,data,n);json_tokener_free(t);return o;
+}
 static json_object *denied_object(void){++json_attempts;return NULL;}
 #define json_object_new_object denied_object
 #include "../A1/control.c"
@@ -41,6 +47,11 @@ static json_object *denied_object(void){++json_attempts;return NULL;}
 #undef json_object_new_object
 
 static void press(unsigned clicks){assert(a1_input_push(A1_INPUT_BUTTON,0,clicks,0,0));a1_input_poll();}
+static bool native_control(const char *kind,const char *text)
+{
+    json_object *o=a1_json_parse(text,strlen(text));if(!o)return false;
+    bool ok=a1_control_local(kind,o);json_object_put(o);return ok;
+}
 int main(void)
 {
     automation_defaults(&automations);
@@ -94,6 +105,25 @@ int main(void)
     json_object *native=json_tokener_parse("{\"speed\":33}");assert(native);
     assert(a1_control_local("fan",native));json_object_put(native);
     assert(config.fan_on && config.speed==33);
+    assert(json_attempts==0 && !service_locked);
+    /* Transport schema rejects wrong types/ranges before changing state. */
+    a1_config_t saved=config;
+    assert(!native_control("fan","{\"on\":1}"));
+    assert(!native_control("fan","{\"speed\":101}"));
+    assert(!native_control("fan","{\"speed\":-1}"));
+    assert(!native_control("fan","{\"speed\":1.5}"));
+    assert(!native_control("fan","{\"mode\":\"auto\\u0000manual\"}"));
+    assert(!native_control("light","{\"enabled\":1}"));
+    assert(!native_control("light","{\"always_on\":\"true\"}"));
+    assert(!native_control("light","{\"brightness\":256}"));
+    assert(!native_control("light","{\"color\":{\"r\":1,\"g\":2}}"));
+    assert(!native_control("light","{\"color\":{\"r\":true,\"g\":2,\"b\":3}}"));
+    assert(!native_control("child_lock","{\"enabled\":2}"));
+    assert(!memcmp(&saved,&config,sizeof(saved)));
+    assert(native_control("light","{\"enabled\":false,\"always_on\":true,\"brightness\":255,\"color\":{\"r\":0,\"g\":128,\"b\":255}}"));
+    assert(!config.led_enabled && config.led_always_on && config.brightness==255 && config.red==0 && config.green==128 && config.blue==255);
+    assert(native_control("child_lock","{\"enabled\":true}"));assert(config.child_lock);
+    assert(native_control("child_lock","{\"enabled\":false}"));assert(!config.child_lock);
     assert(json_attempts==0 && !service_locked);
     puts("PASS A1 typed controls without JSON: gestures, toggles, lock, bounded FIFO, overflow, expiry, busy, reset, wrap");
     return 0;
