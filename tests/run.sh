@@ -8,7 +8,7 @@ python3 -m unittest tests.test_package_stale_signature
 python3 -m unittest tests.test_readonly_stress
 python3 -m unittest tests.test_http_overload
 python3 -m unittest tests.test_http_tcp_integration
-python3 -m unittest tests.test_memory_admission tests.test_http_browser_queue tests.test_tc1_http_recovery tests.test_tc1_http_trace tests.test_tc1_http
+python3 -m unittest tests.test_memory_admission tests.test_http_browser_queue tests.test_tc1_http_recovery tests.test_tc1_http_trace tests.test_tc1_http_parser tests.test_tc1_http
 python3 -m unittest tests.test_a1_provision_memory
 python3 -m unittest tests.test_a1_web_assets
 python3 -m unittest tests.test_m1_boot_config

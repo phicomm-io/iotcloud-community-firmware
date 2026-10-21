@@ -1,0 +1,83 @@
+--- a/libraries/daemons/http_server/http_parse.c
++++ b/libraries/daemons/http_server/http_parse.c
+@@ -82,6 +82,8 @@
+   * are either of the form "product/version" or just "product".
+   */
+   
++  if (!hdrline) return NULL;
++
+   /* chomp any whitespace and find the beginning of the product */
+   while (*token == ' ') {
+     if (*token == 0)
+@@ -171,7 +173,9 @@
+     if (comment && strncmp(comment, MOZ_COMPATIBLE, sizeof(MOZ_COMPATIBLE) - 1) == 0) {
+       /* If this is a "mozilla compatible" browser, parse it
+       * and be done. */
+-      token = strstr(comment, " ") + 1;
++      token = strchr(comment, ' ');
++      if (!token) goto done;
++      token++;
+       token = __httpd_parse_useragent(token, &product,
+                                       &version, &comment);
+       /* Sometimes when the product and version are found
+@@ -180,11 +184,12 @@
+       * next product to our token parser.  If it is numeric,
+       * assume it's the version.
+       */
++      if (!product) goto done;
+       if (product && !version && token) {
+         token = __httpd_parse_useragent(token, &version,
+                                         &dummy,
+                                         &comment);
+-        if (*version < '0' || *version > '9')
++        if (!version || *version < '0' || *version > '9')
+           version = 0;
+       }
+       
+@@ -234,7 +239,7 @@
+                                                               &version,
+                                                               &dummy,
+                                                               &comment);
+-                                    if (*version < '0' || *version > '9')
++                                    if (!version || *version < '0' || *version > '9')
+                                       version = 0;
+                                   }
+                                   goto done;
+@@ -251,14 +256,14 @@
+                */
+                hdrline = __httpd_parse_useragent(hdrline, &version,
+                                                  &dummy, &comment);
+-               if (*version < '0' || *version > '9')
++               if (!version || *version < '0' || *version > '9')
+                  version = 0;
+              }
+   
+ done:
+   if (product) {
+     len = strlen(product);
+-    if (product[len - 1] == ';')
++    if (len && product[len - 1] == ';')
+       product[len - 1] = 0;
+     strncpy(agent->product, product, HTTPD_MAX_VAL_LENGTH);
+     
+@@ -278,7 +283,7 @@
+   
+   if (version) {
+     len = strlen(version);
+-    if (version[len - 1] == ';')
++    if (len && version[len - 1] == ';')
+       version[len - 1] = 0;
+     /* Truncate version strings with unexpected chars */
+     dummy = strstr(version, ",");
+@@ -318,8 +333,9 @@
+     req_p->remaining_bytes = req_p->body_nbytes;
+   } else if (strncasecmp(data_p, http_user_agent, sizeof(http_user_agent) - 1) == 0) {
+     /* chomp the : and ' ' and pass it to the internal parser */
+-    httpd_parse_useragent(data_p + sizeof(http_user_agent) + 1,
+-                          &req_p->agent);
++    char *value = data_p + sizeof(http_user_agent) - 1;
++    while (*value == ' ' || *value == '\t') value++;
++    httpd_parse_useragent(value, &req_p->agent);
+   } else if (strncasecmp(data_p, http_content_type, sizeof(http_content_type) - 1) == 0) {
+     const char *value = data_p + sizeof(http_content_type) - 1;
+     while (*value == ' ' || *value == '\t') value++;
