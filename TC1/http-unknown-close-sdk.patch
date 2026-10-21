@@ -1,0 +1,16 @@
+--- a/libraries/daemons/http_server/httpd_handle.c
++++ b/libraries/daemons/http_server/httpd_handle.c
+@@ -418,11 +418,8 @@
+ 		 * all the pending data in the socket. We let the client
+ 		 * close the socket for us, if necessary.
+ 		 */
+-		httpd_purge_socket_data(&httpd_req, msg_in,
+-				sizeof(msg_in), conn);
+-		httpd_set_error("File %s not_found", httpd_req.filename);
+-		httpd_send_error(conn, HTTP_404);
+-		return kNoErr;
++        httpd_send_error(conn, HTTP_404);
++        return HTTPD_DONE;
+ 	} else {
+ 		httpd_d("WSGI handler failed.");
+         /* Do not parse an unread upload body as another HTTP request. */

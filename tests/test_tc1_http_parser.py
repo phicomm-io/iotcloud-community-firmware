@@ -32,6 +32,34 @@ class Parser(unittest.TestCase):
  def source(self,name):return admission.MemoryAdmission().sdk_http_source(name)
 
  def run_c(self,s):admission.MemoryAdmission().run_c(s)
+ def test_unknown_resource_closes_without_reading_body(self):
+  code=function(self.source('httpd_handle.c'),'int httpd_handle_message(')
+  self.run_c(r'''
+#include <assert.h>
+#include <string.h>
+#include <stdio.h>
+#define kNoErr 0
+#define kInProgressErr 12
+#define HTTPD_DONE 1
+#define WM_E_HTTPD_NOTSUPP 13
+#define WM_E_HTTPD_NO_HANDLER 14
+#define HTTP_505 505
+#define HTTP_500 500
+#define HTTP_404 404
+#define HTTPD_HDR_ADD_CONN_CLOSE 1
+#define httpd_d(...) ((void)0)
+#define httpd_set_error(...) ((void)0)
+struct wsgi {unsigned hdr_fields;};
+typedef struct {int sock;char filename[32];struct wsgi *wsgi;} httpd_request_t;
+static httpd_request_t httpd_req;static unsigned replies;
+static int htsys_getln_soc(int fd,char *p,int n){assert(fd==3&&p&&n==128);return 24;}
+static int httpd_parse_hdr_main(char *p,httpd_request_t *r){(void)p;strcpy(r->filename,"/missing");return 0;}
+static int httpd_wsgi(httpd_request_t *r){assert(r==&httpd_req);return -WM_E_HTTPD_NO_HANDLER;}
+static int httpd_send_error(int fd,int code){assert(fd==3&&code==HTTP_404);replies++;return 0;}
+'''+code+r'''
+int main(void){assert(httpd_handle_message(3)==HTTPD_DONE&&replies==1);
+ puts("TC1 unknown resource: closes after 404 without header/body drain: OK");}
+''')
 
  def test_useragent_empty_compatible_and_random_inputs(self):
   source=self.source('http_parse.c')
