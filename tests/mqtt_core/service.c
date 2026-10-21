@@ -9,6 +9,8 @@
 #include "json_heap.h"
 static unsigned mutations;
 static bool rename_target;
+static bool large_receipt;
+static unsigned large_receipt_writes;
 static unsigned status_mode,status_builds;
 json_object *automation_command(const char*a,json_object*p,const char**c,bool*h){(void)a;(void)p;(void)c;*h=false;return NULL;}
 json_object *service_product_capabilities(void){return json_object_new_object();}
@@ -16,6 +18,10 @@ json_object *service_product(const char*a,json_object*p,const char**code){
  (void)p;*code="ok";
  if(!strcmp(a,"fan.set")){mutations++;if(rename_target)strcpy(account.base,"renamed");}
  json_object *out=json_object_new_object();
+ if(large_receipt && !strcmp(a,"fan.set")){
+  char padding[1025];memset(padding,'x',sizeof(padding)-1);padding[sizeof(padding)-1]=0;
+  json_object_object_add(out,"padding",json_object_new_string(padding));
+ }
  if(!strcmp(a,"status.get")){
   status_builds++;
   if(status_mode==1)*code="busy";
@@ -36,8 +42,19 @@ static void clear_receipts(void){
  for(unsigned i=0;i<8;i++){json_heap_free(receipts[i].response);memset(&receipts[i],0,sizeof(receipts[i]));}
  receipt_next=0;
 }
+static int service_write_packet(Network*n,unsigned char*p,int count,int timeout){
+ if(large_receipt && (p[0]>>4)==PUBLISH){
+  const ph_mqtt_core *core=ph_mqtt_debug_core();
+  /* This is the actual SDK buffer while a real command receipt is sent. */
+  assert(core->dispatch_depth==1 && core->protocol_depth==1);
+  assert(count>512 && client.buf_size>512 && client.buf_size>=(size_t)count);
+  assert(((allocation*)client.buf-1)->entry.size==client.buf_size);
+  large_receipt_writes++;
+ }
+ return write_packet(n,p,count,timeout);
+}
 static void start(void){
- rx_at=rx_size=tx_size=0;network.mqttread=read_packet;network.mqttwrite=write_packet;
+ rx_at=rx_size=tx_size=0;network.mqttread=read_packet;network.mqttwrite=service_write_packet;
  assert(ph_mqtt_client_init(&client,&network,50)==0);client.isconnected=1;
  client.keepAliveInterval=30;countdown(&client.ping_timer,30);
  snprintf(injected_topic,sizeof(injected_topic),"%s/command",account.base);
@@ -52,7 +69,22 @@ static void finish(void){
  ph_mqtt_diagnostics d;ph_mqtt_snapshot(&d);
  assert(!d.bytes&&!d.credit&&!d.inflight[0]&&!d.inflight[1]&&!d.queued[0]&&!d.queued[1]);
 }
-#ifdef PREFLIGHT_FIXTURE
+#ifdef LARGE_RECEIPT_FIXTURE
+int main(void){
+ service_init();assert(mqtt_account_init(&account,1,"a1","test","aabbccddeeff"));
+ assert(ph_mqtt_owner_init(&account,8192,&thread,accept));
+ heap_capacity=64000;start();assert(client.buf_size==512);large_receipt=true;
+ const char *request="{\"action\":\"fan.set\",\"request_id\":\"large-result\",\"params\":{}}";
+ assert(command(request)==0);
+ assert(mutations==1 && large_receipt_writes==1 && strlen(last_body)>1024);
+ assert(strstr(last_body,"\"padding\"") && strstr(last_body,"\"ok\""));
+ assert(client.buf_size==512 && ((allocation*)client.buf-1)->entry.size==512);
+ assert(!ph_mqtt_receipt_pending() && !ph_mqtt_debug_core()->credit);
+ assert(command(request)==0 && mutations==1 && large_receipt_writes==2);
+ finish();clear_receipts();assert(!native_live&&!charged_live);
+ puts("real service >1KiB receipt: dispatch TX growth, PUBACK, true capacity, shrink and replay PASS");
+}
+#elif defined(PREFLIGHT_FIXTURE)
 #include "preflight_service.in"
 #elif defined(A1_BUILDERS_FIXTURE)
 #include "a1_builders.inc"

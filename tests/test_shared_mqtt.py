@@ -183,6 +183,18 @@ int main(void){
                 [ROOT/'tests/mqtt_core/stubs',protocol,protocol/'mico',protocol/'MQTTPacket'], ['-pthread'])
     def test_actual_service(self):
         self.check_service_fixture()
+    def test_large_service_receipt_during_dispatch(self):
+        self.check_service_fixture(extra_defines=['-DLARGE_RECEIPT_FIXTURE'])
+        # The invalid callback-only gate rejects this legitimate receipt growth.
+        source=(ROOT/'common/mqtt/client.c').read_text()
+        original='c == port.client && port.core.protocol_depth &&\n        permit(NULL, bytes)'
+        blocked=source.replace(original,
+            'c == port.client && port.core.protocol_depth &&\n        !port.core.dispatch_depth && permit(NULL, bytes)')
+        self.assertNotEqual(source,blocked)
+        with tempfile.TemporaryDirectory() as directory:
+            client=Path(directory)/'client.c';client.write_text(blocked)
+            with self.assertRaises(subprocess.CalledProcessError):
+                self.check_service_fixture(extra_defines=['-DLARGE_RECEIPT_FIXTURE'],client_source=client)
     def test_tc1_application_conversion_sources(self):
         from tests.test_http_json_budget import function
         source=(ROOT/'TC1/mqtt_server/user_mqtt_client.c').read_text()
@@ -252,7 +264,7 @@ int main(void){
             with self.assertRaises(subprocess.CalledProcessError):
                 self.check_service_fixture([ROOT,Path(temp)], ['-DA1_BUILDERS_FIXTURE'])
 
-    def check_service_fixture(self, extra_includes=(), extra_defines=()):
+    def check_service_fixture(self, extra_includes=(), extra_defines=(), client_source=None):
         sdk = ROOT/'build/a1-sdk/mico-os'
         protocol=sdk/'libraries/protocols/mqtt'
         with self.protocol('A1') as protocol, tempfile.TemporaryDirectory() as directory:
@@ -260,7 +272,7 @@ int main(void){
             for p in json.glob('*.c'): p.write_text(p.read_text().replace('%ld','%d'))
             bear=ROOT/'build/ota-tls/bearssl-0.6'
             self.compile_run([ROOT/'tests/mqtt_core/service.c',ROOT/'common/mqtt/core.c',
-                ROOT/'common/mqtt/client.c',ROOT/'common/mqtt/session.c',ROOT/'common/mqtt/service.c',
+                client_source or ROOT/'common/mqtt/client.c',ROOT/'common/mqtt/session.c',ROOT/'common/mqtt/service.c',
                 ROOT/'common/json_owned.c', protocol/'MQTTClient.c',
                 *sorted((protocol/'MQTTPacket').glob('*.c')), *json.glob('*.c'),
                 *[bear/'src'/p for p in ('hash/sha2small.c','codec/dec32be.c','codec/enc32be.c','codec/enc64be.c')]],

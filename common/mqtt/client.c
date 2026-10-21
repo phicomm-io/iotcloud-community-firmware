@@ -119,10 +119,11 @@ static bool permit(void *p, size_t bytes) {
 }
 
 /* Paho replaces buffers with malloc/copy/free. The old allocation is still
- * live during this check, so admit the entire new block, never just a delta. */
+ * live during this check, so admit the entire new block, never just a delta.
+ * Deferred command dispatch may legitimately publish its completed receipt. */
 int mqtt_buffer_allocation_permit(Client *c, size_t bytes) {
     return ph_mqtt_owner() && c == port.client && port.core.protocol_depth &&
-        !port.core.dispatch_depth && permit(NULL, bytes);
+        permit(NULL, bytes);
 }
 
 static void *allocate(void *p, size_t n) {
