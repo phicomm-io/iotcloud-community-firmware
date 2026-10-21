@@ -45,7 +45,8 @@ def check(directory, header):
     if directory.name == 'A1':
         virtual = paths['MQTT nested virtual command']
         paths['MQTT nested telemetry command'] = (virtual[0], virtual[1],
-            ['direct_json' if n == 'discovery_virtual' else n for n in virtual[2]])
+            [n for n in virtual[2] if n not in ('discovery_virtual','json_owned_publish')] +
+            [n for n in ('virtual_service','direct_json_claimed','direct_leaf') if n in frames])
     status = 'a1_status_json' if directory.name == 'A1' else 'm1_status_json'
     paths['MQTT result nested status'] = (mqtt_budget, 4096, ['mqtt_worker',
         'service_mqtt_flush', 'publish',

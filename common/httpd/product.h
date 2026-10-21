@@ -9,7 +9,7 @@
 #endif
 /* One business lease, never one allocation per pending connection. */
 typedef struct {
-    unsigned claim;
+    unsigned claim, json_claim;
     bool waiting, ota;
     char *body;
     size_t used, capacity;

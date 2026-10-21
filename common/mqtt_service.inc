@@ -16,9 +16,12 @@ static int service_mqtt_send(int (*sender)(const char *,const char *,bool),const
  if(!wire)return MQTT_FAILURE;
  int rc=sender(topic,wire->buf,retain);printbuf_free(wire);return rc;
 }
-static int service_mqtt_publish(int (*sender)(const char *,const char *,bool),const mqtt_account_t *scope,const char *leaf,json_object *o,bool retain){
+__attribute__((noinline))
+static int service_mqtt_publish(int (*sender)(const char *,const char *,bool),const mqtt_account_t *scope,const char *leaf,json_object *o,bool retain,unsigned claim,unsigned json_claim){
  /* Telemetry allocation failure must not tear down an otherwise live socket. */
- struct printbuf *wire=service_mqtt_wire(o);if(!wire)return MQTT_SUCCESS;
+ struct printbuf *wire=service_mqtt_wire(o);
+ service_json_release(json_claim);service_memory_release(claim);
+ if(!wire)return MQTT_SUCCESS;
  char topic[MQTT_TOPIC_MAX];mqtt_leaf(scope,leaf,topic,sizeof(topic));
  int rc=sender(topic,wire->buf,retain);printbuf_free(wire);return rc;
 }
@@ -38,6 +41,7 @@ static service_mqtt_reply_t service_mqtt_emergency[4];
 static unsigned service_mqtt_emergency_used;
 static service_mqtt_reply_t *service_mqtt_head,*service_mqtt_tail;
 static unsigned service_mqtt_reply_count;
+static bool service_mqtt_capabilities_pending;
 static void service_mqtt_entry_free(service_mqtt_reply_t *entry){
  if(entry->emergency)service_mqtt_emergency_used&=~(1u<<(entry->emergency-1));
  else json_heap_free(entry);
@@ -77,18 +81,22 @@ static int service_mqtt_input(int (*sender)(const char *,const char *,bool),cons
  (void)sender;
  if(ota_job_active() && length>1024)return MQTT_SUCCESS;
  if(retained)return MQTT_SUCCESS;
- service_mqtt_reply_t *entry=json_heap_malloc(sizeof(*entry));
+ /* Do not let even reply metadata allocations poison a concurrent builder's
+  * conservative global failure snapshot. Busy replies use fixed emergency IDs. */
+ unsigned json_claim=service_json_claim();
+ service_mqtt_reply_t *entry=json_claim?json_heap_malloc(sizeof(*entry)):NULL;
  bool emergency=!entry;
  if(!entry){
   for(unsigned i=0;i<4;i++)if(!(service_mqtt_emergency_used&(1u<<i))){
    entry=&service_mqtt_emergency[i];memset(entry,0,sizeof(*entry));
    entry->emergency=i+1;service_mqtt_emergency_used|=1u<<i;break;
   }
-  if(!entry){service_memory_mqtt(service_mqtt_reply_count,true,0);return MQTT_FAILURE;}
+  if(!entry){service_json_release(json_claim);service_memory_mqtt(service_mqtt_reply_count,true,0);return MQTT_FAILURE;}
  }else memset(entry,0,sizeof(*entry));
  /* Own the destination before a command can change account configuration. */
  mqtt_target_set(&entry->target,scope);entry->queued_at=mico_rtos_get_time();
- unsigned claim=emergency?0:service_memory_claim(length);
+ if(emergency){service_json_release(json_claim);json_claim=0;}
+ unsigned claim=json_claim?service_memory_claim(length):0;
  struct printbuf *wire=NULL;
  if(claim){
   uint64_t failures=service_memory_failures();
@@ -96,6 +104,7 @@ static int service_mqtt_input(int (*sender)(const char *,const char *,bool),cons
   json_object *r=service_memory_failures()==failures?service_command(q):NULL;if(q)json_object_put(q);
   wire=service_mqtt_wire(r);service_memory_release(claim);
  }
+ service_json_release(json_claim);
  entry->busy=!wire;
  if(wire)entry->body.wire=wire;else service_busy_id(payload,length,entry->body.id);
  if(service_mqtt_tail)service_mqtt_tail->next=entry;else service_mqtt_head=entry;
@@ -103,16 +112,34 @@ static int service_mqtt_input(int (*sender)(const char *,const char *,bool),cons
  service_memory_mqtt(service_mqtt_reply_count,false,0);
  return MQTT_SUCCESS;
 }
+/* A busy graph builder must not permanently skip initial capabilities. The
+ * owner retries on its next snapshot; no lock/lease crosses the sender. */
+__attribute__((noinline))
+static int service_mqtt_try_capabilities(int (*sender)(const char *,const char *,bool),const mqtt_account_t *scope){
+ unsigned token=service_json_claim();if(!token)return MQTT_SUCCESS;
+ unsigned claim=service_memory_claim(0);if(!claim){service_json_release(token);return MQTT_SUCCESS;}
+ struct printbuf *wire=service_mqtt_wire(service_product_capabilities());
+ service_json_release(token);service_memory_release(claim);
+ if(!wire)return MQTT_SUCCESS;
+ char topic[MQTT_TOPIC_MAX];mqtt_leaf(scope,"capabilities",topic,sizeof(topic));
+ service_mqtt_capabilities_pending=false;
+ int rc=sender(topic,wire->buf,true);printbuf_free(wire);return rc;
+}
+__attribute__((noinline))
 static int service_mqtt_snapshot(int (*sender)(const char *,const char *,bool),const mqtt_account_t *scope){
  int rc=service_mqtt_flush(sender);if(rc!=MQTT_SUCCESS)return rc;
  /* Callbacks during flush may have queued fresh results. Defer telemetry. */
  if(service_mqtt_reply_count)return MQTT_SUCCESS;
- unsigned claim=service_memory_claim(0);if(!claim)return MQTT_SUCCESS;
- json_object *r=service_query("status.get");if(!r){service_memory_release(claim);return MQTT_SUCCESS;}json_object *data=json_object_object_get(r,"data");if(data)json_object_get(data);json_object_put(r);
- rc=service_mqtt_publish(sender,scope,"state",data,true);service_memory_release(claim);return rc;
+ if(service_mqtt_capabilities_pending){
+  rc=service_mqtt_try_capabilities(sender,scope);if(rc!=MQTT_SUCCESS)return rc;
+  if(service_mqtt_capabilities_pending || service_mqtt_reply_count)return MQTT_SUCCESS;
+ }
+ unsigned json_claim=service_json_claim();if(!json_claim)return MQTT_SUCCESS;
+ unsigned claim=service_memory_claim(0);if(!claim){service_json_release(json_claim);return MQTT_SUCCESS;}
+ json_object *r=service_query("status.get");if(!r){service_memory_release(claim);service_json_release(json_claim);return MQTT_SUCCESS;}json_object *data=json_object_object_get(r,"data");if(data)json_object_get(data);json_object_put(r);
+ return service_mqtt_publish(sender,scope,"state",data,true,claim,json_claim);
 }
 static int service_mqtt_capabilities(int (*sender)(const char *,const char *,bool),const mqtt_account_t *scope){
- service_mqtt_clear();unsigned claim=service_memory_claim(0);if(!claim)return MQTT_SUCCESS;
- int rc=service_mqtt_publish(sender,scope,"capabilities",service_product_capabilities(),true);
- service_memory_release(claim);return rc;
+ service_mqtt_clear();service_mqtt_capabilities_pending=true;
+ return service_mqtt_try_capabilities(sender,scope);
 }

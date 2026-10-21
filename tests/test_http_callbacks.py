@@ -84,14 +84,14 @@ static ph_http_action start_auth(const char*method,const char*path,unsigned leng
  if(auth)strncpy(r.authorization,auth,sizeof(r.authorization)-1);memset(&x,0,sizeof(x));x.request=&r;return app.begin(&x);
 }
 static ph_http_action start(const char*method,const char*path,unsigned length){return start_auth(method,path,length,"Basic YWRtaW46cHc=");}
-static void finish(bool sent){app.release(&x,sent);assert(app.admission()==(job?2:PH_HTTP_CLIENT_SLOTS));assert(!claims&&!waiting);json_heap_stats_t stats;json_heap_snapshot(&stats);assert(!stats.live_blocks);}
-static void assert_clean(void){json_heap_stats_t stats;assert(!claims&&!waiting);json_heap_snapshot(&stats);assert(!stats.live_blocks);}
+static void finish(bool sent){app.release(&x,sent);assert(app.admission()==(job?2:PH_HTTP_CLIENT_SLOTS));assert(!claims&&!waiting&&!json_token);json_heap_stats_t stats;json_heap_snapshot(&stats);assert(!stats.live_blocks);}
+static void assert_clean(void){json_heap_stats_t stats;assert(!claims&&!waiting&&!json_token);json_heap_snapshot(&stats);assert(!stats.live_blocks);}
 static void assert_json_response(unsigned status,const char*needle){if(x.response.status!=status)fprintf(stderr,"response status %u expected %u body=%.*s\n",x.response.status,status,(int)x.response.length,(const char*)(x.response.body?x.response.body:(const void*)""));assert(x.response.status==status);assert(x.response.body&&x.response.length);assert(strstr(x.response.body,needle));}
 static void execute_wire(const char*wire){
  ph_http_server server;wire_input=wire;wire_position=wire_size=0;wire_accepted=wire_closed=false;memset(wire_output,0,sizeof(wire_output));
  assert(ph_http_server_open(&server,&wire_io,&app,3));
  for(unsigned n=0;n<2000&&!wire_closed;n++)ph_http_server_step(&server);
- assert(wire_closed);wire_server_running=server.running;ph_http_server_close(&server);assert(!claims&&!waiting);
+ assert(wire_closed);wire_server_running=server.running;ph_http_server_close(&server);assert(!claims&&!waiting&&!json_token);
 }
 int main(int argc,char**argv){
  assert(argc==2);char*end=NULL;unsigned long rounds=strtoul(argv[1],&end,10);assert(end&&*end==0&&rounds>=1&&rounds<=100000);
@@ -105,10 +105,14 @@ int main(int argc,char**argv){
  memory.free_memory=memory.allocted_memory=memory.num_of_chunks=INT32_MAX;maximum=true;assert(start("GET","/api/v1/memory",0)==PH_HTTP_REPLY);assert(x.response.status==200&&x.response.length<sizeof(product.scalar));printf("maximum memory JSON: %zu bytes\n",x.response.length);json_object *diagnostic=json_tokener_parse(x.response.body);assert(diagnostic);json_object_put(diagnostic);finish(true);maximum=false;
  for(unsigned i=0;i<6;i++){const char *paths[]={"/api/v1/info","/api/v1/status","/api/v1/capabilities","/api/v1/config","/api/v1/logs","/api/v1/schedules"};assert(start("GET",paths[i],0)==PH_HTTP_REPLY);assert(x.response.status==200);finish(true);}
  assert(start("GET","/api/v1/status",0)==PH_HTTP_REPLY);assert(x.response.status==200&&claims&&product.wire);assert(strstr(x.response.body,"status.get"));finish(true);
+ unsigned other=service_json_claim();assert(other);
+ assert(start("GET","/api/v1/status",0)==PH_HTTP_WAIT);assert(waiting&&!claims&&json_token==other);
+ app.release(&x,false);assert(!waiting&&!claims&&json_token==other);service_json_release(other);
  deny=true;assert(start("GET","/api/v1/status",0)==PH_HTTP_WAIT);assert(waiting&&!claims);deny=false;assert(app.retry(&x)==PH_HTTP_REPLY);assert(!waiting&&claims);finish(false);
  assert(start("POST","/api/v1/command",2)==PH_HTTP_READ_BODY);assert(product.body&&claims);assert(app.body(&x,"{}",2));app.complete(&x);assert(commands==1&&product.wire);finish(true);
  command_alias=true;assert(start("POST","/api/v1/command",20)==PH_HTTP_READ_BODY);assert(app.body(&x,"{\"alias\":\"retained\"}",20));app.complete(&x);assert(product.wire&&strstr(x.response.body,"retained"));finish(true);command_alias=false;
  assert(start("POST","/api/v1/command",10)==PH_HTTP_READ_BODY);assert(app.body(&x,"{",1));finish(false);
+ wire_stall=true;execute_wire("POST /api/v1/command HTTP/1.1\r\nAuthorization: Basic YWRtaW46cHc=\r\nContent-Length: 2\r\n\r\n");wire_stall=false;assert_clean();assert(app.admission()==PH_HTTP_CLIENT_SLOTS);
  assert(start("POST","/api/v1/ota/upload",100)==OTA_ACTION);if(OTA_ACTION==PH_HTTP_WAIT)assert(app.retry(&x)==PH_HTTP_READ_BODY);assert(job&&app.admission()==2);assert(app.body(&x,"123",3));finish(false);assert(aborts==1&&!job);
  assert(start("POST","/api/v1/ota/upload-unsigned",3)==OTA_ACTION);if(OTA_ACTION==PH_HTTP_WAIT)assert(app.retry(&x)==PH_HTTP_READ_BODY);app.body(&x,"123",3);app.complete(&x);assert(x.response.status==202&&finishes==1);finish(true);assert(!job);
  TC1_VERIFY_RECOVERY_CHECK

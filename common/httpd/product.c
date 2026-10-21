@@ -16,6 +16,7 @@ void ph_http_product_init(ph_http_product *p,ph_http_exchange *x)
 void ph_http_json(ph_http_product *p,ph_http_exchange *x,json_object *o)
 {
     p->wire=json_owned_to_wire(o);
+    service_json_release(p->json_claim);p->json_claim=0;
     if(!p->wire) { ph_http_busy(x);return; }
     x->response.status=200;x->response.type="application/json";
     x->response.body=p->wire->buf;x->response.length=p->wire->bpos;
@@ -28,8 +29,10 @@ void ph_http_message(ph_http_product *p,ph_http_exchange *x,unsigned status,cons
 }
 ph_http_action ph_http_claim(ph_http_product *p,ph_http_exchange *x,size_t input,bool read_body)
 {
-    if(!p->claim)p->claim=service_memory_claim(input);
+    if(!p->json_claim)p->json_claim=service_json_claim();
+    if(p->json_claim && !p->claim)p->claim=service_memory_claim(input);
     if(!p->claim) {
+        service_json_release(p->json_claim);p->json_claim=0;
         if(service_memory_cost(input) && input<=1024) {
             if(!p->waiting) { service_memory_waiting(true);p->waiting=true; }
             return PH_HTTP_WAIT;
@@ -68,6 +71,7 @@ void ph_http_product_release(ph_http_product *p)
     if(p->body)json_heap_free(p->body);
     if(p->wire)printbuf_free(p->wire);
     if(p->claim)service_memory_release(p->claim);
+    service_json_release(p->json_claim);
     memset(p,0,sizeof(*p));
 }
 

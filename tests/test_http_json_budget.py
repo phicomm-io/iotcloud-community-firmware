@@ -58,9 +58,10 @@ json_object *service_command(json_object *request){
     mqtt_fixture=r'''
 #define MQTT_SUCCESS 0
 #define MQTT_FAILURE -1
-static bool mqtt_modern;static unsigned mqtt_bytes,service_mqtt_reply_count;
+static bool mqtt_modern,service_mqtt_capabilities_pending;static unsigned mqtt_bytes,service_mqtt_reply_count;
 static int service_mqtt_flush(int (*sender)(const char*,const char*,bool)){(void)sender;return MQTT_SUCCESS;}
 ''' + wire + r'''
+json_object *service_product_capabilities(void){return json_object_new_object();}
 static struct printbuf *service_mqtt_wire(json_object *o){
  if(mqtt_modern)return production_mqtt_wire(o);
  struct printbuf *wire=o?json_object_to_json_string_ex(o):NULL;json_object_put(o);return wire;
@@ -68,7 +69,7 @@ static struct printbuf *service_mqtt_wire(json_object *o){
 static int mqtt_sender(const char *topic,const char *wire,bool retain){
  assert(retain&&strstr(topic,"/state"));assert(strstr(wire,"\"model\": \"a1\""));mqtt_bytes=strlen(wire);return MQTT_SUCCESS;
 }
-''' + function(mqtt,'static int service_mqtt_publish(') + '\n' + function(mqtt,'static int service_mqtt_snapshot(')
+''' + function(mqtt,'static int service_mqtt_publish(') + '\n' + function(mqtt,'static int service_mqtt_try_capabilities(') + '\n' + function(mqtt,'static int service_mqtt_snapshot(')
     fixture = (ROOT/'tests/http_core/status_budget.c').read_text().replace('/* PRODUCTION_MQTT_WIRE */',mqtt_fixture)
     return fixture.replace('/* PRODUCTION_WATCHDOG_FILTER */', snapshots+watchdog+'\n'+filter_fn).replace('/* PRODUCTION_BUILDERS */', builders).replace('/* PRODUCTION_RESULT_QUERY */', result+'\n'+query)
 
@@ -118,7 +119,121 @@ int main(void){
 '''
 
 
+def virtual_fixture(retain_config=False):
+    """Unchanged complete periodic producer, actual config sizeof + allocator ABI."""
+    runtime=(ROOT/'common/runtime.c').read_text()
+    fixture=background_fixture().split('static char background_golden')[0]
+    # Real production token functions; only the RTOS mutex boundary is inert.
+    service=(ROOT/'common/service.c').read_text()
+    fixture=fixture.replace('unsigned service_json_claim(void){return 1;}\nvoid service_json_release(unsigned token){(void)token;}',r'''
+static bool ready=true;static mico_mutex_t service_lock;
+static unsigned json_owner,json_generation;
+OSStatus mico_rtos_lock_mutex(mico_mutex_t*m){(void)m;return kNoErr;}
+OSStatus mico_rtos_unlock_mutex(mico_mutex_t*m){(void)m;return kNoErr;}
+'''+function(service,'unsigned service_json_claim(')+'\n'+function(service,'void service_json_release('))
+    fixture=fixture.replace('uint32_t mico_rtos_get_time(void){return 25000;}','static uint32_t now=25000;\nuint32_t mico_rtos_get_time(void){return now;}')
+    fixtures=r'''
+#define FEATURE_DEVICE_A1
+#define LOCAL_ID a1_id
+#define COUNT(x) (sizeof(x)/sizeof(*(x)))
+static feature_config_t configuration,*published_layout;
+static feature_sample_t samples[FEATURE_MAX_PEERS];
+static uint32_t mqtt_tick,mqtt_graph_retry,mqtt_revision;
+static unsigned mqtt_graph_pending,published_count,published_sensors;
+static bool mqtt_online=true,was_coordinator=true;
+static char published_root[FEATURE_TOPIC_MAX],published_ids[FEATURE_MAX_PEERS][13];
+static struct {bool light_sleep;unsigned brightness;} sleep_state;
+mico_mutex_t a1_lock;a1_state_t a1_state;
+static const char *domains[]={"unused"};
+void feature_config_get(feature_config_t*c){*c=configuration;}
+bool feature_bound(void){return true;}
+bool feature_is_coordinator(void){return true;}
+static unsigned discovery_sensors(const feature_config_t*c){(void)c;return 0;}
+static void root_for(const feature_config_t*c,unsigned i,char*out){(void)c;(void)i;strcpy(out,"test");}
+static void discovery_virtual(int(*p)(const char*,const char*,bool),const feature_config_t*c,const char*r,bool b){(void)p;(void)c;(void)r;(void)b;abort();}
+static json_object *config_encode(const feature_config_t*c,const char*d){(void)c;(void)d;abort();}
+static const char *topic_domain(const char*d){return d;}
+static void js(json_object*o,const char*k,const char*v){json_build_object_add(o,k,json_object_new_string(v));}
+static void lock(void){}static void unlock(void){}
+static uint32_t now_ms(void){return now;}
+void feature_colon_mac(const char*id,char*out){(void)id;strcpy(out,"11:22:33:44:55:66");}
+static bool mqtt_format(char*out,size_t n,const char*format,...){va_list args;va_start(args,format);int used=vsnprintf(out,n,format,args);va_end(args);return used>=0&&(size_t)used<n;}
+'''
+    fixtures=fixtures.replace('static bool mqtt_format(', 'static bool fixture_format(').replace('static bool fixture_format(', 'static bool fixture_format(')
+    # mqtt_account.h already implements mqtt_format, so use it unchanged.
+    fixtures=fixtures[:fixtures.index('static bool fixture_format(')]
+    functions='\n'.join(function(runtime,s) for s in ('static void direct_leaf(', 'static bool direct_json_claimed(', 'static void virtual_service(int (*publish)(const char *, const char *, bool)) {'))
+    if retain_config:
+        functions=functions.replace('free(c);c=NULL;service_json_release(snapshot_token);','service_json_release(snapshot_token);')
+    return fixture+fixtures+'\n'+('#define RETAIN_CONFIG\n' if retain_config else '')+functions+r'''
+static json_object *background_graph(void){
+ feature_sample_t current[1]={{.valid=true,.received_ms=25000,.value={22,45,100,.05}}};
+ return average_body(current,1,25000);
+}
+static bool expect_full;static unsigned callbacks,full_ok;static size_t sender_live;
+static int nested_sender(const char*topic,const char*body,bool retain){
+ (void)retain;assert(topic&&body);callbacks++;
+ /* The native config is no longer retained at ANY periodic sender, including
+  * scalar leaves before average JSON. Wire bytes can still remain. */
+ unsigned token=service_json_claim();assert(token);
+ sender_live=live-libc_baseline;
+#ifdef RETAIN_CONFIG
+ assert(sender_live>=sizeof(feature_config_t));
+#else
+ assert(sender_live<sizeof(feature_config_t));
+#endif
+ json_object *response=service_query("status.get");struct printbuf *wire=json_owned_to_wire(response);
+ assert((wire!=NULL)==expect_full);if(wire){full_ok++;printbuf_free(wire);}
+ service_json_release(token);return 0;
+}
+int main(void){
+ char warm[64];snprintf(warm,sizeof(warm),"%f",1.25);libc_baseline=live;healthy_stats();
+ /* Actual graph allocations are retained while another HTTP operation asks
+  * for admission. Exclusion returns WAIT without a new graph or denial. */
+ unsigned graph_token=service_json_claim();assert(graph_token);json_object *graph=background_graph();assert(graph);
+ ph_http_product waiting_product={0};ph_http_exchange waiting_exchange={0};
+ uint64_t failures=service_memory_failures();
+ assert(ph_http_claim(&waiting_product,&waiting_exchange,0,false)==PH_HTTP_WAIT);
+ assert(service_memory_failures()==failures&&json_owner==graph_token);
+ ph_http_product_release(&waiting_product);json_object_put(graph);service_json_release(graph_token);healthy_stats();
+ configuration.peer_count=1;configuration.revision=mqtt_revision=1;strcpy(configuration.group,"room");
+ strcpy(configuration.peers[0].id,"112233445566");
+ samples[0]=(feature_sample_t){.valid=true,.received_ms=25000,.value={22,45,100,.05},
+  .co2_supported=true,.co2_valid=true,.co2=1100,.co2_received_ms=25000};
+ for(unsigned trial=0;trial<2;trial++){
+  size_t budget=trial?28364:26400;setup(0);capacity=budget+libc_baseline;peak=fail_size=0;callbacks=full_ok=0;
+  mqtt_tick=0;now=25000;expect_full=trial;
+#ifdef RETAIN_CONFIG
+  expect_full=false;
+#endif
+  virtual_service(nested_sender);
+  assert(callbacks>=9 && full_ok==(expect_full?callbacks:0));assert(!json_owner&&!mqtt_graph_pending);healthy_stats();
+  char report[256];int n=snprintf(report,sizeof(report),"actual virtual_service retained=%u config=%u budget=%u callbacks=%u full=%u peak=%u denied=%u last_sender_wire=%u live=0\n",
+#ifdef RETAIN_CONFIG
+  1u,
+#else
+  0u,
+#endif
+  (unsigned)sizeof(feature_config_t),(unsigned)budget,callbacks,full_ok,(unsigned)(peak-libc_baseline),(unsigned)fail_size,(unsigned)sender_live);_write(1,report,n);
+ }
+ /* Native config allocation failure releases its snapshot token as well. */
+ native_fail_size=sizeof(feature_config_t);now+=6000;unsigned before=callbacks;
+ virtual_service(nested_sender);assert(callbacks==before&&!json_owner);healthy_stats();
+ native_fail_size=0;virtual_service(nested_sender);assert(callbacks>before&&!json_owner);healthy_stats();
+ /* Busy snapshot admission does no native allocation/marking, then recovers. */
+ unsigned token=service_json_claim();assert(token);now+=6000;unsigned sent=callbacks;
+ virtual_service(nested_sender);assert(callbacks==sent);service_json_release(token);
+ virtual_service(nested_sender);assert(callbacks>sent&&!json_owner);healthy_stats();
+ return 0;
+}
+'''
+
 class JsonBudget(unittest.TestCase):
+    def test_arm32_actual_virtual_sender(self):
+        for retained in (True,False):
+            with self.subTest(retained=retained):
+                self.compile_arm("A1", virtual_fixture(retained), budget=True)
+
     def test_arm32_background_overlap(self):
         self.compile_arm('A1', background_fixture(), budget=True)
 

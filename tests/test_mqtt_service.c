@@ -29,6 +29,8 @@ void *__wrap_realloc(void *pointer,size_t size){
 #include "../common/mqtt_service.inc"
 uint64_t service_memory_failures(void){return 0;}
 static unsigned claims;
+unsigned service_json_claim(void){return 1;}
+void service_json_release(unsigned token){(void)token;}
 unsigned service_memory_claim(size_t n){if(low_memory || n>8192)return 0;claims++;return 1;}
 void service_memory_release(unsigned n){assert(n==1 && claims);claims--;}
 static unsigned calls, executions;

@@ -1,6 +1,7 @@
 #include "watchdog.h"
 #include "automation.h"
 #include "json_owned.h"
+#include "printbuf.h"
 #include "phicomm_features.h"
 #include "sntp.h"
 #include <math.h>
@@ -74,7 +75,8 @@ static uint32_t member_seen[8];
 static uint32_t mqtt_revision;
 static bool mqtt_online;
 #ifdef FEATURE_DEVICE_A1
-static uint32_t mqtt_tick;
+static uint32_t mqtt_tick, mqtt_graph_retry;
+static unsigned mqtt_graph_pending;
 static bool was_coordinator;
 static char published_root[FEATURE_TOPIC_MAX], published_ids[FEATURE_MAX_PEERS][13];
 static feature_config_t *published_layout;
@@ -1233,7 +1235,7 @@ void feature_mqtt_session(const mqtt_account_t *account) {
   }
 #endif
 #ifdef FEATURE_DEVICE_A1
-  mqtt_tick=0;
+  mqtt_tick=0;mqtt_graph_pending=0;
   if(changed) {
     published_root[0]=0; published_count=0;
     free(published_layout); published_layout=NULL;
@@ -1842,6 +1844,16 @@ static void direct_json(int (*p)(const char *, const char *, bool),
   mqtt_format(topic,sizeof(topic),"%s/%s",root,leaf);
   json_owned_publish(p,topic,o,retain);
 }
+/* The five-second sensor producer competes with HTTP full status for the same
+ * small heap. Defer telemetry instead of building a second graph. Only
+ * independent bytes survive publication and any reentrant packet callback. */
+static bool direct_json_claimed(int (*p)(const char *, const char *, bool),
+                        const char *root,const char *leaf,json_object *o,bool retain,unsigned token) {
+  struct printbuf *wire=json_owned_to_wire(o);
+  service_json_release(token);
+  if(!wire)return false;
+  direct_leaf(p,root,leaf,wire->buf,retain);printbuf_free(wire);return true;
+}
 #ifdef FEATURE_DEVICE_A1
 /* Shared by virtual controls and per-A1 filter entities. Keep their parent
  * identity identical while preserving each physical filter's own state/control. */
@@ -2059,10 +2071,18 @@ static void discovery_virtual(int (*publish)(const char *, const char *, bool),
 #endif
 static void virtual_service(int (*publish)(const char *, const char *, bool)) {
   uint32_t now = now_ms();
+#ifdef FEATURE_DEVICE_A1
+  unsigned snapshot_token=service_json_claim();if(!snapshot_token)return;
+#endif
   feature_config_t *c = malloc(sizeof(*c));
-  if (!c)
+  if (!c) {
+#ifdef FEATURE_DEVICE_A1
+    service_json_release(snapshot_token);
+#endif
     return;
+  }
   feature_config_get(c);
+  uint32_t revision=c->revision;
 #ifdef FEATURE_DEVICE_A1
   bool bound = feature_bound() || c->group[0];
   char root[FEATURE_TOPIC_MAX];
@@ -2072,6 +2092,9 @@ static void virtual_service(int (*publish)(const char *, const char *, bool)) {
   if ((!mqtt_online || mqtt_revision != c->revision || published_sensors != sensor_mask ||
        (!was_coordinator && coordinator)) &&
       coordinator) {
+    /* Discovery keeps its existing publication/retry semantics. This rare
+     * branch must never carry an exclusion token into synchronous publish. */
+    service_json_release(snapshot_token);snapshot_token=0;
     bool layout_changed =
         strcmp(published_root, root) || published_count != c->peer_count ||
         (published_layout && (published_layout->member_count != c->member_count || memcmp(published_layout->members,c->members,sizeof(c->members))));
@@ -2101,6 +2124,12 @@ static void virtual_service(int (*publish)(const char *, const char *, bool)) {
     } else
       published_root[0] = 0;
   }
+  /* Periodic publishing needs only this compact configuration snapshot. The
+   * large native config must not survive socket/PUBACK waits or JSON builds. */
+  bool grouped=c->group[0];unsigned peer_count=c->peer_count;
+  char peer_ids[FEATURE_MAX_PEERS][13];
+  for(unsigned i=0;i<peer_count;i++)memcpy(peer_ids[i],c->peers[i].id,sizeof(peer_ids[i]));
+  free(c);c=NULL;service_json_release(snapshot_token);
   if (bound && (uint32_t)(now - mqtt_tick) >= 5000) {
     mqtt_tick = now;
     bool on;
@@ -2118,7 +2147,7 @@ static void virtual_service(int (*publish)(const char *, const char *, bool)) {
     feature_effective_fan(cfg.fan_on, cfg.speed, &on, &speed);
     char prefix[FEATURE_TOPIC_MAX];
     bool leader = feature_is_coordinator();
-    for (unsigned pass = 0; pass < (c->group[0] ? 2u : 1u); pass++) {
+    for (unsigned pass = 0; pass < (grouped ? 2u : 1u); pass++) {
       if (!pass && !leader)
         continue;
       if (pass) {
@@ -2144,30 +2173,29 @@ static void virtual_service(int (*publish)(const char *, const char *, bool)) {
                   cfg.led_always_on ? "ON" : "OFF", true);
       direct_leaf(publish, prefix, "availability", "online", true);
     }
-    if (leader) {
-      static feature_sample_t current[FEATURE_MAX_PEERS];
-      lock();
-      memcpy(current, samples, sizeof(current));
-      unlock();
-      json_object *average = average_body(current, c->peer_count, now);
-      direct_json(publish,root,"average",average,false);
-      for (unsigned i = 0; i < c->peer_count; i++)
-        {
-          json_object *o = sample_body(&current[i], now);
-          char leaf[64];
-          if (c->peer_count == 1)
-            strcpy(leaf, "sensor");
-          else {
-            char mac[18];
-            feature_colon_mac(c->peers[i].id, mac);
-            mqtt_format(leaf, sizeof(leaf), "%s/sensor", mac);
-          }
-          direct_json(publish,root,leaf,o,false);
-        }
+    /* Coalesce the latest readings. A lease conflict must not mark them sent
+     * or lock retries back onto the five-second/HTTP polling phase. */
+    mqtt_graph_pending=leader?((1u<<(peer_count+1))-1u):0;
+    mqtt_graph_retry=now-100u;
+  }
+  if(!bound || !coordinator)mqtt_graph_pending=0;
+  if(mqtt_graph_pending && (uint32_t)(now-mqtt_graph_retry)>=100u) {
+    mqtt_graph_retry=now;
+    static feature_sample_t current[FEATURE_MAX_PEERS];
+    lock();memcpy(current,samples,sizeof(current));unlock();
+    for(unsigned i=0;i<=peer_count;i++) {
+      unsigned bit=1u<<i;if(!(mqtt_graph_pending&bit))continue;
+      unsigned token=service_json_claim();if(!token)break;
+      json_object *o=i?sample_body(&current[i-1],now):average_body(current,peer_count,now);
+      char leaf[64];
+      if(!i)strcpy(leaf,"average");
+      else if(peer_count==1)strcpy(leaf,"sensor");
+      else {char mac[18];feature_colon_mac(peer_ids[i-1],mac);mqtt_format(leaf,sizeof(leaf),"%s/sensor",mac);}
+      if(direct_json_claimed(publish,root,leaf,o,false,token))mqtt_graph_pending&=~bit;
     }
   }
 #endif
-  mqtt_revision = c->revision;
+  mqtt_revision = revision;
   mqtt_online = true;
 #ifdef FEATURE_DEVICE_A1
   was_coordinator = coordinator;

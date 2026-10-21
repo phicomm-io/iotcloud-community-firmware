@@ -36,6 +36,7 @@ def check(modules, model, nm, elf):
     if status+'_view' in frames:status_path+=[status+'_view']
     paths={
       'HTTP status':(3072,status_path),
+      'HTTP JSON admission':(3072,base+['ph_http_claim','service_json_claim']),
       'HTTP command status':(3072,command+[status]+([status+'_view'] if status+'_view' in frames else [])),
       # Builder frames have returned before encoding. Count the bounded
       # automatic traversal explicitly, outside SDK/native/RTOS reserve.
@@ -71,8 +72,9 @@ def check(modules, model, nm, elf):
           'MQTT nested JSON encode':(['MqttClientThread','all_states','UserMqttHassPower','UserMqttSendTopic','MqttMsgPublish','MessageArrived']+encode,3072),
           'MQTT nested status build':(['MqttClientThread','all_states','UserMqttHassPower','UserMqttSendTopic','MqttMsgPublish','MessageArrived','service_command','service_command_execute','service_product','tc1_status_json'],3072),
           'MQTT nested topic lookup':(['MqttClientThread','all_states','UserMqttHassPower','UserMqttSendTopic','MqttMsgPublish','MessageArrived','tc1_command_topic'],3072),
-          'MQTT snapshot nested JSON encode':(['MqttClientThread','service_mqtt_publish','service_sender','MqttMsgPublish','MessageArrived']+encode,3072),
-          'MQTT flush nested JSON encode':(['MqttClientThread','service_mqtt_flush','service_sender','MqttMsgPublish','MessageArrived']+encode,3072),
+          'MQTT snapshot nested JSON encode':(['MqttClientThread','service_mqtt_snapshot','service_mqtt_publish','service_sender','MqttMsgPublish','MessageArrived']+encode,3072),
+          'MQTT capabilities nested JSON encode':(['MqttClientThread','service_mqtt_snapshot','service_mqtt_try_capabilities','service_sender','MqttMsgPublish','MessageArrived']+encode,3072),
+          'MQTT flush nested JSON encode':(['MqttClientThread','service_mqtt_snapshot','service_mqtt_flush','service_sender','MqttMsgPublish','MessageArrived']+encode,3072),
         }
     else:
         source=(Path(__file__).resolve().parents[1]/model/'mqtt.c').read_text()
@@ -81,18 +83,25 @@ def check(modules, model, nm, elf):
         # Owned encoding returns before the synchronous publish/Paho callback.
         # Keep each reachable outer branch separate, including its live topic
         # scratch, rather than summing mutually exclusive discovery/telemetry.
-        outers={'discovery':['discovery','json_owned_publish']}
+        outers={'discovery':(['discovery','json_owned_publish'],['discovery','json_owned_publish']),
+                'snapshot':(['service_mqtt_snapshot','service_mqtt_publish'],['service_mqtt_snapshot','service_mqtt_publish']),
+                'capabilities':(['service_mqtt_snapshot','service_mqtt_try_capabilities'],['service_mqtt_snapshot','service_mqtt_try_capabilities'])}
         if model=='A1':
-            outers['virtual discovery']=['feature_mqtt_service','discovery_virtual','json_owned_publish','checked_publish']
-            outers['virtual telemetry']=['feature_mqtt_service','direct_json','json_owned_publish','checked_publish']
-            outers['filter discovery']=['discovery','filter_discovery','json_owned_publish']
+            outer=['feature_mqtt_service']+(['virtual_service'] if 'virtual_service' in frames else [])
+            helper=[n for n in ('direct_json_claimed',) if n in frames]
+            config=[n for n in ('direct_json',) if n in frames]
+            outers['virtual discovery']=(outer+['discovery_virtual','json_owned_publish','checked_publish'],outer+['discovery_virtual','json_owned_publish'])
+            outers['virtual config']=(outer+config+['json_owned_publish','checked_publish'],outer+config+['json_owned_publish'])
+            # Encoding returns before direct_leaf builds its topic/send frame.
+            outers['virtual telemetry']=(outer+helper+['direct_leaf','checked_publish'],outer+helper)
+            outers['filter discovery']=(['discovery','filter_discovery','json_owned_publish'],['discovery','filter_discovery','json_owned_publish'])
         mqtt_paths={
-          'MQTT flush nested JSON encode':(['mqtt_worker','service_mqtt_flush','publish',callback]+encode,4096),
+          'MQTT flush nested JSON encode':(['mqtt_worker','service_mqtt_snapshot','service_mqtt_flush','publish',callback]+encode,4096),
         }
-        for branch,outer in outers.items():
-            mqtt_paths['MQTT '+branch+' nested JSON encode']=(['mqtt_worker']+outer+['publish',callback]+encode,4096)
-            mqtt_paths['MQTT '+branch+' nested status build']=(['mqtt_worker']+outer+['publish',callback,'service_command','service_command_execute','service_product',status,status+'_view'],4096)
-            mqtt_paths['MQTT '+branch+' owned encode']=(['mqtt_worker']+[n for n in outer if n!='checked_publish']+encode,4096)
+        for branch,(transport,encoding) in outers.items():
+            mqtt_paths['MQTT '+branch+' nested JSON encode']=(['mqtt_worker']+transport+['publish',callback]+encode,4096)
+            mqtt_paths['MQTT '+branch+' nested status build']=(['mqtt_worker']+transport+['publish',callback,'service_command','service_command_execute','service_product',status,status+'_view'],4096)
+            mqtt_paths['MQTT '+branch+' owned encode']=(['mqtt_worker']+encoding+encode,4096)
     if model!='TC1':mqtt_paths['MQTT OTA recovery']=(['mqtt_worker','ota_job_poll','feature_resume_step'],4096)
     for label,(names,reserve) in mqtt_paths.items():
         missing=set(names)-frames.keys()

@@ -24,7 +24,7 @@ unsigned feature_fan_limit(void){return 100;}
 typedef ph_http_diagnostics http_diag_t;
 static http_diag_t http_diag_snapshot(void){return (http_diag_t){0};}
 static struct {void *p;size_t n;} ledger[2048];
-static size_t libc_baseline;
+static size_t libc_baseline,native_fail_size;
 static size_t live,peak,capacity=100000,fail_size,phase,fail_phase,peak_phase;
 
 static unsigned native_depth,native_reentrant_allocations;
@@ -40,7 +40,7 @@ static size_t resizing(void*p,size_t n){size_t old=p?ledger[find(p)].n:0;if(live
 static void resized(void*p,void*q,size_t n,size_t old){if(q){if(p){unsigned i=find(p);live-=old;ledger[i].p=NULL;}add(q,n);}}
 /* Record only the outermost native allocator operation. Normal malloc calls
  * _malloc_r internally; both must be intercepted without double accounting. */
-void *__wrap_malloc(size_t n){bool outer=!native_depth++;void*p=__real_malloc(n);--native_depth;if(outer)add(p,n);return p;}
+void *__wrap_malloc(size_t n){if(native_fail_size&&n==native_fail_size)return NULL;bool outer=!native_depth++;void*p=__real_malloc(n);--native_depth;if(outer)add(p,n);return p;}
 void *__wrap_calloc(size_t n,size_t m){bool outer=!native_depth++;void*p=__real_calloc(n,m);--native_depth;if(outer)add(p,n*m);return p;}
 void *__wrap__malloc_r(struct _reent*r,size_t n){bool outer=!native_depth++;void*p=__real__malloc_r(r,n);--native_depth;if(outer){add(p,n);native_reentrant_allocations++;}return p;}
 void *__wrap__calloc_r(struct _reent*r,size_t n,size_t m){bool outer=!native_depth++;void*p=__real__calloc_r(r,n,m);--native_depth;if(outer){add(p,n*m);native_reentrant_allocations++;}return p;}
@@ -52,6 +52,8 @@ char *__wrap_strdup(const char*s){size_t n=strlen(s)+1;void*p=__wrap_malloc(n);i
 int json_heap_permit(size_t n){int ok=live+16384+32<=capacity && n<=capacity-live-16384-32;if(!ok&&!fail_size){fail_size=n;fail_phase=phase;}return ok;}
 micoMemInfo_t *MicoGetMemoryInfo(void){static micoMemInfo_t m;m.free_memory=capacity-live;m.allocted_memory=live;m.num_of_chunks=3;return &m;}
 json_object *service_parse(const void*s,size_t n){(void)n;return json_tokener_parse(s);}
+unsigned service_json_claim(void){return 1;}
+void service_json_release(unsigned token){(void)token;}
 unsigned service_memory_claim(size_t n){return service_memory_cost(n);}
 void service_memory_release(unsigned n){(void)n;}
 void service_memory_waiting(bool b){(void)b;}

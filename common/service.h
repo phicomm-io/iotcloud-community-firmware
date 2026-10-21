@@ -13,6 +13,10 @@ void service_event(const char *level, const char *module, const char *event);
 unsigned service_memory_claim(size_t input_bytes);
 void service_memory_release(unsigned claim);
 void service_memory_waiting(bool enter);
+/* Non-waiting exclusion for graph construction through owned encoding. Never
+ * retain a token across socket IO/PUBACK; a stale release cannot clear its heir. */
+unsigned service_json_claim(void);
+void service_json_release(unsigned token);
 void service_memory_snapshot(service_memory_state_t *out);
 /* MQTT owner reports only scalar queue diagnostics; no allocation or socket IO. */
 void service_memory_mqtt(unsigned pending, bool overflow, uint32_t delay_ms);

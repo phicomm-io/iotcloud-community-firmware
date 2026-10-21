@@ -113,9 +113,13 @@ static int legacy_publish(int(*p)(const char*,const char*,bool),const char*t,jso
 #define main unused_runtime_scenarios
 #include "tests/test_runtime.c"
 #undef main
-static unsigned graph_callbacks,wire_callbacks,callbacks;
+static unsigned graph_callbacks,wire_callbacks,callbacks,averages,sensors,blocked_token;
+static bool hold_after_average;
 static int output(const char*t,const char*b,bool r){
  assert(t&&b);json_heap_stats_t s;json_heap_snapshot(&s);
+ unsigned token=service_json_claim();assert(token);service_json_release(token);
+ if(strstr(t,"/average")){averages++;if(hold_after_average){hold_after_average=false;blocked_token=service_json_claim();assert(blocked_token);}}
+ if(strstr(t,"/sensor")&&!r)sensors++;
 #ifndef LEGACY_PUBLISH
  assert(s.live_blocks==0||s.live_blocks==2);
 #endif
@@ -133,6 +137,16 @@ int main(void){
  assert(!feature_mqtt_service(output,true));
  test_now=12000;samples[0].received_ms=test_now;samples[0].co2_received_ms=test_now;
  assert(!feature_mqtt_service(output,true));assert(callbacks>10);
+ unsigned saved_callbacks=callbacks,held=service_json_claim();assert(held);
+ uint64_t failures=service_memory_failures();test_now=18000;
+ assert(!feature_mqtt_service(output,true));assert(callbacks==saved_callbacks&&service_memory_failures()==failures);
+ service_json_release(held);assert(!feature_mqtt_service(output,true));
+ assert(callbacks>saved_callbacks);
+ unsigned old_average=averages,old_sensor=sensors;hold_after_average=true;test_now=24000;
+ assert(!feature_mqtt_service(output,true));assert(blocked_token&&averages==old_average+1&&sensors==old_sensor&&mqtt_graph_pending);
+ saved_callbacks=callbacks;test_now=24100;assert(!feature_mqtt_service(output,true));assert(callbacks==saved_callbacks);
+ service_json_release(blocked_token);blocked_token=0;test_now=24200;
+ assert(!feature_mqtt_service(output,true));assert(averages==old_average+1&&sensors==old_sensor+1&&!mqtt_graph_pending);
  free(published_layout);published_layout=NULL;
  json_heap_stats_t s;json_heap_snapshot(&s);assert(!s.live_blocks);
 #ifdef LEGACY_PUBLISH

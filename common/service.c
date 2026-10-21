@@ -22,6 +22,7 @@ static bool ready, service_lock_ready;
 static mico_mutex_t json_lock;
 static bool json_ready;
 static service_memory_state_t memory_state = {.minimum_free = UINT32_MAX};
+static unsigned json_owner, json_generation;
 static uint32_t service_free_memory(void) {
 #if defined(MOC) && MOC == 1
     const micoMemInfo_t *m = MicoGetMemoryInfo();
@@ -49,6 +50,23 @@ unsigned service_memory_claim(size_t input_bytes) {
     unsigned claim = memory_budget_claim(&memory_state, service_free_memory(), input_bytes);
     mico_rtos_unlock_mutex(&service_lock);
     return claim;
+}
+unsigned service_json_claim(void) {
+    if (!ready) return 0;
+    mico_rtos_lock_mutex(&service_lock);
+    unsigned token = 0;
+    if (!json_owner) {
+        if (!++json_generation) ++json_generation;
+        token = json_owner = json_generation;
+    }
+    mico_rtos_unlock_mutex(&service_lock);
+    return token;
+}
+void service_json_release(unsigned token) {
+    if (!ready || !token) return;
+    mico_rtos_lock_mutex(&service_lock);
+    if (json_owner == token) json_owner = 0;
+    mico_rtos_unlock_mutex(&service_lock);
 }
 void service_memory_release(unsigned claim) {
     if (!ready) return;
