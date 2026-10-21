@@ -12,7 +12,7 @@
   "iotcloud-deploy": "1fa4286b01be8bf74d8793a862e74a7fcfd7ee96ab81df240c284744886b22c5",
   "build-deps": "34d8c7cc6bdc756da6f0400913849fce88d4b5de8664b2f8329a487d666681f2",
   "sources": "23edbaab0f8e5aac075a01e2677988fab140c831f45134f426cf8f2993ed8a1d",
-  "release-log": "70dccbb37ce482195da7ba7723024c9e51cb4232b6be8661ff64a3dee5d232b8",
+  "release-log": "5a4c856ae4ca14b05ed327fa74bf2fc5a9fc6022e385bc98f1c2829656cea3c0",
   "iotcloud-connect": "ea06cfa96f1fb1552b0a81ec4544c5e2b79bdfcbe0271617931dd2b10b026e67",
   "tc1-no-disassembly": "aa49c9d3cec971e0fa63ca5743e455f3573f78018c10019ced8166a2c98404cb",
   "tc1-no-disassembly-ethernet-wifi-ap": "b78af99bccaf3ece7600464a6a303a1304ae044f8098cd7552f138598c73304a"
