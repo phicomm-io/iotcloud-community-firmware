@@ -2,15 +2,14 @@
 /* Included by the MQTT owner only; never call the socket from HTTP or a timer. */
 #include "service.h"
 #include "printbuf.h"
+#include "json_owned.h"
 #include "busy_reply.h"
 #include "json_heap.h"
 #include "mico.h"
 static struct printbuf *service_mqtt_wire(json_object *o){
  /* PUBACK waiting can dispatch callbacks or overlap an HTTP status request.
   * Keep only independent wire bytes while waiting, not the JSON object graph. */
- struct printbuf *wire=o?json_object_to_json_string_ex(o):NULL;
- if(o)json_object_put(o);
- return wire;
+ return json_owned_to_wire(o);
 }
 static int service_mqtt_send(int (*sender)(const char *,const char *,bool),const char *topic,json_object *o,bool retain){
  struct printbuf *wire=service_mqtt_wire(o);

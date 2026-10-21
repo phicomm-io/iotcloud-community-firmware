@@ -11,6 +11,8 @@ import subprocess
 import tempfile
 import unittest
 
+from tests.sdk_json import copy_patched_json
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -51,7 +53,23 @@ json_object *service_command(json_object *request){
  return result(id,"ok",a1_status_json());
 }
 '''
-    fixture = (ROOT/'tests/http_core/status_budget.c').read_text()
+    mqtt=(ROOT/'common/mqtt_service.inc').read_text()
+    wire=function(mqtt,'static struct printbuf *service_mqtt_wire(').replace('service_mqtt_wire(', 'production_mqtt_wire(',1)
+    mqtt_fixture=r'''
+#define MQTT_SUCCESS 0
+#define MQTT_FAILURE -1
+static bool mqtt_modern;static unsigned mqtt_bytes,service_mqtt_reply_count;
+static int service_mqtt_flush(int (*sender)(const char*,const char*,bool)){(void)sender;return MQTT_SUCCESS;}
+''' + wire + r'''
+static struct printbuf *service_mqtt_wire(json_object *o){
+ if(mqtt_modern)return production_mqtt_wire(o);
+ struct printbuf *wire=o?json_object_to_json_string_ex(o):NULL;json_object_put(o);return wire;
+}
+static int mqtt_sender(const char *topic,const char *wire,bool retain){
+ assert(retain&&strstr(topic,"/state"));assert(strstr(wire,"\"model\": \"a1\""));mqtt_bytes=strlen(wire);return MQTT_SUCCESS;
+}
+''' + function(mqtt,'static int service_mqtt_publish(') + '\n' + function(mqtt,'static int service_mqtt_snapshot(')
+    fixture = (ROOT/'tests/http_core/status_budget.c').read_text().replace('/* PRODUCTION_MQTT_WIRE */',mqtt_fixture)
     return fixture.replace('/* PRODUCTION_WATCHDOG_FILTER */', snapshots+watchdog+'\n'+filter_fn).replace('/* PRODUCTION_BUILDERS */', builders).replace('/* PRODUCTION_RESULT_QUERY */', result+'\n'+query)
 
 
@@ -91,6 +109,8 @@ class JsonBudget(unittest.TestCase):
         if budget:
             flags += ['-Wl,--wrap='+s for s in ('malloc','calloc','realloc','free','strdup','_malloc_r','_calloc_r','_realloc_r','_free_r')]
         with tempfile.TemporaryDirectory() as tmp:
+            json=copy_patched_json(sdk/'libraries/utilities/json_c',Path(tmp)/'sdk')
+            flags.insert(0,'-I'+str(json))
             retained = os.environ.get('PHICOMM_HTTP_JSON_ARTIFACT_DIR')
             directory = Path(retained).resolve()/('budget' if budget else model) if retained else Path(tmp)
             directory.mkdir(parents=True,exist_ok=True)
@@ -99,7 +119,7 @@ class JsonBudget(unittest.TestCase):
             obj=directory/'json_owned.o'
             subprocess.run([str(cc),*flags,'-fstack-usage','-c',str(ROOT/'common/json_owned.c'),'-o',str(obj)],check=True,timeout=30)
             json_objects=[]
-            for path in (sdk/'libraries/utilities/json_c').glob('*.c'):
+            for path in json.glob('*.c'):
                 target=directory/(path.stem+'.o');json_objects.append(str(target))
                 subprocess.run([str(cc),*flags,'-fstack-usage','-c',str(path),'-o',str(target)],check=True,timeout=30)
             subprocess.run([str(cc),*flags,str(source),str(ROOT/'tests/http_core/json_arm_runtime.c'),

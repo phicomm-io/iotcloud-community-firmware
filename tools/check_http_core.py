@@ -48,6 +48,34 @@ def check(modules, model, nm, elf):
         size=sum(frames[n] for n in names)
         if size+reserve>budget:raise ValueError(f'{label}: {size}+{reserve}>{budget}')
         print(f'{label}: {size} application + {reserve} reserve <= {budget} bytes')
+    # MQTT uses the same owned encoder. Paho can dispatch a command while an
+    # outer QoS1 publisher is waiting. Keep those outer application frames,
+    # but not the completed response builder, in the encoding call path.
+    encode=['json_owned_to_wire','json_write','json_primitive','json_append']
+    if 'service_mqtt_wire' in frames:encode+=['service_mqtt_wire']
+    if model=='TC1':
+        source=(Path(__file__).resolve().parents[1]/'TC1/mqtt_server/user_mqtt_client.c').read_text()
+        mqtt_budget=int(re.search(r'mqtt_thread_stack_size = (0x[0-9a-fA-F]+|[0-9]+)',source).group(1),0)
+        mqtt_paths={
+          'MQTT nested JSON encode':(['MqttClientThread','all_states','UserMqttHassPower','UserMqttSendTopic','MqttMsgPublish','MessageArrived']+encode,3072),
+          'MQTT snapshot nested JSON encode':(['MqttClientThread','service_mqtt_publish','service_sender','MqttMsgPublish','MessageArrived']+encode,3072),
+          'MQTT flush nested JSON encode':(['MqttClientThread','service_mqtt_flush','service_sender','MqttMsgPublish','MessageArrived']+encode,3072),
+        }
+    else:
+        source=(Path(__file__).resolve().parents[1]/model/'mqtt.c').read_text()
+        mqtt_budget=int(re.search(r'mqtt_worker, (\d+), 0',source).group(1))
+        callback='command' if model=='A1' else 'native_command'
+        outer=['feature_mqtt_service','discovery_virtual'] if model=='A1' else ['discovery']
+        mqtt_paths={
+          'MQTT nested JSON encode':(['mqtt_worker']+outer+['publish',callback]+encode,4096),
+          'MQTT flush nested JSON encode':(['mqtt_worker','service_mqtt_flush','publish',callback]+encode,4096),
+        }
+    for label,(names,reserve) in mqtt_paths.items():
+        missing=set(names)-frames.keys()
+        if missing:raise ValueError(f'{label}: missing actual .su frames: {sorted(missing)}')
+        size=sum(frames[n] for n in names)
+        if size+reserve>mqtt_budget:raise ValueError(f'{label}: {size}+{reserve}>{mqtt_budget}')
+        print(f'{label}: {size} application + {reserve} reserve <= {mqtt_budget} bytes')
     symbols=subprocess.check_output([nm,'--defined-only',elf],text=True)
     for symbol in ('ph_http_server_step','ph_http_parser_feed','ph_http_start'):
         if len(re.findall(r'\b'+symbol+r'$',symbols,re.M))!=1:raise ValueError('Expected one linked '+symbol)

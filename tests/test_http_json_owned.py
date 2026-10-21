@@ -6,6 +6,8 @@ import subprocess
 import tempfile
 import unittest
 
+from tests.sdk_json import copy_patched_json
+
 ROOT = Path(__file__).resolve().parents[1]
 
 class OwnedJson(unittest.TestCase):
@@ -13,8 +15,7 @@ class OwnedJson(unittest.TestCase):
         sdk = Path(os.environ.get('PHICOMM_TEST_JSON_DIR', ROOT / 'build/a1-sdk/mico-os/libraries/utilities/json_c'))
         with tempfile.TemporaryDirectory() as temp:
             temp = Path(temp)
-            json = temp / 'json'
-            shutil.copytree(sdk, json)
+            json = copy_patched_json(sdk, temp/'sdk')
             for source in json.glob('*.c'):
                 source.write_text(source.read_text().replace('%ld', '%d'))
             binary = temp / 'owned-json'

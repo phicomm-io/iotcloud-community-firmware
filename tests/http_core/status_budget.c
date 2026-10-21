@@ -4,6 +4,8 @@
 #include "common/httpd/product.h"
 #include "common/firmware_variant.h"
 #include "common/runtime_metrics.h"
+#include "common/json_owned.h"
+#include "common/mqtt_account.h"
 #include <assert.h>
 #include <reent.h>
 int _write(int,const void*,int);
@@ -57,6 +59,7 @@ uint64_t service_memory_failures(void){json_heap_stats_t s;json_heap_snapshot(&s
 
 /* PRODUCTION_BUILDERS */
 /* PRODUCTION_RESULT_QUERY */
+/* PRODUCTION_MQTT_WIRE */
 static void healthy_stats(void){json_heap_stats_t s;json_heap_snapshot(&s);assert(!s.live_blocks);assert(live==libc_baseline);}
 static void setup(unsigned longest){
  memset(&cfg,0,sizeof(cfg));memset(&state,0,sizeof(state));
@@ -91,6 +94,21 @@ static void measure(bool modern,unsigned longest,bool post,size_t budget,bool ex
  json_object_put(request);healthy_stats();
  char out[256];int n=snprintf(out,sizeof(out),"%s %s %s capacity=%u graph=%u peak=%u@%u denied=%u phase=%u bytes=%u live=%u\n",modern?"consume":"legacy",longest==2?"escaped-text":longest?"maxstrings":"ordinary",post?"POST":"GET",(unsigned)budget,(unsigned)graph,(unsigned)(peak-libc_baseline),(unsigned)peak_phase,(unsigned)fail_size,(unsigned)fail_phase,(unsigned)output,(unsigned)(live-libc_baseline));_write(1,out,n);
 }
+static void measure_mqtt(bool modern,unsigned longest,bool reply,size_t budget,bool expect_ok){
+ setup(longest);capacity=budget+libc_baseline;peak=fail_size=fail_phase=0;phase=2;
+ mqtt_modern=modern;mqtt_bytes=0;
+ if(reply){
+  json_object *request=json_tokener_parse("{\"action\":\"status.get\",\"params\":{},\"request_id\":\"0123456789012345678901234567890123456789012345678901234567890123\"}");
+  json_object *response=service_command(request);json_object_put(request);phase=4;
+  struct printbuf *wire=service_mqtt_wire(response);
+  if(wire){mqtt_bytes=wire->bpos;printbuf_free(wire);}
+ }else{
+  mqtt_account_t scope;assert(mqtt_account_init(&scope,1,"a1","test","aabbccddeeff"));
+  assert(service_mqtt_snapshot(mqtt_sender,&scope)==MQTT_SUCCESS);
+ }
+ assert((mqtt_bytes!=0)==expect_ok);healthy_stats();
+ char out[256];int n=snprintf(out,sizeof(out),"%s MQTT %s %s capacity=%u peak=%u denied=%u phase=%u bytes=%u live=%u\n",modern?"consume":"legacy",reply?"reply":"snapshot",longest==2?"escaped-text":longest?"maxstrings":"ordinary",(unsigned)budget,(unsigned)(peak-libc_baseline),(unsigned)fail_size,(unsigned)fail_phase,mqtt_bytes,(unsigned)(live-libc_baseline));_write(1,out,n);
+}
 int main(void){
  /* Warm up newlib's lazily initialized float conversion before measuring. */
  char warm[64];snprintf(warm,sizeof(warm),"%f",1.25);libc_baseline=live;healthy_stats();
@@ -113,5 +131,13 @@ int main(void){
  /* Stronger pressure remains fail-closed, and does not poison recovery. */
  measure(true,true,true,22000,false);
  measure(true,true,true,29116,true);
+ measure_mqtt(false,0,false,29116,false);
+ measure_mqtt(false,0,true,29116,false);
+ measure_mqtt(true,0,false,29116,true);
+ measure_mqtt(true,0,true,29116,true);
+ measure_mqtt(true,2,false,29116,true);
+ measure_mqtt(true,2,true,29116,true);
+ measure_mqtt(true,2,true,22000,false);
+ measure_mqtt(true,0,true,29116,true);
  return 0;
 }
