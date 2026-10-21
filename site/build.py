@@ -17,6 +17,7 @@ ROOT = HERE.parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(ROOT / 'tools'))
 from pages import ALIASES, GROUPS, PAGES, SITE_URL, EN_GROUPS, EN_PAGES, validate_translations  # noqa: E402
+from seo import EN_INDEX_TITLE, EN_INDEX_DESCRIPTION, guide_metadata, metadata, write_discovery  # noqa: E402
 
 EXTENSIONS = ['tables', 'fenced_code', 'attr_list', 'toc']
 SITE_NAME = 'PHICOMM COMMUNITY'
@@ -147,8 +148,7 @@ def render_guide(slug, title, summary, source, language="zh"):
         extension_configs={'toc': {'slugify': slugify_unicode}})
     return (f'<!doctype html><html lang="{"en" if english else "zh-CN"}"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width,initial-scale=1">'
-            f'<meta name="description" content="{esc(summary)}">'
-            f'<title>{esc(title)} · {esc(SITE_NAME)}</title>'
+            f'{guide_metadata(slug, title, summary, language)}'
             f'<link rel="stylesheet" href="{base}style.css"><script src="{base}theme.js"></script></head><body>'
             f'<a class="skip" href="#main">{"Skip to content" if english else "跳到主要内容"}</a>'
             f'{header(base, language)}'
@@ -207,7 +207,7 @@ def main():
         for _, title, items in EN_GROUPS)
     (english_dir / 'index.html').write_text(
         '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
-        '<title>English documentation · PHICOMM COMMUNITY</title><link rel="stylesheet" href="../../style.css">'
+        + metadata(EN_INDEX_TITLE, EN_INDEX_DESCRIPTION, 'guides/en/', 'en') + '<link rel="stylesheet" href="../../style.css">'
         '<script src="../../theme.js"></script></head><body>' + header('../../', 'en') +
         '<main class="wrap prose" id="main"><p><a href="../../#docs" lang="zh-CN">简体中文</a> · English</p>'
         '<h1>English documentation</h1><p>Guides for TC1, M1, A1 and IotCloud.</p>' + english_links + '</main>' + footer('en') +
@@ -228,7 +228,7 @@ def main():
         (guides / f'{alias}.html').write_text(
             '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
             f'<meta http-equiv="refresh" content="0;url={target}.html">'
-            f'<link rel="canonical" href="{target}.html"><title>刷机教程</title>'
+            f'<link rel="canonical" href="{SITE_URL}guides/{target}.html"><title>刷机教程</title>'
             f'</head><body><a href="{target}.html">查看 A1 / M1 刷机教程</a></body></html>',
             encoding='utf-8')
 
@@ -245,6 +245,7 @@ def main():
     shutil.copytree(bundle / 'local', out / 'local')
 
     shutil.copytree(ROOT / 'docs' / 'public' / 'assets', guides / 'assets', dirs_exist_ok=True)
+    write_discovery(out)
     print(f'Wrote {len(PAGES) - len(missing)} guide pages to {out}')
 
 

@@ -166,6 +166,21 @@ class BuildTests(unittest.TestCase):
         self.assertTrue((self.out / 'style.css').exists())
         self.assertTrue((self.out / '.nojekyll').exists())
 
+    def test_search_discovery_survives_a_full_site_build(self):
+        from xml.etree import ElementTree as ET
+        from pages import SITE_URL
+        urls = [element.text for element in ET.parse(self.out / 'sitemap.xml').iter(
+            '{http://www.sitemaps.org/schemas/sitemap/0.9}loc')]
+        self.assertEqual(len(urls), 2 + 2 * len(PAGES))
+        for url in urls:
+            self.assertTrue(url.startswith(SITE_URL), url)
+            relative = url.removeprefix(SITE_URL)
+            page = self.out / (relative + 'index.html' if not relative or relative.endswith('/') else relative)
+            text = page.read_text()
+            self.assertEqual(re.findall(r'<link rel="canonical" href="([^"]+)">', text), [url])
+            self.assertIn('<meta name="description"', text)
+        self.assertIn(f'Sitemap: {SITE_URL}sitemap.xml', (self.out / 'robots.txt').read_text())
+
 
 if __name__ == '__main__':
     unittest.main()
