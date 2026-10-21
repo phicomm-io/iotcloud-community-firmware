@@ -27,10 +27,10 @@ static const struct {
     FIELD("brightness",brightness,A1_SET_BRIGHTNESS,255,1<<A1_CONTROL_LIGHT),
 #undef FIELD
 };
-static const char *color_keys[]={"r","g","b"};
+static const char color_keys[][2]={"r","g","b"};
 static bool control_value(json_object *v,uint8_t *out,unsigned max)
 {
-    if(!v || !json_object_is_type(v,max?json_type_int:json_type_boolean))return false;
+    if(!json_object_is_type(v,max?json_type_int:json_type_boolean))return false;
     int n=max?json_object_get_int(v):json_object_get_boolean(v);
     /* Unsigned comparison also rejects negative JSON integers. */
     if(max && (unsigned)n>max)return false;
