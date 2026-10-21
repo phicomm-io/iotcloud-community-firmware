@@ -56,6 +56,7 @@ static int session_cycle(void*x){(void)x;return 0;}
 static void session_closing(void*x,bool b,int rc){(void)x;(void)b;(void)rc;}
 static void session_event(void*x,unsigned e,int rc){(void)x;(void)e;(void)rc;}
 static bool session_initial_ready(void*x){(void)x;return true;}
+static bool session_valid(void*x){(void)x;return true;}
 static bool session_stop(void *);
 uint32_t mico_rtos_get_time(void){static unsigned t;return __atomic_add_fetch(&t,1,__ATOMIC_RELAXED);}
 void mico_thread_msleep(unsigned ms){(void)ms;sched_yield();}

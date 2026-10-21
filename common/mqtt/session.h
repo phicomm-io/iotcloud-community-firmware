@@ -36,6 +36,8 @@ typedef struct {
     bool(*stop)(void *);
     /* Optional owner-only predicate: batched discovery/initial state is done. */
     bool(*initial_ready)(void *);
+    /* Owner-only fresh identity/network check, with no lock held over I/O. */
+    bool(*valid)(void *);
 }
 
 ph_mqtt_session_hooks;

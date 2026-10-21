@@ -342,6 +342,12 @@ static int session_cycle(void *context) {
             if (rc == MQTT_SUCCESS) rc = feature_mqtt_service(publish, true);
     return rc;
 }
+static bool session_valid(void *context) {
+    (void)context;
+    m1_config_get(&current);
+    mqtt_state_get(&state);
+    return state.wifi_connected && same_connection(&cfg, &current);
+}
 static bool session_initial_ready(void *context) {
     (void)context;
     return discovery_index==6 && initial_index==2 && feature_mqtt_initial_ready();
@@ -374,7 +380,7 @@ static void mqtt_worker(mico_thread_arg_t arg) {
         mqtt_status(MQTT_CONFIG_ERROR);mico_rtos_delete_thread(NULL);return;
     }
     const ph_mqtt_session_hooks hooks={NULL,session_prepare,session_subscription,
-        session_initial,session_cycle,session_closing,session_event,NULL,session_initial_ready};
+        session_initial,session_cycle,session_closing,session_event,NULL,session_initial_ready,session_valid};
     ph_mqtt_session_run(&client,&hooks);
 }
 OSStatus m1_mqtt_start(void)

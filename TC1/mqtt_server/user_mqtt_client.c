@@ -382,13 +382,14 @@ static void session_event(void *context,unsigned event,int rc) {
     else if(event==PH_MQTT_READY){__atomic_store_n(&isconnect,true,__ATOMIC_RELEASE);cleanup_pending=true;TC1_STATUS_WRITE(tc1_mqtt_status=MQTT_READY);}
     else if(tc1_mqtt_status==MQTT_READY || tc1_mqtt_status==MQTT_CONNECTING){TC1_STATUS_WRITE(tc1_mqtt_status=MQTT_DISCONNECTED);}
 }
+static bool session_valid(void *context){(void)context;return session_current();}
 static bool session_stop(void *context){(void)context;return (__atomic_load_n(&mqtt_lifecycle, __ATOMIC_ACQUIRE) & MQTT_THREAD_STOP) != 0;}
 void MqttClientThread(mico_thread_arg_t arg) {
     if(ph_mqtt_startup_wait(&mqtt_startup,(uint32_t)arg) &&
        ph_mqtt_owner_init(&account,MAX_MQTT_DATA_SIZE-1,&mqtt_owner_thread,ingress_accept)) {
         ph_mqtt_outgoing(outgoing);
         const ph_mqtt_session_hooks hooks={NULL,session_prepare,session_subscription,
-            session_initial,session_cycle,session_closing,session_event,session_stop,session_initial_ready};
+            session_initial,session_cycle,session_closing,session_event,session_stop,session_initial_ready,session_valid};
         ph_mqtt_session_run(&c,&hooks);
     } else {TC1_STATUS_WRITE(tc1_mqtt_status=MQTT_CONFIG_ERROR);}
     ph_mqtt_owner_end();__atomic_store_n(&isconnect,false,__ATOMIC_RELEASE);__atomic_store_n(&mqtt_lifecycle,0u,__ATOMIC_RELEASE);mico_rtos_delete_thread(NULL);

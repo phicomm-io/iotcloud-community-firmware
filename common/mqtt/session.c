@@ -7,6 +7,10 @@ static void event(const ph_mqtt_session_hooks *h, unsigned state, int rc) {
         h->event(h->context, state, rc);
 }
 
+static bool session_valid(const ph_mqtt_session_hooks *h) {
+    return (!h->stop || !h->stop(h->context)) && (!h->valid || h->valid(h->context));
+}
+
 static int publish_text(Client *client, const char *topic, const char *text) {
     MQTTMessage message = {0};
     message.qos = QOS1;
@@ -115,8 +119,12 @@ void ph_mqtt_session_run(Client *client, const ph_mqtt_session_hooks *h) {
          * Publish it once only after CONNECT, subscriptions and initial setup
          * succeed; a failed publication must prevent a false READY state. */
         bool online = false;
+        if (rc == MQTT_SUCCESS && !session_valid(h))
+            rc = PH_MQTT_RECONFIGURE;
         if (rc == MQTT_SUCCESS && (!h->initial_ready || h->initial_ready(h->context))) {
             rc = publish_text(client, spec.availability, "online");
+            if (rc == MQTT_SUCCESS && !session_valid(h))
+                rc = PH_MQTT_RECONFIGURE;
             if (rc == MQTT_SUCCESS) {
                 online = true;
                 attempt = 0;
@@ -135,8 +143,14 @@ void ph_mqtt_session_run(Client *client, const ph_mqtt_session_hooks *h) {
                 rc = MQTT_SUCCESS;
             if (rc != MQTT_SUCCESS)
                 break;
+            if (!session_valid(h)) {
+                rc = PH_MQTT_RECONFIGURE;
+                break;
+            }
             if (!online && (!h->initial_ready || h->initial_ready(h->context))) {
                 rc = publish_text(client, spec.availability, "online");
+                if (rc == MQTT_SUCCESS && !session_valid(h))
+                    rc = PH_MQTT_RECONFIGURE;
                 if (rc != MQTT_SUCCESS)
                     break;
                 online = true;

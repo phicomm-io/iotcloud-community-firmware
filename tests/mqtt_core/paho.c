@@ -31,7 +31,7 @@ char *__wrap_strdup(const char *s){size_t n=strlen(s)+1;char*p=__wrap_malloc(n);
 static uint32_t now_ms;
 static bool multi_session,multi_done;
 static unsigned gate_mode,gate_online_before,gate_ready_before;
-static bool gate_closed;static unsigned multi_attempt,multi_ready,multi_cycles;
+static bool gate_closed,gate_cancel,gate_current;static unsigned multi_attempt,multi_ready,multi_cycles;
 static unsigned backoffs[32],backoff_count;
 static uintptr_t current_thread=1;
 static micoMemInfo_t heap={.free_memory=40000};
@@ -97,7 +97,11 @@ static void sent_packet(void){
   size_t body_at=offset+2+topic_size+(((tx[0]>>1)&3)?2:0);
   if(topic_size==15&&!memcmp(tx+offset+2,"tx/availability",15)){
    assert((tx[0]&1)&&((tx[0]>>1)&3)==1);
-   if(tx_size-body_at==6&&!memcmp(tx+body_at,"online",6))online_publications++;
+   if(tx_size-body_at==6&&!memcmp(tx+body_at,"online",6)){
+    online_publications++;
+    if(gate_mode==7)gate_current=false;
+    if(gate_mode==8)gate_cancel=true;
+   }
    if(tx_size-body_at==7&&!memcmp(tx+body_at,"offline",7))offline_publications++;
   }
 #ifdef REAL_SERVICE
@@ -107,6 +111,10 @@ static void sent_packet(void){
   assert(len<sizeof(last_body));memcpy(last_body,tx+start,len);last_body[len]=0;
   if(strstr(last_body,"\"busy\"")){busy_publications++;strcpy(busy_target,last_topic);}
 #endif
+  if(gate_mode>=5&&cycles==3&&topic_size==8&&!memcmp(tx+offset+2,"tx/state",8)){
+   if(gate_mode==5)gate_current=false;
+   if(gate_mode==6)gate_cancel=true;
+  }
   if(inject_large){unsigned char huge[]={0x30,0xff,0xff,0x7f};append(huge,sizeof(huge));inject_large=false;}
   for(unsigned i=0;i<inject_count;i++)incoming(injected_topic,"{\"request_id\":\"paho-1\"}",77+i);
   inject_count=0;
@@ -183,7 +191,7 @@ static int cycle(void *ctx){(void)ctx;cycles++;
 }
 static void closing(void *ctx,bool connected,int rc){(void)ctx;(void)rc;assert(connected==(!open_fail));close_events++;if(gate_mode)gate_closed=true;}
 static void event(void *ctx,unsigned e,int rc){(void)ctx;(void)rc;if(e==PH_MQTT_READY){ready_events++;if(multi_session)multi_ready++;}}
-static bool stop(void *ctx){(void)ctx;if(gate_mode)return gate_closed||cycles>=4||(gate_mode==3&&cycles>=2);return multi_session?multi_done:cycles>=2 || close_events;}
+static bool stop(void *ctx){(void)ctx;if(gate_mode)return gate_cancel||gate_closed||cycles>=4||(gate_mode==3&&cycles>=2);return multi_session?multi_done:cycles>=2 || close_events;}
 static void sessions(void){
  ph_mqtt_session_hooks h={NULL,prepare,subscription_plan,initial,cycle,closing,event,stop};
  unsigned n=executions,online_before=online_publications,offline_before=offline_publications;
@@ -206,10 +214,11 @@ static void sessions(void){
 
 }
 static bool initial_gate(void *ctx){(void)ctx;return cycles>=3;}
+static bool gate_valid(void *ctx){(void)ctx;return gate_current;}
 static void gated_sessions(void){
- ph_mqtt_session_hooks h={NULL,prepare,subscription_plan,initial,cycle,closing,event,stop,initial_gate};
- for(unsigned mode=1;mode<=4;mode++){
-  gate_mode=mode;gate_closed=false;cycles=close_events=0;
+ ph_mqtt_session_hooks h={NULL,prepare,subscription_plan,initial,cycle,closing,event,stop,initial_gate,gate_valid};
+ for(unsigned mode=1;mode<=8;mode++){
+  gate_mode=mode;gate_closed=gate_cancel=false;gate_current=true;cycles=close_events=0;
   gate_online_before=online_publications;gate_ready_before=ready_events;
   unsigned ran=executions,published=publications;
   ph_mqtt_session_run(&client,&h);
@@ -220,8 +229,8 @@ static void gated_sessions(void){
   assert(executions>=ran+2&&publications>=published+3);
   if(mode==1)assert(ready_events==gate_ready_before+1&&online_publications==gate_online_before+1);
   else assert(ready_events==gate_ready_before);
-  if(mode>=3)assert(online_publications==gate_online_before);
-  if(mode==2)assert(online_publications==gate_online_before+1);
+  if(mode>=3&&mode<=6)assert(online_publications==gate_online_before);
+  if(mode==2||mode>=7)assert(online_publications==gate_online_before+1);
  }
  gate_mode=0;
 }
@@ -238,6 +247,15 @@ int main(void){
  assert(ph_mqtt_startup_wait(&startup,generation));
  assert(mqtt_account_init(&account,1,"a1","test","aabbccddeeff"));
  assert(ph_mqtt_owner_init(&account,8192,&thread,accept));
+ /* Actual pinned ClientInit's first and second buffer allocations fail.
+  * The wrapper must restore Network.read and free the partially built Client. */
+ for(unsigned point=1;point<=2;point++){
+  memset(&client,0xa5,sizeof(client));network.mqttread=read_packet;
+  fail_allocation=native_allocs+point;
+  assert(ph_mqtt_client_init(&client,&network,50)!=MQTT_SUCCESS);
+  assert(!native_live&&!charged_live&&network.mqttread==read_packet);
+  fail_allocation=0;init();cleanup();
+ }
  init();inject_count=1;write_fragment=2;assert(publish()==0);assert(executions==0&&ph_mqtt_debug_core()->count[0]==1);
  ph_mqtt_diagnostics before_init,after_init;ph_mqtt_snapshot(&before_init);
  assert(ph_mqtt_client_init(&client,&network,50)!=0);ph_mqtt_snapshot(&after_init);
