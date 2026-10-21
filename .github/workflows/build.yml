@@ -29,9 +29,16 @@ env:
 jobs:
   frontend:
     name: Verify locked frontend dependency
-    # Source candidates execute only on an isolated GitHub-hosted runner. This
-    # job never publishes a frontend release or changes the committed lock.
-    runs-on: ubuntu-22.04
+    # Use the same trusted-runner policy as firmware. This job never publishes
+    # a frontend release or changes the committed lock.
+    runs-on: >-
+      ${{ fromJSON(
+        github.ref_type != 'tag' &&
+        (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
+        ((github.event_name == 'workflow_dispatch' && inputs.runner == 'self-hosted') ||
+         (vars.PHICOMM_CI_RUNNER == 'self-hosted' &&
+          (github.event_name != 'workflow_dispatch' || inputs.runner == 'auto'))) &&
+        '["self-hosted","linux","x64","phicomm-build"]' || '["ubuntu-22.04"]') }}
     steps:
       - uses: actions/checkout@v4
         with:
