@@ -20,7 +20,7 @@ cp -R "$sdk_m1/libraries/utilities/json_c/." "$json/"
 python3 tools/apply_sdk_patch.py "$json_sdk" \
  common/json-newlib-reent.patch common/json-printbuf-oom.patch \
  common/json-allocation-safety.patch common/json-heap-budget.patch \
- common/json-newlib-nano-abi.patch
+ common/json-newlib-nano-abi.patch common/json-integer-parse.patch
 python3 - "$json" <<'PY'
 import pathlib,sys
 for p in pathlib.Path(sys.argv[1]).glob('*.c'): p.write_text(p.read_text().replace('%ld','%d'))
@@ -32,5 +32,5 @@ for model in A1 M1; do
  sdk="$sdk/libraries/protocols/mqtt"
  extra=()
  if [[ $model == A1 ]]; then extra=(A1/control.c); else extra=(M1/mqtt_transport.c); fi
- "${compiler[@]}" -std=gnu99 -g -pthread -DHOST_$model -DMAX_MESSAGE_HANDLERS=12 -Itests/simulator -Itests/host -I"$model" -I"$json" -I"$sdk" -I"$sdk/MQTTPacket" tests/simulator/node.c "$model/features.c" "$model/service.c" "$model/mqtt.c" "${extra[@]}" tests/simulator/network.c "$sdk/MQTTClient.c" "$sdk"/MQTTPacket/*.c "$json"/*.c -lm -o "$out/$model"
+ "${compiler[@]}" -std=gnu99 -g -pthread -DHOST_$model -DMAX_MESSAGE_HANDLERS=12 -Itests/simulator -Itests/host -I"$model" -I"$json" -I"$sdk" -I"$sdk/MQTTPacket" tests/simulator/node.c "$model/features.c" "$model/service.c" "$model/mqtt.c" common/json_owned.c "${extra[@]}" tests/simulator/network.c "$sdk/MQTTClient.c" "$sdk"/MQTTPacket/*.c "$json"/*.c -lm -o "$out/$model"
 done

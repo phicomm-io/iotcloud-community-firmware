@@ -465,6 +465,15 @@ static int ota_publish(const char *leaf,const char *text,bool retained) {
 #include "../../common/ota/mqtt_ota.inc"
 static int service_sender(const char *topic,const char *body,bool retain){return MqttMsgPublish(&c,topic,QOS1,retain,(const unsigned char *)body,strlen(body));}
 #include "../../common/mqtt_service.inc"
+/* Keep branch-only scratch out of the nested status-command stack. These
+ * helpers finish before command dispatch, or run only on the OTA branch. */
+static __attribute__((noinline)) bool tc1_command_topic(const char *topic,unsigned length) {
+    char command[MQTT_TOPIC_MAX];mqtt_leaf(&account,"command",command,sizeof(command));
+    return length==strlen(command) && !memcmp(topic,command,length);
+}
+static __attribute__((noinline)) void tc1_ota_message(MQTTMessage *message) {
+    ota_command(account.base,message->payload,message->payloadlen,message->retained);
+}
 static void MessageArrived(MessageData *md) {
     OSStatus err = kUnknownErr;
     p_mqtt_recv_msg_t p_recv_msg = NULL;
@@ -474,10 +483,9 @@ static void MessageArrived(MessageData *md) {
        md->topicName->lenstring.len >= MAX_MQTT_TOPIC_SIZE || memchr(message->payload,0,message->payloadlen)) return;
     unsigned tn=md->topicName->cstring?strlen(md->topicName->cstring):md->topicName->lenstring.len;
     const char *tp=md->topicName->cstring?md->topicName->cstring:md->topicName->lenstring.data;
-    char cmd[MQTT_TOPIC_MAX];mqtt_leaf(&account,"command",cmd,sizeof(cmd));
-    if(tn==strlen(cmd) && !memcmp(tp,cmd,tn)){service_mqtt_input(service_sender,&account,message->payload,message->payloadlen,message->retained);return;}
+    if(tc1_command_topic(tp,tn)){service_mqtt_input(service_sender,&account,message->payload,message->payloadlen,message->retained);return;}
     if(tn==strlen(ota_topic) && !memcmp(tp,ota_topic,tn)) {
-        ota_command(account.base,message->payload,message->payloadlen,message->retained);return;
+        tc1_ota_message(message);return;
     }
     if(ota_job_active())return;
     p_recv_msg = (p_mqtt_recv_msg_t) calloc(1, sizeof(mqtt_recv_msg_t));

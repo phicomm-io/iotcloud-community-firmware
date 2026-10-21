@@ -58,6 +58,8 @@ def check(modules, model, nm, elf):
         mqtt_budget=int(re.search(r'mqtt_thread_stack_size = (0x[0-9a-fA-F]+|[0-9]+)',source).group(1),0)
         mqtt_paths={
           'MQTT nested JSON encode':(['MqttClientThread','all_states','UserMqttHassPower','UserMqttSendTopic','MqttMsgPublish','MessageArrived']+encode,3072),
+          'MQTT nested status build':(['MqttClientThread','all_states','UserMqttHassPower','UserMqttSendTopic','MqttMsgPublish','MessageArrived','service_command','service_command_execute','service_product','tc1_status_json'],3072),
+          'MQTT nested topic lookup':(['MqttClientThread','all_states','UserMqttHassPower','UserMqttSendTopic','MqttMsgPublish','MessageArrived','tc1_command_topic'],3072),
           'MQTT snapshot nested JSON encode':(['MqttClientThread','service_mqtt_publish','service_sender','MqttMsgPublish','MessageArrived']+encode,3072),
           'MQTT flush nested JSON encode':(['MqttClientThread','service_mqtt_flush','service_sender','MqttMsgPublish','MessageArrived']+encode,3072),
         }
