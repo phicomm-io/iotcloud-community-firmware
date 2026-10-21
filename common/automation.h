@@ -56,3 +56,7 @@ bool automation_save(const automation_config_t *);
 json_object *automation_command(const char *,json_object *,const char **,bool *handled);
 void automation_poll(bool clock_valid);
 void automation_button(unsigned key,unsigned clicks,unsigned seconds);
+#ifdef FEATURE_DEVICE_A1
+/* Product business entry; does not build a status or command JSON graph. */
+bool a1_automation_execute(const automation_action_t *, bool button);
+#endif

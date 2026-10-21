@@ -38,6 +38,8 @@
 #define DEVICE_ID m1_id
 #endif
 #include "device_status.h"
+#if !defined(HOST_A1) && !defined(HOST_M1)
+/* POSIX simulator provides its existing peripheral/status boundary. */
 __attribute__((noinline)) struct printbuf *service_product_status_wire(bool live,bool envelope,const char *id)
 {
     device_status_t snapshot;
@@ -49,6 +51,7 @@ __attribute__((noinline)) struct printbuf *service_product_status_wire(bool live
 #endif
     return device_status_wire(&snapshot,live?NULL:&full,envelope,id);
 }
+#endif
 static void svc_string(json_object *o,const char *key,const char *value){json_build_object_add(o,key,json_object_new_string(value));}
 static bool svc_keys(json_object *p,const char *allowed){
     json_object_object_foreach(p,key,value){char needle[80];snprintf(needle,sizeof(needle),"|%s|",key);if(!value || !strstr(allowed,needle))return false;}return true;

@@ -171,6 +171,13 @@ void service_init(void) {
     ota_job_init();
     service_event("info","system","boot");
 }
+bool service_control_begin(void) {
+    if (!ready) return false;
+    mico_rtos_lock_mutex(&command_lock);
+    if (ota_job_active()) { mico_rtos_unlock_mutex(&command_lock); return false; }
+    return true;
+}
+void service_control_end(void) { mico_rtos_unlock_mutex(&command_lock); }
 static bool identifier(const char *s,size_t max) {
     size_t n=strlen(s); if (!n || n>=max) return false;
     for (size_t i=0;i<n;i++) if (!isalnum((unsigned char)s[i]) && s[i]!='_' && s[i]!='.' && s[i]!='-') return false;

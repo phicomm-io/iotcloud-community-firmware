@@ -33,7 +33,7 @@ def main():
         command('buttons.set', dict(key=key, clicks=clicks, action=action, params=params or {}), 'accepted')
 
     def press(key=2, clicks=1):
-        raw({'sim_button': dict(key=key, clicks=clicks)})
+        raw({'sim_button': dict(key=key, clicks=clicks, low_memory=True)})
 
     try:
         # Factory power key: wake while off, inspect while on; no mode/speed/Flash changes.

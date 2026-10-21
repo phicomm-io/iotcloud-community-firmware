@@ -64,7 +64,21 @@ def check(directory, header):
             'a1_status_json_view' if directory.name == 'A1' else 'm1_status_json_view']),
     }
     status='a1_status_json' if directory.name=='A1' else 'm1_status_json'
-    if directory.name=='A1':paths['scheduled control'][2].extend(['a1_control_local','feature_group_control','group_send','parse'])
+    if directory.name=='A1':
+        paths={}
+        for label,prefix in (
+            ('scheduled control',['feature_worker','automation_poll']),
+            ('button control',['feature_worker','a1_input_poll','automation_button']),
+            ('panel slider',['feature_worker','a1_input_poll','a1_panel_event'])):
+            local=prefix+(['a1_automation_execute','a1_panel_inspect'] if label!='panel slider' else [])+['a1_control_apply']
+            local += [n for n in ('auto_execute','control_broadcast') if n in frames]
+            paths[label+' group delivery']=(binding,2048,local+['feature_group_control','group_send','parse'])
+            paths[label+' feature persistence']=(binding,2048,local+['feature_fan_apply','install_config','feature_config_save'])
+        paths['button light effect']=(binding,2048,['feature_worker','a1_input_poll','automation_button',
+            'a1_automation_execute','feature_light_select','install_config','feature_config_save'])
+        paths['panel recovery']=(binding,2048,['feature_worker','a1_input_poll','a1_reset'])
+        paths['button filter persistence']=(binding,2048,['feature_worker','a1_input_poll','automation_button',
+            'a1_automation_execute','a1_filter_change'])
     # MQTT paths are checked with the linked shared archive in check_http_core.
     expanded={}
     for label,(budget,reserve,names) in paths.items():
@@ -79,6 +93,7 @@ def check(directory, header):
     # Attribution executes after the business builder returns. Check its own
     # tail rather than charging it together with the full snapshot scratch.
     for label,(_,_,names) in paths.items():
+        if 'service_command' not in names:continue
         prefix=names[:names.index('service_command')+1]
         expanded[label+' failure attribution']=(binding,2048,prefix+['service_caller_graph_failed','service_memory_failures','json_heap_lock'])
     from check_http_core import read_json_allocator_frames

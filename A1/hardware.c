@@ -162,14 +162,15 @@ static bool panel_tick(uint32_t now, uint8_t *last_key, uint8_t *last_slider,
             a1_state.fan_feedback_until = 0;
             mico_rtos_unlock_mutex(&a1_lock);
         }
-        if(event.type==KEY_EVENT_NETWORK_RESET || event.type==KEY_EVENT_FULL_RESET) a1_reset(event.type==KEY_EVENT_FULL_RESET);
-        else if(event.type==KEY_EVENT_CLICKS) automation_button(i,event.count,0);
-        else if(event.type==KEY_EVENT_HOLD) automation_button(i,0,event.count);
+        if(event.type==KEY_EVENT_NETWORK_RESET || event.type==KEY_EVENT_FULL_RESET)
+            a1_input_push(event.type==KEY_EVENT_FULL_RESET?A1_INPUT_FULL_RESET:A1_INPUT_NETWORK_RESET,0,0,0,0);
+        else if(event.type==KEY_EVENT_CLICKS) a1_input_push(A1_INPUT_BUTTON,i,event.count,0,0);
+        else if(event.type==KEY_EVENT_HOLD) a1_input_push(A1_INPUT_BUTTON,i,0,event.count,0);
     }
     (void)wifi_since;
     *wifi_sent = false;
     if (slider != 255 && *last_slider != 255 && slider != *last_slider)
-        a1_panel_event(false, (int)slider - *last_slider);
+        a1_input_push(A1_INPUT_SLIDER,0,0,0,(int)slider - *last_slider);
     *last_key = key; *last_slider = slider;
     return true;
 }

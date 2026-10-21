@@ -4,6 +4,9 @@
 #include <stdint.h>
 #include "json_build.h"
 #include "memory_budget.h"
+/* Serialize internal typed controls with transport commands, without JSON. */
+bool service_control_begin(void);
+void service_control_end(void);
 /* All transports share this dispatcher. The returned object belongs to caller. */
 void service_init(void);
 json_object *service_parse(const void *, size_t);

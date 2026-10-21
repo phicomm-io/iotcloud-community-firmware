@@ -14,6 +14,14 @@ bool automation_save(const automation_config_t *c){if(fail_save || c->revision!=
 json_object *service_product_capabilities(void){return json_object_new_object();}
 json_object *service_product(const char *a,json_object *p,const char **code){(void)p;*code=busy?"busy":"accepted";if(!strcmp(a,"status.get")){*code="ok";return json_object_new_object();}if(!busy){assert(calls<16);order[calls++]=!strcmp(a,"system.reboot")?AUTO_REBOOT:AUTO_FAN;}return NULL;}
 #include "../common/automation.c"
+#ifdef FEATURE_DEVICE_A1
+/* Scheduling harness checks persistence/order; product controls are exercised
+ * by the A1 production-control and simulator scenarios. */
+bool a1_automation_execute(const automation_action_t *a,bool button){
+ (void)button;if(!a->kind)return true;if(busy)return false;
+ assert(calls<16);order[calls++]=a->kind==AUTO_REBOOT?AUTO_REBOOT:AUTO_FAN;return true;
+}
+#endif
 static json_object *request(const char *s,const char *code){json_object *q=service_parse(s,strlen(s));assert(q);json_object *r=service_command(q);json_object_put(q);assert(r);const char *got=json_object_get_string(json_object_object_get(r,"code"));if(strcmp(got,code)){fprintf(stderr,"%s expected=%s got=%s\n",s,code,json_object_to_json_string(r));abort();}return r;}
 #define CHECK(s,c) do{json_object *r=request(s,c);json_object_put(r);}while(0)
 static void tick(unsigned seconds){epoch+=seconds;test_now+=seconds*1000;automation_poll(true);}

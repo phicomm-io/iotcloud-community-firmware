@@ -115,6 +115,8 @@ for define in -DFEATURE_DEVICE_A1 -DAUTOMATION_TC1; do
 "${compiler[@]}" "$define" -std=gnu99 -Wall -Wextra -Wno-misleading-indentation -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-value -Wno-nonnull-compare -Itests/stubs -I"$json_dir" common/service.c tests/test_automation.c common/json_owned.c "$json_dir"/*.c -o "$output/automation"
 "$output/automation"
 done
+"${compiler[@]}" -std=gnu99 -Wall -Wextra -Werror -Wno-misleading-indentation -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-value -Wno-nonnull-compare -Itests/host -I"$json_dir" tests/test_a1_control.c "$json_dir"/*.c -o "$output/a1-control"
+"$output/a1-control"
 for device in M1 A1 TC1; do
     "${compiler[@]}" -std=gnu99 -Wall -Wextra -Werror -DHOST_$device -Itests/host -I"$json_dir" tests/test_migration.c -o "$output/migrate-$device"
     "$output/migrate-$device"
