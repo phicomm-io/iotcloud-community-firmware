@@ -5,7 +5,7 @@ python3 -m unittest tests.test_prepare_sdk
 python3 tools/check_version.py
 python3 -m unittest discover -s tests -p test_version.py
 python3 -m unittest tests.test_package_stale_signature
-python3 -m unittest tests.test_readonly_stress tests.test_readonly_input_edges
+python3 -m unittest tests.test_readonly_stress tests.test_readonly_input_edges tests.test_readonly_shared_httpd
 python3 -m unittest tests.test_http_overload
 python3 -m unittest tests.test_http_tcp_integration
 python3 -m unittest tests.test_memory_admission tests.test_http_browser_queue tests.test_tc1_http_recovery tests.test_tc1_http_trace tests.test_tc1_http_parser tests.test_tc1_http
@@ -51,7 +51,7 @@ cp -R "$json_dir" "$output/sdk/libraries/utilities/json_c"
 python3 tools/apply_sdk_patch.py "$output/sdk" \
     common/json-newlib-reent.patch common/json-printbuf-oom.patch \
     common/json-allocation-safety.patch common/json-heap-budget.patch \
-    common/json-newlib-nano-abi.patch
+    common/json-newlib-nano-abi.patch common/json-integer-parse.patch
 ln -s sdk/libraries/utilities/json_c "$output/json_c"
 python3 - "$output/json_c" <<'PYHOST'
 import pathlib, sys
@@ -59,6 +59,7 @@ for p in pathlib.Path(sys.argv[1]).glob('*.c'):
     p.write_text(p.read_text().replace('%ld', '%d'))
 PYHOST
 json_dir="$output/json_c"
+PHICOMM_TEST_JSON_DIR="$json_dir" python3 -m unittest tests.test_json_integer_parse
 "${compiler[@]}" -std=gnu99 -Wall -Wextra -Werror -DWATCHDOG_HOST -Itests/watchdog -Itests/stubs -I"$json_dir" tests/test_watchdog.c "$json_dir"/*.c -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -o "$output/watchdog"
 "$output/watchdog"
 PHICOMM_TEST_JSON_DIR="$json_dir" python3 -m unittest tests.test_http_json_lifetime

@@ -38,7 +38,7 @@ class ApplySdkPatchTests(unittest.TestCase):
     def test_real_json_stack_reruns_from_every_prefix_for_available_products(self):
         patches = [ROOT / 'common' / name for name in (
             'json-newlib-reent.patch', 'json-printbuf-oom.patch', 'json-allocation-safety.patch',
-            'json-heap-budget.patch', 'json-newlib-nano-abi.patch')]
+            'json-heap-budget.patch', 'json-newlib-nano-abi.patch', 'json-integer-parse.patch')]
         paths = set().union(*(changed_paths(p.read_bytes()) for p in patches))
         candidates = [ROOT / 'build' / name / 'mico-os' for name in
                       ('a1-sdk', 'm1-sdk', 'tc1-sdk-3.6.4')]

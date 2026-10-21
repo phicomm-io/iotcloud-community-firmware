@@ -19,7 +19,8 @@ python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \
     "$project_dir/common/json-printbuf-oom.patch" \
     "$project_dir/common/json-allocation-safety.patch" \
     "$project_dir/common/json-heap-budget.patch" \
-    "$project_dir/common/json-newlib-nano-abi.patch"
+    "$project_dir/common/json-newlib-nano-abi.patch" \
+    "$project_dir/common/json-integer-parse.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/wifi-owned-mico36.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-mico36.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-publish-bounds.patch"

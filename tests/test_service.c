@@ -1,6 +1,7 @@
 #include "mico.h"
 #include "../common/service.h"
 #include <assert.h>
+#include <errno.h>
 #include <string.h>
 json_object *automation_command(const char *a,json_object *p,const char **c,bool *h){(void)a;(void)p;(void)c;*h=false;return NULL;}
 uint32_t test_now;
@@ -20,6 +21,8 @@ int main(void){
  CHECK("{\"action\":\"fan.set\",\"params\":{},\"extra\":true}","invalid_params");
  CHECK("{\"action\":\"fan.set\",\"params\":{}} junk","invalid_params");
  CHECK("{\"action\":\"status.get\\u0000set\",\"params\":{}}","invalid_params");
+ errno=ERANGE;
+ CHECK("{\"action\":\"logs.get\",\"params\":{\"limit\":8}}","ok");
  CHECK("{\"action\":\"logs.get\",\"params\":{\"limit\":9}}","invalid_params");
  for(unsigned i=0;i<70;i++)service_event("info","test","transition");
  service_event("info","test","password=secret");
