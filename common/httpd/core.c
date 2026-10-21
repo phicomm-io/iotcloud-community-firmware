@@ -30,6 +30,8 @@ static void close_slot(ph_http_server *s, unsigned i, ph_http_close_reason why, 
     if (!close_fd(s, c->fd)) { why = PH_HTTP_CLOSED_IO; sent = false; }
     if (c->lease) { s->app->release(&s->exchange, sent); s->active = -1; }
     if (s->queued == (int)i) s->queued = -1;
+    if(c->simple && c->reason==PH_HTTP_CLOSED_BUSY)
+        count(sent?&s->diagnostics.busy_sent:&s->diagnostics.busy_failed);
     count(&s->diagnostics.closed[why]);
     c->state = PH_SLOT_FREE; c->fd = -1; c->lease = false;
 }
@@ -74,7 +76,17 @@ static void respond(ph_http_server *s, unsigned i)
 {
     ph_http_slot *c=&s->slots[i];
     if (!response_header(s)) { close_slot(s,i,PH_HTTP_CLOSED_IO,false); return; }
-    c->simple=NULL; c->header_sent=c->body_sent=0; c->state=PH_SLOT_SEND;
+    c->simple=NULL; c->header_sent=c->body_sent=0;
+    const ph_http_response *r=&s->exchange.response;
+    /* Gather a small response into existing header tail. No optional TC1
+     * socket option and no extra allocation; partial sends keep one offset. */
+    if(!r->suppress_body && r->status!=304 && r->length) {
+        size_t n=sizeof(s->response_header)-s->response_header_length;
+        if(n>r->length)n=r->length;
+        memcpy(s->response_header+s->response_header_length,r->body,n);
+        s->response_header_length+=n;c->body_sent=n;
+    }
+    c->state=PH_SLOT_SEND;
     c->reason=PH_HTTP_CLOSED_OK; c->deadline=s->io->now()+PH_HTTP_RESPONSE_MS;
 }
 static void action(ph_http_server *s, unsigned i, ph_http_action next)
@@ -107,7 +119,7 @@ static void ready(ph_http_server *s, unsigned i)
     c->remaining=c->parser.request.length;
     if(s->active<0) { acquire(s,i); return; }
     if(s->queued<0) {
-        s->queued=(int)i; c->state=PH_SLOT_READY;
+        s->queued=(int)i; count(&s->diagnostics.queued);c->state=PH_SLOT_READY;
         c->deadline=s->io->now()+PH_HTTP_READY_MS;
     } else simple_reply(s,i,true);
 }
@@ -187,6 +199,7 @@ static void send_part(ph_http_server *s, unsigned i)
         int n=s->io->send(c->fd,data,length);
         if(n<0 && s->io->retry()) { s->io->yield();return; }
         if(n<=0) { close_slot(s,i,PH_HTTP_CLOSED_IO,false);return; }
+        if(c->simple && c->reason==PH_HTTP_CLOSED_BUSY)s->diagnostics.busy_bytes+=(unsigned)n;
         if(c->simple || c->header_sent<s->response_header_length)c->header_sent+=(size_t)n;
         else c->body_sent+=(size_t)n;
         return;
@@ -274,7 +287,7 @@ void ph_http_server_step(ph_http_server *s)
         else if((rr&bit) && c->state==PH_SLOT_DRAIN) {
             size_t want=c->remaining<sizeof(s->scratch)?c->remaining:sizeof(s->scratch);
             int got=s->io->recv(c->fd,s->scratch,want);
-            if(got>0) { c->remaining-=(unsigned)got;if(!c->remaining)close_slot(s,i,c->reason,true); }
+            if(got>0) { s->diagnostics.drained+=(unsigned)got;c->remaining-=(unsigned)got;if(!c->remaining)close_slot(s,i,c->reason,true); }
             else if(got==0 || !s->io->retry())close_slot(s,i,c->reason,true);
         }
     }

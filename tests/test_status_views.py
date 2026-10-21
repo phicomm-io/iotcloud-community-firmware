@@ -21,7 +21,7 @@ class StatusViewsTest(unittest.TestCase):
                 for p in host_json.glob('*.c'):
                     p.write_text(p.read_text().replace('%ld', '%d'))
                 source = (ROOT / model / 'http.c').read_text()
-                builders = source[source.index('static void str('):source.index('static void send_json(')]
+                builders = source[source.index('static void str('):source.index('static void memory_response(')]
                 counters = sorted(set(re.findall(r'\bhttp_accept_\w+', builders)))
                 prefix = model.lower()
                 harness = r'''
@@ -37,7 +37,8 @@ void MODEL_LOWER_state_get(MODEL_LOWER_state_t *out){*out=snapshot;}
 static void phicomm_variant_json(json_object *o){expensive++;json_build_object_add(o,"full_resources",json_object_new_boolean(true));}
 static void runtime_metrics_json(json_object *o){expensive++;json_build_object_add(o,"uptime_seconds",json_object_new_int(25));}
 static void watchdog_status_json(json_object *o){expensive++;json_build_object_add(o,"watchdog_state",json_object_new_string("healthy"));}
-typedef struct {int set_rc,set_errno,limit_get_rc,limit,connections_get_rc,connections;} http_diag_t;
+#include "common/httpd/http.h"
+typedef ph_http_diagnostics http_diag_t;
 static http_diag_t http_diag_snapshot(void){expensive++;return (http_diag_t){0};}
 #define HTTP_PENDING_CLIENTS 1
 #define HTTP_TCP_CLIENT_LIMIT 4

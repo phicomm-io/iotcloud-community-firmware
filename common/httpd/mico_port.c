@@ -13,16 +13,29 @@ static unsigned initial_cap;
 static bool use_nodelay;
 static int listener_fd=-1;
 static uint64_t response_started;
+static bool listener_ready;
+static unsigned owner_state, restarts;
+static int io_errno;
 static unsigned irq_lock(void)
 {
+#ifdef PH_HTTP_HOST_TEST
+    return 0;
+#else
     unsigned mask;
     __asm volatile("mrs %0, primask\ncpsid i" : "=r"(mask) :: "memory");
     return mask;
+#endif
 }
 static void irq_unlock(unsigned mask)
-{ __asm volatile("msr primask, %0" :: "r"(mask) : "memory"); }
+{
+#ifdef PH_HTTP_HOST_TEST
+    (void)mask;
+#else
+    __asm volatile("msr primask, %0" :: "r"(mask) : "memory");
+#endif
+}
 static void publish(const ph_http_diagnostics *d)
-{ unsigned mask=irq_lock();cached=*d;irq_unlock(mask); }
+{ unsigned mask=irq_lock();cached=*d;cached.owner_state=owner_state;cached.restarts=restarts;irq_unlock(mask); }
 ph_http_diagnostics ph_http_snapshot(void)
 { unsigned mask=irq_lock();ph_http_diagnostics d=cached;irq_unlock(mask);return d; }
 static int open_listener(unsigned cap)
@@ -30,15 +43,16 @@ static int open_listener(unsigned cap)
     (void)cap;
     int fd=socket(AF_INET,SOCK_STREAM,IPPROTO_TCP);
     if(fd<0)return -1;
+    listener_fd=fd;listener_ready=false;
+    if(fd>=PH_HTTP_FD_LIMIT)return fd;
     struct sockaddr_in a;memset(&a,0,sizeof(a));a.sin_family=AF_INET;
     a.sin_port=htons(80);a.sin_addr.s_addr=INADDR_ANY;
-    if(fd>=PH_HTTP_FD_LIMIT || bind(fd,(struct sockaddr *)&a,sizeof(a))<0 || listen(fd,0)<0) {
-        close(fd);return -1;
-    }
-    listener_fd=fd;return fd;
+    if(bind(fd,(struct sockaddr *)&a,sizeof(a))<0 || listen(fd,0)<0)return fd;
+    listener_ready=true;return fd;
 }
 static int limit(int fd,unsigned cap,ph_http_diagnostics *d)
 {
+    if(!listener_ready) { d->set_rc=-1;d->set_errno=errno;return -1; }
     int value=(int)cap;
     d->set_rc=setsockopt(fd,IPPROTO_TCP,TCP_MAX_CONN_NUM,&value,sizeof(value));
     d->set_errno=d->set_rc<0?errno:0;
@@ -71,6 +85,7 @@ static int wait_ready(uint64_t reads,uint64_t writes,uint64_t *rr,uint64_t *ww,u
     struct timeval t={ms/1000,(ms%1000)*1000};
     HTTP_TRACE(HTTP_TRACE_CLIENT_SELECT_ENTER,listener_fd,(int)ms);
     int rc=select(PH_HTTP_FD_LIMIT,&r,&w,NULL,&t);
+    io_errno=rc<0?errno:0;
     HTTP_TRACE(HTTP_TRACE_CLIENT_SELECT_RETURN,listener_fd,rc);
     *rr=*ww=0;
     if(rc>0)for(unsigned fd=0;fd<PH_HTTP_FD_LIMIT;++fd) {
@@ -80,8 +95,8 @@ static int wait_ready(uint64_t reads,uint64_t writes,uint64_t *rr,uint64_t *ww,u
     return rc;
 }
 static int accept_one(int fd)
-{ HTTP_TRACE(HTTP_TRACE_ACCEPT_ENTER,fd,0);int child=accept(fd,NULL,NULL);HTTP_TRACE(HTTP_TRACE_ACCEPT_RETURN,child,child<0?errno:0);return child; }
-static int receive(int fd,void *p,size_t n) { return recv(fd,p,n,0); }
+{ HTTP_TRACE(HTTP_TRACE_ACCEPT_ENTER,fd,0);int child=accept(fd,NULL,NULL);io_errno=child<0?errno:0;HTTP_TRACE(HTTP_TRACE_ACCEPT_RETURN,child,child<0?errno:0);return child; }
+static int receive(int fd,void *p,size_t n) { int rc=recv(fd,p,n,0);io_errno=rc<0?errno:0;return rc; }
 static int transmit(int fd,const void *p,size_t n)
 {
     uint64_t bit=UINT64_C(1)<<fd;
@@ -89,25 +104,28 @@ static int transmit(int fd,const void *p,size_t n)
         response_started|=bit;
         int one=1;setsockopt(fd,IPPROTO_TCP,TCP_NODELAY,&one,sizeof(one));
     }
-    return send(fd,p,n,0);
+    int rc=send(fd,p,n,0);io_errno=rc<0?errno:0;return rc;
 }
-static int close_one(int fd) { int rc=close(fd);if(fd>=0 && fd<PH_HTTP_FD_LIMIT)response_started&=~(UINT64_C(1)<<fd);if(fd==listener_fd)listener_fd=-1;return rc; }
-static bool retry(void) { return errno==EINTR || errno==EAGAIN || errno==EWOULDBLOCK; }
-static int error_number(void) { return errno; }
+static int close_one(int fd) { int rc=close(fd);io_errno=rc<0?errno:0;if(fd>=0 && fd<PH_HTTP_FD_LIMIT)response_started&=~(UINT64_C(1)<<fd);if(fd==listener_fd)listener_fd=-1;return rc; }
+static bool retry(void) { return io_errno==EINTR || io_errno==EAGAIN || io_errno==EWOULDBLOCK; }
+static int error_number(void) { return io_errno; }
 static void yield(void) { mico_thread_msleep(1); }
 static uint32_t now(void) { return mico_rtos_get_time(); }
 static const ph_http_io io={now,open_listener,limit,accept_one,nonblock,wait_ready,receive,transmit,close_one,retry,error_number,yield,publish};
 static void owner(mico_thread_arg_t arg)
 {
     (void)arg;
+    owner_state=1;restarts=0;
     for(unsigned attempt=0;attempt<3 && lifecycle==1;++attempt) {
         if(ph_http_server_open(&server,&io,application,initial_cap)) {
             while(lifecycle==1 && server.running)ph_http_server_step(&server);
             ph_http_server_close(&server);
         }
         if(lifecycle!=1 || server.diagnostics.close_failures)break;
-        mico_thread_msleep(100);
+        if(attempt<2) { ++restarts;mico_thread_msleep(100); }
     }
+    owner_state=server.diagnostics.close_failures?3:lifecycle==2?0:2;
+    publish(&server.diagnostics);
     unsigned mask=irq_lock();lifecycle=0;irq_unlock(mask);
     mico_rtos_delete_thread(NULL);
 }

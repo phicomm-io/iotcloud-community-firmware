@@ -1,0 +1,18 @@
+--- a/platform/MCU/MW3xx/GCC/app_with_moc.ld
++++ b/platform/MCU/MW3xx/GCC/app_with_moc.ld
+@@ -106,6 +106,15 @@
+     }> SRAM AT> APP_FLASH
+ 
+ 
++    /* Owned application SRAM: excluded from startup clearing and heap reuse. */
++    .http_retained (NOLOAD) :
++    {
++        . = ALIGN(4);
++        KEEP(*(.http_retained))
++        . = ALIGN(4);
++    }> SRAM AT> SRAM
++    ASSERT(SIZEOF(.http_retained) <= 512, "HTTP retained trace exceeds budget")
++
+     .bss : /* Zero initialised memory used for zero initialised variables */
+     {
+         link_bss_location = ALIGN(., 4);

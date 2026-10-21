@@ -62,7 +62,8 @@ typedef struct {
     int last_fd, last_read_rc, last_select_rc, last_errno;
     uint32_t close_failures; int last_close_rc, last_close_errno;
     int set_rc, set_errno, limit_get_rc, limit, connections_get_rc, connections;
-    uint32_t slot_bytes, server_bytes;
+    uint32_t slot_bytes, server_bytes, queued, busy_bytes;
+    unsigned owner_state, restarts; /* 0 stopped, 1 running, 2 unavailable, 3 uncertain close */
 } ph_http_diagnostics;
 /* OS abstraction: only the I/O owner calls these. retry() classifies the
  * immediately preceding error; cached diagnostics never perform socket I/O. */

@@ -1,6 +1,6 @@
 #define AUTOMATION_TC1
 #include "main.h"
-#include "httpd.h"
+#include "http_server/auth.h"
 #include "user_gpio.h"
 #include "user_wifi.h"
 #include "user_power.h"

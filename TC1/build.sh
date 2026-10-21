@@ -27,17 +27,14 @@ python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-socket-close.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/M1/mqtt-packet-deadline.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-response-deadline.patch"
-python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \
-    "$app_dir/http-connection-sdk.patch" "$app_dir/http-resource-sdk.patch" \
-    "$app_dir/http-client-limit-sdk.patch" "$app_dir/http-auth-sdk.patch" \
-    "$app_dir/http-cors-sdk.patch" "$app_dir/http-cors-empty-sdk.patch" "$app_dir/http-options-sdk.patch" "$app_dir/http-client-once-sdk.patch" \
-    "$app_dir/http-recovery-sdk.patch" "$app_dir/http-eof-sdk.patch" "$app_dir/http-nonblocking-sdk.patch" "$app_dir/http-diagnostics-sdk.patch" "$app_dir/http-listener-verify-sdk.patch" "$app_dir/http-header-bounds-sdk.patch" "$app_dir/http-trace-sdk.patch" "$app_dir/http-short-connection-sdk.patch" "$app_dir/http-user-agent-sdk.patch" "$app_dir/http-content-length-sdk.patch" "$app_dir/http-request-version-sdk.patch" "$app_dir/http-header-budget-sdk.patch" "$app_dir/http-unknown-close-sdk.patch"
+python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/http-retained-sdk.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/parameters-sdk.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/signed-ota-sdk.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/no-unsigned-sdk-write.patch"
 mkdir -p "$workspace"
 ln -sfn "$sdk_dir" "$workspace/mico-os"
 ln -sfn "$app_dir" "$workspace/TC1"
+ln -sfn "$project_dir/common/httpd" "$workspace/phicomm_httpd"
 tools_dir="${TC1_TOOLS_DIR:-$project_dir/build/tc1-tools}"
 target=TC1@MK3031@moc
 version_args=()
@@ -84,6 +81,7 @@ ln -sfn "$(command -v make)" "$micoder/cmd/Linux64/make"
     make HOST_OS=Linux64 TOOLS_ROOT="$micoder" PYTHON="$python2" TLS=mocSSL \
         -f mico-os/makefiles/Makefile "$target" total
 )
+python3 "$project_dir/tools/check_http_core.py" "$workspace/build/$target/Modules" TC1 "$gcc_dir/bin/arm-none-eabi-nm" "$workspace/build/$target/binary/$target.elf"
 python3 "$project_dir/tools/check_json_float.py" "$gcc_dir/bin/arm-none-eabi-nm" "$workspace/build/$target/binary/$target.elf"
 python3 "$project_dir/tools/check_tc1_trace.py" "$gcc_dir/bin/arm-none-eabi-nm" "$workspace/build/$target/binary/$target.elf"
 python3 "$app_dir/tools/package.py" "$workspace/build/$target/binary" "$project_dir/build/tc1${variant_suffix}-release"

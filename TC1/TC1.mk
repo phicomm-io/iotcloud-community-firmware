@@ -39,13 +39,14 @@ $(NAME)_SOURCES := http_trace.c\
 				   user_power.c\
 				   timed_task/timed_task.c\
 				   http_server/web_log.c\
-				   http_server/app_httpd.c
+				   http_server/app_httpd.c\
+                   http_server/auth.c
 
 $(NAME)_COMPONENTS := protocols/SNTP\
 					protocols/mqtt\
 					utilities/json_c\
 					utilities/url\
-					daemons/http_server
+					phicomm_httpd
 
 GLOBAL_DEFINES += DEV_MODEL=\"PHICOMM_TC1_A1\"
 
@@ -64,3 +65,5 @@ GLOBAL_DEFINES += PHICOMM_FULL_RESOURCES=$(PHICOMM_FULL_RESOURCES)
 $(NAME)_CFLAGS += -I$(PHICOMM_WEB_OUTPUT_DIR)
 
 GLOBAL_DEFINES += PHICOMM_HTTP_TRACE=1
+
+GLOBAL_DEFINES += PH_HTTP_CLIENT_SLOTS=3
