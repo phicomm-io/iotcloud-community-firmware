@@ -318,7 +318,7 @@ class ReadonlyStressTest(unittest.TestCase):
 
     def test_shared_core_requires_healthy_owner_and_actual_admission(self):
         healthy = {'http_core_owner_state': 1, 'http_core_close_failures': 0,
-                   'http_core_restarts': 0, 'http_core_tcp_limit': 3,
+                   'http_core_restarts': 0, 'http_core_tcp_limit': 4,
                    'http_core_tcp_rc': 0, 'http_core_occupied': 1,
                    'http_core_server_bytes': 4636, 'http_tcp_sample_ms': 1000}
         for changed, blocked in (({}, False),
@@ -328,7 +328,7 @@ class ReadonlyStressTest(unittest.TestCase):
                                  ({'http_core_restarts': 1}, True),
                                  ({'http_core_tcp_limit': 5}, True),
                                  ({'http_core_tcp_rc': -1}, True),
-                                 ({'http_core_occupied': 4}, True),
+                                 ({'http_core_occupied': 5}, True),
                                  ({'http_core_server_bytes': None}, True)):
             with self.subTest(changed=changed), tempfile.TemporaryDirectory() as directory:
                 runner = Runner({'127.0.0.1': 'test'}, 'test', Path(directory),

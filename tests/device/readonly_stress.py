@@ -288,7 +288,7 @@ class Runner:
         if data['http_core_restarts'] != 0:
             self.block(ip, 'shared HTTP owner restarted; investigate before acceptance')
         model = self.before.get(ip, {}).get('state', {}).get('model')
-        expected = {'a1': 3, 'tc1': 3, 'm1': 4}.get(model)
+        expected = {'a1': 3, 'tc1': 4, 'm1': 4}.get(model)
         if (expected is None or data['http_core_tcp_limit'] != expected or
                 data['http_core_tcp_rc'] != 0 or
                 not 0 <= data['http_core_occupied'] <= expected or

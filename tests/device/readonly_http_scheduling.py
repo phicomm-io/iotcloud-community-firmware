@@ -287,7 +287,7 @@ def probe_once(ip, runner, case_deadline, index):
             row.update(category=classified['category'],
                        http_status=facts['status'], response_bytes=received)
             if classified['category'] == 'success':
-                runner.check(ip, classified['state'], started)
+                runner.check(ip, classified['state'], started, time.monotonic())
             elif classified['category'] == 'illegal_200':
                 runner.block(ip, 'HTTP 200 lacked a complete status.get ok envelope')
             elif classified['category'] == 'http_other':
@@ -419,8 +419,8 @@ class SchedulingRunner(Runner):
         self.scheduling_cases = []
         self.scheduling_recovery = []
 
-    def check(self, ip, state, start):
-        super().check(ip, state, start)
+    def check(self, ip, state, start, end=None):
+        super().check(ip, state, start, end)
         model = self.before[ip]['state'].get('model')
         if model is not None and state.get('model') is not None and state.get('model') != model:
             self.block(ip, 'device model changed')

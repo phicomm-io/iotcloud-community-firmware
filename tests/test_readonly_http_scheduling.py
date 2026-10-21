@@ -4,6 +4,7 @@ import json
 import socket
 import threading
 import time
+import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -33,6 +34,50 @@ from tests.device.readonly_http_scheduling import (
 
 
 class ReadonlyHTTPSchedulingTest(unittest.TestCase):
+    @staticmethod
+    def scheduling_fixture(directory):
+        from tests.device.readonly_http_scheduling import SchedulingRunner
+        ip = '10.117.152.102'
+        state = {'device_id': AUTHORIZED_TARGETS[ip], 'version': 'candidate',
+                 'model': 'tc1', 'uptime_seconds': 2,
+                 'socket_states': [0, 0, 0, 0, 0, 0],
+                 'child_lock': False, 'led_enabled': True}
+        runner = SchedulingRunner({ip: AUTHORIZED_TARGETS[ip]},
+                                  'candidate', Path(directory))
+        runner.before[ip] = {'id': AUTHORIZED_TARGETS[ip],
+                             'state': state, 'boot_origin': 98}
+        return ip, state, runner
+
+    def test_inherited_recovery_sample_forwards_request_interval(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ip, state, runner = self.scheduling_fixture(directory)
+            reply = (200, {'code': 'ok', 'data': state}, 100, 500, 100)
+            with patch('tests.device.readonly_stress.request', return_value=reply):
+                row = runner.sample(ip, 'scheduling-recovery')
+            self.assertTrue(row['ok'])
+            self.assertFalse(runner.blockers)
+            self.assertEqual(runner.uptime_observations[ip, 'status'],
+                             (100, 100.5, 2))
+
+    def test_reverse_overlapping_probe_uses_real_end_without_false_reset(self):
+        from tests.device.readonly_http_scheduling import probe_once
+        with tempfile.TemporaryDirectory() as directory:
+            ip, state, runner = self.scheduling_fixture(directory)
+            runner.check(ip, state, 102, 103)
+            later_sample = dict(state, uptime_seconds=3)
+            body = json.dumps({'code': 'ok', 'data': later_sample}).encode()
+            facts = {'status': 200, 'body': body, 'complete': True}
+            with patch('tests.device.readonly_http_scheduling.socket.create_connection'), \
+                    patch('tests.device.readonly_http_scheduling._read_response',
+                          return_value=(facts, len(body))), \
+                    patch('tests.device.readonly_http_scheduling.time.monotonic',
+                          side_effect=[100, 100.1, 100.2, 104, 104.1]):
+                row = probe_once(ip, runner, 200, 0)
+            self.assertEqual(row['category'], 'success')
+            self.assertFalse(runner.blockers)
+            self.assertEqual(runner.uptime_observations[ip, 'status'],
+                             (100, 104, 3))
+
     def test_exact_authorized_target_set_and_identity_validation(self):
         self.assertEqual(set(AUTHORIZED_TARGETS), {
             '10.117.152.111', '10.117.152.102', '10.117.152.110'})
