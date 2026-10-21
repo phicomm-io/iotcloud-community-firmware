@@ -110,7 +110,10 @@ def check(modules, model, nm, elf):
         paths['HTTP OTA MD5 validation']=(4096,['owner','ph_http_server_step','read_body','complete','tc1_ota_verify','md5_range'])
         paths['HTTP OTA activation']=(4096,['owner','ph_http_server_step','close_slot','release','tc1_ota_activate']+(['send_part'] if 'send_part' in frames else []))
     if model!='TC1':paths['HTTP OTA recovery']=(4096,['owner','ph_http_server_step','admission','ota_job_poll','feature_resume_step'])
-    if model=='A1':paths['HTTP command control']=(3072,command+['a1_control_local','feature_group_control','group_send','parse'])
+    if model=='A1':
+        control=['a1_control_json','a1_control_apply']+[n for n in ('control_broadcast',) if n in frames]
+        paths['HTTP command control']=(3072,command+control+['feature_group_control','group_send','parse'])
+        paths['HTTP control persistence']=(3072,command+control+['feature_fan_apply','install_config','feature_config_save'])
     if model in ('A1','TC1'):
         for helper in ('bemfa_config_encode','bemfa_config_values','a1_mqtt_config_save'):
             if helper in frames:
@@ -119,7 +122,7 @@ def check(modules, model, nm, elf):
         business=['owner','bemfa_dispatch','service_command','service_command_execute','service_product','service_product_inner']
         paths['HTTP Bemfa command']=(4096,business)
         paths['HTTP Bemfa config fence']=(4096,['owner','bemfa_dispatch','bemfa_config_get'])
-        if model=='A1':paths['HTTP Bemfa control']=(4096,business+['a1_control_local','feature_group_control','group_send','parse'])
+        if model=='A1':paths['HTTP Bemfa control']=(4096,business+control+['feature_group_control','group_send','parse'])
     # GCC inlines send_part into step in the pinned optimized build. A separate
     # frame must be counted if a compiler/optimization change emits it.
     if 'send_part' in frames:paths['HTTP response'][1].append('send_part')

@@ -73,8 +73,10 @@ def check(frames,model):
     paths.update(status_paths(frames,model,'MQTT periodic status',telemetry,reserve))
     paths.update(status_paths(frames,model,'MQTT command status',dispatch+['service_command_wire','service_product_status_wire'],reserve))
     if model=='A1':
-        paths['MQTT deferred control'][0].extend(['a1_control_local','feature_group_control','group_send','parse'])
-        paths['MQTT feature deferred control']=(owner+['ph_mqtt_poll','feature_command','feature_mqtt_input']+execute+['service_product_inner','a1_control_local','feature_group_control','group_send','parse'],reserve)
+        control=['a1_control_json','a1_control_apply']+[n for n in ('control_broadcast',) if n in frames]
+        paths['MQTT deferred control'][0].extend(control+['feature_group_control','group_send','parse'])
+        paths['MQTT feature deferred control']=(owner+['ph_mqtt_poll','feature_command','feature_mqtt_input']+execute+['service_product_inner']+control+['feature_group_control','group_send','parse'],reserve)
+        paths['MQTT control persistence']=(dispatch+execute+['service_product_inner']+control+['feature_fan_apply','install_config','feature_config_save'],reserve)
         virtual=cycle+['feature_mqtt_service','virtual_service']
         paths['MQTT virtual discovery encode']=(virtual+['discovery_virtual_step','service_mqtt_optional_send']+encode[1:],reserve)
         paths['MQTT virtual domain encode']=(virtual+['direct_json_optional','service_mqtt_optional_send']+encode[1:],reserve)
