@@ -152,6 +152,14 @@ def _runner_gate(runner, stage, failures, targets=None):
     _uptime_gate(runner, stage, failures, targets)
 
 
+def _expected_status_rejection(row):
+    # Runner.ok means the expected response was received, including this
+    # deliberate negative protocol probe. It contains no device status.
+    return (row.get('http') == 200 and row.get('code') == 'invalid_params' and
+            row.get('params') == {'view': 'invalid-read-only-view'} and
+            'uptime' not in row)
+
+
 def _uptime_gate(runner, stage, failures, targets=None):
     selected = _target_scope(targets)
     before = runner.get('before') if isinstance(runner.get('before'), dict) else {}
@@ -171,7 +179,7 @@ def _uptime_gate(runner, stage, failures, targets=None):
         samples = [(seed_start, seed_end, seed_uptime)]
         for row in rows:
             if (not isinstance(row, dict) or row.get('ip') != ip or row.get('action') != 'status.get' or
-                    row.get('ok') is not True):
+                    row.get('ok') is not True or _expected_status_rejection(row)):
                 continue
             start, end, uptime = (row.get('request_started_monotonic'),
                                   row.get('request_ended_monotonic'), row.get('uptime'))
@@ -1487,7 +1495,7 @@ def _verify_runner_continuity(old, new, version, require_complete=True, targets=
             if row.get('ip') != ip or row.get('ok') is not True:
                 continue
             if kind == 'status':
-                if row.get('action') != 'status.get':
+                if row.get('action') != 'status.get' or _expected_status_rejection(row):
                     continue
                 uptime = row.get('uptime')
             else:

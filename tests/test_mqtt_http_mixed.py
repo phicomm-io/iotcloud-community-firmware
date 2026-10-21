@@ -1528,6 +1528,17 @@ class MixedRunnerTests(unittest.TestCase):
             cwd=CONTROLLER.ROOT, check=True, capture_output=True, text=True, timeout=5)
         self.assertEqual(Path(completed.stdout.strip()).resolve(), expected)
 
+    def test_controller_script_dry_run_from_unrelated_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            completed = subprocess.run(
+                [sys.executable, '-I', str(Path(CONTROLLER.__file__).resolve()),
+                 '--label', 'offline-script-entry', '--version', VERSION],
+                cwd=directory, check=True, capture_output=True, text=True, timeout=5)
+        result = json.loads(completed.stdout)
+        self.assertEqual(result['mode'], 'dry-run')
+        self.assertEqual(result['targets'], list(CONTROLLER.DEFAULT_TARGETS))
+        self.assertFalse(Path(result['output']).exists())
+
 
 if __name__ == '__main__':
     unittest.main()

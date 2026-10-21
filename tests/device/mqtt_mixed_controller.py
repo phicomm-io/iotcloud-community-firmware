@@ -17,6 +17,8 @@ import sys
 import time
 
 ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 BASE = ROOT / 'build/status101'
 PRIVATE = BASE / 'private'
 MIXED = ROOT / 'tests/device/mqtt_http_mixed.py'

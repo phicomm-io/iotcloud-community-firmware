@@ -1212,6 +1212,44 @@ class InitialReuseTests(unittest.TestCase):
             with self.subTest(case=case), self.assertRaises(ValueError):
                 AUDIT.verify_post_ota_chain(pre, [('http', middle), ('soak', changed)], self.version)
 
+    def test_expected_invalid_view_probe_is_not_an_uptime_observation(self):
+        old, new = self.runner(), self.runner(shift=500)
+        for ip in AUDIT.TARGETS:
+            new['rows'].append(dict(ip=ip, action='status.get', ok=True, http=200,
+                                    code='invalid_params',
+                                    params={'view': 'invalid-read-only-view'},
+                                    request_started_monotonic=1501,
+                                    request_ended_monotonic=1501.1))
+        self.assertTrue(AUDIT.verify_runner_continuity(old, new, self.version)['passed'])
+        self.assertTrue(AUDIT.verify_runner_continuity(new, self.runner(shift=600),
+                                                     self.version)['passed'])
+
+    def test_status_without_uptime_is_still_blocking_outside_exact_negative_probe(self):
+        import copy
+        old, new = self.runner(), self.runner(shift=500)
+        row = dict(ip=next(iter(AUDIT.TARGETS)), action='status.get', ok=True,
+                   http=200, code='invalid_params', params={'view': 'invalid-read-only-view'},
+                   request_started_monotonic=1501, request_ended_monotonic=1501.1)
+        for changes in ({'code': 'ok'}, {'params': {'view': 'live'}},
+                        {'code': 'error'}, {'http': 503}, {'uptime': None}):
+            bad = copy.deepcopy(new)
+            bad['rows'] = [dict(row, **changes)]
+            with self.subTest(changes=changes), self.assertRaisesRegex(ValueError, 'identity/uptime'):
+                AUDIT.verify_runner_continuity(old, bad, self.version)
+
+    def test_negative_probe_does_not_hide_reset_or_missing_memory_uptime(self):
+        old, new = self.runner(), self.runner(shift=500)
+        ip = next(iter(AUDIT.TARGETS))
+        new['rows'] = [dict(ip=ip, action='status.get', ok=True, http=200,
+                           code='invalid_params', params={'view': 'invalid-read-only-view'})]
+        for rows, memory in (([dict(ip=ip, action='status.get', ok=True, http=200,
+                                   code='ok', uptime=2, request_started_monotonic=1501,
+                                   request_ended_monotonic=1501.1)], new['memory']),
+                             (new['rows'], [dict(r, data={}) for r in new['memory']])):
+            bad = dict(new, rows=rows, memory=memory)
+            with self.subTest(rows=rows), self.assertRaisesRegex(ValueError, 'identity/uptime'):
+                AUDIT.verify_runner_continuity(old, bad, self.version)
+
     def test_postcheck_uses_recorded_fresh_intervals_instead_of_old_soak_before(self):
         import copy
         soak, fresh = self.runner(shift=400), self.runner(shift=500)
