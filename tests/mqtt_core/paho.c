@@ -39,12 +39,19 @@ static bool gate_closed,gate_cancel,gate_current;static unsigned multi_attempt,m
 static unsigned backoffs[32],backoff_count;
 static uintptr_t current_thread=1;
 static micoMemInfo_t heap={.free_memory=40000};
+#ifdef PREFLIGHT_FIXTURE
+static size_t preflight_memory(void);
+#endif
 int mico_rtos_init_mutex(mico_mutex_t *m){*m=0;return 0;}
 void mico_rtos_lock_mutex(mico_mutex_t*m){assert(!*m);*m=1;}
 void mico_rtos_unlock_mutex(mico_mutex_t*m){assert(*m);*m=0;}
 bool mico_rtos_is_current_thread(mico_thread_t*t){return *t==current_thread;}
 uint32_t mico_rtos_get_time(void){return now_ms;}
-const micoMemInfo_t*MicoGetMemoryInfo(void){heap.free_memory=charged_live<heap_capacity?heap_capacity-charged_live:0;return &heap;}
+const micoMemInfo_t*MicoGetMemoryInfo(void){heap.free_memory=charged_live<heap_capacity?heap_capacity-charged_live:0;
+#ifdef PREFLIGHT_FIXTURE
+ size_t forced=preflight_memory();if(forced)heap.free_memory=forced;
+#endif
+ return &heap;}
 static ph_mqtt_startup *pending_startup;
 static uint32_t pending_generation;
 void mico_thread_msleep(unsigned ms){now_ms+=ms;

@@ -226,8 +226,8 @@ static OSStatus MqttMsgPublish(Client *c, const char *topic, char qos, char reta
 
     if (MQTT_SUCCESS == ret) {
         err = kNoErr;
-    } else if (PH_MQTT_MORE == ret) {
-        err = PH_MQTT_MORE;
+    } else if (PH_MQTT_MORE == ret || PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED == ret) {
+        err = ret;
     } else if (MQTT_SOCKET_ERR == ret) {
         err = kConnectionErr;
     } else {
@@ -589,6 +589,7 @@ OSStatus UserMqttSendTopic(char *topic,char *arg,char retained) {
             if(publication_sent){synchronous_error=PH_MQTT_MORE;return PH_MQTT_MORE;}
         }
         rc=send_owned(topic,arg,retained);
+        if(rc==PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED)rc=PH_MQTT_MORE;
         if(publication_turn && rc==kNoErr){publication_sent=true;++publication_cursor;}
     }
     else rc=ph_mqtt_enqueue_send(topic,arg,strlen(arg),QOS0,retained);

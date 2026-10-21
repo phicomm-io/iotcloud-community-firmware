@@ -67,6 +67,8 @@ json_object *service_command(json_object *request){
 #define MQTT_SUCCESS 0
 #define MQTT_FAILURE -1
 #include "common/mqtt/owner.h"
+static int mqtt_resource_result;
+int ph_mqtt_resource_ready(void){return mqtt_resource_result;}
 static bool snapshot_deferred;static uint32_t snapshot_retry_at;
 static bool mqtt_modern,service_mqtt_capabilities_pending;static unsigned mqtt_bytes,service_mqtt_reply_count;
 static int service_mqtt_flush(int (*sender)(const char*,const char*,bool)){(void)sender;return MQTT_SUCCESS;}

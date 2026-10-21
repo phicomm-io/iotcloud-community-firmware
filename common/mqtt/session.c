@@ -60,13 +60,28 @@ static void close_session(Client *client, Network *network) {
     ph_mqtt_client_deinit(client);
 }
 
-static int announce(Client *client, const mqtt_account_t *account) {
+/* Bootstrap text has stable borrowed bytes. Keep it pending across preflight
+ * refusal and service bounded protocol slices; never announce READY early. */
+static __attribute__((noinline)) int publish_wait(Client *client, const char *topic, const char *text,
+                        const ph_mqtt_session_hooks *h) {
+    for (;;) {
+        if (!session_valid(h)) return PH_MQTT_RECONFIGURE;
+        int rc = publish_text(client, topic, text);
+        if (rc != PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED) return rc;
+        rc = ph_mqtt_yield(client, 10);
+        if (rc != MQTT_SUCCESS) return rc;
+        mico_thread_msleep(10);
+    }
+}
+
+static int announce(Client *client, const mqtt_account_t *account, const ph_mqtt_session_hooks *h) {
     if (!account->mode)
         return MQTT_SUCCESS;
     char topic[MQTT_TOPIC_MAX];
     if (!mqtt_aux(account, "discovery", account->mac, topic, sizeof(topic)))
         return MQTT_FAILURE;
-    return publish_text(client, topic, mqtt_announcement(account));
+    return h ? publish_wait(client, topic, mqtt_announcement(account), h) :
+        publish_text(client, topic, mqtt_announcement(account));
 }
 
 static int subscribe_plan(Client *client, const ph_mqtt_session_hooks *h) {
@@ -103,7 +118,7 @@ void ph_mqtt_session_run(Client *client, const ph_mqtt_session_hooks *h) {
         if (!connected)
             event(h, PH_MQTT_CONNECT_ERROR, rc);
         if (rc == MQTT_SUCCESS)
-            rc = announce(client, spec.account);
+            rc = announce(client, spec.account, h);
         if (rc == MQTT_SUCCESS) {
             rc = subscribe_plan(client, h);
             if (rc != MQTT_SUCCESS)
@@ -113,7 +128,7 @@ void ph_mqtt_session_run(Client *client, const ph_mqtt_session_hooks *h) {
             ph_mqtt_turn_begin(4);
             rc = h->initial(h->context);
             ph_mqtt_turn_end();
-            if (rc == PH_MQTT_MORE)
+            if (rc == PH_MQTT_MORE || rc == PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED)
                 rc = MQTT_SUCCESS;
         }
         /* The retained device availability is separate from sensor freshness.
@@ -134,32 +149,52 @@ void ph_mqtt_session_run(Client *client, const ph_mqtt_session_hooks *h) {
                 event(h, PH_MQTT_READY, 0);
             }
         }
+        if (rc == PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED)
+            rc = MQTT_SUCCESS;
         while (rc == MQTT_SUCCESS && (!h->stop || !h->stop(h->context))) {
             rc = ph_mqtt_poll(client);
-            if (rc != MQTT_SUCCESS)
-                break;
-            ph_mqtt_turn_begin(4);
-            rc = h->cycle(h->context);
-            ph_mqtt_turn_end();
-            bool unfinished = rc == PH_MQTT_MORE;
-            if (rc == PH_MQTT_MORE)
+            if (rc == PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED)
                 rc = MQTT_SUCCESS;
             if (rc != MQTT_SUCCESS)
                 break;
-            if (!session_valid(h)) {
+            /* Stop always wins. Identity changes caused by a command wait for
+             * its captured receipt; no new native namespace work runs meanwhile. */
+            if (h->stop && h->stop(h->context)) break;
+            bool receipt_wait = ph_mqtt_receipt_pending();
+            if (!session_valid(h) && !receipt_wait) {
                 rc = PH_MQTT_RECONFIGURE;
                 break;
             }
-            if (!online && (!h->initial_ready || h->initial_ready(h->context))) {
+            rc = ph_mqtt_resource_ready();
+            if (rc == MQTT_SUCCESS && (!receipt_wait || session_valid(h))) {
+                ph_mqtt_turn_begin(4);
+                rc = h->cycle(h->context);
+                ph_mqtt_turn_end();
+            }
+            bool unfinished = rc == PH_MQTT_MORE || rc == PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED || receipt_wait;
+            if (rc == PH_MQTT_MORE || rc == PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED)
+                rc = MQTT_SUCCESS;
+            if (rc != MQTT_SUCCESS)
+                break;
+            if (!session_valid(h) && !ph_mqtt_receipt_pending()) {
+                rc = PH_MQTT_RECONFIGURE;
+                break;
+            }
+            if (!online && session_valid(h) && (!h->initial_ready || h->initial_ready(h->context))) {
                 rc = publish_text(client, spec.availability, "online");
                 if (rc == MQTT_SUCCESS && !session_valid(h))
                     rc = PH_MQTT_RECONFIGURE;
-                if (rc != MQTT_SUCCESS)
+                if (rc == PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED) {
+                    unfinished = true;
+                    rc = MQTT_SUCCESS;
+                } else if (rc != MQTT_SUCCESS)
                     break;
-                online = true;
-                acl_at = mico_rtos_get_time();
-                attempt = 0;
-                event(h, PH_MQTT_READY, 0);
+                else {
+                    online = true;
+                    acl_at = mico_rtos_get_time();
+                    attempt = 0;
+                    event(h, PH_MQTT_READY, 0);
+                }
             }
             /* Retained HA birth may restart discovery after the first READY.
              * Refreshing subscriptions during that batch can replay birth and
@@ -180,6 +215,14 @@ void ph_mqtt_session_run(Client *client, const ph_mqtt_session_hooks *h) {
             }
             if (rc == MQTT_SUCCESS)
                 rc = ph_mqtt_poll(client);
+            if (rc == PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED)
+                rc = MQTT_SUCCESS;
+            /* The second poll can also complete a rename receipt. Do not
+             * enter the next round's command poll before checking identity. */
+            if (rc == MQTT_SUCCESS && (!h->stop || !h->stop(h->context)) &&
+                !session_valid(h) && !ph_mqtt_receipt_pending())
+                rc = PH_MQTT_RECONFIGURE;
+            ph_mqtt_resource_round_end(rc == MQTT_SUCCESS);
             bool active = rc == MQTT_SUCCESS &&
                 (unfinished || (h->initial_ready && !h->initial_ready(h->context)));
             mico_thread_msleep(rc == MQTT_SUCCESS && (active || ph_mqtt_work_pending()) ? 10 : 50);
@@ -215,7 +258,7 @@ int ph_mqtt_cleanup(Client *client, const mqtt_account_t *account, const char *h
     memset(client, 0, sizeof(*client));
     int rc = open_session(client, &network, &spec);
     if (rc == MQTT_SUCCESS) {
-        rc = announce(client, account);
+        rc = announce(client, account, NULL);
         if (rc == MQTT_SUCCESS)
             rc = cleanup();
         if (publish_text(client, topic, "offline") != MQTT_SUCCESS)

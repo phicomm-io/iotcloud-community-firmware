@@ -26,7 +26,10 @@ def check(frames,model):
       'MQTT subscribe ingress':(owner+['subscribe_plan','ph_mqtt_subscribe']+transport[1:],reserve),
       'MQTT yield ingress':(owner+['ph_mqtt_yield']+transport[1:],reserve),
       'MQTT deferred result encode':(dispatch+encode,reserve),
-      'MQTT result PUBACK ingress':(dispatch+['service_sender' if model=='TC1' else 'publish']+transport,reserve),
+      'MQTT result PUBACK ingress':(dispatch+['ph_mqtt_receipt_send','receipt_retry','publish_owned']+transport,reserve),
+      'MQTT pending result PUBACK ingress':(owner+['ph_mqtt_poll','receipt_retry','publish_owned']+transport,reserve),
+      'MQTT emergency PUBACK ingress':(owner+['ph_mqtt_poll']+(['send_emergency'] if 'send_emergency' in frames else [])+['publish_owned']+transport,reserve),
+      'MQTT bootstrap PUBACK ingress':(owner+(['announce'] if 'announce' in frames else [])+['publish_wait','publish_text']+transport,reserve),
       'MQTT deferred control':(dispatch+execute+['service_product_inner'],reserve),
       'MQTT snapshot encode':(cycle+['service_mqtt_snapshot','service_mqtt_publish']+encode,reserve),
       'MQTT capabilities encode':(cycle+['service_mqtt_snapshot','service_mqtt_try_capabilities']+encode,reserve),
@@ -139,7 +142,7 @@ def check(frames,model):
             position = names.index('ph_mqtt_publish')
             retained = names[:position] + [n for n in names[position+1:] if n in ('states_step', 'states')]
             retained = [n for n in retained if n != 'account_message']
-            if model == 'TC1': retained += ['MqttMsgPublish']
+            if model == 'TC1' and 'MqttMsgPublish' not in retained and 'publish_owned' not in retained: retained += ['MqttMsgPublish']
             sites[label.removeprefix('MQTT ')] = retained + ['ph_mqtt_publish']
     sites['external SEND'] = owner + ['ph_mqtt_poll'] + (['outgoing', 'send_owned', 'MqttMsgPublish'] if model == 'TC1' else []) + ['ph_mqtt_publish']
     if model == 'A1':
@@ -150,7 +153,7 @@ def check(frames,model):
     for label, retained in sites.items():
         paths['MQTT '+label+' error record'] = (retained + emitted_end + failure, reserve)
         if retained[-1] == 'ph_mqtt_publish':
-            paths['MQTT '+label+' admission record'] = (retained + failure, reserve)
+            paths['MQTT '+label+' admission record'] = (retained + ['ph_mqtt_resource_ready'] + failure, reserve)
         if label == 'client init': continue  # allocation only, no socket callbacks
         if label == 'disconnect':
             paths['MQTT '+label+' guarded write'] = (retained + ['guarded_write'], reserve)
@@ -200,6 +203,19 @@ def check(frames,model):
             allocator = [api] + (['json_heap_malloc'] if api == 'json_heap_realloc' else [])
             for tail in ('permit', 'created'):
                 paths[label+' '+api+' '+tail] = (names[:-1] + allocator + ['json_heap.'+tail, 'json_heap_failure'], spare)
+    paths['MQTT resource scheduler expiry'] = (owner + ['ph_mqtt_resource_ready'] + failure, reserve)
+    paths['MQTT pending result expiry'] = (owner + ['ph_mqtt_poll','receipt_retry','ph_mqtt_resource_ready'] + failure, reserve)
+    paths['MQTT resource scheduler owner'] = (owner + ['ph_mqtt_resource_ready','ph_mqtt_owner','current','mutex_lock'], reserve)
+    paths['MQTT initial result cleanup'] = (dispatch + ['ph_mqtt_receipt_send','receipt_retry','receipt_clear','service_mqtt_receipt_release'], reserve)
+    paths['MQTT pending result cleanup'] = (owner + ['ph_mqtt_poll','receipt_retry','receipt_clear','service_mqtt_receipt_release'], reserve)
+    paths['MQTT session result cleanup'] = (owner + ['ph_mqtt_pending_clear','pending_release','receipt_clear','service_mqtt_receipt_release'], reserve)
+    paths['MQTT client result cleanup'] = (owner + ['close_session','ph_mqtt_client_deinit','pending_release','receipt_clear','service_mqtt_receipt_release'], reserve)
+    # The indirect owned-wire destructor continues through printbuf and the
+    # patched JSON allocator. Lock and unlock are sibling tails, not nested.
+    for label in ('initial result cleanup','pending result cleanup','session result cleanup','client result cleanup'):
+        names,spare=paths['MQTT '+label]
+        for tail in ('json_heap_lock','json_heap_unlock'):
+            paths['MQTT '+label+' '+tail]=(names+['printbuf_free','json_heap_free',tail],spare)
     paths['MQTT network error record'] = (owner + ['open_session'] + failure, reserve)
     paths['MQTT session error record'] = (owner + failure, reserve)
     for label,(names,spare) in paths.items():

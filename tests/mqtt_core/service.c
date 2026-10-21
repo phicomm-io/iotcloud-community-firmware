@@ -52,7 +52,9 @@ static void finish(void){
  ph_mqtt_diagnostics d;ph_mqtt_snapshot(&d);
  assert(!d.bytes&&!d.credit&&!d.inflight[0]&&!d.inflight[1]&&!d.queued[0]&&!d.queued[1]);
 }
-#ifdef A1_BUILDERS_FIXTURE
+#ifdef PREFLIGHT_FIXTURE
+#include "preflight_service.in"
+#elif defined(A1_BUILDERS_FIXTURE)
 #include "a1_builders.inc"
 #else
 int main(void){

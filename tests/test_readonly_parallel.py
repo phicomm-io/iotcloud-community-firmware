@@ -107,6 +107,38 @@ def _write_aggregate_evidence(runner):
         (runner.output / name).write_text(json.dumps(content))
 
 
+def _write_scheduling_runner_evidence(ip, ident, output, *, baseline_ident=None,
+                                      declared=None, version='v-fake', override=True):
+    versions = {ip: version} if override else {}
+    runner = readonly_http_scheduling.SchedulingRunner(
+        {ip: ident}, version, Path(output), versions, rounds=1)
+    actual_ident = ident if baseline_ident is None else baseline_ident
+    runner.before[ip] = {
+        'id': actual_ident,
+        'state': {'device_id': actual_ident, 'model': 'fake', 'version': version,
+                  'uptime_seconds': 100},
+        'config': {'read_only_fixture': True},
+        'boot_origin': 1.0,
+        'status_request_started_monotonic': 10.0,
+        'status_request_ended_monotonic': 10.1,
+    }
+    runner.run.update(status='complete', completed=True, ended_at=20.0)
+    runner.save()
+    runner.scheduling_cases = [
+        {'ip': ip, 'round': 1, 'phase': phase, 'result': 'PASS'}
+        for phase in readonly_http_scheduling.CASES]
+    runner.scheduling_recovery = [
+        {'ip': ip, 'round': 1, 'recovered': True, 'reads': 3,
+         'consecutive_successes': 3}]
+    runner.save_scheduling()
+    if declared is not None:
+        schedule_path = runner.output / 'http-scheduling.json'
+        data = json.loads(schedule_path.read_text())
+        data['targets'] = declared
+        schedule_path.write_text(json.dumps(data))
+    return runner
+
+
 def _target_evidence(ip):
     return {'targets': [[ip, 'fake-' + ip.rsplit('.', 1)[-1]]],
             'target_versions': {ip: 'v-' + ip.rsplit('.', 1)[-1]},
@@ -415,10 +447,15 @@ class ReadonlyParallelTests(unittest.TestCase):
                             base.pop('baseline')
                             base.update(run={'completed': True},
                                         before={ip: {'id': 'fake-' + ip.rsplit('.', 1)[-1],
-                                                    'state': {'uptime_seconds':
-                                                              int(ip.rsplit('.', 1)[-1])}}},
+                                                    'state': {
+                                                        'device_id': 'fake-' +
+                                                        ip.rsplit('.', 1)[-1],
+                                                        'version': 'v-' +
+                                                        ip.rsplit('.', 1)[-1],
+                                                        'uptime_seconds':
+                                                        int(ip.rsplit('.', 1)[-1])}}},
                                         phases=[], recoveries=[], scenarios=[], rows=[],
-                                        memory=[], summary={})
+                                        memory=[], summary={}, blockers=[])
                             cases = [{'ip': ip, 'round': 1, 'phase': phase}
                                      for phase in readonly_http_scheduling.CASES]
                             sched = {'targets': base['targets'],
@@ -431,8 +468,15 @@ class ReadonlyParallelTests(unittest.TestCase):
                                      'blockers': []}
                             content = {'evidence.json': base,
                                        'http-scheduling.json': sched}
-                        runners.append(AggregateRunner(ip, root / ip.rsplit('.', 1)[-1],
-                                                       content))
+                        aggregate_runner = AggregateRunner(
+                            ip, root / ip.rsplit('.', 1)[-1], content)
+                        if aggregator == 'scheduling':
+                            aggregate_runner.targets = {
+                                ip: 'fake-' + ip.rsplit('.', 1)[-1]}
+                            aggregate_runner.version = 'v-' + ip.rsplit('.', 1)[-1]
+                            aggregate_runner.versions = {
+                                ip: aggregate_runner.version}
+                        runners.append(aggregate_runner)
                     result = run_parallel(runners, _write_aggregate_evidence, 3)
                     self.assertTrue(result['completed'], result)
                     if aggregator == 'input':
@@ -446,7 +490,8 @@ class ReadonlyParallelTests(unittest.TestCase):
                     else:
                         complete, evidence, scheduling = \
                             readonly_http_scheduling.aggregate_parallel_evidence(
-                                runners, {ip: 'fake' for ip in ips}, 1, result,
+                                runners, {ip: 'fake-' + ip.rsplit('.', 1)[-1]
+                                          for ip in ips}, 1, result,
                                 root / 'merged-scheduling.json',
                                 root / 'merged-scheduling-run.json')
                         self.assertEqual({row['ip'] for row in scheduling['recovery']},
@@ -500,10 +545,186 @@ class ReadonlyParallelTests(unittest.TestCase):
                         damaged_runner.evidence['evidence.json']['run']['completed'] = False
                         _write_aggregate_evidence(damaged_runner)
                         incomplete, _, _ = readonly_http_scheduling.aggregate_parallel_evidence(
-                            runners, {ip: 'fake' for ip in ips}, 1, result,
+                            runners, {ip: 'fake-' + ip.rsplit('.', 1)[-1]
+                                      for ip in ips}, 1, result,
                             root / 'incomplete-scheduling.json',
                             root / 'incomplete-scheduling-run.json')
                         self.assertFalse(incomplete)
+
+    def test_scheduling_aggregation_uses_real_runner_shape_and_checks_identity(self):
+        for device_count in (2, 3):
+            with self.subTest(devices=device_count), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                ips = [f'10.1.0.{index}' for index in range(1, device_count + 1)]
+                targets = {ip: f'Fake-{index:04d}'
+                           for index, ip in enumerate(ips, 1)}
+                runners = [
+                    _write_scheduling_runner_evidence(
+                        ip, ident, root / str(index), baseline_ident=ident.lower(),
+                        override=index != 1)
+                    for index, (ip, ident) in enumerate(targets.items(), 1)]
+                for runner in runners:
+                    saved = json.loads((runner.output / 'evidence.json').read_text())
+                    self.assertNotIn('targets', saved)
+                result = {'completed': True, 'failure': None,
+                          'worker_pids': [101 + index for index in range(device_count)]}
+                complete, evidence, scheduling = \
+                    readonly_http_scheduling.aggregate_parallel_evidence(
+                        runners, targets, 1, result, root / 'combined-scheduling.json',
+                        root / 'combined-run.json')
+                self.assertTrue(complete)
+                self.assertEqual(evidence['targets'],
+                                 [[ip, ident] for ip, ident in targets.items()])
+                self.assertEqual(scheduling['targets'], evidence['targets'])
+                self.assertEqual(set(evidence['before']), set(ips))
+                self.assertEqual(len(scheduling['cases']),
+                                 len(ips) * len(readonly_http_scheduling.CASES))
+                self.assertEqual(len(scheduling['recovery']), len(ips))
+                self.assertTrue(evidence['parallel_execution']['workers_completed'])
+                self.assertTrue(evidence['parallel_execution']['aggregate_completed'])
+                self.assertTrue(scheduling['parallel_execution']['completed'])
+
+        invalid_declarations = {
+            'missing': lambda ip, ident: [],
+            'duplicate': lambda ip, ident: [[ip, ident], [ip, ident]],
+            'wrong_declared_identity': lambda ip, ident: [[ip, 'other-device']],
+        }
+        for label, declaration in invalid_declarations.items():
+            with self.subTest(invalid=label), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                ip, ident = '10.1.0.1', 'Fake-0001'
+                runner = _write_scheduling_runner_evidence(
+                    ip, ident, root / 'device', declared=declaration(ip, ident))
+                complete, evidence, scheduling = \
+                    readonly_http_scheduling.aggregate_parallel_evidence(
+                        [runner], {ip: ident}, 1,
+                        {'completed': True, 'failure': None, 'worker_pids': [201]},
+                        root / 'combined-scheduling.json', root / 'combined-run.json')
+                self.assertFalse(complete)
+                self.assertFalse(evidence['run']['completed'])
+                self.assertFalse(evidence['parallel_execution']['completed'])
+                self.assertTrue(evidence['parallel_execution']['workers_completed'])
+                self.assertFalse(evidence['parallel_execution']['aggregate_completed'])
+                self.assertFalse(scheduling['parallel_execution']['completed'])
+
+        for field in ('id', 'state.device_id'):
+            with self.subTest(wrong_baseline=field), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                ip, ident = '10.1.0.1', 'Fake-0001'
+                runner = _write_scheduling_runner_evidence(ip, ident, root / 'device')
+                path = runner.output / 'evidence.json'
+                data = json.loads(path.read_text())
+                if field == 'id':
+                    data['before'][ip]['id'] = 'other-device'
+                else:
+                    data['before'][ip]['state']['device_id'] = 'other-device'
+                path.write_text(json.dumps(data))
+                complete, _, _ = readonly_http_scheduling.aggregate_parallel_evidence(
+                    [runner], {ip: ident}, 1,
+                    {'completed': True, 'failure': None, 'worker_pids': [202]},
+                    root / 'combined-scheduling.json', root / 'combined-run.json')
+                self.assertFalse(complete)
+
+        for damaged_artifact in ('case', 'baseline'):
+            with self.subTest(missing=damaged_artifact), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                ip, ident = '10.1.0.1', 'Fake-0001'
+                runner = _write_scheduling_runner_evidence(ip, ident, root / 'device')
+                if damaged_artifact == 'case':
+                    path = runner.output / 'http-scheduling.json'
+                    data = json.loads(path.read_text())
+                    data['cases'].pop()
+                else:
+                    path = runner.output / 'evidence.json'
+                    data = json.loads(path.read_text())
+                    data['before'].pop(ip)
+                path.write_text(json.dumps(data))
+                complete, evidence, _ = \
+                    readonly_http_scheduling.aggregate_parallel_evidence(
+                        [runner], {ip: ident}, 1,
+                        {'completed': True, 'failure': None, 'worker_pids': [203]},
+                        root / 'combined-scheduling.json', root / 'combined-run.json')
+                self.assertFalse(complete)
+                self.assertFalse(evidence['run']['completed'])
+
+        for damaged_artifact in ('evidence_version', 'evidence_target_versions',
+                                 'schedule_target_versions'):
+            with self.subTest(wrong_version=damaged_artifact), \
+                    tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                ip, ident = '10.1.0.1', 'Fake-0001'
+                runner = _write_scheduling_runner_evidence(ip, ident, root / 'device')
+                filename = ('http-scheduling.json'
+                            if damaged_artifact == 'schedule_target_versions'
+                            else 'evidence.json')
+                path = runner.output / filename
+                data = json.loads(path.read_text())
+                if damaged_artifact == 'evidence_version':
+                    data['before'][ip]['state']['version'] = 'v-wrong'
+                else:
+                    data['target_versions'][ip] = 'v-wrong'
+                path.write_text(json.dumps(data))
+                complete, evidence, scheduling = \
+                    readonly_http_scheduling.aggregate_parallel_evidence(
+                        [runner], {ip: ident}, 1,
+                        {'completed': True, 'failure': None, 'worker_pids': [204]},
+                        root / 'combined-scheduling.json', root / 'combined-run.json')
+                self.assertFalse(complete)
+                self.assertFalse(evidence['run']['completed'])
+                self.assertFalse(scheduling['parallel_execution']['completed'])
+
+        for blocker_artifact in ('evidence', 'scheduling'):
+            with self.subTest(blocker=blocker_artifact), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                ip, ident = '10.1.0.1', 'Fake-0001'
+                runner = _write_scheduling_runner_evidence(ip, ident, root / 'device')
+                path = runner.output / ('evidence.json' if blocker_artifact == 'evidence'
+                                        else 'http-scheduling.json')
+                data = json.loads(path.read_text())
+                data['blockers'].append({'ip': ip, 'reason': 'fixture blocker'})
+                path.write_text(json.dumps(data))
+                complete, evidence, scheduling = \
+                    readonly_http_scheduling.aggregate_parallel_evidence(
+                        [runner], {ip: ident}, 1,
+                        {'completed': True, 'failure': None, 'worker_pids': [205]},
+                        root / 'combined-scheduling.json', root / 'combined-run.json')
+                self.assertFalse(complete)
+                self.assertFalse(evidence['run']['completed'])
+                self.assertIn('fixture blocker', json.dumps(evidence['blockers'] +
+                                                             scheduling['blockers']))
+
+        for bad_counts in ({'reads': 3, 'consecutive_successes': 2},
+                           {'reads': 2, 'consecutive_successes': 3},
+                           {'reads': 3, 'consecutive_successes': True}):
+            with self.subTest(recovery_counts=bad_counts), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                ip, ident = '10.1.0.1', 'Fake-0001'
+                runner = _write_scheduling_runner_evidence(ip, ident, root / 'device')
+                path = runner.output / 'http-scheduling.json'
+                data = json.loads(path.read_text())
+                data['recovery'][0].update(recovered=True, **bad_counts)
+                path.write_text(json.dumps(data))
+                complete, evidence, _ = \
+                    readonly_http_scheduling.aggregate_parallel_evidence(
+                        [runner], {ip: ident}, 1,
+                        {'completed': True, 'failure': None, 'worker_pids': [206]},
+                        root / 'combined-scheduling.json', root / 'combined-run.json')
+                self.assertFalse(complete)
+                self.assertFalse(evidence['run']['completed'])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            ip, ident = '10.1.0.1', 'Fake-0001'
+            runner = _write_scheduling_runner_evidence(ip, ident, root / 'device')
+            path = runner.output / 'http-scheduling.json'
+            data = json.loads(path.read_text())
+            data['blockers'] = 'malformed'
+            path.write_text(json.dumps(data))
+            with self.assertRaisesRegex(ValueError, 'malformed fields'):
+                readonly_http_scheduling.aggregate_parallel_evidence(
+                    [runner], {ip: ident}, 1,
+                    {'completed': True, 'failure': None, 'worker_pids': [207]},
+                    root / 'combined-scheduling.json', root / 'combined-run.json')
 
     def test_default_cli_dry_run_keeps_single_worker_and_no_network(self):
         output = io.StringIO()

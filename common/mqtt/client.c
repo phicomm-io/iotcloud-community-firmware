@@ -68,6 +68,18 @@ static struct {
     bool initialized, bound, failed;
     bool turn_active;
     unsigned turn_left;
+    uint32_t resource_since, resource_retry_at;
+    unsigned resource_packet;
+    bool resource_active, resource_seen, resource_owned, native_waiting;
+    char native_topic[MQTT_TOPIC_MAX];
+    unsigned busy_sending;
+    struct {
+        mqtt_target_t target;
+        const char *wire;
+        void *owned;
+        void(*release)(void *);
+        char busy[SERVICE_BUSY_BYTES];
+    } receipt;
 }
 
 port;
@@ -124,11 +136,34 @@ mico_thread_t *ph_mqtt_owner_thread(void) {
     return ph_mqtt_owner() ? &port.owner : NULL;
 }
 
+static __attribute__((noinline)) void receipt_clear(void) {
+    if (port.receipt.owned)
+        port.receipt.release(port.receipt.owned);
+    port.receipt.wire = NULL;
+    port.receipt.owned = NULL;
+    port.receipt.release = NULL;
+}
+
+/* Only at quiescent teardown. Core clear deliberately refuses borrowed
+ * in-flight entries; a deferred owner now explicitly retires its own entries. */
+static __attribute__((noinline)) void pending_release(void) {
+    receipt_clear();
+    for (unsigned kind = 0; kind < 2; kind++)
+        if (port.core.inflight[kind])
+            ph_mqtt_item_release(&port.core, port.core.inflight[kind]);
+}
+
+bool ph_mqtt_receipt_pending(void) {
+    return ph_mqtt_owner() && port.receipt.wire;
+}
+
 void ph_mqtt_owner_end(void) {
     if (!ph_mqtt_owner() || port.client || port.core.protocol_depth || port.core.dispatch_depth)
         return;
     ph_mqtt_core_accepting(&port.core, false);
+    pending_release();
     ph_mqtt_clear(&port.core);
+    port.resource_active = port.native_waiting = false;
     mutex_lock(NULL);
     port.bound = false;
     mutex_unlock(NULL);
@@ -192,11 +227,14 @@ void ph_mqtt_outgoing(int(*handler)(const ph_mqtt_item *)) {
 }
 
 void ph_mqtt_pending_clear(void) {
-    if (!ph_mqtt_owner())
+    if (!ph_mqtt_owner() || port.core.protocol_depth || port.core.dispatch_depth)
         return;
     ph_mqtt_core_accepting(&port.core, false);
-    if (ph_mqtt_clear(&port.core))
+    pending_release();
+    if (ph_mqtt_clear(&port.core)) {
         memset(port.busy, 0, sizeof(port.busy));
+        port.resource_active = port.native_waiting = false;
+    }
 }
 
 bool ph_mqtt_owner_init(const mqtt_account_t *account, size_t maximum, mico_thread_t *owner, bool(*accept)(MessageData *, messageHandler)) {
@@ -391,6 +429,7 @@ int ph_mqtt_client_init(Client *c, Network *n, unsigned timeout) {
     port.client = c;
     port.network = n;
     port.failed = false;
+    port.resource_active = port.resource_seen = port.native_waiting = false;
     port.delivered = UINT32_MAX;
     ph_mqtt_rx_init(&port.rx, port.payload_max + PH_MQTT_TOPIC_BYTES + 9);
     port.read = n->mqttread;
@@ -410,7 +449,9 @@ int ph_mqtt_client_deinit(Client *c) {
     if (!ph_mqtt_owner() || c != port.client || port.core.protocol_depth || port.core.dispatch_depth)
         return MQTT_FAILURE;
     ph_mqtt_core_accepting(&port.core, false);
+    pending_release();
     ph_mqtt_clear(&port.core);
+    port.resource_active = port.native_waiting = false;
     memset(port.busy, 0, sizeof(port.busy));
     /* Deinit is required even after a framing/admission failure. */
     int rc = MQTTClientDeinit(c);
@@ -457,9 +498,48 @@ int ph_mqtt_yield(Client *c, int timeout) {
     return end(PH_MQTT_ERROR_YIELD, MQTTYield(c, timeout));
 }
 
+/* A resource episode ends only after a full productive round with no pending
+ * deferred receipt/SEND/busy work. A smaller successful packet cannot extend
+ * the deadline of a larger blocked packet. All differences are wrap-safe. */
+int ph_mqtt_resource_ready(void) {
+    if (!ph_mqtt_owner() || port.failed)
+        return MQTT_FAILURE;
+    if (!port.resource_active)
+        return MQTT_SUCCESS;
+    uint32_t elapsed = mico_rtos_get_time() - port.resource_since;
+    if (elapsed >= 30000u) {
+        port.cause = PH_MQTT_CAUSE_RESOURCE_EXPIRED;
+        port.packet_bytes = port.resource_packet;
+        memset(&port.read_evidence, 0, sizeof(port.read_evidence));
+        memset(&port.write_evidence, 0, sizeof(port.write_evidence));
+        ph_mqtt_error(PH_MQTT_ERROR_PUBLISH, MQTT_FAILURE);
+        port.failed = true;
+        return MQTT_FAILURE;
+    }
+    if ((uint32_t)(mico_rtos_get_time() - port.resource_retry_at) < 1000u) {
+        port.resource_seen = true;
+        return PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED;
+    }
+    return MQTT_SUCCESS;
+}
+
+void ph_mqtt_resource_round_end(bool complete) {
+    if (!ph_mqtt_owner())
+        return;
+    if (complete && !port.resource_seen && !port.native_waiting && !port.receipt.wire &&
+        !port.core.inflight[PH_MQTT_SEND] && !port.busy[0].used && !port.busy[1].used)
+        port.resource_active = port.native_waiting = false;
+    port.resource_seen = false;
+}
+
 int ph_mqtt_publish(Client *c, const char *topic, MQTTMessage *m) {
     if (!m || !topic || !m->payload || m->payloadlen > PH_MQTT_PAYLOAD_BYTES || strnlen(topic, PH_MQTT_TOPIC_BYTES + 1) > PH_MQTT_TOPIC_BYTES || !ph_mqtt_owner())
         return MQTT_FAILURE;
+    if (c != port.client || port.failed || port.core.protocol_depth)
+        return MQTT_FAILURE;
+    int ready = ph_mqtt_resource_ready();
+    if (ready != MQTT_SUCCESS)
+        return ready;
     if (port.turn_active) {
         if (!port.turn_left)
             return PH_MQTT_MORE;
@@ -469,21 +549,76 @@ int ph_mqtt_publish(Client *c, const char *topic, MQTTMessage *m) {
     /* SDK serializes a second copy, while callback RX can coexist. Its own
      * allocation is still fallible; this check is a soft live-heap admission. */
     if (!permit(NULL, packet + 32)) {
-        port.cause = PH_MQTT_CAUSE_HEAP_ADMISSION;
-        port.packet_bytes = packet;
-        memset(&port.read_evidence, 0, sizeof(port.read_evidence));
-        memset(&port.write_evidence, 0, sizeof(port.write_evidence));
-        ph_mqtt_error(PH_MQTT_ERROR_PUBLISH, MQTT_FAILURE);
-        port.failed = true;
-        return MQTT_FAILURE;
+        uint32_t now = mico_rtos_get_time();
+        if (!port.resource_active) {
+            port.resource_since = now;
+            port.resource_packet = packet;
+            port.resource_active = true;
+        }
+        if (!port.resource_owned && !port.native_waiting) {
+            strcpy(port.native_topic, topic);
+            port.native_waiting = true;
+        }
+        port.resource_retry_at = now;
+        port.resource_seen = true;
+        return PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED;
     }
     if (!begin(c, PH_MQTT_ERROR_PUBLISH))
         return MQTT_FAILURE;
     port.packet_bytes = packet;
+    /* The emergency wire/target are now owned by this active SDK call's stack.
+     * Preflight refusal never retires the slot; PUBACK callbacks can refill it
+     * after this transfer. Never clear that possible replacement on return. */
+    if (port.busy_sending) port.busy[port.busy_sending - 1].used = false;
     int rc = end(PH_MQTT_ERROR_PUBLISH, MQTTPublish(c, topic, m));
     if (rc != MQTT_SUCCESS)
         port.failed = true;
+    else if (!port.resource_owned && port.native_waiting && !strcmp(port.native_topic, topic))
+        port.native_waiting = false;
     return rc;
+}
+
+static __attribute__((noinline)) int publish_owned(Client *c, const char *topic, MQTTMessage *m) {
+    port.resource_owned = true;
+    int rc = ph_mqtt_publish(c, topic, m);
+    port.resource_owned = false;
+    return rc;
+}
+
+static __attribute__((noinline)) int receipt_retry(Client *c) {
+    int ready = ph_mqtt_resource_ready();
+    if (ready != MQTT_SUCCESS) {
+        if (ready < 0) receipt_clear();
+        return ready;
+    }
+    char topic[MQTT_TOPIC_MAX];
+    if (!mqtt_target_leaf(&port.receipt.target, "result", topic, sizeof(topic)))
+        return MQTT_FAILURE;
+    MQTTMessage m = {0};
+    m.qos = QOS1;
+    m.payload = (void *)port.receipt.wire;
+    m.payloadlen = strlen(port.receipt.wire);
+    int rc = publish_owned(c, topic, &m);
+    if (rc != PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED)
+        receipt_clear();
+    return rc;
+}
+
+int ph_mqtt_receipt_send(const mqtt_target_t *target, const char *wire, void *owned, void(*release_wire)(void *)) {
+    if (!ph_mqtt_owner() || !target || !wire || port.receipt.wire ||
+        (owned && !release_wire) || (!owned && strlen(wire) >= sizeof(port.receipt.busy))) {
+        if (owned && release_wire) release_wire(owned);
+        return MQTT_FAILURE;
+    }
+    port.receipt.target = *target;
+    port.receipt.owned = owned;
+    port.receipt.release = release_wire;
+    if (owned) port.receipt.wire = wire;
+    else {
+        strcpy(port.receipt.busy, wire);
+        port.receipt.wire = port.receipt.busy;
+    }
+    return receipt_retry(port.client);
 }
 
 void ph_mqtt_turn_begin(unsigned limit) {
@@ -526,12 +661,13 @@ static int send_emergency(Client *c) {
         if (!mqtt_target_leaf(&port.busy[i].target, "result", topic, sizeof(topic)))
             return MQTT_FAILURE;
         service_busy_format(port.busy[i].id, wire);
-        port.busy[i].used = false;
         MQTTMessage m = {0};
         m.qos = QOS1;
         m.payload = wire;
         m.payloadlen = strlen(wire);
-        int rc = ph_mqtt_publish(c, topic, &m);
+        port.busy_sending = i + 1;
+        int rc = publish_owned(c, topic, &m);
+        port.busy_sending = 0;
         if (rc != MQTT_SUCCESS)
             return rc;
     }
@@ -552,7 +688,7 @@ bool ph_mqtt_work_pending(void) {
     bool pending = port.core.head[PH_MQTT_COMMAND] || port.core.head[PH_MQTT_SEND];
     mutex_unlock(NULL);
     /* Emergency slots are written/retired only by this owner. */
-    return pending || port.busy[0].used || port.busy[1].used;
+    return pending || port.core.inflight[PH_MQTT_SEND] || port.receipt.wire || port.busy[0].used || port.busy[1].used;
 }
 
 int ph_mqtt_poll(Client *c) {
@@ -562,28 +698,41 @@ int ph_mqtt_poll(Client *c) {
         return MQTT_FAILURE;
     if (port.failed)
         return MQTT_FAILURE;
-    int rc = send_emergency(c);
+    int rc = MQTT_SUCCESS;
+    ph_mqtt_item *i;
+    if (port.receipt.wire) {
+        rc = receipt_retry(c);
+        if (rc == PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED)
+            goto send_one;
+        ph_mqtt_credit_release(&port.core);
+        if (port.core.inflight[PH_MQTT_COMMAND])
+            ph_mqtt_item_release(&port.core, port.core.inflight[PH_MQTT_COMMAND]);
+        if (rc != MQTT_SUCCESS)
+            return rc;
+        /* A completed receipt may acknowledge a rename. Return to the session
+         * identity/stop check before dispatching another old-session command. */
+        return MQTT_SUCCESS;
+    }
+    rc = send_emergency(c);
+    if (rc == PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED)
+        goto send_one;
     if (rc != MQTT_SUCCESS)
         return rc;
     /* Fixed budgets prevent callbacks arriving during PUBACK from extending
      * this pass. One business command, then at most one external telemetry. */
-    ph_mqtt_item *i = ph_mqtt_pop(&port.core, PH_MQTT_COMMAND);
+    i = ph_mqtt_pop(&port.core, PH_MQTT_COMMAND);
     if (i) {
         if (!ph_mqtt_credit_acquire(&port.core, SERVICE_BUSY_BYTES)) {
             /* Even the fixed failure receipt must have credit before dispatch. */
             if (modern(i->data, i->topic_length)) {
-                char topic[MQTT_TOPIC_MAX], wire[SERVICE_BUSY_BYTES];
+                char wire[SERVICE_BUSY_BYTES];
                 mqtt_target_t target;
                 mqtt_target_set(&target, port.account);
-                mqtt_target_leaf(&target, "result", topic, sizeof(topic));
                 service_busy_wire(ph_mqtt_item_payload(i), i->length, wire);
-                MQTTMessage m = {0};
-                m.qos = QOS1;
-                m.payload = wire;
-                m.payloadlen = strlen(wire);
-                rc = ph_mqtt_publish(c, topic, &m);
-                ph_mqtt_item_release(&port.core, i);
-                if (rc != MQTT_SUCCESS)
+                rc = ph_mqtt_receipt_send(&target, wire, NULL, NULL);
+                if (rc != PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED)
+                    ph_mqtt_item_release(&port.core, i);
+                if (rc < 0)
                     return rc;
                 goto send_one;
             }
@@ -617,22 +766,37 @@ int ph_mqtt_poll(Client *c) {
          * Never touch that old MessageData/topic/payload after dispatch. */
         if (port.core.inflight[PH_MQTT_COMMAND])
             ph_mqtt_item_release(&port.core, port.core.inflight[PH_MQTT_COMMAND]);
-        ph_mqtt_credit_release(&port.core);
+        if (!port.receipt.wire)
+            ph_mqtt_credit_release(&port.core);
+        else
+            rc = PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED;
         if (port.failed)
             return MQTT_FAILURE;
     }
 send_one:
+    /* Do not repeat TC1 namespace allocation/encoding during the throttle. */
+    {
+        int ready = ph_mqtt_resource_ready();
+        if (ready != MQTT_SUCCESS) return ready;
+    }
     /* A refused COMMAND consumes its one attempt, not its external SEND turn. */
-    i = ph_mqtt_pop(&port.core, PH_MQTT_SEND);
+    i = port.core.inflight[PH_MQTT_SEND];
+    if (!i) i = ph_mqtt_pop(&port.core, PH_MQTT_SEND);
     if (i) {
         MQTTMessage m = {0};
         m.payload = (void *) ph_mqtt_item_payload(i);
         m.payloadlen = i->length;
         m.qos = i->qos;
         m.retained = i->retained;
-        if (i->generation == port.core.generation)
-            rc = port.outgoing ? port.outgoing(i) : ph_mqtt_publish(c, i->data, &m);
-        ph_mqtt_item_release(&port.core, i);
+        int sent = MQTT_SUCCESS;
+        if (i->generation == port.core.generation) {
+            port.resource_owned = true;
+            sent = port.outgoing ? port.outgoing(i) : ph_mqtt_publish(c, i->data, &m);
+            port.resource_owned = false;
+        }
+        if (sent != PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED)
+            ph_mqtt_item_release(&port.core, i);
+        if (sent != MQTT_SUCCESS) rc = sent;
     }
     return rc;
 }

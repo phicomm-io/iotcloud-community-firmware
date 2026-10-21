@@ -45,6 +45,8 @@ static int publish(const char *topic, const char *payload, bool retain)
     MQTTMessage m = {0}; m.qos = QOS1; m.retained = retain;
     m.payload = (void *)payload; m.payloadlen = strlen(payload);
     int result = ph_mqtt_publish(&client, topic, &m);
+    if (result == PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED)
+        return PH_MQTT_MORE;
     if (result != PH_MQTT_MORE)
         mqtt_error("publish", result);
     return result;

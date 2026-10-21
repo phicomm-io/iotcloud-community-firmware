@@ -19,16 +19,25 @@ a1_status_json a1_status_json_view a1_status_full a1_status_capture device_statu
 encode_a1 a1_control_local feature_group_control group_send parse feature_command
 feature_mqtt_input feature_mqtt_service virtual_service discovery_virtual_step
 json_owned_publish checked_publish publish discovery filter_discovery ota_job_poll
-feature_resume_step ph_mqtt_client_init publish_text close_session ph_mqtt_disconnect
+feature_resume_step ph_mqtt_client_init ph_mqtt_client_deinit publish_text close_session ph_mqtt_disconnect
 ph_mqtt_error ph_mqtt_record_failure ph_mqtt_is_owner current mutex_lock guarded_read
 guarded_write ph_mqtt_protocol_buffers mqtt_socket_read ph_mqtt_record_ingress_drop
 service_mqtt_optional_send service_mqtt_json_begin service_mqtt_json_end
 service_mqtt_json_error json_heap_failure json_heap_malloc json_heap_calloc
 json_heap_realloc json_heap_strdup json_heap.permit json_heap.created discovery_build ph_mqtt_app_error ph_mqtt_record_operation
 service_json_scope_begin service_json_scope_failed service_json_scope_end service_json_release
-service_caller_graph_failed json_heap_lock ph_mqtt_owner_thread ph_mqtt_owner direct_json_optional'''.split()
+service_caller_graph_failed json_heap_lock ph_mqtt_owner_thread ph_mqtt_owner direct_json_optional
+ph_mqtt_receipt_send receipt_retry publish_owned publish_wait ph_mqtt_resource_ready
+receipt_clear service_mqtt_receipt_release printbuf_free json_heap_free ph_mqtt_pending_clear pending_release'''.split()
+SYMBOLS += ['json_heap_unlock']
 
 class MqttStackBudget(unittest.TestCase):
+    def test_receipt_destructor_leaves_are_required_and_counted(self):
+        for name in ('printbuf_free','json_heap_free','json_heap_lock','json_heap_unlock'):
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError,'missing actual .su'):
+                self.run_budget(missing=name)
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError,'>16384'):
+                self.run_budget({name:13000})
     def run_budget(self, sizes=None, missing=None):
         frames=dict.fromkeys(SYMBOLS,0)
         frames.update(sizes or {})
@@ -36,6 +45,21 @@ class MqttStackBudget(unittest.TestCase):
         output=io.StringIO()
         with contextlib.redirect_stdout(output): check(frames,'A1')
         return output.getvalue()
+
+    def test_resource_receipt_and_bootstrap_frames_are_counted(self):
+        output=self.run_budget({'ph_mqtt_receipt_send':16,'receipt_retry':544,
+                                'publish_owned':24,'publish_wait':32,
+                                'ph_mqtt_resource_ready':16,'ph_mqtt_error':40})
+        self.assertIn('MQTT result PUBACK ingress: 584 application',output)
+        self.assertIn('MQTT pending result PUBACK ingress: 568 application',output)
+        self.assertIn('MQTT bootstrap PUBACK ingress: 32 application',output)
+        self.assertIn('MQTT pending result expiry: 600 application',output)
+        for name in ('ph_mqtt_receipt_send','receipt_retry','publish_owned','publish_wait',
+                     'ph_mqtt_resource_ready','receipt_clear','service_mqtt_receipt_release'):
+            with self.subTest(name=name),self.assertRaisesRegex(ValueError,'missing actual .su'):
+                self.run_budget(missing=name)
+        with self.assertRaisesRegex(ValueError,'>16384'):
+            self.run_budget({'receipt_retry':7000,'publish_owned':6000})
 
     def test_caller_scope_and_boolean_helper_tails_are_counted(self):
         output=self.run_budget({'service_caller_graph_failed':40,'json_heap_lock':8,

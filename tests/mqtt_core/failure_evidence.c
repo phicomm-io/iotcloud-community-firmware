@@ -44,8 +44,10 @@ int main(void) {
     evidence(PH_MQTT_CAUSE_UNKNOWN,PH_MQTT_ERROR_SESSION); cleanup();
     fresh(); unsigned allocations=native_allocs, sent=publications;
     heap_capacity=charged_live+16384+40;
+    assert(publish()==PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED);
+    now_ms+=30000;
     assert(publish()==MQTT_FAILURE);
-    ph_mqtt_diagnostics denied=evidence(PH_MQTT_CAUSE_HEAP_ADMISSION,PH_MQTT_ERROR_PUBLISH);
+    ph_mqtt_diagnostics denied=evidence(PH_MQTT_CAUSE_RESOURCE_EXPIRED,PH_MQTT_ERROR_PUBLISH);
     assert(denied.failure.packet_bytes>0 && denied.failure.free_bytes==16384+40);
     assert(native_allocs==allocations && sent==publications);
     assert(!denied.failure.read.requested && !denied.failure.write.requested);

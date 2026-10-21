@@ -3,7 +3,12 @@
 #define PH_MQTT_OWNER_H
 #include "mico.h"
 /* Protocol-independent owner contract used by optional feature producers. */
-enum { PH_MQTT_MORE = 2 };
+enum { PH_MQTT_MORE = 2, PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED = 3 };
+/* Owner-only pre-builder gate. No protocol bytes have started for this result. */
+int ph_mqtt_resource_ready(void);
+/* End a complete scheduler round; smaller sends cannot retire pending work. */
+void ph_mqtt_resource_round_end(bool);
+bool ph_mqtt_receipt_pending(void);
 /* Stable bound handle, available only to the current owner. */
 mico_thread_t *ph_mqtt_owner_thread(void);
 enum {

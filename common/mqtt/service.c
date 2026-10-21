@@ -101,6 +101,10 @@ int service_mqtt_flush(int(*sender)(const char *, const char *, bool)) {
     return ph_mqtt_poll(NULL);
 }
 
+static void service_mqtt_receipt_release(void *wire) {
+    printbuf_free(wire);
+}
+
 int service_mqtt_input(int(*sender)(const char *, const char *, bool), const mqtt_account_t *scope, const void *payload, size_t length, bool retained) {
     if (!ph_mqtt_owner() || !ph_mqtt_debug_core()->dispatch_depth)
         return MQTT_FAILURE;
@@ -126,16 +130,11 @@ int service_mqtt_input(int(*sender)(const char *, const char *, bool), const mqt
     wire = service_mqtt_wire(r);
     service_memory_release(claim);
     service_json_release(token);
-    char topic[MQTT_TOPIC_MAX];
-    if (!mqtt_target_leaf(&target, "result", topic, sizeof(topic))) {
-        if (wire)
-            printbuf_free(wire);
-        return MQTT_FAILURE;
-    }
-    int rc = sender(topic, wire ? wire->buf : busy, false);
-    if (wire)
-        printbuf_free(wire);
-    return rc;
+    (void)sender;
+    /* The owner takes the independent wire, or copies only the fixed fallback.
+     * JSON leases have ended. The captured target survives rename and retry. */
+    return ph_mqtt_receipt_send(&target, wire ? wire->buf : busy, wire,
+                                service_mqtt_receipt_release);
 }
 /* A busy graph builder must not permanently skip initial capabilities. The
  * owner retries on its next snapshot; no lock/lease crosses the sender. */
@@ -171,6 +170,8 @@ __attribute__((noinline)) static int service_mqtt_try_capabilities(int(*sender)(
 }
 
 __attribute__((noinline)) int service_mqtt_snapshot(int(*sender)(const char *, const char *, bool), const mqtt_account_t *scope) {
+    int ready = ph_mqtt_resource_ready();
+    if (ready != MQTT_SUCCESS) return ready == PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED ? PH_MQTT_MORE : ready;
     if(snapshot_deferred && (uint32_t)(mico_rtos_get_time()-snapshot_retry_at)<1000u)
         return PH_MQTT_MORE;
     int rc = MQTT_SUCCESS;

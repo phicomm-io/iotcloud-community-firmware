@@ -492,15 +492,41 @@ def aggregate_parallel_evidence(runners, targets, rounds, result,
                                evidence_path, runner_evidence):
     evidence_path = Path(evidence_path)
     runner_evidence = Path(runner_evidence)
+    evidence_paths = [runner.output / 'evidence.json' for runner in runners]
+    scheduling_paths = [runner.output / 'http-scheduling.json' for runner in runners]
+    evidence_documents = [_read_parallel_json(path) for path in evidence_paths]
+    scheduling_documents = [_read_parallel_json(path) for path in scheduling_paths]
+    child_shapes_valid = (
+        len(runners) == len(targets) and
+        all(_has_parallel_child_shape(document, list_keys=(
+            'blockers', 'recoveries', 'phases', 'scenarios', 'rows', 'memory'),
+            dict_keys=('before', 'run', 'summary', 'target_versions'))
+            for document in evidence_documents) and
+        all(_has_parallel_child_shape(document, list_keys=('cases', 'recovery', 'blockers'),
+                                      dict_keys=('target_versions',))
+            for document in scheduling_documents))
+    if not child_shapes_valid:
+        raise ValueError('parallel child evidence has malformed fields')
+    child_versions_valid = (child_shapes_valid and
+                            _parallel_child_versions_match(
+                                runners, targets, evidence_documents,
+                                scheduling_documents))
+    source_blockers_clear = (
+        child_shapes_valid and
+        all(not document['blockers'] for document in evidence_documents) and
+        all(not document['blockers'] for document in scheduling_documents))
+    worker_metadata = {
+        'device_workers': 3,
+        'worker_pids': result['worker_pids'],
+        'workers_completed': result['completed'],
+        'failure': result['failure'],
+        'completed': False,
+        'aggregate_completed': False,
+    }
     combined = merge_json_files(
-        [runner.output / 'evidence.json' for runner in runners], runner_evidence,
+        evidence_paths, runner_evidence,
         list_keys=('blockers', 'recoveries', 'phases', 'scenarios', 'rows', 'memory'),
-        dict_keys=('before', 'summary', 'target_versions'), metadata={
-            'device_workers': 3,
-            'worker_pids': result['worker_pids'],
-            'completed': result['completed'],
-            'failure': result['failure'],
-        })
+        dict_keys=('before', 'summary', 'target_versions'), metadata=worker_metadata)
     combined['device_runs'] = []
     for runner in runners:
         with open(runner.output / 'evidence.json', encoding='utf-8') as stream:
@@ -510,24 +536,30 @@ def aggregate_parallel_evidence(runners, targets, rounds, result,
                       for round_number in range(1, rounds + 1)
                       for phase in CASES}
     scheduling = merge_json_files(
-        [runner.output / 'http-scheduling.json' for runner in runners], evidence_path,
+        scheduling_paths, evidence_path,
         list_keys=('cases', 'recovery', 'blockers'),
-        dict_keys=('target_versions',), metadata={
-            'device_workers': 3,
-            'worker_pids': result['worker_pids'],
-            'completed': result['completed'],
-            'failure': result['failure'],
-        })
-    recovered_rows = [row for row in scheduling.get('recovery', [])
-                      if row.get('recovered') is True]
+        dict_keys=('target_versions',), metadata=worker_metadata)
+    # SchedulingRunner's evidence intentionally has no targets field. Source
+    # the declaration from its sibling scheduling artifacts, then validate it
+    # against the expected identities and the raw baseline captured by Runner.
+    combined['targets'] = scheduling.get('targets', [])
     expected_recovery = {(ip, round_number) for ip in targets
                          for round_number in range(1, rounds + 1)}
     complete = (result['completed'] and
+                child_versions_valid and source_blockers_clear and
+                _declared_targets_match_baselines(
+                    scheduling.get('targets'), targets, combined.get('before')) and
+                _parallel_recoveries_complete(
+                    scheduling.get('recovery'), expected_recovery) and
                 has_complete_targets_and_baselines(combined, targets, 'before') and
                 covers_expected_records(scheduling.get('cases', []), expected_cases,
                                         ('ip', 'round', 'phase'), exact=True) and
-                covers_expected_records(recovered_rows, expected_recovery,
-                                        ('ip', 'round'), exact=True) and
+                isinstance(combined.get('blockers'), list) and
+                all(isinstance(row, dict) for row in combined['blockers']) and
+                not combined['blockers'] and
+                isinstance(scheduling.get('blockers'), list) and
+                all(isinstance(row, dict) for row in scheduling['blockers']) and
+                not scheduling['blockers'] and
                 all(run.get('completed') is True for run in combined['device_runs']))
     combined['run'].update({
         'status': 'complete' if complete else 'failed',
@@ -535,6 +567,13 @@ def aggregate_parallel_evidence(runners, targets, rounds, result,
         'ended_at': time.time(),
         'failure_type': None if complete else 'ParallelIncomplete',
     })
+    for document in (combined, scheduling):
+        document['parallel_execution']['completed'] = complete
+        document['parallel_execution']['aggregate_completed'] = complete
+        document['parallel_execution']['workers_completed'] = result['completed']
+        document['parallel_execution']['failure'] = result['failure']
+        document['parallel_execution']['aggregate_failure'] = (
+            None if complete else 'ParallelIncomplete')
     if not complete:
         combined['blockers'].append({
             'ip': '', 'reason': 'parallel evidence incomplete or worker failed',
@@ -544,10 +583,112 @@ def aggregate_parallel_evidence(runners, targets, rounds, result,
             'ip': '', 'reason': 'parallel evidence incomplete or worker failed',
             'at': time.time(),
         })
-        scheduling['parallel_execution']['completed'] = False
     write_json_atomic(combined, runner_evidence)
     write_json_atomic(scheduling, evidence_path)
     return complete, combined, scheduling
+
+
+def _read_parallel_json(path):
+    with open(path, encoding='utf-8') as stream:
+        document = json.load(stream)
+    if not isinstance(document, dict):
+        raise ValueError('parallel child evidence must be a JSON object')
+    return document
+
+
+def _has_parallel_child_shape(document, *, list_keys, dict_keys):
+    return (all(isinstance(document.get(key), list) for key in list_keys) and
+            all(isinstance(document.get(key), dict) for key in dict_keys) and
+            all(isinstance(row, dict) for row in document['blockers']) and
+            all(isinstance(row, dict)
+                for key in ('cases', 'recovery') if key in document
+                for row in document[key]))
+
+
+def _parallel_child_versions_match(runners, targets, evidence_documents,
+                                   scheduling_documents):
+    seen = set()
+    for runner, evidence, scheduling in zip(
+            runners, evidence_documents, scheduling_documents):
+        runner_targets = getattr(runner, 'targets', None)
+        overrides = getattr(runner, 'versions', None)
+        default_version = getattr(runner, 'version', None)
+        if (not isinstance(runner_targets, dict) or len(runner_targets) != 1 or
+                not isinstance(overrides, dict)):
+            return False
+        ip = next(iter(runner_targets))
+        if ip in seen or ip not in targets or set(overrides) - {ip}:
+            return False
+        seen.add(ip)
+        expected_version = overrides.get(ip, default_version)
+        if not isinstance(expected_version, str) or not expected_version:
+            return False
+        expected_versions = ({ip: overrides[ip]} if ip in overrides else {})
+        if (evidence.get('target_versions') != expected_versions or
+                scheduling.get('target_versions') != expected_versions):
+            return False
+        baseline = evidence.get('before', {}).get(ip)
+        state = baseline.get('state') if isinstance(baseline, dict) else None
+        if not isinstance(state, dict) or state.get('version') != expected_version:
+            return False
+    return seen == set(targets)
+
+
+def _parallel_recoveries_complete(records, expected):
+    if not isinstance(records, list) or len(records) != len(expected):
+        return False
+    seen = set()
+    for row in records:
+        if not isinstance(row, dict):
+            return False
+        ip, round_number = row.get('ip'), row.get('round')
+        if (not isinstance(ip, str) or type(round_number) is not int or
+                row.get('recovered') is not True):
+            return False
+        key = (ip, round_number)
+        if key not in expected or key in seen:
+            return False
+        successes, reads = row.get('consecutive_successes'), row.get('reads')
+        if (type(successes) is not int or successes < 3 or
+                type(reads) is not int or reads < successes):
+            return False
+        seen.add(key)
+    return seen == expected
+
+
+def _declared_targets_match_baselines(declared, expected, before):
+    """Require unique schedule declarations and identity-matched baselines."""
+    if not isinstance(declared, list) or not isinstance(expected, dict):
+        return False
+    if not isinstance(before, dict):
+        return False
+
+    declared_by_ip = {}
+    for row in declared:
+        if (not isinstance(row, (list, tuple)) or len(row) != 2 or
+                not all(isinstance(value, str) and value for value in row)):
+            return False
+        ip, ident = row
+        if ip in declared_by_ip:
+            return False
+        declared_by_ip[ip] = ident
+
+    if set(declared_by_ip) != set(expected) or set(before) != set(expected):
+        return False
+    for ip, expected_ident in expected.items():
+        baseline = before.get(ip)
+        state = baseline.get('state') if isinstance(baseline, dict) else None
+        baseline_ident = baseline.get('id') if isinstance(baseline, dict) else None
+        state_ident = state.get('device_id') if isinstance(state, dict) else None
+        if not all(isinstance(value, str) and value
+                   for value in (expected_ident, baseline_ident, state_ident,
+                                 declared_by_ip[ip])):
+            return False
+        expected_normalized = expected_ident.lower()
+        if any(value.lower() != expected_normalized
+               for value in (baseline_ident, state_ident, declared_by_ip[ip])):
+            return False
+    return True
 
 
 def main(argv=None):

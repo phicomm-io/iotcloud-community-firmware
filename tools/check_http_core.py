@@ -20,6 +20,15 @@ def read_json_allocator_frames(modules,frames):
         if kind!='static' or name in ('json_heap_lock','json_heap_unlock','json_heap_permit','json_heap_failure'):continue
         if name in ('permit','created','increment'):name='json_heap.'+name
         frames[name]=max(frames.get(name,0),int(size))
+    # Owned MQTT receipt cleanup calls the actual SDK printbuf destructor.
+    # Import only that leaf, keeping unrelated SDK helpers out of the namespace.
+    destructor_files=list(Path(modules).rglob('printbuf.su'))
+    if len(destructor_files)>1:raise ValueError('Expected one actual SDK printbuf.su')
+    for path in destructor_files:
+        for line in path.read_text().splitlines():
+            location,size,kind=line.split('\t')
+            if kind=='static' and location.rsplit(':',1)[-1].split('.')[0]=='printbuf_free':
+                frames['printbuf_free']=max(frames.get('printbuf_free',0),int(size))
 
 def check(modules, model, nm, elf):
     modules=Path(modules)

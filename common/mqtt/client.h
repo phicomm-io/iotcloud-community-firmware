@@ -25,6 +25,10 @@ int ph_mqtt_disconnect(Client *);
 int ph_mqtt_subscribe(Client *, const char *, enum QoS, messageHandler);
 int ph_mqtt_yield(Client *, int);
 int ph_mqtt_publish(Client *, const char *, MQTTMessage *);
+/* Transfers one already encoded receipt to the owner. An owned wire is retained
+ * without a copy; a borrowed busy wire fits the fixed failure buffer. The
+ * existing command credit remains held until the actual send or teardown. */
+int ph_mqtt_receipt_send(const mqtt_target_t *, const char *, void *, void(*)(void *));
 /* Telemetry turn only; command receipts are sent after this scope unwinds. */
 void ph_mqtt_turn_begin(unsigned);
 void ph_mqtt_turn_end(void);

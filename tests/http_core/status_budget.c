@@ -106,6 +106,19 @@ static void measure(bool modern,unsigned longest,bool post,size_t budget,bool ex
  json_object_put(request);healthy_stats();
  char out[256];int n=snprintf(out,sizeof(out),"%s %s %s capacity=%u graph=%u peak=%u@%u denied=%u phase=%u bytes=%u live=%u\n",modern?"consume":"legacy",longest==2?"escaped-text":longest?"maxstrings":"ordinary",post?"POST":"GET",(unsigned)budget,(unsigned)graph,(unsigned)(peak-libc_baseline),(unsigned)peak_phase,(unsigned)fail_size,(unsigned)fail_phase,(unsigned)output,(unsigned)(live-libc_baseline));_write(1,out,n);
 }
+static void mqtt_preflight_gate(void){
+ setup(0);capacity=libc_baseline+100000;peak=live;mqtt_bytes=0;
+ mqtt_modern=true;snapshot_deferred=false;
+ mqtt_account_t scope;assert(mqtt_account_init(&scope,1,"a1","test","aabbccddeeff"));
+ unsigned before=native_reentrant_allocations;
+ mqtt_resource_result=PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED;
+ for(unsigned i=0;i<50;i++)assert(service_mqtt_snapshot(mqtt_sender,&scope)==PH_MQTT_MORE);
+ assert(!mqtt_bytes&&peak==live&&before==native_reentrant_allocations&&!fixture_scope_token);healthy_stats();
+ mqtt_resource_result=MQTT_FAILURE;
+ assert(service_mqtt_snapshot(mqtt_sender,&scope)==MQTT_FAILURE&&!mqtt_bytes&&peak==live);healthy_stats();
+ mqtt_resource_result=MQTT_SUCCESS;
+ assert(service_mqtt_snapshot(mqtt_sender,&scope)==MQTT_SUCCESS&&mqtt_bytes);healthy_stats();
+}
 static void measure_mqtt(bool modern,unsigned longest,bool reply,size_t budget,bool expect_ok){
  setup(longest);capacity=budget+libc_baseline;peak=fail_size=fail_phase=0;phase=2;
  mqtt_modern=modern;mqtt_bytes=0;snapshot_deferred=false;
@@ -124,6 +137,7 @@ static void measure_mqtt(bool modern,unsigned longest,bool reply,size_t budget,b
 int main(void){
  /* Warm up newlib's lazily initialized float conversion before measuring. */
  char warm[64];snprintf(warm,sizeof(warm),"%f",1.25);libc_baseline=live;healthy_stats();
+ mqtt_preflight_gate();
  struct _reent context;_REENT_INIT_PTR(&context);
  size_t before=live;void *direct=_malloc_r(&context,123);assert(direct&&live>=before+charge(123));_free_r(&context,direct);assert(live==before);
  unsigned counted=native_reentrant_allocations;double number;

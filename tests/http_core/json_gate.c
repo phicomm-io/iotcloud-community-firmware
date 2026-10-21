@@ -4,10 +4,12 @@
 #include "common/httpd/product.h"
 #include "common/json_owned.h"
 #include "common/mqtt_account.h"
+#include "common/mqtt/owner.h"
 #define MQTT_SUCCESS 0
 #define MQTT_FAILURE -1
-#define PH_MQTT_MORE 2
-static mico_thread_t *ph_mqtt_owner_thread(void){static __thread mico_thread_t owner;owner=(uintptr_t)pthread_self();return &owner;}
+static int mqtt_resource_result;
+int ph_mqtt_resource_ready(void){return mqtt_resource_result;}
+mico_thread_t *ph_mqtt_owner_thread(void){static __thread mico_thread_t owner;owner=(uintptr_t)pthread_self();return &owner;}
 /* PRODUCTION_MQTT_TELEMETRY */
 #include <pthread.h>
 uint32_t test_now;
@@ -54,6 +56,15 @@ static int puback_reentry(const char*topic,const char*body,bool retained){
 }
 static void *snapshot_thread(void*unused){(void)unused;snapshot_rc=service_mqtt_snapshot(puback_reentry,&account);return NULL;}
 static int forbidden_sender(const char*t,const char*b,bool r){(void)t;(void)b;(void)r;abort();}
+static void preflight_gate(void){
+ unsigned before=builds;
+ allocation=0;fail_at=1;mqtt_resource_result=PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED;
+ for(unsigned i=0;i<50;i++)assert(service_mqtt_snapshot(forbidden_sender,&account)==PH_MQTT_MORE);
+ assert(builds==before&&!allocation);clean();
+ mqtt_resource_result=-17;
+ assert(service_mqtt_snapshot(forbidden_sender,&account)==-17&&builds==before&&!allocation);clean();
+ mqtt_resource_result=MQTT_SUCCESS;fail_at=0;
+}
 static int busy_sender(const char*t,const char*b,bool r){
  assert(strstr(t,"/result")&&!r&&strstr(b,"\"request_id\":\"blocked\"")&&strstr(b,"\"code\":\"busy\""));return 0;
 }
@@ -124,7 +135,7 @@ int main(void){
  service_init();assert(ready);assert(mqtt_account_init(&account,1,"a1","test","aabbccddeeff"));
  unsigned a=service_json_claim();assert(a&&!service_json_claim());service_json_release(a);
  unsigned b=service_json_claim();assert(b&&b!=a);service_json_release(a);assert(!service_json_claim());service_json_release(b);clean();
- deferred_capabilities();competition();
+ deferred_capabilities();preflight_gate();competition();
  timeout_case("GET / HTTP/1.1\r\n\r\n",true);
  timeout_case("POST / HTTP/1.1\r\nContent-Length: 2\r\n\r\n",false);
  /* Builder/encode OOM cleans graph and lease; the next HTTP operation recovers. */

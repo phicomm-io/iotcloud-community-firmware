@@ -316,6 +316,9 @@ int main(void) {
  assert(!strcmp(PRODUCT_state.mqtt_last_error,"serialize: -1"));
  size_t saved_capacity=heap_capacity;
  heap_capacity=charged_live+16384u+32u;
+ assert(publish("tx/state","no headroom",true)==PH_MQTT_MORE);
+ assert(PRODUCT_state.mqtt_errors==2);
+ now_ms+=30000;
  assert(publish("tx/state","no headroom",true)==MQTT_FAILURE);
  assert(PRODUCT_state.mqtt_errors==3);
  assert(strstr(PRODUCT_state.mqtt_last_error,": -1"));
