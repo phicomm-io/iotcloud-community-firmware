@@ -103,7 +103,7 @@ json_object *service_product(const char *action,json_object *p,const char **code
 {
     if(!strcmp(action,"status.get")){
         bool live;*code="invalid_params";if(!status_view_params(p,&live))return NULL;
-        json_object *o=live?tc1_status_live_json():tc1_status_json();*code="ok";return o;
+        json_object *o=live?tc1_status_live_json():tc1_status_json();*code=o?"ok":"busy";return o;
     }
     return service_product_inner(action,p,code);
 }
