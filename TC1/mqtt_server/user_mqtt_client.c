@@ -1083,10 +1083,11 @@ extern void UserMqttHassPower(void) {
         uint32_t today=p_count>=(uint32_t)user_config->p_count_1_day_ago?p_count-user_config->p_count_1_day_ago:0;
         uint32_t yesterday=user_config->p_count_1_day_ago>=user_config->p_count_2_days_ago?user_config->p_count_1_day_ago-user_config->p_count_2_days_ago:0;
         mico_time_t ms=0; mico_time_get_time(&ms); unsigned sec=ms/1000;
-        char payload[512],topic[MQTT_TOPIC_MAX];
+        char payload[512];
         mqtt_format(payload,sizeof(payload),"{\"power\":%.3f,\"energySession\":%.6f,\"powerConsumption\":%.3f,\"powerConsumptionToday\":%.3f,\"powerConsumptionYesterday\":%.3f,\"startupTime\":\"%u - %02u:%02u:%02u\"}",
             real_time_power/10,PowerPulseCountToKwh(power_session_pulses),PowerPulseCountToKwh(p_count),PowerPulseCountToKwh(today),PowerPulseCountToKwh(yesterday),sec/86400,sec/3600%24,sec/60%60,sec%60);
-        mqtt_leaf(&account,"sensor",topic,sizeof(topic)); UserMqttSendTopic(topic,payload,1); return;
+        /* Same owner initialized this exact sensor topic before any publish. */
+        UserMqttSendTopic(topic_state,payload,1); return;
     }
     uint32_t today_count = p_count >= (uint32_t) user_config->p_count_1_day_ago
                            ? p_count - (uint32_t) user_config->p_count_1_day_ago : 0;

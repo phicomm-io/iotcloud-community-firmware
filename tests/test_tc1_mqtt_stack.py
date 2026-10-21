@@ -84,5 +84,44 @@ int main(void){
                             '-fno-omit-frame-pointer','-no-pie','-I'+str(ROOT),str(probe),'-o',str(path/'probe')],check=True)
             subprocess.run([str(path/'probe')],check=True,timeout=30)
 
+    def test_power_topic_and_payload(self):
+        source=(ROOT/'TC1/mqtt_server/user_mqtt_client.c').read_text()
+        power=extract(source,'extern void UserMqttHassPower(void) {')
+        fixture=r'''
+#include <assert.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdarg.h>
+#include <string.h>
+#include "common/mqtt_account.h"
+static mqtt_account_t account;
+static bool isconnect=true,synchronous_send;
+static uint32_t p_count=10000,power_session_pulses=2000;
+static double real_time_power=123;
+static struct {uint32_t p_count_1_day_ago,p_count_2_days_ago;} cfg={9000,8000},*user_config=&cfg;
+static char str_mac[]="aabbccddeeff",topic_state[MQTT_TOPIC_MAX];
+typedef uint32_t mico_time_t;
+static void mico_time_get_time(mico_time_t *out){*out=93784000;}
+static double PowerPulseCountToKwh(uint32_t n){return n/1000.0;}
+static char topics[6][MQTT_TOPIC_MAX],payloads[6][512];static unsigned count;static int retained[6];
+static int UserMqttSendTopic(char*topic,char*payload,char retain){assert(count<6);strcpy(topics[count],topic);strcpy(payloads[count],payload);retained[count++]=retain;return 0;}
+'''+power+r'''
+int main(void){
+ assert(mqtt_account_init(&account,1,"tc1","test",str_mac));assert(mqtt_leaf(&account,"sensor",topic_state,sizeof(topic_state)));
+ UserMqttHassPower();assert(count==1&&!strcmp(topics[0],topic_state)&&retained[0]==1);
+ assert(!strcmp(payloads[0],"{\"power\":12.300,\"energySession\":2.000000,\"powerConsumption\":10.000,\"powerConsumptionToday\":1.000,\"powerConsumptionYesterday\":1.000,\"startupTime\":\"1 - 02:03:04\"}"));
+ count=0;account.mode=0;UserMqttHassPower();assert(count==5);
+ const char*leaves[]={"power","powerConsumption","startupTime","powerConsumptionToday","powerConsumptionYesterday"};
+ for(unsigned i=0;i<5;i++){char expected[128];snprintf(expected,sizeof(expected),"homeassistant/sensor/%s/%s/state",str_mac,leaves[i]);assert(!strcmp(topics[i],expected)&&!retained[i]);}
+ isconnect=false;count=0;UserMqttHassPower();assert(!count);
+ synchronous_send=true;UserMqttHassPower();assert(count==5);return 0;
+}
+'''
+        with tempfile.TemporaryDirectory() as temp:
+            path=Path(temp);probe=path/'power.c';probe.write_text(fixture)
+            subprocess.run([os.environ.get('CC','cc'),'-std=gnu99','-g','-fsanitize=address,undefined','-fno-omit-frame-pointer','-no-pie','-I'+str(ROOT),str(probe),'-o',str(path/'power')],check=True)
+            subprocess.run([str(path/'power')],check=True,timeout=10)
+
 
 if __name__=='__main__':unittest.main()
