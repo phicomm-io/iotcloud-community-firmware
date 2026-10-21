@@ -2,7 +2,7 @@
 
 The repository variable `PHICOMM_CI_RUNNER` selects the default build/test runner.
 Unset (or any value other than `self-hosted`) means GitHub-hosted Ubuntu 22.04.
-Set it to `self-hosted` to route branch pushes and same-repository pull requests
+Set it to `self-hosted` to route branch/tag pushes and same-repository pull requests
 to the optional runner. Clear it to restore GitHub-hosted scheduling.
 
 Manual **Build community firmware** runs default to `runner=auto`, following that
@@ -12,12 +12,12 @@ variable. Explicit `github-hosted` or `self-hosted` overrides the variable.
 | --- | --- |
 | Branch push / same-repository PR | Repository variable, GitHub-hosted if unset |
 | Fork PR | Always GitHub-hosted |
-| Manual branch, `auto` | Repository variable, GitHub-hosted if unset |
-| Manual branch, explicit choice | Selected runner |
-| Any tag | Always GitHub-hosted |
+| Manual branch/tag, `auto` | Repository variable, GitHub-hosted if unset |
+| Manual branch/tag, explicit choice | Selected runner |
+| Tag push | Repository variable, GitHub-hosted if unset |
 
-Self-hosted selection applies to the six firmware builds (three models, two
-variants) and `feature-tests`, requiring all labels: `self-hosted`, `linux`,
+Runner selection applies to frontend validation, the six firmware builds
+(three models, two variants), `feature-tests`, signing and publication, requiring all labels: `self-hosted`, `linux`,
 `x64`, `phicomm-build`. A missing or busy matching runner leaves jobs queued;
 there is no automatic fallback. Choose `github-hosted` on a new manual run or
 clear the repository variable to use GitHub infrastructure again.
@@ -28,12 +28,14 @@ used by the unchanged workflow steps. Containerizing the runner itself is an
 infrastructure choice; this workflow does not add a job container. Use a clean
 runner workspace between jobs/runs, particularly for SDK and compiler outputs.
 
-Tag runs always use GitHub-hosted runners, even when manually requested with
-`runner=self-hosted`. Signing and publication retain their existing tag-only
-conditions, GitHub-hosted runners, protected environment, and secrets. Manual
-branch runs only build/test and upload the existing build artifacts; they do not
-sign or publish a release. No signing or deployment secret is added to the
-self-hosted jobs; they retain the workflow's read-only GitHub token.
+Tag runs follow the same runner selection, including signing and publication.
+Signing and publication retain their tag-only conditions, approved-main source
+check, production environment and release concurrency group. Production secrets
+are available only to those environment-scoped jobs. The signing key is written
+to a restricted temporary file and removed when signing exits. Use only a trusted
+runner for production tags. Fork PRs always run on GitHub-hosted infrastructure.
+Manual branch runs only build/test and upload artifacts; they do not sign or
+publish a release. Build/test jobs retain a read-only GitHub token.
 
 GitHub requires the dispatch workflow to exist on the default branch before it
 can be run manually. This document does not imply that the optional runner is

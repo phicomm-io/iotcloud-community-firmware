@@ -16,7 +16,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(ROOT / 'tools'))
-from pages import ALIASES, GROUPS, PAGES, SITE_URL, EN_GROUPS, EN_PAGES, validate_translations  # noqa: E402
+from pages import ALIASES, GROUPS, PAGES, PARENTS, SITE_URL, EN_GROUPS, EN_PAGES, validate_translations  # noqa: E402
 from seo import EN_INDEX_TITLE, EN_INDEX_DESCRIPTION, guide_metadata, metadata, write_discovery  # noqa: E402
 
 EXTENSIONS = ['tables', 'fenced_code', 'attr_list', 'toc']
@@ -76,7 +76,8 @@ def guide_nav(active_slug, language="zh"):
         out.append(f'<p class="guide-group">{esc(title)}</p>')
         for slug, page_title, _, _ in items:
             current = ' aria-current="page"' if slug == active_slug else ''
-            out.append(f'<a href="{slug}.html"{current}>{esc(page_title)}</a>')
+            child = ' class="guide-child"' if slug in PARENTS else ''
+            out.append(f'<a href="{slug}.html"{child}{current}>{esc(page_title)}</a>')
     label = 'Documentation navigation' if language == 'en' else '文档导航'
     return f'<nav class="guide-nav" aria-label="{label}">{"".join(out)}</nav>'
 
@@ -100,7 +101,7 @@ def docs_index():
     out = []
     for _, title, items in GROUPS:
         links = ''.join(
-            f'<li><a href="guides/{slug}.html">{esc(page_title)}'
+            f'<li class="{"doc-child" if slug in PARENTS else "doc-page"}"><a href="guides/{slug}.html">{esc(page_title)}'
             f'<span>{esc(summary)}</span></a></li>'
             for slug, page_title, summary, _ in items)
         out.append(f'<div class="doc-group"><h3>{esc(title)}</h3><ul>{links}</ul></div>')
@@ -203,7 +204,7 @@ def main():
             raise SystemExit(f'Missing English guide: {source}')
         (english_dir / f'{slug}.html').write_text(render_guide(slug, title, summary, source, 'en'), encoding='utf-8')
     english_links = ''.join(f'<section><h2>{esc(title)}</h2><ul>' + ''.join(
-        f'<li><a href="{slug}.html">{esc(name)}</a> — {esc(summary)}</li>' for slug, name, summary, _ in items) + '</ul></section>'
+        f'<li class="{"doc-child" if slug in PARENTS else "doc-page"}"><a href="{slug}.html">{esc(name)}</a> — {esc(summary)}</li>' for slug, name, summary, _ in items) + '</ul></section>'
         for _, title, items in EN_GROUPS)
     (english_dir / 'index.html').write_text(
         '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'

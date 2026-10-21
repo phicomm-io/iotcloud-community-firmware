@@ -2,6 +2,25 @@
 
 English translation of the published release history. Historical validation statements apply to the release named in each section, not to later firmware. Release notes are authored in the Wiki and frozen into the source repository before tagging.
 
+## v0.9.17
+
+- Fix TC1 failing to connect to IotCloud, Home Assistant or a custom MQTT broker after initial setup or a factory reset despite a saved broker configuration.
+- Applies to full and no-frontend-resources firmware. Preserve existing Wi-Fi, MQTT, schedules and outlet settings.
+- The fix was flashed onto the TC1 that reproduced the problem; fresh status reports and cloud query responses were verified. No new physical A1 or M1 acceptance was performed for this release.
+
+## v0.9.16
+
+- Reduce A1, M1 and TC1 WebUI traffic: load complete status on first entry, poll live readings during normal use, and refresh network and diagnostics on demand or less frequently.
+- Share the HTTP server, bounded connection management, request parsing and error handling across all three models.
+- HTTP and MQTT reuse the authoritative device C structures, snapshot interface and JSON encoder. Copy state under short locks; release locks before encoding or sending.
+- Unify MQTT connection, reconnect, command queues and sending. Prioritize command acknowledgements, bound memory under overload, and recover after load decreases while preserving protocol and retained-message compatibility.
+- Fix TC1 abnormal-connection cleanup, OTA activation ordering and status synchronization. Reduce power/energy numeric conversion memory and handle allocation failures without unbounded growth.
+- Retain command deduplication, conflict detection and acknowledgement targets while reducing receipt-cache memory. Preserve M1 rename acknowledgements before reconnecting.
+- M1 supports optional BMP388/BMP390 sensors with automatic address/model detection and rediscovery after reconnection. Show hPa and the detected model in the existing overview and device summary; hide unavailable or expired readings.
+- Enforce the actual four-device binding limit and improve narrow mobile layouts.
+- Three devices completed at least four hours of read-only mixed HTTP/MQTT stress and recovery checks without observed unexpected whole-device restarts, deadlocks or sustained memory growth. Overload may return busy or time out; service recovers after load decreases. These results cover the tested devices and workloads, not every possible condition.
+- Version 0.9.x is beta: later versions may change or remove features and interfaces. Keep backups of important settings.
+
 ## v0.9.15
 
 - Fix TC1 freezes or reboots when opening the device page or reading live power and energy usage.

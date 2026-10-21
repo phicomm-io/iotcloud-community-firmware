@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       runner:
-        description: Build/test runner (tag builds always use GitHub-hosted)
+        description: Runner for build, tests, signing and publication
         required: true
         type: choice
         default: auto
@@ -33,7 +33,6 @@ jobs:
     # a frontend release or changes the committed lock.
     runs-on: >-
       ${{ fromJSON(
-        github.ref_type != 'tag' &&
         (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
         ((github.event_name == 'workflow_dispatch' && inputs.runner == 'self-hosted') ||
          (vars.PHICOMM_CI_RUNNER == 'self-hosted' &&
@@ -86,7 +85,6 @@ jobs:
       PHICOMM_FRONTEND_ARCHIVE: ${{ github.workspace }}/build/ci-frontend/frontend.tar.gz
     runs-on: >-
       ${{ fromJSON(
-        github.ref_type != 'tag' &&
         (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
         ((github.event_name == 'workflow_dispatch' && inputs.runner == 'self-hosted') ||
          (vars.PHICOMM_CI_RUNNER == 'self-hosted' &&
@@ -194,7 +192,13 @@ jobs:
     name: Sign production OTA packages
     needs: [firmware, feature-tests]
     if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-22.04
+    runs-on: >-
+      ${{ fromJSON(
+        (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
+        ((github.event_name == 'workflow_dispatch' && inputs.runner == 'self-hosted') ||
+         (vars.PHICOMM_CI_RUNNER == 'self-hosted' &&
+          (github.event_name != 'workflow_dispatch' || inputs.runner == 'auto'))) &&
+        '["self-hosted","linux","x64","phicomm-build"]' || '["ubuntu-22.04"]') }}
     environment: signed-ota-production
     permissions:
       contents: read
@@ -261,7 +265,13 @@ jobs:
     name: Publish OTA and Pages
     needs: [sign-ota]
     if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-22.04
+    runs-on: >-
+      ${{ fromJSON(
+        (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
+        ((github.event_name == 'workflow_dispatch' && inputs.runner == 'self-hosted') ||
+         (vars.PHICOMM_CI_RUNNER == 'self-hosted' &&
+          (github.event_name != 'workflow_dispatch' || inputs.runner == 'auto'))) &&
+        '["self-hosted","linux","x64","phicomm-build"]' || '["ubuntu-22.04"]') }}
     environment: signed-ota-production
     concurrency:
       group: production-ota-release
@@ -319,7 +329,6 @@ jobs:
     needs: [frontend, firmware]
     runs-on: >-
       ${{ fromJSON(
-        github.ref_type != 'tag' &&
         (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
         ((github.event_name == 'workflow_dispatch' && inputs.runner == 'self-hosted') ||
          (vars.PHICOMM_CI_RUNNER == 'self-hosted' &&

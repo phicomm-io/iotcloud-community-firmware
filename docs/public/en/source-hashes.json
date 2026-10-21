@@ -11,8 +11,9 @@
   "a1-guide": "fb07334806b1195e942f240494715d59eda0c8e2b05e847194fb66dea47aae81",
   "iotcloud-deploy": "1fa4286b01be8bf74d8793a862e74a7fcfd7ee96ab81df240c284744886b22c5",
   "build-deps": "34d8c7cc6bdc756da6f0400913849fce88d4b5de8664b2f8329a487d666681f2",
-  "sources": "c5da200ef650588d6c79d073289bdd5e5f430eedd5d0d726b86f92b635b04df7",
-  "release-log": "b0d3acf1fc7e5848854e481ac5c7a3bddfef87844ff6dd3486c73a297767b955",
+  "sources": "23edbaab0f8e5aac075a01e2677988fab140c831f45134f426cf8f2993ed8a1d",
+  "release-log": "5a4c856ae4ca14b05ed327fa74bf2fc5a9fc6022e385bc98f1c2829656cea3c0",
   "iotcloud-connect": "ea06cfa96f1fb1552b0a81ec4544c5e2b79bdfcbe0271617931dd2b10b026e67",
-  "tc1-no-disassembly": "e04c1d2f086e9a8e8e5b1446d4ab83755a6f12a6ae88e740ff03d4d135c79cd5"
+  "tc1-no-disassembly": "aa49c9d3cec971e0fa63ca5743e455f3573f78018c10019ced8166a2c98404cb",
+  "tc1-no-disassembly-ethernet-wifi-ap": "b78af99bccaf3ece7600464a6a303a1304ae044f8098cd7552f138598c73304a"
 }
