@@ -348,11 +348,9 @@ static bool session_subscription(void *context,unsigned index,ph_mqtt_subscripti
 }
 static int session_initial(void *context) {
     (void)context;
-    int rc=account.mode?service_mqtt_capabilities(service_sender,&account):MQTT_SUCCESS;
-    if(rc!=MQTT_SUCCESS)return rc;
     cleanup_pending=true;discovery_index=state_index=publication_cursor=0;synchronous_error=0;
     snapshot_at=mico_rtos_get_time()-5000u;
-    return synchronous_error;
+    return account.mode?service_mqtt_capabilities(service_sender,&account):MQTT_SUCCESS;
 }
 static int session_cycle(void *context) {
     (void)context;
