@@ -37,7 +37,7 @@ def check(modules, model, nm, elf):
     paths={
       'HTTP status':(3072,status_path),
       'HTTP JSON admission':(3072,base+['ph_http_claim','service_json_claim']),
-      'HTTP command status':(3072,[n for n in command if not (model=='TC1' and n=='service_product_inner')]+[status]+([status+'_view'] if status+'_view' in frames else [])),
+      'HTTP command status':(3072,command+[status]+([status+'_view'] if status+'_view' in frames else [])),
       # Builder frames have returned before encoding. Count the bounded
       # automatic traversal explicitly, outside SDK/native/RTOS reserve.
       'HTTP GET JSON encode':(3072,base+['ph_http_json','json_owned_to_wire','json_write','json_primitive','json_append']),
@@ -54,6 +54,25 @@ def check(modules, model, nm, elf):
     # GCC inlines send_part into step in the pinned optimized build. A separate
     # frame must be counted if a compiler/optimization change emits it.
     if 'send_part' in frames:paths['HTTP response'][1].append('send_part')
+    # Model wrappers keep the full scratch out of the live stack frame. State
+    # capture returns before pure encoding, so audit the two reachable tails
+    # separately rather than adding their sequential frames together.
+    def status_paths(paths):
+        expanded={}
+        for label,(reserve,names) in paths.items():
+            if status not in names:
+                expanded[label]=(reserve,names);continue
+            common=[n for n in names if not (model=='TC1' and n=='service_product_inner')]
+            view=status+'_view'
+            if view not in common:common.append(view)
+            common.append(model.lower()+'_status_full')
+            expanded[label+' capture']=(reserve,common+[model.lower()+'_status_capture']+[n for n in ('runtime_metrics_capture','feature_fan_snapshot','watchdog_status_capture','a1_filter_get','ph_http_snapshot','tc1_status_begin','tc1_ota_snapshot','reset_name','device_status_text') if n in frames])
+            encode=['device_status_encode','encode_'+model.lower()]
+            # These helpers may be inlined into their emitted parent frame.
+            encode += [n for n in ('device_runtime_encode','device_http_encode','device_filter_encode','watchdog_status_encode') if n in frames and model!='TC1']
+            expanded[label+' encode']=(reserve,common+encode)
+        return expanded
+    paths=status_paths(paths)
     for label,(reserve,names) in paths.items():
         missing=set(names)-frames.keys()
         if missing:raise ValueError(f'{label}: missing actual .su frames: {sorted(missing)}')
@@ -103,6 +122,8 @@ def check(modules, model, nm, elf):
             mqtt_paths['MQTT '+branch+' nested status build']=(['mqtt_worker']+transport+['publish',callback,'service_command','service_command_execute','service_product',status,status+'_view'],4096)
             mqtt_paths['MQTT '+branch+' owned encode']=(['mqtt_worker']+encoding+encode,4096)
     if model!='TC1':mqtt_paths['MQTT OTA recovery']=(['mqtt_worker','ota_job_poll','feature_resume_step'],4096)
+    mqtt_paths={label:(names,reserve) for label,(reserve,names) in
+        status_paths({label:(reserve,names) for label,(names,reserve) in mqtt_paths.items()}).items()}
     for label,(names,reserve) in mqtt_paths.items():
         missing=set(names)-frames.keys()
         if missing:raise ValueError(f'{label}: missing actual .su frames: {sorted(missing)}')

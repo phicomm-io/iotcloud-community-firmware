@@ -58,6 +58,9 @@ json_object *a1_json_parse(const char *s,size_t n){(void)n;return json_tokener_p
 #define WEB_LOG_H
 #define web_log(...) ((void)0)
 #include "../../TC1/mqtt_server/user_mqtt_client.c"
+/* This harness has no concurrent SDK configuration restore transaction. The
+ * real production guard is linked and initialized, rather than stubbing locks. */
+bool tc1_config_changing(void){return false;}
 OSStatus ota_server_start(char *url,char *hash,ota_server_cb_fn callback){(void)url;(void)hash;(void)callback;return -1;}
 void tc1_ota_snapshot(char *state,char *error,unsigned *progress){strcpy(state,"idle");error[0]=0;*progress=0;}
 static user_config_t config;
@@ -107,6 +110,7 @@ int main(int argc,char **argv){
 #elif defined(HOST_A1)
     strcpy(config.mqtt_host,argv[1]);config.mqtt_port=atoi(argv[2]);strcpy(config.mqtt_user,argv[3]);strcpy(config.mqtt_password,pw);strcpy(config.name,"A1 test");config.mqtt_topic_mode=1;a1_state.wifi_connected=true;config.speed=60;
 #else
+    if(!tc1_status_guard_init())return 3;
     strcpy(config.mqtt_host,argv[1]);config.mqtt_port=atoi(argv[2]);strcpy(config.mqtt_user,argv[3]);strcpy(config.mqtt_password,pw);strcpy(system_config.micoSystemConfig.name,"TC1 \"quoted\" test");config.mqtt_topic_mode=getenv("TC1_TEST_LEGACY")?0:1;
     for(unsigned i=0;i<6;++i)snprintf(config.socket_names[i],64,"Socket \"%u\"",i);
     mico_rtos_init_queue(&mqtt_msg_send_queue,"host",sizeof(void *),10);

@@ -200,3 +200,5 @@ OSStatus feature_resume(void);
 OSStatus feature_resume_step(void);
 bool feature_running(void);
 #endif
+
+void feature_fan_snapshot(bool *,unsigned *,bool *,unsigned *);

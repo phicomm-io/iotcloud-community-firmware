@@ -53,7 +53,9 @@ static void mico_rtos_unlock_mutex(unsigned*p){assert(*p);*p=0;}
 '''
      stubs+=f'''\n#define {model}_WEB_ETAG "\\\"page\\\""\n#define {model}_FAVICON_ETAG "\\\"icon\\\""\nstatic const unsigned char {prefix}_web_data[]={{31,139,1,2}};\nstatic const unsigned char {prefix}_favicon_data[]={{1,2}};\n'''
     else:
-     globals=source[source.index('static ph_http_product product;'):source.index('json_object *tc1_status_json(')]
+     # This fixture tests transport/OTA callbacks. Typed status capture and
+     # encoding have separate actual-SDK fixtures; exclude their wrappers.
+     globals=source[source.index('static ph_http_product product;'):source.index('static __attribute__((noinline)) json_object *tc1_status_full(')]
      tail=source[source.index('static void memory_response('):]
      stubs=r'''
 static bool tc1_http_authorized(const char*a){return ph_http_basic(a,"admin",password);}

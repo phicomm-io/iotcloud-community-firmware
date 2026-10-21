@@ -58,6 +58,7 @@ for model in M1 A1 TC1; do
     json="$json_copy"
     transport=()
     if [[ "$model" == M1 ]]; then transport=(M1/mqtt_transport.c); fi
+    if [[ "$model" == TC1 ]]; then transport=(TC1/status_guard.c); fi
     python3 - "$json" <<'PY'
 import pathlib,sys
 for p in pathlib.Path(sys.argv[1]).glob('*.c'):p.write_text(p.read_text().replace('%ld','%d'))

@@ -30,7 +30,7 @@ def function(source, signature):
 def status_fixture():
     source = (ROOT/'A1/http.c').read_text()
     builders = source[source.index('static void str('):source.index('static void memory_response(')]
-    watchdog = function((ROOT/'common/watchdog.c').read_text(), 'void watchdog_status_json(')
+    watchdog = '\n'.join(function((ROOT/'common/watchdog.c').read_text(), f'void watchdog_status_{suffix}(') for suffix in ('capture','encode','json'))
     filter_fn = function((ROOT/'common/service_product.inc').read_text(), 'json_object *a1_filter_json(')
     snapshots = r'''
 #include "common/watchdog.h"
@@ -42,6 +42,14 @@ static void watchdog_unlock(uint32_t n){(void)n;}
 static const char *reset_name(void){return "software";}
 void a1_filter_get(a1_filter_storage_t *p){memset(p,0,sizeof(*p));p->lifetime_hours=2000;}
 '''
+    capture = function((ROOT/'A1/main.c').read_text(), 'void a1_status_capture(')
+    snapshots += r'''
+mico_mutex_t a1_config_lock,a1_lock;
+OSStatus mico_rtos_lock_mutex(mico_mutex_t*m){(void)m;return kNoErr;}
+OSStatus mico_rtos_unlock_mutex(mico_mutex_t*m){(void)m;return kNoErr;}
+void feature_fan_snapshot(bool*eo,unsigned*es,bool*automatic,unsigned*limit){feature_effective_fan(cfg.fan_on,cfg.speed,eo,es);*automatic=false;*limit=100;}
+'''
+    builders = '#define PHICOMM_APPLICATION_WATCHDOG 1\n#define ph_http_snapshot http_diag_snapshot\n#include "common/device_status.c"\n#define a1_config (&cfg)\n#define a1_state state\n'+capture+'\n#undef a1_config\n#undef a1_state\n'+builders+'\n#undef ph_http_snapshot\n'
     service = (ROOT/'common/service.c').read_text()
     result = function(service, 'static json_object *result(')
     query = function(service, 'json_object *service_query(')
@@ -128,12 +136,11 @@ def virtual_fixture(retain_config=False):
     fixture=fixture.replace('unsigned service_json_claim(void){return 1;}\nvoid service_json_release(unsigned token){(void)token;}',r'''
 static bool ready=true;static mico_mutex_t service_lock;
 static unsigned json_owner,json_generation;
-OSStatus mico_rtos_lock_mutex(mico_mutex_t*m){(void)m;return kNoErr;}
-OSStatus mico_rtos_unlock_mutex(mico_mutex_t*m){(void)m;return kNoErr;}
 '''+function(service,'unsigned service_json_claim(')+'\n'+function(service,'void service_json_release('))
     fixture=fixture.replace('uint32_t mico_rtos_get_time(void){return 25000;}','static uint32_t now=25000;\nuint32_t mico_rtos_get_time(void){return now;}')
     fixtures=r'''
 #define FEATURE_DEVICE_A1
+#define a1_state state
 #define LOCAL_ID a1_id
 #define COUNT(x) (sizeof(x)/sizeof(*(x)))
 static feature_config_t configuration,*published_layout;
@@ -143,7 +150,7 @@ static unsigned mqtt_graph_pending,published_count,published_sensors;
 static bool mqtt_online=true,was_coordinator=true;
 static char published_root[FEATURE_TOPIC_MAX],published_ids[FEATURE_MAX_PEERS][13];
 static struct {bool light_sleep;unsigned brightness;} sleep_state;
-mico_mutex_t a1_lock;a1_state_t a1_state;
+
 static const char *domains[]={"unused"};
 void feature_config_get(feature_config_t*c){*c=configuration;}
 bool feature_bound(void){return true;}
@@ -245,7 +252,7 @@ class JsonBudget(unittest.TestCase):
             with self.subTest(model=model):
                 self.compile_arm(model, (ROOT/'tests/http_core/json_owned.c').read_text(), budget=False)
 
-    def compile_arm(self, model, fixture, budget):
+    def compile_arm(self, model, fixture, budget, product=True, host=False):
         sdk = Path(os.environ.get('PHICOMM_'+model+'_SDK', ROOT/'build'/('tc1-sdk-3.6.4' if model=='TC1' else model.lower()+'-sdk')/'mico-os'))
         cc = Path(os.environ.get('ARM_CC', ROOT/'build/tc1-tools/gcc-arm-none-eabi-5_4-2016q2/bin/arm-none-eabi-gcc'))
         qemu = shutil.which('qemu-arm') or shutil.which('qemu-arm-static')
@@ -258,6 +265,7 @@ class JsonBudget(unittest.TestCase):
             'platform/MCU/'+mcu+'/interface','board/'+board,'MiCO/system','MiCO/system/include',
             'libraries/utilities','MiCO/security','MiCO/security/TLS/mocSSL','libraries/utilities/json_c']
         if tc1:
+            includes += ['libraries/drivers','libraries/drivers/MiCOKit_EXT']
             includes += ['platform/MCU/MW3xx/peripherals/sdk/src/incl/'+p for p in
                 ('sdk','platform/os/micortos','sdk/drivers','sdk/drivers/mw300','sdk/drivers/mw300/regs')]
         flags = ['-std=gnu11','-g','-Os','-mthumb','-mcpu=cortex-m3' if tc1 else '-mcpu=cortex-m4',
@@ -267,6 +275,7 @@ class JsonBudget(unittest.TestCase):
         else:
             flags += ['-mfpu=fpv4-sp-d16','-mfloat-abi=hard']
         flags += ['-I'+str(sdk/p) for p in includes]
+        host_flags = [f for f in flags if f.startswith(('-I','-D','-std='))]
         flags += ['-u','_printf_float','-u','_scanf_float','-nostartfiles','--specs=nano.specs',
             '--specs=nosys.specs','-Wl,-e,_start,-Ttext=0x10000']
         if budget:
@@ -286,9 +295,27 @@ class JsonBudget(unittest.TestCase):
                 target=directory/(path.stem+'.o');json_objects.append(str(target))
                 subprocess.run([str(cc),*flags,'-fstack-usage','-c',str(path),'-o',str(target)],check=True,timeout=30)
             subprocess.run([str(cc),*flags,str(source),str(ROOT/'tests/http_core/json_arm_runtime.c'),
-                str(ROOT/'common/httpd/product.c'),str(obj),*json_objects,
+                *([str(ROOT/'common/httpd/product.c')] if product else []),str(obj),*json_objects,
                 '-o',str(binary)],check=True,timeout=30)
             subprocess.run([qemu,str(binary)],check=True,timeout=30)
+            if host:
+                # Real SDK declarations/layout on ASan host, with only the
+                # SDK's 32-bit-long format assumption adapted for host libc.
+                for path in json.glob('*.c'):
+                    path.write_text(path.read_text().replace('%ld','%d'))
+                host_binary=directory/'probe-host'
+                sanitize=['-g','-fsanitize=address,undefined','-fno-omit-frame-pointer','-no-pie']
+                host_cc=os.environ.get('CC','cc');host_obj=directory/'probe-host.o'
+                subprocess.run([host_cc,'-I'+str(json),*host_flags,
+                    '-Dsize_t=size_t','-Dssize_t=ssize_t',*sanitize,
+                    '-c',str(source),'-o',str(host_obj)],check=True,timeout=30)
+                # JSON host compilation only needs the established StringUtils
+                # stub; product capture above still uses actual SDK headers.
+                subprocess.run([host_cc,'-std=gnu11','-I'+str(ROOT/'tests/stubs'),
+                    '-I'+str(json),*sanitize,str(host_obj),
+                    *[str(p) for p in json.glob('*.c')],'-o',str(host_binary)],check=True,timeout=30)
+                subprocess.run([str(host_binary)],check=True,timeout=30)
+
 
 
 if __name__=='__main__':

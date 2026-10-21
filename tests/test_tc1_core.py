@@ -5,7 +5,7 @@ ROOT=pathlib.Path(__file__).resolve().parents[1]
 def execute(source):
     with tempfile.TemporaryDirectory() as d:
         p=pathlib.Path(d);(p/'test.c').write_text(source)
-        subprocess.run(['cc','-std=c99','-Wall','-Wextra','-Wno-misleading-indentation','-fsanitize=address,undefined','-I',str(ROOT/'TC1/http_server'),str(p/'test.c'),'-o',str(p/'test')],check=True)
+        subprocess.run(['cc','-std=c99','-Wall','-Wextra','-Wno-misleading-indentation','-fsanitize=address,undefined','-I',str(ROOT/'TC1/http_server'),'-I',str(ROOT/'TC1'),str(p/'test.c'),'-o',str(p/'test')],check=True)
         subprocess.run([str(p/'test')],check=True,timeout=8,env={**os.environ,"UBSAN_OPTIONS":"halt_on_error=1"})
 
 class Core(unittest.TestCase):
@@ -104,6 +104,10 @@ int main(void) {
 #define REBOOT_HTTP 12
 #define REBOOT_SOFT 13
 #define SOCKET_NUM 6
+#include "status_guard.h"
+static int state_locked;
+void tc1_status_lock(void){assert(!state_locked);state_locked=1;}
+void tc1_status_unlock(void){assert(state_locked);state_locked=0;}
 struct TimedTask {bool on_use;time_t prs_time;int operation,on,weekday;struct TimedTask *next;};
 typedef struct TimedTask *pTimedTask;
 static struct {pTimedTask task_top;int power_led_enabled,user[1];} config;

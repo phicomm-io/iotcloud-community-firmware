@@ -982,6 +982,16 @@ void feature_effective_fan(bool requested_on, unsigned requested_speed,
   effective_on = *on;
   unlock();
 }
+void feature_fan_snapshot(bool *on,unsigned *speed,bool *automatic,unsigned *limit)
+{
+    lock();
+    /* Observe applied controller state; a read must never advance PID. */
+    *on=effective_on; *speed=effective_speed;
+    *automatic=configuration.linkage.enabled;
+    *limit=automatic_night>=0 && (unsigned)automatic_night<configuration.sleep_count
+        ? configuration.sleeps[automatic_night].max_speed : configuration.linkage.max_speed;
+    unlock();
+}
 bool feature_fan_auto(void) {
   lock(); bool automatic = configuration.linkage.enabled; unlock(); return automatic;
 }

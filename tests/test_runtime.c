@@ -296,6 +296,19 @@ static void effective_controls(void) {
   unsigned speed;
   feature_effective_fan(true, 100, &on, &speed);
   assert(on && speed == 30);
+  /* A status copy must report the last applied controller result, never
+     advance PID or recompute from a newly requested setting. */
+  { bool applied,automatic;unsigned percentage,limit;
+    __typeof__(pid) before=pid;bool valid=automatic_valid;
+    uint32_t clock=test_now;
+    feature_fan_snapshot(&applied,&percentage,&automatic,&limit);
+    assert(applied==on && percentage==speed);
+    assert(!memcmp(&before,&pid,sizeof(pid)) && automatic_valid==valid && test_now==clock);
+    effective_on=false;effective_speed=17;
+    feature_fan_snapshot(&applied,&percentage,&automatic,&limit);
+    assert(!applied && percentage==17); /* requested state is not consulted */
+    effective_on=on;effective_speed=speed;
+  }
   c = stored;
   c.scheduled_off = 1;
   c.scheduled_valid = 1;

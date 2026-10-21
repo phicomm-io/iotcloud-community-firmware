@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class FilterStorageTest(unittest.TestCase):
     def test_storage_commands_and_migration(self):
         main = (ROOT / 'A1/main.c').read_text()
-        prefix = main[main.index('mico_mutex_t a1_lock'):main.index('static OSStatus startup_result')] + main[main.index('void automation_load('):]
+        prefix = main[main.index('mico_mutex_t a1_lock'):main.index('static OSStatus startup_result')] + main[main.index('void automation_load('):main.index('#include "../common/device_status.h"')]
         migration = main[main.index('    /* The SDK validates'):main.index('    /* Normalize the retained')]
         harness = r'''
 #include "A1/storage.h"
