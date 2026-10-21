@@ -28,6 +28,13 @@ used by the unchanged workflow steps. Containerizing the runner itself is an
 infrastructure choice; this workflow does not add a job container. Use a clean
 runner workspace between jobs/runs, particularly for SDK and compiler outputs.
 
+Signing and publication explicitly require GitHub CLI. If absent,
+`tools/ci/ensure_gh.sh` installs the checksum-pinned Linux x64 release in
+`/usr/local/bin` using passwordless `sudo`. The manual **Prepare self-hosted
+release tools** workflow can prepare an existing runner before retrying an older
+tag whose workflow did not include this dependency check. It uses a read-only
+token and no production environment secrets.
+
 Tag runs follow the same runner selection, including signing and publication.
 Signing and publication retain their tag-only conditions, approved-main source
 check, production environment and release concurrency group. Production secrets
