@@ -83,7 +83,7 @@ static mqtt_account_t account;
 static bool synchronous_send, rediscover;
 /* External periodic producer requests work only. Account/topic/cursors remain
  * exclusively owned by the MQTT worker, including during reconfiguration. */
-static bool power_pending;
+static bool power_pending,power_turn;
 static bool power_requested(void) {
     return __atomic_exchange_n(&power_pending, false, __ATOMIC_ACQ_REL);
 }
@@ -361,13 +361,16 @@ static int session_cycle(void *context) {
     if(ota_job_active())return MQTT_SUCCESS;
     if(rediscover){discovery_index=state_index=publication_cursor=0;rediscover=false;}
     if(discovery_index<12 || state_index<10)return snapshot_step();
-    if(power_requested()) {
-        state_index=9;publication_cursor=0;
-        return snapshot_step();
+    bool status_due=account.mode && (uint32_t)(mico_rtos_get_time()-snapshot_at)>=5000;
+    /* A slow PUBACK can make both producers due on every turn. Alternate
+     * completed publication batches instead of starving either one. */
+    if(status_due && (!power_turn || !__atomic_load_n(&power_pending,__ATOMIC_ACQUIRE))) {
+        power_turn=true;snapshot_at=mico_rtos_get_time();
+        return service_mqtt_snapshot(service_sender,&account);
     }
-    if(account.mode && (uint32_t)(mico_rtos_get_time()-snapshot_at)>=5000) {
-        snapshot_at=mico_rtos_get_time();rc=service_mqtt_snapshot(service_sender,&account);
-        if(rc!=MQTT_SUCCESS)return rc;
+    if(power_requested()) {
+        power_turn=false;state_index=9;publication_cursor=0;
+        return snapshot_step();
     }
     return rc;
 }

@@ -74,6 +74,42 @@ int main(void){
                             '-fno-omit-frame-pointer','-no-pie','-I'+str(ROOT),str(probe),'-o',str(path/'probe')],check=True)
             subprocess.run([str(path/'probe')],check=True,timeout=30)
 
+    def test_power_status_fairness(self):
+        source=(ROOT/'TC1/mqtt_server/user_mqtt_client.c').read_text()
+        functions=extract(source,'static bool power_requested(')+'\n'+extract(source,'static int session_cycle(')
+        fixture=r'''
+#include <assert.h>
+#include <stdbool.h>
+#include <stdint.h>
+#define PH_MQTT_RECONFIGURE 1
+#define MQTT_SUCCESS 0
+static struct{int mode;char base[8];}account={1,"base"};
+static bool power_pending,power_turn,rediscover;
+static unsigned discovery_index=12,state_index=10,publication_cursor,snapshot_at,now;
+static unsigned powers,statuses;
+#define service_sender 0
+static bool session_current(void){return true;}
+static int ota_service(const char*s){(void)s;return 0;}
+static bool ota_job_active(void){return false;}
+static unsigned mico_rtos_get_time(void){return now;}
+static int snapshot_step(void){powers++;now+=6000;state_index=10;return 0;}
+static int service_mqtt_snapshot(int sender,const void*a){(void)sender;(void)a;statuses++;now+=6000;return 0;}
+/* PRODUCTION */
+int main(void){
+ for(unsigned i=0;i<100;i++){
+  now+=6000;__atomic_store_n(&power_pending,true,__ATOMIC_RELEASE);
+  assert(!session_cycle(0));assert(powers+statuses==i+1);
+  if(i%2)assert(powers==statuses);
+ }
+ assert(powers==50&&statuses==50);return 0;
+}
+'''.replace('/* PRODUCTION */',functions)
+        with tempfile.TemporaryDirectory() as d:
+            p=Path(d);(p/'probe.c').write_text(fixture)
+            subprocess.run([os.environ.get('CC','cc'),'-std=c99','-Wall','-Wextra','-Werror',
+                '-fsanitize=address,undefined','-no-pie',str(p/'probe.c'),'-o',str(p/'probe')],check=True)
+            subprocess.run([str(p/'probe')],check=True,timeout=10)
+
     def test_power_topic_and_payload(self):
         source=(ROOT/'TC1/mqtt_server/user_mqtt_client.c').read_text()
         power=extract(source,'static bool power_requested(')+'\n'+extract(source,'extern void UserMqttHassPower(void) {')
