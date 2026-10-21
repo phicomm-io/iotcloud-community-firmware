@@ -221,6 +221,8 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install cryptography==46.0.3
+      - name: Require GitHub CLI for signed release reuse
+        run: bash tools/ci/ensure_gh.sh
       - name: Sign and verify production packages
         env:
           GH_TOKEN: ${{ github.token }}
@@ -287,6 +289,8 @@ jobs:
           name: signed-release
           path: release
       - run: pip install cryptography==46.0.3
+      - name: Require GitHub CLI for publication
+        run: bash tools/ci/ensure_gh.sh
       - name: Extract frozen Wiki release notes
         env:
           TAG_NAME: ${{ github.ref_name }}

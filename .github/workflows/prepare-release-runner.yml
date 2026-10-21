@@ -1,0 +1,16 @@
+name: Prepare self-hosted release tools
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: [self-hosted, linux, x64, phicomm-build]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install GitHub CLI if missing
+        run: bash tools/ci/ensure_gh.sh
