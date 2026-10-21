@@ -2,6 +2,12 @@
 
 English translation of the published release history. Historical validation statements apply to the release named in each section, not to later firmware. Release notes are authored in the Wiki and frozen into the source repository before tagging.
 
+## v0.9.17
+
+- Fix TC1 failing to connect to IotCloud, Home Assistant or a custom MQTT broker after initial setup or a factory reset despite a saved broker configuration.
+- Applies to full and no-frontend-resources firmware. Preserve existing Wi-Fi, MQTT, schedules and outlet settings.
+- The fix was flashed onto the TC1 that reproduced the problem; fresh status reports and cloud query responses were verified. No new physical A1 or M1 acceptance was performed for this release.
+
 ## v0.9.16
 
 - Reduce A1, M1 and TC1 WebUI traffic: load complete status on first entry, poll live readings during normal use, and refresh network and diagnostics on demand or less frequently.
