@@ -54,7 +54,8 @@ cp -R "$json_dir" "$output/sdk/libraries/utilities/json_c"
 python3 tools/apply_sdk_patch.py "$output/sdk" \
     common/json-newlib-reent.patch common/json-printbuf-oom.patch \
     common/json-allocation-safety.patch common/json-heap-budget.patch \
-    common/json-newlib-nano-abi.patch common/json-integer-parse.patch
+    common/json-newlib-nano-abi.patch common/json-integer-parse.patch \
+    common/json-sized-resize.patch
 ln -s sdk/libraries/utilities/json_c "$output/json_c"
 python3 - "$output/json_c" <<'PYHOST'
 import pathlib, sys
@@ -64,7 +65,7 @@ PYHOST
 json_dir="$output/json_c"
 # Product callbacks need the actual JSON lifetime overlays, including their
 # headers. CI starts with a pristine SDK, so run after preparing this copy.
-PHICOMM_TEST_JSON_DIR="$json_dir" python3 -m unittest tests.test_json_integer_parse tests.test_http_callbacks
+PHICOMM_TEST_JSON_DIR="$json_dir" python3 -m unittest tests.test_json_integer_parse tests.test_json_sized_resize tests.test_http_callbacks
 # Production MQTT tests require every pinned SDK; never silently skip in CI.
 for sdk in build/a1-sdk/mico-os build/m1-sdk/mico-os build/tc1-sdk-3.6.4/mico-os; do
     python3 tools/prepare_sdk.py "$sdk"
@@ -78,7 +79,7 @@ for target in portable moc-mx1290; do
     "${compiler[@]}" "${target_defines[@]}" -std=gnu99 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -Itests/stubs -I"$json_dir" tests/test_runtime_metrics.c "$json_dir"/*.c -o "$output/runtime-metrics-$target"
     "$output/runtime-metrics-$target"
 done
-"${compiler[@]}" -std=gnu99 -Wall -Wextra -Werror -Wno-misleading-indentation -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -Itests/stubs -I"$json_dir" tests/test_json_printbuf_failure.c "$json_dir"/*.c -Wl,--wrap=realloc -o "$output/json-printbuf-failure"
+"${compiler[@]}" -std=gnu99 -Wall -Wextra -Werror -Wno-misleading-indentation -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -Itests/stubs -I"$json_dir" tests/test_json_printbuf_failure.c "$json_dir"/*.c -Wl,--wrap=json_heap_resize -o "$output/json-printbuf-failure"
 "$output/json-printbuf-failure"
 "${compiler[@]}" -std=gnu99 -Wall -Wextra -Werror -Wno-misleading-indentation -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -Itests/stubs -I"$json_dir" tests/test_json_allocation_failure.c "$json_dir"/*.c -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc -Wl,--wrap=strdup -o "$output/json-allocation-failure"
 "$output/json-allocation-failure"
@@ -97,7 +98,7 @@ source=Path('common/mqtt/service.c').read_text()
 Path(__import__('sys').argv[1]).write_text('\n'.join(function(source,n) for n in
     ('static struct printbuf *service_mqtt_wire(', 'int service_mqtt_send(')))
 PYMQTT
-"${compiler[@]}" -std=gnu99 -Wall -Wextra -Werror -Wno-misleading-indentation -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -I"$output" -Itests/stubs -Icommon -I"$json_dir" tests/test_mqtt_service.c common/json_owned.c "$json_dir"/*.c -Wl,--wrap=free -Wl,--wrap=realloc -o "$output/mqtt-service"
+"${compiler[@]}" -std=gnu99 -Wall -Wextra -Werror -Wno-misleading-indentation -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -I"$output" -Itests/stubs -Icommon -I"$json_dir" tests/test_mqtt_service.c common/json_owned.c "$json_dir"/*.c -Wl,--wrap=free -Wl,--wrap=json_heap_resize -o "$output/mqtt-service"
 "$output/mqtt-service"
 "$output/service"
 "${compiler[@]}" -std=gnu99 -Wall -Wextra -Wno-misleading-indentation -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-value -Wno-nonnull-compare -Itests/stubs -I"$json_dir" tests/test_service_failure.c "$json_dir"/*.c -o "$output/service-failure"

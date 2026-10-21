@@ -202,12 +202,12 @@ def check(frames,model):
             paths[label+' allocation observation'] = (names + ['json_heap_failure'], spare)
     # Actual compiled patched json_heap.c frames are required, separately from
     # the strong application hook. permit (guard) and created (malloc NULL)
-    # are sibling tails, not nested. realloc(NULL) can nest malloc; include it
-    # conservatively for that API. RTOS is_current_thread internals remain SDK.
+    # are sibling tails, not nested. Sized replacement uses native malloc
+    # directly; it never nests json_heap_malloc. RTOS interiors remain SDK.
     for label, (names, spare) in list(paths.items()):
         if not label.endswith('allocation observation'): continue
-        for api in ('json_heap_malloc', 'json_heap_calloc', 'json_heap_realloc', 'json_heap_strdup'):
-            allocator = [api] + (['json_heap_malloc'] if api == 'json_heap_realloc' else [])
+        for api in ('json_heap_malloc', 'json_heap_calloc', 'json_heap_resize', 'json_heap_strdup'):
+            allocator = [api]
             for tail in ('permit', 'created'):
                 paths[label+' '+api+' '+tail] = (names[:-1] + allocator + ['json_heap.'+tail, 'json_heap_failure'], spare)
     paths['MQTT resource scheduler expiry'] = (owner + ['ph_mqtt_resource_ready'] + failure, reserve)

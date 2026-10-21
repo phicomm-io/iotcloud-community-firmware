@@ -33,7 +33,8 @@ cp -R "$json_source/libraries/utilities/json_c/." "$json/"
 python3 tools/apply_sdk_patch.py "$json_sdk" \
  common/json-newlib-reent.patch common/json-printbuf-oom.patch \
  common/json-allocation-safety.patch common/json-heap-budget.patch \
- common/json-newlib-nano-abi.patch common/json-integer-parse.patch
+ common/json-newlib-nano-abi.patch common/json-integer-parse.patch \
+ common/json-sized-resize.patch
 python3 - "$json" <<'PY'
 import pathlib,sys
 for p in pathlib.Path(sys.argv[1]).glob('*.c'): p.write_text(p.read_text().replace('%ld','%d'))

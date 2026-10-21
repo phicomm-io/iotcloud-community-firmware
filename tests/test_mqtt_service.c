@@ -12,17 +12,17 @@
 #include "../common/json_owned.h"
 static void *watched[2];
 static unsigned freed[2],wire_calls;
-static bool fail_realloc;
+static bool fail_resize;
 int json_heap_permit(size_t bytes){(void)bytes;return 1;}
 void __real_free(void *);
-void *__real_realloc(void *,size_t);
+void *__real_json_heap_resize(void *,size_t,size_t);
 void __wrap_free(void *pointer){
  for(unsigned i=0;i<2;i++)if(pointer && pointer==watched[i])freed[i]++;
  __real_free(pointer);
 }
-void *__wrap_realloc(void *pointer,size_t size){
- if(fail_realloc){fail_realloc=false;return NULL;}
- return __real_realloc(pointer,size);
+void *__wrap_json_heap_resize(void *pointer,size_t old_size,size_t size){
+ if(fail_resize){fail_resize=false;return NULL;}
+ return __real_json_heap_resize(pointer,old_size,size);
 }
 #define MQTT_SUCCESS 0
 #define MQTT_FAILURE -1
@@ -50,9 +50,9 @@ static void test_owned_wire(void){
  assert(service_mqtt_send(send_owned,"topic",o,true)==MQTT_FAILURE);
  assert(wire_calls==1 && freed[0]==1 && freed[1]==1);
  watched[0]=watched[1]=NULL;
- o=owned_reply();fail_realloc=true;
+ o=owned_reply();fail_resize=true;
  assert(service_mqtt_send(send_owned,"topic",o,true)==MQTT_FAILURE);
- assert(!fail_realloc && wire_calls==1 && freed[0]==1 && freed[1]==1);
+ assert(!fail_resize && wire_calls==1 && freed[0]==1 && freed[1]==1);
  watched[0]=watched[1]=NULL;
 }
 int main(void){

@@ -117,8 +117,8 @@ def check(modules, model, nm, elf):
     # frames, retaining the caller's graph/encoder path; no new RTOS allowance.
     for label,(reserve,names) in list(paths.items()):
         if 'json_write' not in names and 'device_status_encode' not in names:continue
-        for api in ('json_heap_malloc','json_heap_calloc','json_heap_realloc','json_heap_strdup'):
-            allocator=[api]+(['json_heap_malloc'] if api=='json_heap_realloc' else [])
+        for api in ('json_heap_malloc','json_heap_calloc','json_heap_resize','json_heap_strdup'):
+            allocator=[api]
             for tail in ('permit','created'):
                 paths[label+' allocator '+api+' '+tail]=(reserve,names+allocator+['json_heap.'+tail,'json_heap_failure'])
     for label,(reserve,names) in paths.items():

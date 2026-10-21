@@ -1,0 +1,179 @@
+--- a/libraries/utilities/json_c/arraylist.c
++++ b/libraries/utilities/json_c/arraylist.c
+@@ -25,9 +25,10 @@
+ #include "arraylist.h"
+ 
+ #include "json_heap.h"
++/* Every JSON growth must supply its old allocated capacity. */
++#pragma GCC poison realloc
+ #define malloc(n) json_heap_malloc(n)
+ #define calloc(n,s) json_heap_calloc(n,s)
+-#define realloc(p,n) json_heap_realloc(p,n)
+ #define free(p) json_heap_free(p)
+ 
+ struct array_list*
+@@ -80,7 +81,8 @@
+     new_size *= 2;
+   }
+   if((size_t)new_size > (size_t)-1 / sizeof(void*)) return -1;
+-  if(!(t = realloc(arr->array, new_size*sizeof(void*)))) return -1;
++  if(!(t = json_heap_resize(arr->array, (size_t)arr->size*sizeof(void*),
++                            (size_t)new_size*sizeof(void*)))) return -1;
+   arr->array = (void**)t;
+   (void)memset(arr->array + arr->size, 0, (new_size-arr->size)*sizeof(void*));
+   arr->size = new_size;
+--- a/libraries/utilities/json_c/json_heap.c
++++ b/libraries/utilities/json_c/json_heap.c
+@@ -2,6 +2,8 @@
+ #include <string.h>
+ #include <stdint.h>
+ #include "json_heap.h"
++/* Every JSON growth must supply its old allocated capacity. */
++#pragma GCC poison realloc
+ extern char *strdup(const char *);
+ static json_heap_stats_t stats;
+ __attribute__((weak)) void json_heap_lock(void) {}
+@@ -38,15 +40,28 @@
+     if (stats.live_blocks) --stats.live_blocks;
+     json_heap_unlock();
+ }
+-void *json_heap_realloc(void *pointer, size_t size) {
+-    if (!pointer) return json_heap_malloc(size);
+-    if (!size) { json_heap_free(pointer); return NULL; }
++void *json_heap_resize(void *pointer, size_t old_capacity, size_t new_capacity) {
+     void *resized = NULL;
+     json_heap_lock();
+-    /* Reserve the full replacement: an allocator may copy before freeing old. */
+-    if (permit(size)) { resized = realloc(pointer, size); if (!resized) { increment(&stats.allocation_failures); json_heap_failure(2); } }
++    if ((!pointer && old_capacity) || (pointer && !old_capacity)) {
++        increment(&stats.guard_denied); json_heap_failure(4);
++    } else if (!new_capacity) {
++        if (pointer) { free(pointer); if (stats.live_blocks) --stats.live_blocks; }
++    } else if (pointer && old_capacity == new_capacity) {
++        resized = pointer;
++    } else if (permit(new_capacity)) {
++        /* Both allocations coexist until copying is complete. Never call the
++         * SDK's unsized growth, which copies the new length from the old block. */
++        resized = malloc(new_capacity);
++        if (!resized) { increment(&stats.allocation_failures); json_heap_failure(2); }
++        else if (pointer) {
++            memcpy(resized, pointer, old_capacity < new_capacity ? old_capacity : new_capacity);
++            free(pointer); /* One logical live block survives replacement. */
++        } else created(resized);
++    }
+     json_heap_unlock(); return resized;
+ }
++
+ char *json_heap_strdup(const char *text) {
+     char *pointer = NULL;
+     size_t size = strlen(text);
+--- a/libraries/utilities/json_c/json_heap.h
++++ b/libraries/utilities/json_c/json_heap.h
+@@ -9,7 +9,11 @@
+ void json_heap_snapshot(json_heap_stats_t *out);
+ void *json_heap_malloc(size_t size);
+ void *json_heap_calloc(size_t count, size_t size);
+-void *json_heap_realloc(void *pointer, size_t size);
++/* The caller supplies the exact allocated capacity, not its used length.
++ * NULL requires old_capacity=0. A non-NULL allocation requires old_capacity>0.
++ * Zero new capacity frees; equal capacity is a no-op. Failed replacements leave
++ * the old allocation intact. The full new allocation needs temporary headroom. */
++void *json_heap_resize(void *pointer, size_t old_capacity, size_t new_capacity);
+ char *json_heap_strdup(const char *text);
+ void json_heap_free(void *pointer);
+ /* Platform hooks: called under a separate allocator mutex, never service_lock.
+--- a/libraries/utilities/json_c/json_object.c
++++ b/libraries/utilities/json_c/json_object.c
+@@ -30,9 +30,10 @@
+ #include "json_number_reent.h"
+ 
+ #include "json_heap.h"
++/* Every JSON growth must supply its old allocated capacity. */
++#pragma GCC poison realloc
+ #define malloc(n) json_heap_malloc(n)
+ #define calloc(n,s) json_heap_calloc(n,s)
+-#define realloc(p,n) json_heap_realloc(p,n)
+ #define free(p) json_heap_free(p)
+ #define strdup json_heap_strdup
+ 
+--- a/libraries/utilities/json_c/json_tokener.c
++++ b/libraries/utilities/json_c/json_tokener.c
+@@ -36,9 +36,10 @@
+ #include "json_number_reent.h"
+ 
+ #include "json_heap.h"
++/* Every JSON growth must supply its old allocated capacity. */
++#pragma GCC poison realloc
+ #define malloc(n) json_heap_malloc(n)
+ #define calloc(n,s) json_heap_calloc(n,s)
+-#define realloc(p,n) json_heap_realloc(p,n)
+ #define free(p) json_heap_free(p)
+ #define strdup json_heap_strdup
+ 
+--- a/libraries/utilities/json_c/json_util.c
++++ b/libraries/utilities/json_c/json_util.c
+@@ -132,9 +132,10 @@
+ // }
+ 
+ #include "json_heap.h"
++/* Every JSON growth must supply its old allocated capacity. */
++#pragma GCC poison realloc
+ #define malloc(n) json_heap_malloc(n)
+ #define calloc(n,s) json_heap_calloc(n,s)
+-#define realloc(p,n) json_heap_realloc(p,n)
+ #define free(p) json_heap_free(p)
+ 
+ int json_parse_int64(const char *buf, int64_t *retval)
+@@ -163,14 +164,7 @@
+ }
+ 
+ #if HAVE_REALLOC == 0
+-void* rpl_realloc(void* p, size_t n)
+-{
+-	if (n == 0)
+-		n = 1;
+-	if (p == 0)
+-		return malloc(n);
+-	return realloc(p, n);
+-}
++#error "Pinned JSON requires HAVE_REALLOC=1; unsized fallback is unsafe"
+ #endif
+ 
+ #define NELEM(a)        (sizeof(a) / sizeof(a[0]))
+--- a/libraries/utilities/json_c/linkhash.c
++++ b/libraries/utilities/json_c/linkhash.c
+@@ -21,9 +21,10 @@
+ #include "linkhash.h"
+ 
+ #include "json_heap.h"
++/* Every JSON growth must supply its old allocated capacity. */
++#pragma GCC poison realloc
+ #define malloc(n) json_heap_malloc(n)
+ #define calloc(n,s) json_heap_calloc(n,s)
+-#define realloc(p,n) json_heap_realloc(p,n)
+ #define free(p) json_heap_free(p)
+ 
+ void lh_abort(const char *msg, ...)
+--- a/libraries/utilities/json_c/printbuf.c
++++ b/libraries/utilities/json_c/printbuf.c
+@@ -30,9 +30,10 @@
+ #include "printbuf.h"
+ 
+ #include "json_heap.h"
++/* Every JSON growth must supply its old allocated capacity. */
++#pragma GCC poison realloc
+ #define malloc(n) json_heap_malloc(n)
+ #define calloc(n,s) json_heap_calloc(n,s)
+-#define realloc(p,n) json_heap_realloc(p,n)
+ #define free(p) json_heap_free(p)
+ 
+ struct printbuf* printbuf_new(void)
+@@ -62,7 +63,7 @@
+ 	     "bpos=%d wrsize=%d old_size=%d new_size=%d\n",
+ 	     p->bpos, size, p->size, new_size);
+ #endif /* PRINTBUF_DEBUG */
+-    if(!(t = (char*)realloc(p->buf, new_size))) { p->failed = 1; return -1; }
++    if(!(t = (char*)json_heap_resize(p->buf, (size_t)p->size, (size_t)new_size))) { p->failed = 1; return -1; }
+     p->size = new_size;
+     p->buf = t;
+   }

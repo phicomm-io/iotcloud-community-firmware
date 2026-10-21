@@ -24,7 +24,7 @@ ph_mqtt_error ph_mqtt_record_failure ph_mqtt_is_owner current mutex_lock guarded
 guarded_write ph_mqtt_protocol_buffers mqtt_socket_read ph_mqtt_record_ingress_drop
 service_mqtt_optional_send service_mqtt_json_begin service_mqtt_json_end
 service_mqtt_json_error json_heap_failure json_heap_malloc json_heap_calloc
-json_heap_realloc json_heap_strdup json_heap.permit json_heap.created discovery_build ph_mqtt_app_error ph_mqtt_record_operation
+json_heap_resize json_heap_strdup json_heap.permit json_heap.created discovery_build ph_mqtt_app_error ph_mqtt_record_operation
 service_json_scope_begin service_json_scope_failed service_json_scope_end service_json_release
 service_caller_graph_failed json_heap_lock ph_mqtt_owner_thread ph_mqtt_owner direct_json_optional
 ph_mqtt_receipt_send receipt_retry publish_owned publish_wait ph_mqtt_resource_ready
@@ -122,10 +122,10 @@ class MqttStackBudget(unittest.TestCase):
                 self.run_budget(missing=name)
         with self.assertRaisesRegex(ValueError,'>16384'):
             self.run_budget({'json_heap_failure':13000})
-        output=self.run_budget({'json_heap_realloc':16,'json_heap_malloc':8,'json_heap.permit':8,
+        output=self.run_budget({'json_heap_resize':16,'json_heap_malloc':8,'json_heap.permit':8,
                                 'json_heap.created':8,'json_heap_failure':8})
-        self.assertIn('MQTT filter discovery allocation observation json_heap_realloc permit: 40 application',output)
-        for name in ('json_heap_malloc','json_heap_calloc','json_heap_realloc','json_heap_strdup','json_heap.permit','json_heap.created'):
+        self.assertIn('MQTT filter discovery allocation observation json_heap_resize permit: 32 application',output)
+        for name in ('json_heap_malloc','json_heap_calloc','json_heap_resize','json_heap_strdup','json_heap.permit','json_heap.created'):
             with self.subTest(name=name), self.assertRaisesRegex(ValueError,'missing actual .su'):
                 self.run_budget(missing=name)
 

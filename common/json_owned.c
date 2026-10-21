@@ -19,7 +19,7 @@ static bool json_append(struct printbuf *pb,const char *s,int n,enum json_owned_
     if(needed>pb->size) {
         int size=pb->size<=INT_MAX-256?pb->size+256:INT_MAX;
         if(size<needed)size=needed;
-        char *next=json_heap_realloc(pb->buf,(size_t)size);
+        char *next=json_heap_resize(pb->buf,(size_t)pb->size,(size_t)size);
         if(!next){pb->failed=1;return false;}
         pb->buf=next;pb->size=size;
     }

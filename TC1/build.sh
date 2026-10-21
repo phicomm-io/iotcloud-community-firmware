@@ -20,7 +20,8 @@ python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \
     "$project_dir/common/json-allocation-safety.patch" \
     "$project_dir/common/json-heap-budget.patch" \
     "$project_dir/common/json-newlib-nano-abi.patch" \
-    "$project_dir/common/json-integer-parse.patch"
+    "$project_dir/common/json-integer-parse.patch" \
+    "$project_dir/common/json-sized-resize.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/wifi-owned-mico36.patch"
 # Validate the overlapping MQTT overlays together, including repeated builds.
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \
