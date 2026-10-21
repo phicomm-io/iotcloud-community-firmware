@@ -70,6 +70,7 @@ static void http_diag_sample(int listener, int set_rc, int set_errno, bool read_
     if (read_limit) {
         option_length = sizeof(sample.limit);
         sample.limit_get_rc = getsockopt(listener, IPPROTO_TCP, TCP_MAX_CONN_NUM, &sample.limit, &option_length);
+        if (sample.limit_get_rc == 0 && option_length != sizeof(sample.limit)) sample.limit_get_rc = -1;
     }
     option_length = sizeof(sample.connections);
     sample.connections_get_rc = getsockopt(listener, IPPROTO_TCP, TCP_CONN_NUM, &sample.connections, &option_length);
@@ -643,7 +644,12 @@ static void http_accept_worker(mico_thread_arg_t arg)
     int set_rc = setsockopt(listener, IPPROTO_TCP, TCP_MAX_CONN_NUM, &clients, sizeof(clients));
     int set_errno = set_rc < 0 ? errno : 0;
     http_diag_sample(listener, set_rc, set_errno, true);
-    if (set_rc < 0) custom_log("A1 HTTP", "Cannot raise TCP client limit");
+    http_diag_t initial = http_diag_snapshot();
+    if (set_rc < 0 || initial.limit_get_rc != 0 || initial.limit != clients) {
+        close(listener);
+        custom_log("A1 HTTP", "Cannot verify TCP client limit");
+        mico_rtos_delete_thread(NULL); return;
+    }
     OSStatus err = mico_rtos_init_queue(&http_pending, "a1_http_pending", sizeof(int), HTTP_PENDING_CLIENTS);
     if (err != kNoErr) {
         close(listener);
