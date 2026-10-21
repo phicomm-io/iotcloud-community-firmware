@@ -38,12 +38,14 @@ if ! git -C "$sdk_dir" apply --reverse --check "$app_dir/features-sdk.patch" 2>/
 fi
 
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/watchdog-mico36.patch"
-python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-mico36.patch"
-python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-publish-bounds.patch"
-python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-socket-close.patch"
-# Complete started MQTT packets even when the short yield deadline expires.
-python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/M1/mqtt-packet-deadline.patch"
-python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-response-deadline.patch"
+# Validate the overlapping MQTT overlays together, including repeated builds.
+python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \
+    "$project_dir/common/mqtt-mico36.patch" \
+    "$project_dir/common/mqtt-publish-bounds.patch" \
+    "$project_dir/common/mqtt-socket-close.patch" \
+    "$project_dir/M1/mqtt-packet-deadline.patch" \
+    "$project_dir/common/mqtt-response-deadline.patch" \
+    "$project_dir/common/mqtt-buffer-storage.patch"
 # Isolate newlib floating conversion scratch across HTTP/MQTT/runtime threads.
 # Validate these overlapping overlays together, including on repeated builds.
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \

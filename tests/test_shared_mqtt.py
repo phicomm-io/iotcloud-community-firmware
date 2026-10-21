@@ -38,7 +38,8 @@ class SharedMQTT(unittest.TestCase):
                 apply_stack(copy, [ROOT/model/'features-sdk.patch'])
             apply_stack(copy, [ROOT/p for p in ('common/mqtt-mico36.patch',
                 'common/mqtt-publish-bounds.patch', 'common/mqtt-socket-close.patch',
-                'M1/mqtt-packet-deadline.patch', 'common/mqtt-response-deadline.patch')])
+                'M1/mqtt-packet-deadline.patch', 'common/mqtt-response-deadline.patch',
+                'common/mqtt-buffer-storage.patch')])
             yield copy/'libraries/protocols/mqtt'
 
     def compile_run(self, sources, includes=(), defines=()):

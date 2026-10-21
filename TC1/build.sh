@@ -22,11 +22,14 @@ python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \
     "$project_dir/common/json-newlib-nano-abi.patch" \
     "$project_dir/common/json-integer-parse.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/wifi-owned-mico36.patch"
-python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-mico36.patch"
-python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-publish-bounds.patch"
-python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-socket-close.patch"
-python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/M1/mqtt-packet-deadline.patch"
-python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-response-deadline.patch"
+# Validate the overlapping MQTT overlays together, including repeated builds.
+python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \
+    "$project_dir/common/mqtt-mico36.patch" \
+    "$project_dir/common/mqtt-publish-bounds.patch" \
+    "$project_dir/common/mqtt-socket-close.patch" \
+    "$project_dir/M1/mqtt-packet-deadline.patch" \
+    "$project_dir/common/mqtt-response-deadline.patch" \
+    "$project_dir/common/mqtt-buffer-storage.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/http-retained-sdk.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/parameters-sdk.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/signed-ota-sdk.patch"

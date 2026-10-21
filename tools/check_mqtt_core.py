@@ -154,6 +154,13 @@ def check(frames,model):
         paths['MQTT '+label+' error record'] = (retained + emitted_end + failure, reserve)
         if retained[-1] == 'ph_mqtt_publish':
             paths['MQTT '+label+' admission record'] = (retained + ['ph_mqtt_resource_ready'] + failure, reserve)
+        if label != 'disconnect':
+            # SDK buffer replacement retains this application admission hook.
+            # Owner lookup and live-heap admission are sequential sibling tails;
+            # Paho/helper/allocator interiors stay in the unchanged SDK reserve.
+            storage = retained + ['mqtt_buffer_allocation_permit']
+            paths['MQTT '+label+' buffer owner'] = (storage + ['ph_mqtt_owner','current','mutex_lock'], reserve)
+            paths['MQTT '+label+' buffer heap'] = (storage + (['permit'] if 'permit' in frames else []), reserve)
         if label == 'client init': continue  # allocation only, no socket callbacks
         if label == 'disconnect':
             paths['MQTT '+label+' guarded write'] = (retained + ['guarded_write'], reserve)

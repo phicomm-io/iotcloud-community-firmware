@@ -2,6 +2,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 tc1_sdk=${TC1_SDK_DIR:-build/tc1-sdk-3.6.4/mico-os}
+python3 tools/apply_sdk_patch.py "$tc1_sdk" \
+    common/mqtt-mico36.patch common/mqtt-publish-bounds.patch \
+    common/mqtt-socket-close.patch M1/mqtt-packet-deadline.patch \
+    common/mqtt-response-deadline.patch common/mqtt-buffer-storage.patch
 sdk=$tc1_sdk/libraries/protocols/mqtt
 # This job builds only TC1; shared product callbacks must use its prepared
 # pinned JSON library instead of silently depending on an A1 build tree.

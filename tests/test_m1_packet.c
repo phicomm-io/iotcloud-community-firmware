@@ -1,4 +1,6 @@
 #include "MQTTClient.h"
+/* Standalone protocol fixture; production uses shared-owner heap admission. */
+int mqtt_buffer_allocation_permit(Client *c,size_t bytes){(void)c;(void)bytes;return 1;}
 #include <assert.h>
 #include <unistd.h>
 

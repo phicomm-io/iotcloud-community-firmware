@@ -69,7 +69,7 @@ PHICOMM_TEST_JSON_DIR="$json_dir" python3 -m unittest tests.test_json_integer_pa
 for sdk in build/a1-sdk/mico-os build/m1-sdk/mico-os build/tc1-sdk-3.6.4/mico-os; do
     python3 tools/prepare_sdk.py "$sdk"
 done
-PHICOMM_TEST_JSON_DIR="$json_dir" python3 -m unittest tests.test_mqtt_stack_budget tests.test_mqtt_optional_json tests.test_shared_mqtt tests.test_mqtt_preflight_deferral tests.test_mqtt_http_mixed tests.test_mixed_report tests.test_a1_mqtt_progress tests.test_mqtt_birth_progress tests.test_tc1_mqtt_lifecycle
+PHICOMM_TEST_JSON_DIR="$json_dir" python3 -m unittest tests.test_mqtt_stack_budget tests.test_mqtt_optional_json tests.test_shared_mqtt tests.test_mqtt_buffer_storage tests.test_mqtt_preflight_deferral tests.test_mqtt_http_mixed tests.test_mixed_report tests.test_a1_mqtt_progress tests.test_mqtt_birth_progress tests.test_tc1_mqtt_lifecycle
 "${compiler[@]}" -std=gnu99 -Wall -Wextra -Werror -DWATCHDOG_HOST -Itests/watchdog -Itests/stubs -I"$json_dir" tests/test_watchdog.c "$json_dir"/*.c -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -o "$output/watchdog"
 "$output/watchdog"
 for target in portable moc-mx1290; do

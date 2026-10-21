@@ -29,9 +29,21 @@ service_json_scope_begin service_json_scope_failed service_json_scope_end servic
 service_caller_graph_failed json_heap_lock ph_mqtt_owner_thread ph_mqtt_owner direct_json_optional
 ph_mqtt_receipt_send receipt_retry publish_owned publish_wait ph_mqtt_resource_ready
 receipt_clear service_mqtt_receipt_release printbuf_free json_heap_free ph_mqtt_pending_clear pending_release'''.split()
-SYMBOLS += ['json_heap_unlock']
+SYMBOLS += ['json_heap_unlock', 'mqtt_buffer_allocation_permit']
 
 class MqttStackBudget(unittest.TestCase):
+    def test_protocol_buffer_admission_owner_and_heap_are_separate(self):
+        output=self.run_budget({'mqtt_buffer_allocation_permit':24,
+                                'ph_mqtt_owner':16,'current':32,'mutex_lock':8,
+                                'permit':40})
+        self.assertIn('MQTT client init buffer owner: 80 application',output)
+        self.assertIn('MQTT client init buffer heap: 64 application',output)
+        self.assertIn('MQTT pending result PUBACK ingress buffer owner: 80 application',output)
+        with self.assertRaisesRegex(ValueError,'missing actual .su'):
+            self.run_budget(missing='mqtt_buffer_allocation_permit')
+        with self.assertRaisesRegex(ValueError,'>16384'):
+            self.run_budget({'mqtt_buffer_allocation_permit':13000})
+
     def test_receipt_destructor_leaves_are_required_and_counted(self):
         for name in ('printbuf_free','json_heap_free','json_heap_lock','json_heap_unlock'):
             with self.subTest(name=name), self.assertRaisesRegex(ValueError,'missing actual .su'):

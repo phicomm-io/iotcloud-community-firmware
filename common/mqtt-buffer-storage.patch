@@ -1,0 +1,238 @@
+diff --git a/libraries/protocols/mqtt/MQTTClient.c b/libraries/protocols/mqtt/MQTTClient.c
+--- a/libraries/protocols/mqtt/MQTTClient.c
++++ b/libraries/protocols/mqtt/MQTTClient.c
+@@ -19,6 +19,38 @@
+ #define mqtt_client_log(M, ...) //custom_log("MQTT", M, ##__VA_ARGS__)
+ #define mqtt_client_log_trace() custom_log_trace("MQTT")
+ 
++/* The shared owner supplies live-heap admission, including the old/new overlap.
++ * Reject allocations if the protocol is linked without its owning adapter. */
++__attribute__((weak)) int mqtt_buffer_allocation_permit(Client *c, size_t bytes)
++{
++    (void)c; (void)bytes;
++    return 0;
++}
++
++/* The pinned platform realloc does not release shrinking blocks and copies the
++ * requested new size on growth. Never use it for protocol buffer storage. */
++static int mqtt_buffer_resize(Client *c, unsigned char **buffer, size_t *capacity,
++                              size_t bytes, size_t preserve)
++{
++    unsigned char *next;
++    if (!bytes || preserve > *capacity || preserve > bytes ||
++        (preserve && !*buffer))
++        return 0;
++    if (*buffer && bytes == *capacity)
++        return 1;
++    if (!mqtt_buffer_allocation_permit(c, bytes))
++        return 0;
++    next = (unsigned char *)malloc(bytes);
++    if (!next)
++        return 0;
++    if (preserve)
++        memcpy(next, *buffer, preserve);
++    free(*buffer);
++    *buffer = next;
++    *capacity = bytes;
++    return 1;
++}
++
+ void NewMessageData(MessageData* md, MQTTString* aTopicName, MQTTMessage* aMessgage) {
+     md->topicName = aTopicName;
+     md->message = aMessgage;
+@@ -68,22 +100,19 @@
+     c->ipstack = network;
+     c->command_timeout_ms = command_timeout_ms;
+ 
+-    // create default send buf, will be realloced when get larger msg && recover after being processed
+-    c->buf = (unsigned char*)malloc(DEFAULT_SENDBUF_SIZE);
+-    if(NULL == c->buf){
++    c->buf = c->readbuf = NULL;
++    c->buf_size = c->readbuf_size = 0;
++    // Start with independently owned default protocol buffers.
++    if(!mqtt_buffer_resize(c, &c->buf, &c->buf_size, DEFAULT_SENDBUF_SIZE, 0)){
+       mqtt_client_log("create mqtt send buffer failed!");
+       rc = MQTT_BUFFER_OVERFLOW;
+       goto exit;
+     }
+-    c->buf_size = DEFAULT_SENDBUF_SIZE;
+-    // create default recv buf, will be realloced when send larger msg && recover after being processed
+-    c->readbuf = (unsigned char*)malloc(DEFAULT_READBUF_SIZE);
+-    if(NULL == c->readbuf){
++    if(!mqtt_buffer_resize(c, &c->readbuf, &c->readbuf_size, DEFAULT_READBUF_SIZE, 0)){
+       mqtt_client_log("create mqtt recv buffer failed!");
+       rc = MQTT_BUFFER_OVERFLOW;
+       goto exit;
+     }
+-    c->readbuf_size = DEFAULT_READBUF_SIZE;
+ 
+     for (i = 0; i < MAX_MESSAGE_HANDLERS; ++i)
+         c->messageHandlers[i].topicFilter = 0;
+@@ -205,18 +234,12 @@
+     }
+     len += MQTTPacket_encode(c->readbuf + 1, rem_len); /* put the original remaining length back into the buffer */
+ 
+-    // realloc readbuf to get large msg
+-    if((len + rem_len) > c->readbuf_size){
+-      unsigned char *resized = (unsigned char*)realloc((void*)c->readbuf, len + rem_len);
+-      if (resized) c->readbuf = resized;
+-      if(resized){
+-        c->readbuf_size = len + rem_len;
+-      }
+-      else{
+-        mqtt_client_log("no enough memory to recv data!");
+-        rc = MQTT_BUFFER_OVERFLOW;
+-        goto exit;
+-      }
++    /* Only the encoded fixed header exists before reading the payload. */
++    if((len + rem_len) > c->readbuf_size &&
++       !mqtt_buffer_resize(c, &c->readbuf, &c->readbuf_size, len + rem_len, len)){
++      mqtt_client_log("no enough memory to recv data!");
++      rc = MQTT_BUFFER_OVERFLOW;
++      goto exit;
+     }
+ 
+     /* 3. read the rest of the buffer using a callback to supply the rest of the data */
+@@ -502,15 +525,11 @@
+   }
+   // release unused msg buffer
+   if(c->readbuf_size > DEFAULT_READBUF_SIZE){
+-    unsigned char *resized = (unsigned char*)realloc((void*)c->readbuf, DEFAULT_READBUF_SIZE);
+-      if (resized) c->readbuf = resized;
+-    if(resized){
+-      c->readbuf_size = DEFAULT_READBUF_SIZE;
+-      memset(c->readbuf, 0, DEFAULT_READBUF_SIZE);
+-    }
+-    else{
+-      mqtt_client_log("realloc(release) readbuf failed!");
+-    }
++    /* waitfor callers still deserialize CONNACK/SUBACK/PUBACK after cycle.
++     * Retain their prefix even when a previous large packet could not shrink. */
++    if(!mqtt_buffer_resize(c, &c->readbuf, &c->readbuf_size,
++                           DEFAULT_READBUF_SIZE, DEFAULT_READBUF_SIZE))
++      mqtt_client_log("release readbuf failed!");
+   }
+   return rc;
+ }
+@@ -595,9 +614,8 @@
+     countdown(&c->ping_timer, c->keepAliveInterval/c->heartbeat_retry_max);
+     /* Account CONNECT includes a 256-byte password and a scoped client ID/LWT. */
+     if (c->buf_size < 1024) {
+-        unsigned char *next = realloc(c->buf, 1024);
+-        if (!next) return MQTT_BUFFER_OVERFLOW;
+-        c->buf = next; c->buf_size = 1024;
++        if (!mqtt_buffer_resize(c, &c->buf, &c->buf_size, 1024, 0))
++            return MQTT_BUFFER_OVERFLOW;
+     }
+     if ((len = MQTTSerialize_connect(c->buf, c->buf_size, options)) <= 0)
+       goto exit;
+@@ -643,9 +661,8 @@
+     topic.lenstring.data = (char *)topicFilter; topic.lenstring.len = strlen(topicFilter);
+     int size = MQTTPacket_len(MQTTSerialize_subscribeLength(1, &topic));
+     if (size > c->buf_size) {
+-        unsigned char *next = realloc(c->buf, size);
+-        if (!next) return MQTT_BUFFER_OVERFLOW;
+-        c->buf = next; c->buf_size = size;
++        if (!mqtt_buffer_resize(c, &c->buf, &c->buf_size, size, 0))
++            return MQTT_BUFFER_OVERFLOW;
+     }
+     InitTimer(&timer); countdown_ms(&timer, c->command_timeout_ms);
+     packet = getNextPacketId(c);
+@@ -677,20 +694,14 @@
+     if (!c->isconnected)
+         goto exit;
+ 
+-    ///// add by wes20151009: realloc send buffer
++    ///// allocate send buffer before serialization
+     len = MQTTPacket_len(MQTTSerialize_unsubscribeLength(1, &topic));
+-    if (len > c->buf_size)
+-    {
+-      unsigned char *resized = (unsigned char*)realloc((void*)c->buf, len);
+-      if (resized) c->buf = resized;
+-      if(resized){
+-        c->buf_size = len;
+-      }
+-      else{
+-        mqtt_client_log("no enough memory to serialize subscribe data!");
+-        rc = MQTT_BUFFER_OVERFLOW;
+-        goto exit;
+-      }
++    if (len > c->buf_size &&
++        !mqtt_buffer_resize(c, &c->buf, &c->buf_size, len, 0))
++    {
++      mqtt_client_log("no enough memory to serialize subscribe data!");
++      rc = MQTT_BUFFER_OVERFLOW;
++      goto exit;
+     }
+     /////
+ 
+@@ -730,17 +741,9 @@
+ 
+ exit:
+     ///// add by wes20151009: release send buffer
+-    if(c->buf_size > DEFAULT_SENDBUF_SIZE){
+-      unsigned char *resized = (unsigned char*)realloc((void*)c->buf, DEFAULT_SENDBUF_SIZE);
+-      if (resized) c->buf = resized;
+-      if(resized){
+-        c->buf_size = DEFAULT_SENDBUF_SIZE;
+-        memset(c->buf, 0, DEFAULT_SENDBUF_SIZE);
+-      }
+-      else{
+-        mqtt_client_log("realloc(release) sendbuf failed!");
+-      }
+-    }
++    if(c->buf_size > DEFAULT_SENDBUF_SIZE &&
++       !mqtt_buffer_resize(c, &c->buf, &c->buf_size, DEFAULT_SENDBUF_SIZE, 0))
++      mqtt_client_log("release sendbuf failed!");
+     /////
+     return rc;
+ }
+@@ -765,20 +768,14 @@
+     if (message->qos == QOS1 || message->qos == QOS2)
+         message->id = getNextPacketId(c);
+ 
+-    ///// add by wes20151009: realloc send buffer
++    ///// allocate send buffer before serialization
+     len = MQTTPacket_len(MQTTSerialize_publishLength(message->qos, topic, message->payloadlen));
+-    if (len > c->buf_size)
+-    {
+-      unsigned char *resized = (unsigned char*)realloc((void*)c->buf, len);
+-      if (resized) c->buf = resized;
+-      if(resized){
+-        c->buf_size = len;
+-      }
+-      else{
+-        mqtt_client_log("no enough memory to serialize send data!");
+-        rc = MQTT_BUFFER_OVERFLOW;
+-        goto exit;
+-      }
++    if (len > c->buf_size &&
++        !mqtt_buffer_resize(c, &c->buf, &c->buf_size, len, 0))
++    {
++      mqtt_client_log("no enough memory to serialize send data!");
++      rc = MQTT_BUFFER_OVERFLOW;
++      goto exit;
+     }
+     /////
+ 
+@@ -822,17 +819,9 @@
+ 
+ exit:
+     ///// add by wes20151009: release send buffer
+-    if(c->buf_size > DEFAULT_SENDBUF_SIZE){
+-      unsigned char *resized = (unsigned char*)realloc((void*)c->buf, DEFAULT_SENDBUF_SIZE);
+-      if (resized) c->buf = resized;
+-      if(resized){
+-        c->buf_size = DEFAULT_SENDBUF_SIZE;
+-        memset(c->buf, 0, DEFAULT_SENDBUF_SIZE);
+-      }
+-      else{
+-        mqtt_client_log("realloc(release) sendbuf failed!");
+-      }
+-    }
++    if(c->buf_size > DEFAULT_SENDBUF_SIZE &&
++       !mqtt_buffer_resize(c, &c->buf, &c->buf_size, DEFAULT_SENDBUF_SIZE, 0))
++      mqtt_client_log("release sendbuf failed!");
+     /////
+     return rc;
+ }

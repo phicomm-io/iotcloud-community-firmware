@@ -118,6 +118,13 @@ static bool permit(void *p, size_t bytes) {
     return m && m->free_memory > 0 && (size_t) m->free_memory >= SERVICE_MEMORY_RESERVE + 32u && bytes <=(size_t) m->free_memory - SERVICE_MEMORY_RESERVE -32u;
 }
 
+/* Paho replaces buffers with malloc/copy/free. The old allocation is still
+ * live during this check, so admit the entire new block, never just a delta. */
+int mqtt_buffer_allocation_permit(Client *c, size_t bytes) {
+    return ph_mqtt_owner() && c == port.client && port.core.protocol_depth &&
+        !port.core.dispatch_depth && permit(NULL, bytes);
+}
+
 static void *allocate(void *p, size_t n) {
     (void) p;
     return malloc(n);
