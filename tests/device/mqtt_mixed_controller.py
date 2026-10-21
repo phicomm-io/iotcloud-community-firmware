@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[2]
 BASE = ROOT / 'build/status101'
 PRIVATE = BASE / 'private'
 MIXED = ROOT / 'tests/device/mqtt_http_mixed.py'
-TARGETS = (
+DEFAULT_TARGETS = (
     '10.117.152.111=b0f893303134',
     '10.117.152.102=D0BAE463E12C',
     '10.117.152.110=b0f8932864b6',
@@ -115,12 +115,27 @@ def audit_sources(controller_dir, records):
     }
 
 
-def validate_child_result(child_exit, evidence, version):
+def _target_map(specs=None):
+    from tests.device.mqtt_http_mixed import validate_targets
+    return validate_targets(list(DEFAULT_TARGETS if specs is None else specs))
+
+
+def validate_child_result(child_exit, evidence, version, targets=None):
+    from tests.device.mqtt_http_mixed import TARGETS as KNOWN_TARGETS
+    selected = _target_map(targets)
+    expected = {ip: {'device_id': ident,
+                     'model': KNOWN_TARGETS[ip][1]}
+                for ip, ident in selected.items()}
+    all_ips = set(KNOWN_TARGETS)
     if child_exit != 0:
         raise ValueError('Mixed runner child did not exit successfully')
     if (not isinstance(evidence, dict) or evidence.get('status') != 'complete' or
             evidence.get('completed') is not True or evidence.get('version') != version or
-            evidence.get('blockers') != []):
+            evidence.get('blockers') != [] or
+            evidence.get('selected_targets') != list(selected) or
+            evidence.get('targets') != expected or
+            evidence.get('device_status') != {
+                ip: ('SELECTED' if ip in selected else 'PAUSED') for ip in all_ips}):
         raise ValueError('Mixed runner evidence is missing, incomplete, or blocked')
     if evidence.get('http_prechecks') != 'passed' or evidence.get('http_postchecks') != 'passed':
         raise ValueError('Mixed runner HTTP gates are incomplete')
@@ -174,17 +189,19 @@ def wait_child(process, result_file, timeout, poll_interval=0.1, terminate_grace
     return exit_code, timed_out, stopped_for_evidence
 
 
-def build_command(python, label, version):
+def build_command(python, label, version, targets=None):
     command = [str(python), str(MIXED)]
-    for target in TARGETS:
+    for target in (DEFAULT_TARGETS if targets is None else targets):
         command.extend(('--target', target))
     command.extend(('--version', version, '--label', label,
                     '--profile', 'short', '--execute'))
     return command
 
 
-def run(label, version, execute=False):
+def run(label, version, execute=False, targets=None):
     label, version = validate_label(label), validate_version(version)
+    selected = _target_map(targets)
+    target_specs = [ip+'='+ident for ip, ident in selected.items()]
     output, controller_dir = paths_for(label)
     result_file = output / 'mixed-evidence.json'
     if output.exists() or controller_dir.exists():
@@ -192,7 +209,10 @@ def run(label, version, execute=False):
     if not execute:
         return {
             'mode': 'dry-run', 'label': label, 'version': version,
-            'targets': list(TARGETS), 'profile': 'short', 'plan': PLAN,
+            'targets': target_specs, 'selected_targets': list(selected),
+            'device_status': {ip: ('SELECTED' if ip in selected else 'PAUSED')
+                              for ip in _target_map()},
+            'profile': 'short', 'plan': PLAN,
             'output': str(output), 'controller_output': str(controller_dir),
             'will_connect': False, 'will_read_credentials': False,
             'will_send_ota': False, 'will_write_controls_or_config': False,
@@ -207,7 +227,10 @@ def run(label, version, execute=False):
     data = {
         'schema': 1, 'status': 'running', 'completed': False,
         'label': label, 'version': version, 'profile': 'short',
-        'started_at': time.time(), 'targets': list(TARGETS), 'plan': PLAN,
+        'started_at': time.time(), 'targets': target_specs,
+        'selected_targets': list(selected),
+        'device_status': {ip: ('SELECTED' if ip in selected else 'PAUSED')
+                          for ip in _target_map()}, 'plan': PLAN,
         'device_firmware_mutation': 'none', 'source_manifest': None,
         'process': None, 'blockers': [],
     }
@@ -221,7 +244,7 @@ def run(label, version, execute=False):
             'sources': records,
         }
         private_json(controller_dir/'source-manifest.json', source_manifest)
-        command = build_command(sys.executable, label, version)
+        command = build_command(sys.executable, label, version, target_specs)
         log_path = controller_dir/'child.log'
         data.update(source_manifest=source_manifest, command=command,
                     output=str(output), process_log=str(log_path))
@@ -249,7 +272,7 @@ def run(label, version, execute=False):
         data['child_completed'] = (child_evidence.get('completed')
                                    if isinstance(child_evidence, dict) else False)
         try:
-            validate_child_result(child_exit, child_evidence, version)
+            validate_child_result(child_exit, child_evidence, version, target_specs)
             if timed_out:
                 raise ValueError('Mixed runner process exceeded its bounded deadline')
             if stopped_for_evidence:
@@ -276,6 +299,7 @@ def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--label', required=True)
     parser.add_argument('--version', required=True)
+    parser.add_argument('--target', action='append', metavar='IP=ID')
     parser.add_argument('--execute', action='store_true')
     return parser
 
@@ -283,7 +307,7 @@ def build_parser():
 def main(argv=None):
     args = build_parser().parse_args(argv)
     try:
-        result = run(args.label, args.version, execute=args.execute)
+        result = run(args.label, args.version, execute=args.execute, targets=args.target)
     except BaseException as exc:
         print(json.dumps({'status': 'failed', 'error_type': type(exc).__name__}, sort_keys=True))
         return 2

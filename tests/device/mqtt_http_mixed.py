@@ -82,9 +82,12 @@ def validate_targets(specs):
             raise ValueError('Duplicate target IP')
         parsed[ip] = device_id
     expected = {ip: ident for ip, (ident, _model) in TARGETS.items()}
-    if parsed != expected:
-        raise ValueError('Explicit targets must exactly match the authorized three devices')
-    return parsed
+    if (not parsed or not set(parsed) <= set(expected) or
+            any(parsed[ip].lower() != expected[ip].lower() for ip in parsed)):
+        raise ValueError('Explicit targets must be an exact nonempty authorized subset')
+    if '10.117.152.110' in parsed and parsed != expected:
+        raise ValueError('M1 may only be selected in the legacy complete three-device scope')
+    return {ip: parsed[ip] for ip in TARGETS if ip in parsed}
 
 
 def validate_version(version):
@@ -221,13 +224,16 @@ def run_lock():
 
 
 class Evidence:
-    def __init__(self, path, label, version, profile, plan):
+    def __init__(self, path, label, version, profile, plan, targets=TARGETS):
         self.path = path
         self.data = {
             'schema': 1, 'label': label, 'version': version, 'profile': profile,
             'status': 'running', 'completed': False, 'started_at': time.time(),
-            'targets': {ip: {'device_id': ident, 'model': model}
-                        for ip, (ident, model) in TARGETS.items()},
+            'selected_targets': list(targets),
+            'targets': {ip: {'device_id': TARGETS[ip][0], 'model': TARGETS[ip][1]}
+                        for ip in targets},
+            'device_status': {ip: ('SELECTED' if ip in targets else 'PAUSED')
+                              for ip in TARGETS},
             'plan': plan, 'phases': [], 'http': [], 'mqtt': [], 'telemetry': [],
             'recovery': [], 'recovery_attempts': [], 'network_confirmations': [],
             'protocol_errors': [], 'unmatched_mqtt': [],
@@ -319,13 +325,13 @@ def _network_fields(data):
 class NetworkReadiness:
     """Run-wide, sticky network degradation deadline; never sends traffic."""
 
-    def __init__(self, runner, evidence, monotonic=time.monotonic):
+    def __init__(self, runner, evidence, monotonic=time.monotonic, targets=TARGETS):
         self.runner, self.evidence, self.monotonic = runner, evidence, monotonic
         self.lock = threading.Lock()
         self.state = {ip: {'degraded_since_monotonic': None,
                            'last_not_ready_observed_monotonic': None,
                            'maximum_not_ready_seconds': 0.0, 'expired': False}
-                      for ip in TARGETS}
+                      for ip in targets}
         self.evidence.data.setdefault('network_events', [])
         self.evidence.data.setdefault('network_readiness', {})
 
@@ -713,22 +719,22 @@ class HTTPResponseGap:
         return result
 
 
-def run_phase(runner, clients, roots, evidence, phase_plan, profile):
+def run_phase(runner, clients, roots, evidence, phase_plan, profile, targets=TARGETS):
     plan = phase_plan
     phase = plan['name']
     started = time.monotonic()
     deadline, hard_deadline = phase_deadlines(started, plan['seconds'])
     http_before = len(runner.rows)
     http_cursor = http_before
-    http_gap = HTTPResponseGap(TARGETS, started) if profile == 'soak' else None
-    dropped_before = {ip: getattr(clients[ip].messages, 'dropped', 0) for ip in TARGETS}
+    http_gap = HTTPResponseGap(targets, started) if profile == 'soak' else None
+    dropped_before = {ip: getattr(clients[ip].messages, 'dropped', 0) for ip in targets}
     phase_row = {**plan, 'started_at': time.time(), 'completed': False}
     phase_row['progress_checkpoints'] = []
     evidence.data['phases'].append(phase_row)
     mqtt_workers = []
     from concurrent.futures import ThreadPoolExecutor
     stop = threading.Event()
-    pool = ThreadPoolExecutor(max_workers=plan['http_clients']*len(TARGETS))
+    pool = ThreadPoolExecutor(max_workers=plan['http_clients']*len(targets))
     futures = []
     mqtt_threads = []
     hard_timed_out = False
@@ -756,10 +762,10 @@ def run_phase(runner, clients, roots, evidence, phase_plan, profile):
 
     try:
         futures = [pool.submit(_http_worker, runner, ip, phase, deadline, n, stop, HTTP_PERIOD)
-                   for ip in TARGETS for n in range(plan['http_clients'])]
+                   for ip in targets for n in range(plan['http_clients'])]
         queue_overflow_lock = threading.Lock()
         queue_overflow_seen = set()
-        for ip in TARGETS:
+        for ip in targets:
             def on_drop(target_ip=ip):
                 with queue_overflow_lock:
                     first_drop = target_ip not in queue_overflow_seen
@@ -807,7 +813,7 @@ def run_phase(runner, clients, roots, evidence, phase_plan, profile):
             if runner.stop.is_set() or any(worker.failure for worker in mqtt_workers):
                 stop.set()
             if time.monotonic() >= next_memory and not runner.stop.is_set():
-                for ip in TARGETS:
+                for ip in targets:
                     runner.memory_sample(ip, phase)
                     check_http_gap()
                     if http_gap is not None and runner.stop.is_set():
@@ -854,7 +860,7 @@ def run_phase(runner, clients, roots, evidence, phase_plan, profile):
         if worker.failure:
             runner.block('', worker.failure)
     dropped = {ip: getattr(clients[ip].messages, 'dropped', 0)-dropped_before[ip]
-               for ip in TARGETS}
+               for ip in targets}
     evidence.data.setdefault('queue_drops', []).append({'phase': phase, 'per_device': dropped})
     if any(count for count in dropped.values()):
         runner.block('', 'Bounded host MQTT message queue dropped messages in '+phase)
@@ -878,7 +884,7 @@ def run_phase(runner, clients, roots, evidence, phase_plan, profile):
     phase_row['http_outcomes'] = summarize_latencies(phase_http)
     phase_row['mqtt_outcomes'] = summarize_latencies(
         [row for row in evidence.data['mqtt'] if row.get('phase') == phase])
-    for ip in TARGETS:
+    for ip in targets:
         if not any(row.get('ip') == ip and row.get('outcome') == 'success' for row in phase_http):
             phase_row.setdefault('abort_reason', 'No successful HTTP status response for '+ip)
         if not any(row.get('ip') == ip and row.get('outcome') == 'success'
@@ -888,7 +894,7 @@ def run_phase(runner, clients, roots, evidence, phase_plan, profile):
                 phase_row.setdefault('abort_reason', 'No correlated MQTT status response for '+ip)
     phase_row['telemetry_observation'] = {
         ip: _telemetry_observation(evidence.data['telemetry'], ip, phase, 'load')
-        for ip in TARGETS
+        for ip in targets
     }
     phase_row['mqtt_success_liveness'] = {
         worker.ip: {
@@ -991,14 +997,14 @@ def receive_correlated(client, request_id, result_topic, state_topic, timeout,
 
 
 def recover(runner, clients, roots, evidence, name, *, monotonic=time.monotonic,
-            sleep=time.sleep):
+            sleep=time.sleep, targets=TARGETS):
     _check_network(runner, name+'-start')
     runner.recover(name+'-http', seconds=45)
     _check_network(runner, name+'-http-end')
     if runner.stop.is_set():
         raise RuntimeError('HTTP recovery after mixed phase failed')
     result_rows = []
-    for ip in TARGETS:
+    for ip in targets:
         client = clients[ip]
         started = monotonic()
         deadline = started + RECOVERY_BUSY_TOTAL_TIMEOUT
@@ -1248,9 +1254,9 @@ def recover(runner, clients, roots, evidence, name, *, monotonic=time.monotonic,
                                       'telemetry_observation': {
                                           ip: _telemetry_observation(
                                               evidence.data['telemetry'], ip, name, 'recovery')
-                                          for ip in TARGETS
+                                          for ip in targets
                                       },
-                                      'completed': len(result_rows) == len(TARGETS)})
+                                      'completed': len(result_rows) == len(targets)})
     evidence.save()
     if runner.stop.is_set():
         raise RuntimeError('MQTT recovery state gate failed')
@@ -1258,13 +1264,16 @@ def recover(runner, clients, roots, evidence, name, *, monotonic=time.monotonic,
 
 def execute(targets, version, label, profile, output, runtime_loader=load_runtime,
             plan_override=None, run_timeout=RUN_TIMEOUT):
+    selected_targets = {ip: TARGETS[ip] for ip in targets}
+    runner_targets = {ip: ident for ip, (ident, _model) in selected_targets.items()}
     if output.exists():
         raise FileExistsError('Refusing to overwrite mixed-run evidence')
     output.mkdir(mode=0o700, parents=True)
     plan = [dict(row) for row in (plan_override if plan_override is not None else phase_plan(profile))]
-    evidence = Evidence(output/'mixed-evidence.json', label, version, profile, plan)
+    evidence = Evidence(output/'mixed-evidence.json', label, version, profile, plan,
+                        selected_targets)
     Runner, mqtt_helpers, MQTTClient, mqtt_root, mqtt_client_id = runtime_loader()
-    runner = _network_observed_runner(Runner)(targets, version, output/'http-runner', require_shared_core=True)
+    runner = _network_observed_runner(Runner)(runner_targets, version, output/'http-runner', require_shared_core=True)
     stop_timer = threading.Timer(run_timeout, runner.stop.set)
     stop_timer.daemon = True
     stop_timer.start()
@@ -1280,7 +1289,7 @@ def execute(targets, version, label, profile, output, runtime_loader=load_runtim
         runner.initialize()
         if runner.blockers or runner.stop.is_set():
             raise RuntimeError('HTTP baseline initialization was blocked')
-        for ip, (ident, model) in TARGETS.items():
+        for ip, (ident, model) in selected_targets.items():
             baseline = runner.before[ip]
             if baseline['id'].lower() != ident.lower():
                 raise ValueError('HTTP target identity mismatch')
@@ -1293,7 +1302,8 @@ def execute(targets, version, label, profile, output, runtime_loader=load_runtim
                 raise ValueError('HTTP baseline connectivity is not healthy')
         evidence.data['http_prechecks'] = 'passed'
         initialized = True
-        runner.mixed_network_readiness = NetworkReadiness(runner, evidence)
+        runner.mixed_network_readiness = NetworkReadiness(
+            runner, evidence, targets=selected_targets)
         def monitor_network():
             try:
                 while not network_stop.wait(.05):
@@ -1304,7 +1314,7 @@ def execute(targets, version, label, profile, output, runtime_loader=load_runtim
         thread.start()
         network_thread = thread
         evidence.save()
-        for ip, (ident, model) in TARGETS.items():
+        for ip, (ident, model) in selected_targets.items():
             root = mqtt_root(credentials['username'], model, ident)
             client_id = mqtt_client_id(credentials['username'], model, ident) + '_mix_' + uuid.uuid4().hex[:8]
             client = MQTTClient(credentials['host'], credentials['port'], client_id,
@@ -1318,9 +1328,10 @@ def execute(targets, version, label, profile, output, runtime_loader=load_runtim
         evidence.save()
         runner.memory_window('baseline')
         for item in plan:
-            phase_abort = run_phase(runner, clients, roots, evidence, item, profile)
+            phase_abort = run_phase(runner, clients, roots, evidence, item, profile,
+                                    targets=selected_targets)
             try:
-                for ip in TARGETS:
+                for ip in selected_targets:
                     runner.memory_sample(ip, item['name']+'-post')
                     sample = next((row for row in reversed(runner.memory)
                                    if row.get('ip') == ip and row.get('phase') == item['name']+'-post'), {})
@@ -1333,7 +1344,8 @@ def execute(targets, version, label, profile, output, runtime_loader=load_runtim
                                        'http_core_close_failures') if key in sample.get('data', {})},
                         'availability': optional_diagnostics([sample]),
                     })
-                recover(runner, clients, roots, evidence, item['name'])
+                recover(runner, clients, roots, evidence, item['name'],
+                        targets=selected_targets)
             except BaseException as exc:
                 phase_failure = 'Read-only phase recovery failed: '+type(exc).__name__
             if phase_abort and phase_failure is None:
@@ -1342,7 +1354,8 @@ def execute(targets, version, label, profile, output, runtime_loader=load_runtim
                 phase_failure = 'Runner gate stopped after recovery'
             if phase_failure:
                 break
-        drop_totals = {ip: getattr(clients[ip].messages, 'dropped', 0) for ip in TARGETS}
+        drop_totals = {ip: getattr(clients[ip].messages, 'dropped', 0)
+                       for ip in selected_targets}
         evidence.data['host_queue_drop_totals'] = drop_totals
         if any(drop_totals.values()) and phase_failure is None:
             runner.block('', 'Bounded host MQTT message queue dropped messages')

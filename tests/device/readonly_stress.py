@@ -29,9 +29,47 @@ CONTROL_KEYS_BY_MODEL = {
     'tc1': ('socket_states', 'child_lock', 'led_enabled'),
     'm1': ('brightness_requested',),
 }
+CONTROL_SUMMARY_KEYS_BY_MODEL = {
+    'a1': ('fan_mode', 'auto_max_speed', 'requested_fan_on', 'requested_speed',
+           'speed', 'applied_speed', 'fan_state', 'fan_on', 'percentage',
+           'fan_ready', 'child_lock', 'led_enabled'),
+    'tc1': ('socket_states', 'child_lock', 'led_enabled'),
+    'm1': ('brightness_requested',),
+}
 INITIAL_BUSY_MAX_RETRIES = 3
 INITIAL_BUSY_RETRY_DELAY_SECONDS = 1.0
 INITIAL_BUSY_TOTAL_TIMEOUT_SECONDS = 15.0
+
+
+def _bounded_control_value(value):
+    """Keep control evidence small and limited to JSON scalar/list values."""
+    if value is None or type(value) in (bool, int):
+        return value
+    if type(value) is float:
+        return value if math.isfinite(value) else {'type': 'non-finite-number'}
+    if isinstance(value, str):
+        return value if len(value) <= 80 else {'type': 'string', 'length': len(value), 'prefix': value[:80]}
+    if isinstance(value, list):
+        items = []
+        for item in value[:8]:
+            if isinstance(item, list):
+                items.append({'type': 'list', 'length': len(item)})
+            elif isinstance(item, dict):
+                items.append({'type': 'object', 'length': len(item)})
+            else:
+                items.append(_bounded_control_value(item))
+        if len(value) > 8:
+            return {'type': 'list', 'length': len(value), 'first_items': items}
+        return items
+    if isinstance(value, dict):
+        return {'type': 'object', 'length': len(value)}
+    return {'type': type(value).__name__}
+
+
+def _control_summary(state, model):
+    keys = CONTROL_SUMMARY_KEYS_BY_MODEL.get(model, ())
+    return {key: (_bounded_control_value(state[key]) if key in state else {'missing': True})
+            for key in keys}
 
 
 class ProtocolError(ValueError):
@@ -278,9 +316,12 @@ class Runner:
         }
         output.mkdir(parents=True, exist_ok=True)
 
-    def block(self, ip, reason):
+    def block(self, ip, reason, evidence=None):
         with self.lock:
-            self.blockers.append({'ip': ip, 'reason': reason, 'at': time.time()})
+            blocker = {'ip': ip, 'reason': reason, 'at': time.time()}
+            if evidence:
+                blocker.update(evidence)
+            self.blockers.append(blocker)
         self.stop.set()
         print('BLOCKER', ip, reason, flush=True)
 
@@ -303,6 +344,9 @@ class Runner:
 
     def check(self, ip, state, start, end=None):
         ref = self.before[ip]
+        model = ref['state'].get('model')
+        interval = {'request_started_monotonic': start,
+                    'request_ended_monotonic': start if end is None else end}
         if state.get('device_id', '').lower() != ref['id'].lower() or state.get('version') != self.versions.get(ip, self.version):
             self.block(ip, 'identity/version changed')
         uptime = state.get('uptime_seconds')
@@ -310,12 +354,25 @@ class Runner:
                 uptime < 0 or start-uptime > ref['boot_origin']+5):
             self.block(ip, 'unexpected uptime reset or missing uptime')
         self.observe_uptime(ip, uptime, start, start if end is None else end, 'status')
-        model = ref['state'].get('model')
         for key in CONTROL_KEYS_BY_MODEL.get(model, ()):
             if key not in ref['state'] or key not in state:
-                self.block(ip, 'missing control state field: '+key)
+                self.block(ip, 'missing control state field: '+key, {
+                    'control_difference': {
+                        'field': key,
+                        'expected': _bounded_control_value(ref['state'][key]) if key in ref['state'] else {'missing': True},
+                        'observed': _bounded_control_value(state[key]) if key in state else {'missing': True},
+                    },
+                    'request_interval': interval,
+                })
             elif state[key] != ref['state'][key]:
-                self.block(ip, 'control state changed: '+key)
+                self.block(ip, 'control state changed: '+key, {
+                    'control_difference': {
+                        'field': key,
+                        'expected': _bounded_control_value(ref['state'][key]),
+                        'observed': _bounded_control_value(state[key]),
+                    },
+                    'request_interval': interval,
+                })
         if state.get('watchdog_state') not in (None, 'healthy', 'starting'):
             self.block(ip, 'unhealthy watchdog')
 
@@ -336,8 +393,17 @@ class Runner:
                 self.block(ip, 'unexpected HTTP status: '+str(status))
             if row['ok'] and action == 'status.get' and expected == 'ok':
                 state = reply['data']
+                model = self.before[ip]['state'].get('model')
                 row.update(uptime=state.get('uptime_seconds'), free_memory=state.get('free_memory'),
                            wifi_connected=state.get('wifi_connected'), mqtt_connected=state.get('mqtt_connected'))
+                row['control_summary'] = {
+                    'expected': _control_summary(self.before[ip]['state'], model),
+                    'observed': _control_summary(state, model),
+                    'request_interval': {
+                        'request_started_monotonic': start,
+                        'request_ended_monotonic': end,
+                    },
+                }
                 self.check(ip, state, start, end)
         except ProtocolError as e:
             row.update(ok=False, http=e.status, error=str(e), raw_base64=base64.b64encode(e.raw).decode())

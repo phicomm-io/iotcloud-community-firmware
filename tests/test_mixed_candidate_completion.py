@@ -171,6 +171,56 @@ class MQTTContractTests(unittest.TestCase):
         self.assertFalse(result['passed'])
         self.assertIn('mqtt_readonly_contract', failures)
 
+    def test_scoped_readonly_mqtt_rejects_unselected_attempt_diagnostics(self):
+        selected = list(AUDIT.TARGETS)[:2]
+        targets = {ip: AUDIT.TARGETS[ip] for ip in selected}
+        rows = []
+        for ip, (ident, model) in targets.items():
+            for index, mode in enumerate(('full', 'live', 'full')):
+                rows.append({
+                    'ip': ip, 'model': model, 'mode': mode,
+                    'request_id': f'readonly-mqtt-{ip.rsplit(".", 1)[1]}-{index}',
+                    'action': 'status.get', 'params': {} if mode == 'full' else {'view': 'live'},
+                    'retained': False, 'http_status': 200, 'response_code': 'ok',
+                    'response_device_id': ident, 'response_model': model,
+                    'response_version': '0.9.15-test',
+                })
+        evidence = {'status': 'complete', 'completed': True, 'version': '0.9.15-test',
+                    'http_prechecks': 'passed', 'http_postchecks': 'passed',
+                    'blockers': [], 'requests': rows,
+                    'selected_targets': selected,
+                    'device_status': {ip: ('SELECTED' if ip in targets else 'PAUSED')
+                                      for ip in AUDIT.TARGETS}}
+        failures = []
+        self.assertTrue(AUDIT._audit_readonly_mqtt(
+            evidence, '0.9.15-test', failures, targets)['passed'])
+        evidence['attempts'] = [{'ip': '10.117.152.110', 'outcome': 'success'}]
+        failures = []
+        self.assertFalse(AUDIT._audit_readonly_mqtt(
+            evidence, '0.9.15-test', failures, targets)['passed'])
+
+    def test_scoped_http_and_schema_artifacts_reject_unselected_diagnostic_rows(self):
+        selected = list(AUDIT.TARGETS)[:2]
+        targets = {ip: AUDIT.TARGETS[ip] for ip in selected}
+        status = {ip: ('SELECTED' if ip in targets else 'PAUSED') for ip in AUDIT.TARGETS}
+        http = {'schema': 'candidate-http-status-bodies-v1', 'status': 'complete',
+                'completed': True, 'version': '0.9.15-test', 'blockers': [],
+                'selected_targets': selected, 'device_status': status,
+                'targets': [], 'samples': [],
+                'diagnostics': [{'ip': '10.117.152.110', 'value': 1}]}
+        failures = []
+        AUDIT._audit_http_body_evidence(http, '0.9.15-test', failures,
+                                        {'before': {}}, targets)
+        self.assertIn('http_schema_body_contract', failures)
+
+        schema = {'final_contract': {
+            'selected_targets': selected, 'device_status': status,
+            'candidate_diagnostics': [{'ip': '10.117.152.110', 'value': 1}],
+        }}
+        failures = []
+        AUDIT._audit_schema_parity(schema, '0.9.15-test', failures, targets)
+        self.assertIn('http_mqtt_schema_parity_unselected_device_records', failures)
+
     def test_http_full_live_bodies_are_real_successful_unique_and_identity_bound(self):
         samples = []
         before = {}
@@ -471,6 +521,23 @@ class InitialReuseTests(unittest.TestCase):
         self.assertTrue(AUDIT._initial_gate(self.inner, self.commit, self.version))
         self.inner['targets'] = []
         self.assertFalse(AUDIT._initial_gate(self.inner, self.commit, self.version))
+
+    def test_two_target_initial_gate_requires_only_selected_ota_children(self):
+        import copy
+        inner = copy.deepcopy(self.inner)
+        selected = list(AUDIT.TARGETS)[:2]
+        selected_map = {ip: AUDIT.TARGETS[ip] for ip in selected}
+        inner['targets'] = {ip: value[0] for ip, value in selected_map.items()}
+        inner['selected_targets'] = selected
+        inner['device_status'] = {ip: ('SELECTED' if ip in selected_map else 'PAUSED')
+                                  for ip in AUDIT.TARGETS}
+        target_args = [arg for ip, (ident, _model) in selected_map.items()
+                       for arg in ('--target', ip+'='+ident)]
+        inner['steps'] = [inner['steps'][0], inner['steps'][1],
+                          dict(inner['steps'][3], argv=inner['steps'][3]['argv']+target_args)]
+        self.assertTrue(AUDIT._initial_gate(inner, self.commit, self.version))
+        inner['steps'].insert(2, self.inner['steps'][2])
+        self.assertFalse(AUDIT._initial_gate(inner, self.commit, self.version))
 
     def mapped_initial(self):
         import copy
@@ -986,6 +1053,23 @@ class InitialReuseTests(unittest.TestCase):
         for row in new['memory']:
             row['data']['uptime_ms'] += 5000
         self.assertTrue(AUDIT.verify_runner_continuity(old, new, self.version)['passed'])
+
+    def test_two_target_continuity_rejects_unselected_device_rows_and_records_scope(self):
+        import copy
+        selected = list(AUDIT.TARGETS)[:2]
+        targets = {ip: AUDIT.TARGETS[ip] for ip in selected}
+        old, new = self.runner(), self.runner(shift=500)
+        for evidence in (old, new):
+            evidence['before'] = {ip: evidence['before'][ip] for ip in selected}
+            evidence['memory'] = [row for row in evidence['memory'] if row['ip'] in selected]
+        result = AUDIT.verify_runner_continuity(old, new, self.version, targets=targets)
+        self.assertEqual(result['selected_targets'], selected)
+        self.assertEqual(list(result['targets']), selected)
+        contaminated = copy.deepcopy(new)
+        contaminated['memory'].append({'ip': next(ip for ip in AUDIT.TARGETS if ip not in targets),
+                                       'ok': True, 'data': {'uptime_ms': 500000}})
+        with self.assertRaises(ValueError):
+            AUDIT.verify_runner_continuity(old, contaminated, self.version, targets=targets)
 
 
 if __name__ == '__main__':

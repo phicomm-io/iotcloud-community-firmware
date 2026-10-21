@@ -85,11 +85,46 @@ def _require(condition, code, failures):
         failures.append(code)
 
 
-def _identity_gate(runner, version, failures, stage):
+def _target_scope(targets=None):
+    if targets is None:
+        return dict(TARGETS)
+    if isinstance(targets, (tuple, list)):
+        parsed = {}
+        for spec in targets:
+            if not isinstance(spec, str) or spec.count('=') != 1:
+                raise ValueError('Malformed audit target')
+            ip, identity = spec.split('=', 1)
+            if ip in parsed:
+                raise ValueError('Duplicate audit target')
+            parsed[ip] = identity
+        targets = parsed
+    if not isinstance(targets, dict):
+        raise ValueError('Audit target scope must be a mapping or target list')
+    result = {}
+    for ip, value in targets.items():
+        if ip not in TARGETS:
+            raise ValueError('Unknown target in audit scope')
+        if isinstance(value, (tuple, list)) and len(value) == 2:
+            identity, model = value
+            if (str(identity).lower() != TARGETS[ip][0].lower() or
+                    model != TARGETS[ip][1]):
+                raise ValueError('Target identity/model differs from authorization')
+        else:
+            identity, model = TARGETS[ip]
+            if str(value).lower() != identity.lower():
+                raise ValueError('Target identity differs from authorization')
+        result[ip] = TARGETS[ip]
+    if not result or ('10.117.152.110' in result and set(result) != set(TARGETS)):
+        raise ValueError('Audit target scope must be a nonempty authorized subset')
+    return {ip: result[ip] for ip in TARGETS if ip in result}
+
+
+def _identity_gate(runner, version, failures, stage, targets=None):
+    selected = _target_scope(targets)
     before = runner.get('before')
-    ok = isinstance(before, dict) and set(before) == set(TARGETS)
+    ok = isinstance(before, dict) and set(before) == set(selected)
     if ok:
-        for ip, (ident, model) in TARGETS.items():
+        for ip, (ident, model) in selected.items():
             item = before[ip] if isinstance(before[ip], dict) else {}
             state = item.get('state') if isinstance(item.get('state'), dict) else {}
             ok &= str(item.get('id', '')).lower() == ident.lower()
@@ -103,23 +138,26 @@ def _identity_gate(runner, version, failures, stage):
     _require(bool(ok), stage+'_identity_model_version_config_controls', failures)
 
 
-def _runner_gate(runner, stage, failures):
+def _runner_gate(runner, stage, failures, targets=None):
+    selected = _target_scope(targets)
     run = runner.get('run') if isinstance(runner.get('run'), dict) else {}
     _require(run.get('status') == 'complete' and run.get('completed') is True and
              run.get('failure_type') is None, stage+'_runner_not_complete', failures)
     _require(runner.get('blockers') == [], stage+'_runner_blockers', failures)
+    _require(_scope_records_ok(runner, selected), stage+'_runner_unselected_device_records', failures)
     checks = runner.get('completion_checks') if isinstance(runner.get('completion_checks'), dict) else {}
     _require(all(checks.get(name) is True for name in
                  ('network_restore', 'configuration_unchanged', 'idle_quiescence')),
              stage+'_network_config_idle_gates', failures)
-    _uptime_gate(runner, stage, failures)
+    _uptime_gate(runner, stage, failures, targets)
 
 
-def _uptime_gate(runner, stage, failures):
+def _uptime_gate(runner, stage, failures, targets=None):
+    selected = _target_scope(targets)
     before = runner.get('before') if isinstance(runner.get('before'), dict) else {}
     rows = runner.get('rows') if isinstance(runner.get('rows'), list) else []
     all_ok = True
-    for ip in TARGETS:
+    for ip in selected:
         base = before.get(ip) if isinstance(before.get(ip), dict) else {}
         state = base.get('state') if isinstance(base.get('state'), dict) else {}
         seed_start = base.get('status_request_started_monotonic')
@@ -170,6 +208,31 @@ def _uptime_gate(runner, stage, failures):
     _require(all_ok, stage+'_uptime_continuity', failures)
 
 
+def _scope_records_ok(document, selected):
+    """Reject device-attributed evidence for any authorized but unselected DUT."""
+    selected_ips = set(selected)
+    authorized_ips = set(TARGETS)
+    valid = True
+
+    def visit(value, parent_key=None):
+        nonlocal valid
+        if isinstance(value, dict):
+            for key, child in value.items():
+                if parent_key != 'device_status' and key in authorized_ips and key not in selected_ips:
+                    valid = False
+                if key == 'ip' and isinstance(child, str) and child in authorized_ips and child not in selected_ips:
+                    valid = False
+                if isinstance(key, str) and any(key.startswith(ip+' ') for ip in authorized_ips-selected_ips):
+                    valid = False
+                visit(child, key)
+        elif isinstance(value, list):
+            for child in value:
+                visit(child, parent_key)
+
+    visit(document)
+    return valid
+
+
 def _phase_records(evidence, expected, name_key, clients_key, seconds_key, failures, stage):
     phases = evidence.get('phases')
     phases = phases if isinstance(phases, list) else []
@@ -187,11 +250,12 @@ def _phase_records(evidence, expected, name_key, clients_key, seconds_key, failu
     return phases
 
 
-def _audit_http_regression(evidence, version, failures):
+def _audit_http_regression(evidence, version, failures, targets=None):
+    selected = _target_scope(targets)
     stage = 'http_regression'
     _require(evidence.get('version') == version, stage+'_version', failures)
-    _runner_gate(evidence, stage, failures)
-    _identity_gate(evidence, version, failures, stage)
+    _runner_gate(evidence, stage, failures, selected)
+    _identity_gate(evidence, version, failures, stage, selected)
     run = evidence.get('run') if isinstance(evidence.get('run'), dict) else {}
     plan = run.get('plan') if isinstance(run.get('plan'), dict) else {}
     _require(plan.get('mode') == 'full', stage+'_not_full_plan', failures)
@@ -227,16 +291,16 @@ def _audit_http_regression(evidence, version, failures):
                 recovery_ok = False
                 continue
             for ip, result in targets.items():
-                if (ip not in TARGETS or ip in covered or not isinstance(result, dict) or
+                if (ip not in selected or ip in covered or not isinstance(result, dict) or
                         result.get('completed') is not True or result.get('consecutive_successes', 0) < 3):
                     recovery_ok = False
                 covered.add(ip)
-        recovery_ok &= covered == set(TARGETS)
+        recovery_ok &= covered == set(selected)
     _require(recovery_ok, stage+'_per_target_recovery', failures)
     rows = evidence.get('rows') if isinstance(evidence.get('rows'), list) else []
     actions_ok = bool(rows)
     for row in rows:
-        if not isinstance(row, dict) or row.get('ip') not in TARGETS or row.get('action') not in READ_ACTIONS:
+        if not isinstance(row, dict) or row.get('ip') not in selected or row.get('action') not in READ_ACTIONS:
             actions_ok = False
             continue
         status = row.get('http')
@@ -245,14 +309,15 @@ def _audit_http_regression(evidence, version, failures):
         if status == 200 and row.get('code') not in ('ok', 'busy', 'invalid_params'):
             actions_ok = False
     _require(actions_ok, stage+'_read_only_http_results', failures)
-    _audit_load_diagnostics(evidence, failures, stage)
+    _audit_load_diagnostics(evidence, failures, stage, selected)
 
 
-def _quiet_resources(runner, version, failures, stage, require_queue):
+def _quiet_resources(runner, version, failures, stage, require_queue, targets=None):
+    selected = _target_scope(targets)
     memory = runner.get('memory') if isinstance(runner.get('memory'), list) else []
     per_target = {}
     metrics_available = True
-    for ip, (ident, model) in TARGETS.items():
+    for ip, (ident, model) in selected.items():
         rows = [row for row in memory if isinstance(row, dict) and row.get('ip') == ip and
                 row.get('phase') == 'final' and row.get('ok') is True and row.get('http') == 200 and
                 isinstance(row.get('data'), dict)]
@@ -349,7 +414,8 @@ def _quiet_resources(runner, version, failures, stage, require_queue):
     return per_target
 
 
-def _audit_load_diagnostics(runner, failures, stage):
+def _audit_load_diagnostics(runner, failures, stage, targets=None):
+    selected = _target_scope(targets)
     memory = runner.get('memory') if isinstance(runner.get('memory'), list) else []
     output = {}
     fields = ('mqtt_rx_queued', 'mqtt_tx_queued', 'mqtt_inflight', 'mqtt_queue_bytes',
@@ -357,7 +423,7 @@ def _audit_load_diagnostics(runner, failures, stage):
               'mqtt_rx_buffer_bytes', 'mqtt_tx_buffer_bytes', 'mqtt_errors',
               'mqtt_reconnects', 'mqtt_last_error_stage', 'mqtt_last_error',
               'mqtt_operation', 'mqtt_protocol_depth', 'mqtt_max_queue_delay_ms')
-    for ip in TARGETS:
+    for ip in selected:
         rows = [row for row in memory if isinstance(row, dict) and row.get('ip') == ip and
                 isinstance(row.get('data'), dict)]
         available = []
@@ -449,14 +515,23 @@ def _audit_load_diagnostics(runner, failures, stage):
     return output
 
 
-def _audit_mixed(evidence, runner_path, expected_plan, version, label, require_soak, failures, stage):
+def _audit_mixed(evidence, runner_path, expected_plan, version, label, require_soak,
+                 failures, stage, targets=None):
+    selected = _target_scope(targets)
+    _require(_scope_records_ok(evidence, selected), stage+'_unselected_device_records', failures)
     _require(evidence.get('status') == 'complete' and evidence.get('completed') is True and
              evidence.get('blockers') == [] and evidence.get('version') == version and
              evidence.get('label') == label, stage+'_completion_version_label', failures)
     targets = evidence.get('targets') if isinstance(evidence.get('targets'), dict) else {}
-    identity_ok = set(targets) == set(TARGETS)
+    identity_ok = set(targets) == set(selected)
+    if 'selected_targets' in evidence:
+        identity_ok &= evidence.get('selected_targets') == list(selected)
+        identity_ok &= evidence.get('device_status') == {
+            ip: ('SELECTED' if ip in selected else 'PAUSED') for ip in TARGETS}
+    elif set(selected) != set(TARGETS):
+        identity_ok = False
     if identity_ok:
-        for ip, (ident, model) in TARGETS.items():
+        for ip, (ident, model) in selected.items():
             item = targets[ip] if isinstance(targets[ip], dict) else {}
             identity_ok &= str(item.get('device_id', '')).lower() == ident.lower()
             identity_ok &= item.get('model') == model
@@ -482,8 +557,8 @@ def _audit_mixed(evidence, runner_path, expected_plan, version, label, require_s
         recovery_ok &= isinstance(recovery, dict) and recovery.get('phase') == phase['name']
         recovery_ok &= recovery.get('completed') is True and recovery.get('http_completed') is True
         rows = recovery.get('mqtt_results') if isinstance(recovery.get('mqtt_results'), list) else []
-        recovery_ok &= len(rows) == len(TARGETS)
-        recovery_ok &= {row.get('ip') for row in rows if isinstance(row, dict)} == set(TARGETS)
+        recovery_ok &= len(rows) == len(selected)
+        recovery_ok &= {row.get('ip') for row in rows if isinstance(row, dict)} == set(selected)
         recovery_ok &= all(isinstance(row, dict) and row.get('outcome') == 'success' and
                            row.get('retained') is False for row in rows)
     _require(bool(recovery_ok), stage+'_per_target_recovery', failures)
@@ -492,23 +567,32 @@ def _audit_mixed(evidence, runner_path, expected_plan, version, label, require_s
     if runner is None:
         failures.append(stage+'_http_runner_evidence_missing')
     else:
-        _runner_gate(runner, stage, failures)
-        _identity_gate(runner, version, failures, stage+'_http')
-        _audit_load_diagnostics(runner, failures, stage+'_http')
+        _runner_gate(runner, stage, failures, selected)
+        _identity_gate(runner, version, failures, stage+'_http', selected)
+        _audit_load_diagnostics(runner, failures, stage+'_http', selected)
     return runner
 
 
-def _audit_readonly_mqtt(evidence, version, failures):
+def _audit_readonly_mqtt(evidence, version, failures, targets=None):
+    selected = _target_scope(targets)
     expected = {
         '10.117.152.111': ('b0f893303134', 'a1'),
         '10.117.152.102': ('D0BAE463E12C', 'tc1'),
         '10.117.152.110': ('b0f8932864b6', 'm1'),
     }
+    expected = {ip: expected[ip] for ip in selected}
     requests = evidence.get('requests') if isinstance(evidence.get('requests'), list) else []
+    selected_status_ok = (
+        evidence.get('selected_targets') == list(expected) and
+        evidence.get('device_status') == {
+            ip: ('SELECTED' if ip in expected else 'PAUSED') for ip in TARGETS})
+    legacy_full = set(expected) == set(TARGETS) and 'selected_targets' not in evidence and 'device_status' not in evidence
     ok = (evidence.get('status') == 'complete' and evidence.get('completed') is True and
           evidence.get('version') == version and evidence.get('http_prechecks') == 'passed' and
           evidence.get('http_postchecks') == 'passed' and evidence.get('blockers') == [] and
-          len(requests) == 9)
+          len(requests) == 3*len(expected) and
+          _scope_records_ok(evidence, expected) and
+          (selected_status_ok or legacy_full))
     seen_ids = set()
     modes = {ip: [] for ip in expected}
     for row in requests:
@@ -540,16 +624,22 @@ def _audit_readonly_mqtt(evidence, version, failures):
             'unique_request_ids': len(seen_ids)}
 
 
-def _audit_http_body_evidence(evidence, version, failures, runner=None):
-    expected = TARGETS
+def _audit_http_body_evidence(evidence, version, failures, runner=None, targets=None):
+    expected = _target_scope(targets)
     rows = evidence.get('samples') if isinstance(evidence, dict) else None
     rows = rows if isinstance(rows, list) else []
     ok = (evidence.get('schema') == 'candidate-http-status-bodies-v1' and
           evidence.get('status') == 'complete' and evidence.get('completed') is True and
-          evidence.get('version') == version and len(rows) == 6 and
-          evidence.get('blockers') == [])
+          evidence.get('version') == version and len(rows) == 2*len(expected) and
+          evidence.get('blockers') == [] and _scope_records_ok(evidence, expected))
     before = runner.get('before') if isinstance(runner, dict) else None
     ok &= isinstance(before, dict) and set(before) == set(expected)
+    if 'selected_targets' in evidence:
+        ok &= evidence.get('selected_targets') == list(expected)
+        ok &= evidence.get('device_status') == {
+            ip: ('SELECTED' if ip in expected else 'PAUSED') for ip in TARGETS}
+    elif set(expected) != set(TARGETS):
+        ok = False
     targets = [{'ip': ip, 'device_id': ident, 'model': model}
                for ip, (ident, model) in expected.items()]
     ok &= evidence.get('targets') == targets
@@ -616,7 +706,7 @@ def _audit_http_body_evidence(evidence, version, failures, runner=None):
             continue
         valid_samples += 1
     ok &= all(views[ip] == ['full', 'live'] for ip in expected)
-    ok &= valid_samples == 6 and len(seen_ids) == 6
+    ok &= valid_samples == 2*len(expected) and len(seen_ids) == 2*len(expected)
     for ip in expected:
         target_samples = []
         for row in rows:
@@ -652,7 +742,9 @@ def _audit_http_body_evidence(evidence, version, failures, runner=None):
             'unique_request_ids': len(seen_ids)}
 
 
-def _audit_schema_parity(report, version, failures):
+def _audit_schema_parity(report, version, failures, targets=None):
+    selected = _target_scope(targets)
+    _require(_scope_records_ok(report, selected), 'http_mqtt_schema_parity_unselected_device_records', failures)
     contract = report.get('final_contract') if isinstance(report, dict) else None
     contract = contract if isinstance(contract, dict) else {}
     candidate = contract.get('candidate') if isinstance(contract.get('candidate'), dict) else {}
@@ -666,16 +758,23 @@ def _audit_schema_parity(report, version, failures):
     http_counts = candidate_http.get('sample_counts')
     http_live_counts = candidate_http_live.get('sample_counts')
     mqtt_groups = candidate_mqtt.get('groups') if isinstance(candidate_mqtt.get('groups'), dict) else {}
-    counts_ok = http_counts == {'a1': 1, 'tc1': 1, 'm1': 1}
-    counts_ok &= http_live_counts == {'a1': 1, 'tc1': 1, 'm1': 1}
-    for model in ('a1', 'tc1', 'm1'):
+    expected_counts = {model: 1 for _, model in selected.values()}
+    counts_ok = http_counts == expected_counts
+    counts_ok &= http_live_counts == expected_counts
+    models = tuple(model for _, model in selected.values())
+    scope_ok = (contract.get('selected_targets') == list(selected) and
+                contract.get('device_status') == {
+                    ip: ('SELECTED' if ip in selected else 'PAUSED') for ip in TARGETS})
+    if set(selected) == set(TARGETS) and 'selected_targets' not in contract and 'device_status' not in contract:
+        scope_ok = True
+    for model in models:
         group = mqtt_groups.get(model) if isinstance(mqtt_groups.get(model), dict) else {}
         counts_ok &= group.get('full', {}).get('response_count') == 2
         counts_ok &= group.get('live', {}).get('response_count') == 1
     ok = (contract.get('schema') == 'http-mqtt-final-contract-v1' and
           candidate.get('expected_version') == version and candidate.get('version_match') is True and
           candidate.get('all_response_versions_match') is True and not candidate_issues and
-          candidate_mqtt.get('issues') == [] and counts_ok)
+          candidate_mqtt.get('issues') == [] and counts_ok and scope_ok)
     _require(bool(ok), 'http_mqtt_schema_parity_integrity', failures)
     comparisons = contract.get('comparisons') if isinstance(contract.get('comparisons'), dict) else {}
     parity = comparisons.get('candidate_http_full_vs_candidate_mqtt_full', {})
@@ -686,11 +785,11 @@ def _audit_schema_parity(report, version, failures):
         parity[f'{model}/full'].get('status') == 'compared' and
         isinstance(live_parity.get(f'{model}/live'), dict) and
         live_parity[f'{model}/live'].get('status') == 'compared'
-        for model in ('a1', 'tc1', 'm1'))
+        for model in models)
     historical_gap_ok = all(
         isinstance(historical_live.get(f'{model}/live'), dict) and
         historical_live[f'{model}/live'].get('status') == 'unavailable_no_historical_http_live_body'
-        for model in ('a1', 'tc1', 'm1'))
+        for model in models)
     ok &= parity_groups_ok and historical_gap_ok
     _require(parity_groups_ok, 'candidate_http_mqtt_view_parity_missing', failures)
     _require(historical_gap_ok, 'historical_http_live_gap_not_reported', failures)
@@ -957,25 +1056,26 @@ def _accepted_reuse_cli(proof, argv):
             _contains_pair(argv, flag, proof.get('source_label')))
 
 
-def _initial_previous_versions(initial):
+def _initial_previous_versions(initial, targets=None):
     """Exact per-device old versions, independently of the new candidate version.
 
     JSON objects cannot retain duplicate keys; CLI parsers must reject repeated
     --previous IP=VERSION entries before constructing this optional mapping.
     """
+    selected = _target_scope(targets)
     scalar = initial.get('previous_version')
     if 'previous_versions' not in initial:
-        return {ip: scalar for ip in TARGETS}
+        return {ip: scalar for ip in selected}
     mapping = initial['previous_versions']
     valid_version = lambda value: isinstance(value, str) and bool(
         re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9][A-Za-z0-9._-]{0,63})?', value))
-    _reuse_check(isinstance(mapping, dict) and bool(mapping) and set(mapping) <= set(TARGETS) and
+    _reuse_check(isinstance(mapping, dict) and bool(mapping) and set(mapping) <= set(selected) and
                  valid_version(scalar) and all(valid_version(value) for value in mapping.values()),
                  'invalid initial previous_versions')
-    return {ip: mapping.get(ip, scalar) for ip in TARGETS}
+    return {ip: mapping.get(ip, scalar) for ip in selected}
 
 
-def _initial_previous_cli(initial, argv):
+def _initial_previous_cli(initial, argv, targets=None):
     if 'previous_versions' not in initial:
         return True
     try:
@@ -989,37 +1089,57 @@ def _initial_previous_cli(initial, argv):
             ip, value = argv[index+1].split('=', 1)
             _reuse_check(ip not in overrides, 'duplicate previous override')
             overrides[ip] = value
+        selected = _target_scope(targets)
         resolved = _initial_previous_versions(dict(previous_version=initial['previous_version'],
-                                                   previous_versions=overrides)) if overrides else {
-                                                       ip: initial['previous_version'] for ip in TARGETS}
-        return resolved == _initial_previous_versions(initial)
+                                                   previous_versions=overrides), selected) if overrides else {
+                                                       ip: initial['previous_version'] for ip in selected}
+        return resolved == _initial_previous_versions(initial, selected)
     except (ValueError, KeyError, TypeError, IndexError):
         return False
 
 
-def _initial_step_argv(step, index, deploy_ips, label, archive, version, previous):
+def _initial_step_argv(step, index, deploy_ips, label, archive, version, previous,
+                       targets=None, allow_legacy_full=False):
+    selected = _target_scope(targets)
     args = step.get('argv', [])
     if index < len(deploy_ips):
         ip = deploy_ips[index]
         return (len(args) == 6 and Path(str(args[1])).name == 'deploy_candidate.py' and
                 args[2:] == [ip.rsplit('.', 1)[1], label+'-initial', previous[ip], archive])
-    return (index == len(deploy_ips) and len(args) == 7 and
+    target_args = ([] if allow_legacy_full else
+                   [item for ip, (ident, _model) in selected.items()
+                    for item in ('--target', ip+'='+ident)])
+    return (index == len(deploy_ips) and
             Path(str(args[1])).name == 'diagnose_shared_candidate.py' and
-            args[2:] == ['--version', version, '--label', label, '--execute'])
+            args[2:] == ['--version', version, '--label', label, '--execute', *target_args])
 
 
-def _initial_gate(initial, commit, version):
+def _initial_gate(initial, commit, version, targets=None):
     steps = initial.get('steps', [])
     reused = initial.get('reused_deployments', [])
     partial_ok = False
     try:
-        previous = _initial_previous_versions(initial)
-        deploy_ips = tuple(TARGETS)[1:] if reused else tuple(TARGETS)
+        selected = _target_scope(targets if targets is not None else
+                                 ({ip: TARGETS[ip] for ip in initial['selected_targets']}
+                                  if 'selected_targets' in initial else None))
+        legacy_full = 'selected_targets' not in initial and set(selected) == set(TARGETS)
+        previous = _initial_previous_versions(initial, selected)
+        deploy_ips = tuple(ip for ip in selected if ip != tuple(selected)[0]) if reused else tuple(selected)
         if reused and 'previous_versions' in initial:
-            _reuse_check(previous[tuple(TARGETS)[0]] == version, 'reused device previous version differs')
+            _reuse_check(previous[tuple(selected)[0]] == version, 'reused device previous version differs')
         _reuse_check(all(_initial_step_argv(step, index, deploy_ips, initial['label'], initial['archive'],
-                                           version, previous) for index, step in enumerate(steps)),
+                                           version, previous, selected, legacy_full)
+                          for index, step in enumerate(steps)),
                      'initial actual argv differs')
+        _reuse_check(initial.get('targets') == {ip: ident for ip, (ident, _model) in selected.items()},
+                     'initial selected target map differs')
+        if 'selected_targets' in initial:
+            _reuse_check(initial.get('selected_targets') == list(selected) and
+                         initial.get('device_status') == {
+                             ip: ('SELECTED' if ip in selected else 'PAUSED') for ip in TARGETS},
+                         'initial selected/paused device status differs')
+        elif set(selected) != set(TARGETS):
+            _reuse_check(False, 'legacy initial evidence cannot claim a subset scope')
     except (ValueError, KeyError, TypeError):
         return False
     if reused:
@@ -1047,9 +1167,10 @@ def _initial_gate(initial, commit, version):
             _reuse_check(all(initial['started_at'] <= sample['started_at'] <= sample['ended_at'] <=
                              initial['ended_at'] for sample in fresh['samples']),
                          'partial fresh reads outside new execution')
-            _reuse_check(len(steps) == 3, 'partial actual child count')
+            _reuse_check(len(steps) == len(selected), 'partial actual child count')
             for index, step in enumerate(steps):
-                valid = _initial_step_argv(step, index, deploy_ips, initial['label'], initial['archive'], version, previous)
+                valid = _initial_step_argv(step, index, deploy_ips, initial['label'], initial['archive'],
+                                           version, previous, selected, legacy_full)
                 _reuse_check(valid and step['ended_monotonic'] >= step['started_monotonic'] and
                              step['ended_at'] >= step['started_at'], 'partial actual argv/timing differs')
             partial_ok = True
@@ -1063,9 +1184,10 @@ def _initial_gate(initial, commit, version):
             all(initial.get(key) is True for key in
                 ('source_unchanged', 'source_copies_unchanged', 'source_manifest_unchanged')) and
             type(initial.get('pid')) is int and initial['pid'] > 0 and
-            initial.get('exit_code') == 0 and len(steps) == (3 if partial_ok else 4) and
+            initial.get('exit_code') == 0 and
+            len(steps) == len(selected) + (0 if partial_ok else 1) and
             all(_process_complete(row) for row in steps) and
-            initial.get('targets') == {ip: ident for ip, (ident, _) in TARGETS.items()})
+            len(steps) == len(selected) + (0 if partial_ok else 1))
 
 
 def verify_reusable_initial(label, archive, commit, version):
@@ -1129,9 +1251,13 @@ def verify_reusable_initial(label, archive, commit, version):
                      ('--label', label))) and '--execute' in argv, 'original initial argv differs')
     _reuse_check(_initial_previous_cli(inner, argv), 'initial previous override argv differs')
     previous = _initial_previous_versions(inner)
-    deploy_ips = tuple(TARGETS)[1:] if inner.get('reused_deployments') else tuple(TARGETS)
+    selected = _target_scope(inner.get('selected_targets') and
+                             {ip: TARGETS[ip] for ip in inner['selected_targets']} or None)
+    legacy_full = 'selected_targets' not in inner and set(selected) == set(TARGETS)
+    deploy_ips = tuple(ip for ip in selected if ip != tuple(selected)[0]) if inner.get('reused_deployments') else tuple(selected)
     for index, step in enumerate(inner['steps']):
-        valid = _initial_step_argv(step, index, deploy_ips, label, archive, version, previous)
+        valid = _initial_step_argv(step, index, deploy_ips, label, archive, version,
+                                   previous, selected, legacy_full)
         _reuse_check(valid, 'initial four-step argv/order mismatch')
     if inner.get('reused_deployments'):
         partial = inner['reused_deployments'][0]
@@ -1262,7 +1388,7 @@ def verify_reuse_continuity(reuse, pre, require_complete=True):
     return verify_runner_continuity(old, pre, reuse['version'], require_complete)
 
 
-def verify_runner_continuity(old, new, version, require_complete=True):
+def verify_runner_continuity(old, new, version, require_complete=True, targets=None):
     """Do not rebase away a reset/config/control change between runner instances.
 
     Status and memory counters have separate observations. Recorded A1/M1 clocks
@@ -1271,12 +1397,13 @@ def verify_runner_continuity(old, new, version, require_complete=True):
     forward boot-origin shift beyond floor(seconds) uncertainty. This is sampled
     continuity, not a claim about every unobserved instant or clock failure.
     """
+    selected = _target_scope(targets)
     failures = []
-    _identity_gate(new, version, failures, 'continuity')
+    _identity_gate(new, version, failures, 'continuity', selected)
     if require_complete:
-        _runner_gate(new, 'continuity', failures)
+        _runner_gate(new, 'continuity', failures, selected)
     else:
-        _uptime_gate(new, 'continuity', failures)
+        _uptime_gate(new, 'continuity', failures, selected)
         _require(new.get('blockers') == [], 'continuity_blockers', failures)
     _reuse_check(not failures, 'new runner did not pass identity/uptime gates')
 
@@ -1305,7 +1432,7 @@ def verify_runner_continuity(old, new, version, require_complete=True):
         return sorted(result, key=lambda sample: sample[1])
 
     details = {}
-    for ip, (_, model) in TARGETS.items():
+    for ip, (_, model) in selected.items():
         left, right = old['before'][ip], new['before'][ip]
         _reuse_check(left['config'] == right['config'], 'configuration changed: '+ip)
         keys = {'a1': ('requested_fan_on', 'requested_speed', 'child_lock', 'led_enabled'),
@@ -1325,7 +1452,7 @@ def verify_runner_continuity(old, new, version, require_complete=True):
             streams[kind] = {'previous_end': previous[1], 'previous_uptime': previous[2],
                              'new_first_start': min(sample[0] for sample in samples)}
         details[ip] = {'streams': streams, 'configuration_equal': True, 'controls_equal': True}
-    return {'passed': True, 'targets': details,
+    return {'passed': True, 'selected_targets': list(selected), 'targets': details,
             'limit': 'Sampled continuity; not a complete reboot history or proof against clock faults'}
 
 
@@ -1409,18 +1536,18 @@ def verify_reused_pre(reuse, checkpoint_path, journal_path, pre, label, reuse_ha
             'boot_observation_limit': 'Post-OTA boot is bounded by each uploader child interval, not an exact reset timestamp'}
 
 
-def verify_post_ota_chain(pre, stages, version, post=None, post_runner=None):
+def verify_post_ota_chain(pre, stages, version, post=None, post_runner=None, targets=None):
     """All later initialized baselines share the post-OTA idle boot/config."""
     previous = pre
     report = {}
     for name, runner in stages:
-        report[name] = verify_runner_continuity(previous, runner, version)
+        report[name] = verify_runner_continuity(previous, runner, version, targets=targets)
         previous = runner
     if post is not None:
         # The existing postcheck deliberately restores the soak's old before.
         # Its separate fresh comparison retains the real initialization times.
         fresh = copy.deepcopy(post_runner)
-        for ip in TARGETS:
+        for ip in _target_scope(targets):
             item = post.get('fresh_baseline_comparison', {}).get(ip, {})
             _reuse_check(all(item.get(key) is True for key in
                             ('identity_unchanged', 'model_version_unchanged', 'controls_unchanged',
@@ -1430,11 +1557,11 @@ def verify_post_ota_chain(pre, stages, version, post=None, post_runner=None):
             base['status_request_started_monotonic'] = start
             base['status_request_ended_monotonic'] = end
             base['state']['uptime_seconds'] = item['fresh_uptime_seconds']
-        report['mixed_postcheck'] = verify_runner_continuity(previous, fresh, version)
-    return {'passed': True, 'stages': report}
+        report['mixed_postcheck'] = verify_runner_continuity(previous, fresh, version, targets=targets)
+    return {'passed': True, 'selected_targets': list(_target_scope(targets)), 'stages': report}
 
 
-def verify_pre_soak_continuity(stage_map, version):
+def verify_pre_soak_continuity(stage_map, version, targets=None):
     """Offline gate before launching 4h; does not issue any device request."""
     def evidence(name):
         row = stage_map[name]
@@ -1450,11 +1577,13 @@ def verify_pre_soak_continuity(stage_map, version):
     result = verify_post_ota_chain(_read_json(pre_path), [
         ('http_schema_samples', _read_json(body_path)),
         ('http_regression', _read_json(http_path)),
-        ('mixed_short', _read_json(short_path))], version)
+        ('mixed_short', _read_json(short_path))], version, targets=targets)
     return {'passed': True, 'continuity': result, 'proof_sha256': dict(sorted(proof.items()))}
 
 
-def _audit_stage_argv(stage_map, label, archive, commit, version, failures, initial_label=None):
+def _audit_stage_argv(stage_map, label, archive, commit, version, failures, initial_label=None,
+                      targets=None, allow_legacy_full=False):
+    selected = _target_scope(targets)
     contracts = {
         'initial': ('run_initial_shared_screen.py',
                     (('--archive', archive), ('--commit', commit), ('--version', version),
@@ -1486,16 +1615,17 @@ def _audit_stage_argv(stage_map, label, archive, commit, version, failures, init
         'mixed_postcheck': ('mixed_final_postcheck.py',
                             (('--label', label), ('--version', version)), ('--execute',)),
     }
-    targets = [item for ip, (ident, _model) in TARGETS.items() for item in (ip+'='+ident,)]
+    target_specs = [ip+'='+ident for ip, (ident, _model) in selected.items()]
     for name, (executable, pairs, flags) in contracts.items():
         row = stage_map.get(name, {})
         argv = row.get('argv') if isinstance(row.get('argv'), list) else []
         ok = any(executable in str(arg) for arg in argv)
         ok &= all(_contains_pair(argv, key, value) for key, value in pairs)
         ok &= all(flag in argv for flag in flags)
-        if name in ('mqtt_readonly', 'http_schema_samples', 'http_regression', 'mixed_soak'):
+        if name in ('initial', 'pre_stability', 'mqtt_readonly', 'http_schema_samples', 'schema_parity',
+                    'http_regression', 'mixed_short', 'mixed_soak', 'mixed_postcheck'):
             found = [argv[index+1] for index, item in enumerate(argv[:-1]) if item == '--target']
-            ok &= found == targets
+            ok &= found == ([] if allow_legacy_full else target_specs)
         if name == 'schema_parity':
             ok &= _contains_pair(argv, '--contract-http-evidence',
                                  str(PRIVATE/(label+'-pre-pre-stability-idle')/'evidence.json'))
@@ -1522,11 +1652,29 @@ def _audit_stage_argv(stage_map, label, archive, commit, version, failures, init
         _require(bool(ok), name+'_stage_argv_contract', failures)
 
 
-def audit_controller(controller_path, label, archive, commit, version):
+def audit_controller(controller_path, label, archive, commit, version, targets=None):
     controller_path = Path(controller_path)
     controller_dir = controller_path.parent
     controller = _read_json(controller_path)
     failures = []
+    try:
+        selected = _target_scope(targets if targets is not None else
+                                 ({ip: TARGETS[ip] for ip in controller['selected_targets']}
+                                  if 'selected_targets' in controller else None))
+    except (ValueError, KeyError, TypeError):
+        selected = {}
+        failures.append('controller_target_scope_invalid')
+    target_specs = [ip+'='+ident for ip, (ident, _model) in selected.items()]
+    if 'selected_targets' in controller or 'device_status' in controller:
+        target_record_ok = (controller.get('targets') == target_specs and
+                            controller.get('selected_targets') == list(selected) and
+                            controller.get('device_status') == {
+                                ip: ('SELECTED' if ip in selected else 'PAUSED') for ip in TARGETS})
+    else:
+        target_record_ok = (set(selected) == set(TARGETS) and
+                            controller.get('targets') == target_specs)
+    _require(bool(selected) and target_record_ok,
+             'controller_target_scope_or_paused_status', failures)
     _require(controller.get('label') == label and controller.get('archive') == archive and
              controller.get('commit') == commit and controller.get('version') == version,
              'controller_candidate_identity_mismatch', failures)
@@ -1567,7 +1715,10 @@ def audit_controller(controller_path, label, archive, commit, version):
     elif stage_map.get('initial', {}).get('execution') == 'reused':
         failures.append('initial_reuse_record_missing')
     _audit_stage_argv(stage_map, label, archive, commit, version, failures,
-                      initial_label=reuse['source_label'] if reuse else None)
+                      initial_label=reuse['source_label'] if reuse else None,
+                      targets=selected,
+                      allow_legacy_full=('selected_targets' not in controller and
+                                         'device_status' not in controller))
     sources = controller.get('sources')
     _require_acceptance_sources(sources, failures)
     source_audit = _verify_hash_records(controller_dir, sources, failures)
@@ -1618,7 +1769,7 @@ def audit_controller(controller_path, label, archive, commit, version):
     soak = _read_json(soak_path) if soak_path.is_file() else {}
     post = _read_json(post_path) if post_path.is_file() else {}
 
-    initial_ok = _initial_gate(initial, commit, version)
+    initial_ok = bool(selected) and _initial_gate(initial, commit, version, selected)
     _require(initial_ok, 'initial_signed_ota_or_paced_gate', failures)
     expected_initial = PRIVATE/((reuse['source_label'] if reuse else label)+'-initial-controller')/'controller.json'
     _require(initial_path.resolve() == expected_initial.resolve(), 'initial_evidence_path_mismatch', failures)
@@ -1641,16 +1792,17 @@ def audit_controller(controller_path, label, archive, commit, version):
     _require(pre.get('run', {}).get('status') == 'complete' and
              pre.get('run', {}).get('completed') is True and pre.get('blockers') == [],
              'pre_stability_only_runner_incomplete', failures)
-    _identity_gate(pre, version, failures, 'pre_stability')
-    _runner_gate(pre, 'pre_stability', failures)
+    _identity_gate(pre, version, failures, 'pre_stability', selected)
+    _runner_gate(pre, 'pre_stability', failures, selected)
     pre_checks = pre.get('completion_checks') if isinstance(pre.get('completion_checks'), dict) else {}
     _require(pre_checks.get('idle_quiescence') is True, 'pre_stability_idle_gate', failures)
-    mqtt_readonly_summary = _audit_readonly_mqtt(mqtt, version, failures)
-    http_body_summary = _audit_http_body_evidence(http_body, version, failures, http_body_runner)
-    _runner_gate(http_body_runner, 'http_schema_samples', failures)
-    _identity_gate(http_body_runner, version, failures, 'http_schema_samples')
-    schema_parity_summary = _audit_schema_parity(schema, version, failures)
-    _audit_http_regression(http, version, failures)
+    mqtt_readonly_summary = _audit_readonly_mqtt(mqtt, version, failures, selected)
+    http_body_summary = _audit_http_body_evidence(http_body, version, failures,
+                                                  http_body_runner, selected)
+    _runner_gate(http_body_runner, 'http_schema_samples', failures, selected)
+    _identity_gate(http_body_runner, version, failures, 'http_schema_samples', selected)
+    schema_parity_summary = _audit_schema_parity(schema, version, failures, selected)
+    _audit_http_regression(http, version, failures, selected)
     _require(short_controller.get('status') == 'complete' and short_controller.get('completed') is True and
              short_controller.get('source_unchanged') is True and
              short_controller.get('source_copies_unchanged') is True and
@@ -1660,18 +1812,20 @@ def audit_controller(controller_path, label, archive, commit, version):
              'mixed_short_controller_incomplete', failures)
     short_runner_path = Path(short_controller.get('output', ''))/'http-runner/evidence.json'
     short_runner = _audit_mixed(short, short_runner_path, MIXED_SHORT_PLAN, version,
-                                label+'-mixed-short', False, failures, 'mixed_short')
+                                label+'-mixed-short', False, failures, 'mixed_short', selected)
     if short_runner is not None:
-        _quiet_resources(short_runner, version, failures, 'mixed_short', require_queue=False)
-        short_load_summary = _audit_load_diagnostics(short_runner, failures, 'mixed_short')
+        _quiet_resources(short_runner, version, failures, 'mixed_short', require_queue=False,
+                         targets=selected)
+        short_load_summary = _audit_load_diagnostics(short_runner, failures, 'mixed_short', selected)
     else:
         short_load_summary = {}
     soak_runner_path = soak_path.parent/'http-runner/evidence.json'
     soak_runner = _audit_mixed(soak, soak_runner_path, MIXED_SOAK_PLAN, version,
-                               label+'-mixed-soak', True, failures, 'mixed_soak')
+                               label+'-mixed-soak', True, failures, 'mixed_soak', selected)
     if soak_runner is not None:
-        quiet_summary = _quiet_resources(soak_runner, version, failures, 'mixed_soak', require_queue=True)
-        soak_load_summary = _audit_load_diagnostics(soak_runner, failures, 'mixed_soak')
+        quiet_summary = _quiet_resources(soak_runner, version, failures, 'mixed_soak', require_queue=True,
+                                         targets=selected)
+        soak_load_summary = _audit_load_diagnostics(soak_runner, failures, 'mixed_soak', selected)
     else:
         quiet_summary = {}
         soak_load_summary = {}
@@ -1683,7 +1837,7 @@ def audit_controller(controller_path, label, archive, commit, version):
              'mixed_postcheck_incomplete', failures)
     try:
         pre_soak = controller.get('pre_soak_continuity', {})
-        expected_pre_soak = verify_pre_soak_continuity(stage_map, version)
+        expected_pre_soak = verify_pre_soak_continuity(stage_map, version, targets=selected)
         _require(all(pre_soak.get(key) == value for key, value in expected_pre_soak.items()),
                  'pre_soak_continuity_proof', failures)
         checked_at = pre_soak.get('checked_at')
@@ -1699,7 +1853,8 @@ def audit_controller(controller_path, label, archive, commit, version):
         post_runner = _read_json(post_runner_path)
         stage_continuity = verify_post_ota_chain(pre, [
             ('http_schema_samples', http_body_runner), ('http_regression', http),
-            ('mixed_short', short_runner), ('mixed_soak', soak_runner)], version, post, post_runner)
+            ('mixed_short', short_runner), ('mixed_soak', soak_runner)], version, post, post_runner,
+            targets=selected)
     except (OSError, ValueError, KeyError, TypeError) as exc:
         failures.append('cross_stage_continuity:'+str(exc))
     output = {
@@ -1720,7 +1875,9 @@ def audit_controller(controller_path, label, archive, commit, version):
         'schema_parity_candidate_integrity': schema_parity_summary,
         'http_regression_complete': not any(item.startswith('http_regression_') for item in failures),
         'mixed_short_complete': short.get('completed') is True,
-        'http_load_diagnostics': _audit_load_diagnostics(http, [], 'http_regression_report'),
+        'selected_targets': list(selected),
+        'device_status': {ip: ('SELECTED' if ip in selected else 'PAUSED') for ip in TARGETS},
+        'http_load_diagnostics': _audit_load_diagnostics(http, [], 'http_regression_report', selected),
         'mixed_short_load_diagnostics': short_load_summary,
         'mixed_soak_load_diagnostics': soak_load_summary,
         'mixed_soak_complete': soak.get('completed') is True,
@@ -1738,9 +1895,11 @@ def main(argv=None):
     parser.add_argument('--archive', required=True)
     parser.add_argument('--commit', required=True)
     parser.add_argument('--version', required=True)
+    parser.add_argument('--target', action='append', metavar='IP=ID')
     parser.add_argument('--output', type=Path)
     args = parser.parse_args(argv)
-    report = audit_controller(args.controller, args.label, args.archive, args.commit, args.version)
+    report = audit_controller(args.controller, args.label, args.archive, args.commit,
+                              args.version, targets=args.target)
     if args.output:
         temp = args.output.with_suffix(args.output.suffix+'.tmp')
         temp.parent.mkdir(mode=0o700, parents=True, exist_ok=True)

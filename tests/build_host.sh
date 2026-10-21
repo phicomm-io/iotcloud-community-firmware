@@ -4,20 +4,31 @@ cd "$(dirname "$0")/.."
 root="$PWD"
 source tests/host_hash.sh
 output=${1:-build/account-host}
+selected=$(python3 tests/host_models.py)
+mapfile -t models <<< "$selected"
 mkdir -p "$output"
 json_sdk=$(mktemp -d)
 trap 'rm -rf "$json_sdk"' EXIT
-cc -std=c99 -Wall -Wextra -Werror tests/test_m1_scd40.c -o "$output/m1-scd40"
-"$output/m1-scd40"
+if [[ " ${models[*]} " == *" M1 "* ]]; then
+    cc -std=c99 -Wall -Wextra -Werror tests/test_m1_scd40.c -o "$output/m1-scd40"
+    "$output/m1-scd40"
+fi
 python3 -m unittest discover -s tests -p test_apply_sdk_patch.py
 sdk_a1=${A1_SDK_DIR:-build/a1-sdk/mico-os}
 sdk_m1=${M1_SDK_DIR:-build/m1-sdk/mico-os}
 sdk_tc1=${TC1_SDK_DIR:-build/tc1-sdk-3.6.4/mico-os}
 # Match each production Client layout on fresh SDKs as well as cached builds.
 # A1/M1 expose twelve handlers through their board overlay; TC1 uses five.
-python3 tools/apply_sdk_patch.py "$sdk_a1" A1/features-sdk.patch
-python3 tools/apply_sdk_patch.py "$sdk_m1" M1/features-sdk.patch
-for model in A1 M1 TC1; do
+for model in "${models[@]}"; do
+    if [[ "$model" == TC1 ]]; then continue; fi
+    case "$model" in
+        A1) sdk="$sdk_a1" ;;
+        M1) sdk="$sdk_m1" ;;
+        TC1) sdk="$sdk_tc1" ;;
+    esac
+    python3 tools/apply_sdk_patch.py "$sdk" "$model/features-sdk.patch"
+done
+for model in "${models[@]}"; do
     case "$model" in
         A1) sdk="$sdk_a1" ;;
         M1) sdk="$sdk_m1" ;;
@@ -31,18 +42,24 @@ for model in A1 M1 TC1; do
         "$mqtt/MQTTPacket/MQTTPacket.c" -o "$output/$model-mqtt-publish-bounds"
     "$output/$model-mqtt-publish-bounds"
 done
-sdk="$sdk_m1/libraries/protocols/mqtt"
-cc -std=gnu99 -Wall -Wextra -Werror -Itests/host -I"$sdk" -I"$sdk/MQTTPacket" tests/test_m1_transport.c tests/host/network.c M1/mqtt_transport.c -o "$output/m1-transport"
-"$output/m1-transport"
-for model in m1 a1; do
-    if [[ "$model" == m1 ]]; then sdk="$sdk_m1/libraries/protocols/mqtt"; else sdk="$sdk_a1/libraries/protocols/mqtt"; fi
-cc -std=gnu99 -Wall -Wextra -Wno-unused-parameter -Wno-unused-but-set-variable -Wno-sign-compare -Wno-misleading-indentation -Wno-pointer-sign -Wno-implicit-fallthrough -Itests/host -I"$sdk" -I"$sdk/MQTTPacket" tests/test_m1_packet.c tests/host/network.c "$sdk/MQTTClient.c" "$sdk"/MQTTPacket/*.c -o "$output/$model-packet"
-"$output/$model-packet"
+if [[ " ${models[*]} " == *" M1 "* ]]; then
+    sdk="$sdk_m1/libraries/protocols/mqtt"
+    cc -std=gnu99 -Wall -Wextra -Werror -Itests/host -I"$sdk" -I"$sdk/MQTTPacket" tests/test_m1_transport.c tests/host/network.c M1/mqtt_transport.c -o "$output/m1-transport"
+    "$output/m1-transport"
+fi
+for model in "${models[@]}"; do
+    if [[ "$model" == M1 || "$model" == A1 ]]; then
+        if [[ "$model" == M1 ]]; then sdk="$sdk_m1/libraries/protocols/mqtt"; else sdk="$sdk_a1/libraries/protocols/mqtt"; fi
+        packet_name=$(printf '%s' "$model" | tr '[:upper:]' '[:lower:]')
+        cc -std=gnu99 -Wall -Wextra -Wno-unused-parameter -Wno-unused-but-set-variable -Wno-sign-compare -Wno-misleading-indentation -Wno-pointer-sign -Wno-implicit-fallthrough -Itests/host -I"$sdk" -I"$sdk/MQTTPacket" tests/test_m1_packet.c tests/host/network.c "$sdk/MQTTClient.c" "$sdk"/MQTTPacket/*.c -o "$output/$packet_name-packet"
+        "$output/$packet_name-packet"
+    elif [[ "$model" == TC1 ]]; then
+        sdk="$sdk_tc1/libraries/protocols/mqtt"
+        cc -std=gnu99 -Wall -Wextra -Wno-unused-parameter -Wno-unused-but-set-variable -Wno-sign-compare -Wno-misleading-indentation -Wno-pointer-sign -Wno-implicit-fallthrough -Itests/host -I"$sdk" -I"$sdk/MQTTPacket" tests/test_tc1_packet.c tests/host/network.c "$sdk/MQTTClient.c" "$sdk"/MQTTPacket/*.c -o "$output/tc1-packet"
+        "$output/tc1-packet"
+    fi
 done
-sdk="$sdk_tc1/libraries/protocols/mqtt"
-cc -std=gnu99 -Wall -Wextra -Wno-unused-parameter -Wno-unused-but-set-variable -Wno-sign-compare -Wno-misleading-indentation -Wno-pointer-sign -Wno-implicit-fallthrough -Itests/host -I"$sdk" -I"$sdk/MQTTPacket" tests/test_tc1_packet.c tests/host/network.c "$sdk/MQTTClient.c" "$sdk"/MQTTPacket/*.c -o "$output/tc1-packet"
-"$output/tc1-packet"
-for model in M1 A1 TC1; do
+for model in "${models[@]}"; do
     handlers=()
     if [[ "$model" != TC1 ]]; then handlers=(-DMAX_MESSAGE_HANDLERS=12); fi
     case "$model" in

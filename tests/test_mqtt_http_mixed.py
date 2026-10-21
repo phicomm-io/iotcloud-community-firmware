@@ -741,9 +741,10 @@ class NetworkReadinessTests(unittest.TestCase):
             return BlockedRecovery, helpers, client, root, client_id
 
         monitor_type = MIXED.NetworkReadiness
-        def make_monitor(runner, evidence):
-            return monitor_type(runner, evidence, monotonic=lambda: clock[0])
-        def phase(runner, _clients, _roots, _evidence, _plan, _profile):
+        def make_monitor(runner, evidence, targets=None):
+            return monitor_type(runner, evidence, targets=targets,
+                                monotonic=lambda: clock[0])
+        def phase(runner, _clients, _roots, _evidence, _plan, _profile, targets=None):
             runner.mixed_network_readiness.observe(
                 self.ip, dict(self.good, mqtt_connected=False), 'phase-end', 'mqtt-correlated')
             return None
@@ -777,6 +778,7 @@ class NetworkReadinessTests(unittest.TestCase):
 class MixedRunnerTests(unittest.TestCase):
     def setUp(self):
         FakeMQTTClient.instances.clear()
+        FakeRunner.instances.clear()
 
     def test_http_silence_stops_soak_but_does_not_change_short_gate(self):
         for profile in ('soak', 'short'):
@@ -816,13 +818,64 @@ class MixedRunnerTests(unittest.TestCase):
     def test_authorized_targets_and_command_guard(self):
         specs = [ip+'='+ident for ip, ident in TARGETS.items()]
         self.assertEqual(MIXED.validate_targets(specs), TARGETS)
+        selected = {
+            '10.117.152.111': TARGETS['10.117.152.111'],
+            '10.117.152.102': TARGETS['10.117.152.102'],
+        }
+        self.assertEqual(MIXED.validate_targets(
+            [ip+'='+ident for ip, ident in selected.items()]), selected)
         with self.assertRaises(ValueError):
             MIXED.validate_targets(['10.117.152.1=unknown'])
+        with self.assertRaises(ValueError):
+            MIXED.validate_targets([])
+        with self.assertRaises(ValueError):
+            MIXED.validate_targets([
+                '10.117.152.111='+TARGETS['10.117.152.111'],
+                '10.117.152.111='+TARGETS['10.117.152.111'],
+            ])
+        with self.assertRaises(ValueError):
+            MIXED.validate_targets([
+                '10.117.152.111='+TARGETS['10.117.152.111'],
+                '10.117.152.110='+TARGETS['10.117.152.110'],
+            ])
         payload = MIXED.make_status_payload('readonly-mixed-abc')
         self.assertIs(MIXED.guard_status_payload(payload), payload)
         payload['action'] = 'config.set'
         with self.assertRaises(ValueError):
             MIXED.guard_status_payload(payload)
+
+    def test_subset_execution_never_schedules_paused_m1(self):
+        selected = {
+            '10.117.152.111': TARGETS['10.117.152.111'],
+            '10.117.152.102': TARGETS['10.117.152.102'],
+        }
+        plan = [{'name': 'subset-mixed', 'http_clients': 1,
+                 'mqtt_window': 1, 'seconds': 0.06, 'mqtt_period': 0.01}]
+        with tempfile.TemporaryDirectory() as directory:
+            old_private = MIXED.PRIVATE
+            MIXED.PRIVATE = Path(directory)
+            try:
+                result = MIXED.execute(
+                    selected, VERSION, 'subset-offline', 'short',
+                    Path(directory)/'run', runtime_loader=fake_runtime(),
+                    plan_override=plan, run_timeout=3,
+                )
+            finally:
+                MIXED.PRIVATE = old_private
+
+        self.assertTrue(result['completed'])
+        self.assertEqual(result['selected_targets'], list(selected))
+        self.assertEqual(set(result['targets']), set(selected))
+        self.assertEqual(result['device_status']['10.117.152.110'], 'PAUSED')
+        self.assertEqual(set(FakeRunner.instances[-1].targets), set(selected))
+        self.assertEqual(set(FakeRunner.instances[-1].before), set(selected))
+        self.assertTrue(FakeMQTTClient.instances)
+        self.assertTrue(all('_m1-' not in client.client_id
+                            for client in FakeMQTTClient.instances))
+        self.assertTrue(all(row.get('ip') in selected
+                            for row in result['http']+result['mqtt']+
+                            result['telemetry']+result['diagnostic_samples']))
+        self.assertEqual(set(result['queue_drops'][0]['per_device']), set(selected))
 
     def test_classification_retained_and_protocol_errors(self):
         result_topic, state_topic = 'root/result', 'root/state'
@@ -1136,7 +1189,7 @@ class MixedRunnerTests(unittest.TestCase):
             try:
                 output = Path(directory)/'run'
 
-                def recovery_stub(runner, _clients, _roots, evidence, phase):
+                def recovery_stub(runner, _clients, _roots, evidence, phase, targets=None):
                     evidence.data['recovery'].append({
                         'phase': phase, 'completed': True,
                         'http_completed': True, 'mqtt_results': [],
@@ -1404,9 +1457,16 @@ class MixedRunnerTests(unittest.TestCase):
             source = root/'source.py'
             source.write_text('# offline controller fixture\n')
             output = private/'controller-success-mqtt-http-mixed'
+            selected = CONTROLLER._target_map()
+            mixed_targets = {
+                ip: {'device_id': ident, 'model': MIXED.TARGETS[ip][1]}
+                for ip, ident in selected.items()
+            }
             evidence = {
                 'status': 'complete', 'completed': True, 'version': VERSION,
                 'blockers': [], 'http_prechecks': 'passed', 'http_postchecks': 'passed',
+                'selected_targets': list(selected), 'targets': mixed_targets,
+                'device_status': {ip: 'SELECTED' for ip in selected},
                 'phases': [{**row, 'completed': True} for row in CONTROLLER.PLAN],
             }
             child_code = (
@@ -1426,6 +1486,21 @@ class MixedRunnerTests(unittest.TestCase):
         self.assertEqual(result['process']['exit_code'], 0)
         self.assertTrue(result['source_unchanged'])
         self.assertTrue(result['source_copies_unchanged'])
+
+    def test_controller_dry_run_preserves_explicit_subset(self):
+        selected = [
+            '10.117.152.111=b0f893303134',
+            '10.117.152.102=D0BAE463E12C',
+        ]
+        result = CONTROLLER.run('controller-subset', VERSION, targets=selected)
+        self.assertEqual(result['targets'], selected)
+        self.assertEqual(result['selected_targets'], [
+            '10.117.152.111', '10.117.152.102'])
+        self.assertEqual(result['device_status']['10.117.152.110'], 'PAUSED')
+        command = CONTROLLER.build_command(sys.executable, 'controller-subset',
+                                           VERSION, selected)
+        self.assertEqual(command.count('--target'), 2)
+        self.assertNotIn('10.117.152.110=b0f8932864b6', command)
 
     def test_controller_archival_failure_is_recorded_without_manifest(self):
         with tempfile.TemporaryDirectory() as directory:

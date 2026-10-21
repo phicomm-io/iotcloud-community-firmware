@@ -63,6 +63,7 @@ class MixedReportTests(unittest.TestCase):
         plan = [{'name': 'mixed-1', 'seconds': 60, 'http_clients': 1, 'mqtt_window': 1}]
         mixed = {'status': 'complete', 'completed': True, 'blockers': [],
                  'version': 'test-version', 'plan': plan,
+                 'profile': 'short', 'http': [], 'mqtt': [], 'telemetry': [],
                  'phases': [{**plan[0], 'completed': True, 'elapsed_seconds': 60}],
                  'targets': {ip: {'device_id': ident, 'model': model.lower()}
                              for ip, (model, ident) in report.MODELS.items()}}
@@ -77,6 +78,21 @@ class MixedReportTests(unittest.TestCase):
         path.write_text(json.dumps(mixed))
         return path, mixed
 
+    def _scope_fixture(self, directory):
+        path, mixed = self.fixture(directory)
+        selected = list(report.MODELS)[:2]
+        mixed['targets'] = {ip: mixed['targets'][ip] for ip in selected}
+        mixed['selected_targets'] = selected
+        mixed['device_status'] = {ip: ('SELECTED' if ip in selected else 'PAUSED')
+                                  for ip in report.MODELS}
+        runner_path = directory/'http-runner/evidence.json'
+        runner = json.loads(runner_path.read_text())
+        runner['before'] = {ip: runner['before'][ip] for ip in selected}
+        runner_path.write_text(json.dumps(runner))
+        path.write_text(json.dumps(mixed))
+        target_specs = [ip+'='+report.MODELS[ip][1] for ip in selected]
+        return path, mixed, runner, target_specs
+
     def test_rejects_failed_incomplete_or_mismatched_conditions(self):
         with tempfile.TemporaryDirectory() as temporary:
             path, mixed = self.fixture(Path(temporary))
@@ -87,6 +103,34 @@ class MixedReportTests(unittest.TestCase):
                 path.write_text(json.dumps({**mixed, **change}))
                 with self.subTest(change=change), self.assertRaises(ValueError):
                     report.load(path)
+
+    def test_two_target_compare_is_end_to_end_scoped_and_marks_m1_paused(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            before_dir, after_dir = root/'before', root/'after'
+            before_dir.mkdir(); after_dir.mkdir()
+            before, _mixed, _runner, target_specs = self._scope_fixture(before_dir)
+            after, _mixed, _runner, _ = self._scope_fixture(after_dir)
+            result = report.compare(before, after, targets=target_specs)
+            self.assertEqual(result['selected_targets'], [ip for ip, _ in report.MODELS.items()
+                                                            if ip+'='+report.MODELS[ip][1] in target_specs])
+            self.assertEqual(set(result['models']), {'A1', 'TC1'})
+            self.assertEqual(result['device_status']['10.117.152.110'], 'PAUSED')
+
+    def test_two_target_comparison_rejects_hidden_unselected_rows(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            path, mixed, runner, target_specs = self._scope_fixture(directory)
+            mixed['telemetry'].append({'ip': '10.117.152.110', 'fresh': True})
+            path.write_text(json.dumps(mixed))
+            with self.assertRaisesRegex(ValueError, 'unselected device'):
+                report.load(path, targets=target_specs)
+            mixed['telemetry'].clear()
+            path.write_text(json.dumps(mixed))
+            runner['memory'] = [{'ip': '10.117.152.110', 'ok': True, 'data': {}}]
+            (directory/'http-runner/evidence.json').write_text(json.dumps(runner))
+            with self.assertRaisesRegex(ValueError, 'unselected device'):
+                report.load(path, targets=target_specs)
 
 
 if __name__ == '__main__':

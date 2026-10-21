@@ -521,6 +521,149 @@ else:
                 self.assertTrue(runner.stop.is_set())
                 self.assertIn('missing control state field', runner.blockers[0]['reason'])
 
+    def _a1_state(self):
+        return {
+            'model': 'a1', 'device_id': 'a1-test', 'version': 'test',
+            'uptime_seconds': 10, 'watchdog_state': 'healthy',
+            'fan_mode': 'auto', 'auto_max_speed': 44,
+            'requested_fan_on': True, 'requested_speed': 65,
+            'speed': 65, 'applied_speed': 20, 'fan_state': 'running',
+            'fan_on': True, 'percentage': 20, 'fan_ready': True,
+            'child_lock': False, 'led_enabled': True,
+            'wifi_connected': True, 'mqtt_connected': True,
+            'ssid': 'must-not-be-copied', 'mqtt_password': 'must-not-be-copied',
+        }
+
+    def _runner_with_baseline(self, directory, ip, state):
+        runner = Runner({ip: state['device_id']}, 'test', Path(directory))
+        runner.before[ip] = {
+            'id': state['device_id'], 'state': dict(state), 'config': {},
+            'boot_origin': 90,
+        }
+        return runner
+
+    def test_a1_requested_speed_change_is_recorded_and_still_blocks(self):
+        ip = '127.0.0.1'
+        baseline = self._a1_state()
+        observed = dict(baseline, requested_speed=40, speed=40, applied_speed=40)
+        with tempfile.TemporaryDirectory() as directory:
+            runner = self._runner_with_baseline(directory, ip, baseline)
+            reply = (200, {'code': 'ok', 'data': observed}, 100, 20, 100)
+            with patch('tests.device.readonly_stress.request', return_value=reply):
+                row = runner.sample(ip, 'control-evidence')
+            self.assertTrue(runner.stop.is_set())
+            self.assertEqual(row['control_summary']['expected']['requested_speed'], 65)
+            self.assertEqual(row['control_summary']['observed']['requested_speed'], 40)
+            self.assertEqual(row['control_summary']['expected']['fan_mode'], 'auto')
+            self.assertEqual(row['control_summary']['observed']['applied_speed'], 40)
+            interval = {'request_started_monotonic': 100,
+                        'request_ended_monotonic': 100.02}
+            blocker = runner.blockers[-1]
+            self.assertEqual(blocker['reason'], 'control state changed: requested_speed')
+            self.assertEqual(blocker['control_difference'], {
+                'field': 'requested_speed', 'expected': 65, 'observed': 40,
+            })
+            self.assertEqual(blocker['request_interval'], interval)
+            runner.save()
+            evidence_path = Path(directory) / 'evidence.json'
+            self.assertEqual(evidence_path.stat().st_mode & 0o777, 0o600)
+            evidence = json.loads(evidence_path.read_text(encoding='utf-8'))
+            row_evidence = json.dumps(evidence['rows'][-1]['control_summary'])
+            blocker_evidence = json.dumps(evidence['blockers'][-1])
+            self.assertNotIn('ssid', evidence['rows'][-1]['control_summary']['observed'])
+            self.assertNotIn('mqtt_password', evidence['rows'][-1]['control_summary']['observed'])
+            self.assertNotIn('must-not-be-copied', row_evidence+blocker_evidence)
+            self.assertEqual(evidence['blockers'][-1]['control_difference']['observed'], 40)
+
+    def test_missing_a1_control_field_is_recorded_and_still_blocks(self):
+        ip = '127.0.0.1'
+        baseline = self._a1_state()
+        observed = dict(baseline)
+        del observed['requested_speed']
+        with tempfile.TemporaryDirectory() as directory:
+            runner = self._runner_with_baseline(directory, ip, baseline)
+            with patch('tests.device.readonly_stress.request', return_value=(
+                    200, {'code': 'ok', 'data': observed}, 100, 20, 100)):
+                row = runner.sample(ip, 'missing-control')
+            self.assertTrue(runner.stop.is_set())
+            self.assertEqual(row['control_summary']['observed']['requested_speed'], {'missing': True})
+            mismatch = next(item for item in runner.blockers
+                            if item.get('control_difference', {}).get('field') == 'requested_speed')
+            self.assertEqual(mismatch['control_difference']['expected'], 65)
+            self.assertEqual(mismatch['control_difference']['observed'], {'missing': True})
+            self.assertEqual(mismatch['request_interval'], row['control_summary']['request_interval'])
+
+    def test_applied_speed_is_observed_but_not_a_control_gate(self):
+        ip = '127.0.0.1'
+        baseline = self._a1_state()
+        observed = dict(baseline, applied_speed=37, percentage=37)
+        with tempfile.TemporaryDirectory() as directory:
+            runner = self._runner_with_baseline(directory, ip, baseline)
+            with patch('tests.device.readonly_stress.request', return_value=(
+                    200, {'code': 'ok', 'data': observed}, 100, 20, 100)):
+                row = runner.sample(ip, 'dynamic-applied')
+            self.assertFalse(runner.stop.is_set())
+            self.assertEqual(row['control_summary']['expected']['applied_speed'], 20)
+            self.assertEqual(row['control_summary']['observed']['applied_speed'], 37)
+            self.assertEqual(runner.blockers, [])
+
+    def test_tc1_control_summary_and_nonstatus_row_schema(self):
+        ip = '127.0.0.2'
+        baseline = {
+            'model': 'tc1', 'device_id': 'tc1-test', 'version': 'test',
+            'uptime_seconds': 10, 'watchdog_state': 'healthy',
+            'socket_states': [0, 1], 'child_lock': False, 'led_enabled': True,
+        }
+        observed = dict(baseline, socket_states=[0, 1], child_lock=True)
+        with tempfile.TemporaryDirectory() as directory:
+            runner = self._runner_with_baseline(directory, ip, baseline)
+            with patch('tests.device.readonly_stress.request', return_value=(
+                    200, {'code': 'ok', 'data': observed}, 100, 20, 100)):
+                status_row = runner.sample(ip, 'tc1-status')
+            self.assertEqual(status_row['control_summary']['expected']['socket_states'], [0, 1])
+            self.assertEqual(status_row['control_summary']['observed']['socket_states'], [0, 1])
+            mismatch = next(item for item in runner.blockers
+                            if item.get('control_difference', {}).get('field') == 'child_lock')
+            self.assertEqual(mismatch['control_difference'], {
+                'field': 'child_lock', 'expected': False, 'observed': True,
+            })
+            self.assertEqual(mismatch['request_interval'],
+                             status_row['control_summary']['request_interval'])
+            with patch('tests.device.readonly_stress.request', return_value=(
+                    200, {'code': 'ok', 'data': {}}, 20, 5, 101)):
+                other_row = runner.sample(ip, 'tc1-logs', 'logs.get')
+            self.assertNotIn('control_summary', other_row)
+
+    def test_control_summary_bounds_deep_lists_strings_and_output_size(self):
+        ip = '127.0.0.2'
+        deep = [0]
+        for _ in range(5000):
+            deep = [deep]
+        long_text = 'x' * 10000
+        socket_states = [long_text, deep, {'secret': long_text}, *range(10000)]
+        baseline = {
+            'model': 'tc1', 'device_id': 'tc1-test', 'version': 'test',
+            'uptime_seconds': 10, 'watchdog_state': 'healthy',
+            'socket_states': socket_states, 'child_lock': False, 'led_enabled': True,
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            runner = self._runner_with_baseline(directory, ip, baseline)
+            with patch('tests.device.readonly_stress.request', return_value=(
+                    200, {'code': 'ok', 'data': dict(baseline)}, 100, 20, 100)):
+                row = runner.sample(ip, 'bounded-summary')
+            encoded = json.dumps(row['control_summary'], separators=(',', ':'))
+            self.assertLess(len(encoded), 2048)
+            summary = row['control_summary']['observed']['socket_states']
+            self.assertEqual(summary['type'], 'list')
+            self.assertEqual(summary['length'], len(socket_states))
+            self.assertEqual(len(summary['first_items']), 8)
+            self.assertEqual(summary['first_items'][0], {
+                'type': 'string', 'length': len(long_text), 'prefix': long_text[:80],
+            })
+            self.assertEqual(summary['first_items'][1], {'type': 'list', 'length': 1})
+            self.assertEqual(summary['first_items'][2], {'type': 'object', 'length': 1})
+            self.assertNotIn(long_text, encoded)
+
     def test_idle_gate_requires_terminal_consecutive_zero_samples(self):
         with tempfile.TemporaryDirectory() as directory:
             runner = Runner({'127.0.0.1': 'test'}, 'test', Path(directory))

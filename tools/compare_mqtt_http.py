@@ -19,6 +19,64 @@ OUTCOMES = ('success', 'busy', 'timeout', 'transport', 'other', 'cancelled')
 ZERO_FIELDS = ('memory_active', 'memory_reserved', 'memory_waiting', 'json_live_blocks')
 
 
+def target_scope(specs=None):
+    if specs is None:
+        return dict(MODELS)
+    if isinstance(specs, dict):
+        parsed = {}
+        for ip, value in specs.items():
+            if ip not in MODELS or ip in parsed:
+                raise ValueError('Target is unknown or duplicated')
+            model, identity = MODELS[ip]
+            if isinstance(value, (tuple, list)) and len(value) == 2:
+                if value[0].lower() != model.lower() or value[1].lower() != identity.lower():
+                    raise ValueError('Target model or identity differs from authorization')
+            elif isinstance(value, str):
+                if value.lower() != identity.lower():
+                    raise ValueError('Target identity differs from authorization')
+            else:
+                raise ValueError('Malformed target mapping')
+            parsed[ip] = MODELS[ip]
+        if not parsed or ('10.117.152.110' in parsed and set(parsed) != set(MODELS)):
+            raise ValueError('M1 can only be selected with the full target set')
+        return {ip: MODELS[ip] for ip in MODELS if ip in parsed}
+    parsed = {}
+    for spec in specs:
+        if not isinstance(spec, str) or spec.count('=') != 1:
+            raise ValueError('Malformed target specification')
+        ip, identity = spec.split('=', 1)
+        if ip not in MODELS or ip in parsed or identity.lower() != MODELS[ip][1].lower():
+            raise ValueError('Target is unknown, duplicated, or has the wrong identity')
+        parsed[ip] = MODELS[ip]
+    if not parsed or ('10.117.152.110' in parsed and set(parsed) != set(MODELS)):
+        raise ValueError('M1 can only be selected with the full target set')
+    return {ip: MODELS[ip] for ip in MODELS if ip in parsed}
+
+
+def _scope_records_ok(document, selected):
+    selected_ips = set(selected)
+    authorized_ips = set(MODELS)
+    valid = True
+
+    def visit(value, parent_key=None):
+        nonlocal valid
+        if isinstance(value, dict):
+            for key, child in value.items():
+                if parent_key != 'device_status' and key in authorized_ips and key not in selected_ips:
+                    valid = False
+                if key == 'ip' and isinstance(child, str) and child in authorized_ips and child not in selected_ips:
+                    valid = False
+                if isinstance(key, str) and any(key.startswith(ip+' ') for ip in authorized_ips-selected_ips):
+                    valid = False
+                visit(child, key)
+        elif isinstance(value, list):
+            for child in value:
+                visit(child, parent_key)
+
+    visit(document)
+    return valid
+
+
 def number(value):
     return type(value) in (int, float) and math.isfinite(value) and value >= 0
 
@@ -50,19 +108,33 @@ def summarize(rows, seconds):
     }
 
 
-def load(path):
+def load(path, targets=None):
+    selected = target_scope(targets)
     run = json.loads(path.read_text())
     if (run.get('completed') is not True or run.get('status') != 'complete' or
             run.get('blockers') != []):
         raise ValueError('Mixed run incomplete/blocked')
-    if set(run.get('targets', {})) != set(MODELS):
+    if set(run.get('targets', {})) != set(selected):
         raise ValueError('Wrong target set')
+    if not _scope_records_ok(run, selected):
+        raise ValueError('Mixed evidence contains rows for an unselected device')
+    if 'selected_targets' in run:
+        if (run.get('selected_targets') != list(selected) or
+                run.get('device_status') != {
+                    ip: ('SELECTED' if ip in selected else 'PAUSED') for ip in MODELS}):
+            raise ValueError('Target selection/paused status mismatch')
+    elif set(selected) != set(MODELS):
+        raise ValueError('Legacy evidence cannot be used for a subset comparison')
     runner = json.loads((path.parent / 'http-runner/evidence.json').read_text())
     if (runner.get('run', {}).get('completed') is not True or runner.get('blockers') != [] or
             any(runner.get('completion_checks', {}).get(key) is not True for key in
                 ('network_restore', 'configuration_unchanged', 'idle_quiescence'))):
         raise ValueError('Underlying runner completion not proven')
-    for ip, (model, identity) in MODELS.items():
+    if set(runner.get('before', {})) != set(selected):
+        raise ValueError('Underlying runner target set differs')
+    if not _scope_records_ok(runner, selected):
+        raise ValueError('Underlying runner contains rows for an unselected device')
+    for ip, (model, identity) in selected.items():
         target = run['targets'][ip]
         baseline = runner.get('before', {}).get(ip, {})
         if (target.get('device_id', '').lower() != identity or
@@ -152,14 +224,17 @@ def phase_metrics(run, runner, ip, phase):
     return metrics
 
 
-def compare(before_path, after_path):
-    before, before_runner = load(before_path)
-    after, after_runner = load(after_path)
+def compare(before_path, after_path, targets=None):
+    selected = target_scope(targets)
+    before, before_runner = load(before_path, selected)
+    after, after_runner = load(after_path, selected)
     if before['plan'] != after['plan'] or before['profile'] != after['profile']:
         raise ValueError('Different conditions')
     result = {
         'before_version': before['version'], 'after_version': after['version'],
         'profile': before['profile'], 'plan': before['plan'], 'models': {},
+        'selected_targets': list(selected),
+        'device_status': {ip: ('SELECTED' if ip in selected else 'PAUSED') for ip in MODELS},
         'limits': [
             'Bounded concurrent clients/windows; this is not a fixed offered-rate benchmark.',
             'Each outcome counts all attempts; latency samples are reported separately.',
@@ -167,12 +242,12 @@ def compare(before_path, after_path):
             'Telemetry arrivals and capture uptime do not prove sensor sample age.',
             'Telemetry grouped by phase includes load and recovery collection; old evidence does not separate these windows.',
             'Telemetry timestamps record application queue consumption, which can drain buffered arrivals in a burst.',
-            'HTTP recovery duration covers sequential verification of all three targets.',
+            'HTTP recovery duration covers sequential verification of the explicitly selected targets.',
             'Finite heap medians do not prove leak freedom; unavailable metrics are not zero.',
             'Independent source/controller/package audits and closed SDK limits remain separate.',
         ],
     }
-    for ip, (model, _identity) in MODELS.items():
+    for ip, (model, _identity) in selected.items():
         row = {'phases': {}, 'heap': {}}
         for plan in before['plan']:
             pair = {}
@@ -195,10 +270,11 @@ def main():
     parser.add_argument('--before', type=Path, required=True)
     parser.add_argument('--after', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--target', action='append', metavar='IP=ID')
     args = parser.parse_args()
     if args.output.exists():
         raise FileExistsError('Refusing to overwrite an existing comparison')
-    report = compare(args.before, args.after)
+    report = compare(args.before, args.after, targets=args.target)
     with args.output.open('x', encoding='utf-8') as stream:
         args.output.chmod(0o600)
         json.dump(report, stream, indent=2, sort_keys=True)

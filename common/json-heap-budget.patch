@@ -200,6 +200,14 @@
  {
 --- a/libraries/utilities/json_c/json_c.mk
 +++ b/libraries/utilities/json_c/json_c.mk
+@@ -10,6 +10,7 @@
+ NAME := Lib_JSON_C
++$(NAME)_CFLAGS   += -fstack-usage
+ 
+ GLOBAL_INCLUDES := .
+ 
+ $(NAME)_SOURCES := arraylist.c \
+                    json_debug.c \
 @@ -17,7 +17,8 @@
                     json_tokener.c \
                     json_util.c \
@@ -208,6 +216,5 @@
 +                   printbuf.c \
 +                   json_heap.c
                     
--$(NAME)_CFLAGS   += -Wno-unused-value
-+$(NAME)_CFLAGS   += -Wno-unused-value -fstack-usage
+ $(NAME)_CFLAGS   += -Wno-unused-value
  
