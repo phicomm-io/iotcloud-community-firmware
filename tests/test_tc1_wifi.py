@@ -8,6 +8,48 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 class WifiTrial(unittest.TestCase):
+    def test_mqtt_start_uses_current_host(self):
+        source = (ROOT / 'TC1/user_wifi.c').read_text()
+        callback = source[source.index('static void WifiLedTimerCallback('):
+                          source.index('static void WifiReconnectThread(')]
+        harness = r'''
+#include <assert.h>
+#include <string.h>
+enum { WIFI_STATE_NOCONNECT, WIFI_STATE_CONNECTED };
+static int wifi_status, starts, refreshes;
+static struct { char mqtt_ip[32], mqtt_host[128]; int mqtt_port; } config;
+#define user_config (&config)
+static void UserMqttInit(void) { ++starts; }
+static void UserLedRefresh(void) { ++refreshes; }
+''' + callback + r'''
+int main(void) {
+    strcpy(config.mqtt_host, "mqtt.fjrcn.cn");
+    config.mqtt_port = 1883;
+    wifi_status = WIFI_STATE_CONNECTED;
+    WifiLedTimerCallback(0);
+    assert(starts == 1 && refreshes == 1);
+    config.mqtt_host[0] = 0;
+    strcpy(config.mqtt_ip, "legacy.example");
+    WifiLedTimerCallback(0);
+    assert(starts == 1 && refreshes == 2);
+    strcpy(config.mqtt_host, "mqtt.fjrcn.cn");
+    config.mqtt_port = 0;
+    WifiLedTimerCallback(0);
+    assert(starts == 1 && refreshes == 3);
+    config.mqtt_port = 1883;
+    wifi_status = WIFI_STATE_NOCONNECT;
+    WifiLedTimerCallback(0);
+    assert(starts == 1 && refreshes == 4);
+}
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            src = pathlib.Path(directory) / 'mqtt_start.c'
+            binary = pathlib.Path(directory) / 'mqtt_start'
+            src.write_text(harness)
+            subprocess.run(['cc', '-std=gnu99', '-Wall', '-Wextra', '-Werror',
+                            '-Wno-unused-parameter', str(src), '-o', str(binary)], check=True)
+            subprocess.run([str(binary)], check=True, timeout=5)
+
     def test_verification_and_rollback(self):
         source = (ROOT / 'TC1/user_wifi.c').read_text()
         worker = source[source.index('static void WifiTrialWorker('):source.index('void WifiInit(')]

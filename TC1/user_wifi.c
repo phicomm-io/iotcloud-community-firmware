@@ -155,7 +155,7 @@ void WifiScanCallback(ScanResult_adv *result,void *arg) {
 //100ms瀹氭椂鍣ㄥ洖璋?
 static void WifiLedTimerCallback(void* arg)
 {
-    if (wifi_status == WIFI_STATE_CONNECTED && user_config->mqtt_ip[0] && user_config->mqtt_port > 0)
+    if (wifi_status == WIFI_STATE_CONNECTED && user_config->mqtt_host[0] && user_config->mqtt_port > 0)
         UserMqttInit();
     UserLedRefresh();
 }
