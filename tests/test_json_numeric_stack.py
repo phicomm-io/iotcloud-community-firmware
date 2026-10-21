@@ -49,6 +49,24 @@ class NumericStack(unittest.TestCase):
                          ['json_number_scan', 'json_num_cleanup', 'json_heap_free', 'json_heap_unlock'])
         self.assertNotIn('json_num_scan_token', tails['cleanup json_heap_unlock'])
 
+    def test_ota_progress_retains_downloader_scratch(self):
+        from tools.check_http_core import check_tc1_ota_numeric
+        import contextlib
+        import io
+        prefix = ('download_worker', 'ota_fetch', 'fetch_write', 'OtaServerStatusHandler')
+        tails = numeric_tails({}, 'fixed')
+        frames = dict.fromkeys(set(prefix).union(*(set(t) for t in tails.values())), 0)
+        with contextlib.redirect_stdout(io.StringIO()):
+            check_tc1_ota_numeric(frames, 6144)
+        del frames['fetch_write']
+        with self.assertRaisesRegex(ValueError, 'missing .su frames'):
+            check_tc1_ota_numeric(frames, 6144)
+        frames['fetch_write'] = 0
+        frames['ota_fetch'] = 2000
+        frames['json_number_format_fixed'] = 1100
+        with self.assertRaisesRegex(ValueError, '>6144'):
+            check_tc1_ota_numeric(frames, 6144)
+
     def test_real_numeric_nesting_overflow_rejected(self):
         gate = mqtt_budget.MqttStackBudget()
         # Each alone fits. Together with retained converter callers they do not.

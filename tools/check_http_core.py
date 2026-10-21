@@ -30,6 +30,26 @@ def read_json_allocator_frames(modules,frames):
             if kind=='static' and location.rsplit(':',1)[-1].split('.')[0]=='printbuf_free':
                 frames['printbuf_free']=max(frames.get('printbuf_free',0),int(size))
 
+def check_tc1_ota_numeric(frames, budget):
+    try:
+        from .json_numeric_stack import numeric_tails
+    except ImportError:
+        from json_numeric_stack import numeric_tails
+    # Streaming download retains ota_fetch's HTTP header/chunk scratch while
+    # the progress callback formats. Network/TLS work is a sibling of this
+    # callback; retain the unchanged SDK/RTOS allowance, not both branches.
+    prefix = ['download_worker', 'ota_fetch', 'fetch_write', 'OtaServerStatusHandler']
+    for branch, tail in numeric_tails(frames, 'fixed').items():
+        names = prefix + tail
+        missing = set(names) - frames.keys()
+        if missing:
+            raise ValueError('OTA progress numeric: missing .su frames '+str(sorted(missing)))
+        size = sum(frames[name] for name in names)
+        if size + 3072 > budget:
+            raise ValueError(f'OTA progress numeric {branch}: {size}+3072>{budget}')
+        print(f'OTA progress numeric {branch}: {size} application + 3072 reserve <= {budget} bytes')
+
+
 def check(modules, model, nm, elf):
     modules=Path(modules)
     frames={}
@@ -155,6 +175,7 @@ def check(modules, model, nm, elf):
             size=sum(frames[n] for n in names)
             if size+3072>ota_budget:raise ValueError(f'OTA download {branch}: {size}+3072>{ota_budget}')
             print(f'OTA download {branch}: {size} application + 3072 reserve <= {ota_budget} bytes')
+        check_tc1_ota_numeric(frames,ota_budget)
     symbols=subprocess.check_output([nm,'--defined-only',elf],text=True)
     for symbol in ('ph_http_server_step','ph_http_parser_feed','ph_http_start','ph_mqtt_session_run','ph_mqtt_poll','ph_mqtt_enqueue_generation'):
         if len(re.findall(r'\b'+symbol+r'$',symbols,re.M))!=1:raise ValueError('Expected one linked '+symbol)
