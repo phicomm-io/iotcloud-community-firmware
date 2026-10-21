@@ -38,6 +38,9 @@ bool a1_scan_start(void){return false;}
 bool a1_wifi_trial(const a1_config_t *c){(void)c;return false;}
 bool a1_ota_download(const char *u){(void)u;return false;}
 bool a1_control_json(const char *k,json_object *p){(void)k;(void)p;return false;}
+bool a1_control_apply(a1_control_t *r,bool b,bool g){(void)r;(void)b;(void)g;return false;}
+bool a1_control_light_percent(json_object *p){(void)p;return false;}
+int feature_light_select(unsigned effect,json_object **response){(void)effect;(void)response;return 400;}
 json_object *feature_json(const char *d){(void)d;return NULL;}
 int feature_set(const char *d,json_object *p,json_object **o){(void)d;(void)p;(void)o;return 400;}
 json_object *service_parse(const void *data,size_t n){char *copy=strndup(data,n);json_object *o=json_tokener_parse(copy);free(copy);return o;}
@@ -154,7 +157,7 @@ int main(void){
             source = Path(temp) / 'filter.c'
             source.write_text(harness)
             binary = Path(temp) / 'filter'
-            command = [os.environ.get('CC', 'cc'), '-std=gnu99', '-DFEATURE_DEVICE_A1', '-Wno-pointer-sign', '-Wno-misleading-indentation', '-I'+str(ROOT), '-I'+str(ROOT/'A1'), '-I'+str(ROOT/'tests/host'), '-I'+str(json_dir), str(source), *map(str, json_dir.glob('*.c')), '-o', str(binary)]
+            command = [os.environ.get('CC', 'cc'), '-std=gnu99', '-ffunction-sections', '-Wl,--gc-sections', '-DFEATURE_DEVICE_A1', '-Wno-pointer-sign', '-Wno-misleading-indentation', '-I'+str(ROOT), '-I'+str(ROOT/'A1'), '-I'+str(ROOT/'tests/host'), '-I'+str(json_dir), str(source), *map(str, json_dir.glob('*.c')), '-o', str(binary)]
             if os.environ.get('SANITIZE') == '1':
                 command += ['-g', '-fno-omit-frame-pointer', '-fsanitize=address,undefined']
             subprocess.run(command, check=True)

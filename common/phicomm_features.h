@@ -193,6 +193,9 @@ bool feature_fan_auto(void);
 unsigned feature_fan_limit(void);
 /* Validated mode/cap update; 0=failure, 1=manual, 2=auto. */
 int feature_fan_command(json_object *);
+int feature_fan_apply(unsigned mode, int speed);
+int feature_light_select(unsigned effect,json_object **response);
+bool feature_group_active(void);
 bool feature_group_control(const char *kind, json_object *);
 void feature_clock_valid(void);
 void feature_clock_tick(void);

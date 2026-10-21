@@ -4,6 +4,7 @@
 typedef struct {bool signature_verified,image_verified;uint32_t key_id,image_length;uint64_t release_counter;char version[32];} tc1_ota_metadata_t;
 void tc1_ota_metadata(tc1_ota_metadata_t *);
 bool tc1_ota_init(void);
+bool tc1_ota_active(void);
 void tc1_ota_snapshot(char *,char *,unsigned *);
 bool tc1_ota_reserve(void);
 bool tc1_config_reserve(void);

@@ -1,0 +1,4 @@
+STATUS_INT("api_version",1);
+STATUS_STRING("firmware_variant",PHICOMM_FIRMWARE_VARIANT);
+STATUS_BOOL("full_resources",PHICOMM_FULL_RESOURCES);
+STATUS_BOOL("bootstrap_ui",!PHICOMM_FULL_RESOURCES);

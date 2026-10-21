@@ -23,22 +23,26 @@ class M1BarometerTest(unittest.TestCase):
 
     def test_status_json_identity_units_and_expiry(self):
         source = (ROOT / 'common/device_status.c').read_text()
-        helpers = source[source.index('static void status_string('):source.index('static const char *device_mqtt_status(')]
-        fields = source[source.index('    json_object *barometer ='):source.index('    status_int(o, "brightness_requested"')]
+        helpers = '#include "common/firmware_variant.h"\n#include "common/status_emit.inc"'
+        fields = source[source.index('    emit_begin(o,"barometer",false)'):source.index('    emit_int(o, "brightness_requested"')]
         harness = r'''
 #include <assert.h>
 #include <math.h>
 #include <string.h>
 #include <stdint.h>
+#include <stdio.h>
 #include "json.h"
 #include "common/json_build.h"
 #include "M1/barometer.h"
 HELPERS
 static json_object *snapshot(barometer_state_t state,uint32_t now) {
     struct { struct { struct { barometer_state_t barometer; } m1; } sensor; } frozen={{{state}}}, *snapshot=&frozen;
-    json_object *o=json_object_new_object();
+    char buf[2048];status_sink sink={.buf=buf,.capacity=sizeof(buf)-1},*o=&sink;
+    emit_begin(o,NULL,false);
     FIELDS
-    json_object *result=json_object_object_get(o,"barometer");json_object_get(result);json_object_put(o);return result;
+    emit_end(o);assert(!sink.failed);buf[sink.used]=0;
+    json_object *root=json_tokener_parse(buf);assert(root);
+    json_object *result=json_object_object_get(root,"barometer");json_object_get(result);json_object_put(root);return result;
 }
 int main(void) {
     barometer_state_t state={0};json_object *b=snapshot(state,0);

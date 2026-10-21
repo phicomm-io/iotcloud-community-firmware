@@ -1,4 +1,7 @@
 #include "service.h"
+#include "json_owned.h"
+#include "status_view.h"
+#include "printbuf.h"
 #include "firmware_variant.h"
 #include "automation.h"
 #include "ota/mode.h"
@@ -168,6 +171,13 @@ void service_init(void) {
     ota_job_init();
     service_event("info","system","boot");
 }
+bool service_control_begin(void) {
+    if (!ready) return false;
+    mico_rtos_lock_mutex(&command_lock);
+    if (ota_job_active()) { mico_rtos_unlock_mutex(&command_lock); return false; }
+    return true;
+}
+void service_control_end(void) { mico_rtos_unlock_mutex(&command_lock); }
 static bool identifier(const char *s,size_t max) {
     size_t n=strlen(s); if (!n || n>=max) return false;
     for (size_t i=0;i<n;i++) if (!isalnum((unsigned char)s[i]) && s[i]!='_' && s[i]!='.' && s[i]!='-') return false;
@@ -223,14 +233,23 @@ static json_object *logs(json_object *p,const char **code) {
     mico_rtos_unlock_mutex(&service_lock);json_build_object_add(o,"records",a);return o;
 }
 #include "ota/update.inc"
-static json_object *service_command_execute(json_object *req) {
-    const char *code="invalid_params",*id=NULL,*action=NULL;
-    if(!ready || !req || !json_object_is_type(req,json_type_object))return result(NULL,code,NULL);
+typedef struct { const char *id,*action;json_object *params; } service_request;
+static bool service_request_decode(json_object *req,service_request *out)
+{
+    memset(out,0,sizeof(*out));
+    if(!ready || !req || !json_object_is_type(req,json_type_object))return false;
     json_object *a=json_object_object_get(req,"action"),*p=json_object_object_get(req,"params"),*rid=json_object_object_get(req,"request_id");
-    if(rid){if(!json_object_is_type(rid,json_type_string) || json_object_get_string_len(rid)!=(int)strlen(json_object_get_string(rid)) || !identifier(json_object_get_string(rid),65))return result(NULL,code,NULL);id=json_object_get_string(rid);}
-    if(!a || !json_object_is_type(a,json_type_string) || json_object_get_string_len(a)!=(int)strlen(json_object_get_string(a)) || !identifier(json_object_get_string(a),48) || !p || !json_object_is_type(p,json_type_object))return result(id,code,NULL);
-    json_object_object_foreach(req,key,value){(void)value;if(strcmp(key,"action")&&strcmp(key,"params")&&strcmp(key,"request_id"))return result(id,code,NULL);}
-    action=json_object_get_string(a);
+    if(rid){if(!json_object_is_type(rid,json_type_string) || json_object_get_string_len(rid)!=(int)strlen(json_object_get_string(rid)) || !identifier(json_object_get_string(rid),65))return false;out->id=json_object_get_string(rid);}
+    if(!a || !json_object_is_type(a,json_type_string) || json_object_get_string_len(a)!=(int)strlen(json_object_get_string(a)) || !identifier(json_object_get_string(a),48) || !p || !json_object_is_type(p,json_type_object))return false;
+    json_object_object_foreach(req,key,value){(void)value;if(strcmp(key,"action")&&strcmp(key,"params")&&strcmp(key,"request_id"))return false;}
+    out->action=json_object_get_string(a);out->params=p;
+    return true;
+}
+static json_object *service_command_execute(json_object *req) {
+    service_request view;
+    if(!service_request_decode(req,&view))return result(view.id,"invalid_params",NULL);
+    const char *code="invalid_params",*id=view.id,*action=view.action;
+    json_object *p=view.params;
     if(!strcmp(action,"info.get")){
         const char *status_code="ok";json_object *status=service_product("status.get",p,&status_code);
         if(!status)return result(id,status_code,NULL);
@@ -287,4 +306,31 @@ json_object *service_query(const char *action) {
     uint64_t failures=service_memory_failures();
     json_object *req=json_object_new_object();string(req,"action",action);json_build_object_add(req,"params",json_object_new_object());
     json_object *r=!service_caller_graph_failed(failures)?service_command(req):NULL;json_object_put(req);return r;
+}
+
+struct printbuf *service_command_wire(json_object *req)
+{
+    uint64_t before=service_memory_failures();
+    if(service_caller_graph_failed(before))return NULL;
+    service_request view;bool live=false;
+    struct printbuf *wire;
+    if(service_request_decode(req,&view) && !strcmp(view.action,"status.get") &&
+       !ota_job_active() && status_view_params(view.params,&live)) {
+        mico_rtos_lock_mutex(&command_lock);
+        wire=service_product_status_wire(live,true,view.id);
+        mico_rtos_unlock_mutex(&command_lock);
+    } else wire=json_owned_to_wire(service_command(req));
+    if(service_caller_graph_failed(before)) { if(wire)printbuf_free(wire);return NULL; }
+    return wire;
+}
+struct printbuf *service_query_wire(const char *action)
+{
+    if(!ready || strcmp(action,"status.get") || ota_job_active())return json_owned_to_wire(service_query(action));
+    uint64_t before=service_memory_failures();
+    if(service_caller_graph_failed(before))return NULL;
+    mico_rtos_lock_mutex(&command_lock);
+    struct printbuf *wire=service_product_status_wire(false,true,NULL);
+    mico_rtos_unlock_mutex(&command_lock);
+    if(service_caller_graph_failed(before)) { if(wire)printbuf_free(wire);return NULL; }
+    return wire;
 }

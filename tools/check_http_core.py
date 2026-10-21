@@ -75,10 +75,10 @@ def check(modules, model, nm, elf):
     budget=int(re.search(r'#define PH_HTTP_STACK_BYTES (\d+)u',(Path(__file__).resolve().parents[1]/'common/httpd/http.h').read_text()).group(1))
     status=model.lower()+'_status_json'
     base=['owner','ph_http_server_step','acquire','action','begin','prepare']
-    dispatch=['service_query','service_command','service_product']
+    dispatch=['ph_http_query','service_query_wire','service_query','service_command','service_product']
     if 'service_product_inner' in frames and model!='TC1':dispatch+=['service_product_inner']
     if 'service_command_execute' in frames:dispatch+=['service_command_execute']
-    command=['owner','ph_http_server_step','read_body','complete','service_command','service_command_execute','service_product','ph_http_json']
+    command=['owner','ph_http_server_step','read_body','complete','ph_http_command','service_command_wire','service_command','service_command_execute','service_product','ph_http_json']
     if 'service_product_inner' in frames:command+=['service_product_inner']
     status_path=base+dispatch+[status]
     if status+'_view' in frames:status_path+=[status+'_view']
@@ -99,44 +99,55 @@ def check(modules, model, nm, elf):
       'HTTP command status':(3072,command+[status]+([status+'_view'] if status+'_view' in frames else [])),
       # Builder frames have returned before encoding. Count the bounded
       # automatic traversal explicitly, outside SDK/native/RTOS reserve.
-      'HTTP GET JSON encode':(3072,base+['ph_http_json','json_owned_to_wire','json_owned_to_wire_result','json_write','json_primitive','json_append']),
-      'HTTP POST JSON encode':(3072,['owner','ph_http_server_step','read_body','complete','ph_http_json','json_owned_to_wire','json_owned_to_wire_result','json_write','json_primitive','json_append']),
+      'HTTP GET JSON encode':(3072,base+['ph_http_query','service_query_wire','json_owned_to_wire','json_owned_to_wire_result','json_write','json_primitive','json_append']),
+      'HTTP POST JSON encode':(3072,['owner','ph_http_server_step','read_body','complete','ph_http_command','service_command_wire','json_owned_to_wire','json_owned_to_wire_result','json_write','json_primitive','json_append']),
       'HTTP MQTT diagnostics':(3072,base+(['memory_response'] if 'memory_response' in frames else [])+['ph_mqtt_diag_append','ph_mqtt_snapshot','ph_mqtt_core_snapshot']),
       'HTTP response':(3072,['owner','ph_http_server_step','respond','transmit']),
-      'HTTP OTA stream':(4096,['owner','ph_http_server_step','read_body','body_chunk',model.lower()+'_ota_write','signed_ota_write','uECC_verify','EccPoint_mult']),
+      'HTTP OTA stream':(4096,['owner','ph_http_server_step','read_body','body_chunk',model.lower()+'_ota_write','signed_ota_write','uECC_verify','EccPoint_mult']+[n for n in ('uECC_vli_modMult_fast','uECC_vli_modMult','uECC_vli_mmod','uECC_vli_mult') if n in frames]),
       'HTTP OTA validation':(4096,['owner','ph_http_server_step','read_body','complete',('tc1_ota_verify' if model=='TC1' else model.lower()+'_ota_finish'),'signed_ota_finish']),
     }
     if model=='TC1':
         paths['HTTP OTA MD5 validation']=(4096,['owner','ph_http_server_step','read_body','complete','tc1_ota_verify','md5_range'])
         paths['HTTP OTA activation']=(4096,['owner','ph_http_server_step','close_slot','release','tc1_ota_activate']+(['send_part'] if 'send_part' in frames else []))
     if model!='TC1':paths['HTTP OTA recovery']=(4096,['owner','ph_http_server_step','admission','ota_job_poll','feature_resume_step'])
-    if model=='A1':paths['HTTP command control']=(3072,command+['a1_control_local','feature_group_control','group_send','parse'])
+    if model=='A1':
+        control=['a1_control_json','a1_control_apply']+[n for n in ('control_broadcast','control_parse','control_value','control_busy','panel_state','a1_control_light_percent') if n in frames]
+        paths['HTTP command control']=(3072,command+control+['feature_group_control','group_send','parse'])
+        paths['HTTP control persistence']=(3072,command+control+['feature_fan_apply','install_config','feature_config_save'])
+        paths['HTTP light effect persistence']=(3072,command+['feature_light_select','install_config','feature_config_save']+[n for n in ('feature_result',) if n in frames])
+    if model in ('A1','TC1'):
+        for helper in ('bemfa_config_encode','bemfa_config_values','a1_mqtt_config_save'):
+            if helper in frames:
+                paths['HTTP config '+helper]=(3072,(base+dispatch if helper.endswith('encode') else command)+[helper])
+    if model in ('A1','TC1'):
+        business=['owner','bemfa_dispatch','service_command','service_command_execute','service_product','service_product_inner']
+        paths['HTTP Bemfa command']=(4096,business)
+        paths['HTTP Bemfa config fence']=(4096,['owner','bemfa_dispatch','bemfa_config_get'])
+        if model=='A1':paths['HTTP Bemfa control']=(4096,business+control+['feature_group_control','group_send','parse'])
     # GCC inlines send_part into step in the pinned optimized build. A separate
     # frame must be counted if a compiler/optimization change emits it.
     if 'send_part' in frames:paths['HTTP response'][1].append('send_part')
     # Model wrappers keep the full scratch out of the live stack frame. State
     # capture returns before pure encoding, so audit the two reachable tails
     # separately rather than adding their sequential frames together.
-    def status_paths(paths):
-        expanded={}
-        for label,(reserve,names) in paths.items():
-            if status not in names:
-                expanded[label]=(reserve,names);continue
-            common=[n for n in names if not (model=='TC1' and n=='service_product_inner')]
-            view=status+'_view'
-            if view not in common:common.append(view)
-            common.append(model.lower()+'_status_full')
-            expanded[label+' capture']=(reserve,common+[model.lower()+'_status_capture']+[n for n in ('runtime_metrics_capture','feature_fan_snapshot','watchdog_status_capture','a1_filter_get','ph_http_snapshot','tc1_status_begin','tc1_ota_snapshot','reset_name','device_status_text') if n in frames])
-            encode=['device_status_encode','encode_'+model.lower()]
-            # These helpers may be inlined into their emitted parent frame.
-            encode += [n for n in ('device_runtime_encode','device_http_encode','device_filter_encode','watchdog_status_encode') if n in frames and model!='TC1']
-            encode += [n for n in ('status_bool',) if n in frames]
-            expanded[label+' encode']=(reserve,common+encode)
-        return expanded
-    # memory_response is inlined into prepare by pinned GCC; its local
-    # POD/scratch frame is already included there. Count a separate emitted
-    # frame if a compiler change stops inlining it.
-    paths=status_paths(paths)
+    try:
+        from .status_stack import status_paths as direct_status_paths
+    except ImportError:
+        from status_stack import status_paths as direct_status_paths
+    expanded={}
+    for label,(reserve,names) in paths.items():
+        if status not in names:
+            expanded[label]=(reserve,names);continue
+        common=[n for n in names if not (model=='TC1' and n=='service_product_inner')]
+        for n in (status+'_view',model.lower()+'_status_full'):
+            if n in frames and n not in common:common.append(n)
+        for key,(stack,spare) in direct_status_paths(frames,model,label,common,reserve,compat=True).items():expanded[key]=(spare,stack)
+    paths=expanded
+    for label,prefix in [('HTTP direct GET',base+['ph_http_query','service_query_wire','service_product_status_wire']),
+                         ('HTTP direct POST',['owner','ph_http_server_step','read_body','complete','ph_http_command','service_command_wire','service_product_status_wire'])]:
+        for key,(stack,spare) in direct_status_paths(frames,model,label,prefix,3072).items():paths[key]=(spare,stack)
+    for label,prefix in [('GET',base+['ph_http_query']),('POST',['owner','ph_http_server_step','read_body','complete','ph_http_command'])]:
+        paths['HTTP direct '+label+' scope cleanup']=(3072,prefix+['ph_http_wire_take']+[n for n in ('graph_end',) if n in frames]+['service_json_scope_end','json_heap_lock'])
     # Allocator failure observation can also run on HTTP's thread while an
     # MQTT optional scope exists. Count the strong hook and actual allocator
     # frames, retaining the caller's graph/encoder path; no new RTOS allowance.
@@ -157,6 +168,8 @@ def check(modules, model, nm, elf):
     add_numeric_paths(paths,frames,
         ['owner','ph_http_server_step','read_body','complete','ph_http_body_json','service_parse','json_tokener_parse_ex'],
         3072,'HTTP POST numeric parse','scan')
+    from check_mqtt_core import context_frames
+    context_frames(names for reserve,names in paths.values())
     for label,(reserve,names) in paths.items():
         missing=set(names)-frames.keys()
         if missing:raise ValueError(f'{label}: missing actual .su frames: {sorted(missing)}')

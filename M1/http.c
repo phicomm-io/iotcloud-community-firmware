@@ -102,7 +102,7 @@ static ph_http_action prepare(ph_http_exchange *x)
     size_t input=operation==QUERY?0:x->request->length;
     ph_http_action next=ph_http_claim(&product,x,input,operation!=QUERY);
     if(next==PH_HTTP_REPLY && product.claim && operation==QUERY)
-        ph_http_json(&product,x,service_query(query_action));
+        ph_http_query(&product,x,query_action);
     return next;
 }
 static ph_http_action begin(ph_http_exchange *x)
@@ -171,10 +171,9 @@ static void complete(ph_http_exchange *x)
         ph_http_message(&product,x,ok?202:400,ok?"OTA verified; rebooting":"OTA rejected; see /ota for details");return;
     }
     json_object *request=ph_http_body_json(&product,x);
-    json_object *reply=!ph_http_graph_failed(&product)?service_command(request):NULL;
-    /* The reply owns its references; retire input before growing its wire. */
+    ph_http_command(&product,x,request);
+    /* Wire owns all text, including any borrowed request_id. */
     json_object_put(request);
-    ph_http_json(&product,x,reply);
 }
 static void release(ph_http_exchange *x,bool sent)
 {

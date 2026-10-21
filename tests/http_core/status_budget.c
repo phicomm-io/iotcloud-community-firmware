@@ -1,6 +1,9 @@
 /* ARM32 status-budget fixture; Python inserts unchanged production functions. */
 
 #include "A1/a1.h"
+/* Keep exact heap boundaries independent of the checkout hash/dirty suffix. */
+#undef A1_VERSION
+#define A1_VERSION "fixture"
 #include "common/httpd/product.h"
 #include "common/firmware_variant.h"
 #include "common/runtime_metrics.h"
@@ -168,14 +171,16 @@ int main(void){
  measure(true,2,true,27700,true);
  measure(true,2,true,27000,true);
  measure(true,false,false,26400,true);
- measure(true,false,true,26400,false);
+ measure(true,false,true,26400,true);
+ measure(true,false,false,24400,false);
+ measure(true,false,true,24600,false);
  measure(true,2,false,29116,true);
  measure(true,2,true,29116,true);
  /* Stronger pressure remains fail-closed, and does not poison recovery. */
  measure(true,true,true,22000,false);
  measure(true,true,true,29116,true);
  measure_mqtt(false,0,false,29116,false);
- measure_mqtt(false,0,true,29116,false);
+ measure_mqtt(false,0,true,29116,true);
  measure_mqtt(true,0,false,29116,true);
  measure_mqtt(true,0,true,29116,true);
  measure_mqtt(true,2,false,29116,true);

@@ -2,6 +2,7 @@
 #include "a1.h"
 #include "../common/automation.h"
 #include "filter.h"
+#include "../common/mqtt/bemfa.h"
 
 /* Append extensions only: the v3/v4 base/features/automation offsets are ABI. */
 typedef struct {
@@ -12,6 +13,7 @@ typedef struct {
     automation_action_t combination_buttons[34];
     feature_auto_config_t automatic;
     feature_co2_config_t co2;
+    bemfa_config_t bemfa;
 } app_storage_t;
 
 /* Only replace the previous default power toggle, never a custom action.

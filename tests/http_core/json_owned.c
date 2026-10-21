@@ -121,3 +121,5 @@ int main(void){
  printf("owned JSON: byte parity, aliases, %u OOM points, failed graphs, cycles/depth and recovery PASS\n",failures);
  return 0;
 }
+
+#include "tests/http_core/wire_stubs.inc"

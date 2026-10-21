@@ -33,9 +33,23 @@ def main():
         command('buttons.set', dict(key=key, clicks=clicks, action=action, params=params or {}), 'accepted')
 
     def press(key=2, clicks=1):
-        raw({'sim_button': dict(key=key, clicks=clicks)})
+        raw({'sim_button': dict(key=key, clicks=clicks, low_memory=True)})
 
     try:
+        # HTTP shortcuts use typed controls with the public percentage scale.
+        command('light.set', {'enabled': True, 'brightness': 50, 'color': {'r': 12, 'g': 34, 'b': 56}}, 'accepted')
+        s = command('status.get')
+        assert s['brightness'] == 128 and s['led_enabled']
+        command('light.set', {'brightness': 101}, 'invalid_params')
+        assert command('status.get')['brightness'] == 128
+        command('light_always.set', {'enabled': True}, 'accepted')
+        assert command('status.get')['led_always_on']
+        command('light_always.set', {'enabled': False}, 'accepted')
+        result = command('light_effect.select', {'effect': 4}, 'accepted')
+        assert result['code'] == 200 and result['revision']
+        command('light_effect.next', {}, 'accepted')
+        assert command('light_effect.get')['effect'] == 0
+        command('light.set', {'brightness': 100}, 'accepted')
         # Factory power key: wake while off, inspect while on; no mode/speed/Flash changes.
         command('fan.mode.set', {'mode': 'auto'}, 'accepted')
         command('fan.set', {'on': False}, 'accepted')

@@ -8,6 +8,9 @@ static uint64_t started;
 static unsigned duration=10;
 static feature_config_t features;
 static unsigned controls;
+/* This harness exercises the original broker; Bemfa has its own dual-owner
+ * protocol fixture. Keep the original broker enabled in these scenarios. */
+bool bemfa_primary_enabled(void){return true;}
 static void (*scheduled_worker)(mico_thread_arg_t);
 static mico_thread_arg_t scheduled_argument;
 int mico_rtos_create_thread(void *output,int priority,const char *name,void (*fn)(mico_thread_arg_t),unsigned stack,int argument){
@@ -61,6 +64,12 @@ void a1_filter_get(a1_filter_storage_t *out){a1_filter_defaults(out);}
 void a1_config_get(a1_config_t *out){*out=config;}
 void a1_state_get(a1_state_t *out){*out=a1_state;}
 bool a1_control_local(const char *kind,json_object *o){++controls;printf("CONTROL %s\n",kind);fflush(stdout);if(!strcmp(kind,"fan")){json_object *v=json_object_object_get(o,"on");if(v)config.fan_on=json_object_get_boolean(v);v=json_object_object_get(o,"speed");if(v)config.speed=json_object_get_int(v);}++config.revision;return true;}
+bool a1_control_apply(a1_control_t *r,bool button,bool broadcast){
+ (void)button;(void)broadcast;++controls;
+ printf("CONTROL %s\n",r->kind==A1_CONTROL_FAN?"fan":r->kind==A1_CONTROL_LIGHT?"light":"child_lock");fflush(stdout);
+ if(r->kind==A1_CONTROL_FAN){if(r->fields&A1_SET_ON)config.fan_on=r->on;if(r->fields&A1_SET_SPEED)config.speed=r->speed;}
+ ++config.revision;return true;
+}
 json_object *a1_json_parse(const char *s,size_t n){(void)n;return json_tokener_parse(s);}
 #define WORKER mqtt_worker
 #else

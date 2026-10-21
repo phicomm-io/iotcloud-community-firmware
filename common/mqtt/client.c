@@ -47,7 +47,7 @@ typedef struct {
 }
 
 emergency;
-static struct {
+typedef struct {
     ph_mqtt_core core;
     mico_mutex_t mutex;
     mico_thread_t owner;
@@ -61,11 +61,11 @@ static struct {
     bool(*accept)(MessageData *, messageHandler);
     int(*outgoing)(const ph_mqtt_item *);
     subscription subscriptions[MAX_MESSAGE_HANDLERS];
-    emergency busy[2];
+    emergency *busy; /* TMCP emergency receipts exist only on the primary. */
     ph_mqtt_rx rx;
     size_t payload_max;
     uint32_t delivered;
-    bool initialized, bound, failed;
+    bool initialized, mutex_ready, bound, failed;
     bool turn_active;
     unsigned turn_left;
     uint32_t resource_since, resource_retry_at;
@@ -81,29 +81,86 @@ static struct {
         char busy[SERVICE_BUSY_BYTES];
     } receipt;
 }
-
-port;
+port_state;
+static emergency primary_busy[2];
+static port_state primary_port;
+#ifdef PHICOMM_BEMFA
+static port_state *secondary_port;
+static mico_thread_t *secondary_thread;
+#endif
+/* Callback selection is based on the immutable owner binding, never a mutable
+ * current-connection global. External producer APIs explicitly use primary. */
+static port_state *callback_port(void) {
+#ifdef PHICOMM_BEMFA
+    mico_thread_t *owner=__atomic_load_n(&secondary_thread,__ATOMIC_ACQUIRE);
+    if(owner && mico_rtos_is_current_thread(owner))
+        return __atomic_load_n(&secondary_port,__ATOMIC_ACQUIRE);
+#endif
+    return &primary_port;
+}
+static bool initialized(port_state *ctx);
+static __attribute__((noinline)) bool ctx_ph_mqtt_owner(port_state *ctx);
+static mico_thread_t *ctx_ph_mqtt_owner_thread(port_state *ctx);
+static __attribute__((noinline)) void receipt_clear(port_state *ctx);
+static __attribute__((noinline)) void pending_release(port_state *ctx);
+static __attribute__((noinline)) bool ctx_ph_mqtt_receipt_pending(port_state *ctx);
+static __attribute__((noinline)) void ctx_ph_mqtt_owner_end(port_state *ctx);
+static const ph_mqtt_core *ctx_ph_mqtt_debug_core(port_state *ctx);
+static __attribute__((noinline)) int ctx_ph_mqtt_app_error(port_state *ctx, unsigned stage, int rc);
+static __attribute__((noinline)) void ctx_ph_mqtt_error(port_state *ctx, unsigned stage, int rc);
+static __attribute__((noinline)) void ctx_ph_mqtt_session_begin(port_state *ctx);
+static __attribute__((noinline)) void ctx_ph_mqtt_lifecycle_event(port_state *ctx, unsigned stage, int rc);
+static __attribute__((noinline)) void ctx_ph_mqtt_reconnect(port_state *ctx);
+static __attribute__((noinline)) void ctx_ph_mqtt_snapshot(port_state *ctx, ph_mqtt_diagnostics *out);
+static __attribute__((noinline)) void ctx_ph_mqtt_outgoing(port_state *ctx, int(*handler)(const ph_mqtt_item *));
+static __attribute__((noinline)) void ctx_ph_mqtt_pending_clear(port_state *ctx);
+static __attribute__((noinline)) bool ctx_ph_mqtt_owner_init(port_state *ctx, const mqtt_account_t *account, size_t maximum, mico_thread_t *owner, bool(*accept)(MessageData *, messageHandler));
+static bool modern(port_state *ctx, const char *topic, size_t n);
+static bool begin(port_state *ctx, Client *c, unsigned stage);
+static int end(port_state *ctx, unsigned stage, int rc);
+static __attribute__((noinline)) int ctx_ph_mqtt_client_init(port_state *ctx, Client *c, Network *n, unsigned timeout);
+static __attribute__((noinline)) int ctx_ph_mqtt_client_deinit(port_state *ctx, Client *c);
+static __attribute__((noinline)) int ctx_ph_mqtt_connect(port_state *ctx, Client *c, MQTTPacket_connectData *data);
+static __attribute__((noinline)) int ctx_ph_mqtt_disconnect(port_state *ctx, Client *c);
+static __attribute__((noinline)) int ctx_ph_mqtt_subscribe(port_state *ctx, Client *c, const char *filter, enum QoS qos, messageHandler handler);
+static __attribute__((noinline)) int ctx_ph_mqtt_yield(port_state *ctx, Client *c, int timeout);
+static __attribute__((noinline)) int ctx_ph_mqtt_resource_ready(port_state *ctx);
+static __attribute__((noinline)) void ctx_ph_mqtt_resource_round_end(port_state *ctx, bool complete);
+static __attribute__((noinline)) int ctx_ph_mqtt_publish(port_state *ctx, Client *c, const char *topic, MQTTMessage *m);
+static __attribute__((noinline)) int publish_owned(port_state *ctx, Client *c, const char *topic, MQTTMessage *m);
+static __attribute__((noinline)) int receipt_retry(port_state *ctx, Client *c);
+static __attribute__((noinline)) int ctx_ph_mqtt_receipt_send(port_state *ctx, const mqtt_target_t *target, const char *wire, void *owned, void(*release_wire)(void *));
+static __attribute__((noinline)) void ctx_ph_mqtt_turn_begin(port_state *ctx, unsigned limit);
+static __attribute__((noinline)) void ctx_ph_mqtt_turn_end(port_state *ctx);
+static __attribute__((noinline)) uint32_t ctx_ph_mqtt_send_generation(port_state *ctx);
+static __attribute__((noinline)) int ctx_ph_mqtt_enqueue_send_generation(port_state *ctx, const char *topic, const void *payload, size_t n, unsigned qos, bool retain, uint32_t generation);
+static __attribute__((noinline)) int ctx_ph_mqtt_enqueue_send(port_state *ctx, const char *topic, const void *payload, size_t n, unsigned qos, bool retain);
+static int send_emergency(port_state *ctx, Client *c);
+static __attribute__((noinline)) bool ctx_ph_mqtt_input_consumed(port_state *ctx);
+static __attribute__((noinline)) bool ctx_ph_mqtt_work_pending(port_state *ctx);
+static __attribute__((noinline)) int ctx_ph_mqtt_poll(port_state *ctx, Client *c);
 static void mutex_lock(void *p) {
-    (void) p;
-    mico_rtos_lock_mutex(&port.mutex);
+    port_state *ctx=p;
+    mico_rtos_lock_mutex(&ctx->mutex);
 }
 
 static void mutex_unlock(void *p) {
-    (void) p;
-    mico_rtos_unlock_mutex(&port.mutex);
+    port_state *ctx=p;
+    mico_rtos_unlock_mutex(&ctx->mutex);
 }
 
-static bool initialized(void) {
-    return __atomic_load_n(&port.initialized, __ATOMIC_ACQUIRE);
+static bool initialized(port_state *ctx) {
+    if(!ctx)return false;
+    return __atomic_load_n(&ctx->initialized, __ATOMIC_ACQUIRE);
 }
 
 static bool current(void *p) {
-    (void) p;
+    port_state *ctx=p;
     /* core invokes this hook before acquiring its queue mutex. Keep both the
      * handle and its binding under that same stable mutex during rebind. */
-    mutex_lock(NULL);
-    bool owner = port.bound && mico_rtos_is_current_thread(&port.owner);
-    mutex_unlock(NULL);
+    mutex_lock(ctx);
+    bool owner = ctx->bound && mico_rtos_is_current_thread(&ctx->owner);
+    mutex_unlock(ctx);
     return owner;
 }
 
@@ -122,7 +179,8 @@ static bool permit(void *p, size_t bytes) {
  * live during this check, so admit the entire new block, never just a delta.
  * Deferred command dispatch may legitimately publish its completed receipt. */
 int mqtt_buffer_allocation_permit(Client *c, size_t bytes) {
-    return ph_mqtt_owner() && c == port.client && port.core.protocol_depth &&
+    port_state *ctx=callback_port();
+    return ctx_ph_mqtt_owner(ctx) && c == ctx->client && ctx->core.protocol_depth &&
         permit(NULL, bytes);
 }
 
@@ -136,152 +194,154 @@ static void release(void *p, void *q) {
     free(q);
 }
 
-bool ph_mqtt_owner(void) {
-    return initialized() && current(NULL);
+static __attribute__((noinline)) bool ctx_ph_mqtt_owner(port_state *ctx) {
+    return initialized(ctx) && current(ctx);
 }
 
-mico_thread_t *ph_mqtt_owner_thread(void) {
-    return ph_mqtt_owner() ? &port.owner : NULL;
+static mico_thread_t *ctx_ph_mqtt_owner_thread(port_state *ctx) {
+    return ctx_ph_mqtt_owner(ctx) ? &ctx->owner : NULL;
 }
 
-static __attribute__((noinline)) void receipt_clear(void) {
-    if (port.receipt.owned)
-        port.receipt.release(port.receipt.owned);
-    port.receipt.wire = NULL;
-    port.receipt.owned = NULL;
-    port.receipt.release = NULL;
+static __attribute__((noinline)) void receipt_clear(port_state *ctx) {
+    if (ctx->receipt.owned)
+        ctx->receipt.release(ctx->receipt.owned);
+    ctx->receipt.wire = NULL;
+    ctx->receipt.owned = NULL;
+    ctx->receipt.release = NULL;
 }
 
 /* Only at quiescent teardown. Core clear deliberately refuses borrowed
  * in-flight entries; a deferred owner now explicitly retires its own entries. */
-static __attribute__((noinline)) void pending_release(void) {
-    receipt_clear();
+static __attribute__((noinline)) void pending_release(port_state *ctx) {
+    receipt_clear(ctx);
     for (unsigned kind = 0; kind < 2; kind++)
-        if (port.core.inflight[kind])
-            ph_mqtt_item_release(&port.core, port.core.inflight[kind]);
+        if (ctx->core.inflight[kind])
+            ph_mqtt_item_release(&ctx->core, ctx->core.inflight[kind]);
 }
 
-bool ph_mqtt_receipt_pending(void) {
-    return ph_mqtt_owner() && port.receipt.wire;
+static __attribute__((noinline)) bool ctx_ph_mqtt_receipt_pending(port_state *ctx) {
+    return ctx_ph_mqtt_owner(ctx) && ctx->receipt.wire;
 }
 
-void ph_mqtt_owner_end(void) {
-    if (!ph_mqtt_owner() || port.client || port.core.protocol_depth || port.core.dispatch_depth)
+static __attribute__((noinline)) void ctx_ph_mqtt_owner_end(port_state *ctx) {
+    if (!ctx_ph_mqtt_owner(ctx) || ctx->client || ctx->core.protocol_depth || ctx->core.dispatch_depth)
         return;
-    ph_mqtt_core_accepting(&port.core, false);
-    pending_release();
-    ph_mqtt_clear(&port.core);
-    port.resource_active = port.native_waiting = false;
-    mutex_lock(NULL);
-    port.bound = false;
-    mutex_unlock(NULL);
+    ph_mqtt_core_accepting(&ctx->core, false);
+    pending_release(ctx);
+    ph_mqtt_clear(&ctx->core);
+    ctx->resource_active = ctx->native_waiting = false;
+    mutex_lock(ctx);
+    ctx->bound = false;
+    mutex_unlock(ctx);
 }
 
-const ph_mqtt_core *ph_mqtt_debug_core(void) {
-    return &port.core;
+static const ph_mqtt_core *ctx_ph_mqtt_debug_core(port_state *ctx) {
+    return &ctx->core;
 }
 
-int ph_mqtt_app_error(unsigned stage, int rc) {
+static __attribute__((noinline)) int ctx_ph_mqtt_app_error(port_state *ctx, unsigned stage, int rc) {
     if (rc < 0 && stage >= PH_MQTT_ERROR_APP_DISCOVERY_GRAPH &&
-        stage <= PH_MQTT_ERROR_APP_RECEIPT_ADMISSION && ph_mqtt_owner())
-        ph_mqtt_record_operation(&port.core, stage);
+        stage <= PH_MQTT_ERROR_APP_RECEIPT_ADMISSION && ctx_ph_mqtt_owner(ctx))
+        ph_mqtt_record_operation(&ctx->core, stage);
     return rc;
 }
 
-void ph_mqtt_error(unsigned stage, int rc) {
-    if (ph_mqtt_owner()) {
+static __attribute__((noinline)) void ctx_ph_mqtt_error(port_state *ctx, unsigned stage, int rc) {
+    if (ctx_ph_mqtt_owner(ctx)) {
         if (stage == PH_MQTT_ERROR_SESSION &&
-            port.core.operation >= PH_MQTT_ERROR_APP_DISCOVERY_GRAPH &&
-            port.core.operation <= PH_MQTT_ERROR_APP_RECEIPT_ADMISSION)
-            stage = port.core.operation;
+            ctx->core.operation >= PH_MQTT_ERROR_APP_DISCOVERY_GRAPH &&
+            ctx->core.operation <= PH_MQTT_ERROR_APP_RECEIPT_ADMISSION)
+            stage = ctx->core.operation;
         const micoMemInfo_t *m = MicoGetMemoryInfo();
-        ph_mqtt_record_failure(&port.core,
-            port.cause ? port.cause : (stage >= PH_MQTT_ERROR_INIT && stage <= PH_MQTT_ERROR_YIELD ? PH_MQTT_CAUSE_SDK : PH_MQTT_CAUSE_UNKNOWN), stage, rc,
+        ph_mqtt_record_failure(&ctx->core,
+            ctx->cause ? ctx->cause : (stage >= PH_MQTT_ERROR_INIT && stage <= PH_MQTT_ERROR_YIELD ? PH_MQTT_CAUSE_SDK : PH_MQTT_CAUSE_UNKNOWN), stage, rc,
             m && m->free_memory > 0 ? (uint32_t)m->free_memory : 0,
-            port.packet_bytes, port.rx.state, &port.read_evidence, &port.write_evidence);
+            ctx->packet_bytes, ctx->rx.state, &ctx->read_evidence, &ctx->write_evidence);
     }
 }
 
-void ph_mqtt_session_begin(void) {
-    if (ph_mqtt_owner()) {
-        port.cause = port.packet_bytes = 0;
-        memset(&port.read_evidence, 0, sizeof(port.read_evidence));
-        memset(&port.write_evidence, 0, sizeof(port.write_evidence));
-        ph_mqtt_error_session_begin(&port.core);
+static __attribute__((noinline)) void ctx_ph_mqtt_session_begin(port_state *ctx) {
+    if (ctx_ph_mqtt_owner(ctx)) {
+        ctx->cause = ctx->packet_bytes = 0;
+        memset(&ctx->read_evidence, 0, sizeof(ctx->read_evidence));
+        memset(&ctx->write_evidence, 0, sizeof(ctx->write_evidence));
+        ph_mqtt_error_session_begin(&ctx->core);
     }
 }
 
-void ph_mqtt_lifecycle_event(unsigned stage, int rc) {
-    if (ph_mqtt_owner())
-        ph_mqtt_record_error(&port.core, stage, rc, false);
+static __attribute__((noinline)) void ctx_ph_mqtt_lifecycle_event(port_state *ctx, unsigned stage, int rc) {
+    if (ctx_ph_mqtt_owner(ctx))
+        ph_mqtt_record_error(&ctx->core, stage, rc, false);
 }
 
-void ph_mqtt_reconnect(void) {
-    if (ph_mqtt_owner())
-        ph_mqtt_record_reconnect(&port.core);
+static __attribute__((noinline)) void ctx_ph_mqtt_reconnect(port_state *ctx) {
+    if (ctx_ph_mqtt_owner(ctx))
+        ph_mqtt_record_reconnect(&ctx->core);
 }
 
-void ph_mqtt_snapshot(ph_mqtt_diagnostics *out) {
-    if (!initialized()) {
+static __attribute__((noinline)) void ctx_ph_mqtt_snapshot(port_state *ctx, ph_mqtt_diagnostics *out) {
+    if (!initialized(ctx)) {
         memset(out, 0, sizeof(*out));
         return;
     }
-    ph_mqtt_core_snapshot(&port.core, out);
+    ph_mqtt_core_snapshot(&ctx->core, out);
 }
 
-void ph_mqtt_outgoing(int(*handler)(const ph_mqtt_item *)) {
-    if (ph_mqtt_owner() && !port.core.protocol_depth)
-        port.outgoing = handler;
+static __attribute__((noinline)) void ctx_ph_mqtt_outgoing(port_state *ctx, int(*handler)(const ph_mqtt_item *)) {
+    if (ctx_ph_mqtt_owner(ctx) && !ctx->core.protocol_depth)
+        ctx->outgoing = handler;
 }
 
-void ph_mqtt_pending_clear(void) {
-    if (!ph_mqtt_owner() || port.core.protocol_depth || port.core.dispatch_depth)
+static __attribute__((noinline)) void ctx_ph_mqtt_pending_clear(port_state *ctx) {
+    if (!ctx_ph_mqtt_owner(ctx) || ctx->core.protocol_depth || ctx->core.dispatch_depth)
         return;
-    ph_mqtt_core_accepting(&port.core, false);
-    pending_release();
-    if (ph_mqtt_clear(&port.core)) {
-        memset(port.busy, 0, sizeof(port.busy));
-        port.resource_active = port.native_waiting = false;
+    ph_mqtt_core_accepting(&ctx->core, false);
+    pending_release(ctx);
+    if (ph_mqtt_clear(&ctx->core)) {
+        if(ctx->busy)memset(ctx->busy, 0, 2*sizeof(*ctx->busy));
+        ctx->resource_active = ctx->native_waiting = false;
     }
 }
 
-bool ph_mqtt_owner_init(const mqtt_account_t *account, size_t maximum, mico_thread_t *owner, bool(*accept)(MessageData *, messageHandler)) {
-    bool published = initialized();
+static __attribute__((noinline)) bool ctx_ph_mqtt_owner_init(port_state *ctx, const mqtt_account_t *account, size_t maximum, mico_thread_t *owner, bool(*accept)(MessageData *, messageHandler)) {
+    bool published = initialized(ctx);
     if (published) {
-        mutex_lock(NULL);
-        bool bound = port.bound;
-        bool owner_matches = bound && mico_rtos_is_current_thread(&port.owner);
-        mutex_unlock(NULL);
+        mutex_lock(ctx);
+        bool bound = ctx->bound;
+        bool owner_matches = bound && mico_rtos_is_current_thread(&ctx->owner);
+        mutex_unlock(ctx);
         if (bound)
             return owner_matches;
     }
-    if (!owner || !mico_rtos_is_current_thread(owner) || !account || !maximum || maximum > PH_MQTT_PAYLOAD_BYTES)
+    if (!owner || !mico_rtos_is_current_thread(owner) || (ctx==&primary_port && !account) || !maximum || maximum > PH_MQTT_PAYLOAD_BYTES)
         return false;
-    if (!published && mico_rtos_init_mutex(&port.mutex) != kNoErr)
+    if (!published && mico_rtos_init_mutex(&ctx->mutex) != kNoErr)
         return false;
-    mutex_lock(NULL);
-    port.owner = *owner;
-    port.bound = true;
-    mutex_unlock(NULL);
-    port.outgoing = NULL;
-    port.account = account;
-    port.payload_max = maximum;
-    port.accept = accept;
-    ph_mqtt_hooks h = {NULL, mutex_lock, mutex_unlock, current, clock_ms, permit, allocate, release};
-    bool ready = published ? ph_mqtt_core_reset(&port.core) : ph_mqtt_core_init(&port.core, &h);
+    ctx->mutex_ready = true;
+    if(!published && ctx==&primary_port)ctx->busy=primary_busy;
+    mutex_lock(ctx);
+    ctx->owner = *owner;
+    ctx->bound = true;
+    mutex_unlock(ctx);
+    ctx->outgoing = NULL;
+    ctx->account = account;
+    ctx->payload_max = maximum;
+    ctx->accept = accept;
+    ph_mqtt_hooks h = {ctx, mutex_lock, mutex_unlock, current, clock_ms, permit, allocate, release};
+    bool ready = published ? ph_mqtt_core_reset(&ctx->core) : ph_mqtt_core_init(&ctx->core, &h);
     if (!ready) {
-        mutex_lock(NULL);
-        port.bound = false;
-        mutex_unlock(NULL);
+        mutex_lock(ctx);
+        ctx->bound = false;
+        mutex_unlock(ctx);
         return false;
     }
     /* First publication releases the constructed mutex, hooks and core. It is
      * never rewritten during rebind; readers may safely enter stable hooks. */
     if (!published) {
-        port.core.accepting = false;
-        __atomic_store_n(&port.initialized, true, __ATOMIC_RELEASE);
+        ctx->core.accepting = false;
+        __atomic_store_n(&ctx->initialized, true, __ATOMIC_RELEASE);
     }
-    ph_mqtt_core_accepting(&port.core, false);
+    ph_mqtt_core_accepting(&ctx->core, false);
     return true;
 }
 
@@ -321,425 +381,430 @@ static bool topic_bytes(MessageData *d, const char * *topic, size_t *length) {
     return *topic && *length && *length <= PH_MQTT_TOPIC_BYTES && !memchr(*topic, 0, *length);
 }
 
-static bool modern(const char *topic, size_t n) {
-    size_t base = strlen(port.account->base);
-    return n == base + 8 && !memcmp(topic, port.account->base, base) && !memcmp(topic + base, "/command", 8);
+static bool modern(port_state *ctx, const char *topic, size_t n) {
+    if(!ctx->busy || !ctx->account || !ctx->account->base[0])return false;
+    size_t base = strlen(ctx->account->base);
+    return n == base + 8 && !memcmp(topic, ctx->account->base, base) && !memcmp(topic + base, "/command", 8);
 }
 
 static void ingress(MessageData *d) {
+    port_state *ctx=callback_port();
     /* Called by Paho only. No product, JSON, OTA, reconnect or publish here. */
-    if (!ph_mqtt_owner() || !port.core.protocol_depth) {
-        port.failed = true;
+    if (!ctx_ph_mqtt_owner(ctx) || !ctx->core.protocol_depth) {
+        ctx->failed = true;
         return;
     }
-    if (port.delivered == port.rx.serial)
+    if (ctx->delivered == ctx->rx.serial)
         return;
-    port.delivered = port.rx.serial;
+    ctx->delivered = ctx->rx.serial;
     const char *topic;
     size_t n;
     if (!topic_bytes(d, &topic, &n)) {
-        port.failed = true;
+        ctx->failed = true;
         return;
     }
     unsigned route = 0;
-    while (route < MAX_MESSAGE_HANDLERS && (!port.subscriptions[route].filter || !ph_mqtt_topic_matches(port.subscriptions[route].filter, topic, n)))
+    while (route < MAX_MESSAGE_HANDLERS && (!ctx->subscriptions[route].filter || !ph_mqtt_topic_matches(ctx->subscriptions[route].filter, topic, n)))
         route++;
     if (route == MAX_MESSAGE_HANDLERS)
         return;
-    if (port.accept && !port.accept(d, port.subscriptions[route].handler))
+    if (ctx->accept && !ctx->accept(d, ctx->subscriptions[route].handler))
         return;
     MQTTMessage *m = d->message;
-    if (m->payloadlen <= port.payload_max && ph_mqtt_enqueue_route(&port.core, PH_MQTT_COMMAND, topic, n, m->payload, m->payloadlen, m->qos, m->retained, route))
+    if (m->payloadlen <= ctx->payload_max && ph_mqtt_enqueue_route(&ctx->core, PH_MQTT_COMMAND, topic, n, m->payload, m->payloadlen, m->qos, m->retained, route))
         return;
     /* Retained controls never execute and need no reply. */
     if (m->retained)
         return;
-    if (modern(topic, n))
-        for (unsigned i = 0; i < 2; i++) if (!port.busy[i].used) {
-        mqtt_target_set(&port.busy[i].target, port.account);
-        service_busy_id(m->payload, m->payloadlen, port.busy[i].id);
-        port.busy[i].used = true;
+    if (modern(ctx, topic, n))
+        for (unsigned i = 0; i < 2; i++) if (!ctx->busy[i].used) {
+        mqtt_target_set(&ctx->busy[i].target, ctx->account);
+        service_busy_id(m->payload, m->payloadlen, ctx->busy[i].id);
+        ctx->busy[i].used = true;
         return;
     }
     /* PUBACK is transport-only. An unadmitted request has not executed: drop
      * it visibly instead of tearing down a healthy socket on application load.
      * Never run business without result credit, or send from this callback. */
-    ph_mqtt_record_ingress_drop(&port.core, modern(topic, n));
+    ph_mqtt_record_ingress_drop(&ctx->core, modern(ctx, topic, n));
 }
 
 static int guarded_read(Network *n, unsigned char *p, int count, int timeout) {
-    if (!ph_mqtt_owner() || !port.core.protocol_depth || n != port.network || port.rx.failed)
+    port_state *ctx=callback_port();
+    if (!ctx_ph_mqtt_owner(ctx) || !ctx->core.protocol_depth || n != ctx->network || ctx->rx.failed)
         return -1;
-    ph_mqtt_protocol_buffers(&port.core, port.client->readbuf_size, port.client->buf_size);
+    ph_mqtt_protocol_buffers(&ctx->core, ctx->client->readbuf_size, ctx->client->buf_size);
     uint32_t at = mico_rtos_get_time();
-    int rc = port.read(n, p, count, timeout);
+    int rc = ctx->read(n, p, count, timeout);
     /* Freeze the first anomalous call in this protocol operation. Idle zero
      * reads are ordinary; their deadline evidence is retained until an error. */
-    if (!port.cause) {
-        port.read_evidence = (ph_mqtt_io_evidence){count, rc, timeout > 0 ? (unsigned)timeout : 0,
+    if (!ctx->cause) {
+        ctx->read_evidence = (ph_mqtt_io_evidence){count, rc, timeout > 0 ? (unsigned)timeout : 0,
             mico_rtos_get_time() - at};
-        if ((rc < 0 || (rc > 0 && rc != count)) && !port.cause)
-            port.cause = PH_MQTT_CAUSE_READ;
+        if ((rc < 0 || (rc > 0 && rc != count)) && !ctx->cause)
+            ctx->cause = PH_MQTT_CAUSE_READ;
     }
-    if (rc > 0 && !ph_mqtt_rx_feed(&port.rx, p, (size_t) rc)) {
-        if (!port.cause) port.cause = PH_MQTT_CAUSE_RX_FRAMING;
+    if (rc > 0 && !ph_mqtt_rx_feed(&ctx->rx, p, (size_t) rc)) {
+        if (!ctx->cause) ctx->cause = PH_MQTT_CAUSE_RX_FRAMING;
         return -1;
     }
     return rc;
 }
 
 static int guarded_write(Network *n, unsigned char *p, int count, int timeout) {
+    port_state *ctx=callback_port();
     uint32_t at = mico_rtos_get_time();
-    int rc = port.write(n, p, count, timeout);
-    if (!port.cause) {
-        port.write_evidence = (ph_mqtt_io_evidence){count, rc, timeout > 0 ? (unsigned)timeout : 0,
+    int rc = ctx->write(n, p, count, timeout);
+    if (!ctx->cause) {
+        ctx->write_evidence = (ph_mqtt_io_evidence){count, rc, timeout > 0 ? (unsigned)timeout : 0,
             mico_rtos_get_time() - at};
         /* Positive partial writes are supported by Paho, not a failure. */
-        if (rc <= 0 && !port.cause) port.cause = PH_MQTT_CAUSE_WRITE;
+        if (rc <= 0 && !ctx->cause) ctx->cause = PH_MQTT_CAUSE_WRITE;
     }
     return rc;
 }
 
-static bool begin(Client *c, unsigned stage) {
-    if (c != port.client || port.failed || !ph_mqtt_protocol_begin(&port.core))
+static bool begin(port_state *ctx, Client *c, unsigned stage) {
+    if (c != ctx->client || ctx->failed || !ph_mqtt_protocol_begin(&ctx->core))
         return false;
-    port.cause = port.packet_bytes = 0;
-    memset(&port.read_evidence, 0, sizeof(port.read_evidence));
-    memset(&port.write_evidence, 0, sizeof(port.write_evidence));
-    ph_mqtt_record_operation(&port.core, stage);
+    ctx->cause = ctx->packet_bytes = 0;
+    memset(&ctx->read_evidence, 0, sizeof(ctx->read_evidence));
+    memset(&ctx->write_evidence, 0, sizeof(ctx->write_evidence));
+    ph_mqtt_record_operation(&ctx->core, stage);
     return true;
 }
 
-static int end(unsigned stage, int rc) {
-    ph_mqtt_protocol_buffers(&port.core, port.client->readbuf_size, port.client->buf_size);
-    ph_mqtt_protocol_end(&port.core);
-    ph_mqtt_record_operation(&port.core, 0);
-    rc = port.failed ? MQTT_FAILURE : rc;
+static int end(port_state *ctx, unsigned stage, int rc) {
+    ph_mqtt_protocol_buffers(&ctx->core, ctx->client->readbuf_size, ctx->client->buf_size);
+    ph_mqtt_protocol_end(&ctx->core);
+    ph_mqtt_record_operation(&ctx->core, 0);
+    rc = ctx->failed ? MQTT_FAILURE : rc;
     if (rc != MQTT_SUCCESS)
-        ph_mqtt_error(stage, rc);
+        ctx_ph_mqtt_error(ctx, stage, rc);
     else {
         /* Successful protocol activity cannot become a later session cause. */
-        port.cause = port.packet_bytes = 0;
-        memset(&port.read_evidence, 0, sizeof(port.read_evidence));
-        memset(&port.write_evidence, 0, sizeof(port.write_evidence));
+        ctx->cause = ctx->packet_bytes = 0;
+        memset(&ctx->read_evidence, 0, sizeof(ctx->read_evidence));
+        memset(&ctx->write_evidence, 0, sizeof(ctx->write_evidence));
     }
     return rc;
 }
 
-int ph_mqtt_client_init(Client *c, Network *n, unsigned timeout) {
-    if (!ph_mqtt_owner() || port.core.protocol_depth || port.core.dispatch_depth || port.client || !c || !n || !n->mqttread)
+static __attribute__((noinline)) int ctx_ph_mqtt_client_init(port_state *ctx, Client *c, Network *n, unsigned timeout) {
+    if (!ctx_ph_mqtt_owner(ctx) || ctx->core.protocol_depth || ctx->core.dispatch_depth || ctx->client || !c || !n || !n->mqttread)
         return MQTT_FAILURE;
-    if (!ph_mqtt_clear(&port.core))
+    if (!ph_mqtt_clear(&ctx->core))
         return MQTT_FAILURE;
-    ph_mqtt_core_accepting(&port.core, true);
-    memset(port.subscriptions, 0, sizeof(port.subscriptions));
-    memset(port.busy, 0, sizeof(port.busy));
-    port.client = c;
-    port.network = n;
-    port.failed = false;
-    port.resource_active = port.resource_seen = port.native_waiting = false;
-    port.delivered = UINT32_MAX;
-    ph_mqtt_rx_init(&port.rx, port.payload_max + PH_MQTT_TOPIC_BYTES + 9);
-    port.read = n->mqttread;
+    ph_mqtt_core_accepting(&ctx->core, true);
+    memset(ctx->subscriptions, 0, sizeof(ctx->subscriptions));
+    if(ctx->busy)memset(ctx->busy, 0, 2*sizeof(*ctx->busy));
+    ctx->client = c;
+    ctx->network = n;
+    ctx->failed = false;
+    ctx->resource_active = ctx->resource_seen = ctx->native_waiting = false;
+    ctx->delivered = UINT32_MAX;
+    ph_mqtt_rx_init(&ctx->rx, ctx->payload_max + PH_MQTT_TOPIC_BYTES + 9);
+    ctx->read = n->mqttread;
     n->mqttread = guarded_read;
-    port.write = n->mqttwrite;
-    if (port.write) n->mqttwrite = guarded_write;
+    ctx->write = n->mqttwrite;
+    if (ctx->write) n->mqttwrite = guarded_write;
     memset(c, 0, sizeof(*c));
-    if (!begin(c, PH_MQTT_ERROR_INIT))
+    if (!begin(ctx, c, PH_MQTT_ERROR_INIT))
         return MQTT_FAILURE;
-    int rc = end(PH_MQTT_ERROR_INIT, MQTTClientInit(c, n, timeout));
+    int rc = end(ctx, PH_MQTT_ERROR_INIT, MQTTClientInit(c, n, timeout));
     if (rc != MQTT_SUCCESS)
-        ph_mqtt_client_deinit(c);
+        ctx_ph_mqtt_client_deinit(ctx, c);
     return rc;
 }
 
-int ph_mqtt_client_deinit(Client *c) {
-    if (!ph_mqtt_owner() || c != port.client || port.core.protocol_depth || port.core.dispatch_depth)
+static __attribute__((noinline)) int ctx_ph_mqtt_client_deinit(port_state *ctx, Client *c) {
+    if (!ctx_ph_mqtt_owner(ctx) || c != ctx->client || ctx->core.protocol_depth || ctx->core.dispatch_depth)
         return MQTT_FAILURE;
-    ph_mqtt_core_accepting(&port.core, false);
-    pending_release();
-    ph_mqtt_clear(&port.core);
-    port.resource_active = port.native_waiting = false;
-    memset(port.busy, 0, sizeof(port.busy));
+    ph_mqtt_core_accepting(&ctx->core, false);
+    pending_release(ctx);
+    ph_mqtt_clear(&ctx->core);
+    ctx->resource_active = ctx->native_waiting = false;
+    if(ctx->busy)memset(ctx->busy, 0, 2*sizeof(*ctx->busy));
     /* Deinit is required even after a framing/admission failure. */
     int rc = MQTTClientDeinit(c);
-    ph_mqtt_protocol_buffers(&port.core, 0, 0);
-    if (port.network && port.network->mqttread == guarded_read)
-        port.network->mqttread = port.read;
-    if (port.network && port.network->mqttwrite == guarded_write)
-        port.network->mqttwrite = port.write;
-    port.client = NULL;
-    port.network = NULL;
+    ph_mqtt_protocol_buffers(&ctx->core, 0, 0);
+    if (ctx->network && ctx->network->mqttread == guarded_read)
+        ctx->network->mqttread = ctx->read;
+    if (ctx->network && ctx->network->mqttwrite == guarded_write)
+        ctx->network->mqttwrite = ctx->write;
+    ctx->client = NULL;
+    ctx->network = NULL;
     return rc;
 }
 
-int ph_mqtt_connect(Client *c, MQTTPacket_connectData *data) {
-    if (!begin(c, PH_MQTT_ERROR_CONNECT))
+static __attribute__((noinline)) int ctx_ph_mqtt_connect(port_state *ctx, Client *c, MQTTPacket_connectData *data) {
+    if (!begin(ctx, c, PH_MQTT_ERROR_CONNECT))
         return MQTT_FAILURE;
-    return end(PH_MQTT_ERROR_CONNECT, MQTTConnect(c, data));
+    return end(ctx, PH_MQTT_ERROR_CONNECT, MQTTConnect(c, data));
 }
 
-int ph_mqtt_disconnect(Client *c) {
-    if (!ph_mqtt_owner() || c != port.client || !ph_mqtt_protocol_begin(&port.core))
+static __attribute__((noinline)) int ctx_ph_mqtt_disconnect(port_state *ctx, Client *c) {
+    if (!ctx_ph_mqtt_owner(ctx) || c != ctx->client || !ph_mqtt_protocol_begin(&ctx->core))
         return MQTT_FAILURE;
-    ph_mqtt_record_operation(&port.core, PH_MQTT_ERROR_SESSION);
-    return end(PH_MQTT_ERROR_SESSION, MQTTDisconnect(c));
+    ph_mqtt_record_operation(&ctx->core, PH_MQTT_ERROR_SESSION);
+    return end(ctx, PH_MQTT_ERROR_SESSION, MQTTDisconnect(c));
 }
 
-int ph_mqtt_subscribe(Client *c, const char *filter, enum QoS qos, messageHandler handler) {
-    if (!filter || !handler || !begin(c, PH_MQTT_ERROR_SUBSCRIBE))
+static __attribute__((noinline)) int ctx_ph_mqtt_subscribe(port_state *ctx, Client *c, const char *filter, enum QoS qos, messageHandler handler) {
+    if (!filter || !handler || !begin(ctx, c, PH_MQTT_ERROR_SUBSCRIBE))
         return MQTT_FAILURE;
     unsigned at = 0;
-    while (at < MAX_MESSAGE_HANDLERS && port.subscriptions[at].filter && strcmp(port.subscriptions[at].filter, filter))
+    while (at < MAX_MESSAGE_HANDLERS && ctx->subscriptions[at].filter && strcmp(ctx->subscriptions[at].filter, filter))
         at++;
     int rc = at == MAX_MESSAGE_HANDLERS ? MQTT_FAILURE : MQTTSubscribe(c, filter, qos, ingress);
     if (rc == MQTT_SUCCESS) {
-        port.subscriptions[at].filter = filter;
-        port.subscriptions[at].handler = handler;
+        ctx->subscriptions[at].filter = filter;
+        ctx->subscriptions[at].handler = handler;
     }
-    return end(PH_MQTT_ERROR_SUBSCRIBE, rc);
+    return end(ctx, PH_MQTT_ERROR_SUBSCRIBE, rc);
 }
 
-int ph_mqtt_yield(Client *c, int timeout) {
-    if (!begin(c, PH_MQTT_ERROR_YIELD))
+static __attribute__((noinline)) int ctx_ph_mqtt_yield(port_state *ctx, Client *c, int timeout) {
+    if (!begin(ctx, c, PH_MQTT_ERROR_YIELD))
         return MQTT_FAILURE;
-    return end(PH_MQTT_ERROR_YIELD, MQTTYield(c, timeout));
+    return end(ctx, PH_MQTT_ERROR_YIELD, MQTTYield(c, timeout));
 }
 
 /* A resource episode ends only after a full productive round with no pending
  * deferred receipt/SEND/busy work. A smaller successful packet cannot extend
  * the deadline of a larger blocked packet. All differences are wrap-safe. */
-int ph_mqtt_resource_ready(void) {
-    if (!ph_mqtt_owner() || port.failed)
+static __attribute__((noinline)) int ctx_ph_mqtt_resource_ready(port_state *ctx) {
+    if (!ctx_ph_mqtt_owner(ctx) || ctx->failed)
         return MQTT_FAILURE;
-    if (!port.resource_active)
+    if (!ctx->resource_active)
         return MQTT_SUCCESS;
-    uint32_t elapsed = mico_rtos_get_time() - port.resource_since;
+    uint32_t elapsed = mico_rtos_get_time() - ctx->resource_since;
     if (elapsed >= 30000u) {
-        port.cause = PH_MQTT_CAUSE_RESOURCE_EXPIRED;
-        port.packet_bytes = port.resource_packet;
-        memset(&port.read_evidence, 0, sizeof(port.read_evidence));
-        memset(&port.write_evidence, 0, sizeof(port.write_evidence));
-        ph_mqtt_error(PH_MQTT_ERROR_PUBLISH, MQTT_FAILURE);
-        port.failed = true;
+        ctx->cause = PH_MQTT_CAUSE_RESOURCE_EXPIRED;
+        ctx->packet_bytes = ctx->resource_packet;
+        memset(&ctx->read_evidence, 0, sizeof(ctx->read_evidence));
+        memset(&ctx->write_evidence, 0, sizeof(ctx->write_evidence));
+        ctx_ph_mqtt_error(ctx, PH_MQTT_ERROR_PUBLISH, MQTT_FAILURE);
+        ctx->failed = true;
         return MQTT_FAILURE;
     }
-    if ((uint32_t)(mico_rtos_get_time() - port.resource_retry_at) < 1000u) {
-        port.resource_seen = true;
+    if ((uint32_t)(mico_rtos_get_time() - ctx->resource_retry_at) < 1000u) {
+        ctx->resource_seen = true;
         return PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED;
     }
     return MQTT_SUCCESS;
 }
 
-void ph_mqtt_resource_round_end(bool complete) {
-    if (!ph_mqtt_owner())
+static __attribute__((noinline)) void ctx_ph_mqtt_resource_round_end(port_state *ctx, bool complete) {
+    if (!ctx_ph_mqtt_owner(ctx))
         return;
-    if (complete && !port.resource_seen && !port.native_waiting && !port.receipt.wire &&
-        !port.core.inflight[PH_MQTT_SEND] && !port.busy[0].used && !port.busy[1].used)
-        port.resource_active = port.native_waiting = false;
-    port.resource_seen = false;
+    if (complete && !ctx->resource_seen && !ctx->native_waiting && !ctx->receipt.wire &&
+        !ctx->core.inflight[PH_MQTT_SEND] && (!ctx->busy || (!ctx->busy[0].used && !ctx->busy[1].used)))
+        ctx->resource_active = ctx->native_waiting = false;
+    ctx->resource_seen = false;
 }
 
-int ph_mqtt_publish(Client *c, const char *topic, MQTTMessage *m) {
-    if (!m || !topic || !m->payload || m->payloadlen > PH_MQTT_PAYLOAD_BYTES || strnlen(topic, PH_MQTT_TOPIC_BYTES + 1) > PH_MQTT_TOPIC_BYTES || !ph_mqtt_owner())
+static __attribute__((noinline)) int ctx_ph_mqtt_publish(port_state *ctx, Client *c, const char *topic, MQTTMessage *m) {
+    if (!m || !topic || !m->payload || m->payloadlen > PH_MQTT_PAYLOAD_BYTES || strnlen(topic, PH_MQTT_TOPIC_BYTES + 1) > PH_MQTT_TOPIC_BYTES || !ctx_ph_mqtt_owner(ctx))
         return MQTT_FAILURE;
-    if (c != port.client || port.failed || port.core.protocol_depth)
+    if (c != ctx->client || ctx->failed || ctx->core.protocol_depth)
         return MQTT_FAILURE;
-    int ready = ph_mqtt_resource_ready();
+    int ready = ctx_ph_mqtt_resource_ready(ctx);
     if (ready != MQTT_SUCCESS)
         return ready;
-    if (port.turn_active) {
-        if (!port.turn_left)
+    if (ctx->turn_active) {
+        if (!ctx->turn_left)
             return PH_MQTT_MORE;
-        --port.turn_left;
+        --ctx->turn_left;
     }
     size_t packet = strlen(topic) + m->payloadlen + 9;
     /* SDK serializes a second copy, while callback RX can coexist. Its own
      * allocation is still fallible; this check is a soft live-heap admission. */
     if (!permit(NULL, packet + 32)) {
         uint32_t now = mico_rtos_get_time();
-        if (!port.resource_active) {
-            port.resource_since = now;
-            port.resource_packet = packet;
-            port.resource_active = true;
+        if (!ctx->resource_active) {
+            ctx->resource_since = now;
+            ctx->resource_packet = packet;
+            ctx->resource_active = true;
         }
-        if (!port.resource_owned && !port.native_waiting) {
-            strcpy(port.native_topic, topic);
-            port.native_waiting = true;
+        if (!ctx->resource_owned && !ctx->native_waiting) {
+            strcpy(ctx->native_topic, topic);
+            ctx->native_waiting = true;
         }
-        port.resource_retry_at = now;
-        port.resource_seen = true;
+        ctx->resource_retry_at = now;
+        ctx->resource_seen = true;
         return PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED;
     }
-    if (!begin(c, PH_MQTT_ERROR_PUBLISH))
+    if (!begin(ctx, c, PH_MQTT_ERROR_PUBLISH))
         return MQTT_FAILURE;
-    port.packet_bytes = packet;
+    ctx->packet_bytes = packet;
     /* The emergency wire/target are now owned by this active SDK call's stack.
      * Preflight refusal never retires the slot; PUBACK callbacks can refill it
      * after this transfer. Never clear that possible replacement on return. */
-    if (port.busy_sending) port.busy[port.busy_sending - 1].used = false;
-    int rc = end(PH_MQTT_ERROR_PUBLISH, MQTTPublish(c, topic, m));
+    if (ctx->busy_sending) ctx->busy[ctx->busy_sending - 1].used = false;
+    int rc = end(ctx, PH_MQTT_ERROR_PUBLISH, MQTTPublish(c, topic, m));
     if (rc != MQTT_SUCCESS)
-        port.failed = true;
-    else if (!port.resource_owned && port.native_waiting && !strcmp(port.native_topic, topic))
-        port.native_waiting = false;
+        ctx->failed = true;
+    else if (!ctx->resource_owned && ctx->native_waiting && !strcmp(ctx->native_topic, topic))
+        ctx->native_waiting = false;
     return rc;
 }
 
-static __attribute__((noinline)) int publish_owned(Client *c, const char *topic, MQTTMessage *m) {
-    port.resource_owned = true;
-    int rc = ph_mqtt_publish(c, topic, m);
-    port.resource_owned = false;
+static __attribute__((noinline)) int publish_owned(port_state *ctx, Client *c, const char *topic, MQTTMessage *m) {
+    ctx->resource_owned = true;
+    int rc = ctx_ph_mqtt_publish(ctx, c, topic, m);
+    ctx->resource_owned = false;
     return rc;
 }
 
-static __attribute__((noinline)) int receipt_retry(Client *c) {
-    int ready = ph_mqtt_resource_ready();
+static __attribute__((noinline)) int receipt_retry(port_state *ctx, Client *c) {
+    int ready = ctx_ph_mqtt_resource_ready(ctx);
     if (ready != MQTT_SUCCESS) {
-        if (ready < 0) receipt_clear();
+        if (ready < 0) receipt_clear(ctx);
         return ready;
     }
     char topic[MQTT_TOPIC_MAX];
-    if (!mqtt_target_leaf(&port.receipt.target, "result", topic, sizeof(topic)))
+    if (!mqtt_target_leaf(&ctx->receipt.target, "result", topic, sizeof(topic)))
         return MQTT_FAILURE;
     MQTTMessage m = {0};
     m.qos = QOS1;
-    m.payload = (void *)port.receipt.wire;
-    m.payloadlen = strlen(port.receipt.wire);
-    int rc = publish_owned(c, topic, &m);
+    m.payload = (void *)ctx->receipt.wire;
+    m.payloadlen = strlen(ctx->receipt.wire);
+    int rc = publish_owned(ctx, c, topic, &m);
     if (rc != PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED)
-        receipt_clear();
+        receipt_clear(ctx);
     return rc;
 }
 
-int ph_mqtt_receipt_send(const mqtt_target_t *target, const char *wire, void *owned, void(*release_wire)(void *)) {
-    if (!ph_mqtt_owner() || !target || !wire || port.receipt.wire ||
-        (owned && !release_wire) || (!owned && strlen(wire) >= sizeof(port.receipt.busy))) {
+static __attribute__((noinline)) int ctx_ph_mqtt_receipt_send(port_state *ctx, const mqtt_target_t *target, const char *wire, void *owned, void(*release_wire)(void *)) {
+    if (!ctx_ph_mqtt_owner(ctx) || !target || !wire || ctx->receipt.wire ||
+        (owned && !release_wire) || (!owned && strlen(wire) >= sizeof(ctx->receipt.busy))) {
         if (owned && release_wire) release_wire(owned);
         return MQTT_FAILURE;
     }
-    port.receipt.target = *target;
-    port.receipt.owned = owned;
-    port.receipt.release = release_wire;
-    if (owned) port.receipt.wire = wire;
+    ctx->receipt.target = *target;
+    ctx->receipt.owned = owned;
+    ctx->receipt.release = release_wire;
+    if (owned) ctx->receipt.wire = wire;
     else {
-        strcpy(port.receipt.busy, wire);
-        port.receipt.wire = port.receipt.busy;
+        strcpy(ctx->receipt.busy, wire);
+        ctx->receipt.wire = ctx->receipt.busy;
     }
-    return receipt_retry(port.client);
+    return receipt_retry(ctx, ctx->client);
 }
 
-void ph_mqtt_turn_begin(unsigned limit) {
-    if (ph_mqtt_owner() && !port.core.protocol_depth && !port.core.dispatch_depth) {
-        port.turn_active = true;
-        port.turn_left = limit;
+static __attribute__((noinline)) void ctx_ph_mqtt_turn_begin(port_state *ctx, unsigned limit) {
+    if (ctx_ph_mqtt_owner(ctx) && !ctx->core.protocol_depth && !ctx->core.dispatch_depth) {
+        ctx->turn_active = true;
+        ctx->turn_left = limit;
     }
 }
 
-void ph_mqtt_turn_end(void) {
-    if (ph_mqtt_owner())
-        port.turn_active = false;
+static __attribute__((noinline)) void ctx_ph_mqtt_turn_end(port_state *ctx) {
+    if (ctx_ph_mqtt_owner(ctx))
+        ctx->turn_active = false;
 }
 
-uint32_t ph_mqtt_send_generation(void) {
-    if (!initialized())
+static __attribute__((noinline)) uint32_t ctx_ph_mqtt_send_generation(port_state *ctx) {
+    if (!initialized(ctx))
         return 0;
-    mutex_lock(NULL);
-    uint32_t generation = port.bound && port.core.accepting ? port.core.generation : 0;
-    mutex_unlock(NULL);
+    mutex_lock(ctx);
+    uint32_t generation = ctx->bound && ctx->core.accepting ? ctx->core.generation : 0;
+    mutex_unlock(ctx);
     return generation;
 }
 
-int ph_mqtt_enqueue_send_generation(const char *topic, const void *payload, size_t n, unsigned qos, bool retain, uint32_t generation) {
-    if (!initialized() || !topic || !generation)
+static __attribute__((noinline)) int ctx_ph_mqtt_enqueue_send_generation(port_state *ctx, const char *topic, const void *payload, size_t n, unsigned qos, bool retain, uint32_t generation) {
+    if (!initialized(ctx) || !topic || !generation)
         return MQTT_FAILURE;
-    return ph_mqtt_enqueue_generation(&port.core, PH_MQTT_SEND, topic, strnlen(topic, PH_MQTT_TOPIC_BYTES + 1), payload, n, qos, retain, 0, generation) ? MQTT_SUCCESS : MQTT_FAILURE;
+    return ph_mqtt_enqueue_generation(&ctx->core, PH_MQTT_SEND, topic, strnlen(topic, PH_MQTT_TOPIC_BYTES + 1), payload, n, qos, retain, 0, generation) ? MQTT_SUCCESS : MQTT_FAILURE;
 }
 
-int ph_mqtt_enqueue_send(const char *topic, const void *payload, size_t n, unsigned qos, bool retain) {
-    if (!initialized() || !topic)
+static __attribute__((noinline)) int ctx_ph_mqtt_enqueue_send(port_state *ctx, const char *topic, const void *payload, size_t n, unsigned qos, bool retain) {
+    if (!initialized(ctx) || !topic)
         return MQTT_FAILURE;
-    return ph_mqtt_enqueue(&port.core, PH_MQTT_SEND, topic, strnlen(topic, PH_MQTT_TOPIC_BYTES + 1), payload, n, qos, retain) ? MQTT_SUCCESS : MQTT_FAILURE;
+    return ph_mqtt_enqueue(&ctx->core, PH_MQTT_SEND, topic, strnlen(topic, PH_MQTT_TOPIC_BYTES + 1), payload, n, qos, retain) ? MQTT_SUCCESS : MQTT_FAILURE;
 }
 
-static int send_emergency(Client *c) {
+static int send_emergency(port_state *ctx, Client *c) {
+    if(!ctx->busy)return MQTT_SUCCESS;
     for (unsigned i = 0; i < 2; i++)
-        if (port.busy[i].used) {
+        if (ctx->busy[i].used) {
         char topic[MQTT_TOPIC_MAX], wire[SERVICE_BUSY_BYTES];
-        if (!mqtt_target_leaf(&port.busy[i].target, "result", topic, sizeof(topic)))
+        if (!mqtt_target_leaf(&ctx->busy[i].target, "result", topic, sizeof(topic)))
             return MQTT_FAILURE;
-        service_busy_format(port.busy[i].id, wire);
+        service_busy_format(ctx->busy[i].id, wire);
         MQTTMessage m = {0};
         m.qos = QOS1;
         m.payload = wire;
         m.payloadlen = strlen(wire);
-        port.busy_sending = i + 1;
-        int rc = publish_owned(c, topic, &m);
-        port.busy_sending = 0;
+        ctx->busy_sending = i + 1;
+        int rc = publish_owned(ctx, c, topic, &m);
+        ctx->busy_sending = 0;
         if (rc != MQTT_SUCCESS)
             return rc;
     }
     return MQTT_SUCCESS;
 }
 
-bool ph_mqtt_input_consumed(void) {
-    if (!ph_mqtt_owner() || !port.core.dispatch_depth || port.core.protocol_depth)
+static __attribute__((noinline)) bool ctx_ph_mqtt_input_consumed(port_state *ctx) {
+    if (!ctx_ph_mqtt_owner(ctx) || !ctx->core.dispatch_depth || ctx->core.protocol_depth)
         return false;
-    ph_mqtt_item_release(&port.core, port.core.inflight[PH_MQTT_COMMAND]);
-    return ph_mqtt_credit_replace(&port.core, PH_MQTT_RECEIPT_BYTES);
+    ph_mqtt_item_release(&ctx->core, ctx->core.inflight[PH_MQTT_COMMAND]);
+    return ph_mqtt_credit_replace(&ctx->core, PH_MQTT_RECEIPT_BYTES);
 }
 
-bool ph_mqtt_work_pending(void) {
-    if (!ph_mqtt_owner() || port.core.protocol_depth || port.core.dispatch_depth || port.failed)
+static __attribute__((noinline)) bool ctx_ph_mqtt_work_pending(port_state *ctx) {
+    if (!ctx_ph_mqtt_owner(ctx) || ctx->core.protocol_depth || ctx->core.dispatch_depth || ctx->failed)
         return false;
-    mutex_lock(NULL);
-    bool pending = port.core.head[PH_MQTT_COMMAND] || port.core.head[PH_MQTT_SEND];
-    mutex_unlock(NULL);
+    mutex_lock(ctx);
+    bool pending = ctx->core.head[PH_MQTT_COMMAND] || ctx->core.head[PH_MQTT_SEND];
+    mutex_unlock(ctx);
     /* Emergency slots are written/retired only by this owner. */
-    return pending || port.core.inflight[PH_MQTT_SEND] || port.receipt.wire || port.busy[0].used || port.busy[1].used;
+    return pending || ctx->core.inflight[PH_MQTT_SEND] || ctx->receipt.wire || (ctx->busy && (ctx->busy[0].used || ctx->busy[1].used));
 }
 
-int ph_mqtt_poll(Client *c) {
+static __attribute__((noinline)) int ctx_ph_mqtt_poll(port_state *ctx, Client *c) {
     if (!c)
-        c = port.client;
-    if (!ph_mqtt_owner() || c != port.client || port.core.protocol_depth || port.core.dispatch_depth)
+        c = ctx->client;
+    if (!ctx_ph_mqtt_owner(ctx) || c != ctx->client || ctx->core.protocol_depth || ctx->core.dispatch_depth)
         return MQTT_FAILURE;
-    if (port.failed)
+    if (ctx->failed)
         return MQTT_FAILURE;
     int rc = MQTT_SUCCESS;
     ph_mqtt_item *i;
-    if (port.receipt.wire) {
-        rc = receipt_retry(c);
+    if (ctx->receipt.wire) {
+        rc = receipt_retry(ctx, c);
         if (rc == PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED)
             goto send_one;
-        ph_mqtt_credit_release(&port.core);
-        if (port.core.inflight[PH_MQTT_COMMAND])
-            ph_mqtt_item_release(&port.core, port.core.inflight[PH_MQTT_COMMAND]);
+        ph_mqtt_credit_release(&ctx->core);
+        if (ctx->core.inflight[PH_MQTT_COMMAND])
+            ph_mqtt_item_release(&ctx->core, ctx->core.inflight[PH_MQTT_COMMAND]);
         if (rc != MQTT_SUCCESS)
             return rc;
         /* A completed receipt may acknowledge a rename. Return to the session
          * identity/stop check before dispatching another old-session command. */
         return MQTT_SUCCESS;
     }
-    rc = send_emergency(c);
+    rc = send_emergency(ctx, c);
     if (rc == PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED)
         goto send_one;
     if (rc != MQTT_SUCCESS)
         return rc;
     /* Fixed budgets prevent callbacks arriving during PUBACK from extending
      * this pass. One business command, then at most one external telemetry. */
-    i = ph_mqtt_pop(&port.core, PH_MQTT_COMMAND);
+    i = ph_mqtt_pop(&ctx->core, PH_MQTT_COMMAND);
     if (i) {
-        if (!ph_mqtt_credit_acquire(&port.core, SERVICE_BUSY_BYTES)) {
+        if (!ph_mqtt_credit_acquire(&ctx->core, SERVICE_BUSY_BYTES)) {
             /* Even the fixed failure receipt must have credit before dispatch. */
-            if (modern(i->data, i->topic_length)) {
+            if (modern(ctx, i->data, i->topic_length)) {
                 char wire[SERVICE_BUSY_BYTES];
                 mqtt_target_t target;
-                mqtt_target_set(&target, port.account);
+                mqtt_target_set(&target, ctx->account);
                 service_busy_wire(ph_mqtt_item_payload(i), i->length, wire);
-                rc = ph_mqtt_receipt_send(&target, wire, NULL, NULL);
+                rc = ctx_ph_mqtt_receipt_send(ctx, &target, wire, NULL, NULL);
                 if (rc != PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED)
-                    ph_mqtt_item_release(&port.core, i);
+                    ph_mqtt_item_release(&ctx->core, i);
                 if (rc < 0)
                     return rc;
                 goto send_one;
@@ -749,14 +814,14 @@ int ph_mqtt_poll(Client *c) {
              * run and has no modern busy protocol: count/drop it, not the
              * healthy connection. A preexisting credit remains an invariant
              * failure. Only this owner mutates credit; producers cannot race it. */
-            if (!port.core.credit) {
+            if (!ctx->core.credit) {
                 if (!i->retained)
-                    ph_mqtt_record_ingress_drop(&port.core, false);
-                ph_mqtt_item_release(&port.core, i);
+                    ph_mqtt_record_ingress_drop(&ctx->core, false);
+                ph_mqtt_item_release(&ctx->core, i);
                 goto send_one;
             }
-            ph_mqtt_item_release(&port.core, i);
-            return ph_mqtt_app_error(PH_MQTT_ERROR_APP_RECEIPT_ADMISSION, MQTT_FAILURE);
+            ph_mqtt_item_release(&ctx->core, i);
+            return ctx_ph_mqtt_app_error(ctx, PH_MQTT_ERROR_APP_RECEIPT_ADMISSION, MQTT_FAILURE);
         }
         MQTTString topic = MQTTString_initializer;
         topic.cstring = i->data;
@@ -766,30 +831,30 @@ int ph_mqtt_poll(Client *c) {
         m.qos = i->qos;
         m.retained = i->retained;
         MessageData d = { &m, &topic};
-        if (i->generation == port.core.generation && ph_mqtt_dispatch_begin(&port.core)) {
-            port.subscriptions[i->route].handler(&d);
-            ph_mqtt_dispatch_end(&port.core);
+        if (i->generation == ctx->core.generation && ph_mqtt_dispatch_begin(&ctx->core)) {
+            ctx->subscriptions[i->route].handler(&d);
+            ph_mqtt_dispatch_end(&ctx->core);
         }
         /* A modern handler may consume its borrowed entry after parsing.
          * Never touch that old MessageData/topic/payload after dispatch. */
-        if (port.core.inflight[PH_MQTT_COMMAND])
-            ph_mqtt_item_release(&port.core, port.core.inflight[PH_MQTT_COMMAND]);
-        if (!port.receipt.wire)
-            ph_mqtt_credit_release(&port.core);
+        if (ctx->core.inflight[PH_MQTT_COMMAND])
+            ph_mqtt_item_release(&ctx->core, ctx->core.inflight[PH_MQTT_COMMAND]);
+        if (!ctx->receipt.wire)
+            ph_mqtt_credit_release(&ctx->core);
         else
             rc = PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED;
-        if (port.failed)
+        if (ctx->failed)
             return MQTT_FAILURE;
     }
 send_one:
     /* Do not repeat TC1 namespace allocation/encoding during the throttle. */
     {
-        int ready = ph_mqtt_resource_ready();
+        int ready = ctx_ph_mqtt_resource_ready(ctx);
         if (ready != MQTT_SUCCESS) return ready;
     }
     /* A refused COMMAND consumes its one attempt, not its external SEND turn. */
-    i = port.core.inflight[PH_MQTT_SEND];
-    if (!i) i = ph_mqtt_pop(&port.core, PH_MQTT_SEND);
+    i = ctx->core.inflight[PH_MQTT_SEND];
+    if (!i) i = ph_mqtt_pop(&ctx->core, PH_MQTT_SEND);
     if (i) {
         MQTTMessage m = {0};
         m.payload = (void *) ph_mqtt_item_payload(i);
@@ -797,14 +862,162 @@ send_one:
         m.qos = i->qos;
         m.retained = i->retained;
         int sent = MQTT_SUCCESS;
-        if (i->generation == port.core.generation) {
-            port.resource_owned = true;
-            sent = port.outgoing ? port.outgoing(i) : ph_mqtt_publish(c, i->data, &m);
-            port.resource_owned = false;
+        if (i->generation == ctx->core.generation) {
+            ctx->resource_owned = true;
+            sent = ctx->outgoing ? ctx->outgoing(i) : ctx_ph_mqtt_publish(ctx, c, i->data, &m);
+            ctx->resource_owned = false;
         }
         if (sent != PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED)
-            ph_mqtt_item_release(&port.core, i);
+            ph_mqtt_item_release(&ctx->core, i);
         if (sent != MQTT_SUCCESS) rc = sent;
     }
     return rc;
 }
+
+/* Stable public namespaces: producer calls never follow callback selection. */
+bool ph_mqtt_owner(void) { return ctx_ph_mqtt_owner(&primary_port); }
+#ifdef PHICOMM_BEMFA
+bool bm_owner(void) { return ctx_ph_mqtt_owner(secondary_port); }
+#endif
+mico_thread_t *ph_mqtt_owner_thread(void) { return ctx_ph_mqtt_owner_thread(&primary_port); }
+#ifdef PHICOMM_BEMFA
+mico_thread_t *bm_owner_thread(void) { return ctx_ph_mqtt_owner_thread(secondary_port); }
+#endif
+bool ph_mqtt_receipt_pending(void) { return ctx_ph_mqtt_receipt_pending(&primary_port); }
+#ifdef PHICOMM_BEMFA
+bool bm_receipt_pending(void) { return ctx_ph_mqtt_receipt_pending(secondary_port); }
+#endif
+void ph_mqtt_owner_end(void) { ctx_ph_mqtt_owner_end(&primary_port); }
+#ifdef PHICOMM_BEMFA
+void bm_owner_end(void) { ctx_ph_mqtt_owner_end(secondary_port); }
+#endif
+const ph_mqtt_core *ph_mqtt_debug_core(void) { return ctx_ph_mqtt_debug_core(&primary_port); }
+#ifdef PHICOMM_BEMFA
+const ph_mqtt_core *bm_debug_core(void) { return ctx_ph_mqtt_debug_core(secondary_port); }
+#endif
+int ph_mqtt_app_error(unsigned stage, int rc) { return ctx_ph_mqtt_app_error(&primary_port, stage, rc); }
+#ifdef PHICOMM_BEMFA
+int bm_app_error(unsigned stage, int rc) { return ctx_ph_mqtt_app_error(secondary_port, stage, rc); }
+#endif
+void ph_mqtt_error(unsigned stage, int rc) { ctx_ph_mqtt_error(&primary_port, stage, rc); }
+#ifdef PHICOMM_BEMFA
+void bm_error(unsigned stage, int rc) { ctx_ph_mqtt_error(secondary_port, stage, rc); }
+#endif
+void ph_mqtt_session_begin(void) { ctx_ph_mqtt_session_begin(&primary_port); }
+#ifdef PHICOMM_BEMFA
+void bm_session_begin(void) { ctx_ph_mqtt_session_begin(secondary_port); }
+#endif
+void ph_mqtt_lifecycle_event(unsigned stage, int rc) { ctx_ph_mqtt_lifecycle_event(&primary_port, stage, rc); }
+#ifdef PHICOMM_BEMFA
+void bm_lifecycle_event(unsigned stage, int rc) { ctx_ph_mqtt_lifecycle_event(secondary_port, stage, rc); }
+#endif
+void ph_mqtt_reconnect(void) { ctx_ph_mqtt_reconnect(&primary_port); }
+#ifdef PHICOMM_BEMFA
+void bm_reconnect(void) { ctx_ph_mqtt_reconnect(secondary_port); }
+#endif
+void ph_mqtt_snapshot(ph_mqtt_diagnostics *out) { ctx_ph_mqtt_snapshot(&primary_port, out); }
+#ifdef PHICOMM_BEMFA
+void bm_snapshot(ph_mqtt_diagnostics *out) { ctx_ph_mqtt_snapshot(secondary_port, out); }
+#endif
+void ph_mqtt_outgoing(int(*handler)(const ph_mqtt_item *)) { ctx_ph_mqtt_outgoing(&primary_port, handler); }
+#ifdef PHICOMM_BEMFA
+void bm_outgoing(int(*handler)(const ph_mqtt_item *)) { ctx_ph_mqtt_outgoing(secondary_port, handler); }
+#endif
+void ph_mqtt_pending_clear(void) { ctx_ph_mqtt_pending_clear(&primary_port); }
+#ifdef PHICOMM_BEMFA
+void bm_pending_clear(void) { ctx_ph_mqtt_pending_clear(secondary_port); }
+#endif
+bool ph_mqtt_owner_init(const mqtt_account_t *account, size_t maximum, mico_thread_t *owner, bool(*accept)(MessageData *, messageHandler)) { return ctx_ph_mqtt_owner_init(&primary_port, account, maximum, owner, accept); }
+#ifdef PHICOMM_BEMFA
+bool bm_owner_init(const mqtt_account_t *account, size_t maximum, mico_thread_t *owner, bool(*accept)(MessageData *, messageHandler)) { return ctx_ph_mqtt_owner_init(secondary_port, account, maximum, owner, accept); }
+#endif
+int ph_mqtt_client_init(Client *c, Network *n, unsigned timeout) { return ctx_ph_mqtt_client_init(&primary_port, c, n, timeout); }
+#ifdef PHICOMM_BEMFA
+int bm_client_init(Client *c, Network *n, unsigned timeout) { return ctx_ph_mqtt_client_init(secondary_port, c, n, timeout); }
+#endif
+int ph_mqtt_client_deinit(Client *c) { return ctx_ph_mqtt_client_deinit(&primary_port, c); }
+#ifdef PHICOMM_BEMFA
+int bm_client_deinit(Client *c) { return ctx_ph_mqtt_client_deinit(secondary_port, c); }
+#endif
+int ph_mqtt_connect(Client *c, MQTTPacket_connectData *data) { return ctx_ph_mqtt_connect(&primary_port, c, data); }
+#ifdef PHICOMM_BEMFA
+int bm_connect(Client *c, MQTTPacket_connectData *data) { return ctx_ph_mqtt_connect(secondary_port, c, data); }
+#endif
+int ph_mqtt_disconnect(Client *c) { return ctx_ph_mqtt_disconnect(&primary_port, c); }
+#ifdef PHICOMM_BEMFA
+int bm_disconnect(Client *c) { return ctx_ph_mqtt_disconnect(secondary_port, c); }
+#endif
+int ph_mqtt_subscribe(Client *c, const char *filter, enum QoS qos, messageHandler handler) { return ctx_ph_mqtt_subscribe(&primary_port, c, filter, qos, handler); }
+#ifdef PHICOMM_BEMFA
+int bm_subscribe(Client *c, const char *filter, enum QoS qos, messageHandler handler) { return ctx_ph_mqtt_subscribe(secondary_port, c, filter, qos, handler); }
+#endif
+int ph_mqtt_yield(Client *c, int timeout) { return ctx_ph_mqtt_yield(&primary_port, c, timeout); }
+#ifdef PHICOMM_BEMFA
+int bm_yield(Client *c, int timeout) { return ctx_ph_mqtt_yield(secondary_port, c, timeout); }
+#endif
+int ph_mqtt_resource_ready(void) { return ctx_ph_mqtt_resource_ready(&primary_port); }
+#ifdef PHICOMM_BEMFA
+int bm_resource_ready(void) { return ctx_ph_mqtt_resource_ready(secondary_port); }
+#endif
+void ph_mqtt_resource_round_end(bool complete) { ctx_ph_mqtt_resource_round_end(&primary_port, complete); }
+#ifdef PHICOMM_BEMFA
+void bm_resource_round_end(bool complete) { ctx_ph_mqtt_resource_round_end(secondary_port, complete); }
+#endif
+int ph_mqtt_publish(Client *c, const char *topic, MQTTMessage *m) { return ctx_ph_mqtt_publish(&primary_port, c, topic, m); }
+#ifdef PHICOMM_BEMFA
+int bm_publish(Client *c, const char *topic, MQTTMessage *m) { return ctx_ph_mqtt_publish(secondary_port, c, topic, m); }
+#endif
+int ph_mqtt_receipt_send(const mqtt_target_t *target, const char *wire, void *owned, void(*release_wire)(void *)) { return ctx_ph_mqtt_receipt_send(&primary_port, target, wire, owned, release_wire); }
+#ifdef PHICOMM_BEMFA
+int bm_receipt_send(const mqtt_target_t *target, const char *wire, void *owned, void(*release_wire)(void *)) { return ctx_ph_mqtt_receipt_send(secondary_port, target, wire, owned, release_wire); }
+#endif
+void ph_mqtt_turn_begin(unsigned limit) { ctx_ph_mqtt_turn_begin(&primary_port, limit); }
+#ifdef PHICOMM_BEMFA
+void bm_turn_begin(unsigned limit) { ctx_ph_mqtt_turn_begin(secondary_port, limit); }
+#endif
+void ph_mqtt_turn_end(void) { ctx_ph_mqtt_turn_end(&primary_port); }
+#ifdef PHICOMM_BEMFA
+void bm_turn_end(void) { ctx_ph_mqtt_turn_end(secondary_port); }
+#endif
+uint32_t ph_mqtt_send_generation(void) { return ctx_ph_mqtt_send_generation(&primary_port); }
+#ifdef PHICOMM_BEMFA
+uint32_t bm_send_generation(void) { return ctx_ph_mqtt_send_generation(secondary_port); }
+#endif
+int ph_mqtt_enqueue_send_generation(const char *topic, const void *payload, size_t n, unsigned qos, bool retain, uint32_t generation) { return ctx_ph_mqtt_enqueue_send_generation(&primary_port, topic, payload, n, qos, retain, generation); }
+#ifdef PHICOMM_BEMFA
+int bm_enqueue_send_generation(const char *topic, const void *payload, size_t n, unsigned qos, bool retain, uint32_t generation) { return ctx_ph_mqtt_enqueue_send_generation(secondary_port, topic, payload, n, qos, retain, generation); }
+#endif
+int ph_mqtt_enqueue_send(const char *topic, const void *payload, size_t n, unsigned qos, bool retain) { return ctx_ph_mqtt_enqueue_send(&primary_port, topic, payload, n, qos, retain); }
+#ifdef PHICOMM_BEMFA
+int bm_enqueue_send(const char *topic, const void *payload, size_t n, unsigned qos, bool retain) { return ctx_ph_mqtt_enqueue_send(secondary_port, topic, payload, n, qos, retain); }
+#endif
+bool ph_mqtt_input_consumed(void) { return ctx_ph_mqtt_input_consumed(&primary_port); }
+#ifdef PHICOMM_BEMFA
+bool bm_input_consumed(void) { return ctx_ph_mqtt_input_consumed(secondary_port); }
+#endif
+bool ph_mqtt_work_pending(void) { return ctx_ph_mqtt_work_pending(&primary_port); }
+#ifdef PHICOMM_BEMFA
+bool bm_work_pending(void) { return ctx_ph_mqtt_work_pending(secondary_port); }
+#endif
+int ph_mqtt_poll(Client *c) { return ctx_ph_mqtt_poll(&primary_port, c); }
+#ifdef PHICOMM_BEMFA
+int bm_poll(Client *c) { return ctx_ph_mqtt_poll(secondary_port, c); }
+#endif
+#ifdef PHICOMM_BEMFA
+bool bm_transport_allocate(mico_thread_t *owner) {
+    if(!owner || !mico_rtos_is_current_thread(owner) || secondary_port || !permit(NULL,sizeof(port_state)))return false;
+    port_state *next=calloc(1,sizeof(*next));if(!next)return false;
+    __atomic_store_n(&secondary_thread,owner,__ATOMIC_RELEASE);
+    __atomic_store_n(&secondary_port,next,__ATOMIC_RELEASE);return true;
+}
+void bm_transport_release(void) {
+    port_state *ctx=secondary_port;
+    if(!ctx || !secondary_thread || !mico_rtos_is_current_thread(secondary_thread))return;
+    if(initialized(ctx))ctx_ph_mqtt_owner_end(ctx);
+    if(ctx->bound || ctx->client)return;
+    __atomic_store_n(&secondary_port,NULL,__ATOMIC_RELEASE);
+    __atomic_store_n(&secondary_thread,NULL,__ATOMIC_RELEASE);
+    if(ctx->mutex_ready)mico_rtos_deinit_mutex(&ctx->mutex);
+    free(ctx);
+}
+#endif

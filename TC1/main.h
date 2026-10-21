@@ -3,6 +3,7 @@
 
 #include "mico.h"
 #include "../common/mqtt_account.h"
+#include "../common/mqtt/bemfa.h"
 #include "micokit_ext.h"
 #include "timed_task/timed_task.h"
 
@@ -81,6 +82,7 @@ typedef struct
     uint8_t mqtt_topic_mode;
     char mqtt_host[128];
     automation_config_t automation;
+    bemfa_config_t bemfa;
 } user_config_t;
 
 extern char rtc_init;

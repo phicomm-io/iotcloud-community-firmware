@@ -790,6 +790,21 @@ json_object *feature_json(const char *d) {
   free(c);
   return o;
 }
+static json_object *feature_result(int code,unsigned revision,json_object *o) {
+  json_object *result;
+  result = json_object_new_object();
+  number(result, "code", code);
+  number(result, "revision", revision);
+  js(result, "message",
+     code == 200 ? "Saved"
+     : code == 409
+         ? "Revision conflict, binding required, or persistence unavailable"
+         : "Invalid configuration");
+  json_object *request = json_object_object_get(o, "request_id");
+  if (request)
+    json_build_object_add(result, "request_id", json_object_get(request));
+  return result;
+}
 int feature_set(const char *d, json_object *o, json_object **response) {
   int code = 200;
   if (!strcmp(d, "status")) {
@@ -887,17 +902,7 @@ int feature_set(const char *d, json_object *o, json_object **response) {
   else
     group_broadcast_config(d, o);
 end:
-  *response = json_object_new_object();
-  number(*response, "code", code);
-  number(*response, "revision", c->revision);
-  js(*response, "message",
-     code == 200 ? "Saved"
-     : code == 409
-         ? "Revision conflict, binding required, or persistence unavailable"
-         : "Invalid configuration");
-  json_object *request = json_object_object_get(o, "request_id");
-  if (request)
-    json_build_object_add(*response, "request_id", json_object_get(request));
+  *response=feature_result(code,c->revision,o);
   free(c);
   return code;
 }
@@ -999,22 +1004,32 @@ unsigned feature_fan_limit(void) {
   unlock(); return value;
 }
 int feature_fan_command(json_object *o) {
+  unsigned selection=0;
+  json_object *mode=json_object_object_get(o,"mode");
+  if(mode){
+    if(!json_object_is_type(mode,json_type_string) ||
+       strlen(json_object_get_string(mode))!=(size_t)json_object_get_string_len(mode))return 0;
+    const char *v=json_object_get_string(mode);
+    if(!strcmp(v,"auto"))selection=2;
+    else if(!strcmp(v,"manual"))selection=1;
+    else return 0;
+  }
+  json_object *speed=json_object_object_get(o,"speed");
+  return feature_fan_apply(selection,speed?json_object_get_int(speed):-1);
+}
+int feature_fan_apply(unsigned mode, int speed) {
+  if(mode>3 || speed < -1 || speed>100)return 0;
+  /* Power-only/manual-speed actions need no feature snapshot or allocation. */
+  lock();bool current=configuration.linkage.enabled;unlock();
+  if((!mode || mode==(current?2u:1u)) && (!current || speed<=0))return current?2:1;
   feature_config_t *c = malloc(sizeof(*c)); if (!c) return 0;
   feature_config_get(c);
   bool automatic = c->linkage.enabled;
-  json_object *mode = json_object_object_get(o,"mode");
-  if (mode) {
-    if (!json_object_is_type(mode,json_type_string) || strlen(json_object_get_string(mode)) != (size_t)json_object_get_string_len(mode)) {free(c);return 0;}
-    const char *v=json_object_get_string(mode);
-    if (!strcmp(v,"auto")) automatic=true;
-    else if (!strcmp(v,"manual")) automatic=false;
-    else {free(c);return 0;}
-  }
+  if(mode)automatic=mode==3?!automatic:mode==2;
   bool changed = automatic != (bool)c->linkage.enabled;
   c->linkage.enabled = automatic;
-  json_object *speed=json_object_object_get(o,"speed");
-  if (automatic && speed && json_object_get_int(speed)>0) {
-    unsigned maximum=json_object_get_int(speed);
+  if (automatic && speed>0) {
+    unsigned maximum=speed;
     lock(); int night=automatic_night; unlock();
     if (night>=0 && (unsigned)night<c->sleep_count) {
       changed |= c->sleeps[night].max_speed != maximum;
@@ -1028,6 +1043,29 @@ int feature_fan_command(json_object *o) {
   }
   bool ok=!changed || install_config(c);
   free(c);return ok?(automatic?2:1):0;
+}
+bool feature_group_active(void) {
+  lock();bool active=configuration.group[0] && configuration.member_count;unlock();return active;
+}
+int feature_light_select(unsigned effect,json_object **response) {
+  if(effect>4 && effect!=255)return 400;
+  feature_config_t *c=malloc(sizeof(*c));if(!c)return 500;
+  feature_config_get(c);
+  c->light.effect=effect==255?(c->light.effect+1)%5:effect;
+  unsigned selected=c->light.effect;
+  bool ok=install_config(c);
+  unsigned revision=c->revision;
+  free(c);
+  /* Group serialization is optional delivery, after local persistence. */
+  if(ok && feature_group_active()){
+    uint64_t failures=service_memory_failures();
+    json_object *o=json_object_new_object();
+    if(o){number(o,"effect",selected);
+      if(!service_caller_graph_failed(failures))group_broadcast_config("light",o);json_object_put(o);}
+  }
+  int code=ok?200:409;
+  if(response)*response=feature_result(code,revision,NULL);
+  return code;
 }
 unsigned feature_light_cap(unsigned brightness) {
   lock();
@@ -1301,6 +1339,10 @@ static bool feature_worker_should_stop(void){
 #endif
 static void feature_worker(mico_thread_arg_t arg) {
   UNUSED_PARAMETER(arg);
+#ifdef FEATURE_DEVICE_A1
+  /* Restart after OTA must never replay a press from the suspended worker. */
+  a1_input_clear();
+#endif
   char *wire = malloc(FEATURE_WIRE_MAX + 1);
   feature_config_t *c = malloc(sizeof(*c));
   if (!wire || !c) {
@@ -1332,6 +1374,9 @@ static void feature_worker(mico_thread_arg_t arg) {
   for (;;) {
 #ifdef PHICOMM_DEVICE_OTA
     if(feature_worker_should_stop())break;
+#endif
+#ifdef FEATURE_DEVICE_A1
+    a1_input_poll();
 #endif
     uint32_t now = now_ms();
     feature_config_get(c);

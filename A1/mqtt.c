@@ -26,7 +26,7 @@ static bool rediscover, cleanup_pending;
 static a1_config_t session_config;
 static bool same_connection(const a1_config_t *, const a1_config_t *);
 static bool session_current(void)
-{ a1_config_t c; a1_config_get(&c); return same_connection(&session_config, &c); }
+{ a1_config_t c; a1_config_get(&c); return bemfa_primary_enabled() && same_connection(&session_config, &c); }
 static void mqtt_status(unsigned status)
 { mico_rtos_lock_mutex(&a1_lock); a1_state.mqtt_status = status; a1_state.mqtt_connected = status == MQTT_READY; mico_rtos_unlock_mutex(&a1_lock); }
 
@@ -86,33 +86,34 @@ static void command(MessageData *d)
     unsigned fn=ft->cstring?strlen(ft->cstring):ft->lenstring.len;
     if(fn<sizeof(ftopic)){memcpy(ftopic,ft->cstring?ft->cstring:ft->lenstring.data,fn);ftopic[fn]=0;if(feature_mqtt_input(ftopic,m->payload,m->payloadlen,m->retained))return;}
     /* Wildcard also receives our own states: dispatch only these exact commands. */
-    const char *kind = NULL, *key = NULL;
-    if (topic_is(d, "fan/set")) { kind = "fan"; key = "on"; }
-    else if (topic_is(d, "fan/percentage/set")) { kind = "fan"; key = "speed"; }
-    else if (topic_is(d, "light/set")) kind = "light";
-    else if (topic_is(d, "child_lock/set")) { kind = "child_lock"; key = "enabled"; }
-    else if (topic_is(d, "led_always_on/set")) { kind = "light"; key = "always_on"; }
-    else return;
-    char *text = malloc(m->payloadlen + 1);
-    if (!text) return;
-    memcpy(text, m->payload, m->payloadlen); text[m->payloadlen] = 0;
-    if (memchr(text, 0, m->payloadlen)) { free(text); return; }
-    json_object *o = NULL;
-    if (!key) o = a1_json_parse(text, m->payloadlen);
-    else {
-        o = json_object_new_object();
-        if (o && !strcmp(key, "speed")) {
-            char *end; long n = strtol(text, &end, 10);
-            while (isspace((unsigned char)*end)) end++;
-            if (end == text || *end || n < 0 || n > 100 || !isdigit((unsigned char)text[0])) {
-                json_object_put(o); o = NULL;
-            } else json_build_object_add(o, key, json_object_new_int(n));
-        } else if (o && (!strcmp(text, "ON") || !strcmp(text, "OFF")))
-            json_build_object_add(o, key, json_object_new_boolean(!strcmp(text, "ON")));
-        else if (o) { json_object_put(o); o = NULL; }
+    a1_control_t r={0};
+    if(topic_is(d,"light/set")){
+        json_object *o=a1_json_parse(m->payload,m->payloadlen);
+        if(o){a1_control_local("light",o);json_object_put(o);}return;
     }
-    if (o) { a1_control_local(kind, o); json_object_put(o); }
-    free(text);
+    if(topic_is(d,"fan/set")){r.kind=A1_CONTROL_FAN;r.fields=A1_SET_ON;}
+    else if(topic_is(d,"fan/percentage/set")){r.kind=A1_CONTROL_FAN;r.fields=A1_SET_SPEED;}
+    else if(topic_is(d,"child_lock/set")){r.kind=A1_CONTROL_LOCK;r.fields=A1_SET_ENABLED;}
+    else if(topic_is(d,"led_always_on/set")){r.kind=A1_CONTROL_LIGHT;r.fields=A1_SET_ALWAYS;}
+    else return;
+    const char *text=m->payload;unsigned n=m->payloadlen,value=0;
+    if(r.fields==A1_SET_SPEED){
+        unsigned i=0;
+        while(i<n && isdigit((unsigned char)text[i])){
+            value=value*10+text[i++]-'0';if(value>100)return;
+        }
+        if(!i)return;
+        while(i<n && isspace((unsigned char)text[i]))i++;
+        if(i!=n)return;
+        r.speed=value;
+    }else{
+        if(n==2 && !memcmp(text,"ON",2))value=1;
+        else if(n!=3 || memcmp(text,"OFF",3))return;
+        r.on=r.enabled=r.always_on=value;
+    }
+    if(service_control_begin()){
+        a1_control_apply(&r,false,false);service_control_end();
+    }
 }
 static void feature_command(MessageData *d)
 {
@@ -451,7 +452,7 @@ static int session_prepare(void *context,ph_mqtt_connection *spec) {
             mico_rtos_lock_mutex(&a1_lock); a1_state.mqtt_cleanup_warning = result != MQTT_SUCCESS; mico_rtos_unlock_mutex(&a1_lock);
             cleanup_pending = false;
         }
-        if (!cfg.mqtt_host[0] || !state.wifi_connected) { mqtt_status(MQTT_DISCONNECTED); return PH_MQTT_PREPARE_WAIT; }
+        if (!bemfa_primary_enabled() || !cfg.mqtt_host[0] || !state.wifi_connected) { mqtt_status(MQTT_DISCONNECTED); return PH_MQTT_PREPARE_WAIT; }
         if (!mqtt_account_init(&account, MQTT_TOPIC_TMCP, "a1", cfg.mqtt_user, a1_id)) {
             mqtt_status(MQTT_CONFIG_ERROR); return PH_MQTT_PREPARE_WAIT;
         }
@@ -542,7 +543,7 @@ static bool session_valid(void *context) {
     (void)context;
     a1_config_get(&current);
     mqtt_state_get(&state);
-    return state.wifi_connected && same_connection(&cfg, &current);
+    return bemfa_primary_enabled() && state.wifi_connected && same_connection(&cfg, &current);
 }
 static bool session_initial_ready(void *context) {
     (void)context;

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Guard known synchronous button paths using the pinned compiler's .su files.
+"""Guard the hardware producer using the pinned compiler's .su files.
 
 The reserve covers library/RTOS calls; this is not a runtime high-water mark.
 """
@@ -19,15 +19,11 @@ def check(directory, header):
             frames[name] = max(frames.get(name, 0), int(size))
     budget = int(re.search(r'#define A1_HARDWARE_STACK_SIZE (\d+)u',
                            Path(header).read_text()).group(1))
-    common = ['hardware_worker', 'automation_button', 'auto_execute',
-              'service_command', 'service_product']
+    # Gesture recognition and LED feedback stay in the scan loop. Business,
+    # Flash and network tails are budgeted on the binding worker separately.
     paths = {
-        'button status': common + ['service_query', 'a1_status_json', 'a1_status_json_view'],
-        'button control': common + ['service_product_inner', 'a1_control_local',
-                                    'feature_group_control', 'group_send', 'parse'],
-        'button inspect / power on': common + ['service_product_inner',
-            'a1_panel_inspect', 'a1_control_json', 'a1_control_local',
-            'feature_group_control', 'group_send', 'parse'],
+        'panel input handoff': ['hardware_worker', 'a1_input_push'] +
+            [n for n in ('panel_tick', 'a1_buttons_sample', 'key_sample') if n in frames],
     }
     for label, names in paths.items():
         missing = set(names) - frames.keys()

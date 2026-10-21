@@ -2,6 +2,15 @@
 
 English translation of the published release history. Historical validation statements apply to the release named in each section, not to later firmware. Release notes are authored in the Wiki and frozen into the source repository before tagging.
 
+## v0.9.18
+
+- Fix intermittent A1 power-button failures after the device has been running: short presses show ring feedback and double-clicks switch automatic/manual mode again.
+- Share A1 control handling across physical buttons, HTTP, MQTT and automation, reducing allocations and blocking in input handling while retaining child lock, custom button mappings, fan speed and ring behavior.
+- Add optional direct Bemfa connectivity on TC1 and A1. The existing MQTT connection and Bemfa can be enabled independently or used together; existing connections and settings are preserved. M1 retains its existing connectivity.
+- Further reduce status-query memory and embedded-page size. Build validation now checks A1 packages against the actual OTA staging capacity.
+- Host regression and full/slim builds passed for A1, M1 and TC1. An A1 candidate was flashed and checked for preserved settings, Wi-Fi, MQTT and panel status; physical short-press and double-click tests passed. TC1, M1 and Bemfa physical acceptance was not performed for this release.
+- Version 0.9.x is beta. Back up important settings before upgrading.
+
 ## v0.9.17
 
 - Fix TC1 failing to connect to IotCloud, Home Assistant or a custom MQTT broker after initial setup or a factory reset despite a saved broker configuration.

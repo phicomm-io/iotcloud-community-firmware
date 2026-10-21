@@ -36,6 +36,8 @@ class SharedMQTT(unittest.TestCase):
                     apply_stack(copy, [patch])
             if model != 'TC1':
                 apply_stack(copy, [ROOT/model/'features-sdk.patch'])
+            if model == 'TC1':
+                apply_stack(copy, [ROOT/'TC1/mqtt-handlers-sdk.patch'])
             apply_stack(copy, [ROOT/p for p in ('common/mqtt-mico36.patch',
                 'common/mqtt-publish-bounds.patch', 'common/mqtt-socket-close.patch',
                 'M1/mqtt-packet-deadline.patch', 'common/mqtt-response-deadline.patch',
@@ -52,6 +54,13 @@ class SharedMQTT(unittest.TestCase):
             command += list(defines) + [str(p) for p in sources] + ['-o', str(binary)]
             subprocess.run(command, check=True, timeout=60)
             subprocess.run([str(binary)], check=True, timeout=30)
+    def test_dual_owners(self):
+        with self.protocol('TC1') as protocol:
+            self.compile_run([ROOT/'tests/mqtt_core/dual.c',ROOT/'common/mqtt/core.c',
+                ROOT/'common/mqtt/client.c',ROOT/'common/mqtt/session.c',protocol/'MQTTClient.c',
+                *sorted((protocol/'MQTTPacket').glob('*.c'))],
+                [ROOT/'tests/mqtt_core/stubs',protocol,protocol/'mico',protocol/'MQTTPacket'],
+                ['-DPHICOMM_BEMFA=1','-Wl,--wrap=malloc,--wrap=free,--wrap=realloc,--wrap=calloc,--wrap=strdup'])
     def test_core(self):
         self.compile_run([ROOT / p for p in ('tests/mqtt_core/core.c', 'common/mqtt/core.c')])
     def test_concurrent_clear(self):
@@ -63,7 +72,7 @@ class SharedMQTT(unittest.TestCase):
                               *sorted((protocol / 'MQTTPacket').glob('*.c'))],
                              [ROOT / 'tests/mqtt_core/stubs', protocol, protocol / 'mico', protocol / 'MQTTPacket'],
                              (['-DMAX_MESSAGE_HANDLERS=12', '-DPH_EXPECTED_MESSAGE_HANDLERS=12'] if model != 'TC1'
-                              else ['-DPH_EXPECTED_MESSAGE_HANDLERS=5']) +
+                              else ['-DPH_EXPECTED_MESSAGE_HANDLERS=6']) +
                              ['-Wl,--wrap=malloc,--wrap=free,--wrap=realloc,--wrap=calloc,--wrap=strdup'])
     def test_a1_session_pacing(self):
         self.check_session_fixture('pacing','A1')
@@ -98,7 +107,7 @@ class SharedMQTT(unittest.TestCase):
                              [ROOT / 'tests/mqtt_core/stubs', protocol,
                               protocol / 'mico', protocol / 'MQTTPacket'],
                              (['-DMAX_MESSAGE_HANDLERS=12', '-DPH_EXPECTED_MESSAGE_HANDLERS=12']
-                              if model != 'TC1' else ['-DPH_EXPECTED_MESSAGE_HANDLERS=5']) +
+                              if model != 'TC1' else ['-DPH_EXPECTED_MESSAGE_HANDLERS=6']) +
                              ['-Wl,--wrap=malloc,--wrap=free,--wrap=realloc,--wrap=calloc,--wrap=strdup'])
     def test_a1_ingress_self_feedback(self):
         from tests.test_http_json_budget import function
@@ -187,9 +196,9 @@ int main(void){
         self.check_service_fixture(extra_defines=['-DLARGE_RECEIPT_FIXTURE'])
         # The invalid callback-only gate rejects this legitimate receipt growth.
         source=(ROOT/'common/mqtt/client.c').read_text()
-        original='c == port.client && port.core.protocol_depth &&\n        permit(NULL, bytes)'
+        original='c == ctx->client && ctx->core.protocol_depth &&\n        permit(NULL, bytes)'
         blocked=source.replace(original,
-            'c == port.client && port.core.protocol_depth &&\n        !port.core.dispatch_depth && permit(NULL, bytes)')
+            'c == ctx->client && ctx->core.protocol_depth &&\n        !ctx->core.dispatch_depth && permit(NULL, bytes)')
         self.assertNotEqual(source,blocked)
         with tempfile.TemporaryDirectory() as directory:
             client=Path(directory)/'client.c';client.write_text(blocked)

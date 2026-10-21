@@ -95,7 +95,7 @@ static char session_host[128], session_user[64], session_password[257];
 static unsigned session_port, session_mode;
 static char availability_topic[MQTT_TOPIC_MAX];
 static bool session_current(void) {
-    return session_port == (unsigned)user_config->mqtt_port && session_mode == user_config->mqtt_topic_mode &&
+    return bemfa_primary_enabled() && session_port == (unsigned)user_config->mqtt_port && session_mode == user_config->mqtt_topic_mode &&
         !strcmp(session_host,user_config->mqtt_host) && !strcmp(session_user,user_config->mqtt_user) &&
         !strcmp(session_password,user_config->mqtt_password);
 }
@@ -313,7 +313,7 @@ static int session_prepare(void *context,ph_mqtt_connection *spec) {
             session_user,session_password,cleanup_discovery)!=MQTT_SUCCESS;
         TC1_STATUS_WRITE(tc1_mqtt_cleanup_warning=warning);cleanup_pending=false;
     }
-    if(!user_config->mqtt_host[0] || link.is_connected!=1)return PH_MQTT_PREPARE_WAIT;
+    if(!bemfa_primary_enabled() || !user_config->mqtt_host[0] || link.is_connected!=1)return PH_MQTT_PREPARE_WAIT;
     mico_rtos_suspend_all_thread();
     strcpy(session_host,user_config->mqtt_host);strcpy(session_user,user_config->mqtt_user);
     strcpy(session_password,user_config->mqtt_password);session_port=user_config->mqtt_port;
@@ -400,7 +400,7 @@ static void session_event(void *context,unsigned event,int rc) {
     else if(event==PH_MQTT_READY){__atomic_store_n(&isconnect,true,__ATOMIC_RELEASE);cleanup_pending=true;TC1_STATUS_WRITE(tc1_mqtt_status=MQTT_READY);}
     else if(tc1_mqtt_status==MQTT_READY || tc1_mqtt_status==MQTT_CONNECTING){TC1_STATUS_WRITE(tc1_mqtt_status=MQTT_DISCONNECTED);}
 }
-static bool session_valid(void *context){(void)context;return session_current();}
+static bool session_valid(void *context){(void)context;return bemfa_primary_enabled() && session_current();}
 static bool session_stop(void *context){(void)context;return (__atomic_load_n(&mqtt_lifecycle, __ATOMIC_ACQUIRE) & MQTT_THREAD_STOP) != 0;}
 void MqttClientThread(mico_thread_arg_t arg) {
     if(ph_mqtt_startup_wait(&mqtt_startup,(uint32_t)arg) &&

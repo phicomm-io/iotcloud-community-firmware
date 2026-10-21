@@ -5,10 +5,13 @@
 #include "config_legacy.h"
 #include <stddef.h>
 
-uint32_t app_config_legacy_size(void) { return sizeof(user_config_v11_t); }
-uint32_t app_config_legacy_next_size(uint32_t size) { return size==sizeof(user_config_v11_t)?sizeof(user_config_v10_t):0; }
+uint32_t app_config_legacy_size(void) { return offsetof(user_config_t,bemfa); }
+uint32_t app_config_legacy_next_size(uint32_t size) { return size==offsetof(user_config_t,bemfa)?sizeof(user_config_v11_t):size==sizeof(user_config_v11_t)?sizeof(user_config_v10_t):0; }
 bool app_config_migrate_legacy(void *data, uint32_t size)
 {
+    if(size==offsetof(user_config_t,bemfa) && ((user_config_t *)data)->version==USER_CONFIG_VERSION) {
+        memset(&((user_config_t *)data)->bemfa,0,sizeof(bemfa_config_t));return true;
+    }
     return tc1_migrate_v11(data,size) || tc1_migrate_v10(data,size);
 }
 
@@ -219,7 +222,10 @@ int application_start(void) {
         require_noerr(err, exit);
     }
 
+    bool mqtt_extension=user_config->bemfa.magic!=BEMFA_MAGIC || user_config->bemfa.version!=1;
+    if(mqtt_extension)bemfa_defaults(&user_config->bemfa,"tc1",str_mac);
     bool config_updated = migrateCorruptedDefaultSocketNames();
+    config_updated |= mqtt_extension;
     config_updated |= migratePowerCoefficient();
     if (config_updated) {
         mico_system_context_update(sys_config);
@@ -277,6 +283,9 @@ int application_start(void) {
 bool tc1_status_capture(device_status_t *snapshot, device_status_full_t *full)
 {
     memset(snapshot,0,sizeof(*snapshot));if(full)memset(full,0,sizeof(*full));
+#ifdef PHICOMM_BEMFA
+    bemfa_status_capture(&snapshot->network);
+#endif
     if(!tc1_status_begin())return false;
     snapshot->model=DEVICE_TC1;
     snapshot->captured=STATUS_IDENTITY|STATUS_NETWORK|STATUS_CONTROL|STATUS_OTA;
@@ -320,4 +329,14 @@ bool tc1_status_capture(device_status_t *snapshot, device_status_full_t *full)
         if(memory){full->runtime.memory_valid=true;full->runtime.free_memory=memory->free_memory;}
     }
     return true;
+}
+
+void bemfa_config_get(bemfa_config_t *out) {
+    tc1_status_lock();*out=user_config->bemfa;tc1_status_unlock();
+}
+bool bemfa_primary_enabled(void) {tc1_status_lock();bool enabled=user_config->bemfa.mqtt_enabled;tc1_status_unlock();return enabled;}
+const char *bemfa_device_id(void) {return str_mac;}
+bool bemfa_network_ready(void) {
+    LinkStatusTypeDef link={0};micoWlanGetLinkStatus(&link);
+    return link.is_connected==1 && !tc1_ota_active();
 }

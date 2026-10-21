@@ -8,6 +8,9 @@ from pathlib import Path
 OFFSET = 0x75000
 BASE = 0x08088000
 PRODUCT = b"PHICOMM_A1_EMW3080\0"
+# Pinned MK3080B kernel partition table: OTA Storage at 0x110000, size
+# 0xb5000 (kernel.bin offset 0x68f98). Includes the native trailing MD5.
+STAGING_LIMIT = 0xb5000
 KERNEL_SHA256 = "f22ad344286bb97755ab7ba2fb18e8768140c5383875098dfb0449d2184abc74"
 
 
@@ -22,7 +25,7 @@ def crc16(data):
 
 def check(path):
     image = Path(path).read_bytes()
-    if not OFFSET + 144 <= len(image) <= OFFSET + 0x40000 + 16:
+    if not OFFSET + 144 <= len(image) <= min(OFFSET + 0x40000 + 16, STAGING_LIMIT):
         raise ValueError("Invalid OTA length")
     if hashlib.sha256(image[:OFFSET]).hexdigest() != KERNEL_SHA256:
         raise ValueError("Unexpected kernel/padding")

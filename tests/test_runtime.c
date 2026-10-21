@@ -19,6 +19,8 @@ bool feature_config_save(const feature_config_t *c) {
 }
 #ifdef FEATURE_DEVICE_A1
 #include "a1.h"
+void a1_input_poll(void) {}
+void a1_input_clear(void) {}
 char a1_id[13] = "aabbccddee01";
 static unsigned local_controls;
 static const char *test_a1_name = "Living Room A1";
@@ -876,3 +878,5 @@ int main(void) {
        "freshness passed");
   return 0;
 }
+
+#include "stubs/status_wire.inc"

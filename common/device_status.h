@@ -25,7 +25,11 @@ typedef struct {
     char name[64], id[16];
     const char *version; /* immutable firmware literal */
 } device_identity_t;
-typedef struct {
+typedef struct device_network {
+#ifdef PHICOMM_BEMFA
+    bool mqtt_enabled, bemfa_enabled; uint8_t bemfa_status;
+    unsigned bemfa_errors, bemfa_last_stage; int bemfa_last_error;
+#endif
     bool wifi_connected, mqtt_connected, ap_active, mqtt_cleanup_warning;
     bool wifi_trial_active; uint8_t mqtt_status;
     char wifi_trial_status[24];
@@ -98,3 +102,6 @@ void device_runtime_encode(struct json_object *, const device_runtime_t *);
 void a1_status_capture(device_status_t *, device_status_full_t *);
 void m1_status_capture(device_status_t *, device_status_full_t *);
 bool tc1_status_capture(device_status_t *, device_status_full_t *);
+
+/* Independent text; no graph is built. Free with printbuf_free(). */
+struct printbuf *device_status_wire(const device_status_t *, const device_status_full_t *, bool envelope, const char *request_id);

@@ -6,6 +6,7 @@
  * by the production monitor tests in test_watchdog.c. */
 void watchdog_beat(watchdog_slot_t slot) { (void)slot; }
 #include "../../common/automation.h"
+#include "../stubs/status_wire.inc"
 #ifdef HOST_A1
 #include "../../A1/a1.h"
 #define CFG a1_config_t
@@ -35,6 +36,7 @@ void watchdog_beat(watchdog_slot_t slot) { (void)slot; }
 #endif
 extern uint64_t host_now(void);
 static uint64_t started;
+unsigned sim_free_memory=64000;
 char device_id[13];
 mico_mutex_t device_lock;
 STATE device_state;
@@ -115,6 +117,7 @@ json_object_object_add(o,"mqtt_connected",json_object_new_boolean(s.mqtt_connect
 #endif
  return o;}
 #ifdef HOST_A1
+bool bemfa_primary_enabled(void){return true;}
 static a1_filter_storage_t sim_filter={A1_FILTER_MAGIC,0,A1_FILTER_DEFAULT_HOURS};
 static a1_filter_clock_t sim_filter_clock;
 void a1_filter_tick(bool running){BASE_LOCK();a1_filter_advance(&sim_filter,&sim_filter_clock,mico_rtos_get_time(),running);BASE_UNLOCK();}
@@ -143,7 +146,13 @@ int main(int argc,char **argv){if(argc!=6){fprintf(stderr,"node id ip broker por
 #endif
  snprintf(device_state.ip,sizeof(device_state.ip),"%s",argv[2]);device_state.wifi_connected=true;snprintf(base_config.mqtt_host,sizeof(base_config.mqtt_host),"%s",argv[3]);base_config.mqtt_port=atoi(argv[4]);snprintf(base_config.mqtt_user,sizeof(base_config.mqtt_user),"%s",argv[5]);strcpy(base_config.name,"Runtime simulator");base_config.mqtt_topic_mode=1;feature_defaults(&features);automation_defaults(&automations);service_init();if(feature_start()||mqtt_start())return 3;
  char *line=NULL;size_t capacity=0;while(getline(&line,&capacity,stdin)>0){json_object *q=service_parse(line,strlen(line));if(!q){puts("{}");fflush(stdout);continue;}json_object *press=json_object_object_get(q,"sim_button");
- if(press){automation_button(json_object_get_int(json_object_object_get(press,"key")),json_object_get_int(json_object_object_get(press,"clicks")),json_object_get_int(json_object_object_get(press,"seconds")));puts("{\"code\":\"ok\"}");}
+ if(press){
+  /* Deny JSON admission only while the real local action executes. The input
+   * request/reply is outside this window, as on a physical key. */
+  unsigned low=json_object_get_boolean(json_object_object_get(press,"low_memory"));
+  if(low)__atomic_store_n(&sim_free_memory,16000,__ATOMIC_RELAXED);
+  automation_button(json_object_get_int(json_object_object_get(press,"key")),json_object_get_int(json_object_object_get(press,"clicks")),json_object_get_int(json_object_object_get(press,"seconds")));
+  __atomic_store_n(&sim_free_memory,64000,__ATOMIC_RELAXED);puts("{\"code\":\"ok\"}");}
 #ifdef HOST_A1
  else if(json_object_object_get(q,"sim_panel_feedback")){a1_state_t s;a1_config_t c;a1_state_get(&s);a1_config_get(&c);printf("{\"code\":\"ok\",\"data\":{\"until\":%u,\"revision\":%u,\"config_revision\":%u}}\n",s.panel_feedback_until,s.mode_feedback_revision,c.revision);}
  else if(json_object_object_get(q,"sim_panel")){a1_panel_event(false,json_object_get_int(json_object_object_get(q,"sim_panel")));puts("{\"code\":\"ok\"}");}

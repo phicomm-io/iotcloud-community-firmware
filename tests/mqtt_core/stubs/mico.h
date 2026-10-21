@@ -14,6 +14,7 @@ typedef unsigned mico_mutex_t;
 typedef struct { int free_memory; } micoMemInfo_t;
 #define kNoErr 0
 int mico_rtos_init_mutex(mico_mutex_t *);
+int mico_rtos_deinit_mutex(mico_mutex_t *);
 void mico_rtos_lock_mutex(mico_mutex_t *);
 void mico_rtos_unlock_mutex(mico_mutex_t *);
 bool mico_rtos_is_current_thread(mico_thread_t *);

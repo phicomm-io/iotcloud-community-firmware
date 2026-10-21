@@ -15,3 +15,5 @@ int main(int argc,char **argv){
  update_worker(0);assert(!update_busy);if(strcmp(update_state,argv[1])){fprintf(stderr,"expected %s got %s\n",argv[1],update_state);return 1;}
  r=update_command("ota.install",p,&code,&handled);assert(installed==(!strcmp(argv[1],"available")?1u:0u));json_object_put(r);json_object_put(p);return 0;
 }
+
+#include "stubs/status_wire.inc"
