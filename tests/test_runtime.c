@@ -8,6 +8,7 @@ uint32_t test_now;
  * with the production monitor in test_watchdog.c. */
 void watchdog_beat(watchdog_slot_t slot) { (void)slot; }
 static feature_config_t stored;
+uint32_t feature_config_revision(void) { return stored.revision; }
 void feature_config_get(feature_config_t *out) { *out = stored;feature_config_limit_peers(out); }
 bool feature_config_save(const feature_config_t *c) {
   if (c->revision != stored.revision)

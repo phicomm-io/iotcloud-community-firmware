@@ -157,6 +157,8 @@ void feature_render(const feature_light_t *, const float[4], const bool[4],
 #include "json_build.h"
 #include "mico.h"
 void feature_config_get(feature_config_t *);
+/* Authoritative revision under the product configuration lock; no snapshot allocation. */
+uint32_t feature_config_revision(void);
 bool feature_config_save(const feature_config_t *);
 OSStatus feature_start(void);
 json_object *feature_json(const char *domain);

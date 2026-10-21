@@ -344,6 +344,14 @@ int application_start(void)
     return kNoErr;
 }
 
+uint32_t feature_config_revision(void)
+{
+    mico_rtos_lock_mutex(&a1_config_lock);
+    uint32_t revision = ((app_storage_t *)a1_config)->features.revision;
+    mico_rtos_unlock_mutex(&a1_config_lock);
+    return revision;
+}
+
 void feature_config_get(feature_config_t *out)
 {
     mico_rtos_lock_mutex(&a1_config_lock);

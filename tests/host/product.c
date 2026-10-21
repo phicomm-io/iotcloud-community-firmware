@@ -15,6 +15,7 @@ int mico_rtos_create_thread(void *output,int priority,const char *name,void (*fn
  assert(output&&!scheduled_worker);*(mico_thread_t *)output=1;
  scheduled_worker=fn;scheduled_argument=argument;return kNoErr;
 }
+uint32_t feature_config_revision(void){return features.revision;}
 void feature_config_get(feature_config_t *out){*out=features;feature_config_limit_peers(out);}
 bool feature_fan_auto(void){return features.linkage.enabled;}
 unsigned feature_fan_limit(void){return features.linkage.max_speed;}

@@ -49,7 +49,7 @@ static void mqtt_state_get(void*x){(void)x;state.wifi_connected=true;}
 static void a1_config_get(a1_config_t*x){*x=cfg;}
 static void m1_config_get(m1_config_t*x){*x=cfg;}
 static bool same_connection(const a1_config_t*x,const a1_config_t*y){(void)x;(void)y;return true;}
-static void feature_config_get(feature_config_t*x){x->revision=feature_revision;}
+static uint32_t feature_config_revision(void){return feature_revision;}
 static bool feature_mqtt_filters_current(void*x,unsigned n){(void)x;(void)n;return true;}
 static int feature_mqtt_service(int x,bool connected){(void)x;assert(!connected);resets++;return 0;}
 static int discovery(const a1_config_t*x,unsigned index){

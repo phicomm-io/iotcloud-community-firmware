@@ -441,9 +441,7 @@ static int session_prepare(void *context,ph_mqtt_connection *spec) {
         mqtt_leaf(&account, "availability", availability_topic, sizeof(availability_topic));
         session_config = cfg;
         feature_mqtt_session(&account);
-        feature_config_t *fc=malloc(sizeof(*fc));
-        if(!fc)return PH_MQTT_PREPARE_WAIT;
-        feature_config_get(fc);feature_revision=fc->revision;free(fc);
+        feature_revision=feature_config_revision();
         count=feature_mqtt_filters(feature_filters,sizeof(feature_filters)/sizeof(feature_filters[0]));
         if(count>sizeof(feature_filters)/sizeof(feature_filters[0]))return PH_MQTT_PREPARE_WAIT;
         rediscover=false;
@@ -476,9 +474,9 @@ static int session_cycle(void *context) {
             if(ota_job_active())return MQTT_SUCCESS;
             mqtt_state_get(&state); a1_config_get(&current);
             if (!state.wifi_connected || !same_connection(&cfg, &current)) return PH_MQTT_RECONFIGURE;
-            feature_config_t *fc=malloc(sizeof(*fc)); if (!fc) return PH_MQTT_RECONFIGURE; feature_config_get(fc);
-            bool feature_changed=feature_revision!=fc->revision;
-            feature_revision=fc->revision; free(fc);
+            uint32_t current_feature_revision=feature_config_revision();
+            bool feature_changed=feature_revision!=current_feature_revision;
+            feature_revision=current_feature_revision;
             if(feature_changed && !feature_mqtt_filters_current(feature_filters,count))return PH_MQTT_RECONFIGURE;
             /* A birth received during a batch requests a complete subsequent pass.
              * Do not consume it by restarting the partially published pass. */
