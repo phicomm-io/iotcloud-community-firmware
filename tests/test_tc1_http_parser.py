@@ -100,4 +100,65 @@ int main(void){httpd_request_t req={0};
  puts("TC1 exact-limit request version terminator and oversized token: OK");}
 ''')
 
+ def test_line_truncation_and_slow_drip_are_bounded(self):
+  code=function(self.source('httpd_sys.c'),'int htsys_getln_soc(')
+  self.run_c(r'''
+#include <assert.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <stdio.h>
+#define ISO_nl '\n'
+#define ISO_cr '\r'
+#define kInProgressErr 12
+#define httpd_d(...) ((void)0)
+static const char *input;static unsigned at,step;static uint32_t now;
+static uint32_t mico_rtos_get_time(void){return now;}
+static int httpd_recv(int fd,char *p,unsigned n,int flags){(void)fd;(void)flags;assert(n==1);now+=step;if(!input[at])return 0;*p=input[at++];return 1;}
+'''+code+r'''
+int main(void){char output[8];
+ input="abc\r\n";step=0;assert(htsys_getln_soc(1,output,sizeof(output))==3&&!strcmp(output,"abc"));
+ at=0;input="abcdefghijk\r\n";assert(htsys_getln_soc(1,output,sizeof(output))<0&&at==7&&output[7]==0);
+ at=0;step=2000;input="abcdef\r\n";now=UINT32_MAX-999;assert(htsys_getln_soc(1,output,sizeof(output))<0&&at==3);
+ assert(htsys_getln_soc(1,NULL,8)<0&&htsys_getln_soc(1,output,1)<0);
+ puts("TC1 actual line reader rejects truncation and 5-second drip across tick wrap: OK");}
+''')
+
+ def test_aggregate_headers_have_time_byte_and_line_limits(self):
+  code=function(self.source('http_parse.c'),'int httpd_parse_hdr_tags(')
+  self.run_c(PRELUDE+r'''
+static unsigned calls,mode;static uint32_t now;
+static uint32_t mico_rtos_get_time(void){return now;}
+static int htsys_getln_soc(int fd,char *p,int n){(void)fd;(void)n;calls++;if(mode==1)now+=1000;strcpy(p,"X: x");return mode==2?100:4;}
+static int __httpd_parse_hdr_tags(char *p,int n,httpd_request_t *r,uint8_t *done){(void)p;(void)n;(void)r;if(mode==0&&calls==3)*done=1;return 0;}
+'''+code+r'''
+int main(void){httpd_request_t req={0};char line[128];
+ assert(!httpd_parse_hdr_tags(&req,1,line,sizeof(line))&&calls==3);
+ calls=0;mode=1;now=UINT32_MAX-999;assert(httpd_parse_hdr_tags(&req,1,line,sizeof(line))<0&&calls==5);
+ calls=0;mode=2;now=0;assert(httpd_parse_hdr_tags(&req,1,line,sizeof(line))<0&&calls==41);
+ calls=0;mode=3;assert(httpd_parse_hdr_tags(&req,1,line,sizeof(line))<0&&calls==64);
+ (void)http_content_len;(void)http_user_agent;(void)http_content_type;(void)http_encoding;
+ puts("TC1 aggregate headers: 5-second, 4096-byte and 64-line bounds: OK");}
+''')
+
+ def test_purged_headers_stop_at_byte_and_time_limits(self):
+  code=function(self.source('httpd_wsgi.c'),'int httpd_purge_headers(')
+  self.run_c(r'''
+#include <assert.h>
+#include <stdint.h>
+#include <stdio.h>
+#define kNoErr 0
+#define kInProgressErr 12
+typedef enum {ANY_OTHER_CHAR,FIRST_CR_FOUND,FIRST_LF_FOUND,SECOND_CR_FOUND,SECOND_LF_FOUND} httpd_purge_state_t;
+static uint32_t now;static unsigned at,step;static const char *input;
+static uint32_t mico_rtos_get_time(void){return now;}
+static int httpd_recv(int fd,unsigned char *p,unsigned n,int flags){(void)fd;(void)n;(void)flags;now+=step;if(input){if(!input[at])return 0;*p=input[at++];}else{*p='x';at++;}return 1;}
+'''+code+r'''
+int main(void){
+ input="Host: device\r\n\r\n";assert(!httpd_purge_headers(1));
+ at=0;input=NULL;assert(httpd_purge_headers(1)<0&&at==4097);
+ at=0;step=1000;now=UINT32_MAX-999;assert(httpd_purge_headers(1)<0&&at==5);
+ puts("TC1 purged headers: normal CRLF, 4096-byte and timer-wrap bounds: OK");}
+''')
+
 if __name__=='__main__':unittest.main()
