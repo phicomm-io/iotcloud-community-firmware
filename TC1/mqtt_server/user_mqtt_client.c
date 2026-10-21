@@ -76,7 +76,7 @@ MqttMsgPublish(Client *c, const char *topic, char qos, char retained, const unsi
 
 void ProcessHaCmd(char *cmd);
 
-bool isconnect = false;
+static bool isconnect;
 unsigned tc1_mqtt_status = MQTT_DISCONNECTED;
 bool tc1_mqtt_cleanup_warning;
 static mqtt_account_t account;
@@ -99,8 +99,11 @@ static void ha_birth(MessageData *d) {
 
 Client c;  // mqtt client object
 Network n;  // socket network for mqtt client
-volatile bool mqtt_thread_should_exit = false;
-static volatile bool mqtt_thread_running = false;
+/* One atomic transition owns both start admission and stop intent. Separate
+ * flags could lose a concurrent stop between admitting a start and clearing it. */
+#define MQTT_THREAD_RUNNING 1u
+#define MQTT_THREAD_STOP 2u
+static unsigned mqtt_lifecycle;
 
 //static mico_timed_event_t mqtt_client_send_event;
 
@@ -156,8 +159,8 @@ void UserMqttTimerFunc(void *arg) {
 }
 
 OSStatus UserMqttDeInit(void) {
-    mqtt_thread_should_exit = true;
-    isconnect = false;
+    __atomic_fetch_or(&mqtt_lifecycle, MQTT_THREAD_STOP, __ATOMIC_ACQ_REL);
+    __atomic_store_n(&isconnect,false,__ATOMIC_RELEASE);
     return kNoErr;
 }
 
@@ -166,14 +169,12 @@ void clear_mqtt_msg_send_queue(void) { ph_mqtt_pending_clear(); }
 OSStatus UserMqttInit(void) {
     OSStatus err = kNoErr;
 
-    mico_rtos_suspend_all_thread();
-    if (mqtt_thread_running) {
-        mico_rtos_resume_all_thread();
-        return kNoErr;
-    }
-    mqtt_thread_running = true;
-    mqtt_thread_should_exit = false;
-    mico_rtos_resume_all_thread();
+    unsigned prior = __atomic_load_n(&mqtt_lifecycle, __ATOMIC_ACQUIRE);
+    do {
+        if (prior & MQTT_THREAD_RUNNING)
+            return kNoErr;
+    } while (!__atomic_compare_exchange_n(&mqtt_lifecycle, &prior,
+        MQTT_THREAD_RUNNING, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE));
 
     sprintf(topic_set, MQTT_CLIENT_SUB_TOPIC1, str_mac);  // 婵炶揪缍€濞夋洟寮ˉ鐭–闂侀潻闄勫妯侯焽閸愨晜濯存繝濞惧亾閻犳劗鍠撻幏瀣箚瑜滃Σ鐢告煛瀹ュ懏绌块柣锔藉灩缁?
     sprintf(topic_state, MQTT_CLIENT_PUB_TOPIC, str_mac);
@@ -193,9 +194,7 @@ OSStatus UserMqttInit(void) {
 
     exit:
     if (kNoErr != err) {
-        mico_rtos_suspend_all_thread();
-        mqtt_thread_running = false;
-        mico_rtos_resume_all_thread();
+        __atomic_store_n(&mqtt_lifecycle, 0u, __ATOMIC_RELEASE);
     }
     if (kNoErr != err)mqtt_log("ERROR2, app thread exit err: %d kNoErr[%d]", err, kNoErr);
     return err;
@@ -300,7 +299,7 @@ static bool ingress_accept(MessageData *message,messageHandler handler) {
 static int outgoing(const ph_mqtt_item *message);
 static int session_prepare(void *context,ph_mqtt_connection *spec) {
     (void)context;
-    TC1_STATUS_WRITE(tc1_mqtt_status=MQTT_DISCONNECTED);isconnect=false;
+    TC1_STATUS_WRITE(tc1_mqtt_status=MQTT_DISCONNECTED);__atomic_store_n(&isconnect,false,__ATOMIC_RELEASE);
     LinkStatusTypeDef link={0};micoWlanGetLinkStatus(&link);
     if(cleanup_pending && link.is_connected==1 && !session_current()) {
         bool warning=mqtt_cleanup_reconnect(&c,&account,session_host,session_port,
@@ -368,7 +367,7 @@ static bool session_initial_ready(void *context) {
 }
 static void session_closing(void *context,bool connected,int rc) {
     (void)context;(void)rc;
-    isconnect=false;service_mqtt_clear();
+    __atomic_store_n(&isconnect,false,__ATOMIC_RELEASE);service_mqtt_clear();
     if(!session_current())ota_forget();
     if(connected && !session_current()) {
         bool warning=cleanup_discovery()!=0;
@@ -380,10 +379,10 @@ static void session_event(void *context,unsigned event,int rc) {
     if(event==PH_MQTT_CONNECTING){TC1_STATUS_WRITE(tc1_mqtt_status=MQTT_CONNECTING);}
     else if(event==PH_MQTT_CONNECT_ERROR){TC1_STATUS_WRITE(tc1_mqtt_status=rc==4||rc==5?MQTT_AUTH_FAILED:MQTT_DISCONNECTED);}
     else if(event==PH_MQTT_SUBSCRIBE_ERROR){TC1_STATUS_WRITE(tc1_mqtt_status=MQTT_WAITING_ACL);}
-    else if(event==PH_MQTT_READY){isconnect=true;cleanup_pending=true;TC1_STATUS_WRITE(tc1_mqtt_status=MQTT_READY);}
+    else if(event==PH_MQTT_READY){__atomic_store_n(&isconnect,true,__ATOMIC_RELEASE);cleanup_pending=true;TC1_STATUS_WRITE(tc1_mqtt_status=MQTT_READY);}
     else if(tc1_mqtt_status==MQTT_READY || tc1_mqtt_status==MQTT_CONNECTING){TC1_STATUS_WRITE(tc1_mqtt_status=MQTT_DISCONNECTED);}
 }
-static bool session_stop(void *context){(void)context;return mqtt_thread_should_exit;}
+static bool session_stop(void *context){(void)context;return (__atomic_load_n(&mqtt_lifecycle, __ATOMIC_ACQUIRE) & MQTT_THREAD_STOP) != 0;}
 void MqttClientThread(mico_thread_arg_t arg) {
     if(ph_mqtt_startup_wait(&mqtt_startup,(uint32_t)arg) &&
        ph_mqtt_owner_init(&account,MAX_MQTT_DATA_SIZE-1,&mqtt_owner_thread,ingress_accept)) {
@@ -392,7 +391,7 @@ void MqttClientThread(mico_thread_arg_t arg) {
             session_initial,session_cycle,session_closing,session_event,session_stop,session_initial_ready};
         ph_mqtt_session_run(&c,&hooks);
     } else {TC1_STATUS_WRITE(tc1_mqtt_status=MQTT_CONFIG_ERROR);}
-    ph_mqtt_owner_end();isconnect=false;mqtt_thread_running=false;mico_rtos_delete_thread(NULL);
+    ph_mqtt_owner_end();__atomic_store_n(&isconnect,false,__ATOMIC_RELEASE);__atomic_store_n(&mqtt_lifecycle,0u,__ATOMIC_RELEASE);mico_rtos_delete_thread(NULL);
 }
 
 // callback, msg received from mqtt server
@@ -416,7 +415,7 @@ static __attribute__((noinline)) void tc1_ota_message(MQTTMessage *message) {
 }
 static void MessageArrived(MessageData *md) {
     MQTTMessage *message=md->message;
-    if(!isconnect || !session_current() || message->retained)return;
+    if(!__atomic_load_n(&isconnect,__ATOMIC_ACQUIRE) || !session_current() || message->retained)return;
     const char *topic=md->topicName->cstring;
     unsigned length=strlen(topic);
     if(tc1_command_topic(topic,length)) {
@@ -942,7 +941,7 @@ void UserMqttHassAutoPower(void) {
 }
 
 extern void UserMqttHassPower(void) {
-    if (!isconnect && !synchronous_send) return;
+    if (!__atomic_load_n(&isconnect,__ATOMIC_ACQUIRE) && !synchronous_send) return;
     char topic_buf[128], send_buf[128];
     if(account.mode) {
         uint32_t today=p_count>=(uint32_t)user_config->p_count_1_day_ago?p_count-user_config->p_count_1_day_ago:0;
@@ -996,5 +995,5 @@ extern void UserMqttHassPower(void) {
 }
 
 bool UserMqttIsConnect() {
-    return isconnect;
+    return __atomic_load_n(&isconnect,__ATOMIC_ACQUIRE) && !session_stop(NULL);
 }
