@@ -73,7 +73,7 @@ def check(frames,model):
     paths.update(status_paths(frames,model,'MQTT periodic status',telemetry,reserve))
     paths.update(status_paths(frames,model,'MQTT command status',dispatch+['service_command_wire','service_product_status_wire'],reserve))
     if model=='A1':
-        control=['a1_control_json','a1_control_apply']+[n for n in ('control_broadcast',) if n in frames]
+        control=['a1_control_json','a1_control_apply']+[n for n in ('control_broadcast','control_parse','control_value','control_busy','panel_state') if n in frames]
         paths['MQTT deferred control'][0].extend(control+['feature_group_control','group_send','parse'])
         paths['MQTT feature deferred control']=(owner+['ph_mqtt_poll','feature_command','feature_mqtt_input']+execute+['service_product_inner']+control+['feature_group_control','group_send','parse'],reserve)
         paths['MQTT control persistence']=(dispatch+execute+['service_product_inner']+control+['feature_fan_apply','install_config','feature_config_save'],reserve)

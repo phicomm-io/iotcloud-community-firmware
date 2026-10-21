@@ -111,7 +111,7 @@ def check(modules, model, nm, elf):
         paths['HTTP OTA activation']=(4096,['owner','ph_http_server_step','close_slot','release','tc1_ota_activate']+(['send_part'] if 'send_part' in frames else []))
     if model!='TC1':paths['HTTP OTA recovery']=(4096,['owner','ph_http_server_step','admission','ota_job_poll','feature_resume_step'])
     if model=='A1':
-        control=['a1_control_json','a1_control_apply']+[n for n in ('control_broadcast',) if n in frames]
+        control=['a1_control_json','a1_control_apply']+[n for n in ('control_broadcast','control_parse','control_value','control_busy','panel_state','a1_control_light_percent') if n in frames]
         paths['HTTP command control']=(3072,command+control+['feature_group_control','group_send','parse'])
         paths['HTTP control persistence']=(3072,command+control+['feature_fan_apply','install_config','feature_config_save'])
     if model in ('A1','TC1'):

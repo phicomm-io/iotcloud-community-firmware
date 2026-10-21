@@ -71,7 +71,7 @@ def check(directory, header):
             ('button control',['feature_worker','a1_input_poll','automation_button']),
             ('panel slider',['feature_worker','a1_input_poll','a1_panel_event'])):
             local=prefix+(['a1_automation_execute','a1_panel_inspect'] if label!='panel slider' else [])+['a1_control_apply']
-            local += [n for n in ('auto_execute','control_broadcast') if n in frames]
+            local += [n for n in ('auto_execute','control_broadcast','control_busy','panel_state') if n in frames]
             paths[label+' group delivery']=(binding,2048,local+['feature_group_control','group_send','parse'])
             paths[label+' feature persistence']=(binding,2048,local+['feature_fan_apply','install_config','feature_config_save'])
         paths['button light effect']=(binding,2048,['feature_worker','a1_input_poll','automation_button',
