@@ -73,7 +73,7 @@ static const micoMemInfo_t *MicoGetMemoryInfo(void){static micoMemInfo_t m={2147
 static void service_memory_snapshot(service_memory_state_t *b){memset(b,0xff,sizeof(*b));}
 static uint32_t mico_rtos_get_time(void){return UINT32_MAX;}
 static unsigned sent;
-static void check(const char *body,size_t n){assert(n<768 && n==strlen(body));assert(strstr(body,"\"mqtt_overflow\":4294967295"));assert(strstr(body,"\"mqtt_max_delay_ms\":4294967295"));sent++;}
+static void check(const char *body,size_t n){assert(n<896 && n==strlen(body));assert(strstr(body,"\"mqtt_overflow\":4294967295"));assert(strstr(body,"\"mqtt_max_delay_ms\":4294967295"));sent++;}
 '''
             if model=='A1':
                 harness+=r'''
@@ -82,6 +82,7 @@ static void response(int fd,unsigned code,const char *type,const void *body,size
             else:
                 harness+=r'''
 int get_last_reset_reason(void){return 4;}
+int phicomm_http_tcp_snapshot(int *limit,int *connections){*limit=2147483647;*connections=2147483647;return -2147483647;}
 typedef int httpd_request_t;
 #define HTTP_RES_200 "200"
 static int response_json(httpd_request_t *r,const char *status,const char *body,size_t n){assert(*r==7 && !strcmp(status,"200"));check(body,n);return 0;}

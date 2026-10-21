@@ -1,0 +1,26 @@
+--- a/libraries/daemons/http_server/httpd.c
++++ b/libraries/daemons/http_server/httpd.c
+@@ -86,6 +86,23 @@
+ 
+ static int http_sockfd;
+ 
++/* Called only from a handler on the listener owner thread. */
++int phicomm_http_tcp_snapshot(int *limit, int *connections)
++{
++    int value;
++    socklen_t length = sizeof(value);
++    *limit = *connections = -1;
++    if (getsockopt(http_sockfd, IPPROTO_TCP, TCP_MAX_CONN_NUM, &value, &length) < 0 ||
++        length != sizeof(value)) return -1;
++    *limit = value;
++    length = sizeof(value);
++    if (getsockopt(http_sockfd, IPPROTO_TCP, TCP_CONN_NUM, &value, &length) < 0 ||
++        length != sizeof(value)) return -1;
++    *connections = value;
++    return 0;
++}
++
++
+ int client_sockfd;
+ static bool https_active;
+ 

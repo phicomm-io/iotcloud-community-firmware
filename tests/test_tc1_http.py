@@ -12,12 +12,14 @@ class HttpSender(unittest.TestCase):
 #include <stdint.h>
 #include <string.h>
 #include <sys/select.h>
+#include <errno.h>
 #define kInProgressErr 1
 #define kNoErr 0
 #define httpd_d(...) ((void)0)
 static unsigned ticks, calls, written;
 static int mode;
 static uint32_t mico_rtos_get_time(void) { ticks+=200;return ticks; }
+static void mico_thread_msleep(unsigned ms) { assert(ms==1);ticks+=ms; }
 static int fake_select(int n,void*r,fd_set*w,void*e,struct timeval*t) {
  (void)n;(void)r;(void)w;(void)e;assert(t->tv_sec==0 && t->tv_usec==200000);
  ++calls;return mode==1?0:mode==2?-1:1;
@@ -50,10 +52,15 @@ int main(void) {
         harness = r'''
 #include <assert.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <sys/select.h>
+#include <errno.h>
 static int mode, reads;
+static uint32_t ticks;
+static uint32_t mico_rtos_get_time(void) { ticks+=200;return ticks; }
+static void mico_thread_msleep(unsigned ms) { assert(ms==1);ticks+=ms; }
 static int fake_select(int n, fd_set*r, void*w, void*e, struct timeval*t) {
- (void)n;(void)r;(void)w;(void)e;assert(t->tv_sec==5 && t->tv_usec==0);
+ (void)n;(void)r;(void)w;(void)e;assert(t->tv_sec==0 && t->tv_usec==200000);
  return mode==0?0:mode==1?-1:1;
 }
 static int fake_recv(int fd,void*b,size_t n,int flags) {

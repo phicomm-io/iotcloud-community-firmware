@@ -6,6 +6,93 @@ from tests import test_memory_admission as admission
 from tests.test_tc1_sdk_migration import function
 ROOT = Path(__file__).resolve().parents[1]
 class Recovery(unittest.TestCase):
+ def test_tcp_snapshot_preserves_unknown_values_on_option_errors(self):
+  source=admission.MemoryAdmission().sdk_http_source('httpd.c')
+  admission.MemoryAdmission().run_c(r'''
+#include <assert.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#define TCP_MAX_CONN_NUM 7
+#define TCP_CONN_NUM 6
+static int http_sockfd=3,mode;
+static int fake_getsockopt(int fd,int level,int option,void *v,socklen_t *n){
+ assert(fd==3&&level==IPPROTO_TCP&&*n==sizeof(int));
+ if(mode==option)return -1;
+ *(int*)v=option==7?3:2;if(mode==1)*n=0;return 0;
+}
+#define getsockopt fake_getsockopt
+SNAPSHOT
+int main(void){int limit,connections;
+ assert(!phicomm_http_tcp_snapshot(&limit,&connections)&&limit==3&&connections==2);
+ mode=7;assert(phicomm_http_tcp_snapshot(&limit,&connections)<0&&limit==-1&&connections==-1);
+ mode=6;assert(phicomm_http_tcp_snapshot(&limit,&connections)<0&&limit==3&&connections==-1);
+ mode=1;assert(phicomm_http_tcp_snapshot(&limit,&connections)<0&&limit==-1&&connections==-1);
+}
+'''.replace('SNAPSHOT',function(source,'int phicomm_http_tcp_snapshot(')))
+
+ def test_accepted_socket_is_nonblocking_or_closed(self):
+  source=admission.MemoryAdmission().sdk_http_source('httpd.c')
+  admission.MemoryAdmission().run_c(r'''
+#include <assert.h>
+#include <stdbool.h>
+#include <fcntl.h>
+#include <sys/select.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#define kNoErr 0
+#define kInProgressErr 1
+#define FALSE false
+#define httpd_d(...) ((void)0)
+static int http_sockfd=3,client_sockfd=-1,fcntl_failure,closes,configured;
+static bool https_active;
+static int fake_accept(int fd,struct sockaddr *addr,socklen_t *n){assert(fd==3&&addr&&n);return 7;}
+static int fake_fcntl(int fd,int op,int value){assert(fd==7&&op==F_SETFL&&value==O_NONBLOCK);configured++;return fcntl_failure?-1:0;}
+static int fake_close(int fd){assert(fd==7);closes++;return 0;}
+static int fake_setsockopt(int fd,int level,int key,const void *p,socklen_t n){(void)level;(void)key;assert(fd==7&&p&&n==sizeof(int));return 0;}
+#define accept fake_accept
+#define fcntl fake_fcntl
+#define close fake_close
+#define setsockopt fake_setsockopt
+ACCEPT
+int main(void){fd_set fds;FD_ZERO(&fds);FD_SET(3,&fds);
+ fcntl_failure=1;assert(httpd_accept_client_socket(&fds)<0&&client_sockfd==-1&&closes==1&&configured==1);
+ fcntl_failure=0;assert(!httpd_accept_client_socket(&fds)&&client_sockfd==7&&closes==1&&configured==2);
+}
+'''.replace('ACCEPT',function(source,'static int httpd_accept_client_socket(')))
+
+ def test_readiness_race_retries_and_io_deadline_survives_tick_wrap(self):
+  source=admission.MemoryAdmission().sdk_http_source('httpd_handle.c')
+  admission.MemoryAdmission().run_c(r'''
+#include <assert.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <errno.h>
+#include <sys/select.h>
+#define kNoErr 0
+#define kInProgressErr 1
+static uint32_t now;static int calls,mode;
+static uint32_t mico_rtos_get_time(void){return now;}
+static void mico_thread_msleep(unsigned ms){assert(ms==1);now+=ms;}
+static int fake_select(int n,fd_set *r,fd_set *w,fd_set *e,struct timeval *t){assert(n==8&&!!r!=!!w&&!e&&t->tv_usec==200000);now+=200;return mode==4?-1:mode==3?0:1;}
+static int fake_send(int fd,const void *p,size_t n,int f){assert(fd==7&&p&&n&&!f);calls++;
+ if(mode==1||calls==1){errno=EAGAIN;return -1;}if(mode==2){errno=ECONNRESET;return -1;}return n>2?2:(int)n;}
+static int fake_recv(int fd,void *p,size_t n,int f){assert(fd==7&&p&&n&&!f);calls++;
+ if(mode==1||calls==1){errno=EWOULDBLOCK;return -1;}if(mode==2){errno=ECONNRESET;return -2;}return mode==5?0:1;}
+#define select fake_select
+#define send fake_send
+#define recv fake_recv
+SEND
+RECV
+int main(void){char b[8];
+ for(mode=0;mode<=5;mode++){
+  now=UINT32_MAX-99;calls=0;int rc=httpd_send(7,"12345",5);
+  assert((mode==0||mode==5)?rc==0:rc<0);assert((uint32_t)(now-(UINT32_MAX-99))<=5201);
+  now=UINT32_MAX-99;calls=0;rc=httpd_recv(7,b,sizeof(b),0);
+  assert(mode==0?rc==1:mode==5?rc==0:rc==-1);assert((uint32_t)(now-(UINT32_MAX-99))<=5201);
+ }
+}
+'''.replace('SEND',function(source,'int httpd_send(')).replace('RECV',function(source,'int httpd_recv(')))
+
  def test_reset_select_and_close_do_not_suspend_listener(self):
   helper=admission.MemoryAdmission();source=helper.sdk_http_source('httpd.c')
   prefix=r'''

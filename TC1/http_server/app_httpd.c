@@ -373,15 +373,18 @@ static int HttpV1Memory(httpd_request_t *r){
     if(!reset_sampled){reset_reason=get_last_reset_reason();reset_sampled=true;}
     const micoMemInfo_t *m=MicoGetMemoryInfo();if(!m)return HttpV1Busy(r);
     micoMemInfo_t snapshot=*m;service_memory_state_t b;service_memory_snapshot(&b);
-    char out[768];int n=snprintf(out,sizeof(out),
+    extern int phicomm_http_tcp_snapshot(int *,int *);
+    int tcp_limit,tcp_connections;int tcp_rc=phicomm_http_tcp_snapshot(&tcp_limit,&tcp_connections);
+    char out[896];int n=snprintf(out,sizeof(out),
         "{\"code\":\"ok\",\"data\":{\"free_memory\":%d,\"allocated_memory\":%d,"
         "\"free_memory_chunks\":%d,\"uptime_ms\":%lu,\"last_reset_reason\":%d,\"memory_reserve\":%u,"
+        "\"http_tcp_limit\":%d,\"http_tcp_connections\":%d,\"http_tcp_get_rc\":%d,"
         "\"memory_reserved\":%lu,\"memory_active\":%lu,\"memory_waiting\":%lu,"
         "\"memory_denied\":%lu,\"minimum_sampled_free\":%lu,"
         "\"json_live_blocks\":%lu,\"json_peak_blocks\":%lu,\"json_alloc_failures\":%lu,\"json_guard_denied\":%lu,"
         "\"mqtt_pending\":%lu,\"mqtt_peak\":%lu,\"mqtt_overflow\":%lu,\"mqtt_max_delay_ms\":%lu}}",
         snapshot.free_memory,snapshot.allocted_memory,snapshot.num_of_chunks,
-        (unsigned long)mico_rtos_get_time(),reset_reason,SERVICE_MEMORY_RESERVE,
+        (unsigned long)mico_rtos_get_time(),reset_reason,SERVICE_MEMORY_RESERVE,tcp_limit,tcp_connections,tcp_rc,
         (unsigned long)b.reserved,(unsigned long)b.active,(unsigned long)b.waiting,
         (unsigned long)b.denied,(unsigned long)b.minimum_free,
         (unsigned long)b.json_live,(unsigned long)b.json_peak,

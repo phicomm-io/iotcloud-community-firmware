@@ -1,0 +1,129 @@
+--- a/libraries/daemons/http_server/httpd.c
++++ b/libraries/daemons/http_server/httpd.c
+@@ -30,6 +30,7 @@
+  */
+ 
+ #include <string.h>
++#include <fcntl.h>
+ 
+ #include "httpd.h"
+ #include "http-strings.h"
+@@ -268,6 +269,14 @@
+         return -kInProgressErr;
+     }
+     
++    /* select readiness can disappear after a peer reset. Never enter an
++     * unbounded blocking send/recv after a successful readiness check. */
++    if (fcntl(client_sockfd, F_SETFL, O_NONBLOCK) != 0) {
++        close(client_sockfd);
++        client_sockfd = -1;
++        return -kInProgressErr;
++    }
++
+     /*
+      * Enable TCP Keep-alive for accepted client connection
+      *  -- By enabling this feature TCP sends probe packet if there is
+--- a/libraries/daemons/http_server/httpd_handle.c
++++ b/libraries/daemons/http_server/httpd_handle.c
+@@ -36,6 +36,7 @@
+ #include <stdlib.h>
+ #include <stdarg.h>
+ #include "httpd.h"
++#include <errno.h>
+ #include "http_parse.h"
+ #include "http-strings.h"
+ 
+@@ -134,55 +135,53 @@
+  */
+ int httpd_send(int conn, const char *buf, int len)
+ {
+-	int num;
+-    struct timeval t;
+-    fd_set writefds;
+-
+     uint32_t started = mico_rtos_get_time();
+-
+-	do {
+-        if ((uint32_t)(mico_rtos_get_time()-started) >= 5000) return -kInProgressErr;
+-        t.tv_sec = 0; t.tv_usec = 200*1000;
++    while (len > 0) {
++        if ((uint32_t)(mico_rtos_get_time() - started) >= 5000)
++            return -kInProgressErr;
+-#ifdef CONFIG_ENABLE_HTTPS
+-		if (httpd_is_https_active())
+-			num = tls_send(httpd_tls_handle, buf, len);
+-		else
+-#endif /* ENABLE_HTTPS */
+-		   FD_ZERO( &writefds );
+-		   FD_SET( conn, &writefds );
+-
+-        int ready = select( conn + 1, NULL, &writefds, NULL, &t );
++        fd_set writefds;
++        FD_ZERO(&writefds); FD_SET(conn, &writefds);
++        struct timeval timeout = {0, 200000};
++        int ready = select(conn + 1, NULL, &writefds, NULL, &timeout);
+         if (ready < 0) return -kInProgressErr;
+         if (!ready) continue;
+-           if( FD_ISSET( conn, &writefds) )
+-           {
+-               num = send(conn, buf, len, 0);
+-            if (num <= 0) {
+-                   httpd_d("send() failed: %d" ,conn);
+-                   return -kInProgressErr;
+-               }
+-               len -= num;
+-               buf += num;
+-           }
+-	} while (len > 0);
+-
+-
+-	return kNoErr;
++        int sent;
++#ifdef CONFIG_ENABLE_HTTPS
++        if (httpd_is_https_active()) sent = tls_send(httpd_tls_handle, buf, len);
++        else
++#endif
++            sent = send(conn, buf, len, 0);
++        if (sent < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
++            mico_thread_msleep(1);
++            continue;
++        }
++        if (sent <= 0) return -kInProgressErr;
++        len -= sent; buf += sent;
++    }
++    return kNoErr;
+ }
+ 
+ int httpd_recv(int fd, void *buf, size_t n, int flags)
+ {
+-    struct timeval timeout;
+-    fd_set readfds;
+ #ifdef CONFIG_ENABLE_HTTPS
+-    if (httpd_is_https_active()) return tls_recv(httpd_tls_handle, buf, n);
++    if (httpd_is_https_active()) return tls_recv(httpd_tls_handle, buf, n);
+ #endif
+-    /* An incomplete request must not block the only HTTP thread forever. */
+-    FD_ZERO(&readfds); FD_SET(fd, &readfds);
+-    timeout.tv_sec = 5; timeout.tv_usec = 0;
+-    int ready = select(fd + 1, &readfds, NULL, NULL, &timeout);
+-    if (ready <= 0) return -1;
+-		return recv(fd, buf, n, flags);
++    uint32_t started = mico_rtos_get_time();
++    while ((uint32_t)(mico_rtos_get_time() - started) < 5000) {
++        fd_set readfds;
++        FD_ZERO(&readfds); FD_SET(fd, &readfds);
++        struct timeval timeout = {0, 200000};
++        int ready = select(fd + 1, &readfds, NULL, NULL, &timeout);
++        if (ready < 0) return -1;
++        if (!ready) continue;
++        int received = recv(fd, buf, n, flags);
++        if (received < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
++            mico_thread_msleep(1);
++            continue;
++        }
++        return received < 0 ? -1 : received;
++    }
++    return -1;
+ }
+ 
+ int httpd_send_hdr_from_code(int sock, int stat_code,
