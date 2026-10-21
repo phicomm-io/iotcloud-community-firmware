@@ -18,7 +18,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'site'))
-from pages import GROUPS, PAGES, SITE_URL, EN_GROUPS, EN_PAGES, validate_translations  # noqa: E402
+from pages import GROUPS, PAGES, PARENTS, SITE_URL, EN_GROUPS, EN_PAGES, validate_translations  # noqa: E402
 
 # Public guide assets also work when the source repository or Wiki is private.
 WIKI_ASSETS = SITE_URL + 'guides/assets/'
@@ -66,7 +66,7 @@ def home_page(language="zh"):
                   '- [Connect devices to IotCloud](EN-iotcloud-connect)', '']
         for _, title, items in EN_GROUPS:
             lines += ['## ' + title, '']
-            lines += [f'- [{name}]({wiki}): {summary}' for _, name, summary, wiki in items]
+            lines += [f'{"  " if slug in PARENTS else ""}- [{name}]({wiki}): {summary}' for slug, name, summary, wiki in items]
             lines += ['']
         lines += ['## Community', '', '- QQ group: **1021750178** (Chinese)',
                   '- [Join the QQ group](https://qm.qq.com/q/9L150V85kk?from=tim)',
@@ -85,7 +85,8 @@ def home_page(language="zh"):
         lines.append(f'## {title}')
         lines.append('')
         for slug, page_title, summary, wiki in items:
-            lines.append(f'- [{page_title}]({wiki_link_target(wiki)})：{summary}')
+            indent = '  ' if slug in PARENTS else ''
+            lines.append(f'{indent}- [{page_title}]({wiki_link_target(wiki)})：{summary}')
         lines.append('')
     lines += ['## 交流与反馈', '', '- QQ 交流群：**1021750178**',
               '- [点击加入 QQ 群](https://qm.qq.com/q/9L150V85kk?from=tim)；链接无法打开时，可在 QQ 中搜索群号。',
