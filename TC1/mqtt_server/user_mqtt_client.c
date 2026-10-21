@@ -359,7 +359,9 @@ static int session_cycle(void *context) {
     if(!session_current())return PH_MQTT_RECONFIGURE;
     int rc=ota_service(account.base);if(rc!=MQTT_SUCCESS)return rc;
     if(ota_job_active())return MQTT_SUCCESS;
-    if(rediscover){discovery_index=state_index=publication_cursor=0;rediscover=false;}
+    /* Preserve a mid-batch birth until all discovery and initial state items
+     * have completed, then replay the entire snapshot for that request. */
+    if(rediscover && discovery_index==12 && state_index==10){discovery_index=state_index=publication_cursor=0;rediscover=false;}
     if(discovery_index<12 || state_index<10)return snapshot_step();
     bool status_due=account.mode && (uint32_t)(mico_rtos_get_time()-snapshot_at)>=5000;
     /* A slow PUBACK can make both producers due on every turn. Alternate
