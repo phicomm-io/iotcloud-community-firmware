@@ -11,12 +11,19 @@ import sys
 def check(modules, model, nm, elf):
     modules=Path(modules)
     frames={}
+    verify_frames={}
     for directory in (modules/model,modules/'phicomm_httpd'):
         for path in directory.rglob('*.su'):
             for line in path.read_text().splitlines():
                 location,size,kind=line.split('\t')
-                name=location.rsplit(':',1)[-1].split('.')[0]
-                if kind=='static':frames[name]=max(frames.get(name,0),int(size))
+                emitted=location.rsplit(':',1)[-1]
+                name=emitted.split('.')[0]
+                if kind=='static':
+                    frames[name]=max(frames.get(name,0),int(size))
+                    if name=='tc1_ota_verify':verify_frames[emitted]=max(verify_frames.get(emitted,0),int(size))
+    # The pinned compiler splits verification into an 8-byte entry and a
+    # 632-byte .part body; both can be live, unlike alternative clones.
+    if verify_frames:frames['tc1_ota_verify']=sum(verify_frames.values())
     budget=int(re.search(r'#define PH_HTTP_STACK_BYTES (\d+)u',(Path(__file__).resolve().parents[1]/'common/httpd/http.h').read_text()).group(1))
     status=model.lower()+'_status_json'
     base=['owner','ph_http_server_step','acquire','action','begin','prepare']
@@ -36,8 +43,11 @@ def check(modules, model, nm, elf):
       'HTTP POST JSON encode':(3072,['owner','ph_http_server_step','read_body','complete','ph_http_json','json_owned_to_wire','json_write','json_primitive','json_append']),
       'HTTP response':(3072,['owner','ph_http_server_step','respond','transmit']),
       'HTTP OTA stream':(4096,['owner','ph_http_server_step','read_body','body_chunk',model.lower()+'_ota_write','signed_ota_write','uECC_verify','EccPoint_mult']),
-      'HTTP OTA validation':(4096,['owner','ph_http_server_step','read_body','complete',model.lower()+'_ota_finish','signed_ota_finish']),
+      'HTTP OTA validation':(4096,['owner','ph_http_server_step','read_body','complete',('tc1_ota_verify' if model=='TC1' else model.lower()+'_ota_finish'),'signed_ota_finish']),
     }
+    if model=='TC1':
+        paths['HTTP OTA MD5 validation']=(4096,['owner','ph_http_server_step','read_body','complete','tc1_ota_verify','md5_range'])
+        paths['HTTP OTA activation']=(4096,['owner','ph_http_server_step','close_slot','release','tc1_ota_activate']+(['send_part'] if 'send_part' in frames else []))
     if model!='TC1':paths['HTTP OTA recovery']=(4096,['owner','ph_http_server_step','admission','ota_job_poll','feature_resume_step'])
     if model=='A1':paths['HTTP command control']=(3072,command+['a1_control_local','feature_group_control','group_send','parse'])
     # GCC inlines send_part into step in the pinned optimized build. A separate
@@ -90,6 +100,16 @@ def check(modules, model, nm, elf):
         size=sum(frames[n] for n in names)
         if size+reserve>mqtt_budget:raise ValueError(f'{label}: {size}+{reserve}>{mqtt_budget}')
         print(f'{label}: {size} application + {reserve} reserve <= {mqtt_budget} bytes')
+    if model=='TC1':
+        source=(Path(__file__).resolve().parents[1]/'TC1/ota_server/ota_server.c').read_text()
+        ota_budget=int(re.search(r'download_worker,(\d+),',source).group(1))
+        for branch,tail in [('signature',['signed_ota_finish']),('MD5',['md5_range']),('activation',['tc1_ota_activate'])]:
+            names=['download_worker','tc1_ota_finish']+(['tc1_ota_verify'] if branch!='activation' else [])+tail
+            missing=set(names)-frames.keys()
+            if missing:raise ValueError(f'OTA download {branch}: missing .su frames {sorted(missing)}')
+            size=sum(frames[n] for n in names)
+            if size+3072>ota_budget:raise ValueError(f'OTA download {branch}: {size}+3072>{ota_budget}')
+            print(f'OTA download {branch}: {size} application + 3072 reserve <= {ota_budget} bytes')
     symbols=subprocess.check_output([nm,'--defined-only',elf],text=True)
     for symbol in ('ph_http_server_step','ph_http_parser_feed','ph_http_start'):
         if len(re.findall(r'\b'+symbol+r'$',symbols,re.M))!=1:raise ValueError('Expected one linked '+symbol)

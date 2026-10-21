@@ -65,7 +65,10 @@ static bool ota_job_enter(void){assert(job);entered++;return true;}
 static bool tc1_ota_reserve(void){return true;}
 static bool tc1_ota_begin(uint32_t n,bool rescue){assert(n);ota_begins++;(void)rescue;return true;}
 static bool tc1_ota_write(const void*p,size_t n){assert(p&&n<=512);written+=n;return !fail_write;}
-static bool tc1_ota_finish(void){finishes++;return true;}
+static bool tc1_ota_verify(void){finishes++;return true;}
+static bool tc1_ota_activate(void){activations++;return !fail_activation;}
+static bool tc1_ota_commit_uncertain(void){return activation_uncertain;}
+static void tc1_ota_failure(const char*r){assert(r);aborts++;}
 static void tc1_ota_abort(void){aborts++;}
 static void *mico_system_context_get(void){return NULL;}
 #define eState_Software_Reset 1
@@ -88,7 +91,7 @@ static void execute_wire(const char*wire){
  ph_http_server server;wire_input=wire;wire_position=wire_size=0;wire_accepted=wire_closed=false;memset(wire_output,0,sizeof(wire_output));
  assert(ph_http_server_open(&server,&wire_io,&app,3));
  for(unsigned n=0;n<2000&&!wire_closed;n++)ph_http_server_step(&server);
- assert(wire_closed);ph_http_server_close(&server);assert(!claims&&!waiting);
+ assert(wire_closed);wire_server_running=server.running;ph_http_server_close(&server);assert(!claims&&!waiting);
 }
 int main(int argc,char**argv){
  assert(argc==2);char*end=NULL;unsigned long rounds=strtoul(argv[1],&end,10);assert(end&&*end==0&&rounds>=1&&rounds<=100000);
@@ -108,6 +111,7 @@ int main(int argc,char**argv){
  assert(start("POST","/api/v1/command",10)==PH_HTTP_READ_BODY);assert(app.body(&x,"{",1));finish(false);
  assert(start("POST","/api/v1/ota/upload",100)==OTA_ACTION);if(OTA_ACTION==PH_HTTP_WAIT)assert(app.retry(&x)==PH_HTTP_READ_BODY);assert(job&&app.admission()==2);assert(app.body(&x,"123",3));finish(false);assert(aborts==1&&!job);
  assert(start("POST","/api/v1/ota/upload-unsigned",3)==OTA_ACTION);if(OTA_ACTION==PH_HTTP_WAIT)assert(app.retry(&x)==PH_HTTP_READ_BODY);app.body(&x,"123",3);app.complete(&x);assert(x.response.status==202&&finishes==1);finish(true);assert(!job);
+ TC1_VERIFY_RECOVERY_CHECK
  assert(start("GET","/",0)==PH_HTTP_REPLY);assert(x.response.status==200&&x.response.gzip&&x.response.body);ASSET_CHECK finish(true);
  strcpy(password,"other");assert(start("GET","/",0)==PH_HTTP_REPLY);assert(x.response.status==401&&x.response.realm);finish(true);
  assert(start("OPTIONS","/missing",0)==PH_HTTP_REPLY);assert(x.response.status==OPTIONS_UNKNOWN);finish(true);
@@ -124,9 +128,27 @@ int main(int argc,char**argv){
   assert_clean();
  }
  printf("mixed read-only callback soak: %lu rounds; status GET/POST, truncated release, deny-retry, auth failure, unknown route\n",rounds);
+ TC1_ACTIVATION_FAILURE_CHECK
  return 0;
 }
-'''.replace('MODEL_START','AppHttpdStart' if model=='TC1' else model.lower()+'_http_start').replace('WRITE_FAILURE_CHECK','' if model=='TC1' else 'assert(start("POST","/api/v1/ota/upload",3)==PH_HTTP_WAIT);assert(app.retry(&x)==PH_HTTP_READ_BODY);fail_write=true;unsigned before_aborts=aborts;assert(!app.body(&x,"123",3));assert(aborts==before_aborts+1&&!job);job=true;finish(false);assert(job&&aborts==before_aborts+1);job=false;fail_write=false;aborts=0;').replace('OTA_ACTION','PH_HTTP_WAIT').replace('OPTIONS_UNKNOWN','404' if model=='TC1' else '403').replace('HEAD_CHECK','assert(start("GET","/api/v1/status?view=full",0)==PH_HTTP_REPLY&&x.response.status==200);finish(true);assert(start("GET","/api/v1/status///",0)==PH_HTTP_REPLY&&x.response.status==200);finish(true);assert(start("HEAD","/api/v1/status?probe=1",0)==PH_HTTP_REPLY&&x.response.status==200&&x.response.suppress_body);finish(true);assert(start("POST","/api/v1/command///",2)==PH_HTTP_READ_BODY);finish(false);assert(start("GET","/api/v1/statusx",0)==PH_HTTP_REPLY&&x.response.status==404);finish(true);assert(start("GET","/assetsunknown",0)==PH_HTTP_REPLY&&x.response.status==404);finish(true);execute_wire("HEAD / HTTP/1.1\\r\\nAuthorization: Basic YWRtaW46cHc=\\r\\n\\r\\n");assert(strstr(wire_output,"Content-Length: 4\\r\\n"));assert(!strcmp(strstr(wire_output,"\\r\\n\\r\\n")+4,""));' if model=='TC1' else '').replace('ASSET_CHECK','assert(x.response.private_cache&&x.response.etag);strcpy(r.if_none_match,"W/\\\"page\\\"");assert(app.begin(&x)==PH_HTTP_REPLY&&x.response.status==304);' if model!='TC1' else '')
+'''.replace('TC1_VERIFY_RECOVERY_CHECK','' if model!='TC1' else r'''
+ unsigned before_reboots=reboots,before_activations=activations;
+ assert(start("POST","/api/v1/ota/upload",3)==PH_HTTP_WAIT);assert(app.retry(&x)==PH_HTTP_READ_BODY);assert(app.body(&x,"123",3));app.complete(&x);assert(x.response.status==202&&job&&activations==before_activations);finish(false);assert(!job&&reboots==before_reboots&&activations==before_activations);
+ wire_fail_send=true;execute_wire("POST /api/v1/ota/upload HTTP/1.1\r\nAuthorization: Basic YWRtaW46cHc=\r\nContent-Length: 3\r\n\r\n123");wire_fail_send=false;assert(wire_server_running);assert(!job&&reboots==before_reboots&&activations==before_activations);
+ execute_wire("GET /api/v1/status HTTP/1.1\r\nAuthorization: Basic YWRtaW46cHc=\r\n\r\n");assert(strstr(wire_output,"200 OK"));
+ assert(start("POST","/api/v1/ota/upload",3)==PH_HTTP_WAIT);assert(app.retry(&x)==PH_HTTP_READ_BODY);assert(app.body(&x,"123",3));app.complete(&x);finish(true);assert(!job&&reboots==before_reboots+1&&activations==before_activations+1);
+''').replace('TC1_ACTIVATION_FAILURE_CHECK','' if model!='TC1' else r'''
+ strcpy(password,"pw");before_reboots=reboots;before_activations=activations;fail_activation=true;
+ assert(start("POST","/api/v1/ota/upload",3)==PH_HTTP_WAIT);assert(app.retry(&x)==PH_HTTP_READ_BODY);assert(app.body(&x,"123",3));app.complete(&x);finish(true);assert(!job&&reboots==before_reboots&&activations==before_activations+1);
+ before_activations=activations;activation_uncertain=true;
+ assert(start("POST","/api/v1/ota/upload",3)==PH_HTTP_WAIT);assert(app.retry(&x)==PH_HTTP_READ_BODY);assert(app.body(&x,"123",3));app.complete(&x);finish(true);assert(job&&reboots==before_reboots&&activations==before_activations+1);
+ assert(start("POST","/api/v1/ota/upload",3)==PH_HTTP_REPLY&&x.response.status==503);finish(false);assert(job&&reboots==before_reboots);
+ assert(start("GET","/api/v1/status",0)==PH_HTTP_REPLY&&x.response.status==200);finish(true);assert(job);
+ /* Independent fresh platform boundary: close failure is NOT recoverable. */
+ job=fail_activation=activation_uncertain=false;before_reboots=reboots;before_activations=activations;wire_fail_close=true;
+ execute_wire("POST /api/v1/ota/upload HTTP/1.1\r\nAuthorization: Basic YWRtaW46cHc=\r\nContent-Length: 3\r\n\r\n123");
+ assert(!wire_server_running&&!job&&reboots==before_reboots&&activations==before_activations);wire_fail_close=false;
+''').replace('MODEL_START','AppHttpdStart' if model=='TC1' else model.lower()+'_http_start').replace('WRITE_FAILURE_CHECK','' if model=='TC1' else 'assert(start("POST","/api/v1/ota/upload",3)==PH_HTTP_WAIT);assert(app.retry(&x)==PH_HTTP_READ_BODY);fail_write=true;unsigned before_aborts=aborts;assert(!app.body(&x,"123",3));assert(aborts==before_aborts+1&&!job);job=true;finish(false);assert(job&&aborts==before_aborts+1);job=false;fail_write=false;aborts=0;').replace('OTA_ACTION','PH_HTTP_WAIT').replace('OPTIONS_UNKNOWN','404' if model=='TC1' else '403').replace('HEAD_CHECK','assert(start("GET","/api/v1/status?view=full",0)==PH_HTTP_REPLY&&x.response.status==200);finish(true);assert(start("GET","/api/v1/status///",0)==PH_HTTP_REPLY&&x.response.status==200);finish(true);assert(start("HEAD","/api/v1/status?probe=1",0)==PH_HTTP_REPLY&&x.response.status==200&&x.response.suppress_body);finish(true);assert(start("POST","/api/v1/command///",2)==PH_HTTP_READ_BODY);finish(false);assert(start("GET","/api/v1/statusx",0)==PH_HTTP_REPLY&&x.response.status==404);finish(true);assert(start("GET","/assetsunknown",0)==PH_HTTP_REPLY&&x.response.status==404);finish(true);execute_wire("HEAD / HTTP/1.1\\r\\nAuthorization: Basic YWRtaW46cHc=\\r\\n\\r\\n");assert(strstr(wire_output,"Content-Length: 4\\r\\n"));assert(!strcmp(strstr(wire_output,"\\r\\n\\r\\n")+4,""));' if model=='TC1' else '').replace('ASSET_CHECK','assert(x.response.private_cache&&x.response.etag);strcpy(r.if_none_match,"W/\\\"page\\\"");assert(app.begin(&x)==PH_HTTP_REPLY&&x.response.status==304);' if model!='TC1' else '')
     probe=temp/'probe.c';probe.write_text(PREFIX+stubs+globals+tail+main)
     cmd=[os.environ.get('CC','cc'),'-DPH_HTTP_CLIENT_SLOTS='+str(slots),'-DPH_HTTP_SCALAR_BYTES='+('1536' if model=='TC1' else '1280'),'-std=gnu99','-g','-fsanitize=address,undefined','-fno-omit-frame-pointer','-no-pie','-I'+str(ROOT),'-I'+str(ROOT/'tests/stubs'),'-I'+str(json),str(probe),str(ROOT/'common/httpd/product.c'),str(ROOT/'common/json_owned.c'),str(ROOT/'common/httpd/parser.c'),str(ROOT/'common/httpd/core.c'),*map(str,json.glob('*.c')),'-o',str(temp/'probe')]
     subprocess.run(cmd,check=True,timeout=120)

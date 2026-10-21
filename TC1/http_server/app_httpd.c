@@ -274,7 +274,7 @@ static bool body_chunk(ph_http_exchange *x,const void *data,size_t n)
 static void complete(ph_http_exchange *x)
 {
     if(operation==UPLOAD) {
-        upload_verified=tc1_ota_finish();
+        upload_verified=tc1_ota_verify();
         ph_http_message(&product,x,upload_verified?202:400,upload_verified?"文件校验通过，设备正在重启":"OTA rejected");return;
     }
     json_object *request=ph_http_body_json(&product,x);
@@ -288,11 +288,20 @@ static void release(ph_http_exchange *x,bool sent)
     (void)x;
     ph_http_product_release(&product);
     if(upload_open && !upload_verified) { tc1_ota_abort();ota_job_release(); }
-    if(upload_verified && sent) {
-        /* Preserve commit reservation until reset and the existing post-response
-         * transmission grace. This is an explicit successful OTA action. */
-        mico_thread_msleep(300);
-        mico_system_power_perform(mico_system_context_get(),eState_Software_Reset);
+    if(upload_verified) {
+        if(!sent) {
+            /* Verification alone changed no boot metadata. A lost response
+             * neither authorizes reset nor makes the passive slot permanent. */
+            tc1_ota_failure("HTTP response not delivered; upload not activated");
+            ota_job_release();
+        } else if(tc1_ota_activate()) {
+            mico_thread_msleep(300);
+            mico_system_power_perform(mico_system_context_get(),eState_Software_Reset);
+        } else if(!tc1_ota_commit_uncertain()) {
+            tc1_ota_abort();ota_job_release();
+        }
+        /* An uncertain activation retains both reservations, observable as
+         * failed, with no automatic retry or reset. */
     }
     upload_open=false;
 }

@@ -11,7 +11,8 @@ static bool maximum,command_alias;
 ph_http_diagnostics ph_http_snapshot(void){ph_http_diagnostics d;memset(&d,maximum?0xff:0,sizeof(d));if(maximum){d.last_close_rc=d.last_close_errno=d.last_select_rc=d.last_read_rc=d.limit=d.connections=d.connections_get_rc=d.read_errno=INT32_MIN;}return d;}
 static unsigned claims,waiting,queries,commands,aborts,written,finishes,entered,reboots;
 static bool deny,job,fail_write,fail_cap;
-static unsigned ota_begins;
+static unsigned ota_begins,activations;
+static bool fail_activation,activation_uncertain,wire_fail_send,wire_fail_close,wire_server_running;
 static char password[33];
 static uint32_t tick;
 typedef struct {int free_memory,allocted_memory,num_of_chunks;} micoMemInfo_t;
@@ -42,8 +43,8 @@ static int wire_accept(int fd){assert(fd==0&&!wire_accepted);wire_accepted=true;
 static int wire_nonblock(int fd){(void)fd;return 0;}
 static int wire_wait(uint64_t r,uint64_t w,uint64_t*rr,uint64_t*ww,unsigned ms){tick+=ms;*rr=*ww=0;if(!wire_accepted&&(r&1))*rr|=1;if(wire_accepted&&!wire_closed&&(r&2))*rr|=2;if(w&2)*ww|=2;return !!(*rr||*ww);}
 static int wire_recv(int fd,void*p,size_t n){assert(fd==1);size_t left=strlen(wire_input)-wire_position;if(n>left)n=left;memcpy(p,wire_input+wire_position,n);wire_position+=n;return n;}
-static int wire_send(int fd,const void*p,size_t n){assert(fd==1);if(n>3)n=3;assert(wire_size+n<sizeof(wire_output));memcpy(wire_output+wire_size,p,n);wire_size+=n;return n;}
-static int wire_close(int fd){if(fd==1)wire_closed=true;return 0;}
+static int wire_send(int fd,const void*p,size_t n){assert(fd==1);if(wire_fail_send)return -1;if(n>3)n=3;assert(wire_size+n<sizeof(wire_output));memcpy(wire_output+wire_size,p,n);wire_size+=n;return n;}
+static int wire_close(int fd){if(fd==1){wire_closed=true;if(wire_fail_close)return -1;}return 0;}
 static bool wire_retry(void){return false;}
 static int wire_error(void){return 0;}
 static void wire_yield(void){tick++;}

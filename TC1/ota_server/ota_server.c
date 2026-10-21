@@ -59,7 +59,7 @@ static void download_worker(mico_thread_arg_t arg){
     bool ok=ota_job_enter() && ota_fetch(url,0xa9000u+OTA_ENVELOPE_SIZE,fetch_begin,fetch_write,NULL,&error);
     if(ok)ok=tc1_ota_finish();
     if(ok){ota_progress=100;if(callback)callback(OTA_SUCCE,100);free(url);mico_thread_msleep(1500);mico_system_power_perform(mico_system_context_get(),eState_Software_Reset);}
-    else{custom_log("OTA","%s",error?error:"Image validation failed");ota_progress=-1;if(callback)callback(OTA_FAIL,0);tc1_ota_failure(error);free(url);ota_job_release();}
+    else{custom_log("OTA","%s",error?error:"Image validation failed");ota_progress=-1;if(callback)callback(OTA_FAIL,0);tc1_ota_failure(error);free(url);if(!tc1_ota_commit_uncertain())ota_job_release();}
     mico_rtos_delete_thread(NULL);
 }
 

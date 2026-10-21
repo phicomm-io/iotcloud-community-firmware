@@ -6,7 +6,7 @@
 static signed_ota session;
 static tc1_ota_metadata_t metadata;
 void tc1_ota_metadata(tc1_ota_metadata_t *out);
-static bool active, config_busy, unsigned_session, commit_uncertain;
+static bool active, config_busy, unsigned_session, commit_uncertain, verified_pending;
 static const char *ota_state="idle", *ota_error="";
 static char transfer_error[96];
 static mico_mutex_t lock;
@@ -23,7 +23,7 @@ bool tc1_config_reserve(void) {
 }
 void tc1_config_release(void) {mico_rtos_lock_mutex(&lock);config_busy=false;mico_rtos_unlock_mutex(&lock);}
 bool tc1_ota_reserve(void) {
-    mico_rtos_lock_mutex(&lock); bool ok=!active && !config_busy; if(ok) {active=true;ota_state="receiving";ota_error="";}
+    mico_rtos_lock_mutex(&lock); bool ok=!active && !config_busy; if(ok) {active=true;verified_pending=false;ota_state="receiving";ota_error="";}
     mico_rtos_unlock_mutex(&lock); return ok;
 }
 void tc1_ota_snapshot(char *state,char *error,unsigned *progress) {
@@ -33,7 +33,7 @@ void tc1_ota_snapshot(char *state,char *error,unsigned *progress) {
     mico_rtos_unlock_mutex(&lock);
 }
 void tc1_ota_abort(void) {
-    mico_rtos_lock_mutex(&lock); if(!commit_uncertain && strcmp(ota_state,"ready"))active=false; if(strcmp(ota_state,"ready"))ota_state="failed"; mico_rtos_unlock_mutex(&lock);
+    mico_rtos_lock_mutex(&lock); if(!commit_uncertain && strcmp(ota_state,"ready")){active=false;verified_pending=false;} if(strcmp(ota_state,"ready"))ota_state="failed"; mico_rtos_unlock_mutex(&lock);
 }
 void tc1_ota_failure(const char *reason) {
     mico_rtos_lock_mutex(&lock);
@@ -127,25 +127,18 @@ static bool passive_slot_valid(void) {
     return current->partition_length==0xa9000 && target->partition_length==0xa9000 &&
         ((a==0x6000 && b==0xaf000)||(a==0xaf000 && b==0x6000));
 }
-bool tc1_ota_finish(void)
+bool tc1_ota_verify(void)
 {
     const char *error = NULL;
-    mico_rtos_lock_mutex(&lock);ota_state="validating";mico_rtos_unlock_mutex(&lock);
+    mico_rtos_lock_mutex(&lock);
+    if(!active || commit_uncertain || !strcmp(ota_state,"ready")){mico_rtos_unlock_mutex(&lock);return false;}
+    if(verified_pending){mico_rtos_unlock_mutex(&lock);return true;}
+    ota_state="validating";mico_rtos_unlock_mutex(&lock);
     /* Explicit raw compatibility mode follows the original SDK OTA flow.
      * Do not apply signed-image ABI, product, kernel or boot-table checks. */
     if (unsigned_session) {
         if (staged != expected) return false;
-#ifdef PHICOMM_DEVICE_OTA
-        if(!ota_job_commit())return false;
-#endif
-        if (mico_ota_switch_to_new_fw(expected, transport_crc) != kNoErr) {
-            mico_rtos_lock_mutex(&lock);
-            ota_state="failed"; commit_uncertain=true;
-            mico_rtos_unlock_mutex(&lock);
-            return false;
-        }
-        mico_rtos_lock_mutex(&lock); ota_state="ready"; mico_rtos_unlock_mutex(&lock);
-        return true;
+        goto verified;
     }
     if (!unsigned_session && !signed_ota_finish(&session)) {
         return false;
@@ -182,18 +175,34 @@ bool tc1_ota_finish(void)
         error = "OTA MD5 mismatch"; goto fail;
     }
     if(!passive_slot_valid()) {error="Invalid active/passive partitions";goto fail;}
-#ifdef PHICOMM_DEVICE_OTA
-    if(!ota_job_commit()){error="Cancelled";goto fail;}
-#endif
-    if(mico_ota_switch_to_new_fw(expected,transport_crc)!=kNoErr) {
-        /* Commit may have partially persisted: inhibit further OTA until manual reboot. */
-        mico_rtos_lock_mutex(&lock);ota_state="failed";commit_uncertain=true;mico_rtos_unlock_mutex(&lock);
-        return false;
-    }
-    mico_rtos_lock_mutex(&lock);ota_state="ready";mico_rtos_unlock_mutex(&lock);
-    /* Keep the reservation until reset, preventing another OTA from replacing the verified slot. */
+verified:
+    /* HTTP may discard this verified upload until activation. No boot metadata
+     * is changed by verification; retain the reservation across its response. */
+    mico_rtos_lock_mutex(&lock);verified_pending=true;ota_state="verified";mico_rtos_unlock_mutex(&lock);
     return true;
 fail:
     mico_rtos_lock_mutex(&lock);ota_error=error;mico_rtos_unlock_mutex(&lock);return false;
 }
 
+bool tc1_ota_commit_uncertain(void) {
+    mico_rtos_lock_mutex(&lock);bool yes=commit_uncertain;mico_rtos_unlock_mutex(&lock);return yes;
+}
+bool tc1_ota_activate(void) {
+    mico_rtos_lock_mutex(&lock);bool ready=active && verified_pending && !commit_uncertain;
+    if(ready){verified_pending=false;ota_state="activating";}mico_rtos_unlock_mutex(&lock);
+    if(!ready)return false;
+#ifdef PHICOMM_DEVICE_OTA
+    if(!ota_job_commit()){tc1_ota_failure("Cancelled");return false;}
+#endif
+    if(mico_ota_switch_to_new_fw(expected,transport_crc)!=kNoErr) {
+        /* Commit may have partially persisted: keep both OTA reservations. */
+        mico_rtos_lock_mutex(&lock);ota_state="failed";ota_error="Failed to activate verified image; boot metadata uncertain";commit_uncertain=true;mico_rtos_unlock_mutex(&lock);
+        return false;
+    }
+    mico_rtos_lock_mutex(&lock);verified_pending=false;ota_state="ready";mico_rtos_unlock_mutex(&lock);
+    return true;
+}
+/* Download/MQTT callers retain their original verify-and-activate contract. */
+bool tc1_ota_finish(void) {
+    return tc1_ota_verify() && tc1_ota_activate();
+}
