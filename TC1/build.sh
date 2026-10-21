@@ -35,6 +35,7 @@ mkdir -p "$workspace"
 ln -sfn "$sdk_dir" "$workspace/mico-os"
 ln -sfn "$app_dir" "$workspace/TC1"
 ln -sfn "$project_dir/common/httpd" "$workspace/phicomm_httpd"
+ln -sfn "$project_dir/common/mqtt" "$workspace/phicomm_mqtt"
 tools_dir="${TC1_TOOLS_DIR:-$project_dir/build/tc1-tools}"
 target=TC1@MK3031@moc
 version_args=()

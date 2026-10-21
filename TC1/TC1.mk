@@ -46,7 +46,7 @@ $(NAME)_COMPONENTS := protocols/SNTP\
 					protocols/mqtt\
 					utilities/json_c\
 					utilities/url\
-					phicomm_httpd
+					phicomm_httpd phicomm_mqtt
 
 GLOBAL_DEFINES += DEV_MODEL=\"PHICOMM_TC1_A1\"
 
