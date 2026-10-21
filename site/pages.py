@@ -21,6 +21,7 @@ GROUPS = [
         ("tc1-guide", "功能与操作", "六路开关、计量、童锁、定时与按键", "TC1-功能与操作"),
         ("tc1-flash", "刷机", "EMW3031：J-Link 首次安装与恢复", "TC1-刷机"),
         ("tc1-no-disassembly", "免拆刷机", "原厂配网服务触发 TFTP OTA，无需拆机", "TC1-免拆刷机"),
+        ("tc1-no-disassembly-ethernet-wifi-ap", "一个有线＋一个无线＋一个 AP", "图文步骤、配套文件与 Windows / Linux / macOS 命令", "TC1-免拆刷机-有线无线AP"),
     ]),
     ("m1", "M1 空气检测仪", [
         ("m1-guide", "功能与操作", "读数、屏幕亮度、指示灯与恢复", "M1-功能与操作"),
@@ -40,6 +41,9 @@ GROUPS = [
 
 # A shared guide can appear under both products; build and sync it only once.
 PAGES = list({page[0]: page for _, _, items in GROUPS for page in items}.values())
+
+# Child guides share their parent's product group and follow it in navigation.
+PARENTS = {"tc1-no-disassembly-ethernet-wifi-ap": "tc1-no-disassembly"}
 
 # Preserve published URLs when guides are consolidated.
 ALIASES = {"a1-flash": "a1-m1-flash", "m1-flash": "a1-m1-flash"}
@@ -61,6 +65,7 @@ EN_TITLES = {
  'tc1-guide': ('TC1 operation', 'Outlets, metering, schedules and buttons'),
  'tc1-flash': ('Flash TC1', 'EMW3031 first installation and recovery'),
  'tc1-no-disassembly': ('Flash TC1 without disassembly', 'Stock provisioning OTA over TFTP, no case opening'),
+ 'tc1-no-disassembly-ethernet-wifi-ap': ('One Ethernet + one Wi-Fi + one AP', 'Illustrated steps, downloads and Windows / Linux / macOS commands'),
  'm1-guide': ('M1 operation', 'Readings, brightness, icons and recovery'),
  'a1-guide': ('A1 operation', 'Fan, ring, night mode and automation'),
  'a1-m1-flash': ('Flash A1 / M1', 'SWD, factory points and serial bootloader'),

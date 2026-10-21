@@ -4,6 +4,8 @@
 
 Install community firmware over Wi-Fi without opening the case, soldering, serial or SWD wiring, or the vendor cloud.
 
+Illustrated subpage: [One Ethernet adapter + one Wi-Fi adapter + one AP](tc1-no-disassembly-ethernet-wifi-ap), with firmware and payload downloads and commands for Windows, Linux and macOS.
+
 ## How it works
 
 In provisioning mode, the stock firmware exposes a local configuration service. Its OTA endpoint has a stack-overflow vulnerability. A specially crafted request (payload) from the computer redirects execution into the firmware's own **factory OTA update process**.
@@ -26,6 +28,8 @@ Other equivalent topologies work too. You need a client that can join the TC1 pr
 Review [power and wiring requirements](flash-prep) and [firmware package selection](firmware-update). Flashing erases the inactive application slot and reboots the device. The retained stock slot is **not** a guaranteed automatic rollback.
 
 ### Prepare the update file
+
+Download the prepared [mico_ota.bin](assets/tools/tc1-no-disassembly/mico_ota.bin) (649344 bytes) to skip packaging. Use the following method only when preparing another image.
 
 The update file is the raw **MRVL application-slot image plus its 16-byte binary MD5**, not a 32-character text digest. The community image is 649328 bytes; the steps below produce a 649344-byte `mico_ota.bin`:
 
@@ -52,25 +56,7 @@ The image MD5 should be `137bbe25d40f0a45b2b3129f035ea4c3`. Do not use a full-fl
 
 ### 1. Create the OTA AP and TFTP service
 
-#### Recommended: computer with Ethernet and Wi-Fi, plus a router
-
-The computer serves firmware over Ethernet and connects to the TC1 provisioning AP over Wi-Fi. The router provides the OTA AP for downloading the firmware.
-
-```text
-Computer Ethernet (10.0.0.2/8, TFTP server) ──cable── router LAN port
-Computer Wi-Fi ──Wi-Fi── TC1 provisioning AP Phicomm_TC1_XXXX
-TC1 after entering factory OTA mode ──Wi-Fi── router PHICOMM_OTA_AP
-```
-
-1. Set the router's **2.4 GHz Wi-Fi** name to exactly **`PHICOMM_OTA_AP`**, with **no password** and no client isolation. Bridge this Wi-Fi network to the LAN ports.
-2. Connect the computer's Ethernet adapter to a router **LAN port**. Set its address to **`10.0.0.2`** with mask **`255.0.0.0` (/8)**; no gateway or DNS is needed. Check that the router and other devices do not already use `10.0.0.2`.
-3. Start **tftpd or another TFTP server** on the computer. Serve `mico_ota.bin` from its directory and bind it to the Ethernet address `10.0.0.2`. Allow octet reads with 512-byte blocks and no option negotiation.
-4. Allow TFTP traffic through the firewall: the initial request uses **UDP 69**, and the data session uses another server port that must also be allowed. Binding port 69 usually needs additional privileges on Linux/macOS; on Windows, allow UDP on the OTA adapter.
-5. Use another client connected to the router's Wi-Fi to download the whole `mico_ota.bin` and check its size and MD5. A download on the server itself only checks the file service, not Wi-Fi connectivity. Keep TFTP and its log window open after this check.
-
-The computer's adapters **need no Internet sharing or bridge between them**. Ethernet serves `10.0.0.2`, while Wi-Fi reaches TC1 at `10.10.10.1`. After joining TC1, the computer's Wi-Fi adapter does not need to switch to the router's AP.
-
-#### Other equivalent topologies
+#### Network requirements
 
 Any OS and device combination can be used. A computer or phone can join the TC1 provisioning AP while another computer, travel router or wireless AP provides the OTA network. TFTP can run on the AP itself or on an Ethernet computer bridged to the AP.
 
@@ -130,6 +116,8 @@ curl -s -m 5 http://10.10.10.1:8000/read-domain
 `VERSION` must be `1.0.0.26` with `COMPILE_TIME` `Apr 13 2018 10:09:06`. Do not continue on a different build.
 
 ### 3. Send the trigger request
+
+Download [tftp-trigger.bin (payload)](assets/tools/tc1-no-disassembly/tftp-trigger.bin) to skip Python generation and send it with curl. Complete Windows / Linux / macOS commands are in the [illustrated subpage](tc1-no-disassembly-ethernet-wifi-ap).
 
 Keep the computer's Wi-Fi adapter connected to the TC1 provisioning AP and run these commands in a terminal. Python creates the stack-overflow trigger file; `curl` sends it to the device. Send it once, then watch the device and TFTP logs:
 

@@ -11,6 +11,7 @@ PRODUCT_TITLES = {
     'tc1-guide': '斐讯 TC1 智能排插功能与操作',
     'tc1-flash': '斐讯 TC1 刷机教程（A1 硬件版本）',
     'tc1-no-disassembly': '斐讯 TC1 免拆刷机教程（A1 硬件版本）',
+    'tc1-no-disassembly-ethernet-wifi-ap': '斐讯 TC1 免拆刷机：一个有线＋一个无线＋一个 AP',
     'm1-guide': '斐讯 M1 空气检测仪功能与操作',
     'a1-guide': '斐讯 A1 空气净化器功能与操作',
     'a1-m1-flash': '斐讯 A1 / M1 刷机教程：J-Link 与 Bootloader',
