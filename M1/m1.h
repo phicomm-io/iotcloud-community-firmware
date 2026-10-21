@@ -82,6 +82,7 @@ bool m1_ota_finish(void);
 void m1_ota_abort(const char *);
 bool m1_ota_download(const char *url);
 json_object *m1_status_json(void);
+json_object *m1_status_live_json(void);
 
 /* Socket helpers use a bounded wait even if the peer never sends a byte. */
 int m1_socket_read(int fd, void *buf, size_t length, unsigned timeout_ms);

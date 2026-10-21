@@ -87,6 +87,7 @@ bool a1_ota_finish(void);
 void a1_ota_abort(const char *);
 bool a1_ota_download(const char *);
 json_object *a1_status_json(void);
+json_object *a1_status_live_json(void);
 int a1_socket_read(int, void *, size_t, unsigned);
 bool a1_socket_send(int, const void *, size_t);
 int a1_socket_line(int, char *, size_t);

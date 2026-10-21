@@ -27,7 +27,8 @@ def check(directory, header):
             'auto_execute', 'service_command', 'service_product', 'service_product_inner']),
         'scheduled status': (binding, 2048, ['feature_worker', 'automation_poll',
             'auto_execute', 'service_query', 'service_command', 'service_product',
-            'a1_status_json' if directory.name == 'A1' else 'm1_status_json']),
+            'a1_status_json' if directory.name == 'A1' else 'm1_status_json',
+            'a1_status_json_view' if directory.name == 'A1' else 'm1_status_json_view']),
     }
     if directory.name == 'A1':
         paths['MQTT nested virtual command'] = (mqtt_budget, 4096, ['mqtt_worker',
@@ -49,11 +50,11 @@ def check(directory, header):
     http_budget = int(re.search(r'http_worker,\s*(\d+)', http_source).group(1))
     status = 'a1_status_json' if directory.name == 'A1' else 'm1_status_json'
     paths['HTTP status'] = (http_budget, 2048, ['http_worker', 'handle',
-        'service_query', 'service_command', 'service_product', status])
+        'service_query', 'service_command', 'service_product', status, status+'_view'])
     paths['MQTT result nested status'] = (mqtt_budget, 4096, ['mqtt_worker',
         'service_mqtt_flush', 'publish',
         'command' if directory.name == 'A1' else 'native_command',
-        'service_command', 'service_product', status])
+        'service_command', 'service_product', status, status+'_view'])
     if directory.name == 'A1':
         for label in ('scheduled control', 'MQTT nested virtual command', 'MQTT nested filter command'):
             paths[label][2].extend(['feature_group_control', 'group_send', 'parse'])

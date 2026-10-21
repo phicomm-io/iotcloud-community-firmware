@@ -5,6 +5,7 @@ python3 -m unittest tests.test_prepare_sdk
 python3 tools/check_version.py
 python3 -m unittest discover -s tests -p test_version.py
 python3 -m unittest tests.test_package_stale_signature
+python3 -m unittest tests.test_readonly_stress
 python3 -m unittest tests.test_http_overload
 python3 -m unittest tests.test_http_tcp_integration
 python3 -m unittest tests.test_memory_admission tests.test_http_browser_queue tests.test_tc1_http_recovery
@@ -34,7 +35,7 @@ trap 'rm -rf "$output"' EXIT
 "$output/a1-ring"
 "${compiler[@]}" -std=c99 -Wall -Wextra -Werror tests/test_a1_filter.c -o "$output/a1-filter"
 "$output/a1-filter"
-python3 -m unittest tests.test_a1_filter_storage
+python3 -m unittest tests.test_a1_filter_storage tests.test_status_views
 "${compiler[@]}" -DFEATURE_HOST -std=c99 -Wall -Wextra -Werror -Wno-misleading-indentation -Icommon common/engine.c tests/test_engine.c -lm -o "$output/engine"
 "${compiler[@]}" -std=c99 -Wall -Wextra -Werror tests/test_mqtt_account.c -o "$output/mqtt-account"
 "$output/mqtt-account"

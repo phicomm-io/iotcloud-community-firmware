@@ -255,55 +255,59 @@ static void integer(json_object *o, const char *key, int value)
 { json_build_object_add(o, key, json_object_new_int(value)); }
 static void json_bool(json_object *o, const char *key, bool value)
 { json_build_object_add(o, key, json_object_new_boolean(value)); }
-json_object *a1_status_json(void)
+static __attribute__((noinline)) json_object *a1_status_json_view(bool live)
 {
     a1_config_t cfg; a1_state_t s;
     a1_config_get(&cfg); a1_state_get(&s);
     json_object *o = json_object_new_object();
     if (!o) return NULL;
-    phicomm_variant_json(o);
     str(o,"model","a1");
-    runtime_metrics_json(o);
-    http_diag_t diag = http_diag_snapshot();
-    integer(o, "http_accept_ok", (int)http_accept_ok);
-    integer(o, "http_accept_fail", (int)http_accept_fail);
-    integer(o, "http_accept_errno", http_accept_errno);
-    integer(o, "http_accept_last_fd", http_accept_last_fd);
-    integer(o, "http_accept_queue_ok", (int)http_accept_queue_ok);
-    integer(o, "http_accept_queue_reject", (int)http_accept_queue_reject);
-    integer(o, "http_accept_queue_last_rc", http_accept_queue_last_rc);
-    integer(o, "http_accept_busy_fcntl_fail", (int)http_accept_busy_fcntl_fail);
-    integer(o, "http_accept_busy_drained", (int)http_accept_busy_drained);
-    integer(o, "http_accept_busy_send_ok", (int)http_accept_busy_send_ok);
-    integer(o, "http_accept_busy_send_fail", (int)http_accept_busy_send_fail);
-    integer(o, "http_accept_busy_send_errno", http_accept_busy_send_errno);
-    integer(o, "http_accept_busy_send_bytes", http_accept_busy_send_bytes);
-    integer(o, "http_accept_overflow_close", (int)http_accept_overflow_close);
-    integer(o, "http_accept_queue_capacity", HTTP_PENDING_CLIENTS);
-    integer(o, "http_tcp_limit_requested", HTTP_TCP_CLIENT_LIMIT);
-    integer(o, "http_tcp_limit_set_rc", diag.set_rc);
-    integer(o, "http_tcp_limit_set_errno", diag.set_errno);
-    integer(o, "http_tcp_limit_get_rc", diag.limit_get_rc);
-    if (diag.limit_get_rc == 0) json_build_object_add(o, "http_tcp_limit_readback",json_object_new_int(diag.limit));
-    else json_object_object_add(o, "http_tcp_limit_readback", NULL);
-    integer(o, "http_tcp_connections_get_rc", diag.connections_get_rc);
-    if (diag.connections_get_rc == 0) json_build_object_add(o, "http_tcp_connections",json_object_new_int(diag.connections));
-    else json_object_object_add(o, "http_tcp_connections", NULL);
-    watchdog_status_json(o);
-    json_build_object_add(o, "filter", a1_filter_json());
+    if (!live) {
+        phicomm_variant_json(o);
+        runtime_metrics_json(o);
+        http_diag_t diag = http_diag_snapshot();
+        integer(o, "http_accept_ok", (int)http_accept_ok);
+        integer(o, "http_accept_fail", (int)http_accept_fail);
+        integer(o, "http_accept_errno", http_accept_errno);
+        integer(o, "http_accept_last_fd", http_accept_last_fd);
+        integer(o, "http_accept_queue_ok", (int)http_accept_queue_ok);
+        integer(o, "http_accept_queue_reject", (int)http_accept_queue_reject);
+        integer(o, "http_accept_queue_last_rc", http_accept_queue_last_rc);
+        integer(o, "http_accept_busy_fcntl_fail", (int)http_accept_busy_fcntl_fail);
+        integer(o, "http_accept_busy_drained", (int)http_accept_busy_drained);
+        integer(o, "http_accept_busy_send_ok", (int)http_accept_busy_send_ok);
+        integer(o, "http_accept_busy_send_fail", (int)http_accept_busy_send_fail);
+        integer(o, "http_accept_busy_send_errno", http_accept_busy_send_errno);
+        integer(o, "http_accept_busy_send_bytes", http_accept_busy_send_bytes);
+        integer(o, "http_accept_overflow_close", (int)http_accept_overflow_close);
+        integer(o, "http_accept_queue_capacity", HTTP_PENDING_CLIENTS);
+        integer(o, "http_tcp_limit_requested", HTTP_TCP_CLIENT_LIMIT);
+        integer(o, "http_tcp_limit_set_rc", diag.set_rc);
+        integer(o, "http_tcp_limit_set_errno", diag.set_errno);
+        integer(o, "http_tcp_limit_get_rc", diag.limit_get_rc);
+        if (diag.limit_get_rc == 0) json_build_object_add(o, "http_tcp_limit_readback",json_object_new_int(diag.limit));
+        else json_object_object_add(o, "http_tcp_limit_readback", NULL);
+        integer(o, "http_tcp_connections_get_rc", diag.connections_get_rc);
+        if (diag.connections_get_rc == 0) json_build_object_add(o, "http_tcp_connections",json_object_new_int(diag.connections));
+        else json_object_object_add(o, "http_tcp_connections", NULL);
+        watchdog_status_json(o);
+        json_build_object_add(o, "filter", a1_filter_json());
+    } else integer(o, "uptime_seconds", mico_rtos_get_time()/1000);
     str(o, "version", A1_VERSION); str(o, "device_id", a1_id); str(o, "name", cfg.name);
     json_bool(o, "wifi_trial_active", s.wifi_trial_active);
     str(o, "wifi_trial_status", s.wifi_trial_status);
-    str(o, "ssid", cfg.ssid); str(o, "ip", s.ip); str(o, "ap_name", s.ap_name);
-    str(o, "mqtt_host", cfg.mqtt_host); integer(o, "mqtt_port", cfg.mqtt_port); str(o, "mqtt_user", cfg.mqtt_user);
-    str(o, "mqtt_topic_mode", "tmcp");
-    str(o, "mqtt_protocol", "tmcp"); integer(o, "mqtt_protocol_version", 2);
+    if (!live) {
+        str(o, "ssid", cfg.ssid); str(o, "ip", s.ip); str(o, "ap_name", s.ap_name);
+        str(o, "mqtt_host", cfg.mqtt_host); integer(o, "mqtt_port", cfg.mqtt_port); str(o, "mqtt_user", cfg.mqtt_user);
+        str(o, "mqtt_topic_mode", "tmcp");
+        str(o, "mqtt_protocol", "tmcp"); integer(o, "mqtt_protocol_version", 2);
+        integer(o, "mqtt_errors", s.mqtt_errors); str(o, "mqtt_last_error", s.mqtt_last_error);
+        json_bool(o, "web_password_set", cfg.web_password[0] != 0);
+        json_bool(o, "wifi_password_set", cfg.wifi_password[0] != 0);
+        json_bool(o, "mqtt_password_set", cfg.mqtt_password[0] != 0);
+    }
     str(o, "mqtt_status", mqtt_status_name(s.mqtt_status));
-    integer(o, "mqtt_errors", s.mqtt_errors); str(o, "mqtt_last_error", s.mqtt_last_error);
     json_bool(o, "mqtt_cleanup_warning", s.mqtt_cleanup_warning);
-    json_bool(o, "web_password_set", cfg.web_password[0] != 0);
-    json_bool(o, "wifi_password_set", cfg.wifi_password[0] != 0);
-    json_bool(o, "mqtt_password_set", cfg.mqtt_password[0] != 0);
     json_bool(o, "wifi_connected", s.wifi_connected); json_bool(o, "mqtt_connected", s.mqtt_connected);
     bool effective_on; unsigned effective_speed; feature_effective_fan(cfg.fan_on,cfg.speed,&effective_on,&effective_speed);
     str(o,"fan_mode",feature_fan_auto()?"auto":"manual");
@@ -318,20 +322,29 @@ json_object *a1_status_json(void)
     json_bool(o, "led_always_on", cfg.led_always_on); integer(o, "brightness", cfg.brightness);
     integer(o, "red", cfg.red); integer(o, "green", cfg.green); integer(o, "blue", cfg.blue);
     json_bool(o, "child_lock", cfg.child_lock); json_bool(o, "panel_ready", s.panel_ready);
-    integer(o, "panel_errors", s.panel_errors); integer(o, "hardware_errors", s.hardware_errors);
-    integer(o, "panel_last_error", s.panel_last_error);
-    char raw[7];
-    for (unsigned i = 0; i < 3; i++) snprintf(raw + 2 * i, 3, "%02x", s.panel_raw[i]);
-    str(o, "panel_raw", raw); json_bool(o, "config_dirty", s.config_dirty); str(o, "save_error", s.save_error);
-    json_bool(o,"ota_signature_verified",s.ota_signature_verified);
-    json_bool(o,"ota_image_verified",s.ota_image_verified);
-    integer(o,"ota_key_id",s.ota_key_id);integer(o,"ota_image_length",s.ota_image_length);
-    str(o,"ota_release_counter",s.ota_release_counter);str(o,"ota_version",s.ota_version);
+    if (!live) {
+        integer(o, "panel_errors", s.panel_errors); integer(o, "hardware_errors", s.hardware_errors);
+        integer(o, "panel_last_error", s.panel_last_error);
+        char raw[7];
+        for (unsigned i = 0; i < 3; i++) snprintf(raw + 2 * i, 3, "%02x", s.panel_raw[i]);
+        str(o, "panel_raw", raw);
+    }
+    json_bool(o, "config_dirty", s.config_dirty); str(o, "save_error", s.save_error);
+    if (!live) {
+        json_bool(o,"ota_signature_verified",s.ota_signature_verified);
+        json_bool(o,"ota_image_verified",s.ota_image_verified);
+        integer(o,"ota_key_id",s.ota_key_id);integer(o,"ota_image_length",s.ota_image_length);
+        str(o,"ota_release_counter",s.ota_release_counter);str(o,"ota_version",s.ota_version);
+    }
     str(o, "ota_state", s.ota_state); str(o, "ota_error", s.ota_error);
     integer(o, "ota_progress", s.ota_progress); json_bool(o, "ota_active", s.ota_active);
     json_bool(o, "reboot_pending", s.reboot_pending); json_bool(o, "scan_busy", s.scan_busy);
     return o;
 }
+
+/* Preserve the legacy full snapshot for existing callers and telemetry. */
+json_object *a1_status_json(void) { return a1_status_json_view(false); }
+json_object *a1_status_live_json(void) { return a1_status_json_view(true); }
 
 static void send_json(int fd, json_object *o)
 {

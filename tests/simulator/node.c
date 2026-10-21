@@ -13,6 +13,7 @@ void watchdog_beat(watchdog_slot_t slot) { (void)slot; }
 #define config_get a1_config_get
 #define config_save a1_config_save
 #define state_get a1_state_get
+#define status_live_json a1_status_live_json
 #define status_json a1_status_json
 #define device_id a1_id
 #define device_lock a1_lock
@@ -25,6 +26,7 @@ void watchdog_beat(watchdog_slot_t slot) { (void)slot; }
 #define config_get m1_config_get
 #define config_save m1_config_save
 #define state_get m1_state_get
+#define status_live_json m1_status_live_json
 #define status_json m1_status_json
 #define device_id m1_id
 #define device_lock m1_lock
@@ -78,6 +80,8 @@ static void sensor_tick(void){mico_rtos_lock_mutex(&device_lock);
 #endif
  mico_rtos_unlock_mutex(&device_lock);}
 void state_get(STATE *s){mico_rtos_lock_mutex(&device_lock);*s=device_state;mico_rtos_unlock_mutex(&device_lock);}
+json_object *status_json(void);
+json_object *status_live_json(void) { return status_json(); }
 json_object *status_json(void){CFG c;STATE s;config_get(&c);state_get(&s);json_object *o=json_object_new_object();json_object_object_add(o,"id",json_object_new_string(device_id));json_object_object_add(o,"mqtt_connected",json_object_new_boolean(s.mqtt_connected));json_object_object_add(o,"mqtt_errors",json_object_new_int(s.mqtt_errors));json_object_object_add(o,"uptime_ms",json_object_new_int(mico_rtos_get_time()));
 #ifdef HOST_A1
  json_object_object_add(o,"requested_fan_on",json_object_new_boolean(c.fan_on));

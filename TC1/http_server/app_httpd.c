@@ -291,6 +291,33 @@ json_object *tc1_status_json(void) {
     return out;
 }
 
+/* Build only fields needed by high-frequency UI reads: no full buffer/parse. */
+json_object *tc1_status_live_json(void) {
+    json_object *o=json_object_new_object(),*states=json_object_new_array();
+    if(!o){if(states)json_object_put(states);return NULL;}
+    json_build_object_add(o,"model",json_object_new_string("tc1"));
+    json_build_object_add(o,"version",json_object_new_string(VERSION));
+    json_build_object_add(o,"device_id",json_object_new_string(str_mac));
+    json_build_object_add(o,"name",json_object_new_string(sys_config->micoSystemConfig.name));
+    mico_time_t now;mico_time_get_time(&now);
+    json_build_object_add(o,"uptime_seconds",json_object_new_int((unsigned long)now/1000));
+    for(unsigned i=0;i<SOCKET_NUM;i++)json_build_array_add(states,json_object_new_int(user_config->socket_status[i]));
+    json_build_object_add(o,"socket_states",states);
+    json_build_object_add(o,"child_lock",json_object_new_boolean(childLockEnabled));
+    json_build_object_add(o,"led_enabled",json_object_new_boolean(user_config->power_led_enabled));
+    json_build_object_add(o,"wifi_connected",json_object_new_boolean(wifi_status==WIFI_STATE_CONNECTED));
+    json_build_object_add(o,"mqtt_connected",json_object_new_boolean(tc1_mqtt_status==MQTT_READY));
+    json_build_object_add(o,"ap_active",json_object_new_boolean(ip_status.mode==0));
+    json_build_object_add(o,"mqtt_cleanup_warning",json_object_new_boolean(tc1_mqtt_cleanup_warning));
+    json_build_object_add(o,"mqtt_status",json_object_new_string(mqtt_status_name(tc1_mqtt_status)));
+    json_build_object_add(o,"wifi_trial_status",json_object_new_string(WifiTrialStatus()));
+    char state[32],error[128];unsigned progress;tc1_ota_snapshot(state,error,&progress);
+    json_build_object_add(o,"ota_state",json_object_new_string(state));
+    json_build_object_add(o,"ota_error",json_object_new_string(error));
+    json_build_object_add(o,"ota_progress",json_object_new_int(progress));
+    return o;
+}
+
 static int HttpGetTc1Status(httpd_request_t *req) {
     json_object *o=tc1_status_json();if(!o)return kNoMemoryErr;
     const char *s=json_object_to_json_string(o);int rc=response_json(req,HTTP_RES_200,s,strlen(s));json_object_put(o);return rc;

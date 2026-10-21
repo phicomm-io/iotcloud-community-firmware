@@ -32,6 +32,7 @@ static int startup_result(const char *s,int err){(void)s;return err;}
 PRODUCTION
 static int migrate(void){MIGRATION return 0;}
 json_object *a1_status_json(void){return json_object_new_object();}
+json_object *a1_status_live_json(void){return json_object_new_object();}
 bool a1_panel_inspect(void){return false;}
 bool a1_scan_start(void){return false;}
 bool a1_wifi_trial(const a1_config_t *c){(void)c;return false;}

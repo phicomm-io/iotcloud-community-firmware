@@ -1,5 +1,6 @@
 /* Shared M1/A1 adapter, compiled once per firmware. */
 #include "service.h"
+#include "status_view.h"
 #ifdef FEATURE_DEVICE_A1
 #include "a1.h"
 #include "filter.h"
@@ -10,6 +11,7 @@
 #define GET_STATE a1_state_get
 #define SAVE_CONFIG a1_config_save
 #define STATUS a1_status_json
+#define STATUS_LIVE a1_status_live_json
 #define REBOOT a1_reboot_later
 #define RESET a1_reset
 #define WIFI_TRIAL a1_wifi_trial
@@ -26,6 +28,7 @@
 #define GET_STATE m1_state_get
 #define SAVE_CONFIG m1_config_save
 #define STATUS m1_status_json
+#define STATUS_LIVE m1_status_live_json
 #define REBOOT m1_reboot_later
 #define RESET m1_reset
 #define WIFI_TRIAL m1_wifi_trial
@@ -43,6 +46,7 @@ static bool svc_bool(json_object *p,const char *key,bool *out){json_object *v=js
 static bool svc_text(json_object *p,const char *key,char *out,size_t capacity,bool required){json_object *v=json_object_object_get(p,key);if(!v)return !required;if(!json_object_is_type(v,json_type_string))return false;size_t n=json_object_get_string_len(v);if(n>=capacity || n!=strlen(json_object_get_string(v)))return false;memcpy(out,json_object_get_string(v),n+1);return true;}
 json_object *service_product_capabilities(void){
     json_object *o=json_object_new_object(),*a=json_object_new_array();svc_string(o,"model",DEVICE_MODEL);json_build_object_add(o,"protocol",json_object_new_int(2));svc_string(o,"mqtt_protocol","tmcp");json_build_object_add(o,"mqtt_protocol_version",json_object_new_int(2));
+    status_view_capabilities(o);
     const char *actions[]={"schedules.get","schedules.put","schedules.delete","schedules.enable","buttons.get","status.get","capabilities.get","config.get","logs.get","config.set","wifi.scan","wifi.scan.get","binding.status.get","system.reboot","system.reset","ota.start","night.get","night.set","time.get","time.set","binding.get","binding.set",
 #ifdef FEATURE_DEVICE_A1
     "filter.get","filter.set","filter.reset","light_effect.next","light_effect.select","light_always.set","sensors.average.get","buttons.set","binding.probe","light_effect.get","light_effect.set","fan.set","fan.mode.set","fan.mode.toggle","fan.panel","light.set","child_lock.set","linkage.get","linkage.set",
@@ -179,8 +183,9 @@ static __attribute__((noinline)) json_object *service_product_inner(const char *
 json_object *service_product(const char *action,json_object *p,const char **code){
     if(!strcmp(action,"status.get")){
         *code="invalid_params";
-        if(!svc_keys(p,""))return NULL;
-        *code="ok";return STATUS();
+        bool live;
+        if(!status_view_params(p,&live))return NULL;
+        *code="ok";return live?STATUS_LIVE():STATUS();
     }
     return service_product_inner(action,p,code);
 }

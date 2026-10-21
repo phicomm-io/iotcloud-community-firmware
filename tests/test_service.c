@@ -11,6 +11,7 @@ static json_object *run(const char *s,const char *expected){json_object *q=servi
 #define CHECK(s,c) do {json_object *r=run(s,c);json_object_put(r);}while(0)
 int main(void){
  service_init();
+ CHECK("{\"action\":\"status.get\",\"params\":{\"view\":\"live\\u0000full\"}}","invalid_params");
  CHECK("{\"action\":\"status.get\",\"params\":{}}","ok");
  CHECK("{\"action\":\"fan.set\",\"request_id\":\"one\",\"params\":{\"on\":true}}","ok");
  CHECK("{\"action\":\"fan.set\",\"request_id\":\"one\",\"params\":{\"on\":true}}","ok");assert(mutations==1);

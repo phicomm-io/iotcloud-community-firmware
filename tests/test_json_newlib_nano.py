@@ -54,7 +54,9 @@ static int printbuf_memappend(struct printbuf *p, const char *s, int n) {
 void _start(void) {
     const double values[] = {0, 12.5, -0.125, 1000.25};
     const char *expected[] = {"0", "12.5", "-0.125", "1000.25"};
-    for (unsigned cycle = 0; cycle < 100; ++cycle) {
+    /* The fixed arena also catches per-conversion allocations that were not
+     * reclaimed: this many reentrant contexts must reuse the bounded heap. */
+    for (unsigned cycle = 0; cycle < 10000; ++cycle) {
         for (unsigned i = 0; i < 4; ++i) {
             struct json_object o = {.o.c_double = values[i]};
             struct printbuf p; double parsed = 0;

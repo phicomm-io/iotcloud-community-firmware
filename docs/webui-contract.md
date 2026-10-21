@@ -107,3 +107,11 @@ The embedded pages serialize command fetches through complete response bodies. D
 Both variants retain HTTP APIs. The slim variant serves an offline setup page for Wi-Fi, MQTT and the web password; the full platform and standalone `/local/` static frontend provide full controls. Per-device LAN addresses are browser-local, scoped by node/account/device; credentials stay in page memory. LAN is selected only after authenticated model/MAC/status verification. Always-MQTT disables probing; unconfirmed LAN writes and uploads are not replayed over MQTT.
 
 Online OTA stays on `/ota/<model>/latest.json` for full resources and `/ota/<model>/no-frontend-resources/latest.json` for slim resources. Slim metadata must explicitly name the variant; old metadata without a variant is accepted only by full builds. OTA signatures retain the physical product model, and manual variant switching uses that model's signed package.
+
+### Status views
+
+TC1、A1、M1 的 `capabilities.get.status_views` 为 `["full","live"]`。`status.get` 的空参数及 `{view:"full"}` 保持完整状态；`{view:"live"}` 只构造实时传感器、控制、连接和升级状态，省略网络配置、HTTP/内存/看门狗诊断等慢字段。其他参数、类型或 view 值返回 `invalid_params`。旧的 HTTP 状态路径及 MQTT 自动上报仍使用完整状态。
+
+WebUI 首次读取完整状态；首页以 M1 1 秒、A1 2 秒、TC1 3 秒的间隔读取 live，每 30 秒更新完整状态。进入设置页面立即读取完整状态；诊断页每 5 秒、其他设置页每 10 秒刷新。网络/MQTT/设备/固件页的完整状态缓存为 10 秒。后台标签页暂停自动轮询，回到前台读取完整状态；设置成功后使完整状态缓存失效。不宣告 status_views 的旧固件继续使用完整读取。
+
+局部状态与已确认快照合并；缺失字段保留，明确的 null 覆盖旧值，SCD40 子对象逐字段合并。控制确认仍要求最新响应实际包含目标字段，不能用缓存确认操作。TC1 功率及 A1/M1 绑定状态保持独立查询，并在对应视图之外暂停。
