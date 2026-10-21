@@ -32,7 +32,8 @@ static bool control_value(json_object *v,uint8_t *out,unsigned max)
 {
     if(!v || !json_object_is_type(v,max?json_type_int:json_type_boolean))return false;
     int n=max?json_object_get_int(v):json_object_get_boolean(v);
-    if(n<0 || (max && (unsigned)n>max))return false;
+    /* Unsigned comparison also rejects negative JSON integers. */
+    if(max && (unsigned)n>max)return false;
     *out=n;return true;
 }
 
