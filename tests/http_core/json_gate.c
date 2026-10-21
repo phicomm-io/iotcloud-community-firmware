@@ -6,7 +6,8 @@
 #include "common/mqtt_account.h"
 #define MQTT_SUCCESS 0
 #define MQTT_FAILURE -1
-#include "common/mqtt_service.inc"
+#define PH_MQTT_MORE 2
+/* PRODUCTION_MQTT_TELEMETRY */
 #include <pthread.h>
 uint32_t test_now;
 static pthread_mutex_t barrier_lock=PTHREAD_MUTEX_INITIALIZER;
@@ -30,7 +31,7 @@ json_object *service_product(const char*a,json_object*p,const char**code){
 }
 static void clean(void){
  service_memory_state_t m;service_memory_snapshot(&m);
- assert(!m.active&&!m.reserved&&!m.waiting&&!json_owner&&!service_mqtt_reply_count);
+ assert(!m.active&&!m.reserved&&!m.waiting&&!json_owner);
  json_heap_stats_t j;json_heap_snapshot(&j);assert(!j.live_blocks);
 }
 static int send_result(const char*topic,const char*body,bool retained){
@@ -41,11 +42,12 @@ static int puback_reentry(const char*topic,const char*body,bool retained){
  /* No graph lease OR budget reservation may cross synchronous QoS1 publish. */
  service_memory_state_t m;service_memory_snapshot(&m);assert(!m.active&&!m.reserved&&!json_owner);
  unsigned token=service_json_claim();assert(token);service_json_release(token);
- const char request[]="{\"action\":\"status.get\",\"params\":{},\"request_id\":\"puback-command\"}";
- unsigned previous=builds;
- assert(service_mqtt_input(send_result,&account,request,sizeof(request)-1,false)==0);
- assert(builds==previous+1&&service_mqtt_reply_count==1);
- /* Packet callback enqueues; it must never publish over the outer PUBACK. */
+ /* A second HTTP producer may build while this independent wire is sent.
+  * Paho callback deferral itself is exercised by the real protocol harness. */
+ ph_http_product nested={0};ph_http_exchange exchange={0};
+ assert(ph_http_claim(&nested,&exchange,0,false)==PH_HTTP_REPLY);
+ ph_http_json(&nested,&exchange,service_query("status.get"));
+ assert(exchange.response.status==200);ph_http_product_release(&nested);
  assert(sends==1);return -17;
 }
 static void *snapshot_thread(void*unused){(void)unused;snapshot_rc=service_mqtt_snapshot(puback_reentry,&account);return NULL;}
@@ -55,7 +57,7 @@ static int busy_sender(const char*t,const char*b,bool r){
 }
 static unsigned capabilities_sent;
 static int capabilities_sender(const char*t,const char*b,bool retained){
- assert(strstr(t,"/capabilities")&&b&&retained&&!json_owner);capabilities_sent++;return -19;
+ assert(strstr(t,"/capabilities")&&b&&retained&&!json_owner);capabilities_sent++;return capabilities_sent==1?-19:0;
 }
 static void deferred_capabilities(void){
  unsigned token=service_json_claim();assert(token);
@@ -63,7 +65,9 @@ static void deferred_capabilities(void){
  assert(service_mqtt_capabilities_pending&&!capabilities_sent);
  service_json_release(token);
  assert(service_mqtt_snapshot(capabilities_sender,&account)==-19);
- assert(!service_mqtt_capabilities_pending&&capabilities_sent==1);clean();
+ assert(service_mqtt_capabilities_pending&&capabilities_sent==1);
+ assert(service_mqtt_try_capabilities(capabilities_sender,&account)==0);
+ assert(!service_mqtt_capabilities_pending&&capabilities_sent==2);clean();
 }
 static void competition(void){
  pthread_t thread;pause_builder=true;builder_entered=builder_continue=false;
@@ -74,16 +78,11 @@ static void competition(void){
  assert(product.waiting&&!product.claim&&!product.json_claim);
  pthread_mutex_lock(&barrier_lock);pause_builder=false;builder_continue=true;pthread_cond_broadcast(&barrier);pthread_mutex_unlock(&barrier_lock);
  assert(!pthread_join(thread,NULL));assert(snapshot_rc==-17);
- assert(service_mqtt_flush(send_result)==0);
+
  assert(ph_http_claim(&product,&exchange,0,false)==PH_HTTP_REPLY);
  assert(product.claim&&product.json_claim&&!product.waiting);
  unsigned previous=builds;
- assert(service_mqtt_snapshot(forbidden_sender,&account)==0&&builds==previous);
- const char command[]="{\"action\":\"status.get\",\"params\":{},\"request_id\":\"blocked\"}";
- uint64_t failures=service_memory_failures();
- assert(service_mqtt_input(forbidden_sender,&account,command,sizeof(command)-1,false)==0&&builds==previous);
- assert(service_memory_failures()==failures&&service_mqtt_head->emergency);
- assert(service_mqtt_flush(busy_sender)==0);
+ assert(service_mqtt_snapshot(forbidden_sender,&account)==PH_MQTT_MORE&&builds==previous);
  ph_http_json(&product,&exchange,service_query("status.get"));
  assert(exchange.response.status==200&&product.wire&&!product.json_claim&&!json_owner);
  unsigned token=service_json_claim();assert(token);service_json_release(token);

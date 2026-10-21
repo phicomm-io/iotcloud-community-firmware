@@ -23,25 +23,25 @@ static int states(const a1_config_t*c,const mqtt_state_t*s,unsigned i){
 }
 /* PRODUCTION */
 int main(void){
- a1_config_t c={0};mqtt_state_t s={0};
+ a1_config_t c={0};mqtt_state_t s={0};bool snapshot_sent;
  /* One revision edge must complete all leaves on later quiet turns. */
- assert(!states_step(&c,&s,true));assert(!sent);
- for(unsigned i=0;i<6;i++)assert(!states_step(&c,&s,false));
- assert(sent&&!state_pending);for(unsigned i=0;i<7;i++)assert(seen[i]==1);
- unsigned before=calls;assert(!states_step(&c,&s,false)&&calls==before);
+ assert(!states_step(&c,&s,true,&snapshot_sent));assert(!sent&&!snapshot_sent);
+ for(unsigned i=0;i<6;i++)assert(!states_step(&c,&s,false,&snapshot_sent));
+ assert(sent&&!state_pending&&snapshot_sent);for(unsigned i=0;i<7;i++)assert(seen[i]==1);
+ unsigned before=calls;assert(!states_step(&c,&s,false,&snapshot_sent)&&calls==before);
  /* Failed sends retain their bit/cursor; a retry executes it once. */
- fail=true;unsigned cursor=state_index;assert(states_step(&c,&s,true)==-1);
+ fail=true;unsigned cursor=state_index;assert(states_step(&c,&s,true,&snapshot_sent)==-1);
  assert(state_pending==127&&state_index==cursor);fail=false;
- for(unsigned i=0;i<7;i++)assert(!states_step(&c,&s,false));
+ for(unsigned i=0;i<7;i++)assert(!states_step(&c,&s,false,&snapshot_sent));
  assert(!state_pending&&sent);for(unsigned i=0;i<7;i++)assert(seen[i]==2);
  /* Continuous updates cannot starve leaves or initial online readiness. */
  state_seen=0;sent=false;
  for(unsigned i=0;i<21;i++){
-  assert(!states_step(&c,&s,true));
+  assert(!states_step(&c,&s,true,&snapshot_sent));
   if(i>=6)assert(sent);
  }
  for(unsigned i=0;i<7;i++)assert(seen[i]==5);
- for(unsigned i=0;i<7;i++)assert(!states_step(&c,&s,false));
+ for(unsigned i=0;i<7;i++)assert(!states_step(&c,&s,false,&snapshot_sent));
  assert(sent&&!state_pending);return 0;
 }
 '''.replace('/* PRODUCTION */',scheduler)

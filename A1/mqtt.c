@@ -339,7 +339,8 @@ static uint32_t revision,filter_sent_at;
 static a1_filter_storage_t sent_filter;
 /* A dirty snapshot schedules every leaf. Keep pending work across turns:
  * feature_revision is an observation edge, not the lifetime of a batch. */
-static int states_step(const a1_config_t *config, const mqtt_state_t *snapshot, bool dirty) {
+static int states_step(const a1_config_t *config, const mqtt_state_t *snapshot, bool dirty, bool *snapshot_sent) {
+    *snapshot_sent = false;
     if (dirty)
         state_pending |= 0x7fu;
     for (unsigned pass = 0; pass < 7; pass++) {
@@ -348,6 +349,7 @@ static int states_step(const a1_config_t *config, const mqtt_state_t *snapshot, 
             continue;
         int rc = states(config, snapshot, index);
         if (rc == MQTT_SUCCESS) {
+            *snapshot_sent = index == 6;
             state_pending &= ~(1u << index);
             state_index = (index + 1) % 7;
             state_seen |= 1u << index;
@@ -428,8 +430,9 @@ static int session_cycle(void *context) {
                 old_visible != state.led_visible || old_on != on || old_speed != speed;
             revision=current.revision;old_visible=state.led_visible;old_on=on;old_speed=speed;
             if (rc == MQTT_SUCCESS && (state_pending || dirty)) {
-                rc=states_step(&current,&state,dirty);
-                if (rc == MQTT_SUCCESS) { sent_filter = filter; filter_sent_at = mico_rtos_get_time(); }
+                bool snapshot_sent;
+                rc=states_step(&current,&state,dirty,&snapshot_sent);
+                if (snapshot_sent) { sent_filter = filter; filter_sent_at = mico_rtos_get_time(); }
             } else if (rc == MQTT_SUCCESS && a1_filter_mqtt_due(&filter, &sent_filter, mico_rtos_get_time(), filter_sent_at)) {
                 rc = service_mqtt_snapshot(publish, &account);
                 if (rc == MQTT_SUCCESS) { sent_filter = filter; filter_sent_at = mico_rtos_get_time(); }

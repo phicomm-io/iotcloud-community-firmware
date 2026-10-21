@@ -29,7 +29,7 @@ __attribute__((noinline)) static int service_mqtt_publish(int(*sender)(const cha
     service_json_release(json_claim);
     service_memory_release(claim);
     if (!wire)
-        return MQTT_SUCCESS;
+        return PH_MQTT_MORE;
     char topic[MQTT_TOPIC_MAX];
     mqtt_leaf(scope, leaf, topic, sizeof(topic));
     int rc = sender(topic, wire->buf, retain);
@@ -118,21 +118,21 @@ __attribute__((noinline)) int service_mqtt_snapshot(int(*sender)(const char *, c
         if (rc != MQTT_SUCCESS)
             return rc;
         if (service_mqtt_capabilities_pending)
-            return MQTT_SUCCESS;
+            return PH_MQTT_MORE;
     }
     unsigned json_claim = service_json_claim();
     if (!json_claim)
-        return MQTT_SUCCESS;
+        return PH_MQTT_MORE;
     unsigned claim = service_memory_claim(0);
     if (!claim) {
         service_json_release(json_claim);
-        return MQTT_SUCCESS;
+        return PH_MQTT_MORE;
     }
     json_object *r = service_query("status.get");
     if (!r) {
         service_memory_release(claim);
         service_json_release(json_claim);
-        return MQTT_SUCCESS;
+        return PH_MQTT_MORE;
     }
     json_object *data = json_object_object_get(r, "data");
     if (data)

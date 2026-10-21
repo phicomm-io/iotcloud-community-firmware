@@ -5,6 +5,7 @@ import subprocess
 import tempfile
 import unittest
 from tests.sdk_json import copy_patched_json
+from tests.test_status_views import function
 
 ROOT=Path(__file__).resolve().parents[1]
 
@@ -26,6 +27,11 @@ static inline void mico_rtos_unlock_mutex(mico_mutex_t*m){assert(!pthread_mutex_
             # Inject single-allocation failure through the pinned real allocator
             # permit callback, while retaining the actual service floor policy.
             source=(ROOT/'tests/http_core/json_gate.c').read_text()
+            mqtt=(ROOT/'common/mqtt/service.c').read_text()
+            telemetry='static bool service_mqtt_capabilities_pending;\n'+'\n'.join(function(mqtt,n) for n in (
+                'static struct printbuf *service_mqtt_wire(', 'static int service_mqtt_publish(',
+                'static int service_mqtt_try_capabilities(', 'int service_mqtt_snapshot(', 'int service_mqtt_capabilities('))
+            source=source.replace('/* PRODUCTION_MQTT_TELEMETRY */',telemetry)
             source=source.replace('static int test_gate_permit(size_t n)', 'int test_gate_permit(size_t n)')
             (temp/'probe.c').write_text(source)
             heap=json/'json_heap.c';text=heap.read_text()
