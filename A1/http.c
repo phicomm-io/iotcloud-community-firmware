@@ -268,7 +268,12 @@ static void complete(ph_http_exchange *x)
     }
     json_object *request=ph_http_body_json(&product,x);
     if(operation==LIGHT)light_command(x,request);
-    else ph_http_json(&product,x,service_memory_failures()==product.failures?service_command(request):NULL);
+    else {
+        json_object *reply=service_memory_failures()==product.failures?service_command(request):NULL;
+        /* The reply owns its references; retire input before growing its wire. */
+        json_object_put(request);request=NULL;
+        ph_http_json(&product,x,reply);
+    }
     if(request)json_object_put(request);
 }
 static void release(ph_http_exchange *x,bool sent)

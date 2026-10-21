@@ -30,6 +30,10 @@ def check(modules, model, nm, elf):
     paths={
       'HTTP status':(3072,status_path),
       'HTTP command status':(3072,command+[status]+([status+'_view'] if status+'_view' in frames else [])),
+      # Builder frames have returned before encoding. Count the bounded
+      # automatic traversal explicitly, outside SDK/native/RTOS reserve.
+      'HTTP GET JSON encode':(3072,base+['ph_http_json','json_owned_to_wire','json_write','json_primitive','json_append']),
+      'HTTP POST JSON encode':(3072,['owner','ph_http_server_step','read_body','complete','ph_http_json','json_owned_to_wire','json_write','json_primitive','json_append']),
       'HTTP response':(3072,['owner','ph_http_server_step','respond','transmit']),
       'HTTP OTA stream':(4096,['owner','ph_http_server_step','read_body','body_chunk',model.lower()+'_ota_write','signed_ota_write','uECC_verify','EccPoint_mult']),
       'HTTP OTA validation':(4096,['owner','ph_http_server_step','read_body','complete',model.lower()+'_ota_finish','signed_ota_finish']),

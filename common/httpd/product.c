@@ -1,7 +1,9 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "product.h"
+#include "../json_owned.h"
 #include <string.h>
 #include <stdio.h>
+
 
 void ph_http_busy(ph_http_exchange *x)
 {
@@ -13,8 +15,7 @@ void ph_http_product_init(ph_http_product *p,ph_http_exchange *x)
 { memset(p,0,sizeof(*p));ph_http_busy(x); }
 void ph_http_json(ph_http_product *p,ph_http_exchange *x,json_object *o)
 {
-    p->wire=o?json_object_to_json_string_ex(o):NULL;
-    if(o)json_object_put(o);
+    p->wire=json_owned_to_wire(o);
     if(!p->wire) { ph_http_busy(x);return; }
     x->response.status=200;x->response.type="application/json";
     x->response.body=p->wire->buf;x->response.length=p->wire->bpos;

@@ -7,7 +7,7 @@
 #include "common/httpd/product.h"
 #include "common/http_cors.h"
 #include "json.h"
-static bool maximum;
+static bool maximum,command_alias;
 ph_http_diagnostics ph_http_snapshot(void){ph_http_diagnostics d;memset(&d,maximum?0xff:0,sizeof(d));if(maximum){d.last_close_rc=d.last_close_errno=d.last_select_rc=d.last_read_rc=d.limit=d.connections=d.connections_get_rc=d.read_errno=INT32_MIN;}return d;}
 static unsigned claims,waiting,queries,commands,aborts,written,finishes,entered,reboots;
 static bool deny,job,fail_write,fail_cap;
@@ -25,7 +25,7 @@ void service_memory_waiting(bool enter){if(enter)waiting++;else{assert(waiting);
 uint64_t service_memory_failures(void){return 0;}
 void service_memory_snapshot(service_memory_state_t*s){memset(s,maximum?0xff:0,sizeof(*s));}
 json_object *service_query(const char*a){assert(a);queries++;json_object*o=json_object_new_object();json_build_object_add(o,"action",json_object_new_string(a));return o;}
-json_object *service_command(json_object*r){commands++;return r?service_query("command"):NULL;}
+json_object *service_command(json_object*r){commands++;return command_alias?json_object_get(r):r?service_query("command"):NULL;}
 json_object *service_parse(const void*p,size_t n){char*copy=malloc(n+1);memcpy(copy,p,n);copy[n]=0;json_object*o=json_tokener_parse(copy);free(copy);return o;}
 static bool ota_job_active(void){return job;}
 int ph_http_start(const ph_http_app*a,unsigned n){(void)a;(void)n;return 0;}
