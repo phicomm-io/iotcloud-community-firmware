@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-python3 -m unittest tests.test_prepare_sdk
+python3 -m unittest tests.test_prepare_sdk tests.test_apply_sdk_patch
 python3 tools/check_version.py
 python3 -m unittest discover -s tests -p test_version.py
 python3 -m unittest tests.test_package_stale_signature
-python3 -m unittest tests.test_readonly_stress tests.test_readonly_input_edges tests.test_readonly_shared_httpd
+python3 -m unittest tests.test_readonly_stress tests.test_readonly_input_edges tests.test_readonly_shared_httpd tests.test_readonly_http_scheduling tests.test_summarize_readonly_evidence
 python3 -m unittest tests.test_http_overload
 python3 -m unittest tests.test_http_tcp_integration
 python3 -m unittest tests.test_memory_admission tests.test_http_browser_queue tests.test_tc1_http_recovery tests.test_tc1_http_trace tests.test_tc1_http_parser tests.test_tc1_http
