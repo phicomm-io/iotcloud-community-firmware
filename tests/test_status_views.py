@@ -58,6 +58,12 @@ CAPTURE
 BUILDERS
 int json_heap_permit(size_t n){(void)n;assert(!held);permits++;return !fail_after||permits!=fail_after;}
 static void check_params(const char*s,bool valid,bool wanted){json_object*p=json_tokener_parse(s);bool live=false;assert(status_view_params(p,&live)==valid);if(valid)assert(live==wanted);json_object_put(p);}
+static void legacy_parity(json_object *current,json_object *old){
+ ADDITIVE
+ assert(!strcmp(json_object_to_json_string(current),json_object_to_json_string(old)));
+ RESTORE
+ json_object_put(old);
+}
 static void empty(void){json_heap_stats_t s;json_heap_snapshot(&s);assert(!s.live_blocks);}
 int main(void){
  check_params("{}",true,false);check_params("{\"view\":\"full\"}",true,false);check_params("{\"view\":\"live\"}",true,true);
@@ -66,8 +72,8 @@ int main(void){
  SETUP
  json_object*full=LOWER_status_json();assert(full&&expensive);expensive=0;
  json_object*live=LOWER_status_live_json();assert(live&&!expensive);
- json_object*old=legacy_LOWER_status_json();assert(old);assert(!strcmp(json_object_to_json_string(full),json_object_to_json_string(old)));json_object_put(old);
- old=legacy_LOWER_status_live_json();assert(old);assert(!strcmp(json_object_to_json_string(live),json_object_to_json_string(old)));json_object_put(old);
+ json_object*old=legacy_LOWER_status_json();assert(old);legacy_parity(full,old);
+ old=legacy_LOWER_status_live_json();assert(old);legacy_parity(live,old);
  assert(json_object_object_get(full,"ssid"));assert(!json_object_object_get(live,"ssid"));
  assert(!strstr(json_object_to_json_string(full),"secret"));assert(strlen(json_object_to_json_string(live))<strlen(json_object_to_json_string(full)));
  json_object_object_foreach(live,key,value){json_object*prev=json_object_object_get(full,key);if(!strcmp(key,"scd40")){json_object_object_foreach(value,ck,cv){json_object*ov=json_object_object_get(prev,ck);assert(!strcmp(json_object_to_json_string(cv),json_object_to_json_string(ov)));}}else assert(!strcmp(json_object_to_json_string(value),json_object_to_json_string(prev)));}
@@ -77,7 +83,8 @@ int main(void){
  full=device_status_encode(&frozen,&all);assert(full);char*saved=strdup(json_object_to_json_string(full));json_object_put(full);
  memset(&cfg,0xa5,sizeof(cfg));memset(&state,0xa5,sizeof(state));now=999999;memory.free_memory=1;
  full=device_status_encode(&frozen,&all);assert(full&&!strcmp(saved,json_object_to_json_string(full)));free(saved);json_object_put(full);empty();
- for(unsigned i=1;i<=200;i++){permits=0;fail_after=i;full=device_status_encode(&frozen,&all);if(full)json_object_put(full);empty();}fail_after=0;
+ permits=0;full=device_status_encode(&frozen,&all);assert(full);json_object_put(full);unsigned allocations=permits;
+ for(unsigned i=1;i<=allocations;i++){permits=0;fail_after=i;full=device_status_encode(&frozen,&all);if(full)json_object_put(full);empty();}fail_after=0;
  for(unsigned i=0;i<10000;i++){full=device_status_encode(&frozen,i%2?&all:NULL);assert(full&&json_object_to_json_string(full));json_object_put(full);}empty();
  allow_getters=true;memset(&cfg,0,sizeof(cfg));memset(&state,0,sizeof(state));SENSOR_CHECK
  printf("MODEL frozen schema parity, no getters/locks in encode, OOM/10000 cycles, live skips diagnostics: PASS (%zu/%zu bytes)\n",sizeof(device_status_t),sizeof(device_status_full_t));
@@ -109,10 +116,13 @@ static app_storage_t storage;
 void m1_ntp_host_get(char out[64]){getter();memcpy(out,storage.features.ntp_host,64);}
 bool m1_sample_fresh(const m1_sample_t*s,uint32_t at){getter();return s->received&&(uint32_t)(at-s->updated_ms)<M1_STALE_MS;}
 '''
-     onwait='if(inject_update){state.sample.received=true;state.sample.updated_ms=state.scd40.updated_ms=25005;state.scd40.ready=state.scd40.received=true;now=25010;inject_update=false;}'
+     onwait='if(inject_update){state.sample.received=true;state.sample.updated_ms=state.scd40.updated_ms=25005;state.scd40.ready=state.scd40.received=true;state.barometer=(barometer_state_t){.ready=true,.received=true,.updated_ms=25005,.chip_id=0x50,.address=0x77,.pressure_centi_pa=10132400};now=25010;inject_update=false;}'
      setup='state.sample.received=true;state.sample.updated_ms=24000;state.scd40.ready=state.scd40.received=true;state.scd40.updated_ms=24000;state.scd40.co2_ppm=900;'
-     sensor=r'''now=24000;inject_update=true;m1_status_capture(&frozen,NULL);assert(frozen.now_ms==25010);live=device_status_encode(&frozen,NULL);assert(json_object_get_boolean(json_object_object_get(live,"sensor_valid")));json_object*co2=json_object_object_get(live,"scd40");assert(json_object_get_boolean(json_object_object_get(co2,"valid")));assert(json_object_get_int(json_object_object_get(co2,"age_ms"))==5);assert(!json_object_object_get(co2,"temperature"));assert(!json_object_object_get(co2,"humidity"));json_object_put(live);state.scd40.updated_ms=0;live=m1_status_live_json();co2=json_object_object_get(live,"scd40");assert(!json_object_get_boolean(json_object_object_get(co2,"valid")));assert(!json_object_object_get(co2,"co2_ppm"));json_object_put(live);empty();'''
-    for k,v in [('MODEL_SETUP',extra),('ON_WAIT',onwait),('CAPTURE',capture),('BUILDERS',builders),('SETUP',setup),('SENSOR_CHECK',sensor),('CAP','3' if model=='A1' else '4'),('LOWER',prefix),('MODEL',model)]:harness=harness.replace(k,v)
+     sensor=r'''now=24000;inject_update=true;m1_status_capture(&frozen,NULL);assert(frozen.now_ms==25010);live=device_status_encode(&frozen,NULL);assert(json_object_get_boolean(json_object_object_get(live,"sensor_valid")));json_object*co2=json_object_object_get(live,"scd40");assert(json_object_get_boolean(json_object_object_get(co2,"valid")));assert(json_object_get_int(json_object_object_get(co2,"age_ms"))==5);assert(!json_object_object_get(co2,"temperature"));assert(!json_object_object_get(co2,"humidity"));json_object*b=json_object_object_get(live,"barometer");assert(b&&json_object_get_boolean(json_object_object_get(b,"valid")));assert(json_object_get_int(json_object_object_get(b,"age_ms"))==5);assert(!strcmp(json_object_get_string(json_object_object_get(b,"model")),"BMP388"));assert(json_object_get_double(json_object_object_get(b,"pressure_hpa"))==1013.24);json_object_put(live);
+ state.barometer.updated_ms=15010;live=m1_status_live_json();b=json_object_object_get(live,"barometer");assert(!json_object_get_boolean(json_object_object_get(b,"valid")));assert(!json_object_object_get(b,"pressure_hpa"));assert(json_object_get_int(json_object_object_get(b,"age_ms"))==10000);json_object_put(live);
+ state.barometer.updated_ms=25005;state.barometer.chip_id=0x60;state.barometer.address=0x76;full=m1_status_json();b=json_object_object_get(full,"barometer");assert(json_object_get_boolean(json_object_object_get(b,"valid")));assert(!strcmp(json_object_get_string(json_object_object_get(b,"model")),"BMP390"));assert(json_object_get_int(json_object_object_get(b,"address"))==118);json_object_put(full);
+ state.barometer.ready=false;live=m1_status_live_json();b=json_object_object_get(live,"barometer");assert(!json_object_get_boolean(json_object_object_get(b,"valid")));assert(!json_object_object_get(b,"pressure_hpa"));json_object_put(live);state.scd40.updated_ms=0;live=m1_status_live_json();co2=json_object_object_get(live,"scd40");assert(!json_object_get_boolean(json_object_object_get(co2,"valid")));assert(!json_object_object_get(co2,"co2_ppm"));json_object_put(live);empty();'''
+    for k,v in [('ADDITIVE','json_object*b=json_object_object_get(current,"barometer");assert(b);json_object_get(b);json_object_object_del(current,"barometer");' if model=='M1' else ''),('RESTORE','json_object_object_add(current,"barometer",b);' if model=='M1' else ''),('MODEL_SETUP',extra),('ON_WAIT',onwait),('CAPTURE',capture),('BUILDERS',builders),('SETUP',setup),('SENSOR_CHECK',sensor),('CAP','3' if model=='A1' else '4'),('LOWER',prefix),('MODEL',model)]:harness=harness.replace(k,v)
     src=d/'test.c';src.write_text(harness)
     cmd=[os.environ.get('CC','cc'),'-std=gnu99','-DPHICOMM_APPLICATION_WATCHDOG=1','-I'+str(ROOT),'-I'+str(ROOT/'tests/host'),'-I'+str(json),str(src),*map(str,json.glob('*.c')),'-o',str(d/'test')]
     if os.environ.get('SANITIZE')=='1':cmd+=['-g','-fno-omit-frame-pointer','-fsanitize=address,undefined','-fno-pie','-no-pie']

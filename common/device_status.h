@@ -13,6 +13,7 @@ static inline void device_status_text(char *out,size_t capacity,const char *in,s
     size_t i=0;while(i+1<capacity && i<storage && in[i]){out[i]=in[i];i++;}out[i]=0;
 }
 #include "../M1/protocol.h"
+#include "../M1/barometer.h"
 #include "watchdog.h"
 #include "httpd/http.h"
 #include "../A1/filter.h"
@@ -47,6 +48,7 @@ typedef struct {
         bool ready, received; uint16_t co2_ppm;
         uint32_t updated_ms, errors; int32_t last_error; char serial[13];
     } co2; /* Deliberately excludes SCD40 auxiliary temperature/humidity. */
+    barometer_state_t barometer; /* Request-local copy, including live freshness. */
 } device_m1_sensor_t;
 typedef struct { int8_t states[6]; bool child_lock, led_enabled; } device_tc1_control_t;
 typedef struct {

@@ -2,6 +2,8 @@
 
 原始来源：
 
+- [Bosch BMP3 SensorAPI BSD-3-Clause](https://github.com/boschsensortec/BMP3_SensorAPI/tree/db4cf8e4140c593b8c3d85f8c6c07335c7ffa9dc)：许可及版权头保留于 `M1/bmp3_vendor/`。
+
 - [jQuery 3.0.0 MIT](https://github.com/jquery/jquery/blob/3.0.0/LICENSE.txt)
 - [Chartist 0.11.4 MIT](https://github.com/gionkunz/chartist-js/blob/v0.11.4/LICENSE-MIT)
 - [Material Design Lite 1.3.0 Apache-2.0](https://github.com/google/material-design-lite/blob/v1.3.0/LICENSE)

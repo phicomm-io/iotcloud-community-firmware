@@ -1,5 +1,6 @@
 #pragma once
 #include "scd40.h"
+#include "barometer.h"
 #include "mico.h"
 #include "mico_system.h"
 #include "protocol.h"
@@ -33,6 +34,7 @@ typedef struct {
 typedef struct {
     m1_sample_t sample;
     scd40_state_t scd40;
+    barometer_state_t barometer;
     uint8_t last_frame[20], brightness_requested;
     uint32_t rx_frames, unknown_frames, uart_errors, discarded_bytes;
     uint32_t config_generation, reboot_at;

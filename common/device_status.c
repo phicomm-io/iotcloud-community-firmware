@@ -190,6 +190,31 @@ static __attribute__((noinline)) json_object *encode_m1(const device_status_t *s
         json_object_object_add(co2, "co2_ppm", NULL);
     }
     json_build_object_add(o, "scd40", co2);
+    json_object *barometer = json_object_new_object();
+    const barometer_state_t *b = &snapshot->sensor.m1.barometer;
+    const char *barometer_model = m1_barometer_model(b->chip_id);
+    bool pressure_fresh = m1_barometer_fresh(b, now);
+    status_bool(barometer, "ready", b->ready);
+    status_bool(barometer, "valid", pressure_fresh);
+    if (barometer_model) {
+        status_string(barometer, "model", barometer_model);
+        status_int(barometer, "chip_id", b->chip_id);
+        status_int(barometer, "address", b->address);
+    } else {
+        json_object_object_add(barometer, "model", NULL);
+        json_object_object_add(barometer, "chip_id", NULL);
+        json_object_object_add(barometer, "address", NULL);
+    }
+    if (pressure_fresh)
+        json_build_object_add(barometer, "pressure_hpa", json_object_new_double(b->pressure_centi_pa / 10000.0));
+    else json_object_object_add(barometer, "pressure_hpa", NULL);
+    if (b->received) status_int(barometer, "age_ms", (uint32_t)(now - b->updated_ms));
+    else json_object_object_add(barometer, "age_ms", NULL);
+    status_int(barometer, "samples", b->samples);
+    status_int(barometer, "errors", b->errors);
+    status_int(barometer, "attempts", b->attempts);
+    status_int(barometer, "last_error", b->last_error);
+    json_build_object_add(o, "barometer", barometer);
     status_int(o, "brightness_requested", snapshot->control.m1.brightness_requested);
     if (snapshot->sensor.m1.sample.received) json_build_object_add(o, "temperature",json_object_new_double(snapshot->sensor.m1.sample.temperature_deci_c / 10.0));
     else json_object_object_add(o, "temperature", NULL);

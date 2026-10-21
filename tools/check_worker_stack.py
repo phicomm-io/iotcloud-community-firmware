@@ -9,6 +9,41 @@ import sys
 from pathlib import Path
 
 
+def check_m1_barometer(directory):
+    """Bound the serial hardware owner's new tail without changing its stack.
+
+    Sum every emitted Bosch/adapter frame, even mutually exclusive/FIFO-only
+    ones, rather than assume a short init or compensation call chain. There is
+    no recursion. Active I2C calls read at most the 21-byte calibration block
+    and write one register; round the vendor VLAs up to ARM's 8-byte alignment.
+    The 2048-byte SDK/RTOS reserve includes I2C, sleep and mutex callees.
+    """
+    frames = {}
+    for path in directory.rglob('*.su'):
+        if path.name not in ('uart.su', 'barometer.su', 'bmp3.su'):
+            continue
+        for line in path.read_text().splitlines():
+            location, size, kind = line.split('\t')
+            name = location.rsplit(':', 1)[-1].split('.')[0]
+            if path.name == 'uart.su' and name != 'uart_worker':
+                continue
+            extra = {'bmp3_get_regs': 24, 'bmp3_set_regs': 8}.get(name, 0)
+            if kind != 'static' and not extra:
+                raise ValueError('Unbounded hardware frame: ' + name)
+            frames[name] = max(frames.get(name, 0), int(size) + extra)
+    required = {'uart_worker', 'm1_barometer_tick', 'read_regs', 'write_regs',
+                'bmp3_init', 'bmp3_set_op_mode', 'bmp3_get_sensor_data',
+                'bmp3_get_regs', 'bmp3_set_regs', 'compensate_pressure'}
+    if required - frames.keys():
+        raise ValueError('Missing hardware stack usage: ' + ', '.join(sorted(required - frames.keys())))
+    source = (Path(__file__).resolve().parents[1]/'M1/uart.c').read_text()
+    budget = int(re.search(r'"m1_uart", uart_worker, (\d+),', source).group(1))
+    application, reserve = sum(frames.values()), 2048
+    if application + reserve > budget:
+        raise ValueError(f'M1 barometer hardware: {application} application + {reserve} reserve > {budget}')
+    print(f'M1 barometer hardware: {application} application + {reserve} reserve <= {budget} bytes')
+
+
 def check(directory, header):
     directory = Path(directory)
     frames = {}
@@ -49,6 +84,8 @@ def check(directory, header):
         if application + reserve > budget:
             raise ValueError(f'{label}: {application} application + {reserve} reserve > {budget}')
         print(f'{label}: {application} application + {reserve} reserve <= {budget} bytes')
+    if directory.name == 'M1':
+        check_m1_barometer(directory)
 
 
 if __name__ == '__main__':

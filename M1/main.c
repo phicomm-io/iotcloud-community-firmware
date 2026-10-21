@@ -318,6 +318,7 @@ void m1_status_capture(device_status_t *snapshot, device_status_full_t *full)
     snapshot->sensor.m1.uart_ready = m1_state.uart_ready;
     snapshot->control.m1.brightness_requested = m1_state.brightness_requested;
     snapshot->sensor.m1.sample = m1_state.sample;
+    snapshot->sensor.m1.barometer = m1_state.barometer;
     if(full) {
         memcpy(full->model.m1.ntp_status,m1_state.ntp_status,sizeof(m1_state.ntp_status));
         memcpy(full->model.m1.ntp_server,m1_state.ntp_server,sizeof(m1_state.ntp_server));

@@ -16,6 +16,7 @@ python3 -m unittest tests.test_json_build_gate tests.test_http_json_owned tests.
 python3 -m unittest tests.test_memory_admission tests.test_http_browser_queue tests.test_tc1_http_trace
 python3 -m unittest tests.test_a1_provision_memory
 python3 -m unittest tests.test_m1_boot_config
+python3 -m unittest tests.test_m1_barometer
 compiler=("${CC:-cc}")
 if [[ "${SANITIZE:-0}" == 1 ]]; then
     compiler+=(-g -fno-omit-frame-pointer -fsanitize=address,undefined)
