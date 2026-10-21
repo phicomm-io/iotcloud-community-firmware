@@ -7,8 +7,11 @@
 #include "common/httpd/product.h"
 #include "common/http_cors.h"
 #include "json.h"
+static bool maximum;
+ph_http_diagnostics ph_http_snapshot(void){ph_http_diagnostics d;memset(&d,maximum?0xff:0,sizeof(d));return d;}
 static unsigned claims,waiting,queries,commands,aborts,written,finishes,entered,reboots;
-static bool deny,job,fail_write;
+static bool deny,job,fail_write,fail_cap;
+static unsigned ota_begins;
 static char password[33];
 static uint32_t tick;
 typedef struct {int free_memory,allocted_memory,num_of_chunks;} micoMemInfo_t;
@@ -20,7 +23,7 @@ unsigned service_memory_claim(size_t n){if(deny)return 0;claims++;return service
 void service_memory_release(unsigned c){assert(c&&claims);claims--;}
 void service_memory_waiting(bool enter){if(enter)waiting++;else{assert(waiting);waiting--;}}
 uint64_t service_memory_failures(void){return 0;}
-void service_memory_snapshot(service_memory_state_t*s){memset(s,0,sizeof(*s));}
+void service_memory_snapshot(service_memory_state_t*s){memset(s,maximum?0xff:0,sizeof(*s));}
 json_object *service_query(const char*a){assert(a);queries++;json_object*o=json_object_new_object();json_build_object_add(o,"action",json_object_new_string(a));return o;}
 json_object *service_command(json_object*r){commands++;return r?service_query("command"):NULL;}
 json_object *service_parse(const void*p,size_t n){char*copy=malloc(n+1);memcpy(copy,p,n);copy[n]=0;json_object*o=json_tokener_parse(copy);free(copy);return o;}
@@ -33,7 +36,7 @@ static size_t wire_position,wire_size;
 static char wire_output[4096];
 static bool wire_accepted,wire_closed;
 static int wire_open(unsigned cap){(void)cap;return 0;}
-static int wire_limit(int fd,unsigned cap,ph_http_diagnostics*d){(void)fd;d->limit=cap;return 0;}
+static int wire_limit(int fd,unsigned cap,ph_http_diagnostics*d){(void)fd;d->limit=cap;return fail_cap&&cap==2?-1:0;}
 static int wire_accept(int fd){assert(fd==0&&!wire_accepted);wire_accepted=true;return 1;}
 static int wire_nonblock(int fd){(void)fd;return 0;}
 static int wire_wait(uint64_t r,uint64_t w,uint64_t*rr,uint64_t*ww,unsigned ms){tick+=ms;*rr=*ww=0;if(!wire_accepted&&(r&1))*rr|=1;if(wire_accepted&&!wire_closed&&(r&2))*rr|=2;if(w&2)*ww|=2;return !!(*rr||*ww);}

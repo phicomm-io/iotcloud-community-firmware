@@ -22,3 +22,5 @@ ph_http_action ph_http_claim(ph_http_product *, ph_http_exchange *, size_t input
 bool ph_http_body_copy(ph_http_product *, const void *, size_t);
 json_object *ph_http_body_json(ph_http_product *, ph_http_exchange *);
 void ph_http_product_release(ph_http_product *);
+
+size_t ph_http_diag_append(char *, size_t capacity, size_t used, const ph_http_diagnostics *);

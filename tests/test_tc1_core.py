@@ -148,36 +148,6 @@ int main(void){
  ProcessTask();assert(childLockEnabled==1&&config.user[0]==1&&!config.task_top);
 }
 """)
-    def test_http_fragments_oversize_embedded_null_and_close(self):
-        src=(ROOT/'TC1/http_server/app_httpd.c').read_text();func=src[src.index('static int read_headers('):src.index('static int response_json(')]
-        execute(r'''
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <assert.h>
-#define kNoErr 0
-#define kParamErr -1
-#define kNoMemoryErr -2
-#define kGeneralErr -3
-#define HTTPD_MAX_MESSAGE 512
-typedef struct {int hdr_parsed,sock,chunked,remaining_bytes;const char *filename;} httpd_request_t;
-static int ota_active;
-static int ota_job_active(void){return ota_active;}
-static const char *input;static int length,offset,closed;
-static int httpd_parse_hdr_tags(httpd_request_t*r,int fd,char*b,int n){(void)fd;(void)b;(void)n;r->remaining_bytes=length;return 0;}
-static int httpd_recv(int fd,char*b,int n,int flags){(void)fd;(void)flags;if(closed)return 0;int count=n>2?2:n;memcpy(b,input+offset,count);offset+=count;return count;}
-'''+func+r'''
-int main(void){
- char buf[8];httpd_request_t r={0};input="abcdef";length=6;assert(!read_body(&r,buf,8));assert(!strcmp(buf,"abcdef")&&offset==6);
- r=(httpd_request_t){0};length=8;offset=0;assert(read_body(&r,buf,8)<0&&offset==0);
- r=(httpd_request_t){0};length=3;input="a\0b";offset=0;assert(read_body(&r,buf,8)<0);
- r=(httpd_request_t){0};closed=1;assert(read_body(&r,buf,8)<0);
- r=(httpd_request_t){0};closed=0;length=0;assert(!read_body(&r,buf,8)&&buf[0]==0);
- ota_active=1;length=6;offset=0;input="abcdef";
- r=(httpd_request_t){.filename="/config"};assert(read_body(&r,buf,8)==kGeneralErr&&offset==0);
- r=(httpd_request_t){.filename="/api/v1/command"};assert(!read_body(&r,buf,8)&&offset==6);
-}
-''')
     def test_json_escaping_and_capacity(self):
         execute(r'''
 #include <stdio.h>

@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "product.h"
 #include <string.h>
+#include <stdio.h>
 
 void ph_http_busy(ph_http_exchange *x)
 {
@@ -67,4 +68,18 @@ void ph_http_product_release(ph_http_product *p)
     if(p->wire)printbuf_free(p->wire);
     if(p->claim)service_memory_release(p->claim);
     memset(p,0,sizeof(*p));
+}
+
+size_t ph_http_diag_append(char *body,size_t capacity,size_t used,const ph_http_diagnostics *d)
+{
+    if(used<2 || used>=capacity || memcmp(body+used-2,"}}",2))return 0;
+    int n=snprintf(body+used-2,capacity-used+2,
+        ",\"http_core_owner_state\":%u,\"http_core_restarts\":%u,"
+        "\"http_core_close_failures\":%lu,\"http_core_last_close_rc\":%d,\"http_core_last_close_errno\":%d,"
+        "\"http_core_slot_bytes\":%lu,\"http_core_server_bytes\":%lu,"
+        "\"http_core_last_select_rc\":%d,\"http_core_last_read_rc\":%d,"
+        "\"http_core_occupied\":%lu,\"http_tcp_sample_ms\":%lu}}",
+        d->owner_state,d->restarts,(unsigned long)d->close_failures,d->last_close_rc,d->last_close_errno,
+        (unsigned long)d->slot_bytes,(unsigned long)d->server_bytes,d->last_select_rc,d->last_read_rc,(unsigned long)d->occupied,(unsigned long)d->connections_sample_ms);
+    return n>0 && (size_t)n<capacity-used+2?used-2+(size_t)n:0;
 }

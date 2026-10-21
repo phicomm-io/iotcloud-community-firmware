@@ -16,6 +16,7 @@ static uint64_t response_started;
 static bool listener_ready;
 static unsigned owner_state, restarts;
 static int io_errno;
+static uint32_t last_observed;
 static unsigned irq_lock(void)
 {
 #ifdef PH_HTTP_HOST_TEST
@@ -35,7 +36,8 @@ static void irq_unlock(unsigned mask)
 #endif
 }
 static void publish(const ph_http_diagnostics *d)
-{ unsigned mask=irq_lock();cached=*d;cached.owner_state=owner_state;cached.restarts=restarts;irq_unlock(mask); }
+{ unsigned occupied=0;for(unsigned i=0;i<PH_HTTP_CLIENT_SLOTS;++i)occupied+=server.slots[i].state!=PH_SLOT_FREE;
+  unsigned mask=irq_lock();cached=*d;cached.occupied=occupied;cached.owner_state=owner_state;cached.restarts=restarts;irq_unlock(mask); }
 ph_http_diagnostics ph_http_snapshot(void)
 { unsigned mask=irq_lock();ph_http_diagnostics d=cached;irq_unlock(mask);return d; }
 static int open_listener(unsigned cap)
@@ -50,6 +52,15 @@ static int open_listener(unsigned cap)
     if(bind(fd,(struct sockaddr *)&a,sizeof(a))<0 || listen(fd,0)<0)return fd;
     listener_ready=true;return fd;
 }
+static void observe(int fd,ph_http_diagnostics *d)
+{
+    int value=-1;socklen_t n=sizeof(value);
+    d->connections_get_rc=getsockopt(fd,IPPROTO_TCP,TCP_CONN_NUM,&value,&n);
+    if(n!=sizeof(value))d->connections_get_rc=-1;
+    d->connections=value;
+    d->connections_sample_ms=mico_rtos_get_time();
+    last_observed=d->connections_sample_ms;
+}
 static int limit(int fd,unsigned cap,ph_http_diagnostics *d)
 {
     if(!listener_ready) { d->set_rc=-1;d->set_errno=errno;return -1; }
@@ -60,23 +71,24 @@ static int limit(int fd,unsigned cap,ph_http_diagnostics *d)
     d->limit_get_rc=getsockopt(fd,IPPROTO_TCP,TCP_MAX_CONN_NUM,&value,&n);
     if(n!=sizeof(value))d->limit_get_rc=-1;
     d->limit=value;
-    n=sizeof(value);value=-1;
-    d->connections_get_rc=getsockopt(fd,IPPROTO_TCP,TCP_CONN_NUM,&value,&n);
-    if(n!=sizeof(value))d->connections_get_rc=-1;
-    d->connections=value;
+    observe(fd,d);
     return d->set_rc<0 || d->limit_get_rc<0 || d->limit!=(int)cap?-1:0;
 }
 static int nonblock(int fd)
 {
     /* mocIP fcntl always consumes the third vararg, including F_GETFL. */
+    HTTP_TRACE(HTTP_TRACE_NONBLOCK_ENTER,fd,0);
     int flags=fcntl(fd,F_GETFL,0);
     if(flags<0 || fcntl(fd,F_SETFL,flags|O_NONBLOCK)<0)return -1;
     int observed=fcntl(fd,F_GETFL,0);
     if(observed<0 || !(observed&O_NONBLOCK))return -1;
+    HTTP_TRACE(HTTP_TRACE_NONBLOCK_RETURN,fd,observed);
     return 0;
 }
 static int wait_ready(uint64_t reads,uint64_t writes,uint64_t *rr,uint64_t *ww,unsigned ms)
 {
+    if(listener_fd>=0 && (uint32_t)(mico_rtos_get_time()-last_observed)>=1000u)observe(listener_fd,&server.diagnostics);
+    if(!reads && !writes) { mico_thread_msleep(ms);*rr=*ww=0;return 0; }
     fd_set r,w;FD_ZERO(&r);FD_ZERO(&w);
     for(unsigned fd=0;fd<PH_HTTP_FD_LIMIT;++fd) {
         if(reads&(UINT64_C(1)<<fd))FD_SET(fd,&r);
@@ -96,7 +108,7 @@ static int wait_ready(uint64_t reads,uint64_t writes,uint64_t *rr,uint64_t *ww,u
 }
 static int accept_one(int fd)
 { HTTP_TRACE(HTTP_TRACE_ACCEPT_ENTER,fd,0);int child=accept(fd,NULL,NULL);io_errno=child<0?errno:0;HTTP_TRACE(HTTP_TRACE_ACCEPT_RETURN,child,child<0?errno:0);return child; }
-static int receive(int fd,void *p,size_t n) { int rc=recv(fd,p,n,0);io_errno=rc<0?errno:0;return rc; }
+static int receive(int fd,void *p,size_t n) { HTTP_TRACE(HTTP_TRACE_RECV_ENTER,fd,(int)n);int rc=recv(fd,p,n,0);io_errno=rc<0?errno:0;HTTP_TRACE(HTTP_TRACE_RECV_RETURN,fd,rc);return rc; }
 static int transmit(int fd,const void *p,size_t n)
 {
     uint64_t bit=UINT64_C(1)<<fd;
@@ -104,9 +116,10 @@ static int transmit(int fd,const void *p,size_t n)
         response_started|=bit;
         int one=1;setsockopt(fd,IPPROTO_TCP,TCP_NODELAY,&one,sizeof(one));
     }
-    int rc=send(fd,p,n,0);io_errno=rc<0?errno:0;return rc;
+    HTTP_TRACE(HTTP_TRACE_SEND_ENTER,fd,(int)n);
+    int rc=send(fd,p,n,0);io_errno=rc<0?errno:0;HTTP_TRACE(HTTP_TRACE_SEND_RETURN,fd,rc);return rc;
 }
-static int close_one(int fd) { int rc=close(fd);io_errno=rc<0?errno:0;if(fd>=0 && fd<PH_HTTP_FD_LIMIT)response_started&=~(UINT64_C(1)<<fd);if(fd==listener_fd)listener_fd=-1;return rc; }
+static int close_one(int fd) { HTTP_TRACE(HTTP_TRACE_CLOSE_ENTER,fd,0);int rc=close(fd);io_errno=rc<0?errno:0;HTTP_TRACE(HTTP_TRACE_CLOSE_RETURN,fd,rc);if(fd>=0 && fd<PH_HTTP_FD_LIMIT)response_started&=~(UINT64_C(1)<<fd);if(fd==listener_fd)listener_fd=-1;return rc; }
 static bool retry(void) { return io_errno==EINTR || io_errno==EAGAIN || io_errno==EWOULDBLOCK; }
 static int error_number(void) { return io_errno; }
 static void yield(void) { mico_thread_msleep(1); }
@@ -132,11 +145,12 @@ static void owner(mico_thread_arg_t arg)
 int ph_http_start(const ph_http_app *app,unsigned cap,bool nodelay)
 {
     unsigned mask=irq_lock();
-    if(lifecycle) { irq_unlock(mask);return -1; }
-    application=app;initial_cap=cap;use_nodelay=nodelay;lifecycle=1;
+    if(lifecycle || owner_state==3) { irq_unlock(mask);return -1; }
+    application=app;initial_cap=cap;use_nodelay=nodelay;lifecycle=1;owner_state=1;
+    cached.owner_state=1;cached.restarts=0;
     irq_unlock(mask);
     int rc=mico_rtos_create_thread(NULL,MICO_APPLICATION_PRIORITY,"http_core",owner,PH_HTTP_STACK_BYTES,0);
-    if(rc!=kNoErr) { mask=irq_lock();lifecycle=0;irq_unlock(mask); }
+    if(rc!=kNoErr) { mask=irq_lock();lifecycle=0;owner_state=2;cached.owner_state=2;irq_unlock(mask); }
     return rc;
 }
 int ph_http_stop(void)

@@ -63,6 +63,7 @@ typedef struct {
     uint32_t close_failures; int last_close_rc, last_close_errno;
     int set_rc, set_errno, limit_get_rc, limit, connections_get_rc, connections;
     uint32_t slot_bytes, server_bytes, queued, busy_bytes;
+    uint32_t occupied, connections_sample_ms;
     unsigned owner_state, restarts; /* 0 stopped, 1 running, 2 unavailable, 3 uncertain close */
 } ph_http_diagnostics;
 /* OS abstraction: only the I/O owner calls these. retry() classifies the
@@ -107,7 +108,7 @@ typedef struct {
     unsigned char scratch[512];
     size_t response_header_length;
     int listener, active, queued;
-    unsigned cap, turn;
+    unsigned cap, turn, accept_streak;
     bool running;
 } ph_http_server;
 bool ph_http_server_open(ph_http_server *, const ph_http_io *, const ph_http_app *, unsigned cap);

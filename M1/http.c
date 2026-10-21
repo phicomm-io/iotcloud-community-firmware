@@ -21,7 +21,7 @@
 static ph_http_product product;
 static const char *query_action;
 static enum { QUERY, COMMAND, LIGHT, UPLOAD, DIRECT } operation;
-static bool upload_open;
+static bool upload_open, upload_pending;
 static bool response(ph_http_exchange *x,unsigned status,const char *type,const void *body,size_t length,bool gzip)
 {
     x->response.status=status;x->response.type=type;x->response.body=body;
@@ -174,7 +174,7 @@ static void memory_response(ph_http_exchange *x)
     }
     micoMemInfo_t snapshot = *memory;
     service_memory_state_t budget; service_memory_snapshot(&budget);
-    char body[640];
+    char *body=product.scalar;
     int length = snprintf(body, sizeof(product.scalar),
         "{\"code\":\"ok\",\"data\":{\"free_memory\":%d,\"allocated_memory\":%d,"
         "\"free_memory_chunks\":%d,\"uptime_ms\":%lu,\"memory_reserve\":%u,"
@@ -188,6 +188,8 @@ static void memory_response(ph_http_exchange *x)
         (unsigned long)budget.minimum_free,
         (unsigned long)budget.json_live, (unsigned long)budget.json_peak,
         (unsigned long)budget.json_failed, (unsigned long)budget.json_denied);
+    ph_http_diagnostics d=ph_http_snapshot();
+    if(length>0)length=ph_http_diag_append(body,sizeof(product.scalar),length,&d);
     if (length > 0 && (size_t)length < sizeof(product.scalar))
         response(x, 200, "application/json", body, (size_t)length, false);
 }
@@ -195,6 +197,14 @@ static void memory_response(ph_http_exchange *x)
 
 static ph_http_action prepare(ph_http_exchange *x)
 {
+    if(upload_pending) {
+        upload_pending=false;
+        bool rescue=!strcmp(x->request->path,"/api/v1/ota/upload-unsigned");
+        if(!(rescue?m1_ota_begin_unsigned(x->request->length):m1_ota_begin(x->request->length))) {
+            ph_http_message(&product,x,400,"Invalid OTA size or busy");return PH_HTTP_REPLY;
+        }
+        upload_open=true;x->body_idle_ms=15000;x->body_total_ms=300000;return PH_HTTP_READ_BODY;
+    }
     size_t input=operation==QUERY?0:x->request->length;
     ph_http_action next=ph_http_claim(&product,x,input,operation!=QUERY);
     if(next==PH_HTTP_REPLY && product.claim && operation==QUERY)
@@ -242,11 +252,11 @@ static ph_http_action begin(ph_http_exchange *x)
         return prepare(x);
     }
     if(!strcmp(r->method,"POST") && (!strcmp(r->path,"/api/v1/ota/upload") || !strcmp(r->path,"/api/v1/ota/upload-unsigned"))) {
-        bool rescue=!strcmp(r->path,"/api/v1/ota/upload-unsigned");
-        if(!r->have_length || !(rescue?m1_ota_begin_unsigned(r->length):m1_ota_begin(r->length))) {
+        if(!r->have_length || !r->length) {
             ph_http_message(&product,x,400,"Invalid OTA size or busy");return PH_HTTP_REPLY;
         }
-        operation=UPLOAD;upload_open=true;x->body_idle_ms=15000;x->body_total_ms=300000;return PH_HTTP_READ_BODY;
+        /* Verify reduced listener admission before synchronous flash setup. */
+        operation=UPLOAD;upload_pending=true;return PH_HTTP_WAIT;
     }
     ph_http_message(&product,x,404,"Not found");return PH_HTTP_REPLY;
 }
@@ -270,9 +280,9 @@ static void complete(ph_http_exchange *x)
 }
 static void release(ph_http_exchange *x,bool sent)
 {
-    (void)x;(void)sent;if(upload_open)m1_ota_abort("Upload interrupted");upload_open=false;
+    (void)x;(void)sent;if(upload_open)m1_ota_abort("Upload interrupted");upload_open=false;upload_pending=false;
     ph_http_product_release(&product);
 }
-static unsigned admission(void) { return ota_job_active()?2:HTTP_TCP_CLIENT_LIMIT; }
+static unsigned admission(void) { return (upload_pending || ota_job_active())?2:HTTP_TCP_CLIENT_LIMIT; }
 static const ph_http_app app={begin,prepare,body_chunk,complete,release,admission};
 OSStatus m1_http_start(void) { return ph_http_start(&app,HTTP_TCP_CLIENT_LIMIT,true); }

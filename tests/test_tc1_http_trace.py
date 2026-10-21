@@ -7,7 +7,7 @@ ROOT=Path(__file__).resolve().parents[1]
 class Trace(unittest.TestCase):
  def test_warm_reset_invalid_record_build_change_and_bounded_format(self):
   helper=admission.MemoryAdmission()
-  hooks=helper.sdk_http_source('http_trace_hooks.h').replace('#pragma once','')
+  hooks=(ROOT/'common/httpd/http_trace_hooks.h').read_text().replace('#pragma once','')
   source=(ROOT/'TC1/http_trace.c').read_text()
   source='\n'.join(line for line in source.splitlines() if not line.startswith('#include "'))
   helper.run_c(r'''

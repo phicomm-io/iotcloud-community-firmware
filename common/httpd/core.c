@@ -266,7 +266,7 @@ void ph_http_server_step(ph_http_server *s)
     if((rr & (UINT64_C(1)<<s->listener)) && free_slot>=0) {
         int fd=s->io->accept(s->listener);
         if(fd>=0) {
-            s->diagnostics.last_fd=fd;count(&s->diagnostics.accepted);
+            s->accept_streak=0;s->diagnostics.last_fd=fd;count(&s->diagnostics.accepted);
             if(fd>=PH_HTTP_FD_LIMIT || s->io->nonblock(fd)<0) { count(&s->diagnostics.nonblock_failures);close_fd(s,fd); }
             else {
                 ph_http_slot *c=&s->slots[free_slot]; memset(c,0,sizeof(*c));
@@ -274,7 +274,10 @@ void ph_http_server_step(ph_http_server *s)
                 ph_http_parser_init(&c->parser);
             }
         } else if(s->io->retry())s->io->yield();
-        else { s->diagnostics.last_errno=s->io->error();count(&s->diagnostics.accept_failures); }
+        else {
+            s->diagnostics.last_errno=s->io->error();count(&s->diagnostics.accept_failures);
+            if(++s->accept_streak>=3)ph_http_server_close(s);else s->io->yield();
+        }
     }
     for(unsigned n=0;n<PH_HTTP_CLIENT_SLOTS;++n) {
         unsigned i=(s->turn+n)%PH_HTTP_CLIENT_SLOTS; ph_http_slot *c=&s->slots[i];

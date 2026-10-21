@@ -178,6 +178,7 @@ static void memory_response(ph_http_exchange *x){
         (unsigned long)b.json_failed,(unsigned long)b.json_denied,
         (unsigned long)b.mqtt_pending,(unsigned long)b.mqtt_peak,
         (unsigned long)b.mqtt_overflow,(unsigned long)b.mqtt_max_delay);
+    if(n>0)n=ph_http_diag_append(out,sizeof(product.scalar),n,&d);
     if(n>0 && (size_t)n<sizeof(product.scalar))response(x,200,"application/json",out,n);
 }
 

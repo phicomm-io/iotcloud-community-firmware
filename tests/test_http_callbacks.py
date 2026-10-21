@@ -24,7 +24,7 @@ class Callbacks(unittest.TestCase):
 #define MODEL_JSON_LIMIT 8192
 typedef struct {char web_password[33];} app_config_t;
 static void app_config_get(app_config_t*c){strcpy(c->web_password,password);}
-static bool app_ota_begin(uint32_t n){assert(n);job=true;return true;}
+static bool app_ota_begin(uint32_t n){assert(n);ota_begins++;job=true;return true;}
 static bool app_ota_begin_unsigned(uint32_t n){return app_ota_begin(n);}
 static bool app_ota_write(const void*p,size_t n){assert(p&&n<=512);written+=n;return !fail_write;}
 static bool app_ota_finish(void){finishes++;job=false;return true;}
@@ -45,13 +45,12 @@ static void mico_rtos_unlock_mutex(unsigned*p){assert(*p);*p=0;}
      stubs=r'''
 static bool tc1_http_authorized(const char*a){return ph_http_basic(a,"admin",password);}
 static int get_last_reset_reason(void){return 1;}
-static ph_http_diagnostics ph_http_snapshot(void){return (ph_http_diagnostics){0};}
 static size_t tc1_http_trace_format(char*p,size_t n){assert(n>=3);memcpy(p,"{}",3);return 2;}
 static bool ota_job_claim(void){if(job)return false;job=true;return true;}
 static void ota_job_release(void){assert(job);job=false;}
 static bool ota_job_enter(void){assert(job);entered++;return true;}
 static bool tc1_ota_reserve(void){return true;}
-static bool tc1_ota_begin(uint32_t n,bool rescue){assert(n);(void)rescue;return true;}
+static bool tc1_ota_begin(uint32_t n,bool rescue){assert(n);ota_begins++;(void)rescue;return true;}
 static bool tc1_ota_write(const void*p,size_t n){assert(p&&n<=512);written+=n;return !fail_write;}
 static bool tc1_ota_finish(void){finishes++;return true;}
 static void tc1_ota_abort(void){aborts++;}
@@ -78,7 +77,12 @@ static void execute_wire(const char*wire){
 int main(void){
  strcpy(password,"pw");
  execute_wire("GET / HTTP/1.1\r\nAuthorization: Basic YWRtaW46cHc=\r\n\r\n");assert(strstr(wire_output,"Content-Length: 4\r\n"));
+ execute_wire("OPTIONS /api/v1/status HTTP/1.1\r\nOrigin: https://mqtt.fjrcn.cn\r\n\r\n");assert(strstr(wire_output,"200 OK")&&strstr(wire_output,"Access-Control-Allow-Origin: https://mqtt.fjrcn.cn"));
+ fail_cap=true;execute_wire("POST /api/v1/ota/upload HTTP/1.1\r\nAuthorization: Basic YWRtaW46cHc=\r\nContent-Length: 3\r\n\r\n123");assert(!ota_begins&&!job);aborts=0;fail_cap=false;
  HEAD_CHECK
+ assert(start("GET","/api/v1/memory",0)==PH_HTTP_REPLY);assert(x.response.status==200&&!claims&&!product.wire);assert(strstr(x.response.body,"http_core_close_failures"));finish(true);
+ memory.free_memory=memory.allocted_memory=memory.num_of_chunks=INT32_MAX;maximum=true;assert(start("GET","/api/v1/memory",0)==PH_HTTP_REPLY);assert(x.response.status==200&&x.response.length<sizeof(product.scalar));json_object *diagnostic=json_tokener_parse(x.response.body);assert(diagnostic);json_object_put(diagnostic);finish(true);maximum=false;
+ for(unsigned i=0;i<6;i++){const char *paths[]={"/api/v1/info","/api/v1/status","/api/v1/capabilities","/api/v1/config","/api/v1/logs","/api/v1/schedules"};assert(start("GET",paths[i],0)==PH_HTTP_REPLY);assert(x.response.status==200);finish(true);}
  assert(start("GET","/api/v1/status",0)==PH_HTTP_REPLY);assert(x.response.status==200&&claims&&product.wire);assert(strstr(x.response.body,"status.get"));finish(true);
  deny=true;assert(start("GET","/api/v1/status",0)==PH_HTTP_WAIT);assert(waiting&&!claims);deny=false;assert(app.retry(&x)==PH_HTTP_REPLY);assert(!waiting&&claims);finish(false);
  assert(start("POST","/api/v1/command",2)==PH_HTTP_READ_BODY);assert(product.body&&claims);assert(app.body(&x,"{}",2));app.complete(&x);assert(commands==1&&product.wire);finish(true);
@@ -91,7 +95,7 @@ int main(void){
  assert(start("GET","/legacy-unregistered",0)==PH_HTTP_REPLY);assert(x.response.status==404||x.response.status==401);finish(true);
  return 0;
 }
-'''.replace('OTA_ACTION','PH_HTTP_WAIT' if model=='TC1' else 'PH_HTTP_READ_BODY').replace('OPTIONS_UNKNOWN','404' if model=='TC1' else '403').replace('HEAD_CHECK','execute_wire("HEAD / HTTP/1.1\\r\\nAuthorization: Basic YWRtaW46cHc=\\r\\n\\r\\n");assert(strstr(wire_output,"Content-Length: 4\\r\\n"));assert(!strcmp(strstr(wire_output,"\\r\\n\\r\\n")+4,""));' if model=='TC1' else '').replace('ASSET_CHECK','assert(x.response.private_cache&&x.response.etag);' if model!='TC1' else '')
+'''.replace('OTA_ACTION','PH_HTTP_WAIT').replace('OPTIONS_UNKNOWN','404' if model=='TC1' else '403').replace('HEAD_CHECK','execute_wire("HEAD / HTTP/1.1\\r\\nAuthorization: Basic YWRtaW46cHc=\\r\\n\\r\\n");assert(strstr(wire_output,"Content-Length: 4\\r\\n"));assert(!strcmp(strstr(wire_output,"\\r\\n\\r\\n")+4,""));' if model=='TC1' else '').replace('ASSET_CHECK','assert(x.response.private_cache&&x.response.etag);strcpy(r.if_none_match,"W/\\\"page\\\"");assert(app.begin(&x)==PH_HTTP_REPLY&&x.response.status==304);' if model!='TC1' else '')
     probe=temp/'probe.c';probe.write_text(PREFIX+stubs+globals+tail+main)
     cmd=[os.environ.get('CC','cc'),'-std=gnu99','-g','-fsanitize=address,undefined','-fno-omit-frame-pointer','-no-pie','-I'+str(ROOT),'-I'+str(ROOT/'tests/stubs'),'-I'+str(json),str(probe),str(ROOT/'common/httpd/product.c'),str(ROOT/'common/httpd/parser.c'),str(ROOT/'common/httpd/core.c'),*map(str,json.glob('*.c')),'-o',str(temp/'probe')]
     subprocess.run(cmd,check=True);subprocess.run([temp/'probe'],check=True)

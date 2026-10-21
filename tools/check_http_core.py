@@ -22,15 +22,22 @@ def check(modules, model, nm, elf):
     base=['owner','ph_http_server_step','acquire','action','begin','prepare']
     dispatch=['service_query','service_command','service_product']
     if 'service_product_inner' in frames:dispatch+=['service_product_inner']
+    if 'service_command_execute' in frames:dispatch+=['service_command_execute']
+    command=['owner','ph_http_server_step','read_body','complete','service_command','service_command_execute','service_product','ph_http_json']
+    if 'service_product_inner' in frames:command+=['service_product_inner']
     status_path=base+dispatch+[status]
     if status+'_view' in frames:status_path+=[status+'_view']
     paths={
       'HTTP status':(3072,status_path),
-      'HTTP command':(3072,['owner','ph_http_server_step','read_body','complete','service_command','service_product','ph_http_json']),
+      'HTTP command status':(3072,command+[status]+([status+'_view'] if status+'_view' in frames else [])),
       'HTTP response':(3072,['owner','ph_http_server_step','respond','transmit']),
-      'HTTP OTA stream':(4096,['owner','ph_http_server_step','read_body','body_chunk',model.lower()+'_ota_write']),
-      'HTTP OTA validation':(4096,['owner','ph_http_server_step','read_body','complete',model.lower()+'_ota_finish']),
+      'HTTP OTA stream':(4096,['owner','ph_http_server_step','read_body','body_chunk',model.lower()+'_ota_write','signed_ota_write','uECC_verify','EccPoint_mult']),
+      'HTTP OTA validation':(4096,['owner','ph_http_server_step','read_body','complete',model.lower()+'_ota_finish','signed_ota_finish']),
     }
+    if model=='A1':paths['HTTP command control']=(3072,command+['a1_control_local','feature_group_control','group_send','parse'])
+    # GCC inlines send_part into step in the pinned optimized build. A separate
+    # frame must be counted if a compiler/optimization change emits it.
+    if 'send_part' in frames:paths['HTTP response'][1].append('send_part')
     for label,(reserve,names) in paths.items():
         missing=set(names)-frames.keys()
         if missing:raise ValueError(f'{label}: missing actual .su frames: {sorted(missing)}')

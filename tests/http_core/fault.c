@@ -5,7 +5,7 @@
 #include <string.h>
 static ph_http_server s;
 static unsigned tick, releases, begins, completes, bodies, yields, sent_ok;
-static int child, error_value, fail_limit, fail_nonblock, fail_close, fail_wait;
+static int child, error_value, fail_limit, fail_nonblock, fail_close, fail_wait, fail_accept;
 static int transient_send, transient_recv, closes[80];
 static const char *input[80]; static size_t positions[80];
 static char output[80][4096]; static size_t lengths[80];
@@ -15,13 +15,13 @@ static unsigned desired=3;
 static uint32_t now(void){return tick;}
 static int open_listener(unsigned cap){(void)cap;live|=1;return 0;}
 static int limit(int fd,unsigned cap,ph_http_diagnostics *d){assert(fd==0);d->limit=(int)cap;return fail_limit?-1:0;}
-static int accept_one(int fd){assert(fd==0);int n=child;child=-1;if(n>=0&&n<64)live|=UINT64_C(1)<<n;return n;}
+static int accept_one(int fd){assert(fd==0);if(fail_accept){error_value=9;return -1;}int n=child;child=-1;if(n>=0&&n<64)live|=UINT64_C(1)<<n;return n;}
 static int nonblock(int fd){return fail_nonblock==fd?-1:0;}
 static int wait_one(uint64_t r,uint64_t w,uint64_t *rr,uint64_t *ww,unsigned ms){
  assert(!(r&~live));assert(!(w&~live));tick+=ms;
  if(fail_wait){error_value=fail_wait;return -1;}
  *rr=0;*ww=w;
- if(child>=0 && (r&1))*rr|=1;
+ if((child>=0 || fail_accept) && (r&1))*rr|=1;
  for(int i=1;i<64;i++)if((r&(UINT64_C(1)<<i))&&input[i])*rr|=UINT64_C(1)<<i;
  return *rr||*ww?1:0;
 }
@@ -54,7 +54,7 @@ static void release(ph_http_exchange *x,bool sent){assert(x->request);releases++
 static unsigned admission(void){return desired;}
 static const ph_http_io io={now,open_listener,limit,accept_one,nonblock,wait_one,receive,transmit,close_one,retry,get_error,yield_one,NULL};
 static const ph_http_app app={begin,again,body,complete,release,admission};
-static void reset(void){memset(&s,0,sizeof(s));memset(input,0,sizeof(input));memset(positions,0,sizeof(positions));memset(output,0,sizeof(output));memset(lengths,0,sizeof(lengths));memset(closes,0,sizeof(closes));tick=releases=begins=completes=bodies=yields=sent_ok=0;child=-1;error_value=fail_limit=fail_wait=transient_send=transient_recv=0;fail_nonblock=fail_close=-1;live=0;body_fail=false;desired=3;assert(ph_http_server_open(&s,&io,&app,3));}
+static void reset(void){memset(&s,0,sizeof(s));memset(input,0,sizeof(input));memset(positions,0,sizeof(positions));memset(output,0,sizeof(output));memset(lengths,0,sizeof(lengths));memset(closes,0,sizeof(closes));tick=releases=begins=completes=bodies=yields=sent_ok=0;child=-1;error_value=fail_limit=fail_wait=fail_accept=transient_send=transient_recv=0;fail_nonblock=fail_close=-1;live=0;body_fail=false;desired=3;assert(ph_http_server_open(&s,&io,&app,3));}
 static void connect_one(int fd,const char *wire){child=fd;input[fd]=wire;ph_http_server_step(&s);assert(child==-1);}
 static void run(unsigned n){while(n--&&s.running)ph_http_server_step(&s);}
 static int parse(const unsigned char *text,size_t n){ph_http_parser p;ph_http_parser_init(&p);int rc=0;for(size_t i=0;i<n;i++){rc=ph_http_parser_feed(&p,text[i]);if(rc)break;}return rc;}
@@ -82,5 +82,6 @@ int main(void){
  reset();fail_wait=4;run(1);assert(s.running&&yields==1);fail_wait=9;run(1);assert(!s.running&&closes[0]==1);ph_http_server_close(&s);assert(closes[0]==1);
  reset();desired=2;run(1);assert(s.cap==2);fail_limit=1;desired=3;run(1);assert(!s.running&&closes[0]==1);
  reset();ph_http_server_close(&s);fail_nonblock=0;assert(!ph_http_server_open(&s,&io,&app,3));assert(closes[0]==2);
+ reset();fail_accept=1;run(3);assert(!s.running&&s.diagnostics.accept_failures==3&&closes[0]==1&&yields==2);ph_http_server_close(&s);assert(closes[0]==1);
  puts("production HTTP core fault/parser tests PASS");return 0;
 }
