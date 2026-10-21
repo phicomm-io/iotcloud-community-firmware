@@ -24,7 +24,8 @@
 
 NAME := App_TC1
 
-$(NAME)_SOURCES := main.c\
+$(NAME)_SOURCES := http_trace.c\
+                   main.c\
                    service.c\
                    ota_signature.c\
                    ota_crypto.c\
@@ -61,3 +62,5 @@ GLOBAL_CFLAGS += -fstack-usage
 PHICOMM_FULL_RESOURCES ?= 1
 GLOBAL_DEFINES += PHICOMM_FULL_RESOURCES=$(PHICOMM_FULL_RESOURCES)
 $(NAME)_CFLAGS += -I$(PHICOMM_WEB_OUTPUT_DIR)
+
+GLOBAL_DEFINES += PHICOMM_HTTP_TRACE=1

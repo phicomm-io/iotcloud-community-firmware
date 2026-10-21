@@ -6,6 +6,46 @@ from tests import test_memory_admission as admission
 from tests.test_tc1_sdk_migration import function
 ROOT = Path(__file__).resolve().parents[1]
 class Recovery(unittest.TestCase):
+ def test_content_type_copy_is_bounded_and_terminated(self):
+  source=admission.MemoryAdmission().sdk_http_source('http_parse.c')
+  admission.MemoryAdmission().run_c(r'''
+#include <assert.h>
+#include <stdint.h>
+#include <stdbool.h>
+#include <string.h>
+#include <strings.h>
+#include <stdlib.h>
+#include <stdio.h>
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#define ISO_nl '\n'
+#define ISO_cr '\r'
+#define kNoErr 0
+#define kInProgressErr 12
+#define TRUE true
+#define HTTPD_MAX_AUTH_LENGTH 64
+#define HTTP_CHUNKED "chunked"
+#define httpd_d(...) ((void)0)
+typedef struct {int body_nbytes,remaining_bytes;int agent;unsigned chunked;char content_type[128];unsigned if_none_match;unsigned etag_val;char origin[160],authorization[65];} httpd_request_t;
+static const char http_content_len[]="Content-Length:",http_user_agent[]="User-Agent:",http_content_type[]="Content-Type:",http_encoding[]="Transfer-Encoding:";
+static void httpd_parse_useragent(char *p,int *a){(void)p;(void)a;}
+PARSE
+int main(void){
+ httpd_request_t req;uint8_t done;char line[512];
+ for(size_t index=0;index<490;index++){
+  size_t n=(index+489)%490;
+  memset(&req,0xa5,sizeof(req));done=0;
+  strcpy(line,"Content-Type: ");memset(line+14,'x',n);line[14+n]=0;
+  int rc=__httpd_parse_hdr_tags(line,(int)strlen(line),&req,&done);
+  if(n<sizeof(req.content_type)){assert(!rc && strlen(req.content_type)==n);for(size_t j=0;j<n;j++)assert(req.content_type[j]=='x');}
+  else assert(rc<0);
+  assert(req.if_none_match==0xa5a5a5a5u); /* adjacent fields remain untouched */
+ }
+ memset(&req,0,sizeof(req));strcpy(line,"Content-Type: application/json");done=0;
+ assert(!__httpd_parse_hdr_tags(line,strlen(line),&req,&done));assert(!strcmp(req.content_type,"application/json"));
+ puts("TC1 Content-Type lengths 0..489: reject overflow; exact termination; adjacent fields intact: OK");
+}
+'''.replace('PARSE',function(source,'static int __httpd_parse_hdr_tags(')))
+
  def test_tcp_snapshot_preserves_unknown_values_on_option_errors(self):
   source=admission.MemoryAdmission().sdk_http_source('httpd.c')
   admission.MemoryAdmission().run_c(r'''

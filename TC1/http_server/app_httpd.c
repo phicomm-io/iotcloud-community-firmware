@@ -57,6 +57,7 @@ const char *phicomm_http_cors(const char *origin){return phicomm_cors_headers(or
 #include "user_wifi.h"
 #include "user_power.h"
 #include "main.h"
+#include "http_trace.h"
 #include <web_data.c>
 #include "web_log.h"
 #include "timed_task/timed_task.h"
@@ -393,22 +394,37 @@ static int HttpV1Memory(httpd_request_t *r){
         (unsigned long)b.mqtt_overflow,(unsigned long)b.mqtt_max_delay);
     return n>0 && (size_t)n<sizeof(out)?response_json(r,HTTP_RES_200,out,n):HttpV1Busy(r);
 }
+static int HttpV1Trace(httpd_request_t *r){
+    extern size_t tc1_http_trace_format(char *,size_t);
+    char body[1536];size_t size=tc1_http_trace_format(body,sizeof(body));
+    return size?response_json(r,HTTP_RES_200,body,size):HttpV1Busy(r);
+}
 static int HttpV1Command(httpd_request_t *r){
+    HTTP_TRACE(HTTP_TRACE_HEADERS_ENTER,r->sock,0);
     int rc=read_headers(r);
+    HTTP_TRACE(HTTP_TRACE_HEADERS_RETURN,r->sock,rc);
     if(rc || r->chunked || r->remaining_bytes<1 || r->remaining_bytes>(ota_job_active()?1024:8192))return kParamErr;
     unsigned claim=service_memory_wait(r->remaining_bytes);if(!claim)return HttpV1CommandBusy(r);
     size_t capacity=(size_t)r->remaining_bytes+1;
     uint64_t failures=service_memory_failures();
     char *body=json_heap_malloc(capacity);if(!body){service_memory_release(claim);return HttpV1CommandBusy(r);}
+    HTTP_TRACE(HTTP_TRACE_BODY_ENTER,r->sock,capacity);
     rc=read_body(r,body,capacity);
+    HTTP_TRACE(HTTP_TRACE_BODY_RETURN,r->sock,rc);
     if(rc){
         /* A truncated/reset request has no reply channel. Close without
          * dispatching it or attempting another write to the failed socket. */
         json_heap_free(body);service_memory_release(claim);return HTTPD_DONE;
     }
+    HTTP_TRACE(HTTP_TRACE_PARSE_ENTER,r->sock,capacity);
     json_object *request=service_parse(body,strlen(body));json_heap_free(body);
+    HTTP_TRACE(HTTP_TRACE_PARSE_RETURN,r->sock,request!=NULL);
+    HTTP_TRACE(HTTP_TRACE_DISPATCH_ENTER,r->sock,0);
     json_object *reply=service_memory_failures()==failures?service_command(request):NULL;if(request)json_object_put(request);
-    rc=HttpV1Reply(r,reply);service_memory_release(claim);return rc;
+    HTTP_TRACE(HTTP_TRACE_DISPATCH_RETURN,r->sock,reply!=NULL);
+    HTTP_TRACE(HTTP_TRACE_REPLY_ENTER,r->sock,0);
+    rc=HttpV1Reply(r,reply);service_memory_release(claim);
+    HTTP_TRACE(HTTP_TRACE_REPLY_RETURN,r->sock,rc);return rc;
 }
 
 static int HttpSetSocketStatus(httpd_request_t *req) {
@@ -1213,6 +1229,7 @@ static int HttpScheduleSet(httpd_request_t *req) {
 }
 
 const struct httpd_wsgi_call g_app_handlers[] = {
+    {"/api/v1/http-trace", HTTPD_HDR_DEFORT, 0, HttpV1Trace, NULL, NULL, NULL},
     {"/api/v1/memory", HTTPD_HDR_DEFORT, 0, HttpV1Memory, NULL, NULL, NULL},
     {"/api/v1/info", HTTPD_HDR_DEFORT, 0, HttpV1Info, NULL, NULL, NULL},
     {"/api/v1/status", HTTPD_HDR_DEFORT, 0, HttpV1Status, NULL, NULL, NULL},

@@ -17,7 +17,7 @@ class MemoryAdmission(unittest.TestCase):
 
     def run_c(self, source):
         with tempfile.TemporaryDirectory() as directory:
-            p=Path(directory)/'test.c'; p.write_text(source)
+            p=Path(directory)/'test.c'; p.write_text("#define HTTP_TRACE(phase,fd,detail) ((void)(detail))\n"+source)
             cmd=[os.environ.get('CC','cc'),'-std=c99','-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-I'+str(ROOT),str(p),'-o',str(p.with_suffix(''))]
             if os.environ.get('SANITIZE')=='1': cmd+=['-g','-fno-omit-frame-pointer','-fsanitize=address,undefined']
             subprocess.run(cmd,check=True);subprocess.run([str(p.with_suffix(''))],check=True)

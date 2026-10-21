@@ -30,7 +30,7 @@ python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \
     "$app_dir/http-connection-sdk.patch" "$app_dir/http-resource-sdk.patch" \
     "$app_dir/http-client-limit-sdk.patch" "$app_dir/http-auth-sdk.patch" \
     "$app_dir/http-cors-sdk.patch" "$app_dir/http-cors-empty-sdk.patch" "$app_dir/http-options-sdk.patch" "$app_dir/http-client-once-sdk.patch" \
-    "$app_dir/http-recovery-sdk.patch" "$app_dir/http-eof-sdk.patch" "$app_dir/http-nonblocking-sdk.patch" "$app_dir/http-diagnostics-sdk.patch" "$app_dir/http-listener-verify-sdk.patch"
+    "$app_dir/http-recovery-sdk.patch" "$app_dir/http-eof-sdk.patch" "$app_dir/http-nonblocking-sdk.patch" "$app_dir/http-diagnostics-sdk.patch" "$app_dir/http-listener-verify-sdk.patch" "$app_dir/http-header-bounds-sdk.patch" "$app_dir/http-trace-sdk.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/parameters-sdk.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/signed-ota-sdk.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/no-unsigned-sdk-write.patch"
@@ -84,4 +84,5 @@ ln -sfn "$(command -v make)" "$micoder/cmd/Linux64/make"
         -f mico-os/makefiles/Makefile "$target" total
 )
 python3 "$project_dir/tools/check_json_float.py" "$gcc_dir/bin/arm-none-eabi-nm" "$workspace/build/$target/binary/$target.elf"
+python3 "$project_dir/tools/check_tc1_trace.py" "$gcc_dir/bin/arm-none-eabi-nm" "$workspace/build/$target/binary/$target.elf"
 python3 "$app_dir/tools/package.py" "$workspace/build/$target/binary" "$project_dir/build/tc1${variant_suffix}-release"

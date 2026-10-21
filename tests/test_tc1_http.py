@@ -41,7 +41,7 @@ int main(void) {
 '''
         with tempfile.TemporaryDirectory() as directory:
             src=pathlib.Path(directory)/'test.c';binary=pathlib.Path(directory)/'test'
-            src.write_text(harness)
+            src.write_text('#define HTTP_TRACE(phase,fd,detail) ((void)(detail))\n'+harness)
             subprocess.run(['cc','-std=c99','-Wall','-Wextra','-Werror',str(src),'-o',str(binary)],check=True)
             subprocess.run([str(binary)],check=True,timeout=5)
     def test_receive_timeout_peer_close_and_data(self):
@@ -81,7 +81,7 @@ int main(void) {
 '''
         with tempfile.TemporaryDirectory() as directory:
             src=pathlib.Path(directory)/'test.c';binary=pathlib.Path(directory)/'test'
-            src.write_text(harness)
+            src.write_text('#define HTTP_TRACE(phase,fd,detail) ((void)(detail))\n'+harness)
             subprocess.run(['cc','-std=c99','-Wall','-Wextra','-Werror',str(src),'-o',str(binary)],check=True)
             subprocess.run([str(binary)],check=True,timeout=5)
 if __name__ == '__main__': unittest.main()
