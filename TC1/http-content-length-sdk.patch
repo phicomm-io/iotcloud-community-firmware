@@ -1,0 +1,23 @@
+--- a/libraries/daemons/http_server/http_parse.c
++++ b/libraries/daemons/http_server/http_parse.c
+@@ -309,8 +314,18 @@
+   }
+   
+   if (strncasecmp(data_p, http_content_len, sizeof(http_content_len) - 1) == 0) {
+-    req_p->body_nbytes =
+-      atol(&data_p[sizeof(http_content_len) - 1]);
++    const char *value = data_p + sizeof(http_content_len) - 1;
++    while (*value == ' ' || *value == '\t') value++;
++    if (*value < '0' || *value > '9') return -kInProgressErr;
++    unsigned length = 0;
++    while (*value >= '0' && *value <= '9') {
++      unsigned digit = (unsigned)(*value++ - '0');
++      if (length > (2147483647u - digit) / 10u) return -kInProgressErr;
++      length = length * 10u + digit;
++    }
++    while (*value == ' ' || *value == '\t') value++;
++    if (*value && *value != '\r' && *value != '\n') return -kInProgressErr;
++    req_p->body_nbytes = (int)length;
+     if (req_p->body_nbytes == 0) {
+       httpd_d("got 0 for body length");
+       return kNoErr;

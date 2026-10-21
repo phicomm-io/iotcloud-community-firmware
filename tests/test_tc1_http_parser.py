@@ -55,4 +55,16 @@ int main(void){
 }
 ''')
 
+ def test_content_length_rejects_signed_overflow_and_junk(self):
+  source=self.source('http_parse.c')
+  self.run_c(PRELUDE+'static void httpd_parse_useragent(char *p,httpd_useragent_t *a){(void)p;(void)a;}\n'+function(source,'static int __httpd_parse_hdr_tags(')+r'''
+int main(void){
+ const char *invalid[]={"-1","+1","2147483648","9999999999999999999999999999999999999999999","1x","","  "};
+ for(unsigned i=0;i<sizeof(invalid)/sizeof(*invalid);i++){char line[128];snprintf(line,sizeof(line),"Content-Length: %s",invalid[i]);httpd_request_t req={0};uint8_t done=0;assert(__httpd_parse_hdr_tags(line,strlen(line),&req,&done)<0);}
+ const char *valid[]={"0","8192","2147483647"};
+ for(unsigned i=0;i<3;i++){char line[128];snprintf(line,sizeof(line),"Content-Length:\t%s ",valid[i]);httpd_request_t req={0};uint8_t done=0;assert(!__httpd_parse_hdr_tags(line,strlen(line),&req,&done));assert(req.body_nbytes==atoi(valid[i]));}
+ puts("TC1 Content-Length rejects signed, overflow and trailing junk before body allocation: OK");
+}
+''')
+
 if __name__=='__main__':unittest.main()
