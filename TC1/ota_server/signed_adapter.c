@@ -1,4 +1,5 @@
 #include "signed_adapter.h"
+#include "../status_guard.h"
 #include "../../common/ota/mode.h"
 #include "../../common/ota/signed_ota.h"
 #include <string.h>
@@ -18,9 +19,12 @@ static const uint8_t kernel_md5[16]={0x06,0x77,0xcf,0x68,0xfc,0xa7,0xdf,0xdc,0x9
 void tc1_ota_metadata(tc1_ota_metadata_t *out) {mico_rtos_lock_mutex(&lock);*out=metadata;mico_rtos_unlock_mutex(&lock);}
 void tc1_ota_init(void) { mico_rtos_init_mutex(&lock); }
 bool tc1_config_reserve(void) {
+    if(!tc1_status_guard_ready())return false;
+    tc1_status_lock();
     mico_rtos_lock_mutex(&lock); bool ok=!active && !config_busy; if(ok)config_busy=true;
-    mico_rtos_unlock_mutex(&lock);return ok;
+    mico_rtos_unlock_mutex(&lock);tc1_status_unlock();return ok;
 }
+bool tc1_config_changing(void) {mico_rtos_lock_mutex(&lock);bool busy=config_busy;mico_rtos_unlock_mutex(&lock);return busy;}
 void tc1_config_release(void) {mico_rtos_lock_mutex(&lock);config_busy=false;mico_rtos_unlock_mutex(&lock);}
 bool tc1_ota_reserve(void) {
     mico_rtos_lock_mutex(&lock); bool ok=!active && !config_busy; if(ok) {active=true;verified_pending=false;ota_state="receiving";ota_error="";}

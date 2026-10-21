@@ -69,7 +69,7 @@ int MicoFlashRead(int p,uint32_t *o,void *d,unsigned n){if(fault==3 || p==2)retu
 int MicoFlashWrite(int p,uint32_t *o,uint8_t *d,unsigned n){writes++;if(fault==2)return -1;if(*o>sizeof flash || n>sizeof flash-*o)return -1;memcpy(flash+*o,d,n);*o+=n;return 0;}
 int MicoFlashErase(int p,uint32_t o,unsigned n){erases++;if(fault==1)return -1;memset(flash,255,sizeof flash);return 0;}
 int mico_ota_switch_to_new_fw(int n,uint16_t crc){switches++;return fault==5?-1:0;}
-int start(unsigned n,unsigned failure,int rescue){active=commit_uncertain=false;ota_state="idle";erases=writes=switches=0;fault=failure;current.partition_start_addr=fault==6?0xaf000:0x6000;tc1_ota_init();return tc1_ota_reserve() && tc1_ota_begin(n,rescue);}
+int start(unsigned n,unsigned failure,int rescue){active=commit_uncertain=false;ota_state="idle";erases=writes=switches=0;fault=failure;current.partition_start_addr=fault==6?0xaf000:0x6000;tc1_status_guard_init();tc1_ota_init();return tc1_ota_reserve() && tc1_ota_begin(n,rescue);}
 int feed(const uint8_t *p,unsigned n){return tc1_ota_write(p,n);}
 int finish(void){return tc1_ota_finish();}
 int verify(void){return tc1_ota_verify();}
@@ -83,7 +83,7 @@ void cancel_before_activation(void){fault=8;}
 void corrupt_flash(void){flash[123]^=1;}
 int reserve_again(void){tc1_ota_abort();return tc1_ota_reserve();}
 ''')
-  subprocess.run(['cc','-DPHICOMM_DEVICE_OTA=1','-shared','-fPIC','-O2','-Wno-deprecated-declarations','-I'+str(d),'-I'+str(ROOT/'common/ota'),'-I'+str(ROOT/'TC1/ota_server'),str(d/'signed_ota.c'),str(ROOT/'common/ota/crypto.c'),str(d/'harness.c'),'-lcrypto','-o',str(d/'test.so')],check=True)
+  subprocess.run(['cc','-DPHICOMM_DEVICE_OTA=1','-shared','-fPIC','-O2','-Wno-deprecated-declarations','-I'+str(d),'-I'+str(ROOT/'common/ota'),'-I'+str(ROOT/'TC1/ota_server'),str(d/'signed_ota.c'),str(ROOT/'common/ota/crypto.c'),str(d/'harness.c'),str(ROOT/'TC1/status_guard.c'),'-lcrypto','-o',str(d/'test.so')],check=True)
   cls.lib=ctypes.CDLL(str(d/'test.so'));cls.lib.feed.argtypes=[ctypes.c_void_p,ctypes.c_uint]
  @classmethod
  def tearDownClass(cls):cls.tmp.cleanup()

@@ -2,6 +2,7 @@
 
 #include "main.h"
 #include "user_gpio.h"
+#include "status_guard.h"
 #include <stdint.h>
 #include "../common/gesture.h"
 #include "../common/indicator.h"
@@ -139,7 +140,7 @@ void SetSocketStatus(char *socket_status) {
                &values[0], &values[1], &values[2], &values[3],
                &values[4], &values[5]) != SOCKET_NUM) return;
     for (int n=0;n<SOCKET_NUM;++n) if(values[n]!=0 && values[n]!=1) return;
-    for (int n=0;n<SOCKET_NUM;++n) user_config->socket_status[n]=(char)values[n];
+    TC1_STATUS_WRITE(for (int n=0;n<SOCKET_NUM;++n) user_config->socket_status[n]=(char)values[n]);
     int i = 0;
     for (i = 0; i < SOCKET_NUM; i++) {
         UserRelaySet(i, user_config->socket_status[i]);
@@ -168,7 +169,7 @@ void UserRelaySet(unsigned char i, char on) {
             MicoGpioOutputLow(relay[i]);
         }
     }
-    user_config->socket_status[i] = on >= 0 ? on : (user_config->socket_status[i] == 0 ? 1 : 0);
+    TC1_STATUS_WRITE(user_config->socket_status[i] = on >= 0 ? on : (user_config->socket_status[i] == 0 ? 1 : 0));
 
     if (RelayOut() && user_config->power_led_enabled) {
         UserLedSet(1);
@@ -261,7 +262,7 @@ static void KeyEventHandler(int num, boolean longPress) {
         case SWITCH_LED_ENABLE:
         if (childLockEnabled)
                         break;
-            MQTT_LED_ENABLED = MQTT_LED_ENABLED == 0 ? 1 : 0;
+            TC1_STATUS_WRITE(MQTT_LED_ENABLED = MQTT_LED_ENABLED == 0 ? 1 : 0);
             if (RelayOut() && MQTT_LED_ENABLED) {
                 UserLedSet(1);
             } else {
@@ -272,8 +273,8 @@ static void KeyEventHandler(int num, boolean longPress) {
             break;
         case SWITCH_CHILD_LOCK_ENABLE:
             showLog=true;
-            user_config->user[0] = user_config->user[0] == 0 ? 1 : 0;
-            childLockEnabled = user_config->user[0];
+            TC1_STATUS_WRITE(user_config->user[0] = user_config->user[0] == 0 ? 1 : 0;
+            childLockEnabled = user_config->user[0]);
             mico_system_context_update(sys_config);
             UserMqttSendChildLockState();
             break;

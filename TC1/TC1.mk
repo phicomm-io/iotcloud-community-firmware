@@ -25,7 +25,7 @@
 NAME := App_TC1
 
 $(NAME)_SOURCES := http_trace.c\
-                   main.c\
+                   main.c status_guard.c\
                    service.c\
                    ota_signature.c\
                    ota_crypto.c\

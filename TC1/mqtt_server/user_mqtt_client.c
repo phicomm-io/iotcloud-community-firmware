@@ -26,6 +26,7 @@
 #include "http_server/web_log.h"
 
 #include "main.h"
+#include "status_guard.h"
 #include "mico.h"
 #include "MQTTClient.h"
 #include "user_gpio.h"
@@ -356,12 +357,13 @@ void MqttClientThread(mico_thread_arg_t arg) {
     char client_id[192];
     for (;;) {
         if(mqtt_thread_should_exit) break;
-        tc1_mqtt_status=MQTT_DISCONNECTED; isconnect=false;
+        TC1_STATUS_WRITE(tc1_mqtt_status=MQTT_DISCONNECTED); isconnect=false;
         clear_mqtt_msg_send_queue();
         LinkStatusTypeDef link={0}; micoWlanGetLinkStatus(&link);
         if(cleanup_pending && link.is_connected==1 && !session_current()) {
-            tc1_mqtt_cleanup_warning=mqtt_cleanup_reconnect(&c,&account,session_host,session_port,
+            bool warning=mqtt_cleanup_reconnect(&c,&account,session_host,session_port,
                 session_user,session_password,cleanup_discovery)!=MQTT_SUCCESS;
+            TC1_STATUS_WRITE(tc1_mqtt_cleanup_warning=warning);
             cleanup_pending=false;
         }
         if(!user_config->mqtt_host[0] || link.is_connected!=1) { mico_rtos_thread_sleep(1); continue; }
@@ -371,7 +373,7 @@ void MqttClientThread(mico_thread_arg_t arg) {
         session_mode=user_config->mqtt_topic_mode; ++generation;
         mico_rtos_resume_all_thread();
         if(!mqtt_account_init(&account,session_mode,"tc1",session_user,str_mac)) {
-            tc1_mqtt_status=MQTT_CONFIG_ERROR; mico_rtos_thread_sleep(1); continue;
+            TC1_STATUS_WRITE(tc1_mqtt_status=MQTT_CONFIG_ERROR); mico_rtos_thread_sleep(1); continue;
         }
         mqtt_leaf(&account,"ota/set",ota_topic,sizeof(ota_topic));
         mqtt_identity(&account,"",client_id,sizeof(client_id));
@@ -379,7 +381,7 @@ void MqttClientThread(mico_thread_arg_t arg) {
         if(account.mode) { mqtt_leaf(&account,"set",topic_set,sizeof(topic_set)); mqtt_leaf(&account,"sensor",topic_state,sizeof(topic_state)); }
         else { sprintf(topic_set,MQTT_CLIENT_SUB_TOPIC1,str_mac); sprintf(topic_state,MQTT_CLIENT_PUB_TOPIC,str_mac); }
         memset(&c,0,sizeof(c)); memset(&n,0,sizeof(n)); n.my_socket=-1;
-        ssl_opts options={0}; tc1_mqtt_status=MQTT_CONNECTING;
+        ssl_opts options={0}; TC1_STATUS_WRITE(tc1_mqtt_status=MQTT_CONNECTING);
         const char *stage="network";
         int rc=NewNetwork(&n,session_host,session_port,options);
         if(rc==MQTT_SUCCESS) n.mqttread=tc1_mqtt_read;
@@ -393,7 +395,7 @@ void MqttClientThread(mico_thread_arg_t arg) {
             data.willFlag=1; data.will.topicName.cstring=availability_topic;
             data.will.message.cstring="offline"; data.will.qos=1; data.will.retained=1;
             stage="connect"; rc=MQTTConnect(&c,&data); connected=rc==MQTT_SUCCESS;
-            if(!connected) tc1_mqtt_status=rc==4||rc==5?MQTT_AUTH_FAILED:MQTT_DISCONNECTED;
+            if(!connected) TC1_STATUS_WRITE(tc1_mqtt_status=rc==4||rc==5?MQTT_AUTH_FAILED:MQTT_DISCONNECTED);
         }
         if(connected && account.mode) {
             char topic[MQTT_TOPIC_MAX]; mqtt_aux(&account,"discovery",account.mac,topic,sizeof(topic));
@@ -404,7 +406,7 @@ void MqttClientThread(mico_thread_arg_t arg) {
         if(rc==MQTT_SUCCESS && !account.mode){stage="subscribe-ota";rc=MQTTSubscribe(&c,ota_topic,QOS1,MessageArrived);}
         if(rc==MQTT_SUCCESS && !account.mode){stage="subscribe-control";rc=MQTTSubscribe(&c,topic_set,QOS1,MessageArrived);}
         if(rc==MQTT_SUCCESS) { stage="subscribe-ha"; rc=MQTTSubscribe(&c,"homeassistant/status",QOS1,ha_birth); }
-        if(connected && rc!=MQTT_SUCCESS) tc1_mqtt_status=MQTT_WAITING_ACL;
+        if(connected && rc!=MQTT_SUCCESS) TC1_STATUS_WRITE(tc1_mqtt_status=MQTT_WAITING_ACL);
         if(rc==MQTT_SUCCESS) {
             rc=account.mode?service_mqtt_capabilities(service_sender,&account):MQTT_SUCCESS;
             if(rc!=MQTT_SUCCESS){UserMqttClientRelease(&c,&n);continue;}
@@ -415,7 +417,7 @@ void MqttClientThread(mico_thread_arg_t arg) {
         if(rc==MQTT_SUCCESS) stage="running";
         uint32_t snapshot_at=mico_rtos_get_time()-5000u;
         uint32_t acl_check=mico_rtos_get_time(); rediscover=false;
-        if(rc==MQTT_SUCCESS) { isconnect=true; tc1_mqtt_status=MQTT_READY; attempt=0; cleanup_pending=true; }
+        if(rc==MQTT_SUCCESS) { isconnect=true; TC1_STATUS_WRITE(tc1_mqtt_status=MQTT_READY); attempt=0; cleanup_pending=true; }
         while(rc==MQTT_SUCCESS && !mqtt_thread_should_exit && session_current()) {
             if(account.mode){rc=service_mqtt_flush(service_sender);if(rc!=MQTT_SUCCESS)break;}
             if(!ota_job_active() && account.mode && (uint32_t)(mico_rtos_get_time()-snapshot_at)>=5000){snapshot_at=mico_rtos_get_time();rc=service_mqtt_snapshot(service_sender,&account);if(rc!=MQTT_SUCCESS)break;}
@@ -433,7 +435,7 @@ void MqttClientThread(mico_thread_arg_t arg) {
             }
             if(rc==MQTT_SUCCESS && account.mode && (uint32_t)(mico_rtos_get_time()-acl_check)>=30000) {
                 mqtt_leaf(&account,"command",command_topic,sizeof(command_topic));rc=MQTTSubscribe(&c,command_topic,QOS1,MessageArrived); acl_check=mico_rtos_get_time();
-                if(rc!=MQTT_SUCCESS) tc1_mqtt_status=MQTT_WAITING_ACL;
+                if(rc!=MQTT_SUCCESS) TC1_STATUS_WRITE(tc1_mqtt_status=MQTT_WAITING_ACL);
             }
             if(rc==MQTT_SUCCESS && account.mode) rc=service_mqtt_flush(service_sender);
             if(rc==MQTT_SUCCESS) rc=MQTTYield(&c,100);
@@ -445,11 +447,11 @@ void MqttClientThread(mico_thread_arg_t arg) {
         isconnect=false;
         if(!session_current())ota_forget();
         if(connected) {
-            if(!session_current()) { tc1_mqtt_cleanup_warning=cleanup_discovery()!=0; cleanup_pending=false; }
+            if(!session_current()) { bool warning=cleanup_discovery()!=0;TC1_STATUS_WRITE(tc1_mqtt_cleanup_warning=warning); cleanup_pending=false; }
             MqttMsgPublish(&c,availability_topic,QOS1,1,(const unsigned char *)"offline",7);
         }
         ++generation; clear_mqtt_msg_send_queue(); UserMqttClientRelease(&c,&n);
-        if(tc1_mqtt_status==MQTT_READY || tc1_mqtt_status==MQTT_CONNECTING) tc1_mqtt_status=MQTT_DISCONNECTED;
+        if(tc1_mqtt_status==MQTT_READY || tc1_mqtt_status==MQTT_CONNECTING) TC1_STATUS_WRITE(tc1_mqtt_status=MQTT_DISCONNECTED);
         if(!mqtt_thread_should_exit) mico_rtos_thread_sleep(mqtt_retry_seconds(attempt++));
     }
     isconnect=false; mqtt_thread_running=false; mico_rtos_delete_thread(NULL);
@@ -549,7 +551,7 @@ void ProcessHaCmd(char *cmd) {
         int on;
         if (sscanf(cmd, "set led %19s %d", mac, &on) != 2) return;
         if (strcmp(mac, str_mac) || (on!=0 && on!=1)) return;mqtt_log("set led on[%d]", on);
-        user_config->power_led_enabled = on;
+        TC1_STATUS_WRITE(user_config->power_led_enabled = on);
         if (RelayOut() && user_config->power_led_enabled) {
             UserLedSet(1);
         } else {
@@ -572,8 +574,8 @@ void ProcessHaCmd(char *cmd) {
         int on;
         if (sscanf(cmd, "set childLock %19s %d", mac, &on) != 2) return;
         if (strcmp(mac, str_mac) || (on!=0 && on!=1)) return;mqtt_log("set childLock on[%d]", on);
-        user_config->user[0] = on;
-        childLockEnabled = on;
+        TC1_STATUS_WRITE(user_config->user[0] = on;
+        childLockEnabled = on);
         UserMqttSendChildLockState();
         mico_system_context_update(sys_config);
     }else if (mqtt_cmd_starts_with(cmd, "reboot")) {

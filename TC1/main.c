@@ -1,6 +1,7 @@
 #include "../common/service.h"
 #include "ota_server/signed_adapter.h"
 #include "main.h"
+#include "status_guard.h"
 #include "config_legacy.h"
 #include <stddef.h>
 
@@ -150,6 +151,7 @@ void reportMqttPowerInfoThread() {
 }
 
 int application_start(void) {
+    if(!tc1_status_guard_init())return kNoMemoryErr;
     service_init();
     WebLogInit();
     tc1_ota_init();
