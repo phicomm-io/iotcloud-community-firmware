@@ -141,7 +141,7 @@ static __attribute__((noinline)) int filter_discovery(const a1_config_t *c, bool
     static const char *components[] = {"sensor", "sensor", "binary_sensor", "number", "button", "select"};
     static const char *names[] = {"滤芯剩余寿命", "滤芯使用时间", "滤芯更换提醒", "滤芯额定寿命", "更换滤芯后重置", "运行模式"};
     bool bound = feature_bound(), grouped = false;
-    /* MQTT-owner scratch: PUBACK waiting can dispatch nested commands. */
+    /* MQTT-owner scratch: PUBACK callbacks only admit copied ingress. */
     static char parent_id[192], parent_name[FEATURE_TOPIC_MAX];
     if (!clear && bound && !feature_ha_device(parent_id, sizeof(parent_id),
                                              parent_name, sizeof(parent_name), &grouped))
@@ -333,10 +333,30 @@ static mqtt_state_t state;
 static char client_id[192],wildcard[MQTT_TOPIC_MAX];
 static unsigned count,feature_revision;
 static bool old_on,sent,old_visible;
-static unsigned discovery_index,state_index;
+static unsigned discovery_index,state_index,state_pending,state_seen;
 static unsigned old_speed;
 static uint32_t revision,filter_sent_at;
 static a1_filter_storage_t sent_filter;
+/* A dirty snapshot schedules every leaf. Keep pending work across turns:
+ * feature_revision is an observation edge, not the lifetime of a batch. */
+static int states_step(const a1_config_t *config, const mqtt_state_t *snapshot, bool dirty) {
+    if (dirty)
+        state_pending |= 0x7fu;
+    for (unsigned pass = 0; pass < 7; pass++) {
+        unsigned index = (state_index + pass) % 7;
+        if (!(state_pending & (1u << index)))
+            continue;
+        int rc = states(config, snapshot, index);
+        if (rc == MQTT_SUCCESS) {
+            state_pending &= ~(1u << index);
+            state_index = (index + 1) % 7;
+            state_seen |= 1u << index;
+            sent = state_seen == 0x7fu;
+        }
+        return rc;
+    }
+    return MQTT_SUCCESS;
+}
 static int session_prepare(void *context,ph_mqtt_connection *spec) {
     (void)context;
         ota_job_poll();
@@ -379,7 +399,7 @@ static int session_initial(void *context) {
     feature_mqtt_session(&account);
     (void)context;
     int rc=service_mqtt_capabilities(publish,&account);
-    discovery_index=state_index=0;
+    discovery_index=state_index=0;state_pending=0x7fu;state_seen=0;
     old_on=sent=old_visible=false;old_speed=revision=filter_sent_at=0;
     memset(&sent_filter,0,sizeof(sent_filter));
     return rc;
@@ -390,14 +410,13 @@ static int session_cycle(void *context) {
             
             int rc=ota_service(base);if(rc!=MQTT_SUCCESS)return rc;
             if(ota_job_active())return MQTT_SUCCESS;
-            mico_rtos_lock_mutex(&a1_lock); a1_state.mqtt_connected = true; mico_rtos_unlock_mutex(&a1_lock);
             mqtt_state_get(&state); a1_config_get(&current);
             if (!state.wifi_connected || !same_connection(&cfg, &current)) return PH_MQTT_RECONFIGURE;
             feature_config_t *fc=malloc(sizeof(*fc)); if (!fc) return PH_MQTT_RECONFIGURE; feature_config_get(fc);
             bool feature_changed=feature_revision!=fc->revision;
             feature_revision=fc->revision; free(fc);
             if(feature_changed && !feature_mqtt_filters_current(feature_filters,count))return PH_MQTT_RECONFIGURE;
-            if(rediscover) {feature_mqtt_service(publish,false);discovery_index=0;rediscover=false;sent=false;state_index=0;}
+            if(rediscover) {feature_mqtt_service(publish,false);discovery_index=0;rediscover=false;sent=false;state_index=0;state_pending=0x7fu;state_seen=0;}
             if(discovery_index<10) {
                 rc=discovery(&current,discovery_index);
                 if(rc==MQTT_SUCCESS)++discovery_index;
@@ -405,12 +424,11 @@ static int session_cycle(void *context) {
             }
             bool on;unsigned speed;feature_effective_fan(current.fan_on,current.speed,&on,&speed);
             a1_filter_storage_t filter; a1_filter_get(&filter);
-            if (rc == MQTT_SUCCESS && (!sent || feature_changed || revision != current.revision || old_visible != state.led_visible || old_on!=on || old_speed!=speed)) {
-                rc=states(&current,&state,state_index);
-                if(rc==MQTT_SUCCESS && ++state_index==7) {
-                    state_index=0;revision=current.revision;old_visible=state.led_visible;
-                    old_on=on;old_speed=speed;sent=true;
-                }
+            bool dirty = feature_changed || revision != current.revision ||
+                old_visible != state.led_visible || old_on != on || old_speed != speed;
+            revision=current.revision;old_visible=state.led_visible;old_on=on;old_speed=speed;
+            if (rc == MQTT_SUCCESS && (state_pending || dirty)) {
+                rc=states_step(&current,&state,dirty);
                 if (rc == MQTT_SUCCESS) { sent_filter = filter; filter_sent_at = mico_rtos_get_time(); }
             } else if (rc == MQTT_SUCCESS && a1_filter_mqtt_due(&filter, &sent_filter, mico_rtos_get_time(), filter_sent_at)) {
                 rc = service_mqtt_snapshot(publish, &account);
@@ -418,6 +436,10 @@ static int session_cycle(void *context) {
             }
             if (rc == MQTT_SUCCESS) {rc = feature_mqtt_service(publish, true);}
     return rc;
+}
+static bool session_initial_ready(void *context) {
+    (void)context;
+    return discovery_index==10 && sent && feature_mqtt_initial_ready();
 }
 static void session_closing(void *context,bool connected,int rc) {
     (void)context;
@@ -447,7 +469,7 @@ static void mqtt_worker(mico_thread_arg_t arg) {
         mqtt_status(MQTT_CONFIG_ERROR);mico_rtos_delete_thread(NULL);return;
     }
     const ph_mqtt_session_hooks hooks={NULL,session_prepare,session_subscription,
-        session_initial,session_cycle,session_closing,session_event,NULL};
+        session_initial,session_cycle,session_closing,session_event,NULL,session_initial_ready};
     ph_mqtt_session_run(&client,&hooks);
 }
 OSStatus a1_mqtt_start(void)

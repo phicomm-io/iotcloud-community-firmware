@@ -163,6 +163,8 @@ json_object *feature_json(const char *domain);
 /* Returns HTTP status; response ownership passes to caller. */
 int feature_set(const char *domain, json_object *, json_object **response);
 bool feature_mqtt_input(const char *, const void *, size_t, bool);
+/* MQTT owner only; discovery progresses over bounded owner turns. */
+bool feature_mqtt_initial_ready(void);
 int feature_mqtt_service(int (*publish)(const char *, const char *, bool),
                           bool);
 void feature_mqtt_session(const mqtt_account_t *);

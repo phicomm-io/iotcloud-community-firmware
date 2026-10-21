@@ -48,7 +48,8 @@ static bool busy_identifier(const char *p) {
 }
 static void service_busy_id(const void *payload,size_t length,char id[65]) {
     const unsigned char *p=payload,*end;bool valid=false,complete=false;id[0]=0;
-    if(!payload)goto done;end=p+length;
+    if(!payload)goto done;
+    end=p+length;
     if(length>8192)goto done;
     busy_space(&p,end);if(p==end||*p++!='{')goto done;
     for(;;) {

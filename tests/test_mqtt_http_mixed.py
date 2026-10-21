@@ -283,10 +283,63 @@ class MixedRunnerTests(unittest.TestCase):
     def test_new_flattened_mqtt_diagnostics_are_available(self):
         fields = {name: index for index, name in enumerate(MIXED.QUEUE_FIELDS)}
         result = MIXED.optional_diagnostics([{'ok': True, 'data': fields}])
-        self.assertEqual(len(MIXED.QUEUE_FIELDS), 15)
+        self.assertEqual(len(MIXED.QUEUE_FIELDS), 22)
         self.assertEqual(result['queue.mqtt_queue_bytes']['last'],
                          fields['mqtt_queue_bytes'])
         self.assertEqual(result['queue.mqtt_tx_buffer_bytes']['availability'], 'available')
+        for name in ('mqtt_protocol_depth', 'mqtt_operation', 'mqtt_last_error_stage',
+                     'mqtt_last_error', 'mqtt_errors', 'mqtt_reconnects',
+                     'mqtt_max_queue_delay_ms'):
+            self.assertEqual(result['queue.'+name]['last'], fields[name])
+
+    def test_telemetry_is_separated_by_collection_stage_and_missing_is_na(self):
+        rows = [
+            {'ip': '10.117.152.111', 'phase': 'phase-a', 'collection_stage': 'load',
+             'retained': True, 'validated': False},
+            {'ip': '10.117.152.111', 'phase': 'phase-a', 'collection_stage': 'load',
+             'retained': False, 'validated': True},
+            {'ip': '10.117.152.111', 'phase': 'phase-a', 'collection_stage': 'recovery',
+             'retained': False, 'validated': True},
+        ]
+        load = MIXED._telemetry_observation(rows, '10.117.152.111', 'phase-a', 'load')
+        recovery = MIXED._telemetry_observation(rows, '10.117.152.111', 'phase-a', 'recovery')
+        unavailable = MIXED._telemetry_observation([], '10.117.152.111', 'phase-a', 'load')
+        self.assertEqual(load['availability'], 'observed')
+        self.assertEqual(load['validated_nonretained_count'], 1)
+        self.assertEqual(load['retained_excluded_count'], 1)
+        self.assertEqual(recovery['validated_nonretained_count'], 1)
+        self.assertEqual(recovery['observed_within_phase_window_count'], 0)
+        self.assertEqual(recovery['observed_after_phase_window_count'], 1)
+        self.assertEqual(unavailable['availability'], 'NOT_AVAILABLE')
+        self.assertFalse(load['source_timestamp_available'])
+
+    def test_unexpected_initialized_runtime_exception_runs_finish_and_stays_failed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            old_private = MIXED.PRIVATE
+            clients_before = len(FakeMQTTClient.instances)
+            MIXED.PRIVATE = Path(directory)
+            try:
+                output = Path(directory)/'run'
+                with mock.patch.object(FakeRunner, 'memory_window',
+                                       side_effect=RuntimeError('synthetic memory failure')):
+                    with self.assertRaisesRegex(RuntimeError, 'synthetic memory failure'):
+                        MIXED.execute(
+                            TARGETS, VERSION, 'unexpected-after-init', 'short', output,
+                            runtime_loader=fake_runtime(), plan_override=[], run_timeout=3)
+                evidence = json.loads((output/'mixed-evidence.json').read_text())
+                runner = FakeRunner.instances[-1]
+                clients = FakeMQTTClient.instances[clients_before:]
+            finally:
+                MIXED.PRIVATE = old_private
+        self.assertEqual(evidence['status'], 'failed')
+        self.assertFalse(evidence['completed'])
+        self.assertEqual(evidence['failure_type'], 'RuntimeError')
+        self.assertEqual(runner.finish_calls, 1)
+        self.assertFalse(runner.run['completed'])
+        self.assertTrue(evidence['exception_finalization']['attempted'])
+        self.assertTrue(evidence['exception_finalization']['completed'])
+        self.assertTrue(clients)
+        self.assertTrue(all(client.disconnected for client in clients))
 
     def test_outcome_latency_stays_separated_by_category(self):
         rows = [

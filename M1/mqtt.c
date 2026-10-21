@@ -281,7 +281,6 @@ static int session_cycle(void *context) {
             if(!ota_job_active() && (uint32_t)(mico_rtos_get_time()-snapshot_at)>=5000){rc=service_mqtt_snapshot(publish,&account);if(rc!=MQTT_SUCCESS)return rc;snapshot_at=mico_rtos_get_time();}
             rc=ota_service(base); if(rc!=MQTT_SUCCESS)return rc;
             if(ota_job_active())return MQTT_SUCCESS;
-            mico_rtos_lock_mutex(&m1_lock); m1_state.mqtt_connected = true; mico_rtos_unlock_mutex(&m1_lock);
             mqtt_state_get(&state); m1_config_get(&current);
             if (!state.wifi_connected || !same_connection(&cfg, &current)) return PH_MQTT_RECONFIGURE;
             feature_config_t *fc=malloc(sizeof(*fc)); if (!fc) return PH_MQTT_RECONFIGURE; feature_config_get(fc);
@@ -343,6 +342,10 @@ static int session_cycle(void *context) {
             if (rc == MQTT_SUCCESS) rc = feature_mqtt_service(publish, true);
     return rc;
 }
+static bool session_initial_ready(void *context) {
+    (void)context;
+    return discovery_index==6 && initial_index==2 && feature_mqtt_initial_ready();
+}
 static void session_closing(void *context,bool connected,int rc) {
     (void)context;
     service_mqtt_clear();
@@ -371,7 +374,7 @@ static void mqtt_worker(mico_thread_arg_t arg) {
         mqtt_status(MQTT_CONFIG_ERROR);mico_rtos_delete_thread(NULL);return;
     }
     const ph_mqtt_session_hooks hooks={NULL,session_prepare,session_subscription,
-        session_initial,session_cycle,session_closing,session_event,NULL};
+        session_initial,session_cycle,session_closing,session_event,NULL,session_initial_ready};
     ph_mqtt_session_run(&client,&hooks);
 }
 OSStatus m1_mqtt_start(void)

@@ -51,6 +51,8 @@ QUEUE_FIELDS = (
     'mqtt_rx_queued', 'mqtt_tx_queued', 'mqtt_inflight', 'mqtt_queue_bytes',
     'mqtt_peak_bytes', 'mqtt_credit_bytes', 'mqtt_rejected', 'mqtt_owner_faults',
     'mqtt_generation', 'mqtt_rx_buffer_bytes', 'mqtt_tx_buffer_bytes',
+    'mqtt_protocol_depth', 'mqtt_operation', 'mqtt_last_error_stage', 'mqtt_last_error',
+    'mqtt_errors', 'mqtt_reconnects', 'mqtt_max_queue_delay_ms',
 )
 STACK_FIELDS = ('mqtt_stack_watermark', 'mqtt_stack_high_watermark', 'mqtt_stack_free')
 MESSAGE_QUEUE_LIMIT = 512
@@ -304,6 +306,7 @@ class DeviceMQTTWorker:
         self.failure = None
         self.phase_abort_reason = None
         self.phase_started = time.monotonic()
+        self.phase_deadline = None
         self.last_success = self.phase_started
         self.last_correlated_response = self.phase_started
         self.max_success_gap_seconds = 0.0
@@ -336,6 +339,11 @@ class DeviceMQTTWorker:
     def run_window(self, phase, deadline, maximum, period):
         pending = BoundedWindow(maximum)
         self.pending = pending
+        self.phase_started = time.monotonic()
+        self.phase_deadline = deadline
+        self.last_success = self.phase_started
+        self.last_correlated_response = self.phase_started
+        self.max_success_gap_seconds = 0.0
         next_send = time.monotonic()
         sending_done = False
         while (not sending_done or pending.pending) and not self.stop.is_set() and not self.runner.stop.is_set():
@@ -391,7 +399,10 @@ class DeviceMQTTWorker:
                     if retained:
                         self.evidence.append('telemetry', {
                             'ip': self.ip, 'phase': phase, 'retained': True,
-                            'fresh': False, 'reason': 'initial retained snapshot excluded',
+                            'collection_stage': 'load', 'fresh': False,
+                            'reason': 'initial retained snapshot excluded',
+                            'phase_started_monotonic': self.phase_started,
+                            'phase_deadline_monotonic': self.phase_deadline,
                         })
                     elif isinstance(body, dict):
                         try:
@@ -401,7 +412,13 @@ class DeviceMQTTWorker:
                             self.evidence.append('telemetry', {
                                 'ip': self.ip, 'phase': phase, 'retained': False,
                                 'fresh': True, 'validated': True,
-                                'received_monotonic': now,
+                                'collection_stage': 'load',
+                                'consumer_observed_monotonic': now,
+                                'phase_started_monotonic': self.phase_started,
+                                'phase_deadline_monotonic': self.phase_deadline,
+                                'observed_within_phase_window': now <= self.phase_deadline,
+                                'freshness_basis': 'post-subscribe non-retained delivery; source sample time unavailable',
+                                'timestamp_semantics': 'host queue dequeue time, not broker ingress time',
                                 'uptime_source_seconds': identity['uptime_seconds'],
                                 'uptime_reset_check': 'not_evaluated_without_source_timestamp',
                                 **identity,
@@ -413,7 +430,10 @@ class DeviceMQTTWorker:
                     else:
                         self.evidence.append('telemetry', {
                             'ip': self.ip, 'phase': phase, 'retained': False,
-                            'fresh': False, 'reason': 'protocol error: non-object state payload',
+                            'collection_stage': 'load', 'fresh': False,
+                            'reason': 'protocol error: non-object state payload',
+                            'phase_started_monotonic': self.phase_started,
+                            'phase_deadline_monotonic': self.phase_deadline,
                         })
                         self.evidence.append('protocol_errors', {
                             'ip': self.ip, 'phase': phase, 'topic_kind': 'state',
@@ -664,6 +684,10 @@ def run_phase(runner, clients, roots, evidence, phase_plan, profile):
             if not any(row.get('ip') == ip and row.get('outcome') == 'busy'
                        for row in evidence.data['mqtt'] if row.get('phase') == phase):
                 phase_row.setdefault('abort_reason', 'No correlated MQTT status response for '+ip)
+    phase_row['telemetry_observation'] = {
+        ip: _telemetry_observation(evidence.data['telemetry'], ip, phase, 'load')
+        for ip in TARGETS
+    }
     phase_row['mqtt_success_liveness'] = {
         worker.ip: {
             'last_success_gap_seconds': max(0.0, time.monotonic()-worker.last_success),
@@ -681,9 +705,29 @@ def run_phase(runner, clients, roots, evidence, phase_plan, profile):
     return phase_row.get('abort_reason')
 
 
+def _telemetry_observation(rows, ip, phase, stage):
+    selected = [row for row in rows if row.get('ip') == ip and row.get('phase') == phase and
+                row.get('collection_stage') == stage]
+    validated = sum(row.get('validated') is True and row.get('retained') is False
+                    for row in selected)
+    retained = sum(row.get('retained') is True for row in selected)
+    within_window = sum(row.get('validated') is True and row.get('retained') is False and
+                        row.get('observed_within_phase_window') is True for row in selected)
+    return {
+        'availability': 'observed' if validated else 'NOT_AVAILABLE',
+        'validated_nonretained_count': validated,
+        'observed_within_phase_window_count': within_window,
+        'observed_after_phase_window_count': validated-within_window,
+        'retained_excluded_count': retained,
+        'source_timestamp_available': False,
+    }
+
+
 def receive_correlated(client, request_id, result_topic, state_topic, timeout,
-                       telemetry_events, ip, phase, runner):
-    deadline = time.monotonic()+timeout
+                       telemetry_events, ip, phase, runner, *,
+                       collection_stage='recovery', window_started=None):
+    started = time.monotonic() if window_started is None else window_started
+    deadline = started+timeout
     while time.monotonic() < deadline:
         if not client.connected.is_set():
             raise ConnectionError('MQTT disconnected during phase recovery')
@@ -697,6 +741,9 @@ def receive_correlated(client, request_id, result_topic, state_topic, timeout,
                 if retained:
                     telemetry_events.append({
                         'ip': ip, 'phase': phase, 'retained': True, 'fresh': False,
+                        'collection_stage': collection_stage,
+                        'phase_started_monotonic': started,
+                        'phase_deadline_monotonic': deadline,
                         'validated': False, 'reason': 'retained snapshot excluded',
                     })
                 else:
@@ -708,9 +755,16 @@ def receive_correlated(client, request_id, result_topic, state_topic, timeout,
                             data, ip, runner.before[ip]['state'], runner.version)
                     except ValueError as exc:
                         raise MQTTProtocolError('Invalid MQTT state telemetry during recovery') from exc
+                    observed = time.monotonic()
                     telemetry_events.append({
                         'ip': ip, 'phase': phase, 'retained': False, 'fresh': True,
-                        'validated': True, 'received_monotonic': time.monotonic(),
+                        'collection_stage': collection_stage,
+                        'validated': True, 'consumer_observed_monotonic': observed,
+                        'observed_within_phase_window': observed <= deadline,
+                        'phase_started_monotonic': started,
+                        'phase_deadline_monotonic': deadline,
+                        'freshness_basis': 'post-subscribe non-retained delivery; source sample time unavailable',
+                        'timestamp_semantics': 'host queue dequeue time, not broker ingress time',
                         'uptime_source_seconds': identity['uptime_seconds'],
                         'uptime_reset_check': 'not_evaluated_without_source_timestamp',
                         **identity,
@@ -756,7 +810,8 @@ def recover(runner, clients, roots, evidence, name):
         try:
             topic, body, retained = receive_correlated(
                 client, request_id, roots[ip]+'/result', roots[ip]+'/state',
-                MQTT_RESULT_TIMEOUT, evidence.data['telemetry'], ip, name, runner)
+                MQTT_RESULT_TIMEOUT, evidence.data['telemetry'], ip, name, runner,
+                collection_stage='recovery', window_started=started)
         except MQTTProtocolError as exc:
             evidence.append('protocol_errors', {
                 'ip': ip, 'phase': name, 'topic_kind': 'recovery',
@@ -781,6 +836,11 @@ def recover(runner, clients, roots, evidence, name):
                             'retained': False, 'elapsed_ms': (now-started)*1000, **summary})
     evidence.data['recovery'].append({'phase': name, 'http_completed': True,
                                       'mqtt_results': result_rows,
+                                      'telemetry_observation': {
+                                          ip: _telemetry_observation(
+                                              evidence.data['telemetry'], ip, name, 'recovery')
+                                          for ip in TARGETS
+                                      },
                                       'completed': len(result_rows) == len(TARGETS)})
     evidence.save()
     if runner.stop.is_set():
@@ -802,6 +862,7 @@ def execute(targets, version, label, profile, output, runtime_loader=load_runtim
     clients = {}
     roots = {}
     initialized = False
+    finish_called = False
     phase_failure = None
     try:
         credentials = mqtt_helpers.load_credentials()
@@ -870,6 +931,7 @@ def execute(targets, version, label, profile, output, runtime_loader=load_runtim
         clients.clear()
         finish_failure = None
         if initialized:
+            finish_called = True
             try:
                 runner.finish()
             except BaseException as exc:
@@ -891,6 +953,32 @@ def execute(targets, version, label, profile, output, runtime_loader=load_runtim
         evidence.save()
         return evidence.data
     except BaseException as exc:
+        for client in clients.values():
+            try:
+                client.disconnect()
+            except Exception:
+                pass
+        clients.clear()
+        if initialized and not finish_called:
+            finish_called = True
+            try:
+                runner.finish()
+                evidence.data['exception_finalization'] = {
+                    'attempted': True,
+                    'run_status_after_finish': runner.run.get('status'),
+                    'completed': runner.run.get('completed') is True,
+                    'completion_checks': dict(runner.completion_checks),
+                    'blocker_count': len(runner.blockers),
+                }
+            except BaseException as finish_exc:
+                evidence.data['exception_finalization'] = {
+                    'attempted': True,
+                    'run_status_after_finish': runner.run.get('status'),
+                    'completed': False,
+                    'completion_checks': dict(runner.completion_checks),
+                    'blocker_count': len(runner.blockers),
+                    'failure_type': type(finish_exc).__name__,
+                }
         evidence.data.update(status='failed', completed=False, ended_at=time.time(),
                              failure_type=type(exc).__name__,
                              blockers=[dict(row) for row in runner.blockers])

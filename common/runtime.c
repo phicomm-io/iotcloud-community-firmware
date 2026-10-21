@@ -1245,6 +1245,13 @@ int feature_mqtt_service(int (*publish)(const char *, const char *, bool), bool 
   virtual_service(checked_publish);
   return publish_error;
 }
+bool feature_mqtt_initial_ready(void) {
+#ifdef FEATURE_DEVICE_A1
+  return mqtt_online && !mqtt_discovery_pending;
+#else
+  return mqtt_online;
+#endif
+}
 static void rpc_poll(const feature_config_t *c, unsigned i, uint32_t now) {
   json_object *expired = NULL;
   lock();
@@ -2071,6 +2078,13 @@ static void virtual_service(int (*publish)(const char *, const char *, bool)) {
   char root[FEATURE_TOPIC_MAX];
   root_for(c, 0, root);
   bool coordinator = feature_is_coordinator();
+  /* A lower-MAC member can take ownership while discovery is mid-batch.
+   * There is no local bootstrap work left in that role. Regaining ownership
+   * is detected by was_coordinator and starts a fresh discovery cursor. */
+  if (!coordinator) {
+    mqtt_discovery_pending = false;
+    mqtt_discovery_stage = mqtt_discovery_cursor = mqtt_domain_cursor = 0;
+  }
   unsigned sensor_mask=discovery_sensors(c);
   bool discovery_needed=!mqtt_online || mqtt_revision!=revision ||
       published_sensors!=sensor_mask || (!was_coordinator && coordinator);

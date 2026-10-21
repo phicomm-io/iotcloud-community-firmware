@@ -43,7 +43,7 @@ class SharedMQTT(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             binary = Path(temp) / 'test'
             command = [os.environ.get('CC', 'cc'), '-D_GNU_SOURCE', '-std=gnu99', '-g',
-                       '-fsanitize=address,undefined', '-fno-pie', '-no-pie',
+                       '-fsanitize=' + os.environ.get('PHICOMM_MQTT_SANITIZER','address,undefined'), '-fno-pie', '-no-pie',
                        '-I' + str(ROOT / 'common/mqtt')]
             command += ['-I' + str(p) for p in includes]
             command += list(defines) + [str(p) for p in sources] + ['-o', str(binary)]
@@ -60,6 +60,12 @@ class SharedMQTT(unittest.TestCase):
                               *sorted((protocol / 'MQTTPacket').glob('*.c'))],
                              [ROOT / 'tests/mqtt_core/stubs', protocol, protocol / 'mico', protocol / 'MQTTPacket'],
                              ['-Wl,--wrap=malloc,--wrap=free,--wrap=realloc,--wrap=calloc,--wrap=strdup'])
+    def test_client_lifecycle_concurrent(self):
+        with self.protocol('TC1') as protocol:
+            self.compile_run([ROOT/'tests/mqtt_core/lifecycle.c',ROOT/'common/mqtt/core.c',
+                ROOT/'common/mqtt/client.c',protocol/'MQTTClient.c',
+                *sorted((protocol/'MQTTPacket').glob('*.c'))],
+                [ROOT/'tests/mqtt_core/stubs',protocol,protocol/'mico',protocol/'MQTTPacket'], ['-pthread'])
     def test_actual_service(self):
         sdk = ROOT/'build/a1-sdk/mico-os'
         protocol=sdk/'libraries/protocols/mqtt'

@@ -6,4 +6,4 @@
 /* Zero means unavailable. Capture under the producer namespace lock, then
  * enqueue with that generation so a delayed producer cannot cross sessions. */
 uint32_t ph_mqtt_send_generation(void);
-int ph_mqtt_enqueue_send_generation(const char *,const void *,size_t,unsigned,bool,uint32_t);
+int ph_mqtt_enqueue_send_generation(const char *, const void *, size_t, unsigned, bool, uint32_t);

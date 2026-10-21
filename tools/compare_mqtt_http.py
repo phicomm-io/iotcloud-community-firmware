@@ -98,10 +98,13 @@ def heap_median(runner, ip, phase):
 
 
 def telemetry(rows):
+    def observed(row):
+        return row.get('consumer_observed_monotonic', row.get('received_monotonic'))
+
     fresh = [row for row in rows if row.get('fresh') is True and
              row.get('validated') is True and row.get('retained') is False and
-             number(row.get('received_monotonic'))]
-    times = sorted(row['received_monotonic'] for row in fresh)
+             number(observed(row))]
+    times = sorted(observed(row) for row in fresh)
     gaps = [right - left for left, right in zip(times, times[1:])]
     uptimes = [row['uptime_source_seconds'] for row in fresh
                if number(row.get('uptime_source_seconds'))]
@@ -120,8 +123,17 @@ def phase_metrics(run, runner, ip, phase):
     metrics = {kind: summarize([row for row in run[kind]
                                if row.get('ip') == ip and row.get('phase') == name],
                               phase['elapsed_seconds']) for kind in ('http', 'mqtt')}
-    metrics['telemetry'] = telemetry([row for row in run.get('telemetry', [])
-                                     if row.get('ip') == ip and row.get('phase') == name])
+    observations = [row for row in run.get('telemetry', [])
+                    if row.get('ip') == ip and row.get('phase') == name]
+    metrics['telemetry'] = telemetry(observations)
+    separated = any('collection_stage' in row for row in observations)
+    metrics['telemetry_collection_windows'] = {
+        'separated_in_source': separated,
+        'load_and_result_drain': telemetry([row for row in observations
+                                          if row.get('collection_stage') == 'load']) if separated else None,
+        'recovery': telemetry([row for row in observations
+                               if row.get('collection_stage') == 'recovery']) if separated else None,
+    }
     liveness = phase.get('mqtt_success_liveness', {}).get(ip, {})
     gaps = [liveness.get(key) for key in ('maximum_success_gap_seconds', 'last_success_gap_seconds')]
     metrics['mqtt_progress'] = {
@@ -153,6 +165,8 @@ def compare(before_path, after_path):
             'Each outcome counts all attempts; latency samples are reported separately.',
             'Busy is response progress; gaps in successful results remain visible.',
             'Telemetry arrivals and capture uptime do not prove sensor sample age.',
+            'Telemetry grouped by phase includes load and recovery collection; old evidence does not separate these windows.',
+            'Telemetry timestamps record application queue consumption, which can drain buffered arrivals in a burst.',
             'HTTP recovery duration covers sequential verification of all three targets.',
             'Finite heap medians do not prove leak freedom; unavailable metrics are not zero.',
             'Independent source/controller/package audits and closed SDK limits remain separate.',

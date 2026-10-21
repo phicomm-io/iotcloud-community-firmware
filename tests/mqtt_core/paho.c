@@ -29,7 +29,9 @@ void *__wrap_calloc(size_t count,size_t size){
 }
 char *__wrap_strdup(const char *s){size_t n=strlen(s)+1;char*p=__wrap_malloc(n);if(p)memcpy(p,s,n);return p;}
 static uint32_t now_ms;
-static bool multi_session,multi_done;static unsigned multi_attempt,multi_ready,multi_cycles;
+static bool multi_session,multi_done;
+static unsigned gate_mode,gate_online_before,gate_ready_before;
+static bool gate_closed;static unsigned multi_attempt,multi_ready,multi_cycles;
 static unsigned backoffs[32],backoff_count;
 static uintptr_t current_thread=1;
 static micoMemInfo_t heap={.free_memory=40000};
@@ -54,6 +56,7 @@ void InitTimer(Timer*t){memset(t,0,sizeof(*t));}
 static unsigned char rx[65536],tx[20000];
 static size_t rx_at,rx_size,tx_size;
 static unsigned publications,executions,inject_count,write_fragment=65535;
+static unsigned online_publications,offline_publications;
 static char injected_topic[512]="rx/command";
 static bool inject_large,inject_subscription,fail_send,missing_ack,handler_nested;
 static unsigned disconnects,opens,closes,cycles,ready_events,close_events;
@@ -90,6 +93,13 @@ static void sent_packet(void){
  }
  if(tx[0]>>4==3){
   publications++;
+  unsigned topic_size=(tx[offset]<<8)|tx[offset+1];
+  size_t body_at=offset+2+topic_size+(((tx[0]>>1)&3)?2:0);
+  if(topic_size==15&&!memcmp(tx+offset+2,"tx/availability",15)){
+   assert((tx[0]&1)&&((tx[0]>>1)&3)==1);
+   if(tx_size-body_at==6&&!memcmp(tx+body_at,"online",6))online_publications++;
+   if(tx_size-body_at==7&&!memcmp(tx+body_at,"offline",7))offline_publications++;
+  }
 #ifdef REAL_SERVICE
   unsigned tn=(tx[offset]<<8)|tx[offset+1];assert(tn<sizeof(last_topic));
   memcpy(last_topic,tx+offset+2,tn);last_topic[tn]=0;
@@ -100,7 +110,10 @@ static void sent_packet(void){
   if(inject_large){unsigned char huge[]={0x30,0xff,0xff,0x7f};append(huge,sizeof(huge));inject_large=false;}
   for(unsigned i=0;i<inject_count;i++)incoming(injected_topic,"{\"request_id\":\"paho-1\"}",77+i);
   inject_count=0;
-  if(!missing_ack){unsigned tn=(tx[offset]<<8)|tx[offset+1];size_t at=offset+2+tn;unsigned char ack[]={0x40,2,tx[at],tx[at+1]};append(ack,sizeof(ack));}
+  bool gate_ack_missing=gate_mode==2 && topic_size==15 &&
+      !memcmp(tx+offset+2,"tx/availability",15) && tx_size-body_at==6 &&
+      !memcmp(tx+body_at,"online",6);
+  if(!missing_ack&&!gate_ack_missing){unsigned tn=(tx[offset]<<8)|tx[offset+1];size_t at=offset+2+tn;unsigned char ack[]={0x40,2,tx[at],tx[at+1]};append(ack,sizeof(ack));}
  }
  tx_size=0;
 }
@@ -148,8 +161,16 @@ static int prepare(void *ctx,ph_mqtt_connection *spec){
 static bool subscription_plan(void *ctx,unsigned i,ph_mqtt_subscription *spec){
  (void)ctx;if(i)return false;*spec=(ph_mqtt_subscription){"rx/#",QOS1,handler};return true;
 }
-static int initial(void *ctx){(void)ctx;inject_count=1;unsigned n=executions;int rc=publish();assert(executions==n);return rc==0?PH_MQTT_MORE:rc;}
+static int initial(void *ctx){(void)ctx;
+ if(gate_mode)assert(ph_mqtt_enqueue_send("external/gate","queued",6,1,true)==0);
+ inject_count=1;unsigned n=executions;int rc=publish();assert(executions==n);return rc==0?PH_MQTT_MORE:rc;}
 static int cycle(void *ctx){(void)ctx;cycles++;
+ if(gate_mode){
+  if(cycles<=3)assert(online_publications==gate_online_before&&ready_events==gate_ready_before);
+  unsigned before=executions;inject_count=1;int rc=publish();assert(executions==before);
+  if(gate_mode==4&&cycles==2)return PH_MQTT_RECONFIGURE;
+  return rc;
+ }
  if(multi_session){
   multi_cycles++;
   if(multi_ready==1)return MQTT_FAILURE;
@@ -160,14 +181,15 @@ static int cycle(void *ctx){(void)ctx;cycles++;
  }
  return 0;
 }
-static void closing(void *ctx,bool connected,int rc){(void)ctx;(void)rc;assert(connected==(!open_fail));close_events++;}
+static void closing(void *ctx,bool connected,int rc){(void)ctx;(void)rc;assert(connected==(!open_fail));close_events++;if(gate_mode)gate_closed=true;}
 static void event(void *ctx,unsigned e,int rc){(void)ctx;(void)rc;if(e==PH_MQTT_READY){ready_events++;if(multi_session)multi_ready++;}}
-static bool stop(void *ctx){(void)ctx;return multi_session?multi_done:cycles>=2 || close_events;}
+static bool stop(void *ctx){(void)ctx;if(gate_mode)return gate_closed||cycles>=4||(gate_mode==3&&cycles>=2);return multi_session?multi_done:cycles>=2 || close_events;}
 static void sessions(void){
  ph_mqtt_session_hooks h={NULL,prepare,subscription_plan,initial,cycle,closing,event,stop};
- unsigned n=executions;
+ unsigned n=executions,online_before=online_publications,offline_before=offline_publications;
  ph_mqtt_session_run(&client,&h);assert(cycles==2&&ready_events==1&&close_events==1&&executions==n+1);
  assert(opens==1&&closes==1&&disconnects==1&&!native_live);
+ assert(online_publications==online_before+1&&offline_publications==offline_before+1);
  cycles=close_events=0;open_fail=true;ph_mqtt_session_run(&client,&h);open_fail=false;
  assert(!cycles&&close_events==1&&opens==2&&closes==2&&!native_live);
  cycles=close_events=0;subscribe_fail=true;ph_mqtt_session_run(&client,&h);subscribe_fail=false;
@@ -183,6 +205,26 @@ static void sessions(void){
  ph_mqtt_diagnostics diagnostic;ph_mqtt_snapshot(&diagnostic);assert(diagnostic.errors&&diagnostic.reconnects>=10&&!diagnostic.protocol_depth);
 
 }
+static bool initial_gate(void *ctx){(void)ctx;return cycles>=3;}
+static void gated_sessions(void){
+ ph_mqtt_session_hooks h={NULL,prepare,subscription_plan,initial,cycle,closing,event,stop,initial_gate};
+ for(unsigned mode=1;mode<=4;mode++){
+  gate_mode=mode;gate_closed=false;cycles=close_events=0;
+  gate_online_before=online_publications;gate_ready_before=ready_events;
+  unsigned ran=executions,published=publications;
+  ph_mqtt_session_run(&client,&h);
+  assert(gate_closed&&close_events==1&&!native_live&&!charged_live);
+  assert(!ph_mqtt_debug_core()->bytes&&!ph_mqtt_debug_core()->credit);
+  /* Paho callbacks enqueue only; commands and external SEND keep advancing
+   * while the adapter is not ready, without publishing online prematurely. */
+  assert(executions>=ran+2&&publications>=published+3);
+  if(mode==1)assert(ready_events==gate_ready_before+1&&online_publications==gate_online_before+1);
+  else assert(ready_events==gate_ready_before);
+  if(mode>=3)assert(online_publications==gate_online_before);
+  if(mode==2)assert(online_publications==gate_online_before+1);
+ }
+ gate_mode=0;
+}
 int main(void){
  ph_mqtt_startup startup={0};uint32_t generation=ph_mqtt_startup_prepare(&startup);
  pending_startup=&startup;pending_generation=generation;
@@ -191,7 +233,7 @@ int main(void){
  assert(!ph_mqtt_startup_wait(&startup,generation)&&now_ms-start==1000);
  ph_mqtt_startup_publish(&startup,generation,false);assert(!ph_mqtt_startup_wait(&startup,generation));
  uint32_t old=generation;generation=ph_mqtt_startup_prepare(&startup);
- ph_mqtt_startup_publish(&startup,old,true);assert(!startup.ready);
+ ph_mqtt_startup_publish(&startup,old,true);assert((__atomic_load_n(&startup.state,__ATOMIC_ACQUIRE)&3u)==0);
  ph_mqtt_startup_publish(&startup,generation,true);assert(!ph_mqtt_startup_wait(&startup,old));
  assert(ph_mqtt_startup_wait(&startup,generation));
  assert(mqtt_account_init(&account,1,"a1","test","aabbccddeeff"));
@@ -208,7 +250,7 @@ int main(void){
  init();inject_large=true;assert(publish()!=0);assert(executions==6);cleanup();
  init();missing_ack=true;assert(publish()!=0);missing_ack=false;cleanup();
  init();fail_send=true;assert(publish()!=0);fail_send=false;cleanup();
- sessions();
+ sessions();gated_sessions();
  init();uint32_t stale=ph_mqtt_send_generation();assert(stale);cleanup();
  ph_mqtt_owner_end();thread=current_thread=2;assert(ph_mqtt_owner_init(&account,8192,&thread,accept));init();
  unsigned allocated_before=native_allocs;unsigned ran_before=executions;

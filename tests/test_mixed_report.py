@@ -40,6 +40,24 @@ class MixedReportTests(unittest.TestCase):
         self.assertEqual(result['gap_max_seconds'], 5)
         self.assertEqual(result['source_uptime_span_seconds'], 5)
 
+    def test_new_consumer_timestamp_and_separate_collection_windows(self):
+        rows = [{'ip': 'dut', 'phase': 'load', 'collection_stage': stage,
+                 'fresh': True, 'validated': True, 'retained': False,
+                 'consumer_observed_monotonic': instant,
+                 'uptime_source_seconds': instant}
+                for stage, instant in [('load', 10), ('load', 15), ('recovery', 40)]]
+        metrics = report.phase_metrics({'http': [], 'mqtt': [], 'telemetry': rows},
+                                       {}, 'dut', {'name': 'load', 'elapsed_seconds': 60})
+        self.assertEqual(metrics['telemetry']['validated_live_arrivals'], 3)
+        self.assertEqual(metrics['telemetry']['gap_max_seconds'], 25)
+        windows = metrics['telemetry_collection_windows']
+        self.assertTrue(windows['separated_in_source'])
+        self.assertEqual(windows['load_and_result_drain']['gap_max_seconds'], 5)
+        self.assertEqual(windows['recovery']['validated_live_arrivals'], 1)
+        legacy = report.phase_metrics({'http': [], 'mqtt': [], 'telemetry': []},
+                                      {}, 'dut', {'name': 'load', 'elapsed_seconds': 60})
+        self.assertIsNone(legacy['telemetry_collection_windows']['load_and_result_drain'])
+
     def fixture(self, directory):
         path = directory / 'mixed-evidence.json'
         plan = [{'name': 'mixed-1', 'seconds': 60, 'http_clients': 1, 'mqtt_window': 1}]

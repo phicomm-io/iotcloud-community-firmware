@@ -163,6 +163,15 @@ int main(void){
  saved_callbacks=callbacks;test_now=24100;turn();assert(callbacks==saved_callbacks);
  service_json_release(blocked_token);blocked_token=0;test_now=24200;
  drain();assert(averages==old_average+1&&sensors==old_sensor+1&&!mqtt_graph_pending);
+ /* Lose the coordinator role after discovery began but before it finishes.
+  * Readiness must not retain an impossible local pending batch. */
+ configuration.member_count=1;strcpy(configuration.members[0].id,"000000000001");
+ configuration.revision++;stored=configuration;test_now=25000;member_seen[0]=0;
+ turn();assert(mqtt_discovery_pending);
+ member_seen[0]=test_now;turn();
+ assert(!feature_is_coordinator()&&!mqtt_discovery_pending&&feature_mqtt_initial_ready());
+ member_seen[0]=0;turn();assert(mqtt_discovery_pending);
+ drain();assert(!mqtt_discovery_pending&&feature_mqtt_initial_ready());
  free(published_layout);published_layout=NULL;
  json_heap_stats_t s;json_heap_snapshot(&s);assert(!s.live_blocks);
 #ifdef LEGACY_PUBLISH

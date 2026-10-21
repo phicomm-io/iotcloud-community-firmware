@@ -362,6 +362,10 @@ static int session_cycle(void *context) {
     }
     return rc;
 }
+static bool session_initial_ready(void *context) {
+    (void)context;
+    return discovery_index==12 && state_index==10;
+}
 static void session_closing(void *context,bool connected,int rc) {
     (void)context;(void)rc;
     isconnect=false;service_mqtt_clear();
@@ -385,7 +389,7 @@ void MqttClientThread(mico_thread_arg_t arg) {
        ph_mqtt_owner_init(&account,MAX_MQTT_DATA_SIZE-1,&mqtt_owner_thread,ingress_accept)) {
         ph_mqtt_outgoing(outgoing);
         const ph_mqtt_session_hooks hooks={NULL,session_prepare,session_subscription,
-            session_initial,session_cycle,session_closing,session_event,session_stop};
+            session_initial,session_cycle,session_closing,session_event,session_stop,session_initial_ready};
         ph_mqtt_session_run(&c,&hooks);
     } else {TC1_STATUS_WRITE(tc1_mqtt_status=MQTT_CONFIG_ERROR);}
     ph_mqtt_owner_end();isconnect=false;mqtt_thread_running=false;mico_rtos_delete_thread(NULL);
