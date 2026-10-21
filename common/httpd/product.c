@@ -45,6 +45,24 @@ void ph_http_json(ph_http_product *p,ph_http_exchange *x,json_object *o)
     x->response.status=200;x->response.type="application/json";
     x->response.body=p->wire->buf;x->response.length=p->wire->bpos;
 }
+static void ph_http_wire_take(ph_http_product *p,ph_http_exchange *x,struct printbuf *wire)
+{
+    if(ph_http_graph_failed(p)) { if(wire)printbuf_free(wire);wire=NULL; }
+    graph_end(p);
+    service_json_release(p->json_claim);p->json_claim=0;
+    p->wire=wire;
+    if(!wire) { ph_http_busy(x);return; }
+    x->response.status=200;x->response.type="application/json";
+    x->response.body=wire->buf;x->response.length=wire->bpos;
+}
+void ph_http_command(ph_http_product *p,ph_http_exchange *x,json_object *request)
+{
+    ph_http_wire_take(p,x,ph_http_graph_failed(p)?NULL:service_command_wire(request));
+}
+void ph_http_query(ph_http_product *p,ph_http_exchange *x,const char *action)
+{
+    ph_http_wire_take(p,x,ph_http_graph_failed(p)?NULL:service_query_wire(action));
+}
 void ph_http_message(ph_http_product *p,ph_http_exchange *x,unsigned status,const char *text)
 {
     json_object *o=json_object_new_object();

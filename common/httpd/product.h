@@ -28,3 +28,6 @@ bool ph_http_graph_failed(const ph_http_product *);
 void ph_http_product_release(ph_http_product *);
 
 size_t ph_http_diag_append(char *, size_t capacity, size_t used, const ph_http_diagnostics *);
+
+void ph_http_command(ph_http_product *, ph_http_exchange *, json_object *);
+void ph_http_query(ph_http_product *, ph_http_exchange *, const char *);

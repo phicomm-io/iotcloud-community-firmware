@@ -27,7 +27,7 @@ def function(source, signature):
     return source[start:end]
 
 
-def status_fixture():
+def status_fixture(dual=False):
     source = (ROOT/'A1/http.c').read_text()
     builders = source[source.index('static void str('):source.index('static void memory_response(')]
     watchdog = '\n'.join(function((ROOT/'common/watchdog.c').read_text(), f'void watchdog_status_{suffix}(') for suffix in ('capture','encode','json'))
@@ -49,7 +49,7 @@ OSStatus mico_rtos_lock_mutex(mico_mutex_t*m){(void)m;return kNoErr;}
 OSStatus mico_rtos_unlock_mutex(mico_mutex_t*m){(void)m;return kNoErr;}
 void feature_fan_snapshot(bool*eo,unsigned*es,bool*automatic,unsigned*limit){feature_effective_fan(cfg.fan_on,cfg.speed,eo,es);*automatic=false;*limit=100;}
 '''
-    builders = '#define PHICOMM_APPLICATION_WATCHDOG 1\n#define ph_http_snapshot http_diag_snapshot\n#include "common/device_status.c"\n#define a1_config (&cfg)\n#define a1_state state\n'+capture+'\n#undef a1_config\n#undef a1_state\n'+builders+'\n#undef ph_http_snapshot\n'
+    builders = '#define PHICOMM_APPLICATION_WATCHDOG 1\n#define ph_http_snapshot http_diag_snapshot\n#include "tests/http_core/status_reference.c"\n#define a1_config (&cfg)\n#define a1_state state\n'+capture+'\n#undef a1_config\n#undef a1_state\n'+builders+'\n#undef ph_http_snapshot\n'
     service = (ROOT/'common/service.c').read_text()
     result = function(service, 'static json_object *result(')
     query = function(service, 'json_object *service_query(')
@@ -61,7 +61,7 @@ json_object *service_command(json_object *request){
  return result(id,"ok",a1_status_json());
 }
 '''
-    mqtt=(ROOT/'common/mqtt/service.c').read_text()
+    mqtt=(ROOT/'tests/http_core/status_mqtt_reference.c').read_text()
     wire=function(mqtt,'static struct printbuf *service_mqtt_wire(').replace('service_mqtt_wire(', 'production_mqtt_wire(',1)
     mqtt_fixture=r'''
 #define MQTT_SUCCESS 0
@@ -83,6 +83,9 @@ static int mqtt_sender(const char *topic,const char *wire,bool retain){
 }
 ''' + function(mqtt,'static int snapshot_resource_wait(') + '\n' + function(mqtt,'static int service_mqtt_publish(') + '\n' + function(mqtt,'static int service_mqtt_try_capabilities(') + '\n' + function(mqtt,'int service_mqtt_snapshot(')
     fixture = (ROOT/'tests/http_core/status_budget.c').read_text().replace('/* PRODUCTION_MQTT_WIRE */',mqtt_fixture)
+    if dual:
+        fixture = '#define PHICOMM_BEMFA 1\n'+fixture
+        snapshots += '\nvoid bemfa_status_capture(struct device_network *s){s->mqtt_enabled=true;s->bemfa_enabled=true;s->bemfa_status=5;s->bemfa_last_stage=5;}\n'
     return fixture.replace('/* PRODUCTION_WATCHDOG_FILTER */', snapshots+watchdog+'\n'+filter_fn).replace('/* PRODUCTION_BUILDERS */', builders).replace('/* PRODUCTION_RESULT_QUERY */', result+'\n'+query)
 
 
@@ -119,12 +122,12 @@ int main(void){
  assert(text&&strlen(text)<sizeof(background_golden));strcpy(background_golden,text);
  json_object_put(golden);healthy_stats();
  for(unsigned owned=0;owned<2;owned++){
-  setup(0);capacity=27400+libc_baseline;peak=fail_size=fail_phase=0;owned_background=owned;
+  setup(0);capacity=25000+libc_baseline;peak=fail_size=fail_phase=0;owned_background=owned;
   json_object *o=background_graph();assert(o);
   if(owned)json_owned_publish(nested_status,"test/average",o,false);
   else {const char *wire=json_object_to_json_string(o);assert(wire);nested_status("test/average",wire,false);json_object_put(o);}
   assert(nested_ok==owned);healthy_stats();
-  char report[160];int n=snprintf(report,sizeof(report),"background %s actual-average+nested-full capacity=27400 peak=%u guard=%u full=%u live=0\n",owned?"owned":"legacy",(unsigned)(peak-libc_baseline),(unsigned)fail_size,nested_ok);_write(1,report,n);
+  char report[160];int n=snprintf(report,sizeof(report),"background %s actual-average+nested-full capacity=25000 peak=%u guard=%u full=%u live=0\n",owned?"owned":"legacy",(unsigned)(peak-libc_baseline),(unsigned)fail_size,nested_ok);_write(1,report,n);
  }
  return 0;
 }
@@ -223,7 +226,7 @@ int main(void){
  samples[0]=(feature_sample_t){.valid=true,.received_ms=25000,.value={22,45,100,.05},
   .co2_supported=true,.co2_valid=true,.co2=1100,.co2_received_ms=25000};
  for(unsigned trial=0;trial<2;trial++){
-  size_t budget=trial?27400:25300;setup(0);capacity=budget+libc_baseline;peak=fail_size=0;callbacks=full_ok=0;
+  size_t budget=trial?25800:24000;setup(0);capacity=budget+libc_baseline;peak=fail_size=0;callbacks=full_ok=0;
   mqtt_tick=0;now=25000;expect_full=trial;
 #ifdef RETAIN_CONFIG
   expect_full=false;
@@ -267,6 +270,18 @@ class JsonBudget(unittest.TestCase):
     def test_arm32_actual_status_budget(self):
         self.compile_arm('A1', status_fixture(), budget=True)
 
+    def test_arm32_dual_mqtt_status_budget(self):
+        fixture=status_fixture(dual=True)
+        fixture=fixture[:fixture.index('int main(void){')]+'''int main(void){
+ char warm[64];snprintf(warm,sizeof(warm),"%f",1.25);libc_baseline=live;healthy_stats();
+ measure(true,0,false,25000,true);
+ measure(true,0,false,23000,false);
+ measure(true,0,false,25000,true);
+ return 0;
+}
+'''
+        self.compile_arm('A1',fixture,budget=True)
+
     def test_owned_json_all_sdk_arm(self):
         for model in ('A1','M1','TC1'):
             with self.subTest(model=model):
@@ -289,7 +304,7 @@ class JsonBudget(unittest.TestCase):
             includes += ['platform/MCU/MW3xx/peripherals/sdk/src/incl/'+p for p in
                 ('sdk','platform/os/micortos','sdk/drivers','sdk/drivers/mw300','sdk/drivers/mw300/regs')]
         flags = ['-std=gnu11','-g','-Os','-mthumb','-mcpu=cortex-m3' if tc1 else '-mcpu=cortex-m4',
-            '-DMOC=1','-DMW310' if tc1 else '-DCONFIG_CPU_MX1290','-I'+str(ROOT),'-I'+str(ROOT/model)]
+            '-DMOC=1','-DMW310' if tc1 else '-DCONFIG_CPU_MX1290','-I'+str(ROOT),'-I'+str(ROOT/model),'-I'+str(ROOT/'common')]
         if tc1:
             flags += ['-DCONFIG_VARIANT_MW310']
         else:
@@ -308,7 +323,10 @@ class JsonBudget(unittest.TestCase):
             retained = os.environ.get('PHICOMM_HTTP_JSON_ARTIFACT_DIR')
             directory = Path(retained).resolve()/('budget' if budget else model) if retained else Path(tmp)
             directory.mkdir(parents=True,exist_ok=True)
-            source = directory/'probe.c';source.write_text(fixture)
+            source = directory/'probe.c'
+            if product:
+                fixture+='\n#include "tests/http_core/wire_stubs.inc"\n'
+            source.write_text(fixture)
             binary = directory/'probe.elf'
             obj=directory/'json_owned.o'
             subprocess.run([str(cc),*flags,'-fstack-usage','-c',str(ROOT/'common/json_owned.c'),'-o',str(obj)],check=True,timeout=30)

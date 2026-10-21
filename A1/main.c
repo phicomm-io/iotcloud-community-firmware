@@ -45,6 +45,7 @@ void appRestoreDefault_callback(void *data, uint32_t size)
     if (size >= sizeof(app_storage_t)) a1_storage_features_defaults((app_storage_t *)data);
     if (size >= sizeof(app_storage_t)) a1_storage_automation_defaults((app_storage_t *)data);
     if (size >= sizeof(app_storage_t)) a1_filter_defaults(&((app_storage_t *)data)->filter);
+    if(size>=sizeof(app_storage_t))memset(&((app_storage_t *)data)->bemfa,0,sizeof(bemfa_config_t));
     c->magic = A1_CONFIG_MAGIC; c->version = A1_CONFIG_VERSION;
     c->mqtt_port = 1883; c->mqtt_topic_mode = MQTT_TOPIC_TMCP; c->speed = 60;
     c->led_enabled = 1; c->brightness = 255; c->blue = 255;
@@ -321,6 +322,11 @@ int application_start(void)
     if (err != kNoErr) return err;
     uint8_t mac[6]; mico_wlan_get_mac_address(mac);
     snprintf(a1_id, sizeof(a1_id), "%02x%02x%02x%02x%02x%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    bemfa_config_t *b=&((app_storage_t *)a1_config)->bemfa;
+    if(b->magic!=BEMFA_MAGIC || b->version!=1) {
+        bemfa_defaults(b,"a1",a1_id);
+        if(mico_system_context_update(a1_context)!=kNoErr)return startup_result("MQTT extension persist",kUnknownErr);
+    }
     a1_config_get(&c);
     if (!c.name[0]) {
         snprintf(c.name, sizeof(c.name), "A1-%02X%02X", mac[4], mac[5]);
@@ -398,6 +404,9 @@ bool automation_save(const automation_config_t *next) {
 void a1_status_capture(device_status_t *snapshot, device_status_full_t *full)
 {
     memset(snapshot, 0, sizeof(*snapshot)); if(full)memset(full,0,sizeof(*full));
+#ifdef PHICOMM_BEMFA
+    bemfa_status_capture(&snapshot->network);
+#endif
     snapshot->model=DEVICE_A1;
     snapshot->captured=STATUS_IDENTITY|STATUS_NETWORK|STATUS_OTA|STATUS_CONTROL;
     snapshot->identity.version=A1_VERSION; memcpy(snapshot->identity.id,a1_id,sizeof(a1_id));
@@ -471,3 +480,31 @@ void a1_status_capture(device_status_t *snapshot, device_status_full_t *full)
         a1_filter_get(&full->model.a1.filter);
     }
 }
+
+void bemfa_config_get(bemfa_config_t *out) {
+    mico_rtos_lock_mutex(&a1_config_lock);*out=((app_storage_t *)a1_config)->bemfa;mico_rtos_unlock_mutex(&a1_config_lock);
+}
+bool bemfa_primary_enabled(void) {
+    mico_rtos_lock_mutex(&a1_config_lock);bool enabled=((app_storage_t *)a1_config)->bemfa.mqtt_enabled;mico_rtos_unlock_mutex(&a1_config_lock);return enabled;
+}
+/* Commit base MQTT settings and switches together, with optimistic revisions. */
+bool a1_mqtt_config_save(const a1_config_t *base,const bemfa_config_t *next) {
+    mico_rtos_lock_mutex(&a1_config_lock);mico_rtos_lock_mutex(&a1_lock);
+    bemfa_config_t *live=&((app_storage_t *)a1_config)->bemfa;
+    bool valid=!a1_state.ota_active && !a1_state.reboot_pending && !a1_state.wifi_trial_active &&
+        next->revision==live->revision+1 && (!base || base->revision==a1_config->revision);
+    mico_rtos_unlock_mutex(&a1_lock);
+    bool ok=false;
+    if(valid) {
+        bemfa_config_t old=*live;a1_config_t oldbase=*a1_config;
+        *live=*next;if(base){*a1_config=*base;a1_config->revision++;}
+        ok=flush_locked();if(!ok){*live=old;*a1_config=oldbase;}
+        else {mico_rtos_lock_mutex(&a1_lock);a1_state.config_generation++;mico_rtos_unlock_mutex(&a1_lock);}
+    }
+    mico_rtos_unlock_mutex(&a1_config_lock);return ok;
+}
+bool bemfa_config_save(const bemfa_config_t *c) {return a1_mqtt_config_save(NULL,c);}
+bool bemfa_network_ready(void) {
+    mico_rtos_lock_mutex(&a1_lock);bool ready=a1_state.wifi_connected && !a1_state.ota_active && !a1_state.reboot_pending && !a1_state.wifi_trial_active;mico_rtos_unlock_mutex(&a1_lock);return ready;
+}
+const char *bemfa_device_id(void) {return a1_id;}

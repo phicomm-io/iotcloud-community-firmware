@@ -5,8 +5,9 @@
 #include "core.h"
 #include "owner.h"
 #include "../mqtt_account.h"
-/* One compiled instance per firmware. Protocol library and subscription strings
- * are retained; all connection operations require the bound RTOS owner. */
+/* One shared implementation with separate owner contexts. Public producer APIs
+ * always target the primary connection; Bemfa uses its explicit private API.
+ * Protocol operations and subscription strings stay on their bound RTOS owner. */
 /* Creator publishes only after the RTOS has returned the output handle.
  * Generation prevents a previous start from releasing a later worker. */
 typedef struct {

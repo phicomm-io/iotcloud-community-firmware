@@ -30,7 +30,7 @@ static inline void mico_rtos_unlock_mutex(mico_mutex_t*m){assert(!pthread_mutex_
             source=(ROOT/'tests/http_core/json_gate.c').read_text()
             mqtt=(ROOT/'common/mqtt/service.c').read_text()
             telemetry='static bool service_mqtt_capabilities_pending,snapshot_deferred;static uint32_t snapshot_retry_at;\n'+'\n'.join(function(mqtt,n) for n in (
-                'static int snapshot_resource_wait(', 'static struct printbuf *service_mqtt_wire(', 'static int service_mqtt_publish(',
+                'static int snapshot_resource_wait(', 'static struct printbuf *service_mqtt_wire(',
                 'static int service_mqtt_try_capabilities(', 'int service_mqtt_snapshot(', 'int service_mqtt_capabilities('))
             source=source.replace('/* PRODUCTION_MQTT_TELEMETRY */',telemetry)
             source=source.replace('static int test_gate_permit(size_t n)', 'int test_gate_permit(size_t n)')

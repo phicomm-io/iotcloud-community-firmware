@@ -37,7 +37,15 @@ static const micoMemInfo_t *MicoGetMemoryInfo(void){getter();expensive++;return 
 #include "common/runtime_metrics.h"
 #include "common/firmware_variant.h"
 void watchdog_status_capture(watchdog_status_t*out){getter();expensive++;*out=(watchdog_status_t){true,false,true,0,"","unknown"};}
-void watchdog_status_encode(json_object*o,const watchdog_status_t*s){json_build_object_add(o,"watchdog_enabled",json_object_new_boolean(s->enabled));}
+void watchdog_status_encode(json_object*o,const watchdog_status_t*s){
+#define STATUS_INT(k,v) json_build_object_add(o,k,json_object_new_int(v))
+#define STATUS_BOOL(k,v) json_build_object_add(o,k,json_object_new_boolean(v))
+#define STATUS_STRING(k,v) json_build_object_add(o,k,json_object_new_string(v))
+#include "common/watchdog_fields.inc"
+#undef STATUS_INT
+#undef STATUS_BOOL
+#undef STATUS_STRING
+}
 void watchdog_status_json(json_object*o){watchdog_status_t s;watchdog_status_capture(&s);watchdog_status_encode(o,&s);}
 static void runtime_metrics_json(json_object*o){device_runtime_t s;runtime_metrics_capture(&s,mico_rtos_get_time());device_runtime_encode(o,&s);}
 static ph_http_diagnostics http_diag_snapshot(void){getter();expensive++;return (ph_http_diagnostics){0};}
@@ -99,11 +107,11 @@ void feature_effective_fan(bool on,unsigned speed,bool*eo,unsigned*es){getter();
 bool feature_fan_auto(void){getter();return false;}
 unsigned feature_fan_limit(void){getter();return 100;}
 void a1_filter_get(a1_filter_storage_t*out){getter();expensive++;*out=(a1_filter_storage_t){0,10,2000};}
-json_object*a1_filter_json(void){a1_filter_storage_t f;a1_filter_get(&f);return device_filter_encode(&f);}
+json_object*a1_filter_json(void){a1_filter_storage_t f;a1_filter_get(&f);json_object*o=json_object_new_object();unsigned remaining=a1_filter_remaining(&f);status_int(o,"used_seconds",f.used_seconds);status_int(o,"lifetime_hours",f.lifetime_hours);status_int(o,"remaining_percent",remaining);status_bool(o,"replacement_due",remaining<=10);return o;}
 '''
      # The pure helper is declared below the capture and before this oracle wrapper.
-     extra=extra.replace('json_object*a1_filter_json(void){a1_filter_storage_t f;a1_filter_get(&f);return device_filter_encode(&f);}','json_object*a1_filter_json(void);')
-     builders='json_object*a1_filter_json(void){a1_filter_storage_t f;a1_filter_get(&f);return device_filter_encode(&f);}\n'+builders
+     extra=extra.replace('json_object*a1_filter_json(void){a1_filter_storage_t f;a1_filter_get(&f);json_object*o=json_object_new_object();unsigned remaining=a1_filter_remaining(&f);status_int(o,"used_seconds",f.used_seconds);status_int(o,"lifetime_hours",f.lifetime_hours);status_int(o,"remaining_percent",remaining);status_bool(o,"replacement_due",remaining<=10);return o;}','json_object*a1_filter_json(void);')
+     builders='json_object*a1_filter_json(void){a1_filter_storage_t f;a1_filter_get(&f);json_object*o=json_object_new_object();unsigned remaining=a1_filter_remaining(&f);status_int(o,"used_seconds",f.used_seconds);status_int(o,"lifetime_hours",f.lifetime_hours);status_int(o,"remaining_percent",remaining);status_bool(o,"replacement_due",remaining<=10);return o;}\n'+builders
      setup=onwait=sensor=''
     else:
      extra=r'''

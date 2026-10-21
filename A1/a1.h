@@ -107,3 +107,6 @@ json_object *a1_filter_json(void);
 #include "../common/phicomm_features.h"
 
 bool a1_control_local(const char *, json_object *);
+
+#include "../common/mqtt/bemfa.h"
+bool a1_mqtt_config_save(const a1_config_t *,const bemfa_config_t *);

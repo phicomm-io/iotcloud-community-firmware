@@ -8,6 +8,9 @@ static uint64_t started;
 static unsigned duration=10;
 static feature_config_t features;
 static unsigned controls;
+/* This harness exercises the original broker; Bemfa has its own dual-owner
+ * protocol fixture. Keep the original broker enabled in these scenarios. */
+bool bemfa_primary_enabled(void){return true;}
 static void (*scheduled_worker)(mico_thread_arg_t);
 static mico_thread_arg_t scheduled_argument;
 int mico_rtos_create_thread(void *output,int priority,const char *name,void (*fn)(mico_thread_arg_t),unsigned stack,int argument){

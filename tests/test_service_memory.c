@@ -64,3 +64,5 @@ int main(void){
  heap.free_memory=64000;for(unsigned i=0;i<8;i++){json_heap_free(receipts[i].response);memset(&receipts[i],0,sizeof(receipts[i]));}
  empty();puts("Dispatcher: 10000 cleanup cycles, allocation pressure returns NULL/busy, incomplete response suppressed, at-most-once retained, byte-based admission 64 requests: OK");
 }
+
+#include "stubs/status_wire.inc"

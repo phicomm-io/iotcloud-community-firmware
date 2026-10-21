@@ -173,3 +173,5 @@ int main(void){
 }
 
 #endif
+
+#include "../stubs/status_wire.inc"

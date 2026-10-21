@@ -33,3 +33,8 @@ uint64_t service_memory_failures(void);
 /* Product adapter: only static action names and validated parameters reach it. */
 json_object *service_product(const char *, json_object *, const char **code);
 json_object *service_product_capabilities(void);
+
+/* Borrow input, return independent wire bytes (printbuf_free). */
+struct printbuf *service_command_wire(json_object *);
+struct printbuf *service_query_wire(const char *);
+struct printbuf *service_product_status_wire(bool live, bool envelope, const char *request_id);

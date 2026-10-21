@@ -58,3 +58,5 @@ int main(void) {
     command("serialize-after","busy");assert(mutations==104);
     puts("Receipt allocation failure preserves at-most-once execution; bounded eviction passed");
 }
+
+#include "stubs/status_wire.inc"

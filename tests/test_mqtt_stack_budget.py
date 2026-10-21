@@ -14,7 +14,7 @@ service_query service_command service_command_execute service_product service_pr
 json_owned_to_wire json_owned_to_wire_result json_write json_primitive json_append ph_mqtt_publish ingress
 ph_mqtt_enqueue_route ph_mqtt_enqueue_generation session_cycle ph_mqtt_startup_wait
 ph_mqtt_owner_init open_session ph_mqtt_connect subscribe_plan ph_mqtt_subscribe
-ph_mqtt_yield service_mqtt_snapshot service_mqtt_publish service_mqtt_try_capabilities
+ph_mqtt_yield service_mqtt_snapshot service_mqtt_try_capabilities service_product_status_wire service_command_wire service_query_wire device_status_wire status_wire_visit device_status_visit emit_string emit_int emit_bool emit_null emit_begin emit_end emit_prefix emit_quoted emit_bytes emit_double runtime_fields
 a1_status_json a1_status_json_view a1_status_full a1_status_capture device_status_encode
 encode_a1 a1_control_local feature_group_control group_send parse feature_command
 feature_mqtt_input feature_mqtt_service virtual_service discovery_virtual_step
@@ -33,7 +33,20 @@ from tools.json_numeric_stack import NUMERIC_SYMBOLS, JSON_SYMBOLS
 SYMBOLS += ['json_heap_unlock', 'json_heap_permit', 'mqtt_buffer_allocation_permit', 'service_parse',
             'json_numeric.quorem'] + NUMERIC_SYMBOLS + list(JSON_SYMBOLS)
 
+# Separate implementation entries must remain visible to the stack audit.
+from tools.check_mqtt_core import context_frames
+_internal = [SYMBOLS.copy()]
+context_frames(_internal)
+SYMBOLS += [name for name in _internal[0] if name.startswith('ctx_')]
+SYMBOLS += ['owner', 'bemfa_poll', 'bemfa_stop', 'bemfa_close_connection', 'bm_disconnect', 'ctx_ph_mqtt_disconnect', 'bemfa_current_config', 'bemfa_config_get', 'bemfa_report_one', 'bemfa_command', 'bm_poll', 'bm_connect', 'bm_subscribe', 'bm_yield', 'bm_publish', 'ctx_ph_mqtt_connect', 'ctx_ph_mqtt_subscribe', 'ctx_ph_mqtt_yield', 'ctx_ph_mqtt_publish', 'ctx_ph_mqtt_poll', 'ctx_ph_mqtt_owner', 'ctx_ph_mqtt_protocol_buffers']
+
 class MqttStackBudget(unittest.TestCase):
+    def test_context_implementation_frames_are_required(self):
+        with self.assertRaisesRegex(ValueError,"missing actual .su"):
+            self.run_budget(missing="ctx_ph_mqtt_poll")
+        with self.assertRaisesRegex(ValueError,">16384"):
+            self.run_budget({"ctx_ph_mqtt_poll":13000})
+
     def test_protocol_buffer_admission_owner_and_heap_are_separate(self):
         output=self.run_budget({'mqtt_buffer_allocation_permit':24,
                                 'ph_mqtt_owner':16,'current':32,'mutex_lock':8,
@@ -77,10 +90,10 @@ class MqttStackBudget(unittest.TestCase):
 
     def test_caller_scope_and_boolean_helper_tails_are_counted(self):
         output=self.run_budget({'service_caller_graph_failed':40,'json_heap_lock':8,
-                                'service_json_scope_end':32,'status_bool':24,'direct_json_optional':96})
+                                'service_json_scope_end':32,'emit_bool':24,'direct_json_optional':96})
         self.assertIn('MQTT command failure attribution: 48 application',output)
         self.assertIn('MQTT filter discovery encoding cleanup: 40 application',output)
-        self.assertIn('MQTT status pure encode: 24 application',output)
+        self.assertIn('MQTT status wire bool: 24 application',output)
         self.assertIn('MQTT virtual domain encoding cleanup: 136 application',output)
         for name in ('service_json_scope_begin','service_json_scope_failed',
                      'service_json_scope_end','service_json_release',
@@ -88,7 +101,7 @@ class MqttStackBudget(unittest.TestCase):
                      'ph_mqtt_owner_thread','ph_mqtt_owner','direct_json_optional'):
             with self.subTest(name=name),self.assertRaisesRegex(ValueError,'missing actual .su'):
                 self.run_budget(missing=name)
-        for name in ('service_caller_graph_failed','service_json_scope_end','status_bool','direct_json_optional'):
+        for name in ('service_caller_graph_failed','service_json_scope_end','emit_bool','direct_json_optional'):
             with self.subTest(name=name),self.assertRaisesRegex(ValueError,'>16384'):
                 self.run_budget({name:13000})
 
@@ -101,15 +114,15 @@ class MqttStackBudget(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'>16384'):
             self.run_budget({'ph_mqtt_app_error':13000})
 
-    def test_snapshot_publication_retains_wrapper_during_cleanup(self):
-        output=self.run_budget({'service_mqtt_publish':96,'service_json_scope_end':32,
+    def test_snapshot_publication_retains_snapshot_frame_during_cleanup(self):
+        output=self.run_budget({'service_mqtt_snapshot':96,'service_json_scope_end':32,
                                 'service_json_release':24,'json_heap_lock':8})
         self.assertIn('MQTT snapshot publication service_json_scope_end: 136 application',output)
         self.assertIn('MQTT snapshot publication service_json_release: 128 application',output)
         # Neither frame alone exceeds the budget. Their real nesting does.
         for tail in ('service_json_scope_end','service_json_release'):
             with self.subTest(tail=tail),self.assertRaisesRegex(ValueError,'>16384'):
-                self.run_budget({'service_mqtt_publish':6000,tail:6300})
+                self.run_budget({'service_mqtt_snapshot':6000,tail:6300})
 
     def test_optional_scope_and_allocator_tails_are_required(self):
         output=self.run_budget({'json_heap_failure':32,'service_mqtt_json_finish':24,
@@ -159,9 +172,9 @@ class MqttStackBudget(unittest.TestCase):
         self.assertIn('MQTT yield guarded read adapter: 32 application',output)
 
     def test_overload_drop_tail_is_exclusive_and_required(self):
-        output=self.run_budget({'ph_mqtt_enqueue_generation':6000,
-                                'ph_mqtt_record_ingress_drop':6000})
-        self.assertIn('MQTT yield ingress drop count: 6000 application',output)
+        output=self.run_budget({'ph_mqtt_enqueue_generation':2000,
+                                'ph_mqtt_record_ingress_drop':2000})
+        self.assertIn('MQTT yield ingress drop count: 2000 application',output)
         with self.assertRaisesRegex(ValueError,'missing actual .su'):
             self.run_budget(missing='ph_mqtt_record_ingress_drop')
         with self.assertRaisesRegex(ValueError,'>16384'):
@@ -180,9 +193,9 @@ class MqttStackBudget(unittest.TestCase):
 
     def test_exclusive_adapter_and_error_tails_are_not_summed(self):
         # Each fits separately; summing read/write/error siblings would fail.
-        output=self.run_budget({'guarded_read':6000,'guarded_write':6000,
-                                'ph_mqtt_error':6000,'ph_mqtt_record_failure':6000})
-        self.assertIn('MQTT yield error record: 12000 application',output)
+        output=self.run_budget({'guarded_read':1500,'guarded_write':1500,
+                                'ph_mqtt_error':1500,'ph_mqtt_record_failure':1500})
+        self.assertIn('MQTT yield error record: 3000 application',output)
         # An emitted end frame really is retained on the error tail.
-        with self.assertRaisesRegex(ValueError,'>16384'):
-            self.run_budget({'ph_mqtt_error':6000,'ph_mqtt_record_failure':6000,'end':1000})
+        with self.assertRaisesRegex(ValueError,'>12288'):
+            self.run_budget({'ph_mqtt_error':1500,'ph_mqtt_record_failure':1500,'end':6000})

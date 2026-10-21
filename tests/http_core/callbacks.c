@@ -62,3 +62,5 @@ static bool wire_retry(void){return wire_stall;}
 static int wire_error(void){return 0;}
 static void wire_yield(void){tick++;}
 static const ph_http_io wire_io={mico_rtos_get_time,wire_open,wire_limit,wire_accept,wire_nonblock,wire_wait,wire_recv,wire_send,wire_close,wire_retry,wire_error,wire_yield,NULL};
+
+#include "tests/http_core/wire_stubs.inc"

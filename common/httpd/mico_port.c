@@ -3,6 +3,9 @@
 #include "http.h"
 #include <string.h>
 #include "http_trace_hooks.h"
+#ifdef PHICOMM_BEMFA
+#include "../mqtt/bemfa.h"
+#endif
 /* MiCO fcntl uses its socket ABI, not newlib's file flags. Including
  * <fcntl.h> here replaces O_NONBLOCK=1 with 0x4000, rejected by mocIP. */
 #ifndef PH_HTTP_HOST_TEST
@@ -162,12 +165,21 @@ static void owner(mico_thread_arg_t arg)
     owner_state=1;restarts=0;
     for(unsigned attempt=0;attempt<3 && lifecycle==1;++attempt) {
         if(ph_http_server_open(&server,&io,application,initial_cap)) {
-            while(lifecycle==1 && server.running)ph_http_server_step(&server);
+            while(lifecycle==1 && server.running) {
+                ph_http_server_step(&server);
+#ifdef PHICOMM_BEMFA
+                bemfa_poll(&owner_thread);
+                bemfa_dispatch(&owner_thread);
+#endif
+            }
             ph_http_server_close(&server);
         }
         if(lifecycle!=1 || server.diagnostics.close_failures)break;
         if(attempt<2) { ++restarts;mico_thread_msleep(100); }
     }
+#ifdef PHICOMM_BEMFA
+    bemfa_stop();
+#endif
     owner_state=server.diagnostics.close_failures?3:lifecycle==2?0:2;
     publish(&server.diagnostics);
     __atomic_store_n(&owner_published,0,__ATOMIC_RELEASE);

@@ -37,6 +37,18 @@
 #define DEVICE_NAME_PREFIX "M1"
 #define DEVICE_ID m1_id
 #endif
+#include "device_status.h"
+__attribute__((noinline)) struct printbuf *service_product_status_wire(bool live,bool envelope,const char *id)
+{
+    device_status_t snapshot;
+    device_status_full_t full;
+#ifdef FEATURE_DEVICE_A1
+    a1_status_capture(&snapshot,live?NULL:&full);
+#else
+    m1_status_capture(&snapshot,live?NULL:&full);
+#endif
+    return device_status_wire(&snapshot,live?NULL:&full,envelope,id);
+}
 static void svc_string(json_object *o,const char *key,const char *value){json_build_object_add(o,key,json_object_new_string(value));}
 static bool svc_keys(json_object *p,const char *allowed){
     json_object_object_foreach(p,key,value){char needle[80];snprintf(needle,sizeof(needle),"|%s|",key);if(!value || !strstr(allowed,needle))return false;}return true;
@@ -55,6 +67,9 @@ json_object *service_product_capabilities(void){
 #endif
     NULL};for(unsigned i=0;actions[i];i++)json_build_array_add(a,json_object_new_string(actions[i]));json_build_object_add(o,"actions",a);
 #ifdef FEATURE_DEVICE_A1
+#ifdef PHICOMM_BEMFA
+    json_build_object_add(o,"dual_mqtt",json_object_new_boolean(true));
+#endif
     json_build_object_add(o,"schedule_countdown",json_object_new_boolean(true));
     json_object *keys=json_object_new_array();
     const char *names[]={"power","wifi","combination"};
@@ -68,7 +83,11 @@ static __attribute__((noinline)) json_object *service_product_inner(const char *
     if(!strcmp(action,"config.get")){
         if(!svc_keys(p,""))return NULL;CONFIG c;GET_CONFIG(&c);json_object *o=json_object_new_object();
         svc_string(o,"name",c.name);svc_string(o,"ssid",c.ssid);svc_string(o,"mqtt_host",c.mqtt_host);svc_string(o,"mqtt_user",c.mqtt_user);svc_string(o,"mqtt_protocol","tmcp");json_build_object_add(o,"mqtt_protocol_version",json_object_new_int(2));json_build_object_add(o,"mqtt_port",json_object_new_int(c.mqtt_port));
-        json_build_object_add(o,"wifi_password_set",json_object_new_boolean(c.wifi_password[0]));json_build_object_add(o,"mqtt_password_set",json_object_new_boolean(c.mqtt_password[0]));json_build_object_add(o,"web_password_set",json_object_new_boolean(c.web_password[0]));*code="ok";return o;
+        json_build_object_add(o,"wifi_password_set",json_object_new_boolean(c.wifi_password[0]));json_build_object_add(o,"mqtt_password_set",json_object_new_boolean(c.mqtt_password[0]));json_build_object_add(o,"web_password_set",json_object_new_boolean(c.web_password[0]));
+#if defined(FEATURE_DEVICE_A1) && defined(PHICOMM_BEMFA)
+        bemfa_config_encode(o);
+#endif
+        *code="ok";return o;
     }
     STATE state;GET_STATE(&state);
     if(!strcmp(action,"wifi.scan.get")){
@@ -161,9 +180,29 @@ static __attribute__((noinline)) json_object *service_product_inner(const char *
             ok=SAVE_CONFIG(&c);
         }
         else if(!strcmp(s,"auth")){if(!svc_keys(values,"|password|") || !svc_text(values,"password",c.web_password,sizeof(c.web_password),true))return NULL;ok=SAVE_CONFIG(&c);}
+        else if(!strcmp(s,"bemfa")){
+#if defined(FEATURE_DEVICE_A1) && defined(PHICOMM_BEMFA)
+            bemfa_config_t next;bemfa_config_get(&next);
+            if(!bemfa_config_values(&next,values,false))return NULL;
+            ok=bemfa_config_save(&next);
+#else
+            return NULL;
+#endif
+        }
         else if(!strcmp(s,"mqtt")){
-            if(!svc_keys(values,"|host||port||user||password|") || !svc_text(values,"host",c.mqtt_host,sizeof(c.mqtt_host),true) || !svc_text(values,"user",c.mqtt_user,sizeof(c.mqtt_user),true) || !svc_text(values,"password",c.mqtt_password,sizeof(c.mqtt_password),false) || !svc_int(values,"port",&number,1,65535))return NULL;
-            c.mqtt_port=number;ok=SAVE_CONFIG(&c);
+#if defined(FEATURE_DEVICE_A1) && defined(PHICOMM_BEMFA)
+            bemfa_config_t next;bemfa_config_get(&next);bool enabled=next.mqtt_enabled;
+            if(json_object_object_get(values,"enabled") && !svc_bool(values,"enabled",&enabled))return NULL;
+            next.mqtt_enabled=enabled;next.revision++;
+#endif
+            if(!svc_keys(values,"|host||port||user||password||enabled|") || !svc_text(values,"host",c.mqtt_host,sizeof(c.mqtt_host),true) || !svc_text(values,"user",c.mqtt_user,sizeof(c.mqtt_user),true) || !svc_text(values,"password",c.mqtt_password,sizeof(c.mqtt_password),false) || !svc_int(values,"port",&number,1,65535))return NULL;
+            c.mqtt_port=number;
+#if defined(FEATURE_DEVICE_A1) && defined(PHICOMM_BEMFA)
+            ok=a1_mqtt_config_save(&c,&next);
+#else
+            if(json_object_object_get(values,"enabled"))return NULL;
+            ok=SAVE_CONFIG(&c);
+#endif
         }else if(!strcmp(s,"ntp")){
             char host[64];if(!svc_keys(values,"|ntp_host|") || !svc_text(values,"ntp_host",host,sizeof(host),true) || !host[0])return NULL;
             json_object *time=feature_json("time");if(!time){*code="busy";return NULL;}svc_string(time,"ntp_host",host);json_object *out=NULL;int rc=feature_set("time",time,&out);json_object_put(time);*code=rc<300?"accepted":"storage_error";return out;

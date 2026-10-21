@@ -18,9 +18,12 @@ sdk_a1=${A1_SDK_DIR:-build/a1-sdk/mico-os}
 sdk_m1=${M1_SDK_DIR:-build/m1-sdk/mico-os}
 sdk_tc1=${TC1_SDK_DIR:-build/tc1-sdk-3.6.4/mico-os}
 # Match each production Client layout on fresh SDKs as well as cached builds.
-# A1/M1 expose twelve handlers through their board overlay; TC1 uses five.
+# A1/M1 expose twelve handlers; TC1 needs six independent Bemfa outlets.
 for model in "${models[@]}"; do
-    if [[ "$model" == TC1 ]]; then continue; fi
+    if [[ "$model" == TC1 ]]; then
+        python3 tools/apply_sdk_patch.py "$sdk_tc1" TC1/mqtt-handlers-sdk.patch
+        continue
+    fi
     case "$model" in
         A1) sdk="$sdk_a1" ;;
         M1) sdk="$sdk_m1" ;;

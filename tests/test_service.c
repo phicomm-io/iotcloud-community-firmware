@@ -39,3 +39,5 @@ int main(void){
  assert(!strcmp(json_object_get_string(json_object_object_get(json_object_array_get_idx(a,1),"event")),"subscribe_error_2147483647"));json_object_put(r);
  puts("PASS shared service: envelope, replay, conflict, bounded paging and redaction");
 }
+
+#include "stubs/status_wire.inc"

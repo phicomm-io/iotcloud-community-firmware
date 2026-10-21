@@ -22,3 +22,10 @@ json_object_object_add(o,"ip",json_object_new_string("127.0.0.1"));json_object_o
 #endif
  return NULL;
 }
+
+#include "../../common/json_owned.h"
+struct printbuf *service_product_status_wire(bool live,bool envelope,const char *id){
+ (void)live;const char *code;json_object *data=service_product("status.get",NULL,&code);
+ if(envelope){json_object *out=json_object_new_object();if(id)json_build_object_add(out,"request_id",json_object_new_string(id));json_build_object_add(out,"code",json_object_new_string(code));json_build_object_add(out,"message",json_object_new_string("操作成功"));json_build_object_add(out,"data",data);data=out;}
+ return json_owned_to_wire(data);
+}

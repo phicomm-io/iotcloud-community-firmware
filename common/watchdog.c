@@ -226,11 +226,13 @@ void watchdog_status_capture(watchdog_status_t *out)
 }
 void watchdog_status_encode(struct json_object *out, const watchdog_status_t *s)
 {
-    json_object_object_add(out, "reset_reason", json_object_new_string(s->reset_name));
-    json_object_object_add(out, "reset_reason_raw", json_object_new_int(s->reset_raw));
-    json_object_object_add(out, "watchdog_enabled", json_object_new_boolean(s->enabled));
-    json_object_object_add(out, "watchdog_state", json_object_new_string(s->failed ? "fault" : s->ready ? "healthy" : "starting"));
-    json_object_object_add(out, "watchdog_fault", json_object_new_string(s->fault));
+#define STATUS_INT(k,v) json_build_object_add(out,k,json_object_new_int(v))
+#define STATUS_BOOL(k,v) json_build_object_add(out,k,json_object_new_boolean(v))
+#define STATUS_STRING(k,v) json_build_object_add(out,k,json_object_new_string(v))
+#include "watchdog_fields.inc"
+#undef STATUS_INT
+#undef STATUS_BOOL
+#undef STATUS_STRING
 }
 void watchdog_status_json(struct json_object *out)
 {

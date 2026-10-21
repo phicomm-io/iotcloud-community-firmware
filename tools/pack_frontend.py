@@ -3,8 +3,8 @@
 from pathlib import Path
 import hashlib
 import gzip
-import io
 import os
+import zopfli.gzip
 from frontend_release import fetch
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,10 +16,12 @@ def adapt_http_queue(data, model):
         raise ValueError('Locked frontend has no unique head insertion point')
     adapter = (ROOT / 'common/web/http_queue.js').read_bytes()
     html = html.replace(marker, marker + b'<script>' + adapter + b'</script>', 1)
-    output = io.BytesIO()
-    with gzip.GzipFile(fileobj=output, mode='wb', filename='', mtime=0) as stream:
-        stream.write(html)
-    return output.getvalue()
+    # Compress the final bytes after injection, just like the frontend release.
+    # Host-only: the device still serves a normal gzip stream verbatim.
+    output = zopfli.gzip.compress(html, numiterations=15)
+    if gzip.decompress(output) != html:
+        raise ValueError('Adapted frontend gzip round-trip mismatch')
+    return output
 
 
 def pack(model):

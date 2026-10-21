@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = r'''
 #include "mico.h"
 #include "common/service.c"
+#include "tests/stubs/status_wire.inc"
 #include "common/json_owned.h"
 #include "common/httpd/product.h"
 #include "json_object_private.h"

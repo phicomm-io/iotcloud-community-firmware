@@ -69,23 +69,6 @@ static int snapshot_resource_wait(void) {
     snapshot_deferred=true;snapshot_retry_at=mico_rtos_get_time();
     return PH_MQTT_MORE;
 }
-__attribute__((noinline)) static int service_mqtt_publish(int(*sender)(const char *, const char *, bool), const mqtt_account_t *scope, const char *leaf, json_object *o, bool retain, unsigned claim, unsigned json_claim) {
-    /* Telemetry allocation failure must not tear down an otherwise live socket. */
-    struct printbuf *wire = service_mqtt_wire(o);
-    unsigned failure=service_json_scope_end(json_claim);
-    service_json_release(json_claim);
-    service_memory_release(claim);
-    if (!wire || failure) {
-        if(wire)printbuf_free(wire);
-        return snapshot_resource_wait();
-    }
-    snapshot_deferred=false;
-    char topic[MQTT_TOPIC_MAX];
-    mqtt_leaf(scope, leaf, topic, sizeof(topic));
-    int rc = sender(topic, wire->buf, retain);
-    printbuf_free(wire);
-    return rc;
-}
 /* Commands are invoked by the shared owner only after Paho has unwound.
  * Exactly one result wire exists; no response graph/linked backlog crosses a
  * transport callback. The caller holds its receipt credit through this send. */
@@ -122,12 +105,11 @@ int service_mqtt_input(int(*sender)(const char *, const char *, bool), const mqt
     /* Everything borrowed is now copied (including the fixed failure wire).
      * Do not use payload/length/MessageData again after consuming the entry. */
     bool admitted = ph_mqtt_input_consumed();
-    json_object *r = scoped && admitted && !service_json_scope_failed(token) ? service_command(q) : NULL;
+    wire = scoped && admitted && !service_json_scope_failed(token) ? service_command_wire(q) : NULL;
     if (q)
         json_object_put(q);
     unsigned failure=scoped?service_json_scope_end(token):0;
-    if(failure && r){json_object_put(r);r=NULL;}
-    wire = service_mqtt_wire(r);
+    if(failure && wire){printbuf_free(wire);wire=NULL;}
     service_memory_release(claim);
     service_json_release(token);
     (void)sender;
@@ -195,31 +177,18 @@ __attribute__((noinline)) int service_mqtt_snapshot(int(*sender)(const char *, c
     if(!service_json_scope_begin(json_claim,ph_mqtt_owner_thread())) {
         service_memory_release(claim);service_json_release(json_claim);return snapshot_resource_wait();
     }
-    json_object *r = service_query("status.get");
-    if (!r) {
-        service_json_scope_end(json_claim);
-        service_memory_release(claim);
-        service_json_release(json_claim);
+    /* OTA job status has no model and was never eligible for retained state. */
+    struct printbuf *wire=ota_job_active()?NULL:service_product_status_wire(false,false,NULL);
+    unsigned failure=service_json_scope_end(json_claim);
+    service_json_release(json_claim);service_memory_release(claim);
+    if(!wire || failure) {
+        if(wire)printbuf_free(wire);
         return snapshot_resource_wait();
     }
-    json_object *code = json_object_object_get(r, "code");
-    json_object *data = json_object_object_get(r, "data");
-    json_object *model = data && json_object_is_type(data, json_type_object)
-        ? json_object_object_get(data, "model") : NULL;
-    bool valid = code && json_object_is_type(code, json_type_string) &&
-        !strcmp(json_object_get_string(code), "ok") && model &&
-        json_object_is_type(model, json_type_string) &&
-        json_object_get_string_len(model) > 0;
-    if (valid)
-        json_object_get(data);
-    json_object_put(r);
-    if (!valid) {
-        service_json_scope_end(json_claim);
-        service_memory_release(claim);
-        service_json_release(json_claim);
-        return snapshot_resource_wait();
-    }
-    return service_mqtt_publish(sender, scope, "state", data, true, claim, json_claim);
+    snapshot_deferred=false;
+    char topic[MQTT_TOPIC_MAX];mqtt_leaf(scope,"state",topic,sizeof(topic));
+    rc=sender(topic,wire->buf,true);
+    printbuf_free(wire);return rc;
 }
 
 int service_mqtt_capabilities(int(*sender)(const char *, const char *, bool), const mqtt_account_t *scope) {

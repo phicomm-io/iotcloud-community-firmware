@@ -1,4 +1,4 @@
-/* The device HTTP worker is serial. Keep API bodies out of its TCP backlog. */
+/* Serialize API requests through body completion. */
 (()=>{
  const nativeFetch=window.fetch.bind(window);
  let tail=Promise.resolve();
@@ -13,7 +13,6 @@
    const work=tail.then(async()=>{
     if(signal?.aborted)throw aborted();
     const response=await nativeFetch(url,options);
-    // Headers alone do not release the socket: finish the body before next API.
     const body=await response.arrayBuffer();
     return new Response(body,{status:response.status,statusText:response.statusText,headers:response.headers});
    });

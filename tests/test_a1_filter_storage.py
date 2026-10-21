@@ -154,7 +154,7 @@ int main(void){
             source = Path(temp) / 'filter.c'
             source.write_text(harness)
             binary = Path(temp) / 'filter'
-            command = [os.environ.get('CC', 'cc'), '-std=gnu99', '-DFEATURE_DEVICE_A1', '-Wno-pointer-sign', '-Wno-misleading-indentation', '-I'+str(ROOT), '-I'+str(ROOT/'A1'), '-I'+str(ROOT/'tests/host'), '-I'+str(json_dir), str(source), *map(str, json_dir.glob('*.c')), '-o', str(binary)]
+            command = [os.environ.get('CC', 'cc'), '-std=gnu99', '-ffunction-sections', '-Wl,--gc-sections', '-DFEATURE_DEVICE_A1', '-Wno-pointer-sign', '-Wno-misleading-indentation', '-I'+str(ROOT), '-I'+str(ROOT/'A1'), '-I'+str(ROOT/'tests/host'), '-I'+str(json_dir), str(source), *map(str, json_dir.glob('*.c')), '-o', str(binary)]
             if os.environ.get('SANITIZE') == '1':
                 command += ['-g', '-fno-omit-frame-pointer', '-fsanitize=address,undefined']
             subprocess.run(command, check=True)

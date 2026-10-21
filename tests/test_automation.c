@@ -81,3 +81,5 @@ int main(void){automation_defaults(&stored);service_init();
 #endif
  puts("PASS automation: stable IDs, persistence before action, reboot last, no catch-up/replay, busy and bounds");
 }
+
+#include "stubs/status_wire.inc"

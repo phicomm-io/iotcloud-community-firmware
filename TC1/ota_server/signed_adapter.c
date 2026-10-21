@@ -215,3 +215,5 @@ bool tc1_ota_activate(void) {
 bool tc1_ota_finish(void) {
     return tc1_ota_verify() && tc1_ota_activate();
 }
+
+bool tc1_ota_active(void) {mico_rtos_lock_mutex(&lock);bool value=active;mico_rtos_unlock_mutex(&lock);return value;}

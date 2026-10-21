@@ -43,6 +43,7 @@
 在 Linux x86_64 上按[构建依赖](docs/public/build-deps.md)安装工具链与依赖后，执行：
 
 ```sh
+python3 -m pip install -r requirements-build.txt
 ./build.sh
 ```
 

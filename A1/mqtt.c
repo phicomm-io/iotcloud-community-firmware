@@ -26,7 +26,7 @@ static bool rediscover, cleanup_pending;
 static a1_config_t session_config;
 static bool same_connection(const a1_config_t *, const a1_config_t *);
 static bool session_current(void)
-{ a1_config_t c; a1_config_get(&c); return same_connection(&session_config, &c); }
+{ a1_config_t c; a1_config_get(&c); return bemfa_primary_enabled() && same_connection(&session_config, &c); }
 static void mqtt_status(unsigned status)
 { mico_rtos_lock_mutex(&a1_lock); a1_state.mqtt_status = status; a1_state.mqtt_connected = status == MQTT_READY; mico_rtos_unlock_mutex(&a1_lock); }
 
@@ -451,7 +451,7 @@ static int session_prepare(void *context,ph_mqtt_connection *spec) {
             mico_rtos_lock_mutex(&a1_lock); a1_state.mqtt_cleanup_warning = result != MQTT_SUCCESS; mico_rtos_unlock_mutex(&a1_lock);
             cleanup_pending = false;
         }
-        if (!cfg.mqtt_host[0] || !state.wifi_connected) { mqtt_status(MQTT_DISCONNECTED); return PH_MQTT_PREPARE_WAIT; }
+        if (!bemfa_primary_enabled() || !cfg.mqtt_host[0] || !state.wifi_connected) { mqtt_status(MQTT_DISCONNECTED); return PH_MQTT_PREPARE_WAIT; }
         if (!mqtt_account_init(&account, MQTT_TOPIC_TMCP, "a1", cfg.mqtt_user, a1_id)) {
             mqtt_status(MQTT_CONFIG_ERROR); return PH_MQTT_PREPARE_WAIT;
         }
@@ -542,7 +542,7 @@ static bool session_valid(void *context) {
     (void)context;
     a1_config_get(&current);
     mqtt_state_get(&state);
-    return state.wifi_connected && same_connection(&cfg, &current);
+    return bemfa_primary_enabled() && state.wifi_connected && same_connection(&cfg, &current);
 }
 static bool session_initial_ready(void *context) {
     (void)context;

@@ -149,3 +149,5 @@ int main(void){
  ph_http_json(&p,&x,service_query("status.get"));assert(x.response.status==200);ph_http_product_release(&p);clean();
  puts("Actual service/HTTP/MQTT graph exclusion: concurrent producer, PUBACK reentry, token isolation, WAIT/body timeout, OOM recovery PASS");
 }
+
+#include "tests/stubs/status_wire.inc"

@@ -876,3 +876,5 @@ int main(void) {
        "freshness passed");
   return 0;
 }
+
+#include "stubs/status_wire.inc"
