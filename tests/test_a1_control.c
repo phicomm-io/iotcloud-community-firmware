@@ -108,6 +108,8 @@ int main(void)
     assert(json_attempts==0 && !service_locked);
     /* Transport schema rejects wrong types/ranges before changing state. */
     a1_config_t saved=config;
+    assert(!a1_control_local("fan",NULL));
+    assert(!native_control("light","{\"brightness\":1,\"color\":{\"r\":1,\"b\":2}}"));
     assert(!native_control("fan","{\"on\":1}"));
     assert(!native_control("fan","{\"speed\":101}"));
     assert(!native_control("fan","{\"speed\":-1}"));

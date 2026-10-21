@@ -30,7 +30,7 @@ static const struct {
 static const char color_keys[][2]={"r","g","b"};
 static bool control_value(json_object *v,uint8_t *out,unsigned max)
 {
-    if(!json_object_is_type(v,max?json_type_int:json_type_boolean))return false;
+    if(!v || !json_object_is_type(v,max?json_type_int:json_type_boolean))return false;
     int n=max?json_object_get_int(v):json_object_get_boolean(v);
     /* Unsigned comparison also rejects negative JSON integers. */
     if(max && (unsigned)n>max)return false;
@@ -133,7 +133,7 @@ bool a1_control_apply(a1_control_t *r, bool button, bool broadcast)
 /* JSON adapters validate completely before entering the typed business path. */
 static bool control_parse(const char *kind, json_object *o, a1_control_t *r)
 {
-    if (!json_object_is_type(o,json_type_object)) return false;
+    if (!o || !json_object_is_type(o,json_type_object)) return false;
     memset(r,0,sizeof(*r));
     if(!strcmp(kind,"fan"))r->kind=A1_CONTROL_FAN;
     else if(!strcmp(kind,"light"))r->kind=A1_CONTROL_LIGHT;
