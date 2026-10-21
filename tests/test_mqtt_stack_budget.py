@@ -29,7 +29,9 @@ service_json_scope_begin service_json_scope_failed service_json_scope_end servic
 service_caller_graph_failed json_heap_lock ph_mqtt_owner_thread ph_mqtt_owner direct_json_optional
 ph_mqtt_receipt_send receipt_retry publish_owned publish_wait ph_mqtt_resource_ready
 receipt_clear service_mqtt_receipt_release printbuf_free json_heap_free ph_mqtt_pending_clear pending_release'''.split()
-SYMBOLS += ['json_heap_unlock', 'mqtt_buffer_allocation_permit']
+from tools.json_numeric_stack import NUMERIC_SYMBOLS, JSON_SYMBOLS
+SYMBOLS += ['json_heap_unlock', 'json_heap_permit', 'mqtt_buffer_allocation_permit', 'service_parse',
+            'json_numeric.quorem'] + NUMERIC_SYMBOLS + list(JSON_SYMBOLS)
 
 class MqttStackBudget(unittest.TestCase):
     def test_protocol_buffer_admission_owner_and_heap_are_separate(self):

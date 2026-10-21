@@ -225,6 +225,27 @@ def check(frames,model):
             paths['MQTT '+label+' '+tail]=(names+['printbuf_free','json_heap_free',tail],spare)
     paths['MQTT network error record'] = (owner + ['open_session'] + failure, reserve)
     paths['MQTT session error record'] = (owner + failure, reserve)
+    try:
+        from .json_numeric_stack import numeric_tails
+    except ImportError:
+        from json_numeric_stack import numeric_tails
+    def add_numeric(prefix,label,operation):
+        for branch,tail in numeric_tails(frames,operation).items():
+            paths[label+' '+branch]=(prefix+tail,reserve)
+    for label,(names,spare) in list(paths.items()):
+        if 'json_primitive' in names and 'allocation observation' not in label:
+            prefix=names[:names.index('json_primitive')+1]+['json_object_double_to_json_string']
+            add_numeric(prefix,label+' numeric','format')
+        if 'parse' in names:
+            add_numeric(names[:names.index('parse')+1]+['json_tokener_parse_ex'],label+' numeric','scan')
+    add_numeric(dispatch+['service_parse','json_tokener_parse_ex'],'MQTT command numeric parse','scan')
+    if model=='TC1':
+        power=outer+['UserMqttHassPower']+[n for n in ('power_legacy','power_number') if n in frames]
+        add_numeric(power,'MQTT TC1 power numeric','fixed')
+        for helper in ('UserMqttHassAuto','UserMqttHassAutoPower','UserMqttHassPower'):
+            prefix=outer+[helper,'UserMqttSendTopic','send_owned','account_message',
+                          'json_tokener_parse','json_tokener_parse_verbose','json_tokener_parse_ex']
+            add_numeric(prefix,'MQTT TC1 '+helper+' account numeric parse','scan')
     for label,(names,spare) in paths.items():
         missing=set(names)-frames.keys()
         if missing:raise ValueError(f'{label}: missing actual .su frames {sorted(missing)}')

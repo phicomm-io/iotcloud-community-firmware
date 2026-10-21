@@ -47,7 +47,7 @@ class JsonNumberCache(unittest.TestCase):
         sdk = self.sdk_source(model)
         with tempfile.TemporaryDirectory(prefix='json-number-cache-') as temporary:
             directory = Path(temporary)
-            json = copy_patched_json(sdk, directory/'sdk')
+            json = copy_patched_json(sdk, directory/'sdk', checked_numeric=False)
             source = (json/'json_object.c').read_text()
             start = source.index('static int json_object_double_to_json_string(')
             converter = source[start:source.index('struct json_object* json_object_new_double(', start)]

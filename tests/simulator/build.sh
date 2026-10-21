@@ -35,7 +35,9 @@ python3 tools/apply_sdk_patch.py "$json_sdk" \
  common/json-allocation-safety.patch common/json-heap-budget.patch \
  common/json-newlib-nano-abi.patch common/json-integer-parse.patch \
  common/json-sized-resize.patch \
-    common/json-number-cache-cleanup.patch
+    common/json-number-cache-cleanup.patch \
+    common/json-number-checked.patch
+    python3 tools/install_json_numeric.py "$json_sdk"
 python3 - "$json" <<'PY'
 import pathlib,sys
 for p in pathlib.Path(sys.argv[1]).glob('*.c'): p.write_text(p.read_text().replace('%ld','%d'))

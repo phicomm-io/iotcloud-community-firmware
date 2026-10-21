@@ -44,6 +44,11 @@ def check(modules, model, nm, elf):
                     frames[name]=max(frames.get(name,0),int(size))
                     if name=='tc1_ota_verify':verify_frames[emitted]=max(verify_frames.get(emitted,0),int(size))
     read_json_allocator_frames(modules,frames)
+    try:
+        from .json_numeric_stack import read_numeric_frames, add_numeric_paths
+    except ImportError:
+        from json_numeric_stack import read_numeric_frames, add_numeric_paths
+    read_numeric_frames(modules,frames)
     # The pinned compiler splits verification into an 8-byte entry and a
     # 632-byte .part body; both can be live, unlike alternative clones.
     if verify_frames:frames['tc1_ota_verify']=sum(verify_frames.values())
@@ -121,6 +126,17 @@ def check(modules, model, nm, elf):
             allocator=[api]
             for tail in ('permit','created'):
                 paths[label+' allocator '+api+' '+tail]=(reserve,names+allocator+['json_heap.'+tail,'json_heap_failure'])
+    # The primitive callback formats before json_append; they are sibling tails.
+    for label,(reserve,names) in list(paths.items()):
+        if 'json_primitive' in names and 'allocator' not in label:
+            prefix=names[:names.index('json_primitive')+1]+['json_object_double_to_json_string']
+            add_numeric_paths(paths,frames,prefix,reserve,label+' numeric', 'format')
+        if 'parse' in names:
+            prefix=names[:names.index('parse')+1]+['json_tokener_parse_ex']
+            add_numeric_paths(paths,frames,prefix,reserve,label+' numeric', 'scan')
+    add_numeric_paths(paths,frames,
+        ['owner','ph_http_server_step','read_body','complete','ph_http_body_json','service_parse','json_tokener_parse_ex'],
+        3072,'HTTP POST numeric parse','scan')
     for label,(reserve,names) in paths.items():
         missing=set(names)-frames.keys()
         if missing:raise ValueError(f'{label}: missing actual .su frames: {sorted(missing)}')

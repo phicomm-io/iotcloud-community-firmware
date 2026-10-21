@@ -1,0 +1,118 @@
+--- a/libraries/utilities/json_c/json_number_reent.h
++++ b/libraries/utilities/json_c/json_number_reent.h
+@@ -4,37 +4,7 @@
+ #ifndef JSON_NUMBER_REENT_H
+ #define JSON_NUMBER_REENT_H
+ #ifdef __NEWLIB__
+-#include <reent.h>
+-#include <stdlib.h>
+-#ifndef _REENT_SMALL
+-#error "JSON private contexts require newlib-nano headers (--specs=nano.specs)"
+-#endif
+-/* This pinned nano libc's reclaim skips its private powers-of-five cache.
+- * Cache nodes are detached from Balloc's freelist while cached; reclaim owns
+- * the separate result/freelist and the _mp container. Retire only this private
+- * context's cache before handing the remaining scratch back to newlib. */
+-static void json_number_reclaim(struct _reent *context)
+-{
+-  if(!context) return;
+-  if(context->_mp) {
+-    struct _Bigint *node = _REENT_MP_P5S(context);
+-    _REENT_MP_P5S(context) = NULL;
+-    while(node) {
+-      struct _Bigint *next = node->_next;
+-      _free_r(context, node);
+-      node = next;
+-    }
+-  }
+-  _reclaim_reent(context);
+-}
+-static int json_number_scan(const char *text, double *value)
+-{
+-  struct _reent context;
+-  _REENT_INIT_PTR(&context);
+-  int result = _sscanf_r(&context, text, "%lf", value);
+-  json_number_reclaim(&context);
+-  return result;
+-}
++#include "json_number_checked.h"
+ #else
+ static int json_number_scan(const char *text, double *value)
+ {
+--- a/libraries/utilities/json_c/json_object.c
++++ b/libraries/utilities/json_c/json_object.c
+@@ -456,12 +456,8 @@
+ 					     struct printbuf *pb)
+ {
+ #ifdef __NEWLIB__
+-  /* mocOS does not supply a per-thread newlib reentrancy context. */
+-  struct _reent context;
+   char number[32];
+-  _REENT_INIT_PTR(&context);
+-  int length = _snprintf_r(&context, number, sizeof(number), "%g", jso->o.c_double);
+-  json_number_reclaim(&context);
++  int length = json_number_format(number, sizeof(number), jso->o.c_double);
+-  if(length < 0 || length >= (int)sizeof(number)) return -1;
++  if(length < 0 || length >= (int)sizeof(number)) { pb->failed = 1; return -1; }
+   return printbuf_memappend(pb, number, length);
+ #else
+--- a/libraries/utilities/json_c/json_tokener.c
++++ b/libraries/utilities/json_c/json_tokener.c
+@@ -605,13 +605,15 @@
+       {
+ 	int64_t num64;
+ 	double  numd;
++        int number_result = 0;
+ 	if (!tok->is_double && json_parse_int64(tok->pb->buf, &num64) == 0) {
+ 		current = json_object_new_int64(num64);
+ 		if(!current) { tok->err = json_tokener_error_memory; goto out; }
+-	} else if(tok->is_double && json_number_scan(tok->pb->buf, &numd) == 1) {
++	} else if(tok->is_double && (number_result = json_number_scan(tok->pb->buf, &numd)) == 1) {
+           current = json_object_new_double(numd);
+ 	  if(!current) { tok->err = json_tokener_error_memory; goto out; }
+         } else {
++          if(number_result == -2) { tok->err = json_tokener_error_memory; goto out; }
+           tok->err = json_tokener_error_parse_number;
+           goto out;
+         }
+--- a/libraries/utilities/json_c/json_c.mk
++++ b/libraries/utilities/json_c/json_c.mk
+@@ -19,7 +19,14 @@
+                    json_util.c \
+                    linkhash.c \
+                    printbuf.c \
+-                   json_heap.c
++                   json_heap.c \
++                   json_numeric/context.c \
++                   json_numeric/mprec.c \
++                   json_numeric/dtoa.c \
++                   json_numeric/strtod.c \
++                   json_numeric/match.c \
++                   json_numeric/scan.c \
++                   json_numeric/format.c
+                    
+ $(NAME)_CFLAGS   += -Wno-unused-value
+ # The firmware links libc_nano. Private reentrancy contexts must use its ABI
+--- a/libraries/utilities/json_c/json_heap.h
++++ b/libraries/utilities/json_c/json_heap.h
+@@ -23,4 +23,6 @@
+ int json_heap_permit(size_t bytes);
+ /* 1=headroom, 2=allocator NULL, 4=invalid allocation size. */
+ void json_heap_failure(unsigned reason);
++/* Record a policy rejection under the allocator lock, including counters. */
++void json_heap_reject(unsigned reason);
+ #endif
+--- a/libraries/utilities/json_c/json_heap.c
++++ b/libraries/utilities/json_c/json_heap.c
+@@ -73,3 +73,11 @@
+ void json_heap_snapshot(json_heap_stats_t *out) {
+     json_heap_lock(); *out = stats; json_heap_unlock();
+ }
++
++void json_heap_reject(unsigned reason) {
++    json_heap_lock();
++    if (reason == 2) increment(&stats.allocation_failures);
++    else increment(&stats.guard_denied);
++    json_heap_failure(reason);
++    json_heap_unlock();
++}

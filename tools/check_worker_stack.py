@@ -81,6 +81,20 @@ def check(directory, header):
     for label,(_,_,names) in paths.items():
         prefix=names[:names.index('service_command')+1]
         expanded[label+' failure attribution']=(binding,2048,prefix+['service_caller_graph_failed','service_memory_failures','json_heap_lock'])
+    from check_http_core import read_json_allocator_frames
+    from json_numeric_stack import read_numeric_frames, numeric_tails
+    read_json_allocator_frames(directory.parent,frames)
+    read_numeric_frames(directory.parent,frames)
+    for label,(budget,reserve,names) in list(expanded.items()):
+        if 'parse' in names:
+            prefix=names[:names.index('parse')+1]+['json_tokener_parse_ex']
+            for branch,tail in numeric_tails(frames,'scan').items():
+                expanded[label+' numeric '+branch]=(budget,reserve,prefix+tail)
+    # UDP binding input is parsed directly on both product feature workers,
+    # independently of the scheduled A1 group-control path above.
+    for branch,tail in numeric_tails(frames,'scan').items():
+        expanded['binding UDP numeric '+branch]=(binding,2048,
+            ['feature_worker','parse','json_tokener_parse_ex']+tail)
     paths=expanded
     for label, (budget, reserve, names) in paths.items():
         missing = set(names) - frames.keys()

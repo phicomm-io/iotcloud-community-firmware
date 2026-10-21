@@ -82,7 +82,9 @@ for model in "${models[@]}"; do
         common/json-allocation-safety.patch common/json-heap-budget.patch \
         common/json-newlib-nano-abi.patch common/json-integer-parse.patch \
         common/json-sized-resize.patch \
-    common/json-number-cache-cleanup.patch
+    common/json-number-cache-cleanup.patch \
+    common/json-number-checked.patch
+    python3 tools/install_json_numeric.py "$json_sdk/$model"
     json="$json_copy"
     transport=()
     if [[ "$model" == M1 ]]; then transport=(M1/mqtt_transport.c); fi

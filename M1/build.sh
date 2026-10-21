@@ -57,7 +57,9 @@ python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \
     "$project_dir/common/json-newlib-nano-abi.patch" \
     "$project_dir/common/json-integer-parse.patch" \
     "$project_dir/common/json-sized-resize.patch" \
-    "$project_dir/common/json-number-cache-cleanup.patch"
+    "$project_dir/common/json-number-cache-cleanup.patch" \
+    "$project_dir/common/json-number-checked.patch"
+python3 "$project_dir/tools/install_json_numeric.py" "$sdk_dir"
 
 ln -sfn "$sdk_dir" "$workspace/mico-os"
 ln -sfn "$app_dir" "$workspace/M1"
