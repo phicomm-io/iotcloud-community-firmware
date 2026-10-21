@@ -28,7 +28,7 @@ def check(modules, model, nm, elf):
     status=model.lower()+'_status_json'
     base=['owner','ph_http_server_step','acquire','action','begin','prepare']
     dispatch=['service_query','service_command','service_product']
-    if 'service_product_inner' in frames:dispatch+=['service_product_inner']
+    if 'service_product_inner' in frames and model!='TC1':dispatch+=['service_product_inner']
     if 'service_command_execute' in frames:dispatch+=['service_command_execute']
     command=['owner','ph_http_server_step','read_body','complete','service_command','service_command_execute','service_product','ph_http_json']
     if 'service_product_inner' in frames:command+=['service_product_inner']
@@ -37,7 +37,7 @@ def check(modules, model, nm, elf):
     paths={
       'HTTP status':(3072,status_path),
       'HTTP JSON admission':(3072,base+['ph_http_claim','service_json_claim']),
-      'HTTP command status':(3072,command+[status]+([status+'_view'] if status+'_view' in frames else [])),
+      'HTTP command status':(3072,[n for n in command if not (model=='TC1' and n=='service_product_inner')]+[status]+([status+'_view'] if status+'_view' in frames else [])),
       # Builder frames have returned before encoding. Count the bounded
       # automatic traversal explicitly, outside SDK/native/RTOS reserve.
       'HTTP GET JSON encode':(3072,base+['ph_http_json','json_owned_to_wire','json_write','json_primitive','json_append']),

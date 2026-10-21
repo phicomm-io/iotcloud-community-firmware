@@ -19,9 +19,8 @@ static bool number(json_object *p,const char *k,int *n,int lo,int hi){json_objec
 static bool strparam(json_object *p,const char *k,char *out,size_t cap,bool required){json_object *v=json_object_object_get(p,k);if(!v)return !required;if(!json_object_is_type(v,json_type_string))return false;size_t n=json_object_get_string_len(v);if(n>=cap || n!=strlen(json_object_get_string(v)))return false;memcpy(out,json_object_get_string(v),n+1);return true;}
 static void reboot_worker(mico_thread_arg_t arg){(void)arg;mico_rtos_thread_msleep(1500);MicoSystemReboot();mico_rtos_delete_thread(NULL);}
 json_object *service_product_capabilities(void){json_object *o=json_object_new_object(),*a=json_object_new_array();text(o,"model","tc1");text(o,"mqtt_protocol",user_config->mqtt_topic_mode?"tmcp":"legacy");json_object_object_add(o,"mqtt_protocol_version",json_object_new_int(user_config->mqtt_topic_mode?2:1));json_object_object_add(o,"protocol",json_object_new_int(2));const char *actions[]={"time.get","time.set","power.get","status.get","capabilities.get","config.get","logs.get","schedules.get","schedules.put","schedules.delete","schedules.enable","buttons.get","buttons.set","config.set","wifi.scan","wifi.scan.get","ota.start","system.reset","system.reboot","outlet.set","indicator.set","child_lock.set",NULL};for(unsigned i=0;actions[i];i++)json_object_array_add(a,json_object_new_string(actions[i]));json_object_object_add(o,"actions",a);status_view_capabilities(o);return o;}
-json_object *service_product(const char *action,json_object *p,const char **code){
+static __attribute__((noinline)) json_object *service_product_inner(const char *action,json_object *p,const char **code){
     *code="invalid_params";
-    if(!strcmp(action,"status.get")){bool live;if(!status_view_params(p,&live))return NULL;*code="ok";return live?tc1_status_live_json():tc1_status_json();}
     if(!strcmp(action,"config.get")){if(!keys(p,""))return NULL;json_object *o=json_object_new_object();text(o,"name",sys_config->micoSystemConfig.name);text(o,"ssid",sys_config->micoSystemConfig.ssid);text(o,"mqtt_host",user_config->mqtt_host);text(o,"mqtt_user",user_config->mqtt_user);text(o,"mqtt_protocol",user_config->mqtt_topic_mode?"tmcp":"legacy");json_object_object_add(o,"mqtt_protocol_version",json_object_new_int(user_config->mqtt_topic_mode?2:1));json_object_object_add(o,"mqtt_port",json_object_new_int(user_config->mqtt_port));json_object_object_add(o,"mqtt_password_set",json_object_new_boolean(user_config->mqtt_password[0]));json_object_object_add(o,"web_password_set",json_object_new_boolean(user_config->web_password[0]));*code="ok";return o;}
     if(!strcmp(action,"power.get")){if(!keys(p,""))return NULL;json_object *o=json_object_new_object();json_object_object_add(o,"power_watts",json_object_new_double(real_time_power/10.0));json_object_object_add(o,"energy_kwh",json_object_new_double(PowerPulseCountToKwh(p_count)));*code="ok";return o;}
     if(!strcmp(action,"time.get")){if(!keys(p,""))return NULL;json_object *o=json_object_new_object();json_object_object_add(o,"timezone_minutes",json_object_new_int(user_config->automation.timezone));*code="ok";return o;}
@@ -98,3 +97,13 @@ json_object *service_product(const char *action,json_object *p,const char **code
 
 void automation_load(automation_config_t *out){mico_rtos_suspend_all_thread();*out=user_config->automation;mico_rtos_resume_all_thread();}
 bool automation_save(const automation_config_t *next){if(!tc1_config_reserve())return false;automation_config_t *old=malloc(sizeof(*old));if(!old){tc1_config_release();return false;}*old=user_config->automation;bool ok=next->revision==old->revision+1;if(ok){user_config->automation=*next;ok=mico_system_context_update(sys_config)==kNoErr;if(!ok)user_config->automation=*old;}free(old);tc1_config_release();return ok;}
+
+/* Status does not keep configuration/OTA branch scratch on the MQTT stack. */
+json_object *service_product(const char *action,json_object *p,const char **code)
+{
+    if(!strcmp(action,"status.get")){
+        bool live;*code="invalid_params";if(!status_view_params(p,&live))return NULL;
+        json_object *o=live?tc1_status_live_json():tc1_status_json();*code="ok";return o;
+    }
+    return service_product_inner(action,p,code);
+}
