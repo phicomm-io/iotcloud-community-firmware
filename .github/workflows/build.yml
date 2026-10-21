@@ -419,20 +419,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          python3 tools/prepare_sdk.py build/m1-sdk/mico-os
-          python3 tools/prepare_sdk.py build/tc1-sdk-3.6.4/mico-os
-          python3 tools/apply_sdk_patch.py build/m1-sdk/mico-os common/mqtt-mico36.patch
-          python3 tools/apply_sdk_patch.py build/m1-sdk/mico-os common/mqtt-socket-close.patch
-          python3 tools/apply_sdk_patch.py build/m1-sdk/mico-os M1/mqtt-packet-deadline.patch
-          python3 tools/apply_sdk_patch.py build/m1-sdk/mico-os common/mqtt-response-deadline.patch
-          python3 tools/apply_sdk_patch.py build/a1-sdk/mico-os common/mqtt-mico36.patch
-          python3 tools/apply_sdk_patch.py build/a1-sdk/mico-os common/mqtt-socket-close.patch
-          python3 tools/apply_sdk_patch.py build/a1-sdk/mico-os M1/mqtt-packet-deadline.patch
-          python3 tools/apply_sdk_patch.py build/a1-sdk/mico-os common/mqtt-response-deadline.patch
-          python3 tools/apply_sdk_patch.py build/tc1-sdk-3.6.4/mico-os common/mqtt-mico36.patch
-          python3 tools/apply_sdk_patch.py build/tc1-sdk-3.6.4/mico-os common/mqtt-socket-close.patch
-          python3 tools/apply_sdk_patch.py build/tc1-sdk-3.6.4/mico-os M1/mqtt-packet-deadline.patch
-          python3 tools/apply_sdk_patch.py build/tc1-sdk-3.6.4/mico-os common/mqtt-response-deadline.patch
+          for sdk in a1-sdk m1-sdk tc1-sdk-3.6.4; do
+            python3 tools/prepare_sdk.py "build/$sdk/mico-os"
+          done
+          # build_host.sh owns the complete ordered MQTT stack. Pre-applying
+          # only selected overlays creates an incompatible non-prefix state.
+          python3 -m unittest tests.test_mqtt_overlay_preparation
       - name: Test TMCP using real SDK workers and an isolated broker
         run: |
           python3 -m pip install paho-mqtt==2.1.0 Jinja2==3.1.6
