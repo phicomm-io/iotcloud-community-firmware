@@ -1,0 +1,11 @@
+--- a/libraries/daemons/http_server/httpd_handle.c
++++ b/libraries/daemons/http_server/httpd_handle.c
+@@ -335,7 +335,7 @@
+ 		unsigned to_read = msg_in_len >= data_remaining ?
+ 			data_remaining : msg_in_len;
+ 		int actually_read = httpd_recv(conn, msg_in, to_read, 0);
+-		if (actually_read < 0) {
++		if (actually_read <= 0) {
+ 			httpd_d("Unable to read content."
+ 				"Was purging socket data");
+ 			return;

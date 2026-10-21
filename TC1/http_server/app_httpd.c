@@ -368,17 +368,20 @@ static int HttpV1Config(httpd_request_t *r){return HttpV1Query(r,"config.get");}
 static int HttpV1Schedules(httpd_request_t *r){return HttpV1Query(r,"schedules.get");}
 static int HttpV1Logs(httpd_request_t *r){return HttpV1Query(r,"logs.get");}
 static int HttpV1Memory(httpd_request_t *r){
+    extern int get_last_reset_reason(void);
+    static bool reset_sampled;static int reset_reason;
+    if(!reset_sampled){reset_reason=get_last_reset_reason();reset_sampled=true;}
     const micoMemInfo_t *m=MicoGetMemoryInfo();if(!m)return HttpV1Busy(r);
     micoMemInfo_t snapshot=*m;service_memory_state_t b;service_memory_snapshot(&b);
     char out[768];int n=snprintf(out,sizeof(out),
         "{\"code\":\"ok\",\"data\":{\"free_memory\":%d,\"allocated_memory\":%d,"
-        "\"free_memory_chunks\":%d,\"uptime_ms\":%lu,\"memory_reserve\":%u,"
+        "\"free_memory_chunks\":%d,\"uptime_ms\":%lu,\"last_reset_reason\":%d,\"memory_reserve\":%u,"
         "\"memory_reserved\":%lu,\"memory_active\":%lu,\"memory_waiting\":%lu,"
         "\"memory_denied\":%lu,\"minimum_sampled_free\":%lu,"
         "\"json_live_blocks\":%lu,\"json_peak_blocks\":%lu,\"json_alloc_failures\":%lu,\"json_guard_denied\":%lu,"
         "\"mqtt_pending\":%lu,\"mqtt_peak\":%lu,\"mqtt_overflow\":%lu,\"mqtt_max_delay_ms\":%lu}}",
         snapshot.free_memory,snapshot.allocted_memory,snapshot.num_of_chunks,
-        (unsigned long)mico_rtos_get_time(),SERVICE_MEMORY_RESERVE,
+        (unsigned long)mico_rtos_get_time(),reset_reason,SERVICE_MEMORY_RESERVE,
         (unsigned long)b.reserved,(unsigned long)b.active,(unsigned long)b.waiting,
         (unsigned long)b.denied,(unsigned long)b.minimum_free,
         (unsigned long)b.json_live,(unsigned long)b.json_peak,
@@ -394,7 +397,13 @@ static int HttpV1Command(httpd_request_t *r){
     size_t capacity=(size_t)r->remaining_bytes+1;
     uint64_t failures=service_memory_failures();
     char *body=json_heap_malloc(capacity);if(!body){service_memory_release(claim);return HttpV1CommandBusy(r);}
-    rc=read_body(r,body,capacity);json_object *request=rc?NULL:service_parse(body,strlen(body));json_heap_free(body);
+    rc=read_body(r,body,capacity);
+    if(rc){
+        /* A truncated/reset request has no reply channel. Close without
+         * dispatching it or attempting another write to the failed socket. */
+        json_heap_free(body);service_memory_release(claim);return HTTPD_DONE;
+    }
+    json_object *request=service_parse(body,strlen(body));json_heap_free(body);
     json_object *reply=service_memory_failures()==failures?service_command(request):NULL;if(request)json_object_put(request);
     rc=HttpV1Reply(r,reply);service_memory_release(claim);return rc;
 }

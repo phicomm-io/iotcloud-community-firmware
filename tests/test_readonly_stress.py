@@ -45,3 +45,13 @@ class ReadonlyStressTest(unittest.TestCase):
                 with patch('tests.device.readonly_stress.request', return_value=reply):
                     self.assertFalse(runner.sample('127.0.0.1', 'probe', 'logs.get')['ok'])
                 self.assertEqual(runner.stop.is_set(), blocked)
+
+    def test_network_recovery_gate(self):
+        for recovered in (True, False):
+            with self.subTest(recovered=recovered), tempfile.TemporaryDirectory() as directory:
+                runner = Runner({'127.0.0.1': 'test'}, 'test', Path(directory))
+                runner.before = {'127.0.0.1': {'state': {'wifi_connected': True, 'mqtt_connected': True}}}
+                row = {'ok': True, 'wifi_connected': True, 'mqtt_connected': recovered}
+                with patch.object(runner, 'sample', return_value=row), patch.object(runner.stop, 'wait'), patch('tests.device.readonly_stress.time.monotonic', side_effect=(0, 1, 91)):
+                    runner.restore_connectivity()
+                self.assertEqual(runner.stop.is_set(), not recovered)

@@ -44,4 +44,60 @@ int main(void){
 }
 '''
   helper.run_c(prefix.replace('SELECT\n','\n'+function(source,'static int httpd_select(')).replace('\nCLIENT\n','\n'+function(source,'static void httpd_handle_client_connection(')))
+
+ def test_purge_stops_on_eof_and_error(self):
+  helper=admission.MemoryAdmission();source=helper.sdk_http_source('httpd_handle.c')
+  helper.run_c(r'''
+#include <assert.h>
+#define kNoErr 0
+#define httpd_d(...) ((void)0)
+#pragma GCC diagnostic ignored "-Wsign-compare"
+typedef struct {unsigned body_nbytes;} httpd_request_t;
+static int calls,read_result;
+static int httpd_parse_hdr_tags(httpd_request_t *r,int fd,char *b,int n){assert(fd==7&&b&&n==16);r->body_nbytes=8;return 0;}
+static int httpd_recv(int fd,char *b,unsigned n,int flags){assert(fd==7&&b&&n<=8&&!flags&&++calls<4);return read_result;}
+PURGE
+int main(void){
+ httpd_request_t r;char scratch[16];
+ for(read_result=-1;read_result<=0;read_result++){calls=0;httpd_purge_socket_data(&r,scratch,16,7);assert(calls==1);}
+ read_result=4;calls=0;httpd_purge_socket_data(&r,scratch,16,7);assert(calls==2);
+}
+'''.replace('PURGE',function(source,'void httpd_purge_socket_data(')))
+
+ def test_incomplete_command_frees_body_and_closes_without_dispatch_or_send(self):
+  source=(ROOT/'TC1/http_server/app_httpd.c').read_text()
+  admission.MemoryAdmission().run_c(r'''
+#include <assert.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#define kParamErr -2
+#define HTTPD_DONE 3
+typedef int json_object;
+typedef struct {int chunked,remaining_bytes;} httpd_request_t;
+static int read_error,released,freed,dispatched,replied,parsed,put;
+static char storage[64];static json_object object;
+static int read_headers(httpd_request_t *r){(void)r;return 0;}
+static bool ota_job_active(void){return false;}
+static unsigned service_memory_wait(int n){assert(n==16);return 528;}
+static void service_memory_release(unsigned n){assert(n==528);released++;}
+static int HttpV1CommandBusy(httpd_request_t *r){(void)r;assert(0);return -1;}
+static uint64_t service_memory_failures(void){return 0;}
+static char *json_heap_malloc(size_t n){assert(n==17);return storage;}
+static void json_heap_free(void *p){assert(p==storage);freed++;}
+static int read_body(httpd_request_t *r,char *p,int n){(void)r;assert(p==storage&&n==17);strcpy(p,"{}");return read_error;}
+static json_object *service_parse(const char *p,size_t n){assert(p==storage&&n==2);parsed++;return &object;}
+static json_object *service_command(json_object *p){assert(p==&object);dispatched++;return &object;}
+static void json_object_put(json_object *p){assert(p==&object);put++;}
+static int HttpV1Reply(httpd_request_t *r,json_object *p){(void)r;assert(p==&object);replied++;return 0;}
+COMMAND
+int main(void){
+ httpd_request_t r={0,16};read_error=-1;
+ assert(HttpV1Command(&r)==HTTPD_DONE && freed==1 && released==1);
+ assert(!parsed&&!dispatched&&!replied&&!put);
+ read_error=0;assert(!HttpV1Command(&r)&&freed==2&&released==2);
+ assert(parsed==1&&dispatched==1&&replied==1&&put==1);
+}
+'''.replace('COMMAND',function(source,'static int HttpV1Command(')))
 if __name__=='__main__':unittest.main()

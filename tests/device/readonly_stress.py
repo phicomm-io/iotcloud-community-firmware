@@ -91,7 +91,8 @@ class Runner:
                 self.block(ip, 'unexpected command result: '+str(reply.get('code')))
             if row['ok'] and action == 'status.get' and expected == 'ok':
                 state = reply['data']
-                row.update(uptime=state.get('uptime_seconds'), free_memory=state.get('free_memory'))
+                row.update(uptime=state.get('uptime_seconds'), free_memory=state.get('free_memory'),
+                           wifi_connected=state.get('wifi_connected'), mqtt_connected=state.get('mqtt_connected'))
                 self.check(ip, state, start)
         except ProtocolError as e:
             row.update(ok=False, http=e.status, error=str(e), raw_base64=base64.b64encode(e.raw).decode())
@@ -274,6 +275,24 @@ class Runner:
                     job.result()
             self.recover('buffered-read-input-recovery')
 
+    def missing_read_clients(self):
+        """Exercise SDK cleanup when an unknown GET body ends at EOF."""
+        print('START missing read resource with truncated body EOF', flush=True)
+        for ip in self.targets:
+            if self.stop.is_set():
+                return
+            for size in (0, 4, 8):
+                try:
+                    with socket.create_connection((ip, 80), timeout=5) as sock:
+                        header = ('GET /__readonly_missing_resource__ HTTP/1.1\r\nHost: '+ip+
+                                  '\r\nContent-Length: 8\r\nConnection: close\r\n\r\n').encode()
+                        sock.sendall(header+b' '*size)
+                        sock.shutdown(socket.SHUT_WR)
+                        sock.recv(1024)
+                except OSError:
+                    pass
+            self.recover('missing-read-eof-recovery')
+
     def save(self):
         with self.lock:
             rows, blockers = self.rows[:], self.blockers[:]
@@ -291,7 +310,23 @@ class Runner:
         p.write_text(json.dumps(data, ensure_ascii=False, indent=2)+'\n')
         p.chmod(0o600)
 
+    def restore_connectivity(self):
+        for ip in self.targets:
+            required = [key for key in ('wifi_connected', 'mqtt_connected') if self.before[ip]['state'].get(key) is True]
+            if not required or self.stop.is_set():
+                continue
+            deadline, good = time.monotonic()+90, False
+            while time.monotonic() < deadline and not self.stop.is_set():
+                row = self.sample(ip, 'final-connectivity-recovery')
+                if row['ok'] and all(row.get(key) is True for key in required):
+                    good = True
+                    break
+                self.stop.wait(1)
+            if not good and not self.stop.is_set():
+                self.block(ip, 'initial network readiness did not recover after load removed')
+
     def finish(self):
+        self.restore_connectivity()
         if not self.stop.is_set():
             self.memory_window('final')
             for ip in self.targets:
@@ -363,6 +398,8 @@ def main():
                 runner.aborted_clients()
             if not runner.stop.is_set():
                 runner.buffered_read_clients()
+            if not runner.stop.is_set():
+                runner.missing_read_clients()
         if not runner.stop.is_set():
             runner.phase('soak', a.soak_clients, a.soak_seconds, a.soak_period)
         runner.finish()

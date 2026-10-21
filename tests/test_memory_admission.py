@@ -81,6 +81,7 @@ static void response(int fd,unsigned code,const char *type,const void *body,size
 '''+function(source,signature)+'\nint main(void){memory_response(7);assert(sent==1);}'
             else:
                 harness+=r'''
+int get_last_reset_reason(void){return 4;}
 typedef int httpd_request_t;
 #define HTTP_RES_200 "200"
 static int response_json(httpd_request_t *r,const char *status,const char *body,size_t n){assert(*r==7 && !strcmp(status,"200"));check(body,n);return 0;}
