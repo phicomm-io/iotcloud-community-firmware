@@ -13,6 +13,7 @@ import http.client
 import json
 import math
 from pathlib import Path
+import select
 import signal
 import socket
 import statistics
@@ -28,6 +29,9 @@ CONTROL_KEYS_BY_MODEL = {
     'tc1': ('socket_states', 'child_lock', 'led_enabled'),
     'm1': ('brightness_requested',),
 }
+INITIAL_BUSY_MAX_RETRIES = 3
+INITIAL_BUSY_RETRY_DELAY_SECONDS = 1.0
+INITIAL_BUSY_TOTAL_TIMEOUT_SECONDS = 15.0
 
 
 class ProtocolError(ValueError):
@@ -42,9 +46,12 @@ class InitializationError(RuntimeError):
         self.ip, self.action, self.reason = ip, action, reason
 
 
-def request(ip, action='status.get', params=None, timeout=5, capture=None):
+def request(ip, action='status.get', params=None, timeout=5, capture=None,
+            deadline=None):
     if action not in ACTIONS:
         raise ValueError('Only allowlisted read actions are permitted')
+    if deadline is not None:
+        return _request_until(ip, action, params, timeout, capture, deadline)
     c = http.client.HTTPConnection(ip, timeout=timeout)
     start = time.monotonic()
     try:
@@ -68,6 +75,178 @@ def request(ip, action='status.get', params=None, timeout=5, capture=None):
         return r.status, reply, len(raw), (time.monotonic()-start)*1000, start
     finally:
         c.close()
+
+
+def _request_until(ip, action, params, timeout, capture, deadline):
+    start = time.monotonic()
+    remaining = min(timeout, deadline-start)
+    if remaining <= 0:
+        raise TimeoutError('Initialization request deadline exceeded')
+    body = json.dumps({'action': action, 'params': params or {}}).encode()
+    request_bytes = (f'POST /api/v1/command HTTP/1.1\r\n'
+                     f'Host: {ip}\r\nContent-Type: application/json\r\n'
+                     f'Content-Length: {len(body)}\r\nConnection: close\r\n\r\n').encode() + body
+    sock = socket.create_connection((ip, 80), timeout=remaining)
+    try:
+        sock.setblocking(False)
+        sent = 0
+        while sent < len(request_bytes):
+            remaining = deadline-time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError('Initialization request deadline exceeded during send')
+            _, writable, _ = select.select([], [sock], [], remaining)
+            if not writable:
+                raise TimeoutError('Initialization request deadline exceeded during send')
+            written = sock.send(request_bytes[sent:])
+            if written <= 0:
+                raise OSError('Initialization request socket closed during send')
+            sent += written
+
+        response = bytearray()
+        header_end = None
+        status = None
+        content_length = None
+        chunked = False
+        eof = False
+        while True:
+            if header_end is None:
+                found_header_end = response.find(b'\r\n\r\n')
+                if found_header_end >= 0:
+                    header_end = found_header_end
+                    status, content_length, chunked = _parse_response_headers(response[:header_end])
+                    if capture is not None:
+                        capture['http'] = status
+                    if content_length is not None and content_length > 1024 * 1024:
+                        raise http.client.HTTPException('Initialization response body too large')
+            if header_end is not None:
+                payload = response[header_end+4:]
+                if content_length is not None:
+                    if len(payload) >= content_length:
+                        raw = bytes(payload[:content_length])
+                        break
+                    if eof:
+                        raise http.client.IncompleteRead(bytes(payload), content_length)
+                elif chunked:
+                    raw = _decode_chunked_body(payload)
+                    if raw is not None:
+                        break
+                    if eof:
+                        raise http.client.IncompleteRead(bytes(payload))
+                elif eof:
+                    raw = bytes(payload)
+                    break
+                if len(payload) > 1024 * 1024:
+                    raise http.client.HTTPException('Initialization response body too large')
+            elif len(response) > 64 * 1024:
+                raise http.client.HTTPException('Initialization response headers too large')
+
+            remaining = deadline-time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError('Initialization request deadline exceeded during receive')
+            readable, _, _ = select.select([sock], [], [], remaining)
+            if not readable:
+                raise TimeoutError('Initialization request deadline exceeded during receive')
+            data = sock.recv(4096)
+            if not data:
+                eof = True
+                if header_end is None:
+                    raise http.client.HTTPException('HTTP response closed before headers')
+            else:
+                response.extend(data)
+                if len(response) > 1088 * 1024:
+                    raise http.client.HTTPException('Initialization response too large')
+
+        if time.monotonic() >= deadline:
+            raise TimeoutError('Initialization request exceeded its absolute deadline')
+        if capture is not None:
+            capture.update(http=status, raw=raw)
+        try:
+            reply = json.loads(raw)
+            if not isinstance(reply, dict) or not isinstance(reply.get('code'), str):
+                raise ValueError('Missing command envelope')
+            if status == 200 and reply.get('code') == 'ok' and not isinstance(reply.get('data'), dict):
+                raise ValueError('Missing command data')
+        except ValueError:
+            if status == 200:
+                raise ProtocolError(status, raw)
+            reply = {}
+        return status, reply, len(raw), (time.monotonic()-start)*1000, start
+    finally:
+        sock.close()
+
+
+def _parse_response_headers(raw_headers):
+    lines = raw_headers.split(b'\r\n')
+    try:
+        parts = lines[0].decode('ascii').split()
+        if len(parts) < 2:
+            raise ValueError('Missing response status')
+        version, status_text = parts[:2]
+        status = int(status_text)
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise http.client.HTTPException('Malformed HTTP status line') from exc
+    if version not in ('HTTP/1.0', 'HTTP/1.1') or not 100 <= status <= 599:
+        raise http.client.HTTPException('Invalid HTTP status line')
+    lengths, transfers = [], []
+    for line in lines[1:]:
+        if not line or line[:1] in (b' ', b'\t') or b':' not in line:
+            raise http.client.HTTPException('Malformed HTTP response header')
+        name, value = line.split(b':', 1)
+        try:
+            name = name.decode('ascii').lower()
+            value = value.strip().decode('ascii').lower()
+        except UnicodeDecodeError as exc:
+            raise http.client.HTTPException('Non-ASCII HTTP response header') from exc
+        if name == 'content-length':
+            if not value.isdigit():
+                raise http.client.HTTPException('Invalid response Content-Length')
+            lengths.append(int(value))
+        elif name == 'transfer-encoding':
+            transfers.append(value)
+    if lengths and (len(set(lengths)) != 1 or transfers):
+        raise http.client.HTTPException('Conflicting response body framing')
+    if transfers and (len(transfers) != 1 or transfers[0] != 'chunked'):
+        raise http.client.HTTPException('Unsupported response transfer encoding')
+    return status, lengths[0] if lengths else None, bool(transfers)
+
+
+def _decode_chunked_body(payload):
+    offset, decoded = 0, bytearray()
+    while True:
+        line_end = payload.find(b'\r\n', offset)
+        if line_end < 0:
+            return None
+        size_text = payload[offset:line_end].split(b';', 1)[0]
+        # int(..., 16) accepts signs, whitespace and underscores. Negative
+        # chunks can move the cursor backwards, so validate the wire grammar
+        # before conversion and keep every nonterminal iteration advancing.
+        if not size_text or any(byte not in b'0123456789abcdefABCDEF' for byte in size_text):
+            raise http.client.HTTPException('Invalid chunk size')
+        if len(size_text.lstrip(b'0')) > 6:
+            raise http.client.HTTPException('Initialization chunk size too large')
+        try:
+            size = int(size_text, 16)
+        except ValueError as exc:
+            raise http.client.HTTPException('Invalid chunk size') from exc
+        offset = line_end + 2
+        if size > 1024 * 1024:
+            raise http.client.HTTPException('Initialization response body too large')
+        if size == 0:
+            if payload[offset:offset+2] == b'\r\n':
+                return bytes(decoded)
+            trailer_end = payload.find(b'\r\n\r\n', offset)
+            if trailer_end < 0:
+                return None
+            return bytes(decoded)
+        chunk_end = offset + size
+        if chunk_end + 2 > len(payload):
+            return None
+        if payload[chunk_end:chunk_end+2] != b'\r\n':
+            raise http.client.HTTPException('Malformed chunk terminator')
+        decoded.extend(payload[offset:chunk_end])
+        if len(decoded) > 1024 * 1024:
+            raise http.client.HTTPException('Initialization response body too large')
+        offset = chunk_end + 2
 
 
 class Runner:
@@ -140,10 +319,13 @@ class Runner:
         if state.get('watchdog_state') not in (None, 'healthy', 'starting'):
             self.block(ip, 'unhealthy watchdog')
 
-    def sample(self, ip, phase, action='status.get', params=None, expected='ok'):
+    def sample(self, ip, phase, action='status.get', params=None, expected='ok', deadline=None):
         row = {'ip': ip, 'phase': phase, 'action': action, 'params': params or {}, 'at': time.time()}
         try:
-            status, reply, size, elapsed, start = request(ip, action, params)
+            if deadline is None:
+                status, reply, size, elapsed, start = request(ip, action, params)
+            else:
+                status, reply, size, elapsed, start = request(ip, action, params, deadline=deadline)
             end = start + elapsed/1000
             row.update(http=status, code=reply.get('code'), bytes=size, ms=elapsed,
                        request_started_monotonic=start, request_ended_monotonic=end)
@@ -166,9 +348,50 @@ class Runner:
             self.rows.append(row)
         return row
 
+    def required_sample(self, ip, phase, action='status.get', params=None, expected='ok'):
+        """Obtain a golden/recovery success with bounded explicit busy retries.
+
+        Every attempt remains in the original phase denominator. Load/benchmark
+        callers continue to use sample() and do not retry. No mutation is allowed.
+        """
+        if action not in ACTIONS:
+            raise ValueError('required_sample accepts read-only actions only')
+        deadline = time.monotonic()+INITIAL_BUSY_TOTAL_TIMEOUT_SECONDS
+        retries = 0
+        while True:
+            if self.stop.is_set():
+                raise RuntimeError('Required sample stopped before success')
+            if time.monotonic() >= deadline:
+                self.block(ip, 'required sample absolute deadline exhausted: '+phase)
+                self.save()
+                raise RuntimeError('Required sample absolute deadline exhausted')
+            row = self.sample(ip, phase, action, params, expected, deadline=deadline)
+            if time.monotonic() >= deadline:
+                row.update(ok=False, error='required sample absolute deadline exhausted')
+                self.block(ip, 'required sample absolute deadline exhausted: '+phase)
+                self.save()
+                raise RuntimeError('Required sample absolute deadline exhausted')
+            if row['ok'] and not self.stop.is_set():
+                return row
+            busy = row.get('http') == 503 and row.get('code') == 'busy'
+            if busy:
+                row.update(degraded=True, retryable_busy=True,
+                           busy_response_attempt=retries+1, max_busy_retries=INITIAL_BUSY_MAX_RETRIES)
+            if self.stop.is_set() or not busy or retries >= INITIAL_BUSY_MAX_RETRIES:
+                if busy:
+                    row['retry_exhausted'] = True
+                self.block(ip, 'required sample did not succeed: '+phase)
+                self.save()
+                raise RuntimeError('Required sample did not succeed')
+            retries += 1
+            self.save()
+            self.stop.wait(min(INITIAL_BUSY_RETRY_DELAY_SECONDS,
+                               max(0, deadline-time.monotonic())))
+
     def initialize(self):
         for ip, ident in self.targets.items():
-            status, reply, _, elapsed, start, capture = self._initialize_request(ip, 'status.get')
+            status, reply, _, elapsed, start, capture = self._request_with_busy_retry(
+                ip, 'status.get')
             if status != 200 or reply.get('code') != 'ok':
                 self._fail_initialize(ip, 'status.get', status, reply,
                                        'baseline status request was not successful', capture)
@@ -190,7 +413,8 @@ class Runner:
                 self._fail_initialize(ip, 'status.get', status, reply,
                                        'baseline status missing uptime', capture)
 
-            cfg_status, cfg, _, _, _, capture = self._initialize_request(ip, 'config.get')
+            cfg_status, cfg, _, _, _, capture = self._request_with_busy_retry(
+                ip, 'config.get')
             if cfg_status != 200 or cfg.get('code') != 'ok':
                 self._fail_initialize(ip, 'config.get', cfg_status, cfg,
                                        'baseline configuration request was not successful', capture)
@@ -208,42 +432,103 @@ class Runner:
         if not self.stop.is_set() and not self.wait_idle_quiescence('baseline'):
             self.block('', 'baseline idle state did not reach three zero-allocation samples')
 
-    def _initialize_request(self, ip, action):
+    def _request_with_busy_retry(self, ip, action, phase='initialize'):
+        """Shared low-load setup/final read; measurements never call this helper."""
+        deadline = time.monotonic() + INITIAL_BUSY_TOTAL_TIMEOUT_SECONDS
+        busy_retries = 0
+        while True:
+            if self.stop.is_set():
+                self._fail_initialize(ip, action, None, {}, 'required read stopped', phase=phase)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                self._fail_initialize(ip, action, 503, {'code': 'busy'},
+                                      'HTTP 503 busy retry deadline exhausted',
+                                      append_failure_row=False, phase=phase)
+            timeout = min(5.0, remaining)
+            status, reply, size, elapsed, start, capture = self._initialize_request(
+                ip, action, timeout=timeout, deadline=deadline, phase=phase)
+            if status != 503 or reply.get('code') != 'busy':
+                if time.monotonic() >= deadline:
+                    self._fail_initialize(ip, action, status, reply,
+                                          'initialization request exceeded absolute deadline',
+                                          capture, phase=phase)
+                return status, reply, size, elapsed, start, capture
+
+            busy_retries += 1
+            attempt = busy_retries
+            end = start + elapsed / 1000
+            row = {
+                'ip': ip, 'phase': phase, 'action': action, 'params': {},
+                'at': time.time(), 'ok': False, 'degraded': True,
+                'retryable_busy': True, 'busy_response_attempt': attempt,
+                'max_busy_retries': INITIAL_BUSY_MAX_RETRIES,
+                'http': status, 'code': 'busy', 'bytes': size,
+                'ms': elapsed, 'request_started_monotonic': start,
+                'request_ended_monotonic': end,
+            }
+            with self.lock:
+                self.rows.append(row)
+            self.save()
+
+            if busy_retries > INITIAL_BUSY_MAX_RETRIES:
+                self._fail_initialize(ip, action, status, reply,
+                                      'HTTP 503 busy retries exhausted',
+                                      append_failure_row=False, phase=phase)
+
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                row['retry_exhausted'] = True
+                self.save()
+                self._fail_initialize(ip, action, status, reply,
+                                      'HTTP 503 busy retry deadline exhausted',
+                                      append_failure_row=False, phase=phase)
+            time.sleep(min(INITIAL_BUSY_RETRY_DELAY_SECONDS, remaining))
+
+    def _initialize_request(self, ip, action, timeout=5, deadline=None, phase='initialize'):
         capture = {}
         try:
-            result = request(ip, action, capture=capture)
+            result = request(ip, action, timeout=timeout, capture=capture,
+                             deadline=deadline)
         except ProtocolError as exc:
             capture.update(http=exc.status, raw=exc.raw)
-            self._fail_initialize(ip, action, exc.status, {}, str(exc), capture)
+            self._fail_initialize(ip, action, exc.status, {}, str(exc), capture, phase=phase)
         except (OSError, ValueError, http.client.HTTPException) as exc:
             self._fail_initialize(ip, action, capture.get('http'), {},
-                                   type(exc).__name__+': '+str(exc), capture)
+                                   type(exc).__name__+': '+str(exc), capture, phase=phase)
         status, reply, size, elapsed, start = result
         capture.setdefault('http', status)
         return status, reply, size, elapsed, start, capture
 
-    def _fail_initialize(self, ip, action, status, reply, reason, capture=None):
+    def _fail_initialize(self, ip, action, status, reply, reason, capture=None,
+                          append_failure_row=True, phase='initialize'):
         capture = capture or {}
         raw = capture.get('raw')
-        row = {
-            'ip': ip,
-            'phase': 'initialize',
-            'action': action,
-            'params': {},
-            'at': time.time(),
-            'ok': False,
-            'http': status,
-            'code': reply.get('code') if isinstance(reply, dict) else None,
-            'error': reason,
-        }
-        if raw is not None:
-            row['bytes'] = len(raw)
-            row['raw_base64'] = base64.b64encode(raw).decode()
-        self.rows.append(row)
-        self.block(ip, 'initialization failed: '+reason)
+        if append_failure_row:
+            row = {
+                'ip': ip,
+                'phase': phase,
+                'action': action,
+                'params': {},
+                'at': time.time(),
+                'ok': False,
+                'http': status,
+                'code': reply.get('code') if isinstance(reply, dict) else None,
+                'error': reason,
+            }
+            if raw is not None:
+                row['bytes'] = len(raw)
+                row['raw_base64'] = base64.b64encode(raw).decode()
+            self.rows.append(row)
+        elif (self.rows and self.rows[-1].get('ip') == ip and
+              self.rows[-1].get('action') == action and
+              self.rows[-1].get('retryable_busy')):
+            with self.lock:
+                self.rows[-1]['retry_exhausted'] = True
+                self.rows[-1]['error'] = reason
+        self.block(ip, ('initialization' if phase == 'initialize' else phase)+' failed: '+reason)
         self.run.update(
             status='failed', completed=False, ended_at=time.time(),
-            failure_type='InitializationError', failure_reason=reason,
+            failure_type='InitializationError' if phase == 'initialize' else 'RequiredReadError', failure_reason=reason,
         )
         self.save()
         raise InitializationError(ip, action, reason)
@@ -716,8 +1001,15 @@ class Runner:
         if not self.stop.is_set():
             for ip in self.targets:
                 try:
-                    status, reply, *_ = request(ip, 'config.get')
-                except (OSError, ValueError, http.client.HTTPException):
+                    status, reply, size, elapsed, start, capture = self._request_with_busy_retry(
+                        ip, 'config.get', phase='final-config-check')
+                    self.rows.append({'ip': ip, 'phase': 'final-config-check', 'action': 'config.get',
+                                      'params': {}, 'at': time.time(), 'http': status,
+                                      'code': reply.get('code'), 'bytes': size, 'ms': elapsed,
+                                      'ok': status == 200 and reply.get('code') == 'ok',
+                                      'request_started_monotonic': start,
+                                      'request_ended_monotonic': start+elapsed/1000})
+                except InitializationError:
                     status, reply = None, {}
                 if status != 200 or reply.get('code') != 'ok' or reply.get('data') != self.before[ip]['config']:
                     self.block(ip, 'configuration changed or unavailable')

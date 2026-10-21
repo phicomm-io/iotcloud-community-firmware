@@ -6,9 +6,11 @@ does not establish leak freedom.
 """
 import argparse
 import base64
+import copy
 import hashlib
 import json
 import math
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -734,11 +736,394 @@ def _contains_pair(argv, key, value):
     return any(argv[index:index+2] == [key, value] for index in range(len(argv)-1))
 
 
-def _audit_stage_argv(stage_map, label, archive, commit, version, failures):
+def _reuse_check(condition, message):
+    if not condition:
+        raise ValueError('Initial reuse: '+message)
+
+
+def _process_complete(row, group=False):
+    ok = (isinstance(row, dict) and row.get('status') == 'complete' and
+          row.get('exit_code') == 0 and type(row.get('pid')) is int and row['pid'] > 0)
+    if group:
+        ok &= row.get('process_group_empty') is True
+        ok &= all(row.get(key) is False for key in
+                  ('unexpected_descendants', 'descendant_cleanup_attempted',
+                   'timed_out', 'failure_evidence', 'interrupted'))
+    return bool(ok)
+
+
+def _initial_gate(initial, commit, version):
+    steps = initial.get('steps', [])
+    return (initial.get('status') == 'complete' and initial.get('completed') is True and
+            initial.get('initial_signed_ota_complete') is True and
+            initial.get('paced_diagnostic_complete') is True and
+            initial.get('firmware_commit', initial.get('commit')) == commit and
+            initial.get('version') == version and
+            all(initial.get(key) is True for key in
+                ('source_unchanged', 'source_copies_unchanged', 'source_manifest_unchanged')) and
+            type(initial.get('pid')) is int and initial['pid'] > 0 and
+            initial.get('exit_code') == 0 and len(steps) == 4 and
+            all(_process_complete(row) for row in steps) and
+            initial.get('targets') == {ip: ident for ip, (ident, _) in TARGETS.items()})
+
+
+def verify_reusable_initial(label, archive, commit, version):
+    """Re-read the immutable original evidence; never promote its outer result.
+
+    Old archived sources are checked against their original manifest, not against
+    today's test sources. Returned proofs anchor every file used by this decision.
+    Hashes detect later changes; these local records are not signed attestations.
+    """
+    _reuse_check(bool(re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9-]{0,63}', label)), 'invalid label')
+    _reuse_check(bool(re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9-]{0,63}', archive)), 'invalid archive')
+    outer_dir = PRIVATE/(label+'-mixed-final-controller')
+    inner_dir = PRIVATE/(label+'-initial-controller')
+    paced_path = PRIVATE/(label+'-paced-diagnostics')/'evidence.json'
+    proofs = {}
+
+    def anchor(path):
+        path = Path(path).resolve(strict=True)
+        _reuse_check(path.is_relative_to(BASE.resolve()), 'evidence outside acceptance tree')
+        proofs[str(path)] = _sha256(path)
+        return path
+
+    def read(path):
+        return _read_json(anchor(path))
+
+    def archived(folder, records, current=False):
+        _reuse_check(isinstance(records, dict) and bool(records), 'missing archived records')
+        for item in records.values():
+            _reuse_check(isinstance(item, dict), 'invalid archived record')
+            path = (folder/item['archive_path']).resolve(strict=True)
+            _reuse_check(path.is_relative_to(folder.resolve()), 'archive path escapes original run')
+            _reuse_check(_sha256(anchor(path)) == item.get('sha256') ==
+                        item.get('archived_sha256'), 'archived hash mismatch')
+            if current:
+                source = Path(item['source_path']).resolve(strict=True)
+                _reuse_check(source.is_relative_to((BASE/'candidates'/archive).resolve()),
+                            'candidate source outside selected archive')
+                _reuse_check(_sha256(anchor(source)) == item['sha256'], 'candidate changed')
+
+    outer = read(outer_dir/'controller.json')
+    inner = read(inner_dir/'controller.json')
+    _reuse_check(outer.get('label') == label and outer.get('archive') == archive and
+                outer.get('commit') == commit and outer.get('version') == version and
+                outer.get('targets') == [ip+'='+ident for ip, (ident, _) in TARGETS.items()],
+                'original outer candidate or targets differ')
+    _reuse_check(outer.get('status') in ('failed', 'complete') and
+                outer.get('completed') == (outer.get('status') == 'complete'), 'outer result missing')
+    _reuse_check(inner.get('label') == label and inner.get('archive') == archive and
+                _initial_gate(inner, commit, version), 'inner initial did not pass')
+    stages = outer.get('stages', [])
+    _reuse_check(bool(stages) and stages[0].get('name') == 'initial' and
+                sum(row.get('name') == 'initial' for row in stages) == 1, 'original initial row missing')
+    row = stages[0]
+    _reuse_check(_process_complete(row, group=True) and row.get('pid') == inner['pid'] and
+                Path(row.get('evidence_path', '')).resolve() == (inner_dir/'controller.json').resolve(),
+                'original initial process evidence differs')
+    argv = row.get('argv', [])
+    _reuse_check(any(Path(str(arg)).name == 'run_initial_shared_screen.py' for arg in argv) and
+                all(_contains_pair(argv, key, value) for key, value in
+                    (('--archive', archive), ('--commit', commit), ('--version', version),
+                     ('--label', label))) and '--execute' in argv, 'original initial argv differs')
+    previous = inner.get('previous_version')
+    for index, step in enumerate(inner['steps']):
+        args = step.get('argv', [])
+        if index < 3:
+            suffix = tuple(TARGETS)[index].rsplit('.', 1)[1]
+            expected = [suffix, label+'-initial', previous, archive]
+            valid = len(args) == 6 and Path(str(args[1])).name == 'deploy_candidate.py' and args[2:] == expected
+        else:
+            valid = (len(args) == 7 and Path(str(args[1])).name == 'diagnose_shared_candidate.py' and
+                     args[2:] == ['--version', version, '--label', label, '--execute'])
+        _reuse_check(valid, 'initial four-step argv/order mismatch')
+    outer_manifest_path = outer_dir/'source-manifest.json'
+    outer_manifest = read(outer_manifest_path)
+    _reuse_check(_sha256(outer_manifest_path) == outer.get('source_manifest_sha256') and
+                outer_manifest.get('sources') == outer.get('sources') and
+                outer_manifest.get('validation_commit') == outer.get('validation_commit'),
+                'original outer source manifest changed')
+    _reuse_check({'controller.py', 'initial_controller.py', 'readonly_stress.py',
+                  'deploy_candidate.py', 'diagnose_shared_candidate.py', 'ota_package.py',
+                  'audit_mixed_candidate_completion.py', 'http_status_schema_samples.py',
+                  'http_mqtt_schema_parity.py'} <= set(outer_manifest['sources']),
+                'original outer required sources missing')
+    archived(outer_dir, outer_manifest['sources'])
+    inner_manifest_path = inner_dir/'source-manifest.json'
+    inner_manifest = read(inner_manifest_path)
+    _reuse_check(_sha256(inner_manifest_path) == inner.get('source_manifest_sha256') and
+                inner_manifest.get('candidate_commit') == commit and
+                inner_manifest.get('candidate_version') == version and
+                inner_manifest.get('commit') == inner.get('validation_commit'),
+                'original inner source manifest changed')
+    _reuse_check({'controller.py', 'readonly_stress.py', 'deploy_candidate.py',
+                  'diagnose_shared_candidate.py', 'ota_package.py', 'status_benchmark.py',
+                  'validate_shared_candidate.py'} <= set(inner_manifest.get('sources', {})),
+                'original inner required sources missing')
+    archived(inner_dir, inner_manifest.get('sources'))
+    files = outer.get('candidate_files', {})
+    expected_files = set()
+    for model in ('a1', 'tc1', 'm1'):
+        ota = 'phicomm_'+('tc1_a1' if model == 'tc1' else model)+'.ota.bin'
+        expected_files.update(model+'/'+name for name in ('manifest.json', 'SHA256SUMS', ota, ota+'.signed'))
+    _reuse_check(set(files) == expected_files, 'incomplete original candidate archive')
+    archived(outer_dir, files, current=True)
+    from tools.ota.package import verify_package
+    packages = {}
+    for model in ('a1', 'tc1', 'm1'):
+        folder = BASE/'candidates'/archive/model
+        ota = 'phicomm_'+('tc1_a1' if model == 'tc1' else model)+'.ota.bin'
+        manifest = read(folder/'manifest.json')
+        raw = anchor(folder/ota).read_bytes()
+        signed = anchor(folder/(ota+'.signed')).read_bytes()
+        metadata = verify_package(signed, model)
+        _reuse_check(manifest.get('git_commit') == commit and manifest.get('version') == version and
+                    manifest.get('dirty') is False and
+                    manifest.get('target') == {'a1': 'A1@MK3080B@moc', 'm1': 'M1@MK3080B@moc',
+                                               'tc1': 'TC1@MK3031@moc'}[model] and
+                    hashlib.sha256(raw).hexdigest() == manifest.get('files', {}).get(ota) and
+                    metadata.get('model') == model and metadata.get('version') == manifest.get('base_version') and
+                    metadata.get('commit') == commit and signed[192:] == raw,
+                    'signed package or manifest identity mismatch')
+        records = inner_manifest['sources']
+        for name, data in ((model+'.ota.bin.signed', signed),
+                           (model+'.manifest.json', (folder/'manifest.json').read_bytes())):
+            _reuse_check(name in records and records[name]['sha256'] == hashlib.sha256(data).hexdigest(),
+                        'inner deployed package differs')
+        packages[model] = hashlib.sha256(signed).hexdigest()
+    paced = read(paced_path)
+    failures = []
+    _runner_gate(paced, 'reused_paced', failures)
+    _identity_gate(paced, version, failures, 'reused_paced')
+    _reuse_check(not failures and paced.get('version') == version, 'original paced evidence failed')
+    counts = {}
+    for ip in TARGETS:
+        for phase, expected in (('paced-full', 90), ('paced-live', 30)):
+            rows = [item for item in paced.get('rows', [])
+                    if item.get('ip') == ip and item.get('phase') == phase]
+            _reuse_check(len(rows) == expected, 'original paced request count differs')
+            counts[ip+' '+phase] = {
+                'requests': len(rows),
+                'http_200_ok': sum(item.get('http') == 200 and item.get('code') == 'ok' for item in rows),
+                'http_503': sum(item.get('http') == 503 for item in rows),
+                'no_http': sum('http' not in item for item in rows),
+                'other_http': sum('http' in item and item.get('http') not in (200, 503) for item in rows),
+            }
+    _reuse_check(counts == inner.get('diagnostic_summary'), 'original paced summary differs')
+    return {'schema': 'mixed-initial-reuse-v1', 'source_label': label,
+            'archive': archive, 'commit': commit, 'version': version,
+            'original_outer_status': outer['status'], 'original_outer_completed': outer['completed'],
+            'initial_evidence_path': str((inner_dir/'controller.json').resolve()),
+            'paced_evidence_path': str(paced_path.resolve()),
+            'original_initial_stage': row, 'signed_package_sha256': packages,
+            'proof_sha256': dict(sorted(proofs.items())),
+            'interpretation': 'Only inner initial reused; original outer result is unchanged'}
+
+
+def verify_reuse_continuity(reuse, pre, require_complete=True):
+    old = _read_json(reuse['paced_evidence_path'])
+    _reuse_check(_sha256(reuse['paced_evidence_path']) ==
+                reuse['proof_sha256'][reuse['paced_evidence_path']], 'paced evidence changed')
+    return verify_runner_continuity(old, pre, reuse['version'], require_complete)
+
+
+def verify_runner_continuity(old, new, version, require_complete=True):
+    """Do not rebase away a reset/config/control change between runner instances.
+
+    Status and memory counters have separate observations. Recorded A1/M1 clocks
+    run faster than host monotonic time, so an intersection of all boot intervals
+    would reject unchanged old evidence. Require nondecreasing uptime and no
+    forward boot-origin shift beyond floor(seconds) uncertainty. This is sampled
+    continuity, not a claim about every unobserved instant or clock failure.
+    """
+    failures = []
+    _identity_gate(new, version, failures, 'continuity')
+    if require_complete:
+        _runner_gate(new, 'continuity', failures)
+    else:
+        _uptime_gate(new, 'continuity', failures)
+        _require(new.get('blockers') == [], 'continuity_blockers', failures)
+    _reuse_check(not failures, 'new runner did not pass identity/uptime gates')
+
+    def observations(evidence, ip, kind):
+        base = evidence['before'][ip]
+        result = ([(base['status_request_started_monotonic'],
+                    base['status_request_ended_monotonic'], base['state']['uptime_seconds'], 1.0)]
+                  if kind == 'status' else [])
+        for row in evidence.get('rows' if kind == 'status' else 'memory', []):
+            if row.get('ip') != ip or row.get('ok') is not True:
+                continue
+            if kind == 'status':
+                if row.get('action') != 'status.get':
+                    continue
+                uptime = row.get('uptime')
+            else:
+                value = row.get('data', {}).get('uptime_ms')
+                uptime = value/1000 if type(value) in (int, float) else None
+            result.append((row.get('request_started_monotonic'),
+                           row.get('request_ended_monotonic'), uptime,
+                           1.0 if kind == 'status' else .001))
+        _reuse_check(bool(result), 'missing continuity '+kind+' observations: '+ip)
+        _reuse_check(all(all(type(v) in (int, float) and math.isfinite(v) for v in sample) and
+                        sample[0] <= sample[1] and sample[2] >= 0 for sample in result),
+                    'invalid continuity timing: '+ip)
+        return sorted(result, key=lambda sample: sample[1])
+
+    details = {}
+    for ip, (_, model) in TARGETS.items():
+        left, right = old['before'][ip], new['before'][ip]
+        _reuse_check(left['config'] == right['config'], 'configuration changed: '+ip)
+        keys = {'a1': ('requested_fan_on', 'requested_speed', 'child_lock', 'led_enabled'),
+                'tc1': ('socket_states', 'child_lock', 'led_enabled'),
+                'm1': ('brightness_requested',)}[model]
+        _reuse_check(all(left['state'][key] == right['state'][key] for key in keys),
+                    'controls changed: '+ip)
+        streams = {}
+        for kind in ('status', 'memory'):
+            previous = observations(old, ip, kind)[-1]
+            samples = observations(new, ip, kind)
+            _reuse_check(all(start >= previous[1] for start, end, uptime, quantum in samples),
+                        'new stage predates previous stage: '+ip)
+            _reuse_check(all(uptime >= previous[2] and
+                            start-uptime-quantum <= previous[1]-previous[2]
+                            for start, end, uptime, quantum in samples), 'boot changed/reset: '+ip)
+            streams[kind] = {'previous_end': previous[1], 'previous_uptime': previous[2],
+                             'new_first_start': min(sample[0] for sample in samples)}
+        details[ip] = {'streams': streams, 'configuration_equal': True, 'controls_equal': True}
+    return {'passed': True, 'targets': details,
+            'limit': 'Sampled continuity; not a complete reboot history or proof against clock faults'}
+
+
+def verify_reused_pre(reuse, checkpoint_path, journal_path, pre, label, reuse_hash):
+    """Revalidate the pre-OTA checkpoint and the one authorized OTA-out per DUT."""
+    checkpoint = _read_json(checkpoint_path)
+    _reuse_check(checkpoint.get('schema') == 'reuse-pre-checkpoint-v1' and
+                checkpoint.get('reuse_record_sha256') == reuse_hash,
+                'pre-OTA checkpoint missing/wrong reuse record')
+    continuity = verify_reuse_continuity(reuse, checkpoint['runner'], require_complete=False)
+    _reuse_check(checkpoint.get('continuity') == continuity, 'pre-OTA checkpoint continuity differs')
+    at = checkpoint.get('captured_monotonic')
+    _reuse_check(type(at) in (int, float) and math.isfinite(at) and
+                all(at >= item['status_request_ended_monotonic']
+                    for item in checkpoint['runner']['before'].values()), 'invalid checkpoint time')
+    journal = _read_json(journal_path)
+    stage = label+'-pre-ota-out'
+    steps = journal.get('steps', [])
+    _reuse_check(journal.get('schema') == 'reuse-ota-out-v1' and journal.get('stage') == stage and
+                journal.get('completed') is True and len(steps) == 3, 'OTA-out journal incomplete')
+    proofs = {str(Path(checkpoint_path).resolve()): _sha256(checkpoint_path),
+              str(Path(journal_path).resolve()): _sha256(journal_path)}
+    for (ip, (ident, model)), row in zip(TARGETS.items(), steps):
+        args = row.get('argv', [])
+        suffix = ip.rsplit('.', 1)[1]
+        start, end = row.get('started_monotonic'), row.get('ended_monotonic')
+        _reuse_check(row.get('ip') == ip and type(row.get('pid')) is int and row['pid'] > 0 and
+                    row.get('exit_code') == 0 and len(args) == 6 and
+                    Path(str(args[1])).name == 'deploy_candidate.py' and
+                    args[2:] == [suffix, stage, reuse['version'], reuse['archive']] and
+                    type(start) in (int, float) and type(end) in (int, float) and
+                    math.isfinite(start) and math.isfinite(end) and at <= start <= end,
+                    'OTA-out happened before checkpoint or process/target mismatch')
+        at = end
+        folder = PRIVATE/('deploy-'+stage+'-'+suffix)
+        evidence = {}
+        for name in ('before', 'upload-intent', 'upload', 'after'):
+            path = folder/(name+'.json')
+            evidence[name] = _read_json(path)
+            proofs[str(path.resolve())] = _sha256(path)
+        intent = evidence['upload-intent']
+        manifest = _read_json(BASE/'candidates'/reuse['archive']/model/'manifest.json')
+        _reuse_check(intent.get('ip') == ip and str(intent.get('device_id', '')).lower() == ident.lower() and
+                    intent.get('sha256') == reuse['signed_package_sha256'][model] and
+                    intent.get('manifest') == manifest and evidence['upload'].get('http') == 202,
+                    'OTA-out package/target/202 mismatch')
+        before, after = evidence['before'], evidence['after']
+        base = checkpoint['runner']['before'][ip]
+        controls = {'a1': ('requested_fan_on', 'requested_speed', 'child_lock', 'led_enabled'),
+                    'tc1': ('socket_states', 'child_lock', 'led_enabled'),
+                    'm1': ('brightness_requested',)}[model]
+        for item in (before, after):
+            state = item.get('status', {})
+            _reuse_check(str(state.get('device_id', '')).lower() == ident.lower() and
+                        state.get('model') == model and state.get('version') == reuse['version'] and
+                        item.get('config') == base['config'] and
+                        all(state.get(key) == base['state'][key] for key in controls),
+                        'OTA-out identity/config/controls changed')
+        bu, au = before['status'].get('uptime_seconds'), after['status'].get('uptime_seconds')
+        _reuse_check(type(bu) in (int, float) and type(au) in (int, float) and
+                    math.isfinite(bu) and math.isfinite(au) and 0 <= au < bu,
+                    'OTA-out planned reboot not observed')
+        latest = pre.get('before', {}).get(ip, {})
+        state = latest.get('state', {})
+        _reuse_check(latest.get('config') == base['config'] and
+                    all(state.get(key) == base['state'][key] for key in controls),
+                    'post-OTA config/controls changed')
+        # The uploader records no exact status request interval. Its entire child
+        # operation bounds the authorized reboot; do not invent a precise origin.
+        ps, pe, pu = (latest.get('status_request_started_monotonic'),
+                      latest.get('status_request_ended_monotonic'), state.get('uptime_seconds'))
+        _reuse_check(all(type(v) in (int, float) and math.isfinite(v) for v in (ps, pe, pu)) and
+                    ps >= end and pu >= au and ps-pu-1 <= end and pe-pu >= start,
+                    'post-OTA boot outside authorized upload window')
+    failures = []
+    _identity_gate(pre, reuse['version'], failures, 'reuse_post_ota')
+    _runner_gate(pre, 'reuse_post_ota', failures)
+    _reuse_check(not failures, 'post-OTA pre gate failed')
+    return {'passed': True, 'continuity': continuity, 'ota_out_count': 3,
+            'proof_sha256': dict(sorted(proofs.items())),
+            'boot_observation_limit': 'Post-OTA boot is bounded by each uploader child interval, not an exact reset timestamp'}
+
+
+def verify_post_ota_chain(pre, stages, version, post=None, post_runner=None):
+    """All later initialized baselines share the post-OTA idle boot/config."""
+    previous = pre
+    report = {}
+    for name, runner in stages:
+        report[name] = verify_runner_continuity(previous, runner, version)
+        previous = runner
+    if post is not None:
+        # The existing postcheck deliberately restores the soak's old before.
+        # Its separate fresh comparison retains the real initialization times.
+        fresh = copy.deepcopy(post_runner)
+        for ip in TARGETS:
+            item = post.get('fresh_baseline_comparison', {}).get(ip, {})
+            _reuse_check(all(item.get(key) is True for key in
+                            ('identity_unchanged', 'model_version_unchanged', 'controls_unchanged',
+                             'config_unchanged', 'uptime_continuity')), 'postcheck fresh comparison missing')
+            start, end = item['fresh_status_interval']
+            base = fresh['before'][ip]
+            base['status_request_started_monotonic'] = start
+            base['status_request_ended_monotonic'] = end
+            base['state']['uptime_seconds'] = item['fresh_uptime_seconds']
+        report['mixed_postcheck'] = verify_runner_continuity(previous, fresh, version)
+    return {'passed': True, 'stages': report}
+
+
+def verify_pre_soak_continuity(stage_map, version):
+    """Offline gate before launching 4h; does not issue any device request."""
+    def evidence(name):
+        row = stage_map[name]
+        return Path(row.get('evidence_path', row.get('evidence', '')))
+    pre_path = evidence('pre_stability')
+    body_path = evidence('http_schema_samples').parent/'evidence.json'
+    http_path = evidence('http_regression')
+    short_controller_path = evidence('mixed_short')
+    short_controller = _read_json(short_controller_path)
+    short_path = Path(short_controller['output'])/'http-runner/evidence.json'
+    proof = {str(path.resolve()): _sha256(path) for path in
+             (pre_path, body_path, http_path, short_controller_path, short_path)}
+    result = verify_post_ota_chain(_read_json(pre_path), [
+        ('http_schema_samples', _read_json(body_path)),
+        ('http_regression', _read_json(http_path)),
+        ('mixed_short', _read_json(short_path))], version)
+    return {'passed': True, 'continuity': result, 'proof_sha256': dict(sorted(proof.items()))}
+
+
+def _audit_stage_argv(stage_map, label, archive, commit, version, failures, initial_label=None):
     contracts = {
         'initial': ('run_initial_shared_screen.py',
                     (('--archive', archive), ('--commit', commit), ('--version', version),
-                     ('--label', label)), ('--execute',)),
+                     ('--label', initial_label or label)), ('--execute',)),
         'pre_stability': ('validate_shared_candidate.py',
                           (('--archive', archive), ('--version', version),
                            ('--label', label+'-pre')), ('--existing-runtime',
@@ -827,7 +1212,27 @@ def audit_controller(controller_path, label, archive, commit, version):
         process_ok &= row.get('timed_out') is False and row.get('failure_evidence') is False
         process_ok &= row.get('interrupted') is False
     _require(bool(process_ok), 'stage_process_completion_or_cleanup', failures)
-    _audit_stage_argv(stage_map, label, archive, commit, version, failures)
+    reuse = None
+    reuse_metadata = controller.get('initial_reuse')
+    if reuse_metadata is not None:
+        try:
+            reuse_path = controller_dir/'initial-reuse.json'
+            _reuse_check(reuse_metadata.get('path') == 'initial-reuse.json' and
+                        _sha256(reuse_path) == reuse_metadata.get('sha256'), 'reuse record changed')
+            recorded_reuse = _read_json(reuse_path)
+            reuse = verify_reusable_initial(recorded_reuse['source_label'], archive, commit, version)
+            _reuse_check(recorded_reuse == reuse, 'reuse proof differs from original evidence')
+            expected_stage = dict(reuse['original_initial_stage'], execution='reused',
+                                  reused_from=reuse['source_label'])
+            _reuse_check(stage_map.get('initial') == expected_stage, 'reused stage provenance differs')
+            _reuse_check(reuse['source_label'] != label, 'cannot reuse own label')
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            failures.append('initial_reuse_invalid:'+str(exc))
+            reuse = None
+    elif stage_map.get('initial', {}).get('execution') == 'reused':
+        failures.append('initial_reuse_record_missing')
+    _audit_stage_argv(stage_map, label, archive, commit, version, failures,
+                      initial_label=reuse['source_label'] if reuse else None)
     sources = controller.get('sources')
     _require_acceptance_sources(sources, failures)
     source_audit = _verify_hash_records(controller_dir, sources, failures)
@@ -849,6 +1254,10 @@ def audit_controller(controller_path, label, archive, commit, version):
              'candidate_validation_drift_gate_missing', failures)
     _require(controller.get('validation_tree_unchanged') is True,
              'validation_tree_changed_during_run', failures)
+    paths = controller.get('validation_paths')
+    _require(isinstance(paths, list) and all(isinstance(path, str) and
+             (path.startswith(('tests/', 'docs/')) or path == 'common/mqtt/README.md')
+             for path in paths), 'candidate_validation_path_not_allowlisted', failures)
 
     # The child artifacts are located by fixed controller-owned stage paths.
     initial_path = Path(stage_map.get('initial', {}).get('evidence_path', ''))
@@ -874,23 +1283,26 @@ def audit_controller(controller_path, label, archive, commit, version):
     soak = _read_json(soak_path) if soak_path.is_file() else {}
     post = _read_json(post_path) if post_path.is_file() else {}
 
-    initial_steps = initial.get('steps') if isinstance(initial.get('steps'), list) else []
-    initial_process_ok = (len(initial_steps) == 4 and
-                          all(isinstance(row, dict) and row.get('status') == 'complete' and
-                              type(row.get('pid')) is int and row['pid'] > 0 and
-                              row.get('exit_code') == 0 for row in initial_steps))
-    initial_ok = (initial.get('status') == 'complete' and initial.get('completed') is True and
-                  initial.get('initial_signed_ota_complete') is True and
-                  initial.get('paced_diagnostic_complete') is True and
-                  initial.get('firmware_commit', initial.get('commit')) == commit and
-                  initial.get('version') == version and initial.get('source_unchanged') is True and
-                  initial.get('source_copies_unchanged') is True and
-                  initial.get('source_manifest_unchanged') is True and
-                  type(initial.get('pid')) is int and initial['pid'] > 0 and
-                  initial.get('exit_code') == 0 and initial_process_ok)
+    initial_ok = _initial_gate(initial, commit, version)
     _require(initial_ok, 'initial_signed_ota_or_paced_gate', failures)
-    _require(initial.get('targets') == [ip+'='+ident for ip, (ident, _) in TARGETS.items()],
-             'initial_targets_mismatch', failures)
+    expected_initial = PRIVATE/((reuse['source_label'] if reuse else label)+'-initial-controller')/'controller.json'
+    _require(initial_path.resolve() == expected_initial.resolve(), 'initial_evidence_path_mismatch', failures)
+    reuse_continuity = None
+    if reuse is not None:
+        try:
+            checkpoint_path = PRIVATE/(label+'-pre-benchmark')/'reuse-continuity.json'
+            journal_path = PRIVATE/(label+'-pre-benchmark')/'reuse-ota-out.json'
+            reuse_continuity = verify_reused_pre(reuse, checkpoint_path, journal_path, pre, label,
+                                                  reuse_metadata['sha256'])
+            argv = stage_map.get('pre_stability', {}).get('argv', [])
+            _reuse_check(_contains_pair(argv, '--reuse-initial-record',
+                                       str(controller_dir/'initial-reuse.json')),
+                        'pre lacks early continuity checkpoint argument')
+            _reuse_check(controller.get('reuse_continuity') == reuse_continuity and
+                        controller.get('reuse_pre_sha256') == _sha256(pre_path),
+                        'continuity record or pre evidence changed')
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            failures.append('initial_reuse_continuity:'+str(exc))
     _require(pre.get('run', {}).get('status') == 'complete' and
              pre.get('run', {}).get('completed') is True and pre.get('blockers') == [],
              'pre_stability_only_runner_incomplete', failures)
@@ -934,12 +1346,36 @@ def audit_controller(controller_path, label, archive, commit, version):
              post.get('exit_code') == 0 and post.get('process_group_empty') is True and
              post.get('process_group_cleanup_confirmed') is True,
              'mixed_postcheck_incomplete', failures)
+    try:
+        pre_soak = controller.get('pre_soak_continuity', {})
+        expected_pre_soak = verify_pre_soak_continuity(stage_map, version)
+        _require(all(pre_soak.get(key) == value for key, value in expected_pre_soak.items()),
+                 'pre_soak_continuity_proof', failures)
+        checked_at = pre_soak.get('checked_at')
+        soak_started = stage_map.get('mixed_soak', {}).get('started_at')
+        _require(type(checked_at) in (int, float) and type(soak_started) in (int, float) and
+                 math.isfinite(checked_at) and math.isfinite(soak_started) and
+                 checked_at <= soak_started, 'pre_soak_gate_after_start', failures)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        failures.append('pre_soak_continuity:'+str(exc))
+    stage_continuity = None
+    try:
+        post_runner_path = post_path.parent/'runner/evidence.json'
+        post_runner = _read_json(post_runner_path)
+        stage_continuity = verify_post_ota_chain(pre, [
+            ('http_schema_samples', http_body_runner), ('http_regression', http),
+            ('mixed_short', short_runner), ('mixed_soak', soak_runner)], version, post, post_runner)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        failures.append('cross_stage_continuity:'+str(exc))
     output = {
         'schema': 1, 'label': label, 'archive': archive, 'commit': commit, 'version': version,
         'completion_audit_pass': not failures, 'failures': failures,
         'stages': {name: stage_map.get(name, {}).get('status', 'missing') for name in expected_names},
         'source_audit': source_audit, 'candidate_package_audit': candidate_audit,
         'initial_signed_ota_complete': initial_ok,
+        'initial_reuse_verified': reuse is not None if reuse_metadata is not None else None,
+        'initial_reuse_continuity': reuse_continuity,
+        'post_ota_stage_continuity': stage_continuity,
         'pre_stability_only_complete': pre.get('run', {}).get('completed') is True,
         'mqtt_readonly_complete': mqtt_readonly_summary['passed'],
         'mqtt_readonly_summary': mqtt_readonly_summary,

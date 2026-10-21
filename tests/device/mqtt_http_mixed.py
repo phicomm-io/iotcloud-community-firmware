@@ -5,6 +5,7 @@ All broker publications are QoS 1, non-retained status.get requests. Dry-run is
 the default. Device failure injection and broker disconnects belong in host tests.
 """
 import argparse
+import base64
 from collections import Counter
 from contextlib import contextmanager
 import copy
@@ -44,6 +45,9 @@ MQTT_PUBACK_TIMEOUT = 5.0
 HTTP_REQUEST_TIMEOUT = 5.0
 PHASE_SHUTDOWN_GRACE = 2.0
 MQTT_NO_SUCCESS_LIMIT = 30.0
+RECOVERY_BUSY_MAX_RETRIES = 3
+RECOVERY_BUSY_RETRY_DELAY = 1.0
+RECOVERY_BUSY_TOTAL_TIMEOUT = 15.0
 RUN_TIMEOUT = 15000.0
 OUTCOME_NAMES = ('success', 'busy', 'timeout', 'transport', 'other', 'cancelled')
 QUEUE_FIELDS = (
@@ -223,7 +227,8 @@ class Evidence:
             'targets': {ip: {'device_id': ident, 'model': model}
                         for ip, (ident, model) in TARGETS.items()},
             'plan': plan, 'phases': [], 'http': [], 'mqtt': [], 'telemetry': [],
-            'recovery': [], 'protocol_errors': [], 'unmatched_mqtt': [],
+            'recovery': [], 'recovery_attempts': [],
+            'protocol_errors': [], 'unmatched_mqtt': [],
             'queue_drops': [], 'queue_overflow_events': [], 'blockers': [],
         }
         self.lock = threading.RLock()
@@ -725,15 +730,17 @@ def _telemetry_observation(rows, ip, phase, stage):
 
 def receive_correlated(client, request_id, result_topic, state_topic, timeout,
                        telemetry_events, ip, phase, runner, *,
-                       collection_stage='recovery', window_started=None):
-    started = time.monotonic() if window_started is None else window_started
-    deadline = started+timeout
-    while time.monotonic() < deadline:
+                       collection_stage='recovery', window_started=None,
+                       include_raw=False, absolute_deadline=None,
+                       monotonic=time.monotonic):
+    started = monotonic() if window_started is None else window_started
+    deadline = started+timeout if absolute_deadline is None else absolute_deadline
+    while monotonic() < deadline:
         if not client.connected.is_set():
             raise ConnectionError('MQTT disconnected during phase recovery')
         try:
             topic, body, retained, _raw = client.messages.get(
-                timeout=min(.1, max(.01, deadline-time.monotonic())))
+                timeout=min(.1, max(.01, deadline-monotonic())))
         except queue.Empty:
             continue
         try:
@@ -774,66 +781,154 @@ def receive_correlated(client, request_id, result_topic, state_topic, timeout,
                 if not isinstance(body, dict):
                     raise MQTTProtocolError('Non-object MQTT result payload during recovery')
                 if body.get('request_id') == request_id:
+                    if include_raw:
+                        return topic, body, retained, _raw
                     return topic, body, retained
         finally:
             client.messages.task_done()
     raise TimeoutError('Fresh correlated MQTT recovery result timed out')
 
 
-def recover(runner, clients, roots, evidence, name):
+def recover(runner, clients, roots, evidence, name, *, monotonic=time.monotonic,
+            sleep=time.sleep):
     runner.recover(name+'-http', seconds=45)
     if runner.stop.is_set():
         raise RuntimeError('HTTP recovery after mixed phase failed')
     result_rows = []
     for ip in TARGETS:
         client = clients[ip]
-        request_id = 'readonly-mixed-' + uuid.uuid4().hex
-        payload = make_status_payload(request_id)
-        started = time.monotonic()
-        try:
-            info = client.client.publish(roots[ip]+'/command', json.dumps(
-                payload, separators=(',', ':')).encode(), qos=1, retain=False)
-        except Exception as exc:
-            runner.block(ip, 'MQTT recovery publish failed: '+type(exc).__name__)
-            raise RuntimeError('MQTT recovery publish failed') from exc
-        if info.rc != 0:
-            runner.block(ip, 'MQTT recovery QoS1 publish failed')
-            raise RuntimeError('MQTT recovery publish failed')
-        try:
-            info.wait_for_publish(timeout=MQTT_PUBACK_TIMEOUT)
-        except Exception as exc:
-            runner.block(ip, 'MQTT recovery PUBACK wait failed: '+type(exc).__name__)
-            raise RuntimeError('MQTT recovery PUBACK wait failed') from exc
-        if not info.is_published():
-            runner.block(ip, 'MQTT recovery PUBACK timed out')
-            raise TimeoutError('MQTT recovery PUBACK timed out')
-        try:
-            topic, body, retained = receive_correlated(
-                client, request_id, roots[ip]+'/result', roots[ip]+'/state',
-                MQTT_RESULT_TIMEOUT, evidence.data['telemetry'], ip, name, runner,
-                collection_stage='recovery', window_started=started)
-        except MQTTProtocolError as exc:
-            evidence.append('protocol_errors', {
-                'ip': ip, 'phase': name, 'topic_kind': 'recovery',
-                'error': str(exc),
-            })
-            runner.block(ip, 'MQTT recovery protocol error')
-            raise
-        except (queue.Empty, TimeoutError, ConnectionError) as exc:
-            runner.block(ip, 'MQTT recovery response timed out')
-            raise TimeoutError('MQTT recovery response timed out') from exc
-        now = time.monotonic()
-        category = classify_mqtt_message(topic, body, retained, request_id,
-                                         roots[ip]+'/result', roots[ip]+'/state')
-        if category != 'success':
-            runner.block(ip, 'MQTT recovery result was not fresh correlated success')
-            raise RuntimeError('MQTT recovery result failed correlation')
-        summary = _validate_device_data(body['data'], ip, runner.before[ip]['state'], runner.version)
+        started = monotonic()
+        deadline = started + RECOVERY_BUSY_TOTAL_TIMEOUT
+        busy_attempts = []
+        attempt_request_ids = []
+        while True:
+            remaining = deadline-monotonic()
+            if remaining <= 0:
+                runner.block(ip, 'MQTT recovery busy retry deadline expired')
+                raise TimeoutError('MQTT recovery busy retry deadline expired')
+            request_id = 'readonly-mixed-' + uuid.uuid4().hex
+            attempt_request_ids.append(request_id)
+            payload = make_status_payload(request_id)
+            attempt_started = monotonic()
+            try:
+                info = client.client.publish(roots[ip]+'/command', json.dumps(
+                    payload, separators=(',', ':')).encode(), qos=1, retain=False)
+            except Exception as exc:
+                runner.block(ip, 'MQTT recovery publish failed: '+type(exc).__name__)
+                raise RuntimeError('MQTT recovery publish failed') from exc
+            if info.rc != 0:
+                runner.block(ip, 'MQTT recovery QoS1 publish failed')
+                raise RuntimeError('MQTT recovery publish failed')
+            remaining = deadline-monotonic()
+            if remaining <= 0:
+                runner.block(ip, 'MQTT recovery publish exceeded busy retry deadline')
+                raise TimeoutError('MQTT recovery publish exceeded busy retry deadline')
+            try:
+                info.wait_for_publish(timeout=min(MQTT_PUBACK_TIMEOUT, remaining))
+            except Exception as exc:
+                runner.block(ip, 'MQTT recovery PUBACK wait failed: '+type(exc).__name__)
+                raise RuntimeError('MQTT recovery PUBACK wait failed') from exc
+            if not info.is_published():
+                runner.block(ip, 'MQTT recovery PUBACK timed out')
+                raise TimeoutError('MQTT recovery PUBACK timed out')
+            remaining = deadline-monotonic()
+            if remaining <= 0:
+                runner.block(ip, 'MQTT recovery PUBACK exceeded busy retry deadline')
+                raise TimeoutError('MQTT recovery PUBACK exceeded busy retry deadline')
+            try:
+                topic, body, retained, raw = receive_correlated(
+                    client, request_id, roots[ip]+'/result', roots[ip]+'/state',
+                    min(MQTT_RESULT_TIMEOUT, remaining), evidence.data['telemetry'],
+                    ip, name, runner, collection_stage='recovery',
+                    window_started=monotonic(),
+                    absolute_deadline=min(deadline, monotonic()+MQTT_RESULT_TIMEOUT),
+                    include_raw=True, monotonic=monotonic)
+            except MQTTProtocolError as exc:
+                evidence.append('protocol_errors', {
+                    'ip': ip, 'phase': name, 'topic_kind': 'recovery',
+                    'error': str(exc),
+                })
+                runner.block(ip, 'MQTT recovery protocol error')
+                raise
+            except (queue.Empty, TimeoutError, ConnectionError) as exc:
+                runner.block(ip, 'MQTT recovery response timed out')
+                raise TimeoutError('MQTT recovery response timed out') from exc
+            now = monotonic()
+            if now >= deadline:
+                runner.block(ip, 'MQTT recovery response exceeded busy retry deadline')
+                raise TimeoutError('MQTT recovery response exceeded busy retry deadline')
+            category = classify_mqtt_message(topic, body, retained, request_id,
+                                             roots[ip]+'/result', roots[ip]+'/state')
+            if category == 'busy':
+                try:
+                    if not isinstance(raw, bytes):
+                        raise ValueError('raw MQTT response was not bytes')
+                    decoded = json.loads(raw.decode('utf-8'))
+                    if decoded != body:
+                        raise ValueError('raw MQTT response differed from parsed body')
+                except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+                    evidence.append('protocol_errors', {
+                        'ip': ip, 'phase': name, 'topic_kind': 'recovery',
+                        'error': 'Invalid raw bytes for correlated busy response',
+                    })
+                    runner.block(ip, 'MQTT recovery busy response failed raw validation')
+                    raise MQTTProtocolError('MQTT busy response raw validation failed') from exc
+                attempt = {
+                    'ip': ip, 'phase': name, 'request_id': request_id,
+                    'attempt': len(attempt_request_ids),
+                    'retry_limit': RECOVERY_BUSY_MAX_RETRIES,
+                    'attempt_limit': RECOVERY_BUSY_MAX_RETRIES+1,
+                    'outcome': 'busy', 'topic': topic, 'retained': False,
+                    'action': 'status.get', 'params': {},
+                    'started_monotonic': attempt_started,
+                    'ended_monotonic': now,
+                    'elapsed_ms': (now-attempt_started)*1000,
+                    'total_deadline_seconds': RECOVERY_BUSY_TOTAL_TIMEOUT,
+                    'logical_deadline_monotonic': deadline,
+                    'body_bytes': len(raw),
+                    'raw_json_base64': base64.b64encode(raw).decode('ascii'),
+                    'retry_exhausted': len(busy_attempts) >= RECOVERY_BUSY_MAX_RETRIES,
+                    'deadline_exhausted': False,
+                }
+                busy_attempts.append(attempt)
+                evidence.data['recovery_attempts'].append(attempt)
+                evidence.save()
+                if attempt['retry_exhausted']:
+                    runner.block(ip, 'MQTT recovery exhausted matching busy retries')
+                    raise RuntimeError('MQTT recovery exhausted matching busy retries')
+                remaining = deadline-monotonic()
+                if remaining <= RECOVERY_BUSY_RETRY_DELAY:
+                    attempt['deadline_exhausted'] = True
+                    evidence.save()
+                    runner.block(ip, 'MQTT recovery busy retry deadline expired')
+                    raise TimeoutError('MQTT recovery busy retry deadline expired')
+                sleep(min(RECOVERY_BUSY_RETRY_DELAY, remaining))
+                if monotonic() >= deadline:
+                    attempt['deadline_exhausted'] = True
+                    evidence.save()
+                    runner.block(ip, 'MQTT recovery busy retry deadline expired')
+                    raise TimeoutError('MQTT recovery busy retry deadline expired')
+                continue
+            if category != 'success':
+                runner.block(ip, 'MQTT recovery result was not fresh correlated success')
+                raise RuntimeError('MQTT recovery result failed correlation')
+            try:
+                summary = _validate_device_data(
+                    body['data'], ip, runner.before[ip]['state'], runner.version)
+            except (KeyError, ValueError, TypeError) as exc:
+                runner.block(ip, 'MQTT recovery identity or state validation failed')
+                raise RuntimeError('MQTT recovery result failed state validation') from exc
+            break
         checked = dict(body['data'])
         checked.setdefault('device_id', summary['device_id'])
         runner.check(ip, checked, started, now)
+        if runner.stop.is_set():
+            raise RuntimeError('MQTT recovery state gate failed')
         result_rows.append({'ip': ip, 'request_id': request_id, 'outcome': 'success',
-                            'retained': False, 'elapsed_ms': (now-started)*1000, **summary})
+                            'retained': False, 'elapsed_ms': (now-started)*1000,
+                            'attempt_count': len(attempt_request_ids),
+                            'busy_attempt_count': len(busy_attempts),
+                            'attempt_request_ids': attempt_request_ids, **summary})
     evidence.data['recovery'].append({'phase': name, 'http_completed': True,
                                       'mqtt_results': result_rows,
                                       'telemetry_observation': {

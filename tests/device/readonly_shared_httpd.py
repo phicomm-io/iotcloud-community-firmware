@@ -209,6 +209,7 @@ def receive_response(sock, deadline):
         if not readable:
             continue
         try:
+            sock.settimeout(max(.001, min(IO_TIMEOUT, deadline-time.monotonic())))
             chunk = sock.recv(4096)
         except socket.timeout:
             timed_out = True
@@ -233,14 +234,22 @@ def receive_response(sock, deadline):
     return facts
 
 
-def send_scenario(ip, scenario):
+def send_scenario(ip, scenario, deadline=None):
     started = time.monotonic()
-    deadline = started + CASE_DEADLINE
+    deadline = min(started + CASE_DEADLINE, deadline) if deadline is not None else started + CASE_DEADLINE
     result = {'name': scenario.name, 'request_bytes': len(scenario.wire)}
     try:
-        with socket.create_connection((ip, 80), timeout=CONNECT_TIMEOUT) as sock:
-            sock.settimeout(IO_TIMEOUT)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise socket.timeout('case deadline')
+        with socket.create_connection((ip, 80), timeout=min(CONNECT_TIMEOUT, remaining)) as sock:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise socket.timeout('case deadline')
+            sock.settimeout(min(IO_TIMEOUT, remaining))
             sock.sendall(scenario.wire)
+            if time.monotonic() >= deadline:
+                raise socket.timeout('case deadline')
             sock.shutdown(socket.SHUT_WR)
             facts = receive_response(sock, deadline)
             raw = facts.pop('raw', b'')
@@ -281,6 +290,20 @@ def evaluate_scenario(scenario, result):
                 (result.get('complete') is True or closed))
     transport_closed = status is None and closed and result.get('response_bytes', 0) == 0
     return status != 200 and (rejected or transport_closed), None
+
+
+def retryable_legal_busy(scenario, result):
+    """Only a complete, closed, strictly 503/busy legal response may retry."""
+    if (not scenario.expect_success or result.get('status') != 503 or
+            result.get('timed_out') or result.get('too_large') or
+            result.get('closed') is not True or result.get('complete') is not True or
+            result.get('content_length') is None):
+        return False
+    try:
+        body = json.loads(result.get('body', b''))
+    except (TypeError, ValueError):
+        return False
+    return isinstance(body, dict) and body.get('code') == 'busy'
 
 
 class SharedHTTPRunner(InputRunner):
@@ -324,13 +347,27 @@ class SharedHTTPRunner(InputRunner):
             for scenario in validate_scenarios(build_scenarios(ip)):
                 if self.stop.is_set():
                     break
-                started = time.monotonic()
-                result = send_scenario(ip, scenario)
-                response_body = result.pop('body', b'')
-                row = {'ip': ip, **result}
-                self.http_cases.append(row)
-                accepted, state = evaluate_scenario(
-                    scenario, {**result, 'body': response_body})
+                deadline = time.monotonic()+15 if scenario.expect_success else None
+                for attempt in range(1, 5):
+                    started = time.monotonic()
+                    result = (send_scenario(ip, scenario, deadline=deadline)
+                              if deadline is not None else send_scenario(ip, scenario))
+                    busy = retryable_legal_busy(scenario, result)
+                    response_body = result.pop('body', b'')
+                    row = {'ip': ip, **result, 'attempt': attempt,
+                           'busy_rejection': busy}
+                    self.http_cases.append(row)
+                    accepted, state = evaluate_scenario(
+                        scenario, {**result, 'body': response_body})
+                    if deadline is not None and time.monotonic() >= deadline:
+                        accepted, state = False, None
+                        row['required_deadline_exceeded'] = True
+                    self.save()
+                    if (not busy or attempt == 4 or self.stop.is_set() or
+                            deadline is None or time.monotonic()+1 >= deadline):
+                        break
+                    if self.stop.wait(1):
+                        break
                 failure_reason = None
                 if not accepted:
                     failure_reason = (

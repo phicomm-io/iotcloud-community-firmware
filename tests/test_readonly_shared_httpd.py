@@ -187,5 +187,86 @@ class ReadonlySharedHTTPDTest(unittest.TestCase):
             self.assertTrue(runner.stop.is_set())
 
 
+class LegalBusyRetryTests(unittest.TestCase):
+    def exercise(self, results, name='status-normal', elapsed=0):
+        import tempfile
+        from pathlib import Path
+        from tests.device import readonly_shared_httpd as module
+        ip = next(iter(AUTHORIZED_TARGETS))
+        scenario = next(case for case in build_scenarios(ip) if case.name == name)
+        clock = [100.0]
+        def send(*args, **kwargs):
+            clock[0] += elapsed
+            return dict(results.pop(0) if len(results) > 1 else results[0])
+        with tempfile.TemporaryDirectory() as directory:
+            runner = module.SharedHTTPRunner({ip: AUTHORIZED_TARGETS[ip]}, 'test', Path(directory))
+            with patch.object(module, 'validate_scenarios', return_value=[scenario]), \
+                    patch.object(module, 'send_scenario', side_effect=send) as sender, \
+                    patch.object(module.time, 'monotonic', side_effect=lambda: clock[0]), \
+                    patch.object(runner.stop, 'wait', side_effect=lambda seconds: clock.__setitem__(0, clock[0]+seconds) or False), \
+                    patch.object(runner, 'save'), patch.object(runner, 'finish'), \
+                    patch.object(runner, 'recover'), patch.object(runner, 'check'), patch('builtins.print'):
+                try:
+                    runner.run_scenarios()
+                except SystemExit:
+                    pass
+            return runner, sender
+
+    @staticmethod
+    def response(status=503, code='busy'):
+        body = json.dumps({'code': code, 'data': {}}).encode()
+        return {'status': status, 'closed': True, 'complete': True,
+                'content_length': len(body), 'body': body}
+
+    def test_legal_busy_then_success_retains_denominator_and_deadline(self):
+        runner, sender = self.exercise([self.response(), self.response(200, 'ok')])
+        self.assertEqual(sender.call_count, 2)
+        self.assertEqual([row['busy_rejection'] for row in runner.http_cases], [True, False])
+        self.assertEqual([row['attempt'] for row in runner.http_cases], [1, 2])
+        self.assertEqual([call.kwargs['deadline'] for call in sender.call_args_list], [115, 115])
+        self.assertFalse(runner.stop.is_set())
+
+    def test_persistent_busy_is_four_failed_attempts(self):
+        runner, sender = self.exercise([self.response()])
+        self.assertEqual(sender.call_count, 4)
+        self.assertTrue(runner.stop.is_set())
+        self.assertTrue(all(row['busy_rejection'] for row in runner.http_cases))
+
+    def test_malformed_and_nonbusy_protocol_failures_never_retry(self):
+        for result, name in ((self.response(), 'header-embedded-nul'),
+                             (self.response(500), 'status-normal'),
+                             (self.response(503, 'invalid_params'), 'status-normal'),
+                             ({**self.response(), 'closed': False}, 'status-normal'),
+                             ({**self.response(), 'timed_out': True}, 'status-normal')):
+            with self.subTest(name=name, result=result):
+                runner, sender = self.exercise([result], name)
+                self.assertEqual(sender.call_count, 1)
+                self.assertTrue(runner.stop.is_set())
+
+    def test_late_success_is_not_success_and_does_not_retry(self):
+        runner, sender = self.exercise([self.response(200, 'ok')], elapsed=16)
+        self.assertEqual(sender.call_count, 1)
+        self.assertTrue(runner.stop.is_set())
+        self.assertTrue(runner.http_cases[0]['required_deadline_exceeded'])
+
+    def test_connect_and_send_receive_remaining_absolute_deadline(self):
+        from tests.device import readonly_shared_httpd as module
+        from unittest.mock import MagicMock
+        scenario = next(case for case in build_scenarios('10.117.152.102') if case.expect_success)
+        clock = [100.0]
+        sock = MagicMock()
+        sock.__enter__.return_value = sock
+        def connect(*args, **kwargs):
+            self.assertLessEqual(kwargs['timeout'], .5)
+            clock[0] += .3
+            return sock
+        with patch.object(module.time, 'monotonic', side_effect=lambda: clock[0]), \
+                patch.object(module.socket, 'create_connection', side_effect=connect), \
+                patch.object(module, 'receive_response', return_value={}) as receive:
+            module.send_scenario('10.117.152.102', scenario, deadline=100.5)
+        self.assertAlmostEqual(sock.settimeout.call_args.args[0], .2)
+        self.assertEqual(receive.call_args.args[1], 100.5)
+
+
 if __name__ == '__main__':
     unittest.main()

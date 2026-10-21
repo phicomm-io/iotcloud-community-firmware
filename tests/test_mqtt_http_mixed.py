@@ -1,4 +1,5 @@
 """Offline tests for the bounded HTTP/MQTT mixed runner."""
+import base64
 import json
 from pathlib import Path
 import tempfile
@@ -16,11 +17,13 @@ from tests.device import mqtt_mixed_controller as CONTROLLER
 class FakePublishInfo:
     rc = 0
 
-    def __init__(self, published=True):
+    def __init__(self, published=True, wait_hook=None):
         self.published = published
+        self.wait_hook = wait_hook
 
     def wait_for_publish(self, timeout=None):
-        return None
+        if self.wait_hook is not None:
+            self.wait_hook(timeout)
 
     def is_published(self):
         return self.published
@@ -144,6 +147,13 @@ class FakeMQTTClient:
         self.root = None
         self.client = self
         self.publish_count = 0
+        self.published_requests = []
+        self.response_codes = None
+        self.result_mutator = None
+        self.result_topic_override = None
+        self.result_retained = False
+        self.raw_override = None
+        self.publish_ack_hook = None
         self.instances.append(self)
 
     def subscribe(self, topic):
@@ -157,9 +167,18 @@ class FakeMQTTClient:
         if self.publish_mode == 'raise':
             raise OSError('fake publish failure')
         request = json.loads(payload)
+        self.published_requests.append((topic, request, qos, retain))
         self.publish_count += 1
         self.last_qos, self.last_retain = qos, retain
-        if self.state_mode == 'nonobject-result':
+        response_code = (self.response_codes.pop(0) if self.response_codes else None)
+        if response_code == 'busy':
+            body = {'request_id': request['request_id'], 'code': 'busy'}
+        elif response_code is not None:
+            state = dict(self.state)
+            state['uptime_seconds'] += 1
+            body = {'request_id': request['request_id'], 'code': response_code,
+                    'data': state}
+        elif self.state_mode == 'nonobject-result':
             body = None
         elif self.publish_mode in ('busy-always', 'busy-first') and (
                 self.publish_mode == 'busy-always' or self.publish_count <= 6):
@@ -170,15 +189,19 @@ class FakeMQTTClient:
             body = {'request_id': request['request_id'], 'code': 'ok', 'data': state}
         if self.publish_mode == 'unmatched' and body is not None:
             body['request_id'] = 'readonly-mixed-unmatched'
+        if self.result_mutator is not None and body is not None:
+            body = self.result_mutator(body)
         suppress_result = ((self.publish_mode == 'timeout-first' and self.publish_count == 1) or
                            self.publish_mode == 'silent')
         if not suppress_result:
-            self.messages.put((self.root+'/result', body, False,
-                               json.dumps(body).encode() if body is not None else b'not-json'))
+            self.messages.put((self.result_topic_override or self.root+'/result', body,
+                               self.result_retained,
+                               self.raw_override if self.raw_override is not None else
+                               (json.dumps(body).encode() if body is not None else b'not-json')))
         published = self.publish_mode != 'no-puback'
         if self.publish_mode == 'puback-first' and self.publish_count == 1:
             published = False
-        return FakePublishInfo(published=published)
+        return FakePublishInfo(published=published, wait_hook=self.publish_ack_hook)
 
     def disconnect(self):
         self.disconnected = True
@@ -189,6 +212,23 @@ def _recovery_runner(ip, version):
     runner = FakeRunner({ip: TARGETS[ip]}, version, '')
     runner.initialize()
     return runner
+
+
+def _recovery_fixture(directory, response_codes=None):
+    runner = FakeRunner(TARGETS, VERSION, directory)
+    runner.initialize()
+    clients, roots = {}, {}
+    for ip, (_ident, model) in MIXED.TARGETS.items():
+        root = 'phicomm/user/'+model+'/'+TARGETS[ip]
+        client = FakeMQTTClient('broker', 1883, 'offline-'+model)
+        client.state = _state(ip, VERSION)
+        client.root = root
+        if response_codes and ip in response_codes:
+            client.response_codes = list(response_codes[ip])
+        clients[ip], roots[ip] = client, root
+    evidence = MIXED.Evidence(Path(directory)/'recovery.json', 'offline', VERSION,
+                              'short', [])
+    return runner, clients, roots, evidence
 
 
 class FakeHelpers:
@@ -271,6 +311,161 @@ class MixedRunnerTests(unittest.TestCase):
                 client, 'readonly-mixed-id', 'root/result', 'root/state',
                 0.1, [], '10.117.152.111', 'recovery',
                 _recovery_runner('10.117.152.111', VERSION))
+
+    def test_recover_retries_only_matching_busy_and_keeps_success_contract(self):
+        response_codes = {ip: ['busy', 'ok'] for ip in TARGETS}
+        sleeps = []
+        with tempfile.TemporaryDirectory() as directory:
+            runner, clients, roots, evidence = _recovery_fixture(directory, response_codes)
+            MIXED.recover(runner, clients, roots, evidence, 'busy-recovery',
+                          sleep=sleeps.append)
+            saved = json.loads((Path(directory)/'recovery.json').read_text())
+        recovery = evidence.data['recovery'][0]
+        self.assertTrue(recovery['completed'])
+        self.assertEqual(len(recovery['mqtt_results']), 3)
+        self.assertEqual(len(evidence.data['recovery_attempts']), 3)
+        self.assertEqual(len(saved['recovery_attempts']), 3)
+        self.assertTrue(all(row['outcome'] == 'success' for row in recovery['mqtt_results']))
+        self.assertTrue(all(row['attempt_count'] == 2 and row['busy_attempt_count'] == 1
+                            for row in recovery['mqtt_results']))
+        all_ids = [request_id for row in recovery['mqtt_results']
+                   for request_id in row['attempt_request_ids']]
+        self.assertEqual(len(all_ids), len(set(all_ids)))
+        self.assertTrue(all(json.loads(base64.b64decode(row['raw_json_base64']))['code'] == 'busy'
+                            for row in evidence.data['recovery_attempts']))
+        self.assertTrue(all(client.last_qos == 1 and client.last_retain is False
+                            for client in clients.values()))
+        self.assertEqual(sleeps, [MIXED.RECOVERY_BUSY_RETRY_DELAY]*3)
+
+    def test_recover_persistent_busy_is_bounded_and_persists_each_rejection(self):
+        ip = '10.117.152.111'
+        with tempfile.TemporaryDirectory() as directory:
+            runner, clients, roots, evidence = _recovery_fixture(
+                directory, {ip: ['busy']*5})
+            with self.assertRaisesRegex(RuntimeError, 'exhausted matching busy'):
+                MIXED.recover(runner, clients, roots, evidence, 'persistent-busy',
+                              sleep=lambda _seconds: None)
+            saved = json.loads((Path(directory)/'recovery.json').read_text())
+        attempts = saved['recovery_attempts']
+        self.assertEqual(len(clients[ip].published_requests), 4)
+        self.assertEqual(len(attempts), 4)
+        self.assertEqual([row['attempt'] for row in attempts], [1, 2, 3, 4])
+        self.assertTrue(all(row['outcome'] == 'busy' for row in attempts))
+        self.assertEqual(len({row['request_id'] for row in attempts}), 4)
+        self.assertTrue(attempts[-1]['retry_exhausted'])
+        self.assertTrue(runner.blockers)
+
+    def test_recover_nonbusy_error_is_not_retried(self):
+        ip = '10.117.152.111'
+        with tempfile.TemporaryDirectory() as directory:
+            runner, clients, roots, evidence = _recovery_fixture(
+                directory, {ip: ['unavailable']})
+            with self.assertRaisesRegex(RuntimeError, 'failed correlation'):
+                MIXED.recover(runner, clients, roots, evidence, 'nonbusy-recovery')
+        self.assertEqual(len(clients[ip].published_requests), 1)
+        self.assertEqual(evidence.data['recovery_attempts'], [])
+        self.assertTrue(runner.blockers)
+
+    def test_recover_busy_oversleep_updates_persisted_attempt_without_duplicate(self):
+        ip = '10.117.152.111'
+        clock = [0.0]
+
+        def oversleep(_seconds):
+            clock[0] = 16.0
+
+        with tempfile.TemporaryDirectory() as directory:
+            runner, clients, roots, evidence = _recovery_fixture(
+                directory, {ip: ['busy']})
+            with self.assertRaises(TimeoutError):
+                MIXED.recover(runner, clients, roots, evidence, 'oversleep-recovery',
+                              monotonic=lambda: clock[0], sleep=oversleep)
+            saved = json.loads((Path(directory)/'recovery.json').read_text())
+        attempts = saved['recovery_attempts']
+        self.assertEqual(len(clients[ip].published_requests), 1)
+        self.assertEqual(len(attempts), 1)
+        self.assertTrue(attempts[0]['deadline_exhausted'])
+        self.assertFalse(attempts[0]['retry_exhausted'])
+
+    def test_recover_late_puback_and_identity_errors_do_not_retry(self):
+        ip = '10.117.152.111'
+        with tempfile.TemporaryDirectory() as directory:
+            runner, clients, roots, evidence = _recovery_fixture(
+                directory, {ip: ['busy']})
+            clock = [0.0]
+            clients[ip].publish_ack_hook = lambda _timeout: clock.__setitem__(0, 16.0)
+            with self.assertRaises(TimeoutError):
+                MIXED.recover(runner, clients, roots, evidence, 'late-puback',
+                              monotonic=lambda: clock[0], sleep=lambda _seconds: None)
+        self.assertEqual(len(clients[ip].published_requests), 1)
+        self.assertEqual(evidence.data['recovery_attempts'], [])
+        self.assertTrue(runner.blockers)
+
+        with tempfile.TemporaryDirectory() as directory:
+            runner, clients, roots, evidence = _recovery_fixture(
+                directory, {ip: ['ok']})
+            clients[ip].result_mutator = lambda body: {
+                **body, 'data': {**body['data'], 'device_id': 'wrong-device'}}
+            with self.assertRaisesRegex(RuntimeError, 'state validation'):
+                MIXED.recover(runner, clients, roots, evidence, 'bad-identity')
+        self.assertEqual(len(clients[ip].published_requests), 1)
+        self.assertTrue(runner.blockers)
+
+        with tempfile.TemporaryDirectory() as directory:
+            runner, clients, roots, evidence = _recovery_fixture(
+                directory, {ip: ['ok']})
+
+            def block_on_check(target_ip, *_args):
+                runner.block(target_ip, 'synthetic uptime/control gate')
+
+            runner.check = block_on_check
+            with self.assertRaisesRegex(RuntimeError, 'state gate'):
+                MIXED.recover(runner, clients, roots, evidence, 'blocked-check')
+        self.assertEqual(len(clients[ip].published_requests), 1)
+        self.assertTrue(runner.blockers)
+
+        with tempfile.TemporaryDirectory() as directory:
+            runner, clients, roots, evidence = _recovery_fixture(
+                directory, {ip: ['ok']})
+            clients[ip].result_mutator = lambda body: {
+                **body, 'data': {**body['data'], 'wifi_connected': False}}
+            with self.assertRaisesRegex(RuntimeError, 'state validation'):
+                MIXED.recover(runner, clients, roots, evidence, 'bad-identity')
+        self.assertEqual(len(clients[ip].published_requests), 1)
+        self.assertTrue(runner.blockers)
+
+    def test_recover_retained_or_wrong_topic_busy_does_not_retry(self):
+        ip = '10.117.152.111'
+        with tempfile.TemporaryDirectory() as directory:
+            runner, clients, roots, evidence = _recovery_fixture(
+                directory, {ip: ['busy']})
+            clients[ip].result_retained = True
+            with self.assertRaisesRegex(RuntimeError, 'failed correlation'):
+                MIXED.recover(runner, clients, roots, evidence, 'retained-busy')
+        self.assertEqual(len(clients[ip].published_requests), 1)
+        self.assertEqual(evidence.data['recovery_attempts'], [])
+
+    def test_recover_busy_requires_valid_raw_json(self):
+        ip = '10.117.152.111'
+        with tempfile.TemporaryDirectory() as directory:
+            runner, clients, roots, evidence = _recovery_fixture(
+                directory, {ip: ['busy']})
+            clients[ip].raw_override = b'{"request_id":"different","code":"busy"}'
+            with self.assertRaisesRegex(MIXED.MQTTProtocolError, 'raw validation'):
+                MIXED.recover(runner, clients, roots, evidence, 'invalid-busy-raw')
+        self.assertEqual(len(clients[ip].published_requests), 1)
+        self.assertEqual(evidence.data['recovery_attempts'], [])
+        self.assertTrue(evidence.data['protocol_errors'])
+        self.assertTrue(runner.blockers)
+
+        with tempfile.TemporaryDirectory() as directory:
+            runner, clients, roots, evidence = _recovery_fixture(
+                directory, {ip: ['busy']})
+            clients[ip].result_topic_override = 'wrong/result'
+            with mock.patch.object(MIXED, 'MQTT_RESULT_TIMEOUT', 0.02):
+                with self.assertRaises(TimeoutError):
+                    MIXED.recover(runner, clients, roots, evidence, 'wrong-topic')
+        self.assertEqual(len(clients[ip].published_requests), 1)
+        self.assertEqual(evidence.data['recovery_attempts'], [])
 
     def test_missing_diagnostics_remain_unavailable(self):
         result = MIXED.optional_diagnostics([{'ok': True, 'data': {'mqtt_pending': 0}}])
