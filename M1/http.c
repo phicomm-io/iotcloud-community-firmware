@@ -1,3 +1,4 @@
+#include "../common/mqtt/diagnostics.h"
 #include "../common/ota/mode.h"
 #include "../common/watchdog.h"
 #include "../common/service.h"
@@ -62,8 +63,12 @@ static void memory_response(ph_http_exchange *x)
     }
     micoMemInfo_t snapshot = *memory;
     service_memory_state_t budget; service_memory_snapshot(&budget);
-    char *body=product.scalar;
-    int length = snprintf(body, sizeof(product.scalar),
+    /* Request-owned diagnostics scratch; guard failure preserves the small
+     * allocation-free base response. Never increase permanent scalar RAM. */
+    size_t capacity=2304;product.body=snapshot.free_memory>=SERVICE_MEMORY_RESERVE+capacity+32?json_heap_malloc(capacity):NULL;
+    char *body=product.body?product.body:product.scalar;
+    if(!product.body)capacity=sizeof(product.scalar);
+    int length = snprintf(body, capacity,
         "{\"code\":\"ok\",\"data\":{\"free_memory\":%d,\"allocated_memory\":%d,"
         "\"free_memory_chunks\":%d,\"uptime_ms\":%lu,\"memory_reserve\":%u,"
         "\"memory_reserved\":%lu,\"memory_active\":%lu,\"memory_waiting\":%lu,"
@@ -77,8 +82,9 @@ static void memory_response(ph_http_exchange *x)
         (unsigned long)budget.json_live, (unsigned long)budget.json_peak,
         (unsigned long)budget.json_failed, (unsigned long)budget.json_denied);
     ph_http_diagnostics d=ph_http_snapshot();
-    if(length>0)length=ph_http_diag_append(body,sizeof(product.scalar),length,&d);
-    if (length > 0 && (size_t)length < sizeof(product.scalar))
+    if(length>0)length=ph_http_diag_append(body,capacity,length,&d);
+    if(length>0)length=ph_mqtt_diag_append(body,capacity,length,product.body!=NULL);
+    if (length > 0 && (size_t)length < capacity)
         response(x, 200, "application/json", body, (size_t)length, false);
 }
 

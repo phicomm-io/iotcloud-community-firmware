@@ -12,7 +12,7 @@ def check(modules, model, nm, elf):
     modules=Path(modules)
     frames={}
     verify_frames={}
-    for directory in (modules/model,modules/'phicomm_httpd'):
+    for directory in (modules/model,modules/'phicomm_httpd',modules/'phicomm_mqtt'):
         for path in directory.rglob('*.su'):
             for line in path.read_text().splitlines():
                 location,size,kind=line.split('\t')
@@ -42,6 +42,7 @@ def check(modules, model, nm, elf):
       # automatic traversal explicitly, outside SDK/native/RTOS reserve.
       'HTTP GET JSON encode':(3072,base+['ph_http_json','json_owned_to_wire','json_write','json_primitive','json_append']),
       'HTTP POST JSON encode':(3072,['owner','ph_http_server_step','read_body','complete','ph_http_json','json_owned_to_wire','json_write','json_primitive','json_append']),
+      'HTTP MQTT diagnostics':(3072,base+(['memory_response'] if 'memory_response' in frames else [])+['ph_mqtt_diag_append','ph_mqtt_snapshot','ph_mqtt_core_snapshot']),
       'HTTP response':(3072,['owner','ph_http_server_step','respond','transmit']),
       'HTTP OTA stream':(4096,['owner','ph_http_server_step','read_body','body_chunk',model.lower()+'_ota_write','signed_ota_write','uECC_verify','EccPoint_mult']),
       'HTTP OTA validation':(4096,['owner','ph_http_server_step','read_body','complete',('tc1_ota_verify' if model=='TC1' else model.lower()+'_ota_finish'),'signed_ota_finish']),
@@ -72,6 +73,9 @@ def check(modules, model, nm, elf):
             encode += [n for n in ('device_runtime_encode','device_http_encode','device_filter_encode','watchdog_status_encode') if n in frames and model!='TC1']
             expanded[label+' encode']=(reserve,common+encode)
         return expanded
+    # memory_response is inlined into prepare by pinned GCC; its local
+    # POD/scratch frame is already included there. Count a separate emitted
+    # frame if a compiler change stops inlining it.
     paths=status_paths(paths)
     for label,(reserve,names) in paths.items():
         missing=set(names)-frames.keys()
@@ -79,57 +83,8 @@ def check(modules, model, nm, elf):
         size=sum(frames[n] for n in names)
         if size+reserve>budget:raise ValueError(f'{label}: {size}+{reserve}>{budget}')
         print(f'{label}: {size} application + {reserve} reserve <= {budget} bytes')
-    # MQTT uses the same owned encoder. Paho can dispatch a command while an
-    # outer QoS1 publisher is waiting. Keep those outer application frames,
-    # but not the completed response builder, in the encoding call path.
-    encode=['json_owned_to_wire','json_write','json_primitive','json_append']
-    if 'service_mqtt_wire' in frames:encode+=['service_mqtt_wire']
-    if model=='TC1':
-        source=(Path(__file__).resolve().parents[1]/'TC1/mqtt_server/user_mqtt_client.c').read_text()
-        mqtt_budget=int(re.search(r'mqtt_thread_stack_size = (0x[0-9a-fA-F]+|[0-9]+)',source).group(1),0)
-        mqtt_paths={
-          'MQTT nested JSON encode':(['MqttClientThread','all_states','UserMqttHassPower','UserMqttSendTopic','MqttMsgPublish','MessageArrived']+encode,3072),
-          'MQTT nested status build':(['MqttClientThread','all_states','UserMqttHassPower','UserMqttSendTopic','MqttMsgPublish','MessageArrived','service_command','service_command_execute','service_product','tc1_status_json'],3072),
-          'MQTT nested topic lookup':(['MqttClientThread','all_states','UserMqttHassPower','UserMqttSendTopic','MqttMsgPublish','MessageArrived','tc1_command_topic'],3072),
-          'MQTT snapshot nested JSON encode':(['MqttClientThread','service_mqtt_snapshot','service_mqtt_publish','service_sender','MqttMsgPublish','MessageArrived']+encode,3072),
-          'MQTT capabilities nested JSON encode':(['MqttClientThread','service_mqtt_snapshot','service_mqtt_try_capabilities','service_sender','MqttMsgPublish','MessageArrived']+encode,3072),
-          'MQTT flush nested JSON encode':(['MqttClientThread','service_mqtt_snapshot','service_mqtt_flush','service_sender','MqttMsgPublish','MessageArrived']+encode,3072),
-        }
-    else:
-        source=(Path(__file__).resolve().parents[1]/model/'mqtt.c').read_text()
-        mqtt_budget=int(re.search(r'mqtt_worker, (\d+), 0',source).group(1))
-        callback='command' if model=='A1' else 'native_command'
-        # Owned encoding returns before the synchronous publish/Paho callback.
-        # Keep each reachable outer branch separate, including its live topic
-        # scratch, rather than summing mutually exclusive discovery/telemetry.
-        outers={'discovery':(['discovery','json_owned_publish'],['discovery','json_owned_publish']),
-                'snapshot':(['service_mqtt_snapshot','service_mqtt_publish'],['service_mqtt_snapshot','service_mqtt_publish']),
-                'capabilities':(['service_mqtt_snapshot','service_mqtt_try_capabilities'],['service_mqtt_snapshot','service_mqtt_try_capabilities'])}
-        if model=='A1':
-            outer=['feature_mqtt_service']+(['virtual_service'] if 'virtual_service' in frames else [])
-            helper=[n for n in ('direct_json_claimed',) if n in frames]
-            config=[n for n in ('direct_json',) if n in frames]
-            outers['virtual discovery']=(outer+['discovery_virtual','json_owned_publish','checked_publish'],outer+['discovery_virtual','json_owned_publish'])
-            outers['virtual config']=(outer+config+['json_owned_publish','checked_publish'],outer+config+['json_owned_publish'])
-            # Encoding returns before direct_leaf builds its topic/send frame.
-            outers['virtual telemetry']=(outer+helper+['direct_leaf','checked_publish'],outer+helper)
-            outers['filter discovery']=(['discovery','filter_discovery','json_owned_publish'],['discovery','filter_discovery','json_owned_publish'])
-        mqtt_paths={
-          'MQTT flush nested JSON encode':(['mqtt_worker','service_mqtt_snapshot','service_mqtt_flush','publish',callback]+encode,4096),
-        }
-        for branch,(transport,encoding) in outers.items():
-            mqtt_paths['MQTT '+branch+' nested JSON encode']=(['mqtt_worker']+transport+['publish',callback]+encode,4096)
-            mqtt_paths['MQTT '+branch+' nested status build']=(['mqtt_worker']+transport+['publish',callback,'service_command','service_command_execute','service_product',status,status+'_view'],4096)
-            mqtt_paths['MQTT '+branch+' owned encode']=(['mqtt_worker']+encoding+encode,4096)
-    if model!='TC1':mqtt_paths['MQTT OTA recovery']=(['mqtt_worker','ota_job_poll','feature_resume_step'],4096)
-    mqtt_paths={label:(names,reserve) for label,(reserve,names) in
-        status_paths({label:(reserve,names) for label,(names,reserve) in mqtt_paths.items()}).items()}
-    for label,(names,reserve) in mqtt_paths.items():
-        missing=set(names)-frames.keys()
-        if missing:raise ValueError(f'{label}: missing actual .su frames: {sorted(missing)}')
-        size=sum(frames[n] for n in names)
-        if size+reserve>mqtt_budget:raise ValueError(f'{label}: {size}+{reserve}>{mqtt_budget}')
-        print(f'{label}: {size} application + {reserve} reserve <= {mqtt_budget} bytes')
+    from check_mqtt_core import check as check_mqtt
+    check_mqtt(frames,model)
     if model=='TC1':
         source=(Path(__file__).resolve().parents[1]/'TC1/ota_server/ota_server.c').read_text()
         ota_budget=int(re.search(r'download_worker,(\d+),',source).group(1))
@@ -141,12 +96,13 @@ def check(modules, model, nm, elf):
             if size+3072>ota_budget:raise ValueError(f'OTA download {branch}: {size}+3072>{ota_budget}')
             print(f'OTA download {branch}: {size} application + 3072 reserve <= {ota_budget} bytes')
     symbols=subprocess.check_output([nm,'--defined-only',elf],text=True)
-    for symbol in ('ph_http_server_step','ph_http_parser_feed','ph_http_start'):
+    for symbol in ('ph_http_server_step','ph_http_parser_feed','ph_http_start','ph_mqtt_session_run','ph_mqtt_poll','ph_mqtt_enqueue_generation'):
         if len(re.findall(r'\b'+symbol+r'$',symbols,re.M))!=1:raise ValueError('Expected one linked '+symbol)
     forbidden=('httpd_main_thread','httpd_handle_message','httpd_parse_hdr_tags','httpd_parse_request','httpd_wsgi_init','http_accept_worker','http_worker')
     if any(re.search(r'\b'+n+r'$',symbols,re.M) for n in forbidden):raise ValueError('Second HTTP daemon/parser linked')
     archive=modules.parent/'libraries/phicomm_httpd.a'
     if not archive.exists():raise ValueError('Shared core archive missing')
+    if not (modules.parent/'libraries/phicomm_mqtt.a').exists():raise ValueError('Shared MQTT archive missing')
     print(f'{model}: ELF links one common parser/scheduler; no legacy daemon/worker symbols')
 if __name__=='__main__':
     try:check(*sys.argv[1:])

@@ -62,6 +62,11 @@ json_dir="$output/json_c"
 # Product callbacks need the actual JSON lifetime overlays, including their
 # headers. CI starts with a pristine SDK, so run after preparing this copy.
 PHICOMM_TEST_JSON_DIR="$json_dir" python3 -m unittest tests.test_json_integer_parse tests.test_http_callbacks
+# Production MQTT tests require every pinned SDK; never silently skip in CI.
+for sdk in build/a1-sdk/mico-os build/m1-sdk/mico-os build/tc1-sdk-3.6.4/mico-os; do
+    python3 tools/prepare_sdk.py "$sdk"
+done
+PHICOMM_TEST_JSON_DIR="$json_dir" python3 -m unittest tests.test_shared_mqtt tests.test_mqtt_http_mixed tests.test_mixed_report tests.test_a1_mqtt_progress tests.test_tc1_mqtt_lifecycle
 "${compiler[@]}" -std=gnu99 -Wall -Wextra -Werror -DWATCHDOG_HOST -Itests/watchdog -Itests/stubs -I"$json_dir" tests/test_watchdog.c "$json_dir"/*.c -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -o "$output/watchdog"
 "$output/watchdog"
 for target in portable moc-mx1290; do
@@ -81,7 +86,15 @@ ota_port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)
 export PHICOMM_TEST_OTA_PORT="$ota_port"
 "${compiler[@]}" -std=gnu99 -DPHICOMM_OTA_CN_BASE_URL='"http://127.0.0.1:'"$ota_port"'"' -Itests/stubs -I"$json_dir" tests/test_update.c "$json_dir"/*.c -o "$output/update"
 python3 tests/test_update.py "$output/update"
-"${compiler[@]}" -std=gnu99 -Wall -Wextra -Werror -Wno-misleading-indentation -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -Itests/stubs -Icommon -I"$json_dir" tests/test_mqtt_service.c common/json_owned.c "$json_dir"/*.c -Wl,--wrap=free -Wl,--wrap=realloc -o "$output/mqtt-service"
+# Isolated lifetime vectors use the exact shared production helper bodies.
+python3 - "$output/mqtt_owned_helpers.inc" <<'PYMQTT'
+from pathlib import Path
+from tests.test_status_views import function
+source=Path('common/mqtt/service.c').read_text()
+Path(__import__('sys').argv[1]).write_text('\n'.join(function(source,n) for n in
+    ('static struct printbuf *service_mqtt_wire(', 'int service_mqtt_send(')))
+PYMQTT
+"${compiler[@]}" -std=gnu99 -Wall -Wextra -Werror -Wno-misleading-indentation -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -I"$output" -Itests/stubs -Icommon -I"$json_dir" tests/test_mqtt_service.c common/json_owned.c "$json_dir"/*.c -Wl,--wrap=free -Wl,--wrap=realloc -o "$output/mqtt-service"
 "$output/mqtt-service"
 "$output/service"
 "${compiler[@]}" -std=gnu99 -Wall -Wextra -Wno-misleading-indentation -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-value -Wno-nonnull-compare -Itests/stubs -I"$json_dir" tests/test_service_failure.c "$json_dir"/*.c -o "$output/service-failure"

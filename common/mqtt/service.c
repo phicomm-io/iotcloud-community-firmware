@@ -134,10 +134,22 @@ __attribute__((noinline)) int service_mqtt_snapshot(int(*sender)(const char *, c
         service_json_release(json_claim);
         return PH_MQTT_MORE;
     }
+    json_object *code = json_object_object_get(r, "code");
     json_object *data = json_object_object_get(r, "data");
-    if (data)
+    json_object *model = data && json_object_is_type(data, json_type_object)
+        ? json_object_object_get(data, "model") : NULL;
+    bool valid = code && json_object_is_type(code, json_type_string) &&
+        !strcmp(json_object_get_string(code), "ok") && model &&
+        json_object_is_type(model, json_type_string) &&
+        json_object_get_string_len(model) > 0;
+    if (valid)
         json_object_get(data);
     json_object_put(r);
+    if (!valid) {
+        service_memory_release(claim);
+        service_json_release(json_claim);
+        return PH_MQTT_MORE;
+    }
     return service_mqtt_publish(sender, scope, "state", data, true, claim, json_claim);
 }
 

@@ -24,6 +24,7 @@ json_object *service_product_capabilities(void){return json_object_new_object();
 json_object *service_product(const char*a,json_object*p,const char**code){
  (void)a;(void)p;*code="ok";builds++;
  json_object *o=json_object_new_object();
+ json_build_object_add(o,"model",json_object_new_string("a1"));
  for(unsigned i=0;i<20;i++){char key[20];snprintf(key,sizeof(key),"field%u",i);json_build_object_add(o,key,json_object_new_string("production graph"));}
  pthread_mutex_lock(&barrier_lock);
  if(pause_builder){builder_entered=true;pthread_cond_broadcast(&barrier);while(!builder_continue)pthread_cond_wait(&barrier,&barrier_lock);}

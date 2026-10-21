@@ -9,12 +9,18 @@
 #include "json_heap.h"
 static unsigned mutations;
 static bool rename_target;
+static unsigned status_mode;
 json_object *automation_command(const char*a,json_object*p,const char**c,bool*h){(void)a;(void)p;(void)c;*h=false;return NULL;}
 json_object *service_product_capabilities(void){return json_object_new_object();}
 json_object *service_product(const char*a,json_object*p,const char**code){
  (void)p;*code="ok";
  if(!strcmp(a,"fan.set")){mutations++;if(rename_target)strcpy(account.base,"renamed");}
- return json_object_new_object();
+ json_object *out=json_object_new_object();
+ if(!strcmp(a,"status.get")){
+  if(status_mode==1)*code="busy";
+  if(status_mode!=2)json_object_object_add(out,"model",json_object_new_string("a1"));
+ }
+ return out;
 }
 static int sender(const char *topic,const char *body,bool retain){
  assert(!ph_mqtt_debug_core()->protocol_depth);
@@ -50,7 +56,19 @@ int main(void){
  assert(ph_mqtt_owner_init(&account,8192,&thread,accept));
  char request[8193];const char *control="{\"action\":\"fan.set\",\"request_id\":\"large\",\"params\":{}}";
  strcpy(request,control);memset(request+strlen(control),' ',8192-strlen(control));request[8192]=0;
- heap_capacity=64000;start();rename_target=true;
+ heap_capacity=64000;start();
+ /* Busy and incomplete product captures must preserve the previous retained
+  * state; they are retryable work, never a successful empty publication. */
+ for(status_mode=1;status_mode<=2;status_mode++){
+  unsigned before=publications;
+  assert(service_mqtt_snapshot(sender,&account)==PH_MQTT_MORE);
+  assert(publications==before&&!json_owner);
+  service_memory_state_t m;service_memory_snapshot(&m);assert(!m.active&&!m.reserved);
+ }
+ status_mode=0;unsigned before=publications;
+ assert(service_mqtt_snapshot(sender,&account)==0&&publications==before+1);
+ assert(strstr(last_body,"a1"));finish();clear_receipts();assert(!native_live);
+ start();rename_target=true;
  char target[512];snprintf(target,sizeof(target),"%s/result",account.base);
  assert(command(request)==0);assert(mutations==1);assert(!strcmp(target,last_topic));assert(strstr(last_body,"\"ok\""));
  assert(command(request)==0&&mutations==1);assert(strstr(last_body,"\"ok\""));

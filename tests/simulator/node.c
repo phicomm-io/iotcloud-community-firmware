@@ -82,7 +82,13 @@ static void sensor_tick(void){mico_rtos_lock_mutex(&device_lock);
 void state_get(STATE *s){mico_rtos_lock_mutex(&device_lock);*s=device_state;mico_rtos_unlock_mutex(&device_lock);}
 json_object *status_json(void);
 json_object *status_live_json(void) { return status_json(); }
-json_object *status_json(void){CFG c;STATE s;config_get(&c);state_get(&s);json_object *o=json_object_new_object();json_object_object_add(o,"id",json_object_new_string(device_id));json_object_object_add(o,"mqtt_connected",json_object_new_boolean(s.mqtt_connected));json_object_object_add(o,"mqtt_errors",json_object_new_int(s.mqtt_errors));json_object_object_add(o,"uptime_ms",json_object_new_int(mico_rtos_get_time()));
+json_object *status_json(void){CFG c;STATE s;config_get(&c);state_get(&s);json_object *o=json_object_new_object();json_object_object_add(o,"id",json_object_new_string(device_id));
+#ifdef HOST_A1
+ json_object_object_add(o,"model",json_object_new_string("a1"));
+#else
+ json_object_object_add(o,"model",json_object_new_string("m1"));
+#endif
+json_object_object_add(o,"mqtt_connected",json_object_new_boolean(s.mqtt_connected));json_object_object_add(o,"mqtt_errors",json_object_new_int(s.mqtt_errors));json_object_object_add(o,"uptime_ms",json_object_new_int(mico_rtos_get_time()));
 #ifdef HOST_A1
  json_object_object_add(o,"requested_fan_on",json_object_new_boolean(c.fan_on));
  json_object_object_add(o,"filter",a1_filter_json());

@@ -14,7 +14,11 @@ typedef int OSStatus;
 typedef unsigned mico_mutex_t;
 typedef uintptr_t mico_thread_arg_t;
 typedef uintptr_t mico_thread_t;
-static inline bool mico_rtos_is_current_thread(mico_thread_t *thread){(void)thread;return true;}
+static inline bool mico_rtos_is_current_thread(mico_thread_t *thread){return *thread==1;}
+#ifndef PHICOMM_HOST_CUSTOM_MEMORY
+typedef struct { unsigned free_memory; } micoMemInfo_t;
+static inline const micoMemInfo_t *MicoGetMemoryInfo(void){static const micoMemInfo_t m={64000};return &m;}
+#endif
 typedef uint32_t mico_time_t;
 typedef int mico_gpio_t, WiFiEvent;
 #define maxNameLen 64
@@ -44,7 +48,7 @@ static inline void mico_rtos_unlock_mutex(mico_mutex_t *m){assert(*m);*m=0;}
 static inline void mico_rtos_suspend_all_thread(void){}
 static inline void mico_rtos_resume_all_thread(void){}
 static inline void mico_rtos_delete_thread(void *p){(void)p;}
-static inline int mico_rtos_create_thread(void *a,int p,const char *n,void (*f)(mico_thread_arg_t),unsigned stack,int arg){(void)a;(void)p;(void)n;(void)f;(void)stack;(void)arg;return 0;}
+int mico_rtos_create_thread(void *,int,const char *,void (*)(mico_thread_arg_t),unsigned,int);
 typedef struct { void *items[10]; unsigned head,count; } host_queue;
 typedef host_queue *mico_queue_t;
 typedef int mico_worker_thread_t,mico_timer_t;

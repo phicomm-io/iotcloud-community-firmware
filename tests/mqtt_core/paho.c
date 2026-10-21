@@ -56,7 +56,7 @@ void InitTimer(Timer*t){memset(t,0,sizeof(*t));}
 static unsigned char rx[65536],tx[20000];
 static size_t rx_at,rx_size,tx_size;
 static unsigned publications,executions,inject_count,write_fragment=65535;
-static unsigned online_publications,offline_publications,subscriptions;
+static unsigned online_publications,offline_publications,subscriptions,gate_subscription_base;
 static char injected_topic[512]="rx/command";
 static bool inject_large,inject_subscription,fail_send,missing_ack,handler_nested;
 static unsigned disconnects,opens,closes,cycles,ready_events,close_events;
@@ -177,7 +177,11 @@ static int initial(void *ctx){(void)ctx;
 static int cycle(void *ctx){(void)ctx;cycles++;
  if(gate_mode){
   if(cycles<=(gate_mode==9?40u:3u))assert(online_publications==gate_online_before&&ready_events==gate_ready_before);
-  if(gate_mode==9)now_ms+=1000;
+  if(gate_mode>=9)now_ms+=1000;
+  if(gate_mode==10&&cycles>=4&&cycles<45){
+   assert(ready_events==gate_ready_before+1&&online_publications==gate_online_before+1);
+   assert(subscriptions==gate_subscription_base+1);
+  }
   unsigned before=executions;inject_count=1;int rc=publish();assert(executions==before);
   if(gate_mode==4&&cycles==2)return PH_MQTT_RECONFIGURE;
   return rc;
@@ -194,7 +198,7 @@ static int cycle(void *ctx){(void)ctx;cycles++;
 }
 static void closing(void *ctx,bool connected,int rc){(void)ctx;(void)rc;assert(connected==(!open_fail));close_events++;if(gate_mode)gate_closed=true;}
 static void event(void *ctx,unsigned e,int rc){(void)ctx;(void)rc;if(e==PH_MQTT_READY){ready_events++;if(multi_session)multi_ready++;}}
-static bool stop(void *ctx){(void)ctx;if(gate_mode)return gate_cancel||gate_closed||cycles>=(gate_mode==9?42u:4u)||(gate_mode==3&&cycles>=2);return multi_session?multi_done:cycles>=2 || close_events;}
+static bool stop(void *ctx){(void)ctx;if(gate_mode)return gate_cancel||gate_closed||cycles>=(gate_mode==10?46u:gate_mode==9?42u:4u)||(gate_mode==3&&cycles>=2);return multi_session?multi_done:cycles>=2 || close_events;}
 static void sessions(void){
  ph_mqtt_session_hooks h={NULL,prepare,subscription_plan,initial,cycle,closing,event,stop};
  unsigned n=executions,online_before=online_publications,offline_before=offline_publications;
@@ -216,25 +220,26 @@ static void sessions(void){
  ph_mqtt_diagnostics diagnostic;ph_mqtt_snapshot(&diagnostic);assert(diagnostic.errors&&diagnostic.reconnects>=10&&!diagnostic.protocol_depth);
 
 }
-static bool initial_gate(void *ctx){(void)ctx;return cycles>=(gate_mode==9?40u:3u);}
+static bool initial_gate(void *ctx){(void)ctx;return gate_mode==10?(cycles==3||cycles>=45):cycles>=(gate_mode==9?40u:3u);}
 static bool gate_valid(void *ctx){(void)ctx;return gate_current;}
 static void gated_sessions(void){
  ph_mqtt_session_hooks h={NULL,prepare,subscription_plan,initial,cycle,closing,event,stop,initial_gate,gate_valid};
- for(unsigned mode=1;mode<=9;mode++){
+ for(unsigned mode=1;mode<=10;mode++){
   gate_mode=mode;gate_closed=gate_cancel=false;gate_current=true;cycles=close_events=0;
   gate_online_before=online_publications;gate_ready_before=ready_events;
-  unsigned ran=executions,published=publications,subscribed=subscriptions;
+  unsigned ran=executions,published=publications,subscribed=subscriptions;gate_subscription_base=subscriptions;
   ph_mqtt_session_run(&client,&h);
   assert(gate_closed&&close_events==1&&!native_live&&!charged_live);
   assert(!ph_mqtt_debug_core()->bytes&&!ph_mqtt_debug_core()->credit);
   /* Paho callbacks enqueue only; commands and external SEND keep advancing
    * while the adapter is not ready, without publishing online prematurely. */
   assert(executions>=ran+2&&publications>=published+3);
-  if(mode==1||mode==9)assert(ready_events==gate_ready_before+1&&online_publications==gate_online_before+1);
+  if(mode==1||mode>=9)assert(ready_events==gate_ready_before+1&&online_publications==gate_online_before+1);
   else assert(ready_events==gate_ready_before);
   if(mode>=3&&mode<=6)assert(online_publications==gate_online_before);
   if(mode==2||mode==7||mode==8)assert(online_publications==gate_online_before+1);
   if(mode==9)assert(subscriptions==subscribed+1);
+  if(mode==10)assert(subscriptions==subscribed+2);
  }
  gate_mode=0;
 }

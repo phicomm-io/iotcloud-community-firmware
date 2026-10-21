@@ -106,7 +106,7 @@ static void measure_mqtt(bool modern,unsigned longest,bool reply,size_t budget,b
   if(wire){mqtt_bytes=wire->bpos;printbuf_free(wire);}
  }else{
   mqtt_account_t scope;assert(mqtt_account_init(&scope,1,"a1","test","aabbccddeeff"));
-  assert(service_mqtt_snapshot(mqtt_sender,&scope)==MQTT_SUCCESS);
+  int rc=service_mqtt_snapshot(mqtt_sender,&scope);assert(rc==(expect_ok?MQTT_SUCCESS:PH_MQTT_MORE));
  }
  assert((mqtt_bytes!=0)==expect_ok);healthy_stats();
  char out[256];int n=snprintf(out,sizeof(out),"%s MQTT %s %s capacity=%u peak=%u denied=%u phase=%u bytes=%u live=%u\n",modern?"consume":"legacy",reply?"reply":"snapshot",longest==2?"escaped-text":longest?"maxstrings":"ordinary",(unsigned)budget,(unsigned)(peak-libc_baseline),(unsigned)fail_size,(unsigned)fail_phase,mqtt_bytes,(unsigned)(live-libc_baseline));_write(1,out,n);

@@ -332,7 +332,7 @@ static a1_config_t cfg,current;
 static mqtt_state_t state;
 static char client_id[192],wildcard[MQTT_TOPIC_MAX];
 static unsigned count,feature_revision;
-static bool old_on,sent,old_visible;
+static bool old_on,sent,old_visible,filter_turn;
 static unsigned discovery_index,state_index,state_pending,state_seen;
 static unsigned old_speed;
 static uint32_t revision,filter_sent_at;
@@ -358,6 +358,16 @@ static int states_step(const a1_config_t *config, const mqtt_state_t *snapshot, 
         return rc;
     }
     return MQTT_SUCCESS;
+}
+/* Urgent filter snapshots may lead one turn, but never consume successive
+ * turns while other leaves remain pending, even under continuous resets. */
+static bool filter_priority(bool due) {
+    if (due && (!filter_turn || !(state_pending & 0x3fu))) {
+        filter_turn = true;
+        return true;
+    }
+    filter_turn = false;
+    return false;
 }
 static int session_prepare(void *context,ph_mqtt_connection *spec) {
     (void)context;
@@ -402,7 +412,7 @@ static int session_initial(void *context) {
     (void)context;
     int rc=service_mqtt_capabilities(publish,&account);
     discovery_index=state_index=0;state_pending=0x7fu;state_seen=0;
-    old_on=sent=old_visible=false;old_speed=revision=filter_sent_at=0;
+    old_on=sent=old_visible=filter_turn=false;old_speed=revision=filter_sent_at=0;
     memset(&sent_filter,0,sizeof(sent_filter));
     return rc;
 }
@@ -429,13 +439,22 @@ static int session_cycle(void *context) {
             bool dirty = feature_changed || revision != current.revision ||
                 old_visible != state.led_visible || old_on != on || old_speed != speed;
             revision=current.revision;old_visible=state.led_visible;old_on=on;old_speed=speed;
-            if (rc == MQTT_SUCCESS && (state_pending || dirty)) {
-                bool snapshot_sent;
-                rc=states_step(&current,&state,dirty,&snapshot_sent);
-                if (snapshot_sent) { sent_filter = filter; filter_sent_at = mico_rtos_get_time(); }
-            } else if (rc == MQTT_SUCCESS && a1_filter_mqtt_due(&filter, &sent_filter, mico_rtos_get_time(), filter_sent_at)) {
+            /* Filter reset/lifetime changes need their own immediate state
+             * turn. Waiting behind six unrelated leaves can hide the zero
+             * usage edge while the running fan accrues its next second. */
+            if (dirty)
+                state_pending |= 0x7fu;
+            if (filter_priority(a1_filter_mqtt_due(&filter, &sent_filter, mico_rtos_get_time(), filter_sent_at))) {
                 rc = service_mqtt_snapshot(publish, &account);
-                if (rc == MQTT_SUCCESS) { sent_filter = filter; filter_sent_at = mico_rtos_get_time(); }
+                if (rc == MQTT_SUCCESS) {
+                    sent_filter = filter; filter_sent_at = mico_rtos_get_time();
+                    state_pending &= ~(1u << 6); state_seen |= 1u << 6;
+                    sent = state_seen == 0x7fu;
+                }
+            } else if (state_pending) {
+                bool snapshot_sent;
+                rc=states_step(&current,&state,false,&snapshot_sent);
+                if (snapshot_sent) { sent_filter = filter; filter_sent_at = mico_rtos_get_time(); }
             }
             if (rc == MQTT_SUCCESS) {rc = feature_mqtt_service(publish, true);}
     return rc;

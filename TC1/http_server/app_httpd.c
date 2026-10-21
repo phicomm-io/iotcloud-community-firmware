@@ -1,3 +1,4 @@
+#include "../../common/mqtt/diagnostics.h"
 /**
  ******************************************************************************
  * @file    app_https.c
@@ -83,7 +84,11 @@ static void memory_response(ph_http_exchange *x){
     micoMemInfo_t snapshot=*m;service_memory_state_t b;service_memory_snapshot(&b);
     ph_http_diagnostics d=ph_http_snapshot();
     int tcp_limit=d.limit,tcp_connections=d.connections,tcp_rc=d.connections_get_rc;
-    char *out=product.scalar;int n=snprintf(out,sizeof(product.scalar),
+    /* Request-owned diagnostics scratch; guard failure preserves the small
+     * allocation-free base response. Never increase permanent scalar RAM. */
+    size_t capacity=2304;product.body=snapshot.free_memory>=SERVICE_MEMORY_RESERVE+capacity+32?json_heap_malloc(capacity):NULL;
+    char *out=product.body?product.body:product.scalar;
+    if(!product.body)capacity=sizeof(product.scalar);int n=snprintf(out,capacity,
         "{\"code\":\"ok\",\"data\":{\"free_memory\":%d,\"allocated_memory\":%d,"
         "\"free_memory_chunks\":%d,\"uptime_ms\":%lu,\"last_reset_reason\":%d,\"memory_reserve\":%u,"
         "\"http_tcp_limit\":%d,\"http_tcp_connections\":%d,\"http_tcp_get_rc\":%d,"
@@ -99,8 +104,9 @@ static void memory_response(ph_http_exchange *x){
         (unsigned long)b.json_failed,(unsigned long)b.json_denied,
         (unsigned long)b.mqtt_pending,(unsigned long)b.mqtt_peak,
         (unsigned long)b.mqtt_overflow,(unsigned long)b.mqtt_max_delay);
-    if(n>0)n=ph_http_diag_append(out,sizeof(product.scalar),n,&d);
-    if(n>0 && (size_t)n<sizeof(product.scalar))response(x,200,"application/json",out,n);
+    if(n>0)n=ph_http_diag_append(out,capacity,n,&d);
+    if(n>0)n=ph_mqtt_diag_append(out,capacity,n,product.body!=NULL);
+    if(n>0 && (size_t)n<capacity)response(x,200,"application/json",out,n);
 }
 
 /* Preserve the registered TC1 anchored routes' query/trailing-slash aliases.

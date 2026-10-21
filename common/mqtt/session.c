@@ -159,7 +159,11 @@ void ph_mqtt_session_run(Client *client, const ph_mqtt_session_hooks *h) {
                 attempt = 0;
                 event(h, PH_MQTT_READY, 0);
             }
-            if (online && (uint32_t)(mico_rtos_get_time() - acl_at) >= 30000) {
+            /* Retained HA birth may restart discovery after the first READY.
+             * Refreshing subscriptions during that batch can replay birth and
+             * restart it forever with otherwise valid slow acknowledgements. */
+            if (online && (!h->initial_ready || h->initial_ready(h->context)) &&
+                (uint32_t)(mico_rtos_get_time() - acl_at) >= 30000) {
                 rc = subscribe_plan(client, h);
                 acl_at = mico_rtos_get_time();
                 if (rc != MQTT_SUCCESS)

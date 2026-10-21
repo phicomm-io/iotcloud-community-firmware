@@ -16,6 +16,7 @@ class StatusViewsTest(unittest.TestCase):
     capture=function((ROOT/model/'main.c').read_text(),f'void {prefix}_status_capture(')
     source=(ROOT/model/'http.c').read_text();builders=source[source.index('static __attribute__((noinline)) json_object *'+prefix+'_status_full('):source.index('static void memory_response(')]
     harness=r'''
+#define PHICOMM_HOST_CUSTOM_MEMORY 1
 #include "MODEL/LOWER.h"
 #include "common/device_status.h"
 #include "common/status_view.h"

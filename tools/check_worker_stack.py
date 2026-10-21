@@ -2,7 +2,7 @@
 """Conservative application-frame budgets for synchronous task call paths.
 
 Pinned GCC .su data plus reserves for SDK/JSON/RTOS; not runtime watermarks.
-MQTT reserves include packet dispatch while a QoS1 publish awaits its ACK.
+MQTT owner paths are checked separately with their compiled shared archive.
 """
 import re
 import sys
@@ -20,8 +20,6 @@ def check(directory, header):
                 frames[name] = max(frames.get(name, 0), int(size))
     binding = int(re.search(r'#define FEATURE_WORKER_STACK_SIZE (\d+)u',
                             Path(header).read_text()).group(1))
-    source = Path(header).resolve().parents[1] / directory.name / 'mqtt.c'
-    mqtt_budget = int(re.search(r'mqtt_worker, (\d+), 0', source.read_text()).group(1))
     paths = {
         'scheduled control': (binding, 2048, ['feature_worker', 'automation_poll',
             'auto_execute', 'service_command', 'service_product', 'service_product_inner']),
@@ -30,31 +28,9 @@ def check(directory, header):
             'a1_status_json' if directory.name == 'A1' else 'm1_status_json',
             'a1_status_json_view' if directory.name == 'A1' else 'm1_status_json_view']),
     }
-    if directory.name == 'A1':
-        paths['MQTT nested virtual command'] = (mqtt_budget, 4096, ['mqtt_worker',
-            'feature_mqtt_service', 'discovery_virtual', 'json_owned_publish', 'checked_publish', 'publish', 'feature_command',
-            'feature_mqtt_input', 'service_command', 'service_product',
-            'service_product_inner', 'a1_control_local'])
-        paths['MQTT nested filter command'] = (mqtt_budget, 4096, ['mqtt_worker',
-            'discovery', 'filter_discovery', 'json_owned_publish', 'publish', 'feature_command', 'feature_mqtt_input',
-            'service_command', 'service_product', 'service_product_inner',
-            'a1_control_local'])
-    else:
-        paths['MQTT nested command'] = (mqtt_budget, 4096, ['mqtt_worker', 'discovery', 'json_owned_publish', 'publish',
-            'native_command', 'service_command', 'service_product', 'service_product_inner'])
-    if directory.name == 'A1':
-        virtual = paths['MQTT nested virtual command']
-        paths['MQTT nested telemetry command'] = (virtual[0], virtual[1],
-            [n for n in virtual[2] if n not in ('discovery_virtual','json_owned_publish')] +
-            [n for n in ('virtual_service','direct_json_claimed','direct_leaf') if n in frames])
-    status = 'a1_status_json' if directory.name == 'A1' else 'm1_status_json'
-    paths['MQTT result nested status'] = (mqtt_budget, 4096, ['mqtt_worker',
-        'service_mqtt_flush', 'publish',
-        'command' if directory.name == 'A1' else 'native_command',
-        'service_command', 'service_product', status, status+'_view'])
-    if directory.name == 'A1':
-        for label in ('scheduled control', 'MQTT nested virtual command', 'MQTT nested filter command', 'MQTT nested telemetry command'):
-            paths[label][2].extend(['feature_group_control', 'group_send', 'parse'])
+    status='a1_status_json' if directory.name=='A1' else 'm1_status_json'
+    if directory.name=='A1':paths['scheduled control'][2].extend(['a1_control_local','feature_group_control','group_send','parse'])
+    # MQTT paths are checked with the linked shared archive in check_http_core.
     expanded={}
     for label,(budget,reserve,names) in paths.items():
         if status not in names:

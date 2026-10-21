@@ -23,6 +23,8 @@ class TC1Lifecycle(unittest.TestCase):
 #include <pthread.h>
 #include <sched.h>
 #include <unistd.h>
+#include <time.h>
+#include <stdlib.h>
 #include "client.h"
 #include "session.h"
 typedef int OSStatus;
@@ -58,8 +60,8 @@ static void session_event(void*x,unsigned e,int rc){(void)x;(void)e;(void)rc;}
 static bool session_initial_ready(void*x){(void)x;return true;}
 static bool session_valid(void*x){(void)x;return true;}
 static bool session_stop(void *);
-uint32_t mico_rtos_get_time(void){static unsigned t;return __atomic_add_fetch(&t,1,__ATOMIC_RELAXED);}
-void mico_thread_msleep(unsigned ms){(void)ms;sched_yield();}
+uint32_t mico_rtos_get_time(void){struct timespec t;assert(!clock_gettime(CLOCK_MONOTONIC,&t));return (uint32_t)(t.tv_sec*1000u+t.tv_nsec/1000000u);}
+void mico_thread_msleep(unsigned ms){struct timespec t={ms/1000u,(long)(ms%1000u)*1000000L};nanosleep(&t,NULL);}
 bool ph_mqtt_owner_init(const mqtt_account_t*a,size_t n,mico_thread_t*t,bool(*f)(MessageData*,messageHandler)){(void)a;(void)n;(void)t;(void)f;return true;}
 void ph_mqtt_outgoing(int(*f)(const ph_mqtt_item*)){(void)f;}
 void ph_mqtt_owner_end(void){__atomic_add_fetch(&ended,1,__ATOMIC_RELAXED);}
@@ -88,7 +90,13 @@ int main(void){
   create_fail=i%10==0;__atomic_store_n(&entered,false,__ATOMIC_RELEASE);
   unsigned before=created;assert(UserMqttInit()==(create_fail?-1:0));assert(created==before+1);
   if(create_fail){assert(!__atomic_load_n(&mqtt_lifecycle,__ATOMIC_ACQUIRE));continue;}
-  while(!__atomic_load_n(&entered,__ATOMIC_ACQUIRE))sched_yield();
+  uint32_t deadline=mico_rtos_get_time();
+  while(!__atomic_load_n(&entered,__ATOMIC_ACQUIRE)){
+   if((uint32_t)(mico_rtos_get_time()-deadline)>=2000){
+    fprintf(stderr,"worker failed to enter cycle=%u lifecycle=%u ended=%u\n",i,__atomic_load_n(&mqtt_lifecycle,__ATOMIC_ACQUIRE),__atomic_load_n(&ended,__ATOMIC_RELAXED));abort();
+   }
+   sched_yield();
+  }
   assert(UserMqttInit()==0&&created==before+1); /* Never a duplicate worker. */
   assert(UserMqttDeInit()==0&&!UserMqttIsConnect());
   assert(!pthread_join(worker_thread,NULL));
