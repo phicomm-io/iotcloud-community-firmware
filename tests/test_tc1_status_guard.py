@@ -31,7 +31,7 @@ static void mico_rtos_unlock_mutex(mico_mutex_t *m){pthread_mutex_unlock(m);}
 #include <sched.h>
 int init_failed;
 static mico_mutex_t lock=PTHREAD_MUTEX_INITIALIZER;
-static bool active,config_busy;
+static bool active,config_busy,initialized=true;
 '''+functions+'''
 static atomic_bool entered,finished;
 static void *writer(void *unused){(void)unused;entered=true;assert(tc1_config_reserve());finished=true;return 0;}

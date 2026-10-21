@@ -11,22 +11,27 @@ static bool active, config_busy, unsigned_session, commit_uncertain, verified_pe
 static const char *ota_state="idle", *ota_error="";
 static char transfer_error[96];
 static mico_mutex_t lock;
+static bool initialized;
 static uint32_t expected, staged, wire_total, wire_done;
 static unsigned ota_percent;
 static uint16_t transport_crc;
 /* MiCO 3.6.4 / 6c465211: MK3031 kernel padded to the application offset. */
 static const uint8_t kernel_md5[16]={0x06,0x77,0xcf,0x68,0xfc,0xa7,0xdf,0xdc,0x9b,0x81,0x22,0x8d,0x2a,0x1b,0x7e,0xc3};
 void tc1_ota_metadata(tc1_ota_metadata_t *out) {mico_rtos_lock_mutex(&lock);*out=metadata;mico_rtos_unlock_mutex(&lock);}
-void tc1_ota_init(void) { mico_rtos_init_mutex(&lock); }
+bool tc1_ota_init(void) {
+    if(initialized)return true;
+    initialized=mico_rtos_init_mutex(&lock)==kNoErr;return initialized;
+}
 bool tc1_config_reserve(void) {
-    if(!tc1_status_guard_ready())return false;
+    if(!initialized || !tc1_status_guard_ready())return false;
     tc1_status_lock();
     mico_rtos_lock_mutex(&lock); bool ok=!active && !config_busy; if(ok)config_busy=true;
     mico_rtos_unlock_mutex(&lock);tc1_status_unlock();return ok;
 }
-bool tc1_config_changing(void) {mico_rtos_lock_mutex(&lock);bool busy=config_busy;mico_rtos_unlock_mutex(&lock);return busy;}
+bool tc1_config_changing(void) {if(!initialized)return true;mico_rtos_lock_mutex(&lock);bool busy=config_busy;mico_rtos_unlock_mutex(&lock);return busy;}
 void tc1_config_release(void) {mico_rtos_lock_mutex(&lock);config_busy=false;mico_rtos_unlock_mutex(&lock);}
 bool tc1_ota_reserve(void) {
+    if(!initialized)return false;
     mico_rtos_lock_mutex(&lock); bool ok=!active && !config_busy; if(ok) {active=true;verified_pending=false;ota_state="receiving";ota_error="";}
     mico_rtos_unlock_mutex(&lock); return ok;
 }

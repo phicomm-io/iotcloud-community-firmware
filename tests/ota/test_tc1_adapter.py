@@ -41,7 +41,8 @@ typedef MD5_CTX md5_context;
 #define Md5Update MD5_Update
 static void Md5Final(md5_context *ctx,uint8_t *out){MD5_Final(out,ctx);}
 typedef int mico_mutex_t;
-static int mico_rtos_init_mutex(mico_mutex_t *m){return 0;}
+extern int init_fault;
+static int mico_rtos_init_mutex(mico_mutex_t *m){return init_fault;}
 static void mico_rtos_lock_mutex(mico_mutex_t *m){}
 static void mico_rtos_unlock_mutex(mico_mutex_t *m){}
 static void mico_thread_msleep(unsigned ms){}
@@ -61,7 +62,8 @@ int mico_ota_switch_to_new_fw(int,uint16_t);
   (d/'harness.c').write_text('''#include "adapter.c"
 static uint8_t flash[0xa9000];
 static mico_logic_partition_t part={0xaf000,0xa9000},current={0x6000,0xa9000};
-int erases,writes,switches,fault;
+int erases,writes,switches,fault,init_fault;
+int init_failure(void){initialized=false;init_fault=-1;int ok=!tc1_ota_init()&&!tc1_ota_reserve()&&!tc1_config_reserve()&&tc1_config_changing();init_fault=0;return ok&&tc1_ota_init();}
 bool ota_job_cancelled(void){return fault==7 && erases>=2;}
 bool ota_job_commit(void){return fault!=8 && !ota_job_cancelled();}
 mico_logic_partition_t *MicoFlashGetInfo(int p){if(p==3)return &current;return &part;}
@@ -95,6 +97,8 @@ int reserve_again(void){tc1_ota_abort();return tc1_ota_reserve();}
    if not self.lib.feed(part,len(part)):return False
   return bool(self.lib.finish())
  def count(self,name):return ctypes.c_int.in_dll(self.lib,name).value
+ def test_mutex_initialization_failure_fails_closed(self):
+  self.assertTrue(self.lib.init_failure())
  def test_verified_response_loss_has_no_activation_and_allows_retry(self):
   for rescue in [False,True]:
    data=self.image if rescue else self.signed(self.image)

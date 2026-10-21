@@ -154,7 +154,7 @@ int application_start(void) {
     if(!tc1_status_guard_init())return kNoMemoryErr;
     service_init();
     WebLogInit();
-    tc1_ota_init();
+    if(!tc1_ota_init())return kNoMemoryErr;
     int i;tc1_log("start version[%s]", VERSION);
 
     //char main_num=0;
