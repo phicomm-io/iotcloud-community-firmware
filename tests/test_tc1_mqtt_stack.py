@@ -125,7 +125,9 @@ int main(void){
 
     def test_power_topic_and_payload(self):
         source=(ROOT/'TC1/mqtt_server/user_mqtt_client.c').read_text()
-        power=extract(source,'static bool power_requested(')+'\n'+extract(source,'extern void UserMqttHassPower(void) {')
+        power='\n'.join(extract(source,signature) for signature in (
+            'static bool power_requested(', 'static bool power_number(',
+            'static bool power_legacy(', 'extern void UserMqttHassPower(void) {'))
         fixture=r'''
 #include <assert.h>
 #include <stdbool.h>
@@ -147,6 +149,15 @@ static char str_mac[]="aabbccddeeff",topic_state[MQTT_TOPIC_MAX];
 typedef uint32_t mico_time_t;
 static void mico_time_get_time(mico_time_t *out){*out=93784000;}
 static double PowerPulseCountToKwh(uint32_t n){return n/1000.0;}
+/* This seam tests application reaction to explicit conversion failures.
+ * The actual checked allocator/converter has its own ARM fault-injection tests. */
+static unsigned conversions,fail_conversion;
+static int json_number_format_fixed(char *out,unsigned capacity,double value,unsigned precision){
+ if(++conversions==fail_conversion)return -1;
+ char number[512];int n=snprintf(number,sizeof(number),"%.*f",precision,value);
+ if(n<0||(unsigned)n>=capacity)return -1;
+ memcpy(out,number,(unsigned)n+1);return n;
+}
 static char topics[6][MQTT_TOPIC_MAX],payloads[6][512];static unsigned count;static int retained[6];
 static int UserMqttSendTopic(char*topic,char*payload,char retain){assert(owner&&count<6);strcpy(topics[count],topic);strcpy(payloads[count],payload);retained[count++]=retain;return 0;}
 '''+power+r'''
@@ -156,9 +167,25 @@ int main(void){
  assert(mqtt_account_init(&account,1,"tc1","test",str_mac));assert(mqtt_leaf(&account,"sensor",topic_state,sizeof(topic_state)));
  UserMqttHassPower();assert(count==1&&!strcmp(topics[0],topic_state)&&retained[0]==1);
  assert(!strcmp(payloads[0],"{\"power\":12.300,\"energySession\":2.000000,\"powerConsumption\":10.000,\"powerConsumptionToday\":1.000,\"powerConsumptionYesterday\":1.000,\"startupTime\":\"1 - 02:03:04\"}"));
- count=0;account.mode=0;UserMqttHassPower();assert(count==5);
+ for(unsigned fail=1;fail<=5;fail++){
+  conversions=0;fail_conversion=fail;count=0;UserMqttHassPower();assert(!count);
+ }
+ fail_conversion=0;count=0;account.mode=0;UserMqttHassPower();assert(count==5);
+ assert(!strcmp(payloads[0],"{\"power\":\"12.300\"}"));
+ assert(!strcmp(payloads[1],"{\"powerConsumption\":\"10.000\"}"));
+ assert(!strcmp(payloads[2],"{\"startupTime\":\"1 - 02:03:04\"}"));
+ assert(!strcmp(payloads[3],"{\"powerConsumptionToday\":\"1.000\"}"));
+ assert(!strcmp(payloads[4],"{\"powerConsumptionYesterday\":\"1.000\"}"));
  const char*leaves[]={"power","powerConsumption","startupTime","powerConsumptionToday","powerConsumptionYesterday"};
  for(unsigned i=0;i<5;i++){char expected[128];snprintf(expected,sizeof(expected),"homeassistant/sensor/%s/%s/state",str_mac,leaves[i]);assert(!strcmp(topics[i],expected)&&!retained[i]);}
+ for(unsigned fail=1;fail<=4;fail++){
+  conversions=0;fail_conversion=fail;count=0;UserMqttHassPower();assert(count==4);
+  for(unsigned i=0;i<count;i++)assert(payloads[i][strlen(payloads[i])-1]=='}');
+ }
+ fail_conversion=0;
+ char tiny[8]="guarded";size_t used=0;
+ assert(!power_number(tiny,sizeof(tiny),&used,"too-long",1,3));assert(!strcmp(tiny,"guarded"));
+ assert(!power_legacy(tiny,sizeof(tiny),"power",1));
  isconnect=false;count=0;UserMqttHassPower();assert(!count);
  synchronous_send=true;UserMqttHassPower();assert(count==5);
  pthread_t thread;assert(!pthread_create(&thread,NULL,producer,NULL));

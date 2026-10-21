@@ -4,6 +4,7 @@
 #include <ctype.h>
 #include "../../common/mqtt_cleanup.h"
 #include "../../common/mqtt/service.h"
+#include "../../common/json_number_checked.h"
 /**
  ******************************************************************************
  * @file    mqtt_client.c
@@ -964,6 +965,32 @@ void UserMqttHassAutoPower(void) {
     if (topic_buf) free(topic_buf);
 }
 
+/* These helpers only prepare owner-local telemetry. A rejected conversion
+ * skips that publication; a partially prepared payload never reaches MQTT. */
+static bool power_number(char *out, size_t capacity, size_t *used,
+                         const char *prefix, double value, unsigned precision)
+{
+    size_t length = strlen(prefix);
+    int number;
+    if (*used >= capacity || length >= capacity - *used) return false;
+    memcpy(out + *used, prefix, length);
+    *used += length;
+    number = json_number_format_fixed(out + *used, capacity - *used, value, precision);
+    if (number < 0) return false;
+    *used += (size_t)number;
+    return true;
+}
+
+static bool power_legacy(char *out, size_t capacity, const char *key, double value)
+{
+    int prefix = snprintf(out, capacity, "{\"%s\":\"", key);
+    size_t used;
+    if (prefix < 0 || (size_t)prefix >= capacity) return false;
+    used = (size_t)prefix;
+    return power_number(out, capacity, &used, "", value, 3) &&
+           mqtt_format(out + used, capacity - used, "\"}");
+}
+
 extern void UserMqttHassPower(void) {
     if (!ph_mqtt_owner()) {
         __atomic_store_n(&power_pending, true, __ATOMIC_RELEASE);
@@ -976,8 +1003,14 @@ extern void UserMqttHassPower(void) {
         uint32_t yesterday=user_config->p_count_1_day_ago>=user_config->p_count_2_days_ago?user_config->p_count_1_day_ago-user_config->p_count_2_days_ago:0;
         mico_time_t ms=0; mico_time_get_time(&ms); unsigned sec=ms/1000;
         char payload[512];
-        mqtt_format(payload,sizeof(payload),"{\"power\":%.3f,\"energySession\":%.6f,\"powerConsumption\":%.3f,\"powerConsumptionToday\":%.3f,\"powerConsumptionYesterday\":%.3f,\"startupTime\":\"%u - %02u:%02u:%02u\"}",
-            real_time_power/10,PowerPulseCountToKwh(power_session_pulses),PowerPulseCountToKwh(p_count),PowerPulseCountToKwh(today),PowerPulseCountToKwh(yesterday),sec/86400,sec/3600%24,sec/60%60,sec%60);
+        size_t used = 0;
+        if (!power_number(payload,sizeof(payload),&used,"{\"power\":",real_time_power/10,3) ||
+            !power_number(payload,sizeof(payload),&used,",\"energySession\":",PowerPulseCountToKwh(power_session_pulses),6) ||
+            !power_number(payload,sizeof(payload),&used,",\"powerConsumption\":",PowerPulseCountToKwh(p_count),3) ||
+            !power_number(payload,sizeof(payload),&used,",\"powerConsumptionToday\":",PowerPulseCountToKwh(today),3) ||
+            !power_number(payload,sizeof(payload),&used,",\"powerConsumptionYesterday\":",PowerPulseCountToKwh(yesterday),3) ||
+            !mqtt_format(payload+used,sizeof(payload)-used,",\"startupTime\":\"%u - %02u:%02u:%02u\"}",
+                         sec/86400,sec/3600%24,sec/60%60,sec%60)) return;
         /* Same owner initialized this exact sensor topic before any publish. */
         UserMqttSendTopic(topic_state,payload,1); return;
     }
@@ -988,38 +1021,34 @@ extern void UserMqttHassPower(void) {
                                             user_config->p_count_2_days_ago) : 0;
 
     sprintf(topic_buf, "homeassistant/sensor/%s/power/state", str_mac);
-    sprintf(send_buf, "{\"power\":\"%.3f\"}", real_time_power / 10);
-    UserMqttSendTopic(topic_buf, send_buf, 0);
+    if (power_legacy(send_buf,sizeof(send_buf),"power",real_time_power / 10))
+        UserMqttSendTopic(topic_buf, send_buf, 0);
 
     sprintf(topic_buf, "homeassistant/sensor/%s/powerConsumption/state", str_mac);
-    sprintf(send_buf, "{\"powerConsumption\":\"%.3f\"}", PowerPulseCountToKwh(p_count));
-    UserMqttSendTopic(topic_buf, send_buf, 0);
+    if (power_legacy(send_buf,sizeof(send_buf),"powerConsumption",PowerPulseCountToKwh(p_count)))
+        UserMqttSendTopic(topic_buf, send_buf, 0);
 
-    //闁荤姳绶ょ槐鏇㈡偩閼姐倕瀵查柤濮愬€楅崺鐘诲级閳哄倸濮屾い銏″灴瀵噣宕奸弴鐕傜吹
-    char up_time[16] = "00:00:00";
+    char up_time[16];
     mico_time_t past_ms = 0;
     mico_time_get_time(&past_ms);
-    int past = past_ms / 1000;
-    int d = past / 3600 / 24;
-    int h = past / 3600 % 24;
-    int m = past / 60 % 60;
-    int s = past % 60;
-    sprintf(up_time, "%d - %02d:%02d:%02d", d, h, m, s);
+    unsigned past = past_ms / 1000;
+    unsigned d = past / 3600 / 24;
+    unsigned h = past / 3600 % 24;
+    unsigned m = past / 60 % 60;
+    unsigned s = past % 60;
+    if (mqtt_format(up_time,sizeof(up_time),"%u - %02u:%02u:%02u",d,h,m,s) &&
+        mqtt_format(send_buf,sizeof(send_buf),"{\"startupTime\":\"%s\"}",up_time)) {
+        sprintf(topic_buf, "homeassistant/sensor/%s/startupTime/state", str_mac);
+        UserMqttSendTopic(topic_buf, send_buf, 0);
+    }
 
-    sprintf(topic_buf, "homeassistant/sensor/%s/startupTime/state", str_mac);
-    sprintf(send_buf, "{\"startupTime\":\"%s\"}", up_time);
-    UserMqttSendTopic(topic_buf, send_buf, 0);
-
-//    tc1_log("p_count %ld, p_count_1_day_ago %ld ,p_count_2_days_ago %ld, result %ld",p_count,user_config->p_count_1_day_ago,user_config->p_count_2_days_ago,((p_count-user_config->p_count_1_day_ago)<0?0:(p_count-user_config->p_count_1_day_ago)));
     sprintf(topic_buf, "homeassistant/sensor/%s/powerConsumptionToday/state", str_mac);
-    sprintf(send_buf, "{\"powerConsumptionToday\":\"%.3f\"}",
-            PowerPulseCountToKwh(today_count));
-    UserMqttSendTopic(topic_buf, send_buf, 0);
+    if (power_legacy(send_buf,sizeof(send_buf),"powerConsumptionToday",PowerPulseCountToKwh(today_count)))
+        UserMqttSendTopic(topic_buf, send_buf, 0);
 
     sprintf(topic_buf, "homeassistant/sensor/%s/powerConsumptionYesterday/state", str_mac);
-    sprintf(send_buf, "{\"powerConsumptionYesterday\":\"%.3f\"}",
-            PowerPulseCountToKwh(yesterday_count));
-    UserMqttSendTopic(topic_buf, send_buf, 0);
+    if (power_legacy(send_buf,sizeof(send_buf),"powerConsumptionYesterday",PowerPulseCountToKwh(yesterday_count)))
+        UserMqttSendTopic(topic_buf, send_buf, 0);
 }
 
 bool UserMqttIsConnect() {

@@ -19,6 +19,8 @@ cc -std=gnu99 -Wall -Wextra -Wno-unused-parameter -Wno-unused-but-set-variable -
 python3 -m unittest tests.test_http_core tests.test_http_core_tcp tests.test_http_callbacks tests.test_shared_http_adversarial tests.test_shared_http_arm
 python3 -m unittest tests.test_json_newlib_nano tests.test_json_integer_parse
 JSON_NUMBER_CACHE_MODELS=TC1 python3 -m unittest tests.test_json_number_cache
+JSON_NUMERIC_MODELS=TC1 python3 -m unittest tests.test_json_numeric_checked
+python3 -m unittest tests.test_tc1_mqtt_stack
 python3 tests/test_tc1_gpio.py
 
 python3 tests/test_tc1_core.py
