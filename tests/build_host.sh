@@ -81,7 +81,8 @@ for model in "${models[@]}"; do
         common/json-newlib-reent.patch common/json-printbuf-oom.patch \
         common/json-allocation-safety.patch common/json-heap-budget.patch \
         common/json-newlib-nano-abi.patch common/json-integer-parse.patch \
-        common/json-sized-resize.patch
+        common/json-sized-resize.patch \
+    common/json-number-cache-cleanup.patch
     json="$json_copy"
     transport=()
     if [[ "$model" == M1 ]]; then transport=(M1/mqtt_transport.c); fi

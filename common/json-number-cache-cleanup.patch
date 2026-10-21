@@ -1,0 +1,49 @@
+--- a/libraries/utilities/json_c/json_number_reent.h
++++ b/libraries/utilities/json_c/json_number_reent.h
+@@ -5,15 +5,34 @@
+ #define JSON_NUMBER_REENT_H
+ #ifdef __NEWLIB__
+ #include <reent.h>
++#include <stdlib.h>
+ #ifndef _REENT_SMALL
+ #error "JSON private contexts require newlib-nano headers (--specs=nano.specs)"
+ #endif
++/* This pinned nano libc's reclaim skips its private powers-of-five cache.
++ * Cache nodes are detached from Balloc's freelist while cached; reclaim owns
++ * the separate result/freelist and the _mp container. Retire only this private
++ * context's cache before handing the remaining scratch back to newlib. */
++static void json_number_reclaim(struct _reent *context)
++{
++  if(!context) return;
++  if(context->_mp) {
++    struct _Bigint *node = _REENT_MP_P5S(context);
++    _REENT_MP_P5S(context) = NULL;
++    while(node) {
++      struct _Bigint *next = node->_next;
++      _free_r(context, node);
++      node = next;
++    }
++  }
++  _reclaim_reent(context);
++}
+ static int json_number_scan(const char *text, double *value)
+ {
+   struct _reent context;
+   _REENT_INIT_PTR(&context);
+   int result = _sscanf_r(&context, text, "%lf", value);
+-  _reclaim_reent(&context);
++  json_number_reclaim(&context);
+   return result;
+ }
+ #else
+--- a/libraries/utilities/json_c/json_object.c
++++ b/libraries/utilities/json_c/json_object.c
+@@ -461,7 +461,7 @@
+   char number[32];
+   _REENT_INIT_PTR(&context);
+   int length = _snprintf_r(&context, number, sizeof(number), "%g", jso->o.c_double);
+-  _reclaim_reent(&context);
++  json_number_reclaim(&context);
+   if(length < 0 || length >= (int)sizeof(number)) return -1;
+   return printbuf_memappend(pb, number, length);
+ #else

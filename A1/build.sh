@@ -55,7 +55,8 @@ python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \
     "$project_dir/common/json-heap-budget.patch" \
     "$project_dir/common/json-newlib-nano-abi.patch" \
     "$project_dir/common/json-integer-parse.patch" \
-    "$project_dir/common/json-sized-resize.patch"
+    "$project_dir/common/json-sized-resize.patch" \
+    "$project_dir/common/json-number-cache-cleanup.patch"
 
 ln -sfn "$sdk_dir" "$workspace/mico-os"
 ln -sfn "$app_dir" "$workspace/A1"

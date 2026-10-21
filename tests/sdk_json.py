@@ -15,7 +15,7 @@ def copy_patched_json(source, destination):
     patches = ('json-newlib-reent.patch', 'json-printbuf-oom.patch',
                'json-allocation-safety.patch', 'json-heap-budget.patch',
                'json-newlib-nano-abi.patch', 'json-integer-parse.patch',
-               'json-sized-resize.patch')
+               'json-sized-resize.patch', 'json-number-cache-cleanup.patch')
     subprocess.run([sys.executable, str(ROOT/'tools/apply_sdk_patch.py'),
                     str(destination), *[str(ROOT/'common'/p) for p in patches]],
                    check=True, timeout=30)
