@@ -47,9 +47,52 @@ static json_object *runtime_new_object(void) {
   if (fail_runtime_object) { --fail_runtime_object; return NULL; }
   return json_object_new_object();
 }
+/* Execute the real common queue in the host owner; the device's session
+ * drives these same pop/release operations after Paho callbacks unwind. */
+#define lock common_queue_lock
+#define unlock common_queue_unlock
+#include "../common/mqtt/core.c"
+#undef lock
+#undef unlock
+static ph_mqtt_core test_mqtt_queue;
+static bool test_queue_initialized;
+static unsigned test_queue_lock;
+static void qlock(void*p){(void)p;assert(!test_queue_lock++);}
+static void qunlock(void*p){(void)p;assert(test_queue_lock--==1);}
+static bool qowner(void*p){(void)p;return true;}
+static uint32_t qnow(void*p){(void)p;return test_now;}
+static bool qpermit(void*p,size_t n){(void)p;(void)n;return true;}
+static void *qalloc(void*p,size_t n){(void)p;return malloc(n);}
+static void qfree(void*p,void*q){(void)p;free(q);}
+uint32_t ph_mqtt_send_generation(void){
+ if(!test_queue_initialized){ph_mqtt_hooks h={NULL,qlock,qunlock,qowner,qnow,qpermit,qalloc,qfree};
+  assert(ph_mqtt_core_init(&test_mqtt_queue,&h));test_queue_initialized=true;}
+ return test_mqtt_queue.generation;
+}
+int ph_mqtt_enqueue_send_generation(const char*t,const void*b,size_t n,unsigned qos,bool r,uint32_t g){
+ ph_mqtt_send_generation();if(!g)return -1;
+ return ph_mqtt_enqueue_generation(&test_mqtt_queue,PH_MQTT_SEND,t,strlen(t),b,n,qos,r,0,g)?0:-1;
+}
 #define json_object_new_object runtime_new_object
 #include "../common/runtime.c"
 #undef json_object_new_object
+#define queued (test_mqtt_queue.count[PH_MQTT_SEND])
+static void host_feature_mqtt_session(const mqtt_account_t *account){
+ ph_mqtt_send_generation();assert(ph_mqtt_clear(&test_mqtt_queue));feature_mqtt_session(account);
+}
+static int host_feature_mqtt_service(int(*publish)(const char*,const char*,bool),bool connected){
+ ph_mqtt_send_generation();
+ if(connected){ph_mqtt_item*i;
+  while((i=ph_mqtt_pop(&test_mqtt_queue,PH_MQTT_SEND))){
+   int rc=publish(ph_mqtt_item_topic(i),ph_mqtt_item_payload(i),i->retained);
+   ph_mqtt_item_release(&test_mqtt_queue,i);if(rc)return rc;
+  }
+ }
+ return feature_mqtt_service(publish,connected);
+}
+#define feature_mqtt_session host_feature_mqtt_session
+#define feature_mqtt_service host_feature_mqtt_service
+
 static bool scoped_topic(const char *topic) {
  mqtt_account_t a=mqtt_snapshot();char prefix[160];mqtt_format(prefix,sizeof(prefix),"phicomm/v2/%s/",a.key);
  return !strncmp(topic,prefix,strlen(prefix));
@@ -610,8 +653,8 @@ static void compact_resources(void){
  assert(mqtt_link_topic(&longest,"m1","112233445566",LOCAL_ID,"request",route_expected,sizeof(route_expected)));
  assert(enqueue(route_expected,body,true));assert(feature_mqtt_service(capture_route,true)==0);
  assert(mqtt_aux(&longest,"address",LOCAL_ID,route_expected,sizeof(route_expected)));
- for(unsigned i=0;i<4;i++)assert(enqueue(route_expected,body,true));
- assert(!enqueue(route_expected,body,true) && queued==4);
+ for(unsigned i=0;i<7;i++)assert(enqueue(route_expected,body,true));
+ assert(queued==1); /* retained state coalesces in the shared bounded queue */
  assert(feature_mqtt_service(capture_route,true)==0 && !queued);
  /* Reject oversized relative routes instead of truncating a destination. */
  char oversized[FEATURE_TOPIC_MAX],prefix[160];
@@ -619,7 +662,9 @@ static void compact_resources(void){
  strcpy(oversized,prefix);memset(oversized+strlen(prefix),'a',128);oversized[strlen(prefix)+128]=0;
  assert(!enqueue(oversized,body,true));
  assert(enqueue(route_expected,body,true));
- ++mqtt_generation; /* Simulate an enqueue racing a session reset. */
+ uint32_t stale=mqtt_generation;
+ assert(ph_mqtt_clear(&test_mqtt_queue));mqtt_generation=ph_mqtt_send_generation();
+ assert(ph_mqtt_enqueue_send_generation(route_expected,"{}",2,1,true,stale)!=0);
  unsigned before=route_calls;
  assert(feature_mqtt_service(capture_route,true)==0 && !queued && route_calls==before);
  json_object_put(body);stored=saved;configuration=saved;feature_mqtt_session(&account);

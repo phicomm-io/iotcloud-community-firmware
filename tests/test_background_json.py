@@ -56,6 +56,11 @@ static int legacy_publish(int(*p)(const char*,const char*,bool),const char*t,jso
 #define json_owned_publish legacy_publish
 #endif
 /* PRODUCTION_FUNCTIONS */
+static int discovery_all(MODEL_CONFIG*c){
+ for(unsigned i=0;i<EXPECTED_CALLBACKS;i++){
+  unsigned before=callbacks;int rc=discovery(c,i);assert(callbacks-before<=1);if(rc)return rc;
+ }return 0;
+}
 static void empty(void){json_heap_stats_t s;json_heap_snapshot(&s);assert(!s.live_blocks);}
 int main(void){
  assert(mqtt_account_init(&account,1,"MODEL_LOWER","test","aabbccddee01"));strcpy(base,account.base);
@@ -65,12 +70,12 @@ int main(void){
 #ifndef MODEL_A1
  m1_state.scd40.received=true;
 #endif
- assert(discovery(&c)==0);assert(callbacks==EXPECTED_CALLBACKS);empty();
- quiet=true;callbacks=0;callback_rc=-17;assert(discovery(&c)==-17);assert(callbacks==1);empty();
+ assert(discovery_all(&c)==0);assert(callbacks==EXPECTED_CALLBACKS);empty();
+ quiet=true;callbacks=0;callback_rc=-17;assert(discovery_all(&c)==-17);assert(callbacks==1);empty();
 #ifndef LEGACY_PUBLISH
  callback_rc=0;unsigned failures=0;
  for(unsigned i=1;i<10000;i++){
-  allocation=callbacks=0;fail_at=i;int rc=discovery(&c);fail_at=0;empty();
+  allocation=callbacks=0;fail_at=i;int rc=discovery_all(&c);fail_at=0;empty();
   if(!rc){assert(callbacks==EXPECTED_CALLBACKS);break;}
   assert(rc==-1);failures++;assert(i<9999);
  }
@@ -115,8 +120,11 @@ static int legacy_publish(int(*p)(const char*,const char*,bool),const char*t,jso
 #undef main
 static unsigned graph_callbacks,wire_callbacks,callbacks,averages,sensors,blocked_token;
 static bool hold_after_average;
+static unsigned quota;
+static void turn(void);
+static void drain(void);
 static int output(const char*t,const char*b,bool r){
- assert(t&&b);json_heap_stats_t s;json_heap_snapshot(&s);
+ assert(t&&b);if(!quota)return 2;--quota;json_heap_stats_t s;json_heap_snapshot(&s);
  unsigned token=service_json_claim();assert(token);service_json_release(token);
  if(strstr(t,"/average")){averages++;if(hold_after_average){hold_after_average=false;blocked_token=service_json_claim();assert(blocked_token);}}
  if(strstr(t,"/sensor")&&!r)sensors++;
@@ -126,6 +134,14 @@ static int output(const char*t,const char*b,bool r){
  if(s.live_blocks>2)graph_callbacks++;if(s.live_blocks==2)wire_callbacks++;
  printf("%u %s %u %s\n",callbacks++,t,r,b);return 0;
 }
+static void turn(void){quota=4;unsigned before=callbacks;
+ int rc=feature_mqtt_service(output,true);assert(rc==0||rc==2);assert(callbacks-before<=4);
+}
+static void drain(void){for(unsigned i=0;i<300;i++){
+ turn();if(blocked_token)return;
+ if(mqtt_online&&!mqtt_discovery_pending&&!mqtt_graph_pending&&!mqtt_leaf_pending)return;
+ test_now+=100;
+ }assert(!"publication did not make bounded progress");}
 int main(void){
  service_init();feature_defaults(&stored);assert(!feature_start());
  strcpy(stored.group,"room");stored.peer_count=1;
@@ -134,19 +150,19 @@ int main(void){
  samples[0]=(feature_sample_t){.valid=true,.sequence=1,.received_ms=6000,
   .value={22,45,100,.05},.co2_supported=true,.co2_valid=true,
   .co2=1100,.co2_received_ms=6000};
- assert(!feature_mqtt_service(output,true));
+ drain();
  test_now=12000;samples[0].received_ms=test_now;samples[0].co2_received_ms=test_now;
- assert(!feature_mqtt_service(output,true));assert(callbacks>10);
+ drain();assert(callbacks>10);
  unsigned saved_callbacks=callbacks,held=service_json_claim();assert(held);
  uint64_t failures=service_memory_failures();test_now=18000;
- assert(!feature_mqtt_service(output,true));assert(callbacks==saved_callbacks&&service_memory_failures()==failures);
- service_json_release(held);assert(!feature_mqtt_service(output,true));
+ drain();assert(callbacks==saved_callbacks&&service_memory_failures()==failures);
+ service_json_release(held);drain();
  assert(callbacks>saved_callbacks);
  unsigned old_average=averages,old_sensor=sensors;hold_after_average=true;test_now=24000;
- assert(!feature_mqtt_service(output,true));assert(blocked_token&&averages==old_average+1&&sensors==old_sensor&&mqtt_graph_pending);
- saved_callbacks=callbacks;test_now=24100;assert(!feature_mqtt_service(output,true));assert(callbacks==saved_callbacks);
+ drain();assert(blocked_token&&averages==old_average+1&&sensors==old_sensor&&mqtt_graph_pending);
+ saved_callbacks=callbacks;test_now=24100;turn();assert(callbacks==saved_callbacks);
  service_json_release(blocked_token);blocked_token=0;test_now=24200;
- assert(!feature_mqtt_service(output,true));assert(averages==old_average+1&&sensors==old_sensor+1&&!mqtt_graph_pending);
+ drain();assert(averages==old_average+1&&sensors==old_sensor+1&&!mqtt_graph_pending);
  free(published_layout);published_layout=NULL;
  json_heap_stats_t s;json_heap_snapshot(&s);assert(!s.live_blocks);
 #ifdef LEGACY_PUBLISH

@@ -57,6 +57,7 @@ python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \
 ln -sfn "$sdk_dir" "$workspace/mico-os"
 ln -sfn "$app_dir" "$workspace/A1"
 ln -sfn "$project_dir/common/httpd" "$workspace/phicomm_httpd"
+ln -sfn "$project_dir/common/mqtt" "$workspace/phicomm_mqtt"
 python3 "$app_dir/tools/pack_web.py"
 
 gcc_dir="$tools_dir/gcc-arm-none-eabi-5_4-2016q2"

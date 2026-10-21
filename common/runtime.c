@@ -1,4 +1,5 @@
 #include "watchdog.h"
+#include "mqtt/queue.h"
 #include "automation.h"
 #include "json_owned.h"
 #include "printbuf.h"
@@ -62,21 +63,17 @@ typedef struct {
 #endif
 } peer_runtime_t;
 static peer_runtime_t peers[FEATURE_MAX_PEERS];
-static struct {
-  /* Relative destination under the session's account namespace. The longest
-   * current route is a 33-byte group encoded as hex plus a domain/state leaf. */
-  char destination[128];
-  uint32_t generation;
-  char *body;
-  bool retained;
-} queue[4];
-static unsigned queued, queued_bytes;
 static uint32_t member_seen[8];
 static uint32_t mqtt_revision;
 static bool mqtt_online;
 #ifdef FEATURE_DEVICE_A1
 static uint32_t mqtt_tick, mqtt_graph_retry;
-static unsigned mqtt_graph_pending;
+static unsigned mqtt_graph_pending, mqtt_leaf_pending;
+/* Owner-only resumable publication positions. No bodies or JSON are retained. */
+static unsigned mqtt_discovery_stage, mqtt_discovery_cursor, mqtt_domain_cursor;
+static uint32_t mqtt_discovery_revision;
+static unsigned mqtt_discovery_sensors;
+static bool mqtt_discovery_pending;
 static bool was_coordinator;
 static char published_root[FEATURE_TOPIC_MAX], published_ids[FEATURE_MAX_PEERS][13];
 static feature_config_t *published_layout;
@@ -109,32 +106,12 @@ static bool enqueue(const char *t, json_object *o, bool retain) {
   generation=mqtt_generation;
   mico_rtos_unlock_mutex(&namespace_lock);
   size_t prefix_length=strlen(prefix);
-  if (strncmp(t,prefix,prefix_length) ||
-      strlen(t+prefix_length)>=sizeof(queue[0].destination)) return false;
-  const char *s = json_object_to_json_string(o);
-  if (!s) return false;
-  size_t n = strlen(s);
-  if (n > 8192)
-    return false;
-  char *b = malloc(n + 1);
-  if (!b)
-    return false;
-  strcpy(b, s);
-  lock();
-  if (queued == 4 || queued_bytes + n + 1 > 4096) {
-    unlock();
-    free(b);
-    return false;
-  }
-  strcpy(queue[queued].destination,t+prefix_length);
-  queue[queued].generation=generation;
-  queue[queued].body = b;
-  queue[queued].retained = retain;
-  queued++;
-  queued_bytes += n + 1;
-  unlock();
-  return true;
+  if(strncmp(t,prefix,prefix_length) || strlen(t+prefix_length)>=128)return false;
+  const char *wire=json_object_to_json_string(o);
+  if(!wire)return false;
+  return ph_mqtt_enqueue_send_generation(t,wire,strlen(wire),1,retain,generation)==0;
 }
+
 static json_object *parse(const void *data, size_t n) {
   if (!n || n > 8192 || memchr(data, 0, n))
     return NULL;
@@ -1228,11 +1205,10 @@ void feature_mqtt_session(const mqtt_account_t *account) {
   bool changed=feature_account.mode!=account->mode || strcmp(feature_account.key,account->key) ||
       strcmp(feature_account.model,account->model) || strcmp(feature_account.mac,account->mac);
   feature_account = *account;
-  ++mqtt_generation;
+  mqtt_generation=ph_mqtt_send_generation();
   mico_rtos_unlock_mutex(&namespace_lock);
   lock();
-  for (unsigned i=0; i<queued; ++i) free(queue[i].body);
-  queued=queued_bytes=0; mqtt_online=false;
+  mqtt_online=false;
   /* A pending LAN RPC must not fall back into a different MQTT session. */
   for (unsigned i=0; i<FEATURE_MAX_PEERS; ++i) {
     if (peers[i].rpc) json_object_put(peers[i].rpc);
@@ -1245,7 +1221,8 @@ void feature_mqtt_session(const mqtt_account_t *account) {
   }
 #endif
 #ifdef FEATURE_DEVICE_A1
-  mqtt_tick=0;mqtt_graph_pending=0;
+  mqtt_tick=0;mqtt_graph_pending=0;mqtt_leaf_pending=0;
+  mqtt_discovery_pending=false;
   if(changed) {
     published_root[0]=0; published_count=0;
     free(published_layout); published_layout=NULL;
@@ -1266,25 +1243,6 @@ int feature_mqtt_service(int (*publish)(const char *, const char *, bool), bool 
   if (!connected) { mqtt_online=false; return 0; }
   active_publish=publish; publish_error=0;
   virtual_service(checked_publish);
-  for (unsigned i=0; i<4 && !publish_error; ++i) {
-    char topic[FEATURE_TOPIC_MAX],destination[sizeof(queue[0].destination)];
-    uint32_t generation=0;char *body=NULL; bool retained=false;
-    lock();
-    if (queued) {
-      strcpy(destination,queue[0].destination);generation=queue[0].generation;
-      body=queue[0].body; retained=queue[0].retained;
-      queued--; queued_bytes-=strlen(body)+1;
-      memmove(queue,queue+1,queued*sizeof(queue[0]));
-    }
-    unlock();
-    if (!body) break;
-    mico_rtos_lock_mutex(&namespace_lock);
-    bool valid=generation==mqtt_generation &&
-        mqtt_format(topic,sizeof(topic),"phicomm/v2/%s/%s",feature_account.key,destination);
-    mico_rtos_unlock_mutex(&namespace_lock);
-    if (valid) checked_publish(topic,body,retained);
-    free(body);
-  }
   return publish_error;
 }
 static void rpc_poll(const feature_config_t *c, unsigned i, uint32_t now) {
@@ -1560,8 +1518,7 @@ static void feature_worker(mico_thread_arg_t arg) {
   if(udp>=0){close(udp);udp=-1;}
   free(wire);free(c);
   lock();
-  for(unsigned i=0;i<queued;i++)free(queue[i].body);
-  queued=queued_bytes=0;
+
   for(unsigned i=0;i<FEATURE_MAX_PEERS;i++){
     if(peers[i].rpc)json_object_put(peers[i].rpc);peers[i].rpc=NULL;
   }
@@ -1838,21 +1795,21 @@ static bool virtual_input(const char *t, const void *data, size_t n,
   free(c);
   return true;
 }
-static void direct_leaf(int (*p)(const char *, const char *, bool),
+static int direct_leaf(int (*p)(const char *, const char *, bool),
                         const char *root, const char *leaf, const char *body,
                         bool retain) {
-  if (!body) return;
+  if (!body) return -1;
   char topic[FEATURE_TOPIC_MAX];
   mqtt_format(topic, sizeof(topic), "%s/%s", root, leaf);
-  p(topic, body, retain);
+  return p(topic, body, retain);
 }
 /* Newly built telemetry/discovery graphs have no users after publication.
  * Retire them before the MQTT owner can block or dispatch packet callbacks. */
-static void direct_json(int (*p)(const char *, const char *, bool),
+static int direct_json(int (*p)(const char *, const char *, bool),
                         const char *root,const char *leaf,json_object *o,bool retain) {
   char topic[FEATURE_TOPIC_MAX];
   mqtt_format(topic,sizeof(topic),"%s/%s",root,leaf);
-  json_owned_publish(p,topic,o,retain);
+  return json_owned_publish(p,topic,o,retain);
 }
 /* The five-second sensor producer competes with HTTP full status for the same
  * small heap. Defer telemetry instead of building a second graph. Only
@@ -1862,7 +1819,7 @@ static bool direct_json_claimed(int (*p)(const char *, const char *, bool),
   struct printbuf *wire=json_owned_to_wire(o);
   service_json_release(token);
   if(!wire)return false;
-  direct_leaf(p,root,leaf,wire->buf,retain);printbuf_free(wire);return true;
+  int rc=direct_leaf(p,root,leaf,wire->buf,retain);printbuf_free(wire);return rc==0;
 }
 #ifdef FEATURE_DEVICE_A1
 /* Shared by virtual controls and per-A1 filter entities. Keep their parent
@@ -1917,9 +1874,9 @@ static unsigned discovery_sensors(const feature_config_t *c) {
   unlock();
   return mask;
 }
-static void discovery_virtual(int (*publish)(const char *, const char *, bool),
+static bool discovery_virtual_step(int (*publish)(const char *, const char *, bool),
                               const feature_config_t *c, const char *root,
-                              bool remove) {
+                              bool remove, unsigned *cursor) {
   const char *keys[] = {"fan",           "light",       "child_lock",
                         "led_always_on", "temperature", "humidity",
                         "pm25",          "formaldehyde", "co2", "scd40_temperature", "scd40_humidity"};
@@ -1939,15 +1896,16 @@ static void discovery_virtual(int (*publish)(const char *, const char *, bool),
   char owner[13], device_id[192];
   static char safe[FEATURE_TOPIC_MAX];
   if (!virtual_identity(c, root, &account, owner, safe, sizeof(safe),
-                        device_id, sizeof(device_id))) return;
+                        device_id, sizeof(device_id))) return false;
   unsigned sensors=discovery_sensors(c);
   unsigned sets = c->peer_count > 1 ? c->peer_count + 1 : 1;
   for (unsigned set = 0; set < sets; set++)
     for (unsigned i = 0; i < 11; i++) {
+      unsigned position=set*11+i;
+      if(position<*cursor)continue;
       unsigned bits=sensors;
       bool supported=i<8 || (i==8 && (set ? (bits & (1u<<(set-1))) != 0 : bits != 0));
-      if (set && i < 4)
-        continue;
+      if (set && i < 4) { *cursor=position+1;continue; }
       static char uid[FEATURE_TOPIC_MAX], path[FEATURE_TOPIC_MAX], sensor[FEATURE_TOPIC_MAX];
       const char *sid = set ? c->peers[set - 1].id : "average";
       mqtt_format(uid, sizeof(uid), "bound_%s_%s_%s", safe, i < 4 ? "device" : sid,
@@ -1956,14 +1914,17 @@ static void discovery_virtual(int (*publish)(const char *, const char *, bool),
                uid);
       if (account.mode) {
         char entity[240];
-        if (!mqtt_format(entity,sizeof(entity),"bound_%s_%s_%s",safe,i<4?"device":sid,keys[i])) return;
+        if (!mqtt_format(entity,sizeof(entity),"bound_%s_%s_%s",safe,i<4?"device":sid,keys[i])) return false;
         strcpy(account.mac,owner);
-        if (!mqtt_identity(&account,entity,uid,sizeof(uid)) || !mqtt_ha(&account,components[i],entity,path,sizeof(path))) return;
+        if (!mqtt_identity(&account,entity,uid,sizeof(uid)) || !mqtt_ha(&account,components[i],entity,path,sizeof(path))) return false;
       }
       if (remove || !supported) {
         /* Retained tombstones remove auxiliary entities published by earlier firmware. */
-        if(remove || i>=9 || published_sensors) publish(path, "", true);
-        continue;
+        if(remove || i>=9 || published_sensors) {
+          if(publish(path,"",true))return false;
+          *cursor=position+1;return *cursor==sets*11;
+        }
+        *cursor=position+1;continue;
       }
       json_object *o = json_object_new_object(),
                   *device = json_object_new_object(),
@@ -1975,7 +1936,7 @@ static void discovery_virtual(int (*publish)(const char *, const char *, bool),
           json_object_put(device);
         if (ids)
           json_object_put(ids);
-        return;
+        return false;
       }
       json_build_array_add(ids, json_object_new_string(device_id));
       json_build_object_add(device, "identifiers", ids);
@@ -2075,8 +2036,20 @@ static void discovery_virtual(int (*publish)(const char *, const char *, bool),
       }
       json_build_object_add(o, "availability", availability);
       js(o, "availability_mode", "any");
-      json_owned_publish(publish,path,o,true);
+      if(json_owned_publish(publish,path,o,true))return false;
+      *cursor=position+1;return *cursor==sets*11;
     }
+  return true;
+}
+/* Cleanup is finite and explicit; ordinary owner turns use only step(). */
+static void discovery_virtual(int (*publish)(const char *,const char *,bool),
+                              const feature_config_t *c,const char *root,bool remove) {
+  unsigned cursor=0;
+  for(;;) {
+    unsigned prior=cursor;
+    if(discovery_virtual_step(publish,c,root,remove,&cursor))return;
+    if(publish_error || cursor==prior)return;
+  }
 }
 #endif
 static void virtual_service(int (*publish)(const char *, const char *, bool)) {
@@ -2099,40 +2072,51 @@ static void virtual_service(int (*publish)(const char *, const char *, bool)) {
   root_for(c, 0, root);
   bool coordinator = feature_is_coordinator();
   unsigned sensor_mask=discovery_sensors(c);
-  if ((!mqtt_online || mqtt_revision != c->revision || published_sensors != sensor_mask ||
-       (!was_coordinator && coordinator)) &&
-      coordinator) {
-    /* Discovery keeps its existing publication/retry semantics. This rare
-     * branch must never carry an exclusion token into synchronous publish. */
+  bool discovery_needed=!mqtt_online || mqtt_revision!=revision ||
+      published_sensors!=sensor_mask || (!was_coordinator && coordinator);
+  if(coordinator && discovery_needed) {
     service_json_release(snapshot_token);snapshot_token=0;
-    bool layout_changed =
-        strcmp(published_root, root) || published_count != c->peer_count ||
-        (published_layout && (published_layout->member_count != c->member_count || memcmp(published_layout->members,c->members,sizeof(c->members))));
-    for (unsigned i = 0; i < c->peer_count && !layout_changed; i++)
-      layout_changed = strcmp(published_ids[i], c->peers[i].id) != 0;
-    if (published_root[0] && (layout_changed || !bound)) {
-      if (published_layout) discovery_virtual(publish,published_layout,published_root,true);
+    if(!mqtt_discovery_pending || mqtt_discovery_revision!=revision ||
+       mqtt_discovery_sensors!=sensor_mask) {
+      mqtt_discovery_pending=true;mqtt_discovery_stage=0;
+      mqtt_discovery_cursor=mqtt_domain_cursor=0;
+      mqtt_discovery_revision=revision;mqtt_discovery_sensors=sensor_mask;
     }
-    if (bound) {
-      discovery_virtual(publish, c, root, false);
-      published_sensors=sensor_mask;
-      if(!published_layout) published_layout=malloc(sizeof(*published_layout));
-      if(published_layout) *published_layout=*c;
-      strcpy(published_root, root);
-      published_count = c->peer_count;
-      for (unsigned i = 0; i < c->peer_count; i++)
-        strcpy(published_ids[i], c->peers[i].id);
-      for (unsigned d = 0; d < COUNT(domains); d++) {
-        json_object *o = config_encode(c, domains[d]);
-        if (o) {
-          js(o, "_source", LOCAL_ID);
-          char leaf[40];
-          mqtt_format(leaf, sizeof(leaf), "%s/state", topic_domain(domains[d]));
-          direct_json(publish,root,leaf,o,true);
-        }
+    bool layout_changed=strcmp(published_root,root) || published_count!=c->peer_count ||
+        (published_layout && (published_layout->member_count!=c->member_count ||
+        memcmp(published_layout->members,c->members,sizeof(c->members))));
+    for(unsigned i=0;i<c->peer_count && !layout_changed;i++)
+      layout_changed=strcmp(published_ids[i],c->peers[i].id)!=0;
+    if(mqtt_discovery_stage==0) {
+      if(published_root[0] && (layout_changed || !bound) && published_layout &&
+         !discovery_virtual_step(publish,published_layout,published_root,true,&mqtt_discovery_cursor)) {
+        free(c);return;
       }
-    } else
-      published_root[0] = 0;
+      mqtt_discovery_stage=1;mqtt_discovery_cursor=0;
+      free(c);return;
+    }
+    if(mqtt_discovery_stage==1) {
+      if(bound && !discovery_virtual_step(publish,c,root,false,&mqtt_discovery_cursor)) {
+        free(c);return;
+      }
+      mqtt_discovery_stage=2;free(c);return;
+    }
+    if(bound && mqtt_domain_cursor<COUNT(domains)) {
+      json_object *o=config_encode(c,domains[mqtt_domain_cursor]);
+      if(o) {
+        js(o,"_source",LOCAL_ID);char leaf[40];
+        mqtt_format(leaf,sizeof(leaf),"%s/state",topic_domain(domains[mqtt_domain_cursor]));
+        if(!direct_json(publish,root,leaf,o,true))++mqtt_domain_cursor;
+      }
+      free(c);return;
+    }
+    if(bound) {
+      if(!published_layout)published_layout=malloc(sizeof(*published_layout));
+      if(!published_layout){free(c);return;}
+      *published_layout=*c;strcpy(published_root,root);published_count=c->peer_count;
+      for(unsigned i=0;i<c->peer_count;i++)strcpy(published_ids[i],c->peers[i].id);
+    } else published_root[0]=0;
+    published_sensors=sensor_mask;mqtt_discovery_pending=false;
   }
   /* Periodic publishing needs only this compact configuration snapshot. The
    * large native config must not survive socket/PUBACK waits or JSON builds. */
@@ -2140,8 +2124,13 @@ static void virtual_service(int (*publish)(const char *, const char *, bool)) {
   char peer_ids[FEATURE_MAX_PEERS][13];
   for(unsigned i=0;i<peer_count;i++)memcpy(peer_ids[i],c->peers[i].id,sizeof(peer_ids[i]));
   free(c);c=NULL;service_json_release(snapshot_token);
-  if (bound && (uint32_t)(now - mqtt_tick) >= 5000) {
-    mqtt_tick = now;
+  if(bound && (uint32_t)(now-mqtt_tick)>=5000) {
+    mqtt_tick=now;
+    mqtt_leaf_pending|=(1u<<(grouped?14:7))-1u;
+    if(coordinator)mqtt_graph_pending|=(1u<<(peer_count+1))-1u;
+    mqtt_graph_retry=now-100u;
+  }
+  if(bound && mqtt_leaf_pending) {
     bool on;
     unsigned speed;
     /* These snapshots are only used by the MQTT owner. */
@@ -2166,35 +2155,38 @@ static void virtual_service(int (*publish)(const char *, const char *, bool)) {
         mqtt_format(prefix, sizeof(prefix), "%s/%s", root, mac);
       } else
         strcpy(prefix, root);
-      direct_leaf(publish, prefix, "fan/state", on ? "ON" : "OFF", true);
-      direct_leaf(publish,prefix,"fan/mode/state",feature_fan_auto()?"auto":"manual",true);
       char b[192];
-      mqtt_format(b, sizeof(b), "%u", on ? speed : 0);
-      direct_leaf(publish, prefix, "fan/percentage/state", b, true);
-      mqtt_format(b, sizeof(b),
-               "{\"state\":\"%s\",\"brightness\":%u,\"color\":{\"r\":%u,\"g\":%"
-               "u,\"b\":%u}}",
-               led_visible ? "ON" : "OFF", light_brightness, cfg.red,
-               cfg.green, cfg.blue);
-      direct_leaf(publish, prefix, "light/state", b, true);
-      direct_leaf(publish, prefix, "child_lock/state",
-                  cfg.child_lock ? "ON" : "OFF", true);
-      direct_leaf(publish, prefix, "led_always_on/state",
-                  cfg.led_always_on ? "ON" : "OFF", true);
-      direct_leaf(publish, prefix, "availability", "online", true);
+      const char *leaves[]={"fan/state","fan/mode/state","fan/percentage/state",
+          "light/state","child_lock/state","led_always_on/state","availability"};
+      for(unsigned leaf=0;leaf<7;leaf++) {
+        unsigned bit=1u<<(pass*7+leaf);if(!(mqtt_leaf_pending&bit))continue;
+        const char *body=NULL;
+        switch(leaf) {
+          case 0:body=on?"ON":"OFF";break;
+          case 1:body=feature_fan_auto()?"auto":"manual";break;
+          case 2:mqtt_format(b,sizeof(b),"%u",on?speed:0);body=b;break;
+          case 3:mqtt_format(b,sizeof(b),
+              "{\"state\":\"%s\",\"brightness\":%u,\"color\":{\"r\":%u,\"g\":%u,\"b\":%u}}",
+              led_visible?"ON":"OFF",light_brightness,cfg.red,cfg.green,cfg.blue);body=b;break;
+          case 4:body=cfg.child_lock?"ON":"OFF";break;
+          case 5:body=cfg.led_always_on?"ON":"OFF";break;
+          default:body="online";break;
+        }
+        if(direct_leaf(publish,prefix,leaves[leaf],body,true))break;
+        mqtt_leaf_pending&=~bit;
+      }
+      if(publish_error)break;
     }
-    /* Coalesce the latest readings. A lease conflict must not mark them sent
-     * or lock retries back onto the five-second/HTTP polling phase. */
-    mqtt_graph_pending=leader?((1u<<(peer_count+1))-1u):0;
-    mqtt_graph_retry=now-100u;
   }
-  if(!bound || !coordinator)mqtt_graph_pending=0;
+  if(!bound){mqtt_leaf_pending=0;mqtt_graph_pending=0;}
+  if(!coordinator)mqtt_graph_pending=0;
   if(mqtt_graph_pending && (uint32_t)(now-mqtt_graph_retry)>=100u) {
     mqtt_graph_retry=now;
     static feature_sample_t current[FEATURE_MAX_PEERS];
     lock();memcpy(current,samples,sizeof(current));unlock();
     for(unsigned i=0;i<=peer_count;i++) {
       unsigned bit=1u<<i;if(!(mqtt_graph_pending&bit))continue;
+      if(publish_error)break;
       unsigned token=service_json_claim();if(!token)break;
       json_object *o=i?sample_body(&current[i-1],now):average_body(current,peer_count,now);
       char leaf[64];
