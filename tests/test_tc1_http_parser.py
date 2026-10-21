@@ -67,4 +67,37 @@ int main(void){
 }
 ''')
 
+ def test_request_version_token_has_space_for_terminator(self):
+  source=self.source('http_parse.c')
+  code='\n'.join(function(source,n) for n in ('static const char *httpd_next_token(', 'static int httpd_token_cpy(', 'int httpd_parse_hdr_main('))
+  self.run_c(r'''
+#include <assert.h>
+#include <string.h>
+#include <stdbool.h>
+#include <stdio.h>
+#define TRUE true
+#define ISO_nl '\n'
+#define ISO_cr '\r'
+#define ISO_space ' '
+#define ISO_tab '\t'
+#define iswhite(c) ((c)==' '||(c)=='\t'||(c)=='\n'||(c)=='\r')
+#define kNoErr 0
+#define kInProgressErr 12
+#define WM_E_HTTPD_HDR_FNAME 13
+#define WM_E_HTTPD_NOTSUPP 14
+#define HTTPD_MAX_URI_LENGTH 128
+#define httpd_d(...) ((void)0)
+#define httpd_set_error(...) ((void)0)
+typedef struct {int type,sock;char filename[129];} httpd_request_t;
+static const char http_10[]="HTTP/1.0";
+static int httpd_verify_req_type(const char *p,int *t){(void)p;*t=1;return 0;}
+static int httpd_purge_headers(int fd){(void)fd;return 0;}
+'''+code+r'''
+int main(void){httpd_request_t req={0};
+ assert(!httpd_parse_hdr_main("GET /api/v1/status 1234567890 ",&req));
+ assert(httpd_parse_hdr_main("GET /api/v1/status 12345678901 ",&req)<0);
+ assert(httpd_parse_hdr_main("GET /api/v1/status HTTP/1.0",&req)<0);
+ puts("TC1 exact-limit request version terminator and oversized token: OK");}
+''')
+
 if __name__=='__main__':unittest.main()
