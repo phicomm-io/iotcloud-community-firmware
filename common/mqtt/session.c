@@ -119,6 +119,7 @@ void ph_mqtt_session_run(Client *client, const ph_mqtt_session_hooks *h) {
          * Publish it once only after CONNECT, subscriptions and initial setup
          * succeed; a failed publication must prevent a false READY state. */
         bool online = false;
+        uint32_t acl_at = mico_rtos_get_time();
         if (rc == MQTT_SUCCESS && !session_valid(h))
             rc = PH_MQTT_RECONFIGURE;
         if (rc == MQTT_SUCCESS && (!h->initial_ready || h->initial_ready(h->context))) {
@@ -127,11 +128,11 @@ void ph_mqtt_session_run(Client *client, const ph_mqtt_session_hooks *h) {
                 rc = PH_MQTT_RECONFIGURE;
             if (rc == MQTT_SUCCESS) {
                 online = true;
+                acl_at = mico_rtos_get_time();
                 attempt = 0;
                 event(h, PH_MQTT_READY, 0);
             }
         }
-        uint32_t acl_at = mico_rtos_get_time();
         while (rc == MQTT_SUCCESS && (!h->stop || !h->stop(h->context))) {
             rc = ph_mqtt_poll(client);
             if (rc != MQTT_SUCCESS)
@@ -154,10 +155,11 @@ void ph_mqtt_session_run(Client *client, const ph_mqtt_session_hooks *h) {
                 if (rc != MQTT_SUCCESS)
                     break;
                 online = true;
+                acl_at = mico_rtos_get_time();
                 attempt = 0;
                 event(h, PH_MQTT_READY, 0);
             }
-            if ((uint32_t)(mico_rtos_get_time() - acl_at) >= 30000) {
+            if (online && (uint32_t)(mico_rtos_get_time() - acl_at) >= 30000) {
                 rc = subscribe_plan(client, h);
                 acl_at = mico_rtos_get_time();
                 if (rc != MQTT_SUCCESS)
