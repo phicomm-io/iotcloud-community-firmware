@@ -22,7 +22,7 @@ def check(directory, header):
     common = ['hardware_worker', 'automation_button', 'auto_execute',
               'service_command', 'service_product']
     paths = {
-        'button status': common + ['service_query', 'a1_status_json'],
+        'button status': common + ['service_query', 'a1_status_json', 'a1_status_json_view'],
         'button control': common + ['service_product_inner', 'a1_control_local',
                                     'feature_group_control', 'group_send', 'parse'],
         'button inspect / power on': common + ['service_product_inner',

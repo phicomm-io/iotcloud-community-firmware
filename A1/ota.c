@@ -4,6 +4,16 @@
 #include "../common/ota/fetch.h"
 #include "../common/ota/mode.h"
 static bool download_running;
+/* A failed metadata commit may already have selected OTA_TEMP on Flash.
+ * There is no supported rollback/readback contract: keep both reservations. */
+static bool commit_uncertain;
+static bool activation_uncertain(void)
+{
+    mico_rtos_lock_mutex(&a1_lock);
+    bool uncertain = commit_uncertain;
+    mico_rtos_unlock_mutex(&a1_lock);
+    return uncertain;
+}
 #include "../common/ota/signed_ota.h"
 static signed_ota signed_session;
 static bool unsigned_session;
@@ -44,35 +54,38 @@ static bool reserve(void)
 void a1_ota_abort(const char *why)
 {
     watchdog_ota_end();
+    if (activation_uncertain()) return;
     a1_ota_status("failed", why, 0);
     mico_rtos_lock_mutex(&a1_lock); a1_state.ota_active = false; mico_rtos_unlock_mutex(&a1_lock);
     if(!download_running && ota_job_active())ota_job_release();
 }
 
-static bool prepare(uint32_t length)
+/* Low-level Flash helpers never release job ownership. Only their top-level
+ * caller may abort, after the complete synchronous operation has returned. */
+static const char *prepare(uint32_t length)
 {
     mico_logic_partition_t *part = MicoFlashGetInfo(MICO_PARTITION_OTA_TEMP);
     if (!part || length < A1_APP_OFFSET + 128 + 16 || length > A1_APP_OFFSET + A1_APP_LIMIT + 16 ||
         length > part->partition_length) {
-        a1_ota_abort("Invalid OTA length or partition capacity"); return false;
+        return "Invalid OTA length or partition capacity";
     }
     expected = length; staged = 0; transport_crc = 0;
     a1_ota_status("receiving", NULL, 0);
     if (!watchdog_erase_ota(part->partition_length)) {
-        a1_ota_abort("OTA flash erase failed"); return false;
+        return "OTA flash erase failed";
     }
-    return true;
+    return NULL;
 }
 
 static bool native_write(const uint8_t *data, size_t n)
 {
-    if (!n || n > expected - staged) { a1_ota_abort("OTA body exceeds advertised length"); return false; }
+    if (!n || n > expected - staged) return false;
     while (n) {
         unsigned take = n > 512 ? 512 : n;
         uint32_t offset = staged;
         if (MicoFlashWrite(MICO_PARTITION_OTA_TEMP, &offset, (uint8_t *)data, take) != kNoErr ||
             !watchdog_ota_progress()) {
-            a1_ota_abort("OTA flash write failed"); return false;
+            return false;
         }
         transport_crc = a1_crc16(transport_crc, data, take);
         staged += take; data += take; n -= take;
@@ -82,7 +95,7 @@ static bool native_write(const uint8_t *data, size_t n)
 }
 
 static bool signed_erase(void *ctx)
-{ (void)ctx; return prepare(signed_session.image_length); }
+{ (void)ctx; return prepare(signed_session.image_length)==NULL; }
 static bool signed_write(void *ctx, uint32_t offset, const uint8_t *data, size_t n)
 { (void)ctx; if (offset != staged) return false; return native_write(data,n); }
 static bool signed_read(void *ctx, uint32_t offset, uint8_t *data, size_t n)
@@ -105,12 +118,14 @@ bool a1_ota_begin_unsigned(uint32_t length)
     if(!ota_job_enter()){a1_ota_abort("Cannot stop linkage worker");return false;}
     unsigned_session=true; wire_expected=length; wire_received=0;
     if (!watchdog_ota_begin()) { a1_ota_abort("Watchdog unavailable"); return false; }
-    bool ok = prepare(length);
+    const char *error = prepare(length);
     watchdog_ota_end();
-    return ok;
+    if(error){a1_ota_abort(error);return false;}
+    return true;
 }
 bool a1_ota_write(const uint8_t *data, size_t n)
 {
+    if (activation_uncertain()) return false;
     if(ota_job_cancelled()){a1_ota_abort("Cancelled");return false;}
     if (!watchdog_ota_begin()) { a1_ota_abort("Watchdog unavailable"); return false; }
     if (n>wire_expected-wire_received ||
@@ -151,6 +166,7 @@ static bool md5_range(uint32_t start, uint32_t end, uint8_t digest[16])
 
 bool a1_ota_finish(void)
 {
+    if (activation_uncertain()) return false;
     if (!watchdog_ota_begin()) { a1_ota_abort("Watchdog unavailable"); return false; }
     const char *error = NULL;
     if (!unsigned_session && !signed_ota_finish(&signed_session)) {
@@ -190,7 +206,11 @@ bool a1_ota_finish(void)
     }
     if(!ota_job_commit()){error="Cancelled";goto fail;}
     if (mico_ota_switch_to_new_fw(expected, transport_crc) != kNoErr) {
-        error = "Failed to persist OTA boot metadata"; goto fail;
+        mico_rtos_lock_mutex(&a1_lock); commit_uncertain = true;
+        mico_rtos_unlock_mutex(&a1_lock);
+        a1_ota_status("failed", "Failed to activate verified image; boot metadata uncertain", 0);
+        watchdog_ota_end();
+        return false;
     }
     mico_rtos_lock_mutex(&a1_lock);
     strcpy(a1_state.ota_state, "ready"); a1_state.ota_active = false;
@@ -219,7 +239,7 @@ static void download_worker(mico_thread_arg_t arg){
     }
     if(!ok && error)a1_ota_abort(error);
     free(url);download_running=false;
-    if(!ok)ota_job_release();
+    if(!ok && !activation_uncertain())ota_job_release();
     mico_rtos_delete_thread(NULL);
 }
 

@@ -4,8 +4,10 @@ Run after build_host.sh with paho-mqtt and Jinja2, passing isolated broker port.
 """
 import json,os,pathlib,subprocess,sys,uuid
 from mqtt_observer import Observer
+from host_models import selected_models
 from jinja2 import Environment,StrictUndefined
 ROOT=pathlib.Path(__file__).resolve().parents[1]
+models=selected_models()
 port=int(sys.argv[1]);records=[]
 observer=Observer(port,lambda c,u,m:records.append((m.topic,m.payload.decode(),m.retain)))
 observer.start('#')
@@ -37,7 +39,7 @@ def finish_worker(worker, failing, start):
  return out
 
 try:
- for model in ('M1','A1','TC1'):
+ for model in models:
   user='v2_'+model.lower();key='u_'+user.encode().hex();base=f'phicomm/v2/{key}/{model.lower()}/aabbccddeeff';start=len(records)
   action,params=('display.set',{'brightness':50}) if model=='M1' else ('fan.set',{'on':True,'speed':40}) if model=='A1' else ('outlet.set',{'index':0,'on':True})
   command={'request_id':'retained','action':action,'params':params};publish(base+'/command',command,True)
@@ -90,18 +92,21 @@ try:
     if not failing:assert 'CONTROL' in out,out
    finally:clear_retained(base,sys.exc_info()[0] is not None)
  # TC1 Legacy keeps its original command topic and HA identifiers.
- start=len(records);legacy='device/ztc1/AABBCCDDEEFF'
- worker=subprocess.Popen([str(ROOT/'build/account-host/TC1'),'127.0.0.1',str(port),'legacy_test','12'],env={**os.environ,'TC1_TEST_LEGACY':'1'},stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
- try:
-  wait(lambda:any(t==legacy+'/availability' and p=='online' for t,p,r in records[start:]))
-  configs=[json.loads(p) for t,p,r in records[start:] if t.startswith('homeassistant/') and '/AABBCCDDEEFF/' in t and t.endswith('/config') and p]
-  assert configs and any(o.get('cmd_t')==legacy+'/set' for o in configs)
-  publish(legacy+'/set','set socket AABBCCDDEEFF 0 1')
-  wait(lambda:any(t=='homeassistant/switch/AABBCCDDEEFF/socket_0/state' and '1' in p for t,p,r in records[start:]))
-  assert not any(t==legacy+'/capabilities' for t,p,r in records[start:])
-  print('TC1 Legacy PASS original subscription, HA identity and text control',flush=True)
- finally:
-  failing=sys.exc_info()[0] is not None
-  out=finish_worker(worker,failing,start)
-  if not failing:assert 'CONTROL socket=0 on=1' in out,out
+ if 'TC1' in models:
+  start=len(records);legacy='device/ztc1/AABBCCDDEEFF'
+  worker=subprocess.Popen([str(ROOT/'build/account-host/TC1'),'127.0.0.1',str(port),'legacy_test','12'],env={**os.environ,'TC1_TEST_LEGACY':'1'},stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
+  try:
+   wait(lambda:any(t==legacy+'/availability' and p=='online' for t,p,r in records[start:]))
+   configs=[json.loads(p) for t,p,r in records[start:] if t.startswith('homeassistant/') and '/AABBCCDDEEFF/' in t and t.endswith('/config') and p]
+   assert configs and any(o.get('cmd_t')==legacy+'/set' for o in configs)
+   publish(legacy+'/set','set socket AABBCCDDEEFF 0 1')
+   wait(lambda:any(t=='homeassistant/switch/AABBCCDDEEFF/socket_0/state' and '1' in p for t,p,r in records[start:]))
+   assert not any(t==legacy+'/capabilities' for t,p,r in records[start:])
+   print('TC1 Legacy PASS original subscription, HA identity and text control',flush=True)
+  finally:
+   failing=sys.exc_info()[0] is not None
+   out=finish_worker(worker,failing,start)
+   if not failing:assert 'CONTROL socket=0 on=1' in out,out
+ else:
+  print('NOT_RUN TC1 Legacy: TC1 not selected',flush=True)
 finally:observer.close(failing=sys.exc_info()[0] is not None)

@@ -8,6 +8,14 @@ static uint64_t started;
 static unsigned duration=10;
 static feature_config_t features;
 static unsigned controls;
+static void (*scheduled_worker)(mico_thread_arg_t);
+static mico_thread_arg_t scheduled_argument;
+int mico_rtos_create_thread(void *output,int priority,const char *name,void (*fn)(mico_thread_arg_t),unsigned stack,int argument){
+ (void)priority;(void)name;(void)stack;
+ assert(output&&!scheduled_worker);*(mico_thread_t *)output=1;
+ scheduled_worker=fn;scheduled_argument=argument;return kNoErr;
+}
+uint32_t feature_config_revision(void){return features.revision;}
 void feature_config_get(feature_config_t *out){*out=features;feature_config_limit_peers(out);}
 bool feature_fan_auto(void){return features.linkage.enabled;}
 unsigned feature_fan_limit(void){return features.linkage.max_speed;}
@@ -22,6 +30,7 @@ unsigned feature_mqtt_filters(char f[][FEATURE_TOPIC_MAX],unsigned capacity){(vo
 bool feature_mqtt_input(const char *t,const void *d,size_t n,bool retained){(void)t;(void)d;(void)n;(void)retained;return false;}
 bool feature_mqtt_filters_current(char f[][FEATURE_TOPIC_MAX], unsigned n){(void)f;(void)n;return true;}
 void feature_mqtt_session(const mqtt_account_t *a){(void)a;}
+bool feature_mqtt_initial_ready(void){return true;}
 int feature_mqtt_service(int (*p)(const char *,const char *,bool),bool connected){(void)p;(void)connected;return 0;}
 int feature_mqtt_cleanup(int (*p)(const char *,const char *,bool)){(void)p;return 0;}
 void feature_effective_fan(bool a,unsigned b,bool *on,unsigned *speed){*on=a;*speed=b;}
@@ -58,6 +67,9 @@ json_object *a1_json_parse(const char *s,size_t n){(void)n;return json_tokener_p
 #define WEB_LOG_H
 #define web_log(...) ((void)0)
 #include "../../TC1/mqtt_server/user_mqtt_client.c"
+/* This harness has no concurrent SDK configuration restore transaction. The
+ * real production guard is linked and initialized, rather than stubbing locks. */
+bool tc1_config_changing(void){return false;}
 OSStatus ota_server_start(char *url,char *hash,ota_server_cb_fn callback){(void)url;(void)hash;(void)callback;return -1;}
 void tc1_ota_snapshot(char *state,char *error,unsigned *progress){strcpy(state,"idle");error[0]=0;*progress=0;}
 static user_config_t config;
@@ -107,9 +119,17 @@ int main(int argc,char **argv){
 #elif defined(HOST_A1)
     strcpy(config.mqtt_host,argv[1]);config.mqtt_port=atoi(argv[2]);strcpy(config.mqtt_user,argv[3]);strcpy(config.mqtt_password,pw);strcpy(config.name,"A1 test");config.mqtt_topic_mode=1;a1_state.wifi_connected=true;config.speed=60;
 #else
+    if(!tc1_status_guard_init())return 3;
     strcpy(config.mqtt_host,argv[1]);config.mqtt_port=atoi(argv[2]);strcpy(config.mqtt_user,argv[3]);strcpy(config.mqtt_password,pw);strcpy(system_config.micoSystemConfig.name,"TC1 \"quoted\" test");config.mqtt_topic_mode=getenv("TC1_TEST_LEGACY")?0:1;
     for(unsigned i=0;i<6;++i)snprintf(config.socket_names[i],64,"Socket \"%u\"",i);
-    mico_rtos_init_queue(&mqtt_msg_send_queue,"host",sizeof(void *),10);
 #endif
-    WORKER(0);return 0;
+#ifdef HOST_M1
+    if(m1_mqtt_start())return 3;
+#elif defined(HOST_A1)
+    if(a1_mqtt_start())return 3;
+#else
+    if(UserMqttInit())return 3;
+#endif
+    assert(scheduled_worker==WORKER);
+    scheduled_worker(scheduled_argument);return 0;
 }

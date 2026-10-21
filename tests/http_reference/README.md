@@ -1,0 +1,5 @@
+# Superseded HTTP implementation regression sources
+
+These files preserve the previous A1/M1 accept+worker and TC1 vendor daemon regression vectors as reviewable reference. They are deliberately not executed against removed implementation functions and are not evidence for the new core. The original extraction experiment remains on archive/shared-httpd-tc1-extraction-20261019.
+
+The active tests execute common/httpd/{parser,core,mico_port,product}.c and production route callbacks: test_http_core (parser, ownership, listener/start/close faults), test_http_core_tcp (real TCP, EOF/drain/recovery), test_http_callbacks (actual adapters, auth/CORS/assets/ETag/HEAD, signed/rescue OTA lifetime and JSON claims), test_shared_http_adversarial (fragmentation/budgets/deadline wrap). Vendor WSGI registration/prefix implementation is no longer linked; root/assets prefix matching is tested on the actual adapter instead. Retained trace, memory budget, startup/network and JSON ABI suites remain active. Physical kernel semantics, actual flash/signature validity and long-duration device stability require the parent device campaign.

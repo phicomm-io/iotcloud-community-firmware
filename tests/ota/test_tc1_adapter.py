@@ -41,7 +41,8 @@ typedef MD5_CTX md5_context;
 #define Md5Update MD5_Update
 static void Md5Final(md5_context *ctx,uint8_t *out){MD5_Final(out,ctx);}
 typedef int mico_mutex_t;
-static int mico_rtos_init_mutex(mico_mutex_t *m){return 0;}
+extern int init_fault;
+static int mico_rtos_init_mutex(mico_mutex_t *m){return init_fault;}
 static void mico_rtos_lock_mutex(mico_mutex_t *m){}
 static void mico_rtos_unlock_mutex(mico_mutex_t *m){}
 static void mico_thread_msleep(unsigned ms){}
@@ -61,7 +62,8 @@ int mico_ota_switch_to_new_fw(int,uint16_t);
   (d/'harness.c').write_text('''#include "adapter.c"
 static uint8_t flash[0xa9000];
 static mico_logic_partition_t part={0xaf000,0xa9000},current={0x6000,0xa9000};
-int erases,writes,switches,fault;
+int erases,writes,switches,fault,init_fault;
+int init_failure(void){initialized=false;init_fault=-1;int ok=!tc1_ota_init()&&!tc1_ota_reserve()&&!tc1_config_reserve()&&tc1_config_changing();init_fault=0;return ok&&tc1_ota_init();}
 bool ota_job_cancelled(void){return fault==7 && erases>=2;}
 bool ota_job_commit(void){return fault!=8 && !ota_job_cancelled();}
 mico_logic_partition_t *MicoFlashGetInfo(int p){if(p==3)return &current;return &part;}
@@ -69,13 +71,21 @@ int MicoFlashRead(int p,uint32_t *o,void *d,unsigned n){if(fault==3 || p==2)retu
 int MicoFlashWrite(int p,uint32_t *o,uint8_t *d,unsigned n){writes++;if(fault==2)return -1;if(*o>sizeof flash || n>sizeof flash-*o)return -1;memcpy(flash+*o,d,n);*o+=n;return 0;}
 int MicoFlashErase(int p,uint32_t o,unsigned n){erases++;if(fault==1)return -1;memset(flash,255,sizeof flash);return 0;}
 int mico_ota_switch_to_new_fw(int n,uint16_t crc){switches++;return fault==5?-1:0;}
-int start(unsigned n,unsigned failure,int rescue){active=commit_uncertain=false;ota_state="idle";erases=writes=switches=0;fault=failure;current.partition_start_addr=fault==6?0xaf000:0x6000;tc1_ota_init();return tc1_ota_reserve() && tc1_ota_begin(n,rescue);}
+int start(unsigned n,unsigned failure,int rescue){active=commit_uncertain=false;ota_state="idle";erases=writes=switches=0;fault=failure;current.partition_start_addr=fault==6?0xaf000:0x6000;tc1_status_guard_init();tc1_ota_init();return tc1_ota_reserve() && tc1_ota_begin(n,rescue);}
 int feed(const uint8_t *p,unsigned n){return tc1_ota_write(p,n);}
 int finish(void){return tc1_ota_finish();}
+int verify(void){return tc1_ota_verify();}
+int activate(void){return tc1_ota_activate();}
+int uncertain(void){return tc1_ota_commit_uncertain();}
+void lose_response(void){tc1_ota_failure("HTTP response not delivered; upload not activated");}
+int config_available(void){bool ok=tc1_config_reserve();if(ok)tc1_config_release();return ok;}
+int retry(unsigned n,int rescue){return tc1_ota_reserve() && tc1_ota_begin(n,rescue);}
+void cancel_before_activation(void){fault=8;}
+
 void corrupt_flash(void){flash[123]^=1;}
 int reserve_again(void){tc1_ota_abort();return tc1_ota_reserve();}
 ''')
-  subprocess.run(['cc','-DPHICOMM_DEVICE_OTA=1','-shared','-fPIC','-O2','-Wno-deprecated-declarations','-I'+str(d),'-I'+str(ROOT/'common/ota'),'-I'+str(ROOT/'TC1/ota_server'),str(d/'signed_ota.c'),str(ROOT/'common/ota/crypto.c'),str(d/'harness.c'),'-lcrypto','-o',str(d/'test.so')],check=True)
+  subprocess.run(['cc','-DPHICOMM_DEVICE_OTA=1','-shared','-fPIC','-O2','-Wno-deprecated-declarations','-I'+str(d),'-I'+str(ROOT/'common/ota'),'-I'+str(ROOT/'TC1/ota_server'),str(d/'signed_ota.c'),str(ROOT/'common/ota/crypto.c'),str(d/'harness.c'),str(ROOT/'TC1/status_guard.c'),'-lcrypto','-o',str(d/'test.so')],check=True)
   cls.lib=ctypes.CDLL(str(d/'test.so'));cls.lib.feed.argtypes=[ctypes.c_void_p,ctypes.c_uint]
  @classmethod
  def tearDownClass(cls):cls.tmp.cleanup()
@@ -87,8 +97,37 @@ int reserve_again(void){tc1_ota_abort();return tc1_ota_reserve();}
    if not self.lib.feed(part,len(part)):return False
   return bool(self.lib.finish())
  def count(self,name):return ctypes.c_int.in_dll(self.lib,name).value
+ def test_mutex_initialization_failure_fails_closed(self):
+  self.assertTrue(self.lib.init_failure())
+ def test_verified_response_loss_has_no_activation_and_allows_retry(self):
+  for rescue in [False,True]:
+   data=self.image if rescue else self.signed(self.image)
+   self.assertTrue(self.lib.start(len(data),0,rescue))
+   self.assertFalse(self.lib.activate());self.assertEqual(self.count('switches'),0)
+   for at in range(0,len(data),512):self.assertTrue(self.lib.feed(data[at:at+512],len(data[at:at+512])))
+   self.assertTrue(self.lib.verify());self.assertEqual(self.count('switches'),0)
+   self.assertFalse(self.lib.config_available())
+   self.lib.lose_response();self.assertTrue(self.lib.config_available())
+   self.assertTrue(self.lib.retry(len(data),rescue))
+   for at in range(0,len(data),512):self.assertTrue(self.lib.feed(data[at:at+512],len(data[at:at+512])))
+   self.assertTrue(self.lib.finish());self.assertEqual(self.count('switches'),1)
+   self.assertFalse(self.lib.config_available())
+ def test_activation_failure_and_cancel_after_verification(self):
+  data=self.signed(self.image)
+  for failure in [5,8]:
+   self.assertTrue(self.lib.start(len(data),failure==5 and 5 or 0,False))
+   for at in range(0,len(data),512):self.assertTrue(self.lib.feed(data[at:at+512],len(data[at:at+512])))
+   self.assertTrue(self.lib.verify());self.assertEqual(self.count('switches'),0)
+   if failure==8:self.lib.cancel_before_activation()
+   self.assertFalse(self.lib.activate())
+   self.assertEqual(bool(self.lib.uncertain()),failure==5)
+   if failure==5:
+    self.lib.lose_response();self.assertFalse(self.lib.config_available());self.assertFalse(self.lib.retry(len(data),False))
+    self.assertFalse(self.lib.activate());self.assertEqual(self.count('switches'),1)
+   else:self.assertTrue(self.lib.config_available());self.assertEqual(self.count('switches'),0)
  def test_valid_signed_and_unsigned_native(self):
   self.assertTrue(self.upload(self.signed(self.image)));self.assertEqual(self.count('switches'),1)
+  self.assertFalse(self.lib.verify());self.assertFalse(self.lib.activate());self.assertEqual(self.count('switches'),1)
   self.assertFalse(self.lib.reserve_again())
   self.assertTrue(self.upload(self.image,rescue=True));self.assertEqual(self.count('switches'),1)
  def test_raw_compatibility_skips_new_image_and_flash_read_checks(self):

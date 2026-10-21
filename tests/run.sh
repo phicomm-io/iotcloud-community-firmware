@@ -1,22 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-python3 -m unittest tests.test_prepare_sdk
+root="$PWD"
+# The background JSON scenarios also compile the production SHA-256 service.
+source tests/host_hash.sh
+python3 -m unittest tests.test_prepare_sdk tests.test_apply_sdk_patch
 python3 tools/check_version.py
 python3 -m unittest discover -s tests -p test_version.py
 python3 -m unittest tests.test_package_stale_signature
-python3 -m unittest tests.test_http_overload
-python3 -m unittest tests.test_http_tcp_integration
-python3 -m unittest tests.test_memory_admission tests.test_http_browser_queue tests.test_tc1_http_recovery
+python3 -m unittest tests.test_mixed_candidate_completion
+python3 -m unittest tests.test_accepted_upload_postcheck
+python3 -m unittest tests.test_readonly_stress tests.test_readonly_input_edges tests.test_readonly_shared_httpd tests.test_readonly_http_scheduling tests.test_readonly_parallel tests.test_summarize_readonly_evidence tests.test_audit_shared_candidate_completion
+python3 -m unittest tests.test_http_core tests.test_http_core_tcp tests.test_shared_http_adversarial tests.test_shared_http_arm tests.test_shared_http_soak tests.test_shared_http_tcp_soak tests.test_http_mico_sdk_abi
+python3 -m unittest tests.test_json_build_gate tests.test_service_json_failure_scope tests.test_http_json_owned tests.test_http_json_budget tests.test_status_bool tests.test_mqtt_discovery_budget tests.test_background_json tests.test_tc1_mqtt_stack tests.test_tc1_checked_number_calls tests.test_ota_recovery
+python3 -m unittest tests.test_memory_admission tests.test_http_browser_queue tests.test_tc1_http_trace
 python3 -m unittest tests.test_a1_provision_memory
-python3 -m unittest tests.test_a1_web_assets
 python3 -m unittest tests.test_m1_boot_config
+python3 -m unittest tests.test_m1_barometer tests.test_m1_barometer_captures
 compiler=("${CC:-cc}")
 if [[ "${SANITIZE:-0}" == 1 ]]; then
     compiler+=(-g -fno-omit-frame-pointer -fsanitize=address,undefined)
 fi
-root="$PWD"
-source tests/host_hash.sh
 compiler+=("${hash_sources[@]}")
 output=$(mktemp -d)
 trap 'rm -rf "$output"' EXIT
@@ -34,7 +38,7 @@ trap 'rm -rf "$output"' EXIT
 "$output/a1-ring"
 "${compiler[@]}" -std=c99 -Wall -Wextra -Werror tests/test_a1_filter.c -o "$output/a1-filter"
 "$output/a1-filter"
-python3 -m unittest tests.test_a1_filter_storage
+python3 -m unittest tests.test_a1_filter_storage tests.test_status_views tests.test_typed_tc1_status tests.test_tc1_status_guard tests.test_tc1_status_dispatch
 "${compiler[@]}" -DFEATURE_HOST -std=c99 -Wall -Wextra -Werror -Wno-misleading-indentation -Icommon common/engine.c tests/test_engine.c -lm -o "$output/engine"
 "${compiler[@]}" -std=c99 -Wall -Wextra -Werror tests/test_mqtt_account.c -o "$output/mqtt-account"
 "$output/mqtt-account"
@@ -50,7 +54,11 @@ cp -R "$json_dir" "$output/sdk/libraries/utilities/json_c"
 python3 tools/apply_sdk_patch.py "$output/sdk" \
     common/json-newlib-reent.patch common/json-printbuf-oom.patch \
     common/json-allocation-safety.patch common/json-heap-budget.patch \
-    common/json-newlib-nano-abi.patch
+    common/json-newlib-nano-abi.patch common/json-integer-parse.patch \
+    common/json-sized-resize.patch \
+    common/json-number-cache-cleanup.patch \
+    common/json-number-checked.patch
+python3 tools/install_json_numeric.py "$output/sdk"
 ln -s sdk/libraries/utilities/json_c "$output/json_c"
 python3 - "$output/json_c" <<'PYHOST'
 import pathlib, sys
@@ -58,16 +66,24 @@ for p in pathlib.Path(sys.argv[1]).glob('*.c'):
     p.write_text(p.read_text().replace('%ld', '%d'))
 PYHOST
 json_dir="$output/json_c"
+# Product callbacks need the actual JSON lifetime overlays, including their
+# headers. CI starts with a pristine SDK, so run after preparing this copy.
+PHICOMM_TEST_JSON_DIR="$json_dir" python3 -m unittest tests.test_json_integer_parse tests.test_json_sized_resize tests.test_http_callbacks
+# Production MQTT tests require every pinned SDK; never silently skip in CI.
+for sdk in build/a1-sdk/mico-os build/m1-sdk/mico-os build/tc1-sdk-3.6.4/mico-os; do
+    python3 tools/prepare_sdk.py "$sdk"
+done
+python3 -m unittest tests.test_json_number_cache tests.test_json_numeric_checked tests.test_json_numeric_stack tests.test_json_numeric_link
+PHICOMM_TEST_JSON_DIR="$json_dir" python3 -m unittest tests.test_mqtt_stack_budget tests.test_mqtt_optional_json tests.test_shared_mqtt tests.test_mqtt_buffer_storage tests.test_mqtt_preflight_deferral tests.test_mqtt_http_mixed tests.test_mixed_report tests.test_a1_mqtt_progress tests.test_mqtt_birth_progress tests.test_tc1_mqtt_lifecycle
 "${compiler[@]}" -std=gnu99 -Wall -Wextra -Werror -DWATCHDOG_HOST -Itests/watchdog -Itests/stubs -I"$json_dir" tests/test_watchdog.c "$json_dir"/*.c -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -o "$output/watchdog"
 "$output/watchdog"
-PHICOMM_TEST_JSON_DIR="$json_dir" python3 -m unittest tests.test_http_json_lifetime
 for target in portable moc-mx1290; do
     target_defines=()
     if [[ "$target" == moc-mx1290 ]]; then target_defines=(-DMOC=1 -DCONFIG_CPU_MX1290); fi
     "${compiler[@]}" "${target_defines[@]}" -std=gnu99 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -Itests/stubs -I"$json_dir" tests/test_runtime_metrics.c "$json_dir"/*.c -o "$output/runtime-metrics-$target"
     "$output/runtime-metrics-$target"
 done
-"${compiler[@]}" -std=gnu99 -Wall -Wextra -Werror -Wno-misleading-indentation -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -Itests/stubs -I"$json_dir" tests/test_json_printbuf_failure.c "$json_dir"/*.c -Wl,--wrap=realloc -o "$output/json-printbuf-failure"
+"${compiler[@]}" -std=gnu99 -Wall -Wextra -Werror -Wno-misleading-indentation -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -Itests/stubs -I"$json_dir" tests/test_json_printbuf_failure.c "$json_dir"/*.c -Wl,--wrap=json_heap_resize -o "$output/json-printbuf-failure"
 "$output/json-printbuf-failure"
 "${compiler[@]}" -std=gnu99 -Wall -Wextra -Werror -Wno-misleading-indentation -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -Itests/stubs -I"$json_dir" tests/test_json_allocation_failure.c "$json_dir"/*.c -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc -Wl,--wrap=strdup -o "$output/json-allocation-failure"
 "$output/json-allocation-failure"
@@ -78,7 +94,15 @@ ota_port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)
 export PHICOMM_TEST_OTA_PORT="$ota_port"
 "${compiler[@]}" -std=gnu99 -DPHICOMM_OTA_CN_BASE_URL='"http://127.0.0.1:'"$ota_port"'"' -Itests/stubs -I"$json_dir" tests/test_update.c "$json_dir"/*.c -o "$output/update"
 python3 tests/test_update.py "$output/update"
-"${compiler[@]}" -std=gnu99 -Wall -Wextra -Werror -Wno-misleading-indentation -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -Itests/stubs -Icommon -I"$json_dir" tests/test_mqtt_service.c "$json_dir"/*.c -Wl,--wrap=free -Wl,--wrap=realloc -o "$output/mqtt-service"
+# Isolated lifetime vectors use the exact shared production helper bodies.
+python3 - "$output/mqtt_owned_helpers.inc" <<'PYMQTT'
+from pathlib import Path
+from tests.test_status_views import function
+source=Path('common/mqtt/service.c').read_text()
+Path(__import__('sys').argv[1]).write_text('\n'.join(function(source,n) for n in
+    ('static struct printbuf *service_mqtt_wire(', 'int service_mqtt_send(')))
+PYMQTT
+"${compiler[@]}" -std=gnu99 -Wall -Wextra -Werror -Wno-misleading-indentation -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -I"$output" -Itests/stubs -Icommon -I"$json_dir" tests/test_mqtt_service.c common/json_owned.c "$json_dir"/*.c -Wl,--wrap=free -Wl,--wrap=json_heap_resize -o "$output/mqtt-service"
 "$output/mqtt-service"
 "$output/service"
 "${compiler[@]}" -std=gnu99 -Wall -Wextra -Wno-misleading-indentation -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-value -Wno-nonnull-compare -Itests/stubs -I"$json_dir" tests/test_service_failure.c "$json_dir"/*.c -o "$output/service-failure"
@@ -96,7 +120,7 @@ done
 for device in A1 M1; do
     define=()
     if [[ "$device" == A1 ]]; then define=(-DFEATURE_DEVICE_A1); fi
-    "${compiler[@]}" -std=gnu99 -Wall -Wextra -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter -Wno-misleading-indentation -Wno-format-truncation -Wno-sign-compare -Wno-implicit-fallthrough -Wno-nonnull-compare -Wno-unused-value -Itests/stubs -I"$json_dir" "${define[@]}" tests/test_runtime.c common/service.c "$json_dir"/*.c -lm -o "$output/runtime-$device"
+    "${compiler[@]}" -std=gnu99 -Wall -Wextra -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter -Wno-misleading-indentation -Wno-format-truncation -Wno-sign-compare -Wno-implicit-fallthrough -Wno-nonnull-compare -Wno-unused-value -Itests/stubs -I"$json_dir" "${define[@]}" tests/test_runtime.c common/service.c common/json_owned.c "$json_dir"/*.c -lm -o "$output/runtime-$device"
     "$output/runtime-$device"
 done
 python3 tests/check_web.py

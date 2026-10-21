@@ -30,24 +30,8 @@
  *
  ******************************************************************************
  */
-#include "http_server/web_log.h"
-
-#define HTTP_CONTENT_HTML_ZIP "text/html\r\nContent-Encoding: gzip\r\nCache-Control: public"
-#define HTTP_CONTENT_JS_ZIP "text/javascript\r\nContent-Encoding: gzip\r\nCache-Control: public"
-#define HTTP_CONTENT_CSS_ZIP "text/css\r\nContent-Encoding: gzip\r\nCache-Control: public"
-#define HTTP_CONTENT_WOFF2 "font/woff2\r\nCache-Control: public"
-
-#define HTTPD_HDR_DEFORT (HTTPD_HDR_ADD_SERVER|HTTPD_HDR_ADD_CONN_CLOSE|HTTPD_HDR_ADD_PRAGMA_NO_CACHE)
-#define HTTPD_HDR_CACHE (HTTPD_HDR_ADD_SERVER|HTTPD_HDR_ADD_CONN_CLOSE|HTTPD_HDR_ADD_CACHE_CTRL_NO_CHK)
-
-#define send_http(DATA, LEN, LABEL, P_ERR)                                                                 \
-    *(P_ERR) = httpd_send_all_header(req, HTTP_RES_200, LEN , HTTP_CONTENT_HTML_STR);                 \
-    require_noerr_action(*(P_ERR), LABEL, http_log("ERROR: Unable to send http DATA headers.")); \
-    *(P_ERR) = httpd_send_body(req->sock, (const unsigned char*)DATA, LEN);                           \
-    require_noerr_action(*(P_ERR), LABEL, http_log("ERROR: Unable to send http DATA body."));    \
-
-
-extern int AppHttpdStart(void);
-
-extern int AppHttpdStop();
-
+#pragma once
+#include "auth.h"
+#include "web_log.h"
+int AppHttpdStart(void);
+int AppHttpdStop(void);

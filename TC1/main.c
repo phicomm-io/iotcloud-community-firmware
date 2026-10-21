@@ -1,6 +1,7 @@
 #include "../common/service.h"
 #include "ota_server/signed_adapter.h"
 #include "main.h"
+#include "status_guard.h"
 #include "config_legacy.h"
 #include <stddef.h>
 
@@ -24,7 +25,7 @@ bool app_config_migrate_legacy(void *data, uint32_t size)
 #include "time_server/user_rtc.h"
 #include "user_power.h"
 #include "mqtt_server/user_mqtt_client.h"
-#include "httpd.h"
+#include "http_server/auth.h"
 #include "http_server/app_httpd.h"
 #include "timed_task/timed_task.h"
 
@@ -150,9 +151,10 @@ void reportMqttPowerInfoThread() {
 }
 
 int application_start(void) {
+    if(!tc1_status_guard_init())return kNoMemoryErr;
     service_init();
     WebLogInit();
-    tc1_ota_init();
+    if(!tc1_ota_init())return kNoMemoryErr;
     int i;tc1_log("start version[%s]", VERSION);
 
     //char main_num=0;
@@ -270,3 +272,52 @@ int application_start(void) {
     return 0;
 }
 
+
+#include "../common/device_status.h"
+bool tc1_status_capture(device_status_t *snapshot, device_status_full_t *full)
+{
+    memset(snapshot,0,sizeof(*snapshot));if(full)memset(full,0,sizeof(*full));
+    if(!tc1_status_begin())return false;
+    snapshot->model=DEVICE_TC1;
+    snapshot->captured=STATUS_IDENTITY|STATUS_NETWORK|STATUS_CONTROL|STATUS_OTA;
+    snapshot->identity.version=VERSION;
+    device_status_text(snapshot->identity.id,sizeof(snapshot->identity.id),str_mac,sizeof(str_mac));
+    device_status_text(snapshot->identity.name,sizeof(snapshot->identity.name),sys_config->micoSystemConfig.name,sizeof(sys_config->micoSystemConfig.name));
+    memcpy(snapshot->control.tc1.states,user_config->socket_status,sizeof(snapshot->control.tc1.states));
+    snapshot->control.tc1.child_lock=childLockEnabled!=0;
+    snapshot->control.tc1.led_enabled=user_config->power_led_enabled!=0;
+    snapshot->network.wifi_connected=wifi_status==WIFI_STATE_CONNECTED;
+    snapshot->network.ap_active=ip_status.mode==0;
+    snapshot->network.mqtt_status=tc1_mqtt_status;
+    snapshot->network.mqtt_connected=tc1_mqtt_status==MQTT_READY;
+    snapshot->network.mqtt_cleanup_warning=tc1_mqtt_cleanup_warning;
+    strncpy(snapshot->network.wifi_trial_status,WifiTrialStatus(),sizeof(snapshot->network.wifi_trial_status)-1);
+    if(full){
+        snapshot->captured|=STATUS_DIAGNOSTIC;
+        device_status_text(full->network.ssid,sizeof(full->network.ssid),sys_config->micoSystemConfig.ssid,sizeof(sys_config->micoSystemConfig.ssid));
+        device_status_text(full->network.ip,sizeof(full->network.ip),ip_status.ip,sizeof(ip_status.ip));
+        device_status_text(full->model.tc1.mask,sizeof(full->model.tc1.mask),ip_status.mask,sizeof(ip_status.mask));
+        device_status_text(full->model.tc1.gateway,sizeof(full->model.tc1.gateway),ip_status.gateway,sizeof(ip_status.gateway));
+        device_status_text(full->network.ap_name,sizeof(full->network.ap_name),user_config->ap_name,sizeof(user_config->ap_name));
+        device_status_text(full->network.mqtt_host,sizeof(full->network.mqtt_host),user_config->mqtt_host,sizeof(user_config->mqtt_host));
+        device_status_text(full->network.mqtt_user,sizeof(full->network.mqtt_user),user_config->mqtt_user,sizeof(user_config->mqtt_user));
+        full->network.mqtt_port=user_config->mqtt_port;
+        for(unsigned i=0;i<6;i++)device_status_text(full->model.tc1.socket_names[i],sizeof(full->model.tc1.socket_names[i]),user_config->socket_names[i],sizeof(user_config->socket_names[i]));
+        full->model.tc1.modern=user_config->mqtt_topic_mode!=0;
+        full->model.tc1.time_synced=rtc_init==1;
+        full->model.tc1.report_seconds=user_config->mqtt_report_freq;
+        full->model.tc1.power_coefficient=user_config->power_coefficient_x100;
+        full->network.wifi_password_set=sys_config->micoSystemConfig.user_key[0]!=0;
+        full->network.mqtt_password_set=user_config->mqtt_password[0]!=0;
+        full->network.web_password_set=user_config->web_password[0]!=0;
+    }
+    tc1_status_unlock();
+    tc1_ota_snapshot(snapshot->ota.state,snapshot->ota.error,&snapshot->ota.progress);
+    snapshot->now_ms=mico_rtos_get_time();
+    if(full){
+        full->model.tc1.utc_time=(int32_t)time(NULL);
+        const micoMemInfo_t *memory=MicoGetMemoryInfo();
+        if(memory){full->runtime.memory_valid=true;full->runtime.free_memory=memory->free_memory;}
+    }
+    return true;
+}

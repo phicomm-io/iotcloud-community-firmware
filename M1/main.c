@@ -213,6 +213,14 @@ int application_start(void)
     return kNoErr;
 }
 
+uint32_t feature_config_revision(void)
+{
+    mico_rtos_lock_mutex(&config_lock);
+    uint32_t revision = ((app_storage_t *)app_config)->features.revision;
+    mico_rtos_unlock_mutex(&config_lock);
+    return revision;
+}
+
 void feature_config_get(feature_config_t *out)
 {
     mico_rtos_lock_mutex(&config_lock);
@@ -262,4 +270,92 @@ bool automation_save(const automation_config_t *next) {
     bool ok=!busy && next->magic==AUTOMATION_MAGIC && next->revision==live->revision+1;
     if(ok){*old=*live;*live=*next;ok=mico_system_context_update(m1_context)==kNoErr;if(!ok)*live=*old;}
     mico_rtos_unlock_mutex(&config_lock);free(old);return ok;
+}
+
+#include "../common/device_status.h"
+#include "../common/runtime_metrics.h"
+void m1_status_capture(device_status_t *snapshot, device_status_full_t *full)
+{
+    memset(snapshot, 0, sizeof(*snapshot)); if(full)memset(full,0,sizeof(*full));
+    snapshot->model=DEVICE_M1;
+    snapshot->captured=STATUS_IDENTITY|STATUS_NETWORK|STATUS_OTA|STATUS_CONTROL|STATUS_SENSOR;
+    snapshot->identity.version=M1_VERSION; memcpy(snapshot->identity.id,m1_id,sizeof(m1_id));
+    mico_rtos_lock_mutex(&config_lock);
+    mico_rtos_lock_mutex(&m1_lock);
+    memcpy(snapshot->identity.name,app_config->name,sizeof(snapshot->identity.name));
+    if(full) {
+        memcpy(full->network.ssid,app_config->ssid,sizeof(full->network.ssid));
+        memcpy(full->network.mqtt_host,app_config->mqtt_host,sizeof(full->network.mqtt_host));
+        full->network.mqtt_port = app_config->mqtt_port;
+        memcpy(full->network.mqtt_user,app_config->mqtt_user,sizeof(full->network.mqtt_user));
+        full->model.m1.timezone_minutes = app_config->timezone_minutes;
+    }
+    snapshot->network.wifi_trial_active = m1_state.wifi_trial_active;
+    memcpy(snapshot->network.wifi_trial_status,m1_state.wifi_trial_status,sizeof(m1_state.wifi_trial_status));
+    snapshot->network.mqtt_status = m1_state.mqtt_status;
+    snapshot->network.mqtt_cleanup_warning = m1_state.mqtt_cleanup_warning;
+    snapshot->network.wifi_connected = m1_state.wifi_connected;
+    snapshot->network.mqtt_connected = m1_state.mqtt_connected;
+    snapshot->network.ap_active = m1_state.ap_active;
+    memcpy(snapshot->ota.state,m1_state.ota_state,sizeof(m1_state.ota_state));
+    memcpy(snapshot->ota.error,m1_state.ota_error,sizeof(m1_state.ota_error));
+    snapshot->ota.progress = m1_state.ota_progress;
+    snapshot->ota.active = m1_state.ota_active;
+    snapshot->ota.reboot_pending = m1_state.reboot_pending;
+    snapshot->ota.scan_busy = m1_state.scan_busy;
+    if(full) {
+        memcpy(full->network.ip,m1_state.ip,sizeof(m1_state.ip));
+        memcpy(full->network.ap_name,m1_state.ap_name,sizeof(m1_state.ap_name));
+        full->network.mqtt_errors = m1_state.mqtt_errors;
+        memcpy(full->network.mqtt_last_error,m1_state.mqtt_last_error,sizeof(m1_state.mqtt_last_error));
+        full->ota.signature_verified = m1_state.ota_signature_verified;
+        full->ota.image_verified = m1_state.ota_image_verified;
+        full->ota.key_id = m1_state.ota_key_id;
+        full->ota.image_length = m1_state.ota_image_length;
+        memcpy(full->ota.release_counter,m1_state.ota_release_counter,sizeof(m1_state.ota_release_counter));
+        memcpy(full->ota.version,m1_state.ota_version,sizeof(m1_state.ota_version));
+    }
+    snapshot->sensor.m1.uart_ready = m1_state.uart_ready;
+    snapshot->control.m1.brightness_requested = m1_state.brightness_requested;
+    snapshot->sensor.m1.sample = m1_state.sample;
+    snapshot->sensor.m1.barometer = m1_state.barometer;
+    if(full) {
+        memcpy(full->model.m1.ntp_status,m1_state.ntp_status,sizeof(m1_state.ntp_status));
+        memcpy(full->model.m1.ntp_server,m1_state.ntp_server,sizeof(m1_state.ntp_server));
+        full->model.m1.ntp_synced = m1_state.ntp_synced;
+        full->model.m1.ntp_screen_queued = m1_state.ntp_screen_queued;
+        full->model.m1.ntp_last_success = m1_state.ntp_last_success;
+        full->model.m1.ntp_next_at = m1_state.ntp_next_at;
+        full->model.m1.rx_frames = m1_state.rx_frames;
+        full->model.m1.unknown_frames = m1_state.unknown_frames;
+        full->model.m1.uart_errors = m1_state.uart_errors;
+        full->model.m1.discarded_bytes = m1_state.discarded_bytes;
+        memcpy(full->model.m1.last_frame,m1_state.last_frame,sizeof(m1_state.last_frame));
+        full->model.m1.co2_samples = m1_state.scd40.samples;
+        full->model.m1.co2_crc_errors = m1_state.scd40.crc_errors;
+        full->model.m1.co2_bus_initialized = m1_state.scd40.bus_initialized;
+        full->model.m1.co2_last_command = m1_state.scd40.last_command;
+        full->model.m1.co2_error_phase = m1_state.scd40.error_phase;
+    }
+    snapshot->sensor.m1.co2.ready = m1_state.scd40.ready;
+    snapshot->sensor.m1.co2.received = m1_state.scd40.received;
+    snapshot->sensor.m1.co2.co2_ppm = m1_state.scd40.co2_ppm;
+    snapshot->sensor.m1.co2.updated_ms = m1_state.scd40.updated_ms;
+    snapshot->sensor.m1.co2.errors = m1_state.scd40.errors;
+    snapshot->sensor.m1.co2.last_error = m1_state.scd40.last_error;
+    memcpy(snapshot->sensor.m1.co2.serial,m1_state.scd40.serial,sizeof(m1_state.scd40.serial));
+    if(full) {
+        full->network.web_password_set=app_config->web_password[0]!=0;
+        full->network.wifi_password_set=app_config->wifi_password[0]!=0;
+        full->network.mqtt_password_set=app_config->mqtt_password[0]!=0;
+        memcpy(full->model.m1.ntp_host,((app_storage_t *)app_config)->features.ntp_host,64); full->model.m1.ntp_host[63]=0;
+    }
+    mico_rtos_unlock_mutex(&m1_lock);
+    mico_rtos_unlock_mutex(&config_lock);
+    snapshot->now_ms=mico_rtos_get_time(); /* after copying all timestamped state */
+    if(full) {
+        snapshot->captured|=STATUS_DIAGNOSTIC;
+        runtime_metrics_capture(&full->runtime,snapshot->now_ms);
+        watchdog_status_capture(&full->watchdog); full->http=ph_http_snapshot();
+    }
 }

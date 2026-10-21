@@ -1,0 +1,106 @@
+/* Shared service commands execute once, then transfer their exact encoded wire.
+ * Heap pressure is injected only after all JSON leases have unwound. */
+static bool pressure_receipt;
+static size_t preflight_memory(void) {
+ return pressure_receipt && !json_owner && ph_mqtt_debug_core()->credit==PH_MQTT_RECEIPT_BYTES ? 16416 : 0;
+}
+static ph_mqtt_diagnostics snap(void){ph_mqtt_diagnostics d;ph_mqtt_snapshot(&d);return d;}
+static void receipt_wait(bool cancel,bool expire) {
+ heap_capacity=64000;pressure_receipt=false;rename_target=true;
+ assert(mqtt_account_init(&account,1,"a1","test","aabbccddeeff"));start();
+ char target[512];mqtt_leaf(&account,"result",target,sizeof(target));
+ const char *request="{\"action\":\"fan.set\",\"request_id\":\"deferred-receipt\",\"params\":{}}";
+ unsigned ran=mutations,sent=publications,builds=status_builds;
+ ph_mqtt_diagnostics before=snap();pressure_receipt=true;uint32_t began=now_ms;
+ assert(command(request)==PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED);began=now_ms;
+ assert(mutations==ran+1 && publications==sent && ph_mqtt_receipt_pending());
+ ph_mqtt_diagnostics waiting=snap();assert(!waiting.inflight[0] && waiting.credit==PH_MQTT_RECEIPT_BYTES);
+ service_memory_state_t memory;service_memory_snapshot(&memory);
+ assert(!memory.active&&!memory.reserved&&!json_owner && !json_scope.owner);
+ size_t live=native_live;unsigned allocations=native_allocs;
+ /* Changing the namespace cannot move this receipt to the new target. */
+ strcpy(account.key,"new-namespace");
+ for(unsigned i=0;i<49;i++){
+  now_ms+=10;assert(ph_mqtt_poll(&client)==PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED);
+  assert(service_mqtt_snapshot(sender,&account)==PH_MQTT_MORE);
+ }
+ assert(native_live==live && native_allocs==allocations && status_builds==builds);
+ assert(snap().credit==PH_MQTT_RECEIPT_BYTES && snap().errors==before.errors);
+ /* Duplicates and conflicting commands may queue, but never execute while
+  * the already executed mutation's result still owns the receipt credit. */
+ pressure_receipt=false;incoming(injected_topic,request,32);
+ incoming(injected_topic,"{\"action\":\"fan.set\",\"request_id\":\"deferred-receipt\",\"params\":{\"on\":true}}",33);
+ assert(!ph_mqtt_yield(&client,1));assert(snap().queued[0]==2);pressure_receipt=true;
+ if(cancel){ph_mqtt_pending_clear();assert(!ph_mqtt_receipt_pending()&&!snap().credit&&!snap().bytes);}
+ else if(expire){
+  now_ms=began+30000;assert(ph_mqtt_poll(&client)==MQTT_FAILURE);
+  assert(snap().failure.reason==PH_MQTT_CAUSE_RESOURCE_EXPIRED);
+  assert(mutations==ran+1 && publications==sent && !ph_mqtt_receipt_pending() && !snap().credit);
+ }else{
+  now_ms=began+1000;pressure_receipt=false;
+  /* The pending wire is sent to the captured pre-rename target before the
+   * next command's replay (which uses its current namespace) is dispatched. */
+  assert(!ph_mqtt_poll(&client));
+  assert(mutations==ran+1 && publications==sent+1);
+  assert(!strcmp(last_topic,target) && snap().queued[0]==2);
+  assert(!ph_mqtt_receipt_pending()&&!snap().credit);
+  assert(strstr(last_body,"\"ok\""));
+  assert(!ph_mqtt_poll(&client));assert(mutations==ran+1&&publications==sent+2);
+  assert(!ph_mqtt_poll(&client));assert(mutations==ran+1&&strstr(last_body,"conflict"));
+ }
+ pressure_receipt=false;finish();
+ /* Session cleanup keeps SHA replay protection across receipt failure. */
+ rename_target=false;start();assert(command(request)==0 && mutations==ran+1);
+ finish();clear_receipts();assert(!native_live);
+}
+static bool rename_done,rename_cancel;static uint32_t rename_began;
+static unsigned rename_ran;static char rename_result[512],rename_base[192];
+static int rename_prepare(void*x,ph_mqtt_connection*s){
+ int rc=prepare(x,s);s->availability="tx/availability";return rc;
+}
+static bool rename_subscribe(void*x,unsigned i,ph_mqtt_subscription*s){
+ (void)x;if(i)return false;*s=(ph_mqtt_subscription){injected_topic,QOS1,handler};return true;
+}
+static int rename_initial(void*x){
+ (void)x;
+ incoming(injected_topic,"{\"action\":\"fan.set\",\"request_id\":\"rename-pending\",\"params\":{}}",61);
+ incoming(injected_topic,"{\"action\":\"fan.set\",\"request_id\":\"must-not-run\",\"params\":{}}",62);
+ return MQTT_SUCCESS;
+}
+static int rename_cycle(void*x){(void)x;return MQTT_SUCCESS;}
+static bool rename_valid(void*x){(void)x;return !strcmp(account.base,rename_base);}
+static bool rename_stop(void*x){
+ (void)x;
+ if(ph_mqtt_receipt_pending()){
+  if(!rename_began)rename_began=now_ms;
+  if(rename_cancel && (uint32_t)(now_ms-rename_began)>=100)return true;
+  if((uint32_t)(now_ms-rename_began)>=1100)pressure_receipt=false;
+ }
+ return rename_done;
+}
+static void rename_closing(void*x,bool connected,int rc){
+ (void)x;assert(connected&&mutations==rename_ran+1);
+ assert(rc==(rename_cancel?MQTT_SUCCESS:PH_MQTT_RECONFIGURE));
+ assert(!ph_mqtt_receipt_pending()&&!snap().credit&&!snap().bytes);
+ if(!rename_cancel)assert(!strcmp(last_topic,rename_result)&&strstr(last_body,"\"ok\""));
+ rename_done=true;
+}
+static void session_rename(bool cancel){
+ heap_capacity=64000;pressure_receipt=true;rename_target=true;rename_done=false;rename_cancel=cancel;rename_began=0;
+ assert(mqtt_account_init(&account,1,"a1","test","aabbccddeeff"));
+ strcpy(rename_base,account.base);
+ snprintf(injected_topic,sizeof(injected_topic),"%s/command",account.base);
+ mqtt_leaf(&account,"result",rename_result,sizeof(rename_result));rename_ran=mutations;
+ ph_mqtt_session_hooks h={NULL,rename_prepare,rename_subscribe,rename_initial,rename_cycle,rename_closing,NULL,rename_stop,NULL,rename_valid};
+ ph_mqtt_session_run(&client,&h);
+ assert(rename_done&&rename_began&&mutations==rename_ran+1);
+ pressure_receipt=false;clear_receipts();assert(!native_live&&!charged_live);
+}
+int main(void){
+ service_init();assert(mqtt_account_init(&account,1,"a1","test","aabbccddeeff"));
+ assert(ph_mqtt_owner_init(&account,8192,&thread,accept));
+ now_ms=UINT32_MAX-500;receipt_wait(false,false);receipt_wait(true,false);receipt_wait(false,true);
+ session_rename(false);session_rename(true);
+ ph_mqtt_owner_end();
+ puts("preflight receipts: one execution, owned wire/credit, no JSON lease/rebuild, replay/conflict, wrap/expiry/stop cleanup PASS");
+}

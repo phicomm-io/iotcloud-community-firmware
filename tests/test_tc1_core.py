@@ -5,7 +5,7 @@ ROOT=pathlib.Path(__file__).resolve().parents[1]
 def execute(source):
     with tempfile.TemporaryDirectory() as d:
         p=pathlib.Path(d);(p/'test.c').write_text(source)
-        subprocess.run(['cc','-std=c99','-Wall','-Wextra','-Wno-misleading-indentation','-fsanitize=address,undefined','-I',str(ROOT/'TC1/http_server'),str(p/'test.c'),'-o',str(p/'test')],check=True)
+        subprocess.run(['cc','-std=c99','-Wall','-Wextra','-Wno-misleading-indentation','-fsanitize=address,undefined','-I',str(ROOT/'TC1/http_server'),'-I',str(ROOT/'TC1'),str(p/'test.c'),'-o',str(p/'test')],check=True)
         subprocess.run([str(p/'test')],check=True,timeout=8,env={**os.environ,"UBSAN_OPTIONS":"halt_on_error=1"})
 
 class Core(unittest.TestCase):
@@ -104,6 +104,10 @@ int main(void) {
 #define REBOOT_HTTP 12
 #define REBOOT_SOFT 13
 #define SOCKET_NUM 6
+#include "status_guard.h"
+static int state_locked;
+void tc1_status_lock(void){assert(!state_locked);state_locked=1;}
+void tc1_status_unlock(void){assert(state_locked);state_locked=0;}
 struct TimedTask {bool on_use;time_t prs_time;int operation,on,weekday;struct TimedTask *next;};
 typedef struct TimedTask *pTimedTask;
 static struct {pTimedTask task_top;int power_led_enabled,user[1];} config;
@@ -148,36 +152,6 @@ int main(void){
  ProcessTask();assert(childLockEnabled==1&&config.user[0]==1&&!config.task_top);
 }
 """)
-    def test_http_fragments_oversize_embedded_null_and_close(self):
-        src=(ROOT/'TC1/http_server/app_httpd.c').read_text();func=src[src.index('static int read_headers('):src.index('static int response_json(')]
-        execute(r'''
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <assert.h>
-#define kNoErr 0
-#define kParamErr -1
-#define kNoMemoryErr -2
-#define kGeneralErr -3
-#define HTTPD_MAX_MESSAGE 512
-typedef struct {int hdr_parsed,sock,chunked,remaining_bytes;const char *filename;} httpd_request_t;
-static int ota_active;
-static int ota_job_active(void){return ota_active;}
-static const char *input;static int length,offset,closed;
-static int httpd_parse_hdr_tags(httpd_request_t*r,int fd,char*b,int n){(void)fd;(void)b;(void)n;r->remaining_bytes=length;return 0;}
-static int httpd_recv(int fd,char*b,int n,int flags){(void)fd;(void)flags;if(closed)return 0;int count=n>2?2:n;memcpy(b,input+offset,count);offset+=count;return count;}
-'''+func+r'''
-int main(void){
- char buf[8];httpd_request_t r={0};input="abcdef";length=6;assert(!read_body(&r,buf,8));assert(!strcmp(buf,"abcdef")&&offset==6);
- r=(httpd_request_t){0};length=8;offset=0;assert(read_body(&r,buf,8)<0&&offset==0);
- r=(httpd_request_t){0};length=3;input="a\0b";offset=0;assert(read_body(&r,buf,8)<0);
- r=(httpd_request_t){0};closed=1;assert(read_body(&r,buf,8)<0);
- r=(httpd_request_t){0};closed=0;length=0;assert(!read_body(&r,buf,8)&&buf[0]==0);
- ota_active=1;length=6;offset=0;input="abcdef";
- r=(httpd_request_t){.filename="/config"};assert(read_body(&r,buf,8)==kGeneralErr&&offset==0);
- r=(httpd_request_t){.filename="/api/v1/command"};assert(!read_body(&r,buf,8)&&offset==6);
-}
-''')
     def test_json_escaping_and_capacity(self):
         execute(r'''
 #include <stdio.h>

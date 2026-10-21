@@ -5,6 +5,7 @@
 #include <time.h>
 
 #include "main.h"
+#include "status_guard.h"
 #include "user_gpio.h"
 #include "mqtt_server/user_mqtt_client.h"
 #include "timed_task/timed_task.h"
@@ -152,7 +153,7 @@ void ProcessTask() {
         mico_system_context_update(sys_config);
         break;
     case SWITCH_LED_ENABLE:
-        user_config->power_led_enabled = task.on;
+        TC1_STATUS_WRITE(user_config->power_led_enabled = task.on);
         if (RelayOut() && task.on) {
             UserLedSet(1);
         } else {
@@ -162,8 +163,8 @@ void ProcessTask() {
         mico_system_context_update(sys_config);
         break;
     case SWITCH_CHILD_LOCK_ENABLE:
-        user_config->user[0] = task.on;
-        childLockEnabled = user_config->user[0];
+        TC1_STATUS_WRITE(user_config->user[0] = task.on;
+        childLockEnabled = user_config->user[0]);
         mico_system_context_update(sys_config);
         UserMqttSendChildLockState();
         break;

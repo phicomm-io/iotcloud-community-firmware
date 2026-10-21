@@ -1,0 +1,19 @@
+--- a/libraries/daemons/http_server/http_parse.c
++++ b/libraries/daemons/http_server/http_parse.c
+@@ -499,7 +521,7 @@
+   const char *ptr, *next;
+   int err;
+ #define TOKEN_LEN 10
+-  char token[TOKEN_LEN];
++  char token[TOKEN_LEN + 1];
+   
+   /* First token is usually GET/POST */
+   err = httpd_verify_req_type(data_p, &req_p->type);
+@@ -525,6 +547,7 @@
+   next = ptr;
+   
+   err = httpd_token_cpy(ptr, token, TOKEN_LEN);
++  if (err != kNoErr) return err;
+   if (!strncmp(token, http_10, TOKEN_LEN)) {
+     httpd_set_error("HTTP/1.0 clients are not supported");
+     return -WM_E_HTTPD_NOTSUPP;

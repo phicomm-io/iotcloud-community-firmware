@@ -4,17 +4,17 @@
 
 #include "json.h"
 
-static size_t realloc_calls;
-static size_t fail_on_realloc;
+static size_t resize_calls;
+static size_t fail_on_resize;
 
-void *__real_realloc(void *ptr, size_t size);
+void *__real_json_heap_resize(void *ptr, size_t old_size, size_t size);
 
-void *__wrap_realloc(void *ptr, size_t size)
+void *__wrap_json_heap_resize(void *ptr, size_t old_size, size_t size)
 {
-	realloc_calls++;
-	if (fail_on_realloc != 0 && realloc_calls == fail_on_realloc)
+	resize_calls++;
+	if (fail_on_resize != 0 && resize_calls == fail_on_resize)
 		return NULL;
-	return __real_realloc(ptr, size);
+	return __real_json_heap_resize(ptr, old_size, size);
 }
 
 static void require(int condition, const char *message)
@@ -69,11 +69,11 @@ static char *serialize_baseline(struct json_object *root, size_t *expansions)
 	const char *text;
 	char *copy;
 
-	realloc_calls = 0;
-	fail_on_realloc = 0;
+	resize_calls = 0;
+	fail_on_resize = 0;
 	text = json_object_to_json_string(root);
 	require(text != NULL, "baseline cached serialization");
-	*expansions = realloc_calls;
+	*expansions = resize_calls;
 	require(*expansions > 1, "large nested document must expand printbuf repeatedly");
 	require_parseable(text);
 	copy = malloc(strlen(text) + 1);
@@ -88,14 +88,14 @@ static void check_cached_failures(const char *expected, size_t expansions)
 		struct json_object *root = make_document();
 		const char *text;
 		require(root != NULL, "allocate cached-failure document");
-		realloc_calls = 0;
-		fail_on_realloc = nth;
+		resize_calls = 0;
+		fail_on_resize = nth;
 		text = json_object_to_json_string(root);
 		require(text == NULL, "failed cached serialization must return NULL");
-		require(realloc_calls == nth, "sticky failure must stop later realloc attempts");
+		require(resize_calls == nth, "sticky failure must stop later resize attempts");
 
-		fail_on_realloc = 0;
-		realloc_calls = 0;
+		fail_on_resize = 0;
+		resize_calls = 0;
 		text = json_object_to_json_string(root);
 		require(text != NULL && strcmp(text, expected) == 0,
 			"cached object must serialize fully after a failed attempt");
@@ -111,14 +111,14 @@ static void check_independent_buffer_failures(struct json_object *root,
 	for (size_t nth = 1; nth <= expansions; nth++) {
 		struct printbuf *pb;
 
-		realloc_calls = 0;
-		fail_on_realloc = nth;
+		resize_calls = 0;
+		fail_on_resize = nth;
 		pb = json_object_to_json_string_ex(root);
 		require(pb == NULL, "failed independent serialization must return NULL");
-		require(realloc_calls == nth, "independent serialization stopped at failed expansion");
+		require(resize_calls == nth, "independent serialization stopped at failed expansion");
 
-		fail_on_realloc = 0;
-		realloc_calls = 0;
+		fail_on_resize = 0;
+		resize_calls = 0;
 		pb = json_object_to_json_string_ex(root);
 		require(pb != NULL && strcmp(pb->buf, expected) == 0,
 			"independent serialization must recover after allocation failure");

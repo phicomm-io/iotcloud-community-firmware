@@ -54,12 +54,12 @@ int main(void){
  for(unsigned i=0;i<4;i++)assert(!pthread_create(&workers[i],NULL,worker,NULL));
  for(unsigned i=0;i<4;i++)assert(!pthread_join(workers[i],NULL));
  threaded=0;empty();
- /* Realloc failure retains old ownership, overflow never reaches calloc,
+ /* Resize failure retains old ownership, overflow never reaches calloc,
   * and shrinking/freeing stay possible under pressure. */
  void *p=json_heap_malloc(10);assert(p);capacity=live_bytes;
- assert(!json_heap_realloc(p,20));json_heap_free(p);empty();
+ assert(!json_heap_resize(p,10,20));json_heap_free(p);empty();
  assert(!json_heap_calloc(SIZE_MAX,2));empty();
- capacity=1024*1024;p=json_heap_realloc(NULL,10);assert(p);assert(!json_heap_realloc(p,0));empty();
+ capacity=1024*1024;p=json_heap_resize(NULL,0,10);assert(p);assert(!json_heap_resize(p,10,0));empty();
  json_heap_stats_t s;json_heap_snapshot(&s);
  assert(s.allocation_failures && s.guard_denied && s.peak_blocks);
  printf("JSON leak ledger: 10000 serial + 4000 concurrent cycles, %zu native failure points, %zu guard failure points; live=0; peak bytes=%zu, blocks=%u\n",total,total_permits,peak_bytes,s.peak_blocks);

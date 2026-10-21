@@ -74,12 +74,18 @@ static int bind(int fd,const struct sockaddr *addr,socklen_t n) {
 static int listen(int fd,int backlog) { assert(thread==1 && fd==3 && backlog==0); return fail_stage==3?-1:0; }
 static int setsockopt(int fd,int level,int option,const void *value,socklen_t n) {
     assert(thread==1 && fd==3 && level==IPPROTO_TCP && option==TCP_MAX_CONN_NUM);
-    assert(n==sizeof(int) && *(const int *)value==2); return 0;
+    assert(n==sizeof(int) && *(const int *)value==HTTP_TCP_CLIENT_LIMIT); return fail_stage==6?-1:0;
 }
 static int getsockopt(int fd,int level,int option,void *value,socklen_t *n) {
     assert(thread==1 && fd==3 && level==IPPROTO_TCP && *n==sizeof(int));
     assert(option==TCP_MAX_CONN_NUM || option==TCP_CONN_NUM);
-    *(int *)value=option==TCP_MAX_CONN_NUM?2:2; ++diag_reads; return 0;
+    *(int *)value=option==TCP_MAX_CONN_NUM?HTTP_TCP_CLIENT_LIMIT:2; ++diag_reads;
+    if(option==TCP_MAX_CONN_NUM) {
+        if(fail_stage==7)return -1;
+        if(fail_stage==8)*(int *)value=HTTP_TCP_CLIENT_LIMIT+1;
+        if(fail_stage==9)*n=1;
+    }
+    return 0;
 }
 static int mico_rtos_init_queue(mico_queue_t *q,const char *name,unsigned size,unsigned count) {
     (void)q; (void)name; assert(thread==1 && size==sizeof(int) && count==1);
@@ -121,7 +127,7 @@ static void reset(void) {
     queued_count=popped=0; accept_entry=worker_entry=NULL;
 }
 int main(void) {
-    for(fail_stage=1;fail_stage<=5;fail_stage++) {
+    for(fail_stage=1;fail_stage<=9;fail_stage++) {
         reset(); assert(a1_http_start()==0 && accept_entry && !worker_entry);
         thread=1; accept_entry(0);
         assert(deletes==1 && !worker_entry && listener_closes==(fail_stage!=1));
@@ -132,7 +138,7 @@ int main(void) {
     assert(worker_entry && queued_count==2 && sleeps==1 && diag_reads==4);
     thread=2;if(!setjmp(stop))worker_entry(0);
     assert(handled==2 && client_closes==2 && !listener_closes && !deletes);
-    assert(http_diag_snapshot().limit==2);
+    assert(http_diag_snapshot().limit==HTTP_TCP_CLIENT_LIMIT);
     puts("A1 listener ownership, queued fd handoff, startup cleanup: OK");
 }
 '''

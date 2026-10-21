@@ -27,8 +27,53 @@ env:
   PHICOMM_OTA_GLOBAL_BASE_URL: http://phicomm.fjrcn.com
 
 jobs:
+  frontend:
+    name: Verify locked frontend dependency
+    # Use the same trusted-runner policy as firmware. This job never publishes
+    # a frontend release or changes the committed lock.
+    runs-on: >-
+      ${{ fromJSON(
+        github.ref_type != 'tag' &&
+        (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
+        ((github.event_name == 'workflow_dispatch' && inputs.runner == 'self-hosted') ||
+         (vars.PHICOMM_CI_RUNNER == 'self-hosted' &&
+          (github.event_name != 'workflow_dispatch' || inputs.runner == 'auto'))) &&
+        '["self-hosted","linux","x64","phicomm-build"]' || '["ubuntu-22.04"]') }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Test locked dependency validation
+        run: python3 -m unittest discover -s tests -p test_frontend_dependency.py
+      - name: Prepare exact frontend archive
+        env:
+          # Main/tag builds and fork PRs always require the published release.
+          ALLOW_CANDIDATE_SOURCE: >-
+            ${{ github.ref_type != 'tag' &&
+                ((github.event_name == 'pull_request' &&
+                  github.event.pull_request.head.repo.full_name == github.repository) ||
+                 (github.event_name == 'workflow_dispatch' && github.ref_name != 'main')) }}
+        run: |
+          args=()
+          if [ "$ALLOW_CANDIDATE_SOURCE" = true ]; then args+=(--allow-candidate-source); fi
+          python3 tools/ci/prepare_frontend.py \
+            --output build/ci-frontend/frontend.tar.gz "${args[@]}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: verified-frontend
+          path: build/ci-frontend/
+          if-no-files-found: error
+          retention-days: 30
+
   firmware:
     name: ${{ matrix.model }} firmware (both variants)
+    needs: [frontend]
     strategy:
       fail-fast: false
       matrix:
@@ -38,6 +83,7 @@ jobs:
       M1_TOOLS_DIR: ${{ github.workspace }}/build/ci-tools
       A1_TOOLS_DIR: ${{ github.workspace }}/build/ci-tools
       ARM_CC: ${{ github.workspace }}/build/ci-tools/gcc-arm-none-eabi-5_4-2016q2/bin/arm-none-eabi-gcc
+      PHICOMM_FRONTEND_ARCHIVE: ${{ github.workspace }}/build/ci-frontend/frontend.tar.gz
     runs-on: >-
       ${{ fromJSON(
         github.ref_type != 'tag' &&
@@ -50,6 +96,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: verified-frontend
+          path: build/ci-frontend/
       - name: Install build dependencies
         run: |
           sudo apt-get update
@@ -263,8 +313,9 @@ jobs:
       ARM_CC: ${{ github.workspace }}/build/ci-tools/gcc-arm-none-eabi-5_4-2016q2/bin/arm-none-eabi-gcc
       PHICOMM_OTA_CN_BASE_URL: ""
       PHICOMM_OTA_GLOBAL_BASE_URL: ""
+      PHICOMM_FRONTEND_ARCHIVE: ${{ github.workspace }}/build/ci-frontend/frontend.tar.gz
     name: Binding and automation host scenarios
-    needs: [firmware]
+    needs: [frontend, firmware]
     runs-on: >-
       ${{ fromJSON(
         github.ref_type != 'tag' &&
@@ -277,6 +328,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: verified-frontend
+          path: build/ci-frontend/
       - name: Install host test dependencies
         run: |
           sudo apt-get update
@@ -364,20 +419,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          python3 tools/prepare_sdk.py build/m1-sdk/mico-os
-          python3 tools/prepare_sdk.py build/tc1-sdk-3.6.4/mico-os
-          python3 tools/apply_sdk_patch.py build/m1-sdk/mico-os common/mqtt-mico36.patch
-          python3 tools/apply_sdk_patch.py build/m1-sdk/mico-os common/mqtt-socket-close.patch
-          python3 tools/apply_sdk_patch.py build/m1-sdk/mico-os M1/mqtt-packet-deadline.patch
-          python3 tools/apply_sdk_patch.py build/m1-sdk/mico-os common/mqtt-response-deadline.patch
-          python3 tools/apply_sdk_patch.py build/a1-sdk/mico-os common/mqtt-mico36.patch
-          python3 tools/apply_sdk_patch.py build/a1-sdk/mico-os common/mqtt-socket-close.patch
-          python3 tools/apply_sdk_patch.py build/a1-sdk/mico-os M1/mqtt-packet-deadline.patch
-          python3 tools/apply_sdk_patch.py build/a1-sdk/mico-os common/mqtt-response-deadline.patch
-          python3 tools/apply_sdk_patch.py build/tc1-sdk-3.6.4/mico-os common/mqtt-mico36.patch
-          python3 tools/apply_sdk_patch.py build/tc1-sdk-3.6.4/mico-os common/mqtt-socket-close.patch
-          python3 tools/apply_sdk_patch.py build/tc1-sdk-3.6.4/mico-os M1/mqtt-packet-deadline.patch
-          python3 tools/apply_sdk_patch.py build/tc1-sdk-3.6.4/mico-os common/mqtt-response-deadline.patch
+          for sdk in a1-sdk m1-sdk tc1-sdk-3.6.4; do
+            python3 tools/prepare_sdk.py "build/$sdk/mico-os"
+          done
+          # build_host.sh owns the complete ordered MQTT stack. Pre-applying
+          # only selected overlays creates an incompatible non-prefix state.
+          python3 -m unittest tests.test_mqtt_overlay_preparation
       - name: Test TMCP using real SDK workers and an isolated broker
         run: |
           python3 -m pip install paho-mqtt==2.1.0 Jinja2==3.1.6

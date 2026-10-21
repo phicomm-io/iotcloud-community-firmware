@@ -14,7 +14,6 @@ typedef struct {
 static uint32_t now;
 static micoMemInfo_t memory = {3, 60000, 30000, 30000};
 static bool memory_available;
-static uint32_t mico_rtos_get_time(void) { return now; }
 static const micoMemInfo_t *MicoGetMemoryInfo(void)
 { return memory_available ? &memory : NULL; }
 
@@ -28,13 +27,15 @@ int get_last_reset_reason(void)
 #endif
 
 #include "../common/runtime_metrics.h"
+#include "../common/device_status.c"
 
 static json_object *sample(uint32_t tick)
 {
     now = tick;
     json_object *status = json_object_new_object();
     assert(status);
-    runtime_metrics_json(status);
+    device_runtime_t captured;runtime_metrics_capture(&captured,now);
+    device_runtime_encode(status,&captured);
     assert(json_object_to_json_string(status));
     assert(json_object_get_double(json_object_object_get(status, "uptime_ms")) == tick);
 #if defined(MOC) && MOC == 1 && defined(CONFIG_CPU_MX1290)

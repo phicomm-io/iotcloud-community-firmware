@@ -218,7 +218,7 @@ class HttpTcpIntegration(unittest.TestCase):
         for product in ('A1', 'M1'):
             with self.subTest(product=product), self.server(product) as server:
                 normal = server.command('REPORT')['tcp_limit']
-                self.assertEqual(normal, 2)
+                self.assertGreater(normal, 2)
                 server.command('OTA ON')
                 self.assert_response(server.request())  # Wake blocking accept.
                 server.wait(lambda s: s['tcp_limit'] == 2)

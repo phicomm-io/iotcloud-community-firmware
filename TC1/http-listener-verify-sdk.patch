@@ -1,0 +1,41 @@
+--- a/libraries/daemons/http_server/httpd.c
++++ b/libraries/daemons/http_server/httpd.c
+@@ -188,21 +188,29 @@
+     {
+         status = net_get_sock_error( sockfd );
+         httpd_d("Failed to bind socket on port: %d Status: %d", status, port);
++        close(sockfd);
+         return status;
+     }
+ 
+-    /* Configure admission once, before accepting any queued clients. */
+     int limit = phicomm_http_client_limit();
+-    if (setsockopt(sockfd, IPPROTO_TCP, TCP_MAX_CONN_NUM, &limit, sizeof(limit)) < 0) {
++    status = listen( sockfd, limit );
++    if ( status < 0 )
++    {
++        status = net_get_sock_error( sockfd );
++        httpd_d("Failed to listen on port %d: %d.", port, status);
++        close(sockfd);
++        return status;
++    }
++
++    /* MiCO creates the admission state in listen(), resetting the default.
++     * Configure it afterwards and verify before accepting any requests. */
++    int actual = -1;
++    socklen_t length = sizeof(actual);
++    if (setsockopt(sockfd, IPPROTO_TCP, TCP_MAX_CONN_NUM, &limit, sizeof(limit)) < 0 ||
++        getsockopt(sockfd, IPPROTO_TCP, TCP_MAX_CONN_NUM, &actual, &length) < 0 ||
++        length != sizeof(actual) || actual != limit) {
+         close(sockfd);
+         return -kInProgressErr;
+-    }
+-    status = listen( sockfd, limit );
+-    if ( status < 0 )
+-    {
+-        status = net_get_sock_error( sockfd );
+-        httpd_d("Failed to listen on port %d: %d.", port, status);
+-        return status;
+     }
+ 
+     httpd_d("Listening on port %d.", port);

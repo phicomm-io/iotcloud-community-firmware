@@ -8,6 +8,7 @@ uint32_t test_now;
  * with the production monitor in test_watchdog.c. */
 void watchdog_beat(watchdog_slot_t slot) { (void)slot; }
 static feature_config_t stored;
+uint32_t feature_config_revision(void) { return stored.revision; }
 void feature_config_get(feature_config_t *out) { *out = stored;feature_config_limit_peers(out); }
 bool feature_config_save(const feature_config_t *c) {
   if (c->revision != stored.revision)
@@ -47,9 +48,99 @@ static json_object *runtime_new_object(void) {
   if (fail_runtime_object) { --fail_runtime_object; return NULL; }
   return json_object_new_object();
 }
+/* Execute the real common queue in the host owner; the device's session
+ * drives these same pop/release operations after Paho callbacks unwind. */
+#define lock common_queue_lock
+#define unlock common_queue_unlock
+#include "../common/mqtt/core.c"
+#undef lock
+#undef unlock
+static ph_mqtt_core test_mqtt_queue;
+static bool test_queue_initialized;
+static unsigned test_queue_lock;
+static void qlock(void*p){(void)p;assert(!test_queue_lock++);}
+static void qunlock(void*p){(void)p;assert(test_queue_lock--==1);}
+static bool qowner(void*p){(void)p;return true;}
+static uint32_t qnow(void*p){(void)p;return test_now;}
+static bool qpermit(void*p,size_t n){(void)p;(void)n;return true;}
+static void *qalloc(void*p,size_t n){(void)p;return malloc(n);}
+static void qfree(void*p,void*q){(void)p;free(q);}
+uint32_t ph_mqtt_send_generation(void){
+ if(!test_queue_initialized){ph_mqtt_hooks h={NULL,qlock,qunlock,qowner,qnow,qpermit,qalloc,qfree};
+  assert(ph_mqtt_core_init(&test_mqtt_queue,&h));test_queue_initialized=true;}
+ return test_mqtt_queue.generation;
+}
+int ph_mqtt_enqueue_send_generation(const char*t,const void*b,size_t n,unsigned qos,bool r,uint32_t g){
+ ph_mqtt_send_generation();if(!g)return -1;
+ return ph_mqtt_enqueue_generation(&test_mqtt_queue,PH_MQTT_SEND,t,strlen(t),b,n,qos,r,0,g)?0:-1;
+}
 #define json_object_new_object runtime_new_object
 #include "../common/runtime.c"
 #undef json_object_new_object
+#ifndef RUNTIME_EXTERNAL_MQTT_SCOPE
+/* Runtime-only harness transport seam. Production optional-encoding and failure
+ * attribution are exercised by test_background_json and test_mqtt_optional_json. */
+#include "../common/json_owned.h"
+static mico_thread_t runtime_owner=1;
+mico_thread_t *ph_mqtt_owner_thread(void){return &runtime_owner;}
+bool service_mqtt_json_begin(service_mqtt_json_scope *s,mico_thread_t *owner){
+  s->token=service_json_claim();s->claim=s->token?service_memory_claim(0):0;
+  if(s->token&&s->claim&&service_json_scope_begin(s->token,owner))return true;
+  service_json_release(s->token);service_memory_release(s->claim);s->token=s->claim=0;return false;
+}
+static unsigned runtime_scope_end(service_mqtt_json_scope *s){
+  unsigned why=service_json_scope_end(s->token);service_json_release(s->token);
+  service_memory_release(s->claim);s->token=s->claim=0;return why;
+}
+void service_mqtt_json_end(service_mqtt_json_scope *s){(void)runtime_scope_end(s);}
+int service_mqtt_json_error(service_mqtt_json_scope *s,unsigned stage){(void)stage;return runtime_scope_end(s)&3u?PH_MQTT_MORE:-1;}
+int service_mqtt_optional_send(int(*send)(const char*,const char*,bool),const char*t,json_object*o,bool r,service_mqtt_json_scope*s){
+  struct printbuf *w=json_owned_to_wire(o);unsigned why=runtime_scope_end(s);
+  if(!w||why){if(w)printbuf_free(w);return why&3u?PH_MQTT_MORE:-1;}
+  int rc=send(t,w->buf,r);printbuf_free(w);return rc;
+}
+#endif
+#ifdef FEATURE_DEVICE_A1
+static void host_discovery_virtual(int(*send)(const char*,const char*,bool),const feature_config_t*c,const char*root,bool remove){
+  discovery_layout_t layout;discovery_layout_capture(&layout,c);unsigned cursor=0;
+  for(unsigned i=0;i<128;i++){
+    unsigned prior=cursor;
+    if(discovery_virtual_step(send,&layout,root,remove,&cursor,discovery_sensors(c)))return;
+    if(publish_error||cursor==prior)return;
+  }
+  assert(!"Discovery harness exceeded fixed topology");
+}
+#define discovery_virtual host_discovery_virtual
+#endif
+#define queued (test_mqtt_queue.count[PH_MQTT_SEND])
+static void host_feature_mqtt_session(const mqtt_account_t *account){
+ ph_mqtt_send_generation();assert(ph_mqtt_clear(&test_mqtt_queue));feature_mqtt_session(account);
+}
+static int host_feature_mqtt_service(int(*publish)(const char*,const char*,bool),bool connected){
+ ph_mqtt_send_generation();
+ if(connected){ph_mqtt_item*i;
+  while((i=ph_mqtt_pop(&test_mqtt_queue,PH_MQTT_SEND))){
+   int rc=publish(ph_mqtt_item_topic(i),ph_mqtt_item_payload(i),i->retained);
+   ph_mqtt_item_release(&test_mqtt_queue,i);if(rc)return rc;
+  }
+ }
+ return feature_mqtt_service(publish,connected);
+}
+#define feature_mqtt_session host_feature_mqtt_session
+#define feature_mqtt_service host_feature_mqtt_service
+
+/* Discovery is resumable now. Exercise its real cursor to completion rather
+ * than assuming the first turn publishes (stage zero may only retire state).
+ * 256 exceeds the maximum fixed topology's entity and domain steps; failure
+ * to finish remains an assertion, not an unbounded harness wait. */
+static void bootstrap_mqtt(int (*publish)(const char *, const char *, bool)) {
+  for (unsigned step = 0; step < 256; ++step) {
+    assert(feature_mqtt_service(publish, true) == 0);
+    if (feature_mqtt_initial_ready()) return;
+  }
+  assert(!"MQTT bootstrap failed to complete in bounded owner turns");
+}
+
 static bool scoped_topic(const char *topic) {
  mqtt_account_t a=mqtt_snapshot();char prefix[160];mqtt_format(prefix,sizeof(prefix),"phicomm/v2/%s/",a.key);
  return !strncmp(topic,prefix,strlen(prefix));
@@ -148,7 +239,7 @@ static void binding(void) {
   json_object_put(o);
   feature_local_sample(&sample);
   assert(!feature_mqtt_input("unrelated/topic", "{}", 2, false));
-  feature_mqtt_service(capture, true);
+  bootstrap_mqtt(capture);
   assert(publications);
   transaction("binding", "{\"peers\":[]}", 200);
   assert(!feature_bound());
@@ -296,6 +387,19 @@ static void effective_controls(void) {
   unsigned speed;
   feature_effective_fan(true, 100, &on, &speed);
   assert(on && speed == 30);
+  /* A status copy must report the last applied controller result, never
+     advance PID or recompute from a newly requested setting. */
+  { bool applied,automatic;unsigned percentage,limit;
+    __typeof__(pid) before=pid;bool valid=automatic_valid;
+    uint32_t clock=test_now;
+    feature_fan_snapshot(&applied,&percentage,&automatic,&limit);
+    assert(applied==on && percentage==speed);
+    assert(!memcmp(&before,&pid,sizeof(pid)) && automatic_valid==valid && test_now==clock);
+    effective_on=false;effective_speed=17;
+    feature_fan_snapshot(&applied,&percentage,&automatic,&limit);
+    assert(!applied && percentage==17); /* requested state is not consulted */
+    effective_on=on;effective_speed=speed;
+  }
   c = stored;
   c.scheduled_off = 1;
   c.scheduled_valid = 1;
@@ -368,7 +472,12 @@ static unsigned named_discoveries;
 static char discovery_ids[8][192], discovery_topics[8][FEATURE_TOPIC_MAX];
 static bool compare_discovery_identity;
 static int capture_discovery_name(const char *topic, const char *body, bool retained) {
-  if(!*body) { assert(retained && strstr(topic,"scd40_")); return 0; }
+  /* A previously advertised CO2 capability also needs a retained tombstone
+   * after the preceding lifecycle scenario removed that peer. */
+  if(!*body) {
+    assert(retained && (strstr(topic,"scd40_") || strstr(topic,"_co2/config")));
+    return 0;
+  }
   assert(retained && named_discoveries < 8);
   json_object *o = obj(body), *device = json_object_object_get(o, "device");
   assert(!strcmp(string(device, "name"), expected_device_name));
@@ -531,6 +640,7 @@ static void account_namespaces(void) {
   char t[FEATURE_TOPIC_MAX];mqtt_leaf(&alice,"binding/get",t,sizeof(t));
   assert(feature_mqtt_input(t,"{}",2,false));
   assert(queued);assert(feature_mqtt_service(capture_account,true)==0);
+  bootstrap_mqtt(capture_account);
   mqtt_leaf(&alice,"binding/get",t,sizeof(t));assert(feature_mqtt_input(t,"{}",2,false));assert(queued);
   feature_mqtt_session(&bob);assert(!queued);
   assert(!feature_mqtt_input(t,"{}",2,false));
@@ -597,8 +707,8 @@ static void compact_resources(void){
  assert(mqtt_link_topic(&longest,"m1","112233445566",LOCAL_ID,"request",route_expected,sizeof(route_expected)));
  assert(enqueue(route_expected,body,true));assert(feature_mqtt_service(capture_route,true)==0);
  assert(mqtt_aux(&longest,"address",LOCAL_ID,route_expected,sizeof(route_expected)));
- for(unsigned i=0;i<4;i++)assert(enqueue(route_expected,body,true));
- assert(!enqueue(route_expected,body,true) && queued==4);
+ for(unsigned i=0;i<7;i++)assert(enqueue(route_expected,body,true));
+ assert(queued==1); /* retained state coalesces in the shared bounded queue */
  assert(feature_mqtt_service(capture_route,true)==0 && !queued);
  /* Reject oversized relative routes instead of truncating a destination. */
  char oversized[FEATURE_TOPIC_MAX],prefix[160];
@@ -606,7 +716,9 @@ static void compact_resources(void){
  strcpy(oversized,prefix);memset(oversized+strlen(prefix),'a',128);oversized[strlen(prefix)+128]=0;
  assert(!enqueue(oversized,body,true));
  assert(enqueue(route_expected,body,true));
- ++mqtt_generation; /* Simulate an enqueue racing a session reset. */
+ uint32_t stale=mqtt_generation;
+ assert(ph_mqtt_clear(&test_mqtt_queue));mqtt_generation=ph_mqtt_send_generation();
+ assert(ph_mqtt_enqueue_send_generation(route_expected,"{}",2,1,true,stale)!=0);
  unsigned before=route_calls;
  assert(feature_mqtt_service(capture_route,true)==0 && !queued && route_calls==before);
  json_object_put(body);stored=saved;configuration=saved;feature_mqtt_session(&account);
@@ -692,6 +804,11 @@ int main(void) {
   service_init();
   feature_defaults(&stored);
   assert(feature_start() == 0);
+  /* The production owner binds a queue generation before dispatching any
+   * feature traffic. Model that lifecycle here too: generation zero rejects
+   * stale/unbound producers by design. */
+  mqtt_account_t initial_account = mqtt_snapshot();
+  feature_mqtt_session(&initial_account);
   json_object *r = NULL;
 #ifdef FEATURE_DEVICE_A1
   feature_sample_t readings[3] = {0};

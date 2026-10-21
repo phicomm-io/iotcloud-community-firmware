@@ -1,5 +1,9 @@
 #include "watchdog.h"
+#include "mqtt/queue.h"
+#include "mqtt/service.h"
 #include "automation.h"
+#include "json_owned.h"
+#include "printbuf.h"
 #include "phicomm_features.h"
 #include "sntp.h"
 #include <math.h>
@@ -60,23 +64,40 @@ typedef struct {
 #endif
 } peer_runtime_t;
 static peer_runtime_t peers[FEATURE_MAX_PEERS];
-static struct {
-  /* Relative destination under the session's account namespace. The longest
-   * current route is a 33-byte group encoded as hex plus a domain/state leaf. */
-  char destination[128];
-  uint32_t generation;
-  char *body;
-  bool retained;
-} queue[4];
-static unsigned queued, queued_bytes;
 static uint32_t member_seen[8];
 static uint32_t mqtt_revision;
 static bool mqtt_online;
 #ifdef FEATURE_DEVICE_A1
-static uint32_t mqtt_tick;
+static uint32_t mqtt_tick, mqtt_graph_retry;
+static unsigned mqtt_graph_pending, mqtt_leaf_pending;
+static uint8_t mqtt_telemetry_cursor;
+/* Owner-only resumable publication positions. No bodies or JSON are retained. */
+static unsigned mqtt_discovery_stage, mqtt_discovery_cursor, mqtt_domain_cursor;
+static uint32_t mqtt_discovery_revision;
+static unsigned mqtt_discovery_sensors;
+static bool mqtt_discovery_pending;
 static bool was_coordinator;
 static char published_root[FEATURE_TOPIC_MAX], published_ids[FEATURE_MAX_PEERS][13];
-static feature_config_t *published_layout;
+/* Only HA identity/cleanup fields survive a completed discovery pass. Never
+ * retain credentials, automation or the 1408-byte authoritative config copy. */
+typedef struct {
+  char group[33];
+  feature_member_t members[FEATURE_STORAGE_PEERS];
+  char peer_ids[FEATURE_MAX_PEERS][13];
+  uint8_t member_count,peer_count;
+} discovery_layout_t;
+static discovery_layout_t *published_layout;
+static uint32_t mqtt_discovery_retry_at;
+static bool mqtt_discovery_deferred,mqtt_capture_deferred;
+static void discovery_layout_capture(discovery_layout_t *out,const feature_config_t *c) {
+  memcpy(out->group,c->group,sizeof(out->group));
+  memcpy(out->members,c->members,sizeof(out->members));
+  out->member_count=c->member_count;out->peer_count=c->peer_count;
+  for(unsigned i=0;i<c->peer_count;i++)memcpy(out->peer_ids[i],c->peers[i].id,13);
+}
+static void discovery_resource_wait(void) {
+  mqtt_discovery_deferred=true;mqtt_discovery_retry_at=mico_rtos_get_time();
+}
 static unsigned published_count;
 static unsigned published_sensors;
 #endif
@@ -106,32 +127,12 @@ static bool enqueue(const char *t, json_object *o, bool retain) {
   generation=mqtt_generation;
   mico_rtos_unlock_mutex(&namespace_lock);
   size_t prefix_length=strlen(prefix);
-  if (strncmp(t,prefix,prefix_length) ||
-      strlen(t+prefix_length)>=sizeof(queue[0].destination)) return false;
-  const char *s = json_object_to_json_string(o);
-  if (!s) return false;
-  size_t n = strlen(s);
-  if (n > 8192)
-    return false;
-  char *b = malloc(n + 1);
-  if (!b)
-    return false;
-  strcpy(b, s);
-  lock();
-  if (queued == 4 || queued_bytes + n + 1 > 4096) {
-    unlock();
-    free(b);
-    return false;
-  }
-  strcpy(queue[queued].destination,t+prefix_length);
-  queue[queued].generation=generation;
-  queue[queued].body = b;
-  queue[queued].retained = retain;
-  queued++;
-  queued_bytes += n + 1;
-  unlock();
-  return true;
+  if(strncmp(t,prefix,prefix_length) || strlen(t+prefix_length)>=128)return false;
+  const char *wire=json_object_to_json_string(o);
+  if(!wire)return false;
+  return ph_mqtt_enqueue_send_generation(t,wire,strlen(wire),1,retain,generation)==0;
 }
+
 static json_object *parse(const void *data, size_t n) {
   if (!n || n > 8192 || memchr(data, 0, n))
     return NULL;
@@ -979,6 +980,16 @@ void feature_effective_fan(bool requested_on, unsigned requested_speed,
   effective_on = *on;
   unlock();
 }
+void feature_fan_snapshot(bool *on,unsigned *speed,bool *automatic,unsigned *limit)
+{
+    lock();
+    /* Observe applied controller state; a read must never advance PID. */
+    *on=effective_on; *speed=effective_speed;
+    *automatic=configuration.linkage.enabled;
+    *limit=automatic_night>=0 && (unsigned)automatic_night<configuration.sleep_count
+        ? configuration.sleeps[automatic_night].max_speed : configuration.linkage.max_speed;
+    unlock();
+}
 bool feature_fan_auto(void) {
   lock(); bool automatic = configuration.linkage.enabled; unlock(); return automatic;
 }
@@ -1215,11 +1226,10 @@ void feature_mqtt_session(const mqtt_account_t *account) {
   bool changed=feature_account.mode!=account->mode || strcmp(feature_account.key,account->key) ||
       strcmp(feature_account.model,account->model) || strcmp(feature_account.mac,account->mac);
   feature_account = *account;
-  ++mqtt_generation;
+  mqtt_generation=ph_mqtt_send_generation();
   mico_rtos_unlock_mutex(&namespace_lock);
   lock();
-  for (unsigned i=0; i<queued; ++i) free(queue[i].body);
-  queued=queued_bytes=0; mqtt_online=false;
+  mqtt_online=false;
   /* A pending LAN RPC must not fall back into a different MQTT session. */
   for (unsigned i=0; i<FEATURE_MAX_PEERS; ++i) {
     if (peers[i].rpc) json_object_put(peers[i].rpc);
@@ -1232,7 +1242,8 @@ void feature_mqtt_session(const mqtt_account_t *account) {
   }
 #endif
 #ifdef FEATURE_DEVICE_A1
-  mqtt_tick=0;
+  mqtt_tick=0;mqtt_graph_pending=0;mqtt_leaf_pending=0;mqtt_telemetry_cursor=0;
+  mqtt_discovery_pending=false;mqtt_discovery_deferred=false;mqtt_capture_deferred=false;
   if(changed) {
     published_root[0]=0; published_count=0;
     free(published_layout); published_layout=NULL;
@@ -1253,26 +1264,14 @@ int feature_mqtt_service(int (*publish)(const char *, const char *, bool), bool 
   if (!connected) { mqtt_online=false; return 0; }
   active_publish=publish; publish_error=0;
   virtual_service(checked_publish);
-  for (unsigned i=0; i<4 && !publish_error; ++i) {
-    char topic[FEATURE_TOPIC_MAX],destination[sizeof(queue[0].destination)];
-    uint32_t generation=0;char *body=NULL; bool retained=false;
-    lock();
-    if (queued) {
-      strcpy(destination,queue[0].destination);generation=queue[0].generation;
-      body=queue[0].body; retained=queue[0].retained;
-      queued--; queued_bytes-=strlen(body)+1;
-      memmove(queue,queue+1,queued*sizeof(queue[0]));
-    }
-    unlock();
-    if (!body) break;
-    mico_rtos_lock_mutex(&namespace_lock);
-    bool valid=generation==mqtt_generation &&
-        mqtt_format(topic,sizeof(topic),"phicomm/v2/%s/%s",feature_account.key,destination);
-    mico_rtos_unlock_mutex(&namespace_lock);
-    if (valid) checked_publish(topic,body,retained);
-    free(body);
-  }
   return publish_error;
+}
+bool feature_mqtt_initial_ready(void) {
+#ifdef FEATURE_DEVICE_A1
+  return mqtt_online && !mqtt_discovery_pending;
+#else
+  return mqtt_online;
+#endif
 }
 static void rpc_poll(const feature_config_t *c, unsigned i, uint32_t now) {
   json_object *expired = NULL;
@@ -1294,6 +1293,11 @@ static void rpc_poll(const feature_config_t *c, unsigned i, uint32_t now) {
 #ifdef PHICOMM_DEVICE_OTA
 static bool worker_running, worker_stop, worker_exiting, worker_ready;
 bool feature_running(void){lock();bool yes=worker_running;unlock();return yes;}
+static bool feature_worker_should_stop(void){
+  lock();bool stop=worker_stop;
+  if(stop){worker_exiting=true;watchdog_binding_enable(false);}
+  unlock();return stop;
+}
 #endif
 static void feature_worker(mico_thread_arg_t arg) {
   UNUSED_PARAMETER(arg);
@@ -1327,7 +1331,7 @@ static void feature_worker(mico_thread_arg_t arg) {
   }
   for (;;) {
 #ifdef PHICOMM_DEVICE_OTA
-    lock();bool stop=worker_stop;if(stop)worker_exiting=true;unlock();if(stop)break;
+    if(feature_worker_should_stop())break;
 #endif
     uint32_t now = now_ms();
     feature_config_get(c);
@@ -1542,8 +1546,7 @@ static void feature_worker(mico_thread_arg_t arg) {
   if(udp>=0){close(udp);udp=-1;}
   free(wire);free(c);
   lock();
-  for(unsigned i=0;i<queued;i++)free(queue[i].body);
-  queued=queued_bytes=0;
+
   for(unsigned i=0;i<FEATURE_MAX_PEERS;i++){
     if(peers[i].rpc)json_object_put(peers[i].rpc);peers[i].rpc=NULL;
   }
@@ -1567,16 +1570,26 @@ bool feature_pause(unsigned timeout_ms){
   /* Let the RTOS finish deleting/reclaiming the old worker before recreating. */
   mico_thread_msleep(20);return true;
 }
-OSStatus feature_resume(void){
-  /* Once exit was acknowledged it cannot be cancelled. Wait for cleanup. */
-  for(;;){lock();bool exiting=worker_exiting;unlock();if(!exiting)break;mico_thread_msleep(20);}
-  mico_thread_msleep(20);
-  lock();if(worker_running){bool ready=worker_ready;worker_stop=false;unlock();return ready?kNoErr:kNoMemoryErr;}
+/* One attempt only: callers may retry after cleanup/OOM without holding an
+ * HTTP or MQTT owner in a wait loop. worker_running reserves thread creation. */
+OSStatus feature_resume_step(void){
+  lock();
+  if(worker_exiting){unlock();return kInProgressErr;}
+  if(worker_running){bool ready=worker_ready;worker_stop=false;unlock();return ready?kNoErr:kInProgressErr;}
   worker_stop=worker_ready=false;worker_running=true;unlock();watchdog_binding_enable(true);
   OSStatus e=mico_rtos_create_thread(NULL,MICO_APPLICATION_PRIORITY,"binding",feature_worker,FEATURE_WORKER_STACK_SIZE,0);
   if(e!=kNoErr){watchdog_binding_enable(false);lock();worker_running=false;unlock();return e;}
+  lock();bool ready=worker_ready,running=worker_running;unlock();
+  return ready?kNoErr:running?kInProgressErr:kNoMemoryErr;
+}
+OSStatus feature_resume(void){
+  /* Boot may wait for readiness, but never indefinitely for acknowledged exit. */
   uint32_t start=now_ms();
-  for(;;){lock();bool ready=worker_ready,running=worker_running;unlock();if(ready)return kNoErr;if(!running||(uint32_t)(now_ms()-start)>5000)return kNoMemoryErr;mico_thread_msleep(20);}
+  for(;;){
+    OSStatus e=feature_resume_step();if(e!=kInProgressErr)return e;
+    if((uint32_t)(now_ms()-start)>=5000)return kNoMemoryErr;
+    mico_thread_msleep(20);
+  }
 }
 #endif
 void feature_clock_tick(void) {
@@ -1810,36 +1823,55 @@ static bool virtual_input(const char *t, const void *data, size_t n,
   free(c);
   return true;
 }
-static void direct_leaf(int (*p)(const char *, const char *, bool),
+static int direct_leaf(int (*p)(const char *, const char *, bool),
                         const char *root, const char *leaf, const char *body,
                         bool retain) {
-  if (!body) return;
+  if (!body) return -1;
   char topic[FEATURE_TOPIC_MAX];
   mqtt_format(topic, sizeof(topic), "%s/%s", root, leaf);
-  p(topic, body, retain);
+  return p(topic, body, retain);
+}
+/* Newly built telemetry/discovery graphs have no users after publication.
+ * Retire them before the MQTT owner can block or dispatch packet callbacks. */
+static __attribute__((noinline)) int direct_json_optional(int (*p)(const char *, const char *, bool),
+                        const char *root,const char *leaf,json_object *o,bool retain,service_mqtt_json_scope *scope) {
+  char topic[FEATURE_TOPIC_MAX];
+  mqtt_format(topic,sizeof(topic),"%s/%s",root,leaf);
+  return service_mqtt_optional_send(p,topic,o,retain,scope);
+}
+/* The five-second sensor producer competes with HTTP full status for the same
+ * small heap. Defer telemetry instead of building a second graph. Only
+ * independent bytes survive publication and any reentrant packet callback. */
+static bool direct_json_claimed(int (*p)(const char *, const char *, bool),
+                        const char *root,const char *leaf,json_object *o,bool retain,unsigned token) {
+  struct printbuf *wire=json_owned_to_wire(o);
+  service_json_release(token);
+  if(!wire)return false;
+  int rc=direct_leaf(p,root,leaf,wire->buf,retain);printbuf_free(wire);return rc==0;
 }
 #ifdef FEATURE_DEVICE_A1
 /* Shared by virtual controls and per-A1 filter entities. Keep their parent
  * identity identical while preserving each physical filter's own state/control. */
-static bool virtual_identity(const feature_config_t *c, const char *root,
+static bool virtual_identity(const char *group, const feature_member_t *members,
+                             unsigned member_count, const char *root,
                              const mqtt_account_t *account, char owner[13],
                              char *safe, size_t safe_size, char *id, size_t id_size) {
   strcpy(owner, LOCAL_ID);
-  for (unsigned i = 0; i < c->member_count; ++i)
-    if (strcmp(c->members[i].id, owner) < 0) strcpy(owner, c->members[i].id);
+  for (unsigned i = 0; i < member_count; ++i)
+    if (strcmp(members[i].id, owner) < 0) strcpy(owner, members[i].id);
   if (!mqtt_format(safe, safe_size, "%s", root)) return false;
   for (char *p = safe; *p; ++p) if (*p == ':') *p = '_';
   if (account->mode) {
     const char *leaf = strrchr(root, '/');
     if (!mqtt_hex(safe, safe_size, leaf ? leaf + 1 : root)) return false;
     return mqtt_format(id, id_size, "v2_%s_%s_%s", account->key,
-                       c->group[0] ? "group" : owner, safe);
+                       group[0] ? "group" : owner, safe);
   }
   return mqtt_format(id, id_size, "%s", root);
 }
-static const char *virtual_device_name(const feature_config_t *c,
+static const char *virtual_device_name(const char *group,
                                        const a1_config_t *device) {
-  return c->group[0] ? c->group : (device->name[0] ? device->name : "Phicomm A1");
+  return group[0] ? group : (device->name[0] ? device->name : "Phicomm A1");
 }
 bool feature_ha_device(char *id, size_t id_size, char *name, size_t name_size,
                        bool *grouped) {
@@ -1854,8 +1886,8 @@ bool feature_ha_device(char *id, size_t id_size, char *name, size_t name_size,
   account = mqtt_snapshot();
   a1_config_get(&device);
   root_for(c, 0, root);
-  bool ok = virtual_identity(c, root, &account, owner, safe, sizeof(safe), id, id_size) &&
-            mqtt_format(name, name_size, "%s", virtual_device_name(c, &device));
+  bool ok = virtual_identity(c->group,c->members,c->member_count, root, &account, owner, safe, sizeof(safe), id, id_size) &&
+            mqtt_format(name, name_size, "%s", virtual_device_name(c->group, &device));
   *grouped = c->group[0] || c->member_count;
   free(c);
   return ok;
@@ -1871,9 +1903,9 @@ static unsigned discovery_sensors(const feature_config_t *c) {
   unlock();
   return mask;
 }
-static void discovery_virtual(int (*publish)(const char *, const char *, bool),
-                              const feature_config_t *c, const char *root,
-                              bool remove) {
+static bool discovery_virtual_step(int (*publish)(const char *, const char *, bool),
+                              const discovery_layout_t *c, const char *root,
+                              bool remove, unsigned *cursor, unsigned sensors) {
   const char *keys[] = {"fan",           "light",       "child_lock",
                         "led_always_on", "temperature", "humidity",
                         "pm25",          "formaldehyde", "co2", "scd40_temperature", "scd40_humidity"};
@@ -1889,35 +1921,42 @@ static void discovery_virtual(int (*publish)(const char *, const char *, bool),
   /* The MQTT owner publishes discovery; keep the device snapshot off its stack. */
   static a1_config_t device_config;
   a1_config_get(&device_config);
-  const char *device_name = virtual_device_name(c, &device_config);
+  const char *device_name = virtual_device_name(c->group, &device_config);
   char owner[13], device_id[192];
   static char safe[FEATURE_TOPIC_MAX];
-  if (!virtual_identity(c, root, &account, owner, safe, sizeof(safe),
-                        device_id, sizeof(device_id))) return;
-  unsigned sensors=discovery_sensors(c);
+  if (!virtual_identity(c->group,c->members,c->member_count, root, &account, owner, safe, sizeof(safe),
+                        device_id, sizeof(device_id))) return false;
   unsigned sets = c->peer_count > 1 ? c->peer_count + 1 : 1;
   for (unsigned set = 0; set < sets; set++)
     for (unsigned i = 0; i < 11; i++) {
+      unsigned position=set*11+i;
+      if(position<*cursor)continue;
       unsigned bits=sensors;
       bool supported=i<8 || (i==8 && (set ? (bits & (1u<<(set-1))) != 0 : bits != 0));
-      if (set && i < 4)
-        continue;
+      if (set && i < 4) { *cursor=position+1;continue; }
       static char uid[FEATURE_TOPIC_MAX], path[FEATURE_TOPIC_MAX], sensor[FEATURE_TOPIC_MAX];
-      const char *sid = set ? c->peers[set - 1].id : "average";
+      const char *sid = set ? c->peer_ids[set - 1] : "average";
       mqtt_format(uid, sizeof(uid), "bound_%s_%s_%s", safe, i < 4 ? "device" : sid,
                keys[i]);
       mqtt_format(path, sizeof(path), "homeassistant/%s/%s/config", components[i],
                uid);
       if (account.mode) {
         char entity[240];
-        if (!mqtt_format(entity,sizeof(entity),"bound_%s_%s_%s",safe,i<4?"device":sid,keys[i])) return;
+        if (!mqtt_format(entity,sizeof(entity),"bound_%s_%s_%s",safe,i<4?"device":sid,keys[i])) return false;
         strcpy(account.mac,owner);
-        if (!mqtt_identity(&account,entity,uid,sizeof(uid)) || !mqtt_ha(&account,components[i],entity,path,sizeof(path))) return;
+        if (!mqtt_identity(&account,entity,uid,sizeof(uid)) || !mqtt_ha(&account,components[i],entity,path,sizeof(path))) return false;
       }
       if (remove || !supported) {
         /* Retained tombstones remove auxiliary entities published by earlier firmware. */
-        if(remove || i>=9 || published_sensors) publish(path, "", true);
-        continue;
+        if(remove || i>=9 || published_sensors) {
+          if(publish(path,"",true))return false;
+          *cursor=position+1;return *cursor==sets*11;
+        }
+        *cursor=position+1;continue;
+      }
+      service_mqtt_json_scope scope;
+      if(!service_mqtt_json_begin(&scope,ph_mqtt_owner_thread())) {
+        discovery_resource_wait();return false;
       }
       json_object *o = json_object_new_object(),
                   *device = json_object_new_object(),
@@ -1929,7 +1968,9 @@ static void discovery_virtual(int (*publish)(const char *, const char *, bool),
           json_object_put(device);
         if (ids)
           json_object_put(ids);
-        return;
+        int rc=service_mqtt_json_error(&scope,PH_MQTT_ERROR_APP_DISCOVERY_GRAPH);
+        if(rc==PH_MQTT_MORE)discovery_resource_wait();else publish_error=rc;
+        return false;
       }
       json_build_array_add(ids, json_object_new_string(device_id));
       json_build_object_add(device, "identifiers", ids);
@@ -2029,127 +2070,230 @@ static void discovery_virtual(int (*publish)(const char *, const char *, bool),
       }
       json_build_object_add(o, "availability", availability);
       js(o, "availability_mode", "any");
-      const char *wire = json_object_to_json_string(o);
-      if (wire) publish(path, wire, true);
-      json_object_put(o);
+      int rc=service_mqtt_optional_send(publish,path,o,true,&scope);
+      if(rc) {
+        if(rc==PH_MQTT_MORE && !publish_error)discovery_resource_wait();
+        else publish_error=rc;
+        return false;
+      }
+      mqtt_discovery_deferred=false;
+      *cursor=position+1;return *cursor==sets*11;
     }
+  return true;
+}
+/* Cleanup is finite and explicit; ordinary owner turns use only step(). */
+static void discovery_virtual(int (*publish)(const char *,const char *,bool),
+                              const discovery_layout_t *c,const char *root,bool remove) {
+  unsigned cursor=0;
+  for(;;) {
+    unsigned prior=cursor;
+    if(discovery_virtual_step(publish,c,root,remove,&cursor,0))return;
+    if(publish_error || cursor==prior)return;
+  }
 }
 #endif
 static void virtual_service(int (*publish)(const char *, const char *, bool)) {
   uint32_t now = now_ms();
+#ifdef FEATURE_DEVICE_A1
+  if(mqtt_capture_deferred && (uint32_t)(now-mqtt_discovery_retry_at)<1000u)return;
+  mqtt_capture_deferred=false;
+  unsigned snapshot_token=service_json_claim();if(!snapshot_token)return;
+#endif
   feature_config_t *c = malloc(sizeof(*c));
-  if (!c)
+  if (!c) {
+#ifdef FEATURE_DEVICE_A1
+    service_json_release(snapshot_token);
+    mqtt_capture_deferred=true;discovery_resource_wait();
+#endif
     return;
+  }
   feature_config_get(c);
+  uint32_t revision=c->revision;
 #ifdef FEATURE_DEVICE_A1
   bool bound = feature_bound() || c->group[0];
   char root[FEATURE_TOPIC_MAX];
   root_for(c, 0, root);
   bool coordinator = feature_is_coordinator();
-  unsigned sensor_mask=discovery_sensors(c);
-  if ((!mqtt_online || mqtt_revision != c->revision || published_sensors != sensor_mask ||
-       (!was_coordinator && coordinator)) &&
-      coordinator) {
-    bool layout_changed =
-        strcmp(published_root, root) || published_count != c->peer_count ||
-        (published_layout && (published_layout->member_count != c->member_count || memcmp(published_layout->members,c->members,sizeof(c->members))));
-    for (unsigned i = 0; i < c->peer_count && !layout_changed; i++)
-      layout_changed = strcmp(published_ids[i], c->peers[i].id) != 0;
-    if (published_root[0] && (layout_changed || !bound)) {
-      if (published_layout) discovery_virtual(publish,published_layout,published_root,true);
-    }
-    if (bound) {
-      discovery_virtual(publish, c, root, false);
-      published_sensors=sensor_mask;
-      if(!published_layout) published_layout=malloc(sizeof(*published_layout));
-      if(published_layout) *published_layout=*c;
-      strcpy(published_root, root);
-      published_count = c->peer_count;
-      for (unsigned i = 0; i < c->peer_count; i++)
-        strcpy(published_ids[i], c->peers[i].id);
-      for (unsigned d = 0; d < COUNT(domains); d++) {
-        json_object *o = config_encode(c, domains[d]);
-        if (o) {
-          js(o, "_source", LOCAL_ID);
-          char leaf[40];
-          mqtt_format(leaf, sizeof(leaf), "%s/state", topic_domain(domains[d]));
-          direct_leaf(publish, root, leaf, json_object_to_json_string(o), true);
-          json_object_put(o);
-        }
-      }
-    } else
-      published_root[0] = 0;
+  /* A lower-MAC member can take ownership while discovery is mid-batch.
+   * There is no local bootstrap work left in that role. Regaining ownership
+   * is detected by was_coordinator and starts a fresh discovery cursor. */
+  if (!coordinator) {
+    mqtt_discovery_pending = false;mqtt_discovery_deferred=false;
+    mqtt_discovery_stage = mqtt_discovery_cursor = mqtt_domain_cursor = 0;
   }
-  if (bound && (uint32_t)(now - mqtt_tick) >= 5000) {
-    mqtt_tick = now;
-    bool on;
-    unsigned speed;
-    /* These snapshots are only used by the MQTT owner. */
-    static a1_config_t cfg;
-    a1_config_get(&cfg);
-    mico_rtos_lock_mutex(&a1_lock);bool led_visible=a1_state.led_visible;
-    mico_rtos_unlock_mutex(&a1_lock);
-    unsigned light_brightness = cfg.brightness;
-    lock();
-    if (sleep_state.light_sleep && light_brightness > sleep_state.brightness)
-      light_brightness = sleep_state.brightness;
-    unlock();
-    feature_effective_fan(cfg.fan_on, cfg.speed, &on, &speed);
-    char prefix[FEATURE_TOPIC_MAX];
-    bool leader = feature_is_coordinator();
-    for (unsigned pass = 0; pass < (c->group[0] ? 2u : 1u); pass++) {
-      if (!pass && !leader)
-        continue;
-      if (pass) {
-        char mac[18];
-        feature_colon_mac(LOCAL_ID, mac);
-        mqtt_format(prefix, sizeof(prefix), "%s/%s", root, mac);
-      } else
-        strcpy(prefix, root);
-      direct_leaf(publish, prefix, "fan/state", on ? "ON" : "OFF", true);
-      direct_leaf(publish,prefix,"fan/mode/state",feature_fan_auto()?"auto":"manual",true);
-      char b[192];
-      mqtt_format(b, sizeof(b), "%u", on ? speed : 0);
-      direct_leaf(publish, prefix, "fan/percentage/state", b, true);
-      mqtt_format(b, sizeof(b),
-               "{\"state\":\"%s\",\"brightness\":%u,\"color\":{\"r\":%u,\"g\":%"
-               "u,\"b\":%u}}",
-               led_visible ? "ON" : "OFF", light_brightness, cfg.red,
-               cfg.green, cfg.blue);
-      direct_leaf(publish, prefix, "light/state", b, true);
-      direct_leaf(publish, prefix, "child_lock/state",
-                  cfg.child_lock ? "ON" : "OFF", true);
-      direct_leaf(publish, prefix, "led_always_on/state",
-                  cfg.led_always_on ? "ON" : "OFF", true);
-      direct_leaf(publish, prefix, "availability", "online", true);
+  unsigned sensor_mask=discovery_sensors(c);
+  bool discovery_needed=mqtt_discovery_pending || !mqtt_online || mqtt_revision!=revision ||
+      published_sensors!=sensor_mask || (!was_coordinator && coordinator);
+  bool discovery_wait=mqtt_discovery_deferred && (uint32_t)(now-mqtt_discovery_retry_at)<1000u;
+  if(coordinator && discovery_needed && !discovery_wait) {
+    service_json_release(snapshot_token);snapshot_token=0;
+    if(!mqtt_discovery_pending || mqtt_discovery_revision!=revision ||
+       mqtt_discovery_sensors!=sensor_mask) {
+      mqtt_discovery_pending=true;mqtt_discovery_stage=0;
+      mqtt_discovery_cursor=mqtt_domain_cursor=0;
+      mqtt_discovery_revision=revision;mqtt_discovery_sensors=sensor_mask;
     }
-    if (leader) {
-      static feature_sample_t current[FEATURE_MAX_PEERS];
+    bool layout_changed=strcmp(published_root,root) || published_count!=c->peer_count ||
+        (published_layout && (published_layout->member_count!=c->member_count ||
+        memcmp(published_layout->members,c->members,sizeof(c->members))));
+    for(unsigned i=0;i<c->peer_count && !layout_changed;i++)
+      layout_changed=strcmp(published_ids[i],c->peers[i].id)!=0;
+    if(mqtt_discovery_stage==0) {
+      free(c);c=NULL;
+      if(published_root[0] && (layout_changed || !bound) && published_layout &&
+         !discovery_virtual_step(publish,published_layout,published_root,true,&mqtt_discovery_cursor,0)) {
+        free(c);return;
+      }
+      mqtt_discovery_stage=1;mqtt_discovery_cursor=0;
+      free(c);return;
+    }
+    if(mqtt_discovery_stage==1) {
+      discovery_layout_t layout;discovery_layout_capture(&layout,c);
+      free(c);c=NULL;
+      if(bound && !discovery_virtual_step(publish,&layout,root,false,&mqtt_discovery_cursor,sensor_mask))return;
+      mqtt_discovery_stage=2;return;
+    }
+    if(bound && mqtt_domain_cursor<COUNT(domains)) {
+      service_mqtt_json_scope scope;
+      if(!service_mqtt_json_begin(&scope,ph_mqtt_owner_thread())) {
+        free(c);discovery_resource_wait();return;
+      }
+      json_object *o=config_encode(c,domains[mqtt_domain_cursor]);
+      if(o)js(o,"_source",LOCAL_ID);
+      free(c);c=NULL;
+      if(!o) {
+        int rc=service_mqtt_json_error(&scope,PH_MQTT_ERROR_APP_DISCOVERY_GRAPH);
+        if(rc==PH_MQTT_MORE)discovery_resource_wait();else publish_error=rc;
+        return;
+      }
+      char leaf[40];
+      mqtt_format(leaf,sizeof(leaf),"%s/state",topic_domain(domains[mqtt_domain_cursor]));
+      int rc=direct_json_optional(publish,root,leaf,o,true,&scope);
+      if(!rc){++mqtt_domain_cursor;mqtt_discovery_deferred=false;}
+      else if(rc==PH_MQTT_MORE && !publish_error)discovery_resource_wait();
+      else publish_error=rc;
+      return;
+    }
+    if(bound) {
+      if(!published_layout)published_layout=malloc(sizeof(*published_layout));
+      if(!published_layout){free(c);discovery_resource_wait();return;}
+      discovery_layout_capture(published_layout,c);strcpy(published_root,root);published_count=c->peer_count;
+      for(unsigned i=0;i<c->peer_count;i++)strcpy(published_ids[i],c->peers[i].id);
+    } else published_root[0]=0;
+    published_sensors=sensor_mask;mqtt_discovery_pending=false;mqtt_discovery_deferred=false;mqtt_capture_deferred=false;
+  }
+  /* Periodic publishing needs only this compact configuration snapshot. The
+   * large native config must not survive socket/PUBACK waits or JSON builds. */
+  bool grouped=c->group[0];unsigned peer_count=c->peer_count;
+  char peer_ids[FEATURE_MAX_PEERS][13];
+  for(unsigned i=0;i<peer_count;i++)memcpy(peer_ids[i],c->peers[i].id,sizeof(peer_ids[i]));
+  free(c);c=NULL;service_json_release(snapshot_token);
+  if(bound && (uint32_t)(now-mqtt_tick)>=5000) {
+    mqtt_tick=now;
+    mqtt_leaf_pending|=(1u<<(grouped?14:7))-1u;
+    if(coordinator)mqtt_graph_pending|=(1u<<(peer_count+1))-1u;
+    mqtt_graph_retry=now-100u;
+  }
+  /* A cursor spans scalar leaves and graphs. Refreshing the latest data must
+   * not put the same scalar prefix ahead of sensors after every slow ACK.
+   * Use at most four available sends; the shared owner enforces the remaining
+   * global turn budget. Resume a quota-rejected item first on the next turn. */
+  if(!bound){mqtt_leaf_pending=0;mqtt_graph_pending=0;}
+  if(!coordinator)mqtt_graph_pending=0;
+  for(unsigned attempt=0;attempt<4 && !publish_error;attempt++) {
+    unsigned selected_leaf=0,selected_graph=0,selected_work=0;
+    unsigned eligible_leaves=mqtt_leaf_pending & ((1u<<(grouped?14:7))-1u);
+    if(!coordinator)eligible_leaves&=~127u;
+    unsigned eligible_graphs=coordinator && (uint32_t)(now-mqtt_graph_retry)>=100u
+        ? mqtt_graph_pending & ((1u<<(peer_count+1))-1u) : 0;
+    const unsigned work_count=14+FEATURE_MAX_PEERS+1;
+    if(bound)for(unsigned offset=0;offset<work_count;offset++) {
+      unsigned work=(mqtt_telemetry_cursor+offset)%work_count;
+      if(work<14)selected_leaf=eligible_leaves&(1u<<work);
+      else selected_graph=eligible_graphs&(1u<<(work-14));
+      if(selected_leaf || selected_graph) {
+        selected_work=work;
+        mqtt_telemetry_cursor=(uint8_t)((work+1)%work_count);
+        break;
+      }
+    }
+    if(!selected_leaf && !selected_graph)break;
+    if(bound && selected_leaf) {
+      bool on;
+      unsigned speed;
+      /* These snapshots are only used by the MQTT owner. */
+      static a1_config_t cfg;
+      a1_config_get(&cfg);
+      mico_rtos_lock_mutex(&a1_lock);bool led_visible=a1_state.led_visible;
+      mico_rtos_unlock_mutex(&a1_lock);
+      unsigned light_brightness = cfg.brightness;
       lock();
-      memcpy(current, samples, sizeof(current));
+      if (sleep_state.light_sleep && light_brightness > sleep_state.brightness)
+        light_brightness = sleep_state.brightness;
       unlock();
-      json_object *average = average_body(current, c->peer_count, now);
-      direct_leaf(publish, root, "average", json_object_to_json_string(average), false);
-      json_object_put(average);
-      for (unsigned i = 0; i < c->peer_count; i++)
-        {
-          json_object *o = sample_body(&current[i], now);
-          char leaf[64];
-          if (c->peer_count == 1)
-            strcpy(leaf, "sensor");
-          else {
-            char mac[18];
-            feature_colon_mac(c->peers[i].id, mac);
-            mqtt_format(leaf, sizeof(leaf), "%s/sensor", mac);
+      feature_effective_fan(cfg.fan_on, cfg.speed, &on, &speed);
+      char prefix[FEATURE_TOPIC_MAX];
+      bool leader = feature_is_coordinator();
+      for (unsigned pass = 0; pass < (grouped ? 2u : 1u); pass++) {
+        if (!pass && !leader)
+          continue;
+        if (pass) {
+          char mac[18];
+          feature_colon_mac(LOCAL_ID, mac);
+          mqtt_format(prefix, sizeof(prefix), "%s/%s", root, mac);
+        } else
+          strcpy(prefix, root);
+        char b[192];
+        const char *leaves[]={"fan/state","fan/mode/state","fan/percentage/state",
+            "light/state","child_lock/state","led_always_on/state","availability"};
+        for(unsigned leaf=0;leaf<7;leaf++) {
+          unsigned bit=1u<<(pass*7+leaf);if(!(selected_leaf&bit))continue;
+          const char *body=NULL;
+          switch(leaf) {
+            case 0:body=on?"ON":"OFF";break;
+            case 1:body=feature_fan_auto()?"auto":"manual";break;
+            case 2:mqtt_format(b,sizeof(b),"%u",on?speed:0);body=b;break;
+            case 3:mqtt_format(b,sizeof(b),
+                "{\"state\":\"%s\",\"brightness\":%u,\"color\":{\"r\":%u,\"g\":%u,\"b\":%u}}",
+                led_visible?"ON":"OFF",light_brightness,cfg.red,cfg.green,cfg.blue);body=b;break;
+            case 4:body=cfg.child_lock?"ON":"OFF";break;
+            case 5:body=cfg.led_always_on?"ON":"OFF";break;
+            default:body="online";break;
           }
-          direct_leaf(publish, root, leaf, json_object_to_json_string(o),
-                      false);
-          json_object_put(o);
+          if(direct_leaf(publish,prefix,leaves[leaf],body,true))break;
+          mqtt_leaf_pending&=~bit;
         }
+        if(publish_error)break;
+      }
     }
+    if(selected_graph) {
+      /* Only memory contention is throttled. A successful graph or exhausted
+       * send quota must leave the next graph immediately eligible, otherwise
+       * a refreshed scalar prefix can repeatedly overtake the sensor. */
+      static feature_sample_t current[FEATURE_MAX_PEERS];
+      lock();memcpy(current,samples,sizeof(current));unlock();
+      /* Samples may advance while earlier leaf PUBACKs are outstanding. Take
+       * the graph clock after copying them so fresh timestamps never appear
+       * to be almost UINT32_MAX milliseconds old. */
+      uint32_t captured_now=now_ms();
+      for(unsigned i=0;i<=peer_count;i++) {
+        unsigned bit=1u<<i;if(!(selected_graph&bit))continue;
+        if(publish_error)break;
+        unsigned token=service_json_claim();
+        if(!token){mqtt_graph_retry=now;break;}
+        json_object *o=i?sample_body(&current[i-1],captured_now):average_body(current,peer_count,captured_now);
+        char leaf[64];
+        if(!i)strcpy(leaf,"average");
+        else if(peer_count==1)strcpy(leaf,"sensor");
+        else {char mac[18];feature_colon_mac(peer_ids[i-1],mac);mqtt_format(leaf,sizeof(leaf),"%s/sensor",mac);}
+        if(direct_json_claimed(publish,root,leaf,o,false,token))mqtt_graph_pending&=~bit;
+        else if(!publish_error)mqtt_graph_retry=now;
+      }
+    }
+    if(publish_error)mqtt_telemetry_cursor=(uint8_t)selected_work;
   }
 #endif
-  mqtt_revision = c->revision;
+  mqtt_revision = revision;
   mqtt_online = true;
 #ifdef FEATURE_DEVICE_A1
   was_coordinator = coordinator;

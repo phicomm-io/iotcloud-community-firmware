@@ -39,11 +39,14 @@ fi
 
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/wifi-owned-mico36.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/watchdog-mico36.patch"
-python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-mico36.patch"
-python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-publish-bounds.patch"
-python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-socket-close.patch"
-python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/mqtt-packet-deadline.patch"
-python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-response-deadline.patch"
+# Validate the overlapping MQTT overlays together, including repeated builds.
+python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \
+    "$project_dir/common/mqtt-mico36.patch" \
+    "$project_dir/common/mqtt-publish-bounds.patch" \
+    "$project_dir/common/mqtt-socket-close.patch" \
+    "$project_dir/M1/mqtt-packet-deadline.patch" \
+    "$project_dir/common/mqtt-response-deadline.patch" \
+    "$project_dir/common/mqtt-buffer-storage.patch"
 # Isolate newlib floating conversion scratch across HTTP/MQTT/runtime threads.
 # Validate these overlapping overlays together, including on repeated builds.
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \
@@ -51,10 +54,17 @@ python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \
     "$project_dir/common/json-printbuf-oom.patch" \
     "$project_dir/common/json-allocation-safety.patch" \
     "$project_dir/common/json-heap-budget.patch" \
-    "$project_dir/common/json-newlib-nano-abi.patch"
+    "$project_dir/common/json-newlib-nano-abi.patch" \
+    "$project_dir/common/json-integer-parse.patch" \
+    "$project_dir/common/json-sized-resize.patch" \
+    "$project_dir/common/json-number-cache-cleanup.patch" \
+    "$project_dir/common/json-number-checked.patch"
+python3 "$project_dir/tools/install_json_numeric.py" "$sdk_dir"
 
 ln -sfn "$sdk_dir" "$workspace/mico-os"
 ln -sfn "$app_dir" "$workspace/M1"
+ln -sfn "$project_dir/common/httpd" "$workspace/phicomm_httpd"
+ln -sfn "$project_dir/common/mqtt" "$workspace/phicomm_mqtt"
 python3 "$app_dir/tools/pack_web.py"
 
 gcc_dir="$tools_dir/gcc-arm-none-eabi-5_4-2016q2"
@@ -93,6 +103,7 @@ ln -sfn "$(command -v make)" "$micoder/cmd/Linux64/make"
 )
 python3 "$project_dir/tools/check_worker_stack.py" "$workspace/build/$target/Modules/M1" "$project_dir/common/phicomm_features.h"
 python3 "$app_dir/tools/check_image.py" "$workspace/build/$target/binary/$target.ota.bin"
+python3 "$project_dir/tools/check_http_core.py" "$workspace/build/$target/Modules" M1 "$gcc_dir/bin/arm-none-eabi-nm" "$workspace/build/$target/binary/$target.elf"
 python3 "$project_dir/tools/check_json_float.py" "$gcc_dir/bin/arm-none-eabi-nm" "$workspace/build/$target/binary/$target.elf"
 python3 "$app_dir/tools/package.py" "$workspace/build/$target/binary" "$project_dir/build/m1${variant_suffix}-release" "$sdk_commit"
 

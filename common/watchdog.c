@@ -216,19 +216,26 @@ void watchdog_boot_event(void)
                   "system", reset_name());
 }
 
+void watchdog_status_capture(watchdog_status_t *out)
+{
+    uint32_t mask = watchdog_lock();
+    out->enabled = enabled; out->failed = failed; out->ready = startup_complete;
+    for (unsigned i = 0; i < WATCHDOG_OTA; i++) out->ready &= points[i].seen;
+    out->fault = fault; out->reset_raw = reset_raw; out->reset_name = reset_name();
+    watchdog_unlock(mask);
+}
+void watchdog_status_encode(struct json_object *out, const watchdog_status_t *s)
+{
+    json_object_object_add(out, "reset_reason", json_object_new_string(s->reset_name));
+    json_object_object_add(out, "reset_reason_raw", json_object_new_int(s->reset_raw));
+    json_object_object_add(out, "watchdog_enabled", json_object_new_boolean(s->enabled));
+    json_object_object_add(out, "watchdog_state", json_object_new_string(s->failed ? "fault" : s->ready ? "healthy" : "starting"));
+    json_object_object_add(out, "watchdog_fault", json_object_new_string(s->fault));
+}
 void watchdog_status_json(struct json_object *out)
 {
-    bool on, bad, ready; const char *why;
-    uint32_t mask = watchdog_lock();
-    on = enabled; bad = failed; ready = startup_complete;
-    for (unsigned i = 0; i < WATCHDOG_OTA; i++) ready &= points[i].seen;
-    why = fault;
-    watchdog_unlock(mask);
-    json_object_object_add(out, "reset_reason", json_object_new_string(reset_name()));
-    json_object_object_add(out, "reset_reason_raw", json_object_new_int(reset_raw));
-    json_object_object_add(out, "watchdog_enabled", json_object_new_boolean(on));
-    json_object_object_add(out, "watchdog_state", json_object_new_string(bad ? "fault" : ready ? "healthy" : "starting"));
-    json_object_object_add(out, "watchdog_fault", json_object_new_string(why));
+    watchdog_status_t snapshot; watchdog_status_capture(&snapshot);
+    watchdog_status_encode(out, &snapshot);
 }
 
 void watchdog_binding_enable(bool on){

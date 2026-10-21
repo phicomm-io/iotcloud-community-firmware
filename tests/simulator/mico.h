@@ -17,7 +17,9 @@ typedef int OSStatus;
 typedef pthread_mutex_t mico_mutex_t;
 typedef uintptr_t mico_thread_arg_t;
 typedef pthread_t mico_thread_t;
-static inline bool mico_rtos_is_current_thread(mico_thread_t *thread){(void)thread;return true;}
+static inline bool mico_rtos_is_current_thread(mico_thread_t *thread){return pthread_equal(*thread,pthread_self());}
+typedef struct { unsigned free_memory; } micoMemInfo_t;
+static inline const micoMemInfo_t *MicoGetMemoryInfo(void){static const micoMemInfo_t m={64000};return &m;}
 typedef uint32_t mico_time_t;
 typedef int mico_gpio_t, WiFiEvent;
 #define maxNameLen 64

@@ -28,6 +28,12 @@ bool watchdog_ota_begin(void);
 bool watchdog_ota_progress(void);
 void watchdog_ota_end(void);
 struct json_object;
+typedef struct {
+    bool enabled, failed, ready; int reset_raw;
+    const char *fault, *reset_name; /* immutable literals, safe after capture */
+} watchdog_status_t;
+void watchdog_status_capture(watchdog_status_t *);
+void watchdog_status_encode(struct json_object *, const watchdog_status_t *);
 void watchdog_status_json(struct json_object *out);
 
 void watchdog_binding_enable(bool enabled);

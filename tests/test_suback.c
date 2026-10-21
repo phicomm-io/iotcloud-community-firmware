@@ -1,5 +1,7 @@
 #include "MQTTClient.h"
 #include <assert.h>
+/* Standalone protocol fixture: production admission is provided by its owner. */
+int mqtt_buffer_allocation_permit(Client *c,size_t bytes){(void)c;(void)bytes;return 1;}
 static unsigned char reply[8];static unsigned length,position;static int scenario;
 static int read_ack(Network *n,unsigned char *buf,int count,int timeout){(void)n;(void)timeout;if(position+count>length)return -1;memcpy(buf,reply+position,count);position+=count;return count;}
 static int write_sub(Network *n,unsigned char *buf,int count,int timeout){

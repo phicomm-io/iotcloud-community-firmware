@@ -1,0 +1,167 @@
+--- /dev/null
++++ b/libraries/daemons/http_server/http_trace_hooks.h
+@@ -0,0 +1,24 @@
++#pragma once
++/* Numeric phases are diagnostic metadata, never request payloads. */
++enum {
++ HTTP_TRACE_LISTEN_ENTER=1, HTTP_TRACE_LISTEN_RETURN,
++ HTTP_TRACE_ACCEPT_ENTER, HTTP_TRACE_ACCEPT_RETURN,
++ HTTP_TRACE_NONBLOCK_ENTER, HTTP_TRACE_NONBLOCK_RETURN,
++ HTTP_TRACE_CLOSE_ENTER, HTTP_TRACE_CLOSE_RETURN,
++ HTTP_TRACE_HANDLE_ENTER, HTTP_TRACE_HANDLE_RETURN,
++ HTTP_TRACE_SEND_SELECT_ENTER, HTTP_TRACE_SEND_SELECT_RETURN,
++ HTTP_TRACE_SEND_ENTER, HTTP_TRACE_SEND_RETURN,
++ HTTP_TRACE_RECV_SELECT_ENTER, HTTP_TRACE_RECV_SELECT_RETURN,
++ HTTP_TRACE_RECV_ENTER, HTTP_TRACE_RECV_RETURN,
++ HTTP_TRACE_HEADERS_ENTER, HTTP_TRACE_HEADERS_RETURN,
++ HTTP_TRACE_BODY_ENTER, HTTP_TRACE_BODY_RETURN,
++ HTTP_TRACE_PARSE_ENTER, HTTP_TRACE_PARSE_RETURN,
++ HTTP_TRACE_DISPATCH_ENTER, HTTP_TRACE_DISPATCH_RETURN,
++ HTTP_TRACE_REPLY_ENTER, HTTP_TRACE_REPLY_RETURN
++};
++#ifdef PHICOMM_HTTP_TRACE
++void phicomm_http_trace(unsigned phase, int fd, int detail);
++#define HTTP_TRACE(phase,fd,detail) phicomm_http_trace(phase,fd,detail)
++#else
++#define HTTP_TRACE(phase,fd,detail) ((void)0)
++#endif
+--- a/libraries/daemons/http_server/httpd.c
++++ b/libraries/daemons/http_server/httpd.c
+@@ -31,6 +31,7 @@
+ 
+ #include <string.h>
+ #include <fcntl.h>
++#include "http_trace_hooks.h"
+ 
+ #include "httpd.h"
+ #include "http-strings.h"
+@@ -193,7 +194,9 @@
+     }
+ 
+     int limit = phicomm_http_client_limit();
++    HTTP_TRACE(HTTP_TRACE_LISTEN_ENTER,sockfd,limit);
+     status = listen( sockfd, limit );
++    HTTP_TRACE(HTTP_TRACE_LISTEN_RETURN,sockfd,status);
+     if ( status < 0 )
+     {
+         status = net_get_sock_error( sockfd );
+@@ -287,7 +290,9 @@
+     
+     addr_from_len = sizeof(addr_from);
+     
++    HTTP_TRACE(HTTP_TRACE_ACCEPT_ENTER,main_sockfd,0);
+     client_sockfd = accept( main_sockfd, &addr_from, &addr_from_len );
++    HTTP_TRACE(HTTP_TRACE_ACCEPT_RETURN,client_sockfd,0);
+     if ( client_sockfd < 0 )
+     {
+         httpd_d("net_accept client socket failed %d.", client_sockfd);
+@@ -296,8 +301,13 @@
+     
+     /* select readiness can disappear after a peer reset. Never enter an
+      * unbounded blocking send/recv after a successful readiness check. */
+-    if (fcntl(client_sockfd, F_SETFL, O_NONBLOCK) != 0) {
+-        close(client_sockfd);
++    HTTP_TRACE(HTTP_TRACE_NONBLOCK_ENTER,client_sockfd,0);
++    int nonblock_rc = fcntl(client_sockfd, F_SETFL, O_NONBLOCK);
++    HTTP_TRACE(HTTP_TRACE_NONBLOCK_RETURN,client_sockfd,nonblock_rc);
++    if (nonblock_rc != 0) {
++        HTTP_TRACE(HTTP_TRACE_CLOSE_ENTER,client_sockfd,0);
++        int close_rc = close(client_sockfd);
++        HTTP_TRACE(HTTP_TRACE_CLOSE_RETURN,client_sockfd,close_rc);
+         client_sockfd = -1;
+         return -kInProgressErr;
+     }
+@@ -393,7 +403,9 @@
+             /* Timeout has occured */
+             httpd_d("Client socket timeout occurred. " "Force closing socket");
+ 
+-            status = close( client_sockfd );
++            HTTP_TRACE(HTTP_TRACE_CLOSE_ENTER,client_sockfd,0);
++            status = close( client_sockfd );
++            HTTP_TRACE(HTTP_TRACE_CLOSE_RETURN,client_sockfd,status);
+             if ( status != kNoErr )
+             {
+                 status = net_get_sock_error( client_sockfd );
+@@ -417,7 +429,9 @@
+          */
+         /* FIXME: remove this memset if all is working well */
+         /* memset(&httpd_message_in[0], 0, sizeof(httpd_message_in)); */
++        HTTP_TRACE(HTTP_TRACE_HANDLE_ENTER,client_sockfd,0);
+         status = httpd_handle_message( client_sockfd );
++        HTTP_TRACE(HTTP_TRACE_HANDLE_RETURN,client_sockfd,status);
+         if ( status == kNoErr )
+         {
+             /* The handlers are expected more data on the
+@@ -428,7 +442,9 @@
+         /* Either there was some error or everything went well */
+         httpd_d("Close socket %d.  %s: %d", client_sockfd, status == HTTPD_DONE ? "Handler done" : "Handler failed", status);
+ 
++        HTTP_TRACE(HTTP_TRACE_CLOSE_ENTER,client_sockfd,0);
+         status = close( client_sockfd );
++        HTTP_TRACE(HTTP_TRACE_CLOSE_RETURN,client_sockfd,status);
+         if ( status != kNoErr )
+         {
+             status = net_get_sock_error( client_sockfd );
+--- a/libraries/daemons/http_server/httpd_handle.c
++++ b/libraries/daemons/http_server/httpd_handle.c
+@@ -37,6 +37,7 @@
+ #include <stdarg.h>
+ #include "httpd.h"
+ #include <errno.h>
++#include "http_trace_hooks.h"
+ #include "http_parse.h"
+ #include "http-strings.h"
+ 
+@@ -142,15 +143,19 @@
+         fd_set writefds;
+         FD_ZERO(&writefds); FD_SET(conn, &writefds);
+         struct timeval timeout = {0, 200000};
++        HTTP_TRACE(HTTP_TRACE_SEND_SELECT_ENTER,conn,len);
+         int ready = select(conn + 1, NULL, &writefds, NULL, &timeout);
++        HTTP_TRACE(HTTP_TRACE_SEND_SELECT_RETURN,conn,ready);
+         if (ready < 0) return -kInProgressErr;
+         if (!ready) continue;
+         int sent;
++        HTTP_TRACE(HTTP_TRACE_SEND_ENTER,conn,len);
+ #ifdef CONFIG_ENABLE_HTTPS
+         if (httpd_is_https_active()) sent = tls_send(httpd_tls_handle, buf, len);
+         else
+ #endif
+             sent = send(conn, buf, len, 0);
++        HTTP_TRACE(HTTP_TRACE_SEND_RETURN,conn,sent);
+         if (sent < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+             mico_thread_msleep(1);
+             continue;
+@@ -171,10 +176,14 @@
+         fd_set readfds;
+         FD_ZERO(&readfds); FD_SET(fd, &readfds);
+         struct timeval timeout = {0, 200000};
++        HTTP_TRACE(HTTP_TRACE_RECV_SELECT_ENTER,fd,n);
+         int ready = select(fd + 1, &readfds, NULL, NULL, &timeout);
++        HTTP_TRACE(HTTP_TRACE_RECV_SELECT_RETURN,fd,ready);
+         if (ready < 0) return -1;
+         if (!ready) continue;
++        HTTP_TRACE(HTTP_TRACE_RECV_ENTER,fd,n);
+         int received = recv(fd, buf, n, flags);
++        HTTP_TRACE(HTTP_TRACE_RECV_RETURN,fd,received);
+         if (received < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+             mico_thread_msleep(1);
+             continue;
+--- a/platform/MCU/MW3xx/GCC/app_with_moc.ld
++++ b/platform/MCU/MW3xx/GCC/app_with_moc.ld
+@@ -106,6 +106,15 @@
+     }> SRAM AT> APP_FLASH
+ 
+ 
++    /* Owned application SRAM: excluded from startup clearing and heap reuse. */
++    .http_retained (NOLOAD) :
++    {
++        . = ALIGN(4);
++        KEEP(*(.http_retained))
++        . = ALIGN(4);
++    }> SRAM AT> SRAM
++    ASSERT(SIZEOF(.http_retained) <= 512, "HTTP retained trace exceeds budget")
++
+     .bss : /* Zero initialised memory used for zero initialised variables */
+     {
+         link_bss_location = ALIGN(., 4);

@@ -1,0 +1,17 @@
+--- a/libraries/daemons/http_server/http_parse.c
++++ b/libraries/daemons/http_server/http_parse.c
+@@ -321,8 +321,12 @@
+     httpd_parse_useragent(data_p + sizeof(http_user_agent) + 1,
+                           &req_p->agent);
+   } else if (strncasecmp(data_p, http_content_type, sizeof(http_content_type) - 1) == 0) {
+-    memcpy(req_p->content_type, data_p + strlen(http_content_type),
+-           strlen(data_p));
++    const char *value = data_p + sizeof(http_content_type) - 1;
++    while (*value == ' ' || *value == '\t') value++;
++    size_t size = strcspn(value, "\r\n");
++    if (size >= sizeof(req_p->content_type)) return -kInProgressErr;
++    memcpy(req_p->content_type, value, size);
++    req_p->content_type[size] = 0;
+   } else if (strncasecmp(data_p, "If-None-Match", sizeof("If-None-Match") - 1) == 0) {
+     /*
+     * We use the FTFS CRC to generate ETag. Hence, the ETag we

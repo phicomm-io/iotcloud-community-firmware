@@ -159,6 +159,7 @@ static void uart_worker(mico_thread_arg_t arg)
         }
         old_mode = mode;
         m1_scd40_tick();
+        m1_barometer_tick();
         watchdog_beat(WATCHDOG_HARDWARE);
         mico_thread_msleep(10);
     }

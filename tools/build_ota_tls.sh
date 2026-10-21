@@ -5,6 +5,9 @@ model="$1"
 compiler="$2"
 work="$root/build/ota-tls"
 mkdir -p "$work" "$root/$model/generated"
+# All products share the source archive and ABI build directories.
+exec 9>"$work/build.lock"
+flock 9
 if [[ ! -f "$work/bearssl-0.6/Makefile" ]]; then
   curl -fLsS --retry 3 https://bearssl.org/bearssl-0.6.tar.gz -o "$work/source.tar.gz"
   echo "6705bba1714961b41a728dfc5debbe348d2966c117649392f8c8139efc83ff14  $work/source.tar.gz" | sha256sum -c -

@@ -157,12 +157,16 @@ void feature_render(const feature_light_t *, const float[4], const bool[4],
 #include "json_build.h"
 #include "mico.h"
 void feature_config_get(feature_config_t *);
+/* Authoritative revision under the product configuration lock; no snapshot allocation. */
+uint32_t feature_config_revision(void);
 bool feature_config_save(const feature_config_t *);
 OSStatus feature_start(void);
 json_object *feature_json(const char *domain);
 /* Returns HTTP status; response ownership passes to caller. */
 int feature_set(const char *domain, json_object *, json_object **response);
 bool feature_mqtt_input(const char *, const void *, size_t, bool);
+/* MQTT owner only; discovery progresses over bounded owner turns. */
+bool feature_mqtt_initial_ready(void);
 int feature_mqtt_service(int (*publish)(const char *, const char *, bool),
                           bool);
 void feature_mqtt_session(const mqtt_account_t *);
@@ -197,5 +201,8 @@ void feature_clock_tick(void);
 #ifdef PHICOMM_DEVICE_OTA
 bool feature_pause(unsigned timeout_ms);
 OSStatus feature_resume(void);
+OSStatus feature_resume_step(void);
 bool feature_running(void);
 #endif
+
+void feature_fan_snapshot(bool *,unsigned *,bool *,unsigned *);

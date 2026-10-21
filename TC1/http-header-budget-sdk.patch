@@ -1,0 +1,71 @@
+--- a/libraries/daemons/http_server/http_parse.c
++++ b/libraries/daemons/http_server/http_parse.c
+@@ -369,14 +385,20 @@
+   int req_line_len;
+   int err;
+   uint8_t done = 0;
++  uint32_t started = mico_rtos_get_time();
++  unsigned total = 0, lines = 0;
+   
+   while (TRUE) {
++    if (++lines > 64 || (uint32_t)(mico_rtos_get_time()-started) >= 5000)
++      return -kInProgressErr;
+     req_line_len = htsys_getln_soc(sock, buffer, len);
+-    if (req_line_len == -kInProgressErr) {
++    if (req_line_len < 0 || (uint32_t)(mico_rtos_get_time()-started) >= 5000 ||
++        (unsigned)req_line_len > 4096u-total) {
+       httpd_d("Could not read line from socket");
+       return -kInProgressErr;
+     }
+     
++    total += (unsigned)req_line_len;
+     err = __httpd_parse_hdr_tags(buffer, req_line_len, req, &done);
+     if (err != kNoErr)
+       return err;
+--- a/libraries/daemons/http_server/httpd_sys.c
++++ b/libraries/daemons/http_server/httpd_sys.c
+@@ -37,6 +37,8 @@
+ 
+ int htsys_getln_soc(int sd, char *data_p, int buflen)
+ {
++    if (!data_p || buflen < 2) return -kInProgressErr;
++    uint32_t started = mico_rtos_get_time();
+ 	int len = 0;
+ 	char *c_p;
+ 	int result;
+@@ -46,6 +48,9 @@
+ 
+ 	/* Read one byte at a time */
+ 	while ((result = httpd_recv(sd, c_p, 1, 0)) != 0) {
++        if ((uint32_t)(mico_rtos_get_time()-started) >= 5000) {
++            *c_p = 0; return -kInProgressErr;
++        }
+ 		/* error on recv */
+ 		if (result == -1) {
+ 			*c_p = 0;
+@@ -69,7 +74,8 @@
+ 		 * finish off the line */
+ 		if (len >= buflen - 1) {
+ 			httpd_d("buf full: recv didn't read complete line.");
+-			break;
++			*c_p = 0;
++            return -kInProgressErr;
+ 		}
+ 	}
+ 
+--- a/libraries/daemons/http_server/httpd_wsgi.c
++++ b/libraries/daemons/http_server/httpd_wsgi.c
+@@ -150,9 +150,13 @@
+ 
+ int httpd_purge_headers(int sock)
+ {
++    uint32_t started = mico_rtos_get_time();
++    unsigned bytes = 0;
+ 	unsigned char ch;
+ 	httpd_purge_state_t purge_state = ANY_OTHER_CHAR;
+ 	while (httpd_recv(sock, &ch, 1, 0) > 0) {
++        if (++bytes > 4096 || (uint32_t)(mico_rtos_get_time()-started) >= 5000)
++            return -kInProgressErr;
+ 		switch (ch) {
+ 		case '\r':
+ 			if (purge_state == ANY_OTHER_CHAR)

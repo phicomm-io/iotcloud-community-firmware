@@ -19,24 +19,30 @@ python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \
     "$project_dir/common/json-printbuf-oom.patch" \
     "$project_dir/common/json-allocation-safety.patch" \
     "$project_dir/common/json-heap-budget.patch" \
-    "$project_dir/common/json-newlib-nano-abi.patch"
+    "$project_dir/common/json-newlib-nano-abi.patch" \
+    "$project_dir/common/json-integer-parse.patch" \
+    "$project_dir/common/json-sized-resize.patch" \
+    "$project_dir/common/json-number-cache-cleanup.patch" \
+    "$project_dir/common/json-number-checked.patch"
+python3 "$project_dir/tools/install_json_numeric.py" "$sdk_dir"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/wifi-owned-mico36.patch"
-python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-mico36.patch"
-python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-publish-bounds.patch"
-python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-socket-close.patch"
-python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/M1/mqtt-packet-deadline.patch"
-python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/mqtt-response-deadline.patch"
+# Validate the overlapping MQTT overlays together, including repeated builds.
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \
-    "$app_dir/http-connection-sdk.patch" "$app_dir/http-resource-sdk.patch" \
-    "$app_dir/http-client-limit-sdk.patch" "$app_dir/http-auth-sdk.patch" \
-    "$app_dir/http-cors-sdk.patch" "$app_dir/http-cors-empty-sdk.patch" "$app_dir/http-options-sdk.patch" "$app_dir/http-client-once-sdk.patch" \
-    "$app_dir/http-recovery-sdk.patch"
+    "$project_dir/common/mqtt-mico36.patch" \
+    "$project_dir/common/mqtt-publish-bounds.patch" \
+    "$project_dir/common/mqtt-socket-close.patch" \
+    "$project_dir/M1/mqtt-packet-deadline.patch" \
+    "$project_dir/common/mqtt-response-deadline.patch" \
+    "$project_dir/common/mqtt-buffer-storage.patch"
+python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/http-retained-sdk.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/parameters-sdk.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/signed-ota-sdk.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/no-unsigned-sdk-write.patch"
 mkdir -p "$workspace"
 ln -sfn "$sdk_dir" "$workspace/mico-os"
 ln -sfn "$app_dir" "$workspace/TC1"
+ln -sfn "$project_dir/common/httpd" "$workspace/phicomm_httpd"
+ln -sfn "$project_dir/common/mqtt" "$workspace/phicomm_mqtt"
 tools_dir="${TC1_TOOLS_DIR:-$project_dir/build/tc1-tools}"
 target=TC1@MK3031@moc
 version_args=()
@@ -83,5 +89,7 @@ ln -sfn "$(command -v make)" "$micoder/cmd/Linux64/make"
     make HOST_OS=Linux64 TOOLS_ROOT="$micoder" PYTHON="$python2" TLS=mocSSL \
         -f mico-os/makefiles/Makefile "$target" total
 )
+python3 "$project_dir/tools/check_http_core.py" "$workspace/build/$target/Modules" TC1 "$gcc_dir/bin/arm-none-eabi-nm" "$workspace/build/$target/binary/$target.elf"
 python3 "$project_dir/tools/check_json_float.py" "$gcc_dir/bin/arm-none-eabi-nm" "$workspace/build/$target/binary/$target.elf"
+python3 "$project_dir/tools/check_tc1_trace.py" "$gcc_dir/bin/arm-none-eabi-nm" "$workspace/build/$target/binary/$target.elf"
 python3 "$app_dir/tools/package.py" "$workspace/build/$target/binary" "$project_dir/build/tc1${variant_suffix}-release"

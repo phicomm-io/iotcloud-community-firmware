@@ -54,7 +54,7 @@ static bool tc1_config_reserve(void){if(reserved)return false;reserved=true;retu
 static void tc1_config_release(void){assert(reserved);reserved=false;++releases;}
 static void mico_rtos_delete_thread(void *t){(void)t;}
 static OSStatus mico_rtos_create_thread(void *t,int priority,const char *name,void (*fn)(mico_thread_arg_t),int stack,mico_thread_arg_t arg){(void)t;(void)priority;(void)name;(void)stack;(void)arg;queued=fn;return mode==5?-1:0;}
-''' + worker + r'''
+''' + '#define TC1_STATUS_WRITE(...) do { __VA_ARGS__; } while(0)\n' + worker + r'''
 int main(void){
  for(mode=0;mode<=5;++mode){
   memset(&context,0,sizeof(context));strcpy(context.micoSystemConfig.ssid,"saved");strcpy(context.micoSystemConfig.user_key,"old-password");

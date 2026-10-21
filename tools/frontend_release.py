@@ -9,6 +9,7 @@ import fcntl
 import hashlib
 import io
 import json
+import os
 from pathlib import Path, PurePosixPath
 import re
 import shutil
@@ -80,6 +81,7 @@ def fetch(lock_path, output=None, archive=None):
     with (output.parent / (output.name + '.lock')).open('a') as guard:
         fcntl.flock(guard, fcntl.LOCK_EX)
         cache = output.parent / (lock['sha256'] + '.tar.gz')
+        archive = archive or os.environ.get('PHICOMM_FRONTEND_ARCHIVE')
         if archive:
             data = Path(archive).read_bytes()
         elif cache.is_file():

@@ -21,13 +21,13 @@ static void passive_scenarios(void) {
   strcpy(m1_state.ip,"192.0.2.42");
   js(o,"op","bind");incoming(o,false,false,NULL);
   assert(peers[0].session_valid && feature_bound() && queued==1 && stored.revision==revision);
-  assert(strstr(queue[0].body,"192.0.2.42"));
+  assert(strstr((const char *)ph_mqtt_item_payload(test_mqtt_queue.head[PH_MQTT_SEND]),"192.0.2.42"));
   assert(!memcmp(stored.peers[0].token,(uint8_t[16]){0},16));
   feature_mqtt_service(capture,true);assert(!queued);
   feature_sample_t sample={.value={20,50,100,.1},.sequence=9,.boot=7,.received_ms=100,.valid=true};
   feature_local_sample(&sample);test_now=200;
   js(o,"op","read");incoming(o,false,false,NULL);
-  assert(queued==1 && strstr(queue[0].body,"sample") && strstr(queue[0].body,"age_ms"));
+  assert(queued==1 && strstr((const char *)ph_mqtt_item_payload(test_mqtt_queue.head[PH_MQTT_SEND]),"sample") && strstr((const char *)ph_mqtt_item_payload(test_mqtt_queue.head[PH_MQTT_SEND]),"age_ms"));
   feature_mqtt_service(capture,true);assert(!queued);
   int receiver=socket(AF_INET,SOCK_DGRAM,IPPROTO_UDP);assert(receiver>=0);
   struct sockaddr_in address={0};address.sin_family=AF_INET;address.sin_port=htons(FEATURE_PORT);address.sin_addr.s_addr=htonl(INADDR_LOOPBACK);

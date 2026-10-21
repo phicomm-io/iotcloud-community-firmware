@@ -1,0 +1,92 @@
+--- a/libraries/utilities/json_c/json_util.c
++++ b/libraries/utilities/json_c/json_util.c
+@@ -139,68 +139,27 @@
+ 
+ int json_parse_int64(const char *buf, int64_t *retval)
+ {
+-	int32_t num64;
+-	if (sscanf(buf, "%ld", &num64) != 1)
+-	{
+-		MC_DEBUG("Failed to parse, sscanf != 1\n");
+-		return 1;
+-	}
+-	const char *buf_skip_space = buf;
+-	int orig_has_neg = 0;
+-	// Skip leading spaces
+-	while (isspace((int)*buf_skip_space) && *buf_skip_space)
+-		buf_skip_space++;
+-	if (*buf_skip_space == '-')
+-	{
+-		buf_skip_space++;
+-		orig_has_neg = 1;
+-	}
+-	// Skip leading zeros, but keep at least one digit
+-	while (buf_skip_space[0] == '0' && buf_skip_space[1] != '\0')
+-		buf_skip_space++;
+-	if (buf_skip_space[0] == '0' && buf_skip_space[1] == '\0')
+-		orig_has_neg = 0; // "-0" is the same as just plain "0"
+-	
+-	if (errno != ERANGE)
+-	{
+-		char buf_cmp[100];
+-		char *buf_cmp_start = buf_cmp;
+-		int recheck_has_neg = 0;
+-		snprintf(buf_cmp_start, sizeof(buf_cmp), "%ld", num64);
+-                
+-		if (*buf_cmp_start == '-')
+-		{
+-			recheck_has_neg = 1;
+-			buf_cmp_start++;
+-		}
+-		// No need to skip leading spaces or zeros here.
+-
+-		int buf_cmp_len = strlen(buf_cmp_start);
+-		/**
+-		 * If the sign is different, or
+-		 * some of the digits are different, or
+-		 * there is another digit present in the original string
+-		 * then we NOT successfully parsed the value.
+-		 */
+-		if (orig_has_neg != recheck_has_neg ||
+-		    strncmp(buf_skip_space, buf_cmp_start, strlen(buf_cmp_start)) != 0 ||
+-			(strlen(buf_skip_space) != buf_cmp_len &&
+-			 isdigit((int)buf_skip_space[buf_cmp_len])
+-		    )
+-		   )
+-		{
+-			errno = ERANGE;
+-		}
+-	}
+-	if (errno == ERANGE)
+-	{
+-		if (orig_has_neg)
+-			num64 = INT32_MIN;
+-		else
+-			num64 = INT32_MAX;
+-	}
+-	*retval = num64;
+-	return 0;
++    /* Keep the SDK's signed 32-bit saturation contract without libc's
++     * shared errno/reentrancy state. Network and sensor tasks can leave
++     * ERANGE set while an unrelated, valid JSON integer is being parsed. */
++    const unsigned char *p = (const unsigned char *)buf;
++    uint32_t value = 0;
++    int negative = 0, overflow = 0;
++    if (!p || !retval) return 1;
++    while (*p && isspace(*p)) p++;
++    if (*p == '-' || *p == '+') negative = *p++ == '-';
++    if (*p < '0' || *p > '9') return 1;
++    const uint32_t limit = negative ? 2147483648u : 2147483647u;
++    do {
++        uint32_t digit = (uint32_t)(*p++ - '0');
++        if (value > (limit - digit) / 10u) overflow = 1;
++        else if (!overflow) value = value * 10u + digit;
++    } while (*p >= '0' && *p <= '9');
++    while (*p && isspace(*p)) p++;
++    if (*p) return 1;
++    if (overflow) value = limit;
++    *retval = negative ? -(int64_t)value : (int64_t)value;
++    return 0;
+ }
+ 
+ #if HAVE_REALLOC == 0

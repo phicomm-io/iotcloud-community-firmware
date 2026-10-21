@@ -2,6 +2,8 @@
 #include "m1.h"
 #include "MQTTClient.h"
 #include "../common/mqtt_cleanup.h"
+#include "../common/json_owned.h"
+#include "../common/mqtt/service.h"
 
 int m1_mqtt_read(Network *, unsigned char *, int, int);
 
@@ -24,6 +26,8 @@ static void mqtt_state_get(mqtt_state_t *out)
 }
 
 static Client client;
+static mico_thread_t mqtt_owner_thread;
+static ph_mqtt_startup mqtt_startup;
 static mqtt_account_t account;
 static char base[192], command_topic[MQTT_TOPIC_MAX], availability_topic[MQTT_TOPIC_MAX];
 static bool rediscover, cleanup_pending;
@@ -49,8 +53,11 @@ static int publish(const char *topic, const char *payload, bool retain)
     MQTTMessage message = {0};
     message.qos = QOS1; message.retained = retain;
     message.payload = (void *)payload; message.payloadlen = strlen(payload);
-    int result = MQTTPublish(&client, topic, &message);
-    mqtt_error(topic, result);
+    int result = ph_mqtt_publish(&client, topic, &message);
+    if (result == PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED)
+        return PH_MQTT_MORE;
+    if (result != PH_MQTT_MORE)
+        mqtt_error(topic, result);
     return result;
 }
 
@@ -60,7 +67,7 @@ static int publish_leaf(const char *leaf, const char *payload, bool retain)
     return publish(topic, payload, retain);
 }
 
-#include "../common/mqtt_service.inc"
+#include "../common/mqtt/service.h"
 static bool ota_launch(const char *url) { return m1_ota_download(url); }
 static void ota_snapshot(char *state,char *error,unsigned *progress) {
     mico_rtos_lock_mutex(&m1_lock);
@@ -117,7 +124,7 @@ static void ha_birth(MessageData *data)
 static void str(json_object *o, const char *key, const char *value)
 { json_build_object_add(o, key, json_object_new_string(value)); }
 
-static int discovery(const m1_config_t *c)
+static int discovery_build(const m1_config_t *c,unsigned index,service_mqtt_json_scope *scope)
 {
     static const char *keys[] = {"temperature", "humidity", "formaldehyde", "pm25", "co2", "brightness"};
     static const char *names[] = {"温度", "湿度", "甲醛", "PM2.5", "二氧化碳", "屏幕亮度"};
@@ -125,11 +132,11 @@ static int discovery(const m1_config_t *c)
     static const char *classes[] = {"temperature", "humidity", NULL, "pm25", "carbon_dioxide"};
     mico_rtos_lock_mutex(&m1_lock);bool co2_received=m1_state.scd40.received;
     mico_rtos_unlock_mutex(&m1_lock);
-    for (unsigned i = 0; i < 6; i++) {
+    for (unsigned i=index; i<6 && i==index; i++) {
         if (i == 4 && !co2_received) continue;
         char topic[MQTT_TOPIC_MAX], text[MQTT_TOPIC_MAX];
         json_object *o = json_object_new_object();
-        if (!o) return MQTT_FAILURE;
+        if (!o) return service_mqtt_json_error(scope, PH_MQTT_ERROR_APP_DISCOVERY_GRAPH);
         str(o, "name", names[i]);
         mqtt_leaf(&account,"state",text,sizeof(text));str(o,"json_attributes_topic",text);
         str(o,"json_attributes_template","{{ {\"ip\": value_json.ip, \"firmware\": value_json.version, \"sensor_valid\": value_json.sensor_valid} | tojson }}");
@@ -139,7 +146,7 @@ static int discovery(const m1_config_t *c)
         if (!device || !ids) {
             if (device) json_object_put(device);
             if (ids) json_object_put(ids);
-            json_object_put(o); return MQTT_FAILURE;
+            json_object_put(o); return service_mqtt_json_error(scope, PH_MQTT_ERROR_APP_DISCOVERY_GRAPH);
         }
         mqtt_identity(&account, "", text, sizeof(text));
         json_build_array_add(ids, json_object_new_string(text));
@@ -159,7 +166,7 @@ static int discovery(const m1_config_t *c)
                 if (availability) json_object_put(availability);
                 if (node) json_object_put(node);
                 if (sensor) json_object_put(sensor);
-                json_object_put(o); return MQTT_FAILURE;
+                json_object_put(o); return service_mqtt_json_error(scope, PH_MQTT_ERROR_APP_DISCOVERY_GRAPH);
             }
             str(node, "topic", availability_topic);
             snprintf(text, sizeof(text), "%s/%s", base, i == 4 ? "co2_availability" : "sensor_availability"); str(sensor, "topic", text);
@@ -179,13 +186,30 @@ static int discovery(const m1_config_t *c)
             str(o,"entity_category","config");
         }
         mqtt_ha(&account, i < 5 ? "sensor" : "number", keys[i], topic, sizeof(topic));
-        int rc = publish(topic, json_object_to_json_string(o), true);
-        json_object_put(o);
+        int rc = service_mqtt_optional_send(publish,topic,o,true,scope);
         if (rc != MQTT_SUCCESS) return rc;
     }
     return MQTT_SUCCESS;
 }
 
+static bool discovery_deferred;
+static uint32_t discovery_retry_at;
+static int discovery(const m1_config_t *c,unsigned index)
+{
+    /* Resource pressure never retains a graph or retries at owner-loop rate.
+     * One fixed index is retried at most once/second; normal state keeps moving. */
+    uint32_t now=mico_rtos_get_time();
+    if(discovery_deferred && (uint32_t)(now-discovery_retry_at)<1000u)return PH_MQTT_MORE;
+    service_mqtt_json_scope scope;
+    int rc=PH_MQTT_MORE;
+    if(service_mqtt_json_begin(&scope,&mqtt_owner_thread)) {
+        rc=discovery_build(c,index,&scope);
+        service_mqtt_json_end(&scope);
+    }
+    discovery_deferred=rc==PH_MQTT_MORE;
+    if(discovery_deferred)discovery_retry_at=now;
+    return rc;
+}
 static int cleanup_discovery(void)
 {
     const char *keys[] = {"temperature","humidity","formaldehyde","pm25","co2","brightness"};
@@ -210,15 +234,20 @@ static bool same_connection(const m1_config_t *a, const m1_config_t *b)
         !strcmp(a->name, b->name);
 }
 
-static void mqtt_worker(mico_thread_arg_t arg)
-{
-    UNUSED_PARAMETER(arg);
-    static char client_id[192], wildcard[MQTT_TOPIC_MAX];
-    unsigned attempt = 0;
-    for (;;) {
-        /* MQTT callbacks may nest service/JSON formatting on this task. */
-        static m1_config_t cfg, current;
-        static mqtt_state_t state;
+static bool ingress_accept(MessageData *d,messageHandler handler) {
+    return handler==ha_birth || handler==feature_command || !d->message->retained;
+}
+
+static m1_config_t cfg,current;
+static mqtt_state_t state;
+static char client_id[192],wildcard[MQTT_TOPIC_MAX];
+static unsigned count,feature_revision,discovery_index,initial_index;
+static uint32_t connect_sequence,co2_sequence,sequence,snapshot_at;
+static bool co2_discovered;
+static int old_co2_fresh,old_brightness,old_fresh;
+static int session_prepare(void *context,ph_mqtt_connection *spec) {
+    (void)context;
+        ota_job_poll();
         m1_config_get(&cfg); mqtt_state_get(&state);
         if (cleanup_pending && state.wifi_connected && !same_connection(&session_config, &cfg)) {
             int result = mqtt_cleanup_reconnect(&client, &account, session_config.mqtt_host,
@@ -226,9 +255,9 @@ static void mqtt_worker(mico_thread_arg_t arg)
             mico_rtos_lock_mutex(&m1_lock); m1_state.mqtt_cleanup_warning = result != MQTT_SUCCESS; mico_rtos_unlock_mutex(&m1_lock);
             cleanup_pending = false;
         }
-        if (!cfg.mqtt_host[0] || !state.wifi_connected) { mqtt_status(MQTT_DISCONNECTED); mico_thread_msleep(1000); continue; }
+        if (!cfg.mqtt_host[0] || !state.wifi_connected) { mqtt_status(MQTT_DISCONNECTED); return PH_MQTT_PREPARE_WAIT; }
         if (!mqtt_account_init(&account, MQTT_TOPIC_TMCP, "m1", cfg.mqtt_user, m1_id)) {
-            mqtt_status(MQTT_CONFIG_ERROR); mico_thread_msleep(1000); continue;
+            mqtt_status(MQTT_CONFIG_ERROR); return PH_MQTT_PREPARE_WAIT;
         }
         strcpy(base, account.base);
         mqtt_identity(&account, "", client_id, sizeof(client_id));
@@ -237,86 +266,82 @@ static void mqtt_worker(mico_thread_arg_t arg)
         mqtt_leaf(&account, "command", command_topic, sizeof(command_topic));
         session_config = cfg;
         feature_mqtt_session(&account);
-        mqtt_status(MQTT_CONNECTING);
-        Network net = {0}; net.my_socket = -1;
-        memset(&client, 0, sizeof(client));
-        ssl_opts options = {0};
-        if (NewNetwork(&net, cfg.mqtt_host, cfg.mqtt_port, options) != MQTT_SUCCESS) {
-            mqtt_status(MQTT_DISCONNECTED); mico_thread_msleep(mqtt_retry_seconds(attempt++) * 1000); continue;
-        }
-        net.mqttread = m1_mqtt_read;
-        if (MQTTClientInit(&client, &net, 5000) != MQTT_SUCCESS) {
-            net.disconnect(&net); mqtt_status(MQTT_DISCONNECTED); mico_thread_msleep(mqtt_retry_seconds(attempt++) * 1000); continue;
-        }
-        MQTTPacket_connectData connect = MQTTPacket_connectData_initializer;
-        connect.MQTTVersion = 4; connect.clientID.cstring = client_id;
-        connect.username.cstring = cfg.mqtt_user[0] ? cfg.mqtt_user : NULL;
-        connect.password.cstring = cfg.mqtt_user[0] ? cfg.mqtt_password : NULL;
-        connect.keepAliveInterval = 30; connect.cleansession = 1;
-        connect.willFlag = 1; connect.will.topicName.cstring = availability_topic;
-        connect.will.message.cstring = "offline"; connect.will.retained = 1; connect.will.qos = 1;
-        feature_config_t *fc = malloc(sizeof(*fc));
-        if (!fc) { net.disconnect(&net); MQTTClientDeinit(&client); mqtt_status(MQTT_DISCONNECTED); mico_thread_msleep(mqtt_retry_seconds(attempt++) * 1000); continue; }
-        feature_config_get(fc); uint32_t feature_revision=fc->revision; free(fc);
-        int connect_result = MQTTConnect(&client, &connect);
-        bool connected = connect_result == MQTT_SUCCESS;
-        if (!connected) mqtt_status(connect_result == 4 || connect_result == 5 ? MQTT_AUTH_FAILED : MQTT_DISCONNECTED);
-        int announced = MQTT_SUCCESS;
-        if (connected) {
-            char topic[MQTT_TOPIC_MAX]; mqtt_aux(&account, "discovery", account.mac, topic, sizeof(topic));
-            announced = publish(topic, mqtt_announcement(&account), true);
-        }
-        int rc = connected && announced == MQTT_SUCCESS ? MQTTSubscribe(&client, wildcard, QOS1, native_command) : MQTT_FAILURE;
-        if (rc == MQTT_SUCCESS) rc = MQTTSubscribe(&client, "homeassistant/status", QOS0, ha_birth);
-        unsigned count = feature_mqtt_filters(feature_filters,FEATURE_MQTT_M1_FILTER_MAX);
-        if(count>FEATURE_MQTT_M1_FILTER_MAX)rc=MQTT_FAILURE;
-        for (unsigned i = 0; i < count && rc == MQTT_SUCCESS; i++) rc = MQTTSubscribe(&client, feature_filters[i], QOS1, feature_command);
-        if (rc == MQTT_SUCCESS) rc = service_mqtt_capabilities(publish,&account);
-        if (rc == MQTT_SUCCESS) rc = publish_leaf("sensor_availability", "offline", true);
-        if (connected && rc != MQTT_SUCCESS) mqtt_status(MQTT_WAITING_ACL);
-        if (rc == MQTT_SUCCESS) { cleanup_pending = true; rc = discovery(&cfg); }
-        if (rc == MQTT_SUCCESS) {
-            char value[4]; snprintf(value, sizeof(value), "%u", state.brightness_requested);
-            rc = publish_leaf("brightness/state", value, true);
-            if (rc == MQTT_SUCCESS) rc = publish_leaf("sensor", "", true);
-        }
-        if (rc == MQTT_SUCCESS) rc = feature_mqtt_service(publish, true);
-        if (rc == MQTT_SUCCESS) rc = publish(availability_topic, "online", true);
-        if (rc == MQTT_SUCCESS) { attempt = 0; cleanup_pending = true; mqtt_status(MQTT_READY); }
-        uint32_t acl_check = mico_rtos_get_time();
-        uint32_t connect_sequence = state.sample.sequence;
-        uint32_t co2_sequence = 0;
-        bool co2_discovered = state.scd40.received;
-        int old_co2_fresh = -1;
-        uint32_t sequence = 0; int old_brightness = -1, old_fresh = -1;
-        uint32_t snapshot_at=mico_rtos_get_time()-5000u;
-        rediscover = false;
-        while (rc == MQTT_SUCCESS) {
-            /* A command may rename the device or change its subscriptions.
-             * Deliver its queued result before reconnect resets the queue. */
-            rc=service_mqtt_flush(publish);if(rc!=MQTT_SUCCESS)break;
-            if(!ota_job_active() && (uint32_t)(mico_rtos_get_time()-snapshot_at)>=5000){snapshot_at=mico_rtos_get_time();rc=service_mqtt_snapshot(publish,&account);if(rc!=MQTT_SUCCESS)break;}
-            rc=ota_service(base); if(rc!=MQTT_SUCCESS)break;
-            if(ota_job_active()){rc=service_mqtt_flush(publish);if(rc!=MQTT_SUCCESS)break;rc=MQTTYield(&client,100);mico_thread_msleep(50);continue;}
-            mico_rtos_lock_mutex(&m1_lock); m1_state.mqtt_connected = true; mico_rtos_unlock_mutex(&m1_lock);
+        feature_revision=feature_config_revision();
+        count=feature_mqtt_filters(feature_filters,sizeof(feature_filters)/sizeof(feature_filters[0]));
+        if(count>sizeof(feature_filters)/sizeof(feature_filters[0]))return PH_MQTT_PREPARE_WAIT;
+        rediscover=false;
+        *spec=(ph_mqtt_connection){&account,cfg.mqtt_host,cfg.mqtt_user,cfg.mqtt_password,
+            client_id,availability_topic,cfg.mqtt_port,5000,m1_mqtt_read};
+        return PH_MQTT_PREPARE_READY;
+}
+static bool session_subscription(void *context,unsigned index,ph_mqtt_subscription *out) {
+    (void)context;
+    if(index==0)*out=(ph_mqtt_subscription){wildcard,QOS1,native_command};
+    else if(index==1)*out=(ph_mqtt_subscription){"homeassistant/status",QOS0,ha_birth};
+    else if(index-2<count)*out=(ph_mqtt_subscription){feature_filters[index-2],QOS1,feature_command};
+    else return false;
+    return true;
+}
+static int session_initial(void *context) {
+    feature_mqtt_session(&account);
+    (void)context;
+    int rc=service_mqtt_capabilities(publish,&account);
+    if(rc==MQTT_SUCCESS)rc=publish_leaf("sensor_availability","offline",true);
+    discovery_deferred=false;discovery_retry_at=0;
+    discovery_index=initial_index=0;
+    connect_sequence=state.sample.sequence;co2_sequence=sequence=0;
+    co2_discovered=state.scd40.received;
+    old_co2_fresh=old_brightness=old_fresh=-1;
+    snapshot_at=mico_rtos_get_time()-5000u;
+    return rc;
+}
+static int session_cycle(void *context) {
+    (void)context;
+            ota_job_poll();
+            int rc=MQTT_SUCCESS;
+            if(!ota_job_active() && (uint32_t)(mico_rtos_get_time()-snapshot_at)>=5000) {
+                /* Resource pressure on the optional full snapshot must not
+                 * suppress independent bounded sensor/feature publication.
+                 * Retry on the existing period, not every owner turn. */
+                snapshot_at=mico_rtos_get_time();
+                rc=service_mqtt_snapshot(publish,&account);
+                if(rc!=MQTT_SUCCESS && rc!=PH_MQTT_MORE)return rc;
+                rc=MQTT_SUCCESS;
+            }
+            rc=ota_service(base); if(rc!=MQTT_SUCCESS)return rc;
+            if(ota_job_active())return MQTT_SUCCESS;
             mqtt_state_get(&state); m1_config_get(&current);
-            if (!state.wifi_connected || !same_connection(&cfg, &current)) break;
-            fc=malloc(sizeof(*fc)); if (!fc) break; feature_config_get(fc);
-            bool feature_changed=feature_revision!=fc->revision;
-            feature_revision=fc->revision; free(fc);
-            if(feature_changed && !feature_mqtt_filters_current(feature_filters,count))break;
+            if (!state.wifi_connected || !same_connection(&cfg, &current)) return PH_MQTT_RECONFIGURE;
+            uint32_t current_feature_revision=feature_config_revision();
+            bool feature_changed=feature_revision!=current_feature_revision;
+            feature_revision=current_feature_revision;
+            if(feature_changed && !feature_mqtt_filters_current(feature_filters,count))return PH_MQTT_RECONFIGURE;
             if (state.scd40.received && !co2_discovered) { rediscover = true; co2_discovered = true; }
-            if (rediscover) {
+            /* A birth received during a batch requests a complete subsequent pass.
+             * Do not consume it by restarting the partially published pass. */
+            if (rediscover && discovery_index==6) {
                 feature_mqtt_service(publish,false);
-                rc = discovery(&current); rediscover = false;
+                discovery_index=0;rediscover=false;
                 old_brightness = old_fresh = old_co2_fresh = -1; sequence = co2_sequence = 0;
+            }
+            if(discovery_index<6) {
+                rc=discovery(&current,discovery_index);
+                if(rc==MQTT_SUCCESS)++discovery_index;
+                if(rc!=PH_MQTT_MORE)return rc;
+                rc=MQTT_SUCCESS;
+            }
+            if(initial_index<2) {
+                char value[4];snprintf(value,sizeof(value),"%u",state.brightness_requested);
+                rc=initial_index?publish_leaf("sensor","",true):publish_leaf("brightness/state",value,true);
+                if(rc==MQTT_SUCCESS)++initial_index;
+                return rc;
             }
             bool fresh = m1_sample_fresh(&state.sample, mico_rtos_get_time()) &&
                 (state.sample.sequence != connect_sequence);
             if (rc == MQTT_SUCCESS && fresh != old_fresh) {
                 rc = publish_leaf("sensor_availability", fresh ? "online" : "offline", true);
                 if (rc == MQTT_SUCCESS && !fresh) rc = publish_leaf("sensor", "", true);
-                old_fresh = fresh;
+                if(rc==MQTT_SUCCESS)old_fresh=fresh;
             }
             if (rc == MQTT_SUCCESS && fresh && sequence != state.sample.sequence) {
                 const m1_sample_t *s = &state.sample;
@@ -327,7 +352,7 @@ static void mqtt_worker(mico_thread_arg_t arg)
                     s->humidity_deci_pct < 0 ? "-" : "", labs((long)s->humidity_deci_pct) / 10, labs((long)s->humidity_deci_pct) % 10,
                     s->hcho_ug_m3 / 1000, s->hcho_ug_m3 % 1000, s->pm25_ug_m3);
                 rc = publish_leaf("sensor", payload, true);
-                sequence = state.sample.sequence;
+                if(rc==MQTT_SUCCESS)sequence=state.sample.sequence;
             }
             bool co2_fresh = state.scd40.ready && state.scd40.received &&
                 (uint32_t)(mico_rtos_get_time() - state.scd40.updated_ms) < 20000;
@@ -344,21 +369,25 @@ static void mqtt_worker(mico_thread_arg_t arg)
             if (rc == MQTT_SUCCESS && old_brightness != state.brightness_requested) {
                 char value[4]; snprintf(value, sizeof(value), "%u", state.brightness_requested);
                 rc = publish_leaf("brightness/state", value, true);
-                old_brightness = state.brightness_requested;
+                if(rc==MQTT_SUCCESS)old_brightness=state.brightness_requested;
             }
             if (rc == MQTT_SUCCESS) rc = feature_mqtt_service(publish, true);
-            if (rc == MQTT_SUCCESS) rc = service_mqtt_flush(publish);
-            if (rc == MQTT_SUCCESS && (uint32_t)(mico_rtos_get_time() - acl_check) >= 30000) {
-                rc = MQTTSubscribe(&client, wildcard, QOS1, native_command);
-                for (unsigned i = 0; i < count && rc == MQTT_SUCCESS; ++i)
-                    rc = MQTTSubscribe(&client, feature_filters[i], QOS1, feature_command);
-                acl_check = mico_rtos_get_time();
-                mqtt_error("ACL subscription check", rc);
-                if (rc != MQTT_SUCCESS) mqtt_status(MQTT_WAITING_ACL);
-            }
-            if (rc == MQTT_SUCCESS) { rc = MQTTYield(&client, 100); mqtt_error("receive", rc); }
-            mico_thread_msleep(50);
-        }
+    return rc;
+}
+static bool session_valid(void *context) {
+    (void)context;
+    m1_config_get(&current);
+    mqtt_state_get(&state);
+    return state.wifi_connected && same_connection(&cfg, &current);
+}
+static bool session_initial_ready(void *context) {
+    (void)context;
+    return discovery_index==6 && initial_index==2 && feature_mqtt_initial_ready();
+}
+static void session_closing(void *context,bool connected,int rc) {
+    (void)context;
+    service_mqtt_clear();
+    if(rc<0)mqtt_error("session",rc);
         mico_rtos_lock_mutex(&m1_lock); m1_state.mqtt_connected = false; mico_rtos_unlock_mutex(&m1_lock);
         m1_config_get(&current);
         if(!same_connection(&cfg,&current))ota_forget();
@@ -367,17 +396,29 @@ static void mqtt_worker(mico_thread_arg_t arg)
             cleanup_pending = false;
             mico_rtos_lock_mutex(&m1_lock); m1_state.mqtt_cleanup_warning = cleanup != MQTT_SUCCESS; mico_rtos_unlock_mutex(&m1_lock);
         }
-        feature_mqtt_service(publish, false);
-        if (connected) {
-            publish(availability_topic, "offline", true);
-            MQTTDisconnect(&client);
-        }
-        mqtt_state_get(&state);
-        if (state.mqtt_status == MQTT_READY) mqtt_status(MQTT_DISCONNECTED);
-        net.disconnect(&net); MQTTClientDeinit(&client);
-        mico_thread_msleep(mqtt_retry_seconds(attempt++) * 1000);
-    }
+        feature_mqtt_service(publish,false);
 }
-
+static void session_event(void *context,unsigned event,int rc) {
+    (void)context;
+    if(event==PH_MQTT_CONNECTING)mqtt_status(MQTT_CONNECTING);
+    else if(event==PH_MQTT_CONNECT_ERROR)mqtt_status(rc==4||rc==5?MQTT_AUTH_FAILED:MQTT_DISCONNECTED);
+    else if(event==PH_MQTT_SUBSCRIBE_ERROR)mqtt_status(MQTT_WAITING_ACL);
+    else if(event==PH_MQTT_READY){cleanup_pending=true;mqtt_status(MQTT_READY);}
+    else {mqtt_state_get(&state);if(state.mqtt_status==MQTT_READY)mqtt_status(MQTT_DISCONNECTED);}
+}
+static void mqtt_worker(mico_thread_arg_t arg) {
+    if(!ph_mqtt_startup_wait(&mqtt_startup,(uint32_t)arg) ||
+       !ph_mqtt_owner_init(&account,8192,&mqtt_owner_thread,ingress_accept)) {
+        mqtt_status(MQTT_CONFIG_ERROR);mico_rtos_delete_thread(NULL);return;
+    }
+    const ph_mqtt_session_hooks hooks={NULL,session_prepare,session_subscription,
+        session_initial,session_cycle,session_closing,session_event,NULL,session_initial_ready,session_valid};
+    ph_mqtt_session_run(&client,&hooks);
+}
 OSStatus m1_mqtt_start(void)
-{ return mico_rtos_create_thread(NULL, MICO_APPLICATION_PRIORITY, "m1_mqtt", mqtt_worker, 16384, 0); }
+{
+    uint32_t generation=ph_mqtt_startup_prepare(&mqtt_startup);
+    OSStatus rc=mico_rtos_create_thread(&mqtt_owner_thread,MICO_APPLICATION_PRIORITY,
+        "m1_mqtt",mqtt_worker,16384,generation);
+    ph_mqtt_startup_publish(&mqtt_startup,generation,rc==kNoErr);return rc;
+}

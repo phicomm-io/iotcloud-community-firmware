@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from tools.apply_sdk_patch import changed_paths
+from tests.host_models import selected_models
 
 ROOT = Path(__file__).resolve().parents[1]
 APPLY = ROOT / 'tools' / 'apply_sdk_patch.py'
@@ -35,65 +36,73 @@ class ApplySdkPatchTests(unittest.TestCase):
             self.assertIn('SDK left unchanged', result.stderr)
             self.assertEqual(target.read_text(), 'int value = 77;\n')
 
-    def test_real_json_stack_reruns_from_every_prefix_for_available_products(self):
+    def test_a1_real_json_stack_reruns_from_every_prefix(self):
+        self.check_real_json_stack('a1-sdk')
+    def test_m1_real_json_stack_reruns_from_every_prefix(self):
+        self.check_real_json_stack('m1-sdk')
+    def test_tc1_real_json_stack_reruns_from_every_prefix(self):
+        self.check_real_json_stack('tc1-sdk-3.6.4')
+
+    def check_real_json_stack(self, name):
+        model={'a1-sdk':'A1','m1-sdk':'M1','tc1-sdk-3.6.4':'TC1'}[name]
+        if model not in selected_models():self.skipTest('product excluded by PHICOMM_TEST_MODELS')
         patches = [ROOT / 'common' / name for name in (
             'json-newlib-reent.patch', 'json-printbuf-oom.patch', 'json-allocation-safety.patch',
-            'json-heap-budget.patch', 'json-newlib-nano-abi.patch')]
+            'json-heap-budget.patch', 'json-newlib-nano-abi.patch', 'json-integer-parse.patch')]
         paths = set().union(*(changed_paths(p.read_bytes()) for p in patches))
-        candidates = [ROOT / 'build' / name / 'mico-os' for name in
-                      ('a1-sdk', 'm1-sdk', 'tc1-sdk-3.6.4')]
-        available = [sdk for sdk in candidates if (sdk / '.git').exists()]
-        if not available:
-            self.skipTest('pinned product SDK checkout unavailable')
-        for sdk_source in available:
-            product = sdk_source.parent.name
-            baseline = {}
-            for path in paths:
-                result = subprocess.run(['git', '-C', str(sdk_source), 'show', f'HEAD:{path}'],
-                                        capture_output=True)
-                if result.returncode == 0:
-                    baseline[path] = result.stdout
-                else:
-                    self.assertIn(path, {'libraries/utilities/json_c/' + name for name in
-                                         ('json_number_reent.h', 'json_heap.c', 'json_heap.h')})
-            for prefix in range(len(patches) + 1):
-                with self.subTest(product=product, prefix=prefix), tempfile.TemporaryDirectory() as temporary:
-                    sdk = Path(temporary) / 'sdk'
-                    for path, data in baseline.items():
-                        target = sdk / path
-                        target.parent.mkdir(parents=True, exist_ok=True)
-                        target.write_bytes(data)
-                    note = sdk / 'unrelated-local.txt'
-                    note.write_text('keep this dirty SDK file\n')
-                    source = sdk / 'libraries/utilities/json_c/json_object.c'
-                    source.write_bytes(source.read_bytes() + b'\n/* keep unrelated source edit */\n')
-                    for patch in patches[:prefix]:
-                        subprocess.run(['git', 'apply', '--ignore-whitespace', str(patch)],
-                                       cwd=sdk, check=True)
-                    self.apply_patch(sdk, *patches)
-                    final = {p: (sdk / p).read_bytes() for p in paths}
-                    self.apply_patch(sdk, *patches)
-                    self.assertEqual(final, {p: (sdk / p).read_bytes() for p in paths})
-                    self.assertIn(b'keep unrelated source edit', source.read_bytes())
-                    self.assertEqual(note.read_text(), 'keep this dirty SDK file\n')
+        sdk_source=ROOT/'build'/name/'mico-os'
+        if not (sdk_source/'.git').exists():self.skipTest('pinned product SDK checkout unavailable')
+        product = sdk_source.parent.name
+        baseline = {}
+        for path in paths:
+            result = subprocess.run(['git', '-C', str(sdk_source), 'show', f'HEAD:{path}'],
+                                    capture_output=True)
+            if result.returncode == 0:
+                baseline[path] = result.stdout
+            else:
+                self.assertIn(path, {'libraries/utilities/json_c/' + name for name in
+                                     ('json_number_reent.h', 'json_heap.c', 'json_heap.h')})
+        for prefix in range(len(patches) + 1):
+            with self.subTest(product=product, prefix=prefix), tempfile.TemporaryDirectory() as temporary:
+                sdk = Path(temporary) / 'sdk'
+                for path, data in baseline.items():
+                    target = sdk / path
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(data)
+                note = sdk / 'unrelated-local.txt'
+                note.write_text('keep this dirty SDK file\n')
+                source = sdk / 'libraries/utilities/json_c/json_object.c'
+                source.write_bytes(source.read_bytes() + b'\n/* keep unrelated source edit */\n')
+                for patch in patches[:prefix]:
+                    subprocess.run(['git', 'apply', '--ignore-whitespace', str(patch)],
+                                   cwd=sdk, check=True)
+                self.apply_patch(sdk, *patches)
+                makefile=(sdk/'libraries/utilities/json_c/json_c.mk').read_text()
+                self.assertEqual(makefile.count('-fstack-usage'),1)
+                self.assertEqual(makefile.count('--specs=nano.specs'),1)
+                final = {p: (sdk / p).read_bytes() for p in paths}
+                self.apply_patch(sdk, *patches)
+                self.assertEqual(final, {p: (sdk / p).read_bytes() for p in paths})
+                self.assertIn(b'keep unrelated source edit', source.read_bytes())
+                self.assertEqual(note.read_text(), 'keep this dirty SDK file\n')
 
-                    # Missing additions and modified implementations are not a
-                    # known prefix. Reject both without changing any SDK file.
-                    header = sdk / 'libraries/utilities/json_c/json_number_reent.h'
-                    for invalid in [None, b'incompatible local header\n']:
-                        with self.subTest(invalid='missing' if invalid is None else 'modified'):
-                            if invalid is None:
-                                header.unlink()
-                            else:
-                                header.write_bytes(invalid)
-                            before = {p: (sdk / p).read_bytes() if (sdk / p).exists() else None
-                                      for p in paths}
-                            result = subprocess.run(['python3', str(APPLY), str(sdk), *map(str, patches)],
-                                                    capture_output=True, text=True)
-                            self.assertNotEqual(result.returncode, 0)
-                            self.assertIn('SDK left unchanged', result.stderr)
-                            self.assertEqual(before, {
-                                p: (sdk / p).read_bytes() if (sdk / p).exists() else None for p in paths})
+                # Missing additions and modified implementations are not a
+                # known prefix. Reject both without changing any SDK file.
+                header = sdk / 'libraries/utilities/json_c/json_number_reent.h'
+                for invalid in [None, b'incompatible local header\n']:
+                    with self.subTest(invalid='missing' if invalid is None else 'modified'):
+                        if invalid is None:
+                            header.unlink()
+                        else:
+                            header.write_bytes(invalid)
+                        before = {p: (sdk / p).read_bytes() if (sdk / p).exists() else None
+                                  for p in paths}
+                        result = subprocess.run(['python3', str(APPLY), str(sdk), *map(str, patches)],
+                                                capture_output=True, text=True)
+                        self.assertNotEqual(result.returncode, 0)
+                        self.assertIn('SDK left unchanged', result.stderr)
+                        self.assertEqual(before, {
+                            p: (sdk / p).read_bytes() if (sdk / p).exists() else None for p in paths})
 
     def test_nested_archive_is_patched_and_idempotent(self):
         with tempfile.TemporaryDirectory() as temporary:
