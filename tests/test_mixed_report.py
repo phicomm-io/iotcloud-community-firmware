@@ -58,6 +58,28 @@ class MixedReportTests(unittest.TestCase):
                                       {}, 'dut', {'name': 'load', 'elapsed_seconds': 60})
         self.assertIsNone(legacy['telemetry_collection_windows']['load_and_result_drain'])
 
+    def test_baseline_matching_rejects_drift_and_missing_evidence_without_values(self):
+        baseline = {'state': {'requested_fan_on': True, 'requested_speed': 65,
+                             'child_lock': False, 'led_enabled': True,
+                             'fan_mode': 'auto', 'auto_max_speed': 44, 'applied_speed': 20},
+                    'config': {'private': 'must-never-appear'}}
+        after = copy.deepcopy(baseline)
+        after['state']['applied_speed'] = 44
+        self.assertTrue(report.baseline_conditions(baseline, after, 'A1')['matched'])
+        after['state']['requested_speed'] = 1
+        changed = report.baseline_conditions(baseline, after, 'A1')
+        self.assertFalse(changed['matched'])
+        self.assertEqual(changed['changed_control_fields'], ['requested_speed'])
+        self.assertNotIn('must-never-appear', json.dumps(changed))
+        after = copy.deepcopy(baseline)
+        after['config']['private'] = 'different-secret'
+        self.assertFalse(report.baseline_conditions(baseline, after, 'A1')['configuration_equal'])
+        del after['state']['requested_speed']
+        self.assertIn('requested_speed', report.baseline_conditions(baseline, after, 'A1')['missing_control_fields'])
+        self.assertFalse(report.baseline_conditions({'state': {}}, {'state': {}}, 'TC1')['matched'])
+        m1 = {'state': {'brightness_requested': 2}, 'config': {}}
+        self.assertTrue(report.baseline_conditions(m1, m1, 'M1')['matched'])
+
     def fixture(self, directory):
         path = directory / 'mixed-evidence.json'
         plan = [{'name': 'mixed-1', 'seconds': 60, 'http_clients': 1, 'mqtt_window': 1}]
@@ -115,6 +137,7 @@ class MixedReportTests(unittest.TestCase):
             self.assertEqual(result['selected_targets'], [ip for ip, _ in report.MODELS.items()
                                                             if ip+'='+report.MODELS[ip][1] in target_specs])
             self.assertEqual(set(result['models']), {'A1', 'TC1'})
+            self.assertFalse(result['all_baseline_conditions_matched'], 'missing legacy evidence is not matched')
             self.assertEqual(result['device_status']['10.117.152.110'], 'PAUSED')
 
     def test_two_target_comparison_rejects_hidden_unselected_rows(self):

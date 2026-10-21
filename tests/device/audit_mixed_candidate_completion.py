@@ -1381,14 +1381,85 @@ def verify_reusable_initial(label, archive, commit, version):
             'interpretation': 'Only inner initial reused; original outer result is unchanged'}
 
 
-def verify_reuse_continuity(reuse, pre, require_complete=True):
+CONFIRMED_A1_SPEED_SCOPE = (
+    'shared68474c-final-three-r2', 'shared-68474c',
+    '68474c34da1b46383e11f5c60f9bb5e59a0d367a', '0.9.15-68474c')
+CONFIRMED_A1_SPEED_MD_SHA256 = '058ca7523a5d3eb27e0a05000ae39ccd8a697dc6a89583ec27b0ff0d33a1ab83'
+CONFIRMED_A1_SPEED_FAILURE_SHA256 = '76f5b47fe4303b2e5041b1f5a427c5f05dd335c32b7df3504e9c004996a0acea'
+
+
+def confirmed_a1_speed_annotation(reuse):
+    """One user-confirmed external change; not a general control-drift waiver.
+
+    The pinned note records the confirmation. Neither this local JSON nor its
+    hashes are signed attestations. The original failed run remains failed.
+    """
+    scope = tuple(reuse.get(key) for key in ('source_label', 'archive', 'commit', 'version'))
+    _reuse_check(scope == CONFIRMED_A1_SPEED_SCOPE and
+                 reuse.get('original_outer_status') == 'failed' and
+                 reuse.get('original_outer_completed') is False,
+                 'external control annotation candidate/source differs')
+    label = scope[0]
+    note = PRIVATE/(label+'-scope-stop-annotation.md')
+    failure = PRIVATE/(label+'-pre-shared-input')/'shared-httpd-evidence.json'
+    _reuse_check(_sha256(note) == CONFIRMED_A1_SPEED_MD_SHA256 and
+                 _sha256(failure) == CONFIRMED_A1_SPEED_FAILURE_SHA256,
+                 'external control confirmation/failure evidence changed')
+    outer = PRIVATE/(label+'-mixed-final-controller')/'controller.json'
+    paced = Path(reuse['paced_evidence_path'])
+    for path in (outer, paced):
+        _reuse_check(_sha256(path) == reuse['proof_sha256'].get(str(path.resolve())),
+                     'external control original proof changed')
+    return {'schema': 'confirmed-a1-speed-boundary-v1',
+            **dict(zip(('source_label', 'archive', 'commit', 'version'), scope)),
+            'change': {'ip': '10.117.152.111', 'device_id': 'b0f893303134',
+                       'model': 'a1', 'field': 'requested_speed', 'before': 1, 'after': 20},
+            'proof_sha256': {str(path.resolve()): _sha256(path)
+                             for path in (note, failure, outer, paced)},
+            'interpretation': 'User-confirmed external control change at initial reuse boundary only; original pre_stability remains FAIL'}
+
+
+def verify_external_control_annotation(annotation, reuse):
+    expected = confirmed_a1_speed_annotation(reuse)
+    # JSON comparison also distinguishes bool/float from the required integers.
+    _reuse_check(json.dumps(annotation, sort_keys=True) == json.dumps(expected, sort_keys=True),
+                 'external control annotation differs from exact confirmed change')
+    return expected
+
+
+def verify_external_control_record(controller_dir, controller, reuse, stage_map):
+    """Recompute approval independently; never trust the controller's PASS."""
+    metadata = controller.get('external_control_annotation')
+    argv = stage_map.get('pre_stability', {}).get('argv', [])
+    flag = '--external-control-annotation'
+    if metadata is None:
+        _reuse_check(flag not in argv, 'unrecorded external control annotation argument')
+        return None
+    path = Path(controller_dir)/'external-control-annotation.json'
+    _reuse_check(reuse is not None and isinstance(metadata, dict) and
+                 metadata == {'path': path.name, 'sha256': _sha256(path)},
+                 'external control annotation record/hash differs')
+    _reuse_check(argv.count(flag) == 1 and _contains_pair(argv, flag, str(path)),
+                 'pre lacks exact external control annotation argument')
+    return verify_external_control_annotation(_read_json(path), reuse)
+
+
+def verify_reuse_continuity(reuse, pre, require_complete=True, external_control_annotation=None):
     old = _read_json(reuse['paced_evidence_path'])
     _reuse_check(_sha256(reuse['paced_evidence_path']) ==
                 reuse['proof_sha256'][reuse['paced_evidence_path']], 'paced evidence changed')
-    return verify_runner_continuity(old, pre, reuse['version'], require_complete)
+    change = (verify_external_control_annotation(external_control_annotation, reuse)['change']
+              if external_control_annotation is not None else None)
+    return _verify_runner_continuity(old, pre, reuse['version'], require_complete,
+                                     confirmed_change=change)
 
 
 def verify_runner_continuity(old, new, version, require_complete=True, targets=None):
+    return _verify_runner_continuity(old, new, version, require_complete, targets)
+
+
+def _verify_runner_continuity(old, new, version, require_complete=True, targets=None,
+                              confirmed_change=None):
     """Do not rebase away a reset/config/control change between runner instances.
 
     Status and memory counters have separate observations. Recorded A1/M1 clocks
@@ -1438,7 +1509,16 @@ def verify_runner_continuity(old, new, version, require_complete=True, targets=N
         keys = {'a1': ('requested_fan_on', 'requested_speed', 'child_lock', 'led_enabled'),
                 'tc1': ('socket_states', 'child_lock', 'led_enabled'),
                 'm1': ('brightness_requested',)}[model]
-        _reuse_check(all(left['state'][key] == right['state'][key] for key in keys),
+        changed = [key for key in keys if left['state'][key] != right['state'][key]]
+        allowed = confirmed_change is not None and ip == confirmed_change['ip']
+        if allowed:
+            field = confirmed_change['field']
+            _reuse_check(changed == [field] and
+                         type(left['state'][field]) is int and type(right['state'][field]) is int and
+                         left['state'][field] == confirmed_change['before'] and
+                         right['state'][field] == confirmed_change['after'],
+                         'fresh controls differ from confirmed 1-to-20 change: '+ip)
+        _reuse_check(allowed or not changed,
                     'controls changed: '+ip)
         streams = {}
         for kind in ('status', 'memory'):
@@ -1451,18 +1531,24 @@ def verify_runner_continuity(old, new, version, require_complete=True, targets=N
                             for start, end, uptime, quantum in samples), 'boot changed/reset: '+ip)
             streams[kind] = {'previous_end': previous[1], 'previous_uptime': previous[2],
                              'new_first_start': min(sample[0] for sample in samples)}
-        details[ip] = {'streams': streams, 'configuration_equal': True, 'controls_equal': True}
+        details[ip] = {'streams': streams, 'configuration_equal': True, 'controls_equal': not changed}
+        if allowed:
+            details[ip]['confirmed_external_change'] = confirmed_change
     return {'passed': True, 'selected_targets': list(selected), 'targets': details,
             'limit': 'Sampled continuity; not a complete reboot history or proof against clock faults'}
 
 
-def verify_reused_pre(reuse, checkpoint_path, journal_path, pre, label, reuse_hash):
+def verify_reused_pre(reuse, checkpoint_path, journal_path, pre, label, reuse_hash,
+                       external_control_annotation=None):
     """Revalidate the pre-OTA checkpoint and the one authorized OTA-out per DUT."""
     checkpoint = _read_json(checkpoint_path)
     _reuse_check(checkpoint.get('schema') == 'reuse-pre-checkpoint-v1' and
                 checkpoint.get('reuse_record_sha256') == reuse_hash,
                 'pre-OTA checkpoint missing/wrong reuse record')
-    continuity = verify_reuse_continuity(reuse, checkpoint['runner'], require_complete=False)
+    _reuse_check(checkpoint.get('external_control_annotation') == external_control_annotation,
+                 'checkpoint external control annotation differs')
+    continuity = verify_reuse_continuity(reuse, checkpoint['runner'], require_complete=False,
+                                        external_control_annotation=external_control_annotation)
     _reuse_check(checkpoint.get('continuity') == continuity, 'pre-OTA checkpoint continuity differs')
     at = checkpoint.get('captured_monotonic')
     _reuse_check(type(at) in (int, float) and math.isfinite(at) and
@@ -1714,6 +1800,12 @@ def audit_controller(controller_path, label, archive, commit, version, targets=N
             reuse = None
     elif stage_map.get('initial', {}).get('execution') == 'reused':
         failures.append('initial_reuse_record_missing')
+    external_control_annotation = None
+    try:
+        external_control_annotation = verify_external_control_record(
+            controller_dir, controller, reuse, stage_map)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        failures.append('external_control_annotation_invalid:'+str(exc))
     _audit_stage_argv(stage_map, label, archive, commit, version, failures,
                       initial_label=reuse['source_label'] if reuse else None,
                       targets=selected,
@@ -1729,6 +1821,9 @@ def audit_controller(controller_path, label, archive, commit, version, targets=N
         source_manifest_ok = (source_manifest.get('sources') == controller.get('sources') and
                               source_manifest.get('validation_commit') == controller.get('validation_commit') and
                               _sha256(source_manifest_path) == controller.get('source_manifest_sha256'))
+        if controller.get('external_control_annotation') is not None:
+            source_manifest_ok &= (source_manifest.get('run_options', {}).get('external_control_annotation') ==
+                                   controller['external_control_annotation'])
     except (OSError, ValueError, TypeError):
         source_manifest_ok = False
     _require(source_manifest_ok, 'source_manifest_integrity', failures)
@@ -1779,7 +1874,8 @@ def audit_controller(controller_path, label, archive, commit, version, targets=N
             checkpoint_path = PRIVATE/(label+'-pre-benchmark')/'reuse-continuity.json'
             journal_path = PRIVATE/(label+'-pre-benchmark')/'reuse-ota-out.json'
             reuse_continuity = verify_reused_pre(reuse, checkpoint_path, journal_path, pre, label,
-                                                  reuse_metadata['sha256'])
+                                                  reuse_metadata['sha256'],
+                                                  external_control_annotation=external_control_annotation)
             argv = stage_map.get('pre_stability', {}).get('argv', [])
             _reuse_check(_contains_pair(argv, '--reuse-initial-record',
                                        str(controller_dir/'initial-reuse.json')),

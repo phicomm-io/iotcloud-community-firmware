@@ -864,19 +864,201 @@ class InitialReuseTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'paced evidence changed'):
             AUDIT.verify_reuse_continuity(proof, self.runner(shift=500))
 
+    def external_speed_boundary(self):
+        """Synthetic pinned confirmation; production pins are never changed."""
+        from unittest.mock import patch
+        self.paced['before']['10.117.152.111']['state']['requested_speed'] = 1
+        self.write(self.paced_path, self.paced)
+        proof = self.verify()
+        note = self.private/(self.label+'-scope-stop-annotation.md')
+        note.write_text('User confirmed manual A1 requested_speed 1 to 20; original run remains FAIL.')
+        failure = self.private/(self.label+'-pre-shared-input')/'shared-httpd-evidence.json'
+        self.write(failure, {'blockers': [{'ip': '10.117.152.111',
+                   'control_difference': {'field': 'requested_speed', 'expected': 1, 'observed': 20}}]})
+        for name, value in (
+                ('CONFIRMED_A1_SPEED_SCOPE', (self.label, self.archive, self.commit, self.version)),
+                ('CONFIRMED_A1_SPEED_MD_SHA256', AUDIT._sha256(note)),
+                ('CONFIRMED_A1_SPEED_FAILURE_SHA256', AUDIT._sha256(failure))):
+            context = patch.object(AUDIT, name, value)
+            context.start()
+            self.addCleanup(context.stop)
+        pre = self.runner(shift=500)
+        pre['before']['10.117.152.111']['state']['requested_speed'] = 20
+        return proof, pre, AUDIT.confirmed_a1_speed_annotation(proof)
 
-    def checkpoint_and_uploads(self):
+    def test_confirmed_speed_boundary_keeps_original_fail_and_default_strict(self):
+        proof, pre, annotation = self.external_speed_boundary()
+        originals = {path: path.read_bytes() for path in
+                     (self.outer_dir/'controller.json', self.inner_dir/'controller.json', self.paced_path)}
+        result = AUDIT.verify_reuse_continuity(proof, pre, external_control_annotation=annotation)
+        a1 = result['targets']['10.117.152.111']
+        self.assertFalse(a1['controls_equal'])
+        self.assertEqual(a1['confirmed_external_change'], annotation['change'])
+        self.assertTrue(result['targets']['10.117.152.102']['controls_equal'])
+        for call in (lambda: AUDIT.verify_reuse_continuity(proof, pre),
+                     lambda: AUDIT.verify_runner_continuity(self.paced, pre, self.version)):
+            with self.assertRaisesRegex(ValueError, 'controls changed'):
+                call()
+        self.assertEqual(self.verify(), proof)
+        self.assertEqual(json.loads((self.outer_dir/'controller.json').read_text())['status'], 'failed')
+        self.assertTrue(all(path.read_bytes() == data for path, data in originals.items()))
+
+    def test_external_annotation_rejects_other_scope_field_value_type_and_extra_allowance(self):
+        import copy
+        proof, pre, annotation = self.external_speed_boundary()
+        for field, value in (('field', 'led_enabled'), ('ip', '10.117.152.102'),
+                             ('device_id', 'other'), ('after', 21), ('after', 20.0),
+                             ('before', True)):
+            bad = copy.deepcopy(annotation)
+            bad['change'][field] = value
+            with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                AUDIT.verify_reuse_continuity(proof, pre, external_control_annotation=bad)
+        for field, value in (('source_label', 'other'), ('commit', 'b'*40),
+                             ('confirmed', False), ('extra_changes', ['child_lock'])):
+            bad = dict(annotation, **{field: value})
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                AUDIT.verify_external_control_annotation(bad, proof)
+        with self.assertRaises(ValueError):
+            AUDIT.confirmed_a1_speed_annotation(dict(proof, source_label='other'))
+        for path in (self.private/(self.label+'-scope-stop-annotation.md'),
+                     self.private/(self.label+'-pre-shared-input')/'shared-httpd-evidence.json',
+                     self.outer_dir/'controller.json', self.paced_path):
+            original = path.read_bytes()
+            path.write_bytes(original+b' ')
+            with self.subTest(path=path.name), self.assertRaises(ValueError):
+                AUDIT.verify_reuse_continuity(proof, pre, external_control_annotation=annotation)
+            path.write_bytes(original)
+
+    def test_confirmed_speed_does_not_mask_config_other_controls_identity_or_reset(self):
+        import copy
+        proof, pre, annotation = self.external_speed_boundary()
+        mutations = [
+            lambda d: d['before']['10.117.152.111']['config'].update(name='changed'),
+            lambda d: d['before']['10.117.152.111']['state'].update(requested_fan_on=False),
+            lambda d: d['before']['10.117.152.111']['state'].update(child_lock=True),
+            lambda d: d['before']['10.117.152.111']['state'].update(led_enabled=False),
+            lambda d: d['before']['10.117.152.102']['state'].update(socket_states=[True]*6),
+            lambda d: d['before']['10.117.152.110']['state'].update(brightness_requested=99),
+            lambda d: d['before']['10.117.152.111']['state'].update(device_id='other'),
+            lambda d: d['before']['10.117.152.111']['state'].update(version='other'),
+            lambda d: d['before']['10.117.152.111']['state'].update(uptime_seconds=2),
+            lambda d: d['memory'][0]['data'].update(uptime_ms=2000),
+        ]
+        mutations += [lambda d, value=value: d['before']['10.117.152.111']['state'].update(
+            requested_speed=value) for value in (1, 21, 20.0, True)]
+        for index, mutate in enumerate(mutations):
+            bad = copy.deepcopy(pre)
+            mutate(bad)
+            with self.subTest(case=index), self.assertRaises(ValueError):
+                AUDIT.verify_reuse_continuity(proof, bad, external_control_annotation=annotation)
+
+    def test_external_annotation_record_requires_exact_cli_hash_and_independent_recheck(self):
+        import copy
+        proof, pre, annotation = self.external_speed_boundary()
+        folder = self.private/'new-r3-mixed-final-controller'
+        path = folder/'external-control-annotation.json'
+        self.write(path, annotation)
+        controller = {'external_control_annotation': {'path': path.name, 'sha256': AUDIT._sha256(path)}}
+        stages = {'pre_stability': {'argv': ['python', 'validate_shared_candidate.py',
+                  '--external-control-annotation', str(path)]}}
+        self.assertEqual(AUDIT.verify_external_control_record(folder, controller, proof, stages), annotation)
+        self.assertIsNone(AUDIT.verify_external_control_record(folder, {}, proof, {}))
+        for mode in ('unrecorded', 'no-reuse', 'missing-cli', 'duplicate-cli', 'wrong-path', 'hash', 'changed-content'):
+            record, plan = copy.deepcopy(controller), copy.deepcopy(stages)
+            if mode == 'unrecorded':
+                record = {}
+            elif mode == 'missing-cli':
+                plan = {}
+            elif mode == 'duplicate-cli':
+                plan['pre_stability']['argv'] *= 2
+            elif mode == 'wrong-path':
+                plan['pre_stability']['argv'][-1] = '/other/approval.json'
+            elif mode == 'hash':
+                record['external_control_annotation']['sha256'] = '0'*64
+            elif mode == 'changed-content':
+                self.write(path, dict(annotation, confirmed=False))
+                record['external_control_annotation']['sha256'] = AUDIT._sha256(path)
+            with self.subTest(mode=mode), self.assertRaises(ValueError):
+                AUDIT.verify_external_control_record(folder, record, None if mode == 'no-reuse' else proof, plan)
+            self.write(path, annotation)
+
+    def local_acceptance_script(self, name):
+        import importlib.util
+        path = AUDIT.ROOT/'build/status101'/name
+        if not path.is_file():
+            self.skipTest('Local acceptance script is not distributed with the source tree')
+        spec = importlib.util.spec_from_file_location('local_acceptance_fixture_'+path.stem, path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_local_controller_dryrun_skips_initial_and_propagates_exact_annotation_path(self):
+        from unittest.mock import patch
+        module = self.local_acceptance_script('run_mixed_final_acceptance.py')
+        proof, pre, annotation = self.external_speed_boundary()
+        path = self.private/'approval.json'
+        self.write(path, annotation)
+        options = dict(archive=self.archive, commit=self.commit, version=self.version,
+                       label='new-r3', previous_version='0.9.15-old',
+                       external_control_annotation=path)
+        with patch.object(module, 'BASE', self.base), patch.object(module, 'PRIVATE', self.private), \
+                patch.object(module, 'validate_candidate', return_value={}):
+            with self.assertRaisesRegex(ValueError, 'requires initial reuse'):
+                module.run(**options)
+            result = module.run(**options, reuse_initial=self.label)
+        self.assertFalse(result['will_repeat_initial_ota'])
+        self.assertFalse(result['will_connect'])
+        self.assertFalse(result['will_write_controls_or_config'])
+        self.assertEqual(result['initial_ota_targets'], [])
+        self.assertEqual(result['external_control_annotation'], annotation)
+        self.assertNotIn('initial', [row['name'] for row in result['stages']])
+        argv = result['stages'][0]['argv']
+        at = argv.index('--external-control-annotation')
+        self.assertEqual(argv[at+1], str(self.private/'new-r3-mixed-final-controller'/'external-control-annotation.json'))
+        self.assertFalse((self.private/'new-r3-mixed-final-controller').exists())
+        parsed = module.build_parser().parse_args([
+            '--archive', self.archive, '--commit', self.commit, '--version', self.version,
+            '--label', 'new-r3', '--previous-version', '0.9.15-old',
+            '--reuse-initial', self.label, '--external-control-annotation', str(path)])
+        self.assertEqual(parsed.external_control_annotation, path)
+
+    def test_local_fresh_checkpoint_fails_without_confirmation_and_binds_approved_boundary(self):
+        from types import SimpleNamespace
+        module = self.local_acceptance_script('validate_shared_candidate.py')
+        proof, pre, annotation = self.external_speed_boundary()
+        path, bench = self.private/'reuse.json', self.private/'new-pre-benchmark'
+        self.write(path, proof)
+        runner = SimpleNamespace(save=lambda: self.write(bench/'evidence.json', pre))
+        with self.assertRaisesRegex(ValueError, 'controls changed'):
+            module.record_reuse_checkpoint(path, bench, runner)
+        self.assertFalse((bench/'reuse-continuity.json').exists())
+        output = module.record_reuse_checkpoint(path, bench, runner, annotation)
+        record = json.loads(output.read_text())
+        self.assertEqual(record['external_control_annotation'], annotation)
+        self.assertEqual(record['reuse_record_sha256'], AUDIT._sha256(path))
+        self.assertFalse(record['continuity']['targets']['10.117.152.111']['controls_equal'])
+        with self.assertRaises(FileExistsError):
+            module.record_reuse_checkpoint(path, bench, runner, annotation)
+
+
+    def checkpoint_and_uploads(self, external_control_annotation=None):
         import copy
         label = 'new-r3'
         proof = self.verify()
         checkpoint_runner = self.runner(shift=500)
+        if external_control_annotation is not None:
+            checkpoint_runner['before']['10.117.152.111']['state']['requested_speed'] = 20
         checkpoint = {'schema': 'reuse-pre-checkpoint-v1', 'reuse_record_sha256': 'record-hash',
                       'captured_monotonic': 1501, 'runner': checkpoint_runner,
                       'continuity': AUDIT.verify_reuse_continuity(proof, checkpoint_runner,
-                                                                 require_complete=False)}
+                          require_complete=False, external_control_annotation=external_control_annotation)}
+        if external_control_annotation is not None:
+            checkpoint['external_control_annotation'] = external_control_annotation
         checkpoint_path = self.private/'checkpoint.json'
         journal_path = self.private/'journal.json'
         pre = self.runner(shift=1000)
+        if external_control_annotation is not None:
+            pre['before']['10.117.152.111']['state']['requested_speed'] = 20
         steps = []
         for index, (ip, (_, model)) in enumerate(AUDIT.TARGETS.items()):
             suffix = ip.rsplit('.', 1)[1]
@@ -913,6 +1095,33 @@ class InitialReuseTests(unittest.TestCase):
         self.assertTrue(result['passed'])
         self.assertEqual(result['ota_out_count'], 3)
         self.assertEqual(len(result['proof_sha256']), 14)
+
+    def test_annotated_checkpoint_and_reused_pre_recompute_and_later_controls_stay_strict(self):
+        import copy
+        proof, pre, annotation = self.external_speed_boundary()
+        args = self.checkpoint_and_uploads(annotation)
+        result = AUDIT.verify_reused_pre(*args, 'record-hash', external_control_annotation=annotation)
+        self.assertFalse(result['continuity']['targets']['10.117.152.111']['controls_equal'])
+        with self.assertRaisesRegex(ValueError, 'checkpoint external'):
+            AUDIT.verify_reused_pre(*args, 'record-hash')
+        path = args[1]
+        original = json.loads(path.read_text())
+        for field in ('external_control_annotation', 'continuity'):
+            bad = copy.deepcopy(original)
+            bad.pop(field)
+            self.write(path, bad)
+            with self.subTest(field=field), self.assertRaises((ValueError, KeyError)):
+                AUDIT.verify_reused_pre(*args, 'record-hash', external_control_annotation=annotation)
+        self.write(path, original)
+        bad_pre = copy.deepcopy(args[3])
+        bad_pre['before']['10.117.152.111']['state']['requested_speed'] = 21
+        with self.assertRaisesRegex(ValueError, 'post-OTA config/controls'):
+            AUDIT.verify_reused_pre(*args[:3], bad_pre, args[4], 'record-hash',
+                                   external_control_annotation=annotation)
+        later = self.runner(shift=1500)
+        later['before']['10.117.152.111']['state']['requested_speed'] = 21
+        with self.assertRaisesRegex(ValueError, 'controls changed'):
+            AUDIT.verify_runner_continuity(pre, later, self.version)
 
     def test_missing_altered_or_late_checkpoint_and_wrong_package_fail(self):
         import copy

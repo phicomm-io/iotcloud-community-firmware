@@ -224,6 +224,35 @@ def phase_metrics(run, runner, ip, phase):
     return metrics
 
 
+
+def baseline_conditions(before, after, model):
+    """Compare requested controls/configuration without exposing their values.
+
+    Applied fan speed and sensor state can vary normally and are excluded.
+    Missing legacy evidence makes attribution unknown rather than matched.
+    """
+    required = {
+        'A1': ('requested_fan_on', 'requested_speed', 'child_lock', 'led_enabled'),
+        'TC1': ('socket_states', 'child_lock', 'led_enabled'),
+        'M1': ('brightness_requested',),
+    }[model]
+    left, right = before.get('state', {}), after.get('state', {})
+    keys = list(required)
+    if model == 'A1':
+        keys += [key for key in ('fan_mode', 'auto_max_speed') if key in left or key in right]
+    missing = [key for key in keys if key not in left or key not in right]
+    def same(a, b):
+        return json.dumps(a, sort_keys=True, allow_nan=False) == json.dumps(b, sort_keys=True, allow_nan=False)
+    changed = [key for key in keys if key in left and key in right and not same(left[key], right[key])]
+    config_available = isinstance(before.get('config'), dict) and isinstance(after.get('config'), dict)
+    config_equal = same(before['config'], after['config']) if config_available else None
+    matched = not missing and not changed and config_equal is True
+    return {'matched': matched, 'missing_control_fields': missing,
+            'changed_control_fields': changed, 'configuration_equal': config_equal,
+            'attribution': 'matched_requested_controls_and_configuration' if matched else
+                           'conditions_differ_or_are_unverified'}
+
+
 def compare(before_path, after_path, targets=None):
     selected = target_scope(targets)
     before, before_runner = load(before_path, selected)
@@ -236,6 +265,7 @@ def compare(before_path, after_path, targets=None):
         'selected_targets': list(selected),
         'device_status': {ip: ('SELECTED' if ip in selected else 'PAUSED') for ip in MODELS},
         'limits': [
+            'Cross-run attribution requires baseline_conditions.matched; missing legacy controls/configuration are unverified.',
             'Bounded concurrent clients/windows; this is not a fixed offered-rate benchmark.',
             'Each outcome counts all attempts; latency samples are reported separately.',
             'Busy is response progress; gaps in successful results remain visible.',
@@ -248,7 +278,8 @@ def compare(before_path, after_path, targets=None):
         ],
     }
     for ip, (model, _identity) in selected.items():
-        row = {'phases': {}, 'heap': {}}
+        row = {'phases': {}, 'heap': {}, 'baseline_conditions': baseline_conditions(
+            before_runner['before'][ip], after_runner['before'][ip], model)}
         for plan in before['plan']:
             pair = {}
             for label, run, runner in (('before', before, before_runner), ('after', after, after_runner)):
@@ -262,6 +293,8 @@ def compare(before_path, after_path, targets=None):
                 'delta_bytes': last - first if first is not None and last is not None else None,
             }
         result['models'][model] = row
+    result['all_baseline_conditions_matched'] = all(
+        row['baseline_conditions']['matched'] for row in result['models'].values())
     return result
 
 
