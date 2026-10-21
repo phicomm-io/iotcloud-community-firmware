@@ -182,12 +182,23 @@ static void memory_response(ph_http_exchange *x){
     if(n>0 && (size_t)n<sizeof(product.scalar))response(x,200,"application/json",out,n);
 }
 
+/* Preserve the registered TC1 anchored routes' query/trailing-slash aliases.
+ * Assets remain a deliberate prefix route with their own exact file check. */
+static bool route_matches(const char *path,const char *route)
+{
+    size_t n=strlen(route);
+    if(strncmp(path,route,n))return false;
+    path+=n;
+    if(*path=='?')return true;
+    while(*path=='/')++path;
+    return !*path;
+}
 static ph_http_action prepare(ph_http_exchange *x)
 {
     if(operation==UPLOAD) {
         if(!upload_entered) {
             upload_entered=true;
-            bool rescue=!strcmp(x->request->path,"/api/v1/ota/upload-unsigned");
+            bool rescue=route_matches(x->request->path,"/api/v1/ota/upload-unsigned");
             if(!ota_job_enter() || !tc1_ota_begin(x->request->length,rescue)) {
                 ph_http_message(&product,x,400,"OTA rejected");return PH_HTTP_REPLY;
             }
@@ -205,13 +216,13 @@ static ph_http_action begin(ph_http_exchange *x)
     const ph_http_request *r=x->request;
     ph_http_product_init(&product,x);operation=DIRECT;
     upload_open=upload_verified=upload_entered=false;
-    query_action=!strcmp(r->path,"/api/v1/info")?"info.get":!strcmp(r->path,"/api/v1/status")?"status.get":
-      !strcmp(r->path,"/api/v1/capabilities")?"capabilities.get":!strcmp(r->path,"/api/v1/config")?"config.get":
-      !strcmp(r->path,"/api/v1/schedules")?"schedules.get":!strcmp(r->path,"/api/v1/logs")?"logs.get":NULL;
-    bool asset=!strcmp(r->path,"/") || !strncmp(r->path,"/assets",7);
-    bool command=!strcmp(r->path,"/api/v1/command");
-    bool ota=!strcmp(r->path,"/api/v1/ota/upload") || !strcmp(r->path,"/api/v1/ota/upload-unsigned");
-    bool memory=!strcmp(r->path,"/api/v1/memory"),trace=!strcmp(r->path,"/api/v1/http-trace");
+    query_action=route_matches(r->path,"/api/v1/info")?"info.get":route_matches(r->path,"/api/v1/status")?"status.get":
+      route_matches(r->path,"/api/v1/capabilities")?"capabilities.get":route_matches(r->path,"/api/v1/config")?"config.get":
+      route_matches(r->path,"/api/v1/schedules")?"schedules.get":route_matches(r->path,"/api/v1/logs")?"logs.get":NULL;
+    bool asset=route_matches(r->path,"/") || !strncmp(r->path,"/assets",7);
+    bool command=route_matches(r->path,"/api/v1/command");
+    bool ota=route_matches(r->path,"/api/v1/ota/upload") || route_matches(r->path,"/api/v1/ota/upload-unsigned");
+    bool memory=route_matches(r->path,"/api/v1/memory"),trace=route_matches(r->path,"/api/v1/http-trace");
     /* TC1 historically selects an actual route before OPTIONS/authentication. */
     if(!query_action && !asset && !command && !ota && !memory && !trace) {
         response(x,404,"text/plain","",0);return PH_HTTP_REPLY;
@@ -231,7 +242,7 @@ static ph_http_action begin(ph_http_exchange *x)
             size_t n=tc1_http_trace_format(product.scalar,sizeof(product.scalar));
             if(n)response(x,200,"application/json",product.scalar,n);return PH_HTTP_REPLY;
         }
-        if(asset && (!strcmp(r->path,"/") || !strcmp(r->path,"/assets/index.html"))) {
+        if(asset && (route_matches(r->path,"/") || !strcmp(r->path,"/assets/index.html"))) {
             response(x,200,"text/html",web_index_html,sizeof(web_index_html));x->response.gzip=true;
             return PH_HTTP_REPLY;
         }
