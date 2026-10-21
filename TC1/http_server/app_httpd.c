@@ -296,7 +296,7 @@ static void release(ph_http_exchange *x,bool sent)
     }
     upload_open=false;
 }
-static unsigned admission(void) { return ota_job_active()?2:3; }
+static unsigned admission(void) { return ota_job_active()?2:PH_HTTP_CLIENT_SLOTS; }
 static const ph_http_app app={begin,prepare,body_chunk,complete,release,admission};
-int AppHttpdStart(void) { return ph_http_start(&app,3); }
+int AppHttpdStart(void) { return ph_http_start(&app,PH_HTTP_CLIENT_SLOTS); }
 int AppHttpdStop(void) { return ph_http_stop(); }
