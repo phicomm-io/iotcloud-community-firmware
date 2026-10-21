@@ -14,7 +14,7 @@ void *__wrap_malloc(size_t n){
  if(fail_diagnostics_alloc&&n==2304){fail_diagnostics_alloc=false;return NULL;}
  return __real_malloc(n);
 }
-void ph_mqtt_snapshot(ph_mqtt_diagnostics *d){memset(d,maximum?0xff:0,sizeof(*d));if(maximum){d->bytes=d->peak_bytes=d->credit=d->rx_buffer_bytes=d->tx_buffer_bytes=UINT32_MAX;d->last_error=INT32_MIN;}}
+void ph_mqtt_snapshot(ph_mqtt_diagnostics *d){memset(d,maximum?0xff:0,sizeof(*d));if(maximum){d->bytes=d->peak_bytes=d->credit=d->rx_buffer_bytes=d->tx_buffer_bytes=UINT32_MAX;d->last_error=INT32_MIN;d->failure.read.requested=d->failure.read.returned=d->failure.write.requested=d->failure.write.returned=INT32_MIN;}}
 ph_http_diagnostics ph_http_snapshot(void){ph_http_diagnostics d;memset(&d,maximum?0xff:0,sizeof(d));if(maximum){d.last_close_rc=d.last_close_errno=d.last_select_rc=d.last_read_rc=d.limit=d.connections=d.connections_get_rc=d.read_errno=INT32_MIN;}return d;}
 static unsigned claims,waiting,queries,commands,aborts,written,finishes,entered,reboots;
 static bool deny,job,fail_write,fail_cap;

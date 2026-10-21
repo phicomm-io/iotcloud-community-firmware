@@ -56,10 +56,10 @@ def check(frames,model):
         paths['MQTT virtual discovery encode']=(virtual+['discovery_virtual_step','json_owned_publish']+encode,reserve)
         paths['MQTT virtual telemetry encode']=(virtual+[n for n in ('direct_json_claimed',) if n in frames]+encode,reserve)
         paths['MQTT virtual telemetry ingress']=(virtual+(['direct_leaf'] if 'direct_leaf' in frames else [])+['checked_publish','publish']+transport,reserve)
-        paths['MQTT filter discovery encode']=(cycle+['discovery','filter_discovery','json_owned_publish']+encode,reserve)
+        paths['MQTT filter discovery encode']=(cycle+['discovery','filter_discovery','service_mqtt_send']+encode,reserve)
     elif model=='M1':
         paths['MQTT feature deferred control']=(owner+['ph_mqtt_poll','feature_command','feature_mqtt_input']+execute+['service_product_inner'],reserve)
-        paths['MQTT discovery encode']=(cycle+(['discovery'] if 'discovery' in frames else [])+['json_owned_publish']+encode,reserve)
+        paths['MQTT discovery encode']=(cycle+(['discovery'] if 'discovery' in frames else [])+['service_mqtt_send']+encode,reserve)
     else:
         paths['MQTT TC1 legacy control']=(owner+['ph_mqtt_poll','MessageArrived','ProcessHaCmd','UserMqttSendTopic','send_owned','account_message']+transport,reserve)
         # snapshot_step is inlined into session_cycle in the pinned compiler;
@@ -68,6 +68,82 @@ def check(frames,model):
         for helper in ('UserMqttHassAuto','UserMqttHassAutoPower','UserMqttHassPower'):
             paths['MQTT TC1 '+helper]=(outer+[helper,'UserMqttSendTopic','send_owned','account_message']+transport,reserve)
     if model!='TC1':paths['MQTT OTA recovery']=(cycle+['ota_job_poll','feature_resume_step'],reserve)
+    # Protocol error recording runs AFTER Paho returns. Adapter callbacks run
+    # WITH Paho live (covered by the unchanged SDK reserve), but are application
+    # frames themselves. Never add the ingress/JSON encoding sibling tails.
+    owner_hook = ['ph_mqtt_is_owner', 'current', 'mutex_lock']
+    failure = ['ph_mqtt_error', 'ph_mqtt_record_failure'] + owner_hook
+    emitted_end = ['end'] if 'end' in frames else []
+    read_adapter = {'A1': 'mqtt_socket_read', 'M1': 'm1_mqtt_read', 'TC1': 'tc1_mqtt_read'}[model]
+    sites = {
+        'client init': owner + ['open_session', 'ph_mqtt_client_init'],
+        'connect': owner + ['open_session', 'ph_mqtt_connect'],
+        'subscribe': owner + ['subscribe_plan', 'ph_mqtt_subscribe'],
+        'yield': owner + ['ph_mqtt_yield'],
+        'availability': owner + ['publish_text', 'ph_mqtt_publish'],
+        'disconnect': owner + ['close_session', 'ph_mqtt_disconnect'],
+    }
+    # Preserve the retained product/session/sender frames of each audited
+    # publication. account_message has returned before TC1 send_owned publishes.
+    for label, (names, _) in list(paths.items()):
+        if 'ph_mqtt_publish' in names:
+            position = names.index('ph_mqtt_publish')
+            retained = names[:position] + [n for n in names[position+1:] if n in ('states_step', 'states')]
+            retained = [n for n in retained if n != 'account_message']
+            if model == 'TC1': retained += ['MqttMsgPublish']
+            sites[label.removeprefix('MQTT ')] = retained + ['ph_mqtt_publish']
+    sites['external SEND'] = owner + ['ph_mqtt_poll'] + (['outgoing', 'send_owned', 'MqttMsgPublish'] if model == 'TC1' else []) + ['ph_mqtt_publish']
+    if model == 'A1':
+        sites['virtual discovery'] = virtual + ['discovery_virtual_step', 'json_owned_publish', 'checked_publish', 'publish', 'ph_mqtt_publish']
+        sites['filter discovery'] = cycle + ['discovery', 'filter_discovery', 'service_mqtt_send', 'publish', 'ph_mqtt_publish']
+    elif model == 'M1':
+        # Pinned M1 compiler inlines discovery into session_cycle.
+        sites['discovery'] = cycle + (['discovery'] if 'discovery' in frames else []) + ['service_mqtt_send', 'publish', 'ph_mqtt_publish']
+    for label, retained in sites.items():
+        paths['MQTT '+label+' error record'] = (retained + emitted_end + failure, reserve)
+        if retained[-1] == 'ph_mqtt_publish':
+            paths['MQTT '+label+' admission record'] = (retained + failure, reserve)
+        if label == 'client init': continue  # allocation only, no socket callbacks
+        if label == 'disconnect':
+            paths['MQTT '+label+' guarded write'] = (retained + ['guarded_write'], reserve)
+            continue  # DISCONNECT sends only
+        # Admission/drop are exclusive callback tails. The queue attempt has
+        # returned before record_ingress_drop enters its short lock.
+        paths['MQTT '+label+' ingress drop count'] = (retained + ['ingress', 'ph_mqtt_record_ingress_drop'] + owner_hook, reserve)
+        paths['MQTT '+label+' guarded read owner'] = (retained + ['guarded_read', 'ph_mqtt_protocol_buffers'] + owner_hook, reserve)
+        paths['MQTT '+label+' guarded read adapter'] = (retained + ['guarded_read', read_adapter], reserve)
+        paths['MQTT '+label+' guarded write'] = (retained + ['guarded_write'], reserve)
+    # Immediate application-failure markers run after encoding/allocation helpers
+    # return; do not retain their mutually exclusive frames. SDK failures still
+    # record via the independent protocol tails above.
+    app_marker = ['ph_mqtt_app_error', 'ph_mqtt_record_operation'] + owner_hook
+    app_sites = {'receipt admission': owner + ['ph_mqtt_poll']}
+    if model == 'A1':
+        app_sites['discovery graph'] = cycle + ['discovery']
+        app_sites['filter discovery graph or identity'] = cycle + ['discovery', 'filter_discovery']
+        app_sites['discovery encoding'] = cycle + ['discovery', 'service_mqtt_send']
+        app_sites['filter discovery encoding'] = cycle + ['discovery', 'filter_discovery', 'service_mqtt_send']
+    elif model == 'M1':
+        app_sites['discovery graph'] = cycle + (['discovery'] if 'discovery' in frames else [])
+        app_sites['discovery encoding'] = app_sites['discovery graph'] + ['service_mqtt_send']
+    else:
+        app_sites['send conversion'] = owner + ['ph_mqtt_poll', 'outgoing']
+        # Void legacy command replies ignore conversion errors; only synchronous
+        # snapshot publication and external SEND have fatal application returns.
+        for helper in ('UserMqttHassAuto', 'UserMqttHassAutoPower', 'UserMqttHassPower',
+                       'UserMqttHassAutoLed', 'UserMqttHassAutoTotalSocket',
+                       'UserMqttHassAutoChildLock', 'UserMqttHassAutoRebootButton',
+                       'UserMqttHassAutoSoftRebootButton', 'UserMqttSendSocketState',
+                       'UserMqttSendLedState', 'UserMqttSendTotalSocketState',
+                       'UserMqttSendChildLockState'):
+            app_sites['TC1 '+helper] = outer + [helper, 'UserMqttSendTopic', 'send_owned']
+    # ota_service/ota_emit can inline into the product cycle. Charge each only
+    # if emitted, while the marker itself and its lock helper are required.
+    app_sites['OTA graph or encoding'] = cycle + [n for n in ('ota_service', 'ota_emit') if n in frames]
+    for label, retained in app_sites.items():
+        paths['MQTT '+label+' source marker'] = (retained + app_marker, reserve)
+    paths['MQTT network error record'] = (owner + ['open_session'] + failure, reserve)
+    paths['MQTT session error record'] = (owner + failure, reserve)
     for label,(names,spare) in paths.items():
         missing=set(names)-frames.keys()
         if missing:raise ValueError(f'{label}: missing actual .su frames {sorted(missing)}')

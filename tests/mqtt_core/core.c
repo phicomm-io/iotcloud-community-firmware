@@ -5,7 +5,12 @@
 #include <string.h>
 typedef struct { unsigned locked, allocations, frees, fail_at; bool owner, low; uint32_t now; } fixture;
 static void lock(void *p){fixture *f=p;assert(!f->locked++);}
-static void unlock(void *p){fixture *f=p;assert(f->locked--==1);}
+static ph_mqtt_core *observe_failure;
+static unsigned failure_unlocks;
+static void unlock(void *p){fixture *f=p;assert(f->locked--==1);
+ if(observe_failure){failure_unlocks++;assert(observe_failure->failure.operation==observe_failure->last_stage);
+  assert(observe_failure->last_error==-91 && observe_failure->error_latched);}
+}
 static bool owner(void *p){return ((fixture*)p)->owner;}
 static uint32_t now(void *p){return ((fixture*)p)->now;}
 static bool permit(void *p,size_t n){assert(n<=PH_MQTT_QUEUE_BYTES);return !((fixture*)p)->low;}
@@ -57,8 +62,19 @@ int main(void){
  ph_mqtt_item_release(&s,latest);assert(ph_mqtt_clear(&s));
  assert(f.allocations==f.frees+1); /* one injected failed allocation */
  s.errors=s.reconnects=UINT32_MAX-1;
- ph_mqtt_record_error(&s,4,-77);ph_mqtt_record_error(&s,5,-88);
+ ph_mqtt_error_session_begin(&s);
+ ph_mqtt_record_error(&s,4,-77,true);ph_mqtt_record_error(&s,5,-88,true);
  ph_mqtt_record_reconnect(&s);ph_mqtt_record_reconnect(&s);
- ph_mqtt_core_snapshot(&s,&d);assert(d.errors==UINT32_MAX&&d.reconnects==UINT32_MAX&&d.last_stage==5&&d.last_error==-88);
+ ph_mqtt_core_snapshot(&s,&d);assert(d.errors==UINT32_MAX&&d.reconnects==UINT32_MAX&&d.last_stage==4&&d.last_error==-77);
+ ph_mqtt_error_session_begin(&s);observe_failure=&s;
+ ph_mqtt_io_evidence io={1,-1,10,7};
+ ph_mqtt_record_failure(&s,PH_MQTT_CAUSE_READ,5,-91,20000,0,1,&io,&io);
+ observe_failure=NULL;assert(failure_unlocks==1);
+ ph_mqtt_core_snapshot(&s,&d);assert(d.failure.reason==PH_MQTT_CAUSE_READ&&d.failure.read.returned==-1&&d.last_error==-91);
+ s.ingress_dropped=s.busy_overflow=UINT32_MAX-1;
+ ph_mqtt_record_ingress_drop(&s,true);ph_mqtt_record_ingress_drop(&s,true);
+ ph_mqtt_core_snapshot(&s,&d);assert(d.ingress_dropped==UINT32_MAX&&d.busy_overflow==UINT32_MAX);
+ assert(ph_mqtt_core_reset(&s));ph_mqtt_core_snapshot(&s,&d);
+ assert(!d.ingress_dropped&&!d.busy_overflow);
  framing();puts("actual common MQTT core: bounds, owner/depth, in-flight/credit cleanup and fragmented RX framing PASS");
 }

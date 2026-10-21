@@ -317,6 +317,7 @@ class SharedHTTPRunner(InputRunner):
             'target_versions': self.versions,
             'targets': list(self.targets.items()),
             'blockers': self.blockers[:],
+            'recoveries': self.recoveries[:],
             'http_cases': self.http_cases[:],
             'status_checks': self.rows[:],
             'baseline': {

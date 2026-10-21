@@ -64,6 +64,26 @@ class SharedMQTT(unittest.TestCase):
                              (['-DMAX_MESSAGE_HANDLERS=12', '-DPH_EXPECTED_MESSAGE_HANDLERS=12'] if model != 'TC1'
                               else ['-DPH_EXPECTED_MESSAGE_HANDLERS=5']) +
                              ['-Wl,--wrap=malloc,--wrap=free,--wrap=realloc,--wrap=calloc,--wrap=strdup'])
+    def test_session_pacing(self):
+        self.check_session_fixture('pacing')
+    def test_ingress_overload(self):
+        self.check_session_fixture('overload')
+    def test_failure_evidence(self):
+        self.check_session_fixture('failure_evidence')
+    def test_session_first_cause(self):
+        self.check_session_fixture('firstcause')
+    def check_session_fixture(self, name):
+        for model in ('A1', 'M1', 'TC1'):
+            with self.subTest(model=model), self.protocol(model) as protocol:
+                self.compile_run([ROOT / ('tests/mqtt_core/' + name + '.c'),
+                                  ROOT / 'common/mqtt/core.c', ROOT / 'common/mqtt/client.c',
+                                  ROOT / 'common/mqtt/session.c', ROOT / 'common/mqtt/diagnostics.c', protocol / 'MQTTClient.c',
+                                  *sorted((protocol / 'MQTTPacket').glob('*.c'))],
+                                 [ROOT / 'tests/mqtt_core/stubs', protocol,
+                                  protocol / 'mico', protocol / 'MQTTPacket'],
+                                 (['-DMAX_MESSAGE_HANDLERS=12', '-DPH_EXPECTED_MESSAGE_HANDLERS=12']
+                                  if model != 'TC1' else ['-DPH_EXPECTED_MESSAGE_HANDLERS=5']) +
+                                 ['-Wl,--wrap=malloc,--wrap=free,--wrap=realloc,--wrap=calloc,--wrap=strdup'])
     def test_a1_ingress_self_feedback(self):
         from tests.test_http_json_budget import function
         product=(ROOT/'A1/mqtt.c').read_text()
@@ -146,6 +166,67 @@ int main(void){
                 *sorted((protocol/'MQTTPacket').glob('*.c'))],
                 [ROOT/'tests/mqtt_core/stubs',protocol,protocol/'mico',protocol/'MQTTPacket'], ['-pthread'])
     def test_actual_service(self):
+        self.check_service_fixture()
+    def test_tc1_application_conversion_sources(self):
+        from tests.test_http_json_budget import function
+        source=(ROOT/'TC1/mqtt_server/user_mqtt_client.c').read_text()
+        body='\n'.join(function(source,n) for n in
+            ('static int send_owned(', 'static int outgoing(const ph_mqtt_item *message) {'))
+        fixture=r'''#include <assert.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
+#define PH_MQTT_ERROR_APP_SEND_CONVERSION 13
+#define MAX_MQTT_TOPIC_SIZE 512
+#define MAX_MQTT_DATA_SIZE 2048
+#define QOS0 0
+#define QOS1 1
+#define kNoMemoryErr -4
+#define kParamErr -5
+#define MQTT_FAILURE -1
+static struct {int mode;} account={1};static int c;
+static bool synchronous_send,oom,convert=true,current=true;
+static unsigned tagged,sent;static int sdk_rc;
+static int ph_mqtt_app_error(unsigned stage,int rc){assert(stage==13 && rc<0);tagged++;return rc;}
+static void *allocate(size_t n){return oom?NULL:malloc(n);}
+#define malloc allocate
+static bool account_message(const char*t,const char*b,char*x,char*y){(void)t;(void)b;strcpy(x,"topic");strcpy(y,"body");return convert;}
+static int MqttMsgPublish(int*p,const char*t,int q,int r,const unsigned char*b,size_t n){(void)p;(void)t;(void)q;(void)r;(void)b;(void)n;sent++;return sdk_rc;}
+typedef struct {bool retained;} ph_mqtt_item;
+static const char *ph_mqtt_item_topic(const ph_mqtt_item*i){(void)i;return "homeassistant/x";}
+static const char *ph_mqtt_item_payload(const ph_mqtt_item*i){(void)i;return "body";}
+static bool session_current(void){return current;}
+/* BODY */
+int main(void){
+ ph_mqtt_item i={0};oom=true;
+ assert(send_owned("homeassistant/x","body",true)==-4 && !tagged && !sent);
+ synchronous_send=true;
+ assert(send_owned("homeassistant/x","body",true)==-4 && tagged==1 && !sent);
+ oom=false;convert=false;
+ assert(send_owned("homeassistant/x","body",true)==-5 && tagged==2 && !sent);
+ synchronous_send=false;
+ assert(send_owned("homeassistant/x","body",true)==-5 && tagged==2 && !sent);
+ assert(outgoing(&i)==-5 && tagged==3 && !sent);
+ convert=true;assert(outgoing(&i)==0 && tagged==3 && sent==1);
+ sdk_rc=-17;assert(outgoing(&i)==-17 && tagged==4 && sent==2);
+ current=false;assert(outgoing(&i)==-1 && tagged==4 && sent==2);
+}
+'''.replace('/* BODY */',body)
+        with tempfile.TemporaryDirectory() as temp:
+            path=Path(temp,'sources.c');path.write_text(fixture)
+            self.compile_run([path])
+
+    def test_a1_application_sources(self):
+        from tests.test_http_json_budget import function
+        source=(ROOT/'A1/mqtt.c').read_text()
+        builders='\n'.join(function(source,name) for name in
+            ('static void str(', 'static void topic(',
+             'static __attribute__((noinline)) int filter_discovery(', 'static int discovery('))
+        fixture=(ROOT/'tests/mqtt_core/a1_builders.in').read_text().replace('/* BUILDERS */',builders)
+        with tempfile.TemporaryDirectory() as temp:
+            Path(temp,'a1_builders.inc').write_text(fixture)
+            self.check_service_fixture([ROOT,Path(temp)], ['-DA1_BUILDERS_FIXTURE'])
+    def check_service_fixture(self, extra_includes=(), extra_defines=()):
         sdk = ROOT/'build/a1-sdk/mico-os'
         protocol=sdk/'libraries/protocols/mqtt'
         with self.protocol('A1') as protocol, tempfile.TemporaryDirectory() as directory:
@@ -157,9 +238,89 @@ int main(void){
                 ROOT/'common/json_owned.c', protocol/'MQTTClient.c',
                 *sorted((protocol/'MQTTPacket').glob('*.c')), *json.glob('*.c'),
                 *[bear/'src'/p for p in ('hash/sha2small.c','codec/dec32be.c','codec/enc32be.c','codec/enc64be.c')]],
-                [ROOT/'tests/mqtt_core/stubs',ROOT/'tests/stubs',protocol,protocol/'mico',protocol/'MQTTPacket',json,bear/'inc',bear/'src'],
-                ['-include','stdint.h','-DMOC=1','-DMAX_MESSAGE_HANDLERS=12','-Wl,--wrap=malloc,--wrap=free,--wrap=realloc,--wrap=calloc,--wrap=strdup'])
+                [ROOT/'tests/mqtt_core/stubs',ROOT/'tests/stubs',protocol,protocol/'mico',protocol/'MQTTPacket',json,bear/'inc',bear/'src',*extra_includes],
+                [*extra_defines,'-include','stdint.h','-DMOC=1','-DMAX_MESSAGE_HANDLERS=12','-Wl,--wrap=malloc,--wrap=free,--wrap=realloc,--wrap=calloc,--wrap=strdup'])
     def test_a1_protocol(self): self.check_protocol('A1')
     def test_m1_protocol(self): self.check_protocol('M1')
     def test_tc1_protocol(self): self.check_protocol('TC1')
+
+    def test_product_publish_quota_diagnostics(self):
+        """Real adapter functions, shared turn budget and pinned Paho; no sockets."""
+        from tests.test_http_json_budget import function
+        fixture = r'''
+#define main existing_paho_scenarios
+#define publish fixture_paho_publish
+#include "tests/mqtt_core/paho.c"
+#undef publish
+#undef main
+static struct {
+ unsigned mqtt_errors;
+ char mqtt_last_error[96];
+ bool mqtt_connected;
+} PRODUCT_state;
+static mico_mutex_t PRODUCT_lock;
+/* PRODUCTION */
+int main(void) {
+ assert(mqtt_account_init(&account,1,"MODEL","test","aabbccddeeff"));
+ assert(ph_mqtt_owner_init(&account,8192,&thread,accept));
+ init();
+ PRODUCT_state.mqtt_connected=true;
+ /* Code 2 remains an error for operations such as a refused CONNECT. */
+ mqtt_error("connect",2);
+ assert(PRODUCT_state.mqtt_errors==1);
+ assert(!strcmp(PRODUCT_state.mqtt_last_error,"connect: 2"));
+ ph_mqtt_diagnostics before,after;
+ ph_mqtt_snapshot(&before);
+ unsigned sent=publications;
+ ph_mqtt_turn_begin(4);
+ for(unsigned i=0;i<4;i++)assert(publish("tx/state","state",true)==MQTT_SUCCESS);
+ assert(publish("tx/state","deferred",true)==PH_MQTT_MORE);
+ ph_mqtt_turn_end();
+ ph_mqtt_snapshot(&after);
+ assert(publications==sent+4 && after.errors==before.errors);
+ assert(PRODUCT_state.mqtt_errors==1 && PRODUCT_state.mqtt_connected);
+ assert(!strcmp(PRODUCT_state.mqtt_last_error,"connect: 2"));
+ ph_mqtt_turn_begin(4);
+ assert(publish("tx/state","next turn",true)==MQTT_SUCCESS);
+ ph_mqtt_turn_end();
+ assert(publications==sent+5 && PRODUCT_state.mqtt_errors==1);
+ assert(publish("tx/state",NULL,true)==MQTT_FAILURE);
+ assert(PRODUCT_state.mqtt_errors==2);
+ assert(!strcmp(PRODUCT_state.mqtt_last_error,"serialize: -1"));
+ size_t saved_capacity=heap_capacity;
+ heap_capacity=charged_live+16384u+32u;
+ assert(publish("tx/state","no headroom",true)==MQTT_FAILURE);
+ assert(PRODUCT_state.mqtt_errors==3);
+ assert(strstr(PRODUCT_state.mqtt_last_error,": -1"));
+ heap_capacity=saved_capacity;
+ cleanup();init();
+ fail_send=true;
+ assert(publish("tx/state","failed",true)==MQTT_SOCKET_ERR);
+ fail_send=false;
+ assert(PRODUCT_state.mqtt_errors==4);
+ assert(strstr(PRODUCT_state.mqtt_last_error,": -3"));
+ cleanup();
+ init();
+ assert(publish("tx/state","recovered",true)==MQTT_SUCCESS);
+ assert(PRODUCT_state.mqtt_errors==4);
+ cleanup();ph_mqtt_owner_end();
+ assert(!native_live && !charged_live);
+ return 0;
+}
+'''
+        for model in ('A1', 'M1'):
+            with self.subTest(model=model), self.protocol(model) as protocol, tempfile.TemporaryDirectory() as d:
+                product = (ROOT/model/'mqtt.c').read_text()
+                functions = (function(product, 'static void mqtt_error(') + '\n' +
+                             function(product, 'static int publish('))
+                source = Path(d)/'diagnostics.c'
+                source.write_text(fixture.replace('/* PRODUCTION */', functions)
+                                  .replace('PRODUCT', model.lower()).replace('MODEL', model.lower()))
+                self.compile_run([source, ROOT/'common/mqtt/core.c', ROOT/'common/mqtt/client.c',
+                                  ROOT/'common/mqtt/session.c', protocol/'MQTTClient.c',
+                                  *sorted((protocol/'MQTTPacket').glob('*.c'))],
+                                 [ROOT, ROOT/'tests/mqtt_core/stubs', protocol, protocol/'mico',
+                                  protocol/'MQTTPacket'],
+                                 ['-DMAX_MESSAGE_HANDLERS=12', '-DPH_EXPECTED_MESSAGE_HANDLERS=12',
+                                  '-Wl,--wrap=malloc,--wrap=free,--wrap=realloc,--wrap=calloc,--wrap=strdup'])
 if __name__ == '__main__': unittest.main()

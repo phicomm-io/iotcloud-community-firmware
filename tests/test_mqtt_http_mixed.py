@@ -60,6 +60,7 @@ class FakeRunner:
         self.output = Path(output)
         self.stop = threading.Event()
         self.rows = []
+        self.lock = threading.Lock()
         self.blockers = []
         self.memory = []
         self.before = {}
@@ -97,7 +98,8 @@ class FakeRunner:
         row = {
             'ip': ip, 'phase': phase, 'action': 'status.get',
             'ok': True, 'http': 200, 'code': 'ok', 'ms': 1.0,
-            'error': None,
+            'error': None, 'request_started_monotonic': time.monotonic(),
+            'request_ended_monotonic': time.monotonic(),
         }
         row.update({k: self.before[ip]['state'][k] for k in
                     ('wifi_connected', 'mqtt_connected')})
@@ -261,9 +263,294 @@ VERSION = '0.9.15-testmixed'
 TARGETS = {ip: ident for ip, (ident, _model) in MIXED.TARGETS.items()}
 
 
+class HTTPResponseGapTests(unittest.TestCase):
+    @staticmethod
+    def row(ended, http=200, code='ok', ok=True, **extra):
+        return dict(ip='target', request_ended_monotonic=ended,
+                    http=http, code=code, ok=ok, **extra)
+
+    def test_busy_and_occasional_failures_separate_response_from_success(self):
+        clock = mock.Mock(return_value=0.0)
+        gap = MIXED.HTTPResponseGap(['target'], clock())
+        gap.observe([self.row(10), self.row(20, http=503, code=None, ok=False),
+                     self.row(29, http=503, code='busy', ok=False)])
+        clock.return_value = 40.0
+        row = gap.snapshot(clock())['target']
+        self.assertEqual(row['last_response_gap_seconds'], 11)
+        self.assertEqual(row['last_success_gap_seconds'], 30)
+        self.assertEqual(row['maximum_response_gap_seconds'], 19)
+        self.assertLess(row['maximum_response_gap_seconds'], MIXED.HTTP_RESPONSE_GAP_LIMIT)
+
+    def test_silence_reaches_bound_despite_failed_attempts(self):
+        clock = mock.Mock(return_value=30.0)
+        gap = MIXED.HTTPResponseGap(['target'], 0)
+        gap.observe([self.row(29, ok=False, http=None, code=None, error='TimeoutError')])
+        self.assertEqual(gap.snapshot(clock())['target']['maximum_response_gap_seconds'], 30)
+
+    def test_late_response_does_not_hide_gap_and_out_of_order_does_not_regress(self):
+        gap = MIXED.HTTPResponseGap(['target'], 0)
+        gap.observe([self.row(31), self.row(10)])
+        row = gap.snapshot(32)['target']
+        self.assertEqual(row['last_response_gap_seconds'], 1)
+        self.assertEqual(row['maximum_response_gap_seconds'], 31)
+
+
+class NetworkReadinessTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.runner = FakeRunner(TARGETS, VERSION, self.directory.name)
+        self.runner.initialize()
+        self.evidence = MIXED.Evidence(Path(self.directory.name)/'network.json',
+                                      'offline', VERSION, 'short', [])
+        self.clock = [0.0]
+        self.monitor = MIXED.NetworkReadiness(self.runner, self.evidence,
+                                             monotonic=lambda: self.clock[0])
+        self.runner.mixed_network_readiness = self.monitor
+        self.ip = next(iter(TARGETS))
+        self.good = _state(self.ip, VERSION)
+
+    def observe(self, ready, *, started=None, can_restore=True, source='mqtt-correlated',
+                phase='first'):
+        data = dict(self.good, mqtt_connected=ready)
+        self.monitor.observe(self.ip, data, phase, source, started,
+                             can_restore=can_restore)
+
+    def test_short_false_then_fresh_true_records_safe_fields_and_recovers(self):
+        self.clock[0] = 1
+        self.observe(False)
+        self.clock[0] = 5
+        self.observe(True, started=2)
+        self.assertFalse(self.runner.stop.is_set())
+        state = self.evidence.data['network_readiness'][self.ip]
+        self.assertIsNone(state['degraded_since_monotonic'])
+        self.assertEqual(state['maximum_not_ready_seconds'], 4)
+        self.assertEqual(state['current_not_ready_seconds'], 0)
+        self.assertEqual([row['event'] for row in self.evidence.data['network_events']],
+                         ['network-degraded', 'network-ready'])
+        self.assertIs(self.evidence.data['network_events'][0]['mqtt_connected'], False)
+        validated = MIXED._validate_device_data(dict(self.good, mqtt_connected=False),
+                                               self.ip, self.good, VERSION)
+        self.assertIs(validated['mqtt_connected'], False)
+        self.assertIn('uptime_seconds', validated)
+
+    def test_strict_bool_missing_and_nonbool_are_protocol_errors(self):
+        for key in ('wifi_connected', 'mqtt_connected'):
+            for value in (None, 0, 1, 'true', [], {}):
+                with self.subTest(key=key, value=value):
+                    data = dict(self.good, **{key: value})
+                    with self.assertRaisesRegex(ValueError, 'must be boolean'):
+                        MIXED._validate_device_data(data, self.ip, self.good, VERSION)
+            data = dict(self.good)
+            del data[key]
+            with self.assertRaisesRegex(ValueError, 'must be boolean'):
+                MIXED._validate_device_data(data, self.ip, self.good, VERSION)
+
+    def test_identity_control_uptime_and_watchdog_remain_immediate_errors(self):
+        control = next(key for key in self.good if key in
+                       ('requested_speed', 'socket_states', 'brightness_requested'))
+        mutations = [('device_id', 'wrong'), ('model', 'wrong'), ('version', 'wrong'),
+                     ('uptime_seconds', 0), ('uptime_seconds', float('nan')),
+                     ('watchdog_state', 'stalled'), (control, 'changed')]
+        for key, value in mutations:
+            with self.subTest(key=key, value=value), self.assertRaises(ValueError):
+                MIXED._validate_device_data(dict(self.good, **{key: value}),
+                                           self.ip, self.good, VERSION)
+
+    def test_telemetry_true_and_overlapping_old_request_cannot_clear_degradation(self):
+        self.clock[0] = 1
+        self.observe(False)
+        self.clock[0] = 10
+        self.observe(True, can_restore=False, source='mqtt-telemetry')
+        self.observe(True, started=.5)
+        self.assertEqual(self.monitor.state[self.ip]['degraded_since_monotonic'], 1)
+        self.clock[0] = 31
+        self.monitor.check('later-phase')
+        self.assertTrue(self.runner.stop.is_set())
+        self.assertTrue(self.monitor.state[self.ip]['expired'])
+
+    def test_other_device_ready_does_not_clear_target_degradation(self):
+        self.observe(False)
+        other_ip = next(ip for ip in TARGETS if ip != self.ip)
+        self.clock[0] = 10
+        self.monitor.observe(other_ip, _state(other_ip, VERSION), 'next-phase',
+                             'mqtt-correlated', started=5, can_restore=True)
+        self.clock[0] = 30
+        self.monitor.check('next-phase')
+        self.assertTrue(self.monitor.state[self.ip]['expired'])
+        self.assertFalse(self.monitor.state[other_ip]['expired'])
+
+    def test_late_true_cannot_erase_historical_overrun(self):
+        self.observe(False)
+        self.clock[0] = 31
+        self.observe(True, started=30, phase='recovery')
+        self.assertTrue(self.runner.stop.is_set())
+        state = self.evidence.data['network_readiness'][self.ip]
+        self.assertTrue(state['expired'])
+        self.assertEqual(state['maximum_not_ready_seconds'], 31)
+        self.assertEqual(state['degraded_since_monotonic'], 0)
+        self.assertNotIn('network-ready', [row['event'] for row in self.evidence.data['network_events']])
+
+    def test_phase_end_and_busy_unrelated_messages_do_not_restart_deadline(self):
+        self.observe(False)
+        self.clock[0] = 20
+        self.monitor.check('first-end')
+        self.assertFalse(self.runner.stop.is_set())
+        client = FakeMQTTClient('broker', 1883, 'network-test', publish_mode='busy-always')
+        client.state, client.root = self.good, 'offline/network'
+        client.messages.put(('unrelated/state', self.good, False, b'{}'))
+        worker = MIXED.DeviceMQTTWorker(self.ip, client, client.root, self.runner,
+                                        self.evidence, threading.Event())
+        worker.run_window('next-phase', time.monotonic()+.08, 1, .001)
+        self.assertTrue(any(row['outcome'] == 'busy' for row in self.evidence.data['mqtt']))
+        self.assertEqual(self.monitor.state[self.ip]['degraded_since_monotonic'], 0)
+        self.clock[0] = 30
+        self.monitor.check('next-phase-end')
+        self.assertTrue(self.runner.stop.is_set())
+        self.assertEqual(self.evidence.data['network_readiness'][self.ip]['maximum_not_ready_seconds'], 30)
+
+    def test_unresolved_degradation_cannot_pass_final_or_recovery_boundary(self):
+        self.observe(False)
+        self.clock[0] = 1
+        self.monitor.require_ready('final-network-gate')
+        self.assertTrue(self.runner.stop.is_set())
+        self.assertIn('Unresolved network degradation', self.runner.blockers[0]['reason'])
+
+    def test_existing_http_samples_observe_false_and_fresh_true_without_extra_io(self):
+        observed_type = MIXED._network_observed_runner(FakeRunner)
+        runner = observed_type(TARGETS, VERSION, self.directory.name)
+        runner.initialize()
+        runner.mixed_network_readiness = MIXED.NetworkReadiness(
+            runner, self.evidence, monotonic=lambda: self.clock[0])
+        runner.before[self.ip]['state']['mqtt_connected'] = False
+        self.clock[0] = 1
+        runner.sample(self.ip, 'load')
+        self.clock[0] = 5
+        runner.before[self.ip]['state']['mqtt_connected'] = True
+        runner.sample(self.ip, 'recovery')
+        self.assertFalse(runner.stop.is_set())
+        self.assertIsNone(runner.mixed_network_readiness.state[self.ip]['degraded_since_monotonic'])
+        self.assertEqual(len(runner.rows), 2)
+        runner.before[self.ip]['state']['wifi_connected'] = 1
+        runner.sample(self.ip, 'bad-bool')
+        self.assertTrue(runner.stop.is_set())
+        self.assertIn('Invalid HTTP status network fields', runner.blockers[0]['reason'])
+
+    def test_correlated_short_false_then_true_passes_load_without_control_failure(self):
+        client = FakeMQTTClient('broker', 1883, 'network-transient')
+        client.state, client.root = self.good, 'offline/network'
+        client.result_mutator = lambda body: {
+            **body, 'data': dict(body['data'], mqtt_connected=client.publish_count > 1)}
+        worker = MIXED.DeviceMQTTWorker(self.ip, client, client.root, self.runner,
+                                        self.evidence, threading.Event())
+        worker.run_window('transient', time.monotonic()+.1, 1, .001)
+        self.assertIsNone(worker.failure)
+        self.assertFalse(self.runner.stop.is_set())
+        self.assertIsNone(self.monitor.state[self.ip]['degraded_since_monotonic'])
+        outcomes = self.evidence.data['mqtt']
+        self.assertIs(outcomes[0]['mqtt_connected'], False)
+        self.assertTrue(any(row.get('mqtt_connected') is True for row in outcomes[1:]))
+
+    def test_correlated_missing_bool_blocks_immediately(self):
+        for key in ('wifi_connected', 'mqtt_connected'):
+            runner = FakeRunner(TARGETS, VERSION, self.directory.name)
+            runner.initialize()
+            client = FakeMQTTClient('broker', 1883, 'network-invalid')
+            client.state, client.root = self.good, 'offline/network'
+            client.result_mutator = lambda body, missing=key: {
+                **body, 'data': {k: v for k, v in body['data'].items() if k != missing}}
+            worker = MIXED.DeviceMQTTWorker(self.ip, client, client.root, runner,
+                                            self.evidence, threading.Event())
+            worker.run_window('invalid', time.monotonic()+.1, 1, .001)
+            self.assertIn('must be boolean', worker.failure)
+            self.assertTrue(runner.stop.is_set())
+            self.assertEqual(client.publish_count, 1)
+
+    def test_pure_monitor_bounds_blocked_recovery_and_thread_is_joined(self):
+        clock = [0.0]
+        reached = []
+        class BlockedRecovery(FakeRunner):
+            def recover(inner, *_args, **_kwargs):
+                clock[0] = 31
+                reached.append(inner.stop.wait(.5))
+
+        loader = fake_runtime()
+        def runtime():
+            _base, helpers, client, root, client_id = loader()
+            return BlockedRecovery, helpers, client, root, client_id
+
+        monitor_type = MIXED.NetworkReadiness
+        def make_monitor(runner, evidence):
+            return monitor_type(runner, evidence, monotonic=lambda: clock[0])
+        def phase(runner, _clients, _roots, _evidence, _plan, _profile):
+            runner.mixed_network_readiness.observe(
+                self.ip, dict(self.good, mqtt_connected=False), 'phase-end', 'mqtt-correlated')
+            return None
+        with mock.patch.object(MIXED, 'NetworkReadiness', side_effect=make_monitor), \
+                mock.patch.object(MIXED, 'run_phase', side_effect=phase):
+            with self.assertRaisesRegex(RuntimeError, 'recovery failed'):
+                MIXED.execute(TARGETS, VERSION, 'blocked-recovery', 'short',
+                              Path(self.directory.name)/'blocked-run', runtime_loader=runtime,
+                              plan_override=[dict(name='phase', seconds=.1)], run_timeout=2)
+        self.assertEqual(reached, [True])
+        self.assertFalse(any(thread.name == 'mixed-network-monitor'
+                             for thread in threading.enumerate()))
+        saved = json.loads((Path(self.directory.name)/'blocked-run'/'mixed-evidence.json').read_text())
+        self.assertTrue(saved['network_readiness'][self.ip]['expired'])
+        self.assertEqual(saved['network_readiness'][self.ip]['maximum_not_ready_seconds'], 31)
+        self.assertFalse(saved['completed'])
+
+    def test_recovery_cannot_clear_elapsed_deadline(self):
+        runner, clients, roots, evidence = _recovery_fixture(self.directory.name)
+        monitor = MIXED.NetworkReadiness(runner, evidence, monotonic=lambda: self.clock[0])
+        runner.mixed_network_readiness = monitor
+        monitor.observe(self.ip, dict(self.good, mqtt_connected=False), 'phase-end', 'mqtt-correlated')
+        self.clock[0] = 30
+        with self.assertRaisesRegex(RuntimeError, 'HTTP recovery'):
+            MIXED.recover(runner, clients, roots, evidence, 'next-recovery')
+        self.assertTrue(monitor.state[self.ip]['expired'])
+        self.assertTrue(runner.stop.is_set())
+        self.assertTrue(all(not client.published_requests for client in clients.values()))
+
+
 class MixedRunnerTests(unittest.TestCase):
     def setUp(self):
         FakeMQTTClient.instances.clear()
+
+    def test_http_silence_stops_soak_but_does_not_change_short_gate(self):
+        for profile in ('soak', 'short'):
+            with self.subTest(profile=profile), tempfile.TemporaryDirectory() as directory:
+                runner = FakeRunner(TARGETS, VERSION, directory)
+                runner.initialize()
+                clients = {ip: FakeMQTTClient('broker', 1883, 'offline-'+ip)
+                           for ip in TARGETS}
+                roots = {ip: 'phicomm/offline/'+ip for ip in TARGETS}
+                for ip, client in clients.items():
+                    client.root = roots[ip]
+                    client.state = _state(ip, VERSION)
+                evidence = MIXED.Evidence(Path(directory)/'evidence.json',
+                                          'offline', VERSION, profile, [])
+                plan = dict(name='http-silence', seconds=.15, http_clients=1,
+                            mqtt_window=1, mqtt_period=.01)
+                # A deterministic fake clock for HTTP gap observations only;
+                # real thread deadlines remain independent and bounded.
+                original_snapshot = MIXED.HTTPResponseGap.snapshot
+                def expired_snapshot(monitor, _now):
+                    started = min(state['response'] for state in monitor.state.values())
+                    return original_snapshot(monitor, started+30)
+                with mock.patch.object(MIXED, '_http_worker', return_value=None), \
+                        mock.patch.object(MIXED.HTTPResponseGap, 'snapshot', expired_snapshot):
+                    MIXED.run_phase(runner, clients, roots, evidence, plan, profile)
+                row = evidence.data['phases'][0]
+                self.assertEqual(runner.stop.is_set(), profile == 'soak')
+                if profile == 'soak':
+                    self.assertIn('HTTP response gap', row['abort_reason'])
+                    self.assertFalse(row['completed'])
+                    self.assertEqual(set(row['http_response_liveness']), set(TARGETS))
+                    self.assertTrue(all(item['stop_reason'] for item in row['http_response_liveness'].values()))
+                else:
+                    self.assertNotIn('http_response_liveness', row)
+                    self.assertIn('No successful HTTP', row['abort_reason'])
 
     def test_authorized_targets_and_command_guard(self):
         specs = [ip+'='+ident for ip, ident in TARGETS.items()]
@@ -428,8 +715,8 @@ class MixedRunnerTests(unittest.TestCase):
                 directory, {ip: ['ok']})
             clients[ip].result_mutator = lambda body: {
                 **body, 'data': {**body['data'], 'wifi_connected': False}}
-            with self.assertRaisesRegex(RuntimeError, 'state validation'):
-                MIXED.recover(runner, clients, roots, evidence, 'bad-identity')
+            with self.assertRaisesRegex(RuntimeError, 'state gate'):
+                MIXED.recover(runner, clients, roots, evidence, 'network-not-ready')
         self.assertEqual(len(clients[ip].published_requests), 1)
         self.assertTrue(runner.blockers)
 
@@ -643,6 +930,8 @@ class MixedRunnerTests(unittest.TestCase):
                 MIXED.PRIVATE = old_private
         self.assertTrue(result['completed'])
         self.assertEqual(result['status'], 'complete')
+        self.assertFalse(any(thread.name == 'mixed-network-monitor'
+                             for thread in threading.enumerate()))
         self.assertEqual(result['phases'][0]['name'], 'fake-mixed')
         self.assertTrue(result['phases'][0]['completed'])
         self.assertEqual(result['recovery'][0]['completed'], True)

@@ -20,6 +20,7 @@ from tests.device.readonly_input_edges import (
     send_scenario,
     validate_targets,
 )
+from tests.device.readonly_shared_httpd import SharedHTTPRunner
 
 
 class FakeClock:
@@ -36,6 +37,10 @@ class FakeClock:
             return readers, [], []
         self.now += timeout
         return [], [], []
+
+    def wait(self, timeout):
+        self.now += timeout
+        return False
 
 
 class FakeSocket:
@@ -71,7 +76,34 @@ class ReadonlyInputEdgesTest(unittest.TestCase):
         }
         runner.before[ip] = {'id': AUTHORIZED_TARGETS[ip], 'state': state,
                              'boot_origin': 995}
+        runner.uptime_observations[ip, 'status'] = (999.0, 999.1, 500)
         return state
+
+    def run_recovery_with_states(self, runner, ip, states, *, repeat_last=False):
+        clock = FakeClock()
+        clock.now = 1000.0
+        iterator = iter(states)
+        last = states[-1]
+
+        def fake_request(_ip, action, timeout):
+            self.assertEqual(action, 'status.get')
+            self.assertEqual(timeout, 2.0)
+            try:
+                state = next(iterator)
+            except StopIteration:
+                if not repeat_last:
+                    raise AssertionError('unexpected extra recovery sample')
+                state = last
+            started = clock.monotonic()
+            clock.now += .01
+            return 200, {'code': 'ok', 'data': state}, 512, 10, started
+
+        with patch('tests.device.readonly_input_edges.request', side_effect=fake_request), \
+                patch('tests.device.readonly_stress.time.monotonic',
+                      side_effect=clock.monotonic), \
+                patch.object(runner.stop, 'wait', side_effect=clock.wait):
+            runner.recover('mock-connectivity-recovery', seconds=30, targets=(ip,))
+        return clock
 
     def test_allowlisted_scenarios_are_bounded_and_only_post_live_status(self):
         expected = {
@@ -206,7 +238,8 @@ class ReadonlyInputEdgesTest(unittest.TestCase):
             self.assertFalse(malformed['ok'])
             self.assertEqual(malformed['http'], 200)
             self.assertFalse(recovered.get('error'))
-            self.assertTrue(recovered['ok'])
+            self.assertTrue(recovered['network_ready'])
+            self.assertFalse(recovered['ok'])
             self.assertTrue(runner.stop.is_set())
             self.assertTrue(any('malformed successful HTTP response' in item['reason']
                                 for item in runner.blockers))
@@ -234,6 +267,101 @@ class ReadonlyInputEdgesTest(unittest.TestCase):
             self.assertEqual(transport_row['error'], 'OSError')
             self.assertFalse(runner.blockers)
             self.assertFalse(runner.stop.is_set())
+
+    def test_transient_disconnect_recovers_only_after_three_consecutive_ready_samples(self):
+        ip = '10.117.152.102'
+        with tempfile.TemporaryDirectory() as directory:
+            runner = InputRunner({ip: AUTHORIZED_TARGETS[ip]}, 'db113f',
+                                 Path(directory))
+            baseline = self.prime_runner(runner, ip)
+            states = []
+            for connected in (False, True, False, True, True, True):
+                state = dict(baseline, uptime_seconds=501,
+                             wifi_connected=True, mqtt_connected=connected,
+                             errors=2, last_error='mqtt reconnect pending')
+                states.append(state)
+            self.run_recovery_with_states(runner, ip, states)
+
+            recovery = runner.recoveries[-1]
+            self.assertTrue(recovery['completed'])
+            self.assertEqual(recovery['targets'][ip]['attempts'], 6)
+            self.assertEqual(recovery['targets'][ip]['consecutive_successes'], 3)
+            rejected = [row for row in runner.rows if row.get('degraded') == 'network_not_ready']
+            self.assertEqual(len(rejected), 2)
+            self.assertTrue(all(row['ok'] is False and row['network_ready'] is False
+                                for row in rejected))
+            self.assertTrue(all(row['mqtt_connected'] is False and row['errors'] == 2 and
+                                row['last_error'] == 'mqtt reconnect pending'
+                                for row in rejected))
+            self.assertTrue(all(row['uptime'] == row['uptime_seconds']
+                                for row in rejected))
+            saved = json.loads((Path(directory) / 'evidence.json').read_text())
+            self.assertEqual(saved['recoveries'], runner.recoveries)
+            self.assertEqual(len(saved['status_checks']), 6)
+
+    def test_persistent_disconnect_exhausts_existing_recovery_window(self):
+        ip = '10.117.152.102'
+        with tempfile.TemporaryDirectory() as directory:
+            runner = InputRunner({ip: AUTHORIZED_TARGETS[ip]}, 'db113f',
+                                 Path(directory))
+            baseline = self.prime_runner(runner, ip)
+            disconnected = dict(baseline, uptime_seconds=501,
+                                wifi_connected=True, mqtt_connected=False)
+            self.run_recovery_with_states(runner, ip, [disconnected], repeat_last=True)
+
+            recovery = runner.recoveries[-1]
+            self.assertFalse(recovery['completed'])
+            self.assertEqual(recovery['targets'][ip]['attempts'], 30)
+            self.assertEqual(recovery['targets'][ip]['consecutive_successes'], 0)
+            self.assertTrue(runner.stop.is_set())
+            self.assertTrue(any('no sustained recovery' in item['reason']
+                                for item in runner.blockers))
+
+    def test_control_change_and_uptime_reset_block_recovery_immediately(self):
+        ip = '10.117.152.102'
+        cases = (
+            ('control', {'child_lock': True}, 'control state changed: child_lock'),
+            ('uptime', {'uptime_seconds': 1}, 'uptime decreased'),
+        )
+        for name, mutation, reason in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                runner = InputRunner({ip: AUTHORIZED_TARGETS[ip]}, 'db113f',
+                                     Path(directory))
+                baseline = self.prime_runner(runner, ip)
+                state = dict(baseline)
+                state['uptime_seconds'] = 501
+                state.update(mutation)
+                self.run_recovery_with_states(runner, ip, [state])
+                self.assertTrue(runner.stop.is_set())
+                self.assertEqual(runner.recoveries[-1]['targets'][ip]['attempts'], 1)
+                self.assertTrue(any(reason in item['reason'] for item in runner.blockers))
+
+    def test_missing_connectivity_field_is_protocol_blocker(self):
+        ip = '10.117.152.102'
+        with tempfile.TemporaryDirectory() as directory:
+            runner = InputRunner({ip: AUTHORIZED_TARGETS[ip]}, 'db113f',
+                                 Path(directory))
+            state = self.prime_runner(runner, ip)
+            del state['mqtt_connected']
+            with patch('tests.device.readonly_input_edges.request',
+                       return_value=(200, {'code': 'ok', 'data': state}, 100, 5, 1000)):
+                row = runner.sample(ip, 'recovery')
+            self.assertFalse(row['ok'])
+            self.assertEqual(row.get('degraded'), None)
+            self.assertTrue(runner.stop.is_set())
+            self.assertTrue(any('connectivity field missing or invalid: mqtt_connected'
+                                in item['reason'] for item in runner.blockers))
+
+    def test_shared_http_runner_save_preserves_parent_recovery_records(self):
+        ip = '10.117.152.102'
+        with tempfile.TemporaryDirectory() as directory:
+            runner = SharedHTTPRunner({ip: AUTHORIZED_TARGETS[ip]}, 'db113f',
+                                      Path(directory))
+            runner.recoveries.append({'name': 'fixture', 'completed': True,
+                                      'targets': {ip: {'completed': True}}})
+            runner.save()
+            saved = json.loads((Path(directory) / 'shared-httpd-evidence.json').read_text())
+            self.assertEqual(saved['recoveries'], runner.recoveries)
 
     def test_unexpected_http_and_command_results_are_blocking(self):
         ip = '10.117.152.102'

@@ -21,6 +21,7 @@ static int publish_text(Client *client, const char *topic, const char *text) {
 }
 
 static int open_session(Client *client, Network *network, const ph_mqtt_connection *s) {
+    ph_mqtt_session_begin();
     memset(network, 0, sizeof(*network));
     network->my_socket = -1;
     ssl_opts options = {0};
@@ -140,6 +141,7 @@ void ph_mqtt_session_run(Client *client, const ph_mqtt_session_hooks *h) {
             ph_mqtt_turn_begin(4);
             rc = h->cycle(h->context);
             ph_mqtt_turn_end();
+            bool unfinished = rc == PH_MQTT_MORE;
             if (rc == PH_MQTT_MORE)
                 rc = MQTT_SUCCESS;
             if (rc != MQTT_SUCCESS)
@@ -169,15 +171,24 @@ void ph_mqtt_session_run(Client *client, const ph_mqtt_session_hooks *h) {
                 if (rc != MQTT_SUCCESS)
                     event(h, PH_MQTT_SUBSCRIBE_ERROR, rc);
             }
-            if (rc == MQTT_SUCCESS)
-                rc = ph_mqtt_yield(client, 100);
+            /* Keep both poll budgets and the product turn on every round.
+             * A short positive protocol slice still reads/maintains keepalive;
+             * idle owners retain their original pacing. No drain-until-empty. */
+            if (rc == MQTT_SUCCESS) {
+                bool active = unfinished || (h->initial_ready && !h->initial_ready(h->context));
+                rc = ph_mqtt_yield(client, active || ph_mqtt_work_pending() ? 10 : 100);
+            }
             if (rc == MQTT_SUCCESS)
                 rc = ph_mqtt_poll(client);
-            mico_thread_msleep(50);
+            bool active = rc == MQTT_SUCCESS &&
+                (unfinished || (h->initial_ready && !h->initial_ready(h->context)));
+            mico_thread_msleep(rc == MQTT_SUCCESS && (active || ph_mqtt_work_pending()) ? 10 : 50);
         }
         /* Result send was completed by poll before a rename is noticed here.
          * Clear callbacks queued for this old session before model cleanup. */
-        if (rc != MQTT_SUCCESS)
+        if (rc == PH_MQTT_RECONFIGURE)
+            ph_mqtt_lifecycle_event(PH_MQTT_ERROR_SESSION, rc);
+        else if (rc != MQTT_SUCCESS)
             ph_mqtt_error(PH_MQTT_ERROR_SESSION, rc);
         ph_mqtt_pending_clear();
         h->closing(h->context, connected, rc);

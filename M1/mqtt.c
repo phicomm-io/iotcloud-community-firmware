@@ -3,6 +3,7 @@
 #include "MQTTClient.h"
 #include "../common/mqtt_cleanup.h"
 #include "../common/json_owned.h"
+#include "../common/mqtt/service.h"
 
 int m1_mqtt_read(Network *, unsigned char *, int, int);
 
@@ -53,7 +54,8 @@ static int publish(const char *topic, const char *payload, bool retain)
     message.qos = QOS1; message.retained = retain;
     message.payload = (void *)payload; message.payloadlen = strlen(payload);
     int result = ph_mqtt_publish(&client, topic, &message);
-    mqtt_error(topic, result);
+    if (result != PH_MQTT_MORE)
+        mqtt_error(topic, result);
     return result;
 }
 
@@ -132,7 +134,7 @@ static int discovery(const m1_config_t *c,unsigned index)
         if (i == 4 && !co2_received) continue;
         char topic[MQTT_TOPIC_MAX], text[MQTT_TOPIC_MAX];
         json_object *o = json_object_new_object();
-        if (!o) return MQTT_FAILURE;
+        if (!o) return ph_mqtt_app_error(PH_MQTT_ERROR_APP_DISCOVERY_GRAPH, MQTT_FAILURE);
         str(o, "name", names[i]);
         mqtt_leaf(&account,"state",text,sizeof(text));str(o,"json_attributes_topic",text);
         str(o,"json_attributes_template","{{ {\"ip\": value_json.ip, \"firmware\": value_json.version, \"sensor_valid\": value_json.sensor_valid} | tojson }}");
@@ -142,7 +144,7 @@ static int discovery(const m1_config_t *c,unsigned index)
         if (!device || !ids) {
             if (device) json_object_put(device);
             if (ids) json_object_put(ids);
-            json_object_put(o); return MQTT_FAILURE;
+            json_object_put(o); return ph_mqtt_app_error(PH_MQTT_ERROR_APP_DISCOVERY_GRAPH, MQTT_FAILURE);
         }
         mqtt_identity(&account, "", text, sizeof(text));
         json_build_array_add(ids, json_object_new_string(text));
@@ -162,7 +164,7 @@ static int discovery(const m1_config_t *c,unsigned index)
                 if (availability) json_object_put(availability);
                 if (node) json_object_put(node);
                 if (sensor) json_object_put(sensor);
-                json_object_put(o); return MQTT_FAILURE;
+                json_object_put(o); return ph_mqtt_app_error(PH_MQTT_ERROR_APP_DISCOVERY_GRAPH, MQTT_FAILURE);
             }
             str(node, "topic", availability_topic);
             snprintf(text, sizeof(text), "%s/%s", base, i == 4 ? "co2_availability" : "sensor_availability"); str(sensor, "topic", text);
@@ -182,7 +184,7 @@ static int discovery(const m1_config_t *c,unsigned index)
             str(o,"entity_category","config");
         }
         mqtt_ha(&account, i < 5 ? "sensor" : "number", keys[i], topic, sizeof(topic));
-        int rc = json_owned_publish(publish,topic,o,true);
+        int rc = service_mqtt_send(publish,topic,o,true);
         if (rc != MQTT_SUCCESS) return rc;
     }
     return MQTT_SUCCESS;

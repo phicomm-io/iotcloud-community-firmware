@@ -14,7 +14,10 @@ class BackgroundJson(unittest.TestCase):
         for model in ('A1','M1'):
             with self.subTest(model=model):
                 source=(ROOT/model/'mqtt.c').read_text()
-                functions=function(source,'static void str(')+'\n'
+                service=(ROOT/'common/mqtt/service.c').read_text()
+                functions='\n'.join(function(service,n) for n in
+                    ('static struct printbuf *service_mqtt_wire(', 'int service_mqtt_send('))+'\n'
+                functions+=function(source,'static void str(')+'\n'
                 if model=='A1':
                     functions+=function(source,'static void topic(')+'\n'
                     functions+=function(source,'static __attribute__((noinline)) int filter_discovery(')+'\n'
@@ -27,6 +30,10 @@ class BackgroundJson(unittest.TestCase):
 #include "PLATFORM_HEADER"
 #define MQTT_SUCCESS 0
 #define MQTT_FAILURE -1
+#define PH_MQTT_ERROR_APP_DISCOVERY_GRAPH 8
+#define PH_MQTT_ERROR_APP_DISCOVERY_IDENTITY 9
+#define PH_MQTT_ERROR_APP_DISCOVERY_ENCODING 10
+static int ph_mqtt_app_error(unsigned stage,int rc){assert(stage>=8 && stage<=10 && rc<0);return rc;}
 #define A1_VERSION "fixture"
 #define M1_VERSION "fixture"
 #define A1_FILTER_MAX_HOURS 20000u
@@ -53,7 +60,9 @@ static int publish(const char*t,const char*b,bool r){
 static int legacy_publish(int(*p)(const char*,const char*,bool),const char*t,json_object*o,bool r){
  const char*w=json_object_to_json_string(o);assert(w);int rc=p(t,w,r);json_object_put(o);return rc;
 }
-#define json_owned_publish legacy_publish
+#define discovery_sender legacy_publish
+#else
+#define discovery_sender service_mqtt_send
 #endif
 /* PRODUCTION_FUNCTIONS */
 static int discovery_all(MODEL_CONFIG*c){
@@ -84,6 +93,7 @@ int main(void){
  return 0;
 }
 '''
+                functions=functions.replace('int rc = service_mqtt_send(', 'int rc = discovery_sender(')
                 fixture=fixture.replace('/* PRODUCTION_FUNCTIONS */',functions)
                 fixture=fixture.replace('PLATFORM_HEADER',model.lower()+'.h').replace('MODEL_LOWER',model.lower()).replace('MODEL_CONFIG',model.lower()+'_config_t').replace('EXPECTED_CALLBACKS','10' if model=='A1' else '6')
                 sdk=Path(os.environ.get('PHICOMM_TEST_JSON_DIR',ROOT/'build/a1-sdk/mico-os/libraries/utilities/json_c'))

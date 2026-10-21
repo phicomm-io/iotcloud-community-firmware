@@ -34,6 +34,9 @@ void ph_mqtt_turn_end(void);
  * unwinding. Commands have priority, but never recurse through a sender. */
 int ph_mqtt_enqueue_send(const char *, const void *, size_t, unsigned, bool);
 int ph_mqtt_poll(Client *);
+/* Owner only, between protocol/dispatch calls. Queued work or emergency replies;
+ * a false result is a snapshot, not a wakeup/producer synchronization promise. */
+bool ph_mqtt_work_pending(void);
 /* Modern command only: after parsing/copying all borrowed input, consume its
  * queue entry and reserve the maximum result before executing any mutation. */
 bool ph_mqtt_input_consumed(void);
@@ -44,9 +47,22 @@ void ph_mqtt_pending_clear(void);
 bool ph_mqtt_topic_matches(const char *, const char *, size_t);
 const ph_mqtt_core *ph_mqtt_debug_core(void);
 enum {
-    PH_MQTT_ERROR_INIT = 1, PH_MQTT_ERROR_CONNECT, PH_MQTT_ERROR_SUBSCRIBE, PH_MQTT_ERROR_PUBLISH, PH_MQTT_ERROR_YIELD, PH_MQTT_ERROR_SESSION, PH_MQTT_ERROR_NETWORK
+    PH_MQTT_ERROR_INIT = 1, PH_MQTT_ERROR_CONNECT, PH_MQTT_ERROR_SUBSCRIBE, PH_MQTT_ERROR_PUBLISH, PH_MQTT_ERROR_YIELD, PH_MQTT_ERROR_SESSION, PH_MQTT_ERROR_NETWORK,
+    PH_MQTT_ERROR_APP_DISCOVERY_GRAPH, PH_MQTT_ERROR_APP_DISCOVERY_IDENTITY,
+    PH_MQTT_ERROR_APP_DISCOVERY_ENCODING, PH_MQTT_ERROR_APP_OTA_GRAPH,
+    PH_MQTT_ERROR_APP_OTA_ENCODING, PH_MQTT_ERROR_APP_SEND_CONVERSION,
+    PH_MQTT_ERROR_APP_RECEIPT_ADMISSION
 };
 void ph_mqtt_error(unsigned, int);
+/* Mark only an immediately returned fatal application error; no extra event,
+ * allocation, or cause claim. Successful protocol begin/end and session begin
+ * clear the transient marker. The session summary captures it once. */
+#define PH_MQTT_APP_SOURCES 1
+int ph_mqtt_app_error(unsigned, int);
+/* Owner only; reset the latch before Network initialization, not on success. */
+void ph_mqtt_session_begin(void);
+/* Count a lifecycle outcome without replacing a recorded failure cause. */
+void ph_mqtt_lifecycle_event(unsigned, int);
 void ph_mqtt_reconnect(void);
 void ph_mqtt_snapshot(ph_mqtt_diagnostics *);
 #endif

@@ -45,6 +45,8 @@ MQTT_PUBACK_TIMEOUT = 5.0
 HTTP_REQUEST_TIMEOUT = 5.0
 PHASE_SHUTDOWN_GRACE = 2.0
 MQTT_NO_SUCCESS_LIMIT = 30.0
+HTTP_RESPONSE_GAP_LIMIT = 30.0
+NETWORK_NOT_READY_LIMIT = 30.0
 RECOVERY_BUSY_MAX_RETRIES = 3
 RECOVERY_BUSY_RETRY_DELAY = 1.0
 RECOVERY_BUSY_TOTAL_TIMEOUT = 15.0
@@ -291,9 +293,10 @@ def _validate_device_data(data, ip, initial, version):
         'tc1': ('socket_states', 'child_lock', 'led_enabled'),
         'm1': ('brightness_requested',),
     }[model]
-    for key in controls + ('wifi_connected', 'mqtt_connected'):
+    for key in controls:
         if key not in initial or key not in data or data[key] != initial[key]:
-            raise ValueError('MQTT status control/connectivity mismatch: '+key)
+            raise ValueError('MQTT status control mismatch: '+key)
+    network = _network_fields(data)
     uptime, base_uptime = data.get('uptime_seconds'), initial.get('uptime_seconds')
     if (type(uptime) not in (int, float) or not math.isfinite(uptime) or
             type(base_uptime) not in (int, float) or uptime < base_uptime):
@@ -301,7 +304,128 @@ def _validate_device_data(data, ip, initial, version):
     if data.get('watchdog_state') not in (None, 'healthy', 'starting'):
         raise ValueError('MQTT status watchdog is unhealthy')
     return {'device_id': reported_id, 'model': model, 'version': version,
-            'uptime_seconds': uptime}
+            'uptime_seconds': uptime, **{key: data[key] for key in controls}, **network}
+
+
+def _network_fields(data):
+    result = {}
+    for key in ('wifi_connected', 'mqtt_connected'):
+        if type(data.get(key)) is not bool:
+            raise ValueError('Status network field must be boolean: '+key)
+        result[key] = data[key]
+    return result
+
+
+class NetworkReadiness:
+    """Run-wide, sticky network degradation deadline; never sends traffic."""
+
+    def __init__(self, runner, evidence, monotonic=time.monotonic):
+        self.runner, self.evidence, self.monotonic = runner, evidence, monotonic
+        self.lock = threading.Lock()
+        self.state = {ip: {'degraded_since_monotonic': None,
+                           'maximum_not_ready_seconds': 0.0, 'expired': False}
+                      for ip in TARGETS}
+        self.evidence.data.setdefault('network_events', [])
+        self.evidence.data.setdefault('network_readiness', {})
+
+    def _update_locked(self, now, phase):
+        blockers = []
+        for ip, state in self.state.items():
+            since = state['degraded_since_monotonic']
+            elapsed = 0.0 if since is None else max(0.0, now-since)
+            state['current_not_ready_seconds'] = elapsed
+            state['maximum_not_ready_seconds'] = max(state['maximum_not_ready_seconds'], elapsed)
+            state['limit_seconds'] = NETWORK_NOT_READY_LIMIT
+            if elapsed >= NETWORK_NOT_READY_LIMIT and not state['expired']:
+                state['expired'] = True
+                reason = 'Continuous network not-ready observation exceeded %.1fs for %s' % (NETWORK_NOT_READY_LIMIT, ip)
+                state['stop_reason'] = reason
+                blockers.append((ip, reason))
+                self.evidence.append('network_events', {
+                    'ip': ip, 'phase': phase, 'event': 'network-deadline-exceeded',
+                    'observed_monotonic': now, 'not_ready_seconds': elapsed,
+                    'reason': reason})
+        with self.evidence.lock:
+            self.evidence.data['network_readiness'] = copy.deepcopy(self.state)
+        return blockers
+
+    def _block(self, blockers):
+        # Never invoke Runner.block while holding the observer lock.
+        for ip, reason in blockers:
+            self.runner.block(ip, reason)
+
+    def check(self, phase='network-monitor', now=None):
+        now = self.monotonic() if now is None else now
+        with self.lock:
+            blockers = self._update_locked(now, phase)
+        self._block(blockers)
+
+    def require_ready(self, phase, ip=None):
+        self.check(phase)
+        with self.lock:
+            blockers = [(target, 'Unresolved network degradation at '+phase)
+                        for target, state in self.state.items()
+                        if (ip is None or target == ip) and
+                        state['degraded_since_monotonic'] is not None]
+        self._block(blockers)
+
+    def observe(self, ip, data, phase, source, started=None, *, can_restore=False, now=None):
+        network = _network_fields(data)
+        now = self.monotonic() if now is None else now
+        ready = all(network.values())
+        with self.lock:
+            # Check before accepting true: late recovery cannot erase an overrun.
+            blockers = self._update_locked(now, phase)
+            state = self.state[ip]
+            since = state['degraded_since_monotonic']
+            state.update(network)
+            state.update(last_observation_source=source, last_observed_monotonic=now,
+                         last_request_started_monotonic=started,
+                         last_observation_can_restore=can_restore)
+            if not ready and since is None:
+                state['degraded_since_monotonic'] = now
+                self.evidence.append('network_events', {
+                    'ip': ip, 'phase': phase, 'event': 'network-degraded',
+                    'source': source, 'observed_monotonic': now, **network})
+            elif (ready and since is not None and not state['expired'] and
+                  can_restore and started is not None and started >= since):
+                self.evidence.append('network_events', {
+                    'ip': ip, 'phase': phase, 'event': 'network-ready',
+                    'source': source, 'observed_monotonic': now,
+                    'not_ready_seconds': now-since, **network})
+                state['degraded_since_monotonic'] = None
+            blockers += self._update_locked(now, phase)
+        self._block(blockers)
+
+
+def _observe_network(runner, data, ip, phase, source, started=None, *, can_restore=False):
+    monitor = getattr(runner, 'mixed_network_readiness', None)
+    if monitor is not None:
+        monitor.observe(ip, data, phase, source, started, can_restore=can_restore)
+
+
+def _check_network(runner, phase):
+    monitor = getattr(runner, 'mixed_network_readiness', None)
+    if monitor is not None:
+        monitor.check(phase)
+
+
+def _network_observed_runner(base):
+    class ObservedRunner(base):
+        def sample(self, ip, phase, *args, **kwargs):
+            _check_network(self, phase)
+            row = super().sample(ip, phase, *args, **kwargs)
+            if row.get('ok') is True and row.get('action') == 'status.get':
+                try:
+                    _network_fields(row)
+                    if not self.stop.is_set():
+                        _observe_network(self, row, ip, phase, 'http-status',
+                                         row.get('request_started_monotonic'), can_restore=True)
+                except ValueError as exc:
+                    self.block(ip, 'Invalid HTTP status network fields: '+str(exc))
+            _check_network(self, phase)
+            return row
+    return ObservedRunner
 
 
 class DeviceMQTTWorker:
@@ -352,6 +476,9 @@ class DeviceMQTTWorker:
         next_send = time.monotonic()
         sending_done = False
         while (not sending_done or pending.pending) and not self.stop.is_set() and not self.runner.stop.is_set():
+            _check_network(self.runner, phase)
+            if self.runner.stop.is_set():
+                break
             now = time.monotonic()
             if now-self.last_correlated_response >= MQTT_NO_SUCCESS_LIMIT:
                 self.phase_abort_reason = 'No correlated MQTT response for the bounded liveness interval'
@@ -414,6 +541,7 @@ class DeviceMQTTWorker:
                             data = body.get('data', body)
                             identity = _validate_device_data(
                                 data, self.ip, self.runner.before[self.ip]['state'], self.runner.version)
+                            _observe_network(self.runner, data, self.ip, phase, 'mqtt-telemetry')
                             self.evidence.append('telemetry', {
                                 'ip': self.ip, 'phase': phase, 'retained': False,
                                 'fresh': True, 'validated': True,
@@ -475,6 +603,8 @@ class DeviceMQTTWorker:
                                 checked = dict(body['data'])
                                 checked.setdefault('device_id', identity['device_id'])
                                 self.runner.check(self.ip, checked, started, now)
+                                _observe_network(self.runner, checked, self.ip, phase,
+                                                 'mqtt-correlated', started, can_restore=True)
                                 self.max_success_gap_seconds = max(
                                     self.max_success_gap_seconds, now-self.last_success)
                                 self.last_success = now
@@ -547,12 +677,46 @@ def _classify_http(row):
     return 'other'
 
 
+class HTTPResponseGap:
+    """Soak availability from completed HTTP records; no additional requests."""
+
+    def __init__(self, targets, started):
+        self.state = {ip: {kind: started for kind in ('response', 'success')}
+                      for ip in targets}
+        self.maximum = {ip: dict(response=0.0, success=0.0) for ip in targets}
+
+    def observe(self, rows):
+        for row in rows:
+            ip, ended = row.get('ip'), row.get('request_ended_monotonic')
+            if ip not in self.state or ended is None:
+                continue
+            success = row.get('ok') is True and row.get('http') == 200 and row.get('code') == 'ok'
+            busy = row.get('http') in (200, 503) and row.get('code') == 'busy' and not row.get('error')
+            for kind, valid in (('response', success or busy), ('success', success)):
+                if valid:
+                    self.maximum[ip][kind] = max(self.maximum[ip][kind], ended-self.state[ip][kind])
+                    self.state[ip][kind] = max(self.state[ip][kind], ended)
+
+    def snapshot(self, now):
+        result = {}
+        for ip, state in self.state.items():
+            result[ip] = {'response_gap_limit_seconds': HTTP_RESPONSE_GAP_LIMIT}
+            for kind, last in state.items():
+                gap = max(0.0, now-last)
+                self.maximum[ip][kind] = max(self.maximum[ip][kind], gap)
+                result[ip]['last_'+kind+'_gap_seconds'] = gap
+                result[ip]['maximum_'+kind+'_gap_seconds'] = self.maximum[ip][kind]
+        return result
+
+
 def run_phase(runner, clients, roots, evidence, phase_plan, profile):
     plan = phase_plan
     phase = plan['name']
     started = time.monotonic()
     deadline, hard_deadline = phase_deadlines(started, plan['seconds'])
     http_before = len(runner.rows)
+    http_cursor = http_before
+    http_gap = HTTPResponseGap(TARGETS, started) if profile == 'soak' else None
     dropped_before = {ip: getattr(clients[ip].messages, 'dropped', 0) for ip in TARGETS}
     phase_row = {**plan, 'started_at': time.time(), 'completed': False}
     phase_row['progress_checkpoints'] = []
@@ -564,6 +728,28 @@ def run_phase(runner, clients, roots, evidence, phase_plan, profile):
     futures = []
     mqtt_threads = []
     hard_timed_out = False
+
+    def check_http_gap():
+        nonlocal http_cursor
+        if http_gap is None:
+            return
+        # Copy only under the lock. Blocking, persistence and all network I/O
+        # remain outside it, as in Runner.sample().
+        with runner.lock:
+            rows = list(runner.rows[http_cursor:])
+            http_cursor = len(runner.rows)
+        http_gap.observe(row for row in rows if row.get('phase') == phase)
+        snapshot = http_gap.snapshot(time.monotonic())
+        phase_row['http_response_liveness'] = snapshot
+        for ip, row in snapshot.items():
+            if row['maximum_response_gap_seconds'] >= HTTP_RESPONSE_GAP_LIMIT:
+                reason = 'HTTP response gap exceeded %.1fs in %s for %s' % (HTTP_RESPONSE_GAP_LIMIT, phase, ip)
+                row['stop_reason'] = reason
+                phase_row.setdefault('abort_reason', reason)
+                if not runner.stop.is_set():
+                    runner.block(ip, reason)
+                stop.set()
+
     try:
         futures = [pool.submit(_http_worker, runner, ip, phase, deadline, n, stop, HTTP_PERIOD)
                    for ip in TARGETS for n in range(plan['http_clients'])]
@@ -593,6 +779,8 @@ def run_phase(runner, clients, roots, evidence, phase_plan, profile):
         next_memory = time.monotonic()+15
         next_checkpoint = time.monotonic()+PROGRESS_CHECKPOINT_INTERVAL
         while any(not future.done() for future in futures) or any(t.is_alive() for t in mqtt_threads):
+            check_http_gap()
+            _check_network(runner, phase)
             if time.monotonic() >= hard_deadline:
                 hard_timed_out = True
                 stop.set()
@@ -617,6 +805,9 @@ def run_phase(runner, clients, roots, evidence, phase_plan, profile):
             if time.monotonic() >= next_memory and not runner.stop.is_set():
                 for ip in TARGETS:
                     runner.memory_sample(ip, phase)
+                    check_http_gap()
+                    if http_gap is not None and runner.stop.is_set():
+                        break
                 next_memory = time.monotonic()+15
             if time.monotonic() >= next_checkpoint:
                 checkpoint = {
@@ -653,6 +844,8 @@ def run_phase(runner, clients, roots, evidence, phase_plan, profile):
         stop.set()
         pool.shutdown(wait=False, cancel_futures=True)
         raise
+    check_http_gap()
+    _check_network(runner, phase+'-end')
     for worker in mqtt_workers:
         if worker.failure:
             runner.block('', worker.failure)
@@ -674,9 +867,9 @@ def run_phase(runner, clients, roots, evidence, phase_plan, profile):
                      completed=(elapsed >= plan['seconds'] and not runner.stop.is_set() and
                                 not hard_timed_out))
     if not phase_row['completed']:
-        phase_row['abort_reason'] = next(
+        phase_row.setdefault('abort_reason', next(
             (worker.phase_abort_reason for worker in mqtt_workers if worker.phase_abort_reason),
-            'Mixed phase ended before its requested duration')
+            'Mixed phase ended before its requested duration'))
     phase_http = [row for row in evidence.data['http'] if row.get('phase') == phase]
     phase_row['http_outcomes'] = summarize_latencies(phase_http)
     phase_row['mqtt_outcomes'] = summarize_latencies(
@@ -736,6 +929,9 @@ def receive_correlated(client, request_id, result_topic, state_topic, timeout,
     started = monotonic() if window_started is None else window_started
     deadline = started+timeout if absolute_deadline is None else absolute_deadline
     while monotonic() < deadline:
+        _check_network(runner, phase)
+        if runner.stop.is_set():
+            raise RuntimeError('Network/state gate stopped recovery')
         if not client.connected.is_set():
             raise ConnectionError('MQTT disconnected during phase recovery')
         try:
@@ -762,6 +958,7 @@ def receive_correlated(client, request_id, result_topic, state_topic, timeout,
                             data, ip, runner.before[ip]['state'], runner.version)
                     except ValueError as exc:
                         raise MQTTProtocolError('Invalid MQTT state telemetry during recovery') from exc
+                    _observe_network(runner, data, ip, phase, 'mqtt-telemetry')
                     observed = time.monotonic()
                     telemetry_events.append({
                         'ip': ip, 'phase': phase, 'retained': False, 'fresh': True,
@@ -791,7 +988,9 @@ def receive_correlated(client, request_id, result_topic, state_topic, timeout,
 
 def recover(runner, clients, roots, evidence, name, *, monotonic=time.monotonic,
             sleep=time.sleep):
+    _check_network(runner, name+'-start')
     runner.recover(name+'-http', seconds=45)
+    _check_network(runner, name+'-http-end')
     if runner.stop.is_set():
         raise RuntimeError('HTTP recovery after mixed phase failed')
     result_rows = []
@@ -922,6 +1121,13 @@ def recover(runner, clients, roots, evidence, name, *, monotonic=time.monotonic,
         checked = dict(body['data'])
         checked.setdefault('device_id', summary['device_id'])
         runner.check(ip, checked, started, now)
+        _observe_network(runner, checked, ip, name, 'mqtt-recovery',
+                         attempt_started, can_restore=True)
+        if checked['wifi_connected'] is not True or checked['mqtt_connected'] is not True:
+            runner.block(ip, 'MQTT recovery status network is not ready')
+        monitor = getattr(runner, 'mixed_network_readiness', None)
+        if monitor is not None:
+            monitor.require_ready(name+'-mqtt-recovery', ip)
         if runner.stop.is_set():
             raise RuntimeError('MQTT recovery state gate failed')
         result_rows.append({'ip': ip, 'request_id': request_id, 'outcome': 'success',
@@ -950,7 +1156,7 @@ def execute(targets, version, label, profile, output, runtime_loader=load_runtim
     plan = [dict(row) for row in (plan_override if plan_override is not None else phase_plan(profile))]
     evidence = Evidence(output/'mixed-evidence.json', label, version, profile, plan)
     Runner, mqtt_helpers, MQTTClient, mqtt_root, mqtt_client_id = runtime_loader()
-    runner = Runner(targets, version, output/'http-runner', require_shared_core=True)
+    runner = _network_observed_runner(Runner)(targets, version, output/'http-runner', require_shared_core=True)
     stop_timer = threading.Timer(run_timeout, runner.stop.set)
     stop_timer.daemon = True
     stop_timer.start()
@@ -959,6 +1165,8 @@ def execute(targets, version, label, profile, output, runtime_loader=load_runtim
     initialized = False
     finish_called = False
     phase_failure = None
+    network_stop = threading.Event()
+    network_thread = None
     try:
         credentials = mqtt_helpers.load_credentials()
         runner.initialize()
@@ -977,6 +1185,16 @@ def execute(targets, version, label, profile, output, runtime_loader=load_runtim
                 raise ValueError('HTTP baseline connectivity is not healthy')
         evidence.data['http_prechecks'] = 'passed'
         initialized = True
+        runner.mixed_network_readiness = NetworkReadiness(runner, evidence)
+        def monitor_network():
+            try:
+                while not network_stop.wait(.05):
+                    _check_network(runner, 'network-monitor')
+            except BaseException as exc:
+                runner.block('', 'Network observation monitor failed: '+type(exc).__name__)
+        thread = threading.Thread(target=monitor_network, name='mixed-network-monitor', daemon=True)
+        thread.start()
+        network_thread = thread
         evidence.save()
         for ip, (ident, model) in TARGETS.items():
             root = mqtt_root(credentials['username'], model, ident)
@@ -1035,6 +1253,7 @@ def execute(targets, version, label, profile, output, runtime_loader=load_runtim
             runner.block('', phase_failure)
         if finish_failure:
             runner.block('', finish_failure)
+        runner.mixed_network_readiness.require_ready('final-network-gate')
         if (not initialized or runner.run.get('completed') is not True or runner.blockers or
                 any(value is not True for value in runner.completion_checks.values())):
             reason = phase_failure or finish_failure or 'HTTP final restore/idle/config gates failed'
@@ -1081,6 +1300,9 @@ def execute(targets, version, label, profile, output, runtime_loader=load_runtim
         evidence.save()
         raise
     finally:
+        network_stop.set()
+        if network_thread is not None:
+            network_thread.join()
         stop_timer.cancel()
         for client in clients.values():
             try:

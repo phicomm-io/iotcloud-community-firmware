@@ -164,6 +164,8 @@ void ph_mqtt_core_snapshot(ph_mqtt_core *s, ph_mqtt_diagnostics *out) {
     out->credit = s->credit;
     out->generation = s->generation;
     out->owner_faults = s->owner_faults;
+    out->ingress_dropped = s->ingress_dropped;
+    out->busy_overflow = s->busy_overflow;
     out->max_delay_ms = s->max_delay;
     out->rx_buffer_bytes = s->rx_buffer_bytes;
     out->tx_buffer_bytes = s->tx_buffer_bytes;
@@ -172,9 +174,20 @@ void ph_mqtt_core_snapshot(ph_mqtt_core *s, ph_mqtt_diagnostics *out) {
     out->protocol_depth = s->protocol_depth;
     out->operation = s->operation;
     out->last_stage = s->last_stage;
+    out->failure = s->failure;
     out->last_error = s->last_error;
     out->errors = s->errors;
     out->reconnects = s->reconnects;
+    unlock(s);
+}
+
+void ph_mqtt_record_ingress_drop(ph_mqtt_core *s, bool busy_overflow) {
+    if (!ph_mqtt_is_owner(s))
+        return;
+    lock(s);
+    increment(&s->ingress_dropped);
+    if (busy_overflow)
+        increment(&s->busy_overflow);
     unlock(s);
 }
 
@@ -186,12 +199,47 @@ void ph_mqtt_record_operation(ph_mqtt_core *s, unsigned stage) {
     unlock(s);
 }
 
-void ph_mqtt_record_error(ph_mqtt_core *s, unsigned stage, int rc) {
+void ph_mqtt_error_session_begin(ph_mqtt_core *s) {
     if (!ph_mqtt_is_owner(s))
         return;
     lock(s);
-    s->last_stage = stage;
-    s->last_error = rc;
+    s->error_latched = false;
+    s->operation = 0; /* A source tag belongs only to the immediately failing session. */
+    unlock(s);
+}
+
+void ph_mqtt_record_failure(ph_mqtt_core *s, unsigned reason, unsigned operation, int rc,
+                            uint32_t free_bytes, unsigned packet_bytes, unsigned rx_state,
+                            const ph_mqtt_io_evidence *read, const ph_mqtt_io_evidence *write) {
+    if (!ph_mqtt_is_owner(s)) return;
+    lock(s);
+    if (!s->error_latched) {
+        s->failure.reason = reason;
+        s->failure.operation = operation;
+        s->failure.free_bytes = free_bytes;
+        s->failure.packet_bytes = packet_bytes;
+        s->failure.rx_state = rx_state;
+        s->failure.read = *read;
+        s->failure.write = *write;
+        s->failure.credit_bytes = (uint32_t)s->credit;
+        s->failure.queue_bytes = (uint32_t)s->bytes;
+        s->last_stage = operation;
+        s->last_error = rc;
+        s->error_latched = true;
+    }
+    increment(&s->errors);
+    unlock(s);
+}
+
+void ph_mqtt_record_error(ph_mqtt_core *s, unsigned stage, int rc, bool cause) {
+    if (!ph_mqtt_is_owner(s))
+        return;
+    lock(s);
+    if (cause && !s->error_latched) {
+        s->last_stage = stage;
+        s->last_error = rc;
+        s->error_latched = true;
+    }
     increment(&s->errors);
     unlock(s);
 }

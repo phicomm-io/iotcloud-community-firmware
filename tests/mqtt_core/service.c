@@ -51,6 +51,9 @@ static void finish(void){
  ph_mqtt_diagnostics d;ph_mqtt_snapshot(&d);
  assert(!d.bytes&&!d.credit&&!d.inflight[0]&&!d.inflight[1]&&!d.queued[0]&&!d.queued[1]);
 }
+#ifdef A1_BUILDERS_FIXTURE
+#include "a1_builders.inc"
+#else
 int main(void){
  service_init();assert(mqtt_account_init(&account,1,"a1","test","aabbccddeeff"));
  assert(ph_mqtt_owner_init(&account,8192,&thread,accept));
@@ -76,7 +79,7 @@ int main(void){
  assert(mutations==1&&strstr(last_body,"conflict"));finish();clear_receipts();assert(!native_live);
  rename_target=false;assert(mqtt_account_init(&account,1,"a1","test","aabbccddeeff"));
  /* Exact modern topic, actual Paho callback overload: four deferred entries,
-  * two fixed busy receipts, then explicit failure when emergency slots fill. */
+  * two fixed busy receipts, then visible refusal without running the drop. */
  start();unsigned busy_before=busy_publications,mutation_before=mutations;
  for(unsigned i=0;i<6;i++)incoming(injected_topic,control,100+i);
  assert(ph_mqtt_yield(&client,1)==0);assert(mutations==mutation_before);
@@ -86,10 +89,29 @@ int main(void){
  assert(!strcmp(target,busy_target));assert(mutations==mutation_before+1);
  for(unsigned i=0;i<3;i++)assert(ph_mqtt_poll(&client)==0);
  assert(mutations==mutation_before+1);finish();clear_receipts();assert(!native_live);
- start();mutation_before=mutations;
- for(unsigned i=0;i<7;i++)incoming(injected_topic,control,200+i);
- assert(ph_mqtt_yield(&client,1)!=0);assert(ph_mqtt_poll(&client)!=0&&mutations==mutation_before);
- finish();start();assert(command(control)==0&&mutations==mutation_before+1);finish();clear_receipts();assert(!native_live);
+ start();mutation_before=mutations;ph_mqtt_diagnostics prior;ph_mqtt_snapshot(&prior);
+ const char *dropped="{\"action\":\"fan.set\",\"request_id\":\"retry-after-drop\",\"params\":{}}";
+ for(unsigned i=0;i<6;i++)incoming(injected_topic,control,200+i);
+ incoming(injected_topic,dropped,206);
+ assert(ph_mqtt_yield(&client,1)==0&&mutations==mutation_before);
+ ph_mqtt_snapshot(&saturated);
+ assert(saturated.ingress_dropped==prior.ingress_dropped+1&&saturated.busy_overflow==prior.busy_overflow+1);
+ assert(saturated.errors==prior.errors&&saturated.generation==prior.generation);
+ for(unsigned i=0;i<4;i++)assert(ph_mqtt_poll(&client)==0);
+ assert(mutations==mutation_before+1); /* only the admitted shared ID ran */
+ assert(command(dropped)==0&&mutations==mutation_before+2);
+ assert(command(dropped)==0&&mutations==mutation_before+2); /* same-ID replay */
+ finish();clear_receipts();assert(!native_live);
+ /* ID-less overload still never executes rejected messages. Admitted ID-less
+  * controls deliberately have no dedup guarantee: four admitted means four runs. */
+ start();mutation_before=mutations;ph_mqtt_snapshot(&prior);
+ const char *anonymous="{\"action\":\"fan.set\",\"params\":{}}";
+ for(unsigned i=0;i<7;i++)incoming(injected_topic,anonymous,300+i);
+ assert(!ph_mqtt_yield(&client,1)&&mutations==mutation_before);
+ ph_mqtt_snapshot(&saturated);assert(saturated.ingress_dropped==prior.ingress_dropped+1);
+ assert(saturated.busy_overflow==prior.busy_overflow+1);
+ for(unsigned i=0;i<4;i++)assert(!ph_mqtt_poll(&client));
+ assert(mutations==mutation_before+4);finish();clear_receipts();assert(!native_live);
  /* Every native allocation boundary across Paho RX/input/JSON/digest/receipt/
   * encoder/TX gets a failure. Reconnect/replay must never repeat a mutation. */
  unsigned exercised=0;
@@ -105,3 +127,5 @@ int main(void){
  heap_capacity=28364;start();unsigned held=service_json_claim();assert(held);assert(command(control)==0);assert(strstr(last_body,"busy"));service_json_release(held);assert(command("{\"action\":\"status.get\",\"params\":{}}")==0);finish();clear_receipts();assert(!native_live);
  printf("actual shared MQTT service: 8192B input, original rename target, digest replay/conflict and %u allocation failures PASS; requested peak=%zu, charged peak=%zu\n",exercised,native_peak,charged_peak);
 }
+
+#endif

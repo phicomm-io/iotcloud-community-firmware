@@ -70,6 +70,10 @@ static void real_handler(MessageData *);
 static char last_topic[512],last_body[10000];
 static unsigned busy_publications;static char busy_target[512];
 #endif
+#ifdef OVERLOAD_FIXTURE
+static void overload_handler(MessageData *);
+static void overload_publication(const unsigned char *, unsigned, const unsigned char *, size_t);
+#endif
 static Client client;
 static Network network;
 static mqtt_account_t account;
@@ -117,6 +121,9 @@ static void sent_packet(void){
   assert(len<sizeof(last_body));memcpy(last_body,tx+start,len);last_body[len]=0;
   if(strstr(last_body,"\"busy\"")){busy_publications++;strcpy(busy_target,last_topic);}
 #endif
+#ifdef OVERLOAD_FIXTURE
+  overload_publication(tx+offset+2,topic_size,tx+body_at,tx_size-body_at);
+#endif
   if(gate_mode>=5&&cycles==3&&topic_size==8&&!memcmp(tx+offset+2,"tx/state",8)){
    if(gate_mode==5)gate_current=false;
    if(gate_mode==6)gate_cancel=true;
@@ -149,6 +156,9 @@ static void handler(MessageData*d){
  assert(ph_mqtt_debug_core()->dispatch_depth==1);
 #ifdef REAL_SERVICE
  real_handler(d);return;
+#endif
+#ifdef OVERLOAD_FIXTURE
+ overload_handler(d);return;
 #endif
  assert(!strcmp(d->topicName->cstring,"rx/command"));executions++;
  if(handler_nested){handler_nested=false;inject_count=1;MQTTMessage m={0};m.qos=1;m.payload="nested";m.payloadlen=6;

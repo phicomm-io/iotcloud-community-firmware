@@ -26,6 +26,8 @@ void *__wrap_realloc(void *pointer,size_t size){
 }
 #define MQTT_SUCCESS 0
 #define MQTT_FAILURE -1
+#define PH_MQTT_ERROR_APP_DISCOVERY_ENCODING 10
+static int ph_mqtt_app_error(unsigned stage,int rc){assert(stage==10 && rc<0);return rc;}
 #include "mqtt_owned_helpers.inc"
 static json_object *owned_reply(void){
  json_object *o=json_object_new_object(),*child=json_object_new_string("independent wire bytes");

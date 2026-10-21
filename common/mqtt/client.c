@@ -55,6 +55,9 @@ static struct {
     Client *client;
     Network *network;
     int(*read)(Network *, unsigned char *, int, int);
+    int(*write)(Network *, unsigned char *, int, int);
+    ph_mqtt_io_evidence read_evidence, write_evidence;
+    unsigned cause, packet_bytes;
     bool(*accept)(MessageData *, messageHandler);
     int(*outgoing)(const ph_mqtt_item *);
     subscription subscriptions[MAX_MESSAGE_HANDLERS];
@@ -131,9 +134,39 @@ const ph_mqtt_core *ph_mqtt_debug_core(void) {
     return &port.core;
 }
 
+int ph_mqtt_app_error(unsigned stage, int rc) {
+    if (rc < 0 && stage >= PH_MQTT_ERROR_APP_DISCOVERY_GRAPH &&
+        stage <= PH_MQTT_ERROR_APP_RECEIPT_ADMISSION && ph_mqtt_owner())
+        ph_mqtt_record_operation(&port.core, stage);
+    return rc;
+}
+
 void ph_mqtt_error(unsigned stage, int rc) {
+    if (ph_mqtt_owner()) {
+        if (stage == PH_MQTT_ERROR_SESSION &&
+            port.core.operation >= PH_MQTT_ERROR_APP_DISCOVERY_GRAPH &&
+            port.core.operation <= PH_MQTT_ERROR_APP_RECEIPT_ADMISSION)
+            stage = port.core.operation;
+        const micoMemInfo_t *m = MicoGetMemoryInfo();
+        ph_mqtt_record_failure(&port.core,
+            port.cause ? port.cause : (stage >= PH_MQTT_ERROR_INIT && stage <= PH_MQTT_ERROR_YIELD ? PH_MQTT_CAUSE_SDK : PH_MQTT_CAUSE_UNKNOWN), stage, rc,
+            m && m->free_memory > 0 ? (uint32_t)m->free_memory : 0,
+            port.packet_bytes, port.rx.state, &port.read_evidence, &port.write_evidence);
+    }
+}
+
+void ph_mqtt_session_begin(void) {
+    if (ph_mqtt_owner()) {
+        port.cause = port.packet_bytes = 0;
+        memset(&port.read_evidence, 0, sizeof(port.read_evidence));
+        memset(&port.write_evidence, 0, sizeof(port.write_evidence));
+        ph_mqtt_error_session_begin(&port.core);
+    }
+}
+
+void ph_mqtt_lifecycle_event(unsigned stage, int rc) {
     if (ph_mqtt_owner())
-        ph_mqtt_record_error(&port.core, stage, rc);
+        ph_mqtt_record_error(&port.core, stage, rc, false);
 }
 
 void ph_mqtt_reconnect(void) {
@@ -278,24 +311,51 @@ static void ingress(MessageData *d) {
         port.busy[i].used = true;
         return;
     }
-    /* The protocol ACK is not an application receipt. With no emergency slot,
-     * fail this session explicitly; never run a command without result credit. */
-    port.failed = true;
+    /* PUBACK is transport-only. An unadmitted request has not executed: drop
+     * it visibly instead of tearing down a healthy socket on application load.
+     * Never run business without result credit, or send from this callback. */
+    ph_mqtt_record_ingress_drop(&port.core, modern(topic, n));
 }
 
 static int guarded_read(Network *n, unsigned char *p, int count, int timeout) {
     if (!ph_mqtt_owner() || !port.core.protocol_depth || n != port.network || port.rx.failed)
         return -1;
     ph_mqtt_protocol_buffers(&port.core, port.client->readbuf_size, port.client->buf_size);
+    uint32_t at = mico_rtos_get_time();
     int rc = port.read(n, p, count, timeout);
-    if (rc > 0 && !ph_mqtt_rx_feed(&port.rx, p, (size_t) rc))
+    /* Freeze the first anomalous call in this protocol operation. Idle zero
+     * reads are ordinary; their deadline evidence is retained until an error. */
+    if (!port.cause) {
+        port.read_evidence = (ph_mqtt_io_evidence){count, rc, timeout > 0 ? (unsigned)timeout : 0,
+            mico_rtos_get_time() - at};
+        if ((rc < 0 || (rc > 0 && rc != count)) && !port.cause)
+            port.cause = PH_MQTT_CAUSE_READ;
+    }
+    if (rc > 0 && !ph_mqtt_rx_feed(&port.rx, p, (size_t) rc)) {
+        if (!port.cause) port.cause = PH_MQTT_CAUSE_RX_FRAMING;
         return -1;
+    }
+    return rc;
+}
+
+static int guarded_write(Network *n, unsigned char *p, int count, int timeout) {
+    uint32_t at = mico_rtos_get_time();
+    int rc = port.write(n, p, count, timeout);
+    if (!port.cause) {
+        port.write_evidence = (ph_mqtt_io_evidence){count, rc, timeout > 0 ? (unsigned)timeout : 0,
+            mico_rtos_get_time() - at};
+        /* Positive partial writes are supported by Paho, not a failure. */
+        if (rc <= 0 && !port.cause) port.cause = PH_MQTT_CAUSE_WRITE;
+    }
     return rc;
 }
 
 static bool begin(Client *c, unsigned stage) {
     if (c != port.client || port.failed || !ph_mqtt_protocol_begin(&port.core))
         return false;
+    port.cause = port.packet_bytes = 0;
+    memset(&port.read_evidence, 0, sizeof(port.read_evidence));
+    memset(&port.write_evidence, 0, sizeof(port.write_evidence));
     ph_mqtt_record_operation(&port.core, stage);
     return true;
 }
@@ -307,6 +367,12 @@ static int end(unsigned stage, int rc) {
     rc = port.failed ? MQTT_FAILURE : rc;
     if (rc != MQTT_SUCCESS)
         ph_mqtt_error(stage, rc);
+    else {
+        /* Successful protocol activity cannot become a later session cause. */
+        port.cause = port.packet_bytes = 0;
+        memset(&port.read_evidence, 0, sizeof(port.read_evidence));
+        memset(&port.write_evidence, 0, sizeof(port.write_evidence));
+    }
     return rc;
 }
 
@@ -325,6 +391,8 @@ int ph_mqtt_client_init(Client *c, Network *n, unsigned timeout) {
     ph_mqtt_rx_init(&port.rx, port.payload_max + PH_MQTT_TOPIC_BYTES + 9);
     port.read = n->mqttread;
     n->mqttread = guarded_read;
+    port.write = n->mqttwrite;
+    if (port.write) n->mqttwrite = guarded_write;
     memset(c, 0, sizeof(*c));
     if (!begin(c, PH_MQTT_ERROR_INIT))
         return MQTT_FAILURE;
@@ -345,6 +413,8 @@ int ph_mqtt_client_deinit(Client *c) {
     ph_mqtt_protocol_buffers(&port.core, 0, 0);
     if (port.network && port.network->mqttread == guarded_read)
         port.network->mqttread = port.read;
+    if (port.network && port.network->mqttwrite == guarded_write)
+        port.network->mqttwrite = port.write;
     port.client = NULL;
     port.network = NULL;
     return rc;
@@ -395,12 +465,17 @@ int ph_mqtt_publish(Client *c, const char *topic, MQTTMessage *m) {
     /* SDK serializes a second copy, while callback RX can coexist. Its own
      * allocation is still fallible; this check is a soft live-heap admission. */
     if (!permit(NULL, packet + 32)) {
+        port.cause = PH_MQTT_CAUSE_HEAP_ADMISSION;
+        port.packet_bytes = packet;
+        memset(&port.read_evidence, 0, sizeof(port.read_evidence));
+        memset(&port.write_evidence, 0, sizeof(port.write_evidence));
         ph_mqtt_error(PH_MQTT_ERROR_PUBLISH, MQTT_FAILURE);
         port.failed = true;
         return MQTT_FAILURE;
     }
     if (!begin(c, PH_MQTT_ERROR_PUBLISH))
         return MQTT_FAILURE;
+    port.packet_bytes = packet;
     int rc = end(PH_MQTT_ERROR_PUBLISH, MQTTPublish(c, topic, m));
     if (rc != MQTT_SUCCESS)
         port.failed = true;
@@ -466,6 +541,16 @@ bool ph_mqtt_input_consumed(void) {
     return ph_mqtt_credit_replace(&port.core, PH_MQTT_RECEIPT_BYTES);
 }
 
+bool ph_mqtt_work_pending(void) {
+    if (!ph_mqtt_owner() || port.core.protocol_depth || port.core.dispatch_depth || port.failed)
+        return false;
+    mutex_lock(NULL);
+    bool pending = port.core.head[PH_MQTT_COMMAND] || port.core.head[PH_MQTT_SEND];
+    mutex_unlock(NULL);
+    /* Emergency slots are written/retired only by this owner. */
+    return pending || port.busy[0].used || port.busy[1].used;
+}
+
 int ph_mqtt_poll(Client *c) {
     if (!c)
         c = port.client;
@@ -494,10 +579,23 @@ int ph_mqtt_poll(Client *c) {
                 m.payloadlen = strlen(wire);
                 rc = ph_mqtt_publish(c, topic, &m);
                 ph_mqtt_item_release(&port.core, i);
-                return rc;
+                if (rc != MQTT_SUCCESS)
+                    return rc;
+                goto send_one;
+            }
+            /* With no outstanding owner credit, acquire failed only because
+             * the shared ledger was full. This legacy/nonmodern input has not
+             * run and has no modern busy protocol: count/drop it, not the
+             * healthy connection. A preexisting credit remains an invariant
+             * failure. Only this owner mutates credit; producers cannot race it. */
+            if (!port.core.credit) {
+                if (!i->retained)
+                    ph_mqtt_record_ingress_drop(&port.core, false);
+                ph_mqtt_item_release(&port.core, i);
+                goto send_one;
             }
             ph_mqtt_item_release(&port.core, i);
-            return MQTT_FAILURE;
+            return ph_mqtt_app_error(PH_MQTT_ERROR_APP_RECEIPT_ADMISSION, MQTT_FAILURE);
         }
         MQTTString topic = MQTTString_initializer;
         topic.cstring = i->data;
@@ -519,6 +617,8 @@ int ph_mqtt_poll(Client *c) {
         if (port.failed)
             return MQTT_FAILURE;
     }
+send_one:
+    /* A refused COMMAND consumes its one attempt, not its external SEND turn. */
     i = ph_mqtt_pop(&port.core, PH_MQTT_SEND);
     if (i) {
         MQTTMessage m = {0};

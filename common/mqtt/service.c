@@ -17,7 +17,7 @@ static struct printbuf *service_mqtt_wire(json_object *o) {
 int service_mqtt_send(int(*sender)(const char *, const char *, bool), const char *topic, json_object *o, bool retain) {
     struct printbuf *wire = service_mqtt_wire(o);
     if (!wire)
-        return MQTT_FAILURE;
+        return ph_mqtt_app_error(PH_MQTT_ERROR_APP_DISCOVERY_ENCODING, MQTT_FAILURE);
     int rc = sender(topic, wire->buf, retain);
     printbuf_free(wire);
     return rc;

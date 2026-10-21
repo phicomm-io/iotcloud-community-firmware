@@ -258,9 +258,12 @@ class InputRunner(Runner):
         expected_model = baseline.get('model')
         if state.get('model') != expected_model:
             self.block(ip, 'device model changed')
+        required = [key for key in ('wifi_connected', 'mqtt_connected')
+                    if baseline.get(key) is True]
         for key in ('wifi_connected', 'mqtt_connected'):
-            if baseline.get(key) is True and state.get(key) is not True:
-                self.block(ip, 'connectivity state changed: ' + key)
+            if type(state.get(key)) is not bool:
+                self.block(ip, 'status connectivity field missing or invalid: ' + key)
+        return all(state.get(key) is True for key in required)
 
     def sample(self, ip, phase, action='status.get', params=None, expected='ok'):
         if action != 'status.get' or params is not None:
@@ -285,14 +288,18 @@ class InputRunner(Runner):
                 if not isinstance(state, dict):
                     self.block(ip, 'status.get data missing during recovery')
                 else:
-                    row.update(
-                        uptime=state.get('uptime_seconds'),
-                        model=state.get('model'),
-                        wifi_connected=state.get('wifi_connected'),
-                        mqtt_connected=state.get('mqtt_connected'),
-                    )
-                    self.check(ip, state, start)
-                    row['ok'] = True
+                    for key in ('uptime_seconds', 'model', 'wifi_connected',
+                                'mqtt_connected', 'errors', 'last_error',
+                                'watchdog_state'):
+                        if key in state:
+                            row[key] = state[key]
+                    if 'uptime_seconds' in state:
+                        row['uptime'] = state['uptime_seconds']
+                    ready = self.check(ip, state, start)
+                    row['network_ready'] = ready
+                    row['ok'] = ready and not self.stop.is_set()
+                    if not ready and not self.stop.is_set():
+                        row['degraded'] = 'network_not_ready'
         except ProtocolError as exc:
             row.update(ok=False, http=exc.status, error=type(exc).__name__)
             self.block(ip, 'malformed successful HTTP response')
@@ -308,6 +315,7 @@ class InputRunner(Runner):
             'target_versions': self.versions,
             'targets': list(self.targets.items()),
             'blockers': self.blockers[:],
+            'recoveries': self.recoveries[:],
             'scenarios': self.scenario_rows[:],
             'status_checks': self.rows[:],
             'baseline': {

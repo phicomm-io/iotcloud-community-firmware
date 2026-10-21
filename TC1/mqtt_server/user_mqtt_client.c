@@ -564,11 +564,12 @@ static int send_owned(const char *topic,const char *body,bool retained) {
     if(account.mode && !strncmp(topic,"homeassistant/",14)) {
         /* Only the MQTT owner performs JSON/namespace conversion. */
         char *scratch=malloc(MAX_MQTT_TOPIC_SIZE+MAX_MQTT_DATA_SIZE);
-        if(!scratch)return kNoMemoryErr;
+        if(!scratch)return synchronous_send?ph_mqtt_app_error(PH_MQTT_ERROR_APP_SEND_CONVERSION,kNoMemoryErr):kNoMemoryErr;
         int rc=kParamErr;
         if(account_message(topic,body,scratch,scratch+MAX_MQTT_TOPIC_SIZE))
             rc=MqttMsgPublish(&c,scratch,QOS1,1,(const unsigned char *)scratch+MAX_MQTT_TOPIC_SIZE,
                               strlen(scratch+MAX_MQTT_TOPIC_SIZE));
+        else if(synchronous_send)rc=ph_mqtt_app_error(PH_MQTT_ERROR_APP_SEND_CONVERSION,rc);
         free(scratch);return rc;
     }
     return MqttMsgPublish(&c,topic,account.mode || !strncmp(topic,"homeassistant/",14)?QOS1:QOS0,
@@ -576,7 +577,9 @@ static int send_owned(const char *topic,const char *body,bool retained) {
 }
 static int outgoing(const ph_mqtt_item *message) {
     if(!session_current())return MQTT_FAILURE;
-    return send_owned(ph_mqtt_item_topic(message),ph_mqtt_item_payload(message),message->retained);
+    int rc=send_owned(ph_mqtt_item_topic(message),ph_mqtt_item_payload(message),message->retained);
+    /* The external SEND result is fatal; an SDK first cause still wins. */
+    return rc<0?ph_mqtt_app_error(PH_MQTT_ERROR_APP_SEND_CONVERSION,rc):rc;
 }
 OSStatus UserMqttSendTopic(char *topic,char *arg,char retained) {
     if(!topic || !arg || strnlen(topic,MAX_MQTT_TOPIC_SIZE)>=MAX_MQTT_TOPIC_SIZE ||

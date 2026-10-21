@@ -1,0 +1,76 @@
+/* Actual A1 native/filter builders, real JSON ownership and shared session. */
+#include "common/json_owned.h"
+typedef struct {char name[96];} a1_config_t;
+#define FEATURE_TOPIC_MAX 512
+#define A1_FILTER_MAX_HOURS 87600
+#define A1_VERSION "host"
+static char base[192],availability_topic[512];
+static bool builder_bound,identity_failure,encoding_failure,builder_closed;
+static unsigned builder_mode,builder_sends;
+static bool feature_bound(void){return builder_bound;}
+static bool feature_ha_device(char *id,size_t is,char *name,size_t ns,bool *grouped){
+    if(identity_failure)return false;
+    snprintf(id,is,"parent");snprintf(name,ns,"parent");*grouped=false;return true;
+}
+static int builder_sender(const char *topic,const char *wire,bool retained){
+    builder_sends++;return sender(topic,wire,retained);
+}
+static int builder_encode(int(*p)(const char*,const char*,bool),const char*t,json_object*o,bool retain){
+    if(encoding_failure)fail_allocation=native_allocs+1;
+#ifdef PH_MQTT_APP_SOURCES
+    return service_mqtt_send(p,t,o,retain);
+#else
+    return json_owned_publish(p,t,o,retain);
+#endif
+}
+#define publish builder_sender
+#define json_owned_publish builder_encode
+#define service_mqtt_send builder_encode
+/* BUILDERS */
+#undef service_mqtt_send
+#undef json_owned_publish
+#undef publish
+static int builder_prepare(void *context,ph_mqtt_connection *spec){
+    (void)context;rx_at=rx_size=tx_size=0;fail_send=missing_ack=open_fail=false;
+    *spec=(ph_mqtt_connection){&account,"broker","","","host","tx/availability",1883,50,NULL};
+    return PH_MQTT_PREPARE_READY;
+}
+static bool builder_subscription(void*c,unsigned i,ph_mqtt_subscription*s){(void)c;(void)i;(void)s;return false;}
+static int builder_initial(void*c){(void)c;return MQTT_SUCCESS;}
+static int builder_cycle(void*c){
+    (void)c;a1_config_t cfg={"host"};unsigned sent=publications;
+    builder_sends=0;builder_bound=identity_failure=builder_mode==2;
+    encoding_failure=builder_mode>=3;
+    if(builder_mode<2)fail_allocation=native_allocs+1;
+    int rc=discovery(&cfg,builder_mode==1||builder_mode==2||builder_mode==4?4:0);
+    fail_allocation=0;
+    assert(rc==-1 && !builder_sends && publications==sent);
+    return rc;
+}
+static void builder_closing(void*c,bool connected,int rc){
+    (void)c;assert(connected&&rc==-1);ph_mqtt_diagnostics d;ph_mqtt_snapshot(&d);
+    unsigned stage=PH_MQTT_ERROR_SESSION;
+#ifdef PH_MQTT_APP_SOURCES
+    stage=builder_mode<2?PH_MQTT_ERROR_APP_DISCOVERY_GRAPH:
+          builder_mode==2?PH_MQTT_ERROR_APP_DISCOVERY_IDENTITY:PH_MQTT_ERROR_APP_DISCOVERY_ENCODING;
+#endif
+    assert(d.failure.reason==0 && d.failure.operation==stage && d.last_stage==stage);
+    assert(d.last_error==-1 && !d.failure.packet_bytes && !d.failure.credit_bytes && !d.failure.queue_bytes);
+    ph_mqtt_io_evidence zero={0};assert(!memcmp(&d.failure.read,&zero,sizeof(zero)));
+    assert(!memcmp(&d.failure.write,&zero,sizeof(zero)));
+    printf("actual A1 builder negative control mode=%u stage=%u no sender/IO PASS\n",builder_mode,stage);
+    builder_closed=true;
+}
+static bool builder_stop(void*c){(void)c;return builder_closed;}
+int main(void){
+    service_init();heap_capacity=64000;
+    assert(mqtt_account_init(&account,1,"a1","test","aabbccddeeff"));
+    strcpy(base,account.base);assert(mqtt_leaf(&account,"availability",availability_topic,sizeof(availability_topic)));
+    assert(ph_mqtt_owner_init(&account,8192,&thread,accept));
+    ph_mqtt_session_hooks h={NULL,builder_prepare,builder_subscription,builder_initial,builder_cycle,builder_closing,NULL,builder_stop};
+    for(builder_mode=0;builder_mode<5;builder_mode++){
+        builder_closed=false;ph_mqtt_session_run(&client,&h);
+        assert(builder_closed && !native_live && !charged_live);
+    }
+    ph_mqtt_owner_end();return 0;
+}

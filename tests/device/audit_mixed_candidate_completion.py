@@ -13,6 +13,11 @@ import math
 import re
 from pathlib import Path
 
+if __package__:
+    from . import accepted_upload_postcheck as ACCEPTED_UPLOAD
+else:
+    import accepted_upload_postcheck as ACCEPTED_UPLOAD
+
 ROOT = Path(__file__).resolve().parents[2]
 BASE = ROOT / 'build/status101'
 PRIVATE = BASE / 'private'
@@ -52,7 +57,7 @@ QUEUE_REQUIRED_FIELDS = QUEUE_ZERO_FIELDS + (
     'mqtt_reconnects', 'mqtt_max_queue_delay_ms')
 READ_ACTIONS = {'status.get', 'capabilities.get', 'logs.get', 'config.get',
                 'power.get', 'binding.status.get'}
-MQTT_OPERATION_MAX = 7
+MQTT_OPERATION_MAX = 14
 MQTT_BUFFER_MAX = 12288
 REQUIRED_ACCEPTANCE_SOURCES = {
     'controller.py', 'http_status_schema_samples.py', 'http_mqtt_schema_parity.py',
@@ -752,8 +757,304 @@ def _process_complete(row, group=False):
     return bool(ok)
 
 
+# Only these reviewed host helper replacements may differ from the failed run.
+PARTIAL_HELPER_REPLACEMENTS = {
+    'controller.py': ('0036e6a490fe21161091344546c0962b2ca6c5896ee7162bf403fc3e48e1f31f', 'a631bba0bd8cb60a0b1b0c5e1f865ab2d880b6ffc1a92cdd9ce509ee73c7207e'),
+    'validate_shared_candidate.py': ('b70c8221e936d12d7e8a89727dd8ab3423dbadd4f41c4188e0ee1dc7c3f20a0f', 'd627e7eff7d962d14f44131726409f1b98ca87140e79268c61966e548d120587'),
+}
+PARTIAL_CONTROL_FIELDS = ('socket_states', 'requested_fan_on', 'requested_speed',
+                          'child_lock', 'led_enabled', 'brightness_requested', 'fan_mode',
+                          'auto_max_speed', 'led_always_on', 'brightness', 'red', 'green', 'blue')
+
+
+def verify_completed_deploy(label, archive, commit, version, previous):
+    """Accept only the single observed successful A1 child of the known failure.
+
+    This never changes or promotes the failed parent. All historical files and
+    packages are anchored; helper replacement hashes are explicitly allowlisted.
+    """
+    _reuse_check(bool(re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9-]{0,63}', label)), 'invalid partial label')
+    inner_dir = PRIVATE/(label+'-initial-controller')
+    outer_dir = PRIVATE/(label+'-mixed-final-controller')
+    deploy_dir = PRIVATE/('deploy-'+label+'-initial-111')
+    proofs = {}
+    def read(path):
+        path = Path(path).resolve(strict=True)
+        _reuse_check(path.is_relative_to(BASE.resolve()), 'partial evidence outside tree')
+        proofs[str(path)] = _sha256(path)
+        return _read_json(path)
+    inner, outer = read(inner_dir/'controller.json'), read(outer_dir/'controller.json')
+    _reuse_check(inner.get('status') == outer.get('status') == 'failed' and
+                 inner.get('completed') is outer.get('completed') is False and
+                 inner.get('exit_code') == 1 and inner.get('failure_type') == 'TypeError' and
+                 inner.get('failure') == "'NoneType' object is not iterable" and
+                 inner.get('initial_signed_ota_complete') is False and
+                 inner.get('paced_diagnostic_complete') is False, 'partial failure differs')
+    for record, key in ((inner, 'firmware_commit'), (outer, 'commit')):
+        _reuse_check(record.get('label') == label and record.get('archive') == archive and
+                     record.get(key) == commit and record.get('version') == version,
+                     'partial candidate differs')
+    _reuse_check(inner.get('previous_version') == previous and
+                 inner.get('targets') == {ip: ident for ip, (ident, _) in TARGETS.items()},
+                 'partial targets/previous differ')
+    _reuse_check(all(inner.get(k) is True for k in
+                    ('source_unchanged', 'source_copies_unchanged', 'source_manifest_unchanged', 'tracked_worktree_clean')) and
+                 all(outer.get(k) is True for k in
+                    ('source_unchanged', 'source_copies_unchanged', 'candidate_files_unchanged', 'tracked_worktree_clean')),
+                 'partial original source gate failed')
+    steps = inner.get('steps', [])
+    _reuse_check(len(steps) == 1 and _process_complete(steps[0]), 'partial must have one successful child')
+    step = steps[0]
+    _reuse_check(step.get('name') == label+'-initial-deploy-111' and
+                 len(step.get('argv', [])) == 6 and
+                 Path(step['argv'][1]).name == 'deploy_candidate.py' and
+                 step['argv'][2:] == ['111', label+'-initial', previous, archive], 'partial child differs')
+    for path in (BASE/(step['name']+'.log'), outer_dir/'initial.log'):
+        proofs[str(path.resolve(strict=True))] = _sha256(path)
+    stages = outer.get('stages', [])
+    _reuse_check(len(stages) == 1 and stages[0].get('name') == 'initial' and
+                 stages[0].get('pid') == inner.get('pid') and stages[0].get('exit_code') == 1 and
+                 stages[0].get('status') == 'failed' and stages[0].get('process_group_empty') is True and
+                 not any(stages[0].get(k) for k in ('unexpected_descendants', 'descendant_cleanup_attempted',
+                                                    'timed_out', 'interrupted')),
+                 'failed parent child observation differs')
+    _reuse_check(set(deploy_dir.iterdir()) == {deploy_dir/(name+'.json') for name in
+                    ('before', 'upload-intent', 'upload', 'after')}, 'partial deploy files differ')
+    _reuse_check(set(PRIVATE.glob('deploy-'+label+'-initial-*/upload-intent.json')) ==
+                 {deploy_dir/'upload-intent.json'}, 'another upload intent exists')
+    before, intent, upload, after = (read(deploy_dir/(name+'.json')) for name in
+                                    ('before', 'upload-intent', 'upload', 'after'))
+    _reuse_check(step.get('started_at', 0) <= intent.get('at', -1) <= step.get('ended_at', 0),
+                 'partial upload intent outside observed child')
+    _reuse_check(upload.get('http') == 202 and json.loads(upload.get('body', '{}')) ==
+                 {'message': 'OTA verified; rebooting'}, 'partial upload not accepted')
+    ip = '10.117.152.111'
+    ident, model = TARGETS[ip]
+    for state, wanted in ((before.get('status', {}), previous), (after.get('status', {}), version)):
+        _reuse_check(state.get('device_id', '').lower() == ident.lower() and state.get('model') == model and
+                     state.get('version') == wanted, 'partial runtime identity/version differs')
+    _reuse_check(before.get('config') == after.get('config') and isinstance(after.get('config'), dict) and
+                 after['status']['uptime_seconds'] < before['status']['uptime_seconds'],
+                 'partial config/reboot differs')
+    for key in PARTIAL_CONTROL_FIELDS:
+        _reuse_check(before['status'].get(key) == after['status'].get(key), 'partial controls differ:'+key)
+    changes = {}
+    for folder, record in ((inner_dir, inner), (outer_dir, outer)):
+        manifest_path = folder/'source-manifest.json'
+        manifest = read(manifest_path)
+        _reuse_check(_sha256(manifest_path) == record.get('source_manifest_sha256'), 'partial source manifest changed')
+        required = {'controller.py', 'readonly_stress.py', 'deploy_candidate.py',
+                    'diagnose_shared_candidate.py', 'ota_package.py', 'status_benchmark.py',
+                    'validate_shared_candidate.py'}
+        _reuse_check(required <= set(manifest.get('sources', {})), 'partial required sources missing')
+        if folder == inner_dir:
+            _reuse_check(manifest.get('candidate_commit') == commit and manifest.get('candidate_version') == version,
+                         'partial archived candidate identity differs')
+        else:
+            _reuse_check(manifest.get('sources') == outer.get('sources'), 'partial outer source records differ')
+        for name, item in manifest['sources'].items():
+            path = (folder/item['archive_path']).resolve(strict=True)
+            _reuse_check(path.is_relative_to(folder.resolve()), 'partial archive escape')
+            digest = _sha256(path)
+            proofs[str(path)] = digest
+            _reuse_check(digest == item['sha256'] == item['archived_sha256'], 'partial source archive changed')
+            if folder == inner_dir:
+                current = ROOT/item['path']
+                current_digest = _sha256(current)
+                if current_digest != digest:
+                    _reuse_check(name in PARTIAL_HELPER_REPLACEMENTS and
+                                 (digest, current_digest) == PARTIAL_HELPER_REPLACEMENTS[name],
+                                 'unapproved partial helper change:'+name)
+                    changes[name] = {'old_sha256': digest, 'new_sha256': current_digest}
+                elif name in PARTIAL_HELPER_REPLACEMENTS:
+                    _reuse_check(False, 'required helper repair missing:'+name)
+    expected_files = {model+'/'+filename for model in ('a1', 'tc1', 'm1')
+                      for filename in ('manifest.json', 'SHA256SUMS',
+                      'phicomm_'+('tc1_a1' if model == 'tc1' else model)+'.ota.bin',
+                      'phicomm_'+('tc1_a1' if model == 'tc1' else model)+'.ota.bin.signed')}
+    _reuse_check(set(outer.get('candidate_files', {})) == expected_files, 'partial candidate archive incomplete')
+    for item in outer['candidate_files'].values():
+        path = (outer_dir/item['archive_path']).resolve(strict=True)
+        _reuse_check(path.is_relative_to(outer_dir.resolve()) and
+                     _sha256(path) == item['sha256'] == item['archived_sha256'] == _sha256(item['source_path']),
+                     'partial candidate archive changed')
+        proofs[str(path)] = _sha256(path)
+        proofs[str(Path(item['source_path']).resolve())] = _sha256(item['source_path'])
+    _reuse_check(set(changes) == set(PARTIAL_HELPER_REPLACEMENTS), 'helper repair set differs')
+    from tools.ota.package import verify_package
+    folder = BASE/'candidates'/archive/'a1'
+    manifest = read(folder/'manifest.json')
+    signed_path, raw_path = folder/'phicomm_a1.ota.bin.signed', folder/'phicomm_a1.ota.bin'
+    signed, raw = signed_path.read_bytes(), raw_path.read_bytes()
+    for path in (signed_path, raw_path):
+        proofs[str(path.resolve())] = _sha256(path)
+    metadata = verify_package(signed, 'a1')
+    _reuse_check(intent.get('ip') == ip and intent.get('device_id', '').lower() == ident.lower() and
+                 intent.get('sha256') == hashlib.sha256(signed).hexdigest() and intent.get('manifest') == manifest and
+                 manifest.get('git_commit') == commit and manifest.get('version') == version and
+                 manifest.get('dirty') is False and manifest.get('target') == 'A1@MK3080B@moc' and
+                 metadata.get('model') == 'a1' and metadata.get('commit') == commit and
+                 metadata.get('version') == manifest.get('base_version') and signed[192:] == raw and
+                 hashlib.sha256(raw).hexdigest() == manifest.get('files', {}).get('phicomm_a1.ota.bin'),
+                 'partial signed package differs')
+    return {'schema': 'completed-single-deploy-v1', 'source_label': label, 'ip': ip,
+            'archive': archive, 'commit': commit, 'version': version, 'previous_version': previous,
+            'original_step': step, 'original_outer_status': 'failed', 'original_inner_status': 'failed',
+            'after': after, 'helper_changes': changes, 'proof_sha256': dict(sorted(proofs.items()))}
+
+
+def verify_completed_deploy_fresh(proof, samples):
+    """Three guarded reads retain uptime/config/control; SDK clock may run fast."""
+    _reuse_check(len(samples) == 3, 'partial fresh sample count')
+    ip, old = proof['ip'], proof['after']['status']
+    ident, model = TARGETS[ip]
+    last_uptime = old.get('uptime_seconds')
+    last_upper = None
+    wall_upper = proof['original_step']['ended_at']-last_uptime
+    last_end = None
+    for sample in samples:
+        state = sample.get('status', {})
+        _reuse_check(state.get('device_id', '').lower() == ident.lower() and state.get('model') == model and
+                     state.get('version') == proof['version'] and sample.get('config') == proof['after']['config'],
+                     'partial fresh identity/version/config differs')
+        for key in PARTIAL_CONTROL_FIELDS:
+            _reuse_check(state.get(key) == old.get(key), 'partial fresh controls differ:'+key)
+        uptime = state.get('uptime_seconds')
+        start, end = sample.get('started_monotonic'), sample.get('ended_monotonic')
+        _reuse_check(type(uptime) in (int, float) and uptime >= last_uptime and
+                     type(start) in (int, float) and type(end) in (int, float) and end >= start,
+                     'partial fresh uptime/timing invalid')
+        wall_start, wall_end = sample.get('started_at'), sample.get('ended_at')
+        _reuse_check(type(wall_start) in (int, float) and type(wall_end) in (int, float) and
+                     wall_end >= wall_start and wall_start-uptime-1 <= wall_upper and
+                     (last_end is None or start >= last_end), 'partial fresh historical boot boundary')
+        wall_upper = wall_end-uptime
+        last_end = end
+        lower, upper = start-uptime-1, end-uptime
+        _reuse_check(last_upper is None or lower <= last_upper, 'partial fresh reboot boundary')
+        last_uptime, last_upper = uptime, upper
+    return {'passed': True, 'samples': samples, 'basis': 'uptime nondecreasing and adjacent boot upper bound; SDK fast clock allowed'}
+
+
+def verify_accepted_upload_fresh(proof, samples):
+    """Independent postcheck anchors continuity; original failed child stays failed."""
+    expected = ACCEPTED_UPLOAD.verify_accepted_upload_postcheck(
+        proof['cleanup_file'], root=ROOT, validation_commit=proof['validation_commit'], check_current=False)
+    _reuse_check(proof == expected, 'accepted upload provenance differs')
+    for sample in samples:
+        ACCEPTED_UPLOAD._state(sample.get('status', {}), sample.get('config'), proof['after'])
+        _reuse_check(sample.get('started_at', 0) >= proof['postcheck_step']['ended_at'],
+                     'accepted upload fresh sample predates independent postcheck')
+    return dict(verify_completed_deploy_fresh(proof, samples), schema='accepted-upload-fresh-v1')
+
+
+def _accepted_reuse_cli(proof, argv):
+    flags = {'completed-single-deploy-v1': '--reuse-completed-deploy',
+             ACCEPTED_UPLOAD.SCHEMA: '--reuse-accepted-upload-postcheck'}
+    flag = flags.get(proof.get('schema'))
+    return (flag is not None and argv.count(flag) == 1 and
+            all(other == flag or other not in argv for other in flags.values()) and
+            _contains_pair(argv, flag, proof.get('source_label')))
+
+
+def _initial_previous_versions(initial):
+    """Exact per-device old versions, independently of the new candidate version.
+
+    JSON objects cannot retain duplicate keys; CLI parsers must reject repeated
+    --previous IP=VERSION entries before constructing this optional mapping.
+    """
+    scalar = initial.get('previous_version')
+    if 'previous_versions' not in initial:
+        return {ip: scalar for ip in TARGETS}
+    mapping = initial['previous_versions']
+    valid_version = lambda value: isinstance(value, str) and bool(
+        re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9][A-Za-z0-9._-]{0,63})?', value))
+    _reuse_check(isinstance(mapping, dict) and bool(mapping) and set(mapping) <= set(TARGETS) and
+                 valid_version(scalar) and all(valid_version(value) for value in mapping.values()),
+                 'invalid initial previous_versions')
+    return {ip: mapping.get(ip, scalar) for ip in TARGETS}
+
+
+def _initial_previous_cli(initial, argv):
+    if 'previous_versions' not in initial:
+        return True
+    try:
+        _reuse_check(argv.count('--previous-version') == 1, 'missing/duplicate scalar previous version')
+        scalar_at = argv.index('--previous-version')
+        _reuse_check(argv[scalar_at+1] == initial['previous_version'], 'scalar previous argv differs')
+        overrides = {}
+        for index, arg in enumerate(argv):
+            if arg != '--previous':
+                continue
+            ip, value = argv[index+1].split('=', 1)
+            _reuse_check(ip not in overrides, 'duplicate previous override')
+            overrides[ip] = value
+        resolved = _initial_previous_versions(dict(previous_version=initial['previous_version'],
+                                                   previous_versions=overrides)) if overrides else {
+                                                       ip: initial['previous_version'] for ip in TARGETS}
+        return resolved == _initial_previous_versions(initial)
+    except (ValueError, KeyError, TypeError, IndexError):
+        return False
+
+
+def _initial_step_argv(step, index, deploy_ips, label, archive, version, previous):
+    args = step.get('argv', [])
+    if index < len(deploy_ips):
+        ip = deploy_ips[index]
+        return (len(args) == 6 and Path(str(args[1])).name == 'deploy_candidate.py' and
+                args[2:] == [ip.rsplit('.', 1)[1], label+'-initial', previous[ip], archive])
+    return (index == len(deploy_ips) and len(args) == 7 and
+            Path(str(args[1])).name == 'diagnose_shared_candidate.py' and
+            args[2:] == ['--version', version, '--label', label, '--execute'])
+
+
 def _initial_gate(initial, commit, version):
     steps = initial.get('steps', [])
+    reused = initial.get('reused_deployments', [])
+    partial_ok = False
+    try:
+        previous = _initial_previous_versions(initial)
+        deploy_ips = tuple(TARGETS)[1:] if reused else tuple(TARGETS)
+        if reused and 'previous_versions' in initial:
+            _reuse_check(previous[tuple(TARGETS)[0]] == version, 'reused device previous version differs')
+        _reuse_check(all(_initial_step_argv(step, index, deploy_ips, initial['label'], initial['archive'],
+                                           version, previous) for index, step in enumerate(steps)),
+                     'initial actual argv differs')
+    except (ValueError, KeyError, TypeError):
+        return False
+    if reused:
+        try:
+            _reuse_check(len(reused) == 1 and isinstance(reused[0], dict), 'partial reuse count')
+            proof = dict(reused[0])
+            fresh = proof.pop('fresh_continuity')
+            if proof.get('schema') == 'completed-single-deploy-v1':
+                expected = verify_completed_deploy(proof['source_label'], initial['archive'], commit, version,
+                                                   initial['previous_version'])
+                fresh_expected = verify_completed_deploy_fresh(proof, fresh['samples'])
+            elif proof.get('schema') == ACCEPTED_UPLOAD.SCHEMA:
+                _reuse_check((proof.get('archive'), proof.get('commit'), proof.get('version'),
+                              proof.get('previous_version')) ==
+                             (initial['archive'], commit, version, initial['previous_version']),
+                             'accepted upload candidate differs')
+                expected = ACCEPTED_UPLOAD.verify_accepted_upload_postcheck(
+                    proof['cleanup_file'], root=ROOT, validation_commit=initial['validation_commit'],
+                    check_current=False)
+                fresh_expected = verify_accepted_upload_fresh(proof, fresh['samples'])
+            else:
+                _reuse_check(False, 'unknown completed deployment schema')
+            _reuse_check(proof == expected, 'partial provenance differs')
+            _reuse_check(fresh == fresh_expected, 'partial fresh proof differs')
+            _reuse_check(all(initial['started_at'] <= sample['started_at'] <= sample['ended_at'] <=
+                             initial['ended_at'] for sample in fresh['samples']),
+                         'partial fresh reads outside new execution')
+            _reuse_check(len(steps) == 3, 'partial actual child count')
+            for index, step in enumerate(steps):
+                valid = _initial_step_argv(step, index, deploy_ips, initial['label'], initial['archive'], version, previous)
+                _reuse_check(valid and step['ended_monotonic'] >= step['started_monotonic'] and
+                             step['ended_at'] >= step['started_at'], 'partial actual argv/timing differs')
+            partial_ok = True
+        except (ValueError, KeyError, TypeError, OSError):
+            return False
     return (initial.get('status') == 'complete' and initial.get('completed') is True and
             initial.get('initial_signed_ota_complete') is True and
             initial.get('paced_diagnostic_complete') is True and
@@ -762,7 +1063,7 @@ def _initial_gate(initial, commit, version):
             all(initial.get(key) is True for key in
                 ('source_unchanged', 'source_copies_unchanged', 'source_manifest_unchanged')) and
             type(initial.get('pid')) is int and initial['pid'] > 0 and
-            initial.get('exit_code') == 0 and len(steps) == 4 and
+            initial.get('exit_code') == 0 and len(steps) == (3 if partial_ok else 4) and
             all(_process_complete(row) for row in steps) and
             initial.get('targets') == {ip: ident for ip, (ident, _) in TARGETS.items()})
 
@@ -826,17 +1127,17 @@ def verify_reusable_initial(label, archive, commit, version):
                 all(_contains_pair(argv, key, value) for key, value in
                     (('--archive', archive), ('--commit', commit), ('--version', version),
                      ('--label', label))) and '--execute' in argv, 'original initial argv differs')
-    previous = inner.get('previous_version')
+    _reuse_check(_initial_previous_cli(inner, argv), 'initial previous override argv differs')
+    previous = _initial_previous_versions(inner)
+    deploy_ips = tuple(TARGETS)[1:] if inner.get('reused_deployments') else tuple(TARGETS)
     for index, step in enumerate(inner['steps']):
-        args = step.get('argv', [])
-        if index < 3:
-            suffix = tuple(TARGETS)[index].rsplit('.', 1)[1]
-            expected = [suffix, label+'-initial', previous, archive]
-            valid = len(args) == 6 and Path(str(args[1])).name == 'deploy_candidate.py' and args[2:] == expected
-        else:
-            valid = (len(args) == 7 and Path(str(args[1])).name == 'diagnose_shared_candidate.py' and
-                     args[2:] == ['--version', version, '--label', label, '--execute'])
+        valid = _initial_step_argv(step, index, deploy_ips, label, archive, version, previous)
         _reuse_check(valid, 'initial four-step argv/order mismatch')
+    if inner.get('reused_deployments'):
+        partial = inner['reused_deployments'][0]
+        _reuse_check(_accepted_reuse_cli(partial, argv),
+                     'partial source missing from actual initial argv')
+        proofs.update(partial['proof_sha256'])
     outer_manifest_path = outer_dir/'source-manifest.json'
     outer_manifest = read(outer_manifest_path)
     _reuse_check(_sha256(outer_manifest_path) == outer.get('source_manifest_sha256') and
@@ -860,6 +1161,10 @@ def verify_reusable_initial(label, archive, commit, version):
                   'diagnose_shared_candidate.py', 'ota_package.py', 'status_benchmark.py',
                   'validate_shared_candidate.py'} <= set(inner_manifest.get('sources', {})),
                 'original inner required sources missing')
+    if inner.get('reused_deployments') and inner['reused_deployments'][0].get('schema') == ACCEPTED_UPLOAD.SCHEMA:
+        for source_manifest in (outer_manifest, inner_manifest):
+            _reuse_check('accepted_upload_postcheck.py' in source_manifest.get('sources', {}),
+                         'accepted upload verifier source archive missing')
     archived(inner_dir, inner_manifest.get('sources'))
     files = outer.get('candidate_files', {})
     expected_files = set()
@@ -891,6 +1196,36 @@ def verify_reusable_initial(label, archive, commit, version):
             _reuse_check(name in records and records[name]['sha256'] == hashlib.sha256(data).hexdigest(),
                         'inner deployed package differs')
         packages[model] = hashlib.sha256(signed).hexdigest()
+    # Bind each actual deploy to its own expected receiver version and package.
+    # A skipped A1 is verified through the separate immutable reused proof above.
+    for index, ip in enumerate(deploy_ips):
+        ident, model = TARGETS[ip]
+        folder = PRIVATE/('deploy-'+label+'-initial-'+ip.rsplit('.', 1)[1])
+        before, intent, upload, after = (read(folder/(name+'.json')) for name in
+                                          ('before', 'upload-intent', 'upload', 'after'))
+        manifest = read(BASE/'candidates'/archive/model/'manifest.json')
+        _reuse_check(intent.get('ip') == ip and str(intent.get('device_id', '')).lower() == ident.lower() and
+                     intent.get('sha256') == packages[model] and intent.get('manifest') == manifest and
+                     upload.get('http') == 202 and upload.get('failed', False) is False,
+                     'initial deploy package/target/202 mismatch')
+        step = inner['steps'][index]
+        times = (step.get('started_at'), intent.get('at'), step.get('ended_at'))
+        _reuse_check(all(type(value) in (int, float) and math.isfinite(value) for value in times) and
+                     times[0] <= times[1] <= times[2], 'initial upload intent outside child')
+        for record, expected_version in ((before, previous[ip]), (after, version)):
+            state = record.get('status', {})
+            _reuse_check(str(state.get('device_id', '')).lower() == ident.lower() and
+                         state.get('model') == model and state.get('version') == expected_version,
+                         'initial deploy before/after identity/version mismatch')
+        controls = {'a1': ('requested_fan_on', 'requested_speed', 'child_lock', 'led_enabled'),
+                    'tc1': ('socket_states', 'child_lock', 'led_enabled'), 'm1': ('brightness_requested',)}[model]
+        _reuse_check(isinstance(before.get('config'), dict) and before['config'] == after.get('config') and
+                     all(key in before['status'] and key in after['status'] and
+                         before['status'][key] == after['status'][key] for key in controls),
+                     'initial deploy config/controls changed')
+        bu, au = before['status'].get('uptime_seconds'), after['status'].get('uptime_seconds')
+        _reuse_check(all(type(value) in (int, float) and math.isfinite(value) for value in (bu, au)) and
+                     0 <= au < bu, 'initial deploy reboot not observed')
     paced = read(paced_path)
     failures = []
     _runner_gate(paced, 'reused_paced', failures)

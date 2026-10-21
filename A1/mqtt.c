@@ -4,6 +4,7 @@
 #include "../common/mqtt_transport.h"
 #include "../common/mqtt/client.h"
 #include "../common/json_owned.h"
+#include "../common/mqtt/service.h"
 #include "../common/mqtt_cleanup.h"
 #include <ctype.h>
 
@@ -44,7 +45,8 @@ static int publish(const char *topic, const char *payload, bool retain)
     MQTTMessage m = {0}; m.qos = QOS1; m.retained = retain;
     m.payload = (void *)payload; m.payloadlen = strlen(payload);
     int result = ph_mqtt_publish(&client, topic, &m);
-    mqtt_error("publish", result);
+    if (result != PH_MQTT_MORE)
+        mqtt_error("publish", result);
     return result;
 }
 static int leaf(const char *name, const char *payload)
@@ -145,7 +147,7 @@ static __attribute__((noinline)) int filter_discovery(const a1_config_t *c, bool
     static char parent_id[192], parent_name[FEATURE_TOPIC_MAX];
     if (!clear && bound && !feature_ha_device(parent_id, sizeof(parent_id),
                                              parent_name, sizeof(parent_name), &grouped))
-        return MQTT_FAILURE;
+        return ph_mqtt_app_error(PH_MQTT_ERROR_APP_DISCOVERY_IDENTITY, MQTT_FAILURE);
     for (unsigned i=index; i<6 && i==index; ++i) {
         static char path[MQTT_TOPIC_MAX], identity[MQTT_TOPIC_MAX];
         mqtt_ha(&account, components[i], keys[i], path, sizeof(path));
@@ -156,7 +158,7 @@ static __attribute__((noinline)) int filter_discovery(const a1_config_t *c, bool
             if (o) json_object_put(o);
             if (device) json_object_put(device);
             if (ids) json_object_put(ids);
-            return MQTT_FAILURE;
+            return ph_mqtt_app_error(PH_MQTT_ERROR_APP_DISCOVERY_GRAPH, MQTT_FAILURE);
         }
         mqtt_identity(&account, "", identity, sizeof(identity));
         json_build_array_add(ids, json_object_new_string(bound ? parent_id : identity));
@@ -205,7 +207,7 @@ static __attribute__((noinline)) int filter_discovery(const a1_config_t *c, bool
             json_build_array_add(options, json_object_new_string("手动"));
             json_build_object_add(o, "options", options);
         }
-        int rc = json_owned_publish(publish,path,o,true);
+        int rc = service_mqtt_send(publish,path,o,true);
         if (rc != MQTT_SUCCESS) return rc;
     }
     return MQTT_SUCCESS;
@@ -222,7 +224,7 @@ static int discovery(const a1_config_t *c,unsigned index)
             if (o) json_object_put(o);
             if (device) json_object_put(device);
             if (ids) json_object_put(ids);
-            return MQTT_FAILURE;
+            return ph_mqtt_app_error(PH_MQTT_ERROR_APP_DISCOVERY_GRAPH, MQTT_FAILURE);
         }
         char text[MQTT_TOPIC_MAX], path[MQTT_TOPIC_MAX];
         mqtt_identity(&account, "", text, sizeof(text));
@@ -271,7 +273,7 @@ static int discovery(const a1_config_t *c,unsigned index)
         }
         if (i >= 2) str(o, "entity_category", "config");
         mqtt_ha(&account, components[i], keys[i], path, sizeof(path));
-        int rc = json_owned_publish(publish,path,o,true);
+        int rc = service_mqtt_send(publish,path,o,true);
         if (rc != MQTT_SUCCESS) return rc;
     }
     return index>=4?filter_discovery(c,false,index-4):MQTT_SUCCESS;

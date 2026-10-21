@@ -29,6 +29,31 @@ def load_runner(data):
     }
 
 
+def quiet_runner(data):
+    memory = []
+    for ip in AUDIT.TARGETS:
+        for phase in ('baseline', 'final'):
+            memory.extend({'ip': ip, 'phase': phase, 'ok': True, 'http': 200,
+                           'data': dict(data)} for _ in range(3))
+    return {'memory': memory}
+
+
+def quiet_diagnostics():
+    return {
+        'json_live_blocks': 0, 'memory_active': 0, 'memory_reserved': 0,
+        'memory_waiting': 0,
+        'http_core_owner_state': 1, 'http_core_close_failures': 0,
+        'http_core_restarts': 0, 'http_core_tcp_rc': 0, 'http_core_occupied': 0,
+        'mqtt_rx_queued': 0, 'mqtt_tx_queued': 0, 'mqtt_inflight': 0,
+        'mqtt_queue_bytes': 0, 'mqtt_credit_bytes': 0, 'mqtt_peak_bytes': 0,
+        'mqtt_owner_faults': 0, 'mqtt_generation': 1, 'mqtt_rejected': 0,
+        'mqtt_rx_buffer_bytes': 512, 'mqtt_tx_buffer_bytes': 512,
+        'mqtt_protocol_depth': 0, 'mqtt_operation': 1,
+        'mqtt_last_error_stage': 1, 'mqtt_last_error': 0, 'mqtt_errors': 0,
+        'mqtt_reconnects': 0, 'mqtt_max_queue_delay_ms': 0,
+    }
+
+
 class MixedLoadDiagnosticsTests(unittest.TestCase):
     def test_underload_diagnostics_check_budgets_and_owner_without_requiring_zero_queue(self):
         diag = {
@@ -77,6 +102,42 @@ class MixedLoadDiagnosticsTests(unittest.TestCase):
             self.assertEqual(row['availability'], 'NOT_AVAILABLE')
             self.assertEqual(row['fields']['mqtt_queue_bytes'], 'NOT_AVAILABLE')
             self.assertEqual(row['samples'], 1)
+
+    def test_application_mqtt_stages_pass_both_diagnostic_audits(self):
+        for field in ('mqtt_operation', 'mqtt_last_error_stage'):
+            for stage in range(8, 15):
+                with self.subTest(field=field, stage=stage):
+                    diag = quiet_diagnostics()
+                    diag[field] = stage
+                    failures = []
+                    report = AUDIT._audit_load_diagnostics(load_runner(diag), failures, 'stages')
+                    self.assertEqual(failures, [])
+                    self.assertTrue(all(row['violating_phases'] == []
+                                        for row in report.values()))
+                    failures = []
+                    result = AUDIT._quiet_resources(quiet_runner(diag), '0.9.15-test',
+                                                    failures, 'stages', require_queue=True)
+                    self.assertEqual(failures, [])
+                    self.assertTrue(all(row['passed'] for row in result.values()))
+
+    def test_out_of_range_or_malformed_mqtt_stages_fail_both_diagnostic_audits(self):
+        for field in ('mqtt_operation', 'mqtt_last_error_stage'):
+            for value in (15, -1, True, '8'):
+                with self.subTest(field=field, value=value):
+                    diag = quiet_diagnostics()
+                    diag[field] = value
+                    failures = []
+                    report = AUDIT._audit_load_diagnostics(load_runner(diag), failures, 'stages')
+                    self.assertEqual(set(failures), {
+                        f'stages_load_diagnostic_bounds:{ip}' for ip in AUDIT.TARGETS})
+                    self.assertTrue(all(row['violating_phases'] == ['mixed-soak']
+                                        for row in report.values()))
+                    failures = []
+                    result = AUDIT._quiet_resources(quiet_runner(diag), '0.9.15-test',
+                                                    failures, 'stages', require_queue=True)
+                    self.assertEqual(set(failures), {
+                        f'stages_quiet_resources:{ip}' for ip in AUDIT.TARGETS})
+                    self.assertTrue(all(not row['passed'] for row in result.values()))
 
 
 class MQTTContractTests(unittest.TestCase):
@@ -312,6 +373,8 @@ class InitialReuseTests(unittest.TestCase):
                           paced_diagnostic_complete=True, source_unchanged=True, source_copies_unchanged=True,
                           source_manifest_unchanged=True, steps=steps, diagnostic_summary=summary,
                           targets={ip: ident for ip, (ident, _) in AUDIT.TARGETS.items()})
+        for step in steps:
+            step.update(started_at=100, ended_at=110, started_monotonic=1000, ended_monotonic=1010)
         inner_manifest = {'commit': self.commit, 'candidate_commit': self.commit,
                           'candidate_version': self.version, 'sources': inner_sources}
         self.write(self.inner_dir/'source-manifest.json', inner_manifest)
@@ -331,6 +394,18 @@ class InitialReuseTests(unittest.TestCase):
                    {'validation_commit': self.commit, 'sources': outer_sources})
         self.outer['source_manifest_sha256'] = AUDIT._sha256(self.outer_dir/'source-manifest.json')
         self.write(self.outer_dir/'controller.json', self.outer)
+        for ip, (ident, model) in AUDIT.TARGETS.items():
+            folder = self.private/('deploy-'+self.label+'-initial-'+ip.rsplit('.', 1)[1])
+            state = self.runner()['before'][ip]
+            self.write(folder/'before.json', {'status': dict(state['state'], version=self.inner['previous_version'], uptime_seconds=1000),
+                                               'config': state['config']})
+            self.write(folder/'after.json', {'status': dict(state['state'], uptime_seconds=10), 'config': state['config']})
+            package_dir = self.base/'candidates'/self.archive/model
+            ota = 'phicomm_'+('tc1_a1' if model == 'tc1' else model)+'.ota.bin'
+            self.write(folder/'upload-intent.json', {'ip': ip, 'device_id': ident, 'at': 104.5,
+                       'sha256': AUDIT._sha256(package_dir/(ota+'.signed')),
+                       'manifest': json.loads((package_dir/'manifest.json').read_text())})
+            self.write(folder/'upload.json', {'http': 202})
 
     @staticmethod
     def digest(data):
@@ -397,6 +472,259 @@ class InitialReuseTests(unittest.TestCase):
         self.inner['targets'] = []
         self.assertFalse(AUDIT._initial_gate(self.inner, self.commit, self.version))
 
+    def mapped_initial(self):
+        import copy
+        inner = copy.deepcopy(self.inner)
+        a1 = tuple(AUDIT.TARGETS)[0]
+        inner['previous_versions'] = {a1: '0.9.15-4e5a85'}
+        inner['steps'][0]['argv'][4] = inner['previous_versions'][a1]
+        folder = self.private/('deploy-'+self.label+'-initial-111')
+        before = json.loads((folder/'before.json').read_text())
+        before['status']['version'] = inner['previous_versions'][a1]
+        self.write(folder/'before.json', before)
+        self.outer['stages'][0]['argv'].extend(['--previous-version', inner['previous_version'],
+                                                '--previous', a1+'=0.9.15-4e5a85'])
+        self.write(self.inner_dir/'controller.json', inner)
+        self.write(self.outer_dir/'controller.json', self.outer)
+        return inner
+
+    def test_per_device_previous_normal_ota_binds_before_and_candidate_independently(self):
+        inner = self.mapped_initial()
+        self.assertTrue(AUDIT._initial_gate(inner, self.commit, self.version))
+        proof = self.verify()
+        self.assertEqual(proof['version'], self.version)
+        self.assertEqual(inner['previous_version'], '0.9.15-old')
+        resolved = AUDIT._initial_previous_versions(inner)
+        self.assertEqual(resolved['10.117.152.111'], '0.9.15-4e5a85')
+        self.assertEqual(resolved['10.117.152.102'], inner['previous_version'])
+        # Full resolved records are equivalent to a CLI containing only overrides.
+        inner['previous_versions'] = resolved
+        self.write(self.inner_dir/'controller.json', inner)
+        self.verify()
+
+    def test_per_device_previous_invalid_mapping_and_wrong_actual_argv_rejected(self):
+        import copy
+        valid = self.mapped_initial()
+        for mapping in ({}, None, [], {'10.117.152.999':'0.9.15-old'},
+                        {'10.117.152.111':''}, {'10.117.152.111':None}, {'10.117.152.111':' bad '},
+                        {'10.117.152.111':'not-a-version'}):
+            inner = copy.deepcopy(valid);inner['previous_versions'] = mapping
+            self.assertFalse(AUDIT._initial_gate(inner, self.commit, self.version))
+        bad = copy.deepcopy(valid);bad['steps'][0]['argv'][4] = bad['previous_version']
+        self.assertFalse(AUDIT._initial_gate(bad, self.commit, self.version))
+        with self.assertRaises(ValueError): AUDIT._initial_previous_versions(dict(valid, previous_version=''))
+
+    def test_per_device_previous_duplicate_unknown_wrong_or_missing_cli_rejected(self):
+        import copy
+        self.mapped_initial()
+        base = copy.deepcopy(self.outer['stages'][0]['argv'])
+        variants = [base+['--previous','10.117.152.111=0.9.15-4e5a85'],
+                    base+['--previous','10.117.152.999=0.9.15-old'],
+                    base+['--previous'], base[:-2],
+                    [arg if arg != '10.117.152.111=0.9.15-4e5a85' else '10.117.152.111=0.9.15-wrong' for arg in base]]
+        for args in variants:
+            self.outer['stages'][0]['argv'] = args
+            self.write(self.outer_dir/'controller.json', self.outer)
+            with self.assertRaisesRegex(ValueError, 'previous override argv'): self.verify()
+
+    def test_initial_deploy_before_intent_upload_after_are_re_read_and_bound(self):
+        self.mapped_initial()
+        folder = self.private/('deploy-'+self.label+'-initial-111')
+        mutations = [('before', lambda r:r['status'].__setitem__('version', '0.9.15-old')),
+                     ('after', lambda r:r['status'].__setitem__('version', '0.9.15-4e5a85')),
+                     ('before', lambda r:r['status'].__setitem__('device_id', 'wrong')),
+                     ('upload-intent', lambda r:r.__setitem__('sha256', '0'*64)),
+                     ('upload-intent', lambda r:r.__setitem__('at', 99999)),
+                     ('upload', lambda r:r.__setitem__('http', 400)),
+                     ('after', lambda r:r['config'].__setitem__('name','changed')),
+                     ('after', lambda r:r['status'].__setitem__('requested_speed', 99))]
+        for name, mutate in mutations:
+            path = folder/(name+'.json');old = path.read_bytes()
+            record = json.loads(old);mutate(record);self.write(path,record)
+            try:
+                with self.assertRaises(ValueError): self.verify()
+            finally:path.write_bytes(old)
+        proof = self.verify()
+        for name in ('before', 'upload-intent', 'upload', 'after'):
+            self.assertIn(str((folder/(name+'.json')).resolve()), proof['proof_sha256'])
+
+    def test_per_device_previous_reused_three_steps_uses_each_actual_target(self):
+        from unittest.mock import patch
+        inner, proof = self.partial_initial()
+        inner['previous_versions'] = {'10.117.152.111': self.version, '10.117.152.102': '0.9.15-other'}
+        inner['steps'][0]['argv'][4] = '0.9.15-other'
+        with patch.object(AUDIT, 'verify_completed_deploy', return_value=proof):
+            self.assertTrue(AUDIT._initial_gate(inner, self.commit, self.version))
+            inner['steps'][0]['argv'][4] = inner['previous_version']
+            self.assertFalse(AUDIT._initial_gate(inner, self.commit, self.version))
+            inner['steps'][0]['argv'][4] = '0.9.15-other'
+            inner['previous_versions']['10.117.152.111'] = '0.9.15-wrong'
+            self.assertFalse(AUDIT._initial_gate(inner, self.commit, self.version))
+
+    def partial_initial(self):
+        import copy
+        inner = copy.deepcopy(self.inner)
+        inner.update(started_at=100, ended_at=110)
+        inner['steps'] = inner['steps'][1:]
+        for step in inner['steps']:
+            step.update(started_at=104, ended_at=105, started_monotonic=1004, ended_monotonic=1005)
+        state = {'device_id': AUDIT.TARGETS['10.117.152.111'][0], 'model': 'a1',
+                 'version': self.version, 'uptime_seconds': 5, 'requested_speed': 100}
+        proof = {'schema': 'completed-single-deploy-v1', 'source_label': 'failed-source',
+                 'ip': '10.117.152.111', 'archive': self.archive, 'commit': self.commit,
+                 'version': self.version, 'previous_version': inner['previous_version'],
+                 'after': {'status': state, 'config': {'name': 'unchanged'}},
+                 'original_step': {'pid': 999, 'ended_at': 99}, 'proof_sha256': {}}
+        samples = []
+        for index in range(3):
+            current = dict(state, uptime_seconds=8+index)
+            samples.append({'status': current, 'config': {'name': 'unchanged'},
+                            'started_at': 102+index, 'ended_at': 102.1+index,
+                            'started_monotonic': 1002+index, 'ended_monotonic': 1002.1+index})
+        fresh = AUDIT.verify_completed_deploy_fresh(proof, samples)
+        inner['reused_deployments'] = [dict(proof, fresh_continuity=fresh)]
+        return inner, proof
+
+    def test_partial_initial_uses_two_real_ota_children_and_explicit_history(self):
+        from unittest.mock import patch
+        inner, proof = self.partial_initial()
+        with patch.object(AUDIT, 'verify_completed_deploy', return_value=proof):
+            self.assertTrue(AUDIT._initial_gate(inner, self.commit, self.version))
+            self.write(self.inner_dir/'controller.json', inner)
+            self.outer['stages'][0]['argv'].extend(['--reuse-completed-deploy', 'failed-source'])
+            self.write(self.outer_dir/'controller.json', self.outer)
+            reused = self.verify()
+            self.assertEqual(reused['original_outer_status'], 'failed')
+            self.assertEqual(reused['original_initial_stage']['pid'], inner['pid'])
+            self.assertEqual(len(inner['steps']), 3)
+            self.assertEqual(inner['reused_deployments'][0]['original_step']['pid'], 999)
+            self.assertNotIn('started_monotonic', inner['reused_deployments'][0]['original_step'])
+
+    def accepted_partial_initial(self):
+        from unittest.mock import patch
+        fixture_version = patch.object(AUDIT.ACCEPTED_UPLOAD, 'VERSION', self.version)
+        fixture_version.start()
+        self.addCleanup(fixture_version.stop)
+        inner, proof = self.partial_initial()
+        proof.update(schema=AUDIT.ACCEPTED_UPLOAD.SCHEMA, cleanup_file='/fixture/cleanup-proof.json',
+                     validation_commit=self.commit, postcheck_step={'started_at': 98, 'ended_at': 99},
+                     original_failed_step={'exit_code': 1, 'status': 'failed'})
+        proof['original_step'] = dict(proof['postcheck_step'], name='independent-upload-postcheck')
+        runtime = dict(requested_fan_on=False, child_lock=False, led_enabled=True,
+                       firmware_variant='full', full_resources=True, bootstrap_ui=False,
+                       wifi_connected=True, mqtt_connected=True, ota_active=False,
+                       reboot_pending=False, ota_state='idle', ota_error='')
+        proof['after']['status'].update(runtime)
+        fresh = inner['reused_deployments'][0]['fresh_continuity']
+        for sample in fresh['samples']:
+            sample['status'].update(runtime)
+        fresh['schema'] = 'accepted-upload-fresh-v1'
+        inner['reused_deployments'] = [dict(proof, fresh_continuity=fresh)]
+        return inner, proof
+
+    def archive_accepted_source(self, inner):
+        for folder, record in ((self.inner_dir, inner), (self.outer_dir, self.outer)):
+            path = folder/'source-manifest.json'
+            manifest = json.loads(path.read_text())
+            manifest['sources']['accepted_upload_postcheck.py'] = self.source_record(folder, 'accepted_upload_postcheck.py')
+            self.write(path, manifest)
+            record['source_manifest_sha256'] = AUDIT._sha256(path)
+            if folder == self.outer_dir:
+                record['sources'] = manifest['sources']
+        self.write(self.inner_dir/'controller.json', inner)
+        self.write(self.outer_dir/'controller.json', self.outer)
+
+    def test_accepted_schema_dispatch_and_exact_cli_preserve_failed_history(self):
+        from unittest.mock import patch
+        inner, proof = self.accepted_partial_initial()
+        with patch.object(AUDIT.ACCEPTED_UPLOAD, 'verify_accepted_upload_postcheck', return_value=proof), \
+             patch.object(AUDIT, 'verify_completed_deploy', side_effect=AssertionError('old path used')):
+            self.assertTrue(AUDIT._initial_gate(inner, self.commit, self.version))
+            self.outer['stages'][0]['argv'].extend(['--reuse-accepted-upload-postcheck', 'failed-source'])
+            self.archive_accepted_source(inner)
+            result = self.verify()
+            self.assertEqual(result['original_outer_status'], 'failed')
+            self.assertEqual(inner['reused_deployments'][0]['original_failed_step']['exit_code'], 1)
+            self.assertEqual(len(inner['steps']), 3)
+            for suffix in (['--reuse-completed-deploy', 'failed-source'],
+                           ['--reuse-accepted-upload-postcheck', 'wrong-source'],
+                           ['--reuse-accepted-upload-postcheck', 'failed-source', '--reuse-completed-deploy', 'failed-source'],
+                           ['--reuse-accepted-upload-postcheck', 'failed-source']*2):
+                self.outer['stages'][0]['argv'] = self.outer['stages'][0]['argv'][:-2]+suffix
+                self.write(self.outer_dir/'controller.json', self.outer)
+                with self.assertRaises(ValueError): self.verify()
+                self.outer['stages'][0]['argv'] = self.outer['stages'][0]['argv'][:-len(suffix)]+['--reuse-accepted-upload-postcheck', 'failed-source']
+
+    def test_accepted_schema_unknown_wrong_candidate_outside_window_rejected(self):
+        import copy
+        from unittest.mock import patch
+        original, proof = self.accepted_partial_initial()
+        mutations = [lambda i: i['reused_deployments'][0].__setitem__('schema', 'unknown'),
+                     lambda i: i['reused_deployments'][0].__setitem__('commit', '0'*40),
+                     lambda i: i['reused_deployments'][0]['fresh_continuity']['samples'][0].__setitem__('started_at', 97),
+                     lambda i: i.__setitem__('started_at', 103),
+                     lambda i: i['reused_deployments'][0]['fresh_continuity']['samples'][0]['status'].__setitem__('mqtt_connected', False)]
+        for mutate in mutations:
+            inner = copy.deepcopy(original);mutate(inner)
+            with patch.object(AUDIT.ACCEPTED_UPLOAD, 'verify_accepted_upload_postcheck', return_value=proof), \
+                 patch.object(AUDIT, 'verify_completed_deploy', side_effect=AssertionError('old fallback used')):
+                self.assertFalse(AUDIT._initial_gate(inner, self.commit, self.version))
+
+    def test_accepted_verifier_source_archive_required_and_hash_checked(self):
+        from unittest.mock import patch
+        inner, proof = self.accepted_partial_initial()
+        self.outer['stages'][0]['argv'].extend(['--reuse-accepted-upload-postcheck', 'failed-source'])
+        self.write(self.inner_dir/'controller.json', inner)
+        self.write(self.outer_dir/'controller.json', self.outer)
+        with patch.object(AUDIT.ACCEPTED_UPLOAD, 'verify_accepted_upload_postcheck', return_value=proof):
+            with self.assertRaisesRegex(ValueError, 'verifier source archive missing'):self.verify()
+            self.archive_accepted_source(inner)
+            self.verify()
+            (self.inner_dir/'sources/accepted_upload_postcheck.py').write_text('tampered')
+            with self.assertRaisesRegex(ValueError, 'hash mismatch'):self.verify()
+
+    def test_partial_initial_rejects_missing_duplicate_or_replayed_evidence(self):
+        import copy
+        from unittest.mock import patch
+        original, proof = self.partial_initial()
+        for case in ('no-history', 'duplicate-history', 'a1-child', 'missing-child',
+                     'wrong-order', 'stale-read', 'changed-config', 'no-monotonic', 'changed-provenance'):
+            with self.subTest(case=case), patch.object(AUDIT, 'verify_completed_deploy', return_value=proof):
+                inner = copy.deepcopy(original)
+                if case == 'no-history':
+                    inner.pop('reused_deployments')
+                elif case == 'duplicate-history':
+                    inner['reused_deployments'] *= 2
+                elif case == 'a1-child':
+                    inner['steps'][0]['argv'][2] = '111'
+                elif case == 'missing-child':
+                    inner['steps'].pop(0)
+                elif case == 'wrong-order':
+                    inner['steps'][0], inner['steps'][1] = inner['steps'][1], inner['steps'][0]
+                elif case == 'stale-read':
+                    inner['started_at'] = 103
+                elif case == 'changed-config':
+                    inner['reused_deployments'][0]['fresh_continuity']['samples'][0]['config'] = {}
+                elif case == 'no-monotonic':
+                    inner['steps'][0].pop('started_monotonic')
+                else:
+                    inner['reused_deployments'][0]['original_step']['pid'] = 1000
+                self.assertFalse(AUDIT._initial_gate(inner, self.commit, self.version))
+
+    def test_partial_fresh_reboot_boundary_and_sdk_fast_clock(self):
+        import copy
+        inner, proof = self.partial_initial()
+        samples = inner['reused_deployments'][0]['fresh_continuity']['samples']
+        for index, sample in enumerate(samples):
+            sample['status']['uptime_seconds'] += 100+index
+        self.assertTrue(AUDIT.verify_completed_deploy_fresh(proof, samples)['passed'])
+        reboot = copy.deepcopy(samples)
+        reboot[0]['status']['uptime_seconds'] = 5
+        reboot[0]['started_at'] = 109
+        reboot[0]['ended_at'] = 109.1
+        with self.assertRaises(ValueError):
+            AUDIT.verify_completed_deploy_fresh(proof, reboot)
+
     def test_missing_and_changed_archive_fail(self):
         path = self.outer_dir/'sources/controller.py'
         path.unlink()
@@ -427,7 +755,7 @@ class InitialReuseTests(unittest.TestCase):
             AUDIT.verify_reusable_initial(self.label, self.archive, 'b'*40, self.version)
         self.inner['steps'][0], self.inner['steps'][1] = self.inner['steps'][1], self.inner['steps'][0]
         self.write(self.inner_dir/'controller.json', self.inner)
-        with self.assertRaisesRegex(ValueError, 'argv/order'):
+        with self.assertRaisesRegex(ValueError, 'argv/order|inner initial did not pass'):
             self.verify()
 
     def test_signed_package_changed_or_manifest_changed_fail(self):

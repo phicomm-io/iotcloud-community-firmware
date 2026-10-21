@@ -292,7 +292,9 @@ class JsonBudget(unittest.TestCase):
             flags += ['-Wl,--wrap='+s for s in ('malloc','calloc','realloc','free','strdup','_malloc_r','_calloc_r','_realloc_r','_free_r')]
         with tempfile.TemporaryDirectory() as tmp:
             json=copy_patched_json(sdk/'libraries/utilities/json_c',Path(tmp)/'sdk')
-            flags.insert(0,'-I'+str(json))
+            # SDK headers use json_c/json.h; encoders also use json.h. Both
+            # must resolve to the same patched copy, including linkhash layout.
+            flags[0:0] = ['-I'+str(json), '-I'+str(json.parent)]
             retained = os.environ.get('PHICOMM_HTTP_JSON_ARTIFACT_DIR')
             directory = Path(retained).resolve()/('budget' if budget else model) if retained else Path(tmp)
             directory.mkdir(parents=True,exist_ok=True)
@@ -316,7 +318,7 @@ class JsonBudget(unittest.TestCase):
                 host_binary=directory/'probe-host'
                 sanitize=['-g','-fsanitize=address,undefined','-fno-omit-frame-pointer','-no-pie']
                 host_cc=os.environ.get('CC','cc');host_obj=directory/'probe-host.o'
-                subprocess.run([host_cc,'-I'+str(json),*host_flags,
+                subprocess.run([host_cc,'-I'+str(json),'-I'+str(json.parent),*host_flags,
                     '-Dsize_t=size_t','-Dssize_t=ssize_t',*sanitize,
                     '-c',str(source),'-o',str(host_obj)],check=True,timeout=30)
                 # JSON host compilation only needs the established StringUtils
