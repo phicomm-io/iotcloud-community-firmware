@@ -14,6 +14,7 @@ from pathlib import Path
 import select
 import socket
 import sys
+import tempfile
 import time
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -25,6 +26,14 @@ from tests.device.readonly_input_edges import (  # noqa: E402
     AUTHORIZED_TARGETS,
     InputRunner,
     validate_targets,
+)
+from tests.device.readonly_parallel import (
+    covers_expected_records,
+    covers_recovery_targets,
+    has_complete_targets_and_baselines,
+    merge_json_files,
+    run_parallel,
+    write_json_atomic,
 )
 
 
@@ -391,6 +400,38 @@ class SharedHTTPRunner(InputRunner):
         self.finish()
 
 
+def aggregate_parallel_evidence(runners, targets, result, evidence_path):
+    evidence_path = Path(evidence_path)
+    evidence = merge_json_files(
+        [runner.output / 'shared-httpd-evidence.json' for runner in runners],
+        evidence_path,
+        list_keys=('blockers', 'recoveries', 'http_cases', 'status_checks'),
+        dict_keys=('baseline', 'target_versions'), metadata={
+            'device_workers': 3,
+            'worker_pids': result['worker_pids'],
+            'completed': result['completed'],
+            'failure': result['failure'],
+        })
+    expected = {(ip, case.name) for ip in targets
+                for case in validate_scenarios(build_scenarios(ip))}
+    expected_recoveries = {(ip, name + '-recovery') for ip, name in expected}
+    expected_recoveries.update((ip, 'final-recovery') for ip in targets)
+    complete = (result['completed'] and
+                has_complete_targets_and_baselines(evidence, targets, 'baseline') and
+                covers_expected_records(evidence.get('http_cases', []), expected,
+                                        ('ip', 'name')) and
+                covers_recovery_targets(evidence.get('recoveries', []),
+                                        expected_recoveries))
+    if not complete:
+        evidence['blockers'].append({
+            'ip': '', 'reason': 'parallel evidence incomplete or worker failed',
+            'at': time.time(),
+        })
+        evidence['parallel_execution']['completed'] = False
+        write_json_atomic(evidence, evidence_path)
+    return complete, evidence
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--target', action='append', required=True,
@@ -401,6 +442,8 @@ def main(argv=None):
     parser.add_argument('--output', type=Path, default=Path('shared-httpd-evidence'))
     parser.add_argument('--execute', action='store_true',
                         help='Run the read-only raw HTTP acceptance cases')
+    parser.add_argument('--device-workers', type=int, choices=(1, 3), default=1,
+                        help='Device-level workers (default: 1)')
     args = parser.parse_args(argv)
     if not args.version:
         parser.error('--version must not be empty')
@@ -418,14 +461,31 @@ def main(argv=None):
                                      'request_bytes': len(case.wire)}
                                     for case in scenarios]})
     if not args.execute:
-        print(json.dumps({'mode': 'dry-run', 'targets': manifests}, indent=2))
+        print(json.dumps({'mode': 'dry-run', 'device_workers': args.device_workers,
+                          'targets': manifests}, indent=2))
         return 0
 
     with open(LOCK_PATH, 'a') as guard:
         fcntl.flock(guard, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        runner = SharedHTTPRunner(targets, args.version, args.output, versions)
-        runner.initialize()
-        runner.run_scenarios()
+        if args.device_workers == 1 or len(targets) == 1:
+            runner = SharedHTTPRunner(targets, args.version, args.output, versions)
+            runner.initialize()
+            runner.run_scenarios()
+        else:
+            with tempfile.TemporaryDirectory(prefix='phicomm-shared-http-workers-') as worker_root:
+                runners = []
+                for ip, ident in targets.items():
+                    runner = SharedHTTPRunner(
+                        {ip: ident}, args.version, Path(worker_root) / ip,
+                        {ip: versions[ip]} if ip in versions else {})
+                    runner.initialize()
+                    runners.append(runner)
+                result = run_parallel(runners, lambda item: item.run_scenarios(), 3)
+                evidence_path = args.output / 'shared-httpd-evidence.json'
+                complete, _ = aggregate_parallel_evidence(
+                    runners, targets, result, evidence_path)
+                if not complete:
+                    return 1
     return 0
 
 

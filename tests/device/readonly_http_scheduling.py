@@ -14,6 +14,7 @@ from pathlib import Path
 import select
 import socket
 import sys
+import tempfile
 import threading
 import time
 
@@ -26,6 +27,13 @@ from tests.device.readonly_input_edges import (  # noqa: E402
     AUTHORIZED_TARGETS,
 )
 from tests.device.readonly_stress import Runner  # noqa: E402
+from tests.device.readonly_parallel import (
+    covers_expected_records,
+    has_complete_targets_and_baselines,
+    merge_json_files,
+    run_parallel,
+    write_json_atomic,
+)
 
 
 LOCK_PATH = '/tmp/phicomm-readonly-stress.lock'
@@ -480,6 +488,68 @@ class SchedulingRunner(Runner):
         self.save_scheduling()
 
 
+def aggregate_parallel_evidence(runners, targets, rounds, result,
+                               evidence_path, runner_evidence):
+    evidence_path = Path(evidence_path)
+    runner_evidence = Path(runner_evidence)
+    combined = merge_json_files(
+        [runner.output / 'evidence.json' for runner in runners], runner_evidence,
+        list_keys=('blockers', 'recoveries', 'phases', 'scenarios', 'rows', 'memory'),
+        dict_keys=('before', 'summary', 'target_versions'), metadata={
+            'device_workers': 3,
+            'worker_pids': result['worker_pids'],
+            'completed': result['completed'],
+            'failure': result['failure'],
+        })
+    combined['device_runs'] = []
+    for runner in runners:
+        with open(runner.output / 'evidence.json', encoding='utf-8') as stream:
+            combined['device_runs'].append(json.load(stream).get('run', {}))
+    expected_cases = {(ip, round_number, phase)
+                      for ip in targets
+                      for round_number in range(1, rounds + 1)
+                      for phase in CASES}
+    scheduling = merge_json_files(
+        [runner.output / 'http-scheduling.json' for runner in runners], evidence_path,
+        list_keys=('cases', 'recovery', 'blockers'),
+        dict_keys=('target_versions',), metadata={
+            'device_workers': 3,
+            'worker_pids': result['worker_pids'],
+            'completed': result['completed'],
+            'failure': result['failure'],
+        })
+    recovered_rows = [row for row in scheduling.get('recovery', [])
+                      if row.get('recovered') is True]
+    expected_recovery = {(ip, round_number) for ip in targets
+                         for round_number in range(1, rounds + 1)}
+    complete = (result['completed'] and
+                has_complete_targets_and_baselines(combined, targets, 'before') and
+                covers_expected_records(scheduling.get('cases', []), expected_cases,
+                                        ('ip', 'round', 'phase'), exact=True) and
+                covers_expected_records(recovered_rows, expected_recovery,
+                                        ('ip', 'round'), exact=True) and
+                all(run.get('completed') is True for run in combined['device_runs']))
+    combined['run'].update({
+        'status': 'complete' if complete else 'failed',
+        'completed': complete,
+        'ended_at': time.time(),
+        'failure_type': None if complete else 'ParallelIncomplete',
+    })
+    if not complete:
+        combined['blockers'].append({
+            'ip': '', 'reason': 'parallel evidence incomplete or worker failed',
+            'at': time.time(),
+        })
+        scheduling['blockers'].append({
+            'ip': '', 'reason': 'parallel evidence incomplete or worker failed',
+            'at': time.time(),
+        })
+        scheduling['parallel_execution']['completed'] = False
+    write_json_atomic(combined, runner_evidence)
+    write_json_atomic(scheduling, evidence_path)
+    return complete, combined, scheduling
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--target', action='append', required=True,
@@ -492,6 +562,8 @@ def main(argv=None):
                         help='Complete baseline/competition/recovery rounds (default: 1)')
     parser.add_argument('--execute', action='store_true',
                         help='Run bounded read-only status probes; default is dry-run')
+    parser.add_argument('--device-workers', type=int, choices=(1, 3), default=1,
+                        help='Device-level workers (default: 1)')
     args = parser.parse_args(argv)
     if not args.version:
         parser.error('--version must not be empty')
@@ -503,6 +575,7 @@ def main(argv=None):
     manifest = {
         'mode': 'execute' if args.execute else 'dry-run',
         'rounds': args.rounds,
+        'device_workers': args.device_workers,
         'quiet_gap_seconds': QUIET_GAP_SECONDS,
         'targets': [{'ip': ip, 'device_id': ident,
                      'model': AUTHORIZED_MODELS[ip],
@@ -525,11 +598,30 @@ def main(argv=None):
 
     with open(LOCK_PATH, 'a') as guard:
         fcntl.flock(guard, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        runner = SchedulingRunner(targets, args.version, args.output, versions,
-                                  rounds=args.rounds)
-        runner.initialize()
-        runner.run_comparison()
-        runner.finish()
+        if args.device_workers == 1 or len(targets) == 1:
+            runner = SchedulingRunner(targets, args.version, args.output, versions,
+                                      rounds=args.rounds)
+            runner.initialize()
+            runner.run_comparison()
+            runner.finish()
+        else:
+            with tempfile.TemporaryDirectory(prefix='phicomm-scheduling-workers-') as worker_root:
+                runners = []
+                for ip, ident in targets.items():
+                    runner = SchedulingRunner(
+                        {ip: ident}, args.version, Path(worker_root) / ip,
+                        {ip: versions[ip]} if ip in versions else {}, rounds=args.rounds)
+                    runner.initialize()
+                    runners.append(runner)
+                def execute_one(item):
+                    item.run_comparison()
+                    item.finish()
+                result = run_parallel(runners, execute_one, 3)
+                complete, _, _ = aggregate_parallel_evidence(
+                    runners, targets, args.rounds, result,
+                    evidence_path, runner_evidence)
+                if not complete:
+                    return 1
     return 0
 
 

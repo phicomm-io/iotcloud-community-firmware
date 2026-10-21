@@ -15,6 +15,7 @@ from pathlib import Path
 import select
 import socket
 import sys
+import tempfile
 import time
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -22,6 +23,14 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from tests.device.readonly_stress import ProtocolError, Runner, request
+from tests.device.readonly_parallel import (
+    covers_expected_records,
+    covers_recovery_targets,
+    has_complete_targets_and_baselines,
+    merge_json_files,
+    run_parallel,
+    write_json_atomic,
+)
 
 
 AUTHORIZED_TARGETS = {
@@ -349,6 +358,10 @@ class InputRunner(Runner):
         self.save()
         if self.blockers:
             raise SystemExit(1)
+        if self.stop.is_set():
+            self.block('', 'parallel run cancelled by another device')
+            self.save()
+            raise SystemExit(1)
         print('PASS all input cases closed within bounds and devices recovered')
 
     def run_scenarios(self):
@@ -371,6 +384,36 @@ class InputRunner(Runner):
         self.finish()
 
 
+def aggregate_parallel_evidence(runners, targets, scenarios, result, evidence_path):
+    evidence_path = Path(evidence_path)
+    evidence = merge_json_files(
+        [runner.output / 'evidence.json' for runner in runners], evidence_path,
+        list_keys=('blockers', 'recoveries', 'scenarios', 'status_checks'),
+        dict_keys=('baseline', 'target_versions'), metadata={
+            'device_workers': 3,
+            'worker_pids': result['worker_pids'],
+            'completed': result['completed'],
+            'failure': result['failure'],
+        })
+    expected = {(ip, case.name) for ip in targets for case in scenarios[ip]}
+    expected_recoveries = {(ip, name + '-recovery') for ip, name in expected}
+    expected_recoveries.update((ip, 'final-recovery') for ip in targets)
+    complete = (result['completed'] and
+                has_complete_targets_and_baselines(evidence, targets, 'baseline') and
+                covers_expected_records(evidence.get('scenarios', []), expected,
+                                        ('ip', 'name'), exact=True) and
+                covers_recovery_targets(evidence.get('recoveries', []),
+                                        expected_recoveries))
+    if not complete:
+        evidence['blockers'].append({
+            'ip': '', 'reason': 'parallel evidence incomplete or worker failed',
+            'at': time.time(),
+        })
+        evidence['parallel_execution']['completed'] = False
+        write_json_atomic(evidence, evidence_path)
+    return complete, evidence
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--target', action='append', required=True,
@@ -382,6 +425,8 @@ def main(argv=None):
     parser.add_argument('--output', type=Path, default=Path('readonly-input-evidence'))
     parser.add_argument('--execute', action='store_true',
                         help='Send bounded read-only HTTP cases; default is no traffic')
+    parser.add_argument('--device-workers', type=int, choices=(1, 3), default=1,
+                        help='Device-level workers (default: 1)')
     args = parser.parse_args(argv)
     if not args.version:
         parser.error('--version must not be empty')
@@ -395,14 +440,30 @@ def main(argv=None):
                  'max_request_bytes': max(len(case.wire) for case in cases)}
                 for ip, cases in scenarios.items()]
     if not args.execute:
-        print(json.dumps({'mode': 'dry-run', 'targets': manifest}, indent=2))
+        print(json.dumps({'mode': 'dry-run', 'device_workers': args.device_workers,
+                          'targets': manifest}, indent=2))
         return 0
 
     with open(LOCK_PATH, 'a') as guard:
         fcntl.flock(guard, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        runner = InputRunner(targets, args.version, args.output, versions)
-        runner.initialize()
-        runner.run_scenarios()
+        if args.device_workers == 1 or len(targets) == 1:
+            runner = InputRunner(targets, args.version, args.output, versions)
+            runner.initialize()
+            runner.run_scenarios()
+        else:
+            with tempfile.TemporaryDirectory(prefix='phicomm-input-workers-') as worker_root:
+                runners = []
+                for ip, ident in targets.items():
+                    runner = InputRunner({ip: ident}, args.version,
+                                         Path(worker_root) / ip,
+                                         {ip: versions[ip]} if ip in versions else {})
+                    runner.initialize()
+                    runners.append(runner)
+                result = run_parallel(runners, lambda item: item.run_scenarios(), 3)
+                complete, _ = aggregate_parallel_evidence(
+                    runners, targets, scenarios, result, args.output / 'evidence.json')
+                if not complete:
+                    return 1
     return 0
 
 
