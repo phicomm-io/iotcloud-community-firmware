@@ -1,6 +1,6 @@
 # TC1 免拆刷机
 
-**适用于 TC1 A1 硬件（EMW3031 / MK3031）、原厂版本 1.0.0.26。** 其他原厂版本、TC1 A2 与 A1 空气净化器不适用。
+**适用于 TC1 A1 硬件（EMW3031 / MK3031）、原厂版本 1.0.0.26 与 1.0.0.24。** 其他原厂版本、TC1 A2 与 A1 空气净化器不适用。
 
 通过 Wi-Fi 安装社区固件，无需拆壳、焊接、串口或 SWD，也不依赖原厂云服务。
 
@@ -18,7 +18,7 @@
 
 ### 设备与工具
 
-- 一台 **TC1 A1 硬件版排插**，原厂版本为 **1.0.0.26**。
+- 一台 **TC1 A1 硬件版排插**，原厂版本为 **1.0.0.26** 或 **1.0.0.24**。
 - 一台同时有**有线网卡和无线网卡**的电脑，以及一台支持 **2.4 GHz 开放 Wi-Fi** 的路由器。
 - 一根网线，电脑上安装 Python 3、`curl` 和 **tftpd 等 TFTP 服务软件**。也可使用本页提供的 Python TFTP 服务。
 - 对应设备的社区应用槽镜像 `tc1_community.image.bin`。
@@ -113,16 +113,24 @@ Linux/macOS 监听 69 端口通常需要相应权限；Windows 需按防火墙�
 curl -s -m 5 http://10.10.10.1:8000/read-domain
 ```
 
-`VERSION` 应为 `1.0.0.26`，`COMPILE_TIME` 为 `Apr 13 2018 10:09:06`。版本不符时不要继续。
+`VERSION` 应为 `1.0.0.26` 或 `1.0.0.24`，`COMPILE_TIME` 为 `Apr 13 2018 10:09:06`。版本不符时不要继续；后续 payload 的目标地址必须与识别出的版本对应，见下一步。
 
 ### 3. 发送触发请求
 
-可直接下载 [tftp-trigger.bin（payload）](assets/tools/tc1-no-disassembly/tftp-trigger.bin)，跳过 Python 生成步骤，用 curl 发送。Windows / Linux / macOS 的完整命令见[图文操作子页](tc1-no-disassembly-ethernet-wifi-ap)。
+可直接下载对应版本的 payload 文件，跳过 Python 生成步骤：1.0.0.26 用 [tftp-trigger.bin](assets/tools/tc1-no-disassembly/tftp-trigger.bin)，1.0.0.24 用 [tftp-trigger-1.0.0.24.bin](assets/tools/tc1-no-disassembly/tftp-trigger-1.0.0.24.bin)。Windows / Linux / macOS 的完整命令见[图文操作子页](tc1-no-disassembly-ethernet-wifi-ap)。
 
-保持电脑无线网卡连接 TC1 配网热点，在电脑终端执行以下命令：Python 先生成栈溢出触发文件，`curl` 再将它发送给设备。只发送一次，随后观察设备与 TFTP 日志。
+payload 的目标地址随原厂版本变化；两个版本的帧内偏移相同，只是地址平移：
+
+| 原厂版本 | payload 目标地址（小端） | 说明 |
+| --- | --- | --- |
+| 1.0.0.26 | `0x1F073D9F`（`9f 3d 07 1f`） | 工厂 OTA 线程体 |
+| 1.0.0.24 | `0x1F073D63`（`63 3d 07 1f`） | 同一线程体，地址平移 −0x3C |
+
+保持电脑无线网卡连接 TC1 配网热点，在电脑终端执行以下命令：Python 先生成栈溢出触发文件，`curl` 再将它发送给设备。只发送一次，随后观察设备与 TFTP 日志。目标地址按上表替换：
 
 ```sh
 python3 - <<'PY'
+# 1.0.0.26 用 0x1F073D9F；1.0.0.24 用 0x1F073D63
 body = b'A' * 392 + (0x1F073D9F).to_bytes(4, 'little') + b'\0'
 open('tftp-trigger.bin', 'wb').write(body)
 print(len(body))
@@ -154,7 +162,7 @@ TC1 在 OTA 网络中使用 `10.<MAC 后三字节逐字节转十进制>`、掩�
 
 | 现象 | 常见原因 |
 | --- | --- |
-| 看不到 `Phicomm_TC1_XXXX` | 按键节奏不对，或设备不是 A1 硬件 / 不是 1.0.0.26 |
+| 看不到 `Phicomm_TC1_XXXX` | 按键节奏不对，或设备不是 A1 硬件 / 不是 1.0.0.26 或 1.0.0.24 |
 | `/OTA` 返回 404 或无响应 | 未处于配网模式，或客户端不在 `10.10.10.x/24` |
 | 设备没有加入 OTA 热点 | 热点不是 2.4 GHz、名称不是 `PHICOMM_OTA_AP`，或开启了客户端隔离 |
 | TFTP 只传了开头 | 防火墙只放行 UDP 69，未放行传输会话端口 |

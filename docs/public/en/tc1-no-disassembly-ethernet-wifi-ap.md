@@ -4,7 +4,7 @@
 
 The computer serves firmware over **Ethernet**, sends the trigger over **Wi-Fi**, and a router or AP supplies the OTA network. This guide covers preparation, flashing, first boot and cleanup on Windows, Linux and macOS. Select your computer’s operating system to follow its instructions.
 
-**For TC1 A1 hardware (EMW3031 / MK3031), stock firmware 1.0.0.26.** Other stock versions, TC1 A2 and the A1 air purifier are outside this procedure.
+**For TC1 A1 hardware (EMW3031 / MK3031), stock firmware 1.0.0.26 or 1.0.0.24.** Other stock versions, TC1 A2 and the A1 air purifier are outside this procedure.
 
 <!-- os-picker -->
 
@@ -17,7 +17,8 @@ Create a `tc1-flash` folder and download both files into it:
 | Download | Purpose |
 | --- | --- |
 | [mico_ota.bin](assets/tools/tc1-no-disassembly/mico_ota.bin) | Prepared firmware for the TFTP directory; keep this filename |
-| [tftp-trigger.bin (payload)](assets/tools/tc1-no-disassembly/tftp-trigger.bin) | Trigger sent to the stock OTA endpoint; only for this hardware and stock build |
+| [tftp-trigger.bin (payload, 1.0.0.26)](assets/tools/tc1-no-disassembly/tftp-trigger.bin) | Trigger sent to the stock OTA endpoint; for 1.0.0.26 |
+| [tftp-trigger-1.0.0.24.bin (payload, 1.0.0.24)](assets/tools/tc1-no-disassembly/tftp-trigger-1.0.0.24.bin) | Same trigger with the address shifted for 1.0.0.24 |
 
 Their sizes are **649,344 bytes** and **397 bytes**. Use [SHA256SUMS](assets/SHA256SUMS) to verify downloads. These are fixed tutorial files; see [Firmware updates](firmware-update) for later upgrades.
 
@@ -254,7 +255,7 @@ curl --noproxy '*' --fail --max-time 5 http://10.10.10.1:8000/read-domain
 
 <!-- /os -->
 
-Check **`VERSION` = `1.0.0.26`**. The screenshot's `COMMITID` is `d1ecc7616f55bbf781be3bd80e23bab7c03dc047`. Stop if the version or build identifier differs; a matching SSID alone does not prove compatibility.
+Check **`VERSION` = `1.0.0.26` or `1.0.0.24`**. The screenshot's `COMMITID` is `d1ecc7616f55bbf781be3bd80e23bab7c03dc047`. Stop if the version or build identifier differs; the payload must match the detected version (use `tftp-trigger.bin` for 1.0.0.26 and `tftp-trigger-1.0.0.24.bin` for 1.0.0.24). A matching SSID alone does not prove compatibility.
 
 <!-- os:windows -->
 
@@ -264,7 +265,7 @@ Check **`VERSION` = `1.0.0.26`**. The screenshot's `COMMITID` is `d1ecc7616f55bb
 
 ## 6. Send the payload and wait
 
-Open a terminal in the `tc1-flash` folder containing **`tftp-trigger.bin`**. Confirm TFTP is running, Ethernet still has `10.0.0.2`, and Wi-Fi is connected to TC1. Send **once**:
+Open a terminal in the `tc1-flash` folder containing **`tftp-trigger.bin`** (use `tftp-trigger-1.0.0.24.bin` for a 1.0.0.24 device). Confirm TFTP is running, Ethernet still has `10.0.0.2`, and Wi-Fi is connected to TC1. Send **once**:
 
 <!-- os:windows -->
 
@@ -355,7 +356,7 @@ Disable the temporary open AP or restore its original SSID and password. Remove 
 
 | Symptom | Check |
 | --- | --- |
-| curl cannot find payload | Open the terminal in `tc1-flash`; make sure the filename is not `tftp-trigger.bin.txt` |
+| curl cannot find payload | Open the terminal in `tc1-flash`; make sure the filename is not `tftp-trigger.bin.txt` and matches the device version |
 | read-domain does not respond | Recheck TC1 Wi-Fi and `10.10.10.x/24`; pause VPN/proxy settings affecting local routes |
 | No TFTP request | Verify open 2.4 GHz AP, exact SSID, LAN bridging, server binding and firewall |
 | Transfer starts then stalls | Check session ports, computer sleep and Ethernet connection |

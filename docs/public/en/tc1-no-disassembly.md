@@ -1,6 +1,6 @@
 # Flash TC1 without disassembly
 
-**For TC1 A1 hardware (EMW3031 / MK3031) running stock firmware 1.0.0.26.** Other stock versions, TC1 A2 and the A1 air purifier are not supported.
+**For TC1 A1 hardware (EMW3031 / MK3031) running stock firmware 1.0.0.26 or 1.0.0.24.** Other stock versions, TC1 A2 and the A1 air purifier are not supported.
 
 Install community firmware over Wi-Fi without opening the case, soldering, serial or SWD wiring, or the vendor cloud.
 
@@ -18,7 +18,7 @@ There are two connections: **the computer first joins the TC1 provisioning AP to
 
 ### Equipment and tools
 
-- A **TC1 A1 hardware power strip** running stock firmware **1.0.0.26**.
+- A **TC1 A1 hardware power strip** running stock firmware **1.0.0.26** or **1.0.0.24**.
 - A computer with **Ethernet and Wi-Fi adapters**, and a router that supports **2.4 GHz open Wi-Fi**.
 - An Ethernet cable, Python 3, `curl` and **tftpd or another TFTP server** on the computer. The Python TFTP service provided on this page is another option.
 - The community application-slot image `tc1_community.image.bin` for this hardware.
@@ -113,16 +113,24 @@ Join `Phicomm_TC1_XXXX` using the computer's Wi-Fi adapter and check that it has
 curl -s -m 5 http://10.10.10.1:8000/read-domain
 ```
 
-`VERSION` must be `1.0.0.26` with `COMPILE_TIME` `Apr 13 2018 10:09:06`. Do not continue on a different build.
+`VERSION` must be `1.0.0.26` or `1.0.0.24` with `COMPILE_TIME` `Apr 13 2018 10:09:06`. Do not continue on a different build; the later payload target must match the detected version (see the next step).
 
 ### 3. Send the trigger request
 
-Download [tftp-trigger.bin (payload)](assets/tools/tc1-no-disassembly/tftp-trigger.bin) to skip Python generation and send it with curl. Complete Windows / Linux / macOS commands are in the [illustrated subpage](tc1-no-disassembly-ethernet-wifi-ap).
+Download the payload for your stock version to skip Python generation: [tftp-trigger.bin](assets/tools/tc1-no-disassembly/tftp-trigger.bin) for 1.0.0.26, [tftp-trigger-1.0.0.24.bin](assets/tools/tc1-no-disassembly/tftp-trigger-1.0.0.24.bin) for 1.0.0.24. Complete Windows / Linux / macOS commands are in the [illustrated subpage](tc1-no-disassembly-ethernet-wifi-ap).
 
-Keep the computer's Wi-Fi adapter connected to the TC1 provisioning AP and run these commands in a terminal. Python creates the stack-overflow trigger file; `curl` sends it to the device. Send it once, then watch the device and TFTP logs:
+The payload target address depends on the stock version; both versions share the same in-frame offsets and differ only by an address shift:
+
+| Stock version | Payload target (little-endian) | Notes |
+| --- | --- | --- |
+| 1.0.0.26 | `0x1F073D9F` (`9f 3d 07 1f`) | factory OTA thread body |
+| 1.0.0.24 | `0x1F073D63` (`63 3d 07 1f`) | same thread body, address shifted by −0x3C |
+
+Keep the computer's Wi-Fi adapter connected to the TC1 provisioning AP and run these commands in a terminal. Python creates the stack-overflow trigger file; `curl` sends it to the device. Send it once, then watch the device and TFTP logs. Replace the target address from the table above:
 
 ```sh
 python3 - <<'PY'
+# 0x1F073D9F for 1.0.0.26; 0x1F073D63 for 1.0.0.24
 body = b'A' * 392 + (0x1F073D9F).to_bytes(4, 'little') + b'\0'
 open('tftp-trigger.bin', 'wb').write(body)
 print(len(body))
@@ -154,7 +162,7 @@ Once the new firmware works, shut down the temporary OTA AP and TFTP service and
 
 | Symptom | Likely cause |
 | --- | --- |
-| No `Phicomm_TC1_XXXX` | Wrong button rhythm, or not A1 hardware / not 1.0.0.26 |
+| No `Phicomm_TC1_XXXX` | Wrong button rhythm, or not A1 hardware / not 1.0.0.26 or 1.0.0.24 |
 | `/OTA` returns 404 or hangs | Not in provisioning mode, or client outside `10.10.10.x/24` |
 | Device never joins the OTA AP | Not 2.4 GHz, wrong SSID, or client isolation enabled |
 | TFTP stalls after the first block | Firewall allows only UDP 69, not the transfer session |

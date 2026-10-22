@@ -4,7 +4,7 @@
 
 用电脑的**有线网卡传固件、无线网卡发触发请求**，再用一台路由器或 AP 提供刷机热点。本教程完整走一遍连接、下载、触发、首次启动和恢复网络的过程，适用于 Windows、Linux 和 macOS；可选择电脑系统，查看对应操作。
 
-**适用设备：TC1 智能排插 A1 硬件版（EMW3031 / MK3031），原厂固件 1.0.0.26。** TC1 A2、其他原厂版本和 A1 空气净化器不适用。
+**适用设备：TC1 智能排插 A1 硬件版（EMW3031 / MK3031），原厂固件 1.0.0.26 或 1.0.0.24。** TC1 A2、其他原厂版本和 A1 空气净化器不适用。
 
 <!-- os-picker -->
 
@@ -17,7 +17,8 @@
 | 下载 | 用途 |
 | --- | --- |
 | [mico_ota.bin](assets/tools/tc1-no-disassembly/mico_ota.bin) | 已准备好的配套固件，放到 TFTP 服务目录，文件名必须保持不变 |
-| [tftp-trigger.bin（payload）](assets/tools/tc1-no-disassembly/tftp-trigger.bin) | 发送给原厂 OTA 接口的触发文件，仅适用于本页设备与版本 |
+| [tftp-trigger.bin（payload，1.0.0.26）](assets/tools/tc1-no-disassembly/tftp-trigger.bin) | 发送给原厂 OTA 接口的触发文件，用于 1.0.0.26 |
+| [tftp-trigger-1.0.0.24.bin（payload，1.0.0.24）](assets/tools/tc1-no-disassembly/tftp-trigger-1.0.0.24.bin) | 同一触发文件，目标地址按 1.0.0.24 平移 |
 
 文件大小分别是 **649,344 字节**和 **397 字节**。[校验和](assets/SHA256SUMS)可用于核对下载文件。这里提供的是固定的教程配套文件，后续日常升级见[固件更新](firmware-update)。
 
@@ -256,7 +257,7 @@ curl --noproxy '*' --fail --max-time 5 http://10.10.10.1:8000/read-domain
 
 <!-- /os -->
 
-返回信息中核对 **`VERSION` 为 `1.0.0.26`**，本页截图的 `COMMITID` 为 `d1ecc7616f55bbf781be3bd80e23bab7c03dc047`。如果版本或构建标识不符，停止使用本页 payload；不要仅凭热点名称判断兼容。
+返回信息中核对 **`VERSION` 为 `1.0.0.26` 或 `1.0.0.24`**，本页截图的 `COMMITID` 为 `d1ecc7616f55bbf781be3bd80e23bab7c03dc047`。如果版本或构建标识不符，停止使用本页 payload；payload 必须与识别出的版本对应（1.0.0.26 用 `tftp-trigger.bin`，1.0.0.24 用 `tftp-trigger-1.0.0.24.bin`），不要仅凭热点名称判断兼容。
 
 <!-- os:windows -->
 
@@ -266,7 +267,7 @@ curl --noproxy '*' --fail --max-time 5 http://10.10.10.1:8000/read-domain
 
 ## 6. 发送 payload，等待固件下载
 
-打开保存 **`tftp-trigger.bin`** 的 `tc1-flash` 文件夹，在这里打开终端。确认 TFTP 正在运行、有线地址仍为 `10.0.0.2`、无线仍连接 TC1，然后**只发送一次**：
+打开保存 **`tftp-trigger.bin`** 的 `tc1-flash` 文件夹，在这里打开终端。设备是 1.0.0.24 时请使用 `tftp-trigger-1.0.0.24.bin`（命令中文件名随之替换）。确认 TFTP 正在运行、有线地址仍为 `10.0.0.2`、无线仍连接 TC1，然后**只发送一次**：
 
 <!-- os:windows -->
 
@@ -357,7 +358,7 @@ sudo ifconfig en5 inet 10.0.0.2 -alias
 
 | 现象 | 处理 |
 | --- | --- |
-| curl 找不到 payload | 在 `tc1-flash` 文件夹内打开终端，确认文件名不是 `tftp-trigger.bin.txt` |
+| curl 找不到 payload | 在 `tc1-flash` 文件夹内打开终端，确认文件名不是 `tftp-trigger.bin.txt`，且与设备版本匹配 |
 | read-domain 无响应 | 检查无线是否仍连 TC1、是否获得 `10.10.10.x/24`；暂停影响本地路由的 VPN / 代理 |
 | TFTP 没有下载请求 | 核对 AP 为开放的 2.4 GHz、名称完全一致、无线与 LAN 互通；检查服务绑定与防火墙 |
 | TFTP 开始后停住 | 检查服务器会话端口是否被拦截、电脑是否休眠、网线是否松动 |
