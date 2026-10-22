@@ -173,7 +173,7 @@ static const char *topic_domain(const char *d) {
   return !strcmp(d, "light") ? "light/config" : d;
 }
 static unsigned integer(json_object *o, const char *k) {
-  return json_object_get_int(json_object_object_get(o, k));
+  return (unsigned)json_object_get_int64(json_object_object_get(o, k));
 }
 static const char *string(json_object *o, const char *k) {
   json_object *v = json_object_object_get(o, k);
@@ -182,7 +182,7 @@ static const char *string(json_object *o, const char *k) {
              : "";
 }
 static void number(json_object *o, const char *k, unsigned n) {
-  json_build_object_add(o, k, json_object_new_int(n));
+  json_build_object_add(o, k, json_object_new_int64(n));
 }
 static void token_text(const uint8_t t[16], char out[33]) {
   for (unsigned i = 0; i < 16; i++)

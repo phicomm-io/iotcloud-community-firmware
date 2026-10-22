@@ -14,6 +14,11 @@ static void passive_scenarios(void) {
   /* The ordinary HTTP dispatcher cannot authorize sessions. */
   json_object *command=obj("{\"action\":\"sensor.session.set\",\"params\":{\"v\":2,\"a1\":\"112233445566\",\"boot\":11,\"token\":\"abababababababababababababababab\"}}");
   json_object *denied=service_command(command);assert(denied && !feature_bound());json_object_put(denied);json_object_put(command);
+  /* Random boot IDs use all 32 bits; never encode them as signed JSON ints. */
+  number(grant,"boot",UINT32_MAX);
+  assert(json_object_get_int64(json_object_object_get(grant,"boot"))==UINT32_MAX);
+  assert(feature_sensor_session_set(grant)==200);
+  number(grant,"boot",11);
   assert(feature_sensor_session_set(grant)==200 && feature_bound());
   assert(feature_sensor_session_set(grant)==200); /* duplicate QoS1 grant is idempotent */
   assert(!memcmp(&stored,&original,sizeof(stored)));
