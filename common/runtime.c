@@ -182,7 +182,8 @@ static const char *string(json_object *o, const char *k) {
              : "";
 }
 static void number(json_object *o, const char *k, unsigned n) {
-  json_build_object_add(o, k, json_object_new_int64(n));
+  /* MiCO JSON emits signed 32-bit counters; readers preserve their bits. */
+  json_build_object_add(o, k, json_object_new_int((int32_t)n));
 }
 static void token_text(const uint8_t t[16], char out[33]) {
   for (unsigned i = 0; i < 16; i++)
@@ -369,7 +370,7 @@ int feature_sensor_session_set(json_object *o) {
   const char *raw=string(o,"a1"), *text=string(o,"token");
   json_object *v=json_object_object_get(o,"v"), *boot=json_object_object_get(o,"boot");
   if(!json_object_is_type(o,json_type_object) || !v || !json_object_is_type(v,json_type_int) || integer(o,"v")!=2 ||
-     !boot || !json_object_is_type(boot,json_type_int) || json_object_get_int64(boot)<0 || json_object_get_int64(boot)>UINT32_MAX ||
+     !boot || !json_object_is_type(boot,json_type_int) || json_object_get_int64(boot)<INT32_MIN || json_object_get_int64(boot)>UINT32_MAX ||
      strlen(raw)!=12 || json_object_get_string_len(json_object_object_get(o,"a1"))!=12 || !feature_mac(raw,id) || !strcmp(id,LOCAL_ID) ||
      json_object_get_string_len(json_object_object_get(o,"token"))!=32 || !token_read(text,token)) return 400;
   unsigned bits=0;for(unsigned k=0;k<16;k++)bits|=token[k];if(!bits)return 400;

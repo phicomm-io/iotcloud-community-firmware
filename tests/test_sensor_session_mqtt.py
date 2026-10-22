@@ -5,9 +5,10 @@ from pathlib import Path
 from mqtt_observer import Observer, cleanup
 ROOT=Path(__file__).resolve().parents[1]
 def main(port):
-    nodes=[]; grants=[]; legacy=[]
+    nodes=[]; grants=[]; legacy=[]; results=[]
     def received(client,userdata,msg):
         if '/link/' in msg.topic: legacy.append(msg.topic)
+        if msg.topic.endswith('/result'):results.append(json.loads(msg.payload).get('code'))
         if msg.topic.endswith('/command'):
             value=json.loads(msg.payload)
             if value.get('action')=='sensor.session.set': grants.append((time.monotonic(),value))
@@ -64,7 +65,7 @@ def main(port):
         assert grants[1][0]-grants[0][0]>=60 and not legacy
         print('PASS unilateral setup, MQTT-only grant, 65s quiet UDP session, broker outage, M1 restart recovery; grants=2, pair messages=0',flush=True)
     except BaseException:
-        print('DEBUG grants',len(grants),'legacy',len(legacy),flush=True)
+        print('DEBUG grants',len(grants),'boots',[x[1]['params']['boot'] for x in grants],'results',results,'legacy',len(legacy),flush=True)
         for node in nodes:
             for action in ('binding.status.get','mqtt.diagnostics.get'):
                 try: print(action,call(node,action,accepted=False),flush=True)
