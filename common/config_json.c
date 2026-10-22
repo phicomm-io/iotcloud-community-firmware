@@ -47,7 +47,7 @@ static const field_t co2_fields[] = {
     F(feature_co2_config_t, on_co2, 1, 65535), F(feature_co2_config_t, target_co2, 1, 65535),
     F(feature_co2_config_t, low_co2, 0, 65535), F(feature_co2_config_t, high_co2, 1, 65535)};
 static const field_t light_fields[] = {
-    U(feature_light_t, effect, 0, 4), U(feature_light_t, segments, 1, 4),
+    U(feature_light_t, effect, 0, 5), U(feature_light_t, segments, 1, 4),
     U(feature_light_t, follow_fan, 0, 1),
     U(feature_light_t, speed, 1, 10),
     F(feature_light_t, quality_pm, .01, 5000),

@@ -142,7 +142,7 @@ static __attribute__((noinline)) json_object *service_product_inner(const char *
 #ifdef FEATURE_DEVICE_A1
     else if(!strcmp(action,"light_effect.next") || !strcmp(action,"light_effect.select")){
         bool next=!strcmp(action,"light_effect.next");
-        if(next?!svc_keys(p,""):(!svc_keys(p,"|effect|") || !svc_int(p,"effect",&number,0,4)))return NULL;
+        if(next?!svc_keys(p,""):(!svc_keys(p,"|effect|") || !svc_int(p,"effect",&number,0,5)))return NULL;
         json_object *out=NULL;int rc=feature_light_select(next?255:number,&out);
         *code=rc<300?"accepted":rc==409?"busy":rc>=500?"storage_error":"invalid_params";return out;
     }

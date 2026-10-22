@@ -808,7 +808,9 @@ static void animation_speed(void) {
   uint32_t original_ms=test_now, normal[32], fast[32], slow[32];
   effective_on=true;
   configuration.light.follow_fan=0;
-  for(unsigned effect=EFFECT_BREATHE;effect<=EFFECT_RAINBOW;effect++){
+  const unsigned animated[]={EFFECT_BREATHE,EFFECT_RAINBOW,EFFECT_COLOR_BREATHE};
+  for(unsigned k=0;k<sizeof(animated)/sizeof(animated[0]);k++){
+    unsigned effect=animated[k];
     configuration.light.effect=effect;configuration.light.speed=0;test_now=3000;
     feature_light_frame(normal,255,true,0x1122ff);
     configuration.light.speed=5;feature_light_frame(fast,255,true,0x1122ff);
@@ -822,7 +824,7 @@ static void animation_speed(void) {
   }
   /* Every business effect is dark while powered off, independent of follow.
    * Powered automatic idle is a separate state and keeps custom brightness. */
-  for(unsigned effect=EFFECT_FAN;effect<=EFFECT_DATA;effect++){
+  for(unsigned effect=EFFECT_FAN;effect<=EFFECT_COLOR_BREATHE;effect++){
     configuration.light.effect=effect;
     for(unsigned follow=0;follow<2;follow++){
       configuration.light.follow_fan=follow;effective_on=false;
@@ -835,7 +837,19 @@ static void animation_speed(void) {
   configuration.light.effect=EFFECT_SOLID;
   feature_light_frame(normal,128,true,0x0000ff);
   assert(normal[0]==128);
+  configuration.light.effect=EFFECT_COLOR_BREATHE;configuration.light.speed=5;
+  test_now=1000;feature_light_frame(normal,128,true,0x1122ff);
+  test_now=2000;feature_light_frame(fast,128,true,0x1122ff);
+  assert(normal[0] && fast[0] && normal[0]!=fast[0]);
+  for(unsigned i=0;i<32;i++)assert(normal[i]==normal[0]);
   configuration=original;test_now=original_ms;
+  transaction("light","{\"effect\":5}",200);assert(stored.light.effect==EFFECT_COLOR_BREATHE);
+  json_object *selection=NULL;
+  assert(feature_light_select(255,&selection)==200);json_object_put(selection);
+  assert(stored.light.effect==EFFECT_FAN);
+  assert(feature_light_select(5,NULL)==200 && stored.light.effect==EFFECT_COLOR_BREATHE);
+  assert(feature_light_select(6,NULL)==400);
+  transaction("light","{\"effect\":6}",400);
   stored.light.speed=0;json_object *o=config_encode(&stored,"light");
   assert(json_object_get_int(json_object_object_get(o,"speed"))==5);json_object_put(o);
   transaction("light","{\"speed\":0}",400);

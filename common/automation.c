@@ -65,7 +65,7 @@ static bool auto_action_parse(json_object *o,automation_action_t *a,bool button)
  if(k==AUTO_FAN_MODE_TOGGLE || k==AUTO_FAN_PANEL)return button && auto_only(p,"");
  if(k==AUTO_FAN_MODE){json_object *m=json_object_object_get(p,"mode");if(!auto_only(p,"|mode|") || !m || !json_object_is_type(m,json_type_string))return false;const char *v=json_object_get_string(m);if(strcmp(v,"auto") && strcmp(v,"manual"))return false;a->value=!strcmp(v,"auto");return true;}
  if(k==AUTO_NONE || k==AUTO_REBOOT || k==AUTO_FILTER_RESET)return (k!=AUTO_FILTER_RESET || button) && auto_only(p,"");
- if(k==AUTO_LIGHT_EFFECT){if(!button || !auto_only(p,"|effect|") || !auto_integer(p,"effect",&n,0,4))return false;a->value=n;return true;}
+ if(k==AUTO_LIGHT_EFFECT){if(!button || !auto_only(p,"|effect|") || !auto_integer(p,"effect",&n,0,5))return false;a->value=n;return true;}
  if(k==AUTO_FAN || k==AUTO_OUTLET){
   if(!auto_only(p,k==AUTO_FAN?"|on||speed||toggle|":"|on||index||toggle|"))return false;
   uint8_t value;json_object *toggle=json_object_object_get(p,"toggle");

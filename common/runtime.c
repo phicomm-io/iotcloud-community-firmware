@@ -841,10 +841,10 @@ bool feature_group_active(void) {
   lock();bool active=configuration.group[0] && configuration.member_count;unlock();return active;
 }
 int feature_light_select(unsigned effect,json_object **response) {
-  if(effect>4 && effect!=255)return 400;
+  if(effect>EFFECT_COLOR_BREATHE && effect!=255)return 400;
   feature_config_t *c=malloc(sizeof(*c));if(!c)return 500;
   feature_config_get(c);
-  c->light.effect=effect==255?(c->light.effect+1)%5:effect;
+  c->light.effect=effect==255?(c->light.effect+1)%(EFFECT_COLOR_BREATHE+1):effect;
   unsigned selected=c->light.effect;
   bool ok=install_config(c);
   unsigned revision=c->revision;
@@ -894,13 +894,14 @@ void feature_light_frame(uint32_t out[32], unsigned brightness, bool enabled,
   if (l.effect != EFFECT_FAN) {
     unsigned b = brightness;
     double animation_ms = (double)now_ms() * feature_light_speed(&l) / 5;
-    if (l.effect == EFFECT_BREATHE)
+    if (l.effect == EFFECT_BREATHE || l.effect == EFFECT_COLOR_BREATHE)
       b = brightness * (1 + sin(animation_ms / 2000.0)) / 2;
     for (unsigned i = 0; i < 32; i++) {
       unsigned r = (color >> 8) & 255, g = (color >> 16) & 255,
                bl = color & 255;
-      if (l.effect == EFFECT_RAINBOW) {
-        unsigned p = (i * 768 / 32 + (uint32_t)(animation_ms / 30)) % 768;
+      if (l.effect == EFFECT_RAINBOW || l.effect == EFFECT_COLOR_BREATHE) {
+        unsigned offset = l.effect == EFFECT_RAINBOW ? i * 768 / 32 : 0;
+        unsigned p = (offset + (uint32_t)(animation_ms / 30)) % 768;
         r = p < 256 ? 255 - p : p > 512 ? p - 512 : 0;
         g = p < 256 ? p : p < 512 ? 511 - p : 0;
         bl = p < 256 ? 0 : p < 512 ? p - 256 : 767 - p;
