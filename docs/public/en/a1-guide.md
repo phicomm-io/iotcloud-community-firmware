@@ -51,11 +51,11 @@ Child lock blocks normal physical-button actions; a configured child-lock gestur
 
 All automation configuration lives on A1; M1 only measures and responds.
 
-1. Add authorized M1 members.
+1. Add up to four M1 MACs and optional IPs. No configuration is needed on M1.
 2. Configure automatic speed range, offline speed, algorithm, debounce and minimum switching intervals.
 3. Select auto mode and turn on power. Without valid data the offline speed applies.
 
-A1 computes the arithmetic mean of bound M1 readings no older than 15 seconds. With no valid data, readings are `null`. A1 initiates sessions, probes and reads, preferring LAN and falling back to MQTT. It periodically reinitializes sessions after M1 restarts without manual token entry. **Upgrade both sides together.** See [pairing instructions](mqtt-link#a1-and-m1-automation).
+A1 computes the arithmetic mean of bound M1 readings no older than 15 seconds. With no valid data, readings are `null`. A1 sends session tokens through MQTT, then queries readings over LAN UDP only. UDP failures trigger the offline fan speed and retry backoff. A1 automatically authorizes sessions again after M1 restarts, without manual token entry. **Upgrade both sides together.** See [setup instructions](mqtt-link#a1-and-m1-automation).
 
 ## Buttons
 
@@ -119,8 +119,6 @@ When a linked M1 has an SCD40, A1 shows mean CO₂ in ppm and offers CO₂ alone
 
 Default CO₂ thresholds are 1500 ppm to start and 1000 ppm to idle; the default linear range is 800–2000 ppm. These values are adjustable. Combined control uses the highest speed demand. With start/idle hysteresis, any selected metric may start the fan, while all selected metrics must reach their targets before idling.
 
-### Home Assistant / HomeKit through A1
+### M1 readings in Home Assistant / HomeKit
 
-A1 publishes HA discovery for linked M1 temperature, humidity, PM2.5 and formaldehyde. An SCD40 adds CO₂ (ppm) only. SCD40 temperature/humidity are not displayed or forwarded to HA; temperature and humidity continue to use the original M1 sensors. A single M1 exposes its own readings; multiple M1 units expose per-device readings and valid-sample means. Unsupported devices do not create CO₂ entities or contribute zeroes.
-
-UART and CO₂ freshness are independent. Stale readings become unavailable while their entities remain registered. CO₂ uses the standard HA `carbon_dioxide` device class and `ppm`, allowing selection in HA HomeKit Bridge alongside the original M1 temperature/humidity. M1 display brightness is a device control and is not duplicated as an A1 environmental measurement. Upgrades remove SCD40 temperature/humidity discovery entries published by earlier firmware.
+M1 publishes its own MQTT sensor entities: temperature, humidity, PM2.5, formaldehyde, and CO₂ or pressure when the corresponding extension sensors are installed. These entities can be selected in HomeKit Bridge. A1 uses M1 readings for automation and includes the required aggregate values in its own state. A1 no longer publishes proxy sensor entities for individual M1 units; upgrading clears their old discovery entries.

@@ -23,21 +23,23 @@ Configure the Home Assistant MQTT integration to use the same Broker. Device rea
 
 M1 measures, reports and answers authorized A1 requests. It does not control the purifier. Rules, aggregation, fan, ring and group controls live on A1.
 
-### Pairing
+### Setup
 
-1. On M1, add `A1_MAC:M1_MAC` in binding settings. Both MACs are 12 lowercase hexadecimal digits.
-2. On A1, configure the M1 members and automation rules.
-3. Check network, MQTT and binding status. Enable automation only after the average readings are valid.
+1. On A1, add the M1 MAC, optionally its IP, and configure automation rules. Each A1 supports up to four M1 units.
+2. Connect both devices to the same MQTT service and account. The Broker must allow that account to publish to the M1 command topic.
+3. Confirm LAN connectivity and valid average readings before enabling automation. M1 needs no pairing identifier; its page shows current A1 sessions.
 
-Each identifier authorizes one A1 to query one M1. Adding another M1 does not change existing pairs. M1 accepts at most eight unique identifiers; IP addresses, tokens, recovery intervals and automation rules are not entered there.
+With IP left blank, A1 broadcasts on the LAN to find the specified M1 MAC. Enter a reachable IP when crossing subnets or broadcasts are restricted.
 
 ### Runtime behavior
 
-A1 initiates session setup, probes and reads. It prefers LAN transport and falls back to MQTT. M1 only answers authorized `bind`, `probe` and `read` requests. Session tokens exist in RAM; A1 periodically establishes a new session after M1 restarts, with no manual token entry.
+A1 sends a session token to M1 through MQTT, then queries readings over UDP every five seconds. Healthy reads do not repeat authorization or forward sensor data through MQTT. UDP failures use retry backoff; unavailable readings trigger A1's configured offline fan speed.
 
-A1 computes the live arithmetic mean of bound M1 readings that are valid and no older than 15 seconds. With no valid data, readings are `null`. Configure enable switches, thresholds, fan policy, debounce and minimum switching intervals on A1. M1 rejects configuration reads / writes, unbinding and sensor pushes over this channel.
+Session tokens exist only in RAM. M1 supports four A1 sessions, expiring after thirty minutes idle. A restart requires MQTT authorization again; A1 retries automatically, with authorization limited to once per minute during failures. Established sessions with continuing reads survive a temporary MQTT outage.
 
-**Upgrade both devices together. Earlier dedicated protocols are not retained.**
+A1 computes the arithmetic mean of M1 readings no older than fifteen seconds. With no valid data, readings are `null`. Configure thresholds, fan policy, debounce and minimum switching intervals on A1. A1 group control remains independent.
+
+**Upgrade both devices together. The old M1 allowlist and joint pairing topics are no longer used.**
 
 ## IotCloud remote management
 
