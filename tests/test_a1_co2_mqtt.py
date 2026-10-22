@@ -7,11 +7,13 @@ ROOT=Path(__file__).resolve().parents[1]
 def main(port):
     nodes=[]
     messages={}
+    account_key='u_'+b'co2_linkage'.hex()
+    account_root='phicomm/v2/'+account_key+'/'
     def received(client, userdata, message):
         messages[message.topic]=message.payload.decode()
     observer=Observer(port,received).start('#')
     def entities():
-        return {k:json.loads(v) for k,v in list(messages.items()) if k.startswith('homeassistant/') and v and 'bound_' in k}
+        return {k:json.loads(v) for k,v in list(messages.items()) if k.startswith('homeassistant/') and '/'+account_key+'/' in k and v and 'bound_' in k}
     def co2_entity():
         return next((v for v in entities().values() if v.get('device_class')=='carbon_dioxide'),None)
     def launch(model, ident, ip):
@@ -79,7 +81,11 @@ def main(port):
         call(a,'linkage.set',{'metrics':7,'low_hcho':0,'high_hcho':.2})
         wait(lambda:avg().get('co2')==1400)
         wait(lambda:state()['percentage']==40)
-        assert not [k for k,v in messages.items() if '/m1/' not in k and k.endswith(('/sensor','/average')) and v], 'No independent A1 sensor forwarding'
+        # The suite shares a broker with TC1/M1 tests. Their retained sensor
+        # snapshots are legitimate and do not indicate A1 proxy forwarding.
+        forwarded=[k for k,v in messages.items() if k.startswith(account_root)
+                   and '/m1/' not in k and k.endswith(('/sensor','/average')) and v]
+        assert not forwarded, ('No independent A1 sensor forwarding', forwarded)
         print('PASS optional CO2 wire data, legacy M1, linear/hysteresis, stale fallback, recovery and combined metrics',flush=True)
     finally:
         cleanup(observer, nodes, failing=sys.exc_info()[0] is not None)
