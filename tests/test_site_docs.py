@@ -111,6 +111,35 @@ class BuildTests(unittest.TestCase):
             self.assertIn('href="tc1-no-disassembly.html"', sibling)
         self.assertIn('guides/tc1-no-disassembly.html', (self.out / 'index.html').read_text())
 
+    def test_interactive_tc1_guide_retains_readable_fallback(self):
+        from html.parser import HTMLParser
+
+        class OSParser(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.systems = set()
+                self.choices = []
+
+            def handle_starttag(self, tag, attrs):
+                attrs = dict(attrs)
+                if 'data-guide-os' in attrs:
+                    self.systems.update(attrs['data-guide-os'].split())
+                    if 'hidden' in attrs:
+                        raise AssertionError('OS instructions must be readable without JavaScript')
+                if tag == 'input' and attrs.get('name') == 'guide-os':
+                    self.choices.append(attrs['value'])
+
+        for language in ('', 'en/'):
+            text = (self.out / 'guides' / language / 'tc1-no-disassembly-ethernet-wifi-ap.html').read_text()
+            parser = OSParser()
+            parser.feed(text)
+            self.assertEqual(parser.systems, {'mac', 'windows', 'linux'})
+            self.assertEqual(parser.choices, ['mac', 'windows', 'linux'])
+            self.assertNotIn('<!-- os:', text)
+            self.assertNotIn('```', text)
+            for command in ('netsh interface ipv4', 'sudo ip address', 'sudo ifconfig'):
+                self.assertIn(command, text)
+
     def test_home_first_use_remains_primary_and_local_follows_iotcloud(self):
         home = (self.out / 'index.html').read_text()
         hero = home.split('<section class="hero">', 1)[1].split('</section>', 1)[0]

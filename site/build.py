@@ -136,6 +136,30 @@ def expand_site_url(text):
     return text.replace('{{SITE_URL}}', SITE_URL)
 
 
+def render_guide_body(text, language):
+    """Keep OS choices in Markdown; Wiki and no-JS readers retain all steps."""
+    def render(fragment):
+        return markdown.markdown(fragment, extensions=EXTENSIONS,
+                                 extension_configs={'toc': {'slugify': slugify_unicode}})
+
+    def os_block(match):
+        systems = match[1].split()
+        if not systems or set(systems) - {'windows', 'mac', 'linux'}:
+            raise ValueError(f'Unknown guide operating system: {match[1]}')
+        return f'<div data-guide-os="{esc(" ".join(systems))}">\n{render(match[2])}\n</div>'
+
+    text = re.sub(r'<!-- os:([\w ]+) -->\s*\n(.*?)<!-- /os -->', os_block, text, flags=re.S)
+    legend = 'Your computer' if language == 'en' else '选择电脑系统'
+    hint = ('Only instructions for your selected system are shown. Your choice is saved.' if language == 'en'
+            else '只展示所选系统的操作，选择会自动保存。')
+    picker = (f'<fieldset class="guide-os-picker" hidden><legend>{legend}</legend>'
+              '<div class="guide-os-options">' + ''.join(
+                  f'<label><input type="radio" name="guide-os" value="{value}"><span>{label}</span></label>'
+                  for value, label in [('mac', 'macOS'), ('windows', 'Windows'), ('linux', 'Linux')])
+              + f'</div><p>{hint}</p></fieldset>')
+    return render(text.replace('<!-- os-picker -->', picker))
+
+
 def render_guide(slug, title, summary, source, language="zh"):
     english = language == "en"
     base = "../../" if english else "../"
@@ -144,9 +168,7 @@ def render_guide(slug, title, summary, source, language="zh"):
         text = text.replace("](assets/", "](../assets/")
     switch = (f'<a href="../{slug}.html" lang="zh-CN">简体中文</a> · English' if english else
               f'简体中文 · <a href="en/{slug}.html" lang="en">English</a>')
-    body = markdown.markdown(
-        rewrite_links(expand_site_url(text)), extensions=EXTENSIONS,
-        extension_configs={'toc': {'slugify': slugify_unicode}})
+    body = render_guide_body(rewrite_links(expand_site_url(text)), language)
     return (f'<!doctype html><html lang="{"en" if english else "zh-CN"}"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width,initial-scale=1">'
             f'{guide_metadata(slug, title, summary, language)}'
