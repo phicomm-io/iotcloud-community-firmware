@@ -390,6 +390,7 @@ static void group_transport(void) {
 
 #ifdef FEATURE_DEVICE_A1
 static void effective_controls(void) {
+  effective_on=true;
   feature_config_t c = stored;
   c.light.effect = EFFECT_SOLID;
   assert(install_config(&c));
@@ -805,6 +806,7 @@ static void four_peer_limit(void) {
 static void animation_speed(void) {
   feature_config_t original=configuration;
   uint32_t original_ms=test_now, normal[32], fast[32], slow[32];
+  effective_on=true;
   configuration.light.follow_fan=0;
   for(unsigned effect=EFFECT_BREATHE;effect<=EFFECT_RAINBOW;effect++){
     configuration.light.effect=effect;configuration.light.speed=0;test_now=3000;
@@ -818,6 +820,21 @@ static void animation_speed(void) {
     test_now=3000;feature_light_frame(slow,255,true,0x1122ff);
     assert(memcmp(normal,slow,sizeof(normal)));
   }
+  /* Every business effect is dark while powered off, independent of follow.
+   * Powered automatic idle is a separate state and keeps custom brightness. */
+  for(unsigned effect=EFFECT_FAN;effect<=EFFECT_DATA;effect++){
+    configuration.light.effect=effect;
+    for(unsigned follow=0;follow<2;follow++){
+      configuration.light.follow_fan=follow;effective_on=false;
+      for(unsigned i=0;i<32;i++)normal[i]=0xffffff;
+      feature_light_frame(normal,255,true,0x1122ff);
+      for(unsigned i=0;i<32;i++)assert(normal[i]==0);
+    }
+  }
+  effective_on=true;effective_speed=0;configuration.light.follow_fan=0;
+  configuration.light.effect=EFFECT_SOLID;
+  feature_light_frame(normal,128,true,0x0000ff);
+  assert(normal[0]==128);
   configuration=original;test_now=original_ms;
   stored.light.speed=0;json_object *o=config_encode(&stored,"light");
   assert(json_object_get_int(json_object_object_get(o,"speed"))==5);json_object_put(o);

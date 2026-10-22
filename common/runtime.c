@@ -874,13 +874,14 @@ void feature_light_frame(uint32_t out[32], unsigned brightness, bool enabled,
   float values[4];
   memcpy(values, aggregate, sizeof(values));
   bool valid[4] = {available > 0, available > 0, available > 0, available > 0};
-  unsigned speed = effective_on ? effective_speed : 0;
+  bool powered = effective_on;
+  unsigned speed = powered ? effective_speed : 0;
   feature_sleep_state_t sleep = sleep_state;
   unlock();
   unsigned original_brightness = brightness;
   if (sleep.light_sleep && brightness > sleep.brightness)
     brightness = sleep.brightness;
-  if (!enabled || !brightness) {
+  if (!powered || !enabled || !brightness) {
     memset(out, 0, 128);
     return;
   }
