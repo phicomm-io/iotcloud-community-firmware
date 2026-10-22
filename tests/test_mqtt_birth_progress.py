@@ -93,6 +93,7 @@ int main(void){
 #define service_sender 0
 static struct {bool mode;char base[8];}account;
 static bool rediscover,power_turn,power_pending,injected,fail_once;
+static unsigned ha_refresh_pending;
 static unsigned discovery_index,state_index,publication_cursor,snapshot_at;
 static unsigned calls,trace[64],inject_at;
 static bool session_current(void){return true;}
@@ -123,6 +124,19 @@ int main(void){
   assert(calls==44&&!rediscover);
   for(unsigned i=0;i<44;i++)assert(trace[i]==i%22);
  }
+ /* A committed TMCP switch change replays all six HA state topics,
+  * without republishing discovery. A second change mid-batch survives. */
+ calls=0;injected=true;fail_once=false;ha_refresh_pending=1;
+ assert(!session_cycle(0));assert(calls==1&&trace[0]==12);
+ ha_refresh_pending=1;
+ for(unsigned i=0;i<19;i++)assert(!session_cycle(0));
+ assert(calls==20&&!ha_refresh_pending);
+ for(unsigned i=0;i<20;i++)assert(trace[i]==12+i%10);
+ /* Renames replay discovery then current states, preserving identifiers. */
+ calls=0;ha_refresh_pending=3;
+ for(unsigned i=0;i<22;i++)assert(!session_cycle(0));
+ assert(calls==22&&!ha_refresh_pending);
+ for(unsigned i=0;i<22;i++)assert(trace[i]==i);
  return 0;
 }
 '''.replace('/* PRODUCTION */', cycle)

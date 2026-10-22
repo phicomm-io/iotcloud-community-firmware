@@ -56,4 +56,6 @@ extern void UserMqttHassAutoRebootButton(void);
 
 extern void UserMqttHassAutoSoftRebootButton(void);
 
+extern void UserMqttRefreshState(bool discovery);
+
 #endif

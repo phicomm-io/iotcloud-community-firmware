@@ -86,6 +86,7 @@ int main(void){
 #define PH_MQTT_MORE 3
 static struct{int mode;char base[8];}account={1,"base"};
 static bool power_pending,power_turn,rediscover;
+static unsigned ha_refresh_pending;
 static unsigned discovery_index=12,state_index=10,publication_cursor,snapshot_at,now;
 static unsigned powers,statuses,attempts;
 static bool busy;

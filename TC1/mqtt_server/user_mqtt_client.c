@@ -82,6 +82,12 @@ unsigned tc1_mqtt_status = MQTT_DISCONNECTED;
 bool tc1_mqtt_cleanup_warning;
 static mqtt_account_t account;
 static bool synchronous_send, rediscover;
+/* Writers only mark pending work. The MQTT owner publishes after commit,
+ * outside the config/status locks, and preserves changes during a batch. */
+static unsigned ha_refresh_pending;
+void UserMqttRefreshState(bool discovery) {
+    __atomic_fetch_or(&ha_refresh_pending, discovery ? 3u : 1u, __ATOMIC_RELEASE);
+}
 /* External periodic producer requests work only. Account/topic/cursors remain
  * exclusively owned by the MQTT worker, including during reconfiguration. */
 static bool power_pending,power_turn;
@@ -358,6 +364,11 @@ static int session_cycle(void *context) {
     if(!session_current())return PH_MQTT_RECONFIGURE;
     int rc=ota_service(account.base);if(rc!=MQTT_SUCCESS)return rc;
     if(ota_job_active())return MQTT_SUCCESS;
+    if(discovery_index==12 && state_index==10) {
+        unsigned pending=__atomic_exchange_n(&ha_refresh_pending,0u,__ATOMIC_ACQ_REL);
+        if(pending & 2u)rediscover=true;
+        else if(pending & 1u){state_index=0;publication_cursor=0;}
+    }
     /* Preserve a mid-batch birth until all discovery and initial state items
      * have completed, then replay the entire snapshot for that request. */
     if(rediscover && discovery_index==12 && state_index==10){discovery_index=state_index=publication_cursor=0;rediscover=false;}

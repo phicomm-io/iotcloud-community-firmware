@@ -4,6 +4,7 @@
 #include "user_gpio.h"
 #include "user_wifi.h"
 #include "user_power.h"
+#include "mqtt_server/user_mqtt_client.h"
 #include "ota_server/signed_adapter.h"
 #include "ota_server/ota_server.h"
 #include <stdio.h>
@@ -101,6 +102,13 @@ static __attribute__((noinline)) json_object *service_product_inner(const char *
         saved=false;
     }
     if(!valid || !saved){tc1_status_lock();*user_config=*before;tc1_status_unlock();strcpy(sys_config->micoSystemConfig.name,old_name);childLockEnabled=user_config->user[0];for(unsigned i=0;i<6;i++)UserRelaySet(i,user_config->socket_status[i]);UserLedSet(RelayOut() && user_config->power_led_enabled);}
+    /* HA uses per-entity state topics, not the TMCP status snapshot. Publish
+     * committed values after every successful control/config transaction. */
+    if(valid && saved){
+        bool discovery=strcmp(old_name,sys_config->micoSystemConfig.name)!=0 ||
+            memcmp(before->socket_names,user_config->socket_names,sizeof(before->socket_names))!=0;
+        UserMqttRefreshState(discovery);
+    }
     free(before);tc1_config_release();*code=!valid?"invalid_params":saved?"accepted":"storage_error";return NULL;
 }
 
