@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise all four M1 subscriptions with a 63-byte account on a local broker."""
+"""Exercise four RAM sessions with a 63-byte account on a local broker."""
 import json
 from pathlib import Path
 import select
@@ -35,32 +35,6 @@ def main(port):
     def publish(topic, payload):
         client.publish(topic, json.dumps(payload))
 
-    def reply(peer, operation, request_id):
-        topic = f'phicomm/v2/{key}/a1/{peer}/link/{identity}/response'
-        payload = {'v': 1, 'src': peer, 'dst': identity, 'boot': 1,
-                   'id': request_id, 'revision': 1, 'op': operation, 'token': 'ab' * 16}
-        start = len(records)
-        deadline = time.monotonic() + 15
-        # Subscriptions are installed during the reconnect after binding.set.
-        # A missed request may be retried; each attempt has a unique ID.
-        while time.monotonic() < deadline:
-            payload['id'] += 1
-            publish(f'{base}/link/{peer}/request', payload)
-            sent_id = payload['id']
-            for _ in range(10):
-                client.check()
-                matches = [json.loads(p) for t, p, r in records[start:]
-                           if t == topic and json.loads(p).get('id') == sent_id]
-                if matches:
-                    response = matches[-1]
-                    assert response['src'] == identity and response['dst'] == peer
-                    assert response['token'] == payload['token'] and response['ip'] == '127.0.0.1'
-                    assert response['op'] == ('bound' if operation == 'bind' else 'sample')
-                    return response
-                assert worker.poll() is None
-                time.sleep(.03)
-        raise AssertionError(f'No {operation} reply from subscription {peer}')
-
     try:
         worker = subprocess.Popen([str(root / 'build/simulator/M1'), identity,
                                    '127.0.0.1', '127.0.0.1', str(port), user],
@@ -85,29 +59,30 @@ def main(port):
             offline = next(i for i in range(start, len(records))
                            if records[i][0] == base + '/availability' and records[i][1] == 'offline')
             assert result_index < offline, 'rename result lost until after reconnect'
-        command = {'action': 'binding.set',
-                   'params': {'response_ids': [f'{peer}:{identity}' for peer in peers]}}
-        worker.stdin.write(json.dumps(command).encode() + b'\n')
+        # Existing command subscription authorizes all four sessions; no peer
+        # subscriptions, pairing list or MQTT read replies are needed.
+        for index, peer in enumerate(peers + ['000000000005']):
+            rid = f'grant-{index}'
+            publish(base + '/command', {'request_id': rid, 'action': 'sensor.session.set',
+                    'params': {'v': 2, 'a1': peer, 'boot': 1, 'token': 'ab' * 16}})
+            wait(lambda: any(t == base + '/result' and json.loads(p).get('request_id') == rid
+                             for t,p,r in records))
+            value = next(json.loads(p) for t,p,r in reversed(records)
+                         if t == base + '/result' and json.loads(p).get('request_id') == rid)
+            assert value['code'] == ('accepted' if index < 4 else 'busy')
+        worker.stdin.write(json.dumps({'action':'binding.status.get','params':{}}).encode()+b'\n')
         worker.stdin.flush()
-        assert select.select([worker.stdout], [], [], 15)[0], 'binding setup timeout'
-        assert json.loads(worker.stdout.readline())['code'] == 'accepted'
-        # A fifth peer is rejected before storage/subscription changes.
-        command['params']['response_ids'].append(f'000000000005:{identity}')
-        worker.stdin.write(json.dumps(command).encode() + b'\n')
-        worker.stdin.flush()
-        assert select.select([worker.stdout], [], [], 15)[0], 'fifth-peer rejection timeout'
-        assert json.loads(worker.stdout.readline())['code'] == 'invalid_params'
-        for index, peer in enumerate(peers):
-            reply(peer, 'bind', index * 1000)
-            sample = reply(peer, 'read', index * 1000 + 100)
-            assert sample['body']['sequence'] > 0 and sample['body']['valid']
+        assert select.select([worker.stdout],[],[],15)[0]
+        status=json.loads(worker.stdout.readline())['data']
+        assert status['max_sessions']==4 and len(status['peers'])==4
+        assert {p['mac'] for p in status['peers']}==set(peers)
         request = {'request_id': 'long-account-status', 'action': 'status.get'}
         publish(base + '/command', request)
         wait(lambda: any(t == base + '/result' and json.loads(p).get('request_id') == request['request_id']
                          for t, p, r in records))
         assert all(not retained for topic, payload, retained in records
                    if topic.endswith('/response') or topic == base + '/result')
-        print('PASS M1 rename results before reconnect, four actual MQTT subscriptions, long account, bind/sample routing, IP snapshot and command result')
+        print('PASS M1 rename results before reconnect, four RAM sessions, fifth rejected, long account and native command results')
     finally:
         cleanup(client, [worker], failing=sys.exc_info()[0] is not None)
 

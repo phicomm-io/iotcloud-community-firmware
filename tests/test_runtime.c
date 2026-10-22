@@ -170,13 +170,14 @@ static void transaction(const char *d, const char *s, unsigned code) {
   assert(r);
   json_object_put(r);
 }
+#ifdef FEATURE_DEVICE_A1
 static void binding(void) {
   transaction(
       "binding",
       "{\"peers\":[{\"mac\":\"11:22:33:44:55:66\",\"ip\":\"127.0.0.1\"}]}",
       200);
   char filters[12][FEATURE_TOPIC_MAX];
-  assert(feature_mqtt_filters(filters,sizeof(filters)/sizeof(filters[0])) == 4);
+  assert(feature_mqtt_filters(filters,sizeof(filters)/sizeof(filters[0])) == 3);
   char root[FEATURE_TOPIC_MAX];
   root_for(&stored, 0, root);
 #ifdef FEATURE_DEVICE_A1
@@ -184,12 +185,10 @@ static void binding(void) {
 #else
   assert(!strcmp(root, "phicomm/v2/local/a1/112233445566/linkage"));
 #endif
-  json_object *o = envelope(&stored, 0, "bound", 1);
-  js(o, "src", stored.peers[0].id);
-  js(o, "dst", LOCAL_ID);
-  incoming(o, false, false, NULL);
+  assert(sensor_grant(&stored,0,test_now));
+  feature_mqtt_service(capture,true);
   assert(feature_bound());
-  json_object_put(o);
+  json_object *o;
 #ifdef FEATURE_DEVICE_A1
   char topic[FEATURE_TOPIC_MAX];
   const char *light_command = "{\"state\":\"ON\",\"brightness\":100}";
@@ -216,27 +215,32 @@ static void binding(void) {
                              .valid = true, .co2_supported=true, .co2_valid=true, .co2=1234, .co2_received_ms=100};
   test_now = 200;
   json_object_object_add(o, "body", sample_body(&sample, test_now));
-  incoming(o, false, false, NULL);
+  peers[0].pending=true;peers[0].request=integer(o,"id");
+  incoming(o, true, false, "127.0.0.1");
   assert(samples[0].valid && samples[0].received_ms == 200);
   assert(samples[0].co2==1234 && feature_co2_fresh(&samples[0],200));
   assert(!feature_co2_fresh(&samples[0],20100));
   test_now = 300;
-  incoming(o, false, false, NULL);
+  peers[0].pending=true;peers[0].request=integer(o,"id");
+  incoming(o, true, false, "127.0.0.1");
   assert(samples[0].received_ms == 200);
   js(o, "token", "wrong");
   number(json_object_object_get(o, "body"), "sequence", 10);
-  incoming(o, false, false, NULL);
+  peers[0].pending=true;peers[0].request=integer(o,"id");
+  incoming(o, true, false, "127.0.0.1");
   assert(samples[0].sequence == 9);
   js(o, "token", "abababababababababababababababab");
   number(o, "boot", 8);
   number(json_object_object_get(o, "body"), "boot", 8);
   number(json_object_object_get(o, "body"), "sequence", 1);
-  incoming(o, false, false, NULL);
+  peers[0].pending=true;peers[0].request=integer(o,"id");
+  incoming(o, true, false, "127.0.0.1");
   assert(samples[0].boot == 8);
   number(o, "boot", 7);
   number(json_object_object_get(o, "body"), "boot", 7);
   number(json_object_object_get(o, "body"), "sequence", 100);
-  incoming(o, false, false, NULL);
+  peers[0].pending=true;peers[0].request=integer(o,"id");
+  incoming(o, true, false, "127.0.0.1");
   assert(samples[0].boot == 8);
   json_object_put(o);
   feature_local_sample(&sample);
@@ -246,7 +250,33 @@ static void binding(void) {
   transaction("binding", "{\"peers\":[]}", 200);
   assert(!feature_bound());
 }
+#endif
+
 #ifdef FEATURE_DEVICE_A1
+static void sensor_session_pacing(void) {
+  transaction("binding", "{\"peers\":[{\"mac\":\"112233445566\",\"ip\":\"127.0.0.1\"}]}", 200);
+  feature_mqtt_service(capture,true);assert(!queued);
+  test_now=10000;sensor_poll(&stored,0,test_now,true);
+  assert(queued==1 && peers[0].auth_sent && peers[0].pending);
+  mqtt_account_t same=mqtt_snapshot();feature_mqtt_session(&same);
+  assert(!queued && !peers[0].auth_sent); /* queue generation was discarded */
+  sensor_poll(&stored,0,test_now+1,true);assert(queued==1 && peers[0].auth_sent);
+  feature_mqtt_service(capture,true);assert(!queued);
+  /* Valid replies keep the token quiet through healthy polling and broker loss. */
+  for(unsigned i=1;i<=80;i++) {
+    test_now=10000+i*1000;peers[0].pending=false;peers[0].lan=true;peers[0].authorized=true;
+    peers[0].failures=0;peers[0].sent=test_now;
+    sensor_poll(&stored,0,test_now,i<40);assert(!queued);
+  }
+  /* Failure may reauthorize, at most once a minute. */
+  peers[0].lan=false;peers[0].pending=false;peers[0].failures=4;peers[0].recover_at=test_now+60000;
+  sensor_poll(&stored,0,test_now,true);assert(queued==1);
+  feature_mqtt_service(capture,true);
+  for(unsigned i=1;i<60;i++){test_now+=1000;sensor_poll(&stored,0,test_now,true);assert(!queued);}
+  test_now+=1000;sensor_poll(&stored,0,test_now,true);assert(queued==1);
+  feature_mqtt_service(capture,true);
+  transaction("binding", "{\"peers\":[]}", 200);
+}
 static void assert_group_quiet(int receiver) {
   assert(!queued && !group_members[0].pending);
   fd_set readable; FD_ZERO(&readable); FD_SET(receiver, &readable);
@@ -627,7 +657,7 @@ static void account_namespaces(void) {
   assert(grouped && !strcmp(parent, expected_parent) && !strcmp(parent_name, stored.group));
 #endif
   char filters[12][FEATURE_TOPIC_MAX],root[FEATURE_TOPIC_MAX];
-  unsigned count=feature_mqtt_filters(filters,sizeof(filters)/sizeof(filters[0]));assert(count>=3);
+  unsigned count=feature_mqtt_filters(filters,sizeof(filters)/sizeof(filters[0]));assert(count==3);
   for(unsigned i=0;i<count;++i)assert(strstr(filters[i],alice.key));
   assert(feature_mqtt_filters_current(filters,count));
   stored.revision++;configuration=stored;
@@ -678,9 +708,9 @@ static void compact_resources(void){
   stored.peer_count=count;configuration=stored;
   for(unsigned i=0;i<count;i++)snprintf(stored.peers[i].id,sizeof(stored.peers[i].id),"%012x",i+1);
 #ifdef FEATURE_DEVICE_A1
-  unsigned expected=3u+(count?1u:0u);
+  unsigned expected=2u+(count?1u:0u);
 #else
-  unsigned expected=count;
+  unsigned expected=0;
 #endif
   assert(feature_mqtt_filters(filters.topics,capacity)==expected);
   assert(feature_mqtt_filters_current(filters.topics,expected));
@@ -726,6 +756,7 @@ static void compact_resources(void){
 
 
 static void four_peer_limit(void) {
+#ifdef FEATURE_DEVICE_A1
   feature_config_t saved=stored;
   json_object *o=json_object_new_object(), *a=json_object_new_array(), *r=NULL;
 #ifdef FEATURE_DEVICE_A1
@@ -760,10 +791,11 @@ static void four_peer_limit(void) {
   before=stored;feature_config_t loaded;feature_config_get(&loaded);
   assert(loaded.peer_count==4 && !memcmp(loaded.peers,stored.peers,4*sizeof(loaded.peers[0])));
   assert(!memcmp(&before,&stored,sizeof(stored)));
-  char filters[4][FEATURE_TOPIC_MAX];assert(feature_mqtt_filters(filters,4)==4);
+  char filters[4][FEATURE_TOPIC_MAX];assert(feature_mqtt_filters(filters,4)==3);
   assert(!install_config(&stored)); /* Never install an oversized runtime map. */
   saved.revision=stored.revision;assert(install_config(&saved));
   puts("Four-peer boundary: four accepted, fifth rejected without mutation, inbound fifth ignored, legacy reads clamped");
+#endif
 }
 
 #ifndef FEATURE_DEVICE_A1
@@ -834,6 +866,7 @@ int main(void) {
               "{\"peers\":[{\"mac\":\"112233445566\",\"ip\":\"garbage\"}]}",
               400);
   binding();
+  sensor_session_pacing();
 #ifdef FEATURE_DEVICE_A1
   group_transport();
   effective_controls();

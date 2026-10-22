@@ -39,7 +39,7 @@ HTTP 使用 `POST /api/v1/command`，与 MQTT command 共用 JSON 命令和响�
 
 账号隔离需要 Broker ACL 实际限制对应 user_key；仅主题带用户名不构成授权。连接后先公告，再检查真实 SUBACK；授权不足会退避重试，不降级。HA 发现主题为 `homeassistant/<component>/<user_key>/<model>_<mac>_<entity>/config`，设备/实体 ID 包含账号、型号与 MAC。HA online 后重发发现配置。
 
-绑定/地址等辅助根为 `phicomm/v2/<user_key>/<kind>/<id>`；点对点联动为 `phicomm/v2/<user_key>/<model>/<mac>/link/<peer>/<leaf>`。M1 联动仅响应配置允许的查询，不接受联动写操作。
+地址等辅助根为 `phicomm/v2/<user_key>/<kind>/<id>`。A1 组控制保留 `phicomm/v2/<user_key>/a1/<mac>/link/<peer>/<leaf>`。A1→M1 授权复用 M1 原有 command/result：`sensor.session.set` 仅经 MQTT 接受，HTTP 不支持；之后只允许携带会话 token 的 UDP 读取，不订阅 M1/A1 联合主题。详见 [传感器会话](sensor-session.md)。
 
 ## A1 实时平均值
 

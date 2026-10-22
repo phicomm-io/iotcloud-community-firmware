@@ -9,7 +9,7 @@ from tools.check_mqtt_core import check
 
 # Independent emitted-frame fixture: sizes are injected by the scenarios below.
 # Inlined helpers (end, states_step, direct_leaf, direct_json_claimed) are omitted.
-SYMBOLS = '''mqtt_worker ph_mqtt_session_run ph_mqtt_poll command service_mqtt_input
+SYMBOLS = '''mqtt_worker ph_mqtt_session_run ph_mqtt_poll command service_mqtt_input service_mqtt_command_wire
 service_query service_command service_command_execute service_product service_product_inner
 json_owned_to_wire json_owned_to_wire_result json_write json_primitive json_append ph_mqtt_publish ingress
 ph_mqtt_enqueue_route ph_mqtt_enqueue_generation session_cycle ph_mqtt_startup_wait

@@ -38,7 +38,6 @@ def main(port):
         avg=lambda:call(a,'sensors.average.get')
         state=lambda:call(a,'status.get')
         wait(lambda:state().get('mqtt_connected'))
-        call(m,'binding.set',{'response_ids':['020000cc0001:020000dd0001']})
         call(a,'binding.set',{'peers':[{'mac':'020000dd0001','ip':'127.77.1.2'}]})
         wait(lambda:avg().get('sample_count')==1)
         assert co2_entity() is None, 'legacy M1 must not create CO2 discovery'

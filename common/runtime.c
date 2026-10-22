@@ -30,11 +30,13 @@ static mqtt_account_t mqtt_snapshot(void) {
   mico_rtos_unlock_mutex(&namespace_lock); return a;
 }
 static feature_config_t configuration;
-static feature_sample_t samples[FEATURE_MAX_PEERS], local_sample;
+static feature_sample_t local_sample;
+#ifdef FEATURE_DEVICE_A1
+static feature_sample_t samples[FEATURE_MAX_PEERS];
+#endif
 static feature_pid_t pid;
 static void reset_controller(bool preserve_gate);
-static uint32_t boot_id, serial, announce_at, handshake_at;
-static unsigned handshake_cursor;
+static uint32_t boot_id, serial, announce_at;
 #ifdef FEATURE_DEVICE_A1
 static uint32_t tick_at;
 #endif
@@ -51,19 +53,26 @@ static float aggregate[4], aggregate_co2;
 static unsigned available_co2;
 static bool data_valid;
 static unsigned available;
+#ifdef FEATURE_DEVICE_A1
 typedef struct {
-  uint32_t request, sent, recover_at, mqtt_sent, retired_boot[4];
-  unsigned successes;
-  bool lan, pending;
+  uint32_t request, sent, recover_at, auth_at, retired_boot[4];
+  unsigned failures;
+  bool lan, pending, authorized, auth_sent;
   char ip[16];
-  json_object *rpc;
-  uint32_t rpc_sent, rpc_request, last_seen;
-#ifndef FEATURE_DEVICE_A1
   uint8_t session_token[16];
-  bool session_valid;
-#endif
+  uint32_t last_seen;
 } peer_runtime_t;
 static peer_runtime_t peers[FEATURE_MAX_PEERS];
+#else
+#define SENSOR_SESSION_IDLE_MS (30u * 60u * 1000u)
+typedef struct {
+  char id[13], ip[16];
+  uint8_t token[16];
+  uint32_t boot, last_seen;
+  bool valid;
+} sensor_session_t;
+static sensor_session_t sensor_sessions[FEATURE_MAX_PEERS];
+#endif
 static uint32_t member_seen[8];
 static uint32_t mqtt_revision;
 static bool mqtt_online;
@@ -209,31 +218,21 @@ static void root_for(const feature_config_t *c,unsigned i,char out[FEATURE_TOPIC
   mqtt_format(out,FEATURE_TOPIC_MAX,"phicomm/v2/%s/a1/%s/linkage",a.key,c->peers[i].id);
 #endif
 }
+#ifdef FEATURE_DEVICE_A1
 static json_object *envelope(const feature_config_t *c, unsigned i,
                              const char *op, unsigned request) {
   json_object *o = json_object_new_object();
-  if (!o)
-    return NULL;
-  number(o, "v", 1);
-  js(o, "src", LOCAL_ID);
-  js(o, "dst", c->peers[i].id);
-  number(o, "boot", boot_id);
-  number(o, "id", request);
-  number(o, "revision", c->revision);
+  if (!o) return NULL;
+  number(o, "v", 2);
+  js(o, "src", LOCAL_ID); js(o, "dst", c->peers[i].id);
+  number(o, "boot", boot_id); number(o, "id", request);
   js(o, "op", op);
   char token[33];
-#ifdef FEATURE_DEVICE_A1
-  token_text(c->peers[i].token, token);
-#else
   lock(); token_text(peers[i].session_token, token); unlock();
-#endif
   js(o, "token", token);
-#ifdef FEATURE_DEVICE_A1
-  js(o, "group", c->group);
-  number(o, "sensor_count", c->peer_count);
-#endif
   return o;
 }
+#endif
 static bool send_udp(const char *ip, json_object *o) {
   if (!o || udp < 0 || !ip[0])
     return false;
@@ -242,11 +241,11 @@ static bool send_udp(const char *ip, json_object *o) {
   a.sin_family = AF_INET;
   a.sin_port = htons(FEATURE_PORT);
   a.sin_addr.s_addr = inet_addr(ip);
-  if (a.sin_addr.s_addr == INADDR_NONE || a.sin_addr.s_addr == 0)
+  if ((a.sin_addr.s_addr == INADDR_NONE && strcmp(ip,"255.255.255.255")) || a.sin_addr.s_addr == 0)
     return false;
   const char *b = json_object_to_json_string(o);
   if (!b) return false;
-  /* UDP replies also run on the 6 KiB binding task. Keep packet storage
+  /* UDP replies run on the feature task. Keep packet storage
    * off that stack, which already holds the worker and protocol frames. */
   char *wire = malloc(FEATURE_WIRE_MAX);
   if (!wire) return false;
@@ -269,58 +268,18 @@ static bool send_udp(const char *ip, json_object *o) {
   free(wire);
   return sent;
 }
-static bool send_peer(const feature_config_t *c, unsigned i, json_object *o,
-                      bool mqtt_only) {
-  char topic[FEATURE_TOPIC_MAX];
-  bool lan;
-  char ip[16];
-  lock();
-  if (!peer_current(c, i)) {
-    unlock();
-    return false;
-  }
-  lan = peers[i].lan;
-  strcpy(ip, c->peers[i].ip[0] ? c->peers[i].ip : peers[i].ip);
-  unlock();
-  if (!mqtt_only && !c->peers[i].force_mqtt && lan && send_udp(ip, o))
-    return true;
-  mqtt_account_t account = mqtt_snapshot();
-  if (!mqtt_link_topic(&account,
-#ifdef FEATURE_DEVICE_A1
-      "m1",c->peers[i].id,LOCAL_ID,"request",
-#else
-      "a1",c->peers[i].id,LOCAL_ID,"response",
-#endif
-      topic,sizeof(topic))) return false;
-  return enqueue(topic, o, false);
-}
 static void group_config_changed(const feature_config_t *,
                                  const feature_config_t *);
 static bool install_config(feature_config_t *c) {
   if (c->peer_count > FEATURE_MAX_PEERS) return false;
-  for (unsigned i = 0; i < c->peer_count; i++) {
 #ifdef FEATURE_DEVICE_A1
-    unsigned n = 0;
-    for (unsigned j = 0; j < 16; j++)
-      n |= c->peers[i].token[j];
-    if (!n) {
-      c->peers[i].confirmed = 0;
-      if (!new_token(c->peers[i].token))
-        return false;
-    }
-#endif
-  }
-#ifndef FEATURE_DEVICE_A1
-  /* Persist response permissions only, never negotiated LAN sessions. */
-  for (unsigned i = 0; i < c->peer_count; i++) {
-    memset(c->peers[i].token, 0, 16);
-    c->peers[i].confirmed = 0;
-    c->peers[i].ip[0] = 0;
-  }
+  /* Legacy fields remain in the frozen Flash prefix, but sensor transport is LAN-only. */
+  for (unsigned i=0;i<c->peer_count;i++) { c->peers[i].force_mqtt=0; c->peers[i].kind=FEATURE_M1; }
 #endif
   if (!feature_config_save(c))
     return false;
   c->revision++;
+#ifdef FEATURE_DEVICE_A1
   struct mapping {
     feature_sample_t samples[FEATURE_MAX_PEERS];
     peer_runtime_t peers[FEATURE_MAX_PEERS];
@@ -335,22 +294,15 @@ static bool install_config(feature_config_t *c) {
           next->peers[i] = peers[j];
           break;
         }
-    for (unsigned j = 0; j < FEATURE_MAX_PEERS; j++) {
-      bool retained = false;
-      for (unsigned i = 0; i < FEATURE_MAX_PEERS; i++)
-        retained |= next->peers[i].rpc && next->peers[i].rpc == peers[j].rpc;
-      if (!retained && peers[j].rpc)
-        json_object_put(peers[j].rpc);
-    }
     memcpy(samples, next->samples, sizeof(samples));
     memcpy(peers, next->peers, sizeof(peers));
   } else {
-    for (unsigned i = 0; i < FEATURE_MAX_PEERS; i++)
-      if (peers[i].rpc)
-        json_object_put(peers[i].rpc);
     memset(samples, 0, sizeof(samples));
     memset(peers, 0, sizeof(peers));
   }
+#else
+  lock();
+#endif
   group_config_changed(&configuration, c);
   bool preserve_gate = configuration.linkage.enabled && c->linkage.enabled &&
                        configuration.linkage.hysteresis_enabled && c->linkage.hysteresis_enabled;
@@ -359,7 +311,9 @@ static bool install_config(feature_config_t *c) {
   automatic_valid = false;
   reset_controller(preserve_gate);
   unlock();
+#ifdef FEATURE_DEVICE_A1
   free(next);
+#endif
   return true;
 }
 static void co2_body(json_object *o, const feature_sample_t *s, uint32_t now) {
@@ -409,43 +363,57 @@ static json_object *average_body(const feature_sample_t *current, unsigned count
 #endif
 #include "group.c"
 #ifndef FEATURE_DEVICE_A1
-/* Linkage is a passive, read-only channel. Replies always use the configured
- * peer topic or the actual UDP sender; a payload cannot select a reply topic. */
-static void passive_incoming(json_object *o, bool lan, bool retained, const char *ip) {
-  if (retained || integer(o, "v") != 1 || strcmp(string(o, "dst"), LOCAL_ID)) return;
-  feature_config_t *c = malloc(sizeof(*c));
-  if (!c) return;
-  feature_config_get(c);
-  unsigned i;
-  for (i = 0; i < c->peer_count; i++)
-    if (!strcmp(c->peers[i].id, string(o, "src"))) break;
-  if (i == c->peer_count) { free(c); return; }
-  const char *op = string(o, "op");
-  uint8_t token[16];
-  if (!token_read(string(o, "token"), token)) { free(c); return; }
-  bool handshake = !lan && !strcmp(op, "bind");
-  if (!handshake && strcmp(op, "probe") && strcmp(op, "read")) { free(c); return; }
-  lock();
-  bool permitted = peer_current(c, i);
-  if (permitted && handshake) {
-    memcpy(peers[i].session_token, token, 16);
-    peers[i].session_valid = true;
-  } else permitted = permitted && peers[i].session_valid &&
-                      !memcmp(peers[i].session_token, token, 16);
-  feature_sample_t sample = local_sample;
-  unlock();
-  if (permitted) {
-    json_object *r = envelope(c, i, handshake ? "bound" : !strcmp(op,"probe") ? "pong" : "sample", integer(o,"id"));
-    if (!r) { free(c); return; }
-    char local_ip[sizeof(m1_state.ip)];
-    mico_rtos_lock_mutex(&m1_lock);memcpy(local_ip,m1_state.ip,sizeof(local_ip));
-    mico_rtos_unlock_mutex(&m1_lock);
-    js(r, "ip", local_ip);
-    if (!strcmp(op,"read")) json_build_object_add(r,"body",sample_body(&sample,now_ms()));
-    if (lan) send_udp(ip,r); else send_peer(c,i,r,true);
-    json_object_put(r);
+/* Only the MQTT command adapter invokes this grant; no UDP/HTTP grant path. */
+int feature_sensor_session_set(json_object *o) {
+  char id[13]; uint8_t token[16];
+  const char *raw=string(o,"a1"), *text=string(o,"token");
+  json_object *v=json_object_object_get(o,"v"), *boot=json_object_object_get(o,"boot");
+  if(!json_object_is_type(o,json_type_object) || !v || !json_object_is_type(v,json_type_int) || integer(o,"v")!=2 ||
+     !boot || !json_object_is_type(boot,json_type_int) || json_object_get_int64(boot)<0 || json_object_get_int64(boot)>UINT32_MAX ||
+     strlen(raw)!=12 || json_object_get_string_len(json_object_object_get(o,"a1"))!=12 || !feature_mac(raw,id) || !strcmp(id,LOCAL_ID) ||
+     json_object_get_string_len(json_object_object_get(o,"token"))!=32 || !token_read(text,token)) return 400;
+  unsigned bits=0;for(unsigned k=0;k<16;k++)bits|=token[k];if(!bits)return 400;
+  json_object_object_foreach(o,key,value) { (void)value;
+    if(strcmp(key,"v") && strcmp(key,"a1") && strcmp(key,"boot") && strcmp(key,"token"))return 400;
   }
-  free(c);
+  uint32_t now=now_ms(); unsigned slot=FEATURE_MAX_PEERS;
+  lock();
+  for(unsigned i=0;i<FEATURE_MAX_PEERS;i++) {
+    sensor_session_t *p=&sensor_sessions[i];
+    if(p->valid && (uint32_t)(now-p->last_seen)>=SENSOR_SESSION_IDLE_MS)p->valid=false;
+    if(p->valid && !strcmp(p->id,id)) { slot=i;break; }
+    if(!p->valid && slot==FEATURE_MAX_PEERS)slot=i;
+  }
+  if(slot==FEATURE_MAX_PEERS) { unlock();return 409; }
+  sensor_session_t *p=&sensor_sessions[slot];
+  bool same=p->valid && p->boot==integer(o,"boot") && !memcmp(p->token,token,16);
+  if(!same)memset(p,0,sizeof(*p));
+  strcpy(p->id,id);memcpy(p->token,token,16);p->boot=integer(o,"boot");p->last_seen=now;p->valid=true;
+  unlock();return 200;
+}
+static void passive_incoming(json_object *o, bool lan, bool retained, const char *ip) {
+  if(!lan || retained || integer(o,"v")!=2 || strcmp(string(o,"dst"),LOCAL_ID) || !ip || !ip[0])return;
+  const char *op=string(o,"op");
+  if(strcmp(op,"read") && strcmp(op,"probe"))return;
+  uint8_t token[16];if(!token_read(string(o,"token"),token))return;
+  bool permitted=false;uint32_t now=now_ms();
+  lock();
+  for(unsigned i=0;i<FEATURE_MAX_PEERS;i++) {
+    sensor_session_t *p=&sensor_sessions[i];
+    if(p->valid && (uint32_t)(now-p->last_seen)>=SENSOR_SESSION_IDLE_MS)p->valid=false;
+    if(p->valid && !strcmp(p->id,string(o,"src")) && p->boot==integer(o,"boot") && !memcmp(p->token,token,16)) {
+      p->last_seen=now;snprintf(p->ip,sizeof(p->ip),"%s",ip);permitted=true;break;
+    }
+  }
+  feature_sample_t sample=local_sample;
+  unlock();
+  if(!permitted)return;
+  json_object *r=json_object_new_object();if(!r)return;
+  number(r,"v",2);js(r,"src",LOCAL_ID);js(r,"dst",string(o,"src"));
+  number(r,"boot",boot_id);number(r,"id",integer(o,"id"));js(r,"token",string(o,"token"));
+  js(r,"op",!strcmp(op,"read")?"sample":"pong");
+  if(!strcmp(op,"read"))json_build_object_add(r,"body",sample_body(&sample,now));
+  send_udp(ip,r);json_object_put(r);
 }
 #endif
 static void incoming(json_object *o, bool lan, bool retained, const char *ip) {
@@ -453,160 +421,23 @@ static void incoming(json_object *o, bool lan, bool retained, const char *ip) {
   passive_incoming(o, lan, retained, ip);
   return;
 #else
-  if (retained || integer(o, "v") != 1 || strcmp(string(o, "dst"), LOCAL_ID))
-    return;
-  if (group_input(o, lan, retained, ip))
-    return;
-  char src[13];
-  if (!feature_mac(string(o, "src"), src) || !strcmp(src, LOCAL_ID))
-    return;
-  feature_config_t *c = malloc(sizeof(*c));
-  if (!c)
-    return;
-  feature_config_get(c);
-  unsigned i;
-  for (i = 0; i < c->peer_count; i++)
-    if (!strcmp(c->peers[i].id, src))
-      break;
-  const char *op = string(o, "op");
-  if (!strcmp(op, "bind") && !lan) {
-    uint8_t token[16];
-    if (!token_read(string(o, "token"), token))
-      goto done;
-    if (i == c->peer_count) {
-      if (i >= FEATURE_MAX_PEERS)
-        goto done;
-      memset(&c->peers[i], 0, sizeof(c->peers[i]));
-      strcpy(c->peers[i].id, src);
-      c->peer_count++;
-      c->peers[i].timeout_ms = 1000;
-      c->peers[i].recovery_seconds = 60;
-      c->peers[i].recovery = 1;
-#ifdef FEATURE_DEVICE_A1
-      c->peers[i].kind = FEATURE_M1;
-#else
-      c->peers[i].kind = FEATURE_A1;
-#endif
-    } else if (c->peers[i].confirmed && memcmp(c->peers[i].token, token, 16))
-      goto done;
-    memcpy(c->peers[i].token, token, 16);
-    c->peers[i].confirmed = 1;
-#ifndef FEATURE_DEVICE_A1
-    if (!string_field(o, "group", c->peers[i].group, sizeof(c->peers[i].group)))
-      goto done;
-    c->peers[i].sensor_count = integer(o, "sensor_count");
-#endif
-    if (!install_config(c))
-      goto done;
-    json_object *r = envelope(c, i, "bound", integer(o, "id"));
-    send_peer(c, i, r, true);
-    json_object_put(r);
-    goto done;
+  if(group_input(o,lan,retained,ip))return;
+  if(!lan || retained || integer(o,"v")!=2 || strcmp(string(o,"dst"),LOCAL_ID))return;
+  const char *op=string(o,"op");
+  if(strcmp(op,"sample") && strcmp(op,"pong"))return;
+  feature_config_t *c=malloc(sizeof(*c));if(!c)return;feature_config_get(c);
+  unsigned i;for(i=0;i<c->peer_count;i++)if(!strcmp(c->peers[i].id,string(o,"src")))break;
+  if(i==c->peer_count)goto done;
+  char expected[33];bool matched;
+  lock();token_text(peers[i].session_token,expected);
+  matched=peer_current(c,i) && peers[i].pending && integer(o,"id")==peers[i].request && !strcmp(expected,string(o,"token"));
+  if(matched) {
+    peers[i].pending=false;peers[i].lan=true;peers[i].authorized=true;
+    peers[i].failures=0;peers[i].last_seen=now_ms();
+    if(ip && ip[0])snprintf(peers[i].ip,sizeof(peers[i].ip),"%s",ip);
   }
-  if (i == c->peer_count)
-    goto done;
-  char expected[33];
-  token_text(c->peers[i].token, expected);
-  if (strcmp(expected, string(o, "token")))
-    goto done;
-  if (!strcmp(op, "bound") && !lan) {
-    const char *address = string(o,"ip");
-    if (strlen(address)<16 && inet_addr(address)!=INADDR_NONE && inet_addr(address)!=0) {
-      lock(); strcpy(peers[i].ip,address); unlock();
-    }
-    if (!c->peers[i].confirmed) {
-      c->peers[i].confirmed = 1;
-#ifndef FEATURE_DEVICE_A1
-      string_field(o, "group", c->peers[i].group, sizeof(c->peers[i].group));
-      c->peers[i].sensor_count = integer(o, "sensor_count");
-#endif
-      install_config(c);
-    }
-    goto done;
-  }
-  if (!strcmp(op, "unbind")) {
-    memmove(&c->peers[i], &c->peers[i + 1],
-            (c->peer_count - i - 1) * sizeof(c->peers[0]));
-    c->peer_count--;
-    install_config(c);
-    goto done;
-  }
-  if (!c->peers[i].confirmed)
-    goto done;
-
-  if (lan) {
-    lock();
-    if (!peer_current(c, i)) {
-      unlock();
-      goto done;
-    }
-    if (ip && ip[0])
-      strcpy(peers[i].ip, ip);
-    if (integer(o, "id") == peers[i].request && peers[i].pending) {
-      peers[i].pending = false;
-      peers[i].successes++;
-      if (peers[i].successes >= 2)
-        peers[i].lan = true;
-    }
-    unlock();
-  }
-  if (!strcmp(op, "config_get") || !strcmp(op, "config_set")) {
-#ifdef FEATURE_DEVICE_A1
-    const char *d = string(o, "domain");
-    json_object *body = NULL;
-    if (!strcmp(op, "config_set")) {
-      feature_set(d, json_object_object_get(o, "body"), &body);
-      json_object *r = envelope(c, i, "config_result", integer(o, "id"));
-      js(r, "domain", d);
-      if (body)
-        json_build_object_add(r, "body", body);
-      if (lan)
-        send_udp(ip, r);
-      else
-        send_peer(c, i, r, true);
-      json_object_put(r);
-    }
-    body = feature_json(d);
-    if (body) {
-      json_object *r = envelope(c, i, "config_state", integer(o, "id"));
-      js(r, "domain", d);
-      json_build_object_add(r, "body", body);
-      if (lan)
-        send_udp(ip, r);
-      else
-        send_peer(c, i, r, true);
-      json_object_put(r);
-    }
-#endif
-  } else if (!strcmp(op, "config_state") || !strcmp(op, "config_result")) {
-    lock();
-    json_object *pending = NULL;
-    if (!peer_current(c, i)) {
-      unlock();
-      goto done;
-    }
-    if (peers[i].rpc_request == integer(o, "id")) {
-      pending = peers[i].rpc;
-      peers[i].rpc = NULL;
-    }
-    unlock();
-    if (pending)
-      json_object_put(pending);
-  } else if (!strcmp(op, "probe") || !strcmp(op, "read")) {
-    json_object *r = envelope(c, i, !strcmp(op, "probe") ? "pong" : "sample",
-                              integer(o, "id"));
-    if (!strcmp(op, "read")) {
-      lock();
-      feature_sample_t s = local_sample;
-      unlock();
-      json_build_object_add(r, "body", sample_body(&s, now_ms()));
-    }
-    if (lan)
-      send_udp(ip, r);
-    else
-      send_peer(c, i, r, true);
-    json_object_put(r);
-  } else if (!strcmp(op, "sample")) {
+  unlock();if(!matched)goto done;
+  if(!strcmp(op,"sample")) {
     json_object *b = json_object_object_get(o, "body");
     feature_sample_t s;
     memset(&s, 0, sizeof(s));
@@ -656,29 +487,16 @@ done:
 #endif
 }
 bool feature_bound(void) {
-  lock();
-  bool b = false;
+  lock(); bool b=false;
 #ifdef FEATURE_DEVICE_A1
-  b = configuration.group[0] != 0;
-#endif
-  for (unsigned i = 0; i < configuration.peer_count; i++)
-#ifdef FEATURE_DEVICE_A1
-    b |= configuration.peers[i].confirmed;
+  b=configuration.group[0] || configuration.peer_count;
 #else
-    b |= peers[i].session_valid;
+  for(unsigned i=0;i<FEATURE_MAX_PEERS;i++)b|=sensor_sessions[i].valid && (uint32_t)(now_ms()-sensor_sessions[i].last_seen)<SENSOR_SESSION_IDLE_MS;
 #endif
-  unlock();
-  return b;
+  unlock();return b;
 }
 #ifdef FEATURE_DEVICE_A1
-static bool data_bound(void) {
-  lock();
-  bool bound = false;
-  for (unsigned i = 0; i < configuration.peer_count; i++)
-    bound |= configuration.peers[i].confirmed;
-  unlock();
-  return bound;
-}
+static bool data_bound(void) { lock();bool b=configuration.peer_count!=0;unlock();return b; }
 #endif
 bool feature_is_coordinator(void) {
   lock();
@@ -736,17 +554,16 @@ json_object *feature_json(const char *d) {
                            json_object_new_boolean(effective_on));
     number(o, "automatic_speed", automatic_speed);
     json_object *a = json_object_new_array();
+#ifdef FEATURE_DEVICE_A1
     for (unsigned i = 0; i < c->peer_count; i++) {
       json_object *p = json_object_new_object();
       js(p, "mac", c->peers[i].id);
+      json_build_object_add(p,"session_ready",json_object_new_boolean(peers[i].authorized));
       json_build_object_add(p,"co2_supported",json_object_new_boolean(samples[i].co2_supported));
       json_build_object_add(p,"co2_valid",json_object_new_boolean(feature_co2_fresh(&samples[i],now_ms())));
-#ifndef FEATURE_DEVICE_A1
-      json_build_object_add(p,"session_ready",json_object_new_boolean(peers[i].session_valid));
-#endif
       js(p, "ip", c->peers[i].ip[0] ? c->peers[i].ip : peers[i].ip);
       js(p, "transport",
-         peers[i].lan && !c->peers[i].force_mqtt ? "lan" : "mqtt");
+         peers[i].lan ? "lan" : "offline");
       json_build_object_add(p, "pending",
                              json_object_new_boolean(peers[i].pending));
       json_build_object_add(
@@ -754,6 +571,16 @@ json_object *feature_json(const char *d) {
           json_object_new_boolean(feature_sample_fresh(&samples[i], now_ms())));
       json_build_array_add(a, p);
     }
+#else
+    for(unsigned i=0;i<FEATURE_MAX_PEERS;i++) {
+      sensor_session_t *session=&sensor_sessions[i];
+      if(!session->valid || (uint32_t)(now_ms()-session->last_seen)>=SENSOR_SESSION_IDLE_MS)continue;
+      json_object *p=json_object_new_object();js(p,"mac",session->id);js(p,"ip",session->ip);
+      json_build_object_add(p,"session_ready",json_object_new_boolean(true));
+      number(p,"idle_ms",now_ms()-session->last_seen);json_build_array_add(a,p);
+    }
+    number(o,"max_sessions",FEATURE_MAX_PEERS);
+#endif
 #ifdef FEATURE_DEVICE_A1
     json_build_object_add(o, "average", average_body(samples, c->peer_count, now_ms()));
     json_object *members = json_object_new_array();
@@ -784,17 +611,8 @@ json_object *feature_json(const char *d) {
     json_object_put(o);
     o = json_object_new_object();
 #endif
-    json_object *ids = json_object_new_array();
-    for (unsigned i = 0; i < c->peer_count; i++) {
-      char id[26];
-#ifdef FEATURE_DEVICE_A1
-      snprintf(id,sizeof(id),"%s:%s",LOCAL_ID,c->peers[i].id);
-#else
-      snprintf(id,sizeof(id),"%s:%s",c->peers[i].id,LOCAL_ID);
-#endif
-      json_build_array_add(ids,json_object_new_string(id));
-    }
-    json_build_object_add(o,"response_ids",ids);
+    js(o,"sensor_transport","lan");
+    number(o,"session_protocol",2);
     number(o,"max_peers",FEATURE_MAX_PEERS);
   }
   free(c);
@@ -832,23 +650,8 @@ int feature_set(const char *d, json_object *o, json_object **response) {
     js(*response,"message","Linkage is read-only; configure rules on A1"); return 405;
   }
   if (!strcmp(d,"binding")) {
-    json_object *ids=json_object_object_get(o,"response_ids");
-    bool valid=ids && json_object_is_type(ids,json_type_array) && json_object_array_length(ids)<=FEATURE_MAX_PEERS;
-    feature_peer_t allowed[FEATURE_MAX_PEERS]; memset(allowed,0,sizeof(allowed)); unsigned count=0;
-    for (unsigned i=0; valid && i<(unsigned)json_object_array_length(ids); i++) {
-      json_object *v=json_object_array_get_idx(ids,i);
-      const char *id=json_object_get_string(v);
-      char mac[13],sensor[13],raw[13];
-      if (!json_object_is_type(v,json_type_string) || strlen(id)!=25 || id[12]!=':' ||
-          json_object_get_string_len(v)!=25) { valid=false; break; }
-      memcpy(raw,id,12);raw[12]=0;
-      if (!feature_mac(raw,mac) || !feature_mac(id+13,sensor) || strcmp(sensor,LOCAL_ID) || !strcmp(mac,LOCAL_ID)) {valid=false;break;}
-      bool duplicate=false;for(unsigned j=0;j<count;j++) duplicate|=!strcmp(allowed[j].id,mac);
-      if (!duplicate) {strcpy(allowed[count].id,mac);allowed[count++].kind=FEATURE_A1;}
-    }
-    if (valid) {c->peer_count=count;memset(c->peers,0,sizeof(c->peers));memcpy(c->peers,allowed,sizeof(allowed));valid=install_config(c);}
-    *response=json_object_new_object();number(*response,"code",valid?200:400);
-    free(c);return valid?200:400;
+    free(c);*response=json_object_new_object();number(*response,"code",405);
+    js(*response,"message","Configure sensor sources on A1");return 405;
   }
 #endif
   json_object *v = json_object_object_get(o, "revision");
@@ -856,6 +659,7 @@ int feature_set(const char *d, json_object *o, json_object **response) {
     code = 409;
     goto end;
   }
+#ifdef FEATURE_DEVICE_A1
   if (!strcmp(d, "probe")) {
     char mac[13];
     if (!feature_mac(string(o, "mac"), mac)) {
@@ -867,8 +671,8 @@ int feature_set(const char *d, json_object *o, json_object **response) {
     for (unsigned i = 0; i < c->peer_count; i++)
       if (!strcmp(c->peers[i].id, mac)) {
         peers[i].recover_at = 0;
+        peers[i].sent = 0;peers[i].failures=0;
         peers[i].pending = false;
-        peers[i].successes = 0;
         peers[i].lan = false;
         found = true;
       }
@@ -879,34 +683,12 @@ int feature_set(const char *d, json_object *o, json_object **response) {
       code = 404;
     goto end;
   }
+#endif
   if (!config_decode(c, d, o)) {
     code = 400;
     goto end;
   }
 
-  if (!strcmp(d, "binding")) {
-    feature_config_t *old = malloc(sizeof(*old));
-    if (!old) {
-      code = 500;
-      goto end;
-    }
-    feature_config_get(old);
-    for (unsigned i = 0; i < old->peer_count; i++) {
-      bool keep = false;
-      for (unsigned j = 0; j < c->peer_count; j++)
-        keep |= !strcmp(old->peers[i].id, c->peers[j].id);
-      if (!keep && old->peers[i].confirmed) {
-        json_object *r = envelope(old, i, "unbind", next_request());
-        send_peer(old, i, r, false);
-        send_peer(old, i, r, true);
-        json_object_put(r);
-      }
-    }
-    free(old);
-    for (unsigned i = 0; i < c->peer_count; i++)
-      if (!c->peers[i].confirmed)
-        new_token(c->peers[i].token);
-  }
   if (!install_config(c))
     code = 409;
   else
@@ -1141,18 +923,17 @@ unsigned feature_mqtt_filters(char filters[][FEATURE_TOPIC_MAX], unsigned capaci
   mqtt_account_t a=mqtt_snapshot();unsigned n=0;
   feature_config_t *c=malloc(sizeof(*c));if(!c)return FEATURE_MQTT_FILTER_ERROR;feature_config_get(c);
 #ifdef FEATURE_DEVICE_A1
-  unsigned required=3u+(c->peer_count || c->group[0] ? 1u : 0u);
+  unsigned required=2u+(c->peer_count || c->group[0] ? 1u : 0u);
 #else
-  unsigned required=c->peer_count<FEATURE_MQTT_M1_FILTER_MAX?c->peer_count:FEATURE_MQTT_M1_FILTER_MAX;
+  unsigned required=0;
 #endif
   if(capacity<required){free(c);return FEATURE_MQTT_FILTER_ERROR;}
 #ifdef FEATURE_DEVICE_A1
-  mqtt_link_topic(&a,"a1",LOCAL_ID,"+","response",filters[n++],FEATURE_TOPIC_MAX);
   mqtt_link_topic(&a,"a1",LOCAL_ID,"+","request",filters[n++],FEATURE_TOPIC_MAX);
   mqtt_aux(&a,"address","+",filters[n++],FEATURE_TOPIC_MAX);
-  if(required==4) {char root[FEATURE_TOPIC_MAX];root_for(c,0,root);mqtt_format(filters[n++],FEATURE_TOPIC_MAX,"%s/#",root);}
+  if(required==3) {char root[FEATURE_TOPIC_MAX];root_for(c,0,root);mqtt_format(filters[n++],FEATURE_TOPIC_MAX,"%s/#",root);}
 #else
-  for(unsigned i=0;i<required;i++)mqtt_link_topic(&a,"m1",LOCAL_ID,c->peers[i].id,"request",filters[n++],FEATURE_TOPIC_MAX);
+  (void)filters;
 #endif
   free(c);return n;
 }
@@ -1165,6 +946,9 @@ bool feature_mqtt_filters_current(char filters[][FEATURE_TOPIC_MAX], unsigned co
   const unsigned capacity=FEATURE_MQTT_M1_FILTER_MAX;
 #endif
   if(count>capacity)return false;
+#ifndef FEATURE_DEVICE_A1
+  (void)filters;return count==0;
+#endif
   char (*next)[FEATURE_TOPIC_MAX] = calloc(capacity, FEATURE_TOPIC_MAX);
   if (!next) return false;
   unsigned n = feature_mqtt_filters(next,capacity);
@@ -1185,7 +969,7 @@ bool feature_mqtt_input(const char *t, const void *data, size_t n,
   if (!strncmp(t,address_prefix,address_length)) {
 #ifndef FEATURE_DEVICE_A1
     return false;
-#endif
+#else
     json_object *o = parse(data, n);
     if (o) {
       char mac[13];
@@ -1212,6 +996,7 @@ bool feature_mqtt_input(const char *t, const void *data, size_t n,
       json_object_put(o);
     }
     return true;
+#endif
   }
   char link_prefix[FEATURE_TOPIC_MAX];mqtt_leaf(&account,"link/",link_prefix,sizeof(link_prefix));
   if(!strncmp(t,link_prefix,strlen(link_prefix))) {
@@ -1278,11 +1063,6 @@ void feature_mqtt_session(const mqtt_account_t *account) {
   mico_rtos_unlock_mutex(&namespace_lock);
   lock();
   mqtt_online=false;
-  /* A pending LAN RPC must not fall back into a different MQTT session. */
-  for (unsigned i=0; i<FEATURE_MAX_PEERS; ++i) {
-    if (peers[i].rpc) json_object_put(peers[i].rpc);
-    peers[i].rpc=NULL;
-  }
 #ifdef FEATURE_DEVICE_A1
   for (unsigned i=0; i<8; ++i) {
     if (group_members[i].pending) json_object_put(group_members[i].pending);
@@ -1290,16 +1070,18 @@ void feature_mqtt_session(const mqtt_account_t *account) {
   }
 #endif
 #ifdef FEATURE_DEVICE_A1
+  /* A grant queued before a filter reconnect may have been discarded with
+   * its owner generation. Retry unconfirmed sessions; healthy UDP stays quiet. */
+  if(!changed)for(unsigned i=0;i<FEATURE_MAX_PEERS;i++)if(!peers[i].authorized){peers[i].auth_sent=false;peers[i].auth_at=0;}
   mqtt_tick=0;mqtt_leaf_pending=0;mqtt_telemetry_cursor=0;
   mqtt_discovery_pending=false;mqtt_discovery_deferred=false;mqtt_capture_deferred=false;
   if(changed) {
+    memset(peers,0,sizeof(peers));memset(samples,0,sizeof(samples));
     published_root[0]=0; published_count=0;
     free(published_layout); published_layout=NULL;
   }
 #else
-  if(changed) for(unsigned i=0;i<FEATURE_MAX_PEERS;i++) {
-    peers[i].session_valid=false;memset(peers[i].session_token,0,16);
-  }
+  if(changed)memset(sensor_sessions,0,sizeof(sensor_sessions));
 #endif
   unlock();
 }
@@ -1321,23 +1103,54 @@ bool feature_mqtt_initial_ready(void) {
   return mqtt_online;
 #endif
 }
-static void rpc_poll(const feature_config_t *c, unsigned i, uint32_t now) {
-  json_object *expired = NULL;
-  lock();
-  if (peers[i].rpc &&
-      (uint32_t)(now - peers[i].rpc_sent) >= c->peers[i].timeout_ms) {
-    expired = peers[i].rpc;
-    peers[i].rpc = NULL;
-    peers[i].lan = false;
-    peers[i].successes = 0;
-    peers[i].recover_at = now + c->peers[i].recovery_seconds * 1000;
+#ifdef FEATURE_DEVICE_A1
+/* One initial grant; retries are driven by failed UDP reads and capped at once/minute. */
+static bool sensor_grant(const feature_config_t *c,unsigned i,uint32_t now) {
+  uint8_t token[16];bool empty=true;
+  lock();for(unsigned k=0;k<16;k++)empty&=peers[i].session_token[k]==0;unlock();
+  if(empty) {
+    if(!new_token(token))return false;
+    lock();if(!peer_current(c,i)){unlock();return false;}memcpy(peers[i].session_token,token,16);unlock();
   }
-  unlock();
-  if (expired) {
-    send_peer(c, i, expired, true);
-    json_object_put(expired);
-  }
+  json_object *o=json_object_new_object(),*p=json_object_new_object();
+  if(!o || !p){if(o)json_object_put(o);if(p)json_object_put(p);return false;}
+  js(o,"action","sensor.session.set");number(p,"v",2);js(p,"a1",LOCAL_ID);number(p,"boot",boot_id);
+  char text[33];lock();token_text(peers[i].session_token,text);unlock();js(p,"token",text);
+  json_build_object_add(o,"params",p);
+  char topic[FEATURE_TOPIC_MAX];mqtt_account_t account=mqtt_snapshot();
+  mqtt_target_t target;mqtt_target_set(&target,&account);strcpy(target.model,"m1");strcpy(target.mac,c->peers[i].id);
+  bool sent=mqtt_target_leaf(&target,"command",topic,sizeof(topic)) && enqueue(topic,o,false);
+  json_object_put(o);
+  lock();if(peer_current(c,i)) { peers[i].auth_at=now;peers[i].auth_sent=sent; }unlock();
+  return sent;
 }
+static void sensor_poll(const feature_config_t *c,unsigned i,uint32_t now,bool mqtt_connected) {
+  char ip[16];bool grant,due;unsigned failures;
+  lock();
+  if(!peer_current(c,i)){unlock();return;}
+  if(peers[i].pending && (uint32_t)(now-peers[i].sent)>=c->peers[i].timeout_ms) {
+    peers[i].pending=false;peers[i].lan=false;
+    if(peers[i].failures<6)peers[i].failures++;
+    peers[i].recover_at=now+(peers[i].failures==1?1000u:peers[i].failures==2?5000u:peers[i].failures==3?15000u:60000u);
+  }
+  failures=peers[i].failures;
+  grant=mqtt_connected && ((!peers[i].auth_sent && (!peers[i].auth_at || (uint32_t)(now-peers[i].auth_at)>=5000u)) || (failures && (uint32_t)(now-peers[i].auth_at)>=60000u));
+  due=!peers[i].pending && (peers[i].lan ? (uint32_t)(now-peers[i].sent)>=5000u :
+      (!peers[i].sent || ((int32_t)(now-peers[i].recover_at)>=0 && (c->peers[i].recovery || failures==0))));
+  snprintf(ip,sizeof(ip),"%s",c->peers[i].ip[0]?c->peers[i].ip:peers[i].ip);
+  unlock();
+  if(grant)sensor_grant(c,i,now);
+  lock();bool ready=peers[i].auth_sent;unlock();if(!due || !ready)return;
+  /* An explicit address wins. A learned address is retried before broadcast discovery. */
+  if(!ip[0] || (!c->peers[i].ip[0] && failures>=2))strcpy(ip,"255.255.255.255");
+  unsigned request=next_request();json_object *o=envelope(c,i,"read",request);
+  /* Publish pending before sendto so an immediate reply cannot race its request slot. */
+  lock();if(!peer_current(c,i)){unlock();json_object_put(o);return;}
+  peers[i].request=request;peers[i].sent=now;peers[i].pending=true;unlock();
+  bool sent=send_udp(ip,o);json_object_put(o);
+  if(!sent) { lock();if(peer_current(c,i))peers[i].sent=now-c->peers[i].timeout_ms;unlock(); }
+}
+#endif
 #ifdef PHICOMM_DEVICE_OTA
 static bool worker_running, worker_stop, worker_exiting, worker_ready;
 bool feature_running(void){lock();bool yes=worker_running;unlock();return yes;}
@@ -1371,6 +1184,9 @@ static void feature_worker(mico_thread_arg_t arg) {
 #endif
   udp = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
   if (udp >= 0) {
+#ifdef FEATURE_DEVICE_A1
+    int broadcast=1;setsockopt(udp,SOL_SOCKET,SO_BROADCAST,&broadcast,sizeof(broadcast));
+#endif
     struct sockaddr_in a;
     memset(&a, 0, sizeof(a));
     a.sin_family = AF_INET;
@@ -1469,96 +1285,14 @@ static void feature_worker(mico_thread_arg_t arg) {
       enqueue(topic, o, false);
       json_object_put(o);
     }
-    if (state.mqtt_connected && (uint32_t)(now - handshake_at) >= 5000) {
-      handshake_at = now;
-      for (unsigned step = 0; step < c->peer_count; step++) {
-        unsigned i = (handshake_cursor + step) % c->peer_count;
-        {
-          json_object *o = envelope(c, i, "bind", next_request());
-          send_peer(c, i, o, true);
-          json_object_put(o);
-        }
-      }
-      handshake_cursor++;
-    }
-    group_poll(c, now);
-    for (unsigned i = 0; i < c->peer_count; i++) {
-      lock();
-      bool current = peer_current(c, i);
-      unlock();
-      if (!current)
-        break;
-      if (!c->peers[i].confirmed)
-        continue;
-      rpc_poll(c, i, now);
-      if (state.mqtt_connected &&
-          (uint32_t)(now - peers[i].mqtt_sent) >= 5000 &&
-          (c->peers[i].force_mqtt || !peers[i].lan)) {
-        json_object *o = envelope(c, i, "read", next_request());
-        bool sent = send_peer(c, i, o, true);
-        json_object_put(o);
-        if (sent)
-          peers[i].mqtt_sent = now;
-      }
-      if (c->peers[i].force_mqtt)
-        continue;
-      char ip[16];
-      bool timeout, pending, lan;
-      uint32_t recover;
-      lock();
-      strcpy(ip, c->peers[i].ip[0] ? c->peers[i].ip : peers[i].ip);
-      timeout = peers[i].pending &&
-                (uint32_t)(now - peers[i].sent) >= c->peers[i].timeout_ms;
-      if (timeout) {
-        peers[i].pending = false;
-        peers[i].lan = false;
-        peers[i].successes = 0;
-        peers[i].recover_at = now + c->peers[i].recovery_seconds * 1000;
-      }
-      pending = peers[i].pending;
-      lan = peers[i].lan;
-      recover = peers[i].recover_at;
-      unlock();
-      if (timeout) {
-        json_object *o = envelope(c, i, "read", next_request());
-        send_peer(c, i, o, true);
-        json_object_put(o);
-      }
-      if (!pending && ip[0] &&
-          (lan ? (uint32_t)(now - peers[i].sent) >= 5000
-               : (int32_t)(now - recover) >= 0 &&
-                     (recover == 0 || c->peers[i].recovery))) {
-        unsigned request = next_request();
-        json_object *o = envelope(c, i, lan ? "read" : "probe", request);
-        if (send_udp(ip, o)) {
-          lock();
-          peers[i].request = request;
-          peers[i].sent = now;
-          peers[i].pending = true;
-          unlock();
-        } else {
-          lock();
-          peers[i].lan = false;
-          peers[i].successes = 0;
-          peers[i].recover_at = now + c->peers[i].recovery_seconds * 1000;
-          unlock();
-          send_peer(c, i, o, true);
-        }
-        json_object_put(o);
-      }
-    }
-#endif
-#ifdef FEATURE_DEVICE_A1
+    group_poll(c,now);
+    for(unsigned i=0;i<c->peer_count;i++)sensor_poll(c,i,now,state.mqtt_connected);
     if ((uint32_t)(now - tick_at) >= 5000) {
       tick_at = now;
       feature_sample_t current[FEATURE_MAX_PEERS];
       lock();
       memcpy(current, samples, sizeof(current));
       unlock();
-      for (unsigned i = 0; i < c->peer_count; i++)
-        if (!c->peers[i].confirmed) {
-          current[i].valid = false; current[i].co2_valid = false;
-        }
       float v[4] = {0}, co2=0;
       unsigned nc=feature_co2_aggregate(current,c->peer_count,now,c->linkage.statistic,&co2);
       unsigned n = feature_aggregate(current, c->peer_count, now,
@@ -1602,9 +1336,6 @@ static void feature_worker(mico_thread_arg_t arg) {
   free(wire);free(c);
   lock();
 
-  for(unsigned i=0;i<FEATURE_MAX_PEERS;i++){
-    if(peers[i].rpc)json_object_put(peers[i].rpc);peers[i].rpc=NULL;
-  }
 #ifdef FEATURE_DEVICE_A1
   for(unsigned i=0;i<8;i++){
     if(group_members[i].pending)json_object_put(group_members[i].pending);group_members[i].pending=NULL;

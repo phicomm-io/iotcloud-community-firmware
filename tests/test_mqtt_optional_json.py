@@ -131,7 +131,8 @@ int main(void){
  snapshot_result=PH_MQTT_MORE;connection_ok=false;now++;
  assert(session_cycle(NULL)==PH_MQTT_RECONFIGURE);
  connection_ok=true;cfg.revision++;filters_ok=false;
- assert(session_cycle(NULL)==PH_MQTT_RECONFIGURE);
+ /* M1 no longer subscribes to peer filters; binding revisions keep the session. */
+ assert(session_cycle(NULL)==MQTT_SUCCESS);
 }
 '''.replace('/* PRODUCTION */',cycle)
         with tempfile.TemporaryDirectory() as d:

@@ -62,7 +62,14 @@ static bool svc_text(json_object *p,const char *key,char *out,size_t capacity,bo
 json_object *service_product_capabilities(void){
     json_object *o=json_object_new_object(),*a=json_object_new_array();svc_string(o,"model",DEVICE_MODEL);json_build_object_add(o,"protocol",json_object_new_int(2));svc_string(o,"mqtt_protocol","tmcp");json_build_object_add(o,"mqtt_protocol_version",json_object_new_int(2));
     status_view_capabilities(o);
-    const char *actions[]={"schedules.get","schedules.put","schedules.delete","schedules.enable","buttons.get","status.get","capabilities.get","config.get","logs.get","config.set","wifi.scan","wifi.scan.get","binding.status.get","system.reboot","system.reset","ota.start","night.get","night.set","time.get","time.set","binding.get","binding.set",
+#ifndef FEATURE_DEVICE_A1
+    json_build_object_add(o,"sensor_session_protocol",json_object_new_int(2));
+#endif
+    const char *actions[]={"schedules.get","schedules.put","schedules.delete","schedules.enable","buttons.get","status.get","capabilities.get","config.get","logs.get","config.set","wifi.scan","wifi.scan.get","binding.status.get","system.reboot","system.reset","ota.start","night.get","night.set","time.get","time.set","binding.get",
+#ifdef FEATURE_DEVICE_A1
+    "binding.set",
+#endif
+
 #ifdef FEATURE_DEVICE_A1
     "filter.get","filter.set","filter.reset","light_effect.next","light_effect.select","light_always.set","sensors.average.get","buttons.set","binding.probe","light_effect.get","light_effect.set","fan.set","fan.mode.set","fan.mode.toggle","fan.panel","light.set","child_lock.set","linkage.get","linkage.set",
 #else

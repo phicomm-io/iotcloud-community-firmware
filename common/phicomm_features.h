@@ -166,6 +166,10 @@ json_object *feature_json(const char *domain);
 void feature_values_snapshot(feature_values_t *);
 /* Returns HTTP status; response ownership passes to caller. */
 int feature_set(const char *domain, json_object *, json_object **response);
+#ifndef FEATURE_DEVICE_A1
+/* Called only by the admitted MQTT command adapter. Never persists a token. */
+int feature_sensor_session_set(json_object *);
+#endif
 bool feature_mqtt_input(const char *, const void *, size_t, bool);
 /* MQTT owner only; discovery progresses over bounded owner turns. */
 bool feature_mqtt_initial_ready(void);

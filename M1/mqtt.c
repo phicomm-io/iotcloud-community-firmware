@@ -89,18 +89,6 @@ static void brightness_command(MessageData *data)
     if (c >= '0' && c <= '4') m1_set_brightness(c - '0');
 }
 
-static void feature_command(MessageData *d)
-{
-    if(ota_job_active())return;
-    if (!session_current()) return;
-    MQTTString *t = d->topicName;
-    char topic[FEATURE_TOPIC_MAX];
-    unsigned n = t->cstring ? strlen(t->cstring) : t->lenstring.len;
-    if (n >= sizeof(topic)) return;
-    memcpy(topic, t->cstring ? t->cstring : t->lenstring.data, n); topic[n] = 0;
-    feature_mqtt_input(topic, d->message->payload, d->message->payloadlen, d->message->retained);
-}
-static char feature_filters[FEATURE_MQTT_M1_FILTER_MAX][FEATURE_TOPIC_MAX];
 static void native_command(MessageData *d)
 {
     if (!session_current()) return;
@@ -242,13 +230,13 @@ static bool same_connection(const m1_config_t *a, const m1_config_t *b)
 }
 
 static bool ingress_accept(MessageData *d,messageHandler handler) {
-    return handler==ha_birth || handler==feature_command || !d->message->retained;
+    return handler==ha_birth || !d->message->retained;
 }
 
 static m1_config_t cfg,current;
 static mqtt_state_t state;
 static char client_id[192],wildcard[MQTT_TOPIC_MAX];
-static unsigned count,feature_revision,discovery_index,initial_index;
+static unsigned discovery_index,initial_index;
 static uint32_t connect_sequence,co2_sequence,pressure_sequence,sequence,snapshot_at;
 static bool co2_discovered,pressure_discovered;
 static int old_co2_fresh,old_pressure_fresh,old_brightness,old_fresh;
@@ -273,9 +261,6 @@ static int session_prepare(void *context,ph_mqtt_connection *spec) {
         mqtt_leaf(&account, "command", command_topic, sizeof(command_topic));
         session_config = cfg;
         feature_mqtt_session(&account);
-        feature_revision=feature_config_revision();
-        count=feature_mqtt_filters(feature_filters,sizeof(feature_filters)/sizeof(feature_filters[0]));
-        if(count>sizeof(feature_filters)/sizeof(feature_filters[0]))return PH_MQTT_PREPARE_WAIT;
         rediscover=false;
         *spec=(ph_mqtt_connection){&account,cfg.mqtt_host,cfg.mqtt_user,cfg.mqtt_password,
             client_id,availability_topic,cfg.mqtt_port,5000,m1_mqtt_read};
@@ -285,7 +270,6 @@ static bool session_subscription(void *context,unsigned index,ph_mqtt_subscripti
     (void)context;
     if(index==0)*out=(ph_mqtt_subscription){wildcard,QOS1,native_command};
     else if(index==1)*out=(ph_mqtt_subscription){"homeassistant/status",QOS0,ha_birth};
-    else if(index-2<count)*out=(ph_mqtt_subscription){feature_filters[index-2],QOS1,feature_command};
     else return false;
     return true;
 }
@@ -320,10 +304,6 @@ static int session_cycle(void *context) {
             if(ota_job_active())return MQTT_SUCCESS;
             mqtt_state_get(&state); m1_config_get(&current);
             if (!state.wifi_connected || !same_connection(&cfg, &current)) return PH_MQTT_RECONFIGURE;
-            uint32_t current_feature_revision=feature_config_revision();
-            bool feature_changed=feature_revision!=current_feature_revision;
-            feature_revision=current_feature_revision;
-            if(feature_changed && !feature_mqtt_filters_current(feature_filters,count))return PH_MQTT_RECONFIGURE;
             if (state.scd40.received && !co2_discovered) { rediscover = true; co2_discovered = true; }
             if (state.barometer.received && !pressure_discovered) { rediscover = true; pressure_discovered = true; }
             /* A birth received during a batch requests a complete subsequent pass.

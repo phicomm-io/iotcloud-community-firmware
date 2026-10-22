@@ -323,6 +323,23 @@ struct printbuf *service_command_wire(json_object *req)
     if(service_caller_graph_failed(before)) { if(wire)printbuf_free(wire);return NULL; }
     return wire;
 }
+/* Optional product hook: only the admitted MQTT dispatcher reaches it. */
+extern json_object *service_product_mqtt(const char *,json_object *,const char **) __attribute__((weak));
+struct printbuf *service_mqtt_command_wire(json_object *req) {
+    service_request view;
+    if(!service_request_decode(req,&view) || strcmp(view.action,"sensor.session.set"))return service_command_wire(req);
+    uint64_t before=service_memory_failures();
+    if(service_caller_graph_failed(before))return NULL;
+    const char *code="unsupported";json_object *data=NULL;
+    mico_rtos_lock_mutex(&command_lock);
+    if(ota_job_active())code="busy";
+    else if(service_product_mqtt)data=service_product_mqtt(view.action,view.params,&code);
+    json_object *out=result(view.id,code,data);
+    mico_rtos_unlock_mutex(&command_lock);
+    struct printbuf *wire=json_owned_to_wire(out);
+    if(service_caller_graph_failed(before)){if(wire)printbuf_free(wire);return NULL;}
+    return wire;
+}
 struct printbuf *service_query_wire(const char *action)
 {
     if(!ready || strcmp(action,"status.get") || ota_job_active())return json_owned_to_wire(service_query(action));
