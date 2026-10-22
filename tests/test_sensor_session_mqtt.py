@@ -46,14 +46,14 @@ def main(port):
             observer.check();time.sleep(1)
         assert len(grants)==1 and not legacy,'healthy reads must not reauthorize or use pair topics'
         # Established UDP reads remain usable while M1's broker is unreachable.
-        call(m,'config.set',{'section':'mqtt','values':{'host':'127.0.0.2','port':1}})
+        call(m,'config.set',{'section':'mqtt','values':{'host':'127.0.0.2','port':1,'user':'session'}})
         wait(lambda:not call(m,'status.get')['data'].get('mqtt_connected'),15)
         offline=time.monotonic()
         while time.monotonic()-offline<20:
             assert avg().get('sample_count')==1
             observer.check();time.sleep(1)
         assert len(grants)==1
-        call(m,'config.set',{'section':'mqtt','values':{'host':'127.0.0.1','port':port}})
+        call(m,'config.set',{'section':'mqtt','values':{'host':'127.0.0.1','port':port,'user':'session'}})
         wait(lambda:call(m,'status.get')['data'].get('mqtt_connected'),15)
         m.terminate();m.wait(timeout=5);nodes.remove(m)
         m=launch('M1','020000cb0001','127.78.1.2')
