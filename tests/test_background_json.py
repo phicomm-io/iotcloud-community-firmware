@@ -26,6 +26,7 @@ class BackgroundJson(unittest.TestCase):
             if model=='A1':
                 functions+=function(source,'static void topic(')+'\n'
                 functions+=function(source,'static __attribute__((noinline)) int filter_discovery(')+'\n'
+            if model=='M1': functions+=source[source.index('enum { MQTT_BRIGHTNESS_INDEX'):source.index(';',source.index('enum { MQTT_BRIGHTNESS_INDEX'))+1]+'\n'
             functions+='static bool discovery_deferred;\nstatic uint32_t discovery_retry_at;\n'+function(source,'static int discovery_build(')+'\n'+function(source,'static int discovery(')
             fixture=r'''
 #include "common/json_owned.h"
@@ -92,7 +93,7 @@ int main(void){
  assert(mqtt_leaf(&account,"command",command_topic,sizeof(command_topic)));
  MODEL_CONFIG c={.name="Room / \\\" UTF8 中文"};
 #ifndef MODEL_A1
- m1_state.scd40.received=true;
+ m1_state.scd40.received=true;m1_state.barometer.received=true;
 #endif
  assert(discovery_all(&c)==0);assert(callbacks==EXPECTED_CALLBACKS);empty();
  quiet=true;callbacks=0;callback_rc=-17;assert(discovery_all(&c)==-17);assert(callbacks==1);empty();
@@ -110,7 +111,7 @@ int main(void){
 '''
             functions=functions.replace('int rc = service_mqtt_optional_send(', 'int rc = discovery_sender(')
             fixture=fixture.replace('/* PRODUCTION_FUNCTIONS */',functions)
-            fixture=fixture.replace('PLATFORM_HEADER',model.lower()+'.h').replace('MODEL_LOWER',model.lower()).replace('MODEL_CONFIG',model.lower()+'_config_t').replace('EXPECTED_CALLBACKS','10' if model=='A1' else '6')
+            fixture=fixture.replace('PLATFORM_HEADER',model.lower()+'.h').replace('MODEL_LOWER',model.lower()).replace('MODEL_CONFIG',model.lower()+'_config_t').replace('EXPECTED_CALLBACKS','10' if model=='A1' else '7')
             sdk=Path(os.environ.get('PHICOMM_TEST_JSON_DIR',ROOT/'build/a1-sdk/mico-os/libraries/utilities/json_c'))
             with tempfile.TemporaryDirectory() as directory:
                 temp=Path(directory);json=copy_patched_json(sdk,temp/'sdk')

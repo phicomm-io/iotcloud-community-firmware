@@ -53,5 +53,19 @@ CS/SDO 的板载上下拉和 VCC 输入规格以实际模块说明为准。裸�
 浏览器在轮询失败后也按样本年龄自行过期。内置页面需固件锁定对应前端制品。
 
 数值为传感器测得的现场气压，不是海平面气压。采用原始出厂参数和官方补偿算法，
-不添加人为偏移；本接入不自动将气压写入 SCD40，也不新增 HA/HomeKit 实体。
+不添加人为偏移；本接入不自动将气压写入 SCD40，不自动将气压同步到 HomeKit。
 `valid` 仅表示通信和样本时效通过，不代表已经使用标准气压计校准。
+
+## MQTT 与 Home Assistant
+
+除现有 `state.barometer` 外，M1 在每次取得新鲜气压样本后发布
+`phicomm/v2/<user_key>/m1/<mac>/pressure`，例如 `{"pressure":1013.2567}`，单位 hPa。
+样本不保留，避免订阅重连后把旧读数当成新测量；
+同根下 `pressure_availability` 保留发布 `online` / `offline`，与原 UART 传感器和 CO₂ 独立。
+样本达到 10 秒或驱动不可用时，停止发布测量并置为 offline。
+
+取得第一个有效样本后才创建 HA 气压实体。该实体使用
+`device_class: atmospheric_pressure`、`state_class: measurement`、`unit_of_measurement: hPa`，
+并同时检查 M1 设备在线与气压数据在线，设置 10 秒过期。
+HA birth 时重发发现配置；账号/连接配置变更时清理旧气压实体。
+实体类别与单位遵循 [Home Assistant Sensor 文档](https://www.home-assistant.io/integrations/sensor/)。

@@ -3,6 +3,7 @@
 #include "json.h"
 #include "mico.h"
 #include "../../M1/scd40.h"
+#include "../../M1/barometer.h"
 typedef struct {
   int temperature_deci_c, humidity_deci_pct;
   unsigned pm25_ug_m3, hcho_ug_m3, sequence, updated_ms;
@@ -13,6 +14,7 @@ typedef struct {
   char ip[16];
   m1_sample_t sample;
   scd40_state_t scd40;
+  barometer_state_t barometer;
 } m1_state_t;
 extern char m1_id[13];
 void m1_state_get(m1_state_t *);

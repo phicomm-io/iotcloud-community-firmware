@@ -37,6 +37,7 @@ else
 fi
 if [[ " ${models[*]} " == *" M1 "* ]]; then
   "${MQTT_TEST_PYTHON:-python3}" tests/test_m1_co2_mqtt.py "$port"
+  "${MQTT_TEST_PYTHON:-python3}" tests/test_m1_pressure_mqtt.py "$port"
   if [[ " ${models[*]} " == *" A1 "* ]]; then
     "${MQTT_TEST_PYTHON:-python3}" tests/test_a1_auto_mqtt.py "$port"
     "${MQTT_TEST_PYTHON:-python3}" tests/test_a1_co2_mqtt.py "$port"

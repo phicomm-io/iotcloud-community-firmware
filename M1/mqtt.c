@@ -9,6 +9,7 @@ int m1_mqtt_read(Network *, unsigned char *, int, int);
 
 typedef struct {
     m1_sample_t sample;
+    barometer_state_t barometer;
     struct { uint32_t updated_ms,samples; uint16_t co2_ppm; bool ready,received; } scd40;
     bool wifi_connected;
     uint8_t brightness_requested,mqtt_status;
@@ -17,6 +18,7 @@ static void mqtt_state_get(mqtt_state_t *out)
 {
     mico_rtos_lock_mutex(&m1_lock);
     out->sample=m1_state.sample;
+    out->barometer=m1_state.barometer;
     out->scd40.updated_ms=m1_state.scd40.updated_ms;out->scd40.samples=m1_state.scd40.samples;
     out->scd40.co2_ppm=m1_state.scd40.co2_ppm;out->scd40.ready=m1_state.scd40.ready;
     out->scd40.received=m1_state.scd40.received;
@@ -124,22 +126,27 @@ static void ha_birth(MessageData *data)
 static void str(json_object *o, const char *key, const char *value)
 { json_build_object_add(o, key, json_object_new_string(value)); }
 
+enum { MQTT_BRIGHTNESS_INDEX=5, MQTT_PRESSURE_INDEX, MQTT_DISCOVERY_COUNT };
+
 static int discovery_build(const m1_config_t *c,unsigned index,service_mqtt_json_scope *scope)
 {
-    static const char *keys[] = {"temperature", "humidity", "formaldehyde", "pm25", "co2", "brightness"};
-    static const char *names[] = {"温度", "湿度", "甲醛", "PM2.5", "二氧化碳", "屏幕亮度"};
-    static const char *units[] = {"°C", "%", "mg/m³", "µg/m³", "ppm"};
-    static const char *classes[] = {"temperature", "humidity", NULL, "pm25", "carbon_dioxide"};
+    static const char *keys[] = {"temperature", "humidity", "formaldehyde", "pm25", "co2", "brightness", "pressure"};
+    static const char *names[] = {"温度", "湿度", "甲醛", "PM2.5", "二氧化碳", "屏幕亮度", "气压"};
+    static const char *units[] = {"°C", "%", "mg/m³", "µg/m³", "ppm", NULL, "hPa"};
+    static const char *classes[] = {"temperature", "humidity", NULL, "pm25", "carbon_dioxide", NULL, "atmospheric_pressure"};
     mico_rtos_lock_mutex(&m1_lock);bool co2_received=m1_state.scd40.received;
+    bool pressure_received=m1_state.barometer.received;
     mico_rtos_unlock_mutex(&m1_lock);
-    for (unsigned i=index; i<6 && i==index; i++) {
-        if (i == 4 && !co2_received) continue;
+    for (unsigned i=index; i<MQTT_DISCOVERY_COUNT && i==index; i++) {
+        if ((i == 4 && !co2_received) || (i == MQTT_PRESSURE_INDEX && !pressure_received)) continue;
         char topic[MQTT_TOPIC_MAX], text[MQTT_TOPIC_MAX];
         json_object *o = json_object_new_object();
         if (!o) return service_mqtt_json_error(scope, PH_MQTT_ERROR_APP_DISCOVERY_GRAPH);
         str(o, "name", names[i]);
         mqtt_leaf(&account,"state",text,sizeof(text));str(o,"json_attributes_topic",text);
-        str(o,"json_attributes_template","{{ {\"ip\": value_json.ip, \"firmware\": value_json.version, \"sensor_valid\": value_json.sensor_valid} | tojson }}");
+        str(o,"json_attributes_template",i == MQTT_PRESSURE_INDEX ?
+            "{{ {\"ip\": value_json.ip, \"firmware\": value_json.version, \"barometer_valid\": value_json.barometer.valid} | tojson }}" :
+            "{{ {\"ip\": value_json.ip, \"firmware\": value_json.version, \"sensor_valid\": value_json.sensor_valid} | tojson }}");
         json_build_object_add(o, "retain", json_object_new_boolean(false));
         mqtt_identity(&account, keys[i], text, sizeof(text)); str(o, "unique_id", text);
         json_object *device = json_object_new_object(), *ids = json_object_new_array();
@@ -154,12 +161,12 @@ static int discovery_build(const m1_config_t *c,unsigned index,service_mqtt_json
         str(device, "name", c->name); str(device, "model", "M1 EMW3080B");
         str(device, "manufacturer", "Phicomm"); str(device, "sw_version", M1_VERSION);
         json_build_object_add(o, "device", device);
-        if (i < 5) {
-            snprintf(text, sizeof(text), "%s/%s", base, i == 4 ? "co2" : "sensor"); str(o, "state_topic", text);
+        if (i != MQTT_BRIGHTNESS_INDEX) {
+            snprintf(text, sizeof(text), "%s/%s", base, i == MQTT_PRESSURE_INDEX ? "pressure" : i == 4 ? "co2" : "sensor"); str(o, "state_topic", text);
             snprintf(text, sizeof(text), "{{ value_json.%s }}", keys[i]); str(o, "value_template", text);
             str(o, "unit_of_measurement", units[i]); str(o, "state_class", "measurement");
             if (classes[i]) str(o, "device_class", classes[i]);
-            json_build_object_add(o, "expire_after", json_object_new_int(i == 4 ? 20 : 15));
+            json_build_object_add(o, "expire_after", json_object_new_int(i == MQTT_PRESSURE_INDEX ? M1_BAROMETER_STALE_MS/1000u : i == 4 ? 20 : 15));
             json_object *availability = json_object_new_array();
             json_object *node = json_object_new_object(), *sensor = json_object_new_object();
             if (!availability || !node || !sensor) {
@@ -169,7 +176,7 @@ static int discovery_build(const m1_config_t *c,unsigned index,service_mqtt_json
                 json_object_put(o); return service_mqtt_json_error(scope, PH_MQTT_ERROR_APP_DISCOVERY_GRAPH);
             }
             str(node, "topic", availability_topic);
-            snprintf(text, sizeof(text), "%s/%s", base, i == 4 ? "co2_availability" : "sensor_availability"); str(sensor, "topic", text);
+            snprintf(text, sizeof(text), "%s/%s", base, i == MQTT_PRESSURE_INDEX ? "pressure_availability" : i == 4 ? "co2_availability" : "sensor_availability"); str(sensor, "topic", text);
             json_build_array_add(availability, node); json_build_array_add(availability, sensor);
             json_build_object_add(o, "availability", availability);
             str(o, "availability_mode", "all");
@@ -185,7 +192,7 @@ static int discovery_build(const m1_config_t *c,unsigned index,service_mqtt_json
             str(o,"value_template","{{ (value | int) * 25 }}");
             str(o,"entity_category","config");
         }
-        mqtt_ha(&account, i < 5 ? "sensor" : "number", keys[i], topic, sizeof(topic));
+        mqtt_ha(&account, i != MQTT_BRIGHTNESS_INDEX ? "sensor" : "number", keys[i], topic, sizeof(topic));
         int rc = service_mqtt_optional_send(publish,topic,o,true,scope);
         if (rc != MQTT_SUCCESS) return rc;
     }
@@ -212,8 +219,8 @@ static int discovery(const m1_config_t *c,unsigned index)
 }
 static int cleanup_discovery(void)
 {
-    const char *keys[] = {"temperature","humidity","formaldehyde","pm25","co2","brightness"};
-    const char *components[] = {"sensor","sensor","sensor","sensor","sensor","number"};
+    const char *keys[] = {"temperature","humidity","formaldehyde","pm25","co2","brightness","pressure"};
+    const char *components[] = {"sensor","sensor","sensor","sensor","sensor","number","sensor"};
     int result = MQTT_SUCCESS;
     for (unsigned i = 0; i < sizeof(keys)/sizeof(keys[0]); ++i) {
         char path[MQTT_TOPIC_MAX]; mqtt_ha(&account, components[i], keys[i], path, sizeof(path));
@@ -242,9 +249,9 @@ static m1_config_t cfg,current;
 static mqtt_state_t state;
 static char client_id[192],wildcard[MQTT_TOPIC_MAX];
 static unsigned count,feature_revision,discovery_index,initial_index;
-static uint32_t connect_sequence,co2_sequence,sequence,snapshot_at;
-static bool co2_discovered;
-static int old_co2_fresh,old_brightness,old_fresh;
+static uint32_t connect_sequence,co2_sequence,pressure_sequence,sequence,snapshot_at;
+static bool co2_discovered,pressure_discovered;
+static int old_co2_fresh,old_pressure_fresh,old_brightness,old_fresh;
 static int session_prepare(void *context,ph_mqtt_connection *spec) {
     (void)context;
         ota_job_poll();
@@ -289,9 +296,10 @@ static int session_initial(void *context) {
     if(rc==MQTT_SUCCESS)rc=publish_leaf("sensor_availability","offline",true);
     discovery_deferred=false;discovery_retry_at=0;
     discovery_index=initial_index=0;
-    connect_sequence=state.sample.sequence;co2_sequence=sequence=0;
+    connect_sequence=state.sample.sequence;co2_sequence=pressure_sequence=sequence=0;
     co2_discovered=state.scd40.received;
-    old_co2_fresh=old_brightness=old_fresh=-1;
+    pressure_discovered=state.barometer.received;
+    old_pressure_fresh=old_co2_fresh=old_brightness=old_fresh=-1;
     snapshot_at=mico_rtos_get_time()-5000u;
     return rc;
 }
@@ -317,14 +325,15 @@ static int session_cycle(void *context) {
             feature_revision=current_feature_revision;
             if(feature_changed && !feature_mqtt_filters_current(feature_filters,count))return PH_MQTT_RECONFIGURE;
             if (state.scd40.received && !co2_discovered) { rediscover = true; co2_discovered = true; }
+            if (state.barometer.received && !pressure_discovered) { rediscover = true; pressure_discovered = true; }
             /* A birth received during a batch requests a complete subsequent pass.
              * Do not consume it by restarting the partially published pass. */
-            if (rediscover && discovery_index==6) {
+            if (rediscover && discovery_index==MQTT_DISCOVERY_COUNT) {
                 feature_mqtt_service(publish,false);
                 discovery_index=0;rediscover=false;
-                old_brightness = old_fresh = old_co2_fresh = -1; sequence = co2_sequence = 0;
+                old_brightness = old_fresh = old_co2_fresh = old_pressure_fresh = -1; sequence = co2_sequence = pressure_sequence = 0;
             }
-            if(discovery_index<6) {
+            if(discovery_index<MQTT_DISCOVERY_COUNT) {
                 rc=discovery(&current,discovery_index);
                 if(rc==MQTT_SUCCESS)++discovery_index;
                 if(rc!=PH_MQTT_MORE)return rc;
@@ -366,6 +375,19 @@ static int session_cycle(void *context) {
                 rc = publish_leaf("co2_availability", co2_fresh ? "online" : "offline", true);
                 if (rc == MQTT_SUCCESS) old_co2_fresh = co2_fresh;
             }
+            bool pressure_fresh = m1_barometer_fresh(&state.barometer,mico_rtos_get_time());
+            if (rc == MQTT_SUCCESS && pressure_fresh && pressure_sequence != state.barometer.samples) {
+                char value[48];
+                /* Driver units are centi-Pa; 10000 centi-Pa equal one hPa. */
+                unsigned long pressure=state.barometer.pressure_centi_pa;
+                snprintf(value,sizeof(value),"{\"pressure\":%lu.%04lu}",pressure/10000u,pressure%10000u);
+                rc = publish_leaf("pressure",value,false);
+                if (rc == MQTT_SUCCESS) pressure_sequence=state.barometer.samples;
+            }
+            if (rc == MQTT_SUCCESS && pressure_fresh != old_pressure_fresh) {
+                rc = publish_leaf("pressure_availability",pressure_fresh ? "online" : "offline",true);
+                if (rc == MQTT_SUCCESS) old_pressure_fresh=pressure_fresh;
+            }
             if (rc == MQTT_SUCCESS && old_brightness != state.brightness_requested) {
                 char value[4]; snprintf(value, sizeof(value), "%u", state.brightness_requested);
                 rc = publish_leaf("brightness/state", value, true);
@@ -382,7 +404,7 @@ static bool session_valid(void *context) {
 }
 static bool session_initial_ready(void *context) {
     (void)context;
-    return discovery_index==6 && initial_index==2 && feature_mqtt_initial_ready();
+    return discovery_index==MQTT_DISCOVERY_COUNT && initial_index==2 && feature_mqtt_initial_ready();
 }
 static void session_closing(void *context,bool connected,int rc) {
     (void)context;
