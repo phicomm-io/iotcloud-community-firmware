@@ -2,6 +2,16 @@
 
 English translation of the published release history. Historical validation statements apply to the release named in each section, not to later firmware. Release notes are authored in the Wiki and frozen into the source repository before tagging.
 
+## v0.9.19
+
+- Configure M1 sensor sources on A1 with an M1 MAC address and an optional LAN IP. M1 no longer needs pairing or an A1 allowlist; its page shows current sessions.
+- Keep temporary session-token authorization over MQTT, then read sensors over the LAN. Remove sensor-link joint topics and the MQTT sensor-data fallback to reduce subscriptions, traffic and memory use. A1 group control remains available.
+- A1 stops forwarding each M1's complete readings. Its own state includes only the aggregate values used for automatic control, and the page follows the same scope. Old proxy Home Assistant entities are removed on upgrade; use M1 directly for its full readings and entities.
+- Add BMP388/BMP390 pressure readings to M1 MQTT reporting and Home Assistant discovery. Pressure uses hPa and becomes independently unavailable when the sensor disconnects or its readings expire.
+- Upgrade both A1 and M1 to this version, preferably M1 first. MQTT is required to establish a new session or authorize again after M1 restarts. Existing valid sessions can keep reading over the LAN during a temporary broker outage; failed LAN reads follow the configured offline linkage behavior.
+- Candidate firmware passed physical A1/M1 upgrades, LAN reads and a two-version read-only load comparison, alongside full/slim builds and host regression for all three models. Short load tests do not establish long-term stability; TC1 physical acceptance was not performed for this release.
+- Versions in the 0.9.x series are beta releases. Back up important settings before upgrading.
+
 ## v0.9.18
 
 - Fix intermittent A1 power-button failures after the device has been running: short presses show ring feedback and double-clicks switch automatic/manual mode again.
