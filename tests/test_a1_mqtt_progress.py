@@ -66,8 +66,6 @@ int main(void){
 class FeatureRevision(unittest.TestCase):
     def test_a1_authoritative_revision_without_snapshot_allocation(self):
         self.check_authoritative_revision('A1','a1_config_lock','a1_config')
-    def test_m1_authoritative_revision_without_snapshot_allocation(self):
-        self.check_authoritative_revision('M1','config_lock','app_config')
     def check_authoritative_revision(self, model, lock, config):
 
         with self.subTest(model=model):

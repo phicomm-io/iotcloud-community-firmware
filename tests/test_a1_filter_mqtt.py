@@ -138,14 +138,22 @@ def main(port):
                     if p: controls[t] = json.loads(p)
                     else: controls.pop(t, None)
             return controls
-        wait(lambda: len(virtual_configs()) == 8)
+        wait(lambda: len(virtual_configs()) == 4)
+        retired_sensors = {'temperature', 'humidity', 'pm25', 'formaldehyde',
+                           'co2', 'scd40_temperature', 'scd40_humidity'}
+        # Proxy telemetry was removed; discovery must delete its retained
+        # entities, including optional SCD40 entities from older firmware.
+        wait(lambda: all(any(t.startswith(prefix) and '/'+key+'/' in t
+                             and t.endswith('_average_'+name+'/config') and not p
+                             for t, p, r in records[group_start:])
+                         for name in retired_sensors))
         # Birth injected during initial discovery must survive startup and
         # produce a complete second set of all five physical filter configs.
         wait(lambda: reconnect_birth['sent'] and all(
             sum(t.endswith('_filter_'+k+'/config') and bool(p)
                 for t, p, r in records[group_start:]) >= 2 for k in by))
         names = {o['name'] for o in controls.values()}
-        assert names == {'空气净化器', '灯环', '童锁', '灯环常亮', '温度', '湿度', 'PM2.5', '甲醛'}
+        assert names == {'空气净化器', '灯环', '童锁', '灯环常亮'}
         for obj in controls.values():
             assert obj['device']['identifiers'] == [parent]
             assert obj['device']['model'] == 'A1 Air Purifier (EMW3080B)'

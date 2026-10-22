@@ -43,7 +43,7 @@ Disable child lock for custom actions. Actions are recognized after release; rec
 
 ### A1 / M1 automation does not work
 
-Check the M1 pairing identifier, A1 member list and enabled rules, network / MQTT on both devices, then the averaged readings. No valid readings means `null`.
+Check the M1 MAC and optional IP configured on A1; no pairing identifier is needed on M1. Check the A1 member list and enabled rules. Both devices need the same MQTT service and account to establish a session, plus working LAN UDP. Finally, check the averaged readings: no valid readings means `null`.
 
 ### Update failed
 

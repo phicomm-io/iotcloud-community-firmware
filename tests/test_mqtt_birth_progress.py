@@ -13,7 +13,7 @@ class BirthProgress(unittest.TestCase):
     def test_a1_birth_finishes_current_batch_before_replay(self):
         self.check_birth_batch('A1',10,'            bool on;')
     def test_m1_birth_finishes_current_batch_before_replay(self):
-        self.check_birth_batch('M1',6,'            if(initial_index<2)')
+        self.check_birth_batch('M1',7,'            if(initial_index<2)')
     def check_birth_batch(self, model, count, tail):
 
         with self.subTest(model=model):
@@ -36,11 +36,11 @@ typedef struct {unsigned revision;} feature_config_t;
 typedef struct {unsigned revision;} a1_config_t;
 typedef a1_config_t m1_config_t;
 static a1_config_t cfg,current;
-static struct {bool wifi_connected;struct {bool received;}scd40;} state;
-static bool rediscover,sent,old_on,old_visible,filter_turn,co2_discovered;
+static struct {bool wifi_connected;struct {bool received;}scd40,barometer;} state;
+static bool rediscover,sent,old_on,old_visible,filter_turn,co2_discovered,pressure_discovered;
 static unsigned feature_revision,discovery_index,state_index,state_pending,state_seen;
-static int old_brightness,old_fresh,old_co2_fresh;
-static unsigned sequence,co2_sequence,count,snapshot_at;
+static int old_brightness,old_fresh,old_co2_fresh,old_pressure_fresh;
+static unsigned sequence,co2_sequence,pressure_sequence,count,snapshot_at;
 static char base[8],feature_filters[4][32];static int account,publish;
 static unsigned calls,resets,trace[40],inject_at;static bool injected,fail_once;
 static void ota_job_poll(void){}
@@ -77,6 +77,7 @@ int main(void){
  return 0;
 }
 '''.replace('/* COUNT */', str(count)).replace('/* PRODUCTION */', cycle)
+            if model=='M1': fixture=source[source.index('enum { MQTT_BRIGHTNESS_INDEX'):source.index(';',source.index('enum { MQTT_BRIGHTNESS_INDEX'))+1]+'\n'+fixture
             self.compile_run(fixture)
 
     def test_tc1_birth_finishes_snapshot_batch_before_replay(self):

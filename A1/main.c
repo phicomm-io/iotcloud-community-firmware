@@ -408,7 +408,7 @@ void a1_status_capture(device_status_t *snapshot, device_status_full_t *full)
     bemfa_status_capture(&snapshot->network);
 #endif
     snapshot->model=DEVICE_A1;
-    snapshot->captured=STATUS_IDENTITY|STATUS_NETWORK|STATUS_OTA|STATUS_CONTROL;
+    snapshot->captured=STATUS_IDENTITY|STATUS_NETWORK|STATUS_OTA|STATUS_CONTROL|STATUS_SENSOR;
     snapshot->identity.version=A1_VERSION; memcpy(snapshot->identity.id,a1_id,sizeof(a1_id));
     mico_rtos_lock_mutex(&a1_config_lock);
     mico_rtos_lock_mutex(&a1_lock);
@@ -472,6 +472,7 @@ void a1_status_capture(device_status_t *snapshot, device_status_full_t *full)
     mico_rtos_unlock_mutex(&a1_lock);
     mico_rtos_unlock_mutex(&a1_config_lock);
     feature_fan_snapshot(&snapshot->control.a1.effective_on,&snapshot->control.a1.effective_speed, &snapshot->control.a1.automatic,&snapshot->control.a1.auto_limit);
+    feature_values_snapshot(&snapshot->sensor.a1);
     snapshot->now_ms=mico_rtos_get_time(); /* after copying all timestamped state */
     if(full) {
         snapshot->captured|=STATUS_DIAGNOSTIC;

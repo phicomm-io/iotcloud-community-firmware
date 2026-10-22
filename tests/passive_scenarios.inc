@@ -1,69 +1,65 @@
 static void passive_scenarios(void) {
-  json_object *r=NULL;
-  transaction("binding","{\"response_ids\":[\"112233445566:aabbccddee02\",\"112233445566:aabbccddee02\"]}",200);
-  assert(stored.peer_count==1 && !stored.peers[0].confirmed);
-  transaction("binding","{\"response_ids\":[\"112233445566:000000000000\"]}",400);
+  transaction("binding","{\"response_ids\":[]}",405);
   transaction("linkage","{\"enabled\":true}",405);
-  transaction("light","{}",405);
-  transaction("probe","{}",405);
+  transaction("light","{}",405);transaction("probe","{}",405);
   transaction("time","{\"timezone_minutes\":480}",200);
   transaction("sleep","{\"windows\":[{\"days\":127,\"start\":1320,\"end\":420,\"brightness\":0}]}",200);
-  uint32_t revision=stored.revision;
-  char filters[12][FEATURE_TOPIC_MAX];
-  assert(feature_mqtt_filters(filters,sizeof(filters)/sizeof(filters[0]))==1);
-  assert(!strchr(filters[0],'#') && !strchr(filters[0],'+'));
-  json_object *o=envelope(&stored,0,"bind",1);
-  js(o,"src",stored.peers[0].id);js(o,"dst",LOCAL_ID);
-  js(o,"token","abababababababababababababababab");
-  incoming(o,false,true,NULL);assert(!peers[0].session_valid);
-  js(o,"op","config_set");incoming(o,false,false,NULL);assert(!peers[0].session_valid);
-  js(o,"op","read");incoming(o,true,false,"127.0.0.1");assert(!peers[0].session_valid);
-  strcpy(m1_state.ip,"192.0.2.42");
-  js(o,"op","bind");incoming(o,false,false,NULL);
-  assert(peers[0].session_valid && feature_bound() && queued==1 && stored.revision==revision);
-  assert(strstr((const char *)ph_mqtt_item_payload(test_mqtt_queue.head[PH_MQTT_SEND]),"192.0.2.42"));
-  assert(!memcmp(stored.peers[0].token,(uint8_t[16]){0},16));
-  feature_mqtt_service(capture,true);assert(!queued);
+  feature_config_t original=stored;
+  char filters[4][FEATURE_TOPIC_MAX];memset(filters,0x5a,sizeof(filters));
+  assert(feature_mqtt_filters(filters,4)==0 && feature_mqtt_filters_current(filters,0));
+  assert(!feature_mqtt_filters_current(filters,1) && filters[0][0]==0x5a);
+  json_object *grant=obj("{\"v\":2,\"a1\":\"112233445566\",\"boot\":11,\"token\":\"abababababababababababababababab\"}");
+  json_object *o=obj("{\"v\":2,\"src\":\"112233445566\",\"dst\":\"aabbccddee02\",\"op\":\"read\",\"boot\":11,\"id\":7,\"token\":\"abababababababababababababababab\"}");
+  assert(!feature_bound());incoming(o,true,false,"127.0.0.1");assert(!feature_bound());
+  /* The ordinary HTTP dispatcher cannot authorize sessions. */
+  json_object *command=obj("{\"action\":\"sensor.session.set\",\"params\":{\"v\":2,\"a1\":\"112233445566\",\"boot\":11,\"token\":\"abababababababababababababababab\"}}");
+  json_object *denied=service_command(command);assert(denied && !feature_bound());json_object_put(denied);json_object_put(command);
+  /* The pinned JSON wire uses signed counters; preserve all 32 boot bits. */
+  number(grant,"boot",UINT32_MAX);
+  assert(json_object_get_int64(json_object_object_get(grant,"boot"))==-1);
+  json_object *roundtrip=obj(json_object_to_json_string(grant));
+  assert(feature_sensor_session_set(roundtrip)==200 && sensor_sessions[0].boot==UINT32_MAX);
+  json_object_put(roundtrip);
+  number(grant,"boot",11);
+  assert(feature_sensor_session_set(grant)==200 && feature_bound());
+  assert(feature_sensor_session_set(grant)==200); /* duplicate QoS1 grant is idempotent */
+  assert(!memcmp(&stored,&original,sizeof(stored)));
+  json_object *status=feature_json("status");assert(json_object_array_length(json_object_object_get(status,"peers"))==1);json_object_put(status);
   feature_sample_t sample={.value={20,50,100,.1},.sequence=9,.boot=7,.received_ms=100,.valid=true};
   feature_local_sample(&sample);test_now=200;
-  js(o,"op","read");incoming(o,false,false,NULL);
-  assert(queued==1 && strstr((const char *)ph_mqtt_item_payload(test_mqtt_queue.head[PH_MQTT_SEND]),"sample") && strstr((const char *)ph_mqtt_item_payload(test_mqtt_queue.head[PH_MQTT_SEND]),"age_ms"));
-  feature_mqtt_service(capture,true);assert(!queued);
   int receiver=socket(AF_INET,SOCK_DGRAM,IPPROTO_UDP);assert(receiver>=0);
   struct sockaddr_in address={0};address.sin_family=AF_INET;address.sin_port=htons(FEATURE_PORT);address.sin_addr.s_addr=htonl(INADDR_LOOPBACK);
   assert(bind(receiver,(struct sockaddr *)&address,sizeof(address))==0);
   udp=socket(AF_INET,SOCK_DGRAM,IPPROTO_UDP);assert(udp>=0);
-  incoming(o,true,false,"127.0.0.1");
-  fd_set fds;FD_ZERO(&fds);FD_SET(receiver,&fds);struct timeval timeout={1,0};
-  assert(select(receiver+1,&fds,NULL,NULL,&timeout)==1);
-  char wire[FEATURE_WIRE_MAX+1];int length=recv(receiver,wire,sizeof(wire)-1,0);assert(length>0);wire[length]=0;
-  json_object *reply=parse(wire,length);assert(reply && !strcmp(string(reply,"op"),"sample"));
-  assert(integer(json_object_object_get(reply,"body"),"sequence")==9);json_object_put(reply);
-  /* Repeated manual probes and sample reads share the UDP reply path. */
-  for (unsigned attempt=0; attempt<32; attempt++) {
-    const char *op=attempt%2 ? "read" : "probe";
-    js(o,"op",op);incoming(o,true,false,"127.0.0.1");
-    FD_ZERO(&fds);FD_SET(receiver,&fds);timeout=(struct timeval){1,0};
+  for(unsigned attempt=0;attempt<32;attempt++) {
+    js(o,"op",attempt%2?"probe":"read");incoming(o,true,false,"127.0.0.1");
+    fd_set fds;FD_ZERO(&fds);FD_SET(receiver,&fds);struct timeval timeout={1,0};
     assert(select(receiver+1,&fds,NULL,NULL,&timeout)==1);
-    length=recv(receiver,wire,sizeof(wire)-1,0);assert(length>0);
-    reply=parse(wire,length);assert(reply);
-    assert(!strcmp(string(reply,"op"),attempt%2 ? "sample" : "pong"));
+    char wire[FEATURE_WIRE_MAX+1];int length=recv(receiver,wire,sizeof(wire)-1,0);assert(length>0);
+    json_object *reply=parse(wire,length);assert(reply && integer(reply,"v")==2 && integer(reply,"id")==7);
+    assert(!strcmp(string(reply,"op"),attempt%2?"pong":"sample"));
+    if(!(attempt%2))assert(integer(json_object_object_get(reply,"body"),"sequence")==9);
     json_object_put(reply);
   }
-  char oversized[FEATURE_WIRE_MAX+1];memset(oversized,'x',sizeof(oversized)-1);oversized[sizeof(oversized)-1]=0;
-  json_object *large=json_object_new_object();js(large,"body",oversized);
-  assert(!send_udp("127.0.0.1",large));json_object_put(large);
-  assert(stored.revision==revision && stored.peer_count==1);
-  close(receiver);close(udp);udp=-1;
-  js(o,"token","cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd");incoming(o,false,false,NULL);assert(!queued);
-  js(o,"token","abababababababababababababababab");
-  js(o,"op","config_get");incoming(o,false,false,NULL);assert(!queued);
-  js(o,"op","unbind");incoming(o,false,false,NULL);assert(stored.peer_count==1 && stored.revision==revision);
-  js(o,"src","000000000001");js(o,"op","bind");incoming(o,false,false,NULL);assert(!queued);
-  json_object_put(o);
-  r=feature_json("binding");assert(json_object_object_get(r,"response_ids"));assert(!json_object_object_get(r,"peers"));json_object_put(r);
-  /* New sensor data must never create unsolicited linkage publications. */
-  unsigned before=publications;test_now=300;sample.sequence++;feature_local_sample(&sample);
-  feature_mqtt_service(capture,true);assert(publications==before);
-  puts("M1 response IDs, RAM sessions, passive reads, forbidden writes and no unsolicited mirror passed");
+  /* MQTT reads, retained requests, old boot identities and wrong tokens cannot read or refresh. */
+  uint32_t seen=sensor_sessions[0].last_seen;test_now++;
+  incoming(o,false,false,NULL);incoming(o,true,true,"127.0.0.1");
+  number(o,"boot",10);incoming(o,true,false,"127.0.0.1");number(o,"boot",11);
+  js(o,"token","cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd");incoming(o,true,false,"127.0.0.1");
+  assert(sensor_sessions[0].last_seen==seen && !queued);
+  test_now=seen+SENSOR_SESSION_IDLE_MS;assert(!feature_bound());
+  js(o,"token","abababababababababababababababab");incoming(o,true,false,"127.0.0.1");assert(!feature_bound());
+  assert(feature_sensor_session_set(grant)==200);
+  /* Bound storage: an unexpired active session is never evicted by a fifth A1. */
+  for(unsigned i=1;i<=4;i++) { char id[13];snprintf(id,sizeof(id),"%012x",i);js(grant,"a1",id);
+    assert(feature_sensor_session_set(grant)==(i<4?200:409)); }
+  assert(!memcmp(&stored,&original,sizeof(stored)));
+  js(grant,"token","00000000000000000000000000000000");assert(feature_sensor_session_set(grant)==400);
+  mqtt_account_t a=mqtt_snapshot();feature_mqtt_session(&a);assert(feature_bound()); /* reconnect preserves RAM sessions */
+  assert(mqtt_account_init(&a,1,"m1","different_account",LOCAL_ID));feature_mqtt_session(&a);assert(!feature_bound());
+  assert(!memcmp(&stored,&original,sizeof(stored)));
+  close(receiver);close(udp);udp=-1;json_object_put(o);json_object_put(grant);
+  status=feature_json("binding");assert(!json_object_object_get(status,"response_ids") && integer(status,"session_protocol")==2);json_object_put(status);
+  unsigned before=publications;sample.sequence++;feature_local_sample(&sample);feature_mqtt_service(capture,true);assert(publications==before);
+  puts("M1 MQTT-only grants, no pairing/Flash writes, authenticated UDP, idle expiry, capacity and reconnect/account isolation passed");
 }

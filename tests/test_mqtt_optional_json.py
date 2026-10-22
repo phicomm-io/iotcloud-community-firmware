@@ -94,12 +94,12 @@ int main(void){
 #define PH_MQTT_MORE 2
 #define PH_MQTT_RECONFIGURE 1
 typedef struct {int temperature_deci_c,humidity_deci_pct;unsigned hcho_ug_m3,pm25_ug_m3,sequence;}m1_sample_t;
-typedef struct {bool wifi_connected;unsigned brightness_requested;m1_sample_t sample;struct {bool ready,received;unsigned updated_ms,samples,co2_ppm;}scd40;}mqtt_state_t;
+typedef struct {bool wifi_connected;unsigned brightness_requested;m1_sample_t sample;barometer_state_t barometer;struct {bool ready,received;unsigned updated_ms,samples,co2_ppm;}scd40;}mqtt_state_t;
 typedef struct {unsigned revision;}m1_config_t;
 static mqtt_state_t state;static m1_config_t cfg,current;
-static bool rediscover,co2_discovered;
-static unsigned feature_revision,count,discovery_index=6,initial_index=2,connect_sequence,sequence,co2_sequence,snapshot_at,now;
-static int old_fresh=-1,old_co2_fresh=-1,old_brightness=-1,publish,account;
+static bool rediscover,co2_discovered,pressure_discovered;
+static unsigned feature_revision,count,discovery_index=MQTT_DISCOVERY_COUNT,initial_index=2,connect_sequence,sequence,co2_sequence,pressure_sequence,snapshot_at,now;
+static int old_fresh=-1,old_co2_fresh=-1,old_pressure_fresh=-1,old_brightness=-1,publish,account;
 static char base[1],feature_filters[1];
 static unsigned snapshots,sensors,features;static int snapshot_result=PH_MQTT_MORE;
 static bool connection_ok=true,filters_ok=true;
@@ -131,10 +131,13 @@ int main(void){
  snapshot_result=PH_MQTT_MORE;connection_ok=false;now++;
  assert(session_cycle(NULL)==PH_MQTT_RECONFIGURE);
  connection_ok=true;cfg.revision++;filters_ok=false;
- assert(session_cycle(NULL)==PH_MQTT_RECONFIGURE);
+ /* M1 no longer subscribes to peer filters; binding revisions keep the session. */
+ assert(session_cycle(NULL)==MQTT_SUCCESS);
 }
 '''.replace('/* PRODUCTION */',cycle)
         with tempfile.TemporaryDirectory() as d:
+            source=(ROOT/'M1/mqtt.c').read_text()
+            fixture='#include \"'+str(ROOT/'M1/barometer.h')+'\"\n'+source[source.index('enum { MQTT_BRIGHTNESS_INDEX'):source.index(';',source.index('enum { MQTT_BRIGHTNESS_INDEX'))+1]+'\n'+fixture
             src=Path(d)/'m1-fair.c';binary=Path(d)/'m1-fair';src.write_text(fixture)
             flags=[os.environ.get('CC','cc'),'-std=gnu99','-fsanitize=address,undefined','-fno-pie','-no-pie',str(src),'-o',str(binary)]
             subprocess.run(flags,check=True)

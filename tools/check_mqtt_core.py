@@ -34,7 +34,7 @@ def check(frames,model):
     worker='MqttClientThread' if model=='TC1' else 'mqtt_worker'
     callback='MessageArrived' if model=='TC1' else 'command' if model=='A1' else 'native_command'
     owner=[worker,'ph_mqtt_session_run']
-    dispatch=owner+['ph_mqtt_poll',callback,'service_mqtt_input']
+    dispatch=owner+['ph_mqtt_poll',callback,'service_mqtt_input','service_mqtt_command_wire']
     execute=['service_command_wire','service_command','service_command_execute','service_product']
     encode=['json_owned_to_wire','json_owned_to_wire_result','json_write','json_primitive','json_append']
     transport=['ph_mqtt_publish','ingress','ph_mqtt_enqueue_route','ph_mqtt_enqueue_generation']
@@ -85,7 +85,7 @@ def check(frames,model):
         paths['MQTT virtual telemetry ingress']=(virtual+(['direct_leaf'] if 'direct_leaf' in frames else [])+['checked_publish','publish']+transport,reserve)
 
     elif model=='M1':
-        paths['MQTT feature deferred control']=(owner+['ph_mqtt_poll','feature_command','feature_mqtt_input']+execute+['service_product_inner'],reserve)
+        paths['MQTT sensor session grant']=(dispatch+['service_product_mqtt','feature_sensor_session_set'],reserve)
 
     else:
         paths['MQTT TC1 legacy control']=(owner+['ph_mqtt_poll','MessageArrived','ProcessHaCmd','UserMqttSendTopic','send_owned','account_message']+transport,reserve)

@@ -14,6 +14,7 @@ static inline void device_status_text(char *out,size_t capacity,const char *in,s
 }
 #include "../M1/protocol.h"
 #include "../M1/barometer.h"
+#include "sensor_values.h"
 #include "watchdog.h"
 #include "httpd/http.h"
 #include "../A1/filter.h"
@@ -60,7 +61,7 @@ typedef struct {
     device_identity_t identity; device_network_t network; device_ota_t ota;
     union { device_a1_control_t a1; device_tc1_control_t tc1;
         struct { uint8_t brightness_requested; } m1; } control;
-    union { device_m1_sensor_t m1; } sensor;
+    union { device_m1_sensor_t m1; feature_values_t a1; } sensor;
 } device_status_t;
 typedef struct {
     uint32_t now_ms; bool memory_valid; int free_memory, allocated_memory,

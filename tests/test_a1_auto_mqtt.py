@@ -105,7 +105,7 @@ def main(port):
             client.check()
         finally:reader.close(failing=sys.exc_info()[0] is not None)
         print('PASS HA preset discovery, rendered mode/speed commands, state convergence and retained late subscription',flush=True)
-        call(m,'binding.set',{'response_ids':['020000aa0001:020000bb0001']})
+        wait(lambda:call(m,'status.get').get('mqtt_connected'))
         call(a,'binding.set',{'peers':[{'mac':'020000bb0001','ip':'127.75.1.2'}]})
         call(a,'fan.mode.set',{'mode':'auto'})
         call(a,'linkage.set',{'mode':1,'metrics':1,'low_pm':10,'high_pm':110,'min_speed':0,'max_speed':80,'fallback_speed':23})

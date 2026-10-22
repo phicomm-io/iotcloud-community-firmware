@@ -24,13 +24,13 @@ TC1、A1、M1 的离线页面统一由 [前端仓库](https://github.com/phicomm
 | `buttons.get/set` | 自定义按键映射；get 使用 offset/limit（最多 8 条），next/capacity/count；是否可写见能力列表 |
 | `system.reboot/reset`, `ota.start` | 重启、重置、签名 OTA URL |
 | `night.get/set`, `time.get/set` | 夜间模式（A1/M1）与时区 |
-| `binding.get/set`, `binding.status.get` | A1/M1 绑定设置、运行状态 |
+| `binding.get/set`, `binding.status.get` | A1 数据源设置；A1/M1 会话状态（M1 不支持 set） |
 | `sensors.average.get` | A1 多 M1 实时平均值 |
 | `light_effect.next/select` | A1 轮换灯效或选择 `{effect:0..4}`，保留其他灯效配置 |
 | `light_always.set` | A1 灯环常亮 `{enabled:boolean}` |
 | `filter.get/set/reset` | A1 运行时间估算；set 接受额定寿命 `{lifetime_hours:1..20000}`；reset 清零用量 |
 
-A1 最多绑定 4 台 M1；M1 最多授权 4 台 A1。`binding.get.data.max_peers` 返回 `4`；超过上限的 `binding.set` 返回 `invalid_params`，原绑定保持不变。升级旧的八条绑定配置时，只启用原顺序的前四条，Flash 存储布局不变。
+A1 最多配置 4 台 M1；M1 最多保存 4 台 A1 的 RAM 会话，状态返回 `max_sessions:4`，不再接受 `binding.set`。`binding.get.data.max_peers` 返回 `4`；超过上限的 `binding.set` 返回 `invalid_params`，原绑定保持不变。升级旧的八条绑定配置时，只启用原顺序的前四条，Flash 存储布局不变。
 
 文件 OTA 独立于 JSON 命令：`POST /api/v1/ota/upload` 上传签名原始字节流；仅显式选择未签名更新时使用 `/api/v1/ota/upload-unsigned`。两者仍校验产品镜像和写入结果。
 

@@ -33,6 +33,17 @@ static int report(const char *format,...){char out[256];va_list args;va_start(ar
 static void parity(device_status_t *s,device_status_full_t *f,bool full){
  capacity=libc_baseline+100000;const char *id="read-123";
  json_object *old=reference_device_status_encode(s,full?f:NULL);assert(old);
+ /* The legacy oracle predates the additive A1 summary. Keep its existing
+  * fields as oracle and compare the new subtree through graph/wire parity. */
+ if(s->model==DEVICE_A1 && (s->captured&STATUS_SENSOR)){
+  json_object *current=device_status_encode(s,full?f:NULL);assert(current);
+  json_object *ordered=json_object_new_object();assert(ordered);
+  json_object_object_foreach(current,key,value){
+   json_object *v=!strcmp(key,"sensors")?value:json_object_object_get(old,key);
+   if(v)json_object_get(v);json_object_object_add(ordered,key,v);
+  }
+  json_object_put(old);old=ordered;json_object_put(current);
+ }
  struct printbuf *oracle=json_owned_to_wire(result(id,"ok",old));assert(oracle);
  size_t length=oracle->bpos;char saved[8192];assert(length<sizeof(saved));memcpy(saved,oracle->buf,length+1);printbuf_free(oracle);healthy_stats();
  peak=live;struct printbuf *wire=device_status_wire(s,full?f:NULL,true,id);
@@ -59,6 +70,7 @@ static void states(void){
   s.sensor.m1.sample.received=true;s.sensor.m1.sample.updated_ms=UINT32_MAX-1000;s.sensor.m1.sample.temperature_deci_c=-135;s.sensor.m1.sample.humidity_deci_pct=487;
   s.sensor.m1.co2.ready=s.sensor.m1.co2.received=true;s.sensor.m1.co2.updated_ms=UINT32_MAX-19999;s.sensor.m1.co2.co2_ppm=1234;
   s.sensor.m1.barometer=(barometer_state_t){.ready=true,.received=true,.updated_ms=UINT32_MAX-1,.chip_id=0x50,.address=0x77,.pressure_centi_pa=10132400};
+  if(model==DEVICE_A1)s.sensor.a1=(feature_values_t){.value={23,45,123,.1},.co2=1400,.sample_count=2,.co2_sample_count=1,.configured_count=2,.valid=true};
   parity(&s,&f,true);s.now_ms=0;parity(&s,&f,false);s.now_ms=UINT32_MAX;
  }
  s.captured=0;assert(!device_status_wire(&s,&f,true,NULL));healthy_stats();

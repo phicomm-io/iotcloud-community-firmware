@@ -105,7 +105,7 @@ int service_mqtt_input(int(*sender)(const char *, const char *, bool), const mqt
     /* Everything borrowed is now copied (including the fixed failure wire).
      * Do not use payload/length/MessageData again after consuming the entry. */
     bool admitted = ph_mqtt_input_consumed();
-    wire = scoped && admitted && !service_json_scope_failed(token) ? service_command_wire(q) : NULL;
+    wire = scoped && admitted && !service_json_scope_failed(token) ? service_mqtt_command_wire(q) : NULL;
     if (q)
         json_object_put(q);
     unsigned failure=scoped?service_json_scope_end(token):0;

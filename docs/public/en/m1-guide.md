@@ -51,7 +51,7 @@ M1 uses the original panel's `0x18` long-press event, acknowledges it with fixed
 
 ## Supplying readings to A1
 
-M1 measures, reports and answers authorized A1 requests. It does not control or poll the purifier. Add `A1_MAC:M1_MAC` in M1 binding settings; at most eight unique pairs are accepted. Configuration reads / writes, unbinding and sensor pushes are rejected on the binding channel. See [A1 and M1 automation](mqtt-link#a1-and-m1-automation).
+M1 measures, reports and answers authorized A1 requests. It does not control or poll the purifier. Add this M1's MAC and optional IP on A1. MQTT establishes the session; sensor queries use LAN UDP. The M1 page shows read-only session status for up to four A1 units, with no allowlist or pairing code to maintain. See [A1 and M1 automation](mqtt-link#a1-and-m1-automation).
 
 ## IotCloud and Home Assistant
 
