@@ -2,6 +2,15 @@
 
 English translation of the published release history. Historical validation statements apply to the release named in each section, not to later firmware. Release notes are authored in the Wiki and frozen into the source repository before tagging.
 
+## v0.9.20
+
+- Fix A1 effects remaining lit after purifier power-off when custom brightness is used with fan-speed brightness tracking disabled. Keep automatic-mode zero-speed waiting distinct from power-off.
+- Add colorful breathing on A1: the whole ring gradually changes color while breathing, with custom brightness and animation speed. Single-color breathing remains available.
+- Fix TC1 Home Assistant states reverting to on after outlets are switched off over MQTT or IotCloud. Refresh all six outlets and the master switch after controls are saved, and republish discovery when device or outlet names change.
+- Fix four-digit pressure readings overflowing or wrapping on M1 cards in IotCloud. The public MQTT service now grants Home Assistant startup-notification publishing to existing accounts as well, allowing integration reloads to trigger device rediscovery.
+- Physical A1 and TC1 candidate upgrades preserved configuration. Acceptance covered light settings and power-off state, six-outlet MQTT states, renaming and rediscovery. The original TC1 outlet states and device name were restored afterward. M1 was not flashed for this release.
+- Versions in the 0.9.x series are beta releases. Back up important settings before upgrading.
+
 ## v0.9.19
 
 - Configure M1 sensor sources on A1 with an M1 MAC address and an optional LAN IP. M1 no longer needs pairing or an A1 allowlist; its page shows current sessions.
