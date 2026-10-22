@@ -68,13 +68,12 @@ static uint32_t member_seen[8];
 static uint32_t mqtt_revision;
 static bool mqtt_online;
 #ifdef FEATURE_DEVICE_A1
-static uint32_t mqtt_tick, mqtt_graph_retry;
-static unsigned mqtt_graph_pending, mqtt_leaf_pending;
+static uint32_t mqtt_tick;
+static unsigned mqtt_leaf_pending;
 static uint8_t mqtt_telemetry_cursor;
 /* Owner-only resumable publication positions. No bodies or JSON are retained. */
 static unsigned mqtt_discovery_stage, mqtt_discovery_cursor, mqtt_domain_cursor;
 static uint32_t mqtt_discovery_revision;
-static unsigned mqtt_discovery_sensors;
 static bool mqtt_discovery_pending;
 static bool was_coordinator;
 static char published_root[FEATURE_TOPIC_MAX], published_ids[FEATURE_MAX_PEERS][13];
@@ -99,7 +98,6 @@ static void discovery_resource_wait(void) {
   mqtt_discovery_deferred=true;mqtt_discovery_retry_at=mico_rtos_get_time();
 }
 static unsigned published_count;
-static unsigned published_sensors;
 #endif
 static int udp = -1;
 static void lock(void) { mico_rtos_lock_mutex(&feature_lock); }
@@ -699,6 +697,18 @@ void feature_local_sample(const feature_sample_t *s) {
   local_sample = *s;
   unlock();
 }
+#ifdef FEATURE_DEVICE_A1
+void feature_values_snapshot(feature_values_t *out) {
+  lock();
+  memcpy(out->value,aggregate,sizeof(out->value));
+  out->co2=aggregate_co2;
+  out->sample_count=available;out->co2_sample_count=available_co2;
+  out->configured_count=configuration.peer_count;
+  out->statistic=configuration.linkage.statistic;
+  out->valid=data_valid;
+  unlock();
+}
+#endif
 void feature_clock_valid(void) { clock_ok = true; }
 json_object *feature_json(const char *d) {
 
@@ -1280,7 +1290,7 @@ void feature_mqtt_session(const mqtt_account_t *account) {
   }
 #endif
 #ifdef FEATURE_DEVICE_A1
-  mqtt_tick=0;mqtt_graph_pending=0;mqtt_leaf_pending=0;mqtt_telemetry_cursor=0;
+  mqtt_tick=0;mqtt_leaf_pending=0;mqtt_telemetry_cursor=0;
   mqtt_discovery_pending=false;mqtt_discovery_deferred=false;mqtt_capture_deferred=false;
   if(changed) {
     published_root[0]=0; published_count=0;
@@ -1884,16 +1894,6 @@ static __attribute__((noinline)) int direct_json_optional(int (*p)(const char *,
   mqtt_format(topic,sizeof(topic),"%s/%s",root,leaf);
   return service_mqtt_optional_send(p,topic,o,retain,scope);
 }
-/* The five-second sensor producer competes with HTTP full status for the same
- * small heap. Defer telemetry instead of building a second graph. Only
- * independent bytes survive publication and any reentrant packet callback. */
-static bool direct_json_claimed(int (*p)(const char *, const char *, bool),
-                        const char *root,const char *leaf,json_object *o,bool retain,unsigned token) {
-  struct printbuf *wire=json_owned_to_wire(o);
-  service_json_release(token);
-  if(!wire)return false;
-  int rc=direct_leaf(p,root,leaf,wire->buf,retain);printbuf_free(wire);return rc==0;
-}
 #ifdef FEATURE_DEVICE_A1
 /* Shared by virtual controls and per-A1 filter entities. Keep their parent
  * identity identical while preserving each physical filter's own state/control. */
@@ -1937,20 +1937,9 @@ bool feature_ha_device(char *id, size_t id_size, char *name, size_t name_size,
   free(c);
   return ok;
 }
-/* Capability persists through stale readings; only the configured peer owns its slot. */
-static unsigned discovery_sensors(const feature_config_t *c) {
-  unsigned mask=0;
-  lock();
-  for(unsigned i=0;i<c->peer_count && i<FEATURE_MAX_PEERS;i++) {
-    if(strcmp(c->peers[i].id,configuration.peers[i].id)) continue;
-    if(samples[i].co2_supported) mask |= 1u<<i;
-  }
-  unlock();
-  return mask;
-}
 static bool discovery_virtual_step(int (*publish)(const char *, const char *, bool),
                               const discovery_layout_t *c, const char *root,
-                              bool remove, unsigned *cursor, unsigned sensors) {
+                              bool remove, unsigned *cursor) {
   const char *keys[] = {"fan",           "light",       "child_lock",
                         "led_always_on", "temperature", "humidity",
                         "pm25",          "formaldehyde", "co2", "scd40_temperature", "scd40_humidity"};
@@ -1976,10 +1965,8 @@ static bool discovery_virtual_step(int (*publish)(const char *, const char *, bo
     for (unsigned i = 0; i < 11; i++) {
       unsigned position=set*11+i;
       if(position<*cursor)continue;
-      unsigned bits=sensors;
-      bool supported=i<8 || (i==8 && (set ? (bits & (1u<<(set-1))) != 0 : bits != 0));
       if (set && i < 4) { *cursor=position+1;continue; }
-      static char uid[FEATURE_TOPIC_MAX], path[FEATURE_TOPIC_MAX], sensor[FEATURE_TOPIC_MAX];
+      static char uid[FEATURE_TOPIC_MAX], path[FEATURE_TOPIC_MAX];
       const char *sid = set ? c->peer_ids[set - 1] : "average";
       mqtt_format(uid, sizeof(uid), "bound_%s_%s_%s", safe, i < 4 ? "device" : sid,
                keys[i]);
@@ -1991,13 +1978,11 @@ static bool discovery_virtual_step(int (*publish)(const char *, const char *, bo
         strcpy(account.mac,owner);
         if (!mqtt_identity(&account,entity,uid,sizeof(uid)) || !mqtt_ha(&account,components[i],entity,path,sizeof(path))) return false;
       }
-      if (remove || !supported) {
-        /* Retained tombstones remove auxiliary entities published by earlier firmware. */
-        if(remove || i>=9 || published_sensors) {
-          if(publish(path,"",true))return false;
-          *cursor=position+1;return *cursor==sets*11;
-        }
-        *cursor=position+1;continue;
+      if (remove || i >= 4) {
+        /* Retire every old proxy sensor, including optional SCD40 entities.
+         * Keep the resumable cursor and owner send budget during migration. */
+        if(publish(path,"",true))return false;
+        *cursor=position+1;return *cursor==sets*11;
       }
       service_mqtt_json_scope scope;
       if(!service_mqtt_json_begin(&scope,ph_mqtt_owner_thread())) {
@@ -2066,41 +2051,12 @@ static bool discovery_virtual_step(int (*publish)(const char *, const char *, bo
             const char *off=i==2?"{\"action\":\"child_lock.set\",\"params\":{\"enabled\":false}}":"{\"action\":\"light.set\",\"params\":{\"always_on\":false}}";
             js(o,"payload_on",on);js(o,"payload_off",off);js(o,"state_on","ON");js(o,"state_off","OFF");
         }
-            } else {
-        if (c->peer_count == 1)
-          mqtt_format(sensor, sizeof(sensor), "%s/sensor", root);
-        else if (set) {
-          char mac[18];
-          feature_colon_mac(sid, mac);
-          mqtt_format(sensor, sizeof(sensor), "%s/%s/sensor", root, mac);
-        } else
-          mqtt_format(sensor, sizeof(sensor), "%s/average", root);
-        js(o, "state_topic", sensor);
-        mqtt_format(topic, sizeof(topic), "{{ value_json.%s }}", keys[i]);
-        js(o, "value_template", topic);
-        number(o, "expire_after", 15);
-        js(o, "state_class", "measurement");
-        js(o, "unit_of_measurement",
-           i == 4 ? "°C"
-           : i == 5 ? "%"
-           : i == 6 ? "µg/m³"
-           : i == 8 ? "ppm"
-                    : "mg/m³");
-        if (i != 7)
-          js(o, "device_class", i==8 ? "carbon_dioxide" : keys[i]);
       }
       mqtt_leaf(&account,"state",topic,sizeof(topic));js(o,"json_attributes_topic",topic);
       js(o,"json_attributes_template","{{ {\"ip\": value_json.ip, \"firmware\": value_json.version} | tojson }}");
       if(i==2 || i==3)js(o,"entity_category","config");
       json_object *availability = json_object_new_array();
-      if(i>=4) {
-        json_object *node=json_object_new_object();
-        js(node,"topic",sensor);
-        mqtt_format(topic,sizeof(topic),"{{ 'online' if value_json.%s else 'offline' }}",i==8?"co2_valid":"valid");
-        js(node,"value_template",topic);
-        json_build_array_add(availability,node);
-      }
-      for (unsigned member = 0; i<4 && member <= c->member_count; member++) {
+      for (unsigned member = 0; member <= c->member_count; member++) {
         const char *id = member ? c->members[member - 1].id : LOCAL_ID;
         if (member && !strcmp(id, LOCAL_ID))
           continue;
@@ -2132,7 +2088,7 @@ static void discovery_virtual(int (*publish)(const char *,const char *,bool),
   unsigned cursor=0;
   for(;;) {
     unsigned prior=cursor;
-    if(discovery_virtual_step(publish,c,root,remove,&cursor,0))return;
+    if(discovery_virtual_step(publish,c,root,remove,&cursor))return;
     if(publish_error || cursor==prior)return;
   }
 }
@@ -2166,17 +2122,15 @@ static void virtual_service(int (*publish)(const char *, const char *, bool)) {
     mqtt_discovery_pending = false;mqtt_discovery_deferred=false;
     mqtt_discovery_stage = mqtt_discovery_cursor = mqtt_domain_cursor = 0;
   }
-  unsigned sensor_mask=discovery_sensors(c);
   bool discovery_needed=mqtt_discovery_pending || !mqtt_online || mqtt_revision!=revision ||
-      published_sensors!=sensor_mask || (!was_coordinator && coordinator);
+      (!was_coordinator && coordinator);
   bool discovery_wait=mqtt_discovery_deferred && (uint32_t)(now-mqtt_discovery_retry_at)<1000u;
   if(coordinator && discovery_needed && !discovery_wait) {
     service_json_release(snapshot_token);snapshot_token=0;
-    if(!mqtt_discovery_pending || mqtt_discovery_revision!=revision ||
-       mqtt_discovery_sensors!=sensor_mask) {
+    if(!mqtt_discovery_pending || mqtt_discovery_revision!=revision) {
       mqtt_discovery_pending=true;mqtt_discovery_stage=0;
       mqtt_discovery_cursor=mqtt_domain_cursor=0;
-      mqtt_discovery_revision=revision;mqtt_discovery_sensors=sensor_mask;
+      mqtt_discovery_revision=revision;
     }
     bool layout_changed=strcmp(published_root,root) || published_count!=c->peer_count ||
         (published_layout && (published_layout->member_count!=c->member_count ||
@@ -2186,7 +2140,7 @@ static void virtual_service(int (*publish)(const char *, const char *, bool)) {
     if(mqtt_discovery_stage==0) {
       free(c);c=NULL;
       if(published_root[0] && (layout_changed || !bound) && published_layout &&
-         !discovery_virtual_step(publish,published_layout,published_root,true,&mqtt_discovery_cursor,0)) {
+         !discovery_virtual_step(publish,published_layout,published_root,true,&mqtt_discovery_cursor)) {
         free(c);return;
       }
       mqtt_discovery_stage=1;mqtt_discovery_cursor=0;
@@ -2195,7 +2149,7 @@ static void virtual_service(int (*publish)(const char *, const char *, bool)) {
     if(mqtt_discovery_stage==1) {
       discovery_layout_t layout;discovery_layout_capture(&layout,c);
       free(c);c=NULL;
-      if(bound && !discovery_virtual_step(publish,&layout,root,false,&mqtt_discovery_cursor,sensor_mask))return;
+      if(bound && !discovery_virtual_step(publish,&layout,root,false,&mqtt_discovery_cursor))return;
       mqtt_discovery_stage=2;return;
     }
     if(bound && mqtt_domain_cursor<COUNT(domains)) {
@@ -2225,44 +2179,33 @@ static void virtual_service(int (*publish)(const char *, const char *, bool)) {
       discovery_layout_capture(published_layout,c);strcpy(published_root,root);published_count=c->peer_count;
       for(unsigned i=0;i<c->peer_count;i++)strcpy(published_ids[i],c->peers[i].id);
     } else published_root[0]=0;
-    published_sensors=sensor_mask;mqtt_discovery_pending=false;mqtt_discovery_deferred=false;mqtt_capture_deferred=false;
+    mqtt_discovery_pending=false;mqtt_discovery_deferred=false;mqtt_capture_deferred=false;
   }
   /* Periodic publishing needs only this compact configuration snapshot. The
    * large native config must not survive socket/PUBACK waits or JSON builds. */
-  bool grouped=c->group[0];unsigned peer_count=c->peer_count;
-  char peer_ids[FEATURE_MAX_PEERS][13];
-  for(unsigned i=0;i<peer_count;i++)memcpy(peer_ids[i],c->peers[i].id,sizeof(peer_ids[i]));
+  bool grouped=c->group[0];
   free(c);c=NULL;service_json_release(snapshot_token);
   if(bound && (uint32_t)(now-mqtt_tick)>=5000) {
     mqtt_tick=now;
     mqtt_leaf_pending|=(1u<<(grouped?14:7))-1u;
-    if(coordinator)mqtt_graph_pending|=(1u<<(peer_count+1))-1u;
-    mqtt_graph_retry=now-100u;
   }
-  /* A cursor spans scalar leaves and graphs. Refreshing the latest data must
-   * not put the same scalar prefix ahead of sensors after every slow ACK.
-   * Use at most four available sends; the shared owner enforces the remaining
-   * global turn budget. Resume a quota-rejected item first on the next turn. */
-  if(!bound){mqtt_leaf_pending=0;mqtt_graph_pending=0;}
-  if(!coordinator)mqtt_graph_pending=0;
+  /* Only virtual control leaves remain. Sensor values travel in the existing
+   * physical A1 status snapshot, without a separate producer or topic. */
+  if(!bound)mqtt_leaf_pending=0;
   for(unsigned attempt=0;attempt<4 && !publish_error;attempt++) {
-    unsigned selected_leaf=0,selected_graph=0,selected_work=0;
+    unsigned selected_leaf=0,selected_work=0;
     unsigned eligible_leaves=mqtt_leaf_pending & ((1u<<(grouped?14:7))-1u);
     if(!coordinator)eligible_leaves&=~127u;
-    unsigned eligible_graphs=coordinator && (uint32_t)(now-mqtt_graph_retry)>=100u
-        ? mqtt_graph_pending & ((1u<<(peer_count+1))-1u) : 0;
-    const unsigned work_count=14+FEATURE_MAX_PEERS+1;
-    if(bound)for(unsigned offset=0;offset<work_count;offset++) {
-      unsigned work=(mqtt_telemetry_cursor+offset)%work_count;
-      if(work<14)selected_leaf=eligible_leaves&(1u<<work);
-      else selected_graph=eligible_graphs&(1u<<(work-14));
-      if(selected_leaf || selected_graph) {
+    if(bound)for(unsigned offset=0;offset<14;offset++) {
+      unsigned work=(mqtt_telemetry_cursor+offset)%14;
+      selected_leaf=eligible_leaves&(1u<<work);
+      if(selected_leaf) {
         selected_work=work;
-        mqtt_telemetry_cursor=(uint8_t)((work+1)%work_count);
+        mqtt_telemetry_cursor=(uint8_t)((work+1)%14);
         break;
       }
     }
-    if(!selected_leaf && !selected_graph)break;
+    if(!selected_leaf)break;
     if(bound && selected_leaf) {
       bool on;
       unsigned speed;
@@ -2309,30 +2252,6 @@ static void virtual_service(int (*publish)(const char *, const char *, bool)) {
           mqtt_leaf_pending&=~bit;
         }
         if(publish_error)break;
-      }
-    }
-    if(selected_graph) {
-      /* Only memory contention is throttled. A successful graph or exhausted
-       * send quota must leave the next graph immediately eligible, otherwise
-       * a refreshed scalar prefix can repeatedly overtake the sensor. */
-      static feature_sample_t current[FEATURE_MAX_PEERS];
-      lock();memcpy(current,samples,sizeof(current));unlock();
-      /* Samples may advance while earlier leaf PUBACKs are outstanding. Take
-       * the graph clock after copying them so fresh timestamps never appear
-       * to be almost UINT32_MAX milliseconds old. */
-      uint32_t captured_now=now_ms();
-      for(unsigned i=0;i<=peer_count;i++) {
-        unsigned bit=1u<<i;if(!(selected_graph&bit))continue;
-        if(publish_error)break;
-        unsigned token=service_json_claim();
-        if(!token){mqtt_graph_retry=now;break;}
-        json_object *o=i?sample_body(&current[i-1],captured_now):average_body(current,peer_count,captured_now);
-        char leaf[64];
-        if(!i)strcpy(leaf,"average");
-        else if(peer_count==1)strcpy(leaf,"sensor");
-        else {char mac[18];feature_colon_mac(peer_ids[i-1],mac);mqtt_format(leaf,sizeof(leaf),"%s/sensor",mac);}
-        if(direct_json_claimed(publish,root,leaf,o,false,token))mqtt_graph_pending&=~bit;
-        else if(!publish_error)mqtt_graph_retry=now;
       }
     }
     if(publish_error)mqtt_telemetry_cursor=(uint8_t)selected_work;

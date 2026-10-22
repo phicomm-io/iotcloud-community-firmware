@@ -43,13 +43,30 @@ HTTP 使用 `POST /api/v1/command`，与 MQTT command 共用 JSON 命令和响�
 
 ## A1 实时平均值
 
-`sensors.average.get` 仅由 A1 提供，params 必须为空。HTTP 和 MQTT 均可查询。`binding.status.get` 的 `average` 字段和联动虚拟设备的 `average` Topic 使用同一数据结构：
+`sensors.average.get` 仅由 A1 提供，params 必须为空。HTTP 和 MQTT 均可查询。`binding.status.get` 的 `average` 字段使用同一数据结构：
 
 ```json
 {"valid":true,"sample_count":2,"configured_count":3,"temperature":25,"humidity":50,"pm25":20,"formaldehyde":0.1}
 ```
 
-仅统计已绑定、数值合法且未过期的 M1；按四项分别计算算术平均值，不受自动联动配置的最大值/中值等策略影响。单位依次为 °C、%、µg/m³、mg/m³。没有有效采样时 `valid:false`、`sample_count:0`，四项值均为 null。查询时重新检查新鲜度；零值是有效测量。平均值不保留发布，失效时也发布无效结构，避免沿用旧值。
+仅统计已绑定、数值合法且未过期的 M1；按四项分别计算算术平均值，不受自动联动配置的最大值/中值等策略影响。单位依次为 °C、%、µg/m³、mg/m³。没有有效采样时 `valid:false`、`sample_count:0`，四项值均为 null。查询时重新检查新鲜度；零值是有效测量。这些接口按需查询，不再主动发布联动虚拟设备的 `average`、`sensor` 或逐台 M1 的传感器主题。
+
+## A1 状态中的联动传感器值
+
+现有 A1 `state` 主题和 `status.get` 的 full/live 视图新增 `sensors` 对象，
+直接复制内部联动和灯效使用的汇总值，不新增主题订阅，也不为上报重新聚合逐台 M1 数据。
+
+```json
+{"sensors":{"valid":true,"statistic":0,"sample_count":2,"co2_sample_count":1,"configured_count":3,"temperature":25,"humidity":50,"pm25":20,"formaldehyde":0.1,"co2_valid":true,"co2":900}}
+```
+
+`statistic` 沿用联动配置的统计方式；因此这里可能是最大值或中值，与按需查询的算术平均值不同。
+`valid` 表示内部联动所选指标的数据有效性；四项原传感器值和 CO₂ 分别以
+`sample_count`、`co2_sample_count` 判断是否可用，无有效样本时相应值为 null。
+状态发送频率沿用 A1 原有上报周期；消费者仍需检查设备在线和状态新鲜度。
+
+A1 不再创建 M1 代理传感器的 HA 实体。连接、绑定变更及 HA birth 时会清理当前绑定布局下的旧传感器发现配置，
+保留风机、灯光、童锁、灯光常亮和各 A1 滤芯实体。M1 自身的传感器上报与发现不受影响。
 
 ## A1 滤芯寿命
 

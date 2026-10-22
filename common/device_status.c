@@ -142,6 +142,24 @@ static __attribute__((noinline)) void encode_a1(status_sink *o,const device_stat
         for (unsigned i = 0; i < 3; i++) snprintf(raw + 2 * i, 3, "%02x", full->model.a1.panel_raw[i]);
         emit_string(o, "panel_raw", raw);
     }
+    if(snapshot->captured & STATUS_SENSOR) {
+        const feature_values_t *v=&snapshot->sensor.a1;
+        emit_begin(o,"sensors",false);
+        emit_bool(o,"valid",v->valid);
+        emit_int(o,"statistic",v->statistic);
+        emit_int(o,"sample_count",v->sample_count);
+        emit_int(o,"co2_sample_count",v->co2_sample_count);
+        emit_int(o,"configured_count",v->configured_count);
+        const char *keys[]={"temperature","humidity","pm25","formaldehyde"};
+        for(unsigned i=0;i<4;i++) {
+            if(v->sample_count)emit_double(o,keys[i],v->value[i]);
+            else emit_null(o,keys[i]);
+        }
+        emit_bool(o,"co2_valid",v->co2_sample_count!=0);
+        if(v->co2_sample_count)emit_double(o,"co2",v->co2);
+        else emit_null(o,"co2");
+        emit_end(o);
+    }
     emit_bool(o, "config_dirty", snapshot->control.a1.config_dirty); emit_string(o, "save_error", snapshot->control.a1.save_error);
     if (!live) {
         emit_bool(o,"ota_signature_verified",full->ota.signature_verified);

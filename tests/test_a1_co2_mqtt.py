@@ -3,7 +3,6 @@
 import json, os, select, subprocess, sys, time
 from pathlib import Path
 from mqtt_observer import Observer, cleanup
-from jinja2 import Environment
 ROOT=Path(__file__).resolve().parents[1]
 def main(port):
     nodes=[]
@@ -15,15 +14,6 @@ def main(port):
         return {k:json.loads(v) for k,v in list(messages.items()) if k.startswith('homeassistant/') and v and 'bound_' in k}
     def co2_entity():
         return next((v for v in entities().values() if v.get('device_class')=='carbon_dioxide'),None)
-    def render(entity, field, payload):
-        return Environment().from_string(entity[field]).render(value_json=payload)
-    def sensor_payload(entity):
-        body=messages.get(entity['state_topic'])
-        return json.loads(body) if body else {}
-    def available(entity):
-        node=entity['availability'][0]
-        body=messages.get(node['topic'])
-        return render(node,'value_template',json.loads(body)) if body else ''
     def launch(model, ident, ip):
         p=subprocess.Popen([str(ROOT/'build/simulator'/model),ident,ip,'127.0.0.1',str(port),'co2_linkage'],env={**os.environ,'SIM_BIND_IP':ip},stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True,bufsize=1)
         nodes.append(p);return p
@@ -60,14 +50,9 @@ def main(port):
         wait(lambda:avg().get('co2')==1400)
         assert avg()['co2_sample_count']==1 and avg()['co2_valid']
         wait(lambda:state()['percentage']==40)
-        entity=wait(co2_entity)
-        assert entity['unit_of_measurement']=='ppm' and entity['state_class']=='measurement'
-        wait(lambda:available(entity)=='online')
-        wait(lambda:sensor_payload(entity).get('co2')==1400)
-        assert float(render(entity,'value_template',sensor_payload(entity)))==1400
-        assert not [v for v in entities().values() if v.get('name','').startswith('SCD40 ')]
+        assert co2_entity() is None, 'A1 no longer creates proxy sensor entities'
+        assert not [v for v in entities().values() if v.get('device_class') in ('temperature','humidity','pm25','carbon_dioxide')]
         assert not any(k.startswith('scd40_') for k in avg())
-        assert not any(k.startswith('scd40_') for k in sensor_payload(entity))
 
         call(m,raw={'sim_co2':{'enabled':True,'ppm':2200}})
         wait(lambda:state()['percentage']==80)
@@ -79,15 +64,12 @@ def main(port):
         wait(lambda:state()['percentage']==55)
         call(m,raw={'sim_sensor':{'enabled':False}})
         wait(lambda:not avg()['valid'],30)
-        wait(lambda:sensor_payload(entity).get('valid') is False)
-        assert sensor_payload(entity)['temperature'] is None and available(entity)=='online'
         assert avg()['co2_valid'] and state()['percentage']==55, 'CO2 remains usable without UART samples'
         call(m,raw={'sim_sensor':{'enabled':True}})
         wait(lambda:avg()['valid'])
         call(m,raw={'sim_co2':{'enabled':False}})
         wait(lambda:not avg()['co2_valid'],35)
-        wait(lambda:available(entity)=='offline')
-        assert co2_entity() is not None
+        assert co2_entity() is None
         assert not any(k.startswith('scd40_') for k in avg())
         assert avg()['co2_supported'] and avg()['co2'] is None and avg()['valid']
         wait(lambda:state()['percentage']==23)
@@ -97,6 +79,7 @@ def main(port):
         call(a,'linkage.set',{'metrics':7,'low_hcho':0,'high_hcho':.2})
         wait(lambda:avg().get('co2')==1400)
         wait(lambda:state()['percentage']==40)
+        assert not [k for k,v in messages.items() if '/m1/' not in k and k.endswith(('/sensor','/average')) and v], 'No independent A1 sensor forwarding'
         print('PASS optional CO2 wire data, legacy M1, linear/hysteresis, stale fallback, recovery and combined metrics',flush=True)
     finally:
         cleanup(observer, nodes, failing=sys.exc_info()[0] is not None)

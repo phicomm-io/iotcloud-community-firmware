@@ -205,7 +205,7 @@ static void turn(void){quota=turn_quota;unsigned before=callbacks;
 }
 static void drain(void){for(unsigned i=0;i<300;i++){
  turn();if(blocked_token)return;
- if(mqtt_online&&!mqtt_discovery_pending&&!mqtt_graph_pending&&!mqtt_leaf_pending)return;
+ if(mqtt_online&&!mqtt_discovery_pending&&!mqtt_leaf_pending)return;
  test_now+=100;
  }assert(!"publication did not make bounded progress");}
 int main(void){
@@ -224,11 +224,10 @@ int main(void){
  drain();assert(callbacks==saved_callbacks&&service_memory_failures()==failures);
  service_json_release(held);drain();
  assert(callbacks>saved_callbacks);
- unsigned old_average=averages,old_sensor=sensors;hold_after_average=true;test_now=24000;
- drain();assert(blocked_token&&averages==old_average+1&&sensors==old_sensor&&mqtt_graph_pending);
- saved_callbacks=callbacks;test_now=24100;turn();assert(callbacks==saved_callbacks);
- service_json_release(blocked_token);blocked_token=0;test_now=24200;
- drain();assert(averages==old_average+1&&sensors==old_sensor+1&&!mqtt_graph_pending);
+ assert(averages==0&&sensors==0);
+ unsigned held_telemetry=service_json_claim();assert(held_telemetry);
+ saved_callbacks=callbacks;test_now=24000;turn();assert(callbacks==saved_callbacks);
+ service_json_release(held_telemetry);drain();assert(callbacks>saved_callbacks);
  /* Lose the coordinator role after discovery began but before it finishes.
   * Readiness must not retain an impossible local pending batch. */
  configuration.member_count=1;strcpy(configuration.members[0].id,"000000000001");
@@ -238,30 +237,19 @@ int main(void){
  assert(!feature_is_coordinator()&&!mqtt_discovery_pending&&feature_mqtt_initial_ready());
  member_seen[0]=0;turn();assert(mqtt_discovery_pending);
  drain();assert(!mqtt_discovery_pending&&feature_mqtt_initial_ready());
- /* A UDP update may occur while a leaf PUBACK is outstanding. The graph
-  * capture clock must follow the copied timestamps, never precede them. */
- test_now=60000;mqtt_tick=60000;mqtt_leaf_pending=1;mqtt_graph_pending=3;
- mqtt_graph_retry=59900;update_during_leaf=check_fresh_graph=true;
- turn();assert(!update_during_leaf);drain();check_fresh_graph=false;
- /* A writer can also update after entry now but before graph copy without
-  * a leaf in this turn (e.g. while a short config lock was contended). */
- mqtt_tick=test_now;mqtt_leaf_pending=0;mqtt_graph_pending=3;
- mqtt_graph_retry=test_now-100;mqtt_telemetry_cursor=14;
- update_on_clock=check_fresh_graph=true;clock_reads=0;
- turn();assert(!update_on_clock);drain();check_fresh_graph=false;
  /* Valid slow ACKs take more than one 5s production interval per turn.
   * Replenishing the latest data must not restart a fixed leaf prefix forever. */
- old_average=averages;old_sensor=sensors;slow_ack=true;leaf_seen=0;max_turn_outputs=0;
+ slow_ack=true;leaf_seen=0;max_turn_outputs=0;
  mqtt_tick=test_now-5000;
  for(unsigned i=0;i<60;i++){turn();test_now+=50;}
  assert(max_turn_outputs==4);
- assert(leaf_seen==127&&averages>old_average+1&&sensors>old_sensor+1);
+ assert(leaf_seen==127&&averages==0&&sensors==0);
  /* Physical publications may leave only one or two global slots. Quota
   * rejection must resume the rejected virtual item rather than skip it. */
  for(turn_quota=1;turn_quota<=2;turn_quota++){
-  old_average=averages;old_sensor=sensors;leaf_seen=0;
+  leaf_seen=0;
   for(unsigned i=0;i<100;i++){turn();test_now+=50;}
-  assert(leaf_seen==127&&averages>old_average+1&&sensors>old_sensor+1);
+  assert(leaf_seen==127&&averages==0&&sensors==0);
  }
  turn_quota=4;slow_ack=false;
  free(published_layout);published_layout=NULL;

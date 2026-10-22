@@ -20,7 +20,7 @@ def discovery_fixture():
     production+='\n'.join(function(runtime,s) for s in ('static bool virtual_identity(', 'static const char *virtual_device_name(', 'static bool discovery_virtual_step('))
     production+='\n#undef number\n'
     # Optional graph helpers and retry state must precede the real builder.
-    fixture=fixture.replace(stub,'static bool discovery_virtual_step(int(*)(const char*,const char*,bool),const discovery_layout_t*,const char*,bool,unsigned*,unsigned);')
+    fixture=fixture.replace(stub,'static bool discovery_virtual_step(int(*)(const char*,const char*,bool),const discovery_layout_t*,const char*,bool,unsigned*);')
     start=fixture.index('static void virtual_service(int (*publish)')
     fixture=fixture[:start]+production+'\n'+fixture[start:]
     codec=(ROOT/'common/config_json.c').read_text()
@@ -100,13 +100,13 @@ int main(void){
  discovery_layout_t layout;discovery_layout_capture(&layout,&configuration);enforce_nested=false;
  for(unsigned leaf=0;leaf<2;leaf++)for(unsigned point=1;point<=180;point++){
   unsigned cursor=leaf;fault_at=point;fault_calls=0;publish_error=0;mqtt_discovery_deferred=false;
-  (void)discovery_virtual_step(sender,&layout,"test",false,&cursor,0);fault_at=0;
+  (void)discovery_virtual_step(sender,&layout,"test",false,&cursor);fault_at=0;
   assert(cursor==leaf || cursor==leaf+1);assert(!json_owner&&!fixture_scope_token);healthy_stats();
  }
  unsigned cursor=0;quota=true;quota_count=1;publish_error=0;mqtt_discovery_deferred=false;
- assert(!discovery_virtual_step(sender,&layout,"test",false,&cursor,0));assert(!cursor&&!mqtt_discovery_deferred&&publish_error==PH_MQTT_MORE);
- quota=false;publish_error=0;assert(!discovery_virtual_step(sender,&layout,"test",false,&cursor,0));assert(cursor==1);healthy_stats();
- transport_fail=true;publish_error=0;assert(!discovery_virtual_step(sender,&layout,"test",false,&cursor,0));assert(cursor==1&&publish_error==-17);transport_fail=false;publish_error=0;healthy_stats();
+ assert(!discovery_virtual_step(sender,&layout,"test",false,&cursor));assert(!cursor&&!mqtt_discovery_deferred&&publish_error==PH_MQTT_MORE);
+ quota=false;publish_error=0;assert(!discovery_virtual_step(sender,&layout,"test",false,&cursor));assert(cursor==1);healthy_stats();
+ transport_fail=true;publish_error=0;assert(!discovery_virtual_step(sender,&layout,"test",false,&cursor));assert(cursor==1&&publish_error==-17);transport_fail=false;publish_error=0;healthy_stats();
  /* Refused lease and native config OOM make no graph and release the token. */
  configure();unsigned token=service_json_claim();unsigned sent=sends;virtual_service(sender);assert(sends==sent);service_json_release(token);
  native_fail_size=sizeof(feature_config_t);virtual_service(sender);assert(!json_owner&&!fixture_scope_token&&!native_config_live);native_fail_size=0;

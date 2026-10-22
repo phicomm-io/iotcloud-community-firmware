@@ -107,7 +107,7 @@ static void host_discovery_virtual(int(*send)(const char*,const char*,bool),cons
   discovery_layout_t layout;discovery_layout_capture(&layout,c);unsigned cursor=0;
   for(unsigned i=0;i<128;i++){
     unsigned prior=cursor;
-    if(discovery_virtual_step(send,&layout,root,remove,&cursor,discovery_sensors(c)))return;
+    if(discovery_virtual_step(send,&layout,root,remove,&cursor))return;
     if(publish_error||cursor==prior)return;
   }
   assert(!"Discovery harness exceeded fixed topology");
@@ -477,7 +477,7 @@ static int capture_discovery_name(const char *topic, const char *body, bool reta
   /* A previously advertised CO2 capability also needs a retained tombstone
    * after the preceding lifecycle scenario removed that peer. */
   if(!*body) {
-    assert(retained && (strstr(topic,"scd40_") || strstr(topic,"_co2/config")));
+    assert(retained && strstr(topic,"/sensor/"));
     return 0;
   }
   assert(retained && named_discoveries < 8);
@@ -501,47 +501,43 @@ static int capture_discovery_name(const char *topic, const char *body, bool reta
   json_object_put(o);
   return 0;
 }
-static unsigned sensor_entities, co2_entities, aux_entities;
+static unsigned sensor_entities, control_entities;
 static bool remove_sensor_entities;
-static int capture_sensor_discovery(const char *topic, const char *body, bool retained) {
+static int capture_sensor_discovery(const char *topic,const char *body,bool retained) {
   assert(retained && strstr(topic,"homeassistant/"));
-  if(remove_sensor_entities) { assert(!*body); sensor_entities++; return 0; }
-  if(!*body) { assert(strstr(topic,"scd40_")); aux_entities++; return 0; }
-  json_object *o=obj(body);
-  if(!strcmp(string(o,"device_class"),"carbon_dioxide")) {
-    assert(!strcmp(string(o,"unit_of_measurement"),"ppm"));
-    assert(strstr(string(o,"value_template"),"co2")); co2_entities++;
-  }
-  if(strstr(string(o,"name"),"SCD40")) {
-    assert(strstr(string(o,"value_template"),"scd40_")); aux_entities++;
-    assert(!strstr(topic,"020000dd0002_scd40_"));
-  }
-  if(strstr(topic,"/sensor/")) {
-    json_object *node=json_object_array_get_idx(json_object_object_get(o,"availability"),0);
-    assert(!strcmp(string(node,"topic"),string(o,"state_topic")));
-    assert(strstr(string(node,"value_template"),"valid"));
-    assert(integer(o,"expire_after")==15);
-  }
-  sensor_entities++; json_object_put(o); return 0;
+  if(strstr(topic,"/sensor/")) { assert(!*body);sensor_entities++; }
+  else { assert((!*body)==remove_sensor_entities);control_entities++; }
+  return 0;
 }
 static void optional_sensor_discovery(void) {
-  feature_config_t saved=configuration, config;
-  feature_sample_t saved_samples[8]; memcpy(saved_samples,samples,sizeof(samples));
-  feature_defaults(&config); config.peer_count=2;
-  strcpy(config.peers[0].id,"020000dd0001"); strcpy(config.peers[1].id,"020000dd0002");
-  configuration=config; memset(samples,0,sizeof(samples));
-  samples[0].co2_supported=samples[1].co2_supported=true;
-  char root[FEATURE_TOPIC_MAX];root_for(&config,0,root);
-  assert(discovery_sensors(&config)==(1u|2u));
-  discovery_virtual(capture_sensor_discovery,&config,root,false);
-  assert(sensor_entities==19 && co2_entities==3 && aux_entities==6);
-  /* Freshness does not remove registered entities. Layout cleanup removes all optional IDs. */
-  remove_sensor_entities=true; sensor_entities=0;
-  discovery_virtual(capture_sensor_discovery,&config,root,true);
-  assert(sensor_entities==25);
+  feature_config_t config;feature_defaults(&config);
+  for(unsigned count=1;count<=FEATURE_MAX_PEERS;count++) {
+    config.peer_count=count;
+    for(unsigned i=0;i<count;i++)snprintf(config.peers[i].id,13,"%012x",i+1);
+    char root[FEATURE_TOPIC_MAX];root_for(&config,0,root);
+    unsigned expected=7*(count>1?count+1:1);
+    for(unsigned remove=0;remove<2;remove++) {
+      remove_sensor_entities=remove;sensor_entities=control_entities=0;
+      discovery_virtual(capture_sensor_discovery,&config,root,remove);
+      assert(control_entities==4 && sensor_entities==expected);
+    }
+  }
   remove_sensor_entities=false;
-  configuration=saved;memcpy(samples,saved_samples,sizeof(samples));
-  puts("Optional HA sensors: mixed M1 capabilities, averages, independent availability and retained cleanup passed");
+  puts("A1 proxy sensors removed; all historical IDs tombstoned; four controls retained");
+}
+static void internal_values(void) {
+  feature_config_t saved=configuration;float previous[4];memcpy(previous,aggregate,sizeof(previous));
+  float previous_co2=aggregate_co2;unsigned n=available,nc=available_co2;bool valid=data_valid;
+  configuration.peer_count=2;configuration.linkage.statistic=STAT_MAX;
+  available=2;available_co2=1;data_valid=true;
+  aggregate[0]=29;aggregate[1]=60;aggregate[2]=123;aggregate[3]=.2;aggregate_co2=1400;
+  feature_values_t v;feature_values_snapshot(&v);
+  assert(v.valid && v.sample_count==2 && v.co2_sample_count==1 && v.configured_count==2);
+  assert(v.statistic==STAT_MAX && v.value[2]==123 && v.co2==1400);
+  available=available_co2=0;data_valid=false;feature_values_snapshot(&v);
+  assert(!v.valid && !v.sample_count && !v.co2_sample_count);
+  configuration=saved;memcpy(aggregate,previous,sizeof(previous));aggregate_co2=previous_co2;
+  available=n;available_co2=nc;data_valid=valid;
 }
 static void discovery_device_names(void) {
   feature_config_t config;
@@ -556,7 +552,7 @@ static void discovery_device_names(void) {
     named_discoveries = 0;
     compare_discovery_identity = i != 0;
     discovery_virtual(capture_discovery_name, &config, root, false);
-    assert(named_discoveries == 8);
+    assert(named_discoveries == 4);
     feature_config_t saved = stored;
     stored = config;
     char parent[192], name[FEATURE_TOPIC_MAX];
@@ -572,7 +568,7 @@ static void discovery_device_names(void) {
   named_discoveries = 0;
   compare_discovery_identity = false;
   discovery_virtual(capture_discovery_name, &config, root, false);
-  assert(named_discoveries == 8);
+  assert(named_discoveries == 4);
   feature_config_t saved = stored;
   stored = config;
   char parent[192], name[FEATURE_TOPIC_MAX];
@@ -603,6 +599,7 @@ static void account_namespaces(void) {
 #ifdef FEATURE_DEVICE_A1
   discovery_device_names();
   optional_sensor_discovery();
+  internal_values();
 #endif
   mqtt_account_t alice,bob,legacy;
   char user[64];memset(user,'x',63);user[63]=0;

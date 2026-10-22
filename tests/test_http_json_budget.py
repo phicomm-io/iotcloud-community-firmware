@@ -47,6 +47,7 @@ void a1_filter_get(a1_filter_storage_t *p){memset(p,0,sizeof(*p));p->lifetime_ho
 mico_mutex_t a1_config_lock,a1_lock;
 OSStatus mico_rtos_lock_mutex(mico_mutex_t*m){(void)m;return kNoErr;}
 OSStatus mico_rtos_unlock_mutex(mico_mutex_t*m){(void)m;return kNoErr;}
+void feature_values_snapshot(feature_values_t*out){memset(out,0,sizeof(*out));}
 void feature_fan_snapshot(bool*eo,unsigned*es,bool*automatic,unsigned*limit){feature_effective_fan(cfg.fan_on,cfg.speed,eo,es);*automatic=false;*limit=100;}
 '''
     builders = '#define PHICOMM_APPLICATION_WATCHDOG 1\n#define ph_http_snapshot http_diag_snapshot\n#include "tests/http_core/status_reference.c"\n#define a1_config (&cfg)\n#define a1_state state\n'+capture+'\n#undef a1_config\n#undef a1_state\n'+builders+'\n#undef ph_http_snapshot\n'
@@ -171,7 +172,7 @@ bool feature_bound(void){return true;}
 bool feature_is_coordinator(void){return true;}
 static unsigned discovery_sensors(const feature_config_t*c){(void)c;return 0;}
 static void root_for(const feature_config_t*c,unsigned i,char*out){(void)c;(void)i;strcpy(out,"test");}
-static bool discovery_virtual_step(int(*p)(const char*,const char*,bool),const discovery_layout_t*c,const char*r,bool b,unsigned*cursor,unsigned sensors){(void)p;(void)c;(void)r;(void)b;(void)cursor;(void)sensors;abort();}
+static bool discovery_virtual_step(int(*p)(const char*,const char*,bool),const discovery_layout_t*c,const char*r,bool b,unsigned*cursor){(void)p;(void)c;(void)r;(void)b;(void)cursor;abort();}
 static json_object *config_encode(const feature_config_t*c,const char*d){(void)c;(void)d;abort();}
 static const char *topic_domain(const char*d){return d;}
 static void js(json_object*o,const char*k,const char*v){json_build_object_add(o,k,json_object_new_string(v));}
@@ -187,7 +188,7 @@ static bool mqtt_format(char*out,size_t n,const char*format,...){va_list args;va
     mqtt=(ROOT/'common/mqtt/service.c').read_text()
     fixtures += '\n#include \"common/mqtt/service.h\"\n#define PH_MQTT_ERROR_APP_DISCOVERY_GRAPH 8\n#define PH_MQTT_ERROR_APP_DISCOVERY_ENCODING 10\nstatic int ph_mqtt_app_error(unsigned stage,int rc){(void)stage;return rc;}\n'+ '\n'.join(function(mqtt,k) for k in ('bool service_mqtt_json_begin(', 'static unsigned service_mqtt_json_finish(', 'void service_mqtt_json_end(', 'int service_mqtt_json_error(', 'int service_mqtt_optional_send('))
     fixtures += '\n'+function(runtime,'static void discovery_layout_capture(')+'\n'+function(runtime,'static void discovery_resource_wait(')
-    functions='\n'.join(function(runtime,s) for s in ('static int direct_leaf(', 'static bool direct_json_claimed(', 'static __attribute__((noinline)) int direct_json_optional(', 'static void virtual_service(int (*publish)(const char *, const char *, bool)) {'))
+    functions='\n'.join(function(runtime,s) for s in ('static int direct_leaf(', 'static __attribute__((noinline)) int direct_json_optional(', 'static void virtual_service(int (*publish)(const char *, const char *, bool)) {'))
     if retain_config:
         functions=functions.replace('free(c);c=NULL;service_json_release(snapshot_token);','service_json_release(snapshot_token);')
     return fixture+fixtures+'\n'+('#define RETAIN_CONFIG\n' if retain_config else '')+functions+r'''
@@ -237,7 +238,7 @@ int main(void){
     now+=100;
   }
   assert(!mqtt_leaf_pending);
-  assert(callbacks>=9 && full_ok==(expect_full?callbacks:0));assert(!json_owner&&!mqtt_graph_pending);healthy_stats();
+  assert(callbacks>=7 && full_ok==(expect_full?callbacks:0));assert(!json_owner&&!mqtt_graph_pending);healthy_stats();
   char report[256];int n=snprintf(report,sizeof(report),"actual virtual_service retained=%u config=%u budget=%u callbacks=%u full=%u peak=%u denied=%u last_sender_wire=%u live=0\n",
 #ifdef RETAIN_CONFIG
   1u,
