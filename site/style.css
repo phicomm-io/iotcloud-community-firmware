@@ -182,6 +182,15 @@ select{font:inherit;background:var(--surface);border:1px solid var(--border);bor
 .guide-pager b{display:block;color:var(--text);font-size:15px;font-weight:650;margin-top:2px}
 
 /* Guide prose */
+.guide-os-picker{border:1px solid var(--border);border-radius:var(--radius-s);padding:16px;margin:24px 0;background:var(--surface-muted)}
+.guide-os-picker legend{font-weight:650;padding:0 6px}
+.guide-os-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;max-width:360px}
+.guide-os-options label{position:relative;cursor:pointer}
+.guide-os-options input{position:absolute;opacity:0;width:1px;height:1px}
+.guide-os-options span{display:block;padding:10px 8px;text-align:center;border:1px solid var(--border);border-radius:var(--radius-s);background:var(--surface);font-size:14px}
+.guide-os-options input:checked+span{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:650}
+.guide-os-options input:focus-visible+span{outline:2px solid var(--accent);outline-offset:3px}
+.prose .guide-os-picker p{font-size:13px;color:var(--muted);margin-bottom:0}
 .prose{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:36px 40px;box-shadow:var(--shadow);max-width:820px}
 .prose h1{font-size:28px;margin:0 0 20px}
 .prose h2{font-size:20px;margin:40px 0 12px;padding-top:20px;border-top:1px solid var(--border)}

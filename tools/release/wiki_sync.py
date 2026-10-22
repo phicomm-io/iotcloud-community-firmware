@@ -39,6 +39,8 @@ def rewrite(text, language="zh"):
     page_by_slug = {slug: wiki for slug, _, _, wiki in (EN_PAGES if language == "en" else PAGES)}
     """Turn site link targets into Wiki link targets."""
     text = text.replace('{{SITE_URL}}', SITE_URL)
+    # Wiki has no script support; retain every OS section as ordinary Markdown.
+    text = re.sub(r'<!-- (?:os-picker|os:[\w ]+|/os) -->\n*', '', text)
 
     def one(match):
         target, rest = match.group(1).strip(), match.group(2)
