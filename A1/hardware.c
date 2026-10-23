@@ -1,6 +1,7 @@
 #include "../common/watchdog.h"
 #include "../common/automation.h"
 #include "a1.h"
+#include "fresh_air.h"
 #include "ring_feedback.h"
 #include "light.h"
 #include "../common/indicator.h"
@@ -74,9 +75,13 @@ static void fan_tick(const a1_config_t *c, uint8_t *speed)
         if (err == kNoErr) err = stop;
     } else if (*speed != c->speed) {
         int target = c->speed, next = *speed;
+#ifndef A1_FRESH_AIR
         if (next < target) next = target - next > 10 ? next + 10 : target;
         else next = next - target > 10 ? next - 10 : target;
-        err = MicoPwmInitialize(MICO_PWM_3, 1000, 80.0f - 0.6f * next);
+#else
+        next=target;
+#endif
+        err = MicoPwmInitialize(MICO_PWM_3, 25000, 80.0f - 0.6f * next);
         if (err == kNoErr) err = MicoPwmStart(MICO_PWM_3);
         if (err == kNoErr) err = MicoGpioOutputLow(MICO_GPIO_19);
         if (err == kNoErr) *speed = next;
@@ -195,6 +200,9 @@ static void hardware_worker(mico_thread_arg_t arg)
         watchdog_beat(WATCHDOG_HARDWARE);
         mico_thread_msleep(3000);
     }
+#ifdef A1_FRESH_AIR
+    fresh_init();
+#endif
     uint8_t speed = 0, key = 0, slider = 255;
     uint32_t fan_at = mico_rtos_get_time(), wifi_since = 0, probe_at = fan_at;
     bool wifi_sent = false, initialized = panel_init(), frame_sent = false;
@@ -209,8 +217,17 @@ static void hardware_worker(mico_thread_arg_t arg)
         if ((uint32_t)(now - fan_at) >= 100) {
             bool on; unsigned desired;
             feature_effective_fan(cfg.fan_on, cfg.speed, &on, &desired);
+#ifdef A1_FRESH_AIR
+            fresh_prepare(cfg.fan_on && !state.reboot_pending,desired,speed,now,&desired);
+            on=desired>0;
+#else
+            if(state.reboot_pending){on=false;desired=0;}
+#endif
             cfg.fan_on = on; cfg.speed = desired;
             fan_tick(&cfg, &speed);
+#ifdef A1_FRESH_AIR
+            fresh_finish(speed,now);
+#endif
             a1_filter_tick(speed > 0);
             fan_at += 100;
             if ((uint32_t)(now - fan_at) >= 100) fan_at = now;

@@ -75,7 +75,7 @@ static void update_worker(mico_thread_arg_t arg){
                     const char *v=update_text(meta,"version"),*path=update_text(meta,"path"),*notes=update_text(meta,"release_log");unsigned remote[3],local[3];
                     size_t n=strlen(path);
                     if(!strcmp(update_text(meta,"model"),UPDATE_MODEL)&&
-                       (!strcmp(update_text(meta,"firmware_variant"),PHICOMM_FIRMWARE_VARIANT)||(PHICOMM_FULL_RESOURCES&&!update_text(meta,"firmware_variant")[0]))&&strlen(v)<sizeof(update_version)&&update_semver(v,remote)&&update_semver(FIRMWARE_VERSION,local)&&update_relative(path)&&n>7&&!strcmp(path+n-7,".signed")&&update_relative(notes)){
+                       (!strcmp(update_text(meta,"firmware_variant"),PHICOMM_FIRMWARE_VARIANT)||(PHICOMM_LEGACY_FULL_VARIANT&&!update_text(meta,"firmware_variant")[0]))&&strlen(v)<sizeof(update_version)&&update_semver(v,remote)&&update_semver(FIRMWARE_VERSION,local)&&update_relative(path)&&n>7&&!strcmp(path+n-7,".signed")&&update_relative(notes)){
                         mico_rtos_lock_mutex(&service_lock);strcpy(update_version,v);strcpy(update_path,path);strcpy(update_notes,notes);update_available=false;
                         for(unsigned i=0;i<3;i++)if(remote[i]!=local[i]){update_available=remote[i]>local[i];break;}
                         mico_rtos_unlock_mutex(&service_lock);ok=true;

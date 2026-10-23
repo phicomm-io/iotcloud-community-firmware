@@ -18,6 +18,9 @@ static inline void device_status_text(char *out,size_t capacity,const char *in,s
 #include "watchdog.h"
 #include "httpd/http.h"
 #include "../A1/filter.h"
+#ifdef A1_FRESH_AIR
+#include "../A1/fresh_air_model.h"
+#endif
 
 typedef enum { DEVICE_A1, DEVICE_M1, DEVICE_TC1 } device_model_t;
 enum { STATUS_IDENTITY=1, STATUS_NETWORK=2, STATUS_CONTROL=4,
@@ -45,6 +48,9 @@ typedef struct {
     bool fan_ready, touch_active, led_visible, panel_ready, config_dirty;
     bool effective_on, automatic; unsigned effective_speed, auto_limit;
     char save_error[96];
+#ifdef A1_FRESH_AIR
+    fresh_snapshot_t fresh;
+#endif
 } device_a1_control_t;
 typedef struct {
     bool uart_ready;

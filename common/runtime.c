@@ -2009,3 +2009,41 @@ int feature_mqtt_cleanup(int (*publish)(const char *, const char *, bool)) {
 #endif
   return publish_error;
 }
+
+#ifdef A1_FRESH_AIR
+#include "../A1/fresh_air.h"
+bool feature_fresh_values(unsigned statistic,unsigned metrics,float values[4],float *co2) {
+    feature_sample_t current[FEATURE_MAX_PEERS]; unsigned count;
+    lock(); memcpy(current,samples,sizeof(current)); count=configuration.peer_count; unlock();
+    uint32_t now=now_ms();
+    unsigned n=feature_aggregate(current,count,now,statistic,values,NULL);
+    unsigned nc=feature_co2_aggregate(current,count,now,statistic,co2);
+    return (!(metrics&3)||n) && (!(metrics&4)||nc);
+}
+unsigned feature_primary_ceiling(void) {
+    lock(); unsigned cap=configuration.linkage.enabled?configuration.linkage.max_speed:100;
+    if(sleep_state.fan_sleep && cap>sleep_state.max_speed)cap=sleep_state.max_speed;
+    if(configuration.linkage.enabled && automatic_night>=0 && (unsigned)automatic_night<configuration.sleep_count)
+        cap=configuration.sleeps[automatic_night].max_speed;
+    unlock(); return cap;
+}
+json_object *feature_fresh_encode(const fresh_config_t *f) {
+    feature_config_t *c=calloc(1,sizeof(*c)); if(!c)return NULL;
+    c->linkage=f->linkage;c->co2=f->co2;c->automatic.fallback_speed=f->fallback_speed;
+    json_object *o=config_encode(c,"linkage");free(c);return o;
+}
+bool feature_fresh_decode(fresh_config_t *f,json_object *o) {
+    /* Accept only the shared linkage codec's keys, plus optimistic revision. */
+    json_object_object_foreach(o,key,value) {
+        bool known=!strcmp(key,"revision")||!strcmp(key,"fallback_speed");
+        for(unsigned i=0;i<COUNT(linkage_fields);i++)if(!strcmp(key,linkage_fields[i].key))known=true;
+        for(unsigned i=0;i<COUNT(co2_fields);i++)if(!strcmp(key,co2_fields[i].key))known=true;
+        if(!known)return false;
+    }
+    feature_config_t *c=calloc(1,sizeof(*c));if(!c)return false;
+    c->linkage=f->linkage;c->co2=f->co2;c->automatic.fallback_speed=f->fallback_speed;
+    bool ok=config_decode(c,"linkage",o);
+    if(ok){f->linkage=c->linkage;f->linkage.enabled=1;f->co2=c->co2;f->fallback_speed=c->automatic.fallback_speed;}
+    free(c);return ok;
+}
+#endif

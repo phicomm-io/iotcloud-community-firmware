@@ -58,6 +58,10 @@ static int micoWlanGetLinkStatus(LinkStatusTypeDef *link) {
 static int micoWlanGetIPStatus(IPStatusTypedef *ip,int mode) {
     assert(mode==Station);strcpy(ip->ip,ip_mode==1?"":ip_mode==2?"0.0.0.0":"192.168.1.2");return 0;
 }
+#define MICO_GPIO_19 19
+#define MICO_PWM_3 3
+static int MicoGpioOutputHigh(int pin) { assert(pin==19);return 0; }
+static int MicoPwmStop(int pin) { assert(pin==3);return 0; }
 static void MicoSystemReboot(void) { assert(0); }
 static void a1_config_flush(bool force) { assert(!force); }
 static void watchdog_beat(int slot) { assert(slot==WATCHDOG_NETWORK); }

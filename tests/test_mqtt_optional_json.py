@@ -10,7 +10,7 @@ ROOT=Path(__file__).resolve().parents[1]
 class OptionalJson(unittest.TestCase):
     def test_native_cycle_defer_fairness_and_wrap(self):
         source=(ROOT/'A1/mqtt.c').read_text()
-        body=function(source,'static int discovery(')+'\n'+function(source,'static int session_cycle(')
+        body=function(source,'static void primary_snapshot(')+'\n'+function(source,'static int discovery(')+'\n'+function(source,'static int session_cycle(')
         fixture=r"""
 #include <stdint.h>
 #include <stdbool.h>
@@ -58,13 +58,13 @@ int main(void){
  for(unsigned i=0;i<250;i++){assert(session_cycle(NULL)==PH_MQTT_MORE);assert(!discovery_index);now+=20;}
  assert(attempts==5 && !builds && normal==250 && features==250);
  deny=false;
- for(unsigned i=0;i<10;i++){assert(session_cycle(NULL)==0);now+=20;}
- assert(builds==10 && discovery_index==10 && attempts==15);
+ for(unsigned i=0;i<12;i++){assert(session_cycle(NULL)==0);now+=20;}
+ assert(builds==12 && discovery_index==12 && attempts==17);
  /* No duplicated discovery after completion, ordinary work continues. */
- assert(session_cycle(NULL)==0 && builds==10 && normal==251 && features==251);
+ assert(session_cycle(NULL)==0 && builds==12 && normal==251 && features==251);
  /* Even after discovery completed, native full pressure cannot stop features. */
  deny=true;for(unsigned i=0;i<100;i++){assert(session_cycle(NULL)==PH_MQTT_MORE);now+=20;}
- assert(normal==351 && features==351 && discovery_index==10);
+ assert(normal==351 && features==351 && discovery_index==12);
 }
 """.replace('/* PRODUCTION */',body)
         with tempfile.TemporaryDirectory() as d:

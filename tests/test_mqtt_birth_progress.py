@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class BirthProgress(unittest.TestCase):
     def test_a1_birth_finishes_current_batch_before_replay(self):
-        self.check_birth_batch('A1',10,'            bool on;')
+        self.check_birth_batch('A1',12,'            bool on;')
     def test_m1_birth_finishes_current_batch_before_replay(self):
         self.check_birth_batch('M1',7,'            if(initial_index<2)')
     def check_birth_batch(self, model, count, tail):

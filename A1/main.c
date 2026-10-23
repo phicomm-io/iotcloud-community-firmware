@@ -41,6 +41,7 @@ void appRestoreDefault_callback(void *data, uint32_t size)
 {
     if (size < sizeof(a1_config_t)) return;
     a1_config_t *c = data;
+    if(size>=sizeof(app_storage_t))memset(&((app_storage_t *)data)->fresh_air,0,sizeof(fresh_config_t));
     memset(c, 0, sizeof(*c));
     if (size >= sizeof(app_storage_t)) a1_storage_features_defaults((app_storage_t *)data);
     if (size >= sizeof(app_storage_t)) a1_storage_automation_defaults((app_storage_t *)data);
@@ -318,6 +319,14 @@ int application_start(void)
         a1_storage_features_defaults((app_storage_t *)a1_config);
         if (mico_system_context_update(a1_context) != kNoErr) return startup_result("config persist", kUnknownErr);
     }
+    fresh_config_t *fresh=&((app_storage_t *)a1_config)->fresh_air;
+    if(fresh->magic!=FRESH_MAGIC || fresh->schema!=FRESH_SCHEMA || !fresh_mapping_valid(&fresh->mapping)) {
+        fresh_defaults(fresh);
+        if(mico_system_context_update(a1_context)!=kNoErr)return startup_result("fresh air persist",kUnknownErr);
+    }
+#ifdef A1_FRESH_AIR
+    err=startup_result("fresh air GPIO",fresh_boot());if(err!=kNoErr)return err;
+#endif
     err = startup_result("MiCO system", mico_system_init(a1_context));
     if (err != kNoErr) return err;
     uint8_t mac[6]; mico_wlan_get_mac_address(mac);
@@ -472,6 +481,10 @@ void a1_status_capture(device_status_t *snapshot, device_status_full_t *full)
     mico_rtos_unlock_mutex(&a1_lock);
     mico_rtos_unlock_mutex(&a1_config_lock);
     feature_fan_snapshot(&snapshot->control.a1.effective_on,&snapshot->control.a1.effective_speed, &snapshot->control.a1.automatic,&snapshot->control.a1.auto_limit);
+#ifdef A1_FRESH_AIR
+    fresh_snapshot(&snapshot->control.a1.fresh);
+    snapshot->control.a1.effective_speed=snapshot->control.a1.fresh.primary;
+#endif
     feature_values_snapshot(&snapshot->sensor.a1);
     snapshot->now_ms=mico_rtos_get_time(); /* after copying all timestamped state */
     if(full) {
@@ -509,3 +522,18 @@ bool bemfa_network_ready(void) {
     mico_rtos_lock_mutex(&a1_lock);bool ready=a1_state.wifi_connected && !a1_state.ota_active && !a1_state.reboot_pending && !a1_state.wifi_trial_active;mico_rtos_unlock_mutex(&a1_lock);return ready;
 }
 const char *bemfa_device_id(void) {return a1_id;}
+
+#ifdef A1_FRESH_AIR
+void fresh_config_get(fresh_config_t *out) {
+    mico_rtos_lock_mutex(&a1_config_lock);*out=((app_storage_t *)a1_config)->fresh_air;mico_rtos_unlock_mutex(&a1_config_lock);
+}
+const char *fresh_config_save(const fresh_config_t *next) {
+    mico_rtos_lock_mutex(&a1_config_lock);mico_rtos_lock_mutex(&a1_lock);
+    fresh_config_t *live=&((app_storage_t *)a1_config)->fresh_air;
+    const char *result="accepted";
+    if(a1_state.ota_active || a1_state.reboot_pending)result="busy";
+    else if(live->revision!=next->revision)result="conflict";
+    else {*live=*next;live->revision++;a1_control_changed();}
+    mico_rtos_unlock_mutex(&a1_lock);mico_rtos_unlock_mutex(&a1_config_lock);return result;
+}
+#endif

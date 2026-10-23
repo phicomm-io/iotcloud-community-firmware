@@ -11,7 +11,7 @@ function releaseCard(release,latest){
  const tr=el('tr');for(const text of ['型号','固件下载'])tr.append(el('th',text));table.append(tr);
  for(const [model,original] of Object.entries(release.models)){
   for(const [variant,value] of [['full',original],...Object.entries(original.variants||{})]){
-  const row=el('tr');row.append(el('td',model.toUpperCase()+(variant==='full'?' · 完整版':' · 精简版，保留配网页')));const cell=el('td');
+  const row=el('tr');row.append(el('td',model.toUpperCase()+(' · '+({'full':'完整版','no-frontend-resources':'精简版，保留配网页','fresh-air':'新风版','fresh-air-no-frontend-resources':'新风精简版，保留配网页'}[variant]||variant))));const cell=el('td');
   for(const [kind,label] of [['signed','签名 OTA'],['raw','原始 OTA'],['full','完整镜像']])if(value.downloads[kind])cell.append(link(label,value.downloads[kind].path));
   row.append(cell);table.append(row);
   }

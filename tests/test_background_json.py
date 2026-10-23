@@ -12,7 +12,8 @@ ROOT = Path(__file__).resolve().parents[1]
 class BackgroundJson(unittest.TestCase):
     def test_a1_native_discovery_callbacks(self): self.check_native_discovery_callbacks('A1')
     def test_m1_native_discovery_callbacks(self): self.check_native_discovery_callbacks('M1')
-    def check_native_discovery_callbacks(self, model):
+    def test_a1_fresh_discovery_callbacks(self): self.check_native_discovery_callbacks('A1', fresh=True)
+    def check_native_discovery_callbacks(self, model, fresh=False):
 
         with self.subTest(model=model):
             source=(ROOT/model/'mqtt.c').read_text()
@@ -26,8 +27,9 @@ class BackgroundJson(unittest.TestCase):
             if model=='A1':
                 functions+=function(source,'static void topic(')+'\n'
                 functions+=function(source,'static __attribute__((noinline)) int filter_discovery(')+'\n'
+                functions+='static int discovery_build(const a1_config_t *,unsigned,service_mqtt_json_scope *);\n'+function(source,'static int fresh_discovery(')+'\n'
             if model=='M1': functions+=source[source.index('enum { MQTT_BRIGHTNESS_INDEX'):source.index(';',source.index('enum { MQTT_BRIGHTNESS_INDEX'))+1]+'\n'
-            functions+='static bool discovery_deferred;\nstatic uint32_t discovery_retry_at;\n'+function(source,'static int discovery_build(')+'\n'+function(source,'static int discovery(')
+            functions+='static bool discovery_deferred;\nstatic uint32_t discovery_retry_at;\n'+function(source,'static int discovery_build(const '+model.lower()+'_config_t *c,')+'\n'+function(source,'static int discovery(')
             fixture=r'''
 #include "common/json_owned.h"
 #include "common/mqtt_account.h"
@@ -109,9 +111,9 @@ int main(void){
  return 0;
 }
 '''
-            functions=functions.replace('int rc = service_mqtt_optional_send(', 'int rc = discovery_sender(')
+            functions=functions.replace('int rc = service_mqtt_optional_send(', 'int rc = discovery_sender(').replace('return service_mqtt_optional_send(', 'return discovery_sender(')
             fixture=fixture.replace('/* PRODUCTION_FUNCTIONS */',functions)
-            fixture=fixture.replace('PLATFORM_HEADER',model.lower()+'.h').replace('MODEL_LOWER',model.lower()).replace('MODEL_CONFIG',model.lower()+'_config_t').replace('EXPECTED_CALLBACKS','10' if model=='A1' else '7')
+            fixture=fixture.replace('PLATFORM_HEADER',model.lower()+'.h').replace('MODEL_LOWER',model.lower()).replace('MODEL_CONFIG',model.lower()+'_config_t').replace('EXPECTED_CALLBACKS','12' if fresh else '10' if model=='A1' else '7')
             sdk=Path(os.environ.get('PHICOMM_TEST_JSON_DIR',ROOT/'build/a1-sdk/mico-os/libraries/utilities/json_c'))
             with tempfile.TemporaryDirectory() as directory:
                 temp=Path(directory);json=copy_patched_json(sdk,temp/'sdk')
@@ -119,7 +121,7 @@ int main(void){
                 src=temp/'probe.c';src.write_text(fixture);results=[]
                 for legacy in (True,False):
                     binary=temp/('legacy' if legacy else 'owned')
-                    flags=['-DLEGACY_PUBLISH'] if legacy else []
+                    flags=(['-DLEGACY_PUBLISH'] if legacy else []) + (['-DA1_FRESH_AIR'] if fresh else [])
                     subprocess.run([os.environ.get('CC','cc'),'-std=gnu99','-g','-DMODEL_'+model,
                         '-fsanitize=address,undefined','-fno-omit-frame-pointer','-no-pie',*flags,
                         '-I'+str(ROOT),'-I'+str(ROOT/'tests/stubs'),'-I'+str(json),str(src),

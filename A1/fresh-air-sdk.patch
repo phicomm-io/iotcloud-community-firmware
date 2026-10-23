@@ -1,0 +1,24 @@
+diff --git a/board/MK3080B/platform.c b/board/MK3080B/platform.c
+--- a/board/MK3080B/platform.c
++++ b/board/MK3080B/platform.c
+@@ -73,5 +73,8 @@
+ const mico_gpio_init_t gpio_init[] =
+ {
++#ifdef A1_FRESH_AIR
++  {MICO_GPIO_9, INPUT_HIGH_IMPEDANCE, 0},
++#endif
+   {MICO_GPIO_19, INPUT_PULL_UP, 0}, /* Keep active-low motor disabled before app init. */
+   {MICO_GPIO_12, INPUT_PULL_UP, 0},
+   {MICO_GPIO_13, INPUT_PULL_UP, 0},
+@@ -81,7 +84,11 @@
+ 
+ const mico_pwm_pinmap_t pwm_pinmap[] = 
+ {
++#ifdef A1_FRESH_AIR
++  [MICO_PWM_1] = {.pin = MICO_GPIO_9, }, /* User TX, alternate PWM1 route. */
++#else
+   [MICO_PWM_1] = {.pin = MICO_GPIO_1, },
++#endif
+   [MICO_PWM_2] = {.pin = MICO_GPIO_2, },
+   [MICO_PWM_3] = {.pin = MICO_GPIO_12,},
+   [MICO_PWM_4] = {.pin = MICO_GPIO_13,},

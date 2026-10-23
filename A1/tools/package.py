@@ -11,8 +11,8 @@ from check_version import project_version, build_metadata
 
 source, output, sdk = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
 variant = os.environ.get('PHICOMM_FIRMWARE_VARIANT', 'full')
-if variant not in ('full', 'no-frontend-resources'): raise ValueError('Unknown variant')
-artifact = "phicomm_a1" + ('' if variant == 'full' else '-no-frontend-resources')
+if variant not in ('full', 'no-frontend-resources', 'fresh-air', 'fresh-air-no-frontend-resources'): raise ValueError('Unknown variant')
+artifact = "phicomm_a1" + ('' if variant == 'full' else '-' + variant)
 output.mkdir(parents=True, exist_ok=True)
 # A newly packaged raw image invalidates any envelope produced for the prior image.
 (output / (artifact + '.ota.bin.signed')).unlink(missing_ok=True)
@@ -36,6 +36,7 @@ for suffix in (".usr.bin", ".ota.bin", ".all.bin", ".elf", ".map"):
         manifest["files"][destination.name] = hashlib.sha256(destination.read_bytes()).hexdigest()
 manifest["sdk_patch_sha256"] = hashlib.sha256((Path(__file__).resolve().parents[1] / "sdk.patch").read_bytes()).hexdigest()
 manifest["features_sdk_patch_sha256"] = hashlib.sha256((Path(__file__).resolve().parents[1] / "features-sdk.patch").read_bytes()).hexdigest()
+manifest["fresh_air_sdk_patch_sha256"] = hashlib.sha256((Path(__file__).resolve().parents[1] / "fresh-air-sdk.patch").read_bytes()).hexdigest()
 manifest["image"] = check(output / (artifact + '.ota.bin'))
 if (version.encode() + b"\0") not in (output / (artifact + '.usr.bin')).read_bytes():
     raise SystemExit("Built image does not contain project version")

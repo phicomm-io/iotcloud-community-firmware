@@ -130,6 +130,19 @@ static __attribute__((noinline)) void encode_a1(status_sink *o,const device_stat
     emit_bool(o, "ap_active", snapshot->network.ap_active); emit_bool(o, "fan_on", effective_on);
     emit_int(o, "speed", snapshot->control.a1.speed); emit_int(o, "percentage", effective_on ? effective_speed : 0);
     emit_int(o, "applied_speed", snapshot->control.a1.applied_speed); emit_bool(o, "fan_ready", snapshot->control.a1.fan_ready);
+#ifdef A1_FRESH_AIR
+    const fresh_snapshot_t *f=&snapshot->control.a1.fresh;
+    emit_bool(o,"fresh_air_requested_on",f->requested_on);
+    emit_int(o,"fresh_air_requested_speed",f->requested_speed);
+    emit_string(o,"fresh_air_mode",f->automatic?"auto":"manual");
+    emit_bool(o,"fresh_air_on",f->applied>0);
+    emit_int(o,"fresh_air_target",f->target);emit_int(o,"fresh_air_speed",f->applied);
+    emit_int(o,"fresh_air_primary_speed",f->primary);
+    emit_int(o,"fresh_air_pwm_milli",(int)(f->duty*1000));
+    emit_int(o,"fresh_air_fb_millihz",f->frequency_millihz);emit_int(o,"fresh_air_pulses",f->pulses);
+    emit_int(o,"fresh_air_limit_reason",f->reason);emit_bool(o,"fresh_air_ready",f->ready);
+    emit_bool(o,"fresh_air_fallback",f->fallback);
+#endif
     emit_bool(o, "touch_active", snapshot->control.a1.touch_active);
     emit_bool(o, "led_enabled", snapshot->control.a1.led_enabled); emit_bool(o, "led_visible", snapshot->control.a1.led_visible);
     emit_bool(o, "led_always_on", snapshot->control.a1.led_always_on); emit_int(o, "brightness", snapshot->control.a1.brightness);

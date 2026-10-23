@@ -31,8 +31,9 @@ def pack(model):
         raise ValueError('Unknown frontend model')
     bundle = fetch(ROOT / 'frontend.lock.json')
     variant = os.environ.get('PHICOMM_FIRMWARE_VARIANT', 'full')
-    if variant not in ('full', 'no-frontend-resources'): raise ValueError('Unknown variant')
-    page = 'index.html.gz' if variant == 'full' else 'setup.html.gz'
+    allowed = ('full', 'no-frontend-resources') + (('fresh-air', 'fresh-air-no-frontend-resources') if model == 'a1' else ())
+    if variant not in allowed: raise ValueError('Unknown variant')
+    page = 'index.html.gz' if variant in ('full', 'fresh-air') else 'setup.html.gz'
     data = adapt_http_queue((bundle / 'devices' / model / page).read_bytes(), model)
     generated = Path(os.environ.get('PHICOMM_WEB_OUTPUT_DIR', str(ROOT / model.upper() / 'generated')))
     if model == 'tc1':

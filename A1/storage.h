@@ -1,5 +1,6 @@
 #pragma once
 #include "a1.h"
+#include "fresh_air.h"
 #include "../common/automation.h"
 #include "filter.h"
 #include "../common/mqtt/bemfa.h"
@@ -14,6 +15,7 @@ typedef struct {
     feature_auto_config_t automatic;
     feature_co2_config_t co2;
     bemfa_config_t bemfa;
+    fresh_config_t fresh_air; /* Tagged append-only extension; retained by ordinary A1. */
 } app_storage_t;
 
 /* Only replace the previous default power toggle, never a custom action.

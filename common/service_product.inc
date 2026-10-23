@@ -4,6 +4,9 @@
 #ifdef FEATURE_DEVICE_A1
 #include "a1.h"
 #include "filter.h"
+#ifdef A1_FRESH_AIR
+#include "fresh_air.h"
+#endif
 #define DEVICE_MODEL "a1"
 #define CONFIG a1_config_t
 #define STATE a1_state_t
@@ -71,6 +74,9 @@ json_object *service_product_capabilities(void){
 #endif
 
 #ifdef FEATURE_DEVICE_A1
+#ifdef A1_FRESH_AIR
+    "fresh_air.set","fresh_air.config.get","fresh_air.config.set","fresh_air.linkage.get","fresh_air.linkage.set",
+#endif
     "filter.get","filter.set","filter.reset","light_effect.next","light_effect.select","light_always.set","sensors.average.get","buttons.set","binding.probe","light_effect.get","light_effect.set","fan.set","fan.mode.set","fan.mode.toggle","fan.panel","light.set","child_lock.set","linkage.get","linkage.set",
 #else
     "display.set",
@@ -85,6 +91,9 @@ json_object *service_product_capabilities(void){
     const char *names[]={"power","wifi","combination"};
     for(unsigned i=0;i<3;i++)json_build_array_add(keys,json_object_new_string(names[i]));
     json_build_object_add(o,"button_keys",keys);
+#endif
+#ifdef A1_FRESH_AIR
+    json_build_object_add(o,"fresh_air",json_object_new_boolean(true));
 #endif
     return o;
 }
@@ -115,6 +124,9 @@ static __attribute__((noinline)) json_object *service_product_inner(const char *
     bool query=strlen(action)>4 && !strcmp(action+strlen(action)-4,".get");
     if(!query && (state.ota_active || state.reboot_pending || state.wifi_trial_active)){*code="busy";return NULL;}
 #ifdef FEATURE_DEVICE_A1
+#ifdef A1_FRESH_AIR
+    if(!strncmp(action,"fresh_air.",10))return fresh_command(action,p,code);
+#endif
     if(!strcmp(action,"filter.reset")){
         if(!svc_keys(p,""))return NULL;
         *code=a1_filter_change(0,true);return !strcmp(*code,"accepted")?a1_filter_json():NULL;

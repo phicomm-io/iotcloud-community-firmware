@@ -168,6 +168,28 @@ jobs:
           path: release/full/
           if-no-files-found: error
           retention-days: 30
+      - name: Build and collect A1 fresh-air variants
+        if: matrix.model == 'a1'
+        run: |
+          for variant in fresh-air fresh-air-no-frontend-resources; do
+            PHICOMM_FIRMWARE_VARIANT="$variant" ./A1/build.sh
+            directory="release/$variant"
+            mkdir -p "$directory"
+            cp "build/a1-$variant-release/phicomm_a1-$variant.ota.bin" "$directory/phicomm_a1-$variant.ota.bin.raw"
+            cp "build/a1-$variant-release/phicomm_a1-$variant.all.bin" "$directory/"
+          done
+      - uses: actions/upload-artifact@v4
+        if: matrix.model == 'a1'
+        with:
+          name: a1-fresh-air-firmware
+          path: release/fresh-air/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: matrix.model == 'a1'
+        with:
+          name: a1-fresh-air-no-frontend-resources-firmware
+          path: release/fresh-air-no-frontend-resources/
+          if-no-files-found: error
       - name: Prepare no-frontend-resources release assets
         if: ${{ !cancelled() && steps.slim.outcome == 'success' }}
         env:
@@ -240,7 +262,9 @@ jobs:
             gh release download "$TAG_NAME" --pattern "*.signed" --dir previous
           fi
           for model in tc1 m1 a1; do
-           for variant in full no-frontend-resources; do
+           variants="full no-frontend-resources"
+           if [ "$model" = a1 ]; then variants="$variants fresh-air fresh-air-no-frontend-resources"; fi
+           for variant in $variants; do
             product="$model"
             if [ "$model" = tc1 ]; then product=tc1_a1; fi
             if [ "$variant" != full ]; then product="$product-$variant"; fi

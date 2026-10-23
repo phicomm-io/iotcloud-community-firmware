@@ -1,5 +1,6 @@
 #include "../common/watchdog.h"
 #include "a1.h"
+#include "fresh_air.h"
 
 static void scan_done(ScanResult *list, void *arg)
 {
@@ -145,7 +146,14 @@ static void network_worker(mico_thread_arg_t arg)
         if (!scanning) scan_since = 0;
         bool reboot = a1_state.reboot_pending && (int32_t)(now - a1_state.reboot_at) >= 0;
         mico_rtos_unlock_mutex(&a1_lock);
-        if (reboot) MicoSystemReboot();
+        if (reboot) {
+#ifdef A1_FRESH_AIR
+            fresh_shutdown();
+#endif
+            MicoGpioOutputHigh(MICO_GPIO_19);
+            MicoPwmStop(MICO_PWM_3);
+            MicoSystemReboot();
+        }
         a1_config_flush(false);
         watchdog_beat(WATCHDOG_NETWORK);
         /* Do not reserve the 16 KiB MQTT stack while first-time provisioning

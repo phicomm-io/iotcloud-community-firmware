@@ -29,7 +29,7 @@ def make(tag, commit, directory, notes, legacy=False, require_variants=False):
                 release['models'][model]['source_commit']=source
                 release['models'][model]['source_relation']='documentation_only_difference'
     slim = 'no-frontend-resources'
-    # Old catalogs remain readable. New production releases require all six.
+    # Old catalogs remain readable. New production releases require all eight.
     include = require_variants or any(directory.glob('*-no-frontend-resources.*'))
     if include:
         for model, product in PRODUCTS.items():
@@ -41,6 +41,15 @@ def make(tag, commit, directory, notes, legacy=False, require_variants=False):
                 files[kind] = dict(path=f'/releases/{tag}/{name}', size=len(body), sha256=hashlib.sha256(body).hexdigest())
             release['models'][model]['firmware_variant'] = 'full'
             release['models'][model]['variants'] = {slim: {**files['signed'], 'firmware_variant':slim, 'downloads':files, 'release_log':release['notes']}}
+    for variant in ('fresh-air', 'fresh-air-no-frontend-resources'):
+        if not require_variants and not any(directory.glob(f'phicomm_a1-{variant}.*')): continue
+        files = {}
+        for kind, suffix in [('signed','ota.bin.signed'),('raw','ota.bin.raw'),('full','all.bin')]:
+            name = f'phicomm_a1-{variant}.{suffix}'
+            body = (directory / name).read_bytes()
+            if not body: raise ValueError(f'empty asset {name}')
+            files[kind] = dict(path=f'/releases/{tag}/{name}',size=len(body),sha256=hashlib.sha256(body).hexdigest())
+        release['models']['a1'].setdefault('variants', {})[variant] = {**files['signed'], 'firmware_variant':variant, 'downloads':files, 'release_log':release['notes']}
     (directory/'notes.md').write_text(notes)
     (directory/'index.html').write_text('<!doctype html><meta charset="utf-8"><title>'+tag+'</title><h1>'+tag+'</h1><pre>'+html.escape(notes)+'</pre>')
     (directory/'release.json').write_text(json.dumps(release,ensure_ascii=False,indent=2)+'\n')

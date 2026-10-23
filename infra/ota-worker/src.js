@@ -6,13 +6,14 @@ export default {
     const path = new URL(request.url).pathname;
     try {
       let body, type = 'application/json; charset=utf-8', ttl = 60;
-      const latest = path.match(/^\/ota\/(tc1|m1|a1)(\/no-frontend-resources)?\/latest\.json$/);
+      const latest = path.match(/^\/ota\/(tc1|m1|a1)(\/(?:no-frontend-resources|fresh-air|fresh-air-no-frontend-resources))?\/latest\.json$/);
       if (latest) {
         const stable = await env.RELEASES.get('stable.json');
         if (!stable) return new Response('No stable release', {status:404,headers});
         const release = await stable.json();
         const original = release.models[latest[1]];
-        const variant = latest[2] ? 'no-frontend-resources' : 'full';
+        const variant = latest[2] ? latest[2].slice(1) : 'full';
+        if (variant.startsWith('fresh-air') && latest[1] !== 'a1') return new Response('Not found', {status:404});
         const model = latest[2] ? original?.variants?.[variant] : original;
         if (!model) return new Response('Model unavailable', {status:404,headers});
         body = JSON.stringify({schema:1,tag:release.tag,version:release.version,commit:release.commit,model:latest[1],firmware_variant:variant,path:model.path,size:model.size,sha256:model.sha256,release_log:model.release_log});

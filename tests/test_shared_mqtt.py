@@ -258,7 +258,8 @@ int main(void){
         source=(ROOT/'A1/mqtt.c').read_text()
         builders='\n'.join(function(source,name) for name in
             ('static void str(', 'static void topic(',
-             'static __attribute__((noinline)) int filter_discovery(', 'static int discovery_build(', 'static int discovery('))
+             'static __attribute__((noinline)) int filter_discovery(', 'static int fresh_discovery(', 'static int discovery_build(const a1_config_t *c,', 'static int discovery('))
+        builders='static int discovery_build(const a1_config_t *,unsigned,service_mqtt_json_scope *);\n'+builders
         fixture=(ROOT/'tests/mqtt_core/a1_builders.in').read_text().replace('/* BUILDERS */',builders)
         with tempfile.TemporaryDirectory() as temp:
             Path(temp,'a1_builders.inc').write_text(fixture)

@@ -1,5 +1,8 @@
 #include "../common/ota/mode.h"
 #include "a1.h"
+#ifdef A1_FRESH_AIR
+#include "fresh_air.h"
+#endif
 #include "MQTTClient.h"
 #include "../common/mqtt_transport.h"
 #include "../common/mqtt/client.h"
@@ -215,13 +218,53 @@ static __attribute__((noinline)) int filter_discovery(const a1_config_t *c, bool
     }
     return MQTT_SUCCESS;
 }
+/* Accessory identity is always the physical A1, even with grouped primary control. */
+static int discovery_build(const a1_config_t *,unsigned,service_mqtt_json_scope *);
+static int fresh_discovery(const a1_config_t *c,bool clear,unsigned i,service_mqtt_json_scope *scope) {
+    char path[MQTT_TOPIC_MAX],identity[MQTT_TOPIC_MAX];
+    const char *key=i?"fresh_air_feedback":"fresh_air";
+    mqtt_ha(&account,i?"sensor":"fan",key,path,sizeof(path));
+#ifndef A1_FRESH_AIR
+    clear=true;
+    (void)c;(void)scope;
+#endif
+    if(clear)return publish(path,"",true);
+    if(!i)return discovery_build(c,10,scope);
+#ifdef A1_FRESH_AIR
+    json_object *o=json_object_new_object(),*device=json_object_new_object(),*ids=json_object_new_array();
+    if(!o||!device||!ids){if(o)json_object_put(o);if(device)json_object_put(device);if(ids)json_object_put(ids);return service_mqtt_json_error(scope,PH_MQTT_ERROR_APP_DISCOVERY_GRAPH);}
+    mqtt_identity(&account,"",identity,sizeof(identity));json_build_array_add(ids,json_object_new_string(identity));
+    json_build_object_add(device,"identifiers",ids);str(device,"name",c->name);str(device,"manufacturer","Phicomm");str(device,"model","A1 Fresh Air");str(device,"sw_version",A1_VERSION);
+    json_build_object_add(o,"device",device);str(o,"name",i?"新风反馈频率":"新风风机");
+    mqtt_identity(&account,key,identity,sizeof(identity));str(o,"unique_id",identity);
+    str(o,"availability_topic",availability_topic);topic(o,"state_topic","state");
+    str(o,"value_template","{{ value_json.fresh_air_fb_millihz / 1000 }}");
+    str(o,"unit_of_measurement","Hz");str(o,"state_class","measurement");str(o,"entity_category","diagnostic");
+    return service_mqtt_optional_send(publish,path,o,true,scope);
+#else
+    return MQTT_SUCCESS;
+#endif
+}
+static void primary_snapshot(const a1_config_t *c,bool *on,unsigned *speed) {
+#ifdef A1_FRESH_AIR
+    fresh_snapshot_t f;fresh_snapshot(&f);*on=c->fan_on;*speed=f.primary;
+#else
+    feature_effective_fan(c->fan_on,c->speed,on,speed);
+#endif
+}
 static int discovery_build(const a1_config_t *c,unsigned index,service_mqtt_json_scope *scope)
 {
+    if(index==11)return fresh_discovery(c,false,1,scope);
+#ifndef A1_FRESH_AIR
+    if(index==10)return fresh_discovery(c,true,0,scope);
+#endif
+    bool fresh=index==10;
+    unsigned begin=fresh?0:index;
     const char *keys[] = {"fan", "light", "child_lock", "led_always_on"};
     const char *components[] = {"fan", "light", "switch", "switch"};
     const char *names[] = {"空气净化器", "灯环", "童锁", "灯环常亮"};
-    for (unsigned i=index; i<4 && i==index; i++) {
-        if (feature_bound()) { char path[MQTT_TOPIC_MAX]; mqtt_ha(&account, components[i], keys[i], path, sizeof(path)); int rc=publish(path,"",true); if(rc!=MQTT_SUCCESS)return rc; continue; }
+    for (unsigned i=begin; i<4 && i==begin; i++) {
+        if (!fresh && feature_bound()) { char path[MQTT_TOPIC_MAX]; mqtt_ha(&account, components[i], fresh?"fresh_air":keys[i], path, sizeof(path)); int rc=publish(path,"",true); if(rc!=MQTT_SUCCESS)return rc; continue; }
         json_object *o = json_object_new_object(), *device = json_object_new_object(), *ids = json_object_new_array();
         if (!o || !device || !ids) {
             if (o) json_object_put(o);
@@ -235,27 +278,30 @@ static int discovery_build(const a1_config_t *c,unsigned index,service_mqtt_json
         json_build_object_add(device, "identifiers", ids);
         str(device, "name", c->name); str(device, "model", "A1 Air Purifier (EMW3080B)");
         str(device, "manufacturer", "Phicomm"); str(device, "sw_version", A1_VERSION);
-        json_build_object_add(o, "device", device); str(o, "name", names[i]);
-        mqtt_identity(&account, keys[i], text, sizeof(text)); str(o, "unique_id", text);
+        json_build_object_add(o, "device", device); str(o, "name", fresh?"新风风机":names[i]);
+        mqtt_identity(&account, fresh?"fresh_air":keys[i], text, sizeof(text)); str(o, "unique_id", text);
         str(o, "availability_topic", availability_topic);
         topic(o,"json_attributes_topic","state");
         str(o,"json_attributes_template","{{ {\"ip\": value_json.ip, \"firmware\": value_json.version, \"config_dirty\": value_json.config_dirty} | tojson }}");
         json_build_object_add(o, "retain", json_object_new_boolean(false));
         topic(o, "command_topic", "command");
-        snprintf(text, sizeof(text), "%s/state", keys[i]); topic(o, "state_topic", text);
+        snprintf(text, sizeof(text), "%s/state", keys[i]); topic(o, "state_topic", fresh?"state":text);
+        if(fresh)str(o,"state_value_template","{{ 'ON' if value_json.fresh_air_requested_on else 'OFF' }}");
         if (i == 0) {
             str(o, "icon", "mdi:air-purifier");
             topic(o,"preset_mode_command_topic","command");
-            topic(o,"preset_mode_state_topic","fan/mode/state");
-            str(o,"preset_mode_command_template","{\"action\":\"fan.mode.set\",\"params\":{\"mode\":{{ value | tojson }}}}");
+            topic(o,"preset_mode_state_topic",fresh?"state":"fan/mode/state");
+            if(fresh)str(o,"preset_mode_value_template","{{ value_json.fresh_air_mode }}");
+            snprintf(text,sizeof(text),"{\"action\":\"%s\",\"params\":{\"mode\":{{ value | tojson }}}}",fresh?"fresh_air.set":"fan.mode.set");str(o,"preset_mode_command_template",text);
             json_object *modes=json_object_new_array();
             json_build_array_add(modes,json_object_new_string("auto"));
             json_build_array_add(modes,json_object_new_string("manual"));
             json_build_object_add(o,"preset_modes",modes);
             topic(o, "percentage_command_topic", "command");
-            str(o,"command_template","{\"action\":\"fan.set\",\"params\":{\"on\":{{ 'true' if value == 'ON' else 'false' }}}}");
-            str(o,"percentage_command_template","{\"action\":\"fan.set\",\"params\":{\"mode\":\"manual\",\"speed\":{{ value | int }}}}");
-            topic(o, "percentage_state_topic", "fan/percentage/state");
+            snprintf(text,sizeof(text),"{\"action\":\"%s\",\"params\":{\"on\":{{ 'true' if value == 'ON' else 'false' }}}}",fresh?"fresh_air.set":"fan.set");str(o,"command_template",text);
+            snprintf(text,sizeof(text),"{\"action\":\"%s\",\"params\":{\"mode\":\"manual\",\"speed\":{{ value | int }}}}",fresh?"fresh_air.set":"fan.set");str(o,"percentage_command_template",text);
+            topic(o, "percentage_state_topic", fresh?"state":"fan/percentage/state");
+            if(fresh)str(o,"percentage_value_template","{{ value_json.fresh_air_speed }}");
             json_build_object_add(o, "speed_range_min", json_object_new_int(1));
             json_build_object_add(o, "speed_range_max", json_object_new_int(100));
         }
@@ -275,15 +321,16 @@ static int discovery_build(const a1_config_t *c,unsigned index,service_mqtt_json
             str(o,"payload_on",on);str(o,"payload_off",off);str(o,"state_on","ON");str(o,"state_off","OFF");
         }
         if (i >= 2) str(o, "entity_category", "config");
-        mqtt_ha(&account, components[i], keys[i], path, sizeof(path));
+        mqtt_ha(&account, components[i], fresh?"fresh_air":keys[i], path, sizeof(path));
         int rc = service_mqtt_optional_send(publish,path,o,true,scope);
         if (rc != MQTT_SUCCESS) return rc;
     }
+    if(fresh)return MQTT_SUCCESS;
     return index>=4?filter_discovery(c,false,index-4,scope):MQTT_SUCCESS;
 }
 static int states(const a1_config_t *c, const mqtt_state_t *s,unsigned index)
 {
-    bool on; unsigned desired;feature_effective_fan(c->fan_on,c->speed,&on,&desired);
+    bool on; unsigned desired;primary_snapshot(c,&on,&desired);
     int rc=index==0?leaf("fan/state",on?"ON":"OFF"):MQTT_SUCCESS;
     char speed[4], light[192]; snprintf(speed, sizeof(speed), "%u", on ? desired : 0);
     if (index==1 && rc==MQTT_SUCCESS) rc = leaf("fan/percentage/state", speed);
@@ -328,6 +375,7 @@ static int cleanup_discovery(void)
 static int cleanup_all(void)
 {
     int result = cleanup_discovery();
+    for(unsigned i=0;i<2;i++)if(fresh_discovery(&session_config,true,i,NULL)!=MQTT_SUCCESS)result=MQTT_FAILURE;
     for(unsigned i=0;i<6;i++)if(filter_discovery(&session_config,true,i,NULL)!=MQTT_SUCCESS)result=MQTT_FAILURE;
     if (feature_mqtt_cleanup(publish) != MQTT_SUCCESS) result = MQTT_FAILURE;
     return result;
@@ -502,14 +550,14 @@ static int session_cycle(void *context) {
             if(feature_changed && !feature_mqtt_filters_current(feature_filters,count))return PH_MQTT_RECONFIGURE;
             /* A birth received during a batch requests a complete subsequent pass.
              * Do not consume it by restarting the partially published pass. */
-            if(rediscover && discovery_index==10) {feature_mqtt_service(publish,false);discovery_index=0;rediscover=false;sent=false;state_index=0;state_pending=0x7fu;state_seen=0;}
-            if(discovery_index<10) {
+            if(rediscover && discovery_index==12) {feature_mqtt_service(publish,false);discovery_index=0;rediscover=false;sent=false;state_index=0;state_pending=0x7fu;state_seen=0;}
+            if(discovery_index<12) {
                 rc=discovery(&current,discovery_index);
                 if(rc==MQTT_SUCCESS)++discovery_index;
                 if(rc!=PH_MQTT_MORE)return rc;
                 rc=MQTT_SUCCESS;
             }
-            bool on;unsigned speed;feature_effective_fan(current.fan_on,current.speed,&on,&speed);
+            bool on;unsigned speed;primary_snapshot(&current,&on,&speed);
             a1_filter_storage_t filter; a1_filter_get(&filter);
             bool dirty = feature_changed || revision != current.revision ||
                 old_visible != state.led_visible || old_on != on || old_speed != speed;
@@ -519,6 +567,11 @@ static int session_cycle(void *context) {
              * usage edge while the running fan accrues its next second. */
             if (dirty)
                 state_pending |= 0x7fu;
+#ifdef A1_FRESH_AIR
+            static uint32_t fresh_at;
+            uint32_t fresh_now=mico_rtos_get_time();
+            if((uint32_t)(fresh_now-fresh_at)>=1000){state_pending|=1u<<6;fresh_at=fresh_now;}
+#endif
             if (filter_priority(a1_filter_mqtt_due(&filter, &sent_filter, mico_rtos_get_time(), filter_sent_at))) {
                 rc = service_mqtt_snapshot(publish, &account);
                 if (rc == MQTT_SUCCESS) {
@@ -547,7 +600,7 @@ static bool session_valid(void *context) {
 }
 static bool session_initial_ready(void *context) {
     (void)context;
-    return discovery_index==10 && sent && feature_mqtt_initial_ready();
+    return discovery_index==12 && sent && feature_mqtt_initial_ready();
 }
 static void session_closing(void *context,bool connected,int rc) {
     (void)context;

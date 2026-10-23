@@ -15,7 +15,12 @@ def write_latest(catalog, output):
         raise ValueError('Stable release is absent from catalog')
     for model in ('tc1', 'm1', 'a1'):
         item = release.get('models', {}).get(model, {}) if release else {}
-        for variant, entry in [('full', item), ('no-frontend-resources', item.get('variants', {}).get('no-frontend-resources', {}))]:
+        variants = dict(item.get('variants', {}))
+        # Remove stale manifests too when rolling back to an older catalog.
+        expected = ['no-frontend-resources']
+        if model == 'a1': expected += ['fresh-air', 'fresh-air-no-frontend-resources']
+        for variant in expected: variants.setdefault(variant, {})
+        for variant, entry in [('full', item), *variants.items()]:
             folder = output / 'ota' / model
             if variant != 'full': folder /= variant
             target = folder / 'latest.json'

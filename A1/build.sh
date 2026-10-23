@@ -8,12 +8,15 @@ if [[ "${GITHUB_REF_TYPE:-}" == tag ]]; then
 fi
 python3 "$project_dir/tools/check_version.py" "${version_args[@]}"
 variant="${PHICOMM_FIRMWARE_VARIANT:-full}"
+A1_FRESH_AIR=0
 case "$variant" in
     full) variant_suffix=""; PHICOMM_FULL_RESOURCES=1 ;;
     no-frontend-resources) variant_suffix="-no-frontend-resources"; PHICOMM_FULL_RESOURCES=0 ;;
+    fresh-air) variant_suffix="-fresh-air"; PHICOMM_FULL_RESOURCES=1; A1_FRESH_AIR=1 ;;
+    fresh-air-no-frontend-resources) variant_suffix="-fresh-air-no-frontend-resources"; PHICOMM_FULL_RESOURCES=0; A1_FRESH_AIR=1 ;;
     *) echo "Unknown firmware variant: $variant" >&2; exit 1 ;;
 esac
-export PHICOMM_FULL_RESOURCES
+export PHICOMM_FULL_RESOURCES A1_FRESH_AIR
 export PHICOMM_WEB_OUTPUT_DIR="$project_dir/build/a1${variant_suffix}-web"
 
 sdk_dir="${A1_SDK_DIR:-$project_dir/build/a1-sdk/mico-os}"
@@ -24,18 +27,9 @@ target=A1@MK3080B@moc
 mkdir -p "$tools_dir" "$workspace" "$(dirname "$sdk_dir")"
 
 python3 "$project_dir/tools/prepare_sdk.py" "$sdk_dir"
-if git -C "$sdk_dir" apply --reverse --check "$app_dir/sdk.patch" 2>/dev/null; then
-    : # already applied
-else
-    git -C "$sdk_dir" apply --check "$app_dir/sdk.patch"
-    git -C "$sdk_dir" apply "$app_dir/sdk.patch"
-fi
-
-# Product board overlays stay in separate checkouts of the shared SDK pin.
-if ! git -C "$sdk_dir" apply --reverse --check "$app_dir/features-sdk.patch" 2>/dev/null; then
-    git -C "$sdk_dir" apply --check "$app_dir/features-sdk.patch"
-    git -C "$sdk_dir" apply "$app_dir/features-sdk.patch"
-fi
+# Validate overlapping board overlays as one idempotent patch stack.
+python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \
+    "$app_dir/sdk.patch" "$app_dir/features-sdk.patch" "$app_dir/fresh-air-sdk.patch"
 
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/watchdog-mico36.patch"
 # Validate the overlapping MQTT overlays together, including repeated builds.
