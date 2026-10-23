@@ -2,6 +2,14 @@
 
 English translation of the published release history. Historical validation statements apply to the release named in each section, not to later firmware. Release notes are authored in the Wiki and frozen into the source repository before tagging.
 
+## v0.9.21
+
+- Fix M1 restarting repeatedly during first migration from factory firmware by providing enough startup stack for factory configuration initialization.
+- M1 factory migration must start with 0.9.21 or newer. Use the full M1 native OTA image for the first upload, rather than a full Flash image or a community signature wrapper. Devices already running community firmware continue to use signed OTA packages.
+- A fix candidate passed factory LAN OTA, community hotspot web access, Wi-Fi setup, LAN access and sensor communication on one M1. The candidate was based on 0.9.19 with only the startup stack increased; this is not byte-for-byte physical acceptance of the final 0.9.21 packages. Power-cycle cold boot, A1, TC1 and public DNS migration were not tested.
+- First migration may require joining the M1-AP hotspot and configuring Wi-Fi again. A closed upload connection alone does not establish success; verify the community version and device health as described in the migration guide.
+- Versions in the 0.9.x series are beta releases. Back up important settings before upgrading.
+
 ## v0.9.20
 
 - Fix A1 effects remaining lit after purifier power-off when custom brightness is used with fan-speed brightness tracking disabled. Keep automatic-mode zero-speed waiting distinct from power-off.
