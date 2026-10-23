@@ -6,7 +6,7 @@
 
 - 所有 A1 原风机 PWM 均改为 25 kHz。原驱动板映射不变：GPIO12 / PWM3，GPIO19 低有效使能，运行占空比 `80 - 0.6 × speed`。
 - 新风版用户串口 TX / GPIO9 复用为 PWM1，RX / GPIO10 为上拉、下降沿反馈输入；不再用于用户串口。
-- 新风反馈为脉冲累计数和 Hz（协议单位 mHz），没有假设每转脉冲数，不报告 RPM，也不作为失速保护或闭环控制依据。灯环发送期间的中断屏蔽可能影响计数，须实测。
+- 新风反馈为脉冲累计数和整数 RPM；每转脉冲数 pulses_per_rev 可设置为 1–255，默认 2，RPM = 脉冲频率 × 60 ÷ 每转脉冲数。不作为失速保护或闭环控制依据。灯环发送期间的中断屏蔽可能影响计数，须实测。
 - 新风实际高电平占空比 `D = clamp(a × S + b, pwm_min, pwm_max)`；S 是最终输出的归一化转速百分比。a、b 支持有限小数，a 可为负；`0 ≤ pwm_min ≤ pwm_max ≤ 100`。
 - 高电平开启预设 a=1、b=0；低电平开启预设 a=-1、b=100。极性仅决定关机电平，不重复反转公式。S=0、关机绕过映射；0/100% 用常量 GPIO，中间值用 25 kHz PWM。
 
@@ -34,14 +34,14 @@
 新风变体的 `capabilities.get` 返回 `fresh_air: true` 并声明以下 action：
 
 - `fresh_air.set`：可选 `on`（布尔）、`speed`（0–100 整数）、`mode`（`manual`/`auto`）。切换模式不会开机，0 速度停转。
-- `fresh_air.config.get` / `.set`：`revision`、`coupling`、`cap_ratio`、`boost_ratio`、`active_low`（布尔）、`a`、`b`、`pwm_min`、`pwm_max`。set 必须携带当前 revision，部分更新原子校验；过期返回 conflict。
+- `fresh_air.config.get` / `.set`：`revision`、`coupling`、`cap_ratio`、`boost_ratio`、`active_low`（布尔）、`a`、`b`、`pwm_min`、`pwm_max`、`pulses_per_rev`。set 必须携带当前 revision，部分更新原子校验；过期返回 conflict。
 - `fresh_air.linkage.get` / `.set`：与原 `linkage` 相同的策略字段，独立 revision（与新风其他设置共享版本号）。该策略的 enabled 固定为 1，是否使用由新风 mode 决定。
 
 配置追加到既有存储末尾，带 magic/schema。原有存储前缀和版本 9 ABI 不变，新普通 A1 也保留该扩展。控制和参数保存沿用 A1 延迟合并写入，`config_dirty` / `save_error` 表示持久化状态。
 
-live/full 状态新增 `fresh_air_requested_on`、`fresh_air_requested_speed`、`fresh_air_mode`、`fresh_air_on`（输出命令非零）、`fresh_air_target`、`fresh_air_speed`、`fresh_air_primary_speed`、`fresh_air_pwm_milli`、`fresh_air_fb_millihz`、`fresh_air_pulses`、`fresh_air_limit_reason`、`fresh_air_ready`、`fresh_air_fallback`。限制原因：0 无、1 整机关机、2 调速/比例约束、3 输出错误、4 应用配置。
+live/full 状态新增 `fresh_air_requested_on`、`fresh_air_requested_speed`、`fresh_air_mode`、`fresh_air_on`（输出命令非零）、`fresh_air_target`、`fresh_air_speed`、`fresh_air_primary_speed`、`fresh_air_pwm_milli`、`fresh_air_rpm`、`fresh_air_pulses`、`fresh_air_limit_reason`、`fresh_air_ready`、`fresh_air_fallback`。限制原因：0 无、1 整机关机、2 调速/比例约束、3 输出错误、4 应用配置。
 
-前端复用同一 A1 页面，按 capability 显示新风卡片和 `#settings/freshair`、`#settings/freshauto`。MQTT 使用既有统一 command topic，HA 增加独立新风 fan（含模式）和反馈频率 sensor；即使原风机加入分组，新风仍属于物理 A1。切回新普通固件时发布发现实体的 retained 空消息。
+前端复用同一 A1 页面，按 capability 显示新风卡片和 `#settings/freshair`、`#settings/freshauto`。MQTT 使用既有统一 command topic，HA 增加独立新风 fan（含模式）和转速 sensor；即使原风机加入分组，新风仍属于物理 A1。切回新普通固件时发布发现实体的 retained 空消息。
 
 ## 构建与验证
 

@@ -234,12 +234,12 @@ static int fresh_discovery(const a1_config_t *c,bool clear,unsigned i,service_mq
     json_object *o=json_object_new_object(),*device=json_object_new_object(),*ids=json_object_new_array();
     if(!o||!device||!ids){if(o)json_object_put(o);if(device)json_object_put(device);if(ids)json_object_put(ids);return service_mqtt_json_error(scope,PH_MQTT_ERROR_APP_DISCOVERY_GRAPH);}
     mqtt_identity(&account,"",identity,sizeof(identity));json_build_array_add(ids,json_object_new_string(identity));
-    json_build_object_add(device,"identifiers",ids);str(device,"name",c->name);str(device,"manufacturer","Phicomm");str(device,"model","A1 Fresh Air");str(device,"sw_version",A1_VERSION);
-    json_build_object_add(o,"device",device);str(o,"name",i?"新风反馈频率":"新风风机");
+    json_build_object_add(device,"identifiers",ids);str(device,"name",c->name);str(device,"manufacturer","Phicomm");str(device,"model","A1 Air Purifier (EMW3080B)");str(device,"sw_version",A1_VERSION);
+    json_build_object_add(o,"device",device);str(o,"name",i?"新风转速":"新风风机");
     mqtt_identity(&account,key,identity,sizeof(identity));str(o,"unique_id",identity);
     str(o,"availability_topic",availability_topic);topic(o,"state_topic","state");
-    str(o,"value_template","{{ value_json.fresh_air_fb_millihz / 1000 }}");
-    str(o,"unit_of_measurement","Hz");str(o,"state_class","measurement");str(o,"entity_category","diagnostic");
+    str(o,"value_template","{{ value_json.fresh_air_rpm }}");
+    str(o,"unit_of_measurement","rpm");str(o,"state_class","measurement");str(o,"entity_category","diagnostic");
     return service_mqtt_optional_send(publish,path,o,true,scope);
 #else
     return MQTT_SUCCESS;
@@ -299,7 +299,7 @@ static int discovery_build(const a1_config_t *c,unsigned index,service_mqtt_json
             json_build_object_add(o,"preset_modes",modes);
             topic(o, "percentage_command_topic", "command");
             snprintf(text,sizeof(text),"{\"action\":\"%s\",\"params\":{\"on\":{{ 'true' if value == 'ON' else 'false' }}}}",fresh?"fresh_air.set":"fan.set");str(o,"command_template",text);
-            snprintf(text,sizeof(text),"{\"action\":\"%s\",\"params\":{\"mode\":\"manual\",\"speed\":{{ value | int }}}}",fresh?"fresh_air.set":"fan.set");str(o,"percentage_command_template",text);
+            snprintf(text,sizeof(text),"{\"action\":\"%s\",\"params\":{\"mode\":\"manual\",%s\"speed\":{{ value | int }}}}",fresh?"fresh_air.set":"fan.set",fresh?"\"on\":{{ 'true' if value | int > 0 else 'false' }},":"");str(o,"percentage_command_template",text);
             topic(o, "percentage_state_topic", fresh?"state":"fan/percentage/state");
             if(fresh)str(o,"percentage_value_template","{{ value_json.fresh_air_speed }}");
             json_build_object_add(o, "speed_range_min", json_object_new_int(1));

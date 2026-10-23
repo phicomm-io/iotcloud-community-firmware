@@ -2,7 +2,7 @@
 #include "../common/phicomm_features.h"
 #include "fresh_air_model.h"
 #define FRESH_MAGIC 0x46524131u
-#define FRESH_SCHEMA 1u
+#define FRESH_SCHEMA 2u
 typedef struct {
     uint32_t magic, schema, revision;
     uint8_t on, speed, automatic, fallback_speed;

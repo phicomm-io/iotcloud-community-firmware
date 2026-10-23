@@ -139,7 +139,7 @@ static __attribute__((noinline)) void encode_a1(status_sink *o,const device_stat
     emit_int(o,"fresh_air_target",f->target);emit_int(o,"fresh_air_speed",f->applied);
     emit_int(o,"fresh_air_primary_speed",f->primary);
     emit_int(o,"fresh_air_pwm_milli",(int)(f->duty*1000));
-    emit_int(o,"fresh_air_fb_millihz",f->frequency_millihz);emit_int(o,"fresh_air_pulses",f->pulses);
+    emit_int(o,"fresh_air_rpm",f->rpm);emit_int(o,"fresh_air_pulses",f->pulses);
     emit_int(o,"fresh_air_limit_reason",f->reason);emit_bool(o,"fresh_air_ready",f->ready);
     emit_bool(o,"fresh_air_fallback",f->fallback);
 #endif

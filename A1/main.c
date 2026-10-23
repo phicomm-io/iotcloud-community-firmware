@@ -320,8 +320,12 @@ int application_start(void)
         if (mico_system_context_update(a1_context) != kNoErr) return startup_result("config persist", kUnknownErr);
     }
     fresh_config_t *fresh=&((app_storage_t *)a1_config)->fresh_air;
+    bool fresh_migrated=fresh->magic==FRESH_MAGIC && fresh->schema==1;
+    if(fresh_migrated){fresh->schema=FRESH_SCHEMA;fresh->mapping.pulses_per_rev=2;}
     if(fresh->magic!=FRESH_MAGIC || fresh->schema!=FRESH_SCHEMA || !fresh_mapping_valid(&fresh->mapping)) {
-        fresh_defaults(fresh);
+        fresh_defaults(fresh);fresh_migrated=true;
+    }
+    if(fresh_migrated) {
         if(mico_system_context_update(a1_context)!=kNoErr)return startup_result("fresh air persist",kUnknownErr);
     }
 #ifdef A1_FRESH_AIR

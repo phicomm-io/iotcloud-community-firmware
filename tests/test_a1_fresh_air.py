@@ -67,7 +67,10 @@ int main(void){
  sensor_valid=false;now+=5000;tick(true,0);assert(current.target==20 && current.fallback);
  /* Snapshot reads must not advance controller state. */
  feature_pid_t saved=controller;fresh_snapshot_t view;for(unsigned i=0;i<50;i++)fresh_snapshot(&view);assert(!memcmp(&saved,&controller,sizeof(saved)));
- for(unsigned i=0;i<120;i++)edge(NULL);now+=1000;tick(true,0);assert(current.pulses==120 && current.frequency_millihz>0);
+ for(unsigned i=0;i<120;i++)edge(NULL);now+=1000;tick(true,0);assert(current.pulses==120 && current.rpm>0);
+ sample_at=now;previous_pulses=pulses;config.mapping.pulses_per_rev=2;
+ for(unsigned i=0;i<100;i++)edge(NULL);now+=1000;mico_rtos_lock_mutex(&output_lock);fresh_finish(primary,now);assert(current.rpm==3000);
+ config.mapping.pulses_per_rev=4;for(unsigned i=0;i<100;i++)edge(NULL);now+=1000;mico_rtos_lock_mutex(&output_lock);fresh_finish(primary,now);assert(current.rpm==1500);
  fail_pwm=1;tick(true,0);assert(current.applied==0 && !current.ready && measured_duty==100);fail_pwm=0;
  fresh_shutdown();for(unsigned i=0;i<10;i++)tick(true,100);assert(!primary && !current.applied && measured_duty==100);
  a1_state.reboot_pending=true;assert(!strcmp(cmd("fresh_air.set","{\"on\":false}"),"busy"));

@@ -71,7 +71,16 @@ static int publish(const char*t,const char*b,bool r){
  assert(s.live_blocks==2);
 #endif
  unsigned saved=fail_at;fail_at=0;
- json_object *parsed=json_tokener_parse(b);assert(parsed);json_object_put(parsed);fail_at=saved;
+ json_object *parsed=json_tokener_parse(b);assert(parsed);
+#ifdef A1_FRESH_AIR
+ if(strstr(t,"/fresh_air/config")){
+  const char *template=json_object_get_string(json_object_object_get(parsed,"percentage_command_template"));
+  assert(template && strstr(template,"\\\"on\\\"" )==NULL); /* Parsed template contains literal quotes. */
+  assert(strstr(template,"\"on\":") && strstr(template,"value | int > 0"));
+ }
+ if(strstr(t,"/fresh_air_feedback/config"))assert(!strcmp(json_object_get_string(json_object_object_get(parsed,"unit_of_measurement")),"rpm"));
+#endif
+ json_object_put(parsed);fail_at=saved;
  if(!quiet)printf("%u %s %u %s\n",callbacks,t,r,b);callbacks++;return callback_rc;
 }
 #ifdef LEGACY_PUBLISH

@@ -5,7 +5,7 @@
 /* Speeds are normalized commands, not measured RPM. Duty is actual high time. */
 typedef struct {
     uint8_t coupling, active_low;
-    uint16_t cap_ratio, boost_ratio;
+    uint16_t cap_ratio, boost_ratio, pulses_per_rev;
     float a, b, pwm_min, pwm_max;
 } fresh_mapping_t;
 typedef struct {
@@ -13,11 +13,12 @@ typedef struct {
     unsigned requested_speed, target, applied, primary;
     unsigned reason; /* 0 none, 1 master off, 2 ratio/cap, 3 hardware, 4 reconfigure */
     float duty;
-    uint32_t pulses, frequency_millihz;
+    uint32_t pulses, rpm;
 } fresh_snapshot_t;
 static inline bool fresh_mapping_valid(const fresh_mapping_t *m) {
     return m->coupling <= 1 && m->active_low <= 1 && m->cap_ratio <= 100 &&
         m->boost_ratio >= 1 && m->boost_ratio <= 500 &&
+        m->pulses_per_rev >= 1 && m->pulses_per_rev <= 255 &&
         isfinite(m->a) && isfinite(m->b) && isfinite(m->pwm_min) && isfinite(m->pwm_max) &&
         m->pwm_min >= 0 && m->pwm_min <= m->pwm_max && m->pwm_max <= 100;
 }

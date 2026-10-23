@@ -96,7 +96,7 @@ void fresh_finish(unsigned primary,uint32_t now) {
     if(next_fresh!=current.applied || !current.ready)output(next_fresh);
     uint32_t count=pulses,elapsed=now-sample_at;
     if(elapsed>=1000) {
-        current.frequency_millihz=feedback_ready?(uint64_t)(count-previous_pulses)*1000000u/elapsed:0;
+        current.rpm=feedback_ready?(uint64_t)(count-previous_pulses)*60000u/elapsed/config.mapping.pulses_per_rev:0;
         current.pulses=count;previous_pulses=count;sample_at=now;
     }
     mico_rtos_lock_mutex(&a1_lock);published=current;mico_rtos_unlock_mutex(&a1_lock);
@@ -110,6 +110,7 @@ static json_object *encode(const fresh_config_t *c,bool linkage) {
     json_object *o=linkage?feature_fresh_encode(c):json_object_new_object();if(!o)return NULL;
     json_build_object_add(o,"revision",json_object_new_int(c->revision));
     if(!linkage) {
+        number(o,"pulses_per_rev",c->mapping.pulses_per_rev);
         number(o,"coupling",c->mapping.coupling);number(o,"cap_ratio",c->mapping.cap_ratio);number(o,"boost_ratio",c->mapping.boost_ratio);
         json_build_object_add(o,"active_low",json_object_new_boolean(c->mapping.active_low));
         number(o,"a",c->mapping.a);number(o,"b",c->mapping.b);number(o,"pwm_min",c->mapping.pwm_min);number(o,"pwm_max",c->mapping.pwm_max);
@@ -151,10 +152,10 @@ json_object *fresh_command(const char *action,json_object *p,const char **code) 
         else if(config_set && !strcmp(k,"b"))c.mapping.b=n;
         else if(config_set && !strcmp(k,"pwm_min"))c.mapping.pwm_min=n;
         else if(config_set && !strcmp(k,"pwm_max"))c.mapping.pwm_max=n;
-        else if(config_set && (!strcmp(k,"coupling")||!strcmp(k,"cap_ratio")||!strcmp(k,"boost_ratio"))) {
+        else if(config_set && (!strcmp(k,"coupling")||!strcmp(k,"cap_ratio")||!strcmp(k,"boost_ratio")||!strcmp(k,"pulses_per_rev"))) {
             if(n<0||n>500||(int)n!=n)return NULL;
             if(!strcmp(k,"coupling")){if(n>1)return NULL;c.mapping.coupling=n;}
-            else if(!strcmp(k,"cap_ratio"))c.mapping.cap_ratio=n;else c.mapping.boost_ratio=n;
+            else if(!strcmp(k,"cap_ratio"))c.mapping.cap_ratio=n;else if(!strcmp(k,"boost_ratio"))c.mapping.boost_ratio=n;else c.mapping.pulses_per_rev=n;
         } else return NULL;
     }}
     if(!fresh_mapping_valid(&c.mapping))return NULL;

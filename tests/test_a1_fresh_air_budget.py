@@ -18,7 +18,7 @@ class FreshAirBudget(unittest.TestCase):
                 text = text.replace('!strcmp(key,"sensors")?value:',
                     '(!strcmp(key,"sensors")||!strncmp(key,"fresh_air_",10))?value:')
                 text = text.replace('void a1_status_capture(',
-                    'void fresh_snapshot(fresh_snapshot_t *p){memset(p,0,sizeof(*p));p->requested_on=true;p->requested_speed=100;p->automatic=true;p->ready=true;p->target=100;p->applied=100;p->primary=100;p->duty=100;p->pulses=123456;p->frequency_millihz=123456;}\nvoid a1_status_capture(', 1)
+                    'void fresh_snapshot(fresh_snapshot_t *p){memset(p,0,sizeof(*p));p->requested_on=true;p->requested_speed=100;p->automatic=true;p->ready=true;p->target=100;p->applied=100;p->primary=100;p->duty=100;p->pulses=123456;p->rpm=123456;}\nvoid a1_status_capture(', 1)
                 text = text.replace('budget=23000;budget<=29000;budget+=2000',
                     'budget=17000;budget<=25000;budget+=1000')
                 text = text.replace('assert(x.response.status==200&&p.wire);if(post)',
