@@ -97,9 +97,9 @@ void fresh_prepare(bool master,unsigned desired,unsigned applied,uint32_t now,un
 }
 void fresh_finish(unsigned primary,uint32_t now) {
     current.primary=primary;
-    unsigned cap=config.mapping.coupling?primary*100/config.mapping.boost_ratio:primary*config.mapping.cap_ratio/100;
+    unsigned cap=fresh_limit(&config.mapping,primary);
     if(next_fresh>cap)next_fresh=cap;
-    if(primary!=next_primary)current.reason=3;
+    if(primary!=next_primary){next_fresh=0;current.reason=3;}
     if(next_fresh!=current.applied || !current.ready)output(next_fresh);
     uint32_t count=pulses,elapsed=now-sample_at;
     if(elapsed>=1000) {
@@ -161,7 +161,7 @@ json_object *fresh_command(const char *action,json_object *p,const char **code) 
         else if(config_set && !strcmp(k,"pwm_max"))c.mapping.pwm_max=n;
         else if(config_set && (!strcmp(k,"coupling")||!strcmp(k,"cap_ratio")||!strcmp(k,"boost_ratio")||!strcmp(k,"pulses_per_rev"))) {
             if(n<0||n>500||(int)n!=n)return NULL;
-            if(!strcmp(k,"coupling")){if(n>1)return NULL;c.mapping.coupling=n;}
+            if(!strcmp(k,"coupling")){if(n>2)return NULL;c.mapping.coupling=n;}
             else if(!strcmp(k,"cap_ratio"))c.mapping.cap_ratio=n;else if(!strcmp(k,"boost_ratio"))c.mapping.boost_ratio=n;else c.mapping.pulses_per_rev=n;
         } else return NULL;
     }}

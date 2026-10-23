@@ -4,6 +4,8 @@
 int main(void) {
     fresh_mapping_t m={.pulses_per_rev=2,.cap_ratio=100,.boost_ratio=100,.a=1,.pwm_max=100};
     assert(fresh_mapping_valid(&m));
+    m.coupling=2;unsigned ip,iff;fresh_pair(&m,0,100,0,0,100,&ip,&iff);assert(ip==0 && iff==100);
+    m.coupling=0;
     m.pwm_min=20;m.pwm_max=80;m.a=.5;m.b=10;
     assert(fresh_duty(&m,0)==0 && fresh_duty(&m,1)==20 && fresh_duty(&m,100)==60);
     m.active_low=1;m.a=-1;m.b=100;

@@ -45,7 +45,7 @@ STORAGE
 static const char *cmd(const char *action,const char *body){json_object *p=json_tokener_parse(body);const char *code;json_object *o=fresh_command(action,p,&code);if(o)json_object_put(o);json_object_put(p);return code;}
 static void tick(bool master,unsigned desired){unsigned next;now+=100;fresh_prepare(master,desired,primary,now,&next);primary=next;fresh_finish(primary,now);}
 int main(void){
- fresh_defaults(&storage.fresh_air);fresh_boot();fresh_init();assert(measured_duty==0 && edge);
+ fresh_defaults(&storage.fresh_air);assert(storage.fresh_air.mapping.coupling==2);storage.fresh_air.mapping.coupling=0;fresh_boot();fresh_init();assert(measured_duty==0 && edge);
  assert(!strcmp(cmd("fresh_air.set","{\"on\":true,\"speed\":100}"),"accepted"));
  for(unsigned i=0;i<15;i++)tick(true,40);
  assert(current.applied==40 && primary==40 && measured_duty==40);
@@ -84,6 +84,11 @@ int main(void){
  sensor_valid=true;ppm=2000;primary=100;current.applied=50;published.reason=2;
  controller.initialized=true;controller.integral=70;controller.last_ms=now-5000;control_at=now-5000;
  tick(true,0);assert(controller.integral==70 && current.applied==50);
+ char independent[80];snprintf(independent,sizeof(independent),"{\"revision\":%u,\"coupling\":2}",storage.fresh_air.revision);
+ assert(!strcmp(cmd("fresh_air.config.set",independent),"accepted"));
+ assert(!strcmp(cmd("fresh_air.set","{\"mode\":\"manual\",\"speed\":100}"),"accepted"));
+ for(unsigned i=0;i<15;i++)tick(true,0);assert(primary==0 && current.applied==100);
+ tick(false,0);assert(!primary && !current.applied);
  fresh_shutdown();for(unsigned i=0;i<10;i++)tick(true,100);assert(!primary && !current.applied && measured_duty==100);
  a1_state.reboot_pending=true;assert(!strcmp(cmd("fresh_air.set","{\"on\":false}"),"busy"));
  puts("Fresh controller: commands, revision, mapping, sensor fallback, feedback, shutdown: PASS");

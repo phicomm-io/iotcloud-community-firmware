@@ -14,10 +14,12 @@
 
 新风开关、手动速度、自动策略独立保存。出厂关闭，记忆手动速度 60%。自动默认使用已绑定 M1 的 CO₂，800–2000 ppm 线性映射到 20–100%，传感器离线回退 30%，回退也受自动范围约束。支持 PM2.5、甲醛、CO₂ 组合，固定、线性、PID、统计方式和启停回差，使用独立控制器状态。查询状态不会推进 PID。风速和模式切换不中断输出；比例限速时冻结向上的积分累积，重新启用时立即重新计算。
 
-两种模式分别保存比例：
+三种联动选项，两个比例分别保存：
 
 1. `coupling=0`：新风输出 `F ≤ floor(P × cap_ratio / 100)`，比例 0–100，默认 100。
 2. `coupling=1`：原风机输出 `P ≥ ceil(F × boost_ratio / 100)`，比例 1–500，默认 100。原风机自动和夜间上限优先；不足时降低新风。
+
+3. `coupling=2`：独立调速，不限制新风与原风机的比例。新配置默认采用此项，升级保留已有选择。整机关机仍停止两路。
 
 上述 P、F 是输出命令百分比，不是反馈测得的机械转速。每个 100 ms 调速步骤均应用约束；上升先提高原风机，下降先降低新风。正常升速每步最多 10%，约束收紧时允许立即降速。原风机输出失败会撤销新风输出。
 
@@ -41,7 +43,7 @@
 
 live/full 状态新增 `fresh_air_requested_on`、`fresh_air_requested_speed`、`fresh_air_mode`、`fresh_air_on`（输出命令非零）、`fresh_air_target`、`fresh_air_speed`、`fresh_air_primary_speed`、`fresh_air_pwm_milli`、`fresh_air_rpm`、`fresh_air_pulses`、`fresh_air_limit_reason`、`fresh_air_ready`、`fresh_air_fallback`。限制原因：0 无、1 整机关机、2 调速/比例约束、3 输出错误、4 应用配置。
 
-前端复用同一 A1 页面，按 capability 显示新风卡片和 `#settings/freshair`、`#settings/freshauto`。MQTT 使用既有统一 command topic，HA 增加独立新风 fan（含模式）和转速 sensor；即使原风机加入分组，新风仍属于物理 A1。切回新普通固件时发布发现实体的 retained 空消息。
+前端复用同一 A1 页面，按 capability 显示新风卡片和 `#settings/freshair`、`#settings/linkage`。原风机与新风自动策略合并在自动调速页，分别保存；PM2.5、甲醛和 CO₂ 使用多选框，至少选择一个。MQTT 使用既有统一 command topic，HA 增加独立新风 fan（含模式）和转速 sensor；即使原风机加入分组，新风仍属于物理 A1。切回新普通固件时发布发现实体的 retained 空消息。
 
 ## 构建与验证
 
