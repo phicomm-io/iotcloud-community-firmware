@@ -38,14 +38,19 @@ def main(port):
         call(a,'binding.set',{'peers':[{'mac':'020000cb0001','ip':'127.78.1.2'}]})
         avg=lambda:call(a,'sensors.average.get')['data']
         wait(lambda:avg().get('sample_count')==1)
-        assert len(grants)==1 and not legacy
+        # Changing binding filters reconnects MQTT. A grant delivered before
+        # the first UDP confirmation may be retried by the new session; both
+        # must carry the same authorization. Measure quietness after convergence.
+        initial_grants=len(grants)
+        assert initial_grants in (1,2) and not legacy
         assert call(m,'binding.status.get')['data']['peers'][0]['mac']=='020000ca0001'
         first=grants[0][1]['params']; assert first['v']==2 and len(first['token'])==32
+        assert all(grant[1]['params']==first for grant in grants)
         start=time.monotonic()
         while time.monotonic()-start<65:
             assert avg().get('sample_count')==1
             observer.check();time.sleep(1)
-        assert len(grants)==1 and not legacy,'healthy reads must not reauthorize or use pair topics'
+        assert len(grants)==initial_grants and not legacy,'healthy reads must not reauthorize or use pair topics'
         # Established UDP reads remain usable while M1's broker is unreachable.
         call(m,'config.set',{'section':'mqtt','values':{'host':'127.0.0.2','port':1,'user':'session'}})
         wait(lambda:not call(m,'status.get')['data'].get('mqtt_connected'),15)
@@ -53,17 +58,17 @@ def main(port):
         while time.monotonic()-offline<20:
             assert avg().get('sample_count')==1
             observer.check();time.sleep(1)
-        assert len(grants)==1
+        assert len(grants)==initial_grants
         call(m,'config.set',{'section':'mqtt','values':{'host':'127.0.0.1','port':port,'user':'session'}})
         wait(lambda:call(m,'status.get')['data'].get('mqtt_connected'),15)
         m.terminate();m.wait(timeout=5);nodes.remove(m)
         m=launch('M1','020000cb0001','127.78.1.2')
-        wait(lambda:len(grants)==2,100)
+        wait(lambda:len(grants)==initial_grants+1,100)
         wait(lambda:call(m,'binding.status.get')['data'].get('peers'),15)
         wait(lambda:avg().get('sample_count')==1,20)
-        assert grants[1][1]['params']==first,'recovery reuses the current RAM session'
-        assert grants[1][0]-grants[0][0]>=60 and not legacy
-        print('PASS unilateral setup, MQTT-only grant, 65s quiet UDP session, broker outage, M1 restart recovery; grants=2, pair messages=0',flush=True)
+        assert grants[-1][1]['params']==first,'recovery reuses the current RAM session'
+        assert grants[-1][0]-grants[initial_grants-1][0]>=60 and not legacy
+        print(f'PASS unilateral setup, MQTT-only grant, 65s quiet UDP session, broker outage, M1 restart recovery; startup grants={initial_grants}, recovery grants=1, pair messages=0',flush=True)
     except BaseException:
         print('DEBUG grants',len(grants),'boots',[x[1]['params']['boot'] for x in grants],'results',results,'legacy',len(legacy),flush=True)
         for node in nodes:
