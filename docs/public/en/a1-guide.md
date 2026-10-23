@@ -122,3 +122,17 @@ Default CO₂ thresholds are 1500 ppm to start and 1000 ppm to idle; the default
 ### M1 readings in Home Assistant / HomeKit
 
 M1 publishes its own MQTT sensor entities: temperature, humidity, PM2.5, formaldehyde, and CO₂ or pressure when the corresponding extension sensors are installed. These entities can be selected in HomeKit Bridge. A1 uses M1 readings for automation and includes the required aggregate values in its own state. A1 no longer publishes proxy sensor entities for individual M1 units; upgrading clears their old discovery entries.
+
+## Optional fresh-air fan
+
+Starting with v0.9.22, choose `fresh-air` with embedded web resources or `fresh-air-no-frontend-resources` without them. Standard A1 units do not need a fresh-air variant. Use an image matching the current variant when upgrading. Fresh-air firmware occupies the user UART, which is no longer available for serial communication.
+
+For a compatible PWM fan, connect user UART TX (GPIO9) to PWM control, RX (GPIO10) to tachometer feedback, and share signal ground. Power the fan from a supply matching its voltage and current requirements, never from signal pins. Check the fan pinout and signal levels before wiring and use level conversion when needed. Do not connect fan supply voltage to TX/RX. Original fan driver wiring remains unchanged; both PWM outputs run at 25 kHz.
+
+The home page provides independent fresh-air power, speed and automatic mode. Fresh-air settings include PWM polarity, mapping and output limits. The normal preset increases duty with speed; the inverted preset decreases it. Stopping bypasses the minimum running duty. Feedback is displayed in RPM; set pulses per revolution to the fan specification, default 2. Feedback is informational and does not provide stall protection.
+
+Choose independent speed, a fresh-air command limit proportional to the original fan, or an original-fan minimum proportional to fresh-air demand. In the last mode, original-fan automatic and night limits also constrain fresh air. Ratios apply to command percentages, not measured RPM. Master power-off stops both fans.
+
+Both automatic policies share one settings page and are saved separately. Select one or more of PM2.5, formaldehyde and CO₂; CO₂ requires available sensor data.
+
+Normal restart and firmware upgrade stop outputs first. Off levels during cold boot and bootloader execution are not guaranteed. If the fan must remain stopped throughout power-up, use suitable external pull resistors or an enable circuit and verify the actual electrical behavior.

@@ -2,6 +2,16 @@
 
 English translation of the published release history. Historical validation statements apply to the release named in each section, not to later firmware. Release notes are authored in the Wiki and frozen into the source repository before tagging.
 
+## v0.9.22
+
+- Add optional A1 fresh-air variants using user UART TX for PWM and RX for fan feedback. Connect a compatible fan as described in the wiring guide. Standard variants retain their existing purpose and the original fan driver mapping is unchanged. All A1 PWM runs at 25 kHz.
+- Control the fresh-air fan independently with manual or automatic speed, configurable PWM polarity and output mapping limits. Feedback is displayed in RPM with configurable pulses per revolution, defaulting to 2.
+- Choose independent speed, a fresh-air limit proportional to the original fan, or a minimum original-fan speed driven by fresh-air demand. Master power-off stops both fans and existing coupling settings are preserved.
+- Combine both automatic settings on one page with PM2.5, formaldehyde and CO₂ checkboxes. Improve speed transitions and constrained automatic control. Fresh-air controls support the web interface, MQTT and Home Assistant entities.
+- Reduce temporary policy allocation and web resource size. Keep the 16 KiB memory protection threshold; busy responses remain possible under load.
+- An A1 fresh-air candidate passed physical upgrade, configuration preservation and desktop/mobile page checks. Exact final release packages, HA/HomeKit pairing and electrical waveforms have not been physically validated. Off levels during cold boot and bootloader execution are not guaranteed. M1 and TC1 were not flashed for this release.
+- Full fresh-air firmware has very little space remaining; a variant without embedded web resources is also available. Versions in the 0.9.x series are beta releases. Back up important settings before upgrading.
+
 ## v0.9.21
 
 - Fix M1 restarting repeatedly during first migration from factory firmware by providing enough startup stack for factory configuration initialization.
