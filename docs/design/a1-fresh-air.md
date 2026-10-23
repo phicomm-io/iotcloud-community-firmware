@@ -12,7 +12,7 @@
 
 ## 联动和自动模式
 
-新风开关、手动速度、自动策略独立保存。出厂关闭，记忆手动速度 60%。自动默认使用已绑定 M1 的 CO₂，800–2000 ppm 线性映射到 20–100%，传感器离线回退 30%，回退也受自动范围约束。支持 PM2.5、甲醛、CO₂ 组合，固定、线性、PID、统计方式和启停回差，使用独立控制器状态。查询状态不会推进 PID。
+新风开关、手动速度、自动策略独立保存。出厂关闭，记忆手动速度 60%。自动默认使用已绑定 M1 的 CO₂，800–2000 ppm 线性映射到 20–100%，传感器离线回退 30%，回退也受自动范围约束。支持 PM2.5、甲醛、CO₂ 组合，固定、线性、PID、统计方式和启停回差，使用独立控制器状态。查询状态不会推进 PID。风速和模式切换不中断输出；比例限速时冻结向上的积分累积，重新启用时立即重新计算。
 
 两种模式分别保存比例：
 
@@ -37,7 +37,7 @@
 - `fresh_air.config.get` / `.set`：`revision`、`coupling`、`cap_ratio`、`boost_ratio`、`active_low`（布尔）、`a`、`b`、`pwm_min`、`pwm_max`、`pulses_per_rev`。set 必须携带当前 revision，部分更新原子校验；过期返回 conflict。
 - `fresh_air.linkage.get` / `.set`：与原 `linkage` 相同的策略字段，独立 revision（与新风其他设置共享版本号）。该策略的 enabled 固定为 1，是否使用由新风 mode 决定。
 
-配置追加到既有存储末尾，带 magic/schema。原有存储前缀和版本 9 ABI 不变，新普通 A1 也保留该扩展。控制和参数保存沿用 A1 延迟合并写入，`config_dirty` / `save_error` 表示持久化状态。
+配置追加到既有存储末尾，带 magic/schema。schema 2 在旧结构的对齐空隙保存每转脉冲数；schema 1 自动迁移为默认 2，保留已有设置。原有存储前缀和版本 9 ABI 不变，新普通 A1 也保留该扩展。控制和参数保存沿用 A1 延迟合并写入，`config_dirty` / `save_error` 表示持久化状态。
 
 live/full 状态新增 `fresh_air_requested_on`、`fresh_air_requested_speed`、`fresh_air_mode`、`fresh_air_on`（输出命令非零）、`fresh_air_target`、`fresh_air_speed`、`fresh_air_primary_speed`、`fresh_air_pwm_milli`、`fresh_air_rpm`、`fresh_air_pulses`、`fresh_air_limit_reason`、`fresh_air_ready`、`fresh_air_fallback`。限制原因：0 无、1 整机关机、2 调速/比例约束、3 输出错误、4 应用配置。
 

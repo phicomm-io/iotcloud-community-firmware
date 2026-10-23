@@ -65,13 +65,25 @@ int main(void){
  ceiling=100;for(unsigned i=0;i<15;i++)tick(true,0);
  assert(current.target==90 && primary==100 && current.applied==50);
  sensor_valid=false;now+=5000;tick(true,0);assert(current.target==20 && current.fallback);
+ assert(!strcmp(cmd("fresh_air.set","{\"mode\":\"manual\",\"speed\":70}"),"accepted"));
+ tick(true,0);assert(current.applied>0); /* Control edits must not pulse the fan off. */
  /* Snapshot reads must not advance controller state. */
  feature_pid_t saved=controller;fresh_snapshot_t view;for(unsigned i=0;i<50;i++)fresh_snapshot(&view);assert(!memcmp(&saved,&controller,sizeof(saved)));
  for(unsigned i=0;i<120;i++)edge(NULL);now+=1000;tick(true,0);assert(current.pulses==120 && current.rpm>0);
  sample_at=now;previous_pulses=pulses;config.mapping.pulses_per_rev=2;
  for(unsigned i=0;i<100;i++)edge(NULL);now+=1000;mico_rtos_lock_mutex(&output_lock);fresh_finish(primary,now);assert(current.rpm==3000);
  config.mapping.pulses_per_rev=4;for(unsigned i=0;i<100;i++)edge(NULL);now+=1000;mico_rtos_lock_mutex(&output_lock);fresh_finish(primary,now);assert(current.rpm==1500);
+ config.mapping.pulses_per_rev=storage.fresh_air.mapping.pulses_per_rev;
+ assert(!strcmp(cmd("fresh_air.set","{\"speed\":10}"),"accepted"));
  fail_pwm=1;tick(true,0);assert(current.applied==0 && !current.ready && measured_duty==100);fail_pwm=0;
+ /* A saturated coupling must not accumulate upward PID integral. */
+ storage.fresh_air.automatic=1;storage.fresh_air.linkage.mode=2;
+ storage.fresh_air.linkage.min_speed=0;storage.fresh_air.linkage.max_speed=100;
+ storage.fresh_air.linkage.kp=0;storage.fresh_air.linkage.ki=1;
+ storage.fresh_air.co2.target_co2=1000;config=storage.fresh_air;
+ sensor_valid=true;ppm=2000;primary=100;current.applied=50;published.reason=2;
+ controller.initialized=true;controller.integral=70;controller.last_ms=now-5000;control_at=now-5000;
+ tick(true,0);assert(controller.integral==70 && current.applied==50);
  fresh_shutdown();for(unsigned i=0;i<10;i++)tick(true,100);assert(!primary && !current.applied && measured_duty==100);
  a1_state.reboot_pending=true;assert(!strcmp(cmd("fresh_air.set","{\"on\":false}"),"busy"));
  puts("Fresh controller: commands, revision, mapping, sensor fallback, feedback, shutdown: PASS");

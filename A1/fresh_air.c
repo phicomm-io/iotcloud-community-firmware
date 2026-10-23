@@ -53,8 +53,10 @@ void fresh_prepare(bool master,unsigned desired,unsigned applied,uint32_t now,un
     fresh_config_t c;fresh_config_get(&c);
     mico_rtos_lock_mutex(&output_lock); /* Held through both output operations. */
     bool changed=revision!=c.revision;
+    bool remap=memcmp(&config.mapping,&c.mapping,sizeof(c.mapping))!=0;
     if(changed) {
-        output(0);config=c;output(0);revision=c.revision;
+        if(remap)output(0);
+        config=c;if(remap)output(0);revision=c.revision;
         memset(&controller,0,sizeof(controller));control_at=now-5000;
     }
     current.requested_on=c.on;current.requested_speed=c.speed;current.automatic=c.automatic;
@@ -64,7 +66,11 @@ void fresh_prepare(bool master,unsigned desired,unsigned applied,uint32_t now,un
         if((uint32_t)(now-control_at)>=5000) {
             float values[4]={0},co2=0;bool on;
             bool valid=feature_fresh_values(c.linkage.statistic,c.linkage.metrics,values,&co2);
-            if(valid) feature_control_co2(&c.linkage,&c.co2,&controller,values,co2,now,true,automatic_speed,&on,&automatic_speed);
+            if(valid) {
+                float integral=controller.integral;
+                feature_control_co2(&c.linkage,&c.co2,&controller,values,co2,now,true,current.applied,&on,&automatic_speed);
+                if(published.reason==2 && automatic_speed>current.applied && controller.integral>integral)controller.integral=integral;
+            }
             else {memset(&controller,0,sizeof(controller));automatic_speed=c.fallback_speed;
                 if(automatic_speed<c.linkage.min_speed)automatic_speed=c.linkage.min_speed;
                 if(automatic_speed>c.linkage.max_speed)automatic_speed=c.linkage.max_speed;}
@@ -73,6 +79,7 @@ void fresh_prepare(bool master,unsigned desired,unsigned applied,uint32_t now,un
         target=automatic_speed;
     }
     if(target>100)target=100;
+    if(!c.on){target=0;memset(&controller,0,sizeof(controller));control_at=now-5000;}
     current.target=target;
     if(!master || inhibited) {
         *next=next_fresh=0;current.reason=1;
@@ -82,7 +89,7 @@ void fresh_prepare(bool master,unsigned desired,unsigned applied,uint32_t now,un
         fresh_pair(&c.mapping,desired,target,feature_primary_ceiling(),applied,current.applied,next,&next_fresh);
         if(!c.on)next_fresh=0;
         if(next_fresh<target)current.reason=2;
-        if(changed){next_fresh=0;current.reason=4;}
+        if(remap){next_fresh=0;current.reason=4;}
     }
     next_primary=*next;
     /* Lower fresh output before lowering the primary output. */
