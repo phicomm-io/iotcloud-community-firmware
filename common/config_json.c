@@ -131,10 +131,36 @@ static bool string_field(json_object *o, const char *key, char *dst, size_t n) {
 static void js(json_object *o, const char *k, const char *v) {
   json_build_object_add(o, k, json_object_new_string(v));
 }
+static json_object *linkage_encode(const feature_linkage_t *l, const feature_co2_config_t *co2, unsigned fallback) {
+  json_object *o=encode_fields(l,linkage_fields,COUNT(linkage_fields));
+  if(o) {
+    json_build_object_add(o,"fallback_speed",json_object_new_int(fallback));
+    for(unsigned i=0;i<COUNT(co2_fields);i++) json_build_object_add(o,co2_fields[i].key,json_object_new_double(*(const float *)((const char *)co2+co2_fields[i].offset)));
+  }
+  return o;
+}
+static bool linkage_decode(feature_linkage_t *l, feature_co2_config_t *co2, uint8_t *fallback, json_object *o) {
+    if (!decode_fields(o, l, linkage_fields, COUNT(linkage_fields)))
+      return false;
+    if (json_object_object_get(o, "metrics")) {
+      if (!json_object_object_get(o, "on_metrics"))
+        l->on_metrics = l->metrics;
+      if (!json_object_object_get(o, "off_metrics"))
+        l->off_metrics = l->metrics;
+    }
+    static const field_t automatic_fields[] = {{"fallback_speed", 0, 1, 0, 100}};
+    if (!decode_fields(o, fallback, automatic_fields, COUNT(automatic_fields))) return false;
+    if (!decode_fields(o, co2, co2_fields, COUNT(co2_fields))) return false;
+    return (!(l->metrics & 4) || (co2->low_co2 < co2->high_co2 && co2->target_co2 > 0 && (!l->hysteresis_enabled || co2->on_co2 > co2->target_co2))) && l->min_speed <= l->max_speed && l->low_pm < l->high_pm &&
+           l->low_hcho < l->high_hcho &&
+           (!l->hysteresis_enabled ||
+            ((!(l->metrics & 1) || l->on_pm > l->target_pm) &&
+             (!(l->metrics & 2) || l->on_hcho > l->target_hcho)));
+}
 static json_object *config_encode(const feature_config_t *c, const char *d) {
   json_object *o = NULL, *a;
   if (!strcmp(d, "linkage"))
-    o = encode_fields(&c->linkage, linkage_fields, COUNT(linkage_fields));
+    o = linkage_encode(&c->linkage,&c->co2,c->automatic.fallback_speed);
   else if (!strcmp(d, "light")) {
     o = encode_fields(&c->light, light_fields, COUNT(light_fields));
     json_build_object_add(o, "speed", json_object_new_int(feature_light_speed(&c->light)));
@@ -212,10 +238,6 @@ static json_object *config_encode(const feature_config_t *c, const char *d) {
     }
     json_build_object_add(o, "members", a);
   }
-  if (o && !strcmp(d, "linkage")) {
-    json_build_object_add(o, "fallback_speed", json_object_new_int(c->automatic.fallback_speed));
-    for(unsigned i=0;i<COUNT(co2_fields);i++) json_build_object_add(o,co2_fields[i].key,json_object_new_double(*(const float *)((const char *)&c->co2+co2_fields[i].offset)));
-  }
   if (o && !strcmp(d, "sleep")) {
     json_object *windows = json_object_object_get(o, "windows");
     for (unsigned i=0;i<c->sleep_count;i++) {
@@ -232,23 +254,7 @@ static bool config_decode(feature_config_t *c, const char *d, json_object *o) {
   if (!json_object_is_type(o, json_type_object))
     return false;
   if (!strcmp(d, "linkage")) {
-    feature_linkage_t *l = &c->linkage;
-    if (!decode_fields(o, l, linkage_fields, COUNT(linkage_fields)))
-      return false;
-    if (json_object_object_get(o, "metrics")) {
-      if (!json_object_object_get(o, "on_metrics"))
-        l->on_metrics = l->metrics;
-      if (!json_object_object_get(o, "off_metrics"))
-        l->off_metrics = l->metrics;
-    }
-    static const field_t automatic_fields[] = {U(feature_auto_config_t, fallback_speed, 0, 100)};
-    if (!decode_fields(o, &c->automatic, automatic_fields, COUNT(automatic_fields))) return false;
-    if (!decode_fields(o, &c->co2, co2_fields, COUNT(co2_fields))) return false;
-    return (!(l->metrics & 4) || (c->co2.low_co2 < c->co2.high_co2 && c->co2.target_co2 > 0 && (!l->hysteresis_enabled || c->co2.on_co2 > c->co2.target_co2))) && l->min_speed <= l->max_speed && l->low_pm < l->high_pm &&
-           l->low_hcho < l->high_hcho &&
-           (!l->hysteresis_enabled ||
-            ((!(l->metrics & 1) || l->on_pm > l->target_pm) &&
-             (!(l->metrics & 2) || l->on_hcho > l->target_hcho)));
+    return linkage_decode(&c->linkage,&c->co2,&c->automatic.fallback_speed,o);
   }
   if (!strcmp(d, "light")) {
     if (!decode_fields(o, &c->light, light_fields, COUNT(light_fields)))

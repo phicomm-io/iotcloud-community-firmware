@@ -2028,9 +2028,7 @@ unsigned feature_primary_ceiling(void) {
     unlock(); return cap;
 }
 json_object *feature_fresh_encode(const fresh_config_t *f) {
-    feature_config_t *c=calloc(1,sizeof(*c)); if(!c)return NULL;
-    c->linkage=f->linkage;c->co2=f->co2;c->automatic.fallback_speed=f->fallback_speed;
-    json_object *o=config_encode(c,"linkage");free(c);return o;
+    return linkage_encode(&f->linkage,&f->co2,f->fallback_speed);
 }
 bool feature_fresh_decode(fresh_config_t *f,json_object *o) {
     /* Accept only the shared linkage codec's keys, plus optimistic revision. */
@@ -2040,10 +2038,8 @@ bool feature_fresh_decode(fresh_config_t *f,json_object *o) {
         for(unsigned i=0;i<COUNT(co2_fields);i++)if(!strcmp(key,co2_fields[i].key))known=true;
         if(!known)return false;
     }
-    feature_config_t *c=calloc(1,sizeof(*c));if(!c)return false;
-    c->linkage=f->linkage;c->co2=f->co2;c->automatic.fallback_speed=f->fallback_speed;
-    bool ok=config_decode(c,"linkage",o);
-    if(ok){f->linkage=c->linkage;f->linkage.enabled=1;f->co2=c->co2;f->fallback_speed=c->automatic.fallback_speed;}
-    free(c);return ok;
+    bool ok=linkage_decode(&f->linkage,&f->co2,&f->fallback_speed,o);
+    if(ok)f->linkage.enabled=1;
+    return ok;
 }
 #endif
