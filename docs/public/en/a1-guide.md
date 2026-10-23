@@ -125,7 +125,7 @@ M1 publishes its own MQTT sensor entities: temperature, humidity, PM2.5, formald
 
 ## Optional fresh-air fan
 
-Starting with v0.9.22, choose `fresh-air` with embedded web resources or `fresh-air-no-frontend-resources` without them. Standard A1 units do not need a fresh-air variant. Use an image matching the current variant when upgrading. Fresh-air firmware occupies the user UART, which is no longer available for serial communication.
+Starting with v0.9.23, choose `fresh-air` with embedded web resources or `fresh-air-no-frontend-resources` without them. Standard A1 units do not need a fresh-air variant. Use an image matching the current variant when upgrading. Fresh-air firmware occupies the user UART, which is no longer available for serial communication.
 
 For a compatible PWM fan, connect user UART TX (GPIO9) to PWM control, RX (GPIO10) to tachometer feedback, and share signal ground. Power the fan from a supply matching its voltage and current requirements, never from signal pins. Check the fan pinout and signal levels before wiring and use level conversion when needed. Do not connect fan supply voltage to TX/RX. Original fan driver wiring remains unchanged; both PWM outputs run at 25 kHz.
 

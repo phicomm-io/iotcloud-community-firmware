@@ -2,7 +2,7 @@
 
 English translation of the published release history. Historical validation statements apply to the release named in each section, not to later firmware. Release notes are authored in the Wiki and frozen into the source repository before tagging.
 
-## v0.9.22
+## v0.9.23
 
 - Add optional A1 fresh-air variants using user UART TX for PWM and RX for fan feedback. Connect a compatible fan as described in the wiring guide. Standard variants retain their existing purpose and the original fan driver mapping is unchanged. All A1 PWM runs at 25 kHz.
 - Control the fresh-air fan independently with manual or automatic speed, configurable PWM polarity and output mapping limits. Feedback is displayed in RPM with configurable pulses per revolution, defaulting to 2.
