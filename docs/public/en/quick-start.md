@@ -12,9 +12,11 @@ This community firmware supports the Phicomm TC1 power strip, M1 air quality mon
 
 **`tc1(a1)` means the A1 hardware revision of the TC1 power strip, not the A1 air purifier. They are different products and cannot use each other's firmware.** Check the model before flashing.
 
-For a first installation, follow [TC1 flashing](tc1-flash) (EMW3031, J-Link) or [A1 / M1 flashing](a1-m1-flash) (EMW3080B, J-Link or serial bootloader).
+For a first installation, M1 can use [factory LAN migration](m1-no-disassembly), starting with 0.9.21 or newer. Wired procedures are [TC1 flashing](tc1-flash) (EMW3031, J-Link) and [A1 / M1 flashing and recovery](a1-m1-flash) (EMW3080B, J-Link or serial bootloader).
 
 ## First Wi-Fi setup
+
+This section describes community firmware. Devices still running factory firmware should use [stock Wi-Fi setup without the app](stock-provision) first.
 
 If Wi-Fi has not been configured, the device opens a setup access point. Connect a phone or computer and open `http://192.168.0.1/`.
 

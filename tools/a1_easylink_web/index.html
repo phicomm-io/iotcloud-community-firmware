@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="a1-token" content="{{TOKEN}}">
+  <title>A1 原厂配网</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">斐讯 A1 · 原厂固件</p>
+    <h1>让 A1 连接 Wi-Fi</h1>
+    <p>无需原厂 App。电脑先无线连接目标 <strong>2.4 GHz Wi-Fi</strong>，再填写同一个网络的信息。</p>
+    <ol class="steps">
+      <li>电脑使用 Wi-Fi 连接，不能用网线代替。</li>
+      <li>开始发送后，让 A1 进入配网模式；接收窗口约 60 秒。</li>
+      <li>发送结束后，在路由器客户端列表确认 A1 获得 IP。</li>
+    </ol>
+    <form id="provision" autocomplete="off">
+      <fieldset id="inputs">
+        <label for="ssid">Wi-Fi 名称</label>
+        <input id="ssid" name="ssid" required placeholder="电脑当前连接的 Wi-Fi" maxlength="32" autocapitalize="off" spellcheck="false">
+        <label for="password">Wi-Fi 密码</label>
+        <input id="password" name="password" type="password" autocomplete="new-password" required>
+        <label class="check"><input id="open-network" type="checkbox">这是无密码的开放网络</label>
+        <label for="interface-ip">电脑无线网卡 IPv4 地址</label>
+        <input id="interface-ip" name="interface_ip" required inputmode="decimal" placeholder="例如 192.168.1.23" spellcheck="false">
+        <p class="help">Windows 用 ipconfig 查看 WLAN 的 IPv4；请勿填写路由器、VPN 或有线网卡地址。</p>
+        <details>
+          <summary>发送选项</summary>
+          <label for="duration">持续时间（秒）</label>
+          <input id="duration" type="number" value="50" min="1" max="60" step="1" required>
+          <label for="interval">包间隔（毫秒）</label>
+          <input id="interval" type="number" value="10" min="1" max="200" step="1" required>
+        </details>
+      </fieldset>
+      <div class="actions">
+        <button type="submit" id="start" disabled>开始发送</button>
+        <button type="button" id="stop" class="secondary" disabled>停止</button>
+      </div>
+    </form>
+    <section class="status" aria-labelledby="status-title">
+      <h2 id="status-title">发送状态</h2>
+      <p id="message" role="status" aria-live="polite">正在连接本机发送服务…</p>
+      <progress id="progress" value="0" max="50" aria-label="发送进度"></progress>
+      <p id="counts" class="help"></p>
+    </section>
+    <p class="footnote">信息仅提交给本机发送服务，不上传云端、不保存密码。关闭页面不会立即停止发送，请使用“停止”或退出终端。当前已通过原厂解码指令仿真，实机无线配网尚未验证。</p>
+    <details class="footnote"><summary>如何让 A1 进入配网模式？</summary>
+      <p>原厂代码在特定触摸输入持续约 1 秒后启动配网。触摸寄存器与面板具体图标尚未核对，因此这里不能指定某个按键。首次使用需先确认设备已进入配网状态；未配置开机也不能仅凭日志认定自动进入。</p>
+    </details>
+    <noscript>需要启用 JavaScript 才能使用本机配网页面。</noscript>
+  </main>
+</body>
+</html>

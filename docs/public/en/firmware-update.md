@@ -1,6 +1,6 @@
 # Firmware updates
 
-Web OTA is available **only after this community firmware is installed**. Phicomm factory firmware and other third-party firmware require a first installation using the appropriate flashing guide.
+This page covers web OTA after community firmware is installed. Factory devices need their model-specific first installation. M1 can use [factory LAN migration](m1-no-disassembly), **starting with 0.9.21 or newer**; do not upload the community signature wrapper to the factory interface.
 
 ## Check for updates on the device
 
@@ -23,7 +23,7 @@ You can read release notes for the selected version. Use **Cancel download** dur
 | File | Purpose |
 | --- | --- |
 | `.ota.bin.signed` | Signed OTA package for web upload and MQTT / URL installation; P-256 / SHA-256 signature verification is mandatory |
-| `.ota.bin.raw` | Raw image for an explicitly selected unsigned recovery procedure |
+| `.ota.bin.raw` | Native image for an explicitly supported first migration or unsigned recovery; factory M1 migration uses the full image from 0.9.21 or newer |
 | `.all.bin` | Full image for wired flashing; **never upload it as OTA** |
 
 Use the GitHub archive on the [project downloads page]({{SITE_URL}}#releases), choose your exact product and verify `SHA256SUMS` from that release. The device verifies the header signature before erasing, and activates the new image only after Flash readback SHA-256 and compatibility checks pass.
@@ -37,7 +37,7 @@ Online demos use simulated data. On a real device:
 3. Keep power connected throughout writing and the automatic reboot.
 4. Reopen the WebUI and check the running version.
 
-A first transition from older firmware may require `.ota.bin.raw`. New firmware accepts it after selecting **Allow unsigned firmware**, without a second confirmation dialog.
+Unsigned recovery from older community firmware may use `.ota.bin.raw` under its specific procedure. Firmware supporting that option accepts it after selecting **Allow unsigned firmware**. Factory M1 uses the separate [factory upload procedure](m1-no-disassembly); later normal updates still use signed packages.
 
 ## Recovery
 

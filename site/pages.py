@@ -25,10 +25,14 @@ GROUPS = [
     ]),
     ("m1", "M1 空气检测仪", [
         ("m1-guide", "功能与操作", "读数、屏幕亮度、指示灯与恢复", "M1-功能与操作"),
+        ("stock-provision", "原厂固件配网（免 App）", "A1 EasyLink 与 M1 热点配网，按系统显示命令", "A1-M1-原厂配网"),
+        ("m1-no-disassembly", "免拆刷机：内网 / 公网", "原厂 OTA 上传、镜像要求与 DNS 迁移边界", "M1-免拆刷机"),
         ("a1-m1-flash", "刷机：J-Link / Bootloader", "共用教程：模组飞线、工厂测试点与串口刷机", "A1-M1-刷机"),
     ]),
     ("a1", "A1 空气净化器", [
         ("a1-guide", "功能与操作", "风机、灯环、夜间模式与联动", "A1-功能与操作"),
+        ("stock-provision", "原厂固件配网（免 App）", "A1 EasyLink 与 M1 热点配网，按系统显示命令", "A1-M1-原厂配网"),
+        ("a1-no-disassembly", "免拆刷机：内网 / 公网", "原厂 OTA 上传、镜像要求与 DNS 迁移边界", "A1-免拆刷机"),
         ("a1-m1-flash", "刷机：J-Link / Bootloader", "共用教程：模组飞线、工厂测试点与串口刷机", "A1-M1-刷机"),
     ]),
     ("dev", "开发与维护", [
@@ -56,6 +60,9 @@ SITE_URL = 'https://phicomm-io.github.io/'
 
 # English guides share the same slugs, ordering and asset collection.
 EN_TITLES = {
+ 'stock-provision': ('Stock Wi-Fi setup without the app', 'A1 EasyLink and M1 hotspot setup on Windows, macOS and Linux'),
+ 'a1-no-disassembly': ('A1 no-disassembly migration', 'LAN OTA uploads and public DNS migration prerequisites'),
+ 'm1-no-disassembly': ('M1 no-disassembly migration', 'Factory LAN OTA, image requirements and DNS migration limits'),
  'quick-start': ('Quick start', 'Devices, Wi-Fi setup and local access'),
  'flash-prep': ('Before flashing', 'Power, backups and image selection'),
  'firmware-update': ('Firmware updates', 'OTA sources, packages and recovery'),

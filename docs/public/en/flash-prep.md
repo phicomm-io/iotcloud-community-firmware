@@ -2,6 +2,8 @@
 
 Read these common requirements before following a model-specific guide. The individual guides describe wiring points and differences between products.
 
+Factory M1 also supports the [LAN migration procedure](m1-no-disassembly), starting at 0.9.21 or newer. Keep its normal power supply as described there. The wiring and independent-supply requirements below apply when opening a device and connecting a programmer.
+
 ## Electrical safety
 
 **Disconnect mains power, the original power supply and all loads before opening the device or connecting a programmer.** During flashing:
@@ -19,7 +21,7 @@ A full image overwrites the original firmware and some settings. Save a full Fla
 | Device | Module | First-install method | Guide |
 | --- | --- | --- | --- |
 | TC1 power strip | EMW3031 | J-Link + FlashPlus, full image at Flash offset 0 | [TC1 flashing](tc1-flash) |
-| M1 air quality monitor | EMW3080B / MK3080B | J-Link or serial bootloader | [A1 / M1 flashing](a1-m1-flash) |
+| M1 air quality monitor | EMW3080B / MK3080B | Factory LAN OTA, or J-Link / serial bootloader | [LAN migration](m1-no-disassembly) · [Wired recovery](a1-m1-flash) |
 | A1 air purifier | EMW3080B / MK3080B | J-Link or serial bootloader | [A1 / M1 flashing](a1-m1-flash) |
 
 The TC1 A1 hardware revision and the A1 air purifier are different products. Download firmware by product.
@@ -29,10 +31,10 @@ The TC1 A1 hardware revision and the A1 air purifier are different products. Dow
 | File | Purpose | First installation? |
 | --- | --- | --- |
 | `.all.bin` | Native full Flash image | Yes, full-address programming |
-| `.ota.bin` / `.ota.bin.signed` | Signed OTA update package | No, only devices already running this firmware |
-| `.ota.bin.raw` | Raw OTA image | No; serial image preparation or explicitly chosen unsigned recovery |
+| `.ota.bin.signed` | Signed OTA update package | No, only devices already running this firmware |
+| `.ota.bin.raw` | Native OTA image | Factory M1 can use the full image from 0.9.21 or newer; follow each guide for other uses |
 
-**Use the OTA file for a web update, never `.all.bin` or `.usr.bin`.** Verify downloads against `SHA256SUMS` from the same release.
+**Community web updates use `.ota.bin.signed`; factory migration follows the model-specific guide. Never upload `.all.bin` or `.usr.bin` as OTA.** Verify downloads against `SHA256SUMS` from the same release.
 
 ## Wiring and instructions
 

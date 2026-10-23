@@ -210,6 +210,52 @@ class BuildTests(unittest.TestCase):
             self.assertIn('<meta name="description"', text)
         self.assertIn(f'Sitemap: {SITE_URL}sitemap.xml', (self.out / 'robots.txt').read_text())
 
+    def test_stock_guides_keep_all_os_commands_without_javascript(self):
+        from html.parser import HTMLParser
+
+        class OSParser(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.systems = set()
+                self.choices = []
+
+            def handle_starttag(self, tag, attrs):
+                attrs = dict(attrs)
+                if 'data-guide-os' in attrs:
+                    self.systems.update(attrs['data-guide-os'].split())
+                    if 'hidden' in attrs:
+                        raise AssertionError('Instructions must remain readable without JavaScript')
+                if tag == 'input' and attrs.get('name') == 'guide-os':
+                    self.choices.append(attrs['value'])
+
+        for language in ('', 'en/'):
+            for slug in ('stock-provision', 'a1-no-disassembly', 'm1-no-disassembly'):
+                text = (self.out / 'guides' / language / f'{slug}.html').read_text()
+                parser = OSParser()
+                parser.feed(text)
+                self.assertEqual(parser.systems, {'mac', 'windows', 'linux'})
+                self.assertEqual(parser.choices, ['mac', 'windows', 'linux'])
+                self.assertNotIn('<!-- os:', text)
+                self.assertNotIn('```', text)
+                self.assertIn('curl.exe', text)
+                self.assertRegex(text, r'curl (?:--http1\.0 )?--noproxy')
+
+    def test_easylink_download_is_complete_and_matches_sources(self):
+        import hashlib
+        import zipfile
+        assets = self.out / 'guides/assets'
+        archive = assets / 'tools/a1-easylink.zip'
+        files = ('a1_easylink.py', 'a1_easylink_web.py',
+                 'a1_easylink_web/index.html', 'a1_easylink_web/app.js',
+                 'a1_easylink_web/style.css')
+        with zipfile.ZipFile(archive) as bundle:
+            self.assertEqual(set(bundle.namelist()), {'a1-easylink/' + f for f in files})
+            for name in files:
+                self.assertEqual(bundle.read('a1-easylink/' + name),
+                                 (ROOT / 'tools' / name).read_bytes())
+        checksum = hashlib.sha256(archive.read_bytes()).hexdigest()
+        self.assertIn(checksum + '  tools/a1-easylink.zip', (assets / 'SHA256SUMS').read_text())
+
 
 if __name__ == '__main__':
     unittest.main()

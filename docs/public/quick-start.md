@@ -15,9 +15,12 @@
 如果你还没有安装本项目固件，请按对应型号的刷机文档操作：
 
 - [TC1 刷机](tc1-flash)：EMW3031，J-Link 烧录
-- [A1 / M1 刷机](a1-m1-flash)：EMW3080B，J-Link 或串口 Bootloader
+- [M1 免拆迁移](m1-no-disassembly)：从原厂内网 OTA 安装，首次必须使用 0.9.21 或更新版本
+- [A1 / M1 有线刷机与恢复](a1-m1-flash)：EMW3080B，J-Link 或串口 Bootloader
 
 ## 首次配网
+
+以下是社区固件的首次配网；尚在原厂固件时先看 [免 App 原厂配网](stock-provision)。
 
 设备上电后若未配置 Wi-Fi，会开启配网热点。用手机或电脑连接该热点，浏览器访问 `http://192.168.0.1/` 完成配网。
 

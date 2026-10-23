@@ -16,6 +16,7 @@
 | `images/jlink-swd.png` | [SEGGER 官方 SWD 接口图](https://www.segger.com/fileadmin/images/products/J-Link/Technology/Interface_Description/181129_SWD.svg)，由 SVG 转为白色背景 PNG |
 | `images/flashplus-config.png` | [EMW3031 / FlashPlus 工具说明 PDF](https://github.com/IoTDevice/phicomm_tc1_a1/blob/master/工具和文档/EMW3031说明文档_flashplus.pdf)，第 2 页配置区域裁剪；仅用于识别芯片与 Flash 配置，擦除及校验选项以本项目教程为准 |
 | `tools/FlashPlus_v1.0.10.msi` | Marvell FlashPlus v1.0.10，[IoTDevice 工具镜像](https://github.com/IoTDevice/phicomm_tc1_a1/blob/master/工具和文档/FlashPlus_v1.0.10.msi)，安装包保持原样 |
+| `tools/a1-easylink.zip` | 本项目的 A1 EasyLink 配网工具，包含 `tools/a1_easylink.py`、`tools/a1_easylink_web.py` 和三个网页资源；无固件文件，工具包校验和见清单 |
 
 图片与第三方工具的版权属于原作者及供应商，保存副本不改变原有授权；FlashPlus 不属于本项目固件源码。**EMW3031 数据手册明确限制配图转载，因此教程仅链接原文。**
 
