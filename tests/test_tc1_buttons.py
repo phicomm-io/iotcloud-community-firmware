@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class TC1Buttons(unittest.TestCase):
     def test_offline_and_low_heap_controls(self):
         sdk = Path(os.environ.get('TC1_SDK_DIR', ROOT/'build/tc1-sdk-3.6.4/mico-os'))
-        bear = ROOT/'build/ota-tls/bearssl-0.6'
+        sha = sdk/'MiCO/security/SHAUtils'
         with tempfile.TemporaryDirectory() as temporary:
             out = Path(temporary)
             json = copy_patched_json(sdk/'libraries/utilities/json_c', out/'sdk')
@@ -32,11 +32,10 @@ class TC1Buttons(unittest.TestCase):
             command = [os.environ.get('CC', 'cc'), '-std=gnu99', '-g',
                        '-fsanitize=address,undefined', '-fno-omit-frame-pointer', '-no-pie',
                        '-I'+str(ROOT/'tests/stubs'), '-I'+str(ROOT), '-I'+str(json),
-                       '-I'+str(out), '-I'+str(bear/'inc'), '-I'+str(bear/'src'),
+                       '-I'+str(out), '-I'+str(sha),
                        str(ROOT/'tests/tc1_buttons_harness.c'), str(ROOT/'common/json_owned.c'),
                        *map(str, sorted(json.glob('*.c'))),
-                       *[str(bear/name) for name in ('src/hash/sha2small.c',
-                           'src/codec/dec32be.c', 'src/codec/enc32be.c', 'src/codec/enc64be.c')],
+                       str(sha/'sha224-256.c'),
                        '-o', str(out/'buttons')]
             compiled = subprocess.run(command, capture_output=True, text=True)
             self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
