@@ -22,6 +22,13 @@ bool a1_automation_execute(const automation_action_t *a,bool button){
  assert(calls<16);order[calls++]=a->kind==AUTO_REBOOT?AUTO_REBOOT:AUTO_FAN;return true;
 }
 #endif
+#ifdef AUTOMATION_TC1
+bool tc1_automation_load_button(unsigned key,unsigned slot,automation_action_t *out){*out=stored.buttons[key][slot];return true;}
+bool tc1_automation_execute(const automation_action_t *a,bool button){
+ (void)button;if(!a->kind)return true;if(busy)return false;
+ assert(calls<16);order[calls++]=a->kind==AUTO_REBOOT?AUTO_REBOOT:AUTO_FAN;return true;
+}
+#endif
 static json_object *request(const char *s,const char *code){json_object *q=service_parse(s,strlen(s));assert(q);json_object *r=service_command(q);json_object_put(q);assert(r);const char *got=json_object_get_string(json_object_object_get(r,"code"));if(strcmp(got,code)){fprintf(stderr,"%s expected=%s got=%s\n",s,code,json_object_to_json_string(r));abort();}return r;}
 #define CHECK(s,c) do{json_object *r=request(s,c);json_object_put(r);}while(0)
 static void tick(unsigned seconds){epoch+=seconds;test_now+=seconds*1000;automation_poll(true);}

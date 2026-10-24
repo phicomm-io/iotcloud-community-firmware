@@ -22,6 +22,7 @@ JSON_NUMBER_CACHE_MODELS=TC1 python3 -m unittest tests.test_json_number_cache
 JSON_NUMERIC_MODELS=TC1 python3 -m unittest tests.test_json_numeric_checked
 python3 -m unittest tests.test_tc1_mqtt_stack tests.test_tc1_checked_number_calls
 python3 tests/test_tc1_gpio.py
+python3 -m unittest tests.test_tc1_buttons
 
 python3 tests/test_tc1_core.py
 
