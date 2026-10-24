@@ -236,7 +236,7 @@ static bool ingress_accept(MessageData *d,messageHandler handler) {
 static m1_config_t cfg,current;
 static mqtt_state_t state;
 static char client_id[192],wildcard[MQTT_TOPIC_MAX];
-static char sensor_filter[1][FEATURE_TOPIC_MAX];
+static char sensor_filter[FEATURE_TOPIC_MAX];
 static unsigned discovery_index,initial_index;
 static uint32_t connect_sequence,co2_sequence,pressure_sequence,sequence,snapshot_at;
 static bool co2_discovered,pressure_discovered;
@@ -262,7 +262,10 @@ static int session_prepare(void *context,ph_mqtt_connection *spec) {
         mqtt_leaf(&account, "command", command_topic, sizeof(command_topic));
         session_config = cfg;
         feature_mqtt_session(&account);
-        if(feature_mqtt_filters(sensor_filter,1)!=1)return PH_MQTT_PREPARE_WAIT;
+        /* This subscription depends only on account identity. Do not allocate
+         * the full feature configuration merely to form its fixed topic. */
+        char sensor_leaf[32];snprintf(sensor_leaf,sizeof(sensor_leaf),"%s/command",account.mac);
+        if(!mqtt_aux(&account,"sensor",sensor_leaf,sensor_filter,sizeof(sensor_filter)))return PH_MQTT_PREPARE_WAIT;
         rediscover=false;
         *spec=(ph_mqtt_connection){&account,cfg.mqtt_host,cfg.mqtt_user,cfg.mqtt_password,
             client_id,availability_topic,cfg.mqtt_port,5000,m1_mqtt_read};
@@ -272,7 +275,7 @@ static bool session_subscription(void *context,unsigned index,ph_mqtt_subscripti
     (void)context;
     if(index==0)*out=(ph_mqtt_subscription){wildcard,QOS1,native_command};
     else if(index==1)*out=(ph_mqtt_subscription){"homeassistant/status",QOS0,ha_birth};
-    else if(index==2)*out=(ph_mqtt_subscription){sensor_filter[0],QOS1,native_command};
+    else if(index==2)*out=(ph_mqtt_subscription){sensor_filter,QOS1,native_command};
     else return false;
     return true;
 }
