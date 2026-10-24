@@ -2,13 +2,16 @@
 import importlib.util
 from pathlib import Path
 import struct
+import sys
 import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location('daikin_stock_ota', ROOT / 'docs/public/assets/tools/daikin-stock-ota/daikin_stock_ota.py')
 ota = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(ota)
+# Importing a downloadable asset must not add bytecode to the public bundle.
+with patch.object(sys, 'dont_write_bytecode', True):
+    SPEC.loader.exec_module(ota)
 
 
 class Peer:
