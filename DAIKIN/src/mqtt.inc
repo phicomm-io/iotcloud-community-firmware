@@ -1,5 +1,5 @@
 static void publish(const String &topic,const String &text,bool retain=true){if(mqtt&&mqttConnected)esp_mqtt_client_publish(mqtt,topic.c_str(),text.c_str(),text.length(),1,retain);}
-static void publishState(){DynamicJsonDocument doc(4096);state(doc.to<JsonObject>());String text;serializeJson(doc,text);publish(mqttRoot+"/state",text);
+static void publishState(){DynamicJsonDocument doc(8192);state(doc.to<JsonObject>());String text;serializeJson(doc,text);publish(mqttRoot+"/state",text);
   doc.clear();sensorBody(doc.to<JsonObject>());String feed;serializeJson(doc,feed);
   publish(sensorRoot+"/state",feed,false);
 }
@@ -25,9 +25,9 @@ static void mqttEvent(void *,esp_event_base_t,int32_t eventId,void *eventData){
   auto event=(esp_mqtt_event_handle_t)eventData;
   mqttLastEvent=eventId;
   if(eventId==MQTT_EVENT_ERROR&&event->error_handle){mqttErrorType=event->error_handle->error_type;mqttSocketError=event->error_handle->esp_transport_sock_errno;}
-  if(eventId==MQTT_EVENT_CONNECTED){mqttConnected=true;commandSubId=esp_mqtt_client_subscribe(mqtt,(mqttRoot+"/command").c_str(),1);esp_mqtt_client_subscribe(mqtt,"homeassistant/status",1);esp_mqtt_client_subscribe(mqtt,(sensorRoot+"/command").c_str(),1);}
-  if(eventId==MQTT_EVENT_SUBSCRIBED&&event->msg_id==commandSubId)mqttOnline=true;
-  if(eventId==MQTT_EVENT_DISCONNECTED)mqttConnected=false;
+  if(eventId==MQTT_EVENT_CONNECTED){mqttConnected=true;mqttCommandReady=false;commandSubId=esp_mqtt_client_subscribe(mqtt,(mqttRoot+"/command").c_str(),1);esp_mqtt_client_subscribe(mqtt,"homeassistant/status",1);esp_mqtt_client_subscribe(mqtt,(sensorRoot+"/command").c_str(),1);}
+  if(eventId==MQTT_EVENT_SUBSCRIBED&&event->msg_id==commandSubId){mqttCommandReady=true;mqttOnline=true;}
+  if(eventId==MQTT_EVENT_DISCONNECTED){mqttConnected=false;mqttCommandReady=false;}
   if(eventId!=MQTT_EVENT_DATA||event->retain)return; // Never execute retained commands.
   if(event->current_data_offset==0){
     if(mqttQueued)return;
@@ -42,7 +42,7 @@ static void mqttEvent(void *,esp_event_base_t,int32_t eventId,void *eventData){
 }
 static void startMqtt(){
   if(mqtt){esp_mqtt_client_stop(mqtt);esp_mqtt_client_destroy(mqtt);mqtt=nullptr;}
-  mqttConnected=false;mqttOnline=false;for(auto &s:sessions)s=SensorSession();
+  mqttConnected=false;mqttCommandReady=false;mqttOnline=false;for(auto &s:sessions)s=SensorSession();
   const char *host=config["mqtt"]["host"]|"";if(!*host)return;
   String user=config["mqtt"]["user"]|"",userKey="local";
   if(user.length()){userKey="u_";for(size_t i=0;i<user.length();i++){char hex[3];snprintf(hex,3,"%02x",(uint8_t)user[i]);userKey+=hex;}}

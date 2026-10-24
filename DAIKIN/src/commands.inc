@@ -17,6 +17,7 @@ static void state(JsonObject out){
   out["mqtt_connected"]=mqttConnected;out["mqtt_status"]=mqttConnected?"connected":strlen(config["mqtt"]["host"]|"")?"connecting":"disabled";
   out["mqtt_protocol"]="tmcp";out["mqtt_topic_mode"]="tmcp";out["mqtt_protocol_version"]=2;
   out["formaldehyde_present"]=hchoPresent;out["indicator_enabled"]=indicator;
+  indicatorStatus(out,now);
   JsonObject sensors=out.createNestedObject("sensors");
   for(unsigned i=0;i<SENSOR_COUNT;i++){
     if(!sensorPresent(i))continue;
@@ -32,6 +33,7 @@ static void capabilities(JsonObject out){
   out["model"]="daikin";out["firmware_variant"]="full";out["hardware_model"]="BRY88AX151K";out["protocol"]=2;
   out["mqtt_protocol"]="tmcp";out["mqtt_protocol_version"]=2;
   out["formaldehyde_present"]=hchoPresent;out["sensor_session_protocol"]=2;out["sensor_schema"]=1;
+  out["indicator_rules_supported"]=true;
   JsonArray a=out.createNestedArray("actions");for(auto name:actions)a.add(name);
 }
 static bool knownFields(JsonObjectConst obj,const char *allowed){
@@ -73,7 +75,7 @@ static String execute(const String &body){
       for(int i=0;i<n&&i<24;i++){JsonObject net=nets.createNestedObject();net["ssid"]=WiFi.SSID(i);net["rssi"]=WiFi.RSSI(i);net["security"]=WiFi.encryptionType(i)==WIFI_AUTH_OPEN?0:1;}
     }else if(action=="indicator.set"){
       if(!knownFields(params,"|enabled|")||!params["enabled"].is<bool>())code="invalid_params";
-      else{DynamicJsonDocument candidate(3072);candidate.set(config);candidate["indicator"]=params["enabled"];if(!saveConfig(candidate))code="storage_error";else{indicator=config["indicator"];data["enabled"]=indicator;}}
+      else{DynamicJsonDocument candidate(configCapacity);candidate.set(config);candidate["indicator"]=params["enabled"];if(!saveConfig(candidate))code="storage_error";else{indicator=config["indicator"];data["enabled"]=indicator;}}
     }else if(action=="system.reboot"||action=="system.reset"){
       if(params.size())code="invalid_params";
       else if(action=="system.reset"&&!prefs.clear())code="storage_error";
@@ -93,15 +95,19 @@ static String execute(const String &body){
         for(JsonPairConst kv:values){String k=kv.key().c_str();if(k=="port")valid=valid&&kv.value().is<int>()&&kv.value().as<int>()>=1&&kv.value().as<int>()<=65535;
           else if(k=="protocol")valid=valid&&String(kv.value().as<const char*>()?kv.value().as<const char*>():"")=="tmcp";
           else valid=valid&&validText(kv.value(),k=="host"?127:k=="password"?256:63);}
+      }else if(section=="indicator_rules"){
+        daikin::LightSettings parsed;valid=valid&&daikin::readLightSettings(values,parsed);
       }else valid=false;
       if(!valid)code="invalid_params";
       else{
-        DynamicJsonDocument candidate(3072);candidate.set(config);
+        DynamicJsonDocument candidate(configCapacity);candidate.set(config);
+        if(section=="indicator_rules")candidate.remove("indicator_rules");
         // Copy dynamic keys into the candidate's pool: const char* keys would
         // otherwise outlive the request document after config.set(candidate).
         for(JsonPairConst kv:values){const char *key=kv.key().c_str();if(section=="mqtt"&&!strcmp(key,"username"))key="user";candidate[section][String(key)]=kv.value();}
         if(!saveConfig(candidate))code="storage_error";
-        else{code="accepted";if(section=="mqtt")mqttRestart=true;if(section=="wifi")wifiRestart=true;}
+        else{code="accepted";if(section=="mqtt")mqttRestart=true;if(section=="wifi")wifiRestart=true;
+          if(section=="indicator_rules")customLightSettings=daikin::readLightSettings(config["indicator_rules"],lightSettings);}
       }
     }else code="unsupported_action";
   }

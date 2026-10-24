@@ -255,6 +255,10 @@ jobs:
           build/daikin-frames
           c++ -std=c++11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer -IDAIKIN/include -IDAIKIN/.pio/libdeps/bry88ab/ArduinoJson/src DAIKIN/tests/sessions.cpp -o build/daikin-sessions
           ASAN_OPTIONS=detect_leaks=1 build/daikin-sessions
+          c++ -std=c++11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer -IDAIKIN/include -IDAIKIN/.pio/libdeps/bry88ab/ArduinoJson/src DAIKIN/tests/indicators.cpp -o build/daikin-indicators
+          ASAN_OPTIONS=detect_leaks=1 build/daikin-indicators
+          c++ -std=c++11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer -IDAIKIN/include -IDAIKIN/.pio/libdeps/bry88ab/ArduinoJson/src DAIKIN/tests/indicator_runtime.cpp -o build/daikin-indicator-runtime
+          ASAN_OPTIONS=detect_leaks=1 build/daikin-indicator-runtime
           npm install --prefix build/esp-tests --no-save jsdom@26.1.0
           NODE_PATH=build/esp-tests/node_modules node DAIKIN/tests/web.cjs
       - name: Collect ESP release assets

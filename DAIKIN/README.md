@@ -18,6 +18,16 @@
 
 温湿度使用原始测量，未套用参考配置中的经验偏移或倍数；SGP30 的 ppb 不通过经验倍数伪装成质量浓度。PM 协议校验目前基于长度、帧头、完成状态与量程，参考仓库未提供可核验的 I²C 校验和定义，仍需实机核验。
 
+## 指示灯规则
+
+在设备设置的“通用设置 → 指示灯规则”（`#settings/device`）中启用指示灯，为 CO₂、TVOC、PM 各设置最多两组规则；PM 灯选择 PM2.5 或 PM10 为数据源，检测到甲醛模块后也可设置甲醛规则。每组包含比较条件（`>`、`≥`、`<`、`≤`）、阈值和常亮 / 常灭 / 快闪 / 慢闪。快闪亮灭各 150 ms，慢闪亮灭各 1 s。规则存入 NVS，重启保留；写入失败保留旧配置。
+
+同一项目多组命中时，高阈值优先。没有命中、没有读数或读数超过 20 秒时熄灯。GPIO33 只根据选定的 PM 数据源判断，另一个 PM 读数不参与亮灯逻辑。TVOC / 甲醛共用 GPIO32，优先显示快闪、其次慢闪、常亮、常灭。未保存自定义规则的旧配置保留原来的 CO₂ >1000、PM2.5 >50、TVOC >300 或甲醛 >0.1 亮灯行为；保存后按全部自定义规则处理。
+
+GPIO25 独立指示系统状态，不受空气质量指示灯总开关影响：未配网三长三短；已配网但 Wi-Fi 未连接快闪；配置了 MQTT 但连接或命令订阅尚未就绪时慢闪；就绪时常亮。未配置 MQTT 不影响就绪判断。节奏及状态优先级复用 `common/indicator.h`。
+
+`config.set` 的 `section` 为 `indicator_rules`，`values` 包含 `pm_source`（`pm25` 或 `pm10`）、三个必需数组 `co2`、`tvoc`、`pm` 和可选数组 `formaldehyde`。数组最多两项，空数组禁用该项目；每项结构为 `{"threshold":1000,"op":"gt","mode":"on"}`，`op` 支持 `gt/gte/lt/lte`，`mode` 支持 `on/off/fast/slow`。阈值必须是有限非负数，上限分别为 10000 ppm、65535 ppb、10000 µg/m³、5 mg/m³，同项不能重复阈值。设置接口、查询和 MQTT 状态使用同一份规则；`indicator_modes` 返回三颗测量灯的当前方式，`system_indicator` 返回系统灯状态。
+
 ## 构建与安装
 
 安装 PlatformIO Core 后执行：
@@ -59,6 +69,8 @@ python3 -m esptool --chip esp32 --port PORT write_flash 0 build/daikin-release/d
 ```sh
 c++ -Wall -Wextra -Werror -IDAIKIN/include DAIKIN/tests/frames.cpp -o /tmp/daikin-frames
 /tmp/daikin-frames
+c++ -std=c++11 -Wall -Wextra -Werror -IDAIKIN/include -IDAIKIN/.pio/libdeps/bry88ab/ArduinoJson/src DAIKIN/tests/indicators.cpp -o /tmp/daikin-indicators
+/tmp/daikin-indicators
 ```
 
 `DAIKIN/tests/web.cjs` 对生成 HTML 检查公共前端启动、甲醛缺失/存在/过期和 ESP32 OTA 页面。硬件验证状态另见本次实机记录，主机测试不替代真实模块、闪存掉电和长期运行验证。
