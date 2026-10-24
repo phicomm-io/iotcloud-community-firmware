@@ -9,6 +9,10 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
+      release_dry_run:
+        description: Sign and validate release artifacts without publishing (main only)
+        type: boolean
+        default: false
       runner:
         description: Runner for build, tests, signing and publication
         required: true
@@ -210,10 +214,67 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  esp:
+    name: DAIKIN ESP32 full firmware
+    needs: frontend
+    runs-on: >-
+      ${{ fromJSON(
+        (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
+        ((github.event_name == 'workflow_dispatch' && inputs.runner == 'self-hosted') ||
+         (vars.PHICOMM_CI_RUNNER == 'self-hosted' &&
+          (github.event_name != 'workflow_dispatch' || inputs.runner == 'auto'))) &&
+        '["self-hosted","linux","x64","phicomm-build"]' || '["ubuntu-22.04"]') }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: verified-frontend
+          path: build/ci-frontend/
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/packages
+            ~/.platformio/platforms
+            DAIKIN/.pio/libdeps
+          key: esp32-${{ runner.os }}-${{ hashFiles('DAIKIN/platformio.ini') }}
+      - run: pip install platformio==6.2.0
+      - name: Build universal full image and test actual embedded page
+        env:
+          PHICOMM_FRONTEND_ARCHIVE: ${{ github.workspace }}/build/ci-frontend/frontend.tar.gz
+        run: |
+          DAIKIN/build.sh
+          c++ -std=c++11 -Wall -Wextra -Werror -IDAIKIN/include DAIKIN/tests/frames.cpp -o build/daikin-frames
+          build/daikin-frames
+          c++ -std=c++11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer -IDAIKIN/include -IDAIKIN/.pio/libdeps/bry88ab/ArduinoJson/src DAIKIN/tests/sessions.cpp -o build/daikin-sessions
+          ASAN_OPTIONS=detect_leaks=1 build/daikin-sessions
+          npm install --prefix build/esp-tests --no-save jsdom@26.1.0
+          NODE_PATH=build/esp-tests/node_modules node DAIKIN/tests/web.cjs
+      - name: Collect ESP release assets
+        run: |
+          mkdir -p release
+          cp build/daikin-release/phicomm_daikin.all.bin release/
+          cp build/daikin-release/phicomm_daikin.ota.bin release/phicomm_daikin.ota.bin.raw
+          cp build/daikin-release/manifest.json release/manifest-daikin.json
+          (cd release && sha256sum * > SHA256SUMS-daikin)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: daikin-full-firmware
+          path: release/
+          if-no-files-found: error
+          retention-days: 30
+
   sign-ota:
     name: Sign production OTA packages
-    needs: [firmware, feature-tests]
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [firmware, esp, feature-tests]
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.release_dry_run)
     runs-on: >-
       ${{ fromJSON(
         (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
@@ -232,7 +293,11 @@ jobs:
         env:
           TAG_NAME: ${{ github.ref_name }}
         run: |
-          python3 tools/check_version.py --tag "$TAG_NAME"
+          if [ "$TAG_NAME" = main ]; then
+            python3 tools/check_version.py
+          else
+            python3 tools/check_version.py --tag "$TAG_NAME"
+          fi
           git merge-base --is-ancestor HEAD origin/main
       - uses: actions/download-artifact@v4
         with:
@@ -258,11 +323,13 @@ jobs:
           trap 'rm -f "$key_file"' EXIT
           printf '%s\n' "$OTA_KEY" > "$key_file"
           unset OTA_KEY
-          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+          if [ "$TAG_NAME" != main ] && gh release view "$TAG_NAME" >/dev/null 2>&1; then
             gh release download "$TAG_NAME" --pattern "*.signed" --dir previous
           fi
-          for model in tc1 m1 a1; do
+          if [ "$TAG_NAME" = main ]; then TAG_NAME=$(git describe --tags --match 'v[0-9]*' --abbrev=0); fi
+          for model in tc1 m1 a1 daikin; do
            variants="full no-frontend-resources"
+           if [ "$model" = daikin ]; then variants="full"; fi
            if [ "$model" = a1 ]; then variants="$variants fresh-air fresh-air-no-frontend-resources"; fi
            for variant in $variants; do
             product="$model"
@@ -280,6 +347,13 @@ jobs:
            done
           done
           (cd release && sha256sum *.bin *.bin.raw *.bin.signed > SHA256SUMS && sha256sum -c SHA256SUMS)
+      - name: Validate complete release catalog
+        if: github.event_name == 'workflow_dispatch' && inputs.release_dry_run
+        run: |
+          tag=$(git describe --tags --match 'v[0-9]*' --abbrev=0)
+          printf '%s\n' 'Release validation only; not published.' > release-dry-run.md
+          python3 tools/release/catalog.py "$tag" "$(git rev-parse HEAD)" release release-dry-run.md
+          (cd release && sha256sum *.bin *.bin.raw *.bin.signed manifest-daikin.json release.json notes.md index.html > SHA256SUMS && sha256sum -c SHA256SUMS)
       - uses: actions/upload-artifact@v4
         with:
           name: signed-release
@@ -322,6 +396,13 @@ jobs:
           python3 tools/release/notes.py "$TAG_NAME" --output release-notes.md
           python3 tools/release/catalog.py "$TAG_NAME" "$GITHUB_SHA" release release-notes.md
           (cd release && sha256sum -c SHA256SUMS)
+          (cd release && sha256sum *.bin *.bin.raw *.bin.signed manifest-daikin.json release.json notes.md index.html > SHA256SUMS && sha256sum -c SHA256SUMS)
+      - name: Verify reviewed notes against staged signed firmware
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh repo clone phicomm-io/phicomm-io.github.io "$RUNNER_TEMP/retained-notes-archive" -- --depth=1
+          python3 tools/release/verify_user_notes_release.py release "$RUNNER_TEMP/retained-notes-archive"
       - name: Stage GitHub release and immutable OTA assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -345,6 +426,7 @@ jobs:
       - name: Build and publish public Pages allowlist
         env:
           GH_TOKEN: ${{ secrets.PAGES_DEPLOY_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: tools/release/pages.sh
 
   feature-tests:
@@ -445,10 +527,7 @@ jobs:
           node --test tests/test_ota_worker.mjs
       - name: Test production TLS transport with real TLS and sanitizers
         run: |
-          curl -fsSL --retry 3 https://bearssl.org/bearssl-0.6.tar.gz -o "$RUNNER_TEMP/bearssl.tar.gz"
-          echo "6705bba1714961b41a728dfc5debbe348d2966c117649392f8c8139efc83ff14  $RUNNER_TEMP/bearssl.tar.gz" | sha256sum -c -
-          tar -xzf "$RUNNER_TEMP/bearssl.tar.gz" -C "$RUNNER_TEMP"
-          OTA_BEARSSL_DIR="$RUNNER_TEMP/bearssl-0.6" python3 tests/test_ota_fetch.py
+          python3 tests/test_ota_fetch.py
       - name: Test engines, binding runtime and WebUI syntax
         run: |
           python3 -m pip install Markdown==3.7 -r requirements-build.txt

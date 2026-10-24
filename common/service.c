@@ -13,7 +13,7 @@
 #include <time.h>
 #include "generated/build_ota.h"
 #include "json_heap.h"
-#include "bearssl_hash.h"
+#include "sha.h"
 #define LOG_COUNT 64
 /* Fixed vocabulary events never accept credentials, payloads or URLs. */
 typedef struct { uint32_t sequence, uptime, utc; int32_t argument; uint8_t level,module,event,reserved; } service_record_t;
@@ -272,8 +272,9 @@ static json_object *service_command_execute(json_object *req) {
     if(cache){
         const char *canonical=json_object_to_json_string(req);
         if(!canonical)return result(id,"busy",NULL);
-        br_sha256_context sha; br_sha256_init(&sha);
-        br_sha256_update(&sha,canonical,strlen(canonical));br_sha256_out(&sha,digest);
+        SHA256Context sha;
+        if(SHA256Reset(&sha) || SHA256Input(&sha,(const uint8_t *)canonical,strlen(canonical)) ||
+           SHA256Result(&sha,digest))return result(id,"busy",NULL);
     }
     mico_rtos_lock_mutex(&command_lock);
     if(cache)for(unsigned i=0;i<8;i++)if(!strcmp(receipts[i].id,id)){

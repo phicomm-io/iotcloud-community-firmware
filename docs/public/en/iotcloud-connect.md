@@ -1,6 +1,6 @@
 # Connect devices to IotCloud
 
-IotCloud is a web management platform for the TC1 power strip, M1 air quality monitor and A1 air purifier. Connect devices to view online status, air readings and power usage in one place, and remotely use each device's supported controls and settings. Account mode saves the device list so you can continue from another phone or computer on the same node and account.
+IotCloud is a web management platform for the TC1 power strip, M1 and DAIKIN air quality monitors, and A1 air purifier. Connect devices to view online status, air readings and power usage in one place, and remotely use each device's supported controls and settings. Account mode saves the device list so you can continue from another phone or computer on the same node and account.
 
 [Open IotCloud]({{SITE_URL}}iotcloud/) · [Try the simulated demo]({{SITE_URL}}demos/platform/)
 
@@ -36,7 +36,7 @@ Choose either method below, using the same Broker and account details.
    | Port | `1883` |
    | Username | Platform username registered on that node |
    | Password | Current MQTT password; initially the registration password |
-   | Topic mode | On TC1, select **TMCP (v2)** under Advanced. M1 and A1 always use TMCP |
+   | Topic mode | On TC1, select **TMCP (v2)** under Advanced. M1, A1 and DAIKIN always use TMCP |
 
 3. Save and wait for the device's MQTT status to show connected. If it keeps reconnecting, check the host, username and password.
 
@@ -58,11 +58,13 @@ Return to IotCloud on the same node. TMCP devices using the same MQTT account ap
 If a device is missing, first check its local MQTT status. You can also use Device management → Add device, entering the **MAC address** shown in its WebUI, the correct model and protocol. MAC addresses have 12 hexadecimal characters; colon or hyphen separators are also accepted. Adding a device to the list does not configure its MQTT connection.
 
 - **TC1:** TMCP is recommended for this project's firmware. Legacy (v1) is for TC1 devices actually using the old protocol and requires manual addition.
-- **M1 and A1:** Select the correct model; the protocol is always TMCP.
+- **M1, A1 and DAIKIN:** Select the correct model; the protocol is always TMCP.
 
 Confirm that platform MQTT is connected, the device card is online and readings keep updating. Open an M1's live readings, or adjust its screen brightness and check the physical device. Check other devices' functions as needed. Once connected, you can switch your phone to mobile data and manage online devices without forwarding ports to them.
 
-See [TC1](tc1-guide), [M1](m1-guide) and [A1](a1-guide) for daily operation. A1 / M1 permissions and automatic linkage must still be configured separately using [MQTT and automation](mqtt-link).
+DAIKIN details show separate PM2.5 / PM10 cards, CO₂, temperature, humidity and TVOC scales, with a TVOC reference of ≤300 ppb. The formaldehyde card stays hidden without its module. The linked-device area shows A1 sessions that have actually read the monitor.
+
+See [TC1](tc1-guide), [M1](m1-guide), [A1](a1-guide) and [DAIKIN](daikin-guide) for daily operation. Configure A1 source authorization and automatic control separately using [MQTT and automation](mqtt-link).
 
 ## Troubleshooting
 

@@ -43,6 +43,8 @@ trap 'rm -rf "$output"' EXIT
 python3 -m unittest tests.test_a1_fresh_air
 python3 -m unittest tests.test_a1_filter_storage tests.test_status_views tests.test_status_direct tests.test_typed_tc1_status tests.test_tc1_status_guard tests.test_tc1_status_dispatch
 "${compiler[@]}" -DFEATURE_HOST -std=c99 -Wall -Wextra -Werror -Wno-misleading-indentation -Icommon common/engine.c tests/test_engine.c -lm -o "$output/engine"
+"${compiler[@]}" -DFEATURE_HOST -std=c99 -Wall -Wextra -Werror -Wno-misleading-indentation -Icommon common/engine.c tests/test_sensor_aggregate.c -lm -o "$output/sensor-aggregate"
+"$output/sensor-aggregate"
 "${compiler[@]}" -std=c99 -Wall -Wextra -Werror tests/test_mqtt_account.c -o "$output/mqtt-account"
 "$output/mqtt-account"
 "${compiler[@]}" -std=c99 -Wall -Wextra -Werror -Itests/stubs -ITC1 tests/test_web_log.c -o "$output/web-log"

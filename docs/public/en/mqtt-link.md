@@ -7,7 +7,7 @@ MQTT is optional: local device functions work without it. Configure a Broker add
 | Device | Supported mode |
 | --- | --- |
 | TC1 | Legacy (v1) and TMCP (v2); TMCP is the default for a new setup |
-| M1 / A1 | TMCP (v2) only; no Legacy selector |
+| M1 / A1 / DAIKIN | TMCP (v2) only; no Legacy selector |
 
 M1 and A1 normalize old mode flags to TMCP at boot, retaining the Broker address, port and credentials. They do not switch back to old topics at runtime.
 
@@ -17,29 +17,23 @@ Device topics use `phicomm/v2/<scope>/<model>/<mac>/...`. A nonempty username ma
 
 ## Home Assistant
 
-Configure the Home Assistant MQTT integration to use the same Broker. Device readings and controls appear through MQTT discovery. M1 and A1 can subscribe read-only to Home Assistant startup notifications to refresh discovery after HA restarts.
+Configure the Home Assistant MQTT integration to use the same Broker. Device readings and controls appear through MQTT discovery. M1, A1 and DAIKIN can subscribe read-only to Home Assistant startup notifications to refresh discovery after HA restarts.
 
-## A1 and M1 automation
+## A1 sensor automation
 
-M1 measures, reports and answers authorized A1 requests. It does not control the purifier. Rules, aggregation, fan, ring and group controls live on A1.
+M1, DAIKIN and other providers measure, publish and answer authorized reads. Rules, aggregation, fan, ring and group control live on A1. Available fields determine automation choices independently of the provider model.
 
-### Setup
+1. Add up to four provider MACs and optional IPs on A1; different monitor models can be mixed.
+2. Use the same MQTT service and account. Update the platform to support generic sensor topics. A self-hosted Broker must permit measurements at `phicomm/v2/<scope>/sensor/<mac>/state` and session grants through its matching `command` topic.
+3. Confirm valid readings before enabling automation. A monitor lists an A1 as connected only after an actual successful read.
 
-1. On A1, add the M1 MAC, optionally its IP, and configure automation rules. Each A1 supports up to four M1 units.
-2. Connect both devices to the same MQTT service and account. The Broker must allow that account to publish to the M1 command topic.
-3. Confirm LAN connectivity and valid average readings before enabling automation. M1 needs no pairing identifier; its page shows current A1 sessions.
+Without an IP, A1 can broadcast on the LAN to find the specified MAC. Enter a reachable address across subnets or when broadcasts are restricted. A1 sends a session token through non-retained MQTT, then queries UDP every five seconds. LAN readings take priority; generic MQTT measurements can be used when LAN reads are unavailable. Existing M1 sessions remain compatible.
 
-With IP left blank, A1 broadcasts on the LAN to find the specified M1 MAC. Enter a reachable IP when crossing subnets or broadcasts are restricted.
+Tokens exist only in RAM. Each monitor supports four A1 sessions, expiring after thirty minutes idle. After a monitor restarts, A1 automatically reauthorizes through MQTT. Established sessions with continuing UDP reads survive a temporary MQTT outage.
 
-### Runtime behavior
+Each field has independent unit, validity and age checks. PM2.5, formaldehyde, temperature and humidity expire after fifteen seconds; CO₂ expires after twenty seconds. Boot identifiers and sequence numbers reject old or repeated samples; replay does not renew freshness. Statistics include only providers with valid data for that metric; no valid readings means `null`. Missing or stale data hides the corresponding choices while preserving saved rules. Unavailable required data invokes A1's offline speed. PM10 and TVOC are not currently fan-control metrics.
 
-A1 sends a session token to M1 through MQTT, then queries readings over UDP every five seconds. Healthy reads do not repeat authorization or forward sensor data through MQTT. UDP failures use retry backoff; unavailable readings trigger A1's configured offline fan speed.
-
-Session tokens exist only in RAM. M1 supports four A1 sessions, expiring after thirty minutes idle. A restart requires MQTT authorization again; A1 retries automatically, with authorization limited to once per minute during failures. Established sessions with continuing reads survive a temporary MQTT outage.
-
-A1 computes the arithmetic mean of M1 readings no older than fifteen seconds. With no valid data, readings are `null`. Configure thresholds, fan policy, debounce and minimum switching intervals on A1. A1 group control remains independent.
-
-**Upgrade both devices together. The old M1 allowlist and joint pairing topics are no longer used.**
+Configure thresholds, statistical strategy, debounce and minimum switching intervals on A1. Group control remains independent. Upgrade both sides together; the old M1 allowlist and joint pairing topics are no longer used.
 
 ## IotCloud remote management
 

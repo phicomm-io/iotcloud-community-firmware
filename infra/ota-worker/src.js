@@ -1,4 +1,4 @@
-// One stable object selects all three models atomically. No public write API.
+// One stable object selects all models atomically. No public write API.
 export default {
   async fetch(request, env) {
     const headers = {'Access-Control-Allow-Origin':'*','X-Content-Type-Options':'nosniff'};
@@ -6,7 +6,7 @@ export default {
     const path = new URL(request.url).pathname;
     try {
       let body, type = 'application/json; charset=utf-8', ttl = 60;
-      const latest = path.match(/^\/ota\/(tc1|m1|a1)(\/(?:no-frontend-resources|fresh-air|fresh-air-no-frontend-resources))?\/latest\.json$/);
+      const latest = path.match(/^\/ota\/(tc1|m1|a1|daikin)(\/(?:no-frontend-resources|fresh-air|fresh-air-no-frontend-resources))?\/latest\.json$/);
       if (latest) {
         const stable = await env.RELEASES.get('stable.json');
         if (!stable) return new Response('No stable release', {status:404,headers});
@@ -14,6 +14,7 @@ export default {
         const original = release.models[latest[1]];
         const variant = latest[2] ? latest[2].slice(1) : 'full';
         if (variant.startsWith('fresh-air') && latest[1] !== 'a1') return new Response('Not found', {status:404});
+        if (latest[1] === 'daikin' && variant !== 'full') return new Response('Not found', {status:404,headers});
         const model = latest[2] ? original?.variants?.[variant] : original;
         if (!model) return new Response('Model unavailable', {status:404,headers});
         body = JSON.stringify({schema:1,tag:release.tag,version:release.version,commit:release.commit,model:latest[1],firmware_variant:variant,path:model.path,size:model.size,sha256:model.sha256,release_log:model.release_log});
@@ -21,13 +22,15 @@ export default {
         body = JSON.stringify({service:'phicomm-ota',schema:1,index:'/releases/index.json'});
       } else {
         const key = path.slice(1);
-        if (key !== 'releases/index.json' && !/^releases\/v\d+\.\d+\.\d+\/[A-Za-z0-9_.-]+$/.test(key))
+        const notesIndex = key === 'releases/notes/index.json';
+        const notesManifest = /^releases\/notes\/manifest\.[a-f0-9]{64}\.json$/.test(key);
+        if (key !== 'releases/index.json' && !notesIndex && !notesManifest && !/^releases\/v\d+\.\d+\.\d+\/[A-Za-z0-9_.-]+$/.test(key))
           return new Response('Not found', {status:404,headers});
         const object = await env.RELEASES.get(key);
         if (!object) return new Response('Not found', {status:404,headers});
         object.writeHttpMetadata(new Headers());
         type = key.endsWith('.json') ? type : key.endsWith('.md') ? 'text/plain; charset=utf-8' : key.endsWith('.html') ? 'text/html; charset=utf-8' : 'application/octet-stream';
-        ttl = key === 'releases/index.json' ? 60 : 31536000;
+        ttl = key === 'releases/index.json' || notesIndex ? 60 : 31536000;
         headers['Content-Length'] = String(object.size);
         headers.ETag = object.httpEtag;
         headers['Content-Type'] = type;

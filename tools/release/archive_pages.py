@@ -13,11 +13,11 @@ def write_latest(catalog, output):
     release = next((r for r in catalog['releases'] if r['tag'] == stable), None)
     if stable and release is None:
         raise ValueError('Stable release is absent from catalog')
-    for model in ('tc1', 'm1', 'a1'):
+    for model in ('tc1', 'm1', 'a1', 'daikin'):
         item = release.get('models', {}).get(model, {}) if release else {}
         variants = dict(item.get('variants', {}))
         # Remove stale manifests too when rolling back to an older catalog.
-        expected = ['no-frontend-resources']
+        expected = [] if model=='daikin' else ['no-frontend-resources']
         if model == 'a1': expected += ['fresh-air', 'fresh-air-no-frontend-resources']
         for variant in expected: variants.setdefault(variant, {})
         for variant, entry in [('full', item), *variants.items()]:

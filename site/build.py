@@ -16,6 +16,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(ROOT / 'tools'))
+sys.path.insert(0, str(ROOT / 'tools/release'))
 from pages import ALIASES, GROUPS, PAGES, PARENTS, SITE_URL, EN_GROUPS, EN_PAGES, validate_translations  # noqa: E402
 from seo import EN_INDEX_TITLE, EN_INDEX_DESCRIPTION, guide_metadata, metadata, write_discovery  # noqa: E402
 
@@ -160,7 +161,7 @@ def render_guide_body(text, language):
     return render(text.replace('<!-- os-picker -->', picker))
 
 
-def render_guide(slug, title, summary, source, language="zh"):
+def render_guide(slug, title, summary, source, language="zh", notes_manifest=None):
     english = language == "en"
     base = "../../" if english else "../"
     text = source.read_text(encoding="utf-8")
@@ -169,6 +170,12 @@ def render_guide(slug, title, summary, source, language="zh"):
     switch = (f'<a href="../{slug}.html" lang="zh-CN">简体中文</a> · English' if english else
               f'简体中文 · <a href="en/{slug}.html" lang="en">English</a>')
     body = render_guide_body(rewrite_links(expand_site_url(text)), language)
+    scripts = ''
+    if slug == 'release-log' and notes_manifest is not None:
+        from notes_ui import body as notes_body
+        body = notes_body(notes_manifest, 'en' if english else 'zh-CN')
+        scripts = ''.join(f'<script src="{base}releases/notes/{name}.js"></script>'
+                          for name in ('core', 'client', 'page'))
     return (f'<!doctype html><html lang="{"en" if english else "zh-CN"}"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width,initial-scale=1">'
             f'{guide_metadata(slug, title, summary, language)}'
@@ -182,7 +189,7 @@ def render_guide(slug, title, summary, source, language="zh"):
             f'{pager(slug, language)}'
             f'</main></div>'
             f'{footer(language)}'
-            f'<script src="{base}site.js"></script></body></html>')
+            f'<script src="{base}site.js"></script>{scripts}</body></html>')
 
 
 def markdown_sources():
@@ -201,10 +208,25 @@ def markdown_sources():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('output', type=Path)
+    parser.add_argument('--archive', type=Path, help='Retained published archive; originals are copied unchanged')
+    parser.add_argument('--formal', action='store_true', help='Verify actual firmware, signatures and source locks')
     args = parser.parse_args()
     validate_translations(ROOT)
     out = args.output
     out.mkdir(parents=True, exist_ok=True)
+    # Prepare the archive before compiling notes or generating any page. Local
+    # builds may use the fixed catalog snapshot; publication requires real files.
+    from user_notes import DATA, write_public
+    if args.archive:
+        if out.resolve() == args.archive.resolve():
+            parser.error('output must be separate from the retained archive')
+        for folder in ('releases', 'ota'):
+            if (args.archive / folder).is_dir():
+                shutil.copytree(args.archive / folder, out / folder, dirs_exist_ok=True)
+    else:
+        (out / 'releases').mkdir(exist_ok=True)
+        shutil.copyfile(DATA / 'catalog.snapshot.json', out / 'releases/index.json')
+    notes_manifest = write_public(out, archive=out if args.archive else None, formal=args.formal)
 
     for name in ['style.css', 'theme.js', 'site.js', 'releases.js']:
         shutil.copyfile(HERE / name, out / name)
@@ -224,7 +246,7 @@ def main():
         source = ROOT / 'docs' / 'public' / 'en' / f'{slug}.md'
         if not source.is_file():
             raise SystemExit(f'Missing English guide: {source}')
-        (english_dir / f'{slug}.html').write_text(render_guide(slug, title, summary, source, 'en'), encoding='utf-8')
+        (english_dir / f'{slug}.html').write_text(render_guide(slug, title, summary, source, 'en', notes_manifest), encoding='utf-8')
     english_links = ''.join(f'<section><h2>{esc(title)}</h2><ul>' + ''.join(
         f'<li class="{"doc-child" if slug in PARENTS else "doc-page"}"><a href="{slug}.html">{esc(name)}</a> — {esc(summary)}</li>' for slug, name, summary, _ in items) + '</ul></section>'
         for _, title, items in EN_GROUPS)
@@ -233,7 +255,7 @@ def main():
         + metadata(EN_INDEX_TITLE, EN_INDEX_DESCRIPTION, 'guides/en/', 'en') + '<link rel="stylesheet" href="../../style.css">'
         '<script src="../../theme.js"></script></head><body>' + header('../../', 'en') +
         '<main class="wrap prose" id="main"><p><a href="../../#docs" lang="zh-CN">简体中文</a> · English</p>'
-        '<h1>English documentation</h1><p>Guides for TC1, M1, A1 and IotCloud.</p>' + english_links + '</main>' + footer('en') +
+        '<h1>English documentation</h1><p>Guides for TC1, M1, A1, DAIKIN and IotCloud.</p>' + english_links + '</main>' + footer('en') +
         '<script src="../../site.js"></script></body></html>', encoding='utf-8')
     sources = markdown_sources()
     missing, guides = [], out / 'guides'
@@ -243,7 +265,7 @@ def main():
         if not source.exists():
             missing.append(f'{slug} ({source.relative_to(ROOT)})')
             continue
-        (guides / f'{slug}.html').write_text(render_guide(slug, title, summary, source), encoding='utf-8')
+        (guides / f'{slug}.html').write_text(render_guide(slug, title, summary, source, notes_manifest=notes_manifest), encoding='utf-8')
     if missing:
         print('Missing guide sources: ' + ', '.join(missing), file=sys.stderr)
 
@@ -269,6 +291,8 @@ def main():
 
     shutil.copytree(ROOT / 'docs' / 'public' / 'assets', guides / 'assets', dirs_exist_ok=True)
     write_discovery(out)
+    from user_notes import verify_output
+    verify_output(out, formal=args.formal)
     print(f'Wrote {len(PAGES) - len(missing)} guide pages to {out}')
 
 

@@ -25,7 +25,9 @@ manifest.update(version_metadata)
 manifest['sdk'] = json.loads((Path(__file__).resolve().parents[2] / 'common/mico-sdk.json').read_text())
 manifest['firmware_variant'] = variant
 manifest['frontend_http_queue_sha256'] = hashlib.sha256((Path(__file__).resolve().parents[2] / 'common/web/http_queue.js').read_bytes()).hexdigest()
-manifest['frontend'] = json.loads((Path(__file__).resolve().parents[2] / 'frontend.lock.json').read_text())
+frontend_root = Path(__file__).resolve().parents[2]
+frontend_metadata = frontend_root / 'build/frontend-m1-provenance.json'
+manifest['frontend'] = json.loads((frontend_metadata if frontend_metadata.exists() else frontend_root / 'frontend.lock.json').read_text())
 for suffix in (".usr.bin", ".ota.bin", ".all.bin", ".elf", ".map"):
     original = source / (prefix + suffix)
     if not original.is_file():

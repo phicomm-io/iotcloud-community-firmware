@@ -21,19 +21,25 @@ class ReleaseTests(unittest.TestCase):
     self.assertEqual(len(model['sha256']),64)
    (root/'phicomm_a1.ota.bin.signed').write_bytes(b'')
    with self.assertRaises(ValueError):make('v0.9.5','a'*40,root,'notes')
- def test_eight_variants_are_required_for_new_releases(self):
+ def test_nine_variants_are_required_and_daikin_has_only_full(self):
   with tempfile.TemporaryDirectory() as tmp:
    root=Path(tmp)
-   for product in ['tc1_a1','m1','a1']:
-    for variant in ['', '-no-frontend-resources'] + (['-fresh-air','-fresh-air-no-frontend-resources'] if product=='a1' else []):
+   for product in ['tc1_a1','m1','a1','daikin']:
+    for variant in ([''] if product=='daikin' else ['', '-no-frontend-resources']) + (['-fresh-air','-fresh-air-no-frontend-resources'] if product=='a1' else []):
      for suffix in ['ota.bin.signed','ota.bin.raw','all.bin']:
       (root/f'phicomm_{product}{variant}.{suffix}').write_bytes((product+variant+suffix).encode())
    r=make('v0.9.5','a'*40,root,'Notes',require_variants=True)
-   for model in r['models'].values():
+   self.assertEqual(set(r['models']),{'tc1','m1','a1','daikin'})
+   self.assertNotIn('variants',r['models']['daikin'])
+   for key,model in r['models'].items():
+    if key=='daikin':continue
     slim=model['variants']['no-frontend-resources']
     self.assertEqual(slim['firmware_variant'],'no-frontend-resources')
     self.assertIn('-no-frontend-resources.',slim['path'])
     self.assertNotEqual(slim['sha256'],model['sha256'])
    (root/'phicomm_a1-no-frontend-resources.ota.bin.raw').unlink()
+   with self.assertRaises(FileNotFoundError):make('v0.9.5','a'*40,root,'Notes',require_variants=True)
+   (root/'phicomm_a1-no-frontend-resources.ota.bin.raw').write_bytes(b'fixture')
+   (root/'phicomm_daikin.all.bin').unlink()
    with self.assertRaises(FileNotFoundError):make('v0.9.5','a'*40,root,'Notes',require_variants=True)
 if __name__=='__main__':unittest.main()

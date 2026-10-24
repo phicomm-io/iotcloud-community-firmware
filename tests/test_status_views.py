@@ -117,7 +117,21 @@ json_object*a1_filter_json(void){a1_filter_storage_t f;a1_filter_get(&f);json_ob
      sensor=r'''json_object*b;
  a1_status_capture(&frozen,NULL);live=device_status_encode(&frozen,NULL);b=json_object_object_get(live,"sensors");assert(b);assert(json_object_get_int(json_object_object_get(b,"sample_count"))==2);assert(json_object_get_double(json_object_object_get(b,"co2"))==1400);assert(json_object_get_double(json_object_object_get(b,"pm25"))==123);json_object_put(live);
  frozen.sensor.a1.sample_count=0;live=device_status_encode(&frozen,NULL);b=json_object_object_get(live,"sensors");assert(!json_object_object_get(b,"temperature"));assert(json_object_get_boolean(json_object_object_get(b,"co2_valid")));assert(json_object_get_double(json_object_object_get(b,"co2"))==1400);json_object_put(live);
- frozen.sensor.a1.co2_sample_count=0;live=device_status_encode(&frozen,NULL);b=json_object_object_get(live,"sensors");assert(!json_object_object_get(b,"co2"));assert(!json_object_get_boolean(json_object_object_get(b,"co2_valid")));json_object_put(live);empty();'''
+ frozen.sensor.a1.co2_sample_count=0;live=device_status_encode(&frozen,NULL);b=json_object_object_get(live,"sensors");assert(!json_object_object_get(b,"co2"));assert(!json_object_get_boolean(json_object_object_get(b,"co2_valid")));json_object_put(live);empty();
+ /* A provider without HCHO still supplies temperature/humidity/PM2.5/CO2.
+  * Both full and live status must remain valid JSON for this partial sample. */
+ const float missing[]={NAN,INFINITY,-INFINITY};
+ a1_status_capture(&frozen,&all);
+ for(unsigned full_view=0;full_view<2;full_view++)for(unsigned n=0;n<3;n++) {
+  frozen.sensor.a1=(feature_values_t){.value={23,45,123,missing[n]},.co2=1400,.sample_count=1,.co2_sample_count=1,.configured_count=1};
+  live=device_status_encode(&frozen,full_view?&all:NULL);assert(live);b=json_object_object_get(live,"sensors");
+  assert(!json_object_object_get(b,"formaldehyde"));assert(json_object_get_double(json_object_object_get(b,"pm25"))==123);
+  assert(json_object_get_boolean(json_object_object_get(b,"co2_valid")));json_object_put(live);
+  struct printbuf *wire=device_status_wire(&frozen,full_view?&all:NULL,true,"partial");assert(wire);
+  assert(strstr(wire->buf,"\"formaldehyde\": null")&&!strstr(wire->buf,": nan")&&!strstr(wire->buf,": inf")&&!strstr(wire->buf,": -inf"));printbuf_free(wire);
+  frozen.sensor.a1.co2=missing[n];live=device_status_encode(&frozen,full_view?&all:NULL);b=json_object_object_get(live,"sensors");
+  assert(!json_object_object_get(b,"co2"));assert(!json_object_get_boolean(json_object_object_get(b,"co2_valid")));json_object_put(live);empty();
+ }'''
 
     else:
      extra=r'''

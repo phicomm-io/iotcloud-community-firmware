@@ -1,18 +1,29 @@
 #include "mico.h"
 #include "fetch.h"
 #include "mode.h"
-#include "tls_profile.h"
 #include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#ifndef OTA_FETCH_HANDSHAKE_MS
+#define OTA_FETCH_HANDSHAKE_MS 10000u
+#endif
+#ifndef OTA_FETCH_TOTAL_MS
+#define OTA_FETCH_TOTAL_MS 180000u
+#endif
+/* Pinned MK3080B kernel 3080B002.024 consumes the fd in ssl_close, whereas
+ * MK3031 kernel 30300002.015 leaves it with the caller. Product wrappers must
+ * select the installed kernel ABI, not an unrelated SDK wolfSSL archive. */
+#ifndef OTA_TLS_CLOSES_SOCKET
+#define OTA_TLS_CLOSES_SOCKET 1
+#endif
 
 typedef struct {
     int fd;
     bool tls;
     uint32_t deadline;
-    ota_tls_context *ssl;
-    unsigned char *buffer;
+    mico_ssl_t ssl;
+    mico_semaphore_t handshake_stop, handshake_done;
     char host[128], path[384];
     unsigned port;
 } transfer;
@@ -34,6 +45,12 @@ static bool parse_url(const char *url, transfer *t) {
     return true;
 }
 bool ota_url_valid(const char *url) {transfer t;return parse_url(url,&t);}
+/* MiCO's closed socket kernel does not export its errno store to newlib.
+ * SO_ERROR and bounded retries work for both the SDK and the POSIX adapter. */
+static bool socket_failed(transfer *t) {
+    int error=0;socklen_t length=sizeof(error);
+    return getsockopt(t->fd,SOL_SOCKET,SO_ERROR,&error,&length)<0 || error!=0;
+}
 static int socket_io(transfer *t, void *data, size_t n, bool writing) {
     ota_job_sample();
     uint32_t start=mico_rtos_get_time();
@@ -41,13 +58,98 @@ static int socket_io(transfer *t, void *data, size_t n, bool writing) {
         if(ota_job_cancelled()||(int32_t)(t->deadline-mico_rtos_get_time())<=0)return -1;
         fd_set f;FD_ZERO(&f);FD_SET(t->fd,&f);struct timeval tv={0,200000};
         int rc=select(t->fd+1,writing?NULL:&f,writing?&f:NULL,NULL,&tv);
-        if(rc<0)return -1;
-        if(rc){int nbytes=writing?send(t->fd,data,n,0):recv(t->fd,data,n,0);return nbytes>0?nbytes:-1;}
+        if(rc<0){if(socket_failed(t))return -1;mico_thread_msleep(20);continue;}
+        if(rc){int nbytes=writing?send(t->fd,data,n,0):recv(t->fd,data,n,0);
+            if(nbytes>=0)return nbytes?nbytes:-1;
+            if(socket_failed(t))return -1;mico_thread_msleep(20);}
     }while((uint32_t)(mico_rtos_get_time()-start)<10000);
     return -1;
 }
-static int tls_read(void *v,unsigned char *p,size_t n){return socket_io(v,p,n,false);}
-static int tls_write(void *v,const unsigned char *p,size_t n){return socket_io(v,(void *)p,n,true);}
+/* Kernel TLS owns its record buffers and cryptography. The observer bounds a
+ * stalled SNI handshake without freeing a socket while the kernel uses it. */
+static void handshake_observer(mico_thread_arg_t arg) {
+    transfer *t=(transfer *)arg;
+    uint32_t start=mico_rtos_get_time();
+    while(mico_rtos_get_semaphore(&t->handshake_stop,20)!=kNoErr) {
+        if(ota_job_cancelled() || (uint32_t)(mico_rtos_get_time()-start)>=OTA_FETCH_HANDSHAKE_MS ||
+           (int32_t)(t->deadline-mico_rtos_get_time())<=0) {
+            /* Do not shutdown lwIP from a second thread while SSL is inside
+             * recv: early cancellation reproduced a kernel HardFault on A1.
+             * An existing blocking call has the timeout below; subsequent
+             * calls must return instead of starting another blocking wait. */
+            int flags=fcntl(t->fd,F_GETFL,0);
+            if(flags>=0)fcntl(t->fd,F_SETFL,flags|O_NONBLOCK);
+            break;
+        }
+    }
+    mico_rtos_set_semaphore(&t->handshake_done);
+    mico_rtos_delete_thread(NULL);
+}
+static bool kernel_tls_connect(transfer *t) {
+    if(mico_rtos_init_semaphore(&t->handshake_stop,1)!=kNoErr)return false;
+    if(mico_rtos_init_semaphore(&t->handshake_done,1)!=kNoErr) {
+        mico_rtos_deinit_semaphore(&t->handshake_stop);return false;
+    }
+    int error=-1,flags=fcntl(t->fd,F_GETFL,0),io_timeout=1000;
+    /* Configure blocking I/O before starting the observer: its nonblocking
+     * abort must never be overwritten by delayed handshake initialization.
+     * Existing recv calls use an integer-ms timeout in the MiCO socket ABI. */
+    bool ready=flags>=0 &&
+        setsockopt(t->fd,SOL_SOCKET,SO_RCVTIMEO,&io_timeout,sizeof(io_timeout))>=0 &&
+        setsockopt(t->fd,SOL_SOCKET,SO_SNDTIMEO,&io_timeout,sizeof(io_timeout))>=0 &&
+        fcntl(t->fd,F_SETFL,flags&~O_NONBLOCK)>=0;
+    bool started=ready && mico_rtos_create_thread(NULL,MICO_APPLICATION_PRIORITY,"ota_tls_guard",
+        handshake_observer,1024,(mico_thread_arg_t)t)==kNoErr;
+    if(started) {
+        if(!ota_job_cancelled() && (int32_t)(t->deadline-mico_rtos_get_time())>0) {
+            ssl_set_client_version(TLS_V1_2_MODE);
+            /* Preserve the signed-OTA trust policy: encrypted transport with
+             * SNI, no CA validation; the package authenticates the publisher. */
+            t->ssl=ssl_connect_sni(t->fd,0,NULL,t->host,&error);
+        }
+        mico_rtos_set_semaphore(&t->handshake_stop);
+        mico_rtos_get_semaphore(&t->handshake_done,MICO_WAIT_FOREVER);
+        /* MK3080B also consumes the fd on handshake failure after set_fd.
+         * Early context/SNI allocation errors leave it with the caller. */
+        if(OTA_TLS_CLOSES_SOCKET && !t->ssl && error!=-1 && error!=-203 && error!=-125)t->fd=-1;
+        if(t->ssl) {
+            ssl_set_using_nonblock(t->ssl,1);
+            if(fcntl(t->fd,F_SETFL,flags|O_NONBLOCK)<0) {
+                ssl_close(t->ssl);t->ssl=NULL;
+                if(OTA_TLS_CLOSES_SOCKET)t->fd=-1;
+            }
+        }
+    }
+    mico_rtos_deinit_semaphore(&t->handshake_done);
+    mico_rtos_deinit_semaphore(&t->handshake_stop);
+    ota_job_sample();
+    return t->ssl && !ota_job_cancelled();
+}
+static int kernel_tls_io(transfer *t,void *data,size_t n,bool writing) {
+    uint32_t start=mico_rtos_get_time();bool wait_write=writing;
+    for(;;) {
+        ota_job_sample();
+        if(ota_job_cancelled() || (int32_t)(t->deadline-mico_rtos_get_time())<=0 ||
+           (uint32_t)(mico_rtos_get_time()-start)>=10000u)return -1;
+        if(wait_write || ssl_pending(t->ssl)<=0) {
+            fd_set f;FD_ZERO(&f);FD_SET(t->fd,&f);struct timeval tv={0,200000};
+            int ready=select(t->fd+1,wait_write?NULL:&f,wait_write?&f:NULL,NULL,&tv);
+            if(ready<0){if(socket_failed(t))return -1;mico_thread_msleep(20);continue;}
+            if(!ready)continue;
+        }
+        int rc=writing?ssl_send(t->ssl,data,n):ssl_recv(t->ssl,data,n);
+        if(rc>0)return rc;
+        int error=ssl_get_error(t->ssl,rc);
+        /* MiCO's kernel exports the OpenSSL-compatible WANT_READ/WRITE codes. */
+        if(error==2)wait_write=false;
+        else if(error==3)wait_write=true;
+        else return -1;
+    }
+}
+static void disconnect_host(transfer *t) {
+    if(t->ssl){ssl_close(t->ssl);t->ssl=NULL;if(OTA_TLS_CLOSES_SOCKET)t->fd=-1;}
+    if(t->fd>=0){close(t->fd);t->fd=-1;}
+}
 static unsigned word(const unsigned char *p){return (unsigned)p[0]*256+p[1];}
 static bool dns_skip(const unsigned char *p,unsigned n,unsigned *at){
     while(*at<n){unsigned c=p[(*at)++];if(!c)return true;if((c&0xc0)==0xc0){if(*at>=n)return false;(*at)++;return true;}if(c>63||*at+c>n)return false;*at+=c;}return false;
@@ -83,22 +185,20 @@ static bool connect_host(transfer *t) {
     int flags=fcntl(t->fd,F_GETFL,0);if(flags<0||fcntl(t->fd,F_SETFL,flags|O_NONBLOCK)<0)return false;
     int rc=connect(t->fd,(struct sockaddr *)&a,sizeof(a));
     if(rc<0){uint32_t start=mico_rtos_get_time();
-        do{if(ota_job_cancelled()||(uint32_t)(mico_rtos_get_time()-start)>=10000)return false;
-            fd_set f;FD_ZERO(&f);FD_SET(t->fd,&f);struct timeval tv={0,200000};rc=select(t->fd+1,NULL,&f,NULL,&tv);if(rc<0)return false;
+        do{if(ota_job_cancelled()||(uint32_t)(mico_rtos_get_time()-start)>=10000 ||
+              (int32_t)(t->deadline-mico_rtos_get_time())<=0)return false;
+            fd_set f;FD_ZERO(&f);FD_SET(t->fd,&f);struct timeval tv={0,200000};rc=select(t->fd+1,NULL,&f,NULL,&tv);
+            if(rc<0){if(socket_failed(t))return false;mico_thread_msleep(20);rc=0;}
         }while(!rc);
-        int e=0;socklen_t len=sizeof(e);if(getsockopt(t->fd,SOL_SOCKET,SO_ERROR,&e,&len)<0||e)return false;}
+        if(socket_failed(t))return false;}
     /* Keep the connected socket nonblocking: a writable indication does not
        guarantee that send() can consume the entire TLS record without waiting. */
     if(!t->tls)return true;
-    unsigned char entropy[32];if(MicoRandomNumberRead(entropy,sizeof(entropy))!=kNoErr)return false;
-    ota_tls_init(t->ssl,t->buffer,2048);br_ssl_engine_inject_entropy(&t->ssl->client.eng,entropy,sizeof(entropy));
-    if(!br_ssl_client_reset(&t->ssl->client,t->host,0))return false;
-    br_sslio_init(&t->ssl->io,&t->ssl->client.eng,tls_read,t,tls_write,t);return true;
+    return kernel_tls_connect(t);
 }
-static int read_data(transfer *t,void *p,size_t n){return t->tls?br_sslio_read(&t->ssl->io,p,n):socket_io(t,p,n,false);}
+static int read_data(transfer *t,void *p,size_t n){return t->tls?kernel_tls_io(t,p,n,false):socket_io(t,p,n,false);}
 static bool send_data(transfer *t,const char *p,size_t n){
-    if(t->tls)return br_sslio_write_all(&t->ssl->io,p,n)==0&&br_sslio_flush(&t->ssl->io)==0;
-    while(n){int rc=socket_io(t,(void *)p,n,true);if(rc<=0)return false;p+=rc;n-=rc;}return true;
+    while(n){int rc=t->tls?kernel_tls_io(t,(void *)p,n,true):socket_io(t,(void *)p,n,true);if(rc<=0)return false;p+=rc;n-=rc;}return true;
 }
 static int line_read(transfer *t,char *p,size_t cap){size_t n=0;while(n+1<cap){char c;if(read_data(t,&c,1)!=1||!c)return -1;p[n++]=c;if(c=='\n'){if(n<2||p[n-2]!='\r')return -1;p[n-2]=0;return n;}}return -1;}
 static bool number(const char **p,uint32_t *n){if(!isdigit((unsigned char)**p))return false;*n=0;do{unsigned d=*(*p)++-'0';if(*n>(UINT32_MAX-d)/10)return false;*n=*n*10+d;}while(isdigit((unsigned char)**p));return true;}
@@ -106,10 +206,9 @@ static const char *space(const char *p){while(*p==' '||*p=='\t')p++;return p;}
 bool ota_fetch(const char *url,uint32_t limit,ota_fetch_begin begin,ota_fetch_write write,void *ctx,const char **error){
     transfer *t=calloc(1,sizeof(*t));char line[640];unsigned char chunk[512];
     uint32_t done=0,total=0;bool connected=false,ok=false;
-    *error="No memory for transfer";if(!t)return false;t->fd=-1;t->deadline=mico_rtos_get_time()+180000;
+    *error="No memory for transfer";if(!t)return false;t->fd=-1;t->deadline=mico_rtos_get_time()+OTA_FETCH_TOTAL_MS;
 #define FAIL(s) do{*error=(s);goto out;}while(0)
     if(!write||!limit||!parse_url(url,t))FAIL("Invalid URL");
-    if(t->tls){t->ssl=calloc(1,sizeof(*t->ssl));t->buffer=malloc(2048);if(!t->ssl||!t->buffer)FAIL("No memory for TLS");}
     do{
         ota_job_sample();
         if(ota_job_cancelled())FAIL("Cancelled");
@@ -118,7 +217,7 @@ bool ota_fetch(const char *url,uint32_t limit,ota_fetch_begin begin,ota_fetch_wr
         uint32_t last=done+1023;if(total&&last>=total)last=total-1;
         int n=t->tls?snprintf(line,sizeof(line),"GET %s HTTP/1.1\r\nHost: %s:%u\r\nRange: bytes=%lu-%lu\r\nConnection: keep-alive\r\nAccept-Encoding: identity\r\n\r\n",t->path,t->host,t->port,(unsigned long)done,(unsigned long)last):snprintf(line,sizeof(line),"GET %s HTTP/1.1\r\nHost: %s:%u\r\nConnection: close\r\nAccept-Encoding: identity\r\n\r\n",t->path,t->host,t->port);
         if(n<0||(size_t)n>=sizeof(line)||!send_data(t,line,n))FAIL("TLS handshake or request failed");
-        if(line_read(t,line,sizeof(line))<0||strncmp(line,"HTTP/1.",7)||line[8]!=' ')FAIL("Invalid HTTP status");
+        if(line_read(t,line,sizeof(line))<12||strncmp(line,"HTTP/1.",7)||line[8]!=' ')FAIL("Invalid HTTP status");
         unsigned status=atoi(line+9),headers=0;uint32_t length=0,first=0,end=0,size=0;bool have=false,range=false,close_peer=false;
         for(;;){n=line_read(t,line,sizeof(line));if(n<0||(headers+=n)>8192)FAIL("Invalid HTTP headers");if(n==2)break;
             const char *p;
@@ -133,11 +232,12 @@ bool ota_fetch(const char *url,uint32_t limit,ota_fetch_begin begin,ota_fetch_wr
         if(!total){total=size;if(begin&&!begin(ctx,total))FAIL("Package rejected");}
         while(length){if(ota_job_cancelled())FAIL("Cancelled");
         if((int32_t)(mico_rtos_get_time()-t->deadline)>=0)FAIL("Download timed out");n=read_data(t,chunk,length>sizeof(chunk)?sizeof(chunk):length);if(n<=0)FAIL("Download interrupted");if(!write(ctx,done,chunk,n))FAIL("Signature or write rejected");done+=n;length-=n;}
-        if(close_peer){close(t->fd);t->fd=-1;connected=false;}
+        if(close_peer){disconnect_host(t);connected=false;}
     }while(done<total);
     ok=true;*error=NULL;
 out:
     if(!ok && ota_job_cancelled())*error="Cancelled";
-    if(t->fd>=0)close(t->fd);free(t->buffer);free(t->ssl);free(t);return ok;
+    else if(!ok && (int32_t)(t->deadline-mico_rtos_get_time())<=0)*error="Download timed out";
+    disconnect_host(t);free(t);return ok;
 #undef FAIL
 }

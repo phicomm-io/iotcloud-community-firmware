@@ -25,3 +25,7 @@ Images and third-party tools remain copyrighted by their authors and vendors; ho
 The A1 filter and power interlock note comes from [zA1 Issue #3](https://github.com/a2633063/zA1/issues/3). Users reported that the purifier would not power on without its filter; the original project maintainer confirmed adding the reminder to the documentation.
 
 See [Build dependencies](build-deps) for toolchains and SDKs.
+
+## DAIKIN and measurement references
+
+DAIKIN wiring and PM2005 / PM2105 frames follow [louliangsheng/daikin-air-sensor](https://github.com/louliangsheng/daikin-air-sensor). PM2.5 and PM10 occupy different fields in the same reply. TVOC uses SGP30 native ppb output. The ≤300 ppb product ventilation reference matches the device indicator; see the [Sensirion SGP30 datasheet](https://sensirion.com/file/datasheet_sgp30/) and [MOX output explanation](https://sensirion.com/resource/application_note/output_mox_sensor). It is not a health compliance limit. Particulate display bands follow [HJ 633—2026 table 3](https://www.mee.gov.cn/ywgz/fgbz/bz/bzwb/jcffbz/202602/t20260225_1144441.shtml); instantaneous readings are not a calculated AQI.

@@ -41,13 +41,13 @@ M1 uses the original panel's long-press event to clear Wi-Fi and the WebUI passw
 
 Disable child lock for custom actions. Actions are recognized after release; recovery never executes while a button is still held. Five seconds and above are reserved, not custom long presses. Multi-click actions wait until the click interval finishes.
 
-### A1 / M1 automation does not work
+### A1 sensor automation does not work
 
-Check the M1 MAC and optional IP configured on A1; no pairing identifier is needed on M1. Check the A1 member list and enabled rules. Both devices need the same MQTT service and account to establish a session, plus working LAN UDP. Finally, check the averaged readings: no valid readings means `null`.
+Check the provider MAC and optional IP on A1; M1 and DAIKIN need no manual pairing identifier. Check members and enabled rules, updated firmware, the same MQTT service/account and generic sensor ACLs. Check LAN UDP and MQTT measurements. Missing metrics hide their choices; no valid required data means `null` and the configured offline speed.
 
 ### Update failed
 
-Keep power connected during updates. If the WebUI remains available, verify the file and network and retry. Otherwise recover with a programmer: [TC1](tc1-flash) or [A1 / M1](a1-m1-flash).
+Keep power connected during updates. If the WebUI remains available, verify the file and network and retry. Otherwise recover with a programmer: [TC1](tc1-flash) [A1 / M1](a1-m1-flash) or [DAIKIN](daikin-guide).
 
 ### Settings were not saved
 
@@ -63,7 +63,7 @@ A factory reset clears user settings and requires Wi-Fi provisioning again. A fu
 
 ## More help
 
-Read the [TC1](tc1-guide), [M1](m1-guide) or [A1](a1-guide) guide. Search or open a [firmware issue](https://github.com/phicomm-io/phicomm-community-firmware/issues), including the product, firmware version and reproduction steps.
+Read the [TC1](tc1-guide), [M1](m1-guide) [A1](a1-guide) or [DAIKIN](daikin-guide) guide. Search or open a [firmware issue](https://github.com/phicomm-io/phicomm-community-firmware/issues), including the product, firmware version and reproduction steps.
 
 Join the Chinese-speaking QQ community: **1021750178** · [Join the group](https://qm.qq.com/q/9L150V85kk?from=tim). If the link does not open, search for the group number in QQ.
 

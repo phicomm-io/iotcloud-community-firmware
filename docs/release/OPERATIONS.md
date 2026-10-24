@@ -16,7 +16,7 @@ GitHub Environment `signed-ota-production` 的 `OTA_SIGNING_KEY_PEM` 负责 CI �
 2. 在私有 Wiki `Release-Log.md` 编辑唯一的 `## vMAJOR.MINOR.PATCH` 章节并提交、推送 Wiki。
 3. 运行 `python3 tools/release/notes.py vMAJOR.MINOR.PATCH --wiki /path/to/wiki`，把 `docs/release/Release-Log.md` 和 `wiki-snapshot.json` 一起提交。
 4. 测试、审核并合并主分支。确认新版本严格递增后才在该主分支提交上创建 tag。
-5. tag CI 构建三个型号、测试并签名。发布任务先创建草稿，上传不可变版本目录，通过国内外下载哈希及签名验证后才公开 GitHub Release，并更新一个 `stable.json`。
+5. tag CI 构建四个型号的九种固件并测试、签名：A1 普通／新风各提供完整与精简版，M1、TC1 各提供完整与精简版，DAIKIN 仅提供通用完整版。发布任务先创建草稿，上传不可变版本目录，通过国内外下载哈希及签名验证后才公开 GitHub Release，并更新一个 `stable.json`。
 6. 最后同步公开 Pages 的明确文件白名单。Pages 的历史归档读取 `/releases/index.json`，保留所有已导入历史版本。
 
 发布说明缺失、重复、未完成或快照哈希不匹配会阻止发布。相同版本目录中的不同内容会被拒绝覆盖；重试应使用已上传的签名产物，不能重新签名后强行覆盖。所有生产发布共用 Actions concurrency group，禁止手工并发运行发布脚本。
@@ -55,7 +55,7 @@ python3 site/build.py build/pages
 tools/release/pages.sh --preview
 ```
 
-线上 `main` 在发布流程末尾由 `tools/release/pages.sh` 更新。公开站点由 `wiki-demo.yml` Actions 工作流部署，白名单必须包含 `ota/`。发布后检查该工作流与三个 `/ota/MODEL/latest.json`；必要时用 `gh workflow run wiki-demo.yml --repo phicomm-io/phicomm-io.github.io` 重新部署，再读回线上文件。
+线上 `main` 在发布流程末尾由 `tools/release/pages.sh` 更新。公开站点由 `wiki-demo.yml` Actions 工作流部署，白名单必须包含 `ota/` 及与 demo 匹配的前端锁文件和读取工具。发布后检查该工作流与四个 `/ota/MODEL/latest.json`；必要时用 `gh workflow run wiki-demo.yml --repo phicomm-io/phicomm-io.github.io` 重新部署，再读回线上文件。
 
 ## 术语
 
@@ -66,7 +66,7 @@ tools/release/pages.sh --preview
 
 ## 元数据
 
-- `/ota/{tc1,m1,a1}/latest.json`：型号、版本、commit、大小、sha256、相对下载路径和发布说明路径。
+- `/ota/{tc1,m1,a1,daikin}/latest.json`：型号、版本、commit、大小、sha256、相对下载路径和发布说明路径。DAIKIN 当前只支持本地签名文件上传；提供下载元数据不表示设备支持在线检查或 URL 下载。
 - `/releases/index.json`：按数字 SemVer 倒序的版本归档；`stable` 指定正式最新版。
 - `/releases/vX.Y.Z/`：原始固件、签名 OTA、完整镜像、SHA256SUMS、notes.md、index.html、release.json。
 
@@ -97,6 +97,6 @@ Pages 默认从本站 `/releases/` 下载历史固件，不依赖个人域名或
 
 ## 锁定前端 Release
 
-前端仓库 `phicomm-io/phicomm-community-frontend` 是设备 WebUI、Vue 平台和 demo 的唯一源码。先等待目标 commit 的 `frontend-<完整40位commit>` Release，通过测试后将其 `frontend.lock.json` 提交到固件仓库。锁文件包含仓库、完整 commit、Release、产物名和 SHA-256，禁止 latest 或分支回退。三款固件直接嵌入 `devices/<model>/index.html.gz`，生成的固件 manifest 记录锁文件；文档站只复制同一产物的 `demos/`。
+前端仓库 `phicomm-io/phicomm-community-frontend` 是设备 WebUI、Vue 平台和 demo 的唯一源码。先等待目标 commit 的 `frontend-<完整40位commit>` Release，通过测试后将其 `frontend.lock.json` 提交到固件仓库。锁文件包含仓库、完整 commit、Release、产物名和 SHA-256，禁止 latest 或分支回退。四款固件直接嵌入 `devices/<model>/index.html.gz`，生成的固件 manifest 记录锁文件；文档站只复制同一产物的 `demos/`。
 
 `python3 tools/frontend_release.py --archive /path/frontend.tar.gz` 可预填离线缓存，仍要求与锁文件一致。前端单元测试、设备表单测试和 demo 浏览器测试归前端仓库 CI；固件 CI 验证锁定页面的嵌入及 HTTP 行为。后端仓库有自己的锁文件，可独立选择兼容版本。

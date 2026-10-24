@@ -274,12 +274,12 @@ static inline void mico_rtos_unlock_mutex(mico_mutex_t*m){assert(!pthread_mutex_
         header = header.replace('return thread && *thread==1;', 'return thread && pthread_equal(*thread,pthread_self());')
         (temp/'mico.h').write_text(header)
         (temp/'fixture.c').write_text(FIXTURE)
-        bear = ROOT/'build/ota-tls/bearssl-0.6'
-        hash_sources = [str(bear/'src'/p) for p in ('hash/sha2small.c', 'codec/dec32be.c', 'codec/enc32be.c', 'codec/enc64be.c')]
+        sha = ROOT/'build/a1-sdk/mico-os/MiCO/security/SHAUtils'
+        hash_sources = [str(sha/'sha224-256.c')]
         cls.binary = temp/'fixture'
         subprocess.run([os.environ.get('CC', 'cc'), '-std=gnu99', '-g', '-pthread',
                         '-fsanitize=address,undefined', '-fno-omit-frame-pointer', '-no-pie',
-                        '-I'+str(bear/'inc'), '-I'+str(bear/'src'), '-I'+str(temp),
+                        '-I'+str(sha), '-I'+str(temp),
                         '-I'+str(ROOT), '-I'+str(ROOT/'tests/stubs'), '-I'+str(json),
                         str(temp/'fixture.c'), str(ROOT/'common/json_owned.c'), str(ROOT/'common/httpd/product.c'),
                         *hash_sources, *map(str, json.glob('*.c')), '-o', str(cls.binary)],

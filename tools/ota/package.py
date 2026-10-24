@@ -8,7 +8,7 @@ from pathlib import Path
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, utils
 DOMAIN = b'PHICOMM-OTA-V1'
-MODELS = {'tc1': 1, 'm1': 2, 'a1': 3}
+MODELS = {'tc1': 1, 'm1': 2, 'a1': 3, 'daikin': 4}
 
 def header(image, model, version, commit, key_id=1, channel=1):
     match = re.fullmatch(r'v?(\d+)\.(\d+)\.(\d+)', version)

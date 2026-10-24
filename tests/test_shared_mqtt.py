@@ -280,13 +280,13 @@ int main(void){
         with self.protocol('A1') as protocol, tempfile.TemporaryDirectory() as directory:
             json=copy_patched_json(sdk/'libraries/utilities/json_c',Path(directory)/'sdk')
             for p in json.glob('*.c'): p.write_text(p.read_text().replace('%ld','%d'))
-            bear=ROOT/'build/ota-tls/bearssl-0.6'
+            sha=ROOT/'build/a1-sdk/mico-os/MiCO/security/SHAUtils'
             self.compile_run([ROOT/'tests/mqtt_core/service.c',ROOT/'common/mqtt/core.c',
                 client_source or ROOT/'common/mqtt/client.c',ROOT/'common/mqtt/session.c',ROOT/'common/mqtt/service.c',
                 ROOT/'common/json_owned.c', protocol/'MQTTClient.c',
                 *sorted((protocol/'MQTTPacket').glob('*.c')), *json.glob('*.c'),
-                *[bear/'src'/p for p in ('hash/sha2small.c','codec/dec32be.c','codec/enc32be.c','codec/enc64be.c')]],
-                [ROOT/'tests/mqtt_core/stubs',ROOT/'tests/stubs',protocol,protocol/'mico',protocol/'MQTTPacket',json,bear/'inc',bear/'src',*extra_includes],
+                sha/'sha224-256.c'],
+                [ROOT/'tests/mqtt_core/stubs',ROOT/'tests/stubs',protocol,protocol/'mico',protocol/'MQTTPacket',json,sha,*extra_includes],
                 [*extra_defines,'-include','stdint.h','-DMOC=1','-DMAX_MESSAGE_HANDLERS=12','-Wl,--wrap=malloc,--wrap=free,--wrap=realloc,--wrap=calloc,--wrap=strdup'])
     def test_a1_protocol(self): self.check_protocol('A1')
     def test_m1_protocol(self): self.check_protocol('M1')

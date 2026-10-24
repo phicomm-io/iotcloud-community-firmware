@@ -5,14 +5,15 @@ from xml.etree import ElementTree as ET
 from pages import PAGES, SITE_URL
 
 SITE_TITLE = '斐讯社区固件 · PHICOMM COMMUNITY'
-EN_INDEX_TITLE = 'Phicomm TC1 / M1 / A1 community firmware documentation'
-EN_INDEX_DESCRIPTION = 'Installation, local control, MQTT, Home Assistant and IotCloud guides for Phicomm TC1, M1 and A1.'
+EN_INDEX_TITLE = 'TC1 / M1 / A1 / DAIKIN community firmware documentation'
+EN_INDEX_DESCRIPTION = 'Installation, local control, MQTT, Home Assistant and IotCloud guides for Phicomm TC1, M1, A1 and DAIKIN BRY88AX151K.'
 PRODUCT_TITLES = {
     'tc1-guide': '斐讯 TC1 智能排插功能与操作',
     'tc1-flash': '斐讯 TC1 刷机教程（A1 硬件版本）',
     'tc1-no-disassembly': '斐讯 TC1 免拆刷机教程（A1 硬件版本）',
     'tc1-no-disassembly-ethernet-wifi-ap': '斐讯 TC1 免拆刷机：一个有线＋一个无线＋一个 AP',
     'm1-guide': '斐讯 M1 空气检测仪功能与操作',
+    'daikin-guide': 'DAIKIN BRY88AX151K 空气检测仪功能与安装',
     'a1-guide': '斐讯 A1 空气净化器功能与操作',
     'a1-m1-flash': '斐讯 A1 / M1 刷机教程：J-Link 与 Bootloader',
 }

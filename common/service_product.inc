@@ -67,6 +67,7 @@ json_object *service_product_capabilities(void){
     status_view_capabilities(o);
 #ifndef FEATURE_DEVICE_A1
     json_build_object_add(o,"sensor_session_protocol",json_object_new_int(2));
+    json_build_object_add(o,"sensor_schema",json_object_new_int(1));
 #endif
     const char *actions[]={"schedules.get","schedules.put","schedules.delete","schedules.enable","buttons.get","status.get","capabilities.get","config.get","logs.get","config.set","wifi.scan","wifi.scan.get","binding.status.get","system.reboot","system.reset","ota.start","night.get","night.set","time.get","time.set","binding.get",
 #ifdef FEATURE_DEVICE_A1

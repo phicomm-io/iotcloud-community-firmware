@@ -4,6 +4,9 @@ from pathlib import Path
 import hashlib
 import gzip
 import os
+import json
+import subprocess
+import importlib.util
 import zopfli.gzip
 from frontend_release import fetch
 
@@ -29,12 +32,31 @@ def adapt_http_queue(data, model):
 def pack(model):
     if model not in ('tc1', 'm1', 'a1'):
         raise ValueError('Unknown frontend model')
-    bundle = fetch(ROOT / 'frontend.lock.json')
+    bundle = None
+    local = os.environ.get('PHICOMM_FRONTEND_SOURCE')
+    if not local: bundle = fetch(ROOT / 'frontend.lock.json')
     variant = os.environ.get('PHICOMM_FIRMWARE_VARIANT', 'full')
     allowed = ('full', 'no-frontend-resources') + (('fresh-air', 'fresh-air-no-frontend-resources') if model == 'a1' else ())
     if variant not in allowed: raise ValueError('Unknown variant')
     page = 'index.html.gz' if variant in ('full', 'fresh-air') else 'setup.html.gz'
-    data = adapt_http_queue((bundle / 'devices' / model / page).read_bytes(), model)
+    if local:
+        if variant not in ('full','fresh-air'): raise ValueError('Development frontend requires full variant')
+        source=Path(local).resolve()
+        spec=importlib.util.spec_from_file_location('development_frontend',source/'common/web/page.py')
+        renderer=importlib.util.module_from_spec(spec);spec.loader.exec_module(renderer)
+        entry=source/('TC1/http_server/web/index.html' if model=='tc1' else model.upper()+'/web/index.html')
+        raw=gzip.compress(renderer.render_page(entry,minify=True),mtime=0)
+        provenance={'development':True,'source':str(source),
+            'commit':subprocess.check_output(['git','-C',str(source),'rev-parse','HEAD'],text=True).strip(),
+            'dirty':bool(subprocess.check_output(['git','-C',str(source),'status','--porcelain']))}
+    else:
+        raw=(bundle/'devices'/model/page).read_bytes()
+        provenance=json.loads((ROOT/'frontend.lock.json').read_text())
+    data=adapt_http_queue(raw,model)
+    provenance['gzip_sha256']=hashlib.sha256(data).hexdigest()
+    metadata=ROOT/'build'/('frontend-'+model+'-provenance.json')
+    metadata.parent.mkdir(parents=True,exist_ok=True);metadata.write_text(json.dumps(provenance,indent=2)+'\n')
+
     generated = Path(os.environ.get('PHICOMM_WEB_OUTPUT_DIR', str(ROOT / model.upper() / 'generated')))
     if model == 'tc1':
         output = generated / 'web_data.c'
@@ -50,4 +72,4 @@ def pack(model):
         text = '\n'.join(lines)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(text)
-    print(f'{model.upper()} verified UI {len(data)} bytes gzip, frontend {bundle.name}, HTTP FIFO=True')
+    print(f'{model.upper()} verified UI {len(data)} bytes gzip, frontend {bundle.name if bundle else "LOCAL DEVELOPMENT"}, HTTP FIFO=True')

@@ -1,0 +1,63 @@
+name: Static release notes
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      runner:
+        type: choice
+        default: auto
+        options: [auto, github-hosted, self-hosted]
+permissions:
+  contents: read
+jobs:
+  static-notes:
+    runs-on: >-
+      ${{ fromJSON(
+        (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
+        ((github.event_name == 'workflow_dispatch' && inputs.runner == 'self-hosted') ||
+         (vars.PHICOMM_CI_RUNNER == 'self-hosted' &&
+          (github.event_name != 'workflow_dispatch' || inputs.runner == 'auto'))) &&
+        '["self-hosted","linux","x64","phicomm-build"]' || '["ubuntu-22.04"]') }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: python3 -m pip install Markdown==3.7 cryptography==46.0.3
+      - run: npm ci --ignore-scripts
+      - name: Migration, scope, lifecycle and browser request tests
+        run: |
+          python3 tests/test_user_notes.py
+          python3 tests/test_site_docs.py
+          python3 tests/test_archive_pages.py
+          python3 tests/test_publish_user_notes.py
+          node --test tests/test_release_notes.cjs tests/test_release_notes_web.cjs
+          node --test tests/test_ota_worker.mjs
+      - name: Build the fixed historical snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "$(python3 -c 'import json;print(json.load(open("frontend.lock.json"))["release"])')" \
+            --repo phicomm-io/phicomm-community-frontend --pattern frontend.tar.gz --dir "$RUNNER_TEMP/notes-frontend"
+          PHICOMM_FRONTEND_ARCHIVE="$RUNNER_TEMP/notes-frontend/frontend.tar.gz" python3 site/build.py build/pages
+      - name: Browser and no-JavaScript history
+        run: |
+          npm install --no-save --package-lock=false @playwright/test@1.64.1
+          npx playwright install --with-deps chromium
+          python3 -m http.server 18765 --bind 127.0.0.1 --directory build/pages > "$RUNNER_TEMP/notes-http.log" 2>&1 &
+          server=$!
+          trap 'kill "$server"' EXIT
+          node tests/test_release_notes_browser.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: static-release-notes
+          path: |
+            build/pages
+            build/notes-evidence

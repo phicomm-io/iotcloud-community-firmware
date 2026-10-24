@@ -53,8 +53,6 @@ GLOBAL_DEFINES += DEV_MODEL=\"PHICOMM_TC1_A1\"
 # JSON decimal parsing uses the private checked numeric component.
 
 $(NAME)_SOURCES += ota_fetch.c ota_mode.c
-$(NAME)_INCLUDES += generated/tls-include
-$(NAME)_PREBUILT_LIBRARY := generated/libbearssl.a
 GLOBAL_DEFINES += PHICOMM_DEVICE_OTA=1
 GLOBAL_CFLAGS += -fstack-usage
 

@@ -2,6 +2,16 @@
 
 English translation of the published release history. Historical validation statements apply to the release named in each section, not to later firmware. Release notes are authored in the Wiki and frozen into the source repository before tagging.
 
+## v0.9.24
+
+- Add universal ESP32 firmware for the DAIKIN BRY88AX151K, sharing the local WebUI, MQTT and sensor-session protocol. It detects PM2005 / PM2105 and the optional formaldehyde module; unavailable formaldehyde readings are hidden. DAIKIN has a full build only.
+- The DAIKIN overview uses a single row of sensor cards, comfort scales and a separate PM10 card. It shows PM2.5, PM10, temperature, humidity, CO₂, TVOC and connected devices. TVOC includes a 300 ppb ventilation reference, with fixed-size indicator badges that fit longer labels.
+- A1 automation offers metrics according to the provider's available data rather than its model. It accepts DAIKIN data and excludes missing or expired values from control. Existing binding and automation configurations remain compatible.
+- A1, M1 and TC1 downloads use kernel TLS, handling short reads, short writes and nonblocking waits with handshake, cancellation and overall deadlines. Failure and retry release TLS sessions and sockets. HTTPS still does not validate certificates; OTA firmware signatures remain mandatory.
+- Fix TC1 local button actions being lost when low memory prevents a JSON status query; local controls now execute directly. Separately fix restoration through the configuration API when an unconfigured MQTT host has the default port zero.
+- The website Release Log adds reviewed Chinese/English history and comparisons across releases, scoped to model, firmware variant and the actual release chain. Missing evidence, translations or inconsistent archives produce explicit errors. Legacy OTA metadata, original single-release notes, download URLs and archived firmware files stay compatible.
+- Full device pages add an upgrade comparison entry that passes the actual version and firmware variant to the website. Browsers calculate the notes; devices do not store release history or add note downloads. The website can optionally read LAN device information once, keeps manual selection after errors and never stores the password.
+
 ## v0.9.23
 
 - Add optional A1 fresh-air variants using user UART TX for PWM and RX for fan feedback. Connect a compatible fan as described in the wiring guide. Standard variants retain their existing purpose and the original fan driver mapping is unchanged. All A1 PWM runs at 25 kHz.
