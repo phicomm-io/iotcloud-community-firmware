@@ -2,6 +2,15 @@
 
 English translation of the published release history. Historical validation statements apply to the release named in each section, not to later firmware. Release notes are authored in the Wiki and frozen into the source repository before tagging.
 
+## v0.9.25
+
+- DAIKIN Settings → General → Indicator rules supports up to two thresholds for each of CO₂, TVOC and PM, with steady on, always off, fast blink and slow blink. Choose PM2.5 or PM10 as the PM lamp's data source. Formaldehyde rules appear when its module is detected. Rules survive restart; unmatched or stale readings turn the light off.
+- The DAIKIN Wi-Fi lamp indicates system state: three long and three short pulses when unconfigured, fast blink when Wi-Fi is disconnected, slow blink while configured MQTT is not ready, and steady on when ready. It operates independently of the air quality indicator switch.
+- DAIKIN recovery hotspots use `BRY88AX151K-AP-<last six MAC digits in uppercase>`, with IP and gateway `192.168.0.1`. Startup, button recovery and reopening after network failure share this configuration. Saved Wi-Fi and MQTT settings remain intact.
+- New DAIKIN release assets use the `daikin_BRY88AX151K` prefix; normal upgrades use `daikin_BRY88AX151K.ota.bin.signed`. Historical archives retain their original filenames. Update packaging, signing, download catalogs and bilingual installation guides, distinguishing the older transition image included with the stock OTA tutorial.
+- IotCloud remembers confirmed home-screen installation to prevent repeated Safari prompts. Standalone windows restrict zoom in the app and device frames. All website demos add a home link; update the DAIKIN settings demo and describe the project as open-source firmware for discontinued IoT devices or devices whose cloud services have ended.
+- A DAIKIN candidate passed physical OTA, configuration preservation, Wi-Fi/MQTT recovery, hotspot naming and automatic shutdown, six sensor readings after warmup, and desktop/mobile page checks. The final signed release packages were not physically accepted byte for byte, and A1, M1 and TC1 were not reflashed. Physical iPhone home-screen gestures and lamp blink measurements were not tested.
+
 ## v0.9.24
 
 - Add universal ESP32 firmware for the DAIKIN BRY88AX151K, sharing the local WebUI, MQTT and sensor-session protocol. It detects PM2005 / PM2105 and the optional formaldehyde module; unavailable formaldehyde readings are hidden. DAIKIN has a full build only.
