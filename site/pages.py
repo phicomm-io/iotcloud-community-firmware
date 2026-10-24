@@ -30,6 +30,7 @@ GROUPS = [
         ("a1-m1-flash", "刷机：J-Link / Bootloader", "共用教程：模组飞线、工厂测试点与串口刷机", "A1-M1-刷机"),
     ]),
     ("daikin", "DAIKIN 空气检测仪", [
+        ("daikin-stock-ota", "原厂 OTA 无线刷机", "BRY88AB151K：按键触发、配套发送器与实机迁移", "DAIKIN-原厂OTA"),
         ("daikin-guide", "功能、安装与恢复", "BRY88AX151K：通用 ESP32 固件、读数与 A1 联动", "DAIKIN-功能与安装"),
     ]),
     ("a1", "A1 空气净化器", [
@@ -63,6 +64,7 @@ SITE_URL = 'https://phicomm-io.github.io/'
 
 # English guides share the same slugs, ordering and asset collection.
 EN_TITLES = {
+ 'daikin-stock-ota': ('Daikin stock OTA migration', 'BRY88AB151K button gesture, sender and verified first boot'),
  'stock-provision': ('Stock Wi-Fi setup without the app', 'A1 EasyLink and M1 hotspot setup on Windows, macOS and Linux'),
  'a1-no-disassembly': ('A1 no-disassembly migration', 'LAN OTA uploads and public DNS migration prerequisites'),
  'm1-no-disassembly': ('M1 no-disassembly migration', 'Factory LAN OTA, image requirements and DNS migration limits'),
