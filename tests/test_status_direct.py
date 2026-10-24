@@ -72,6 +72,18 @@ static void states(void){
   s.sensor.m1.barometer=(barometer_state_t){.ready=true,.received=true,.updated_ms=UINT32_MAX-1,.chip_id=0x50,.address=0x77,.pressure_centi_pa=10132400};
   if(model==DEVICE_A1)s.sensor.a1=(feature_values_t){.value={23,45,123,.1},.co2=1400,.sample_count=2,.co2_sample_count=1,.configured_count=2,.valid=true};
   parity(&s,&f,true);s.now_ms=0;parity(&s,&f,false);s.now_ms=UINT32_MAX;
+  if(model==DEVICE_A1){
+   /* Actual ARM formatter + both graph/wire paths must preserve good fields
+    * and use JSON null for every unavailable metric in a partial sample. */
+   for(unsigned field=0;field<5;field++){
+    s.sensor.a1=(feature_values_t){.value={23,45,123,.1},.co2=1400,.sample_count=1,.co2_sample_count=1};
+    if(field<4)s.sensor.a1.value[field]=NAN;else s.sensor.a1.co2=INFINITY;
+    parity(&s,&f,true);parity(&s,&f,false);
+    struct printbuf *wire=device_status_wire(&s,NULL,true,"partial");assert(wire);
+    const char *null_fields[]={"\"temperature\": null","\"humidity\": null","\"pm25\": null","\"formaldehyde\": null","\"co2\": null"};
+    assert(strstr(wire->buf,null_fields[field]));assert(!strstr(wire->buf,": nan")&&!strstr(wire->buf,": inf"));printbuf_free(wire);healthy_stats();
+   }
+  }
  }
  s.captured=0;assert(!device_status_wire(&s,&f,true,NULL));healthy_stats();
 }

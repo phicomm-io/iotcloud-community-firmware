@@ -2,6 +2,7 @@
 #include "device_status.h"
 #include "json_build.h"
 #include "firmware_variant.h"
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 static void status_string(struct json_object *o,const char *k,const char *s)
@@ -165,11 +166,12 @@ static __attribute__((noinline)) void encode_a1(status_sink *o,const device_stat
         emit_int(o,"configured_count",v->configured_count);
         const char *keys[]={"temperature","humidity","pm25","formaldehyde"};
         for(unsigned i=0;i<4;i++) {
-            if(v->sample_count)emit_double(o,keys[i],v->value[i]);
+            if(v->sample_count && isfinite(v->value[i]))emit_double(o,keys[i],v->value[i]);
             else emit_null(o,keys[i]);
         }
-        emit_bool(o,"co2_valid",v->co2_sample_count!=0);
-        if(v->co2_sample_count)emit_double(o,"co2",v->co2);
+        bool co2_valid=v->co2_sample_count && isfinite(v->co2);
+        emit_bool(o,"co2_valid",co2_valid);
+        if(co2_valid)emit_double(o,"co2",v->co2);
         else emit_null(o,"co2");
         emit_end(o);
     }
