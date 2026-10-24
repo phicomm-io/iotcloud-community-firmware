@@ -1,16 +1,12 @@
 # Daikin BRY88AB151K: migrate through stock OTA
 
-On 2026-10-24, a **BRY88AB151K running stock SV.02.00.01.15 with 4MB Flash** successfully accepted a community application through its stock TCP OTA service and booted it. This guide uses an ordinary ESP32 application image; no separate stock-OTA build is needed.
-
-**Do not use this image on BRY88AX151K or assume other stock versions are compatible.** The test device was backed up and restored to stock over serial before wireless migration. The result validates the button gesture and OTA path, not every factory configuration state. The provided image is the tested `0.9.21-2cfd89-dirty` test build, not a claim about the current stable release.
-
 ## 1. Prepare the device and computer
 
 Use a stable device power supply and a computer with 2.4GHz Wi-Fi and Python 3. The sender needs only the Python standard library. Download the files before switching the computer to the device hotspot. Ethernet can keep the computer online while Wi-Fi connects to the device, but internet access is not required during flashing.
 
 Have a recovery method available. For a first attempt, keep your own complete 4MB serial Flash backup. Another device's complete backup can overwrite identity and private settings.
 
-Stock OTA listens on TCP 8555 after entering update mode. It writes the inactive application slot, selects it for boot, and restarts. **Entering OTA mode already initializes and erases the inactive slot.** Keep power connected. GPIO0 is for serial download mode; the wireless gesture uses the pairing button mapped to GPIO34.
+Stock OTA listens on TCP 8555 after entering update mode. It writes the inactive application slot, selects it for boot, and restarts. **Entering OTA mode already initializes and erases the inactive slot.** Keep power connected.
 
 ## 2. Download and check the files
 
@@ -44,7 +40,7 @@ Install Python 3 first if the command is unavailable. Stop on a hash or format m
 
 ## 3. Trigger stock OTA with the button
 
-With the stock application running, use the pairing button:
+With the stock application running, locate the **RESET pinhole on the back of the device**. Use a suitable thin tool to gently press the button inside, then follow this sequence:
 
 1. Hold for approximately **3 seconds**, then release for approximately **0.5 seconds**.
 2. Hold for approximately **3 seconds**, then release for approximately **0.5 seconds**.
@@ -120,7 +116,5 @@ Serial logs confirmed that the stock bootloader and partition table remained and
 | Hotspot connects but TCP 8555 times out/refuses | Check network switching and the actual gateway. A hotspot alone does not prove the OTA service started; inspect the two serial markers if available. |
 | Handshake or version rejected | Stop and check the stock version and compatibility. Do not invent a higher label to bypass compatibility checks. |
 | Transfer interrupted, invalid ACK or final NG | Save the output and observe the powered device. Acknowledged bytes alone do not prove successful flashing. |
-| OK but no new hotspot | Wait for reboot, rescan and inspect serial logs. Ensure GPIO0 was released after any earlier serial work. |
-| Device will not boot | Restore your own complete Flash backup through ESP32 serial download mode. GPIO0/EN recovery is separate from the wireless button gesture. |
-
-The verified result covers this stock version on BRY88AB151K migrating to the fixed application provided here. Other models, configuration states and later updates require separate verification.
+| OK but no new hotspot | Wait for reboot, rescan and inspect the device startup logs. |
+| Device will not boot | Stop repeated wireless update attempts and seek serial recovery using your own complete Flash backup. |
