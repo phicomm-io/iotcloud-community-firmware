@@ -20,7 +20,7 @@ A1、M1、TC1 的 OTA 下载统一调用 MiCO 内核的 `ssl_connect_sni`、`ssl
 | AES-CBC | `AesSetKey`、`AesCbcEncrypt`、`AesCbcDecrypt` | 直接导出；CBC 本身不能替代 CCM |
 | SHA-256 / SHA-1 | MX1290 的扩展 `InitSha256` / `Sha256Update` / `Sha256Final` 等 | 扩展包装检查 `EXTRA_CRYPTO_FLAG`，缺失时返回 -1，不能假定所有已安装内核都支持 |
 | HMAC | MX1290 扩展 `HmacSetKey` / `HmacUpdate` / `HmacFinal` | 同样需要检查扩展可用性；MW3xx 导出表没有同等扩展保证 |
-| P-256 / ECDH / ECDSA | 未发现可直接调用的原语导出 | 允许保留应用侧最小实现及必要链接；`ssl_set_ecc` 只控制 TLS 功能，不是 ECC 原语接口 |
+| P-256 / ECDH / ECDSA | 未发现可直接调用的原语导出 | 固件验签仍需应用侧 micro-ecc，LAN 可保留自身所需的 ECC 链接；`ssl_set_ecc` 只控制 TLS 功能，不是 ECC 原语接口 |
 
 对应源码：`include/mico_security.h`，`platform/MCU/{MX1290,MW3xx}/moc/moc_api.h`，以及 MX1290 的 `moc_api_sep.h`、`moc_adapter.c`。当前 OTA 签名的 micro-ecc、SDK SHAUtils 不依赖可选扩展；写请求去重也复用同一 SDK SHA-256。将来启用 LAN 应单独验证 AES/哈希 ABI、CCM 向量、ECDH/ECDSA 向量和完整链接映射；当前变更没有删除原工作区未提交的 LAN 实现。
 
