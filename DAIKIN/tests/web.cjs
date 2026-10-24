@@ -1,0 +1,42 @@
+const assert=require('node:assert/strict');
+const {JSDOM,VirtualConsole}=require('jsdom');
+const fs=require('node:fs');
+const html=fs.readFileSync(process.argv[2],'utf8');
+let state={model:'daikin',name:'DAIKIN',device_id:'001122334455',sensors:{pm25:{valid:true,value:12},co2:{valid:true,value:800},temperature:{valid:true,value:25.1},humidity:{valid:true,value:52},tvoc:{valid:true,value:123}},formaldehyde_present:false};
+const errors=[];const console=new VirtualConsole();console.on('jsdomError',e=>errors.push(e));
+const dom=new JSDOM(html,{url:'http://192.168.4.1/',runScripts:'dangerously',pretendToBeVisual:true,virtualConsole:console,beforeParse(w){
+ w.matchMedia=()=>({matches:false,addEventListener(){}});w.TextEncoder=TextEncoder;w.AbortController=AbortController;
+ w.fetch=async(path,opts)=>{
+ const r=JSON.parse(opts.body);let data={};
+ if(r.action==='capabilities.get')data={actions:['status.get','config.get','capabilities.get','config.set','indicator.set','wifi.scan','wifi.scan.get','system.reboot','system.reset']};
+ else if(r.action==='status.get')data=state;
+ else throw Error('Unexpected request: '+r.action);
+ return {ok:true,status:200,json:async()=>({code:'ok',message:'ok',data})};
+ };
+}});
+(async()=>{
+ await new Promise(r=>setTimeout(r,100));
+ assert.deepEqual(errors.map(e=>e.message),[]);
+ const document=dom.window.document;
+ assert.equal(document.querySelector('[data-sensor="formaldehyde"]').hidden,true);
+ assert.equal(document.querySelector('[data-sensor="tvoc"] .num').textContent,'123');
+ assert.equal(document.querySelector('#screenSeg'),null);
+ assert.equal(document.querySelector('#peerCard'),null);
+ state={...state,co2_warmup_seconds_remaining:120,sensors:{...state.sensors,co2:{valid:false,value:null}}};
+ await dom.window.UI.reload();
+ assert.match(document.querySelector('[data-sensor="co2"] .badge').textContent,/120/);
+ state.co2_warmup_seconds_remaining=0;await dom.window.UI.reload();
+ assert.equal(document.querySelector('[data-sensor="co2"] .badge').textContent,'暂无有效数据');
+ state={...state,formaldehyde_present:true,sensors:{...state.sensors,formaldehyde:{valid:true,value:0.123}}};
+ await dom.window.UI.reload();
+ assert.equal(document.querySelector('[data-sensor="formaldehyde"]').hidden,false);
+ assert.equal(document.querySelector('[data-sensor="formaldehyde"] .num').textContent,'0.123');
+ state.sensors.formaldehyde={valid:false,value:null};await dom.window.UI.reload();
+ assert.equal(document.querySelector('[data-sensor="formaldehyde"]').hidden,false);
+ assert.equal(document.querySelector('[data-sensor="formaldehyde"] .num').textContent,'—');
+ dom.window.location.hash='#settings/firmware';await new Promise(r=>setTimeout(r,40));
+ assert.match(document.querySelector('[data-settings-page="firmware"]').textContent,/BRY88AB151K/);
+ assert.equal(document.querySelector('#otaUrl'),null);
+ assert.deepEqual(errors.map(e=>e.message),[]);
+ dom.window.close();process.stdout.write('PASS: shared frontend boots, module absent/present/stale, ESP32 OTA page\n');
+})().catch(e=>{dom.window.close();process.stderr.write(e.stack+'\n');process.exitCode=1;});
