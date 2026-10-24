@@ -293,13 +293,13 @@ int service_mqtt_optional_send(int(*p)(const char*,const char*,bool),const char*
             for legacy in (True,False):
                 binary=temp/('legacy' if legacy else 'owned')
                 flags=['-DLEGACY_PUBLISH'] if legacy else []
-                bear=ROOT/'build/ota-tls/bearssl-0.6'
+                sha=ROOT/'build/a1-sdk/mico-os/MiCO/security/SHAUtils'
                 subprocess.run([os.environ.get('CC','cc'),'-std=gnu99','-g',
                     '-DFEATURE_DEVICE_A1','-fsanitize=address,undefined',
                     '-fno-omit-frame-pointer','-no-pie',*flags,'-I'+str(ROOT),
                     '-I'+str(ROOT/'tests/stubs'),'-I'+str(json),str(source),
-                    '-I'+str(bear/'inc'),'-I'+str(bear/'src'),
-                    *[str(bear/'src'/p) for p in ('hash/sha2small.c','codec/dec32be.c','codec/enc32be.c','codec/enc64be.c')],
+                    '-I'+str(sha),
+                    str(sha/'sha224-256.c'),
                     str(ROOT/'common/service.c'),str(ROOT/'common/json_owned.c'),
                     *map(str,json.glob('*.c')),'-lm','-o',str(binary)],check=True)
                 results.append(subprocess.run([str(binary)],check=True,

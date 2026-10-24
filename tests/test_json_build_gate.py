@@ -39,11 +39,11 @@ static inline void mico_rtos_unlock_mutex(mico_mutex_t*m){assert(!pthread_mutex_
             text=text.replace('if (!json_heap_permit(', 'if (!test_gate_permit(')
             heap.write_text('#include <stddef.h>\nint test_gate_permit(size_t);\n'+text)
             binary=temp/'probe'
-            bear=ROOT/'build/ota-tls/bearssl-0.6'
-            hash_sources=[str(bear/'src'/p) for p in ('hash/sha2small.c','codec/dec32be.c','codec/enc32be.c','codec/enc64be.c')]
+            sha=ROOT/'build/a1-sdk/mico-os/MiCO/security/SHAUtils'
+            hash_sources = [str(sha/'sha224-256.c')]
             subprocess.run([os.environ.get('CC','cc'),'-std=gnu99','-g','-pthread',
                 '-fsanitize=address,undefined','-fno-omit-frame-pointer','-no-pie',
-                '-I'+str(bear/'inc'),'-I'+str(bear/'src'),'-I'+str(temp),'-I'+str(ROOT),'-I'+str(ROOT/'tests/stubs'),'-I'+str(json),
+                '-I'+str(sha),'-I'+str(temp),'-I'+str(ROOT),'-I'+str(ROOT/'tests/stubs'),'-I'+str(json),
                 str(temp/'probe.c'),str(ROOT/'common/httpd/product.c'),str(ROOT/'common/httpd/core.c'),
                 str(ROOT/'common/httpd/parser.c'),str(ROOT/'common/json_owned.c'),
                 *hash_sources,*map(str,json.glob('*.c')),'-o',str(binary)],check=True,timeout=60)
