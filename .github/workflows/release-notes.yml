@@ -1,7 +1,7 @@
 name: Static release notes
 on:
   push:
-    branches: [main, 'feat/**']
+    branches: [main]
   pull_request:
   workflow_dispatch:
     inputs:
@@ -47,11 +47,7 @@ jobs:
       - name: Browser and no-JavaScript history
         run: |
           npm install --no-save --package-lock=false @playwright/test@1.64.1
-          if [[ "${{ runner.environment }}" == github-hosted ]]; then
-            npx playwright install --with-deps chromium
-          else
-            npx playwright install chromium
-          fi
+          npx playwright install --with-deps chromium
           python3 -m http.server 18765 --bind 127.0.0.1 --directory build/pages > "$RUNNER_TEMP/notes-http.log" 2>&1 &
           server=$!
           trap 'kill "$server"' EXIT
