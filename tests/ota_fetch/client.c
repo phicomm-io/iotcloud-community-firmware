@@ -4,6 +4,19 @@
 #include <assert.h>
 #include "../../common/ota/fetch.h"
 extern bool ota_test_clean(void);
+#undef shutdown
+int ota_test_shutdown(int fd,int how){
+ if(getenv("OTA_TEST_FAULT")&&!strcmp(getenv("OTA_TEST_FAULT"),"shutdown_no_wakeup"))return 0;
+ return shutdown(fd,how);
+}
+#undef setsockopt
+int ota_test_setsockopt(int fd,int level,int option,const void *value,socklen_t length){
+ if(level==SOL_SOCKET && (option==SO_RCVTIMEO || option==SO_SNDTIMEO)){
+  assert(length==sizeof(int));int ms=*(const int *)value;struct timeval tv={ms/1000,(ms%1000)*1000};
+  return setsockopt(fd,level,option,&tv,sizeof(tv));
+ }
+ return setsockopt(fd,level,option,value,length);
+}
 #undef connect
 int ota_test_connect(int fd,const struct sockaddr *address,socklen_t length){
  int rc=connect(fd,address,length);

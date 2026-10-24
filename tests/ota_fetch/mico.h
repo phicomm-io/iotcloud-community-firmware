@@ -46,3 +46,9 @@ int ssl_get_error(mico_ssl_t,int);
 int ssl_close(mico_ssl_t);
 int ota_test_connect(int,const struct sockaddr *,socklen_t);
 #define connect ota_test_connect
+
+int ota_test_setsockopt(int,int,int,const void *,socklen_t);
+#define setsockopt ota_test_setsockopt
+
+int ota_test_shutdown(int,int);
+#define shutdown ota_test_shutdown

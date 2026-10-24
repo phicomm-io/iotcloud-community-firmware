@@ -83,7 +83,12 @@ static bool kernel_tls_connect(transfer *t) {
     bool started=mico_rtos_create_thread(NULL,MICO_APPLICATION_PRIORITY,"ota_tls_guard",
         handshake_observer,1024,(mico_thread_arg_t)t)==kNoErr;
     if(started) {
-        int error=0,flags=fcntl(t->fd,F_GETFL,0);
+        int error=-1,flags=fcntl(t->fd,F_GETFL,0);
+        /* A cross-thread lwIP shutdown need not wake an already blocked recv.
+         * Bound each blocking handshake operation as well (SDK uses ms ints). */
+        int io_timeout=1000;
+        if(setsockopt(t->fd,SOL_SOCKET,SO_RCVTIMEO,&io_timeout,sizeof(io_timeout))<0 ||
+           setsockopt(t->fd,SOL_SOCKET,SO_SNDTIMEO,&io_timeout,sizeof(io_timeout))<0)flags=-1;
         if(flags>=0 && fcntl(t->fd,F_SETFL,flags&~O_NONBLOCK)>=0) {
             ssl_set_client_version(TLS_V1_2_MODE);
             /* Preserve the signed-OTA trust policy: encrypted transport with
@@ -92,10 +97,14 @@ static bool kernel_tls_connect(transfer *t) {
         }
         mico_rtos_set_semaphore(&t->handshake_stop);
         mico_rtos_get_semaphore(&t->handshake_done,MICO_WAIT_FOREVER);
+        /* The SDK ssl_close also closes its socket, including handshake
+         * failures after wolfSSL_set_fd. Initial context/SNI allocation failures
+         * (-1, -203, -125) leave the raw socket with the caller. */
+        if(!t->ssl && error!=-1 && error!=-203 && error!=-125)t->fd=-1;
         if(t->ssl) {
             ssl_set_using_nonblock(t->ssl,1);
             if(fcntl(t->fd,F_SETFL,flags|O_NONBLOCK)<0) {
-                ssl_close(t->ssl);t->ssl=NULL;
+                ssl_close(t->ssl);t->ssl=NULL;t->fd=-1;
             }
         }
     }
@@ -126,7 +135,7 @@ static int kernel_tls_io(transfer *t,void *data,size_t n,bool writing) {
     }
 }
 static void disconnect_host(transfer *t) {
-    if(t->ssl){ssl_close(t->ssl);t->ssl=NULL;}
+    if(t->ssl){ssl_close(t->ssl);t->ssl=NULL;t->fd=-1;}
     if(t->fd>=0){close(t->fd);t->fd=-1;}
 }
 static unsigned word(const unsigned char *p){return (unsigned)p[0]*256+p[1];}
