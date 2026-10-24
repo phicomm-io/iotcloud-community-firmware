@@ -1,6 +1,6 @@
 # Quick start
 
-This community firmware supports the Phicomm TC1 power strip, M1 air quality monitor, A1 air purifier and DAIKIN BRY88AX151K air quality monitor. It provides local web control, MQTT and Home Assistant integration. Firmware downloads are free; the manufacturer's cloud is not required.
+This project provides open-source firmware for discontinued IoT devices or devices whose cloud service providers have ended support. It currently supports the Phicomm TC1 power strip, M1 air quality monitor, A1 air purifier and DAIKIN BRY88AX151K air quality monitor. It provides local web control, MQTT and Home Assistant integration. Firmware downloads are free; the manufacturer's cloud is not required.
 
 ## Identify your device
 

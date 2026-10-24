@@ -1,6 +1,6 @@
 # 斐讯设备社区固件
 
-为斐讯 **TC1 智能排插、M1 空气检测仪、A1 空气净化器及 DAIKIN BRY88AX151K 空气检测仪**维护社区固件，让设备通过本地网页继续使用，也能接入 MQTT、Home Assistant 和远程管理平台。固件免费，无需原厂云服务；仅在局域网使用时，不需要部署平台。
+本项目为已淘汰或云服务厂商停止服务的 IoT 设备提供开源固件。现已支持斐讯 **TC1 智能排插、M1 空气检测仪、A1 空气净化器及 DAIKIN BRY88AX151K 空气检测仪**，让设备通过本地网页继续使用，也能接入 MQTT、Home Assistant 和远程管理平台。固件免费，无需原厂云服务；仅在局域网使用时，不需要部署平台。
 
 **[项目主页与下载](https://phicomm-io.github.io/) · [使用文档](https://phicomm-io.github.io/#docs) · [在线演示](https://phicomm-io.github.io/#demos) · [发布说明](https://phicomm-io.github.io/guides/release-log.html)**
 
