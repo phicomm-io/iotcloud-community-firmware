@@ -133,9 +133,23 @@ python3 tests/test_user_notes.py
 node --test tests/test_release_notes.cjs tests/test_release_notes_web.cjs
 python3 tests/test_site_docs.py
 python3 tests/test_archive_pages.py
+python3 tests/test_publish_user_notes.py
+node --test tests/test_ota_worker.mjs
 # Serve the built site at 127.0.0.1:18765, then:
 node tests/test_release_notes_browser.cjs
 ```
 
 See [validation.md](validation.md) for the recorded simulation, browser, old-device
 and publication boundaries. The ordinary firmware CI remains separate.
+
+## Mirror publication
+
+The production Pages step receives the existing OTA publication credential.
+After formal archive and page verification, `publish_user_notes.py build/pages`
+checks that R2 still has exactly the catalog used for this build, uploads the
+content-addressed manifest with immutable-object protection, and updates
+`releases/notes/index.json` last. It then reads the index, manifest and catalog
+from both public mirrors and compares their bytes. A catalog mismatch stops
+publication instead of combining snapshots. Preview and local builds do not
+write to mirrors. The Worker allows only the note index and SHA-256-named JSON
+manifests; its other OTA routes and legacy response fields are unchanged.

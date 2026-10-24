@@ -62,6 +62,11 @@ if [[ -f "$target/public/demos/platform/release.json" ]]; then
  cp -a "$target/public/demos/platform" build/pages/demos/
 fi
 python3 tools/release/user_notes.py --verify-output build/pages --formal
+# The tag workflow supplies the existing OTA credential. Preview and local
+# builds never mutate mirrors; public data is uploaded before its pointer.
+if [[ "$mode" == publish && -n "${CLOUDFLARE_API_TOKEN:-}" ]]; then
+ python3 tools/release/publish_user_notes.py build/pages
+fi
 # Only generated public files cross the repository boundary. Immutable resources
 # are included before their index in the same atomic Git commit.
 find "$target/public" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf -- {} +

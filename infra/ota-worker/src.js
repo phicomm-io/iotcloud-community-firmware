@@ -22,13 +22,15 @@ export default {
         body = JSON.stringify({service:'phicomm-ota',schema:1,index:'/releases/index.json'});
       } else {
         const key = path.slice(1);
-        if (key !== 'releases/index.json' && !/^releases\/v\d+\.\d+\.\d+\/[A-Za-z0-9_.-]+$/.test(key))
+        const notesIndex = key === 'releases/notes/index.json';
+        const notesManifest = /^releases\/notes\/manifest\.[a-f0-9]{64}\.json$/.test(key);
+        if (key !== 'releases/index.json' && !notesIndex && !notesManifest && !/^releases\/v\d+\.\d+\.\d+\/[A-Za-z0-9_.-]+$/.test(key))
           return new Response('Not found', {status:404,headers});
         const object = await env.RELEASES.get(key);
         if (!object) return new Response('Not found', {status:404,headers});
         object.writeHttpMetadata(new Headers());
         type = key.endsWith('.json') ? type : key.endsWith('.md') ? 'text/plain; charset=utf-8' : key.endsWith('.html') ? 'text/html; charset=utf-8' : 'application/octet-stream';
-        ttl = key === 'releases/index.json' ? 60 : 31536000;
+        ttl = key === 'releases/index.json' || notesIndex ? 60 : 31536000;
         headers['Content-Length'] = String(object.size);
         headers.ETag = object.httpEtag;
         headers['Content-Type'] = type;

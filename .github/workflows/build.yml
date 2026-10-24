@@ -426,6 +426,7 @@ jobs:
       - name: Build and publish public Pages allowlist
         env:
           GH_TOKEN: ${{ secrets.PAGES_DEPLOY_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: tools/release/pages.sh
 
   feature-tests:

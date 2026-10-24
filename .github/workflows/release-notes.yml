@@ -36,7 +36,9 @@ jobs:
           python3 tests/test_user_notes.py
           python3 tests/test_site_docs.py
           python3 tests/test_archive_pages.py
+          python3 tests/test_publish_user_notes.py
           node --test tests/test_release_notes.cjs tests/test_release_notes_web.cjs
+          node --test tests/test_ota_worker.mjs
       - name: Build the fixed historical snapshot
         env:
           GH_TOKEN: ${{ github.token }}

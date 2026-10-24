@@ -31,3 +31,14 @@ test('DAIKIN has a full manifest and rejects all variant routes',async()=>{
  assert.equal(r.status,200);assert.equal((await r.json()).model,'daikin');
  for(const variant of ['no-frontend-resources','fresh-air','fresh-air-no-frontend-resources'])assert.equal((await worker.fetch(new Request(`http://ota/ota/daikin/${variant}/latest.json`),storage)).status,404);
 });
+test('reviewed note data uses a short-lived pointer and immutable hashed manifests',async()=>{
+ const digest='a'.repeat(64),payload=Buffer.from('{}');
+ const storage={RELEASES:{get:async()=>({size:payload.length,body:payload,httpEtag:'"notes"',writeHttpMetadata(){}})}};
+ for(const [path,ttl] of [['/releases/notes/index.json',60],[`/releases/notes/manifest.${digest}.json`,31536000]]){
+  const r=await worker.fetch(new Request('https://ota'+path),storage);
+  assert.equal(r.status,200);assert.match(r.headers.get('Content-Type'),/application\/json/);
+  assert.equal(r.headers.get('Access-Control-Allow-Origin'),'*');assert.match(r.headers.get('Cache-Control'),new RegExp(`max-age=${ttl},`));
+ }
+ for(const path of ['/releases/notes/private.json','/releases/notes/manifest.short.json','/releases/notes/index.json/extra'])
+  assert.equal((await worker.fetch(new Request('https://ota'+path),storage)).status,404);
+});
