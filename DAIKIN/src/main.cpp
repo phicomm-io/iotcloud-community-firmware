@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <WiFi.h>
+#include <WiFiUdp.h>
 #include <Wire.h>
 #include <Preferences.h>
 #include <ESPmDNS.h>
@@ -10,6 +11,9 @@
 #include <mqtt_client.h>
 #include <mbedtls/base64.h>
 #include "frames.h"
+extern "C" {
+#include "../../common/ota/signed_ota.h"
+}
 #include "web.h"
 
 // BRY88AX151K family, tested BRY88AB151K board wiring; see README.
@@ -69,6 +73,7 @@ static void startWifi(){
   connectAt=millis();
 }
 #include "sensors.inc"
+#include "sessions.inc"
 #include "commands.inc"
 #include "http.inc"
 #include "mqtt.inc"
@@ -85,25 +90,29 @@ void setup(){
   pinMode(34,INPUT); // External pull resistor is required on input-only GPIO34.
   const uint8_t hdcConfig[]={2,0x10,0};writeI2c(thBus,0x40,hdcConfig,3);
   const uint8_t hchoMode[]={0xff,1,0x78,0x41,0,0,0,0,0x46};hchoUart.write(hchoMode,9);
-  httpd_config_t server=HTTPD_DEFAULT_CONFIG();server.stack_size=10240;server.recv_wait_timeout=10;
+  httpd_config_t server=HTTPD_DEFAULT_CONFIG();server.stack_size=10240;server.recv_wait_timeout=10;server.max_uri_handlers=12;
   if(httpd_start(&web,&server)==ESP_OK){
     httpd_uri_t root={};root.uri="/";root.method=HTTP_GET;root.handler=rootHandler;httpd_register_uri_handler(web,&root);
+    httpd_uri_t info={};info.uri="/api/v1/info";info.method=HTTP_GET;info.handler=infoHandler;httpd_register_uri_handler(web,&info);
+    for(auto path:{"/api/v1/info","/api/v1/command","/api/v1/ota/upload","/api/v1/ota/upload-unsigned"}){httpd_uri_t options={};options.uri=path;options.method=HTTP_OPTIONS;options.handler=optionsHandler;httpd_register_uri_handler(web,&options);}
     httpd_uri_t cmd={};cmd.uri="/api/v1/command";cmd.method=HTTP_POST;cmd.handler=commandHandler;httpd_register_uri_handler(web,&cmd);
     for(auto path:{"/api/v1/ota/upload","/api/v1/ota/upload-unsigned"}){httpd_uri_t ota={};ota.uri=path;ota.method=HTTP_POST;ota.handler=uploadHandler;httpd_register_uri_handler(web,&ota);}
   }
   // Confirm local startup once the command server is available.
   if(web)esp_ota_mark_app_valid_cancel_rollback();
+  sensorBoot=esp_random()|1;sensorUdp.begin(11288);
   startMqtt();Serial.printf("DAIKIN BRY88AX151K %s %s\n",pmModel,deviceId.c_str());
 }
 void loop(){
   uint32_t now=millis();
-  if(!otaActive)pollSensors(now);
+  if(!otaActive){pollSensors(now);pollSessions();}
   if(webPending){webResult=otaActive?"{\"code\":\"busy\",\"message\":\"OTA active\"}":execute(webBody);portENTER_CRITICAL(&webMux);webPending=false;webDone=true;portEXIT_CRITICAL(&webMux);}
-  if(mqttQueued){String body(mqttPending);portENTER_CRITICAL(&mqttMux);mqttQueued=false;portEXIT_CRITICAL(&mqttMux);if(!otaActive)publish(mqttRoot+"/result",execute(body),false);}
+  if(mqttQueued){String body(mqttPending);bool sensor=mqttSensorCommand;portENTER_CRITICAL(&mqttMux);mqttQueued=false;portEXIT_CRITICAL(&mqttMux);if(!otaActive){if(sensor)sessionGrant(body);else if(!sessionGrant(body))publish(mqttRoot+"/result",execute(body),false);}}
   if(mqttOnline){mqttOnline=false;
     DynamicJsonDocument doc(1024);capabilities(doc.to<JsonObject>());String text;serializeJson(doc,text);publish(mqttRoot+"/capabilities",text);publish(mqttRoot+"/availability","online");
     String discoveryTopic=mqttRoot.substring(0,mqttRoot.indexOf("/daikin/"))+"/discovery/"+deviceId;
     publish(discoveryTopic,"{\"schema\":1,\"model\":\"daikin\",\"protocol\":\"tmcp\",\"protocol_version\":2,\"version\":\"v2\"}");haBirth=true;
+    publish(sensorRoot.substring(0,sensorRoot.indexOf("/sensor/"))+"/address/"+deviceId,String("{\"ip\":\"")+WiFi.localIP().toString()+"\"}");
   }
   static bool previousHcho=false;if(previousHcho!=hchoPresent){previousHcho=hchoPresent;haBirth=true;}
   if(haBirth&&mqttConnected){haBirth=false;discovery();}

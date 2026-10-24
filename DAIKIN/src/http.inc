@@ -1,5 +1,5 @@
 static esp_err_t jsonResponse(httpd_req_t *req,const char *status,const String &body){
-  httpd_resp_set_status(req,status);httpd_resp_set_type(req,"application/json");httpd_resp_set_hdr(req,"Cache-Control","no-store");
+  httpd_resp_set_hdr(req,"Access-Control-Allow-Origin","*");httpd_resp_set_status(req,status);httpd_resp_set_type(req,"application/json");httpd_resp_set_hdr(req,"Cache-Control","no-store");
   return httpd_resp_send(req,body.c_str(),body.length());
 }
 static bool authorized(httpd_req_t *req){
@@ -39,26 +39,47 @@ static esp_err_t commandHandler(httpd_req_t *req){
   return jsonResponse(req,"200 OK",webResult);
 }
 static volatile bool otaActive=false;
+struct OtaFlash {const esp_partition_t *partition;esp_ota_handle_t handle;size_t length;};
+static bool otaErase(void *context){auto *f=(OtaFlash*)context;return esp_ota_begin(f->partition,f->length,&f->handle)==ESP_OK;}
+static bool otaWrite(void *context,uint32_t offset,const uint8_t *data,size_t n){(void)offset;return esp_ota_write(((OtaFlash*)context)->handle,data,n)==ESP_OK;}
+static bool otaRead(void *context,uint32_t offset,uint8_t *data,size_t n){return esp_partition_read(((OtaFlash*)context)->partition,offset,data,n)==ESP_OK;}
+static bool receiveExact(httpd_req_t *req,uint8_t *data,size_t n){while(n){int used=httpd_req_recv(req,(char*)data,n);if(used<=0)return false;data+=used;n-=used;}return true;}
 static esp_err_t uploadHandler(httpd_req_t *req){
   if(!authorized(req))return ESP_OK;
-  if(strcmp(req->uri,"/api/v1/ota/upload-unsigned"))return jsonResponse(req,"400 Bad Request","{\"code\":\"unsupported\",\"message\":\"Use explicit unsigned ESP32 application upload\"}");
+  const bool signedImage=strcmp(req->uri,"/api/v1/ota/upload-unsigned")!=0;
   const esp_partition_t *partition=esp_ota_get_next_update_partition(nullptr);
-  if(!partition||req->content_len<288||req->content_len>(int)partition->size)return jsonResponse(req,"400 Bad Request","{\"code\":\"invalid_image\",\"message\":\"Invalid image size\"}");
-  otaActive=true;uint8_t buffer[1024];int left=req->content_len;size_t used=0;
-  // Validate embedded IDF application descriptor before erasing inactive slot.
+  const int envelope=signedImage?OTA_ENVELOPE_SIZE:0;
+  if(!partition||req->content_len<320+envelope||req->content_len-envelope>(int)partition->size)return jsonResponse(req,"400 Bad Request","{\"code\":\"invalid_image\",\"message\":\"Invalid image size\"}");
+  otaActive=true;uint8_t buffer[1024];int left=req->content_len-envelope;
+  OtaFlash flash={partition,0,(size_t)left};signed_ota verifier;
+  bool ok=true;
+  if(signedImage){
+    signed_ota_io io={otaErase,otaWrite,otaRead,&flash};
+    ok=signed_ota_begin(&verifier,req->content_len,partition->size,4,1,io)&&receiveExact(req,buffer,envelope)&&signed_ota_write(&verifier,buffer,envelope);
+  }
+  // Preserve the existing board descriptor so installed firmware accepts migration.
   const size_t prefix=sizeof(esp_image_header_t)+sizeof(esp_image_segment_header_t)+sizeof(esp_app_desc_t)+sizeof(daikin_target);
-  while(used<prefix){int n=httpd_req_recv(req,(char*)buffer+used,prefix-used);if(n<=0){otaActive=false;return ESP_FAIL;}used+=n;}
-  auto *desc=(esp_app_desc_t*)(buffer+sizeof(esp_image_header_t)+sizeof(esp_image_segment_header_t));
-  const esp_app_desc_t *self=esp_ota_get_app_description();
-  bool correct=buffer[0]==0xe9&&desc->magic_word==ESP_APP_DESC_MAGIC_WORD&&memcmp(desc->project_name,self->project_name,sizeof(desc->project_name))==0&&memcmp(buffer+prefix-sizeof(daikin_target),daikin_target,sizeof(daikin_target))==0;
-  // Custom descriptor prevents other ESP32 products or PM variants being installed.
-  esp_ota_handle_t handle=0;esp_err_t error=correct?esp_ota_begin(partition,req->content_len,&handle):ESP_ERR_INVALID_ARG;
-  if(error==ESP_OK){error=esp_ota_write(handle,buffer,used);left-=used;}
-  while(error==ESP_OK&&left>0){int n=httpd_req_recv(req,(char*)buffer,min(left,(int)sizeof(buffer)));if(n<=0){error=ESP_FAIL;break;}error=esp_ota_write(handle,buffer,n);left-=n;}
-  if(error==ESP_OK){error=esp_ota_end(handle);handle=0;}if(handle)esp_ota_abort(handle);
-  if(error==ESP_OK)error=esp_ota_set_boot_partition(partition);
+  if(ok)ok=receiveExact(req,buffer,prefix);
+  if(ok){
+    auto *desc=(esp_app_desc_t*)(buffer+sizeof(esp_image_header_t)+sizeof(esp_image_segment_header_t));
+    const esp_app_desc_t *self=esp_ota_get_app_description();
+    ok=buffer[0]==0xe9&&desc->magic_word==ESP_APP_DESC_MAGIC_WORD&&!memcmp(desc->project_name,self->project_name,sizeof(desc->project_name))&&!memcmp(buffer+prefix-sizeof(daikin_target),daikin_target,sizeof(daikin_target));
+  }
+  if(ok&&!signedImage)ok=otaErase(&flash);
+  if(ok){ok=signedImage?signed_ota_write(&verifier,buffer,prefix):otaWrite(&flash,0,buffer,prefix);left-=prefix;}
+  while(ok&&left>0){int n=httpd_req_recv(req,(char*)buffer,min(left,(int)sizeof(buffer)));if(n<=0){ok=false;break;}ok=signedImage?signed_ota_write(&verifier,buffer,n):otaWrite(&flash,0,buffer,n);left-=n;}
+  if(ok&&signedImage)ok=signed_ota_finish(&verifier);
+  if(ok){ok=esp_ota_end(flash.handle)==ESP_OK;flash.handle=0;}
+  if(flash.handle)esp_ota_abort(flash.handle);
+  if(ok)ok=esp_ota_set_boot_partition(partition)==ESP_OK;
   otaActive=false;
-  if(error!=ESP_OK)return jsonResponse(req,"400 Bad Request","{\"code\":\"invalid_image\",\"message\":\"Image validation or flash write failed\"}");
+  if(!ok)return jsonResponse(req,"400 Bad Request","{\"code\":\"invalid_image\",\"message\":\"Signature, target, digest or flash validation failed\"}");
+  prefs.putBool("ota_signed",signedImage);
   rebootAt=millis()+1500;
   return jsonResponse(req,"202 Accepted","{\"code\":\"accepted\",\"message\":\"Image verified; rebooting\"}");
 }
+static esp_err_t infoHandler(httpd_req_t *req){
+  if(!authorized(req))return ESP_OK;
+  return jsonResponse(req,"200 OK",String("{\"code\":\"ok\",\"data\":{\"api_version\":1,\"model\":\"daikin\",\"device_id\":\"")+deviceId+"\",\"mac\":\""+deviceId+"\"}}");
+}
+static esp_err_t optionsHandler(httpd_req_t *req){httpd_resp_set_hdr(req,"Access-Control-Allow-Origin","*");httpd_resp_set_hdr(req,"Access-Control-Allow-Methods","GET, POST, OPTIONS");httpd_resp_set_hdr(req,"Access-Control-Allow-Headers","Content-Type, Authorization");return httpd_resp_send(req,nullptr,0);}

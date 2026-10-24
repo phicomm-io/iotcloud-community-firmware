@@ -2,6 +2,7 @@ static void state(JsonObject out){
   uint32_t now=millis();
   out["model"]="daikin";out["hardware_model"]="BRY88AX151K";out["pm_sensor"]=pmModel;
   out["name"]=config["device"]["name"]|"DAIKIN";out["device_id"]=deviceId;out["version"]=version;
+  out["ota_signature_verified"]=prefs.getBool("ota_signed",false);
   out["uptime_seconds"]=now/1000;out["free_memory"]=ESP.getFreeHeap();
   out["co2_warmup_seconds_remaining"]=now<180000?(180000-now+999)/1000:0;
   out["mqtt_last_event"]=mqttLastEvent;out["mqtt_error_type"]=mqttErrorType;out["mqtt_socket_error"]=mqttSocketError;
@@ -20,16 +21,17 @@ static void state(JsonObject out){
   for(int i=0;i<6;i++){
     if(i==5&&!hchoPresent)continue;
     JsonObject s=sensors.createNestedObject(keys[i]);bool valid=readings[i].valid(now);
+    s["unit"]=((const char*[]){"µg/m³","ppm","°C","%","ppb","mg/m³"})[i];
     s["valid"]=valid;s["received"]=readings[i].received;
     if(valid)s["value"]=readings[i].value;else s["value"]=nullptr;
     if(readings[i].received)s["age_ms"]=uint32_t(now-readings[i].at);else s["age_ms"]=nullptr;
   }
 }
-static const char *actions[]={"status.get","config.get","capabilities.get","config.set","wifi.scan","wifi.scan.get","indicator.set","system.reboot","system.reset"};
+static const char *actions[]={"status.get","config.get","capabilities.get","binding.status.get","config.set","wifi.scan","wifi.scan.get","indicator.set","system.reboot","system.reset"};
 static void capabilities(JsonObject out){
   out["model"]="daikin";out["hardware_model"]="BRY88AX151K";out["protocol"]=2;
   out["mqtt_protocol"]="tmcp";out["mqtt_protocol_version"]=2;
-  out["formaldehyde_present"]=hchoPresent;
+  out["formaldehyde_present"]=hchoPresent;out["sensor_session_protocol"]=2;out["sensor_schema"]=1;
   JsonArray a=out.createNestedArray("actions");for(auto name:actions)a.add(name);
 }
 static bool knownFields(JsonObjectConst obj,const char *allowed){
@@ -57,6 +59,7 @@ static String execute(const String &body){
   if(!strcmp(code,"ok")){
     if(query&&params.size()!=0)code="invalid_params";
     else if(action=="status.get")state(data);
+    else if(action=="binding.status.get")sessionStatus(data);
     else if(action=="capabilities.get")capabilities(data);
     else if(action=="config.get"){
       state(data); // Public settings only; never copy credential-bearing config.
