@@ -10,10 +10,14 @@ static unsigned allocations, injected;
 static int forced_error;
 static int recycled[64];static unsigned recycled_count;
 static void kernel_closes_socket(int fd){
+#if OTA_TLS_CLOSES_SOCKET
  close(fd);assert(recycled_count<64);
  /* A different RTOS owner can immediately reuse the descriptor. Its socket
   * must survive caller cleanup after the kernel has consumed its own fd. */
  recycled[recycled_count]=open("/dev/null",O_RDONLY);assert(recycled[recycled_count]>=0);recycled_count++;
+#else
+ (void)fd;
+#endif
 }
 static bool fail(const char *name) {
     const char *fault=getenv("OTA_TEST_FAULT");

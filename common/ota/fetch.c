@@ -11,6 +11,12 @@
 #ifndef OTA_FETCH_TOTAL_MS
 #define OTA_FETCH_TOTAL_MS 180000u
 #endif
+/* Pinned MK3080B kernel 3080B002.024 consumes the fd in ssl_close, whereas
+ * MK3031 kernel 30300002.015 leaves it with the caller. Product wrappers must
+ * select the installed kernel ABI, not an unrelated SDK wolfSSL archive. */
+#ifndef OTA_TLS_CLOSES_SOCKET
+#define OTA_TLS_CLOSES_SOCKET 1
+#endif
 
 typedef struct {
     int fd;
@@ -97,14 +103,14 @@ static bool kernel_tls_connect(transfer *t) {
         }
         mico_rtos_set_semaphore(&t->handshake_stop);
         mico_rtos_get_semaphore(&t->handshake_done,MICO_WAIT_FOREVER);
-        /* The SDK ssl_close also closes its socket, including handshake
-         * failures after wolfSSL_set_fd. Initial context/SNI allocation failures
-         * (-1, -203, -125) leave the raw socket with the caller. */
-        if(!t->ssl && error!=-1 && error!=-203 && error!=-125)t->fd=-1;
+        /* MK3080B also consumes the fd on handshake failure after set_fd.
+         * Early context/SNI allocation errors leave it with the caller. */
+        if(OTA_TLS_CLOSES_SOCKET && !t->ssl && error!=-1 && error!=-203 && error!=-125)t->fd=-1;
         if(t->ssl) {
             ssl_set_using_nonblock(t->ssl,1);
             if(fcntl(t->fd,F_SETFL,flags|O_NONBLOCK)<0) {
-                ssl_close(t->ssl);t->ssl=NULL;t->fd=-1;
+                ssl_close(t->ssl);t->ssl=NULL;
+                if(OTA_TLS_CLOSES_SOCKET)t->fd=-1;
             }
         }
     }
@@ -135,7 +141,7 @@ static int kernel_tls_io(transfer *t,void *data,size_t n,bool writing) {
     }
 }
 static void disconnect_host(transfer *t) {
-    if(t->ssl){ssl_close(t->ssl);t->ssl=NULL;t->fd=-1;}
+    if(t->ssl){ssl_close(t->ssl);t->ssl=NULL;if(OTA_TLS_CLOSES_SOCKET)t->fd=-1;}
     if(t->fd>=0){close(t->fd);t->fd=-1;}
 }
 static unsigned word(const unsigned char *p){return (unsigned)p[0]*256+p[1];}

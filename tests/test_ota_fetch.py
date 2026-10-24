@@ -18,8 +18,10 @@ class Fetch(unittest.TestCase):
         cls.temp=tempfile.TemporaryDirectory();cls.directory=Path(cls.temp.name)
         override=os.environ.get('OTA_FETCH_CLIENT')
         cls.client=Path(override) if override else cls.directory/'fetch-client'
+        ownership=int(os.environ.get('OTA_TEST_TLS_CLOSES_SOCKET','1'))
+        if ownership not in (0,1):raise ValueError('Invalid kernel socket ownership')
         if not override:
-            subprocess.run(['cc','-Os','-g','-DPHICOMM_DEVICE_OTA=1','-DOTA_FETCH_HANDSHAKE_MS=600u','-DOTA_FETCH_TOTAL_MS=1200u','-fsanitize=address,undefined','-fno-omit-frame-pointer','-fno-pie','-no-pie','-I'+str(ROOT/'tests/ota_fetch'),'-I'+str(ROOT/'build/a1-sdk/mico-os/libraries/utilities/json_c'),str(ROOT/'tests/ota_fetch/client.c'),str(ROOT/'tests/ota_fetch/kernel_tls.c'),str(ROOT/'common/ota/fetch.c'),'-lssl','-lcrypto','-lpthread','-o',str(cls.client)],check=True)
+            subprocess.run(['cc','-Os','-g','-DPHICOMM_DEVICE_OTA=1','-DOTA_TLS_CLOSES_SOCKET='+str(ownership),'-DOTA_FETCH_HANDSHAKE_MS=600u','-DOTA_FETCH_TOTAL_MS=1200u','-fsanitize=address,undefined','-fno-omit-frame-pointer','-fno-pie','-no-pie','-I'+str(ROOT/'tests/ota_fetch'),'-I'+str(ROOT/'build/a1-sdk/mico-os/libraries/utilities/json_c'),str(ROOT/'tests/ota_fetch/client.c'),str(ROOT/'tests/ota_fetch/kernel_tls.c'),str(ROOT/'common/ota/fetch.c'),'-lssl','-lcrypto','-lpthread','-o',str(cls.client)],check=True)
 
         subprocess.run(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-keyout',str(cls.directory/'key'),'-out',str(cls.directory/'cert'),'-days','1','-subj','/CN=wrong.invalid'],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         cls.context=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER);cls.context.minimum_version=cls.context.maximum_version=ssl.TLSVersion.TLSv1_2
@@ -111,5 +113,15 @@ class Fetch(unittest.TestCase):
         for tls,fault in ((False,'stall'),(True,'stall'),(True,'handshake_stall')):
             with self.subTest(tls=tls,fault=fault):
                 p=self.case(fault,tls=tls,cancel=300);self.assertNotEqual(p.returncode,0);self.assertIn('error=Cancelled',p.stdout);self.assertLess(int(re.search(r'elapsed=(\d+)',p.stdout)[1]),1000)
+
+class Tc1Fetch(Fetch):
+    @classmethod
+    def setUpClass(cls):
+        old=os.environ.get('OTA_TEST_TLS_CLOSES_SOCKET')
+        os.environ['OTA_TEST_TLS_CLOSES_SOCKET']='0'
+        try:super().setUpClass()
+        finally:
+            if old is None:os.environ.pop('OTA_TEST_TLS_CLOSES_SOCKET',None)
+            else:os.environ['OTA_TEST_TLS_CLOSES_SOCKET']=old
 
 if __name__=='__main__':unittest.main()
