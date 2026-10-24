@@ -6,7 +6,7 @@ Recorded on 2026-10-24, against the 23 published archives through v0.9.23.
   exact interval merging, independent fixes, scopes, source identities and errors).
 - PASS: 15 client/jsdom scenarios, including resource integrity, one-shot info,
   authentication/busy/legacy/timeout/permission errors and stale reply isolation.
-- PASS: 12 Python migration/provenance/translation/CLI scenarios.
+- PASS: 13 Python migration/provenance/translation/CLI scenarios.
 - PASS: 21 existing public documentation checks and retained archive unit checks.
 - PASS: formal local site build against Pages commit
   `b9a64b055064322ef86d04ad392d711716fa9914`; actual signed firmware, source commits

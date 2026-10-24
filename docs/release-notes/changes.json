@@ -3852,6 +3852,427 @@
         "v0.9.23:b006",
         "v0.9.23:b007"
       ]
+    },
+    {
+      "change_id": "daikin-universal-firmware",
+      "version": "0.9.24",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "daikin"
+        ],
+        "variants": [
+          "full"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "DAIKIN 通用固件",
+        "en": "Universal DAIKIN firmware"
+      },
+      "description": {
+        "zh-CN": "新增 DAIKIN BRY88AX151K 的 ESP32 通用完整版固件，共用本地网页、MQTT 和传感器会话协议；自动识别 PM2005 / PM2105 与可选甲醛模块，无甲醛模块时隐藏读数。",
+        "en": "Adds universal full ESP32 firmware for DAIKIN BRY88AX151K with the shared local UI, MQTT and sensor-session protocol. PM2005 / PM2105 and the optional formaldehyde module are detected automatically; absent formaldehyde readings are hidden."
+      },
+      "ota_summary": {
+        "zh-CN": "新增 DAIKIN BRY88AX151K 的 ESP32 通用完整版固件，共用本地网页、MQTT 和传感器会话协议；自动识别 PM2005 / PM2105 与可选甲醛模块，无甲醛模块时隐藏读数。",
+        "en": "Adds universal full ESP32 firmware for DAIKIN BRY88AX151K with the shared local UI, MQTT and sensor-session protocol. PM2005 / PM2105 and the optional formaldehyde module are detected automatically; absent formaldehyde readings are hidden."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.24:b001"
+      ]
+    },
+    {
+      "change_id": "daikin-air-overview",
+      "version": "0.9.24",
+      "type": "feature",
+      "component": "bundled_web",
+      "scope": {
+        "models": [
+          "daikin"
+        ],
+        "variants": [
+          "full"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "DAIKIN 空气质量概览",
+        "en": "DAIKIN air quality overview"
+      },
+      "description": {
+        "zh-CN": "以单行传感器卡片和舒适度条展示 PM2.5、独立 PM10、温湿度、CO₂、TVOC 及已连接设备；TVOC 提供 300 ppb 通风参考，固定大小的指标胶囊适配长文案。",
+        "en": "A single row of sensor cards and comfort scales shows PM2.5, a separate PM10 card, temperature, humidity, CO₂, TVOC and connected devices. TVOC includes a 300 ppb ventilation reference; fixed-size badges accommodate longer labels."
+      },
+      "ota_summary": {
+        "zh-CN": "以单行传感器卡片和舒适度条展示 PM2.5、独立 PM10、温湿度、CO₂、TVOC 及已连接设备；TVOC 提供 300 ppb 通风参考，固定大小的指标胶囊适配长文案。",
+        "en": "A single row of sensor cards and comfort scales shows PM2.5, a separate PM10 card, temperature, humidity, CO₂, TVOC and connected devices. TVOC includes a 300 ppb ventilation reference; fixed-size badges accommodate longer labels."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.24:b002"
+      ]
+    },
+    {
+      "change_id": "a1-capability-providers",
+      "version": "0.9.24",
+      "type": "improvement",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "A1 根据实际数据执行联动",
+        "en": "A1 automation uses available provider data"
+      },
+      "description": {
+        "zh-CN": "A1 联动使用提供方实际可用的数据，支持 DAIKIN 等提供方，不再绑定对方型号；缺失或过期的数据不参与控制，原有绑定和联动配置保持兼容。",
+        "en": "A1 automation consumes available provider data, including DAIKIN readings, without requiring a particular provider model. Missing or stale readings do not control the device; existing bindings and automation settings remain compatible."
+      },
+      "ota_summary": {
+        "zh-CN": "A1 联动使用提供方实际可用的数据，支持 DAIKIN 等提供方，不再绑定对方型号；缺失或过期的数据不参与控制，原有绑定和联动配置保持兼容。",
+        "en": "A1 automation consumes available provider data, including DAIKIN readings, without requiring a particular provider model. Missing or stale readings do not control the device; existing bindings and automation settings remain compatible."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.24:b003"
+      ]
+    },
+    {
+      "change_id": "a1-data-aware-automation-ui",
+      "version": "0.9.24",
+      "type": "improvement",
+      "component": "bundled_web",
+      "scope": {
+        "models": [
+          "a1"
+        ],
+        "variants": [
+          "full",
+          "fresh-air"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "自动化选项随可用读数显示",
+        "en": "Automation options follow available readings"
+      },
+      "description": {
+        "zh-CN": "A1 自动化设置仅显示提供方能够提供的读数选项；缺失对应数据时隐藏该选项，保留已有配置。",
+        "en": "A1 automation settings show options for readings the provider can supply. Options for unavailable readings are hidden while existing settings are retained."
+      },
+      "ota_summary": {
+        "zh-CN": "A1 自动化设置仅显示提供方能够提供的读数选项；缺失对应数据时隐藏该选项，保留已有配置。",
+        "en": "A1 automation settings show options for readings the provider can supply. Options for unavailable readings are hidden while existing settings are retained."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.24:b003"
+      ]
+    },
+    {
+      "change_id": "kernel-tls-download",
+      "version": "0.9.24",
+      "type": "improvement",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1",
+          "m1",
+          "tc1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "在线下载使用内核 TLS",
+        "en": "Online downloads use kernel TLS"
+      },
+      "description": {
+        "zh-CN": "A1、M1、TC1 在线下载改用内核 TLS，支持短读、短写及非阻塞等待，并限制握手、取消和总下载时间；失败和重试释放 TLS 会话与 socket。HTTPS 仍不校验证书，OTA 固件签名继续强制验证。",
+        "en": "A1, M1 and TC1 downloads use kernel TLS with short-read/write handling, nonblocking waits, handshake and overall deadlines, cancellation, and session/socket cleanup on failure and retry. HTTPS still does not validate certificates; OTA firmware signatures remain mandatory."
+      },
+      "ota_summary": {
+        "zh-CN": "A1、M1、TC1 在线下载改用内核 TLS，支持短读、短写及非阻塞等待，并限制握手、取消和总下载时间；失败和重试释放 TLS 会话与 socket。HTTPS 仍不校验证书，OTA 固件签名继续强制验证。",
+        "en": "A1, M1 and TC1 downloads use kernel TLS with short-read/write handling, nonblocking waits, handshake and overall deadlines, cancellation, and session/socket cleanup on failure and retry. HTTPS still does not validate certificates; OTA firmware signatures remain mandatory."
+      },
+      "summary_complete": true,
+      "critical": true,
+      "source_refs": [
+        "v0.9.24:b004"
+      ]
+    },
+    {
+      "change_id": "tc1-local-button-low-memory",
+      "version": "0.9.24",
+      "type": "bugfix",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "tc1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "修复 TC1 低内存下的本地按键",
+        "en": "Fix TC1 local buttons under memory pressure"
+      },
+      "description": {
+        "zh-CN": "TC1 本地按键直接执行控制，修复低内存时 JSON 状态查询失败导致按键动作被丢弃的问题。",
+        "en": "TC1 local buttons execute controls directly, fixing lost button actions when JSON status queries fail under memory pressure."
+      },
+      "ota_summary": {
+        "zh-CN": "TC1 本地按键直接执行控制，修复低内存时 JSON 状态查询失败导致按键动作被丢弃的问题。",
+        "en": "TC1 local buttons execute controls directly, fixing lost button actions when JSON status queries fail under memory pressure."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.24:b005"
+      ]
+    },
+    {
+      "change_id": "tc1-empty-mqtt-port-default",
+      "version": "0.9.24",
+      "type": "bugfix",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "tc1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "恢复 TC1 未配置的 MQTT 默认值",
+        "en": "Restore unconfigured TC1 MQTT defaults"
+      },
+      "description": {
+        "zh-CN": "修复 TC1 未配置 MQTT 主机时，端口为 0 的默认配置不能通过配置接口恢复的问题。",
+        "en": "Fixes the configuration API rejecting the default port of 0 when no MQTT host is configured on TC1."
+      },
+      "ota_summary": {
+        "zh-CN": "修复 TC1 未配置 MQTT 主机时，端口为 0 的默认配置不能通过配置接口恢复的问题。",
+        "en": "Fixes the configuration API rejecting the default port of 0 when no MQTT host is configured on TC1."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.24:b005"
+      ]
+    },
+    {
+      "change_id": "reviewed-release-history",
+      "version": "0.9.24",
+      "type": "feature",
+      "component": "service",
+      "scope": {
+        "models": [
+          "a1",
+          "m1",
+          "tc1",
+          "daikin"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "官网审核历史和升级差异",
+        "en": "Reviewed website history and upgrade comparisons"
+      },
+      "description": {
+        "zh-CN": "官网提供中英文审核历史及按型号、固件类型和实际发布链计算的升级差异；资料不足、翻译缺失或归档不一致时明确提示。旧 OTA 元数据、原始说明、下载地址和固件文件保持兼容。",
+        "en": "The website provides reviewed Chinese/English history and upgrade comparisons based on the model, firmware variant and actual release chain. Insufficient evidence, missing translations and archive mismatches produce explicit errors. Legacy OTA metadata, original notes, download URLs and firmware files remain compatible."
+      },
+      "ota_summary": {
+        "zh-CN": "官网提供中英文审核历史及按型号、固件类型和实际发布链计算的升级差异；资料不足、翻译缺失或归档不一致时明确提示。旧 OTA 元数据、原始说明、下载地址和固件文件保持兼容。",
+        "en": "The website provides reviewed Chinese/English history and upgrade comparisons based on the model, firmware variant and actual release chain. Insufficient evidence, missing translations and archive mismatches produce explicit errors. Legacy OTA metadata, original notes, download URLs and firmware files remain compatible."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.24:b006"
+      ]
+    },
+    {
+      "change_id": "web-upgrade-comparison",
+      "version": "0.9.24",
+      "type": "feature",
+      "component": "bundled_web",
+      "scope": {
+        "models": [
+          "a1",
+          "m1",
+          "tc1",
+          "daikin"
+        ],
+        "variants": [
+          "full",
+          "fresh-air"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "从设备网页查看升级差异",
+        "en": "Open upgrade comparisons from the device UI"
+      },
+      "description": {
+        "zh-CN": "完整版固件设置增加官网升级差异入口，携带真实版本和固件类型。说明由浏览器计算，设备不保存发布历史或增加说明下载任务；官网可选读取一次设备信息，失败时保留手动选择，密码不保存。",
+        "en": "Full UI firmware settings link to website upgrade comparisons with the real version and firmware variant. The browser computes notes without storing history or downloading notes on the device. Optional one-shot device identification retains manual selection on failure and never stores the password."
+      },
+      "ota_summary": {
+        "zh-CN": "完整版固件设置增加官网升级差异入口，携带真实版本和固件类型。说明由浏览器计算，设备不保存发布历史或增加说明下载任务；官网可选读取一次设备信息，失败时保留手动选择，密码不保存。",
+        "en": "Full UI firmware settings link to website upgrade comparisons with the real version and firmware variant. The browser computes notes without storing history or downloading notes on the device. Optional one-shot device identification retains manual selection on failure and never stores the password."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.24:b007"
+      ]
     }
   ],
   "merges": []

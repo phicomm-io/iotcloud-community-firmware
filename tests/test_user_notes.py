@@ -21,6 +21,15 @@ class UserNotesTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.data = Path(self.tmp.name) / 'data'
         shutil.copytree(notes.DATA, self.data)
+        # Tests exercise the fixed, published historical snapshot. A prepared
+        # future version must not silently enter its records or public results.
+        known = {r['version'] for r in notes.read(self.data / 'catalog.snapshot.json')['releases']}
+        order = notes.read(self.data / 'release-order.json')
+        order['releases'] = [r for r in order['releases'] if r['version'] in known]
+        (self.data / 'release-order.json').write_bytes(notes.encoded(order))
+        changes = notes.read(self.data / 'changes.json')
+        changes['changes'] = [c for c in changes['changes'] if c['version'] in known]
+        (self.data / 'changes.json').write_bytes(notes.encoded(changes))
 
     def change(self, name, edit):
         path = self.data / name

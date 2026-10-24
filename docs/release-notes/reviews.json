@@ -1617,6 +1617,92 @@
       "basis": [
         "v0.9.5:b002"
       ]
+    },
+    "v0.9.24:b001": {
+      "block_sha256": "6df925841ab6cb03d3625c34c6f411a3ff932b4fabcce4197d8a530e17a2ca84",
+      "release_sha256": "3e72a373f2f637391b11d184554e219a2d363b8b2dee5edadd9c4413b0c18d7b",
+      "status": "approved",
+      "reason": "依据本次实现逐项审核中英文用户影响；独立 TC1 缺陷使用独立 ID，官网服务更新不进入固件 OTA 差异。",
+      "change_refs": [
+        "daikin-universal-firmware@0.9.24"
+      ],
+      "basis": [
+        "v0.9.24:b001"
+      ]
+    },
+    "v0.9.24:b002": {
+      "block_sha256": "711cd9054ed184b72872b8c53e1e7c932990aca3e32fb8459695effeac45c43c",
+      "release_sha256": "3e72a373f2f637391b11d184554e219a2d363b8b2dee5edadd9c4413b0c18d7b",
+      "status": "approved",
+      "reason": "依据本次实现逐项审核中英文用户影响；独立 TC1 缺陷使用独立 ID，官网服务更新不进入固件 OTA 差异。",
+      "change_refs": [
+        "daikin-air-overview@0.9.24"
+      ],
+      "basis": [
+        "v0.9.24:b002"
+      ]
+    },
+    "v0.9.24:b003": {
+      "block_sha256": "90c025f3213b11166d6d79875deda561f4ea6f0347422e5938cac731ab5127de",
+      "release_sha256": "3e72a373f2f637391b11d184554e219a2d363b8b2dee5edadd9c4413b0c18d7b",
+      "status": "approved",
+      "reason": "依据本次实现逐项审核中英文用户影响；独立 TC1 缺陷使用独立 ID，官网服务更新不进入固件 OTA 差异。",
+      "change_refs": [
+        "a1-capability-providers@0.9.24",
+        "a1-data-aware-automation-ui@0.9.24"
+      ],
+      "basis": [
+        "v0.9.24:b003"
+      ]
+    },
+    "v0.9.24:b004": {
+      "block_sha256": "f1a5246019fa0eff7e2154c1c1fdbff1700a51869341881be7f59f5406965261",
+      "release_sha256": "3e72a373f2f637391b11d184554e219a2d363b8b2dee5edadd9c4413b0c18d7b",
+      "status": "approved",
+      "reason": "依据本次实现逐项审核中英文用户影响；独立 TC1 缺陷使用独立 ID，官网服务更新不进入固件 OTA 差异。",
+      "change_refs": [
+        "kernel-tls-download@0.9.24"
+      ],
+      "basis": [
+        "v0.9.24:b004"
+      ]
+    },
+    "v0.9.24:b005": {
+      "block_sha256": "1c0dac4b8a8fb0be4476eb8e56b849a2a0e90f1041460f45bd652cb1fc239141",
+      "release_sha256": "3e72a373f2f637391b11d184554e219a2d363b8b2dee5edadd9c4413b0c18d7b",
+      "status": "approved",
+      "reason": "依据本次实现逐项审核中英文用户影响；独立 TC1 缺陷使用独立 ID，官网服务更新不进入固件 OTA 差异。",
+      "change_refs": [
+        "tc1-local-button-low-memory@0.9.24",
+        "tc1-empty-mqtt-port-default@0.9.24"
+      ],
+      "basis": [
+        "v0.9.24:b005"
+      ]
+    },
+    "v0.9.24:b006": {
+      "block_sha256": "c7f7f34f198ae234c57f087738aa1bca48f30e623a82261829b7671edd817f99",
+      "release_sha256": "3e72a373f2f637391b11d184554e219a2d363b8b2dee5edadd9c4413b0c18d7b",
+      "status": "approved",
+      "reason": "依据本次实现逐项审核中英文用户影响；独立 TC1 缺陷使用独立 ID，官网服务更新不进入固件 OTA 差异。",
+      "change_refs": [
+        "reviewed-release-history@0.9.24"
+      ],
+      "basis": [
+        "v0.9.24:b006"
+      ]
+    },
+    "v0.9.24:b007": {
+      "block_sha256": "539f1c3a225aae884e9542fdd2018f53b3c0b90d67eae9a5814beb96134df278",
+      "release_sha256": "3e72a373f2f637391b11d184554e219a2d363b8b2dee5edadd9c4413b0c18d7b",
+      "status": "approved",
+      "reason": "依据本次实现逐项审核中英文用户影响；独立 TC1 缺陷使用独立 ID，官网服务更新不进入固件 OTA 差异。",
+      "change_refs": [
+        "web-upgrade-comparison@0.9.24"
+      ],
+      "basis": [
+        "v0.9.24:b007"
+      ]
     }
   }
 }

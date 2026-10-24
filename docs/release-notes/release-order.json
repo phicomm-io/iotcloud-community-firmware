@@ -138,6 +138,12 @@
       "previous": "0.9.21",
       "branch": "main",
       "channel": "stable"
+    },
+    {
+      "version": "0.9.24",
+      "previous": "0.9.23",
+      "branch": "main",
+      "channel": "stable"
     }
   ]
 }
