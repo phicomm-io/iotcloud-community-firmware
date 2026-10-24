@@ -217,7 +217,13 @@ jobs:
   esp:
     name: DAIKIN ESP32 full firmware
     needs: frontend
-    runs-on: ubuntu-22.04
+    runs-on: >-
+      ${{ fromJSON(
+        (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
+        ((github.event_name == 'workflow_dispatch' && inputs.runner == 'self-hosted') ||
+         (vars.PHICOMM_CI_RUNNER == 'self-hosted' &&
+          (github.event_name != 'workflow_dispatch' || inputs.runner == 'auto'))) &&
+        '["self-hosted","linux","x64","phicomm-build"]' || '["ubuntu-22.04"]') }}
     steps:
       - uses: actions/checkout@v4
         with:
