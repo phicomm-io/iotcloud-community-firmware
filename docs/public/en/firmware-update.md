@@ -18,6 +18,12 @@ You can read release notes for the selected version. Use **Cancel download** dur
 | China mirror | `http://phicomm.fjrcn.cn` |
 | International source | `http://phicomm.fjrcn.com` |
 
+## Compare changes across releases
+
+Open the website's [Release Log upgrade comparison]({{SITE_URL}}guides/en/release-log.html?view=compare) and choose the model, firmware variant, current version and target release. Notes follow the actual release chain. Pending reviews, missing translations or mismatched archives stop the comparison instead of substituting the latest release notes.
+
+Optionally enter a LAN address and read the device information once. The web management password is used only for that request; manual selection remains available if reading fails. A comparison never checks for or installs firmware. Older device pages retain their original single-release notes.
+
 ## Choose the correct file
 
 | File | Purpose |

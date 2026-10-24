@@ -1,20 +1,6 @@
 #!/usr/bin/env bash
-# Build the public site and push it to the public Pages repository.
-#
-#   tools/release/pages.sh                build and publish to `main` (live site)
-#   tools/release/pages.sh --preview      build and push the `preview` branch
-#   tools/release/pages.sh --build-only   build only, output stays in build/pages
-#
-# No argument publishes, because the release workflow calls this script bare
-# after a tag ships. Preview never touches the publish branch.
-#
-# Target repository and branch are configurable so the site can move to a
-# user/organization root domain without editing this script:
-#
-#   PHICOMM_PAGES_REPO=phicomm-io/phicomm-io.github.io \
-#   PHICOMM_PAGES_BRANCH=main tools/release/pages.sh
-#
-# A <owner>/<owner>.github.io repository serves at https://<owner>.github.io/.
+# Prepare archive -> verify/compile notes -> generate site -> final consistency.
+# No argument publishes because the tag workflow invokes this script bare.
 set -euo pipefail
 mode=publish
 case "${1:-}" in
@@ -23,47 +9,46 @@ case "${1:-}" in
  "") ;;
  *) echo "usage: $0 [--preview|--build-only]" >&2; exit 2 ;;
 esac
-
 : "${PHICOMM_PAGES_REPO:=phicomm-io/phicomm-io.github.io}"
 : "${PHICOMM_PAGES_BRANCH:=main}"
-python3 -m pip install --quiet Markdown==3.7
-# Verify published guide URLs and homepage priorities before replacing the site.
-python3 tests/test_site_docs.py
-python3 site/build.py build/pages
-
-if [[ "$mode" == build ]]; then
- echo "Built build/pages (serve it locally, or run without --build-only to push)."
- exit 0
-fi
-
-if [[ "$mode" == preview ]]; then
- branch=preview
-else
- branch="$PHICOMM_PAGES_BRANCH"
-fi
 target=$(mktemp -d)
 trap 'rm -rf "$target"' EXIT
 if [[ -n "${GH_TOKEN:-}" ]]; then gh auth setup-git; fi
-gh repo clone "$PHICOMM_PAGES_REPO" "$target/public" -- --depth=1
-# Preserve the static archive even when the external mirrors are retired.
-if [[ -d "$target/public/releases" ]]; then
- cp -a "$target/public/releases" build/pages/
+# A fixed snapshot supports offline local builds. Publication always uses actual
+# retained files and cryptographically verifies every firmware identity.
+if [[ "$mode" == build && -z "${PHICOMM_PAGES_ARCHIVE:-}" ]]; then
+ python3 site/build.py build/pages
+ echo "Built build/pages from the fixed historical metadata snapshot."
+ exit 0
 fi
-python3 tools/release/archive_pages.py build/pages || {
- if [[ ! -s build/pages/releases/index.json ]]; then
-  echo "No verified static archive is available." >&2
-  exit 1
+if [[ "$mode" == build ]]; then
+ cp -a "$PHICOMM_PAGES_ARCHIVE/." "$target/archive"
+else
+ gh repo clone "$PHICOMM_PAGES_REPO" "$target/public" -- --depth=1
+ mkdir -p "$target/archive"
+ for entry in releases ota; do
+  if [[ -d "$target/public/$entry" ]]; then cp -a "$target/public/$entry" "$target/archive/"; fi
+ done
+ # Refresh only this temporary archive. A failed refresh cannot leave partially
+ # updated metadata or mutate retained originals used by the final build.
+ cp -a "$target/archive" "$target/refresh"
+ if python3 tools/release/archive_pages.py "$target/refresh"; then
+  cp -a "$target/refresh/." "$target/archive/"
+ elif [[ ! -s "$target/archive/releases/index.json" ]]; then
+  echo "No verified static archive is available." >&2; exit 1
+ else
+  echo "Keeping retained archive; upstream refresh failed." >&2
  fi
- echo "Keeping the existing GitHub archive; upstream refresh failed." >&2
-}
-# The retained archive must still provide the small device manifests when an
-# upstream refresh fails; otherwise a site-only publish removes OTA discovery.
-python3 tools/release/archive_pages.py build/pages --existing
-# Keep the public site's independent MQTT release automation and platform demo.
+fi
+python3 tools/release/archive_pages.py "$target/archive" --existing
+python3 tests/test_site_docs.py
+python3 site/build.py build/pages --archive "$target/archive" --formal
+if [[ "$mode" == build ]]; then
+ echo "Built and verified build/pages against actual archived firmware."
+ exit 0
+fi
 for entry in .github tools; do
- if [[ -d "$target/public/$entry" ]]; then
-  cp -a "$target/public/$entry" build/pages/
- fi
+ if [[ -d "$target/public/$entry" ]]; then cp -a "$target/public/$entry" build/pages/; fi
 done
 # Pages builds IotCloud from its own lock. Publish the same verified frontend
 # as these guides and device demos instead of retaining an older platform UI.
@@ -75,9 +60,13 @@ if [[ -f "$target/public/demos/platform/release.json" ]]; then
  rm -rf build/pages/demos/platform
  cp -a "$target/public/demos/platform" build/pages/demos/
 fi
-# Only generated public output may cross the private/public boundary.
+python3 tools/release/user_notes.py --verify-output build/pages --formal
+# Only generated public files cross the repository boundary. Immutable resources
+# are included before their index in the same atomic Git commit.
 find "$target/public" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf -- {} +
 cp -a build/pages/. "$target/public/"
+branch="$PHICOMM_PAGES_BRANCH"
+if [[ "$mode" == preview ]]; then branch=preview; fi
 git -C "$target/public" checkout -B "$branch"
 git -C "$target/public" add .
 if ! git -C "$target/public" diff --cached --quiet; then
