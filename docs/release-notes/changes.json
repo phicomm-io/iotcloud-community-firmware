@@ -1,0 +1,3858 @@
+{
+  "schema": 1,
+  "changes": [
+    {
+      "change_id": "mqtt-account-scope",
+      "version": "0.9.1",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1",
+          "m1",
+          "tc1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "按账号隔离 MQTT 通信",
+        "en": "Account-scoped MQTT"
+      },
+      "description": {
+        "zh-CN": "设备 MQTT 通信按账号隔离，固件版本显示关联发布版本。",
+        "en": "Device MQTT traffic is scoped to the account; the displayed firmware version identifies its release."
+      },
+      "ota_summary": {
+        "zh-CN": "设备 MQTT 通信按账号隔离，固件版本显示关联发布版本。",
+        "en": "Device MQTT traffic is scoped to the account; the displayed firmware version identifies its release."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.1:b003"
+      ]
+    },
+    {
+      "change_id": "m1-web-overview",
+      "version": "0.9.2",
+      "type": "feature",
+      "component": "bundled_web",
+      "scope": {
+        "models": [
+          "m1"
+        ],
+        "variants": [
+          "full",
+          "fresh-air"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "M1 实时概览与设置导航",
+        "en": "M1 live overview and settings"
+      },
+      "description": {
+        "zh-CN": "首页显示空气读数与屏幕亮度，设置按 Wi-Fi、MQTT、绑定、升级和诊断分组；切换页面保留未保存输入。",
+        "en": "The overview shows air readings and screen brightness. Wi-Fi, MQTT, binding, updates and diagnostics have separate settings pages; unsaved input survives page switches."
+      },
+      "ota_summary": {
+        "zh-CN": "首页显示空气读数与屏幕亮度，设置按 Wi-Fi、MQTT、绑定、升级和诊断分组；切换页面保留未保存输入。",
+        "en": "The overview shows air readings and screen brightness. Wi-Fi, MQTT, binding, updates and diagnostics have separate settings pages; unsaved input survives page switches."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.2:b004"
+      ]
+    },
+    {
+      "change_id": "m1-status-icon-mapping",
+      "version": "0.9.2",
+      "type": "bugfix",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "m1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "修正 M1 网络图标",
+        "en": "Correct M1 network indicators"
+      },
+      "description": {
+        "zh-CN": "正常连接时 Wi-Fi 常亮、错误标志熄灭；Wi-Fi 故障同步闪烁，已配置的 MQTT 故障单独提示，未配置 MQTT 不报错。",
+        "en": "Wi-Fi stays lit and the error icon is off during normal operation. Wi-Fi faults blink both icons; configured MQTT faults have a separate indication, and unconfigured MQTT does not report a fault."
+      },
+      "ota_summary": {
+        "zh-CN": "正常连接时 Wi-Fi 常亮、错误标志熄灭；Wi-Fi 故障同步闪烁，已配置的 MQTT 故障单独提示，未配置 MQTT 不报错。",
+        "en": "Wi-Fi stays lit and the error icon is off during normal operation. Wi-Fi faults blink both icons; configured MQTT faults have a separate indication, and unconfigured MQTT does not report a fault."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.2:b005"
+      ]
+    },
+    {
+      "change_id": "mqtt-idle-fragment-disconnect",
+      "version": "0.9.2",
+      "type": "bugfix",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "m1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "修复 MQTT 空闲与分包断线",
+        "en": "Fix MQTT idle and fragmented-packet disconnects"
+      },
+      "description": {
+        "zh-CN": "修复空闲超时误断线和 TCP 分包导致的 MQTT 断线，增加最近错误诊断。",
+        "en": "Fixes incorrect idle timeouts and MQTT disconnects caused by fragmented TCP packets; recent errors are available for diagnosis."
+      },
+      "ota_summary": {
+        "zh-CN": "修复空闲超时误断线和 TCP 分包导致的 MQTT 断线，增加最近错误诊断。",
+        "en": "Fixes incorrect idle timeouts and MQTT disconnects caused by fragmented TCP packets; recent errors are available for diagnosis."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.2:b006"
+      ]
+    },
+    {
+      "change_id": "signed-ota",
+      "version": "0.9.3",
+      "type": "security",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1",
+          "m1",
+          "tc1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "签名 OTA 与写入校验",
+        "en": "Signed OTA and flash verification"
+      },
+      "description": {
+        "zh-CN": "新增 P-256/SHA-256 签名 OTA，写入前验证签名、写入后核对 Flash 摘要及兼容性。旧固件首次过渡使用可信本地网页上传原生 OTA；完整 Flash 镜像不能用作网页 OTA。",
+        "en": "Adds P-256/SHA-256 signed OTA with signature checks before writing and flash-digest and compatibility checks afterwards. For initial migration from older firmware, upload a native OTA image through a trusted local page; a full flash image is not a web OTA package."
+      },
+      "ota_summary": {
+        "zh-CN": "新增 P-256/SHA-256 签名 OTA，写入前验证签名、写入后核对 Flash 摘要及兼容性。旧固件首次过渡使用可信本地网页上传原生 OTA；完整 Flash 镜像不能用作网页 OTA。",
+        "en": "Adds P-256/SHA-256 signed OTA with signature checks before writing and flash-digest and compatibility checks afterwards. For initial migration from older firmware, upload a native OTA image through a trusted local page; a full flash image is not a web OTA package."
+      },
+      "summary_complete": true,
+      "critical": true,
+      "source_refs": [
+        "v0.9.3:b001",
+        "v0.9.3:b002",
+        "v0.9.3:b003",
+        "v0.9.3:b004",
+        "v0.9.3:b005"
+      ]
+    },
+    {
+      "change_id": "shared-web-design",
+      "version": "0.9.5",
+      "type": "improvement",
+      "component": "bundled_web",
+      "scope": {
+        "models": [
+          "a1",
+          "m1",
+          "tc1"
+        ],
+        "variants": [
+          "full",
+          "fresh-air"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "统一设备网页与中英文操作",
+        "en": "Consistent device pages and languages"
+      },
+      "description": {
+        "zh-CN": "统一设备网页的状态、读数、定时和按键设置，中英文操作保持一致。",
+        "en": "Device pages share consistent status, readings, schedules and button settings in Chinese and English."
+      },
+      "ota_summary": {
+        "zh-CN": "统一设备网页的状态、读数、定时和按键设置，中英文操作保持一致。",
+        "en": "Device pages share consistent status, readings, schedules and button settings in Chinese and English."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.5:b001"
+      ]
+    },
+    {
+      "change_id": "mqtt-ack-connection",
+      "version": "0.9.5",
+      "type": "improvement",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1",
+          "m1",
+          "tc1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "改善 MQTT 回执与连接提示",
+        "en": "Improve MQTT acknowledgements and connection status"
+      },
+      "description": {
+        "zh-CN": "改进 MQTT 报文处理、命令回执与连接状态指示。",
+        "en": "Improves MQTT packet handling, command acknowledgements and connection indicators."
+      },
+      "ota_summary": {
+        "zh-CN": "改进 MQTT 报文处理、命令回执与连接状态指示。",
+        "en": "Improves MQTT packet handling, command acknowledgements and connection indicators."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.5:b003"
+      ]
+    },
+    {
+      "change_id": "ota-regional-sources",
+      "version": "0.9.5",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1",
+          "m1",
+          "tc1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "增加在线检查与国内外升级源",
+        "en": "Online checks and regional update sources"
+      },
+      "description": {
+        "zh-CN": "新增异步版本检查和签名固件下载入口，提供境内外 HTTP 来源；保留文件和 URL 升级。",
+        "en": "Adds asynchronous version checks and signed firmware downloads from Chinese and global HTTP sources; file and URL updates remain available."
+      },
+      "ota_summary": {
+        "zh-CN": "新增异步版本检查和签名固件下载入口，提供境内外 HTTP 来源；保留文件和 URL 升级。",
+        "en": "Adds asynchronous version checks and signed firmware downloads from Chinese and global HTTP sources; file and URL updates remain available."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.5:b004",
+        "v0.9.5:b005"
+      ]
+    },
+    {
+      "change_id": "public-download-site",
+      "version": "0.9.5",
+      "type": "feature",
+      "component": "service",
+      "scope": {
+        "models": [
+          "a1",
+          "m1",
+          "tc1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "官网演示与历史下载",
+        "en": "Website demos and historical downloads"
+      },
+      "description": {
+        "zh-CN": "官网提供设备和平台演示、最新下载及按版本保留的归档。",
+        "en": "The website provides device and platform demos, current downloads and versioned archives."
+      },
+      "ota_summary": {
+        "zh-CN": "官网提供设备和平台演示、最新下载及按版本保留的归档。",
+        "en": "The website provides device and platform demos, current downloads and versioned archives."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.5:b007"
+      ]
+    },
+    {
+      "change_id": "ota-github-pages",
+      "version": "0.9.6",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1",
+          "m1",
+          "tc1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "GitHub Pages HTTPS 升级源",
+        "en": "GitHub Pages HTTPS update source"
+      },
+      "description": {
+        "zh-CN": "设备可直接从 GitHub Pages 检查版本、读取说明和下载签名 OTA，继续保留境内外 HTTP 来源。",
+        "en": "Devices can check versions, read notes and download signed OTA from GitHub Pages over HTTPS; regional HTTP sources remain available."
+      },
+      "ota_summary": {
+        "zh-CN": "设备可直接从 GitHub Pages 检查版本、读取说明和下载签名 OTA，继续保留境内外 HTTP 来源。",
+        "en": "Devices can check versions, read notes and download signed OTA from GitHub Pages over HTTPS; regional HTTP sources remain available."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.6:b001"
+      ]
+    },
+    {
+      "change_id": "ota-cancellation",
+      "version": "0.9.6",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1",
+          "m1",
+          "tc1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "升级下载可取消并限制超时",
+        "en": "Cancellable downloads with timeouts"
+      },
+      "description": {
+        "zh-CN": "DNS、连接及收发设置超时，失败或取消后恢复日常服务；提交启动镜像后不能取消，重试从头下载。",
+        "en": "DNS, connection and I/O have timeouts. Failure or cancellation restores normal services; cancellation is unavailable after the boot image is committed, and retries start a new download."
+      },
+      "ota_summary": {
+        "zh-CN": "DNS、连接及收发设置超时，失败或取消后恢复日常服务；提交启动镜像后不能取消，重试从头下载。",
+        "en": "DNS, connection and I/O have timeouts. Failure or cancellation restores normal services; cancellation is unavailable after the boot image is committed, and retries start a new download."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.6:b002"
+      ]
+    },
+    {
+      "change_id": "ota-service-memory",
+      "version": "0.9.6",
+      "type": "improvement",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1",
+          "m1",
+          "tc1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "减少升级期间资源占用",
+        "en": "Reduce resource use during updates"
+      },
+      "description": {
+        "zh-CN": "升级期间释放 A1/M1 联动资源，保留 MQTT/HTTP 升级状态与取消响应，并减少日志和 HTTP 的内存开销。",
+        "en": "Updates release A1/M1 binding resources while retaining MQTT/HTTP progress and cancellation responses; logging and HTTP use less memory."
+      },
+      "ota_summary": {
+        "zh-CN": "升级期间释放 A1/M1 联动资源，保留 MQTT/HTTP 升级状态与取消响应，并减少日志和 HTTP 的内存开销。",
+        "en": "Updates release A1/M1 binding resources while retaining MQTT/HTTP progress and cancellation responses; logging and HTTP use less memory."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.6:b003"
+      ]
+    },
+    {
+      "change_id": "tc1-ota-boot-slot",
+      "version": "0.9.6",
+      "type": "bugfix",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "tc1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "修复 TC1 OTA 启动槽校验",
+        "en": "Fix TC1 OTA boot-slot checks"
+      },
+      "description": {
+        "zh-CN": "修复 TC1 签名 OTA 的启动槽校验，保留型号、签名及 Flash 读回检查。",
+        "en": "Corrects TC1 signed-OTA boot-slot validation while retaining model, signature and flash readback checks."
+      },
+      "ota_summary": {
+        "zh-CN": "修复 TC1 签名 OTA 的启动槽校验，保留型号、签名及 Flash 读回检查。",
+        "en": "Corrects TC1 signed-OTA boot-slot validation while retaining model, signature and flash readback checks."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.6:b004"
+      ]
+    },
+    {
+      "change_id": "ota-https-trust-boundary",
+      "version": "0.9.6",
+      "type": "security",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1",
+          "m1",
+          "tc1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "HTTPS 与固件验签的边界",
+        "en": "HTTPS and firmware-signature checks"
+      },
+      "description": {
+        "zh-CN": "本版 HTTPS 不验证服务器证书；固件签名仍为强制校验。应从可信来源获取升级文件。",
+        "en": "HTTPS in this release does not validate server certificates; firmware-signature verification remains mandatory. Obtain update files from a trusted source."
+      },
+      "ota_summary": {
+        "zh-CN": "本版 HTTPS 不验证服务器证书；固件签名仍为强制校验。应从可信来源获取升级文件。",
+        "en": "HTTPS in this release does not validate server certificates; firmware-signature verification remains mandatory. Obtain update files from a trusted source."
+      },
+      "summary_complete": true,
+      "critical": true,
+      "source_refs": [
+        "v0.9.6:b004"
+      ]
+    },
+    {
+      "change_id": "a1-panel-feedback",
+      "version": "0.9.6",
+      "type": "bugfix",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "修正面板与风速灯环反馈",
+        "en": "Correct panel and fan-ring feedback"
+      },
+      "description": {
+        "zh-CN": "修正 A1 面板、风速灯环及触摸反馈。",
+        "en": "Corrects A1 panel, fan-speed ring and touch feedback."
+      },
+      "ota_summary": {
+        "zh-CN": "修正 A1 面板、风速灯环及触摸反馈。",
+        "en": "Corrects A1 panel, fan-speed ring and touch feedback."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.6:b005"
+      ]
+    },
+    {
+      "change_id": "critical-thread-watchdog",
+      "version": "0.9.6",
+      "type": "improvement",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1",
+          "m1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "改善稳定性与关键线程恢复",
+        "en": "Stability and critical-thread recovery"
+      },
+      "description": {
+        "zh-CN": "改善 A1/M1 稳定性并为关键线程增加看门狗恢复。",
+        "en": "Improves A1/M1 stability and adds watchdog recovery for critical threads."
+      },
+      "ota_summary": {
+        "zh-CN": "改善 A1/M1 稳定性并为关键线程增加看门狗恢复。",
+        "en": "Improves A1/M1 stability and adds watchdog recovery for critical threads."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.6:b005"
+      ]
+    },
+    {
+      "change_id": "ota-concurrent-access-notice",
+      "version": "0.9.6",
+      "type": "breaking",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1",
+          "m1",
+          "tc1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "升级期间减少并发访问",
+        "en": "Limit concurrent access during updates"
+      },
+      "description": {
+        "zh-CN": "持续高并发升级尚未完成完整验收；升级期间请减少其他客户端访问。",
+        "en": "Updates under sustained high concurrency have not completed full validation. Reduce other client traffic during an update."
+      },
+      "ota_summary": {
+        "zh-CN": "持续高并发升级尚未完成完整验收；升级期间请减少其他客户端访问。",
+        "en": "Updates under sustained high concurrency have not completed full validation. Reduce other client traffic during an update."
+      },
+      "summary_complete": true,
+      "critical": true,
+      "source_refs": [
+        "v0.9.6:b006"
+      ]
+    },
+    {
+      "change_id": "a1-filter-life",
+      "version": "0.9.7",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "滤芯寿命预估",
+        "en": "Filter-life estimate"
+      },
+      "description": {
+        "zh-CN": "按风机运行时间累计滤芯使用量，可调整额定寿命并在更换后重置，MQTT 和 Home Assistant 同步显示。",
+        "en": "Tracks filter use from fan running time, with an adjustable rated life and a reset after replacement; MQTT and Home Assistant expose the estimate."
+      },
+      "ota_summary": {
+        "zh-CN": "按风机运行时间累计滤芯使用量，可调整额定寿命并在更换后重置，MQTT 和 Home Assistant 同步显示。",
+        "en": "Tracks filter use from fan running time, with an adjustable rated life and a reset after replacement; MQTT and Home Assistant expose the estimate."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.7:b001"
+      ]
+    },
+    {
+      "change_id": "a1-custom-buttons",
+      "version": "0.9.7",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "自定义按键与组合键",
+        "en": "Custom button and combination actions"
+      },
+      "description": {
+        "zh-CN": "电源键、Wi-Fi 键及双键组合支持自定义连击和长按动作，组合键避免误触单键与网络恢复。",
+        "en": "Power, Wi-Fi and combined buttons support custom click and hold actions; combinations avoid accidental individual-button and network-recovery actions."
+      },
+      "ota_summary": {
+        "zh-CN": "电源键、Wi-Fi 键及双键组合支持自定义连击和长按动作，组合键避免误触单键与网络恢复。",
+        "en": "Power, Wi-Fi and combined buttons support custom click and hold actions; combinations avoid accidental individual-button and network-recovery actions."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.7:b002"
+      ]
+    },
+    {
+      "change_id": "a1-ha-device-metadata",
+      "version": "0.9.7",
+      "type": "improvement",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "改善 Home Assistant 设备信息",
+        "en": "Improve Home Assistant device information"
+      },
+      "description": {
+        "zh-CN": "改善 A1 中文名称、图标及型号，绑定与滤芯实体归属同一设备；滤芯操作仅作用于对应 A1。",
+        "en": "Improves A1 names, icons and model information. Binding and filter entities belong to the same device; filter actions affect only their own A1."
+      },
+      "ota_summary": {
+        "zh-CN": "改善 A1 中文名称、图标及型号，绑定与滤芯实体归属同一设备；滤芯操作仅作用于对应 A1。",
+        "en": "Improves A1 names, icons and model information. Binding and filter entities belong to the same device; filter actions affect only their own A1."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.7:b003"
+      ]
+    },
+    {
+      "change_id": "tc1-unassigned-button-migration",
+      "version": "0.9.7",
+      "type": "bugfix",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "tc1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "修复旧按键设置迁移",
+        "en": "Fix migration of unassigned buttons"
+      },
+      "description": {
+        "zh-CN": "修复 TC1 旧配置中未分配按键的迁移。",
+        "en": "Fixes migration of unassigned buttons in older TC1 settings."
+      },
+      "ota_summary": {
+        "zh-CN": "修复 TC1 旧配置中未分配按键的迁移。",
+        "en": "Fixes migration of unassigned buttons in older TC1 settings."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.7:b004"
+      ]
+    },
+    {
+      "change_id": "web-common-navigation",
+      "version": "0.9.7",
+      "type": "bugfix",
+      "component": "bundled_web",
+      "scope": {
+        "models": [
+          "a1",
+          "m1",
+          "tc1"
+        ],
+        "variants": [
+          "full",
+          "fresh-air"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "恢复设置导航并改善触控",
+        "en": "Restore settings navigation and touch interaction"
+      },
+      "description": {
+        "zh-CN": "恢复通用设置导航，改善触屏操作。",
+        "en": "Restores common settings navigation and improves touch interaction."
+      },
+      "ota_summary": {
+        "zh-CN": "恢复通用设置导航，改善触屏操作。",
+        "en": "Restores common settings navigation and improves touch interaction."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.7:b004"
+      ]
+    },
+    {
+      "change_id": "a1-auto-power-separation",
+      "version": "0.9.8",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "自动模式与电源独立",
+        "en": "Independent automatic mode and power"
+      },
+      "description": {
+        "zh-CN": "自动/手动模式独立于电源，支持风速上下限、离线风速和夜间范围；手动关机不会被空气质量联动打开。",
+        "en": "Automatic/manual mode is independent of power, with speed bounds, offline speed and night ranges; air-quality control does not turn a manually powered-off unit back on."
+      },
+      "ota_summary": {
+        "zh-CN": "自动/手动模式独立于电源，支持风速上下限、离线风速和夜间范围；手动关机不会被空气质量联动打开。",
+        "en": "Automatic/manual mode is independent of power, with speed bounds, offline speed and night ranges; air-quality control does not turn a manually powered-off unit back on."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.8:b001",
+        "v0.9.8:b002"
+      ]
+    },
+    {
+      "change_id": "a1-start-stop-hysteresis",
+      "version": "0.9.8",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "可选启停回差",
+        "en": "Optional start/stop hysteresis"
+      },
+      "description": {
+        "zh-CN": "PM2.5、甲醛或组合指标可设置启动与目标阈值，配合持续时间及最短运行/待机时间抑制频繁启停；默认关闭。",
+        "en": "PM2.5, formaldehyde or combined metrics can use start and target thresholds, dwell times and minimum run/standby times to reduce cycling; hysteresis is disabled by default."
+      },
+      "ota_summary": {
+        "zh-CN": "PM2.5、甲醛或组合指标可设置启动与目标阈值，配合持续时间及最短运行/待机时间抑制频繁启停；默认关闭。",
+        "en": "PM2.5, formaldehyde or combined metrics can use start and target thresholds, dwell times and minimum run/standby times to reduce cycling; hysteresis is disabled by default."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.8:b002",
+        "v0.9.8:b005"
+      ]
+    },
+    {
+      "change_id": "a1-mode-controls",
+      "version": "0.9.8",
+      "type": "feature",
+      "component": "bundled_web",
+      "scope": {
+        "models": [
+          "a1"
+        ],
+        "variants": [
+          "full",
+          "fresh-air"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "自动模式设置入口",
+        "en": "Automatic-mode controls"
+      },
+      "description": {
+        "zh-CN": "设备网页可切换自动/手动模式，调整自动上限及目标、启动阈值。",
+        "en": "The device page can select automatic/manual mode and set automatic limits, targets and start thresholds."
+      },
+      "ota_summary": {
+        "zh-CN": "设备网页可切换自动/手动模式，调整自动上限及目标、启动阈值。",
+        "en": "The device page can select automatic/manual mode and set automatic limits, targets and start thresholds."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.8:b003"
+      ]
+    },
+    {
+      "change_id": "cloud-a1-operating-state",
+      "version": "0.9.8",
+      "type": "improvement",
+      "component": "service",
+      "scope": {
+        "models": [
+          "a1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "平台显示 A1 运行状态",
+        "en": "A1 operating state in the platform"
+      },
+      "description": {
+        "zh-CN": "平台列表显示自动/手动及运行、待机、关机状态。",
+        "en": "Platform lists show automatic/manual mode and running, standby or powered-off state."
+      },
+      "ota_summary": {
+        "zh-CN": "平台列表显示自动/手动及运行、待机、关机状态。",
+        "en": "Platform lists show automatic/manual mode and running, standby or powered-off state."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.8:b003"
+      ]
+    },
+    {
+      "change_id": "a1-default-power-button",
+      "version": "0.9.8",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "双击切换自动与手动",
+        "en": "Double-click mode switching"
+      },
+      "description": {
+        "zh-CN": "电源键默认双击切换自动/手动，青色双脉冲与暖橙色单脉冲分别提示当前模式；模式独立于电源并保留手动风速。",
+        "en": "The default power-button double-click switches automatic/manual mode, confirmed by cyan double or warm-orange single pulses; mode remains independent of power and preserves manual speed."
+      },
+      "ota_summary": {
+        "zh-CN": "电源键默认双击切换自动/手动，青色双脉冲与暖橙色单脉冲分别提示当前模式；模式独立于电源并保留手动风速。",
+        "en": "The default power-button double-click switches automatic/manual mode, confirmed by cyan double or warm-orange single pulses; mode remains independent of power and preserves manual speed."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.8:b004"
+      ]
+    },
+    {
+      "change_id": "a1-ha-mode-selector",
+      "version": "0.9.9",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "Home Assistant 独立模式选择器",
+        "en": "Separate Home Assistant mode selector"
+      },
+      "description": {
+        "zh-CN": "Home Assistant 增加独立运行模式选择器，自动/手动切换不改变电源，并继续同步风扇预设与 HomeKit Bridge。",
+        "en": "Adds a separate Home Assistant operating-mode selector; switching automatic/manual mode preserves power and continues to sync fan presets and HomeKit Bridge."
+      },
+      "ota_summary": {
+        "zh-CN": "Home Assistant 增加独立运行模式选择器，自动/手动切换不改变电源，并继续同步风扇预设与 HomeKit Bridge。",
+        "en": "Adds a separate Home Assistant operating-mode selector; switching automatic/manual mode preserves power and continues to sync fan presets and HomeKit Bridge."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.9:b001"
+      ]
+    },
+    {
+      "change_id": "cloud-auto-settings-entry",
+      "version": "0.9.9",
+      "type": "improvement",
+      "component": "service",
+      "scope": {
+        "models": [
+          "a1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "改善平台自动调速入口",
+        "en": "Improve platform automatic-control settings"
+      },
+      "description": {
+        "zh-CN": "自动调速卡片提供明确设置入口，加载时有提示，失败可重试，关机时仍可配置。",
+        "en": "The automatic-control card has a clear settings entry, loading feedback and retry support; settings remain available while powered off."
+      },
+      "ota_summary": {
+        "zh-CN": "自动调速卡片提供明确设置入口，加载时有提示，失败可重试，关机时仍可配置。",
+        "en": "The automatic-control card has a clear settings entry, loading feedback and retry support; settings remain available while powered off."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.9:b002"
+      ]
+    },
+    {
+      "change_id": "a1-default-power-button",
+      "version": "0.9.10",
+      "type": "improvement",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "电源键可查看模式与实际风量",
+        "en": "Power button reports mode and actual airflow"
+      },
+      "description": {
+        "zh-CN": "默认单击在关机时开机、开机时提示模式和实际风量；长按 1–4 秒松手关机，双击切换自动/手动并保留电源。灯效遵守童锁和夜间亮度，自定义映射保留。",
+        "en": "By default, a click powers on an off unit or reports mode and actual airflow on a running unit. Hold for 1–4 seconds and release to power off; double-click switches automatic/manual while preserving power. Feedback respects child lock and night brightness; custom mappings are retained."
+      },
+      "ota_summary": {
+        "zh-CN": "默认单击在关机时开机、开机时提示模式和实际风量；长按 1–4 秒松手关机，双击切换自动/手动并保留电源。灯效遵守童锁和夜间亮度，自定义映射保留。",
+        "en": "By default, a click powers on an off unit or reports mode and actual airflow on a running unit. Hold for 1–4 seconds and release to power off; double-click switches automatic/manual while preserving power. Feedback respects child lock and night brightness; custom mappings are retained."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.10:b001",
+        "v0.9.10:b002",
+        "v0.9.10:b003"
+      ]
+    },
+    {
+      "change_id": "a1-auto-save-revision",
+      "version": "0.9.10",
+      "type": "bugfix",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "修复自动设置连续保存失败",
+        "en": "Fix repeated automatic-settings saves"
+      },
+      "description": {
+        "zh-CN": "修复首次保存自动调速设置后未更新配置版本、导致第二次保存失败的问题。",
+        "en": "Fixes a missing configuration-revision update after the first automatic-settings save that caused a second save to fail."
+      },
+      "ota_summary": {
+        "zh-CN": "修复首次保存自动调速设置后未更新配置版本、导致第二次保存失败的问题。",
+        "en": "Fixes a missing configuration-revision update after the first automatic-settings save that caused a second save to fail."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.10:b004"
+      ]
+    },
+    {
+      "change_id": "m1-scd40-co2",
+      "version": "0.9.11",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "m1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "外接 SCD40 二氧化碳传感器",
+        "en": "External SCD40 carbon-dioxide sensor"
+      },
+      "description": {
+        "zh-CN": "支持通过 I²C 读取外接 SCD40 的 CO₂，GPIO8 为 SDA、GPIO7 为 SCL，上拉至 3.3 V；未安装时保持原有传感器。",
+        "en": "Supports CO₂ readings from an external I²C SCD40, with GPIO8 SDA and GPIO7 SCL pulled up to 3.3 V; existing sensors remain available without the module."
+      },
+      "ota_summary": {
+        "zh-CN": "支持通过 I²C 读取外接 SCD40 的 CO₂，GPIO8 为 SDA、GPIO7 为 SCL，上拉至 3.3 V；未安装时保持原有传感器。",
+        "en": "Supports CO₂ readings from an external I²C SCD40, with GPIO8 SDA and GPIO7 SCL pulled up to 3.3 V; existing sensors remain available without the module."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.11:b001",
+        "v0.9.11:b005"
+      ]
+    },
+    {
+      "change_id": "m1-web-overview",
+      "version": "0.9.11",
+      "type": "improvement",
+      "component": "bundled_web",
+      "scope": {
+        "models": [
+          "m1"
+        ],
+        "variants": [
+          "full",
+          "fresh-air"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "概览增加 CO₂ 与舒适度范围",
+        "en": "CO₂ and comfort range in the overview"
+      },
+      "description": {
+        "zh-CN": "M1 概览保留空气读数、亮度与设置导航；检测到 CO₂ 后显示五项指标和舒适度范围。当前页过期读数变灰，重新打开时隐藏过期 CO₂ 卡片。",
+        "en": "The M1 overview retains air readings, brightness and settings navigation. Detected CO₂ adds a fifth metric and comfort range. Stale readings turn grey; reopening hides a stale CO₂ card."
+      },
+      "ota_summary": {
+        "zh-CN": "M1 概览保留空气读数、亮度与设置导航；检测到 CO₂ 后显示五项指标和舒适度范围。当前页过期读数变灰，重新打开时隐藏过期 CO₂ 卡片。",
+        "en": "The M1 overview retains air readings, brightness and settings navigation. Detected CO₂ adds a fifth metric and comfort range. Stale readings turn grey; reopening hides a stale CO₂ card."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.11:b002",
+        "v0.9.2:b004"
+      ]
+    },
+    {
+      "change_id": "m1-co2-ha",
+      "version": "0.9.11",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "m1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "Home Assistant CO₂ 实体",
+        "en": "Home Assistant CO₂ entity"
+      },
+      "description": {
+        "zh-CN": "Home Assistant 自动发现 ppm 单位的 CO₂，过期时不可用，新读数恢复后重新有效。",
+        "en": "Home Assistant discovers a CO₂ entity in ppm; it becomes unavailable when stale and recovers when fresh readings return."
+      },
+      "ota_summary": {
+        "zh-CN": "Home Assistant 自动发现 ppm 单位的 CO₂，过期时不可用，新读数恢复后重新有效。",
+        "en": "Home Assistant discovers a CO₂ entity in ppm; it becomes unavailable when stale and recovers when fresh readings return."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.11:b003"
+      ]
+    },
+    {
+      "change_id": "cloud-m1-co2",
+      "version": "0.9.11",
+      "type": "feature",
+      "component": "service",
+      "scope": {
+        "models": [
+          "m1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "平台摘要显示新鲜 CO₂",
+        "en": "Fresh CO₂ in platform summaries"
+      },
+      "description": {
+        "zh-CN": "IotCloud 设备摘要显示有效的新鲜 CO₂ 读数。",
+        "en": "IotCloud device summaries display valid, fresh CO₂ readings."
+      },
+      "ota_summary": {
+        "zh-CN": "IotCloud 设备摘要显示有效的新鲜 CO₂ 读数。",
+        "en": "IotCloud device summaries display valid, fresh CO₂ readings."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.11:b003"
+      ]
+    },
+    {
+      "change_id": "a1-first-flash-initialization",
+      "version": "0.9.11",
+      "type": "bugfix",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "保留首次刷入配置初始化修复",
+        "en": "Initial-flash configuration initialization"
+      },
+      "description": {
+        "zh-CN": "保留从其他固件首次刷入 A1 时的配置初始化修复。",
+        "en": "Retains the configuration-initialization fix for first installation on an A1 from other firmware."
+      },
+      "ota_summary": {
+        "zh-CN": "保留从其他固件首次刷入 A1 时的配置初始化修复。",
+        "en": "Retains the configuration-initialization fix for first installation on an A1 from other firmware."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.11:b004"
+      ]
+    },
+    {
+      "change_id": "a1-co2-automation",
+      "version": "0.9.12",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "CO₂ 自动调速与独立有效期",
+        "en": "CO₂ automation with independent freshness"
+      },
+      "description": {
+        "zh-CN": "可使用绑定 M1 的 CO₂ 单独或组合调速，支持固定、线性和 PID；组合取最高需求。CO₂ 独立判断有效期，所选 CO₂ 全部失效时采用离线风速。",
+        "en": "Bound M1 CO₂ can drive fixed, linear or PID control alone or with other metrics; combined control uses the highest demand. CO₂ freshness is independent, with offline speed when all selected CO₂ sources are invalid."
+      },
+      "ota_summary": {
+        "zh-CN": "可使用绑定 M1 的 CO₂ 单独或组合调速，支持固定、线性和 PID；组合取最高需求。CO₂ 独立判断有效期，所选 CO₂ 全部失效时采用离线风速。",
+        "en": "Bound M1 CO₂ can drive fixed, linear or PID control alone or with other metrics; combined control uses the highest demand. CO₂ freshness is independent, with offline speed when all selected CO₂ sources are invalid."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.12:b001",
+        "v0.9.12:b002"
+      ]
+    },
+    {
+      "change_id": "a1-co2-ha",
+      "version": "0.9.12",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "A1 CO₂ Home Assistant 实体",
+        "en": "A1 CO₂ Home Assistant entity"
+      },
+      "description": {
+        "zh-CN": "A1 发布标准 ppm 二氧化碳实体；使用固定导出白名单的 HomeKit Bridge 用户需手动加入该实体。",
+        "en": "A1 publishes a standard CO₂ entity in ppm. HomeKit Bridge installations using a fixed export allowlist must add the new entity."
+      },
+      "ota_summary": {
+        "zh-CN": "A1 发布标准 ppm 二氧化碳实体；使用固定导出白名单的 HomeKit Bridge 用户需手动加入该实体。",
+        "en": "A1 publishes a standard CO₂ entity in ppm. HomeKit Bridge installations using a fixed export allowlist must add the new entity."
+      },
+      "summary_complete": true,
+      "critical": true,
+      "source_refs": [
+        "v0.9.12:b003"
+      ]
+    },
+    {
+      "change_id": "m1-scd40-temperature-export",
+      "version": "0.9.12",
+      "type": "breaking",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "m1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "移除 SCD40 重复温湿度实体",
+        "en": "Remove duplicate SCD40 temperature and humidity"
+      },
+      "description": {
+        "zh-CN": "SCD40 仅展示和转发 CO₂；温湿度继续来自 M1 原有传感器，升级会清理此前发布的 SCD40 温湿度实体。",
+        "en": "SCD40 exposes CO₂ only. Temperature and humidity continue to use M1’s original sensor; updates remove previously published SCD40 temperature/humidity entities."
+      },
+      "ota_summary": {
+        "zh-CN": "SCD40 仅展示和转发 CO₂；温湿度继续来自 M1 原有传感器，升级会清理此前发布的 SCD40 温湿度实体。",
+        "en": "SCD40 exposes CO₂ only. Temperature and humidity continue to use M1’s original sensor; updates remove previously published SCD40 temperature/humidity entities."
+      },
+      "summary_complete": true,
+      "critical": true,
+      "source_refs": [
+        "v0.9.12:b004"
+      ]
+    },
+    {
+      "change_id": "a1-co2-controls",
+      "version": "0.9.12",
+      "type": "feature",
+      "component": "bundled_web",
+      "scope": {
+        "models": [
+          "a1"
+        ],
+        "variants": [
+          "full",
+          "fresh-air"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "网页 CO₂ 与组合阈值",
+        "en": "CO₂ and combined thresholds in the page"
+      },
+      "description": {
+        "zh-CN": "A1 网页支持 CO₂ 均值、组合指标和 ppm 阈值设置，保留已有配置。",
+        "en": "The A1 page supports mean CO₂, combined metrics and ppm thresholds while retaining existing settings."
+      },
+      "ota_summary": {
+        "zh-CN": "A1 网页支持 CO₂ 均值、组合指标和 ppm 阈值设置，保留已有配置。",
+        "en": "The A1 page supports mean CO₂, combined metrics and ppm thresholds while retaining existing settings."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.12:b005"
+      ]
+    },
+    {
+      "change_id": "first-provision-http-memory",
+      "version": "0.9.12",
+      "type": "bugfix",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1",
+          "m1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "修复首次配网内存与网页响应",
+        "en": "Fix first-setup memory and HTTP responses"
+      },
+      "description": {
+        "zh-CN": "改善首次配网内存及网页响应，增加缓存重新验证和有界非阻塞 HTTP 响应，保留首次初始化修复。",
+        "en": "Improves memory use during initial Wi-Fi setup and HTTP responsiveness, with cache revalidation and bounded nonblocking responses; initial-configuration fixes remain."
+      },
+      "ota_summary": {
+        "zh-CN": "改善首次配网内存及网页响应，增加缓存重新验证和有界非阻塞 HTTP 响应，保留首次初始化修复。",
+        "en": "Improves memory use during initial Wi-Fi setup and HTTP responsiveness, with cache revalidation and bounded nonblocking responses; initial-configuration fixes remain."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.12:b006"
+      ]
+    },
+    {
+      "change_id": "a1-light-animation-speed",
+      "version": "0.9.13",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "呼吸与彩虹灯效速度",
+        "en": "Breathing and rainbow animation speed"
+      },
+      "description": {
+        "zh-CN": "呼吸灯和彩虹跑马灯可选 1–10 档速度，默认 5 档延续原有速度，保存后重启保留。",
+        "en": "Breathing and rainbow animations have speeds 1–10; default 5 retains the previous speed, and saved settings survive restart."
+      },
+      "ota_summary": {
+        "zh-CN": "呼吸灯和彩虹跑马灯可选 1–10 档速度，默认 5 档延续原有速度，保存后重启保留。",
+        "en": "Breathing and rainbow animations have speeds 1–10; default 5 retains the previous speed, and saved settings survive restart."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.13:b001"
+      ]
+    },
+    {
+      "change_id": "a1-countdown-off",
+      "version": "0.9.13",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "倒计时关闭",
+        "en": "Countdown to power off"
+      },
+      "description": {
+        "zh-CN": "可设置 1 分钟至 24 小时倒计时，支持取消、删除和重计时；不依赖网络校时，关闭页面继续运行，重启取消活动倒计时。",
+        "en": "Set a 1-minute to 24-hour shutdown countdown, with cancel, delete and restart actions. It is independent of network time and continues after closing the page; a device reboot cancels active countdowns."
+      },
+      "ota_summary": {
+        "zh-CN": "可设置 1 分钟至 24 小时倒计时，支持取消、删除和重计时；不依赖网络校时，关闭页面继续运行，重启取消活动倒计时。",
+        "en": "Set a 1-minute to 24-hour shutdown countdown, with cancel, delete and restart actions. It is independent of network time and continues after closing the page; a device reboot cancels active countdowns."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.13:b002",
+        "v0.9.13:b003"
+      ]
+    },
+    {
+      "change_id": "a1-light-countdown-controls",
+      "version": "0.9.13",
+      "type": "feature",
+      "component": "bundled_web",
+      "scope": {
+        "models": [
+          "a1"
+        ],
+        "variants": [
+          "full",
+          "fresh-air"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "灯效速度与倒计时设置",
+        "en": "Animation-speed and countdown controls"
+      },
+      "description": {
+        "zh-CN": "设备网页提供灯效速度预览和倒计时设置，中英文保持对应。",
+        "en": "The device page provides animation-speed previews and countdown controls in both languages."
+      },
+      "ota_summary": {
+        "zh-CN": "设备网页提供灯效速度预览和倒计时设置，中英文保持对应。",
+        "en": "The device page provides animation-speed previews and countdown controls in both languages."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.13:b004"
+      ]
+    },
+    {
+      "change_id": "runtime-memory-014",
+      "version": "0.9.14",
+      "type": "improvement",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1",
+          "m1",
+          "tc1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "降低联动与通信内存占用",
+        "en": "Reduce binding and communication memory"
+      },
+      "description": {
+        "zh-CN": "减少联动与 MQTT 内存占用，A1 应用静态 RAM 减少约 10.8 KiB，TC1 约 1.0 KiB。",
+        "en": "Reduces binding and MQTT memory use, saving about 10.8 KiB of A1 application static RAM and 1.0 KiB on TC1."
+      },
+      "ota_summary": {
+        "zh-CN": "减少联动与 MQTT 内存占用，A1 应用静态 RAM 减少约 10.8 KiB，TC1 约 1.0 KiB。",
+        "en": "Reduces binding and MQTT memory use, saving about 10.8 KiB of A1 application static RAM and 1.0 KiB on TC1."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.14:b001"
+      ]
+    },
+    {
+      "change_id": "binding-four-device-limit",
+      "version": "0.9.14",
+      "type": "breaking",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1",
+          "m1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "联动上限统一为四台",
+        "en": "Four-device binding limit"
+      },
+      "description": {
+        "zh-CN": "A1/M1 联动上限为 4 台，已有超过 4 台的配置升级后仅启用前 4 台。",
+        "en": "A1/M1 binding is limited to four devices; configurations with more than four enable only the first four after upgrading."
+      },
+      "ota_summary": {
+        "zh-CN": "A1/M1 联动上限为 4 台，已有超过 4 台的配置升级后仅启用前 4 台。",
+        "en": "A1/M1 binding is limited to four devices; configurations with more than four enable only the first four after upgrading."
+      },
+      "summary_complete": true,
+      "critical": true,
+      "source_refs": [
+        "v0.9.14:b002"
+      ]
+    },
+    {
+      "change_id": "http-command-queue-diagnostics",
+      "version": "0.9.14",
+      "type": "improvement",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1",
+          "m1",
+          "tc1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "改善请求排队与繁忙诊断",
+        "en": "Improve request queues and busy diagnostics"
+      },
+      "description": {
+        "zh-CN": "优化网页请求与 MQTT 回包队列，增加内存余量和回包诊断；繁忙或内存不足时可能返回 busy，稍后可重试。",
+        "en": "Optimizes web requests and MQTT response queues and adds memory-headroom and response diagnostics; busy or low-memory devices may return busy so clients can retry later."
+      },
+      "ota_summary": {
+        "zh-CN": "优化网页请求与 MQTT 回包队列，增加内存余量和回包诊断；繁忙或内存不足时可能返回 busy，稍后可重试。",
+        "en": "Optimizes web requests and MQTT response queues and adds memory-headroom and response diagnostics; busy or low-memory devices may return busy so clients can retry later."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.14:b003",
+        "v0.9.14:b004"
+      ]
+    },
+    {
+      "change_id": "bundled-web-compression",
+      "version": "0.9.14",
+      "type": "improvement",
+      "component": "bundled_web",
+      "scope": {
+        "models": [
+          "a1",
+          "m1",
+          "tc1"
+        ],
+        "variants": [
+          "full",
+          "fresh-air"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "压缩内置网页",
+        "en": "Compress bundled pages"
+      },
+      "description": {
+        "zh-CN": "在保留功能、中英文和操作方式的同时减少内置网页占用。",
+        "en": "Reduces bundled-page size while retaining features, both languages and existing interactions."
+      },
+      "ota_summary": {
+        "zh-CN": "在保留功能、中英文和操作方式的同时减少内置网页占用。",
+        "en": "Reduces bundled-page size while retaining features, both languages and existing interactions."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.14:b005"
+      ]
+    },
+    {
+      "change_id": "minimal-firmware",
+      "version": "0.9.14",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1",
+          "m1",
+          "tc1"
+        ],
+        "variants": [
+          "no-frontend-resources",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "提供保留配网页的精简版",
+        "en": "Minimal firmware with setup pages"
+      },
+      "description": {
+        "zh-CN": "精简版保留离线配网、首次 MQTT 与网页密码配置，完整控制通过本地管理页或 IotCloud；在线升级保留当前固件类型。",
+        "en": "Minimal firmware retains offline Wi-Fi setup, initial MQTT and web-password settings. Full control uses the local console or IotCloud; online updates retain the current firmware variant."
+      },
+      "ota_summary": {
+        "zh-CN": "精简版保留离线配网、首次 MQTT 与网页密码配置，完整控制通过本地管理页或 IotCloud；在线升级保留当前固件类型。",
+        "en": "Minimal firmware retains offline Wi-Fi setup, initial MQTT and web-password settings. Full control uses the local console or IotCloud; online updates retain the current firmware variant."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.14:b006"
+      ]
+    },
+    {
+      "change_id": "standalone-local-console",
+      "version": "0.9.14",
+      "type": "feature",
+      "component": "service",
+      "scope": {
+        "models": [
+          "a1",
+          "m1",
+          "tc1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "无需账号的本地设备管理",
+        "en": "Local console without an account"
+      },
+      "description": {
+        "zh-CN": "独立本地管理页可使用设备内网地址和网页密码直连，无需账号、后端或 MQTT；浏览器需允许本地网络访问。",
+        "en": "The standalone local console connects using a LAN address and web password, without an account, backend or MQTT; the browser must permit local-network access."
+      },
+      "ota_summary": {
+        "zh-CN": "独立本地管理页可使用设备内网地址和网页密码直连，无需账号、后端或 MQTT；浏览器需允许本地网络访问。",
+        "en": "The standalone local console connects using a LAN address and web password, without an account, backend or MQTT; the browser must permit local-network access."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.14:b007"
+      ]
+    },
+    {
+      "change_id": "cloud-lan-preference",
+      "version": "0.9.14",
+      "type": "feature",
+      "component": "service",
+      "scope": {
+        "models": [
+          "a1",
+          "m1",
+          "tc1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "平台优先使用内网连接",
+        "en": "Prefer LAN connections in the platform"
+      },
+      "description": {
+        "zh-CN": "IotCloud 可配置内网地址并优先直连，失败后继续用 MQTT，也可始终使用 MQTT。",
+        "en": "IotCloud can prefer a configured LAN address and fall back to MQTT, or always use MQTT."
+      },
+      "ota_summary": {
+        "zh-CN": "IotCloud 可配置内网地址并优先直连，失败后继续用 MQTT，也可始终使用 MQTT。",
+        "en": "IotCloud can prefer a configured LAN address and fall back to MQTT, or always use MQTT."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.14:b008"
+      ]
+    },
+    {
+      "change_id": "tc1-web-metering-stall",
+      "version": "0.9.15",
+      "type": "bugfix",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "tc1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "修复网页计量查询卡死或重启",
+        "en": "Fix stalls or reboots during web metering"
+      },
+      "description": {
+        "zh-CN": "修复打开网页、查看实时功率或电量时可能卡死、重启的问题。",
+        "en": "Fixes possible stalls or reboots when opening the page or reading live power and energy."
+      },
+      "ota_summary": {
+        "zh-CN": "修复打开网页、查看实时功率或电量时可能卡死、重启的问题。",
+        "en": "Fixes possible stalls or reboots when opening the page or reading live power and energy."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.15:b001"
+      ]
+    },
+    {
+      "change_id": "a1-m1-reading-stability-015",
+      "version": "0.9.15",
+      "type": "improvement",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1",
+          "m1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "改善读数和通信稳定性",
+        "en": "Improve reading and communication stability"
+      },
+      "description": {
+        "zh-CN": "改善读数及通信稳定性，保留现有网络和设备设置。",
+        "en": "Improves reading and communication stability while retaining network and device settings."
+      },
+      "ota_summary": {
+        "zh-CN": "改善读数及通信稳定性，保留现有网络和设备设置。",
+        "en": "Improves reading and communication stability while retaining network and device settings."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.15:b002"
+      ]
+    },
+    {
+      "change_id": "web-incremental-refresh",
+      "version": "0.9.16",
+      "type": "improvement",
+      "component": "bundled_web",
+      "scope": {
+        "models": [
+          "a1",
+          "m1",
+          "tc1"
+        ],
+        "variants": [
+          "full",
+          "fresh-air"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "按需刷新页面数据",
+        "en": "Refresh page data on demand"
+      },
+      "description": {
+        "zh-CN": "首次打开读取完整状态，日常按需刷新实时数据，网络和诊断数据按页面或较低频率加载，减少传输与设备负担。",
+        "en": "Pages fetch full state initially, refresh live data on demand and load network/diagnostic data per page or less frequently, reducing traffic and device load."
+      },
+      "ota_summary": {
+        "zh-CN": "首次打开读取完整状态，日常按需刷新实时数据，网络和诊断数据按页面或较低频率加载，减少传输与设备负担。",
+        "en": "Pages fetch full state initially, refresh live data on demand and load network/diagnostic data per page or less frequently, reducing traffic and device load."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.16:b001"
+      ]
+    },
+    {
+      "change_id": "shared-http-mqtt-state",
+      "version": "0.9.16",
+      "type": "improvement",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1",
+          "m1",
+          "tc1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "改善网页与 MQTT 并发响应",
+        "en": "Improve concurrent HTTP and MQTT responses"
+      },
+      "description": {
+        "zh-CN": "网页与 MQTT 共用状态快照及连接处理，缩短持锁时间并优先确认命令；高负载可返回繁忙，降载后恢复。",
+        "en": "HTTP and MQTT share state snapshots and connection handling, shorten lock holds and prioritize command acknowledgements; overload can return busy and recover after traffic falls."
+      },
+      "ota_summary": {
+        "zh-CN": "网页与 MQTT 共用状态快照及连接处理，缩短持锁时间并优先确认命令；高负载可返回繁忙，降载后恢复。",
+        "en": "HTTP and MQTT share state snapshots and connection handling, shorten lock holds and prioritize command acknowledgements; overload can return busy and recover after traffic falls."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.16:b002",
+        "v0.9.16:b003",
+        "v0.9.16:b004"
+      ]
+    },
+    {
+      "change_id": "tc1-http-resource-recovery",
+      "version": "0.9.16",
+      "type": "bugfix",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "tc1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "修复异常 HTTP 连接资源回收",
+        "en": "Fix abnormal HTTP connection cleanup"
+      },
+      "description": {
+        "zh-CN": "修复异常 HTTP 连接处理与资源回收，并减少计量和数字转换开销，降低持续占用、卡死或异常重启风险。",
+        "en": "Fixes abnormal HTTP connection handling and resource cleanup and reduces metering/conversion overhead to reduce persistent allocation, stalls and unexpected restarts."
+      },
+      "ota_summary": {
+        "zh-CN": "修复异常 HTTP 连接处理与资源回收，并减少计量和数字转换开销，降低持续占用、卡死或异常重启风险。",
+        "en": "Fixes abnormal HTTP connection handling and resource cleanup and reduces metering/conversion overhead to reduce persistent allocation, stalls and unexpected restarts."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.16:b005"
+      ]
+    },
+    {
+      "change_id": "mqtt-command-dedupe-memory",
+      "version": "0.9.16",
+      "type": "improvement",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1",
+          "m1",
+          "tc1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "优化命令去重内存",
+        "en": "Reduce command-deduplication memory"
+      },
+      "description": {
+        "zh-CN": "降低 MQTT 命令去重与回执的内存占用，保留重复执行保护与冲突检查。",
+        "en": "Reduces MQTT command-deduplication and acknowledgement memory while retaining duplicate protection and conflict checks."
+      },
+      "ota_summary": {
+        "zh-CN": "降低 MQTT 命令去重与回执的内存占用，保留重复执行保护与冲突检查。",
+        "en": "Reduces MQTT command-deduplication and acknowledgement memory while retaining duplicate protection and conflict checks."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.16:b006"
+      ]
+    },
+    {
+      "change_id": "m1-rename-ack",
+      "version": "0.9.16",
+      "type": "bugfix",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "m1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "修复改名命令缺少确认",
+        "en": "Fix missing rename acknowledgements"
+      },
+      "description": {
+        "zh-CN": "修复 M1 改名已执行但调用方收不到确认的问题。",
+        "en": "Fixes M1 rename commands executing without an acknowledgement reaching the caller."
+      },
+      "ota_summary": {
+        "zh-CN": "修复 M1 改名已执行但调用方收不到确认的问题。",
+        "en": "Fixes M1 rename commands executing without an acknowledgement reaching the caller."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.16:b006"
+      ]
+    },
+    {
+      "change_id": "m1-pressure-sensor",
+      "version": "0.9.16",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "m1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "外接 BMP388/BMP390 气压",
+        "en": "External BMP388/BMP390 pressure sensors"
+      },
+      "description": {
+        "zh-CN": "自动识别 BMP388/BMP390，在概览与摘要显示 hPa 气压；失联或过期后隐藏，重新接入后恢复识别。",
+        "en": "Detects BMP388/BMP390 automatically and shows pressure in hPa in the overview and summary; disconnected or stale data is hidden and reconnection restores detection."
+      },
+      "ota_summary": {
+        "zh-CN": "自动识别 BMP388/BMP390，在概览与摘要显示 hPa 气压；失联或过期后隐藏，重新接入后恢复识别。",
+        "en": "Detects BMP388/BMP390 automatically and shows pressure in hPa in the overview and summary; disconnected or stale data is hidden and reconnection restores detection."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.16:b007"
+      ]
+    },
+    {
+      "change_id": "binding-limit-page",
+      "version": "0.9.16",
+      "type": "bugfix",
+      "component": "bundled_web",
+      "scope": {
+        "models": [
+          "a1",
+          "m1"
+        ],
+        "variants": [
+          "full",
+          "fresh-air"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "修正联动数量限制与窄屏布局",
+        "en": "Fix binding limits and narrow layouts"
+      },
+      "description": {
+        "zh-CN": "绑定页面满 4 台后禁止继续添加，并改善手机布局。",
+        "en": "The binding page prevents adding more than four devices and improves mobile layout."
+      },
+      "ota_summary": {
+        "zh-CN": "绑定页面满 4 台后禁止继续添加，并改善手机布局。",
+        "en": "The binding page prevents adding more than four devices and improves mobile layout."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.16:b008"
+      ]
+    },
+    {
+      "change_id": "tc1-first-mqtt-config",
+      "version": "0.9.17",
+      "type": "bugfix",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "tc1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "修复首次配置后 MQTT 无法连接",
+        "en": "Fix MQTT connection after initial setup"
+      },
+      "description": {
+        "zh-CN": "修复首次配置或恢复出厂后已保存 MQTT 服务器却无法连接的问题，适用于完整版和精简版，保留已有设置。",
+        "en": "Fixes failure to connect to a saved MQTT server after initial setup or factory reset, in full and minimal variants, while retaining existing settings."
+      },
+      "ota_summary": {
+        "zh-CN": "修复首次配置或恢复出厂后已保存 MQTT 服务器却无法连接的问题，适用于完整版和精简版，保留已有设置。",
+        "en": "Fixes failure to connect to a saved MQTT server after initial setup or factory reset, in full and minimal variants, while retaining existing settings."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.17:b001",
+        "v0.9.17:b002"
+      ]
+    },
+    {
+      "change_id": "a1-local-button-unresponsive",
+      "version": "0.9.18",
+      "type": "bugfix",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "修复电源键偶发无响应",
+        "en": "Fix intermittent power-button failures"
+      },
+      "description": {
+        "zh-CN": "修复运行一段时间后短按、双击偶发无响应，恢复短按灯环提示及双击模式切换。",
+        "en": "Fixes intermittent click and double-click failures after extended operation, restoring ring feedback and mode switching."
+      },
+      "ota_summary": {
+        "zh-CN": "修复运行一段时间后短按、双击偶发无响应，恢复短按灯环提示及双击模式切换。",
+        "en": "Fixes intermittent click and double-click failures after extended operation, restoring ring feedback and mode switching."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.18:b001"
+      ]
+    },
+    {
+      "change_id": "a1-native-control-path",
+      "version": "0.9.18",
+      "type": "improvement",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "减少本地控制分配与阻塞",
+        "en": "Reduce allocation and blocking in local control"
+      },
+      "description": {
+        "zh-CN": "本地按键、HTTP、MQTT 和自动化共用控制路径，减少分配与阻塞，保留童锁、自定义按键、风速和灯环行为。",
+        "en": "Buttons, HTTP, MQTT and automation share control paths to reduce allocation and blocking while retaining child lock, custom buttons, fan speed and ring behavior."
+      },
+      "ota_summary": {
+        "zh-CN": "本地按键、HTTP、MQTT 和自动化共用控制路径，减少分配与阻塞，保留童锁、自定义按键、风速和灯环行为。",
+        "en": "Buttons, HTTP, MQTT and automation share control paths to reduce allocation and blocking while retaining child lock, custom buttons, fan speed and ring behavior."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.18:b002"
+      ]
+    },
+    {
+      "change_id": "bemfa-direct-client",
+      "version": "0.9.18",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1",
+          "tc1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "可选巴法云直连",
+        "en": "Optional direct Bemfa connection"
+      },
+      "description": {
+        "zh-CN": "设备可直连巴法云，原 MQTT 与巴法云可分别开关并同时使用，保留已有连接与配置。",
+        "en": "Devices can connect directly to Bemfa; existing MQTT and Bemfa can be enabled independently and used together while retaining current connections and settings."
+      },
+      "ota_summary": {
+        "zh-CN": "设备可直连巴法云，原 MQTT 与巴法云可分别开关并同时使用，保留已有连接与配置。",
+        "en": "Devices can connect directly to Bemfa; existing MQTT and Bemfa can be enabled independently and used together while retaining current connections and settings."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.18:b003"
+      ]
+    },
+    {
+      "change_id": "runtime-query-memory-018",
+      "version": "0.9.18",
+      "type": "improvement",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1",
+          "m1",
+          "tc1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "减少状态查询与网页占用",
+        "en": "Reduce state-query and page overhead"
+      },
+      "description": {
+        "zh-CN": "继续降低状态查询的内存和内置网页空间开销，并检查 A1 OTA 暂存区容量。",
+        "en": "Further reduces state-query memory and bundled-page size and checks A1 OTA staging capacity."
+      },
+      "ota_summary": {
+        "zh-CN": "继续降低状态查询的内存和内置网页空间开销，并检查 A1 OTA 暂存区容量。",
+        "en": "Further reduces state-query memory and bundled-page size and checks A1 OTA staging capacity."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.18:b004"
+      ]
+    },
+    {
+      "change_id": "a1-m1-simple-binding",
+      "version": "0.9.19",
+      "type": "improvement",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1",
+          "m1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "简化 A1 读取 M1 的配置",
+        "en": "Simplify A1 access to M1"
+      },
+      "description": {
+        "zh-CN": "A1 只需填写 M1 MAC 和可选内网 IP，M1 无需配对或维护白名单，页面改为显示当前会话。",
+        "en": "A1 needs only an M1 MAC and optional LAN IP; M1 no longer requires pairing or an allowlist and displays current sessions."
+      },
+      "ota_summary": {
+        "zh-CN": "A1 只需填写 M1 MAC 和可选内网 IP，M1 无需配对或维护白名单，页面改为显示当前会话。",
+        "en": "A1 needs only an M1 MAC and optional LAN IP; M1 no longer requires pairing or an allowlist and displays current sessions."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.19:b001"
+      ]
+    },
+    {
+      "change_id": "a1-m1-session-protocol",
+      "version": "0.9.19",
+      "type": "breaking",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1",
+          "m1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "联动改用临时会话与局域网读取",
+        "en": "Binding uses temporary sessions and LAN reads"
+      },
+      "description": {
+        "zh-CN": "A1/M1 需配套升级，先升级 M1 再升级 A1。新建或重建会话需要 MQTT；有效会话可在 MQTT 暂断时继续 LAN 读取。移除传感器联合主题及 MQTT 数据回退，LAN 失败按离线策略处理。",
+        "en": "Upgrade M1 before A1 and keep both on the compatible release. Creating or rebuilding a session requires MQTT; valid sessions can continue LAN reads during a temporary MQTT outage. Shared sensor topics and MQTT data fallback are removed; failed LAN reads use offline policy."
+      },
+      "ota_summary": {
+        "zh-CN": "A1/M1 需配套升级，先升级 M1 再升级 A1。新建或重建会话需要 MQTT；有效会话可在 MQTT 暂断时继续 LAN 读取。移除传感器联合主题及 MQTT 数据回退，LAN 失败按离线策略处理。",
+        "en": "Upgrade M1 before A1 and keep both on the compatible release. Creating or rebuilding a session requires MQTT; valid sessions can continue LAN reads during a temporary MQTT outage. Shared sensor topics and MQTT data fallback are removed; failed LAN reads use offline policy."
+      },
+      "summary_complete": true,
+      "critical": true,
+      "source_refs": [
+        "v0.9.19:b002",
+        "v0.9.19:b005"
+      ]
+    },
+    {
+      "change_id": "a1-m1-proxy-export-removal",
+      "version": "0.9.19",
+      "type": "breaking",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "移除 M1 完整数据代理导出",
+        "en": "Remove full M1 data proxy exports"
+      },
+      "description": {
+        "zh-CN": "A1 仅上报自动控制需要的汇总值，清理旧代理 Home Assistant 实体；完整 M1 数据和实体请直接使用 M1。",
+        "en": "A1 reports only aggregates needed for automatic control and removes old proxy Home Assistant entities; use M1 directly for its full readings and entities."
+      },
+      "ota_summary": {
+        "zh-CN": "A1 仅上报自动控制需要的汇总值，清理旧代理 Home Assistant 实体；完整 M1 数据和实体请直接使用 M1。",
+        "en": "A1 reports only aggregates needed for automatic control and removes old proxy Home Assistant entities; use M1 directly for its full readings and entities."
+      },
+      "summary_complete": true,
+      "critical": true,
+      "source_refs": [
+        "v0.9.19:b003"
+      ]
+    },
+    {
+      "change_id": "m1-pressure-mqtt-ha",
+      "version": "0.9.19",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "m1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "气压 MQTT 与 Home Assistant 实体",
+        "en": "Pressure MQTT and Home Assistant entity"
+      },
+      "description": {
+        "zh-CN": "BMP388/BMP390 气压以 hPa 上报 MQTT 和 Home Assistant，失联或过期时独立标为不可用。",
+        "en": "BMP388/BMP390 pressure is published in hPa to MQTT and Home Assistant and independently marked unavailable when disconnected or stale."
+      },
+      "ota_summary": {
+        "zh-CN": "BMP388/BMP390 气压以 hPa 上报 MQTT 和 Home Assistant，失联或过期时独立标为不可用。",
+        "en": "BMP388/BMP390 pressure is published in hPa to MQTT and Home Assistant and independently marked unavailable when disconnected or stale."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.19:b004"
+      ]
+    },
+    {
+      "change_id": "a1-powered-off-business-light",
+      "version": "0.9.20",
+      "type": "bugfix",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "修复关机后业务灯效仍亮",
+        "en": "Fix business lights remaining on after shutdown"
+      },
+      "description": {
+        "zh-CN": "修复自定义亮度且关闭亮度随风速变化时，关机后业务灯效仍亮的问题；保留自动待机与关机的区别。",
+        "en": "Fixes business lights remaining on after shutdown with custom brightness and fan-linked brightness disabled, while preserving the difference between automatic standby and shutdown."
+      },
+      "ota_summary": {
+        "zh-CN": "修复自定义亮度且关闭亮度随风速变化时，关机后业务灯效仍亮的问题；保留自动待机与关机的区别。",
+        "en": "Fixes business lights remaining on after shutdown with custom brightness and fan-linked brightness disabled, while preserving the difference between automatic standby and shutdown."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.20:b001"
+      ]
+    },
+    {
+      "change_id": "a1-color-breathing",
+      "version": "0.9.20",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "彩色呼吸灯",
+        "en": "Color-cycling breathing light"
+      },
+      "description": {
+        "zh-CN": "新增随呼吸明暗逐渐变色的灯效，支持亮度与速度，单色呼吸继续可选。",
+        "en": "Adds a breathing effect that gradually cycles colors, with brightness and speed controls; single-color breathing remains available."
+      },
+      "ota_summary": {
+        "zh-CN": "新增随呼吸明暗逐渐变色的灯效，支持亮度与速度，单色呼吸继续可选。",
+        "en": "Adds a breathing effect that gradually cycles colors, with brightness and speed controls; single-color breathing remains available."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.20:b002"
+      ]
+    },
+    {
+      "change_id": "tc1-ha-switch-state",
+      "version": "0.9.20",
+      "type": "bugfix",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "tc1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "修复 Home Assistant 开关状态回跳",
+        "en": "Fix Home Assistant switch-state reversion"
+      },
+      "description": {
+        "zh-CN": "修复 MQTT/IotCloud 关闭插座后 Home Assistant 又显示打开；控制保存后刷新六路和总开关状态，改名后重新发布发现配置。",
+        "en": "Fixes Home Assistant reverting to on after an outlet is switched off through MQTT/IotCloud. Saved controls refresh all six and master states; renames republish discovery."
+      },
+      "ota_summary": {
+        "zh-CN": "修复 MQTT/IotCloud 关闭插座后 Home Assistant 又显示打开；控制保存后刷新六路和总开关状态，改名后重新发布发现配置。",
+        "en": "Fixes Home Assistant reverting to on after an outlet is switched off through MQTT/IotCloud. Saved controls refresh all six and master states; renames republish discovery."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.20:b003"
+      ]
+    },
+    {
+      "change_id": "cloud-pressure-card-layout",
+      "version": "0.9.20",
+      "type": "bugfix",
+      "component": "service",
+      "scope": {
+        "models": [
+          "m1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "修复平台气压卡片换行",
+        "en": "Fix platform pressure-card wrapping"
+      },
+      "description": {
+        "zh-CN": "修复 IotCloud M1 卡片四位气压读数溢出和换行。",
+        "en": "Fixes overflow and wrapping of four-digit pressure readings on IotCloud M1 cards."
+      },
+      "ota_summary": {
+        "zh-CN": "修复 IotCloud M1 卡片四位气压读数溢出和换行。",
+        "en": "Fixes overflow and wrapping of four-digit pressure readings on IotCloud M1 cards."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.20:b004"
+      ]
+    },
+    {
+      "change_id": "broker-ha-reload-permission",
+      "version": "0.9.20",
+      "type": "bugfix",
+      "component": "service",
+      "scope": {
+        "models": [
+          "a1",
+          "m1",
+          "tc1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "修复 Home Assistant 重新发现权限",
+        "en": "Fix Home Assistant rediscovery permissions"
+      },
+      "description": {
+        "zh-CN": "公共 MQTT 服务补齐 Home Assistant 启动通知权限，已有账号同步更新，重新加载集成可触发设备发现。",
+        "en": "The public MQTT service grants Home Assistant startup-notification permissions to existing and new accounts so integration reloads can trigger device discovery."
+      },
+      "ota_summary": {
+        "zh-CN": "公共 MQTT 服务补齐 Home Assistant 启动通知权限，已有账号同步更新，重新加载集成可触发设备发现。",
+        "en": "The public MQTT service grants Home Assistant startup-notification permissions to existing and new accounts so integration reloads can trigger device discovery."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.20:b004"
+      ]
+    },
+    {
+      "change_id": "m1-stock-migration-startup",
+      "version": "0.9.21",
+      "type": "bugfix",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "m1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "修复原厂首次迁移启动重启",
+        "en": "Fix startup resets during stock migration"
+      },
+      "description": {
+        "zh-CN": "修复原厂配置初始化启动栈不足导致的反复重启。M1 原厂免拆迁移从 0.9.21 开始，首次使用完整版原生 OTA；可能需连接 M1-AP 配网。社区设备继续使用签名包。",
+        "en": "Fixes repeated resets caused by insufficient startup stack during stock-configuration initialization. M1 stock migration starts at 0.9.21 and initially requires the full native OTA image; Wi-Fi setup through M1-AP may be needed. Community devices continue using signed packages."
+      },
+      "ota_summary": {
+        "zh-CN": "修复原厂配置初始化启动栈不足导致的反复重启。M1 原厂免拆迁移从 0.9.21 开始，首次使用完整版原生 OTA；可能需连接 M1-AP 配网。社区设备继续使用签名包。",
+        "en": "Fixes repeated resets caused by insufficient startup stack during stock-configuration initialization. M1 stock migration starts at 0.9.21 and initially requires the full native OTA image; Wi-Fi setup through M1-AP may be needed. Community devices continue using signed packages."
+      },
+      "summary_complete": true,
+      "critical": true,
+      "source_refs": [
+        "v0.9.21:b001",
+        "v0.9.21:b002",
+        "v0.9.21:b004"
+      ]
+    },
+    {
+      "change_id": "a1-pwm-frequency",
+      "version": "0.9.23",
+      "type": "improvement",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "A1 PWM 统一为 25 kHz",
+        "en": "A1 PWM uses 25 kHz"
+      },
+      "description": {
+        "zh-CN": "A1 PWM 频率统一为 25 kHz，普通版保留原风机驱动板映射。",
+        "en": "A1 PWM runs at 25 kHz; the standard variant retains the original fan-driver mapping."
+      },
+      "ota_summary": {
+        "zh-CN": "A1 PWM 频率统一为 25 kHz，普通版保留原风机驱动板映射。",
+        "en": "A1 PWM runs at 25 kHz; the standard variant retains the original fan-driver mapping."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.23:b001"
+      ]
+    },
+    {
+      "change_id": "a1-fresh-air",
+      "version": "0.9.23",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1"
+        ],
+        "variants": [
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "可选新风固件与独立风机",
+        "en": "Optional fresh-air firmware and second fan"
+      },
+      "description": {
+        "zh-CN": "新风版使用串口 TX 输出 PWM、RX 接收转速，需兼容风扇和正确接线；支持独立电源、手动/自动、极性与输出映射，默认每转 2 脉冲，MQTT 与 Home Assistant 提供新风实体。",
+        "en": "The fresh-air variant uses serial TX for PWM and RX for tachometer input and requires compatible wiring and fans. It supports independent power, manual/automatic mode, polarity and output mapping, defaults to two pulses per revolution, and exposes fresh-air MQTT/Home Assistant entities."
+      },
+      "ota_summary": {
+        "zh-CN": "新风版使用串口 TX 输出 PWM、RX 接收转速，需兼容风扇和正确接线；支持独立电源、手动/自动、极性与输出映射，默认每转 2 脉冲，MQTT 与 Home Assistant 提供新风实体。",
+        "en": "The fresh-air variant uses serial TX for PWM and RX for tachometer input and requires compatible wiring and fans. It supports independent power, manual/automatic mode, polarity and output mapping, defaults to two pulses per revolution, and exposes fresh-air MQTT/Home Assistant entities."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.23:b001",
+        "v0.9.23:b002",
+        "v0.9.23:b004"
+      ]
+    },
+    {
+      "change_id": "a1-fresh-air-coupling",
+      "version": "0.9.23",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1"
+        ],
+        "variants": [
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "双风机联动策略",
+        "en": "Dual-fan coupling policies"
+      },
+      "description": {
+        "zh-CN": "新风可独立调速、按原风机比例限制，或提高原风机最低转速；整机关机关闭两路，保留已有联动设置。",
+        "en": "Fresh-air speed can be independent, limited by the main fan or raise the main fan’s minimum speed. Powering off the unit stops both channels and preserves existing binding settings."
+      },
+      "ota_summary": {
+        "zh-CN": "新风可独立调速、按原风机比例限制，或提高原风机最低转速；整机关机关闭两路，保留已有联动设置。",
+        "en": "Fresh-air speed can be independent, limited by the main fan or raise the main fan’s minimum speed. Powering off the unit stops both channels and preserves existing binding settings."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.23:b003"
+      ]
+    },
+    {
+      "change_id": "a1-dual-auto-settings",
+      "version": "0.9.23",
+      "type": "improvement",
+      "component": "bundled_web",
+      "scope": {
+        "models": [
+          "a1"
+        ],
+        "variants": [
+          "full",
+          "fresh-air"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "统一两路自动调速设置",
+        "en": "Unified automatic settings for both fans"
+      },
+      "description": {
+        "zh-CN": "原风机和新风自动设置合并到同一页，使用 PM2.5、甲醛、CO₂ 多选框，改善切换与受限时的控制。",
+        "en": "Main and fresh-air automatic settings share a page with PM2.5, formaldehyde and CO₂ checkboxes, improving switching and control under limits."
+      },
+      "ota_summary": {
+        "zh-CN": "原风机和新风自动设置合并到同一页，使用 PM2.5、甲醛、CO₂ 多选框，改善切换与受限时的控制。",
+        "en": "Main and fresh-air automatic settings share a page with PM2.5, formaldehyde and CO₂ checkboxes, improving switching and control under limits."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.23:b004"
+      ]
+    },
+    {
+      "change_id": "a1-fresh-air-memory",
+      "version": "0.9.23",
+      "type": "improvement",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1"
+        ],
+        "variants": [
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "减少新风配置开销",
+        "en": "Reduce fresh-air configuration overhead"
+      },
+      "description": {
+        "zh-CN": "减少策略配置的临时分配和网页占用，保留 16 KiB 内存保护；高负载仍可能返回 busy。",
+        "en": "Reduces temporary policy allocations and page size, retains the 16 KiB memory guard and may still return busy under heavy load."
+      },
+      "ota_summary": {
+        "zh-CN": "减少策略配置的临时分配和网页占用，保留 16 KiB 内存保护；高负载仍可能返回 busy。",
+        "en": "Reduces temporary policy allocations and page size, retains the 16 KiB memory guard and may still return busy under heavy load."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.23:b005"
+      ]
+    },
+    {
+      "change_id": "a1-fresh-air-startup-limit",
+      "version": "0.9.23",
+      "type": "breaking",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1"
+        ],
+        "variants": [
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "新风接线与启动阶段限制",
+        "en": "Fresh-air wiring and startup limitations"
+      },
+      "description": {
+        "zh-CN": "新风冷上电和引导阶段不能保证关机电平；使用前需确认兼容接线。完整版 OTA 空间很小，可选择保留配网页的新风精简版。",
+        "en": "The off level is not guaranteed during fresh-air cold power-on or boot; confirm compatible wiring before use. Full-variant OTA space is very limited; a fresh-air minimal variant retains setup pages."
+      },
+      "ota_summary": {
+        "zh-CN": "新风冷上电和引导阶段不能保证关机电平；使用前需确认兼容接线。完整版 OTA 空间很小，可选择保留配网页的新风精简版。",
+        "en": "The off level is not guaranteed during fresh-air cold power-on or boot; confirm compatible wiring before use. Full-variant OTA space is very limited; a fresh-air minimal variant retains setup pages."
+      },
+      "summary_complete": true,
+      "critical": true,
+      "source_refs": [
+        "v0.9.23:b006",
+        "v0.9.23:b007"
+      ]
+    }
+  ],
+  "merges": []
+}

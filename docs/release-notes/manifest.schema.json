@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Public reviewed release-note manifest v1",
+  "type": "object",
+  "required": ["schema", "supported_scopes", "stable", "archive_sha256", "releases", "changes", "merges", "sources"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": 1},
+    "supported_scopes": {"type": "array", "items": {"type": "object", "required": ["branch", "channel"], "properties": {"branch": {"const": "main"}, "channel": {"const": "stable"}}}},
+    "stable": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+    "archive_sha256": {"$ref": "#/$defs/sha"},
+    "releases": {"type": "array", "items": {"type": "object", "required": ["version", "tag", "previous", "branch", "channel", "targets", "coverage", "baseline_confirmed", "history_status"], "properties": {"previous": {"type": ["string", "null"]}, "targets": {"type": "array", "items": {"type": "object", "required": ["model", "variant", "hardware", "kind", "tag_commit", "source_commit", "frontend", "path", "size", "sha256"], "properties": {"sha256": {"$ref": "#/$defs/sha"}, "source_commit": {"$ref": "#/$defs/commit"}, "path": {"type": "string", "pattern": "^/releases/"}, "size": {"type": "integer", "minimum": 1}}}}, "baseline_confirmed": {"type": "boolean"}, "history_status": {"enum": ["insufficient", "pending", "reviewed", "no_user_changes"]}}}},
+    "changes": {"type": "array", "items": {"type": "object", "required": ["change_id", "version", "type", "component", "scope", "review_status", "lifecycle", "title", "description", "ota_summary", "summary_complete", "critical"], "properties": {"change_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$"}, "type": {"enum": ["feature", "improvement", "bugfix", "security", "breaking"]}, "component": {"enum": ["firmware", "bundled_web", "service"]}, "review_status": {"const": "approved"}, "scope": {"$ref": "#/$defs/scope"}, "lifecycle": {"type": "object", "required": ["state"], "properties": {"state": {"enum": ["active", "withdrawn", "superseded"]}, "no_residual_impact": {"type": "boolean"}, "superseded_by": {"type": "string"}, "supersedes": {"type": "array", "items": {"type": "string"}}}}, "title": {"$ref": "#/$defs/localized"}, "description": {"$ref": "#/$defs/localized"}, "ota_summary": {"$ref": "#/$defs/localized"}, "summary_complete": {"type": "boolean"}, "critical": {"type": "boolean"}}}},
+    "merges": {"type": "array"},
+    "sources": {"type": "object"}
+  },
+  "$defs": {
+    "sha": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "commit": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+    "localized": {"type": "object", "properties": {"zh-CN": {"type": "string", "minLength": 1}, "en": {"type": "string", "minLength": 1}}, "additionalProperties": false},
+    "scope": {"type": "object", "required": ["models", "variants", "hardware", "branches", "channels"], "additionalProperties": false, "properties": {"models": {"$ref": "#/$defs/set"}, "variants": {"$ref": "#/$defs/set"}, "hardware": {"$ref": "#/$defs/set"}, "branches": {"$ref": "#/$defs/set"}, "channels": {"$ref": "#/$defs/set"}}},
+    "set": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+  }
+}

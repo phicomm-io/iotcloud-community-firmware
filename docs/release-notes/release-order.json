@@ -1,0 +1,143 @@
+{
+  "schema": 1,
+  "releases": [
+    {
+      "version": "0.9.0",
+      "previous": null,
+      "branch": "main",
+      "channel": "stable"
+    },
+    {
+      "version": "0.9.1",
+      "previous": "0.9.0",
+      "branch": "main",
+      "channel": "stable"
+    },
+    {
+      "version": "0.9.2",
+      "previous": "0.9.1",
+      "branch": "main",
+      "channel": "stable"
+    },
+    {
+      "version": "0.9.3",
+      "previous": "0.9.2",
+      "branch": "main",
+      "channel": "stable"
+    },
+    {
+      "version": "0.9.4",
+      "previous": "0.9.3",
+      "branch": "main",
+      "channel": "stable"
+    },
+    {
+      "version": "0.9.5",
+      "previous": "0.9.4",
+      "branch": "main",
+      "channel": "stable"
+    },
+    {
+      "version": "0.9.6",
+      "previous": "0.9.5",
+      "branch": "main",
+      "channel": "stable"
+    },
+    {
+      "version": "0.9.7",
+      "previous": "0.9.6",
+      "branch": "main",
+      "channel": "stable"
+    },
+    {
+      "version": "0.9.8",
+      "previous": "0.9.7",
+      "branch": "main",
+      "channel": "stable"
+    },
+    {
+      "version": "0.9.9",
+      "previous": "0.9.8",
+      "branch": "main",
+      "channel": "stable"
+    },
+    {
+      "version": "0.9.10",
+      "previous": "0.9.9",
+      "branch": "main",
+      "channel": "stable"
+    },
+    {
+      "version": "0.9.11",
+      "previous": "0.9.10",
+      "branch": "main",
+      "channel": "stable"
+    },
+    {
+      "version": "0.9.12",
+      "previous": "0.9.11",
+      "branch": "main",
+      "channel": "stable"
+    },
+    {
+      "version": "0.9.13",
+      "previous": "0.9.12",
+      "branch": "main",
+      "channel": "stable"
+    },
+    {
+      "version": "0.9.14",
+      "previous": "0.9.13",
+      "branch": "main",
+      "channel": "stable"
+    },
+    {
+      "version": "0.9.15",
+      "previous": "0.9.14",
+      "branch": "main",
+      "channel": "stable"
+    },
+    {
+      "version": "0.9.16",
+      "previous": "0.9.15",
+      "branch": "main",
+      "channel": "stable"
+    },
+    {
+      "version": "0.9.17",
+      "previous": "0.9.16",
+      "branch": "main",
+      "channel": "stable"
+    },
+    {
+      "version": "0.9.18",
+      "previous": "0.9.17",
+      "branch": "main",
+      "channel": "stable"
+    },
+    {
+      "version": "0.9.19",
+      "previous": "0.9.18",
+      "branch": "main",
+      "channel": "stable"
+    },
+    {
+      "version": "0.9.20",
+      "previous": "0.9.19",
+      "branch": "main",
+      "channel": "stable"
+    },
+    {
+      "version": "0.9.21",
+      "previous": "0.9.20",
+      "branch": "main",
+      "channel": "stable"
+    },
+    {
+      "version": "0.9.23",
+      "previous": "0.9.21",
+      "branch": "main",
+      "channel": "stable"
+    }
+  ]
+}
