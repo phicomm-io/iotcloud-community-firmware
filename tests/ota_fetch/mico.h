@@ -12,6 +12,9 @@
 #include <string.h>
 #include <sys/random.h>
 #define kNoErr 0
+/* Match the public SDK header, whose shutdown constant differs from lwIP. */
+#undef SHUT_RDWR
+#define SHUT_RDWR 3
 #define Station 0
 typedef struct {char dns[16];} IPStatusTypedef;
 static inline uint32_t mico_rtos_get_time(void){struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);return (uint32_t)(t.tv_sec*1000+t.tv_nsec/1000000);}

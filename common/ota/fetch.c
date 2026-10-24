@@ -67,7 +67,9 @@ static void handshake_observer(mico_thread_arg_t arg) {
     while(mico_rtos_get_semaphore(&t->handshake_stop,20)!=kNoErr) {
         if(ota_job_cancelled() || (uint32_t)(mico_rtos_get_time()-start)>=OTA_FETCH_HANDSHAKE_MS ||
            (int32_t)(t->deadline-mico_rtos_get_time())<=0) {
-            shutdown(t->fd,SHUT_RDWR);break;
+            /* mocIP forwards this directly to lwIP, whose ABI uses 2. The
+             * public MiCO header incorrectly defines SHUT_RDWR as 3. */
+            shutdown(t->fd,2);break;
         }
     }
     mico_rtos_set_semaphore(&t->handshake_done);
