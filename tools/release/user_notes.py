@@ -193,7 +193,8 @@ def compile_manifest(data=DATA, archive=None, formal=False):
             raise ValueError('Invalid scope: ' + ref)
         if scope['branches'] != ['main'] or scope['channels'] != ['stable']:
             raise ValueError('Only explicitly reviewed main/stable is supported')
-        public = {k: copy.deepcopy(v) for k, v in row.items() if k != 'source_refs'}
+        public = {k: copy.deepcopy(row[k]) for k in ('change_id', 'version', 'type', 'component', 'scope', 'review_status',
+                  'lifecycle', 'title', 'description', 'ota_summary', 'summary_complete', 'critical')}
         # No fallback: incomplete locales remain visibly incomplete coverage.
         approved.append(public)
     releases = []
@@ -218,7 +219,7 @@ def compile_manifest(data=DATA, archive=None, formal=False):
             target_rows.append(dict(model=model, variant=variant, hardware='*', kind=kind,
                                     tag_commit=release['commit'], source_commit=source,
                                     frontend=info['frontend'], **asset))
-            applicable = [c for c in all_changes if c['version'] == ver and model in c['scope']['models'] and variant in c['scope']['variants']]
+            applicable = [c for c in all_changes if c['component'] != 'service' and c['version'] == ver and model in c['scope']['models'] and variant in c['scope']['variants']]
             incomplete = any(c in pending for c in applicable)
             languages = [lang for lang in LOCALES if all(c.get(field, {}).get(lang, '').strip()
                          for c in applicable for field in ('title', 'description'))]

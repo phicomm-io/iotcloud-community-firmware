@@ -75,6 +75,17 @@ class UserNotesTests(unittest.TestCase):
         self.assertTrue(any('en' not in c['locales'] for c in release['coverage']))
         self.assertIn('Translation pending review', notes.history_html(manifest, 'en'))
 
+    def test_service_translation_does_not_block_firmware_coverage(self):
+        document = notes.read(self.data / 'changes.json')
+        row = next(c for c in document['changes'] if c['component'] == 'service' and c['version'] not in ('0.9.0', '0.9.5'))
+        row['title'].pop('en')
+        row['internal_review_reason'] = 'PRIVATE REVIEW TEXT'
+        (self.data / 'changes.json').write_bytes(notes.encoded(document))
+        manifest, _ = notes.compile_manifest(self.data)
+        release = next(r for r in manifest['releases'] if r['version'] == row['version'])
+        self.assertTrue(all('en' in c['locales'] for c in release['coverage']))
+        self.assertNotIn('PRIVATE REVIEW TEXT', json.dumps(manifest))
+
     def test_published_archive_metadata_cannot_be_rewritten(self):
         self.change('catalog.snapshot.json', lambda d: d['releases'][0].update(commit='0' * 40))
         with self.assertRaisesRegex(ValueError, 'snapshot hash'):
