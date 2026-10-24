@@ -2,12 +2,13 @@
 """Generate immutable release metadata, including downloads for every model."""
 import argparse, hashlib, html, json, re
 from pathlib import Path
-PRODUCTS={'tc1':'tc1_a1','m1':'m1','a1':'a1'}
+PRODUCTS={'tc1':'tc1_a1','m1':'m1','a1':'a1','daikin':'daikin'}
 def make(tag, commit, directory, notes, legacy=False, require_variants=False):
     if not re.fullmatch(r'v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)',tag):raise ValueError('invalid tag')
     if not re.fullmatch('[0-9a-f]{40}',commit):raise ValueError('invalid commit')
     release={'schema':1,'tag':tag,'version':tag[1:],'commit':commit,'notes':f'/releases/{tag}/notes.md','models':{}}
     for model,product in PRODUCTS.items():
+        if model=='daikin' and not require_variants and not (directory/'phicomm_daikin.all.bin').exists():continue
         files={}
         for kind,suffix in [('signed','ota.bin.signed'),('raw','ota.bin.raw'),('full','all.bin')]:
             name=f'phicomm_{product}.{suffix}'
@@ -29,10 +30,11 @@ def make(tag, commit, directory, notes, legacy=False, require_variants=False):
                 release['models'][model]['source_commit']=source
                 release['models'][model]['source_relation']='documentation_only_difference'
     slim = 'no-frontend-resources'
-    # Old catalogs remain readable. New production releases require all eight.
+    # Old catalogs remain readable. New production releases require all nine.
     include = require_variants or any(directory.glob('*-no-frontend-resources.*'))
     if include:
         for model, product in PRODUCTS.items():
+            if model=='daikin':continue
             files = {}
             for kind, suffix in [('signed','ota.bin.signed'),('raw','ota.bin.raw'),('full','all.bin')]:
                 name = f'phicomm_{product}-{slim}.{suffix}'

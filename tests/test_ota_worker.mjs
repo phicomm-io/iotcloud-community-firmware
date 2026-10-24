@@ -25,3 +25,9 @@ test('fresh-air routes require A1 and never substitute ordinary images',async()=
   for(const model of ['m1','tc1'])assert.equal((await worker.fetch(new Request(`http://ota/ota/${model}/${variant}/latest.json`),storage)).status,404);
  }
 });
+test('DAIKIN has a full manifest and rejects all variant routes',async()=>{
+ const storage={RELEASES:{get:async()=>({json:async()=>({tag:'v1.0.0',version:'1.0.0',commit:'b'.repeat(40),models:{daikin:{path:'/releases/v1.0.0/phicomm_daikin.ota.bin.signed',size:100,sha256:'daikin'}}})})}};
+ const r=await worker.fetch(new Request('http://ota/ota/daikin/latest.json'),storage);
+ assert.equal(r.status,200);assert.equal((await r.json()).model,'daikin');
+ for(const variant of ['no-frontend-resources','fresh-air','fresh-air-no-frontend-resources'])assert.equal((await worker.fetch(new Request(`http://ota/ota/daikin/${variant}/latest.json`),storage)).status,404);
+});

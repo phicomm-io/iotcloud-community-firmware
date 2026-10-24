@@ -86,9 +86,19 @@ void counter_decimal(uint64_t value,char *out){ota_counter_decimal(value,out);}
     def test_wrong_model_and_key(self):
         self.assertFalse(self.run_package(self.valid, model=2))
         self.assertEqual(self.count('erases'), 0)
+
         bad = package.sign(self.image, 'tc1', '2.3.5', 'a'*40, ec.generate_private_key(ec.SECP256R1()))
         self.assertFalse(self.run_package(bad))
         self.assertEqual(self.count('erases'), 0)
+
+    def test_daikin_target_and_cross_model_rejection(self):
+        data=package.sign(self.image,'daikin','2.3.5','a'*40,self.key)
+        self.assertTrue(self.run_package(data,model=4))
+        for model in (1,2,3):
+            self.assertFalse(self.run_package(data,model=model))
+            self.assertEqual(self.count('erases'),0)
+        self.assertFalse(self.run_package(self.valid,model=4))
+        self.assertEqual(self.count('erases'),0)
 
     def test_image_flash_faults_and_length(self):
         mutated = bytearray(self.valid); mutated[-1] ^= 1
