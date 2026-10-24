@@ -28,16 +28,16 @@
 
 产物位于 `build/daikin-release/`：
 
-- `phicomm_daikin.all.bin`：首次串口安装的完整镜像，写入 **0x0**。
-- `phicomm_daikin.ota.bin`：未签名应用镜像，仅供显式救援入口。
-- 正式发布链生成 `phicomm_daikin.ota.bin.signed`，日常网页更新使用该签名包。
+- `daikin_BRY88AX151K.all.bin`：首次串口安装的完整镜像，写入 **0x0**。
+- `daikin_BRY88AX151K.ota.bin`：未签名应用镜像，仅供显式救援入口。
+- 正式发布链生成 `daikin_BRY88AX151K.ota.bin.signed`，日常网页更新使用该签名包。
 - `manifest.json`、`SHA256SUMS`：源码版本、前端锁、目标与校验信息。
 
 首次安装前完整备份 Flash。进入下载模式后使用 ESPTool，例如：
 
 ```sh
 python3 -m esptool --chip esp32 --port PORT read_flash 0 0x400000 original.bin
-python3 -m esptool --chip esp32 --port PORT write_flash 0 build/daikin-release/phicomm_daikin.all.bin
+python3 -m esptool --chip esp32 --port PORT write_flash 0 build/daikin-release/daikin_BRY88AX151K.all.bin
 ```
 
 松开 BOOT0 后复位。连接 `DAIKIN-<MAC末六位>` 热点，访问 `http://192.168.4.1/`，在网络设置中配置 Wi-Fi。Station 稳定两分钟后关闭临时热点；网络不可用时重新开放恢复入口。网页认证用户名为 `admin`，可设置访问密码。

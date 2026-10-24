@@ -260,8 +260,9 @@ jobs:
       - name: Collect ESP release assets
         run: |
           mkdir -p release
-          cp build/daikin-release/phicomm_daikin.all.bin release/
-          cp build/daikin-release/phicomm_daikin.ota.bin release/phicomm_daikin.ota.bin.raw
+          stem="$(python3 tools/release/products.py daikin)"
+          cp "build/daikin-release/$stem.all.bin" release/
+          cp "build/daikin-release/$stem.ota.bin" "release/$stem.ota.bin.raw"
           cp build/daikin-release/manifest.json release/manifest-daikin.json
           (cd release && sha256sum * > SHA256SUMS-daikin)
       - uses: actions/upload-artifact@v4
@@ -332,18 +333,16 @@ jobs:
            if [ "$model" = daikin ]; then variants="full"; fi
            if [ "$model" = a1 ]; then variants="$variants fresh-air fresh-air-no-frontend-resources"; fi
            for variant in $variants; do
-            product="$model"
-            if [ "$model" = tc1 ]; then product=tc1_a1; fi
-            if [ "$variant" != full ]; then product="$product-$variant"; fi
-            if test -s "previous/phicomm_$product.ota.bin.signed"; then
-              cp "previous/phicomm_$product.ota.bin.signed" release/
-              tail -c +193 "release/phicomm_$product.ota.bin.signed" | cmp - "release/phicomm_$product.ota.bin.raw"
+            stem="$(python3 tools/release/products.py "$model" "$variant")"
+            if test -s "previous/$stem.ota.bin.signed"; then
+              cp "previous/$stem.ota.bin.signed" release/
+              tail -c +193 "release/$stem.ota.bin.signed" | cmp - "release/$stem.ota.bin.raw"
             else
               python3 tools/ota/package.py --key "$key_file" --model "$model" \
                 --version "$TAG_NAME" --commit "$(git rev-parse HEAD)" \
-                "release/phicomm_$product.ota.bin.raw" "release/phicomm_$product.ota.bin.signed"
+                "release/$stem.ota.bin.raw" "release/$stem.ota.bin.signed"
             fi
-            python3 tools/release/verify.py "release/phicomm_$product.ota.bin.signed" "$model" "$TAG_NAME" "$(git rev-parse HEAD)"
+            python3 tools/release/verify.py "release/$stem.ota.bin.signed" "$model" "$TAG_NAME" "$(git rev-parse HEAD)"
            done
           done
           (cd release && sha256sum *.bin *.bin.raw *.bin.signed > SHA256SUMS && sha256sum -c SHA256SUMS)

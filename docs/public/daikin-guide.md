@@ -16,7 +16,7 @@ ESP32 / 4 MB Flash 版本使用同一份通用固件，自动识别 PM2005 / PM2
 在[下载页](../index.html#releases)选择**明确包含 DAIKIN 的版本**。旧版归档只有斐讯设备时，不要上传其它型号镜像。本设备仅提供完整版。
 
 1. 确认 ESP32 / 4 MB Flash 与接线，完整备份原始 Flash；备份含有联网凭据，妥善保存。
-2. 将 GPIO0 / BOOT0 在上电时拉低，进入 ESP32 下载模式。使用 ESPTool 将 `phicomm_daikin.all.bin` 写入 **0x0**。不要以 factory 镜像执行网页 OTA。
+2. 将 GPIO0 / BOOT0 在上电时拉低，进入 ESP32 下载模式。使用 ESPTool 将 `daikin_BRY88AX151K.all.bin` 写入 **0x0**。不要以 factory 镜像执行网页 OTA。
 3. 松开 BOOT0 并重新上电，连接 `DAIKIN-<MAC末六位>` 热点，打开 `http://192.168.4.1/` 设置 Wi-Fi。
 4. 在路由器中查找设备 IP，通过本地网页确认读数。CO₂ 需要等待预热；未安装甲醛模块时不会显示甲醛卡片。
 
@@ -24,9 +24,11 @@ ESP32 / 4 MB Flash 版本使用同一份通用固件，自动识别 PM2005 / PM2
 
 ## 日常更新与恢复
 
-网页的固件更新页上传 `phicomm_daikin.ota.bin.signed`。设备验证本项目签名、目标型号与镜像后安装，Wi-Fi 和 MQTT 配置保留。当前通过手动文件更新，不提供 URL 下载或精简包。
+历史版本可能仍使用 `phicomm_daikin` 前缀，文件名以对应版本的下载页和 `SHA256SUMS` 为准。
 
-页面另有明确标记的未签名救援入口，仅用于可信的原始应用镜像。发布文件名为 `phicomm_daikin.ota.bin.raw`，本地构建文件名为 `phicomm_daikin.ota.bin`。无法访问网页时，可重新进入 BOOT0 下载模式，恢复原始备份或安装完整镜像。详见[固件更新](firmware-update)。
+网页的固件更新页上传 `daikin_BRY88AX151K.ota.bin.signed`。设备验证本项目签名、目标型号与镜像后安装，Wi-Fi 和 MQTT 配置保留。当前通过手动文件更新，不提供 URL 下载或精简包。
+
+页面另有明确标记的未签名救援入口，仅用于可信的原始应用镜像。发布文件名为 `daikin_BRY88AX151K.ota.bin.raw`，本地构建文件名为 `daikin_BRY88AX151K.ota.bin`。无法访问网页时，可重新进入 BOOT0 下载模式，恢复原始备份或安装完整镜像。详见[固件更新](firmware-update)。
 
 ## IotCloud、Home Assistant 与 A1
 

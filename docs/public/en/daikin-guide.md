@@ -16,7 +16,7 @@ The OLED and internal GPIO26 indicator are currently unused. BRY88AA151K has dif
 Choose a release that **explicitly includes DAIKIN** on the [downloads page](../../index.html#releases). Do not substitute another model's image when an older archive lists only Phicomm devices. This device has a full image only.
 
 1. Confirm the ESP32 / 4 MB Flash board and wiring, then back up the entire original Flash. Keep that backup private because it contains network credentials.
-2. Hold GPIO0 / BOOT0 low while powering on to enter the ESP32 bootloader. Use ESPTool to write `phicomm_daikin.all.bin` at **0x0**. Never upload the factory image through web OTA.
+2. Hold GPIO0 / BOOT0 low while powering on to enter the ESP32 bootloader. Use ESPTool to write `daikin_BRY88AX151K.all.bin` at **0x0**. Never upload the factory image through web OTA.
 3. Release BOOT0 and power cycle. Join `DAIKIN-<last six MAC digits>` and open `http://192.168.4.1/` to configure Wi-Fi.
 4. Find the device IP in your router and check the local readings. Allow CO₂ to warm up; no formaldehyde card appears without its module.
 
@@ -24,9 +24,11 @@ Use ESP32-compatible 3.3 V serial signals and avoid back-powering the device fro
 
 ## Updates and recovery
 
-Upload `phicomm_daikin.ota.bin.signed` from the firmware update page. The device verifies the project signature, target and image before installing; Wi-Fi and MQTT settings remain. Updates currently use manual files; URL downloads and slim packages are unavailable.
+Historical releases may still use the `phicomm_daikin` prefix. Use the filenames listed on that release’s download page and in `SHA256SUMS`.
 
-An explicitly labelled unsigned recovery input accepts a trusted raw application image. Releases name it `phicomm_daikin.ota.bin.raw`; local builds use `phicomm_daikin.ota.bin`. If the web interface is unavailable, enter the BOOT0 bootloader again and restore the original backup or a complete image. See [Firmware updates](firmware-update).
+Upload `daikin_BRY88AX151K.ota.bin.signed` from the firmware update page. The device verifies the project signature, target and image before installing; Wi-Fi and MQTT settings remain. Updates currently use manual files; URL downloads and slim packages are unavailable.
+
+An explicitly labelled unsigned recovery input accepts a trusted raw application image. Releases name it `daikin_BRY88AX151K.ota.bin.raw`; local builds use `daikin_BRY88AX151K.ota.bin`. If the web interface is unavailable, enter the BOOT0 bootloader again and restore the original backup or a complete image. See [Firmware updates](firmware-update).
 
 ## IotCloud, Home Assistant and A1
 
