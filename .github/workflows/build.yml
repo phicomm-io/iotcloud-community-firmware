@@ -397,6 +397,12 @@ jobs:
           python3 tools/release/catalog.py "$TAG_NAME" "$GITHUB_SHA" release release-notes.md
           (cd release && sha256sum -c SHA256SUMS)
           (cd release && sha256sum *.bin *.bin.raw *.bin.signed manifest-daikin.json release.json notes.md index.html > SHA256SUMS && sha256sum -c SHA256SUMS)
+      - name: Verify reviewed notes against staged signed firmware
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh repo clone phicomm-io/phicomm-io.github.io "$RUNNER_TEMP/retained-notes-archive" -- --depth=1
+          python3 tools/release/verify_user_notes_release.py release "$RUNNER_TEMP/retained-notes-archive"
       - name: Stage GitHub release and immutable OTA assets
         env:
           GH_TOKEN: ${{ github.token }}

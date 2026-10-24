@@ -9,6 +9,7 @@ case "${1:-}" in
  "") ;;
  *) echo "usage: $0 [--preview|--build-only]" >&2; exit 2 ;;
 esac
+python3 -m pip install --quiet Markdown==3.7 cryptography==46.0.3
 : "${PHICOMM_PAGES_REPO:=phicomm-io/phicomm-io.github.io}"
 : "${PHICOMM_PAGES_BRANCH:=main}"
 target=$(mktemp -d)

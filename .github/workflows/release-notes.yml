@@ -4,11 +4,22 @@ on:
     branches: [main, 'feat/**']
   pull_request:
   workflow_dispatch:
+    inputs:
+      runner:
+        type: choice
+        default: auto
+        options: [auto, github-hosted, self-hosted]
 permissions:
   contents: read
 jobs:
   static-notes:
-    runs-on: ubuntu-latest
+    runs-on: >-
+      ${{ fromJSON(
+        (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
+        ((github.event_name == 'workflow_dispatch' && inputs.runner == 'self-hosted') ||
+         (vars.PHICOMM_CI_RUNNER == 'self-hosted' &&
+          (github.event_name != 'workflow_dispatch' || inputs.runner == 'auto'))) &&
+        '["self-hosted","linux","x64","phicomm-build"]' || '["ubuntu-22.04"]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -36,7 +47,11 @@ jobs:
       - name: Browser and no-JavaScript history
         run: |
           npm install --no-save --package-lock=false @playwright/test@1.64.1
-          npx playwright install --with-deps chromium
+          if [[ "${{ runner.environment }}" == github-hosted ]]; then
+            npx playwright install --with-deps chromium
+          else
+            npx playwright install chromium
+          fi
           python3 -m http.server 18765 --bind 127.0.0.1 --directory build/pages > "$RUNNER_TEMP/notes-http.log" 2>&1 &
           server=$!
           trap 'kill "$server"' EXIT
