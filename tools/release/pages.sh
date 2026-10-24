@@ -65,6 +65,12 @@ for entry in .github tools; do
   cp -a "$target/public/$entry" build/pages/
  fi
 done
+# Pages builds IotCloud from its own lock. Publish the same verified frontend
+# as these guides and device demos instead of retaining an older platform UI.
+if [[ -d build/pages/tools ]]; then
+ cp frontend.lock.json build/pages/tools/iotcloud.lock.json
+ cp tools/frontend_release.py build/pages/tools/frontend_release.py
+fi
 if [[ -f "$target/public/demos/platform/release.json" ]]; then
  rm -rf build/pages/demos/platform
  cp -a "$target/public/demos/platform" build/pages/demos/
