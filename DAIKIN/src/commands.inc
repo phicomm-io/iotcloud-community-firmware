@@ -8,7 +8,7 @@ static void state(JsonObject out){
   out["mqtt_last_event"]=mqttLastEvent;out["mqtt_error_type"]=mqttErrorType;out["mqtt_socket_error"]=mqttSocketError;
   out["button_pressed"]=digitalRead(34)==LOW;
   out["wifi_connected"]=WiFi.status()==WL_CONNECTED;out["ssid"]=config["wifi"]["ssid"]|"";
-  out["ip"]=WiFi.localIP().toString();out["rssi"]=WiFi.RSSI();
+  out["ip"]=(WiFi.status()==WL_CONNECTED?WiFi.localIP():WiFi.softAPIP()).toString();out["rssi"]=WiFi.RSSI();
   out["ap_active"]=bool(WiFi.getMode()&WIFI_AP);out["ap_name"]=apName;
   out["wifi_password_set"]=strlen(config["wifi"]["password"]|"")>0;
   out["web_password_set"]=strlen(config["auth"]["password"]|"")>0;

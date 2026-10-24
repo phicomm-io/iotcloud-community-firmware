@@ -17,7 +17,7 @@ Choose a release that **explicitly includes DAIKIN** on the [downloads page](../
 
 1. Confirm the ESP32 / 4 MB Flash board and wiring, then back up the entire original Flash. Keep that backup private because it contains network credentials.
 2. Hold GPIO0 / BOOT0 low while powering on to enter the ESP32 bootloader. Use ESPTool to write `daikin_BRY88AX151K.all.bin` at **0x0**. Never upload the factory image through web OTA.
-3. Release BOOT0 and power cycle. Join `DAIKIN-<last six MAC digits>` and open `http://192.168.4.1/` to configure Wi-Fi.
+3. Release BOOT0 and power cycle. Join `BRY88AX151K-AP-<last six MAC digits in uppercase>` (for example, `BRY88AX151K-AP-AABBCC`) and open `http://192.168.0.1/` to configure Wi-Fi. The hotspot uses the same name and address when reopened by the button or after a network failure.
 4. Find the device IP in your router and check the local readings. Allow CO₂ to warm up; no formaldehyde card appears without its module.
 
 Use ESP32-compatible 3.3 V serial signals and avoid back-powering the device from a USB serial adapter. Review [Before flashing](flash-prep) if wiring is uncertain. A complete image or backup restore overwrites Flash; confirm the device and file first.

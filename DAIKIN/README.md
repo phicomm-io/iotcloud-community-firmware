@@ -40,7 +40,7 @@ python3 -m esptool --chip esp32 --port PORT read_flash 0 0x400000 original.bin
 python3 -m esptool --chip esp32 --port PORT write_flash 0 build/daikin-release/daikin_BRY88AX151K.all.bin
 ```
 
-松开 BOOT0 后复位。连接 `DAIKIN-<MAC末六位>` 热点，访问 `http://192.168.4.1/`，在网络设置中配置 Wi-Fi。Station 稳定两分钟后关闭临时热点；网络不可用时重新开放恢复入口。网页认证用户名为 `admin`，可设置访问密码。
+松开 BOOT0 后复位。连接 `BRY88AX151K-AP-<MAC末六位大写>` 热点（例如 `BRY88AX151K-AP-AABBCC`），访问 `http://192.168.0.1/`，在网络设置中配置 Wi-Fi。热点 IP 和网关均为 `192.168.0.1`，子网掩码为 `255.255.255.0`；首次启动、按键恢复及断网自动重开均使用此配置。Station 稳定两分钟后关闭临时热点；网络不可用时重新开放恢复入口。网页认证用户名为 `admin`，可设置访问密码。
 
 网页默认接受本项目 PHOTA001 / P-256 签名包，产品编号为 4；验证签名后才开始写入 OTA 槽位，并核对 ESP image、应用描述、目标标记以及 Flash 回读 SHA-256。显式未签名救援入口仍保留。不要上传 factory 镜像或其它产品的签名包。当前不提供在线 URL 下载和精简固件；ESP-IDF 的自动故障回滚与刷写掉电尚未实测。显示型号为 AX，应用描述中的 AB 标记保留以兼容已安装固件的 OTA 迁移。
 

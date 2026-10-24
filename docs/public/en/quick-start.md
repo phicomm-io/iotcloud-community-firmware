@@ -19,16 +19,16 @@ For ESP32 serial installation, see [DAIKIN installation and recovery](daikin-gui
 
 This section describes community firmware. Devices still running factory firmware should use [stock Wi-Fi setup without the app](stock-provision) first.
 
-If Wi-Fi has not been configured, the device opens a setup access point. Connect a phone or computer and use the setup address below (DAIKIN: `http://192.168.4.1/`; other models: `http://192.168.0.1/`).
+If Wi-Fi has not been configured, the device opens a setup access point. Connect a phone or computer and open `http://192.168.0.1/`.
 
 | Device | Setup access point |
 | --- | --- |
 | TC1, A1 hardware revision | `TC1-AP-<last six MAC digits>` |
 | M1 | `M1-AP-<last six MAC digits>` |
-| DAIKIN | `DAIKIN-<last six MAC digits>` (setup address `http://192.168.4.1/`) |
+| DAIKIN | `BRY88AX151K-AP-<last six MAC digits in uppercase>` |
 | A1 air purifier | `A1-AP-<last six MAC digits>` |
 
-Phicomm AP names use uppercase MAC digits; DAIKIN uses lowercase. Older firmware may use a different setup address; check its release notes.
+All setup AP names use uppercase MAC digits. Older firmware may use a different hotspot name or setup address; check its release notes.
 
 ## Open the device WebUI
 

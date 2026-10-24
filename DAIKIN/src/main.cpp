@@ -67,10 +67,15 @@ static bool saveConfig(DynamicJsonDocument &candidate){
   if(prefs.putString("config",text)!=text.length())return false;
   config.clear(); config.set(candidate);configText=text; updatePassword();return true;
 }
+static void startAccessPoint(){
+  const IPAddress address(192,168,0,1),netmask(255,255,255,0);
+  WiFi.softAPConfig(address,address,netmask);
+  WiFi.softAP(apName.c_str());
+}
 static void startWifi(){
   WiFi.mode(WIFI_AP_STA);
   // Recovery AP remains available when the saved station is unreachable.
-  WiFi.softAP(apName.c_str());
+  startAccessPoint();
   const char *ssid=config["wifi"]["ssid"]|"";
   if(*ssid)WiFi.begin(ssid,config["wifi"]["password"]|"");
   connectAt=millis();
@@ -85,7 +90,8 @@ void setup(){
   if(!prefs.begin("daikin",false)){Serial.println("NVS unavailable");while(true)delay(1000);}
   configText=prefs.getString("config","{}");if(deserializeJson(config,configText)||!config.is<JsonObject>()){Serial.println("Config corrupt; refusing to discard credentials");while(true)delay(1000);}
   updatePassword();indicator=config["indicator"]|false;
-  WiFi.mode(WIFI_AP_STA);deviceId=WiFi.macAddress();deviceId.replace(":","");deviceId.toLowerCase();apName="DAIKIN-"+deviceId.substring(6);
+  WiFi.mode(WIFI_AP_STA);deviceId=WiFi.macAddress();deviceId.replace(":","");deviceId.toLowerCase();
+  apName="BRY88AX151K-AP-"+deviceId.substring(6);apName.toUpperCase();
   startWifi();
   pmBus.begin(23,22,100000);thBus.begin(19,21,100000);pmBus.setTimeOut(50);thBus.setTimeOut(50);
   co2Uart.begin(9600,SERIAL_8N1,16,17);hchoUart.begin(9600,SERIAL_8N1,5,18);
@@ -132,7 +138,7 @@ void loop(){
   // Close initial recovery AP after station has been stable for two minutes.
   static uint32_t connectedSince=0;
   if(WiFi.status()==WL_CONNECTED){if(!connectedSince){connectedSince=now;if(MDNS.begin(("daikin-"+deviceId).c_str()))MDNS.addService("http","tcp",80);}if(uint32_t(now-connectedSince)>120000&&uint32_t(now-connectAt)>120000)WiFi.softAPdisconnect(true);}
-  else{if(connectedSince)MDNS.end();connectedSince=0;if(!(WiFi.getMode()&WIFI_AP))WiFi.softAP(apName.c_str());}
+  else{if(connectedSince)MDNS.end();connectedSince=0;if(!(WiFi.getMode()&WIFI_AP))startAccessPoint();}
   if(!otaActive&&rebootAt&&due(now,rebootAt))ESP.restart();
   // Local serial console uses the same bounded command dispatcher. Credentials
   // are accepted for provisioning but are never echoed or returned in queries.
