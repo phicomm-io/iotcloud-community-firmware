@@ -395,15 +395,22 @@ static json_object *average_body(const feature_sample_t *current, unsigned count
   number(o, "configured_count", count);
   json_build_object_add(o, "valid", json_object_new_boolean(n != 0));
   const char *keys[] = {"temperature", "humidity", "pm25", "formaldehyde"};
-  json_object *fields=json_object_new_object();
+  // The legacy complete sample already proves all four fields are available.
+  // Only partial samples need the explicit mask; avoid a redundant JSON graph
+  // on every complete sample in memory-constrained A1 background publishing.
+  bool complete=n!=0;
+  for(unsigned i=0;i<4;i++)complete=complete&&isfinite(mean[i]);
+  json_object *fields=complete?NULL:json_object_new_object();
   for (unsigned i = 0; i < 4; ++i) {
     bool valid=n && isfinite(mean[i]);
-    json_build_object_add(fields,keys[i],json_object_new_boolean(valid));
+    if(!complete)json_build_object_add(fields,keys[i],json_object_new_boolean(valid));
     if(valid)json_build_object_add(o,keys[i],json_object_new_double(mean[i]));
     else json_object_object_add(o,keys[i],NULL);
   }
-  json_build_object_add(fields,"co2",json_object_new_boolean(nc!=0));
-  json_build_object_add(o,"fields",fields);
+  if(!complete){
+    json_build_object_add(fields,"co2",json_object_new_boolean(nc!=0));
+    json_build_object_add(o,"fields",fields);
+  }
   return o;
 }
 #endif

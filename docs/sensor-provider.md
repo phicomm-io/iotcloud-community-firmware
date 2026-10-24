@@ -28,6 +28,8 @@ A1 对各字段分别聚合，不要求一个设备同时拥有四种数据。`s
 {"valid":true,"sample_count":1,"configured_count":1,"temperature":null,"humidity":null,"pm25":12,"formaldehyde":null,"fields":{"temperature":false,"humidity":false,"pm25":true,"formaldehyde":false}}
 ```
 
+四项基础数据全部有效时省略冗余 `fields` 对象，沿用完整样本的 `valid` 与独立的 `co2_valid`，避免增加 A1 周期发布的 JSON 内存峰值。部分数据或全部失效时显式提供 `fields`，缺失读数为 `null`。
+
 调速所选字段必须全部可用，否则使用已配置的离线风速；不使用缺失字段的零值运算。数据灯效按字段判断有效性。前端隐藏不可用的调速/灯效数据来源选项；数据失效不删除持久化规则或阈值，恢复后重新显示。用户保存启用规则时必须选择当前可用的数据。
 
 前端源码维护在相邻 `phicomm-community-frontend` 仓库。开发验证可显式使用：

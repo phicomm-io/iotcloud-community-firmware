@@ -94,13 +94,14 @@ def background_fixture():
     runtime=(ROOT/'common/runtime.c').read_text()
     engine=(ROOT/'common/engine.c').read_text()
     functions='\n'.join(function(engine,s) for s in (
-        'bool feature_sample_fresh(', 'unsigned feature_aggregate(',
+        'unsigned feature_sample_fresh_fields(', 'bool feature_sample_fresh(',
+        'static float sensor_statistic(', 'unsigned feature_aggregate(',
         'bool feature_co2_fresh(', 'unsigned feature_co2_aggregate('))
     functions+='\n#define number integer\n'+'\n'.join(function(runtime,s) for s in (
         'static void co2_body(', 'static json_object *sample_body(',
         'static json_object *average_body('))+'\n#undef number\n'
     fixture=status_fixture();fixture=fixture[:fixture.index('int main(void){')]
-    return fixture+'\n#include <math.h>\n'+functions+r'''
+    return fixture+'\n#define FEATURE_DEVICE_A1\n#include <math.h>\n'+functions+r'''
 static char background_golden[2048];
 static bool nested_ok,owned_background;
 static int nested_status(const char *topic,const char *body,bool retain){
