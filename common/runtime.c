@@ -69,7 +69,7 @@ static peer_runtime_t peers[FEATURE_MAX_PEERS];
 typedef struct {
   char id[13], ip[16];
   uint8_t token[16];
-  uint32_t boot, last_seen;
+  uint32_t boot, last_seen, last_read;
   bool valid, active;
 } sensor_session_t;
 static sensor_session_t sensor_sessions[FEATURE_MAX_PEERS];
@@ -455,7 +455,7 @@ static void passive_incoming(json_object *o, bool lan, bool retained, const char
     sensor_session_t *p=&sensor_sessions[i];
     if(p->valid && (uint32_t)(now-p->last_seen)>=SENSOR_SESSION_IDLE_MS)p->valid=false;
     if(p->valid && !strcmp(p->id,string(o,"src")) && p->boot==integer(o,"boot") && !memcmp(p->token,token,16)) {
-      p->last_seen=now;p->active=true;snprintf(p->ip,sizeof(p->ip),"%s",ip);permitted=true;break;
+      p->last_seen=p->last_read=now;p->active=true;snprintf(p->ip,sizeof(p->ip),"%s",ip);permitted=true;break;
     }
   }
   feature_sample_t sample=local_sample;
@@ -609,8 +609,9 @@ json_object *feature_json(const char *d) {
       sensor_session_t *session=&sensor_sessions[i];
       if(!session->valid || (uint32_t)(now_ms()-session->last_seen)>=SENSOR_SESSION_IDLE_MS)continue;
       json_object *p=json_object_new_object();js(p,"mac",session->id);js(p,"ip",session->ip);
-      json_build_object_add(p,"session_ready",json_object_new_boolean(session->active && (uint32_t)(now_ms()-session->last_seen)<FEATURE_STALE_MS));
-      number(p,"idle_ms",now_ms()-session->last_seen);json_build_array_add(a,p);
+      uint32_t idle=now_ms()-(session->active?session->last_read:session->last_seen);
+      json_build_object_add(p,"session_ready",json_object_new_boolean(session->active && idle<FEATURE_STALE_MS));
+      number(p,"idle_ms",idle);json_build_array_add(a,p);
     }
     number(o,"max_sessions",FEATURE_MAX_PEERS);
 #endif

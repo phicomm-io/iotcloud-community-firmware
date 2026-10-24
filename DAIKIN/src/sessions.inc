@@ -2,7 +2,7 @@
 static WiFiUDP sensorUdp;
 static uint32_t sensorBoot=0,sensorSequence=0;
 static String sensorRoot;
-struct SensorSession {String id,token;uint32_t boot=0,seen=0;IPAddress ip;bool used=false,active=false;};
+struct SensorSession {String id,token;uint32_t boot=0,seen=0,readAt=0;IPAddress ip;bool used=false,active=false;};
 static SensorSession sessions[4];
 // MiCO represents uint32 counters as signed JSON integers. Decode their bits
 // explicitly: ArduinoJson converts a negative integer directly to uint32 as 0.
@@ -34,7 +34,8 @@ static void sessionStatus(JsonObject out){
   out["max_sessions"]=4;JsonArray peers=out.createNestedArray("peers");
   for(auto &s:sessions)if(s.used&&uint32_t(millis()-s.seen)<1800000){
     JsonObject p=peers.createNestedObject();p["mac"]=s.id;p["ip"]=s.active?s.ip.toString():String("");
-    p["session_ready"]=s.active&&uint32_t(millis()-s.seen)<15000;p["idle_ms"]=uint32_t(millis()-s.seen);
+    const uint32_t idle=uint32_t(millis()-(s.active?s.readAt:s.seen));
+    p["session_ready"]=s.active&&idle<15000;p["idle_ms"]=idle;
   }
 }
 static bool sessionGrant(const String &text){
@@ -49,7 +50,7 @@ static bool sessionGrant(const String &text){
   SensorSession *slot=nullptr;
   for(auto &s:sessions){if(s.used&&uint32_t(millis()-s.seen)>=1800000)s.used=false;if(s.used&&s.id==id){slot=&s;break;}if(!s.used&&!slot)slot=&s;}
   if(!slot)return false;
-  if(slot->id!=id||slot->token!=token||slot->boot!=boot){slot->active=false;slot->ip=IPAddress();}
+  if(!slot->used||slot->id!=id||slot->token!=token||slot->boot!=boot){slot->active=false;slot->ip=IPAddress();}
   slot->id=id;slot->token=token;slot->boot=boot;slot->seen=millis();slot->used=true;return true;
 }
 static void pollSessions(){
@@ -62,7 +63,7 @@ static void pollSessions(){
   if(doc["v"]!=2||deviceId!=(doc["dst"]|"")||(strcmp(op,"read")&&strcmp(op,"probe"))||
      !sessionCounter(doc["id"],id)||!sessionCounter(doc["boot"],boot))return;
   for(auto &s:sessions)if(s.used&&uint32_t(millis()-s.seen)<1800000&&s.id==(doc["src"]|"")&&s.token==(doc["token"]|"")&&s.boot==boot){
-    s.ip=sensorUdp.remoteIP();s.seen=millis();s.active=true;
+    s.ip=sensorUdp.remoteIP();s.seen=s.readAt=millis();s.active=true;
     DynamicJsonDocument reply(4096);reply["v"]=2;reply["src"]=deviceId;reply["dst"]=s.id;reply["boot"]=int32_t(sensorBoot);
     reply["id"]=int32_t(id);reply["token"]=s.token;reply["op"]=!strcmp(op,"read")?"sample":"pong";
     if(!strcmp(op,"read"))sensorBody(reply.createNestedObject("body"));

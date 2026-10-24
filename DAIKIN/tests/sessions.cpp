@@ -76,6 +76,13 @@ int main(){
   assert(sessionGrant(grant("4294967295"))&&sessions[0].active);
   DynamicJsonDocument status(1024);sessionStatus(status.to<JsonObject>());
   assert(status["max_sessions"]==4&&status["peers"].size()==1&&status["peers"][0]["session_ready"]==true);
+  // Reauthorizing an idle peer must not imply a new UDP connection.
+  now+=15000;
+  assert(sessionGrant(grant("-1")));
+  sessionStatus(status.to<JsonObject>());
+  assert(status["peers"][0]["session_ready"]==false&&status["peers"][0]["idle_ms"]==15000);
+  readSession("-1");sessionStatus(status.to<JsonObject>());
+  assert(status["peers"][0]["session_ready"]==true&&status["peers"][0]["idle_ms"]==0);
   for(const char *bad:{"0","4294967296","-2147483649","1.5","\"1\"","null","true"}){
     assert(!sessionGrant(grant(bad))&&sessions[0].boot==UINT32_MAX&&sessions[0].active);
   }
@@ -95,5 +102,8 @@ int main(){
   assert(body["sequence"].as<int32_t>()==1);
   now+=1800000;unsigned before=sensorUdp.sent;readSession("-1");
   assert(sensorUdp.sent==before);
-  puts("PASS signed/unsigned session counters, authenticated UDP replies, invalid ranges, idempotent grants, wraparound and expiry");
+  assert(sessionGrant(grant("-1")));
+  sessionStatus(status.to<JsonObject>());
+  assert(status["peers"][0]["session_ready"]==false&&status["peers"][0]["ip"]=="");
+  puts("PASS signed/unsigned counters, authenticated UDP, invalid ranges, idempotent grants, wraparound, expiry and UDP-only readiness");
 }

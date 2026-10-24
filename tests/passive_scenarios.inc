@@ -47,9 +47,22 @@ static void passive_scenarios(void) {
   number(o,"boot",10);incoming(o,true,false,"127.0.0.1");number(o,"boot",11);
   js(o,"token","cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd");incoming(o,true,false,"127.0.0.1");
   assert(sensor_sessions[0].last_seen==seen && !queued);
+  /* Retrying MQTT authorization cannot make an idle UDP peer look connected. */
+  test_now=seen+FEATURE_STALE_MS;
+  assert(feature_sensor_session_set(grant)==200);
+  status=feature_json("status");
+  json_object *peer=json_object_array_get_idx(json_object_object_get(status,"peers"),0);
+  assert(!json_object_get_boolean(json_object_object_get(peer,"session_ready")) && integer(peer,"idle_ms")==FEATURE_STALE_MS);
+  json_object_put(status);
+  js(o,"token","abababababababababababababababab");incoming(o,true,false,"127.0.0.1");
+  status=feature_json("status");peer=json_object_array_get_idx(json_object_object_get(status,"peers"),0);
+  assert(json_object_get_boolean(json_object_object_get(peer,"session_ready")) && integer(peer,"idle_ms")==0);json_object_put(status);
+  seen=test_now;
   test_now=seen+SENSOR_SESSION_IDLE_MS;assert(!feature_bound());
   js(o,"token","abababababababababababababababab");incoming(o,true,false,"127.0.0.1");assert(!feature_bound());
   assert(feature_sensor_session_set(grant)==200);
+  status=feature_json("status");peer=json_object_array_get_idx(json_object_object_get(status,"peers"),0);
+  assert(!json_object_get_boolean(json_object_object_get(peer,"session_ready")));json_object_put(status);
   /* Bound storage: an unexpired active session is never evicted by a fifth A1. */
   for(unsigned i=1;i<=4;i++) { char id[13];snprintf(id,sizeof(id),"%012x",i);js(grant,"a1",id);
     assert(feature_sensor_session_set(grant)==(i<4?200:409)); }
