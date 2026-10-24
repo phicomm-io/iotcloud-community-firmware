@@ -86,7 +86,8 @@ static __attribute__((noinline)) json_object *service_product_inner(const char *
                 char host[sizeof(user_config->mqtt_host)],user[64],password[257],protocol[8];int port;strcpy(protocol,user_config->mqtt_topic_mode?"tmcp":"legacy");strcpy(password,user_config->mqtt_password);
                 bool enabled=user_config->bemfa.mqtt_enabled;
                 bool toggle=!json_object_object_get(v,"enabled") || boolparam(v,"enabled",&enabled);
-                valid=toggle && keys(v,"|host||port||user||password||protocol||enabled|") && strparam(v,"host",host,sizeof(host),true) && strparam(v,"user",user,sizeof(user),true) && strparam(v,"password",password,sizeof(password),false) && number(v,"port",&port,1,65535) && strparam(v,"protocol",protocol,sizeof(protocol),false) && (!strcmp(protocol,"tmcp") || !strcmp(protocol,"legacy"));
+                /* Zero is the factory sentinel for unconfigured MQTT. */
+                valid=toggle && keys(v,"|host||port||user||password||protocol||enabled|") && strparam(v,"host",host,sizeof(host),true) && strparam(v,"user",user,sizeof(user),true) && strparam(v,"password",password,sizeof(password),false) && number(v,"port",&port,0,65535) && (port || !host[0]) && strparam(v,"protocol",protocol,sizeof(protocol),false) && (!strcmp(protocol,"tmcp") || !strcmp(protocol,"legacy"));
                 if(valid){tc1_status_lock();user_config->bemfa.mqtt_enabled=enabled;user_config->bemfa.revision++;tc1_status_unlock();strcpy(user_config->mqtt_host,host);strcpy(user_config->mqtt_user,user);strcpy(user_config->mqtt_password,password);user_config->mqtt_port=port;user_config->mqtt_topic_mode=!strcmp(protocol,"tmcp");}
             }
         }
