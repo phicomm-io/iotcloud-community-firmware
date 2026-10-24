@@ -66,8 +66,4 @@ static void pollSensors(uint32_t now){
       }
     }
   }
-  digitalWrite(4,indicator&&readings[1].valid(now)&&readings[1].value>1000);
-  digitalWrite(33,indicator&&readings[0].valid(now)&&readings[0].value>50);
-  digitalWrite(32,indicator&&((hchoPresent&&readings[5].valid(now)&&readings[5].value>0.1f)||(!hchoPresent&&readings[4].valid(now)&&readings[4].value>300)));
-  digitalWrite(25,WiFi.status()!=WL_CONNECTED);
 }

@@ -1,5 +1,5 @@
 {
-  "quick-start": "193dbbf658ff056932497da9740cd67eab40c50cb6748347f37b330bf5b051ae",
+  "quick-start": "2d5cdadf0fa0b7470c010b56ac7084d6f7c3ece1c394a07cb54d3de3624dbf55",
   "flash-prep": "cc301178166dc432fb88365d7695c1596d9aeeb16f31f47702949523fc86d0cc",
   "firmware-update": "bd4c5c2ccd947e259e9da9623695ddd4a2a58ff3ac444ce77aada97a837ad5fb",
   "mqtt-link": "97ab79b2e570c01f92e4206149e8d9cc8fc6e02706ba913f37d9a27957adbb06",
@@ -12,13 +12,13 @@
   "iotcloud-deploy": "1fa4286b01be8bf74d8793a862e74a7fcfd7ee96ab81df240c284744886b22c5",
   "build-deps": "34d8c7cc6bdc756da6f0400913849fce88d4b5de8664b2f8329a487d666681f2",
   "sources": "8d747a2af035d6412100bdfbdd2e73d56bab37364312c54398b99855dd3f9b56",
-  "release-log": "64b31eb05f3fad63ffd24cd6e7d54bbd53f820a2f5324a195450b9c92989ed51",
+  "release-log": "0b32b931db31c763a89dd14e142333f5a3ed824bb1831cfcb234d5fb6dec8b15",
   "iotcloud-connect": "03fce25fabc3be4cf311bccc3558e1c200feb826e74cba6aab7f99c104677abb",
   "tc1-no-disassembly": "cd6c7012d96e889c5c8b1a1e3f9b1a09dee7b3585fe006cb111254ed9944924d",
   "tc1-no-disassembly-ethernet-wifi-ap": "00ed505fc141b98ae1642e9b1c3bf2772f180694e76fddec9ae881fbb85e79fc",
   "stock-provision": "2cf796bb60debc56bb8623aab33b4d40313ac3f11ae34a3fa77030e6031f96e5",
   "a1-no-disassembly": "a94b5877808bf968149834efc0e36d2204f84b1f182e75a23dff7e5f99ccac28",
   "m1-no-disassembly": "789b16002e66f689bd29285ee6b7707ec4ca496dc47885a6588ef3cff1fb6100",
-  "daikin-guide": "b2b72cc337e94a470d2bcb2150cb93f07f762acddcfa1c1b1c0dbad5b714030d",
-  "daikin-stock-ota": "079fc9d783052b329910f21c5a1a817ae19bf1a59183a94440ea4f771a202537"
+  "daikin-guide": "ffab227d9360fb0b1ba374642d7e800113e2a138c3396491b59325c5d68b08a9",
+  "daikin-stock-ota": "ff77f0bbf931d67158a1cff359348ca9907eb98ed403e2afc100d50004de3ee0"
 }

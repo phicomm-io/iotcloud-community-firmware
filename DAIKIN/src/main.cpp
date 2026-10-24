@@ -11,6 +11,7 @@
 #include <mqtt_client.h>
 #include <mbedtls/base64.h>
 #include "frames.h"
+#include "indicator_json.h"
 extern "C" {
 #include "../../common/ota/signed_ota.h"
 }
@@ -27,6 +28,7 @@ static Preferences prefs;
 static httpd_handle_t web;
 static esp_mqtt_client_handle_t mqtt=nullptr;
 static volatile bool mqttConnected=false;
+static volatile bool mqttCommandReady=false;
 static volatile int mqttLastEvent=MQTT_EVENT_ANY,mqttErrorType=0,mqttSocketError=0;
 static bool hchoPresent=false, indicator=false;
 static bool sensorPresent(unsigned i){return i==HCHO?hchoPresent:i!=PM10||readings[PM10].received;}
@@ -40,7 +42,10 @@ static char mqttPending[4097];
 static volatile bool mqttQueued=false;
 static bool mqttReceiving=false;
 static size_t mqttReceived=0;
-static DynamicJsonDocument config(3072);
+static constexpr size_t configCapacity=6144;
+static DynamicJsonDocument config(configCapacity);
+static daikin::LightSettings lightSettings=daikin::defaultLightSettings();
+static bool customLightSettings=false;
 static String lastRequest[8], lastBody[8], lastResponse[8];
 static unsigned requestSlot=0;
 static uint8_t co2Frame[8], hchoFrame[9];
@@ -63,19 +68,26 @@ static const char *pmModel="detecting";
 
 static bool due(uint32_t now,uint32_t at){return int32_t(now-at)>=0;}
 static bool saveConfig(DynamicJsonDocument &candidate){
+  if(candidate.overflowed())return false;
   String text; serializeJson(candidate,text);
   if(prefs.putString("config",text)!=text.length())return false;
   config.clear(); config.set(candidate);configText=text; updatePassword();return true;
 }
+static void startAccessPoint(){
+  const IPAddress address(192,168,0,1),netmask(255,255,255,0);
+  WiFi.softAPConfig(address,address,netmask);
+  WiFi.softAP(apName.c_str());
+}
 static void startWifi(){
   WiFi.mode(WIFI_AP_STA);
   // Recovery AP remains available when the saved station is unreachable.
-  WiFi.softAP(apName.c_str());
+  startAccessPoint();
   const char *ssid=config["wifi"]["ssid"]|"";
   if(*ssid)WiFi.begin(ssid,config["wifi"]["password"]|"");
   connectAt=millis();
 }
 #include "sensors.inc"
+#include "indicators.inc"
 #include "sessions.inc"
 #include "commands.inc"
 #include "http.inc"
@@ -85,7 +97,9 @@ void setup(){
   if(!prefs.begin("daikin",false)){Serial.println("NVS unavailable");while(true)delay(1000);}
   configText=prefs.getString("config","{}");if(deserializeJson(config,configText)||!config.is<JsonObject>()){Serial.println("Config corrupt; refusing to discard credentials");while(true)delay(1000);}
   updatePassword();indicator=config["indicator"]|false;
-  WiFi.mode(WIFI_AP_STA);deviceId=WiFi.macAddress();deviceId.replace(":","");deviceId.toLowerCase();apName="DAIKIN-"+deviceId.substring(6);
+  customLightSettings=daikin::readLightSettings(config["indicator_rules"],lightSettings);
+  WiFi.mode(WIFI_AP_STA);deviceId=WiFi.macAddress();deviceId.replace(":","");deviceId.toLowerCase();
+  apName="BRY88AX151K-AP-"+deviceId.substring(6);apName.toUpperCase();
   startWifi();
   pmBus.begin(23,22,100000);thBus.begin(19,21,100000);pmBus.setTimeOut(50);thBus.setTimeOut(50);
   co2Uart.begin(9600,SERIAL_8N1,16,17);hchoUart.begin(9600,SERIAL_8N1,5,18);
@@ -123,6 +137,7 @@ void loop(){
   if(mqttConnected&&due(now,nextPublish)){nextPublish=now+5000;publishState();}
   if(mqttRestart){mqttRestart=false;startMqtt();}
   if(wifiRestart){wifiRestart=false;startWifi();}
+  pollIndicators(now);
   // GPIO34 reset key: hold >=5 s to reopen provisioning, retaining device settings.
   static uint32_t pressedAt=0;static bool pressed=false,handled=false;
   if(digitalRead(34)==LOW){
@@ -132,7 +147,7 @@ void loop(){
   // Close initial recovery AP after station has been stable for two minutes.
   static uint32_t connectedSince=0;
   if(WiFi.status()==WL_CONNECTED){if(!connectedSince){connectedSince=now;if(MDNS.begin(("daikin-"+deviceId).c_str()))MDNS.addService("http","tcp",80);}if(uint32_t(now-connectedSince)>120000&&uint32_t(now-connectAt)>120000)WiFi.softAPdisconnect(true);}
-  else{if(connectedSince)MDNS.end();connectedSince=0;if(!(WiFi.getMode()&WIFI_AP))WiFi.softAP(apName.c_str());}
+  else{if(connectedSince)MDNS.end();connectedSince=0;if(!(WiFi.getMode()&WIFI_AP))startAccessPoint();}
   if(!otaActive&&rebootAt&&due(now,rebootAt))ESP.restart();
   // Local serial console uses the same bounded command dispatcher. Credentials
   // are accepted for provisioning but are never echoed or returned in queries.

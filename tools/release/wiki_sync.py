@@ -62,7 +62,7 @@ def rewrite(text, language="zh"):
 def home_page(language="zh"):
     if language == "en":
         lines = ['# Phicomm Community Firmware', '', '[简体中文](Home) · English', '',
-                 'Community firmware for the TC1 power strip, M1 air quality monitor, A1 air purifier and DAIKIN BRY88AX151K air quality monitor.',
+                 'Open-source firmware for discontinued IoT devices or devices whose cloud service providers have ended support.',
                  'Local web control, MQTT and Home Assistant integration, with free firmware downloads.', '']
         lines += [f'- [Open IotCloud]({SITE_URL}iotcloud/)',
                   '- [Connect devices to IotCloud](EN-iotcloud-connect)', '']
@@ -79,7 +79,7 @@ def home_page(language="zh"):
                   '- [MQTT platform](https://github.com/phicomm-io/phicomm-community-mqtt)', '']
         return '\n'.join(lines)
     lines = ['# 斐讯社区固件', '', '简体中文 · [English](EN-Home)', '',
-             '本项目为斐讯 TC1 智能排插、M1 空气检测仪、A1 空气净化器和大金 DAIKIN BRY88AX151K 空气检测仪维护社区固件。',
+             '本项目为已淘汰或云服务厂商停止服务的 IoT 设备提供开源固件。',
              '本地网页控制、MQTT 与 Home Assistant 接入，固件免费下载。', '']
     lines += [f'- [打开 IotCloud 设备管理]({SITE_URL}iotcloud/)',
               '- [接入 IotCloud](接入-IotCloud) · [自行部署](IotCloud-部署)', '']

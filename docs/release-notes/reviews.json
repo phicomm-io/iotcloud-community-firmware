@@ -1703,6 +1703,79 @@
       "basis": [
         "v0.9.24:b007"
       ]
+    },
+    "v0.9.25:b001": {
+      "block_sha256": "b7530f337777575751c3f9cc910a6bfe46f572ba473368d7b8dc223c85a75afd",
+      "release_sha256": "c0c54218883f920265419dbe0a69c929846b5d9d9f12af96b9292f29d9cd7e9d",
+      "status": "approved",
+      "reason": "按已实现的设备、前端和发布行为审核中英文影响；服务更新不进入固件差异。",
+      "change_refs": [
+        "daikin-indicator-rules@0.9.25",
+        "daikin-indicator-editor@0.9.25"
+      ],
+      "basis": [
+        "v0.9.25:b001"
+      ]
+    },
+    "v0.9.25:b002": {
+      "block_sha256": "9da4bb44b3fe5cc6faa3d8b5e8fe78cfea764f68389d73ca6c259965bc7fdf61",
+      "release_sha256": "c0c54218883f920265419dbe0a69c929846b5d9d9f12af96b9292f29d9cd7e9d",
+      "status": "approved",
+      "reason": "按已实现的设备、前端和发布行为审核中英文影响；服务更新不进入固件差异。",
+      "change_refs": [
+        "daikin-system-indicator@0.9.25"
+      ],
+      "basis": [
+        "v0.9.25:b002"
+      ]
+    },
+    "v0.9.25:b003": {
+      "block_sha256": "aa61f29b4afd68f86a23756e2547777cef0c36caf5cd47b5adcfb9a685bf33f9",
+      "release_sha256": "c0c54218883f920265419dbe0a69c929846b5d9d9f12af96b9292f29d9cd7e9d",
+      "status": "approved",
+      "reason": "按已实现的设备、前端和发布行为审核中英文影响；服务更新不进入固件差异。",
+      "change_refs": [
+        "daikin-recovery-hotspot@0.9.25"
+      ],
+      "basis": [
+        "v0.9.25:b003"
+      ]
+    },
+    "v0.9.25:b004": {
+      "block_sha256": "70e063ad4ed21e25475b40c360faa657390c0d9fe3460d5cf622dd5541bba392",
+      "release_sha256": "c0c54218883f920265419dbe0a69c929846b5d9d9f12af96b9292f29d9cd7e9d",
+      "status": "approved",
+      "reason": "按已实现的设备、前端和发布行为审核中英文影响；服务更新不进入固件差异。",
+      "change_refs": [
+        "daikin-release-filenames@0.9.25"
+      ],
+      "basis": [
+        "v0.9.25:b004"
+      ]
+    },
+    "v0.9.25:b005": {
+      "block_sha256": "62bbd054b689dc2c8a79f0217059b80cd813716044f60c0185880e56975fc76c",
+      "release_sha256": "c0c54218883f920265419dbe0a69c929846b5d9d9f12af96b9292f29d9cd7e9d",
+      "status": "approved",
+      "reason": "按已实现的设备、前端和发布行为审核中英文影响；服务更新不进入固件差异。",
+      "change_refs": [
+        "iotcloud-installation-memory@0.9.25",
+        "iotcloud-standalone-zoom@0.9.25",
+        "website-demo-navigation@0.9.25"
+      ],
+      "basis": [
+        "v0.9.25:b005"
+      ]
+    },
+    "v0.9.25:b006": {
+      "block_sha256": "7048eb22a63f94ec90e854b3a11d73c59d72f8bf990ddd496d3cfa4d6958ef2c",
+      "release_sha256": "c0c54218883f920265419dbe0a69c929846b5d9d9f12af96b9292f29d9cd7e9d",
+      "status": "excluded",
+      "reason": "候选实机验证及未测范围是验收边界，不作为独立固件功能。",
+      "change_refs": [],
+      "basis": [
+        "v0.9.25:b006"
+      ]
     }
   }
 }

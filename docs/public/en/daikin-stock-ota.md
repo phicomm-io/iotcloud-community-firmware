@@ -104,6 +104,8 @@ After reboot, connect to the new open hotspot **`DAIKIN-XXXXXX`**, using the las
 
 Open **http://192.168.4.1** and verify the model, device ID and version. The tested device reported `BRY88AB151K`, `9c9c1ff76748`, and `0.9.21-2cfd89-dirty`. Configure router Wi-Fi, a management password and MQTT as needed.
 
+The transition image included with this guide uses the older hotspot name and address above. After updating to v0.9.25, the recovery hotspot uses `BRY88AX151K-AP-<last six MAC digits in uppercase>` at `http://192.168.0.1/`. Once router Wi-Fi is configured, continue using the router-assigned IP for normal access.
+
 PM2.5, temperature, humidity and TVOC had valid readings after boot. CO2 was still warming up; HCHO was not detected and had also reported no-data errors under stock. Successful transfer does not prove every sensor works.
 
 Serial logs confirmed that the stock bootloader and partition table remained and the community application booted from the second stock slot, `0x190000`. Stock network settings do not automatically become community configuration. Configuration persistence in the smaller stock NVS, power-cycle retention and a second community OTA were not verified in this test. Future images must still fit the stock 1.5MiB slots.

@@ -18,6 +18,7 @@ sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(ROOT / 'tools'))
 sys.path.insert(0, str(ROOT / 'tools/release'))
 from pages import ALIASES, GROUPS, PAGES, PARENTS, SITE_URL, EN_GROUPS, EN_PAGES, validate_translations  # noqa: E402
+from demo_navigation import add_navigation
 from seo import EN_INDEX_TITLE, EN_INDEX_DESCRIPTION, guide_metadata, metadata, write_discovery  # noqa: E402
 
 EXTENSIONS = ['tables', 'fenced_code', 'attr_list', 'toc']
@@ -283,6 +284,7 @@ def main():
     if (out / 'demos').exists():
         shutil.rmtree(out / 'demos')
     shutil.copytree(bundle / 'demos', out / 'demos')
+    add_navigation(out)
     if not (bundle / 'local/index.html').is_file():
         raise SystemExit('Pinned frontend release has no standalone local console')
     if (out / 'local').exists():

@@ -2,17 +2,21 @@
 """Generate immutable release metadata, including downloads for every model."""
 import argparse, hashlib, html, json, re
 from pathlib import Path
-PRODUCTS={'tc1':'tc1_a1','m1':'m1','a1':'a1','daikin':'daikin'}
+from products import STEMS, asset_stem
 def make(tag, commit, directory, notes, legacy=False, require_variants=False):
     if not re.fullmatch(r'v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)',tag):raise ValueError('invalid tag')
     if not re.fullmatch('[0-9a-f]{40}',commit):raise ValueError('invalid commit')
     release={'schema':1,'tag':tag,'version':tag[1:],'commit':commit,'notes':f'/releases/{tag}/notes.md','models':{}}
-    for model,product in PRODUCTS.items():
-        if model=='daikin' and not require_variants and not (directory/'phicomm_daikin.all.bin').exists():continue
+    if not legacy and any(directory.glob('phicomm_daikin.*')):
+        raise ValueError('DAIKIN assets must use the daikin_BRY88AX151K prefix')
+    for model,stem in STEMS.items():
+        if model == 'daikin':
+            if legacy and not any(directory.glob(stem + '.*')): stem = 'phicomm_daikin'
+            if not require_variants and not any(directory.glob(stem + '.*')): continue
         files={}
         for kind,suffix in [('signed','ota.bin.signed'),('raw','ota.bin.raw'),('full','all.bin')]:
-            name=f'phicomm_{product}.{suffix}'
-            if legacy and kind=='raw' and not (directory/name).exists():name=f'phicomm_{product}.ota.bin'
+            name=f'{stem}.{suffix}'
+            if legacy and kind=='raw' and not (directory/name).exists():name=f'{stem}.ota.bin'
             if legacy and kind=='signed' and not (directory/name).exists():continue
             body=(directory/name).read_bytes()
             if not body:raise ValueError(f'empty asset {name}')
@@ -33,11 +37,11 @@ def make(tag, commit, directory, notes, legacy=False, require_variants=False):
     # Old catalogs remain readable. New production releases require all nine.
     include = require_variants or any(directory.glob('*-no-frontend-resources.*'))
     if include:
-        for model, product in PRODUCTS.items():
+        for model in STEMS:
             if model=='daikin':continue
             files = {}
             for kind, suffix in [('signed','ota.bin.signed'),('raw','ota.bin.raw'),('full','all.bin')]:
-                name = f'phicomm_{product}-{slim}.{suffix}'
+                name = f'{asset_stem(model, slim)}.{suffix}'
                 body = (directory / name).read_bytes()
                 if not body: raise ValueError(f'empty asset {name}')
                 files[kind] = dict(path=f'/releases/{tag}/{name}', size=len(body), sha256=hashlib.sha256(body).hexdigest())

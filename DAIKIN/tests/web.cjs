@@ -40,6 +40,7 @@ test('DAIKIN uses shared metric scales, optional HCHO and expiring live data',()
   w.UI.device.onStatus({...state,sensors:{...state.sensors,formaldehyde:{valid:true,value:.012,age_ms:0}}});
   assert.equal(card('formaldehyde').hidden,false);assert.equal(card('formaldehyde').querySelector('.num').textContent,'0.012');
   assert.ok(w.document.querySelector('[data-indicator="formaldehyde"]'));assert.equal(w.document.querySelector('[data-indicator="tvoc"]'),null);
-  assert.equal(w.UI.device.otaName,'phicomm_daikin.ota.bin.signed');
+  // Older pinned frontend releases predate the public asset rename.
+  assert.match(w.UI.device.otaName,/^(?:phicomm_daikin|daikin_BRY88AX151K)\.ota\.bin\.signed$/);
  }finally{dom.window.close();}
 });

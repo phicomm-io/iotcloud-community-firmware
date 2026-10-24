@@ -6,7 +6,7 @@ from pages import PAGES, SITE_URL
 
 SITE_TITLE = '斐讯社区固件 · PHICOMM COMMUNITY'
 EN_INDEX_TITLE = 'TC1 / M1 / A1 / DAIKIN community firmware documentation'
-EN_INDEX_DESCRIPTION = 'Installation, local control, MQTT, Home Assistant and IotCloud guides for Phicomm TC1, M1, A1 and DAIKIN BRY88AX151K.'
+EN_INDEX_DESCRIPTION = 'Open-source firmware for discontinued IoT devices or devices whose cloud service providers have ended support. Guides for TC1, M1, A1, DAIKIN and IotCloud.'
 PRODUCT_TITLES = {
     'tc1-guide': '斐讯 TC1 智能排插功能与操作',
     'tc1-flash': '斐讯 TC1 刷机教程（A1 硬件版本）',
