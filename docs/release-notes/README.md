@@ -60,12 +60,15 @@ already covers these resources. A local build can use the fixed metadata snapsho
 a formal publication always requires actual firmware files and historical Git
 objects (`fetch-depth: 0`). No firmware is built by these tools.
 
-If publication stops after the firmware release is public, dispatch **Publish
-static site** on `main` to rebuild against the actual retained firmware and
-complete the mirror and Pages publication. It uses the same production lock and
-credentials as the tag workflow, without rebuilding or replacing firmware.
-Mirror verification sends the same explicit empty User-Agent as existing OTA
-verification; urllib's default Python User-Agent is rejected by the public edge.
+If publication stops after the firmware release is public, an authorized operator
+can run `tools/release/pages.sh` from a clean checkout with `GH_TOKEN`,
+`CLOUDFLARE_API_TOKEN` and the verified `PHICOMM_FRONTEND_ARCHIVE` supplied in the
+process environment. Confirm no tag publication is running before manual
+recovery. The tool verifies the actual retained firmware and completes the
+mirror and Pages publication without rebuilding or replacing firmware. The
+signing environment remains restricted to release tags. Mirror verification
+sends the same explicit empty User-Agent as existing OTA verification; urllib's
+default Python User-Agent is rejected by the public edge.
 
 ```sh
 python3 site/build.py build/pages                       # local fixed snapshot
