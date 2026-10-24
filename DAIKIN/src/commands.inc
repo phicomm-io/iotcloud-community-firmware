@@ -1,6 +1,6 @@
 static void state(JsonObject out){
   uint32_t now=millis();
-  out["model"]="daikin";out["hardware_model"]="BRY88AX151K";out["pm_sensor"]=pmModel;
+  out["model"]="daikin";out["firmware_variant"]="full";out["hardware_model"]="BRY88AX151K";out["pm_sensor"]=pmModel;
   out["name"]=config["device"]["name"]|"DAIKIN";out["device_id"]=deviceId;out["version"]=version;
   out["ota_signature_verified"]=prefs.getBool("ota_signed",false);
   out["uptime_seconds"]=now/1000;out["free_memory"]=ESP.getFreeHeap();
@@ -29,7 +29,7 @@ static void state(JsonObject out){
 }
 static const char *actions[]={"status.get","config.get","capabilities.get","binding.status.get","config.set","wifi.scan","wifi.scan.get","indicator.set","system.reboot","system.reset"};
 static void capabilities(JsonObject out){
-  out["model"]="daikin";out["hardware_model"]="BRY88AX151K";out["protocol"]=2;
+  out["model"]="daikin";out["firmware_variant"]="full";out["hardware_model"]="BRY88AX151K";out["protocol"]=2;
   out["mqtt_protocol"]="tmcp";out["mqtt_protocol_version"]=2;
   out["formaldehyde_present"]=hchoPresent;out["sensor_session_protocol"]=2;out["sensor_schema"]=1;
   JsonArray a=out.createNestedArray("actions");for(auto name:actions)a.add(name);

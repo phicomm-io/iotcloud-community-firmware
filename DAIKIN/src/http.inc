@@ -80,6 +80,6 @@ static esp_err_t uploadHandler(httpd_req_t *req){
 }
 static esp_err_t infoHandler(httpd_req_t *req){
   if(!authorized(req))return ESP_OK;
-  return jsonResponse(req,"200 OK",String("{\"code\":\"ok\",\"data\":{\"api_version\":1,\"model\":\"daikin\",\"device_id\":\"")+deviceId+"\",\"mac\":\""+deviceId+"\"}}");
+  return jsonResponse(req,"200 OK",String("{\"code\":\"ok\",\"data\":{\"api_version\":1,\"model\":\"daikin\",\"firmware_variant\":\"full\",\"version\":\"")+version+"\",\"device_id\":\""+deviceId+"\",\"mac\":\""+deviceId+"\"}}");
 }
 static esp_err_t optionsHandler(httpd_req_t *req){httpd_resp_set_hdr(req,"Access-Control-Allow-Origin","*");httpd_resp_set_hdr(req,"Access-Control-Allow-Methods","GET, POST, OPTIONS");httpd_resp_set_hdr(req,"Access-Control-Allow-Headers","Content-Type, Authorization");return httpd_resp_send(req,nullptr,0);}
