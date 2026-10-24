@@ -233,7 +233,7 @@ def main():
         + metadata(EN_INDEX_TITLE, EN_INDEX_DESCRIPTION, 'guides/en/', 'en') + '<link rel="stylesheet" href="../../style.css">'
         '<script src="../../theme.js"></script></head><body>' + header('../../', 'en') +
         '<main class="wrap prose" id="main"><p><a href="../../#docs" lang="zh-CN">简体中文</a> · English</p>'
-        '<h1>English documentation</h1><p>Guides for TC1, M1, A1 and IotCloud.</p>' + english_links + '</main>' + footer('en') +
+        '<h1>English documentation</h1><p>Guides for TC1, M1, A1, DAIKIN and IotCloud.</p>' + english_links + '</main>' + footer('en') +
         '<script src="../../site.js"></script></body></html>', encoding='utf-8')
     sources = markdown_sources()
     missing, guides = [], out / 'guides'

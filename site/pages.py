@@ -10,11 +10,11 @@ page footers.
 # (group id, group title, [(slug, title, summary, wiki page name), ...])
 GROUPS = [
     ("common", "开始使用", [
-        ("quick-start", "快速开始", "认识三款设备、配网与访问方式", "快速开始"),
+        ("quick-start", "快速开始", "设备、配网与访问方式", "快速开始"),
         ("flash-prep", "刷机前准备", "供电与接线的通用要求、两个模块的下载接口", "刷机前准备"),
         ("firmware-update", "固件更新", "更新来源、包的选择与失败处理", "固件更新"),
         ("iotcloud-connect", "接入 IotCloud", "注册账号、配置 MQTT 与确认设备上线", "接入-IotCloud"),
-        ("mqtt-link", "MQTT 与联动", "MQTT 模式、管理平台与 A1 × M1 联动", "MQTT与联动"),
+        ("mqtt-link", "MQTT 与联动", "MQTT 模式、管理平台与 A1 数据联动", "MQTT与联动"),
         ("faq", "故障排查", "连接状态、灯语总则与常见问题", "故障排查"),
     ]),
     ("tc1", "TC1 智能排插", [
@@ -28,6 +28,9 @@ GROUPS = [
         ("stock-provision", "原厂固件配网（免 App）", "A1 EasyLink 与 M1 热点配网，按系统显示命令", "A1-M1-原厂配网"),
         ("m1-no-disassembly", "免拆刷机：内网 / 公网", "原厂 OTA 上传、镜像要求与 DNS 迁移边界", "M1-免拆刷机"),
         ("a1-m1-flash", "刷机：J-Link / Bootloader", "共用教程：模组飞线、工厂测试点与串口刷机", "A1-M1-刷机"),
+    ]),
+    ("daikin", "DAIKIN 空气检测仪", [
+        ("daikin-guide", "功能、安装与恢复", "BRY88AX151K：通用 ESP32 固件、读数与 A1 联动", "DAIKIN-功能与安装"),
     ]),
     ("a1", "A1 空气净化器", [
         ("a1-guide", "功能与操作", "风机、灯环、夜间模式与联动", "A1-功能与操作"),
@@ -74,6 +77,7 @@ EN_TITLES = {
  'tc1-no-disassembly': ('Flash TC1 without disassembly', 'Stock provisioning OTA over TFTP, no case opening'),
  'tc1-no-disassembly-ethernet-wifi-ap': ('One Ethernet + one Wi-Fi + one AP', 'Illustrated steps, downloads and Windows / Linux / macOS commands'),
  'm1-guide': ('M1 operation', 'Readings, brightness, icons and recovery'),
+ 'daikin-guide': ('DAIKIN operation and installation', 'BRY88AX151K: universal ESP32 firmware, readings and A1 automation'),
  'a1-guide': ('A1 operation', 'Fan, ring, night mode and automation'),
  'a1-m1-flash': ('Flash A1 / M1', 'SWD, factory points and serial bootloader'),
  'iotcloud-deploy': ('Deploy IotCloud', 'China / US nodes, hosting and local devices'),
@@ -82,7 +86,7 @@ EN_TITLES = {
  'release-log': ('Release Log', 'Release notes and historical validation scope'),
 }
 EN_GROUP_NAMES = {'common':'Getting started','tc1':'TC1 power strip',
-                  'm1':'M1 air quality monitor','a1':'A1 air purifier',
+                  'm1':'M1 air quality monitor','daikin':'DAIKIN air quality monitor','a1':'A1 air purifier',
                   'dev':'Development and maintenance'}
 EN_GROUPS = [(gid, EN_GROUP_NAMES[gid], [
     (slug, *EN_TITLES[slug], 'EN-' + slug) for slug, _, _, _ in items
