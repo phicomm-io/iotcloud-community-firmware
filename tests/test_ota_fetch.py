@@ -77,6 +77,9 @@ class Fetch(unittest.TestCase):
     def test_nonblocking_returns(self):
         for fault in ('want_write','want_read','read_wants_write'):
             with self.subTest(fault=fault):self.assertEqual(self.case(shim_fault=fault).returncode,0)
+    def test_socket_errno_is_not_application_errno(self):
+        for tls in (False,True):
+            with self.subTest(tls=tls):self.assertEqual(self.case(tls=tls,shim_fault='socket_errno').returncode,0)
     def test_cleanup_and_retry_in_one_process(self):
         for fault in ('sem1','sem2','thread','tls_alloc'):
             with self.subTest(fault=fault):

@@ -5,7 +5,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
-#include <errno.h>
 #ifndef OTA_FETCH_HANDSHAKE_MS
 #define OTA_FETCH_HANDSHAKE_MS 10000u
 #endif
@@ -40,6 +39,12 @@ static bool parse_url(const char *url, transfer *t) {
     return true;
 }
 bool ota_url_valid(const char *url) {transfer t;return parse_url(url,&t);}
+/* MiCO's closed socket kernel does not export its errno store to newlib.
+ * SO_ERROR and bounded retries work for both the SDK and the POSIX adapter. */
+static bool socket_failed(transfer *t) {
+    int error=0;socklen_t length=sizeof(error);
+    return getsockopt(t->fd,SOL_SOCKET,SO_ERROR,&error,&length)<0 || error!=0;
+}
 static int socket_io(transfer *t, void *data, size_t n, bool writing) {
     ota_job_sample();
     uint32_t start=mico_rtos_get_time();
@@ -47,10 +52,10 @@ static int socket_io(transfer *t, void *data, size_t n, bool writing) {
         if(ota_job_cancelled()||(int32_t)(t->deadline-mico_rtos_get_time())<=0)return -1;
         fd_set f;FD_ZERO(&f);FD_SET(t->fd,&f);struct timeval tv={0,200000};
         int rc=select(t->fd+1,writing?NULL:&f,writing?&f:NULL,NULL,&tv);
-        if(rc<0){if(errno==EINTR)continue;return -1;}
+        if(rc<0){if(socket_failed(t))return -1;mico_thread_msleep(20);continue;}
         if(rc){int nbytes=writing?send(t->fd,data,n,0):recv(t->fd,data,n,0);
-            if(nbytes<0&&(errno==EINTR||errno==EAGAIN||errno==EWOULDBLOCK))continue;
-            return nbytes>0?nbytes:-1;}
+            if(nbytes>=0)return nbytes?nbytes:-1;
+            if(socket_failed(t))return -1;mico_thread_msleep(20);}
     }while((uint32_t)(mico_rtos_get_time()-start)<10000);
     return -1;
 }
@@ -106,7 +111,7 @@ static int kernel_tls_io(transfer *t,void *data,size_t n,bool writing) {
         if(wait_write || ssl_pending(t->ssl)<=0) {
             fd_set f;FD_ZERO(&f);FD_SET(t->fd,&f);struct timeval tv={0,200000};
             int ready=select(t->fd+1,wait_write?NULL:&f,wait_write?&f:NULL,NULL,&tv);
-            if(ready<0){if(errno==EINTR)continue;return -1;}
+            if(ready<0){if(socket_failed(t))return -1;mico_thread_msleep(20);continue;}
             if(!ready)continue;
         }
         int rc=writing?ssl_send(t->ssl,data,n):ssl_recv(t->ssl,data,n);
@@ -157,13 +162,12 @@ static bool connect_host(transfer *t) {
     int flags=fcntl(t->fd,F_GETFL,0);if(flags<0||fcntl(t->fd,F_SETFL,flags|O_NONBLOCK)<0)return false;
     int rc=connect(t->fd,(struct sockaddr *)&a,sizeof(a));
     if(rc<0){uint32_t start=mico_rtos_get_time();
-        if(errno!=EINPROGRESS && errno!=EWOULDBLOCK && errno!=EINTR)return false;
         do{if(ota_job_cancelled()||(uint32_t)(mico_rtos_get_time()-start)>=10000 ||
               (int32_t)(t->deadline-mico_rtos_get_time())<=0)return false;
             fd_set f;FD_ZERO(&f);FD_SET(t->fd,&f);struct timeval tv={0,200000};rc=select(t->fd+1,NULL,&f,NULL,&tv);
-            if(rc<0){if(errno==EINTR){rc=0;continue;}return false;}
+            if(rc<0){if(socket_failed(t))return false;mico_thread_msleep(20);rc=0;}
         }while(!rc);
-        int e=0;socklen_t len=sizeof(e);if(getsockopt(t->fd,SOL_SOCKET,SO_ERROR,&e,&len)<0||e)return false;}
+        if(socket_failed(t))return false;}
     /* Keep the connected socket nonblocking: a writable indication does not
        guarantee that send() can consume the entire TLS record without waiting. */
     if(!t->tls)return true;

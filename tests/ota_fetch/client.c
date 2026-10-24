@@ -4,6 +4,14 @@
 #include <assert.h>
 #include "../../common/ota/fetch.h"
 extern bool ota_test_clean(void);
+#undef connect
+int ota_test_connect(int fd,const struct sockaddr *address,socklen_t length){
+ int rc=connect(fd,address,length);
+ /* Model the proprietary kernel: application errno is unrelated to socket
+  * failure, even while an ordinary nonblocking connection is in progress. */
+ if(getenv("OTA_TEST_FAULT")&&!strcmp(getenv("OTA_TEST_FAULT"),"socket_errno"))errno=0;
+ return rc;
+}
 static uint32_t started,cancel_after;
 static FILE *output;
 void ota_job_sample(void){}
