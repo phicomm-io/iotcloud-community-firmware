@@ -6,8 +6,9 @@
 extern bool ota_test_clean(void);
 #undef shutdown
 int ota_test_shutdown(int fd,int how){
- if(getenv("OTA_TEST_FAULT")&&!strcmp(getenv("OTA_TEST_FAULT"),"shutdown_no_wakeup"))return 0;
- return shutdown(fd,how);
+ (void)fd;(void)how;
+ assert(!"application shutdown may corrupt a concurrent kernel TLS recv");
+ return -1;
 }
 #undef setsockopt
 int ota_test_setsockopt(int fd,int level,int option,const void *value,socklen_t length){

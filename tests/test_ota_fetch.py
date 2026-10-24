@@ -36,6 +36,12 @@ class Fetch(unittest.TestCase):
                 stream=self.request
                 try:
                     if fault=='handshake_stall':time.sleep(3);return
+                    if fault=='handshake_drip':
+                        # Keep each recv active below its timeout. Only the
+                        # observer's nonblocking switch bounds the handshake.
+                        for byte in b'\x16\x03\x03\x04\x00'+bytes(1024):
+                            stream.sendall(bytes([byte]));time.sleep(.1)
+                        return
                     if tls:stream=context.wrap_socket(stream,server_side=True)
                     with stream:
                         reader=stream.makefile('rb')
@@ -82,13 +88,14 @@ class Fetch(unittest.TestCase):
     def test_socket_errno_is_not_application_errno(self):
         for tls in (False,True):
             with self.subTest(tls=tls):self.assertEqual(self.case(tls=tls,shim_fault='socket_errno').returncode,0)
-    def test_handshake_timeout_when_shutdown_does_not_wake_recv(self):
-        for cancel in (0,300):
-            with self.subTest(cancel=cancel):
-                p=self.case('handshake_stall',cancel=cancel,shim_fault='shutdown_no_wakeup')
-                self.assertNotEqual(p.returncode,0,p.stdout+p.stderr)
-                self.assertLess(int(re.search(r'elapsed=(\d+)',p.stdout)[1]),1800)
-                if cancel:self.assertIn('error=Cancelled',p.stdout)
+    def test_handshake_deadline_without_cross_thread_shutdown(self):
+        for fault in ('handshake_stall','handshake_drip'):
+            for cancel in (0,300):
+                with self.subTest(fault=fault,cancel=cancel):
+                    p=self.case(fault,cancel=cancel)
+                    self.assertNotEqual(p.returncode,0,p.stdout+p.stderr)
+                    self.assertLess(int(re.search(r'elapsed=(\d+)',p.stdout)[1]),1600)
+                    if cancel:self.assertIn('error=Cancelled',p.stdout)
     def test_cleanup_and_retry_in_one_process(self):
         for fault in ('sem1','sem2','thread','tls_alloc'):
             with self.subTest(fault=fault):
@@ -105,14 +112,15 @@ class Fetch(unittest.TestCase):
     def test_handshake_and_total_deadline(self):
         p=self.case('handshake_stall');self.assertNotEqual(p.returncode,0)
         self.assertGreaterEqual(int(re.search(r'elapsed=(\d+)',p.stdout)[1]),500)
-        self.assertLess(int(re.search(r'elapsed=(\d+)',p.stdout)[1]),1000)
+        self.assertLess(int(re.search(r'elapsed=(\d+)',p.stdout)[1]),1600)
         p=self.case('slow');self.assertNotEqual(p.returncode,0);self.assertIn('error=Download timed out',p.stdout)
         self.assertLess(int(re.search(r'elapsed=(\d+)',p.stdout)[1]),1600)
     def test_limit(self):self.assertNotEqual(self.case(limit=100).returncode,0)
     def test_cancel_stalled_http_tls_and_handshake(self):
         for tls,fault in ((False,'stall'),(True,'stall'),(True,'handshake_stall')):
             with self.subTest(tls=tls,fault=fault):
-                p=self.case(fault,tls=tls,cancel=300);self.assertNotEqual(p.returncode,0);self.assertIn('error=Cancelled',p.stdout);self.assertLess(int(re.search(r'elapsed=(\d+)',p.stdout)[1]),1000)
+                p=self.case(fault,tls=tls,cancel=300);self.assertNotEqual(p.returncode,0);self.assertIn('error=Cancelled',p.stdout)
+                self.assertLess(int(re.search(r'elapsed=(\d+)',p.stdout)[1]),1600 if fault=='handshake_stall' else 1000)
 
 class Tc1Fetch(Fetch):
     @classmethod

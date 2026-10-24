@@ -73,9 +73,13 @@ static void handshake_observer(mico_thread_arg_t arg) {
     while(mico_rtos_get_semaphore(&t->handshake_stop,20)!=kNoErr) {
         if(ota_job_cancelled() || (uint32_t)(mico_rtos_get_time()-start)>=OTA_FETCH_HANDSHAKE_MS ||
            (int32_t)(t->deadline-mico_rtos_get_time())<=0) {
-            /* mocIP forwards this directly to lwIP, whose ABI uses 2. The
-             * public MiCO header incorrectly defines SHUT_RDWR as 3. */
-            shutdown(t->fd,2);break;
+            /* Do not shutdown lwIP from a second thread while SSL is inside
+             * recv: early cancellation reproduced a kernel HardFault on A1.
+             * An existing blocking call has the timeout below; subsequent
+             * calls must return instead of starting another blocking wait. */
+            int flags=fcntl(t->fd,F_GETFL,0);
+            if(flags>=0)fcntl(t->fd,F_SETFL,flags|O_NONBLOCK);
+            break;
         }
     }
     mico_rtos_set_semaphore(&t->handshake_done);
@@ -90,8 +94,8 @@ static bool kernel_tls_connect(transfer *t) {
         handshake_observer,1024,(mico_thread_arg_t)t)==kNoErr;
     if(started) {
         int error=-1,flags=fcntl(t->fd,F_GETFL,0);
-        /* A cross-thread lwIP shutdown need not wake an already blocked recv.
-         * Bound each blocking handshake operation as well (SDK uses ms ints). */
+        /* Changing O_NONBLOCK need not wake an existing recv. Bound that call
+         * too; the MiCO socket ABI takes integer milliseconds, not timeval. */
         int io_timeout=1000;
         if(setsockopt(t->fd,SOL_SOCKET,SO_RCVTIMEO,&io_timeout,sizeof(io_timeout))<0 ||
            setsockopt(t->fd,SOL_SOCKET,SO_SNDTIMEO,&io_timeout,sizeof(io_timeout))<0)flags=-1;
