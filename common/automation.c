@@ -176,6 +176,8 @@ json_object *automation_command(const char *name,json_object *p,const char **cod
 static bool auto_execute(const automation_action_t *a,bool button){
 #ifdef FEATURE_DEVICE_A1
  return a1_automation_execute(a,button);
+#elif defined(AUTOMATION_TC1)
+ return tc1_automation_execute(a,button);
 #else
  if(!a->kind)return true;json_object *q=auto_action_json(a);
  if(button){
@@ -195,7 +197,23 @@ static bool auto_execute(const automation_action_t *a,bool button){
  json_object *r=service_command(q);json_object_put(q);const char *code=r?json_object_get_string(json_object_object_get(r,"code")):"busy";bool ok=!strcmp(code,"ok")||!strcmp(code,"accepted");if(r)json_object_put(r);return ok;
 #endif
 }
-void automation_button(unsigned key,unsigned clicks,unsigned seconds){if(key>=AUTOMATION_KEYS || clicks>30 || seconds>4 || (!!clicks==!!seconds))return;auto_init();automation_config_t *c=malloc(sizeof(*c));if(!c)return;mico_rtos_lock_mutex(&automation_lock);automation_load(c);automation_action_t a=c->buttons[key][clicks?clicks-1:seconds+29];mico_rtos_unlock_mutex(&automation_lock);free(c);service_event("info","button","gesture");auto_execute(&a,true);}
+void automation_button(unsigned key,unsigned clicks,unsigned seconds){
+ if(key>=AUTOMATION_KEYS || clicks>30 || seconds>4 || (!!clicks==!!seconds))return;
+ auto_init();automation_action_t a;
+#ifdef AUTOMATION_TC1
+ /* Read one mapping instead of allocating all 128 schedules on a key press. */
+ mico_rtos_lock_mutex(&automation_lock);
+ bool loaded=tc1_automation_load_button(key,clicks?clicks-1:seconds+29,&a);
+ mico_rtos_unlock_mutex(&automation_lock);
+ if(!loaded){service_event("info","button","gesture");service_event("warn","command","rejected");return;}
+#else
+ automation_config_t *c=malloc(sizeof(*c));if(!c)return;
+ mico_rtos_lock_mutex(&automation_lock);automation_load(c);
+ a=c->buttons[key][clicks?clicks-1:seconds+29];
+ mico_rtos_unlock_mutex(&automation_lock);free(c);
+#endif
+ service_event("info","button","gesture");auto_execute(&a,true);
+}
 #ifdef FEATURE_DEVICE_A1
 static void auto_countdown_poll(void) {
  /* Avoid configuration allocation/copy on every worker tick with no timer. */

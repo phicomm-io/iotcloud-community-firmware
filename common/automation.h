@@ -60,3 +60,8 @@ void automation_button(unsigned key,unsigned clicks,unsigned seconds);
 /* Product business entry; does not build a status or command JSON graph. */
 bool a1_automation_execute(const automation_action_t *, bool button);
 #endif
+#ifdef AUTOMATION_TC1
+/* Read only the selected map; execute without constructing JSON graphs. */
+bool tc1_automation_load_button(unsigned key, unsigned slot, automation_action_t *);
+bool tc1_automation_execute(const automation_action_t *, bool button);
+#endif
