@@ -173,6 +173,32 @@ class BuildTests(unittest.TestCase):
             html = (self.out / 'guides' / f'{alias}.html').read_text()
             self.assertIn('url=a1-m1-flash.html', html)
 
+    def test_all_demos_link_back_to_the_website(self):
+        import importlib.util
+        import shutil
+        spec = importlib.util.spec_from_file_location('demo_navigation', ROOT / 'site/demo_navigation.py')
+        navigation = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(navigation)
+        for model in ('tc1', 'm1', 'a1', 'daikin', 'platform'):
+            page = self.out / 'demos' / model / 'index.html'
+            text = page.read_text()
+            self.assertIn('data-demo-home href="../../"', text)
+            self.assertIn('src="../../demo-nav.js"', text)
+            self.assertIn('href="../../demo-nav.css"', text)
+        # A Pages publish restores an independently built platform demo.
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp)
+            shutil.copytree(self.out / 'demos', output / 'demos')
+            platform = output / 'demos/platform/index.html'
+            platform.write_text('<html><head></head><body><div id="app"></div></body></html>')
+            navigation.add_navigation(output)
+            once = platform.read_text()
+            navigation.add_navigation(output)
+            self.assertEqual(platform.read_text(), once)
+            self.assertEqual(once.count('data-demo-home href='), 1)
+            self.assertTrue((output / 'demo-nav.js').is_file())
+            self.assertTrue((output / 'demo-nav.css').is_file())
+
     def test_english_navigation_assets_and_language_switches(self):
         from urllib.parse import urlsplit, unquote
         for slug, _, _, _ in EN_PAGES:

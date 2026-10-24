@@ -61,6 +61,10 @@ if [[ -f "$target/public/demos/platform/release.json" ]]; then
  rm -rf build/pages/demos/platform
  cp -a "$target/public/demos/platform" build/pages/demos/
 fi
+python3 site/demo_navigation.py build/pages
+if [[ -d build/pages/tools ]]; then
+ cp site/demo_navigation.py build/pages/tools/demo_navigation.py
+fi
 python3 tools/release/user_notes.py --verify-output build/pages --formal
 # The tag workflow supplies the existing OTA credential. Preview and local
 # builds never mutate mirrors; public data is uploaded before its pointer.
