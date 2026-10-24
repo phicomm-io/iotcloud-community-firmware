@@ -35,6 +35,7 @@ class PublishNotesTests(unittest.TestCase):
     def test_complete_immutable_resource_precedes_pointer_and_both_mirrors_are_read(self):
         requests = []
         expected = self.expected
+        test = self
         class Response:
             status = 200
             def __init__(self, body): self.body = body
@@ -44,6 +45,10 @@ class PublishNotesTests(unittest.TestCase):
         class Opener:
             def open(self, request, timeout):
                 from urllib.parse import urlsplit
+                # Without an explicit header urllib supplies Python-urllib,
+                # which the production mirror's edge rejects with HTTP 403.
+                test.assertTrue(request.has_header('User-agent'))
+                test.assertEqual(request.get_header('User-agent'), '')
                 url = urlsplit(request.full_url)
                 requests.append((url.netloc, url.path))
                 return Response(expected[url.path])

@@ -60,6 +60,13 @@ already covers these resources. A local build can use the fixed metadata snapsho
 a formal publication always requires actual firmware files and historical Git
 objects (`fetch-depth: 0`). No firmware is built by these tools.
 
+If publication stops after the firmware release is public, dispatch **Publish
+static site** on `main` to rebuild against the actual retained firmware and
+complete the mirror and Pages publication. It uses the same production lock and
+credentials as the tag workflow, without rebuilding or replacing firmware.
+Mirror verification sends the same explicit empty User-Agent as existing OTA
+verification; urllib's default Python User-Agent is rejected by the public edge.
+
 ```sh
 python3 site/build.py build/pages                       # local fixed snapshot
 python3 site/build.py build/pages --archive /path/to/site --formal

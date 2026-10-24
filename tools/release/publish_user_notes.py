@@ -27,7 +27,10 @@ def publish(output):
     for base in MIRRORS:
         for path, data in expected.items():
             request = Request(base + path + '?notes=' + manifest['sha256'],
-                              headers={'Accept-Encoding': 'identity', 'Cache-Control': 'no-cache'})
+                              # Match existing OTA mirror verification. The edge
+                              # rejects urllib's implicit Python User-Agent.
+                              headers={'Accept-Encoding': 'identity', 'Cache-Control': 'no-cache',
+                                       'User-Agent': ''})
             with opener.open(request, timeout=30) as response:
                 if response.status != 200 or response.read() != data:
                     raise ValueError('Public note snapshot mismatch: ' + base + path)
