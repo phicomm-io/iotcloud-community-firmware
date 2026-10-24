@@ -132,79 +132,56 @@ void feature_root(const char *a1, const char *group, const char *m1,
     strcpy(m, "00:00:00:00:00:00");
   snprintf(out, n, "%s:%s", group && *group ? group : a, m);
 }
-bool feature_sample_fresh(const feature_sample_t *s, uint32_t now) {
-  if (!s->valid || s->age_ms >= FEATURE_STALE_MS ||
-      (uint32_t)(now - s->received_ms) >= FEATURE_STALE_MS - s->age_ms)
-    return false;
-  for (unsigned i = 0; i < 4; ++i)
-    if (!isfinite(s->value[i]))
-      return false;
-  return s->value[1] >= 0 && s->value[1] <= 100 && s->value[2] >= 0 &&
-         s->value[3] >= 0;
-}
-unsigned feature_aggregate(const feature_sample_t *s, unsigned count,
-                           uint32_t now, unsigned method, float out[4],
-                           unsigned *effective) {
-  unsigned indexes[8], n = 0;
-  if (count > 8)
-    count = 8;
-  for (unsigned i = 0; i < count; ++i)
-    if (feature_sample_fresh(&s[i], now))
-      indexes[n++] = i;
-  unsigned use = method;
-  if ((method == STAT_MEDIAN && n <= 3) || (method == STAT_TRIMMED && n < 3))
-    use = STAT_MEAN;
-  if (effective)
-    *effective = use;
-  if (!n)
-    return 0;
-  for (unsigned f = 0; f < 4; ++f) {
-    float v[8];
-    for (unsigned i = 0; i < n; ++i)
-      v[i] = s[indexes[i]].value[f];
-    if (use == STAT_FAILBACK) {
-      out[f] = v[0];
-      continue;
-    }
-    for (unsigned i = 1; i < n; ++i) {
-      float x = v[i];
-      unsigned j = i;
-      while (j && v[j - 1] > x) {
-        v[j] = v[j - 1];
-        --j;
-      }
-      v[j] = x;
-    }
-    if (use == STAT_MAX)
-      out[f] = v[n - 1];
-    else if (use == STAT_MIN)
-      out[f] = v[0];
-    else if (use == STAT_MEDIAN)
-      out[f] = n % 2 ? v[n / 2] : (v[n / 2 - 1] + v[n / 2]) / 2;
-    else {
-      unsigned lo = use == STAT_TRIMMED ? 1 : 0,
-               hi = use == STAT_TRIMMED ? n - 1 : n;
-      float sum = 0;
-      for (unsigned i = lo; i < hi; ++i)
-        sum += v[i];
-      out[f] = sum / (hi - lo);
+unsigned feature_sample_fresh_fields(const feature_sample_t *s,uint32_t now) {
+  if(!s->valid)return 0;
+  unsigned mask=feature_sample_fields(s);
+  for(unsigned f=0;f<4;f++)if(mask&(1u<<f)) {
+    uint32_t age=s->partial?s->field_age_ms[f]:s->age_ms;
+    if(age>=FEATURE_STALE_MS || (uint32_t)(now-s->received_ms)>=FEATURE_STALE_MS-age ||
+       !isfinite(s->value[f]) || (f==1&&(s->value[f]<0||s->value[f]>100)) ||
+       (f>=2&&s->value[f]<0)) {
+      if(!s->partial)return 0;
+      mask&=~(1u<<f);
     }
   }
-  return n;
+  return mask;
 }
+bool feature_sample_fresh(const feature_sample_t *s, uint32_t now) {
+  return feature_sample_fresh_fields(s,now)!=0;
+}
+/* The same statistic applies independently to each available field. */
+static float sensor_statistic(float *v,unsigned n,unsigned method,unsigned *effective) {
+  unsigned use=((method==STAT_MEDIAN&&n<=3)||(method==STAT_TRIMMED&&n<3))?STAT_MEAN:method;
+  if(effective)*effective=use;
+  if(!n)return NAN;
+  if(use==STAT_FAILBACK)return v[0];
+  for(unsigned i=1;i<n;i++){float x=v[i];unsigned j=i;while(j&&v[j-1]>x){v[j]=v[j-1];j--;}v[j]=x;}
+  if(use==STAT_MAX)return v[n-1];
+  if(use==STAT_MIN)return v[0];
+  if(use==STAT_MEDIAN)return n%2?v[n/2]:(v[n/2-1]+v[n/2])/2;
+  unsigned lo=use==STAT_TRIMMED?1:0,hi=use==STAT_TRIMMED?n-1:n;float sum=0;for(unsigned i=lo;i<hi;i++)sum+=v[i];return sum/(hi-lo);
+}
+unsigned feature_aggregate(const feature_sample_t *s,unsigned count,uint32_t now,unsigned method,float out[4],unsigned *effective) {
+  unsigned indexes[8],total=0;if(count>8)count=8;
+  for(unsigned i=0;i<count;i++)if(feature_sample_fresh(&s[i],now))indexes[total++]=i;
+  if(effective)*effective=((method==STAT_MEDIAN&&total<=3)||(method==STAT_TRIMMED&&total<3))?STAT_MEAN:method;
+  for(unsigned f=0;f<4;f++) {
+    float v[8];unsigned n=0;
+    for(unsigned i=0;i<total;i++)if(feature_sample_fresh_fields(&s[indexes[i]],now)&(1u<<f))v[n++]=s[indexes[i]].value[f];
+    out[f]=sensor_statistic(v,n,method,NULL);
+  }
+  return total;
+}
+
 bool feature_co2_fresh(const feature_sample_t *s, uint32_t now) {
   return s->co2_supported && s->co2_valid && isfinite(s->co2) && s->co2 > 0 && s->co2 <= 65535 &&
          s->co2_age_ms < 20000u && (uint32_t)(now-s->co2_received_ms) < 20000u-s->co2_age_ms;
 }
 unsigned feature_co2_aggregate(const feature_sample_t *samples, unsigned count, uint32_t now, unsigned method, float *out) {
-  feature_sample_t fresh[8] = {0};
-  unsigned n = 0;
-  for (unsigned i=0; i<count && i<8; i++) if (feature_co2_fresh(&samples[i],now)) {
-    fresh[n].valid=true; fresh[n].received_ms=now; fresh[n++].value[0]=samples[i].co2;
-  }
-  float values[4]; unsigned result=feature_aggregate(fresh,n,now,method,values,NULL);
-  if(result) *out=values[0];
-  return result;
+  float values[8];unsigned n=0;
+  for(unsigned i=0;i<count && i<8;i++)if(feature_co2_fresh(&samples[i],now))values[n++]=samples[i].co2;
+  if(n)*out=sensor_statistic(values,n,method,NULL);
+  return n;
 }
 static bool control(const feature_linkage_t *c, const feature_co2_config_t *co2, float ppm, feature_pid_t *p,
                      const float v[4], uint32_t now, bool on, unsigned speed,

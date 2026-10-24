@@ -6,8 +6,8 @@ static void passive_scenarios(void) {
   transaction("sleep","{\"windows\":[{\"days\":127,\"start\":1320,\"end\":420,\"brightness\":0}]}",200);
   feature_config_t original=stored;
   char filters[4][FEATURE_TOPIC_MAX];memset(filters,0x5a,sizeof(filters));
-  assert(feature_mqtt_filters(filters,4)==0 && feature_mqtt_filters_current(filters,0));
-  assert(!feature_mqtt_filters_current(filters,1) && filters[0][0]==0x5a);
+  assert(feature_mqtt_filters(filters,4)==1 && feature_mqtt_filters_current(filters,1));
+  assert(!feature_mqtt_filters_current(filters,0) && strstr(filters[0],"/sensor/aabbccddee02/command"));
   json_object *grant=obj("{\"v\":2,\"a1\":\"112233445566\",\"boot\":11,\"token\":\"abababababababababababababababab\"}");
   json_object *o=obj("{\"v\":2,\"src\":\"112233445566\",\"dst\":\"aabbccddee02\",\"op\":\"read\",\"boot\":11,\"id\":7,\"token\":\"abababababababababababababababab\"}");
   assert(!feature_bound());incoming(o,true,false,"127.0.0.1");assert(!feature_bound());

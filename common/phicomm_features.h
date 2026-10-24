@@ -119,7 +119,12 @@ typedef struct {
   float co2;
   uint32_t co2_received_ms, co2_age_ms;
   bool co2_supported, co2_valid;
+  uint8_t fields;
+  bool partial;
+  uint16_t field_age_ms[4];
 } feature_sample_t;
+static inline unsigned feature_sample_fields(const feature_sample_t *s) { return s->partial ? s->fields & 15u : 15u; }
+unsigned feature_sample_fresh_fields(const feature_sample_t *,uint32_t);
 typedef struct {
   float integral, previous, derivative;
   uint32_t last_ms, condition_since, switch_ms;

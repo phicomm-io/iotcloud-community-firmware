@@ -52,6 +52,7 @@ static feature_sleep_state_t sleep_state;
 static float aggregate[4], aggregate_co2;
 static unsigned available_co2;
 static bool data_valid;
+static unsigned data_fields;
 static unsigned available;
 #ifdef FEATURE_DEVICE_A1
 typedef struct {
@@ -69,7 +70,7 @@ typedef struct {
   char id[13], ip[16];
   uint8_t token[16];
   uint32_t boot, last_seen;
-  bool valid;
+  bool valid, active;
 } sensor_session_t;
 static sensor_session_t sensor_sessions[FEATURE_MAX_PEERS];
 #endif
@@ -317,6 +318,30 @@ static bool install_config(feature_config_t *c) {
 #endif
   return true;
 }
+#ifdef FEATURE_DEVICE_A1
+static void sensor_decode(json_object *o, feature_sample_t *s) {
+  const char *names[]={"temperature","humidity","pm25","formaldehyde","co2"};
+  const char *units[]={"°C","%","µg/m³","mg/m³","ppm"};
+  json_object *values=json_object_object_get(o,"sensors");
+  memset(s,0,sizeof(*s));s->partial=true;s->received_ms=s->co2_received_ms=now_ms();
+  for(unsigned f=0;f<5;f++) {
+    json_object *field=json_object_object_get(values,names[f]);
+    json_object *v=json_object_object_get(values?field:o,names[f]);
+    if(values)v=json_object_object_get(field,"value");
+    json_object *age=json_object_object_get(values?field:o,values?"age_ms":f==4?"co2_age_ms":"age_ms");
+    bool enabled=values?integer(field,"valid"):integer(o,f==4?"co2_valid":"valid");
+    if(f==4)s->co2_supported=values?field!=NULL:integer(o,"co2_supported");
+    if(!enabled || (values&&strcmp(string(field,"unit"),units[f])) || !age || !json_object_is_type(age,json_type_int) ||
+       json_object_get_int(age)<0 || (unsigned)json_object_get_int(age)>=(f==4?20000u:FEATURE_STALE_MS) ||
+       (!json_object_is_type(v,json_type_int)&&!json_object_is_type(v,json_type_double)))continue;
+    float value=json_object_get_double(v);
+    if(!isfinite(value)||(f==0&&(value < -40 || value>125))||(f==1&&(value<0||value>100))||(f>=2&&value<0)||(f==4&&(value==0||value>65535)))continue;
+    if(f==4){s->co2=value;s->co2_valid=true;s->co2_age_ms=integer(values?field:o,values?"age_ms":"co2_age_ms");}
+    else {s->fields|=1u<<f;s->value[f]=value;s->field_age_ms[f]=json_object_get_int(age);if((unsigned)json_object_get_int(age)>s->age_ms)s->age_ms=json_object_get_int(age);}
+  }
+  s->valid=s->fields!=0;s->boot=integer(o,"boot");s->sequence=integer(o,"sequence");
+}
+#endif
 static void co2_body(json_object *o, const feature_sample_t *s, uint32_t now) {
   json_build_object_add(o,"co2_supported",json_object_new_boolean(s->co2_supported));
   json_build_object_add(o,"co2_valid",json_object_new_boolean(feature_co2_fresh(s,now)));
@@ -336,13 +361,27 @@ static json_object *sample_body(const feature_sample_t *s, uint32_t now) {
                          json_object_new_boolean(feature_sample_fresh(s, now)));
   const char *keys[] = {"temperature", "humidity", "pm25", "formaldehyde"};
   for (unsigned i = 0; i < 4; i++)
-    json_object_object_add(o, keys[i], feature_sample_fresh(s,now)?json_object_new_double(s->value[i]):NULL);
+    json_object_object_add(o, keys[i], (feature_sample_fresh_fields(s,now)&(1u<<i))?json_object_new_double(s->value[i]):NULL);
+  #ifndef FEATURE_DEVICE_A1
+  json_object *values=json_object_new_object();
+  const char *units[]={"°C","%","µg/m³","mg/m³","ppm"};
+  for(unsigned i=0;i<5;i++) {
+    if(i==4&&!s->co2_supported)continue;
+    bool fresh=i==4?feature_co2_fresh(s,now):(feature_sample_fresh_fields(s,now)&(1u<<i))!=0;
+    json_object *field=json_object_new_object();
+    js(field,"unit",units[i]);json_build_object_add(field,"valid",json_object_new_boolean(fresh));
+    number(field,"age_ms",i==4?s->co2_age_ms+(uint32_t)(now-s->co2_received_ms):s->age_ms+(uint32_t)(now-s->received_ms));
+    json_object_object_add(field,"value",fresh?json_object_new_double(i==4?s->co2:s->value[i]):NULL);
+    json_build_object_add(values,i==4?"co2":keys[i],field);
+  }
+  json_build_object_add(o,"sensors",values);
+  #endif
   return o;
 }
 #ifdef FEATURE_DEVICE_A1
 /* Caller supplies a stable snapshot. Missing/stale data is never a zero reading. */
 static json_object *average_body(const feature_sample_t *current, unsigned count, uint32_t now) {
-  float mean[4];
+  float mean[4]={NAN,NAN,NAN,NAN};
   unsigned n = feature_aggregate(current, count, now, STAT_MEAN, mean, NULL);
   json_object *o = json_object_new_object();
   number(o, "sample_count", n);
@@ -356,9 +395,15 @@ static json_object *average_body(const feature_sample_t *current, unsigned count
   number(o, "configured_count", count);
   json_build_object_add(o, "valid", json_object_new_boolean(n != 0));
   const char *keys[] = {"temperature", "humidity", "pm25", "formaldehyde"};
-  for (unsigned i = 0; i < 4; ++i)
-    if (n) json_build_object_add(o, keys[i],json_object_new_double(mean[i]));
-    else json_object_object_add(o, keys[i], NULL);
+  json_object *fields=json_object_new_object();
+  for (unsigned i = 0; i < 4; ++i) {
+    bool valid=n && isfinite(mean[i]);
+    json_build_object_add(fields,keys[i],json_object_new_boolean(valid));
+    if(valid)json_build_object_add(o,keys[i],json_object_new_double(mean[i]));
+    else json_object_object_add(o,keys[i],NULL);
+  }
+  json_build_object_add(fields,"co2",json_object_new_boolean(nc!=0));
+  json_build_object_add(o,"fields",fields);
   return o;
 }
 #endif
@@ -403,7 +448,7 @@ static void passive_incoming(json_object *o, bool lan, bool retained, const char
     sensor_session_t *p=&sensor_sessions[i];
     if(p->valid && (uint32_t)(now-p->last_seen)>=SENSOR_SESSION_IDLE_MS)p->valid=false;
     if(p->valid && !strcmp(p->id,string(o,"src")) && p->boot==integer(o,"boot") && !memcmp(p->token,token,16)) {
-      p->last_seen=now;snprintf(p->ip,sizeof(p->ip),"%s",ip);permitted=true;break;
+      p->last_seen=now;p->active=true;snprintf(p->ip,sizeof(p->ip),"%s",ip);permitted=true;break;
     }
   }
   feature_sample_t sample=local_sample;
@@ -441,27 +486,7 @@ static void incoming(json_object *o, bool lan, bool retained, const char *ip) {
   if(!strcmp(op,"sample")) {
     json_object *b = json_object_object_get(o, "body");
     feature_sample_t s;
-    memset(&s, 0, sizeof(s));
-    const char *keys[] = {"temperature", "humidity", "pm25", "formaldehyde"};
-    bool valid = true;
-    for (unsigned k = 0; k < 4; k++) {
-      json_object *v = json_object_object_get(b, keys[k]);
-      if (!v || (!json_object_is_type(v, json_type_double) &&
-                 !json_object_is_type(v, json_type_int)))
-        valid = false;
-      s.value[k] = json_object_get_double(v);
-    }
-    json_object *co2=json_object_object_get(b,"co2"), *age=json_object_object_get(b,"co2_age_ms");
-    s.co2_supported=integer(b,"co2_supported");
-    s.co2_valid=s.co2_supported && integer(b,"co2_valid") && co2 && age &&
-      (json_object_is_type(co2,json_type_double)||json_object_is_type(co2,json_type_int)) &&
-      json_object_is_type(age,json_type_int) && json_object_get_int64(age)>=0 && json_object_get_int64(age)<20000;
-    s.co2=json_object_get_double(co2); s.co2_age_ms=integer(b,"co2_age_ms"); s.co2_received_ms=now_ms();
-    s.sequence = integer(b, "sequence");
-    s.boot = integer(b, "boot");
-    s.age_ms = integer(b, "age_ms");
-    s.received_ms = now_ms();
-    s.valid = valid && integer(b, "valid");
+    sensor_decode(b,&s);
     lock();
     if (!peer_current(c, i)) {
       unlock();
@@ -559,17 +584,17 @@ json_object *feature_json(const char *d) {
     for (unsigned i = 0; i < c->peer_count; i++) {
       json_object *p = json_object_new_object();
       js(p, "mac", c->peers[i].id);
-      json_build_object_add(p,"session_ready",json_object_new_boolean(peers[i].authorized));
+      json_build_object_add(p,"session_ready",json_object_new_boolean(peers[i].authorized||samples[i].partial));
       json_build_object_add(p,"co2_supported",json_object_new_boolean(samples[i].co2_supported));
       json_build_object_add(p,"co2_valid",json_object_new_boolean(feature_co2_fresh(&samples[i],now_ms())));
       js(p, "ip", c->peers[i].ip[0] ? c->peers[i].ip : peers[i].ip);
       js(p, "transport",
-         peers[i].lan ? "lan" : "offline");
+         peers[i].lan ? "lan" : (feature_sample_fresh(&samples[i],now_ms())||feature_co2_fresh(&samples[i],now_ms())?"mqtt":"offline"));
       json_build_object_add(p, "pending",
                              json_object_new_boolean(peers[i].pending));
       json_build_object_add(
           p, "fresh",
-          json_object_new_boolean(feature_sample_fresh(&samples[i], now_ms())));
+          json_object_new_boolean(feature_sample_fresh(&samples[i], now_ms())||feature_co2_fresh(&samples[i],now_ms())));
       json_build_array_add(a, p);
     }
 #else
@@ -577,7 +602,7 @@ json_object *feature_json(const char *d) {
       sensor_session_t *session=&sensor_sessions[i];
       if(!session->valid || (uint32_t)(now_ms()-session->last_seen)>=SENSOR_SESSION_IDLE_MS)continue;
       json_object *p=json_object_new_object();js(p,"mac",session->id);js(p,"ip",session->ip);
-      json_build_object_add(p,"session_ready",json_object_new_boolean(true));
+      json_build_object_add(p,"session_ready",json_object_new_boolean(session->active && (uint32_t)(now_ms()-session->last_seen)<FEATURE_STALE_MS));
       number(p,"idle_ms",now_ms()-session->last_seen);json_build_array_add(a,p);
     }
     number(o,"max_sessions",FEATURE_MAX_PEERS);
@@ -873,7 +898,7 @@ void feature_light_frame(uint32_t out[32], unsigned brightness, bool enabled,
   feature_light_t l = configuration.light;
   float values[4];
   memcpy(values, aggregate, sizeof(values));
-  bool valid[4] = {available > 0, available > 0, available > 0, available > 0};
+  bool valid[4] = {data_fields&1,data_fields&2,data_fields&4,data_fields&8};
   bool powered = effective_on;
   unsigned speed = powered ? effective_speed : 0;
   feature_sleep_state_t sleep = sleep_state;
@@ -926,17 +951,19 @@ unsigned feature_mqtt_filters(char filters[][FEATURE_TOPIC_MAX], unsigned capaci
   mqtt_account_t a=mqtt_snapshot();unsigned n=0;
   feature_config_t *c=malloc(sizeof(*c));if(!c)return FEATURE_MQTT_FILTER_ERROR;feature_config_get(c);
 #ifdef FEATURE_DEVICE_A1
-  unsigned required=2u+(c->peer_count || c->group[0] ? 1u : 0u);
+  unsigned required=2u+(c->peer_count || c->group[0] ? 1u : 0u)+(c->peer_count?1u:0u);
 #else
-  unsigned required=0;
+  unsigned required=1;
 #endif
   if(capacity<required){free(c);return FEATURE_MQTT_FILTER_ERROR;}
 #ifdef FEATURE_DEVICE_A1
   mqtt_link_topic(&a,"a1",LOCAL_ID,"+","request",filters[n++],FEATURE_TOPIC_MAX);
   mqtt_aux(&a,"address","+",filters[n++],FEATURE_TOPIC_MAX);
-  if(required==3) {char root[FEATURE_TOPIC_MAX];root_for(c,0,root);mqtt_format(filters[n++],FEATURE_TOPIC_MAX,"%s/#",root);}
+  if(c->peer_count || c->group[0]) {char root[FEATURE_TOPIC_MAX];root_for(c,0,root);mqtt_format(filters[n++],FEATURE_TOPIC_MAX,"%s/#",root);}
+  if(c->peer_count)mqtt_aux(&a,"sensor","+/state",filters[n++],FEATURE_TOPIC_MAX);
 #else
-  (void)filters;
+  char leaf[32];snprintf(leaf,sizeof(leaf),"%s/command",LOCAL_ID);
+  mqtt_aux(&a,"sensor",leaf,filters[n++],FEATURE_TOPIC_MAX);
 #endif
   free(c);return n;
 }
@@ -949,9 +976,6 @@ bool feature_mqtt_filters_current(char filters[][FEATURE_TOPIC_MAX], unsigned co
   const unsigned capacity=FEATURE_MQTT_M1_FILTER_MAX;
 #endif
   if(count>capacity)return false;
-#ifndef FEATURE_DEVICE_A1
-  (void)filters;return count==0;
-#endif
   char (*next)[FEATURE_TOPIC_MAX] = calloc(capacity, FEATURE_TOPIC_MAX);
   if (!next) return false;
   unsigned n = feature_mqtt_filters(next,capacity);
@@ -966,6 +990,39 @@ static bool virtual_input(const char *t, const void *data, size_t n,
 bool feature_mqtt_input(const char *t, const void *data, size_t n,
                         bool retained) {
   mqtt_account_t account = mqtt_snapshot();
+#ifndef FEATURE_DEVICE_A1
+  char grant_topic[FEATURE_TOPIC_MAX],leaf[32];snprintf(leaf,sizeof(leaf),"%s/command",LOCAL_ID);
+  mqtt_aux(&account,"sensor",leaf,grant_topic,sizeof(grant_topic));
+  if(!strcmp(t,grant_topic)) {
+    if(!retained){json_object *o=parse(data,n);if(o){
+      if(!strcmp(string(o,"action"),"sensor.session.set"))feature_sensor_session_set(json_object_object_get(o,"params"));
+      json_object_put(o);
+    }}return true;
+  }
+#endif
+#ifdef FEATURE_DEVICE_A1
+  char sensor_prefix[FEATURE_TOPIC_MAX];mqtt_aux(&account,"sensor","",sensor_prefix,sizeof(sensor_prefix));
+  size_t prefix_len=strlen(sensor_prefix);
+  if(!strncmp(t,sensor_prefix,prefix_len)){
+    // Account-scoped read-only measurements. Model is deliberately absent.
+    // Retained snapshots cannot prove freshness after reconnection.
+    const char *suffix=t+prefix_len;char mac[13];
+    if(retained || strlen(suffix)!=18 || strcmp(suffix+12,"/state"))return true;
+    memcpy(mac,suffix,12);mac[12]=0;char normalized[13];if(!feature_mac(mac,normalized))return true;
+    json_object *o=parse(data,n);if(!o)return true;
+    if(integer(o,"schema")!=1 || strcmp(string(o,"device_id"),normalized)){json_object_put(o);return true;}
+    feature_sample_t sample;sensor_decode(o,&sample);
+    if(!sample.boot||!sample.sequence){json_object_put(o);return true;}
+    lock();for(unsigned i=0;i<configuration.peer_count;i++)if(!strcmp(configuration.peers[i].id,normalized)){
+      if(peers[i].lan && (uint32_t)(now_ms()-peers[i].last_seen)<FEATURE_STALE_MS)break;
+      bool retired=false;for(unsigned k=0;k<4;k++)retired|=peers[i].retired_boot[k]==sample.boot;
+      if(retired || (samples[i].partial && sample.boot==samples[i].boot && (int32_t)(sample.sequence-samples[i].sequence)<=0))break;
+      if(samples[i].partial && samples[i].boot!=sample.boot){memmove(peers[i].retired_boot+1,peers[i].retired_boot,3*sizeof(uint32_t));peers[i].retired_boot[0]=samples[i].boot;}
+      if(!peers[i].lan || (uint32_t)(now_ms()-peers[i].last_seen)>=FEATURE_STALE_MS)samples[i]=sample;
+      break;
+    }unlock();json_object_put(o);return true;
+  }
+#endif
   char address_prefix[192];
   mqtt_aux(&account,"address","",address_prefix,sizeof(address_prefix));
   size_t address_length = strlen(address_prefix);
@@ -1079,7 +1136,7 @@ void feature_mqtt_session(const mqtt_account_t *account) {
   mqtt_tick=0;mqtt_leaf_pending=0;mqtt_telemetry_cursor=0;
   mqtt_discovery_pending=false;mqtt_discovery_deferred=false;mqtt_capture_deferred=false;
   if(changed) {
-    memset(peers,0,sizeof(peers));memset(samples,0,sizeof(samples));
+    memset(peers,0,sizeof(peers));memset(samples,0,sizeof(samples));data_valid=false;data_fields=0;
     published_root[0]=0; published_count=0;
     free(published_layout); published_layout=NULL;
   }
@@ -1122,7 +1179,10 @@ static bool sensor_grant(const feature_config_t *c,unsigned i,uint32_t now) {
   json_build_object_add(o,"params",p);
   char topic[FEATURE_TOPIC_MAX];mqtt_account_t account=mqtt_snapshot();
   mqtt_target_t target;mqtt_target_set(&target,&account);strcpy(target.model,"m1");strcpy(target.mac,c->peers[i].id);
-  bool sent=mqtt_target_leaf(&target,"command",topic,sizeof(topic)) && enqueue(topic,o,false);
+  lock();bool legacy=peers[i].failures>=2;unlock();
+  bool sent;
+  if(legacy)sent=mqtt_target_leaf(&target,"command",topic,sizeof(topic)) && enqueue(topic,o,false);
+  else {char leaf[32];snprintf(leaf,sizeof(leaf),"%s/command",c->peers[i].id);sent=mqtt_aux(&account,"sensor",leaf,topic,sizeof(topic)) && enqueue(topic,o,false);}
   json_object_put(o);
   lock();if(peer_current(c,i)) { peers[i].auth_at=now;peers[i].auth_sent=sent; }unlock();
   return sent;
@@ -1303,7 +1363,9 @@ static void feature_worker(mico_thread_arg_t arg) {
       lock();
       available = n;
       available_co2=nc; aggregate_co2=co2;
-      data_valid = (!(c->linkage.metrics & 3) || n > 0) && (!(c->linkage.metrics & 4) || nc > 0);
+      data_fields=0;for(unsigned f=0;f<4;f++)if(n && isfinite(v[f]))data_fields|=1u<<f;
+      unsigned required=((c->linkage.metrics&1)?4u:0u)|((c->linkage.metrics&2)?8u:0u);
+      data_valid = (data_fields&required)==required && (!(c->linkage.metrics & 4) || nc > 0);
       memcpy(aggregate,v,sizeof(v));
       if (!data_valid) { reset_controller(configuration.linkage.hysteresis_enabled); pid.condition=0; }
       automatic_valid = false;

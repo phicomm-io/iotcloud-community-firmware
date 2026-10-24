@@ -177,7 +177,7 @@ static void binding(void) {
       "{\"peers\":[{\"mac\":\"11:22:33:44:55:66\",\"ip\":\"127.0.0.1\"}]}",
       200);
   char filters[12][FEATURE_TOPIC_MAX];
-  assert(feature_mqtt_filters(filters,sizeof(filters)/sizeof(filters[0])) == 3);
+  assert(feature_mqtt_filters(filters,sizeof(filters)/sizeof(filters[0])) == 4);
   char root[FEATURE_TOPIC_MAX];
   root_for(&stored, 0, root);
 #ifdef FEATURE_DEVICE_A1
@@ -658,7 +658,7 @@ static void account_namespaces(void) {
   assert(grouped && !strcmp(parent, expected_parent) && !strcmp(parent_name, stored.group));
 #endif
   char filters[12][FEATURE_TOPIC_MAX],root[FEATURE_TOPIC_MAX];
-  unsigned count=feature_mqtt_filters(filters,sizeof(filters)/sizeof(filters[0]));assert(count==3);
+  unsigned count=feature_mqtt_filters(filters,sizeof(filters)/sizeof(filters[0]));assert(count==4);
   for(unsigned i=0;i<count;++i)assert(strstr(filters[i],alice.key));
   assert(feature_mqtt_filters_current(filters,count));
   stored.revision++;configuration=stored;
@@ -709,9 +709,9 @@ static void compact_resources(void){
   stored.peer_count=count;configuration=stored;
   for(unsigned i=0;i<count;i++)snprintf(stored.peers[i].id,sizeof(stored.peers[i].id),"%012x",i+1);
 #ifdef FEATURE_DEVICE_A1
-  unsigned expected=2u+(count?1u:0u);
+  unsigned expected=2u+(count?2u:0u);
 #else
-  unsigned expected=0;
+  unsigned expected=1;
 #endif
   assert(feature_mqtt_filters(filters.topics,capacity)==expected);
   assert(feature_mqtt_filters_current(filters.topics,expected));
@@ -792,7 +792,7 @@ static void four_peer_limit(void) {
   before=stored;feature_config_t loaded;feature_config_get(&loaded);
   assert(loaded.peer_count==4 && !memcmp(loaded.peers,stored.peers,4*sizeof(loaded.peers[0])));
   assert(!memcmp(&before,&stored,sizeof(stored)));
-  char filters[4][FEATURE_TOPIC_MAX];assert(feature_mqtt_filters(filters,4)==3);
+  char filters[4][FEATURE_TOPIC_MAX];assert(feature_mqtt_filters(filters,4)==4);
   assert(!install_config(&stored)); /* Never install an oversized runtime map. */
   saved.revision=stored.revision;assert(install_config(&saved));
   puts("Four-peer boundary: four accepted, fifth rejected without mutation, inbound fifth ignored, legacy reads clamped");
@@ -860,6 +860,29 @@ static void animation_speed(void) {
   transaction("light","{\"speed\":10}",200);assert(stored.light.speed==10);
   transaction("light","{\"effect\":2}",200);assert(stored.light.speed==10);
   puts("Animation speed: legacy default, render timing, bounds and persistence passed");
+}
+#endif
+#ifdef FEATURE_DEVICE_A1
+static void generic_measurements(void){
+ feature_config_t saved=configuration;feature_sample_t old[FEATURE_MAX_PEERS];memcpy(old,samples,sizeof(old));
+ feature_defaults(&configuration);configuration.peer_count=1;strcpy(configuration.peers[0].id,"9c9c1ff76748");
+ mqtt_account_t account=mqtt_snapshot();char topic[FEATURE_TOPIC_MAX];mqtt_aux(&account,"sensor","9c9c1ff76748/state",topic,sizeof(topic));
+ const char *wire="{\"boot\":123,\"sequence\":1,\"schema\":1,\"device_id\":\"9c9c1ff76748\",\"sensors\":{\"pm25\":{\"valid\":true,\"value\":42,\"unit\":\"µg/m³\",\"age_ms\":0}}}";
+ memset(samples,0,sizeof(samples));
+ assert(feature_mqtt_input(topic,wire,strlen(wire),true));assert(!samples[0].valid);
+ assert(feature_mqtt_input(topic,wire,strlen(wire),false));assert(samples[0].valid&&samples[0].fields==4);
+ uint32_t received=samples[0].received_ms;test_now+=100;feature_mqtt_input(topic,wire,strlen(wire),false);assert(samples[0].received_ms==received);
+ float result[4];assert(feature_aggregate(samples,1,now_ms(),STAT_MEAN,result,NULL)==1);
+ assert(result[2]==42 && isnan(result[3]) && isnan(result[0]));
+ json_object *average=average_body(samples,1,now_ms());assert(integer(json_object_object_get(average,"fields"),"pm25"));
+ assert(!integer(json_object_object_get(average,"fields"),"formaldehyde"));assert(!json_object_object_get(average,"formaldehyde"));json_object_put(average);
+ const char *bad="{\"boot\":123,\"sequence\":2,\"schema\":1,\"device_id\":\"9c9c1ff76748\",\"sensors\":{\"pm25\":{\"valid\":true,\"value\":42,\"unit\":\"ppm\",\"age_ms\":0}}}";
+ feature_mqtt_input(topic,bad,strlen(bad),false);assert(!samples[0].valid);
+ const char *co2="{\"boot\":123,\"sequence\":3,\"schema\":1,\"device_id\":\"9c9c1ff76748\",\"sensors\":{\"co2\":{\"valid\":true,\"value\":1800,\"unit\":\"ppm\",\"age_ms\":0}}}";
+ feature_mqtt_input(topic,co2,strlen(co2),false);assert(!samples[0].valid&&feature_co2_fresh(&samples[0],now_ms()));
+ average=average_body(samples,1,now_ms());assert(integer(json_object_object_get(average,"fields"),"co2"));assert(integer(average,"co2")==1800);json_object_put(average);
+
+ configuration=saved;memcpy(samples,old,sizeof(old));
 }
 #endif
 int main(void) {
@@ -933,6 +956,9 @@ int main(void) {
   passive_scenarios();
 #endif
   compact_resources();
+#ifdef FEATURE_DEVICE_A1
+  generic_measurements();
+#endif
   four_peer_limit();
   (void)r;
   puts("runtime transactions, handshake, authentication and duplicate "
