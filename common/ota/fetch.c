@@ -90,16 +90,18 @@ static bool kernel_tls_connect(transfer *t) {
     if(mico_rtos_init_semaphore(&t->handshake_done,1)!=kNoErr) {
         mico_rtos_deinit_semaphore(&t->handshake_stop);return false;
     }
-    bool started=mico_rtos_create_thread(NULL,MICO_APPLICATION_PRIORITY,"ota_tls_guard",
+    int error=-1,flags=fcntl(t->fd,F_GETFL,0),io_timeout=1000;
+    /* Configure blocking I/O before starting the observer: its nonblocking
+     * abort must never be overwritten by delayed handshake initialization.
+     * Existing recv calls use an integer-ms timeout in the MiCO socket ABI. */
+    bool ready=flags>=0 &&
+        setsockopt(t->fd,SOL_SOCKET,SO_RCVTIMEO,&io_timeout,sizeof(io_timeout))>=0 &&
+        setsockopt(t->fd,SOL_SOCKET,SO_SNDTIMEO,&io_timeout,sizeof(io_timeout))>=0 &&
+        fcntl(t->fd,F_SETFL,flags&~O_NONBLOCK)>=0;
+    bool started=ready && mico_rtos_create_thread(NULL,MICO_APPLICATION_PRIORITY,"ota_tls_guard",
         handshake_observer,1024,(mico_thread_arg_t)t)==kNoErr;
     if(started) {
-        int error=-1,flags=fcntl(t->fd,F_GETFL,0);
-        /* Changing O_NONBLOCK need not wake an existing recv. Bound that call
-         * too; the MiCO socket ABI takes integer milliseconds, not timeval. */
-        int io_timeout=1000;
-        if(setsockopt(t->fd,SOL_SOCKET,SO_RCVTIMEO,&io_timeout,sizeof(io_timeout))<0 ||
-           setsockopt(t->fd,SOL_SOCKET,SO_SNDTIMEO,&io_timeout,sizeof(io_timeout))<0)flags=-1;
-        if(flags>=0 && fcntl(t->fd,F_SETFL,flags&~O_NONBLOCK)>=0) {
+        if(!ota_job_cancelled() && (int32_t)(t->deadline-mico_rtos_get_time())>0) {
             ssl_set_client_version(TLS_V1_2_MODE);
             /* Preserve the signed-OTA trust policy: encrypted transport with
              * SNI, no CA validation; the package authenticates the publisher. */

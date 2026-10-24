@@ -96,6 +96,13 @@ class Fetch(unittest.TestCase):
                     self.assertNotEqual(p.returncode,0,p.stdout+p.stderr)
                     self.assertLess(int(re.search(r'elapsed=(\d+)',p.stdout)[1]),1600)
                     if cancel:self.assertIn('error=Cancelled',p.stdout)
+    def test_handshake_abort_survives_delayed_thread_creation(self):
+        for cancel in (0,30):
+            with self.subTest(cancel=cancel):
+                p=self.case('handshake_drip',cancel=cancel,shim_fault='thread_start_delay')
+                self.assertNotEqual(p.returncode,0,p.stdout+p.stderr)
+                self.assertLess(int(re.search(r'elapsed=(\d+)',p.stdout)[1]),1600)
+                if cancel:self.assertIn('error=Cancelled',p.stdout)
     def test_cleanup_and_retry_in_one_process(self):
         for fault in ('sem1','sem2','thread','tls_alloc'):
             with self.subTest(fault=fault):

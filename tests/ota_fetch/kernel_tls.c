@@ -52,7 +52,10 @@ int mico_rtos_create_thread(void *thread,unsigned priority,const char *name,void
     if(fail("thread"))return -1;
     launch *l=malloc(sizeof(*l));if(!l)return -1;*l=(launch){fn,arg};pthread_t id;
     atomic_fetch_add(&threads,1);
-    if(pthread_create(&id,NULL,run,l)){free(l);atomic_fetch_sub(&threads,1);return -1;}pthread_detach(id);return 0;
+    if(pthread_create(&id,NULL,run,l)){free(l);atomic_fetch_sub(&threads,1);return -1;}pthread_detach(id);
+    /* The RTOS may run the observer before the creator resumes. */
+    if(fail("thread_start_delay"))usleep(700000);
+    return 0;
 }
 void mico_rtos_delete_thread(void *thread){(void)thread;atomic_fetch_sub(&threads,1);pthread_exit(NULL);}
 void ssl_set_client_version(unsigned version){assert(version==TLS_V1_2_MODE);}
