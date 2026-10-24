@@ -25,3 +25,7 @@
 A1 滤芯安装与上电联锁的说明来自 [zA1 Issue #3](https://github.com/a2633063/zA1/issues/3)：用户反馈未安装滤芯时无法通电，原项目维护者确认已将提醒加入文档。
 
 构建所需的工具链与 SDK 见[构建依赖](build-deps)。
+
+## DAIKIN 与读数参考
+
+DAIKIN 引脚与 PM2005 / PM2105 协议参考 [louliangsheng/daikin-air-sensor](https://github.com/louliangsheng/daikin-air-sensor)。PM2.5 与 PM10 来自同一帧的不同字段。TVOC 使用 SGP30 原生 ppb 输出，≤300 ppb 是沿用本设备指示灯阈值的产品通风参考；参见 [Sensirion SGP30 数据手册](https://sensirion.com/file/datasheet_sgp30/)与[MOX 输出解释](https://sensirion.com/resource/application_note/output_mox_sensor)，不将该参考作为健康合格限值。颗粒物显示分段参考 [HJ 633—2026 表 3](https://www.mee.gov.cn/ywgz/fgbz/bz/bzwb/jcffbz/202602/t20260225_1144441.shtml)，瞬时值并非按标准计算的 AQI。

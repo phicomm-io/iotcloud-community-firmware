@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | **TC1 智能排插** | 六路插座开关、计量、童锁、指示灯和定时任务 | A1 硬件版本，EMW3031。**不支持 A2 硬件** |
 | **M1 空气检测仪** | PM2.5、甲醛、温湿度读数和屏幕亮度设置 | 原装 EMW3080B / MK3080B，保留 ATSAMD20 |
-| **DAIKIN BRY88AX151K** | PM2.5、CO₂、温湿度、TVOC 和可选甲醛，A1 数据联动 | ESP32 / 4 MB Flash，PM2005 / PM2105 自动识别 |
+| **DAIKIN BRY88AX151K** | PM2.5、PM10、CO₂、温湿度、TVOC 和可选甲醛，A1 数据联动 | ESP32 / 4 MB Flash，PM2005 / PM2105 自动识别 |
 | **A1 空气净化器** | 风机、灯环、童锁、夜间模式和环境数据联动 | 原装 EMW3080B / MK3080B |
 
 > **`tc1(a1)` 指 TC1 的 A1 硬件版本，不是 A1 空气净化器。** 这是两个不同产品，固件文件不通用。刷写前务必确认型号。
@@ -48,5 +48,5 @@ WebUI 顶部可切换中文、英文及明暗主题。设置按**网络、设备
 - 日常操作、灯语与按键：[TC1](tc1-guide) · [M1](m1-guide) · [A1](a1-guide) · [DAIKIN](daikin-guide)
 - 更新固件：[固件更新](firmware-update)
 - 远程集中管理设备：[接入 IotCloud](iotcloud-connect)
-- 接入 Home Assistant 或配置 A1 × M1 联动：[MQTT 与联动](mqtt-link)
+- 接入 Home Assistant 或配置 A1 环境数据联动：[MQTT 与联动](mqtt-link)
 - 遇到问题：[故障排查](faq)

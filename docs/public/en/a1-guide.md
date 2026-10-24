@@ -1,13 +1,13 @@
 # A1 operation
 
-A1 provides fan control, a light ring, child lock, night mode and automatic control using M1 readings. For installation, see [A1 / M1 flashing](a1-m1-flash).
+A1 provides fan control, a light ring, child lock, night mode and automatic control using valid readings from M1, DAIKIN and other sensor providers. For installation, see [A1 / M1 flashing](a1-m1-flash).
 
 ## Power and fan
 
 The home page provides independent power and operating-mode controls.
 
 - Manual mode runs at your chosen speed. Returning to manual restores the last manual speed.
-- Auto mode adjusts speed while powered on, using PM2.5, formaldehyde, or the higher demand of both.
+- Auto mode adjusts speed while powered on, using PM2.5, formaldehyde and CO₂; combined metrics use the highest demand.
 - Selecting a mode while off preserves power-off. Worsening air quality never turns on a powered-off purifier.
 - The ring and web slider set speed in manual mode and the active period's maximum in auto mode. Changing speed also turns power on.
 
@@ -47,15 +47,17 @@ Countdowns work without clock sync and continue after closing the browser. A pow
 
 Child lock blocks normal physical-button actions; a configured child-lock gesture can still unlock the device. Night mode reduces brightness during the configured time period. An end time earlier than the start means the period crosses midnight.
 
-## M1 automation
+## Sensor automation
 
-All automation configuration lives on A1; M1 only measures and responds.
+Automation choices depend on currently valid measurements, independently of the monitor model. Add up to four providers, including a mix of M1 and DAIKIN. PM2.5, formaldehyde and CO₂ are checked independently for units, validity and freshness before aggregation. Missing or stale metrics hide their options while preserving saved rules. Unavailable required data triggers the configured offline speed; missing values never become zero. PM10 and TVOC currently remain monitor readings rather than A1 control metrics.
 
-1. Add up to four M1 MACs and optional IPs. No configuration is needed on M1.
-2. Configure automatic speed range, offline speed, algorithm, debounce and minimum switching intervals.
-3. Select auto mode and turn on power. Without valid data the offline speed applies.
+CO₂ defaults are 1500 ppm to start, 1000 ppm to idle and an 800–2000 ppm linear range. Any selected metric can trigger start; all must meet their targets to idle. These thresholds remain configurable.
 
-A1 computes the arithmetic mean of bound M1 readings no older than 15 seconds. With no valid data, readings are `null`. A1 sends session tokens through MQTT, then queries readings over LAN UDP only. UDP failures trigger the offline fan speed and retry backoff. A1 automatically authorizes sessions again after M1 restarts, without manual token entry. **Upgrade both sides together.** See [setup instructions](mqtt-link#a1-and-m1-automation).
+On A1, add each provider MAC and optional IP. Configure automatic speed range, offline speed, algorithm, debounce and minimum switching intervals, then select auto mode and turn on power. No manual A1 pairing identifier is needed on the monitor.
+
+A1 authorizes temporary sessions through the same MQTT account, prefers LAN UDP reads and can use generic MQTT measurements when LAN reads are unavailable. Existing M1 sessions remain compatible. PM2.5, formaldehyde, temperature and humidity expire after 15 seconds; CO₂ expires after 20 seconds. Replayed samples do not renew freshness. Each average includes only providers with valid data for that metric; absent data is `null`.
+
+Use updated firmware on both sides and Broker permissions for generic sensor topics. See [MQTT and automation](mqtt-link).
 
 ## Buttons
 
