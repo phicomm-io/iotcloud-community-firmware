@@ -6,6 +6,7 @@
 #define __MAIN_H_
 #define __USER_KEY_H_
 #include "mico.h"
+#define mico_rtos_delete_thread(thread) ((void)(thread))
 #include "common/automation.h"
 #include "common/gesture.h"
 #include "common/indicator.h"
@@ -100,7 +101,6 @@ static int create_reboot_thread(void *thread, int priority, const char *name,
 #define mico_rtos_create_thread create_reboot_thread
 #define mico_rtos_thread_msleep mico_thread_msleep
 #define MicoSystemReboot() ((void)0)
-#define mico_rtos_delete_thread(thread) ((void)(thread))
 void UserRelaySet(unsigned char i, char on);
 void UserRelaySetAll(char on);
 void UserLedSet(char on);
