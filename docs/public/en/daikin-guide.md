@@ -26,7 +26,7 @@ Use ESP32-compatible 3.3 V serial signals and avoid back-powering the device fro
 
 Upload `phicomm_daikin.ota.bin.signed` from the firmware update page. The device verifies the project signature, target and image before installing; Wi-Fi and MQTT settings remain. Updates currently use manual files; URL downloads and slim packages are unavailable.
 
-An explicitly labelled unsigned recovery input accepts a trusted raw application image, `phicomm_daikin.ota.bin`. If the web interface is unavailable, enter the BOOT0 bootloader again and restore the original backup or a complete image. See [Firmware updates](firmware-update).
+An explicitly labelled unsigned recovery input accepts a trusted raw application image. Releases name it `phicomm_daikin.ota.bin.raw`; local builds use `phicomm_daikin.ota.bin`. If the web interface is unavailable, enter the BOOT0 bootloader again and restore the original backup or a complete image. See [Firmware updates](firmware-update).
 
 ## IotCloud, Home Assistant and A1
 

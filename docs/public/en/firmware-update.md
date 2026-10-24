@@ -4,7 +4,7 @@ This page covers web OTA after community firmware is installed. Factory devices 
 
 ## Check for updates on the device
 
-Official builds provide GitHub Pages HTTPS and domestic/international HTTP update sources. Choose a source in the firmware settings and check:
+Official A1, M1 and TC1 builds provide GitHub Pages HTTPS and domestic/international HTTP update sources. Choose a source in the firmware settings and check:
 
 - The UI distinguishes **a new version**, **already up to date** and **network failure**.
 - Switch sources and retry if a network request fails.
@@ -43,9 +43,11 @@ Unsigned recovery from older community firmware may use `.ota.bin.raw` under its
 
 Updates pause linkage and other business responses while keeping update status and cancellation available. Reduce concurrent access during an update; sustained multi-client pressure updating has not passed full acceptance.
 
-If the WebUI is reachable, check the file, model, version and network, then retry. If the device cannot boot, use the corresponding wired recovery guide: [TC1](tc1-flash), [M1 / A1](a1-m1-flash). Normal OTA updates do not require opening the device.
+If the WebUI is reachable, check the file, model, version and network, then retry. If the device cannot boot, use the corresponding wired recovery guide: [TC1](tc1-flash), [M1 / A1](a1-m1-flash), [DAIKIN](daikin-guide). Normal OTA updates do not require opening the device.
 
 ## Full and slim firmware
+
+DAIKIN BRY88AX151K has one universal full image that detects PM2005 / PM2105 and the optional formaldehyde module. Use the local file procedure above; online checks and URL downloads are unavailable.
 
 Default files include the complete device UI. Files containing `-no-frontend-resources` keep an offline setup page for Wi-Fi, initial MQTT settings and the web password, available through the device hotspot or LAN address. Use [local device management]({{SITE_URL}}local/) or IotCloud for full controls and settings. Both share the same appearance. MQTT is not required to complete Wi-Fi setup.
 

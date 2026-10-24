@@ -26,7 +26,7 @@ ESP32 / 4 MB Flash 版本使用同一份通用固件，自动识别 PM2005 / PM2
 
 网页的固件更新页上传 `phicomm_daikin.ota.bin.signed`。设备验证本项目签名、目标型号与镜像后安装，Wi-Fi 和 MQTT 配置保留。当前通过手动文件更新，不提供 URL 下载或精简包。
 
-页面另有明确标记的未签名救援入口，仅用于可信的原始应用镜像 `phicomm_daikin.ota.bin`。无法访问网页时，可重新进入 BOOT0 下载模式，恢复原始备份或安装完整镜像。详见[固件更新](firmware-update)。
+页面另有明确标记的未签名救援入口，仅用于可信的原始应用镜像。发布文件名为 `phicomm_daikin.ota.bin.raw`，本地构建文件名为 `phicomm_daikin.ota.bin`。无法访问网页时，可重新进入 BOOT0 下载模式，恢复原始备份或安装完整镜像。详见[固件更新](firmware-update)。
 
 ## IotCloud、Home Assistant 与 A1
 
