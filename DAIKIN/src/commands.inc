@@ -18,10 +18,10 @@ static void state(JsonObject out){
   out["mqtt_protocol"]="tmcp";out["mqtt_topic_mode"]="tmcp";out["mqtt_protocol_version"]=2;
   out["formaldehyde_present"]=hchoPresent;out["indicator_enabled"]=indicator;
   JsonObject sensors=out.createNestedObject("sensors");
-  for(int i=0;i<6;i++){
-    if(i==5&&!hchoPresent)continue;
+  for(unsigned i=0;i<SENSOR_COUNT;i++){
+    if(!sensorPresent(i))continue;
     JsonObject s=sensors.createNestedObject(keys[i]);bool valid=readings[i].valid(now);
-    s["unit"]=((const char*[]){"µg/m³","ppm","°C","%","ppb","mg/m³"})[i];
+    s["unit"]=units[i];
     s["valid"]=valid;s["received"]=readings[i].received;
     if(valid)s["value"]=readings[i].value;else s["value"]=nullptr;
     if(readings[i].received)s["age_ms"]=uint32_t(now-readings[i].at);else s["age_ms"]=nullptr;

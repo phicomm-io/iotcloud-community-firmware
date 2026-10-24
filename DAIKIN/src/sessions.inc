@@ -12,10 +12,9 @@ static bool hexText(const char *text,size_t length){
 static void sensorBody(JsonObject out){
   out["schema"]=1;out["device_id"]=deviceId;out["boot"]=sensorBoot;out["sequence"]=++sensorSequence;
   JsonObject values=out.createNestedObject("sensors");
-  const char *units[]={"µg/m³","ppm","°C","%","ppb","mg/m³"};
   const uint32_t now=millis();
-  for(unsigned i=0;i<6;i++){
-    if(i==5&&!hchoPresent)continue;
+  for(unsigned i=0;i<SENSOR_COUNT;i++){
+    if(!sensorPresent(i))continue;
     JsonObject value=values.createNestedObject(keys[i]);bool valid=readings[i].valid(now);
     value["valid"]=valid;value["unit"]=units[i];
     value["age_ms"]=readings[i].received?uint32_t(now-readings[i].at):0;

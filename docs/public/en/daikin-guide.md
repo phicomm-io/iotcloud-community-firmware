@@ -4,7 +4,7 @@ The ESP32 / 4 MB Flash board uses one universal image that detects PM2005 / PM21
 
 ## Readings and controls
 
-- Read PM2.5, CO₂, temperature, humidity and TVOC. The CO₂ module needs about three minutes to warm up; the interface reports no valid reading during this period.
+- Read PM2.5, PM10, CO₂, temperature, humidity and TVOC. PM2005 / PM2105 provide both particulate readings in one frame and one card; PM10 stays hidden when it is unavailable. The CO₂ module needs about three minutes to warm up; the interface reports no valid reading during this period.
 - Formaldehyde is detected automatically. Without the module, its card and entity stay hidden. A previously detected module that stops responding becomes invalid; old readings never become zero measurements.
 - Comfort scales follow fresh readings. Stale values do not contribute to comfort ratings. TVOC uses the module's native ppb unit.
 - Configure the name, network, web password and indicators in Settings. Hold the rear button for five seconds to reopen the setup hotspot without clearing settings.

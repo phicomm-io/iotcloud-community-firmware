@@ -8,10 +8,9 @@ static void discovery(){
   String userKey=config["mqtt"]["user"]|"";String encoded="local";
   if(userKey.length()){encoded="u_";for(size_t i=0;i<userKey.length();i++){char hex[3];snprintf(hex,3,"%02x",(uint8_t)userKey[i]);encoded+=hex;}}
   String haRoot="homeassistant/sensor/"+encoded+"/daikin_"+deviceId+"_";
-  const char *units[]={"µg/m³","ppm","°C","%","ppb","mg/m³"};
-  const char *classes[]={"pm25","carbon_dioxide","temperature","humidity","volatile_organic_compounds_parts",""};
-  for(int i=0;i<6;i++){
-    if(i==5&&!hchoPresent){publish(haRoot+keys[i]+"/config","");continue;}
+  const char *classes[]={"pm25","carbon_dioxide","temperature","humidity","volatile_organic_compounds_parts","","pm10"};
+  for(unsigned i=0;i<SENSOR_COUNT;i++){
+    if(!sensorPresent(i)){publish(haRoot+keys[i]+"/config","");continue;}
     DynamicJsonDocument doc(1536);doc["name"]=keys[i];doc["unique_id"]=encoded+"_daikin_"+deviceId+"_"+keys[i];
     doc["state_topic"]=mqttRoot+"/state";doc["availability_topic"]=mqttRoot+"/availability";
     doc["value_template"]=String("{{ value_json.sensors.")+keys[i]+".value if value_json.sensors."+keys[i]+".valid else 'None' }}";

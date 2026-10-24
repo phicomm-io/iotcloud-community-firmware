@@ -19,14 +19,17 @@ extern "C" {
 // BRY88AX151K family, tested BRY88AB151K board wiring; see README.
 static TwoWire pmBus(0), thBus(1);
 static HardwareSerial co2Uart(2), hchoUart(1);
-static daikin::Sample readings[6]; // PM2.5, CO2, temperature, humidity, TVOC(ppb), CH2O(mg/m3)
-static const char *keys[]={"pm25","co2","temperature","humidity","tvoc","formaldehyde"};
+enum Sensor { PM25, CO2, TEMPERATURE, HUMIDITY, TVOC, HCHO, PM10, SENSOR_COUNT };
+static daikin::Sample readings[SENSOR_COUNT];
+static const char *keys[]={"pm25","co2","temperature","humidity","tvoc","formaldehyde","pm10"};
+static const char *units[]={"µg/m³","ppm","°C","%","ppb","mg/m³","µg/m³"};
 static Preferences prefs;
 static httpd_handle_t web;
 static esp_mqtt_client_handle_t mqtt=nullptr;
 static volatile bool mqttConnected=false;
 static volatile int mqttLastEvent=MQTT_EVENT_ANY,mqttErrorType=0,mqttSocketError=0;
 static bool hchoPresent=false, indicator=false;
+static bool sensorPresent(unsigned i){return i==HCHO?hchoPresent:i!=PM10||readings[PM10].received;}
 static int commandSubId=-1;
 static bool sgpReady=false;
 static uint32_t sgpSince=0, nextSample=0, nextSgp=0, nextPublish=0, connectAt=0;
@@ -114,7 +117,8 @@ void loop(){
     publish(discoveryTopic,"{\"schema\":1,\"model\":\"daikin\",\"protocol\":\"tmcp\",\"protocol_version\":2,\"version\":\"v2\"}");haBirth=true;
     publish(sensorRoot.substring(0,sensorRoot.indexOf("/sensor/"))+"/address/"+deviceId,String("{\"ip\":\"")+WiFi.localIP().toString()+"\"}");
   }
-  static bool previousHcho=false;if(previousHcho!=hchoPresent){previousHcho=hchoPresent;haBirth=true;}
+  static bool previousHcho=false,previousPm10=false;
+  if(previousHcho!=hchoPresent||previousPm10!=sensorPresent(PM10)){previousHcho=hchoPresent;previousPm10=sensorPresent(PM10);haBirth=true;}
   if(haBirth&&mqttConnected){haBirth=false;discovery();}
   if(mqttConnected&&due(now,nextPublish)){nextPublish=now+5000;publishState();}
   if(mqttRestart){mqttRestart=false;startMqtt();}

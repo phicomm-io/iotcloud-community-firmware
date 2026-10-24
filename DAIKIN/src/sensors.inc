@@ -25,10 +25,15 @@ static void pollSensors(uint32_t now){
   if(hchoWaiting&&uint32_t(now-hchoSent)>500){hchoUsed=0;hchoWaiting=false;}
   if(due(now,nextSample)){
     nextSample=now+5000;
-    uint8_t p[12];uint16_t v;
+    uint8_t p[12];daikin::Particulates particles;
     if(readI2c(pmBus,0x28,p,12)){
-      if(daikin::pm(p,12,false,v)){pmModel="PM2105";readings[0].set(v,now);}
-      else if(daikin::pm(p,12,true,v)){pmModel="PM2005";readings[0].set(v,now);}
+      bool decoded=daikin::pm(p,12,false,particles);
+      if(decoded)pmModel="PM2105";
+      else if((decoded=daikin::pm(p,12,true,particles)))pmModel="PM2005";
+      if(decoded){
+        if(particles.pm25<=10000)readings[PM25].set(particles.pm25,now);
+        if(particles.pm10<=10000)readings[PM10].set(particles.pm10,now);
+      }
     }
     // HDC1080 temperature+humidity acquisition; bounded 15 ms conversion.
     const uint8_t reg[]={0};
