@@ -77,6 +77,10 @@ M1 uses TMCP (v2) topics only, with no Legacy selector. See [MQTT and automation
 
 ## v1.0 in development
 
-Plans include double-click alarm cancellation, switching between direct and Wi-Fi display sources, and selecting CO₂ or generic display data from another online device. Wi-Fi values require valid units and expiry; stale data restores the direct display without replacing original sensor acquisition or alarms. Steadier PM2.5 readings are also in development. These features require matching open-source controller, Wi-Fi firmware and frontend and have not been released.
+Dual-position screen readings and steadier PM2.5 are in development and have not been released. They require matching open-source controller, Wi-Fi firmware and frontend.
+
+In Device settings, open **User readings on the device screen**. Configure the formaldehyde and PM2.5 positions separately using this M1's sensors, another device on the same MQTT account and broker (TC1 power, A1 main-fan output, DAIKIN CO₂ or other readings), or an API / manually written value. A1 provides its current effective output percentage (0–100%), including fresh-air variants. Each position has three digits; use the preview to choose decimal places and scaling. Only the original reading in its original position at ÷1 keeps its original label and unit; other units are hidden.
+
+Set **Double-press action** to **Switch both original/user readings** to switch the pair together. A ringing alarm is stopped first. Set each position's maximum reading age and color rule independently: missing, expired or out-of-range data restores only that position's original reading. Choose a fixed color or thresholds in the original physical units, before display scaling. User readings do not replace original sensor acquisition or alarms.
 
 v1 also plans separate over-threshold buzzer switches for formaldehyde and PM2.5, both off by default. Light thresholds, alarms and manual tones remain separately controlled.

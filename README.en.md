@@ -36,7 +36,7 @@ The DAIKIN stock OTA layout has **`0x180000` (1.5 MiB)** application slots. Foll
 | Area | Planned features |
 | --- | --- |
 | Use and updates | Chinese / English interfaces, device language, configuration backup and restore, migration recovery and upgrade comparisons |
-| M1 | Double-click, external online CO₂, generic Wi-Fi display data and steadier PM2.5; separate over-threshold formaldehyde / PM2.5 buzzer switches, off by default, independent of light thresholds, alarms and manual tones |
+| M1 | Independent sources for the formaldehyde / PM2.5 positions: local sensors, TC1 power, A1 effective main-fan output (0–100%), DAIKIN CO₂ and other readings, or the API; double-press switches the original / user pair, with separate expiry fallback and threshold or fixed colors; steadier PM2.5 and separate over-threshold buzzer switches, off by default, independent of light thresholds, alarms and manual tones |
 | DAIKIN `hub` | Separate hub variant: local accounts, TCP / WebSocket MQTT Broker, LAN Home Assistant, an upstream MQTT client and Bemfa forwarding; normal firmware remains a sensor device |
 
 Apple Home is planned through HAP bridging on the hub. Pairing, controls and restart recovery await physical-device validation. Matter support is not currently claimed.
