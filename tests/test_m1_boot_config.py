@@ -27,6 +27,7 @@ static void appRestoreDefault_callback(void *data,uint32_t n) {
     resets++;
     app_config->magic=M1_CONFIG_MAGIC;app_config->version=M1_CONFIG_VERSION;
     storage.co2_source=(m1_co2_source_config_t){.magic=M1_CO2_SOURCE_MAGIC};
+    m1_display_defaults(&storage.display);
 }
 void service_event(const char *level,const char *domain,const char *event) {
     assert(!strcmp(domain,"config"));events++;
@@ -38,6 +39,7 @@ int main(void) {
         memset(&storage,0xa5,sizeof(storage));
         app_config->magic=M1_CONFIG_MAGIC;app_config->version=v;
         storage.co2_source=(m1_co2_source_config_t){.magic=M1_CO2_SOURCE_MAGIC};
+        m1_display_defaults(&storage.display);
         app_storage_t before=storage;resets=events=0;config_recovery=false;
         assert(gate()==0);
         bool unknown=v<1 || v>M1_CONFIG_VERSION;
@@ -50,6 +52,7 @@ int main(void) {
     for(unsigned kind=0;kind<7;kind++) {
         memset(&storage,0,sizeof(storage));app_config->magic=M1_CONFIG_MAGIC;app_config->version=M1_CONFIG_VERSION;
         storage.co2_source=(m1_co2_source_config_t){.magic=M1_CO2_SOURCE_MAGIC};
+        m1_display_defaults(&storage.display);
         if(kind==0)storage.co2_source.magic=0;
         if(kind==1)memset(storage.co2_source.device_id,'a',13);
         if(kind==2)storage.co2_source.external=2;

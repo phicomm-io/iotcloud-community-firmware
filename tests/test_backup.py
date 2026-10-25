@@ -52,6 +52,17 @@ int main(void){
 #include <assert.h>
 #include "M1/storage.h"
 #include "common/backup.h"
+/* Exact legacy typedef from M1/storage.h blob
+ * e6d9a64fc117acfd42df93eaaec632d5b115a67d. Keep this fixture independent of
+ * the current storage type and its new display member. */
+typedef struct {
+    m1_config_t base;
+    feature_config_storage_t features;
+    automation_config_t automation;
+    uint8_t reserved_controller_config[20];
+    m1_co2_config_t co2;
+    m1_co2_source_config_t co2_source;
+} legacy_m1_storage_v8_t;
 static app_storage_t live;
 char m1_id[13]="aabbccddeeff";
 static mico_mutex_t lock;
@@ -71,13 +82,33 @@ static void backup_finish(bool ok){finishes++;committed=ok;}
 #define BACKUP_LOCK lock
 #define BACKUP_CONTEXT (&live)
 #include "common/backup_mico.inc"
+static void reject_backup(const void *data,size_t length){
+    const app_storage_t before=live;
+    const unsigned old_writes=writes,old_finishes=finishes;
+    assert(!strcmp(device_backup_import(data,length),"invalid_backup"));
+    assert(writes==old_writes&&finishes==old_finishes&&!lock&&!memcmp(&live,&before,sizeof(live)));
+}
 int main(void){
+    assert(sizeof(legacy_m1_storage_v8_t)==2856&&__alignof__(legacy_m1_storage_v8_t)==8);
+    assert(sizeof(m1_storage_v8_t)==sizeof(legacy_m1_storage_v8_t));
+    assert(sizeof(app_storage_t)==2928&&offsetof(app_storage_t,display)==2852);
+#define V8_OFFSET(member) assert(offsetof(legacy_m1_storage_v8_t,member)==offsetof(app_storage_t,member))
+    V8_OFFSET(base);V8_OFFSET(features);V8_OFFSET(automation);V8_OFFSET(reserved_controller_config);
+    V8_OFFSET(co2);V8_OFFSET(co2_source);
+#undef V8_OFFSET
     live.base.magic=M1_CONFIG_MAGIC;live.base.version=M1_CONFIG_VERSION;live.base.mqtt_port=1883;
     strcpy(live.base.ssid,"kept-network");strcpy(live.base.wifi_password,"kept-password");
     strcpy(live.base.mqtt_password,"mqtt-secret");strcpy(live.base.web_password,"web-secret");
     live.base.revision=42;live.features.magic=FEATURE_MAGIC;live.automation.magic=AUTOMATION_MAGIC;
     live.co2.magic=M1_CO2_MAGIC;live.co2.interval=5;
     live.co2_source.magic=M1_CO2_SOURCE_MAGIC;
+    m1_display_defaults(&live.display);
+    live.display.configured=live.display.selected=live.display.double_click=1;
+    live.display.revision=7;live.display.lanes[0].source=M1_DISPLAY_API;
+    live.display.lanes[0].color=2;
+    live.features.revision=13;live.features.last_event=UINT64_C(0x123456789abcdef0);
+    strcpy(live.features.ntp_host,"clock.example");live.automation.revision=17;
+    memset(live.reserved_controller_config,0x6c,sizeof(live.reserved_controller_config));
     const size_t length=device_backup_size();assert(length<=PH_BACKUP_LIMIT);
     void *data=malloc(length),*bad=malloc(length);assert(data&&bad);
     assert(device_backup_export(data,length));
@@ -98,6 +129,74 @@ int main(void){
     write_fail=false;assert(!strcmp(device_backup_import(data,length),"accepted"));
     assert(writes==2&&finishes==2&&committed&&!lock);
     before=original;before.base.revision=43;assert(!memcmp(&live,&before,sizeof(live)));
+    /* Construct real v8 storage, including its four tail-padding bytes. A new
+     * struct prefix ending at display would incorrectly produce only 2852. */
+    legacy_m1_storage_v8_t legacy={0};
+#define V8_COPY(member) memcpy(&legacy.member,&original.member,sizeof(legacy.member))
+    V8_COPY(base);V8_COPY(features);V8_COPY(automation);V8_COPY(reserved_controller_config);
+    V8_COPY(co2);V8_COPY(co2_source);
+#undef V8_COPY
+    legacy.base.version=8;legacy.co2.mode=2;legacy.co2.slot=1;
+    legacy.co2_source.external=1;strcpy(legacy.co2_source.device_id,"123456abcdef");
+    const size_t padding=offsetof(legacy_m1_storage_v8_t,co2_source)+sizeof(legacy.co2_source);
+    assert(padding==2852&&sizeof(legacy)-padding==4);
+    memset((char*)&legacy+padding,0xa5,sizeof(legacy)-padding);
+    const size_t old_bytes=sizeof(legacy),old_length=sizeof(ph_backup_header)+old_bytes;
+    void *old_data=malloc(old_length);assert(old_data);
+    memcpy((char*)old_data+sizeof(ph_backup_header),&legacy,sizeof(legacy));
+    ph_backup_seal(old_data,"m1",PHICOMM_FIRMWARE_VARIANT,FIRMWARE_VERSION,8,old_bytes);
+    assert(ph_backup_open(old_data,old_length,"m1",PHICOMM_FIRMWARE_VARIANT,8,sizeof(legacy)));
+    before=live;write_fail=true;assert(!strcmp(device_backup_import(old_data,old_length),"storage_error"));
+    assert(!memcmp(&live,&before,sizeof(live))&&writes==3&&finishes==3&&!committed&&!lock);
+    write_fail=false;occupied=true;
+    assert(!strcmp(device_backup_import(old_data,old_length),"busy")&&writes==3&&!lock);
+    assert(!memcmp(&live,&before,sizeof(live)));occupied=false;recovery=true;
+    assert(!strcmp(device_backup_import(old_data,old_length),"busy")&&writes==3&&!lock);
+    assert(!memcmp(&live,&before,sizeof(live)));recovery=false;
+    write_fail=false;assert(!strcmp(device_backup_import(old_data,old_length),"accepted"));
+    assert(writes==4&&finishes==4&&committed&&!lock&&live.base.version==M1_CONFIG_VERSION&&live.base.revision==44);
+    assert(live.co2.mode==2&&live.co2.slot==1&&live.co2_source.external);
+    assert(!strcmp(live.co2_source.device_id,"123456abcdef")&&m1_display_config_valid(&live.display)&&!live.display.configured);
+    m1_config_t expected_base;memcpy(&expected_base,&legacy.base,sizeof(expected_base));
+    expected_base.version=M1_CONFIG_VERSION;expected_base.revision=44;
+    assert(!memcmp(&live.base,&expected_base,sizeof(expected_base)));
+#define V8_PRESERVED(member) assert(!memcmp(&live.member,&legacy.member,sizeof(legacy.member)))
+    V8_PRESERVED(features);V8_PRESERVED(automation);V8_PRESERVED(reserved_controller_config);
+    V8_PRESERVED(co2);V8_PRESERVED(co2_source);
+#undef V8_PRESERVED
+    m1_display_config_t defaults;m1_display_defaults(&defaults);
+    assert(!memcmp(&live.display,&defaults,sizeof(defaults)));
+    reject_backup(old_data,old_length-1);
+    /* Reject the former fabricated 2852-byte prefix, even with a valid CRC. */
+    memcpy(bad,old_data,old_length);
+    ph_backup_seal(bad,"m1",PHICOMM_FIRMWARE_VARIANT,FIRMWARE_VERSION,8,old_bytes-4);
+    reject_backup(bad,old_length-4);
+    memcpy(bad,old_data,old_length);memset((char*)bad+old_length,0,4);
+    ph_backup_seal(bad,"m1",PHICOMM_FIRMWARE_VARIANT,FIRMWARE_VERSION,8,old_bytes+4);
+    reject_backup(bad,old_length+4);
+    for(unsigned kind=0;kind<3;kind++){
+        memcpy(bad,old_data,old_length);
+        ph_backup_seal(bad,kind==0?"a1":"m1",kind==1?"wrong-variant":PHICOMM_FIRMWARE_VARIANT,
+                       FIRMWARE_VERSION,kind==2?M1_CONFIG_VERSION:8,old_bytes);
+        reject_backup(bad,old_length);
+    }
+    memcpy(bad,old_data,old_length);
+    legacy_m1_storage_v8_t *old_payload=(void*)((char*)bad+sizeof(ph_backup_header));
+    old_payload->base.version=M1_CONFIG_VERSION;
+    ph_backup_seal(bad,"m1",PHICOMM_FIRMWARE_VARIANT,FIRMWARE_VERSION,8,old_bytes);
+    reject_backup(bad,old_length);
+    memcpy(bad,old_data,old_length);old_payload->co2.interval=0;
+    ph_backup_seal(bad,"m1",PHICOMM_FIRMWARE_VARIANT,FIRMWARE_VERSION,8,old_bytes);
+    reject_backup(bad,old_length);
+    /* The CRC includes arbitrary legacy padding, which becomes display magic
+     * only after the migration initializes the whole new profile. */
+    ((char*)old_data)[old_length-1]^=1;
+    reject_backup(old_data,old_length);
+    memcpy(bad,data,length);candidate=(void*)((char*)bad+sizeof(ph_backup_header));candidate->base.version=8;
+    ph_backup_seal(bad,"m1",PHICOMM_FIRMWARE_VARIANT,FIRMWARE_VERSION,M1_CONFIG_VERSION,sizeof(live));
+    reject_backup(bad,length);
+    puts("M1 backup: real v8 sizeof2856/padding, v9 sizeof2928, strict envelope and rollback PASS");
+    free(old_data);
     free(data);free(bad);return 0;
 }
 '''

@@ -12,12 +12,18 @@ static bool backup_linkage_valid(const feature_linkage_t *l){
 }
 static bool backup_storage_valid(const app_storage_t *next) {
     const BACKUP_BASE *c=&next->base;
+    bool version_valid=c->version==BACKUP_VERSION;
+#ifndef FEATURE_DEVICE_A1
+    /* Read only retained v8 fields until after validation. The new display
+     * profile overlaps v8's trailing padding and is initialized at commit. */
+    version_valid=version_valid || c->version==8;
+#endif
 #define BACKUP_TEXT(field) if(!ph_backup_text(c->field,sizeof(c->field)))return false
     BACKUP_TEXT(ssid);BACKUP_TEXT(wifi_password);BACKUP_TEXT(mqtt_host);BACKUP_TEXT(mqtt_user);
     BACKUP_TEXT(mqtt_password);BACKUP_TEXT(name);BACKUP_TEXT(web_password);
 #undef BACKUP_TEXT
     const feature_config_storage_t *f=&next->features;
-    if(c->magic!=BACKUP_MAGIC || c->version!=BACKUP_VERSION || !c->mqtt_port ||
+    if(c->magic!=BACKUP_MAGIC || !version_valid || !c->mqtt_port ||
        f->magic!=FEATURE_MAGIC || f->language>PH_LANG_EN || f->peer_count>FEATURE_STORAGE_PEERS || f->member_count>8 || f->event_count>8 || f->sleep_count>4 ||
        !ph_backup_text(f->group,sizeof(f->group)) || !ph_backup_text(f->ntp_host,sizeof(f->ntp_host)) ||
        f->timezone_minutes < -720 || f->timezone_minutes>840 || f->linkage.statistic>STAT_FAILBACK || f->light.effect>EFFECT_COLOR_BREATHE || f->light.segments>4 ||
@@ -38,6 +44,9 @@ static bool backup_storage_valid(const app_storage_t *next) {
 #else
     if(next->co2.magic!=M1_CO2_MAGIC || next->co2.mode>2 || next->co2.slot>1 || !next->co2.interval || next->co2.interval>3600 || next->co2.low>next->co2.high)return false;
     if(!m1_co2_source_config_valid(&next->co2_source) || (next->co2_source.external&&!strcmp(next->co2_source.device_id,m1_id)))return false;
+    if(c->version==BACKUP_VERSION && !m1_display_config_valid(&next->display))return false;
+    if(c->version==BACKUP_VERSION)for(unsigned i=0;i<M1_DISPLAY_LANES;i++)
+        if(next->display.lanes[i].source==M1_DISPLAY_MQTT && !strcmp(next->display.lanes[i].device_id,m1_id))return false;
     if(c->brightness>4 || c->last_on>4)return false;
 #endif
     return true;
@@ -52,11 +61,26 @@ bool device_backup_export(void *out,size_t capacity) {
 }
 const char *device_backup_import(const void *data,size_t length) {
     const app_storage_t *next=ph_backup_open(data,length,BACKUP_MODEL,PHICOMM_FIRMWARE_VARIANT,BACKUP_VERSION,sizeof(app_storage_t));
+    if(next && next->base.version!=BACKUP_VERSION)return "invalid_backup";
+    size_t restore_size=sizeof(app_storage_t);
+#ifndef FEATURE_DEVICE_A1
+    if(!next){
+        restore_size=sizeof(m1_storage_v8_t);
+        next=ph_backup_open(data,length,BACKUP_MODEL,PHICOMM_FIRMWARE_VARIANT,8,restore_size);
+        if(next && next->base.version!=8)return "invalid_backup";
+    }
+#endif
     if(!next || !backup_storage_valid(next))return "invalid_backup";
     app_storage_t *before=malloc(sizeof(*before));if(!before)return "busy";
     mico_rtos_lock_mutex(&BACKUP_LOCK);
     if(device_config_recovery() || !backup_reserve()){mico_rtos_unlock_mutex(&BACKUP_LOCK);free(before);return "busy";}
-    memcpy(before,BACKUP_LIVE,sizeof(*before));memcpy(BACKUP_LIVE,next,sizeof(*next));
+    memcpy(before,BACKUP_LIVE,sizeof(*before));memcpy(BACKUP_LIVE,next,restore_size);
+#ifndef FEATURE_DEVICE_A1
+    if(restore_size<sizeof(app_storage_t)){
+        m1_display_defaults(&((app_storage_t *)BACKUP_LIVE)->display);
+        BACKUP_LIVE->version=BACKUP_VERSION;
+    }
+#endif
     BACKUP_LIVE->revision=before->base.revision+1;
     bool ok=mico_system_context_update(BACKUP_CONTEXT)==kNoErr;
     if(!ok)memcpy(BACKUP_LIVE,before,sizeof(*before));

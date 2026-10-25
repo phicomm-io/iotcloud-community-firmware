@@ -2,8 +2,8 @@
 import os
 from pathlib import Path
 from tests.test_http_json_budget import function
+from tests.sdk_json import copy_patched_json
 import subprocess
-import shutil
 import tempfile
 import unittest
 
@@ -228,8 +228,7 @@ int main(void){
 '''.replace('PRODUCTION', prefix).replace('MIGRATION', migration).replace('WEIGHT', weight)
         json_dir = Path(os.environ.get('PHICOMM_TEST_JSON_DIR', ROOT / 'build/a1-sdk/mico-os/libraries/utilities/json_c'))
         with tempfile.TemporaryDirectory() as temp:
-            host_json = Path(temp) / 'json'
-            shutil.copytree(json_dir, host_json)
+            host_json = copy_patched_json(json_dir, Path(temp) / 'sdk')
             for path in host_json.glob('*.c'):
                 path.write_text(path.read_text().replace('%ld', '%d'))
             json_dir = host_json

@@ -1,4 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
+#include "hub_home_budget.h"
+#include <esp_heap_caps.h>
 // HAP is deliberately opt-in. Only local MQTT publications are trusted as
 // live state; upstream retained messages cannot confirm a Home control.
 static iotcloud::HomeStorage homeStorage;
@@ -102,9 +104,38 @@ struct HomeSensor:SpanService{
 static void homeAccessory(uint32_t aid,const char *model,const char *serial,const char *name){
   new SpanAccessory(aid);new Service::AccessoryInformation();new Characteristic::Identify();new Characteristic::Name(name);new Characteristic::Manufacturer("IoTCloud");new Characteristic::Model(model);new Characteristic::SerialNumber(serial);new Characteristic::FirmwareRevision("1.0.0");
 }
+static bool homeMemoryReady(){
+  using Budget=iotcloud::HomeGraphBudget;
+  auto saved=config["hub"]["devices"].as<JsonArrayConst>();
+  const char *owner=config["hub"]["username"]|"";
+  const size_t ownerLength=strlen(owner);
+  if(saved.isNull()||saved.size()>iotcloud::HubService::Devices||ownerLength<3||ownerLength>32)return false;
+  for(size_t i=0;i<ownerLength;++i)if(!((owner[i]>='a'&&owner[i]<='z')||(owner[i]>='A'&&owner[i]<='Z')||(owner[i]>='0'&&owner[i]<='9')||owner[i]=='_'))return false;
+  Budget budget({sizeof(SpanAccessory),sizeof(SpanCharacteristic),sizeof(Service::AccessoryInformation),
+      sizeof(HomeSensor),sizeof(HomeOutlet),sizeof(HomeFan),sizeof(HomeLight),sizeof(SpanService *)});
+  if(!budget.device(Budget::Daikin))return false;
+  const char *seen[iotcloud::HubService::Devices]={};size_t count=0;
+  for(JsonObjectConst device:saved){
+    const char *mac=device["mac"]|"";
+    auto model=Budget::kind(device["model"]|"");
+    if(model==Budget::Invalid||strlen(mac)!=12||!strcmp(mac,"000000000000")||!strcmp(mac,"ffffffffffff")||
+        device["version"]!="v2"||device["status"]!="active"||device["username"]!=owner)return false;
+    for(unsigned i=0;i<12;++i)if(!((mac[i]>='0'&&mac[i]<='9')||(mac[i]>='a'&&mac[i]<='f')))return false;
+    for(size_t i=0;i<count;++i)if(!strcmp(mac,seen[i]))return false;
+    seen[count++]=mac;
+    if(strcmp(mac,deviceId.c_str())&&!budget.device(model))return false;
+  }
+  const auto caps=MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT;
+  return budget.fits(heap_caps_get_free_size(caps),heap_caps_get_largest_free_block(caps));
+}
 static void homeInit(){
   homeConfiguration=homeSignature();
   if(!homeEnabled())return;
+  // Reject the entire graph before NVS/bootstrap or the first Span allocation.
+  // These reserves are startup policy, not a measured SRP peak or a guarantee
+  // against concurrent Wi-Fi allocations after the check.
+  homeError="busy";
+  if(!homeMemoryReady())return;
   homeError="storage_error";
   if(!homeStorage.open(true))return;
   nvs_handle metadata=0;

@@ -151,11 +151,48 @@ bool a1_ota_download(const char *u){(void)u;return false;}
 /* This simulator has no UART controller. Keep its hardware-only capabilities
  * unavailable; production controller/storage behavior is tested separately. */
 static m1_co2_source_config_t source_config={.magic=M1_CO2_SOURCE_MAGIC};
+static m1_display_config_t display_config={.magic=M1_DISPLAY_MAGIC,.lanes={
+ {.source=M1_DISPLAY_NONE,.metric=M1_DISPLAY_CUSTOM,.unit=M1_DISPLAY_UNITLESS,.scale=1,.ttl_seconds=20},
+ {.source=M1_DISPLAY_NONE,.metric=M1_DISPLAY_CUSTOM,.unit=M1_DISPLAY_UNITLESS,.scale=1,.ttl_seconds=20}}};
 void m1_co2_source_config_get(m1_co2_source_config_t *out){BASE_LOCK();*out=source_config;BASE_UNLOCK();}
 #undef device_id
+void m1_display_config_get(m1_display_config_t *out){BASE_LOCK();*out=display_config;BASE_UNLOCK();}
+void m1_display_switch_get(m1_display_switch_config_t *out){
+ BASE_LOCK();*out=(m1_display_switch_config_t){.revision=display_config.revision,.configured=display_config.configured,
+  .selected=display_config.selected,.double_click=display_config.double_click};
+ for(unsigned i=0;i<M1_DISPLAY_LANES;i++)if(display_config.lanes[i].source!=M1_DISPLAY_NONE)out->present=true;
+ BASE_UNLOCK();
+}
+bool m1_display_lane_get(unsigned slot,m1_display_lane_config_t *out,uint32_t *revision){
+ if(slot>=M1_DISPLAY_LANES)return false;
+ BASE_LOCK();*out=display_config.lanes[slot];*revision=display_config.revision;bool configured=display_config.configured;BASE_UNLOCK();return configured;
+}
+const char *m1_display_config_save(const m1_display_config_t *c){
+ if(!m1_display_config_valid(c))return "invalid_params";
+ for(unsigned i=0;i<M1_DISPLAY_LANES;i++)if(c->lanes[i].source==M1_DISPLAY_MQTT&&!strcmp(c->lanes[i].device_id,m1_id))return "invalid_params";
+ BASE_LOCK();bool ok=c->revision==display_config.revision&&c->revision<INT32_MAX;
+ if(ok){display_config=*c;display_config.revision++;m1_display_source_reset();}BASE_UNLOCK();return ok?"accepted":"busy";
+}
+const char *m1_display_data_save(unsigned slot,uint32_t revision,float value,unsigned unit,unsigned ttl,int color){
+ if(slot>=M1_DISPLAY_LANES||!isfinite(value)||value<0||value>999999||color < -1||color>3)return "invalid_params";
+ BASE_LOCK();const m1_display_lane_config_t *l=&display_config.lanes[slot];const char *code="invalid_params";
+ if(revision!=display_config.revision)code="busy";
+ else if(display_config.configured&&l->source==M1_DISPLAY_API&&l->unit==unit&&ttl<=l->ttl_seconds&&
+         (!ttl||m1_display_metric_value_valid(l->metric,value))){
+  m1_display_value_t encoded;
+  if(!ttl||m1_display_encode_value(l,slot,value,ttl,color<0?l->color:color,&encoded)){
+   m1_display_data_store(slot,revision,value,ttl,color);code="accepted";
+  }
+ }
+ BASE_UNLOCK();return code;
+}
+void m1_display_readback(m1_display_readback_t out[M1_DISPLAY_LANES],bool *selected){
+ BASE_LOCK();*selected=display_config.selected;memset(out,0,M1_DISPLAY_LANES*sizeof(*out));BASE_UNLOCK();
+}
 const char *m1_co2_source_config_save(const m1_co2_source_config_t *c){
  if(!m1_co2_source_config_valid(c)||(c->external&&!strcmp(c->device_id,m1_id)))return "invalid_params";
- BASE_LOCK();bool ok=c->revision==source_config.revision;if(ok){source_config=*c;source_config.revision++;}BASE_UNLOCK();
+ BASE_LOCK();bool ok=c->revision==source_config.revision&&(!display_config.configured||display_config.revision<INT32_MAX);
+ if(ok){source_config=*c;source_config.revision++;if(display_config.configured){display_config.configured=0;display_config.revision++;m1_display_source_reset();}}BASE_UNLOCK();
  if(ok)m1_co2_source_reset();return ok?"accepted":"busy";
 }
 #define device_id m1_id

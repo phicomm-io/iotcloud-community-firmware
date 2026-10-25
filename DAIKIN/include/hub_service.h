@@ -8,7 +8,8 @@ namespace iotcloud {
 // service.
 class HubService {
 public:
-  static constexpr size_t Devices = 12, Routes = 8, Mappings = 8, Sessions = 4;
+  static constexpr size_t Devices = 12, Routes = 8, Mappings = 8, Sessions = 4,
+                          ConfigCapacity = 16384;
   struct Reply {
     int status = 200;
     std::string body = "{}", token;
@@ -31,7 +32,10 @@ public:
   std::function<bool()> homeReset;
   explicit HubService(DynamicJsonDocument &configuration)
       : config(configuration) {}
-  bool ready() const { return !user().empty(); }
+  bool ready() const {
+    const char *name = config["hub"]["username"] | "";
+    return *name != 0;
+  }
   std::string user() const { return config["hub"]["username"] | ""; }
   static std::string userKey(const std::string &name) {
     std::string key = "u_";
@@ -213,10 +217,23 @@ public:
     return bridgeValid(h["bridge"], h["username"] | "") &&
            bemfaValid(h["bemfa"], devices);
   }
+  size_t workingMemory(const Request &request) const {
+    return inputCapacity(request) + outputCapacity(request) + responseCapacity(request) +
+           (needsCandidate(request) ? candidateCapacity(request) : 0) + 16384;
+  }
+  size_t largestAllocation(const Request &request) const {
+    return std::max(needsCandidate(request) ? candidateCapacity(request) : size_t(2048),
+                    std::max(responseCapacity(request),
+                             std::max(inputCapacity(request), outputCapacity(request))));
+  }
   Reply handle(const Request &request, uint32_t now) {
     const auto &path = request.path;
     const bool get = request.method == "GET";
-    DynamicJsonDocument input(12288), output(12288);
+    // Most requests contain only credentials or a single device. Reserving two
+    // maximum-size documents here starves the ESP32 byte-addressable heap.
+    DynamicJsonDocument input(inputCapacity(request)), output(outputCapacity(request));
+    if ((inputCapacity(request) && !input.capacity()) || !output.capacity())
+      return fail(503, "busy");
     if (!get && !(request.method == "DELETE" && request.body.empty()) &&
         (request.body.empty() || deserializeJson(input, request.body) ||
          !input.is<JsonObject>()))
@@ -245,7 +262,7 @@ public:
       if (!fields(input.as<JsonObjectConst>(), "|username||password|") ||
           !nameValid(input["username"]) || !string(input["password"], 63, 8))
         return fail(400, "invalid_params");
-      DynamicJsonDocument next(config.capacity());
+      DynamicJsonDocument next(candidateCapacity(request));
       next.set(config);
       auto h = next.createNestedObject("hub");
       h["schema"] = 1;
@@ -312,7 +329,7 @@ public:
           !fields(input.as<JsonObjectConst>(), "|enabled|") ||
           !input["enabled"].is<bool>())
         return fail(400, "invalid_params");
-      DynamicJsonDocument next(config.capacity());
+      DynamicJsonDocument next(candidateCapacity(request));
       next.set(config);
       next["hub"]["homekit"] = input.as<JsonObjectConst>();
       if(next["hub"]["instance"].isNull()){
@@ -350,7 +367,7 @@ public:
       if (!ok)
         return fail(403, "unauthorized");
       bool mqtt = path == "/api/auth/mqtt-password";
-      DynamicJsonDocument next(config.capacity());
+      DynamicJsonDocument next(candidateCapacity(request));
       next.set(config);
       auto h = next["hub"].as<JsonObject>();
       if (!password(h, input["password"].as<std::string>(), mqtt))
@@ -380,7 +397,7 @@ public:
           return fail(409, "conflict");
       if (config["hub"]["devices"].size() >= Devices)
         return fail(409, "hub_capacity");
-      DynamicJsonDocument next(config.capacity());
+      DynamicJsonDocument next(candidateCapacity(request));
       next.set(config);
       next["hub"]["devices"].as<JsonArray>().add(input.as<JsonObjectConst>());
       if (!commit(next, false))
@@ -392,7 +409,7 @@ public:
       std::string id = path.substr(13);
       if (id.size() != 12)
         return fail(400, "invalid_params");
-      DynamicJsonDocument next(config.capacity());
+      DynamicJsonDocument next(candidateCapacity(request));
       next.set(config);
       auto devices = next["hub"]["devices"].as<JsonArray>();
       bool found = false;
@@ -432,7 +449,7 @@ public:
       if (request.method != "PUT" ||
           !fields(input.as<JsonObjectConst>(), "|enabled||mappings||mqtt|"))
         return fail(400, "invalid_params");
-      DynamicJsonDocument next(config.capacity());
+      DynamicJsonDocument next(candidateCapacity(request));
       next.set(config);
       auto upstream = input["mqtt"].as<JsonObjectConst>();
       if (!upstream.isNull()) {
@@ -472,7 +489,7 @@ public:
       }
       if (request.method != "PUT" && request.method != "DELETE")
         return fail(405, "method_not_allowed");
-      DynamicJsonDocument next(config.capacity());
+      DynamicJsonDocument next(candidateCapacity(request));
       next.set(config);
       if (request.method == "DELETE")
         next["hub"].remove("bemfa");
@@ -481,7 +498,8 @@ public:
                     "|enabled||api_key||mappings|"))
           return fail(400, "invalid_params");
         if (input["api_key"] == "")
-          input["api_key"] = config["hub"]["bemfa"]["api_key"] | "";
+          input["api_key"] =
+              std::string(config["hub"]["bemfa"]["api_key"] | "");
         if (!bemfaValid(input.as<JsonObjectConst>(), config["hub"]["devices"]))
           return fail(400, "invalid_params");
         next["hub"]["bemfa"] = input.as<JsonObjectConst>();
@@ -502,6 +520,43 @@ public:
   }
 
 private:
+  static bool needsCandidate(const Request &request) {
+    return request.method != "GET" && request.path != "/api/auth/login" &&
+           request.path != "/api/auth/logout" &&
+           request.path != "/api/hub/homekit/pairing";
+  }
+  static size_t inputCapacity(const Request &request) {
+    return request.method == "GET" || request.body.empty()
+               ? 0
+               : std::min<size_t>(12288, request.body.size() * 2 + 512);
+  }
+  size_t candidateCapacity(const Request &request) const {
+    // Copy the compact current pool plus the request's bounded input pool.
+    // The margin covers generated account hashes, owner/device metadata and
+    // new object slots. Small edits must remain possible with HAP running,
+    // even when no contiguous maximum-size config buffer is available.
+    return std::min<size_t>(size_t(ConfigCapacity),
+        config.memoryUsage() + inputCapacity(request) + 1024);
+  }
+  JsonVariantConst responseValue(const Request &request) const {
+    JsonVariantConst value;
+    if (request.method == "GET") {
+      if (request.path == "/api/devices") value = config["hub"]["devices"];
+      else if (request.path == "/api/hub/bridge") value = config["hub"]["bridge"];
+      else if (request.path == "/api/integrations/bemfa") value = config["hub"]["bemfa"];
+    }
+    return value;
+  }
+  size_t outputCapacity(const Request &request) const {
+    return std::max<size_t>(2048, responseValue(request).memoryUsage() + 1024);
+  }
+  size_t responseCapacity(const Request &request) const {
+    // Repeated JSON strings share pool storage, while escaped strings expand
+    // on the wire. Budget the serialized bytes separately from the JSON pool.
+    // The margin covers bridge MQTT metadata (127-byte host, 63-byte user,
+    // escaped up to sixfold), status fields and the terminating byte.
+    return std::max<size_t>(2048, measureJson(responseValue(request)) + 1536);
+  }
   DynamicJsonDocument &config;
   struct Session {
     bool used = false;
@@ -602,6 +657,7 @@ private:
     Reply reply;
     reply.status = status;
     reply.body.clear();
+    reply.body.reserve(measureJson(doc));
     serializeJson(doc, reply.body);
     return reply;
   }

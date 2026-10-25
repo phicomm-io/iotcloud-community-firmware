@@ -4,6 +4,7 @@
 #include <array>
 #include <cstdint>
 #include <functional>
+#include <list>
 #include <string>
 #include <vector>
 
@@ -29,6 +30,10 @@ public:
   std::function<bool(size_t)> allocate;
   std::function<bool(unsigned, size_t)> writable;
   Send send;
+  // A transport may enqueue the MQTT header/topic/payload directly into its
+  // bounded transmit buffer, without two extra full-payload packet copies.
+  std::function<bool(unsigned, const uint8_t *, size_t,
+                     const std::string &, const std::string &)> sendPublish;
   Close close;
   Authenticate authenticate;
   Authorize authorize;
@@ -201,14 +206,17 @@ public:
         buffered += x.input.size();
       size_t take = std::min(
           n, std::min(Packet + 5 - c.input.size(), ReceiveBudget - buffered));
-      if (!take || (allocate && !allocate(take + Packet))) {
+      const size_t size = c.input.size() + take;
+      // Only replace the actual input buffer here. A small packet must not
+      // require a contiguous maximum-size packet buffer on every fragment.
+      if (!take || (size > c.input.capacity() && allocate && !allocate(size))) {
         ++refused;
         disconnect(slot);
         return false;
       }
       if (c.input.empty())
         c.partialAt = now;
-      c.input.reserve(c.input.size() + take);
+      c.input.reserve(size);
       c.input.insert(c.input.end(), data, data + take);
       data += take;
       n -= take;
@@ -240,12 +248,24 @@ public:
         if (c.input.size() < header + remaining)
           break;
         const uint8_t flags = c.input[0];
+        const size_t tail = c.input.size() - header - remaining;
+        // The input allocation remains live while the tail and parsed strings
+        // are copied. Subscription handling also clones bounded filter vectors;
+        // their largest replacement is independent of a tiny request's length.
+        size_t working = remaining + tail + 512;
+        if (flags == 0x82 || flags == 0xa2)
+          working = std::max(working, Subscriptions * 2 * sizeof(std::string) + 512);
+        if (allocate && !allocate(working)) {
+          ++refused;
+          disconnect(slot);
+          return false;
+        }
         // Own the packet while callbacks may reset or disconnect its client.
-        std::vector<uint8_t> body(c.input.begin() + header,
-                                  c.input.begin() + header + remaining);
-        c.input.erase(c.input.begin(), c.input.begin() + header + remaining);
-        if (c.input.capacity() > c.input.size() + 1024)
-          c.input.shrink_to_fit();
+        std::vector<uint8_t> body;
+        body.swap(c.input);
+        c.input.assign(body.begin() + header + remaining, body.end());
+        body.erase(body.begin() + header + remaining, body.end());
+        body.erase(body.begin(), body.begin() + header);
         c.at = now;
         c.partialAt = now;
         if (!packet(slot, flags, body)) {
@@ -259,7 +279,7 @@ public:
   }
   bool publish(const std::string &topic, const std::string &body,
                bool retain = false, Origin origin = Origin::Internal) {
-    if ((allocate && !allocate(topic.size() + body.size() * 2 + 512)) ||
+    if ((allocate && !allocate(topic.size() + body.size() * (sendPublish ? 1 : 2) + 512)) ||
         !topicValid(topic) || topic.size() + body.size() + 4 > Packet ||
         !allowed(topic, true))
       return false;
@@ -317,7 +337,9 @@ private:
   };
   uint32_t retainedSequence = 0;
   std::array<Client, Clients> clients;
-  std::vector<Retained> retained;
+  // One fixed-size node per retained message avoids a whole-array replacement
+  // while all payloads are live. publish() budgets its node with the payload.
+  std::list<Retained> retained;
   struct Reader {
     const std::vector<uint8_t> &data;
     size_t pos = 0;
@@ -377,6 +399,22 @@ private:
   }
   void deliver(unsigned slot, const std::string &topic, const std::string &body,
                bool replay) {
+    if (sendPublish) {
+      uint8_t header[7] = {uint8_t(0x30 | (replay ? 1 : 0))};
+      size_t used = 1, remaining = topic.size() + body.size() + 2;
+      do {
+        uint8_t byte = remaining % 128;
+        remaining /= 128;
+        header[used++] = byte | (remaining ? 128 : 0);
+      } while (remaining);
+      header[used++] = topic.size() >> 8;
+      header[used++] = topic.size() & 255;
+      if (!active(slot) || !sendPublish(slot, header, used, topic, body)) {
+        ++dropped;
+        disconnect(slot);
+      }
+      return;
+    }
     std::vector<uint8_t> bytes;
     bytes.reserve(topic.size() + body.size() + 2);
     bytes.push_back(topic.size() >> 8);
@@ -430,7 +468,7 @@ private:
     c.willRetain = flags & 32;
     return output(slot, 0x20, {0, 0});
   }
-  bool packet(unsigned slot, uint8_t flags, const std::vector<uint8_t> &body) {
+  bool packet(unsigned slot, uint8_t flags, std::vector<uint8_t> &body) {
     Reader r{body};
     auto &c = clients[slot];
     unsigned type = flags >> 4;
@@ -445,6 +483,9 @@ private:
       if (!r.ok || (qos && !id) || !topicValid(topic) || !allowed(topic, true))
         return false;
       std::string payload(body.begin() + r.pos, body.end());
+      // Topic/payload now own their bytes and id is saved. This branch never
+      // reads Reader again; release the full input capacity before callbacks.
+      std::vector<uint8_t>().swap(body);
       if (!publish(topic, payload, flags & 1, Origin::Local))
         return false;
       return !qos || output(slot, 0x40, {uint8_t(id >> 8), uint8_t(id)});
@@ -476,7 +517,10 @@ private:
         }
         if (!exists)
           next.push_back(filter);
-        accepted.push_back(filter);
+        // Repeating an existing filter still gets its own SUBACK, but must not
+        // allocate an unbounded list of duplicate replay filters.
+        if (std::find(accepted.begin(), accepted.end(), filter) == accepted.end())
+          accepted.push_back(filter);
         ack.push_back(0);
       }
       if (!r.done())

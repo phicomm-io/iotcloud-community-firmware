@@ -50,19 +50,40 @@ static String backupExecute(){
 #endif
   if(configRecovery)return "{\"code\":\"migration_required\"}";
   if(webOperation==1){
-    DynamicJsonDocument out(configCapacity+1024);
+    DynamicJsonDocument out(config.memoryUsage()+1024);
+    if(!out.capacity())return "{\"code\":\"busy\"}";
     out["schema"]=1;out["model"]="daikin";out["variant"]=DAIKIN_VARIANT;out["config_version"]=1;out["firmware_version"]=version;out["config"]=config;
-    String text;serializeJson(out,text);return text;
+    if(out.overflowed())return "{\"code\":\"busy\"}";
+    const size_t length=measureJson(out);String text;
+    if(!text.reserve(length))return "{\"code\":\"busy\"}";
+    serializeJson(out,text);
+    if(text.length()!=length)return "{\"code\":\"busy\"}";
+    return text;
   }
-  DynamicJsonDocument backup(configCapacity+1024);
-  if(deserializeJson(backup,webBody)||!backup.is<JsonObject>()||backup["schema"]!=1||String(backup["model"]|"")!="daikin"||
-    String(backup["variant"]|"")!=DAIKIN_VARIANT||backup["config_version"]!=1||!validConfig(backup["config"].as<JsonObjectConst>()))return "{\"code\":\"invalid_backup\"}";
-  DynamicJsonDocument candidate(configCapacity);candidate.set(backup["config"]);
-  if(!saveConfig(candidate))return "{\"code\":\"storage_error\"}";
+  const size_t limit=configCapacity+1024;
+  size_t capacity=config.memoryUsage()+1024;if(capacity>limit)capacity=limit;
+  for(;;){
+    // JSON structure and strings determine memory use. Retry a genuinely larger
+    // document after NoMemory, releasing each previous pool before allocating.
+    DynamicJsonDocument backup(capacity);
+    if(!backup.capacity())return "{\"code\":\"busy\"}";
+    auto error=deserializeJson(backup,webBody);
+    if(error==DeserializationError::NoMemory){
+      if(capacity==limit)return "{\"code\":\"busy\"}";
+      capacity=capacity>limit-1024?limit:capacity+1024;continue;
+    }
+    if(error||!backup.is<JsonObject>()||backup["schema"]!=1||String(backup["model"]|"")!="daikin"||
+      String(backup["variant"]|"")!=DAIKIN_VARIANT||backup["config_version"]!=1||!validConfig(backup["config"].as<JsonObjectConst>()))return "{\"code\":\"invalid_backup\"}";
+    auto restored=backup["config"].as<JsonObjectConst>();
+    size_t candidateCapacity=restored.memoryUsage()+1024;if(candidateCapacity>configCapacity)candidateCapacity=configCapacity;
+    DynamicJsonDocument candidate(candidateCapacity);
+    if(!candidate.capacity()||!candidate.set(restored)||candidate.overflowed())return "{\"code\":\"busy\"}";
+    if(!saveConfig(candidate))return "{\"code\":\"storage_error\"}";
 #ifdef IOTCLOUD_HUB
-  hubRestoreChanged();
+    hubRestoreChanged();
 #endif
-  rebootAt=millis()+1500;return "{\"code\":\"accepted\"}";
+    rebootAt=millis()+1500;return "{\"code\":\"accepted\"}";
+  }
 }
 static esp_err_t backupHandler(httpd_req_t *req){
   if(!authorized(req))return ESP_OK;
@@ -72,20 +93,36 @@ static esp_err_t backupHandler(httpd_req_t *req){
   const bool restore=req->method==HTTP_POST;
   if(restore&&(req->content_len<=0||req->content_len>int(configCapacity+1024)))return jsonResponse(req,"400 Bad Request","{\"code\":\"invalid_backup\"}");
   String body;char buffer[512];int left=restore?req->content_len:0;
-  while(left){int n=httpd_req_recv(req,buffer,min(left,(int)sizeof(buffer)));if(n<=0)return ESP_FAIL;body.concat(buffer,n);left-=n;}
-  webBody=body;webOperation=restore?2:1;webDone=false;
+  if(restore&&!body.reserve(left))return jsonResponse(req,"503 Service Unavailable","{\"code\":\"busy\"}");
+  while(left){int n=httpd_req_recv(req,buffer,min(left,(int)sizeof(buffer)));if(n<=0)return ESP_FAIL;if(!body.concat(buffer,n))return jsonResponse(req,"503 Service Unavailable","{\"code\":\"busy\"}");left-=n;}
+  webBody=std::move(body);webOperation=restore?2:1;webDone=false;
   portENTER_CRITICAL(&webMux);webPending=true;portEXIT_CRITICAL(&webMux);
   uint32_t started=millis();while(!webDone){if(uint32_t(millis()-started)>=10000)return jsonResponse(req,"503 Service Unavailable","{\"code\":\"timeout\"}");delay(1);}
   if(!restore&&webResult.startsWith("{\"schema\":")){
     httpd_resp_set_hdr(req,"Access-Control-Allow-Origin","*");httpd_resp_set_hdr(req,"Cache-Control","no-store");httpd_resp_set_type(req,"application/octet-stream");return httpd_resp_send(req,webResult.c_str(),webResult.length());
   }
+  if(webResult.startsWith("{\"code\":\"busy\""))return jsonResponse(req,"503 Service Unavailable",webResult);
   return jsonResponse(req,webResult.indexOf("accepted")>=0?"202 Accepted":"400 Bad Request",webResult);
 }
 static volatile bool otaActive=false;
-struct OtaFlash {const esp_partition_t *partition;esp_ota_handle_t handle;size_t length;};
-static bool otaErase(void *context){auto *f=(OtaFlash*)context;return esp_ota_begin(f->partition,f->length,&f->handle)==ESP_OK;}
-static bool otaWrite(void *context,uint32_t offset,const uint8_t *data,size_t n){(void)offset;return esp_ota_write(((OtaFlash*)context)->handle,data,n)==ESP_OK;}
-static bool otaRead(void *context,uint32_t offset,uint8_t *data,size_t n){return esp_partition_read(((OtaFlash*)context)->partition,offset,data,n)==ESP_OK;}
+struct OtaFlash {const esp_partition_t *partition;esp_ota_handle_t handle;size_t work;};
+static bool otaErase(void *context){
+  auto *f=(OtaFlash*)context;
+  // Writes are continuous and bounded to 1024 bytes. Let IDF erase only newly
+  // reached sectors instead of blocking the HTTP task on a whole-image erase.
+  return esp_ota_begin(f->partition,OTA_WITH_SEQUENTIAL_WRITES,&f->handle)==ESP_OK;
+}
+static void otaYield(OtaFlash *f,size_t n){if((f->work+=n)>=16384){f->work=0;delay(1);}}
+static bool otaWrite(void *context,uint32_t offset,const uint8_t *data,size_t n){
+  (void)offset;auto *f=(OtaFlash*)context;
+  if(esp_ota_write(f->handle,data,n)!=ESP_OK)return false;
+  otaYield(f,n);return true;
+}
+static bool otaRead(void *context,uint32_t offset,uint8_t *data,size_t n){
+  auto *f=(OtaFlash*)context;
+  if(esp_partition_read(f->partition,offset,data,n)!=ESP_OK)return false;
+  otaYield(f,n);return true;
+}
 static bool receiveExact(httpd_req_t *req,uint8_t *data,size_t n){while(n){int used=httpd_req_recv(req,(char*)data,n);if(used<=0)return false;data+=used;n-=used;}return true;}
 static esp_err_t uploadFirmware(httpd_req_t *req,bool signedImage,const daikin::FirmwareIdentity &expected){
   const esp_partition_t *partition=esp_ota_get_next_update_partition(nullptr);
@@ -96,7 +133,7 @@ static esp_err_t uploadFirmware(httpd_req_t *req,bool signedImage,const daikin::
   if(!partition||req->content_len<(int)prefix+envelope||req->content_len-envelope>(int)partition->size)return jsonResponse(req,"400 Bad Request","{\"code\":\"invalid_image\",\"message\":\"Invalid image size\"}");
   otaActive=true;uint8_t buffer[1024];int left=req->content_len-envelope;
   static_assert(sizeof(buffer)>=OTA_ENVELOPE_SIZE+daikin::firmwarePrefixSize,"OTA prefix buffer too small");
-  OtaFlash flash={partition,0,(size_t)left};signed_ota verifier;
+  OtaFlash flash={partition,0,0};signed_ota verifier;
   // Buffer the bounded envelope and prefix before the verifier can erase the
   // inactive slot. This is only an identity prefilter; signature and complete
   // staged-payload digest validation remain mandatory for every signed image.
@@ -156,7 +193,7 @@ static esp_err_t statusHandler(httpd_req_t *req){
   webBody="";webOperation=4;webDone=false;
   portENTER_CRITICAL(&webMux);webPending=true;portEXIT_CRITICAL(&webMux);
   uint32_t started=millis();while(!webDone){if(uint32_t(millis()-started)>=10000)return jsonResponse(req,"503 Service Unavailable","{\"code\":\"timeout\"}");delay(1);}
-  return jsonResponse(req,"200 OK",webResult);
+  return jsonResponse(req,webResult.startsWith("{\"code\":\"busy\"")?"503 Service Unavailable":"200 OK",webResult);
 }
 static esp_err_t optionsHandler(httpd_req_t *req){httpd_resp_set_hdr(req,"Access-Control-Allow-Origin","*");httpd_resp_set_hdr(req,"Access-Control-Allow-Methods","GET, POST, OPTIONS");httpd_resp_set_hdr(req,"Access-Control-Allow-Headers","Content-Type, Authorization, X-IoTCloud-Target-Variant, X-IoTCloud-Confirm");return httpd_resp_send(req,nullptr,0);}
 

@@ -24,10 +24,15 @@ class HomeRequest {
            (c >= 'a' && c <= 'z') ||
            (c && std::strchr("!#$%&'*+-.^_`|~", c));
   }
-  static std::string lower(std::string s) {
-    for (auto &c : s)
+  static bool matches(const std::string &s, size_t first, size_t last,
+                      const char *lower) {
+    if (last - first != std::strlen(lower)) return false;
+    for (; first < last; ++first, ++lower) {
+      auto c = static_cast<unsigned char>(s[first]);
       if (c >= 'A' && c <= 'Z') c += 'a' - 'A';
-    return s;
+      if (c != static_cast<unsigned char>(*lower)) return false;
+    }
+    return true;
   }
   bool headers(size_t end) {
     const auto line = bytes.find("\r\n");
@@ -55,13 +60,12 @@ class HomeRequest {
         auto c = static_cast<unsigned char>(bytes[i]);
         if ((c < 0x20 && c != '\t') || c >= 0x7f) return false;
       }
-      const auto key = lower(bytes.substr(pos, colon - pos));
       auto first = bytes.find_first_not_of(" \t", colon + 1);
       if (first == std::string::npos || first > next) first = next;
       auto last = next;
       while (last > first && (bytes[last - 1] == ' ' || bytes[last - 1] == '\t')) --last;
-      if (key == "transfer-encoding") return false;
-      if (key == "content-length") {
+      if (matches(bytes, pos, colon, "transfer-encoding")) return false;
+      if (matches(bytes, pos, colon, "content-length")) {
         if (foundLength || first == last) return false;
         foundLength = true;
         for (auto i = first; i < last; ++i) {
@@ -70,12 +74,11 @@ class HomeRequest {
           if (length > (Limit - digit) / 10) return false;
           length = length * 10 + digit;
         }
-      } else if (key == "content-type") {
+      } else if (matches(bytes, pos, colon, "content-type")) {
         if (foundType) return false;
         foundType = true;
-        const auto value = lower(bytes.substr(first, last - first));
-        type = value == "application/pairing+tlv8" ? Pairing :
-               value == "application/hap+json" ? Json : Other;
+        type = matches(bytes, first, last, "application/pairing+tlv8") ? Pairing :
+               matches(bytes, first, last, "application/hap+json") ? Json : Other;
       }
       pos = next + 2;
     }
@@ -88,9 +91,22 @@ public:
   std::string bytes;
   size_t expected = 0;
   Type type = Other;
+  bool (*allocate)(size_t) = nullptr;
   bool append(const uint8_t *data, size_t n) {
     if (n > Limit - bytes.size() ||
         (expected && n > expected - bytes.size())) return false;
+    if (bytes.size() + n > bytes.capacity()) {
+      const auto capacity = std::min(size_t(Limit), std::max(bytes.size() + n,
+          std::max(size_t(32), bytes.capacity() * 2)));
+      // Check the full replacement, including its NUL, while the old buffer
+      // is still live. reserve() on the old string may silently double past
+      // Limit when only the last byte of an otherwise valid request arrives.
+      if (allocate && !allocate(capacity + 1)) return false;
+      std::string replacement;
+      replacement.reserve(capacity);
+      replacement.assign(bytes);
+      bytes.swap(replacement);
+    }
     if (n) bytes.append(reinterpret_cast<const char *>(data), n);
     if (!expected) {
       const auto end = bytes.find("\r\n\r\n");
@@ -131,10 +147,20 @@ class HomeRecord {
 public:
   static constexpr size_t Limit = 1024, Overhead = 18;
   std::vector<uint8_t> bytes;
+  bool (*allocate)(size_t) = nullptr;
   size_t length() const { return bytes.size() < 2 ? 0 : bytes[0] + 256u * bytes[1]; }
   size_t remaining() const { return (bytes.size() < 2 ? 2 : length() + Overhead) - bytes.size(); }
   bool append(const uint8_t *data, size_t n) {
     if (n > remaining() || n > Limit + Overhead - bytes.size()) return false;
+    if (bytes.size() + n > bytes.capacity()) {
+      const auto capacity = std::min(Limit + Overhead,
+          std::max(bytes.size() + n, std::max(size_t(32), bytes.capacity() * 2)));
+      if (allocate && !allocate(capacity)) return false;
+      std::vector<uint8_t> replacement;
+      replacement.reserve(capacity);
+      replacement.assign(bytes.begin(), bytes.end());
+      bytes.swap(replacement);
+    }
     if (n) bytes.insert(bytes.end(), data, data + n);
     return bytes.size() < 2 || (length() && length() <= Limit);
   }

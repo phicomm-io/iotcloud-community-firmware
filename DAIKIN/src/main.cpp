@@ -14,9 +14,11 @@
 #include <mqtt_client.h>
 #include <mbedtls/base64.h>
 #ifdef IOTCLOUD_HUB
+#include <esp_heap_caps.h>
 #include <mbedtls/pkcs5.h>
 #include <mbedtls/sha1.h>
 #include "hub_service.h"
+#include "hub_native_publish.h"
 #include "hub_transport.h"
 #include "hub_relay.h"
 #include "hub_home.h"
@@ -53,7 +55,7 @@ static int commandSubId=-1;
 static bool sgpReady=false;
 static uint32_t sgpSince=0, nextSample=0, nextSgp=0, nextPublish=0, connectAt=0;
 static volatile uint32_t rebootAt=0;
-static String deviceId, apName, mqttRoot, configText;
+static String deviceId, apName, mqttRoot;
 static portMUX_TYPE mqttMux=portMUX_INITIALIZER_UNLOCKED;
 static char mqttPending[4097];
 static volatile bool mqttQueued=false;
@@ -114,6 +116,25 @@ static void updatePassword(){
 }
 static const char *pmModel="detecting";
 
+static String loadConfigText(){
+  const char *key="config";
+#ifdef IOTCLOUD_HUB
+  // Never reuse the legacy string key for a blob: IDF may retain both types.
+  // A present hub key is authoritative, including invalid data (fail closed).
+  if(prefs.isKey("config_hub"))key="config_hub";
+#endif
+  auto type=prefs.getType(key);
+  if(type==PT_BLOB){
+    const size_t n=prefs.getBytesLength(key);
+    if(n&&n<=6144){std::unique_ptr<char[]> data(new(std::nothrow) char[n+1]);if(data&&prefs.getBytes(key,data.get(),n)==n){data[n]=0;return String(data.get(),n);}}
+    return "invalid";
+  }
+#ifdef IOTCLOUD_HUB
+  if(!strcmp(key,"config_hub"))return "invalid";
+#endif
+  if(prefs.isKey(key)&&type!=PT_STR)return "invalid";
+  return prefs.getString(key,"{}");
+}
 static bool due(uint32_t now,uint32_t at){return int32_t(now-at)>=0;}
 static bool saveConfig(DynamicJsonDocument &candidate){
 #ifdef IOTCLOUD_HUB
@@ -121,15 +142,24 @@ static bool saveConfig(DynamicJsonDocument &candidate){
 #endif
   if(configRecovery||candidate.overflowed())return false;
   candidate["_version"]=1;
-  String text; serializeJson(candidate,text);
+  if(candidate.overflowed())return false;
+  const size_t length=measureJson(candidate);
 #ifdef IOTCLOUD_HUB
-  // The existing NVS partition is 20 KiB. Bound the complete document so two
-  // blob generations and NVS compaction can coexist during an atomic update.
-  if(text.length()>6144||prefs.putBytes("config",text.c_str(),text.length())!=text.length())return false;
+  if(length>6144)return false;
 #else
-  if(text.length()>3999||prefs.putString("config",text)!=text.length())return false;
+  if(length>3999)return false;
 #endif
-  config.clear(); config.set(candidate);configText=text; updatePassword();return true;
+  String text;text.reserve(length);serializeJson(candidate,text);
+  if(text.length()!=length)return false;
+#ifdef IOTCLOUD_HUB
+  // Stock NVS is 16 KiB. This is a document limit, not a free-space promise;
+  // NVS can still reject an update while preserving the previous generation.
+  // Keep the legacy key intact until and after the separate hub blob commits.
+  if(prefs.putBytes("config_hub",text.c_str(),length)!=length)return false;
+#else
+  if(prefs.putString("config",text)!=length)return false;
+#endif
+  config=std::move(candidate);config.shrinkToFit();updatePassword();return true;
 }
 static void startAccessPoint(){
   const IPAddress address(192,168,0,1),netmask(255,255,255,0);
@@ -157,15 +187,13 @@ static void startWifi(){
 void setup(){
   Serial.begin(115200);
   if(!prefs.begin("daikin",false)){Serial.println("NVS unavailable");while(true)delay(1000);}
-  if(prefs.getType("config")==PT_BLOB){
-    const size_t n=prefs.getBytesLength("config");
-    if(n&&n<=6144){std::unique_ptr<char[]> data(new char[n+1]);if(prefs.getBytes("config",data.get(),n)==n){data[n]=0;configText=data.get();}}
-    if(configText.isEmpty())configText="invalid";
-  }else if(prefs.isKey("config")&&prefs.getType("config")!=PT_STR)configText="invalid";
-  else configText=prefs.getString("config","{}");
-  if(deserializeJson(config,configText)||!config.is<JsonObject>()||!validConfig(config.as<JsonObjectConst>())){
-    configRecovery=true;config.clear();config.to<JsonObject>();Serial.println("Configuration recovery required");
+  {
+    String text=loadConfigText();
+    if(deserializeJson(config,text)||!config.is<JsonObject>()||!validConfig(config.as<JsonObjectConst>())){
+      configRecovery=true;config.clear();config.to<JsonObject>();Serial.println("Configuration recovery required");
+    }
   }
+  config.shrinkToFit();
   updatePassword();indicator=config["indicator"]|false;
   customLightSettings=daikin::readLightSettings(config["indicator_rules"],lightSettings);
   WiFi.mode(WIFI_AP_STA);deviceId=WiFi.macAddress();deviceId.replace(":","");deviceId.toLowerCase();
@@ -209,7 +237,7 @@ void loop(){
 #ifdef IOTCLOUD_HUB
     if(webOperation==3){if(otaActive){hubHttpStatus=503;hubHttpToken="";webResult="{\"code\":\"busy\"}";}else hubApiExecute();}else
 #endif
-    if(webOperation==4){DynamicJsonDocument doc(8192);doc["code"]="ok";state(doc.createNestedObject("data"));webResult="";serializeJson(doc,webResult);}else webResult=otaActive?"{\"code\":\"busy\",\"message\":\"OTA active\"}":webOperation?backupExecute():execute(webBody);portENTER_CRITICAL(&webMux);webPending=false;webDone=true;portEXIT_CRITICAL(&webMux);}
+    if(webOperation==4){if(!mqttStateJson(webResult,httpStatusBody))webResult="{\"code\":\"busy\"}";}else webResult=otaActive?"{\"code\":\"busy\",\"message\":\"OTA active\"}":webOperation?backupExecute():execute(webBody);portENTER_CRITICAL(&webMux);webPending=false;webDone=true;portEXIT_CRITICAL(&webMux);}
   if(mqttQueued){String body(mqttPending);bool sensor=mqttSensorCommand;portENTER_CRITICAL(&mqttMux);mqttQueued=false;portEXIT_CRITICAL(&mqttMux);if(!otaActive){if(sensor)sessionGrant(body);else if(!sessionGrant(body))publish(mqttRoot+"/result",execute(body),false);}}
   if(mqttOnline){mqttOnline=false;
     DynamicJsonDocument doc(1024);capabilities(doc.to<JsonObject>());String text;serializeJson(doc,text);publish(mqttRoot+"/capabilities",text);publish(mqttRoot+"/availability","online");

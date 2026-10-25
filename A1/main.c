@@ -2,12 +2,13 @@
 #include "../common/automation.h"
 
 #include "../common/backup.h"
-static bool config_recovery, config_initializing, config_update_pending;
-bool device_config_recovery(void) { return config_recovery; }
-void device_config_recovery_set(bool recovery) { config_recovery=recovery; }
+static bool config_recovery, config_commit_uncertain, config_initializing, config_update_pending;
+bool device_config_recovery(void) { return config_recovery || config_commit_uncertain; }
+void device_config_recovery_set(bool recovery) { config_recovery=recovery || config_commit_uncertain; }
+void app_config_commit_indeterminate(void) { config_commit_uncertain=config_recovery=true; }
 bool app_config_persist_allowed(void) {
     if (config_initializing) config_update_pending = true;
-    return !config_recovery && !config_initializing;
+    return !config_recovery && !config_commit_uncertain && !config_initializing;
 }
 #include "../common/service.h"
 #include "../common/watchdog.h"
@@ -110,7 +111,7 @@ bool a1_reset(bool full)
         if (full) appRestoreDefault_callback(a1_config, sizeof(*old));
         else { a1_config->ssid[0] = 0; a1_config->wifi_password[0] = 0; a1_config->web_password[0] = 0; }
         ok = mico_system_context_update(a1_context) == kNoErr;
-        if (!ok) { memcpy(a1_config, old, sizeof(*old)); config_recovery=was_recovery; }
+        if (!ok) { memcpy(a1_config, old, sizeof(*old)); config_recovery=was_recovery || config_commit_uncertain; }
         else {
             filter_clock.saved_seconds = filter_storage()->used_seconds;
             if (full) { filter_clock = (a1_filter_clock_t){0}; stock_clock = (a1_filter_stock_clock_t){0}; }

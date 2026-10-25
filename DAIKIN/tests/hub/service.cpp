@@ -14,13 +14,17 @@ static std::string hex(const uint8_t *bytes, size_t n) {
 int main() {
   DynamicJsonDocument config(16384);
   config["auth"]["password"] = "device-web-password";
+  config.shrinkToFit();
   iotcloud::HubService service(config);
   bool fail = false;
+  size_t candidateLimit = iotcloud::HubService::ConfigCapacity;
   unsigned writes = 0, drops = 0;
   service.store = [&](DynamicJsonDocument &next) {
+    assert(next.capacity() <= candidateLimit);
     if (fail)
       return false;
-    config.set(next);
+    config = std::move(next);
+    config.shrinkToFit();
     writes++;
     return true;
   };
@@ -202,14 +206,75 @@ int main() {
   assert(service.handle(add, 3).status == 409);
   assert(service.handle(Request("GET", "/api/devices", "", token), 4)
              .body.find("aabbccddeeff") != std::string::npos);
+  // Saving the initial disabled form must keep an absent key empty, rather
+  // than converting ArduinoJson's null value to the string "null".
+  {
+    assert(config["hub"]["bemfa"].isNull());
+    auto initial = service.handle(
+        Request("GET", "/api/integrations/bemfa", "", token), 5);
+    assert(initial.status == 200 && !deserializeJson(response, initial.body) &&
+           response["enabled"] == false && response["key_set"] == false &&
+           response["mappings"].is<JsonArray>() &&
+           response["mappings"].size() == 0 && !response.containsKey("api_key"));
+    const unsigned beforeWrites = writes;
+    auto disabled = service.handle(Request("PUT", "/api/integrations/bemfa",
+        R"({"enabled":false,"api_key":"","mappings":[]})", token), 5);
+    if (disabled.status != 200)
+      fprintf(stderr, "initial disabled Bemfa save: HTTP %d %s\n",
+              disabled.status, disabled.body.c_str());
+    assert(disabled.status == 200 && writes == beforeWrites + 1 &&
+           config["hub"]["bemfa"]["api_key"] == "" &&
+           config["hub"]["bemfa"]["enabled"] == false &&
+           config["hub"]["bemfa"]["mappings"].size() == 0 &&
+           !deserializeJson(response, disabled.body) &&
+           response["key_set"] == false && !response.containsKey("api_key"));
+  }
   auto bemfa = Request(
       "PUT", "/api/integrations/bemfa",
       R"({"enabled":true,"api_key":"0123456789abcdef","mappings":[{"device":{"mac":"aabbccddeeff","model":"tc1","version":"v2","status":"active","username":"local"},"channel":0,"topic":"socket001"}]})",
       token);
+  {
+    std::string beforeConfig;
+    serializeJson(config, beforeConfig);
+    auto unchanged = [&] {
+      std::string current;
+      serializeJson(config, current);
+      return current == beforeConfig;
+    };
+    const unsigned beforeWrites = writes, beforeDrops = drops;
+    auto noKey = bemfa;
+    noKey.body.erase(noKey.body.find("0123456789abcdef"), 16);
+    // A real mapping isolates the absent-key check from the empty-map check.
+    assert(service.handle(noKey, 5).status == 400 &&
+           writes == beforeWrites && unchanged());
+    fail = true;
+    auto rejected = service.handle(bemfa, 5);
+    assert(rejected.status == 503 &&
+           rejected.body.find("storage_error") != std::string::npos &&
+           writes == beforeWrites && drops == beforeDrops && unchanged());
+    assert(service.handle(Request("GET", "/api/auth/me", "", token), 5).status == 200);
+    fail = false;
+  }
   auto saved = service.handle(bemfa, 5);
   assert(saved.status == 200 &&
          saved.body.find("0123456789abcdef") == std::string::npos);
   assert(config["hub"]["bemfa"]["api_key"] == "0123456789abcdef");
+  // Keeping a masked API key must copy it before the old config pool is freed.
+  auto keepKey = bemfa;
+  const auto keyAt = keepKey.body.find("0123456789abcdef");
+  assert(keyAt != std::string::npos);
+  keepKey.body.erase(keyAt, 16);
+  auto kept = service.handle(keepKey, 5);
+  assert(kept.status == 200 &&
+         config["hub"]["bemfa"]["api_key"] == "0123456789abcdef" &&
+         !deserializeJson(response, kept.body) && response["key_set"] == true &&
+         !response.containsKey("api_key") &&
+         kept.body.find("0123456789abcdef") == std::string::npos);
+  auto masked = service.handle(
+      Request("GET", "/api/integrations/bemfa", "", token), 5);
+  assert(masked.status == 200 && !deserializeJson(response, masked.body) &&
+         response["key_set"] == true && !response.containsKey("api_key") &&
+         masked.body.find("0123456789abcdef") == std::string::npos);
   assert(
       service
           .handle(Request("DELETE", "/api/devices/aabbccddeeff", "", token), 6)
@@ -224,9 +289,77 @@ int main() {
   assert(saved.status == 200 &&
          saved.body.find("upstream-secret") == std::string::npos);
   assert(config["mqtt"]["password"] == "upstream-secret");
+  // A real HAP session left only a 7924-byte contiguous block. Small route
+  // edits and their rollback must fit it repeatedly without clearing accounts,
+  // devices or the session. Keep the maximum-size configuration tests below.
+  candidateLimit = 7924;
+  const Request disableBridge("PUT", "/api/hub/bridge",
+      R"({"enabled":false,"mappings":[]})", token);
+  for (unsigned i = 0; i < 16; ++i) {
+    assert(service.largestAllocation(bridge) <= candidateLimit);
+    assert(service.handle(bridge, 7).status == 200);
+    assert(service.largestAllocation(disableBridge) <= candidateLimit);
+    assert(service.handle(disableBridge, 7).status == 200);
+    assert(config["hub"]["bridge"]["enabled"] == false &&
+           config["hub"]["bridge"]["mappings"].size() == 0 &&
+           config["mqtt"]["password"] == "upstream-secret" &&
+           service.handle(Request("GET", "/api/auth/me", "", token), 7).status == 200);
+  }
+  candidateLimit = iotcloud::HubService::ConfigCapacity;
   bridge.body =
       R"({"enabled":true,"mappings":[{"direction":"in","local_topic":"phicomm/v2/u_6f74686572/m1/aabbccddeeff/command","remote_topic":"upstream/set","retain":false,"allow_retained":true}]})";
   assert(service.handle(bridge, 8).status == 400);
+  // Response strings must fit the checked contiguous allocation, including
+  // repeated long values and JSON escaping that expands their wire length.
+  for (bool escaped : {false, true}) {
+    DynamicJsonDocument responseConfig(16384);
+    responseConfig.set(config);
+    responseConfig["hub"].remove("bridge");
+    auto longBridge = responseConfig["hub"].createNestedObject("bridge");
+    longBridge["enabled"] = true;
+    auto routes = longBridge.createNestedArray("mappings");
+    const std::string remote(escaped ? 70 : 480, escaped ? '\x01' : 'r');
+    for (unsigned i = 0; i < 8; ++i) {
+      auto route = routes.createNestedObject();
+      route["direction"] = "out";
+      route["local_topic"] = "local/" + std::to_string(i);
+      route["remote_topic"] = remote;
+      route["retain"] = false;
+      route["allow_retained"] = false;
+    }
+    const std::string host(escaped ? 127 : 10, escaped ? '\x01' : 'h');
+    responseConfig["mqtt"]["host"] = host;
+    responseConfig["mqtt"]["user"] = std::string(escaped ? 63 : 5, escaped ? '\x01' : 'u');
+    assert(!responseConfig.overflowed() && measureJson(responseConfig) <= 6144 &&
+           iotcloud::HubService::valid(responseConfig["hub"]));
+    responseConfig.shrinkToFit();
+    iotcloud::HubService responseService(responseConfig);
+    responseService.derive = service.derive;
+    responseService.randomHex = service.randomHex;
+    auto session = responseService.handle(Request("POST", "/api/auth/login",
+        R"({"username":"local","password":"local-password"})"), 8);
+    assert(session.status == 200);
+    const Request query("GET", "/api/hub/bridge", "", session.token);
+    auto result = responseService.handle(query, 8);
+    DynamicJsonDocument decoded(16384);
+    assert(result.status == 200 && !deserializeJson(decoded, result.body) &&
+           decoded["mappings"].size() == 8 &&
+           decoded["mappings"][7]["remote_topic"].as<std::string>() == remote &&
+           decoded["mqtt"]["host"].as<std::string>() == host);
+    assert(result.body.capacity() + 1 <= responseService.largestAllocation(query));
+  }
+  // A compact live pool must still allow the complete device capacity to grow.
+  for (unsigned i = 1; i <= 12; ++i) {
+    char id[13];
+    snprintf(id, sizeof(id), "%012x", i);
+    auto body = std::string("{\"mac\":\"") + id +
+                "\",\"model\":\"m1\",\"version\":\"v2\"}";
+    assert(service.handle(Request("POST", "/api/devices", body, token), 8).status == 201);
+    assert(!config.overflowed() && config.capacity() < iotcloud::HubService::ConfigCapacity);
+  }
+  auto listing = service.handle(Request("GET", "/api/devices", "", token), 8);
+  DynamicJsonDocument devices(8192);
+  assert(listing.status == 200 && !deserializeJson(devices, listing.body) && devices.size() == 12);
   // Failed storage leaves credentials, sessions, routes and the running broker
   // alone.
   fail = true;

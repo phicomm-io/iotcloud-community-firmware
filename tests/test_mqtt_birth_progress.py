@@ -107,6 +107,7 @@ static unsigned calls,trace[64],inject_at;
 static bool session_current(void){return true;}
 static bool ota_job_active(void){return false;}
 static int ota_service(const char*x){(void)x;return 0;}
+static int power_sensor_cycle(bool *handled){*handled=false;return 0;}
 static unsigned mico_rtos_get_time(void){return 0;}
 static bool power_requested(void){return false;}
 static int service_mqtt_snapshot(int sender,void*x){(void)sender;(void)x;return 0;}

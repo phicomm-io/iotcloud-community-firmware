@@ -93,6 +93,7 @@ static bool busy;
 #define service_sender 0
 static bool session_current(void){return true;}
 static int ota_service(const char*s){(void)s;return 0;}
+static int power_sensor_cycle(bool *handled){*handled=false;return 0;}
 static bool ota_job_active(void){return false;}
 static unsigned mico_rtos_get_time(void){return now;}
 static int snapshot_step(void){powers++;now+=6000;state_index=10;return 0;}

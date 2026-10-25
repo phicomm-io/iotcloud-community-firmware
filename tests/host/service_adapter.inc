@@ -4,7 +4,7 @@ json_object *automation_command(const char *a,json_object *p,const char **code,b
 json_object *service_product_capabilities(void){json_object *o=json_object_new_object();json_object_object_add(o,"protocol",json_object_new_int(2));return o;}
 json_object *service_product(const char *a,json_object *p,const char **code){
  *code="unsupported";
- if(!strcmp(a,"status.get")){json_object *o=json_object_new_object();
+ if(!strcmp(a,"status.get") || !strcmp(a,"info.get")){json_object *o=json_object_new_object();
 #ifdef HOST_A1
  json_object_object_add(o,"model",json_object_new_string("a1"));
 #elif defined(HOST_M1)

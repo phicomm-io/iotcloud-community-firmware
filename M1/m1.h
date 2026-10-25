@@ -1,6 +1,7 @@
 #pragma once
 #include "scd40.h"
 #include "barometer.h"
+#include "display_source.h"
 #include "mico.h"
 #include "mico_system.h"
 #include "protocol.h"
@@ -15,7 +16,7 @@
 #define M1_VERSION FIRMWARE_VERSION
 #define M1_PRODUCT "PHICOMM_M1_EMW3080"
 #define M1_CONFIG_MAGIC 0x4d314346u
-#define M1_CONFIG_VERSION 8u
+#define M1_CONFIG_VERSION 9u
 #define M1_APP_OFFSET 0x75000u
 #define M1_APP_CPU_ADDRESS 0x08088000u
 #define M1_APP_LIMIT 0x40000u
@@ -72,11 +73,27 @@ bool m1_co2_source_value(uint16_t *,uint16_t *);
 json_object *m1_co2_source_json(void);
 json_object *m1_co2_source_set(json_object *,const char **);
 bool m1_button_rx(const uint8_t [20]);
+void m1_display_config_get(m1_display_config_t *);
+void m1_display_switch_get(m1_display_switch_config_t *);
+bool m1_display_lane_get(unsigned,m1_display_lane_config_t *,uint32_t *);
+const char *m1_display_config_save(const m1_display_config_t *);
+void m1_display_source_reset(void);
+void m1_display_source_mqtt_reset(void);
+void m1_display_source_sample(const char *,json_object *);
+void m1_display_source_offline(const char *,const char *);
+void m1_display_source_value(const m1_display_config_t *,unsigned,m1_display_value_t *);
+void m1_display_data_store(unsigned,uint32_t,float,uint8_t,int);
+const char *m1_display_data_save(unsigned,uint32_t,float,unsigned,unsigned,int);
+json_object *m1_display_source_json(void);
+json_object *m1_display_source_set(json_object *,const char **);
+json_object *m1_display_data_set(json_object *,const char **);
+void m1_display_readback(m1_display_readback_t [M1_DISPLAY_LANES],bool *);
 
 typedef struct {
     char mcu_version[17];
     bool mcu_version_received, buzzer_requested, wake_alarm_active;
     bool mcu_tones, mcu_button_events, mcu_display_source;
+    uint8_t mcu_display_schema; /* Independent dual-lane extension, not scalar schema 1. */
     bool mcu_music_present;
     bool mcu_sensor_details;
     uint8_t wake_alarm_tone;

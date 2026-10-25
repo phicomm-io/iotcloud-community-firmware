@@ -48,9 +48,13 @@ A1 offers automation sources according to currently valid data, independently of
 
 ## v1.0 hub in development
 
-A separate `hub` variant is planned; the ordinary image remains a sensor device. The hub includes local accounts, a MQTT TCP / WebSocket Broker, LAN Home Assistant, an upstream MQTT client and Bemfa forwarding, managed through the existing frontend. Local accounts do not include email or GitHub login.
+The separate `hub` variant includes local accounts, an MQTT TCP / WebSocket Broker, LAN Home Assistant, an upstream MQTT client and Bemfa forwarding. The ordinary image remains a sensor device. Local accounts do not include email or GitHub login.
 
-Apple Home is planned through HAP bridging; pairing, controls and recovery after disconnection await physical-device validation. Matter support is not currently claimed. These features have not been released and are not included in the ordinary images currently offered for download.
+Select **Hub management** on the device page, or open `http://DEVICE-IP/iotcloud/#/`. First set the device web administration password, then create a local account: usernames contain 3–32 ASCII letters, digits or underscores, and passwords contain 8–63 bytes. After login, manage devices, upstream forwarding, Bemfa mappings and Apple Home.
+
+On each device, set its MQTT host to the hub IP, port to `1883`, and credentials to the local account's MQTT username/password. WebSocket clients use `ws://HUB-IP:9001/mqtt`. The device management page provides manual setup instructions; Home Assistant can connect to the same Broker.
+
+Apple Home uses HAP bridging. Enable it separately under **Apple Home** to obtain the pairing code; it is off by default. Matter is currently unavailable. v1 has not been formally released, and the ordinary images currently offered for download do not contain these hub features.
 
 ### Switch from full to hub
 
@@ -59,6 +63,6 @@ Only newer `full` firmware that advertises this operation provides the conversio
 1. Open the device on your LAN and set a web administration password, or keep the existing password. **Set web password** on the upgrade page opens its settings form.
 2. Open **Settings → Firmware → Advanced**, select the matching signed `hub` OTA file and enable **Switch to hub firmware**. This option cannot be combined with unsigned recovery.
 3. Select **Upload and install**, review the confirmation and explicitly approve the conversion. Wi-Fi, MQTT and the web administration password are retained.
-4. Reopen the device after restart, confirm its variant is `hub`, and use the original web administration password to create the first local account. HomeKit is off by default; enable it separately when needed.
+4. Reopen the device after restart, confirm its variant is `hub`, select **Hub management**, and use the original web administration password to create the first local account. HomeKit is off by default; enable it separately when needed.
 
 Normal signed updates and unsigned recovery still accept only the current variant. Direct OTA from `hub → full` is unsupported.

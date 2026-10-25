@@ -42,6 +42,7 @@ static int discovery_build(const a1_config_t*c,unsigned i,service_mqtt_json_scop
 static void ota_job_poll(void){}
 static int ota_service(const char*b){(void)b;return 0;}
 static bool ota_job_active(void){return false;}
+static int fan_sensor_cycle(bool on,unsigned speed,bool*handled){(void)on;(void)speed;*handled=false;return 0;}
 static void mqtt_state_get(mqtt_state_t*s){s->wifi_connected=true;}
 static void a1_config_get(a1_config_t*c){*c=cfg;}
 static bool same_connection(const a1_config_t*a,const a1_config_t*b){(void)a;(void)b;return true;}

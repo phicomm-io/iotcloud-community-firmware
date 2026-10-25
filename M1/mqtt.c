@@ -35,9 +35,29 @@ static char base[192], command_topic[MQTT_TOPIC_MAX], availability_topic[MQTT_TO
 static bool rediscover, cleanup_pending;
 static uint8_t discovery_language;
 static m1_config_t session_config;
+static bool session_need_availability, session_subscribed;
 static bool same_connection(const m1_config_t *, const m1_config_t *);
+static bool display_mqtt_needed(void)
+{
+    m1_display_config_t display;
+    m1_display_config_get(&display);
+    if(display.configured)for(unsigned i=0;i<M1_DISPLAY_LANES;i++)
+        if(display.lanes[i].source==M1_DISPLAY_MQTT)return true;
+    return false;
+}
+static void session_display_reset(void)
+{
+    session_subscribed=false;
+    m1_display_source_mqtt_reset();
+}
 static bool session_current(void)
-{ m1_config_t c; m1_config_get(&c); return same_connection(&session_config, &c); }
+{
+    m1_config_t c; m1_config_get(&c);
+    bool valid=same_connection(&session_config,&c) &&
+        session_need_availability==display_mqtt_needed();
+    if(!valid)session_display_reset();
+    return valid;
+}
 static void mqtt_status(unsigned status)
 { mico_rtos_lock_mutex(&m1_lock); m1_state.mqtt_status = status; m1_state.mqtt_connected = status == MQTT_READY; mico_rtos_unlock_mutex(&m1_lock); }
 
@@ -102,7 +122,7 @@ static void native_command(MessageData *d)
     char ota_topic[MQTT_TOPIC_MAX]; mqtt_leaf(&account,"ota/set",ota_topic,sizeof(ota_topic));
     if(!strcmp(topic,ota_topic)) { ota_command(base,d->message->payload,d->message->payloadlen,d->message->retained);return; }
     if(ota_job_active())return;
-    if(feature_mqtt_input(topic,d->message->payload,d->message->payloadlen,d->message->retained))return;
+    if(session_subscribed && feature_mqtt_input(topic,d->message->payload,d->message->payloadlen,d->message->retained))return;
     if(!strcmp(topic,command_topic))brightness_command(d);
 }
 static void ha_birth(MessageData *data)
@@ -247,6 +267,7 @@ static mqtt_state_t state;
 static char client_id[192],wildcard[MQTT_TOPIC_MAX];
 static char sensor_filter[FEATURE_TOPIC_MAX];
 static char co2_filter[FEATURE_TOPIC_MAX];
+static char source_availability_filter[FEATURE_TOPIC_MAX];
 static unsigned discovery_index,initial_index;
 static uint32_t connect_sequence,co2_sequence,pressure_sequence,sequence,snapshot_at;
 static bool co2_discovered,pressure_discovered,particles_discovered;
@@ -254,6 +275,7 @@ static uint32_t particles_at;
 static int old_co2_fresh,old_pressure_fresh,old_brightness,old_fresh;
 static int session_prepare(void *context,ph_mqtt_connection *spec) {
     (void)context;
+        session_display_reset();
         ota_job_poll();
         m1_config_get(&cfg); mqtt_state_get(&state);
         if (cleanup_pending && state.wifi_connected && !same_connection(&session_config, &cfg)) {
@@ -272,12 +294,14 @@ static int session_prepare(void *context,ph_mqtt_connection *spec) {
         mqtt_leaf(&account, "availability", availability_topic, sizeof(availability_topic));
         mqtt_leaf(&account, "command", command_topic, sizeof(command_topic));
         session_config = cfg;discovery_language=device_language_get();
+        session_need_availability=display_mqtt_needed();
         feature_mqtt_session(&account);
         /* This subscription depends only on account identity. Do not allocate
          * the full feature configuration merely to form its fixed topic. */
         char sensor_leaf[32];snprintf(sensor_leaf,sizeof(sensor_leaf),"%s/command",account.mac);
         if(!mqtt_aux(&account,"sensor",sensor_leaf,sensor_filter,sizeof(sensor_filter)))return PH_MQTT_PREPARE_WAIT;
         if(!mqtt_aux(&account,"sensor","+/state",co2_filter,sizeof(co2_filter)))return PH_MQTT_PREPARE_WAIT;
+        if(session_need_availability && !mqtt_format(source_availability_filter,sizeof(source_availability_filter),"phicomm/v2/%s/+/+/availability",account.key))return PH_MQTT_PREPARE_WAIT;
         rediscover=false;
         *spec=(ph_mqtt_connection){&account,cfg.mqtt_host,cfg.mqtt_user,cfg.mqtt_password,
             client_id,availability_topic,cfg.mqtt_port,5000,m1_mqtt_read};
@@ -289,11 +313,19 @@ static bool session_subscription(void *context,unsigned index,ph_mqtt_subscripti
     else if(index==1)*out=(ph_mqtt_subscription){"homeassistant/status",QOS0,ha_birth};
     else if(index==2)*out=(ph_mqtt_subscription){sensor_filter,QOS1,native_command};
     else if(index==3)*out=(ph_mqtt_subscription){co2_filter,QOS1,native_command};
+    /* The original four filters stay usable with existing broker ACLs. A
+     * configured MQTT lane needs offline delivery even while displaying the
+     * original values, because a button may select that lane at any time. */
+    else if(index==4 && session_need_availability)*out=(ph_mqtt_subscription){source_availability_filter,QOS1,native_command};
     else return false;
     return true;
 }
 static int session_initial(void *context) {
+    if(!session_current())return PH_MQTT_RECONFIGURE;
     feature_mqtt_session(&account);
+    /* The shared owner calls initial only after every planned SUBACK succeeds.
+     * Never admit a generic measurement from a partial/failed subscription. */
+    session_subscribed=true;
     (void)context;
     int rc=service_mqtt_capabilities(publish,&account);
     if(rc==MQTT_SUCCESS)rc=publish_leaf("sensor_availability","offline",true);
@@ -418,7 +450,10 @@ static bool session_valid(void *context) {
     (void)context;
     m1_config_get(&current);
     mqtt_state_get(&state);
-    return state.wifi_connected && same_connection(&cfg, &current);
+    bool valid=state.wifi_connected && same_connection(&cfg,&current) &&
+        session_need_availability==display_mqtt_needed();
+    if(!valid)session_display_reset();
+    return valid;
 }
 static bool session_initial_ready(void *context) {
     (void)context;
@@ -426,6 +461,7 @@ static bool session_initial_ready(void *context) {
 }
 static void session_closing(void *context,bool connected,int rc) {
     (void)context;
+    session_display_reset();
     service_mqtt_clear();
     if(rc<0)mqtt_error("session",rc);
         mico_rtos_lock_mutex(&m1_lock); m1_state.mqtt_connected = false; mico_rtos_unlock_mutex(&m1_lock);
@@ -442,7 +478,7 @@ static void session_event(void *context,unsigned event,int rc) {
     (void)context;
     if(event==PH_MQTT_CONNECTING)mqtt_status(MQTT_CONNECTING);
     else if(event==PH_MQTT_CONNECT_ERROR)mqtt_status(rc==4||rc==5?MQTT_AUTH_FAILED:MQTT_DISCONNECTED);
-    else if(event==PH_MQTT_SUBSCRIBE_ERROR)mqtt_status(MQTT_WAITING_ACL);
+    else if(event==PH_MQTT_SUBSCRIBE_ERROR){session_display_reset();mqtt_status(MQTT_WAITING_ACL);}
     else if(event==PH_MQTT_READY){cleanup_pending=true;mqtt_status(MQTT_READY);}
     else {mqtt_state_get(&state);if(state.mqtt_status==MQTT_READY)mqtt_status(MQTT_DISCONNECTED);}
 }

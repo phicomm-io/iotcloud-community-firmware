@@ -48,6 +48,27 @@ mico_mutex_t m1_lock; m1_state_t m1_state;
 void m1_state_get(m1_state_t *out) { memset(out, 0, sizeof(*out)); }
 void m1_co2_source_sample(const char *id,const feature_sample_t *sample){(void)id;(void)sample;}
 void m1_co2_source_reset(void){}
+/* This harness owns the common runtime/MQTT boundary, not the display owner's
+ * cache, storage or UART. Record its borrowed-input callbacks here; the real
+ * display implementation is exercised by test_m1_display_source.py. */
+static unsigned display_sample_calls, display_offline_calls, display_reset_calls;
+static char display_sample_id[13], display_offline_id[13], display_offline_model[7];
+static uint32_t display_boot, display_sequence;
+static double display_power;
+void m1_display_source_sample(const char *id, json_object *sample) {
+  ++display_sample_calls;
+  snprintf(display_sample_id, sizeof(display_sample_id), "%s", id);
+  display_boot = json_object_get_int64(json_object_object_get(sample, "boot"));
+  display_sequence = json_object_get_int64(json_object_object_get(sample, "sequence"));
+  json_object *power = json_object_object_get(json_object_object_get(sample, "sensors"), "power");
+  display_power = json_object_get_double(json_object_object_get(power, "value"));
+}
+void m1_display_source_offline(const char *model, const char *id) {
+  ++display_offline_calls;
+  snprintf(display_offline_model, sizeof(display_offline_model), "%s", model);
+  snprintf(display_offline_id, sizeof(display_offline_id), "%s", id);
+}
+void m1_display_source_mqtt_reset(void) { ++display_reset_calls; }
 #endif
 static unsigned fail_runtime_object;
 static json_object *runtime_new_object(void) {
@@ -805,6 +826,60 @@ static void four_peer_limit(void) {
 
 #ifndef FEATURE_DEVICE_A1
 #include "passive_scenarios.inc"
+static void display_runtime_bridge(void) {
+  mqtt_account_t saved = mqtt_snapshot(), owner, other;
+  assert(mqtt_account_init(&owner, 1, "m1", "display_owner", LOCAL_ID));
+  assert(mqtt_account_init(&other, 1, "m1", "different_owner", LOCAL_ID));
+  unsigned resets = display_reset_calls;
+  feature_mqtt_session(&owner);
+  feature_mqtt_session(&owner); /* Reconnect also invalidates display leases. */
+  assert(display_reset_calls == resets + 2);
+
+  char topic[FEATURE_TOPIC_MAX], outside[FEATURE_TOPIC_MAX];
+  assert(mqtt_aux(&owner, "sensor", "112233445566/state", topic, sizeof(topic)));
+  assert(mqtt_aux(&other, "sensor", "112233445566/state", outside, sizeof(outside)));
+  const char *sample = "{\"schema\":1,\"device_id\":\"112233445566\",\"model\":\"tc1\","
+      "\"boot\":4294967295,\"sequence\":4294967295,"
+      "\"sensors\":{\"power\":{\"value\":12.5,\"unit\":\"W\",\"valid\":true,\"age_ms\":100}}}";
+  unsigned samples_before = display_sample_calls;
+  assert(feature_mqtt_input(topic, sample, strlen(sample), true));
+  assert(!feature_mqtt_input(outside, sample, strlen(sample), false));
+  assert(display_sample_calls == samples_before);
+  assert(feature_mqtt_input(topic, sample, strlen(sample), false));
+  assert(display_sample_calls == samples_before + 1);
+  assert(!strcmp(display_sample_id, "112233445566"));
+  assert(display_boot == UINT32_MAX && display_sequence == UINT32_MAX && display_power == 12.5);
+
+  /* Invalid envelopes must not reach either display lane. Replay, units and
+   * measurement TTL are the display owner's responsibility, not this seam. */
+  const char *invalid_counter[] = {"0", "-1", "4294967296", "1.5", "true", "\"1\""};
+  char wire[192];
+  for (unsigned i = 0; i < sizeof(invalid_counter) / sizeof(invalid_counter[0]); ++i) {
+    snprintf(wire, sizeof(wire), "{\"schema\":1,\"device_id\":\"112233445566\",\"boot\":%s,\"sequence\":1}", invalid_counter[i]);
+    assert(feature_mqtt_input(topic, wire, strlen(wire), false));
+    snprintf(wire, sizeof(wire), "{\"schema\":1,\"device_id\":\"112233445566\",\"boot\":1,\"sequence\":%s}", invalid_counter[i]);
+    assert(feature_mqtt_input(topic, wire, strlen(wire), false));
+  }
+  assert(display_sample_calls == samples_before + 1);
+
+  const char *models[] = {"m1", "daikin", "tc1", "a1"};
+  unsigned offline_before = display_offline_calls;
+  for (unsigned i = 0; i < sizeof(models) / sizeof(models[0]); ++i) {
+    assert(mqtt_aux(&owner, models[i], "112233445566/availability", topic, sizeof(topic)));
+    assert(mqtt_aux(&other, models[i], "112233445566/availability", outside, sizeof(outside)));
+    assert(feature_mqtt_input(topic, "online", 6, false));
+    assert(feature_mqtt_input(topic, "offline", 7, true));
+    assert(feature_mqtt_input(topic, "offline\n", 8, false));
+    assert(!feature_mqtt_input(outside, "offline", 7, false));
+    assert(display_offline_calls == offline_before + i);
+    assert(feature_mqtt_input(topic, "offline", 7, false));
+    assert(display_offline_calls == offline_before + i + 1);
+    assert(!strcmp(display_offline_model, models[i]) && !strcmp(display_offline_id, "112233445566"));
+  }
+  feature_mqtt_session(&saved);
+  assert(display_reset_calls == resets + 3);
+  puts("M1 display runtime bridge: scoped fresh input, strict uint32 envelopes, offline notifications and session resets passed");
+}
 #endif
 #ifdef FEATURE_DEVICE_A1
 static void animation_speed(void) {
@@ -958,6 +1033,7 @@ int main(void) {
   account_namespaces();
 #else
   passive_scenarios();
+  display_runtime_bridge();
 #endif
   compact_resources();
 #ifdef FEATURE_DEVICE_A1

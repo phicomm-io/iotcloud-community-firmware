@@ -25,6 +25,7 @@ static void state(JsonObject out){
   otaPartitionStatus(out.createNestedObject("ota_partitions"));
   out["uptime_seconds"]=now/1000;out["free_memory"]=ESP.getFreeHeap();
   out["minimum_free_memory"]=ESP.getMinFreeHeap();out["max_free_block"]=ESP.getMaxAllocHeap();
+  out["reset_reason"]=unsigned(esp_reset_reason());
   out["co2_warmup_seconds_remaining"]=!co2Module.warmed&&now<180000?(180000-now+999)/1000:0;
   JsonObject co2=out.createNestedObject("co2_diagnostics");
   co2["protocol"]="cm1106";co2["received"]=co2Module.received;co2["fresh"]=co2Module.fresh(now);
@@ -61,6 +62,9 @@ static void state(JsonObject out){
   indicatorStatus(out,now);
 #ifdef IOTCLOUD_HUB
   JsonObject hub=out.createNestedObject("hub");hub["ready"]=hubReady();hub["clients"]=hubTransport.broker.count();hub["max_clients"]=unsigned(iotcloud::HubBroker::Clients);hub["retained_bytes"]=hubTransport.broker.retainedBytes();hub["refused"]=hubTransport.broker.refused;hub["dropped"]=hubTransport.broker.dropped;hub["account_set"]=hubService.ready();hub["username"]=hubService.user();
+  hub["free_byte_heap"]=heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT);
+  hub["largest_byte_block"]=heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT);
+  hub["min_byte_heap"]=heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT);
 #endif
   JsonObject sensors=out.createNestedObject("sensors");
   for(unsigned i=0;i<SENSOR_COUNT;i++){
@@ -171,7 +175,7 @@ static String execute(const String &body){
       for(int i=0;i<n&&i<24;i++){JsonObject net=nets.createNestedObject();net["ssid"]=WiFi.SSID(i);net["rssi"]=WiFi.RSSI(i);net["security"]=WiFi.encryptionType(i)==WIFI_AUTH_OPEN?0:1;}
     }else if(action=="indicator.set"){
       if(!knownFields(params,"|enabled|")||!params["enabled"].is<bool>())code="invalid_params";
-      else{DynamicJsonDocument candidate(configCapacity);candidate.set(config);candidate["indicator"]=params["enabled"];if(!saveConfig(candidate))code="storage_error";else{indicator=config["indicator"];data["enabled"]=indicator;}}
+      else{DynamicJsonDocument candidate(std::min(configCapacity,config.memoryUsage()+1024));candidate.set(config);candidate["indicator"]=params["enabled"];if(!saveConfig(candidate))code="storage_error";else{indicator=config["indicator"];data["enabled"]=indicator;}}
     }else if(action=="co2.calibrate"){
       if(!knownFields(params,"|reference_ppm||reference_stable|")||params.size()!=2||
          !params["reference_ppm"].is<int>()||params["reference_ppm"].as<int>()<400||params["reference_ppm"].as<int>()>1500||
@@ -197,7 +201,7 @@ static String execute(const String &body){
       valid=valid&&validSection(section,values);
       if(!valid)code="invalid_params";
       else{
-        DynamicJsonDocument candidate(configCapacity);candidate.set(config);
+        DynamicJsonDocument candidate(std::min(configCapacity,config.memoryUsage()+values.memoryUsage()+1024));candidate.set(config);
         if(section=="indicator_rules")candidate.remove("indicator_rules");
         // Copy dynamic keys into the candidate's pool: const char* keys would
         // otherwise outlive the request document after config.set(candidate).

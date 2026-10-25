@@ -22,6 +22,9 @@ def fixture(dual=True):
     # Include actual wire service entry points, sharing the actual validation helper.
     service=(ROOT/'common/service.c').read_text()
     text+='\n#include "common/status_view.h"\nstatic bool ready=true;static mico_mutex_t command_lock;\n'
+    # This status-only fixture has no capability encoder. Preserve the actual
+    # optional-hook decision without linking unrelated product catalogs.
+    text+='extern struct printbuf *service_product_capabilities_wire(const char *,const char *const *,bool) __attribute__((weak));\nstatic struct printbuf *service_capabilities_wire(const char *id){(void)id;abort();return NULL;}\n'
     text+=function(service,'static bool identifier(')+'\ntypedef struct { const char *id,*action;json_object *params; } service_request;\n'
     text+='\n'.join(function(service,s) for s in ('static bool service_request_decode(','struct printbuf *service_command_wire(','struct printbuf *service_query_wire('))
     # Inject every allocation refusal, including count/fill checked numeric scratch.

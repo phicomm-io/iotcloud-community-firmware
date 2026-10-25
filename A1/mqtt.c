@@ -259,6 +259,44 @@ static void primary_snapshot(const a1_config_t *c,bool *on,unsigned *speed) {
     feature_effective_fan(c->fan_on,c->speed,on,speed);
 #endif
 }
+/* sensor-values-v1 describes effective primary fan percent, not RPM.
+ * This owner snapshot also applies to the fresh-air build. */
+static uint32_t fan_sensor_boot,fan_sensor_sequence,fan_sensor_at;
+static uint32_t fan_sensor_wait=5000;
+static bool fan_sensor_started,fan_sensor_turn;
+static bool fan_sensor_ready(void) {
+    mico_rtos_lock_mutex(&a1_lock);
+    bool ready=a1_state.fan_ready && !a1_state.ota_active && !a1_state.reboot_pending;
+    mico_rtos_unlock_mutex(&a1_lock);
+    return ready;
+}
+static int fan_sensor_cycle(bool on,unsigned speed,bool *handled) {
+    *handled=false;
+    if(!account.mode)return MQTT_SUCCESS;
+    if(fan_sensor_turn){fan_sensor_turn=false;return MQTT_SUCCESS;}
+    uint32_t now=mico_rtos_get_time();
+    if(fan_sensor_started && (uint32_t)(now-fan_sensor_at)<fan_sensor_wait)return MQTT_SUCCESS;
+    *handled=fan_sensor_turn=fan_sensor_started=true;
+    fan_sensor_at=now;fan_sensor_wait=1000;
+    if(!fan_sensor_boot && (MicoRandomNumberRead((uint8_t *)&fan_sensor_boot,sizeof(fan_sensor_boot))!=kNoErr || !fan_sensor_boot)) {
+        fan_sensor_boot=0;return MQTT_SUCCESS;
+    }
+    unsigned percent=on?speed:0;
+    bool valid=fan_sensor_ready() && percent<=100;
+    char topic[192],payload[320],value[8]="null";
+    if(valid && !mqtt_format(value,sizeof(value),"%u",percent))return MQTT_SUCCESS;
+    uint32_t sequence=fan_sensor_sequence+1u;if(!sequence)sequence=1;
+    if(!mqtt_aux(&account,"sensor",account.mac,topic,sizeof(topic)) ||
+       !mqtt_format(topic+strlen(topic),sizeof(topic)-strlen(topic),"/state") ||
+       !mqtt_format(payload,sizeof(payload),
+          "{\"schema\":1,\"model\":\"a1\",\"device_id\":\"%s\",\"boot\":%lu,\"sequence\":%lu,\"sensors\":{\"fan_speed_percent\":{\"value\":%s,\"unit\":\"%%\",\"valid\":%s,\"age_ms\":0}}}",
+          account.mac,(unsigned long)fan_sensor_boot,(unsigned long)sequence,value,
+          valid?"true":"false"))return MQTT_SUCCESS;
+    fan_sensor_sequence=sequence;
+    int rc=publish(topic,payload,false);
+    if(rc==MQTT_SUCCESS)fan_sensor_wait=5000;
+    return rc;
+}
 static int discovery_build(const a1_config_t *c,unsigned index,service_mqtt_json_scope *scope)
 {
     if(index==11)return fresh_discovery(c,false,1,scope);
@@ -582,6 +620,11 @@ static int session_cycle(void *context) {
             uint32_t fresh_now=mico_rtos_get_time();
             if((uint32_t)(fresh_now-fresh_at)>=1000){state_pending|=1u<<6;fresh_at=fresh_now;}
 #endif
+            /* At most one independent typed attempt; the next owner turn
+             * always remains available to native/filter/feature producers. */
+            bool sensor_handled;
+            int sensor_rc=fan_sensor_cycle(on,speed,&sensor_handled);
+            if(sensor_handled)return sensor_rc;
             if (filter_priority(a1_filter_mqtt_due(&filter, &sent_filter, mico_rtos_get_time(), filter_sent_at))) {
                 rc = service_mqtt_snapshot(publish, &account);
                 if (rc == MQTT_SUCCESS) {

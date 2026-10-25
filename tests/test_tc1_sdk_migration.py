@@ -43,6 +43,9 @@ typedef struct { system_config_t flashContentInRam; void *user_config_data; uint
 #define kNotPreparedErr -1
 #define kWriteErr -2
 #define kSizeErr -3
+#define kReadErr -4
+#define kNoMemoryErr -5
+#define kParamErr -6
 #define MICO_PARTITION_PARAMETER_1 0
 #define MICO_PARTITION_PARAMETER_2 1
 #define PARA_MICO_DATA_SECTION 0
@@ -81,9 +84,17 @@ static int mico_system_context_restore(system_context_t *c) { (void)c; restores+
 static uint32_t app_config_legacy_size(void) { return 32; }
 static uint32_t app_config_legacy_next_size(uint32_t size) { return size==32?16:0; }
 static bool app_config_migrate_legacy(void *d,uint32_t size) { assert(size==32||size==16);migrations++;memset((uint8_t*)d+size,0,64-size);return true; }
+bool app_config_persist_allowed(void) { return true; }
+void app_config_commit_indeterminate(void) {}
 '''
-        for signature in ('static uint16_t para_crc16(', 'static OSStatus internal_update_config('):
-            harness += function(source, signature)
+        checked_crc = 'static OSStatus para_crc16(' in source
+        if checked_crc:
+            harness += source[source.index('static bool para_commit_uncertain'):source.index('OSStatus mico_system_context_restore')]
+            harness += 'static uint16_t test_crc(int p) { uint16_t crc; assert(para_crc16(p,&crc)==0); return crc; }\n'
+        else:
+            for signature in ('static uint16_t para_crc16(', 'static OSStatus internal_update_config('):
+                harness += function(source, signature)
+            harness += 'static uint16_t test_crc(int p) { return para_crc16(p); }\n'
         # Skip the forward declaration of try_old_para.
         harness += function(source[source.index('/* Read the 3.5 CRC'):], 'static OSStatus try_old_para(')
         harness += r'''
@@ -102,7 +113,7 @@ int main(void) {
   for(unsigned i=0;i<size;i++)assert(data[i]==0x42);
   for(unsigned i=size;i<64;i++)assert(data[i]==0);
   assert(!memcmp(flash[0],flash[1],256));uint16_t stored;memcpy(&stored,flash[0]+254,2);
-  assert(stored==para_crc16(0));assert(!memcmp(flash[0]+32,data,64));
+  assert(stored==test_crc(0));assert(!memcmp(flash[0]+32,data,64));
  }
  setup(32,1);flash[1][40]^=1;assert(try_old_para(&context)==0);assert(restores==1 && !writes && !migrations);
  setup(32,1);flash[1][24]^=1;assert(try_old_para(&context)==0);assert(restores==1 && !writes);

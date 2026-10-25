@@ -92,6 +92,39 @@ void UserMqttRefreshState(bool discovery) {
 /* External periodic producer requests work only. Account/topic/cursors remain
  * exclusively owned by the MQTT worker, including during reconfiguration. */
 static bool power_pending,power_turn;
+/* sensor-values-v1 is owner-local and independent of retained HA telemetry.
+ * Process counters survive MQTT reconnect/account changes. Random failure
+ * defers this optional feed; it must not invent a reusable boot identity. */
+static uint32_t power_sensor_boot, power_sensor_sequence, power_sensor_at;
+static uint32_t power_sensor_wait=5000;
+static bool power_sensor_started, power_sensor_turn;
+static int power_sensor_cycle(bool *handled) {
+    *handled=false;
+    if(!account.mode)return MQTT_SUCCESS;
+    if(power_sensor_turn){power_sensor_turn=false;return MQTT_SUCCESS;}
+    uint32_t now=mico_rtos_get_time();
+    if(power_sensor_started && (uint32_t)(now-power_sensor_at)<power_sensor_wait)return MQTT_SUCCESS;
+    *handled=power_sensor_turn=power_sensor_started=true;
+    power_sensor_at=now;power_sensor_wait=1000;
+    if(!power_sensor_boot && (MicoRandomNumberRead((uint8_t *)&power_sensor_boot,sizeof(power_sensor_boot))!=kNoErr || !power_sensor_boot)) {
+        power_sensor_boot=0;return MQTT_SUCCESS;
+    }
+    tc1_power_sample_t sample;PowerSampleRead(&sample);
+    char topic[192],payload[320],value[48]="null";
+    if(sample.valid && json_number_format_fixed(value,sizeof(value),sample.watts,3)<0)return MQTT_SUCCESS;
+    uint32_t sequence=power_sensor_sequence+1u;if(!sequence)sequence=1;
+    if(!mqtt_aux(&account,"sensor",account.mac,topic,sizeof(topic)) ||
+       !mqtt_format(topic+strlen(topic),sizeof(topic)-strlen(topic),"/state") ||
+       !mqtt_format(payload,sizeof(payload),
+          "{\"schema\":1,\"model\":\"tc1\",\"device_id\":\"%s\",\"boot\":%lu,\"sequence\":%lu,\"sensors\":{\"power\":{\"value\":%s,\"unit\":\"W\",\"valid\":%s,\"age_ms\":%lu}}}",
+          account.mac,(unsigned long)power_sensor_boot,(unsigned long)sequence,value,
+          sample.valid?"true":"false",(unsigned long)sample.age_ms))return MQTT_SUCCESS;
+    power_sensor_sequence=sequence;
+    int rc=service_sender(topic,payload,false);
+    if(rc==MQTT_SUCCESS)power_sensor_wait=5000;
+    return rc;
+}
+
 static bool power_requested(void) {
     return __atomic_exchange_n(&power_pending, false, __ATOMIC_ACQ_REL);
 }
@@ -356,6 +389,7 @@ static bool session_subscription(void *context,unsigned index,ph_mqtt_subscripti
 }
 static int session_initial(void *context) {
     (void)context;
+    PowerSampleInvalidate();
     cleanup_pending=true;discovery_index=state_index=publication_cursor=0;synchronous_error=0;
     snapshot_at=mico_rtos_get_time()-5000u;
     return account.mode?service_mqtt_capabilities(service_sender,&account):MQTT_SUCCESS;
@@ -374,6 +408,9 @@ static int session_cycle(void *context) {
      * have completed, then replay the entire snapshot for that request. */
     if(rediscover && discovery_index==12 && state_index==10){discovery_index=state_index=publication_cursor=0;rediscover=false;}
     if(discovery_index<12 || state_index<10)return snapshot_step();
+    bool sensor_handled;
+    int sensor_rc=power_sensor_cycle(&sensor_handled);
+    if(sensor_handled)return sensor_rc;
     bool status_due=account.mode && (uint32_t)(mico_rtos_get_time()-snapshot_at)>=5000;
     /* A slow PUBACK can make both producers due on every turn. Alternate
      * completed publication batches instead of starving either one. */

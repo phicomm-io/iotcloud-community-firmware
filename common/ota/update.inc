@@ -78,8 +78,9 @@ done:
     mico_rtos_lock_mutex(&service_lock);if(!strcmp(update_state,"checking"))strcpy(update_state,"failed");update_busy=false;mico_rtos_unlock_mutex(&service_lock);
     mico_rtos_delete_thread(NULL);
 }
+static const char *const update_capability_names[]={"ota.sources.get","ota.check","ota.check.get","ota.install",NULL};
 static void update_capabilities(json_object *o) {
-    json_object *a=json_object_object_get(o,"actions");if(a){const char *names[]={"ota.sources.get","ota.check","ota.check.get","ota.install"};for(unsigned i=0;i<4;i++)json_build_array_add(a,json_object_new_string(names[i]));}
+    json_object *a=json_object_object_get(o,"actions");if(a)for(unsigned i=0;update_capability_names[i];i++)json_build_array_add(a,json_object_new_string(update_capability_names[i]));
 }
 static json_object *update_command(const char *action,json_object *p,const char **code,bool *handled) {
     if(strcmp(action,"ota.sources.get")&&strcmp(action,"ota.check")&&strcmp(action,"ota.check.get")&&strcmp(action,"ota.install"))return NULL;
@@ -102,6 +103,7 @@ static json_object *update_command(const char *action,json_object *p,const char 
     json_build_object_add(o,"available",json_object_new_boolean(update_available));mico_rtos_unlock_mutex(&service_lock);return o;
 }
 #else
+static const char *const update_capability_names[]={NULL};
 static void update_capabilities(json_object *o){(void)o;}
 static json_object *update_command(const char *a,json_object *p,const char **code,bool *handled){(void)a;(void)p;(void)code;(void)handled;return NULL;}
 #endif
