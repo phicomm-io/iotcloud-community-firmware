@@ -82,6 +82,13 @@
 <div class="doc-groups" id="docs-index"></div>
 </div></section>
 
+<section class="section" id="m1-mcu"><div class="wrap">
+<p class="eyebrow">M1 · ATSAMD20G18A</p><h2>开源主控，让屏幕与声音有更多玩法。</h2>
+<p class="lead">传感器、实体屏幕与蜂鸣器的独立开源固件，与 EMW3080 联网固件分别升级。新增 CO₂ 屏幕替换或交替显示、屏幕段与 PWM 调试、能力及状态查询；RTTTL 音乐与四种提示音已在 v0.9.3 源码实现，尚未发布。</p>
+<p>当前发布为开发预览，仍需实机复验。CO₂ 需要外接传感器及配套联网固件，不会增加原机没有的传感器。</p>
+<div class="actions"><a class="btn primary" href="guides/m1-mcu-firmware.html">功能介绍与原厂备份</a><a class="btn" href="#m1-mcu-releases">主控 Release 下载</a><a class="btn" href="https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20">MIT 开源仓库</a></div>
+</div></section>
+
 <section class="section" id="releases"><div class="wrap">
 <p class="eyebrow">发布与下载</p>
 <h2>最新版，以及每一个历史版本。</h2>
@@ -92,6 +99,14 @@
 <h3 class="sub-heading">历史版本归档</h3>
 <p class="muted small">旧版本仅供查阅和恢复；升级前请确认型号及该版本支持的固件格式。每个版本保留对应型号的固件、发布说明与校验文件。</p>
 <div id="archive"></div>
+<section id="m1-mcu-releases" aria-labelledby="m1-mcu-release-title" style="margin-top:40px">
+<h3 id="m1-mcu-release-title">M1 主控 MCU · 独立 Release</h3>
+<p>ATSAMD20G18A 开发预览，与上方联网固件的版本号、镜像和升级入口相互独立。以下附件来自 GitHub，不随联网固件的下载来源切换。应用 OTA 不更换 Boot；原厂整片备份不能用于应用 OTA。</p>
+<div class="actions"><a class="btn" href="guides/m1-mcu-firmware.html">新增功能与使用边界</a><a class="btn" href="https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20/releases">全部 GitHub Releases</a><a class="btn" href="guides/assets/firmware/m1-mcu/m1-atsamd20g18a-stock-11.1.2.1.bin" download>原厂主控备份 · 256 KiB</a><a class="btn" href="guides/assets/firmware/m1-mcu/SHA256SUMS">原厂备份 SHA256</a></div>
+<p id="m1-mcu-status" role="status" aria-live="polite">正在读取主控版本…</p><div id="m1-mcu-versions"></div>
+<noscript><p>请通过「全部 GitHub Releases」查看主控版本与附件；原厂备份可直接下载。</p></noscript>
+</section>
+
 </div></section>
 <section class="section" id="community"><div class="wrap">
 <p class="eyebrow">一起让老设备继续好用</p><h2>加入斐讯社区交流</h2>

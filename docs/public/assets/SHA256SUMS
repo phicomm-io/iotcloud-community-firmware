@@ -24,3 +24,4 @@ e977d30dec11b71b6ce63c6605bf03025925554853e6fbedb7adc2e595b9672b  images/tc1-sto
 dc199783be67162d6bfbd3abe318f07608dd7d934cfc77252d1777e70eeea66e  tools/daikin-stock-ota/daikin_stock_ota.py
 649a7b81b35e19510f9f7edb8488157418117849361bc62c6f4e13c61a5fb19e  tools/daikin-stock-ota/daikin-bry88ab.application.bin
 7610b2b95b0655dba94e9b536833eec5cf95cf4e18f23db097c537baf58023d5  tools/daikin-stock-ota/SHA256SUMS
+6a8a9f72741e01d5ebc73467819079146553ec73339029eaf4cc49e8cbd1a7f9  firmware/m1-mcu/m1-atsamd20g18a-stock-11.1.2.1.bin

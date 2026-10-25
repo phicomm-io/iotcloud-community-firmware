@@ -24,6 +24,7 @@ GROUPS = [
         ("tc1-no-disassembly-ethernet-wifi-ap", "一个有线＋一个无线＋一个 AP", "图文步骤、配套文件与 Windows / Linux / macOS 命令", "TC1-免拆刷机-有线无线AP"),
     ]),
     ("m1", "M1 空气检测仪", [
+        ("m1-mcu-firmware", "主控开源固件", "新增功能、主控 Release 与原厂备份", "M1-主控开源固件"),
         ("m1-guide", "功能与操作", "读数、屏幕亮度、指示灯与恢复", "M1-功能与操作"),
         ("stock-provision", "原厂固件配网（免 App）", "A1 EasyLink 与 M1 热点配网，按系统显示命令", "A1-M1-原厂配网"),
         ("m1-no-disassembly", "免拆刷机：内网 / 公网", "原厂 OTA 上传、镜像要求与 DNS 迁移边界", "M1-免拆刷机"),
@@ -64,6 +65,7 @@ SITE_URL = 'https://phicomm-io.github.io/'
 
 # English guides share the same slugs, ordering and asset collection.
 EN_TITLES = {
+ 'm1-mcu-firmware': ('M1 open-source controller firmware', 'Added capabilities, controller releases and stock backup'),
  'daikin-stock-ota': ('Daikin stock OTA migration', 'BRY88AB151K button gesture, sender and verified first boot'),
  'stock-provision': ('Stock Wi-Fi setup without the app', 'A1 EasyLink and M1 hotspot setup on Windows, macOS and Linux'),
  'a1-no-disassembly': ('A1 no-disassembly migration', 'LAN OTA uploads and public DNS migration prerequisites'),

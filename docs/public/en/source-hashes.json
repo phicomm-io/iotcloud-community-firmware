@@ -20,5 +20,6 @@
   "a1-no-disassembly": "a94b5877808bf968149834efc0e36d2204f84b1f182e75a23dff7e5f99ccac28",
   "m1-no-disassembly": "789b16002e66f689bd29285ee6b7707ec4ca496dc47885a6588ef3cff1fb6100",
   "daikin-guide": "ffab227d9360fb0b1ba374642d7e800113e2a138c3396491b59325c5d68b08a9",
-  "daikin-stock-ota": "ff77f0bbf931d67158a1cff359348ca9907eb98ed403e2afc100d50004de3ee0"
+  "daikin-stock-ota": "ff77f0bbf931d67158a1cff359348ca9907eb98ed403e2afc100d50004de3ee0",
+  "m1-mcu-firmware": "98704f97ac3b55bb6c44867b806dcb545a98164b158ffbd73de05a4b0a0267f7"
 }
