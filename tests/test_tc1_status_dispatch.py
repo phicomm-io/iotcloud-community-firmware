@@ -12,6 +12,10 @@ class TC1StatusDispatch(unittest.TestCase):
 #include <assert.h>
 #include <string.h>
 #include "common/status_view.h"
+#include "common/generated/build_version.h"
+#define VERSION FIRMWARE_VERSION
+char str_mac[16]="aabbccddeeff";
+static void text(json_object *o,const char *k,const char *v){json_object_object_add(o,k,json_object_new_string(v));}
 static bool busy;static unsigned full,live,other;
 static json_object *tc1_status_json(void){full++;return busy?NULL:json_object_new_object();}
 static json_object *tc1_status_live_json(void){live++;return busy?NULL:json_object_new_object();}

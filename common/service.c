@@ -254,7 +254,7 @@ static json_object *service_command_execute(json_object *req) {
     const char *code="invalid_params",*id=view.id,*action=view.action;
     json_object *p=view.params;
     if(!strcmp(action,"info.get")){
-        const char *status_code="ok";json_object *status=service_product("status.get",p,&status_code);
+        const char *status_code="ok";json_object *status=service_product("info.get",p,&status_code);
         if(!status)return result(id,status_code,NULL);
         json_object *info=json_object_new_object();
         const char *keys[]={"model","device_id","version"};

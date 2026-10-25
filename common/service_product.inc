@@ -23,6 +23,7 @@
 #define DOWNLOAD a1_ota_download
 #define DEVICE_NAME_PREFIX "A1"
 #define DEVICE_ID a1_id
+#define DEVICE_VERSION A1_VERSION
 #else
 #include "m1.h"
 #define DEVICE_MODEL "m1"
@@ -41,6 +42,7 @@
 #define DOWNLOAD m1_ota_download
 #define DEVICE_NAME_PREFIX "M1"
 #define DEVICE_ID m1_id
+#define DEVICE_VERSION M1_VERSION
 #endif
 #include "device_status.h"
 #if !defined(HOST_A1) && !defined(HOST_M1)
@@ -356,6 +358,15 @@ static __attribute__((noinline)) json_object *service_product_inner(const char *
 /* Status snapshots are also published inside the MQTT owner. Do not reserve the
  * configuration/write handler's large frame on this frequent nested path. */
 json_object *service_product(const char *action,json_object *p,const char **code){
+    if(!strcmp(action,"info.get")){
+        bool live;*code="invalid_params";
+        if(!status_view_params(p,&live))return NULL;
+        /* Identity is immutable after startup. Avoid capturing and parsing a
+         * complete status graph for these three metadata fields. */
+        json_object *o=json_object_new_object();
+        svc_string(o,"model",DEVICE_MODEL);svc_string(o,"device_id",DEVICE_ID);svc_string(o,"version",DEVICE_VERSION);
+        *code=o?"ok":"busy";return o;
+    }
     if(!strcmp(action,"status.get")){
         *code="invalid_params";
         bool live;

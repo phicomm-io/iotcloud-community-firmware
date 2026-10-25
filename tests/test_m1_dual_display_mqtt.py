@@ -47,10 +47,20 @@ def main(port):
              'decimals': 0, 'scale': 1, 'ttl_seconds': 60,
              'color': {'mode': 'fixed', 'value': 'green'}},
         ]
+        reconnect_at = len(records)
         saved = command('display_source.set', {'revision': 0, 'selected_source': 'user',
                                               'double_click': 'switch_display', 'lanes': lanes})
         assert saved['runtime']['profile'] == 'dual'
         assert saved['runtime']['confirmation'] == 'requires_mcu_upgrade', 'simulator has no dual UART MCU'
+
+        # Adding the first MQTT lane changes the subscription plan. A fresh
+        # measurement must arrive after the new session acknowledges offline
+        # delivery; the previous four-filter session cannot admit it safely.
+        availability = f'{prefix}/m1/aabbccddeeff/availability'
+        observer.wait(lambda: any(t == availability and p == b'offline'
+                                 for t, p in records[reconnect_at:]), label='display source reconnect offline')
+        observer.wait(lambda: any(t == availability and p == b'online'
+                                 for t, p in records[reconnect_at:]), label='display source reconnect online')
 
         co2 = {'schema': 1, 'device_id': co2_id, 'model': 'daikin', 'boot': 31, 'sequence': 1,
                'sensors': {'co2': {'valid': True, 'value': 1234, 'unit': 'ppm', 'age_ms': 0}}}

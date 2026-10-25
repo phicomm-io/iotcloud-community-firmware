@@ -50,6 +50,9 @@ bool m1_ota_download(const char *url){(void)url;return false;}
 static m1_config_t config;
 char m1_id[13]="aabbccddeeff";mico_mutex_t m1_lock;m1_state_t m1_state;
 void m1_config_get(m1_config_t *out){*out=config;}
+/* This peripheral-only host worker has no persisted user display profile. */
+void m1_display_config_get(m1_display_config_t *out){m1_display_defaults(out);}
+void m1_display_source_mqtt_reset(void){}
 void m1_state_get(m1_state_t *out){
     *out=m1_state;
 }
