@@ -66,16 +66,7 @@ static bool svc_keys(json_object *p,const char *allowed){
 static bool svc_int(json_object *p,const char *key,int *out,int lo,int hi){json_object *v=json_object_object_get(p,key);if(!v || !json_object_is_type(v,json_type_int))return false;*out=json_object_get_int(v);return *out>=lo && *out<=hi;}
 static bool svc_bool(json_object *p,const char *key,bool *out){json_object *v=json_object_object_get(p,key);if(!v || !json_object_is_type(v,json_type_boolean))return false;*out=json_object_get_boolean(v);return true;}
 static bool svc_text(json_object *p,const char *key,char *out,size_t capacity,bool required){json_object *v=json_object_object_get(p,key);if(!v)return !required;if(!json_object_is_type(v,json_type_string))return false;size_t n=json_object_get_string_len(v);if(n>=capacity || n!=strlen(json_object_get_string(v)))return false;memcpy(out,json_object_get_string(v),n+1);return true;}
-json_object *service_product_capabilities(void){
-    json_object *o=json_object_new_object(),*a=json_object_new_array();svc_string(o,"model",DEVICE_MODEL);json_build_object_add(o,"protocol",json_object_new_int(2));svc_string(o,"mqtt_protocol","tmcp");json_build_object_add(o,"mqtt_protocol_version",json_object_new_int(2));
-    status_view_capabilities(o);
-    svc_string(o,"device_language","zh-CN,en");json_build_object_add(o,"config_backup",json_object_new_int(1));json_build_object_add(o,"config_recovery",json_object_new_boolean(device_config_recovery()));
-#ifndef FEATURE_DEVICE_A1
-    json_build_object_add(o,"sensor_session_protocol",json_object_new_int(2));
-    json_build_object_add(o,"sensor_schema",json_object_new_int(1));
-    json_build_object_add(o,"sensor_alarm_config_schema",json_object_new_int(1));
-#endif
-    const char *actions[]={"schedules.get","schedules.put","schedules.delete","schedules.enable","buttons.get","status.get","capabilities.get","config.get","logs.get","config.set","wifi.scan","wifi.scan.get","binding.status.get","system.reboot","system.reset","ota.start","night.get","night.set","time.get","time.set","binding.get",
+static const char *const svc_capability_actions[]={"schedules.get","schedules.put","schedules.delete","schedules.enable","buttons.get","status.get","capabilities.get","config.get","logs.get","config.set","wifi.scan","wifi.scan.get","binding.status.get","system.reboot","system.reset","ota.start","night.get","night.set","time.get","time.set","binding.get",
 #ifdef FEATURE_DEVICE_A1
     "binding.set",
 #endif
@@ -91,21 +82,94 @@ json_object *service_product_capabilities(void){
     "wake_alarm.get","wake_alarm.start","wake_alarm.stop",
     "music.get","music.begin","music.chunk","music.commit","music.read","music.play","music.stop","music.cancel",
 #endif
-    NULL};for(unsigned i=0;actions[i];i++)json_build_array_add(a,json_object_new_string(actions[i]));json_build_object_add(o,"actions",a);
+    NULL};
+#ifdef FEATURE_DEVICE_A1
+static const char *const svc_capability_keys[]={"power","wifi","combination",NULL};
+#endif
+json_object *service_product_capabilities(void){
+    json_object *o=json_object_new_object(),*a=json_object_new_array();svc_string(o,"model",DEVICE_MODEL);json_build_object_add(o,"protocol",json_object_new_int(2));svc_string(o,"mqtt_protocol","tmcp");json_build_object_add(o,"mqtt_protocol_version",json_object_new_int(2));
+    status_view_capabilities(o);
+    svc_string(o,"device_language","zh-CN,en");json_build_object_add(o,"config_backup",json_object_new_int(1));json_build_object_add(o,"config_recovery",json_object_new_boolean(device_config_recovery()));
+#ifndef FEATURE_DEVICE_A1
+    json_build_object_add(o,"sensor_session_protocol",json_object_new_int(2));
+    json_build_object_add(o,"sensor_schema",json_object_new_int(1));
+    json_build_object_add(o,"sensor_alarm_config_schema",json_object_new_int(1));
+#endif
+    for(unsigned i=0;svc_capability_actions[i];i++)json_build_array_add(a,json_object_new_string(svc_capability_actions[i]));json_build_object_add(o,"actions",a);
 #ifdef FEATURE_DEVICE_A1
 #ifdef PHICOMM_BEMFA
     json_build_object_add(o,"dual_mqtt",json_object_new_boolean(true));
 #endif
     json_build_object_add(o,"schedule_countdown",json_object_new_boolean(true));
     json_object *keys=json_object_new_array();
-    const char *names[]={"power","wifi","combination"};
-    for(unsigned i=0;i<3;i++)json_build_array_add(keys,json_object_new_string(names[i]));
+    for(unsigned i=0;svc_capability_keys[i];i++)json_build_array_add(keys,json_object_new_string(svc_capability_keys[i]));
     json_build_object_add(o,"button_keys",keys);
 #endif
 #ifdef A1_FRESH_AIR
     json_build_object_add(o,"fresh_air",json_object_new_boolean(true));
 #endif
     return o;
+}
+/* The graph API remains available to existing producers. Frequent HTTP/MQTT
+ * queries can encode the same immutable catalog without building its nodes. */
+#include "status_emit.inc"
+static void svc_capability_array(status_sink *sink,const char *key,const char *const *names,const char *const *extra)
+{
+    emit_begin(sink,key,true);
+    if(names)for(unsigned i=0;names[i];i++)emit_string(sink,NULL,names[i]);
+    if(extra)for(unsigned i=0;extra[i];i++)emit_string(sink,NULL,extra[i]);
+    emit_end(sink);
+}
+static bool svc_capabilities_visit(status_sink *sink,const char *id,const char *const *extra,bool restricted,bool recovery)
+{
+    emit_begin(sink,NULL,false);
+    if(id)emit_string(sink,"request_id",id);
+    emit_string(sink,"code","ok");emit_string(sink,"message","操作成功");
+    emit_begin(sink,"data",false);
+    if(!restricted) {
+        emit_string(sink,"model",DEVICE_MODEL);emit_int(sink,"protocol",2);
+        emit_string(sink,"mqtt_protocol","tmcp");emit_int(sink,"mqtt_protocol_version",2);
+        static const char *const views[]={"full","live",NULL};
+        svc_capability_array(sink,"status_views",views,NULL);
+        emit_string(sink,"device_language","zh-CN,en");emit_int(sink,"config_backup",1);
+        emit_bool(sink,"config_recovery",recovery);
+#ifndef FEATURE_DEVICE_A1
+        emit_int(sink,"sensor_session_protocol",2);emit_int(sink,"sensor_schema",1);
+        emit_int(sink,"sensor_alarm_config_schema",1);
+#endif
+    }
+    svc_capability_array(sink,"actions",restricted?NULL:svc_capability_actions,extra);
+    if(!restricted) {
+#ifdef FEATURE_DEVICE_A1
+#ifdef PHICOMM_BEMFA
+        emit_bool(sink,"dual_mqtt",true);
+#endif
+        emit_bool(sink,"schedule_countdown",true);
+        svc_capability_array(sink,"button_keys",svc_capability_keys,NULL);
+#endif
+#ifdef A1_FRESH_AIR
+        emit_bool(sink,"fresh_air",true);
+#endif
+    }
+    variant_fields(sink);emit_end(sink);emit_end(sink);
+    return !sink->failed && !sink->depth;
+}
+__attribute__((noinline)) struct printbuf *service_product_capabilities_wire(const char *id,const char *const *extra,bool restricted)
+{
+    /* Snapshot the only mutable field once, before either encoding pass. */
+    bool recovery=restricted?false:device_config_recovery();
+    status_sink sink={0};
+    if(!svc_capabilities_visit(&sink,id,extra,restricted,recovery) || sink.used>=INT_MAX)return NULL;
+    size_t length=sink.used;
+    struct printbuf *wire=json_heap_calloc(1,sizeof(*wire));
+    if(!wire)return NULL;
+    wire->buf=json_heap_malloc(length+1);
+    if(!wire->buf) { printbuf_free(wire);return NULL; }
+    wire->size=(int)length+1;
+    memset(&sink,0,sizeof(sink));sink.buf=wire->buf;sink.capacity=length;
+    if(!svc_capabilities_visit(&sink,id,extra,restricted,recovery) || sink.used!=length) { printbuf_free(wire);return NULL; }
+    wire->bpos=(int)length;wire->buf[length]=0;
+    return wire;
 }
 static __attribute__((noinline)) json_object *service_product_inner(const char *action,json_object *p,const char **code){
     *code="invalid_params";
