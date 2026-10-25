@@ -175,7 +175,7 @@ static String execute(const String &body){
       for(int i=0;i<n&&i<24;i++){JsonObject net=nets.createNestedObject();net["ssid"]=WiFi.SSID(i);net["rssi"]=WiFi.RSSI(i);net["security"]=WiFi.encryptionType(i)==WIFI_AUTH_OPEN?0:1;}
     }else if(action=="indicator.set"){
       if(!knownFields(params,"|enabled|")||!params["enabled"].is<bool>())code="invalid_params";
-      else{DynamicJsonDocument candidate(configCapacity);candidate.set(config);candidate["indicator"]=params["enabled"];if(!saveConfig(candidate))code="storage_error";else{indicator=config["indicator"];data["enabled"]=indicator;}}
+      else{DynamicJsonDocument candidate(std::min(configCapacity,config.memoryUsage()+1024));candidate.set(config);candidate["indicator"]=params["enabled"];if(!saveConfig(candidate))code="storage_error";else{indicator=config["indicator"];data["enabled"]=indicator;}}
     }else if(action=="co2.calibrate"){
       if(!knownFields(params,"|reference_ppm||reference_stable|")||params.size()!=2||
          !params["reference_ppm"].is<int>()||params["reference_ppm"].as<int>()<400||params["reference_ppm"].as<int>()>1500||
@@ -201,7 +201,7 @@ static String execute(const String &body){
       valid=valid&&validSection(section,values);
       if(!valid)code="invalid_params";
       else{
-        DynamicJsonDocument candidate(configCapacity);candidate.set(config);
+        DynamicJsonDocument candidate(std::min(configCapacity,config.memoryUsage()+values.memoryUsage()+1024));candidate.set(config);
         if(section=="indicator_rules")candidate.remove("indicator_rules");
         // Copy dynamic keys into the candidate's pool: const char* keys would
         // otherwise outlive the request document after config.set(candidate).

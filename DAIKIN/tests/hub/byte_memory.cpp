@@ -1,3 +1,19 @@
+#include <algorithm>
+#include <cstddef>
+#include <cstdlib>
+#include <new>
+// A few scenarios cap actual C++ allocations as well as the production
+// admission predicate. This catches hidden container growth after a guard.
+static size_t allocationLimit = size_t(-1), largestAllocation = 0, deniedAllocations = 0;
+void *operator new(std::size_t n) {
+  largestAllocation = std::max(largestAllocation, n);
+  if (n > allocationLimit) { ++deniedAllocations; throw std::bad_alloc(); }
+  if (void *p = std::malloc(n ? n : 1)) return p;
+  throw std::bad_alloc();
+}
+void *operator new[](std::size_t n) { return ::operator new(n); }
+void operator delete(void *p) noexcept { std::free(p); }
+void operator delete[](void *p) noexcept { std::free(p); }
 #include "hub_transport.h"
 #include <cassert>
 #include <cstdio>
@@ -83,6 +99,91 @@ static void receiveGrowth() {
   assert(!b.receive(0, input.data() + input.size() - 1, 1, 0));
   assert(checked == 8197 && !b.active(0));
 }
+struct AllocationCap {
+  explicit AllocationCap(size_t n) { allocationLimit = n; largestAllocation = deniedAllocations = 0; }
+  ~AllocationCap() { allocationLimit = size_t(-1); }
+};
+static void retainedGrowth() {
+  HubBroker b; credentials(b);
+  b.sendPublish = [](unsigned, const uint8_t *, size_t, const std::string &, const std::string &) { return true; };
+  size_t checked = 0;
+  b.allocate = [&](size_t n) { checked = std::max(checked, n); return n < 2548 && n + 16384 < 40000; };
+  // A vector used to allocate a complete 64-element array at entry 33 even
+  // though the tiny payload passed a 517-byte guard. Nodes remain small.
+  for (unsigned i = 0; i < 32; ++i)
+    assert(b.publish("t/" + std::to_string(i), "x", true));
+  {
+    AllocationCap cap(2548);
+    for (unsigned i = 32; i < 128; ++i)
+      assert(b.publish("t/" + std::to_string(i), "x", true));
+    assert(b.retainedCount() == 128 && !b.publish("overflow", "x", true));
+    assert(b.publish("t/0", "replacement", true));
+    assert(b.publish("t/1", "", true) && b.retainedCount() == 127);
+    assert(b.publish("replacement", "x", true) && b.retainedCount() == 128);
+    assert(checked < 2548 && largestAllocation < 2548 && !deniedAllocations);
+  }
+}
+static void smallReceive() {
+  HubBroker b; credentials(b); unsigned publications = 0;
+  b.send = [](unsigned, const uint8_t *, size_t) { return true; };
+  b.sendPublish = [](unsigned, const uint8_t *, size_t, const std::string &, const std::string &) { return true; };
+  const auto connect = connectPacket(), subscribe = subscribePacket();
+  Bytes data = publishPacket(std::string(1024, 'x'));
+  const auto second = publishPacket(std::string(1024, 'y'));
+  data.insert(data.end(), second.begin(), second.end());
+  size_t checked = 0;
+  b.allocate = [&](size_t n) { checked = std::max(checked, n); return n < 2548 && n + 16384 < 40000; };
+  b.event = [&](const std::string &topic, const std::string &payload, bool, HubBroker::Origin) {
+    assert(topic == "topic/a" && payload == std::string(1024, publications ? 'y' : 'x'));
+    ++publications;
+  };
+  {
+    AllocationCap cap(2548);
+    assert(b.open(0, 0));
+    assert(b.receive(0, connect.data(), connect.size(), 0));
+    assert(b.receive(0, subscribe.data(), subscribe.size(), 0));
+    // The real transport reads at most 512 bytes at a time. Include a
+    // coalesced tail belonging to the following publication in those chunks.
+    for (size_t at = 0; at < data.size(); at += 512)
+      assert(b.receive(0, data.data() + at, std::min(size_t(512), data.size() - at), 1));
+    assert(publications == 2 && b.connected(0) && checked < 2548 && !deniedAllocations);
+  }
+}
+static void receiveCopy() {
+  HubBroker b; credentials(b); unsigned publications = 0;
+  b.send = [](unsigned, const uint8_t *, size_t) { return true; };
+  b.event = [&](const std::string &, const std::string &, bool, HubBroker::Origin) { ++publications; };
+  assert(b.open(0, 0)); auto connect = connectPacket();
+  assert(b.receive(0, connect.data(), connect.size(), 0));
+  auto input = publishPacket(std::string(1400, 'x')); assert(input.size() < 1500);
+  size_t checked = 0;
+  b.allocate = [&](size_t n) { checked = n; return n < 1500; };
+  AllocationCap cap(1500);
+  // Receiving the packet fits, but its separate parsed-data admission fails
+  // before packet copies or synchronous callbacks can consume the reserve.
+  assert(!b.receive(0, input.data(), input.size(), 1));
+  assert(checked > 1500 && !publications && !b.active(0) && !deniedAllocations);
+}
+static void duplicateSubscriptions() {
+  HubBroker b; credentials(b); Bytes reply;
+  b.send = [&](unsigned, const uint8_t *p, size_t n) { reply.assign(p, p + n); return true; };
+  assert(b.open(0, 0)); auto connect = connectPacket();
+  assert(b.receive(0, connect.data(), connect.size(), 0));
+  Bytes body{0, 1};
+  for (unsigned i = 0; i < 2047; ++i) { text(body, "t"); body.push_back(0); }
+  const auto input = frame(0x82, body); assert(body.size() == 8190);
+  b.allocate = [](size_t n) { return n < 9000; };
+  {
+    AllocationCap cap(9000);
+    for (size_t at = 0; at < input.size(); at += 512)
+      assert(b.receive(0, input.data() + at, std::min(size_t(512), input.size() - at), 1));
+    // MQTT still requires one acknowledgement per requested filter. Replay
+    // bookkeeping needs only the single unique subscription, not 2047 copies.
+    assert(reply.size() == 2052 && reply[0] == 0x90 && reply[3] == 0 && reply[4] == 1);
+    for (size_t i = 5; i < reply.size(); ++i) assert(reply[i] == 0);
+    assert(b.connected(0) && !deniedAllocations);
+  }
+}
 struct TransportFixture {
   HubTransport transport;
   int client = -1;
@@ -138,6 +239,10 @@ int main(int argc, char **argv) {
   if (scenario == "coalesced") coalesced();
   else if (scenario == "callback-reset") callbackReset();
   else if (scenario == "receive-growth") receiveGrowth();
+  else if (scenario == "retained-growth") retainedGrowth();
+  else if (scenario == "small-receive") smallReceive();
+  else if (scenario == "receive-copy") receiveCopy();
+  else if (scenario == "duplicate-subscriptions") duplicateSubscriptions();
   else {
     assert(scenario == "direct-growth" || scenario == "raw-growth");
     transmitGrowth(atoi(argv[2]), atoi(argv[3]), scenario == "direct-growth");

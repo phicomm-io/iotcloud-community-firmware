@@ -38,6 +38,7 @@
 #include <esp_sntp.h>
 #include <esp_ota_ops.h>
 #include <esp_wifi.h>
+#include <esp_heap_caps.h>
 
 #include "HomeSpan.h"
 #include "HAP.h"
@@ -120,10 +121,21 @@ void Span::pollTask(){
   if(hapServer->hasClient()){
     auto incoming=hapServer->available();
     // Bound sockets and leave memory for authenticated HTTP, MQTT and OTA.
-    if(hapList.size()>=4 || ESP.getFreeHeap()<65000 || ESP.getMaxAllocHeap()<20000){
+    // INTERNAL alone also counts instruction RAM unsuitable for byte buffers.
+    const auto caps=MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+    const bool paired=HAPClient::nAdminControllers()>0;
+    const size_t freeMinimum=paired?32768:40960;
+    const size_t blockMinimum=paired?8192:20480;
+    if(hapList.size()>=4 || heap_caps_get_free_size(caps)<freeMinimum ||
+        heap_caps_get_largest_free_block(caps)<blockMinimum){
       incoming.stop();
     }else{
       auto it=hapList.emplace(hapList.begin());
+      it->request.allocate=it->encrypted.allocate=[](size_t n){
+        const auto caps=MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+        return heap_caps_get_free_size(caps)>n+16384 &&
+            heap_caps_get_largest_free_block(caps)>n;
+      };
       it->client=incoming;
       it->client.setTimeout(1000);
       it->clientNumber=it->client.fd()-LWIP_SOCKET_OFFSET;

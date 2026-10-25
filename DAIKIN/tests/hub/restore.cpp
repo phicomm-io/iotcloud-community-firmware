@@ -1,6 +1,27 @@
 // Compile the actual firmware restore/reset, save and quiesce functions. Only
 // NVS, ESP MQTT tasks, HAP socket closing and clocks are replaced on the host.
+#include <algorithm>
+#include <cstdlib>
+#include <stdlib.h>
+#include <cstdint>
+#include <string>
+// Limit the pinned ArduinoJson allocator, leaving protocol/socket bookkeeping
+// independent. This reproduces a largest available block, not a fake JSON doc.
+static size_t jsonAllocationLimit=SIZE_MAX,jsonAllocationCount=0,jsonFailAt=0;
+static size_t deniedJsonAllocations=0;
+static void *jsonAllocate(size_t size){
+  if(++jsonAllocationCount==jsonFailAt||size>jsonAllocationLimit){++deniedJsonAllocations;return nullptr;}
+  return std::malloc(size);
+}
+static void *jsonReallocate(void *pointer,size_t size){
+  if(size>jsonAllocationLimit){++deniedJsonAllocations;return nullptr;}
+  return std::realloc(pointer,size);
+}
+#define malloc jsonAllocate
+#define realloc jsonReallocate
 #include <ArduinoJson.h>
+#undef malloc
+#undef realloc
 #include "hub_home.h"
 #include "hub_relay.h"
 #include "hub_transport.h"
@@ -16,14 +37,21 @@
 
 #define IOTCLOUD_HUB 1
 #define DAIKIN_VARIANT "hub"
+static size_t stringAllocationLimit=SIZE_MAX,stringWriteLimit=SIZE_MAX,stringConcatLimit=SIZE_MAX;
 struct String:std::string {
   using std::string::string;
+  using std::string::append;
   String(const std::string &s):std::string(s){}
   bool isEmpty()const{return empty();}
+  bool startsWith(const char *s)const{return compare(0,strlen(s),s)==0;}
   bool endsWith(const char *s)const{size_t n=strlen(s);return size()>=n&&compare(size()-n,n,s)==0;}
   int indexOf(const String &s)const{auto n=find(s);return n==npos?-1:int(n);}
-  size_t write(uint8_t c){push_back(c);return 1;}
-  size_t write(const uint8_t *p,size_t n){append(reinterpret_cast<const char *>(p),n);return n;}
+  bool reserve(size_t n){if(n>stringAllocationLimit)return false;std::string::reserve(n);return true;}
+  void push_back(char c){if(size()<stringWriteLimit)std::string::push_back(c);}
+  String &append(const char *p,size_t n){n=std::min(n,stringWriteLimit>size()?stringWriteLimit-size():size_t(0));std::string::append(p,n);return *this;}
+  bool concat(const char *p,size_t n){if(size()+n>stringConcatLimit||size()+n>stringAllocationLimit)return false;append(p,n);return true;}
+  size_t write(uint8_t c){return write(&c,1);}
+  size_t write(const uint8_t *p,size_t n){n=std::min(n,stringWriteLimit>size()?stringWriteLimit-size():size_t(0));append(reinterpret_cast<const char *>(p),n);return n;}
 };
 namespace ArduinoJson {
 template<> struct Converter<String> {
@@ -115,6 +143,49 @@ static unsigned requestSlot=0;
 #include "commands.inc"
 #include "backup.inc"
 
+// Run the production HTTP handler too: delay() dispatches its queued operation
+// as loop() would. Authentication itself is covered by the OTA handler suite.
+using esp_err_t=int;
+static constexpr int ESP_OK=0,ESP_FAIL=-1,HTTP_GET=0,HTTP_POST=1;
+using std::min;
+struct httpd_req_t {
+  int method=HTTP_GET,content_len=0;
+  size_t offset=0;
+  std::string input,status="200 OK",type,body,cache;
+};
+static int authMux=0,webMux=0;
+static char webPassword[33]="device-password";
+static bool webPending=false,webDone=true;
+static void httpd_resp_set_hdr(httpd_req_t *req,const char *key,const char *value){if(!strcmp(key,"Cache-Control"))req->cache=value;}
+static void httpd_resp_set_status(httpd_req_t *req,const char *status){req->status=status;}
+static void httpd_resp_set_type(httpd_req_t *req,const char *type){req->type=type;}
+static esp_err_t httpd_resp_send(httpd_req_t *req,const char *body,size_t length){req->body.assign(body?body:"",length);return ESP_OK;}
+static int httpd_req_recv(httpd_req_t *req,char *out,int size){size_t n=std::min(size_t(size),req->input.size()-req->offset);memcpy(out,req->input.data()+req->offset,n);req->offset+=n;return int(n);}
+static bool authorized(httpd_req_t *){return true;}
+static void delay(unsigned n){now+=n;if(webPending&&!webDone){webResult=backupExecute();webPending=false;webDone=true;}}
+#include "json-response.inc"
+#include "backup-handler.inc"
+
+static void normalMemory(){
+  jsonAllocationLimit=stringAllocationLimit=stringWriteLimit=stringConcatLimit=SIZE_MAX;
+  jsonFailAt=0;
+}
+static String restoreBody(bool larger){
+  DynamicJsonDocument backup(configCapacity+1024);
+  backup["schema"]=1;backup["model"]="daikin";backup["variant"]="hub";backup["config_version"]=1;backup["config"]=config;
+  if(larger){
+    auto h=backup["config"]["hub"].as<JsonObject>();h["username"]="newowner";
+    auto devices=h["devices"].to<JsonArray>();
+    for(unsigned i=0;i<12;++i){
+      auto d=devices.createNestedObject();char mac[13];snprintf(mac,sizeof(mac),"aabbccdd%04x",i+1);
+      d["mac"]=std::string(mac);d["model"]=i==0?"tc1":i==1?"a1":"m1";
+      d["version"]="v2";d["status"]="active";d["username"]="newowner";
+    }
+  }
+  assert(!backup.overflowed()&&validConfig(backup["config"]));
+  String body;serializeJson(backup,body);return body;
+}
+
 static std::string hex(const uint8_t *p,size_t n){
   std::string result;
   for(size_t i=0;i<n;++i){result+="0123456789abcdef"[p[i]>>4];result+="0123456789abcdef"[p[i]&15];}
@@ -185,7 +256,55 @@ int main(int argc,char **argv){
   for(unsigned i=0;i<3;++i){hubMessages[i].receiving=true;hubMessages[i].length=5;}
   sessions[0].used=sessions[0].active=true;hubHome.devices[0].online=hubHome.devices[0].controls=true;
   hubReload=hubCredentials=hubBirth=true;
-  if(scenario=="mqtt"||scenario=="mqtt-local"||scenario=="mqtt-fail"){
+  if(scenario.compare(0,7,"backup-")==0){
+    if(scenario=="backup-fit"){
+      for(unsigned i=0;i<3;++i){
+        String body=std::string("{\"model\":\"m1\",\"mac\":\"aabbccdd000")+char('1'+i)+"\",\"version\":\"v2\"}";
+        assert(hubService.handle(Request("POST","/api/devices",body,login.token),++now).status==201);
+      }
+    }
+    const auto before=prefs.persisted;const auto writes=prefs.writes;
+    jsonAllocationCount=deniedJsonAllocations=0;
+    jsonAllocationLimit=7924;stringAllocationLimit=7924;
+    if(scenario=="backup-json")jsonAllocationLimit=0;
+    if(scenario=="backup-string")stringAllocationLimit=32;
+    if(scenario=="backup-short")stringWriteLimit=100;
+    httpd_req_t req;assert(backupHandler(&req)==ESP_OK);
+    normalMemory();
+    if(scenario=="backup-fit"){
+      assert(req.status=="200 OK"&&req.type=="application/octet-stream"&&req.cache=="no-store");
+      DynamicJsonDocument parsed(configCapacity+1024);assert(!deserializeJson(parsed,req.body));
+      assert(parsed["schema"]==1&&parsed["model"]=="daikin"&&parsed["variant"]=="hub");
+      assert(parsed["firmware_version"]==version&&validConfig(parsed["config"]));
+      std::string saved,current;serializeJson(parsed["config"],saved);serializeJson(config,current);assert(saved==current);
+      assert(deniedJsonAllocations==0);
+    }else assert(req.status=="503 Service Unavailable"&&req.body=="{\"code\":\"busy\"}");
+    assert(prefs.persisted==before&&prefs.writes==writes&&!rebootAt);assertLive(login.token,fd);
+  }else if(scenario=="restore-fit"||scenario.compare(0,12,"restore-oom-")==0){
+    httpd_req_t req;req.method=HTTP_POST;req.input=restoreBody(scenario=="restore-fit"||scenario=="restore-oom-parse");req.content_len=req.input.size();
+    const auto before=prefs.persisted;const auto writes=prefs.writes;
+    jsonAllocationCount=deniedJsonAllocations=0;
+    jsonAllocationLimit=7924;stringAllocationLimit=7924;
+    if(scenario=="restore-oom-parse")jsonAllocationLimit=4096;
+    if(scenario=="restore-oom-candidate")jsonFailAt=2;
+    if(scenario=="restore-oom-body")stringAllocationLimit=32;
+    if(scenario=="restore-oom-concat")stringConcatLimit=1;
+    assert(backupHandler(&req)==ESP_OK);
+    const auto attempted=jsonAllocationCount;
+    normalMemory();
+    if(scenario=="restore-fit"){
+      assert(req.status=="202 Accepted"&&req.body=="{\"code\":\"accepted\"}");
+      assert(config["hub"]["devices"].size()==12&&hubService.user()=="newowner");
+      assert(attempted>2&&deniedJsonAllocations==0);assertQuiesced(login.token,fd);assert(rebootAt);
+    }else{
+      assert(req.status=="503 Service Unavailable"&&req.body=="{\"code\":\"busy\"}");
+      assert(prefs.persisted==before&&prefs.writes==writes&&!rebootAt);assertLive(login.token,fd);
+      if(scenario=="restore-oom-parse")assert(attempted>1&&deniedJsonAllocations==1);
+      if(scenario=="restore-oom-candidate")assert(attempted==2&&deniedJsonAllocations==1);
+      if(scenario=="restore-oom-body")assert(attempted==0&&req.offset==0);
+      if(scenario=="restore-oom-concat")assert(attempted==0&&req.offset>0);
+    }
+  }else if(scenario=="mqtt"||scenario=="mqtt-local"||scenario=="mqtt-fail"){
     hubReload=hubCredentials=hubBirth=mqttRestart=false;
     prefs.fail=scenario=="mqtt-fail";
     auto before=prefs.persisted;

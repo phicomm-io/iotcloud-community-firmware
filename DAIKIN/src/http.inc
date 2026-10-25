@@ -50,19 +50,40 @@ static String backupExecute(){
 #endif
   if(configRecovery)return "{\"code\":\"migration_required\"}";
   if(webOperation==1){
-    DynamicJsonDocument out(configCapacity+1024);
+    DynamicJsonDocument out(config.memoryUsage()+1024);
+    if(!out.capacity())return "{\"code\":\"busy\"}";
     out["schema"]=1;out["model"]="daikin";out["variant"]=DAIKIN_VARIANT;out["config_version"]=1;out["firmware_version"]=version;out["config"]=config;
-    String text;serializeJson(out,text);return text;
+    if(out.overflowed())return "{\"code\":\"busy\"}";
+    const size_t length=measureJson(out);String text;
+    if(!text.reserve(length))return "{\"code\":\"busy\"}";
+    serializeJson(out,text);
+    if(text.length()!=length)return "{\"code\":\"busy\"}";
+    return text;
   }
-  DynamicJsonDocument backup(configCapacity+1024);
-  if(deserializeJson(backup,webBody)||!backup.is<JsonObject>()||backup["schema"]!=1||String(backup["model"]|"")!="daikin"||
-    String(backup["variant"]|"")!=DAIKIN_VARIANT||backup["config_version"]!=1||!validConfig(backup["config"].as<JsonObjectConst>()))return "{\"code\":\"invalid_backup\"}";
-  DynamicJsonDocument candidate(configCapacity);candidate.set(backup["config"]);
-  if(!saveConfig(candidate))return "{\"code\":\"storage_error\"}";
+  const size_t limit=configCapacity+1024;
+  size_t capacity=config.memoryUsage()+1024;if(capacity>limit)capacity=limit;
+  for(;;){
+    // JSON structure and strings determine memory use. Retry a genuinely larger
+    // document after NoMemory, releasing each previous pool before allocating.
+    DynamicJsonDocument backup(capacity);
+    if(!backup.capacity())return "{\"code\":\"busy\"}";
+    auto error=deserializeJson(backup,webBody);
+    if(error==DeserializationError::NoMemory){
+      if(capacity==limit)return "{\"code\":\"busy\"}";
+      capacity=capacity>limit-1024?limit:capacity+1024;continue;
+    }
+    if(error||!backup.is<JsonObject>()||backup["schema"]!=1||String(backup["model"]|"")!="daikin"||
+      String(backup["variant"]|"")!=DAIKIN_VARIANT||backup["config_version"]!=1||!validConfig(backup["config"].as<JsonObjectConst>()))return "{\"code\":\"invalid_backup\"}";
+    auto restored=backup["config"].as<JsonObjectConst>();
+    size_t candidateCapacity=restored.memoryUsage()+1024;if(candidateCapacity>configCapacity)candidateCapacity=configCapacity;
+    DynamicJsonDocument candidate(candidateCapacity);
+    if(!candidate.capacity()||!candidate.set(restored)||candidate.overflowed())return "{\"code\":\"busy\"}";
+    if(!saveConfig(candidate))return "{\"code\":\"storage_error\"}";
 #ifdef IOTCLOUD_HUB
-  hubRestoreChanged();
+    hubRestoreChanged();
 #endif
-  rebootAt=millis()+1500;return "{\"code\":\"accepted\"}";
+    rebootAt=millis()+1500;return "{\"code\":\"accepted\"}";
+  }
 }
 static esp_err_t backupHandler(httpd_req_t *req){
   if(!authorized(req))return ESP_OK;
@@ -72,13 +93,15 @@ static esp_err_t backupHandler(httpd_req_t *req){
   const bool restore=req->method==HTTP_POST;
   if(restore&&(req->content_len<=0||req->content_len>int(configCapacity+1024)))return jsonResponse(req,"400 Bad Request","{\"code\":\"invalid_backup\"}");
   String body;char buffer[512];int left=restore?req->content_len:0;
-  while(left){int n=httpd_req_recv(req,buffer,min(left,(int)sizeof(buffer)));if(n<=0)return ESP_FAIL;body.concat(buffer,n);left-=n;}
-  webBody=body;webOperation=restore?2:1;webDone=false;
+  if(restore&&!body.reserve(left))return jsonResponse(req,"503 Service Unavailable","{\"code\":\"busy\"}");
+  while(left){int n=httpd_req_recv(req,buffer,min(left,(int)sizeof(buffer)));if(n<=0)return ESP_FAIL;if(!body.concat(buffer,n))return jsonResponse(req,"503 Service Unavailable","{\"code\":\"busy\"}");left-=n;}
+  webBody=std::move(body);webOperation=restore?2:1;webDone=false;
   portENTER_CRITICAL(&webMux);webPending=true;portEXIT_CRITICAL(&webMux);
   uint32_t started=millis();while(!webDone){if(uint32_t(millis()-started)>=10000)return jsonResponse(req,"503 Service Unavailable","{\"code\":\"timeout\"}");delay(1);}
   if(!restore&&webResult.startsWith("{\"schema\":")){
     httpd_resp_set_hdr(req,"Access-Control-Allow-Origin","*");httpd_resp_set_hdr(req,"Cache-Control","no-store");httpd_resp_set_type(req,"application/octet-stream");return httpd_resp_send(req,webResult.c_str(),webResult.length());
   }
+  if(webResult.startsWith("{\"code\":\"busy\""))return jsonResponse(req,"503 Service Unavailable",webResult);
   return jsonResponse(req,webResult.indexOf("accepted")>=0?"202 Accepted":"400 Bad Request",webResult);
 }
 static volatile bool otaActive=false;

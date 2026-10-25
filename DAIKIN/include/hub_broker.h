@@ -4,6 +4,7 @@
 #include <array>
 #include <cstdint>
 #include <functional>
+#include <list>
 #include <string>
 #include <vector>
 
@@ -205,15 +206,17 @@ public:
         buffered += x.input.size();
       size_t take = std::min(
           n, std::min(Packet + 5 - c.input.size(), ReceiveBudget - buffered));
-      const size_t allocation = std::max(take + Packet, c.input.size() + take);
-      if (!take || (allocate && !allocate(allocation))) {
+      const size_t size = c.input.size() + take;
+      // Only replace the actual input buffer here. A small packet must not
+      // require a contiguous maximum-size packet buffer on every fragment.
+      if (!take || (size > c.input.capacity() && allocate && !allocate(size))) {
         ++refused;
         disconnect(slot);
         return false;
       }
       if (c.input.empty())
         c.partialAt = now;
-      c.input.reserve(c.input.size() + take);
+      c.input.reserve(size);
       c.input.insert(c.input.end(), data, data + take);
       data += take;
       n -= take;
@@ -245,14 +248,24 @@ public:
         if (c.input.size() < header + remaining)
           break;
         const uint8_t flags = c.input[0];
+        const size_t tail = c.input.size() - header - remaining;
+        // The input allocation remains live while the tail and parsed strings
+        // are copied. Subscription handling also clones bounded filter vectors;
+        // their largest replacement is independent of a tiny request's length.
+        size_t working = remaining + tail + 512;
+        if (flags == 0x82 || flags == 0xa2)
+          working = std::max(working, Subscriptions * 2 * sizeof(std::string) + 512);
+        if (allocate && !allocate(working)) {
+          ++refused;
+          disconnect(slot);
+          return false;
+        }
         // Own the packet while callbacks may reset or disconnect its client.
         std::vector<uint8_t> body;
         body.swap(c.input);
         c.input.assign(body.begin() + header + remaining, body.end());
         body.erase(body.begin() + header + remaining, body.end());
         body.erase(body.begin(), body.begin() + header);
-        if (body.capacity() > body.size() + 1024)
-          body.shrink_to_fit();
         c.at = now;
         c.partialAt = now;
         if (!packet(slot, flags, body)) {
@@ -324,7 +337,9 @@ private:
   };
   uint32_t retainedSequence = 0;
   std::array<Client, Clients> clients;
-  std::vector<Retained> retained;
+  // One fixed-size node per retained message avoids a whole-array replacement
+  // while all payloads are live. publish() budgets its node with the payload.
+  std::list<Retained> retained;
   struct Reader {
     const std::vector<uint8_t> &data;
     size_t pos = 0;
@@ -499,7 +514,10 @@ private:
         }
         if (!exists)
           next.push_back(filter);
-        accepted.push_back(filter);
+        // Repeating an existing filter still gets its own SUBACK, but must not
+        // allocate an unbounded list of duplicate replay filters.
+        if (std::find(accepted.begin(), accepted.end(), filter) == accepted.end())
+          accepted.push_back(filter);
         ack.push_back(0);
       }
       if (!r.done())

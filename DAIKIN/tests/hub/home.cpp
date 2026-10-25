@@ -1,7 +1,93 @@
-#include "hub_home.h"
+#include <algorithm>
+#include <cstdlib>
+#include <stdlib.h>
+#include <cstdint>
 #include <cassert>
 #include <cstdio>
+#include <string>
+// Exercise the pinned ArduinoJson implementation with an actual allocation
+// ceiling, including its NoMemory result. Other C++/broker allocations are not
+// capped here; they are covered by the byte-memory broker suite.
+static size_t jsonLimit=SIZE_MAX,jsonAttempts=0,jsonDenied=0,jsonLargest=0;
+static size_t jsonLive=0,jsonPeak=0;
+static void *homeJsonAllocate(size_t n){
+  ++jsonAttempts;jsonLargest=std::max(jsonLargest,n);
+  if(n>jsonLimit){++jsonDenied;return nullptr;}
+  auto p=std::malloc(n);if(p)jsonPeak=std::max(jsonPeak,++jsonLive);return p;
+}
+static void homeJsonFree(void *p){if(p){assert(jsonLive);--jsonLive;}std::free(p);}
+static void *homeJsonReallocate(void *p,size_t n){
+  if(n>jsonLimit){++jsonDenied;return nullptr;}
+  auto q=std::realloc(p,n);if(q&&!p)jsonPeak=std::max(jsonPeak,++jsonLive);return q;
+}
+#define malloc homeJsonAllocate
+#define free homeJsonFree
+#define realloc homeJsonReallocate
+#include <ArduinoJson.h>
+#undef malloc
+#undef free
+#undef realloc
+#include "hub_home.h"
+
+static std::string dense(const std::string &object,unsigned entries){
+  assert(!object.empty()&&object.back()=='}');
+  auto result=object.substr(0,object.size()-1)+",\"ignored\":[";
+  for(unsigned i=0;i<entries;++i)result+=i?",0":"0";
+  return result+"]}";
+}
+static void memoryTests(){
+  using Home=iotcloud::HubHome;
+  DynamicJsonDocument saved(1024);
+  assert(!deserializeJson(saved,R"([{"mac":"112233445566","model":"m1"},{"mac":"aabbccddeeff","model":"tc1"}])"));
+  iotcloud::HubBroker broker;Home home(broker);
+  broker.authorize=[](const std::string &,bool){return true;};
+  unsigned serial=0;
+  home.randomHex=[&](size_t n){auto s=std::to_string(++serial);return std::string(n*2-s.size(),'0')+s;};
+  assert(home.configure(saved.as<JsonArrayConst>(),"lab/","aabbcc000001"));
+  std::string command;
+  broker.event=[&](const std::string &,const std::string &body,bool,iotcloud::HubBroker::Origin){command=body;};
+  auto observe=[&](const std::string &topic,const std::string &body,size_t ceiling){
+    const auto live=jsonLive;jsonLimit=ceiling;jsonAttempts=jsonDenied=jsonLargest=0;jsonPeak=live;
+    home.observe(topic,body);jsonLimit=SIZE_MAX;
+    assert(jsonLive==live&&jsonPeak<=live+1); // Retries never retain old pools.
+  };
+  const auto sensor=home.devices[1].base,control=home.devices[2].base;
+  const std::string m1=R"({"model":"m1","device_id":"112233445566","sensor_valid":true,"age_ms":1200,"climate_valid":true,"pm25_valid":true,"temperature":25.5,"humidity":43,"pm25":12,"scd40":{"valid":true,"co2_ppm":720,"age_ms":500}})";
+  home.tick(50000);observe(sensor+"/state",m1,2548);
+  const auto &device=home.devices[1];
+  assert(device.reachable(50000)&&device.values[Home::Temperature].number==25.5&&device.values[Home::Temperature].fresh(50000));
+  assert(device.values[Home::Humidity].number==43&&device.values[Home::PM25].number==12&&device.values[Home::CO2].number==720);
+  assert(jsonAttempts==1&&!jsonDenied&&jsonLargest<=2548);
+  home.tick(51000);observe(sensor+"/state",dense(m1,180),SIZE_MAX);
+  assert(device.at==51000&&device.sequence==2&&jsonAttempts>1&&!jsonDenied&&jsonLargest<=8192);
+  const auto sequence=device.sequence,at=device.at,sampleAt=device.values[Home::Temperature].at;
+  auto unchanged=[&](){assert(device.sequence==sequence&&device.at==at&&device.values[Home::Temperature].at==sampleAt&&device.values[Home::Temperature].number==25.5&&device.online);};
+  home.tick(52000);observe(sensor+"/state",dense(m1,180),2548);
+  assert(jsonAttempts>1&&jsonDenied==1);unchanged();
+  observe(sensor+"/state",m1,0);assert(jsonDenied==1);unchanged();
+  // A complete wire object may still exceed the old pool limit. Neither that
+  // failure nor a syntax error at the end may partially refresh known values.
+  observe(sensor+"/state",dense(m1,300),SIZE_MAX);
+  assert(jsonAttempts>1&&!jsonDenied&&jsonLargest==8192);unchanged();
+  auto malformed=dense(m1,180);malformed.pop_back();
+  observe(sensor+"/state",malformed,SIZE_MAX);unchanged();
+  const std::string off=R"({"socket_states":[0,0,0,0,0,0]})",on=R"({"socket_states":[1,0,0,0,0,0]})";
+  observe(control+"/state",off,2548);assert(home.begin(2,Home::Outlet,0,1));
+  DynamicJsonDocument request(512);assert(!deserializeJson(request,command));
+  const auto receipt="{\"request_id\":\""+request["request_id"].as<std::string>()+"\",\"code\":\"accepted\"}";
+  const auto sent=command;
+  observe(control+"/result",dense(receipt,180),2548);
+  assert(jsonDenied==1&&command==sent&&!home.finished());
+  observe(control+"/state",on,2548);assert(!home.finished());
+  observe(control+"/result",receipt,2548);assert(!home.finished());
+  const auto controlSequence=home.devices[2].sequence;
+  observe(control+"/state",dense(on,180),2548);
+  assert(jsonDenied==1&&home.devices[2].sequence==controlSequence&&!home.finished());
+  observe(control+"/state",on,2548);assert(home.finished()&&home.finish());
+  puts("hub home fragmented JSON pool, retry and control-confirmation tests passed");
+}
 int main() {
+  memoryTests();
   DynamicJsonDocument saved(2048);
   assert(!deserializeJson(saved,
       R"([{"mac":"aabbccddeeff","model":"tc1"},{"mac":"112233445566","model":"m1"},{"mac":"a1a2a3a4a5a6","model":"a1"}])"));

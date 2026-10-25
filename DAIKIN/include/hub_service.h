@@ -216,10 +216,10 @@ public:
   }
   size_t workingMemory(const Request &request) const {
     return inputCapacity(request) + outputCapacity(request) + responseCapacity(request) +
-           (needsCandidate(request) ? ConfigCapacity : 0) + 16384;
+           (needsCandidate(request) ? candidateCapacity(request) : 0) + 16384;
   }
   size_t largestAllocation(const Request &request) const {
-    return std::max(needsCandidate(request) ? size_t(ConfigCapacity) : size_t(2048),
+    return std::max(needsCandidate(request) ? candidateCapacity(request) : size_t(2048),
                     std::max(responseCapacity(request),
                              std::max(inputCapacity(request), outputCapacity(request))));
   }
@@ -259,7 +259,7 @@ public:
       if (!fields(input.as<JsonObjectConst>(), "|username||password|") ||
           !nameValid(input["username"]) || !string(input["password"], 63, 8))
         return fail(400, "invalid_params");
-      DynamicJsonDocument next(ConfigCapacity);
+      DynamicJsonDocument next(candidateCapacity(request));
       next.set(config);
       auto h = next.createNestedObject("hub");
       h["schema"] = 1;
@@ -326,7 +326,7 @@ public:
           !fields(input.as<JsonObjectConst>(), "|enabled|") ||
           !input["enabled"].is<bool>())
         return fail(400, "invalid_params");
-      DynamicJsonDocument next(ConfigCapacity);
+      DynamicJsonDocument next(candidateCapacity(request));
       next.set(config);
       next["hub"]["homekit"] = input.as<JsonObjectConst>();
       if(next["hub"]["instance"].isNull()){
@@ -364,7 +364,7 @@ public:
       if (!ok)
         return fail(403, "unauthorized");
       bool mqtt = path == "/api/auth/mqtt-password";
-      DynamicJsonDocument next(ConfigCapacity);
+      DynamicJsonDocument next(candidateCapacity(request));
       next.set(config);
       auto h = next["hub"].as<JsonObject>();
       if (!password(h, input["password"].as<std::string>(), mqtt))
@@ -394,7 +394,7 @@ public:
           return fail(409, "conflict");
       if (config["hub"]["devices"].size() >= Devices)
         return fail(409, "hub_capacity");
-      DynamicJsonDocument next(ConfigCapacity);
+      DynamicJsonDocument next(candidateCapacity(request));
       next.set(config);
       next["hub"]["devices"].as<JsonArray>().add(input.as<JsonObjectConst>());
       if (!commit(next, false))
@@ -406,7 +406,7 @@ public:
       std::string id = path.substr(13);
       if (id.size() != 12)
         return fail(400, "invalid_params");
-      DynamicJsonDocument next(ConfigCapacity);
+      DynamicJsonDocument next(candidateCapacity(request));
       next.set(config);
       auto devices = next["hub"]["devices"].as<JsonArray>();
       bool found = false;
@@ -446,7 +446,7 @@ public:
       if (request.method != "PUT" ||
           !fields(input.as<JsonObjectConst>(), "|enabled||mappings||mqtt|"))
         return fail(400, "invalid_params");
-      DynamicJsonDocument next(ConfigCapacity);
+      DynamicJsonDocument next(candidateCapacity(request));
       next.set(config);
       auto upstream = input["mqtt"].as<JsonObjectConst>();
       if (!upstream.isNull()) {
@@ -486,7 +486,7 @@ public:
       }
       if (request.method != "PUT" && request.method != "DELETE")
         return fail(405, "method_not_allowed");
-      DynamicJsonDocument next(ConfigCapacity);
+      DynamicJsonDocument next(candidateCapacity(request));
       next.set(config);
       if (request.method == "DELETE")
         next["hub"].remove("bemfa");
@@ -525,6 +525,14 @@ private:
     return request.method == "GET" || request.body.empty()
                ? 0
                : std::min<size_t>(12288, request.body.size() * 2 + 512);
+  }
+  size_t candidateCapacity(const Request &request) const {
+    // Copy the compact current pool plus the request's bounded input pool.
+    // The margin covers generated account hashes, owner/device metadata and
+    // new object slots. Small edits must remain possible with HAP running,
+    // even when no contiguous maximum-size config buffer is available.
+    return std::min<size_t>(size_t(ConfigCapacity),
+        config.memoryUsage() + inputCapacity(request) + 1024);
   }
   JsonVariantConst responseValue(const Request &request) const {
     JsonVariantConst value;

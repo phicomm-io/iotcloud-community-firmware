@@ -3,9 +3,31 @@
 #include "../../lib/HomeSpan/src/IoTCloudSRP.h"
 #include <cassert>
 #include <cstdio>
+#include <cstdlib>
+#include <new>
 #include <random>
 
+// Model fragmentation of the actual C++ byte allocator after an earlier TCP
+// fragment reserved enough input capacity. No server or parser is substituted.
+static size_t allocationLimit = size_t(-1), allocationCalls = 0, allocationChecks = 0;
+static bool countAllocations = false;
+void *operator new(size_t n) {
+  if (countAllocations) ++allocationCalls;
+  if (n > allocationLimit) throw std::bad_alloc();
+  if (auto p = std::malloc(n ? n : 1)) return p;
+  throw std::bad_alloc();
+}
+void *operator new[](size_t n) { return ::operator new(n); }
+void operator delete(void *p) noexcept { std::free(p); }
+void operator delete[](void *p) noexcept { ::operator delete(p); }
+
 using iotcloud::HomeRequest;
+static std::vector<size_t> reservations;
+static size_t allowedReservation;
+static bool allocate(size_t n) {
+  reservations.push_back(n);
+  return n <= allowedReservation;
+}
 static bool append(HomeRequest &r, const std::string &s) {
   return r.append(reinterpret_cast<const uint8_t *>(s.data()), s.size());
 }
@@ -13,7 +35,146 @@ static std::string post(const std::string &body) {
   return "POST /pair-setup HTTP/1.1\r\ncontent-type: application/pairing+tlv8\r\nCONTENT-LENGTH: " +
       std::to_string(body.size()) + "\r\n\r\n" + body;
 }
+static void headerAllocation() {
+  const std::string prefix = "GET /accessories HTTP/1.1\r\n";
+  const std::string headers[] = {
+    std::string(900, 'x') + ": y\r\n\r\n",
+    "Content-Type: " + std::string(900, 'X') + "\r\n\r\n",
+    "cOnTeNt-TyPe: " + std::string(900, ' ') + "ApPlIcAtIoN/HaP+JsOn\t\r\n\r\n"
+  };
+  for (size_t i = 0; i < 3; ++i) {
+    const auto wire = prefix + headers[i];
+    if (!i) assert(wire.size() == 934);
+    HomeRequest request;
+    request.allocate = [](size_t n) { ++allocationChecks; return n < allocationLimit; };
+    assert(request.append(reinterpret_cast<const uint8_t *>(wire.data()), 700));
+    assert(request.append(reinterpret_cast<const uint8_t *>(wire.data() + 700), 100));
+    assert(request.bytes.capacity() == 1400);
+    const auto checked = allocationChecks;
+    bool accepted = false, threw = false;
+    allocationLimit = 600;
+    allocationCalls = 0;
+    countAllocations = true;
+    try {
+      accepted = request.append(reinterpret_cast<const uint8_t *>(wire.data() + 800), wire.size() - 800);
+    } catch (const std::bad_alloc &) {
+      threw = true;
+    }
+    countAllocations = false;
+    allocationLimit = size_t(-1);
+    assert(!threw && accepted && request.complete() && request.bytes == wire);
+    assert(allocationCalls == 0 && allocationChecks == checked);
+    assert(request.type == (i == 2 ? HomeRequest::Json : HomeRequest::Other));
+  }
+  for (const auto &mime : {std::string("ApPlIcAtIoN/PaIrInG+TlV8"), std::string("\tAPPLICATION/HAP+JSON \t")}) {
+    HomeRequest request;
+    assert(append(request, "POST /pair-setup HTTP/1.1\r\nCoNtEnT-TyPe: " + mime + "\r\nCoNtEnT-LeNgTh: 1\r\n\r\nx"));
+    assert(request.complete() && request.type != HomeRequest::Other);
+  }
+}
+static void requestAllocation() {
+  auto wire = post(std::string(HomeRequest::Limit, 'b'));
+  wire = post(std::string(HomeRequest::Limit - (wire.size() - HomeRequest::Limit), 'b'));
+  assert(wire.size() == HomeRequest::Limit);
+  HomeRequest request;
+  request.allocate = allocate;
+  allowedReservation = HomeRequest::Limit + 1;
+  reservations.clear();
+  assert(append(request, wire.substr(0, wire.size() - 1)));
+  assert(request.bytes.capacity() == HomeRequest::Limit - 1);
+  assert(reservations == std::vector<size_t>{HomeRequest::Limit});
+  const auto before = request.bytes;
+  allowedReservation = HomeRequest::Limit;
+  assert(!append(request, wire.substr(wire.size() - 1)));
+  assert(reservations.back() == HomeRequest::Limit + 1);
+  assert(request.bytes == before && !request.complete());
+  assert(request.bytes.capacity() == HomeRequest::Limit - 1);
+  // The final byte checks 8097, then reserves only 8096. Appending directly to
+  // the old 8095-byte capacity would grow this libstdc++ string to 16190.
+  allowedReservation = HomeRequest::Limit + 1;
+  assert(append(request, wire.substr(wire.size() - 1)) && request.complete());
+  assert(request.bytes == wire && request.bytes.capacity() == HomeRequest::Limit);
+  const auto checked = reservations.size();
+  request.clear();
+  allowedReservation = 0;
+  assert(append(request, "GET /accessories HTTP/1.1\r\n\r\n") && request.complete());
+  assert(reservations.size() == checked); // Reuse needs no new allocation.
+
+  // Exercise growth through every TCP fragment size, preserving binary bodies.
+  for (size_t step : {size_t(1), size_t(2), size_t(31), size_t(512), size_t(4096)}) {
+    HomeRequest fragmented;
+    fragmented.allocate = allocate;
+    allowedReservation = HomeRequest::Limit + 1;
+    reservations.clear();
+    for (size_t at = 0; at < wire.size(); at += step) {
+      assert(append(fragmented, wire.substr(at, step)));
+      assert(fragmented.bytes.capacity() <= HomeRequest::Limit);
+    }
+    assert(fragmented.complete() && fragmented.bytes == wire);
+    for (auto n : reservations) assert(n <= HomeRequest::Limit + 1);
+  }
+  HomeRequest denied;
+  denied.allocate = allocate;
+  allowedReservation = 0;
+  reservations.clear();
+  assert(!append(denied, "GET /accessories HTTP/1.1\r\n\r\n"));
+  assert(denied.bytes.empty() && !denied.complete() && !denied.expected);
+  assert(denied.type == HomeRequest::Other && reservations == std::vector<size_t>{33});
+}
+static void recordAllocation() {
+  using iotcloud::HomeRecord;
+  HomeRecord record;
+  record.allocate = allocate;
+  std::vector<uint8_t> input(HomeRecord::Limit + HomeRecord::Overhead, 0xa5);
+  input[0] = 0; input[1] = 4;
+  allowedReservation = HomeRecord::Limit + HomeRecord::Overhead;
+  reservations.clear();
+  assert(record.append(input.data(), 2));
+  assert(reservations == std::vector<size_t>{32});
+  assert(record.append(input.data() + 2, 1022));
+  assert(record.bytes.capacity() == 1024 && reservations.back() == 1024);
+  const auto before = record.bytes;
+  allowedReservation = 1041;
+  assert(!record.append(input.data() + 1024, 17));
+  assert(reservations.back() == 1042 && record.bytes == before && !record.complete());
+  allowedReservation = 1042;
+  assert(record.append(input.data() + 1024, 17));
+  assert(record.bytes.capacity() == 1042);
+  const auto checked = reservations.size();
+  allowedReservation = 0;
+  assert(record.append(input.data() + 1041, 1) && record.complete());
+  assert(reservations.size() == checked && record.bytes == input);
+  record.clear();
+  assert(record.append(input.data(), 2) && record.append(input.data() + 2, 1040));
+  assert(record.complete() && reservations.size() == checked);
+
+  // A one-byte final fragment must preflight the full replacement, not 1.
+  HomeRecord finalByte;
+  finalByte.allocate = allocate;
+  allowedReservation = 1042;
+  reservations.clear();
+  assert(finalByte.append(input.data(), 2));
+  assert(finalByte.append(input.data() + 2, 1039));
+  assert(finalByte.bytes.capacity() == 1041);
+  allowedReservation = 1041;
+  assert(!finalByte.append(input.data() + 1041, 1));
+  assert(reservations.back() == 1042 && finalByte.bytes.size() == 1041 && !finalByte.complete());
+  allowedReservation = 1042;
+  assert(finalByte.append(input.data() + 1041, 1) && finalByte.complete());
+  assert(finalByte.bytes.capacity() == 1042 && finalByte.bytes == input);
+
+  HomeRecord denied;
+  denied.allocate = allocate;
+  allowedReservation = 0;
+  reservations.clear();
+  assert(!denied.append(input.data(), 2));
+  assert(denied.bytes.empty() && !denied.complete() && denied.remaining() == 2);
+  assert(reservations == std::vector<size_t>{32});
+}
 int main() {
+  headerAllocation();
+  requestAllocation();
+  recordAllocation();
   uint8_t nonce[12]={};
   for(unsigned i=0;i<65536;++i)assert(iotcloud::homeNonceIncrement(nonce));
   assert(nonce[4]==0&&nonce[5]==0&&nonce[6]==1);

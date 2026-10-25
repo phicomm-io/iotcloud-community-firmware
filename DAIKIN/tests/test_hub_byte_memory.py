@@ -1,7 +1,8 @@
 """Production byte-buffer ownership and fragmented-heap allocation guards.
 
-The allocator predicate models available byte-addressable heap. Real sockets
-exercise transport callbacks; no global allocator override or device is used.
+The allocator predicate models available byte-addressable heap. Focused cases
+also cap actual C++ allocation sizes to catch unchecked container growth.
+Real sockets exercise transport callbacks; no device is used.
 """
 import os
 from pathlib import Path
@@ -51,6 +52,18 @@ class HubByteMemory(unittest.TestCase):
 
     def test_raw_send_checks_full_transmit_reservation(self):
         self.scenario('raw-growth')
+
+    def test_retained_burst_keeps_allocations_below_fragmented_block(self):
+        self.scenario('retained-growth')
+
+    def test_small_packets_work_with_2548_byte_contiguous_block(self):
+        self.scenario('small-receive')
+
+    def test_parsed_packet_copies_have_separate_admission(self):
+        self.scenario('receive-copy')
+
+    def test_duplicate_subscriptions_keep_replay_metadata_bounded(self):
+        self.scenario('duplicate-subscriptions')
 
 
 if __name__ == '__main__':

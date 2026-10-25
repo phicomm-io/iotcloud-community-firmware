@@ -54,7 +54,7 @@ static int commandSubId=-1;
 static bool sgpReady=false;
 static uint32_t sgpSince=0, nextSample=0, nextSgp=0, nextPublish=0, connectAt=0;
 static volatile uint32_t rebootAt=0;
-static String deviceId, apName, mqttRoot, configText;
+static String deviceId, apName, mqttRoot;
 static portMUX_TYPE mqttMux=portMUX_INITIALIZER_UNLOCKED;
 static char mqttPending[4097];
 static volatile bool mqttQueued=false;
@@ -148,7 +148,7 @@ static bool saveConfig(DynamicJsonDocument &candidate){
 #else
   if(length>3999)return false;
 #endif
-  String text; serializeJson(candidate,text);
+  String text;text.reserve(length);serializeJson(candidate,text);
   if(text.length()!=length)return false;
 #ifdef IOTCLOUD_HUB
   // Stock NVS is 16 KiB. This is a document limit, not a free-space promise;
@@ -158,7 +158,7 @@ static bool saveConfig(DynamicJsonDocument &candidate){
 #else
   if(prefs.putString("config",text)!=length)return false;
 #endif
-  config=std::move(candidate);config.shrinkToFit();configText=std::move(text); updatePassword();return true;
+  config=std::move(candidate);config.shrinkToFit();updatePassword();return true;
 }
 static void startAccessPoint(){
   const IPAddress address(192,168,0,1),netmask(255,255,255,0);
@@ -186,9 +186,11 @@ static void startWifi(){
 void setup(){
   Serial.begin(115200);
   if(!prefs.begin("daikin",false)){Serial.println("NVS unavailable");while(true)delay(1000);}
-  configText=loadConfigText();
-  if(deserializeJson(config,configText)||!config.is<JsonObject>()||!validConfig(config.as<JsonObjectConst>())){
-    configRecovery=true;config.clear();config.to<JsonObject>();Serial.println("Configuration recovery required");
+  {
+    String text=loadConfigText();
+    if(deserializeJson(config,text)||!config.is<JsonObject>()||!validConfig(config.as<JsonObjectConst>())){
+      configRecovery=true;config.clear();config.to<JsonObject>();Serial.println("Configuration recovery required");
+    }
   }
   config.shrinkToFit();
   updatePassword();indicator=config["indicator"]|false;

@@ -17,8 +17,10 @@ int main() {
   config.shrinkToFit();
   iotcloud::HubService service(config);
   bool fail = false;
+  size_t candidateLimit = iotcloud::HubService::ConfigCapacity;
   unsigned writes = 0, drops = 0;
   service.store = [&](DynamicJsonDocument &next) {
+    assert(next.capacity() <= candidateLimit);
     if (fail)
       return false;
     config = std::move(next);
@@ -233,6 +235,23 @@ int main() {
   assert(saved.status == 200 &&
          saved.body.find("upstream-secret") == std::string::npos);
   assert(config["mqtt"]["password"] == "upstream-secret");
+  // A real HAP session left only a 7924-byte contiguous block. Small route
+  // edits and their rollback must fit it repeatedly without clearing accounts,
+  // devices or the session. Keep the maximum-size configuration tests below.
+  candidateLimit = 7924;
+  const Request disableBridge("PUT", "/api/hub/bridge",
+      R"({"enabled":false,"mappings":[]})", token);
+  for (unsigned i = 0; i < 16; ++i) {
+    assert(service.largestAllocation(bridge) <= candidateLimit);
+    assert(service.handle(bridge, 7).status == 200);
+    assert(service.largestAllocation(disableBridge) <= candidateLimit);
+    assert(service.handle(disableBridge, 7).status == 200);
+    assert(config["hub"]["bridge"]["enabled"] == false &&
+           config["hub"]["bridge"]["mappings"].size() == 0 &&
+           config["mqtt"]["password"] == "upstream-secret" &&
+           service.handle(Request("GET", "/api/auth/me", "", token), 7).status == 200);
+  }
+  candidateLimit = iotcloud::HubService::ConfigCapacity;
   bridge.body =
       R"({"enabled":true,"mappings":[{"direction":"in","local_topic":"phicomm/v2/u_6f74686572/m1/aabbccddeeff/command","remote_topic":"upstream/set","retain":false,"allow_retained":true}]})";
   assert(service.handle(bridge, 8).status == 400);
