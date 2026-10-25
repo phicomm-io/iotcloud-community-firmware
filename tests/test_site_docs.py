@@ -172,12 +172,42 @@ class BuildTests(unittest.TestCase):
             if not url.scheme and not url.netloc and url.path.endswith('.html'):
                 self.assertTrue((self.out / unquote(url.path)).is_file(), target)
 
-    def test_shared_flashing_guide_is_preserved_in_installation(self):
-        items = next(items for group, _, items in GROUPS if group == 'install')
-        self.assertIn('a1-m1-flash', [item[0] for item in items])
+    def test_shared_flashing_guide_is_discoverable_for_both_devices(self):
+        for device in ('m1', 'a1'):
+            items = next(items for group, _, items in GROUPS if group == device)
+            self.assertIn('a1-m1-flash', [item[0] for item in items])
         html = (self.out / 'guides' / 'a1-m1-flash.html').read_text()
         for anchor in ('j-link-刷机', 'bootloader-刷机'):
             self.assertIn(f'id="{anchor}"', html)
+
+    def test_device_entries_reach_install_update_use_and_recovery(self):
+        from html import unescape
+        from urllib.parse import unquote, urlsplit
+
+        devices = ('m1', 'a1', 'tc1', 'daikin')
+        for language in ('', 'en/'):
+            home = self.out / (language + 'index.html')
+            paths = [home, self.out / 'guides/en/index.html'] if language else [home]
+            paths += [self.out / 'guides' / language / (slug + '.html') for slug, *_ in PAGES]
+            for path in paths:
+                text = path.read_text()
+                entries = re.findall(r'<div class="device-doc-actions"[^>]*data-device-actions="([^"]+)"[^>]*>(.*?)</div>', text)
+                self.assertEqual([device for device, _ in entries], list(devices), path)
+                for device, entry in entries:
+                    links = re.findall(r'<a href="([^"]+)" data-guide-action="([^"]+)"', entry)
+                    self.assertEqual([action for _, action in links], ['install', 'update', 'use', 'recover'])
+                    for href, action in links:
+                        url = urlsplit(unescape(href))
+                        target = path.parent / unquote(url.path)
+                        self.assertTrue(target.is_file(), f'{path}: missing {device} {action}: {href}')
+                        if url.fragment:
+                            self.assertIn(f'id="{unquote(url.fragment)}"', target.read_text(), href)
+                        if action in ('use', 'recover'):
+                            self.assertEqual(target.name, device + '-guide.html', href)
+                if path == home:
+                    for device in devices:
+                        self.assertIn(f'href="#docs-{device}"', text)
+                        self.assertIn(f'id="docs-{device}" open', text)
 
     def test_old_flashing_urls_reach_shared_guide(self):
         for alias in ('a1-flash', 'm1-flash'):

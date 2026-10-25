@@ -164,6 +164,8 @@ select{font:inherit;background:var(--surface);border:1px solid var(--border);bor
 .doc-group a{display:block;padding:7px 8px;border-radius:var(--radius-s);text-decoration:none;color:var(--text);font-size:14px}
 .doc-group a:hover{background:var(--surface-muted);color:var(--accent)}
 .doc-group a span{display:block;font-size:12px;color:var(--muted);margin-top:2px}
+.device-doc-actions{display:flex;flex-wrap:wrap;gap:4px;padding:0 12px 12px}
+.device-doc-actions a{display:block;padding:7px 8px;border-radius:var(--radius-s);font-size:14px}
 
 /* Four entry points shared by both home-page languages. */
 .prefs{display:flex;align-items:center;gap:10px;margin-left:auto}
