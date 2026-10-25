@@ -3,6 +3,7 @@
 M1 has two independently updated processors. The **EMW3080 Wi-Fi module** runs networking, the web interface and cloud communication. The **ATSAMD20G18A controller** drives sensors, the display, RTC, button and buzzer. This MIT-licensed project implements the controller firmware. Installing Wi-Fi firmware does not automatically replace it.
 
 [Source](https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20) · [Controller releases and downloads]({{SITE_URL}}#m1-mcu-releases) · [M1 operation](m1-guide)
+[Network update guide](m1-mcu-update)
 
 ## Added capabilities
 

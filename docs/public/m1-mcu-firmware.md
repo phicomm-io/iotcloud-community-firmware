@@ -3,6 +3,7 @@
 M1 内部有两个分别升级的处理器：**EMW3080 联网模块**负责 Wi-Fi、网页和云端；**ATSAMD20G18A 主控**负责传感器、屏幕、RTC、按键与蜂鸣器。本项目开源的是后者，源码采用 MIT 许可。仅安装联网固件不会自动替换主控。
 
 [开源仓库](https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20) · [主控 Release 与下载]({{SITE_URL}}#m1-mcu-releases) · [联网固件使用说明](m1-guide)
+[主控网络升级教程](m1-mcu-update)
 
 ## 相比原厂增加了什么
 

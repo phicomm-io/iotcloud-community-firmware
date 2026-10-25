@@ -8,6 +8,7 @@ SITE_TITLE = '斐讯社区固件 · PHICOMM COMMUNITY'
 EN_INDEX_TITLE = 'TC1 / M1 / A1 / DAIKIN community firmware documentation'
 EN_INDEX_DESCRIPTION = 'Open-source firmware for discontinued IoT devices or devices whose cloud service providers have ended support. Guides for TC1, M1, A1, DAIKIN and IotCloud.'
 PRODUCT_TITLES = {
+    'm1-mcu-update': '斐讯 M1 主控 MCU 网络升级教程（免拆机）',
     'tc1-guide': '斐讯 TC1 智能排插功能与操作',
     'tc1-flash': '斐讯 TC1 刷机教程（A1 硬件版本）',
     'tc1-no-disassembly': '斐讯 TC1 免拆刷机教程（A1 硬件版本）',
