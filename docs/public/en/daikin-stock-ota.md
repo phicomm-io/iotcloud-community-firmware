@@ -1,5 +1,9 @@
 # Daikin BRY88AB151K: migrate through stock OTA
 
+Choose your computer’s operating system below. Checking the file and uploading will both show matching commands. On Windows, use PowerShell; on macOS or Linux, use Terminal. Without JavaScript, all commands remain visible.
+
+<!-- os-picker -->
+
 ## 1. Prepare the device and computer
 
 Use a stable device power supply and a computer with 2.4GHz Wi-Fi and Python 3. The sender needs only the Python standard library. Download the files before switching the computer to the device hotspot. Ethernet can keep the computer online while Wi-Fi connects to the device, but internet access is not required during flashing.
@@ -24,17 +28,25 @@ This is the unchanged ordinary `application.bin`. Do not send `factory.bin`, a c
 
 Open a terminal in the download directory and check the file without contacting the device.
 
+<!-- os:windows -->
+
 Windows PowerShell:
 
 ```powershell
 py -3 .\daikin_stock_ota.py .\daikin-bry88ab.application.bin --sha256 649a7b81b35e19510f9f7edb8488157418117849361bc62c6f4e13c61a5fb19e --check-only
 ```
 
+<!-- /os -->
+
+<!-- os:mac linux -->
+
 macOS / Linux:
 
 ```sh
 python3 ./daikin_stock_ota.py ./daikin-bry88ab.application.bin --sha256 649a7b81b35e19510f9f7edb8488157418117849361bc62c6f4e13c61a5fb19e --check-only
 ```
+
+<!-- /os -->
 
 Install Python 3 first if the command is unavailable. Stop on a hash or format mismatch and download the correct file again.
 
@@ -73,17 +85,25 @@ On Windows, use the Wi-Fi menu when possible. In the remote SSH test, a current-
 
 Confirm that the computer is connected to your device's hotspot, then run the sender. Its default destination is `192.168.4.1:8555`.
 
+<!-- os:windows -->
+
 Windows PowerShell:
 
 ```powershell
 py -3 .\daikin_stock_ota.py .\daikin-bry88ab.application.bin --sha256 649a7b81b35e19510f9f7edb8488157418117849361bc62c6f4e13c61a5fb19e
 ```
 
+<!-- /os -->
+
+<!-- os:mac linux -->
+
 macOS / Linux:
 
 ```sh
 python3 ./daikin_stock_ota.py ./daikin-bry88ab.application.bin --sha256 649a7b81b35e19510f9f7edb8488157418117849361bc62c6f4e13c61a5fb19e
 ```
+
+<!-- /os -->
 
 The default stock protocol version label is `SV.02.00.01.16`. It passes the tested stock version check; it does not change the image or represent the community version. When using another image in future, use its actual publisher-provided SHA-256 and separately verify model and stock-layout compatibility.
 

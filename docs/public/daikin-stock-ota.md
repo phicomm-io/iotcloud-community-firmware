@@ -1,5 +1,9 @@
 # 大金 BRY88AB151K：通过原厂 OTA 刷入社区固件
 
+先选择电脑的操作系统，后面的文件检查和上传步骤会一起切换命令。Windows 使用 PowerShell，macOS / Linux 使用终端；浏览器未启用 JavaScript 时会显示全部系统的命令。
+
+<!-- os-picker -->
+
 ## 1. 原理与准备
 
 原厂在进入升级模式后开放 TCP 8555 服务。电脑连接设备热点，通过专用发送器完成握手、版本检查、分块传输和校验。成功后，设备把启动分区切换到备用槽，再重启运行社区应用。
@@ -31,17 +35,25 @@
 
 先打开文件所在目录的终端，仅校验文件，不连接设备：
 
+<!-- os:windows -->
+
 Windows PowerShell：
 
 ```powershell
 py -3 .\daikin_stock_ota.py .\daikin-bry88ab.application.bin --sha256 649a7b81b35e19510f9f7edb8488157418117849361bc62c6f4e13c61a5fb19e --check-only
 ```
 
+<!-- /os -->
+
+<!-- os:mac linux -->
+
 macOS / Linux：
 
 ```sh
 python3 ./daikin_stock_ota.py ./daikin-bry88ab.application.bin --sha256 649a7b81b35e19510f9f7edb8488157418117849361bc62c6f4e13c61a5fb19e --check-only
 ```
+
+<!-- /os -->
 
 如果提示找不到 Python，先安装 Python 3；如果哈希或镜像格式不匹配，停止并重新下载，不要跳过检查。
 
@@ -80,17 +92,25 @@ Windows 推荐直接通过系统 Wi-Fi 菜单连接。若用 `netsh` 在远程 S
 
 确认当前连接的是自己的大金热点，在文件目录中运行以下命令。默认目标是 `192.168.4.1:8555`。
 
+<!-- os:windows -->
+
 Windows PowerShell：
 
 ```powershell
 py -3 .\daikin_stock_ota.py .\daikin-bry88ab.application.bin --sha256 649a7b81b35e19510f9f7edb8488157418117849361bc62c6f4e13c61a5fb19e
 ```
 
+<!-- /os -->
+
+<!-- os:mac linux -->
+
 macOS / Linux：
 
 ```sh
 python3 ./daikin_stock_ota.py ./daikin-bry88ab.application.bin --sha256 649a7b81b35e19510f9f7edb8488157418117849361bc62c6f4e13c61a5fb19e
 ```
+
+<!-- /os -->
 
 发送器默认发送原厂协议版本标签 `SV.02.00.01.16`，用于通过当前原厂版本的准入检查；这不是刷入后的社区固件版本。镜像内容不受该标签改写。若未来换用另一份镜像，必须同时使用该镜像对应的 SHA-256，且重新确认机型和原厂布局适配。
 

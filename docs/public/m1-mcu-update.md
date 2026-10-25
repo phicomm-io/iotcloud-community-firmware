@@ -2,7 +2,9 @@
 
 M1 主控固件可以通过网络更新，**不需要 J-Link，也不需要拆机**。当前使用电脑上的 Python 脚本升级，电脑需能通过局域网访问 M1。
 
-M1 的 Wi-Fi 模块与 ATSAMD20G18A 主控分别升级。**主控镜像不要填进普通 Wi-Fi 固件更新框。** 本文只更新主控应用，保留原厂 Bootloader。
+**本文刷的是“传感器主控”，不是“Wi-Fi MCU”。** EMW3080 联网模块负责 Wi-Fi 和网页；ATSAMD20G18A 传感器主控负责与机内传感器通信，以及屏幕、按键和蜂鸣器。为降低新手误刷导致设备无法使用的风险，传感器主控没有 WebUI 上传入口。请使用下文电脑脚本，通过 `POST /api/v1/mcu/exchange` API 烧录并校验；普通网页“固件更新”只更新 Wi-Fi MCU。
+
+<!-- os-picker -->
 
 ## 1. 确认 Wi-Fi 固件版本
 
@@ -10,7 +12,7 @@ M1 必须先安装支持主控网络升级的配套社区 Wi-Fi 固件：**公�
 
 在 M1 网页查看当前 Wi-Fi 固件版本。低于 v0.9.26 时，先通过正常的 Wi-Fi 固件更新入口安装 [M1 Wi-Fi v0.9.26 或更新版本]({{SITE_URL}}#releases)，确认设备恢复上线，再升级主控。两者版本号相互独立：这里的 v0.9.26 是 **Wi-Fi 版本**，下文 v0.9.4 是 **主控版本**。
 
-如需在网页中使用主控的 RTTTL 音乐、四种提示音和闹钟曲目，配套 Wi-Fi 固件需要 **v0.9.27 或更新版本**，并通过主控能力检测；这与能否使用脚本刷写主控是两个条件。
+如需在网页中使用主控的 RTTTL 音乐、四种提示音和闹钟曲目，配套 Wi-Fi 固件需要 **v0.9.27 或更新版本**，还需另外刷入主控 v0.9.3 或更新版本并通过能力检测；网页颗粒物详情需要主控 v0.9.4 的完整帧能力。只升级 Wi-Fi 不会自动获得这些功能，详见[主控功能与版本条件](m1-mcu-firmware)。
 
 ## 2. 下载主控文件与脚本
 
@@ -36,15 +38,37 @@ cd phicomm_m1_mcu_atsamd20
 
 下面的 `DEVICE_IP`、`DEVICE_ID`、`/下载目录/` 都是占位符，请替换成自己的值；命令应在主控源码目录执行。
 
-如果设置了 M1 网页密码，先设置密码环境变量；没有设置则跳过。以下为 Linux / macOS 终端写法：
+如果设置了 M1 网页密码，先设置密码环境变量；没有设置则跳过。请选择自己的系统查看命令：
+
+<!-- os:windows -->
+
+```powershell
+$env:M1_WEB_PASSWORD='你的网页密码'
+```
+
+<!-- /os -->
+
+<!-- os:mac linux -->
 
 ```sh
 export M1_WEB_PASSWORD='你的网页密码'
 ```
 
-Windows PowerShell 对应写法为 `$env:M1_WEB_PASSWORD='你的网页密码'`，并可将下面的 `python3` 换成 `python`，将文件路径换成 Windows 的实际路径。
+<!-- /os -->
+
+Windows 命令使用单行写法，示例下载目录为 `C:/Downloads/`，请换成自己保存镜像和 JSON 的目录；路径含空格时保留两侧引号。
 
 ## 4. 先检查，不刷写
+
+<!-- os:windows -->
+
+```powershell
+py -3 tools/m1_network.py --host DEVICE_IP --device-id DEVICE_ID --image "C:/Downloads/m1-mcu-ota.bin" --manifest "C:/Downloads/m1-mcu-ota.json"
+```
+
+<!-- /os -->
+
+<!-- os:mac linux -->
 
 ```sh
 python3 tools/m1_network.py \
@@ -54,13 +78,25 @@ python3 tools/m1_network.py \
   --manifest /下载目录/m1-mcu-ota.json
 ```
 
-以上多行命令的 `\` 续行适用于 Linux / macOS；Windows PowerShell 可将各行合为一行执行。
+<!-- /os -->
+
+macOS / Linux 的多行命令请整体复制，行末 `\` 表示命令还没结束；Windows 命令已经合为一行。
 
 默认不刷写。检查输出中的 `device_id`、`before_mcu`、`candidate`、`sha256` 和 `bytes`，确认目标设备和候选主控版本正确。此步骤核对本地镜像并读取设备身份与主控版本，**不会实际发送升级帧，也不能代替前面的 Wi-Fi 最低版本检查**。
 
 ## 5. 加上 --flash 正式更新
 
 确认检查结果正确后，使用相同参数加上 `--flash`：
+
+<!-- os:windows -->
+
+```powershell
+py -3 tools/m1_network.py --host DEVICE_IP --device-id DEVICE_ID --image "C:/Downloads/m1-mcu-ota.bin" --manifest "C:/Downloads/m1-mcu-ota.json" --flash
+```
+
+<!-- /os -->
+
+<!-- os:mac linux -->
 
 ```sh
 python3 tools/m1_network.py \
@@ -70,6 +106,8 @@ python3 tools/m1_network.py \
   --manifest /下载目录/m1-mcu-ota.json \
   --flash
 ```
+
+<!-- /os -->
 
 升级期间保持供电，不要同时升级 Wi-Fi、重启设备或修改配置。脚本逐块等待应答并显示进度；主控重启会让 Wi-Fi 暂时断开，工具随后等待网络恢复，并核对同一设备新的主控版本回报，最多等待约 120 秒。
 

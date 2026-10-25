@@ -2,6 +2,8 @@
 
 This page covers web OTA after community firmware is installed. Factory devices need their model-specific first installation. M1 can use [factory LAN migration](m1-no-disassembly), **starting with 0.9.21 or newer**; do not upload the community signature wrapper to the factory interface.
 
+**M1 has two MCUs.** This page updates the EMW3080 Wi-Fi module. It does not update the ATSAMD20G18A sensor controller. Some Wi-Fi v0.9.27 features require a separate controller update through the API; see [controller features](m1-mcu-firmware) and [controller update steps](m1-mcu-update).
+
 ## Check for updates on the device
 
 Official A1, M1 and TC1 builds provide GitHub Pages HTTPS and domestic/international HTTP update sources. Choose a source in the firmware settings and check:

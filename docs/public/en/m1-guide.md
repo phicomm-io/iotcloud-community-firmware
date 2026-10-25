@@ -2,9 +2,21 @@
 
 M1 provides PM2.5, formaldehyde, temperature, humidity and screen brightness controls. It can supply readings for A1 automation. For first installation, see [A1 / M1 flashing](a1-m1-flash).
 
+## Two separate firmware updates
+
+M1 has a **Wi-Fi MCU (EMW3080)** for networking and the web interface, and a **sensor controller (ATSAMD20G18A)** for built-in sensors, the screen and buzzer. An ordinary web update installs Wi-Fi firmware only. Some Wi-Fi v0.9.27 features need the open-source sensor controller too: tones/music require controller v0.9.3 or newer; particle details require v0.9.4 capabilities. Basic readings remain usable with the stock controller.
+
+To reduce accidental wrong-image flashing, there is no controller upload button in the WebUI. Use the [computer script through the API](m1-mcu-update) for that separate update. See [controller features and version requirements](m1-mcu-firmware).
+
 ## Readings
 
 The home page shows particle concentration (PM2.5), formaldehyde concentration, ambient temperature and relative humidity. Colors and labels indicate reading quality, such as excellent, good or poor.
+
+## Particle details (Wi-Fi v0.9.27)
+
+With a sensor controller that supports complete frames (published in controller v0.9.4), the local home page provides a **Particle details** card: PM1.0, PM10 and six cumulative particle counts. PM2.5 stays in its main card. Expand details for CF=1 concentrations and raw diagnostics. Counts use particles per 0.1 L, not μg/m³; atmospheric and CF=1 are two reporting conventions from the same sensor.
+
+Expired, warming-up or unhealthy measurements show “—”. If the card is absent or unsupported, check both firmware versions and controller capabilities. The new readings support MQTT and Home Assistant discovery, but live Home Assistant integration has not yet been verified. See [complete-frame readings](m1-mcu-firmware).
 
 ## External SCD40 CO₂ sensor (experimental)
 
