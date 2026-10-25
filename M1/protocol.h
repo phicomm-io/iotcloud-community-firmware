@@ -38,4 +38,6 @@ void m1_buzzer_frame(uint8_t frame[M1_TX_FRAME_SIZE], bool enabled);
 void m1_version_frame(uint8_t frame[M1_TX_FRAME_SIZE]);
 void m1_threshold_frame(uint8_t frame[M1_TX_FRAME_SIZE], bool pm25, uint16_t low, uint16_t high);
 bool m1_parse_version(const uint8_t frame[M1_RX_FRAME_SIZE], char version[17]);
+/* Built-in tones first appear in MCU v0.9.3; capability/PWM check is separate. */
+bool m1_tone_version_supported(const char *version);
 

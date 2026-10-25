@@ -49,6 +49,9 @@ typedef struct {
 typedef struct {
     char mcu_version[17];
     bool mcu_version_received, buzzer_requested, wake_alarm_active;
+    bool mcu_tones;
+    bool mcu_music_present;
+    uint8_t wake_alarm_tone;
     uint32_t wake_alarm_started, wake_alarm_until;
     uint32_t mcu_version_updated_ms, buzzer_until;
     bool alarm_uart_sent;
@@ -134,5 +137,8 @@ bool m1_mcu_exchange(const uint8_t *,size_t,uint8_t reply[20]);
 void m1_mcu_tick(void);
 bool m1_mcu_rx(const uint8_t frame[20]);
 bool m1_wake_alarm_start(unsigned duration_seconds);
+bool m1_tone_supported(void);
+bool m1_music_supported(void);
+bool m1_wake_alarm_tone_start(unsigned duration_seconds,unsigned tone);
 void m1_wake_alarm_stop(void);
 json_object *m1_wake_alarm_json(void);

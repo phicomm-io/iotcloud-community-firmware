@@ -4870,6 +4870,228 @@
       "source_refs": [
         "v0.9.26:b004"
       ]
+    },
+    {
+      "change_id": "m1-threshold-editor",
+      "version": "0.9.27",
+      "type": "feature",
+      "component": "bundled_web",
+      "scope": {
+        "models": [
+          "m1"
+        ],
+        "variants": [
+          "full"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "甲醛/PM 两档阈值设置页",
+        "en": "Formaldehyde/PM threshold editor"
+      },
+      "description": {
+        "zh-CN": "在设置 → 通用中分别编辑甲醛/PM 两档阈值或还原原厂值（100/300、75/150，主控原始整数）。沿用持久化接口，保留另一行草稿并处理共享版本冲突。",
+        "en": "Edit the two formaldehyde/PM thresholds or restore stock values (100/300 and 75/150, raw MCU integers) in Settings → General. Uses persistent settings, preserves the other row’s draft and handles shared revision conflicts."
+      },
+      "ota_summary": {
+        "zh-CN": "在设置 → 通用中分别编辑甲醛/PM 两档阈值或还原原厂值（100/300、75/150，主控原始整数）。沿用持久化接口，保留另一行草稿并处理共享版本冲突。",
+        "en": "Edit the two formaldehyde/PM thresholds or restore stock values (100/300 and 75/150, raw MCU integers) in Settings → General. Uses persistent settings, preserves the other row’s draft and handles shared revision conflicts."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.27:b001"
+      ]
+    },
+    {
+      "change_id": "m1-alarm-tone-selection",
+      "version": "0.9.27",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "m1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "闹钟内置短音选择",
+        "en": "Alarm tone selection"
+      },
+      "description": {
+        "zh-CN": "闹钟支持四种内置短音，原蜂鸣声仍可选；须检测主控版本 ≥0.9.3、扩展能力与 PWM。指定时间/每周执行及到期/手动停止继续有效；旧主控保持原蜂鸣声。",
+        "en": "Alarms support four built-in tones alongside the original buzzer. Requires MCU ≥0.9.3 plus extension/PWM capabilities. Scheduled/weekly execution and timed/manual stopping remain; older MCUs retain the original buzzer."
+      },
+      "ota_summary": {
+        "zh-CN": "闹钟支持四种内置短音，原蜂鸣声仍可选；须检测主控版本 ≥0.9.3、扩展能力与 PWM。指定时间/每周执行及到期/手动停止继续有效；旧主控保持原蜂鸣声。",
+        "en": "Alarms support four built-in tones alongside the original buzzer. Requires MCU ≥0.9.3 plus extension/PWM capabilities. Scheduled/weekly execution and timed/manual stopping remain; older MCUs retain the original buzzer."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.27:b002"
+      ]
+    },
+    {
+      "change_id": "m1-alarm-tone-editor",
+      "version": "0.9.27",
+      "type": "feature",
+      "component": "bundled_web",
+      "scope": {
+        "models": [
+          "m1"
+        ],
+        "variants": [
+          "full"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "网页选择及试听闹钟短音",
+        "en": "Web alarm tone selection and preview"
+      },
+      "description": {
+        "zh-CN": "首页与定时闹钟可选择和试听四种短音。仅在实际主控版本和能力满足时显示新选项；原有定时配置保持兼容。",
+        "en": "Select and preview four tones on the home and scheduled alarm screens. New options appear only when the actual MCU version and capabilities qualify; existing schedules remain compatible."
+      },
+      "ota_summary": {
+        "zh-CN": "首页与定时闹钟可选择和试听四种短音。仅在实际主控版本和能力满足时显示新选项；原有定时配置保持兼容。",
+        "en": "Select and preview four tones on the home and scheduled alarm screens. New options appear only when the actual MCU version and capabilities qualify; existing schedules remain compatible."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.27:b002"
+      ]
+    },
+    {
+      "change_id": "m1-rtttl-music",
+      "version": "0.9.27",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "m1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "主控 RTTTL 音乐与闹钟接口",
+        "en": "MCU RTTTL music and alarm API"
+      },
+      "description": {
+        "zh-CN": "提供一首 RTTTL 曲目的写入、读回、播放、停止及闹钟循环。需另行升级 MCU 至 v0.9.3 并通过能力检测；最多 1024 ASCII 字节、256 音符、180 秒，存 MCU 双槽数据区，重启/应用 OTA 后保留。部分音区偏小，没有音量放大。",
+        "en": "Upload, read, play or stop one RTTTL song and repeat it as an alarm. Requires a separate MCU upgrade to v0.9.3 and capability detection. Up to 1024 ASCII bytes, 256 notes and 180 seconds, retained in dual MCU slots across restart/application OTA. Some pitches are quiet; there is no volume amplification."
+      },
+      "ota_summary": {
+        "zh-CN": "提供一首 RTTTL 曲目的写入、读回、播放、停止及闹钟循环。需另行升级 MCU 至 v0.9.3 并通过能力检测；最多 1024 ASCII 字节、256 音符、180 秒，存 MCU 双槽数据区，重启/应用 OTA 后保留。部分音区偏小，没有音量放大。",
+        "en": "Upload, read, play or stop one RTTTL song and repeat it as an alarm. Requires a separate MCU upgrade to v0.9.3 and capability detection. Up to 1024 ASCII bytes, 256 notes and 180 seconds, retained in dual MCU slots across restart/application OTA. Some pitches are quiet; there is no volume amplification."
+      },
+      "summary_complete": true,
+      "critical": true,
+      "source_refs": [
+        "v0.9.27:b003"
+      ]
+    },
+    {
+      "change_id": "m1-rtttl-editor",
+      "version": "0.9.27",
+      "type": "feature",
+      "component": "bundled_web",
+      "scope": {
+        "models": [
+          "m1"
+        ],
+        "variants": [
+          "full"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "网页写入及读取 RTTTL 曲目",
+        "en": "RTTTL upload and readback in WebUI"
+      },
+      "description": {
+        "zh-CN": "在设置 → 通用中粘贴或导入 RTTTL 文本，显示上传进度，校验 CRC 后提交至主控；支持读回、单次播放和停止。保存后可选择为闹钟曲目；主控版本或能力不满足时隐藏入口。",
+        "en": "Paste or import RTTTL text in Settings → General with upload progress and CRC validation before MCU commit. Read it back, play once or stop; select the saved song as an alarm. Hide controls when MCU version or capabilities do not qualify."
+      },
+      "ota_summary": {
+        "zh-CN": "在设置 → 通用中粘贴或导入 RTTTL 文本，显示上传进度，校验 CRC 后提交至主控；支持读回、单次播放和停止。保存后可选择为闹钟曲目；主控版本或能力不满足时隐藏入口。",
+        "en": "Paste or import RTTTL text in Settings → General with upload progress and CRC validation before MCU commit. Read it back, play once or stop; select the saved song as an alarm. Hide controls when MCU version or capabilities do not qualify."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.27:b003"
+      ]
     }
   ],
   "merges": []

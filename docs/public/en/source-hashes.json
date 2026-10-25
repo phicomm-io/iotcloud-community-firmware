@@ -12,7 +12,7 @@
   "iotcloud-deploy": "1fa4286b01be8bf74d8793a862e74a7fcfd7ee96ab81df240c284744886b22c5",
   "build-deps": "34d8c7cc6bdc756da6f0400913849fce88d4b5de8664b2f8329a487d666681f2",
   "sources": "8d747a2af035d6412100bdfbdd2e73d56bab37364312c54398b99855dd3f9b56",
-  "release-log": "81f999f595e0c81660bcce1e1ab6bf2d3844c1534bada7bea5232e59ea2bd8bc",
+  "release-log": "e039c52a136f0c98544691ed28790047811d89c6a4aaf501d80f2b1b6b4647a3",
   "iotcloud-connect": "03fce25fabc3be4cf311bccc3558e1c200feb826e74cba6aab7f99c104677abb",
   "tc1-no-disassembly": "cd6c7012d96e889c5c8b1a1e3f9b1a09dee7b3585fe006cb111254ed9944924d",
   "tc1-no-disassembly-ethernet-wifi-ap": "00ed505fc141b98ae1642e9b1c3bf2772f180694e76fddec9ae881fbb85e79fc",
@@ -21,5 +21,5 @@
   "m1-no-disassembly": "789b16002e66f689bd29285ee6b7707ec4ca496dc47885a6588ef3cff1fb6100",
   "daikin-guide": "ffab227d9360fb0b1ba374642d7e800113e2a138c3396491b59325c5d68b08a9",
   "daikin-stock-ota": "ff77f0bbf931d67158a1cff359348ca9907eb98ed403e2afc100d50004de3ee0",
-  "m1-mcu-firmware": "98704f97ac3b55bb6c44867b806dcb545a98164b158ffbd73de05a4b0a0267f7"
+  "m1-mcu-firmware": "ae641e6ebe0a7b078255643717a9404800ad0194ba710aee13630c65f49d4f3a"
 }

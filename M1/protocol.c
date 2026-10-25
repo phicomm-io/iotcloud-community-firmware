@@ -1,4 +1,18 @@
 #include "protocol.h"
+bool m1_tone_version_supported(const char *version)
+{
+    unsigned part[3]={0};
+    for(unsigned i=0;i<3;i++) {
+        if(*version<'0' || *version>'9')return false;
+        do {
+            part[i]=part[i]*10u+(unsigned)(*version++-'0');
+            if(part[i]>999)return false;
+        }while(*version>='0' && *version<='9');
+        if(i<2 && *version++!='.')return false;
+    }
+    if(*version && (*version!='-' || !version[1]))return false;
+    return part[0]>0 || part[1]>9 || (part[1]==9 && part[2]>=3);
+}
 #include <string.h>
 
 static uint16_t be16(const uint8_t *p) { return ((uint16_t)p[0] << 8) | p[1]; }

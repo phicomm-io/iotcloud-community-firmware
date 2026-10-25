@@ -60,6 +60,7 @@ bool m1_mcu_rx(const uint8_t p[20])
     mico_rtos_lock_mutex(&m1_lock);
     if(p[1]==0x17) {
         m1_state.mcu_extended=false;m1_state.mcu_caps=0;m1_state.mcu_version_received=false;
+        m1_state.mcu_tones=false;m1_state.mcu_music_present=false;
         auto_waiting=false;auto_due=now;
     }
     if(p[1]==0x15 && p[2]==1 && m1_state.mcu_updating)transfer_complete=true;
@@ -70,17 +71,22 @@ bool m1_mcu_rx(const uint8_t p[20])
          (request_frame[1]==0x13 && p[1]==0x14 && p[2]==request_frame[2] && p[3]==request_frame[3]) ||
          (request_frame[1]==0x16 && request_frame[2]==1 && p[1]==0x1a));
     if(match){memcpy(response_frame,p,20);exchange_done=exchange_ok=true;}
+    if(match && p[1]==0x70 && p[2]==15 && request_frame[4]==0 && !p[4])
+        m1_state.mcu_music_present=p[5]==1;
+    if(match && p[1]==0x70 && p[2]==15 && request_frame[4]==3 && !p[4])m1_state.mcu_music_present=true;
     if(p[1]==0x70 && auto_waiting && p[2]==auto_op && p[3]==auto_sequence) {
         auto_waiting=false;
         if(!p[4] && auto_op==0) {
             m1_state.mcu_protocol=p[5];m1_state.mcu_caps=be16(p+6);
             m1_state.mcu_extended=p[5]>=2 && (be16(p+6)&0x3c00)==0x3c00;
+            m1_state.mcu_tones=p[5]>=2 && (be16(p+6)&0x4000) && p[10]==1;
             auto_phase=1;
         } else if(!p[4] && auto_op==13) {
             shown_ppm=be16(p+13);shown_valid=p[15]!=0;shown_co2=p[16]!=0;shown_at=now;
             shown_until=now+(uint32_t)be16(p+17)*1000;
         }
-        auto_due=now+(auto_op==13?1000:0);
+        if(!p[4] && auto_op==15)m1_state.mcu_music_present=p[5]==1;
+        auto_due=now+((auto_op==13||auto_op==15)?1000:0);
         if(p[4])auto_due=now+2000;
     }
     mico_rtos_unlock_mutex(&m1_lock);
@@ -115,13 +121,14 @@ void m1_mcu_tick(void)
     m1_co2_config_t config;m1_co2_config_get(&config);
     if(!ready){extension(f,0);auto_due=now+10000;}
     else {
-        if(auto_phase<1 || auto_phase>4)auto_phase=1;
+        if(auto_phase<1 || auto_phase>5)auto_phase=1;
         if(auto_phase==1){extension(f,11);f[4]=2;put16(f+5,config.low);put16(f+7,config.high);}
         if(auto_phase==2){extension(f,10);f[4]=config.mode;f[5]=config.slot;put16(f+6,config.interval);}
         if(auto_phase==3){extension(f,12);bool fresh=sensor.ready && sensor.received && (uint32_t)(now-sensor.updated_ms)<20000 && sensor.co2_ppm;
             put16(f+4,sensor.co2_ppm);f[6]=fresh;put16(f+7,fresh?(20000-(now-sensor.updated_ms)+999)/1000:0);}
         if(auto_phase==4)extension(f,13);
-        auto_phase=auto_phase==4?1:auto_phase+1;
+        if(auto_phase==5)extension(f,15);
+        auto_phase=auto_phase==5 || (auto_phase==4 && !(m1_state.mcu_caps&0x8000))?1:auto_phase+1;
     }
     mico_rtos_lock_mutex(&m1_lock);
     auto_op=f[2];auto_sequence=f[3];auto_waiting=true;auto_deadline=now+1000;
@@ -166,4 +173,12 @@ json_object *m1_co2_set(json_object *p,const char **code)
     if(!available){*code="unsupported";return NULL;}
     m1_co2_config_t c={.magic=M1_CO2_MAGIC,.revision=values[5],.mode=values[0],.slot=values[1],.interval=values[2],.low=values[3],.high=values[4]};
     *code=m1_co2_config_save(&c);return !strcmp(*code,"accepted")?m1_co2_json():NULL;
+}
+
+bool m1_music_supported(void)
+{
+    mico_rtos_lock_mutex(&m1_lock);
+    bool supported=m1_state.mcu_version_received && m1_state.mcu_tones &&
+        (m1_state.mcu_caps&0x8000) && m1_tone_version_supported(m1_state.mcu_version);
+    mico_rtos_unlock_mutex(&m1_lock);return supported;
 }

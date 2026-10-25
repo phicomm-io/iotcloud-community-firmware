@@ -82,6 +82,7 @@ json_object *service_product_capabilities(void){
 #else
     "display.set","buzzer.set","mcu.version.get","mcu.version.query","alarm.get","alarm.set","co2_display.get","co2_display.set",
     "wake_alarm.get","wake_alarm.start","wake_alarm.stop",
+    "music.get","music.begin","music.chunk","music.commit","music.read","music.play","music.stop","music.cancel",
 #endif
     NULL};for(unsigned i=0;actions[i];i++)json_build_array_add(a,json_object_new_string(actions[i]));json_build_object_add(o,"actions",a);
 #ifdef FEATURE_DEVICE_A1
@@ -175,11 +176,54 @@ static __attribute__((noinline)) json_object *service_product_inner(const char *
         *code=m1_alarm_set(!strcmp(sensor,"pm25"),low,high,revision);
         return !strcmp(*code,"accepted")?m1_alarm_json():NULL;
     }
+    if(!strncmp(action,"music.",6)) {
+        if(!m1_music_supported()){*code="unsupported";return NULL;}
+        uint8_t f[12]={0x23,0x70,15,0,0,0,0,0,0,0,0,0x21},out[20];
+        int n=0,offset=0;char text[11]={0};
+        if(!strcmp(action,"music.get")){if(!svc_keys(p,"|"))return NULL;}
+        else if(!strcmp(action,"music.begin")){
+            char crc[9];if(!svc_keys(p,"|length||crc32|")||!svc_int(p,"length",&n,1,1024)||!svc_text(p,"crc32",crc,sizeof(crc),true)||strlen(crc)!=8)return NULL;
+            f[4]=1;f[5]=n>>8;f[6]=n;
+            for(unsigned i=0;i<8;i++){
+                int c=crc[i],v=c>='0'&&c<='9'?c-'0':c>='a'&&c<='f'?c-'a'+10:c>='A'&&c<='F'?c-'A'+10:-1;
+                if(v<0)return NULL;f[7+i/2]|=(uint8_t)(v<<(i%2?0:4));
+            }
+        }else if(!strcmp(action,"music.chunk")){
+            if(!svc_keys(p,"|offset||data|")||!svc_int(p,"offset",&offset,0,1023)||!svc_text(p,"data",text,5,true)||!*text)return NULL;
+            f[4]=2;f[5]=offset>>8;f[6]=offset;memcpy(f+7,text,strlen(text));
+        }else if(!strcmp(action,"music.commit")){if(!svc_keys(p,"|"))return NULL;f[4]=3;}
+        else if(!strcmp(action,"music.read")){
+            if(!svc_keys(p,"|offset||length|")||!svc_int(p,"offset",&offset,0,1023)||!svc_int(p,"length",&n,1,10))return NULL;
+            f[4]=4;f[5]=offset>>8;f[6]=offset;f[7]=n;
+        }else if(!strcmp(action,"music.play")){
+            if(!svc_keys(p,"|"))return NULL;f[4]=5;f[6]=180;
+        }else if(!strcmp(action,"music.stop")){if(!svc_keys(p,"|"))return NULL;f[4]=6;}
+        else if(!strcmp(action,"music.cancel")){if(!svc_keys(p,"|"))return NULL;f[4]=7;}
+        else {*code="unsupported";return NULL;}
+        if(!m1_mcu_exchange(f,12,out)){*code="busy";return NULL;}
+        if(out[4]){*code=out[4]==1?"invalid_params":out[4]==2?"busy":out[4]==3?"unsupported":"storage_error";return NULL;}
+        json_object *o=json_object_new_object();
+        if(f[4]==0){
+            json_build_object_add(o,"present",json_object_new_boolean(out[5]));
+            json_build_object_add(o,"playing",json_object_new_boolean(out[6]));
+            json_build_object_add(o,"length",json_object_new_int((unsigned)out[7]*256+out[8]));
+            char crc[9];snprintf(crc,sizeof(crc),"%02x%02x%02x%02x",out[9],out[10],out[11],out[12]);svc_string(o,"crc32",crc);
+            json_build_object_add(o,"duration_ms",json_object_new_int((uint32_t)out[13]<<24|(uint32_t)out[14]<<16|(uint32_t)out[15]<<8|out[16]));
+            json_build_object_add(o,"uploading",json_object_new_boolean(out[17]));
+            json_build_object_add(o,"max_length",json_object_new_int(1024));
+        }else if(f[4]==4){
+            if(out[7]!=n || out[5]!=f[5] || out[6]!=f[6]){*code="busy";json_object_put(o);return NULL;}
+            memcpy(text,out+8,n);text[n]=0;svc_string(o,"data",text);
+        }
+        *code=f[4]==0||f[4]==4?"ok":"accepted";return o;
+    }
     if(!strcmp(action,"wake_alarm.start")) {
-        int seconds=60;
-        if(!svc_keys(p,"|duration_seconds|") || (json_object_object_get(p,"duration_seconds") &&
-           !svc_int(p,"duration_seconds",&seconds,1,180)))return NULL;
-        *code=m1_wake_alarm_start(seconds)?"accepted":"busy";
+        int seconds=60,tone=0;
+        if(!svc_keys(p,"|duration_seconds||tone|") || (json_object_object_get(p,"duration_seconds") &&
+           !svc_int(p,"duration_seconds",&seconds,1,180)) || (json_object_object_get(p,"tone") &&
+           !svc_int(p,"tone",&tone,0,5)))return NULL;
+        if((tone && !m1_tone_supported()) || (tone==5 && !m1_music_supported())){*code="unsupported";return NULL;}
+        *code=m1_wake_alarm_tone_start(seconds,tone)?"accepted":"busy";
         return !strcmp(*code,"accepted")?m1_wake_alarm_json():NULL;
     }
     if(!strcmp(action,"mcu.version.query")) {
@@ -343,9 +387,10 @@ json_object *m1_alarm_json(void) {
     return o;
 }
 json_object *m1_wake_alarm_json(void) {
-    uint32_t now=mico_rtos_get_time(),until;bool active;
+    uint32_t now=mico_rtos_get_time(),until;bool active;unsigned tone;
     mico_rtos_lock_mutex(&m1_lock);
     active=m1_state.wake_alarm_active;until=m1_state.wake_alarm_until;
+    tone=m1_state.wake_alarm_tone;
     mico_rtos_unlock_mutex(&m1_lock);
     active=active && (int32_t)(until-now)>0;
     json_object *o=json_object_new_object();
@@ -354,6 +399,14 @@ json_object *m1_wake_alarm_json(void) {
     json_build_object_add(o,"default_duration_seconds",json_object_new_int(60));
     json_build_object_add(o,"max_duration_seconds",json_object_new_int(180));
     json_build_object_add(o,"stop_on_screen_event",json_object_new_boolean(true));
+    bool supported=m1_tone_supported();
+    json_build_object_add(o,"tone_supported",json_object_new_boolean(supported));
+    json_build_object_add(o,"tone_count",json_object_new_int(supported?4:0));
+    json_build_object_add(o,"music_supported",json_object_new_boolean(m1_music_supported()));
+    mico_rtos_lock_mutex(&m1_lock);bool present=m1_state.mcu_music_present;mico_rtos_unlock_mutex(&m1_lock);
+    json_build_object_add(o,"music_present",json_object_new_boolean(present));
+    svc_string(o,"tone_min_mcu_version","0.9.3");
+    json_build_object_add(o,"tone",json_object_new_int(tone));
     return o;
 }
 json_object *m1_mcu_json(void) {

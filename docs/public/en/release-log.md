@@ -2,6 +2,14 @@
 
 English translation of the published release history. Historical validation statements apply to the release named in each section, not to later firmware. Release notes are authored in the Wiki and frozen into the source repository before tagging.
 
+## v0.9.27
+
+- M1 Settings → General adds independent formaldehyde and PM2.5 two-level threshold editors and stock-default restoration. Existing persistence is retained; editing either pollutant preserves unsaved input for the other and handles shared revision conflicts. Defaults are 100/300 for formaldehyde and 75/150 for PM2.5 in controller raw units.
+- M1 overview and scheduled alarms support four preset tones with preview. Availability checks MCU version ≥0.9.3, extension capabilities and PWM support; older controllers retain the original beep. One-time and weekly triggers, timeout and manual stop remain supported.
+- M1 adds one custom RTTTL song: paste or import text, upload to the controller, read it back, play or stop, and select it for alarms. Limits are 1024 ASCII bytes, 256 notes and 180 seconds. Dual-slot MCU storage retains music across reboot and normal application OTA. A separate MCU v0.9.3 update and capability detection are required. Music remains quiet in some frequency ranges; no volume amplification is added.
+- Companion MCU v0.9.3 is a separate development preview with nonblocking RTTTL playback, four short tones and a clock colon blinking once per second. Wi-Fi OTA does not include the controller image; controller network OTA replaces the application and preserves stock Boot.
+- One M1 candidate passed Wi-Fi/controller network OTA, old-controller gating, real WebUI upload and exact readback, play/stop, music alarm timeout and song retention through another controller OTA. The user confirmed audible sound. Connection, CO₂, threshold and schedule settings were preserved. Threshold form save/restore passed host regression. Real interrupted power writes, sound pressure/oscilloscope measurements, long-term stability and other models were not tested.
+
 ## v0.9.26
 
 - A1 adds the stock weighted filter-consumption model, estimated cumulative airflow, and switching between elapsed-time and weighted models. Existing configurations retain their model and accumulated runtime. Both counters continue running; model switching does not reset them, while filter reset clears both. Airflow is estimated from the speed mapping, not measured.

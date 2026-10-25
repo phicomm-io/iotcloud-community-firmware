@@ -76,7 +76,12 @@ static bool auto_action_parse(json_object *o,automation_action_t *a,bool button)
   if(json_object_object_get(p,"speed")){if(!auto_integer(p,"speed",&n,1,100))return false;a->speed=n;}
   return true;
  }
- if(k==AUTO_WAKE_ALARM){if(button || !auto_only(p,"|duration_seconds|") || !auto_integer(p,"duration_seconds",&n,1,180))return false;a->value=n;return true;}
+ if(k==AUTO_WAKE_ALARM){
+  if(button || !auto_only(p,"|duration_seconds||tone|") || !auto_integer(p,"duration_seconds",&n,1,180))return false;
+  a->value=n;
+  if(json_object_object_get(p,"tone")){if(!auto_integer(p,"tone",&n,0,5))return false;a->speed=n;}
+  return true;
+ }
  if(k==AUTO_DISPLAY){if(!auto_only(p,"|brightness|") || !auto_integer(p,"brightness",&n,0,100) || n%25)return false;a->value=n;return true;}
  if(k==AUTO_LIGHT || k==AUTO_CHILD_LOCK || k==AUTO_INDICATOR || k==AUTO_LIGHT_ALWAYS){
   if(!auto_only(p,k==AUTO_LIGHT?"|enabled||brightness||toggle|":"|enabled||toggle|"))return false;
@@ -94,7 +99,10 @@ static json_object *auto_action_json(const automation_action_t *a){
  else if(k==AUTO_OUTLET || k==AUTO_FAN){
   if(a->value==2)json_build_object_add(p,"toggle",json_object_new_boolean(true));else json_build_object_add(p,"on",json_object_new_boolean(a->value));
   if(k==AUTO_OUTLET && a->target<6)json_build_object_add(p,"index",json_object_new_int(a->target));if(k==AUTO_FAN && a->speed)json_build_object_add(p,"speed",json_object_new_int(a->speed));
- }else if(k==AUTO_WAKE_ALARM)json_build_object_add(p,"duration_seconds",json_object_new_int(a->value));
+ }else if(k==AUTO_WAKE_ALARM){
+  json_build_object_add(p,"duration_seconds",json_object_new_int(a->value));
+  if(a->speed)json_build_object_add(p,"tone",json_object_new_int(a->speed));
+ }
  else if(k==AUTO_DISPLAY)json_build_object_add(p,"brightness",json_object_new_int(a->value));
  else if(k==AUTO_LIGHT || k==AUTO_CHILD_LOCK || k==AUTO_INDICATOR || k==AUTO_LIGHT_ALWAYS){
   if(a->value==2)json_build_object_add(p,"toggle",json_object_new_boolean(true));else json_build_object_add(p,"enabled",json_object_new_boolean(a->value));

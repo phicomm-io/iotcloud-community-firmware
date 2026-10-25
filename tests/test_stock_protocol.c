@@ -6,6 +6,10 @@
 
 int main(void)
 {
+    const char *tone_versions[]={"0.9.3","0.9.3-abcdef","0.9.10-ab12ef-d","0.10.0","1.0.0"};
+    for(unsigned i=0;i<sizeof(tone_versions)/sizeof(*tone_versions);i++)assert(m1_tone_version_supported(tone_versions[i]));
+    const char *old_versions[]={"","1.2","oss-0.3","0.9.2-abcdef","0.8.99","0.9.3x","0.9.3-","0..3","999999.0.0"};
+    for(unsigned i=0;i<sizeof(old_versions)/sizeof(*old_versions);i++)assert(!m1_tone_version_supported(old_versions[i]));
     uint8_t frame[20]={0x23,1,0,80,1,5,50,60,25,0,35,1,7,2,0,0,0,0,0,0x21};
     m1_sample_t sample={0};
     assert(m1_parse_sample(frame,UINT32_MAX-100,&sample));

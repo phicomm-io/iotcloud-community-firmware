@@ -110,6 +110,13 @@ int main(void){automation_defaults(&stored);service_init();
  /* M1 alarm uses the existing persisted schedule ABI, including weekly masks,
   * disable/delete, clock validity, flash failure and no replay. */
  automation_defaults(&stored);armed=false;previous=highwater=previous_ms=0;calls=0;
+ CHECK("{\"action\":\"schedules.put\",\"params\":{\"enabled\":true,\"trigger\":\"once\",\"at\":1900000000,\"action\":\"wake_alarm.start\",\"params\":{\"duration_seconds\":60,\"tone\":6}}}","invalid_params");
+ CHECK("{\"action\":\"schedules.put\",\"params\":{\"enabled\":true,\"trigger\":\"once\",\"at\":1900000000,\"action\":\"wake_alarm.start\",\"params\":{\"duration_seconds\":60,\"tone\":3}}}","accepted");
+ assert(stored.tasks[0].action.speed==3);
+ json_object *tones=request("{\"action\":\"schedules.get\",\"params\":{}}","ok");
+ json_object *tone_item=json_object_array_get_idx(json_object_object_get(json_object_object_get(tones,"data"),"items"),0);
+ assert(json_object_get_int(json_object_object_get(json_object_object_get(tone_item,"params"),"tone"))==3);json_object_put(tones);
+ automation_defaults(&stored);
  CHECK("{\"action\":\"schedules.put\",\"params\":{\"enabled\":true,\"trigger\":\"once\",\"at\":1900000000,\"action\":\"wake_alarm.start\",\"params\":{\"duration_seconds\":181}}}","invalid_params");
  CHECK("{\"action\":\"schedules.put\",\"params\":{\"enabled\":true,\"trigger\":\"once\",\"at\":1900000000,\"action\":\"wake_alarm.start\",\"params\":{\"duration_seconds\":0}}}","invalid_params");
  CHECK("{\"action\":\"schedules.put\",\"params\":{\"enabled\":true,\"trigger\":\"once\",\"at\":1900000000,\"action\":\"wake_alarm.start\",\"params\":{\"duration_seconds\":true}}}","invalid_params");

@@ -47,13 +47,15 @@ static int flash_update(void *p){(void)p;writes++;if(fail_flash)return -1;flash=
 static int migrate(void){MIGRATION return 0;}
 static unsigned step,queued,version_queries,buzzer_on,buzzer_off,stop_ms;
 static unsigned wake_beeps, beep_times[8], screen_rx;
+static unsigned tone_beeps,tone_stops,tone_attempts,tone_times[8],music_plays,music_stops;
+static uint8_t music_args[7];
 static unsigned threshold_attempts, threshold_success, threshold_first, threshold_last;
 static bool fail_threshold;
 static uint8_t threshold_frame[12];
 static jmp_buf done;
 uint32_t mico_rtos_get_time(void){return now;}
 static unsigned phase;
-void mico_thread_msleep(unsigned ms){if(phase>=8){now+=ms;m1_mcu_tick();}}
+void mico_thread_msleep(unsigned ms){if(phase>=8){if(phase<12)now+=ms;m1_mcu_tick();}}
 void mico_rtos_thread_sleep(unsigned sec){(void)sec;}
 void watchdog_beat(int slot){(void)slot;}
 typedef struct { int unused; } ring_buffer_t;
@@ -64,10 +66,19 @@ typedef int mico_pwm_t;
 static int MicoUartInitialize(int port,mico_uart_config_t *c,ring_buffer_t *r){(void)port;(void)r;assert(c->baud==115200);return 0;}
 static int MicoUartSend(int port,const uint8_t *p,unsigned n){
  (void)port;assert((n==12 || p[1]==0x13) && p[0]==0x23);
+ if(phase>=12 && p[1]==0x70 && p[2]==14){
+  tone_attempts++;
+  if(phase==14 && tone_attempts==1)return -1;
+  if(p[4]){assert(p[4]==3 && tone_beeps<8);tone_times[tone_beeps++]=now;}else tone_stops++;
+ }
+ if(phase>=15 && p[1]==0x70 && p[2]==15){
+  memcpy(music_args,p+4,7);if(p[4]==5)music_plays++;if(p[4]==6)music_stops++;
+ }
  if(phase>=8 && phase!=10){
   uint8_t ack[20]={0x23,0x70,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0x21};
   if(p[1]==0x70){ack[2]=p[2];ack[3]=p[3];
-   if(p[2]==0){ack[5]=phase==11?1:2;ack[6]=0x3f;ack[7]=0xff;}
+   if(p[2]==0){ack[5]=phase==11?1:2;ack[6]=phase>=15?0xff:phase>=12?0x7f:0x3f;ack[7]=0xff;ack[10]=phase>=12;}
+   if(p[2]==15 && !p[4]){ack[5]=1;ack[7]=0;ack[8]=8;ack[18]=1;}
    if(p[2]==13){ack[13]=0x02;ack[14]=0xbc;ack[15]=1;ack[16]=1;ack[18]=20;}
   }else if(p[1]==0x12){ack[1]=0x14;}
   else if(p[1]==0x13){ack[1]=0x14;ack[2]=p[2];ack[3]=p[3];ack[4]=1;}
@@ -110,7 +121,12 @@ void m1_scd40_tick(void);
 #include "M1/mcu.c"
 void m1_scd40_tick(void){
  step++;now+=100;
- if(phase==7){
+ if(phase>=12){
+  if(step==1)assert(m1_wake_alarm_tone_start(5,phase==16?5:3));
+  if(step==2 && phase==13)m1_state.mcu_tones=false;
+  if(step==22 && phase!=13)m1_wake_alarm_stop();
+  if(step==60)longjmp(done,1);
+ }else if(phase==7){
   queued=10;
   if(step==25)longjmp(done,1);
  }else if(!phase){
@@ -271,7 +287,50 @@ int main(void){
  uint8_t keep_alarm[20];memcpy(keep_alarm,live.reserved_controller_config,20);
  assert(!migrate() && live.base.version==7 && live.co2.mode==0 && live.co2.interval==5);
  assert(!memcmp(keep_alarm,live.reserved_controller_config,20));
- puts("M1 production storage compatibility, UART version/buzzer deadline, wake alarm and restored threshold persistence/retry/queue pressure/uptime-wrap: OK");
+ /* Version AND queried extension/PWM capabilities gate all custom tones. */
+ memset(&m1_state,0,sizeof(m1_state));m1_state.uart_ready=true;m1_state.mcu_version_received=true;
+ strcpy(m1_state.mcu_version,"0.9.2-abcdef");now=10000;phase=12;
+ auto_waiting=false;auto_due=manual_until=0;m1_mcu_tick();assert(m1_state.mcu_tones && !m1_tone_supported());
+ assert(!strcmp(command("wake_alarm.start","{\"tone\":3}"),"unsupported"));
+ strcpy(m1_state.mcu_version,"0.9.3-abcdef");assert(m1_tone_supported());
+ m1_state.mcu_tones=false;assert(!strcmp(command("wake_alarm.start","{\"tone\":3}"),"unsupported"));
+ m1_state.mcu_tones=true;assert(!strcmp(command("wake_alarm.start","{\"tone\":6}"),"invalid_params"));
+ assert(!strcmp(command("wake_alarm.start","{\"tone\":true}"),"invalid_params"));
+ assert(!strcmp(command("wake_alarm.start","{\"tone\":3,\"duration_seconds\":1}"),"accepted"));m1_wake_alarm_stop();
+ uint8_t reboot[20]={0x23,0x17};m1_mcu_rx(reboot);assert(!m1_tone_supported());
+ /* Production worker: two-second preset cadence, stop, capability loss,
+  * bounded TX retry and uint32 rollover, all outside the saturated FIFO. */
+ for(unsigned variant=12;variant<=14;variant++)for(unsigned wrap=0;wrap<2;wrap++){
+  memset(&m1_state,0,sizeof(m1_state));m1_state.mcu_version_received=m1_state.mcu_tones=true;
+  strcpy(m1_state.mcu_version,"0.9.3-abcdef");
+  now=wrap?UINT32_MAX-500:0;unsigned start=now;phase=variant;step=0;queued=10;
+  tone_beeps=tone_stops=tone_attempts=0;auto_waiting=false;manual_until=auto_due=now+60000;
+  if(!setjmp(done))uart_worker(0);
+  assert(!m1_state.wake_alarm_active && tone_stops==1);
+  assert(tone_beeps==(variant==13?1:2));
+  assert((unsigned)(tone_times[0]-start)==(variant==14?200:100));
+  if(variant!=13)assert((unsigned)(tone_times[1]-start)==2100);
+ }
+ /* Real product dispatch: music needs both version and bit 15. */
+ phase=15;now=10000;auto_waiting=false;manual_until=auto_due=0;
+ m1_state.mcu_version_received=true;strcpy(m1_state.mcu_version,"0.9.3-abcdef");
+ m1_state.mcu_tones=true;m1_state.mcu_caps=0x7fff;
+ assert(!strcmp(command("music.get","{}"),"unsupported"));
+ m1_state.mcu_caps=0xffff;assert(!strcmp(command("music.get","{}"),"ok") && m1_state.mcu_music_present);
+ assert(!strcmp(command("music.begin","{\"length\":8,\"crc32\":\"1234abcd\"}"),"accepted"));
+ assert(music_args[0]==1 && music_args[2]==8 && music_args[3]==0x12 && music_args[6]==0xcd);
+ assert(!strcmp(command("music.chunk","{\"offset\":4,\"data\":\"c,d\"}"),"accepted"));
+ assert(music_args[0]==2 && music_args[2]==4 && music_args[3]=='c' && !music_args[6]);
+ assert(!strcmp(command("music.begin","{\"length\":1025,\"crc32\":\"1234abcd\"}"),"invalid_params"));
+ assert(!strcmp(command("music.begin","{\"length\":8,\"crc32\":\"invalid!\"}"),"invalid_params"));
+ assert(!strcmp(command("music.chunk","{\"offset\":0,\"data\":\"abcde\"}"),"invalid_params"));
+ /* Song alarm is started once (not every two seconds), then explicitly stopped. */
+ memset(&m1_state,0,sizeof(m1_state));m1_state.mcu_version_received=m1_state.mcu_tones=m1_state.mcu_music_present=true;
+ m1_state.mcu_caps=0xffff;strcpy(m1_state.mcu_version,"0.9.3-abcdef");
+ now=0;step=0;phase=16;queued=10;music_plays=music_stops=0;auto_waiting=false;manual_until=auto_due=60000;
+ if(!setjmp(done))uart_worker(0);
+ assert(music_plays==1 && music_stops==1 && !m1_state.wake_alarm_active);
+ puts("M1 production storage, alarm thresholds, version/PWM-gated tones/RTTTL, UART cadence/retry/stop/wrap: OK");
 }
 '''.replace('PRODUCTION', production).replace('MIGRATION', migration)
         # Match the actual watchdog prototype included by the worker.

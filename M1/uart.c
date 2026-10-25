@@ -50,16 +50,29 @@ bool m1_uart_buzzer(bool enabled, unsigned duration_ms)
 
 /* Repeat the MCU's single beep with bounded ON/OFF pulses. The UART worker
  * owns transmission; neither the command FIFO nor network polling drives it. */
-bool m1_wake_alarm_start(unsigned duration_seconds)
+bool m1_tone_supported(void)
 {
-    if (!queue_ready || !duration_seconds || duration_seconds > 180) return false;
+    mico_rtos_lock_mutex(&m1_lock);
+    bool supported=m1_state.mcu_version_received && m1_state.mcu_tones &&
+        m1_tone_version_supported(m1_state.mcu_version);
+    mico_rtos_unlock_mutex(&m1_lock);return supported;
+}
+bool m1_wake_alarm_start(unsigned duration_seconds)
+{ return m1_wake_alarm_tone_start(duration_seconds,0); }
+bool m1_wake_alarm_tone_start(unsigned duration_seconds,unsigned tone)
+{
+    if (!queue_ready || !duration_seconds || duration_seconds > 180 || tone>5) return false;
     mico_rtos_lock_mutex(&m1_lock);
     bool ok = !m1_state.wake_alarm_active && !m1_state.ota_active &&
-              !m1_state.reboot_pending && !m1_state.wifi_trial_active;
+              !m1_state.reboot_pending && !m1_state.wifi_trial_active && !m1_state.mcu_updating &&
+              (!tone || (m1_state.mcu_version_received && m1_state.mcu_tones &&
+                         m1_tone_version_supported(m1_state.mcu_version) &&
+                         (tone!=5 || ((m1_state.mcu_caps&0x8000) && m1_state.mcu_music_present))));
     if (ok) {
         m1_state.wake_alarm_started = mico_rtos_get_time();
         m1_state.wake_alarm_until = m1_state.wake_alarm_started + duration_seconds * 1000u;
         m1_state.wake_alarm_active = true;
+        m1_state.wake_alarm_tone = tone;
     }
     mico_rtos_unlock_mutex(&m1_lock);
     return ok;
@@ -160,9 +173,13 @@ static void uart_worker(mico_thread_arg_t arg)
     queue_ready = true;
     uint32_t next_query = mico_rtos_get_time();
     uint32_t next_version = next_query, next_buzzer = next_query;
+    uint32_t next_tone=next_query;
     uint32_t next_alarm = next_query;
     unsigned version_attempts = 0;
     int buzzer_sent = -1;
+    uint8_t tone_sequence=0;
+    bool tone_sent=false;unsigned tone_kind=0;
+    uint32_t tone_cycle=0,tone_started=0;
     m1_decoder_t decoder = {0};
     unsigned old_level = 255, old_mode = 255, old_error = 255, old_wifi = 255;
     uint32_t mode_since = 0;
@@ -179,17 +196,32 @@ static void uart_worker(mico_thread_arg_t arg)
             m1_state.buzzer_requested = false;
         if (m1_state.wake_alarm_active &&
             ((int32_t)(now - m1_state.wake_alarm_until) >= 0 || m1_state.ota_active ||
-             m1_state.reboot_pending || m1_state.wifi_trial_active))
+             m1_state.reboot_pending || m1_state.wifi_trial_active || m1_state.mcu_updating ||
+             (m1_state.wake_alarm_tone && (!m1_state.mcu_version_received || !m1_state.mcu_tones ||
+                !m1_tone_version_supported(m1_state.mcu_version)))))
             m1_state.wake_alarm_active = false;
         bool wake_pulse = m1_state.wake_alarm_active &&
             (uint32_t)(now - m1_state.wake_alarm_started) % 2000u < 300u;
-        bool buzzer = m1_state.buzzer_requested || wake_pulse;
+        unsigned tone=m1_state.wake_alarm_active?m1_state.wake_alarm_tone:0;
+        uint32_t until=m1_state.wake_alarm_until;
+        uint32_t started=m1_state.wake_alarm_started,cycle=(uint32_t)(now-started)/2000u;
+        bool buzzer = m1_state.buzzer_requested || (wake_pulse && !tone);
         bool version_received = m1_state.mcu_version_received;
         mico_rtos_unlock_mutex(&m1_lock);
         if (!mcu_updating && buzzer != buzzer_sent && (int32_t)(now - next_buzzer) >= 0) {
             m1_buzzer_frame(frame, buzzer);
             if (transmit(frame)) buzzer_sent = buzzer;
             next_buzzer = now + 100;
+        }
+        /* Presets stop on the MCU itself. Send once per 2-second alarm cycle,
+         * never continuously renew a short tone from this fast worker. */
+        if(!mcu_updating && (int32_t)(now-next_tone)>=0 &&
+           (tone ? (!tone_sent || started!=tone_started || (tone!=5 && cycle!=tone_cycle)) : tone_sent)) {
+            memset(frame,0,12);frame[0]=0x23;frame[1]=0x70;frame[2]=(tone==5 || (!tone && tone_kind==5))?15:14;
+            frame[3]=++tone_sequence;frame[4]=tone;frame[11]=0x21;
+            if(frame[2]==15){frame[4]=tone?5:6;frame[6]=tone?(uint8_t)((until-now+999u)/1000u):0;frame[7]=tone?1:0;}
+            if(transmit(frame)){tone_sent=tone!=0;tone_started=started;tone_cycle=cycle;tone_kind=tone;}
+            next_tone=now+100;
         }
         if (!mcu_updating && (int32_t)(now - next_alarm) >= 0) {
             alarm_sync(); next_alarm = now + 1000;
