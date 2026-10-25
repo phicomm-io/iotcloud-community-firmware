@@ -98,6 +98,19 @@ typedef struct {bool wifi_connected;unsigned brightness_requested;m1_sample_t sa
 typedef struct {unsigned revision;}m1_config_t;
 static mqtt_state_t state;static m1_config_t cfg,current;
 static bool rediscover,co2_discovered,pressure_discovered;
+static bool particles_discovered;
+static unsigned m1_lock,particles_at,mqtt_owner_thread,particle_attempts;
+static struct {bool mcu_sensor_details;}m1_state;
+static void mico_rtos_lock_mutex(unsigned *m){(void)m;}
+static void mico_rtos_unlock_mutex(unsigned *m){(void)m;}
+typedef unsigned service_mqtt_json_scope;
+typedef void json_object;
+#define MQTT_TOPIC_MAX 64
+static bool service_mqtt_json_begin(service_mqtt_json_scope *s,unsigned *owner){(void)s;(void)owner;particle_attempts++;return false;}
+static json_object *m1_particles_json(void){assert(0);return NULL;}
+static void mqtt_leaf(int *a,const char *leaf,char *out,unsigned n){(void)a;(void)leaf;(void)out;(void)n;assert(0);}
+static int service_mqtt_optional_send(int p,const char *topic,json_object *o,bool retain,service_mqtt_json_scope *s){(void)p;(void)topic;(void)o;(void)retain;(void)s;assert(0);return -1;}
+static void service_mqtt_json_end(service_mqtt_json_scope *s){(void)s;assert(0);}
 static unsigned feature_revision,count,discovery_index=MQTT_DISCOVERY_COUNT,initial_index=2,connect_sequence,sequence,co2_sequence,pressure_sequence,snapshot_at,now;
 static int old_fresh=-1,old_co2_fresh=-1,old_pressure_fresh=-1,old_brightness=-1,publish,account;
 static char base[1],feature_filters[1];
@@ -122,6 +135,7 @@ int main(void){
  now=UINT32_MAX-2500;snapshot_at=now-5000u;
  for(unsigned i=0;i<600;i++){assert(session_cycle(NULL)==0);now+=20;}
  assert(snapshots==3 && sensors==600 && features==600);
+ assert(particle_attempts==4); /* Bounded optional retries across clock rollover. */
  /* Recovery at the next original period; no repeated full state attempts. */
  snapshot_result=0;now=snapshot_at+5000u;
  assert(session_cycle(NULL)==0 && snapshots==4 && sensors==601 && features==601);
