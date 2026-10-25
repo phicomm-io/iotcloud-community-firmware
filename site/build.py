@@ -17,7 +17,7 @@ ROOT = HERE.parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(ROOT / 'tools'))
 sys.path.insert(0, str(ROOT / 'tools/release'))
-from pages import ALIASES, GROUPS, PAGES, PARENTS, SITE_URL, EN_GROUPS, EN_PAGES, validate_translations  # noqa: E402
+from pages import ALIASES, DEVICE_ACTIONS, GROUPS, PAGES, PARENTS, SITE_URL, EN_GROUPS, EN_PAGES, validate_translations  # noqa: E402
 from demo_navigation import add_navigation
 from public_links import expand_public_links, PUBLIC_LINKS
 from seo import EN_INDEX_TITLE, EN_INDEX_DESCRIPTION, guide_metadata, metadata, write_discovery  # noqa: E402
@@ -71,12 +71,36 @@ def footer(language="zh"):
             '</div></footer>')
 
 
+def device_actions(group, base, language="zh", active_slug=None):
+    english = language == 'en'
+    labels = {'install': ('刷机', 'Flash'), 'update': ('升级', 'Update'),
+              'use': ('使用', 'Use'), 'recover': ('恢复', 'Recovery')}
+    titles = {slug: title for slug, title, *_ in (EN_PAGES if english else PAGES)}
+    links = []
+    for action, slug, chinese, translated in DEVICE_ACTIONS.get(group, []):
+        anchor = translated if english else chinese
+        target = base + slug + '.html' + ('#' + anchor if anchor else '')
+        current = ' aria-current="page"' if slug == active_slug and not anchor else ''
+        links.append(f'<a href="{esc(target)}" data-guide-action="{action}" '
+                     f'title="{esc(titles[slug])}"{current}>'
+                     f'{labels[action][english]}</a>')
+    if not links:
+        return ''
+    label = group.upper() + (' guides' if english else ' 文档入口')
+    return (f'<div class="device-doc-actions" role="group" aria-label="{label}" '
+            f'data-device-actions="{group}">{"".join(links)}</div>')
+
+
 def guide_nav(active_slug, language="zh"):
     out = []
-    for _, title, items in (EN_GROUPS if language == "en" else GROUPS):
+    for group, title, items in (EN_GROUPS if language == "en" else GROUPS):
         opened = ' open' if any(slug == active_slug for slug, *_ in items) else ''
-        out.append(f'<details class="guide-nav-group"{opened}><summary>{esc(title)}</summary>')
+        out.append(f'<details class="guide-nav-group" data-guide-group="{group}"{opened}>'
+                   f'<summary>{esc(title)}</summary>{device_actions(group, "", language, active_slug)}')
+        featured = {item[1] for item in DEVICE_ACTIONS.get(group, [])}
         for slug, page_title, _, _ in items:
+            if slug in featured:
+                continue
             current = ' aria-current="page"' if slug == active_slug else ''
             child = ' class="guide-child"' if slug in PARENTS else ''
             out.append(f'<a href="{slug}.html"{child}{current}>{esc(page_title)}</a>')
@@ -100,14 +124,18 @@ def pager(slug, language="zh"):
 
 
 def docs_index(language="zh", base="guides/"):
-    """All published guides under the same four navigation entries."""
+    """Device guides first, followed by shared setup and developer material."""
     out = []
-    for _, title, items in (EN_GROUPS if language == 'en' else GROUPS):
+    for group, title, items in (EN_GROUPS if language == 'en' else GROUPS):
+        featured = {item[1] for item in DEVICE_ACTIONS.get(group, [])}
         links = ''.join(
             f'<li class="{"doc-child" if slug in PARENTS else "doc-page"}"><a href="{base}{slug}.html">{esc(page_title)}'
             f'<span>{esc(summary)}</span></a></li>'
-            for slug, page_title, summary, _ in items)
-        out.append(f'<details class="doc-group"><summary>{esc(title)}</summary><ul>{links}</ul></details>')
+            for slug, page_title, summary, _ in items if slug not in featured)
+        opened = ' open' if group in DEVICE_ACTIONS else ''
+        listing = f'<ul>{links}</ul>' if links else ''
+        out.append(f'<details class="doc-group" id="docs-{group}"{opened}><summary>{esc(title)}</summary>'
+                   f'{device_actions(group, base, language)}{listing}</details>')
     return ''.join(out)
 
 
@@ -259,7 +287,7 @@ def main():
         + metadata(EN_INDEX_TITLE, EN_INDEX_DESCRIPTION, 'guides/en/', 'en') + '<link rel="stylesheet" href="../../style.css">'
         '<script src="../../theme.js"></script></head><body>' + header('../../', 'en') +
         '<main class="wrap docs-directory" id="main"><p><a href="../../#docs" lang="zh-CN">简体中文</a> · English</p>'
-        '<h1>English documentation</h1><p>Devices and features, installation, common questions and development.</p>'
+        '<h1>Guides by device</h1><p>Choose M1, A1, TC1 or DAIKIN for flashing, updates, use and recovery.</p>'
         '<div class="doc-groups">' + docs_index('en', '') + '</div></main>' + footer('en') +
         '<script src="../../site.js"></script></body></html>', encoding='utf-8')
     sources = markdown_sources()
