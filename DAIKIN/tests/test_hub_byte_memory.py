@@ -26,9 +26,13 @@ class HubByteMemory(unittest.TestCase):
         cls.temp = tempfile.TemporaryDirectory(prefix='hub-byte-memory-')
         cls.addClassCleanup(cls.temp.cleanup)
         cls.binary = str(Path(cls.temp.name) / 'byte-memory')
+        source = (ROOT / 'src/hub.inc').read_text()
+        start = source.index('static bool hubAllocationReady(')
+        end = source.index('\n}', start) + 2
+        (Path(cls.temp.name) / 'hub_input_lifetime_guard.h').write_text(source[start:end] + '\n')
         subprocess.run(['c++', '-std=c++11', '-g', '-Wall', '-Wextra', '-Werror',
                         '-fsanitize=address,undefined', '-fno-omit-frame-pointer', '-fno-pie', '-no-pie',
-                        '-I' + str(ROOT / 'include'), str(ROOT / 'tests/hub/byte_memory.cpp'),
+                        '-I' + str(Path(cls.temp.name)), '-I' + str(ROOT / 'include'), str(ROOT / 'tests/hub/byte_memory.cpp'),
                         '-o', cls.binary], check=True)
 
     def scenario(self, name):
@@ -61,6 +65,12 @@ class HubByteMemory(unittest.TestCase):
 
     def test_parsed_packet_copies_have_separate_admission(self):
         self.scenario('receive-copy')
+
+    def test_publish_releases_input_before_fixed_reserve_guard_and_observer(self):
+        self.scenario('publish-qos0')
+
+    def test_qos1_release_preserves_binary_retained_replacement_replay_and_tail(self):
+        self.scenario('publish-qos1-retained')
 
     def test_duplicate_subscriptions_keep_replay_metadata_bounded(self):
         self.scenario('duplicate-subscriptions')

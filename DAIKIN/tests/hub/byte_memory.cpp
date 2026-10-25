@@ -5,15 +5,37 @@
 // A few scenarios cap actual C++ allocations as well as the production
 // admission predicate. This catches hidden container growth after a guard.
 static size_t allocationLimit = size_t(-1), largestAllocation = 0, deniedAllocations = 0;
+struct Allocation { void *pointer; size_t bytes; };
+static Allocation allocations[2048] = {};
+static size_t liveAllocationBytes = 0, watchNextAllocation = 0, watchedBytes = 0;
+static void *watchedPointer = nullptr;
+static bool watchedAlive = false;
 void *operator new(std::size_t n) {
   largestAllocation = std::max(largestAllocation, n);
   if (n > allocationLimit) { ++deniedAllocations; throw std::bad_alloc(); }
-  if (void *p = std::malloc(n ? n : 1)) return p;
+  if (void *p = std::malloc(n ? n : 1)) {
+    for (auto &a : allocations) if (!a.pointer) {
+      a = {p, n ? n : 1}; liveAllocationBytes += a.bytes;
+      if (watchNextAllocation && n == watchNextAllocation) {
+        watchedPointer = p; watchedBytes = n; watchedAlive = true; watchNextAllocation = 0;
+      }
+      return p;
+    }
+    std::abort();
+  }
   throw std::bad_alloc();
 }
 void *operator new[](std::size_t n) { return ::operator new(n); }
-void operator delete(void *p) noexcept { std::free(p); }
-void operator delete[](void *p) noexcept { std::free(p); }
+void operator delete(void *p) noexcept {
+  if (!p) return;
+  for (auto &a : allocations) if (a.pointer == p) {
+    liveAllocationBytes -= a.bytes; a = {};
+    if (watchedAlive && p == watchedPointer) watchedAlive = false;
+    std::free(p); return;
+  }
+  std::abort();
+}
+void operator delete[](void *p) noexcept { ::operator delete(p); }
 #include "hub_transport.h"
 #include <cassert>
 #include <cstdio>
@@ -23,6 +45,12 @@ void operator delete[](void *p) noexcept { std::free(p); }
 using iotcloud::HubBroker;
 using iotcloud::HubTransport;
 using Bytes = std::vector<uint8_t>;
+// Model only requested C++ bytes, backed by real operator new/delete above.
+// This is not an ESP heap/fragmentation emulator. Execute the unchanged guard.
+static size_t modeledCapacity = size_t(-1);
+static size_t hubByteHeap() { return modeledCapacity > liveAllocationBytes ? modeledCapacity - liveAllocationBytes : 0; }
+static size_t hubByteBlock() { return hubByteHeap(); }
+#include "hub_input_lifetime_guard.h"
 static void text(Bytes &out, const std::string &s) {
   out.push_back(s.size() >> 8); out.push_back(s.size() & 255);
   out.insert(out.end(), s.begin(), s.end());
@@ -32,9 +60,9 @@ static Bytes frame(uint8_t flags, const Bytes &body) {
   do { out.push_back(n % 128 | (n >= 128 ? 128 : 0)); n /= 128; } while (n);
   out.insert(out.end(), body.begin(), body.end()); return out;
 }
-static Bytes connectPacket() {
+static Bytes connectPacket(const std::string &id = "memory-review") {
   Bytes b; text(b, "MQTT"); b.insert(b.end(), {4, 0xc2, 0, 30});
-  text(b, "memory-review"); text(b, "owner"); text(b, "password");
+  text(b, id); text(b, "owner"); text(b, "password");
   return frame(0x10, b);
 }
 static Bytes subscribePacket() {
@@ -164,6 +192,79 @@ static void receiveCopy() {
   assert(!b.receive(0, input.data(), input.size(), 1));
   assert(checked > 1500 && !publications && !b.active(0) && !deniedAllocations);
 }
+static void publishLifetime(bool retained) {
+  HubBroker b; credentials(b);
+  b.send = [](unsigned, const uint8_t *, size_t) { return true; };
+  b.sendPublish = [](unsigned, const uint8_t *, size_t, const std::string &, const std::string &) { return true; };
+  assert(b.open(0, 0)); auto connect = connectPacket();
+  assert(b.receive(0, connect.data(), connect.size(), 0));
+  const std::string expectedTopic = "topic/a";
+  std::string expectedPayload(1406, 'p');
+  expectedPayload[0] = '\0'; expectedPayload[700] = char(0xff); expectedPayload.back() = '\0';
+  if (retained) assert(b.publish(expectedTopic, std::string(64, 'o'), true));
+  Bytes body; text(body, expectedTopic);
+  if (retained) body.insert(body.end(), {0x12, 0x34});
+  body.insert(body.end(), expectedPayload.begin(), expectedPayload.end());
+  auto input = frame(retained ? 0x33 : 0x30, body);
+  const auto ping = frame(0xc0, {}), lateConnect = connectPacket("memory-late"), subscription = subscribePacket();
+  if (retained) input.insert(input.end(), ping.begin(), ping.end());
+  const size_t publishNeed = expectedTopic.size() + expectedPayload.size() + 512;
+  const size_t workingNeed = body.size() + (retained ? ping.size() : 0) + 512;
+  unsigned publications = 0, acks = 0, pings = 0, replay = 0, checks = 0, rejected = 0;
+  size_t freeAtPublish = 0, freeWithOldInput = 0;
+  bool releasedAtPublish = false, firstAllocation = true;
+  b.send = [&](unsigned slot, const uint8_t *p, size_t n) {
+    if (slot == 0) {
+      if (n == 4 && p[0] == 0x40) {
+        assert(retained && p[1] == 2 && p[2] == 0x12 && p[3] == 0x34); ++acks;
+      } else { assert(retained && n == 2 && p[0] == 0xd0 && p[1] == 0); ++pings; }
+    } else assert(slot == 1 && (p[0] == 0x20 || p[0] == 0x90));
+    return true;
+  };
+  b.sendPublish = [&](unsigned slot, const uint8_t *header, size_t n,
+                      const std::string &topic, const std::string &payload) {
+    assert(retained && slot == 1 && n && header[0] == 0x31);
+    assert(topic == expectedTopic && payload == expectedPayload); ++replay; return true;
+  };
+  b.event = [&](const std::string &topic, const std::string &payload, bool retain, HubBroker::Origin origin) {
+    assert(!watchedAlive && topic == expectedTopic && payload == expectedPayload);
+    assert(retain == retained && origin == HubBroker::Origin::Local); ++publications;
+  };
+  b.allocate = [&](size_t n) {
+    if (firstAllocation) {
+      assert(n == input.size()); firstAllocation = false;
+      watchNextAllocation = n; watchedPointer = nullptr; watchedAlive = false;
+    }
+    const bool admitted = hubAllocationReady(n);
+    if (n == publishNeed) {
+      ++checks; releasedAtPublish = watchedPointer && !watchedAlive;
+      freeAtPublish = hubByteHeap();
+      freeWithOldInput = freeAtPublish - (releasedAtPublish ? watchedBytes : 0);
+      if (!admitted) ++rejected;
+    }
+    return admitted;
+  };
+  // Enough for the real pre-copy working guard. The old still-live packet at
+  // publish consumes the margin and must be rejected by the same 16 KiB guard.
+  modeledCapacity = liveAllocationBytes + 16384 + input.size() + workingNeed + 64;
+  assert(!hubAllocationReady(modeledCapacity - liveAllocationBytes - 16384));
+  const bool received = b.receive(0, input.data(), input.size(), 1);
+  printf("publish-life qos=%u retain=%u received=%u input_capacity=%zu released=%u free=%zu old_input_free=%zu need=%zu checks=%u rejected=%u reserve=16384\n",
+         retained ? 1 : 0, retained, received, watchedBytes, releasedAtPublish,
+         freeAtPublish, freeWithOldInput, publishNeed, checks, rejected);
+  std::fflush(stdout);
+  assert(received && b.connected(0) && publications == 1 && checks == 1 && !rejected);
+  assert(releasedAtPublish && !watchNextAllocation && freeAtPublish > publishNeed + 16384);
+  assert(freeWithOldInput <= publishNeed + 16384 && !replay);
+  assert(acks == unsigned(retained) && pings == unsigned(retained));
+  if (retained) {
+    assert(b.retainedCount() == 1 && b.retainedBytes() == expectedTopic.size() + expectedPayload.size());
+    assert(b.open(1, 2) && b.receive(1, lateConnect.data(), lateConnect.size(), 2));
+    assert(b.receive(1, subscription.data(), subscription.size(), 2)); b.tick(2);
+    assert(replay == 1 && b.connected(0) && b.connected(1));
+  } else assert(!b.retainedCount());
+  modeledCapacity = size_t(-1);
+}
 static void duplicateSubscriptions() {
   HubBroker b; credentials(b); Bytes reply;
   b.send = [&](unsigned, const uint8_t *p, size_t n) { reply.assign(p, p + n); return true; };
@@ -242,6 +343,8 @@ int main(int argc, char **argv) {
   else if (scenario == "retained-growth") retainedGrowth();
   else if (scenario == "small-receive") smallReceive();
   else if (scenario == "receive-copy") receiveCopy();
+  else if (scenario == "publish-qos0") publishLifetime(false);
+  else if (scenario == "publish-qos1-retained") publishLifetime(true);
   else if (scenario == "duplicate-subscriptions") duplicateSubscriptions();
   else {
     assert(scenario == "direct-growth" || scenario == "raw-growth");

@@ -468,7 +468,7 @@ private:
     c.willRetain = flags & 32;
     return output(slot, 0x20, {0, 0});
   }
-  bool packet(unsigned slot, uint8_t flags, const std::vector<uint8_t> &body) {
+  bool packet(unsigned slot, uint8_t flags, std::vector<uint8_t> &body) {
     Reader r{body};
     auto &c = clients[slot];
     unsigned type = flags >> 4;
@@ -483,6 +483,9 @@ private:
       if (!r.ok || (qos && !id) || !topicValid(topic) || !allowed(topic, true))
         return false;
       std::string payload(body.begin() + r.pos, body.end());
+      // Topic/payload now own their bytes and id is saved. This branch never
+      // reads Reader again; release the full input capacity before callbacks.
+      std::vector<uint8_t>().swap(body);
       if (!publish(topic, payload, flags & 1, Origin::Local))
         return false;
       return !qos || output(slot, 0x40, {uint8_t(id >> 8), uint8_t(id)});
