@@ -193,7 +193,7 @@ static esp_err_t statusHandler(httpd_req_t *req){
   webBody="";webOperation=4;webDone=false;
   portENTER_CRITICAL(&webMux);webPending=true;portEXIT_CRITICAL(&webMux);
   uint32_t started=millis();while(!webDone){if(uint32_t(millis()-started)>=10000)return jsonResponse(req,"503 Service Unavailable","{\"code\":\"timeout\"}");delay(1);}
-  return jsonResponse(req,"200 OK",webResult);
+  return jsonResponse(req,webResult.startsWith("{\"code\":\"busy\"")?"503 Service Unavailable":"200 OK",webResult);
 }
 static esp_err_t optionsHandler(httpd_req_t *req){httpd_resp_set_hdr(req,"Access-Control-Allow-Origin","*");httpd_resp_set_hdr(req,"Access-Control-Allow-Methods","GET, POST, OPTIONS");httpd_resp_set_hdr(req,"Access-Control-Allow-Headers","Content-Type, Authorization, X-IoTCloud-Target-Variant, X-IoTCloud-Confirm");return httpd_resp_send(req,nullptr,0);}
 

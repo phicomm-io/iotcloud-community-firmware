@@ -19,7 +19,7 @@ static bool hexText(const char *text,size_t length){
 }
 static void sensorBody(JsonObject out){
   if(!++sensorSequence)++sensorSequence;
-  out["schema"]=1;out["device_id"]=deviceId;out["boot"]=int32_t(sensorBoot);out["sequence"]=int32_t(sensorSequence);
+  out["schema"]=1;out["device_id"]=deviceId;out["model"]="daikin";out["boot"]=sensorBoot;out["sequence"]=sensorSequence;
   JsonObject values=out.createNestedObject("sensors");
   const uint32_t now=millis();
   for(unsigned i=0;i<SENSOR_COUNT;i++){
@@ -53,7 +53,7 @@ static bool sessionGrant(const String &text){
   if(!slot->used||slot->id!=id||slot->token!=token||slot->boot!=boot){slot->active=false;slot->ip=IPAddress();}
   slot->id=id;slot->token=token;slot->boot=boot;slot->seen=millis();slot->used=true;return true;
 }
-static void pollSessions(){
+static void __attribute__((noinline)) pollSessions(){
   int size=sensorUdp.parsePacket();if(!size)return;
   if(size>1200){while(sensorUdp.available())sensorUdp.read();return;}
   char wire[1201];int n=sensorUdp.read(wire,size);if(n!=size)return;wire[n]=0;

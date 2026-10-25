@@ -18,6 +18,7 @@
 #include <mbedtls/pkcs5.h>
 #include <mbedtls/sha1.h>
 #include "hub_service.h"
+#include "hub_native_publish.h"
 #include "hub_transport.h"
 #include "hub_relay.h"
 #include "hub_home.h"
@@ -236,7 +237,7 @@ void loop(){
 #ifdef IOTCLOUD_HUB
     if(webOperation==3){if(otaActive){hubHttpStatus=503;hubHttpToken="";webResult="{\"code\":\"busy\"}";}else hubApiExecute();}else
 #endif
-    if(webOperation==4){DynamicJsonDocument doc(8192);doc["code"]="ok";state(doc.createNestedObject("data"));webResult="";serializeJson(doc,webResult);}else webResult=otaActive?"{\"code\":\"busy\",\"message\":\"OTA active\"}":webOperation?backupExecute():execute(webBody);portENTER_CRITICAL(&webMux);webPending=false;webDone=true;portEXIT_CRITICAL(&webMux);}
+    if(webOperation==4){if(!mqttStateJson(webResult,httpStatusBody))webResult="{\"code\":\"busy\"}";}else webResult=otaActive?"{\"code\":\"busy\",\"message\":\"OTA active\"}":webOperation?backupExecute():execute(webBody);portENTER_CRITICAL(&webMux);webPending=false;webDone=true;portEXIT_CRITICAL(&webMux);}
   if(mqttQueued){String body(mqttPending);bool sensor=mqttSensorCommand;portENTER_CRITICAL(&mqttMux);mqttQueued=false;portEXIT_CRITICAL(&mqttMux);if(!otaActive){if(sensor)sessionGrant(body);else if(!sessionGrant(body))publish(mqttRoot+"/result",execute(body),false);}}
   if(mqttOnline){mqttOnline=false;
     DynamicJsonDocument doc(1024);capabilities(doc.to<JsonObject>());String text;serializeJson(doc,text);publish(mqttRoot+"/capabilities",text);publish(mqttRoot+"/availability","online");

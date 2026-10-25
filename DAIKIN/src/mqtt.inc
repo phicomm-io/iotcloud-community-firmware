@@ -1,4 +1,5 @@
 static void publish(const String &topic,const String &text,bool retain=true){
+  if(!topic||!topic.length()||!text)return;
 #ifdef IOTCLOUD_HUB
   if(hubRestartPending())return;
 #endif
@@ -7,9 +8,30 @@ static void publish(const String &topic,const String &text,bool retain=true){
   hubLocalPublish(topic,text,retain);
 #endif
 }
-static void publishState(){DynamicJsonDocument doc(8192);state(doc.to<JsonObject>());String text;serializeJson(doc,text);publish(mqttRoot+"/state",text);
-  doc.clear();sensorBody(doc.to<JsonObject>());String feed;serializeJson(doc,feed);
-  publish(sensorRoot+"/state",feed,false);
+static bool mqttStateJson(String &text,void (*fill)(JsonObject),size_t capacity=4096){
+  text="";
+  for(;;){
+    DynamicJsonDocument doc(capacity);
+    if(doc.capacity()<capacity)return false;
+    fill(doc.to<JsonObject>());
+    if(doc.overflowed()){
+      if(capacity>=8192)return false;
+      capacity*=2;continue;
+    }
+    const size_t length=measureJson(doc);
+    if(!text.reserve(length))return false;
+    const size_t written=serializeJson(doc,text);
+    return text&&written==length&&text.length()==length;
+  }
+}
+static void httpStatusBody(JsonObject out){
+  out["code"]="ok";state(out.createNestedObject("data"));
+}
+static void publishState(){
+  // Release the JSON pool before the SDK/local broker copies the wire payload.
+  // Also release the first wire payload before building the typed sensor feed.
+  {String text;if(mqttStateJson(text,state))publish(mqttRoot+"/state",text);}
+  {String text;if(mqttStateJson(text,sensorBody,1024))publish(sensorRoot+"/state",text,false);}
 }
 
 static void discovery(){

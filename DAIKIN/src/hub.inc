@@ -234,22 +234,40 @@ static void hubApiExecute() {
 }
 static void hubLocalPublish(const String &topic, const String &body,
                             bool retain) {
-  if (!hubReady())
+  // Admit namespace scratch before constructing any owning string. The byte
+  // reserve in broker.publish() cannot protect allocations made by its caller.
+  if (!topic || !body || topic.length() > iotcloud::HubBroker::Topic ||
+      body.length() > iotcloud::HubBroker::Packet ||
+      !hubReady() || !hubAllocationReady(2048))
     return;
   // Native sensor/HA messages are materialized independently for the local
   // account. The upstream account namespace never becomes a local credential.
-  String upstreamKey = mqttRoot.substring(11, mqttRoot.indexOf("/daikin/")),
-         localKey = iotcloud::HubService::userKey(hubService.user()).c_str();
-  String target = topic, payload = body;
-  target.replace("phicomm/v2/" + upstreamKey + "/",
-                 "phicomm/v2/" + localKey + "/");
-  target.replace("homeassistant/sensor/" + upstreamKey + "/",
-                 "homeassistant/sensor/" + localKey + "/");
-  payload.replace("phicomm/v2/" + upstreamKey + "/",
-                  "phicomm/v2/" + localKey + "/");
-  if (topic.startsWith("homeassistant/"))
-    payload.replace(upstreamKey + "_daikin_", localKey + "_daikin_");
-  hubTransport.broker.publish(target.c_str(), payload.c_str(), retain,
+  const int boundary = mqttRoot.indexOf("/daikin/");
+  if (!mqttRoot || boundary < 11 || boundary > 139) return;
+  const std::string upstreamKey(mqttRoot.c_str() + 11, size_t(boundary - 11));
+  const std::string localKey = iotcloud::HubService::userKey(hubService.user());
+  const std::string from = "phicomm/v2/" + upstreamKey + "/",
+                    to = "phicomm/v2/" + localKey + "/";
+  const std::string haFrom = "homeassistant/sensor/" + upstreamKey + "/",
+                    haTo = "homeassistant/sensor/" + localKey + "/";
+  const std::string idFrom = upstreamKey + "_daikin_",
+                    idTo = localKey + "_daikin_";
+  const iotcloud::NativeRule topicRules[] = {{from, to}, {haFrom, haTo}};
+  const iotcloud::NativeRule bodyRules[] = {{from, to}, {idFrom, idTo}};
+  size_t targetLength = 0, payloadLength = 0;
+  if (!iotcloud::nativeMessageSize(topic.c_str(), topic.length(), topicRules, 2,
+                                  iotcloud::HubBroker::Topic, targetLength) ||
+      !iotcloud::nativeMessageSize(body.c_str(), body.length(), bodyRules,
+                                  topic.startsWith("homeassistant/") ? 2 : 1,
+                                  iotcloud::HubBroker::Packet, payloadLength) ||
+      targetLength + payloadLength + 4 > iotcloud::HubBroker::Packet ||
+      !hubAllocationReady(2 * (targetLength + payloadLength) + 2048)) return;
+  std::string target, payload;
+  target.reserve(targetLength); payload.reserve(payloadLength);
+  iotcloud::nativeMessageAppend(target, topic.c_str(), topic.length(), topicRules, 2);
+  iotcloud::nativeMessageAppend(payload, body.c_str(), body.length(), bodyRules,
+                                topic.startsWith("homeassistant/") ? 2 : 1);
+  hubTransport.broker.publish(target, payload, retain,
                               iotcloud::HubBroker::Origin::Internal);
 }
 static void hubInit() {

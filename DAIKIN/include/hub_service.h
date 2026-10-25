@@ -32,7 +32,10 @@ public:
   std::function<bool()> homeReset;
   explicit HubService(DynamicJsonDocument &configuration)
       : config(configuration) {}
-  bool ready() const { return !user().empty(); }
+  bool ready() const {
+    const char *name = config["hub"]["username"] | "";
+    return *name != 0;
+  }
   std::string user() const { return config["hub"]["username"] | ""; }
   static std::string userKey(const std::string &name) {
     std::string key = "u_";

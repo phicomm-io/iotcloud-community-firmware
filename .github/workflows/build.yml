@@ -317,6 +317,7 @@ jobs:
         run: |
           python3 -m pip install paho-mqtt==2.1.0
           SANITIZE=1 python3 -m unittest discover -s DAIKIN/tests -p 'test_hub*.py'
+          python3 -m unittest discover -s DAIKIN/tests -p 'test_native_publish.py'
           for scenario in home http relay service storage; do
             c++ -std=c++11 -Wall -Wextra -Werror -fsanitize=address,undefined \
               -fno-omit-frame-pointer -fno-pie -no-pie -IDAIKIN/include \
