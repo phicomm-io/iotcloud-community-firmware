@@ -6,7 +6,7 @@ names, navigation order and the Wiki pages cannot drift apart. The page shell
 (header, sidebar, footer) is generated here so every guide shares the site's
 design language instead of carrying its own markup.
 """
-import argparse, html, json, re, shutil, sys
+import argparse, html, re, shutil, sys
 from pathlib import Path
 
 import markdown
@@ -26,30 +26,6 @@ SITE_NAME = 'PHICOMM COMMUNITY'
 # Nav anchors live on the home page, so guides reach them through '../'.
 HOME_ANCHORS = [('devices', '设备'), ('features', '功能'), ('iotcloud', 'IotCloud'), ('demos', '在线演示'),
                 ('docs', '文档'), ('releases', '下载')]
-
-
-def controller_releases():
-    """Publish controller releases in HTML, independent of API and JSON caches."""
-    releases = json.loads((ROOT / 'docs/public/assets/firmware/m1-mcu/releases.json').read_text())
-    releases = [r for r in releases if not r.get('draft') and re.fullmatch(r'v\d+\.\d+\.\d+', r['tag_name'])]
-    releases.sort(key=lambda r: tuple(map(int, r['tag_name'][1:].split('.'))), reverse=True)
-    if not releases:
-        raise ValueError('No public controller releases')
-    repo = 'https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20'
-    attachments = [('m1-mcu-ota.bin', '应用 OTA'), ('m1-mcu-ota.json', 'OTA 清单'),
-                   ('m1-mcu-debug-recovery.zip', '调试 / 恢复包'), ('SHA256SUMS', 'SHA256 校验'),
-                   ('release.json', '构建记录')]
-    cards = []
-    for index, release in enumerate(releases):
-        tag = release['tag_name']
-        names = {a['name'] for a in release['assets']}
-        links = ''.join(f'<a href="{repo}/releases/download/{tag}/{name}" rel="noopener noreferrer">{label}</a>'
-                        for name, label in attachments if name in names)
-        links += f'<a href="{repo}/releases/tag/{tag}" rel="noopener noreferrer">GitHub 发布页</a>'
-        kind = '开发预览' if release.get('prerelease') else '已发布'
-        cards.append(f'<details class="release"{" open" if index == 0 else ""}><summary>{tag} · {kind}</summary>'
-                     f'<div class="actions">{links}</div><pre class="notes">{html.escape(release.get("body") or "发布说明请见 GitHub 发布页。")}</pre></details>')
-    return f'共 {len(releases)} 个主控版本（含开发预览） · 发布说明与下载链接随本站同步更新。', ''.join(cards)
 
 
 def esc(text):
@@ -262,9 +238,6 @@ def main():
     if placeholder not in home:
         raise SystemExit('site/index.html: docs index container not found')
     home = home.replace(placeholder, f'<div class="doc-groups" id="docs-index">{docs_index()}</div>')
-    mcu_status, mcu_cards = controller_releases()
-    home = home.replace('<!-- MCU_RELEASE_STATUS -->', mcu_status)
-    home = home.replace('<!-- MCU_RELEASE_CARDS -->', mcu_cards)
     (out / 'index.html').write_text(home, encoding='utf-8')
 
     # Both languages are built together, so missing translations fail publication.
