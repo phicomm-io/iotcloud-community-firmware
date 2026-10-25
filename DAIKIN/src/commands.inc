@@ -4,7 +4,27 @@ static void state(JsonObject out){
   out["name"]=config["device"]["name"]|"DAIKIN";out["device_id"]=deviceId;out["version"]=version;
   out["ota_signature_verified"]=prefs.getBool("ota_signed",false);
   out["uptime_seconds"]=now/1000;out["free_memory"]=ESP.getFreeHeap();
-  out["co2_warmup_seconds_remaining"]=now<180000?(180000-now+999)/1000:0;
+  out["co2_warmup_seconds_remaining"]=!co2Module.warmed&&now<180000?(180000-now+999)/1000:0;
+  JsonObject co2=out.createNestedObject("co2_diagnostics");
+  co2["protocol"]="cm1106";co2["received"]=co2Module.received;co2["fresh"]=co2Module.fresh(now);
+  co2["status_format"]=co2Module.statusFlagsSupported?"bitmask_v06":"legacy_reserved";
+  co2["status_flags_supported"]=co2Module.statusFlagsSupported;
+  co2["reserved_raw"]=nullptr;if(co2Module.received)co2["reserved_raw"]=co2Module.reserved;
+  co2["raw_ppm"]=nullptr;co2["status_raw"]=nullptr;co2["age_ms"]=nullptr;
+  if(co2Module.received){co2["raw_ppm"]=co2Module.raw;co2["status_raw"]=co2Module.status;co2["age_ms"]=uint32_t(now-co2Module.measuredAt);}
+  const char *flags[]={"preheating","sensor_error","over_range","under_range","uncalibrated","light_aging","drift"};
+  for(unsigned i=0;i<7;i++){if(co2Module.received&&co2Module.statusFlagsSupported)co2[flags[i]]=bool(co2Module.status&(1<<i));else co2[flags[i]]=nullptr;}
+  co2["frame_errors"]=co2Module.errors;co2["response_timeouts"]=co2Module.timeouts;
+  co2["calibration_available"]=co2Module.canCalibrate(now);
+  co2["cooldown_seconds"]=co2Module.cooldown(now);
+  JsonObject calibration=co2.createNestedObject("calibration");
+  calibration["state"]=co2Module.result();calibration["pending"]=co2Module.pending();
+  calibration["awaiting_measurement"]=co2Module.awaitingMeasurement;
+  if(co2Module.attempted){calibration["reference_ppm"]=co2Module.target;calibration["requested_ms"]=co2Module.requestedAt;}
+  if(co2Module.calibration==daikin::CM1106::Acknowledged||co2Module.calibration==daikin::CM1106::Timeout)calibration["completed_ms"]=co2Module.completedAt;
+  JsonObject climate=out.createNestedObject("climate_compensation");
+  climate["temperature_offset"]=config["climate"]["temperature_offset"]|4.9f;
+  climate["humidity_offset"]=config["climate"]["humidity_offset"]|0.0f;
   out["mqtt_last_event"]=mqttLastEvent;out["mqtt_error_type"]=mqttErrorType;out["mqtt_socket_error"]=mqttSocketError;
   out["button_pressed"]=digitalRead(34)==LOW;
   out["wifi_connected"]=WiFi.status()==WL_CONNECTED;out["ssid"]=config["wifi"]["ssid"]|"";
@@ -28,7 +48,7 @@ static void state(JsonObject out){
     if(readings[i].received)s["age_ms"]=uint32_t(now-readings[i].at);else s["age_ms"]=nullptr;
   }
 }
-static const char *actions[]={"status.get","config.get","capabilities.get","binding.status.get","config.set","wifi.scan","wifi.scan.get","indicator.set","system.reboot","system.reset"};
+static const char *actions[]={"status.get","config.get","capabilities.get","binding.status.get","config.set","wifi.scan","wifi.scan.get","indicator.set","co2.calibrate","system.reboot","system.reset"};
 static void capabilities(JsonObject out){
   out["model"]="daikin";out["firmware_variant"]="full";out["hardware_model"]="BRY88AX151K";out["protocol"]=2;
   out["mqtt_protocol"]="tmcp";out["mqtt_protocol_version"]=2;
@@ -76,6 +96,12 @@ static String execute(const String &body){
     }else if(action=="indicator.set"){
       if(!knownFields(params,"|enabled|")||!params["enabled"].is<bool>())code="invalid_params";
       else{DynamicJsonDocument candidate(configCapacity);candidate.set(config);candidate["indicator"]=params["enabled"];if(!saveConfig(candidate))code="storage_error";else{indicator=config["indicator"];data["enabled"]=indicator;}}
+    }else if(action=="co2.calibrate"){
+      if(!knownFields(params,"|reference_ppm||reference_stable|")||params.size()!=2||
+         !params["reference_ppm"].is<int>()||params["reference_ppm"].as<int>()<400||params["reference_ppm"].as<int>()>1500||
+         !params["reference_stable"].is<bool>()||!params["reference_stable"].as<bool>())code="invalid_params";
+      else if(!co2Module.request(params["reference_ppm"].as<int>(),millis()))code="not_ready";
+      else {readings[CO2].received=false;code="accepted";data["state"]="queued";data["reference_ppm"]=co2Module.target;}
     }else if(action=="system.reboot"||action=="system.reset"){
       if(params.size())code="invalid_params";
       else if(action=="system.reset"&&!prefs.clear())code="storage_error";
@@ -95,6 +121,10 @@ static String execute(const String &body){
         for(JsonPairConst kv:values){String k=kv.key().c_str();if(k=="port")valid=valid&&kv.value().is<int>()&&kv.value().as<int>()>=1&&kv.value().as<int>()<=65535;
           else if(k=="protocol")valid=valid&&String(kv.value().as<const char*>()?kv.value().as<const char*>():"")=="tmcp";
           else valid=valid&&validText(kv.value(),k=="host"?127:k=="password"?256:63);}
+      }else if(section=="climate"){
+        valid=valid&&knownFields(values,"|temperature_offset||humidity_offset|")&&values.size()==2&&
+          values["temperature_offset"].is<float>()&&values["humidity_offset"].is<float>()&&
+          daikin::validClimateOffsets(values["temperature_offset"].as<float>(),values["humidity_offset"].as<float>());
       }else if(section=="indicator_rules"){
         daikin::LightSettings parsed;valid=valid&&daikin::readLightSettings(values,parsed);
       }else valid=false;
@@ -107,6 +137,7 @@ static String execute(const String &body){
         for(JsonPairConst kv:values){const char *key=kv.key().c_str();if(section=="mqtt"&&!strcmp(key,"username"))key="user";candidate[section][String(key)]=kv.value();}
         if(!saveConfig(candidate))code="storage_error";
         else{code="accepted";if(section=="mqtt")mqttRestart=true;if(section=="wifi")wifiRestart=true;
+          if(section=="climate"){readings[TEMPERATURE].received=false;readings[HUMIDITY].received=false;nextSample=millis();}
           if(section=="indicator_rules")customLightSettings=daikin::readLightSettings(config["indicator_rules"],lightSettings);}
       }
     }else code="unsupported_action";

@@ -1838,7 +1838,7 @@
     },
     "v0.9.27:b001": {
       "block_sha256": "cdaab62407b3eb5574c1c2bfa200d19c5795b486633784e8d82fef706ac2609f",
-      "release_sha256": "23da3e92895072d172675702c8b9f8b0528d91320063846db806721412916f0e",
+      "release_sha256": "af0ebc79558e1820c96a60bce01ca39b8d1e27dc0654c68add71ceb36cc5382b",
       "status": "approved",
       "reason": "依据已实现代码、主机回归和候选 M1 实机证据审核，保留版本门控与音量限制。",
       "change_refs": [
@@ -1850,7 +1850,7 @@
     },
     "v0.9.27:b002": {
       "block_sha256": "9d53a1638aa757fd63693467a8c8b5bd2420955e8038395a3b3b560d1562d8e5",
-      "release_sha256": "23da3e92895072d172675702c8b9f8b0528d91320063846db806721412916f0e",
+      "release_sha256": "af0ebc79558e1820c96a60bce01ca39b8d1e27dc0654c68add71ceb36cc5382b",
       "status": "approved",
       "reason": "依据已实现代码、主机回归和候选 M1 实机证据审核，保留版本门控与音量限制。",
       "change_refs": [
@@ -1863,7 +1863,7 @@
     },
     "v0.9.27:b003": {
       "block_sha256": "3205a80ea92c5fa58560ef3354015ea5c25a4319354be4d1fb56f5905a4a90ce",
-      "release_sha256": "23da3e92895072d172675702c8b9f8b0528d91320063846db806721412916f0e",
+      "release_sha256": "af0ebc79558e1820c96a60bce01ca39b8d1e27dc0654c68add71ceb36cc5382b",
       "status": "approved",
       "reason": "依据已实现代码、主机回归和候选 M1 实机证据审核，保留版本门控与音量限制。",
       "change_refs": [
@@ -1876,7 +1876,7 @@
     },
     "v0.9.27:b004": {
       "block_sha256": "6fc18f49279d80fbe50b38736718558964bfe4d961314014a073a9273ed0f2a5",
-      "release_sha256": "23da3e92895072d172675702c8b9f8b0528d91320063846db806721412916f0e",
+      "release_sha256": "af0ebc79558e1820c96a60bce01ca39b8d1e27dc0654c68add71ceb36cc5382b",
       "status": "excluded",
       "reason": "独立 MCU 发布和实机验收边界，不作为 Wi-Fi 固件独立功能。",
       "change_refs": [],
@@ -1886,12 +1886,47 @@
     },
     "v0.9.27:b005": {
       "block_sha256": "da1bba0459467299b9cac71480eb9e2228c48360dbbdbbe95a884fa863789518",
-      "release_sha256": "23da3e92895072d172675702c8b9f8b0528d91320063846db806721412916f0e",
+      "release_sha256": "af0ebc79558e1820c96a60bce01ca39b8d1e27dc0654c68add71ceb36cc5382b",
       "status": "excluded",
       "reason": "独立 MCU 发布和实机验收边界，不作为 Wi-Fi 固件独立功能。",
       "change_refs": [],
       "basis": [
         "v0.9.27:b005"
+      ]
+    },
+    "v0.9.27:b006": {
+      "block_sha256": "eb623bbdd7506624dd8a627a65f9ee41183e604be90edd13946d8d686d549b48",
+      "release_sha256": "af0ebc79558e1820c96a60bce01ca39b8d1e27dc0654c68add71ceb36cc5382b",
+      "status": "approved",
+      "reason": "依据原厂反汇编、主机数值回归及候选实机证据审核；保留未测精度与正式包边界。",
+      "change_refs": [
+        "daikin-co2-calibration@0.9.27",
+        "daikin-co2-editor@0.9.27"
+      ],
+      "basis": [
+        "v0.9.27:b006"
+      ]
+    },
+    "v0.9.27:b007": {
+      "block_sha256": "94bdb4c46f4bd815984e0b95b928b016e30277bc118f2e3e933cc2b51172daa9",
+      "release_sha256": "af0ebc79558e1820c96a60bce01ca39b8d1e27dc0654c68add71ceb36cc5382b",
+      "status": "approved",
+      "reason": "依据原厂反汇编、主机数值回归及候选实机证据审核；保留未测精度与正式包边界。",
+      "change_refs": [
+        "daikin-stock-climate@0.9.27"
+      ],
+      "basis": [
+        "v0.9.27:b007"
+      ]
+    },
+    "v0.9.27:b008": {
+      "block_sha256": "3f091334e1f1eda78dd0c09b73ad4c65c9be71779b514582592265ce42cca337",
+      "release_sha256": "af0ebc79558e1820c96a60bce01ca39b8d1e27dc0654c68add71ceb36cc5382b",
+      "status": "excluded",
+      "reason": "依据原厂反汇编、主机数值回归及候选实机证据审核；保留未测精度与正式包边界。",
+      "change_refs": [],
+      "basis": [
+        "v0.9.27:b008"
       ]
     }
   }

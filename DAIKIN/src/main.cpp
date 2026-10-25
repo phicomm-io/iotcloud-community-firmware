@@ -11,6 +11,8 @@
 #include <mqtt_client.h>
 #include <mbedtls/base64.h>
 #include "frames.h"
+#include "cm1106.h"
+#include "climate.h"
 #include "indicator_json.h"
 extern "C" {
 #include "../../common/ota/signed_ota.h"
@@ -48,10 +50,11 @@ static daikin::LightSettings lightSettings=daikin::defaultLightSettings();
 static bool customLightSettings=false;
 static String lastRequest[8], lastBody[8], lastResponse[8];
 static unsigned requestSlot=0;
-static uint8_t co2Frame[8], hchoFrame[9];
-static size_t co2Used=0, hchoUsed=0;
-static bool co2Waiting=false, hchoWaiting=false;
-static uint32_t co2Sent=0, hchoSent=0;
+static daikin::CM1106 co2Module;
+static uint8_t hchoFrame[9];
+static size_t hchoUsed=0;
+static bool hchoWaiting=false;
+static uint32_t hchoSent=0;
 static bool mqttRestart=false, wifiRestart=false;
 #include "build_info.h"
 static const char *version=DAIKIN_VERSION;

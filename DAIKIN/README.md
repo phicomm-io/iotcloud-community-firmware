@@ -14,9 +14,29 @@
 | 指示灯 | CO₂ GPIO4、TVOC/甲醛 GPIO32、PM GPIO33、联网状态 GPIO25；内部 GPIO26（已确认接线，暂未驱动） |
 | 配网键 | GPIO34，低电平持续五秒重新打开配网热点，不清空数据；每次按住只触发一次，OTA 写入期间暂停触发 |
 
-探测不依据 GPIO 电平或串口初始化成功。未检出甲醛模块时，HTTP 状态不生成其测量对象，网页隐藏卡片，HA 不发布该实体；曾检出后失联则保留卡片并标记失效。20 秒过期读数返回 `valid:false,value:null`，不会冒充零值。CO₂/甲醛启动期间允许识别模块，但不把预热读数当作测量。未启用自动 CO₂ 校准。
+探测不依据 GPIO 电平或串口初始化成功。未检出甲醛模块时，HTTP 状态不生成其测量对象，网页隐藏卡片，HA 不发布该实体；曾检出后失联则保留卡片并标记失效。20 秒过期读数返回 `valid:false,value:null`，不会冒充零值。CO₂/甲醛启动期间允许识别模块，但不把预热读数当作测量。固件不主动配置模块 ABC 自动校准，不能据此推断模块内部 ABC 已关闭。
 
-温湿度使用原始测量，未套用参考配置中的经验偏移或倍数；SGP30 的 ppb 不通过经验倍数伪装成质量浓度。PM 协议校验目前基于长度、帧头、完成状态与量程，参考仓库未提供可核验的 I²C 校验和定义，仍需实机核验。
+## CO₂ 模块诊断与手动校准
+
+通用设置中的“CO₂ 模块诊断与校准”显示模块原始 ppm、状态字节；完整 `status.get` 的 `co2_diagnostics` 另含数据年龄、错误帧数、应答超时数和本次开机的校准状态。当前 DAIKIN 使用旧版 UART 兼容模式 `legacy_reserved`：2019 年 CM1106-C V0.2 将 DF3/DF4 定义为保留字节，因此保留两字节原值，故障标志返回 null、`status_flags_supported:false`，不把状态 1 擅自解释为预热或正常。新版 V0.6 才定义故障位，未确认模块版本前不启用该解释。串口有效应答、数据新鲜度、预热时间和数值范围仍参与测量有效性判断。
+
+校准入口仅在预热三分钟、最近 20 秒内有模块应答后开放（旧版协议不能单凭保留状态字节判断模块故障）。使用可靠参照仪或标准气体确定环境浓度，稳定至少两分钟，填写 400～1500 ppm 整数，勾选环境确认并二次确认。室外不等于固定 400 ppm。参考厂家 [CM1106-C V0.6 说明书第 4.1、4.3 节](https://en.gassensor.com.cn/Product_files/Specifications/CM1106-C%20Single%20Beam%20NDIR%20CO2%20Sensor%20Module%20Specification.pdf)；实际模块子型号的兼容性仍需实机核验。
+
+校准使用现有鉴权和写请求去重机制：
+
+```json
+{"request_id":"unique-calibration-id","action":"co2.calibrate","params":{"reference_ppm":430,"reference_stable":true}}
+```
+
+`reference_stable:true` 表示操作者确认上述环境条件，固件不能自行证明真实浓度或环境稳定。接口先返回 `accepted` / `queued`，随后从 `status.get` 查询 `co2_diagnostics.calibration.state`：`never`、`queued`、`waiting_ack`、`acknowledged` 或 `timeout_unknown`。只有校验正确的 `16 01 03 E6` 才标记已应答；三秒无应答视为结果未知，不自动重发。每次请求后冷却 60 秒。校准期间清除旧测量，结束后需新测量才能恢复对外读数；已应答不等于精度验证通过，应与参照仪再次比较。校准记录只在 RAM 保存，重启后不保留；模块基线由模块自身管理。
+
+入口前端位于相邻 `phicomm-community-frontend` 仓库。未发布并更新前端锁之前，使用包含该改动的本地前端构建开发包：
+
+```sh
+PHICOMM_FRONTEND_SOURCE=/path/to/phicomm-community-frontend ./DAIKIN/build.sh
+```
+
+温湿度采用本机原厂固件恢复的补偿：温度减 4.9 °C；湿度先按原始温度换算混合比，经 `q × 0.8915 + 0.2632` 修正，再按补偿后的温度还原相对湿度并限制到 0～100%。湿度随原始温度变化，并非固定加减值。通用设置支持自定义温度减去值（−20～20 °C，默认 4.9）与湿度微调（−30～30 %RH，默认 0），支持恢复默认；设置持久化，保存后清除旧温湿度读数并重新采集。该模型来自原厂程序，不代表经过独立计量校准；SGP30 的 ppb 不通过经验倍数伪装成质量浓度。PM 协议校验目前基于长度、帧头、完成状态与量程，参考仓库未提供可核验的 I²C 校验和定义，仍需实机核验。
 
 ## 指示灯规则
 
@@ -69,6 +89,8 @@ python3 -m esptool --chip esp32 --port PORT write_flash 0 build/daikin-release/d
 ```sh
 c++ -Wall -Wextra -Werror -IDAIKIN/include DAIKIN/tests/frames.cpp -o /tmp/daikin-frames
 /tmp/daikin-frames
+c++ -std=c++11 -Wall -Wextra -Werror -IDAIKIN/include DAIKIN/tests/cm1106.cpp -o /tmp/daikin-cm1106
+/tmp/daikin-cm1106
 c++ -std=c++11 -Wall -Wextra -Werror -IDAIKIN/include -IDAIKIN/.pio/libdeps/bry88ab/ArduinoJson/src DAIKIN/tests/indicators.cpp -o /tmp/daikin-indicators
 /tmp/daikin-indicators
 ```

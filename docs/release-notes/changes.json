@@ -5092,6 +5092,138 @@
       "source_refs": [
         "v0.9.27:b003"
       ]
+    },
+    {
+      "change_id": "daikin-co2-calibration",
+      "version": "0.9.27",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "daikin"
+        ],
+        "variants": [
+          "full"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "CO₂ 模块诊断与校准接口",
+        "en": "CO₂ diagnostics and calibration API"
+      },
+      "description": {
+        "zh-CN": "提供原始浓度、通信错误和校准结果；兼容旧版保留状态字节。400～1500 ppm 参考环境须稳定至少两分钟，超时结果未知且不重发，ACK 不代表精度验证。",
+        "en": "Expose raw concentration, communication errors and calibration results with legacy reserved-byte compatibility. A 400–1500 ppm reference must be stable for two minutes. Timeouts remain unknown without retries; ACK does not verify accuracy."
+      },
+      "ota_summary": {
+        "zh-CN": "提供原始浓度、通信错误和校准结果；兼容旧版保留状态字节。400～1500 ppm 参考环境须稳定至少两分钟，超时结果未知且不重发，ACK 不代表精度验证。",
+        "en": "Expose raw concentration, communication errors and calibration results with legacy reserved-byte compatibility. A 400–1500 ppm reference must be stable for two minutes. Timeouts remain unknown without retries; ACK does not verify accuracy."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.27:b006"
+      ]
+    },
+    {
+      "change_id": "daikin-co2-editor",
+      "version": "0.9.27",
+      "type": "feature",
+      "component": "bundled_web",
+      "scope": {
+        "models": [
+          "daikin"
+        ],
+        "variants": [
+          "full"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "网页 CO₂ 诊断与确认校准",
+        "en": "CO₂ diagnostics and confirmed calibration in WebUI"
+      },
+      "description": {
+        "zh-CN": "通用设置显示模块诊断，并通过环境确认和二次确认发送单次校准。旧固件隐藏入口；记录仅保存在本次开机。",
+        "en": "General settings show module diagnostics and send calibration once after environment and final confirmation. Older firmware hides the controls; records last only for this boot."
+      },
+      "ota_summary": {
+        "zh-CN": "通用设置显示模块诊断，并通过环境确认和二次确认发送单次校准。旧固件隐藏入口；记录仅保存在本次开机。",
+        "en": "General settings show module diagnostics and send calibration once after environment and final confirmation. Older firmware hides the controls; records last only for this boot."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.27:b006"
+      ]
+    },
+    {
+      "change_id": "daikin-stock-climate",
+      "version": "0.9.27",
+      "type": "fix",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "daikin"
+        ],
+        "variants": [
+          "full"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "stable"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "恢复原厂温湿度补偿",
+        "en": "Restore stock temperature and humidity compensation"
+      },
+      "description": {
+        "zh-CN": "温度减 4.9 °C；湿度结合原始温度、混合比 q × 0.8915 + 0.2632 以及补偿后的温度计算并限制至 0～100%。固定原厂模型不等于独立计量校准。 WebUI 支持自定义温度减去值（默认 4.9°C）和湿度微调（默认 0%RH）、恢复默认和持久化保存；保存后读回确认。",
+        "en": "Subtract 4.9 °C from temperature. Derive humidity from raw temperature, mixing ratio q × 0.8915 + 0.2632 and corrected temperature, bounded to 0–100%. The fixed stock model is not an independently verified calibration. WebUI supports a custom temperature subtraction (default 4.9 °C), humidity adjustment (default 0 %RH), default restoration and persistent saving with readback confirmation."
+      },
+      "ota_summary": {
+        "zh-CN": "温度减 4.9 °C；湿度结合原始温度、混合比 q × 0.8915 + 0.2632 以及补偿后的温度计算并限制至 0～100%。固定原厂模型不等于独立计量校准。 WebUI 支持自定义温度减去值（默认 4.9°C）和湿度微调（默认 0%RH）、恢复默认和持久化保存；保存后读回确认。",
+        "en": "Subtract 4.9 °C from temperature. Derive humidity from raw temperature, mixing ratio q × 0.8915 + 0.2632 and corrected temperature, bounded to 0–100%. The fixed stock model is not an independently verified calibration. WebUI supports a custom temperature subtraction (default 4.9 °C), humidity adjustment (default 0 %RH), default restoration and persistent saving with readback confirmation."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v0.9.27:b007"
+      ]
     }
   ],
   "merges": []

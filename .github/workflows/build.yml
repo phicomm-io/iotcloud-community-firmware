@@ -253,6 +253,10 @@ jobs:
           DAIKIN/build.sh
           c++ -std=c++11 -Wall -Wextra -Werror -IDAIKIN/include DAIKIN/tests/frames.cpp -o build/daikin-frames
           build/daikin-frames
+          c++ -std=c++11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer -IDAIKIN/include DAIKIN/tests/cm1106.cpp -o build/daikin-cm1106
+          ASAN_OPTIONS=detect_leaks=1 build/daikin-cm1106
+          c++ -std=c++11 -Wall -Wextra -Werror -fsanitize=address,undefined -IDAIKIN/include DAIKIN/tests/climate.cpp -o build/daikin-climate
+          build/daikin-climate
           c++ -std=c++11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer -IDAIKIN/include -IDAIKIN/.pio/libdeps/bry88ab/ArduinoJson/src DAIKIN/tests/sessions.cpp -o build/daikin-sessions
           ASAN_OPTIONS=detect_leaks=1 build/daikin-sessions
           c++ -std=c++11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer -IDAIKIN/include -IDAIKIN/.pio/libdeps/bry88ab/ArduinoJson/src DAIKIN/tests/indicators.cpp -o build/daikin-indicators

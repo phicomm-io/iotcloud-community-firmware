@@ -10,18 +10,18 @@ static void pollSensors(uint32_t now){
   static bool warmedUp=false;warmedUp=warmedUp||now>=180000;
   // Assemble UART replies across loop iterations, with header resynchronization.
   while(co2Uart.available()){
-    uint8_t b=co2Uart.read();if(!co2Waiting)continue;
-    if(co2Used==0&&b!=0x16)continue;
-    co2Frame[co2Used++]=b;
-    if(co2Used==8){uint16_t v;if(daikin::co2(co2Frame,8,v)&&warmedUp)readings[1].set(v,now);co2Used=0;co2Waiting=false;}
+    co2Module.push(co2Uart.read(),now);
   }
+  uint8_t command[6];size_t commandSize=co2Module.poll(now,command);
+  if(commandSize){while(co2Uart.available())co2Uart.read();co2Uart.write(command,commandSize);}
+  if(co2Module.valid(now))readings[CO2].set(co2Module.raw,co2Module.measuredAt);
+  else readings[CO2].received=false;
   while(hchoUart.available()){
     uint8_t b=hchoUart.read();if(!hchoWaiting)continue;
     if(hchoUsed==0&&b!=0xff)continue;
     hchoFrame[hchoUsed++]=b;
     if(hchoUsed==9){uint16_t v;if(daikin::ch2o(hchoFrame,9,v)){hchoPresent=true;if(warmedUp)readings[5].set(v/1000.0f,now);}hchoUsed=0;hchoWaiting=false;}
   }
-  if(co2Waiting&&uint32_t(now-co2Sent)>500){co2Used=0;co2Waiting=false;}
   if(hchoWaiting&&uint32_t(now-hchoSent)>500){hchoUsed=0;hchoWaiting=false;}
   if(due(now,nextSample)){
     nextSample=now+5000;
@@ -42,12 +42,10 @@ static void pollSensors(uint32_t now){
       if(readI2c(thBus,0x40,th,4)){
         float t=((th[0]<<8)|th[1])*165.0f/65536.0f-40;
         float h=((th[2]<<8)|th[3])*100.0f/65536.0f;
-        if(t>=-40&&t<=125&&h>=0&&h<=100){readings[2].set(t,now);readings[3].set(h,now);}
+        float compensatedT,compensatedH;
+        if(daikin::compensateClimate(t,h,compensatedT,compensatedH,config["climate"]["temperature_offset"]|4.9f,config["climate"]["humidity_offset"]|0.0f)){readings[2].set(compensatedT,now);readings[3].set(compensatedH,now);}
       }
     }
-    const uint8_t co2Query[]={0x11,1,1,0xed};
-    while(co2Uart.available())co2Uart.read();
-    co2Uart.write(co2Query,4);co2Sent=now;co2Waiting=true;co2Used=0;
     const uint8_t hchoQuery[]={0xff,1,0x86,0,0,0,0,0,0x79};
     while(hchoUart.available())hchoUart.read();
     hchoUart.write(hchoQuery,9);hchoSent=now;hchoWaiting=true;hchoUsed=0;
