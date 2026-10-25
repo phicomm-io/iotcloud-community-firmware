@@ -1,4 +1,12 @@
-static void publish(const String &topic,const String &text,bool retain=true){if(mqtt&&mqttConnected)esp_mqtt_client_publish(mqtt,topic.c_str(),text.c_str(),text.length(),1,retain);}
+static void publish(const String &topic,const String &text,bool retain=true){
+#ifdef IOTCLOUD_HUB
+  if(hubRestartPending())return;
+#endif
+  if(mqtt&&mqttConnected)esp_mqtt_client_publish(mqtt,topic.c_str(),text.c_str(),text.length(),1,retain);
+#ifdef IOTCLOUD_HUB
+  hubLocalPublish(topic,text,retain);
+#endif
+}
 static void publishState(){DynamicJsonDocument doc(8192);state(doc.to<JsonObject>());String text;serializeJson(doc,text);publish(mqttRoot+"/state",text);
   doc.clear();sensorBody(doc.to<JsonObject>());String feed;serializeJson(doc,feed);
   publish(sensorRoot+"/state",feed,false);
@@ -11,7 +19,7 @@ static void discovery(){
   const char *classes[]={"pm25","carbon_dioxide","temperature","humidity","volatile_organic_compounds_parts","","pm10"};
   for(unsigned i=0;i<SENSOR_COUNT;i++){
     if(!sensorPresent(i)){publish(haRoot+keys[i]+"/config","");continue;}
-    DynamicJsonDocument doc(1536);doc["name"]=keys[i];doc["unique_id"]=encoded+"_daikin_"+deviceId+"_"+keys[i];
+    DynamicJsonDocument doc(1536);doc["name"]=ph_i18n(String(config["device"]["language"]|"zh-CN")=="en"?PH_LANG_EN:PH_LANG_ZH,(const char *const[]){"PM2.5","二氧化碳","温度","湿度","总挥发性有机物","甲醛","PM10"}[i],(const char *const[]){"PM2.5","Carbon dioxide","Temperature","Humidity","TVOC","Formaldehyde","PM10"}[i]);doc["unique_id"]=encoded+"_daikin_"+deviceId+"_"+keys[i];
     doc["state_topic"]=mqttRoot+"/state";doc["availability_topic"]=mqttRoot+"/availability";
     doc["value_template"]=String("{{ value_json.sensors.")+keys[i]+".value if value_json.sensors."+keys[i]+".valid else 'None' }}";
     doc["unit_of_measurement"]=units[i];if(*classes[i])doc["device_class"]=classes[i];doc["state_class"]="measurement";doc["expire_after"]=30;
@@ -22,12 +30,19 @@ static void discovery(){
 static bool mqttSensorCommand=false;
 static volatile bool mqttOnline=false,haBirth=false;
 static void mqttEvent(void *,esp_event_base_t,int32_t eventId,void *eventData){
+#ifdef IOTCLOUD_HUB
+  if(hubRestartPending())return;
+#endif
   auto event=(esp_mqtt_event_handle_t)eventData;
   mqttLastEvent=eventId;
   if(eventId==MQTT_EVENT_ERROR&&event->error_handle){mqttErrorType=event->error_handle->error_type;mqttSocketError=event->error_handle->esp_transport_sock_errno;}
   if(eventId==MQTT_EVENT_CONNECTED){mqttConnected=true;mqttCommandReady=false;commandSubId=esp_mqtt_client_subscribe(mqtt,(mqttRoot+"/command").c_str(),1);esp_mqtt_client_subscribe(mqtt,"homeassistant/status",1);esp_mqtt_client_subscribe(mqtt,(sensorRoot+"/command").c_str(),1);}
   if(eventId==MQTT_EVENT_SUBSCRIBED&&event->msg_id==commandSubId){mqttCommandReady=true;mqttOnline=true;}
   if(eventId==MQTT_EVENT_DISCONNECTED){mqttConnected=false;mqttCommandReady=false;}
+  #ifdef IOTCLOUD_HUB
+  if(eventId==MQTT_EVENT_CONNECTED)hubSubscribe();
+  if(eventId==MQTT_EVENT_DATA&&hubCapture(event,0))return;
+#endif
   if(eventId!=MQTT_EVENT_DATA||event->retain)return; // Never execute retained commands.
   if(event->current_data_offset==0){
     if(mqttQueued)return;
@@ -40,16 +55,36 @@ static void mqttEvent(void *,esp_event_base_t,int32_t eventId,void *eventData){
   memcpy(mqttPending+mqttReceived,event->data,event->data_len);mqttReceived+=event->data_len;
   if(mqttReceived==(size_t)event->total_data_len){mqttPending[mqttReceived]=0;portENTER_CRITICAL(&mqttMux);mqttQueued=true;portEXIT_CRITICAL(&mqttMux);mqttReceiving=false;}
 }
-static void startMqtt(){
+static void stopMqtt(){
   if(mqtt){esp_mqtt_client_stop(mqtt);esp_mqtt_client_destroy(mqtt);mqtt=nullptr;}
   mqttConnected=false;mqttCommandReady=false;mqttOnline=false;for(auto &s:sessions)s=SensorSession();
-  const char *host=config["mqtt"]["host"]|"";if(!*host)return;
+  mqttReceiving=false;mqttReceived=0;mqttSensorCommand=false;
+  portENTER_CRITICAL(&mqttMux);mqttQueued=false;mqttPending[0]=0;portEXIT_CRITICAL(&mqttMux);
+}
+static void startMqtt(){
+#ifdef IOTCLOUD_HUB
+  if(hubRestartPending())return;
+#endif
+  stopMqtt();
+#ifdef IOTCLOUD_HUB
+  hubConfigureUpstream();mqttOnline=hubReady();
+#endif
+  const char *host=config["mqtt"]["host"]|"";
   String user=config["mqtt"]["user"]|"",userKey="local";
   if(user.length()){userKey="u_";for(size_t i=0;i<user.length();i++){char hex[3];snprintf(hex,3,"%02x",(uint8_t)user[i]);userKey+=hex;}}
   mqttRoot="phicomm/v2/"+userKey+"/daikin/"+deviceId;
   sensorRoot="phicomm/v2/"+userKey+"/sensor/"+deviceId;
-  esp_mqtt_client_config_t c={};c.host=host;c.port=config["mqtt"]["port"]|1883;c.username=config["mqtt"]["user"]|"";c.password=config["mqtt"]["password"]|"";
+  if(!*host)return;
+  esp_mqtt_client_config_t c={};
   String clientId="daikin-"+deviceId,availability=mqttRoot+"/availability";
+#if ESP_IDF_VERSION_MAJOR >= 5
+  c.broker.address.hostname=host;c.broker.address.port=config["mqtt"]["port"]|1883;c.broker.address.transport=MQTT_TRANSPORT_OVER_TCP;
+  c.credentials.username=config["mqtt"]["user"]|"";c.credentials.authentication.password=config["mqtt"]["password"]|"";c.credentials.client_id=clientId.c_str();
+  c.session.last_will.topic=availability.c_str();c.session.last_will.msg="offline";c.session.last_will.qos=1;c.session.last_will.retain=1;
+  c.buffer.size=4608;c.buffer.out_size=4608;c.session.keepalive=30;
+#else
+  c.host=host;c.port=config["mqtt"]["port"]|1883;c.username=config["mqtt"]["user"]|"";c.password=config["mqtt"]["password"]|"";
   c.client_id=clientId.c_str();c.lwt_topic=availability.c_str();c.lwt_msg="offline";c.lwt_qos=1;c.lwt_retain=1;c.buffer_size=4608;c.out_buffer_size=4608;c.keepalive=30;
+#endif
   mqtt=esp_mqtt_client_init(&c);if(mqtt){esp_mqtt_client_register_event(mqtt,MQTT_EVENT_ANY,mqttEvent,nullptr);esp_mqtt_client_start(mqtt);}
 }

@@ -4,9 +4,13 @@ on:
   push:
     branches:
       - main
+      - dev
+      - 'feature/**'
+      - 'hotfix/**'
     tags:
       - 'v*'
   pull_request:
+    branches: [main, dev]
   workflow_dispatch:
     inputs:
       release_dry_run:
@@ -46,6 +50,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+          fetch-depth: 0
+      - name: Check branch workflow
+        run: python3 tools/check_branch_policy.py
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -75,7 +82,7 @@ jobs:
           retention-days: 30
 
   firmware:
-    name: ${{ matrix.model }} firmware (both variants)
+    name: ${{ matrix.model }} firmware variants
     needs: [frontend]
     strategy:
       fail-fast: false
@@ -215,8 +222,14 @@ jobs:
           retention-days: 30
 
   esp:
-    name: DAIKIN ESP32 full firmware
+    name: DAIKIN ESP32 ${{ matrix.variant }} firmware
     needs: frontend
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [full, hub]
+    env:
+      PHICOMM_FIRMWARE_VARIANT: ${{ matrix.variant }}
     runs-on: >-
       ${{ fromJSON(
         (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
@@ -245,12 +258,30 @@ jobs:
             ~/.platformio/platforms
             DAIKIN/.pio/libdeps
           key: esp32-${{ runner.os }}-${{ hashFiles('DAIKIN/platformio.ini') }}
-      - run: pip install platformio==6.2.0
-      - name: Build universal full image and test actual embedded page
+      - name: Install ESP and host test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libssl-dev
+          python3 -m pip install platformio==6.2.0 cryptography==46.0.3 -r requirements-build.txt
+      - name: Build universal image and enforce stock OTA resource budgets
         env:
           PHICOMM_FRONTEND_ARCHIVE: ${{ github.workspace }}/build/ci-frontend/frontend.tar.gz
         run: |
           DAIKIN/build.sh
+          python3 tools/release/check_esp_budget.py --variant "$PHICOMM_FIRMWARE_VARIANT" --layout stock \
+            --output "release/budget-daikin-$PHICOMM_FIRMWARE_VARIANT.json"
+      - name: Preserve measured budgets on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: daikin-${{ matrix.variant }}-failed-budget
+          path: release/budget-daikin-${{ matrix.variant }}.json
+          if-no-files-found: ignore
+      - name: Test actual OTA handler and signed variant identity
+        run: python3 -m unittest discover -s DAIKIN/tests -p 'test_ota_identity.py'
+      - name: Test ESP32 protocol and actual embedded page
+        if: matrix.variant == 'full'
+        run: |
           c++ -std=c++11 -Wall -Wextra -Werror -IDAIKIN/include DAIKIN/tests/frames.cpp -o build/daikin-frames
           build/daikin-frames
           c++ -std=c++11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer -IDAIKIN/include DAIKIN/tests/cm1106.cpp -o build/daikin-cm1106
@@ -265,17 +296,78 @@ jobs:
           ASAN_OPTIONS=detect_leaks=1 build/daikin-indicator-runtime
           npm install --prefix build/esp-tests --no-save jsdom@26.1.0
           NODE_PATH=build/esp-tests/node_modules node DAIKIN/tests/web.cjs
+      - name: Test hub broker, transports and bounded storage
+        if: matrix.variant == 'hub'
+        run: |
+          python3 -m pip install paho-mqtt==2.1.0
+          SANITIZE=1 python3 -m unittest discover -s DAIKIN/tests -p 'test_hub*.py'
+          for scenario in home http relay service storage; do
+            c++ -std=c++11 -Wall -Wextra -Werror -fsanitize=address,undefined \
+              -fno-omit-frame-pointer -fno-pie -no-pie -IDAIKIN/include \
+              -IDAIKIN/.pio/libdeps/bry88ab-hub/ArduinoJson/src \
+              "DAIKIN/tests/hub/$scenario.cpp" -lcrypto -o "build/daikin-hub-$scenario"
+            ASAN_OPTIONS=detect_leaks=1 "build/daikin-hub-$scenario"
+          done
+      - name: Test production HAP value handling and byte output
+        if: matrix.variant == 'hub'
+        run: |
+          python3 -m unittest discover -s DAIKIN/tests -p 'test_hap*.py'
+          python3 DAIKIN/tests/test_frontend_prepare.py
+      - name: Identify exact frontend source for hub integration tests
+        if: matrix.variant == 'hub'
+        id: hub-frontend
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import sys
+          sys.path.insert(0, 'tools')
+          from frontend_release import read_lock
+          lock = read_lock('frontend.lock.json')
+          print(f"repository={lock['repository']}")
+          print(f"commit={lock['commit']}")
+          PY
+      - uses: actions/checkout@v4
+        if: matrix.variant == 'hub'
+        with:
+          repository: ${{ steps.hub-frontend.outputs.repository }}
+          ref: ${{ steps.hub-frontend.outputs.commit }}
+          path: build/hub-frontend-source
+          persist-credentials: false
+      - name: Test locked hub frontend with production broker
+        if: matrix.variant == 'hub'
+        env:
+          FIRMWARE_ROOT: ${{ github.workspace }}
+          HUB_TEST_CONSOLE: ${{ github.workspace }}/build/daikin-hub-console
+          HUB_TEST_DIST: ${{ github.workspace }}/build/hub-ci-dist
+          HUB_MQTT_REPORT: ${{ github.workspace }}/build/hub-mqtt-interop.json
+          VITE_HUB: '1'
+          VITE_BASE_PATH: /iotcloud/
+        working-directory: build/hub-frontend-source/frontend
+        run: |
+          test -f tests/hub-console.mjs
+          test -f tests/hub-mqtt-interop.mjs
+          npm ci
+          npx playwright install --with-deps chromium
+          npm run build -- --outDir "$HUB_TEST_DIST" --emptyOutDir
+          c++ -std=c++11 -g -Wall -Wextra -Werror \
+            -I"$FIRMWARE_ROOT/DAIKIN/include" \
+            -I"$FIRMWARE_ROOT/DAIKIN/.pio/libdeps/bry88ab-hub/ArduinoJson/src" \
+            "$FIRMWARE_ROOT/DAIKIN/tests/hub/console.cpp" \
+            -lcrypto -pthread -o "$HUB_TEST_CONSOLE"
+          node tests/hub-console.mjs
+          node tests/hub-mqtt-interop.mjs
       - name: Collect ESP release assets
         run: |
           mkdir -p release
-          stem="$(python3 tools/release/products.py daikin)"
-          cp "build/daikin-release/$stem.all.bin" release/
-          cp "build/daikin-release/$stem.ota.bin" "release/$stem.ota.bin.raw"
-          cp build/daikin-release/manifest.json release/manifest-daikin.json
-          (cd release && sha256sum * > SHA256SUMS-daikin)
+          stem="$(python3 tools/release/products.py daikin "$PHICOMM_FIRMWARE_VARIANT")"
+          directory=build/daikin-release
+          if [ "$PHICOMM_FIRMWARE_VARIANT" != full ]; then directory="build/daikin-$PHICOMM_FIRMWARE_VARIANT-release"; fi
+          cp "$directory/$stem.all.bin" release/
+          cp "$directory/$stem.ota.bin" "release/$stem.ota.bin.raw"
+          cp "$directory/manifest.json" "release/manifest-daikin-$PHICOMM_FIRMWARE_VARIANT.json"
+          (cd release && sha256sum * > "SHA256SUMS-daikin-$PHICOMM_FIRMWARE_VARIANT")
       - uses: actions/upload-artifact@v4
         with:
-          name: daikin-full-firmware
+          name: daikin-${{ matrix.variant }}-firmware
           path: release/
           if-no-files-found: error
           retention-days: 30
@@ -283,7 +375,7 @@ jobs:
   sign-ota:
     name: Sign production OTA packages
     needs: [firmware, esp, feature-tests]
-    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.release_dry_run)
+    if: (github.event_name == 'push' && github.ref_type == 'tag') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.release_dry_run)
     runs-on: >-
       ${{ fromJSON(
         (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
@@ -302,6 +394,7 @@ jobs:
         env:
           TAG_NAME: ${{ github.ref_name }}
         run: |
+          python3 tools/check_branch_policy.py
           if [ "$TAG_NAME" = main ]; then
             python3 tools/check_version.py
           else
@@ -335,12 +428,9 @@ jobs:
           if [ "$TAG_NAME" != main ] && gh release view "$TAG_NAME" >/dev/null 2>&1; then
             gh release download "$TAG_NAME" --pattern "*.signed" --dir previous
           fi
-          if [ "$TAG_NAME" = main ]; then TAG_NAME=$(git describe --tags --match 'v[0-9]*' --abbrev=0); fi
-          for model in tc1 m1 a1 daikin; do
-           variants="full no-frontend-resources"
-           if [ "$model" = daikin ]; then variants="full"; fi
-           if [ "$model" = a1 ]; then variants="$variants fresh-air fresh-air-no-frontend-resources"; fi
-           for variant in $variants; do
+          if [ "$TAG_NAME" = main ]; then TAG_NAME="v$(cat VERSION)"; fi
+          python3 tools/release/products.py --targets > "$RUNNER_TEMP/release-targets.txt"
+          while read -r model variant; do
             stem="$(python3 tools/release/products.py "$model" "$variant")"
             if test -s "previous/$stem.ota.bin.signed"; then
               cp "previous/$stem.ota.bin.signed" release/
@@ -350,17 +440,16 @@ jobs:
                 --version "$TAG_NAME" --commit "$(git rev-parse HEAD)" \
                 "release/$stem.ota.bin.raw" "release/$stem.ota.bin.signed"
             fi
-            python3 tools/release/verify.py "release/$stem.ota.bin.signed" "$model" "$TAG_NAME" "$(git rev-parse HEAD)"
-           done
-          done
+            python3 tools/release/verify.py "release/$stem.ota.bin.signed" "$model" "$TAG_NAME" "$(git rev-parse HEAD)" --variant "$variant"
+          done < "$RUNNER_TEMP/release-targets.txt"
           (cd release && sha256sum *.bin *.bin.raw *.bin.signed > SHA256SUMS && sha256sum -c SHA256SUMS)
       - name: Validate complete release catalog
         if: github.event_name == 'workflow_dispatch' && inputs.release_dry_run
         run: |
-          tag=$(git describe --tags --match 'v[0-9]*' --abbrev=0)
+          tag="v$(cat VERSION)"
           printf '%s\n' 'Release validation only; not published.' > release-dry-run.md
           python3 tools/release/catalog.py "$tag" "$(git rev-parse HEAD)" release release-dry-run.md
-          (cd release && sha256sum *.bin *.bin.raw *.bin.signed manifest-daikin.json release.json notes.md index.html > SHA256SUMS && sha256sum -c SHA256SUMS)
+          (cd release && sha256sum *.bin *.bin.raw *.bin.signed *.json notes.md index.html > SHA256SUMS && sha256sum -c SHA256SUMS)
       - uses: actions/upload-artifact@v4
         with:
           name: signed-release
@@ -371,7 +460,7 @@ jobs:
   release:
     name: Publish OTA and Pages
     needs: [sign-ota]
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'push' && github.ref_type == 'tag'
     runs-on: >-
       ${{ fromJSON(
         (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
@@ -403,7 +492,7 @@ jobs:
           python3 tools/release/notes.py "$TAG_NAME" --output release-notes.md
           python3 tools/release/catalog.py "$TAG_NAME" "$GITHUB_SHA" release release-notes.md
           (cd release && sha256sum -c SHA256SUMS)
-          (cd release && sha256sum *.bin *.bin.raw *.bin.signed manifest-daikin.json release.json notes.md index.html > SHA256SUMS && sha256sum -c SHA256SUMS)
+          (cd release && sha256sum *.bin *.bin.raw *.bin.signed *.json notes.md index.html > SHA256SUMS && sha256sum -c SHA256SUMS)
       - name: Verify reviewed notes against staged signed firmware
         env:
           GH_TOKEN: ${{ github.token }}
@@ -531,13 +620,14 @@ jobs:
       - name: Test OTA release tooling and Worker
         run: |
           python3 -m unittest discover -s tests -p test_release.py
+          python3 -m unittest tests.test_branch_policy tests.test_release_budget tests.test_release_variant tests.test_release_publish tests.test_archive_pages
           node --test tests/test_ota_worker.mjs
       - name: Test production TLS transport with real TLS and sanitizers
         run: |
           python3 tests/test_ota_fetch.py
       - name: Test engines, binding runtime and WebUI syntax
         run: |
-          python3 -m pip install Markdown==3.7 -r requirements-build.txt
+          python3 -m pip install Markdown==3.7 Jinja2==3.1.6 -r requirements-build.txt
           tests/run.sh
       - name: Prepare pinned SDKs for MQTT transport tests
         env:
@@ -554,3 +644,5 @@ jobs:
           python3 -m pip install paho-mqtt==2.1.0 Jinja2==3.1.6
           tests/build_host.sh
           tests/run_mqtt_v2.sh
+      - name: Test actual SDK workers against the embedded hub broker
+        run: HUB_TEST_WORKERS=1 python3 -m unittest DAIKIN.tests.test_hub_mqtt.HubTests.test_actual_sdk_workers_share_broker_and_home_assistant

@@ -11,66 +11,64 @@ ROOT = Path(__file__).resolve().parents[1]
 class M1BootConfigTest(unittest.TestCase):
     def test_foreign_layout_reset_and_known_versions_preserved(self):
         source = (ROOT / 'M1/main.c').read_text()
-        start = source.index('    if (app_config->magic != M1_CONFIG_MAGIC)')
-        end = source.index('    bool controller_migration', start)
+        start = source.index('    if (app_config->magic != M1_CONFIG_MAGIC')
+        end = source.index('    bool migration_changed', start)
         harness = r'''
+#include "M1/storage.h"
 #include <assert.h>
-#include <stdint.h>
-#include <stdbool.h>
-#include <string.h>
 #include <stdio.h>
-#define M1_CONFIG_MAGIC 0x4d314346u
-#define M1_CONFIG_VERSION 7
-#define kNoErr 0
-#define kUnknownErr -1
-typedef struct { uint32_t magic,version; char credentials[64]; } config_t;
-typedef struct { config_t base; unsigned char extensions[300]; } app_storage_t;
 static app_storage_t storage;
-static config_t *app_config = &storage.base;
-static struct { char wifi[32]; } context = {"saved SDK credentials"};
-static void *m1_context = &context;
-static unsigned resets, writes, events;
-static bool fail_write;
+static m1_config_t *app_config = &storage.base;
+static unsigned resets, events;
+static bool config_recovery;
 static void appRestoreDefault_callback(void *data,uint32_t n) {
     assert(data==&storage && n==sizeof(storage));
     for(unsigned i=0;i<n;i++)assert(((unsigned char *)data)[i]==0);
     resets++;
     app_config->magic=M1_CONFIG_MAGIC;app_config->version=M1_CONFIG_VERSION;
+    storage.co2_source=(m1_co2_source_config_t){.magic=M1_CO2_SOURCE_MAGIC};
 }
-static int mico_system_context_update(void *ctx) {
-    assert(ctx==&context && !strcmp(context.wifi,"saved SDK credentials"));
-    writes++;return fail_write?-1:0;
-}
-static void service_event(const char *level,const char *domain,const char *event) {
+void service_event(const char *level,const char *domain,const char *event) {
     assert(!strcmp(domain,"config"));events++;
-    assert(!strcmp(event,!strcmp(level,"info")?"foreign_layout_reset":"unsupported_layout"));
+    assert(!strcmp(level,"error") && !strcmp(event,"unsupported_layout"));
 }
 static int gate(void) { GATE return 0; }
 int main(void) {
     for(unsigned v=0;v<=M1_CONFIG_VERSION+1;v++) {
         memset(&storage,0xa5,sizeof(storage));
         app_config->magic=M1_CONFIG_MAGIC;app_config->version=v;
-        app_storage_t before=storage;
-        resets=writes=events=0;fail_write=false;
-        assert(gate()==((v<1 || v>M1_CONFIG_VERSION)?-1:0));
-        assert(!resets && !writes && !memcmp(&before,&storage,sizeof(storage)));
-        assert(events==(v<1 || v>M1_CONFIG_VERSION));
+        storage.co2_source=(m1_co2_source_config_t){.magic=M1_CO2_SOURCE_MAGIC};
+        app_storage_t before=storage;resets=events=0;config_recovery=false;
+        assert(gate()==0);
+        bool unknown=v<1 || v>M1_CONFIG_VERSION;
+        assert(config_recovery==unknown && resets==unknown && events==unknown);
+        if(!unknown)assert(!memcmp(&before,&storage,sizeof(storage)));
+        else assert(app_config->magic==M1_CONFIG_MAGIC && app_config->version==M1_CONFIG_VERSION);
     }
-    for(unsigned failure=0;failure<2;failure++) {
-        memset(&storage,0xa5,sizeof(storage));resets=writes=events=0;
-        fail_write=failure;
-        assert(gate()==(failure?-1:0));
-        assert(resets==1 && writes==1 && events==!failure);
-        assert(app_config->magic==M1_CONFIG_MAGIC && app_config->version==M1_CONFIG_VERSION);
+    memset(&storage,0xa5,sizeof(storage));resets=events=0;config_recovery=false;
+    assert(gate()==0 && config_recovery && resets==1 && events==1);
+    for(unsigned kind=0;kind<7;kind++) {
+        memset(&storage,0,sizeof(storage));app_config->magic=M1_CONFIG_MAGIC;app_config->version=M1_CONFIG_VERSION;
+        storage.co2_source=(m1_co2_source_config_t){.magic=M1_CO2_SOURCE_MAGIC};
+        if(kind==0)storage.co2_source.magic=0;
+        if(kind==1)memset(storage.co2_source.device_id,'a',13);
+        if(kind==2)storage.co2_source.external=2;
+        if(kind==3)storage.co2_source.double_click=2;
+        if(kind==4)storage.co2_source.reserved[0]=1;
+        if(kind==5)storage.co2_source.revision=UINT32_MAX;
+        if(kind==6)storage.co2_source.device_id[0]='a';
+        resets=events=0;config_recovery=false;
+        assert(gate()==0 && config_recovery && resets==1 && events==1);
     }
-    puts("M1 boot: reset foreign app data, preserve known layouts/SDK credentials, fail on persist error: OK");
+    puts("M1 boot: known layouts preserved, unsupported layouts enter RAM-only recovery: OK");
 }
 '''.replace('GATE', source[start:end])
         with tempfile.TemporaryDirectory() as temporary:
             probe, binary = Path(temporary) / 'probe.c', Path(temporary) / 'probe'
             probe.write_text(harness)
             command = [os.environ.get('CC', 'cc'), '-std=c99', '-Wall', '-Wextra', '-Werror',
-                       str(probe), '-o', str(binary)]
+                       '-I'+str(ROOT), '-I'+str(ROOT/'tests/host'), '-I'+str(ROOT/'M1'),
+                       '-I'+str(ROOT/'build/m1-sdk/mico-os/libraries/utilities/json_c'), str(probe), '-o', str(binary)]
             if os.environ.get('SANITIZE') == '1':
                 command += ['-g', '-fno-omit-frame-pointer', '-fsanitize=address,undefined']
             subprocess.run(command, check=True)

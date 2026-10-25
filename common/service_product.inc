@@ -13,6 +13,7 @@
 #define GET_CONFIG a1_config_get
 #define GET_STATE a1_state_get
 #define SAVE_CONFIG a1_config_save
+#define SAVE_DEVICE_CONFIG a1_device_config_save
 #define STATUS a1_status_json
 #define STATUS_LIVE a1_status_live_json
 #define REBOOT a1_reboot_later
@@ -30,6 +31,7 @@
 #define GET_CONFIG m1_config_get
 #define GET_STATE m1_state_get
 #define SAVE_CONFIG m1_config_save
+#define SAVE_DEVICE_CONFIG m1_device_config_save
 #define STATUS m1_status_json
 #define STATUS_LIVE m1_status_live_json
 #define REBOOT m1_reboot_later
@@ -65,9 +67,11 @@ static bool svc_text(json_object *p,const char *key,char *out,size_t capacity,bo
 json_object *service_product_capabilities(void){
     json_object *o=json_object_new_object(),*a=json_object_new_array();svc_string(o,"model",DEVICE_MODEL);json_build_object_add(o,"protocol",json_object_new_int(2));svc_string(o,"mqtt_protocol","tmcp");json_build_object_add(o,"mqtt_protocol_version",json_object_new_int(2));
     status_view_capabilities(o);
+    svc_string(o,"device_language","zh-CN,en");json_build_object_add(o,"config_backup",json_object_new_int(1));json_build_object_add(o,"config_recovery",json_object_new_boolean(device_config_recovery()));
 #ifndef FEATURE_DEVICE_A1
     json_build_object_add(o,"sensor_session_protocol",json_object_new_int(2));
     json_build_object_add(o,"sensor_schema",json_object_new_int(1));
+    json_build_object_add(o,"sensor_alarm_config_schema",json_object_new_int(1));
 #endif
     const char *actions[]={"schedules.get","schedules.put","schedules.delete","schedules.enable","buttons.get","status.get","capabilities.get","config.get","logs.get","config.set","wifi.scan","wifi.scan.get","binding.status.get","system.reboot","system.reset","ota.start","night.get","night.set","time.get","time.set","binding.get",
 #ifdef FEATURE_DEVICE_A1
@@ -80,7 +84,7 @@ json_object *service_product_capabilities(void){
 #endif
     "filter.model.set","filter.get","filter.set","filter.reset","light_effect.next","light_effect.select","light_always.set","sensors.average.get","buttons.set","binding.probe","light_effect.get","light_effect.set","fan.set","fan.mode.set","fan.mode.toggle","fan.panel","light.set","child_lock.set","linkage.get","linkage.set",
 #else
-    "sensor_details.get","display.set","buzzer.set","mcu.version.get","mcu.version.query","alarm.get","alarm.set","co2_display.get","co2_display.set",
+    "sensor_details.get","display.set","buzzer.set","mcu.version.get","mcu.version.query","alarm.get","alarm.set","co2_display.get","co2_display.set","co2_source.get","co2_source.set",
     "wake_alarm.get","wake_alarm.start","wake_alarm.stop",
     "music.get","music.begin","music.chunk","music.commit","music.read","music.play","music.stop","music.cancel",
 #endif
@@ -104,7 +108,7 @@ static __attribute__((noinline)) json_object *service_product_inner(const char *
     *code="invalid_params";
     if(!strcmp(action,"config.get")){
         if(!svc_keys(p,""))return NULL;CONFIG c;GET_CONFIG(&c);json_object *o=json_object_new_object();
-        svc_string(o,"name",c.name);svc_string(o,"ssid",c.ssid);svc_string(o,"mqtt_host",c.mqtt_host);svc_string(o,"mqtt_user",c.mqtt_user);svc_string(o,"mqtt_protocol","tmcp");json_build_object_add(o,"mqtt_protocol_version",json_object_new_int(2));json_build_object_add(o,"mqtt_port",json_object_new_int(c.mqtt_port));
+        svc_string(o,"migration_state",device_config_recovery()?"confirmation_required":"ready");svc_string(o,"language",ph_language_tag(device_language_get()));svc_string(o,"name",c.name);svc_string(o,"ssid",c.ssid);svc_string(o,"mqtt_host",c.mqtt_host);svc_string(o,"mqtt_user",c.mqtt_user);svc_string(o,"mqtt_protocol","tmcp");json_build_object_add(o,"mqtt_protocol_version",json_object_new_int(2));json_build_object_add(o,"mqtt_port",json_object_new_int(c.mqtt_port));
         json_build_object_add(o,"wifi_password_set",json_object_new_boolean(c.wifi_password[0]));json_build_object_add(o,"mqtt_password_set",json_object_new_boolean(c.mqtt_password[0]));json_build_object_add(o,"web_password_set",json_object_new_boolean(c.web_password[0]));
 #if defined(FEATURE_DEVICE_A1) && defined(PHICOMM_BEMFA)
         bemfa_config_encode(o);
@@ -131,6 +135,7 @@ static __attribute__((noinline)) json_object *service_product_inner(const char *
     if(!strcmp(action,"co2_display.get")) {
         if(!svc_keys(p,""))return NULL;*code="ok";return m1_co2_json();
     }
+    if(!strcmp(action,"co2_source.get")){if(!svc_keys(p,""))return NULL;*code="ok";return m1_co2_source_json();}
     if(!strcmp(action,"alarm.get")) {
         if(!svc_keys(p,""))return NULL;*code="ok";return m1_alarm_json();
     }
@@ -169,14 +174,17 @@ static __attribute__((noinline)) json_object *service_product_inner(const char *
 #endif
 #ifndef FEATURE_DEVICE_A1
     if(!strcmp(action,"co2_display.set"))return m1_co2_set(p,code);
+    if(!strcmp(action,"co2_source.set"))return m1_co2_source_set(p,code);
     if(!strcmp(action,"alarm.set")) {
         char sensor[8];int low,high,revision;
-        if(!svc_keys(p,"|sensor||yellow||red||revision|") ||
+        json_object *buzzer=json_object_object_get(p,"buzzer_enabled");
+        if(!svc_keys(p,"|sensor||yellow||red||revision||buzzer_enabled|") ||
+           (buzzer && !json_object_is_type(buzzer,json_type_boolean)) ||
            !svc_text(p,"sensor",sensor,sizeof(sensor),true) ||
            (strcmp(sensor,"hcho") && strcmp(sensor,"pm25")) ||
            !svc_int(p,"yellow",&low,0,65535) || !svc_int(p,"red",&high,1,65535) ||
            !svc_int(p,"revision",&revision,0,INT32_MAX) || low>high)return NULL;
-        *code=m1_alarm_set(!strcmp(sensor,"pm25"),low,high,revision);
+        *code=m1_alarm_set(!strcmp(sensor,"pm25"),low,high,revision,buzzer?json_object_get_boolean(buzzer):-1);
         return !strcmp(*code,"accepted")?m1_alarm_json():NULL;
     }
     if(!strncmp(action,"music.",6)) {
@@ -297,9 +305,11 @@ static __attribute__((noinline)) json_object *service_product_inner(const char *
         if(!svc_keys(p,"|section||values|") || !section || !json_object_is_type(section,json_type_string) || !values || !json_object_is_type(values,json_type_object))return NULL;
         const char *s=json_object_get_string(section);CONFIG c;GET_CONFIG(&c);
         if(!strcmp(s,"device")){
-            if(!svc_keys(values,"|name|") || !svc_text(values,"name",c.name,sizeof(c.name),true))return NULL;
+            uint8_t language=device_language_get();char tag[8];
+            if(!svc_keys(values,"|name||language|") || (!json_object_object_get(values,"name") && !json_object_object_get(values,"language")) || !svc_text(values,"name",c.name,sizeof(c.name),false))return NULL;
+            if(json_object_object_get(values,"language") && (!svc_text(values,"language",tag,sizeof(tag),true) || !ph_language_parse(tag,&language)))return NULL;
             if(!c.name[0]){unsigned suffix=(unsigned)strtoul(DEVICE_ID+8,NULL,16);snprintf(c.name,sizeof(c.name),DEVICE_NAME_PREFIX "-%04X",suffix);}
-            ok=SAVE_CONFIG(&c);
+            ok=SAVE_DEVICE_CONFIG(&c,language);
         }
         else if(!strcmp(s,"auth")){if(!svc_keys(values,"|password|") || !svc_text(values,"password",c.web_password,sizeof(c.web_password),true))return NULL;ok=SAVE_CONFIG(&c);}
         else if(!strcmp(s,"bemfa")){
@@ -375,6 +385,12 @@ json_object *m1_alarm_json(void) {
     m1_alarm_config_t a;m1_alarm_get(&a);
     mico_rtos_lock_mutex(&m1_lock);
     bool sent=m1_state.alarm_uart_sent && m1_state.alarm_sent_revision==a.revision;
+    bool supported=m1_state.mcu_version_received && m1_state.mcu_alarm_schema==1;
+    bool actual=supported && m1_state.alarm_buzzer_received &&
+        (uint32_t)(mico_rtos_get_time()-m1_state.alarm_buzzer_updated_ms)<15000;
+    unsigned mask=m1_state.alarm_buzzer_mask,schema=m1_state.mcu_alarm_schema;
+    bool confirmed=actual && mask==a.reserved[1] && m1_state.alarm_buzzer_revision==a.revision;
+    bool active=m1_state.alarm_buzzer_active;
     mico_rtos_unlock_mutex(&m1_lock);
     json_object *o=json_object_new_object();
     json_build_object_add(o,"revision",json_object_new_int(a.revision));
@@ -384,6 +400,23 @@ json_object *m1_alarm_json(void) {
     json_build_object_add(o,"hcho_red",json_object_new_int(a.hcho[1]));
     json_build_object_add(o,"pm25_yellow",json_object_new_int(a.pm25[0]));
     json_build_object_add(o,"pm25_red",json_object_new_int(a.pm25[1]));
+    json_build_object_add(o,"hcho_buzzer_enabled",json_object_new_boolean(a.reserved[1]&1));
+    json_build_object_add(o,"pm25_buzzer_enabled",json_object_new_boolean(a.reserved[1]&2));
+    json_build_object_add(o,"buzzer_supported",json_object_new_boolean(supported));
+    json_build_object_add(o,"mcu_alarm_schema",json_object_new_int(schema));
+    json_build_object_add(o,"buzzer_confirmed",json_object_new_boolean(confirmed));
+    if(actual){
+        json_build_object_add(o,"mcu_hcho_buzzer_enabled",json_object_new_boolean(mask&1));
+        json_build_object_add(o,"mcu_pm25_buzzer_enabled",json_object_new_boolean(mask&2));
+        json_build_object_add(o,"mcu_buzzer_mask",json_object_new_int(mask));
+        json_build_object_add(o,"sensor_alarm_active",json_object_new_boolean(active));
+    }else{
+        json_object_object_add(o,"mcu_hcho_buzzer_enabled",NULL);
+        json_object_object_add(o,"mcu_pm25_buzzer_enabled",NULL);
+        json_object_object_add(o,"mcu_buzzer_mask",NULL);
+        json_object_object_add(o,"sensor_alarm_active",NULL);
+    }
+    svc_string(o,"buzzer_confirmation",confirmed?"mcu_readback":supported?"pending_mcu_readback":"requires_mcu_upgrade");
     json_build_object_add(o,"uart_sent",json_object_new_boolean(a.configured && sent));
     svc_string(o,"unit","main_controller_raw_u16");
     svc_string(o,"confirmation","uart_send_only");
@@ -401,7 +434,7 @@ json_object *m1_wake_alarm_json(void) {
     json_build_object_add(o,"remaining_seconds",json_object_new_int(active?((until-now)+999)/1000:0));
     json_build_object_add(o,"default_duration_seconds",json_object_new_int(60));
     json_build_object_add(o,"max_duration_seconds",json_object_new_int(180));
-    json_build_object_add(o,"stop_on_screen_event",json_object_new_boolean(true));
+    svc_string(o,"stop_button_event","double_click");
     bool supported=m1_tone_supported();
     json_build_object_add(o,"tone_supported",json_object_new_boolean(supported));
     json_build_object_add(o,"tone_count",json_object_new_int(supported?4:0));
@@ -413,11 +446,12 @@ json_object *m1_wake_alarm_json(void) {
     return o;
 }
 json_object *m1_mcu_json(void) {
-    char version[17];bool received,buzzer,updating;uint32_t updated,until;unsigned protocol,caps;
+    char version[17];bool received,buzzer,updating,buttons,display_source;uint32_t updated,until;unsigned protocol,caps;
     mico_rtos_lock_mutex(&m1_lock);
     memcpy(version,m1_state.mcu_version,sizeof(version));received=m1_state.mcu_version_received;
     updated=m1_state.mcu_version_updated_ms;buzzer=m1_state.buzzer_requested;until=m1_state.buzzer_until;
     updating=m1_state.mcu_updating;protocol=m1_state.mcu_protocol;caps=m1_state.mcu_caps;
+    buttons=m1_state.mcu_button_events;display_source=m1_state.mcu_display_source;
     mico_rtos_unlock_mutex(&m1_lock);
     uint32_t now=mico_rtos_get_time();
     json_object *o=json_object_new_object();svc_string(o,"version",version);
@@ -425,6 +459,8 @@ json_object *m1_mcu_json(void) {
     json_build_object_add(o,"updating",json_object_new_boolean(updating));
     json_build_object_add(o,"extension_protocol",json_object_new_int(protocol));
     json_build_object_add(o,"extension_caps",json_object_new_int(caps));
+    json_build_object_add(o,"button_events_supported",json_object_new_boolean(buttons));
+    json_build_object_add(o,"display_source_supported",json_object_new_boolean(display_source));
     if(received)json_build_object_add(o,"version_age_ms",json_object_new_double((uint32_t)(now-updated)));
     json_build_object_add(o,"buzzer_requested",json_object_new_boolean(buzzer && (int32_t)(until-now)>0));
     json_build_object_add(o,"buzzer_remaining_ms",json_object_new_int(buzzer && (int32_t)(until-now)>0?until-now:0));

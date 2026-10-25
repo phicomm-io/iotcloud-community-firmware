@@ -21,3 +21,5 @@ void m1_state_get(m1_state_t *);
 
 extern mico_mutex_t m1_lock;
 extern m1_state_t m1_state;
+void m1_co2_source_sample(const char *,const feature_sample_t *);
+void m1_co2_source_reset(void);

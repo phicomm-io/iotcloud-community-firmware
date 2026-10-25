@@ -26,11 +26,8 @@ BASE = ROOT / 'build/status101'
 PRIVATE = BASE / 'private'
 LOCK_PATH = Path('/tmp/phicomm-readonly-stress.lock')
 MQTT_CANDIDATE = BASE / 'readonly_mqtt_candidate.py'
-TARGETS = {
-    '10.117.152.111': ('b0f893303134', 'a1'),
-    '10.117.152.102': ('D0BAE463E12C', 'tc1'),
-    '10.117.152.110': ('b0f8932864b6', 'm1'),
-}
+# Populated only by explicit CLI scope or an explicit caller/test fixture.
+TARGETS = {}
 SHORT_PLAN = (
     {'name': 'mixed-1', 'http_clients': 1, 'mqtt_window': 1, 'seconds': 60},
     {'name': 'mixed-4', 'http_clients': 4, 'mqtt_window': 2, 'seconds': 120},
@@ -72,22 +69,44 @@ def phase_deadlines(started, duration):
     return load_deadline, load_deadline + drain_margin
 
 
+def configure_targets(specs):
+    """Install an explicit IP/model/identity authorization scope before runtime."""
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
+    from tools.compare_mqtt_http import target_scope
+    scoped = target_scope(specs)
+    TARGETS.clear()
+    TARGETS.update({ip: (identity, model.lower())
+                    for ip, (model, identity) in scoped.items()})
+    return {ip: identity for ip, (identity, _model) in TARGETS.items()}
+
+
 def validate_targets(specs):
+    if not specs:
+        raise ValueError('Explicit targets are required')
+    if not TARGETS:
+        configure_targets(specs)
     parsed = {}
     for spec in specs:
-        if '=' not in spec:
-            raise ValueError('Targets must use IP=expected_device_id')
-        ip, device_id = spec.split('=', 1)
+        if not isinstance(spec, str) or spec.count('=') != 1:
+            raise ValueError('Targets must use IP=MODEL:expected_device_id')
+        ip, value = spec.split('=', 1)
         if ip in parsed:
             raise ValueError('Duplicate target IP')
+        if ':' in value:
+            model, device_id = value.split(':', 1)
+            if ip not in TARGETS or model.lower() != TARGETS[ip][1]:
+                raise ValueError('Target model differs from the explicit authorization scope')
+        else:
+            device_id = value
         parsed[ip] = device_id
     expected = {ip: ident for ip, (ident, _model) in TARGETS.items()}
     if (not parsed or not set(parsed) <= set(expected) or
             any(parsed[ip].lower() != expected[ip].lower() for ip in parsed)):
         raise ValueError('Explicit targets must be an exact nonempty authorized subset')
-    if '10.117.152.110' in parsed and parsed != expected:
-        raise ValueError('M1 may only be selected in the legacy complete three-device scope')
-    return {ip: parsed[ip] for ip in TARGETS if ip in parsed}
+    if any(TARGETS[ip][1] == 'm1' for ip in parsed) and set(parsed) != set(expected):
+        raise ValueError('M1 may only be selected in the complete three-device scope')
+    return {ip: expected[ip] for ip in TARGETS if ip in parsed}
 
 
 def validate_version(version):
@@ -1434,7 +1453,9 @@ def execute(targets, version, label, profile, output, runtime_loader=load_runtim
 
 def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--target', action='append', required=True, metavar='IP=ID')
+    parser.add_argument('--target', action='append', required=True, metavar='IP=MODEL:ID')
+    parser.add_argument('--scope-target', action='append', metavar='IP=MODEL:ID',
+                        help='full explicit authorization scope when selecting a subset')
     parser.add_argument('--version', required=True)
     parser.add_argument('--label', required=True)
     parser.add_argument('--profile', choices=('short', 'soak'), default='short')
@@ -1446,6 +1467,8 @@ def build_parser():
 def main(argv=None):
     args = build_parser().parse_args(argv)
     try:
+        if args.scope_target:
+            configure_targets(args.scope_target)
         targets = validate_targets(args.target)
         version = validate_version(args.version)
         if not args.label or len(args.label) > 48 or not args.label.replace('-', '').replace('_', '').isalnum():

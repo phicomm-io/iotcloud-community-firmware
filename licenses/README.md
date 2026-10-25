@@ -1,12 +1,16 @@
 # 第三方许可文本
 
-原始来源：
+实际代码路径和外部 SDK 说明见[第三方索引](../THIRD_PARTY_NOTICES.md)。各文件保留原版权与许可。
 
-- [Bosch BMP3 SensorAPI BSD-3-Clause](https://github.com/boschsensortec/BMP3_SensorAPI/tree/db4cf8e4140c593b8c3d85f8c6c07335c7ffa9dc)：许可及版权头保留于 `M1/bmp3_vendor/`。
+| 文本 | 对应代码或用途 |
+| --- | --- |
+| [newlib 数字转换通知](newlib-numeric.txt) | `common/json_numeric/` 中 AT&T、Lucent 与 Berkeley 原许可的汇集 |
+| [Bosch BMP3 BSD-3-Clause](../M1/bmp3_vendor/LICENSE) | `M1/bmp3_vendor/` |
+| [micro-ecc BSD-2-Clause](../common/ota/vendor/LICENSE.txt) | `common/ota/vendor/` |
+| [HomeSpan MIT](../DAIKIN/lib/HomeSpan/LICENSE) | 开发中的 DAIKIN `hub` HAP 桥接 |
+| [jQuery MIT](jquery-MIT.txt) | 历史 WebUI 许可文本 |
+| [Chartist MIT](chartist-MIT.txt) | 历史 WebUI 许可文本 |
+| [Material Design Lite](material-design-lite-Apache-2.0.txt) | 历史 WebUI；保留的原文还包含文档相关许可说明 |
+| [getmdl-select MIT](getmdl-select-MIT.txt) | 历史 WebUI 许可文本 |
 
-- [jQuery 3.0.0 MIT](https://github.com/jquery/jquery/blob/3.0.0/LICENSE.txt)
-- [Chartist 0.11.4 MIT](https://github.com/gionkunz/chartist-js/blob/v0.11.4/LICENSE-MIT)
-- [Material Design Lite 1.3.0 Apache-2.0](https://github.com/google/material-design-lite/blob/v1.3.0/LICENSE)
-- [getmdl-select MIT](https://github.com/CreativeIT/getmdl-select/blob/master/LICENSE.txt)
-
-SDK 的许可文本和版权头保留于原目录。以上许可不覆盖整个仓库；授权范围见 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)。
+MiCO SDK、Arduino-ESP32 和构建工具的声明保留于各自下载包。当前前端的第三方清单见固定前端版本。

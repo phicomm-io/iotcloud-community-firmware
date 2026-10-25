@@ -1,15 +1,30 @@
+#include "../../common/i18n.h"
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <WiFi.h>
 #include <WiFiUdp.h>
 #include <Wire.h>
 #include <Preferences.h>
+#include <memory>
+#include <atomic>
 #include <ESPmDNS.h>
 #include <esp_http_server.h>
 #include <esp_ota_ops.h>
 #include <esp_app_format.h>
 #include <mqtt_client.h>
 #include <mbedtls/base64.h>
+#ifdef IOTCLOUD_HUB
+#include <mbedtls/pkcs5.h>
+#include <mbedtls/sha1.h>
+#include "hub_service.h"
+#include "hub_transport.h"
+#include "hub_relay.h"
+#include "hub_home.h"
+#include "hub_home_storage.h"
+#include <HomeSpan.h>
+#include <HAP.h>
+#include "hub_web.h"
+#endif
 #include "frames.h"
 #include "cm1106.h"
 #include "climate.h"
@@ -44,8 +59,35 @@ static char mqttPending[4097];
 static volatile bool mqttQueued=false;
 static bool mqttReceiving=false;
 static size_t mqttReceived=0;
+#ifdef IOTCLOUD_HUB
+static constexpr size_t configCapacity=16384;
+#else
 static constexpr size_t configCapacity=6144;
+#endif
 static DynamicJsonDocument config(configCapacity);
+static bool configRecovery=false;
+#ifdef IOTCLOUD_HUB
+static iotcloud::HubService hubService(config);
+static iotcloud::HubTransport hubTransport;
+static iotcloud::HubRelay hubRelay(config,hubService,hubTransport.broker);
+static iotcloud::HubHome hubHome(hubTransport.broker);
+static bool homeReset();
+static bool homeFactoryReset();
+static void homeStatus(JsonObject);
+static void homeChanged();
+static void homeQuiesce();
+static void homeInit();
+static void pollHome(uint32_t);
+static bool hubReady();
+static void hubApiExecute();
+static void hubLocalPublish(const String &,const String &,bool);
+static bool hubCapture(esp_mqtt_event_handle_t,unsigned);
+static void hubSubscribe();
+static void hubConfigureUpstream();
+static void hubUpstreamChanged();
+static void hubRestoreChanged();
+static bool hubRestartPending();
+#endif
 static daikin::LightSettings lightSettings=daikin::defaultLightSettings();
 static bool customLightSettings=false;
 static String lastRequest[8], lastBody[8], lastResponse[8];
@@ -57,9 +99,12 @@ static bool hchoWaiting=false;
 static uint32_t hchoSent=0;
 static bool mqttRestart=false, wifiRestart=false;
 #include "build_info.h"
+#include "firmware_identity.h"
 static const char *version=DAIKIN_VERSION;
 extern "C" {
-extern const char daikin_target[32] __attribute__((section(".rodata_custom_desc"),used)) = DAIKIN_TARGET;
+extern const daikin::FirmwareIdentity daikin_target __attribute__((section(".rodata_custom_desc"),used)) = {
+  DAIKIN_TARGET,"PHICOMM-DAIKIN-1:" DAIKIN_VARIANT
+};
 }
 static char webPassword[33]={};
 static portMUX_TYPE authMux=portMUX_INITIALIZER_UNLOCKED;
@@ -71,9 +116,19 @@ static const char *pmModel="detecting";
 
 static bool due(uint32_t now,uint32_t at){return int32_t(now-at)>=0;}
 static bool saveConfig(DynamicJsonDocument &candidate){
-  if(candidate.overflowed())return false;
+#ifdef IOTCLOUD_HUB
+  if(hubRestartPending())return false;
+#endif
+  if(configRecovery||candidate.overflowed())return false;
+  candidate["_version"]=1;
   String text; serializeJson(candidate,text);
-  if(prefs.putString("config",text)!=text.length())return false;
+#ifdef IOTCLOUD_HUB
+  // The existing NVS partition is 20 KiB. Bound the complete document so two
+  // blob generations and NVS compaction can coexist during an atomic update.
+  if(text.length()>6144||prefs.putBytes("config",text.c_str(),text.length())!=text.length())return false;
+#else
+  if(text.length()>3999||prefs.putString("config",text)!=text.length())return false;
+#endif
   config.clear(); config.set(candidate);configText=text; updatePassword();return true;
 }
 static void startAccessPoint(){
@@ -95,10 +150,22 @@ static void startWifi(){
 #include "commands.inc"
 #include "http.inc"
 #include "mqtt.inc"
+#ifdef IOTCLOUD_HUB
+#include "hub.inc"
+#include "home.inc"
+#endif
 void setup(){
   Serial.begin(115200);
   if(!prefs.begin("daikin",false)){Serial.println("NVS unavailable");while(true)delay(1000);}
-  configText=prefs.getString("config","{}");if(deserializeJson(config,configText)||!config.is<JsonObject>()){Serial.println("Config corrupt; refusing to discard credentials");while(true)delay(1000);}
+  if(prefs.getType("config")==PT_BLOB){
+    const size_t n=prefs.getBytesLength("config");
+    if(n&&n<=6144){std::unique_ptr<char[]> data(new char[n+1]);if(prefs.getBytes("config",data.get(),n)==n){data[n]=0;configText=data.get();}}
+    if(configText.isEmpty())configText="invalid";
+  }else if(prefs.isKey("config")&&prefs.getType("config")!=PT_STR)configText="invalid";
+  else configText=prefs.getString("config","{}");
+  if(deserializeJson(config,configText)||!config.is<JsonObject>()||!validConfig(config.as<JsonObjectConst>())){
+    configRecovery=true;config.clear();config.to<JsonObject>();Serial.println("Configuration recovery required");
+  }
   updatePassword();indicator=config["indicator"]|false;
   customLightSettings=daikin::readLightSettings(config["indicator_rules"],lightSettings);
   WiFi.mode(WIFI_AP_STA);deviceId=WiFi.macAddress();deviceId.replace(":","");deviceId.toLowerCase();
@@ -110,14 +177,26 @@ void setup(){
   pinMode(34,INPUT); // External pull resistor is required on input-only GPIO34.
   const uint8_t hdcConfig[]={2,0x10,0};writeI2c(thBus,0x40,hdcConfig,3);
   const uint8_t hchoMode[]={0xff,1,0x78,0x41,0,0,0,0,0x46};hchoUart.write(hchoMode,9);
-  httpd_config_t server=HTTPD_DEFAULT_CONFIG();server.stack_size=10240;server.recv_wait_timeout=10;server.max_uri_handlers=12;
+  httpd_config_t server=HTTPD_DEFAULT_CONFIG();server.stack_size=10240;server.recv_wait_timeout=10;server.max_uri_handlers=48;
+#ifdef IOTCLOUD_HUB
+  server.uri_match_fn=httpd_uri_match_wildcard;
+#endif
   if(httpd_start(&web,&server)==ESP_OK){
     httpd_uri_t root={};root.uri="/";root.method=HTTP_GET;root.handler=rootHandler;httpd_register_uri_handler(web,&root);
     httpd_uri_t info={};info.uri="/api/v1/info";info.method=HTTP_GET;info.handler=infoHandler;httpd_register_uri_handler(web,&info);
-    for(auto path:{"/api/v1/info","/api/v1/command","/api/v1/ota/upload","/api/v1/ota/upload-unsigned"}){httpd_uri_t options={};options.uri=path;options.method=HTTP_OPTIONS;options.handler=optionsHandler;httpd_register_uri_handler(web,&options);}
+    httpd_uri_t status={};status.uri="/api/v1/status";status.method=HTTP_GET;status.handler=statusHandler;httpd_register_uri_handler(web,&status);
+    for(auto path:{"/api/v1/info","/api/v1/status","/api/v1/command","/api/v1/ota/upload","/api/v1/ota/upload-unsigned","/api/v1/config/backup","/api/v1/config/restore"}){httpd_uri_t options={};options.uri=path;options.method=HTTP_OPTIONS;options.handler=optionsHandler;httpd_register_uri_handler(web,&options);}
+    for(auto path:{"/api/v1/config/backup","/api/v1/config/restore"}){httpd_uri_t backup={};backup.uri=path;backup.method=strstr(path,"restore")?HTTP_POST:HTTP_GET;backup.handler=backupHandler;httpd_register_uri_handler(web,&backup);}
     httpd_uri_t cmd={};cmd.uri="/api/v1/command";cmd.method=HTTP_POST;cmd.handler=commandHandler;httpd_register_uri_handler(web,&cmd);
     for(auto path:{"/api/v1/ota/upload","/api/v1/ota/upload-unsigned"}){httpd_uri_t ota={};ota.uri=path;ota.method=HTTP_POST;ota.handler=uploadHandler;httpd_register_uri_handler(web,&ota);}
+#ifndef IOTCLOUD_HUB
+    httpd_uri_t convert={};convert.uri="/api/v1/ota/convert";convert.method=HTTP_POST;convert.handler=convertHandler;httpd_register_uri_handler(web,&convert);
+    convert.method=HTTP_OPTIONS;convert.handler=optionsHandler;httpd_register_uri_handler(web,&convert);
+#endif
   }
+#ifdef IOTCLOUD_HUB
+  registerHubHttp();hubInit();homeInit();
+#endif
   // Confirm local startup once the command server is available.
   if(web)esp_ota_mark_app_valid_cancel_rollback();
   sensorBoot=esp_random()|1;sensorUdp.begin(11288);
@@ -126,7 +205,11 @@ void setup(){
 void loop(){
   uint32_t now=millis();
   if(!otaActive){pollSensors(now);pollSessions();}
-  if(webPending){webResult=otaActive?"{\"code\":\"busy\",\"message\":\"OTA active\"}":execute(webBody);portENTER_CRITICAL(&webMux);webPending=false;webDone=true;portEXIT_CRITICAL(&webMux);}
+  if(webPending){
+#ifdef IOTCLOUD_HUB
+    if(webOperation==3){if(otaActive){hubHttpStatus=503;hubHttpToken="";webResult="{\"code\":\"busy\"}";}else hubApiExecute();}else
+#endif
+    if(webOperation==4){DynamicJsonDocument doc(8192);doc["code"]="ok";state(doc.createNestedObject("data"));webResult="";serializeJson(doc,webResult);}else webResult=otaActive?"{\"code\":\"busy\",\"message\":\"OTA active\"}":webOperation?backupExecute():execute(webBody);portENTER_CRITICAL(&webMux);webPending=false;webDone=true;portEXIT_CRITICAL(&webMux);}
   if(mqttQueued){String body(mqttPending);bool sensor=mqttSensorCommand;portENTER_CRITICAL(&mqttMux);mqttQueued=false;portEXIT_CRITICAL(&mqttMux);if(!otaActive){if(sensor)sessionGrant(body);else if(!sessionGrant(body))publish(mqttRoot+"/result",execute(body),false);}}
   if(mqttOnline){mqttOnline=false;
     DynamicJsonDocument doc(1024);capabilities(doc.to<JsonObject>());String text;serializeJson(doc,text);publish(mqttRoot+"/capabilities",text);publish(mqttRoot+"/availability","online");
@@ -136,8 +219,14 @@ void loop(){
   }
   static bool previousHcho=false,previousPm10=false;
   if(previousHcho!=hchoPresent||previousPm10!=sensorPresent(PM10)){previousHcho=hchoPresent;previousPm10=sensorPresent(PM10);haBirth=true;}
-  if(haBirth&&mqttConnected){haBirth=false;discovery();}
-  if(mqttConnected&&due(now,nextPublish)){nextPublish=now+5000;publishState();}
+  #ifdef IOTCLOUD_HUB
+  pollHub(now);
+  const bool outputReady=mqttConnected||hubReady();
+#else
+  const bool outputReady=mqttConnected;
+#endif
+  if(haBirth&&outputReady){haBirth=false;discovery();}
+  if(outputReady&&due(now,nextPublish)){nextPublish=now+5000;publishState();}
   if(mqttRestart){mqttRestart=false;startMqtt();}
   if(wifiRestart){wifiRestart=false;startWifi();}
   pollIndicators(now);
@@ -149,8 +238,11 @@ void loop(){
   }else{pressed=false;handled=false;}
   // Close initial recovery AP after station has been stable for two minutes.
   static uint32_t connectedSince=0;
-  if(WiFi.status()==WL_CONNECTED){if(!connectedSince){connectedSince=now;if(MDNS.begin(("daikin-"+deviceId).c_str()))MDNS.addService("http","tcp",80);}if(uint32_t(now-connectedSince)>120000&&uint32_t(now-connectAt)>120000)WiFi.softAPdisconnect(true);}
+  if(WiFi.status()==WL_CONNECTED){if(!connectedSince){connectedSince=now;if(MDNS.begin(("daikin-"+deviceId).c_str()))MDNS.addService("http","tcp",80);}if(!configRecovery&&uint32_t(now-connectedSince)>120000&&uint32_t(now-connectAt)>120000)WiFi.softAPdisconnect(true);}
   else{if(connectedSince)MDNS.end();connectedSince=0;if(!(WiFi.getMode()&WIFI_AP))startAccessPoint();}
+  #ifdef IOTCLOUD_HUB
+  pollHome(millis());
+  #endif
   if(!otaActive&&rebootAt&&due(now,rebootAt))ESP.restart();
   // Local serial console uses the same bounded command dispatcher. Credentials
   // are accepted for provisioning but are never echoed or returned in queries.

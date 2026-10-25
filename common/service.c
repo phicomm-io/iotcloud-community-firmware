@@ -1,4 +1,7 @@
 #include "service.h"
+#include "backup.h"
+__attribute__((weak)) bool device_config_recovery(void) { return false; }
+__attribute__((weak)) void device_config_recovery_set(bool recovery) { (void)recovery; }
 #include "json_owned.h"
 #include "status_view.h"
 #include "printbuf.h"
@@ -265,6 +268,8 @@ static json_object *service_command_execute(json_object *req) {
     if(ota_job_active() && strcmp(action,"ota.check.get") && strcmp(action,"ota.sources.get") && strcmp(action,"ota.notes.get"))return result(id,"busy",NULL);
 #endif
     bool query=strlen(action)>4 && !strcmp(action+strlen(action)-4,".get");
+    if(device_config_recovery() && !query && strcmp(action,"system.reset") && strcmp(action,"system.reboot") && strcmp(action,"wifi.scan"))return result(id,"migration_required",NULL);
+    if(device_config_recovery() && !strcmp(action,"system.reset") && !json_object_get_boolean(json_object_object_get(p,"full")))return result(id,"migration_required",NULL);
     /* Receipt stores only control requests. Configuration requests can contain
        passwords and are never retained in the replay cache. */
     bool cache=id && !query && strncmp(action,"config.",7) && strncmp(action,"wifi.",5) && strncmp(action,"ota.",4);

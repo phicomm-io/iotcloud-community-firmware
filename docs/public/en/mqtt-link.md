@@ -1,6 +1,6 @@
 # MQTT and automation
 
-MQTT is optional: local device functions work without it. Configure a Broker address, port, username and password in the device WebUI to connect Home Assistant or IotCloud.
+MQTT is optional: local device functions work without it. Configure a Broker address, port, username and password in the device WebUI to connect Home Assistant or IoTCloud.
 
 ## Protocol modes
 
@@ -35,14 +35,14 @@ Each field has independent unit, validity and age checks. PM2.5, formaldehyde, t
 
 Configure thresholds, statistical strategy, debounce and minimum switching intervals on A1. Group control remains independent. Upgrade both sides together; the old M1 allowlist and joint pairing topics are no longer used.
 
-## IotCloud remote management
+## IoTCloud remote management
 
-[Connect devices to IotCloud](iotcloud-connect) · [Open IotCloud]({{SITE_URL}}iotcloud/) · [Deploy IotCloud](iotcloud-deploy)
+[Connect devices to IoTCloud](iotcloud-connect) · [Open IoTCloud]({{SITE_URL}}iotcloud/) · [Deploy IoTCloud](iotcloud-deploy)
 
-The [MQTT platform](https://github.com/phicomm-io/phicomm-community-mqtt) provides accounts, device lists and Legacy / TMCP controls. It reuses the local device UI. MQTT initially uses the registration password and can later have a separate password; website and MQTT passwords are managed independently.
+The [MQTT platform](https://github.com/phicomm-io/iotcloud-community-mqtt) provides accounts, device lists and Legacy / TMCP controls. It reuses the local device UI. MQTT initially uses the registration password and can later have a separate password; website and MQTT passwords are managed independently.
 
 Select **China** (`mqtt.fjrcn.cn`) or **US** (`mqtt.fjrcn.com`) at the top. Each node has separate registration, accounts, devices and data. A username on one node does not create an account on the other. Configure the device with the chosen node's Broker and its own credentials.
 
 Login can connect MQTT automatically and reconnect after network loss. You can [prefill a local device](iotcloud-deploy#prefill-a-local-device), review the settings on that device and save. Platform accounts and third-party Broker mode keep device lists and credentials separate. Guest mode provides browser-local device management without a platform login.
 
-See the platform [deployment documentation](https://github.com/phicomm-io/phicomm-community-mqtt#readme) for topic isolation, migrations and permissions. [Online demos]({{SITE_URL}}#demos) use simulated data and do not connect to physical devices.
+See the platform [deployment documentation](https://github.com/phicomm-io/iotcloud-community-mqtt#readme) for topic isolation, migrations and permissions. [Online demos]({{SITE_URL}}#demos) use simulated data and do not connect to physical devices.

@@ -1,23 +1,18 @@
-# M1 no-disassembly flashing: LAN upload and public DNS migration
+# M1 installation without disassembly: LAN upload
 
 M1 can join your router through its factory hotspot, then accept community firmware from a computer without the original app. This procedure updates the Wi-Fi module and keeps the original main MCU program.
 
 **The first migration from factory firmware must use 0.9.21 or newer.** Choose the **full M1 native OTA image, `phicomm_m1.ota.bin.raw`**. Older versions can repeatedly restart during first boot; do not install an old version as a stepping stone. This guide pins downloads to 0.9.21.
 
-A fix candidate passed factory LAN OTA, community hotspot web access, Wi-Fi setup and sensor communication on one M1. Still verify the actual boot result of the published package. Public DNS migration remains untested and no ready-to-use migration DNS is supplied. These M1 results do not establish A1 compatibility.
+This guide covers factory LAN OTA for the M1 Wi-Fi module. After installation, confirm the version, web access and sensors in step 5. Use the separate installation guide for an A1 purifier.
 
 Select your computer system to show the matching commands. Replace example device IPs with the address in your router's client list.
 
 <!-- os-picker -->
 
-## 1. Choose a path
+## 1. Prepare the local network
 
-| Path | User action | Status |
-| --- | --- | --- |
-| LAN | Upload a native OTA image to the factory configuration service | M1 fix candidate passed; first migration starts at 0.9.21 |
-| Public service | Router DNS directs M1 to a compatible image service | Service, TLS and full migration still need device validation |
-
-Use the LAN path. Your computer can reach that router over Ethernet or Wi-Fi. Do not expose device ports to the Internet.
+Connect the computer to the same router as M1 over Ethernet or Wi-Fi, with client isolation disabled. No public device ports are needed. There is no verified public DNS migration service; use the LAN method below.
 
 ## 2. Connect the factory M1
 
@@ -111,7 +106,7 @@ curl --http1.0 --noproxy '*' --connect-timeout 5 --max-time 300 --header 'Conten
 
 ## 5. Join the community hotspot and finish setup
 
-Factory network settings may not carry over. If the old IP is unreachable after upload, scan for the community hotspot. Wi-Fi had to be configured again in the tested migration.
+First migration may require Wi-Fi setup again. If the old IP is unreachable after upload, scan for the community hotspot.
 
 | Stage | Hotspot | Access while joined |
 | --- | --- | --- |
@@ -123,7 +118,7 @@ Factory network settings may not carry over. If the old IP is unreachable after 
 2. Open `http://192.168.0.1/` and save your 2.4 GHz Wi-Fi settings in the initial setup page. Allow time to connect.
 3. Rejoin the router and find M1 by its label MAC. The new IP may match the factory IP or change. Open `http://device-IP/` using port 80, rather than the factory port 8000.
 4. Confirm model M1, version **0.9.21 or newer**, updating temperature/humidity and PM2.5 readings, and normal display and device communication.
-5. After installation and connectivity are confirmed, a normal power cycle can check boot, automatic reconnection and retained settings. The candidate test did not cover this step; keep your own result.
+5. After installation and connectivity are confirmed, a normal power cycle can check boot, automatic reconnection and retained settings.
 
 For a read-only status check, update the address in the same terminal:
 
@@ -147,74 +142,7 @@ curl --noproxy '*' --connect-timeout 3 --max-time 5 "http://${DeviceIp}/api/v1/s
 
 A community hotspot establishes that the new system offers setup. Confirm the version, web access and updating sensors before calling migration successful. For later community upgrades, use signed packages as described in [firmware updates](firmware-update).
 
-## 6. Public migration through a compatible service
-
-```text
-Connected device → controlled DNS → compatible activation / state handling
-→ factory update check → image URL and MD5 → download and install → verified new runtime
-```
-
-The backup references these endpoints. Their current availability has not been checked.
-
-| Purpose | Factory endpoint |
-| --- | --- |
-| Activation | `https://phiclouds.phicomm.com/device/active?mac=…&productId=1` |
-| Update check | `https://aircat.phicomm.com/firmware/checkUpdate?mac=…&wifiSoftwareVer=…&mainSoftwareVer=…` |
-| Business connection | `aircat.phicomm.com:9000` |
-
-### Configure and check DNS
-
-Proceed only after a maintainer supplies a DNS address and migration image validated on the target hardware. No such address is supplied by this guide.
-
-1. Record the router's current DNS and device network settings.
-2. Configure the supplied DNS in the router's DHCP / LAN settings. If the router proxies DNS, follow the service instructions for forwarding too. Changing only the computer's DNS does not change the device's resolver.
-3. Follow router instructions to renew the device lease and resolution; never restart during firmware transfer or writing. A device using static DNS needs separate confirmation.
-4. Query the update hostname from a computer on that LAN. Compare with the maintainer's expected result, then confirm the target device's own requests in service logs.
-
-<!-- os:windows -->
-
-```powershell
-Resolve-DnsName aircat.phicomm.com -Type A
-```
-
-<!-- /os -->
-
-<!-- os:mac linux -->
-
-```sh
-dig +short A aircat.phicomm.com
-```
-
-<!-- /os -->
-
-The computer's result does not establish the device's resolver or migration success. Restore the user's original DNS after migration.
-
-### Response format for service maintainers
-
-These values illustrate the parser structure. They are not a deployable update manifest:
-
-```json
-{
-  "wifiSoftware": {
-    "url": "http://migration.example/m1-native.bin",
-    "ver": "14.2.4.2",
-    "md5": "<32 hexadecimal MD5 characters of the actual response body>",
-    "enforce": true
-  }
-}
-```
-
-Provide only `wifiSoftware` for Wi-Fi migration. Do not include `mainSoftware`, which targets the separate MCU. The remote Wi-Fi version string must differ from the local value and enforcement conditions must be satisfied. This is different from A1's numeric comparison. The example version is factory comparison metadata, not the image's community version.
-
-The startup OTA thread waits for the main MCU's version report, requesting it again after a five-second timeout. Update checks therefore need a working MCU, although an app action is not necessarily required. The downloader appends a MAC query parameter and has Range/resume paths; the server must support the actual device requests.
-
-The server must implement required activation/state exchanges, HTTPS update responses and actual image delivery. Compute MD5 from the bytes served. MD5 is a content checksum, not a factory private-key signature. The traced application path does not establish that arbitrary images will boot, nor replace a full bootloader audit.
-
-The update-check TLS call disables CA verification, but legacy TLS versions, cipher suites, certificate algorithms and SNI behavior still require device testing. The downloader recognizes HTTP and HTTPS URLs; browser download success does not prove device compatibility.
-
-Before public use, demonstrate activation, update triggering, TLS, complete download, installation, reboot and functional checks on the target factory device. A static file host plus changed DNS is insufficient. Until this is done, there is no verified “change DNS and reboot” procedure.
-
-## 7. Troubleshooting
+## 6. Troubleshooting
 
 | Symptom | Action |
 | --- | --- |
@@ -223,6 +151,5 @@ Before public use, demonstrate activation, update triggering, TLS, complete down
 | Community hotspot exists, old IP fails | Join the hotspot and set up Wi-Fi at `192.168.0.1` |
 | Blinking icon with a DHCP lease | Verify HTTP access; the icon may reflect the factory cloud connection |
 | No web access, hotspot or client record after waiting | Keep image hashes and upload output, stop repeated writes and read boot logs using the [serial / J-Link recovery guide](a1-m1-flash) |
-| DNS change does not trigger an update | Public migration remains unverified; inspect the device's actual resolver, service logs and trigger conditions |
 
-The tested path is M1 Wi-Fi module migration over the LAN. MCU flashing, A1 migration and public DNS migration are outside that result.
+This procedure only updates the Wi-Fi module. The sensor controller uses a [separate update procedure](m1-mcu-update).

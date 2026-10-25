@@ -6,7 +6,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
  body={};status=200;chunked=False
  def log_message(self,*args):pass
  def do_GET(self):
-  assert self.path=='/ota/m1/latest.json'
+  assert self.path=='/ota/v1/m1/full/latest.json'
   body=json.dumps(self.body).encode();self.send_response(self.status)
   if self.chunked:self.send_header('Transfer-Encoding','chunked')
   else:self.send_header('Content-Length',str(len(body)))

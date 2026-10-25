@@ -8,6 +8,8 @@
 sha256sum -c SHA256SUMS
 ```
 
+接口、协议和配置兼容性见[IoTCloud 开发文档](https://phicomm-io.github.io/iotcloud-community-protocols/)，构建脚本见[固件源码](https://github.com/phicomm-io/iotcloud-community-firmware)。
+
 ## 依赖文件
 
 | 文件 | 用途与来源 |
@@ -18,7 +20,7 @@ sha256sum -c SHA256SUMS
 | [mico-os-3.6.4.bundle](https://github.com/phicomm-io/phicomm-community-firmware/releases/download/0.0.0/mico-os-3.6.4.bundle) | 三型号共用的 SDK Git 副本，[MXCHIP/mico-os](https://github.com/MXCHIP/mico-os/tree/6c465211d3ff8797cd835e400ec54a06530dd476)，固定提交 `6c465211d3ff8797cd835e400ec54a06530dd476`，不含本项目补丁 |
 | [tc1-mico-sdk.tar.gz](https://github.com/phicomm-io/phicomm-community-firmware/releases/download/0.0.0/tc1-mico-sdk.tar.gz) | 历史 TC1 MiCO 3.5.4 归档，仅用于构建旧版本；当前版本统一使用上面的 MiCO 3.6.4 |
 
-工具链压缩包保留随包许可证；GCC 等组件的对应源码同时提供。Python 使用随源码的 PSF 许可证。MiCO SDK 包含多个不同授权的源码及二进制组件，按原文件声明适用，不采用本项目统一授权替代。原版权与许可证保留在归档内。
+工具链压缩包保留随包许可证；GCC 等组件的对应源码同时提供。Python 使用随源码的 PSF 许可证。MiCO SDK 各组件保留原版权与许可，见 [SDK 原声明](https://github.com/MXCHIP/mico-os/blob/6c465211d3ff8797cd835e400ec54a06530dd476/README.md#L59)与[系统源码声明](https://github.com/MXCHIP/mico-os/blob/6c465211d3ff8797cd835e400ec54a06530dd476/MiCO/system/mico_system_init.c#L10)。
 
 ## 准备本地副本
 
@@ -56,6 +58,6 @@ A1_TOOLS_DIR=/opt/phicomm-tools ./A1/build.sh
 
 脚本会应用仓库内各产品的 SDK 补丁。**工具目录已有正确版本的 GCC 与 Python 时，不再下载它们。**
 
-仍需 Linux 系统的 `make`、Git、Perl、Python 3、bzip2、curl、C 编译环境及相关系统库；安装命令见[项目构建说明](https://github.com/phicomm-io/phicomm-community-firmware#readme)。
+仍需 Linux 系统的 `make`、Git、Perl、Python 3、bzip2、curl、C 编译环境及相关系统库；安装命令见[项目构建说明](https://github.com/phicomm-io/iotcloud-community-firmware#readme)。
 
 当前版本不再下载 TC1 的 3.5.4 归档。在项目根目录执行 `./build.sh` 可依次构建三个型号。

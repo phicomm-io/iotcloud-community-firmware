@@ -44,10 +44,25 @@ test('a stale mirror or corrupt resource never produces a partial snapshot', asy
   const other=resources();other['/releases/notes/index.json']=Buffer.from('{"schema":1}');
   await assert.rejects(Client.snapshot('',{fetch:fetched(other),crypto:webcrypto}),e=>e.code==='INVALID_INDEX');
 });
-test('browser rejects oversized resources and unavailable integrity verification', async()=>{
+test('browser rejects oversized resources', async()=>{
   const map=resources();const index=JSON.parse(map['/releases/notes/index.json']);index.manifest.size=5e6;map['/releases/notes/index.json']=Buffer.from(JSON.stringify(index));
   await assert.rejects(Client.snapshot('',{fetch:fetched(map),crypto:webcrypto}),e=>e.code==='INVALID_INDEX');
-  await assert.rejects(Client.snapshot('',{fetch:fetched(resources()),crypto:{}}),e=>e.code==='INTEGRITY_UNAVAILABLE');
+});
+test('HTTP LAN pages verify release hashes without Web Crypto, including padding boundaries', async()=>{
+  for (const padding of [0,1,55,56,63,64,65,127,4096]) {
+    const map=resources(), index=JSON.parse(map['/releases/notes/index.json']);
+    const catalog=Buffer.concat([map['/releases/index.json'],Buffer.alloc(padding,32)]);
+    const manifest=Buffer.from(JSON.stringify({...fixture.manifest,archive_sha256:hash(catalog)}));
+    delete map[index.manifest.path];
+    index.catalog={path:'/releases/index.json',sha256:hash(catalog),size:catalog.length};
+    index.manifest={path:'/releases/notes/manifest.'+hash(manifest)+'.json',sha256:hash(manifest),size:manifest.length};
+    map['/releases/index.json']=catalog;map[index.manifest.path]=manifest;
+    map['/releases/notes/index.json']=Buffer.from(JSON.stringify(index));
+    const result=await Client.snapshot('',{fetch:fetched(map),crypto:{}});
+    assert.equal(result.manifest.archive_sha256,hash(catalog));
+    catalog[0]^=1;
+    await assert.rejects(Client.snapshot('',{fetch:fetched(map),crypto:{}}),error=>error.code==='SOURCE_MISMATCH');
+  }
 });
 test('device read uses one existing info request and only the real firmware identity', async()=>{
   const calls=[];const info=await Client.readDevice('10.117.152.111','sensitive', {fetch:async(path,options)=>{calls.push({path,options});return new Response(JSON.stringify({code:'ok',data:{model:'A1',firmware_variant:'fresh-air',version:'0.9.23-123456',tmcp_version:'v2',mac:'private'}}));}});

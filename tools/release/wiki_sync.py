@@ -11,7 +11,7 @@ Usage:
     wiki_sync.py --check  <wiki-dir>   # report drift, change nothing
     wiki_sync.py          <wiki-dir>   # write the pages
 
-The Wiki directory is a clone of phicomm-community-firmware.wiki.git.
+The Wiki directory is a clone of iotcloud-community-firmware.wiki.git.
 """
 import argparse, re, sys
 from pathlib import Path
@@ -75,8 +75,8 @@ def home_page(language="zh"):
                   '- If the link does not open, search for the group number in QQ.', '',
                   '## Links', '', f'- [Project site and downloads]({SITE_URL})',
                   f'- [English website guides]({SITE_URL}guides/en/)',
-                  '- [Firmware source](https://github.com/phicomm-io/phicomm-community-firmware)',
-                  '- [MQTT platform](https://github.com/phicomm-io/phicomm-community-mqtt)', '']
+                  '- [Firmware source](https://github.com/phicomm-io/iotcloud-community-firmware)',
+                  '- [MQTT platform](https://github.com/phicomm-io/iotcloud-community-mqtt)', '']
         return '\n'.join(lines)
     lines = ['# 斐讯社区固件', '', '简体中文 · [English](EN-Home)', '',
              '本项目为已淘汰或云服务厂商停止服务的 IoT 设备提供开源固件。',
@@ -95,8 +95,8 @@ def home_page(language="zh"):
               '- 反馈问题请附上型号、固件版本和复现步骤，并遮去密码与令牌等信息。', '',
               '## 相关链接', '',
               f'- [项目主页与历史版本归档]({SITE_URL})',
-              '- [固件源码仓库](https://github.com/phicomm-io/phicomm-community-firmware)',
-              '- [MQTT 远程集中管理平台](https://github.com/phicomm-io/phicomm-community-mqtt)',
+              '- [固件源码仓库](https://github.com/phicomm-io/iotcloud-community-firmware)',
+              '- [MQTT 远程集中管理平台](https://github.com/phicomm-io/iotcloud-community-mqtt)',
               '']
     return '\n'.join(lines)
 

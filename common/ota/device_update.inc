@@ -66,7 +66,7 @@ static void update_worker(mico_thread_arg_t arg){
             ok=ota_fetch(url,16384,notes_begin,notes_write,NULL,&error);
             if(ok){mico_rtos_lock_mutex(&service_lock);trim_utf8();mico_rtos_unlock_mutex(&service_lock);}
         }else{
-            snprintf(url,sizeof(url),"%s/ota/" UPDATE_MODEL PHICOMM_OTA_VARIANT_PATH "/latest.json",update_bases[update_source]);
+            snprintf(url,sizeof(url),"%s/ota/v1/" UPDATE_MODEL "/" PHICOMM_FIRMWARE_VARIANT "/latest.json",update_bases[update_source]);
             ok=ota_fetch(url,4096,meta_begin,meta_write,&b,&error);
             /* TLS buffers are already free before JSON parsing. */
             if(ok){

@@ -318,7 +318,6 @@ static bool install_config(feature_config_t *c) {
 #endif
   return true;
 }
-#ifdef FEATURE_DEVICE_A1
 static void sensor_decode(json_object *o, feature_sample_t *s) {
   const char *names[]={"temperature","humidity","pm25","formaldehyde","co2"};
   const char *units[]={"°C","%","µg/m³","mg/m³","ppm"};
@@ -331,8 +330,9 @@ static void sensor_decode(json_object *o, feature_sample_t *s) {
     json_object *age=json_object_object_get(values?field:o,values?"age_ms":f==4?"co2_age_ms":"age_ms");
     bool enabled=values?integer(field,"valid"):integer(o,f==4?"co2_valid":"valid");
     if(f==4)s->co2_supported=values?field!=NULL:integer(o,"co2_supported");
-    if(!enabled || (values&&strcmp(string(field,"unit"),units[f])) || !age || !json_object_is_type(age,json_type_int) ||
-       json_object_get_int(age)<0 || (unsigned)json_object_get_int(age)>=(f==4?20000u:FEATURE_STALE_MS) ||
+    if(!enabled || (values&&(!json_object_is_type(json_object_object_get(field,"valid"),json_type_boolean) ||
+       strcmp(string(field,"unit"),units[f]) || json_object_get_string_len(json_object_object_get(field,"unit"))!=(int)strlen(units[f]))) || !age || !json_object_is_type(age,json_type_int) ||
+       json_object_get_int64(age)<0 || json_object_get_int64(age)>=(f==4?20000u:FEATURE_STALE_MS) ||
        (!json_object_is_type(v,json_type_int)&&!json_object_is_type(v,json_type_double)))continue;
     float value=json_object_get_double(v);
     if(!isfinite(value)||(f==0&&(value < -40 || value>125))||(f==1&&(value<0||value>100))||(f>=2&&value<0)||(f==4&&(value==0||value>65535)))continue;
@@ -341,7 +341,6 @@ static void sensor_decode(json_object *o, feature_sample_t *s) {
   }
   s->valid=s->fields!=0;s->boot=integer(o,"boot");s->sequence=integer(o,"sequence");
 }
-#endif
 static void co2_body(json_object *o, const feature_sample_t *s, uint32_t now) {
   json_build_object_add(o,"co2_supported",json_object_new_boolean(s->co2_supported));
   json_build_object_add(o,"co2_valid",json_object_new_boolean(feature_co2_fresh(s,now)));
@@ -1020,7 +1019,6 @@ bool feature_mqtt_input(const char *t, const void *data, size_t n,
     }}return true;
   }
 #endif
-#ifdef FEATURE_DEVICE_A1
   char sensor_prefix[FEATURE_TOPIC_MAX];mqtt_aux(&account,"sensor","",sensor_prefix,sizeof(sensor_prefix));
   size_t prefix_len=strlen(sensor_prefix);
   if(!strncmp(t,sensor_prefix,prefix_len)){
@@ -1030,9 +1028,14 @@ bool feature_mqtt_input(const char *t, const void *data, size_t n,
     if(retained || strlen(suffix)!=18 || strcmp(suffix+12,"/state"))return true;
     memcpy(mac,suffix,12);mac[12]=0;char normalized[13];if(!feature_mac(mac,normalized))return true;
     json_object *o=parse(data,n);if(!o)return true;
-    if(integer(o,"schema")!=1 || strcmp(string(o,"device_id"),normalized)){json_object_put(o);return true;}
+    json_object *schema=json_object_object_get(o,"schema"),*id=json_object_object_get(o,"device_id"),*boot=json_object_object_get(o,"boot"),*seq=json_object_object_get(o,"sequence");
+    if(!json_object_is_type(schema,json_type_int)||json_object_get_int64(schema)!=1 ||
+       !json_object_is_type(id,json_type_string)||json_object_get_string_len(id)!=12||strcmp(string(o,"device_id"),normalized) ||
+       !json_object_is_type(boot,json_type_int)||json_object_get_int64(boot)<1||json_object_get_int64(boot)>UINT32_MAX ||
+       !json_object_is_type(seq,json_type_int)||json_object_get_int64(seq)<1||json_object_get_int64(seq)>UINT32_MAX){json_object_put(o);return true;}
     feature_sample_t sample;sensor_decode(o,&sample);
     if(!sample.boot||!sample.sequence){json_object_put(o);return true;}
+#ifdef FEATURE_DEVICE_A1
     lock();for(unsigned i=0;i<configuration.peer_count;i++)if(!strcmp(configuration.peers[i].id,normalized)){
       if(peers[i].lan && (uint32_t)(now_ms()-peers[i].last_seen)<FEATURE_STALE_MS)break;
       bool retired=false;for(unsigned k=0;k<4;k++)retired|=peers[i].retired_boot[k]==sample.boot;
@@ -1040,9 +1043,12 @@ bool feature_mqtt_input(const char *t, const void *data, size_t n,
       if(samples[i].partial && samples[i].boot!=sample.boot){memmove(peers[i].retired_boot+1,peers[i].retired_boot,3*sizeof(uint32_t));peers[i].retired_boot[0]=samples[i].boot;}
       if(!peers[i].lan || (uint32_t)(now_ms()-peers[i].last_seen)>=FEATURE_STALE_MS)samples[i]=sample;
       break;
-    }unlock();json_object_put(o);return true;
-  }
+    }unlock();
+#else
+    m1_co2_source_sample(normalized,&sample);
 #endif
+    json_object_put(o);return true;
+  }
   char address_prefix[192];
   mqtt_aux(&account,"address","",address_prefix,sizeof(address_prefix));
   size_t address_length = strlen(address_prefix);
@@ -1135,6 +1141,9 @@ bool feature_mqtt_input(const char *t, const void *data, size_t n,
 }
 static void virtual_service(int (*publish)(const char *, const char *, bool));
 void feature_mqtt_session(const mqtt_account_t *account) {
+#ifndef FEATURE_DEVICE_A1
+  m1_co2_source_reset();
+#endif
   mico_rtos_lock_mutex(&namespace_lock);
   bool changed=feature_account.mode!=account->mode || strcmp(feature_account.key,account->key) ||
       strcmp(feature_account.model,account->model) || strcmp(feature_account.mac,account->mac);
@@ -1763,6 +1772,7 @@ static bool discovery_virtual_step(int (*publish)(const char *, const char *, bo
                               "sensor", "sensor", "sensor", "sensor", "sensor", "sensor", "sensor"};
   const char *names[] = {"空气净化器", "灯环", "童锁", "灯环常亮",
                          "温度", "湿度", "PM2.5", "甲醛", "二氧化碳", "SCD40 温度", "SCD40 湿度"};
+  const char *english[] = {"Air purifier","Light ring","Child lock","Light always on","Temperature","Humidity","PM2.5","Formaldehyde","Carbon dioxide","SCD40 temperature","SCD40 humidity"};
   const char *icons[] = {"mdi:air-purifier", "mdi:led-strip-variant", "mdi:lock",
                          "mdi:led-on", NULL, NULL, NULL, "mdi:molecule", "mdi:molecule-co2", NULL, NULL};
   /* MQTT-owner-only scratch: publishing may dispatch callbacks on this stack. */
@@ -1772,7 +1782,7 @@ static bool discovery_virtual_step(int (*publish)(const char *, const char *, bo
   static a1_config_t device_config;
   a1_config_get(&device_config);
   const char *device_name = virtual_device_name(c->group, &device_config);
-  char owner[13], device_id[192];
+  char owner[13], device_id[FEATURE_TOPIC_MAX];
   static char safe[FEATURE_TOPIC_MAX];
   if (!virtual_identity(c->group,c->members,c->member_count, root, &account, owner, safe, sizeof(safe),
                         device_id, sizeof(device_id))) return false;
@@ -1826,7 +1836,7 @@ static bool discovery_virtual_step(int (*publish)(const char *, const char *, bo
       json_build_object_add(o, "device", device);
       js(o, "unique_id", uid);
       json_build_object_add(o,"retain",json_object_new_boolean(false));
-      js(o, "name", names[i]);
+      js(o, "name", ph_i18n(device_language_get(),names[i],english[i]));
       if (icons[i]) js(o, "icon", icons[i]);
       static char topic[FEATURE_TOPIC_MAX];
       if (i < 4) {

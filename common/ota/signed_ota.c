@@ -2,22 +2,32 @@
 #include "keyring.h"
 #include <string.h>
 #ifdef ESP_PLATFORM
+#include "mbedtls/version.h"
 #include "mbedtls/sha256.h"
 #include "mbedtls/ecdsa.h"
 typedef mbedtls_sha256_context SHA256Context;
+#if MBEDTLS_VERSION_MAJOR >= 3
+static int SHA256Reset(SHA256Context *s){mbedtls_sha256_init(s);return mbedtls_sha256_starts(s,0);}
+static int SHA256Input(SHA256Context *s,const uint8_t *p,size_t n){return mbedtls_sha256_update(s,p,n);}
+static int SHA256Result(SHA256Context *s,uint8_t out[32]){return mbedtls_sha256_finish(s,out);}
+#define OTA_EC_FIELD(member) MBEDTLS_PRIVATE(member)
+#else
 static int SHA256Reset(SHA256Context *s){mbedtls_sha256_init(s);return mbedtls_sha256_starts_ret(s,0);}
 static int SHA256Input(SHA256Context *s,const uint8_t *p,size_t n){return mbedtls_sha256_update_ret(s,p,n);}
 static int SHA256Result(SHA256Context *s,uint8_t out[32]){return mbedtls_sha256_finish_ret(s,out);}
+#define OTA_EC_FIELD(member) member
+#endif
 static void sha_release(SHA256Context *s){mbedtls_sha256_free(s);}
 static bool ota_verify(const uint8_t *key,const uint8_t *digest,const uint8_t *signature){
     mbedtls_ecdsa_context ec;mbedtls_ecdsa_init(&ec);mbedtls_mpi r,s;mbedtls_mpi_init(&r);mbedtls_mpi_init(&s);
     uint8_t point[65];point[0]=4;memcpy(point+1,key,64);
-    bool ok=!mbedtls_ecp_group_load(&ec.grp,MBEDTLS_ECP_DP_SECP256R1)&&
-      !mbedtls_ecp_point_read_binary(&ec.grp,&ec.Q,point,sizeof(point))&&
+    bool ok=!mbedtls_ecp_group_load(&ec.OTA_EC_FIELD(grp),MBEDTLS_ECP_DP_SECP256R1)&&
+      !mbedtls_ecp_point_read_binary(&ec.OTA_EC_FIELD(grp),&ec.OTA_EC_FIELD(Q),point,sizeof(point))&&
       !mbedtls_mpi_read_binary(&r,signature,32)&&!mbedtls_mpi_read_binary(&s,signature+32,32)&&
-      !mbedtls_ecdsa_verify(&ec.grp,digest,32,&ec.Q,&r,&s);
+      !mbedtls_ecdsa_verify(&ec.OTA_EC_FIELD(grp),digest,32,&ec.OTA_EC_FIELD(Q),&r,&s);
     mbedtls_mpi_free(&r);mbedtls_mpi_free(&s);mbedtls_ecdsa_free(&ec);return ok;
 }
+#undef OTA_EC_FIELD
 #else
 #include "vendor/uECC.h"
 #include "sha.h"

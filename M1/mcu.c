@@ -2,6 +2,7 @@
 #include "../common/device_status.h"
 #include "../common/json_build.h"
 #include "sensor_details.h"
+#include "display_source.h"
 static m1_details_t details;
 
 /* One UART owner, one bounded HTTP exchange. No socket writes from UART task. */
@@ -12,9 +13,20 @@ static bool transfer_complete;
 static uint32_t transfer_until, manual_until, auto_due, auto_deadline;
 static uint8_t sequence, auto_sequence, auto_op, auto_phase;
 static bool auto_waiting;
+/* A write reply is followed by a separate read before reporting confirmation. */
+static bool alarm_need_read, alarm_request_write;
+static uint8_t alarm_request_mask;
+static uint32_t alarm_request_revision, alarm_due;
 static uint16_t shown_ppm;
 static bool shown_valid, shown_co2;
 static uint32_t shown_at, shown_until;
+static int manual_display_mode=-1;
+static uint32_t manual_display_revision,manual_source_revision;
+static bool button_seen;
+static uint8_t button_sequence;
+static uint32_t display_phase_at,display_config_revision,display_source_revision;
+static uint16_t sent_ppm;
+static bool display_phase_set;
 static uint16_t be16(const uint8_t *p){return ((uint16_t)p[0]<<8)|p[1];}
 static void put16(uint8_t *p,unsigned n){p[0]=n>>8;p[1]=n;}
 static bool due(uint32_t now,uint32_t at){return (int32_t)(now-at)>=0;}
@@ -36,7 +48,7 @@ bool m1_mcu_exchange(const uint8_t *p,size_t n,uint8_t out[20])
         ((cmd==0x13 || cmd==0x16) && !m1_state.mcu_updating) ||
         (cmd==0x16 && !p[2] && !transfer_complete);
     if(!busy) {
-        if(cmd==0x12){m1_state.mcu_updating=true;transfer_complete=false;memset(&details,0,sizeof(details));m1_state.mcu_sensor_details=false;}
+        if(cmd==0x12){m1_state.mcu_updating=true;transfer_complete=false;memset(&details,0,sizeof(details));m1_state.mcu_sensor_details=false;m1_state.mcu_alarm_schema=0;m1_state.alarm_buzzer_received=false;alarm_need_read=false;}
         exchange_active=exchange_pending=true;exchange_done=exchange_ok=false;
         memcpy(request_frame,p,n);request_length=n;
         manual_until=mico_rtos_get_time()+5000;transfer_until=mico_rtos_get_time()+15000;
@@ -63,6 +75,10 @@ bool m1_mcu_rx(const uint8_t p[20])
     if(p[1]==0x17) {
         m1_state.mcu_extended=false;m1_state.mcu_caps=0;m1_state.mcu_version_received=false;
         m1_state.mcu_tones=false;m1_state.mcu_music_present=false;
+        m1_state.mcu_button_events=false;m1_state.mcu_display_source=false;
+        m1_state.mcu_alarm_schema=0;m1_state.alarm_buzzer_received=false;
+        m1_state.alarm_uart_sent=false;alarm_need_read=false;alarm_due=now;
+        button_seen=false;manual_display_mode=-1;display_phase_set=false;
         auto_waiting=false;auto_due=now;
         memset(&details,0,sizeof(details));m1_state.mcu_sensor_details=false;
     }
@@ -85,18 +101,37 @@ bool m1_mcu_rx(const uint8_t p[20])
             m1_state.mcu_tones=p[5]>=2 && (be16(p+6)&0x4000) && p[10]==1;
             details.supported=p[11]==1 && p[12]>=7 && p[13]==9;
             m1_state.mcu_sensor_details=details.supported;
+            m1_state.mcu_button_events=p[14]==1&&(p[15]&3)==3;
+            m1_state.mcu_display_source=p[16]==1;
+            m1_state.mcu_alarm_schema=p[17]==1?1:0;
+            if(!m1_state.mcu_alarm_schema)m1_state.alarm_buzzer_received=false;
             auto_phase=1;
         } else if(!p[4] && auto_op==13) {
             shown_ppm=be16(p+13);shown_valid=p[15]!=0;shown_co2=p[16]!=0;shown_at=now;
             shown_until=now+(uint32_t)be16(p+17)*1000;
+        } else if(!p[4] && auto_op==19 && p[5]==1) {
+            shown_ppm=sent_ppm;shown_valid=p[13]!=0;shown_co2=p[7]!=0;shown_at=now;
+            shown_until=now+(uint32_t)p[13]*1000;
         }
         if(auto_op==16){
             bool complete=m1_details_reply(&details,p,now);
             if(complete && details.id==0)auto_phase=1;
         }
         if(!p[4] && auto_op==15)m1_state.mcu_music_present=p[5]==1;
-        auto_due=now+((auto_op==13||auto_op==15)?1000:0);
+        auto_due=now+((auto_op==13||auto_op==19||auto_op==15)?250:0);
         if(p[4])auto_due=now+2000;
+        if(auto_op==20){
+            uint8_t mask;bool active;
+            bool valid=m1_parse_sensor_alarm(p,&mask,&active);
+            alarm_need_read=valid && alarm_request_write && mask==alarm_request_mask;
+            if(valid && !alarm_request_write){
+                m1_state.alarm_buzzer_received=true;m1_state.alarm_buzzer_mask=mask;
+                m1_state.alarm_buzzer_active=active;m1_state.alarm_buzzer_updated_ms=now;
+                m1_state.alarm_buzzer_revision=alarm_request_revision;
+            }else m1_state.alarm_buzzer_received=false;
+            alarm_due=now+(alarm_need_read?0:valid && mask==alarm_request_mask?5000:2000);
+            auto_due=now+(alarm_need_read?0:250);
+        }
     }
     mico_rtos_unlock_mutex(&m1_lock);
     return match || p[1]==0x70 || p[1]==0x14 || p[1]==0x15 || p[1]==0x17 || p[1]==0x1a;
@@ -123,23 +158,51 @@ void m1_mcu_tick(void)
         m1_state.reboot_pending || m1_state.wifi_trial_active || !due(now,manual_until);
     if(auto_waiting && due(now,auto_deadline)){
         if(auto_op==16){m1_details_fail(&details);auto_phase=1;}
+        if(auto_op==20){alarm_need_read=false;alarm_due=now+2000;m1_state.alarm_buzzer_received=false;}
         auto_waiting=false;auto_due=now+2000;
     }
     bool ready=m1_state.mcu_extended,version=m1_state.mcu_version_received;
     bool details_supported=details.supported;
-    scd40_state_t sensor=m1_state.scd40;
+    bool generic=m1_state.mcu_display_source;
+    bool alarm_supported=m1_state.mcu_alarm_schema==1;
     skip=skip || auto_waiting || !due(now,auto_due) || !version;
     mico_rtos_unlock_mutex(&m1_lock);
     if(skip)return;
+    m1_alarm_config_t alarm;m1_alarm_get(&alarm);
+    mico_rtos_lock_mutex(&m1_lock);
+    bool alarm_confirmed=m1_state.alarm_buzzer_received &&
+        m1_state.alarm_buzzer_revision==alarm.revision && m1_state.alarm_buzzer_mask==alarm.reserved[1];
+    bool alarm_sync=alarm_supported && due(now,alarm_due) && (!alarm_confirmed ||
+        (uint32_t)(now-m1_state.alarm_buzzer_updated_ms)>=5000);
+    mico_rtos_unlock_mutex(&m1_lock);
     m1_co2_config_t config;m1_co2_config_get(&config);
-    if(!ready){extension(f,0);auto_due=now+10000;}
+    m1_co2_source_config_t source;m1_co2_source_config_get(&source);
+    if(manual_display_revision!=config.revision||manual_source_revision!=source.revision)manual_display_mode=-1;
+    uint16_t ppm,ttl;bool fresh=m1_co2_source_value(&ppm,&ttl);
+    if(!display_phase_set || display_config_revision!=config.revision || display_source_revision!=source.revision){
+        display_phase_at=now;display_config_revision=config.revision;
+        display_source_revision=source.revision;display_phase_set=true;
+    }
+    if(alarm_sync){
+        bool read=alarm_confirmed || (alarm_need_read && alarm_request_revision==alarm.revision &&
+            alarm_request_mask==alarm.reserved[1]);
+        alarm_request_write=!read;alarm_request_revision=alarm.revision;alarm_request_mask=alarm.reserved[1];
+        m1_sensor_alarm_frame(f,++sequence,!read,read?0:alarm_request_mask);
+        if(!read){mico_rtos_lock_mutex(&m1_lock);m1_state.alarm_buzzer_received=false;mico_rtos_unlock_mutex(&m1_lock);}
+    }
+    else if(!ready){extension(f,0);auto_due=now+10000;}
     else {
         if(auto_phase<1 || auto_phase>6 || (auto_phase==6 && !details_supported))auto_phase=1;
-        if(auto_phase==1){extension(f,11);f[4]=2;put16(f+5,config.low);put16(f+7,config.high);}
-        if(auto_phase==2){extension(f,10);f[4]=config.mode;f[5]=config.slot;put16(f+6,config.interval);}
-        if(auto_phase==3){extension(f,12);bool fresh=sensor.ready && sensor.received && (uint32_t)(now-sensor.updated_ms)<20000 && sensor.co2_ppm;
-            put16(f+4,sensor.co2_ppm);f[6]=fresh;put16(f+7,fresh?(20000-(now-sensor.updated_ms)+999)/1000:0);}
-        if(auto_phase==4)extension(f,13);
+        if(generic){
+            if(auto_phase==1){extension(f,17);m1_display_source_encode(f+4,ppm,fresh?ttl:0,config.slot,config.low,config.high);sent_ppm=ppm;}
+            if(auto_phase==2){extension(f,18);f[4]=m1_display_source_selected(config.mode,manual_display_mode,now-display_phase_at,config.interval);}
+            if(auto_phase==3 || auto_phase==4)extension(f,19);
+        }else{
+            if(auto_phase==1){extension(f,11);f[4]=2;put16(f+5,config.low);put16(f+7,config.high);}
+            if(auto_phase==2){extension(f,10);f[4]=manual_display_mode<0?config.mode:manual_display_mode;f[5]=config.slot;put16(f+6,config.interval);}
+            if(auto_phase==3){extension(f,12);put16(f+4,ppm);f[6]=fresh;put16(f+7,ttl);}
+            if(auto_phase==4)extension(f,13);
+        }
         if(auto_phase==5)extension(f,15);
         if(auto_phase==6){
             extension(f,16);mico_rtos_lock_mutex(&m1_lock);
@@ -158,6 +221,7 @@ void m1_mcu_tick(void)
     if(MicoUartSend(MICO_UART_1,f,12)!=kNoErr){
         mico_rtos_lock_mutex(&m1_lock);
         if(auto_op==16){m1_details_fail(&details);auto_phase=1;}
+        if(auto_op==20){alarm_need_read=false;alarm_due=now+2000;m1_state.alarm_buzzer_received=false;}
         auto_waiting=false;auto_due=now+2000;m1_state.uart_errors++;
         mico_rtos_unlock_mutex(&m1_lock);
     }
@@ -166,13 +230,14 @@ void m1_mcu_tick(void)
 void m1_co2_capture(device_m1_co2_t *out)
 {
     m1_co2_config_t c;m1_co2_config_get(&c);
+    m1_co2_source_config_t source;m1_co2_source_config_get(&source);
     mico_rtos_lock_mutex(&m1_lock);
     uint32_t now=mico_rtos_get_time();
     bool valid=shown_valid && !due(now,shown_until) && (uint32_t)(now-shown_at)<5000;
     *out=(device_m1_co2_t){.revision=c.revision,.interval=c.interval,.low=c.low,.high=c.high,
         .mode=c.mode,.slot=c.slot,.ppm=shown_ppm,
         .supported=m1_state.mcu_extended && m1_state.mcu_version_received,
-        .present=m1_state.scd40.serial[0]!=0,.valid=valid,.showing=shown_co2 && valid};
+        .present=source.external||m1_state.scd40.serial[0]!=0,.valid=valid,.showing=shown_co2 && valid};
     mico_rtos_unlock_mutex(&m1_lock);
 }
 json_object *m1_co2_json(void)
@@ -196,10 +261,33 @@ json_object *m1_co2_set(json_object *p,const char **code)
     json_object_object_foreach(p,key,value){(void)value;bool found=false;for(unsigned i=0;i<6;i++)if(!strcmp(key,keys[i]))found=true;if(!found)return NULL;}
     for(unsigned i=0;i<6;i++){json_object *v=json_object_object_get(p,keys[i]);if(!v || !json_object_is_type(v,json_type_int))return NULL;values[i]=json_object_get_int(v);if(values[i]<0 || values[i]>hi[i])return NULL;}
     if(!values[2] || values[3]>values[4])return NULL;
-    mico_rtos_lock_mutex(&m1_lock);bool available=m1_state.mcu_extended && m1_state.mcu_version_received && m1_state.scd40.serial[0];mico_rtos_unlock_mutex(&m1_lock);
+    m1_co2_source_config_t source;m1_co2_source_config_get(&source);
+    mico_rtos_lock_mutex(&m1_lock);bool available=m1_state.mcu_extended && m1_state.mcu_version_received && (source.external||m1_state.scd40.serial[0]);mico_rtos_unlock_mutex(&m1_lock);
     if(!available){*code="unsupported";return NULL;}
     m1_co2_config_t c={.magic=M1_CO2_MAGIC,.revision=values[5],.mode=values[0],.slot=values[1],.interval=values[2],.low=values[3],.high=values[4]};
     *code=m1_co2_config_save(&c);return !strcmp(*code,"accepted")?m1_co2_json():NULL;
+}
+
+bool m1_button_rx(const uint8_t p[20])
+{
+    if(p[0]!=0x23||p[19]!=0x21||p[1]!=0x71||p[2]!=1||p[3]<1||p[3]>4)return false;
+    for(unsigned i=7;i<19;i++)if(p[i])return false;
+    if(button_seen&&button_sequence==p[4])return true;
+    button_seen=true;button_sequence=p[4];
+    if(p[3]!=2)return true;
+    mico_rtos_lock_mutex(&m1_lock);
+    bool ringing=m1_state.wake_alarm_active,busy=m1_state.mcu_updating||m1_state.ota_active||m1_state.reboot_pending||m1_state.wifi_trial_active;
+    bool supported=m1_state.mcu_button_events&&m1_state.mcu_extended;
+    mico_rtos_unlock_mutex(&m1_lock);
+    if(busy)return true;
+    if(ringing){m1_wake_alarm_stop();return true;}
+    m1_co2_source_config_t source;m1_co2_source_config_get(&source);
+    mico_rtos_lock_mutex(&m1_lock);bool present=source.external||m1_state.scd40.serial[0];mico_rtos_unlock_mutex(&m1_lock);
+    if(!supported||!source.double_click||!present)return true;
+    m1_co2_config_t config;m1_co2_config_get(&config);
+    bool previous=m1_display_source_selected(config.mode,manual_display_mode,mico_rtos_get_time()-display_phase_at,config.interval);
+    manual_display_mode=previous?0:1;manual_display_revision=config.revision;manual_source_revision=source.revision;
+    auto_phase=2;auto_due=mico_rtos_get_time();return true;
 }
 
 bool m1_music_supported(void)

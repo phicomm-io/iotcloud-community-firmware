@@ -30,6 +30,18 @@ int main(void)
     m1_threshold_frame(tx,true,0,65535);
     const uint8_t pm_threshold[12]={0x23,6,0,0,0xff,0xff,0,0,0,0,0,0x21};
     assert(!memcmp(tx,pm_threshold,12));
+    assert(m1_sensor_alarm_frame(tx,42,false,0));
+    const uint8_t alarm_read[12]={0x23,0x70,20,42,0,0,0,0,0,0,0,0x21};
+    assert(!memcmp(tx,alarm_read,12));
+    for(unsigned mask=0;mask<8;mask++)assert(m1_sensor_alarm_frame(tx,43,true,mask) && tx[4]==1 && tx[5]==mask && !tx[6] && !tx[10]);
+    assert(!m1_sensor_alarm_frame(tx,1,true,8) && !m1_sensor_alarm_frame(tx,1,false,1));
+    uint8_t alarm_reply[20]={0x23,0x70,20,42,0,1,3,1,0,0,0,0,0,0,0,0,0,0,0,0x21},mask=0;
+    bool active=false;assert(m1_parse_sensor_alarm(alarm_reply,&mask,&active) && mask==3 && active);
+    for(unsigned i=0;i<4;i++){
+        unsigned at=i==0?4:i==1?5:i==2?6:7;uint8_t old=alarm_reply[at];
+        alarm_reply[at]=i==0?1:i==1?2:i==2?8:2;
+        assert(!m1_parse_sensor_alarm(alarm_reply,&mask,&active));alarm_reply[at]=old;
+    }
     char version[17]="keep";
     memset(frame,0,sizeof(frame));frame[0]=0x23;frame[1]=17;frame[19]=0x21;frame[2]=16;
     memcpy(frame+3,"0123456789abcdef",16);

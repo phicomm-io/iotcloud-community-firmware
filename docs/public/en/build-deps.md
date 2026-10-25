@@ -8,6 +8,8 @@ Download dependencies from the [0.0.0 archive](https://github.com/phicomm-io/phi
 sha256sum -c SHA256SUMS
 ```
 
+See the [IoTCloud developer documentation](https://phicomm-io.github.io/iotcloud-community-protocols/en/) for interfaces, protocols and configuration compatibility, and the [firmware source](https://github.com/phicomm-io/iotcloud-community-firmware) for build scripts.
+
 ## Files
 
 | File | Purpose and source |
@@ -18,7 +20,7 @@ sha256sum -c SHA256SUMS
 | [mico-os-3.6.4.bundle](https://github.com/phicomm-io/phicomm-community-firmware/releases/download/0.0.0/mico-os-3.6.4.bundle) | Shared Git SDK copy for all three products at [MXCHIP/mico-os](https://github.com/MXCHIP/mico-os/tree/6c465211d3ff8797cd835e400ec54a06530dd476), commit `6c465211d3ff8797cd835e400ec54a06530dd476`, without project patches |
 | [tc1-mico-sdk.tar.gz](https://github.com/phicomm-io/phicomm-community-firmware/releases/download/0.0.0/tc1-mico-sdk.tar.gz) | Historical TC1 MiCO 3.5.4 archive for older revisions; current builds use MiCO 3.6.4 above |
 
-Toolchain archives retain their licenses; corresponding GCC component source is provided. Python uses its bundled PSF license. MiCO includes differently licensed source and binary components; their original declarations apply, rather than a blanket project license. Copyright and license notices remain in the archives.
+Toolchain archives retain their licenses; corresponding GCC component source is provided. Python uses its bundled PSF license. MiCO components retain their original copyright notices and terms; see the [SDK notices](https://github.com/MXCHIP/mico-os/blob/6c465211d3ff8797cd835e400ec54a06530dd476/README.md#L59) and [system source notices](https://github.com/MXCHIP/mico-os/blob/6c465211d3ff8797cd835e400ec54a06530dd476/MiCO/system/mico_system_init.c#L10).
 
 ## Prepare local copies
 
@@ -54,6 +56,6 @@ M1_TOOLS_DIR=/opt/phicomm-tools ./M1/build.sh
 A1_TOOLS_DIR=/opt/phicomm-tools ./A1/build.sh
 ```
 
-The scripts apply product-specific SDK patches. Correct existing GCC / Python copies are reused without downloading. Linux also needs make, Git, Perl, Python 3, bzip2, curl, a C build environment and related system libraries; see the [project build instructions](https://github.com/phicomm-io/phicomm-community-firmware#readme).
+The scripts apply product-specific SDK patches. Correct existing GCC / Python copies are reused without downloading. Linux also needs make, Git, Perl, Python 3, bzip2, curl, a C build environment and related system libraries; see the [project build instructions](https://github.com/phicomm-io/iotcloud-community-firmware#readme).
 
 Current builds no longer download the TC1 3.5.4 archive. Run `./build.sh` at the project root to build all three products in sequence.

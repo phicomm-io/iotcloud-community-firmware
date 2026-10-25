@@ -1,6 +1,6 @@
 # WebUI 设计与接口约定
 
-TC1、A1、M1 的离线页面统一由 [前端仓库](https://github.com/phicomm-io/phicomm-community-frontend) 构建。固件提交 `frontend.lock.json` 锁定完整 commit 的 Release 与 SHA-256，`tools/frontend_release.py` 下载校验全部文件，`tools/pack_frontend.py` 直接嵌入其中的确定性 gzip，不再从固件仓库展开前端源码。浏览器无需 CDN。公共样式、词表、服务层、设置页及产品 `page.js` 均在前端仓库维护。`common/web/page.py` 仅为已有工具保留命令兼容入口，输出锁定 Release 中的 HTML。
+TC1、A1、M1 的离线页面统一由 [前端仓库](https://github.com/phicomm-io/iotcloud-community-frontend) 构建。固件提交 `frontend.lock.json` 锁定完整 commit 的 Release 与 SHA-256，`tools/frontend_release.py` 下载校验全部文件，`tools/pack_frontend.py` 直接嵌入其中的确定性 gzip，不再从固件仓库展开前端源码。浏览器无需 CDN。公共样式、词表、服务层、设置页及产品 `page.js` 均在前端仓库维护。`common/web/page.py` 仅为已有工具保留命令兼容入口，输出锁定 Release 中的 HTML。
 
 ## 页面与词表
 

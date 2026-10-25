@@ -30,10 +30,10 @@
 
 `reference_stable:true` 表示操作者确认上述环境条件，固件不能自行证明真实浓度或环境稳定。接口先返回 `accepted` / `queued`，随后从 `status.get` 查询 `co2_diagnostics.calibration.state`：`never`、`queued`、`waiting_ack`、`acknowledged` 或 `timeout_unknown`。只有校验正确的 `16 01 03 E6` 才标记已应答；三秒无应答视为结果未知，不自动重发。每次请求后冷却 60 秒。校准期间清除旧测量，结束后需新测量才能恢复对外读数；已应答不等于精度验证通过，应与参照仪再次比较。校准记录只在 RAM 保存，重启后不保留；模块基线由模块自身管理。
 
-入口前端位于相邻 `phicomm-community-frontend` 仓库。未发布并更新前端锁之前，使用包含该改动的本地前端构建开发包：
+入口前端位于相邻 `iotcloud-community-frontend` 仓库。未发布并更新前端锁之前，使用包含该改动的本地前端构建开发包：
 
 ```sh
-PHICOMM_FRONTEND_SOURCE=/path/to/phicomm-community-frontend ./DAIKIN/build.sh
+PHICOMM_FRONTEND_SOURCE=/path/to/iotcloud-community-frontend ./DAIKIN/build.sh
 ```
 
 温湿度采用本机原厂固件恢复的补偿：温度减 4.9 °C；湿度先按原始温度换算混合比，经 `q × 0.8915 + 0.2632` 修正，再按补偿后的温度还原相对湿度并限制到 0～100%。湿度随原始温度变化，并非固定加减值。通用设置支持自定义温度减去值（−20～20 °C，默认 4.9）与湿度微调（−30～30 %RH，默认 0），支持恢复默认；设置持久化，保存后清除旧温湿度读数并重新采集。该模型来自原厂程序，不代表经过独立计量校准；SGP30 的 ppb 不通过经验倍数伪装成质量浓度。PM 协议校验目前基于长度、帧头、完成状态与量程，参考仓库未提供可核验的 I²C 校验和定义，仍需实机核验。

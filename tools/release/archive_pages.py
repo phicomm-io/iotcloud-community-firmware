@@ -5,6 +5,12 @@ import hashlib
 import json
 from pathlib import Path, PurePosixPath
 from urllib.request import Request, urlopen
+try:
+    from products import MODEL_VARIANTS
+except ModuleNotFoundError:
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from products import MODEL_VARIANTS
 
 
 def write_latest(catalog, output):
@@ -13,29 +19,36 @@ def write_latest(catalog, output):
     release = next((r for r in catalog['releases'] if r['tag'] == stable), None)
     if stable and release is None:
         raise ValueError('Stable release is absent from catalog')
-    for model in ('tc1', 'm1', 'a1', 'daikin'):
-        item = release.get('models', {}).get(model, {}) if release else {}
-        variants = dict(item.get('variants', {}))
-        # Remove stale manifests too when rolling back to an older catalog.
-        expected = [] if model=='daikin' else ['no-frontend-resources']
-        if model == 'a1': expected += ['fresh-air', 'fresh-air-no-frontend-resources']
-        for variant in expected: variants.setdefault(variant, {})
-        for variant, entry in [('full', item), *variants.items()]:
-            folder = output / 'ota' / model
-            if variant != 'full': folder /= variant
-            target = folder / 'latest.json'
-            signed = entry.get('downloads', {}).get('signed')
-            if not signed:
-                target.unlink(missing_ok=True)
-                continue
-            document = dict(schema=1, tag=release['tag'], version=release['version'],
-                            commit=release['commit'], model=model, firmware_variant=variant,
-                            **signed, release_log=release['notes'])
-            data = (json.dumps(document, ensure_ascii=False, separators=(',', ':')) + '\n').encode()
-            if len(data) > 4096: raise ValueError('Device manifest exceeds 4096 bytes')
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(data)
-
+    # Legacy clients receive at most the immutable 1.0.0 bridge release.
+    version = tuple(map(int, release['version'].split('.'))) if release else (0, 0, 0)
+    bridge = release
+    if version > (1, 0, 0):
+        bridge = next((r for r in catalog['releases'] if r['tag'] == 'v1.0.0'), None)
+        if bridge is None: raise ValueError('v1.0.0 bridge release is absent from catalog')
+    for channel, selected in [('legacy', bridge), ('v1', release if version >= (1, 0, 0) else None)]:
+        for model, supported in MODEL_VARIANTS.items():
+            item = selected.get('models', {}).get(model, {}) if selected else {}
+            variants = dict(item.get('variants', {}))
+            # Remove stale manifests too when rolling back to an older catalog.
+            for variant in supported[1:]: variants.setdefault(variant, {})
+            for variant, entry in [('full', item), *variants.items()]:
+                folder = output / 'ota' / model if channel == 'legacy' else output / 'ota' / 'v1' / model / variant
+                if channel == 'legacy' and variant != 'full': folder /= variant
+                target = folder / 'latest.json'
+                if channel == 'legacy' and variant == 'hub':
+                    target.unlink(missing_ok=True)
+                    continue
+                signed = entry.get('downloads', {}).get('signed')
+                if not signed:
+                    target.unlink(missing_ok=True)
+                    continue
+                document = dict(schema=1, tag=selected['tag'], version=selected['version'],
+                                commit=selected['commit'], model=model, firmware_variant=variant,
+                                **signed, release_log=selected['notes'])
+                data = (json.dumps(document, ensure_ascii=False, separators=(',', ':')) + '\n').encode()
+                if len(data) > 4096: raise ValueError('Device manifest exceeds 4096 bytes')
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(data)
 
 def mirror(source, output):
     output = Path(output)

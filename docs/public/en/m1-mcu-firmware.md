@@ -1,6 +1,8 @@
 # M1 open-source controller firmware
 
-This MIT-licensed open-source firmware runs on the M1 sensor controller. Check which processor a firmware package targets before updating.
+The current GPL-3.0 source runs on the M1 sensor controller. Check which processor a firmware package targets before updating.
+
+**Compatibility: open-source firmware is recommended for stock 11.x controllers. Stock 17.1.2.3 / 17.x differs substantially and awaits analysis; migration is currently discouraged.** Read the actual sensor-controller version. Do not infer it from the Wi-Fi version; unreadable versions remain unknown.
 
 ## Which MCU does this guide mean?
 
@@ -32,13 +34,12 @@ PM2.5, formaldehyde, temperature, humidity, clock and brightness remain the basi
 | Complete sensor frames | Two sets of PM1.0/PM2.5/PM10, six cumulative particle counts, raw formaldehyde, raw temperature/humidity and status; includes age, health and checksum information | Controller v0.9.4; Wi-Fi v0.9.27 provides WebUI readings; computer queries also supported |
 | Auditable update and recovery | Open receive/stage/verification logic; the independent new Boot adds CRC32 journal checks and restarts interrupted copying | New Boot behavior requires replacing Boot; CRC is not a signature or old-version rollback |
 
-Fixes the stock firmware issue where two-level pollutant threshold settings did not take effect. Custom thresholds now control indicator colors and high-level buzzer alarms, with an added query for the current configuration. v0.9.3 also blinks the clock colon each second, but the corresponding stock path remains unconfirmed, so this is not claimed as a stock-exclusive difference.
+Custom pollutant thresholds control indicator colors and high-level buzzer alarms, with a query for the current configuration.
 
-## Downloads and validation
+## Downloads and requirements
 
 The latest published controller release is **v0.9.4, a development preview**. Network flashing and sensor-frame queries require Wi-Fi v0.9.26 or newer; web music, tone controls and particle details require Wi-Fi v0.9.27 or newer and matching controller capabilities. The dedicated download section lists public releases including prereleases, separately from Wi-Fi firmware. Update the controller and Wi-Fi module separately.
 
-**This remains a development preview.** The watchdog clock divider causing the early oss-0.3 boot failure has been fixed. This candidate passed network OTA, preset tones, WebUI music upload/readback/play/stop and song retention across application OTA on one M1; the user confirmed audible sound. Candidate validation is recorded separately from acceptance of the official Release binary. Other board revisions, full electrical timing and real interrupted-write recovery remain unverified. Quiet music remains a known limitation; this release does not add volume amplification. Check the downloaded tag's release notes and [validation record](https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20/blob/main/docs/validation.md).
 
 - `m1-mcu-ota.bin` is the controller application linked at **0x4000**. Check its JSON manifest and SHA256SUMS.
 - `m1-mcu-debug-recovery.zip` contains application/Boot debugging and recovery files with address instructions.
@@ -77,11 +78,10 @@ python3 tools/m1_sensors.py --host DEVICE_IP --device-id DEVICE_ID --sensor pm
 
 If a web password is configured, set `M1_WEB_PASSWORD` as described in the [network update guide](m1-mcu-update). The tool checks controller capabilities first and also supports offline frame decoding. PM1.0/PM2.5/PM10 use μg/m³, cumulative particle counts use particles per 0.1 L, and temperature/humidity conversions exclude M1 display compensation. Unknown bytes remain raw data.
 
-A development candidate on one M1 returned PM1.0/PM2.5/PM10 of 13/19/19 μg/m³ and nonzero particle counts, with valid measurement, status and auxiliary checksums. With matching Wi-Fi v0.9.27 firmware, automatic collection, web display and additional MQTT reporting are supported. Ordinary PM2.5 reporting is unchanged. Module identity and measurement accuracy need independent verification. See [fields and hardware observations](https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20/blob/v0.9.4/docs/sensor-frames.md).
 
 ## Stock controller backup
 
-The analyzed **ATSAMD20G18A stock 11.1.2.1 main Flash backup** is available for development/recovery after checking the hardware and backup scope. It contains 256 KiB (262144 bytes); two original reads matched byte for byte. It includes stock Boot and application, but **excludes NVM User Row, fuses and auxiliary calibration regions**. It is not Wi-Fi module firmware.
+The **ATSAMD20G18A stock 11.1.2.1 main Flash backup** is available for development and recovery on matching hardware. It contains 256 KiB (262144 bytes). It includes stock Boot and application, but **excludes NVM User Row, fuses and auxiliary calibration regions**. It is not Wi-Fi module firmware.
 
 [Download stock controller backup](assets/firmware/m1-mcu/m1-atsamd20g18a-stock-11.1.2.1.bin) · [SHA256SUMS](assets/firmware/m1-mcu/SHA256SUMS)
 
@@ -89,4 +89,10 @@ The analyzed **ATSAMD20G18A stock 11.1.2.1 main Flash backup** is available for 
 SHA-256 6a8a9f72741e01d5ebc73467819079146553ec73339029eaf4cc49e8cbd1a7f9
 ```
 
-The full backup starts at **0x00000000**, and must not be used as application OTA payload. Save your own backup and verify chip/board, power and SWD recovery before restoring. Other board revisions have not been accepted on this evidence. The stock binary is provided separately as a factory backup and is not covered by the project's MIT source license.
+The full backup starts at **0x00000000**, and must not be used as application OTA payload. Save your own backup and verify chip/board, power and SWD recovery before restoring. Do not use this backup for a different controller version or board revision. The stock binary is provided separately as a factory backup and is not covered by the project's GPL-3.0 source license.
+
+## v1.0 in development
+
+Plans include double-click events, generic Wi-Fi display data and steadier PM2.5 readings. Matching Wi-Fi firmware can select CO₂ from another online device and manage units, thresholds and expiry. Expired data restores the original display; while an alarm rings, double-click first cancels it. These features have not been released and require matching controller, Wi-Fi firmware and frontend.
+
+v1 also plans separate over-threshold buzzer switches for formaldehyde and PM2.5, both off by default. Light thresholds, alarms and manual tones remain separately controlled.

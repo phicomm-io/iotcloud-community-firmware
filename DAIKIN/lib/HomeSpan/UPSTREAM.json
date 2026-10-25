@@ -1,0 +1,41 @@
+{
+  "name": "HomeSpan",
+  "version": "1.9.1",
+  "repository": "https://github.com/HomeSpan/HomeSpan",
+  "commit": "d6fcc50a0b44c559780db1cef5e14078e2f41541",
+  "license": "MIT",
+  "license_file": "LICENSE",
+  "scope": "Vendored ESP32 HomeKit Accessory Protocol implementation for the opt-in IoTCloud DAIKIN hub variant",
+  "patches": [
+    "Leave Wi-Fi provisioning, application HTTP, OTA, recovery and the shared mDNS responder under the firmware adapter's ownership.",
+    "Avoid Flash or default-NVS initialization in global constructors; require explicit dedicated-partition namespace handles.",
+    "Require the adapter's per-device Setup ID and stored SRP verifier; never fall back to a public default pairing PIN.",
+    "Bound persisted accessory, controller and database-hash blobs before allocation or copying; latch storage errors until reboot.",
+    "Commit accessory identity, pairing changes, verifier and database hash before reporting success; explicitly commit controller deletion.",
+    "Provide storage health, initialization readiness and stop interfaces so the adapter can disable HomeKit after persistence errors.",
+    "Replace blocking HTTP/encrypted-record reception with bounded incremental framing, strict headers, binary TLV handling and request deadlines.",
+    "Bound and validate incoming TLVs before allocating; reject truncated encrypted data and keep pairing/verification state per connection.",
+    "Reject zero and out-of-range SRP public keys/verifiers, check MPI/SHA failures and compare client proofs in constant time.",
+    "Bound concurrent HAP connections and timed writes; preserve IoTCloud characteristic availability and JSON/HTTP limits.",
+    "Bound the actual characteristics parser writes independently of the preliminary JSON field count.",
+    "Parse complete numeric JSON values without narrowing overflow; enforce characteristic ranges/valid values and preserve rejected-row errors across service updates.",
+    "Reject duplicate characteristic rows/properties before applying writes or subscription changes.",
+    "Use the complete 64-bit HAP record nonce counter and close the session instead of reusing a nonce on exhaustion.",
+    "Replace iostream/locale serialization with a narrow byte writer while preserving decimal JSON, binary TLVs and 1024-byte encrypted record boundaries.",
+    "Skip empty output frames, close sessions after encryption or short-write failures, and retain SHA-384 count/send behavior.",
+    "Match TLV malloc/realloc buffers with a free deleter and keep owning HAP output objects noncopyable."
+  ],
+  "integration_storage": {
+    "layout": "Existing 4 MiB Flash dual-OTA table is retained",
+    "ownership_marker": "0x3d0000..0x3d1000",
+    "nvs": "0x3d1000..0x400000",
+    "claim": "Only a completely erased tail may receive the ownership marker",
+    "reset": "Only recognized owned storage may be erased by the authenticated adapter reset; restart is required"
+  },
+  "host_tests": [
+    "DAIKIN/tests/hub/http.cpp",
+    "DAIKIN/tests/hub/storage.cpp",
+    "DAIKIN/tests/test_hap_characteristics.py",
+    "DAIKIN/tests/test_hap_output.py"
+  ]
+}

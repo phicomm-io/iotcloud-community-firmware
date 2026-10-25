@@ -14,6 +14,7 @@ class ParticlesDiscovery(unittest.TestCase):
 static mqtt_account_t account;
 static char base[192],availability_topic[512],command_topic[512];
 m1_state_t m1_state;mico_mutex_t m1_lock;
+uint8_t device_language_get(void){return PH_LANG_ZH;}
 static unsigned cleared,sent;static json_object *last;
 static int publish(const char*t,const char*p,bool r){assert(t&&p&&r);assert(!*p);cleared++;return 0;}
 void service_mqtt_json_end(service_mqtt_json_scope*s){(void)s;}

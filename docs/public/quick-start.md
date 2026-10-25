@@ -2,6 +2,8 @@
 
 本项目为已淘汰或云服务厂商停止服务的 IoT 设备提供开源固件，现已支持斐讯 TC1 智能排插、M1 空气检测仪、A1 空气净化器及 DAIKIN BRY88AX151K 空气检测仪，提供本地网页控制、MQTT 与 Home Assistant 接入。固件免费，无需厂商云服务。
 
+**v1.0 正在开发，尚未发布。** 下载区保留已有 0.9.x 固件。M1 的 Wi-Fi 与传感器主控独立升级；原厂主控 11.x 推荐使用开源版，17.1.2.3 / 17.x 暂不建议迁移。
+
 ## 先确认你的设备
 
 | 设备 | 说明 | 硬件 |
@@ -47,6 +49,6 @@ WebUI 顶部可切换中文、英文及明暗主题。设置按**网络、设备
 
 - 日常操作、灯语与按键：[TC1](tc1-guide) · [M1](m1-guide) · [A1](a1-guide) · [DAIKIN](daikin-guide)
 - 更新固件：[固件更新](firmware-update)
-- 远程集中管理设备：[接入 IotCloud](iotcloud-connect)
+- 远程集中管理设备：[接入 IoTCloud](iotcloud-connect)
 - 接入 Home Assistant 或配置 A1 环境数据联动：[MQTT 与联动](mqtt-link)
 - 遇到问题：[故障排查](faq)

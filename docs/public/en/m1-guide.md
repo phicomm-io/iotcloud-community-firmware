@@ -2,6 +2,8 @@
 
 M1 provides PM2.5, formaldehyde, temperature, humidity and screen brightness controls. It can supply readings for A1 automation. For first installation, see [A1 / M1 flashing](a1-m1-flash).
 
+**Controller compatibility:** the GPL-3.0 open-source controller is recommended for stock 11.x. Stock 17.1.2.3 / 17.x differs substantially and awaits analysis; migration is discouraged. Check Wi-Fi and controller versions separately. Unreadable versions remain unknown.
+
 ## Two separate firmware updates
 
 M1 has a **Wi-Fi MCU (EMW3080)** for networking and the web interface, and a **sensor controller (ATSAMD20G18A)** for built-in sensors, the screen and buzzer. An ordinary web update installs Wi-Fi firmware only. Some Wi-Fi v0.9.27 features need the open-source sensor controller too: tones/music require controller v0.9.3 or newer; particle details require v0.9.4 capabilities. Basic readings remain usable with the stock controller.
@@ -55,7 +57,7 @@ The original panel has two independent icon outputs:
 | Wi-Fi fault | Blinking | Blinking |
 | Configured MQTT fault | Steady on | Two long and two short pulses |
 
-Disabling an output drives its GPIO low. An unconfigured MQTT connection is not a fault. The original screen's formaldehyde / PM2.5 color thresholds and manual color controls have no verified protocol and are not supported.
+Disabling an output drives its GPIO low. An unconfigured MQTT connection is not a fault. The stock controller has no verified general protocol for formaldehyde / PM2.5 color thresholds or manual colors. See the [open-source controller guide](m1-mcu-firmware) for its extensions.
 
 ## Buttons and recovery
 
@@ -63,12 +65,18 @@ M1 uses the original panel's `0x18` long-press event, acknowledges it with fixed
 
 ## Supplying readings to A1
 
-M1 measures, reports and answers authorized A1 requests. It does not control or poll the purifier. Add this M1's MAC and optional IP on A1. MQTT establishes the session; sensor queries use LAN UDP. The M1 page shows read-only session status for up to four A1 units, with no allowlist or pairing code to maintain. See [A1 and M1 automation](mqtt-link#a1-and-m1-automation).
+M1 measures, reports and answers authorized A1 requests. It does not control or poll the purifier. Add this M1's MAC and optional IP on A1. MQTT establishes the session; sensor queries use LAN UDP. The M1 page shows read-only session status for up to four A1 units, with no allowlist or pairing code to maintain. See [A1 sensor automation](mqtt-link#a1-sensor-automation).
 
-## IotCloud and Home Assistant
+## IoTCloud and Home Assistant
 
-IotCloud reuses the M1 CO₂ detail card and shows fresh CO₂ readings in device summaries. Once SCD40 produces a valid reading, Home Assistant discovers a carbon dioxide MQTT sensor in ppm. After 20 seconds without an update, only that sensor becomes unavailable; the original M1 sensors remain independent.
+IoTCloud reuses the M1 CO₂ detail card and shows fresh CO₂ readings in device summaries. Once SCD40 produces a valid reading, Home Assistant discovers a carbon dioxide MQTT sensor in ppm. After 20 seconds without an update, only that sensor becomes unavailable; the original M1 sensors remain independent.
 
 ## MQTT
 
 M1 uses TMCP (v2) topics only, with no Legacy selector. See [MQTT and automation](mqtt-link).
+
+## v1.0 in development
+
+Plans include double-click alarm cancellation, switching between direct and Wi-Fi display sources, and selecting CO₂ or generic display data from another online device. Wi-Fi values require valid units and expiry; stale data restores the direct display without replacing original sensor acquisition or alarms. Steadier PM2.5 readings are also in development. These features require matching open-source controller, Wi-Fi firmware and frontend and have not been released.
+
+v1 also plans separate over-threshold buzzer switches for formaldehyde and PM2.5, both off by default. Light thresholds, alarms and manual tones remain separately controlled.

@@ -36,6 +36,7 @@ def discovery_fixture():
     fixture=fixture.replace('static struct {void *p;size_t n;} ledger[2048];','static void *native_config_live;static bool require_lease;static unsigned json_owner,fault_at,fault_calls;\nstatic struct {void *p;size_t n;} ledger[2048];')
     fixture=fixture.replace('int json_heap_permit(size_t n){int ok=', 'int json_heap_permit(size_t n){if(require_lease)assert(json_owner);if(fault_at && ++fault_calls==fault_at)return 0;int ok=')
     fixture=fixture.replace('void __wrap_free(void*p){bool outer=', 'void __wrap_free(void*p){if(p==native_config_live)native_config_live=NULL;bool outer=')
+    fixture = '#include "common/i18n.h"\nuint8_t device_language_get(void){return PH_LANG_ZH;}\n' + fixture
     return fixture+r'''
 static unsigned sends,quota_count;static bool enforce_nested,quota,transport_fail;
 static int sender(const char*t,const char*b,bool retain){

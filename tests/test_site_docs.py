@@ -147,11 +147,23 @@ class BuildTests(unittest.TestCase):
         links = re.findall(r'<a class="([^"]+)" href="([^"]+)">([^<]+)</a>', actions)
         self.assertEqual(links[0], ('btn primary', 'guides/quick-start.html', '第一次使用'))
         self.assertEqual([text for css, _, text in links if 'primary' in css.split()], ['第一次使用'])
-        targets = [href for _, href, _ in links]
+        targets = re.findall(r'href="([^"]+)"', hero)
         self.assertEqual(targets.index('local/'), targets.index('iotcloud/') + 1)
-        nav = re.search(r'<nav class="site-nav"[^>]*>(.*?)</nav>', home).group(1)
-        nav_targets = re.findall(r'href="([^"]+)"', nav)
-        self.assertEqual(nav_targets.index('local/'), nav_targets.index('#iotcloud') + 1)
+
+    def test_bilingual_home_navigation_and_published_urls(self):
+        for relative, guide_base in (('index.html', 'guides/'), ('en/index.html', '../guides/en/')):
+            home = (self.out / relative).read_text()
+            nav = re.search(r'<nav class="site-nav"[^>]*>(.*?)</nav>', home).group(1)
+            targets = re.findall(r'href="([^"]+)"', nav)
+            self.assertEqual(targets, ['#devices', '#install', '#faq', '#develop'])
+            for anchor in ('devices', 'install', 'faq', 'develop', 'features', 'iotcloud',
+                           'demos', 'docs', 'releases', 'community', 'm1-mcu', 'm1-mcu-releases'):
+                self.assertIn(f'id="{anchor}"', home)
+            for slug, *_ in PAGES:
+                self.assertIn(f'href="{guide_base}{slug}.html"', home)
+            self.assertIn('data-home-language', home)
+            self.assertNotIn('{{', home)
+            self.assertNotRegex(home, r'href="[^\"]*/releases/(?:download/)?v1[./]')
 
     def test_home_local_html_links_exist(self):
         from urllib.parse import urlsplit, unquote
@@ -160,10 +172,9 @@ class BuildTests(unittest.TestCase):
             if not url.scheme and not url.netloc and url.path.endswith('.html'):
                 self.assertTrue((self.out / unquote(url.path)).is_file(), target)
 
-    def test_shared_flashing_guide_under_both_products(self):
-        for gid in ('a1', 'm1'):
-            items = next(items for group, _, items in GROUPS if group == gid)
-            self.assertIn('a1-m1-flash', [item[0] for item in items])
+    def test_shared_flashing_guide_is_preserved_in_installation(self):
+        items = next(items for group, _, items in GROUPS if group == 'install')
+        self.assertIn('a1-m1-flash', [item[0] for item in items])
         html = (self.out / 'guides' / 'a1-m1-flash.html').read_text()
         for anchor in ('j-link-刷机', 'bootloader-刷机'):
             self.assertIn(f'id="{anchor}"', html)
@@ -226,7 +237,7 @@ class BuildTests(unittest.TestCase):
         from pages import SITE_URL
         urls = [element.text for element in ET.parse(self.out / 'sitemap.xml').iter(
             '{http://www.sitemaps.org/schemas/sitemap/0.9}loc')]
-        self.assertEqual(len(urls), 2 + 2 * len(PAGES))
+        self.assertEqual(len(urls), 3 + 2 * len(PAGES))
         for url in urls:
             self.assertTrue(url.startswith(SITE_URL), url)
             relative = url.removeprefix(SITE_URL)

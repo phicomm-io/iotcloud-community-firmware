@@ -19,13 +19,16 @@ sys.path.insert(0, str(ROOT / 'tools'))
 sys.path.insert(0, str(ROOT / 'tools/release'))
 from pages import ALIASES, GROUPS, PAGES, PARENTS, SITE_URL, EN_GROUPS, EN_PAGES, validate_translations  # noqa: E402
 from demo_navigation import add_navigation
+from public_links import expand_public_links, PUBLIC_LINKS
 from seo import EN_INDEX_TITLE, EN_INDEX_DESCRIPTION, guide_metadata, metadata, write_discovery  # noqa: E402
 
 EXTENSIONS = ['tables', 'fenced_code', 'attr_list', 'toc']
 SITE_NAME = 'PHICOMM COMMUNITY'
 # Nav anchors live on the home page, so guides reach them through '../'.
-HOME_ANCHORS = [('devices', '设备'), ('features', '功能'), ('iotcloud', 'IotCloud'), ('demos', '在线演示'),
-                ('docs', '文档'), ('releases', '下载')]
+HOME_ANCHORS = [('devices', '设备与功能'), ('install', '安装升级'),
+                ('faq', '常见问题'), ('develop', '参与开发')]
+EN_HOME_ANCHORS = [('devices', 'Devices and features'), ('install', 'Install and update'),
+                   ('faq', 'Common questions'), ('develop', 'Contribute')]
 
 
 def esc(text):
@@ -33,53 +36,51 @@ def esc(text):
 
 
 def header(base, language="zh"):
-    if language == "en":
-        nav = "".join(f'<a href="{base}#{anchor}">{label}</a>' for anchor, label in [("devices","Devices"),("features","Features"),("iotcloud","IotCloud"),("demos","Demos"),("docs","Documentation"),("releases","Downloads")])
-        return (f'<header class="site-header"><div class="wrap"><a class="brand" href="{base}"><span class="mark">P</span><span class="word"><b>{SITE_NAME}</b><span>Community firmware</span></span></a><nav class="site-nav" aria-label="Main navigation">{nav}</nav><div class="prefs"><label class="sr" for="themePick">Theme</label><select id="themePick"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></div></div></header>')
-    nav = ''.join(f'<a href="{base}#{anchor}">{esc(label)}</a>' for anchor, label in HOME_ANCHORS)
+    english = language == 'en'
+    home = base + ('en/' if english else '')
+    anchors = EN_HOME_ANCHORS if english else HOME_ANCHORS
+    nav = ''.join(f'<a href="{home}#{anchor}">{esc(label)}</a>' for anchor, label in anchors)
+    theme, system, light, dark = (('Theme', 'System', 'Light', 'Dark') if english else
+                                  ('主题', '跟随系统', '浅色', '深色'))
     return (f'<header class="site-header"><div class="wrap">'
-            f'<a class="brand" href="{base}./"><span class="mark" aria-hidden="true">斐</span>'
-            f'<span class="word"><b>{esc(SITE_NAME)}</b><span>社区固件</span></span></a>'
-            f'<nav class="site-nav" aria-label="主导航">{nav}</nav>'
-            f'<div class="prefs"><label class="sr" for="themePick">主题</label>'
-            f'<select id="themePick"><option value="system">跟随系统</option>'
-            f'<option value="light">浅色</option><option value="dark">深色</option></select></div>'
-            f'</div></header>')
+            f'<a class="brand" href="{home or "./"}"><span class="mark" aria-hidden="true">{"P" if english else "斐"}</span>'
+            f'<span class="word"><b>IoTCloud COMMUNITY</b><span>{"Community firmware" if english else "社区固件"}</span></span></a>'
+            f'<nav class="site-nav" aria-label="{"Main navigation" if english else "主导航"}">{nav}</nav>'
+            f'<div class="prefs"><label class="sr" for="themePick">{theme}</label>'
+            f'<select id="themePick"><option value="system">{system}</option>'
+            f'<option value="light">{light}</option><option value="dark">{dark}</option></select></div>'
+            '</div></header>')
 
 
 def footer(language="zh"):
-    if language == "en":
-        return ('<footer class="site-footer"><div class="wrap">'
-                '<div><b>PHICOMM COMMUNITY</b><p>Community-maintained, not affiliated with the manufacturer. '
-                'Check the documentation for your release. The firmware repository has no single license covering all code.</p></div>'
-                '<div><b>Documentation</b><ul><li><a href="quick-start.html">Quick start</a></li>'
-                '<li><a href="faq.html">Troubleshooting</a></li><li><a href="release-log.html">Release Log</a></li></ul></div>'
-                '<div><b>Source</b><ul><li><a href="https://github.com/phicomm-io/phicomm-community-firmware">Firmware</a></li>'
-                '<li><a href="https://github.com/phicomm-io/phicomm-community-mqtt">MQTT platform</a></li></ul></div>'
-                '<div><b>Community</b><p>QQ group: 1021750178</p><a href="https://qm.qq.com/q/9L150V85kk?from=tim" target="_blank" rel="noopener noreferrer">Join the QQ group (Chinese)</a></div></div></footer>')
+    english = language == 'en'
+    description = ('Community maintained and independent of the manufacturers. See each source repository for component and third-party licenses.' if english else
+                   '社区维护，与原厂无隶属关系。各组件许可及第三方说明见对应源码仓库。')
+    names = ('Quick start', 'Troubleshooting', 'Release notes') if english else ('快速开始', '故障排查', '发布说明')
+    guides = ''.join(f'<li><a href="{slug}.html">{name}</a></li>' for slug, name in
+                     zip(('quick-start', 'faq', 'release-log'), names))
+    source = ('Developer documentation', 'Shared frontend', 'IoTCloud platform', 'M1 sensor controller') if english else ('开发文档', '统一前端', 'IoTCloud 平台', 'M1 传感器主控')
+    urls = [PUBLIC_LINKS[key] for key in ('PROTOCOLS_URL', 'FRONTEND_URL', 'PLATFORM_URL', 'MCU_URL')]
+    if english:
+        urls[0] += 'en/'
+    links = ''.join(f'<li><a href="{url}">{name}</a></li>' for url, name in zip(urls, source))
     return ('<footer class="site-footer"><div class="wrap">'
-            f'<div><b>{esc(SITE_NAME)}</b><p style="margin-top:8px">社区维护项目，与原厂无隶属关系。'
-            '固件、指南及发布说明以对应版本为准。本仓库没有覆盖全部代码的统一许可证。</p></div>'
-            '<div><b>文档</b><ul>'
-            '<li><a href="quick-start.html">快速开始</a></li>'
-            '<li><a href="faq.html">故障排查</a></li>'
-            '<li><a href="build-deps.html">构建依赖</a></li>'
-            '<li><a href="release-log.html">Release Log</a></li></ul></div>'
-            '<div><b>源码</b><ul>'
-            '<li><a href="https://github.com/phicomm-io/phicomm-community-firmware" rel="noopener noreferrer">固件仓库</a></li>'
-            '<li><a href="https://github.com/phicomm-io/phicomm-community-mqtt" rel="noopener noreferrer">管理平台</a></li>'
-            '</ul></div><div><b>交流与反馈</b><p>QQ 群：1021750178</p>'
-            '<a href="https://qm.qq.com/q/9L150V85kk?from=tim" target="_blank" rel="noopener noreferrer">加入 QQ 群</a></div></div></footer>')
+            f'<div><b>IoTCloud COMMUNITY</b><p>{description}</p></div>'
+            f'<div><b>{"Guides" if english else "使用指南"}</b><ul>{guides}</ul></div>'
+            f'<div><b>{"Source and protocols" if english else "源码与协议"}</b><ul>{links}</ul></div>'
+            '</div></footer>')
 
 
 def guide_nav(active_slug, language="zh"):
     out = []
     for _, title, items in (EN_GROUPS if language == "en" else GROUPS):
-        out.append(f'<p class="guide-group">{esc(title)}</p>')
+        opened = ' open' if any(slug == active_slug for slug, *_ in items) else ''
+        out.append(f'<details class="guide-nav-group"{opened}><summary>{esc(title)}</summary>')
         for slug, page_title, _, _ in items:
             current = ' aria-current="page"' if slug == active_slug else ''
             child = ' class="guide-child"' if slug in PARENTS else ''
             out.append(f'<a href="{slug}.html"{child}{current}>{esc(page_title)}</a>')
+        out.append('</details>')
     label = 'Documentation navigation' if language == 'en' else '文档导航'
     return f'<nav class="guide-nav" aria-label="{label}">{"".join(out)}</nav>'
 
@@ -98,15 +99,15 @@ def pager(slug, language="zh"):
     return f'<div class="guide-pager">{"".join(parts)}</div>' if parts else ''
 
 
-def docs_index():
-    """Home-page index of every guide, grouped the same way as the sidebar."""
+def docs_index(language="zh", base="guides/"):
+    """All published guides under the same four navigation entries."""
     out = []
-    for _, title, items in GROUPS:
+    for _, title, items in (EN_GROUPS if language == 'en' else GROUPS):
         links = ''.join(
-            f'<li class="{"doc-child" if slug in PARENTS else "doc-page"}"><a href="guides/{slug}.html">{esc(page_title)}'
+            f'<li class="{"doc-child" if slug in PARENTS else "doc-page"}"><a href="{base}{slug}.html">{esc(page_title)}'
             f'<span>{esc(summary)}</span></a></li>'
             for slug, page_title, summary, _ in items)
-        out.append(f'<div class="doc-group"><h3>{esc(title)}</h3><ul>{links}</ul></div>')
+        out.append(f'<details class="doc-group"><summary>{esc(title)}</summary><ul>{links}</ul></details>')
     return ''.join(out)
 
 
@@ -135,7 +136,7 @@ def rewrite_links(text):
 
 def expand_site_url(text):
     """Fill the {{SITE_URL}} placeholder that docs use to link the live site."""
-    return text.replace('{{SITE_URL}}', SITE_URL)
+    return expand_public_links(text.replace('{{SITE_URL}}', SITE_URL))
 
 
 def render_guide_body(text, language):
@@ -233,12 +234,17 @@ def main():
         shutil.copyfile(HERE / name, out / name)
     (out / '.nojekyll').touch()
 
-    home = (HERE / 'index.html').read_text(encoding='utf-8')
-    placeholder = '<div class="doc-groups" id="docs-index"></div>'
-    if placeholder not in home:
-        raise SystemExit('site/index.html: docs index container not found')
-    home = home.replace(placeholder, f'<div class="doc-groups" id="docs-index">{docs_index()}</div>')
-    (out / 'index.html').write_text(home, encoding='utf-8')
+    for language, source_name, destination, guide_base in (
+        ('zh', 'index.html', out / 'index.html', 'guides/'),
+        ('en', 'index-en.html', out / 'en/index.html', '../guides/en/'),
+    ):
+        home = expand_public_links((HERE / source_name).read_text(encoding='utf-8'))
+        placeholder = '<div class="doc-groups" id="docs-index"></div>'
+        if placeholder not in home:
+            raise SystemExit(f'site/{source_name}: docs index container not found')
+        home = home.replace(placeholder, f'<div class="doc-groups" id="docs-index">{docs_index(language, guide_base)}</div>')
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(home, encoding='utf-8')
 
     # Both languages are built together, so missing translations fail publication.
     english_dir = out / 'guides' / 'en'
@@ -248,15 +254,13 @@ def main():
         if not source.is_file():
             raise SystemExit(f'Missing English guide: {source}')
         (english_dir / f'{slug}.html').write_text(render_guide(slug, title, summary, source, 'en', notes_manifest), encoding='utf-8')
-    english_links = ''.join(f'<section><h2>{esc(title)}</h2><ul>' + ''.join(
-        f'<li class="{"doc-child" if slug in PARENTS else "doc-page"}"><a href="{slug}.html">{esc(name)}</a> — {esc(summary)}</li>' for slug, name, summary, _ in items) + '</ul></section>'
-        for _, title, items in EN_GROUPS)
     (english_dir / 'index.html').write_text(
         '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
         + metadata(EN_INDEX_TITLE, EN_INDEX_DESCRIPTION, 'guides/en/', 'en') + '<link rel="stylesheet" href="../../style.css">'
         '<script src="../../theme.js"></script></head><body>' + header('../../', 'en') +
-        '<main class="wrap prose" id="main"><p><a href="../../#docs" lang="zh-CN">简体中文</a> · English</p>'
-        '<h1>English documentation</h1><p>Guides for TC1, M1, A1, DAIKIN and IotCloud.</p>' + english_links + '</main>' + footer('en') +
+        '<main class="wrap docs-directory" id="main"><p><a href="../../#docs" lang="zh-CN">简体中文</a> · English</p>'
+        '<h1>English documentation</h1><p>Devices and features, installation, common questions and development.</p>'
+        '<div class="doc-groups">' + docs_index('en', '') + '</div></main>' + footer('en') +
         '<script src="../../site.js"></script></body></html>', encoding='utf-8')
     sources = markdown_sources()
     missing, guides = [], out / 'guides'

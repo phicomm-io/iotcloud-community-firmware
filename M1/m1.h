@@ -5,6 +5,7 @@
 #include "mico_system.h"
 #include "protocol.h"
 #include "json.h"
+#include "../common/phicomm_features.h"
 #include "../common/mqtt_account.h"
 #include <stdio.h>
 #include <string.h>
@@ -14,7 +15,7 @@
 #define M1_VERSION FIRMWARE_VERSION
 #define M1_PRODUCT "PHICOMM_M1_EMW3080"
 #define M1_CONFIG_MAGIC 0x4d314346u
-#define M1_CONFIG_VERSION 7u
+#define M1_CONFIG_VERSION 8u
 #define M1_APP_OFFSET 0x75000u
 #define M1_APP_CPU_ADDRESS 0x08088000u
 #define M1_APP_LIMIT 0x40000u
@@ -33,9 +34,11 @@ typedef struct {
 
 /* Fits the retained 20-byte v6 controller extension; not MCU readback. */
 #define M1_ALARM_MAGIC 0x4d31414cu
+#define M1_ALARM_SCHEMA 1u
 typedef struct {
     uint32_t magic, revision;
     uint16_t hcho[2], pm25[2];
+    /* reserved[0]: schema; reserved[1]: HCHO/PM2.5 buzzer mask; [2]: zero. */
     uint8_t configured, reserved[3];
 } m1_alarm_config_t;
 typedef char m1_alarm_size_check[sizeof(m1_alarm_config_t) == 20 ? 1 : -1];
@@ -45,11 +48,35 @@ typedef struct {
     uint8_t mode, slot;
 } m1_co2_config_t;
 #define M1_CO2_MAGIC 0x4d314332u
+#define M1_CO2_SOURCE_MAGIC 0x4d314353u
+typedef struct {
+    uint32_t magic, revision;
+    char device_id[13];
+    uint8_t external, double_click, reserved[2];
+} m1_co2_source_config_t;
+void m1_co2_source_config_get(m1_co2_source_config_t *);
+const char *m1_co2_source_config_save(const m1_co2_source_config_t *);
+static inline bool m1_co2_source_config_valid(const m1_co2_source_config_t *c)
+{
+    if(c->magic!=M1_CO2_SOURCE_MAGIC || c->revision>INT32_MAX ||
+       c->external>1 || c->double_click>1 || c->device_id[12] || c->reserved[0] || c->reserved[1])return false;
+    if(!c->external){for(unsigned i=0;i<13;i++)if(c->device_id[i])return false;return true;}
+    for(unsigned i=0;i<12;i++){
+        char x=c->device_id[i];if(!((x>='0'&&x<='9')||(x>='a'&&x<='f')))return false;
+    }
+    return true;
+}
+void m1_co2_source_reset(void);
+void m1_co2_source_sample(const char *,const feature_sample_t *);
+bool m1_co2_source_value(uint16_t *,uint16_t *);
+json_object *m1_co2_source_json(void);
+json_object *m1_co2_source_set(json_object *,const char **);
+bool m1_button_rx(const uint8_t [20]);
 
 typedef struct {
     char mcu_version[17];
     bool mcu_version_received, buzzer_requested, wake_alarm_active;
-    bool mcu_tones;
+    bool mcu_tones, mcu_button_events, mcu_display_source;
     bool mcu_music_present;
     bool mcu_sensor_details;
     uint8_t wake_alarm_tone;
@@ -57,6 +84,9 @@ typedef struct {
     uint32_t mcu_version_updated_ms, buzzer_until;
     bool alarm_uart_sent;
     uint32_t alarm_sent_revision;
+    uint8_t mcu_alarm_schema, alarm_buzzer_mask;
+    bool alarm_buzzer_received, alarm_buzzer_active;
+    uint32_t alarm_buzzer_revision, alarm_buzzer_updated_ms;
     bool mcu_updating, mcu_extended;
     uint16_t mcu_caps;
     uint8_t mcu_protocol;
@@ -126,7 +156,8 @@ bool m1_uart_version_query(void);
 bool m1_uart_buzzer(bool enabled, unsigned duration_ms);
 json_object *m1_mcu_json(void);
 void m1_alarm_get(m1_alarm_config_t *);
-const char *m1_alarm_set(bool pm25, uint16_t low, uint16_t high, uint32_t revision);
+/* buzzer: -1 preserves the saved selection; 0/1 explicitly selects it. */
+const char *m1_alarm_set(bool pm25, uint16_t low, uint16_t high, uint32_t revision, int buzzer);
 json_object *m1_alarm_json(void);
 void m1_co2_config_get(m1_co2_config_t *);
 const char *m1_co2_config_save(const m1_co2_config_t *);
@@ -145,3 +176,7 @@ bool m1_music_supported(void);
 bool m1_wake_alarm_tone_start(unsigned duration_seconds,unsigned tone);
 void m1_wake_alarm_stop(void);
 json_object *m1_wake_alarm_json(void);
+
+#include "../common/i18n.h"
+uint8_t device_language_get(void);
+bool m1_device_config_save(const m1_config_t *, uint8_t language);

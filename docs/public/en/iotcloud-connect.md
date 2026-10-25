@@ -1,14 +1,14 @@
-# Connect devices to IotCloud
+# Connect devices to IoTCloud
 
-IotCloud is a web management platform for the TC1 power strip, M1 and DAIKIN air quality monitors, and A1 air purifier. Connect devices to view online status, air readings and power usage in one place, and remotely use each device's supported controls and settings. Account mode saves the device list so you can continue from another phone or computer on the same node and account.
+IoTCloud is a web management platform for the TC1 power strip, M1 and DAIKIN air quality monitors, and A1 air purifier. Connect devices to view online status, air readings and power usage in one place, and remotely use each device's supported controls and settings. Account mode saves the device list so you can continue from another phone or computer on the same node and account.
 
-[Open IotCloud]({{SITE_URL}}iotcloud/) · [Try the simulated demo]({{SITE_URL}}demos/platform/)
+[Open IoTCloud]({{SITE_URL}}iotcloud/) · [Try the simulated demo]({{SITE_URL}}demos/platform/)
 
 ## 1. Prepare the device and account
 
 Install this project's firmware, configure Wi-Fi and confirm that the device WebUI opens at its LAN IP. See [Quick start](quick-start) for installation. During configuration, your phone or computer must be able to reach the device's LAN. Remote management requires both the device and browser to reach the selected platform node.
 
-Open IotCloud, select China or US at the top, then choose registration. Set a username and password and complete email verification if requested. If registration is closed, follow the page's administrator contact instructions.
+Open IoTCloud, select China or US at the top, then choose registration. Set a username and password and complete email verification if requested. If registration is closed, follow the page's administrator contact instructions.
 
 | Node | Website | Device Broker host | Device MQTT port |
 | --- | --- | --- | --- |
@@ -42,9 +42,9 @@ Choose either method below, using the same Broker and account details.
 
 **Enter only the hostname in the device Broker field, without `https://`, `wss://` or `/mqtt`.** `https://phicomm-io.github.io/iotcloud/` is the web entry, not a device Broker. The browser addresses `wss://mqtt.fjrcn.cn/mqtt` and `wss://mqtt.fjrcn.com/mqtt` must not be used as device Hosts either.
 
-### Option B: Prefill from IotCloud
+### Option B: Prefill from IoTCloud
 
-1. On a phone or computer that can reach the device's LAN, open IotCloud Settings → MQTT connection or Device management and choose the option to fill settings into a local device.
+1. On a phone or computer that can reach the device's LAN, open IoTCloud Settings → MQTT connection or Device management and choose the option to fill settings into a local device.
 2. Enter the device IP or local URL. Check the Broker hostname, TCP port `1883`, platform username and current MQTT password, confirm the destination and open the device window.
 3. In the new device window, check the sending platform's origin and accept the prefill request. The device's existing WebUI password still applies.
 4. Review the prefilled values, click Save on the device page and confirm MQTT is connected. A platform message that values were prefilled only confirms delivery to the device WebUI.
@@ -53,7 +53,7 @@ Keep the platform window open and accept within two minutes. Send only to a veri
 
 ## 3. Confirm the device is online
 
-Return to IotCloud on the same node. TMCP devices using the same MQTT account appear automatically. Wait for the list to refresh, or open Settings → Device management and click Refresh.
+Return to IoTCloud on the same node. TMCP devices using the same MQTT account appear automatically. Wait for the list to refresh, or open Settings → Device management and click Refresh.
 
 If a device is missing, first check its local MQTT status. You can also use Device management → Add device, entering the **MAC address** shown in its WebUI, the correct model and protocol. MAC addresses have 12 hexadecimal characters; colon or hyphen separators are also accepted. Adding a device to the list does not configure its MQTT connection.
 
@@ -78,4 +78,4 @@ See [TC1](tc1-guide), [M1](m1-guide), [A1](a1-guide) and [DAIKIN](daikin-guide) 
 | Device list is empty after changing nodes | Nodes have separate accounts and devices. Return to the original node, or register and reconfigure devices on the new one |
 | Using your own MQTT server | Choose self-hosted Broker / guest mode and enter a WebSocket-capable address. Its device list is separate from platform account mode |
 
-For hosting your own frontend, account service or Broker, see [Deploy IotCloud](iotcloud-deploy).
+For hosting your own frontend, account service or Broker, see [Deploy IoTCloud](iotcloud-deploy).

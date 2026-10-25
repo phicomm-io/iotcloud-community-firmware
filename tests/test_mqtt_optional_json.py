@@ -28,6 +28,8 @@ static mico_thread_t mqtt_owner_thread;
 static a1_config_t cfg,current;
 static mqtt_state_t state;
 static bool discovery_deferred,rediscover,sent,old_on,old_visible,deny=true;
+static uint8_t discovery_language;
+static uint8_t device_language_get(void){return 0;}
 static uint32_t discovery_retry_at,now,filter_sent_at;
 static unsigned attempts,builds,normal,features,discovery_index,feature_revision;
 static unsigned count,state_index,state_pending,state_seen,revision,old_speed;
@@ -98,6 +100,8 @@ typedef struct {bool wifi_connected;unsigned brightness_requested;m1_sample_t sa
 typedef struct {unsigned revision;}m1_config_t;
 static mqtt_state_t state;static m1_config_t cfg,current;
 static bool rediscover,co2_discovered,pressure_discovered;
+static uint8_t discovery_language;
+static uint8_t device_language_get(void){return 0;}
 static bool particles_discovered;
 static unsigned m1_lock,particles_at,mqtt_owner_thread,particle_attempts;
 static struct {bool mcu_sensor_details;}m1_state;

@@ -1,8 +1,8 @@
-# IotCloud 部署
+# IoTCloud 部署
 
-直接使用现有平台管理设备，请先看[接入 IotCloud](iotcloud-connect)。本页介绍自行部署与托管。
+直接使用现有平台管理设备，请先看[接入 IoTCloud](iotcloud-connect)。本页介绍自行部署与托管。
 
-[打开本站 IotCloud]({{SITE_URL}}iotcloud/) · [前端源码与发布](https://github.com/phicomm-io/phicomm-community-frontend) · [后端与 Broker 部署](https://github.com/phicomm-io/phicomm-community-mqtt#本地初始化)
+[打开本站 IoTCloud]({{SITE_URL}}iotcloud/) · [前端源码与发布](https://github.com/phicomm-io/iotcloud-community-frontend) · [后端与 Broker 部署](https://github.com/phicomm-io/iotcloud-community-mqtt#安装)
 
 ## 无需登录的本地直连
 
@@ -14,14 +14,14 @@
 
 | 需求 | 入口 |
 | --- | --- |
-| 直接使用本站前端 | [打开 IotCloud]({{SITE_URL}}iotcloud/)，在登录页的“服务器设置”选择自己的后端 |
-| 只托管前端到 GitHub Pages 或其他静态服务 | [前端静态部署说明](https://github.com/phicomm-io/phicomm-community-frontend#iotcloud-静态部署与-web-app) |
-| 自建账号、设备管理和 MQTT Broker | [平台部署说明](https://github.com/phicomm-io/phicomm-community-mqtt#本地初始化) |
-| 前端与后端使用不同域名 | [跨域后端配置](https://github.com/phicomm-io/phicomm-community-mqtt#独立静态前端iotcloud) |
+| 直接使用本站前端 | [打开 IoTCloud]({{SITE_URL}}iotcloud/)，在登录页的“服务器设置”选择自己的后端 |
+| 只托管前端到 GitHub Pages 或其他静态服务 | [前端静态部署说明](https://github.com/phicomm-io/iotcloud-community-frontend#iotcloud-静态部署与-web-app) |
+| 自建账号、设备管理和 MQTT Broker | [平台部署说明](https://github.com/phicomm-io/iotcloud-community-mqtt#安装) |
+| 前端与后端使用不同域名 | [跨域后端配置](https://github.com/phicomm-io/iotcloud-community-mqtt#安装) |
 
 ## 静态前端
 
-从前端仓库的 [Releases](https://github.com/phicomm-io/phicomm-community-frontend/releases) 下载所需版本的 `frontend.tar.gz`，按发布中的 `SHA256SUMS` 校验，解压后将 `platform/` 的内容作为静态网站发布。GitHub Pages 的项目子路径也可使用。
+从前端仓库的 [Releases](https://github.com/phicomm-io/iotcloud-community-frontend/releases) 下载所需版本的 `frontend.tar.gz`，按发布中的 `SHA256SUMS` 校验，解压后将 `platform/` 的内容作为静态网站发布。GitHub Pages 的项目子路径也可使用。
 
 在登录页展开“服务器设置”，填写后端 HTTPS 根地址（不带 `/api`）和 MQTT WebSocket 地址。也可在发布前编辑网站根目录的 `config.json`：
 
@@ -36,7 +36,7 @@
 
 ## 配套后端与 MQTT
 
-按[平台部署说明](https://github.com/phicomm-io/phicomm-community-mqtt#本地初始化)初始化后端和 Broker，再配置公网 HTTPS 与 WSS。静态托管只承载网页；账号服务、设备同步和 MQTT Broker 仍需要运行服务端。
+按[平台部署说明](https://github.com/phicomm-io/iotcloud-community-mqtt#安装)初始化后端和 Broker，再配置公网 HTTPS 与 WSS。静态托管只承载网页；账号服务、设备同步和 MQTT Broker 仍需要运行服务端。
 
 前后端跨域时，在后端 `backend/config.yaml` 中允许前端的准确来源，例如使用本站前端时：
 
@@ -51,17 +51,17 @@ allowed_origins:
 
 ## 安装为 Web App
 
-使用浏览器的“安装应用”或“添加到主屏幕”安装 IotCloud。首次联网后会缓存应用界面；离线可打开页面，但登录、同步与设备控制仍需要网络。发现新版本后，按更新提示确认即可切换。
+使用浏览器的“安装应用”或“添加到主屏幕”安装 IoTCloud。首次联网后会缓存应用界面；离线可打开页面，但登录、同步与设备控制仍需要网络。发现新版本后，按更新提示确认即可切换。
 
 ## 将平台账号填写到本地设备
 
-在 IotCloud 的“设置 → MQTT 连接”或“设备管理”中点击“填写到本地设备”，输入同一局域网内设备的 IP，并核对 Broker 主机名、设备 MQTT TCP 端口和账号密码。平台会在浏览器中新开设备本地页面；公网平台服务器不会访问你的内网。
+在 IoTCloud 的“设置 → MQTT 连接”或“设备管理”中点击“填写到本地设备”，输入同一局域网内设备的 IP，并核对 Broker 主机名、设备 MQTT TCP 端口和账号密码。平台会在浏览器中新开设备本地页面；公网平台服务器不会访问你的内网。
 
 设备需要安装支持此功能的新版 WebUI。设备页显示发起平台的来源，点击“接收并预填”后，配置才填入设备前端；检查并点击“保存”后才提交到设备。已有设备网页密码仍然有效，不会被绕过。设备不会读取或导出已保存的 MQTT 密码。
 
 跳转 URL 的 fragment 仅携带 Broker 主机名、端口、用户名及一次性握手信息，不含密码；密码在用户点击接收后通过窗口通信传递。握手两分钟内有效，取消或过期后清除未保存的导入信息。仅向已核对的设备 IP 发送，并仅在可信局域网使用：HTTP 设备无法防止网络窃听或篡改。浏览器阻止弹窗、隔离窗口或设备版本不支持时，请手动填写，不会降级为 URL 携带密码。
 
-首页 MQTT Host 提醒可点击“我知道了”关闭；设置中仍能查看设备接入地址及说明。设备 Broker 设置中的“打开 IotCloud”只打开平台入口，不附带账号密码。
+首页 MQTT Host 提醒可点击“我知道了”关闭；设置中仍能查看设备接入地址及说明。设备 Broker 设置中的“打开 IoTCloud”只打开平台入口，不附带账号密码。
 
 ## China / US 独立节点
 

@@ -8,6 +8,7 @@ static uint64_t started;
 static unsigned duration=10;
 static feature_config_t features;
 static unsigned controls;
+uint8_t device_language_get(void){return features.language==1?1:0;}
 /* This harness exercises the original broker; Bemfa has its own dual-owner
  * protocol fixture. Keep the original broker enabled in these scenarios. */
 bool bemfa_primary_enabled(void){return true;}
@@ -52,6 +53,7 @@ void m1_config_get(m1_config_t *out){*out=config;}
 void m1_state_get(m1_state_t *out){
     *out=m1_state;
 }
+json_object *m1_particles_json(void){return json_object_new_object();}
 bool m1_set_brightness(unsigned n){++controls;m1_state.brightness_requested=n;printf("CONTROL brightness=%u\n",n);fflush(stdout);return true;}
 bool m1_sample_fresh(const m1_sample_t *s,uint32_t now){return s->received && (uint32_t)(now-s->updated_ms)<15000;}
 #define WORKER mqtt_worker

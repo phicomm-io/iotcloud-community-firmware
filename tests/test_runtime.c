@@ -2,6 +2,8 @@
 #include "../common/phicomm_features.h"
 #include "json.h"
 #include "mico.h"
+#include "../common/i18n.h"
+uint8_t device_language_get(void) { return PH_LANG_ZH; }
 void automation_poll(bool valid){(void)valid;}
 uint32_t test_now;
 /* Runtime harness does not launch RTOS workers; watchdog deadlines are tested
@@ -44,6 +46,8 @@ bool a1_control_local(const char *k, json_object *o) {
 char m1_id[13] = "aabbccddee02";
 mico_mutex_t m1_lock; m1_state_t m1_state;
 void m1_state_get(m1_state_t *out) { memset(out, 0, sizeof(*out)); }
+void m1_co2_source_sample(const char *id,const feature_sample_t *sample){(void)id;(void)sample;}
+void m1_co2_source_reset(void){}
 #endif
 static unsigned fail_runtime_object;
 static json_object *runtime_new_object(void) {

@@ -6,7 +6,7 @@ from pages import PAGES, SITE_URL
 
 SITE_TITLE = '斐讯社区固件 · PHICOMM COMMUNITY'
 EN_INDEX_TITLE = 'TC1 / M1 / A1 / DAIKIN community firmware documentation'
-EN_INDEX_DESCRIPTION = 'Open-source firmware for discontinued IoT devices or devices whose cloud service providers have ended support. Guides for TC1, M1, A1, DAIKIN and IotCloud.'
+EN_INDEX_DESCRIPTION = 'Open-source firmware for discontinued IoT devices or devices whose cloud service providers have ended support. Guides for TC1, M1, A1, DAIKIN and IoTCloud.'
 PRODUCT_TITLES = {
     'm1-mcu-update': '斐讯 M1 主控 MCU 网络升级教程（免拆机）',
     'tc1-guide': '斐讯 TC1 智能排插功能与操作',
@@ -58,7 +58,7 @@ def write_discovery(output):
 
     No fabricated lastmod dates: rebuilding alone does not update the content.
     """
-    paths = ['', 'guides/en/'] + [f'guides/{prefix}{slug}.html'
+    paths = ['', 'en/', 'guides/en/'] + [f'guides/{prefix}{slug}.html'
                                 for prefix in ('', 'en/') for slug, *_ in PAGES]
     namespace = 'http://www.sitemaps.org/schemas/sitemap/0.9'
     ET.register_namespace('', namespace)

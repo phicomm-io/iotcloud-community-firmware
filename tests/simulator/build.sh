@@ -53,6 +53,6 @@ for model in "${models[@]}"; do
   common/mqtt-response-deadline.patch common/mqtt-buffer-storage.patch
  sdk="$sdk/libraries/protocols/mqtt"
  extra=()
- if [[ $model == A1 ]]; then extra=(A1/control.c); else extra=(M1/mqtt_transport.c); fi
+ if [[ $model == A1 ]]; then extra=(A1/control.c); else extra=(M1/mqtt_transport.c M1/co2_source.c); fi
  "${compiler[@]}" -std=gnu99 -g -pthread -DHOST_$model -DMAX_MESSAGE_HANDLERS=12 -Itests/simulator -Itests/host -I"$model" -I"$json" -I"$sdk" -I"$sdk/mico" -I"$sdk/MQTTPacket" tests/simulator/node.c "$model/features.c" "$model/service.c" "$model/mqtt.c" common/json_owned.c common/mqtt/{core,client,session,service,diagnostics}.c "${extra[@]}" tests/simulator/network.c "$sdk/MQTTClient.c" "$sdk"/MQTTPacket/*.c "$json"/*.c -lm -o "$out/$model"
 done

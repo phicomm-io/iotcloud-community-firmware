@@ -65,18 +65,13 @@ bash TC1/build.sh
 
 隔离状态读取复测：**PASS**。停止浏览器流量后，120.88 秒内三台各 25/25、合计 75/75 次严格读取通过，4 秒超时且无自动重试；身份、版本、Wi-Fi/MQTT、各机型外设、uptime 连续性及 TC1 六路状态均通过。证据位于 `build/compression-device-evidence/isolated/`。该结果不覆盖首次并行窗口 FAIL，也不证明长期/并发稳定性。
 
-## 本地证据
-
-固件 worktree：`/home/fjr/hobbies/phicomm-web-compression-firmware`；前端 worktree：`/home/fjr/hobbies/phicomm-web-compression-frontend`。
+## 产物与验证范围
 
 - 三机产物、manifest、SHA256SUMS、签名包：`build/{a1,m1,tc1}-release/`；未压缩对照：`build/compression-baseline/`。
-- 前端归档：前端 worktree 的 `build/frontend.tar.gz`、`build/frontend.lock.json`。
-- 升级前后私有快照/单次上传意图与响应、公开摘要、真实 gzip、首次健康样本、浏览器截图/结果：`build/compression-device-evidence/`。
-- 受控布局比较：`build/compression-device-evidence/browser/*-controlled-layout.json`，含 main/压缩每条路由宽度和分类。
-- 构建日志：`build/compression-{a1,m1,tc1}.log`；测试日志：`build/compression-*-tests.log`、前端 worktree 的 `build/compression-*.log`。
-- 单次部署与只读测试脚本：`build/deploy-compression.py`、`build/compression-device-browser.cjs`、`build/controlled-layout-comparison.cjs`、`build/compression-health*.py`。原始失败记录未删除。
+- 前端归档：前端 checkout 的 `build/frontend.tar.gz`、`build/frontend.lock.json`。
+- 受控布局比较记录每条路由的宽度及分类；配置、设备快照和浏览器截图保留于私有验收材料，不随源码发布。
 
-私有快照与截图可能包含本地网络/配置，只保存于构建证据目录，不提交到 Git。
+上述结果对应本文列出的构建提交与归档校验值；正式发布状态以公开 Release 和 CI 为准。
 
 ## main 集成补充（2026-10-19）
 

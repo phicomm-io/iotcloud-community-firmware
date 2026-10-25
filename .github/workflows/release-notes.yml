@@ -1,8 +1,9 @@
 name: Static release notes
 on:
   push:
-    branches: [main]
+    branches: [main, dev, 'feature/**', 'hotfix/**']
   pull_request:
+    branches: [main, dev]
   workflow_dispatch:
     inputs:
       runner:
@@ -22,6 +23,10 @@ jobs:
         '["self-hosted","linux","x64","phicomm-build"]' || '["ubuntu-22.04"]') }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check branch workflow
+        run: python3 tools/check_branch_policy.py
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -45,7 +50,7 @@ jobs:
         run: |
           bash tools/ci/ensure_gh.sh
           gh release download "$(python3 -c 'import json;print(json.load(open("frontend.lock.json"))["release"])')" \
-            --repo phicomm-io/phicomm-community-frontend --pattern frontend.tar.gz --dir "$RUNNER_TEMP/notes-frontend"
+            --repo phicomm-io/iotcloud-community-frontend --pattern frontend.tar.gz --dir "$RUNNER_TEMP/notes-frontend"
           PHICOMM_FRONTEND_ARCHIVE="$RUNNER_TEMP/notes-frontend/frontend.tar.gz" python3 site/build.py build/pages
       - name: Browser and no-JavaScript history
         run: |

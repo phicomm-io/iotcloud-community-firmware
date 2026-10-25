@@ -16,6 +16,7 @@
 #include "printbuf.h"
 #include "json_heap.h"
 #include "../common/httpd/product.h"
+#include "../common/backup.h"
 
 
 #define HTTP_PENDING_CLIENTS 1u
@@ -24,7 +25,7 @@
 #define http_diag_snapshot ph_http_snapshot
 static ph_http_product product;
 static const char *query_action;
-static enum { QUERY, COMMAND, LIGHT, UPLOAD, DIRECT } operation;
+static enum { QUERY, COMMAND, LIGHT, UPLOAD, DIRECT , BACKUP, RESTORE } operation;
 static bool upload_open, upload_pending;
 static bool response(ph_http_exchange *x,unsigned status,const char *type,const void *body,size_t length,bool gzip)
 {
@@ -121,8 +122,13 @@ static ph_http_action prepare(ph_http_exchange *x)
         }
         upload_open=true;x->body_idle_ms=15000;x->body_total_ms=300000;return PH_HTTP_READ_BODY;
     }
-    size_t input=operation==QUERY?0:x->request->length;
+    size_t input=operation==BACKUP?device_backup_size():operation==QUERY?0:x->request->length;
     ph_http_action next=ph_http_claim(&product,x,input,operation!=QUERY);
+    if(next==PH_HTTP_READ_BODY && operation==BACKUP){
+        if(device_backup_export(product.body,input))response(x,200,"application/octet-stream",product.body,input,false);
+        else ph_http_message(&product,x,409,"backup_unavailable");
+        return PH_HTTP_REPLY;
+    }
     if(next==PH_HTTP_REPLY && product.claim && operation==QUERY)
         ph_http_query(&product,x,query_action);
     return next;
@@ -139,6 +145,14 @@ static ph_http_action begin(ph_http_exchange *x)
     }
     if(strncmp(r->path,"/api/v1/",8) && strcmp(r->path,"/") && strcmp(r->path,"/index.html") && strcmp(r->path,"/favicon.ico")) {
         ph_http_message(&product,x,404,"Not found");return PH_HTTP_REPLY;
+    }
+    if(!strcmp(r->path,"/api/v1/config/backup") || !strcmp(r->path,"/api/v1/config/restore")) {
+        if(!cfg.web_password[0]){ph_http_message(&product,x,403,"set_web_password_first");return PH_HTTP_REPLY;}
+        if(!strcmp(r->method,"GET") && !strcmp(r->path,"/api/v1/config/backup")){operation=BACKUP;return prepare(x);}
+        if(!strcmp(r->method,"POST") && !strcmp(r->path,"/api/v1/config/restore")){
+            if(!r->have_length || r->length!=device_backup_size()){ph_http_message(&product,x,400,"invalid_backup");return PH_HTTP_REPLY;}
+            operation=RESTORE;return prepare(x);
+        }
     }
     if(!strcmp(r->method,"GET")) {
         if(!strcmp(r->path,"/api/v1/memory")) { memory_response(x);return PH_HTTP_REPLY; }
@@ -192,6 +206,7 @@ static void complete(ph_http_exchange *x)
         bool ok=a1_ota_finish();upload_open=false;
         ph_http_message(&product,x,ok?202:400,ok?"OTA verified; rebooting":"OTA rejected; see /ota for details");return;
     }
+    if(operation==RESTORE){const char *code=device_backup_import(product.body,product.used);ph_http_message(&product,x,!strcmp(code,"accepted")?202:!strcmp(code,"busy")?409:400,code);return;}
     json_object *request=ph_http_body_json(&product,x);
     if(operation==LIGHT)light_command(x,request);
     else {

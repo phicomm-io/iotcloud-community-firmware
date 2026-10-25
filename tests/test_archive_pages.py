@@ -64,3 +64,40 @@ class ArchiveTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaisesRegex(ValueError, 'Stable release is absent'):
                 archive.write_latest(dict(stable='v2', releases=[]), Path(tmp))
+
+    def release(self, tag):
+        def entry(variant):
+            signed = dict(path=f'/releases/{tag}/daikin-{variant}.ota.bin.signed', size=1234,
+                          sha256=('a' if variant == 'full' else 'b') * 64)
+            return dict(firmware_variant=variant, downloads=dict(signed=signed))
+        model = entry('full')
+        model['variants'] = dict(hub=entry('hub'))
+        return dict(tag=tag, version=tag[1:], commit='c' * 40, notes=f'/releases/{tag}/notes.md', models=dict(daikin=model))
+
+    def test_v1_variants_advance_while_legacy_stops_at_bridge(self):
+        bridge, current = self.release('v1.0.0'), self.release('v1.2.3')
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp)
+            archive.write_latest(dict(stable=current['tag'], releases=[current, bridge]), output)
+            for variant in ('full', 'hub'):
+                value = json.loads((output / f'ota/v1/daikin/{variant}/latest.json').read_text())
+                self.assertEqual(value['tag'], current['tag'])
+                self.assertEqual(value['firmware_variant'], variant)
+            legacy = json.loads((output / 'ota/daikin/latest.json').read_text())
+            self.assertEqual(legacy['tag'], 'v1.0.0')
+            self.assertFalse((output / 'ota/daikin/hub/latest.json').exists())
+
+    def test_bridge_required_and_old_catalog_removes_stale_v1_variants(self):
+        bridge, current = self.release('v1.0.0'), self.release('v1.0.1')
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp)
+            with self.assertRaisesRegex(ValueError, 'bridge release is absent'):
+                archive.write_latest(dict(stable=current['tag'], releases=[current]), output)
+            archive.write_latest(dict(stable=current['tag'], releases=[current, bridge]), output)
+            historical = self.release('v0.9.24')
+            del historical['models']['daikin']['variants']
+            archive.write_latest(dict(stable=historical['tag'], releases=[historical]), output)
+            self.assertFalse((output / 'ota/v1/daikin/full/latest.json').exists())
+            self.assertFalse((output / 'ota/v1/daikin/hub/latest.json').exists())
+            legacy = json.loads((output / 'ota/daikin/latest.json').read_text())
+            self.assertEqual(legacy['tag'], 'v0.9.24')

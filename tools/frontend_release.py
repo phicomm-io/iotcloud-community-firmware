@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fetch a frontend release pinned by full commit and archive SHA-256.
 
-Canonical source: phicomm-community-frontend/tools/fetch_release.py.
+Canonical source: iotcloud-community-frontend/tools/fetch_release.py.
 The firmware and backend carry this bootstrap consumer, not UI source.
 """
 import argparse

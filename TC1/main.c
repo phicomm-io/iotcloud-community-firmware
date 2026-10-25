@@ -1,4 +1,10 @@
 #include "../common/service.h"
+
+#include "../common/backup.h"
+static bool config_recovery;
+bool device_config_recovery(void) { return config_recovery; }
+void device_config_recovery_set(bool recovery) { config_recovery=recovery; }
+bool app_config_persist_allowed(void) { return !config_recovery; }
 #include "ota_server/signed_adapter.h"
 #include "main.h"
 #include "status_guard.h"
@@ -172,6 +178,10 @@ int application_start(void) {
     user_config = ((system_context_t *) sys_config)->user_config_data;
     require_action(user_config, exit, err = kNoMemoryErr);
 
+    if(user_config->version!=USER_CONFIG_VERSION) {
+        config_recovery=true;memset(user_config,0,sizeof(*user_config));
+        appRestoreDefault_callback(user_config,sizeof(*user_config));
+    }
     if (user_config->automation.magic != AUTOMATION_MAGIC) {
         automation_defaults(&user_config->automation);
         for(unsigned i=0,n=0;i<MAX_TASK_NUM;i++) if(user_config->timed_tasks[i].on_use) {
@@ -340,3 +350,5 @@ bool bemfa_network_ready(void) {
     LinkStatusTypeDef link={0};micoWlanGetLinkStatus(&link);
     return link.is_connected==1 && !tc1_ota_active();
 }
+
+#include "backup.inc"

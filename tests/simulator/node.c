@@ -52,6 +52,8 @@ static CFG base_config;
 static feature_config_t features;
 static automation_config_t automations;
 static pthread_mutex_t store_lock=PTHREAD_MUTEX_INITIALIZER;
+bool device_config_recovery(void){return false;}
+void device_config_recovery_set(bool value){(void)value;}
 static bool sensor_enabled=true;
 #ifndef HOST_A1
 static bool co2_enabled=false;
@@ -73,6 +75,13 @@ int mico_rtos_create_thread(void *out,int priority,const char *name,void (*fn)(m
 int simulator_bind(int fd,const struct sockaddr *a,socklen_t n){struct sockaddr_in copy=*(const struct sockaddr_in *)a;const char *ip=getenv("SIM_BIND_IP");if(ip && copy.sin_addr.s_addr==INADDR_ANY)inet_aton(ip,&copy.sin_addr);return bind(fd,(struct sockaddr *)&copy,n);}
 void config_get(CFG *c){BASE_LOCK();*c=base_config;BASE_UNLOCK();}
 bool config_save(const CFG *c){BASE_LOCK();bool ok=c->revision==base_config.revision;if(ok){base_config=*c;++base_config.revision;}BASE_UNLOCK();return ok;}
+uint8_t device_language_get(void){pthread_mutex_lock(&store_lock);uint8_t language=features.language;pthread_mutex_unlock(&store_lock);return language==PH_LANG_EN?PH_LANG_EN:PH_LANG_ZH;}
+#ifdef HOST_A1
+bool a1_device_config_save(const CFG *c,uint8_t language)
+#else
+bool m1_device_config_save(const CFG *c,uint8_t language)
+#endif
+{if(language>PH_LANG_EN || !config_save(c))return false;pthread_mutex_lock(&store_lock);features.language=language;pthread_mutex_unlock(&store_lock);return true;}
 uint32_t feature_config_revision(void){pthread_mutex_lock(&store_lock);uint32_t revision=features.revision;pthread_mutex_unlock(&store_lock);return revision;}
 void feature_config_get(feature_config_t *c){pthread_mutex_lock(&store_lock);*c=features;feature_config_limit_peers(c);pthread_mutex_unlock(&store_lock);}
 bool feature_config_save(const feature_config_t *c){pthread_mutex_lock(&store_lock);bool ok=c->revision==features.revision;if(ok){features=*c;++features.revision;}pthread_mutex_unlock(&store_lock);return ok;}
@@ -141,6 +150,15 @@ bool a1_ota_download(const char *u){(void)u;return false;}
 #else
 /* This simulator has no UART controller. Keep its hardware-only capabilities
  * unavailable; production controller/storage behavior is tested separately. */
+static m1_co2_source_config_t source_config={.magic=M1_CO2_SOURCE_MAGIC};
+void m1_co2_source_config_get(m1_co2_source_config_t *out){BASE_LOCK();*out=source_config;BASE_UNLOCK();}
+#undef device_id
+const char *m1_co2_source_config_save(const m1_co2_source_config_t *c){
+ if(!m1_co2_source_config_valid(c)||(c->external&&!strcmp(c->device_id,m1_id)))return "invalid_params";
+ BASE_LOCK();bool ok=c->revision==source_config.revision;if(ok){source_config=*c;source_config.revision++;}BASE_UNLOCK();
+ if(ok)m1_co2_source_reset();return ok?"accepted":"busy";
+}
+#define device_id m1_id
 bool m1_uart_buzzer(bool enabled,unsigned duration){(void)enabled;(void)duration;return false;}
 bool m1_uart_version_query(void){return false;}
 bool m1_mcu_exchange(const uint8_t *p,size_t n,uint8_t reply[20]){(void)p;(void)n;(void)reply;return false;}
@@ -150,8 +168,8 @@ bool m1_wake_alarm_tone_start(unsigned seconds,unsigned tone){(void)seconds;(voi
 bool m1_wake_alarm_start(unsigned seconds){(void)seconds;return false;}
 void m1_wake_alarm_stop(void){}
 void m1_alarm_get(m1_alarm_config_t*out){memset(out,0,sizeof(*out));}
-const char *m1_alarm_set(bool pm,uint16_t low,uint16_t high,uint32_t revision)
-{(void)pm;(void)low;(void)high;(void)revision;return "unsupported";}
+const char *m1_alarm_set(bool pm,uint16_t low,uint16_t high,uint32_t revision,int buzzer)
+{(void)pm;(void)low;(void)high;(void)revision;(void)buzzer;return "unsupported";}
 json_object *m1_sensor_details_json(void){json_object *o=json_object_new_object();json_build_object_add(o,"available",json_object_new_boolean(false));return o;}
 json_object *m1_particles_json(void){return m1_sensor_details_json();}
 json_object *m1_co2_json(void){json_object*o=json_object_new_object();json_build_object_add(o,"available",json_object_new_boolean(false));return o;}

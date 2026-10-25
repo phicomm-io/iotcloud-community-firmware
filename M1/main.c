@@ -1,14 +1,20 @@
 #include "../common/automation.h"
+
+#include "../common/backup.h"
+static bool config_recovery;
+bool device_config_recovery(void) { return config_recovery; }
+void device_config_recovery_set(bool recovery) { config_recovery=recovery; }
+bool app_config_persist_allowed(void) { return !config_recovery; }
 #include "../common/service.h"
 #include "../common/watchdog.h"
 #include "m1.h"
 #include "config_legacy.h"
+#include "storage.h"
 #include <stddef.h>
 
 mico_mutex_t m1_lock;
 static mico_mutex_t config_lock;
 static m1_config_t *app_config;
-typedef struct { m1_config_t base; feature_config_storage_t features; automation_config_t automation; uint8_t reserved_controller_config[20]; m1_co2_config_t co2; } app_storage_t;
 
 char m1_id[13];
 m1_state_t m1_state;
@@ -23,6 +29,7 @@ void appRestoreDefault_callback(void *data, uint32_t size)
     if (size >= sizeof(app_storage_t)) automation_defaults(&((app_storage_t *)data)->automation);
     if (size >= sizeof(app_storage_t)) memset(((app_storage_t *)data)->reserved_controller_config, 0, 20);
     if (size >= sizeof(app_storage_t)) ((app_storage_t *)data)->co2=(m1_co2_config_t){.magic=M1_CO2_MAGIC,.interval=5,.low=1000,.high=1500};
+    if (size >= sizeof(app_storage_t)) ((app_storage_t *)data)->co2_source=(m1_co2_source_config_t){.magic=M1_CO2_SOURCE_MAGIC};
     c->magic = M1_CONFIG_MAGIC; c->version = M1_CONFIG_VERSION;
     c->mqtt_port = 1883; c->mqtt_topic_mode = MQTT_TOPIC_TMCP;
     c->brightness = c->last_on = 4; c->timezone_minutes = 480;
@@ -43,7 +50,15 @@ void m1_ntp_host_get(char out[64])
     mico_rtos_unlock_mutex(&config_lock);
 }
 
-bool m1_config_save(const m1_config_t *c)
+uint8_t device_language_get(void)
+{
+    mico_rtos_lock_mutex(&config_lock);
+    uint8_t language = ((app_storage_t *)app_config)->features.language;
+    mico_rtos_unlock_mutex(&config_lock);
+    return language == PH_LANG_EN ? PH_LANG_EN : PH_LANG_ZH;
+}
+
+static bool m1_config_save_language(const m1_config_t *c, int language)
 {
     mico_rtos_lock_mutex(&config_lock);
     if (c->revision != app_config->revision && c->magic == app_config->magic) {
@@ -54,9 +69,11 @@ bool m1_config_save(const m1_config_t *c)
     app_config->revision = old.revision + 1;
     feature_config_storage_t *features = &((app_storage_t *)app_config)->features;
     int16_t old_timezone = features->timezone_minutes;
+    uint8_t old_language = features->language;
+    if (language >= 0) features->language = language;
     features->timezone_minutes = c->timezone_minutes;
     OSStatus err = mico_system_context_update(m1_context);
-    if (err != kNoErr) { memcpy(app_config, &old, sizeof(old)); features->timezone_minutes = old_timezone; }
+    if (err != kNoErr) { memcpy(app_config, &old, sizeof(old)); features->timezone_minutes = old_timezone; features->language = old_language; }
     mico_rtos_unlock_mutex(&config_lock);
     if (err != kNoErr) return false;
     mico_rtos_lock_mutex(&m1_lock);
@@ -65,11 +82,36 @@ bool m1_config_save(const m1_config_t *c)
     return true;
 }
 
+bool m1_config_save(const m1_config_t *c) { return m1_config_save_language(c, -1); }
+bool m1_device_config_save(const m1_config_t *c, uint8_t language) {
+    return language <= PH_LANG_EN && m1_config_save_language(c, language);
+}
+
 void m1_co2_config_get(m1_co2_config_t *out)
 {
     mico_rtos_lock_mutex(&config_lock);
     *out=((app_storage_t *)app_config)->co2;
     mico_rtos_unlock_mutex(&config_lock);
+}
+void m1_co2_source_config_get(m1_co2_source_config_t *out)
+{
+    mico_rtos_lock_mutex(&config_lock);*out=((app_storage_t *)app_config)->co2_source;mico_rtos_unlock_mutex(&config_lock);
+}
+const char *m1_co2_source_config_save(const m1_co2_source_config_t *next)
+{
+    if(!m1_co2_source_config_valid(next) || (next->external&&!strcmp(next->device_id,m1_id)))return "invalid_params";
+    mico_rtos_lock_mutex(&config_lock);
+    m1_co2_source_config_t *live=&((app_storage_t *)app_config)->co2_source,old=*live;
+    mico_rtos_lock_mutex(&m1_lock);
+    bool busy=m1_state.ota_active||m1_state.mcu_updating||m1_state.reboot_pending||m1_state.wifi_trial_active;
+    mico_rtos_unlock_mutex(&m1_lock);
+    const char *code="busy";
+    if(!busy&&next->revision==old.revision&&old.revision<INT32_MAX){
+        *live=*next;live->revision++;
+        if(mico_system_context_update(m1_context)!=kNoErr){*live=old;code="storage_error";}else code="accepted";
+    }
+    mico_rtos_unlock_mutex(&config_lock);
+    if(!strcmp(code,"accepted"))m1_co2_source_reset();return code;
 }
 const char *m1_co2_config_save(const m1_co2_config_t *next)
 {
@@ -95,6 +137,12 @@ static void alarm_load_locked(m1_alarm_config_t *out)
         ((out->configured & 1) && (!out->hcho[1] || out->hcho[0] > out->hcho[1])) ||
         ((out->configured & 2) && (!out->pm25[1] || out->pm25[0] > out->pm25[1])))
         memset(out, 0, sizeof(*out));
+    /* Older threshold-only records retain their limits and revision. A new
+     * or unrecognised alarm extension always starts with both buzzers off. */
+    if (out->reserved[0] != M1_ALARM_SCHEMA || (out->reserved[1] & ~3u) || out->reserved[2]) {
+        out->reserved[0] = M1_ALARM_SCHEMA;
+        out->reserved[1] = out->reserved[2] = 0;
+    }
 }
 
 void m1_alarm_get(m1_alarm_config_t *out)
@@ -104,9 +152,9 @@ void m1_alarm_get(m1_alarm_config_t *out)
     mico_rtos_unlock_mutex(&config_lock);
 }
 
-const char *m1_alarm_set(bool pm25, uint16_t low, uint16_t high, uint32_t revision)
+const char *m1_alarm_set(bool pm25, uint16_t low, uint16_t high, uint32_t revision, int buzzer)
 {
-    if (!high || low > high) return "invalid_params";
+    if (!high || low > high || buzzer < -1 || buzzer > 1) return "invalid_params";
     mico_rtos_lock_mutex(&config_lock);
     m1_alarm_config_t next;
     alarm_load_locked(&next);
@@ -123,6 +171,10 @@ const char *m1_alarm_set(bool pm25, uint16_t low, uint16_t high, uint32_t revisi
         pair[0] = low; pair[1] = high;
         next.magic = M1_ALARM_MAGIC; next.revision++;
         next.configured |= pm25 ? 2 : 1;
+        if (buzzer >= 0) {
+            unsigned mask = pm25 ? 2u : 1u;
+            next.reserved[1] = (next.reserved[1] & ~mask) | (buzzer ? mask : 0);
+        }
         memcpy(live, &next, sizeof(next));
         if (mico_system_context_update(m1_context) != kNoErr) {
             memcpy(live, old, sizeof(old)); result = "storage_error";
@@ -148,10 +200,12 @@ bool m1_reset(bool full)
     mico_rtos_unlock_mutex(&m1_lock);
     if (ok) {
         memcpy(old, app_config, sizeof(*old));
+        bool was_recovery=config_recovery;
+        if(full)config_recovery=false;
         if (full) appRestoreDefault_callback(app_config, sizeof(*old));
         else { app_config->ssid[0] = 0; app_config->wifi_password[0] = 0; app_config->web_password[0] = 0; }
         ok = mico_system_context_update(m1_context) == kNoErr;
-        if (!ok) memcpy(app_config, old, sizeof(*old));
+        if (!ok) { memcpy(app_config, old, sizeof(*old)); config_recovery=was_recovery; }
         mico_rtos_lock_mutex(&m1_lock);
         m1_state.reboot_pending = ok;
         if (ok) m1_state.reboot_at = mico_rtos_get_time() + 1000u;
@@ -205,17 +259,17 @@ int application_start(void)
     m1_config_t c;
     /* MiCO validates its partition, not the previous firmware's app layout.
      * Reset only foreign application data; preserve the SDK network settings. */
-    if (app_config->magic != M1_CONFIG_MAGIC) {
-        memset(app_config, 0, sizeof(app_storage_t));
-        appRestoreDefault_callback(app_config, sizeof(app_storage_t));
-        if (mico_system_context_update(m1_context) != kNoErr) return kUnknownErr;
-        service_event("info", "config", "foreign_layout_reset");
+    if (app_config->magic != M1_CONFIG_MAGIC || app_config->version < 1 || app_config->version > M1_CONFIG_VERSION ||
+        (app_config->version == M1_CONFIG_VERSION && !m1_co2_source_config_valid(&((app_storage_t *)app_config)->co2_source))) {
+        config_recovery=true;
+        memset(app_config,0,sizeof(app_storage_t));
+        appRestoreDefault_callback(app_config,sizeof(app_storage_t));
+        service_event("error","config","unsupported_layout");
     }
-    if (app_config->version < 1 || app_config->version > M1_CONFIG_VERSION) {
-        service_event("error","config","unsupported_layout");return kUnknownErr;
-    }
+    bool migration_changed=false;
     bool controller_migration = app_config->version < 6;
     bool co2_migration = app_config->version < 7;
+    bool source_migration = app_config->version < 8;
     if (app_config->magic == M1_CONFIG_MAGIC &&
         (app_config->version == 1 || app_config->version == 2)) {
         m1_storage_v2_t *old = malloc(sizeof(*old));
@@ -227,16 +281,17 @@ int application_start(void)
         free(old);
         { feature_config_t next; memcpy(&next, &((app_storage_t *)app_config)->features, sizeof(feature_config_storage_t));
         m1_migrate_response_permissions(app_config, &next); memcpy(&((app_storage_t *)app_config)->features, &next, sizeof(feature_config_storage_t)); }
-        if (mico_system_context_update(m1_context) != kNoErr) return kUnknownErr;
+        migration_changed=true;
     }
     if (app_config->magic == M1_CONFIG_MAGIC && app_config->version == 3) {
         { feature_config_t next; memcpy(&next, &((app_storage_t *)app_config)->features, sizeof(feature_config_storage_t));
         m1_migrate_response_permissions(app_config, &next); memcpy(&((app_storage_t *)app_config)->features, &next, sizeof(feature_config_storage_t)); }
-        if (mico_system_context_update(m1_context) != kNoErr) return kUnknownErr;
+        migration_changed=true;
     }
     if (app_config->magic == M1_CONFIG_MAGIC && app_config->version == 4) {
         ((app_storage_t *)app_config)->automation.magic=0;
         app_config->version = M1_CONFIG_VERSION;
+        migration_changed=true;
     }
     if (((app_storage_t *)app_config)->automation.magic != AUTOMATION_MAGIC) {
         automation_config_t *next=&((app_storage_t *)app_config)->automation;
@@ -248,22 +303,27 @@ int application_start(void)
             t->enabled=0;t->state=AUTO_MIGRATED_DISABLED;
         }
         f->event_count=0;f->scheduled_off=f->scheduled_valid=0;
-        if (mico_system_context_update(m1_context) != kNoErr) return kUnknownErr;
+        migration_changed=true;
     }
     if (controller_migration) {
         memset(((app_storage_t *)app_config)->reserved_controller_config, 0, 20);
         app_config->version = M1_CONFIG_VERSION;
-        if (mico_system_context_update(m1_context) != kNoErr) return kUnknownErr;
+        migration_changed=true;
     }
     if (co2_migration) {
         ((app_storage_t *)app_config)->co2=(m1_co2_config_t){.magic=M1_CO2_MAGIC,.interval=5,.low=1000,.high=1500};
         app_config->version=M1_CONFIG_VERSION;
-        if(mico_system_context_update(m1_context)!=kNoErr)return kUnknownErr;
+        migration_changed=true;
+    }
+    if(source_migration){
+        ((app_storage_t *)app_config)->co2_source=(m1_co2_source_config_t){.magic=M1_CO2_SOURCE_MAGIC};
+        ((app_storage_t *)app_config)->features.language=0;
+        app_config->version=M1_CONFIG_VERSION;migration_changed=true;
     }
     /* Normalize the retained ABI byte without changing credentials or layout. */
     if (app_config->mqtt_topic_mode != MQTT_TOPIC_TMCP) {
         app_config->mqtt_topic_mode = MQTT_TOPIC_TMCP;
-        if (mico_system_context_update(m1_context) != kNoErr) return kUnknownErr;
+        migration_changed=true;
     }
     m1_config_get(&c);
     if (c.magic != M1_CONFIG_MAGIC || c.version != M1_CONFIG_VERSION) {
@@ -273,7 +333,16 @@ int application_start(void)
     feature_config_storage_t *extension = &((app_storage_t *)app_config)->features;
     if (extension->magic != FEATURE_MAGIC) {
         feature_config_t next; feature_defaults(&next); memcpy(extension, &next, sizeof(*extension));
-        if (mico_system_context_update(m1_context) != kNoErr) return kUnknownErr;
+        migration_changed=true;
+    }
+    if(migration_changed && !config_recovery && mico_system_context_update(m1_context)!=kNoErr){
+        /* Boot remains available for explicit recovery. No later SDK/app write
+         * may overwrite the original layout after a failed migration. */
+        config_recovery=true;
+        memset(app_config,0,sizeof(app_storage_t));
+        appRestoreDefault_callback(app_config,sizeof(app_storage_t));
+        m1_config_get(&c);
+        service_event("error","config","migration_failed");
     }
     err = mico_system_init(m1_context);
     if (err != kNoErr) return err;
@@ -446,3 +515,23 @@ void m1_status_capture(device_status_t *snapshot, device_status_full_t *full)
         watchdog_status_capture(&full->watchdog); full->http=ph_http_snapshot();
     }
 }
+
+#define BACKUP_MODEL "m1"
+#define BACKUP_BASE m1_config_t
+#define BACKUP_MAGIC M1_CONFIG_MAGIC
+#define BACKUP_VERSION M1_CONFIG_VERSION
+#define BACKUP_LIVE app_config
+#define BACKUP_LOCK config_lock
+#define BACKUP_CONTEXT m1_context
+static bool backup_reserve(void) {
+    mico_rtos_lock_mutex(&m1_lock);
+    bool ok=!m1_state.ota_active && !m1_state.reboot_pending && !m1_state.wifi_trial_active && !m1_state.mcu_updating;
+    if(ok){m1_state.reboot_pending=true;m1_state.reboot_at=mico_rtos_get_time()+0x7fffffffu;}
+    mico_rtos_unlock_mutex(&m1_lock);return ok;
+}
+static void backup_finish(bool ok) {
+    mico_rtos_lock_mutex(&m1_lock);m1_state.reboot_pending=ok;
+    if(ok)m1_state.reboot_at=mico_rtos_get_time()+1500;
+    mico_rtos_unlock_mutex(&m1_lock);
+}
+#include "../common/backup_mico.inc"

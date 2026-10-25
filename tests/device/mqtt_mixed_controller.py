@@ -22,18 +22,12 @@ if str(ROOT) not in sys.path:
 BASE = ROOT / 'build/status101'
 PRIVATE = BASE / 'private'
 MIXED = ROOT / 'tests/device/mqtt_http_mixed.py'
-DEFAULT_TARGETS = (
-    '10.117.152.111=b0f893303134',
-    '10.117.152.102=D0BAE463E12C',
-    '10.117.152.110=b0f8932864b6',
-)
 SOURCES = {
     'controller.py': Path(__file__).resolve(),
     'mqtt_http_mixed.py': MIXED,
     'readonly_stress.py': ROOT / 'tests/device/readonly_stress.py',
     'readonly_mqtt_candidate.py': BASE / 'readonly_mqtt_candidate.py',
-    'primary_stability_load.py': Path(
-        '/home/fjr/hobbies/phicomm-community-firmware/tests/device/stability_load.py'),
+    'primary_stability_load.py': ROOT / 'tests/device/primary_stability_load.py',
 }
 PLAN = [
     {'name': 'mixed-1', 'http_clients': 1, 'mqtt_window': 1, 'seconds': 60},
@@ -73,11 +67,27 @@ def paths_for(label):
     return output, controller
 
 
-def archive_sources(controller_dir):
+def source_paths(overrides=None):
+    """Resolve explicitly supplied baseline sources without changing runtime imports."""
+    sources = dict(SOURCES)
+    seen = set()
+    for spec in overrides or ():
+        if not isinstance(spec, str) or spec.count('=') != 1:
+            raise ValueError('Source overrides must use NAME=PATH')
+        name, value = spec.split('=', 1)
+        if name not in sources or name in seen or not value:
+            raise ValueError('Source override name is unknown, duplicated, or empty')
+        path = Path(value).expanduser()
+        sources[name] = (path if path.is_absolute() else ROOT / path).resolve()
+        seen.add(name)
+    return sources
+
+
+def archive_sources(controller_dir, overrides=None):
     source_dir = controller_dir / 'sources'
     source_dir.mkdir(mode=0o700)
     records = {}
-    for name, source in SOURCES.items():
+    for name, source in source_paths(overrides).items():
         if not source.is_file():
             raise FileNotFoundError('Required runtime source is missing: '+name)
         destination = source_dir / name
@@ -119,7 +129,9 @@ def audit_sources(controller_dir, records):
 
 def _target_map(specs=None):
     from tests.device.mqtt_http_mixed import validate_targets
-    return validate_targets(list(DEFAULT_TARGETS if specs is None else specs))
+    if not specs:
+        raise ValueError('Explicit targets are required')
+    return validate_targets(list(specs))
 
 
 def validate_child_result(child_exit, evidence, version, targets=None):
@@ -192,18 +204,24 @@ def wait_child(process, result_file, timeout, poll_interval=0.1, terminate_grace
 
 
 def build_command(python, label, version, targets=None):
+    from tests.device.mqtt_http_mixed import TARGETS as authorized
+    selected = _target_map(targets)
     command = [str(python), str(MIXED)]
-    for target in (DEFAULT_TARGETS if targets is None else targets):
+    for ip, (identity, model) in authorized.items():
+        command.extend(('--scope-target', ip+'='+model+':'+identity))
+    for target in (ip+'='+identity for ip, identity in selected.items()):
         command.extend(('--target', target))
     command.extend(('--version', version, '--label', label,
                     '--profile', 'short', '--execute'))
     return command
 
 
-def run(label, version, execute=False, targets=None):
+def run(label, version, execute=False, targets=None, sources=None):
     label, version = validate_label(label), validate_version(version)
     selected = _target_map(targets)
     target_specs = [ip+'='+ident for ip, ident in selected.items()]
+    resolved_sources = source_paths(sources)
+    from tests.device.mqtt_http_mixed import TARGETS as authorized
     output, controller_dir = paths_for(label)
     result_file = output / 'mixed-evidence.json'
     if output.exists() or controller_dir.exists():
@@ -213,8 +231,9 @@ def run(label, version, execute=False, targets=None):
             'mode': 'dry-run', 'label': label, 'version': version,
             'targets': target_specs, 'selected_targets': list(selected),
             'device_status': {ip: ('SELECTED' if ip in selected else 'PAUSED')
-                              for ip in _target_map()},
+                              for ip in authorized},
             'profile': 'short', 'plan': PLAN,
+            'missing_source_names': [name for name, path in resolved_sources.items() if not path.is_file()],
             'output': str(output), 'controller_output': str(controller_dir),
             'will_connect': False, 'will_read_credentials': False,
             'will_send_ota': False, 'will_write_controls_or_config': False,
@@ -232,13 +251,13 @@ def run(label, version, execute=False, targets=None):
         'started_at': time.time(), 'targets': target_specs,
         'selected_targets': list(selected),
         'device_status': {ip: ('SELECTED' if ip in selected else 'PAUSED')
-                          for ip in _target_map()}, 'plan': PLAN,
+                          for ip in authorized}, 'plan': PLAN,
         'device_firmware_mutation': 'none', 'source_manifest': None,
         'process': None, 'blockers': [],
     }
     private_json(controller_dir/'controller.json', data)
     try:
-        records = archive_sources(controller_dir)
+        records = archive_sources(controller_dir, sources)
         source_manifest = {
             'git_head': subprocess.run(
                 ['git', 'rev-parse', 'HEAD'], cwd=ROOT, check=True,
@@ -301,7 +320,9 @@ def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--label', required=True)
     parser.add_argument('--version', required=True)
-    parser.add_argument('--target', action='append', metavar='IP=ID')
+    parser.add_argument('--target', action='append', required=True, metavar='IP=MODEL:ID')
+    parser.add_argument('--source', action='append', metavar='NAME=PATH',
+                        help='baseline source override for archival/hash comparison; does not alter runtime imports')
     parser.add_argument('--execute', action='store_true')
     return parser
 
@@ -309,7 +330,7 @@ def build_parser():
 def main(argv=None):
     args = build_parser().parse_args(argv)
     try:
-        result = run(args.label, args.version, execute=args.execute, targets=args.target)
+        result = run(args.label, args.version, execute=args.execute, targets=args.target, sources=args.source)
     except BaseException as exc:
         print(json.dumps({'status': 'failed', 'error_type': type(exc).__name__}, sort_keys=True))
         return 2

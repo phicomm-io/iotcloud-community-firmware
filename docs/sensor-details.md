@@ -22,10 +22,10 @@ MCU 的 OP00 能力应答必须声明 sensor schema=1、种类数至少 7、块�
 
 ## 前端与验证
 
-源码位于相邻 `phicomm-community-frontend` 仓库的 `M1/web/page.js`。设备 WebUI 与平台内嵌首页复用独立“颗粒物详情”卡片：PM1.0、PM10、六档颗粒数，折叠查看 CF=1 的额外浓度和原始诊断；PM2.5 继续使用原主读数。浏览器将响应帧龄加上本地经过时间，到期显示“—”，缓存页面恢复后立即重新核对有效期。
+源码位于相邻 `iotcloud-community-frontend` 仓库的 `M1/web/page.js`。设备 WebUI 与平台内嵌首页复用独立“颗粒物详情”卡片：PM1.0、PM10、六档颗粒数，折叠查看 CF=1 的额外浓度和原始诊断；PM2.5 继续使用原主读数。浏览器将响应帧龄加上本地经过时间，到期显示“—”，缓存页面恢复后立即重新核对有效期。
 
 测试入口：`tests/test_m1_sensor_details.c`、`tests/test_stock_runtime.py`、`tests/test_m1_particles_mqtt.py`；前端 `tests/test_m1_particles.cjs` 和 `tests/test_m1_particles_browser.cjs`。
 
 2026-10-25 已在 M1 `b0f8932864b6` 构建并 OTA 验证详情 API、390/1280 像素页面与配置保留。测试机 MCU 为声明本能力的开发版 `0.9.3-2df7a1-d`，未改写 MCU；不将该结果表述为正式 MCU 0.9.4 的刷机验收。旧 MCU、失效数据、严格 JSON 下未采集帧龄为 null、八个 Discovery 配置通过主机回归；实际 Home Assistant 实例接入尚未验证。
 
-本地开发可使用 `PHICOMM_FRONTEND_SOURCE=/absolute/path/phicomm-community-frontend ./M1/build.sh` 生成含新卡片的候选镜像。固件通过 `frontend.lock.json` 锁定前端的提交和归档校验和。按本次要求只提交至 main，不创建固件 tag 或 GitHub Release。
+本地开发可使用 `PHICOMM_FRONTEND_SOURCE=/absolute/path/iotcloud-community-frontend ./M1/build.sh` 生成含新卡片的候选镜像。固件通过 `frontend.lock.json` 锁定前端的提交和归档校验和。按本次要求只提交至 main，不创建固件 tag 或 GitHub Release。

@@ -34,10 +34,10 @@ A1 的 `status.get`（完整、实时及 MQTT 状态）同样逐项输出有限�
 
 调速所选字段必须全部可用，否则使用已配置的离线风速；不使用缺失字段的零值运算。数据灯效按字段判断有效性。前端隐藏不可用的调速/灯效数据来源选项；数据失效不删除持久化规则或阈值，恢复后重新显示。用户保存启用规则时必须选择当前可用的数据。
 
-前端源码维护在相邻 `phicomm-community-frontend` 仓库。开发验证可显式使用：
+前端源码维护在相邻 `iotcloud-community-frontend` 仓库。开发验证可显式使用：
 
 ```sh
-PHICOMM_FRONTEND_SOURCE=/path/phicomm-community-frontend ./A1/build.sh
+PHICOMM_FRONTEND_SOURCE=/path/iotcloud-community-frontend ./A1/build.sh
 ```
 
 该选项在 manifest 中记录开发来源、commit、dirty 与 HTML gzip SHA-256。默认构建仍使用 `frontend.lock.json`；发布前应完成前端正式 Release 并更新锁，不能将开发覆盖包当作已发布的前端版本。

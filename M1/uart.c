@@ -236,7 +236,6 @@ static void uart_worker(mico_thread_arg_t arg)
                 m1_config_get(&cfg);
                 m1_brightness_frame(command.frame, effective_level(command.level), cfg.last_on);
                 if (transmit(command.frame)) {
-                    if ((cfg.brightness == 0) != (command.level == 0)) m1_wake_alarm_stop();
                     for (unsigned attempt = 0; attempt < 3; attempt++) {
                         m1_config_get(&cfg);
                         if (cfg.brightness == command.level) break;
@@ -257,6 +256,7 @@ static void uart_worker(mico_thread_arg_t arg)
             if (MicoUartRecv(MICO_UART_1, &byte, 1, i ? 0 : 10) != kNoErr) break;
             if (!m1_decode_byte(&decoder, byte, frame)) continue;
             if(frame[1]==0x17){version_attempts=0;next_version=mico_rtos_get_time();}
+            if(m1_button_rx(frame))continue;
             if(m1_mcu_rx(frame))continue;
             if (frame[1] == 0x18) {
                 static const uint8_t ack[12] = {0x23,0x16,0x00,0x10,0x14,0x00,0x03,0x10,0xf1,0xff,0xff,0x21};
@@ -264,9 +264,6 @@ static void uart_worker(mico_thread_arg_t arg)
                 if (!reset_seen) { reset_seen = true; m1_reset(false); }
                 continue;
             }
-            /* A physical screen power event dismisses ringing in either
-             * direction, including when the screen was already off. */
-            if (frame[1] == 0x0f && frame[2] <= 1) m1_wake_alarm_stop();
             mico_rtos_lock_mutex(&m1_lock);
             memcpy(m1_state.last_frame, frame, 20);
             m1_state.rx_frames++;

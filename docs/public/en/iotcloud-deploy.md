@@ -1,8 +1,8 @@
-# Deploy IotCloud
+# Deploy IoTCloud
 
-To manage devices on the hosted platform, start with [Connect to IotCloud](iotcloud-connect). This page covers hosting your own services.
+To manage devices on the hosted platform, start with [Connect to IoTCloud](iotcloud-connect). This page covers hosting your own services.
 
-[Open IotCloud]({{SITE_URL}}iotcloud/) · [Frontend source and releases](https://github.com/phicomm-io/phicomm-community-frontend) · [Backend and Broker deployment](https://github.com/phicomm-io/phicomm-community-mqtt#readme)
+[Open IoTCloud]({{SITE_URL}}iotcloud/) · [Frontend source and releases](https://github.com/phicomm-io/iotcloud-community-frontend) · [Backend and Broker deployment](https://github.com/phicomm-io/iotcloud-community-mqtt#readme)
 
 ## China and US nodes
 
@@ -11,7 +11,7 @@ To manage devices on the hosted platform, start with [Connect to IotCloud](iotcl
 | China | https://mqtt.fjrcn.cn | mqtt.fjrcn.cn:1883 | wss://mqtt.fjrcn.cn/mqtt |
 | US | https://mqtt.fjrcn.com | mqtt.fjrcn.com:1883 | wss://mqtt.fjrcn.com/mqtt |
 
-Choose a node at the top of IotCloud. **Accounts, passwords, devices and data are independent. Register separately on each node.** Switching reloads the page and reconnects using the selected node's own session and MQTT credentials; it does not migrate data. Configure devices with that node's Broker hostname and account. The same username on two nodes does not link them.
+Choose a node at the top of IoTCloud. **Accounts, passwords, devices and data are independent. Register separately on each node.** Switching reloads the page and reconnects using the selected node's own session and MQTT credentials; it does not migrate data. Configure devices with that node's Broker hostname and account. The same username on two nodes does not link them.
 
 ## Local access without login
 
@@ -21,11 +21,11 @@ For standalone static hosting, publish the complete `local/` directory from the 
 
 ## Deployment options
 
-Use [the hosted frontend]({{SITE_URL}}iotcloud/) and choose China / US, host the frontend on GitHub Pages or another static service, or run your own backend and Broker. The frontend repository documents static deployment; the [platform repository](https://github.com/phicomm-io/phicomm-community-mqtt#readme) documents server initialization and cross-origin access.
+Use [the hosted frontend]({{SITE_URL}}iotcloud/) and choose China / US, host the frontend on GitHub Pages or another static service, or run your own backend and Broker. The frontend repository documents static deployment; the [platform repository](https://github.com/phicomm-io/iotcloud-community-mqtt#readme) documents server initialization and cross-origin access.
 
 ## Static frontend
 
-Download `frontend.tar.gz` from a frontend [release](https://github.com/phicomm-io/phicomm-community-frontend/releases), verify its `SHA256SUMS` and publish the contents of `platform/`. GitHub Pages project subpaths are supported.
+Download `frontend.tar.gz` from a frontend [release](https://github.com/phicomm-io/iotcloud-community-frontend/releases), verify its `SHA256SUMS` and publish the contents of `platform/`. GitHub Pages project subpaths are supported.
 
 For a custom backend, expand **Server settings** on the login page and enter an HTTPS origin without `/api`, plus the MQTT WebSocket address. Alternatively edit the published root `config.json`:
 
@@ -53,7 +53,7 @@ allowed_origins:
 
 An origin includes scheme and hostname, plus a non-default port when needed; no `/iotcloud/` path or trailing slash. Set `public_url` to the backend's own public origin. Allow only trusted frontend origins. Platform accounts must use that backend's Broker. Use guest mode for a different Broker. HTTPS pages require WSS.
 
-Device firmware's MQTT Host must be a reachable Broker hostname and device TCP port, not a website URL or WSS path. IotCloud displays a reminder when the frontend and MQTT hostnames differ.
+Device firmware's MQTT Host must be a reachable Broker hostname and device TCP port, not a website URL or WSS path. IoTCloud displays a reminder when the frontend and MQTT hostnames differ.
 
 ## Install as a Web App
 
@@ -67,4 +67,4 @@ The device needs a recent WebUI supporting this flow. It displays the requesting
 
 The URL fragment carries only hostname, port, username and one-time handshake metadata, not the password. Password transfer uses window messaging after explicit consent. The handshake expires after two minutes; cancellation or expiry clears unsaved imported data. Verify the destination IP and use a trusted LAN: HTTP cannot prevent eavesdropping or tampering. Blocked popups, isolated windows or unsupported firmware require manual entry; the flow never falls back to putting passwords in a URL.
 
-Dismiss the MQTT hostname reminder with **I understand**; device connection details remain in settings. **Open IotCloud** on the device opens only the platform entry and never includes credentials.
+Dismiss the MQTT hostname reminder with **I understand**; device connection details remain in settings. **Open IoTCloud** on the device opens only the platform entry and never includes credentials.

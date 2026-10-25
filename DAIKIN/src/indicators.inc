@@ -1,6 +1,10 @@
 static unsigned systemIndicatorMode(){
+#ifdef IOTCLOUD_HUB
+  return indicator_mode(strlen(config["wifi"]["ssid"]|"")>0,WiFi.status()==WL_CONNECTED,hubService.ready(),hubReady());
+#else
   return indicator_mode(strlen(config["wifi"]["ssid"]|"")>0,WiFi.status()==WL_CONNECTED,
     strlen(config["mqtt"]["host"]|"")>0,mqttConnected&&mqttCommandReady);
+#endif
 }
 static void sensorIndicatorModes(uint32_t now,daikin::LightMode (&modes)[3]){
   using namespace daikin;

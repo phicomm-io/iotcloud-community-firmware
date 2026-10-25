@@ -47,6 +47,7 @@
 #include "mqtt_server/user_mqtt_client.h"
 #include "ota_server/signed_adapter.h"
 #include "../../common/httpd/product.h"
+#include "../../common/backup.h"
 #include "../../common/http_cors.h"
 #include "../../common/firmware_variant.h"
 #include "../../common/ota/mode.h"
@@ -55,7 +56,7 @@
 #include <web_data.c>
 static ph_http_product product;
 static const char *query_action;
-static enum { DIRECT, QUERY, COMMAND, UPLOAD } operation;
+static enum { DIRECT, QUERY, COMMAND, UPLOAD, BACKUP, RESTORE } operation;
 static bool upload_open, upload_verified, upload_entered;
 static void response(ph_http_exchange *x,unsigned status,const char *type,const void *body,size_t n)
 { x->response.status=status;x->response.type=type;x->response.body=body;x->response.length=n; }
@@ -133,9 +134,14 @@ static ph_http_action prepare(ph_http_exchange *x)
         x->body_idle_ms=15000;x->body_total_ms=300000;
         return PH_HTTP_READ_BODY;
     }
-    ph_http_action a=ph_http_claim(&product,x,operation==QUERY?0:x->request->length,operation==COMMAND);
+    ph_http_action a=ph_http_claim(&product,x,operation==BACKUP?device_backup_size():operation==QUERY?0:x->request->length,operation==COMMAND || operation==BACKUP || operation==RESTORE);
     if(a==PH_HTTP_REPLY && product.claim && operation==QUERY)
         ph_http_query(&product,x,query_action);
+    if(a==PH_HTTP_READ_BODY && operation==BACKUP){
+        if(device_backup_export(product.body,device_backup_size()))response(x,200,"application/octet-stream",product.body,device_backup_size());
+        else ph_http_message(&product,x,409,"backup_unavailable");
+        return PH_HTTP_REPLY;
+    }
     return a;
 }
 static ph_http_action begin(ph_http_exchange *x)
@@ -148,10 +154,11 @@ static ph_http_action begin(ph_http_exchange *x)
       route_matches(r->path,"/api/v1/schedules")?"schedules.get":route_matches(r->path,"/api/v1/logs")?"logs.get":NULL;
     bool asset=route_matches(r->path,"/") || !strncmp(r->path,"/assets",7);
     bool command=route_matches(r->path,"/api/v1/command");
+    bool backup=route_matches(r->path,"/api/v1/config/backup"),restore=route_matches(r->path,"/api/v1/config/restore");
     bool ota=route_matches(r->path,"/api/v1/ota/upload") || route_matches(r->path,"/api/v1/ota/upload-unsigned");
     bool memory=route_matches(r->path,"/api/v1/memory"),trace=route_matches(r->path,"/api/v1/http-trace");
     /* TC1 historically selects an actual route before OPTIONS/authentication. */
-    if(!query_action && !asset && !command && !ota && !memory && !trace) {
+    if(!query_action && !asset && !command && !backup && !restore && !ota && !memory && !trace) {
         response(x,404,"text/plain","",0);return PH_HTTP_REPLY;
     }
     x->response.cors=phicomm_cors_headers(r->origin);
@@ -160,6 +167,12 @@ static ph_http_action begin(ph_http_exchange *x)
     }
     if(!tc1_http_authorized(r->authorization)) {
         response(x,401,"text/plain","",0);x->response.realm="TC1";return PH_HTTP_REPLY;
+    }
+    if(backup || restore){
+        if(!user_config->web_password[0]){ph_http_message(&product,x,403,"set_web_password_first");return PH_HTTP_REPLY;}
+        if(backup && !strcmp(r->method,"GET")){operation=BACKUP;return prepare(x);}
+        if(restore && !strcmp(r->method,"POST") && r->have_length && r->length==device_backup_size()){operation=RESTORE;return prepare(x);}
+        ph_http_message(&product,x,400,"invalid_backup");return PH_HTTP_REPLY;
     }
     if(!strcmp(r->method,"GET") || !strcmp(r->method,"HEAD")) {
         x->response.suppress_body=!strcmp(r->method,"HEAD");
@@ -204,6 +217,7 @@ static void complete(ph_http_exchange *x)
         upload_verified=tc1_ota_verify();
         ph_http_message(&product,x,upload_verified?202:400,upload_verified?"文件校验通过，设备正在重启":"OTA rejected");return;
     }
+    if(operation==RESTORE){const char *code=device_backup_import(product.body,product.used);ph_http_message(&product,x,!strcmp(code,"accepted")?202:!strcmp(code,"busy")?409:400,code);return;}
     json_object *request=ph_http_body_json(&product,x);
     ph_http_command(&product,x,request);
     /* Wire owns all text, including any borrowed request_id. */

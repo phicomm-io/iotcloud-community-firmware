@@ -78,6 +78,19 @@ void m1_threshold_frame(uint8_t f[M1_TX_FRAME_SIZE], bool pm25, uint16_t low, ui
     command(f, pm25 ? 0x06 : 0x05);
     f[2] = low >> 8; f[3] = low; f[4] = high >> 8; f[5] = high;
 }
+bool m1_sensor_alarm_frame(uint8_t f[M1_TX_FRAME_SIZE], uint8_t sequence, bool write, uint8_t mask)
+{
+    if ((mask & ~7u) || (!write && mask)) return false;
+    command(f, 0x70); f[2] = 20; f[3] = sequence; f[4] = write; f[5] = mask;
+    return true;
+}
+bool m1_parse_sensor_alarm(const uint8_t f[M1_RX_FRAME_SIZE], uint8_t *mask, bool *active)
+{
+    if (f[0] != 0x23 || f[1] != 0x70 || f[2] != 20 || f[19] != 0x21 ||
+        f[4] || f[5] != 1 || (f[6] & ~7u) || f[7] > 1) return false;
+    *mask = f[6]; *active = f[7] != 0;
+    return true;
+}
 bool m1_parse_version(const uint8_t f[M1_RX_FRAME_SIZE], char version[17])
 {
     unsigned n = f[2];

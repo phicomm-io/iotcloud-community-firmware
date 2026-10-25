@@ -6,6 +6,7 @@
 #include <string.h>
 #include "common/httpd/product.h"
 #include "common/http_cors.h"
+#include "common/backup.h"
 #include "json.h"
 #include "common/mqtt/diagnostics.h"
 static bool maximum,command_alias,fail_diagnostics_alloc;
@@ -21,6 +22,22 @@ static bool deny,job,fail_write,fail_cap;
 static unsigned ota_begins,activations;
 static bool fail_activation,activation_uncertain,wire_fail_send,wire_fail_close,wire_server_running;
 static char password[33];
+/* The real envelope/storage transaction is covered in test_backup.py. Here the
+ * device boundary exposes binary bytes so route ownership cannot assume text. */
+static const unsigned char backup_bytes[128]={'P','H','C','B','A','C','K','1',0,0xff,0x80,0x21};
+static unsigned backup_exports,backup_imports;
+static bool fail_backup_export;
+static const char *backup_import_code="accepted";
+size_t device_backup_size(void){return sizeof(backup_bytes);}
+bool device_backup_export(void *out,size_t n){
+ assert(out&&n==sizeof(backup_bytes));backup_exports++;
+ if(fail_backup_export)return false;
+ memcpy(out,backup_bytes,n);return true;
+}
+const char *device_backup_import(const void *input,size_t n){
+ assert(input&&n==sizeof(backup_bytes)&&!memcmp(input,backup_bytes,n));
+ backup_imports++;return backup_import_code;
+}
 static uint32_t tick;
 typedef struct {int free_memory,allocted_memory,num_of_chunks;} micoMemInfo_t;
 static micoMemInfo_t memory={50000,1000,3};

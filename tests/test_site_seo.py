@@ -65,7 +65,7 @@ class SearchTests(unittest.TestCase):
     def test_sitemap_covers_published_content_without_aliases_or_apps(self):
         with tempfile.TemporaryDirectory() as directory:
             out = Path(directory)
-            expected = ['', 'guides/en/'] + [f'guides/{prefix}{slug}.html'
+            expected = ['', 'en/', 'guides/en/'] + [f'guides/{prefix}{slug}.html'
                         for prefix in ('', 'en/') for slug, *_ in PAGES]
             for path in expected:
                 file = out / (path + 'index.html' if not path or path.endswith('/') else path)

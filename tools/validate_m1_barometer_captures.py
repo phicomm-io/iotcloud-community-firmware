@@ -10,11 +10,12 @@ import argparse
 import base64
 import hashlib
 import json
+import ipaddress
+import re
 import math
 from pathlib import Path
 
 
-DEVICE_ID = "b0f8932864b6"
 MODEL = "m1"
 BAROMETER_MODEL = "BMP388"
 CHIP_ID = 80
@@ -52,7 +53,34 @@ def _pointer(document, pointer):
     return value
 
 
-def validate_source_captures(capture_sources, expected_version):
+def _device_identity(value):
+    if not isinstance(value, str) or not re.fullmatch(r"[0-9a-fA-F]{12}", value):
+        raise ValueError("device_identity_missing_or_invalid")
+    return value.lower()
+
+
+def _device_ip(value):
+    if value is None:
+        return None
+    try:
+        if not isinstance(value, str):
+            raise ValueError
+        return str(ipaddress.ip_address(value))
+    except (TypeError, ValueError):
+        raise ValueError("device_ip_invalid") from None
+
+
+def _capture_ip(envelope, provenance):
+    metadata = envelope.get("capture_metadata", {})
+    if not isinstance(metadata, dict):
+        raise ValueError("capture_metadata_invalid")
+    value = (provenance or {}).get("device_ip")
+    if value is None:
+        value = metadata.get("device_ip", metadata.get("ip", envelope.get("device_ip")))
+    return _device_ip(value)
+
+
+def validate_source_captures(capture_sources, expected_version, expected_device_id=None, expected_ip=None):
     """Validate stage evidence files without issuing any device requests.
 
     Each source is a mapping with path, json_pointer, and kind. `runner_state`
@@ -82,7 +110,15 @@ def validate_source_captures(capture_sources, expected_version):
                 ended = item["request_ended_monotonic"]
             else:
                 raise ValueError("capture_kind_invalid")
+            capture_ip = source.get("device_ip", item.get("ip"))
+            if capture_ip is None and source["kind"] == "runner_state":
+                candidate = source["json_pointer"].rsplit("/", 1)[-1]
+                try:
+                    capture_ip = _device_ip(candidate)
+                except ValueError:
+                    pass
             provenance = {
+                "device_ip": _device_ip(capture_ip),
                 "source_path": str(path), "source_sha256": source_sha256,
                 "json_pointer": source["json_pointer"], "kind": source["kind"],
                 "request_started_monotonic": started,
@@ -96,14 +132,14 @@ def validate_source_captures(capture_sources, expected_version):
                 KeyError, TypeError, IndexError) as error:
             source_failures.append("capture_%d_source_%s" % (index, str(error)))
 
-    report = _validate_capture_objects(captures, expected_version, len(capture_sources))
+    report = _validate_capture_objects(captures, expected_version, len(capture_sources), expected_device_id, expected_ip)
     report["failures"] = source_failures + report["failures"]
     if len(capture_sources) >= 2:
         report["status"] = "passed" if not report["failures"] else "failed"
     return report
 
 
-def validate_captures(captures, expected_version):
+def validate_captures(captures, expected_version, expected_device_id=None, expected_ip=None):
     """Validate ordered paths containing already-captured status envelopes."""
     loaded = []
     failures = []
@@ -113,19 +149,20 @@ def validate_captures(captures, expected_version):
             loaded.append((path, digest, envelope, None))
         except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:
             failures.append("capture_%d_%s" % (index, str(error)))
-    report = _validate_capture_objects(loaded, expected_version, len(captures))
+    report = _validate_capture_objects(loaded, expected_version, len(captures), expected_device_id, expected_ip)
     report["failures"] = failures + report["failures"]
     if len(captures) >= 2:
         report["status"] = "passed" if not report["failures"] else "failed"
     return report
 
 
-def _validate_capture_objects(captures, expected_version, capture_count):
+def _validate_capture_objects(captures, expected_version, capture_count, expected_device_id=None, expected_ip=None):
     """Validate parsed envelopes and preserve source provenance when present."""
     report = {
         "status": "NOT_RUN",
-        "device_ip": "10.117.152.110",
-        "expected_device_id": DEVICE_ID,
+        "device_ip": None,
+        "expected_device_id": None,
+        "identity_source": "explicit_argument" if expected_device_id is not None else "capture_metadata",
         "expected_version": expected_version,
         "capture_count": capture_count,
         "hardware_presence": "not_confirmed",
@@ -138,6 +175,28 @@ def _validate_capture_objects(captures, expected_version, capture_count):
         report["failures"].append("at_least_two_ordered_captures_required")
         return report
 
+    identity = expected_device_id
+    device_ip = expected_ip
+    for _path, _digest, envelope, provenance in captures:
+        try:
+            data = _status_data(envelope)
+            if identity is None and data.get("model") == MODEL:
+                identity = _device_identity(data.get("device_id", data.get("id")))
+            if device_ip is None:
+                device_ip = _capture_ip(envelope, provenance)
+        except (ValueError, TypeError):
+            continue
+        if identity is not None and device_ip is not None:
+            break
+    try:
+        identity = _device_identity(identity)
+        device_ip = _device_ip(device_ip)
+    except ValueError as error:
+        report["failures"].append(str(error))
+        report["status"] = "failed"
+        return report
+    report["expected_device_id"] = identity
+    report["device_ip"] = device_ip
     previous_uptime = None
     previous_samples = None
     parsed = []
@@ -151,13 +210,20 @@ def _validate_capture_objects(captures, expected_version, capture_count):
             continue
 
         identity_ok = (
-            str(data.get("device_id", data.get("id", ""))).lower() == DEVICE_ID and
+            str(data.get("device_id", data.get("id", ""))).lower() == identity and
             data.get("model") == MODEL and data.get("version") == expected_version
         )
         if identity_ok:
             report["hardware_presence"] = "m1_identity_confirmed"
         else:
             report["failures"].append("capture_%d_identity_or_version_mismatch" % index)
+
+        try:
+            observed_ip = _capture_ip(envelope, provenance)
+            if device_ip is not None and observed_ip != device_ip:
+                report["failures"].append("capture_%d_device_ip_missing_or_mismatch" % index)
+        except ValueError as error:
+            report["failures"].append("capture_%d_%s" % (index, str(error)))
 
         barometer = data.get("barometer")
         if not isinstance(barometer, dict):
@@ -240,6 +306,8 @@ def _validate_capture_objects(captures, expected_version, capture_count):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--version", required=True)
+    parser.add_argument("--device-id", help="expected M1 identity; otherwise use the first capture identity")
+    parser.add_argument("--device-ip", help="expected captured address; requires matching capture metadata")
     parser.add_argument("--capture", action="append", default=[],
                         help="ordered JSON status response envelope (repeat at stage boundaries)")
     parser.add_argument("--sources-json",
@@ -249,9 +317,9 @@ def main():
     if args.capture and args.sources_json:
         parser.error("Use --capture or --sources-json, not both")
     if args.sources_json:
-        report = validate_source_captures(json.loads(Path(args.sources_json).read_text()), args.version)
+        report = validate_source_captures(json.loads(Path(args.sources_json).read_text()), args.version, args.device_id, args.device_ip)
     else:
-        report = validate_captures(args.capture, args.version)
+        report = validate_captures(args.capture, args.version, args.device_id, args.device_ip)
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")

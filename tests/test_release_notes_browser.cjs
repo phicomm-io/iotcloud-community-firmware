@@ -28,9 +28,12 @@ const {chromium}=require(process.env.PHICOMM_PLAYWRIGHT||'@playwright/test');
    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
    await page.screenshot({path:`build/notes-evidence/${locale}-nojs.png`,fullPage:true});await page.close();cases++;
   }
-  const page=await browser.newPage();await page.goto(base+'/');await page.locator('#archive .release').first().waitFor();
+  const page=await browser.newPage();await page.goto(base+'/');await page.locator('#archive .release').first().waitFor({state:'attached'});
   assert.equal(await page.locator('#archive .release').count(),releaseCount);assert.equal(await page.locator('#latest .release').count(),1);
-  await page.locator('#archive summary').first().click();assert.ok(await page.locator('#archive .notes').first().textContent());await page.close();cases++;
+  await page.locator('#releases > details.collection > summary').first().click();
+  await page.locator('#archive .release > summary').first().click();
+  await page.locator('#archive .release-notes > summary').first().click();
+  assert.ok(await page.locator('#archive .notes').first().textContent());await page.close();cases++;
   fs.writeFileSync('build/notes-evidence/browser.json',JSON.stringify({status:'PASS',cases,local_site:base,real_device:false,production:false},null,2)+'\n');
   console.log(`${cases} release history / comparison browser scenarios passed`);
  }finally{await browser.close();}

@@ -13,7 +13,9 @@ typedef struct {
     uint8_t mqtt_enabled, enabled;
     char app_id[65], secret_key[129];
     char topics[BEMFA_TOPICS][BEMFA_TOPIC_BYTES];
+    uint8_t language; /* Former zero-filled tail padding; TC1 device language. */
 } bemfa_config_t;
+typedef char bemfa_storage_abi[sizeof(bemfa_config_t)==592 && offsetof(bemfa_config_t,language)==590?1:-1];
 struct json_object;
 void bemfa_defaults(bemfa_config_t *, const char *model, const char *mac);
 bool bemfa_config_valid(const bemfa_config_t *, bool tc1);

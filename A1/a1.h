@@ -130,3 +130,7 @@ bool a1_mqtt_config_save(const a1_config_t *,const bemfa_config_t *);
 void a1_filter_observe(unsigned speed, unsigned weight);
 void a1_filter_stock_get(a1_filter_stock_t *);
 const char *a1_filter_model_change(bool weighted);
+
+#include "../common/i18n.h"
+uint8_t device_language_get(void);
+bool a1_device_config_save(const a1_config_t *, uint8_t language);

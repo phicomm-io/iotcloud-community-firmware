@@ -31,6 +31,7 @@ def resolve_version(root=ROOT, tag=None):
         return {'version': '0.0.0-000000-dirty', 'base_version': '0.0.0',
                 'git_commit': None, 'git_tag': None, 'dirty': True}
 
+    explicit_tag = tag
     dirty = bool(git(root, 'status', '--porcelain', '--untracked-files=normal'))
     if tag:
         if git(root, 'rev-parse', f'refs/tags/{tag}^{{commit}}') != commit:
@@ -47,6 +48,15 @@ def resolve_version(root=ROOT, tag=None):
             except subprocess.CalledProcessError:
                 tag = None
     base = tag[1:] if tag else '0.0.0'
+    target_file = root / 'VERSION'
+    if target_file.is_file():
+        target = target_file.read_text().strip()
+        if not TAG_PATTERN.fullmatch('v' + target):
+            raise ValueError('VERSION must contain MAJOR.MINOR.PATCH')
+        if explicit_tag and target != explicit_tag[1:]:
+            raise ValueError('release tag differs from VERSION')
+        if not explicit_tag and tuple(map(int, target.split('.'))) > tuple(map(int, base.split('.'))):
+            base, tag = target, None
     return {'version': f'{base}-{commit[:6]}' + ('-dirty' if dirty else ''),
             'base_version': base, 'git_commit': commit, 'git_tag': tag, 'dirty': dirty}
 

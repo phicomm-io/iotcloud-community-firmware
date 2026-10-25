@@ -56,7 +56,7 @@ static void update_worker(mico_thread_arg_t arg) {
     fd=socket(AF_INET,SOCK_STREAM,IPPROTO_TCP);if(fd<0)goto done;
     int timeout=10000;setsockopt(fd,SOL_SOCKET,SO_SNDTIMEO,&timeout,sizeof(timeout));
     if(connect(fd,(struct sockaddr *)&address,sizeof(address))<0)goto done;
-    snprintf(line,sizeof(line),"GET /ota/" UPDATE_MODEL "/latest.json HTTP/1.1\r\nHost: %s:%u\r\nConnection: close\r\nAccept-Encoding: identity\r\n\r\n",host,port);
+    snprintf(line,sizeof(line),"GET /ota/v1/" UPDATE_MODEL "/" PHICOMM_FIRMWARE_VARIANT "/latest.json HTTP/1.1\r\nHost: %s:%u\r\nConnection: close\r\nAccept-Encoding: identity\r\n\r\n",host,port);
     size_t sent=0,n=strlen(line);while(sent<n){int rc=send(fd,line+sent,n-sent,0);if(rc<=0)goto done;sent+=rc;}
     if(update_line(fd,line,sizeof(line))<0||(strncmp(line,"HTTP/1.1 200 ",13)&&strncmp(line,"HTTP/1.0 200 ",13)))goto done;
     unsigned length=0,headers=0;bool have=false;

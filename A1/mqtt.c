@@ -26,6 +26,7 @@ static ph_mqtt_startup mqtt_startup;
 static mqtt_account_t account;
 static char base[192], availability_topic[MQTT_TOPIC_MAX];
 static bool rediscover, cleanup_pending;
+static uint8_t discovery_language;
 static a1_config_t session_config;
 static bool same_connection(const a1_config_t *, const a1_config_t *);
 static bool session_current(void)
@@ -148,9 +149,10 @@ static __attribute__((noinline)) int filter_discovery(const a1_config_t *c, bool
     static const char *keys[] = {"filter_remaining", "filter_used", "filter_replacement", "filter_lifetime", "filter_reset", "fan_mode"};
     static const char *components[] = {"sensor", "sensor", "binary_sensor", "number", "button", "select"};
     static const char *names[] = {"滤芯剩余寿命", "滤芯使用时间", "滤芯更换提醒", "滤芯额定寿命", "更换滤芯后重置", "运行模式"};
+    static const char *english[] = {"Filter life remaining","Filter usage","Replace filter","Rated filter life","Reset after replacement","Operating mode"};
     bool bound = feature_bound(), grouped = false;
     /* MQTT-owner scratch: PUBACK callbacks only admit copied ingress. */
-    static char parent_id[192], parent_name[FEATURE_TOPIC_MAX];
+    static char parent_id[FEATURE_TOPIC_MAX], parent_name[FEATURE_TOPIC_MAX];
     if (!clear && bound && !feature_ha_device(parent_id, sizeof(parent_id),
                                              parent_name, sizeof(parent_name), &grouped))
         return ph_mqtt_app_error(PH_MQTT_ERROR_APP_DISCOVERY_IDENTITY, MQTT_FAILURE);
@@ -174,9 +176,9 @@ static __attribute__((noinline)) int filter_discovery(const a1_config_t *c, bool
         json_build_object_add(o, "device", device);
         if (bound && grouped) {
             static char label[160];
-            snprintf(label, sizeof(label), "%s %s", c->name, names[i]);
+            snprintf(label, sizeof(label), "%s %s", c->name, ph_i18n(device_language_get(),names[i],english[i]));
             str(o, "name", label);
-        } else str(o, "name", names[i]);
+        } else str(o, "name", ph_i18n(device_language_get(),names[i],english[i]));
         mqtt_identity(&account, keys[i], identity, sizeof(identity)); str(o, "unique_id", identity);
         str(o, "availability_topic", availability_topic); str(o, "icon", i == 5 ? "mdi:fan-auto" : "mdi:air-filter");
         if (i < 5) str(o, "entity_category", i < 3 ? "diagnostic" : "config");
@@ -206,11 +208,16 @@ static __attribute__((noinline)) int filter_discovery(const a1_config_t *c, bool
             str(o, "payload_press", "{\"action\":\"filter.reset\",\"params\":{}}");
         } else {
             topic(o, "command_topic", "command");
-            str(o, "value_template", "{{ '自动' if value_json.fan_mode == 'auto' else '手动' }}");
-            str(o, "command_template", "{\"action\":\"fan.mode.set\",\"params\":{\"mode\":\"{{ 'auto' if value == '自动' else 'manual' }}\"}}");
+            const uint8_t language = device_language_get();
+            str(o, "value_template", ph_i18n(language,
+                "{{ '自动' if value_json.fan_mode == 'auto' else '手动' }}",
+                "{{ 'Automatic' if value_json.fan_mode == 'auto' else 'Manual' }}"));
+            str(o, "command_template", ph_i18n(language,
+                "{\"action\":\"fan.mode.set\",\"params\":{\"mode\":\"{{ 'auto' if value == '自动' else 'manual' }}\"}}",
+                "{\"action\":\"fan.mode.set\",\"params\":{\"mode\":\"{{ 'auto' if value == 'Automatic' else 'manual' }}\"}}"));
             json_object *options = json_object_new_array();
-            json_build_array_add(options, json_object_new_string("自动"));
-            json_build_array_add(options, json_object_new_string("手动"));
+            json_build_array_add(options, json_object_new_string(ph_i18n(language, "自动", "Automatic")));
+            json_build_array_add(options, json_object_new_string(ph_i18n(language, "手动", "Manual")));
             json_build_object_add(o, "options", options);
         }
         int rc = service_mqtt_optional_send(publish,path,o,true,scope);
@@ -235,7 +242,7 @@ static int fresh_discovery(const a1_config_t *c,bool clear,unsigned i,service_mq
     if(!o||!device||!ids){if(o)json_object_put(o);if(device)json_object_put(device);if(ids)json_object_put(ids);return service_mqtt_json_error(scope,PH_MQTT_ERROR_APP_DISCOVERY_GRAPH);}
     mqtt_identity(&account,"",identity,sizeof(identity));json_build_array_add(ids,json_object_new_string(identity));
     json_build_object_add(device,"identifiers",ids);str(device,"name",c->name);str(device,"manufacturer","Phicomm");str(device,"model","A1 Air Purifier (EMW3080B)");str(device,"sw_version",A1_VERSION);
-    json_build_object_add(o,"device",device);str(o,"name",i?"新风转速":"新风风机");
+    json_build_object_add(o,"device",device);str(o,"name",i?ph_i18n(device_language_get(),"新风转速","Fresh air speed"):ph_i18n(device_language_get(),"新风风机","Fresh air fan"));
     mqtt_identity(&account,key,identity,sizeof(identity));str(o,"unique_id",identity);
     str(o,"availability_topic",availability_topic);topic(o,"state_topic","state");
     str(o,"value_template","{{ value_json.fresh_air_rpm }}");
@@ -263,6 +270,7 @@ static int discovery_build(const a1_config_t *c,unsigned index,service_mqtt_json
     const char *keys[] = {"fan", "light", "child_lock", "led_always_on"};
     const char *components[] = {"fan", "light", "switch", "switch"};
     const char *names[] = {"空气净化器", "灯环", "童锁", "灯环常亮"};
+    const char *english[] = {"Air purifier", "Light ring", "Child lock", "Always-on light ring"};
     for (unsigned i=begin; i<4 && i==begin; i++) {
         if (!fresh && feature_bound()) { char path[MQTT_TOPIC_MAX]; mqtt_ha(&account, components[i], fresh?"fresh_air":keys[i], path, sizeof(path)); int rc=publish(path,"",true); if(rc!=MQTT_SUCCESS)return rc; continue; }
         json_object *o = json_object_new_object(), *device = json_object_new_object(), *ids = json_object_new_array();
@@ -278,7 +286,7 @@ static int discovery_build(const a1_config_t *c,unsigned index,service_mqtt_json
         json_build_object_add(device, "identifiers", ids);
         str(device, "name", c->name); str(device, "model", "A1 Air Purifier (EMW3080B)");
         str(device, "manufacturer", "Phicomm"); str(device, "sw_version", A1_VERSION);
-        json_build_object_add(o, "device", device); str(o, "name", fresh?"新风风机":names[i]);
+        json_build_object_add(o, "device", device); str(o, "name", fresh?ph_i18n(device_language_get(),"新风风机","Fresh air fan"):ph_i18n(device_language_get(),names[i],english[i]));
         mqtt_identity(&account, fresh?"fresh_air":keys[i], text, sizeof(text)); str(o, "unique_id", text);
         str(o, "availability_topic", availability_topic);
         topic(o,"json_attributes_topic","state");
@@ -508,7 +516,7 @@ static int session_prepare(void *context,ph_mqtt_connection *spec) {
         mqtt_identity(&account, "", client_id, sizeof(client_id));
         mqtt_leaf(&account, "command", wildcard, sizeof(wildcard));
         mqtt_leaf(&account, "availability", availability_topic, sizeof(availability_topic));
-        session_config = cfg;
+        session_config = cfg;discovery_language=device_language_get();
         feature_mqtt_session(&account);
         feature_revision=feature_config_revision();
         count=feature_mqtt_filters(feature_filters,sizeof(feature_filters)/sizeof(feature_filters[0]));
@@ -544,6 +552,8 @@ static int session_cycle(void *context) {
             if(ota_job_active())return MQTT_SUCCESS;
             mqtt_state_get(&state); a1_config_get(&current);
             if (!state.wifi_connected || !same_connection(&cfg, &current)) return PH_MQTT_RECONFIGURE;
+            uint8_t language=device_language_get();
+            if(language!=discovery_language){discovery_language=language;rediscover=true;}
             uint32_t current_feature_revision=feature_config_revision();
             bool feature_changed=feature_revision!=current_feature_revision;
             feature_revision=current_feature_revision;

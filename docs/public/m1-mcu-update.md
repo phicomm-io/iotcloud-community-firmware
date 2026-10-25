@@ -4,6 +4,8 @@ M1 主控固件可以通过网络更新，**不需要 J-Link，也不需要拆�
 
 **本文刷的是“传感器主控”，不是“Wi-Fi MCU”。** EMW3080 联网模块负责 Wi-Fi 和网页；ATSAMD20G18A 传感器主控负责与机内传感器通信，以及屏幕、按键和蜂鸣器。为降低新手误刷导致设备无法使用的风险，传感器主控没有 WebUI 上传入口。请使用下文电脑脚本，通过 `POST /api/v1/mcu/exchange` API 烧录并校验；普通网页“固件更新”只更新 Wi-Fi MCU。
 
+**先核对主控版本：推荐原厂 11.x 迁移，17.1.2.3 / 17.x 差异较大，暂不建议迁移。** 本教程不会把联网版本当作主控版本；版本未知时先查明硬件与原始版本。
+
 <!-- os-picker -->
 
 ## 1. 确认 Wi-Fi 固件版本
@@ -82,7 +84,7 @@ python3 tools/m1_network.py \
 
 macOS / Linux 的多行命令请整体复制，行末 `\` 表示命令还没结束；Windows 命令已经合为一行。
 
-默认不刷写。检查输出中的 `device_id`、`before_mcu`、`candidate`、`sha256` 和 `bytes`，确认目标设备和候选主控版本正确。此步骤核对本地镜像并读取设备身份与主控版本，**不会实际发送升级帧，也不能代替前面的 Wi-Fi 最低版本检查**。
+默认不刷写。检查输出中的 `device_id`、`before_mcu`、`candidate`、`sha256` 和 `bytes`，确认目标设备和待写入的主控版本正确。此步骤核对本地镜像并读取设备身份与主控版本，**不会实际发送升级帧，也不能代替前面的 Wi-Fi 最低版本检查**。
 
 ## 5. 加上 --flash 正式更新
 
@@ -119,4 +121,4 @@ python3 tools/m1_network.py \
 
 该过程**只更新链接于 0x4000 的主控应用，保留原厂 Bootloader**，不会刷入独立新 Boot。原厂 Boot 不具备新 Boot 增加的 CRC 日志与中断搬运恢复保证。原厂整片备份与 Boot 镜像不能作为本流程的应用 OTA 文件。
 
-主控仍为开发预览，已有单台 M1 候选网络升级验证，其他硬件修订和真实掉电恢复需分别验证。功能与原厂备份见 [M1 主控开源固件](m1-mcu-firmware)，实现细节见[主控网络升级协议](https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20/blob/v0.9.4/docs/network-ota.md)。
+使用对应 Release 的镜像与清单，升级期间保持供电。功能与原厂备份见 [M1 主控开源固件](m1-mcu-firmware)，实现细节见[主控网络升级协议](https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20/blob/v0.9.4/docs/network-ota.md)。

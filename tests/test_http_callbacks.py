@@ -1,10 +1,10 @@
 """Production product callbacks + real shared JSON lifetime helpers, ASan/UBSan."""
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import tempfile
 import unittest
+from tests.sdk_json import copy_patched_json
 ROOT=Path(__file__).resolve().parents[1]
 PREFIX=(ROOT/'tests/http_core/callbacks.c').read_text()
 SOAK_ENV='PH_HTTP_CALLBACK_SOAK_ROUNDS'
@@ -24,8 +24,7 @@ class Callbacks(unittest.TestCase):
   sdk=Path(os.environ.get('PHICOMM_TEST_JSON_DIR',ROOT/'build/a1-sdk/mico-os/libraries/utilities/json_c'))
   for model,slots in (('A1',3),('M1',4),('TC1',3),('TC1',4)):
    with self.subTest(model=model,slots=slots),tempfile.TemporaryDirectory() as temp:
-    temp=Path(temp);json=temp/'json';shutil.copytree(sdk,json)
-    for p in json.glob('*.c'):p.write_text(p.read_text().replace('%ld','%d'))
+    temp=Path(temp);json=copy_patched_json(sdk,temp/'sdk')
     source=(ROOT/(model+'/http.c' if model!='TC1' else 'TC1/http_server/app_httpd.c')).read_text()
     if model!='TC1':
      prefix=model.lower()
@@ -66,6 +65,8 @@ static void mico_rtos_unlock_mutex(unsigned*p){assert(*p);*p=0;}
      globals=source[source.index('static ph_http_product product;'):source.index('static __attribute__((noinline)) json_object *tc1_status_full(')]
      tail=source[source.index('static void memory_response('):]
      stubs=r'''
+/* Alias the fixture's mutable password, including the empty-password guard. */
+static struct {char *web_password;} config_fixture={password},*user_config=&config_fixture;
 static bool tc1_http_authorized(const char*a){return ph_http_basic(a,"admin",password);}
 static int get_last_reset_reason(void){return 1;}
 static size_t tc1_http_trace_format(char*p,size_t n){assert(n>=3);memcpy(p,"{}",3);return 2;}
@@ -127,6 +128,33 @@ int main(int argc,char**argv){
  command_alias=true;assert(start("POST","/api/v1/command",20)==PH_HTTP_READ_BODY);assert(app.body(&x,"{\"alias\":\"retained\"}",20));app.complete(&x);assert(product.wire&&strstr(x.response.body,"retained"));finish(true);command_alias=false;
  assert(start("POST","/api/v1/command",10)==PH_HTTP_READ_BODY);assert(app.body(&x,"{",1));finish(false);
  wire_stall=true;execute_wire("POST /api/v1/command HTTP/1.1\r\nAuthorization: Basic YWRtaW46cHc=\r\nContent-Length: 2\r\n\r\n");wire_stall=false;assert_clean();assert(app.admission()==PH_HTTP_CLIENT_SLOTS);
+ /* Backup/restore share the real route, allocator, body-copy and release path. */
+ password[0]=0;
+ assert(start_auth("GET","/api/v1/config/backup",0,NULL)==PH_HTTP_REPLY);assert_json_response(403,"set_web_password_first");finish(true);
+ assert(start_auth("POST","/api/v1/config/restore",sizeof(backup_bytes),NULL)==PH_HTTP_REPLY);assert_json_response(403,"set_web_password_first");finish(true);
+ assert(!backup_exports&&!backup_imports);strcpy(password,"pw");
+ assert(start_auth("GET","/api/v1/config/backup",0,"Basic YmFk")==PH_HTTP_REPLY);assert(x.response.status==401&&!backup_exports);finish(true);
+ assert(start_auth("POST","/api/v1/config/restore",sizeof(backup_bytes),"Basic YmFk")==PH_HTTP_REPLY);assert(x.response.status==401&&!backup_imports);finish(true);
+ assert(start("GET","/api/v1/config/backup",0)==PH_HTTP_REPLY);
+ assert(x.response.status==200&&!strcmp(x.response.type,"application/octet-stream")&&x.response.length==sizeof(backup_bytes));
+ assert(product.body==x.response.body&&claims&&!memcmp(x.response.body,backup_bytes,sizeof(backup_bytes))&&backup_exports==1);finish(true);
+ deny=true;assert(start("GET","/api/v1/config/backup",0)==PH_HTTP_WAIT);assert(waiting&&!claims&&backup_exports==1);
+ deny=false;assert(app.retry(&x)==PH_HTTP_REPLY);assert(x.response.status==200&&backup_exports==2&&!memcmp(x.response.body,backup_bytes,sizeof(backup_bytes)));finish(false);
+ fail_backup_export=true;assert(start("GET","/api/v1/config/backup",0)==PH_HTTP_REPLY);assert_json_response(409,"backup_unavailable");finish(true);fail_backup_export=false;
+ for(unsigned n=sizeof(backup_bytes)-1;n<=sizeof(backup_bytes)+1;n+=2){
+  assert(start("POST","/api/v1/config/restore",n)==PH_HTTP_REPLY);assert_json_response(400,"invalid_backup");finish(true);
+ }
+ assert(!backup_imports);
+ assert(start("POST","/api/v1/config/restore",sizeof(backup_bytes))==PH_HTTP_READ_BODY);assert(app.body(&x,backup_bytes,9));finish(false);assert(!backup_imports);
+ deny=true;assert(start("POST","/api/v1/config/restore",sizeof(backup_bytes))==PH_HTTP_WAIT);assert(waiting&&!claims);finish(false);deny=false;assert(!backup_imports);
+ const char *restore_codes[]={"accepted","busy","storage_error","invalid_backup"};
+ const unsigned restore_statuses[]={202,409,400,400};
+ for(unsigned n=0;n<sizeof(restore_codes)/sizeof(restore_codes[0]);n++){
+  backup_import_code=restore_codes[n];assert(start("POST","/api/v1/config/restore",sizeof(backup_bytes))==PH_HTTP_READ_BODY);
+  assert(app.body(&x,backup_bytes,9)&&app.body(&x,backup_bytes+9,sizeof(backup_bytes)-9));app.complete(&x);
+  assert_json_response(restore_statuses[n],restore_codes[n]);assert(backup_imports==n+1);finish(n!=0);
+ }
+ backup_import_code="accepted";assert_clean();
  assert(start("POST","/api/v1/ota/upload",100)==OTA_ACTION);if(OTA_ACTION==PH_HTTP_WAIT)assert(app.retry(&x)==PH_HTTP_READ_BODY);assert(job&&app.admission()==2);assert(app.body(&x,"123",3));finish(false);assert(aborts==1&&!job);
  assert(start("POST","/api/v1/ota/upload-unsigned",3)==OTA_ACTION);if(OTA_ACTION==PH_HTTP_WAIT)assert(app.retry(&x)==PH_HTTP_READ_BODY);app.body(&x,"123",3);app.complete(&x);assert(x.response.status==202&&finishes==1);finish(true);assert(!job);
  MCU_CHECK

@@ -1,6 +1,6 @@
 # DAIKIN BRY88AX151K air quality monitor
 
-The ESP32 / 4 MB Flash board uses one universal image that detects PM2005 / PM2105 and the optional formaldehyde module. Its web interface shares M1 reading cards, comfort scales and linked-device information, with local access, IotCloud and Home Assistant support.
+The ESP32 / 4 MB Flash board uses one universal image that detects PM2005 / PM2105 and the optional formaldehyde module. Its web interface shares M1 reading cards, comfort scales and linked-device information, with local access, IoTCloud and Home Assistant support.
 
 ## Readings and controls
 
@@ -21,7 +21,7 @@ The Wi-Fi lamp indicates system status: three long and three short pulses when u
 
 ## First installation
 
-Choose a release that **explicitly includes DAIKIN** on the [downloads page](../../index.html#releases). Do not substitute another model's image when an older archive lists only Phicomm devices. This device has a full image only.
+Choose a release that **explicitly includes DAIKIN** on the [downloads page](../../index.html#releases). Do not substitute another model's image when an older archive lists only Phicomm devices. Existing 0.9.x releases provide the full image only. The v1 hub variant has not been released.
 
 1. Confirm the ESP32 / 4 MB Flash board and wiring, then back up the entire original Flash. Keep that backup private because it contains network credentials.
 2. Hold GPIO0 / BOOT0 low while powering on to enter the ESP32 bootloader. Use ESPTool to write `daikin_BRY88AX151K.all.bin` at **0x0**. Never upload the factory image through web OTA.
@@ -38,10 +38,27 @@ Upload `daikin_BRY88AX151K.ota.bin.signed` from the firmware update page. The de
 
 An explicitly labelled unsigned recovery input accepts a trusted raw application image. Releases name it `daikin_BRY88AX151K.ota.bin.raw`; local builds use `daikin_BRY88AX151K.ota.bin`. If the web interface is unavailable, enter the BOOT0 bootloader again and restore the original backup or a complete image. See [Firmware updates](firmware-update).
 
-## IotCloud, Home Assistant and A1
+## IoTCloud, Home Assistant and A1
 
-Follow [Connect to IotCloud](iotcloud-connect) using an MQTT account on the selected node. The device is discovered as **DAIKIN BRY88AX151K**, and the platform provides the same reading cards as its local interface. Home Assistant discovery publishes only sensors that are present.
+Follow [Connect to IoTCloud](iotcloud-connect) using an MQTT account on the selected node. The device is discovered as **DAIKIN BRY88AX151K**, and the platform provides the same reading cards as its local interface. Home Assistant discovery publishes only sensors that are present.
 
 Add this device's MAC and optional IP in the updated A1 settings. MQTT under the same account grants reading sessions automatically. A1 prefers local reads and uses MQTT measurements when local reads are unavailable. The monitor's linked-purifier area shows A1 devices that have actually read it; a grant alone is not a connection.
 
 A1 offers automation sources according to currently valid data, independently of the monitor model. Missing formaldehyde or stale readings hide the corresponding options while preserving saved rules. If required control data is unavailable, A1 uses its configured offline speed. TVOC is not currently a fan-control metric.
+
+## v1.0 hub in development
+
+A separate `hub` variant is planned; the ordinary image remains a sensor device. The hub includes local accounts, a MQTT TCP / WebSocket Broker, LAN Home Assistant, an upstream MQTT client and Bemfa forwarding, managed through the existing frontend. Local accounts do not include email or GitHub login.
+
+Apple Home is planned through HAP bridging; pairing, controls and recovery after disconnection await physical-device validation. Matter support is not currently claimed. These features have not been released and are not included in the ordinary images currently offered for download.
+
+### Switch from full to hub
+
+Only newer `full` firmware that advertises this operation provides the conversion option. The image must fit the device's actual OTA slot. Use local HTTP and a real signed `hub` OTA file; the older full images currently offered for download do not provide this feature.
+
+1. Open the device on your LAN and set a web administration password, or keep the existing password. **Set web password** on the upgrade page opens its settings form.
+2. Open **Settings → Firmware → Advanced**, select the matching signed `hub` OTA file and enable **Switch to hub firmware**. This option cannot be combined with unsigned recovery.
+3. Select **Upload and install**, review the confirmation and explicitly approve the conversion. Wi-Fi, MQTT and the web administration password are retained.
+4. Reopen the device after restart, confirm its variant is `hub`, and use the original web administration password to create the first local account. HomeKit is off by default; enable it separately when needed.
+
+Normal signed updates and unsigned recovery still accept only the current variant. Direct OTA from `hub → full` is unsupported.

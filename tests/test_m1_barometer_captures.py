@@ -44,6 +44,35 @@ class BarometerCaptureTests(unittest.TestCase):
         self.assertEqual(report["hardware_presence"], "m1_identity_confirmed")
         self.assertEqual(report["sensor_presence"], "bmp388_hardware_confirmed")
 
+    def test_identity_is_derived_without_an_invented_address(self):
+        report = validator.validate_captures(self.pair(), VERSION)
+        self.assertEqual(report["expected_device_id"], body(100, 5)["data"]["device_id"])
+        self.assertEqual(report["identity_source"], "capture_metadata")
+        self.assertIsNone(report["device_ip"])
+
+    def test_explicit_identity_mismatch_and_missing_metadata_fail(self):
+        report = validator.validate_captures(
+            self.pair(), VERSION, expected_device_id="020000000099")
+        self.assertEqual(report["status"], "failed")
+        self.assertIn("capture_0_identity_or_version_mismatch", report["failures"])
+        first, second = body(100, 5), body(110, 6)
+        del first["data"]["device_id"]
+        del second["data"]["device_id"]
+        report = validator.validate_captures(self.pair(first, second), VERSION)
+        self.assertIn("device_identity_missing_or_invalid", report["failures"])
+
+    def test_explicit_address_requires_matching_capture_metadata(self):
+        first, second = body(100, 5), body(110, 6)
+        first["capture_metadata"] = {"device_ip": "198.51.100.10"}
+        second["capture_metadata"] = {"device_ip": "198.51.100.10"}
+        report = validator.validate_captures(
+            self.pair(first, second), VERSION, expected_ip="198.51.100.10")
+        self.assertEqual(report["status"], "passed")
+        second["capture_metadata"]["device_ip"] = "198.51.100.20"
+        report = validator.validate_captures(
+            self.pair(first, second), VERSION, expected_ip="198.51.100.10")
+        self.assertIn("capture_1_device_ip_missing_or_mismatch", report["failures"])
+
     def test_insufficient_captures_are_not_run(self):
         report = validator.validate_captures([], VERSION)
         self.assertEqual(report["status"], "NOT_RUN")

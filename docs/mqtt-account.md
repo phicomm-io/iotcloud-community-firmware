@@ -35,7 +35,7 @@ HTTP 使用 `POST /api/v1/command`，与 MQTT command 共用 JSON 命令和响�
 
 `model` 按实际型号变化；Legacy 为 `protocol:"legacy"`、`protocol_version:1`、`version:"v1"`。`schema:1` 是公告结构版本。
 
-**平台配套要求：** 当前相邻仓库 `phicomm-community-mqtt` 的 M1/A1 校验仍要求 `version:"community"`，账号 ACL/业务主题仍使用旧根。平台必须同步支持 v2 元数据和 `phicomm/v2` 根，才能完成自动登记和授权。本次固件修改未部署或修改生产平台；不能据固件构建通过宣称现有平台可直接使用。
+**平台配套要求：** 当前相邻仓库 `iotcloud-community-mqtt` 的 M1/A1 校验仍要求 `version:"community"`，账号 ACL/业务主题仍使用旧根。平台必须同步支持 v2 元数据和 `phicomm/v2` 根，才能完成自动登记和授权。本次固件修改未部署或修改生产平台；不能据固件构建通过宣称现有平台可直接使用。
 
 账号隔离需要 Broker ACL 实际限制对应 user_key；仅主题带用户名不构成授权。连接后先公告，再检查真实 SUBACK；授权不足会退避重试，不降级。HA 发现主题为 `homeassistant/<component>/<user_key>/<model>_<mac>_<entity>/config`，设备/实体 ID 包含账号、型号与 MAC。HA online 后重发发现配置。
 

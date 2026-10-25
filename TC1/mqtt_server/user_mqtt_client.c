@@ -1,3 +1,4 @@
+#include "../../common/i18n.h"
 #include "../../common/ota/mode.h"
 #include "ota_server/signed_adapter.h"
 #include "ota_server/ota_server.h"
@@ -734,7 +735,7 @@ void UserMqttHassAutoRebootButton(void) {
         // 闂備焦褰冪粔鎾箚鎼淬劌绠板鑸靛姈鐏忥箓姊洪弶璺ㄐら柣?
         sprintf(topic_buf, "homeassistant/button/%s/reboot/config", str_mac);
         snprintf(send_buf, MAX_MQTT_DATA_SIZE,
-                "{\"name\":\"Reboot Device\","
+                "{\"name\":\"%s\","
                 "\"uniq_id\":\"tc1_%s_reboot\","
                 "\"object_id\":\"tc1_%s_reboot\","
                 "\"cmd_t\":\"device/ztc1/%s/set\","  // 婵烇絽娴傞崰妤呭极婵傜宸濋柟瀛樺笚婵垹鈽夐幘鎰佺吋妞わ綀濮ょ粋鎺楀Ψ閵夈儳鍩嶉梻浣规緲缁夌兘顢欓弴鐔风窞闁搞儜鍕婵炴垶鎸撮崑鎾绘煛瀹ュ懏绌块柣?
@@ -745,7 +746,7 @@ void UserMqttHassAutoRebootButton(void) {
                 "\"name\":\"%s\","
                 "\"model\":\"TC1\","
                 "\"manufacturer\":\"PHICOMM\"}}",
-                str_mac, str_mac, str_mac, str_mac, str_mac, device_name);
+                ph_i18n(user_config->bemfa.language,"重启设备","Reboot Device"), str_mac, str_mac, str_mac, str_mac, str_mac, device_name);
         UserMqttSendTopic(topic_buf, send_buf, 1);
     }
     if (send_buf) free(send_buf);
@@ -763,7 +764,7 @@ void UserMqttHassAutoSoftRebootButton(void) {
         // 闁哄鍎愰崹鍫曞闯閹间礁瑙︽い鏍ㄧ☉閻﹀姊虹粵瀣珝闁告ǜ鍊楃槐?
         sprintf(topic_buf, "homeassistant/button/%s/soft_reboot/config", str_mac);
         snprintf(send_buf, MAX_MQTT_DATA_SIZE,
-                "{\"name\":\"Soft Reboot\","
+                "{\"name\":\"%s\","
                 "\"uniq_id\":\"tc1_%s_soft_reboot\","
                 "\"object_id\":\"tc1_%s_soft_reboot\","
                 "\"cmd_t\":\"device/ztc1/%s/set\","
@@ -774,7 +775,7 @@ void UserMqttHassAutoSoftRebootButton(void) {
                 "\"name\":\"%s\","
                 "\"model\":\"TC1\","
                 "\"manufacturer\":\"PHICOMM\"}}",
-                str_mac, str_mac, str_mac, str_mac, str_mac, device_name);
+                ph_i18n(user_config->bemfa.language,"软重启","Soft Reboot"), str_mac, str_mac, str_mac, str_mac, str_mac, device_name);
         UserMqttSendTopic(topic_buf, send_buf, 1);
     }
     if (send_buf) free(send_buf);
@@ -791,7 +792,7 @@ void UserMqttHassAutoLed(void) {
     if (send_buf != NULL && topic_buf != NULL) {
         sprintf(topic_buf, "homeassistant/switch/%s/led/config", str_mac);
         snprintf(send_buf, MAX_MQTT_DATA_SIZE,
-                "{\"name\":\"LED Indicator\","
+                "{\"name\":\"%s\","
                 "\"uniq_id\":\"tc1_%s_led\","
                 "\"object_id\":\"tc1_%s_led\","
                 "\"stat_t\":\"homeassistant/switch/%s/led/state\","
@@ -804,7 +805,7 @@ void UserMqttHassAutoLed(void) {
                 "\"name\":\"%s\","
                 "\"model\":\"TC1\","
                 "\"manufacturer\":\"PHICOMM\"}}",
-                str_mac,str_mac,str_mac, str_mac, str_mac, str_mac,str_mac,device_name);
+                ph_i18n(user_config->bemfa.language,"指示灯","LED Indicator"), str_mac,str_mac,str_mac, str_mac, str_mac, str_mac,str_mac,device_name);
         UserMqttSendTopic(topic_buf, send_buf, 1);
     }
     if (send_buf)
@@ -823,7 +824,7 @@ void UserMqttHassAutoChildLock(void) {
     if (send_buf != NULL && topic_buf != NULL) {
         sprintf(topic_buf, "homeassistant/switch/%s/childLock/config", str_mac);
         snprintf(send_buf, MAX_MQTT_DATA_SIZE,
-                "{\"name\":\"Child Lock\","
+                "{\"name\":\"%s\","
                 "\"uniq_id\":\"tc1_%s_child_lock\","
                 "\"object_id\":\"tc1_%s_child_lock\","
                 "\"stat_t\":\"homeassistant/switch/%s/childLock/state\","
@@ -836,7 +837,7 @@ void UserMqttHassAutoChildLock(void) {
                 "\"name\":\"%s\","
                 "\"model\":\"TC1\","
                 "\"manufacturer\":\"PHICOMM\"}}",
-                str_mac,str_mac,str_mac, str_mac, str_mac, str_mac,str_mac,device_name);
+                ph_i18n(user_config->bemfa.language,"童锁","Child Lock"), str_mac,str_mac,str_mac, str_mac, str_mac, str_mac,str_mac,device_name);
         UserMqttSendTopic(topic_buf, send_buf, 1);
     }
     if (send_buf)
@@ -855,7 +856,7 @@ void UserMqttHassAutoTotalSocket(void) {
     if (send_buf != NULL && topic_buf != NULL) {
         sprintf(topic_buf, "homeassistant/switch/%s/total_socket/config", str_mac);
         snprintf(send_buf, MAX_MQTT_DATA_SIZE,
-                "{\"name\":\"Master Switch\","
+                "{\"name\":\"%s\","
                 "\"uniq_id\":\"tc1_%s_total_socket\","
                 "\"object_id\":\"tc1_%s_total_socket\","
                 "\"stat_t\":\"homeassistant/switch/%s/total_socket/state\","
@@ -868,7 +869,7 @@ void UserMqttHassAutoTotalSocket(void) {
                 "\"name\":\"%s\","
                 "\"model\":\"TC1\","
                 "\"manufacturer\":\"PHICOMM\"}}",
-                str_mac, str_mac, str_mac, str_mac, str_mac, str_mac, str_mac,device_name);
+                ph_i18n(user_config->bemfa.language,"总开关","Master Switch"), str_mac, str_mac, str_mac, str_mac, str_mac, str_mac, str_mac,device_name);
         UserMqttSendTopic(topic_buf, send_buf, 1);
     }
     if (send_buf)
@@ -888,7 +889,7 @@ void UserMqttHassAutoPower(void) {
     if (send_buf != NULL && topic_buf != NULL) {
         sprintf(topic_buf, "homeassistant/sensor/%s/power/config", str_mac);
         snprintf(send_buf, MAX_MQTT_DATA_SIZE,
-                "{\"name\":\"Power\","
+                "{\"name\":\"%s\","
                 "\"uniq_id\":\"tc1_%s_p\","
                 "\"object_id\":\"tc1_%s_p\","
                 "\"state_topic\":\"homeassistant/sensor/%s/power/state\","
@@ -899,11 +900,11 @@ void UserMqttHassAutoPower(void) {
                 "\"name\":\"%s\","
                 "\"model\":\"TC1\","
                 "\"manufacturer\":\"PHICOMM\"}}",
-                str_mac,str_mac, str_mac, str_mac,device_name);
+                ph_i18n(user_config->bemfa.language,"功率","Power"), str_mac,str_mac, str_mac, str_mac,device_name);
         UserMqttSendTopic(topic_buf, send_buf, 1);
         sprintf(topic_buf, "homeassistant/sensor/%s/powerConsumption/config", str_mac);
         snprintf(send_buf, MAX_MQTT_DATA_SIZE,
-                "{\"name\":\"Energy Total\","
+                "{\"name\":\"%s\","
                 "\"uniq_id\":\"tc1_%s_pc\","
                 "\"object_id\":\"tc1_%s_pc\","
                 "\"state_topic\":\"homeassistant/sensor/%s/powerConsumption/state\","
@@ -914,19 +915,19 @@ void UserMqttHassAutoPower(void) {
                 "\"name\":\"%s\","
                 "\"model\":\"TC1\","
                 "\"manufacturer\":\"PHICOMM\"}}",
-                str_mac, str_mac, str_mac, str_mac,device_name);
+                ph_i18n(user_config->bemfa.language,"累计用电","Energy Total"), str_mac, str_mac, str_mac, str_mac,device_name);
         UserMqttSendTopic(topic_buf, send_buf, 1);
 
 
         sprintf(topic_buf,"homeassistant/sensor/%s/energySession/config",str_mac);
         snprintf(send_buf,MAX_MQTT_DATA_SIZE,
-            "{\"name\":\"Energy Since Boot\",\"uniq_id\":\"tc1_%s_energy_session\",\"state_topic\":\"homeassistant/sensor/%s/energySession/state\",\"unit_of_measurement\":\"kWh\",\"device_class\":\"energy\",\"state_class\":\"total_increasing\",\"value_template\":\"{{ value_json.energySession }}\",\"device\":{\"identifiers\":[\"tc1_%s\"],\"name\":\"%s\",\"model\":\"TC1\",\"manufacturer\":\"PHICOMM\"}}",
-            str_mac,str_mac,str_mac,device_name);
+            "{\"name\":\"%s\",\"uniq_id\":\"tc1_%s_energy_session\",\"state_topic\":\"homeassistant/sensor/%s/energySession/state\",\"unit_of_measurement\":\"kWh\",\"device_class\":\"energy\",\"state_class\":\"total_increasing\",\"value_template\":\"{{ value_json.energySession }}\",\"device\":{\"identifiers\":[\"tc1_%s\"],\"name\":\"%s\",\"model\":\"TC1\",\"manufacturer\":\"PHICOMM\"}}",
+            ph_i18n(user_config->bemfa.language,"本次启动用电","Energy Since Boot"), str_mac,str_mac,str_mac,device_name);
         UserMqttSendTopic(topic_buf,send_buf,1);
 
         sprintf(topic_buf, "homeassistant/sensor/%s/startupTime/config", str_mac);
         snprintf(send_buf, MAX_MQTT_DATA_SIZE,
-                "{\"name\":\"Uptime\","
+                "{\"name\":\"%s\","
                 "\"uniq_id\":\"tc1_%s_sut\","
                 "\"object_id\":\"tc1_%s_sut\","
                 "\"state_topic\":\"homeassistant/sensor/%s/startupTime/state\","
@@ -937,12 +938,12 @@ void UserMqttHassAutoPower(void) {
                 "\"name\":\"%s\","
                 "\"model\":\"TC1\","
                 "\"manufacturer\":\"PHICOMM\"}}",
-                str_mac, str_mac, str_mac, str_mac,device_name);
+                ph_i18n(user_config->bemfa.language,"运行时间","Uptime"), str_mac, str_mac, str_mac, str_mac,device_name);
         UserMqttSendTopic(topic_buf, send_buf, 1);
 
         sprintf(topic_buf, "homeassistant/sensor/%s/powerConsumptionToday/config", str_mac);
         snprintf(send_buf, MAX_MQTT_DATA_SIZE,
-                "{\"name\":\"Energy Today\","
+                "{\"name\":\"%s\","
                 "\"uniq_id\":\"tc1_%s_pc_today\","
                 "\"object_id\":\"tc1_%s_pc_today\","
                 "\"state_topic\":\"homeassistant/sensor/%s/powerConsumptionToday/state\","
@@ -953,12 +954,12 @@ void UserMqttHassAutoPower(void) {
                 "\"name\":\"%s\","
                 "\"model\":\"TC1\","
                 "\"manufacturer\":\"PHICOMM\"}}",
-                str_mac,str_mac, str_mac, str_mac,device_name);
+                ph_i18n(user_config->bemfa.language,"今日用电","Energy Today"), str_mac,str_mac, str_mac, str_mac,device_name);
         UserMqttSendTopic(topic_buf, send_buf, 1);
 
         sprintf(topic_buf, "homeassistant/sensor/%s/powerConsumptionYesterday/config", str_mac);
         snprintf(send_buf, MAX_MQTT_DATA_SIZE,
-                "{\"name\":\"Energy Yesterday\","
+                "{\"name\":\"%s\","
                 "\"uniq_id\":\"tc1_%s_pc_yesterday\","
                 "\"object_id\":\"tc1_%s_pc_yesterday\","
                 "\"state_topic\":\"homeassistant/sensor/%s/powerConsumptionYesterday/state\","
@@ -969,7 +970,7 @@ void UserMqttHassAutoPower(void) {
                 "\"name\":\"%s\","
                 "\"model\":\"TC1\","
                 "\"manufacturer\":\"PHICOMM\"}}",
-                str_mac,str_mac, str_mac, str_mac,device_name);
+                ph_i18n(user_config->bemfa.language,"昨日用电","Energy Yesterday"), str_mac,str_mac, str_mac, str_mac,device_name);
         UserMqttSendTopic(topic_buf, send_buf, 1);
     }
     if (send_buf) free(send_buf);

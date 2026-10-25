@@ -1,5 +1,7 @@
 /* Actual A1 native/filter builders, real JSON ownership and shared session. */
 #include "common/json_owned.h"
+#include "common/i18n.h"
+uint8_t device_language_get(void){return PH_LANG_ZH;}
 typedef struct {char name[96];} a1_config_t;
 #define FEATURE_TOPIC_MAX 512
 #define A1_FILTER_MAX_HOURS 87600

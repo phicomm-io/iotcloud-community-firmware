@@ -1,5 +1,14 @@
 #define FEATURE_DEVICE_A1
 #include "../common/automation.h"
+
+#include "../common/backup.h"
+static bool config_recovery, config_initializing, config_update_pending;
+bool device_config_recovery(void) { return config_recovery; }
+void device_config_recovery_set(bool recovery) { config_recovery=recovery; }
+bool app_config_persist_allowed(void) {
+    if (config_initializing) config_update_pending = true;
+    return !config_recovery && !config_initializing;
+}
 #include "../common/service.h"
 #include "../common/watchdog.h"
 #include "a1.h"
@@ -96,10 +105,12 @@ bool a1_reset(bool full)
     if (ok) {
         filter_advance(mico_rtos_get_time(), filter_clock.running);
         memcpy(old, a1_config, sizeof(*old));
+        bool was_recovery=config_recovery;
+        if(full)config_recovery=false;
         if (full) appRestoreDefault_callback(a1_config, sizeof(*old));
         else { a1_config->ssid[0] = 0; a1_config->wifi_password[0] = 0; a1_config->web_password[0] = 0; }
         ok = mico_system_context_update(a1_context) == kNoErr;
-        if (!ok) memcpy(a1_config, old, sizeof(*old));
+        if (!ok) { memcpy(a1_config, old, sizeof(*old)); config_recovery=was_recovery; }
         else {
             filter_clock.saved_seconds = filter_storage()->used_seconds;
             if (full) { filter_clock = (a1_filter_clock_t){0}; stock_clock = (a1_filter_stock_clock_t){0}; }
@@ -147,7 +158,15 @@ static bool flush_locked(void)
     return err == kNoErr;
 }
 
-bool a1_config_save(const a1_config_t *c)
+uint8_t device_language_get(void)
+{
+    mico_rtos_lock_mutex(&a1_config_lock);
+    uint8_t language = ((app_storage_t *)a1_config)->features.language;
+    mico_rtos_unlock_mutex(&a1_config_lock);
+    return language == PH_LANG_EN ? PH_LANG_EN : PH_LANG_ZH;
+}
+
+static bool a1_config_save_language(const a1_config_t *c, int language)
 {
     mico_rtos_lock_mutex(&a1_config_lock);
     mico_rtos_lock_mutex(&a1_lock);
@@ -158,14 +177,22 @@ bool a1_config_save(const a1_config_t *c)
     mico_rtos_unlock_mutex(&a1_lock);
     if (!valid) { mico_rtos_unlock_mutex(&a1_config_lock); return false; }
     a1_config_t old = *a1_config;
+    uint8_t *stored_language = &((app_storage_t *)a1_config)->features.language;
+    uint8_t old_language = *stored_language;
+    if (language >= 0) *stored_language = language;
     *a1_config = *c; a1_config->revision = old.revision + 1;
     bool ok = flush_locked();
-    if (!ok) *a1_config = old;
+    if (!ok) { *a1_config = old; *stored_language = old_language; }
     else {
         mico_rtos_lock_mutex(&a1_lock); a1_state.config_generation++; mico_rtos_unlock_mutex(&a1_lock);
     }
     mico_rtos_unlock_mutex(&a1_config_lock);
     return ok;
+}
+
+bool a1_config_save(const a1_config_t *c) { return a1_config_save_language(c, -1); }
+bool a1_device_config_save(const a1_config_t *c, uint8_t language) {
+    return language <= PH_LANG_EN && a1_config_save_language(c, language);
 }
 
 bool a1_config_flush(bool force)
@@ -283,15 +310,13 @@ int application_start(void)
     a1_config_t c;
     /* The SDK validates MiCO's partition, not the application's layout.
      * zA1's J-Link installer preserves parameters from the previous firmware. */
-    if (a1_config->magic != A1_CONFIG_MAGIC) {
-        memset(a1_config, 0, sizeof(app_storage_t));
-        appRestoreDefault_callback(a1_config, sizeof(app_storage_t));
-        if (mico_system_context_update(a1_context) != kNoErr) return startup_result("config persist", kUnknownErr);
-        service_event("info", "config", "foreign_layout_reset");
+    if (a1_config->magic != A1_CONFIG_MAGIC || a1_config->version < 1 || a1_config->version > A1_CONFIG_VERSION) {
+        config_recovery=true;
+        memset(a1_config,0,sizeof(app_storage_t));
+        appRestoreDefault_callback(a1_config,sizeof(app_storage_t));
+        service_event("error","config","unsupported_layout");
     }
-    if (a1_config->version < 1 || a1_config->version > A1_CONFIG_VERSION) {
-        service_event("error","config","unsupported_layout");return kUnknownErr;
-    }
+    bool migration_changed = false;
     bool stock_migration = a1_config->version < 10;
     bool co2_migration = a1_config->version < 9;
     bool panel_migration = a1_config->version < 8;
@@ -310,12 +335,14 @@ int application_start(void)
         feature_config_t next; a1_migrate_v2(a1_config, &next, old);
         a1_storage_features_put((app_storage_t *)a1_config, &next);
         free(old);
-        if (mico_system_context_update(a1_context) != kNoErr) return startup_result("config persist", kUnknownErr);
+        migration_changed = true;
     }
     if (a1_config->magic == A1_CONFIG_MAGIC && a1_config->version == 3) {
         ((app_storage_t *)a1_config)->automation.magic=0;
     }
-    if (a1_config->version >= 3 && a1_config->version < A1_CONFIG_VERSION) a1_config->version = A1_CONFIG_VERSION;
+    if (a1_config->version >= 3 && a1_config->version < A1_CONFIG_VERSION) {
+        a1_config->version = A1_CONFIG_VERSION; migration_changed = true;
+    }
     if (filter_storage()->magic != A1_FILTER_MAGIC || !filter_storage()->lifetime_hours ||
         filter_storage()->lifetime_hours > A1_FILTER_MAX_HOURS) {
         a1_filter_defaults(filter_storage()); filter_migration = true;
@@ -342,7 +369,7 @@ int application_start(void)
     }
     if (co2_migration) feature_co2_defaults(&((app_storage_t *)a1_config)->co2);
     if (panel_migration) a1_storage_panel_buttons_migrate((app_storage_t *)a1_config);
-    if ((stock_migration || filter_migration || button_migration || auto_migration || panel_migration || co2_migration) && mico_system_context_update(a1_context) != kNoErr) return startup_result("filter persist", kUnknownErr);
+    migration_changed |= stock_migration || filter_migration || button_migration || auto_migration || panel_migration || co2_migration;
     if (((app_storage_t *)a1_config)->automation.magic != AUTOMATION_MAGIC) {
         automation_config_t *next=malloc(sizeof(*next));
         if (!next) return startup_result("automation allocation", kNoMemoryErr);
@@ -355,12 +382,12 @@ int application_start(void)
         }
         a1_storage_automation_put((app_storage_t *)a1_config, next);free(next);
         f->event_count=0;f->scheduled_off=f->scheduled_valid=0;
-        if (mico_system_context_update(a1_context) != kNoErr) return kUnknownErr;
+        migration_changed = true;
     }
     /* Normalize the retained ABI byte without changing credentials or layout. */
     if (a1_config->mqtt_topic_mode != MQTT_TOPIC_TMCP) {
         a1_config->mqtt_topic_mode = MQTT_TOPIC_TMCP;
-        if (mico_system_context_update(a1_context) != kNoErr) return kUnknownErr;
+        migration_changed = true;
     }
     a1_config_get(&c);
     if (c.magic != A1_CONFIG_MAGIC || c.version != A1_CONFIG_VERSION) {
@@ -370,7 +397,7 @@ int application_start(void)
     feature_config_storage_t *extension = &((app_storage_t *)a1_config)->features;
     if (extension->magic != FEATURE_MAGIC) {
         a1_storage_features_defaults((app_storage_t *)a1_config);
-        if (mico_system_context_update(a1_context) != kNoErr) return startup_result("config persist", kUnknownErr);
+        migration_changed = true;
     }
     fresh_config_t *fresh=&((app_storage_t *)a1_config)->fresh_air;
     bool fresh_migrated=fresh->magic==FRESH_MAGIC && fresh->schema==1;
@@ -378,12 +405,10 @@ int application_start(void)
     if(fresh->magic!=FRESH_MAGIC || fresh->schema!=FRESH_SCHEMA || !fresh_mapping_valid(&fresh->mapping)) {
         fresh_defaults(fresh);fresh_migrated=true;
     }
-    if(fresh_migrated) {
-        if(mico_system_context_update(a1_context)!=kNoErr)return startup_result("fresh air persist",kUnknownErr);
-    }
-#ifdef A1_FRESH_AIR
-    err=startup_result("fresh air GPIO",fresh_boot());if(err!=kNoErr)return err;
-#endif
+    migration_changed |= fresh_migrated;
+    /* MiCO initializes the MAC and may update network parameters. Keep those
+     * writes in RAM until every application extension is migrated. */
+    config_initializing = true;
     err = startup_result("MiCO system", mico_system_init(a1_context));
     if (err != kNoErr) return err;
     uint8_t mac[6]; mico_wlan_get_mac_address(mac);
@@ -391,13 +416,27 @@ int application_start(void)
     bemfa_config_t *b=&((app_storage_t *)a1_config)->bemfa;
     if(b->magic!=BEMFA_MAGIC || b->version!=1) {
         bemfa_defaults(b,"a1",a1_id);
-        if(mico_system_context_update(a1_context)!=kNoErr)return startup_result("MQTT extension persist",kUnknownErr);
+        migration_changed = true;
     }
     a1_config_get(&c);
     if (!c.name[0]) {
         snprintf(c.name, sizeof(c.name), "A1-%02X%02X", mac[4], mac[5]);
-        if (!a1_config_save(&c)) return startup_result("config persist", kUnknownErr);
+        *a1_config = c; migration_changed = true;
     }
+    config_initializing = false;
+    if ((migration_changed || config_update_pending) && !config_recovery && mico_system_context_update(a1_context) != kNoErr) {
+        config_recovery = true;
+        memset(a1_config, 0, sizeof(app_storage_t));
+        appRestoreDefault_callback(a1_config, sizeof(app_storage_t));
+        fresh_defaults(&((app_storage_t *)a1_config)->fresh_air);
+        bemfa_defaults(&((app_storage_t *)a1_config)->bemfa, "a1", a1_id);
+        snprintf(a1_config->name, sizeof(a1_config->name), "A1-%02X%02X", mac[4], mac[5]);
+        filter_clock = (a1_filter_clock_t){0};
+        service_event("error", "config", "migration_failed");
+    }
+#ifdef A1_FRESH_AIR
+    err=startup_result("fresh air GPIO",fresh_boot());if(err!=kNoErr)return err;
+#endif
     snprintf(a1_state.ap_name, sizeof(a1_state.ap_name), "A1-AP-%s", a1_id + 6);
     for (char *p = a1_state.ap_name; *p; ++p)
         if (*p >= 'a' && *p <= 'f') *p -= 'a' - 'A';
@@ -595,3 +634,23 @@ const char *fresh_config_save(const fresh_config_t *next) {
     mico_rtos_unlock_mutex(&a1_lock);mico_rtos_unlock_mutex(&a1_config_lock);return result;
 }
 #endif
+
+#define BACKUP_MODEL "a1"
+#define BACKUP_BASE a1_config_t
+#define BACKUP_MAGIC A1_CONFIG_MAGIC
+#define BACKUP_VERSION A1_CONFIG_VERSION
+#define BACKUP_LIVE a1_config
+#define BACKUP_LOCK a1_config_lock
+#define BACKUP_CONTEXT a1_context
+static bool backup_reserve(void) {
+    mico_rtos_lock_mutex(&a1_lock);
+    bool ok=!a1_state.ota_active && !a1_state.reboot_pending && !a1_state.wifi_trial_active;
+    if(ok){a1_state.reboot_pending=true;a1_state.reboot_at=mico_rtos_get_time()+0x7fffffffu;}
+    mico_rtos_unlock_mutex(&a1_lock);return ok;
+}
+static void backup_finish(bool ok) {
+    mico_rtos_lock_mutex(&a1_lock);a1_state.reboot_pending=ok;
+    if(ok)a1_state.reboot_at=mico_rtos_get_time()+1500;
+    mico_rtos_unlock_mutex(&a1_lock);
+}
+#include "../common/backup_mico.inc"

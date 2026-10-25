@@ -38,6 +38,8 @@ typedef a1_config_t m1_config_t;
 static a1_config_t cfg,current;
 static struct {bool wifi_connected;struct {bool received;}scd40,barometer;} state;
 static bool rediscover,sent,old_on,old_visible,filter_turn,co2_discovered,pressure_discovered;
+static uint8_t discovery_language,fixture_language;
+static uint8_t device_language_get(void){return fixture_language;}
 static bool particles_discovered;
 static unsigned m1_lock;
 static struct {bool mcu_sensor_details;}m1_state;
@@ -47,7 +49,7 @@ static unsigned feature_revision,discovery_index,state_index,state_pending,state
 static int old_brightness,old_fresh,old_co2_fresh,old_pressure_fresh;
 static unsigned sequence,co2_sequence,pressure_sequence,count,snapshot_at;
 static char base[8],feature_filters[4][32];static int account,publish;
-static unsigned calls,resets,trace[40],inject_at;static bool injected,fail_once;
+static unsigned calls,resets,trace[40],inject_at;static bool injected,fail_once,language_change;
 static void ota_job_poll(void){}
 static bool ota_job_active(void){return false;}
 static int ota_service(const char*x){(void)x;return 0;}
@@ -62,14 +64,15 @@ static bool feature_mqtt_filters_current(void*x,unsigned n){(void)x;(void)n;retu
 static int feature_mqtt_service(int x,bool connected){(void)x;assert(!connected);resets++;return 0;}
 static int discovery(const a1_config_t*x,unsigned index){
  (void)x;assert(index<BATCH);
- if(!injected&&index==inject_at){rediscover=true;injected=true;}
+ if(!injected&&index==inject_at){if(language_change)fixture_language=1;else rediscover=true;injected=true;}
  if(fail_once&&index==inject_at){fail_once=false;return PH_MQTT_MORE;}
  assert(calls<40);trace[calls++]=index;return MQTT_SUCCESS;
 }
 /* PRODUCTION */
 int main(void){
- for(unsigned trial=0;trial<3;trial++){
+ for(unsigned trial=0;trial<4;trial++){
   calls=resets=discovery_index=0;injected=false;inject_at=trial?BATCH/2:0;
+  discovery_language=fixture_language=0;language_change=trial==3;
   rediscover=trial==0;fail_once=trial==2;
   if(!trial)injected=true;
   for(unsigned turn=0;turn<2*BATCH+4;turn++){

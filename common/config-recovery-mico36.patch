@@ -1,0 +1,15 @@
+--- a/MiCO/system/mico_system_para_storage.c
++++ b/MiCO/system/mico_system_para_storage.c
+@@ -394,8 +394,12 @@
+   return err;
+ }
+ 
++/* An incompatible app layout remains in Flash until the user confirms reset. */
++__attribute__((weak)) bool app_config_persist_allowed(void) { return true; }
++
+ OSStatus mico_system_context_update( mico_Context_t *in_context )
+ {
++  if (!app_config_persist_allowed()) return kNoErr;
+   OSStatus err = kNoErr;
+   require_action( in_context, exit, err = kNotPreparedErr );
+ 

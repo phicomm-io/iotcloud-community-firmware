@@ -1,7 +1,7 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const {JSDOM}=require('jsdom'),vm=require('node:vm');
 test('DAIKIN uses shared metric scales, optional HCHO and expiring live data',()=>{
- const source=require('node:fs').readFileSync('DAIKIN/generated/web.h','utf8');
+ const source=require('node:fs').readFileSync('DAIKIN/generated/bry88ab/web.h','utf8');
  const html=require('node:zlib').gunzipSync(Buffer.from(source.match(/\{([^}]+)\}/)[1].split(',').map(Number))).toString();
  const dom=new JSDOM(html,{runScripts:'outside-only',url:'http://device.local'}),w=dom.window;
  try{

@@ -13,8 +13,8 @@ ROOT = Path(__file__).resolve().parents[1]
 class FilterStorageTest(unittest.TestCase):
     def test_storage_commands_and_migration(self):
         main = (ROOT / 'A1/main.c').read_text()
-        prefix = main[main.index('mico_mutex_t a1_lock'):main.index('static OSStatus startup_result')] + main[main.index('void automation_load('):main.index('#include "../common/device_status.h"')]
-        migration = main[main.index('    /* The SDK validates'):main.index('    /* Normalize the retained')]
+        prefix = main[main.index('static bool config_recovery'):main.index('#include "../common/service.h"')] + main[main.index('mico_mutex_t a1_lock'):main.index('static OSStatus startup_result')] + main[main.index('void automation_load('):main.index('#include "../common/device_status.h"')]
+        migration = main[main.index('    /* The SDK validates'):main.index('#ifdef A1_FRESH_AIR\n    err=startup_result("fresh air GPIO"')]
         weight = function((ROOT / 'common/runtime.c').read_text(), 'unsigned feature_filter_weight(')
         harness = r'''
 #define A1_FRESH_AIR
@@ -30,7 +30,8 @@ static void lock(void){assert(!weight_locked);weight_locked=1;}
 static void unlock(void){assert(weight_locked);weight_locked=0;}
 WEIGHT
 static uint32_t now;
-static int writes, fail_write;
+static int writes, fail_write, sdk_write;
+bool app_config_persist_allowed(void);
 static app_storage_t flash;
 uint32_t mico_rtos_get_time(void){return now;}
 static int flash_update(void *ctx){(void)ctx;writes++;if(fail_write)return -1;extern a1_config_t *a1_config;memcpy(&flash,a1_config,sizeof(flash));return 0;}
@@ -41,8 +42,10 @@ void feature_defaults(feature_config_t *c){memset(c,0,sizeof(*c));c->magic=FEATU
 void automation_defaults(automation_config_t *c){memset(c,0,sizeof(*c));c->magic=AUTOMATION_MAGIC;c->next_id=1;c->buttons[0][1].kind=AUTO_FAN_MODE_TOGGLE;}
 void service_event(const char *l,const char *m,const char *e){(void)l;(void)m;(void)e;}
 static int startup_result(const char *s,int err){(void)s;return err;}
+static int mico_system_init(void *ctx){(void)ctx;if(sdk_write)assert(!app_config_persist_allowed());return 0;}
+static void mico_wlan_get_mac_address(uint8_t *mac){const uint8_t value[]={0xaa,0xbb,0xcc,0xdd,0xee,0xff};memcpy(mac,value,6);}
 PRODUCTION
-static int migrate(void){MIGRATION return 0;}
+static int migrate(void){a1_config_t c;OSStatus err;MIGRATION return config_recovery?-1:0;}
 json_object *a1_status_json(void){return json_object_new_object();}
 json_object *a1_status_live_json(void){return json_object_new_object();}
 bool a1_panel_inspect(void){return false;}
@@ -61,7 +64,10 @@ json_object *service_parse(const void *data,size_t n){char *copy=strndup(data,n)
 static app_storage_t live;
 static void init(void){
  memset(&live,0,sizeof(live));memset(&a1_state,0,sizeof(a1_state));memset(&filter_clock,0,sizeof(filter_clock));memset(&stock_clock,0,sizeof(stock_clock));
- a1_config=&live.base;appRestoreDefault_callback(&live,sizeof(live));save_at=0;writes=fail_write=0;now=0;
+ a1_config=&live.base;appRestoreDefault_callback(&live,sizeof(live));
+ fresh_defaults(&live.fresh_air);bemfa_defaults(&live.bemfa,"a1","aabbccddeeff");strcpy(live.base.name,"A1-EEFF");
+ config_recovery=config_initializing=config_update_pending=false;
+ save_at=0;writes=fail_write=sdk_write=0;now=0;
 }
 static const char *cmd(const char *action,const char *params){
  json_object *p=json_tokener_parse(params);const char *code;json_object *out=service_product(action,p,&code);
@@ -115,7 +121,7 @@ int main(void){
   if(v==6){live.automation.buttons[0][1].kind=AUTO_REBOOT;live.combination_buttons[0].kind=AUTO_FILTER_RESET;}
   if(v<3){a1_storage_v2_t old={0};old.base.magic=A1_CONFIG_MAGIC;old.base.version=v;strcpy(old.base.ssid,"preserved-wifi");strcpy(old.base.name,"old-device");memcpy(&live,&old,sizeof(old));}
   else {live.features.sleep_count=1;live.automation.tasks[0].id=42;}
-  assert(migrate()==0 && live.base.version==A1_CONFIG_VERSION && live.filter.magic==A1_FILTER_MAGIC && live.filter.lifetime_hours==4320);
+  assert(migrate()==0 && writes==1 && live.base.version==A1_CONFIG_VERSION && live.filter.magic==A1_FILTER_MAGIC && live.filter.lifetime_hours==4320);
   assert(live.combination_buttons[0].kind==(v==6?AUTO_FILTER_RESET:AUTO_NONE));if(v>=5)assert(live.filter.used_seconds==123);
   assert(live.automatic.fallback_speed==30);
   assert(live.automation.buttons[0][1].kind==(v==6?AUTO_REBOOT:AUTO_FAN_MODE_TOGGLE));
@@ -124,24 +130,27 @@ int main(void){
  }
  /* A valid MiCO partition may still contain another firmware's app data.
   * zA1's J-Link script deliberately preserves both parameter partitions. */
- init();memset(&live,0xa5,sizeof(live));
- assert(migrate()==0 && writes>0);
- assert(flash.base.magic==A1_CONFIG_MAGIC && flash.base.version==A1_CONFIG_VERSION);
- assert(!flash.base.ssid[0] && !flash.base.wifi_password[0] && !flash.base.web_password[0]);
- assert(!flash.base.fan_on && flash.base.speed==60 && flash.base.led_enabled);
- assert(flash.filter.magic==A1_FILTER_MAGIC && flash.filter.lifetime_hours==4320 && !flash.filter.used_seconds);
- assert(flash.features.magic==FEATURE_MAGIC && flash.automation.magic==AUTOMATION_MAGIC);
- assert(flash.automation.buttons[0][1].kind==AUTO_FAN_MODE_TOGGLE);
- assert(flash.combination_buttons[0].kind==AUTO_NONE && !flash.automatic.reserved[0]);
- live=flash;writes=0;
- assert(migrate()==0 && writes==0 && !memcmp(&live,&flash,sizeof(live)));
- init();memset(&live,0xa5,sizeof(live));fail_write=1;
- assert(migrate()!=0 && writes==1);
+ init();memset(&live,0xa5,sizeof(live));flash=live;app_storage_t unsupported=flash;
+ assert(migrate()!=0 && config_recovery && writes==0 && !app_config_persist_allowed());
+ assert(!memcmp(&flash,&unsupported,sizeof(flash)));
+ assert(live.base.magic==A1_CONFIG_MAGIC && live.base.version==A1_CONFIG_VERSION);
+ assert(!live.base.ssid[0] && !live.base.wifi_password[0] && !live.base.web_password[0]);
+ assert(!live.base.fan_on && live.base.speed==60 && live.base.led_enabled);
+ assert(live.features.magic==FEATURE_MAGIC && live.automation.magic==AUTOMATION_MAGIC);
+ assert(live.automation.buttons[0][1].kind==AUTO_FAN_MODE_TOGGLE);
  for(unsigned v=0;v<=A1_CONFIG_VERSION+1;v+=A1_CONFIG_VERSION+1){
-  init();live.base.version=v;strcpy(live.base.ssid,"keep-unsupported-config");
-  app_storage_t co2_before=live;
-  assert(migrate()!=0 && writes==0 && !memcmp(&live,&co2_before,sizeof(live)));
+  init();live.base.version=v;strcpy(live.base.ssid,"keep-unsupported-config");flash=live;unsupported=flash;
+  assert(migrate()!=0 && writes==0 && config_recovery && !memcmp(&flash,&unsupported,sizeof(flash)));
  }
+ /* All extensions and MiCO writes share a single commit. A failed commit
+  * leaves the previous Flash intact and continues in RAM-only recovery. */
+ init();live.base.version=3;live.fresh_air.magic=0;live.bemfa.magic=0;live.features.magic=0;
+ strcpy(live.base.ssid,"original-network");live.base.name[0]=0;flash=live;unsupported=flash;
+ fail_write=sdk_write=1;
+ assert(migrate()!=0 && writes==1 && config_recovery && !app_config_persist_allowed());
+ assert(!memcmp(&flash,&unsupported,sizeof(flash)) && !live.base.ssid[0]);
+ init();writes=0;sdk_write=1;assert(migrate()==0 && writes==1 && app_config_persist_allowed());
+ init();assert(migrate()==0 && writes==0 && app_config_persist_allowed());
  puts("A1 persistence, Flash failure/retry, commands, resets, v1-v6 migration and foreign firmware startup: OK");
  /* v8 appends CO2 thresholds without moving or rewriting existing settings. */
  init();live.base.version=8;live.filter.used_seconds=789;live.automatic.fallback_speed=47;
@@ -167,7 +176,7 @@ int main(void){
  assert(migrate()==0 && live.automation.buttons[0][0].kind==AUTO_FAN && live.automation.buttons[0][0].speed==42);
  /* Exact v9 prefix must survive migration, including fresh-air, CO2 and Bemfa. */
  init();live.base.version=9;strcpy(live.base.ssid,"keep-network");
- memset(&live.fresh_air,0x5a,sizeof(live.fresh_air));memset(&live.bemfa,0x6b,sizeof(live.bemfa));
+ live.fresh_air.speed=61;live.fresh_air.fallback_speed=43;strcpy(live.bemfa.app_id,"kept-id");strcpy(live.bemfa.secret_key,"kept-key");
  live.co2.target_co2=917;live.filter.used_seconds=4320*1800;
  memset(&live.filter_stock,0xa5,sizeof(live.filter_stock));
  app_storage_t v9_before=live;v9_before.base.version=10;
@@ -195,6 +204,25 @@ int main(void){
  assert(live.filter_stock.usage==975 && live.filter_stock.air_litres==6500);
  fail_write=0;
  puts("A1 stock migration/accounting/persistence/model rollback: OK");
+ /* Language and device name form one persisted transaction; storage failure
+  * must retain both the live language and unrelated network credentials. */
+ init();strcpy(live.base.ssid,"kept-wifi");strcpy(live.base.wifi_password,"kept-password");
+ strcpy(live.base.name,"kept-user-name");assert(device_language_get()==PH_LANG_ZH);
+ assert(!strcmp(cmd("config.set","{\"section\":\"device\",\"values\":{\"language\":\"en\"}}"),"accepted"));
+ assert(writes==1 && device_language_get()==PH_LANG_EN && flash.features.language==PH_LANG_EN);
+ assert(!strcmp(live.base.name,"kept-user-name") && !strcmp(flash.base.ssid,"kept-wifi") && !strcmp(flash.base.wifi_password,"kept-password"));
+ app_storage_t language_before=live;unsigned language_writes=writes;
+ const char *invalid_language[]={"{\"section\":\"device\",\"values\":{\"language\":\"fr\"}}", "{\"section\":\"device\",\"values\":{\"language\":1}}", "{\"section\":\"device\",\"values\":{}}"};
+ for(unsigned i=0;i<sizeof(invalid_language)/sizeof(invalid_language[0]);i++)
+  assert(!strcmp(cmd("config.set",invalid_language[i]),"invalid_params"));
+ assert(writes==language_writes && !memcmp(&live,&language_before,sizeof(live)));
+ fail_write=1;
+ assert(!strcmp(cmd("config.set","{\"section\":\"device\",\"values\":{\"language\":\"zh-CN\",\"name\":\"changed\"}}"),"storage_error"));
+ assert(device_language_get()==PH_LANG_EN && !memcmp(&live.base,&language_before.base,sizeof(live.base)) && flash.features.language==PH_LANG_EN);
+ fail_write=0;live=flash;assert(device_language_get()==PH_LANG_EN);
+ assert(!strcmp(cmd("config.set","{\"section\":\"device\",\"values\":{\"language\":\"zh-CN\"}}"),"accepted"));
+ assert(device_language_get()==PH_LANG_ZH && flash.features.language==PH_LANG_ZH && !strcmp(live.base.name,"kept-user-name"));
+ puts("A1 persisted language: validation, atomic name rollback, restart and credential preservation OK");
  puts("A1 filter production persistence, Flash failure/retry, commands, resets and v1-v6 migration: OK");
 }
 '''.replace('PRODUCTION', prefix).replace('MIGRATION', migration).replace('WEIGHT', weight)
@@ -208,7 +236,7 @@ int main(void){
             source = Path(temp) / 'filter.c'
             source.write_text(harness)
             binary = Path(temp) / 'filter'
-            command = [os.environ.get('CC', 'cc'), '-std=gnu99', '-ffunction-sections', '-Wl,--gc-sections', '-DFEATURE_DEVICE_A1', '-Wno-pointer-sign', '-Wno-misleading-indentation', '-I'+str(ROOT), '-I'+str(ROOT/'A1'), '-I'+str(ROOT/'tests/host'), '-I'+str(json_dir), str(source), *map(str, json_dir.glob('*.c')), '-lm', '-o', str(binary)]
+            command = [os.environ.get('CC', 'cc'), '-std=gnu99', '-ffunction-sections', '-Wl,--gc-sections', '-DFEATURE_DEVICE_A1', '-Wno-pointer-sign', '-Wno-misleading-indentation', '-I'+str(ROOT), '-I'+str(ROOT/'A1'), '-I'+str(ROOT/'tests/host'), '-I'+str(json_dir), str(source), str(ROOT/'A1/fresh_air_defaults.c'), str(ROOT/'common/mqtt/bemfa_config.c'), *map(str, json_dir.glob('*.c')), '-lm', '-o', str(binary)]
             if os.environ.get('SANITIZE') == '1':
                 command += ['-g', '-fno-omit-frame-pointer', '-fsanitize=address,undefined']
             subprocess.run(command, check=True)

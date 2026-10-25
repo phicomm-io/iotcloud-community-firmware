@@ -13,7 +13,7 @@ Connection warnings take priority over normal lighting:
 | Configured MQTT not ready | Approximately 1 second on / 1 second off |
 | Normal | Normal lighting settings regain control |
 
-TC1 uses its indicator and restores normal settings when connected. M1 uses separate Wi-Fi and error icons: normally Wi-Fi is on and error is off. A1 uses a connection-indicator position in the ring; the remaining lighting follows its settings.
+TC1 uses its indicator and restores normal settings when connected. M1 uses separate Wi-Fi and error icons: normally Wi-Fi is on and error is off. A1 uses a connection-indicator position in the ring; the remaining lighting follows its settings. DAIKIN uses its separate Wi-Fi indicator.
 
 **An unconfigured MQTT connection is not a fault.** MQTT warnings appear only when MQTT was configured but is not ready.
 
@@ -63,7 +63,7 @@ A factory reset clears user settings and requires Wi-Fi provisioning again. A fu
 
 ## More help
 
-Read the [TC1](tc1-guide), [M1](m1-guide) [A1](a1-guide) or [DAIKIN](daikin-guide) guide. Search or open a [firmware issue](https://github.com/phicomm-io/phicomm-community-firmware/issues), including the product, firmware version and reproduction steps.
+Read the [TC1](tc1-guide), [M1](m1-guide) [A1](a1-guide) or [DAIKIN](daikin-guide) guide. Search or open a [firmware issue](https://github.com/phicomm-io/.github/issues), including the product, firmware version and reproduction steps.
 
 Join the Chinese-speaking QQ community: **1021750178** · [Join the group](https://qm.qq.com/q/9L150V85kk?from=tim). If the link does not open, search for the group number in QQ.
 

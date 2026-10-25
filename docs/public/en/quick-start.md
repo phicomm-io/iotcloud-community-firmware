@@ -2,6 +2,8 @@
 
 This project provides open-source firmware for discontinued IoT devices or devices whose cloud service providers have ended support. It currently supports the Phicomm TC1 power strip, M1 air quality monitor, A1 air purifier and DAIKIN BRY88AX151K air quality monitor. It provides local web control, MQTT and Home Assistant integration. Firmware downloads are free; the manufacturer's cloud is not required.
 
+**v1.0 is in development and has not been released.** Downloads retain existing 0.9.x firmware. M1 Wi-Fi and sensor-controller firmware update separately; the open-source controller is recommended for stock 11.x. Migration from 17.1.2.3 / 17.x is currently discouraged.
+
 ## Identify your device
 
 | Device | Functions | Hardware |
@@ -40,6 +42,6 @@ Theme preferences are stored locally in the browser and shared with the device U
 
 - Daily operation: [TC1](tc1-guide), [M1](m1-guide), [A1](a1-guide), [DAIKIN](daikin-guide).
 - [Firmware updates](firmware-update).
-- [Connect to IotCloud](iotcloud-connect) for remote device management.
+- [Connect to IoTCloud](iotcloud-connect) for remote device management.
 - [MQTT, Home Assistant and A1 sensor automation](mqtt-link).
 - [Troubleshooting](faq).

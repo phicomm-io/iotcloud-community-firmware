@@ -37,11 +37,12 @@ def run_host(source):
 class StockRuntimeTest(unittest.TestCase):
     def test_m1_storage_commands_and_uart(self):
         main = (ROOT / 'M1/main.c').read_text()
-        production = main[main.index('mico_mutex_t m1_lock'):main.index('int application_start')]
-        migration = main[main.index('    bool controller_migration'):main.index('    /* Normalize the retained')]
+        production = main[main.index('static bool config_recovery'):main.index('#include "../common/service.h"')] + main[main.index('mico_mutex_t m1_lock'):main.index('int application_start')]
+        migration = main[main.index('    bool migration_changed'):main.index('    err = mico_system_init')]
         harness = r'''
 #include "M1/m1.h"
 #include "M1/config_legacy.h"
+#include "M1/storage.h"
 #include "common/automation.h"
 #include <setjmp.h>
 static unsigned now,writes;
@@ -53,7 +54,8 @@ void automation_defaults(automation_config_t *c){memset(c,0,sizeof(*c));c->magic
 PRODUCTION
 static app_storage_t live,flash;
 static int flash_update(void *p){(void)p;writes++;if(fail_flash)return -1;flash=live;return 0;}
-static int migrate(void){MIGRATION return 0;}
+void service_event(const char *level,const char *module,const char *name){(void)level;(void)module;(void)name;}
+static int migrate(void){m1_config_t c;MIGRATION return config_recovery?-1:0;}
 static unsigned step,queued,version_queries,buzzer_on,buzzer_off,stop_ms;
 static unsigned wake_beeps, beep_times[8], screen_rx;
 static unsigned tone_beeps,tone_stops,tone_attempts,tone_times[8],music_plays,music_stops;
@@ -61,6 +63,8 @@ static uint8_t music_args[7];
 static unsigned threshold_attempts, threshold_success, threshold_first, threshold_last;
 static bool fail_threshold;
 static uint8_t threshold_frame[12];
+static unsigned alarm_writes,alarm_reads,alarm_io_fault;
+static uint8_t alarm_device_mask;
 static jmp_buf done;
 uint32_t mico_rtos_get_time(void){return now;}
 static unsigned phase;
@@ -75,6 +79,20 @@ typedef int mico_pwm_t;
 static int MicoUartInitialize(int port,mico_uart_config_t *c,ring_buffer_t *r){(void)port;(void)r;assert(c->baud==115200);return 0;}
 static int MicoUartSend(int port,const uint8_t *p,unsigned n){
  (void)port;assert((n==12 || p[1]==0x13) && p[0]==0x23);
+ if(phase==17 && p[1]==0x70 && p[2]==20){
+  assert(m1_state.mcu_alarm_schema==1 && p[4]<=1 && !(p[5]&~7u));
+  for(unsigned i=6;i<11;i++)assert(!p[i]);
+  if(p[4])alarm_writes++;else {alarm_reads++;assert(!p[5]);}
+  unsigned fault=alarm_io_fault;alarm_io_fault=0;
+  if(fault==1)return -1;
+  uint8_t ack[20]={0x23,0x70,20,p[3],0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0x21};
+  if(fault==2)ack[4]=2;
+  else if(p[4])alarm_device_mask=p[5];
+  if(fault==3)return 0;
+  ack[6]=fault==4?(alarm_device_mask^1):fault==5?8:alarm_device_mask;
+  if(fault==6)ack[7]=2;if(fault==7)ack[5]=2;
+  m1_mcu_rx(ack);return 0;
+ }
  if(phase>=12 && p[1]==0x70 && p[2]==14){
   tone_attempts++;
   if(phase==14 && tone_attempts==1)return -1;
@@ -86,7 +104,7 @@ static int MicoUartSend(int port,const uint8_t *p,unsigned n){
  if(phase>=8 && phase!=10){
   uint8_t ack[20]={0x23,0x70,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0x21};
   if(p[1]==0x70){ack[2]=p[2];ack[3]=p[3];
-   if(p[2]==0){ack[5]=phase==11?1:2;ack[6]=phase>=15?0xff:phase>=12?0x7f:0x3f;ack[7]=0xff;ack[10]=phase>=12;}
+   if(p[2]==0){ack[5]=phase==11?1:2;ack[6]=phase>=15?0xff:phase>=12?0x7f:0x3f;ack[7]=0xff;ack[10]=phase>=12;ack[17]=phase==17;}
    if(p[2]==15 && !p[4]){ack[5]=1;ack[7]=0;ack[8]=8;ack[18]=1;}
    if(p[2]==13){ack[13]=0x02;ack[14]=0xbc;ack[15]=1;ack[16]=1;ack[18]=20;}
   }else if(p[1]==0x12){ack[1]=0x14;}
@@ -128,6 +146,7 @@ void m1_barometer_tick(void){}
 void m1_scd40_tick(void);
 #include "M1/uart.c"
 #include "M1/mcu.c"
+#include "M1/co2_source.c"
 void m1_scd40_tick(void){
  step++;now+=100;
  if(phase>=12){
@@ -183,7 +202,7 @@ int main(void){
   step=queued=screen_rx=wake_beeps=0;m1_state.ota_active=false;
   if(!setjmp(done))uart_worker(0);
   assert(!m1_state.wake_alarm_active && !m1_state.buzzer_requested);
-  assert(wake_beeps==((phase==1 || phase==6)?3:1));
+  assert(wake_beeps==((phase<=3 || phase==6)?3:1)); /* Screen changes do not cancel alarms. */
   assert((unsigned)(beep_times[0]-start)==100);
   if(wake_beeps==3)assert((unsigned)(beep_times[1]-start)==2100 && (unsigned)(beep_times[2]-start)==4100);
  }
@@ -199,14 +218,29 @@ int main(void){
   assert(!strcmp(live.base.ssid,"keep"));
   for(unsigned j=0;j<20;j++)assert(live.reserved_controller_config[j]==0);
  }
- live.base.version=5;fail_flash=true;assert(migrate()!=0);fail_flash=false;
+ live.base.version=5;fail_flash=true;assert(migrate()!=0);fail_flash=false;config_recovery=false;
  memset(live.reserved_controller_config,0xa5,20);live.base.version=M1_CONFIG_VERSION;unsigned before=writes;
  assert(!migrate() && writes==before);
+
+ /* Threshold-only v6 records keep limits/revisions and acquire an OFF default
+  * in RAM without rewriting their storage bytes. Unknown alarm schemas do too. */
+ m1_alarm_config_t legacy_alarm={.magic=M1_ALARM_MAGIC,.revision=17,.hcho={80,220},.pm25={35,70},.configured=3};
+ memcpy(live.reserved_controller_config,&legacy_alarm,20);app_storage_t legacy_before=live;
+ m1_alarm_config_t migrated_alarm;m1_alarm_get(&migrated_alarm);
+ assert(migrated_alarm.hcho[0]==80 && migrated_alarm.pm25[1]==70 && migrated_alarm.revision==17);
+ assert(migrated_alarm.reserved[0]==M1_ALARM_SCHEMA && !migrated_alarm.reserved[1]);
+ assert(!memcmp(&legacy_before,&live,sizeof(live)));
+ for(unsigned kind=0;kind<3;kind++){
+  legacy_alarm.reserved[0]=kind==0?2:M1_ALARM_SCHEMA;
+  legacy_alarm.reserved[1]=kind==1?8:3;legacy_alarm.reserved[2]=kind==2;
+  memcpy(live.reserved_controller_config,&legacy_alarm,20);m1_alarm_get(&migrated_alarm);
+  assert(!migrated_alarm.reserved[1] && migrated_alarm.hcho[0]==80 && migrated_alarm.pm25[1]==70);
+ }
 
  /* Restored stock threshold API: persistence, admission and UART-only proof. */
  appRestoreDefault_callback(&live,sizeof(live));memset(&m1_state,0,sizeof(m1_state));
  memset(live.reserved_controller_config,0xa5,20);
- m1_alarm_config_t blank;m1_alarm_get(&blank);assert(!blank.configured && !blank.revision);
+ m1_alarm_config_t blank;m1_alarm_get(&blank);assert(!blank.configured && !blank.revision && !blank.reserved[1]);
  unsigned blank_attempts=threshold_attempts;alarm_sync();assert(threshold_attempts==blank_attempts);
  json_object *caps=service_product_capabilities();
  const char *caps_text=json_object_to_json_string(caps);assert(strstr(caps_text,"alarm.get") && strstr(caps_text,"alarm.set"));json_object_put(caps);
@@ -221,7 +255,12 @@ int main(void){
   "{\"sensor\":\"hcho\",\"yellow\":1.5,\"red\":2,\"revision\":0}",
   "{\"sensor\":\"hcho\",\"yellow\":1,\"red\":65536,\"revision\":0}",
   "{\"sensor\":\"hcho\",\"yellow\":1,\"red\":2,\"revision\":-1}",
-  "{\"sensor\":\"hcho\",\"yellow\":1,\"red\":2,\"revision\":0,\"other\":1}"
+  "{\"sensor\":\"hcho\",\"yellow\":1,\"red\":2,\"revision\":0,\"other\":1}",
+  "{\"sensor\":\"hcho\",\"yellow\":1,\"red\":2,\"revision\":0,\"buzzer_enabled\":1}",
+  "{\"sensor\":\"hcho\",\"yellow\":1,\"red\":2,\"revision\":0,\"buzzer_enabled\":\"false\"}",
+  "{\"sensor\":\"hcho\",\"yellow\":1,\"red\":2,\"revision\":0,\"buzzer_enabled\":null}",
+  "{\"sensor\":\"hcho\",\"yellow\":1,\"red\":2,\"revision\":0,\"buzzer_enabled\":[]}",
+  "{\"sensor\":\"hcho\",\"yellow\":1,\"red\":2,\"revision\":0,\"buzzer_mask\":8}"
  };
  for(unsigned j=0;j<sizeof(bad_alarm)/sizeof(*bad_alarm);j++)assert(!strcmp(command("alarm.set",bad_alarm[j]),"invalid_params"));
  const char *set_hcho="{\"sensor\":\"hcho\",\"yellow\":80,\"red\":100,\"revision\":0}";
@@ -294,7 +333,7 @@ int main(void){
  phase=11;auto_waiting=false;auto_due=manual_until=0;m1_state.mcu_extended=false;m1_mcu_tick();assert(!m1_state.mcu_extended);
  live.base.version=6;memset(&live.co2,0xa5,sizeof(live.co2));
  uint8_t keep_alarm[20];memcpy(keep_alarm,live.reserved_controller_config,20);
- assert(!migrate() && live.base.version==7 && live.co2.mode==0 && live.co2.interval==5);
+ assert(!migrate() && live.base.version==M1_CONFIG_VERSION && live.co2.mode==0 && live.co2.interval==5);
  assert(!memcmp(keep_alarm,live.reserved_controller_config,20));
  /* Version AND queried extension/PWM capabilities gate all custom tones. */
  memset(&m1_state,0,sizeof(m1_state));m1_state.uart_ready=true;m1_state.mcu_version_received=true;
@@ -372,7 +411,53 @@ int main(void){
  assert(details.frames[0].received && details.id==1 && auto_phase==6);
  assert(m1_details_valid(&details,now));
  cap[1]=0x17;m1_mcu_rx(cap);assert(!details.supported && !m1_state.mcu_sensor_details);
- puts("M1 production storage, alarm thresholds, version/PWM-gated tones/RTTTL, UART cadence/retry/stop/wrap: OK");
+ /* Sensor alarms: capability-gated default OFF, separate write/read, independent
+  * settings, flash rollback, CAS and UART error/malformed-response recovery. */
+ appRestoreDefault_callback(&live,sizeof(live));memset(&m1_state,0,sizeof(m1_state));
+ now=100000;phase=17;alarm_writes=alarm_reads=0;alarm_device_mask=7;
+ auto_waiting=false;auto_due=manual_until=alarm_due=0;alarm_need_read=false;memset(&details,0,sizeof(details));
+ m1_state.mcu_version_received=true;strcpy(m1_state.mcu_version,"0.9.3-test");
+ m1_mcu_tick();assert(m1_state.mcu_alarm_schema==1 && !alarm_writes);
+ m1_mcu_tick();assert(alarm_writes==1 && !alarm_reads && !m1_state.alarm_buzzer_received && alarm_device_mask==0);
+ out=m1_alarm_json();assert(!json_object_get_boolean(json_object_object_get(out,"buzzer_confirmed")));json_object_put(out);
+ m1_mcu_tick();assert(alarm_reads==1 && m1_state.alarm_buzzer_received);
+ out=m1_alarm_json();assert(json_object_to_json_string(out));
+ assert(json_object_get_boolean(json_object_object_get(out,"buzzer_confirmed")));
+ assert(!strcmp(json_object_get_string(json_object_object_get(out,"buzzer_confirmation")),"mcu_readback"));json_object_put(out);
+ const char *hcho_on="{\"sensor\":\"hcho\",\"yellow\":90,\"red\":240,\"revision\":0,\"buzzer_enabled\":true}";
+ assert(!strcmp(command("alarm.set",hcho_on),"accepted"));m1_alarm_get(&a);
+ assert(a.reserved[1]==1 && a.hcho[0]==90);live=flash;m1_alarm_get(&a);assert(a.reserved[1]==1);
+ out=m1_alarm_json();assert(!json_object_get_boolean(json_object_object_get(out,"buzzer_confirmed")));json_object_put(out);
+ assert(!strcmp(command("alarm.set",hcho_on),"busy"));
+ const char *pm25_on="{\"sensor\":\"pm25\",\"yellow\":40,\"red\":80,\"revision\":1,\"buzzer_enabled\":true}";
+ preserved=live;fail_flash=true;assert(!strcmp(command("alarm.set",pm25_on),"storage_error"));fail_flash=false;
+ assert(!memcmp(&live,&preserved,sizeof(live)));assert(!strcmp(command("alarm.set",pm25_on),"accepted"));
+ assert(!strcmp(command("alarm.set","{\"sensor\":\"hcho\",\"yellow\":100,\"red\":300,\"revision\":2}"),"accepted"));
+ m1_alarm_get(&a);assert(a.reserved[1]==3 && a.pm25[0]==40);
+ assert(!strcmp(command("alarm.set","{\"sensor\":\"hcho\",\"yellow\":100,\"red\":300,\"revision\":3,\"buzzer_enabled\":false}"),"accepted"));
+ m1_alarm_get(&a);assert(a.reserved[1]==2 && a.pm25[0]==40);
+ for(unsigned fault=1;fault<=7;fault++){
+  m1_state.alarm_buzzer_received=false;alarm_need_read=false;auto_waiting=false;auto_due=manual_until=now;alarm_due=now;
+  alarm_io_fault=fault<4?fault:0;m1_mcu_tick();
+  if(fault>=4){alarm_io_fault=fault;m1_mcu_tick();}
+  out=m1_alarm_json();assert(json_object_to_json_string(out) && !json_object_get_boolean(json_object_object_get(out,"buzzer_confirmed")));json_object_put(out);
+  for(unsigned turn=0;turn<28;turn++){now+=250;m1_mcu_tick();}
+  assert(m1_state.alarm_buzzer_received && alarm_device_mask==2);
+  out=m1_alarm_json();assert(json_object_get_boolean(json_object_object_get(out,"buzzer_confirmed")));json_object_put(out);
+ }
+ /* Old capability data never authorizes OP20, nor invents actual OFF state. */
+ unsigned before_alarms=alarm_writes+alarm_reads;
+ m1_state.mcu_alarm_schema=0;m1_state.alarm_buzzer_received=false;
+ for(unsigned turn=0;turn<24;turn++){now+=250;m1_mcu_tick();}
+ assert(alarm_writes+alarm_reads==before_alarms);
+ out=m1_alarm_json();assert(json_object_to_json_string(out));
+ assert(!json_object_get_boolean(json_object_object_get(out,"buzzer_supported")));
+ assert(!json_object_object_get(out,"mcu_hcho_buzzer_enabled"));
+ assert(!strcmp(json_object_get_string(json_object_object_get(out,"buzzer_confirmation")),"requires_mcu_upgrade"));json_object_put(out);
+ m1_state.mcu_alarm_schema=1;m1_state.alarm_buzzer_received=true;m1_state.alarm_buzzer_updated_ms=now-15000;
+ out=m1_alarm_json();assert(!json_object_get_boolean(json_object_object_get(out,"buzzer_confirmed")) && !json_object_object_get(out,"mcu_pm25_buzzer_enabled"));json_object_put(out);
+ cap[1]=0x17;m1_mcu_rx(cap);assert(!m1_state.mcu_alarm_schema && !m1_state.alarm_buzzer_received && !m1_state.alarm_uart_sent);
+ puts("M1 production storage, default-off sensor alarms, capability/readback/fault recovery, thresholds and wake tones: OK");
 }
 '''.replace('PRODUCTION', production).replace('MIGRATION', migration)
         # Match the actual watchdog prototype included by the worker.

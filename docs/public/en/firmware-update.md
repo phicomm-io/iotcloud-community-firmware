@@ -57,6 +57,6 @@ If the WebUI is reachable, check the file, model, version and network, then retr
 
 DAIKIN BRY88AX151K has one universal full image that detects PM2005 / PM2105 and the optional formaldehyde module. Use the local file procedure above; online checks and URL downloads are unavailable.
 
-Default files include the complete device UI. Files containing `-no-frontend-resources` keep an offline setup page for Wi-Fi, initial MQTT settings and the web password, available through the device hotspot or LAN address. Use [local device management]({{SITE_URL}}local/) or IotCloud for full controls and settings. Both share the same appearance. MQTT is not required to complete Wi-Fi setup.
+Default files include the complete device UI. Files containing `-no-frontend-resources` keep an offline setup page for Wi-Fi, initial MQTT settings and the web password, available through the device hotspot or LAN address. Use [local device management]({{SITE_URL}}local/) or IoTCloud for full controls and settings. Both share the same appearance. MQTT is not required to complete Wi-Fi setup.
 
 Online checks stay on the current firmware variant. To switch variants manually, select the signed package for the same physical product.

@@ -64,6 +64,29 @@ class VersionTests(unittest.TestCase):
     def test_no_tag(self):
         self.assertEqual(version_tool.resolve_version(self.root)['version'], '0.0.0-' + self.commit[:6])
 
+    def test_v1_target_version_is_available_before_first_v1_tag(self):
+        self.git('tag', 'v0.9.24')
+        (self.root / 'VERSION').write_text('1.0.0\n')
+        self.git('add', 'VERSION')
+        self.git('commit', '-qm', 'prepare v1')
+        result = version_tool.resolve_version(self.root)
+        self.assertEqual(result['base_version'], '1.0.0')
+        self.assertIsNone(result['git_tag'])
+        self.assertEqual(result['version'], '1.0.0-' + self.git('rev-parse', 'HEAD')[:6])
+        self.git('tag', 'v1.0.0')
+        self.assertEqual(version_tool.resolve_version(self.root, 'v1.0.0')['base_version'], '1.0.0')
+
+    def test_release_tag_must_match_target_version(self):
+        (self.root / 'VERSION').write_text('1.0.0\n')
+        self.git('add', 'VERSION')
+        self.git('commit', '-qm', 'prepare v1')
+        self.git('tag', 'v1.0.1')
+        with self.assertRaisesRegex(ValueError, 'differs from VERSION'):
+            version_tool.resolve_version(self.root, 'v1.0.1')
+        (self.root / 'VERSION').write_text('01.0.0\n')
+        with self.assertRaisesRegex(ValueError, 'VERSION must contain'):
+            version_tool.resolve_version(self.root)
+
     def test_non_git_and_parent_repository(self):
         child = self.root / 'export'
         child.mkdir()

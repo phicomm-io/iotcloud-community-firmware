@@ -10,14 +10,14 @@
 
 用户记忆得到历史产物验证。e4ddbd 本身是 DAIKIN 传感器合并提交，版本名中的 dirty 还包含当时的未提交修改，不能把该版本名等同于 main 已提交功能。
 
-历史 `build/m1-wake-alarm-20261024/artifacts/manifest.json` 记录版本 `0.9.24-e4ddbd-dirty`，OTA SHA-256 为 `bf215642a70afa9bdaa396318fa4b30dc58e10fb486b9abf8ac49370027858bb`，本次重新核对文件哈希相符。其配套 ELF 包含 m1_alarm_save、m1_parse_sample、m1_uart_buzzer、m1_uart_version_query、m1_wake_alarm_start/stop；留存设备能力和运行记录确认阈值持久化、版本查询、蜂鸣器/叫醒曾存在。另有同名版本镜像的 SHA 为 `da192de99d0c908c2e6784c85e4d616598e87e52993dec244d05c0d0bc5c380f` 和 `0bff06cae130a16934862bc51d9b733ec976bfd81e3418f3bead7e448be625e0`，版本字符串不能唯一识别镜像。
+历史归档记录版本 `0.9.24-e4ddbd-dirty`，OTA SHA-256 为 `bf215642a70afa9bdaa396318fa4b30dc58e10fb486b9abf8ac49370027858bb`，本次重新核对文件哈希相符。其配套 ELF 包含 m1_alarm_save、m1_parse_sample、m1_uart_buzzer、m1_uart_version_query、m1_wake_alarm_start/stop；留存设备能力和运行记录确认阈值持久化、版本查询、蜂鸣器/叫醒曾存在。另有同名版本镜像的 SHA 为 `da192de99d0c908c2e6784c85e4d616598e87e52993dec244d05c0d0bc5c380f` 和 `0bff06cae130a16934862bc51d9b733ec976bfd81e3418f3bead7e448be625e0`，版本字符串不能唯一识别镜像。
 
 | 内容 | 已存在的部分 | 此次处理 |
 | --- | --- | --- |
 | M1 阈值、版本、蜂鸣器、健康和负温度 | 旧候选/开发分支补丁，未全部进入 main | 迁入并适配共享 HTTP、MQTT、统一状态快照；保留阈值发送重试与掉电保存 |
 | A1 按传感器能力隐藏读数/灯效来源/自动指标 | 新 main 已含大部分，而且支持新风和 CO₂ | 保留新版实现；补齐无数据提示、能力变化刷新和保存检查；显式“改用可用指标”才移除失效指标，保留编辑草稿 |
 | MCU PM 模式、PA24、SHT 恢复、CI/版本机制 | MCU main 已提交 | 保留，未重复覆盖 |
-| MCU 原厂采样/显示节奏、阈值、CO₂ 渲染、0x70 调试、网络工具 | MCU main 上的 28 个未提交文件 | 与迁移前备份逐文件哈希比较，28 个文件无变化，验证其与 Wi-Fi/网页配套 |
+| MCU 原厂采样/显示节奏、阈值、CO₂ 渲染、0x70 调试、网络工具 | MCU main 上的 28 个未提交文件 | 逐文件哈希对照确认 28 个文件无变化，验证其与 Wi-Fi/网页配套 |
 | M1 实体屏幕 CO₂ 设置、0x70 自动同步及主控网络 OTA | 本次后续增量 | 迁入最新 Wi-Fi/frontend main 并构建 |
 
 ## 实现边界
@@ -28,13 +28,11 @@ Wi-Fi 保留现有配置布局；A1 v10 只在 v9 结构尾部追加滤芯数据
 
 A1 风量是风速映射估算，不是反馈实测。MCU 升级保留原厂 Bootloader；独立 MCU 发布仍为开发预览版。电气时钟波形、冷上电与长时间稳定性未验收。
 
-## 备份与验证证据
+## 验证范围
 
-- 原 Wi-Fi 工作区（含无关 A1/TC1/LAN/研究资料）保留于 stash `9067e3aaa488e1c10811fe56e197aaaf6ab134b6` 和 `/home/fjr/hobbies/phicomm-migration-backup-20261025-011408`，未整体覆盖到 main。
-- 前端原 6 个文件、MCU 原 28 个文件保存于 `/home/fjr/hobbies/phicomm-three-repo-backup-20261025-012806`；后续滤芯/闹钟修改前的完整增量另存于 `/home/fjr/hobbies/phicomm-filter-alarm-backup-20261025-013934`。
 - Wi-Fi：实际生产配置迁移/持久化/UART/CO₂/升级、A1 滤芯边界与回滚、真实 C 自动化、ARM 状态编码、三款产品共享 HTTP 回调和混合收包场景均通过。
 - 前端：普通/压缩页面、UTC/上海时区、滤芯草稿保留、M1 闹钟与气压到期、41 项平台单元测试通过；公开资源由前端 CI 做浏览器测试并发布。
 - MCU：主机测试、29 个 Python 测试、ASan/UBSan、602 个升级事务模型、ARM OTA 构建和 10 个时钟 MMIO 模型用例通过。
-- 实机：A1 新风版 `b0f893303134` 与 M1 `b0f8932864b6` 已刷入候选并恢复网络；滤芯模型双向切换不清零、主控 v0.9.2 网络升级/版本回读、两种 CO₂ 替换设置直接 MCU 读回、试听/停止和实际指定时间/每周闹钟触发均通过。测试设置已恢复，测试任务已删除。MCU 公开 v0.9.2 OTA 下载后与已刷入应用逐字节相同（SHA-256 `173f384f8c24f04d44ad51fe034c43d13de50de24a0ce789839cdfb96f7125c9`）。TC1 未做本次实机刷入。
+- 实机：A1 新风版与 M1 已刷入候选并恢复网络；滤芯模型双向切换不清零、主控 v0.9.2 网络升级/版本回读、两种 CO₂ 替换设置直接 MCU 读回、试听/停止和实际指定时间/每周闹钟触发均通过。测试设置已恢复，测试任务已删除。MCU 公开 v0.9.2 OTA 下载后与已刷入应用逐字节相同（SHA-256 `173f384f8c24f04d44ad51fe034c43d13de50de24a0ce789839cdfb96f7125c9`）。TC1 未做本次实机刷入。
 
-日志、镜像清单和实机结果：`build/filter-alarm-main-migration-20261025/`；MCU 构建与升级记录位于该目录及 MCU 的 `build/`。正式发布进度及验证边界以 Release Log、对应 CI 和公开 Release 为准。
+正式发布进度及验证边界以 Release Log、对应 CI 和公开 Release 为准。

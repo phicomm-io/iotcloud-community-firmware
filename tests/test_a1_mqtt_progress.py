@@ -99,7 +99,9 @@ static void feature_config_get(feature_config_t *p){p->revision=storage.features
 static unsigned feature_revision,feature_filters[1],count;
 static struct {bool wifi_connected;} state;
 static unsigned cfg,current;
-static bool connection=true,filters=true,changed;
+static bool connection=true,filters=true,changed,rediscover;
+static uint8_t discovery_language;
+static uint8_t device_language_get(void){return 0;}
 static void mqtt_state_get(void *p){(void)p;state.wifi_connected=true;}
 static void MODEL_config_get(void *p){(void)p;}
 static bool same_connection(void *a,void *b){(void)a;(void)b;return connection;}

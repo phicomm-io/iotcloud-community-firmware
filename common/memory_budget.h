@@ -15,7 +15,7 @@ typedef struct {
     uint32_t mqtt_pending, mqtt_peak, mqtt_overflow, mqtt_max_delay;
 } service_memory_state_t;
 static inline unsigned service_memory_cost(size_t input) {
-    return input <= 8192 ? SERVICE_MEMORY_WORK + (unsigned)input : 0;
+    return input <= 16384 ? SERVICE_MEMORY_WORK + (unsigned)input : 0;
 }
 static inline unsigned memory_budget_claim(service_memory_state_t *s, uint32_t free_bytes, size_t input) {
     unsigned cost = service_memory_cost(input);

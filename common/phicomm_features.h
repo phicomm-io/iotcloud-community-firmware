@@ -83,7 +83,7 @@ typedef struct {
   uint8_t group_token[16], peer_count, member_count, event_count, sleep_count; \
   int16_t timezone_minutes; \
   uint8_t scheduled_off, scheduled_valid, scheduled_speed, group_force_mqtt, \
-      group_recovery, reserved; \
+      group_recovery, language; \
   uint16_t group_timeout_ms, group_recovery_seconds; \
   uint64_t last_event; \
   feature_peer_t peers[FEATURE_STORAGE_PEERS]; \

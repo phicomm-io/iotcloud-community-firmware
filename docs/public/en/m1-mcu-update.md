@@ -4,6 +4,8 @@ You can update M1 controller firmware over the network **without J-Link or openi
 
 **This updates the sensor controller, not the Wi-Fi MCU.** EMW3080 runs Wi-Fi and the web interface; ATSAMD20G18A communicates with sensors and controls the screen and buzzer. To reduce accidental wrong-image flashing, the sensor controller has no WebUI upload button. Use the computer script below: it calls `POST /api/v1/mcu/exchange` and verifies the image and runtime version. Ordinary web firmware updates only update Wi-Fi.
 
+**Check the controller version first: migration is recommended for stock 11.x. Stock 17.1.2.3 / 17.x differs substantially and migration is discouraged.** Wi-Fi and controller versions are separate. If the controller version is unknown, identify the hardware and original version first.
+
 <!-- os-picker -->
 
 ## 1. Check Wi-Fi firmware
@@ -117,4 +119,4 @@ If runtime confirmation times out, wait for the device to reconnect and check po
 
 This procedure **updates only the controller application linked at 0x4000 and preserves the stock Bootloader**. It does not install the independent new Boot or its added CRC journal/interrupted-copy recovery guarantees. Do not use a full stock backup or Boot image as application OTA payload.
 
-The controller remains a development preview. Candidate network updates have been checked on one M1; other board revisions and actual power-loss recovery need separate verification. See [controller features and stock backup](m1-mcu-firmware) and the [network update protocol](https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20/blob/v0.9.4/docs/network-ota.md).
+Use an image and manifest from the same Release, and keep power connected during the update. See [controller features and stock backup](m1-mcu-firmware) and the [network update protocol](https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20/blob/v0.9.4/docs/network-ota.md).

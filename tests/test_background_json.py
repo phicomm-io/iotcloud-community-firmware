@@ -1,5 +1,6 @@
 """Real virtual/discovery producers: byte parity and graph lifetime at publish."""
 import os
+import json
 from pathlib import Path
 import subprocess
 import tempfile
@@ -33,6 +34,7 @@ class BackgroundJson(unittest.TestCase):
             fixture=r'''
 #include "common/json_owned.h"
 #include "common/mqtt_account.h"
+#include "common/i18n.h"
 #include "json_heap.h"
 #include "printbuf.h"
 #include "PLATFORM_HEADER"
@@ -40,6 +42,8 @@ class BackgroundJson(unittest.TestCase):
 #define MQTT_FAILURE -1
 #define PH_MQTT_MORE 2
 static mico_thread_t mqtt_owner_thread=1;
+static uint8_t fixture_language;
+uint8_t device_language_get(void){return fixture_language;}
 typedef struct {unsigned token,claim;}service_mqtt_json_scope;
 static bool token_active,claim_active,ready=true;static unsigned json_owner,service_lock;
 void service_mqtt_json_end(service_mqtt_json_scope *);
@@ -98,7 +102,8 @@ static int discovery_all(MODEL_CONFIG*c){
  }return 0;
 }
 static void empty(void){json_heap_stats_t s;json_heap_snapshot(&s);assert(!s.live_blocks);}
-int main(void){
+int main(int argc,char **argv){
+ if(argc>1 && !strcmp(argv[1],"en"))fixture_language=PH_LANG_EN;
  assert(mqtt_account_init(&account,1,"MODEL_LOWER","test","aabbccddee01"));strcpy(base,account.base);
  assert(mqtt_leaf(&account,"availability",availability_topic,sizeof(availability_topic)));
  assert(mqtt_leaf(&account,"command",command_topic,sizeof(command_topic)));
@@ -127,7 +132,7 @@ int main(void){
             with tempfile.TemporaryDirectory() as directory:
                 temp=Path(directory);json=copy_patched_json(sdk,temp/'sdk')
                 for path in json.glob('*.c'):path.write_text(path.read_text().replace('%ld','%d'))
-                src=temp/'probe.c';src.write_text(fixture);results=[]
+                src=temp/'probe.c';src.write_text(fixture);results={}
                 for legacy in (True,False):
                     binary=temp/('legacy' if legacy else 'owned')
                     flags=(['-DLEGACY_PUBLISH'] if legacy else []) + (['-DA1_FRESH_AIR'] if fresh else [])
@@ -135,8 +140,35 @@ int main(void){
                         '-fsanitize=address,undefined','-fno-omit-frame-pointer','-no-pie',*flags,
                         '-I'+str(ROOT),'-I'+str(ROOT/'tests/stubs'),'-I'+str(json),str(src),
                         str(ROOT/'common/json_owned.c'),*map(str,json.glob('*.c')),'-lm','-o',str(binary)],check=True)
-                    results.append(subprocess.run([str(binary)],check=True,stdout=subprocess.PIPE,timeout=60).stdout)
-                self.assertEqual(results[0],results[1])
+                    for language in ('zh-CN','en'):
+                        results[legacy,language]=subprocess.run([str(binary),language],check=True,stdout=subprocess.PIPE,timeout=60).stdout
+                for language in ('zh-CN','en'):
+                    self.assertEqual(results[True,language],results[False,language])
+                self.check_discovery_languages(model, results[False,'zh-CN'], results[False,'en'])
+
+    def check_discovery_languages(self, model, chinese, english):
+        def configs(data):
+            return {parts[1]: json.loads(parts[3]) for line in data.decode().splitlines()
+                    if len(parts := line.split(' ',3)) == 4}
+        zh, en = configs(chinese), configs(english)
+        self.assertEqual(zh.keys(), en.keys())
+        for topic, before in zh.items():
+            after = en[topic]
+            self.assertEqual(before['unique_id'], after['unique_id'])
+            self.assertEqual(before['device'], after['device'])
+            for key in ('state_topic','command_topic','availability_topic','json_attributes_topic'):
+                self.assertEqual(before.get(key), after.get(key))
+            self.assertFalse(any('\u4e00' <= c <= '\u9fff' for c in after['name']), after['name'])
+        if model == 'A1':
+            from jinja2 import Environment, StrictUndefined
+            env = Environment(undefined=StrictUndefined)
+            for mapping, labels in ((zh, ['自动','手动']), (en, ['Automatic','Manual'])):
+                mode = next(value for topic,value in mapping.items() if topic.endswith('_fan_mode/config'))
+                self.assertEqual(mode['options'],labels)
+                for wire, label in zip(('auto','manual'), labels):
+                    self.assertEqual(env.from_string(mode['value_template']).render(value_json={'fan_mode':wire}), label)
+                    self.assertEqual(json.loads(env.from_string(mode['command_template']).render(value=label)),
+                                     {'action':'fan.mode.set','params':{'mode':wire}})
 
     def test_virtual_production_callbacks(self):
         # Include the existing platform shim, whose runtime.c include is the real

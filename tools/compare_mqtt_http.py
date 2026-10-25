@@ -6,68 +6,94 @@ required; this tool does not certify a release or infer leak freedom.
 """
 import argparse
 import json
+import ipaddress
+import re
 import math
 from pathlib import Path
 import statistics
 
-MODELS = {
-    '10.117.152.111': ('A1', 'b0f893303134'),
-    '10.117.152.102': ('TC1', 'd0bae463e12c'),
-    '10.117.152.110': ('M1', 'b0f8932864b6'),
-}
+SUPPORTED_MODELS = ('A1', 'TC1', 'M1')
 OUTCOMES = ('success', 'busy', 'timeout', 'transport', 'other', 'cancelled')
 ZERO_FIELDS = ('memory_active', 'memory_reserved', 'memory_waiting', 'json_live_blocks')
 
 
-def target_scope(specs=None):
+def target_scope(specs=None, metadata=None):
+    """Resolve an explicit scope or captured target metadata; never choose a DUT."""
     if specs is None:
-        return dict(MODELS)
+        specs = metadata
+    if not specs:
+        raise ValueError('An explicit target scope or captured target metadata is required')
     if isinstance(specs, dict):
-        parsed = {}
+        entries = []
         for ip, value in specs.items():
-            if ip not in MODELS or ip in parsed:
-                raise ValueError('Target is unknown or duplicated')
-            model, identity = MODELS[ip]
-            if isinstance(value, (tuple, list)) and len(value) == 2:
-                if value[0].lower() != model.lower() or value[1].lower() != identity.lower():
-                    raise ValueError('Target model or identity differs from authorization')
-            elif isinstance(value, str):
-                if value.lower() != identity.lower():
-                    raise ValueError('Target identity differs from authorization')
+            if isinstance(value, dict):
+                model, identity = value.get('model'), value.get('device_id')
+            elif isinstance(value, (tuple, list)) and len(value) == 2:
+                model, identity = value
             else:
-                raise ValueError('Malformed target mapping')
-            parsed[ip] = MODELS[ip]
-        if not parsed or ('10.117.152.110' in parsed and set(parsed) != set(MODELS)):
-            raise ValueError('M1 can only be selected with the full target set')
-        return {ip: MODELS[ip] for ip in MODELS if ip in parsed}
-    parsed = {}
-    for spec in specs:
-        if not isinstance(spec, str) or spec.count('=') != 1:
-            raise ValueError('Malformed target specification')
-        ip, identity = spec.split('=', 1)
-        if ip not in MODELS or ip in parsed or identity.lower() != MODELS[ip][1].lower():
-            raise ValueError('Target is unknown, duplicated, or has the wrong identity')
-        parsed[ip] = MODELS[ip]
-    if not parsed or ('10.117.152.110' in parsed and set(parsed) != set(MODELS)):
+                raise ValueError('Target mapping must provide model and identity')
+            entries.append((ip, model, identity))
+    else:
+        entries = []
+        for spec in specs:
+            if not isinstance(spec, str) or spec.count('=') != 1:
+                raise ValueError('Targets must use IP=MODEL:ID')
+            ip, value = spec.split('=', 1)
+            if ':' not in value:
+                raise ValueError('Targets must provide an explicit model: IP=MODEL:ID')
+            model, identity = value.split(':', 1)
+            entries.append((ip, model, identity))
+    parsed, models, identities = {}, set(), set()
+    for ip, model, identity in entries:
+        try:
+            if not isinstance(ip, str):
+                raise ValueError
+            address = str(ipaddress.ip_address(ip))
+        except (TypeError, ValueError):
+            raise ValueError('Target address is invalid') from None
+        if not isinstance(model, str) or model.upper() not in SUPPORTED_MODELS:
+            raise ValueError('Target model must be A1, TC1, or M1')
+        model = model.upper()
+        if not isinstance(identity, str) or not re.fullmatch(r'[0-9a-fA-F]{12}', identity):
+            raise ValueError('Target identity must be 12 hexadecimal characters')
+        identity = identity.lower()
+        if address in parsed or model in models or identity in identities:
+            raise ValueError('Target address, model, or identity is duplicated')
+        parsed[address] = (model, identity)
+        models.add(model)
+        identities.add(identity)
+    if 'M1' in models and models != set(SUPPORTED_MODELS):
         raise ValueError('M1 can only be selected with the full target set')
-    return {ip: MODELS[ip] for ip in MODELS if ip in parsed}
+    return {ip: parsed[ip] for model in SUPPORTED_MODELS
+            for ip in parsed if parsed[ip][0] == model}
+
+
+def _is_ip(value):
+    if not isinstance(value, str):
+        return False
+    try:
+        ipaddress.ip_address(value)
+        return True
+    except (TypeError, ValueError):
+        return False
 
 
 def _scope_records_ok(document, selected):
     selected_ips = set(selected)
-    authorized_ips = set(MODELS)
     valid = True
 
     def visit(value, parent_key=None):
         nonlocal valid
         if isinstance(value, dict):
             for key, child in value.items():
-                if parent_key != 'device_status' and key in authorized_ips and key not in selected_ips:
+                if parent_key != 'device_status' and _is_ip(key) and key not in selected_ips:
                     valid = False
-                if key == 'ip' and isinstance(child, str) and child in authorized_ips and child not in selected_ips:
+                if key == 'ip' and _is_ip(child) and child not in selected_ips:
                     valid = False
-                if isinstance(key, str) and any(key.startswith(ip+' ') for ip in authorized_ips-selected_ips):
-                    valid = False
+                if isinstance(key, str) and ' ' in key:
+                    prefix = key.split(' ', 1)[0]
+                    if _is_ip(prefix) and prefix not in selected_ips:
+                        valid = False
                 visit(child, key)
         elif isinstance(value, list):
             for child in value:
@@ -75,6 +101,15 @@ def _scope_records_ok(document, selected):
 
     visit(document)
     return valid
+
+
+def _selection_status(run, selected):
+    status = run.get('device_status')
+    if not isinstance(status, dict) or any(
+            not _is_ip(ip) or state != ('SELECTED' if ip in selected else 'PAUSED')
+            for ip, state in status.items()) or not set(selected) <= set(status):
+        raise ValueError('Target selection/paused status mismatch')
+    return status
 
 
 def number(value):
@@ -109,8 +144,10 @@ def summarize(rows, seconds):
 
 
 def load(path, targets=None):
-    selected = target_scope(targets)
     run = json.loads(path.read_text())
+    if not isinstance(run, dict):
+        raise ValueError('Mixed evidence must be an object')
+    selected = target_scope(targets, metadata=run.get('targets'))
     if (run.get('completed') is not True or run.get('status') != 'complete' or
             run.get('blockers') != []):
         raise ValueError('Mixed run incomplete/blocked')
@@ -119,11 +156,10 @@ def load(path, targets=None):
     if not _scope_records_ok(run, selected):
         raise ValueError('Mixed evidence contains rows for an unselected device')
     if 'selected_targets' in run:
-        if (run.get('selected_targets') != list(selected) or
-                run.get('device_status') != {
-                    ip: ('SELECTED' if ip in selected else 'PAUSED') for ip in MODELS}):
+        if run.get('selected_targets') != list(selected):
             raise ValueError('Target selection/paused status mismatch')
-    elif set(selected) != set(MODELS):
+        _selection_status(run, selected)
+    elif {model for model, _identity in selected.values()} != set(SUPPORTED_MODELS):
         raise ValueError('Legacy evidence cannot be used for a subset comparison')
     runner = json.loads((path.parent / 'http-runner/evidence.json').read_text())
     if (runner.get('run', {}).get('completed') is not True or runner.get('blockers') != [] or
@@ -254,16 +290,18 @@ def baseline_conditions(before, after, model):
 
 
 def compare(before_path, after_path, targets=None):
-    selected = target_scope(targets)
-    before, before_runner = load(before_path, selected)
+    before, before_runner = load(before_path, targets)
+    selected = target_scope(targets, metadata=before.get('targets'))
     after, after_runner = load(after_path, selected)
+    if before.get('device_status') != after.get('device_status'):
+        raise ValueError('Different target selection/paused status')
     if before['plan'] != after['plan'] or before['profile'] != after['profile']:
         raise ValueError('Different conditions')
     result = {
         'before_version': before['version'], 'after_version': after['version'],
         'profile': before['profile'], 'plan': before['plan'], 'models': {},
         'selected_targets': list(selected),
-        'device_status': {ip: ('SELECTED' if ip in selected else 'PAUSED') for ip in MODELS},
+        'device_status': before.get('device_status', dict.fromkeys(selected, 'SELECTED')),
         'limits': [
             'Cross-run attribution requires baseline_conditions.matched; missing legacy controls/configuration are unverified.',
             'Bounded concurrent clients/windows; this is not a fixed offered-rate benchmark.',
@@ -303,7 +341,8 @@ def main():
     parser.add_argument('--before', type=Path, required=True)
     parser.add_argument('--after', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
-    parser.add_argument('--target', action='append', metavar='IP=ID')
+    parser.add_argument('--target', action='append', metavar='IP=MODEL:ID',
+                        help='explicit expected scope; otherwise derive it from before capture metadata')
     args = parser.parse_args()
     if args.output.exists():
         raise FileExistsError('Refusing to overwrite an existing comparison')

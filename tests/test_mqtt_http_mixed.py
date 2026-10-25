@@ -13,6 +13,15 @@ import sys
 from tests.device import mqtt_http_mixed as MIXED
 from tests.device import mqtt_mixed_controller as CONTROLLER
 
+TEST_TARGETS = {
+    '198.51.100.10': ('020000000001', 'a1'),
+    '198.51.100.20': ('020000000002', 'tc1'),
+    '198.51.100.30': ('020000000003', 'm1'),
+}
+TEST_TARGET_SPECS = [ip+'='+ident for ip, (ident, _model) in TEST_TARGETS.items()]
+TEST_SCOPE_SPECS = [ip+'='+model+':'+ident for ip, (ident, model) in TEST_TARGETS.items()]
+MIXED.TARGETS.update(TEST_TARGETS)
+
 
 class FakePublishInfo:
     rc = 0
@@ -297,6 +306,8 @@ class HTTPResponseGapTests(unittest.TestCase):
 
 class NetworkReadinessTests(unittest.TestCase):
     def setUp(self):
+        MIXED.TARGETS.clear()
+        MIXED.TARGETS.update(TEST_TARGETS)
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.runner = FakeRunner(TARGETS, VERSION, self.directory.name)
@@ -777,6 +788,8 @@ class NetworkReadinessTests(unittest.TestCase):
 
 class MixedRunnerTests(unittest.TestCase):
     def setUp(self):
+        MIXED.TARGETS.clear()
+        MIXED.TARGETS.update(TEST_TARGETS)
         FakeMQTTClient.instances.clear()
         FakeRunner.instances.clear()
 
@@ -819,8 +832,8 @@ class MixedRunnerTests(unittest.TestCase):
         specs = [ip+'='+ident for ip, ident in TARGETS.items()]
         self.assertEqual(MIXED.validate_targets(specs), TARGETS)
         selected = {
-            '10.117.152.111': TARGETS['10.117.152.111'],
-            '10.117.152.102': TARGETS['10.117.152.102'],
+            '198.51.100.10': TARGETS['198.51.100.10'],
+            '198.51.100.20': TARGETS['198.51.100.20'],
         }
         self.assertEqual(MIXED.validate_targets(
             [ip+'='+ident for ip, ident in selected.items()]), selected)
@@ -830,13 +843,13 @@ class MixedRunnerTests(unittest.TestCase):
             MIXED.validate_targets([])
         with self.assertRaises(ValueError):
             MIXED.validate_targets([
-                '10.117.152.111='+TARGETS['10.117.152.111'],
-                '10.117.152.111='+TARGETS['10.117.152.111'],
+                '198.51.100.10='+TARGETS['198.51.100.10'],
+                '198.51.100.10='+TARGETS['198.51.100.10'],
             ])
         with self.assertRaises(ValueError):
             MIXED.validate_targets([
-                '10.117.152.111='+TARGETS['10.117.152.111'],
-                '10.117.152.110='+TARGETS['10.117.152.110'],
+                '198.51.100.10='+TARGETS['198.51.100.10'],
+                '198.51.100.30='+TARGETS['198.51.100.30'],
             ])
         payload = MIXED.make_status_payload('readonly-mixed-abc')
         self.assertIs(MIXED.guard_status_payload(payload), payload)
@@ -846,8 +859,8 @@ class MixedRunnerTests(unittest.TestCase):
 
     def test_subset_execution_never_schedules_paused_m1(self):
         selected = {
-            '10.117.152.111': TARGETS['10.117.152.111'],
-            '10.117.152.102': TARGETS['10.117.152.102'],
+            '198.51.100.10': TARGETS['198.51.100.10'],
+            '198.51.100.20': TARGETS['198.51.100.20'],
         }
         plan = [{'name': 'subset-mixed', 'http_clients': 1,
                  'mqtt_window': 1, 'seconds': 0.06, 'mqtt_period': 0.01}]
@@ -866,7 +879,7 @@ class MixedRunnerTests(unittest.TestCase):
         self.assertTrue(result['completed'])
         self.assertEqual(result['selected_targets'], list(selected))
         self.assertEqual(set(result['targets']), set(selected))
-        self.assertEqual(result['device_status']['10.117.152.110'], 'PAUSED')
+        self.assertEqual(result['device_status']['198.51.100.30'], 'PAUSED')
         self.assertEqual(set(FakeRunner.instances[-1].targets), set(selected))
         self.assertEqual(set(FakeRunner.instances[-1].before), set(selected))
         self.assertTrue(FakeMQTTClient.instances)
@@ -910,8 +923,8 @@ class MixedRunnerTests(unittest.TestCase):
         with self.assertRaises(MIXED.MQTTProtocolError):
             MIXED.receive_correlated(
                 client, 'readonly-mixed-id', 'root/result', 'root/state',
-                0.1, [], '10.117.152.111', 'recovery',
-                _recovery_runner('10.117.152.111', VERSION))
+                0.1, [], '198.51.100.10', 'recovery',
+                _recovery_runner('198.51.100.10', VERSION))
 
     def test_recover_retries_only_matching_busy_and_keeps_success_contract(self):
         response_codes = {ip: ['busy', 'ok'] for ip in TARGETS}
@@ -939,7 +952,7 @@ class MixedRunnerTests(unittest.TestCase):
         self.assertEqual(sleeps, [MIXED.RECOVERY_BUSY_RETRY_DELAY]*3)
 
     def test_recover_persistent_busy_is_bounded_and_persists_each_rejection(self):
-        ip = '10.117.152.111'
+        ip = '198.51.100.10'
         with tempfile.TemporaryDirectory() as directory:
             runner, clients, roots, evidence = _recovery_fixture(
                 directory, {ip: ['busy']*5})
@@ -957,7 +970,7 @@ class MixedRunnerTests(unittest.TestCase):
         self.assertTrue(runner.blockers)
 
     def test_recover_nonbusy_error_is_not_retried(self):
-        ip = '10.117.152.111'
+        ip = '198.51.100.10'
         with tempfile.TemporaryDirectory() as directory:
             runner, clients, roots, evidence = _recovery_fixture(
                 directory, {ip: ['unavailable']})
@@ -968,7 +981,7 @@ class MixedRunnerTests(unittest.TestCase):
         self.assertTrue(runner.blockers)
 
     def test_recover_busy_oversleep_updates_persisted_attempt_without_duplicate(self):
-        ip = '10.117.152.111'
+        ip = '198.51.100.10'
         clock = [0.0]
 
         def oversleep(_seconds):
@@ -988,7 +1001,7 @@ class MixedRunnerTests(unittest.TestCase):
         self.assertFalse(attempts[0]['retry_exhausted'])
 
     def test_recover_late_puback_and_identity_errors_do_not_retry(self):
-        ip = '10.117.152.111'
+        ip = '198.51.100.10'
         with tempfile.TemporaryDirectory() as directory:
             runner, clients, roots, evidence = _recovery_fixture(
                 directory, {ip: ['busy']})
@@ -1035,7 +1048,7 @@ class MixedRunnerTests(unittest.TestCase):
         self.assertTrue(runner.blockers)
 
     def test_recover_retained_or_wrong_topic_busy_does_not_retry(self):
-        ip = '10.117.152.111'
+        ip = '198.51.100.10'
         with tempfile.TemporaryDirectory() as directory:
             runner, clients, roots, evidence = _recovery_fixture(
                 directory, {ip: ['busy']})
@@ -1046,7 +1059,7 @@ class MixedRunnerTests(unittest.TestCase):
         self.assertEqual(evidence.data['recovery_attempts'], [])
 
     def test_recover_busy_requires_valid_raw_json(self):
-        ip = '10.117.152.111'
+        ip = '198.51.100.10'
         with tempfile.TemporaryDirectory() as directory:
             runner, clients, roots, evidence = _recovery_fixture(
                 directory, {ip: ['busy']})
@@ -1090,16 +1103,16 @@ class MixedRunnerTests(unittest.TestCase):
 
     def test_telemetry_is_separated_by_collection_stage_and_missing_is_na(self):
         rows = [
-            {'ip': '10.117.152.111', 'phase': 'phase-a', 'collection_stage': 'load',
+            {'ip': '198.51.100.10', 'phase': 'phase-a', 'collection_stage': 'load',
              'retained': True, 'validated': False},
-            {'ip': '10.117.152.111', 'phase': 'phase-a', 'collection_stage': 'load',
+            {'ip': '198.51.100.10', 'phase': 'phase-a', 'collection_stage': 'load',
              'retained': False, 'validated': True},
-            {'ip': '10.117.152.111', 'phase': 'phase-a', 'collection_stage': 'recovery',
+            {'ip': '198.51.100.10', 'phase': 'phase-a', 'collection_stage': 'recovery',
              'retained': False, 'validated': True},
         ]
-        load = MIXED._telemetry_observation(rows, '10.117.152.111', 'phase-a', 'load')
-        recovery = MIXED._telemetry_observation(rows, '10.117.152.111', 'phase-a', 'recovery')
-        unavailable = MIXED._telemetry_observation([], '10.117.152.111', 'phase-a', 'load')
+        load = MIXED._telemetry_observation(rows, '198.51.100.10', 'phase-a', 'load')
+        recovery = MIXED._telemetry_observation(rows, '198.51.100.10', 'phase-a', 'recovery')
+        unavailable = MIXED._telemetry_observation([], '198.51.100.10', 'phase-a', 'load')
         self.assertEqual(load['availability'], 'observed')
         self.assertEqual(load['validated_nonretained_count'], 1)
         self.assertEqual(load['retained_excluded_count'], 1)
@@ -1159,7 +1172,7 @@ class MixedRunnerTests(unittest.TestCase):
         self.assertEqual(sum(row['count'] for row in summary.values()), len(rows))
 
     def test_correlated_busy_is_liveness_without_success(self):
-        ip = '10.117.152.111'
+        ip = '198.51.100.10'
         runner = FakeRunner({ip: TARGETS[ip]}, VERSION, '')
         runner.initialize()
         client = FakeMQTTClient('broker', 1883, 'busy-test', publish_mode='busy-always')
@@ -1457,7 +1470,7 @@ class MixedRunnerTests(unittest.TestCase):
             source = root/'source.py'
             source.write_text('# offline controller fixture\n')
             output = private/'controller-success-mqtt-http-mixed'
-            selected = CONTROLLER._target_map()
+            selected = CONTROLLER._target_map(TEST_TARGET_SPECS)
             mixed_targets = {
                 ip: {'device_id': ident, 'model': MIXED.TARGETS[ip][1]}
                 for ip, ident in selected.items()
@@ -1480,7 +1493,7 @@ class MixedRunnerTests(unittest.TestCase):
                                       {name: source for name in CONTROLLER.SOURCES}), \
                     mock.patch.object(CONTROLLER, 'build_command', return_value=command), \
                     mock.patch.object(CONTROLLER.importlib.util, 'find_spec', return_value=object()):
-                result = CONTROLLER.run('controller-success', VERSION, execute=True)
+                result = CONTROLLER.run('controller-success', VERSION, execute=True, targets=TEST_TARGET_SPECS)
         self.assertEqual(result['status'], 'complete')
         self.assertTrue(result['completed'])
         self.assertEqual(result['process']['exit_code'], 0)
@@ -1489,18 +1502,18 @@ class MixedRunnerTests(unittest.TestCase):
 
     def test_controller_dry_run_preserves_explicit_subset(self):
         selected = [
-            '10.117.152.111=b0f893303134',
-            '10.117.152.102=D0BAE463E12C',
+            '198.51.100.10=020000000001',
+            '198.51.100.20=020000000002',
         ]
         result = CONTROLLER.run('controller-subset', VERSION, targets=selected)
         self.assertEqual(result['targets'], selected)
         self.assertEqual(result['selected_targets'], [
-            '10.117.152.111', '10.117.152.102'])
-        self.assertEqual(result['device_status']['10.117.152.110'], 'PAUSED')
+            '198.51.100.10', '198.51.100.20'])
+        self.assertEqual(result['device_status']['198.51.100.30'], 'PAUSED')
         command = CONTROLLER.build_command(sys.executable, 'controller-subset',
                                            VERSION, selected)
         self.assertEqual(command.count('--target'), 2)
-        self.assertNotIn('10.117.152.110=b0f8932864b6', command)
+        self.assertNotIn('198.51.100.30=020000000003', command)
 
     def test_controller_archival_failure_is_recorded_without_manifest(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1511,7 +1524,7 @@ class MixedRunnerTests(unittest.TestCase):
                     mock.patch.object(CONTROLLER, 'archive_sources',
                                       side_effect=OSError('offline archive failure')):
                 with self.assertRaisesRegex(OSError, 'offline archive failure'):
-                    CONTROLLER.run('archive-failure', VERSION, execute=True)
+                    CONTROLLER.run('archive-failure', VERSION, execute=True, targets=TEST_TARGET_SPECS)
             controller_file = private/'archive-failure-mqtt-http-mixed-controller'/'controller.json'
             record = json.loads(controller_file.read_text())
         self.assertEqual(record['status'], 'failed')
@@ -1532,12 +1545,71 @@ class MixedRunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             completed = subprocess.run(
                 [sys.executable, '-I', str(Path(CONTROLLER.__file__).resolve()),
-                 '--label', 'offline-script-entry', '--version', VERSION],
+                 '--label', 'offline-script-entry', '--version', VERSION,
+                 *[item for target in TEST_SCOPE_SPECS for item in ('--target', target)]],
                 cwd=directory, check=True, capture_output=True, text=True, timeout=5)
         result = json.loads(completed.stdout)
         self.assertEqual(result['mode'], 'dry-run')
-        self.assertEqual(result['targets'], list(CONTROLLER.DEFAULT_TARGETS))
+        self.assertEqual(result['targets'], TEST_TARGET_SPECS)
         self.assertFalse(Path(result['output']).exists())
+
+
+class PortableTargetConfigurationTests(unittest.TestCase):
+    def setUp(self):
+        self.saved_targets = dict(MIXED.TARGETS)
+        MIXED.TARGETS.clear()
+
+    def tearDown(self):
+        MIXED.TARGETS.clear()
+        MIXED.TARGETS.update(self.saved_targets)
+
+    def test_empty_scope_requires_explicit_model_and_identity(self):
+        with self.assertRaisesRegex(ValueError, 'Explicit targets'):
+            MIXED.validate_targets([])
+        with self.assertRaisesRegex(ValueError, 'explicit model'):
+            MIXED.validate_targets(['198.51.100.10=020000000001'])
+        self.assertEqual(MIXED.TARGETS, {})
+        with self.assertRaisesRegex(ValueError, 'Explicit targets'):
+            CONTROLLER.run('offline', VERSION)
+
+    def test_configured_scope_preserves_model_and_identity_rejection(self):
+        selected = MIXED.configure_targets(['198.51.100.10=A1:020000000001'])
+        self.assertEqual(selected, {'198.51.100.10': '020000000001'})
+        for specs in (['198.51.100.10=TC1:020000000001'],
+                      ['198.51.100.10=A1:020000000099'],
+                      ['198.51.100.20=A1:020000000001']):
+            with self.subTest(specs=specs), self.assertRaises(ValueError):
+                MIXED.validate_targets(specs)
+
+    def test_explicit_baseline_source_is_archived_and_compared(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            baseline = root/'external-baseline.py'
+            baseline.write_text('# explicit external baseline fixture\n')
+            output = root/'controller'
+            output.mkdir()
+            with mock.patch.object(CONTROLLER, 'SOURCES', {
+                    'primary_stability_load.py': root/'missing.py'}):
+                records = CONTROLLER.archive_sources(output, [
+                    'primary_stability_load.py='+str(baseline)])
+                audit = CONTROLLER.audit_sources(output, records)
+                self.assertTrue(audit['source_unchanged'])
+                self.assertTrue(audit['source_copies_unchanged'])
+                baseline.write_text('# changed baseline fixture\n')
+                self.assertFalse(CONTROLLER.audit_sources(output, records)['source_unchanged'])
+
+    def test_source_overrides_reject_unknown_duplicate_and_missing_paths(self):
+        for specs in (['unknown.py=file.py'],
+                      ['primary_stability_load.py='],
+                      ['primary_stability_load.py=a.py', 'primary_stability_load.py=b.py']):
+            with self.subTest(specs=specs), self.assertRaises(ValueError):
+                CONTROLLER.source_paths(specs)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with mock.patch.object(CONTROLLER, 'SOURCES', {
+                    'primary_stability_load.py': root/'missing.py'}):
+                with self.assertRaisesRegex(FileNotFoundError, 'primary_stability_load.py'):
+                    CONTROLLER.archive_sources(root)
 
 
 if __name__ == '__main__':

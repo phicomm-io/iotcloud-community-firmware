@@ -33,6 +33,7 @@ static ph_mqtt_startup mqtt_startup;
 static mqtt_account_t account;
 static char base[192], command_topic[MQTT_TOPIC_MAX], availability_topic[MQTT_TOPIC_MAX];
 static bool rediscover, cleanup_pending;
+static uint8_t discovery_language;
 static m1_config_t session_config;
 static bool same_connection(const m1_config_t *, const m1_config_t *);
 static bool session_current(void)
@@ -120,6 +121,7 @@ static int discovery_build(const m1_config_t *c,unsigned index,service_mqtt_json
 {
     static const char *keys[] = {"temperature", "humidity", "formaldehyde", "pm25", "co2", "brightness", "pressure", "pm1", "pm10", "gt_0_3", "gt_0_5", "gt_1_0", "gt_2_5", "gt_5_0", "gt_10_0"};
     static const char *names[] = {"温度", "湿度", "甲醛", "PM2.5", "二氧化碳", "屏幕亮度", "气压", "PM1.0", "PM10", ">0.3 µm", ">0.5 µm", ">1.0 µm", ">2.5 µm", ">5.0 µm", ">10 µm"};
+    static const char *english[] = {"Temperature", "Humidity", "Formaldehyde", "PM2.5", "Carbon dioxide", "Screen brightness", "Air pressure", "PM1.0", "PM10", ">0.3 µm", ">0.5 µm", ">1.0 µm", ">2.5 µm", ">5.0 µm", ">10 µm"};
     static const char *units[] = {"°C", "%", "mg/m³", "µg/m³", "ppm", NULL, "hPa", "µg/m³", "µg/m³", "#/0.1 L", "#/0.1 L", "#/0.1 L", "#/0.1 L", "#/0.1 L", "#/0.1 L"};
     static const char *classes[] = {"temperature", "humidity", NULL, "pm25", "carbon_dioxide", NULL, "atmospheric_pressure", "pm1", "pm10", NULL, NULL, NULL, NULL, NULL, NULL};
     mico_rtos_lock_mutex(&m1_lock);bool co2_received=m1_state.scd40.received;
@@ -135,7 +137,7 @@ static int discovery_build(const m1_config_t *c,unsigned index,service_mqtt_json
         }
         json_object *o = json_object_new_object();
         if (!o) return service_mqtt_json_error(scope, PH_MQTT_ERROR_APP_DISCOVERY_GRAPH);
-        str(o, "name", names[i]);
+        str(o, "name", ph_i18n(device_language_get(),names[i],english[i]));
         mqtt_leaf(&account,"state",text,sizeof(text));str(o,"json_attributes_topic",text);
         str(o,"json_attributes_template",i == MQTT_PRESSURE_INDEX ?
             "{{ {\"ip\": value_json.ip, \"firmware\": value_json.version, \"barometer_valid\": value_json.barometer.valid} | tojson }}" :
@@ -244,6 +246,7 @@ static m1_config_t cfg,current;
 static mqtt_state_t state;
 static char client_id[192],wildcard[MQTT_TOPIC_MAX];
 static char sensor_filter[FEATURE_TOPIC_MAX];
+static char co2_filter[FEATURE_TOPIC_MAX];
 static unsigned discovery_index,initial_index;
 static uint32_t connect_sequence,co2_sequence,pressure_sequence,sequence,snapshot_at;
 static bool co2_discovered,pressure_discovered,particles_discovered;
@@ -268,12 +271,13 @@ static int session_prepare(void *context,ph_mqtt_connection *spec) {
         mqtt_leaf(&account, "command", wildcard, sizeof(wildcard));
         mqtt_leaf(&account, "availability", availability_topic, sizeof(availability_topic));
         mqtt_leaf(&account, "command", command_topic, sizeof(command_topic));
-        session_config = cfg;
+        session_config = cfg;discovery_language=device_language_get();
         feature_mqtt_session(&account);
         /* This subscription depends only on account identity. Do not allocate
          * the full feature configuration merely to form its fixed topic. */
         char sensor_leaf[32];snprintf(sensor_leaf,sizeof(sensor_leaf),"%s/command",account.mac);
         if(!mqtt_aux(&account,"sensor",sensor_leaf,sensor_filter,sizeof(sensor_filter)))return PH_MQTT_PREPARE_WAIT;
+        if(!mqtt_aux(&account,"sensor","+/state",co2_filter,sizeof(co2_filter)))return PH_MQTT_PREPARE_WAIT;
         rediscover=false;
         *spec=(ph_mqtt_connection){&account,cfg.mqtt_host,cfg.mqtt_user,cfg.mqtt_password,
             client_id,availability_topic,cfg.mqtt_port,5000,m1_mqtt_read};
@@ -284,6 +288,7 @@ static bool session_subscription(void *context,unsigned index,ph_mqtt_subscripti
     if(index==0)*out=(ph_mqtt_subscription){wildcard,QOS1,native_command};
     else if(index==1)*out=(ph_mqtt_subscription){"homeassistant/status",QOS0,ha_birth};
     else if(index==2)*out=(ph_mqtt_subscription){sensor_filter,QOS1,native_command};
+    else if(index==3)*out=(ph_mqtt_subscription){co2_filter,QOS1,native_command};
     else return false;
     return true;
 }
@@ -320,6 +325,8 @@ static int session_cycle(void *context) {
             if(ota_job_active())return MQTT_SUCCESS;
             mqtt_state_get(&state); m1_config_get(&current);
             if (!state.wifi_connected || !same_connection(&cfg, &current)) return PH_MQTT_RECONFIGURE;
+            uint8_t language=device_language_get();
+            if(language!=discovery_language){discovery_language=language;rediscover=true;}
             if (state.scd40.received && !co2_discovered) { rediscover = true; co2_discovered = true; }
             mico_rtos_lock_mutex(&m1_lock);bool particle_support=m1_state.mcu_sensor_details;mico_rtos_unlock_mutex(&m1_lock);
             if(particle_support!=particles_discovered){rediscover=true;particles_discovered=particle_support;}
