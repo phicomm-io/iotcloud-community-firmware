@@ -115,12 +115,14 @@ static struct {void iotcloudStop(){++hapStops;}} homeSpan;
 static bool homeFactoryReset(){return true;}
 static size_t hubByteHeap(){return 200000;}
 static size_t hubByteBlock(){return 200000;}
+static bool hubAllocationReady(size_t n){return hubByteHeap()>n+16384&&hubByteBlock()>n;}
 #include "quiesce.inc"
 static unsigned homeChanges=0,bemfaStarts=0;
 static void homeChanged(){++homeChanges;}
 static void startBemfa(){++bemfaStarts;}
 static constexpr int pdTRUE=1;
 static int xQueueReceive(QueueHandle_t,void *,int){return 0;}
+static unsigned uxQueueMessagesWaiting(QueueHandle_t){return 0;}
 static uint32_t nextPublish=0;
 static bool otaActive=false;
 #include "poll.inc"
@@ -226,7 +228,7 @@ static void assertQuiesced(const std::string &token,int fd){
   for(const auto &s:sessions)assert(!s.used&&!s.active);
   assert(hubEpoch==1&&queueResets==1&&hubHttpToken.empty());
   assert(hubRemoteTopics.empty()&&bemfaTopics.empty()&&bemfaConfiguredKey.empty());
-  for(unsigned i=0;i<3;++i)assert(!hubMessages[i].receiving&&!hubMessages[i].length);
+  for(const auto &message:hubMessages)assert(!message);
   uint8_t byte;assert(::recv(fd,&byte,1,0)==0);
   hubReload=true;hubCredentials=true;pollHub(++now);
   assert(!hubTransport.running()&&homeChanges==0&&bemfaStarts==0);
@@ -252,8 +254,8 @@ int main(int argc,char **argv){
   int fd=connectClient(atoi(argv[2]));
   bemfaMqtt=reinterpret_cast<void *>(2);bemfaConnected=true;bemfaConfiguredKey="old-key";
   hubRemoteTopics={"old/upstream"};bemfaTopics={"old/bemfa"};hubHttpToken=login.token.c_str();
-  hubInbox=reinterpret_cast<void *>(3);hubMessages.reset(new HubMessage[3]);
-  for(unsigned i=0;i<3;++i){hubMessages[i].receiving=true;hubMessages[i].length=5;}
+  hubInbox=reinterpret_cast<void *>(3);
+  for(auto &message:hubMessages){message.reset(new HubMessage);message->receiving=true;message->length=5;}
   sessions[0].used=sessions[0].active=true;hubHome.devices[0].online=hubHome.devices[0].controls=true;
   hubReload=hubCredentials=hubBirth=true;
   if(scenario.compare(0,7,"backup-")==0){
@@ -335,7 +337,7 @@ int main(int argc,char **argv){
       pollHub(++now);
       assert(hubEpoch==1&&queueResets==1&&stopped==2&&destroyed==2);
       assert(!hubReload&&mqttRestart&&!mqtt&&!bemfaMqtt&&bemfaStarts==1);
-      for(unsigned i=0;i<3;++i)assert(!hubMessages[i].receiving&&!hubMessages[i].length);
+      for(const auto &message:hubMessages)assert(!message);
     }
   }else if(scenario=="reset"||scenario=="reset-fail"){
     prefs.clearFail=scenario=="reset-fail";

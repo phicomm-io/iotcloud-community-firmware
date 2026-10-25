@@ -20,6 +20,7 @@ class HubReload(unittest.TestCase):
         cls.tmp = tempfile.TemporaryDirectory(prefix='daikin-hub-reload-')
         root = Path(cls.tmp.name)
         parts = {
+            'allocation.inc': section('DAIKIN/src/hub.inc', 'static bool hubAllocationReady(', 'static bool hubReload'),
             'globals.inc': section('DAIKIN/src/hub.inc', 'static bool hubReload', 'static String hubHex('),
             'capture.inc': section('DAIKIN/src/hub.inc', 'static bool hubCapture(', 'static void hubSubscribe('),
             'mqtt.inc': section('DAIKIN/src/mqtt.inc', 'static void stopMqtt()'),
@@ -37,7 +38,7 @@ class HubReload(unittest.TestCase):
         cls.binary = root / 'reload'
         subprocess.run(['c++', '-std=c++11', '-Wall', '-Wextra', '-Werror',
                         '-fsanitize=address,undefined', '-fno-omit-frame-pointer', '-fno-pie', '-no-pie',
-                        '-I' + str(root), '-I' + str(ROOT / 'DAIKIN/include'), '-I' + str(codec),
+                        '-pthread', '-I' + str(root), '-I' + str(ROOT / 'DAIKIN/include'), '-I' + str(codec),
                         str(ROOT / 'DAIKIN/tests/hub/reload.cpp'), '-o', str(cls.binary)], check=True)
 
     @classmethod
@@ -56,6 +57,24 @@ class HubReload(unittest.TestCase):
 
     def test_native_mqtt_change_retires_old_source_before_new_generation(self):
         self.scenario('native')
+
+    def test_two_sources_interleave_maximum_binary_fragments_and_release(self):
+        self.scenario('inbox-fragments')
+
+    def test_unsubscribed_and_malformed_fragments_leave_no_working_allocation(self):
+        self.scenario('inbox-invalid')
+
+    def test_guard_and_nothrow_failures_recover_without_dequeuing(self):
+        self.scenario('inbox-allocation')
+
+    def test_three_value_queue_full_epoch_ota_and_restore_drop_rules(self):
+        self.scenario('inbox-bounds')
+
+    def test_two_source_partials_and_dequeue_have_three_object_peak(self):
+        self.scenario('inbox-peak')
+
+    def test_concurrent_source_tasks_join_before_inbox_reset(self):
+        self.scenario('inbox-concurrent')
 
 
 if __name__ == '__main__':

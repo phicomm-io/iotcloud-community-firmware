@@ -28,7 +28,9 @@ struct HubMessage {
   uint32_t epoch = 0;
   bool retain = false, receiving = false;
 };
-static std::unique_ptr<HubMessage[]> hubMessages;
+// Each SDK task owns its source's partial message. The by-value inbox keeps
+// completed messages; idle sources do not need permanent working buffers.
+static std::unique_ptr<HubMessage> hubMessages[2];
 static QueueHandle_t hubInbox = nullptr;
 static String hubHex(const uint8_t *data, size_t n) {
   String s;
@@ -72,40 +74,62 @@ static std::string hubDerive(const std::string &password,
   return std::string(result.c_str());
 }
 static bool hubCapture(esp_mqtt_event_handle_t event, unsigned source) {
-  if (hubRestoring || !hubMessages || !hubInbox || source > 1) return false;
-  auto &part = hubMessages[source];
+  if (!event || hubRestoring || !hubInbox || source > 1) return false;
+  auto &message = hubMessages[source];
   if (event->current_data_offset == 0) {
-    part.receiving = false;
-    std::string topic(event->topic, event->topic_len);
+    message.reset();
+    if (event->topic_len < 0 || (event->topic_len && !event->topic))
+      return false;
     const auto &topics = source ? bemfaTopics : hubRemoteTopics;
-    if (std::find(topics.begin(), topics.end(), topic) == topics.end())
+    const auto topic = std::find_if(topics.begin(), topics.end(),
+        [&](const std::string &candidate) {
+          return candidate.size() == size_t(event->topic_len) &&
+                 (!event->topic_len ||
+                  !memcmp(candidate.data(), event->topic, event->topic_len));
+        });
+    if (topic == topics.end())
       return false;
     if (event->total_data_len < 0 || event->total_data_len > 4096 ||
-        event->topic_len > 256)
+        event->topic_len > 256 || event->data_len < 0 ||
+        event->data_len > event->total_data_len ||
+        (event->data_len && !event->data))
       return true;
+    if (!hubAllocationReady(sizeof(HubMessage))) {
+      ++hubInboxDropped;
+      return true;
+    }
+    message.reset(new (std::nothrow) HubMessage);
+    if (!message) {
+      ++hubInboxDropped;
+      return true;
+    }
+    auto &part = *message;
     part.length = 0;
     part.total = event->total_data_len;
     part.source = source;
     part.epoch = hubEpoch;
     part.retain = event->retain;
-    memcpy(part.topic, topic.data(), topic.size());
-    part.topic[topic.size()] = 0;
+    memcpy(part.topic, topic->data(), topic->size());
+    part.topic[topic->size()] = 0;
     part.receiving = true;
   }
-  if (!part.receiving)
+  if (!message)
     return false;
+  auto &part = *message;
   if (event->current_data_offset != (int)part.length || event->data_len < 0 ||
-      part.length + event->data_len > part.total) {
-    part.receiving = false;
+      size_t(event->data_len) > part.total - part.length ||
+      (event->data_len && !event->data)) {
+    message.reset();
     return true;
   }
-  memcpy(part.body + part.length, event->data, event->data_len);
+  if (event->data_len)
+    memcpy(part.body + part.length, event->data, event->data_len);
   part.length += event->data_len;
   if (part.length == part.total) {
     part.body[part.length] = 0;
     if (xQueueSend(hubInbox, &part, 0)!=pdTRUE)
       ++hubInboxDropped;
-    part.receiving = false;
+    message.reset();
   }
   return true;
 }
@@ -176,10 +200,10 @@ static void startBemfa() {
 }
 static bool hubRestartPending() { return hubRestoring; }
 static void hubResetInbox() {
+  // Both SDK clients are stopped/joined before their source slots are reset.
   ++hubEpoch;
   if (hubInbox) xQueueReset(hubInbox);
-  if (hubMessages)
-    for (unsigned i = 0; i < 3; ++i) hubMessages[i] = HubMessage();
+  for (auto &message : hubMessages) message.reset();
 }
 static void hubUpstreamChanged() {
   // config.set may run inside the local broker's poll callback. Stop the old
@@ -271,7 +295,6 @@ static void hubLocalPublish(const String &topic, const String &body,
                               iotcloud::HubBroker::Origin::Internal);
 }
 static void hubInit() {
-  hubMessages.reset(new (std::nothrow) HubMessage[3]);
   hubInbox = xQueueCreate(3, sizeof(HubMessage));
   hubService.homeStatus = homeStatus;
   hubService.homeReset = homeReset;
@@ -372,19 +395,22 @@ static void pollHub(uint32_t now) {
     startBemfa();
   }
   hubRelay.tick(now);
-  if (hubMessages && hubInbox) {
-  auto &hubReceived = hubMessages[2];
-  if (xQueueReceive(hubInbox, &hubReceived, 0) == pdTRUE &&
-      hubReceived.epoch == hubEpoch && !otaActive) {
-    if (hubReceived.source)
-      hubRelay.incomingBemfa(hubReceived.topic,
-                             std::string(hubReceived.body, hubReceived.length),
-                             hubReceived.retain);
-    else
-      hubRelay.incoming(hubReceived.topic,
-                        std::string(hubReceived.body, hubReceived.length),
-                        hubReceived.retain);
-  }
+  if (hubInbox && uxQueueMessagesWaiting(hubInbox) &&
+      hubAllocationReady(sizeof(HubMessage))) {
+    // Do not dequeue until the temporary copy exists. Allocation pressure can
+    // retry next poll without dropping the queued value or using a large stack.
+    std::unique_ptr<HubMessage> hubReceived(new (std::nothrow) HubMessage);
+    if (hubReceived && xQueueReceive(hubInbox, hubReceived.get(), 0) == pdTRUE &&
+        hubReceived->epoch == hubEpoch && !otaActive) {
+      if (hubReceived->source)
+        hubRelay.incomingBemfa(hubReceived->topic,
+                              std::string(hubReceived->body, hubReceived->length),
+                              hubReceived->retain);
+      else
+        hubRelay.incoming(hubReceived->topic,
+                          std::string(hubReceived->body, hubReceived->length),
+                          hubReceived->retain);
+    }
   }
   if (bemfaConnected &&
       (hubRelay.status == "connecting" || hubRelay.status == "disconnected"))
