@@ -1704,136 +1704,136 @@
         "v0.9.24:b007"
       ]
     },
-    "v0.9.25:b001": {
+    "v0.9.26:b001": {
       "block_sha256": "d1583872623e8d7cccf9b813067db1ddc2a20d60e080578aa381885eea346efc",
       "release_sha256": "baab8bd6e43e6b358632a43caba45039a40655b8a6e75a5b8ea19c8f58007274",
       "status": "approved",
       "reason": "结合 main 实现、主机回归与 A1/M1 候选实机结果审核；明确估算和 MCU 能力边界。",
       "change_refs": [
-        "a1-weighted-filter@0.9.25"
+        "a1-weighted-filter@0.9.26"
       ],
       "basis": [
-        "v0.9.25:b001"
+        "v0.9.26:b001"
       ]
     },
-    "v0.9.25:b002": {
+    "v0.9.26:b002": {
       "block_sha256": "1626cf99cf68b1e557d951816717f30fea246b158c9add837b88e44625df00af",
       "release_sha256": "baab8bd6e43e6b358632a43caba45039a40655b8a6e75a5b8ea19c8f58007274",
       "status": "approved",
       "reason": "结合 main 实现、主机回归与 A1/M1 候选实机结果审核；明确估算和 MCU 能力边界。",
       "change_refs": [
-        "m1-wake-alarm@0.9.25",
-        "m1-stock-threshold-diagnostics@0.9.25"
+        "m1-wake-alarm@0.9.26",
+        "m1-stock-threshold-diagnostics@0.9.26"
       ],
       "basis": [
-        "v0.9.25:b002"
+        "v0.9.26:b002"
       ]
     },
-    "v0.9.25:b003": {
+    "v0.9.26:b003": {
       "block_sha256": "e56e9b2ec5b369ababece126550ed243175ef57999a6855b2136b71399890a76",
       "release_sha256": "baab8bd6e43e6b358632a43caba45039a40655b8a6e75a5b8ea19c8f58007274",
       "status": "approved",
       "reason": "结合 main 实现、主机回归与 A1/M1 候选实机结果审核；明确估算和 MCU 能力边界。",
       "change_refs": [
-        "m1-co2-screen@0.9.25"
+        "m1-co2-screen@0.9.26"
       ],
       "basis": [
-        "v0.9.25:b003"
+        "v0.9.26:b003"
       ]
     },
-    "v0.9.25:b004": {
+    "v0.9.26:b004": {
       "block_sha256": "d00f74ba3fed63f0343e013ce5fe31ce9dcb3bc191f6436ac056893453180be0",
       "release_sha256": "baab8bd6e43e6b358632a43caba45039a40655b8a6e75a5b8ea19c8f58007274",
       "status": "approved",
       "reason": "结合 main 实现、主机回归与 A1/M1 候选实机结果审核；明确估算和 MCU 能力边界。",
       "change_refs": [
-        "m1-mcu-network-ota@0.9.25"
+        "m1-mcu-network-ota@0.9.26"
       ],
       "basis": [
-        "v0.9.25:b004"
+        "v0.9.26:b004"
       ]
     },
-    "v0.9.25:b005": {
+    "v0.9.26:b005": {
       "block_sha256": "0ab81ce7820b38bc62edfea4e976fa11504d46327914edb63367b4af7f086ffb",
       "release_sha256": "baab8bd6e43e6b358632a43caba45039a40655b8a6e75a5b8ea19c8f58007274",
       "status": "excluded",
       "reason": "实机验收范围与未测项目，不作为独立固件功能。",
       "change_refs": [],
       "basis": [
-        "v0.9.25:b005"
+        "v0.9.26:b005"
       ]
     },
-    "v0.9.25:b006": {
+    "v0.9.26:b006": {
       "block_sha256": "b7530f337777575751c3f9cc910a6bfe46f572ba473368d7b8dc223c85a75afd",
       "release_sha256": "baab8bd6e43e6b358632a43caba45039a40655b8a6e75a5b8ea19c8f58007274",
       "status": "approved",
       "reason": "按已实现的设备、前端和发布行为审核中英文影响；服务更新不进入固件差异。",
       "change_refs": [
-        "daikin-indicator-rules@0.9.25",
-        "daikin-indicator-editor@0.9.25"
+        "daikin-indicator-rules@0.9.26",
+        "daikin-indicator-editor@0.9.26"
       ],
       "basis": [
-        "v0.9.25:b006"
+        "v0.9.26:b006"
       ]
     },
-    "v0.9.25:b007": {
+    "v0.9.26:b007": {
       "block_sha256": "9da4bb44b3fe5cc6faa3d8b5e8fe78cfea764f68389d73ca6c259965bc7fdf61",
       "release_sha256": "baab8bd6e43e6b358632a43caba45039a40655b8a6e75a5b8ea19c8f58007274",
       "status": "approved",
       "reason": "按已实现的设备、前端和发布行为审核中英文影响；服务更新不进入固件差异。",
       "change_refs": [
-        "daikin-system-indicator@0.9.25"
+        "daikin-system-indicator@0.9.26"
       ],
       "basis": [
-        "v0.9.25:b007"
+        "v0.9.26:b007"
       ]
     },
-    "v0.9.25:b008": {
+    "v0.9.26:b008": {
       "block_sha256": "aa61f29b4afd68f86a23756e2547777cef0c36caf5cd47b5adcfb9a685bf33f9",
       "release_sha256": "baab8bd6e43e6b358632a43caba45039a40655b8a6e75a5b8ea19c8f58007274",
       "status": "approved",
       "reason": "按已实现的设备、前端和发布行为审核中英文影响；服务更新不进入固件差异。",
       "change_refs": [
-        "daikin-recovery-hotspot@0.9.25"
+        "daikin-recovery-hotspot@0.9.26"
       ],
       "basis": [
-        "v0.9.25:b008"
+        "v0.9.26:b008"
       ]
     },
-    "v0.9.25:b009": {
+    "v0.9.26:b009": {
       "block_sha256": "70e063ad4ed21e25475b40c360faa657390c0d9fe3460d5cf622dd5541bba392",
       "release_sha256": "baab8bd6e43e6b358632a43caba45039a40655b8a6e75a5b8ea19c8f58007274",
       "status": "approved",
       "reason": "按已实现的设备、前端和发布行为审核中英文影响；服务更新不进入固件差异。",
       "change_refs": [
-        "daikin-release-filenames@0.9.25"
+        "daikin-release-filenames@0.9.26"
       ],
       "basis": [
-        "v0.9.25:b009"
+        "v0.9.26:b009"
       ]
     },
-    "v0.9.25:b010": {
+    "v0.9.26:b010": {
       "block_sha256": "62bbd054b689dc2c8a79f0217059b80cd813716044f60c0185880e56975fc76c",
       "release_sha256": "baab8bd6e43e6b358632a43caba45039a40655b8a6e75a5b8ea19c8f58007274",
       "status": "approved",
       "reason": "按已实现的设备、前端和发布行为审核中英文影响；服务更新不进入固件差异。",
       "change_refs": [
-        "iotcloud-installation-memory@0.9.25",
-        "iotcloud-standalone-zoom@0.9.25",
-        "website-demo-navigation@0.9.25"
+        "iotcloud-installation-memory@0.9.26",
+        "iotcloud-standalone-zoom@0.9.26",
+        "website-demo-navigation@0.9.26"
       ],
       "basis": [
-        "v0.9.25:b010"
+        "v0.9.26:b010"
       ]
     },
-    "v0.9.25:b011": {
+    "v0.9.26:b011": {
       "block_sha256": "d729edc3f0e0d98f2945d53a8c510a304a789e58e7c0b0c2a7151da3fd0a78b6",
       "release_sha256": "baab8bd6e43e6b358632a43caba45039a40655b8a6e75a5b8ea19c8f58007274",
       "status": "excluded",
       "reason": "候选实机验证及未测范围是验收边界，不作为独立固件功能。",
       "change_refs": [],
       "basis": [
-        "v0.9.25:b011"
+        "v0.9.26:b011"
       ]
     }
   }

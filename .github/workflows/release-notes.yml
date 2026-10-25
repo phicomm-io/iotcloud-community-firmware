@@ -43,6 +43,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          bash tools/ci/ensure_gh.sh
           gh release download "$(python3 -c 'import json;print(json.load(open("frontend.lock.json"))["release"])')" \
             --repo phicomm-io/phicomm-community-frontend --pattern frontend.tar.gz --dir "$RUNNER_TEMP/notes-frontend"
           PHICOMM_FRONTEND_ARCHIVE="$RUNNER_TEMP/notes-frontend/frontend.tar.gz" python3 site/build.py build/pages

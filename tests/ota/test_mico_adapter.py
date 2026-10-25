@@ -83,7 +83,7 @@ static bool ota_job_commit(void){return true;}
 
 static struct {char ota_state[32],ota_error[128],ota_release_counter[21],ota_version[32];
  unsigned ota_progress,ota_key_id,ota_image_length,reboot_at;
- bool ota_active,ota_signature_verified,ota_image_verified,reboot_pending,wifi_trial_active;} device_state;
+ bool ota_active,ota_signature_verified,ota_image_verified,reboot_pending,wifi_trial_active,mcu_updating;} device_state;
 static bool device_upgrade_reserve(void){if(device_state.ota_active)return false;device_state.ota_active=true;return true;}
 ''')
             # Keep actual validation, Flash helpers and product constants. Only
@@ -112,6 +112,7 @@ int MicoFlashErase(int p,uint32_t o,unsigned n){assert(lease && n==4096 && o==(u
 int mico_ota_switch_to_new_fw(int n,uint16_t crc){assert(lease);switches++;return fault==5?-1:0;}
 static void reset(int failure){commit_uncertain=false;download_running=false;deleted=0;job_active=false;job_releases=0;replace_job_on_release=true;memset(&device_state,0,sizeof device_state);erases=writes=reads=switches=progress=lease=0;fault=failure;}
 int start(unsigned n,int failure,int rescue){reset(failure);return rescue?MODEL_ota_begin_unsigned(n):MODEL_ota_begin(n);}
+int start_mcu_busy(unsigned n,int rescue){reset(0);device_state.mcu_updating=true;return rescue?MODEL_ota_begin_unsigned(n):MODEL_ota_begin(n);}
 int feed(const uint8_t *p,unsigned n){return MODEL_ota_write(p,n);}
 int finish(void){return MODEL_ota_finish();}
 void corrupt_flash(void){flash[123]^=1;}
@@ -161,6 +162,14 @@ int download(const uint8_t *data,unsigned n,int failure){
                 return ok
 
             signed = package.sign(image, model, '0.9.4', 'a'*40, key)
+            if model == 'm1':
+                for rescue, data in ((False, signed), (True, image)):
+                    self.assertFalse(lib.start_mcu_busy(len(data), rescue))
+                    self.assertFalse(lib.active())
+                    self.assertFalse(lib.reboot_pending())
+                    self.assertEqual(count('job_releases'), 1)
+                    for name in ('erases', 'writes', 'reads', 'switches', 'lease'):
+                        self.assertEqual(count(name), 0)
             self.assertTrue(upload(signed))
             self.assertEqual(count('switches'), 1)
             self.assertEqual(count('erases'), 0xb5000//4096)

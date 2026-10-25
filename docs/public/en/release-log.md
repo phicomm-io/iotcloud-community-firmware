@@ -2,7 +2,7 @@
 
 English translation of the published release history. Historical validation statements apply to the release named in each section, not to later firmware. Release notes are authored in the Wiki and frozen into the source repository before tagging.
 
-## v0.9.25
+## v0.9.26
 
 - A1 adds the stock weighted filter-consumption model, estimated cumulative airflow, and switching between elapsed-time and weighted models. Existing configurations retain their model and accumulated runtime. Both counters continue running; model switching does not reset them, while filter reset clears both. Airflow is estimated from the speed mapping, not measured.
 - M1 adds one-time and weekly wake alarms, web preview and stop controls, persistent stock formaldehyde/PM2.5 two-level threshold writes, negative temperatures, sensor health, MCU version queries and buzzer controls.
