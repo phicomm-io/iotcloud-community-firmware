@@ -51,6 +51,7 @@ typedef struct {
     bool mcu_version_received, buzzer_requested, wake_alarm_active;
     bool mcu_tones;
     bool mcu_music_present;
+    bool mcu_sensor_details;
     uint8_t wake_alarm_tone;
     uint32_t wake_alarm_started, wake_alarm_until;
     uint32_t mcu_version_updated_ms, buzzer_until;
@@ -132,6 +133,8 @@ const char *m1_co2_config_save(const m1_co2_config_t *);
 struct device_m1_co2;
 void m1_co2_capture(struct device_m1_co2 *);
 json_object *m1_co2_json(void);
+json_object *m1_sensor_details_json(void);
+json_object *m1_particles_json(void);
 json_object *m1_co2_set(json_object *,const char **);
 bool m1_mcu_exchange(const uint8_t *,size_t,uint8_t reply[20]);
 void m1_mcu_tick(void);

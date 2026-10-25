@@ -80,7 +80,7 @@ json_object *service_product_capabilities(void){
 #endif
     "filter.model.set","filter.get","filter.set","filter.reset","light_effect.next","light_effect.select","light_always.set","sensors.average.get","buttons.set","binding.probe","light_effect.get","light_effect.set","fan.set","fan.mode.set","fan.mode.toggle","fan.panel","light.set","child_lock.set","linkage.get","linkage.set",
 #else
-    "display.set","buzzer.set","mcu.version.get","mcu.version.query","alarm.get","alarm.set","co2_display.get","co2_display.set",
+    "sensor_details.get","display.set","buzzer.set","mcu.version.get","mcu.version.query","alarm.get","alarm.set","co2_display.get","co2_display.set",
     "wake_alarm.get","wake_alarm.start","wake_alarm.stop",
     "music.get","music.begin","music.chunk","music.commit","music.read","music.play","music.stop","music.cancel",
 #endif
@@ -111,6 +111,9 @@ static __attribute__((noinline)) json_object *service_product_inner(const char *
 #endif
         *code="ok";return o;
     }
+#ifndef FEATURE_DEVICE_A1
+    if(!strcmp(action,"sensor_details.get")){if(!svc_keys(p,""))return NULL;*code="ok";return m1_sensor_details_json();}
+#endif
     STATE state;GET_STATE(&state);
     if(!strcmp(action,"wifi.scan.get")){
         if(!svc_keys(p,""))return NULL;json_object *o=json_object_new_object(),*list=json_object_new_array();

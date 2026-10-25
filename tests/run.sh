@@ -15,7 +15,7 @@ python3 -m unittest tests.test_http_core tests.test_http_core_tcp tests.test_sha
 python3 -m unittest tests.test_json_build_gate tests.test_service_json_failure_scope tests.test_http_json_owned tests.test_http_json_budget tests.test_status_bool tests.test_mqtt_discovery_budget tests.test_background_json tests.test_tc1_mqtt_stack tests.test_tc1_checked_number_calls tests.test_ota_recovery
 python3 -m unittest tests.test_memory_admission tests.test_http_browser_queue tests.test_tc1_http_trace
 python3 -m unittest tests.test_a1_provision_memory
-python3 -m unittest tests.test_m1_boot_config tests.test_stock_runtime
+python3 -m unittest tests.test_m1_boot_config tests.test_stock_runtime tests.test_m1_particles_mqtt
 python3 -m unittest tests.test_m1_barometer tests.test_m1_barometer_captures
 compiler=("${CC:-cc}")
 if [[ "${SANITIZE:-0}" == 1 ]]; then
@@ -25,6 +25,8 @@ compiler+=("${hash_sources[@]}")
 output=$(mktemp -d)
 trap 'rm -rf "$output"' EXIT
 "${compiler[@]}" -std=c99 -Wall -Wextra -Werror tests/test_stock_protocol.c M1/protocol.c -o "$output/m1-stock-protocol"
+"${compiler[@]}" -std=c99 -Wall -Wextra -Werror tests/test_m1_sensor_details.c -o "$output/m1-sensor-details"
+"$output/m1-sensor-details"
 "$output/m1-stock-protocol"
 "${compiler[@]}" -std=c99 -Wall -Wextra -Werror tests/test_gesture.c -o "$output/gesture"
 "$output/gesture"

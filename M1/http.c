@@ -122,7 +122,7 @@ static ph_http_action begin(ph_http_exchange *x)
         if(!strcmp(r->path,"/api/v1/memory")) { memory_response(x);return PH_HTTP_REPLY; }
         query_action=!strcmp(r->path,"/api/v1/info")?"info.get":!strcmp(r->path,"/api/v1/status")?"status.get":
           !strcmp(r->path,"/api/v1/capabilities")?"capabilities.get":!strcmp(r->path,"/api/v1/config")?"config.get":
-          !strcmp(r->path,"/api/v1/logs")?"logs.get":!strcmp(r->path,"/api/v1/schedules")?"schedules.get":NULL;
+          !strcmp(r->path,"/api/v1/sensor_details")?"sensor_details.get":!strcmp(r->path,"/api/v1/logs")?"logs.get":!strcmp(r->path,"/api/v1/schedules")?"schedules.get":NULL;
         if(query_action) { operation=QUERY;return prepare(x); }
         const char *tag=NULL;
         if(!strcmp(r->path,"/") || !strcmp(r->path,"/index.html")) {

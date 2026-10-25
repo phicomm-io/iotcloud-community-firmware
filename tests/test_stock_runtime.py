@@ -13,11 +13,20 @@ def run_host(source):
     json_dir = Path(os.environ.get('PHICOMM_TEST_JSON_DIR', ROOT / 'build/a1-sdk/mico-os/libraries/utilities/json_c'))
     with tempfile.TemporaryDirectory() as directory:
         tmp = Path(directory)
-        shutil.copytree(json_dir, tmp / 'json')
+        sdk = tmp / 'sdk'
+        patched = sdk / 'libraries/utilities/json_c'
+        shutil.copytree(json_dir, patched)
+        patches = ['json-newlib-reent', 'json-printbuf-oom', 'json-allocation-safety',
+                   'json-heap-budget', 'json-newlib-nano-abi', 'json-integer-parse',
+                   'json-sized-resize', 'json-number-cache-cleanup', 'json-number-checked']
+        subprocess.run(['python3', str(ROOT/'tools/apply_sdk_patch.py'), str(sdk),
+                        *[str(ROOT/'common'/f'{name}.patch') for name in patches]], check=True)
+        subprocess.run(['python3', str(ROOT/'tools/install_json_numeric.py'), str(sdk)], check=True)
+        (tmp / 'json').symlink_to(patched, target_is_directory=True)
         for path in (tmp / 'json').glob('*.c'):
             path.write_text(path.read_text().replace('%ld', '%d'))
         (tmp / 'test.c').write_text(source)
-        command = [os.environ.get('CC', 'cc'), '-std=gnu99', '-g', '-fsanitize=undefined,address',
+        command = [os.environ.get('CC', 'cc'), '-std=gnu99', '-g', '-fsanitize=undefined,address', '-DJSON_ALLOCATION_SAFETY=1',
                    '-I'+str(ROOT), '-I'+str(ROOT/'M1'), '-I'+str(ROOT/'tests/host'), '-I'+str(tmp/'json'),
                    '-Wno-pointer-sign', str(tmp/'test.c'), str(ROOT/'M1/protocol.c'),
                    *map(str, (tmp/'json').glob('*.c')), '-o', str(tmp/'test')]
@@ -330,6 +339,39 @@ int main(void){
  now=0;step=0;phase=16;queued=10;music_plays=music_stops=0;auto_waiting=false;manual_until=auto_due=60000;
  if(!setjmp(done))uart_worker(0);
  assert(music_plays==1 && music_stops==1 && !m1_state.wake_alarm_active);
+
+ /* Details action works on old MCU without inventing measurements. */
+ memset(&details,0,sizeof(details));
+ assert(!strcmp(command("sensor_details.get","{}"),"ok"));
+ assert(!strcmp(command("sensor_details.get","{\"unexpected\":1}"),"invalid_params"));
+ out=m1_sensor_details_json();assert(json_object_to_json_string(out));assert(!json_object_get_boolean(json_object_object_get(out,"available")));assert(!json_object_object_get(out,"pm"));json_object_put(out);
+ /* Actual UART capability response, not a version comparison, opens OP10. */
+ auto_waiting=true;auto_op=0;auto_sequence=42;
+ uint8_t cap[20]={0x23,0x70,0,42,0,2,0xff,0xff,0,0,1,1,7,9,0,0,0,0,0,0x21};
+ m1_mcu_rx(cap);assert(details.supported && m1_state.mcu_sensor_details);
+ static const uint8_t pmraw[32]={0x42,0x4d,0,0x1c,0,13,0,19,0,19,0,13,0,19,0,19,8,0x94,2,0x7f,0,0x72,0,0,0,0,0,0,0x97,0,3,0x37};
+ details.frames[0]=(m1_sensor_frame_t){.length=32,.flags=3,.health=1,.received=true,.at=now,.age_ms=628};
+ memcpy(details.frames[0].raw,pmraw,32);
+ out=m1_sensor_details_json();assert(json_object_to_json_string(out));assert(json_object_get_boolean(json_object_object_get(out,"available")));
+ json_object *pm=json_object_object_get(out,"pm"),*counts=json_object_object_get(pm,"particles_per_0_1_l");
+ assert(json_object_get_int(json_object_object_get(counts,"gt_0_3"))==2196);
+ assert(json_object_get_int(json_object_object_get(counts,"gt_2_5"))==0);
+ assert(json_object_get_int(json_object_object_get(json_object_object_get(pm,"atmospheric_ug_m3"),"pm1"))==13);json_object_put(out);
+ now+=5372;out=m1_sensor_details_json();assert(!json_object_get_boolean(json_object_object_get(out,"available")));assert(!json_object_object_get(out,"pm"));json_object_put(out);
+
+ /* Real automatic scheduler performs metadata + four chunks + verification. */
+ phase=10;details=(m1_details_t){.supported=true};auto_phase=6;auto_waiting=false;auto_due=manual_until=now;
+ m1_state.mcu_extended=m1_state.mcu_version_received=true;
+ for(unsigned turn=0;turn<6;turn++){
+  m1_mcu_tick();assert(auto_waiting && auto_op==16);
+  uint8_t reply[20]={0x23,0x70,16,auto_sequence,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0x21};
+  if(details.stage==1){unsigned n=32-details.offset;if(n>9)n=9;reply[6]=details.offset;reply[7]=n;reply[9]=5;memcpy(reply+10,pmraw+details.offset,n);}
+  else {reply[6]=32;reply[8]=5;reply[13]=3;reply[14]=1;}
+  m1_mcu_rx(reply);now+=10;
+ }
+ assert(details.frames[0].received && details.id==1 && auto_phase==6);
+ assert(m1_details_valid(&details,now));
+ cap[1]=0x17;m1_mcu_rx(cap);assert(!details.supported && !m1_state.mcu_sensor_details);
  puts("M1 production storage, alarm thresholds, version/PWM-gated tones/RTTTL, UART cadence/retry/stop/wrap: OK");
 }
 '''.replace('PRODUCTION', production).replace('MIGRATION', migration)

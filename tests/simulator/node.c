@@ -143,11 +143,17 @@ bool a1_ota_download(const char *u){(void)u;return false;}
  * unavailable; production controller/storage behavior is tested separately. */
 bool m1_uart_buzzer(bool enabled,unsigned duration){(void)enabled;(void)duration;return false;}
 bool m1_uart_version_query(void){return false;}
+bool m1_mcu_exchange(const uint8_t *p,size_t n,uint8_t reply[20]){(void)p;(void)n;(void)reply;return false;}
+bool m1_tone_supported(void){return false;}
+bool m1_music_supported(void){return false;}
+bool m1_wake_alarm_tone_start(unsigned seconds,unsigned tone){(void)seconds;(void)tone;return false;}
 bool m1_wake_alarm_start(unsigned seconds){(void)seconds;return false;}
 void m1_wake_alarm_stop(void){}
 void m1_alarm_get(m1_alarm_config_t*out){memset(out,0,sizeof(*out));}
 const char *m1_alarm_set(bool pm,uint16_t low,uint16_t high,uint32_t revision)
 {(void)pm;(void)low;(void)high;(void)revision;return "unsupported";}
+json_object *m1_sensor_details_json(void){json_object *o=json_object_new_object();json_build_object_add(o,"available",json_object_new_boolean(false));return o;}
+json_object *m1_particles_json(void){return m1_sensor_details_json();}
 json_object *m1_co2_json(void){json_object*o=json_object_new_object();json_build_object_add(o,"available",json_object_new_boolean(false));return o;}
 json_object *m1_co2_set(json_object*p,const char**code){(void)p;*code="unsupported";return NULL;}
 bool m1_set_brightness(unsigned n){mico_rtos_lock_mutex(&device_lock);device_state.brightness_requested=n;mico_rtos_unlock_mutex(&device_lock);return true;}
