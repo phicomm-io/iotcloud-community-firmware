@@ -5,12 +5,57 @@
 #include "main.h"
 #include "mqtt_server/user_mqtt_client.h"
 #include "user_power.h"
+#include <math.h>
+#include <string.h>
 
 uint32_t p_count = 0;
 volatile uint32_t power_session_pulses;
 PowerRecord power_record = {1, {0}};
 char power_record_str[1101] = {0};
 float real_time_power = 0;
+
+/* One IRQ writer, one MQTT owner. The sample age uses the IRQ-safe RTOS
+ * millisecond tick on both sides; thread code must not enter the SDK's mutable
+ * nsclock accumulator used by the existing pulse measurement. */
+static uint32_t power_sample_version, power_sample_bits, power_sample_at;
+static uint32_t power_sample_expired;
+static void power_sample_commit(float raw, uint32_t at_ms) {
+    uint32_t bits, version=__atomic_load_n(&power_sample_version,__ATOMIC_SEQ_CST);
+    memcpy(&bits,&raw,sizeof(bits));
+    __atomic_store_n(&power_sample_version,version+1u,__ATOMIC_SEQ_CST);
+    __atomic_store_n(&power_sample_bits,bits,__ATOMIC_SEQ_CST);
+    __atomic_store_n(&power_sample_at,at_ms,__ATOMIC_SEQ_CST);
+    __atomic_store_n(&power_sample_version,version+2u,__ATOMIC_SEQ_CST);
+}
+void PowerSampleInvalidate(void) {
+    /* A reconnect may follow arbitrarily many 32-bit tick wraps. Require a
+     * new genuine calculation; neither process boot nor sequence is reset. */
+    __atomic_store_n(&power_sample_expired,
+        __atomic_load_n(&power_sample_version,__ATOMIC_SEQ_CST),__ATOMIC_SEQ_CST);
+}
+void PowerSampleRead(tc1_power_sample_t *out) {
+    if(!out)return;
+    *out=(tc1_power_sample_t){0};
+    for(unsigned attempt=0;attempt<3;attempt++) {
+        uint32_t before=__atomic_load_n(&power_sample_version,__ATOMIC_SEQ_CST);
+        if(!before || (before&1u))continue;
+        uint32_t bits=__atomic_load_n(&power_sample_bits,__ATOMIC_SEQ_CST);
+        uint32_t at=__atomic_load_n(&power_sample_at,__ATOMIC_SEQ_CST);
+        if(before!=__atomic_load_n(&power_sample_version,__ATOMIC_SEQ_CST))continue;
+        /* Once expired, the same sample cannot revive on tick rollover. A
+         * saturated invalid age also covers the unknown gap on reconnect. */
+        if(before==__atomic_load_n(&power_sample_expired,__ATOMIC_SEQ_CST)) {
+            out->age_ms=UINT32_MAX;return;
+        }
+        uint32_t age=mico_rtos_get_time()-at;
+        float raw;memcpy(&raw,&bits,sizeof(raw));
+        out->watts=raw/10.0f;
+        out->age_ms=age;
+        out->valid=age<20000 && isfinite(out->watts) && out->watts>=0;
+        if(age>=20000)__atomic_store_n(&power_sample_expired,before,__ATOMIC_SEQ_CST);
+        return;
+    }
+}
 
 float GetPowerCoefficient(void) {
     return (float) user_config->power_coefficient_x100 / POWER_COEFFICIENT_SCALE;
@@ -79,6 +124,7 @@ static void PowerIrqHandler(void *arg) {
     }
     irq_old = past_ns;
     n_1s = (float) (past_ns % NS) / spend_ns;
+    power_sample_commit(real_time_power,mico_rtos_get_time());
 }
 
 void PowerInit(void) {

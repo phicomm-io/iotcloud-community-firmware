@@ -353,8 +353,15 @@ static json_object *sample_body(const feature_sample_t *s, uint32_t now) {
   if (!o)
     return NULL;
   co2_body(o,s,now);
+#ifdef FEATURE_DEVICE_A1
   number(o, "sequence", s->sequence);
   number(o, "boot", s->boot);
+#else
+  /* Typed MQTT measurements use positive uint32 counters. Keep the UDP
+   * control envelope's historical bit-preserving representation separate. */
+  json_build_object_add(o,"sequence",json_object_new_int64(s->sequence));
+  json_build_object_add(o,"boot",json_object_new_int64(s->boot));
+#endif
   number(o, "age_ms", s->age_ms + (uint32_t)(now - s->received_ms));
   json_build_object_add(o, "valid",
                          json_object_new_boolean(feature_sample_fresh(s, now)));
@@ -362,6 +369,7 @@ static json_object *sample_body(const feature_sample_t *s, uint32_t now) {
   for (unsigned i = 0; i < 4; i++)
     json_object_object_add(o, keys[i], (feature_sample_fresh_fields(s,now)&(1u<<i))?json_object_new_double(s->value[i]):NULL);
   #ifndef FEATURE_DEVICE_A1
+  js(o,"model","m1");
   json_object *values=json_object_new_object();
   const char *units[]={"°C","%","µg/m³","mg/m³","ppm"};
   for(unsigned i=0;i<5;i++) {
@@ -1006,10 +1014,31 @@ bool feature_mqtt_filters_current(char filters[][FEATURE_TOPIC_MAX], unsigned co
 }
 static bool virtual_input(const char *t, const void *data, size_t n,
                           bool retained);
+#ifndef FEATURE_DEVICE_A1
+static __attribute__((noinline)) bool display_availability_input(const mqtt_account_t *account,
+        const char *topic,const void *data,size_t length,bool retained)
+{
+  char prefix[MQTT_KEY_MAX+12];
+  if(!mqtt_format(prefix,sizeof(prefix),"phicomm/v2/%s/",account->key))return false;
+  size_t n=strlen(prefix);
+  if(strncmp(topic,prefix,n))return false;
+  const char *model=topic+n,*slash=strchr(model,'/');
+  if(!slash || slash-model<2 || slash-model>6 || strlen(slash+1)!=25 || strcmp(slash+13,"/availability"))return false;
+  char model_name[7],id[13];memcpy(model_name,model,slash-model);model_name[slash-model]=0;
+  if(strcmp(model_name,"m1")&&strcmp(model_name,"daikin")&&strcmp(model_name,"tc1")&&strcmp(model_name,"a1"))return false;
+  memcpy(id,slash+1,12);id[12]=0;
+  for(unsigned i=0;i<12;i++)if(!((id[i]>='0'&&id[i]<='9')||(id[i]>='a'&&id[i]<='f')))return false;
+  /* An online announcement cannot renew a measurement lease. Retained
+   * announcements also cannot restore cache state after reconnect. */
+  if(!retained && length==7 && !memcmp(data,"offline",7))m1_display_source_offline(model_name,id);
+  return true;
+}
+#endif
 bool feature_mqtt_input(const char *t, const void *data, size_t n,
                         bool retained) {
   mqtt_account_t account = mqtt_snapshot();
 #ifndef FEATURE_DEVICE_A1
+  if(display_availability_input(&account,t,data,n,retained))return true;
   char grant_topic[FEATURE_TOPIC_MAX],leaf[32];snprintf(leaf,sizeof(leaf),"%s/command",LOCAL_ID);
   mqtt_aux(&account,"sensor",leaf,grant_topic,sizeof(grant_topic));
   if(!strcmp(t,grant_topic)) {
@@ -1046,6 +1075,7 @@ bool feature_mqtt_input(const char *t, const void *data, size_t n,
     }unlock();
 #else
     m1_co2_source_sample(normalized,&sample);
+    m1_display_source_sample(normalized,o);
 #endif
     json_object_put(o);return true;
   }
@@ -1143,6 +1173,7 @@ static void virtual_service(int (*publish)(const char *, const char *, bool));
 void feature_mqtt_session(const mqtt_account_t *account) {
 #ifndef FEATURE_DEVICE_A1
   m1_co2_source_reset();
+  m1_display_source_mqtt_reset();
 #endif
   mico_rtos_lock_mutex(&namespace_lock);
   bool changed=feature_account.mode!=account->mode || strcmp(feature_account.key,account->key) ||
@@ -1327,7 +1358,8 @@ static void feature_worker(mico_thread_arg_t arg) {
     static uint32_t wire_sequence, uart_sequence, co2_sequence;
     static bool co2_ready;
     if(!wire_sequence || uart_sequence!=state.sample.sequence || co2_sequence!=state.scd40.samples || co2_ready!=state.scd40.ready) {
-      ++wire_sequence; uart_sequence=state.sample.sequence; co2_sequence=state.scd40.samples; co2_ready=state.scd40.ready;
+      if(!++wire_sequence)++wire_sequence;
+      uart_sequence=state.sample.sequence; co2_sequence=state.scd40.samples; co2_ready=state.scd40.ready;
     }
     local.sequence = wire_sequence;
     local.boot = boot_id;
@@ -1513,6 +1545,9 @@ OSStatus feature_start(void) {
   scheduled_speed = configuration.scheduled_speed;
   if (MicoRandomNumberRead((uint8_t *)&boot_id, sizeof(boot_id)) != kNoErr)
     return kUnknownErr;
+#ifndef FEATURE_DEVICE_A1
+  if(!boot_id)boot_id=1;
+#endif
 #ifdef PHICOMM_DEVICE_OTA
   return feature_resume();
 #else

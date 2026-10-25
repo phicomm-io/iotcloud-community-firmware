@@ -85,6 +85,7 @@ json_object *service_product_capabilities(void){
     "filter.model.set","filter.get","filter.set","filter.reset","light_effect.next","light_effect.select","light_always.set","sensors.average.get","buttons.set","binding.probe","light_effect.get","light_effect.set","fan.set","fan.mode.set","fan.mode.toggle","fan.panel","light.set","child_lock.set","linkage.get","linkage.set",
 #else
     "sensor_details.get","display.set","buzzer.set","mcu.version.get","mcu.version.query","alarm.get","alarm.set","co2_display.get","co2_display.set","co2_source.get","co2_source.set",
+    "display_source.get","display_source.set","display_data.set",
     "wake_alarm.get","wake_alarm.start","wake_alarm.stop",
     "music.get","music.begin","music.chunk","music.commit","music.read","music.play","music.stop","music.cancel",
 #endif
@@ -136,6 +137,7 @@ static __attribute__((noinline)) json_object *service_product_inner(const char *
         if(!svc_keys(p,""))return NULL;*code="ok";return m1_co2_json();
     }
     if(!strcmp(action,"co2_source.get")){if(!svc_keys(p,""))return NULL;*code="ok";return m1_co2_source_json();}
+    if(!strcmp(action,"display_source.get")){if(!svc_keys(p,""))return NULL;*code="ok";return m1_display_source_json();}
     if(!strcmp(action,"alarm.get")) {
         if(!svc_keys(p,""))return NULL;*code="ok";return m1_alarm_json();
     }
@@ -175,6 +177,8 @@ static __attribute__((noinline)) json_object *service_product_inner(const char *
 #ifndef FEATURE_DEVICE_A1
     if(!strcmp(action,"co2_display.set"))return m1_co2_set(p,code);
     if(!strcmp(action,"co2_source.set"))return m1_co2_source_set(p,code);
+    if(!strcmp(action,"display_source.set"))return m1_display_source_set(p,code);
+    if(!strcmp(action,"display_data.set"))return m1_display_data_set(p,code);
     if(!strcmp(action,"alarm.set")) {
         char sensor[8];int low,high,revision;
         json_object *buzzer=json_object_object_get(p,"buzzer_enabled");
@@ -446,12 +450,13 @@ json_object *m1_wake_alarm_json(void) {
     return o;
 }
 json_object *m1_mcu_json(void) {
-    char version[17];bool received,buzzer,updating,buttons,display_source;uint32_t updated,until;unsigned protocol,caps;
+    char version[17];bool received,buzzer,updating,buttons,display_source;uint32_t updated,until;unsigned protocol,caps,display_schema;
     mico_rtos_lock_mutex(&m1_lock);
     memcpy(version,m1_state.mcu_version,sizeof(version));received=m1_state.mcu_version_received;
     updated=m1_state.mcu_version_updated_ms;buzzer=m1_state.buzzer_requested;until=m1_state.buzzer_until;
     updating=m1_state.mcu_updating;protocol=m1_state.mcu_protocol;caps=m1_state.mcu_caps;
     buttons=m1_state.mcu_button_events;display_source=m1_state.mcu_display_source;
+    display_schema=m1_state.mcu_display_schema;
     mico_rtos_unlock_mutex(&m1_lock);
     uint32_t now=mico_rtos_get_time();
     json_object *o=json_object_new_object();svc_string(o,"version",version);
@@ -461,6 +466,8 @@ json_object *m1_mcu_json(void) {
     json_build_object_add(o,"extension_caps",json_object_new_int(caps));
     json_build_object_add(o,"button_events_supported",json_object_new_boolean(buttons));
     json_build_object_add(o,"display_source_supported",json_object_new_boolean(display_source));
+    json_build_object_add(o,"display_source_schema",json_object_new_int(display_schema));
+    json_build_object_add(o,"dual_display_source_supported",json_object_new_boolean(display_schema==2));
     if(received)json_build_object_add(o,"version_age_ms",json_object_new_double((uint32_t)(now-updated)));
     json_build_object_add(o,"buzzer_requested",json_object_new_boolean(buzzer && (int32_t)(until-now)>0));
     json_build_object_add(o,"buzzer_remaining_ms",json_object_new_int(buzzer && (int32_t)(until-now)>0?until-now:0));

@@ -96,6 +96,8 @@ void UserRelaySetAll(char on){for(unsigned i=0;i<6;++i)UserRelaySet(i,on);}
 bool RelayOut(void){for(unsigned i=0;i<6;++i)if(config.socket_status[i])return true;return false;}
 void UserSoftReboot(void){}
 float PowerPulseCountToKwh(uint32_t count){return count/100.0;}
+void PowerSampleRead(tc1_power_sample_t *out){memset(out,0,sizeof(*out));}
+void PowerSampleInvalidate(void){}
 #define WORKER MqttClientThread
 #endif
 #include "service_adapter.inc"

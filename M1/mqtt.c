@@ -247,6 +247,7 @@ static mqtt_state_t state;
 static char client_id[192],wildcard[MQTT_TOPIC_MAX];
 static char sensor_filter[FEATURE_TOPIC_MAX];
 static char co2_filter[FEATURE_TOPIC_MAX];
+static char source_availability_filter[FEATURE_TOPIC_MAX];
 static unsigned discovery_index,initial_index;
 static uint32_t connect_sequence,co2_sequence,pressure_sequence,sequence,snapshot_at;
 static bool co2_discovered,pressure_discovered,particles_discovered;
@@ -278,6 +279,7 @@ static int session_prepare(void *context,ph_mqtt_connection *spec) {
         char sensor_leaf[32];snprintf(sensor_leaf,sizeof(sensor_leaf),"%s/command",account.mac);
         if(!mqtt_aux(&account,"sensor",sensor_leaf,sensor_filter,sizeof(sensor_filter)))return PH_MQTT_PREPARE_WAIT;
         if(!mqtt_aux(&account,"sensor","+/state",co2_filter,sizeof(co2_filter)))return PH_MQTT_PREPARE_WAIT;
+        if(!mqtt_format(source_availability_filter,sizeof(source_availability_filter),"phicomm/v2/%s/+/+/availability",account.key))return PH_MQTT_PREPARE_WAIT;
         rediscover=false;
         *spec=(ph_mqtt_connection){&account,cfg.mqtt_host,cfg.mqtt_user,cfg.mqtt_password,
             client_id,availability_topic,cfg.mqtt_port,5000,m1_mqtt_read};
@@ -289,6 +291,7 @@ static bool session_subscription(void *context,unsigned index,ph_mqtt_subscripti
     else if(index==1)*out=(ph_mqtt_subscription){"homeassistant/status",QOS0,ha_birth};
     else if(index==2)*out=(ph_mqtt_subscription){sensor_filter,QOS1,native_command};
     else if(index==3)*out=(ph_mqtt_subscription){co2_filter,QOS1,native_command};
+    else if(index==4)*out=(ph_mqtt_subscription){source_availability_filter,QOS1,native_command};
     else return false;
     return true;
 }

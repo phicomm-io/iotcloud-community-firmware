@@ -1,10 +1,11 @@
 #include "../common/automation.h"
 
 #include "../common/backup.h"
-static bool config_recovery;
-bool device_config_recovery(void) { return config_recovery; }
-void device_config_recovery_set(bool recovery) { config_recovery=recovery; }
-bool app_config_persist_allowed(void) { return !config_recovery; }
+static bool config_recovery, config_commit_uncertain;
+bool device_config_recovery(void) { return config_recovery || config_commit_uncertain; }
+void device_config_recovery_set(bool recovery) { config_recovery=recovery || config_commit_uncertain; }
+void app_config_commit_indeterminate(void) { config_commit_uncertain=config_recovery=true; }
+bool app_config_persist_allowed(void) { return !config_recovery && !config_commit_uncertain; }
 #include "../common/service.h"
 #include "../common/watchdog.h"
 #include "m1.h"
@@ -30,6 +31,7 @@ void appRestoreDefault_callback(void *data, uint32_t size)
     if (size >= sizeof(app_storage_t)) memset(((app_storage_t *)data)->reserved_controller_config, 0, 20);
     if (size >= sizeof(app_storage_t)) ((app_storage_t *)data)->co2=(m1_co2_config_t){.magic=M1_CO2_MAGIC,.interval=5,.low=1000,.high=1500};
     if (size >= sizeof(app_storage_t)) ((app_storage_t *)data)->co2_source=(m1_co2_source_config_t){.magic=M1_CO2_SOURCE_MAGIC};
+    if (size >= sizeof(app_storage_t)) m1_display_defaults(&((app_storage_t *)data)->display);
     c->magic = M1_CONFIG_MAGIC; c->version = M1_CONFIG_VERSION;
     c->mqtt_port = 1883; c->mqtt_topic_mode = MQTT_TOPIC_TMCP;
     c->brightness = c->last_on = 4; c->timezone_minutes = 480;
@@ -97,18 +99,82 @@ void m1_co2_source_config_get(m1_co2_source_config_t *out)
 {
     mico_rtos_lock_mutex(&config_lock);*out=((app_storage_t *)app_config)->co2_source;mico_rtos_unlock_mutex(&config_lock);
 }
+void m1_display_config_get(m1_display_config_t *out)
+{
+    mico_rtos_lock_mutex(&config_lock);*out=((app_storage_t *)app_config)->display;mico_rtos_unlock_mutex(&config_lock);
+}
+void m1_display_switch_get(m1_display_switch_config_t *out)
+{
+    mico_rtos_lock_mutex(&config_lock);
+    const m1_display_config_t *c=&((app_storage_t *)app_config)->display;
+    *out=(m1_display_switch_config_t){.revision=c->revision,.configured=c->configured,
+        .selected=c->selected,.double_click=c->double_click};
+    for(unsigned i=0;i<M1_DISPLAY_LANES;i++)if(c->lanes[i].source!=M1_DISPLAY_NONE)out->present=true;
+    mico_rtos_unlock_mutex(&config_lock);
+}
+bool m1_display_lane_get(unsigned slot,m1_display_lane_config_t *out,uint32_t *revision)
+{
+    if(slot>=M1_DISPLAY_LANES)return false;
+    mico_rtos_lock_mutex(&config_lock);
+    const m1_display_config_t *c=&((app_storage_t *)app_config)->display;
+    *out=c->lanes[slot];*revision=c->revision;bool configured=c->configured;
+    mico_rtos_unlock_mutex(&config_lock);return configured;
+}
+const char *m1_display_config_save(const m1_display_config_t *next)
+{
+    if(!m1_display_config_valid(next))return "invalid_params";
+    for(unsigned i=0;i<M1_DISPLAY_LANES;i++)
+        if(next->lanes[i].source==M1_DISPLAY_MQTT && !strcmp(next->lanes[i].device_id,m1_id))return "invalid_params";
+    mico_rtos_lock_mutex(&config_lock);
+    m1_display_config_t *live=&((app_storage_t *)app_config)->display,old=*live;
+    mico_rtos_lock_mutex(&m1_lock);
+    bool busy=m1_state.ota_active||m1_state.mcu_updating||m1_state.reboot_pending||m1_state.wifi_trial_active;
+    mico_rtos_unlock_mutex(&m1_lock);
+    const char *code="busy";
+    if(!busy && !config_recovery && next->revision==old.revision && old.revision<INT32_MAX){
+        *live=*next;live->revision++;
+        if(mico_system_context_update(m1_context)!=kNoErr){*live=old;code="storage_error";}else code="accepted";
+    }
+    if(!strcmp(code,"accepted"))m1_display_source_reset();
+    mico_rtos_unlock_mutex(&config_lock);return code;
+}
+const char *m1_display_data_save(unsigned slot,uint32_t revision,float value,unsigned unit,unsigned ttl,int color)
+{
+    if(slot>=M1_DISPLAY_LANES || !isfinite(value) || value<0 || value>999999 || color < -1 || color>3)return "invalid_params";
+    mico_rtos_lock_mutex(&config_lock);
+    const m1_display_config_t *c=&((app_storage_t *)app_config)->display;
+    const m1_display_lane_config_t *l=&c->lanes[slot];
+    const char *code="invalid_params";
+    mico_rtos_lock_mutex(&m1_lock);
+    bool busy=m1_state.ota_active||m1_state.mcu_updating||m1_state.reboot_pending||m1_state.wifi_trial_active;
+    mico_rtos_unlock_mutex(&m1_lock);
+    if(busy || config_recovery || c->revision!=revision)code="busy";
+    else if(c->configured && l->source==M1_DISPLAY_API && l->unit==unit && ttl<=l->ttl_seconds &&
+            (!ttl || m1_display_metric_value_valid(l->metric,value))){
+        m1_display_value_t encoded;
+        if(!ttl || m1_display_encode_value(l,slot,value,ttl,color<0?l->color:color,&encoded)){
+            m1_display_data_store(slot,revision,value,ttl,color);code="accepted";
+        }
+    }
+    mico_rtos_unlock_mutex(&config_lock);return code;
+}
 const char *m1_co2_source_config_save(const m1_co2_source_config_t *next)
 {
     if(!m1_co2_source_config_valid(next) || (next->external&&!strcmp(next->device_id,m1_id)))return "invalid_params";
     mico_rtos_lock_mutex(&config_lock);
     m1_co2_source_config_t *live=&((app_storage_t *)app_config)->co2_source,old=*live;
+    m1_display_config_t *display=&((app_storage_t *)app_config)->display;
+    uint32_t old_display_revision=display->revision;bool old_display_configured=display->configured;
     mico_rtos_lock_mutex(&m1_lock);
     bool busy=m1_state.ota_active||m1_state.mcu_updating||m1_state.reboot_pending||m1_state.wifi_trial_active;
     mico_rtos_unlock_mutex(&m1_lock);
     const char *code="busy";
-    if(!busy&&next->revision==old.revision&&old.revision<INT32_MAX){
+    if(!busy&&!config_recovery&&next->revision==old.revision&&old.revision<INT32_MAX&&
+       (!display->configured||display->revision<INT32_MAX)){
         *live=*next;live->revision++;
-        if(mico_system_context_update(m1_context)!=kNoErr){*live=old;code="storage_error";}else code="accepted";
+        if(display->configured){display->configured=0;display->revision++;}
+        if(mico_system_context_update(m1_context)!=kNoErr){*live=old;display->revision=old_display_revision;display->configured=old_display_configured;code="storage_error";}
+        else {code="accepted";m1_display_source_reset();}
     }
     mico_rtos_unlock_mutex(&config_lock);
     if(!strcmp(code,"accepted"))m1_co2_source_reset();return code;
@@ -118,14 +184,18 @@ const char *m1_co2_config_save(const m1_co2_config_t *next)
     if(next->magic!=M1_CO2_MAGIC || next->mode>2 || next->slot>1 || !next->interval || next->interval>3600 || next->low>next->high)return "invalid_params";
     mico_rtos_lock_mutex(&config_lock);
     m1_co2_config_t *live=&((app_storage_t *)app_config)->co2,old=*live;
+    m1_display_config_t *display=&((app_storage_t *)app_config)->display;
+    uint32_t old_display_revision=display->revision;bool old_display_configured=display->configured;
     mico_rtos_lock_mutex(&m1_lock);
     bool busy=m1_state.ota_active || m1_state.mcu_updating || m1_state.reboot_pending || m1_state.wifi_trial_active;
     mico_rtos_unlock_mutex(&m1_lock);
     const char *code="busy";
-    if(!busy && old.revision==next->revision && old.revision<INT32_MAX) {
+    if(!busy && !config_recovery && old.revision==next->revision && old.revision<INT32_MAX &&
+       (!display->configured||display->revision<INT32_MAX)) {
         *live=*next;live->revision++;
-        if(mico_system_context_update(m1_context)!=kNoErr){*live=old;code="storage_error";}
-        else code="accepted";
+        if(display->configured){display->configured=0;display->revision++;}
+        if(mico_system_context_update(m1_context)!=kNoErr){*live=old;display->revision=old_display_revision;display->configured=old_display_configured;code="storage_error";}
+        else {code="accepted";m1_display_source_reset();}
     }
     mico_rtos_unlock_mutex(&config_lock);return code;
 }
@@ -205,7 +275,7 @@ bool m1_reset(bool full)
         if (full) appRestoreDefault_callback(app_config, sizeof(*old));
         else { app_config->ssid[0] = 0; app_config->wifi_password[0] = 0; app_config->web_password[0] = 0; }
         ok = mico_system_context_update(m1_context) == kNoErr;
-        if (!ok) { memcpy(app_config, old, sizeof(*old)); config_recovery=was_recovery; }
+        if (!ok) { memcpy(app_config, old, sizeof(*old)); config_recovery=was_recovery || config_commit_uncertain; }
         mico_rtos_lock_mutex(&m1_lock);
         m1_state.reboot_pending = ok;
         if (ok) m1_state.reboot_at = mico_rtos_get_time() + 1000u;
@@ -260,7 +330,8 @@ int application_start(void)
     /* MiCO validates its partition, not the previous firmware's app layout.
      * Reset only foreign application data; preserve the SDK network settings. */
     if (app_config->magic != M1_CONFIG_MAGIC || app_config->version < 1 || app_config->version > M1_CONFIG_VERSION ||
-        (app_config->version == M1_CONFIG_VERSION && !m1_co2_source_config_valid(&((app_storage_t *)app_config)->co2_source))) {
+        (app_config->version >= 8 && !m1_co2_source_config_valid(&((app_storage_t *)app_config)->co2_source)) ||
+        (app_config->version == M1_CONFIG_VERSION && !m1_display_config_valid(&((app_storage_t *)app_config)->display))) {
         config_recovery=true;
         memset(app_config,0,sizeof(app_storage_t));
         appRestoreDefault_callback(app_config,sizeof(app_storage_t));
@@ -270,6 +341,7 @@ int application_start(void)
     bool controller_migration = app_config->version < 6;
     bool co2_migration = app_config->version < 7;
     bool source_migration = app_config->version < 8;
+    bool display_migration = app_config->version < 9;
     if (app_config->magic == M1_CONFIG_MAGIC &&
         (app_config->version == 1 || app_config->version == 2)) {
         m1_storage_v2_t *old = malloc(sizeof(*old));
@@ -318,6 +390,12 @@ int application_start(void)
     if(source_migration){
         ((app_storage_t *)app_config)->co2_source=(m1_co2_source_config_t){.magic=M1_CO2_SOURCE_MAGIC};
         ((app_storage_t *)app_config)->features.language=0;
+        app_config->version=M1_CONFIG_VERSION;migration_changed=true;
+    }
+    if(display_migration){
+        /* A v8 installation keeps its CO2 profile and behavior. The new dual
+         * profile becomes active only after an explicit full configuration. */
+        m1_display_defaults(&((app_storage_t *)app_config)->display);
         app_config->version=M1_CONFIG_VERSION;migration_changed=true;
     }
     /* Normalize the retained ABI byte without changing credentials or layout. */

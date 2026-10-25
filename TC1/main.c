@@ -1,10 +1,11 @@
 #include "../common/service.h"
 
 #include "../common/backup.h"
-static bool config_recovery;
-bool device_config_recovery(void) { return config_recovery; }
-void device_config_recovery_set(bool recovery) { config_recovery=recovery; }
-bool app_config_persist_allowed(void) { return !config_recovery; }
+static bool config_recovery, config_commit_uncertain;
+bool device_config_recovery(void) { return config_recovery || config_commit_uncertain; }
+void device_config_recovery_set(bool recovery) { config_recovery=recovery || config_commit_uncertain; }
+void app_config_commit_indeterminate(void) { config_commit_uncertain=config_recovery=true; }
+bool app_config_persist_allowed(void) { return !config_recovery && !config_commit_uncertain; }
 #include "ota_server/signed_adapter.h"
 #include "main.h"
 #include "status_guard.h"
