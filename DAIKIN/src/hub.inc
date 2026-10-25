@@ -1,6 +1,14 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
+#include <esp_heap_caps.h>
 // All configuration and broker callbacks run on loop(). ESP MQTT tasks only
 // assemble bounded messages and enqueue them; they never read mutable JSON.
+// INTERNAL alone includes instruction RAM that cannot hold byte buffers.
+static size_t hubByteHeap() {
+  return heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+}
+static size_t hubByteBlock() {
+  return heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+}
 static bool hubReload = false, hubCredentials = false, hubBirth = false;
 static std::atomic<bool> hubRestoring{false};
 static esp_mqtt_client_handle_t bemfaMqtt = nullptr;
@@ -208,7 +216,8 @@ static void hubApiExecute() {
     hubHttpToken = "";
     return;
   }
-  if (ESP.getFreeHeap() < 75000) {
+  if (hubByteHeap() < hubService.workingMemory(hubHttpRequest) ||
+      hubByteBlock() < hubService.largestAllocation(hubHttpRequest)) {
     hubHttpStatus = 503;
     webResult = "{\"code\":\"busy\"}";
     hubHttpToken = "";
@@ -254,7 +263,7 @@ static void hubInit() {
   };
   hubService.bemfaStatus = []() { return hubRelay.status; };
   hubTransport.admission = []() {
-    return ESP.getFreeHeap() > 65000 && ESP.getMaxAllocHeap() > 20000;
+    return hubByteHeap() > 32768 && hubByteBlock() > 12288;
   };
   hubTransport.websocketAccept = [](const std::string &key) {
     auto input = key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
@@ -273,7 +282,7 @@ static void hubInit() {
     return std::string(result, n);
   };
   hubTransport.broker.allocate = [](size_t n) {
-    return ESP.getFreeHeap() > n + 32000 && ESP.getMaxAllocHeap() > n;
+    return hubByteHeap() > n + 16384 && hubByteBlock() > n;
   };
   hubTransport.broker.authenticate = [](const std::string &u,
                                         const std::string &p) {

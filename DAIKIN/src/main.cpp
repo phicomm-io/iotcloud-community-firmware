@@ -14,6 +14,7 @@
 #include <mqtt_client.h>
 #include <mbedtls/base64.h>
 #ifdef IOTCLOUD_HUB
+#include <esp_heap_caps.h>
 #include <mbedtls/pkcs5.h>
 #include <mbedtls/sha1.h>
 #include "hub_service.h"
@@ -114,6 +115,25 @@ static void updatePassword(){
 }
 static const char *pmModel="detecting";
 
+static String loadConfigText(){
+  const char *key="config";
+#ifdef IOTCLOUD_HUB
+  // Never reuse the legacy string key for a blob: IDF may retain both types.
+  // A present hub key is authoritative, including invalid data (fail closed).
+  if(prefs.isKey("config_hub"))key="config_hub";
+#endif
+  auto type=prefs.getType(key);
+  if(type==PT_BLOB){
+    const size_t n=prefs.getBytesLength(key);
+    if(n&&n<=6144){std::unique_ptr<char[]> data(new(std::nothrow) char[n+1]);if(data&&prefs.getBytes(key,data.get(),n)==n){data[n]=0;return String(data.get(),n);}}
+    return "invalid";
+  }
+#ifdef IOTCLOUD_HUB
+  if(!strcmp(key,"config_hub"))return "invalid";
+#endif
+  if(prefs.isKey(key)&&type!=PT_STR)return "invalid";
+  return prefs.getString(key,"{}");
+}
 static bool due(uint32_t now,uint32_t at){return int32_t(now-at)>=0;}
 static bool saveConfig(DynamicJsonDocument &candidate){
 #ifdef IOTCLOUD_HUB
@@ -121,15 +141,24 @@ static bool saveConfig(DynamicJsonDocument &candidate){
 #endif
   if(configRecovery||candidate.overflowed())return false;
   candidate["_version"]=1;
-  String text; serializeJson(candidate,text);
+  if(candidate.overflowed())return false;
+  const size_t length=measureJson(candidate);
 #ifdef IOTCLOUD_HUB
-  // The existing NVS partition is 20 KiB. Bound the complete document so two
-  // blob generations and NVS compaction can coexist during an atomic update.
-  if(text.length()>6144||prefs.putBytes("config",text.c_str(),text.length())!=text.length())return false;
+  if(length>6144)return false;
 #else
-  if(text.length()>3999||prefs.putString("config",text)!=text.length())return false;
+  if(length>3999)return false;
 #endif
-  config.clear(); config.set(candidate);configText=text; updatePassword();return true;
+  String text; serializeJson(candidate,text);
+  if(text.length()!=length)return false;
+#ifdef IOTCLOUD_HUB
+  // Stock NVS is 16 KiB. This is a document limit, not a free-space promise;
+  // NVS can still reject an update while preserving the previous generation.
+  // Keep the legacy key intact until and after the separate hub blob commits.
+  if(prefs.putBytes("config_hub",text.c_str(),length)!=length)return false;
+#else
+  if(prefs.putString("config",text)!=length)return false;
+#endif
+  config=std::move(candidate);config.shrinkToFit();configText=std::move(text); updatePassword();return true;
 }
 static void startAccessPoint(){
   const IPAddress address(192,168,0,1),netmask(255,255,255,0);
@@ -157,15 +186,11 @@ static void startWifi(){
 void setup(){
   Serial.begin(115200);
   if(!prefs.begin("daikin",false)){Serial.println("NVS unavailable");while(true)delay(1000);}
-  if(prefs.getType("config")==PT_BLOB){
-    const size_t n=prefs.getBytesLength("config");
-    if(n&&n<=6144){std::unique_ptr<char[]> data(new char[n+1]);if(prefs.getBytes("config",data.get(),n)==n){data[n]=0;configText=data.get();}}
-    if(configText.isEmpty())configText="invalid";
-  }else if(prefs.isKey("config")&&prefs.getType("config")!=PT_STR)configText="invalid";
-  else configText=prefs.getString("config","{}");
+  configText=loadConfigText();
   if(deserializeJson(config,configText)||!config.is<JsonObject>()||!validConfig(config.as<JsonObjectConst>())){
     configRecovery=true;config.clear();config.to<JsonObject>();Serial.println("Configuration recovery required");
   }
+  config.shrinkToFit();
   updatePassword();indicator=config["indicator"]|false;
   customLightSettings=daikin::readLightSettings(config["indicator_rules"],lightSettings);
   WiFi.mode(WIFI_AP_STA);deviceId=WiFi.macAddress();deviceId.replace(":","");deviceId.toLowerCase();

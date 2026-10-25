@@ -85,7 +85,8 @@ static unsigned hapStops=0;
 static struct {void iotcloudStop(){++hapStops;}} homeSpan;
 #include "home-quiesce.inc"
 static bool homeFactoryReset(){return true;}
-static struct {unsigned getFreeHeap(){return 200000;}} ESP;
+static size_t hubByteHeap(){return 200000;}
+static size_t hubByteBlock(){return 200000;}
 #include "quiesce.inc"
 static unsigned homeChanges=0,bemfaStarts=0;
 static void homeChanged(){++homeChanges;}

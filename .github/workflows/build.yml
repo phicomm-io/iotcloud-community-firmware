@@ -296,8 +296,24 @@ jobs:
           ASAN_OPTIONS=detect_leaks=1 build/daikin-indicator-runtime
           npm install --prefix build/esp-tests --no-save jsdom@26.1.0
           NODE_PATH=build/esp-tests/node_modules node DAIKIN/tests/web.cjs
+      - name: Check out pinned ESP-IDF NVS host-test sources
+        if: matrix.variant == 'hub'
+        uses: actions/checkout@v4
+        with:
+          repository: espressif/esp-idf
+          ref: 38eeba213aa695aabfd6d89aa9f5078dbe5a94c3
+          path: build/esp-idf-nvs
+          persist-credentials: false
+          sparse-checkout: |
+            components/nvs_flash
+            components/esp_rom/include
+            components/esp_rom/linux
+            components/esp_common/include
+            components/log/include
       - name: Test hub broker, transports and bounded storage
         if: matrix.variant == 'hub'
+        env:
+          DAIKIN_NVS_IDF_SOURCE: ${{ github.workspace }}/build/esp-idf-nvs
         run: |
           python3 -m pip install paho-mqtt==2.1.0
           SANITIZE=1 python3 -m unittest discover -s DAIKIN/tests -p 'test_hub*.py'

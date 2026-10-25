@@ -62,6 +62,9 @@ static void state(JsonObject out){
   indicatorStatus(out,now);
 #ifdef IOTCLOUD_HUB
   JsonObject hub=out.createNestedObject("hub");hub["ready"]=hubReady();hub["clients"]=hubTransport.broker.count();hub["max_clients"]=unsigned(iotcloud::HubBroker::Clients);hub["retained_bytes"]=hubTransport.broker.retainedBytes();hub["refused"]=hubTransport.broker.refused;hub["dropped"]=hubTransport.broker.dropped;hub["account_set"]=hubService.ready();hub["username"]=hubService.user();
+  hub["free_byte_heap"]=heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT);
+  hub["largest_byte_block"]=heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT);
+  hub["min_byte_heap"]=heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT);
 #endif
   JsonObject sensors=out.createNestedObject("sensors");
   for(unsigned i=0;i<SENSOR_COUNT;i++){

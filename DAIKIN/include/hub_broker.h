@@ -29,6 +29,10 @@ public:
   std::function<bool(size_t)> allocate;
   std::function<bool(unsigned, size_t)> writable;
   Send send;
+  // A transport may enqueue the MQTT header/topic/payload directly into its
+  // bounded transmit buffer, without two extra full-payload packet copies.
+  std::function<bool(unsigned, const uint8_t *, size_t,
+                     const std::string &, const std::string &)> sendPublish;
   Close close;
   Authenticate authenticate;
   Authorize authorize;
@@ -201,7 +205,8 @@ public:
         buffered += x.input.size();
       size_t take = std::min(
           n, std::min(Packet + 5 - c.input.size(), ReceiveBudget - buffered));
-      if (!take || (allocate && !allocate(take + Packet))) {
+      const size_t allocation = std::max(take + Packet, c.input.size() + take);
+      if (!take || (allocate && !allocate(allocation))) {
         ++refused;
         disconnect(slot);
         return false;
@@ -241,11 +246,13 @@ public:
           break;
         const uint8_t flags = c.input[0];
         // Own the packet while callbacks may reset or disconnect its client.
-        std::vector<uint8_t> body(c.input.begin() + header,
-                                  c.input.begin() + header + remaining);
-        c.input.erase(c.input.begin(), c.input.begin() + header + remaining);
-        if (c.input.capacity() > c.input.size() + 1024)
-          c.input.shrink_to_fit();
+        std::vector<uint8_t> body;
+        body.swap(c.input);
+        c.input.assign(body.begin() + header + remaining, body.end());
+        body.erase(body.begin() + header + remaining, body.end());
+        body.erase(body.begin(), body.begin() + header);
+        if (body.capacity() > body.size() + 1024)
+          body.shrink_to_fit();
         c.at = now;
         c.partialAt = now;
         if (!packet(slot, flags, body)) {
@@ -259,7 +266,7 @@ public:
   }
   bool publish(const std::string &topic, const std::string &body,
                bool retain = false, Origin origin = Origin::Internal) {
-    if ((allocate && !allocate(topic.size() + body.size() * 2 + 512)) ||
+    if ((allocate && !allocate(topic.size() + body.size() * (sendPublish ? 1 : 2) + 512)) ||
         !topicValid(topic) || topic.size() + body.size() + 4 > Packet ||
         !allowed(topic, true))
       return false;
@@ -377,6 +384,22 @@ private:
   }
   void deliver(unsigned slot, const std::string &topic, const std::string &body,
                bool replay) {
+    if (sendPublish) {
+      uint8_t header[7] = {uint8_t(0x30 | (replay ? 1 : 0))};
+      size_t used = 1, remaining = topic.size() + body.size() + 2;
+      do {
+        uint8_t byte = remaining % 128;
+        remaining /= 128;
+        header[used++] = byte | (remaining ? 128 : 0);
+      } while (remaining);
+      header[used++] = topic.size() >> 8;
+      header[used++] = topic.size() & 255;
+      if (!active(slot) || !sendPublish(slot, header, used, topic, body)) {
+        ++dropped;
+        disconnect(slot);
+      }
+      return;
+    }
     std::vector<uint8_t> bytes;
     bytes.reserve(topic.size() + body.size() + 2);
     bytes.push_back(topic.size() >> 8);

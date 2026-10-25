@@ -45,6 +45,28 @@ public:
     broker.send = [this](unsigned i, const uint8_t *p, size_t n) {
       return enqueue(i, p, n);
     };
+    broker.sendPublish = [this](unsigned i, const uint8_t *header, size_t n,
+                               const std::string &topic,
+                               const std::string &body) {
+      auto &p = peers[i];
+      const size_t mqttLength = n + topic.size() + body.size();
+      const size_t frameLength = p.ws ? (mqttLength >= 126 ? 4 : 2) : 0;
+      const size_t total = mqttLength + frameLength;
+      if ((p.ws && !p.upgraded) || !prepare(i, total))
+        return false;
+      if (p.ws) {
+        p.tx.push_back(0x82);
+        p.tx.push_back(mqttLength >= 126 ? 126 : mqttLength);
+        if (mqttLength >= 126) {
+          p.tx.push_back(mqttLength >> 8);
+          p.tx.push_back(mqttLength & 255);
+        }
+      }
+      p.tx.insert(p.tx.end(), header, header + n);
+      p.tx.insert(p.tx.end(), topic.begin(), topic.end());
+      p.tx.insert(p.tx.end(), body.begin(), body.end());
+      return true;
+    };
     broker.close = [this](unsigned i) {
       if (peers[i].fd >= 0) {
         peers[i].closing = true;
@@ -178,15 +200,26 @@ private:
       n += p.tx.size();
     return n;
   }
-  bool raw(unsigned i, const uint8_t *data, size_t n) {
+  bool prepare(unsigned i, size_t n) {
     auto &p = peers[i];
     if (p.fd < 0 || p.closing || queued() + n > TxBudget)
       return false;
     if (!n)
       return true;
+    const size_t size = p.tx.size() + n;
+    // reserve() needs the whole replacement block while the previous buffer
+    // remains live. Checking only the appended bytes can admit an OOM.
+    if (size > p.tx.capacity() && broker.allocate && !broker.allocate(size))
+      return false;
     if (p.tx.empty())
       p.at = clock;
-    p.tx.reserve(p.tx.size() + n);
+    p.tx.reserve(size);
+    return true;
+  }
+  bool raw(unsigned i, const uint8_t *data, size_t n) {
+    if (!prepare(i, n))
+      return false;
+    auto &p = peers[i];
     p.tx.insert(p.tx.end(), data, data + n);
     return true;
   }
