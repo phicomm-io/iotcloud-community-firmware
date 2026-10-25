@@ -123,9 +123,13 @@ json_object_object_add(o,"mqtt_connected",json_object_new_boolean(s.mqtt_connect
 bool bemfa_primary_enabled(void){return true;}
 static a1_filter_storage_t sim_filter={A1_FILTER_MAGIC,0,A1_FILTER_DEFAULT_HOURS};
 static a1_filter_clock_t sim_filter_clock;
+static a1_filter_stock_t sim_stock={.magic=A1_FILTER_STOCK_MAGIC};
+static a1_filter_stock_clock_t sim_stock_clock;
 void a1_filter_tick(bool running){BASE_LOCK();a1_filter_advance(&sim_filter,&sim_filter_clock,mico_rtos_get_time(),running);BASE_UNLOCK();}
-void a1_filter_get(a1_filter_storage_t *out){CFG c;config_get(&c);bool on;unsigned speed;feature_effective_fan(c.fan_on,c.speed,&on,&speed);a1_filter_tick(on&&speed);BASE_LOCK();*out=sim_filter;BASE_UNLOCK();}
-const char *a1_filter_change(unsigned hours,bool reset){a1_filter_storage_t f;a1_filter_get(&f);BASE_LOCK();if(reset){sim_filter.used_seconds=0;sim_filter_clock.remainder_ms=0;}else sim_filter.lifetime_hours=hours;BASE_UNLOCK();return "accepted";}
+void a1_filter_get(a1_filter_storage_t *out){CFG c;config_get(&c);bool on;unsigned speed;feature_effective_fan(c.fan_on,c.speed,&on,&speed);a1_filter_tick(on&&speed);unsigned weight=feature_filter_weight();BASE_LOCK();a1_filter_stock_advance(&sim_stock,&sim_stock_clock,mico_rtos_get_time());sim_stock_clock.speed=on?speed:0;sim_stock_clock.weight=weight;*out=sim_filter;BASE_UNLOCK();}
+void a1_filter_stock_get(a1_filter_stock_t*out){a1_filter_storage_t f;a1_filter_get(&f);BASE_LOCK();*out=sim_stock;BASE_UNLOCK();}
+const char *a1_filter_model_change(bool weighted){BASE_LOCK();sim_stock.weighted=weighted;++base_config.revision;BASE_UNLOCK();return "accepted";}
+const char *a1_filter_change(unsigned hours,bool reset){a1_filter_storage_t f;a1_filter_get(&f);BASE_LOCK();if(reset){sim_filter.used_seconds=0;sim_filter_clock.remainder_ms=0;a1_filter_stock_defaults(&sim_stock,sim_stock.weighted);}else sim_filter.lifetime_hours=hours;BASE_UNLOCK();return "accepted";}
 a1_config_t *a1_config=&base_config;
 void a1_control_changed(void){++base_config.revision;}
 bool a1_config_flush(bool f){(void)f;return true;}
@@ -135,6 +139,17 @@ bool a1_scan_start(void){return false;}
 bool a1_wifi_trial(const CFG *c){(void)c;return false;}
 bool a1_ota_download(const char *u){(void)u;return false;}
 #else
+/* This simulator has no UART controller. Keep its hardware-only capabilities
+ * unavailable; production controller/storage behavior is tested separately. */
+bool m1_uart_buzzer(bool enabled,unsigned duration){(void)enabled;(void)duration;return false;}
+bool m1_uart_version_query(void){return false;}
+bool m1_wake_alarm_start(unsigned seconds){(void)seconds;return false;}
+void m1_wake_alarm_stop(void){}
+void m1_alarm_get(m1_alarm_config_t*out){memset(out,0,sizeof(*out));}
+const char *m1_alarm_set(bool pm,uint16_t low,uint16_t high,uint32_t revision)
+{(void)pm;(void)low;(void)high;(void)revision;return "unsupported";}
+json_object *m1_co2_json(void){json_object*o=json_object_new_object();json_build_object_add(o,"available",json_object_new_boolean(false));return o;}
+json_object *m1_co2_set(json_object*p,const char**code){(void)p;*code="unsupported";return NULL;}
 bool m1_set_brightness(unsigned n){mico_rtos_lock_mutex(&device_lock);device_state.brightness_requested=n;mico_rtos_unlock_mutex(&device_lock);return true;}
 bool m1_sample_fresh(const m1_sample_t *s,uint32_t now){return s->received&&(uint32_t)(now-s->updated_ms)<15000;}
 bool m1_reset(bool f){(void)f;return false;}

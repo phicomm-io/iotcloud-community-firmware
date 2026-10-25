@@ -41,6 +41,8 @@ static uint32_t watchdog_lock(void){return 0;}
 static void watchdog_unlock(uint32_t n){(void)n;}
 static const char *reset_name(void){return "software";}
 void a1_filter_get(a1_filter_storage_t *p){memset(p,0,sizeof(*p));p->lifetime_hours=2000;}
+void a1_filter_stock_get(a1_filter_stock_t *p){a1_filter_stock_defaults(p,false);}
+static void svc_string(json_object *o,const char*k,const char*v){json_build_object_add(o,k,json_object_new_string(v));}
 '''
     capture = function((ROOT/'A1/main.c').read_text(), 'void a1_status_capture(')
     snapshots += r'''

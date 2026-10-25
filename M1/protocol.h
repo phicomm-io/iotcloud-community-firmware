@@ -13,6 +13,7 @@ typedef struct {
     int32_t temperature_deci_c, humidity_deci_pct;
     uint32_t sequence, updated_ms;
     bool received;
+    uint8_t pm25_status, auxiliary_status, climate_status;
 } m1_sample_t;
 
 typedef struct {
@@ -29,4 +30,12 @@ void m1_brightness_frame(uint8_t frame[M1_TX_FRAME_SIZE], unsigned level, unsign
 void m1_clock_frame(uint8_t frame[M1_TX_FRAME_SIZE], unsigned year, unsigned month,
                     unsigned day, unsigned hour, unsigned minute, unsigned second);
 uint16_t m1_crc16(uint16_t crc, const uint8_t *, size_t);
+
+/* Byte 12 has not been identified as a particular sensor. Expose it raw. */
+static inline unsigned m1_sample_fields(const m1_sample_t *s)
+{ return (s->climate_status ? 3u : 0u) | (s->pm25_status ? 4u : 0u) | 8u; }
+void m1_buzzer_frame(uint8_t frame[M1_TX_FRAME_SIZE], bool enabled);
+void m1_version_frame(uint8_t frame[M1_TX_FRAME_SIZE]);
+void m1_threshold_frame(uint8_t frame[M1_TX_FRAME_SIZE], bool pm25, uint16_t low, uint16_t high);
+bool m1_parse_version(const uint8_t frame[M1_RX_FRAME_SIZE], char version[17]);
 

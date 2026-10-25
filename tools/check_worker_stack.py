@@ -110,6 +110,12 @@ def check(directory, header):
     for branch,tail in numeric_tails(frames,'scan').items():
         expanded['binding UDP numeric '+branch]=(binding,2048,
             ['feature_worker','parse','json_tokener_parse_ex']+tail)
+    if directory.name=='M1':
+        expanded['UART config persistence']=(4096,2048,['uart_worker','m1_config_save'])
+        expanded['UART MCU bridge']=(4096,2048,['uart_worker','m1_mcu_tick','m1_co2_config_get'])
+        expanded['scheduled CO2 capture']=(binding,2048,['feature_worker','automation_poll','auto_execute',
+            'service_query','service_command','service_product','m1_status_json','m1_status_json_view',
+            'm1_status_full','m1_status_capture','m1_co2_capture','m1_co2_config_get'])
     paths=expanded
     for label, (budget, reserve, names) in paths.items():
         missing = set(names) - frames.keys()

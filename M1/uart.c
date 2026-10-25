@@ -28,6 +28,51 @@ bool m1_uart_clock(unsigned y, unsigned mo, unsigned d, unsigned h, unsigned mi,
     return mico_rtos_push_to_queue(&tx_queue, &command, 0) == kNoErr;
 }
 
+bool m1_uart_version_query(void)
+{
+    if (!queue_ready) return false;
+    uart_command_t command = { .kind = 0x11 };
+    m1_version_frame(command.frame);
+    return mico_rtos_push_to_queue(&tx_queue, &command, 0) == kNoErr;
+}
+
+/* Deadline lives outside the FIFO: a full command queue cannot delay OFF. */
+bool m1_uart_buzzer(bool enabled, unsigned duration_ms)
+{
+    if (!queue_ready || (enabled && (!duration_ms || duration_ms > 5000))) return false;
+    mico_rtos_lock_mutex(&m1_lock);
+    if (!enabled) m1_state.wake_alarm_active = false;
+    m1_state.buzzer_requested = enabled;
+    m1_state.buzzer_until = mico_rtos_get_time() + (enabled ? duration_ms : 0);
+    mico_rtos_unlock_mutex(&m1_lock);
+    return true;
+}
+
+/* Repeat the MCU's single beep with bounded ON/OFF pulses. The UART worker
+ * owns transmission; neither the command FIFO nor network polling drives it. */
+bool m1_wake_alarm_start(unsigned duration_seconds)
+{
+    if (!queue_ready || !duration_seconds || duration_seconds > 180) return false;
+    mico_rtos_lock_mutex(&m1_lock);
+    bool ok = !m1_state.wake_alarm_active && !m1_state.ota_active &&
+              !m1_state.reboot_pending && !m1_state.wifi_trial_active;
+    if (ok) {
+        m1_state.wake_alarm_started = mico_rtos_get_time();
+        m1_state.wake_alarm_until = m1_state.wake_alarm_started + duration_seconds * 1000u;
+        m1_state.wake_alarm_active = true;
+    }
+    mico_rtos_unlock_mutex(&m1_lock);
+    return ok;
+}
+
+void m1_wake_alarm_stop(void)
+{
+    mico_rtos_lock_mutex(&m1_lock);
+    m1_state.wake_alarm_active = false;
+    m1_state.buzzer_requested = false;
+    mico_rtos_unlock_mutex(&m1_lock);
+}
+
 static void uart_error(void)
 {
     mico_rtos_lock_mutex(&m1_lock);
@@ -40,6 +85,33 @@ static bool transmit(const uint8_t *frame)
     if (MicoUartSend(MICO_UART_1, frame, 12) == kNoErr) return true;
     uart_error();
     return false;
+}
+
+/* Outside the FIFO: retry persisted configuration even under queue pressure.
+ * Successful send is not acknowledgement from the stock controller. */
+static void alarm_sync(void)
+{
+    m1_alarm_config_t alarm;
+    m1_alarm_get(&alarm);
+    mico_rtos_lock_mutex(&m1_lock);
+    bool skip = m1_state.ota_active || m1_state.reboot_pending || m1_state.wifi_trial_active ||
+        (m1_state.alarm_uart_sent && m1_state.alarm_sent_revision == alarm.revision);
+    mico_rtos_unlock_mutex(&m1_lock);
+    if (skip || !alarm.configured) return;
+    uint8_t frame[12];
+    bool sent = true;
+    if (alarm.configured & 1) {
+        m1_threshold_frame(frame, false, alarm.hcho[0], alarm.hcho[1]);
+        if (!transmit(frame)) sent = false;
+    }
+    if (alarm.configured & 2) {
+        m1_threshold_frame(frame, true, alarm.pm25[0], alarm.pm25[1]);
+        if (!transmit(frame)) sent = false;
+    }
+    mico_rtos_lock_mutex(&m1_lock);
+    m1_state.alarm_uart_sent = sent;
+    m1_state.alarm_sent_revision = alarm.revision;
+    mico_rtos_unlock_mutex(&m1_lock);
 }
 
 static void indicator_output(mico_pwm_t pwm, mico_gpio_t gpio, float duty, bool on)
@@ -87,21 +159,52 @@ static void uart_worker(mico_thread_arg_t arg)
     mico_rtos_unlock_mutex(&m1_lock);
     queue_ready = true;
     uint32_t next_query = mico_rtos_get_time();
+    uint32_t next_version = next_query, next_buzzer = next_query;
+    uint32_t next_alarm = next_query;
+    unsigned version_attempts = 0;
+    int buzzer_sent = -1;
     m1_decoder_t decoder = {0};
     unsigned old_level = 255, old_mode = 255, old_error = 255, old_wifi = 255;
     uint32_t mode_since = 0;
     unsigned applied_display = cfg.brightness;
     for (;;) {
         uint32_t now = mico_rtos_get_time();
-        if ((int32_t)(now - next_query) >= 0) {
+        m1_mcu_tick();
+        mico_rtos_lock_mutex(&m1_lock);bool mcu_updating=m1_state.mcu_updating;mico_rtos_unlock_mutex(&m1_lock);
+        if (!mcu_updating && (int32_t)(now - next_query) >= 0) {
             m1_query_frame(frame); transmit(frame); next_query = now + M1_POLL_MS;
         }
+        mico_rtos_lock_mutex(&m1_lock);
+        if (m1_state.buzzer_requested && (int32_t)(now - m1_state.buzzer_until) >= 0)
+            m1_state.buzzer_requested = false;
+        if (m1_state.wake_alarm_active &&
+            ((int32_t)(now - m1_state.wake_alarm_until) >= 0 || m1_state.ota_active ||
+             m1_state.reboot_pending || m1_state.wifi_trial_active))
+            m1_state.wake_alarm_active = false;
+        bool wake_pulse = m1_state.wake_alarm_active &&
+            (uint32_t)(now - m1_state.wake_alarm_started) % 2000u < 300u;
+        bool buzzer = m1_state.buzzer_requested || wake_pulse;
+        bool version_received = m1_state.mcu_version_received;
+        mico_rtos_unlock_mutex(&m1_lock);
+        if (!mcu_updating && buzzer != buzzer_sent && (int32_t)(now - next_buzzer) >= 0) {
+            m1_buzzer_frame(frame, buzzer);
+            if (transmit(frame)) buzzer_sent = buzzer;
+            next_buzzer = now + 100;
+        }
+        if (!mcu_updating && (int32_t)(now - next_alarm) >= 0) {
+            alarm_sync(); next_alarm = now + 1000;
+        }
+        if (!mcu_updating && !version_received && version_attempts < 3 && (int32_t)(now - next_version) >= 0) {
+            m1_version_frame(frame); transmit(frame);
+            version_attempts++; next_version = now + 5000;
+        }
         uart_command_t command;
-        if (mico_rtos_pop_from_queue(&tx_queue, &command, 0) == kNoErr) {
+        if (!mcu_updating && mico_rtos_pop_from_queue(&tx_queue, &command, 0) == kNoErr) {
             if (command.kind == 2) {
                 m1_config_get(&cfg);
                 m1_brightness_frame(command.frame, effective_level(command.level), cfg.last_on);
                 if (transmit(command.frame)) {
+                    if ((cfg.brightness == 0) != (command.level == 0)) m1_wake_alarm_stop();
                     for (unsigned attempt = 0; attempt < 3; attempt++) {
                         m1_config_get(&cfg);
                         if (cfg.brightness == command.level) break;
@@ -121,16 +224,24 @@ static void uart_worker(mico_thread_arg_t arg)
             uint8_t byte;
             if (MicoUartRecv(MICO_UART_1, &byte, 1, i ? 0 : 10) != kNoErr) break;
             if (!m1_decode_byte(&decoder, byte, frame)) continue;
+            if(frame[1]==0x17){version_attempts=0;next_version=mico_rtos_get_time();}
+            if(m1_mcu_rx(frame))continue;
             if (frame[1] == 0x18) {
                 static const uint8_t ack[12] = {0x23,0x16,0x00,0x10,0x14,0x00,0x03,0x10,0xf1,0xff,0xff,0x21};
                 transmit(ack);
                 if (!reset_seen) { reset_seen = true; m1_reset(false); }
                 continue;
             }
+            /* A physical screen power event dismisses ringing in either
+             * direction, including when the screen was already off. */
+            if (frame[1] == 0x0f && frame[2] <= 1) m1_wake_alarm_stop();
             mico_rtos_lock_mutex(&m1_lock);
             memcpy(m1_state.last_frame, frame, 20);
             m1_state.rx_frames++;
-            if (!m1_parse_sample(frame, mico_rtos_get_time(), &m1_state.sample)) {
+            if (m1_parse_version(frame, m1_state.mcu_version)) {
+                m1_state.mcu_version_received = true;
+                m1_state.mcu_version_updated_ms = mico_rtos_get_time();
+            } else if (!m1_parse_sample(frame, mico_rtos_get_time(), &m1_state.sample)) {
                 if (frame[1] == 0x0f && frame[2] <= 1) {
                     m1_state.brightness_requested = frame[2] ? cfg.last_on : 0;
                 } else m1_state.unknown_frames++;
@@ -145,7 +256,7 @@ static void uart_worker(mico_thread_arg_t arg)
             m1_state.mqtt_connected && m1_state.mqtt_status == MQTT_READY);
         mico_rtos_unlock_mutex(&m1_lock);
         level = effective_level(level);
-        if (level != applied_display) {
+        if (!mcu_updating && level != applied_display) {
             m1_brightness_frame(frame, level, cfg.last_on);
             if (transmit(frame)) applied_display = level;
         }

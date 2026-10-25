@@ -228,7 +228,7 @@ static void hardware_worker(mico_thread_arg_t arg)
 #ifdef A1_FRESH_AIR
             fresh_finish(speed,now);
 #endif
-            a1_filter_tick(speed > 0);
+            a1_filter_observe(speed, feature_filter_weight());
             fan_at += 100;
             if ((uint32_t)(now - fan_at) >= 100) fan_at = now;
         }

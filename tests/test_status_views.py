@@ -68,7 +68,21 @@ int json_heap_permit(size_t n){(void)n;assert(!held);permits++;return !fail_afte
 static void check_params(const char*s,bool valid,bool wanted){json_object*p=json_tokener_parse(s);bool live=false;assert(status_view_params(p,&live)==valid);if(valid)assert(live==wanted);json_object_put(p);}
 static void legacy_parity(json_object *current,json_object *old){
  ADDITIVE
+ json_object *filter=json_object_object_get(current,"filter"),*legacy_filter=json_object_object_get(old,"filter");
+ if(filter){
+  assert(legacy_filter);assert(!strcmp(json_object_get_string(json_object_object_get(filter,"model")),"runtime"));
+  assert(json_object_get_int(json_object_object_get(filter,"weighted_capacity"))==12000000);
+  assert(json_object_get_int(json_object_object_get(filter,"weighted_usage"))==0);
+  assert(json_object_get_int(json_object_object_get(filter,"weighted_remaining_percent"))==100);
+  assert(json_object_get_int(json_object_object_get(filter,"time_remaining_percent"))==100);
+  assert(json_object_get_double(json_object_object_get(filter,"air_volume_m3_estimate"))==0);
+  json_object *legacy_only=json_object_new_object();json_object_object_foreach(legacy_filter,key,value){
+   json_object *v=json_object_object_get(filter,key);if(v)json_object_get(v);json_object_object_add(legacy_only,key,v);
+  }
+  json_object_get(filter);json_object_object_add(current,"filter",legacy_only);
+ }
  assert(!strcmp(json_object_to_json_string(current),json_object_to_json_string(old)));
+ if(filter)json_object_object_add(current,"filter",filter);
  RESTORE
  json_object_put(old);
 }
@@ -108,6 +122,7 @@ void feature_effective_fan(bool on,unsigned speed,bool*eo,unsigned*es){getter();
 bool feature_fan_auto(void){getter();return false;}
 unsigned feature_fan_limit(void){getter();return 100;}
 void a1_filter_get(a1_filter_storage_t*out){getter();expensive++;*out=(a1_filter_storage_t){0,10,2000};}
+void a1_filter_stock_get(a1_filter_stock_t*out){getter();expensive++;a1_filter_stock_defaults(out,false);}
 json_object*a1_filter_json(void){a1_filter_storage_t f;a1_filter_get(&f);json_object*o=json_object_new_object();unsigned remaining=a1_filter_remaining(&f);status_int(o,"used_seconds",f.used_seconds);status_int(o,"lifetime_hours",f.lifetime_hours);status_int(o,"remaining_percent",remaining);status_bool(o,"replacement_due",remaining<=10);return o;}
 '''
      # The pure helper is declared below the capture and before this oracle wrapper.
@@ -141,16 +156,17 @@ static app_storage_t storage;
 #define app_config (&storage.base)
 #undef cfg
 #define cfg storage.base
+void m1_co2_capture(device_m1_co2_t*out){getter();assert(!held);*out=(device_m1_co2_t){.revision=3,.interval=5,.low=1000,.high=1500,.mode=1,.supported=true,.present=true,.valid=true,.showing=true,.ppm=1234};}
 void m1_ntp_host_get(char out[64]){getter();memcpy(out,storage.features.ntp_host,64);}
 bool m1_sample_fresh(const m1_sample_t*s,uint32_t at){getter();return s->received&&(uint32_t)(at-s->updated_ms)<M1_STALE_MS;}
 '''
      onwait='if(inject_update){state.sample.received=true;state.sample.updated_ms=state.scd40.updated_ms=25005;state.scd40.ready=state.scd40.received=true;state.barometer=(barometer_state_t){.ready=true,.received=true,.updated_ms=25005,.chip_id=0x50,.address=0x77,.pressure_centi_pa=10132400};now=25010;inject_update=false;}'
      setup='state.sample.received=true;state.sample.updated_ms=24000;state.scd40.ready=state.scd40.received=true;state.scd40.updated_ms=24000;state.scd40.co2_ppm=900;'
-     sensor=r'''now=24000;inject_update=true;m1_status_capture(&frozen,NULL);assert(frozen.now_ms==25010);live=device_status_encode(&frozen,NULL);assert(json_object_get_boolean(json_object_object_get(live,"sensor_valid")));json_object*co2=json_object_object_get(live,"scd40");assert(json_object_get_boolean(json_object_object_get(co2,"valid")));assert(json_object_get_int(json_object_object_get(co2,"age_ms"))==5);assert(!json_object_object_get(co2,"temperature"));assert(!json_object_object_get(co2,"humidity"));json_object*b=json_object_object_get(live,"barometer");assert(b&&json_object_get_boolean(json_object_object_get(b,"valid")));assert(json_object_get_int(json_object_object_get(b,"age_ms"))==5);assert(!strcmp(json_object_get_string(json_object_object_get(b,"model")),"BMP388"));assert(json_object_get_double(json_object_object_get(b,"pressure_hpa"))==1013.24);json_object_put(live);
+     sensor=r'''live=m1_status_live_json();json_object*d=json_object_object_get(live,"co2_display");assert(d&&json_object_get_boolean(json_object_object_get(d,"available")));assert(json_object_get_int(json_object_object_get(d,"mcu_co2_ppm"))==1234);assert(json_object_get_int(json_object_object_get(d,"revision"))==3);json_object_put(live);now=24000;inject_update=true;m1_status_capture(&frozen,NULL);assert(frozen.now_ms==25010);live=device_status_encode(&frozen,NULL);assert(json_object_get_boolean(json_object_object_get(live,"sensor_valid")));json_object*co2=json_object_object_get(live,"scd40");assert(json_object_get_boolean(json_object_object_get(co2,"valid")));assert(json_object_get_int(json_object_object_get(co2,"age_ms"))==5);assert(!json_object_object_get(co2,"temperature"));assert(!json_object_object_get(co2,"humidity"));json_object*b=json_object_object_get(live,"barometer");assert(b&&json_object_get_boolean(json_object_object_get(b,"valid")));assert(json_object_get_int(json_object_object_get(b,"age_ms"))==5);assert(!strcmp(json_object_get_string(json_object_object_get(b,"model")),"BMP388"));assert(json_object_get_double(json_object_object_get(b,"pressure_hpa"))==1013.24);json_object_put(live);
  state.barometer.updated_ms=15010;live=m1_status_live_json();b=json_object_object_get(live,"barometer");assert(!json_object_get_boolean(json_object_object_get(b,"valid")));assert(!json_object_object_get(b,"pressure_hpa"));assert(json_object_get_int(json_object_object_get(b,"age_ms"))==10000);json_object_put(live);
  state.barometer.updated_ms=25005;state.barometer.chip_id=0x60;state.barometer.address=0x76;full=m1_status_json();b=json_object_object_get(full,"barometer");assert(json_object_get_boolean(json_object_object_get(b,"valid")));assert(!strcmp(json_object_get_string(json_object_object_get(b,"model")),"BMP390"));assert(json_object_get_int(json_object_object_get(b,"address"))==118);json_object_put(full);
  state.barometer.ready=false;live=m1_status_live_json();b=json_object_object_get(live,"barometer");assert(!json_object_get_boolean(json_object_object_get(b,"valid")));assert(!json_object_object_get(b,"pressure_hpa"));json_object_put(live);state.scd40.updated_ms=0;live=m1_status_live_json();co2=json_object_object_get(live,"scd40");assert(!json_object_get_boolean(json_object_object_get(co2,"valid")));assert(!json_object_object_get(co2,"co2_ppm"));json_object_put(live);empty();'''
-    for k,v in [('ADDITIVE','json_object*b=json_object_object_get(current,"barometer");assert(b);json_object_get(b);json_object_object_del(current,"barometer");' if model=='M1' else 'json_object*b=json_object_object_get(current,"sensors");assert(b);json_object_get(b);json_object_object_del(current,"sensors");'),('RESTORE','json_object_object_add(current,"barometer",b);' if model=='M1' else 'json_object_object_add(current,"sensors",b);'),('MODEL_SETUP',extra),('ON_WAIT',onwait),('CAPTURE',capture),('BUILDERS',builders),('SETUP',setup),('SENSOR_CHECK',sensor),('CAP','3' if model=='A1' else '4'),('LOWER',prefix),('MODEL',model)]:harness=harness.replace(k,v)
+    for k,v in [('ADDITIVE','json_object*health=json_object_object_get(current,"sensor_health");assert(health);json_object_get(health);json_object_object_del(current,"sensor_health");json_object*c=json_object_object_get(current,"co2_display");assert(c);json_object_get(c);json_object_object_del(current,"co2_display");json_object*b=json_object_object_get(current,"barometer");assert(b);json_object_get(b);json_object_object_del(current,"barometer");' if model=='M1' else 'json_object*b=json_object_object_get(current,"sensors");assert(b);json_object_get(b);json_object_object_del(current,"sensors");'),('RESTORE','json_object_object_add(current,"barometer",b);json_object_object_add(current,"co2_display",c);json_object_object_add(current,"sensor_health",health);' if model=='M1' else 'json_object_object_add(current,"sensors",b);'),('MODEL_SETUP',extra),('ON_WAIT',onwait),('CAPTURE',capture),('BUILDERS',builders),('SETUP',setup),('SENSOR_CHECK',sensor),('CAP','3' if model=='A1' else '4'),('LOWER',prefix),('MODEL',model)]:harness=harness.replace(k,v)
     src=d/'test.c';src.write_text(harness)
     cmd=[os.environ.get('CC','cc'),'-std=gnu99','-DPHICOMM_APPLICATION_WATCHDOG=1','-I'+str(ROOT),'-I'+str(ROOT/'tests/host'),'-I'+str(json),str(src),*map(str,json.glob('*.c')),'-o',str(d/'test')]
     if os.environ.get('SANITIZE')=='1':cmd+=['-g','-fno-omit-frame-pointer','-fsanitize=address,undefined','-fno-pie','-no-pie']

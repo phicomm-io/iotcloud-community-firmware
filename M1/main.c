@@ -8,7 +8,7 @@
 mico_mutex_t m1_lock;
 static mico_mutex_t config_lock;
 static m1_config_t *app_config;
-typedef struct { m1_config_t base; feature_config_storage_t features; automation_config_t automation; } app_storage_t;
+typedef struct { m1_config_t base; feature_config_storage_t features; automation_config_t automation; uint8_t reserved_controller_config[20]; m1_co2_config_t co2; } app_storage_t;
 
 char m1_id[13];
 m1_state_t m1_state;
@@ -21,6 +21,8 @@ void appRestoreDefault_callback(void *data, uint32_t size)
     memset(c, 0, sizeof(*c));
     if (size >= sizeof(app_storage_t)) { feature_config_t next; feature_defaults(&next); memcpy(&((app_storage_t *)data)->features, &next, sizeof(feature_config_storage_t)); }
     if (size >= sizeof(app_storage_t)) automation_defaults(&((app_storage_t *)data)->automation);
+    if (size >= sizeof(app_storage_t)) memset(((app_storage_t *)data)->reserved_controller_config, 0, 20);
+    if (size >= sizeof(app_storage_t)) ((app_storage_t *)data)->co2=(m1_co2_config_t){.magic=M1_CO2_MAGIC,.interval=5,.low=1000,.high=1500};
     c->magic = M1_CONFIG_MAGIC; c->version = M1_CONFIG_VERSION;
     c->mqtt_port = 1883; c->mqtt_topic_mode = MQTT_TOPIC_TMCP;
     c->brightness = c->last_on = 4; c->timezone_minutes = 480;
@@ -63,13 +65,85 @@ bool m1_config_save(const m1_config_t *c)
     return true;
 }
 
+void m1_co2_config_get(m1_co2_config_t *out)
+{
+    mico_rtos_lock_mutex(&config_lock);
+    *out=((app_storage_t *)app_config)->co2;
+    mico_rtos_unlock_mutex(&config_lock);
+}
+const char *m1_co2_config_save(const m1_co2_config_t *next)
+{
+    if(next->magic!=M1_CO2_MAGIC || next->mode>2 || next->slot>1 || !next->interval || next->interval>3600 || next->low>next->high)return "invalid_params";
+    mico_rtos_lock_mutex(&config_lock);
+    m1_co2_config_t *live=&((app_storage_t *)app_config)->co2,old=*live;
+    mico_rtos_lock_mutex(&m1_lock);
+    bool busy=m1_state.ota_active || m1_state.mcu_updating || m1_state.reboot_pending || m1_state.wifi_trial_active;
+    mico_rtos_unlock_mutex(&m1_lock);
+    const char *code="busy";
+    if(!busy && old.revision==next->revision && old.revision<INT32_MAX) {
+        *live=*next;live->revision++;
+        if(mico_system_context_update(m1_context)!=kNoErr){*live=old;code="storage_error";}
+        else code="accepted";
+    }
+    mico_rtos_unlock_mutex(&config_lock);return code;
+}
+
+static void alarm_load_locked(m1_alarm_config_t *out)
+{
+    memcpy(out, ((app_storage_t *)app_config)->reserved_controller_config, sizeof(*out));
+    if (out->magic != M1_ALARM_MAGIC || (out->configured & ~3u) ||
+        ((out->configured & 1) && (!out->hcho[1] || out->hcho[0] > out->hcho[1])) ||
+        ((out->configured & 2) && (!out->pm25[1] || out->pm25[0] > out->pm25[1])))
+        memset(out, 0, sizeof(*out));
+}
+
+void m1_alarm_get(m1_alarm_config_t *out)
+{
+    mico_rtos_lock_mutex(&config_lock);
+    alarm_load_locked(out);
+    mico_rtos_unlock_mutex(&config_lock);
+}
+
+const char *m1_alarm_set(bool pm25, uint16_t low, uint16_t high, uint32_t revision)
+{
+    if (!high || low > high) return "invalid_params";
+    mico_rtos_lock_mutex(&config_lock);
+    m1_alarm_config_t next;
+    alarm_load_locked(&next);
+    mico_rtos_lock_mutex(&m1_lock);
+    bool busy = m1_state.ota_active || m1_state.mcu_updating || m1_state.reboot_pending || m1_state.wifi_trial_active;
+    mico_rtos_unlock_mutex(&m1_lock);
+    const char *result = "busy";
+    /* Keep the revision representable by the SDK's signed JSON integer. */
+    if (!busy && next.revision == revision && revision < INT32_MAX) {
+        uint8_t old[20];
+        uint8_t *live = ((app_storage_t *)app_config)->reserved_controller_config;
+        memcpy(old, live, sizeof(old));
+        uint16_t *pair = pm25 ? next.pm25 : next.hcho;
+        pair[0] = low; pair[1] = high;
+        next.magic = M1_ALARM_MAGIC; next.revision++;
+        next.configured |= pm25 ? 2 : 1;
+        memcpy(live, &next, sizeof(next));
+        if (mico_system_context_update(m1_context) != kNoErr) {
+            memcpy(live, old, sizeof(old)); result = "storage_error";
+        } else {
+            mico_rtos_lock_mutex(&m1_lock);
+            m1_state.alarm_uart_sent = false;
+            mico_rtos_unlock_mutex(&m1_lock);
+            result = "accepted";
+        }
+    }
+    mico_rtos_unlock_mutex(&config_lock);
+    return result;
+}
+
 bool m1_reset(bool full)
 {
     app_storage_t *old = malloc(sizeof(*old));
     if (!old) return false;
     mico_rtos_lock_mutex(&config_lock);
     mico_rtos_lock_mutex(&m1_lock);
-    bool ok = !m1_state.ota_active && !m1_state.reboot_pending && !m1_state.wifi_trial_active;
+    bool ok = !m1_state.ota_active && !m1_state.mcu_updating && !m1_state.reboot_pending && !m1_state.wifi_trial_active;
     if (ok) { m1_state.reboot_pending = true; m1_state.reboot_at = mico_rtos_get_time() + 0x7fffffffu; }
     mico_rtos_unlock_mutex(&m1_lock);
     if (ok) {
@@ -98,7 +172,7 @@ void m1_state_get(m1_state_t *out)
 bool m1_reboot_later(uint32_t ms)
 {
     mico_rtos_lock_mutex(&m1_lock);
-    bool ok = !m1_state.ota_active && !m1_state.reboot_pending && !m1_state.wifi_trial_active;
+    bool ok = !m1_state.ota_active && !m1_state.mcu_updating && !m1_state.reboot_pending && !m1_state.wifi_trial_active;
     if (ok) { m1_state.reboot_pending = true; m1_state.reboot_at = mico_rtos_get_time() + ms; }
     mico_rtos_unlock_mutex(&m1_lock);
     return ok;
@@ -140,6 +214,8 @@ int application_start(void)
     if (app_config->version < 1 || app_config->version > M1_CONFIG_VERSION) {
         service_event("error","config","unsupported_layout");return kUnknownErr;
     }
+    bool controller_migration = app_config->version < 6;
+    bool co2_migration = app_config->version < 7;
     if (app_config->magic == M1_CONFIG_MAGIC &&
         (app_config->version == 1 || app_config->version == 2)) {
         m1_storage_v2_t *old = malloc(sizeof(*old));
@@ -173,6 +249,16 @@ int application_start(void)
         }
         f->event_count=0;f->scheduled_off=f->scheduled_valid=0;
         if (mico_system_context_update(m1_context) != kNoErr) return kUnknownErr;
+    }
+    if (controller_migration) {
+        memset(((app_storage_t *)app_config)->reserved_controller_config, 0, 20);
+        app_config->version = M1_CONFIG_VERSION;
+        if (mico_system_context_update(m1_context) != kNoErr) return kUnknownErr;
+    }
+    if (co2_migration) {
+        ((app_storage_t *)app_config)->co2=(m1_co2_config_t){.magic=M1_CO2_MAGIC,.interval=5,.low=1000,.high=1500};
+        app_config->version=M1_CONFIG_VERSION;
+        if(mico_system_context_update(m1_context)!=kNoErr)return kUnknownErr;
     }
     /* Normalize the retained ABI byte without changing credentials or layout. */
     if (app_config->mqtt_topic_mode != MQTT_TOPIC_TMCP) {
@@ -237,7 +323,7 @@ bool feature_config_save(const feature_config_t *c)
     mico_rtos_lock_mutex(&config_lock);
     feature_config_storage_t *live = &((app_storage_t *)app_config)->features;
     mico_rtos_lock_mutex(&m1_lock);
-    bool busy = m1_state.ota_active || m1_state.reboot_pending;
+    bool busy = m1_state.ota_active || m1_state.mcu_updating || m1_state.reboot_pending;
     mico_rtos_unlock_mutex(&m1_lock);
     bool ok = !busy && c->magic == FEATURE_MAGIC && live->revision == c->revision;
     if (ok) {
@@ -266,7 +352,7 @@ bool automation_save(const automation_config_t *next) {
     automation_config_t *old=malloc(sizeof(*old));if(!old)return false;
     mico_rtos_lock_mutex(&config_lock);
     automation_config_t *live=&((app_storage_t *)app_config)->automation;
-    mico_rtos_lock_mutex(&m1_lock);bool busy=m1_state.ota_active || m1_state.reboot_pending || m1_state.wifi_trial_active;mico_rtos_unlock_mutex(&m1_lock);
+    mico_rtos_lock_mutex(&m1_lock);bool busy=m1_state.ota_active || m1_state.mcu_updating || m1_state.reboot_pending || m1_state.wifi_trial_active;mico_rtos_unlock_mutex(&m1_lock);
     bool ok=!busy && next->magic==AUTOMATION_MAGIC && next->revision==live->revision+1;
     if(ok){*old=*live;*live=*next;ok=mico_system_context_update(m1_context)==kNoErr;if(!ok)*live=*old;}
     mico_rtos_unlock_mutex(&config_lock);free(old);return ok;
@@ -352,6 +438,7 @@ void m1_status_capture(device_status_t *snapshot, device_status_full_t *full)
     }
     mico_rtos_unlock_mutex(&m1_lock);
     mico_rtos_unlock_mutex(&config_lock);
+    m1_co2_capture(&snapshot->sensor.m1.co2_display);
     snapshot->now_ms=mico_rtos_get_time(); /* after copying all timestamped state */
     if(full) {
         snapshot->captured|=STATUS_DIAGNOSTIC;

@@ -14,7 +14,7 @@
 #define M1_VERSION FIRMWARE_VERSION
 #define M1_PRODUCT "PHICOMM_M1_EMW3080"
 #define M1_CONFIG_MAGIC 0x4d314346u
-#define M1_CONFIG_VERSION 5u
+#define M1_CONFIG_VERSION 7u
 #define M1_APP_OFFSET 0x75000u
 #define M1_APP_CPU_ADDRESS 0x08088000u
 #define M1_APP_LIMIT 0x40000u
@@ -31,7 +31,31 @@ typedef struct {
     uint8_t mqtt_topic_mode; /* ABI retained; always MQTT_TOPIC_TMCP. */
 } m1_config_t;
 
+/* Fits the retained 20-byte v6 controller extension; not MCU readback. */
+#define M1_ALARM_MAGIC 0x4d31414cu
 typedef struct {
+    uint32_t magic, revision;
+    uint16_t hcho[2], pm25[2];
+    uint8_t configured, reserved[3];
+} m1_alarm_config_t;
+typedef char m1_alarm_size_check[sizeof(m1_alarm_config_t) == 20 ? 1 : -1];
+typedef struct {
+    uint32_t magic, revision;
+    uint16_t interval, low, high;
+    uint8_t mode, slot;
+} m1_co2_config_t;
+#define M1_CO2_MAGIC 0x4d314332u
+
+typedef struct {
+    char mcu_version[17];
+    bool mcu_version_received, buzzer_requested, wake_alarm_active;
+    uint32_t wake_alarm_started, wake_alarm_until;
+    uint32_t mcu_version_updated_ms, buzzer_until;
+    bool alarm_uart_sent;
+    uint32_t alarm_sent_revision;
+    bool mcu_updating, mcu_extended;
+    uint16_t mcu_caps;
+    uint8_t mcu_protocol;
     m1_sample_t sample;
     scd40_state_t scd40;
     barometer_state_t barometer;
@@ -93,3 +117,22 @@ int m1_socket_line(int fd, char *buf, size_t capacity);
 
 
 #include "../common/phicomm_features.h"
+
+bool m1_uart_version_query(void);
+bool m1_uart_buzzer(bool enabled, unsigned duration_ms);
+json_object *m1_mcu_json(void);
+void m1_alarm_get(m1_alarm_config_t *);
+const char *m1_alarm_set(bool pm25, uint16_t low, uint16_t high, uint32_t revision);
+json_object *m1_alarm_json(void);
+void m1_co2_config_get(m1_co2_config_t *);
+const char *m1_co2_config_save(const m1_co2_config_t *);
+struct device_m1_co2;
+void m1_co2_capture(struct device_m1_co2 *);
+json_object *m1_co2_json(void);
+json_object *m1_co2_set(json_object *,const char **);
+bool m1_mcu_exchange(const uint8_t *,size_t,uint8_t reply[20]);
+void m1_mcu_tick(void);
+bool m1_mcu_rx(const uint8_t frame[20]);
+bool m1_wake_alarm_start(unsigned duration_seconds);
+void m1_wake_alarm_stop(void);
+json_object *m1_wake_alarm_json(void);

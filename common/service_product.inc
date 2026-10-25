@@ -78,9 +78,10 @@ json_object *service_product_capabilities(void){
 #ifdef A1_FRESH_AIR
     "fresh_air.set","fresh_air.config.get","fresh_air.config.set","fresh_air.linkage.get","fresh_air.linkage.set",
 #endif
-    "filter.get","filter.set","filter.reset","light_effect.next","light_effect.select","light_always.set","sensors.average.get","buttons.set","binding.probe","light_effect.get","light_effect.set","fan.set","fan.mode.set","fan.mode.toggle","fan.panel","light.set","child_lock.set","linkage.get","linkage.set",
+    "filter.model.set","filter.get","filter.set","filter.reset","light_effect.next","light_effect.select","light_always.set","sensors.average.get","buttons.set","binding.probe","light_effect.get","light_effect.set","fan.set","fan.mode.set","fan.mode.toggle","fan.panel","light.set","child_lock.set","linkage.get","linkage.set",
 #else
-    "display.set",
+    "display.set","buzzer.set","mcu.version.get","mcu.version.query","alarm.get","alarm.set","co2_display.get","co2_display.set",
+    "wake_alarm.get","wake_alarm.start","wake_alarm.stop",
 #endif
     NULL};for(unsigned i=0;actions[i];i++)json_build_array_add(a,json_object_new_string(actions[i]));json_build_object_add(o,"actions",a);
 #ifdef FEATURE_DEVICE_A1
@@ -122,12 +123,37 @@ static __attribute__((noinline)) json_object *service_product_inner(const char *
     if(!strcmp(action,"sensors.average.get")){if(!svc_keys(p,""))return NULL;*code="ok";return feature_json("average");}
     if(!strcmp(action,"binding.probe")){json_object *out=NULL;int rc=feature_set("probe",p,&out);*code=rc<300?"accepted":"invalid_params";return out;}
 #endif
+#ifndef FEATURE_DEVICE_A1
+    if(!strcmp(action,"co2_display.get")) {
+        if(!svc_keys(p,""))return NULL;*code="ok";return m1_co2_json();
+    }
+    if(!strcmp(action,"alarm.get")) {
+        if(!svc_keys(p,""))return NULL;*code="ok";return m1_alarm_json();
+    }
+    if(!strcmp(action,"wake_alarm.get")) {
+        if(!svc_keys(p,""))return NULL;*code="ok";return m1_wake_alarm_json();
+    }
+    if(!strcmp(action,"wake_alarm.stop")) {
+        if(!svc_keys(p,""))return NULL;m1_wake_alarm_stop();*code="accepted";return m1_wake_alarm_json();
+    }
+    if(!strcmp(action,"mcu.version.get")) {
+        if(!svc_keys(p,""))return NULL;*code="ok";
+        return m1_mcu_json();
+    }
+#endif
+#ifndef FEATURE_DEVICE_A1
+    if(state.mcu_updating && (strlen(action)<4 || strcmp(action+strlen(action)-4,".get"))){*code="busy";return NULL;}
+#endif
     bool query=strlen(action)>4 && !strcmp(action+strlen(action)-4,".get");
     if(!query && (state.ota_active || state.reboot_pending || state.wifi_trial_active)){*code="busy";return NULL;}
 #ifdef FEATURE_DEVICE_A1
 #ifdef A1_FRESH_AIR
     if(!strncmp(action,"fresh_air.",10))return fresh_command(action,p,code);
 #endif
+    if(!strcmp(action,"filter.model.set")) {
+        bool weighted;if(!svc_keys(p,"|weighted|") || !svc_bool(p,"weighted",&weighted))return NULL;
+        *code=a1_filter_model_change(weighted);return !strcmp(*code,"accepted")?a1_filter_json():NULL;
+    }
     if(!strcmp(action,"filter.reset")){
         if(!svc_keys(p,""))return NULL;
         *code=a1_filter_change(0,true);return !strcmp(*code,"accepted")?a1_filter_json():NULL;
@@ -135,6 +161,35 @@ static __attribute__((noinline)) json_object *service_product_inner(const char *
     if(!strcmp(action,"filter.set")){
         int hours;if(!svc_keys(p,"|lifetime_hours|") || !svc_int(p,"lifetime_hours",&hours,1,A1_FILTER_MAX_HOURS))return NULL;
         *code=a1_filter_change(hours,false);return !strcmp(*code,"accepted")?a1_filter_json():NULL;
+    }
+#endif
+#ifndef FEATURE_DEVICE_A1
+    if(!strcmp(action,"co2_display.set"))return m1_co2_set(p,code);
+    if(!strcmp(action,"alarm.set")) {
+        char sensor[8];int low,high,revision;
+        if(!svc_keys(p,"|sensor||yellow||red||revision|") ||
+           !svc_text(p,"sensor",sensor,sizeof(sensor),true) ||
+           (strcmp(sensor,"hcho") && strcmp(sensor,"pm25")) ||
+           !svc_int(p,"yellow",&low,0,65535) || !svc_int(p,"red",&high,1,65535) ||
+           !svc_int(p,"revision",&revision,0,INT32_MAX) || low>high)return NULL;
+        *code=m1_alarm_set(!strcmp(sensor,"pm25"),low,high,revision);
+        return !strcmp(*code,"accepted")?m1_alarm_json():NULL;
+    }
+    if(!strcmp(action,"wake_alarm.start")) {
+        int seconds=60;
+        if(!svc_keys(p,"|duration_seconds|") || (json_object_object_get(p,"duration_seconds") &&
+           !svc_int(p,"duration_seconds",&seconds,1,180)))return NULL;
+        *code=m1_wake_alarm_start(seconds)?"accepted":"busy";
+        return !strcmp(*code,"accepted")?m1_wake_alarm_json():NULL;
+    }
+    if(!strcmp(action,"mcu.version.query")) {
+        if(!svc_keys(p,""))return NULL;*code=m1_uart_version_query()?"accepted":"busy";return NULL;
+    }
+    if(!strcmp(action,"buzzer.set")) {
+        bool enabled;int duration=500;
+        if(!svc_keys(p,"|enabled||duration_ms|") || !svc_bool(p,"enabled",&enabled) ||
+           (json_object_object_get(p,"duration_ms") && !svc_int(p,"duration_ms",&duration,1,5000)))return NULL;
+        *code=m1_uart_buzzer(enabled,duration)?"accepted":"busy";return NULL;
     }
 #endif
     const char *domains[]={"binding","night","time","linkage","light_effect",NULL};
@@ -252,10 +307,71 @@ json_object *service_product(const char *action,json_object *p,const char **code
 #ifdef FEATURE_DEVICE_A1
 json_object *a1_filter_json(void){
     a1_filter_storage_t f;a1_filter_get(&f);json_object *o=json_object_new_object();
-    unsigned remaining=a1_filter_remaining(&f);
+    a1_filter_stock_t stock;a1_filter_stock_get(&stock);
+    unsigned time_remaining=a1_filter_remaining(&f),weighted_remaining=a1_filter_stock_remaining(&stock);
+    unsigned remaining=stock.weighted?weighted_remaining:time_remaining;
+    svc_string(o,"model",stock.weighted?"weighted_estimate":"runtime");
+    json_build_object_add(o,"time_remaining_percent",json_object_new_int(time_remaining));
+    json_build_object_add(o,"weighted_remaining_percent",json_object_new_int(weighted_remaining));
+    json_build_object_add(o,"weighted_usage",json_object_new_int(stock.usage));
+    json_build_object_add(o,"weighted_capacity",json_object_new_int(A1_FILTER_STOCK_CAPACITY));
+    json_build_object_add(o,"air_volume_m3_estimate",json_object_new_double(stock.air_litres/1000.0));
     json_build_object_add(o,"used_seconds",json_object_new_int(f.used_seconds));
     json_build_object_add(o,"lifetime_hours",json_object_new_int(f.lifetime_hours));
     json_build_object_add(o,"remaining_percent",json_object_new_int(remaining));
     json_build_object_add(o,"replacement_due",json_object_new_boolean(remaining<=10));return o;
+}
+#endif
+
+#ifndef FEATURE_DEVICE_A1
+json_object *m1_alarm_json(void) {
+    m1_alarm_config_t a;m1_alarm_get(&a);
+    mico_rtos_lock_mutex(&m1_lock);
+    bool sent=m1_state.alarm_uart_sent && m1_state.alarm_sent_revision==a.revision;
+    mico_rtos_unlock_mutex(&m1_lock);
+    json_object *o=json_object_new_object();
+    json_build_object_add(o,"revision",json_object_new_int(a.revision));
+    json_build_object_add(o,"hcho_configured",json_object_new_boolean(a.configured&1));
+    json_build_object_add(o,"pm25_configured",json_object_new_boolean(a.configured&2));
+    json_build_object_add(o,"hcho_yellow",json_object_new_int(a.hcho[0]));
+    json_build_object_add(o,"hcho_red",json_object_new_int(a.hcho[1]));
+    json_build_object_add(o,"pm25_yellow",json_object_new_int(a.pm25[0]));
+    json_build_object_add(o,"pm25_red",json_object_new_int(a.pm25[1]));
+    json_build_object_add(o,"uart_sent",json_object_new_boolean(a.configured && sent));
+    svc_string(o,"unit","main_controller_raw_u16");
+    svc_string(o,"confirmation","uart_send_only");
+    return o;
+}
+json_object *m1_wake_alarm_json(void) {
+    uint32_t now=mico_rtos_get_time(),until;bool active;
+    mico_rtos_lock_mutex(&m1_lock);
+    active=m1_state.wake_alarm_active;until=m1_state.wake_alarm_until;
+    mico_rtos_unlock_mutex(&m1_lock);
+    active=active && (int32_t)(until-now)>0;
+    json_object *o=json_object_new_object();
+    json_build_object_add(o,"active",json_object_new_boolean(active));
+    json_build_object_add(o,"remaining_seconds",json_object_new_int(active?((until-now)+999)/1000:0));
+    json_build_object_add(o,"default_duration_seconds",json_object_new_int(60));
+    json_build_object_add(o,"max_duration_seconds",json_object_new_int(180));
+    json_build_object_add(o,"stop_on_screen_event",json_object_new_boolean(true));
+    return o;
+}
+json_object *m1_mcu_json(void) {
+    char version[17];bool received,buzzer,updating;uint32_t updated,until;unsigned protocol,caps;
+    mico_rtos_lock_mutex(&m1_lock);
+    memcpy(version,m1_state.mcu_version,sizeof(version));received=m1_state.mcu_version_received;
+    updated=m1_state.mcu_version_updated_ms;buzzer=m1_state.buzzer_requested;until=m1_state.buzzer_until;
+    updating=m1_state.mcu_updating;protocol=m1_state.mcu_protocol;caps=m1_state.mcu_caps;
+    mico_rtos_unlock_mutex(&m1_lock);
+    uint32_t now=mico_rtos_get_time();
+    json_object *o=json_object_new_object();svc_string(o,"version",version);
+    json_build_object_add(o,"version_received",json_object_new_boolean(received));
+    json_build_object_add(o,"updating",json_object_new_boolean(updating));
+    json_build_object_add(o,"extension_protocol",json_object_new_int(protocol));
+    json_build_object_add(o,"extension_caps",json_object_new_int(caps));
+    if(received)json_build_object_add(o,"version_age_ms",json_object_new_double((uint32_t)(now-updated)));
+    json_build_object_add(o,"buzzer_requested",json_object_new_boolean(buzzer && (int32_t)(until-now)>0));
+    json_build_object_add(o,"buzzer_remaining_ms",json_object_new_int(buzzer && (int32_t)(until-now)>0?until-now:0));
+    svc_string(o,"buzzer_confirmation","command_only");return o;
 }
 #endif

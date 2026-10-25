@@ -21,7 +21,7 @@
 #define http_diag_snapshot ph_http_snapshot
 static ph_http_product product;
 static const char *query_action;
-static enum { QUERY, COMMAND, LIGHT, UPLOAD, DIRECT } operation;
+static enum { QUERY, COMMAND, LIGHT, UPLOAD, MCU, DIRECT } operation;
 static bool upload_open, upload_pending;
 static bool response(ph_http_exchange *x,unsigned status,const char *type,const void *body,size_t length,bool gzip)
 {
@@ -136,6 +136,13 @@ static ph_http_action begin(ph_http_exchange *x)
             return PH_HTTP_REPLY;
         }
     }
+    if(!strcmp(r->method,"POST") && !strcmp(r->path,"/api/v1/mcu/exchange")) {
+        if(!r->have_length || r->length<6 || r->length>262) {
+            ph_http_message(&product,x,400,"Invalid MCU frame size");return PH_HTTP_REPLY;
+        }
+        operation=MCU;x->body_idle_ms=5000;x->body_total_ms=5000;
+        return prepare(x);
+    }
     if(!strcmp(r->method,"POST") && !strcmp(r->path,"/api/v1/command"))operation=COMMAND;
 
     if(operation==COMMAND || operation==LIGHT) {
@@ -169,6 +176,16 @@ static void complete(ph_http_exchange *x)
     if(operation==UPLOAD) {
         bool ok=m1_ota_finish();upload_open=false;
         ph_http_message(&product,x,ok?202:400,ok?"OTA verified; rebooting":"OTA rejected; see /ota for details");return;
+    }
+    if(operation==MCU) {
+        uint8_t reply[20];
+        bool ok=product.used==x->request->length &&
+            m1_mcu_exchange((const uint8_t *)product.body,product.used,reply);
+        if(ok) {
+            memcpy(product.scalar,reply,sizeof(reply));
+            response(x,200,"application/octet-stream",product.scalar,sizeof(reply),false);
+        } else ph_http_message(&product,x,409,"MCU busy or response timeout");
+        return;
     }
     json_object *request=ph_http_body_json(&product,x);
     ph_http_command(&product,x,request);

@@ -42,7 +42,7 @@ static bool reserve(void)
 {
     if(!ota_job_claim())return false;
     mico_rtos_lock_mutex(&m1_lock);
-    bool free = !m1_state.ota_active && !m1_state.reboot_pending && !m1_state.wifi_trial_active;
+    bool free = !m1_state.ota_active && !m1_state.mcu_updating && !m1_state.reboot_pending && !m1_state.wifi_trial_active;
     if (free) {
         snprintf(m1_state.ota_state,sizeof(m1_state.ota_state),"authenticating");
         m1_state.ota_error[0]=0;m1_state.ota_progress=0;

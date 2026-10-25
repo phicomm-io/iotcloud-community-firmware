@@ -89,9 +89,15 @@ static void device_http_encode(status_sink *o,const ph_http_diagnostics *snapsho
     else emit_null(o,"http_tcp_connections");
 }
 #if !defined(PHICOMM_STATUS_MODEL) || PHICOMM_STATUS_MODEL == 0
-static void device_filter_encode(status_sink *o,const a1_filter_storage_t *f)
+static void device_filter_encode(status_sink *o,const a1_filter_storage_t *f,const a1_filter_stock_t *stock)
 {
-    unsigned remaining=a1_filter_remaining(f);
+    unsigned remaining=stock->weighted?a1_filter_stock_remaining(stock):a1_filter_remaining(f);
+    emit_string(o,"model",stock->weighted?"weighted_estimate":"runtime");
+    emit_int(o,"weighted_usage",stock->usage);
+    emit_int(o,"weighted_capacity",A1_FILTER_STOCK_CAPACITY);
+    emit_int(o,"weighted_remaining_percent",a1_filter_stock_remaining(stock));
+    emit_int(o,"time_remaining_percent",a1_filter_remaining(f));
+    emit_double(o,"air_volume_m3_estimate",stock->air_litres/1000.0);
     emit_int(o,"used_seconds",f->used_seconds);emit_int(o,"lifetime_hours",f->lifetime_hours);
     emit_int(o,"remaining_percent",remaining);emit_bool(o,"replacement_due",remaining<=10);
 }
@@ -105,7 +111,7 @@ static __attribute__((noinline)) void encode_a1(status_sink *o,const device_stat
         runtime_fields(o, &full->runtime);
         device_http_encode(o,&full->http,3);
         watchdog_fields(o, &full->watchdog);
-        emit_begin(o,"filter",false); device_filter_encode(o,&full->model.a1.filter); emit_end(o);
+        emit_begin(o,"filter",false); device_filter_encode(o,&full->model.a1.filter,&full->model.a1.filter_stock); emit_end(o);
     } else emit_int(o, "uptime_seconds", snapshot->now_ms/1000);
     emit_string(o, "version", snapshot->identity.version); emit_string(o, "device_id", snapshot->identity.id); emit_string(o, "name", snapshot->identity.name);
     emit_bool(o, "wifi_trial_active", snapshot->network.wifi_trial_active);
@@ -233,6 +239,21 @@ static __attribute__((noinline)) void encode_m1(status_sink *o,const device_stat
     emit_bool(o, "sensor_valid", fresh); emit_bool(o, "sensor_received", snapshot->sensor.m1.sample.received);
     if (snapshot->sensor.m1.sample.received) emit_double(o,"age_ms",(uint32_t)(now - snapshot->sensor.m1.sample.updated_ms));
     else emit_null(o,"age_ms");
+    emit_begin(o,"sensor_health",false);
+    const m1_sample_t *sample=&snapshot->sensor.m1.sample;
+    emit_bool(o,"received",sample->received);emit_int(o,"pm25_raw",sample->pm25_status);
+    emit_int(o,"climate_raw",sample->climate_status);emit_int(o,"auxiliary_raw",sample->auxiliary_status);
+    emit_bool(o,"pm25_valid",fresh && sample->pm25_status);emit_bool(o,"climate_valid",fresh && sample->climate_status);
+    emit_bool(o,"all_flags_ok",fresh && sample->pm25_status && sample->climate_status && sample->auxiliary_status);
+    emit_end(o);
+    emit_begin(o,"co2_display",false);
+    const device_m1_co2_t *c=&snapshot->sensor.m1.co2_display;
+    emit_bool(o,"available",c->supported && c->present);
+    emit_bool(o,"mcu_supported",c->supported);emit_bool(o,"module_present",c->present);
+    emit_int(o,"revision",c->revision);emit_int(o,"mode",c->mode);emit_int(o,"slot",c->slot);
+    emit_int(o,"interval_seconds",c->interval);emit_int(o,"low",c->low);emit_int(o,"high",c->high);
+    emit_int(o,"mcu_co2_ppm",c->ppm);emit_bool(o,"mcu_data_valid",c->valid);emit_bool(o,"showing_co2",c->showing);
+    emit_end(o);
     emit_begin(o,"scd40",false);
     bool co2_fresh = snapshot->sensor.m1.co2.ready && snapshot->sensor.m1.co2.received &&
         (uint32_t)(now - snapshot->sensor.m1.co2.updated_ms) < 20000;

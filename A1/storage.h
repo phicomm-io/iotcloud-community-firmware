@@ -3,6 +3,7 @@
 #include "fresh_air.h"
 #include "../common/automation.h"
 #include "filter.h"
+#include "filter_stock.h"
 #include "../common/mqtt/bemfa.h"
 
 /* Append extensions only: the v3/v4 base/features/automation offsets are ABI. */
@@ -16,6 +17,7 @@ typedef struct {
     feature_co2_config_t co2;
     bemfa_config_t bemfa;
     fresh_config_t fresh_air; /* Tagged append-only extension; retained by ordinary A1. */
+    a1_filter_stock_t filter_stock; /* v10: after all v9 fields, including fresh-air. */
 } app_storage_t;
 
 /* Only replace the previous default power toggle, never a custom action.

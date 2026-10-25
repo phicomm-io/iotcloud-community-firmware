@@ -37,11 +37,16 @@ static void tick(unsigned seconds){epoch+=seconds;test_now+=seconds*1000;automat
 #define CONTROL_PARAMS "\"on\":true"
 #define KEY "0"
 #define KEY_INDEX 0
-#else
+#elif defined(FEATURE_DEVICE_A1)
 #define CONTROL "fan.set"
 #define CONTROL_PARAMS "\"on\":true,\"speed\":50"
 #define KEY "1"
 #define KEY_INDEX 1
+#else
+#define CONTROL "display.set"
+#define CONTROL_PARAMS "\"brightness\":50"
+#define KEY "0"
+#define KEY_INDEX 0
 #endif
 int main(void){automation_defaults(&stored);service_init();
 #ifdef AUTOMATION_TC1
@@ -62,9 +67,14 @@ int main(void){automation_defaults(&stored);service_init();
  epoch-=20;test_now+=1000;automation_poll(true);tick(30);assert(calls==2);
  CHECK("{\"action\":\"schedules.get\",\"params\":{\"limit\":9}}","invalid_params");
  CHECK("{\"action\":\"schedules.delete\",\"params\":{\"id\":65535}}","not_found");
+#if defined(FEATURE_DEVICE_A1) || defined(AUTOMATION_TC1)
  CHECK("{\"action\":\"buttons.set\",\"params\":{\"key\":" KEY ",\"seconds\":5,\"action\":\"system.reboot\",\"params\":{}}}","invalid_params");
  CHECK("{\"action\":\"buttons.set\",\"params\":{\"key\":" KEY ",\"clicks\":2,\"action\":\"system.reboot\",\"params\":{}}}","accepted");
  automation_button(KEY_INDEX,2,0);assert(calls==3);
+#else
+ CHECK("{\"action\":\"buttons.set\",\"params\":{}}","unsupported");
+ automation_action_t reboot={.kind=AUTO_REBOOT};assert(auto_execute(&reboot,false));assert(calls==3);
+#endif
  fail_save=true;CHECK("{\"action\":\"schedules.delete\",\"params\":{\"id\":1}}","storage_error");assert(stored.tasks[0].id==1);fail_save=false;
  stored.tasks[0].enabled=1;stored.tasks[0].at=epoch+5;stored.tasks[0].last=0;stored.revision++;busy=true;tick(5);assert(calls==3 && !stored.tasks[0].enabled && stored.tasks[0].state==AUTO_BUSY);busy=false;
  stored.tasks[1].enabled=1;stored.tasks[1].at=epoch+10;stored.tasks[1].last=0;epoch+=100;test_now+=1000;automation_poll(true);tick(1);assert(calls==3 && stored.tasks[1].state==AUTO_MISSED);
@@ -94,6 +104,36 @@ int main(void){automation_defaults(&stored);service_init();
  CHECK("{\"action\":\"buttons.get\",\"params\":{\"limit\":9}}","invalid_params");
 #ifdef FEATURE_DEVICE_A1
 #include "countdown_scenarios.inc"
+#endif
+
+#if !defined(FEATURE_DEVICE_A1) && !defined(AUTOMATION_TC1)
+ /* M1 alarm uses the existing persisted schedule ABI, including weekly masks,
+  * disable/delete, clock validity, flash failure and no replay. */
+ automation_defaults(&stored);armed=false;previous=highwater=previous_ms=0;calls=0;
+ CHECK("{\"action\":\"schedules.put\",\"params\":{\"enabled\":true,\"trigger\":\"once\",\"at\":1900000000,\"action\":\"wake_alarm.start\",\"params\":{\"duration_seconds\":181}}}","invalid_params");
+ CHECK("{\"action\":\"schedules.put\",\"params\":{\"enabled\":true,\"trigger\":\"once\",\"at\":1900000000,\"action\":\"wake_alarm.start\",\"params\":{\"duration_seconds\":0}}}","invalid_params");
+ CHECK("{\"action\":\"schedules.put\",\"params\":{\"enabled\":true,\"trigger\":\"once\",\"at\":1900000000,\"action\":\"wake_alarm.start\",\"params\":{\"duration_seconds\":true}}}","invalid_params");
+ CHECK("{\"action\":\"buttons.set\",\"params\":{\"key\":0,\"clicks\":1,\"action\":\"wake_alarm.start\",\"params\":{\"duration_seconds\":60}}}","unsupported");
+ epoch=1899999990;test_now=1000;automation_poll(false);assert(!calls);
+ CHECK("{\"action\":\"schedules.put\",\"params\":{\"enabled\":true,\"trigger\":\"once\",\"at\":1900000000,\"action\":\"wake_alarm.start\",\"params\":{\"duration_seconds\":60}}}","accepted");
+ assert(stored.tasks[0].action.kind==AUTO_WAKE_ALARM && stored.tasks[0].action.value==60);
+ json_object *r=request("{\"action\":\"schedules.get\",\"params\":{}}","ok"),*d=json_object_object_get(r,"data"),*item=json_object_array_get_idx(json_object_object_get(d,"items"),0);
+ assert(!strcmp(json_object_get_string(json_object_object_get(item,"action")),"wake_alarm.start"));
+ assert(json_object_get_int(json_object_object_get(json_object_object_get(item,"params"),"duration_seconds"))==60);json_object_put(r);
+ automation_poll(true);tick(10);assert(calls==1 && !stored.tasks[0].enabled);tick(1);assert(calls==1);
+ /* Fixed UTC clock; weekday and minute are computed using persisted timezone. */
+ automation_defaults(&stored);stored.timezone=480;armed=false;previous=highwater=0;
+ epoch=1900000040;test_now+=1000;automation_poll(true);
+ unsigned due=epoch+60-epoch%60,day=((due+480*60)/86400+3)%7,minute=((due+480*60)/60)%1440;
+ char req[512];snprintf(req,sizeof(req),"{\"action\":\"schedules.put\",\"params\":{\"enabled\":true,\"trigger\":\"weekly\",\"days\":%u,\"minute\":%u,\"action\":\"wake_alarm.start\",\"params\":{\"duration_seconds\":30}}}",1u<<day,minute);CHECK(req,"accepted");
+ CHECK("{\"action\":\"schedules.enable\",\"params\":{\"id\":1,\"enabled\":false}}","accepted");
+ tick(due-epoch);assert(calls==1);
+ CHECK("{\"action\":\"schedules.enable\",\"params\":{\"id\":1,\"enabled\":true}}","accepted");
+ tick(1);assert(calls==1); /* Does not catch up a disabled occurrence. */
+ epoch=due+7*86400-1;test_now+=1000;automation_poll(true);tick(1);assert(calls==2);
+ epoch-=10;test_now+=1000;automation_poll(true);tick(11);assert(calls==2);
+ fail_save=true;CHECK("{\"action\":\"schedules.delete\",\"params\":{\"id\":1}}","storage_error");assert(stored.tasks[0].id);fail_save=false;
+ CHECK("{\"action\":\"schedules.delete\",\"params\":{\"id\":1}}","accepted");assert(!stored.tasks[0].id);
 #endif
  puts("PASS automation: stable IDs, persistence before action, reboot last, no catch-up/replay, busy and bounds");
 }

@@ -44,6 +44,14 @@ static bool app_ota_finish(void){finishes++;job=false;return true;}
 static void app_ota_abort(const char*r){assert(r);aborts++;job=false;}
 #define OSStatus int
 '''.replace('MODEL',model).replace('app_',prefix+'_')
+     if model=='M1':
+      stubs+=r'''
+static unsigned mcu_calls;static bool mcu_fail;
+static bool m1_mcu_exchange(const uint8_t*p,size_t n,uint8_t out[20]){
+ assert(n==12&&p[0]==0x23&&p[1]==0x70);mcu_calls++;
+ memset(out,0,20);out[0]=0x23;out[1]=0x70;out[19]=0x21;return !mcu_fail;
+}
+'''
      if model=='A1':
       stubs+='''
 static unsigned a1_lock;
@@ -121,6 +129,7 @@ int main(int argc,char**argv){
  wire_stall=true;execute_wire("POST /api/v1/command HTTP/1.1\r\nAuthorization: Basic YWRtaW46cHc=\r\nContent-Length: 2\r\n\r\n");wire_stall=false;assert_clean();assert(app.admission()==PH_HTTP_CLIENT_SLOTS);
  assert(start("POST","/api/v1/ota/upload",100)==OTA_ACTION);if(OTA_ACTION==PH_HTTP_WAIT)assert(app.retry(&x)==PH_HTTP_READ_BODY);assert(job&&app.admission()==2);assert(app.body(&x,"123",3));finish(false);assert(aborts==1&&!job);
  assert(start("POST","/api/v1/ota/upload-unsigned",3)==OTA_ACTION);if(OTA_ACTION==PH_HTTP_WAIT)assert(app.retry(&x)==PH_HTTP_READ_BODY);app.body(&x,"123",3);app.complete(&x);assert(x.response.status==202&&finishes==1);finish(true);assert(!job);
+ MCU_CHECK
  TC1_VERIFY_RECOVERY_CHECK
  assert(start("GET","/",0)==PH_HTTP_REPLY);assert(x.response.status==200&&x.response.gzip&&x.response.body);ASSET_CHECK finish(true);
  strcpy(password,"other");assert(start("GET","/",0)==PH_HTTP_REPLY);assert(x.response.status==401&&x.response.realm);finish(true);
@@ -141,7 +150,18 @@ int main(int argc,char**argv){
  TC1_ACTIVATION_FAILURE_CHECK
  return 0;
 }
-'''.replace('TC1_VERIFY_RECOVERY_CHECK','' if model!='TC1' else r'''
+'''.replace('MCU_CHECK','' if model!='M1' else r'''
+ assert(start_auth("POST","/api/v1/mcu/exchange",12,"Basic YmFk") == PH_HTTP_REPLY);assert(x.response.status==401&&!mcu_calls);finish(false);
+ assert(start("POST","/api/v1/mcu/exchange",5)==PH_HTTP_REPLY&&x.response.status==400);finish(false);
+ assert(start("POST","/api/v1/mcu/exchange",263)==PH_HTTP_REPLY&&x.response.status==400);finish(false);
+ assert(start("POST","/api/v1/mcu/exchange",12)==PH_HTTP_READ_BODY);
+ unsigned char frame[12]={0x23,0x70,0,0,0,0,0,0,0,0,0,0x21};
+ assert(app.body(&x,frame,3)&&app.body(&x,frame+3,9));app.complete(&x);
+ assert(mcu_calls==1&&x.response.status==200&&x.response.length==20&&x.response.body==product.scalar);
+ assert(((const unsigned char*)x.response.body)[19]==0x21&&!product.wire);finish(true);
+ assert(start("POST","/api/v1/mcu/exchange",12)==PH_HTTP_READ_BODY);assert(app.body(&x,frame,5));app.complete(&x);assert(x.response.status==409&&mcu_calls==1);finish(false);
+ mcu_fail=true;assert(start("POST","/api/v1/mcu/exchange",12)==PH_HTTP_READ_BODY);assert(app.body(&x,frame,12));app.complete(&x);assert(x.response.status==409&&mcu_calls==2);finish(true);
+''').replace('TC1_VERIFY_RECOVERY_CHECK' ,'' if model!='TC1' else r'''
  unsigned before_reboots=reboots,before_activations=activations;
  assert(start("POST","/api/v1/ota/upload",3)==PH_HTTP_WAIT);assert(app.retry(&x)==PH_HTTP_READ_BODY);assert(app.body(&x,"123",3));app.complete(&x);assert(x.response.status==202&&job&&activations==before_activations);finish(false);assert(!job&&reboots==before_reboots&&activations==before_activations);
  wire_fail_send=true;execute_wire("POST /api/v1/ota/upload HTTP/1.1\r\nAuthorization: Basic YWRtaW46cHc=\r\nContent-Length: 3\r\n\r\n123");wire_fail_send=false;assert(wire_server_running);assert(!job&&reboots==before_reboots&&activations==before_activations);

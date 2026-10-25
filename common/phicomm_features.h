@@ -198,6 +198,7 @@ void feature_effective_fan(bool requested_on, unsigned requested_speed, bool *,
                            unsigned *);
 void feature_light_frame(uint32_t out[32], unsigned brightness, bool enabled,
                          uint32_t color);
+unsigned feature_filter_weight(void);
 unsigned feature_light_cap(unsigned brightness);
 void feature_manual_fan(bool on);
 bool feature_fan_auto(void);

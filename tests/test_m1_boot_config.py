@@ -12,7 +12,7 @@ class M1BootConfigTest(unittest.TestCase):
     def test_foreign_layout_reset_and_known_versions_preserved(self):
         source = (ROOT / 'M1/main.c').read_text()
         start = source.index('    if (app_config->magic != M1_CONFIG_MAGIC)')
-        end = source.index('    if (app_config->magic == M1_CONFIG_MAGIC &&', start)
+        end = source.index('    bool controller_migration', start)
         harness = r'''
 #include <assert.h>
 #include <stdint.h>
@@ -20,7 +20,7 @@ class M1BootConfigTest(unittest.TestCase):
 #include <string.h>
 #include <stdio.h>
 #define M1_CONFIG_MAGIC 0x4d314346u
-#define M1_CONFIG_VERSION 5
+#define M1_CONFIG_VERSION 7
 #define kNoErr 0
 #define kUnknownErr -1
 typedef struct { uint32_t magic,version; char credentials[64]; } config_t;

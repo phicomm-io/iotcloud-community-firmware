@@ -46,14 +46,14 @@ static void auto_text(json_object *o,const char *k,const char *s){json_build_obj
 static bool auto_integer(json_object *o,const char *k,int *v,int lo,int hi){json_object *p=json_object_object_get(o,k);if(!p || !json_object_is_type(p,json_type_int))return false;*v=json_object_get_int(p);return *v>=lo && *v<=hi;}
 static bool auto_flag(json_object *o,const char *k,uint8_t *v){json_object *p=json_object_object_get(o,k);if(!p || !json_object_is_type(p,json_type_boolean))return false;*v=json_object_get_boolean(p);return true;}
 static bool auto_only(json_object *o,const char *allowed){json_object_object_foreach(o,k,v){char n[80];snprintf(n,sizeof(n),"|%s|",k);if(!v || !strstr(allowed,n))return false;}return true;}
-static const char *auto_names[]={"none","outlet.set","fan.set","light.set","child_lock.set","indicator.set","display.set","system.reboot","light_effect.select","filter.reset","light_always.set","fan.mode.set","fan.mode.toggle","fan.panel"};
+static const char *auto_names[]={"none","outlet.set","fan.set","light.set","child_lock.set","indicator.set","display.set","system.reboot","light_effect.select","filter.reset","light_always.set","fan.mode.set","fan.mode.toggle","fan.panel","wake_alarm.start"};
 static bool auto_supported(unsigned k){
 #ifdef AUTOMATION_TC1
  return k==AUTO_NONE || k==AUTO_OUTLET || k==AUTO_CHILD_LOCK || k==AUTO_INDICATOR || k==AUTO_REBOOT;
 #elif defined(FEATURE_DEVICE_A1)
  return k==AUTO_NONE || k==AUTO_FAN || k==AUTO_LIGHT || k==AUTO_CHILD_LOCK || k==AUTO_REBOOT || k==AUTO_LIGHT_EFFECT || k==AUTO_FILTER_RESET || k==AUTO_LIGHT_ALWAYS || k==AUTO_FAN_MODE || k==AUTO_FAN_MODE_TOGGLE || k==AUTO_FAN_PANEL;
 #else
- return k==AUTO_NONE || k==AUTO_DISPLAY || k==AUTO_REBOOT;
+ return k==AUTO_NONE || k==AUTO_DISPLAY || k==AUTO_REBOOT || k==AUTO_WAKE_ALARM;
 #endif
 }
 static bool auto_action_parse(json_object *o,automation_action_t *a,bool button){
@@ -76,6 +76,7 @@ static bool auto_action_parse(json_object *o,automation_action_t *a,bool button)
   if(json_object_object_get(p,"speed")){if(!auto_integer(p,"speed",&n,1,100))return false;a->speed=n;}
   return true;
  }
+ if(k==AUTO_WAKE_ALARM){if(button || !auto_only(p,"|duration_seconds|") || !auto_integer(p,"duration_seconds",&n,1,180))return false;a->value=n;return true;}
  if(k==AUTO_DISPLAY){if(!auto_only(p,"|brightness|") || !auto_integer(p,"brightness",&n,0,100) || n%25)return false;a->value=n;return true;}
  if(k==AUTO_LIGHT || k==AUTO_CHILD_LOCK || k==AUTO_INDICATOR || k==AUTO_LIGHT_ALWAYS){
   if(!auto_only(p,k==AUTO_LIGHT?"|enabled||brightness||toggle|":"|enabled||toggle|"))return false;
@@ -93,7 +94,8 @@ static json_object *auto_action_json(const automation_action_t *a){
  else if(k==AUTO_OUTLET || k==AUTO_FAN){
   if(a->value==2)json_build_object_add(p,"toggle",json_object_new_boolean(true));else json_build_object_add(p,"on",json_object_new_boolean(a->value));
   if(k==AUTO_OUTLET && a->target<6)json_build_object_add(p,"index",json_object_new_int(a->target));if(k==AUTO_FAN && a->speed)json_build_object_add(p,"speed",json_object_new_int(a->speed));
- }else if(k==AUTO_DISPLAY)json_build_object_add(p,"brightness",json_object_new_int(a->value));
+ }else if(k==AUTO_WAKE_ALARM)json_build_object_add(p,"duration_seconds",json_object_new_int(a->value));
+ else if(k==AUTO_DISPLAY)json_build_object_add(p,"brightness",json_object_new_int(a->value));
  else if(k==AUTO_LIGHT || k==AUTO_CHILD_LOCK || k==AUTO_INDICATOR || k==AUTO_LIGHT_ALWAYS){
   if(a->value==2)json_build_object_add(p,"toggle",json_object_new_boolean(true));else json_build_object_add(p,"enabled",json_object_new_boolean(a->value));
   if(k==AUTO_LIGHT && a->speed<=100)json_build_object_add(p,"brightness",json_object_new_int(a->speed));

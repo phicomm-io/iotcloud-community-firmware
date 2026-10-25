@@ -900,6 +900,18 @@ unsigned feature_light_cap(unsigned brightness) {
   unlock();
   return brightness;
 }
+#ifdef FEATURE_DEVICE_A1
+unsigned feature_filter_weight(void) {
+  lock();
+  float ratio = 0;
+  if ((data_fields & 4) && configuration.light.quality_pm > 0)
+    ratio = fmaxf(ratio, aggregate[2] / configuration.light.quality_pm);
+  if ((data_fields & 8) && configuration.light.quality_hcho > 0)
+    ratio = fmaxf(ratio, aggregate[3] / configuration.light.quality_hcho);
+  unlock();
+  return ratio <= 1 ? 15 : ratio <= 2 ? 75 : 150;
+}
+#endif
 void feature_light_frame(uint32_t out[32], unsigned brightness, bool enabled,
                          uint32_t color) {
   lock();

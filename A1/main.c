@@ -14,21 +14,45 @@ a1_state_t a1_state;
 mico_Context_t *a1_context;
 static uint32_t save_at;
 static a1_filter_clock_t filter_clock;
+static a1_filter_stock_clock_t stock_clock;
 
 static a1_filter_storage_t *filter_storage(void)
 { return &((app_storage_t *)a1_config)->filter; }
 
+static a1_filter_stock_t *stock_storage(void)
+{ return &((app_storage_t *)a1_config)->filter_stock; }
+static void filter_advance(uint32_t now, bool running)
+{
+    a1_filter_stock_advance(stock_storage(), &stock_clock, now);
+    a1_filter_advance(filter_storage(), &filter_clock, now, running);
+}
+void a1_filter_observe(unsigned speed, unsigned weight)
+{
+    mico_rtos_lock_mutex(&a1_config_lock);
+    filter_advance(mico_rtos_get_time(), speed > 0);
+    stock_clock.speed = speed > 100 ? 100 : speed;
+    stock_clock.weight = weight == 75 || weight == 150 ? weight : 15;
+    mico_rtos_unlock_mutex(&a1_config_lock);
+}
+void a1_filter_stock_get(a1_filter_stock_t *out)
+{
+    mico_rtos_lock_mutex(&a1_config_lock);
+    filter_advance(mico_rtos_get_time(), filter_clock.running);
+    *out = *stock_storage();
+    mico_rtos_unlock_mutex(&a1_config_lock);
+}
+
 void a1_filter_tick(bool running)
 {
     mico_rtos_lock_mutex(&a1_config_lock);
-    a1_filter_advance(filter_storage(), &filter_clock, mico_rtos_get_time(), running);
+    filter_advance(mico_rtos_get_time(), running);
     mico_rtos_unlock_mutex(&a1_config_lock);
 }
 
 void a1_filter_get(a1_filter_storage_t *out)
 {
     mico_rtos_lock_mutex(&a1_config_lock);
-    a1_filter_advance(filter_storage(), &filter_clock, mico_rtos_get_time(), filter_clock.running);
+    filter_advance(mico_rtos_get_time(), filter_clock.running);
     *out = *filter_storage();
     mico_rtos_unlock_mutex(&a1_config_lock);
 }
@@ -47,6 +71,7 @@ void appRestoreDefault_callback(void *data, uint32_t size)
     if (size >= sizeof(app_storage_t)) a1_storage_automation_defaults((app_storage_t *)data);
     if (size >= sizeof(app_storage_t)) a1_filter_defaults(&((app_storage_t *)data)->filter);
     if(size>=sizeof(app_storage_t))memset(&((app_storage_t *)data)->bemfa,0,sizeof(bemfa_config_t));
+    if (size >= sizeof(app_storage_t)) a1_filter_stock_defaults(&((app_storage_t *)data)->filter_stock, true);
     c->magic = A1_CONFIG_MAGIC; c->version = A1_CONFIG_VERSION;
     c->mqtt_port = 1883; c->mqtt_topic_mode = MQTT_TOPIC_TMCP; c->speed = 60;
     c->led_enabled = 1; c->brightness = 255; c->blue = 255;
@@ -69,7 +94,7 @@ bool a1_reset(bool full)
     if (ok) { a1_state.reboot_pending = true; a1_state.reboot_at = mico_rtos_get_time() + 0x7fffffffu; }
     mico_rtos_unlock_mutex(&a1_lock);
     if (ok) {
-        a1_filter_advance(filter_storage(), &filter_clock, mico_rtos_get_time(), filter_clock.running);
+        filter_advance(mico_rtos_get_time(), filter_clock.running);
         memcpy(old, a1_config, sizeof(*old));
         if (full) appRestoreDefault_callback(a1_config, sizeof(*old));
         else { a1_config->ssid[0] = 0; a1_config->wifi_password[0] = 0; a1_config->web_password[0] = 0; }
@@ -77,7 +102,7 @@ bool a1_reset(bool full)
         if (!ok) memcpy(a1_config, old, sizeof(*old));
         else {
             filter_clock.saved_seconds = filter_storage()->used_seconds;
-            if (full) filter_clock = (a1_filter_clock_t){0};
+            if (full) { filter_clock = (a1_filter_clock_t){0}; stock_clock = (a1_filter_stock_clock_t){0}; }
         }
         mico_rtos_lock_mutex(&a1_lock);
         a1_state.reboot_pending = ok;
@@ -108,7 +133,7 @@ void a1_control_changed(void)
 /* Configuration mutex serializes flash updates with OTA/reboot reservation. */
 static bool flush_locked(void)
 {
-    a1_filter_advance(filter_storage(), &filter_clock, mico_rtos_get_time(), filter_clock.running);
+    filter_advance(mico_rtos_get_time(), filter_clock.running);
     OSStatus err = mico_system_context_update(a1_context);
     if (err == kNoErr) filter_clock.saved_seconds = filter_storage()->used_seconds;
     mico_rtos_lock_mutex(&a1_lock);
@@ -148,7 +173,7 @@ bool a1_config_flush(bool force)
     mico_rtos_lock_mutex(&a1_config_lock);
     mico_rtos_lock_mutex(&a1_lock);
     bool busy = a1_state.ota_active || a1_state.reboot_pending;
-    a1_filter_advance(filter_storage(), &filter_clock, mico_rtos_get_time(), filter_clock.running);
+    filter_advance(mico_rtos_get_time(), filter_clock.running);
     bool checkpoint = filter_storage()->used_seconds - filter_clock.saved_seconds >= A1_FILTER_CHECKPOINT_SECONDS;
     bool due = a1_state.config_dirty ? (force || (int32_t)(mico_rtos_get_time() - save_at) >= 0) :
         (filter_pending() && (force || checkpoint || !filter_clock.running));
@@ -165,13 +190,32 @@ const char *a1_filter_change(unsigned lifetime_hours, bool reset)
     bool busy = a1_state.ota_active || a1_state.reboot_pending || a1_state.wifi_trial_active;
     mico_rtos_unlock_mutex(&a1_lock);
     if (busy) { mico_rtos_unlock_mutex(&a1_config_lock); return "busy"; }
-    a1_filter_advance(filter_storage(), &filter_clock, mico_rtos_get_time(), filter_clock.running);
+    filter_advance(mico_rtos_get_time(), filter_clock.running);
     a1_filter_storage_t old = *filter_storage();
-    if (reset) filter_storage()->used_seconds = 0;
+    a1_filter_stock_t stock_old = *stock_storage();
+    if (reset) { filter_storage()->used_seconds = 0; a1_filter_stock_defaults(stock_storage(), stock_old.weighted); }
     else filter_storage()->lifetime_hours = lifetime_hours;
     bool ok = flush_locked();
-    if (!ok) *filter_storage() = old;
+    if (!ok) { *filter_storage() = old; *stock_storage() = stock_old; }
     else if (reset) filter_clock.remainder_ms = 0;
+    mico_rtos_unlock_mutex(&a1_config_lock);
+    return ok ? "accepted" : "storage_error";
+}
+
+const char *a1_filter_model_change(bool weighted)
+{
+    mico_rtos_lock_mutex(&a1_config_lock);
+    mico_rtos_lock_mutex(&a1_lock);
+    bool busy = a1_state.ota_active || a1_state.reboot_pending || a1_state.wifi_trial_active;
+    mico_rtos_unlock_mutex(&a1_lock);
+    if (busy) { mico_rtos_unlock_mutex(&a1_config_lock); return "busy"; }
+    filter_advance(mico_rtos_get_time(), filter_clock.running);
+    a1_filter_stock_t old = *stock_storage();
+    uint32_t revision = a1_config->revision;
+    stock_storage()->weighted = weighted; a1_config->revision++;
+    bool ok = flush_locked();
+    if (!ok) { *stock_storage() = old; a1_config->revision = revision; }
+    else { mico_rtos_lock_mutex(&a1_lock); a1_state.config_generation++; mico_rtos_unlock_mutex(&a1_lock); }
     mico_rtos_unlock_mutex(&a1_config_lock);
     return ok ? "accepted" : "storage_error";
 }
@@ -181,7 +225,7 @@ static bool exclusive_begin(bool ota, uint32_t delay)
     mico_rtos_lock_mutex(&a1_config_lock);
     mico_rtos_lock_mutex(&a1_lock);
     bool free = !a1_state.ota_active && !a1_state.reboot_pending && !a1_state.wifi_trial_active;
-    a1_filter_advance(filter_storage(), &filter_clock, mico_rtos_get_time(), filter_clock.running);
+    filter_advance(mico_rtos_get_time(), filter_clock.running);
     bool dirty = a1_state.config_dirty || filter_pending();
     if (free) {
         a1_state.ota_active = ota; a1_state.reboot_pending = !ota;
@@ -248,6 +292,7 @@ int application_start(void)
     if (a1_config->version < 1 || a1_config->version > A1_CONFIG_VERSION) {
         service_event("error","config","unsupported_layout");return kUnknownErr;
     }
+    bool stock_migration = a1_config->version < 10;
     bool co2_migration = a1_config->version < 9;
     bool panel_migration = a1_config->version < 8;
     bool auto_migration = a1_config->version < 7;
@@ -270,10 +315,18 @@ int application_start(void)
     if (a1_config->magic == A1_CONFIG_MAGIC && a1_config->version == 3) {
         ((app_storage_t *)a1_config)->automation.magic=0;
     }
-    if (a1_config->version == 3 || a1_config->version == 4 || a1_config->version == 5 || a1_config->version == 6 || a1_config->version == 7 || a1_config->version == 8) a1_config->version = A1_CONFIG_VERSION;
+    if (a1_config->version >= 3 && a1_config->version < A1_CONFIG_VERSION) a1_config->version = A1_CONFIG_VERSION;
     if (filter_storage()->magic != A1_FILTER_MAGIC || !filter_storage()->lifetime_hours ||
         filter_storage()->lifetime_hours > A1_FILTER_MAX_HOURS) {
         a1_filter_defaults(filter_storage()); filter_migration = true;
+    }
+    if (stock_migration || !a1_filter_stock_valid(stock_storage())) {
+        a1_filter_stock_defaults(stock_storage(), false);
+        uint64_t usage = (uint64_t)filter_storage()->used_seconds * A1_FILTER_STOCK_CAPACITY /
+            ((uint64_t)filter_storage()->lifetime_hours * 3600u);
+        stock_storage()->usage = usage > A1_FILTER_STOCK_CAPACITY ? A1_FILTER_STOCK_CAPACITY : usage;
+        /* Retain the old time estimate; begin estimated volume history at migration. */
+        stock_migration = true;
     }
     filter_clock.saved_seconds = filter_storage()->used_seconds;
     if (auto_migration) {
@@ -289,7 +342,7 @@ int application_start(void)
     }
     if (co2_migration) feature_co2_defaults(&((app_storage_t *)a1_config)->co2);
     if (panel_migration) a1_storage_panel_buttons_migrate((app_storage_t *)a1_config);
-    if ((filter_migration || button_migration || auto_migration || panel_migration || co2_migration) && mico_system_context_update(a1_context) != kNoErr) return startup_result("filter persist", kUnknownErr);
+    if ((stock_migration || filter_migration || button_migration || auto_migration || panel_migration || co2_migration) && mico_system_context_update(a1_context) != kNoErr) return startup_result("filter persist", kUnknownErr);
     if (((app_storage_t *)a1_config)->automation.magic != AUTOMATION_MAGIC) {
         automation_config_t *next=malloc(sizeof(*next));
         if (!next) return startup_result("automation allocation", kNoMemoryErr);
@@ -496,6 +549,7 @@ void a1_status_capture(device_status_t *snapshot, device_status_full_t *full)
         runtime_metrics_capture(&full->runtime,snapshot->now_ms);
         watchdog_status_capture(&full->watchdog); full->http=ph_http_snapshot();
         a1_filter_get(&full->model.a1.filter);
+        a1_filter_stock_get(&full->model.a1.filter_stock);
     }
 }
 

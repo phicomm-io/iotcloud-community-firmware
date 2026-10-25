@@ -33,13 +33,25 @@ static int report(const char *format,...){char out[256];va_list args;va_start(ar
 static void parity(device_status_t *s,device_status_full_t *f,bool full){
  capacity=libc_baseline+100000;const char *id="read-123";
  json_object *old=reference_device_status_encode(s,full?f:NULL);assert(old);
+ if(s->model==DEVICE_A1 && full){
+  json_object *old_filter=json_object_object_get(old,"filter"),*new_filter=json_object_new_object();assert(old_filter&&new_filter);
+  json_object_object_add(new_filter,"model",json_object_new_string(f->model.a1.filter_stock.weighted?"weighted_estimate":"runtime"));
+  json_object_object_add(new_filter,"weighted_usage",json_object_new_int(f->model.a1.filter_stock.usage));
+  json_object_object_add(new_filter,"weighted_capacity",json_object_new_int(A1_FILTER_STOCK_CAPACITY));
+  json_object_object_add(new_filter,"weighted_remaining_percent",json_object_new_int(a1_filter_stock_remaining(&f->model.a1.filter_stock)));
+  json_object_object_add(new_filter,"time_remaining_percent",json_object_new_int(a1_filter_remaining(&f->model.a1.filter)));
+  json_object_object_add(new_filter,"air_volume_m3_estimate",json_object_new_double(f->model.a1.filter_stock.air_litres/1000.0));
+  json_object_object_foreach(old_filter,k,v){if(v)json_object_get(v);json_object_object_add(new_filter,k,v);}
+  json_object_object_add(old,"filter",new_filter);
+ }
+
  /* The legacy oracle predates the additive A1 summary. Keep its existing
   * fields as oracle and compare the new subtree through graph/wire parity. */
- if(s->model==DEVICE_A1 && (s->captured&STATUS_SENSOR)){
+ if((s->model==DEVICE_A1 && (s->captured&STATUS_SENSOR)) || s->model==DEVICE_M1){
   json_object *current=device_status_encode(s,full?f:NULL);assert(current);
   json_object *ordered=json_object_new_object();assert(ordered);
   json_object_object_foreach(current,key,value){
-   json_object *v=!strcmp(key,"sensors")?value:json_object_object_get(old,key);
+   json_object *v=(!strcmp(key,"sensors") || !strcmp(key,"co2_display") || !strcmp(key,"sensor_health"))?value:json_object_object_get(old,key);
    if(v)json_object_get(v);json_object_object_add(ordered,key,v);
   }
   json_object_put(old);old=ordered;json_object_put(current);
@@ -66,6 +78,9 @@ static void states(void){
  for(unsigned i=0;i<6;i++)strcpy(f.model.tc1.socket_names[i],"\"\\/插孔\n\x01");
  for(unsigned model=0;model<3;model++){
   s.model=model;memset(&s.sensor,0,sizeof(s.sensor));
+  memset(&f.model,0,sizeof(f.model));
+  if(model==DEVICE_A1){a1_filter_defaults(&f.model.a1.filter);a1_filter_stock_defaults(&f.model.a1.filter_stock,false);}
+  if(model==DEVICE_TC1)for(unsigned i=0;i<6;i++)strcpy(f.model.tc1.socket_names[i],"插孔\\\"\n");
   parity(&s,&f,false);parity(&s,&f,true);
   s.sensor.m1.sample.received=true;s.sensor.m1.sample.updated_ms=UINT32_MAX-1000;s.sensor.m1.sample.temperature_deci_c=-135;s.sensor.m1.sample.humidity_deci_pct=487;
   s.sensor.m1.co2.ready=s.sensor.m1.co2.received=true;s.sensor.m1.co2.updated_ms=UINT32_MAX-19999;s.sensor.m1.co2.co2_ppm=1234;

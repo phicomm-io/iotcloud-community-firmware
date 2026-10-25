@@ -12,7 +12,7 @@
 #define A1_VERSION FIRMWARE_VERSION
 #define A1_PRODUCT "PHICOMM_A1_EMW3080"
 #define A1_CONFIG_MAGIC 0x41314346u
-#define A1_CONFIG_VERSION 9u
+#define A1_CONFIG_VERSION 10u
 #define A1_APP_OFFSET 0x75000u
 #define A1_APP_CPU_ADDRESS 0x08088000u
 #define A1_APP_LIMIT 0x40000u
@@ -125,3 +125,8 @@ bool a1_control_local(const char *, json_object *);
 
 #include "../common/mqtt/bemfa.h"
 bool a1_mqtt_config_save(const a1_config_t *,const bemfa_config_t *);
+
+#include "filter_stock.h"
+void a1_filter_observe(unsigned speed, unsigned weight);
+void a1_filter_stock_get(a1_filter_stock_t *);
+const char *a1_filter_model_change(bool weighted);

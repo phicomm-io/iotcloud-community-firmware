@@ -1,6 +1,7 @@
 """Run production storage/service functions with a fallible RAM Flash driver."""
 import os
 from pathlib import Path
+from tests.test_http_json_budget import function
 import subprocess
 import shutil
 import tempfile
@@ -14,9 +15,20 @@ class FilterStorageTest(unittest.TestCase):
         main = (ROOT / 'A1/main.c').read_text()
         prefix = main[main.index('mico_mutex_t a1_lock'):main.index('static OSStatus startup_result')] + main[main.index('void automation_load('):main.index('#include "../common/device_status.h"')]
         migration = main[main.index('    /* The SDK validates'):main.index('    /* Normalize the retained')]
+        weight = function((ROOT / 'common/runtime.c').read_text(), 'unsigned feature_filter_weight(')
         harness = r'''
+#define A1_FRESH_AIR
 #include "A1/storage.h"
 #include "A1/config_legacy.h"
+#include <stddef.h>
+#include <math.h>
+static feature_config_t configuration;
+static unsigned data_fields;
+static float aggregate[4];
+static int weight_locked;
+static void lock(void){assert(!weight_locked);weight_locked=1;}
+static void unlock(void){assert(weight_locked);weight_locked=0;}
+WEIGHT
 static uint32_t now;
 static int writes, fail_write;
 static app_storage_t flash;
@@ -34,6 +46,7 @@ static int migrate(void){MIGRATION return 0;}
 json_object *a1_status_json(void){return json_object_new_object();}
 json_object *a1_status_live_json(void){return json_object_new_object();}
 bool a1_panel_inspect(void){return false;}
+json_object *fresh_command(const char *a,json_object *p,const char **c){(void)a;(void)p;*c="unsupported";return NULL;}
 bool a1_scan_start(void){return false;}
 bool a1_wifi_trial(const a1_config_t *c){(void)c;return false;}
 bool a1_ota_download(const char *u){(void)u;return false;}
@@ -47,7 +60,7 @@ json_object *service_parse(const void *data,size_t n){char *copy=strndup(data,n)
 #include "common/service_product.inc"
 static app_storage_t live;
 static void init(void){
- memset(&live,0,sizeof(live));memset(&a1_state,0,sizeof(a1_state));memset(&filter_clock,0,sizeof(filter_clock));
+ memset(&live,0,sizeof(live));memset(&a1_state,0,sizeof(a1_state));memset(&filter_clock,0,sizeof(filter_clock));memset(&stock_clock,0,sizeof(stock_clock));
  a1_config=&live.base;appRestoreDefault_callback(&live,sizeof(live));save_at=0;writes=fail_write=0;now=0;
 }
 static const char *cmd(const char *action,const char *params){
@@ -55,6 +68,14 @@ static const char *cmd(const char *action,const char *params){
  if(out)json_object_put(out);json_object_put(p);return code;
 }
 int main(void){
+ configuration.light.quality_pm=75;configuration.light.quality_hcho=.1f;
+ data_fields=0;aggregate[2]=1000;aggregate[3]=10;assert(feature_filter_weight()==15);
+ data_fields=4;aggregate[2]=75;assert(feature_filter_weight()==15);
+ aggregate[2]=150;assert(feature_filter_weight()==75);aggregate[2]=151;assert(feature_filter_weight()==150);
+ data_fields=8;aggregate[3]=.15f;assert(feature_filter_weight()==75);
+ aggregate[3]=.21f;assert(feature_filter_weight()==150);
+ data_fields=12;aggregate[2]=0;assert(feature_filter_weight()==150);
+ configuration.light.quality_hcho=0;assert(feature_filter_weight()==15 && !weight_locked);
  init();live.filter.used_seconds=123;automation_config_t mapping,check;
  automation_load(&mapping);mapping.revision++;mapping.buttons[2][0].kind=AUTO_FILTER_RESET;
  mapping.buttons[1][1].kind=AUTO_REBOOT;
@@ -71,7 +92,7 @@ int main(void){
  now=3601000;a1_filter_tick(false);assert(a1_config_flush(false));assert(writes==2 && flash.filter.used_seconds==3601);
  now+=10000;assert(a1_config_flush(false));assert(writes==2);
  a1_filter_tick(true);now+=5000;assert(a1_reboot_later(100));assert(flash.filter.used_seconds==3606);
- live=flash;memset(&filter_clock,0,sizeof(filter_clock));memset(&a1_state,0,sizeof(a1_state));
+ live=flash;memset(&filter_clock,0,sizeof(filter_clock));memset(&stock_clock,0,sizeof(stock_clock));memset(&a1_state,0,sizeof(a1_state));
  filter_clock.saved_seconds=live.filter.used_seconds;assert(live.filter.used_seconds==3606);
  assert(!strcmp(cmd("filter.get","{}"),"ok"));
  assert(!strcmp(cmd("filter.set","{\"lifetime_hours\":6000}"),"accepted"));
@@ -128,7 +149,7 @@ int main(void){
  app_storage_t co2_before=live;
  assert(migrate()==0 && live.base.version==A1_CONFIG_VERSION);
  assert(live.co2.on_co2==1500 && live.co2.target_co2==1000 && live.co2.low_co2==800 && live.co2.high_co2==2000);
- co2_before.base.version=A1_CONFIG_VERSION;co2_before.co2=live.co2;
+ co2_before.base.version=A1_CONFIG_VERSION;co2_before.co2=live.co2;co2_before.filter_stock=live.filter_stock;
  assert(!memcmp(&co2_before,&live,sizeof(live)));
  live.co2.target_co2=900;assert(migrate()==0 && live.co2.target_co2==900);
  /* v7 power defaults migrate once; custom gestures and unrelated data survive. */
@@ -144,9 +165,39 @@ int main(void){
  assert(migrate()==0 && live.automation.buttons[0][0].kind==AUTO_LIGHT && live.automation.buttons[0][30].kind==AUTO_NONE);
  init();live.base.version=7;live.automation.buttons[0][0]=(automation_action_t){.kind=AUTO_FAN,.value=2,.speed=42};
  assert(migrate()==0 && live.automation.buttons[0][0].kind==AUTO_FAN && live.automation.buttons[0][0].speed==42);
+ /* Exact v9 prefix must survive migration, including fresh-air, CO2 and Bemfa. */
+ init();live.base.version=9;strcpy(live.base.ssid,"keep-network");
+ memset(&live.fresh_air,0x5a,sizeof(live.fresh_air));memset(&live.bemfa,0x6b,sizeof(live.bemfa));
+ live.co2.target_co2=917;live.filter.used_seconds=4320*1800;
+ memset(&live.filter_stock,0xa5,sizeof(live.filter_stock));
+ app_storage_t v9_before=live;v9_before.base.version=10;
+ assert(migrate()==0 && live.base.version==10 && !live.filter_stock.weighted);
+ assert(!memcmp(&v9_before,&live,offsetof(app_storage_t,filter_stock)));
+ assert(live.filter_stock.usage==6000000 && !live.filter_stock.air_litres);
+ app_storage_t reboot=live;writes=0;assert(migrate()==0 && writes==0 && !memcmp(&live,&reboot,sizeof(live)));
+ init();live.base.version=9;fail_write=1;assert(migrate()!=0);
+ /* v9 appends stock accounting without moving old fields or resetting life. */
+ init();live.base.version=9;live.filter.used_seconds=4320*1800;
+ memset(&live.filter_stock,0xa5,sizeof(live.filter_stock));
+ assert(migrate()==0 && live.base.version==10 && !live.filter_stock.weighted);
+ assert(live.filter_stock.usage==6000000 && a1_filter_stock_remaining(&live.filter_stock)==50);
+ assert(!strcmp(cmd("filter.model.set","{\"weighted\":1}"),"invalid_params"));
+ assert(!strcmp(cmd("filter.model.set","{\"weighted\":true,\"extra\":1}"),"invalid_params"));
+ a1_state.ota_active=true;assert(!strcmp(cmd("filter.model.set","{\"weighted\":true}"),"busy"));a1_state.ota_active=false;
+ fail_write=1;assert(!strcmp(cmd("filter.model.set","{\"weighted\":true}"),"storage_error"));
+ assert(!live.filter_stock.weighted);fail_write=0;
+ assert(!strcmp(cmd("filter.model.set","{\"weighted\":true}"),"accepted") && flash.filter_stock.weighted);
+ assert(!strcmp(cmd("filter.reset","{}"),"accepted") && !flash.filter_stock.usage && flash.filter_stock.weighted);
+ a1_filter_observe(100,150);now+=60000;a1_filter_observe(0,15);
+ assert(live.filter_stock.usage==975 && live.filter_stock.air_litres==6500);
+ assert(a1_config_flush(false) && flash.filter_stock.usage==975);
+ fail_write=1;assert(!strcmp(cmd("filter.reset","{}"),"storage_error"));
+ assert(live.filter_stock.usage==975 && live.filter_stock.air_litres==6500);
+ fail_write=0;
+ puts("A1 stock migration/accounting/persistence/model rollback: OK");
  puts("A1 filter production persistence, Flash failure/retry, commands, resets and v1-v6 migration: OK");
 }
-'''.replace('PRODUCTION', prefix).replace('MIGRATION', migration)
+'''.replace('PRODUCTION', prefix).replace('MIGRATION', migration).replace('WEIGHT', weight)
         json_dir = Path(os.environ.get('PHICOMM_TEST_JSON_DIR', ROOT / 'build/a1-sdk/mico-os/libraries/utilities/json_c'))
         with tempfile.TemporaryDirectory() as temp:
             host_json = Path(temp) / 'json'
@@ -157,7 +208,7 @@ int main(void){
             source = Path(temp) / 'filter.c'
             source.write_text(harness)
             binary = Path(temp) / 'filter'
-            command = [os.environ.get('CC', 'cc'), '-std=gnu99', '-ffunction-sections', '-Wl,--gc-sections', '-DFEATURE_DEVICE_A1', '-Wno-pointer-sign', '-Wno-misleading-indentation', '-I'+str(ROOT), '-I'+str(ROOT/'A1'), '-I'+str(ROOT/'tests/host'), '-I'+str(json_dir), str(source), *map(str, json_dir.glob('*.c')), '-o', str(binary)]
+            command = [os.environ.get('CC', 'cc'), '-std=gnu99', '-ffunction-sections', '-Wl,--gc-sections', '-DFEATURE_DEVICE_A1', '-Wno-pointer-sign', '-Wno-misleading-indentation', '-I'+str(ROOT), '-I'+str(ROOT/'A1'), '-I'+str(ROOT/'tests/host'), '-I'+str(json_dir), str(source), *map(str, json_dir.glob('*.c')), '-lm', '-o', str(binary)]
             if os.environ.get('SANITIZE') == '1':
                 command += ['-g', '-fno-omit-frame-pointer', '-fsanitize=address,undefined']
             subprocess.run(command, check=True)

@@ -6,6 +6,7 @@ def status_paths(frames,model,label,prefix,reserve,compat=False,capture=True):
         from json_numeric_stack import numeric_tails
     paths={}
     captures=[model.lower()+'_status_capture']+[n for n in ('bemfa_status_capture','bemfa_config_get','runtime_metrics_capture','feature_fan_snapshot','watchdog_status_capture','a1_filter_get','ph_http_snapshot','tc1_status_begin','tc1_ota_snapshot','reset_name','device_status_text') if n in frames]
+    if model=='M1':captures += [n for n in ('m1_co2_capture','m1_co2_config_get') if n in frames]
     if capture:paths[label+' capture']=(prefix+captures,reserve)
     wire=prefix+(['device_status_encode'] if compat else [])+['device_status_wire']
     schema=wire+[n for n in ('status_wire_visit','device_status_visit') if n in frames]+['encode_'+model.lower()]

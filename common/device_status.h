@@ -18,6 +18,7 @@ static inline void device_status_text(char *out,size_t capacity,const char *in,s
 #include "watchdog.h"
 #include "httpd/http.h"
 #include "../A1/filter.h"
+#include "../A1/filter_stock.h"
 #ifdef A1_FRESH_AIR
 #include "../A1/fresh_air_model.h"
 #endif
@@ -52,8 +53,15 @@ typedef struct {
     fresh_snapshot_t fresh;
 #endif
 } device_a1_control_t;
+typedef struct device_m1_co2 {
+    uint32_t revision;
+    uint16_t interval, low, high, ppm;
+    uint8_t mode, slot;
+    bool supported, present, valid, showing;
+} device_m1_co2_t;
 typedef struct {
     bool uart_ready;
+    device_m1_co2_t co2_display;
     m1_sample_t sample; /* reuse the sensor module's authoritative C format */
     struct {
         bool ready, received; uint16_t co2_ppm;
@@ -88,7 +96,7 @@ typedef struct {
     device_runtime_t runtime; watchdog_status_t watchdog;
     ph_http_diagnostics http;
     union {
-        struct { a1_filter_storage_t filter; uint32_t panel_errors, hardware_errors;
+        struct { a1_filter_storage_t filter; a1_filter_stock_t filter_stock; uint32_t panel_errors, hardware_errors;
             int panel_last_error; uint8_t panel_raw[3]; } a1;
         struct { int timezone_minutes; char ntp_host[64], ntp_status[24], ntp_server[64];
             bool ntp_synced, ntp_screen_queued; uint32_t ntp_last_success, ntp_next_at;

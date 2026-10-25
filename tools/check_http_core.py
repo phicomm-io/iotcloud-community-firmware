@@ -106,6 +106,8 @@ def check(modules, model, nm, elf):
       'HTTP OTA stream':(4096,['owner','ph_http_server_step','read_body','body_chunk',model.lower()+'_ota_write','signed_ota_write','uECC_verify','EccPoint_mult']+[n for n in ('uECC_vli_modMult_fast','uECC_vli_modMult','uECC_vli_mmod','uECC_vli_mult') if n in frames]),
       'HTTP OTA validation':(4096,['owner','ph_http_server_step','read_body','complete',('tc1_ota_verify' if model=='TC1' else model.lower()+'_ota_finish'),'signed_ota_finish']),
     }
+    if model=='M1':
+        paths['HTTP MCU exchange']=(3072,['owner','ph_http_server_step','read_body','complete','m1_mcu_exchange'])
     if model=='TC1':
         paths['HTTP OTA MD5 validation']=(4096,['owner','ph_http_server_step','read_body','complete','tc1_ota_verify','md5_range'])
         paths['HTTP OTA activation']=(4096,['owner','ph_http_server_step','close_slot','release','tc1_ota_activate']+(['send_part'] if 'send_part' in frames else []))

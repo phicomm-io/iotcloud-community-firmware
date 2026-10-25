@@ -27,8 +27,10 @@ bool m1_parse_sample(const uint8_t f[M1_RX_FRAME_SIZE], uint32_t now, m1_sample_
     if (f[0] != 0x23 || f[1] != 1 || f[19] != 0x21) return false;
     s->hcho_ug_m3 = be16(f + 2);
     s->temperature_deci_c = (int32_t)f[5] * 10 + f[6] / 10;
+    if (f[4] == 1) s->temperature_deci_c = -s->temperature_deci_c;
     s->humidity_deci_pct = (int32_t)f[7] * 10 + f[8] / 10;
     s->pm25_ug_m3 = be16(f + 9);
+    s->pm25_status = f[11]; s->auxiliary_status = f[12]; s->climate_status = f[13];
     s->updated_ms = now;
     s->sequence++;
     s->received = true;
@@ -40,19 +42,36 @@ bool m1_sample_fresh(const m1_sample_t *s, uint32_t now)
 
 static void command(uint8_t *f, unsigned type)
 { memset(f, 0, M1_TX_FRAME_SIZE); f[0] = 0x23; f[1] = type; f[11] = 0x21; }
-void m1_query_frame(uint8_t *f) { command(f, 1); }
-void m1_brightness_frame(uint8_t *f, unsigned level, unsigned last_on)
+void m1_query_frame(uint8_t f[M1_TX_FRAME_SIZE]) { command(f, 1); }
+void m1_brightness_frame(uint8_t f[M1_TX_FRAME_SIZE], unsigned level, unsigned last_on)
 {
     command(f, 2);
     f[2] = (level ? level : last_on) * 25;
     f[3] = level != 0;
 }
-void m1_clock_frame(uint8_t *f, unsigned y, unsigned mo, unsigned d,
+void m1_clock_frame(uint8_t f[M1_TX_FRAME_SIZE], unsigned y, unsigned mo, unsigned d,
                     unsigned h, unsigned mi, unsigned s)
 {
     command(f, 3);
     f[2] = y >> 8; f[3] = y; f[4] = mo; f[5] = d;
     f[6] = h; f[7] = mi; f[8] = s;
+}
+void m1_buzzer_frame(uint8_t f[M1_TX_FRAME_SIZE], bool enabled)
+{ command(f, 0x0e); f[2] = enabled; }
+void m1_version_frame(uint8_t f[M1_TX_FRAME_SIZE]) { command(f, 0x11); }
+void m1_threshold_frame(uint8_t f[M1_TX_FRAME_SIZE], bool pm25, uint16_t low, uint16_t high)
+{
+    command(f, pm25 ? 0x06 : 0x05);
+    f[2] = low >> 8; f[3] = low; f[4] = high >> 8; f[5] = high;
+}
+bool m1_parse_version(const uint8_t f[M1_RX_FRAME_SIZE], char version[17])
+{
+    unsigned n = f[2];
+    if (f[0] != 0x23 || f[1] != 0x11 || f[19] != 0x21 || !n || n > 16) return false;
+    while (n && !f[3+n-1]) n--;
+    if (!n) return false;
+    for (unsigned i = 0; i < n; i++) if (f[3+i] < 32 || f[3+i] > 126) return false;
+    memcpy(version, f + 3, n); version[n] = 0; return true;
 }
 uint16_t m1_crc16(uint16_t crc, const uint8_t *p, size_t n)
 {
