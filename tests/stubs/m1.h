@@ -10,7 +10,7 @@ typedef struct {
   bool received;
 } m1_sample_t;
 typedef struct {
-  bool wifi_connected, mqtt_connected;
+  bool wifi_connected, mqtt_connected, mcu_sensor_details;
   char ip[16];
   m1_sample_t sample;
   scd40_state_t scd40;
