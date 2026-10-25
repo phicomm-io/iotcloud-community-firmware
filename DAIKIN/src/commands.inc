@@ -25,6 +25,7 @@ static void state(JsonObject out){
   otaPartitionStatus(out.createNestedObject("ota_partitions"));
   out["uptime_seconds"]=now/1000;out["free_memory"]=ESP.getFreeHeap();
   out["minimum_free_memory"]=ESP.getMinFreeHeap();out["max_free_block"]=ESP.getMaxAllocHeap();
+  out["reset_reason"]=unsigned(esp_reset_reason());
   out["co2_warmup_seconds_remaining"]=!co2Module.warmed&&now<180000?(180000-now+999)/1000:0;
   JsonObject co2=out.createNestedObject("co2_diagnostics");
   co2["protocol"]="cm1106";co2["received"]=co2Module.received;co2["fresh"]=co2Module.fresh(now);

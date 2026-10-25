@@ -70,6 +70,7 @@ using String=std::string;
 typedef int esp_err_t;
 typedef uint32_t esp_ota_handle_t;
 #define ESP_OK 0
+#define OTA_WITH_SEQUENTIAL_WRITES 0xfffffffeU
 struct esp_image_header_t {uint8_t bytes[24];};
 struct esp_image_segment_header_t {uint8_t bytes[8];};
 struct esp_app_desc_t {uint32_t magic,secure,reserved[2];char version[32],project_name[32];uint8_t rest[176];};
@@ -79,6 +80,8 @@ static esp_partition_t partition={8192};
 static esp_app_desc_t self={};
 static uint8_t flashBytes[2*1024*1024];
 static size_t written;
+static size_t erasedTo,maximumErase,burst,maximumBurst;
+static int sequential,sectorErases,yields;
 static uint32_t rebootAt;
 static bool configRecovery=false,webPending=false,webDone=true;
 static int fault,statusCode,erases,writes,reads,ends,activations,aborts,preferencesWrites,bytesAtErase;
@@ -92,6 +95,8 @@ static int authMux=0;
 #define portENTER_CRITICAL(mux) (void)(mux)
 #define portEXIT_CRITICAL(mux) (void)(mux)
 static uint32_t millis(){return 100;}
+static void delay(unsigned milliseconds){if(milliseconds!=1)abort();yields++;burst=0;}
+static void flashWork(size_t n){burst+=n;maximumBurst=std::max(maximumBurst,burst);}
 static int httpd_req_get_hdr_value_str(httpd_req_t *,const char *name,char *out,size_t n){
   auto value=requestHeaders.find(name);
   if(value==requestHeaders.end()||value->second.size()>=n)return -1;
@@ -116,18 +121,37 @@ static int httpd_req_recv(httpd_req_t *req,char *data,size_t n){
 static httpd_req_t *currentRequest;
 static const esp_partition_t *esp_ota_get_next_update_partition(void *){return fault==8?nullptr:&partition;}
 static const esp_app_desc_t *esp_ota_get_app_description(){return &self;}
-static esp_err_t esp_ota_begin(const esp_partition_t *,size_t,esp_ota_handle_t *handle){
-  erases++;bytesAtErase=currentRequest->received;if(fault==1)return -1;*handle=1;written=0;memset(flashBytes,0xff,sizeof flashBytes);return ESP_OK;
+static esp_err_t esp_ota_begin(const esp_partition_t *,size_t imageSize,esp_ota_handle_t *handle){
+  erases++;bytesAtErase=currentRequest->received;if(fault==1)return -1;
+  *handle=1;written=0;sequential=imageSize==OTA_WITH_SEQUENTIAL_WRITES;
+  if(!sequential){
+    erasedTo=(imageSize+4095)&~size_t(4095);maximumErase=erasedTo;
+    if(erasedTo>sizeof flashBytes)return -1;
+    memset(flashBytes,0xff,erasedTo);
+  }
+  return ESP_OK;
 }
 static esp_err_t esp_ota_write(esp_ota_handle_t,const uint8_t *data,size_t n){
   writes++;if(fault==2||written+n>sizeof flashBytes)return -1;
-  memcpy(flashBytes+written,data,n);written+=n;return ESP_OK;
+  // Model IDF's sequential-write contract on dirty NOR flash: erase only newly
+  // touched 4 KiB sectors, then program 1->0 without erasing an earlier prefix.
+  if(sequential){
+    size_t end=(written+n+4095)&~size_t(4095);
+    if(end>erasedTo){
+      if(fault==9||(fault==10&&written>=4096))return -1;
+      size_t amount=end-erasedTo;maximumErase=std::max(maximumErase,amount);
+      memset(flashBytes+erasedTo,0xff,amount);erasedTo=end;sectorErases++;
+    }
+  }
+  for(size_t i=0;i<n;i++)flashBytes[written+i]&=data[i];
+  written+=n;flashWork(n);return ESP_OK;
 }
 static esp_err_t esp_partition_read(const esp_partition_t *,uint32_t offset,uint8_t *data,size_t n){
   reads++;if(fault==3||offset+n>written)return -1;
   memcpy(data,flashBytes+offset,n);
   if(fault==4)data[0]^=1;
   if(fault==7&&n==daikin::firmwarePrefixSize)data[320]^=1;
+  flashWork(n);
   return ESP_OK;
 }
 static esp_err_t esp_ota_end(esp_ota_handle_t){ends++;return fault==5?-1:ESP_OK;}
@@ -144,6 +168,8 @@ static void initialize(int hub,int failure,int authorizedRequest){
   daikin_target=hub?bridge:full;
   memset(&self,0,sizeof self);strcpy(self.project_name,"arduino-lib-builder");
   fault=failure;statusCode=erases=writes=reads=ends=activations=aborts=preferencesWrites=bytesAtErase=0;
+  erasedTo=maximumErase=burst=maximumBurst=0;sequential=sectorErases=yields=0;
+  memset(flashBytes,0xa5,sizeof flashBytes);
   written=rebootAt=0;response.clear();requestHeaders.clear();responseHeaders.clear();prefs.signedImage=false;
   configRecovery=webPending=false;webDone=true;otaActive=false;
   strcpy(webPassword,"device-password");
@@ -156,8 +182,8 @@ static void initialize(int hub,int failure,int authorizedRequest){
   requestHeaders["X-IoTCloud-Confirm"]="full-to-hub";
 }
 extern "C" int upload(const uint8_t *body,unsigned length,int hub,int unsignedImage,
-                      int chunk,int declared,int failure,int authorizedRequest){
-  initialize(hub,failure,authorizedRequest);partition.size=8192;
+                      int chunk,int declared,int failure,int authorizedRequest,unsigned capacity){
+  initialize(hub,failure,authorizedRequest);partition.size=capacity;
   httpd_req_t req={unsignedImage?"/api/v1/ota/upload-unsigned":"/api/v1/ota/upload",
     declared<0?(int)length:declared,body,(int)length,0,chunk};
   currentRequest=&req;
@@ -182,7 +208,7 @@ extern "C" const char *reply(){return response.c_str();}
 extern "C" const char *response_header(const char *name){return responseHeaders[name].c_str();}
 extern "C" void preflight(){httpd_req_t req={};req.uri="/api/v1/ota/convert";optionsHandler(&req);}
 extern "C" int count(int which){
-  const int values[]={erases,writes,reads,ends,activations,aborts,(int)rebootAt,(int)otaActive,preferencesWrites,(int)prefs.signedImage,bytesAtErase};
+  const int values[]={erases,writes,reads,ends,activations,aborts,(int)rebootAt,(int)otaActive,preferencesWrites,(int)prefs.signedImage,bytesAtErase,sequential,yields,(int)maximumBurst,(int)maximumErase,sectorErases,(int)erasedTo};
   return values[which];
 }
 ''')
@@ -196,7 +222,7 @@ extern "C" int count(int which){
                         '-lcrypto', '-o', str(d / 'test.so')], check=True)
         cls.lib = ctypes.CDLL(str(d / 'test.so'))
         cls.lib.upload.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_int, ctypes.c_int,
-                                   ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+                                   ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_uint]
         cls.lib.convert.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_int, ctypes.c_int,
                                    ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int, ctypes.c_int,
                                    ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_uint]
@@ -224,8 +250,9 @@ extern "C" int count(int which){
     def signed(self, image, key=None):
         return package.sign(image, 'daikin', '1.0.0', 'a' * 40, key or self.key)
 
-    def upload(self, image, variant='full', unsigned=False, chunk=1024, declared=-1, fault=0, allow=True):
-        status = self.lib.upload(image, len(image), variant == 'hub', unsigned, chunk, declared, fault, allow)
+    def upload(self, image, variant='full', unsigned=False, chunk=1024, declared=-1, fault=0, allow=True,
+               capacity=8192):
+        status = self.lib.upload(image, len(image), variant == 'hub', unsigned, chunk, declared, fault, allow, capacity)
         self.assertEqual(self.lib.count(7), 0, 'OTA busy state leaked')
         if status != 202:
             self.assertEqual(self.lib.count(4), 0, 'Rejected upload activated a partition')
@@ -424,6 +451,35 @@ extern "C" int count(int which){
         allowed = self.lib.response_header(b'Access-Control-Allow-Headers')
         for name in (b'Content-Type', b'Authorization', b'X-IoTCloud-Target-Variant', b'X-IoTCloud-Confirm'):
             self.assertIn(name, allowed)
+
+    def test_large_uploads_erase_incrementally_and_yield_during_write_and_readback(self):
+        size = 1479664  # The payload size that exposed the device's early reset.
+        for variant, unsigned, conversion in (('full', False, False), ('full', True, False),
+                                               ('hub', False, False), ('hub', True, False),
+                                               ('hub', False, True)):
+            image = bytearray(self.image(variant))
+            image.extend((bytes(range(256)) * ((size - len(image) + 255) // 256))[:size - len(image)])
+            struct.pack_into('<I', image, 28, len(image) - 32)
+            payload = bytes(image)
+            data = payload if unsigned else self.signed(payload)
+            for chunk in (997, 8192):
+                with self.subTest(variant=variant, unsigned=unsigned, conversion=conversion, chunk=chunk):
+                    if conversion:
+                        status = self.convert(data, chunk=chunk, capacity=0x180000)
+                    else:
+                        status = self.upload(data, variant, unsigned, chunk, capacity=0x180000)
+                    self.assertEqual(status, 202)
+                    self.assertEqual(self.lib.flash_matches(payload, len(payload)), 1)
+                    self.assertEqual(self.lib.count(11), 1, 'Whole-image erase was requested')
+                    self.assertEqual(self.lib.count(14), 4096, 'Erase exceeded one newly touched sector')
+                    self.assertEqual(self.lib.count(16), (size + 4095) // 4096 * 4096)
+                    self.assertGreater(self.lib.count(12), 0, 'Flash work never allowed other tasks to run')
+                    self.assertLess(self.lib.count(13), 32768, 'Unbounded work between scheduler yields')
+                    if conversion:
+                        for fault in (9, 10):
+                            self.assertEqual(self.convert(data, fault=fault, capacity=0x180000), 400)
+                            self.assertEqual(self.lib.count(4), 0)
+                            self.assertGreaterEqual(self.lib.count(5), 1, 'Failed sector erase did not abort OTA')
 
 
 class PackageIdentity(unittest.TestCase):

@@ -82,10 +82,24 @@ static esp_err_t backupHandler(httpd_req_t *req){
   return jsonResponse(req,webResult.indexOf("accepted")>=0?"202 Accepted":"400 Bad Request",webResult);
 }
 static volatile bool otaActive=false;
-struct OtaFlash {const esp_partition_t *partition;esp_ota_handle_t handle;size_t length;};
-static bool otaErase(void *context){auto *f=(OtaFlash*)context;return esp_ota_begin(f->partition,f->length,&f->handle)==ESP_OK;}
-static bool otaWrite(void *context,uint32_t offset,const uint8_t *data,size_t n){(void)offset;return esp_ota_write(((OtaFlash*)context)->handle,data,n)==ESP_OK;}
-static bool otaRead(void *context,uint32_t offset,uint8_t *data,size_t n){return esp_partition_read(((OtaFlash*)context)->partition,offset,data,n)==ESP_OK;}
+struct OtaFlash {const esp_partition_t *partition;esp_ota_handle_t handle;size_t work;};
+static bool otaErase(void *context){
+  auto *f=(OtaFlash*)context;
+  // Writes are continuous and bounded to 1024 bytes. Let IDF erase only newly
+  // reached sectors instead of blocking the HTTP task on a whole-image erase.
+  return esp_ota_begin(f->partition,OTA_WITH_SEQUENTIAL_WRITES,&f->handle)==ESP_OK;
+}
+static void otaYield(OtaFlash *f,size_t n){if((f->work+=n)>=16384){f->work=0;delay(1);}}
+static bool otaWrite(void *context,uint32_t offset,const uint8_t *data,size_t n){
+  (void)offset;auto *f=(OtaFlash*)context;
+  if(esp_ota_write(f->handle,data,n)!=ESP_OK)return false;
+  otaYield(f,n);return true;
+}
+static bool otaRead(void *context,uint32_t offset,uint8_t *data,size_t n){
+  auto *f=(OtaFlash*)context;
+  if(esp_partition_read(f->partition,offset,data,n)!=ESP_OK)return false;
+  otaYield(f,n);return true;
+}
 static bool receiveExact(httpd_req_t *req,uint8_t *data,size_t n){while(n){int used=httpd_req_recv(req,(char*)data,n);if(used<=0)return false;data+=used;n-=used;}return true;}
 static esp_err_t uploadFirmware(httpd_req_t *req,bool signedImage,const daikin::FirmwareIdentity &expected){
   const esp_partition_t *partition=esp_ota_get_next_update_partition(nullptr);
@@ -96,7 +110,7 @@ static esp_err_t uploadFirmware(httpd_req_t *req,bool signedImage,const daikin::
   if(!partition||req->content_len<(int)prefix+envelope||req->content_len-envelope>(int)partition->size)return jsonResponse(req,"400 Bad Request","{\"code\":\"invalid_image\",\"message\":\"Invalid image size\"}");
   otaActive=true;uint8_t buffer[1024];int left=req->content_len-envelope;
   static_assert(sizeof(buffer)>=OTA_ENVELOPE_SIZE+daikin::firmwarePrefixSize,"OTA prefix buffer too small");
-  OtaFlash flash={partition,0,(size_t)left};signed_ota verifier;
+  OtaFlash flash={partition,0,0};signed_ota verifier;
   // Buffer the bounded envelope and prefix before the verifier can erase the
   // inactive slot. This is only an identity prefilter; signature and complete
   // staged-payload digest validation remain mandatory for every signed image.
