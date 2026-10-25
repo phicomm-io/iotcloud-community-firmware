@@ -495,7 +495,8 @@ public:
                     "|enabled||api_key||mappings|"))
           return fail(400, "invalid_params");
         if (input["api_key"] == "")
-          input["api_key"] = config["hub"]["bemfa"]["api_key"].as<std::string>();
+          input["api_key"] =
+              std::string(config["hub"]["bemfa"]["api_key"] | "");
         if (!bemfaValid(input.as<JsonObjectConst>(), config["hub"]["devices"]))
           return fail(400, "invalid_params");
         next["hub"]["bemfa"] = input.as<JsonObjectConst>();

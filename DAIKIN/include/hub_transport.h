@@ -2,8 +2,11 @@
 #pragma once
 #include "hub_broker.h"
 #include <cerrno>
+#include <cstdio>
 #include <cstring>
 #include <fcntl.h>
+#include <memory>
+#include <new>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
@@ -13,7 +16,8 @@ namespace iotcloud {
 // The application loop owns sockets, protocol state and all callbacks.
 class HubTransport {
 public:
-  static constexpr size_t TxBudget = 32768, HttpLimit = 2048;
+  static constexpr size_t TxBudget = 32768, HttpLimit = 2048, ReadBlock = 512,
+                          InitialAllocation = ReadBlock + 512;
   HubBroker broker;
   std::function<std::string(const std::string &)> websocketAccept;
   std::function<bool()> admission;
@@ -100,10 +104,11 @@ public:
           peers[slot].fd = fd;
           peers[slot].ws = type;
           peers[slot].at = now;
-          broker.open(slot, now);
+          if (!broker.open(slot, now))
+            finish(slot);
         }
       }
-    uint8_t buffer[512];
+    uint8_t buffer[ReadBlock];
     for (unsigned i = 0; i < peers.size(); i++) {
       auto &p = peers[i];
       if (p.fd < 0)
@@ -135,8 +140,10 @@ public:
         int n = ::send(p.fd, p.tx.data(), p.tx.size(), flags);
         if (n > 0) {
           p.tx.erase(p.tx.begin(), p.tx.begin() + n);
-          if (p.tx.capacity() > p.tx.size() + 1024)
-            p.tx.shrink_to_fit();
+          // Releasing an empty buffer cannot fail. Shrinking a partially sent
+          // vector would allocate an unchecked replacement under fragmentation.
+          if (p.tx.empty() && p.tx.capacity() > 1024)
+            std::vector<uint8_t>().swap(p.tx);
           p.at = now;
         } else if (n == 0 || (errno != EAGAIN && errno != EWOULDBLOCK)) {
           drop(i);
@@ -151,12 +158,40 @@ public:
   }
 
 private:
+  struct HttpBuffer {
+    std::unique_ptr<char[]> data;
+    size_t size = 0, capacity = 0;
+    bool append(uint8_t c, const std::function<bool(size_t)> &allocate) {
+      if (!c || size == HttpLimit)
+        return false;
+      if (size == capacity) {
+        const size_t next = std::min(size_t(HttpLimit), std::max(size_t(32), capacity * 2));
+        // Keep the previous block live until the complete replacement exists.
+        if (allocate && !allocate(next + 1))
+          return false;
+        std::unique_ptr<char[]> replacement(new (std::nothrow) char[next + 1]);
+        if (!replacement)
+          return false;
+        if (size)
+          memcpy(replacement.get(), data.get(), size);
+        data.swap(replacement);
+        capacity = next;
+      }
+      data[size++] = c;
+      data[size] = 0;
+      return true;
+    }
+  };
   struct Peer {
     int fd = -1;
     bool ws = false, upgraded = false, closing = false, fragment = false;
     uint32_t at = 0, closedAt = 0;
-    std::vector<uint8_t> tx, header;
-    std::string http, control;
+    std::vector<uint8_t> tx;
+    HttpBuffer http;
+    // WebSocket headers/control payloads have fixed protocol bounds. These
+    // slots exist before accept(), so a peer cannot trigger hidden growth.
+    uint8_t header[14] = {}, control[125] = {};
+    size_t headerSize = 0, controlSize = 0;
     uint64_t remaining = 0, offset = 0;
     uint8_t mask[4] = {}, opcode = 0;
     bool fin = false;
@@ -240,70 +275,77 @@ private:
     return peers[i].ws ? peers[i].upgraded && frame(i, 2, data, n)
                        : raw(i, data, n);
   }
-  static std::string lower(std::string s) {
-    for (auto &c : s)
-      if (c >= 'A' && c <= 'Z')
-        c += 32;
-    return s;
-  }
-  static std::string field(const std::string &http, const std::string &name) {
-    size_t at = http.find("\r\n");
-    while (at != std::string::npos) {
+  struct Text {
+    const char *data = nullptr;
+    size_t size = 0;
+    Text() = default;
+    Text(const char *data, size_t size) : data(data), size(size) {}
+    bool equals(const char *lower) const {
+      if (size != strlen(lower))
+        return false;
+      for (size_t i = 0; i < size; ++i) {
+        auto c = static_cast<unsigned char>(data[i]);
+        if (c >= 'A' && c <= 'Z') c += 'a' - 'A';
+        if (c != static_cast<unsigned char>(lower[i])) return false;
+      }
+      return true;
+    }
+    bool token(const char *wanted) const {
+      for (size_t at = 0; at < size;) {
+        size_t end = at;
+        while (end < size && data[end] != ',') ++end;
+        size_t first = at, last = end;
+        while (first < last && data[first] == ' ') ++first;
+        while (last > first && data[last - 1] == ' ') --last;
+        if (Text(data + first, last - first).equals(wanted)) return true;
+        at = end + 1;
+      }
+      return false;
+    }
+  };
+  static Text field(const HttpBuffer &http, const char *name) {
+    const char *at = strstr(http.data.get(), "\r\n");
+    while (at) {
       at += 2;
-      size_t end = http.find("\r\n", at);
-      if (end == std::string::npos || end == at)
-        break;
-      size_t colon = http.find(':', at);
-      if (colon < end && lower(http.substr(at, colon - at)) == name) {
-        size_t start = colon + 1;
-        while (start < end && (http[start] == ' ' || http[start] == '\t'))
-          start++;
-        while (end > start && (http[end - 1] == ' ' || http[end - 1] == '\t'))
-          end--;
-        return http.substr(start, end - start);
+      const char *end = strstr(at, "\r\n");
+      if (!end || end == at) break;
+      const char *colon = static_cast<const char *>(memchr(at, ':', end - at));
+      if (colon && Text(at, colon - at).equals(name)) {
+        const char *first = colon + 1;
+        while (first < end && (*first == ' ' || *first == '\t')) ++first;
+        while (end > first && (end[-1] == ' ' || end[-1] == '\t')) --end;
+        return Text(first, end - first);
       }
       at = end;
     }
     return {};
   }
-  static bool token(const std::string &value, const char *wanted) {
-    size_t at = 0;
-    while (at < value.size()) {
-      size_t end = value.find(',', at);
-      if (end == std::string::npos)
-        end = value.size();
-      auto part = value.substr(at, end - at);
-      while (!part.empty() && part.front() == ' ')
-        part.erase(0, 1);
-      while (!part.empty() && part.back() == ' ')
-        part.pop_back();
-      if (lower(part) == wanted)
-        return true;
-      at = end + 1;
-    }
-    return false;
-  }
   bool upgrade(unsigned i) {
     auto &p = peers[i];
     auto key = field(p.http, "sec-websocket-key");
-    if (p.http.compare(0, 20, "GET /mqtt HTTP/1.1\r\n") ||
-        field(p.http, "sec-websocket-version") != "13" ||
-        !token(field(p.http, "connection"), "upgrade") ||
-        lower(field(p.http, "upgrade")) != "websocket" ||
-        !token(field(p.http, "sec-websocket-protocol"), "mqtt") ||
-        key.size() != 24 || !websocketAccept)
+    if (p.http.size < 20 || memcmp(p.http.data.get(), "GET /mqtt HTTP/1.1\r\n", 20) ||
+        !field(p.http, "sec-websocket-version").equals("13") ||
+        !field(p.http, "connection").token("upgrade") ||
+        !field(p.http, "upgrade").equals("websocket") ||
+        !field(p.http, "sec-websocket-protocol").token("mqtt") ||
+        key.size != 24 || !websocketAccept ||
+        (broker.allocate && !broker.allocate(512)))
       return false;
-    std::string answer = websocketAccept(key);
-    if (answer.empty())
+    // Only bounded key/SHA/base64 temporaries remain after parsing spans. The
+    // complete response lives on the stack, then uses the normal TX guard.
+    std::string answer = websocketAccept(std::string(key.data, key.size));
+    if (answer.size() != 28)
       return false;
-    std::string response =
+    char response[192];
+    const int length = snprintf(response, sizeof(response),
         "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: "
-        "Upgrade\r\nSec-WebSocket-Protocol: mqtt\r\nSec-WebSocket-Accept: " +
-        answer + "\r\n\r\n";
-    if (!raw(i, (const uint8_t *)response.data(), response.size()))
+        "Upgrade\r\nSec-WebSocket-Protocol: mqtt\r\nSec-WebSocket-Accept: %s\r\n\r\n",
+        answer.c_str());
+    if (length < 0 || size_t(length) >= sizeof(response) ||
+        !raw(i, (const uint8_t *)response, size_t(length)))
       return false;
     p.upgraded = true;
-    p.http.clear();
+    p.http = HttpBuffer();
     return true;
   }
   bool websocket(unsigned i, uint8_t *data, size_t n) {
@@ -311,22 +353,23 @@ private:
     size_t at = 0;
     while (at < n && !p.closing) {
       if (!p.upgraded) {
-        p.http.push_back(data[at++]);
-        if (p.http.size() > HttpLimit)
+        if (!p.http.append(data[at++], broker.allocate))
           return false;
-        if (p.http.size() >= 4 &&
-            p.http.compare(p.http.size() - 4, 4, "\r\n\r\n") == 0 &&
+        if (p.http.size >= 4 &&
+            !memcmp(p.http.data.get() + p.http.size - 4, "\r\n\r\n", 4) &&
             !upgrade(i))
           return false;
         continue;
       }
       if (!p.remaining) {
-        p.header.push_back(data[at++]);
-        if (p.header.size() < 2)
+        if (p.headerSize == sizeof(p.header))
+          return false;
+        p.header[p.headerSize++] = data[at++];
+        if (p.headerSize < 2)
           continue;
         unsigned length = p.header[1] & 127;
         size_t need = 2 + (length == 126 ? 2 : length == 127 ? 8 : 0) + 4;
-        if (p.header.size() < need)
+        if (p.headerSize < need)
           continue;
         p.opcode = p.header[0] & 15;
         p.fin = p.header[0] & 128;
@@ -347,11 +390,11 @@ private:
           p.fragment = true;
         if (p.opcode == 0 && p.fin)
           p.fragment = false;
-        memcpy(p.mask, p.header.data() + need - 4, 4);
-        p.header.clear();
+        memcpy(p.mask, p.header + need - 4, 4);
+        p.headerSize = 0;
         p.remaining = length;
         p.offset = 0;
-        p.control.clear();
+        p.controlSize = 0;
         if (!length) {
           if (p.opcode == 8) {
             frame(i, 8, nullptr, 0);
@@ -368,8 +411,12 @@ private:
       size_t take = std::min<size_t>(p.remaining, n - at);
       for (size_t j = 0; j < take; j++)
         data[at + j] ^= p.mask[(p.offset + j) % 4];
-      if (p.opcode >= 8)
-        p.control.append((const char *)data + at, take);
+      if (p.opcode >= 8) {
+        if (take > sizeof(p.control) - p.controlSize)
+          return false;
+        memcpy(p.control + p.controlSize, data + at, take);
+        p.controlSize += take;
+      }
       else if (!broker.receive(i, data + at, take, clock))
         return false;
       at += take;
@@ -377,12 +424,12 @@ private:
       p.remaining -= take;
       if (!p.remaining) {
         if (p.opcode == 8) {
-          frame(i, 8, (const uint8_t *)p.control.data(), p.control.size());
+          frame(i, 8, p.control, p.controlSize);
           broker.disconnect(i);
           return true;
         }
         if (p.opcode == 9 &&
-            !frame(i, 10, (const uint8_t *)p.control.data(), p.control.size()))
+            !frame(i, 10, p.control, p.controlSize))
           return false;
       }
     }

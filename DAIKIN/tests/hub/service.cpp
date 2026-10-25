@@ -206,10 +206,55 @@ int main() {
   assert(service.handle(add, 3).status == 409);
   assert(service.handle(Request("GET", "/api/devices", "", token), 4)
              .body.find("aabbccddeeff") != std::string::npos);
+  // Saving the initial disabled form must keep an absent key empty, rather
+  // than converting ArduinoJson's null value to the string "null".
+  {
+    assert(config["hub"]["bemfa"].isNull());
+    auto initial = service.handle(
+        Request("GET", "/api/integrations/bemfa", "", token), 5);
+    assert(initial.status == 200 && !deserializeJson(response, initial.body) &&
+           response["enabled"] == false && response["key_set"] == false &&
+           response["mappings"].is<JsonArray>() &&
+           response["mappings"].size() == 0 && !response.containsKey("api_key"));
+    const unsigned beforeWrites = writes;
+    auto disabled = service.handle(Request("PUT", "/api/integrations/bemfa",
+        R"({"enabled":false,"api_key":"","mappings":[]})", token), 5);
+    if (disabled.status != 200)
+      fprintf(stderr, "initial disabled Bemfa save: HTTP %d %s\n",
+              disabled.status, disabled.body.c_str());
+    assert(disabled.status == 200 && writes == beforeWrites + 1 &&
+           config["hub"]["bemfa"]["api_key"] == "" &&
+           config["hub"]["bemfa"]["enabled"] == false &&
+           config["hub"]["bemfa"]["mappings"].size() == 0 &&
+           !deserializeJson(response, disabled.body) &&
+           response["key_set"] == false && !response.containsKey("api_key"));
+  }
   auto bemfa = Request(
       "PUT", "/api/integrations/bemfa",
       R"({"enabled":true,"api_key":"0123456789abcdef","mappings":[{"device":{"mac":"aabbccddeeff","model":"tc1","version":"v2","status":"active","username":"local"},"channel":0,"topic":"socket001"}]})",
       token);
+  {
+    std::string beforeConfig;
+    serializeJson(config, beforeConfig);
+    auto unchanged = [&] {
+      std::string current;
+      serializeJson(config, current);
+      return current == beforeConfig;
+    };
+    const unsigned beforeWrites = writes, beforeDrops = drops;
+    auto noKey = bemfa;
+    noKey.body.erase(noKey.body.find("0123456789abcdef"), 16);
+    // A real mapping isolates the absent-key check from the empty-map check.
+    assert(service.handle(noKey, 5).status == 400 &&
+           writes == beforeWrites && unchanged());
+    fail = true;
+    auto rejected = service.handle(bemfa, 5);
+    assert(rejected.status == 503 &&
+           rejected.body.find("storage_error") != std::string::npos &&
+           writes == beforeWrites && drops == beforeDrops && unchanged());
+    assert(service.handle(Request("GET", "/api/auth/me", "", token), 5).status == 200);
+    fail = false;
+  }
   auto saved = service.handle(bemfa, 5);
   assert(saved.status == 200 &&
          saved.body.find("0123456789abcdef") == std::string::npos);
@@ -219,8 +264,17 @@ int main() {
   const auto keyAt = keepKey.body.find("0123456789abcdef");
   assert(keyAt != std::string::npos);
   keepKey.body.erase(keyAt, 16);
-  assert(service.handle(keepKey, 5).status == 200 &&
-         config["hub"]["bemfa"]["api_key"] == "0123456789abcdef");
+  auto kept = service.handle(keepKey, 5);
+  assert(kept.status == 200 &&
+         config["hub"]["bemfa"]["api_key"] == "0123456789abcdef" &&
+         !deserializeJson(response, kept.body) && response["key_set"] == true &&
+         !response.containsKey("api_key") &&
+         kept.body.find("0123456789abcdef") == std::string::npos);
+  auto masked = service.handle(
+      Request("GET", "/api/integrations/bemfa", "", token), 5);
+  assert(masked.status == 200 && !deserializeJson(response, masked.body) &&
+         response["key_set"] == true && !response.containsKey("api_key") &&
+         masked.body.find("0123456789abcdef") == std::string::npos);
   assert(
       service
           .handle(Request("DELETE", "/api/devices/aabbccddeeff", "", token), 6)

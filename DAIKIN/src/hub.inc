@@ -9,6 +9,10 @@ static size_t hubByteHeap() {
 static size_t hubByteBlock() {
   return heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
 }
+static bool hubAllocationReady(size_t n) {
+  return n <= size_t(-1) - 16384 && hubByteHeap() > n + 16384 &&
+         hubByteBlock() > n;
+}
 static bool hubReload = false, hubCredentials = false, hubBirth = false;
 static std::atomic<bool> hubRestoring{false};
 static esp_mqtt_client_handle_t bemfaMqtt = nullptr;
@@ -263,7 +267,9 @@ static void hubInit() {
   };
   hubService.bemfaStatus = []() { return hubRelay.status; };
   hubTransport.admission = []() {
-    return hubByteHeap() > 32768 && hubByteBlock() > 12288;
+    // Peer and broker slots already exist. Reserve for the first bounded read
+    // and parser scratch; larger MQTT/WS buffers check their actual growth.
+    return hubAllocationReady(iotcloud::HubTransport::InitialAllocation);
   };
   hubTransport.websocketAccept = [](const std::string &key) {
     auto input = key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
@@ -282,7 +288,7 @@ static void hubInit() {
     return std::string(result, n);
   };
   hubTransport.broker.allocate = [](size_t n) {
-    return hubByteHeap() > n + 16384 && hubByteBlock() > n;
+    return hubAllocationReady(n);
   };
   hubTransport.broker.authenticate = [](const std::string &u,
                                         const std::string &p) {

@@ -6,6 +6,11 @@ $(NAME)_CFLAGS += -fstack-usage -fno-inline-small-functions -fconserve-stack
 $(NAME)_COMPONENTS := protocols/SNTP protocols/mqtt utilities/json_c phicomm_httpd phicomm_mqtt
 GLOBAL_DEFINES += DEV_MODEL=\"PHICOMM_A1_EMW3080\" DISABLE_MICO_BLUENRG=1
 
+# Both optimized SDK modes are release builds, including the default with logs.
+ifneq ($(filter release release_log,$(BUILD_TYPE)),)
+GLOBAL_DEFINES += PHICOMM_EMW3080_RELEASE_MEMORY=1
+endif
+
 GLOBAL_DEFINES += MAX_MESSAGE_HANDLERS=12 PHICOMM_APPLICATION_WATCHDOG=1
 
 # JSON decimal parsing uses the private checked numeric component.
