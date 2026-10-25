@@ -5184,7 +5184,7 @@
     {
       "change_id": "daikin-stock-climate",
       "version": "0.9.27",
-      "type": "fix",
+      "type": "bugfix",
       "component": "firmware",
       "scope": {
         "models": [
