@@ -100,6 +100,24 @@ class BuildTests(unittest.TestCase):
         for slug, title, _, _ in PAGES:
             self.assertIn(f'guides/{slug}.html', home, f'home page does not link {slug}')
 
+    def test_controller_downloads_work_without_javascript_or_api(self):
+        import json
+        from html import escape
+        releases = json.loads((ROOT / 'docs/public/assets/firmware/m1-mcu/releases.json').read_text())
+        releases = sorted(releases, key=lambda r: tuple(map(int, r['tag_name'][1:].split('.'))), reverse=True)
+        home = (self.out / 'index.html').read_text()
+        self.assertNotIn('<!-- MCU_RELEASE_', home)
+        self.assertIn(f'共 {len(releases)} 个主控版本', home)
+        self.assertIn(f'<details class="release" open><summary>{releases[0]["tag_name"]}', home)
+        for release in releases:
+            tag = release['tag_name']
+            self.assertIn(f'/releases/download/{tag}/m1-mcu-ota.bin', home)
+            self.assertIn(f'/releases/download/{tag}/m1-mcu-ota.json', home)
+            self.assertIn(escape(release['body']), home)
+        script = (self.out / 'releases.js').read_text()
+        self.assertNotIn('api.github.com', script)
+        self.assertNotIn('m1-mcu-versions', script)
+
     def test_published_tc1_no_disassembly_urls_survive_rebuild(self):
         for language in ('', 'en/'):
             guide = self.out / 'guides' / language / 'tc1-no-disassembly.html'
