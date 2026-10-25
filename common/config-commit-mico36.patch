@@ -1,0 +1,603 @@
+--- a/MiCO/system/mico_system_para_storage.c
++++ b/MiCO/system/mico_system_para_storage.c
+@@ -112,6 +112,11 @@
+         return NULL;
+ }
+ 
++/* Callback only latches application recovery; it must not perform any I/O. */
++WEAK void app_config_commit_indeterminate(void) {}
++
++static bool para_commit_uncertain;
++
+ static bool is_crc_match( uint16_t crc_1, uint16_t crc_2)
+ {
+   if( crc_1 != crc_2 )
+@@ -120,111 +125,305 @@
+   return true;
+ }
+ 
+-/* Calculate CRC value for parameter1/parameter2. exclude boottable and the last 2 bytes(crc16 result) */
+-static uint16_t para_crc16(mico_partition_t part)
+-{
+-    uint16_t crc_result;
+-    CRC16_Context crc_context;
+-    uint32_t offset, len = 1024, end;
++/* CRC zero is valid; read failures must never be represented as a CRC value. */
++static OSStatus para_crc16(mico_partition_t part, uint16_t *result)
++{
++    OSStatus err = kNoErr;
++    CRC16_Context crc;
++    uint32_t offset, end;
+     uint8_t *tmp;
+-    mico_logic_partition_t *partition; 
+-    
+-    if ((part != MICO_PARTITION_PARAMETER_1) && (part != MICO_PARTITION_PARAMETER_2))
+-        return 0;
+-
+-    tmp = (uint8_t*)malloc(1024);
+-    if (tmp == NULL)
+-        return 0;
+-
+-    offset = mico_context_section_offsets[ PARA_MICO_DATA_SECTION ];
+-    partition = MicoFlashGetInfo( part );
+-    /* Calculate CRC value */
+-    CRC16_Init( &crc_context );
++    mico_logic_partition_t *partition;
++
++    if (!result || (part != MICO_PARTITION_PARAMETER_1 && part != MICO_PARTITION_PARAMETER_2))
++        return kParamErr;
++    partition = MicoFlashGetInfo(part);
++    if (!partition || partition->partition_length < CRC_SIZE ||
++        mico_context_section_offsets[PARA_MICO_DATA_SECTION] > partition->partition_length - CRC_SIZE)
++        return kSizeErr;
++    tmp = (uint8_t *)malloc(1024);
++    if (!tmp) return kNoMemoryErr;
++    offset = mico_context_section_offsets[PARA_MICO_DATA_SECTION];
+     end = partition->partition_length - CRC_SIZE;
+-    while(offset < end) {
+-        if (offset + len > end)
+-            len = end - offset;
+-        MicoFlashRead( part, &offset, tmp, len);
+-        CRC16_Update( &crc_context, tmp, len );
+-    }
+-    CRC16_Final( &crc_context, &crc_result );
+-
++    CRC16_Init(&crc);
++    while (offset < end) {
++        uint32_t start = offset, len = end - offset;
++        if (len > 1024) len = 1024;
++        err = MicoFlashRead(part, &offset, tmp, len);
++        require_noerr(err, exit);
++        require_action(offset == start + len, exit, err = kReadErr);
++        CRC16_Update(&crc, tmp, len);
++    }
++    CRC16_Final(&crc, result);
++exit:
+     free(tmp);
+-    return crc_result;
+-}
+-
+-static OSStatus internal_update_config( system_context_t * const inContext )
+-{
+-  OSStatus err = kNoErr;
+-  uint32_t para_offset;
+-  uint16_t crc_result;
+-  uint16_t crc_readback;;
+-  mico_logic_partition_t *partition; 
+-
+-  require_action(inContext, exit, err = kNotPreparedErr);
+-
+-  para_log("Flash write!");
+-  mico_rtos_lock_mutex( &para_flash_mutex);
+-  partition = MicoFlashGetInfo( MICO_PARTITION_PARAMETER_1 );
+-  err = MicoFlashErase( MICO_PARTITION_PARAMETER_1, 0x0, partition->partition_length);
+-  require_noerr(err, exit);
+-
+-  para_offset = 0x0;
+-  err = MicoFlashWrite( MICO_PARTITION_PARAMETER_1, &para_offset, (uint8_t *)&inContext->flashContentInRam, sizeof(system_config_t));
+-  require_noerr(err, exit);
+-
+-  para_offset = mico_context_section_offsets[ PARA_APP_DATA_SECTION ];
+-  err = MicoFlashWrite( MICO_PARTITION_PARAMETER_1, &para_offset, inContext->user_config_data, inContext->user_config_data_size );
+-  require_noerr(err, exit);
++    return err;
++}
++
++static OSStatus para_valid(mico_partition_t part, bool *valid, uint16_t *crc)
++{
++    OSStatus err;
++    uint16_t stored;
++    uint32_t offset;
++    mico_logic_partition_t *partition = MicoFlashGetInfo(part);
++    *valid = false;
++    err = para_crc16(part, crc);
++    require_noerr(err, exit);
++    offset = partition->partition_length - CRC_SIZE;
++    err = MicoFlashRead(part, &offset, (uint8_t *)&stored, CRC_SIZE);
++    require_noerr(err, exit);
++    require_action(offset == partition->partition_length, exit, err = kReadErr);
++    *valid = is_crc_match(*crc, stored);
++exit:
++    return err;
++}
++
++/* CRC equality alone does not prove that two valid configurations match. */
++static OSStatus para_equal(mico_partition_t left, mico_partition_t right, bool *same)
++{
++    OSStatus err = kNoErr;
++    uint32_t offset, end;
++    uint8_t *tmp;
++    mico_logic_partition_t *a = MicoFlashGetInfo(left);
++    mico_logic_partition_t *b = MicoFlashGetInfo(right);
++    *same = false;
++    if (!a || !b || a->partition_length != b->partition_length ||
++        mico_context_section_offsets[PARA_MICO_DATA_SECTION] > a->partition_length)
++        return kSizeErr;
++    tmp = (uint8_t *)malloc(1024);
++    if (!tmp) return kNoMemoryErr;
++    offset = mico_context_section_offsets[PARA_MICO_DATA_SECTION];
++    end = a->partition_length;
++    while (offset < end) {
++        uint32_t start = offset, other = offset, len = end - offset;
++        if (len > 512) len = 512;
++        err = MicoFlashRead(left, &offset, tmp, len);
++        require_noerr(err, exit);
++        require_action(offset == start + len, exit, err = kReadErr);
++        err = MicoFlashRead(right, &other, tmp + 512, len);
++        require_noerr(err, exit);
++        require_action(other == offset, exit, err = kReadErr);
++        if (memcmp(tmp, tmp + 512, len)) goto exit;
++    }
++    *same = true;
++exit:
++    free(tmp);
++    return err;
++}
++
++/* Copy only from a fully checked source. An interrupted repair cannot erase it. */
++static int para_copy(mico_partition_t dst, mico_partition_t src)
++{
++    OSStatus err;
++    uint32_t offset, end, dst_offset;
++    uint16_t source_crc, target_crc;
++    bool valid, same;
++    uint8_t *tmp;
++    mico_logic_partition_t *source = MicoFlashGetInfo(src);
++    mico_logic_partition_t *target = MicoFlashGetInfo(dst);
++    if (dst == src || !source || !target || source->partition_length != target->partition_length)
++        return kSizeErr;
++    err = para_valid(src, &valid, &source_crc);
++    if (err) return err;
++    if (!valid) return kReadErr;
++    tmp = (uint8_t *)malloc(1024);
++    if (!tmp) return kNoMemoryErr;
++    err = MicoFlashErase(dst, 0, target->partition_length);
++    require_noerr(err, exit);
++    offset = mico_context_section_offsets[PARA_MICO_DATA_SECTION];
++    dst_offset = offset;
++    end = source->partition_length;
++    while (offset < end) {
++        uint32_t start = offset, len = end - offset;
++        if (len > 1024) len = 1024;
++        err = MicoFlashRead(src, &offset, tmp, len);
++        require_noerr(err, exit);
++        require_action(offset == start + len, exit, err = kReadErr);
++        err = MicoFlashWrite(dst, &dst_offset, tmp, len);
++        require_noerr(err, exit);
++        require_action(dst_offset == offset, exit, err = kWriteErr);
++    }
++    /* Release the copy buffer before the full CRC verifier allocates its own. */
++    free(tmp);
++    tmp = NULL;
++    err = para_valid(dst, &valid, &target_crc);
++    require_noerr(err, exit);
++    require_action(valid && target_crc == source_crc, exit, err = kWriteErr);
++    err = para_equal(src, dst, &same);
++    require_noerr(err, exit);
++    require_action(same, exit, err = kWriteErr);
++exit:
++    free(tmp);
++    return err;
++}
++
++/* Expected bytes include erased gaps, not just the application and CRC tail. */
++static uint8_t para_config_byte(const system_context_t *context, uint32_t offset)
++{
++    uint32_t app = mico_context_section_offsets[PARA_APP_DATA_SECTION];
++    if (offset < sizeof(system_config_t))
++        return ((const uint8_t *)&context->flashContentInRam)[offset];
++    if (offset >= app && offset - app < context->user_config_data_size)
++        return ((const uint8_t *)context->user_config_data)[offset - app];
+ #ifdef MICO_EXTRA_AP_NUM
+-  para_offset = mico_context_section_offsets[ PARA_SYS_EXTRA_SECTION ];
+-  err = MicoFlashWrite( MICO_PARTITION_PARAMETER_1, &para_offset, (uint8_t *)inContext->extra_ap, sizeof(inContext->extra_ap) );
+-  require_noerr(err, exit);
+-#endif
+-
+-  crc_result = para_crc16(MICO_PARTITION_PARAMETER_1);
+-  para_offset = partition->partition_length - CRC_SIZE;
+-  err = MicoFlashWrite( MICO_PARTITION_PARAMETER_1, &para_offset, (uint8_t *)&crc_result, CRC_SIZE );
+-  require_noerr(err, exit);
+-  
+-  /* Read back*/
+-  para_offset = partition->partition_length - CRC_SIZE;
+-  err = MicoFlashRead( MICO_PARTITION_PARAMETER_1, &para_offset, (uint8_t *)&crc_readback, CRC_SIZE );
+-  if( crc_readback != crc_result) {
+-    mico_rtos_unlock_mutex( &para_flash_mutex);
+-    para_log( "crc_readback = %d, crc_result %d", crc_readback, crc_result);
+-    return kWriteErr;
+-  }
+-
+-  partition = MicoFlashGetInfo( MICO_PARTITION_PARAMETER_2 );
+-  /* Write backup data*/
+-  err = MicoFlashErase( MICO_PARTITION_PARAMETER_2, 0x0, partition->partition_length );
+-  require_noerr(err, exit);
+-
+-  para_offset = 0x0;
+-  err = MicoFlashWrite( MICO_PARTITION_PARAMETER_2, &para_offset, (uint8_t *)&inContext->flashContentInRam, sizeof(system_config_t));
+-  require_noerr(err, exit);
+-
+-  para_offset = mico_context_section_offsets[ PARA_APP_DATA_SECTION ];
+-  err = MicoFlashWrite( MICO_PARTITION_PARAMETER_2, &para_offset, inContext->user_config_data, inContext->user_config_data_size );
+-  require_noerr(err, exit);
++    if (offset >= mico_context_section_offsets[PARA_SYS_EXTRA_SECTION] &&
++        offset - mico_context_section_offsets[PARA_SYS_EXTRA_SECTION] < sizeof(context->extra_ap))
++        return ((const uint8_t *)context->extra_ap)[offset - mico_context_section_offsets[PARA_SYS_EXTRA_SECTION]];
++#endif
++    return 0xff;
++}
++
++static OSStatus para_config_layout(const system_context_t *context, mico_partition_t part)
++{
++    uint32_t app = mico_context_section_offsets[PARA_APP_DATA_SECTION], end;
++    mico_logic_partition_t *partition = MicoFlashGetInfo(part);
++    if (!partition || partition->partition_length < CRC_SIZE) return kSizeErr;
++    end = partition->partition_length - CRC_SIZE;
++    if (app < sizeof(system_config_t) || app > end ||
++        context->user_config_data_size > end - app ||
++        (context->user_config_data_size && !context->user_config_data)) return kSizeErr;
+ #ifdef MICO_EXTRA_AP_NUM
+-  para_offset = mico_context_section_offsets[ PARA_SYS_EXTRA_SECTION ];
+-  err = MicoFlashWrite( MICO_PARTITION_PARAMETER_2, &para_offset, (uint8_t *)inContext->extra_ap, sizeof(inContext->extra_ap) );
+-  require_noerr(err, exit);
+-#endif
+-
+-  para_offset = partition->partition_length - CRC_SIZE;
+-  err = MicoFlashWrite( MICO_PARTITION_PARAMETER_2, &para_offset, (uint8_t *)&crc_result, CRC_SIZE );
+-  require_noerr(err, exit);
+-
+-exit:
+-  mico_rtos_unlock_mutex( &para_flash_mutex);
+-  return err;
++    if (mico_context_section_offsets[PARA_SYS_EXTRA_SECTION] < app + context->user_config_data_size ||
++        mico_context_section_offsets[PARA_SYS_EXTRA_SECTION] > end ||
++        sizeof(context->extra_ap) > end - mico_context_section_offsets[PARA_SYS_EXTRA_SECTION]) return kSizeErr;
++#endif
++    return kNoErr;
++}
++
++static uint16_t para_config_crc(const system_context_t *context, mico_partition_t part, uint8_t *tmp)
++{
++    uint16_t result;
++    uint32_t offset = mico_context_section_offsets[PARA_MICO_DATA_SECTION];
++    uint32_t end = MicoFlashGetInfo(part)->partition_length - CRC_SIZE;
++    CRC16_Context crc;
++    CRC16_Init(&crc);
++    while (offset < end) {
++        uint32_t i, len = end - offset;
++        if (len > 1024) len = 1024;
++        for (i = 0; i < len; ++i) tmp[i] = para_config_byte(context, offset + i);
++        CRC16_Update(&crc, tmp, len);
++        offset += len;
++    }
++    CRC16_Final(&crc, &result);
++    return result;
++}
++
++static OSStatus para_write_config(mico_partition_t part, system_context_t *context, uint8_t *tmp)
++{
++    OSStatus err, write_err;
++    uint32_t offset, end, attempt;
++    uint16_t expected_crc, stored;
++    mico_logic_partition_t *partition = MicoFlashGetInfo(part);
++    err = para_config_layout(context, part);
++    if (err) return err;
++    end = partition->partition_length - CRC_SIZE;
++    expected_crc = para_config_crc(context, part, tmp);
++    /* An erased tail must not itself be a valid commit record. The seed is SDK
++     * metadata; toggling one bit changes the CRC without changing app layout. */
++    if (expected_crc == 0xffff) {
++        if (part != MICO_PARTITION_PARAMETER_1) return kWriteErr;
++        context->flashContentInRam.micoSystemConfig.seed ^= 1;
++        seedNum = context->flashContentInRam.micoSystemConfig.seed;
++        expected_crc = para_config_crc(context, part, tmp);
++    }
++    err = MicoFlashErase(part, 0, partition->partition_length);
++    if (err) return err;
++    offset = end;
++    err = MicoFlashRead(part, &offset, (uint8_t *)&stored, CRC_SIZE);
++    if (err) return err;
++    if (offset != partition->partition_length || stored != 0xffff) return kWriteErr;
++    offset = 0;
++    err = MicoFlashWrite(part, &offset, (uint8_t *)&context->flashContentInRam, sizeof(system_config_t));
++    if (err) return err;
++    if (offset != sizeof(system_config_t)) return kWriteErr;
++    offset = mico_context_section_offsets[PARA_APP_DATA_SECTION];
++    err = MicoFlashWrite(part, &offset, context->user_config_data, context->user_config_data_size);
++    if (err) return err;
++    if (offset != mico_context_section_offsets[PARA_APP_DATA_SECTION] + context->user_config_data_size) return kWriteErr;
++#ifdef MICO_EXTRA_AP_NUM
++    offset = mico_context_section_offsets[PARA_SYS_EXTRA_SECTION];
++    err = MicoFlashWrite(part, &offset, (uint8_t *)context->extra_ap, sizeof(context->extra_ap));
++    if (err) return err;
++    if (offset != mico_context_section_offsets[PARA_SYS_EXTRA_SECTION] + sizeof(context->extra_ap)) return kWriteErr;
++#endif
++    /* Verify the complete image against RAM before publishing its CRC. This
++     * catches silent/partial writes too (the MOC write wrapper returns zero). */
++    offset = 0;
++    while (offset < end) {
++        uint32_t i, start = offset, len = end - offset;
++        if (len > 1024) len = 1024;
++        err = MicoFlashRead(part, &offset, tmp, len);
++        if (err) return err;
++        if (offset != start + len) return kReadErr;
++        for (i = 0; i < len; ++i)
++            if (tmp[i] != para_config_byte(context, start + i)) return kWriteErr;
++    }
++    offset = end;
++    write_err = MicoFlashWrite(part, &offset, (uint8_t *)&expected_crc, CRC_SIZE);
++    /* A write error may occur after programming. Resolve it from actual bytes;
++     * retry bounded transient read failures, never overwrite the old backup.
++     * If all reads fail the commit is unknown: propagate that read error rather
++     * than claiming that Flash rolled back. No RAM rollback is performed here. */
++    for (attempt = 0; attempt < 3; ++attempt) {
++        offset = end;
++        err = MicoFlashRead(part, &offset, (uint8_t *)&stored, CRC_SIZE);
++        if (!err && offset == partition->partition_length)
++            return stored == expected_crc ? kNoErr : (write_err ? write_err : kWriteErr);
++        if (!err) err = kReadErr;
++    }
++    if (part == MICO_PARTITION_PARAMETER_1) {
++        para_commit_uncertain = true;
++        app_config_commit_indeterminate();
++    }
++    return err;
++}
++
++extern bool app_config_persist_allowed(void);
++
++static OSStatus internal_update_config(system_context_t * const inContext)
++{
++    OSStatus err;
++    uint16_t primary_crc, backup_crc;
++    bool primary_valid, backup_valid, same = false;
++    uint8_t *tmp = NULL;
++    if (!inContext || para_commit_uncertain) return kNotPreparedErr;
++    if (!app_config_persist_allowed()) return kNoErr;
++    err = para_config_layout(inContext, MICO_PARTITION_PARAMETER_1);
++    if (err) return err;
++    mico_rtos_lock_mutex(&para_flash_mutex);
++    /* Another caller may have latched uncertainty while this one waited. */
++    require_action(!para_commit_uncertain, exit, err = kNotPreparedErr);
++    if (!app_config_persist_allowed()) { err = kNoErr; goto exit; }
++    err = para_valid(MICO_PARTITION_PARAMETER_1, &primary_valid, &primary_crc);
++    require_noerr(err, exit);
++    err = para_valid(MICO_PARTITION_PARAMETER_2, &backup_valid, &backup_crc);
++    require_noerr(err, exit);
++    /* A previous accepted update may have left degraded redundancy. Preserve
++     * that latest committed primary before starting another transaction. */
++    if (primary_valid && backup_valid && primary_crc == backup_crc) {
++        err = para_equal(MICO_PARTITION_PARAMETER_1, MICO_PARTITION_PARAMETER_2, &same);
++        require_noerr(err, exit);
++    }
++    if (primary_valid && !same) {
++        err = para_copy(MICO_PARTITION_PARAMETER_2, MICO_PARTITION_PARAMETER_1);
++        require_noerr(err, exit);
++    }
++    tmp = (uint8_t *)malloc(1024);
++    require_action(tmp, exit, err = kNoMemoryErr);
++    err = para_write_config(MICO_PARTITION_PARAMETER_1, inContext, tmp);
++    require_noerr(err, exit);
++    /* Primary is completely verified and committed. A redundancy failure must
++     * not make the application roll RAM back while reboot selects new Flash. */
++    (void)para_write_config(MICO_PARTITION_PARAMETER_2, inContext, tmp);
++    err = kNoErr;
++exit:
++    mico_rtos_unlock_mutex(&para_flash_mutex);
++    free(tmp);
++    return err;
+ }
+ 
+ OSStatus mico_system_context_restore( mico_Context_t * const inContext )
+-{ 
++{
++  if (para_commit_uncertain) return kNotPreparedErr; 
+   OSStatus err = kNoErr;
+   require_action( inContext, exit, err = kNotPreparedErr );
+ 
+@@ -255,7 +454,8 @@
+ 
+ #ifdef MFG_MODE_AUTO
+ OSStatus MICORestoreMFG( void )
+-{ 
++{
++  if (para_commit_uncertain) return kNotPreparedErr; 
+   OSStatus err = kNoErr;
+   require_action( sys_context, exit, err = kNotPreparedErr );
+ 
+@@ -275,99 +475,46 @@
+ }
+ #endif
+ 
+-static int para_copy(mico_partition_t dst, mico_partition_t src)
+-{
+-    uint32_t offset, len = 1024, end, dst_offset;
+-    uint8_t *tmp;
+-    mico_logic_partition_t *partition;
+-    
+-    tmp = (uint8_t*)malloc(1024);
+-    if (tmp == NULL)
+-        return -1;
+-    
+-    partition = MicoFlashGetInfo( dst );
+-
+-    MicoFlashErase( dst ,0x0, partition->partition_length );
+-
+-    offset = mico_context_section_offsets[ PARA_MICO_DATA_SECTION ]; // ignore boottable
+-    dst_offset = offset;
+-    end = partition->partition_length;
+-    while(offset < end) {
+-        if (offset + len > end)
+-            len = end - offset;
+-        MicoFlashRead( src, &offset, tmp, len);
+-        MicoFlashWrite( dst, &dst_offset, tmp, len);
+-    }
+-
+-    free(tmp);
+-    
+-    return 0;
+-}
+-
+ OSStatus MICOReadConfiguration(system_context_t *inContext)
+ {
+-  uint32_t para_offset = 0x0;
+-  uint32_t crc_offset;
+-  uint16_t crc_result, crc_target;
+-  uint16_t crc_backup_result, crc_backup_target;
+-  mico_logic_partition_t *partition; 
+-
++  uint32_t para_offset;
++  uint16_t primary_crc, backup_crc;
++  bool primary_valid, backup_valid, same = false, trusted_read = false;
++  mico_partition_t selected;
+   mico_Context_t *mico_context = mico_system_context_get();
+-  
+   OSStatus err = kNoErr;
+ 
+   require_action(inContext, exit, err = kNotPreparedErr);
+-
+-  partition = MicoFlashGetInfo( MICO_PARTITION_PARAMETER_1 );
+-  crc_result = para_crc16(MICO_PARTITION_PARAMETER_1);
+-  para_log( "crc_result = %d", crc_result);
+-  crc_offset = partition->partition_length - CRC_SIZE;
+-  err = MicoFlashRead( MICO_PARTITION_PARAMETER_1, &crc_offset, (uint8_t *)&crc_target, CRC_SIZE );
+-  para_log( "crc_target = %d", crc_target);
+-
+-  crc_backup_result = para_crc16(MICO_PARTITION_PARAMETER_2);
+-  para_log( "crc_backup_result = %d", crc_backup_result);
+-  crc_offset = partition->partition_length - CRC_SIZE;
+-  err = MicoFlashRead( MICO_PARTITION_PARAMETER_2, &crc_offset, (uint8_t *)&crc_backup_target, CRC_SIZE );
+-  para_log( "crc_backup_target = %d", crc_backup_target);
+-  
+-  /* Data collapsed at main partition */
+-  if( is_crc_match( crc_result, crc_target ) == false ){
+-    /* Data collapsed at main partition and backup partition both, restore to default */
+-    if( is_crc_match( crc_backup_result, crc_backup_target ) == false ){
+-      para_log("Config failed on both partition, try old partition!");
+-      err = try_old_para( inContext );
+-      require_noerr(err, exit);
+-    }
+-    /* main collapsed, backup correct, copy data from back up to main */
+-    else {
+-      para_log("Config failed on main, recover!");
+-
+-      para_copy(MICO_PARTITION_PARAMETER_1, MICO_PARTITION_PARAMETER_2);
+-    }
+-  }   
+-  /* main correct */
+-  else { 
+-      /* main correct , backup collapsed, or main!=backup, copy data from main to back up */
+-    if( is_crc_match( crc_result, crc_backup_result ) == false || is_crc_match( crc_backup_result, crc_backup_target ) == false ){
+-      para_log("Config failed on backup, recover!");
+-
+-      para_copy(MICO_PARTITION_PARAMETER_2, MICO_PARTITION_PARAMETER_1);
+-    }
++  err = para_config_layout(inContext, MICO_PARTITION_PARAMETER_1);
++  require_noerr(err, exit);
++  err = para_valid(MICO_PARTITION_PARAMETER_1, &primary_valid, &primary_crc);
++  require_noerr(err, exit);
++  err = para_valid(MICO_PARTITION_PARAMETER_2, &backup_valid, &backup_crc);
++  require_noerr(err, exit);
++  if (!primary_valid && !backup_valid) {
++    err = try_old_para(inContext);
++    require_noerr(err, exit);
++    goto loaded;
+   }
+-
+-  partition = MicoFlashGetInfo( MICO_PARTITION_PARAMETER_1 );
+-  /* Load data and crc from main partition */
+-  para_offset = 0x0;
+-  err = MicoFlashRead( MICO_PARTITION_PARAMETER_1, &para_offset, (uint8_t *)&inContext->flashContentInRam, sizeof( system_config_t ) );
+-  para_offset = mico_context_section_offsets[ PARA_APP_DATA_SECTION ];
+-  err = MicoFlashRead( MICO_PARTITION_PARAMETER_1, &para_offset, (uint8_t *)inContext->user_config_data, inContext->user_config_data_size );
++  selected = primary_valid ? MICO_PARTITION_PARAMETER_1 : MICO_PARTITION_PARAMETER_2;
++  para_offset = 0;
++  err = MicoFlashRead(selected, &para_offset, (uint8_t *)&inContext->flashContentInRam, sizeof(system_config_t));
++  require_noerr(err, exit);
++  require_action(para_offset == sizeof(system_config_t), exit, err = kReadErr);
++  para_offset = mico_context_section_offsets[PARA_APP_DATA_SECTION];
++  err = MicoFlashRead(selected, &para_offset, (uint8_t *)inContext->user_config_data, inContext->user_config_data_size);
++  require_noerr(err, exit);
++  require_action(para_offset == mico_context_section_offsets[PARA_APP_DATA_SECTION] + inContext->user_config_data_size,
++                 exit, err = kReadErr);
+ #ifdef MICO_EXTRA_AP_NUM
+-  para_offset = mico_context_section_offsets[ PARA_SYS_EXTRA_SECTION ];
+-  err = MicoFlashRead( MICO_PARTITION_PARAMETER_1, &para_offset, (uint8_t *)inContext->extra_ap, sizeof(inContext->extra_ap) );
+-#endif
+-  
+-
++  para_offset = mico_context_section_offsets[PARA_SYS_EXTRA_SECTION];
++  err = MicoFlashRead(selected, &para_offset, (uint8_t *)inContext->extra_ap, sizeof(inContext->extra_ap));
++  require_noerr(err, exit);
++  require_action(para_offset == mico_context_section_offsets[PARA_SYS_EXTRA_SECTION] + sizeof(inContext->extra_ap),
++                 exit, err = kReadErr);
++#endif
++  trusted_read = true;
++loaded:
+   if(inContext->flashContentInRam.micoSystemConfig.magic_number != SYS_MAGIC_NUMBR){
+     para_log("Magic number error, restore to default");
+ #ifdef MFG_MODE_AUTO
+@@ -389,8 +536,33 @@
+     strcpy((char *)inContext->micoStatus.dnsServer, inContext->flashContentInRam.micoSystemConfig.dnsServer);
+   }
+ 
+-exit: 
+-
++  /* Load every selected section before any repair. Transient verification or
++   * data-read failures above cannot trigger a destructive recovery attempt. */
++  if (trusted_read && app_config_persist_allowed()) {
++    if (!primary_valid) {
++      err = para_copy(MICO_PARTITION_PARAMETER_1, MICO_PARTITION_PARAMETER_2);
++      require_noerr(err, exit);
++    } else {
++      if (backup_valid && primary_crc == backup_crc) {
++        err = para_equal(MICO_PARTITION_PARAMETER_1, MICO_PARTITION_PARAMETER_2, &same);
++        require_noerr(err, exit);
++      }
++      if (!same) {
++        err = para_copy(MICO_PARTITION_PARAMETER_2, MICO_PARTITION_PARAMETER_1);
++        require_noerr(err, exit);
++      }
++    }
++  }
++  /* Complete checked reads release the SDK latch only when the application
++   * allows persistence. Product recovery remains sticky until reboot. */
++  if (trusted_read && app_config_persist_allowed()) para_commit_uncertain = false;
++exit:
++  /* SDK init ignores this error. Incomplete boot reads must still prevent a
++   * later save from committing partial RAM; complete-load repair errors do not. */
++  if (err && inContext && !trusted_read && !para_commit_uncertain) {
++    para_commit_uncertain = true;
++    app_config_commit_indeterminate();
++  }
+   return err;
+ }
+ 
+@@ -399,6 +571,7 @@
+ 
+ OSStatus mico_system_context_update( mico_Context_t *in_context )
+ {
++  if (para_commit_uncertain) return kNotPreparedErr;
+   if (!app_config_persist_allowed()) return kNoErr;
+   OSStatus err = kNoErr;
+   require_action( in_context, exit, err = kNotPreparedErr );

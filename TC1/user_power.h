@@ -1,5 +1,7 @@
 #ifndef __USER_POWER_H_
 #define __USER_POWER_H_
+#include <stdbool.h>
+#include <stdint.h>
 
 #define PW_NUM 100
 #define POWER_COEFFICIENT_SCALE 100
@@ -22,6 +24,11 @@ extern float real_time_power;
 char* GetPowerRecord(int idx);
 float GetPowerCoefficient(void);
 float PowerPulseCountToKwh(uint32_t pulse_count);
+/* A copy of the existing pulse calculation, never a second measurement. */
+typedef struct { float watts; uint32_t age_ms; bool valid; } tc1_power_sample_t;
+void PowerSampleRead(tc1_power_sample_t *out);
+/* MQTT owner: invalidate before a new session; only a new IRQ sample restores freshness. */
+void PowerSampleInvalidate(void);
 void PowerInit(void);
 void SetPowerRecord(PowerRecord* pr, uint32_t pw);
 

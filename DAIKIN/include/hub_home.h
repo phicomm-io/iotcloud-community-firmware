@@ -74,28 +74,40 @@ public:
         continue;
       if (body.size() > HubBroker::Packet)
         return;
-      DynamicJsonDocument doc(8192);
-      if (deserializeJson(doc, body) || !doc.is<JsonObject>())
-        return;
-      if (result) {
-        if (pending.used && pending.device == i &&
-            doc["request_id"] == pending.id) {
-          bool accepted = doc["code"] == "ok" || doc["code"] == "accepted";
-          if (accepted && !pending.acked) {
-            pending.acked = true;
-            pending.sequence = d.sequence;
-            query(d); // Confirm a snapshot taken after the command receipt.
-          }
-          pending.failed = !accepted;
-        }
-        if (d.query.empty() || doc["request_id"] != d.query ||
-            doc["code"] != "ok" || !doc["data"].is<JsonObject>())
+      size_t capacity = std::min(size_t(8192), body.size() * 2 + 512);
+      for (;;) {
+        DynamicJsonDocument doc(capacity);
+        if (!doc.capacity())
           return;
-        d.query.clear();
-        state(d, doc["data"]);
-      } else
-        state(d, doc.as<JsonObjectConst>());
-      return;
+        auto error = deserializeJson(doc, body);
+        if (error == DeserializationError::NoMemory && capacity < 8192) {
+          // Dense JSON can need far more pool space than its wire length.
+          // Release this pool before retrying, preserving the existing limit.
+          capacity = std::min(size_t(8192), capacity + 1024);
+          continue;
+        }
+        if (error || !doc.is<JsonObject>())
+          return;
+        if (result) {
+          if (pending.used && pending.device == i &&
+              doc["request_id"] == pending.id) {
+            bool accepted = doc["code"] == "ok" || doc["code"] == "accepted";
+            if (accepted && !pending.acked) {
+              pending.acked = true;
+              pending.sequence = d.sequence;
+              query(d); // Confirm a snapshot taken after the command receipt.
+            }
+            pending.failed = !accepted;
+          }
+          if (d.query.empty() || doc["request_id"] != d.query ||
+              doc["code"] != "ok" || !doc["data"].is<JsonObject>())
+            return;
+          d.query.clear();
+          state(d, doc["data"]);
+        } else
+          state(d, doc.as<JsonObjectConst>());
+        return;
+      }
     }
   }
   // At most one small status query per tick; no retained data is treated as a

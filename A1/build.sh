@@ -27,7 +27,10 @@ target=A1@MK3080B@moc
 mkdir -p "$tools_dir" "$workspace" "$(dirname "$sdk_dir")"
 
 python3 "$project_dir/tools/prepare_sdk.py" "$sdk_dir"
-python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/config-recovery-mico36.patch"
+# Validate configuration recovery and commit overlays as one ordered stack.
+python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \
+    "$project_dir/common/config-recovery-mico36.patch" \
+    "$project_dir/common/config-commit-mico36.patch"
 # Validate overlapping board overlays as one idempotent patch stack.
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \
     "$app_dir/sdk.patch" "$app_dir/features-sdk.patch" "$app_dir/fresh-air-sdk.patch"

@@ -3,10 +3,15 @@ $(NAME)_SOURCES := main.c watchdog.c service.c features.c protocol.c scd40.c uar
 $(NAME)_INCLUDES := . generated
 $(NAME)_CFLAGS += -fstack-usage
 $(NAME)_SOURCES += mcu.c barometer.c bmp3_vendor/bmp3.c
-$(NAME)_SOURCES += co2_source.c
+$(NAME)_SOURCES += co2_source.c display_source.c
 GLOBAL_DEFINES += BMP3_64BIT_COMPENSATION=1
 $(NAME)_COMPONENTS := protocols/SNTP protocols/SNTP protocols/mqtt utilities/json_c phicomm_httpd phicomm_mqtt
 GLOBAL_DEFINES += DEV_MODEL=\"PHICOMM_M1_EMW3080\" DISABLE_MICO_BLUENRG=1
+
+# Both optimized SDK modes are release builds, including the default with logs.
+ifneq ($(filter release release_log,$(BUILD_TYPE)),)
+GLOBAL_DEFINES += PHICOMM_EMW3080_RELEASE_MEMORY=1
+endif
 
 
 GLOBAL_DEFINES += MAX_MESSAGE_HANDLERS=12 PHICOMM_APPLICATION_WATCHDOG=1

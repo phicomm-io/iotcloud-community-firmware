@@ -29,6 +29,8 @@ class HubRestore(unittest.TestCase):
         parts = {
             'save.inc': section('DAIKIN/src/main.cpp', 'static bool saveConfig(', 'static void startAccessPoint('),
             'backup.inc': section('DAIKIN/src/http.inc', 'static String backupExecute()', 'static esp_err_t backupHandler('),
+            'backup-handler.inc': section('DAIKIN/src/http.inc', 'static esp_err_t backupHandler(', 'static volatile bool otaActive'),
+            'json-response.inc': section('DAIKIN/src/http.inc', 'static esp_err_t jsonResponse(', 'static bool authorized('),
             'commands.inc': section('DAIKIN/src/commands.inc', 'static bool knownFields('),
             'hub-globals.inc': section('DAIKIN/src/hub.inc', 'static bool hubReload', 'static String hubHex('),
             'mqtt-stop.inc': section('DAIKIN/src/mqtt.inc', 'static void stopMqtt()', 'static void startMqtt('),
@@ -85,6 +87,22 @@ class HubRestore(unittest.TestCase):
 
     def test_failed_native_mqtt_config_keeps_old_client_and_inbox(self):
         self.scenario('mqtt-fail')
+
+    def test_backup_get_under_fragmented_heap_returns_complete_backup(self):
+        self.scenario('backup-fit')
+
+    def test_backup_allocation_or_short_serialization_is_503(self):
+        for failure in ('json', 'string', 'short'):
+            with self.subTest(failure=failure):
+                self.scenario('backup-' + failure)
+
+    def test_restore_oom_is_503_and_preserves_live_account_and_storage(self):
+        for failure in ('parse', 'candidate', 'body', 'concat'):
+            with self.subTest(failure=failure):
+                self.scenario('restore-oom-' + failure)
+
+    def test_restore_larger_valid_backup_fits_fragmented_heap(self):
+        self.scenario('restore-fit')
 
 
 if __name__ == '__main__':

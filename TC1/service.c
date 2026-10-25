@@ -122,6 +122,12 @@ bool automation_save(const automation_config_t *next){if(!tc1_config_reserve())r
 /* Status does not keep configuration/OTA branch scratch on the MQTT stack. */
 json_object *service_product(const char *action,json_object *p,const char **code)
 {
+    if(!strcmp(action,"info.get")){
+        bool live;*code="invalid_params";if(!status_view_params(p,&live))return NULL;
+        json_object *o=json_object_new_object();text(o,"model","tc1");
+        json_build_object_add(o,"device_id",json_object_new_string_len(str_mac,strnlen(str_mac,12)));
+        text(o,"version",VERSION);*code=o?"ok":"busy";return o;
+    }
     if(!strcmp(action,"status.get")){
         bool live;*code="invalid_params";if(!status_view_params(p,&live))return NULL;
         json_object *o=live?tc1_status_live_json():tc1_status_json();*code=o?"ok":"busy";return o;

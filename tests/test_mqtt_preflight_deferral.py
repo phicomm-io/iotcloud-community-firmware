@@ -64,6 +64,8 @@ int main(void){
 static struct {unsigned mode;} account={1};
 static bool cleanup_pending;
 static unsigned discovery_index,state_index,publication_cursor,snapshot_at;
+static unsigned invalidations;
+static void PowerSampleInvalidate(void){invalidations++;}
 static int synchronous_error,cap_rc;
 static uint32_t mico_rtos_get_time(void){return 100;}
 static int service_sender(const char*t,const char*b,bool r){(void)t;(void)b;(void)r;return 0;}
@@ -78,6 +80,7 @@ int main(void){
  for(cap_rc=0;cap_rc<=3;cap_rc++){
   cleanup_pending=false;discovery_index=state_index=publication_cursor=9;synchronous_error=-1;
   assert(session_initial(0)==cap_rc);
+  assert(invalidations==(unsigned)cap_rc+1);
  }
 }
 '''.replace('/* BODY */',body)

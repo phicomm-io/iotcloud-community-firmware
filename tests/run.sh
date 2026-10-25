@@ -5,6 +5,7 @@ root="$PWD"
 # The background JSON scenarios also compile the production SHA-256 service.
 source tests/host_hash.sh
 python3 -m unittest tests.test_prepare_sdk tests.test_apply_sdk_patch
+python3 -m unittest tests.test_config_commit
 python3 tools/check_version.py
 python3 -m unittest discover -s tests -p test_version.py
 python3 -m unittest tests.test_package_stale_signature
@@ -13,8 +14,9 @@ python3 -m unittest tests.test_accepted_upload_postcheck
 python3 -m unittest tests.test_readonly_stress tests.test_readonly_input_edges tests.test_readonly_shared_httpd tests.test_readonly_http_scheduling tests.test_readonly_parallel tests.test_summarize_readonly_evidence tests.test_audit_shared_candidate_completion
 python3 -m unittest tests.test_http_core tests.test_http_core_tcp tests.test_shared_http_adversarial tests.test_shared_http_arm tests.test_shared_http_soak tests.test_shared_http_tcp_soak tests.test_http_mico_sdk_abi
 python3 -m unittest tests.test_json_build_gate tests.test_service_json_failure_scope tests.test_http_json_owned tests.test_http_json_budget tests.test_status_bool tests.test_mqtt_discovery_budget tests.test_background_json tests.test_tc1_mqtt_stack tests.test_tc1_checked_number_calls tests.test_ota_recovery
-python3 -m unittest tests.test_memory_admission tests.test_http_browser_queue tests.test_tc1_http_trace
+python3 -m unittest tests.test_memory_admission tests.test_emw3080_release_memory tests.test_http_browser_queue tests.test_tc1_http_trace
 python3 -m unittest tests.test_a1_provision_memory
+python3 -m unittest tests.test_info_metadata tests.test_m1_mqtt_display_session tests.test_host_rng tests.test_capabilities_wire
 python3 -m unittest tests.test_m1_boot_config tests.test_stock_runtime tests.test_m1_display_source tests.test_backup tests.test_m1_particles_mqtt
 python3 -m unittest tests.test_m1_barometer tests.test_m1_barometer_captures
 compiler=("${CC:-cc}")
@@ -45,6 +47,8 @@ trap 'rm -rf "$output"' EXIT
 "${compiler[@]}" -std=c99 -Wall -Wextra -Werror -Wno-misleading-indentation tests/test_a1_fresh_air.c -lm -o "$output/a1-fresh-air"
 "$output/a1-fresh-air"
 python3 -m unittest tests.test_a1_fresh_air
+python3 -m unittest discover -s A1/tests -p test_fan_sensor.py
+python3 -m unittest discover -s TC1/tests -p test_power_sensor.py
 python3 -m unittest tests.test_a1_filter_storage tests.test_status_views tests.test_status_direct tests.test_typed_tc1_status tests.test_tc1_status_guard tests.test_tc1_status_dispatch
 "${compiler[@]}" -DFEATURE_HOST -std=c99 -Wall -Wextra -Werror -Wno-misleading-indentation -Icommon common/engine.c tests/test_engine.c -lm -o "$output/engine"
 "${compiler[@]}" -DFEATURE_HOST -std=c99 -Wall -Wextra -Werror -Wno-misleading-indentation -Icommon common/engine.c tests/test_sensor_aggregate.c -lm -o "$output/sensor-aggregate"

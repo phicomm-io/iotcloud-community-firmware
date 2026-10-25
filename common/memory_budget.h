@@ -7,7 +7,13 @@
  * allocator checks the live heap on every allocation instead of assuming a
  * full 12 KiB graph per request. No active-request count controls admission.
  * Core/network headroom is a soft floor, not a closed-SDK heap partition. */
+/* MiCO release_log also defines DEBUG; product makefiles select this policy
+ * from BUILD_TYPE rather than the compiler's logging/assertion switches. */
+#if defined(PHICOMM_EMW3080_RELEASE_MEMORY) && PHICOMM_EMW3080_RELEASE_MEMORY
+#define SERVICE_MEMORY_RESERVE 8192u
+#else
 #define SERVICE_MEMORY_RESERVE 16384u
+#endif
 #define SERVICE_MEMORY_WORK 512u
 typedef struct {
     uint32_t reserved, active, denied, waiting, minimum_free;

@@ -68,7 +68,8 @@ int main(){
     assert(!deserializeJson(reply,sensorUdp.outgoing));
     assert(reply["boot"].as<int32_t>()==-1);
     assert(reply["id"].as<int32_t>()==INT32_MIN);
-    assert(reply["body"]["boot"].as<int32_t>()==-1);
+    assert(reply["body"]["boot"].is<uint32_t>()&&reply["body"]["boot"].as<uint32_t>()==UINT32_MAX);
+    assert(reply["body"]["model"]=="daikin");
     assert(reply["body"]["sensors"]["pm25"]["value"].as<int>()==12);
   }
   // A retry with the same bits must preserve the established session.
@@ -97,9 +98,15 @@ int main(){
   assert(!deserializeJson(reply,sensorUdp.outgoing)&&reply["id"].as<int32_t>()==-1);
   sensorSequence=INT32_MAX;
   DynamicJsonDocument body(1024);sensorBody(body.to<JsonObject>());
-  assert(body["sequence"].as<int32_t>()==INT32_MIN);
+  assert(body["sequence"].is<uint32_t>()&&body["sequence"].as<uint32_t>()==0x80000000u);
+  std::string feed;serializeJson(body,feed);
+  assert(feed.find("\"boot\":4294967295")!=std::string::npos);
+  assert(feed.find("\"sequence\":2147483648")!=std::string::npos);
+  sensorSequence=UINT32_MAX-1;sensorBody(body.to<JsonObject>());
+  feed.clear();serializeJson(body,feed);
+  assert(feed.find("\"sequence\":4294967295")!=std::string::npos);
   sensorSequence=UINT32_MAX;sensorBody(body.to<JsonObject>());
-  assert(body["sequence"].as<int32_t>()==1);
+  assert(body["sequence"].is<uint32_t>()&&body["sequence"].as<uint32_t>()==1);
   now+=1800000;unsigned before=sensorUdp.sent;readSession("-1");
   assert(sensorUdp.sent==before);
   assert(sessionGrant(grant("-1")));

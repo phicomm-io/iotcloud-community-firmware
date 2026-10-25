@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <sys/select.h>
 #include <sys/socket.h>
+#include <sys/random.h>
 #include <netdb.h>
 #include <arpa/inet.h>
 typedef int OSStatus;
@@ -30,6 +31,12 @@ typedef int mico_gpio_t, WiFiEvent;
 #define kNoMemoryErr -3
 #define kDeletedErr -4
 #define kConnectionErr -5
+/* Match MiCODriverRng.h; short or failed Linux reads cannot create a valid
+ * producer boot identifier in the real-SDK host worker. */
+static inline OSStatus MicoRandomNumberRead(void *buffer,int bytes){
+    if(bytes<0 || (!buffer && bytes))return kParamErr;
+    return getrandom(buffer,(size_t)bytes,0)==bytes?kNoErr:kUnknownErr;
+}
 #define require(x,label) do { if(!(x)) goto label; } while(0)
 #define require_action(x,label,act) do { if(!(x)){act;goto label;} } while(0)
 #define require_string(x,label,str) require(x,label)

@@ -147,6 +147,7 @@ void m1_scd40_tick(void);
 #include "M1/uart.c"
 #include "M1/mcu.c"
 #include "M1/co2_source.c"
+#include "M1/display_source.c"
 void m1_scd40_tick(void){
  step++;now+=100;
  if(phase>=12){

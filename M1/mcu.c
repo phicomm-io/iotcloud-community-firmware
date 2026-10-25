@@ -27,6 +27,25 @@ static uint8_t button_sequence;
 static uint32_t display_phase_at,display_config_revision,display_source_revision;
 static uint16_t sent_ppm;
 static bool display_phase_set;
+static m1_display_value_t dual_sent[M1_DISPLAY_LANES];
+static struct {
+    m1_display_readback_t value;
+    uint32_t revision, updated_ms, until;
+    bool selected;
+} dual_shown[M1_DISPLAY_LANES];
+static uint8_t dual_query_slot;
+static uint32_t dual_revision, dual_profile_revision;
+static bool dual_selected, dual_profile_selected, dual_profile_pending, dual_profile_confirmed;
+static bool dual_probe_wait;
+static m1_display_config_t uart_display_config;
+/* OP23 describes saved lane caches even while the legacy profile is active.
+ * Its readback is evidence only after this configuration's OP22 succeeded.
+ * All callers hold m1_lock. */
+static void dual_profile_forget(void)
+{
+    dual_profile_pending=dual_profile_confirmed=false;
+    memset(dual_shown,0,sizeof(dual_shown));
+}
 static uint16_t be16(const uint8_t *p){return ((uint16_t)p[0]<<8)|p[1];}
 static void put16(uint8_t *p,unsigned n){p[0]=n>>8;p[1]=n;}
 static bool due(uint32_t now,uint32_t at){return (int32_t)(now-at)>=0;}
@@ -48,7 +67,8 @@ bool m1_mcu_exchange(const uint8_t *p,size_t n,uint8_t out[20])
         ((cmd==0x13 || cmd==0x16) && !m1_state.mcu_updating) ||
         (cmd==0x16 && !p[2] && !transfer_complete);
     if(!busy) {
-        if(cmd==0x12){m1_state.mcu_updating=true;transfer_complete=false;memset(&details,0,sizeof(details));m1_state.mcu_sensor_details=false;m1_state.mcu_alarm_schema=0;m1_state.alarm_buzzer_received=false;alarm_need_read=false;}
+        if(cmd==0x12){m1_state.mcu_updating=true;transfer_complete=false;memset(&details,0,sizeof(details));m1_state.mcu_sensor_details=false;m1_state.mcu_alarm_schema=0;m1_state.mcu_display_schema=0;m1_state.alarm_buzzer_received=false;alarm_need_read=false;dual_profile_forget();}
+        if(cmd==0x70 && (p[2]==10 || p[2]==18 || p[2]==22))dual_profile_forget();
         exchange_active=exchange_pending=true;exchange_done=exchange_ok=false;
         memcpy(request_frame,p,n);request_length=n;
         manual_until=mico_rtos_get_time()+5000;transfer_until=mico_rtos_get_time()+15000;
@@ -76,9 +96,11 @@ bool m1_mcu_rx(const uint8_t p[20])
         m1_state.mcu_extended=false;m1_state.mcu_caps=0;m1_state.mcu_version_received=false;
         m1_state.mcu_tones=false;m1_state.mcu_music_present=false;
         m1_state.mcu_button_events=false;m1_state.mcu_display_source=false;
+        m1_state.mcu_display_schema=0;
         m1_state.mcu_alarm_schema=0;m1_state.alarm_buzzer_received=false;
         m1_state.alarm_uart_sent=false;alarm_need_read=false;alarm_due=now;
         button_seen=false;manual_display_mode=-1;display_phase_set=false;
+        dual_profile_forget();memset(dual_sent,0,sizeof(dual_sent));
         auto_waiting=false;auto_due=now;
         memset(&details,0,sizeof(details));m1_state.mcu_sensor_details=false;
     }
@@ -96,6 +118,7 @@ bool m1_mcu_rx(const uint8_t p[20])
     if(p[1]==0x70 && auto_waiting && p[2]==auto_op && p[3]==auto_sequence) {
         auto_waiting=false;
         if(!p[4] && auto_op==0) {
+            dual_profile_forget();
             m1_state.mcu_protocol=p[5];m1_state.mcu_caps=be16(p+6);
             m1_state.mcu_extended=p[5]>=2 && (be16(p+6)&0x3c00)==0x3c00;
             m1_state.mcu_tones=p[5]>=2 && (be16(p+6)&0x4000) && p[10]==1;
@@ -103,6 +126,7 @@ bool m1_mcu_rx(const uint8_t p[20])
             m1_state.mcu_sensor_details=details.supported;
             m1_state.mcu_button_events=p[14]==1&&(p[15]&3)==3;
             m1_state.mcu_display_source=p[16]==1;
+            m1_state.mcu_display_schema=p[18]==2?2:0;
             m1_state.mcu_alarm_schema=p[17]==1?1:0;
             if(!m1_state.mcu_alarm_schema)m1_state.alarm_buzzer_received=false;
             auto_phase=1;
@@ -112,14 +136,32 @@ bool m1_mcu_rx(const uint8_t p[20])
         } else if(!p[4] && auto_op==19 && p[5]==1) {
             shown_ppm=sent_ppm;shown_valid=p[13]!=0;shown_co2=p[7]!=0;shown_at=now;
             shown_until=now+(uint32_t)p[13]*1000;
+        } else if(auto_op==22) {
+            dual_profile_confirmed=dual_profile_pending && !p[4] && !due(now,auto_deadline);
+            dual_profile_pending=false;
+        } else if(!p[4] && auto_op==23 && p[5]==2 && p[6]<=1 && p[7]<=1 &&
+                  p[8]==dual_query_slot && p[8]<M1_DISPLAY_LANES && be16(p+9)<=999 &&
+                  (p[11]&~7u)==0 && (p[11]&3u)!=3 && p[12]<=3 && p[13]<=60 &&
+                  !p[14]&&!p[15]&&!p[16]&&!p[17]&&!p[18] &&
+                  (!p[7] || (p[6] && p[13]))) {
+            unsigned slot=p[8];
+            const m1_display_value_t *sent=&dual_sent[slot];
+            bool match=dual_profile_confirmed && dual_profile_revision==dual_revision &&
+                dual_profile_selected==dual_selected && p[6]==dual_selected &&
+                (sent->valid ? (p[13] && p[7]==dual_selected && be16(p+9)==sent->number && p[11]==sent->format && p[12]==sent->color) : (!p[13]&&!p[7]));
+            dual_shown[slot].value=(m1_display_readback_t){.number=be16(p+9),.format=p[11],
+                .color=p[12],.ttl=p[13],.showing=p[7]!=0,.confirmed=match};
+            dual_shown[slot].selected=p[6]!=0;dual_shown[slot].revision=dual_revision;
+            dual_shown[slot].updated_ms=now;dual_shown[slot].until=now+(uint32_t)p[13]*1000;
         }
         if(auto_op==16){
             bool complete=m1_details_reply(&details,p,now);
             if(complete && details.id==0)auto_phase=1;
         }
         if(!p[4] && auto_op==15)m1_state.mcu_music_present=p[5]==1;
-        auto_due=now+((auto_op==13||auto_op==19||auto_op==15)?250:0);
-        if(p[4])auto_due=now+2000;
+        auto_due=now+((auto_op==13||auto_op==19||auto_op==23||auto_op==15)?250:0);
+        if(auto_op==0 && dual_probe_wait && m1_state.mcu_display_schema!=2)auto_due=now+10000;
+        if(p[4] || (auto_op==22 && due(now,auto_deadline)))auto_due=now+2000;
         if(auto_op==20){
             uint8_t mask;bool active;
             bool valid=m1_parse_sensor_alarm(p,&mask,&active);
@@ -159,11 +201,13 @@ void m1_mcu_tick(void)
     if(auto_waiting && due(now,auto_deadline)){
         if(auto_op==16){m1_details_fail(&details);auto_phase=1;}
         if(auto_op==20){alarm_need_read=false;alarm_due=now+2000;m1_state.alarm_buzzer_received=false;}
+        if(auto_op==22)dual_profile_forget();
         auto_waiting=false;auto_due=now+2000;
     }
     bool ready=m1_state.mcu_extended,version=m1_state.mcu_version_received;
     bool details_supported=details.supported;
     bool generic=m1_state.mcu_display_source;
+    bool dual_supported=m1_state.mcu_display_schema==2;
     bool alarm_supported=m1_state.mcu_alarm_schema==1;
     skip=skip || auto_waiting || !due(now,auto_due) || !version;
     mico_rtos_unlock_mutex(&m1_lock);
@@ -177,7 +221,16 @@ void m1_mcu_tick(void)
     mico_rtos_unlock_mutex(&m1_lock);
     m1_co2_config_t config;m1_co2_config_get(&config);
     m1_co2_source_config_t source;m1_co2_source_config_get(&source);
-    if(manual_display_revision!=config.revision||manual_source_revision!=source.revision)manual_display_mode=-1;
+    m1_display_config_t *display=&uart_display_config;m1_display_config_get(display);
+    mico_rtos_lock_mutex(&m1_lock);
+    if(display->configured){
+        if(manual_display_revision!=display->revision||manual_source_revision!=UINT32_MAX)manual_display_mode=-1;
+        if(dual_revision!=display->revision){auto_phase=1;dual_profile_forget();dual_revision=display->revision;}
+    }else{
+        dual_profile_forget();
+        if(manual_display_revision!=config.revision||manual_source_revision!=source.revision)manual_display_mode=-1;
+    }
+    mico_rtos_unlock_mutex(&m1_lock);
     uint16_t ppm,ttl;bool fresh=m1_co2_source_value(&ppm,&ttl);
     if(!display_phase_set || display_config_revision!=config.revision || display_source_revision!=source.revision){
         display_phase_at=now;display_config_revision=config.revision;
@@ -190,7 +243,38 @@ void m1_mcu_tick(void)
         m1_sensor_alarm_frame(f,++sequence,!read,read?0:alarm_request_mask);
         if(!read){mico_rtos_lock_mutex(&m1_lock);m1_state.alarm_buzzer_received=false;mico_rtos_unlock_mutex(&m1_lock);}
     }
-    else if(!ready){extension(f,0);auto_due=now+10000;}
+    else if(!ready){extension(f,0);dual_probe_wait=false;auto_due=now+10000;}
+    else if(display->configured && dual_supported){
+        if(auto_phase<1 || auto_phase>7 || (auto_phase==7&&!details_supported))auto_phase=1;
+        if(auto_phase<=2){
+            unsigned slot=auto_phase-1;
+            m1_display_source_value(display,slot,&dual_sent[slot]);
+            const m1_display_value_t *value=&dual_sent[slot];
+            extension(f,21);put16(f+4,value->number);f[6]=value->format;f[7]=value->color;
+            f[8]=value->valid?value->ttl:0;f[9]=slot;
+        }else if(auto_phase==3){
+            extension(f,22);
+            mico_rtos_lock_mutex(&m1_lock);
+            dual_profile_forget();
+            dual_selected=manual_display_mode<0?display->selected:manual_display_mode!=0;f[4]=dual_selected;
+            dual_profile_revision=display->revision;dual_profile_selected=dual_selected;dual_profile_pending=true;
+            mico_rtos_unlock_mutex(&m1_lock);
+        }else if(auto_phase==4 || auto_phase==5){
+            extension(f,23);dual_query_slot=auto_phase-4;f[4]=dual_query_slot;
+        }else if(auto_phase==6)extension(f,15);
+        else {extension(f,16);mico_rtos_lock_mutex(&m1_lock);m1_details_request(&details,f+4);mico_rtos_unlock_mutex(&m1_lock);}
+        if(auto_phase!=7){
+            unsigned next=auto_phase+1;
+            if(next==6 && !(m1_state.mcu_caps&0x8000))next=7;
+            if(next==7 && !details_supported)next=1;
+            auto_phase=next;
+        }
+    }
+    else if(display->configured){
+        /* A scalar-capable controller cannot execute the dual profile. Keep
+         * probing capabilities without selecting or rewriting a legacy lane. */
+        extension(f,0);dual_probe_wait=true;auto_due=now+10000;
+    }
     else {
         if(auto_phase<1 || auto_phase>6 || (auto_phase==6 && !details_supported))auto_phase=1;
         if(generic){
@@ -222,6 +306,7 @@ void m1_mcu_tick(void)
         mico_rtos_lock_mutex(&m1_lock);
         if(auto_op==16){m1_details_fail(&details);auto_phase=1;}
         if(auto_op==20){alarm_need_read=false;alarm_due=now+2000;m1_state.alarm_buzzer_received=false;}
+        if(auto_op==22)dual_profile_forget();
         auto_waiting=false;auto_due=now+2000;m1_state.uart_errors++;
         mico_rtos_unlock_mutex(&m1_lock);
     }
@@ -281,13 +366,46 @@ bool m1_button_rx(const uint8_t p[20])
     mico_rtos_unlock_mutex(&m1_lock);
     if(busy)return true;
     if(ringing){m1_wake_alarm_stop();return true;}
+    m1_display_switch_config_t display;m1_display_switch_get(&display);
+    if(display.configured){
+        mico_rtos_lock_mutex(&m1_lock);bool dual=m1_state.mcu_display_schema==2;mico_rtos_unlock_mutex(&m1_lock);
+        if(!supported||!dual||!display.double_click||!display.present)return true;
+        bool previous=manual_display_mode>=0 && manual_display_revision==display.revision &&
+            manual_source_revision==UINT32_MAX?manual_display_mode!=0:display.selected!=0;
+        mico_rtos_lock_mutex(&m1_lock);
+        manual_display_mode=previous?0:1;manual_display_revision=display.revision;manual_source_revision=UINT32_MAX;
+        dual_profile_forget();
+        mico_rtos_unlock_mutex(&m1_lock);
+        auto_phase=1;auto_due=mico_rtos_get_time();return true;
+    }
     m1_co2_source_config_t source;m1_co2_source_config_get(&source);
     mico_rtos_lock_mutex(&m1_lock);bool present=source.external||m1_state.scd40.serial[0];mico_rtos_unlock_mutex(&m1_lock);
     if(!supported||!source.double_click||!present)return true;
     m1_co2_config_t config;m1_co2_config_get(&config);
     bool previous=m1_display_source_selected(config.mode,manual_display_mode,mico_rtos_get_time()-display_phase_at,config.interval);
+    mico_rtos_lock_mutex(&m1_lock);
     manual_display_mode=previous?0:1;manual_display_revision=config.revision;manual_source_revision=source.revision;
+    mico_rtos_unlock_mutex(&m1_lock);
     auto_phase=2;auto_due=mico_rtos_get_time();return true;
+}
+
+void m1_display_readback(m1_display_readback_t out[M1_DISPLAY_LANES],bool *selected)
+{
+    m1_display_switch_config_t c;m1_display_switch_get(&c);uint32_t now=mico_rtos_get_time();
+    mico_rtos_lock_mutex(&m1_lock);
+    *selected=c.configured?(manual_display_mode>=0 && manual_display_revision==c.revision &&
+        manual_source_revision==UINT32_MAX?manual_display_mode!=0:c.selected!=0):shown_co2 && shown_valid && !due(now,shown_until);
+    bool profile_confirmed=dual_profile_confirmed && dual_profile_revision==c.revision &&
+        dual_profile_selected==*selected && m1_state.mcu_version_received && m1_state.mcu_extended &&
+        m1_state.mcu_display_schema==2 && !m1_state.mcu_updating;
+    for(unsigned i=0;i<M1_DISPLAY_LANES;i++){
+        out[i]=dual_shown[i].value;
+        out[i].confirmed=out[i].confirmed && profile_confirmed && c.configured && dual_shown[i].revision==c.revision &&
+            dual_shown[i].selected==*selected && (uint32_t)(now-dual_shown[i].updated_ms)<5000;
+        out[i].ttl=due(now,dual_shown[i].until)?0:(uint8_t)((dual_shown[i].until-now+999)/1000);
+        out[i].showing=out[i].confirmed && out[i].showing && out[i].ttl;
+    }
+    mico_rtos_unlock_mutex(&m1_lock);
 }
 
 bool m1_music_supported(void)

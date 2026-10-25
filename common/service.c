@@ -236,6 +236,26 @@ static json_object *logs(json_object *p,const char **code) {
     mico_rtos_unlock_mutex(&service_lock);json_build_object_add(o,"records",a);return o;
 }
 #include "ota/update.inc"
+/* Optional A1/M1 encoder. Other product/host adapters retain the graph path. */
+extern struct printbuf *service_product_capabilities_wire(const char *,const char *const *,bool) __attribute__((weak));
+#ifdef PHICOMM_DEVICE_OTA
+static const char *const ota_active_capability_names[]={"status.get","ota.sources.get","ota.check.get","ota.notes.get","ota.status.get","ota.cancel",NULL};
+#endif
+static struct printbuf *service_capabilities_wire(const char *id)
+{
+    uint64_t before=service_memory_failures();
+    if(service_caller_graph_failed(before))return NULL;
+    mico_rtos_lock_mutex(&command_lock);
+    bool active=ota_job_active();
+    const char *const *actions=update_capability_names;
+#ifdef PHICOMM_DEVICE_OTA
+    if(active)actions=ota_active_capability_names;
+#endif
+    struct printbuf *wire=service_product_capabilities_wire(id,actions,active);
+    mico_rtos_unlock_mutex(&command_lock);
+    if(service_caller_graph_failed(before)) { if(wire)printbuf_free(wire);return NULL; }
+    return wire;
+}
 typedef struct { const char *id,*action;json_object *params; } service_request;
 static bool service_request_decode(json_object *req,service_request *out)
 {
@@ -254,7 +274,7 @@ static json_object *service_command_execute(json_object *req) {
     const char *code="invalid_params",*id=view.id,*action=view.action;
     json_object *p=view.params;
     if(!strcmp(action,"info.get")){
-        const char *status_code="ok";json_object *status=service_product("status.get",p,&status_code);
+        const char *status_code="ok";json_object *status=service_product("info.get",p,&status_code);
         if(!status)return result(id,status_code,NULL);
         json_object *info=json_object_new_object();
         const char *keys[]={"model","device_id","version"};
@@ -264,7 +284,7 @@ static json_object *service_command_execute(json_object *req) {
 #ifdef PHICOMM_DEVICE_OTA
     if(!strcmp(action,"ota.cancel"))return result(id,ota_job_cancel()?"accepted":"busy",NULL);
     if(!strcmp(action,"ota.status.get") || (ota_job_active() && !strcmp(action,"status.get")))return result(id,"ok",ota_job_status());
-    if(ota_job_active() && !strcmp(action,"capabilities.get")){json_object *o=json_object_new_object(),*a=json_object_new_array();const char *names[]={"status.get","ota.sources.get","ota.check.get","ota.notes.get","ota.status.get","ota.cancel"};for(unsigned i=0;i<6;i++)json_build_array_add(a,json_object_new_string(names[i]));json_build_object_add(o,"actions",a);phicomm_variant_json(o);return result(id,"ok",o);}
+    if(ota_job_active() && !strcmp(action,"capabilities.get")){json_object *o=json_object_new_object(),*a=json_object_new_array();for(unsigned i=0;ota_active_capability_names[i];i++)json_build_array_add(a,json_object_new_string(ota_active_capability_names[i]));json_build_object_add(o,"actions",a);phicomm_variant_json(o);return result(id,"ok",o);}
     if(ota_job_active() && strcmp(action,"ota.check.get") && strcmp(action,"ota.sources.get") && strcmp(action,"ota.notes.get"))return result(id,"busy",NULL);
 #endif
     bool query=strlen(action)>4 && !strcmp(action+strlen(action)-4,".get");
@@ -319,13 +339,16 @@ struct printbuf *service_command_wire(json_object *req)
     uint64_t before=service_memory_failures();
     if(service_caller_graph_failed(before))return NULL;
     service_request view;bool live=false;
+    bool decoded=service_request_decode(req,&view);
     struct printbuf *wire;
-    if(service_request_decode(req,&view) && !strcmp(view.action,"status.get") &&
+    if(decoded && !strcmp(view.action,"status.get") &&
        !ota_job_active() && status_view_params(view.params,&live)) {
         mico_rtos_lock_mutex(&command_lock);
         wire=service_product_status_wire(live,true,view.id);
         mico_rtos_unlock_mutex(&command_lock);
-    } else wire=json_owned_to_wire(service_command(req));
+    } else if(decoded && !strcmp(view.action,"capabilities.get") && service_product_capabilities_wire)
+        wire=service_capabilities_wire(view.id);
+    else wire=json_owned_to_wire(service_command(req));
     if(service_caller_graph_failed(before)) { if(wire)printbuf_free(wire);return NULL; }
     return wire;
 }
@@ -348,6 +371,8 @@ struct printbuf *service_mqtt_command_wire(json_object *req) {
 }
 struct printbuf *service_query_wire(const char *action)
 {
+    if(ready && !strcmp(action,"capabilities.get") && service_product_capabilities_wire)
+        return service_capabilities_wire(NULL);
     if(!ready || strcmp(action,"status.get") || ota_job_active())return json_owned_to_wire(service_query(action));
     uint64_t before=service_memory_failures();
     if(service_caller_graph_failed(before))return NULL;

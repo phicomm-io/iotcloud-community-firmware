@@ -94,7 +94,8 @@ static void update_worker(mico_thread_arg_t arg){
     mico_rtos_lock_mutex(&service_lock);update_busy=false;mico_rtos_unlock_mutex(&service_lock);
     mico_rtos_delete_thread(NULL);
 }
-static void update_capabilities(json_object *o){json_object *a=json_object_object_get(o,"actions");if(a){const char *names[]={"ota.sources.get","ota.check","ota.check.get","ota.install","ota.notes","ota.notes.get","ota.status.get","ota.cancel"};for(unsigned i=0;i<8;i++)json_build_array_add(a,json_object_new_string(names[i]));}}
+static const char *const update_capability_names[]={"ota.sources.get","ota.check","ota.check.get","ota.install","ota.notes","ota.notes.get","ota.status.get","ota.cancel",NULL};
+static void update_capabilities(json_object *o){json_object *a=json_object_object_get(o,"actions");if(a)for(unsigned i=0;update_capability_names[i];i++)json_build_array_add(a,json_object_new_string(update_capability_names[i]));}
 static json_object *update_command(const char *action,json_object *p,const char **code,bool *handled){
     if(strcmp(action,"ota.sources.get")&&strcmp(action,"ota.check")&&strcmp(action,"ota.check.get")&&strcmp(action,"ota.install")&&strcmp(action,"ota.notes")&&strcmp(action,"ota.notes.get"))return NULL;
     *handled=true;*code="ok";json_object *o=json_object_new_object();
