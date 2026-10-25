@@ -17,7 +17,7 @@ PM2.5, formaldehyde, temperature, humidity, clock and brightness remain the basi
 | Custom RTTTL music | Upload, read, play and stop one monophonic tune; dual-slot Flash storage survives reboot and normal application OTA; compatible WebUI can use it for alarms | Implemented in v0.9.3 source, not yet released; 1024 bytes, 256 notes, 180 seconds maximum |
 | Auditable update and recovery | Open receive/stage/verification logic; the independent new Boot adds CRC32 journal checks and restarts interrupted copying | New Boot behavior requires replacing Boot; CRC is not a signature or old-version rollback |
 
-Two-level pollutant thresholds already existed in stock firmware. Their color and high-level buzzer behavior is retained; querying configuration is an extension. The v0.9.3 source also blinks the clock colon each second, but the corresponding stock path remains unconfirmed, so this is not claimed as a stock-exclusive difference.
+Fixes the stock firmware issue where two-level pollutant threshold settings did not take effect. Custom thresholds now control indicator colors and high-level buzzer alarms, with an added query for the current configuration. The v0.9.3 source also blinks the clock colon each second, but the corresponding stock path remains unconfirmed, so this is not claimed as a stock-exclusive difference.
 
 ## Downloads and validation
 
