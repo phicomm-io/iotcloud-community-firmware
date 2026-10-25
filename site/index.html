@@ -84,7 +84,7 @@
 
 <section class="section" id="m1-mcu"><div class="wrap">
 <p class="eyebrow">M1 · ATSAMD20G18A</p><h2>开源主控，让屏幕与声音有更多玩法。</h2>
-<p class="lead">传感器、实体屏幕与蜂鸣器的独立开源固件，与 EMW3080 联网固件分别升级。新增 CO₂ 屏幕替换或交替显示、屏幕段与 PWM 调试、能力及状态查询；v0.9.3 开发预览提供 RTTTL 音乐与四种提示音，搭配 Wi-Fi v0.9.27 使用。</p>
+<p class="lead">传感器、实体屏幕与蜂鸣器的独立开源固件，与 EMW3080 联网固件分别升级。新增 CO₂ 屏幕替换或交替显示、屏幕段与 PWM 调试、能力及状态查询；支持 RTTTL 音乐与四种提示音（搭配 Wi-Fi v0.9.27）；v0.9.4 开发预览新增完整传感器帧查询，可读取 PM1.0、PM10 和颗粒数等数据。</p>
 <p>当前发布为开发预览，仍需实机复验。CO₂ 需要外接传感器及配套联网固件，不会增加原机没有的传感器。</p>
 <div class="actions"><a class="btn primary" href="guides/m1-mcu-firmware.html">功能介绍与原厂备份</a><a class="btn" href="guides/m1-mcu-update.html">免拆机网络升级</a><a class="btn" href="#m1-mcu-releases">主控 Release 下载</a><a class="btn" href="https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20">MIT 开源仓库</a></div>
 </div></section>
@@ -104,6 +104,7 @@
 <p><a href="guides/m1-mcu-update.html">主控网络升级教程</a> · Wi-Fi 固件最低 v0.9.26，使用电脑脚本升级，无需 J-Link 或拆机。</p>
 <p>ATSAMD20G18A 开发预览，与上方联网固件的版本号、镜像和升级入口相互独立。以下附件来自 GitHub，不随联网固件的下载来源切换。应用 OTA 不更换 Boot；原厂整片备份不能用于应用 OTA。</p>
 <div class="actions"><a class="btn" href="guides/m1-mcu-firmware.html">新增功能与使用边界</a><a class="btn" href="https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20/releases">全部 GitHub Releases</a><a class="btn" href="guides/assets/firmware/m1-mcu/m1-atsamd20g18a-stock-11.1.2.1.bin" download>原厂主控备份 · 256 KiB</a><a class="btn" href="guides/assets/firmware/m1-mcu/SHA256SUMS">原厂备份 SHA256</a></div>
+<p><a href="https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20/releases/tag/v0.9.4">v0.9.4 开发预览</a>：新增完整传感器帧读取，支持电脑工具经 Wi-Fi 查询 PM1.0 / PM2.5 / PM10、颗粒数和原始响应。</p>
 <p id="m1-mcu-status" role="status" aria-live="polite">正在读取主控版本…</p><div id="m1-mcu-versions"></div>
 <noscript><p>请通过「全部 GitHub Releases」查看主控版本与附件；原厂备份可直接下载。</p></noscript>
 </section>

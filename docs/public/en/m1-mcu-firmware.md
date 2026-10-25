@@ -16,13 +16,14 @@ PM2.5, formaldehyde, temperature, humidity, clock and brightness remain the basi
 | Capability and state queries | Sensor health, display cache, PM mode and configured thresholds | v0.9.2, compatible tools or Wi-Fi firmware |
 | Four notification tones | Tap, confirmation, notice and error tones with controller-side timeout | v0.9.3 development preview; Wi-Fi v0.9.27 |
 | Custom RTTTL music | Upload, read, play and stop one monophonic tune; dual-slot Flash storage survives reboot and normal application OTA; compatible WebUI can use it for alarms | v0.9.3 development preview; Wi-Fi v0.9.27; 1024 bytes, 256 notes, 180 seconds maximum |
+| Complete sensor frames | Two sets of PM1.0/PM2.5/PM10, six cumulative particle counts, raw formaldehyde, raw temperature/humidity and status; includes age, health and checksum information | v0.9.4; computer tool over the Wi-Fi bridge |
 | Auditable update and recovery | Open receive/stage/verification logic; the independent new Boot adds CRC32 journal checks and restarts interrupted copying | New Boot behavior requires replacing Boot; CRC is not a signature or old-version rollback |
 
 Fixes the stock firmware issue where two-level pollutant threshold settings did not take effect. Custom thresholds now control indicator colors and high-level buzzer alarms, with an added query for the current configuration. v0.9.3 also blinks the clock colon each second, but the corresponding stock path remains unconfirmed, so this is not claimed as a stock-exclusive difference.
 
 ## Downloads and validation
 
-The latest published controller release is **v0.9.3, a development preview**, paired with Wi-Fi v0.9.27. The dedicated download section lists public releases including prereleases, separately from Wi-Fi firmware. Update the controller and Wi-Fi module separately.
+The latest published controller release is **v0.9.4, a development preview**. Network flashing and sensor-frame queries require Wi-Fi v0.9.26 or newer; web music and tone controls require Wi-Fi v0.9.27 or newer. The dedicated download section lists public releases including prereleases, separately from Wi-Fi firmware. Update the controller and Wi-Fi module separately.
 
 **This remains a development preview.** The watchdog clock divider causing the early oss-0.3 boot failure has been fixed. This candidate passed network OTA, preset tones, WebUI music upload/readback/play/stop and song retention across application OTA on one M1; the user confirmed audible sound. Candidate validation is recorded separately from acceptance of the official Release binary. Other board revisions, full electrical timing and real interrupted-write recovery remain unverified. Quiet music remains a known limitation; this release does not add volume amplification. Check the downloaded tag's release notes and [validation record](https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20/blob/main/docs/validation.md).
 
@@ -30,6 +31,20 @@ The latest published controller release is **v0.9.3, a development preview**, pa
 - `m1-mcu-debug-recovery.zip` contains application/Boot debugging and recovery files with address instructions.
 - Application OTA preserves the stock Boot, which does not gain the independent new Boot's CRC/recovery guarantees.
 - Do not submit controller images to the EMW3080 Wi-Fi firmware updater. See [controller network OTA](https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20/blob/main/docs/network-ota.md).
+
+## Read additional sensor data
+
+v0.9.4 provides read-only complete-frame queries. Use the tool from this version's source with your own device IP and ID:
+
+```sh
+python3 tools/m1_sensors.py --host DEVICE_IP --device-id DEVICE_ID
+# Read only the complete particle frame
+python3 tools/m1_sensors.py --host DEVICE_IP --device-id DEVICE_ID --sensor pm
+```
+
+If a web password is configured, set `M1_WEB_PASSWORD` as described in the [network update guide](m1-mcu-update). The tool checks controller capabilities first and also supports offline frame decoding. PM1.0/PM2.5/PM10 use μg/m³, cumulative particle counts use particles per 0.1 L, and temperature/humidity conversions exclude M1 display compensation. Unknown bytes remain raw data.
+
+A development candidate on one M1 returned PM1.0/PM2.5/PM10 of 13/19/19 μg/m³ and nonzero particle counts, with valid measurement, status and auxiliary checksums. Additional data currently requires on-demand computer queries; automatic Wi-Fi collection, web display and extra MQTT reporting are not included. Ordinary PM2.5 reporting is unchanged. Module identity and measurement accuracy need independent verification. See [fields and hardware observations](https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20/blob/v0.9.4/docs/sensor-frames.md).
 
 ## Stock controller backup
 
