@@ -5224,6 +5224,1980 @@
       "source_refs": [
         "v0.9.27:b007"
       ]
+    },
+    {
+      "change_id": "v1-bundled-i18n",
+      "version": "1.0.0-rc",
+      "type": "improvement",
+      "component": "bundled_web",
+      "scope": {
+        "models": [
+          "tc1",
+          "a1",
+          "m1",
+          "daikin"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources",
+          "hub"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "设备网页与配网文案国际化",
+        "en": "Internationalized device and setup pages"
+      },
+      "description": {
+        "zh-CN": "整理设备操作页面和配网页的中英文文案，保留原有界面风格。精简版保留自身配网页面，完整操作页由独立前端提供。",
+        "en": "Expand Chinese and English text coverage in device and setup pages while retaining the existing visual style. Slim images retain their setup pages; the independent frontend provides full device controls."
+      },
+      "ota_summary": {
+        "zh-CN": "整理设备操作页面和配网页的中英文文案，保留原有界面风格。精简版保留自身配网页面，完整操作页由独立前端提供。",
+        "en": "Expand Chinese and English text coverage in device and setup pages while retaining the existing visual style. Slim images retain their setup pages; the independent frontend provides full device controls."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc:b003"
+      ],
+      "evidence": {
+        "index": "review/release-v1.0.0-rc/feature-evidence.json",
+        "feature_ids": [
+          "i18n"
+        ],
+        "source_refs": [
+          "contributing",
+          "device_language",
+          "platform_i18n",
+          "platform_mail",
+          "web_i18n"
+        ]
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+        "reviewed_utc": "2026-10-26T04:56:16.830877+00:00",
+        "review_report": "review/release-v1.0.0-rc/structured-notes-independent-review.json",
+        "review_report_sha256": "ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+        "reviewed_content_sha256": "aa7fa32596c7ab9c68d9efcfd2eb4f062d886f25b57fae611da7181fbf3e860d",
+        "reason": "i18n扩展与原样式一致；slim仅配网页、独立前端提供完整操作页。 bundled_web；实际full/fresh-air/hub与slim setup均有对应页面。"
+      }
+    },
+    {
+      "change_id": "v1-platform-i18n",
+      "version": "1.0.0-rc",
+      "type": "improvement",
+      "component": "service",
+      "scope": {
+        "models": [
+          "tc1",
+          "a1",
+          "m1",
+          "daikin"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources",
+          "hub"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "平台界面、服务反馈与邮件国际化",
+        "en": "Internationalized platform, service messages and email"
+      },
+      "description": {
+        "zh-CN": "管理平台界面、服务成功或错误反馈及邮件模板使用中英文文案；程序继续使用稳定错误码。平台服务单独部署，不随设备 OTA 更新。",
+        "en": "The management platform, success and error messages, and email templates use Chinese and English text. Applications continue to use stable error codes. Platform services are deployed separately from device OTA updates."
+      },
+      "ota_summary": {
+        "zh-CN": "管理平台界面、服务成功或错误反馈及邮件模板使用中英文文案；程序继续使用稳定错误码。平台服务单独部署，不随设备 OTA 更新。",
+        "en": "The management platform, success and error messages, and email templates use Chinese and English text. Applications continue to use stable error codes. Platform services are deployed separately from device OTA updates."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc:b003"
+      ],
+      "evidence": {
+        "index": "review/release-v1.0.0-rc/feature-evidence.json",
+        "feature_ids": [
+          "i18n"
+        ],
+        "source_refs": [
+          "contributing",
+          "device_language",
+          "platform_i18n",
+          "platform_mail",
+          "web_i18n"
+        ]
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+        "reviewed_utc": "2026-10-26T04:56:16.830877+00:00",
+        "review_report": "review/release-v1.0.0-rc/structured-notes-independent-review.json",
+        "review_report_sha256": "ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+        "reviewed_content_sha256": "2dd876b50ac17b40705e556a5c0b7bc38335d5451ab6e8c1f53838ae778da078",
+        "reason": "平台/反馈/邮件中英含义一致，稳定错误字段与翻译分开。 service；独立平台部署，明确排除设备OTA。"
+      }
+    },
+    {
+      "change_id": "v1-device-language",
+      "version": "1.0.0-rc",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "tc1",
+          "a1",
+          "m1",
+          "daikin"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources",
+          "hub"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "独立设备语言与 MQTT 名称",
+        "en": "Separate device language and MQTT names"
+      },
+      "description": {
+        "zh-CN": "保存设备语言，按该语言重新发布 MQTT / Home Assistant 实体名称。浏览器语言单独设置，实体标识、唯一 ID 和主题保持不变。",
+        "en": "Persist the device language and republish MQTT and Home Assistant entity names in that language. Browser language is configured separately; entity identifiers, unique IDs and topics remain unchanged."
+      },
+      "ota_summary": {
+        "zh-CN": "保存设备语言，按该语言重新发布 MQTT / Home Assistant 实体名称。浏览器语言单独设置，实体标识、唯一 ID 和主题保持不变。",
+        "en": "Persist the device language and republish MQTT and Home Assistant entity names in that language. Browser language is configured separately; entity identifiers, unique IDs and topics remain unchanged."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc:b003"
+      ],
+      "evidence": {
+        "index": "review/release-v1.0.0-rc/feature-evidence.json",
+        "feature_ids": [
+          "persistent_device_language"
+        ],
+        "source_refs": [
+          "device_language",
+          "language_ids",
+          "m1_mqtt_names",
+          "shared_mqtt_names"
+        ]
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+        "reviewed_utc": "2026-10-26T04:56:16.830877+00:00",
+        "review_report": "review/release-v1.0.0-rc/structured-notes-independent-review.json",
+        "review_report_sha256": "ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+        "reviewed_content_sha256": "18779abcbeea7662b818c92d06cd48f7a90a0ce480fdf7b1955da38ac8981bbe",
+        "reason": "持久设备语言与浏览器偏好分离，MQTT/HA名称更新而身份/主题稳定。 firmware；四机型实际Wi-Fi变体。"
+      }
+    },
+    {
+      "change_id": "v1-local-connection-fold",
+      "version": "1.0.0-rc",
+      "type": "improvement",
+      "component": "service",
+      "scope": {
+        "models": [
+          "tc1",
+          "a1",
+          "m1",
+          "daikin"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources",
+          "hub"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "按需展开本地连接",
+        "en": "Expand Local connection on demand"
+      },
+      "description": {
+        "zh-CN": "独立设备管理前端、平台与 Pages 演示统一使用 Local connection 按钮，点击后显示 IP 与密码输入并可折叠，保持现有风格。",
+        "en": "The independent device-management frontend, platform and Pages demos use a Local connection button that reveals collapsible IP and password inputs while retaining the existing style."
+      },
+      "ota_summary": {
+        "zh-CN": "独立设备管理前端、平台与 Pages 演示统一使用 Local connection 按钮，点击后显示 IP 与密码输入并可折叠，保持现有风格。",
+        "en": "The independent device-management frontend, platform and Pages demos use a Local connection button that reveals collapsible IP and password inputs while retaining the existing style."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc:b004"
+      ],
+      "evidence": {
+        "index": "review/release-v1.0.0-rc/feature-evidence.json",
+        "feature_ids": [
+          "local_connection_fold"
+        ],
+        "source_refs": [
+          "local_connection",
+          "progress"
+        ]
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+        "reviewed_utc": "2026-10-26T04:56:16.830877+00:00",
+        "review_report": "review/release-v1.0.0-rc/structured-notes-independent-review.json",
+        "review_report_sha256": "ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+        "reviewed_content_sha256": "a092ef7f9c8fff29ff4142b9adbf992cfb0c92d94eb65434b01c1923f4379601",
+        "reason": "Local connection按钮展开/折叠IP与密码，未声称线上发布已完成。 service；独立应用/平台/demo同组件，不计设备OTA。"
+      }
+    },
+    {
+      "change_id": "v1-platform-short-usernames",
+      "version": "1.0.0-rc",
+      "type": "improvement",
+      "component": "service",
+      "scope": {
+        "models": [
+          "tc1",
+          "a1",
+          "m1",
+          "daikin"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources",
+          "hub"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "限制新用户名与 MQTT 别名长度",
+        "en": "Limit new usernames and MQTT aliases"
+      },
+      "description": {
+        "zh-CN": "新平台用户名和 MQTT 别名为 3–32 个 ASCII 字母、数字、下划线、点或连字符。已有长账号保留登录，可添加短 MQTT 别名；邮箱登录独立处理。此约束不替代设备连接第三方 Broker 的账号规则。",
+        "en": "New platform usernames and MQTT aliases contain 3–32 ASCII letters, digits, underscores, dots or hyphens. Existing long accounts retain login and may add a short MQTT alias. Email login is handled separately. This does not replace account rules for third-party brokers."
+      },
+      "ota_summary": {
+        "zh-CN": "新平台用户名和 MQTT 别名为 3–32 个 ASCII 字母、数字、下划线、点或连字符。已有长账号保留登录，可添加短 MQTT 别名；邮箱登录独立处理。此约束不替代设备连接第三方 Broker 的账号规则。",
+        "en": "New platform usernames and MQTT aliases contain 3–32 ASCII letters, digits, underscores, dots or hyphens. Existing long accounts retain login and may add a short MQTT alias. Email login is handled separately. This does not replace account rules for third-party brokers."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc:b005"
+      ],
+      "evidence": {
+        "index": "review/release-v1.0.0-rc/feature-evidence.json",
+        "feature_ids": [
+          "cloud_username_limit"
+        ],
+        "source_refs": [
+          "cloud_legacy_alias",
+          "cloud_username",
+          "platform_i18n"
+        ]
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+        "reviewed_utc": "2026-10-26T04:56:16.830877+00:00",
+        "review_report": "review/release-v1.0.0-rc/structured-notes-independent-review.json",
+        "review_report_sha256": "ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+        "reviewed_content_sha256": "576708484e499cd4b2184b7044a292dabd56e20ed83dba99c7c1170f8bf4d5cf",
+        "reason": "3–32 ASCII alnum_.-、旧长账户、短MQTT别名、邮箱和第三方Broker边界完整。 service；仅云新用户名/MQTT别名，不替代本地owner规则。"
+      }
+    },
+    {
+      "change_id": "v1-m1-mcu-version-ui",
+      "version": "1.0.0-rc",
+      "type": "feature",
+      "component": "bundled_web",
+      "scope": {
+        "models": [
+          "m1"
+        ],
+        "variants": [
+          "full"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "分别显示 Wi-Fi 与传感器 MCU 版本",
+        "en": "Show Wi-Fi and sensor MCU versions separately"
+      },
+      "description": {
+        "zh-CN": "分别显示联网模块和传感器 MCU 的原始版本，无法读取时显示未知。原厂 11.x 优先推荐开源主控；17.1.2.3 / 17.x 暂不建议迁移。Wi-Fi OTA 不包含主控升级。",
+        "en": "Show the original Wi-Fi module and sensor MCU versions separately, or unknown when unreadable. The open-source sensor MCU is recommended first for stock 11.x; migration from 17.1.2.3 or 17.x is not currently recommended. Wi-Fi OTA does not update the sensor MCU."
+      },
+      "ota_summary": {
+        "zh-CN": "分别显示联网模块和传感器 MCU 的原始版本，无法读取时显示未知。原厂 11.x 优先推荐开源主控；17.1.2.3 / 17.x 暂不建议迁移。Wi-Fi OTA 不包含主控升级。",
+        "en": "Show the original Wi-Fi module and sensor MCU versions separately, or unknown when unreadable. The open-source sensor MCU is recommended first for stock 11.x; migration from 17.1.2.3 or 17.x is not currently recommended. Wi-Fi OTA does not update the sensor MCU."
+      },
+      "summary_complete": true,
+      "critical": true,
+      "source_refs": [
+        "v1.0.0-rc:b007"
+      ],
+      "evidence": {
+        "index": "review/release-v1.0.0-rc/feature-evidence.json",
+        "feature_ids": [
+          "m1_mcu_version_and_stock_boundary"
+        ],
+        "source_refs": [
+          "m1_user_guide",
+          "mcu_readme",
+          "web_mcu_version"
+        ]
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+        "reviewed_utc": "2026-10-26T04:56:16.830877+00:00",
+        "review_report": "review/release-v1.0.0-rc/structured-notes-independent-review.json",
+        "review_report_sha256": "ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+        "reviewed_content_sha256": "73ca585485731c8fd0eeb24f39a7828da5d1a9b09096a079d4434fb09b97f732",
+        "reason": "Wi-Fi/MCU原始版本、unknown、11.x推荐/17.x暂不迁移、独立升级完整。 bundled_web；仅M1 full；未把旧版本查询API重新申报。"
+      }
+    },
+    {
+      "change_id": "v1-m1-sensor-pm-smoothing",
+      "version": "1.0.0-rc",
+      "type": "improvement",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "m1"
+        ],
+        "variants": [
+          "sensor-mcu"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "传感器 MCU 的 PM2.5 平滑",
+        "en": "PM2.5 smoothing in the sensor MCU"
+      },
+      "description": {
+        "zh-CN": "需单独升级开源传感器 MCU：PM2.5 使用三点中值与自适应平滑抑制尖峰，持续升高时快速跟随；原始传感器帧仍可查询。本项不包含在 Wi-Fi OTA 中。",
+        "en": "Requires a separate open-source sensor MCU update: a three-sample median and adaptive smoothing suppress PM2.5 spikes while following sustained increases quickly. Raw sensor frames remain available. This feature is not included in Wi-Fi OTA."
+      },
+      "ota_summary": {
+        "zh-CN": "需单独升级开源传感器 MCU：PM2.5 使用三点中值与自适应平滑抑制尖峰，持续升高时快速跟随；原始传感器帧仍可查询。本项不包含在 Wi-Fi OTA 中。",
+        "en": "Requires a separate open-source sensor MCU update: a three-sample median and adaptive smoothing suppress PM2.5 spikes while following sustained increases quickly. Raw sensor frames remain available. This feature is not included in Wi-Fi OTA."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc:b008"
+      ],
+      "evidence": {
+        "index": "review/release-v1.0.0-rc/feature-evidence.json",
+        "feature_ids": [
+          "m1_pm25_smoothing"
+        ],
+        "source_refs": [
+          "mcu_readme",
+          "pm_filter",
+          "pm_runtime"
+        ]
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+        "reviewed_utc": "2026-10-26T04:56:16.830877+00:00",
+        "review_report": "review/release-v1.0.0-rc/structured-notes-independent-review.json",
+        "review_report_sha256": "ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+        "reviewed_content_sha256": "0ecd915a526d4be989f76267a70a767a8a5494123c86c4b58aeb0796b3df6880",
+        "reason": "三点中值/自适应平滑、持续升高跟随、原始帧保留准确。 firmware + m1:sensor-mcu；独立MCU升级，exact variant排除全部Wi-Fi目标。"
+      }
+    },
+    {
+      "change_id": "v1-m1-optional-sensor-buzzer",
+      "version": "1.0.0-rc",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "m1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "可选的甲醛与 PM2.5 蜂鸣报警",
+        "en": "Optional formaldehyde and PM2.5 buzzer alarms"
+      },
+      "description": {
+        "zh-CN": "甲醛、PM2.5 超阈值蜂鸣报警分别开关，默认关闭。需支持该能力的开源传感器 MCU；色灯、闹钟和手动提示音分别控制。",
+        "en": "Enable formaldehyde and PM2.5 threshold buzzer alarms separately; both are off by default. A capable open-source sensor MCU is required. Lamp colors, scheduled alarms and manual tones remain separate controls."
+      },
+      "ota_summary": {
+        "zh-CN": "甲醛、PM2.5 超阈值蜂鸣报警分别开关，默认关闭。需支持该能力的开源传感器 MCU；色灯、闹钟和手动提示音分别控制。",
+        "en": "Enable formaldehyde and PM2.5 threshold buzzer alarms separately; both are off by default. A capable open-source sensor MCU is required. Lamp colors, scheduled alarms and manual tones remain separate controls."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc:b009"
+      ],
+      "evidence": {
+        "index": "review/release-v1.0.0-rc/feature-evidence.json",
+        "feature_ids": [
+          "m1_optional_threshold_buzzer"
+        ],
+        "source_refs": [
+          "alarm_contract",
+          "buzzer_runtime",
+          "mcu_readme"
+        ]
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+        "reviewed_utc": "2026-10-26T04:56:16.830877+00:00",
+        "review_report": "review/release-v1.0.0-rc/structured-notes-independent-review.json",
+        "review_report_sha256": "ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+        "reviewed_content_sha256": "a4f73424a364a59c9af3495abd693b925cfda66ada32a21058b5ec3ab66e4224",
+        "reason": "两种阈值蜂鸣分别开关且默认关，具备能力的MCU前提和独立其他提示音保留。 firmware；M1 full/slim的配置协同，不包含MCU升级镜像。"
+      }
+    },
+    {
+      "change_id": "v1-m1-button-actions",
+      "version": "1.0.0-rc",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "m1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "双击停止闹钟与整体切换读数",
+        "en": "Double-press alarm stop and whole-display switching"
+      },
+      "description": {
+        "zh-CN": "配套新版开源传感器 MCU 后，单击开关屏幕。闹钟响铃时，双击只停止闹钟；未响铃时，按配置同时切换甲醛和 PM2.5 区域的原始 / 用户读数。",
+        "en": "With the matching new open-source sensor MCU, a single press toggles the screen. When an alarm is ringing, a double press only stops it. Otherwise, when configured, it switches both formaldehyde and PM2.5 regions between original and user readings."
+      },
+      "ota_summary": {
+        "zh-CN": "配套新版开源传感器 MCU 后，单击开关屏幕。闹钟响铃时，双击只停止闹钟；未响铃时，按配置同时切换甲醛和 PM2.5 区域的原始 / 用户读数。",
+        "en": "With the matching new open-source sensor MCU, a single press toggles the screen. When an alarm is ringing, a double press only stops it. Otherwise, when configured, it switches both formaldehyde and PM2.5 regions between original and user readings."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc:b010"
+      ],
+      "evidence": {
+        "index": "review/release-v1.0.0-rc/feature-evidence.json",
+        "feature_ids": [
+          "m1_button_actions"
+        ],
+        "source_refs": [
+          "button_runtime",
+          "display_contract",
+          "m1_user_guide"
+        ]
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+        "reviewed_utc": "2026-10-26T04:56:16.830877+00:00",
+        "review_report": "review/release-v1.0.0-rc/structured-notes-independent-review.json",
+        "review_report_sha256": "ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+        "reviewed_content_sha256": "d9d66826b58a64767bfb05dceec1688faf719aa6ea7a1f3fdc4456a16a14d78c",
+        "reason": "修订后响铃双击只停闹钟；未响铃且配置允许时整体切换，两者互斥。 firmware；M1 full/slim配套新版开源MCU。"
+      }
+    },
+    {
+      "change_id": "v1-m1-segmented-reset",
+      "version": "1.0.0-rc",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "m1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "分段长按重新配网与恢复出厂",
+        "en": "Separate long-press reprovisioning and factory reset"
+      },
+      "description": {
+        "zh-CN": "配套新版开源传感器 MCU 后，按住 3 秒至未满 10 秒松手，清除 Wi-Fi 与网页密码并保留 MQTT 等设置；按满 10 秒恢复出厂，主控独立音乐保留。保存成功后两颗 MCU 一起重启，离线也可使用。",
+        "en": "With the matching new open-source sensor MCU, release after holding for at least 3 but under 10 seconds to clear Wi-Fi and the web password while keeping MQTT and other settings. Hold for 10 seconds to factory-reset network-module settings; independent sensor MCU music is retained. Both MCUs restart after settings are saved, including while offline."
+      },
+      "ota_summary": {
+        "zh-CN": "配套新版开源传感器 MCU 后，按住 3 秒至未满 10 秒松手，清除 Wi-Fi 与网页密码并保留 MQTT 等设置；按满 10 秒恢复出厂，主控独立音乐保留。保存成功后两颗 MCU 一起重启，离线也可使用。",
+        "en": "With the matching new open-source sensor MCU, release after holding for at least 3 but under 10 seconds to clear Wi-Fi and the web password while keeping MQTT and other settings. Hold for 10 seconds to factory-reset network-module settings; independent sensor MCU music is retained. Both MCUs restart after settings are saved, including while offline."
+      },
+      "summary_complete": true,
+      "critical": true,
+      "source_refs": [
+        "v1.0.0-rc:b010"
+      ],
+      "evidence": {
+        "index": "review/release-v1.0.0-rc/feature-evidence.json",
+        "feature_ids": [
+          "m1_segmented_reset"
+        ],
+        "source_refs": [
+          "button_runtime",
+          "m1_user_guide"
+        ]
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+        "reviewed_utc": "2026-10-26T04:56:16.830877+00:00",
+        "review_report": "review/release-v1.0.0-rc/structured-notes-independent-review.json",
+        "review_report_sha256": "ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+        "reviewed_content_sha256": "d9671b479be64dc46802a5b3f16d57b966a4d50037e8ea9277967cae453e5672",
+        "reason": "3–<10秒释放与满10秒动作、清除/保留内容、音乐独立保存、保存后双MCU复位准确。 firmware；M1 full/slim的协同恢复，离线不跳过持久化确认。"
+      }
+    },
+    {
+      "change_id": "v1-m1-dual-display-sources",
+      "version": "1.0.0-rc",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "m1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "双区域用户读数与独立有效期",
+        "en": "User readings and independent expiry for both regions"
+      },
+      "description": {
+        "zh-CN": "甲醛、PM2.5 区域分别选择本机传感器、同一 MQTT 账户 / Broker 下的在线设备或 API 数据，独立配置颜色和有效期。双击整体切换；缺失、过期、离线或无效时仅对应区域恢复原读数，不改原始采集与报警。需配套支持的新主控。",
+        "en": "Configure local sensors, online devices on the same MQTT account and broker, or API data separately for the formaldehyde and PM2.5 regions, with independent colors and expiry. Double press switches both regions together. Missing, expired, offline or invalid data restores only its region without changing original acquisition or alarms. A capable matching sensor MCU is required."
+      },
+      "ota_summary": {
+        "zh-CN": "甲醛、PM2.5 区域分别选择本机传感器、同一 MQTT 账户 / Broker 下的在线设备或 API 数据，独立配置颜色和有效期。双击整体切换；缺失、过期、离线或无效时仅对应区域恢复原读数，不改原始采集与报警。需配套支持的新主控。",
+        "en": "Configure local sensors, online devices on the same MQTT account and broker, or API data separately for the formaldehyde and PM2.5 regions, with independent colors and expiry. Double press switches both regions together. Missing, expired, offline or invalid data restores only its region without changing original acquisition or alarms. A capable matching sensor MCU is required."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc:b011"
+      ],
+      "evidence": {
+        "index": "review/release-v1.0.0-rc/feature-evidence.json",
+        "feature_ids": [
+          "m1_two_external_regions",
+          "m1_typed_sources"
+        ],
+        "source_refs": [
+          "a1_typed_producer",
+          "display_contract",
+          "display_contract_json",
+          "display_source",
+          "m1_display_guide",
+          "tc1_power_freshness",
+          "tc1_typed_producer",
+          "todo"
+        ]
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+        "reviewed_utc": "2026-10-26T04:56:16.830877+00:00",
+        "review_report": "review/release-v1.0.0-rc/structured-notes-independent-review.json",
+        "review_report_sha256": "ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+        "reviewed_content_sha256": "32fb8186c472668b79fce766c741c1f9dd4cd6c6d4d08fce229f74fe0eedea11",
+        "reason": "两区域来源/颜色/TTL独立、同账户和Broker、单路失效回退且不改采集报警准确。 firmware；M1 full/slim consumer，需匹配MCU。"
+      }
+    },
+    {
+      "change_id": "v1-tc1-a1-typed-display-producers",
+      "version": "1.0.0-rc",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "tc1",
+          "a1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "发布 TC1 功率与 A1 生效输出数据",
+        "en": "Publish TC1 power and effective A1 fan output"
+      },
+      "description": {
+        "zh-CN": "为 M1 用户读数提供带身份、新鲜度与有效标记的 TC1 功率和 A1 主风机生效输出数据。A1 为 0–100% 的当前输出，新风变体相同，不表示 RPM；不可用读数不伪装成零。",
+        "en": "Provide M1 user readings with TC1 power and effective A1 primary-fan output carrying identity, freshness and validity. A1 reports the current 0–100% output, including the fresh-air variant, rather than RPM. Unavailable readings are not represented as zero."
+      },
+      "ota_summary": {
+        "zh-CN": "为 M1 用户读数提供带身份、新鲜度与有效标记的 TC1 功率和 A1 主风机生效输出数据。A1 为 0–100% 的当前输出，新风变体相同，不表示 RPM；不可用读数不伪装成零。",
+        "en": "Provide M1 user readings with TC1 power and effective A1 primary-fan output carrying identity, freshness and validity. A1 reports the current 0–100% output, including the fresh-air variant, rather than RPM. Unavailable readings are not represented as zero."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc:b011"
+      ],
+      "evidence": {
+        "index": "review/release-v1.0.0-rc/feature-evidence.json",
+        "feature_ids": [
+          "m1_typed_sources"
+        ],
+        "source_refs": [
+          "a1_typed_producer",
+          "display_contract",
+          "display_source",
+          "m1_display_guide",
+          "tc1_power_freshness",
+          "tc1_typed_producer",
+          "todo"
+        ]
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+        "reviewed_utc": "2026-10-26T04:56:16.830877+00:00",
+        "review_report": "review/release-v1.0.0-rc/structured-notes-independent-review.json",
+        "review_report_sha256": "ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+        "reviewed_content_sha256": "e7301af333dd38d81d0d04523ab26c2e12804706ef10adb4c7583ace642effb8",
+        "reason": "TC1功率/A1生效主风机数据身份、新鲜度、有效性准确；A1为0–100%而非RPM。 firmware；TC1 full/slim及A1全部实际变体，新风仍是主风机输出。"
+      }
+    },
+    {
+      "change_id": "v1-m1-display-modes-glyphs",
+      "version": "1.0.0-rc",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "m1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "按物理屏幕选择数字模式与原厂标识",
+        "en": "Display modes and native legends for the physical screen"
+      },
+      "description": {
+        "zh-CN": "PM 区域仅三位整数，最高 999；甲醛区域可选整数、千位自动缩放、两位小数、一位小数末位补零或固定除以 1000。小数点固定在第一位之后；字样与原生单位分别显隐，单位仍为 mg/m³ 和 µg/m³。本地 / MQTT 正数溢出按模式上限显示。",
+        "en": "The PM region supports three integer digits up to 999. The formaldehyde region offers integer, automatic kilo scaling, two decimals, one decimal with a trailing zero, or fixed division by 1000. Its decimal point is fixed after the first digit. Legends and native units have separate visibility controls; the units remain mg/m³ and µg/m³. Positive local or MQTT overflow is limited to the selected mode maximum."
+      },
+      "ota_summary": {
+        "zh-CN": "PM 区域仅三位整数，最高 999；甲醛区域可选整数、千位自动缩放、两位小数、一位小数末位补零或固定除以 1000。小数点固定在第一位之后；字样与原生单位分别显隐，单位仍为 mg/m³ 和 µg/m³。本地 / MQTT 正数溢出按模式上限显示。",
+        "en": "The PM region supports three integer digits up to 999. The formaldehyde region offers integer, automatic kilo scaling, two decimals, one decimal with a trailing zero, or fixed division by 1000. Its decimal point is fixed after the first digit. Legends and native units have separate visibility controls; the units remain mg/m³ and µg/m³. Positive local or MQTT overflow is limited to the selected mode maximum."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc:b012"
+      ],
+      "evidence": {
+        "index": "review/release-v1.0.0-rc/feature-evidence.json",
+        "feature_ids": [
+          "m1_display_modes_and_glyphs"
+        ],
+        "source_refs": [
+          "display_contract",
+          "display_contract_json",
+          "display_modes",
+          "m1_display_guide"
+        ]
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+        "reviewed_utc": "2026-10-26T04:56:16.830877+00:00",
+        "review_report": "review/release-v1.0.0-rc/structured-notes-independent-review.json",
+        "review_report_sha256": "ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+        "reviewed_content_sha256": "17062437a4be3dd771300f2ed80df182cb2bd809a833b2a8dcb80fd4f382091b",
+        "reason": "PM整数999/甲醛五模式/固定小数点、字样单位独立显隐和正溢出饱和准确。 firmware；M1 full/slim格式编码，物理生效需MCU。"
+      }
+    },
+    {
+      "change_id": "v1-m1-independent-lamp-segments",
+      "version": "1.0.0-rc",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "m1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "每区域九段灯独立配置",
+        "en": "Nine independent lamp segments per region"
+      },
+      "description": {
+        "zh-CN": "每区域左中右三个灯位的红、绿、黄九段可独立开关，并可在同一位置同时开启多色；也可按显示转换前的原始物理值和两个阈值自动配色。",
+        "en": "Control the red, green and yellow segments independently at each of three positions in each region, including multiple colors at one position. Alternatively, apply two thresholds to the original physical value before display conversion."
+      },
+      "ota_summary": {
+        "zh-CN": "每区域左中右三个灯位的红、绿、黄九段可独立开关，并可在同一位置同时开启多色；也可按显示转换前的原始物理值和两个阈值自动配色。",
+        "en": "Control the red, green and yellow segments independently at each of three positions in each region, including multiple colors at one position. Alternatively, apply two thresholds to the original physical value before display conversion."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc:b012"
+      ],
+      "evidence": {
+        "index": "review/release-v1.0.0-rc/feature-evidence.json",
+        "feature_ids": [
+          "m1_nine_lamp_segments"
+        ],
+        "source_refs": [
+          "display_contract_json",
+          "display_source",
+          "m1_display_guide"
+        ]
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+        "reviewed_utc": "2026-10-26T04:56:16.830877+00:00",
+        "review_report": "review/release-v1.0.0-rc/structured-notes-independent-review.json",
+        "review_report_sha256": "ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+        "reviewed_content_sha256": "312b3093fe683920865f3afa3ee3a87b28afa97677f1c52ac6373a5efed7f8f9",
+        "reason": "每区三位置红绿黄共九段可独立且同时多色，阈值按转换前物理值准确。 firmware；M1 full/slim；不重报旧阈值编辑功能。"
+      }
+    },
+    {
+      "change_id": "v1-m1-raw-display-api",
+      "version": "1.0.0-rc",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "m1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "API 直接写入数字与完整灯段",
+        "en": "Write raw digits and complete lamp segments through the API"
+      },
+      "description": {
+        "zh-CN": "display_value.set 按已保存的 API 区域配置接收 0–999 整数、小数点、字样、原生单位显隐及九段灯，不缩放、舍入、钳位或套用阈值配色；PM 禁止小数点。小数或越界数字拒绝。写入需匹配修订号与有效期，TTL 0 单独清除该区域。",
+        "en": "For a saved API-region configuration, display_value.set accepts an integer from 0 to 999, decimal point, legend and native-unit visibility, and all nine lamp segments. It does not scale, round, clamp or apply threshold colors. PM decimal points, fractional numbers and out-of-range digits are rejected. Writes must match the revision and expiry; TTL 0 clears only that region."
+      },
+      "ota_summary": {
+        "zh-CN": "display_value.set 按已保存的 API 区域配置接收 0–999 整数、小数点、字样、原生单位显隐及九段灯，不缩放、舍入、钳位或套用阈值配色；PM 禁止小数点。小数或越界数字拒绝。写入需匹配修订号与有效期，TTL 0 单独清除该区域。",
+        "en": "For a saved API-region configuration, display_value.set accepts an integer from 0 to 999, decimal point, legend and native-unit visibility, and all nine lamp segments. It does not scale, round, clamp or apply threshold colors. PM decimal points, fractional numbers and out-of-range digits are rejected. Writes must match the revision and expiry; TTL 0 clears only that region."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc:b013"
+      ],
+      "evidence": {
+        "index": "review/release-v1.0.0-rc/feature-evidence.json",
+        "feature_ids": [
+          "m1_raw_display_api"
+        ],
+        "source_refs": [
+          "display_contract",
+          "display_contract_json",
+          "display_raw"
+        ]
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+        "reviewed_utc": "2026-10-26T04:56:16.830877+00:00",
+        "review_report": "review/release-v1.0.0-rc/structured-notes-independent-review.json",
+        "review_report_sha256": "ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+        "reviewed_content_sha256": "e5f7cd5d7850b12631874d4012cb603809fe176a0693060803f2f9383fa90b64",
+        "reason": "raw 0–999整数、PM禁小数点、不转换/舍入/钳位/阈值换色、revision/TTL及TTL0单路清除完整。 firmware；M1 full/slim；需已保存API来源，不是任意传感器写入。"
+      }
+    },
+    {
+      "change_id": "v1-m1-display-compatibility",
+      "version": "1.0.0-rc",
+      "type": "improvement",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "m1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "显示能力协商、修订校验与配置迁移",
+        "en": "Display negotiation, revision checks and configuration migration"
+      },
+      "description": {
+        "zh-CN": "新显示配置使用 revision/CAS，并支持带冒号或连续形式、大小写不敏感的 MAC。先探测主控能力再启用新接口，保留冻结的旧 API / UART；支持已定义旧配置与备份迁移，未知未来布局进入恢复路径。",
+        "en": "New display configuration uses revision/CAS checks and accepts compact or colon-separated MAC addresses in either case. Probe the sensor MCU before enabling new interfaces and retain the frozen legacy API and UART behavior. Defined older configurations and backups migrate; unknown future layouts enter recovery."
+      },
+      "ota_summary": {
+        "zh-CN": "新显示配置使用 revision/CAS，并支持带冒号或连续形式、大小写不敏感的 MAC。先探测主控能力再启用新接口，保留冻结的旧 API / UART；支持已定义旧配置与备份迁移，未知未来布局进入恢复路径。",
+        "en": "New display configuration uses revision/CAS checks and accepts compact or colon-separated MAC addresses in either case. Probe the sensor MCU before enabling new interfaces and retain the frozen legacy API and UART behavior. Defined older configurations and backups migrate; unknown future layouts enter recovery."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc:b013",
+        "v1.0.0-rc:b021"
+      ],
+      "evidence": {
+        "index": "review/release-v1.0.0-rc/feature-evidence.json",
+        "feature_ids": [
+          "m1_display_contract_compatibility"
+        ],
+        "source_refs": [
+          "backup_implementation",
+          "contract_independent_review",
+          "display_contract",
+          "display_migration",
+          "display_source",
+          "display_uart",
+          "protocol_lock"
+        ]
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+        "reviewed_utc": "2026-10-26T04:56:16.830877+00:00",
+        "review_report": "review/release-v1.0.0-rc/structured-notes-independent-review.json",
+        "review_report_sha256": "ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+        "reviewed_content_sha256": "d1dd90b91e09c31ad4ddc4485296d308e3a7a2412905de432892f8c980a758a4",
+        "reason": "revision/CAS、两种MAC、能力探测、冻结旧API/UART、定义过迁移与未来布局保护准确。 firmware；M1 full/slim，不承诺未知布局自动迁移。"
+      }
+    },
+    {
+      "change_id": "v1-daikin-hub-variant",
+      "version": "1.0.0-rc",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "daikin"
+        ],
+        "variants": [
+          "hub"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "独立大金中枢版本与本地账户",
+        "en": "Separate Daikin hub variant and local account"
+      },
+      "description": {
+        "zh-CN": "hub 为独立变体，在传感器功能上提供本地账户与设备管理。首次创建账户前需设置设备网页密码；本地用户名为 3–32 个字母、数字或下划线，密码 8–63 字节，不含邮箱或 GitHub 云端登录。",
+        "en": "The separate hub variant adds a local account and device management to the sensor functions. Set a device web password before initial account creation. Local usernames contain 3–32 letters, digits or underscores and passwords contain 8–63 bytes. Email and GitHub cloud login are not included."
+      },
+      "ota_summary": {
+        "zh-CN": "hub 为独立变体，在传感器功能上提供本地账户与设备管理。首次创建账户前需设置设备网页密码；本地用户名为 3–32 个字母、数字或下划线，密码 8–63 字节，不含邮箱或 GitHub 云端登录。",
+        "en": "The separate hub variant adds a local account and device management to the sensor functions. Set a device web password before initial account creation. Local usernames contain 3–32 letters, digits or underscores and passwords contain 8–63 bytes. Email and GitHub cloud login are not included."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc:b015"
+      ],
+      "evidence": {
+        "index": "review/release-v1.0.0-rc/feature-evidence.json",
+        "feature_ids": [
+          "daikin_hub_variant_webui"
+        ],
+        "source_refs": [
+          "frontend_lock",
+          "hub_guide",
+          "hub_runtime",
+          "hub_service"
+        ]
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+        "reviewed_utc": "2026-10-26T04:56:16.830877+00:00",
+        "review_report": "review/release-v1.0.0-rc/structured-notes-independent-review.json",
+        "review_report_sha256": "ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+        "reviewed_content_sha256": "09a1e3eaa6d15924a7a50870135de3f53efcaea4af92cb7d440f048bbd07e982",
+        "reason": "hub独立、本地账户先设Web密码、3–32 alnum_及8–63字节密码、无邮箱/GitHub云登录准确。 firmware；仅daikin:hub，未混用云用户名字符集。"
+      }
+    },
+    {
+      "change_id": "v1-daikin-hub-webui",
+      "version": "1.0.0-rc",
+      "type": "feature",
+      "component": "bundled_web",
+      "scope": {
+        "models": [
+          "daikin"
+        ],
+        "variants": [
+          "hub"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "中枢账户、设备与服务网页设置",
+        "en": "Web settings for hub account, devices and services"
+      },
+      "description": {
+        "zh-CN": "在设备网页进入中枢管理，可配置本地账户、设备、Broker 接入、上游转发、巴法云映射和可选 Apple 家庭，保持原有界面风格。",
+        "en": "Open Hub management from the device page to configure the local account, devices, broker access, upstream forwarding, Bemfa mappings and optional Apple Home while retaining the existing visual style."
+      },
+      "ota_summary": {
+        "zh-CN": "在设备网页进入中枢管理，可配置本地账户、设备、Broker 接入、上游转发、巴法云映射和可选 Apple 家庭，保持原有界面风格。",
+        "en": "Open Hub management from the device page to configure the local account, devices, broker access, upstream forwarding, Bemfa mappings and optional Apple Home while retaining the existing visual style."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc:b015",
+        "v1.0.0-rc:b016",
+        "v1.0.0-rc:b017"
+      ],
+      "evidence": {
+        "index": "review/release-v1.0.0-rc/feature-evidence.json",
+        "feature_ids": [
+          "daikin_hub_variant_webui"
+        ],
+        "source_refs": [
+          "frontend_lock",
+          "hub_guide",
+          "hub_runtime",
+          "hub_service"
+        ]
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+        "reviewed_utc": "2026-10-26T04:56:16.830877+00:00",
+        "review_report": "review/release-v1.0.0-rc/structured-notes-independent-review.json",
+        "review_report_sha256": "ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+        "reviewed_content_sha256": "e4d464b0d42387be98b502020ad13474407c99cb7cd196cce8cd4ae44f62ccd2",
+        "reason": "WebUI本地账户/设备/Broker/上游/Bemfa/可选Apple家庭设置的双语语义一致。 bundled_web；仅daikin:hub，不声称实网/物理验收。"
+      }
+    },
+    {
+      "change_id": "v1-daikin-local-broker",
+      "version": "1.0.0-rc",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "daikin"
+        ],
+        "variants": [
+          "hub"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "局域网 MQTT TCP / WebSocket Broker",
+        "en": "LAN MQTT TCP and WebSocket broker"
+      },
+      "description": {
+        "zh-CN": "提供 TCP 1883 与 WebSocket 9001/mqtt，本地设备与 Home Assistant 可使用中枢账户连接和订阅；其他设备需在自己的 MQTT 设置中指定中枢地址与账户。",
+        "en": "Provide TCP on port 1883 and WebSocket at port 9001/mqtt for local devices and Home Assistant to connect and subscribe with the hub account. Configure the hub address and account in each device’s MQTT settings."
+      },
+      "ota_summary": {
+        "zh-CN": "提供 TCP 1883 与 WebSocket 9001/mqtt，本地设备与 Home Assistant 可使用中枢账户连接和订阅；其他设备需在自己的 MQTT 设置中指定中枢地址与账户。",
+        "en": "Provide TCP on port 1883 and WebSocket at port 9001/mqtt for local devices and Home Assistant to connect and subscribe with the hub account. Configure the hub address and account in each device’s MQTT settings."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc:b016"
+      ],
+      "evidence": {
+        "index": "review/release-v1.0.0-rc/feature-evidence.json",
+        "feature_ids": [
+          "daikin_hub_broker_ha"
+        ],
+        "source_refs": [
+          "hub_broker",
+          "hub_guide",
+          "hub_service",
+          "hub_transport"
+        ]
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+        "reviewed_utc": "2026-10-26T04:56:16.830877+00:00",
+        "review_report": "review/release-v1.0.0-rc/structured-notes-independent-review.json",
+        "review_report_sha256": "ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+        "reviewed_content_sha256": "f5f72abe9ad86e4322547cf9534a3c9490a6753fc6393b367198c86b9d331731",
+        "reason": "TCP1883、WS9001/mqtt、本地账户及需要在各设备自行配置中枢地址准确。 firmware；仅daikin:hub，不把登记设备当作远端自动配网。"
+      }
+    },
+    {
+      "change_id": "v1-daikin-broker-client-forwarding",
+      "version": "1.0.0-rc",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "daikin"
+        ],
+        "variants": [
+          "hub"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "Broker / Client 共存与事件、巴法云转发",
+        "en": "Concurrent broker and client with event and Bemfa forwarding"
+      },
+      "description": {
+        "zh-CN": "本地 Broker 与上游 MQTT Client 同时运行，按方向与主题映射转发事件，提供巴法云设备映射和转发配置。",
+        "en": "Run the local broker and upstream MQTT client concurrently, forward events according to direction and topic mappings, and configure Bemfa device mappings and forwarding."
+      },
+      "ota_summary": {
+        "zh-CN": "本地 Broker 与上游 MQTT Client 同时运行，按方向与主题映射转发事件，提供巴法云设备映射和转发配置。",
+        "en": "Run the local broker and upstream MQTT client concurrently, forward events according to direction and topic mappings, and configure Bemfa device mappings and forwarding."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc:b016"
+      ],
+      "evidence": {
+        "index": "review/release-v1.0.0-rc/feature-evidence.json",
+        "feature_ids": [
+          "daikin_hub_client_and_relays"
+        ],
+        "source_refs": [
+          "hub_guide",
+          "hub_relay",
+          "hub_runtime",
+          "hub_service"
+        ]
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+        "reviewed_utc": "2026-10-26T04:56:16.830877+00:00",
+        "review_report": "review/release-v1.0.0-rc/structured-notes-independent-review.json",
+        "review_report_sha256": "ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+        "reviewed_content_sha256": "70759ea89fd5dfc5f27a206fd905eb08491a024069ccb80a82e2a7e903646da9",
+        "reason": "Broker/Client共存、方向/主题映射及Bemfa映射转发语义一致。 firmware；仅daikin:hub；不是生产Broker或真实Bemfa验收声明。"
+      }
+    },
+    {
+      "change_id": "v1-daikin-hap-bridge",
+      "version": "1.0.0-rc",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "daikin"
+        ],
+        "variants": [
+          "hub"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "可选 HomeKit HAP 桥接",
+        "en": "Optional HomeKit HAP bridge"
+      },
+      "description": {
+        "zh-CN": "实验功能，默认关闭：以 HAP 桥接 TC1 六路开关、A1 风机 / 灯与 M1 / 大金具备的有效传感器。当前不包含 Matter；HomeKit 配对资料独立保存，不随普通配置备份导出。",
+        "en": "Experimental and off by default: bridge six TC1 switches, A1 fans and lights, and available valid M1 or Daikin sensors through HAP. Matter is not included. HomeKit pairing data is stored separately and is excluded from ordinary configuration backups."
+      },
+      "ota_summary": {
+        "zh-CN": "实验功能，默认关闭：以 HAP 桥接 TC1 六路开关、A1 风机 / 灯与 M1 / 大金具备的有效传感器。当前不包含 Matter；HomeKit 配对资料独立保存，不随普通配置备份导出。",
+        "en": "Experimental and off by default: bridge six TC1 switches, A1 fans and lights, and available valid M1 or Daikin sensors through HAP. Matter is not included. HomeKit pairing data is stored separately and is excluded from ordinary configuration backups."
+      },
+      "summary_complete": true,
+      "critical": true,
+      "source_refs": [
+        "v1.0.0-rc:b017"
+      ],
+      "evidence": {
+        "index": "review/release-v1.0.0-rc/feature-evidence.json",
+        "feature_ids": [
+          "daikin_hap_bridge"
+        ],
+        "source_refs": [
+          "hub_guide",
+          "hub_home",
+          "hub_home_contract"
+        ]
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+        "reviewed_utc": "2026-10-26T04:56:16.830877+00:00",
+        "review_report": "review/release-v1.0.0-rc/structured-notes-independent-review.json",
+        "review_report_sha256": "ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+        "reviewed_content_sha256": "be7cada203d96afb760671d1c57eaccffffca9b051b10c35d1b297d79e01ab05",
+        "reason": "HAP实验默认关闭、TC1六开关/A1风机灯/有效传感器、无Matter及配对独立备份限制完整。 firmware；仅daikin:hub，不声称iPhone配对/物理输出验收。"
+      }
+    },
+    {
+      "change_id": "v1-daikin-explicit-hub-conversion",
+      "version": "1.0.0-rc",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "daikin"
+        ],
+        "variants": [
+          "full"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "明确确认后从普通版切换中枢",
+        "en": "Explicitly confirmed conversion from full to hub"
+      },
+      "description": {
+        "zh-CN": "声明支持的新 full 可通过本地 HTTP、网页密码、匹配实际 OTA 容量的 hub 签名镜像和明确确认切换，保留联网配置。普通升级仍隔离变体，不支持直接 hub → full OTA。",
+        "en": "A new full image advertising this capability can switch to hub over local HTTP using the web password, a signed hub image that fits the installed OTA slot, and explicit confirmation. Network settings are retained. Ordinary updates remain variant-isolated; direct hub-to-full OTA is unsupported."
+      },
+      "ota_summary": {
+        "zh-CN": "声明支持的新 full 可通过本地 HTTP、网页密码、匹配实际 OTA 容量的 hub 签名镜像和明确确认切换，保留联网配置。普通升级仍隔离变体，不支持直接 hub → full OTA。",
+        "en": "A new full image advertising this capability can switch to hub over local HTTP using the web password, a signed hub image that fits the installed OTA slot, and explicit confirmation. Network settings are retained. Ordinary updates remain variant-isolated; direct hub-to-full OTA is unsupported."
+      },
+      "summary_complete": true,
+      "critical": true,
+      "source_refs": [
+        "v1.0.0-rc:b018"
+      ],
+      "evidence": {
+        "index": "review/release-v1.0.0-rc/feature-evidence.json",
+        "feature_ids": [
+          "daikin_explicit_full_to_hub"
+        ],
+        "source_refs": [
+          "hub_guide",
+          "hub_service"
+        ]
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+        "reviewed_utc": "2026-10-26T04:56:16.830877+00:00",
+        "review_report": "review/release-v1.0.0-rc/structured-notes-independent-review.json",
+        "review_report_sha256": "ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+        "reviewed_content_sha256": "ed53ae4bcf1e459697d52b76a4c3f9d7b6858cf2664d1d04e94ed876400140a2",
+        "reason": "full能力声明、本地密码、实际槽容量内签名hub镜像、明确确认、网络保留和禁止反向OTA准确。 firmware；仅daikin:full入口；普通OTA继续隔离variant。"
+      }
+    },
+    {
+      "change_id": "v1-authenticated-backup-recovery",
+      "version": "1.0.0-rc",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "tc1",
+          "a1",
+          "m1",
+          "daikin"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources",
+          "hub"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "完整配置备份、校验恢复与迁移保护",
+        "en": "Complete configuration backup, validated restore and migration protection"
+      },
+      "description": {
+        "zh-CN": "通过有网页密码的局域网 HTTP 下载或恢复完整配置，先核对机型、变体、配置版本及内容。保留已支持的旧配置迁移；不支持布局保留原存储并要求确认后清空。M1 MCU 音乐和 HomeKit 配对不在普通 Wi-Fi 配置备份中。",
+        "en": "Download or restore complete configuration over local HTTP protected by the web password after validating the model, variant, configuration version and contents. Retain supported older-configuration migration paths. Unsupported layouts preserve storage and require confirmation before clearing it. M1 MCU music and HomeKit pairing are excluded from ordinary Wi-Fi configuration backups."
+      },
+      "ota_summary": {
+        "zh-CN": "通过有网页密码的局域网 HTTP 下载或恢复完整配置，先核对机型、变体、配置版本及内容。保留已支持的旧配置迁移；不支持布局保留原存储并要求确认后清空。M1 MCU 音乐和 HomeKit 配对不在普通 Wi-Fi 配置备份中。",
+        "en": "Download or restore complete configuration over local HTTP protected by the web password after validating the model, variant, configuration version and contents. Retain supported older-configuration migration paths. Unsupported layouts preserve storage and require confirmation before clearing it. M1 MCU music and HomeKit pairing are excluded from ordinary Wi-Fi configuration backups."
+      },
+      "summary_complete": true,
+      "critical": true,
+      "source_refs": [
+        "v1.0.0-rc:b020"
+      ],
+      "evidence": {
+        "index": "review/release-v1.0.0-rc/feature-evidence.json",
+        "feature_ids": [
+          "configuration_backup_recovery"
+        ],
+        "source_refs": [
+          "backup_implementation",
+          "config_contract",
+          "device_language",
+          "display_migration"
+        ]
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+        "reviewed_utc": "2026-10-26T04:56:16.830877+00:00",
+        "review_report": "review/release-v1.0.0-rc/structured-notes-independent-review.json",
+        "review_report_sha256": "ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+        "reviewed_content_sha256": "46f55691794cbf1decfe29d67b8b0132ca6579d14944d2af923c0928f0707aad",
+        "reason": "本地密码HTTP、model/variant/version/content验证、已定义迁移和未支持存储保护、音乐/配对排除准确。 firmware；四机型实际Wi-Fi变体，不是跨机型/变体通用备份。"
+      }
+    },
+    {
+      "change_id": "v1-browser-inline-upgrade-diff",
+      "version": "1.0.0-rc",
+      "type": "improvement",
+      "component": "bundled_web",
+      "scope": {
+        "models": [
+          "tc1",
+          "a1",
+          "m1"
+        ],
+        "variants": [
+          "full",
+          "fresh-air"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "在升级页核对跨版本差异",
+        "en": "Check cross-version differences within the update page"
+      },
+      "description": {
+        "zh-CN": "TC1、A1、M1 的设备升级页由浏览器直接获取并校验结构化发布资料，计算当前到目标版本的差异；资料不可用时说明原因并额外确认后才能继续。已有官网差异入口保留。",
+        "en": "On TC1, A1 and M1, the browser fetches and verifies structured release data in the device update page and computes changes from the current to the target version. If data is unavailable, the page explains the reason and requires additional confirmation before proceeding. The existing website comparison link remains available."
+      },
+      "ota_summary": {
+        "zh-CN": "TC1、A1、M1 的设备升级页由浏览器直接获取并校验结构化发布资料，计算当前到目标版本的差异；资料不可用时说明原因并额外确认后才能继续。已有官网差异入口保留。",
+        "en": "On TC1, A1 and M1, the browser fetches and verifies structured release data in the device update page and computes changes from the current to the target version. If data is unavailable, the page explains the reason and requires additional confirmation before proceeding. The existing website comparison link remains available."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc:b021"
+      ],
+      "evidence": {
+        "index": "review/release-v1.0.0-rc/feature-evidence.json",
+        "feature_ids": [
+          "browser_upgrade_differences"
+        ],
+        "source_refs": [
+          "config_contract",
+          "todo",
+          "upgrade_guide",
+          "browser_upgrade_ui"
+        ]
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+        "reviewed_utc": "2026-10-26T04:56:16.830877+00:00",
+        "review_report": "review/release-v1.0.0-rc/structured-notes-independent-review.json",
+        "review_report_sha256": "ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+        "reviewed_content_sha256": "0589b367f3ff6b1e44318fa1935e03d60228564f524560d4bf33cd9be7de96f8",
+        "reason": "修订后仅TC1/A1/M1页内校验快照/跨版本差异及不可用额外确认；已有官网入口保留。 bundled_web；tc1/a1/m1 + full/fresh-air；无ota.sources.get的大金已排除。"
+      }
+    },
+    {
+      "change_id": "v1-emw3080-release-memory",
+      "version": "1.0.0-rc",
+      "type": "improvement",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1",
+          "m1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "EMW3080 release 分配保留 8 KiB",
+        "en": "8 KiB allocation reserve for EMW3080 release images"
+      },
+      "description": {
+        "zh-CN": "A1 / M1 release 的实际分配保留底线为 8 KiB，测试验收仍要求 12 KiB；8–12 KiB 可正常分配。不适用于 TC1 的 EMW3031 或大金 ESP32。",
+        "en": "A1 and M1 release images use an actual 8 KiB allocation reserve while test acceptance still requires 12 KiB. Allocations between 8 and 12 KiB remain allowed. This does not apply to TC1’s EMW3031 or Daikin’s ESP32."
+      },
+      "ota_summary": {
+        "zh-CN": "A1 / M1 release 的实际分配保留底线为 8 KiB，测试验收仍要求 12 KiB；8–12 KiB 可正常分配。不适用于 TC1 的 EMW3031 或大金 ESP32。",
+        "en": "A1 and M1 release images use an actual 8 KiB allocation reserve while test acceptance still requires 12 KiB. Allocations between 8 and 12 KiB remain allowed. This does not apply to TC1’s EMW3031 or Daikin’s ESP32."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc:b022"
+      ],
+      "evidence": {
+        "index": "review/release-v1.0.0-rc/feature-evidence.json",
+        "feature_ids": [
+          "emw3080_memory_policy"
+        ],
+        "source_refs": [
+          "memory_policy",
+          "memory_pressure",
+          "memory_regression"
+        ]
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+        "reviewed_utc": "2026-10-26T04:56:16.830877+00:00",
+        "review_report": "review/release-v1.0.0-rc/structured-notes-independent-review.json",
+        "review_report_sha256": "ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+        "reviewed_content_sha256": "39e7de838ce59c6c30613dc196cc267b78a976c45760750ecc7cc464756a7cc6",
+        "reason": "实际8KiB与测试12KiB分开，8–12KiB允许，不推广到TC1 EMW3031/大金ESP32。 firmware；仅A1/M1 release/release_log及实际变体。"
+      }
+    },
+    {
+      "change_id": "v1-open-source-development",
+      "version": "1.0.0-rc",
+      "type": "improvement",
+      "component": "service",
+      "scope": {
+        "models": [
+          "tc1",
+          "a1",
+          "m1",
+          "daikin"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources",
+          "hub"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "开源、归档与跨仓库开发规范",
+        "en": "Open source, archives and cross-repository development rules"
+      },
+      "description": {
+        "zh-CN": "归档 v0.9.x，整理 CI、Issue / PR 模板与接口、配置迁移及固定依赖的贡献规范。维护代码采用 GPL-3.0，第三方声明保留；这些仓库与开发资料变更不属于设备 OTA 功能。",
+        "en": "Archive v0.9.x and organize CI, issue and PR templates, and contribution rules for interfaces, configuration migration and pinned dependencies. Maintained code uses GPL-3.0 while third-party notices are retained. Repository and development-material changes are separate from device OTA features."
+      },
+      "ota_summary": {
+        "zh-CN": "归档 v0.9.x，整理 CI、Issue / PR 模板与接口、配置迁移及固定依赖的贡献规范。维护代码采用 GPL-3.0，第三方声明保留；这些仓库与开发资料变更不属于设备 OTA 功能。",
+        "en": "Archive v0.9.x and organize CI, issue and PR templates, and contribution rules for interfaces, configuration migration and pinned dependencies. Maintained code uses GPL-3.0 while third-party notices are retained. Repository and development-material changes are separate from device OTA features."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc:b023"
+      ],
+      "evidence": {
+        "index": "review/release-v1.0.0-rc/feature-evidence.json",
+        "feature_ids": [
+          "open_source_and_development"
+        ],
+        "source_refs": [
+          "ci_build",
+          "ci_protocols",
+          "contributing",
+          "issue_template",
+          "pr_template",
+          "readme_license",
+          "todo"
+        ]
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+        "reviewed_utc": "2026-10-26T04:56:16.830877+00:00",
+        "review_report": "review/release-v1.0.0-rc/structured-notes-independent-review.json",
+        "review_report_sha256": "ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+        "reviewed_content_sha256": "4dce5ed40b42f794bc2ab35c67ac6edf38d1785ff9b01e37b58436766bfd8e1f",
+        "reason": "CI/模板/贡献接口迁移固定依赖规范、v0.9.x归档、GPL3及第三方保留语义一致；未声称CI已过。 service；仓库与开发资料组织，排除设备OTA。"
+      }
+    },
+    {
+      "change_id": "v1-device-guides-protocol-pages",
+      "version": "1.0.0-rc",
+      "type": "improvement",
+      "component": "service",
+      "scope": {
+        "models": [
+          "tc1",
+          "a1",
+          "m1",
+          "daikin"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources",
+          "hub"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "按设备组织指南与集中开发者协议",
+        "en": "Device-organized guides and shared developer protocols"
+      },
+      "description": {
+        "zh-CN": "用户指南按 M1 / A1 / TC1 / 大金组织安装、升级、使用与恢复，保持 Pages 风格；接口、协议、配置兼容性和样例集中提供中英文开发者 Pages。",
+        "en": "Organize installation, updates, daily use and recovery guides by M1, A1, TC1 and Daikin while retaining the Pages style. Centralized Chinese and English developer Pages document interfaces, protocols, configuration compatibility and examples."
+      },
+      "ota_summary": {
+        "zh-CN": "用户指南按 M1 / A1 / TC1 / 大金组织安装、升级、使用与恢复，保持 Pages 风格；接口、协议、配置兼容性和样例集中提供中英文开发者 Pages。",
+        "en": "Organize installation, updates, daily use and recovery guides by M1, A1, TC1 and Daikin while retaining the Pages style. Centralized Chinese and English developer Pages document interfaces, protocols, configuration compatibility and examples."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc:b024"
+      ],
+      "evidence": {
+        "index": "review/release-v1.0.0-rc/feature-evidence.json",
+        "feature_ids": [
+          "device_docs_and_protocol_pages"
+        ],
+        "source_refs": [
+          "contributing",
+          "hub_guide",
+          "m1_user_guide",
+          "progress",
+          "protocol_lock",
+          "protocol_pages"
+        ]
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+        "reviewed_utc": "2026-10-26T04:56:16.830877+00:00",
+        "review_report": "review/release-v1.0.0-rc/structured-notes-independent-review.json",
+        "review_report_sha256": "ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+        "reviewed_content_sha256": "2b0e3b83ce56a260f073fa711664f9fa0017e8ab1788358522e554300125b1df",
+        "reason": "按设备用户指南与集中中英文接口/协议/兼容性/样例准确，文档源存在不等于本次线上发布验收。 service；文档和开发者Pages组织，排除设备OTA。"
+      }
+    },
+    {
+      "change_id": "v1-m1-display-profile-webui",
+      "version": "1.0.0-rc",
+      "type": "feature",
+      "component": "bundled_web",
+      "scope": {
+        "models": [
+          "m1"
+        ],
+        "variants": [
+          "full"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "双区域来源、数字与九段灯设置页",
+        "en": "Settings for two display regions, digits and nine lamp segments"
+      },
+      "description": {
+        "zh-CN": "设备完整网页可为甲醛、PM 区域独立选择来源、有效期、数字模式、字样 / 单位及九段灯，并设置双击整体切换；显示传感器 MCU 支持情况和确认状态，提供固定玻璃布局预览。应用新显示需使用支持该能力的 MCU。",
+        "en": "The full device page configures each formaldehyde or PM region’s source, expiry, display mode, legend and unit visibility, and nine lamp segments, plus whole-display switching on double press. It shows sensor MCU support and confirmation status and previews the fixed glass layout. Applying the new display requires a capable MCU."
+      },
+      "ota_summary": {
+        "zh-CN": "设备完整网页可为甲醛、PM 区域独立选择来源、有效期、数字模式、字样 / 单位及九段灯，并设置双击整体切换；显示传感器 MCU 支持情况和确认状态，提供固定玻璃布局预览。应用新显示需使用支持该能力的 MCU。",
+        "en": "The full device page configures each formaldehyde or PM region’s source, expiry, display mode, legend and unit visibility, and nine lamp segments, plus whole-display switching on double press. It shows sensor MCU support and confirmation status and previews the fixed glass layout. Applying the new display requires a capable MCU."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc:b011",
+        "v1.0.0-rc:b012",
+        "v1.0.0-rc:b013"
+      ],
+      "evidence": {
+        "index": "review/release-v1.0.0-rc/feature-evidence.json",
+        "feature_ids": [
+          "m1_two_external_regions",
+          "m1_display_modes_and_glyphs",
+          "m1_nine_lamp_segments",
+          "m1_raw_display_api"
+        ],
+        "source_refs": [
+          "display_contract",
+          "display_contract_json",
+          "display_modes",
+          "display_raw",
+          "display_source",
+          "m1_display_guide",
+          "web_display_profile"
+        ]
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+        "reviewed_utc": "2026-10-26T04:56:16.830877+00:00",
+        "review_report": "review/release-v1.0.0-rc/structured-notes-independent-review.json",
+        "review_report_sha256": "ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+        "reviewed_content_sha256": "ad25e04708cdfc891e82597517ad97812883dcef0cdef747cb24ed5066234424",
+        "reason": "修订后仅说明显示MCU支持/确认状态与固定玻璃预览，应用新显示需capable MCU，未再误称控件全被门控。 bundled_web；仅M1 full；slim完整操作由独立前端提供。"
+      }
+    },
+    {
+      "change_id": "v1-m1-sensor-buzzer-webui",
+      "version": "1.0.0-rc",
+      "type": "feature",
+      "component": "bundled_web",
+      "scope": {
+        "models": [
+          "m1"
+        ],
+        "variants": [
+          "full"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "分别设置两种传感器蜂鸣报警",
+        "en": "Separate controls for both sensor buzzer alarms"
+      },
+      "description": {
+        "zh-CN": "网页分别提供甲醛和 PM2.5 超阈值蜂鸣开关，默认关闭，保存后核对配置；不支持的旧主控明确显示能力限制。",
+        "en": "The page provides separate formaldehyde and PM2.5 threshold buzzer switches, both off by default, and checks saved configuration. Older unsupported sensor MCUs show the capability limitation."
+      },
+      "ota_summary": {
+        "zh-CN": "网页分别提供甲醛和 PM2.5 超阈值蜂鸣开关，默认关闭，保存后核对配置；不支持的旧主控明确显示能力限制。",
+        "en": "The page provides separate formaldehyde and PM2.5 threshold buzzer switches, both off by default, and checks saved configuration. Older unsupported sensor MCUs show the capability limitation."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc:b009"
+      ],
+      "evidence": {
+        "index": "review/release-v1.0.0-rc/feature-evidence.json",
+        "feature_ids": [
+          "m1_optional_threshold_buzzer"
+        ],
+        "source_refs": [
+          "alarm_contract",
+          "buzzer_runtime",
+          "mcu_readme",
+          "web_threshold_buzzer"
+        ]
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+        "reviewed_utc": "2026-10-26T04:56:16.830877+00:00",
+        "review_report": "review/release-v1.0.0-rc/structured-notes-independent-review.json",
+        "review_report_sha256": "ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+        "reviewed_content_sha256": "d80412601f9dce2a1e03e46b665053bf9670e352ce6f618176640251eacbf4f5",
+        "reason": "两种蜂鸣开关分开默认关、配置状态读回和旧MCU能力限制准确，不等于物理发声验收。 bundled_web；仅M1 full，buzzer_supported限制蜂鸣开关。"
+      }
     }
   ],
   "merges": []

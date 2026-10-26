@@ -87,6 +87,25 @@ class VersionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'VERSION must contain'):
             version_tool.resolve_version(self.root)
 
+    def test_candidate_preserves_full_identity_and_matches_core_version(self):
+        (self.root / 'VERSION').write_text('1.0.0\n')
+        self.git('add', 'VERSION')
+        self.git('commit', '-qm', 'prepare v1 candidate')
+        for tag in ('v1.0.0-rc', 'v1.0.0-rc.0', 'v1.0.0-rc.2'):
+            self.git('tag', tag)
+            metadata = version_tool.resolve_version(self.root, tag)
+            self.assertEqual(metadata['base_version'], tag[1:])
+            self.assertEqual(metadata['version'], tag[1:] + '-' + self.git('rev-parse', 'HEAD')[:6])
+            self.git('tag', '-d', tag)
+        self.git('tag', 'v1.0.0-rc.2')
+        self.assertEqual(version_tool.resolve_version(self.root)['base_version'], '1.0.0-rc.2')
+        self.git('tag', 'v1.0.1-rc')
+        with self.assertRaisesRegex(ValueError, 'differs from VERSION'):
+            version_tool.resolve_version(self.root, 'v1.0.1-rc')
+        (self.root / 'VERSION').write_text('1.0.0-rc\n')
+        with self.assertRaisesRegex(ValueError, 'VERSION must contain'):
+            version_tool.resolve_version(self.root)
+
     def test_non_git_and_parent_repository(self):
         child = self.root / 'export'
         child.mkdir()

@@ -21,7 +21,7 @@ The Wi-Fi lamp indicates system status: three long and three short pulses when u
 
 ## First installation
 
-Choose a release that **explicitly includes DAIKIN** on the [downloads page](../../index.html#releases). Do not substitute another model's image when an older archive lists only Phicomm devices. Existing 0.9.x releases provide the full image only. The v1 hub variant has not been released.
+Choose a release that **explicitly includes DAIKIN** on the [downloads page](../../index.html#releases). Do not substitute another model's image when an older archive lists only Phicomm devices. Existing 0.9.x archives provide the full image only. v1.0.0-rc also provides a separate `hub` variant as a prerelease.
 
 1. Confirm the ESP32 / 4 MB Flash board and wiring, then back up the entire original Flash. Keep that backup private because it contains network credentials.
 2. Hold GPIO0 / BOOT0 low while powering on to enter the ESP32 bootloader. Use ESPTool to write `daikin_BRY88AX151K.all.bin` at **0x0**. Never upload the factory image through web OTA.
@@ -46,7 +46,7 @@ Add this device's MAC and optional IP in the updated A1 settings. MQTT under the
 
 A1 offers automation sources according to currently valid data, independently of the monitor model. Missing formaldehyde or stale readings hide the corresponding options while preserving saved rules. If required control data is unavailable, A1 uses its configured offline speed. TVOC is not currently a fan-control metric.
 
-## v1.0 hub in development
+## v1.0.0-rc hub (prerelease)
 
 The separate `hub` variant includes local accounts, an MQTT TCP / WebSocket Broker, LAN Home Assistant, an upstream MQTT client and Bemfa forwarding. The ordinary image remains a sensor device. Local accounts do not include email or GitHub login.
 
@@ -54,11 +54,11 @@ Select **Hub management** on the device page, or open `http://DEVICE-IP/iotcloud
 
 On each device, set its MQTT host to the hub IP, port to `1883`, and credentials to the local account's MQTT username/password. WebSocket clients use `ws://HUB-IP:9001/mqtt`. The device management page provides manual setup instructions; Home Assistant can connect to the same Broker.
 
-Apple Home uses HAP bridging. Enable it separately under **Apple Home** to obtain the pairing code; it is off by default. Matter is currently unavailable. v1 has not been formally released, and the ordinary images currently offered for download do not contain these hub features.
+Apple Home uses HAP bridging. Enable it separately under **Apple Home** to obtain the pairing code; it is off by default. Matter is currently unavailable. v1.0.0-rc provides a separate `hub` image; ordinary images do not include these hub features. The stable v1.0.0 release is not yet available.
 
 ### Switch from full to hub
 
-Only newer `full` firmware that advertises this operation provides the conversion option. The image must fit the device's actual OTA slot. Use local HTTP and a real signed `hub` OTA file; the older full images currently offered for download do not provide this feature.
+Only newer `full` firmware that advertises this operation provides the conversion option. The image must fit the device's actual OTA slot. Use local HTTP and a real signed `hub` OTA file; 0.9.x full images do not provide this feature.
 
 1. Open the device on your LAN and set a web administration password, or keep the existing password. **Set web password** on the upgrade page opens its settings form.
 2. Open **Settings → Firmware → Advanced**, select the matching signed `hub` OTA file and enable **Switch to hub firmware**. This option cannot be combined with unsigned recovery.

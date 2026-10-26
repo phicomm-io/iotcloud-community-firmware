@@ -3,10 +3,12 @@ const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const {createHash, webcrypto} = require('node:crypto');
 const {execFileSync} = require('node:child_process');
+const {readFileSync} = require('node:fs');
 const {JSDOM} = require('jsdom');
 const Notes = require('../site/release-notes/core.js');
 const Client = require('../site/release-notes/client.js');
 const Page = require('../site/release-notes/page.js');
+const CandidateUI = require('./fixtures/release_candidate_ui.cjs');
 const fixture = JSON.parse(execFileSync('python3', ['-c', `import sys,json;sys.path[:0]=['tools/release','site'];import user_notes,notes_ui;m,c=user_notes.compile_manifest();print(json.dumps(dict(manifest=m,catalog=json.loads(c),zh=notes_ui.body(m,'zh-CN'),en=notes_ui.body(m,'en'))))`], {cwd: require('node:path').resolve(__dirname, '..'), maxBuffer: 2e6}));
 const snapshot = {manifest: fixture.manifest, catalog: fixture.catalog, source: '', id: 'fixture'};
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -65,9 +67,9 @@ test('HTTP LAN pages verify release hashes without Web Crypto, including padding
   }
 });
 test('device read uses one existing info request and only the real firmware identity', async()=>{
-  const calls=[];const info=await Client.readDevice('10.117.152.111','sensitive', {fetch:async(path,options)=>{calls.push({path,options});return new Response(JSON.stringify({code:'ok',data:{model:'A1',firmware_variant:'fresh-air',version:'0.9.23-123456',tmcp_version:'v2',mac:'private'}}));}});
+  const calls=[];const info=await Client.readDevice('192.168.1.2','sensitive', {fetch:async(path,options)=>{calls.push({path,options});return new Response(JSON.stringify({code:'ok',data:{model:'A1',firmware_variant:'fresh-air',version:'0.9.23-123456',tmcp_version:'v2',mac:'private'}}));}});
   assert.deepEqual(info,{model:'a1',variant:'fresh-air',version:'0.9.23-123456'});
-  assert.equal(calls.length,1);assert.equal(calls[0].path,'http://10.117.152.111/api/v1/info');
+  assert.equal(calls.length,1);assert.equal(calls[0].path,'http://192.168.1.2/api/v1/info');
   assert.equal(calls[0].options.method,'GET');assert.match(calls[0].options.headers.Authorization,/^Basic /);
   assert.ok(!JSON.stringify(info).includes('private'));
 });
@@ -118,7 +120,7 @@ test('outdated release source requests cannot overwrite a newer verified source'
 });
 test('one-shot device reads clear the password and stale replies never replace manual selection', async()=>{
   const response=pending();let calls=0;const p=mounted({client:{readDevice:async()=>{calls++;return response.promise;}}});
-  try{await p.controller.ready;p.field('address').value='10.117.152.111';p.field('password').value='secret';p.read();assert.equal(p.field('password').value,'');
+  try{await p.controller.ready;p.field('address').value='192.168.1.2';p.field('password').value='secret';p.read();assert.equal(p.field('password').value,'');
     p.change('model','m1');response.resolve({model:'a1',variant:'fresh-air',version:'0.9.23'});await tick();assert.equal(calls,1);assert.equal(p.field('model').value,'m1');assert.equal(p.field('from').value,'');
   }finally{p.close();}
 });
@@ -132,7 +134,165 @@ test('manual comparison remains available after device errors; repeated mounting
 });
 test('English and no-JavaScript history never expose excluded or pending raw text', async()=>{
   const dom=new JSDOM(fixture.en);assert.match(dom.window.document.querySelector('#notes-history').textContent,/No new user-visible changes/);
-  assert.equal(dom.window.document.querySelector('#notes-history').hidden,false);assert.ok(!dom.window.document.body.textContent.includes('change_refs'));dom.window.close();
+  assert.equal(dom.window.document.querySelector('#notes-history').hidden,false);assert.equal(dom.window.document.querySelector('#notes-channel').disabled,true);
+  assert.ok(!dom.window.document.body.textContent.includes('change_refs'));dom.window.close();
   const p=mounted({locale:'en',url:'https://phicomm-io.github.io/guides/en/release-log.html?from=0.9.14&to=0.9.23&model=m1&variant=full'});
   try{await p.controller.ready;assert.equal(p.app.dataset.reportState,'complete');assert.match(p.field('result').textContent,/Bug fixes/);}finally{p.close();}
+});
+
+test('stable snapshots never request candidate metadata; candidate snapshots require an explicit local channel', async()=>{
+  const f=CandidateUI.fixture(),map={...CandidateUI.resources(f.stable),...CandidateUI.resources(f.candidate)},calls=[];
+  const stable=await Client.snapshot('',{fetch:fetched(map,calls),crypto:webcrypto});
+  assert.equal(stable.channel,'stable');assert.equal(calls.length,3);assert.ok(calls.every(c=>!c.path.includes('/candidate/')));
+  calls.length=0;
+  const candidate=await Client.snapshot('',{channel:'candidate',fetch:fetched(map,calls),crypto:webcrypto});
+  assert.equal(candidate.channel,'candidate');assert.equal(candidate.catalog.stable,'v0.9.27');
+  assert.equal(calls.length,3);assert.ok(calls.every(c=>c.path.startsWith('/releases/notes/candidate/')));
+  assert.ok(Object.isFrozen(candidate.catalog.releases));
+  for(const source of ['https://phicomm.fjrcn.com','https://phicomm.fjrcn.cn','https://phicomm-io.github.io'])
+    await assert.rejects(Client.snapshot(source,{channel:'candidate',fetch:()=>{throw Error('must not fetch');}}),e=>e.code==='INVALID_SOURCE');
+});
+test('candidate snapshots reject foreign scopes, paths and mixed hashes without trying stable or mirrors', async()=>{
+  const f=CandidateUI.fixture(),path='/releases/notes/candidate/index.json';
+  for(const alter of [index=>delete index.channel,index=>{index.source.scope='stable';},index=>{index.source.kind='worker';},
+    index=>{index.catalog.path='/releases/index.json';},index=>{index.manifest.path='https://phicomm.fjrcn.com/manifest.json';}]){
+    const map=CandidateUI.resources(f.candidate),index=JSON.parse(map[path]);alter(index);map[path]=Buffer.from(JSON.stringify(index));
+    const calls=[];await assert.rejects(Client.snapshot('',{channel:'candidate',fetch:fetched(map,calls),crypto:webcrypto}),e=>e.code==='INVALID_INDEX');
+    assert.equal(calls.length,1);
+  }
+  const map=CandidateUI.resources(f.candidate),index=JSON.parse(map[path]);map[index.catalog.path]=Buffer.from('{}');
+  await assert.rejects(Client.snapshot('',{channel:'candidate',fetch:fetched(map),crypto:webcrypto}),e=>e.code==='SOURCE_MISMATCH');
+  const calls=[];await assert.rejects(Client.snapshot('',{channel:'candidate',fetch:fetched({},calls),crypto:webcrypto}),e=>e.code==='CANDIDATE_UNAVAILABLE');
+  assert.deepEqual(calls.map(c=>c.path),[path]);
+});
+test('candidate snapshot hashes also bind the channel and stable baseline declarations', async()=>{
+  for(const alter of [value=>{value.manifest.supported_scopes=[];},value=>{value.catalog.stable='v1.0.0-rc';},
+    value=>{value.manifest.stable='1.0.0';},value=>{value.catalog.releases=value.catalog.releases.filter(r=>!r.prerelease);}]){
+    const f=CandidateUI.fixture();alter(f.candidate);
+    await assert.rejects(Client.snapshot('',{channel:'candidate',fetch:fetched(CandidateUI.resources(f.candidate)),crypto:webcrypto}),e=>e.code==='SOURCE_MISMATCH');
+  }
+});
+test('the default stable page hides candidates even if a combined snapshot is accidentally supplied', async()=>{
+  const f=CandidateUI.fixture(),calls=[],p=mounted({client:{snapshot:async(source,options)=>{calls.push({source,channel:options.channel});return f.candidate;}}});
+  try{await p.controller.ready;assert.equal(p.field('channel').value,'stable');assert.equal(p.field('to').value,'0.9.27');
+    assert.equal(p.field('candidates').hidden,true);assert.equal(p.field('candidate-downloads').childElementCount,0);
+    assert.ok(![...p.field('to').options].some(o=>o.value.includes('-rc')));assert.deepEqual(calls,[{source:'',channel:'stable'}]);
+  }finally{p.close();}
+});
+test('explicit candidate selection uses the stable baseline, groups all four devices and shares the candidate channel', async()=>{
+  const f=CandidateUI.fixture(),calls=[],p=mounted({client:{snapshot:async(source,options)=>{calls.push({source,channel:options.channel});return f[options.channel];}}});
+  try{await p.controller.ready;const history=p.field('history').innerHTML;
+    p.change('source','https://phicomm.fjrcn.cn');await tick();p.change('channel','candidate');await tick();
+    assert.deepEqual(calls.at(-1),{source:'',channel:'candidate'});assert.equal(p.field('source').disabled,true);
+    assert.deepEqual([...p.field('source').options].map(o=>o.value),['']);
+    assert.equal(p.field('from').value,'0.9.27');assert.equal(p.field('to').value,'1.0.0-rc');assert.equal(p.field('candidates').hidden,false);
+    assert.deepEqual([...p.field('candidate-downloads').children].map(n=>n.id),['notes-candidate-m1','notes-candidate-a1','notes-candidate-tc1','notes-candidate-daikin']);
+    const links=[...p.field('candidate-downloads').querySelectorAll('a')];
+    assert.equal(links.filter(a=>a.pathname.endsWith('.ota.bin.signed')).length,10);
+    assert.ok(links.every(a=>!a.href.includes('phicomm.fjrcn.')));assert.equal(p.field('history').innerHTML,history);
+    p.submit();assert.equal(p.app.dataset.reportState,'complete');assert.equal(p.field('result').querySelectorAll('.notes-change').length,1);
+    assert.equal(new URL(p.field('share').href).searchParams.get('channel'),'candidate');
+    assert.ok(p.field('result').querySelector('.notes-target a').pathname.startsWith('/releases/v1.0.0-rc/'));
+    p.change('channel','stable');await tick();assert.equal(p.field('candidate-downloads').childElementCount,0);assert.equal(p.field('share').hidden,true);
+    assert.equal(p.field('source').disabled,false);assert.equal(p.field('source').value,'https://phicomm.fjrcn.cn');assert.equal(p.field('to').value,'0.9.27');
+  }finally{p.close();}
+});
+test('an RC target URL alone cannot opt a stable visitor into candidate downloads', async()=>{
+  const f=CandidateUI.fixture(),calls=[],p=mounted({url:'https://phicomm-io.github.io/guides/release-log.html?from=0.9.27&to=1.0.0-rc&model=m1&variant=full',
+    client:{snapshot:async(_source,options)=>{calls.push(options.channel);return f[options.channel];}}});
+  try{await p.controller.ready;assert.deepEqual(calls,['stable']);assert.equal(p.app.dataset.reportState,'error');
+    assert.equal(p.field('candidate-downloads').childElementCount,0);assert.equal(p.field('candidates').hidden,true);
+  }finally{p.close();}
+});
+test('candidate shares restore the explicit channel in both languages', async()=>{
+  const f=CandidateUI.fixture();
+  for(const locale of ['zh','en']){
+    const p=mounted({locale,url:'https://phicomm-io.github.io/guides/release-log.html?channel=candidate&from=0.9.27&to=1.0.0-rc&model=m1&variant=full',
+      client:{snapshot:async(_source,options)=>f[options.channel]}});
+    try{await p.controller.ready;assert.equal(p.app.dataset.reportState,'complete');assert.equal(p.field('channel').value,'candidate');
+      assert.equal(p.field('model').value,'m1');assert.equal(p.field('to').value,'1.0.0-rc');assert.equal(p.field('source').options.length,1);
+      assert.ok([...p.field('candidate-downloads').querySelectorAll('a')].some(a=>a.pathname==='/guides/'+(locale==='en'?'en/':'')+'m1-guide.html'));
+    }finally{p.close();}
+  }
+});
+test('an unavailable candidate never falls back to stable or leaves earlier links available', async()=>{
+  const f=CandidateUI.fixture(),calls=[],p=mounted({client:{snapshot:async(_source,options)=>{calls.push(options.channel);
+    if(options.channel==='candidate')throw new Client.ClientError('CANDIDATE_UNAVAILABLE','No candidate');return f.stable;}}});
+  try{await p.controller.ready;p.change('channel','candidate');await tick();assert.deepEqual(calls,['stable','candidate']);
+    assert.equal(p.app.dataset.reportState,'error');assert.equal(p.field('submit').disabled,true);assert.equal(p.field('candidate-downloads').childElementCount,0);
+    assert.match(p.field('candidate-status').textContent,/尚未提供候选版/);assert.equal(p.field('share').hidden,true);
+  }finally{p.close();}
+});
+test('a late candidate response cannot replace a newer stable selection', async()=>{
+  const f=CandidateUI.fixture(),delayed=pending(),p=mounted({client:{snapshot:async(_source,options)=>options.channel==='candidate'?delayed.promise:f.stable}});
+  try{await p.controller.ready;p.change('channel','candidate');p.change('channel','stable');await tick();delayed.resolve(f.candidate);await tick();
+    assert.equal(p.field('channel').value,'stable');assert.equal(p.field('to').value,'0.9.27');assert.equal(p.field('candidates').hidden,true);
+    assert.equal(p.field('candidate-downloads').childElementCount,0);assert.equal(p.app.dataset.reportState,undefined);
+  }finally{p.close();}
+});
+test('candidate download links reject foreign or traversal paths and require a signed asset identity', async()=>{
+  const f=CandidateUI.fixture(),entry=f.candidate.catalog.releases.at(-1).models.m1;
+  entry.downloads.raw.path='https://phicomm.fjrcn.cn/releases/v1.0.0-rc/fake.bin';
+  entry.downloads.full.path='/releases/v1.0.0-rc/../stable.bin';delete entry.variants['no-frontend-resources'].downloads.signed;
+  const p=mounted({url:'https://phicomm-io.github.io/guides/release-log.html?channel=candidate',client:{snapshot:async()=>f.candidate}});
+  try{await p.controller.ready;const group=p.dom.window.document.getElementById('notes-candidate-m1');
+    assert.equal(group.querySelectorAll('a[href$=".ota.bin.signed"]').length,1);assert.equal(group.querySelectorAll('a[href$=".all.bin"]').length,0);
+    assert.ok(!group.innerHTML.includes('fjrcn'));assert.ok(!group.innerHTML.includes('../stable'));
+  }finally{p.close();}
+});
+
+async function controllerHomepage({locale='zh',releases=[],fallback=false}={}) {
+  const root=require('node:path').resolve(__dirname,'..'),calls=[],f=CandidateUI.fixture();
+  const dom=new JSDOM(readFileSync(root+'/site/'+(locale==='en'?'index-en.html':'index.html'),'utf8'),
+    {url:'https://phicomm-io.github.io/'+(locale==='en'?'en/':''),runScripts:'outside-only'});
+  Object.assign(dom.window,{ReleaseNotes:Notes,ReleaseNotesClient:{snapshot:async()=>f.stable},AbortController,
+    fetch:async url=>{calls.push(String(url));return {ok:!fallback||calls.length>1,status:503,json:async()=>releases};}});
+  try {
+    await dom.window.eval(readFileSync(root+'/site/releases.js','utf8'));
+    await tick();
+    return {dom,calls,close(){dom.window.close();}};
+  } catch(error){dom.window.close();throw error;}
+}
+test('the real homepage reads strict MCU RC tags, orders candidates numerically and retains Wi-Fi stable', async()=>{
+  const release=(tag_name,extra={})=>({tag_name,draft:false,prerelease:false,assets:[{name:'m1-mcu-ota.bin'},{name:'release.json'}],...extra});
+  const valid=['v0.9.9','v1.0.0-rc.2','v1.0.0-rc','v0.9.10','v1.0.0-rc.10','v1.0.0-rc.0'];
+  const invalid=['v01.0.0','v1.0.0-rc.01','v1.0.0-rc1','v1.0.0-RC','v1.0.0-beta.1',
+    'v1.0.0-rc-abcdef','v1.0.0-abcdef','1.0.0-rc','v9007199254740992.0.0','v1.0.0-rc.9007199254740992','v1.0.0-rc\n'];
+  for(const locale of ['zh','en']){
+    const p=await controllerHomepage({locale,releases:[...valid.map(tag=>release(tag)),...invalid.map(tag=>release(tag)),
+      release('v9.0.0',{draft:true}),release('v8.0.0',{assets:null}),null]});
+    try {
+      const document=p.dom.window.document,rows=[...document.querySelectorAll('#m1-mcu-versions > details')];
+      assert.deepEqual(rows.map(row=>row.querySelector('summary').textContent.split(' · ')[0]),
+        ['v1.0.0-rc.10','v1.0.0-rc.2','v1.0.0-rc.0','v1.0.0-rc','v0.9.10','v0.9.9']);
+      assert.deepEqual(rows.map(row=>row.open),[true,false,false,false,false,false]);
+      assert.ok(rows.slice(0,4).every(row=>row.querySelector('summary').textContent.includes(locale==='en'?'Development preview':'开发预览')));
+      assert.ok(rows.slice(4).every(row=>row.querySelector('summary').textContent.includes(locale==='en'?'Published':'已发布')));
+      assert.deepEqual([...rows[0].querySelectorAll('a')].map(a=>a.href),[
+        'https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20/releases/download/v1.0.0-rc.10/m1-mcu-ota.bin',
+        'https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20/releases/download/v1.0.0-rc.10/release.json',
+        'https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20/releases/tag/v1.0.0-rc.10']);
+      assert.match(document.querySelector('#latest h3').textContent,/^v0\.9\.27/);
+      assert.ok(!document.querySelector('#latest').textContent.includes('-rc'));
+      const candidates=[...document.querySelectorAll('.device-grid .card-links a')].filter(a=>a.search.includes('channel=candidate'));
+      assert.deepEqual(candidates.map(a=>new URL(a.href).searchParams.get('model')),['tc1','m1','a1','daikin']);
+      assert.ok(candidates.every(a=>a.hash==='#notes-candidate-'+new URL(a.href).searchParams.get('model')));
+      assert.ok(candidates.every(a=>a.pathname==='/guides/'+(locale==='en'?'en/':'')+'release-log.html'));
+      assert.ok([...document.querySelectorAll('.quick-links a')].every(a=>a.classList.contains('btn')));
+      assert.equal(p.calls.length,1);assert.match(p.calls[0],/\/releases\?per_page=100$/);
+    } finally {p.close();}
+  }
+});
+test('MCU snapshot fallback uses the same RC ordering and stable versions precede their own candidates', async()=>{
+  const releases=['v1.0.0-rc.10','v1.0.0','v1.0.0-rc','v1.1.0-rc'].map(tag_name=>({tag_name,assets:[]}));
+  const p=await controllerHomepage({locale:'en',releases,fallback:true});
+  try {
+    const document=p.dom.window.document;
+    assert.deepEqual([...document.querySelectorAll('#m1-mcu-versions summary')].map(n=>n.textContent.split(' · ')[0]),
+      ['v1.1.0-rc','v1.0.0','v1.0.0-rc.10','v1.0.0-rc']);
+    assert.deepEqual(p.calls,['https://api.github.com/repos/phicomm-io/phicomm_m1_mcu_atsamd20/releases?per_page=100',
+      'https://phicomm-io.github.io/guides/assets/firmware/m1-mcu/releases.json']);
+    assert.match(document.getElementById('m1-mcu-status').textContent,/Showing the site snapshot/);
+    assert.match(document.querySelector('#latest h3').textContent,/^v0\.9\.27/);
+  } finally {p.close();}
 });

@@ -11,10 +11,17 @@ def body(manifest, locale):
 <p class="eyebrow">{t('发布与升级', 'RELEASES & UPGRADES')}</p>
 <h1>Release Log</h1>
 <p>{t('按版本查阅已审核说明，或查看当前设备升级后会发生什么变化。', 'Read reviewed release history, or see what changes when your device upgrades.')}</p>
+<div class="notes-fields"><label for="notes-channel">{t('发布渠道', 'Release channel')}<select id="notes-channel" disabled><option value="stable">{t('稳定版', 'Stable releases')}</option><option value="candidate">{t('候选版（RC）', 'Release candidates (RC)')}</option></select></label></div>
 <div class="notes-tabs" role="tablist" aria-label="{t('查看方式', 'View')}">
 <button type="button" role="tab" id="notes-history-tab" aria-controls="notes-history" aria-selected="true">{t('版本历史', 'Version history')}</button>
 <button type="button" role="tab" id="notes-compare-tab" aria-controls="notes-comparison" aria-selected="false">{t('升级差异', 'Upgrade comparison')}</button>
 </div>
+<section id="notes-candidates" aria-labelledby="notes-candidates-title" hidden>
+<h2 id="notes-candidates-title">{t('候选版下载（RC）', 'Release candidate downloads (RC)')}</h2>
+<p>{t('候选版单独提供，不替换稳定版。请按设备型号和固件类型选择。', 'Release candidates are separate from stable releases. Choose your device model and firmware variant.')}</p>
+<p id="notes-candidate-status" role="status" aria-live="polite"></p>
+<div id="notes-candidate-downloads"></div>
+</section>
 <section id="notes-comparison" role="tabpanel" aria-labelledby="notes-compare-tab" hidden>
 <h2>{t('这次升级，有哪些变化？', 'What changes in this upgrade?')}</h2>
 <p class="muted">{t('选择设备和版本。查询仅在浏览器中计算，不会检查或安装设备更新。', 'Choose a device and releases. Comparisons run in your browser and do not check for or install device updates.')}</p>
@@ -39,5 +46,5 @@ def body(manifest, locale):
 <noscript><p>{t('升级区间计算需要 JavaScript；下方版本历史仍可直接阅读。', 'Upgrade comparisons require JavaScript; the release history below remains readable.')}</p></noscript>
 </section>
 <section id="notes-history" role="tabpanel" aria-labelledby="notes-history-tab">{history_html(manifest, locale)}</section>
-<noscript><p>{t('当前显示构建时生成的已审核历史。启用 JavaScript 后可查询升级区间。', 'This is the reviewed history generated at build time. Enable JavaScript to compare upgrade ranges.')}</p></noscript>
+<noscript><p>{t('稳定版历史仍可直接阅读。候选版下载与升级比较需启用 JavaScript。', 'Stable release history remains readable. Enable JavaScript for candidate downloads and upgrade comparisons.')}</p></noscript>
 </div>'''

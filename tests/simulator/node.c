@@ -159,7 +159,7 @@ void m1_co2_source_config_get(m1_co2_source_config_t *out){BASE_LOCK();*out=sour
 void m1_display_config_get(m1_display_config_t *out){BASE_LOCK();*out=display_config;BASE_UNLOCK();}
 void m1_display_switch_get(m1_display_switch_config_t *out){
  BASE_LOCK();*out=(m1_display_switch_config_t){.revision=display_config.revision,.configured=display_config.configured,
-  .selected=display_config.selected,.double_click=display_config.double_click};
+  .selected=display_config.selected,.double_click=display_config.double_click,.formatted=display_config.reserved==M1_DISPLAY_FORMATTED};
  for(unsigned i=0;i<M1_DISPLAY_LANES;i++)if(display_config.lanes[i].source!=M1_DISPLAY_NONE)out->present=true;
  BASE_UNLOCK();
 }
@@ -177,12 +177,26 @@ const char *m1_display_data_save(unsigned slot,uint32_t revision,float value,uns
  if(slot>=M1_DISPLAY_LANES||!isfinite(value)||value<0||value>999999||color < -1||color>3)return "invalid_params";
  BASE_LOCK();const m1_display_lane_config_t *l=&display_config.lanes[slot];const char *code="invalid_params";
  if(revision!=display_config.revision)code="busy";
- else if(display_config.configured&&l->source==M1_DISPLAY_API&&l->unit==unit&&ttl<=l->ttl_seconds&&
+ else if(display_config.configured&&!display_config.reserved&&l->source==M1_DISPLAY_API&&l->unit==unit&&ttl<=l->ttl_seconds&&
          (!ttl||m1_display_metric_value_valid(l->metric,value))){
   m1_display_value_t encoded;
   if(!ttl||m1_display_encode_value(l,slot,value,ttl,color<0?l->color:color,&encoded)){
    m1_display_data_store(slot,revision,value,ttl,color);code="accepted";
   }
+ }
+ BASE_UNLOCK();return code;
+}
+const char *m1_display_frame_save(unsigned slot,uint32_t revision,unsigned number,unsigned format,unsigned lamps,unsigned ttl){
+ if(slot>=M1_DISPLAY_LANES||number>999||format>7||(slot==1&&(format&1u))||
+    lamps>M1_DISPLAY_LAMPS_MAX||ttl>60||(!ttl&&(number||format||lamps)))return "invalid_params";
+ BASE_LOCK();const m1_display_lane_config_t *l=&display_config.lanes[slot];const char *code="invalid_params";
+ mico_rtos_lock_mutex(&m1_lock);
+ bool busy=m1_state.ota_active||m1_state.mcu_updating||m1_state.reboot_pending||m1_state.wifi_trial_active;
+ mico_rtos_unlock_mutex(&m1_lock);
+ if(busy||revision!=display_config.revision)code="busy";
+ else if(display_config.configured&&display_config.reserved==M1_DISPLAY_FORMATTED&&
+         l->source==M1_DISPLAY_API&&ttl<=l->ttl_seconds){
+  m1_display_frame_store(slot,revision,number,format,lamps,ttl);code="accepted";
  }
  BASE_UNLOCK();return code;
 }

@@ -6,6 +6,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
+from urllib.error import HTTPError
 
 spec = importlib.util.spec_from_file_location('archive_pages', Path(__file__).resolve().parents[1] / 'tools/release/archive_pages.py')
 archive = importlib.util.module_from_spec(spec)
@@ -40,10 +41,10 @@ class ArchiveTests(unittest.TestCase):
     def test_device_manifest_follows_stable_and_never_falls_back_to_raw(self):
         signed = dict(path='/releases/v1/firmware.bin.signed', size=192, sha256='a' * 64)
         raw = dict(path='/releases/v1/firmware.bin.raw', size=1, sha256='b' * 64)
-        stable = dict(tag='v1', version='1.0.0', commit='c' * 40, notes='/releases/v1/notes.md',
+        stable = dict(tag='v1.0.0', version='1.0.0', commit='c' * 40, notes='/releases/v1.0.0/notes.md',
                       models=dict(m1=dict(downloads=dict(signed=signed, raw=raw)),
                                   tc1=dict(downloads=dict(raw=raw))))
-        catalog = dict(stable='v1', releases=[dict(tag='v2', models={}), stable])
+        catalog = dict(stable='v1.0.0', releases=[dict(tag='v2.0.0', models={}), stable])
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp)
             stale = output/'ota/tc1/latest.json'
@@ -101,3 +102,66 @@ class ArchiveTests(unittest.TestCase):
             self.assertFalse((output / 'ota/v1/daikin/hub/latest.json').exists())
             legacy = json.loads((output / 'ota/daikin/latest.json').read_text())
             self.assertEqual(legacy['tag'], 'v0.9.24')
+
+    def test_explicit_candidates_are_retained_beside_the_unchanged_stable_catalog(self):
+        stable = self.release('v0.9.27')
+        candidate = self.release('v1.0.0-rc')
+        candidate.update(prerelease=True, channel='candidate')
+        stable_catalog = json.dumps(dict(schema=1, stable=stable['tag'], releases=[stable])).encode()
+        candidate_catalog = json.dumps(dict(schema=1, channel='candidate', releases=[candidate])).encode()
+        responses = {'/releases/index.json': stable_catalog}
+        candidate_responses = {'/releases/candidates.json': candidate_catalog}
+        for release, mapping in ((stable, responses), (candidate, candidate_responses)):
+            for model in release['models'].values():
+                for entry in (model, *model.get('variants', {}).values()):
+                    for item in entry['downloads'].values():
+                        body = b'stable image' if release is stable else b'candidate image'
+                        item.update(size=len(body), sha256=hashlib.sha256(body).hexdigest())
+                        mapping[item['path']] = body
+            mapping[release['notes']] = b'reviewed notes'
+            mapping[f"/releases/{release['tag']}/SHA256SUMS"] = b'checksums'
+        stable_catalog = json.dumps(dict(schema=1, stable=stable['tag'], releases=[stable])).encode()
+        candidate_catalog = json.dumps(dict(schema=1, channel='candidate', releases=[candidate])).encode()
+        responses['/releases/index.json'] = stable_catalog
+        candidate_responses['/releases/candidates.json'] = candidate_catalog
+        def request(req, **kwargs):
+            return io.BytesIO(responses[req.full_url.removeprefix('https://archive.example')])
+        with tempfile.TemporaryDirectory() as tmp, patch.object(archive, 'urlopen', side_effect=request):
+            output = Path(tmp)
+            archive.mirror('https://archive.example', output, True, candidate_responses.__getitem__)
+            self.assertEqual((output / 'releases/index.json').read_bytes(), stable_catalog)
+            self.assertEqual((output / 'releases/candidates.json').read_bytes(), candidate_catalog)
+            self.assertTrue((output / 'releases/v1.0.0-rc/notes.md').exists())
+            manifest = json.loads((output / 'ota/daikin/latest.json').read_bytes())
+            self.assertEqual(manifest['tag'], 'v0.9.27')
+            self.assertFalse((output / 'ota/v1/daikin/hub/latest.json').exists())
+            candidate_asset = candidate['models']['daikin']['downloads']['signed']['path']
+            (output / candidate_asset.lstrip('/')).unlink()
+            candidate_responses[candidate_asset] = b'corrupt candidate'
+            with self.assertRaisesRegex(ValueError, 'checksum mismatch'):
+                archive.mirror('https://archive.example', output, True, candidate_responses.__getitem__)
+            self.assertEqual((output / 'releases/index.json').read_bytes(), stable_catalog)
+            self.assertEqual((output / 'releases/candidates.json').read_bytes(), candidate_catalog)
+            def missing_asset(path):
+                if path == candidate_asset:
+                    raise HTTPError(path, 404, 'Candidate asset missing', None, None)
+                return candidate_responses[path]
+            with self.assertRaises(HTTPError):
+                archive.mirror('https://archive.example', output, True, missing_asset)
+
+    def test_only_missing_first_candidate_catalog_is_accepted(self):
+        catalog = json.dumps(dict(schema=1, stable=None, releases=[])).encode()
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp)
+            def missing(path):
+                raise HTTPError(path, 404, 'No candidate catalog', None, None)
+            with patch.object(archive, 'urlopen', return_value=io.BytesIO(catalog)):
+                archive.mirror('https://archive.example', output, True, missing)
+            self.assertEqual((output / 'releases/index.json').read_bytes(), catalog)
+            self.assertFalse((output / 'releases/candidates.json').exists())
+            def failed(path):
+                raise HTTPError(path, 503, 'Service unavailable', None, None)
+            with patch.object(archive, 'urlopen', return_value=io.BytesIO(catalog)):
+                with self.assertRaises(HTTPError):
+                    archive.mirror('https://archive.example', output, True, failed)
+            self.assertEqual((output / 'releases/index.json').read_bytes(), catalog)

@@ -502,6 +502,13 @@ jobs:
       - run: pip install cryptography==46.0.3
       - name: Require GitHub CLI for publication
         run: bash tools/ci/ensure_gh.sh
+      - name: Classify the strictly validated release tag
+        id: release-channel
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          channel="$(python3 tools/release/release_version.py "$TAG_NAME")"
+          printf 'channel=%s\n' "$channel" >> "$GITHUB_OUTPUT"
       - name: Extract frozen Wiki release notes
         env:
           TAG_NAME: ${{ github.ref_name }}
@@ -513,10 +520,16 @@ jobs:
       - name: Verify reviewed notes against staged signed firmware
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_CHANNEL: ${{ steps.release-channel.outputs.channel }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           gh repo clone phicomm-io/phicomm-io.github.io "$RUNNER_TEMP/retained-notes-archive" -- --depth=1
+          if [ "$RELEASE_CHANNEL" = candidate ]; then
+            python3 tools/release/archive_pages.py "$RUNNER_TEMP/retained-notes-archive" --include-candidates --candidates-r2
+          fi
           python3 tools/release/verify_user_notes_release.py release "$RUNNER_TEMP/retained-notes-archive"
       - name: Stage GitHub release and immutable OTA assets
+        if: steps.release-channel.outputs.channel == 'stable'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -533,10 +546,29 @@ jobs:
           python3 tools/release/publish.py release
           gh release edit "$TAG_NAME" --draft=false --latest
           python3 tools/release/publish.py release --promote
+      - name: Publish an isolated GitHub prerelease and candidate catalog
+        if: steps.release-channel.outputs.channel == 'candidate'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG_NAME: ${{ github.ref_name }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if ! gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release create "$TAG_NAME" --draft --prerelease --latest=false --title "$TAG_NAME" --notes-file release-notes.md release/*
+          else
+            gh release download "$TAG_NAME" --dir existing
+            for file in release/*.bin* release/SHA256SUMS; do cmp "$file" "existing/$(basename "$file")"; done
+          fi
+          python3 tools/release/publish.py release
+          gh release edit "$TAG_NAME" --draft=false --prerelease --latest=false
+          python3 tools/release/publish.py release --candidate
       - uses: actions/setup-node@v4
+        if: steps.release-channel.outputs.channel == 'stable'
         with:
           node-version: '24'
       - name: Build and publish public Pages allowlist
+        if: steps.release-channel.outputs.channel == 'stable'
         env:
           GH_TOKEN: ${{ secrets.PAGES_DEPLOY_TOKEN }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -637,7 +669,7 @@ jobs:
       - name: Test OTA release tooling and Worker
         run: |
           python3 -m unittest discover -s tests -p test_release.py
-          python3 -m unittest tests.test_branch_policy tests.test_release_budget tests.test_release_variant tests.test_release_publish tests.test_archive_pages
+          python3 -m unittest tests.test_version tests.test_branch_policy tests.test_release_budget tests.test_release_variant tests.test_release_publish tests.test_release_candidate tests.test_archive_pages
           node --test tests/test_ota_worker.mjs
       - name: Test production TLS transport with real TLS and sanitizers
         run: |

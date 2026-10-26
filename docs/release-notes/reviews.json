@@ -1928,6 +1928,309 @@
       "basis": [
         "v0.9.27:b008"
       ]
+    },
+    "v1.0.0-rc:b001": {
+      "block_sha256": "df7f78f89a3678bc09e96cc16c328b5315e3e3b803b2bcff8e24819e8e9a3a1f",
+      "release_sha256": "e888869e83b6d325edc31ce5e3f843ef9c2990b47b699c33563bbe930eecc4ea",
+      "status": "excluded",
+      "reason": "版本导言、分类标题或导航链接；保留原文，不作为用户功能差异。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc:b001"
+      ]
+    },
+    "v1.0.0-rc:b002": {
+      "block_sha256": "da74143f30112a374df724980cdd2fae253e229c23cf7c9fb921a884d28b12c9",
+      "release_sha256": "e888869e83b6d325edc31ce5e3f843ef9c2990b47b699c33563bbe930eecc4ea",
+      "status": "excluded",
+      "reason": "版本导言、分类标题或导航链接；保留原文，不作为用户功能差异。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc:b002"
+      ]
+    },
+    "v1.0.0-rc:b003": {
+      "block_sha256": "7afe992a52495455e0204e83a9c7d275218406c1b8e83e6485af927871b0da6e",
+      "release_sha256": "e888869e83b6d325edc31ce5e3f843ef9c2990b47b699c33563bbe930eecc4ea",
+      "status": "approved",
+      "reason": "中文RC原文经root接受；关联29项中英标题、说明、OTA摘要和组件/机型/变体范围经独立逐项审阅。只批准文案与源码支持，不表示构建、发布或实机验收。",
+      "change_refs": [
+        "v1-bundled-i18n@1.0.0-rc",
+        "v1-platform-i18n@1.0.0-rc",
+        "v1-device-language@1.0.0-rc"
+      ],
+      "basis": "review/release-v1.0.0-rc/structured-notes-independent-review.json sha256=ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+      "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+      "reviewed_utc": "2026-10-26T04:56:16.830877+00:00"
+    },
+    "v1.0.0-rc:b004": {
+      "block_sha256": "f430ede43d204615ede6992e129ba8ecde55ee2bfb8193c58781b493543749e8",
+      "release_sha256": "e888869e83b6d325edc31ce5e3f843ef9c2990b47b699c33563bbe930eecc4ea",
+      "status": "approved",
+      "reason": "中文RC原文经root接受；关联29项中英标题、说明、OTA摘要和组件/机型/变体范围经独立逐项审阅。只批准文案与源码支持，不表示构建、发布或实机验收。",
+      "change_refs": [
+        "v1-local-connection-fold@1.0.0-rc"
+      ],
+      "basis": "review/release-v1.0.0-rc/structured-notes-independent-review.json sha256=ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+      "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+      "reviewed_utc": "2026-10-26T04:56:16.830877+00:00"
+    },
+    "v1.0.0-rc:b005": {
+      "block_sha256": "9de7e3dedf4e1569934fccbd12b111479d48d26715c1e9ce3a8eeae2499f3f8e",
+      "release_sha256": "e888869e83b6d325edc31ce5e3f843ef9c2990b47b699c33563bbe930eecc4ea",
+      "status": "approved",
+      "reason": "中文RC原文经root接受；关联29项中英标题、说明、OTA摘要和组件/机型/变体范围经独立逐项审阅。只批准文案与源码支持，不表示构建、发布或实机验收。",
+      "change_refs": [
+        "v1-platform-short-usernames@1.0.0-rc"
+      ],
+      "basis": "review/release-v1.0.0-rc/structured-notes-independent-review.json sha256=ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+      "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+      "reviewed_utc": "2026-10-26T04:56:16.830877+00:00"
+    },
+    "v1.0.0-rc:b006": {
+      "block_sha256": "ca14bd1c8ec7586192e687d3f0e557c2cf290deca93b38aa92e8a46a519cc736",
+      "release_sha256": "e888869e83b6d325edc31ce5e3f843ef9c2990b47b699c33563bbe930eecc4ea",
+      "status": "excluded",
+      "reason": "版本导言、分类标题或导航链接；保留原文，不作为用户功能差异。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc:b006"
+      ]
+    },
+    "v1.0.0-rc:b007": {
+      "block_sha256": "ba09bc02a38156ce65a88dad524ba7473ed028d59c6f84e06d8b0235843236fb",
+      "release_sha256": "e888869e83b6d325edc31ce5e3f843ef9c2990b47b699c33563bbe930eecc4ea",
+      "status": "approved",
+      "reason": "中文RC原文经root接受；关联29项中英标题、说明、OTA摘要和组件/机型/变体范围经独立逐项审阅。只批准文案与源码支持，不表示构建、发布或实机验收。",
+      "change_refs": [
+        "v1-m1-mcu-version-ui@1.0.0-rc"
+      ],
+      "basis": "review/release-v1.0.0-rc/structured-notes-independent-review.json sha256=ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+      "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+      "reviewed_utc": "2026-10-26T04:56:16.830877+00:00"
+    },
+    "v1.0.0-rc:b008": {
+      "block_sha256": "196a345ddc9f4f68e12df98bbd632eaefae452d067427fb49a3b03d91958664c",
+      "release_sha256": "e888869e83b6d325edc31ce5e3f843ef9c2990b47b699c33563bbe930eecc4ea",
+      "status": "approved",
+      "reason": "中文RC原文经root接受；关联29项中英标题、说明、OTA摘要和组件/机型/变体范围经独立逐项审阅。只批准文案与源码支持，不表示构建、发布或实机验收。",
+      "change_refs": [
+        "v1-m1-sensor-pm-smoothing@1.0.0-rc"
+      ],
+      "basis": "review/release-v1.0.0-rc/structured-notes-independent-review.json sha256=ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+      "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+      "reviewed_utc": "2026-10-26T04:56:16.830877+00:00"
+    },
+    "v1.0.0-rc:b009": {
+      "block_sha256": "0c92d4f13438c7e2bccb5a9fb7045d38c540a150daa75bfee1c7a05fc4dda6e2",
+      "release_sha256": "e888869e83b6d325edc31ce5e3f843ef9c2990b47b699c33563bbe930eecc4ea",
+      "status": "approved",
+      "reason": "中文RC原文经root接受；关联29项中英标题、说明、OTA摘要和组件/机型/变体范围经独立逐项审阅。只批准文案与源码支持，不表示构建、发布或实机验收。",
+      "change_refs": [
+        "v1-m1-optional-sensor-buzzer@1.0.0-rc",
+        "v1-m1-sensor-buzzer-webui@1.0.0-rc"
+      ],
+      "basis": "review/release-v1.0.0-rc/structured-notes-independent-review.json sha256=ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+      "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+      "reviewed_utc": "2026-10-26T04:56:16.830877+00:00"
+    },
+    "v1.0.0-rc:b010": {
+      "block_sha256": "0fc0a1abe2df6be7c7f868ff5032a2a05dc11f0232de0472131669b4fedba434",
+      "release_sha256": "e888869e83b6d325edc31ce5e3f843ef9c2990b47b699c33563bbe930eecc4ea",
+      "status": "approved",
+      "reason": "中文RC原文经root接受；关联29项中英标题、说明、OTA摘要和组件/机型/变体范围经独立逐项审阅。只批准文案与源码支持，不表示构建、发布或实机验收。",
+      "change_refs": [
+        "v1-m1-button-actions@1.0.0-rc",
+        "v1-m1-segmented-reset@1.0.0-rc"
+      ],
+      "basis": "review/release-v1.0.0-rc/structured-notes-independent-review.json sha256=ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+      "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+      "reviewed_utc": "2026-10-26T04:56:16.830877+00:00"
+    },
+    "v1.0.0-rc:b011": {
+      "block_sha256": "2492ae647b1053203e5d277245ce76bd838e971ca2e4568d39dfa073f93b03f0",
+      "release_sha256": "e888869e83b6d325edc31ce5e3f843ef9c2990b47b699c33563bbe930eecc4ea",
+      "status": "approved",
+      "reason": "中文RC原文经root接受；关联29项中英标题、说明、OTA摘要和组件/机型/变体范围经独立逐项审阅。只批准文案与源码支持，不表示构建、发布或实机验收。",
+      "change_refs": [
+        "v1-m1-dual-display-sources@1.0.0-rc",
+        "v1-tc1-a1-typed-display-producers@1.0.0-rc",
+        "v1-m1-display-profile-webui@1.0.0-rc"
+      ],
+      "basis": "review/release-v1.0.0-rc/structured-notes-independent-review.json sha256=ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+      "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+      "reviewed_utc": "2026-10-26T04:56:16.830877+00:00"
+    },
+    "v1.0.0-rc:b012": {
+      "block_sha256": "9c443366cf07f4d5f0d19a1fc9e64f868e919dba2e2328060dcc5a176294b188",
+      "release_sha256": "e888869e83b6d325edc31ce5e3f843ef9c2990b47b699c33563bbe930eecc4ea",
+      "status": "approved",
+      "reason": "中文RC原文经root接受；关联29项中英标题、说明、OTA摘要和组件/机型/变体范围经独立逐项审阅。只批准文案与源码支持，不表示构建、发布或实机验收。",
+      "change_refs": [
+        "v1-m1-display-modes-glyphs@1.0.0-rc",
+        "v1-m1-independent-lamp-segments@1.0.0-rc",
+        "v1-m1-display-profile-webui@1.0.0-rc"
+      ],
+      "basis": "review/release-v1.0.0-rc/structured-notes-independent-review.json sha256=ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+      "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+      "reviewed_utc": "2026-10-26T04:56:16.830877+00:00"
+    },
+    "v1.0.0-rc:b013": {
+      "block_sha256": "322811fd98a45d9e7775abf0cd913ebc0fce9c8d8b3302f70582b0695e5c8ec0",
+      "release_sha256": "e888869e83b6d325edc31ce5e3f843ef9c2990b47b699c33563bbe930eecc4ea",
+      "status": "approved",
+      "reason": "中文RC原文经root接受；关联29项中英标题、说明、OTA摘要和组件/机型/变体范围经独立逐项审阅。只批准文案与源码支持，不表示构建、发布或实机验收。",
+      "change_refs": [
+        "v1-m1-raw-display-api@1.0.0-rc",
+        "v1-m1-display-compatibility@1.0.0-rc",
+        "v1-m1-display-profile-webui@1.0.0-rc"
+      ],
+      "basis": "review/release-v1.0.0-rc/structured-notes-independent-review.json sha256=ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+      "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+      "reviewed_utc": "2026-10-26T04:56:16.830877+00:00"
+    },
+    "v1.0.0-rc:b014": {
+      "block_sha256": "86876faa802ef98d1847bd1bd1844f8262c5a76b3279cbe15964b75fbc7b005c",
+      "release_sha256": "e888869e83b6d325edc31ce5e3f843ef9c2990b47b699c33563bbe930eecc4ea",
+      "status": "excluded",
+      "reason": "版本导言、分类标题或导航链接；保留原文，不作为用户功能差异。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc:b014"
+      ]
+    },
+    "v1.0.0-rc:b015": {
+      "block_sha256": "504242d28cb9330fabff4b72d21a0ba2cea76fa3d342bcdc735052dccb55c91a",
+      "release_sha256": "e888869e83b6d325edc31ce5e3f843ef9c2990b47b699c33563bbe930eecc4ea",
+      "status": "approved",
+      "reason": "中文RC原文经root接受；关联29项中英标题、说明、OTA摘要和组件/机型/变体范围经独立逐项审阅。只批准文案与源码支持，不表示构建、发布或实机验收。",
+      "change_refs": [
+        "v1-daikin-hub-variant@1.0.0-rc",
+        "v1-daikin-hub-webui@1.0.0-rc"
+      ],
+      "basis": "review/release-v1.0.0-rc/structured-notes-independent-review.json sha256=ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+      "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+      "reviewed_utc": "2026-10-26T04:56:16.830877+00:00"
+    },
+    "v1.0.0-rc:b016": {
+      "block_sha256": "a43b30e26ab83e194fa7b7edf7eafda21cb7b60c314b38ffd2a24c5f81b29013",
+      "release_sha256": "e888869e83b6d325edc31ce5e3f843ef9c2990b47b699c33563bbe930eecc4ea",
+      "status": "approved",
+      "reason": "中文RC原文经root接受；关联29项中英标题、说明、OTA摘要和组件/机型/变体范围经独立逐项审阅。只批准文案与源码支持，不表示构建、发布或实机验收。",
+      "change_refs": [
+        "v1-daikin-hub-webui@1.0.0-rc",
+        "v1-daikin-local-broker@1.0.0-rc",
+        "v1-daikin-broker-client-forwarding@1.0.0-rc"
+      ],
+      "basis": "review/release-v1.0.0-rc/structured-notes-independent-review.json sha256=ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+      "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+      "reviewed_utc": "2026-10-26T04:56:16.830877+00:00"
+    },
+    "v1.0.0-rc:b017": {
+      "block_sha256": "63f335bee2eee8944929d0b1704973eb4a22919c441f02462fa9c601212d1200",
+      "release_sha256": "e888869e83b6d325edc31ce5e3f843ef9c2990b47b699c33563bbe930eecc4ea",
+      "status": "approved",
+      "reason": "中文RC原文经root接受；关联29项中英标题、说明、OTA摘要和组件/机型/变体范围经独立逐项审阅。只批准文案与源码支持，不表示构建、发布或实机验收。",
+      "change_refs": [
+        "v1-daikin-hub-webui@1.0.0-rc",
+        "v1-daikin-hap-bridge@1.0.0-rc"
+      ],
+      "basis": "review/release-v1.0.0-rc/structured-notes-independent-review.json sha256=ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+      "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+      "reviewed_utc": "2026-10-26T04:56:16.830877+00:00"
+    },
+    "v1.0.0-rc:b018": {
+      "block_sha256": "575c55ad01b4ebc73d83e1bb850b0f2f6211dee7a6d686e5b57a65e508bbc8ce",
+      "release_sha256": "e888869e83b6d325edc31ce5e3f843ef9c2990b47b699c33563bbe930eecc4ea",
+      "status": "approved",
+      "reason": "中文RC原文经root接受；关联29项中英标题、说明、OTA摘要和组件/机型/变体范围经独立逐项审阅。只批准文案与源码支持，不表示构建、发布或实机验收。",
+      "change_refs": [
+        "v1-daikin-explicit-hub-conversion@1.0.0-rc"
+      ],
+      "basis": "review/release-v1.0.0-rc/structured-notes-independent-review.json sha256=ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+      "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+      "reviewed_utc": "2026-10-26T04:56:16.830877+00:00"
+    },
+    "v1.0.0-rc:b019": {
+      "block_sha256": "8d093edd69411db739ae50b29e89a444488c5bd397bd904b65ccc6c6243b347a",
+      "release_sha256": "e888869e83b6d325edc31ce5e3f843ef9c2990b47b699c33563bbe930eecc4ea",
+      "status": "excluded",
+      "reason": "版本导言、分类标题或导航链接；保留原文，不作为用户功能差异。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc:b019"
+      ]
+    },
+    "v1.0.0-rc:b020": {
+      "block_sha256": "74f4cd4a5d72be377a7a3b24b34d26a6caf7a734dcb876b2d8186ded860dde6c",
+      "release_sha256": "e888869e83b6d325edc31ce5e3f843ef9c2990b47b699c33563bbe930eecc4ea",
+      "status": "approved",
+      "reason": "中文RC原文经root接受；关联29项中英标题、说明、OTA摘要和组件/机型/变体范围经独立逐项审阅。只批准文案与源码支持，不表示构建、发布或实机验收。",
+      "change_refs": [
+        "v1-authenticated-backup-recovery@1.0.0-rc"
+      ],
+      "basis": "review/release-v1.0.0-rc/structured-notes-independent-review.json sha256=ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+      "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+      "reviewed_utc": "2026-10-26T04:56:16.830877+00:00"
+    },
+    "v1.0.0-rc:b021": {
+      "block_sha256": "c832cd1bf8b6763c9666a243ff637309c4a3a3e6d141edff72d0afb73cfde62d",
+      "release_sha256": "e888869e83b6d325edc31ce5e3f843ef9c2990b47b699c33563bbe930eecc4ea",
+      "status": "approved",
+      "reason": "中文RC原文经root接受；关联29项中英标题、说明、OTA摘要和组件/机型/变体范围经独立逐项审阅。只批准文案与源码支持，不表示构建、发布或实机验收。",
+      "change_refs": [
+        "v1-m1-display-compatibility@1.0.0-rc",
+        "v1-browser-inline-upgrade-diff@1.0.0-rc"
+      ],
+      "basis": "review/release-v1.0.0-rc/structured-notes-independent-review.json sha256=ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+      "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+      "reviewed_utc": "2026-10-26T04:56:16.830877+00:00"
+    },
+    "v1.0.0-rc:b022": {
+      "block_sha256": "c464a6ab448358ac833d253de40acd13bf567e66ba9cd92e11d33cc3fce5ad23",
+      "release_sha256": "e888869e83b6d325edc31ce5e3f843ef9c2990b47b699c33563bbe930eecc4ea",
+      "status": "approved",
+      "reason": "中文RC原文经root接受；关联29项中英标题、说明、OTA摘要和组件/机型/变体范围经独立逐项审阅。只批准文案与源码支持，不表示构建、发布或实机验收。",
+      "change_refs": [
+        "v1-emw3080-release-memory@1.0.0-rc"
+      ],
+      "basis": "review/release-v1.0.0-rc/structured-notes-independent-review.json sha256=ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+      "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+      "reviewed_utc": "2026-10-26T04:56:16.830877+00:00"
+    },
+    "v1.0.0-rc:b023": {
+      "block_sha256": "7e2737a0ecb65dfdadd4c60d8a061febbd83245d6ee95c901824689895f6c85b",
+      "release_sha256": "e888869e83b6d325edc31ce5e3f843ef9c2990b47b699c33563bbe930eecc4ea",
+      "status": "approved",
+      "reason": "中文RC原文经root接受；关联29项中英标题、说明、OTA摘要和组件/机型/变体范围经独立逐项审阅。只批准文案与源码支持，不表示构建、发布或实机验收。",
+      "change_refs": [
+        "v1-open-source-development@1.0.0-rc"
+      ],
+      "basis": "review/release-v1.0.0-rc/structured-notes-independent-review.json sha256=ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+      "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+      "reviewed_utc": "2026-10-26T04:56:16.830877+00:00"
+    },
+    "v1.0.0-rc:b024": {
+      "block_sha256": "efcab010d1dd7366b961c2033508044f03e2baf7f31e5010c4a36d7aaa7873bc",
+      "release_sha256": "e888869e83b6d325edc31ce5e3f843ef9c2990b47b699c33563bbe930eecc4ea",
+      "status": "approved",
+      "reason": "中文RC原文经root接受；关联29项中英标题、说明、OTA摘要和组件/机型/变体范围经独立逐项审阅。只批准文案与源码支持，不表示构建、发布或实机验收。",
+      "change_refs": [
+        "v1-device-guides-protocol-pages@1.0.0-rc"
+      ],
+      "basis": "review/release-v1.0.0-rc/structured-notes-independent-review.json sha256=ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
+      "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
+      "reviewed_utc": "2026-10-26T04:56:16.830877+00:00"
+    },
+    "v1.0.0-rc:b025": {
+      "block_sha256": "386994c7516808cc22b7ff7ba62347a371298be2ed5aafba4d2f6c6b06c6495a",
+      "release_sha256": "e888869e83b6d325edc31ce5e3f843ef9c2990b47b699c33563bbe930eecc4ea",
+      "status": "excluded",
+      "reason": "版本导言、分类标题或导航链接；保留原文，不作为用户功能差异。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc:b025"
+      ]
     }
   }
 }

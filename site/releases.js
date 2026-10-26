@@ -87,7 +87,13 @@ async function loadM1ControllerReleases(){
    if(!response.ok)throw Error('HTTP '+response.status);
    const data=await response.json();
    if(!Array.isArray(data))throw Error('Invalid releases');
-   return data.filter(r=>!r.draft&&/^v\d+\.\d+\.\d+$/.test(r.tag_name)&&Array.isArray(r.assets));
+   return data.filter(r=>{
+    if(!r||r.draft||!Array.isArray(r.assets))return false;
+    try{
+     const version=ReleaseNotes.parseVersion(r.tag_name);
+     return !version.suffix&&r.tag_name==='v'+version.version;
+    }catch{return false;}
+   });
   }finally{clearTimeout(timer);}
  }
  let versions,snapshot=false;
@@ -97,15 +103,13 @@ async function loadM1ControllerReleases(){
   try{versions=await read(new URL('guides/assets/firmware/m1-mcu/releases.json', siteBase));}
   catch{message.textContent=t('主控版本暂时无法读取，请使用上方 GitHub Releases 入口。', 'Controller releases are unavailable. Use the GitHub Releases link above.');return;}
  }
- // Numeric ordering also handles v0.9.10 after v0.9.9.
- versions.sort((a,b)=>{
-  const x=a.tag_name.slice(1).split('.').map(Number),y=b.tag_name.slice(1).split('.').map(Number);
-  return y[0]-x[0]||y[1]-x[1]||y[2]-x[2];
- });
+ // Use the shared version order, including bare RC and numbered candidates.
+ versions.sort((a,b)=>ReleaseNotes.compareVersions(b.tag_name,a.tag_name));
  target.replaceChildren();
  for(const [index,release] of versions.entries()){
   const box=el('details');box.className='release';box.open=index===0;
-  box.append(el('summary',release.tag_name+(release.prerelease?t(' · 开发预览', ' · Development preview'):t(' · 已发布', ' · Published'))));
+  const preview=release.prerelease||ReleaseNotes.parseVersion(release.tag_name).prerelease;
+  box.append(el('summary',release.tag_name+(preview?t(' · 开发预览', ' · Development preview'):t(' · 已发布', ' · Published'))));
   const links=el('div');links.className='actions';
   const add=(label,url)=>{const a=el('a',label);a.href=url;a.rel='noopener noreferrer';links.append(a);};
   for(const [name,label] of attachments){

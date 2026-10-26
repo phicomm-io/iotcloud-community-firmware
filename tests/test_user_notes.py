@@ -105,6 +105,73 @@ class UserNotesTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'chain declaration'):
             notes.compile_manifest(self.data)
 
+    def test_candidate_notes_preserve_stable_selection_and_require_their_own_scope(self):
+        tag, ver = 'v1.0.0-rc', '1.0.0-rc'
+        catalog = notes.read(self.data / 'catalog.snapshot.json')
+        stable = catalog['stable']
+        stable_catalog = copy.deepcopy(catalog)
+        source = catalog['releases'][0]
+        release = copy.deepcopy(source)
+        release.update(tag=tag, version=ver, channel='candidate', prerelease=True, notes=f'/releases/{tag}/notes.md')
+        for _, _, entry in notes.targets(release):
+            for asset in entry['downloads'].values():
+                asset['path'] = asset['path'].replace('/' + source['tag'] + '/', '/' + tag + '/')
+        catalog['releases'].append(release)
+        archive = Path(self.tmp.name) / 'archive'
+        (archive / 'releases').mkdir(parents=True)
+        (archive / 'releases/index.json').write_bytes(notes.encoded(catalog))
+        original = b'Candidate external display configuration and device features.\n'
+        (self.data / 'sources' / (tag + '.md')).write_bytes(original)
+        identities = notes.read(self.data / 'archive-identities.json')
+        identities['releases'][tag] = copy.deepcopy(identities['releases'][source['tag']])
+        identities['releases'][tag]['notes_sha256'] = notes.digest(original)
+        (self.data / 'archive-identities.json').write_bytes(notes.encoded(identities))
+        self.change('release-order.json', lambda d: d['releases'].append(dict(version=ver, previous='0.9.23', branch='main', channel='candidate')))
+        changes = notes.read(self.data / 'changes.json')
+        row = copy.deepcopy(changes['changes'][-1])
+        row.update(change_id='candidate-display', version=ver, source_refs=[tag + ':b001'])
+        row['scope']['channels'] = ['candidate']
+        changes['changes'].append(row)
+        (self.data / 'changes.json').write_bytes(notes.encoded(changes))
+        self.change('reviews.json', lambda d: d['blocks'].update({tag + ':b001': dict(status='approved',
+            block_sha256=notes.digest(original.strip()), release_sha256=notes.digest(original),
+            change_refs=['candidate-display@' + ver])}))
+        manifest, _ = notes.compile_manifest(self.data, archive=archive)
+        self.assertEqual(manifest['stable'], stable[1:])
+        self.assertIn(dict(branch='main', channel='candidate'), manifest['supported_scopes'])
+        candidate = next(r for r in manifest['releases'] if r['version'] == ver)
+        self.assertEqual(candidate['channel'], 'candidate')
+        self.assertTrue(all(c['scope']['channels'] == ['candidate'] for c in candidate['coverage']))
+        (archive / 'releases/index.json').write_bytes(notes.encoded(stable_catalog))
+        (archive / 'releases/candidates.json').write_bytes(notes.encoded(dict(schema=1, channel='candidate', releases=[release])))
+        stable_manifest = notes.write_public(archive, self.data, archive=archive)
+        self.assertFalse(any(r['channel'] == 'candidate' for r in stable_manifest['releases']))
+        before = {p.relative_to(archive): p.read_bytes() for p in archive.rglob('*') if p.is_file()}
+        candidate_manifest = notes.write_public(archive, self.data, archive=archive, include_candidates=True)
+        self.assertEqual(candidate_manifest['stable'], stable[1:])
+        self.assertIn(dict(branch='main', channel='candidate'), candidate_manifest['supported_scopes'])
+        for path, body in before.items():
+            self.assertEqual((archive / path).read_bytes(), body)
+        pointer = notes.read(archive / 'releases/notes/candidate/index.json')
+        self.assertEqual(pointer['channel'], 'candidate')
+        self.assertEqual(pointer['source'], dict(scope='candidate', kind='relative-archive'))
+        for name in ('manifest', 'catalog'):
+            self.assertRegex(pointer[name]['path'], r'^/releases/notes/candidate/' + name + r'\.[a-f0-9]{64}\.json$')
+        combined = notes.read(notes.valid_path(archive, pointer['catalog']))
+        self.assertEqual(combined['stable'], stable)
+        self.assertIn(tag, {r['tag'] for r in combined['releases']})
+        self.assertEqual(notes.verify_output(archive, self.data, include_candidates=True), candidate_manifest)
+        self.assertEqual(notes.write_public(archive, self.data, archive=archive, include_candidates=True), candidate_manifest)
+        resource = notes.valid_path(archive, pointer['catalog'])
+        original_catalog = resource.read_bytes()
+        resource.write_bytes(original_catalog + b' ')
+        with self.assertRaisesRegex(ValueError, 'resource hash mismatch'):
+            notes.verify_output(archive, self.data, include_candidates=True)
+        resource.write_bytes(original_catalog)
+        self.change('changes.json', lambda d: d['changes'][-1]['scope'].update(channels=['stable']))
+        with self.assertRaisesRegex(ValueError, 'explicit release channel'):
+            notes.compile_manifest(self.data, archive=archive, include_candidates=True)
+
     def test_v4_is_not_a_duplicate_feature_and_v0_is_insufficient(self):
         manifest, _ = notes.compile_manifest(self.data)
         statuses = {r['version']: r['history_status'] for r in manifest['releases']}

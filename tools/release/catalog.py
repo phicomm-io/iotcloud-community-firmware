@@ -8,6 +8,7 @@ import re
 from pathlib import Path
 
 from products import STEMS, asset_stem, variants_for
+from release_version import parse_tag
 
 
 def downloads(directory, tag, stem, legacy=False):
@@ -36,13 +37,18 @@ def verify_daikin_assets(directory, files, tag, commit, variant, keyring_path):
 
 
 def make(tag, commit, directory, notes, legacy=False, require_variants=False, keyring_path=None):
-    if not re.fullmatch(r'v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)', tag):
-        raise ValueError('invalid tag')
+    identity = parse_tag(tag)
+    if identity.prerelease and (legacy or identity.core[0] == 0):
+        raise ValueError('Release candidates require the current v1+ signed asset layout')
     if not re.fullmatch('[0-9a-f]{40}', commit):
         raise ValueError('invalid commit')
     directory = Path(directory)
     release = dict(schema=1, tag=tag, version=tag[1:], commit=commit,
                    notes=f'/releases/{tag}/notes.md', models={})
+    if identity.prerelease:
+        release.update(prerelease=True, channel='candidate',
+                       source={'scope':'candidate', 'kind':'relative-archive'},
+                       github_release=f'https://github.com/phicomm-io/iotcloud-community-firmware/releases/tag/{tag}')
     if not legacy and any(directory.glob('phicomm_daikin.*')):
         raise ValueError('DAIKIN assets must use the daikin_BRY88AX151K prefix')
     include_slim = require_variants or any(directory.glob('*-no-frontend-resources.*'))

@@ -18,6 +18,7 @@
 #define UPDATE_MODEL "m1"
 #endif
 #include "../generated/build_version.h"
+#include "version.h"
 static const char *update_bases[]={PHICOMM_OTA_CN_BASE_URL,PHICOMM_OTA_GLOBAL_BASE_URL};
 static const char *update_sources[]={"cn","global"};
 static bool update_busy, update_available;
@@ -34,10 +35,6 @@ static int update_line(int fd,char *out,size_t cap) {
     size_t n=0;uint32_t deadline=mico_rtos_get_time()+10000;
     while(n+1<cap){char c;if((int32_t)(mico_rtos_get_time()-deadline)>=0||update_read(fd,&c,1)!=1||!c)return -1;
         if(c=='\n'){if(!n||out[n-1]!='\r')return -1;out[--n]=0;return n;}out[n++]=c;}return -1;
-}
-static bool update_semver(const char *s,unsigned v[3]) {
-    for(int i=0;i<3;i++){if(!isdigit((unsigned char)*s))return false;v[i]=0;while(isdigit((unsigned char)*s)){if(v[i]>100000)return false;v[i]=v[i]*10+(*s++-'0');}if(i<2&&*s++!='.')return false;}
-    return !*s||*s=='-';
 }
 static const char *update_text(json_object *o,const char *key) {
     json_object *v=json_object_object_get(o,key);return v&&json_object_is_type(v,json_type_string)?json_object_get_string(v):"";
@@ -66,11 +63,11 @@ static void update_worker(mico_thread_arg_t arg) {
     if(!have)goto done;body=malloc(length+1);if(!body)goto done;
     for(unsigned got=0;got<length;){int rc=update_read(fd,body+got,length-got);if(rc<=0)goto done;got+=rc;}body[length]=0;
     meta=service_parse(body,length);if(!meta)goto done;
-    const char *version=update_text(meta,"version"),*path=update_text(meta,"path"),*notes=update_text(meta,"release_log");unsigned remote[3],local[3];
-    if(strcmp(update_text(meta,"model"),UPDATE_MODEL)||!update_semver(version,remote)||!update_semver(FIRMWARE_VERSION,local)||strlen(version)>=sizeof(update_version)||!update_relative(path)||!update_relative(notes))goto done;
+    const char *version=update_text(meta,"version"),*path=update_text(meta,"path"),*notes=update_text(meta,"release_log");ph_ota_version_t remote,local;
+    if(strcmp(update_text(meta,"model"),UPDATE_MODEL)||!ph_ota_version_parse(version,&remote)||!ph_ota_version_parse(FIRMWARE_VERSION,&local)||strlen(version)>=sizeof(update_version)||!update_relative(path)||!update_relative(notes))goto done;
     mico_rtos_lock_mutex(&service_lock);
     strcpy(update_version,version);strcpy(update_path,path);strcpy(update_notes,notes);update_available=false;
-    for(int i=0;i<3;i++){if(remote[i]!=local[i]){update_available=remote[i]>local[i];break;}}
+    update_available=ph_ota_version_compare(&remote,&local)>0;
     strcpy(update_state,update_available?"available":"up_to_date");
     mico_rtos_unlock_mutex(&service_lock);
 done:
