@@ -61,7 +61,15 @@ Disabling an output drives its GPIO low. An unconfigured MQTT connection is not 
 
 ## Buttons and recovery
 
-M1 uses the original panel's `0x18` long-press event, acknowledges it with fixed `0x16`, and clears Wi-Fi and the WebUI password once per boot after deduplication. It does not implement TC1 / A1's precise 5 / 10 second recovery split and has no custom button mappings. Follow [A1 / M1 recovery](a1-m1-flash). A full reset is available in the WebUI.
+After updating **both the open-source sensor MCU and Wi-Fi firmware** to versions supporting staged recovery:
+
+- A single click toggles the screen after about 350 ms to distinguish a double click. Double clicks stop a ringing alarm first, then switch both original/user readings according to the configured action.
+- Hold for at least 3 seconds and release before 10 seconds to clear Wi-Fi and the WebUI password and start provisioning again. MQTT and other settings are preserved.
+- Hold continuously for 10 seconds to restore factory settings, including Wi-Fi, MQTT, the WebUI password and other network-module settings. Custom music stored separately on the sensor MCU is preserved.
+
+Both recovery actions save settings before restarting the sensor and Wi-Fi MCUs; Wi-Fi connectivity is not required. Recovery gestures are disabled during updates. Stock sensor firmware retains its original long-press provisioning event and does not support these staged gestures. See [A1 / M1 recovery](a1-m1-flash); a full reset is also available in the WebUI.
+
+The current EMW3080 SDK does not provide WPA3 connectivity. Use WPA2-PSK/AES; WPA2/WPA3 transition networks must allow WPA2 clients. See the [module specifications](https://docs.mxchip.com/attach/zh/DS0122CN_EMW3080_V2.8.pdf).
 
 ## Supplying readings to A1
 
