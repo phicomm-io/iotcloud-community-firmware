@@ -65,6 +65,8 @@ static bool fail_threshold;
 static uint8_t threshold_frame[12];
 static unsigned alarm_writes,alarm_reads,alarm_io_fault;
 static uint8_t alarm_device_mask;
+static unsigned reset_rx,reset_acks,reset_writes;
+static uint8_t reset_ack[12];
 static jmp_buf done;
 uint32_t mico_rtos_get_time(void){return now;}
 static unsigned phase;
@@ -79,6 +81,17 @@ typedef int mico_pwm_t;
 static int MicoUartInitialize(int port,mico_uart_config_t *c,ring_buffer_t *r){(void)port;(void)r;assert(c->baud==115200);return 0;}
 static int MicoUartSend(int port,const uint8_t *p,unsigned n){
  (void)port;assert((n==12 || p[1]==0x13) && p[0]==0x23);
+ if(phase==18 && p[1]==0x16){
+  const uint8_t ack[12]={0x23,0x16,0,0x10,0x14,0,3,0x10,0xf1,0xff,0xff,0x21};
+  assert(!memcmp(p,ack,12) && step>=3 && m1_state.reboot_pending);
+  assert(!flash.base.ssid[0] && !flash.base.wifi_password[0] && !flash.base.web_password[0]);
+  assert(!strcmp(flash.base.mqtt_host,"keep-broker") && !strcmp(flash.base.mqtt_password,"keep-key"));
+  assert(writes==reset_writes+2); /* A failed storage attempt followed by one commit. */
+  reset_acks++;return reset_acks==1?-1:0;
+ }
+ if(phase==20 && p[1]==0x72){
+  memcpy(reset_ack,p,12);reset_acks++;return reset_acks==1?-1:0;
+ }
  if(phase==17 && p[1]==0x70 && p[2]==20){
   assert(m1_state.mcu_alarm_schema==1 && p[4]<=1 && !(p[5]&~7u));
   for(unsigned i=6;i<11;i++)assert(!p[i]);
@@ -130,6 +143,15 @@ static int MicoUartRecv(int port,uint8_t *out,unsigned n,unsigned timeout){
   uint8_t event[20]={0x23,0x0f,phase==3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0x21};
   *out=event[screen_rx++];return 0;
  }
+ if(phase==18 && step>=1 && step<=4 && reset_rx<(step*20)){
+  const uint8_t event[20]={0x23,0x18,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0x21};
+  *out=event[reset_rx++%20];return 0;
+ }
+ if(phase==19 && step>=2 && screen_rx<40){
+  const uint8_t click[20]={[0]=0x23,[1]=0x71,[2]=1,[3]=1,[19]=0x21};
+  const uint8_t screen[20]={[0]=0x23,[1]=0x0f,[19]=0x21};
+  *out=screen_rx<20?click[screen_rx]:screen[screen_rx-20];screen_rx++;return 0;
+ }
  return -1;
 }
 static int MicoPwmStop(int p){(void)p;return 0;}
@@ -150,7 +172,13 @@ void m1_scd40_tick(void);
 #include "M1/display_source.c"
 void m1_scd40_tick(void){
  step++;now+=100;
- if(phase>=12){
+ if(phase==18){
+  if(step==2)m1_state.ota_active=false;
+  if(step==3)fail_flash=false;
+  if(step==5)longjmp(done,1);
+ }else if(phase==19){
+  if(step==4)longjmp(done,1);
+ }else if(phase>=12){
   if(step==1)assert(m1_wake_alarm_tone_start(5,phase==16?5:3));
   if(step==2 && phase==13)m1_state.mcu_tones=false;
   if(step==22 && phase!=13)m1_wake_alarm_stop();
@@ -458,7 +486,57 @@ int main(void){
  m1_state.mcu_alarm_schema=1;m1_state.alarm_buzzer_received=true;m1_state.alarm_buzzer_updated_ms=now-15000;
  out=m1_alarm_json();assert(!json_object_get_boolean(json_object_object_get(out,"buzzer_confirmed")) && !json_object_object_get(out,"mcu_pm25_buzzer_enabled"));json_object_put(out);
  cap[1]=0x17;m1_mcu_rx(cap);assert(!m1_state.mcu_alarm_schema && !m1_state.alarm_buzzer_received && !m1_state.alarm_uart_sent);
- puts("M1 production storage, default-off sensor alarms, capability/readback/fault recovery, thresholds and wake tones: OK");
+ /* Physical reset works offline and retries rejection/storage/TX failures.
+  * A duplicate must neither ACK uncommitted settings nor commit twice. */
+ appRestoreDefault_callback(&live,sizeof(live));memset(&m1_state,0,sizeof(m1_state));
+ strcpy(live.base.ssid,"old-network");strcpy(live.base.wifi_password,"old-key");
+ strcpy(live.base.web_password,"old-web");strcpy(live.base.mqtt_host,"keep-broker");
+ strcpy(live.base.mqtt_password,"keep-key");flash=live;
+ now=0;step=queued=reset_rx=reset_acks=0;phase=18;reset_writes=writes;
+ m1_state.ota_active=true;fail_flash=true;
+ if(!setjmp(done))uart_worker(0);
+ assert(reset_acks==2 && writes==reset_writes+2 && reset_rx==80);
+ assert(m1_state.reboot_pending && m1_state.reboot_at==1300);
+ assert(!m1_state.wifi_connected && !m1_state.mqtt_connected);
+ /* A single event plus legacy state spans the receive work budget. */
+ memset(&m1_state,0,sizeof(m1_state));m1_state.brightness_requested=4;
+ now=0;step=queued=screen_rx=0;phase=19;button_seen=false;
+ if(!setjmp(done))uart_worker(0);
+ assert(screen_rx==40 && !m1_state.brightness_requested);
+ assert(!m1_state.wifi_connected && !m1_state.mqtt_connected);
+ /* Extended reset: exact schema/scope/token, rollback before ACK, one
+  * durable write despite ACK loss, and no escalation by another request. */
+ phase=20;
+ for(unsigned kind=1;kind<=2;kind++){
+  appRestoreDefault_callback(&live,sizeof(live));memset(&m1_state,0,sizeof(m1_state));
+  strcpy(live.base.ssid,"old-network");strcpy(live.base.wifi_password,"old-key");
+  strcpy(live.base.web_password,"old-web");strcpy(live.base.mqtt_host,"keep-broker");
+  strcpy(live.base.mqtt_password,"keep-key");flash=live;preserved=live;
+  reset_receipt_t receipt={0};reset_acks=0;reset_writes=writes;
+  uint8_t request[20]={[0]=0x23,[1]=0x72,[2]=1,[3]=kind,[4]=255,[19]=0x21};
+  request[2]=2;assert(reset_frame(&receipt,request));request[2]=1;
+  request[3]=0;assert(reset_frame(&receipt,request));request[3]=3;assert(reset_frame(&receipt,request));request[3]=kind;
+  for(unsigned i=5;i<19;i++){request[i]=1;assert(reset_frame(&receipt,request));request[i]=0;}
+  assert(!reset_acks && writes==reset_writes && !receipt.committed);
+  bool *busy[]={&m1_state.ota_active,&m1_state.mcu_updating,&m1_state.wifi_trial_active,&m1_state.reboot_pending};
+  for(unsigned i=0;i<4;i++){
+   *busy[i]=true;assert(reset_frame(&receipt,request));*busy[i]=false;
+   assert(!reset_acks && !receipt.committed && writes==reset_writes);
+  }
+  fail_flash=true;assert(reset_frame(&receipt,request));fail_flash=false;
+  assert(!reset_acks && !receipt.committed && !m1_state.reboot_pending && writes==reset_writes+1);
+  assert(!memcmp(&live,&preserved,sizeof(live)));
+  assert(reset_frame(&receipt,request) && receipt.committed && reset_acks==1 && writes==reset_writes+2);
+  const uint8_t expected_ack[12]={[0]=0x23,[1]=0x72,[2]=1,[3]=kind,[4]=255,[11]=0x21};
+  assert(!memcmp(reset_ack,expected_ack,12) && m1_state.reboot_pending);
+  assert(!flash.base.ssid[0] && !flash.base.wifi_password[0] && !flash.base.web_password[0]);
+  assert((kind==1 && !strcmp(flash.base.mqtt_host,"keep-broker")) || (kind==2 && !flash.base.mqtt_host[0]));
+  assert(reset_frame(&receipt,request) && reset_acks==2 && writes==reset_writes+2);
+  request[3]=3-kind;assert(reset_frame(&receipt,request));request[3]=kind;
+  request[4]=0;assert(reset_frame(&receipt,request));
+  assert(reset_acks==2 && writes==reset_writes+2);
+ }
+ puts("M1 production storage, alarms, reset ACK/retries and offline single click: OK");
 }
 '''.replace('PRODUCTION', production).replace('MIGRATION', migration)
         # Match the actual watchdog prototype included by the worker.

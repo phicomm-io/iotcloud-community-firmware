@@ -483,9 +483,16 @@ static void session_event(void *context,unsigned event,int rc) {
     else {mqtt_state_get(&state);if(state.mqtt_status==MQTT_READY)mqtt_status(MQTT_DISCONNECTED);}
 }
 static void mqtt_worker(mico_thread_arg_t arg) {
-    if(!ph_mqtt_startup_wait(&mqtt_startup,(uint32_t)arg) ||
-       !ph_mqtt_owner_init(&account,8192,&mqtt_owner_thread,ingress_accept)) {
+    if(!ph_mqtt_startup_wait(&mqtt_startup,(uint32_t)arg)) {
         mqtt_status(MQTT_CONFIG_ERROR);mico_rtos_delete_thread(NULL);return;
+    }
+    /* The network worker has already recorded a successful thread start.
+     * Keep this sole owner alive if RTOS mutex allocation is temporarily
+     * unavailable; exiting here would disable MQTT until the next reboot. */
+    while(!ph_mqtt_owner_init(&account,8192,&mqtt_owner_thread,ingress_accept)) {
+        mqtt_status(MQTT_DISCONNECTED);
+        custom_log("M1", "MQTT owner initialization deferred");
+        mico_thread_msleep(1000);
     }
     const ph_mqtt_session_hooks hooks={NULL,session_prepare,session_subscription,
         session_initial,session_cycle,session_closing,session_event,NULL,session_initial_ready,session_valid};
