@@ -1,0 +1,1979 @@
+{
+  "base_catalog_sha256": "e67c4a9b3bb502c1e64b232fcafae5d771a1310af8e84254e7211f35f3999db5",
+  "base_identities_canonical_sha256": "bb4d431d6484ffe0b57c63407e2674633e32eb3124a2a7c01da0fa1b1db7856a",
+  "base_identities_sha256": "60760c7abab60667be763131c039a87d5b0be858d8c668440704a275305f23c2",
+  "catalog_sha256": "41ca1b06192513fa027c89e9ab1ee7b448b57a4938cdc1d43381fbb14d366122",
+  "frontend_locks": {
+    "01c6595084cff35b48753748f2b06843615d6d1d": {
+      "bytes_base64": "ewogICJzY2hlbWEiOiAxLAogICJyZXBvc2l0b3J5IjogInBoaWNvbW0taW8vcGhpY29tbS1jb21tdW5pdHktZnJvbnRlbmQiLAogICJjb21taXQiOiAiNDgyYWQyNDNhOWZhNjZjZDE4OWU2MDhkOTY2NzQwYmU1MTk4Mzg2ZSIsCiAgInJlbGVhc2UiOiAiZnJvbnRlbmQtNDgyYWQyNDNhOWZhNjZjZDE4OWU2MDhkOTY2NzQwYmU1MTk4Mzg2ZSIsCiAgImFzc2V0IjogImZyb250ZW5kLnRhci5neiIsCiAgInNoYTI1NiI6ICIyZTViYzYxZmI0MmU4N2JhNjQ5ZjA1Mjc2OTdmZDE0M2Y5ZTlkOTJjMmZiOGEyODI5OTlhODJlNjhjNmI5Y2QyIgp9Cg==",
+      "sha256": "1194ebf987faa28c4b497d5fb0b1d6bb852c64d737fede1d53c0695e234f67b4"
+    },
+    "07966b43ae0814718a5448f959ae078fc5fd8247": {
+      "bytes_base64": "ewogICJzY2hlbWEiOiAxLAogICJyZXBvc2l0b3J5IjogInBoaWNvbW0taW8vcGhpY29tbS1jb21tdW5pdHktZnJvbnRlbmQiLAogICJjb21taXQiOiAiOWVkYzg4ZDFkZjAzNmYzZDc0YjNlNzA2NDU1MjdmNWZmYjJkNGYyOSIsCiAgInJlbGVhc2UiOiAiZnJvbnRlbmQtOWVkYzg4ZDFkZjAzNmYzZDc0YjNlNzA2NDU1MjdmNWZmYjJkNGYyOSIsCiAgImFzc2V0IjogImZyb250ZW5kLnRhci5neiIsCiAgInNoYTI1NiI6ICI1ZmE5MGQwNWUwMTg4NWFhMTQ3MmRmNzNkZGMxM2EyOThlMzZjZDE3MmJlZTQwYmFhMzkzOGIzYWU5ODA0MzA0Igp9Cg==",
+      "sha256": "25dec368c2f841fcbc4f6161451fc01b28e7b3fa2bde0fcdb56dde9d88aaa2bb"
+    },
+    "189e22e84929e1b5a702d27c57de47f53dec8ccd": {
+      "bytes_base64": "ewogICJzY2hlbWEiOiAxLAogICJyZXBvc2l0b3J5IjogInBoaWNvbW0taW8vcGhpY29tbS1jb21tdW5pdHktZnJvbnRlbmQiLAogICJjb21taXQiOiAiMWE2YWJlMDBmNTE1MTQxYmI4ODJkM2U5NDJhMmVkMjczNzUxYjkxYSIsCiAgInJlbGVhc2UiOiAiZnJvbnRlbmQtMWE2YWJlMDBmNTE1MTQxYmI4ODJkM2U5NDJhMmVkMjczNzUxYjkxYSIsCiAgImFzc2V0IjogImZyb250ZW5kLnRhci5neiIsCiAgInNoYTI1NiI6ICI4NTRmY2U0NmJkZDM0ZjYyNjJjYjMwMWMwYTdkNzgyOGNlYmMzYTMzZDczOGMwNGZlYzlkNDk1MzZhYmIyODRmIgp9Cg==",
+      "sha256": "26cc352a251ab06e8a664bc4a5e16a1cfe3ccfc36fd2aae98f1622b3786a39e7"
+    },
+    "217898169058c216f44a6b17e42de024e96b760c": {
+      "bytes_base64": "ewogICJzY2hlbWEiOiAxLAogICJyZXBvc2l0b3J5IjogInBoaWNvbW0taW8vcGhpY29tbS1jb21tdW5pdHktZnJvbnRlbmQiLAogICJjb21taXQiOiAiZmEwOGI1YmJlZDAxNzAzNzkyMGEyYjM2ZDg3Y2NmYjc1NWUzZTZjNiIsCiAgInJlbGVhc2UiOiAiZnJvbnRlbmQtZmEwOGI1YmJlZDAxNzAzNzkyMGEyYjM2ZDg3Y2NmYjc1NWUzZTZjNiIsCiAgImFzc2V0IjogImZyb250ZW5kLnRhci5neiIsCiAgInNoYTI1NiI6ICJjNTJiNDQwYmMwZDQ1MmY4OTM1YTM2ZTJmNzZhZTRiYWU5OWNmMDZkYTQwMmJmODZmYTk5Y2Q3ODgyMDliYzQ5Igp9Cg==",
+      "sha256": "de4d67f1ca116d5ef35dc7d56ed34a70a1b7b2ba499626a331afef31edccd983"
+    },
+    "24bd08ea35ab23d30647470d9486f2a99c3981fe": {
+      "bytes_base64": "ewogICJzY2hlbWEiOiAxLAogICJyZXBvc2l0b3J5IjogInBoaWNvbW0taW8vcGhpY29tbS1jb21tdW5pdHktZnJvbnRlbmQiLAogICJjb21taXQiOiAiOTA1OGVhOTE1Njk3YmIzZGU2OTcyMTJiMWI1MTg4YWYyMTNjN2FlMCIsCiAgInJlbGVhc2UiOiAiZnJvbnRlbmQtOTA1OGVhOTE1Njk3YmIzZGU2OTcyMTJiMWI1MTg4YWYyMTNjN2FlMCIsCiAgImFzc2V0IjogImZyb250ZW5kLnRhci5neiIsCiAgInNoYTI1NiI6ICI5ZWY5NTE3MzNlYmY0ZDkzM2Q0ZjViYWRhNzEyMTMyY2JhYjcwNTUyYjgxZjdkZGM5YTBkMTg4N2I3YThmNGJjIgp9Cg==",
+      "sha256": "6cc44e259008d45fc82588ee328dd7b21ba86f5bcf560247c74415c5b0c96228"
+    },
+    "2cfd89e023d8899e7014b1d1b77bfaeeb328c8fe": {
+      "bytes_base64": "ewogICJzY2hlbWEiOiAxLAogICJyZXBvc2l0b3J5IjogInBoaWNvbW0taW8vcGhpY29tbS1jb21tdW5pdHktZnJvbnRlbmQiLAogICJjb21taXQiOiAiNzFhN2EyMGNjYzc1YmYzZmFlZTAwNTE0YjE2Y2M2YzY2ZjgxMzk0ZiIsCiAgInJlbGVhc2UiOiAiZnJvbnRlbmQtNzFhN2EyMGNjYzc1YmYzZmFlZTAwNTE0YjE2Y2M2YzY2ZjgxMzk0ZiIsCiAgImFzc2V0IjogImZyb250ZW5kLnRhci5neiIsCiAgInNoYTI1NiI6ICJlYmNmZDA1ODNkNmU4ZGM5YzgwNzZjZjUyMWM1YWIyZTIyMWMwYmFmZmQyYzIzYjM5ZTZiNzhmZTlhMTE2NDAwIgp9Cg==",
+      "sha256": "ec3149b731c92e26552f7bd7771a699f3d786c2afb6e16c6cc19424b8eab3242"
+    },
+    "3592fc5a3394bdf01de30be3831e059a01458be2": {
+      "bytes_base64": "ewogICJzY2hlbWEiOiAxLAogICJyZXBvc2l0b3J5IjogInBoaWNvbW0taW8vcGhpY29tbS1jb21tdW5pdHktZnJvbnRlbmQiLAogICJjb21taXQiOiAiNDI3MzIxMDliYjgzNTE0MWM5MTNhNTY1M2YwMDcxZTA0OWFjYjc2ZiIsCiAgInJlbGVhc2UiOiAiZnJvbnRlbmQtNDI3MzIxMDliYjgzNTE0MWM5MTNhNTY1M2YwMDcxZTA0OWFjYjc2ZiIsCiAgImFzc2V0IjogImZyb250ZW5kLnRhci5neiIsCiAgInNoYTI1NiI6ICJjMjMxZDkyMzY1ZTlmM2Q0MzI3MGVhMDhhMjYzNjhjMzQ1ZTRiMGIwYWRiMGFkM2UwM2Y1ZDQ0NzlmYjAwYzUwIgp9Cg==",
+      "sha256": "4abf818fbc5653cd836a1a5b4898033c0c59818bf1ebde66ed15388404cdebb8"
+    },
+    "40b41dad82472ce84dcb9f940580753eb3c8dda8": {
+      "bytes_base64": "ewogICJzY2hlbWEiOiAxLAogICJyZXBvc2l0b3J5IjogInBoaWNvbW0taW8vcGhpY29tbS1jb21tdW5pdHktZnJvbnRlbmQiLAogICJjb21taXQiOiAiOThiYmI5ZWQ3ZjBhZGE0YmQzMzA4ZTQ4MWNjMjg1ZjA4Yzk1ODdjYyIsCiAgInJlbGVhc2UiOiAiZnJvbnRlbmQtOThiYmI5ZWQ3ZjBhZGE0YmQzMzA4ZTQ4MWNjMjg1ZjA4Yzk1ODdjYyIsCiAgImFzc2V0IjogImZyb250ZW5kLnRhci5neiIsCiAgInNoYTI1NiI6ICI1NThmMDhhZWQyMTAzNmRlZGU5ZDk1OTc4NzlkMjMxZTVlNDRiYjMxY2FiYjYwMDUxNjY2MWFmNGZmOWYxMzY3Igp9Cg==",
+      "sha256": "e3fefd7144ba6d2d58c0305c0f7855ac9f822c16d92c38d6d704f1cb33a54b70"
+    },
+    "4b34678e4f6c0a2a4ac43a10e78ee9a1e05d8099": {
+      "bytes_base64": "ewogICJzY2hlbWEiOiAxLAogICJyZXBvc2l0b3J5IjogInBoaWNvbW0taW8vcGhpY29tbS1jb21tdW5pdHktZnJvbnRlbmQiLAogICJjb21taXQiOiAiNDJhODdmMTUyZTcxMTUzMzk4ZmMyOWMwZmZmOTkxZTcxNDRhNTMwOCIsCiAgInJlbGVhc2UiOiAiZnJvbnRlbmQtNDJhODdmMTUyZTcxMTUzMzk4ZmMyOWMwZmZmOTkxZTcxNDRhNTMwOCIsCiAgImFzc2V0IjogImZyb250ZW5kLnRhci5neiIsCiAgInNoYTI1NiI6ICI3ODU0NTljOTlmODg5YTM5NWUyZmRlYWMyNjFlMjViMTRhOWJjZDE4N2FlYmVkNjkwYjhhNjFlYjUxMjFmMTQ1Igp9Cg==",
+      "sha256": "7a7f23d18fa10dd0dcdf9512b602d6c69004d3e2b1d1d656030ff0b05554cb56"
+    },
+    "53c700c3aefe96d7ebbf00a8d81f7aaa0964e24e": {
+      "bytes_base64": "ewogICJzY2hlbWEiOiAxLAogICJyZXBvc2l0b3J5IjogInBoaWNvbW0taW8vcGhpY29tbS1jb21tdW5pdHktZnJvbnRlbmQiLAogICJjb21taXQiOiAiNGQ1Zjc3OTY2ZTQ0MTk2YjJkMjA3NzAwNmIxMzUyZjI2M2Q0YTAzMyIsCiAgInJlbGVhc2UiOiAiZnJvbnRlbmQtNGQ1Zjc3OTY2ZTQ0MTk2YjJkMjA3NzAwNmIxMzUyZjI2M2Q0YTAzMyIsCiAgImFzc2V0IjogImZyb250ZW5kLnRhci5neiIsCiAgInNoYTI1NiI6ICI2MGNjYmFhZGRiZjg4ODE4M2RlM2Y0NTExYmFmODE5NjA2ZTQxYjYxOWUyOTUzYzJmYWNmNTdjYzBmZjJiY2FiIgp9Cg==",
+      "sha256": "0d00f4e7908dfc44c10edba05bd44317afffc4e64da479aa50fb6f4310c92cbc"
+    },
+    "61f6641e58046108ffdca354c8b34e06c03aaab4": {
+      "bytes_base64": "ewogICJzY2hlbWEiOiAxLAogICJyZXBvc2l0b3J5IjogInBoaWNvbW0taW8vcGhpY29tbS1jb21tdW5pdHktZnJvbnRlbmQiLAogICJjb21taXQiOiAiNWRiYmVhN2ExNTI1ZmM3NDg2ZTdiZDFjNmFmZDliNGY3MzRhMDU1ZSIsCiAgInJlbGVhc2UiOiAiZnJvbnRlbmQtNWRiYmVhN2ExNTI1ZmM3NDg2ZTdiZDFjNmFmZDliNGY3MzRhMDU1ZSIsCiAgImFzc2V0IjogImZyb250ZW5kLnRhci5neiIsCiAgInNoYTI1NiI6ICJmZGI3MmI5MTI2YzAxODk2ZWEyNzY0M2ViN2U2NWI3NTM5YjRjNWE0NGY3MTZjZDY2OWEzNWRkYzMxZmM2NzUwIgp9Cg==",
+      "sha256": "416910319565f5e2a6badcef8341b630b4f6ce26b6561cb7e430ced4f862994d"
+    },
+    "7bcb40fbbb8335c6e185c21171170a16284ddf93": {
+      "bytes_base64": "ewogICJzY2hlbWEiOiAxLAogICJyZXBvc2l0b3J5IjogInBoaWNvbW0taW8vcGhpY29tbS1jb21tdW5pdHktZnJvbnRlbmQiLAogICJjb21taXQiOiAiNGQ1Zjc3OTY2ZTQ0MTk2YjJkMjA3NzAwNmIxMzUyZjI2M2Q0YTAzMyIsCiAgInJlbGVhc2UiOiAiZnJvbnRlbmQtNGQ1Zjc3OTY2ZTQ0MTk2YjJkMjA3NzAwNmIxMzUyZjI2M2Q0YTAzMyIsCiAgImFzc2V0IjogImZyb250ZW5kLnRhci5neiIsCiAgInNoYTI1NiI6ICI2MGNjYmFhZGRiZjg4ODE4M2RlM2Y0NTExYmFmODE5NjA2ZTQxYjYxOWUyOTUzYzJmYWNmNTdjYzBmZjJiY2FiIgp9Cg==",
+      "sha256": "0d00f4e7908dfc44c10edba05bd44317afffc4e64da479aa50fb6f4310c92cbc"
+    },
+    "83b8becbee831def8c3a7380a0007e1d8348570d": {
+      "bytes_base64": "ewogICJzY2hlbWEiOiAxLAogICJyZXBvc2l0b3J5IjogInBoaWNvbW0taW8vcGhpY29tbS1jb21tdW5pdHktZnJvbnRlbmQiLAogICJjb21taXQiOiAiNzI4ZDhjNzg1NzVhM2I3ZGYwNmZkZjIzNTllMTFiYTM3OGUxYjgwYiIsCiAgInJlbGVhc2UiOiAiZnJvbnRlbmQtNzI4ZDhjNzg1NzVhM2I3ZGYwNmZkZjIzNTllMTFiYTM3OGUxYjgwYiIsCiAgImFzc2V0IjogImZyb250ZW5kLnRhci5neiIsCiAgInNoYTI1NiI6ICJjMTIwYTM4YTVkYTQzNjAzYmNmMTc2ODM4YjBjMDI2ODUyNDQxZTAyZGE3MWQwMzI2OWM0MmNmMjcxODIxN2FhIgp9Cg==",
+      "sha256": "96d49ab27f528115ad7de547d9e4dd4ab4452fed97b1fc4eb9626522dc32a624"
+    },
+    "99770efc322ee9d95b19be895d33bc2b79191607": {
+      "bytes_base64": "ewogICJzY2hlbWEiOiAxLAogICJyZXBvc2l0b3J5IjogInBoaWNvbW0taW8vcGhpY29tbS1jb21tdW5pdHktZnJvbnRlbmQiLAogICJjb21taXQiOiAiODliZmMyMDI4ZGE1ZTU4MWRhOWEwODdiMDIwZjhkMmMwOGJlZTNmYyIsCiAgInJlbGVhc2UiOiAiZnJvbnRlbmQtODliZmMyMDI4ZGE1ZTU4MWRhOWEwODdiMDIwZjhkMmMwOGJlZTNmYyIsCiAgImFzc2V0IjogImZyb250ZW5kLnRhci5neiIsCiAgInNoYTI1NiI6ICJhZjg2OTEyZTJmMzc0YTQ3MWM2YjFjODk3ZjRmMDBlYTM2YmMxNjM3MzQ0NjdlMzYzZGRlMWJiNzhmNWZmMDJhIgp9Cg==",
+      "sha256": "48da6ace21f0d6e5188add51e1df878c023b440b51694e9f3fdab4cfd098131c"
+    },
+    "bc1b5a1284726206d7654294628ad14a9dcb8e11": {
+      "bytes_base64": "ewogICJzY2hlbWEiOiAxLAogICJyZXBvc2l0b3J5IjogInBoaWNvbW0taW8vcGhpY29tbS1jb21tdW5pdHktZnJvbnRlbmQiLAogICJjb21taXQiOiAiYmQ2M2Q1NThmN2YwMDFiYzI0YTJhZTE4NTVhNWM0MTdhNWI1Y2U1NSIsCiAgInJlbGVhc2UiOiAiZnJvbnRlbmQtYmQ2M2Q1NThmN2YwMDFiYzI0YTJhZTE4NTVhNWM0MTdhNWI1Y2U1NSIsCiAgImFzc2V0IjogImZyb250ZW5kLnRhci5neiIsCiAgInNoYTI1NiI6ICJjNWNkNWU3MmRkYmE3YjNiMDE5NmY0ODAxYzVmNWE3MmVkMDY4ZTJkZmU1MTJlYjVhOTIzZjc4M2EzYjhlMzljIgp9Cg==",
+      "sha256": "9e193571e5be4aa7d8c1d68a259b6dd6c2ea98e941df39b1d3bba90541313f60"
+    },
+    "c7f4bdaeb741cd0606710644a22cc3b60c6cdceb": {
+      "bytes_base64": "ewogICJzY2hlbWEiOiAxLAogICJyZXBvc2l0b3J5IjogInBoaWNvbW0taW8vcGhpY29tbS1jb21tdW5pdHktZnJvbnRlbmQiLAogICJjb21taXQiOiAiMWE2YWJlMDBmNTE1MTQxYmI4ODJkM2U5NDJhMmVkMjczNzUxYjkxYSIsCiAgInJlbGVhc2UiOiAiZnJvbnRlbmQtMWE2YWJlMDBmNTE1MTQxYmI4ODJkM2U5NDJhMmVkMjczNzUxYjkxYSIsCiAgImFzc2V0IjogImZyb250ZW5kLnRhci5neiIsCiAgInNoYTI1NiI6ICI4NTRmY2U0NmJkZDM0ZjYyNjJjYjMwMWMwYTdkNzgyOGNlYmMzYTMzZDczOGMwNGZlYzlkNDk1MzZhYmIyODRmIgp9Cg==",
+      "sha256": "26cc352a251ab06e8a664bc4a5e16a1cfe3ccfc36fd2aae98f1622b3786a39e7"
+    },
+    "d2f22cf26287426e1b9c7c622e3a8818a6ebee7a": {
+      "bytes_base64": "ewogICJzY2hlbWEiOiAxLAogICJyZXBvc2l0b3J5IjogInBoaWNvbW0taW8vcGhpY29tbS1jb21tdW5pdHktZnJvbnRlbmQiLAogICJjb21taXQiOiAiNzFhN2EyMGNjYzc1YmYzZmFlZTAwNTE0YjE2Y2M2YzY2ZjgxMzk0ZiIsCiAgInJlbGVhc2UiOiAiZnJvbnRlbmQtNzFhN2EyMGNjYzc1YmYzZmFlZTAwNTE0YjE2Y2M2YzY2ZjgxMzk0ZiIsCiAgImFzc2V0IjogImZyb250ZW5kLnRhci5neiIsCiAgInNoYTI1NiI6ICJlYmNmZDA1ODNkNmU4ZGM5YzgwNzZjZjUyMWM1YWIyZTIyMWMwYmFmZmQyYzIzYjM5ZTZiNzhmZTlhMTE2NDAwIgp9Cg==",
+      "sha256": "ec3149b731c92e26552f7bd7771a699f3d786c2afb6e16c6cc19424b8eab3242"
+    },
+    "dbfe4f87d5cfe4804a766631a0d3c02c55de3b4a": {
+      "bytes_base64": "ewogICJzY2hlbWEiOiAxLAogICJyZXBvc2l0b3J5IjogInBoaWNvbW0taW8vcGhpY29tbS1jb21tdW5pdHktZnJvbnRlbmQiLAogICJjb21taXQiOiAiMTIzMjc4YjU4YmM1ZDllNmRkMzlkN2Q2MzAwZDlmN2RhNjJjNzJkOCIsCiAgInJlbGVhc2UiOiAiZnJvbnRlbmQtMTIzMjc4YjU4YmM1ZDllNmRkMzlkN2Q2MzAwZDlmN2RhNjJjNzJkOCIsCiAgImFzc2V0IjogImZyb250ZW5kLnRhci5neiIsCiAgInNoYTI1NiI6ICI4ZTE3NDM3NjJmYmM4MjcyNTU3MWVkNTY0OTZjZjI4NmE2YjljNTBhMGEzYmY3MzE0ZDlhZTc4YjhmMzdhYmU4Igp9Cg==",
+      "sha256": "406f7e8da8fe82e45346d365f86f598ea1f3fdac3add7c072f413285d9e5e8de"
+    },
+    "e4ddbde2daae48c47b0357eb7ac979f3dc5cc5ce": {
+      "bytes_base64": "ewogICJzY2hlbWEiOiAxLAogICJyZXBvc2l0b3J5IjogInBoaWNvbW0taW8vcGhpY29tbS1jb21tdW5pdHktZnJvbnRlbmQiLAogICJjb21taXQiOiAiNDg2MGFlMTE5NGNlZmQyM2YyNzE2YjE5YWZiMDc4MTY3NDhlM2UyNCIsCiAgInJlbGVhc2UiOiAiZnJvbnRlbmQtNDg2MGFlMTE5NGNlZmQyM2YyNzE2YjE5YWZiMDc4MTY3NDhlM2UyNCIsCiAgImFzc2V0IjogImZyb250ZW5kLnRhci5neiIsCiAgInNoYTI1NiI6ICI5MWIxZmViYThjNmFjMmU0YWY2MThiOTI4ZTFhNmUyNDg1MDkzNWY5OTZkMTc2OTFhY2NlYmVhZTFhYTZjNDY3Igp9Cg==",
+      "sha256": "78a1fa08498df3102e881a4cf756347fea86901f68efa74e650450cb0ad65949"
+    },
+    "f94b1c13346c5a875496c72bd1875b7b61ecfa6c": {
+      "bytes_base64": "ewogICJzY2hlbWEiOiAxLAogICJyZXBvc2l0b3J5IjogInBoaWNvbW0taW8vcGhpY29tbS1jb21tdW5pdHktZnJvbnRlbmQiLAogICJjb21taXQiOiAiYTI1ZDgxYzgwNTA5MDUyYjgyZmNkNTMxYTk3ZGVlMWFmNWIxMzc1ZiIsCiAgInJlbGVhc2UiOiAiZnJvbnRlbmQtYTI1ZDgxYzgwNTA5MDUyYjgyZmNkNTMxYTk3ZGVlMWFmNWIxMzc1ZiIsCiAgImFzc2V0IjogImZyb250ZW5kLnRhci5neiIsCiAgInNoYTI1NiI6ICJmOWQyZDJkYzZiOTY0OWZlMWUzNjdhMDkzNTA3ZDcyODFjMmM0YWE2YWE4ZTE0ZmY0Y2JmN2QzNjY5ZGMwYjFjIgp9Cg==",
+      "sha256": "6c07eaf56e60e6e2d586c846217bf3d629e14a31458edc60f4367f012df20e29"
+    }
+  },
+  "releases": {
+    "v0.9.0": {
+      "notes_sha256": "60eacbf08636d32b9b0daf912442632b5f3788eb6a1a1901ae070e0aca98ba41",
+      "tag_commit": "2a49ac766f564b768eebe2ec2db72ba42ae50da4",
+      "targets": {
+        "a1:full": {
+          "frontend": {
+            "kind": "in-tree",
+            "source_commit": "2a49ac766f564b768eebe2ec2db72ba42ae50da4"
+          },
+          "source_commit": "2a49ac766f564b768eebe2ec2db72ba42ae50da4"
+        },
+        "m1:full": {
+          "frontend": {
+            "kind": "in-tree",
+            "source_commit": "2a49ac766f564b768eebe2ec2db72ba42ae50da4"
+          },
+          "source_commit": "2a49ac766f564b768eebe2ec2db72ba42ae50da4"
+        },
+        "tc1:full": {
+          "frontend": {
+            "kind": "in-tree",
+            "source_commit": "2a49ac766f564b768eebe2ec2db72ba42ae50da4"
+          },
+          "source_commit": "2a49ac766f564b768eebe2ec2db72ba42ae50da4"
+        }
+      }
+    },
+    "v0.9.1": {
+      "notes_sha256": "75d0abb5effeaf54a9932ac7d0d47bb6b7ce879b089409a5ba64807b3c3c5476",
+      "tag_commit": "4b96e16fa9b1d002ed658dfc6a1317e2ba2bc0ac",
+      "targets": {
+        "a1:full": {
+          "frontend": {
+            "kind": "in-tree",
+            "source_commit": "4b96e16fa9b1d002ed658dfc6a1317e2ba2bc0ac"
+          },
+          "source_commit": "4b96e16fa9b1d002ed658dfc6a1317e2ba2bc0ac"
+        },
+        "m1:full": {
+          "frontend": {
+            "kind": "in-tree",
+            "source_commit": "4b96e16fa9b1d002ed658dfc6a1317e2ba2bc0ac"
+          },
+          "source_commit": "4b96e16fa9b1d002ed658dfc6a1317e2ba2bc0ac"
+        },
+        "tc1:full": {
+          "frontend": {
+            "kind": "in-tree",
+            "source_commit": "4b96e16fa9b1d002ed658dfc6a1317e2ba2bc0ac"
+          },
+          "source_commit": "4b96e16fa9b1d002ed658dfc6a1317e2ba2bc0ac"
+        }
+      }
+    },
+    "v0.9.10": {
+      "notes_sha256": "2430f8e2773524c7163ad59d9ae543ba5b5c53845b8448a1176bd5a702f75116",
+      "tag_commit": "3592fc5a3394bdf01de30be3831e059a01458be2",
+      "targets": {
+        "a1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "42732109bb835141c913a5653f0071e049acb76f",
+              "release": "frontend-42732109bb835141c913a5653f0071e049acb76f",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "c231d92365e9f3d43270ea08a26368c345e4b0b0adb0ad3e03f5d4479fb00c50"
+            },
+            "sha256": "4abf818fbc5653cd836a1a5b4898033c0c59818bf1ebde66ed15388404cdebb8"
+          },
+          "source_commit": "3592fc5a3394bdf01de30be3831e059a01458be2"
+        },
+        "m1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "42732109bb835141c913a5653f0071e049acb76f",
+              "release": "frontend-42732109bb835141c913a5653f0071e049acb76f",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "c231d92365e9f3d43270ea08a26368c345e4b0b0adb0ad3e03f5d4479fb00c50"
+            },
+            "sha256": "4abf818fbc5653cd836a1a5b4898033c0c59818bf1ebde66ed15388404cdebb8"
+          },
+          "source_commit": "3592fc5a3394bdf01de30be3831e059a01458be2"
+        },
+        "tc1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "42732109bb835141c913a5653f0071e049acb76f",
+              "release": "frontend-42732109bb835141c913a5653f0071e049acb76f",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "c231d92365e9f3d43270ea08a26368c345e4b0b0adb0ad3e03f5d4479fb00c50"
+            },
+            "sha256": "4abf818fbc5653cd836a1a5b4898033c0c59818bf1ebde66ed15388404cdebb8"
+          },
+          "source_commit": "3592fc5a3394bdf01de30be3831e059a01458be2"
+        }
+      }
+    },
+    "v0.9.11": {
+      "notes_sha256": "f1b5e615a9c4b39021f186342bb3b73dd17ca636c0ef281a5b4e27973eab3726",
+      "tag_commit": "dbfe4f87d5cfe4804a766631a0d3c02c55de3b4a",
+      "targets": {
+        "a1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "123278b58bc5d9e6dd39d7d6300d9f7da62c72d8",
+              "release": "frontend-123278b58bc5d9e6dd39d7d6300d9f7da62c72d8",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "8e1743762fbc82725571ed56496cf286a6b9c50a0a3bf7314d9ae78b8f37abe8"
+            },
+            "sha256": "406f7e8da8fe82e45346d365f86f598ea1f3fdac3add7c072f413285d9e5e8de"
+          },
+          "source_commit": "dbfe4f87d5cfe4804a766631a0d3c02c55de3b4a"
+        },
+        "m1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "123278b58bc5d9e6dd39d7d6300d9f7da62c72d8",
+              "release": "frontend-123278b58bc5d9e6dd39d7d6300d9f7da62c72d8",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "8e1743762fbc82725571ed56496cf286a6b9c50a0a3bf7314d9ae78b8f37abe8"
+            },
+            "sha256": "406f7e8da8fe82e45346d365f86f598ea1f3fdac3add7c072f413285d9e5e8de"
+          },
+          "source_commit": "dbfe4f87d5cfe4804a766631a0d3c02c55de3b4a"
+        },
+        "tc1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "123278b58bc5d9e6dd39d7d6300d9f7da62c72d8",
+              "release": "frontend-123278b58bc5d9e6dd39d7d6300d9f7da62c72d8",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "8e1743762fbc82725571ed56496cf286a6b9c50a0a3bf7314d9ae78b8f37abe8"
+            },
+            "sha256": "406f7e8da8fe82e45346d365f86f598ea1f3fdac3add7c072f413285d9e5e8de"
+          },
+          "source_commit": "dbfe4f87d5cfe4804a766631a0d3c02c55de3b4a"
+        }
+      }
+    },
+    "v0.9.12": {
+      "notes_sha256": "1d2d5bb6b8212c9599e5cc2d5984c441d82082e2659b9159e6ccc797374abfeb",
+      "tag_commit": "bc1b5a1284726206d7654294628ad14a9dcb8e11",
+      "targets": {
+        "a1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "bd63d558f7f001bc24a2ae1855a5c417a5b5ce55",
+              "release": "frontend-bd63d558f7f001bc24a2ae1855a5c417a5b5ce55",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "c5cd5e72ddba7b3b0196f4801c5f5a72ed068e2dfe512eb5a923f783a3b8e39c"
+            },
+            "sha256": "9e193571e5be4aa7d8c1d68a259b6dd6c2ea98e941df39b1d3bba90541313f60"
+          },
+          "source_commit": "bc1b5a1284726206d7654294628ad14a9dcb8e11"
+        },
+        "m1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "bd63d558f7f001bc24a2ae1855a5c417a5b5ce55",
+              "release": "frontend-bd63d558f7f001bc24a2ae1855a5c417a5b5ce55",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "c5cd5e72ddba7b3b0196f4801c5f5a72ed068e2dfe512eb5a923f783a3b8e39c"
+            },
+            "sha256": "9e193571e5be4aa7d8c1d68a259b6dd6c2ea98e941df39b1d3bba90541313f60"
+          },
+          "source_commit": "bc1b5a1284726206d7654294628ad14a9dcb8e11"
+        },
+        "tc1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "bd63d558f7f001bc24a2ae1855a5c417a5b5ce55",
+              "release": "frontend-bd63d558f7f001bc24a2ae1855a5c417a5b5ce55",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "c5cd5e72ddba7b3b0196f4801c5f5a72ed068e2dfe512eb5a923f783a3b8e39c"
+            },
+            "sha256": "9e193571e5be4aa7d8c1d68a259b6dd6c2ea98e941df39b1d3bba90541313f60"
+          },
+          "source_commit": "bc1b5a1284726206d7654294628ad14a9dcb8e11"
+        }
+      }
+    },
+    "v0.9.13": {
+      "notes_sha256": "b044932f0f1f42c0e4c6960b48b82370fcab2f3e26f15d89c170e3265ae22689",
+      "tag_commit": "4b34678e4f6c0a2a4ac43a10e78ee9a1e05d8099",
+      "targets": {
+        "a1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "42a87f152e71153398fc29c0fff991e7144a5308",
+              "release": "frontend-42a87f152e71153398fc29c0fff991e7144a5308",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "785459c99f889a395e2fdeac261e25b14a9bcd187aebed690b8a61eb5121f145"
+            },
+            "sha256": "7a7f23d18fa10dd0dcdf9512b602d6c69004d3e2b1d1d656030ff0b05554cb56"
+          },
+          "source_commit": "4b34678e4f6c0a2a4ac43a10e78ee9a1e05d8099"
+        },
+        "m1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "42a87f152e71153398fc29c0fff991e7144a5308",
+              "release": "frontend-42a87f152e71153398fc29c0fff991e7144a5308",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "785459c99f889a395e2fdeac261e25b14a9bcd187aebed690b8a61eb5121f145"
+            },
+            "sha256": "7a7f23d18fa10dd0dcdf9512b602d6c69004d3e2b1d1d656030ff0b05554cb56"
+          },
+          "source_commit": "4b34678e4f6c0a2a4ac43a10e78ee9a1e05d8099"
+        },
+        "tc1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "42a87f152e71153398fc29c0fff991e7144a5308",
+              "release": "frontend-42a87f152e71153398fc29c0fff991e7144a5308",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "785459c99f889a395e2fdeac261e25b14a9bcd187aebed690b8a61eb5121f145"
+            },
+            "sha256": "7a7f23d18fa10dd0dcdf9512b602d6c69004d3e2b1d1d656030ff0b05554cb56"
+          },
+          "source_commit": "4b34678e4f6c0a2a4ac43a10e78ee9a1e05d8099"
+        }
+      }
+    },
+    "v0.9.14": {
+      "notes_sha256": "4184c00ad2c487d755b887e6364161231dadf5401781a69567417b2e51ad4aab",
+      "tag_commit": "c7f4bdaeb741cd0606710644a22cc3b60c6cdceb",
+      "targets": {
+        "a1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "1a6abe00f515141bb882d3e942a2ed273751b91a",
+              "release": "frontend-1a6abe00f515141bb882d3e942a2ed273751b91a",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "854fce46bdd34f6262cb301c0a7d7828cebc3a33d738c04fec9d49536abb284f"
+            },
+            "sha256": "26cc352a251ab06e8a664bc4a5e16a1cfe3ccfc36fd2aae98f1622b3786a39e7"
+          },
+          "source_commit": "c7f4bdaeb741cd0606710644a22cc3b60c6cdceb"
+        },
+        "a1:no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "1a6abe00f515141bb882d3e942a2ed273751b91a",
+              "release": "frontend-1a6abe00f515141bb882d3e942a2ed273751b91a",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "854fce46bdd34f6262cb301c0a7d7828cebc3a33d738c04fec9d49536abb284f"
+            },
+            "sha256": "26cc352a251ab06e8a664bc4a5e16a1cfe3ccfc36fd2aae98f1622b3786a39e7"
+          },
+          "source_commit": "c7f4bdaeb741cd0606710644a22cc3b60c6cdceb"
+        },
+        "m1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "1a6abe00f515141bb882d3e942a2ed273751b91a",
+              "release": "frontend-1a6abe00f515141bb882d3e942a2ed273751b91a",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "854fce46bdd34f6262cb301c0a7d7828cebc3a33d738c04fec9d49536abb284f"
+            },
+            "sha256": "26cc352a251ab06e8a664bc4a5e16a1cfe3ccfc36fd2aae98f1622b3786a39e7"
+          },
+          "source_commit": "c7f4bdaeb741cd0606710644a22cc3b60c6cdceb"
+        },
+        "m1:no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "1a6abe00f515141bb882d3e942a2ed273751b91a",
+              "release": "frontend-1a6abe00f515141bb882d3e942a2ed273751b91a",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "854fce46bdd34f6262cb301c0a7d7828cebc3a33d738c04fec9d49536abb284f"
+            },
+            "sha256": "26cc352a251ab06e8a664bc4a5e16a1cfe3ccfc36fd2aae98f1622b3786a39e7"
+          },
+          "source_commit": "c7f4bdaeb741cd0606710644a22cc3b60c6cdceb"
+        },
+        "tc1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "1a6abe00f515141bb882d3e942a2ed273751b91a",
+              "release": "frontend-1a6abe00f515141bb882d3e942a2ed273751b91a",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "854fce46bdd34f6262cb301c0a7d7828cebc3a33d738c04fec9d49536abb284f"
+            },
+            "sha256": "26cc352a251ab06e8a664bc4a5e16a1cfe3ccfc36fd2aae98f1622b3786a39e7"
+          },
+          "source_commit": "c7f4bdaeb741cd0606710644a22cc3b60c6cdceb"
+        },
+        "tc1:no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "1a6abe00f515141bb882d3e942a2ed273751b91a",
+              "release": "frontend-1a6abe00f515141bb882d3e942a2ed273751b91a",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "854fce46bdd34f6262cb301c0a7d7828cebc3a33d738c04fec9d49536abb284f"
+            },
+            "sha256": "26cc352a251ab06e8a664bc4a5e16a1cfe3ccfc36fd2aae98f1622b3786a39e7"
+          },
+          "source_commit": "c7f4bdaeb741cd0606710644a22cc3b60c6cdceb"
+        }
+      }
+    },
+    "v0.9.15": {
+      "notes_sha256": "597e385319108ad16f3008da1fba8d77ca806939d1decb195bfcac113da2a504",
+      "tag_commit": "189e22e84929e1b5a702d27c57de47f53dec8ccd",
+      "targets": {
+        "a1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "1a6abe00f515141bb882d3e942a2ed273751b91a",
+              "release": "frontend-1a6abe00f515141bb882d3e942a2ed273751b91a",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "854fce46bdd34f6262cb301c0a7d7828cebc3a33d738c04fec9d49536abb284f"
+            },
+            "sha256": "26cc352a251ab06e8a664bc4a5e16a1cfe3ccfc36fd2aae98f1622b3786a39e7"
+          },
+          "source_commit": "189e22e84929e1b5a702d27c57de47f53dec8ccd"
+        },
+        "a1:no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "1a6abe00f515141bb882d3e942a2ed273751b91a",
+              "release": "frontend-1a6abe00f515141bb882d3e942a2ed273751b91a",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "854fce46bdd34f6262cb301c0a7d7828cebc3a33d738c04fec9d49536abb284f"
+            },
+            "sha256": "26cc352a251ab06e8a664bc4a5e16a1cfe3ccfc36fd2aae98f1622b3786a39e7"
+          },
+          "source_commit": "189e22e84929e1b5a702d27c57de47f53dec8ccd"
+        },
+        "m1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "1a6abe00f515141bb882d3e942a2ed273751b91a",
+              "release": "frontend-1a6abe00f515141bb882d3e942a2ed273751b91a",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "854fce46bdd34f6262cb301c0a7d7828cebc3a33d738c04fec9d49536abb284f"
+            },
+            "sha256": "26cc352a251ab06e8a664bc4a5e16a1cfe3ccfc36fd2aae98f1622b3786a39e7"
+          },
+          "source_commit": "189e22e84929e1b5a702d27c57de47f53dec8ccd"
+        },
+        "m1:no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "1a6abe00f515141bb882d3e942a2ed273751b91a",
+              "release": "frontend-1a6abe00f515141bb882d3e942a2ed273751b91a",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "854fce46bdd34f6262cb301c0a7d7828cebc3a33d738c04fec9d49536abb284f"
+            },
+            "sha256": "26cc352a251ab06e8a664bc4a5e16a1cfe3ccfc36fd2aae98f1622b3786a39e7"
+          },
+          "source_commit": "189e22e84929e1b5a702d27c57de47f53dec8ccd"
+        },
+        "tc1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "1a6abe00f515141bb882d3e942a2ed273751b91a",
+              "release": "frontend-1a6abe00f515141bb882d3e942a2ed273751b91a",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "854fce46bdd34f6262cb301c0a7d7828cebc3a33d738c04fec9d49536abb284f"
+            },
+            "sha256": "26cc352a251ab06e8a664bc4a5e16a1cfe3ccfc36fd2aae98f1622b3786a39e7"
+          },
+          "source_commit": "189e22e84929e1b5a702d27c57de47f53dec8ccd"
+        },
+        "tc1:no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "1a6abe00f515141bb882d3e942a2ed273751b91a",
+              "release": "frontend-1a6abe00f515141bb882d3e942a2ed273751b91a",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "854fce46bdd34f6262cb301c0a7d7828cebc3a33d738c04fec9d49536abb284f"
+            },
+            "sha256": "26cc352a251ab06e8a664bc4a5e16a1cfe3ccfc36fd2aae98f1622b3786a39e7"
+          },
+          "source_commit": "189e22e84929e1b5a702d27c57de47f53dec8ccd"
+        }
+      }
+    },
+    "v0.9.16": {
+      "notes_sha256": "f42a6a229d2d7826fa5261b31cd41968485f415827d6547d19c7569152e2dc24",
+      "tag_commit": "53c700c3aefe96d7ebbf00a8d81f7aaa0964e24e",
+      "targets": {
+        "a1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "4d5f77966e44196b2d2077006b1352f263d4a033",
+              "release": "frontend-4d5f77966e44196b2d2077006b1352f263d4a033",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "60ccbaaddbf888183de3f4511baf819606e41b619e2953c2facf57cc0ff2bcab"
+            },
+            "sha256": "0d00f4e7908dfc44c10edba05bd44317afffc4e64da479aa50fb6f4310c92cbc"
+          },
+          "source_commit": "53c700c3aefe96d7ebbf00a8d81f7aaa0964e24e"
+        },
+        "a1:no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "4d5f77966e44196b2d2077006b1352f263d4a033",
+              "release": "frontend-4d5f77966e44196b2d2077006b1352f263d4a033",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "60ccbaaddbf888183de3f4511baf819606e41b619e2953c2facf57cc0ff2bcab"
+            },
+            "sha256": "0d00f4e7908dfc44c10edba05bd44317afffc4e64da479aa50fb6f4310c92cbc"
+          },
+          "source_commit": "53c700c3aefe96d7ebbf00a8d81f7aaa0964e24e"
+        },
+        "m1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "4d5f77966e44196b2d2077006b1352f263d4a033",
+              "release": "frontend-4d5f77966e44196b2d2077006b1352f263d4a033",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "60ccbaaddbf888183de3f4511baf819606e41b619e2953c2facf57cc0ff2bcab"
+            },
+            "sha256": "0d00f4e7908dfc44c10edba05bd44317afffc4e64da479aa50fb6f4310c92cbc"
+          },
+          "source_commit": "53c700c3aefe96d7ebbf00a8d81f7aaa0964e24e"
+        },
+        "m1:no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "4d5f77966e44196b2d2077006b1352f263d4a033",
+              "release": "frontend-4d5f77966e44196b2d2077006b1352f263d4a033",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "60ccbaaddbf888183de3f4511baf819606e41b619e2953c2facf57cc0ff2bcab"
+            },
+            "sha256": "0d00f4e7908dfc44c10edba05bd44317afffc4e64da479aa50fb6f4310c92cbc"
+          },
+          "source_commit": "53c700c3aefe96d7ebbf00a8d81f7aaa0964e24e"
+        },
+        "tc1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "4d5f77966e44196b2d2077006b1352f263d4a033",
+              "release": "frontend-4d5f77966e44196b2d2077006b1352f263d4a033",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "60ccbaaddbf888183de3f4511baf819606e41b619e2953c2facf57cc0ff2bcab"
+            },
+            "sha256": "0d00f4e7908dfc44c10edba05bd44317afffc4e64da479aa50fb6f4310c92cbc"
+          },
+          "source_commit": "53c700c3aefe96d7ebbf00a8d81f7aaa0964e24e"
+        },
+        "tc1:no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "4d5f77966e44196b2d2077006b1352f263d4a033",
+              "release": "frontend-4d5f77966e44196b2d2077006b1352f263d4a033",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "60ccbaaddbf888183de3f4511baf819606e41b619e2953c2facf57cc0ff2bcab"
+            },
+            "sha256": "0d00f4e7908dfc44c10edba05bd44317afffc4e64da479aa50fb6f4310c92cbc"
+          },
+          "source_commit": "53c700c3aefe96d7ebbf00a8d81f7aaa0964e24e"
+        }
+      }
+    },
+    "v0.9.17": {
+      "notes_sha256": "69c19f3373a82dbeeaedc57326836b4644812ed3a0d92f1cd35c0773d7c07ae6",
+      "tag_commit": "7bcb40fbbb8335c6e185c21171170a16284ddf93",
+      "targets": {
+        "a1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "4d5f77966e44196b2d2077006b1352f263d4a033",
+              "release": "frontend-4d5f77966e44196b2d2077006b1352f263d4a033",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "60ccbaaddbf888183de3f4511baf819606e41b619e2953c2facf57cc0ff2bcab"
+            },
+            "sha256": "0d00f4e7908dfc44c10edba05bd44317afffc4e64da479aa50fb6f4310c92cbc"
+          },
+          "source_commit": "7bcb40fbbb8335c6e185c21171170a16284ddf93"
+        },
+        "a1:no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "4d5f77966e44196b2d2077006b1352f263d4a033",
+              "release": "frontend-4d5f77966e44196b2d2077006b1352f263d4a033",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "60ccbaaddbf888183de3f4511baf819606e41b619e2953c2facf57cc0ff2bcab"
+            },
+            "sha256": "0d00f4e7908dfc44c10edba05bd44317afffc4e64da479aa50fb6f4310c92cbc"
+          },
+          "source_commit": "7bcb40fbbb8335c6e185c21171170a16284ddf93"
+        },
+        "m1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "4d5f77966e44196b2d2077006b1352f263d4a033",
+              "release": "frontend-4d5f77966e44196b2d2077006b1352f263d4a033",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "60ccbaaddbf888183de3f4511baf819606e41b619e2953c2facf57cc0ff2bcab"
+            },
+            "sha256": "0d00f4e7908dfc44c10edba05bd44317afffc4e64da479aa50fb6f4310c92cbc"
+          },
+          "source_commit": "7bcb40fbbb8335c6e185c21171170a16284ddf93"
+        },
+        "m1:no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "4d5f77966e44196b2d2077006b1352f263d4a033",
+              "release": "frontend-4d5f77966e44196b2d2077006b1352f263d4a033",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "60ccbaaddbf888183de3f4511baf819606e41b619e2953c2facf57cc0ff2bcab"
+            },
+            "sha256": "0d00f4e7908dfc44c10edba05bd44317afffc4e64da479aa50fb6f4310c92cbc"
+          },
+          "source_commit": "7bcb40fbbb8335c6e185c21171170a16284ddf93"
+        },
+        "tc1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "4d5f77966e44196b2d2077006b1352f263d4a033",
+              "release": "frontend-4d5f77966e44196b2d2077006b1352f263d4a033",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "60ccbaaddbf888183de3f4511baf819606e41b619e2953c2facf57cc0ff2bcab"
+            },
+            "sha256": "0d00f4e7908dfc44c10edba05bd44317afffc4e64da479aa50fb6f4310c92cbc"
+          },
+          "source_commit": "7bcb40fbbb8335c6e185c21171170a16284ddf93"
+        },
+        "tc1:no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "4d5f77966e44196b2d2077006b1352f263d4a033",
+              "release": "frontend-4d5f77966e44196b2d2077006b1352f263d4a033",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "60ccbaaddbf888183de3f4511baf819606e41b619e2953c2facf57cc0ff2bcab"
+            },
+            "sha256": "0d00f4e7908dfc44c10edba05bd44317afffc4e64da479aa50fb6f4310c92cbc"
+          },
+          "source_commit": "7bcb40fbbb8335c6e185c21171170a16284ddf93"
+        }
+      }
+    },
+    "v0.9.18": {
+      "notes_sha256": "44c14514d2055a0cc1857d691c662acaed4ecf70cb3b821859be197f53b9bf44",
+      "tag_commit": "40b41dad82472ce84dcb9f940580753eb3c8dda8",
+      "targets": {
+        "a1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "98bbb9ed7f0ada4bd3308e481cc285f08c9587cc",
+              "release": "frontend-98bbb9ed7f0ada4bd3308e481cc285f08c9587cc",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "558f08aed21036dede9d9597879d231e5e44bb31cabb600516661af4ff9f1367"
+            },
+            "sha256": "e3fefd7144ba6d2d58c0305c0f7855ac9f822c16d92c38d6d704f1cb33a54b70"
+          },
+          "source_commit": "40b41dad82472ce84dcb9f940580753eb3c8dda8"
+        },
+        "a1:no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "98bbb9ed7f0ada4bd3308e481cc285f08c9587cc",
+              "release": "frontend-98bbb9ed7f0ada4bd3308e481cc285f08c9587cc",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "558f08aed21036dede9d9597879d231e5e44bb31cabb600516661af4ff9f1367"
+            },
+            "sha256": "e3fefd7144ba6d2d58c0305c0f7855ac9f822c16d92c38d6d704f1cb33a54b70"
+          },
+          "source_commit": "40b41dad82472ce84dcb9f940580753eb3c8dda8"
+        },
+        "m1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "98bbb9ed7f0ada4bd3308e481cc285f08c9587cc",
+              "release": "frontend-98bbb9ed7f0ada4bd3308e481cc285f08c9587cc",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "558f08aed21036dede9d9597879d231e5e44bb31cabb600516661af4ff9f1367"
+            },
+            "sha256": "e3fefd7144ba6d2d58c0305c0f7855ac9f822c16d92c38d6d704f1cb33a54b70"
+          },
+          "source_commit": "40b41dad82472ce84dcb9f940580753eb3c8dda8"
+        },
+        "m1:no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "98bbb9ed7f0ada4bd3308e481cc285f08c9587cc",
+              "release": "frontend-98bbb9ed7f0ada4bd3308e481cc285f08c9587cc",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "558f08aed21036dede9d9597879d231e5e44bb31cabb600516661af4ff9f1367"
+            },
+            "sha256": "e3fefd7144ba6d2d58c0305c0f7855ac9f822c16d92c38d6d704f1cb33a54b70"
+          },
+          "source_commit": "40b41dad82472ce84dcb9f940580753eb3c8dda8"
+        },
+        "tc1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "98bbb9ed7f0ada4bd3308e481cc285f08c9587cc",
+              "release": "frontend-98bbb9ed7f0ada4bd3308e481cc285f08c9587cc",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "558f08aed21036dede9d9597879d231e5e44bb31cabb600516661af4ff9f1367"
+            },
+            "sha256": "e3fefd7144ba6d2d58c0305c0f7855ac9f822c16d92c38d6d704f1cb33a54b70"
+          },
+          "source_commit": "40b41dad82472ce84dcb9f940580753eb3c8dda8"
+        },
+        "tc1:no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "98bbb9ed7f0ada4bd3308e481cc285f08c9587cc",
+              "release": "frontend-98bbb9ed7f0ada4bd3308e481cc285f08c9587cc",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "558f08aed21036dede9d9597879d231e5e44bb31cabb600516661af4ff9f1367"
+            },
+            "sha256": "e3fefd7144ba6d2d58c0305c0f7855ac9f822c16d92c38d6d704f1cb33a54b70"
+          },
+          "source_commit": "40b41dad82472ce84dcb9f940580753eb3c8dda8"
+        }
+      }
+    },
+    "v0.9.19": {
+      "notes_sha256": "8435656a224d65e3abf82660f3a598d5ddf6349e403cfda6955c3659465efb7f",
+      "tag_commit": "24bd08ea35ab23d30647470d9486f2a99c3981fe",
+      "targets": {
+        "a1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "9058ea915697bb3de697212b1b5188af213c7ae0",
+              "release": "frontend-9058ea915697bb3de697212b1b5188af213c7ae0",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "9ef951733ebf4d933d4f5bada712132cbab70552b81f7ddc9a0d1887b7a8f4bc"
+            },
+            "sha256": "6cc44e259008d45fc82588ee328dd7b21ba86f5bcf560247c74415c5b0c96228"
+          },
+          "source_commit": "24bd08ea35ab23d30647470d9486f2a99c3981fe"
+        },
+        "a1:no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "9058ea915697bb3de697212b1b5188af213c7ae0",
+              "release": "frontend-9058ea915697bb3de697212b1b5188af213c7ae0",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "9ef951733ebf4d933d4f5bada712132cbab70552b81f7ddc9a0d1887b7a8f4bc"
+            },
+            "sha256": "6cc44e259008d45fc82588ee328dd7b21ba86f5bcf560247c74415c5b0c96228"
+          },
+          "source_commit": "24bd08ea35ab23d30647470d9486f2a99c3981fe"
+        },
+        "m1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "9058ea915697bb3de697212b1b5188af213c7ae0",
+              "release": "frontend-9058ea915697bb3de697212b1b5188af213c7ae0",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "9ef951733ebf4d933d4f5bada712132cbab70552b81f7ddc9a0d1887b7a8f4bc"
+            },
+            "sha256": "6cc44e259008d45fc82588ee328dd7b21ba86f5bcf560247c74415c5b0c96228"
+          },
+          "source_commit": "24bd08ea35ab23d30647470d9486f2a99c3981fe"
+        },
+        "m1:no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "9058ea915697bb3de697212b1b5188af213c7ae0",
+              "release": "frontend-9058ea915697bb3de697212b1b5188af213c7ae0",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "9ef951733ebf4d933d4f5bada712132cbab70552b81f7ddc9a0d1887b7a8f4bc"
+            },
+            "sha256": "6cc44e259008d45fc82588ee328dd7b21ba86f5bcf560247c74415c5b0c96228"
+          },
+          "source_commit": "24bd08ea35ab23d30647470d9486f2a99c3981fe"
+        },
+        "tc1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "9058ea915697bb3de697212b1b5188af213c7ae0",
+              "release": "frontend-9058ea915697bb3de697212b1b5188af213c7ae0",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "9ef951733ebf4d933d4f5bada712132cbab70552b81f7ddc9a0d1887b7a8f4bc"
+            },
+            "sha256": "6cc44e259008d45fc82588ee328dd7b21ba86f5bcf560247c74415c5b0c96228"
+          },
+          "source_commit": "24bd08ea35ab23d30647470d9486f2a99c3981fe"
+        },
+        "tc1:no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "9058ea915697bb3de697212b1b5188af213c7ae0",
+              "release": "frontend-9058ea915697bb3de697212b1b5188af213c7ae0",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "9ef951733ebf4d933d4f5bada712132cbab70552b81f7ddc9a0d1887b7a8f4bc"
+            },
+            "sha256": "6cc44e259008d45fc82588ee328dd7b21ba86f5bcf560247c74415c5b0c96228"
+          },
+          "source_commit": "24bd08ea35ab23d30647470d9486f2a99c3981fe"
+        }
+      }
+    },
+    "v0.9.2": {
+      "notes_sha256": "de73e0d09b79bd96b3e877baa59e2ea32be32badeae1157d456a80254fc75d31",
+      "tag_commit": "89b0de33471df62da30971a630fa42983e4511dc",
+      "targets": {
+        "a1:full": {
+          "frontend": {
+            "kind": "in-tree",
+            "source_commit": "89b0de33471df62da30971a630fa42983e4511dc"
+          },
+          "source_commit": "89b0de33471df62da30971a630fa42983e4511dc"
+        },
+        "m1:full": {
+          "frontend": {
+            "kind": "in-tree",
+            "source_commit": "89b0de33471df62da30971a630fa42983e4511dc"
+          },
+          "source_commit": "89b0de33471df62da30971a630fa42983e4511dc"
+        },
+        "tc1:full": {
+          "frontend": {
+            "kind": "in-tree",
+            "source_commit": "89b0de33471df62da30971a630fa42983e4511dc"
+          },
+          "source_commit": "89b0de33471df62da30971a630fa42983e4511dc"
+        }
+      }
+    },
+    "v0.9.20": {
+      "notes_sha256": "eced846471280373d6540e8b153235447e0b416148800e946908674fae064dd9",
+      "tag_commit": "d2f22cf26287426e1b9c7c622e3a8818a6ebee7a",
+      "targets": {
+        "a1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "71a7a20ccc75bf3faee00514b16cc6c66f81394f",
+              "release": "frontend-71a7a20ccc75bf3faee00514b16cc6c66f81394f",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "ebcfd0583d6e8dc9c8076cf521c5ab2e221c0baffd2c23b39e6b78fe9a116400"
+            },
+            "sha256": "ec3149b731c92e26552f7bd7771a699f3d786c2afb6e16c6cc19424b8eab3242"
+          },
+          "source_commit": "d2f22cf26287426e1b9c7c622e3a8818a6ebee7a"
+        },
+        "a1:no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "71a7a20ccc75bf3faee00514b16cc6c66f81394f",
+              "release": "frontend-71a7a20ccc75bf3faee00514b16cc6c66f81394f",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "ebcfd0583d6e8dc9c8076cf521c5ab2e221c0baffd2c23b39e6b78fe9a116400"
+            },
+            "sha256": "ec3149b731c92e26552f7bd7771a699f3d786c2afb6e16c6cc19424b8eab3242"
+          },
+          "source_commit": "d2f22cf26287426e1b9c7c622e3a8818a6ebee7a"
+        },
+        "m1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "71a7a20ccc75bf3faee00514b16cc6c66f81394f",
+              "release": "frontend-71a7a20ccc75bf3faee00514b16cc6c66f81394f",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "ebcfd0583d6e8dc9c8076cf521c5ab2e221c0baffd2c23b39e6b78fe9a116400"
+            },
+            "sha256": "ec3149b731c92e26552f7bd7771a699f3d786c2afb6e16c6cc19424b8eab3242"
+          },
+          "source_commit": "d2f22cf26287426e1b9c7c622e3a8818a6ebee7a"
+        },
+        "m1:no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "71a7a20ccc75bf3faee00514b16cc6c66f81394f",
+              "release": "frontend-71a7a20ccc75bf3faee00514b16cc6c66f81394f",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "ebcfd0583d6e8dc9c8076cf521c5ab2e221c0baffd2c23b39e6b78fe9a116400"
+            },
+            "sha256": "ec3149b731c92e26552f7bd7771a699f3d786c2afb6e16c6cc19424b8eab3242"
+          },
+          "source_commit": "d2f22cf26287426e1b9c7c622e3a8818a6ebee7a"
+        },
+        "tc1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "71a7a20ccc75bf3faee00514b16cc6c66f81394f",
+              "release": "frontend-71a7a20ccc75bf3faee00514b16cc6c66f81394f",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "ebcfd0583d6e8dc9c8076cf521c5ab2e221c0baffd2c23b39e6b78fe9a116400"
+            },
+            "sha256": "ec3149b731c92e26552f7bd7771a699f3d786c2afb6e16c6cc19424b8eab3242"
+          },
+          "source_commit": "d2f22cf26287426e1b9c7c622e3a8818a6ebee7a"
+        },
+        "tc1:no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "71a7a20ccc75bf3faee00514b16cc6c66f81394f",
+              "release": "frontend-71a7a20ccc75bf3faee00514b16cc6c66f81394f",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "ebcfd0583d6e8dc9c8076cf521c5ab2e221c0baffd2c23b39e6b78fe9a116400"
+            },
+            "sha256": "ec3149b731c92e26552f7bd7771a699f3d786c2afb6e16c6cc19424b8eab3242"
+          },
+          "source_commit": "d2f22cf26287426e1b9c7c622e3a8818a6ebee7a"
+        }
+      }
+    },
+    "v0.9.21": {
+      "notes_sha256": "0102e2172bf7b3f5e2dc508d290d4588cae792ef8df328b159cb2f6c4ae53e24",
+      "tag_commit": "2cfd89e023d8899e7014b1d1b77bfaeeb328c8fe",
+      "targets": {
+        "a1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "71a7a20ccc75bf3faee00514b16cc6c66f81394f",
+              "release": "frontend-71a7a20ccc75bf3faee00514b16cc6c66f81394f",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "ebcfd0583d6e8dc9c8076cf521c5ab2e221c0baffd2c23b39e6b78fe9a116400"
+            },
+            "sha256": "ec3149b731c92e26552f7bd7771a699f3d786c2afb6e16c6cc19424b8eab3242"
+          },
+          "source_commit": "2cfd89e023d8899e7014b1d1b77bfaeeb328c8fe"
+        },
+        "a1:no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "71a7a20ccc75bf3faee00514b16cc6c66f81394f",
+              "release": "frontend-71a7a20ccc75bf3faee00514b16cc6c66f81394f",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "ebcfd0583d6e8dc9c8076cf521c5ab2e221c0baffd2c23b39e6b78fe9a116400"
+            },
+            "sha256": "ec3149b731c92e26552f7bd7771a699f3d786c2afb6e16c6cc19424b8eab3242"
+          },
+          "source_commit": "2cfd89e023d8899e7014b1d1b77bfaeeb328c8fe"
+        },
+        "m1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "71a7a20ccc75bf3faee00514b16cc6c66f81394f",
+              "release": "frontend-71a7a20ccc75bf3faee00514b16cc6c66f81394f",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "ebcfd0583d6e8dc9c8076cf521c5ab2e221c0baffd2c23b39e6b78fe9a116400"
+            },
+            "sha256": "ec3149b731c92e26552f7bd7771a699f3d786c2afb6e16c6cc19424b8eab3242"
+          },
+          "source_commit": "2cfd89e023d8899e7014b1d1b77bfaeeb328c8fe"
+        },
+        "m1:no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "71a7a20ccc75bf3faee00514b16cc6c66f81394f",
+              "release": "frontend-71a7a20ccc75bf3faee00514b16cc6c66f81394f",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "ebcfd0583d6e8dc9c8076cf521c5ab2e221c0baffd2c23b39e6b78fe9a116400"
+            },
+            "sha256": "ec3149b731c92e26552f7bd7771a699f3d786c2afb6e16c6cc19424b8eab3242"
+          },
+          "source_commit": "2cfd89e023d8899e7014b1d1b77bfaeeb328c8fe"
+        },
+        "tc1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "71a7a20ccc75bf3faee00514b16cc6c66f81394f",
+              "release": "frontend-71a7a20ccc75bf3faee00514b16cc6c66f81394f",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "ebcfd0583d6e8dc9c8076cf521c5ab2e221c0baffd2c23b39e6b78fe9a116400"
+            },
+            "sha256": "ec3149b731c92e26552f7bd7771a699f3d786c2afb6e16c6cc19424b8eab3242"
+          },
+          "source_commit": "2cfd89e023d8899e7014b1d1b77bfaeeb328c8fe"
+        },
+        "tc1:no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "71a7a20ccc75bf3faee00514b16cc6c66f81394f",
+              "release": "frontend-71a7a20ccc75bf3faee00514b16cc6c66f81394f",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "ebcfd0583d6e8dc9c8076cf521c5ab2e221c0baffd2c23b39e6b78fe9a116400"
+            },
+            "sha256": "ec3149b731c92e26552f7bd7771a699f3d786c2afb6e16c6cc19424b8eab3242"
+          },
+          "source_commit": "2cfd89e023d8899e7014b1d1b77bfaeeb328c8fe"
+        }
+      }
+    },
+    "v0.9.23": {
+      "notes_sha256": "9dddfe40aba86980f5789d0a791a14cf59953f68467fc06b585dce3a503b224a",
+      "tag_commit": "61f6641e58046108ffdca354c8b34e06c03aaab4",
+      "targets": {
+        "a1:fresh-air": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "5dbbea7a1525fc7486e7bd1c6afd9b4f734a055e",
+              "release": "frontend-5dbbea7a1525fc7486e7bd1c6afd9b4f734a055e",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "fdb72b9126c01896ea27643eb7e65b7539b4c5a44f716cd669a35ddc31fc6750"
+            },
+            "sha256": "416910319565f5e2a6badcef8341b630b4f6ce26b6561cb7e430ced4f862994d"
+          },
+          "source_commit": "61f6641e58046108ffdca354c8b34e06c03aaab4"
+        },
+        "a1:fresh-air-no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "5dbbea7a1525fc7486e7bd1c6afd9b4f734a055e",
+              "release": "frontend-5dbbea7a1525fc7486e7bd1c6afd9b4f734a055e",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "fdb72b9126c01896ea27643eb7e65b7539b4c5a44f716cd669a35ddc31fc6750"
+            },
+            "sha256": "416910319565f5e2a6badcef8341b630b4f6ce26b6561cb7e430ced4f862994d"
+          },
+          "source_commit": "61f6641e58046108ffdca354c8b34e06c03aaab4"
+        },
+        "a1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "5dbbea7a1525fc7486e7bd1c6afd9b4f734a055e",
+              "release": "frontend-5dbbea7a1525fc7486e7bd1c6afd9b4f734a055e",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "fdb72b9126c01896ea27643eb7e65b7539b4c5a44f716cd669a35ddc31fc6750"
+            },
+            "sha256": "416910319565f5e2a6badcef8341b630b4f6ce26b6561cb7e430ced4f862994d"
+          },
+          "source_commit": "61f6641e58046108ffdca354c8b34e06c03aaab4"
+        },
+        "a1:no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "5dbbea7a1525fc7486e7bd1c6afd9b4f734a055e",
+              "release": "frontend-5dbbea7a1525fc7486e7bd1c6afd9b4f734a055e",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "fdb72b9126c01896ea27643eb7e65b7539b4c5a44f716cd669a35ddc31fc6750"
+            },
+            "sha256": "416910319565f5e2a6badcef8341b630b4f6ce26b6561cb7e430ced4f862994d"
+          },
+          "source_commit": "61f6641e58046108ffdca354c8b34e06c03aaab4"
+        },
+        "m1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "5dbbea7a1525fc7486e7bd1c6afd9b4f734a055e",
+              "release": "frontend-5dbbea7a1525fc7486e7bd1c6afd9b4f734a055e",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "fdb72b9126c01896ea27643eb7e65b7539b4c5a44f716cd669a35ddc31fc6750"
+            },
+            "sha256": "416910319565f5e2a6badcef8341b630b4f6ce26b6561cb7e430ced4f862994d"
+          },
+          "source_commit": "61f6641e58046108ffdca354c8b34e06c03aaab4"
+        },
+        "m1:no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "5dbbea7a1525fc7486e7bd1c6afd9b4f734a055e",
+              "release": "frontend-5dbbea7a1525fc7486e7bd1c6afd9b4f734a055e",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "fdb72b9126c01896ea27643eb7e65b7539b4c5a44f716cd669a35ddc31fc6750"
+            },
+            "sha256": "416910319565f5e2a6badcef8341b630b4f6ce26b6561cb7e430ced4f862994d"
+          },
+          "source_commit": "61f6641e58046108ffdca354c8b34e06c03aaab4"
+        },
+        "tc1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "5dbbea7a1525fc7486e7bd1c6afd9b4f734a055e",
+              "release": "frontend-5dbbea7a1525fc7486e7bd1c6afd9b4f734a055e",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "fdb72b9126c01896ea27643eb7e65b7539b4c5a44f716cd669a35ddc31fc6750"
+            },
+            "sha256": "416910319565f5e2a6badcef8341b630b4f6ce26b6561cb7e430ced4f862994d"
+          },
+          "source_commit": "61f6641e58046108ffdca354c8b34e06c03aaab4"
+        },
+        "tc1:no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "5dbbea7a1525fc7486e7bd1c6afd9b4f734a055e",
+              "release": "frontend-5dbbea7a1525fc7486e7bd1c6afd9b4f734a055e",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "fdb72b9126c01896ea27643eb7e65b7539b4c5a44f716cd669a35ddc31fc6750"
+            },
+            "sha256": "416910319565f5e2a6badcef8341b630b4f6ce26b6561cb7e430ced4f862994d"
+          },
+          "source_commit": "61f6641e58046108ffdca354c8b34e06c03aaab4"
+        }
+      }
+    },
+    "v0.9.24": {
+      "notes_sha256": "3e72a373f2f637391b11d184554e219a2d363b8b2dee5edadd9c4413b0c18d7b",
+      "tag_commit": "e4ddbde2daae48c47b0357eb7ac979f3dc5cc5ce",
+      "targets": {
+        "a1:fresh-air": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "4860ae1194cefd23f2716b19afb07816748e3e24",
+              "release": "frontend-4860ae1194cefd23f2716b19afb07816748e3e24",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "91b1feba8c6ac2e4af618b928e1a6e24850935f996d17691accebeae1aa6c467"
+            },
+            "sha256": "78a1fa08498df3102e881a4cf756347fea86901f68efa74e650450cb0ad65949"
+          },
+          "source_commit": "e4ddbde2daae48c47b0357eb7ac979f3dc5cc5ce"
+        },
+        "a1:fresh-air-no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "4860ae1194cefd23f2716b19afb07816748e3e24",
+              "release": "frontend-4860ae1194cefd23f2716b19afb07816748e3e24",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "91b1feba8c6ac2e4af618b928e1a6e24850935f996d17691accebeae1aa6c467"
+            },
+            "sha256": "78a1fa08498df3102e881a4cf756347fea86901f68efa74e650450cb0ad65949"
+          },
+          "source_commit": "e4ddbde2daae48c47b0357eb7ac979f3dc5cc5ce"
+        },
+        "a1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "4860ae1194cefd23f2716b19afb07816748e3e24",
+              "release": "frontend-4860ae1194cefd23f2716b19afb07816748e3e24",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "91b1feba8c6ac2e4af618b928e1a6e24850935f996d17691accebeae1aa6c467"
+            },
+            "sha256": "78a1fa08498df3102e881a4cf756347fea86901f68efa74e650450cb0ad65949"
+          },
+          "source_commit": "e4ddbde2daae48c47b0357eb7ac979f3dc5cc5ce"
+        },
+        "a1:no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "4860ae1194cefd23f2716b19afb07816748e3e24",
+              "release": "frontend-4860ae1194cefd23f2716b19afb07816748e3e24",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "91b1feba8c6ac2e4af618b928e1a6e24850935f996d17691accebeae1aa6c467"
+            },
+            "sha256": "78a1fa08498df3102e881a4cf756347fea86901f68efa74e650450cb0ad65949"
+          },
+          "source_commit": "e4ddbde2daae48c47b0357eb7ac979f3dc5cc5ce"
+        },
+        "daikin:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "4860ae1194cefd23f2716b19afb07816748e3e24",
+              "release": "frontend-4860ae1194cefd23f2716b19afb07816748e3e24",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "91b1feba8c6ac2e4af618b928e1a6e24850935f996d17691accebeae1aa6c467"
+            },
+            "sha256": "78a1fa08498df3102e881a4cf756347fea86901f68efa74e650450cb0ad65949"
+          },
+          "source_commit": "e4ddbde2daae48c47b0357eb7ac979f3dc5cc5ce"
+        },
+        "m1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "4860ae1194cefd23f2716b19afb07816748e3e24",
+              "release": "frontend-4860ae1194cefd23f2716b19afb07816748e3e24",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "91b1feba8c6ac2e4af618b928e1a6e24850935f996d17691accebeae1aa6c467"
+            },
+            "sha256": "78a1fa08498df3102e881a4cf756347fea86901f68efa74e650450cb0ad65949"
+          },
+          "source_commit": "e4ddbde2daae48c47b0357eb7ac979f3dc5cc5ce"
+        },
+        "m1:no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "4860ae1194cefd23f2716b19afb07816748e3e24",
+              "release": "frontend-4860ae1194cefd23f2716b19afb07816748e3e24",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "91b1feba8c6ac2e4af618b928e1a6e24850935f996d17691accebeae1aa6c467"
+            },
+            "sha256": "78a1fa08498df3102e881a4cf756347fea86901f68efa74e650450cb0ad65949"
+          },
+          "source_commit": "e4ddbde2daae48c47b0357eb7ac979f3dc5cc5ce"
+        },
+        "tc1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "4860ae1194cefd23f2716b19afb07816748e3e24",
+              "release": "frontend-4860ae1194cefd23f2716b19afb07816748e3e24",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "91b1feba8c6ac2e4af618b928e1a6e24850935f996d17691accebeae1aa6c467"
+            },
+            "sha256": "78a1fa08498df3102e881a4cf756347fea86901f68efa74e650450cb0ad65949"
+          },
+          "source_commit": "e4ddbde2daae48c47b0357eb7ac979f3dc5cc5ce"
+        },
+        "tc1:no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "4860ae1194cefd23f2716b19afb07816748e3e24",
+              "release": "frontend-4860ae1194cefd23f2716b19afb07816748e3e24",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "91b1feba8c6ac2e4af618b928e1a6e24850935f996d17691accebeae1aa6c467"
+            },
+            "sha256": "78a1fa08498df3102e881a4cf756347fea86901f68efa74e650450cb0ad65949"
+          },
+          "source_commit": "e4ddbde2daae48c47b0357eb7ac979f3dc5cc5ce"
+        }
+      }
+    },
+    "v0.9.26": {
+      "notes_sha256": "baab8bd6e43e6b358632a43caba45039a40655b8a6e75a5b8ea19c8f58007274",
+      "tag_commit": "217898169058c216f44a6b17e42de024e96b760c",
+      "targets": {
+        "a1:fresh-air": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "fa08b5bbed017037920a2b36d87ccfb755e3e6c6",
+              "release": "frontend-fa08b5bbed017037920a2b36d87ccfb755e3e6c6",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "c52b440bc0d452f8935a36e2f76ae4bae99cf06da402bf86fa99cd788209bc49"
+            },
+            "sha256": "de4d67f1ca116d5ef35dc7d56ed34a70a1b7b2ba499626a331afef31edccd983"
+          },
+          "source_commit": "217898169058c216f44a6b17e42de024e96b760c"
+        },
+        "a1:fresh-air-no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "fa08b5bbed017037920a2b36d87ccfb755e3e6c6",
+              "release": "frontend-fa08b5bbed017037920a2b36d87ccfb755e3e6c6",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "c52b440bc0d452f8935a36e2f76ae4bae99cf06da402bf86fa99cd788209bc49"
+            },
+            "sha256": "de4d67f1ca116d5ef35dc7d56ed34a70a1b7b2ba499626a331afef31edccd983"
+          },
+          "source_commit": "217898169058c216f44a6b17e42de024e96b760c"
+        },
+        "a1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "fa08b5bbed017037920a2b36d87ccfb755e3e6c6",
+              "release": "frontend-fa08b5bbed017037920a2b36d87ccfb755e3e6c6",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "c52b440bc0d452f8935a36e2f76ae4bae99cf06da402bf86fa99cd788209bc49"
+            },
+            "sha256": "de4d67f1ca116d5ef35dc7d56ed34a70a1b7b2ba499626a331afef31edccd983"
+          },
+          "source_commit": "217898169058c216f44a6b17e42de024e96b760c"
+        },
+        "a1:no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "fa08b5bbed017037920a2b36d87ccfb755e3e6c6",
+              "release": "frontend-fa08b5bbed017037920a2b36d87ccfb755e3e6c6",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "c52b440bc0d452f8935a36e2f76ae4bae99cf06da402bf86fa99cd788209bc49"
+            },
+            "sha256": "de4d67f1ca116d5ef35dc7d56ed34a70a1b7b2ba499626a331afef31edccd983"
+          },
+          "source_commit": "217898169058c216f44a6b17e42de024e96b760c"
+        },
+        "daikin:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "fa08b5bbed017037920a2b36d87ccfb755e3e6c6",
+              "release": "frontend-fa08b5bbed017037920a2b36d87ccfb755e3e6c6",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "c52b440bc0d452f8935a36e2f76ae4bae99cf06da402bf86fa99cd788209bc49"
+            },
+            "sha256": "de4d67f1ca116d5ef35dc7d56ed34a70a1b7b2ba499626a331afef31edccd983"
+          },
+          "source_commit": "217898169058c216f44a6b17e42de024e96b760c"
+        },
+        "m1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "fa08b5bbed017037920a2b36d87ccfb755e3e6c6",
+              "release": "frontend-fa08b5bbed017037920a2b36d87ccfb755e3e6c6",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "c52b440bc0d452f8935a36e2f76ae4bae99cf06da402bf86fa99cd788209bc49"
+            },
+            "sha256": "de4d67f1ca116d5ef35dc7d56ed34a70a1b7b2ba499626a331afef31edccd983"
+          },
+          "source_commit": "217898169058c216f44a6b17e42de024e96b760c"
+        },
+        "m1:no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "fa08b5bbed017037920a2b36d87ccfb755e3e6c6",
+              "release": "frontend-fa08b5bbed017037920a2b36d87ccfb755e3e6c6",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "c52b440bc0d452f8935a36e2f76ae4bae99cf06da402bf86fa99cd788209bc49"
+            },
+            "sha256": "de4d67f1ca116d5ef35dc7d56ed34a70a1b7b2ba499626a331afef31edccd983"
+          },
+          "source_commit": "217898169058c216f44a6b17e42de024e96b760c"
+        },
+        "tc1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "fa08b5bbed017037920a2b36d87ccfb755e3e6c6",
+              "release": "frontend-fa08b5bbed017037920a2b36d87ccfb755e3e6c6",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "c52b440bc0d452f8935a36e2f76ae4bae99cf06da402bf86fa99cd788209bc49"
+            },
+            "sha256": "de4d67f1ca116d5ef35dc7d56ed34a70a1b7b2ba499626a331afef31edccd983"
+          },
+          "source_commit": "217898169058c216f44a6b17e42de024e96b760c"
+        },
+        "tc1:no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "fa08b5bbed017037920a2b36d87ccfb755e3e6c6",
+              "release": "frontend-fa08b5bbed017037920a2b36d87ccfb755e3e6c6",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "c52b440bc0d452f8935a36e2f76ae4bae99cf06da402bf86fa99cd788209bc49"
+            },
+            "sha256": "de4d67f1ca116d5ef35dc7d56ed34a70a1b7b2ba499626a331afef31edccd983"
+          },
+          "source_commit": "217898169058c216f44a6b17e42de024e96b760c"
+        }
+      }
+    },
+    "v0.9.27": {
+      "notes_sha256": "af0ebc79558e1820c96a60bce01ca39b8d1e27dc0654c68add71ceb36cc5382b",
+      "tag_commit": "99770efc322ee9d95b19be895d33bc2b79191607",
+      "targets": {
+        "a1:fresh-air": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "89bfc2028da5e581da9a087b020f8d2c08bee3fc",
+              "release": "frontend-89bfc2028da5e581da9a087b020f8d2c08bee3fc",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "af86912e2f374a471c6b1c897f4f00ea36bc163734467e363dde1bb78f5ff02a"
+            },
+            "sha256": "48da6ace21f0d6e5188add51e1df878c023b440b51694e9f3fdab4cfd098131c"
+          },
+          "source_commit": "99770efc322ee9d95b19be895d33bc2b79191607"
+        },
+        "a1:fresh-air-no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "89bfc2028da5e581da9a087b020f8d2c08bee3fc",
+              "release": "frontend-89bfc2028da5e581da9a087b020f8d2c08bee3fc",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "af86912e2f374a471c6b1c897f4f00ea36bc163734467e363dde1bb78f5ff02a"
+            },
+            "sha256": "48da6ace21f0d6e5188add51e1df878c023b440b51694e9f3fdab4cfd098131c"
+          },
+          "source_commit": "99770efc322ee9d95b19be895d33bc2b79191607"
+        },
+        "a1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "89bfc2028da5e581da9a087b020f8d2c08bee3fc",
+              "release": "frontend-89bfc2028da5e581da9a087b020f8d2c08bee3fc",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "af86912e2f374a471c6b1c897f4f00ea36bc163734467e363dde1bb78f5ff02a"
+            },
+            "sha256": "48da6ace21f0d6e5188add51e1df878c023b440b51694e9f3fdab4cfd098131c"
+          },
+          "source_commit": "99770efc322ee9d95b19be895d33bc2b79191607"
+        },
+        "a1:no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "89bfc2028da5e581da9a087b020f8d2c08bee3fc",
+              "release": "frontend-89bfc2028da5e581da9a087b020f8d2c08bee3fc",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "af86912e2f374a471c6b1c897f4f00ea36bc163734467e363dde1bb78f5ff02a"
+            },
+            "sha256": "48da6ace21f0d6e5188add51e1df878c023b440b51694e9f3fdab4cfd098131c"
+          },
+          "source_commit": "99770efc322ee9d95b19be895d33bc2b79191607"
+        },
+        "daikin:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "89bfc2028da5e581da9a087b020f8d2c08bee3fc",
+              "release": "frontend-89bfc2028da5e581da9a087b020f8d2c08bee3fc",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "af86912e2f374a471c6b1c897f4f00ea36bc163734467e363dde1bb78f5ff02a"
+            },
+            "sha256": "48da6ace21f0d6e5188add51e1df878c023b440b51694e9f3fdab4cfd098131c"
+          },
+          "source_commit": "99770efc322ee9d95b19be895d33bc2b79191607"
+        },
+        "m1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "89bfc2028da5e581da9a087b020f8d2c08bee3fc",
+              "release": "frontend-89bfc2028da5e581da9a087b020f8d2c08bee3fc",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "af86912e2f374a471c6b1c897f4f00ea36bc163734467e363dde1bb78f5ff02a"
+            },
+            "sha256": "48da6ace21f0d6e5188add51e1df878c023b440b51694e9f3fdab4cfd098131c"
+          },
+          "source_commit": "99770efc322ee9d95b19be895d33bc2b79191607"
+        },
+        "m1:no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "89bfc2028da5e581da9a087b020f8d2c08bee3fc",
+              "release": "frontend-89bfc2028da5e581da9a087b020f8d2c08bee3fc",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "af86912e2f374a471c6b1c897f4f00ea36bc163734467e363dde1bb78f5ff02a"
+            },
+            "sha256": "48da6ace21f0d6e5188add51e1df878c023b440b51694e9f3fdab4cfd098131c"
+          },
+          "source_commit": "99770efc322ee9d95b19be895d33bc2b79191607"
+        },
+        "tc1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "89bfc2028da5e581da9a087b020f8d2c08bee3fc",
+              "release": "frontend-89bfc2028da5e581da9a087b020f8d2c08bee3fc",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "af86912e2f374a471c6b1c897f4f00ea36bc163734467e363dde1bb78f5ff02a"
+            },
+            "sha256": "48da6ace21f0d6e5188add51e1df878c023b440b51694e9f3fdab4cfd098131c"
+          },
+          "source_commit": "99770efc322ee9d95b19be895d33bc2b79191607"
+        },
+        "tc1:no-frontend-resources": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "89bfc2028da5e581da9a087b020f8d2c08bee3fc",
+              "release": "frontend-89bfc2028da5e581da9a087b020f8d2c08bee3fc",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "af86912e2f374a471c6b1c897f4f00ea36bc163734467e363dde1bb78f5ff02a"
+            },
+            "sha256": "48da6ace21f0d6e5188add51e1df878c023b440b51694e9f3fdab4cfd098131c"
+          },
+          "source_commit": "99770efc322ee9d95b19be895d33bc2b79191607"
+        }
+      }
+    },
+    "v0.9.3": {
+      "notes_sha256": "da496ed013e8529564eee3d0703e48c7df21d252ab49dd8b722e55dfe89d9cf0",
+      "tag_commit": "f9e4af903bd82899b4a38adb375e005342aa5b27",
+      "targets": {
+        "a1:full": {
+          "frontend": {
+            "kind": "in-tree",
+            "source_commit": "d50e937522f28e62d343506a70a39cd1e0ce4ef9"
+          },
+          "source_commit": "d50e937522f28e62d343506a70a39cd1e0ce4ef9"
+        },
+        "m1:full": {
+          "frontend": {
+            "kind": "in-tree",
+            "source_commit": "d50e937522f28e62d343506a70a39cd1e0ce4ef9"
+          },
+          "source_commit": "d50e937522f28e62d343506a70a39cd1e0ce4ef9"
+        },
+        "tc1:full": {
+          "frontend": {
+            "kind": "in-tree",
+            "source_commit": "d50e937522f28e62d343506a70a39cd1e0ce4ef9"
+          },
+          "source_commit": "d50e937522f28e62d343506a70a39cd1e0ce4ef9"
+        }
+      }
+    },
+    "v0.9.4": {
+      "notes_sha256": "9cb1cd468c6e779b96968bfa32f9a3cf95d37cf2c2d7342d7d0f2520a067d569",
+      "tag_commit": "f9e4af903bd82899b4a38adb375e005342aa5b27",
+      "targets": {
+        "a1:full": {
+          "frontend": {
+            "kind": "in-tree",
+            "source_commit": "d50e937522f28e62d343506a70a39cd1e0ce4ef9"
+          },
+          "source_commit": "d50e937522f28e62d343506a70a39cd1e0ce4ef9"
+        },
+        "m1:full": {
+          "frontend": {
+            "kind": "in-tree",
+            "source_commit": "d50e937522f28e62d343506a70a39cd1e0ce4ef9"
+          },
+          "source_commit": "d50e937522f28e62d343506a70a39cd1e0ce4ef9"
+        },
+        "tc1:full": {
+          "frontend": {
+            "kind": "in-tree",
+            "source_commit": "d50e937522f28e62d343506a70a39cd1e0ce4ef9"
+          },
+          "source_commit": "d50e937522f28e62d343506a70a39cd1e0ce4ef9"
+        }
+      }
+    },
+    "v0.9.5": {
+      "notes_sha256": "26eff8a4ea897b68c43c05aeee6a0e05ab2c19e2897366afe1c958e904c29d4c",
+      "tag_commit": "3eddfd56bc312089e726bb2d362924e2db53e369",
+      "targets": {
+        "a1:full": {
+          "frontend": {
+            "kind": "in-tree",
+            "source_commit": "3eddfd56bc312089e726bb2d362924e2db53e369"
+          },
+          "source_commit": "3eddfd56bc312089e726bb2d362924e2db53e369"
+        },
+        "m1:full": {
+          "frontend": {
+            "kind": "in-tree",
+            "source_commit": "3eddfd56bc312089e726bb2d362924e2db53e369"
+          },
+          "source_commit": "3eddfd56bc312089e726bb2d362924e2db53e369"
+        },
+        "tc1:full": {
+          "frontend": {
+            "kind": "in-tree",
+            "source_commit": "3eddfd56bc312089e726bb2d362924e2db53e369"
+          },
+          "source_commit": "3eddfd56bc312089e726bb2d362924e2db53e369"
+        }
+      }
+    },
+    "v0.9.6": {
+      "notes_sha256": "d973387a23b0f94d47fa808240fc6db47eb0cc147dfc0a231555a1a0ec1b3b7e",
+      "tag_commit": "f94b1c13346c5a875496c72bd1875b7b61ecfa6c",
+      "targets": {
+        "a1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "a25d81c80509052b82fcd531a97dee1af5b1375f",
+              "release": "frontend-a25d81c80509052b82fcd531a97dee1af5b1375f",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "f9d2d2dc6b9649fe1e367a093507d7281c2c4aa6aa8e14ff4cbf7d3669dc0b1c"
+            },
+            "sha256": "6c07eaf56e60e6e2d586c846217bf3d629e14a31458edc60f4367f012df20e29"
+          },
+          "source_commit": "f94b1c13346c5a875496c72bd1875b7b61ecfa6c"
+        },
+        "m1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "a25d81c80509052b82fcd531a97dee1af5b1375f",
+              "release": "frontend-a25d81c80509052b82fcd531a97dee1af5b1375f",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "f9d2d2dc6b9649fe1e367a093507d7281c2c4aa6aa8e14ff4cbf7d3669dc0b1c"
+            },
+            "sha256": "6c07eaf56e60e6e2d586c846217bf3d629e14a31458edc60f4367f012df20e29"
+          },
+          "source_commit": "f94b1c13346c5a875496c72bd1875b7b61ecfa6c"
+        },
+        "tc1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "a25d81c80509052b82fcd531a97dee1af5b1375f",
+              "release": "frontend-a25d81c80509052b82fcd531a97dee1af5b1375f",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "f9d2d2dc6b9649fe1e367a093507d7281c2c4aa6aa8e14ff4cbf7d3669dc0b1c"
+            },
+            "sha256": "6c07eaf56e60e6e2d586c846217bf3d629e14a31458edc60f4367f012df20e29"
+          },
+          "source_commit": "f94b1c13346c5a875496c72bd1875b7b61ecfa6c"
+        }
+      }
+    },
+    "v0.9.7": {
+      "notes_sha256": "8cb8b839438619b53087bb7146a0c373da548b91a53a4d46ba9eee3c735f1229",
+      "tag_commit": "07966b43ae0814718a5448f959ae078fc5fd8247",
+      "targets": {
+        "a1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "9edc88d1df036f3d74b3e70645527f5ffb2d4f29",
+              "release": "frontend-9edc88d1df036f3d74b3e70645527f5ffb2d4f29",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "5fa90d05e01885aa1472df73ddc13a298e36cd172bee40baa3938b3ae9804304"
+            },
+            "sha256": "25dec368c2f841fcbc4f6161451fc01b28e7b3fa2bde0fcdb56dde9d88aaa2bb"
+          },
+          "source_commit": "07966b43ae0814718a5448f959ae078fc5fd8247"
+        },
+        "m1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "9edc88d1df036f3d74b3e70645527f5ffb2d4f29",
+              "release": "frontend-9edc88d1df036f3d74b3e70645527f5ffb2d4f29",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "5fa90d05e01885aa1472df73ddc13a298e36cd172bee40baa3938b3ae9804304"
+            },
+            "sha256": "25dec368c2f841fcbc4f6161451fc01b28e7b3fa2bde0fcdb56dde9d88aaa2bb"
+          },
+          "source_commit": "07966b43ae0814718a5448f959ae078fc5fd8247"
+        },
+        "tc1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "9edc88d1df036f3d74b3e70645527f5ffb2d4f29",
+              "release": "frontend-9edc88d1df036f3d74b3e70645527f5ffb2d4f29",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "5fa90d05e01885aa1472df73ddc13a298e36cd172bee40baa3938b3ae9804304"
+            },
+            "sha256": "25dec368c2f841fcbc4f6161451fc01b28e7b3fa2bde0fcdb56dde9d88aaa2bb"
+          },
+          "source_commit": "07966b43ae0814718a5448f959ae078fc5fd8247"
+        }
+      }
+    },
+    "v0.9.8": {
+      "notes_sha256": "ab7330b426d2d95257e2d33672aec0689d423d463a0064404fd976d8b886f472",
+      "tag_commit": "83b8becbee831def8c3a7380a0007e1d8348570d",
+      "targets": {
+        "a1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "728d8c78575a3b7df06fdf2359e11ba378e1b80b",
+              "release": "frontend-728d8c78575a3b7df06fdf2359e11ba378e1b80b",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "c120a38a5da43603bcf176838b0c026852441e02da71d03269c42cf2718217aa"
+            },
+            "sha256": "96d49ab27f528115ad7de547d9e4dd4ab4452fed97b1fc4eb9626522dc32a624"
+          },
+          "source_commit": "83b8becbee831def8c3a7380a0007e1d8348570d"
+        },
+        "m1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "728d8c78575a3b7df06fdf2359e11ba378e1b80b",
+              "release": "frontend-728d8c78575a3b7df06fdf2359e11ba378e1b80b",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "c120a38a5da43603bcf176838b0c026852441e02da71d03269c42cf2718217aa"
+            },
+            "sha256": "96d49ab27f528115ad7de547d9e4dd4ab4452fed97b1fc4eb9626522dc32a624"
+          },
+          "source_commit": "83b8becbee831def8c3a7380a0007e1d8348570d"
+        },
+        "tc1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "728d8c78575a3b7df06fdf2359e11ba378e1b80b",
+              "release": "frontend-728d8c78575a3b7df06fdf2359e11ba378e1b80b",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "c120a38a5da43603bcf176838b0c026852441e02da71d03269c42cf2718217aa"
+            },
+            "sha256": "96d49ab27f528115ad7de547d9e4dd4ab4452fed97b1fc4eb9626522dc32a624"
+          },
+          "source_commit": "83b8becbee831def8c3a7380a0007e1d8348570d"
+        }
+      }
+    },
+    "v0.9.9": {
+      "notes_sha256": "c797dd8d6034a14988100b521d160caf4b713ed0cf10861ad2d6e1845ed2e33e",
+      "tag_commit": "01c6595084cff35b48753748f2b06843615d6d1d",
+      "targets": {
+        "a1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "482ad243a9fa66cd189e608d966740be5198386e",
+              "release": "frontend-482ad243a9fa66cd189e608d966740be5198386e",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "2e5bc61fb42e87ba649f0527697fd143f9e9d92c2fb8a282999a82e68c6b9cd2"
+            },
+            "sha256": "1194ebf987faa28c4b497d5fb0b1d6bb852c64d737fede1d53c0695e234f67b4"
+          },
+          "source_commit": "01c6595084cff35b48753748f2b06843615d6d1d"
+        },
+        "m1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "482ad243a9fa66cd189e608d966740be5198386e",
+              "release": "frontend-482ad243a9fa66cd189e608d966740be5198386e",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "2e5bc61fb42e87ba649f0527697fd143f9e9d92c2fb8a282999a82e68c6b9cd2"
+            },
+            "sha256": "1194ebf987faa28c4b497d5fb0b1d6bb852c64d737fede1d53c0695e234f67b4"
+          },
+          "source_commit": "01c6595084cff35b48753748f2b06843615d6d1d"
+        },
+        "tc1:full": {
+          "frontend": {
+            "kind": "lock",
+            "lock": {
+              "asset": "frontend.tar.gz",
+              "commit": "482ad243a9fa66cd189e608d966740be5198386e",
+              "release": "frontend-482ad243a9fa66cd189e608d966740be5198386e",
+              "repository": "phicomm-io/phicomm-community-frontend",
+              "schema": 1,
+              "sha256": "2e5bc61fb42e87ba649f0527697fd143f9e9d92c2fb8a282999a82e68c6b9cd2"
+            },
+            "sha256": "1194ebf987faa28c4b497d5fb0b1d6bb852c64d737fede1d53c0695e234f67b4"
+          },
+          "source_commit": "01c6595084cff35b48753748f2b06843615d6d1d"
+        }
+      }
+    }
+  },
+  "schema": 1,
+  "scope": "legacy-v0.9"
+}

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Review, compile and verify static user release notes; never build firmware."""
 import argparse
+import base64
 import copy
 import hashlib
 import html
@@ -14,6 +15,8 @@ ROOT = Path(__file__).resolve().parents[2]
 DATA = ROOT / 'docs/release-notes'
 LOCALES = ('zh-CN', 'en')
 TYPES = ('feature', 'improvement', 'bugfix', 'security', 'breaking')
+LEGACY_CATALOG_SHA256 = '41ca1b06192513fa027c89e9ab1ee7b448b57a4938cdc1d43381fbb14d366122'
+LEGACY_PROVENANCE_SHA256 = '46eb9ab3987cd460d8f415a16598a1b294b6eb817fba30aac125730108ba74a3'
 LABELS = {
     'zh-CN': dict(zip(TYPES, ('新功能', '功能改进', '问题修复', '安全更新', '重要变化'))),
     'en': dict(zip(TYPES, ('New features', 'Improvements', 'Bug fixes', 'Security updates', 'Important changes'))),
@@ -95,9 +98,57 @@ def valid_path(archive, value):
     return target
 
 
+def legacy_provenance(data=DATA):
+    """Only the frozen 26 v0.9 archives may use retained source-lock bytes."""
+    catalog_bytes = (data / 'catalog.legacy-v0.9.json').read_bytes()
+    proof_bytes = (data / 'legacy-provenance.json').read_bytes()
+    if digest(catalog_bytes) != LEGACY_CATALOG_SHA256 or digest(proof_bytes) != LEGACY_PROVENANCE_SHA256:
+        raise ValueError('Legacy archive provenance hash mismatch')
+    catalog, proof = json.loads(catalog_bytes), json.loads(proof_bytes)
+    original = read(data / 'archive-identities.json')
+    original_tags = {r['tag'] for r in read(data / 'catalog.snapshot.json')['releases']}
+    original['releases'] = {tag: row for tag, row in original['releases'].items() if tag in original_tags}
+    if (proof['schema'] != 1 or proof['scope'] != 'legacy-v0.9' or
+            proof['catalog_sha256'] != digest(catalog_bytes) or
+            proof['base_catalog_sha256'] != digest((data / 'catalog.snapshot.json').read_bytes()) or
+            proof['base_identities_canonical_sha256'] != digest(encoded(original)) or
+            any(proof['releases'].get(tag) != row for tag, row in original['releases'].items())):
+        raise ValueError('Legacy archive differs from the original historical identities')
+    releases = {r['tag']: r for r in catalog['releases']}
+    if (len(releases) != 26 or set(releases) != set(proof['releases']) or
+            any(not tag.startswith('v0.9.') or parse_tag(tag).prerelease for tag in releases)):
+        raise ValueError('Invalid frozen legacy archive scope')
+    lock_sources = set()
+    for tag, release in releases.items():
+        identity = proof['releases'][tag]
+        if (identity['tag_commit'] != release['commit'] or
+                identity['notes_sha256'] != digest((data / 'sources' / (tag + '.md')).read_bytes()) or
+                set(identity['targets']) != {m + ':' + v for m, v, _ in targets(release)}):
+            raise ValueError('Legacy release provenance mismatch: ' + tag)
+        for model, variant, entry in targets(release):
+            row = identity['targets'][model + ':' + variant]
+            source = entry.get('source_commit', release['models'][model].get('source_commit', release['commit']))
+            frontend = row['frontend']
+            if row['source_commit'] != source:
+                raise ValueError('Legacy source provenance mismatch: ' + tag)
+            if frontend['kind'] == 'lock':
+                retained = proof['frontend_locks'][source]
+                raw = base64.b64decode(retained['bytes_base64'], validate=True)
+                if (digest(raw) != retained['sha256'] or digest(raw) != frontend['sha256'] or
+                        json.loads(raw) != frontend['lock']):
+                    raise ValueError('Legacy frontend lock provenance mismatch: ' + tag)
+                lock_sources.add(source)
+            elif frontend != dict(kind='in-tree', source_commit=source):
+                raise ValueError('Invalid legacy in-tree frontend provenance: ' + tag)
+    if lock_sources != set(proof['frontend_locks']):
+        raise ValueError('Unexpected legacy frontend lock source')
+    return releases, proof['releases']
+
+
 def verify_archive(catalog, identities, archive, data=DATA):
     """Formal builds read real immutable files and the historical source locks."""
     from verify import verify
+    legacy, legacy_identities = legacy_provenance(data)
     for release in catalog['releases']:
         tag = release['tag']
         notes = valid_path(archive, dict(path=release['notes'])).read_bytes()
@@ -110,12 +161,16 @@ def verify_archive(catalog, identities, archive, data=DATA):
             if source != identity['source_commit']:
                 raise ValueError('Archived source commit mismatch: ' + tag)
             frontend = identity['frontend']
-            lock = subprocess.run(['git', 'show', source + ':frontend.lock.json'], cwd=ROOT, capture_output=True)
-            if frontend['kind'] == 'lock':
-                if lock.returncode or digest(lock.stdout) != frontend['sha256'] or json.loads(lock.stdout) != frontend['lock']:
-                    raise ValueError('Historical frontend lock mismatch: ' + tag)
-            elif lock.returncode == 0 or frontend != dict(kind='in-tree', source_commit=source):
-                raise ValueError('Invalid historical in-tree frontend identity: ' + tag)
+            if legacy.get(tag) == release:
+                if identity != legacy_identities[tag]['targets'][model + ':' + variant]:
+                    raise ValueError('Legacy target provenance mismatch: ' + tag)
+            else:
+                # Current/future releases always need their actual source object;
+                # a missing object must never become an in-tree or legacy proof.
+                lock = subprocess.run(['git', 'show', source + ':frontend.lock.json'], cwd=ROOT, capture_output=True)
+                if (frontend['kind'] != 'lock' or lock.returncode or
+                        digest(lock.stdout) != frontend['sha256'] or json.loads(lock.stdout) != frontend['lock']):
+                    raise ValueError('Frontend lock mismatch: ' + tag + ' source ' + source[:12])
             for kind, asset in entry['downloads'].items():
                 if asset['path'] in checked:
                     continue
@@ -161,6 +216,13 @@ def compile_manifest(data=DATA, archive=None, formal=False, include_candidates=F
         raise ValueError('Previously archived metadata changed or is missing')
     if digest((data / 'catalog.snapshot.json').read_bytes()) != identities['catalog_sha256']:
         raise ValueError('Historical archive snapshot hash mismatch')
+    legacy, legacy_identities = legacy_provenance(data)
+    if any(actual.get(tag) != row for tag, row in legacy.items() if formal or tag in actual):
+        raise ValueError('Previously archived legacy metadata changed or is missing')
+    for tag in actual.keys() & legacy.keys():
+        if tag in identities['releases'] and identities['releases'][tag] != legacy_identities[tag]:
+            raise ValueError('Legacy release identities changed: ' + tag)
+        identities['releases'][tag] = copy.deepcopy(legacy_identities[tag])
     for release in catalog['releases']:
         identity = parse_tag(release['tag'])
         if (release['version'] != identity.version or
@@ -173,7 +235,7 @@ def compile_manifest(data=DATA, archive=None, formal=False, include_candidates=F
         declaration = declarations[release['version']]
         if declaration['branch'] != 'main' or declaration['channel'] != identity.channel:
             raise ValueError('Release declaration must match its explicit main/channel identity')
-        if release['tag'] not in identities['releases']:
+        if release['tag'] not in identities['releases'] or (formal and release['tag'] not in legacy):
             if not archive or not formal:
                 raise ValueError('New release identities require a formal build and actual archive')
             target_proofs = {}
@@ -183,11 +245,14 @@ def compile_manifest(data=DATA, archive=None, formal=False, include_candidates=F
                 source = entry.get('source_commit', release['models'][model].get('source_commit', release['commit']))
                 lock = subprocess.run(['git', 'show', source + ':frontend.lock.json'], cwd=ROOT, capture_output=True)
                 if lock.returncode:
-                    raise ValueError('New releases require a verifiable frontend lock')
+                    raise ValueError('New releases require a verifiable frontend lock: ' + release['tag'] + ' source ' + source[:12])
                 target_proofs[model + ':' + variant] = dict(source_commit=source,
                     frontend=dict(kind='lock', sha256=digest(lock.stdout), lock=json.loads(lock.stdout)))
-            identities['releases'][release['tag']] = dict(tag_commit=release['commit'], targets=target_proofs,
+            current_identity = dict(tag_commit=release['commit'], targets=target_proofs,
                 notes_sha256=digest((data / 'sources' / (release['tag'] + '.md')).read_bytes()))
+            if release['tag'] in identities['releases'] and identities['releases'][release['tag']] != current_identity:
+                raise ValueError('Current release frontend provenance changed: ' + release['tag'])
+            identities['releases'][release['tag']] = current_identity
     if formal and not archive:
         raise ValueError('Formal builds require the actual archive')
     frozen = (ROOT / 'docs/release/Release-Log.md').read_bytes()
