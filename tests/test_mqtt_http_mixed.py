@@ -813,7 +813,9 @@ class MixedRunnerTests(unittest.TestCase):
                 original_snapshot = MIXED.HTTPResponseGap.snapshot
                 def expired_snapshot(monitor, _now):
                     started = min(state['response'] for state in monitor.state.values())
-                    return original_snapshot(monitor, started+30)
+                    # Stay past the bound: subtracting fractional monotonic
+                    # timestamps can round an exact 30-second gap downward.
+                    return original_snapshot(monitor, started+MIXED.HTTP_RESPONSE_GAP_LIMIT+1.0)
                 with mock.patch.object(MIXED, '_http_worker', return_value=None), \
                         mock.patch.object(MIXED.HTTPResponseGap, 'snapshot', expired_snapshot):
                     MIXED.run_phase(runner, clients, roots, evidence, plan, profile)
