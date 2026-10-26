@@ -100,6 +100,36 @@ static bool transmit(const uint8_t *frame)
     return false;
 }
 
+typedef struct { bool committed; uint8_t command,kind,sequence; } reset_receipt_t;
+static bool reset_frame(reset_receipt_t *receipt,const uint8_t frame[20])
+{
+    if(frame[0]!=0x23 || frame[19]!=0x21)return false;
+    if(frame[1]!=0x18 && frame[1]!=0x72)return false;
+    bool extended=frame[1]==0x72;
+    uint8_t kind=extended?frame[3]:1,sequence=extended?frame[4]:0;
+    if(extended) {
+        if(frame[2]!=1 || kind<1 || kind>2)return true;
+        for(unsigned i=5;i<19;i++)if(frame[i])return true;
+    }
+    if(receipt->committed) {
+        if(receipt->command!=frame[1] || receipt->kind!=kind || receipt->sequence!=sequence)
+            return true;
+    } else {
+        /* The MCU may cut Wi-Fi power after the ACK: persist first. A failed
+         * save or busy reset remains retryable, without acknowledging it. */
+        if(!m1_reset(kind==2))return true;
+        *receipt=(reset_receipt_t){true,frame[1],kind,sequence};
+    }
+    if(extended) {
+        uint8_t ack[12]={0x23,0x72,1,kind,sequence,0,0,0,0,0,0,0x21};
+        transmit(ack);
+    } else {
+        static const uint8_t ack[12]={0x23,0x16,0,0x10,0x14,0,3,0x10,0xf1,0xff,0xff,0x21};
+        transmit(ack);
+    }
+    return true;
+}
+
 /* Outside the FIFO: retry persisted configuration even under queue pressure.
  * Successful send is not acknowledgement from the stock controller. */
 static void alarm_sync(void)
@@ -153,7 +183,7 @@ static void uart_worker(mico_thread_arg_t arg)
 {
     UNUSED_PARAMETER(arg);
     uint8_t storage[128], frame[20];
-    bool reset_seen = false;
+    reset_receipt_t reset_receipt = {0};
     ring_buffer_t ring;
     ring_buffer_init(&ring, storage, sizeof(storage));
     mico_uart_config_t config = { 115200, DATA_WIDTH_8BIT, NO_PARITY,
@@ -258,12 +288,7 @@ static void uart_worker(mico_thread_arg_t arg)
             if(frame[1]==0x17){version_attempts=0;next_version=mico_rtos_get_time();}
             if(m1_button_rx(frame))continue;
             if(m1_mcu_rx(frame))continue;
-            if (frame[1] == 0x18) {
-                static const uint8_t ack[12] = {0x23,0x16,0x00,0x10,0x14,0x00,0x03,0x10,0xf1,0xff,0xff,0x21};
-                transmit(ack);
-                if (!reset_seen) { reset_seen = true; m1_reset(false); }
-                continue;
-            }
+            if(reset_frame(&reset_receipt,frame))continue;
             mico_rtos_lock_mutex(&m1_lock);
             memcpy(m1_state.last_frame, frame, 20);
             m1_state.rx_frames++;
