@@ -33,6 +33,15 @@ class BulkSenderTest(unittest.TestCase):
                 packets.append(b'\x23\x13' + struct.pack('>H', index + 1) + chunk + struct.pack('>H', crc_reference(chunk)))
             packets.append(b'\x23\x16' + bytes(9) + b'\x21')
             cases.append((data, packets))
+        # The final Thumb instruction must fit wholly inside the image.
+        for size in (164, 32768):
+            data = struct.pack('<II', 0x20008000, 0x4000 + size - 1) + bytes(size - 8)
+            packets = [bytes((0x23, 0x12, size // 256, size % 256)) + bytes(7) + b'\x21']
+            for index in range(size // 256 + 1):
+                chunk = data[index * 256:(index + 1) * 256]
+                packets.append(b'\x23\x13' + struct.pack('>H', index + 1) + chunk + struct.pack('>H', crc_reference(chunk)))
+            packets.append(b'\x23\x16' + bytes(9) + b'\x21')
+            cases.append((data, packets))
         c = '#include <stdint.h>\n#include <stddef.h>\n#include <stdbool.h>\n#include <string.h>\n#include <assert.h>\n'
         for ci, (data, packets) in enumerate(cases):
             c += f'static uint8_t image{ci}[]={{' + ','.join(map(str, data)) + '};\n'
@@ -67,6 +76,9 @@ reset();fail_at=8;assert(!mcu_bulk(image3,sizeof(image3)));assert(!commits && ca
 reset();bad_ack=8;assert(!mcu_bulk(image3,sizeof(image3)));assert(!commits && cancels==1);
 reset();delay=200;assert(!mcu_bulk(image3,sizeof(image3)));assert(!commits && cancels==1);
 reset();assert(!mcu_bulk(image3,163));assert(!mcu_bulk(image3,32769));assert(!pos && !cancels);
+reset();uint32_t pc=0xffffffffu;memcpy(image3+4,&pc,4);assert(!mcu_bulk(image3,sizeof(image3)));assert(!pos && !commits && !cancels);
+reset();pc=0x40a5;memcpy(image0+4,&pc,4);assert(!mcu_bulk(image0,sizeof(image0)));assert(!pos && !commits && !cancels);
+reset();pc=0xc001;memcpy(image4+4,&pc,4);assert(!mcu_bulk(image4,sizeof(image4)));assert(!pos && !commits && !cancels);
 reset();image3[0]=image3[1]=image3[2]=image3[3]=0;assert(!mcu_bulk(image3,sizeof(image3)));assert(!pos && !commits && !cancels);
 return 0;}
 '''

@@ -99,7 +99,7 @@ static bool mcu_bulk(const uint8_t *image,size_t n)
     if(n<164 || n>32768)return false;
     memcpy(&sp,image,4);memcpy(&pc,image+4,4);
     if(sp<=0x20000000u || sp>0x20008000u || (sp&7) || !(pc&1) ||
-       (pc&~1u)<0x4000 || (pc&~1u)+2>0x4000+n)return false;
+       (pc&~1u)<0x4000 || (pc&~1u)>0x4000+n-2)return false;
     f[2]=n/256;f[3]=n%256;f[11]=0x21;
     uint32_t start=mico_rtos_get_time();
     if(!m1_mcu_exchange(f,12,ack) || ack[1]!=0x14 || ack[2] || ack[3])goto cancel;
