@@ -2,6 +2,39 @@
   {
     "assets": [
       {
+        "browser_download_url": "https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20/releases/download/v1.0.0-rc/m1-mcu-debug-recovery.zip",
+        "name": "m1-mcu-debug-recovery.zip"
+      },
+      {
+        "browser_download_url": "https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20/releases/download/v1.0.0-rc/m1-mcu-ota.bin",
+        "name": "m1-mcu-ota.bin"
+      },
+      {
+        "browser_download_url": "https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20/releases/download/v1.0.0-rc/m1-mcu-ota.json",
+        "name": "m1-mcu-ota.json"
+      },
+      {
+        "browser_download_url": "https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20/releases/download/v1.0.0-rc/notes.md",
+        "name": "notes.md"
+      },
+      {
+        "browser_download_url": "https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20/releases/download/v1.0.0-rc/release.json",
+        "name": "release.json"
+      },
+      {
+        "browser_download_url": "https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20/releases/download/v1.0.0-rc/SHA256SUMS",
+        "name": "SHA256SUMS"
+      }
+    ],
+    "body": "# v1.0.0-rc\n\n- PM2.5 使用三点中值与自适应平滑抑制尖峰，持续升高时快速跟随，保留原始传感器帧查询。\n- 甲醛、PM2.5 超阈值蜂鸣报警分别开关，默认关闭。\n- 增加双击事件：配套联网固件可优先停止闹钟，或整体切换两个区域的原始 / 用户读数；单击继续开关屏幕。\n- 配套联网固件后，按住 3 秒至未满 10 秒松手重新配网，按满 10 秒恢复出厂；保存设置后两颗 MCU 一起重启，主控独立音乐保留。\n- 提供两区域独立的 Wi-Fi 显示通道、数字 / 固定小数点 / 原厂字样与单位，以及每区域九段灯控制；数据过期逐区域恢复原传感器读数。来源选择和数据换算由 Wi-Fi MCU 负责。\n- 新显示接口通过能力探测启用，旧 UART 操作码保持兼容；数字范围与 PM 区域无小数点的物理限制分别校验。\n\n原厂 11.x 优先推荐使用；17.1.2.3 / 17.x 暂不建议迁移。传感器 MCU 与 Wi-Fi 模块分别升级；Wi-Fi OTA 不包含本镜像。\n\n### 构建信息\n\n版本：`1.0.0-rc-97a03b`；源码：`97a03bf2c28f026d3043e1b19d0339d6b74f4a94`。\n\n本发布为开发预览。\n\n原厂 11.x 用户可优先使用；17.1.2.3 / 17.x 待镜像分析后再确认兼容性。\n\n### 下载文件\n\n- `m1-mcu-ota.bin`：ATSAMD20G18A 主控应用，链接于 `0x4000`；不用于 Wi-Fi MCU 更新。\n- `m1-mcu-ota.json`：版本、来源、长度、SHA-256 及验证状态。\n- `m1-mcu-debug-recovery.zip`：独立 Boot、应用与 ELF/map，仅供开发和 SWD 恢复。\n- `SHA256SUMS`：下载后可运行 `sha256sum -c SHA256SUMS` 校验。\n\n镜像无签名，SHA/CRC 不提供来源认证。请保留原厂备份和 SWD 恢复能力。\n",
+    "html_url": "https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20/releases/tag/v1.0.0-rc",
+    "prerelease": true,
+    "published_at": "2026-10-26T04:59:17Z",
+    "tag_name": "v1.0.0-rc"
+  },
+  {
+    "assets": [
+      {
         "browser_download_url": "https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20/releases/download/v0.9.4/m1-mcu-debug-recovery.zip",
         "name": "m1-mcu-debug-recovery.zip"
       },

@@ -30,10 +30,10 @@ function reviewedNotes(release, manifest) {
   }
   return note;
 }
-function releaseCard(release, latest, snapshot) {
-  const box = el(latest ? 'article' : 'details'); box.className = 'release';
-  const head = el(latest ? 'h3' : 'summary', release.tag); box.append(head);
-  if (latest) { const badge = el('span', t('最新版', 'Latest')); badge.className = 'tag'; head.append(badge); }
+function releaseCard(release, latest, snapshot, candidate = false) {
+  const box = el(latest || candidate ? 'article' : 'details'); box.className = 'release';
+  const head = el(latest || candidate ? 'h3' : 'summary', release.tag); box.append(head);
+  if (latest || candidate) { const badge = el('span', candidate ? t('候选版 · 预发布', 'Release candidate · Prerelease') : t('稳定最新版', 'Latest stable')); badge.className = 'tag'; head.append(badge); }
   const table = el('table'); table.className = 'downloads';
   const tr = el('tr'); for (const text of [t('型号', 'Model'), t('固件下载', 'Firmware')]) tr.append(el('th', text)); table.append(tr);
   for (const [model, original] of Object.entries(release.models)) {
@@ -68,8 +68,32 @@ async function loadCatalog() {
     status.textContent = error.code === 'SOURCE_MISMATCH' ? t('说明与固件目录不同步，请切换完整来源后重试。', 'Notes and firmware do not match. Choose another complete source.') : t('暂时无法校验发布数据，请切换来源或稍后重试。', 'Release data could not be verified. Change source or try again later.');
   }
 }
+// Candidate downloads stay on this hash-verified archive. Mirror selection
+// applies only to stable/history and must never promote a candidate to latest.
+async function loadCandidateCatalog() {
+  const target = document.getElementById('candidate-releases');
+  const message = document.getElementById('candidate-release-status');
+  if (!target || !message) return;
+  try {
+    const snapshot = await ReleaseNotesClient.snapshot('', {channel: 'candidate'});
+    const candidates = snapshot.catalog.releases
+      .filter(release => release.channel === 'candidate' && release.prerelease === true)
+      .sort((a, b) => ReleaseNotes.compareVersions(b.version, a.version));
+    target.replaceChildren();
+    for (const release of candidates) target.append(releaseCard(release, false, snapshot, true));
+    message.textContent = candidates.length
+      ? t('候选版供体验与测试；下载来自本站归档，稳定通道保持不变。', 'Candidates are for testing; downloads use this site archive and leave the stable channel unchanged.')
+      : t('目前没有可用候选版。', 'No release candidate is currently available.');
+  } catch (error) {
+    target.replaceChildren();
+    message.textContent = error.code === 'CANDIDATE_UNAVAILABLE'
+      ? t('目前没有可用候选版。', 'No release candidate is currently available.')
+      : t('暂时无法校验候选版目录，请稍后重试或查看候选版说明。', 'Candidate downloads could not be verified. Try later or read the candidate release notes.');
+  }
+}
 source.addEventListener('change', loadCatalog);
 loadCatalog();
+loadCandidateCatalog();
 
 // Controller releases include development previews: /releases/latest excludes them.
 // Keep this independent of the Wi-Fi catalog and mirror selector.

@@ -46,7 +46,9 @@ Add this device's MAC and optional IP in the updated A1 settings. MQTT under the
 
 A1 offers automation sources according to currently valid data, independently of the monitor model. Missing formaldehyde or stale readings hide the corresponding options while preserving saved rules. If required control data is unavailable, A1 uses its configured offline speed. TVOC is not currently a fan-control metric.
 
-## v1.0.0-rc.1 hub (prerelease)
+## Hub edition
+
+The hub baseline is available in v1.0.0-rc. Automatic local-device listing, the optional Web password and restart recovery described below target v1.0.0-rc.1, which is not yet released.
 
 The separate `hub` variant includes local accounts, an MQTT TCP / WebSocket Broker, LAN Home Assistant, an upstream MQTT client and Bemfa forwarding. The ordinary image remains a sensor device. Local accounts do not include email or GitHub login.
 
@@ -56,7 +58,7 @@ The DAIKIN itself appears automatically in the hub device list. Its MQTT connect
 
 On each other device, set its MQTT host to the hub IP, port to `1883`, and credentials to the local account's MQTT username/password. WebSocket clients use `ws://HUB-IP:9001/mqtt`. The device management page provides manual setup instructions; Home Assistant can connect to the same Broker.
 
-Apple Home uses HAP bridging. Enable it separately under **Apple Home** to obtain the pairing code; it is off by default. Matter is currently unavailable. v1.0.0-rc.1 provides a separate `hub` image; ordinary images do not include these hub features. The stable v1.0.0 release is not yet available.
+Apple Home uses HAP bridging. Enable it separately under **Apple Home** to obtain the pairing code; it is off by default. Matter is currently unavailable. v1.0.0-rc already provides a separate `hub` image; ordinary images do not include these hub features. The stable v1.0.0 release is not yet available.
 
 ### Switch from full to hub
 

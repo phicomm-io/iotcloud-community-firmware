@@ -241,11 +241,11 @@ test('candidate download links reject foreign or traversal paths and require a s
   }finally{p.close();}
 });
 
-async function controllerHomepage({locale='zh',releases=[],fallback=false}={}) {
+async function controllerHomepage({locale='zh',releases=[],fallback=false,candidateError=null}={}) {
   const root=require('node:path').resolve(__dirname,'..'),calls=[],f=CandidateUI.fixture();
   const dom=new JSDOM(readFileSync(root+'/site/'+(locale==='en'?'index-en.html':'index.html'),'utf8'),
     {url:'https://phicomm-io.github.io/'+(locale==='en'?'en/':''),runScripts:'outside-only'});
-  Object.assign(dom.window,{ReleaseNotes:Notes,ReleaseNotesClient:{snapshot:async()=>f.stable},AbortController,
+  Object.assign(dom.window,{ReleaseNotes:Notes,ReleaseNotesClient:{snapshot:async(_source,options={})=>{if(options.channel==='candidate'){if(candidateError)throw candidateError;return f.candidate;}return f.stable;}},AbortController,
     fetch:async url=>{calls.push(String(url));return {ok:!fallback||calls.length>1,status:503,json:async()=>releases};}});
   try {
     await dom.window.eval(readFileSync(root+'/site/releases.js','utf8'));
@@ -295,4 +295,58 @@ test('MCU snapshot fallback uses the same RC ordering and stable versions preced
     assert.match(document.getElementById('m1-mcu-status').textContent,/Showing the site snapshot/);
     assert.match(document.querySelector('#latest h3').textContent,/^v0\.9\.27/);
   } finally {p.close();}
+});
+
+// Homepage downloads must expose prereleases without changing stable/history.
+test('homepage lists all ten RC targets separately from stable, including after mirror selection', async()=>{
+  for(const locale of ['zh','en']) {
+    const p=await controllerHomepage({locale});
+    try {
+      const d=p.dom.window.document,area=d.getElementById('candidate-releases');
+      assert.match(area.querySelector('h3').textContent,/v1\.0\.0-rc/);
+      assert.match(area.querySelector('.tag').textContent,locale==='en'?/Prerelease/:/预发布/);
+      assert.equal(area.querySelectorAll('a[href$=".ota.bin.signed"]').length,10);
+      assert.equal(area.querySelectorAll('.downloads tr').length,11);
+      assert.ok([...area.querySelectorAll('a')].every(a=>a.origin==='https://phicomm-io.github.io'));
+      assert.match(d.querySelector('#latest h3').textContent,/^v0\.9\.27/);
+      assert.ok(!d.getElementById('archive').textContent.includes('v1.0.0-rc'));
+      const selector=d.getElementById('source');selector.value='https://phicomm.fjrcn.cn';
+      selector.dispatchEvent(new p.dom.window.Event('change'));await tick();
+      assert.equal(area.querySelectorAll('a[href$=".ota.bin.signed"]').length,10);
+      assert.ok([...area.querySelectorAll('a')].every(a=>a.origin==='https://phicomm-io.github.io'));
+      assert.match(d.querySelector('#latest h3').textContent,/^v0\.9\.27/);
+    }finally{p.close();}
+  }
+});
+test('candidate catalog failure leaves stable downloads usable and displays no unverified candidate links', async()=>{
+  for(const code of ['CANDIDATE_UNAVAILABLE','SOURCE_MISMATCH']) {
+    const p=await controllerHomepage({locale:'en',candidateError:Object.assign(Error('unavailable'),{code})});
+    try {
+      const d=p.dom.window.document;
+      assert.equal(d.getElementById('candidate-releases').childElementCount,0);
+      assert.match(d.querySelector('#latest h3').textContent,/^v0\.9\.27/);
+      assert.match(d.getElementById('candidate-release-status').textContent,code==='CANDIDATE_UNAVAILABLE'?/No release candidate/:/could not be verified/);
+    }finally{p.close();}
+  }
+});
+
+
+test('the committed MCU fallback snapshot exposes the published RC and preserves old releases', async()=>{
+  const releases=JSON.parse(readFileSync(require('node:path').resolve(__dirname,'../docs/public/assets/firmware/m1-mcu/releases.json'),'utf8'));
+  assert.equal(releases.length,5);
+  assert.equal(releases[0].tag_name,'v1.0.0-rc');
+  assert.equal(releases[0].prerelease,true);
+  assert.deepEqual(releases.slice(1).map(r=>r.tag_name),['v0.9.4','v0.9.3','v0.9.2','v0.9.1']);
+  for(const locale of ['zh-CN','en']) {
+    const p=await controllerHomepage({locale,releases,fallback:true});
+    try {
+      const doc=p.dom.window.document;
+      assert.match(doc.querySelector('#m1-mcu-versions summary').textContent,/^v1\.0\.0-rc ·/);
+      const hrefs=[...doc.querySelectorAll('#m1-mcu-versions > details:first-child a')].map(a=>a.href);
+      for(const name of ['m1-mcu-ota.bin','m1-mcu-ota.json','m1-mcu-debug-recovery.zip','SHA256SUMS','release.json']) {
+        const url='https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20/releases/download/v1.0.0-rc/'+name;
+        assert.ok(releases[0].assets.some(a=>a.name===name&&a.browser_download_url===url));assert.ok(hrefs.includes(url));
+      }
+    } finally {p.close();}
+  }
 });

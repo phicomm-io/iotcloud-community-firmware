@@ -2231,6 +2231,104 @@
       "basis": [
         "v1.0.0-rc:b025"
       ]
+    },
+    "v1.0.0-rc.1:b001": {
+      "block_sha256": "9fda6c43d64ac8f71fc16ad1b4d485af9085c3a58a32077eded08da3ecacd8bf",
+      "release_sha256": "6134f07a73ba7c4087ead94f8d3b91324c421cfe3c849eab3dce0e26a907fb9b",
+      "status": "excluded",
+      "reason": "候选版本范围、分组标题或文档下载导航，不单独作为固件功能变更。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.1:b001"
+      ]
+    },
+    "v1.0.0-rc.1:b002": {
+      "block_sha256": "01bf73adde61b6c8050a1c6de121caa99122d2171e96e27c5db869b23e3a9d62",
+      "release_sha256": "6134f07a73ba7c4087ead94f8d3b91324c421cfe3c849eab3dce0e26a907fb9b",
+      "status": "excluded",
+      "reason": "候选版本范围、分组标题或文档下载导航，不单独作为固件功能变更。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.1:b002"
+      ]
+    },
+    "v1.0.0-rc.1:b003": {
+      "block_sha256": "9f46561188937f01a30e03491f4d1efc8512b5129b806c228b67acc96eecc360",
+      "release_sha256": "6134f07a73ba7c4087ead94f8d3b91324c421cfe3c849eab3dce0e26a907fb9b",
+      "status": "approved",
+      "reason": "按本次真实生产与网页实现核对用户可见增量，保留鉴权、变体和容量边界；HomeKit刷新列为问题修复，不冒充新功能。",
+      "change_refs": [
+        "v1-daikin-hub-self-device@1.0.0-rc.1"
+      ],
+      "basis": [
+        "v1.0.0-rc.1:b003"
+      ]
+    },
+    "v1.0.0-rc.1:b004": {
+      "block_sha256": "6097394cf9343c6c89fdd7726a8f3d6cb7104e058a9562b413cbdd60736ab4f6",
+      "release_sha256": "6134f07a73ba7c4087ead94f8d3b91324c421cfe3c849eab3dce0e26a907fb9b",
+      "status": "excluded",
+      "reason": "候选版本范围、分组标题或文档下载导航，不单独作为固件功能变更。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.1:b004"
+      ]
+    },
+    "v1.0.0-rc.1:b005": {
+      "block_sha256": "e00a896018acf27b550e0358ba272673e93fc5f52657b7b050d1738db728467a",
+      "release_sha256": "6134f07a73ba7c4087ead94f8d3b91324c421cfe3c849eab3dce0e26a907fb9b",
+      "status": "approved",
+      "reason": "按本次真实生产与网页实现核对用户可见增量，保留鉴权、变体和容量边界；HomeKit刷新列为问题修复，不冒充新功能。",
+      "change_refs": [
+        "v1-daikin-hub-optional-web-password@1.0.0-rc.1"
+      ],
+      "basis": [
+        "v1.0.0-rc.1:b005"
+      ]
+    },
+    "v1.0.0-rc.1:b006": {
+      "block_sha256": "1ef66403d34a2883dbb92b66d254ba679823ea0795f2f0dcc8c2e6714a699ca9",
+      "release_sha256": "6134f07a73ba7c4087ead94f8d3b91324c421cfe3c849eab3dce0e26a907fb9b",
+      "status": "approved",
+      "reason": "按本次真实生产与网页实现核对用户可见增量，保留鉴权、变体和容量边界；HomeKit刷新列为问题修复，不冒充新功能。",
+      "change_refs": [
+        "v1-daikin-conversion-optional-web-password@1.0.0-rc.1"
+      ],
+      "basis": [
+        "v1.0.0-rc.1:b006"
+      ]
+    },
+    "v1.0.0-rc.1:b007": {
+      "block_sha256": "fb3de5420ac9c662d33030733fcde8da36df7a700061aec2ff2b1a9f76c10294",
+      "release_sha256": "6134f07a73ba7c4087ead94f8d3b91324c421cfe3c849eab3dce0e26a907fb9b",
+      "status": "excluded",
+      "reason": "候选版本范围、分组标题或文档下载导航，不单独作为固件功能变更。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.1:b007"
+      ]
+    },
+    "v1.0.0-rc.1:b008": {
+      "block_sha256": "3cd579541c2ce423d09fee165b973a276ba15b96c4c08943851b6d722bf2b907",
+      "release_sha256": "6134f07a73ba7c4087ead94f8d3b91324c421cfe3c849eab3dce0e26a907fb9b",
+      "status": "approved",
+      "reason": "按本次真实生产与网页实现核对用户可见增量，保留鉴权、变体和容量边界；HomeKit刷新列为问题修复，不冒充新功能。",
+      "change_refs": [
+        "v1-daikin-homekit-status-refresh@1.0.0-rc.1"
+      ],
+      "basis": [
+        "v1.0.0-rc.1:b008"
+      ]
+    },
+    "v1.0.0-rc.1:b009": {
+      "block_sha256": "2f970d4e304f1d552b33c1cb9143b4020d976971568a7da8358249d39df5af1e",
+      "release_sha256": "6134f07a73ba7c4087ead94f8d3b91324c421cfe3c849eab3dce0e26a907fb9b",
+      "status": "excluded",
+      "reason": "候选版本范围、分组标题或文档下载导航，不单独作为固件功能变更。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.1:b009"
+      ]
     }
   }
 }

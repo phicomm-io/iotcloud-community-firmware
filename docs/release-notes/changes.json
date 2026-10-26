@@ -7198,6 +7198,252 @@
         "reviewed_content_sha256": "d80412601f9dce2a1e03e46b665053bf9670e352ce6f618176640251eacbf4f5",
         "reason": "两种蜂鸣开关分开默认关、配置状态读回和旧MCU能力限制准确，不等于物理发声验收。 bundled_web；仅M1 full，buzzer_supported限制蜂鸣开关。"
       }
+    },
+    {
+      "change_id": "v1-daikin-hub-self-device",
+      "version": "1.0.0-rc.1",
+      "type": "improvement",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "daikin"
+        ],
+        "variants": [
+          "hub"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "中枢本机自动显示在设备列表",
+        "en": "Show the hub itself in the device list"
+      },
+      "description": {
+        "zh-CN": "中枢自动出现在自己的设备列表，可查看本机传感器并进入设备设置。本机项不占用 12 个外部设备名额，不能被当作外部设备删除或重复注册。",
+        "en": "The hub automatically appears in its own device list, where its local sensors and device settings are accessible. The self entry does not consume any of the 12 external-device slots and cannot be removed or registered again as an external device."
+      },
+      "ota_summary": {
+        "zh-CN": "中枢自动出现在自己的设备列表，可查看本机传感器并进入设备设置。本机项不占用 12 个外部设备名额，不能被当作外部设备删除或重复注册。",
+        "en": "The hub automatically appears in its own device list, where its local sensors and device settings are accessible. The self entry does not consume any of the 12 external-device slots and cannot be removed or registered again as an external device."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc.1:b003"
+      ],
+      "evidence": {
+        "firmware_review_commit": "827d89be0e0256f4ba6b8d8eb4cffaa4ca646095",
+        "frontend_review_commit": "d9d900ea7f5c9c0e000de9734d44d4fd271c39b8",
+        "source_paths": [
+          "DAIKIN/include/hub_service.h",
+          "DAIKIN/src/hub.inc",
+          "DAIKIN/tests/hub/service.cpp",
+          "frontend/src/App.vue",
+          "frontend/tests/hub-webui-entry.mjs"
+        ]
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root/ci_release",
+        "reviewed_utc": "2026-10-26T08:55:58.227834+00:00",
+        "reason": "Author reviewed both languages against the specified source paths; scope and authentication/variant boundaries agree. Independent review is not claimed.",
+        "reviewed_content_sha256": "ea6041cb6af28372d9c8a91381b120ed1604b727f8d1c4a5954c014a790663ee"
+      }
+    },
+    {
+      "change_id": "v1-daikin-hub-optional-web-password",
+      "version": "1.0.0-rc.1",
+      "type": "improvement",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "daikin"
+        ],
+        "variants": [
+          "hub"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "中枢管理不再强制先设网页密码",
+        "en": "Make the device web password optional for hub setup"
+      },
+      "description": {
+        "zh-CN": "首次设置中枢及打开本地管理时，不再要求预先设置设备网页密码。已设置网页密码时仍需正确鉴权，中枢本地账户的登录密码保持独立。",
+        "en": "Initial hub setup and local management no longer require a device web password to be configured first. An existing web password must still be authenticated, and the local hub account keeps its separate login password."
+      },
+      "ota_summary": {
+        "zh-CN": "首次设置中枢及打开本地管理时，不再要求预先设置设备网页密码。已设置网页密码时仍需正确鉴权，中枢本地账户的登录密码保持独立。",
+        "en": "Initial hub setup and local management no longer require a device web password to be configured first. An existing web password must still be authenticated, and the local hub account keeps its separate login password."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc.1:b005"
+      ],
+      "evidence": {
+        "firmware_review_commit": "827d89be0e0256f4ba6b8d8eb4cffaa4ca646095",
+        "frontend_review_commit": "d9d900ea7f5c9c0e000de9734d44d4fd271c39b8",
+        "source_paths": [
+          "DAIKIN/src/http.inc",
+          "DAIKIN/tests/hub/service.cpp",
+          "frontend/src/components/HubSetup.vue",
+          "frontend/tests/hub-webui-entry.mjs"
+        ]
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root/ci_release",
+        "reviewed_utc": "2026-10-26T08:52:34.533356+00:00",
+        "reason": "Author reviewed both languages against the specified source paths; scope and authentication/variant boundaries agree. Independent review is not claimed.",
+        "reviewed_content_sha256": "e01c6e4682029137efe050e74179de13f1135932a2e06c3d6fd01c834010492c"
+      }
+    },
+    {
+      "change_id": "v1-daikin-conversion-optional-web-password",
+      "version": "1.0.0-rc.1",
+      "type": "improvement",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "daikin"
+        ],
+        "variants": [
+          "full"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "普通版切换中枢无需预先设置网页密码",
+        "en": "Allow full-to-hub conversion without first setting a web password"
+      },
+      "description": {
+        "zh-CN": "声明转换能力的新版 full，可在局域网网页选择匹配的 hub 签名包并明确确认切换，无需先设置网页密码；已有密码时仍需鉴权。机型、签名和实际 OTA 容量检查继续有效，联网配置保留，普通 OTA 继续隔离变体且不支持直接 hub → full OTA。",
+        "en": "A new full image advertising conversion support can switch through its LAN web page using a matching signed hub image and explicit confirmation, without first setting a web password. An existing password still requires authentication. Model, signature and installed OTA-slot checks remain in force, network settings are retained, ordinary updates remain variant-isolated, and direct hub-to-full OTA is unsupported."
+      },
+      "ota_summary": {
+        "zh-CN": "声明转换能力的新版 full，可在局域网网页选择匹配的 hub 签名包并明确确认切换，无需先设置网页密码；已有密码时仍需鉴权。机型、签名和实际 OTA 容量检查继续有效，联网配置保留，普通 OTA 继续隔离变体且不支持直接 hub → full OTA。",
+        "en": "A new full image advertising conversion support can switch through its LAN web page using a matching signed hub image and explicit confirmation, without first setting a web password. An existing password still requires authentication. Model, signature and installed OTA-slot checks remain in force, network settings are retained, ordinary updates remain variant-isolated, and direct hub-to-full OTA is unsupported."
+      },
+      "summary_complete": true,
+      "critical": true,
+      "source_refs": [
+        "v1.0.0-rc.1:b006"
+      ],
+      "evidence": {
+        "firmware_review_commit": "827d89be0e0256f4ba6b8d8eb4cffaa4ca646095",
+        "frontend_review_commit": "d9d900ea7f5c9c0e000de9734d44d4fd271c39b8",
+        "source_paths": [
+          "DAIKIN/src/http.inc",
+          "DAIKIN/tests/test_ota_identity.py",
+          "common/web/ui.js",
+          "frontend/src/deviceConnection.js",
+          "tests/test_ota_conversion.cjs",
+          "frontend/tests/ota-conversion.mjs"
+        ]
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root/ci_release",
+        "reviewed_utc": "2026-10-26T08:52:34.533356+00:00",
+        "reason": "Author reviewed both languages against the specified source paths; scope and authentication/variant boundaries agree. Independent review is not claimed.",
+        "reviewed_content_sha256": "41e7eee1818d0614fa70a452e2ec16293137d950baf4053a0cd064bfeccede5f"
+      }
+    },
+    {
+      "change_id": "v1-daikin-homekit-status-refresh",
+      "version": "1.0.0-rc.1",
+      "type": "bugfix",
+      "component": "bundled_web",
+      "scope": {
+        "models": [
+          "daikin"
+        ],
+        "variants": [
+          "hub"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "HomeKit 设置后继续刷新真实状态",
+        "en": "Refresh HomeKit status after settings changes"
+      },
+      "description": {
+        "zh-CN": "调整 HomeKit 开关或重置配对后，网页在等待重启期间继续检查状态，服务恢复后显示当前状态，会话失效时提示重新登录。等待期间不重复提交开关或重置请求，也不显示过期配对码。",
+        "en": "After changing the HomeKit switch or resetting pairing, the page continues checking status while the hub restarts, shows the current state when the service returns, and prompts for sign-in if the session expires. It does not replay the change or reset request, or display stale pairing codes while waiting."
+      },
+      "ota_summary": {
+        "zh-CN": "调整 HomeKit 开关或重置配对后，网页在等待重启期间继续检查状态，服务恢复后显示当前状态，会话失效时提示重新登录。等待期间不重复提交开关或重置请求，也不显示过期配对码。",
+        "en": "After changing the HomeKit switch or resetting pairing, the page continues checking status while the hub restarts, shows the current state when the service returns, and prompts for sign-in if the session expires. It does not replay the change or reset request, or display stale pairing codes while waiting."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc.1:b008"
+      ],
+      "evidence": {
+        "firmware_review_commit": "827d89be0e0256f4ba6b8d8eb4cffaa4ca646095",
+        "frontend_review_commit": "d9d900ea7f5c9c0e000de9734d44d4fd271c39b8",
+        "source_paths": [
+          "frontend/src/components/HubHome.vue",
+          "frontend/src/views/LoginPage.vue",
+          "frontend/tests/hub-home.mjs"
+        ]
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root/ci_release",
+        "reviewed_utc": "2026-10-26T08:52:34.533356+00:00",
+        "reason": "Author reviewed both languages against the specified source paths; scope and authentication/variant boundaries agree. Independent review is not claimed.",
+        "reviewed_content_sha256": "011be62bee01206d4781edc43a82813f01c81943ab99227128c4dca1ab4bc0d3"
+      }
     }
   ],
   "merges": []

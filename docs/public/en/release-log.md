@@ -2,6 +2,25 @@
 
 English translation of the published release history. Historical validation statements apply to the release named in each section, not to later firmware. Release notes are authored in the Wiki and frozen into the source repository before tagging.
 
+## v1.0.0-rc.1
+
+The second v1.0.0 release candidate retains the features of the published v1.0.0-rc. This section lists the new DAIKIN hub and web-entry changes. Support for the hub’s own sensors in HomeKit is retained from the published RC.
+
+### DAIKIN hub device list
+
+- The hub automatically appears in its own device list, where its local sensors and device settings are accessible. The self entry does not consume any of the 12 external-device slots and cannot be removed or registered again as an external device.
+
+### Local management and variant conversion
+
+- Initial hub setup and local management no longer require a device web password to be configured first. An existing web password must still be authenticated, and the local hub account keeps its separate login password.
+- A new full image advertising conversion support can switch through its LAN web page using a matching signed hub image and explicit confirmation, without first setting a web password. An existing password still requires authentication. Model, signature and installed OTA-slot checks remain in force, network settings are retained, ordinary updates remain variant-isolated, and direct hub-to-full OTA is unsupported.
+
+### HomeKit status display
+
+- After changing the HomeKit switch or resetting pairing, the page continues checking status while the hub restarts, shows the current state when the service returns, and prompts for sign-in if the session expires. It does not replay the change or reset request, or display stale pairing codes while waiting.
+
+[Features since 0.9.27, device guides and downloads](https://phicomm-io.github.io/). Candidates and stable releases are shown separately. This section does not replace the complete notes for the published v1.0.0-rc.
+
 ## v1.0.0-rc
 
 The v1.0.0 release candidate includes companion updates for device firmware, the M1 sensor MCU, WebUI and cloud platform.
