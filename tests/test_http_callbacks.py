@@ -208,6 +208,8 @@ int main(int argc,char**argv){
  m1_state.mcu_updating=true;assert(start("POST","/api/v1/mcu/ota",164)==PH_HTTP_REPLY&&x.response.status==409);finish(false);m1_state.mcu_updating=false;
  assert(start("POST","/api/v1/mcu/ota",164)==PH_HTTP_READ_BODY);assert(app.body(&x,image,3));finish(false);assert(mcu_calls==calls_before);
  image[0]=1;assert(start("POST","/api/v1/mcu/ota",164)==PH_HTTP_READ_BODY);assert(app.body(&x,image,164));app.complete(&x);assert(x.response.status==409&&mcu_calls==calls_before);finish(true);image[0]=0;
+ uint32_t bad_pc=0xffffffffu;memcpy(image+4,&bad_pc,4);
+ assert(start("POST","/api/v1/mcu/ota",164)==PH_HTTP_READ_BODY);assert(app.body(&x,image,164));app.complete(&x);assert(x.response.status==409&&mcu_calls==calls_before);finish(true);memcpy(image+4,&pc,4);
  assert(start("POST","/api/v1/mcu/ota",164)==PH_HTTP_READ_BODY);assert(app.body(&x,image,1)&&app.body(&x,image+1,163));app.complete(&x);assert(x.response.status==202&&mcu_commits==1&&mcu_received==164);finish(true);
  mcu_fail=true;assert(start("POST","/api/v1/mcu/ota",164)==PH_HTTP_READ_BODY);assert(app.body(&x,image,164));app.complete(&x);assert(x.response.status==409&&mcu_commits==1&&!m1_state.mcu_updating);finish(true);mcu_fail=false;
 
