@@ -11,7 +11,7 @@ page footers.
 GROUPS = [
     ('m1', 'M1 空气检测仪', [
         ('m1-guide', 'M1 功能与操作', '读数、屏幕亮度、指示灯与恢复', 'M1-功能与操作'),
-        ('m1-no-disassembly', 'M1 免拆安装', '原厂局域网 OTA、镜像选择与首次配网', 'M1-免拆刷机'),
+        ('m1-no-disassembly', 'M1 免拆安装', '局域网上传、单设备 DNS 迁移与首次配网', 'M1-免拆刷机'),
         ('a1-m1-flash', 'A1 / M1 有线安装与恢复', '共用教程：模组飞线、工厂测试点与串口刷机', 'A1-M1-刷机'),
         ('stock-provision', '原厂固件配网（免 App）', 'A1 EasyLink 与 M1 热点配网，按系统显示命令', 'A1-M1-原厂配网'),
         ('m1-mcu-update', 'M1 传感器主控升级', 'Wi-Fi 最低版本、脚本升级与版本确认', 'M1-主控网络升级'),
@@ -92,7 +92,7 @@ EN_TITLES = {
  'daikin-stock-ota': ('Daikin stock OTA migration', 'BRY88AB151K button gesture, sender and verified first boot'),
  'stock-provision': ('Stock Wi-Fi setup without the app', 'A1 EasyLink and M1 hotspot setup on Windows, macOS and Linux'),
  'a1-no-disassembly': ('A1 no-disassembly compatibility', 'Stock-version limits, connection checks and wired installation'),
- 'm1-no-disassembly': ('M1 installation without disassembly', 'Factory LAN OTA, image selection and first Wi-Fi setup'),
+ 'm1-no-disassembly': ('M1 installation without disassembly', 'LAN upload, per-device DNS migration and first Wi-Fi setup'),
  'quick-start': ('Quick start', 'Devices, Wi-Fi setup and local access'),
  'flash-prep': ('Before flashing', 'Power, backups and image selection'),
  'firmware-update': ('Firmware updates', 'OTA sources, packages and recovery'),

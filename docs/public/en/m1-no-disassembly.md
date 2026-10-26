@@ -1,10 +1,10 @@
-# M1 installation without disassembly: LAN upload
+# M1 installation without disassembly: LAN upload and DNS migration
 
 M1 can join your router through its factory hotspot, then accept community firmware from a computer without the original app. This procedure updates the Wi-Fi module and keeps the original main MCU program.
 
 **The first migration from factory firmware must use 0.9.21 or newer.** Choose the **full M1 native OTA image, `phicomm_m1.ota.bin.raw`**. Older versions can repeatedly restart during first boot; do not install an old version as a stepping stone. This guide pins downloads to 0.9.21.
 
-This guide covers factory LAN OTA for the M1 Wi-Fi module. After installation, confirm the version, web access and sensors in step 5. Use the separate installation guide for an A1 purifier.
+This guide covers factory LAN uploads and self-hosted DNS migration for the M1 Wi-Fi module. After installation, confirm the version, web access and sensors in step 5. Use the separate installation guide for an A1 purifier.
 
 Select your computer system to show the matching commands. Replace example device IPs with the address in your router's client list.
 
@@ -12,7 +12,7 @@ Select your computer system to show the matching commands. Replace example devic
 
 ## 1. Prepare the local network
 
-Connect the computer to the same router as M1 over Ethernet or Wi-Fi, with client isolation disabled. No public device ports are needed. There is no verified public DNS migration service; use the LAN method below.
+Connect the computer to the same router as M1 over Ethernet or Wi-Fi, with client isolation disabled. No public device ports are needed. For stalled uploads, see the self-hosted DNS migration in section 6. There is no public migration DNS address to enter directly.
 
 ## 2. Connect the factory M1
 
@@ -142,13 +142,128 @@ curl --noproxy '*' --connect-timeout 3 --max-time 5 "http://${DeviceIp}/api/v1/s
 
 A community hotspot establishes that the new system offers setup. Confirm the version, web access and updating sensors before calling migration successful. For later community upgrades, use signed packages as described in [firmware updates](firmware-update).
 
-## 6. Troubleshooting
+## 6. DNS migration: let the stock M1 download the image
+
+Use this alternative if LAN uploads stall. On 2026-10-26, one M1 with stock Wi-Fi `14.2.4.1` and controller `11.1.2.1` successfully migrated to full build `1.0.0-39a5b0`. Complete download, community hotspot, web access, Wi-Fi setup, automatic reconnection after a software reboot and updating sensor readings were verified. A physical cold boot was not tested. This 1.0.0 build identifier does not imply a formal Release exists or that every stock revision has been validated.
+
+Uploads to `:8000/OTA` from two computers stalled after the first few KB; the device-initiated download completed. The upload fault remains unexplained. HTTP 000 or a slowly blinking Wi-Fi icon does not establish success. Do not repeatedly upload.
+
+### What you need
+
+- A stock M1 connected and identified using sections 2–3. Reserve its DHCP address on the router so it stays unchanged during migration.
+- An OpenWrt / ImmortalWrt router with SSH access, `dnsmasq` and `nft`, on the same LAN as M1 and the computer.
+- A Linux computer with Python 3 and `openssl`, kept running throughout. Run the server and router commands in Linux / router shells. Windows and macOS users can use a Linux host on the same LAN.
+- A **full native M1 OTA image** with a verified SHA-256, selected as in section 4. Do not use `.all.bin`, `.signed` or a controller image. Native source-build output may be named `phicomm_m1.ota.bin`, while the published download may end in `.ota.bin.raw`; validate its contents rather than converting by renaming.
+- Download the [migration server script](assets/tools/m1-dns-migration/m1_dns_migration.py) and [SHA256SUMS](assets/tools/m1-dns-migration/SHA256SUMS). Run `sha256sum -c SHA256SUMS` in their directory.
+
+Examples use router `192.168.1.1`, computer `192.168.1.10`, M1 `192.168.1.123` and M1 MAC `00:11:22:33:44:55`. **Replace every example with your own values.** Computer ports `29080`, `29443`, `29000` and router port `5533` must be free. Allow the device and router to reach those computer ports through any firewall.
+
+### Step 1: start the temporary server on the computer
+
+Place the script and image in one directory. Set `--sha256` to this image's value from a trusted checksum manifest:
+
+```sh
+python3 m1_dns_migration.py \
+  --image ./phicomm_m1.ota.bin.raw \
+  --sha256 'REPLACE_WITH_64_HEX_SHA256_FROM_TRUSTED_MANIFEST' \
+  --mac 00:11:22:33:44:55 \
+  --device-ip 192.168.1.123 \
+  --router-ip 192.168.1.1 \
+  --server-ip 192.168.1.10
+```
+
+Keep the window open after `"kind": "ready"`. The script validates SHA-256, native M1 product identity, length, CRC and trailing MD5 before serving. It stores its certificate and private key in `m1-migration-state/`. Activation and update responses are restricted to the selected MAC; **no `mainSoftware` update is returned**. Activation uses the MAC as a temporary device ID, not an original account binding or restored factory cloud service.
+
+The temporary HTTPS endpoint supports older factory clients and generates a self-signed certificate valid for two days. Use it only on your own LAN, stop it after migration and do not expose it to the Internet.
+
+### Step 2: route only this M1's DNS requests on the router
+
+SSH into the router and run these commands in the same shell. They leave `/etc/hosts`, global DNS and DHCP settings unchanged. A separate resolver handles only the selected M1's redirected DNS requests.
+
+```sh
+RouterIp=192.168.1.1
+ServerIp=192.168.1.10
+DeviceIp=192.168.1.123
+mkdir -p /tmp/m1-dns-migration
+cp /etc/hosts /tmp/m1-dns-migration/hosts.before
+uci export dhcp > /tmp/m1-dns-migration/dhcp.before
+nft list ruleset > /tmp/m1-dns-migration/nft.before
+
+dnsmasq --conf-file=/dev/null --no-hosts \
+  --port=5533 --listen-address="$RouterIp" --bind-interfaces \
+  --no-resolv --server=127.0.0.1#53 \
+  --host-record="aircat.phicomm.com,$RouterIp" \
+  --host-record="phiclouds.phicomm.com,$RouterIp" \
+  --pid-file=/tmp/m1-dns-migration/dns.pid \
+  --log-queries --log-facility=/tmp/m1-dns-migration/dns.log
+
+cat > /tmp/m1-dns-migration/rules.nft <<EOF_RULES
+table ip m1_dns_migration {
+ chain prerouting {
+  type nat hook prerouting priority -110; policy accept;
+  ip saddr $DeviceIp udp dport 53 counter redirect to :5533
+  ip saddr $DeviceIp tcp dport 53 counter redirect to :5533
+  ip saddr $DeviceIp ip daddr $RouterIp tcp dport 443 counter dnat to $ServerIp:29443
+  ip saddr $DeviceIp ip daddr $RouterIp tcp dport 9000 counter dnat to $ServerIp:29000
+ }
+ chain postrouting {
+  type nat hook postrouting priority 101; policy accept;
+  ip saddr $DeviceIp ip daddr $ServerIp tcp dport { 29443, 29000 } counter snat to $RouterIp
+ }
+}
+EOF_RULES
+nft -c -f /tmp/m1-dns-migration/rules.nft && nft -f /tmp/m1-dns-migration/rules.nft
+```
+
+The rules use a dedicated table. If it already exists, clean up the previous session using step 5 before restarting. Other domains continue through the router's normal resolver. Port 9000 only receives factory status reports; the script sends no control commands.
+
+Adding two global `/etc/hosts` entries can affect other devices and still does not provide HTTPS compatibility, an update manifest or firmware downloads. The per-device rules above connect the complete migration path.
+
+### Step 3: reboot M1 and observe its own requests
+
+Confirm the server is ready and no upload or flash operation is active, then disconnect M1 power for about 10 seconds and reconnect. Keep power and networking stable. Watch the computer output and the router log:
+
+```sh
+tail -f /tmp/m1-dns-migration/dns.log
+```
+
+Expected computer events are:
+
+1. `tls` and `/device/active?mac=…&productId=1`: the stock device reaches the compatible service.
+2. `/firmware/checkUpdate?...wifiSoftwareVer=...&mainSoftwareVer=...`: the device checks for updates. Its original controller must return its version.
+3. `/m1-native.bin?deviceMAC` and `download_complete`: the complete image was sent. Query strings and Range requests are supported.
+4. `wifiSoftware.ifSuccess: true` inside `cloud_tcp`: the stock application reports update success. This does not prove community firmware has booted.
+
+Manifest version `14.2.4.2` is only a comparison value that makes the tested stock `14.2.4.1` recognize an update; **it is not the community image version**. Verify the actual installed version after boot. If requests are absent, check connectivity, DNS-rule counters, server ports and the controller, rather than repeatedly rebooting or forcing different files.
+
+### Step 4: verify community firmware and set up Wi-Fi
+
+Wait a few minutes, scan for `M1-AP-XXXXXX` and follow section 5 to open `192.168.0.1` and configure 2.4 GHz Wi-Fi. Find the new DHCP address. Check `/api/v1/status` for the full `device_id`, actual `version`, `wifi_connected`, `sensor_valid` and increasing `rx_frames`. Verify the web page and automatic reconnection with retained settings after a software reboot.
+
+A complete download or factory success report alone is insufficient. Keep power connected and check the hotspot, leases and version before sending anything again.
+
+### Step 5: restore routing and stop the temporary service
+
+After migration is verified, or after the test has stopped with no transfer / flash operation remaining, run on the router:
+
+```sh
+nft delete table ip m1_dns_migration
+kill "$(cat /tmp/m1-dns-migration/dns.pid)"
+cmp /etc/hosts /tmp/m1-dns-migration/hosts.before
+uci export dhcp > /tmp/m1-dns-migration/dhcp.after
+cmp /tmp/m1-dns-migration/dhcp.before /tmp/m1-dns-migration/dhcp.after
+```
+
+No output from the two `cmp` commands confirms these original configurations did not change. Keep the logs; do not overwrite the entire router configuration with old snapshots. Press `Ctrl+C` in the computer's server window. You may then remove its temporary certificate directory. Future updates use community signed OTA and do not need this service. The M1 hardware result does not establish A1 compatibility.
+
+## 7. Troubleshooting
 
 | Symptom | Action |
 | --- | --- |
 | Empty reply / HTTP 000 | Check whether upload completed, keep power connected and check the community hotspot and version before retrying |
 | Neither the old IP nor expected hotspot works | The community name is `M1-AP-XXXXXX`; check router leases and scan results rather than only the old IP |
 | Community hotspot exists, old IP fails | Join the hotspot and set up Wi-Fi at `192.168.0.1` |
+| Upload stalls after a few KB | Let the request finish; after stock access is restored, use device-initiated downloading in section 6 instead of repeated uploads |
 | Blinking icon with a DHCP lease | Verify HTTP access; the icon may reflect the factory cloud connection |
 | No web access, hotspot or client record after waiting | Keep image hashes and upload output, stop repeated writes and read boot logs using the [serial / J-Link recovery guide](a1-m1-flash) |
 
