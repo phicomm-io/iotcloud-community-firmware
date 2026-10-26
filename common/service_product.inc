@@ -80,6 +80,7 @@ static const char *const svc_capability_actions[]={"schedules.get","schedules.pu
 #else
     "sensor_details.get","display.set","buzzer.set","mcu.version.get","mcu.version.query","alarm.get","alarm.set","co2_display.get","co2_display.set","co2_source.get","co2_source.set",
     "display_source.get","display_source.set","display_data.set",
+    "display_profile.get","display_profile.set","display_value.set",
     "wake_alarm.get","wake_alarm.start","wake_alarm.stop",
     "music.get","music.begin","music.chunk","music.commit","music.read","music.play","music.stop","music.cancel",
 #endif
@@ -205,6 +206,7 @@ static __attribute__((noinline)) json_object *service_product_inner(const char *
     }
     if(!strcmp(action,"co2_source.get")){if(!svc_keys(p,""))return NULL;*code="ok";return m1_co2_source_json();}
     if(!strcmp(action,"display_source.get")){if(!svc_keys(p,""))return NULL;*code="ok";return m1_display_source_json();}
+    if(!strcmp(action,"display_profile.get")){if(!svc_keys(p,""))return NULL;*code="ok";return m1_display_profile_json();}
     if(!strcmp(action,"alarm.get")) {
         if(!svc_keys(p,""))return NULL;*code="ok";return m1_alarm_json();
     }
@@ -246,6 +248,8 @@ static __attribute__((noinline)) json_object *service_product_inner(const char *
     if(!strcmp(action,"co2_source.set"))return m1_co2_source_set(p,code);
     if(!strcmp(action,"display_source.set"))return m1_display_source_set(p,code);
     if(!strcmp(action,"display_data.set"))return m1_display_data_set(p,code);
+    if(!strcmp(action,"display_profile.set"))return m1_display_profile_set(p,code);
+    if(!strcmp(action,"display_value.set"))return m1_display_value_set(p,code);
     if(!strcmp(action,"alarm.set")) {
         char sensor[8];int low,high,revision;
         json_object *buzzer=json_object_object_get(p,"buzzer_enabled");

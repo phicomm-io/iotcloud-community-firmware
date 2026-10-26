@@ -108,7 +108,7 @@ void m1_display_switch_get(m1_display_switch_config_t *out)
     mico_rtos_lock_mutex(&config_lock);
     const m1_display_config_t *c=&((app_storage_t *)app_config)->display;
     *out=(m1_display_switch_config_t){.revision=c->revision,.configured=c->configured,
-        .selected=c->selected,.double_click=c->double_click};
+        .selected=c->selected,.double_click=c->double_click,.formatted=c->reserved==M1_DISPLAY_FORMATTED};
     for(unsigned i=0;i<M1_DISPLAY_LANES;i++)if(c->lanes[i].source!=M1_DISPLAY_NONE)out->present=true;
     mico_rtos_unlock_mutex(&config_lock);
 }
@@ -149,12 +149,29 @@ const char *m1_display_data_save(unsigned slot,uint32_t revision,float value,uns
     bool busy=m1_state.ota_active||m1_state.mcu_updating||m1_state.reboot_pending||m1_state.wifi_trial_active;
     mico_rtos_unlock_mutex(&m1_lock);
     if(busy || config_recovery || c->revision!=revision)code="busy";
-    else if(c->configured && l->source==M1_DISPLAY_API && l->unit==unit && ttl<=l->ttl_seconds &&
+    else if(c->configured && !c->reserved && l->source==M1_DISPLAY_API && l->unit==unit && ttl<=l->ttl_seconds &&
             (!ttl || m1_display_metric_value_valid(l->metric,value))){
         m1_display_value_t encoded;
         if(!ttl || m1_display_encode_value(l,slot,value,ttl,color<0?l->color:color,&encoded)){
             m1_display_data_store(slot,revision,value,ttl,color);code="accepted";
         }
+    }
+    mico_rtos_unlock_mutex(&config_lock);return code;
+}
+const char *m1_display_frame_save(unsigned slot,uint32_t revision,unsigned number,unsigned format,unsigned lamps,unsigned ttl)
+{
+    if(slot>=M1_DISPLAY_LANES || number>999 || format>7 || (slot==1 && (format&1u)) ||
+       lamps>M1_DISPLAY_LAMPS_MAX || ttl>60 || (!ttl && (number || format || lamps)))return "invalid_params";
+    mico_rtos_lock_mutex(&config_lock);
+    const m1_display_config_t *c=&((app_storage_t *)app_config)->display;
+    const m1_display_lane_config_t *l=&c->lanes[slot];
+    const char *code="invalid_params";
+    mico_rtos_lock_mutex(&m1_lock);
+    bool busy=m1_state.ota_active||m1_state.mcu_updating||m1_state.reboot_pending||m1_state.wifi_trial_active;
+    mico_rtos_unlock_mutex(&m1_lock);
+    if(busy || config_recovery || c->revision!=revision)code="busy";
+    else if(c->configured && c->reserved==M1_DISPLAY_FORMATTED && l->source==M1_DISPLAY_API && ttl<=l->ttl_seconds){
+        m1_display_frame_store(slot,revision,number,format,lamps,ttl);code="accepted";
     }
     mico_rtos_unlock_mutex(&config_lock);return code;
 }
@@ -331,6 +348,7 @@ int application_start(void)
      * Reset only foreign application data; preserve the SDK network settings. */
     if (app_config->magic != M1_CONFIG_MAGIC || app_config->version < 1 || app_config->version > M1_CONFIG_VERSION ||
         (app_config->version >= 8 && !m1_co2_source_config_valid(&((app_storage_t *)app_config)->co2_source)) ||
+        (app_config->version == 9 && !m1_display_v9_valid(&((app_storage_t *)app_config)->display)) ||
         (app_config->version == M1_CONFIG_VERSION && !m1_display_config_valid(&((app_storage_t *)app_config)->display))) {
         config_recovery=true;
         memset(app_config,0,sizeof(app_storage_t));
@@ -342,6 +360,7 @@ int application_start(void)
     bool co2_migration = app_config->version < 7;
     bool source_migration = app_config->version < 8;
     bool display_migration = app_config->version < 9;
+    bool presentation_migration = app_config->version == 9;
     if (app_config->magic == M1_CONFIG_MAGIC &&
         (app_config->version == 1 || app_config->version == 2)) {
         m1_storage_v2_t *old = malloc(sizeof(*old));
@@ -396,6 +415,12 @@ int application_start(void)
         /* A v8 installation keeps its CO2 profile and behavior. The new dual
          * profile becomes active only after an explicit full configuration. */
         m1_display_defaults(&((app_storage_t *)app_config)->display);
+        app_config->version=M1_CONFIG_VERSION;migration_changed=true;
+    }
+    if(presentation_migration){
+        /* A v9 dual/legacy profile retains its exact source lanes and active
+         * behavior. New presentation options require an explicit v3 save. */
+        m1_display_upgrade_v9(&((app_storage_t *)app_config)->display);
         app_config->version=M1_CONFIG_VERSION;migration_changed=true;
     }
     /* Normalize the retained ABI byte without changing credentials or layout. */

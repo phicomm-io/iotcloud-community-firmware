@@ -71,7 +71,7 @@ int main(void) {
             probe.write_text(harness)
             command = [os.environ.get('CC', 'cc'), '-std=c99', '-Wall', '-Wextra', '-Werror',
                        '-I'+str(ROOT), '-I'+str(ROOT/'tests/host'), '-I'+str(ROOT/'M1'),
-                       '-I'+str(ROOT/'build/m1-sdk/mico-os/libraries/utilities/json_c'), str(probe), '-o', str(binary)]
+                       '-I'+str(Path(os.environ.get('PHICOMM_TEST_JSON_DIR', ROOT/'build/m1-sdk/mico-os/libraries/utilities/json_c'))), str(probe), '-o', str(binary)]
             if os.environ.get('SANITIZE') == '1':
                 command += ['-g', '-fno-omit-frame-pointer', '-fsanitize=address,undefined']
             subprocess.run(command, check=True)

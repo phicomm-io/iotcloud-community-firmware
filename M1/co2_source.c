@@ -2,6 +2,11 @@
 #include "../common/json_build.h"
 #include <math.h>
 
+static bool source_is_type(json_object *o,enum json_type type)
+{return o && json_object_is_type(o,type);}
+static json_object *source_get(json_object *o,const char *key)
+{return source_is_type(o,json_type_object)?json_object_object_get(o,key):NULL;}
+
 static feature_sample_t remote;
 static uint32_t remote_revision, retired_boot[4];
 
@@ -54,17 +59,19 @@ json_object *m1_co2_source_json(void)
 }
 json_object *m1_co2_source_set(json_object *p,const char **code)
 {
-    *code="invalid_params";if(!json_object_is_type(p,json_type_object))return NULL;
+    *code="invalid_params";if(!source_is_type(p,json_type_object))return NULL;
     const char *keys[]={"source","device_id","double_click","revision"};
     json_object_object_foreach(p,key,value){(void)value;bool known=false;for(unsigned i=0;i<4;i++)if(!strcmp(key,keys[i]))known=true;if(!known)return NULL;}
     for(unsigned i=0;i<3;i++){
-        json_object *v=json_object_object_get(p,keys[i]);
-        if(!json_object_is_type(v,json_type_string) || (size_t)json_object_get_string_len(v)!=strlen(json_object_get_string(v)))return NULL;
+        json_object *v=source_get(p,keys[i]);
+        if(!source_is_type(v,json_type_string) || (size_t)json_object_get_string_len(v)!=strlen(json_object_get_string(v)))return NULL;
     }
-    json_object *rev=json_object_object_get(p,"revision");if(!json_object_is_type(rev,json_type_int)||json_object_get_int64(rev)<0||json_object_get_int64(rev)>INT32_MAX)return NULL;
-    const char *source=json_object_get_string(json_object_object_get(p,"source")),*action=json_object_get_string(json_object_object_get(p,"double_click"));
-    const char *id=json_object_get_string(json_object_object_get(p,"device_id"));
-    if((strcmp(source,"local")&&strcmp(source,"mqtt"))||(strcmp(action,"none")&&strcmp(action,"switch_display"))||strlen(id)>12)return NULL;
+    json_object *rev=source_get(p,"revision");if(!source_is_type(rev,json_type_int)||json_object_get_int64(rev)<0||json_object_get_int64(rev)>INT32_MAX)return NULL;
+    const char *source=json_object_get_string(source_get(p,"source")),*action=json_object_get_string(source_get(p,"double_click"));
+    const char *id=json_object_get_string(source_get(p,"device_id"));
+    if((strcmp(source,"local")&&strcmp(source,"mqtt"))||(strcmp(action,"none")&&strcmp(action,"switch_display")))return NULL;
     m1_co2_source_config_t c={.magic=M1_CO2_SOURCE_MAGIC,.revision=json_object_get_int(rev),.external=!strcmp(source,"mqtt"),.double_click=!strcmp(action,"switch_display")};
-    strcpy(c.device_id,id);*code=m1_co2_source_config_save(&c);return !strcmp(*code,"accepted")?m1_co2_source_json():NULL;
+    if(c.external){if(!m1_display_device_id(id,c.device_id))return NULL;}
+    else if(*id)return NULL;
+    *code=m1_co2_source_config_save(&c);return !strcmp(*code,"accepted")?m1_co2_source_json():NULL;
 }

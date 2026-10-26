@@ -14,9 +14,9 @@ static bool backup_storage_valid(const app_storage_t *next) {
     const BACKUP_BASE *c=&next->base;
     bool version_valid=c->version==BACKUP_VERSION;
 #ifndef FEATURE_DEVICE_A1
-    /* Read only retained v8 fields until after validation. The new display
-     * profile overlaps v8's trailing padding and is initialized at commit. */
-    version_valid=version_valid || c->version==8;
+    /* Read only each legacy version's retained prefix before migration. The
+     * display starts inside v8 tail padding; presentation is absent in v9. */
+    version_valid=version_valid || c->version==8 || c->version==9;
 #endif
 #define BACKUP_TEXT(field) if(!ph_backup_text(c->field,sizeof(c->field)))return false
     BACKUP_TEXT(ssid);BACKUP_TEXT(wifi_password);BACKUP_TEXT(mqtt_host);BACKUP_TEXT(mqtt_user);
@@ -44,8 +44,9 @@ static bool backup_storage_valid(const app_storage_t *next) {
 #else
     if(next->co2.magic!=M1_CO2_MAGIC || next->co2.mode>2 || next->co2.slot>1 || !next->co2.interval || next->co2.interval>3600 || next->co2.low>next->co2.high)return false;
     if(!m1_co2_source_config_valid(&next->co2_source) || (next->co2_source.external&&!strcmp(next->co2_source.device_id,m1_id)))return false;
+    if(c->version==9 && !m1_display_v9_valid(&next->display))return false;
     if(c->version==BACKUP_VERSION && !m1_display_config_valid(&next->display))return false;
-    if(c->version==BACKUP_VERSION)for(unsigned i=0;i<M1_DISPLAY_LANES;i++)
+    if(c->version>=9)for(unsigned i=0;i<M1_DISPLAY_LANES;i++)
         if(next->display.lanes[i].source==M1_DISPLAY_MQTT && !strcmp(next->display.lanes[i].device_id,m1_id))return false;
     if(c->brightness>4 || c->last_on>4)return false;
 #endif
@@ -64,8 +65,14 @@ const char *device_backup_import(const void *data,size_t length) {
     if(next && next->base.version!=BACKUP_VERSION)return "invalid_backup";
     size_t restore_size=sizeof(app_storage_t);
 #ifndef FEATURE_DEVICE_A1
+    unsigned restore_version=BACKUP_VERSION;
     if(!next){
-        restore_size=sizeof(m1_storage_v8_t);
+        restore_size=sizeof(m1_storage_v9_t);restore_version=9;
+        next=ph_backup_open(data,length,BACKUP_MODEL,PHICOMM_FIRMWARE_VARIANT,9,restore_size);
+        if(next && next->base.version!=9)return "invalid_backup";
+    }
+    if(!next){
+        restore_size=sizeof(m1_storage_v8_t);restore_version=8;
         next=ph_backup_open(data,length,BACKUP_MODEL,PHICOMM_FIRMWARE_VARIANT,8,restore_size);
         if(next && next->base.version!=8)return "invalid_backup";
     }
@@ -76,10 +83,11 @@ const char *device_backup_import(const void *data,size_t length) {
     if(device_config_recovery() || !backup_reserve()){mico_rtos_unlock_mutex(&BACKUP_LOCK);free(before);return "busy";}
     memcpy(before,BACKUP_LIVE,sizeof(*before));memcpy(BACKUP_LIVE,next,restore_size);
 #ifndef FEATURE_DEVICE_A1
-    if(restore_size<sizeof(app_storage_t)){
+    if(restore_version==8){
         m1_display_defaults(&((app_storage_t *)BACKUP_LIVE)->display);
-        BACKUP_LIVE->version=BACKUP_VERSION;
     }
+    if(restore_version==9)m1_display_upgrade_v9(&((app_storage_t *)BACKUP_LIVE)->display);
+    BACKUP_LIVE->version=BACKUP_VERSION;
 #endif
     BACKUP_LIVE->revision=before->base.revision+1;
     bool ok=mico_system_context_update(BACKUP_CONTEXT)==kNoErr;

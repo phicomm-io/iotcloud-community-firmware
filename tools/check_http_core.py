@@ -164,6 +164,11 @@ def check(modules, model, nm, elf):
         if 'json_primitive' in names and 'allocator' not in label:
             prefix=names[:names.index('json_primitive')+1]+['json_object_double_to_json_string']
             add_numeric_paths(paths,frames,prefix,reserve,label+' numeric', 'format')
+            if model=='M1':
+                # v3 display values/thresholds use a separate primitive
+                # callback; retain its real frame and checked numeric tail.
+                prefix=names[:names.index('json_primitive')+1]+['display_float32_encode']
+                add_numeric_paths(paths,frames,prefix,reserve,label+' float32 numeric','float32')
         if 'parse' in names:
             prefix=names[:names.index('parse')+1]+['json_tokener_parse_ex']
             add_numeric_paths(paths,frames,prefix,reserve,label+' numeric', 'scan')

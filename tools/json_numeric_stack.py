@@ -7,7 +7,7 @@ from pathlib import Path
 
 CORE_FILES = ('context', 'mprec', 'dtoa', 'strtod', 'match', 'scan', 'format')
 NUMERIC_SYMBOLS = '''json_number_scan json_num_scan_token json_num_strtod_r
-json_number_format json_number_format_fixed json_num_dtoa_r json_num_Balloc
+json_number_format json_number_format_fixed json_number_format_float32 json_num_dtoa_r json_num_Balloc
 json_num_Bfree json_num_multadd json_num_s2b json_num_i2b json_num_multiply
 json_num_pow5mult json_num_lshift json_num_mdiff json_num_d2b json_num_ratio
 json_num_b2d json_num_init_mp json_num_calloc json_num_cleanup
@@ -55,7 +55,7 @@ def numeric_tails(frames, operation):
                    ['json_num_pow5mult', 'json_num_multiply'],
                    ['json_num_lshift'], ['json_num_mdiff'], ['json_num_i2b'], [])
     else:
-        entry = ['json_number_format_fixed' if operation == 'fixed' else 'json_number_format',
+        entry = [{'fixed': 'json_number_format_fixed', 'float32': 'json_number_format_float32'}.get(operation, 'json_number_format'),
                  'json_num_dtoa_r']
         helpers = (['json_num_d2b'], ['json_num_pow5mult', 'json_num_multadd'],
                    ['json_num_pow5mult', 'json_num_multiply'],

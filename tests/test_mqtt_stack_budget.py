@@ -41,6 +41,25 @@ SYMBOLS += [name for name in _internal[0] if name.startswith('ctx_')]
 SYMBOLS += ['owner', 'bemfa_poll', 'bemfa_stop', 'bemfa_close_connection', 'bm_disconnect', 'ctx_ph_mqtt_disconnect', 'bemfa_current_config', 'bemfa_config_get', 'bemfa_report_one', 'bemfa_command', 'bm_poll', 'bm_connect', 'bm_subscribe', 'bm_yield', 'bm_publish', 'ctx_ph_mqtt_connect', 'ctx_ph_mqtt_subscribe', 'ctx_ph_mqtt_yield', 'ctx_ph_mqtt_publish', 'ctx_ph_mqtt_poll', 'ctx_ph_mqtt_owner', 'ctx_ph_mqtt_protocol_buffers']
 
 class MqttStackBudget(unittest.TestCase):
+    def test_m1_float32_callback_and_numeric_frames_are_required_and_nested(self):
+        extra='''native_command m1_status_json m1_status_json_view m1_status_full
+m1_status_capture encode_m1 service_product_mqtt feature_sensor_session_set
+m1_mqtt_read display_float32_encode'''.split()
+        def exercise(sizes=None, missing=None):
+            frames=dict.fromkeys(SYMBOLS+extra,0)
+            frames.update(sizes or {})
+            if missing:del frames[missing]
+            output=io.StringIO()
+            with contextlib.redirect_stdout(output):check(frames,'M1')
+            return output.getvalue()
+        output=exercise({'display_float32_encode':48,'json_number_format_float32':96})
+        self.assertIn('float32 numeric arithmetic: 144 application',output)
+        for name in ('display_float32_encode','json_number_format_float32'):
+            with self.subTest(name=name),self.assertRaisesRegex(ValueError,'missing actual .su'):
+                exercise(missing=name)
+        with self.assertRaisesRegex(ValueError,'>16384'):
+            exercise({'display_float32_encode':6000,'json_number_format_float32':7000})
+
     def test_context_implementation_frames_are_required(self):
         with self.assertRaisesRegex(ValueError,"missing actual .su"):
             self.run_budget(missing="ctx_ph_mqtt_poll")

@@ -56,6 +56,9 @@ static void reply(void){
         p[9]=v->number>>8;p[10]=v->number;p[11]=v->format;p[12]=v->color;p[13]=v->ttl;
     }
     assert(m1_mcu_rx(p));
+    /* The frozen v2 tests start after the optional new read-only probe.
+     * Its success/unsupported/timeout cases are exercised by v3 tests. */
+    if(sent[2]==0)format_probe_done=true;
 }
 static const char *settings="{\"revision\":0,\"selected_source\":\"user\",\"double_click\":\"switch_display\",\"lanes\":["
  "{\"slot\":0,\"source\":\"api\",\"device_id\":\"\",\"metric\":\"co2\",\"unit\":\"ppm\",\"decimals\":2,\"scale\":1000,\"ttl_seconds\":20,\"color\":{\"mode\":\"thresholds\",\"low\":1000,\"high\":1500}},"
@@ -63,7 +66,7 @@ static const char *settings="{\"revision\":0,\"selected_source\":\"user\",\"doub
 int main(void){
     m1_display_defaults(&live.display);live.co2_source.magic=M1_CO2_SOURCE_MAGIC;
     live.co2=(m1_co2_config_t){.magic=M1_CO2_MAGIC,.interval=5,.low=1000,.high=1500};
-    assert(sizeof(live.display)==76 && sizeof(m1_display_lane_config_t)==32);
+    assert(sizeof(live.display)==92 && sizeof(m1_display_lane_config_t)==32);
     const app_storage_t original=live;fail_flash=true;assert(!call(settings,false,"storage_error"));
     assert(!memcmp(&live,&original,sizeof(live)));fail_flash=false;
     done(call(settings,false,"accepted"));assert(live.display.revision==1&&live.display.configured&&writes==2);

@@ -33,13 +33,16 @@
 #include <stdlib.h>
 #ifdef __NEWLIB__
 /* Fixed %g layout extracted from pinned nano-vfprintf_float.c; numerical
- * digits and rounding remain its original dtoa mode2 precision6 algorithm.
+ * digits and rounding remain its original dtoa mode2 algorithm.
  * Berkeley license for the layout source is retained in scan.c. */
 #include <math.h>
 #include <string.h>
 #include "context.h"
 #include "../json_number_checked.h"
-int json_number_format(char *out, unsigned capacity, double value)
+/* Keep the conversion frame in the public entries, as required by the actual
+ * numeric stack accounting. Only these two fixed precisions are exposed. */
+static inline __attribute__((always_inline)) int
+json_number_format_general(char *out, unsigned capacity, double value, int precision)
 {
     struct json_num_context context = {0};
     char number[32], *p = number, *digits, *end;
@@ -49,13 +52,13 @@ int json_number_format(char *out, unsigned capacity, double value)
         if (value < 0) *p++ = '-';
         memcpy(p, "inf", 3); p += 3;
     } else {
-        digits = json_num_dtoa_r(&context, value, 2, 6, &exponent, &sign, &end);
+        digits = json_num_dtoa_r(&context, value, 2, precision, &exponent, &sign, &end);
         if (!digits || context.failed) {
             json_num_cleanup(&context); errno = ENOMEM; return -1;
         }
         count = (int)(end - digits);
         if (sign) *p++ = '-';
-        if (exponent <= -4 || exponent > 6) {
+        if (exponent <= -4 || exponent > precision) {
             unsigned magnitude;
             char reversed[4]; unsigned used = 0;
             *p++ = *digits++;
@@ -88,6 +91,14 @@ int json_number_format(char *out, unsigned capacity, double value)
     if ((unsigned)count >= capacity) return -1;
     memcpy(out, number, (unsigned)count); out[count] = 0;
     return count;
+}
+int json_number_format(char *out, unsigned capacity, double value)
+{
+    return json_number_format_general(out, capacity, value, 6);
+}
+int json_number_format_float32(char *out, unsigned capacity, float value)
+{
+    return json_number_format_general(out, capacity, (double)value, 9);
 }
 /* Fixed %f for application-owned telemetry. No generic varargs formatter.
  * Compute the final size before the first destination byte is written, so a
@@ -137,6 +148,13 @@ int json_number_format(char *out, unsigned capacity, double value)
 {
     char temporary[32];
     int n = snprintf(temporary, sizeof(temporary), "%g", value);
+    if (n < 0 || (unsigned)n >= capacity || (unsigned)n >= sizeof(temporary)) return -1;
+    memcpy(out, temporary, (unsigned)n + 1); return n;
+}
+int json_number_format_float32(char *out, unsigned capacity, float value)
+{
+    char temporary[32];
+    int n = snprintf(temporary, sizeof(temporary), "%.9g", (double)value);
     if (n < 0 || (unsigned)n >= capacity || (unsigned)n >= sizeof(temporary)) return -1;
     memcpy(out, temporary, (unsigned)n + 1); return n;
 }
