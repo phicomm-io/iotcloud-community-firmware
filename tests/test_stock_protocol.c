@@ -6,7 +6,7 @@
 
 int main(void)
 {
-    const char *tone_versions[]={"0.9.3","0.9.3-abcdef","0.9.10-ab12ef-d","0.10.0","1.0.0"};
+    const char *tone_versions[]={"0.9.3","0.9.3-abcdef","0.9.10-ab12ef-d","0.10.0","1.0.0","1.0.0-rc-abcdef"};
     for(unsigned i=0;i<sizeof(tone_versions)/sizeof(*tone_versions);i++)assert(m1_tone_version_supported(tone_versions[i]));
     const char *old_versions[]={"","1.2","oss-0.3","0.9.2-abcdef","0.8.99","0.9.3x","0.9.3-","0..3","999999.0.0"};
     for(unsigned i=0;i<sizeof(old_versions)/sizeof(*old_versions);i++)assert(!m1_tone_version_supported(old_versions[i]));
@@ -48,7 +48,12 @@ int main(void)
     assert(m1_parse_version(frame,version) && !strcmp(version,"0123456789abcdef"));
     frame[2]=16;memcpy(frame+3,"1.2",3);memset(frame+6,0,13);
     assert(m1_parse_version(frame,version) && !strcmp(version,"1.2"));
-    memcpy(frame+3,"0123456789abcdef",16);assert(m1_parse_version(frame,version));
+    /* The bare RC and its six-character commit fit the existing UART field.
+     * Keep stock strings generic; community/full-SHA matching is a UI concern. */
+    frame[2]=15;memcpy(frame+3,"1.0.0-rc-abcdef",15);frame[18]=0;
+    assert(m1_parse_version(frame,version) && !strcmp(version,"1.0.0-rc-abcdef"));
+    frame[17]='\n';assert(!m1_parse_version(frame,version));frame[17]='f';
+    frame[2]=16;memcpy(frame+3,"0123456789abcdef",16);assert(m1_parse_version(frame,version));
     frame[2]=17;assert(!m1_parse_version(frame,version) && !strcmp(version,"0123456789abcdef"));
     frame[2]=0;assert(!m1_parse_version(frame,version));
     frame[2]=1;frame[3]=0;assert(!m1_parse_version(frame,version));

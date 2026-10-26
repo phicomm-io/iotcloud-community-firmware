@@ -1,4 +1,8 @@
 #include "mico.h"
+#include "../common/generated/build_version.h"
+static const char *test_firmware_version=FIRMWARE_VERSION;
+#undef FIRMWARE_VERSION
+#define FIRMWARE_VERSION test_firmware_version
 static void mico_rtos_delete_thread(void *p){(void)p;}
 #include "../common/service.c"
 uint32_t test_now;
@@ -7,7 +11,8 @@ json_object *automation_command(const char *a,json_object *p,const char **c,bool
 json_object *service_product_capabilities(void){json_object *o=json_object_new_object();json_object_object_add(o,"actions",json_object_new_array());return o;}
 json_object *service_product(const char *a,json_object *p,const char **code){assert(!strcmp(a,"ota.start"));const char *url=update_text(p,"url");assert(strstr(url,"http://127.0.0.1:")&&strstr(url,"/releases/v"));installed++;*code="accepted";return json_object_new_object();}
 int main(int argc,char **argv){
- assert(argc==2);service_init();unsigned v[3];assert(update_semver("0.10.0",v)&&v[1]==10);assert(!update_semver("latest",v));assert(!update_relative("/releases/v1/../../escape"));
+ assert(argc==2 || argc==3);if(argc==3)test_firmware_version=argv[2];
+ service_init();ph_ota_version_t v;assert(ph_ota_version_parse("0.10.0",&v)&&v.core[1]==10);assert(!ph_ota_version_parse("latest",&v));assert(!update_relative("/releases/v1/../../escape"));
  const char *code="ok";bool handled=false;json_object *p=json_object_new_object();string(p,"source","missing");
  json_object *r=update_command("ota.check",p,&code,&handled);assert(!strcmp(code,"invalid_params"));json_object_put(r);
  string(p,"source","cn");r=update_command("ota.check",p,&code,&handled);assert(!strcmp(code,"accepted"));json_object_put(r);assert(update_busy);

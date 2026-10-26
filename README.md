@@ -27,19 +27,19 @@ TC1 的 A1 硬件版本与 A1 空气净化器是不同产品，固件不能混�
 
 已有社区固件的日常网页更新使用匹配产品的 `.ota.bin.signed`；原生应用 `.ota.bin.raw` 仅用于教程明确支持的迁移或救援入口。`.all.bin` 是有线安装的完整镜像，不能用于网页 OTA。更新和恢复见[固件更新](https://phicomm-io.github.io/guides/firmware-update.html)。
 
-大金原厂 OTA 布局的应用槽为 **`0x180000`（1.5 MiB）**，普通版首次迁移按[原厂 OTA 教程](https://phicomm-io.github.io/guides/daikin-stock-ota.html)执行。开发中的 `full → hub` 签名切换见[中枢指南](https://phicomm-io.github.io/guides/daikin-guide.html#普通版切换为中枢)，需支持该入口的新固件和符合设备容量的镜像。
+大金原厂 OTA 布局的应用槽为 **`0x180000`（1.5 MiB）**，普通版首次迁移按[原厂 OTA 教程](https://phicomm-io.github.io/guides/daikin-stock-ota.html)执行。v1.0.0-rc 的 `full → hub` 签名切换见[中枢指南](https://phicomm-io.github.io/guides/daikin-guide.html#普通版切换为中枢)，需支持该入口的新固件和符合设备容量的镜像。
 
-## v1.0 开发中
+## v1.0.0-rc 候选版
 
-**v1.0 尚未正式发布，下载区保留已有 0.9.x 制品。** 以下是开发目标，可用性以之后的正式发布说明为准。
+**[v1.0.0-rc](https://github.com/phicomm-io/iotcloud-community-firmware/releases/tag/v1.0.0-rc) 为预发布版本，稳定通道仍为 v0.9.27。** 下载区保留 0.9.x 历史制品，具体功能与配套版本以发布说明为准。
 
-| 方向 | 计划功能 |
+| 方向 | 候选版功能 |
 | --- | --- |
 | 使用与升级 | 中英文界面、设备语言、配置备份恢复、迁移失败保护与升级差异 |
 | M1 | 甲醛 / PM2.5 两位置分别选本机传感器、TC1 功率、A1 主风机生效输出（0–100%）、大金 CO₂ 等数据或 API；双击整体切换原始 / 用户读数，各自过期回退，颜色按阈值或固定值；PM2.5 稳定处理，甲醛 / PM2.5 超阈值蜂鸣独立开关、默认关闭，色灯阈值、闹钟与手动鸣叫独立 |
 | DAIKIN `hub` | 独立中枢变体：本地账户、TCP / WebSocket MQTT Broker、局域网 Home Assistant、上游 MQTT 客户端与巴法云转发；普通版继续用于传感器 |
 
-Apple 家庭计划通过 `hub` 的 HAP 桥接实现，配对、控制和重启恢复仍待真机验证；目前不宣称支持 Matter。
+Apple 家庭采用 `hub` 的实验性 HomeKit HAP 桥接，配对、控制和重启恢复仍待真机验证；当前不包含 Matter。
 
 ## 构建与参与
 

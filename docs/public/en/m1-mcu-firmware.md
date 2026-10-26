@@ -38,7 +38,7 @@ Custom pollutant thresholds control indicator colors and high-level buzzer alarm
 
 ## Downloads and requirements
 
-The latest published controller release is **v0.9.4, a development preview**. Network flashing and sensor-frame queries require Wi-Fi v0.9.26 or newer; web music, tone controls and particle details require Wi-Fi v0.9.27 or newer and matching controller capabilities. The dedicated download section lists public releases including prereleases, separately from Wi-Fi firmware. Update the controller and Wi-Fi module separately.
+The latest public controller release is **v1.0.0-rc, a development preview / prerelease**; the stable v1.0.0 release is not yet available. Network flashing and sensor-frame queries require Wi-Fi v0.9.26 or newer; web music, tone controls and particle details require Wi-Fi v0.9.27 or newer and matching controller capabilities. The dedicated download section lists public releases including prereleases, separately from Wi-Fi firmware. Update the controller and Wi-Fi module separately.
 
 
 - `m1-mcu-ota.bin` is the controller application linked at **0x4000**. Check its JSON manifest and SHA256SUMS.
@@ -91,8 +91,8 @@ SHA-256 6a8a9f72741e01d5ebc73467819079146553ec73339029eaf4cc49e8cbd1a7f9
 
 The full backup starts at **0x00000000**, and must not be used as application OTA payload. Save your own backup and verify chip/board, power and SWD recovery before restoring. Do not use this backup for a different controller version or board revision. The stock binary is provided separately as a factory backup and is not covered by the project's GPL-3.0 source license.
 
-## v1.0 in development
+## v1.0.0-rc features
 
-Plans include double-click events, generic Wi-Fi display data and steadier PM2.5 readings. Matching Wi-Fi firmware can select CO₂ from another online device and manage units, thresholds and expiry. Expired data restores the original display; while an alarm rings, double-click first cancels it. These features have not been released and require matching controller, Wi-Fi firmware and frontend.
+v1.0.0-rc includes double-click events, generic Wi-Fi display data and steadier PM2.5 readings. Matching Wi-Fi firmware can select CO₂ from another online device and manage units, thresholds and expiry. Expired data restores the original display; while an alarm rings, double-click first cancels it. This is a prerelease and requires matching controller, Wi-Fi firmware and frontend.
 
-v1 also plans separate over-threshold buzzer switches for formaldehyde and PM2.5, both off by default. Light thresholds, alarms and manual tones remain separately controlled.
+Formaldehyde and PM2.5 have separate over-threshold buzzer switches, both off by default. Light thresholds, alarms and manual tones remain separately controlled.

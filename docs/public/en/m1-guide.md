@@ -83,9 +83,9 @@ IoTCloud reuses the M1 CO₂ detail card and shows fresh CO₂ readings in devic
 
 M1 uses TMCP (v2) topics only, with no Legacy selector. See [MQTT and automation](mqtt-link).
 
-## v1.0 in development
+## v1.0.0-rc user readings and PM2.5 smoothing
 
-Dual-position screen readings and steadier PM2.5 are in development and have not been released. They require matching open-source controller, Wi-Fi firmware and frontend.
+v1.0.0-rc provides dual-position screen readings and steadier PM2.5. They require matching open-source controller, Wi-Fi firmware and frontend. This is a prerelease; the stable v1.0.0 release is not yet available.
 
 In Device settings, open **User readings on the device screen**. Configure the formaldehyde and PM2.5 regions separately using this M1's sensors, another device on the same MQTT account and broker (TC1 power, A1 main-fan output, DAIKIN CO₂ or other readings), or an API / manual write. A1 provides its current effective output percentage (0–100%), including fresh-air variants. Other devices' MAC addresses accept both `aabbccddeeff` and `aa:bb:cc:dd:ee:ff`, with either letter case.
 
@@ -131,4 +131,4 @@ After selecting and saving the API / manual source, write an integer from `0–9
 
 Set **Double-press action** to **Switch both original/user readings** to switch the pair together. A ringing alarm is stopped first. Set each region's maximum reading age independently: missing, expired, offline or invalid data restores only that region's original reading, without affecting the other. User readings do not replace original sensor acquisition or alarms.
 
-v1 also plans separate over-threshold buzzer switches for formaldehyde and PM2.5, both off by default. Light thresholds, alarms and manual tones remain separately controlled.
+Formaldehyde and PM2.5 have separate over-threshold buzzer switches, both off by default. Light thresholds, alarms and manual tones remain separately controlled.

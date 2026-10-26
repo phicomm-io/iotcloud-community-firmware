@@ -16,16 +16,23 @@
   }
   function parse(value) {
     need(typeof value === 'string', 'INVALID_VERSION', 'A firmware version is required.');
-    const match = /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([a-f0-9]{6,40}))?$/.exec(value);
-    need(match && !value.includes('dirty'), 'UNKNOWN_BUILD', 'Unknown development or dirty builds cannot be treated as a published release.');
+    const match = /^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(rc)(?:\.(0|[1-9][0-9]*))?)?(?:-([a-f0-9]{6,40}))?$/.exec(value);
+    need(match && match[0] === value && !value.includes('dirty'), 'UNKNOWN_BUILD', 'Unknown development or dirty builds cannot be treated as a published release.');
     const numbers = match.slice(1, 4).map(Number);
     need(numbers.every(Number.isSafeInteger), 'INVALID_VERSION', 'Version components exceed the supported numeric range.');
-    return {version: numbers.join('.'), numbers, suffix: match[4] || null};
+    const candidate = match[4] ? (match[5] == null ? '' : Number(match[5])) : null;
+    need(candidate === null || candidate === '' || Number.isSafeInteger(candidate), 'INVALID_VERSION', 'Candidate number exceeds the supported numeric range.');
+    return {version: numbers.join('.') + (match[4] ? '-rc' + (match[5] == null ? '' : '.' + match[5]) : ''),
+      numbers, suffix: match[6] || null, prerelease: !!match[4], candidate};
   }
   function order(a, b) {
-    const x = parse(a).numbers, y = parse(b).numbers;
+    const left = parse(a), right = parse(b), x = left.numbers, y = right.numbers;
     for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] < y[i] ? -1 : 1;
-    return 0;
+    if (left.prerelease !== right.prerelease) return left.prerelease ? -1 : 1;
+    if (left.candidate === right.candidate) return 0;
+    if (left.candidate === '') return -1;
+    if (right.candidate === '') return 1;
+    return left.candidate < right.candidate ? -1 : 1;
   }
   function scopeMatches(scope, query) {
     return ['models', 'variants', 'branches', 'channels', 'hardware'].every(key => {
@@ -56,7 +63,9 @@
     need(archived.length === 1, 'ARCHIVE_MISMATCH', 'The release is missing or duplicated in the archive catalog.');
     const record = archived[0], entry = entryFor(record, query);
     need(entry, 'TARGET_NOT_FOUND', 'The requested firmware variant does not exist in the archive.');
-    need((record.branch || 'main') === query.branch && (record.channel || 'stable') === query.channel,
+    const channel = parse(release.version).prerelease ? 'candidate' : 'stable';
+    need(release.channel === channel && (record.branch || 'main') === query.branch && (record.channel || 'stable') === channel &&
+      (channel !== 'candidate' || record.prerelease === true) && (channel !== 'stable' || !record.prerelease),
       'ARCHIVE_MISMATCH', 'Archive branch or channel differs from the requested scope.');
     const asset = entry.downloads && entry.downloads[target.kind];
     const source = entry.source_commit || record.models[query.model].source_commit || record.commit;
@@ -94,8 +103,10 @@
       need(['zh-CN', 'en'].includes(query.locale), 'LANGUAGE_MISSING', 'This language has not been reviewed.');
       need(typeof query.model === 'string' && typeof query.variant === 'string', 'SCOPE_REQUIRED', 'Select a model and firmware variant.');
       const from = parse(query.from), to = parse(query.to);
+      need((query.channel === 'candidate') === to.prerelease, 'UNKNOWN_TARGET', 'Select the explicit candidate channel to compare a prerelease.');
       need(order(from.version, to.version) <= 0, 'DOWNGRADE', 'Downgrades do not have an upgrade difference.');
-      const releases = manifest.releases.filter(r => r.branch === query.branch && r.channel === query.channel);
+      const releases = manifest.releases.filter(r => r.branch === query.branch &&
+        (r.channel === query.channel || (query.channel === 'candidate' && r.channel === 'stable')));
       const byVersion = new Map();
       for (const r of releases) {
         need(!byVersion.has(r.version) && parse(r.version).version === r.version && Array.isArray(r.targets), 'INVALID_DATA', 'Duplicate or malformed release record.');
@@ -121,18 +132,19 @@
       }
       need(seen.has(from.version), 'BROKEN_RELEASE_CHAIN', 'The starting release is not on the target release chain.');
       const interval = path.filter(r => order(r.version, from.version) > 0);
+      const scopeFor = version => Object.assign({}, query, {channel: parse(version).prerelease ? 'candidate' : 'stable'});
       for (const release of [start, ...interval]) {
         identity(release, query, catalog, manifest);
-        const coverage = release.coverage.filter(c => scopeMatches(c.scope, query));
+        const coverage = release.coverage.filter(c => scopeMatches(c.scope, scopeFor(release.version)));
         need(coverage.length === 1, 'COVERAGE_UNKNOWN', 'Coverage for this release and scope is not confirmed.');
         need(coverage[0].status === 'complete', 'REVIEW_REQUIRED', 'Relevant release records still need review.', {version: release.version});
         need(coverage[0].locales.includes(query.locale), 'LANGUAGE_MISSING', 'This release has an incomplete translation.', {version: release.version});
       }
       need(start.baseline_confirmed === true, 'BASELINE_UNKNOWN', 'The starting state cannot be confirmed.');
       if (query.hardware === '*') need(!manifest.changes.some(c => seen.has(c.version) && c.component !== 'service' &&
-        scopeMatches(Object.assign({}, c.scope, {hardware: ['*']}), query) && !c.scope.hardware.includes('*')),
+        scopeMatches(Object.assign({}, c.scope, {hardware: ['*']}), scopeFor(c.version)) && !c.scope.hardware.includes('*')),
         'HARDWARE_REQUIRED', 'This device scope has hardware-specific changes; select its hardware revision.');
-      const revisions = manifest.changes.filter(c => seen.has(c.version) && scopeMatches(c.scope, query) && c.component !== 'service');
+      const revisions = manifest.changes.filter(c => seen.has(c.version) && scopeMatches(c.scope, scopeFor(c.version)) && c.component !== 'service');
       const histories = new Map();
       for (const row of revisions) {
         need(row.review_status === 'approved', 'REVIEW_REQUIRED', 'A relevant change has not been approved.');

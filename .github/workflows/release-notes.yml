@@ -40,7 +40,7 @@ jobs:
         run: |
           python3 tests/test_user_notes.py
           python3 tests/test_site_docs.py
-          python3 -m unittest tests.test_archive_pages
+          python3 -m unittest tests.test_archive_pages tests.test_release_candidate
           python3 tests/test_publish_user_notes.py
           node --test tests/test_release_notes.cjs tests/test_release_notes_web.cjs
           node --test tests/test_ota_worker.mjs
@@ -60,6 +60,7 @@ jobs:
           server=$!
           trap 'kill "$server"' EXIT
           node tests/test_release_notes_browser.cjs
+          PHICOMM_RC_BROWSERS=chromium node tests/test_release_candidate_browser.cjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -67,3 +68,4 @@ jobs:
           path: |
             build/pages
             build/notes-evidence
+            build/rc-ui-evidence

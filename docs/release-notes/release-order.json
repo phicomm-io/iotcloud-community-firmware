@@ -156,6 +156,12 @@
       "previous": "0.9.26",
       "branch": "main",
       "channel": "stable"
+    },
+    {
+      "version": "1.0.0-rc",
+      "previous": "0.9.27",
+      "branch": "main",
+      "channel": "candidate"
     }
   ]
 }

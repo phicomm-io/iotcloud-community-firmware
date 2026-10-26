@@ -5,6 +5,10 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / 'release'))
+from release_version import parse_tag
 
 
 def topic(branch):
@@ -21,13 +25,19 @@ def check(event_name, event, ref, root=None):
             raise ValueError('Use feature/* -> dev -> main; hotfix/* -> main, then sync main -> dev.')
     elif ref.startswith('refs/tags/'):
         tag = ref.removeprefix('refs/tags/')
-        if not re.fullmatch(r'v[1-9]\d*\.(0|[1-9]\d*)\.(0|[1-9]\d*)', tag):
-            raise ValueError('Only stable v1+ tags may release; archive/0.9.x is frozen.')
+        try:
+            release = parse_tag(tag)
+            if release.core[0] == 0:
+                raise ValueError('archive tag')
+        except ValueError as error:
+            raise ValueError('Only stable or RC v1+ tags may release; archive/0.9.x is frozen.') from error
         command = ['git'] + (['-C', str(root)] if root else [])
         head = subprocess.check_output(command + ['rev-parse', 'HEAD'], text=True).strip()
         target = subprocess.check_output(command + ['rev-parse', f'refs/tags/{tag}^{{commit}}'], text=True).strip()
         if head != target:
             raise ValueError('Release tag does not point to the checked-out commit')
+        if subprocess.check_output(command + ['status', '--porcelain', '--untracked-files=normal'], text=True).strip():
+            raise ValueError('Release tag build requires a clean source tree')
         subprocess.run(command + ['merge-base', '--is-ancestor', 'HEAD', 'origin/main'], check=True)
     elif event_name in ('push', 'workflow_dispatch'):
         branch = ref.removeprefix('refs/heads/')

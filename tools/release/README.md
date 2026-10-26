@@ -20,7 +20,45 @@ is the shared enumeration for building the signing/catalog matrix. DAIKIN v1
 catalog entries authenticate each signed payload's exact full/hub image label
 and require the downloadable raw application to be the same payload.
 
-Only stable v1+ tags at a commit on `main` may publish firmware. Branch builds
+Stable and RC v1+ tags at a clean, exact commit on `main` may publish firmware. Branch builds
 and a manual signing dry run do not promote an OTA manifest. New manifests use
 `/ota/v1/<model>/<variant>/latest.json`; legacy paths stop at the v1.0.0 bridge.
 The v0.x archive retains its original asset and metadata shape.
+
+`VERSION` contains the numeric core, for example `1.0.0`. Candidate tags are
+`v1.0.0-rc` or `v1.0.0-rc.N`, where N is a nonnegative integer without leading
+zeros. The ordering is `rc < rc.0 < rc.1 < stable`; commit suffixes are build
+identities, not release tags. The tagged core must match `VERSION`.
+
+Candidates are GitHub prereleases with `--latest=false`. They have immutable
+R2 assets under `/releases/<tag>/` and a separate `/releases/candidates.json`
+catalog. The current production Worker serves stable releases, so candidate
+assets are verified by authenticated API readback; public mirror verification
+remains a stable-release gate. Use GitHub prereleases or a separately published
+Pages candidate archive for manual downloads. Stage with `publish.py DIRECTORY`,
+make the GitHub prerelease public, then use `publish.py DIRECTORY --candidate`.
+`--promote` rejects candidates before any remote operation. Candidate workflows
+do not deploy the OTA Worker, publish Pages, replace `stable.json`, create the
+v1.0.0 bridge, or change legacy/v1 device `latest.json` manifests.
+
+For local note validation or a Pages candidate archive, explicitly run
+`archive_pages.py OUTPUT --include-candidates --candidates-r2`. This reads the
+candidate catalog and assets through the authenticated API, verifies file
+hashes, and retains them beside the unchanged stable `releases/index.json`.
+Only the temporary note-validation catalog combines both channels. Without
+`--candidates-r2`, candidate reads use the selected public archive source;
+only a 404 for the candidate catalog is accepted as an empty first catalog.
+Use `import_user_notes.py --archive OUTPUT --include-candidates --previous VERSION`
+to import one new candidate's immutable originals with an explicit reviewed
+baseline. Candidate changes and coverage use the `candidate` channel; stable
+release chains continue to follow stable predecessors.
+
+Generate the optional Pages comparison snapshot with
+`user_notes.py --output OUTPUT --archive OUTPUT --formal --include-candidates`.
+Its pointer is `/releases/notes/candidate/index.json`, marked with candidate
+channel/source scope. It references independent hash-named catalog and manifest
+files in the same candidate directory. The combined catalog keeps its stable
+selection; neither `releases/index.json` nor the default note pointer is changed.
+`--verify-output OUTPUT --formal --include-candidates` verifies that independent
+snapshot. These files are for the local Pages archive; the stable mirror-note
+publisher does not publish the candidate pointer.

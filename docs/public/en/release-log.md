@@ -2,6 +2,43 @@
 
 English translation of the published release history. Historical validation statements apply to the release named in each section, not to later firmware. Release notes are authored in the Wiki and frozen into the source repository before tagging.
 
+## v1.0.0-rc
+
+The v1.0.0 release candidate includes companion updates for device firmware, the M1 sensor MCU, WebUI and cloud platform.
+
+### General and platform
+
+- Device pages, the management platform, provisioning pages and service messages support Simplified Chinese / English. A separately saved device language controls MQTT / Home Assistant discovery names; changing it preserves entity identifiers and topics.
+- Keep the existing interface style. “Local connection” uses a button that expands the device IP and password inputs when selected.
+- New cloud usernames and MQTT aliases must contain 3–32 ASCII letters, digits, underscores, dots or hyphens. Existing long accounts can still sign in and add a short MQTT alias; email sign-in is handled separately.
+
+### M1 sensors, buttons and display
+
+- Show the Wi-Fi module and sensor MCU versions separately, or unknown when unavailable. **The open-source sensor MCU is recommended primarily for stock 11.x users; migration from 17.1.2.3 / 17.x is not recommended yet.** Wi-Fi OTA does not also update the sensor MCU.
+- Add PM2.5 spike suppression and adaptive smoothing, following sustained increases quickly while retaining raw sensor-frame queries.
+- Formaldehyde and PM2.5 threshold buzzer alarms can be enabled independently and are off by default. They are controlled separately from indicator colors, wake alarms and manual sound previews.
+- With the matching new open-source sensor MCU, a single press toggles the screen. A double press only stops an alarm while it is ringing; otherwise, when configured, it switches both regions between original and user readings. Release after holding for at least 3 seconds but less than 10 to provision Wi-Fi again while retaining MQTT and other settings. Hold for 10 seconds to restore factory settings while retaining the controller’s independently stored music. Both MCUs restart after settings are saved; these actions also work offline.
+- Configure independent sources, expiry times and colors for the formaldehyde and PM2.5 regions at the same time: local sensors, other sensors using the same MQTT account and broker, TC1 power, DAIKIN readings, A1 effective main-fan output percentage, and API / manual writes. A1 output is 0–100%, not RPM.
+- The PM2.5 region displays a three-digit integer. The formaldehyde region supports integers, automatic scaling in thousands, two decimal places, one decimal place with a trailing zero, and fixed division by 1000. Show or hide the original labels and units independently. Each region’s nine lamp segments can be set individually or colored automatically using thresholds on the original physical value. The fixed glass units remain µg/m³ and mg/m³.
+- Add the `display_profile.get/set` and `display_value.set` APIs. Direct writes specify a `0–999` number, decimal point, label and unit flags, and all nine lamp segments without source conversion or threshold coloring. The PM region rejects decimal points. Each region independently restores its original reading on expiry; immediate clearing and configuration-revision checks are supported. New configurations accept colon-separated or contiguous MAC addresses in either letter case.
+
+### DAIKIN hub variant
+
+- Add a separate `hub` variant with a local account, device management and hub settings alongside DAIKIN sensor functions, configurable directly through the WebUI.
+- Provide an MQTT broker over TCP `1883` and WebSocket `9001/mqtt` for LAN devices and Home Assistant using a local account. The hub can also act as an upstream MQTT client, forward events in both directions as configured, and map and forward devices to Bemfa.
+- Offer optional **HomeKit HAP bridging (experimental and off by default)** for TC1’s six switches, the A1 fan / light, and available valid sensors on M1 / DAIKIN in Apple Home. Matter is not included.
+- A new `full` build that advertises conversion support can switch to the hub using the local web password, a signed `hub` image that fits the available capacity, and explicit confirmation, while retaining network settings. Normal OTA continues to distinguish variants; direct `hub → full` OTA is not supported.
+
+### Configuration, updates and development
+
+- Add full LAN configuration backup / restore protected by the web password, validating the model, variant and configuration version first. Retain supported migration paths for older configurations. Unsupported configurations enter a recovery mode that requires confirmation and preserves the original storage. M1 sensor MCU music and HomeKit pairing data are stored separately and excluded from ordinary Wi-Fi configuration backups.
+- TC1 / A1 / M1 update pages can display and compute differences across versions directly. Unavailable information is explained and requires additional confirmation. M1 probes for new display capabilities before enabling them and retains compatible paths for the old APIs / UART.
+- A1 / M1 EMW3080 release allocations use an 8 KiB reserve floor, while the test acceptance threshold remains 12 KiB. Allocations with 8–12 KiB of headroom are allowed.
+- Organize CI, Issue / PR templates and contribution guidelines, covering interfaces, configuration migration and pinned dependencies across repositories. Archive v0.9.x; maintained code uses GPL-3.0, with third-party licenses retained.
+- Keep user documentation organized by M1 / A1 / TC1 / DAIKIN for installation, updates, use and recovery, with the existing Pages style. Publish interfaces, protocols, configuration compatibility and examples together in the [developer documentation](https://phicomm-io.github.io/iotcloud-community-protocols/en/).
+
+[Documentation and downloads by device](https://phicomm-io.github.io/en/) · [M1 sensor MCU update guide](https://phicomm-io.github.io/guides/en/m1-mcu-update.html)
+
 ## v0.9.27
 
 - M1 Settings → General adds independent formaldehyde and PM2.5 two-level threshold editors and stock-default restoration. Existing persistence is retained; editing either pollutant preserves unsaved input for the other and handles shared revision conflicts. Defaults are 100/300 for formaldehyde and 75/150 for PM2.5 in controller raw units.

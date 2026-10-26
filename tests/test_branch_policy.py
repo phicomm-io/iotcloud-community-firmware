@@ -34,8 +34,8 @@ class BranchPolicyTests(unittest.TestCase):
                 with self.subTest(event=event, branch=branch), self.assertRaises(ValueError):
                     policy.check(event, {}, 'refs/heads/' + branch)
 
-    def test_unstable_and_frozen_tags_fail_before_git(self):
-        for tag in ('v0.9.25', 'v1.0.0-rc.1', 'v1.0', 'v01.0.0', 'v1.00.0', 'other'):
+    def test_invalid_and_frozen_tags_fail_before_git(self):
+        for tag in ('v0.9.25', 'v0.9.28-rc', 'v1.0.0-rc.01', 'v1.0.0-beta', 'v1.0', 'v01.0.0', 'v1.00.0', 'other'):
             with self.subTest(tag=tag), self.assertRaises(ValueError):
                 policy.check('push', {}, 'refs/tags/' + tag)
 
@@ -54,6 +54,13 @@ class BranchPolicyTests(unittest.TestCase):
             git('update-ref', 'refs/remotes/origin/main', main)
             git('tag', '-a', 'v1.0.0', '-m', 'stable')
             policy.check('push', {}, 'refs/tags/v1.0.0', root)
+            for tag in ('v1.0.0-rc', 'v1.0.0-rc.0', 'v1.0.0-rc.1'):
+                git('tag', tag)
+                policy.check('push', {}, 'refs/tags/' + tag, root)
+            (root / 'source').write_text('uncommitted')
+            with self.assertRaisesRegex(ValueError, 'clean source tree'):
+                policy.check('push', {}, 'refs/tags/v1.0.0-rc', root)
+            (root / 'source').write_text('main')
             git('checkout', '-qb', 'dev')
             (root / 'source').write_text('development')
             git('commit', '-qam', 'development')

@@ -8,6 +8,7 @@ import json
 import re
 import subprocess
 from pathlib import Path
+from release_version import parse_tag, parse_version, version_key
 
 ROOT = Path(__file__).resolve().parents[2]
 DATA = ROOT / 'docs/release-notes'
@@ -32,9 +33,7 @@ def read(path):
 
 
 def version(value):
-    if not re.fullmatch(r'v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)', value):
-        raise ValueError('Invalid release version: ' + str(value))
-    return tuple(map(int, value.lstrip('v').split('.')))
+    return version_key(value)
 
 
 def blocks(text):
@@ -128,9 +127,28 @@ def verify_archive(catalog, identities, archive, data=DATA):
                     verify(body, model, tag, source)
 
 
-def compile_manifest(data=DATA, archive=None, formal=False):
+def compile_manifest(data=DATA, archive=None, formal=False, include_candidates=False):
     catalog_bytes = ((archive / 'releases/index.json') if archive else data / 'catalog.snapshot.json').read_bytes()
     catalog = json.loads(catalog_bytes)
+    if include_candidates:
+        if archive is None:
+            raise ValueError('Candidate notes require an explicit local archive')
+        candidates = read(archive / 'releases/candidates.json')
+        if (candidates.get('schema') != 1 or candidates.get('channel') != 'candidate' or
+                'stable' in candidates or not isinstance(candidates.get('releases'), list)):
+            raise ValueError('Invalid candidate note catalog')
+        for release in candidates['releases']:
+            if not parse_tag(release['tag']).prerelease:
+                raise ValueError('Candidate note catalog contains a stable release')
+            existing = next((r for r in catalog['releases'] if r['tag'] == release['tag']), None)
+            if existing is not None and existing != release:
+                raise ValueError('Candidate note catalog conflicts with archived metadata')
+            if existing is None:
+                catalog['releases'].append(release)
+        catalog['releases'].sort(key=lambda r: version(r['tag']), reverse=True)
+        catalog_bytes = encoded(catalog)
+    if parse_tag(catalog['stable']).prerelease:
+        raise ValueError('Release candidates cannot replace the stable release-note selection')
     identities = read(data / 'archive-identities.json')
     declarations = {r['version']: r for r in read(data / 'release-order.json')['releases']}
     if len(declarations) != len(read(data / 'release-order.json')['releases']):
@@ -144,8 +162,17 @@ def compile_manifest(data=DATA, archive=None, formal=False):
     if digest((data / 'catalog.snapshot.json').read_bytes()) != identities['catalog_sha256']:
         raise ValueError('Historical archive snapshot hash mismatch')
     for release in catalog['releases']:
+        identity = parse_tag(release['tag'])
+        if (release['version'] != identity.version or
+                release.get('channel', 'stable') != identity.channel or
+                (identity.prerelease and release.get('prerelease') is not True) or
+                (not identity.prerelease and release.get('prerelease'))):
+            raise ValueError('Release version or channel differs from its tag')
         if release['version'] not in declarations:
             raise ValueError('Published release has no explicit reviewed chain declaration')
+        declaration = declarations[release['version']]
+        if declaration['branch'] != 'main' or declaration['channel'] != identity.channel:
+            raise ValueError('Release declaration must match its explicit main/channel identity')
         if release['tag'] not in identities['releases']:
             if not archive or not formal:
                 raise ValueError('New release identities require a formal build and actual archive')
@@ -191,8 +218,8 @@ def compile_manifest(data=DATA, archive=None, formal=False):
         if not all(isinstance(scope.get(k), list) and scope[k] and len(scope[k]) == len(set(scope[k]))
                    for k in ('models', 'variants', 'branches', 'channels', 'hardware')):
             raise ValueError('Invalid scope: ' + ref)
-        if scope['branches'] != ['main'] or scope['channels'] != ['stable']:
-            raise ValueError('Only explicitly reviewed main/stable is supported')
+        if scope['branches'] != ['main'] or scope['channels'] != [parse_version(row['version']).channel]:
+            raise ValueError('Change scope must match the explicit release channel')
         public = {k: copy.deepcopy(row[k]) for k in ('change_id', 'version', 'type', 'component', 'scope', 'review_status',
                   'lifecycle', 'title', 'description', 'ota_summary', 'summary_complete', 'critical')}
         # No fallback: incomplete locales remain visibly incomplete coverage.
@@ -200,6 +227,7 @@ def compile_manifest(data=DATA, archive=None, formal=False):
     releases = []
     for release in sorted(catalog['releases'], key=lambda r: version(r['tag'])):
         tag, ver = release['tag'], release['version']
+        channel = parse_tag(tag).channel
         original = (data / 'sources' / (tag + '.md')).read_bytes()
         proof = identities['releases'][tag]
         if proof['tag_commit'] != release['commit'] or proof['notes_sha256'] != digest(original):
@@ -223,11 +251,15 @@ def compile_manifest(data=DATA, archive=None, formal=False):
             incomplete = any(c in pending for c in applicable)
             languages = [lang for lang in LOCALES if all(c.get(field, {}).get(lang, '').strip()
                          for c in applicable for field in ('title', 'description'))]
-            scope = dict(models=[model], variants=[variant], branches=['main'], channels=['stable'], hardware=['*'])
+            scope = dict(models=[model], variants=[variant], branches=['main'], channels=[channel], hardware=['*'])
             coverage.append(dict(scope=scope, status='pending' if release_pending or incomplete else 'complete', locales=languages))
         declaration = declarations[ver]
         if declaration['previous'] is not None and 'v' + declaration['previous'] not in actual:
             raise ValueError('Explicit release chain is broken')
+        if declaration['previous'] is not None and version(declaration['previous']) >= version(ver):
+            raise ValueError('Explicit release chain is out of order')
+        if not parse_version(ver).prerelease and declaration['previous'] is not None and parse_version(declaration['previous']).prerelease:
+            raise ValueError('Stable release chains cannot depend on a candidate release')
         releases.append(dict(version=ver, tag=tag, previous=declaration['previous'], branch=declaration['branch'], channel=declaration['channel'],
                              baseline_confirmed=not release_pending, coverage=coverage, targets=target_rows,
                              history_status='insufficient' if tag == 'v0.9.0' else 'pending' if release_pending else
@@ -238,7 +270,10 @@ def compile_manifest(data=DATA, archive=None, formal=False):
         if not keys or any(k not in by_id or by_id[k]['review']['status'] != 'approved' for k in keys):
             raise ValueError('Merged summary has missing or invalidated reviews')
         merges.append({k: copy.deepcopy(v) for k, v in row.items() if k != 'source_refs'})
-    manifest = dict(schema=1, supported_scopes=[dict(branch='main', channel='stable')],
+    supported_scopes = [dict(branch='main', channel='stable')]
+    if any(parse_version(r['version']).prerelease for r in releases):
+        supported_scopes.append(dict(branch='main', channel='candidate'))
+    manifest = dict(schema=1, supported_scopes=supported_scopes,
                     stable=catalog['stable'].lstrip('v'), archive_sha256=digest(catalog_bytes),
                     releases=releases, changes=approved, merges=merges, sources=sources)
     return manifest, catalog_bytes
@@ -251,16 +286,25 @@ def immutable(path, body):
     path.write_bytes(body)
 
 
-def write_public(output, data=DATA, archive=None, formal=False):
-    manifest, catalog_bytes = compile_manifest(data, archive, formal)
+def write_public(output, data=DATA, archive=None, formal=False, include_candidates=False):
+    manifest, catalog_bytes = compile_manifest(data, archive, formal, include_candidates)
     body = encoded(manifest)
     name = 'manifest.' + digest(body) + '.json'
     directory = output / 'releases/notes'
+    if include_candidates:
+        directory /= 'candidate'
     immutable(directory / name, body)
-    for source in (ROOT / 'site/release-notes').glob('*.js'):
-        (directory / source.name).write_bytes(source.read_bytes())
-    document = dict(schema=1, manifest=dict(path='/releases/notes/' + name, size=len(body), sha256=digest(body)),
+    if not include_candidates:
+        for source in (ROOT / 'site/release-notes').glob('*.js'):
+            (directory / source.name).write_bytes(source.read_bytes())
+    prefix = '/releases/notes/candidate/' if include_candidates else '/releases/notes/'
+    document = dict(schema=1, manifest=dict(path=prefix + name, size=len(body), sha256=digest(body)),
                     catalog=dict(path='/releases/index.json', size=len(catalog_bytes), sha256=digest(catalog_bytes)))
+    if include_candidates:
+        catalog_name = 'catalog.' + digest(catalog_bytes) + '.json'
+        immutable(directory / catalog_name, catalog_bytes)
+        document.update(channel='candidate', source=dict(scope='candidate', kind='relative-archive'))
+        document['catalog']['path'] = prefix + catalog_name
     # This is the only mutable pointer; write it after every immutable resource.
     index = directory / 'index.json'
     temporary = directory / 'index.json.tmp'
@@ -269,9 +313,12 @@ def write_public(output, data=DATA, archive=None, formal=False):
     return manifest
 
 
-def verify_output(output, data=DATA, formal=False):
+def verify_output(output, data=DATA, formal=False, include_candidates=False):
     """Last build step: pointers, archived identity and rendered pages agree."""
-    pointer = read(output / 'releases/notes/index.json')
+    pointer = read(output / ('releases/notes/candidate/index.json' if include_candidates else 'releases/notes/index.json'))
+    if include_candidates and (pointer.get('channel') != 'candidate' or pointer.get('source') != dict(scope='candidate', kind='relative-archive') or any(
+            not re.fullmatch(r'/releases/notes/candidate/' + key + r'\.[a-f0-9]{64}\.json', pointer[key]['path']) for key in ('manifest', 'catalog'))):
+        raise ValueError('Invalid candidate note snapshot identity')
     for key in ('manifest', 'catalog'):
         entry = pointer[key]
         body = valid_path(output, entry).read_bytes()
@@ -280,9 +327,13 @@ def verify_output(output, data=DATA, formal=False):
     manifest = read(valid_path(output, pointer['manifest']))
     if manifest['archive_sha256'] != pointer['catalog']['sha256']:
         raise ValueError('Final notes/catalog snapshot mismatch')
-    rebuilt, _ = compile_manifest(data, output if formal else None, formal)
+    rebuilt, _ = compile_manifest(data, output if formal or include_candidates else None, formal, include_candidates)
     if manifest != rebuilt:
         raise ValueError('Compiled notes changed during page generation')
+    # Candidate notes are optional browser data. Stable no-JavaScript history
+    # remains the default document and keeps its existing rendering check.
+    if include_candidates:
+        return manifest
     for locale, path in [('zh-CN', 'guides/release-log.html'), ('en', 'guides/en/release-log.html')]:
         page = (output / path).read_text()
         if history_html(manifest, locale) not in page:
@@ -340,17 +391,20 @@ def main():
     parser.add_argument('--output', type=Path)
     parser.add_argument('--archive', type=Path)
     parser.add_argument('--formal', action='store_true')
+    parser.add_argument('--include-candidates', action='store_true', help='Generate/verify a separate local candidate snapshot; never replace stable note or catalog pointers')
     args = parser.parse_args()
+    if args.include_candidates and not (args.output or args.verify_output):
+        parser.error('--include-candidates requires --output or --verify-output')
     if args.pending:
         print(encoded(pending_report(args.data)).decode(), end='')
     elif args.verify_output:
-        verify_output(args.verify_output, args.data, args.formal)
+        verify_output(args.verify_output, args.data, args.formal, args.include_candidates)
         print('Final release-note consistency verified')
     elif args.migrate:
         result = write_records(args.data)
         print(f"Migrated {len(result['records'])} deterministic source blocks")
     elif args.output:
-        manifest = write_public(args.output, args.data, args.archive, args.formal)
+        manifest = write_public(args.output, args.data, args.archive, args.formal, args.include_candidates)
         print(f"Compiled {len(manifest['releases'])} releases and {len(manifest['changes'])} reviewed revisions")
     else:
         parser.error('choose --migrate or --output')

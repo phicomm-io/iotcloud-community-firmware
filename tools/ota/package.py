@@ -4,17 +4,22 @@ import argparse
 import hashlib
 import re
 import struct
+import sys
 from pathlib import Path
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, utils
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'release'))
+from release_version import parse_version
 DOMAIN = b'PHICOMM-OTA-V1'
 MODELS = {'tc1': 1, 'm1': 2, 'a1': 3, 'daikin': 4}
 
-def header(image, model, version, commit, key_id=1, channel=1):
-    match = re.fullmatch(r'v?(\d+)\.(\d+)\.(\d+)', version)
-    if not match:
-        raise ValueError('Release version must be MAJOR.MINOR.PATCH')
-    parts = [int(x) for x in match.groups()]
+def header(image, model, version, commit, key_id=1, channel=None):
+    identity = parse_version(version)
+    parts = identity.core
+    if channel is None:
+        channel = 2 if identity.prerelease else 1
+    if identity.prerelease and channel != 2:
+        raise ValueError('Release candidates require signed OTA candidate channel 2')
     if any(x >= 1 << 20 for x in parts):
         raise ValueError('Version component exceeds 20 bits')
     version = version.encode('ascii')
@@ -67,14 +72,14 @@ def verify_package(package, model, keyring_path=None):
         raise ValueError('Invalid signed OTA version field')
     try:
         version_text = version_raw.decode('ascii')
-        version_match = re.fullmatch(r'v?(\d+)\.(\d+)\.(\d+)', version_text)
-    except UnicodeDecodeError as error:
+        identity = parse_version(version_text)
+    except (UnicodeDecodeError, ValueError) as error:
         raise ValueError('Invalid signed OTA version') from error
-    if not version_match:
-        raise ValueError('Invalid signed OTA version')
-    expected_counter = sum(int(part) << shift for part, shift in zip(version_match.groups(), (40, 20, 0)))
-    if counter != expected_counter or any(int(part) >= 1 << 20 for part in version_match.groups()):
+    expected_counter = sum(part << shift for part, shift in zip(identity.core, (40, 20, 0)))
+    if counter != expected_counter or any(part >= 1 << 20 for part in identity.core):
         raise ValueError('Signed OTA version counter mismatch')
+    if identity.prerelease and channel != 2:
+        raise ValueError('Signed OTA release candidate is not in candidate channel 2')
     payload = package[192:]
     if hashlib.sha256(payload).digest() != digest:
         raise ValueError('Signed OTA payload digest mismatch')
@@ -86,6 +91,7 @@ def verify_package(package, model, keyring_path=None):
     except Exception as error:
         raise ValueError('Signed OTA signature is not trusted or is invalid') from error
     return {'key_id': key_id, 'model': model, 'version': version_text,
+            'channel': channel, 'prerelease': identity.prerelease,
             'commit': commit.hex(), 'payload_size': length,
             'payload_sha256': digest.hex()}
 

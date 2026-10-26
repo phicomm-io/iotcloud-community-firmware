@@ -1,5 +1,6 @@
 /* Shared job reservation serializes metadata, release notes and installation. */
 #include "fetch.h"
+#include "version.h"
 #include "../firmware_variant.h"
 #ifndef PHICOMM_OTA_GITHUB_BASE_URL
 #define PHICOMM_OTA_GITHUB_BASE_URL "https://phicomm-io.github.io"
@@ -32,9 +33,6 @@ static const char *update_text(json_object *o,const char *key){json_object *v=js
 static bool update_relative(const char *s){
     if(strncmp(s,"/releases/v",11)||strlen(s)>=200||strstr(s,".."))return false;
     for(;*s;s++)if(!isalnum((unsigned char)*s)&&!strchr("/._-",*s))return false;return true;
-}
-static bool update_semver(const char *s,unsigned v[3]){
-    for(int i=0;i<3;i++){if(!isdigit((unsigned char)*s))return false;v[i]=0;while(isdigit((unsigned char)*s)){if(v[i]>100000)return false;v[i]=v[i]*10+(*s++-'0');}if(i<2&&*s++!='.')return false;}return !*s||*s=='-';
 }
 typedef struct{char *body;uint32_t length;} metadata_body;
 static bool meta_begin(void *ctx,uint32_t n){metadata_body *b=ctx;b->body=malloc(n+1);b->length=n;return b->body!=NULL;}
@@ -72,12 +70,12 @@ static void update_worker(mico_thread_arg_t arg){
             if(ok){
                 b.body[b.length]=0;json_object *meta=service_parse(b.body,b.length);ok=false;error="Invalid release manifest";
                 if(meta){
-                    const char *v=update_text(meta,"version"),*path=update_text(meta,"path"),*notes=update_text(meta,"release_log");unsigned remote[3],local[3];
+                    const char *v=update_text(meta,"version"),*path=update_text(meta,"path"),*notes=update_text(meta,"release_log");ph_ota_version_t remote,local;
                     size_t n=strlen(path);
                     if(!strcmp(update_text(meta,"model"),UPDATE_MODEL)&&
-                       (!strcmp(update_text(meta,"firmware_variant"),PHICOMM_FIRMWARE_VARIANT)||(PHICOMM_LEGACY_FULL_VARIANT&&!update_text(meta,"firmware_variant")[0]))&&strlen(v)<sizeof(update_version)&&update_semver(v,remote)&&update_semver(FIRMWARE_VERSION,local)&&update_relative(path)&&n>7&&!strcmp(path+n-7,".signed")&&update_relative(notes)){
+                       (!strcmp(update_text(meta,"firmware_variant"),PHICOMM_FIRMWARE_VARIANT)||(PHICOMM_LEGACY_FULL_VARIANT&&!update_text(meta,"firmware_variant")[0]))&&strlen(v)<sizeof(update_version)&&ph_ota_version_parse(v,&remote)&&ph_ota_version_parse(FIRMWARE_VERSION,&local)&&update_relative(path)&&n>7&&!strcmp(path+n-7,".signed")&&update_relative(notes)){
                         mico_rtos_lock_mutex(&service_lock);strcpy(update_version,v);strcpy(update_path,path);strcpy(update_notes,notes);update_available=false;
-                        for(unsigned i=0;i<3;i++)if(remote[i]!=local[i]){update_available=remote[i]>local[i];break;}
+                        update_available=ph_ota_version_compare(&remote,&local)>0;
                         mico_rtos_unlock_mutex(&service_lock);ok=true;
                     }
                     json_object_put(meta);
@@ -113,7 +111,7 @@ static json_object *update_command(const char *action,json_object *p,const char 
             if(mico_rtos_create_thread(NULL,UPDATE_PRIORITY,"ota_metadata",update_worker,6144,0)!=kNoErr){update_busy=false;strcpy(notes?notes_state:update_state,"failed");ota_job_release();*code="busy";}else *code="accepted";
         }
     }else if(!strcmp(action,"ota.install")){
-        if(update_busy||!*update_path)*code="invalid_params";
+        if(update_busy||!update_available||!*update_path)*code="invalid_params";
         else{char url[500];snprintf(url,sizeof(url),"%s%s",update_bases[update_source],update_path);json_object *params=json_object_new_object();string(params,"url",url);mico_rtos_unlock_mutex(&service_lock);json_object_put(o);o=service_product("ota.start",params,code);json_object_put(params);return o;}
     }
     if(!strcmp(action,"ota.notes.get")){

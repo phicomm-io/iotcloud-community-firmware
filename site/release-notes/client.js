@@ -102,16 +102,25 @@
     return Array.from(state, value => value.toString(16).padStart(8, '0')).join('');
   }
   async function snapshot(source = '', options = {}) {
+    const channel = options.channel || 'stable', candidate = channel === 'candidate';
+    if (!['stable', 'candidate'].includes(channel)) fail('INVALID_SOURCE', 'Select a supported release channel.');
+    if (candidate && source) fail('INVALID_SOURCE', 'Release candidates are available from this archive only.');
     return withTimeout(options, async signal => {
       const base = baseURL(source), fetcher = options.fetch || root.fetch.bind(root);
+      const directory = '/releases/notes/' + (candidate ? 'candidate/' : '');
       const get = async (path, limit) => {
         const response = await fetcher(base + path, {signal, credentials: 'omit', cache: 'no-store', redirect: 'error'});
+        if (candidate && path === directory + 'index.json' && response.status === 404)
+          fail('CANDIDATE_UNAVAILABLE', 'No release candidate is available in this archive.');
         if (!response.ok) fail('SOURCE_UNAVAILABLE', 'Release data is unavailable (HTTP ' + response.status + ').');
         return bytes(response, limit);
       };
-      const indexBytes = await get('/releases/notes/index.json', 16384), index = document(indexBytes);
+      const indexBytes = await get(directory + 'index.json', 16384), index = document(indexBytes);
+      const resourcePath = kind => new RegExp('^' + directory.replaceAll('.', '\\.') + kind + '\\.[a-f0-9]{64}\\.json$');
       if (index.schema !== 1 || !index.manifest || !index.catalog ||
-        !/^\/releases\/notes\/manifest\.[a-f0-9]{64}\.json$/.test(index.manifest.path) || index.catalog.path !== '/releases/index.json')
+        !resourcePath('manifest').test(index.manifest.path) ||
+        (candidate ? !resourcePath('catalog').test(index.catalog.path) : index.catalog.path !== '/releases/index.json') ||
+        (candidate && (index.channel !== 'candidate' || index.source?.scope !== 'candidate' || index.source?.kind !== 'relative-archive')))
         fail('INVALID_INDEX', 'The release-note index is invalid.');
       async function verified(entry) {
         if (!Number.isSafeInteger(entry.size) || entry.size < 1 || entry.size > 4 * 1024 * 1024 || !/^[a-f0-9]{64}$/.test(entry.sha256))
@@ -122,9 +131,14 @@
         return document(data);
       }
       const values = await Promise.all([verified(index.manifest), verified(index.catalog)]);
-      if (values[0].archive_sha256 !== index.catalog.sha256 || !index.manifest.path.endsWith(index.manifest.sha256 + '.json'))
+      if (values[0].archive_sha256 !== index.catalog.sha256 || !index.manifest.path.endsWith(index.manifest.sha256 + '.json') ||
+        (candidate && !index.catalog.path.endsWith(index.catalog.sha256 + '.json')))
         fail('SOURCE_MISMATCH', 'Release-note data and archive metadata belong to different snapshots.');
-      return freeze({source: base, id: index.manifest.sha256, manifest: values[0], catalog: values[1]});
+      if (candidate && (!Array.isArray(values[0].supported_scopes) || !values[0].supported_scopes.some(scope => scope.branch === 'main' && scope.channel === 'candidate') ||
+        !Array.isArray(values[1].releases) || !values[1].releases.some(release => release.channel === 'candidate' && release.prerelease === true) ||
+        typeof values[1].stable !== 'string' || values[0].stable !== values[1].stable.replace(/^v/, '') || !/^v\d+\.\d+\.\d+$/.test(values[1].stable)))
+        fail('SOURCE_MISMATCH', 'Candidate notes and archive do not declare the same stable baseline and candidate channel.');
+      return freeze({source: base, channel, id: index.manifest.sha256, manifest: values[0], catalog: values[1]});
     });
   }
   function deviceURL(address) {

@@ -27,19 +27,19 @@ TC1's A1 hardware revision and the A1 purifier are different products; their ima
 
 Normal web updates on community firmware use the matching `.ota.bin.signed` package. A raw application `.ota.bin.raw` is only for migration or recovery procedures that explicitly accept it. The full `.all.bin` image is for wired installation and cannot be uploaded through web OTA. See [updates and recovery](https://phicomm-io.github.io/guides/en/firmware-update.html).
 
-The DAIKIN stock OTA layout has **`0x180000` (1.5 MiB)** application slots. Follow the [stock OTA guide](https://phicomm-io.github.io/guides/en/daikin-stock-ota.html) for the first migration to normal firmware. The signed `full → hub` conversion is in development; see the [hub guide](https://phicomm-io.github.io/guides/en/daikin-guide.html#switch-from-full-to-hub). It requires supporting firmware and an image that fits the device.
+The DAIKIN stock OTA layout has **`0x180000` (1.5 MiB)** application slots. Follow the [stock OTA guide](https://phicomm-io.github.io/guides/en/daikin-stock-ota.html) for the first migration to normal firmware. For the signed `full → hub` conversion in v1.0.0-rc, see the [hub guide](https://phicomm-io.github.io/guides/en/daikin-guide.html#switch-from-full-to-hub). It requires supporting firmware and an image that fits the device.
 
-## v1.0 in development
+## v1.0.0-rc candidate
 
-**v1.0 has not been released. Existing 0.9.x artifacts remain available.** These are development targets; future release notes will determine availability.
+**[v1.0.0-rc](https://github.com/phicomm-io/iotcloud-community-firmware/releases/tag/v1.0.0-rc) is a prerelease; the stable channel remains on v0.9.27.** Historical 0.9.x artifacts remain available. Check the release notes for features and matching version requirements.
 
-| Area | Planned features |
+| Area | Candidate features |
 | --- | --- |
 | Use and updates | Chinese / English interfaces, device language, configuration backup and restore, migration recovery and upgrade comparisons |
 | M1 | Independent sources for the formaldehyde / PM2.5 positions: local sensors, TC1 power, A1 effective main-fan output (0–100%), DAIKIN CO₂ and other readings, or the API; double-press switches the original / user pair, with separate expiry fallback and threshold or fixed colors; steadier PM2.5 and separate over-threshold buzzer switches, off by default, independent of light thresholds, alarms and manual tones |
 | DAIKIN `hub` | Separate hub variant: local accounts, TCP / WebSocket MQTT Broker, LAN Home Assistant, an upstream MQTT client and Bemfa forwarding; normal firmware remains a sensor device |
 
-Apple Home is planned through HAP bridging on the hub. Pairing, controls and restart recovery await physical-device validation. Matter support is not currently claimed.
+Apple Home uses experimental HomeKit HAP bridging on the hub. Pairing, controls and restart recovery await physical-device validation. Matter is not included.
 
 ## Build and contribute
 

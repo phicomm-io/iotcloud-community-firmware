@@ -5,11 +5,13 @@ import json
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 GENERATED = ROOT / 'common' / 'generated'
-TAG_PATTERN = re.compile(r'v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)\Z')
+sys.path.insert(0, str(ROOT / 'tools/release'))
+from release_version import TAG_PATTERN, parse_tag, parse_version
 
 
 def git(root, *args):
@@ -20,7 +22,7 @@ def git(root, *args):
 def resolve_version(root=ROOT, tag=None):
     root = Path(root).resolve()
     if tag and not TAG_PATTERN.fullmatch(tag):
-        raise ValueError(f'Invalid release tag: {tag}; expected vMAJOR.MINOR.PATCH')
+        raise ValueError(f'Invalid release tag: {tag}; expected vMAJOR.MINOR.PATCH[-rc[.N]]')
     try:
         if Path(git(root, 'rev-parse', '--show-toplevel')).resolve() != root:
             raise ValueError('Source directory is not the Git repository root')
@@ -51,11 +53,11 @@ def resolve_version(root=ROOT, tag=None):
     target_file = root / 'VERSION'
     if target_file.is_file():
         target = target_file.read_text().strip()
-        if not TAG_PATTERN.fullmatch('v' + target):
+        if not TAG_PATTERN.fullmatch('v' + target) or parse_version(target).prerelease:
             raise ValueError('VERSION must contain MAJOR.MINOR.PATCH')
-        if explicit_tag and target != explicit_tag[1:]:
+        if explicit_tag and parse_version(target).core != parse_tag(explicit_tag).core:
             raise ValueError('release tag differs from VERSION')
-        if not explicit_tag and tuple(map(int, target.split('.'))) > tuple(map(int, base.split('.'))):
+        if not explicit_tag and parse_version(target).core > parse_version(base).core:
             base, tag = target, None
     return {'version': f'{base}-{commit[:6]}' + ('-dirty' if dirty else ''),
             'base_version': base, 'git_commit': commit, 'git_tag': tag, 'dirty': dirty}

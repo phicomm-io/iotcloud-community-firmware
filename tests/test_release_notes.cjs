@@ -101,6 +101,53 @@ test('numeric versions, explicit legal gaps and downgrade protection', () => {
   assert.equal(run(f, {from: '1.9.0', to: '1.12.0'}).changes.length, 1);
   failure(run(f, {from: '1.12.0', to: '1.9.0'}), 'DOWNGRADE');
 });
+test('candidate ordering retains full identity, commit provenance and strict numeric suffixes', () => {
+  const versions = ['0.9.27', '1.0.0-rc', '1.0.0-rc.0', '1.0.0-rc.2', '1.0.0-rc.10', '1.0.0', '1.0.1-rc'];
+  assert.deepEqual(versions.slice().reverse().sort(Notes.compareVersions), versions);
+  assert.equal(Notes.parseVersion('v1.0.0-rc.2-abcdef').version, '1.0.0-rc.2');
+  assert.equal(Notes.parseVersion('v1.0.0-rc.2-abcdef').suffix, 'abcdef');
+  for (const value of ['1.0.0-rc.01', '1.0.0-rc.-1', '1.0.0-RC', '1.0.0-beta', '1.0.0-rc+meta',
+    '1.0.0-rc\n', '1.0.0-rc-abcdef-dirty', '1.0.0-rc.١']) assert.throws(() => Notes.parseVersion(value));
+});
+function candidateFixture() {
+  const f = fixture(['0.9.27', '1.0.0-rc', '1.0.0-rc.2', '1.0.0-rc.10', '1.0.0']);
+  f.manifest.supported_scopes.push({branch: 'main', channel: 'candidate'});
+  f.manifest.releases.at(-1).previous = '0.9.27';
+  for (const record of f.manifest.releases.filter(r => r.version.includes('-rc'))) {
+    record.channel = 'candidate';
+    for (const coverage of record.coverage) coverage.scope.channels = ['candidate'];
+    Object.assign(f.catalog.releases.find(r => r.version === record.version), {channel: 'candidate', prerelease: true});
+  }
+  const candidateScope = {...scope(), channels: ['candidate']};
+  f.manifest.changes = [revision('old', '0.9.27'), revision('new', '1.0.0-rc', {scope: candidateScope}),
+    revision('new', '1.0.0-rc.10', {scope: candidateScope}), revision('stable-only', '1.0.0')];
+  return f;
+}
+test('candidate comparisons require explicit selection and can use a reviewed stable baseline', () => {
+  const f = candidateFixture(), q = {from: '0.9.27', to: '1.0.0-rc.10', channel: 'candidate'};
+  let result = run(f, q);
+  assert.equal(result.ok, true); assert.deepEqual(result.changes.map(c => c.change_id), ['new']);
+  assert.equal(result.changes[0].version, '1.0.0-rc.10');
+  result = run(f, {...q, from: '1.0.0-rc'});
+  assert.equal(result.ok, true); assert.equal(result.changes[0].impact, 'updated');
+  failure(run(f, {...q, channel: 'stable'}), 'UNKNOWN_TARGET');
+  failure(run(f, {...q, to: '1.0.0'}), 'UNKNOWN_TARGET');
+  result = run(f, {from: '0.9.27', to: '1.0.0'});
+  assert.equal(result.ok, true); assert.deepEqual(result.changes.map(c => c.change_id), ['stable-only']);
+  failure(run(f, {...q, from: '1.0.0'}), 'DOWNGRADE');
+  const target = f.manifest.releases.find(r => r.version === q.to).targets[0];
+  assert.equal(run(f, {...q, to: q.to + '-' + target.source_commit.slice(0, 6)}).ok, true);
+  failure(run(f, {...q, to: q.to + '-abcdef'}), 'UNKNOWN_BUILD');
+});
+test('candidate metadata and intermediate reviews cannot be inferred from version labels', () => {
+  const q = {from: '0.9.27', to: '1.0.0-rc.10', channel: 'candidate'};
+  let f = candidateFixture(); delete f.catalog.releases.find(r => r.version === q.to).prerelease;
+  failure(run(f, q), 'ARCHIVE_MISMATCH');
+  f = candidateFixture(); f.manifest.releases.find(r => r.version === '1.0.0-rc.2').coverage[0].status = 'pending';
+  failure(run(f, q), 'REVIEW_REQUIRED');
+  f = candidateFixture(); f.manifest.releases.find(r => r.version === q.to).previous = '1.0.0';
+  failure(run(f, q), 'BROKEN_RELEASE_CHAIN');
+});
 test('broken chains, unknown targets and future changes cannot produce a partial list', () => {
   const f = fixture(); f.manifest.changes = [revision('now', '0.9.2'), revision('future', '0.9.3', {review_status: 'pending'})];
   assert.deepEqual(run(f, {to: '0.9.2'}).changes.map(c => c.change_id), ['now']);

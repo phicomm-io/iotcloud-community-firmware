@@ -12,22 +12,88 @@
     const english = app.dataset.locale === 'en', locale = english ? 'en' : 'zh-CN';
     const t = (zh, en) => english ? en : zh;
     const get = id => app.querySelector('#notes-' + id);
-    const fields = Object.fromEntries(['source', 'model', 'variant', 'from', 'to'].map(k => [k, get(k)]));
+    const fields = Object.fromEntries(['channel', 'source', 'model', 'variant', 'from', 'to'].map(k => [k, get(k)]));
     const status = get('status'), resultBox = get('result'), submit = get('submit'), share = get('share');
     const readButton = get('read-device'), deviceStatus = get('device-status');
+    const candidateBox = get('candidates'), candidateDownloads = get('candidate-downloads'), candidateStatus = get('candidate-status');
+    const stableSourceOptions = [...fields.source.options].map(option => option.cloneNode(true));
     const params = new URL(win.location.href).searchParams;
     const initial = Object.fromEntries(['from', 'to', 'model', 'variant'].map(k => [k, params.get(k)]));
+    fields.channel.disabled = false;
+    fields.channel.value = params.get('channel') === 'candidate' ? 'candidate' : 'stable';
     const labels = english ? {feature: 'New features', improvement: 'Improvements', bugfix: 'Bug fixes', security: 'Security updates', breaking: 'Important changes'} :
       {feature: '新功能', improvement: '功能改进', bugfix: '问题修复', security: '安全更新', breaking: '重要变化'};
     const variantLabel = variant => ({full: t('完整版', 'Full'), 'no-frontend-resources': t('精简版（保留配网页）', 'Minimal (setup pages retained)'),
-      'fresh-air': t('新风完整版', 'Fresh-air full'), 'fresh-air-no-frontend-resources': t('新风精简版', 'Fresh-air minimal')}[variant] || variant);
+      'fresh-air': t('新风完整版', 'Fresh-air full'), 'fresh-air-no-frontend-resources': t('新风精简版', 'Fresh-air minimal'),
+      hub: t('中枢版', 'Hub')}[variant] || variant);
     const removers = [];
     function on(node, event, handler) { node.addEventListener(event, handler); removers.push(() => node.removeEventListener(event, handler)); }
     function element(tag, text, className) {
       const el = doc.createElement(tag); if (text != null) el.textContent = text; if (className) el.className = className; return el;
     }
     let snapshot = null, sourceEpoch = 0, conditionEpoch = 0, sourceController = null, deviceController = null;
-    let deviceVersion = null, firstLoad = true, destroyed = false;
+    let deviceVersion = null, firstLoad = true, destroyed = false, stableSource = fields.source.value;
+    const candidateSelected = () => fields.channel.value === 'candidate';
+    function scopedReleases(targetsOnly = false) {
+      return snapshot.manifest.releases.filter(release => release.branch === 'main' &&
+        (release.channel === fields.channel.value || (!targetsOnly && candidateSelected() && release.channel === 'stable')));
+    }
+    function configureSource() {
+      const candidate = candidateSelected();
+      if (candidate && !fields.source.disabled) stableSource = fields.source.value;
+      fields.source.replaceChildren(...stableSourceOptions.map(option => option.cloneNode(true)));
+      if (candidate) {
+        fields.source.replaceChildren(new win.Option(t('本站候选归档（GitHub）', 'This candidate archive (GitHub)'), ''));
+        fields.source.value = '';
+      } else fields.source.value = stableSource;
+      fields.source.disabled = candidate;
+      candidateBox.hidden = !candidate; candidateDownloads.replaceChildren(); candidateStatus.textContent = '';
+      app.dataset.channel = fields.channel.value;
+    }
+    function candidateLink(asset, release) {
+      if (!asset || !Number.isSafeInteger(asset.size) || asset.size < 1 || !/^[a-f0-9]{64}$/.test(asset.sha256)) return null;
+      const prefix = '/releases/' + release.tag + '/';
+      if (typeof asset.path !== 'string' || !asset.path.startsWith(prefix) || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(asset.path.slice(prefix.length))) return null;
+      return asset.path;
+    }
+    function renderCandidates() {
+      const releases = snapshot.catalog.releases.filter(release => release.channel === 'candidate' && release.prerelease === true &&
+        release.tag === 'v' + release.version && Notes.parseVersion(release.version).prerelease)
+        .sort((a, b) => Notes.compareVersions(b.version, a.version));
+      if (!releases.length) throw {code: 'CANDIDATE_UNAVAILABLE', reason: 'No release candidate is available in this archive.'};
+      for (const [model, label] of [['m1', t('M1 空气检测仪', 'M1 air quality monitor')], ['a1', t('A1 空气净化器', 'A1 air purifier')],
+        ['tc1', t('TC1 智能排插', 'TC1 power strip')], ['daikin', t('DAIKIN 大金检测仪', 'DAIKIN air quality monitor')]]) {
+        const group = element('article', null, 'notes-change'); group.id = 'notes-candidate-' + model;
+        group.append(element('h3', label));
+        const guide = element('a', t('功能与使用指南', 'Operation guide')); guide.href = '/guides/' + (english ? 'en/' : '') + model + '-guide.html';
+        const demo = element('a', t('界面演示', 'Interface demo')); demo.href = '/demos/' + model + '/';
+        const actions = element('p', null, 'notes-actions'); actions.append(guide, demo); group.append(actions);
+        let available = false;
+        for (const release of releases) {
+          const item = release.models[model]; if (!item) continue;
+          const list = element('ul');
+          for (const [variant, entry] of [['full', item], ...Object.entries(item.variants || {})]) {
+            if (!candidateLink(entry.downloads?.signed, release)) continue;
+            const row = element('li'); row.append(element('b', variantLabel(variant)));
+            for (const [kind, label] of [['signed', t('签名 OTA', 'Signed OTA')], ['raw', t('原始 OTA', 'Raw OTA')], ['full', t('完整镜像', 'Full image')]]) {
+              const href = candidateLink(entry.downloads[kind], release); if (!href) continue;
+              const link = element('a', label); link.href = href; row.append(doc.createTextNode(' · '), link);
+            }
+            list.append(row);
+          }
+          if (!list.childElementCount) continue;
+          available = true; group.append(element('h4', release.tag + ' · RC'), list);
+          const checksum = element('a', t('SHA256 校验文件', 'SHA256 checksums')); checksum.href = '/releases/' + release.tag + '/SHA256SUMS';
+          const links = element('p', null, 'notes-actions'); links.append(checksum);
+          const github = 'https://github.com/phicomm-io/iotcloud-community-firmware/releases/tag/' + release.tag;
+          if (release.github_release === github) { const link = element('a', t('GitHub 候选版', 'GitHub prerelease')); link.href = github; links.append(link); }
+          group.append(links);
+        }
+        if (!available) group.append(element('p', t('暂无此型号的候选版文件。', 'No candidate files are available for this model.')));
+        candidateDownloads.append(group);
+      }
+      candidateStatus.textContent = t('稳定版仍为 ', 'The stable release remains ') + snapshot.catalog.stable + (english ? '.' : '。');
+    }
     function clearResult() { resultBox.replaceChildren(); share.hidden = true; app.removeAttribute('data-report-state'); }
     function invalidate() {
       conditionEpoch++; deviceController?.abort(); deviceController = null; readButton.disabled = false;
@@ -44,6 +110,7 @@
         COVERAGE_UNKNOWN: '无法确认该设备范围的说明覆盖情况。', BROKEN_RELEASE_CHAIN: '发布链不完整，不能推断中间版本。',
         ARCHIVE_MISMATCH: '说明与固件归档的提交、文件或校验值不一致。', FRONTEND_IDENTITY_MISMATCH: '无法核实该固件的界面版本。',
         SOURCE_MISMATCH: '说明资源与固件目录不同步，请切换完整来源后重试。', SOURCE_UNAVAILABLE: '说明来源暂时不可用，请切换来源或稍后重试。',
+        CANDIDATE_UNAVAILABLE: '本站尚未提供候选版，请查看稳定版。', INVALID_SOURCE: '候选版仅使用本站归档，请选择有效的发布来源。', INVALID_INDEX: '发布数据索引不完整，暂不能提供下载或比较。',
         NETWORK_BLOCKED: '请求未能完成，可能受到网络、CORS 或浏览器本地网络权限限制；仍可手动选择。',
         LOCAL_NETWORK_DENIED: '浏览器拒绝本地网络访问；请手动选择或调整浏览器权限。', TIMEOUT: '请求超时，仍可手动选择。',
         DEVICE_UNAUTHORIZED: '网页管理密码不正确。', DEVICE_BUSY: '设备繁忙，请稍后重试或手动选择。', OLD_DEVICE_API: '此旧接口不支持读取所需信息，请手动选择。',
@@ -61,7 +128,7 @@
       select.value = values.includes(selected) ? selected : values[0] || '';
     }
     function supported() {
-      return snapshot.manifest.releases.filter(r => r.targets.some(target => target.model === fields.model.value && target.variant === fields.variant.value))
+      return scopedReleases().filter(r => r.targets.some(target => target.model === fields.model.value && target.variant === fields.variant.value))
         .sort((a, b) => Notes.compareVersions(b.version, a.version));
     }
     function versions(fromValue = fields.from.value, toValue = fields.to.value) {
@@ -69,14 +136,15 @@
       fields.from.replaceChildren(); option(fields.from, '', t('选择当前版本', 'Choose current version'));
       option(fields.from, 'stock', t('原厂固件 / 首次安装', 'Stock firmware / first installation'));
       for (const value of values) option(fields.from, value, 'v' + value);
-      const original = deviceVersion || fromValue;
+      const original = deviceVersion || fromValue || (candidateSelected() && values.includes(snapshot.manifest.stable) ? snapshot.manifest.stable : '');
       if (original && !['stock', ...values].includes(original)) option(fields.from, original, original);
       fields.from.value = original || '';
-      setOptions(fields.to, values, values.includes(toValue) ? toValue : values.includes(snapshot.manifest.stable) ? snapshot.manifest.stable : values[0], v => 'v' + v);
-      if (toValue && !values.includes(toValue)) { option(fields.to, toValue, toValue); fields.to.value = toValue; }
+      const targets = releases.filter(release => release.channel === fields.channel.value).map(release => release.version);
+      setOptions(fields.to, targets, targets.includes(toValue) ? toValue : targets.includes(snapshot.manifest.stable) ? snapshot.manifest.stable : targets[0], v => 'v' + v);
+      if (toValue && !targets.includes(toValue)) { option(fields.to, toValue, toValue); fields.to.value = toValue; }
     }
     function variants(wanted = fields.variant.value, fromValue, toValue) {
-      const values = [...new Set(snapshot.manifest.releases.flatMap(r => r.targets.filter(x => x.model === fields.model.value).map(x => x.variant)))];
+      const values = [...new Set(scopedReleases(true).flatMap(r => r.targets.filter(x => x.model === fields.model.value).map(x => x.variant)))];
       setOptions(fields.variant, values, wanted || 'full', variantLabel); versions(fromValue, toValue);
     }
     function selectTab(which) {
@@ -97,7 +165,7 @@
     function comparison() {
       clearResult(); if (!snapshot) return;
       if (!fields.from.value) { status.textContent = t('请选择当前固件版本。', 'Choose the current firmware version.'); return; }
-      const query = {from: fields.from.value, to: fields.to.value, model: fields.model.value, variant: fields.variant.value, branch: 'main', channel: 'stable', locale};
+      const query = {from: fields.from.value, to: fields.to.value, model: fields.model.value, variant: fields.variant.value, branch: 'main', channel: fields.channel.value, locale};
       const result = Notes.compare(snapshot.manifest, query, snapshot.catalog);
       if (!result.ok) {
         app.dataset.reportState = 'error'; showError(result.error);
@@ -129,11 +197,12 @@
         resultBox.append(group);
       }
       const identity = element('details', null, 'notes-target'); identity.append(element('summary', t('目标固件与校验信息', 'Target firmware and verification')));
-      const link = element('a', result.target.path.split('/').pop()); link.href = snapshot.source + result.target.path; identity.append(link);
+      const link = element('a', result.target.path.split('/').pop()); link.href = (candidateSelected() ? '' : snapshot.source) + result.target.path; identity.append(link);
       identity.append(element('p', t('源码：', 'Source: ') + result.target.source_commit), element('p', 'SHA-256: ' + result.target.sha256));
       resultBox.append(identity);
       const url = new URL(win.location.href); url.search = ''; url.hash = '';
       for (const key of ['from', 'to', 'model', 'variant']) url.searchParams.set(key, query[key]);
+      if (candidateSelected()) url.searchParams.set('channel', 'candidate');
       share.href = url.href; share.hidden = false;
       win.history.replaceState(null, '', url.pathname + url.search);
     }
@@ -145,14 +214,17 @@
     async function load() {
       invalidate(); snapshot = null; const epoch = ++sourceEpoch;
       sourceController?.abort(); sourceController = new AbortController();
-      const source = fields.source.value;
+      configureSource(); const source = fields.source.value, channel = fields.channel.value;
       for (const field of ['model', 'variant', 'from', 'to']) fields[field].disabled = true;
       submit.disabled = true; status.textContent = t('正在校验发布数据…', 'Verifying release data…');
+      if (candidateSelected()) candidateStatus.textContent = status.textContent;
       try {
-        const value = await Client.snapshot(source, {signal: sourceController.signal});
+        const value = await Client.snapshot(source, {signal: sourceController.signal, channel});
         if (destroyed || epoch !== sourceEpoch) return;
         snapshot = value;
-        const models = [...new Set(snapshot.manifest.releases.flatMap(r => r.targets.map(x => x.model)))].sort();
+        if (candidateSelected()) renderCandidates();
+        fields.channel.options[0].textContent = t('稳定版 · v', 'Stable · v') + snapshot.manifest.stable;
+        const models = [...new Set(scopedReleases(true).flatMap(r => r.targets.map(x => x.model)))].sort();
         const wanted = firstLoad ? initial.model || 'a1' : fields.model.value;
         setOptions(fields.model, models, wanted, m => m.toUpperCase());
         if (wanted && !models.includes(wanted)) { option(fields.model, '', t('请选择适用型号', 'Choose a supported model')); fields.model.value = ''; }
@@ -165,10 +237,16 @@
         firstLoad = false;
       } catch (error) {
         if (destroyed || epoch !== sourceEpoch || error.code === 'REQUEST_ABORTED') return;
+        snapshot = null; candidateDownloads.replaceChildren();
+        if (candidateSelected()) showError(error, candidateStatus);
         showError(error); app.dataset.reportState = 'error';
       }
     }
-    on(fields.source, 'change', load);
+    on(fields.source, 'change', () => { stableSource = fields.source.value; load(); });
+    on(fields.channel, 'change', () => {
+      deviceVersion = null; fields.from.value = ''; fields.to.value = '';
+      if (candidateSelected()) selectTab('compare'); load();
+    });
     on(get('device-form'), 'submit', async event => {
       event.preventDefault(); invalidate(); const epoch = conditionEpoch;
       const address = get('address').value.trim(), password = get('password').value;
@@ -192,7 +270,7 @@
       destroyed = true; sourceEpoch++; invalidate(); sourceController?.abort(); for (const remove of removers) remove();
       delete app.releaseNotesController;
     }};
-    if (params.get('view') === 'compare') selectTab('compare');
+    if (params.get('view') === 'compare' || candidateSelected()) selectTab('compare');
     app.releaseNotesController = controller; controller.ready = load(); return controller;
   }
   return Object.freeze({mount});

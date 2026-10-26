@@ -3,11 +3,12 @@
 import argparse, hashlib, json, re, subprocess
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
-TAG = re.compile(r'v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)\Z')
+from release_version import TAG_PATTERN as TAG, parse_tag
 
 def extract(text, tag):
-    if not TAG.fullmatch(tag): raise ValueError('expected vMAJOR.MINOR.PATCH')
-    sections = list(re.finditer(r'^##\s+(v\d+\.\d+\.\d+)\s*$', text, re.M))
+    parse_tag(tag)
+    sections = [section for section in re.finditer(r'^##[ \t]+(v[^\s]+)[ \t]*$', text, re.M)
+                if TAG.fullmatch(section[1])]
     matches = [i for i,s in enumerate(sections) if s[1] == tag]
     if len(matches) != 1: raise ValueError(f'{tag}: expected exactly one release section')
     i = matches[0]
@@ -22,8 +23,8 @@ def main():
     a=p.parse_args();dest=ROOT/'docs/release'
     if a.wiki:
         tags=subprocess.check_output(['git','-C',str(ROOT),'tag','--merged','HEAD','--list','v*'],text=True).splitlines()
-        versions=[tuple(map(int,t[1:].split('.'))) for t in tags if TAG.fullmatch(t)]
-        if not TAG.fullmatch(a.tag) or (versions and tuple(map(int,a.tag[1:].split('.')))<=max(versions)):
+        versions=[parse_tag(t).key for t in tags if TAG.fullmatch(t)]
+        if not TAG.fullmatch(a.tag) or (versions and parse_tag(a.tag).key<=max(versions)):
             p.error('new release must increment the latest existing SemVer tag')
         if subprocess.check_output(['git','-C',str(a.wiki),'status','--porcelain'],text=True).strip():
             p.error('commit Wiki changes before freezing the snapshot')

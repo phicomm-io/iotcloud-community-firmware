@@ -17,7 +17,6 @@ python3 -m unittest tests.test_json_build_gate tests.test_service_json_failure_s
 python3 -m unittest tests.test_memory_admission tests.test_emw3080_release_memory tests.test_http_browser_queue tests.test_tc1_http_trace
 python3 -m unittest tests.test_a1_provision_memory
 python3 -m unittest tests.test_info_metadata tests.test_m1_mqtt_display_session tests.test_host_rng tests.test_capabilities_wire
-python3 -m unittest tests.test_m1_boot_config tests.test_stock_runtime tests.test_m1_display_source tests.test_m1_display_format tests.test_m1_storage_v10 tests.test_backup tests.test_m1_particles_mqtt
 python3 -m unittest tests.test_m1_barometer tests.test_m1_barometer_captures
 compiler=("${CC:-cc}")
 if [[ "${SANITIZE:-0}" == 1 ]]; then
@@ -30,6 +29,8 @@ trap 'rm -rf "$output"' EXIT
 "${compiler[@]}" -std=c99 -Wall -Wextra -Werror tests/test_m1_sensor_details.c -o "$output/m1-sensor-details"
 "$output/m1-sensor-details"
 "$output/m1-stock-protocol"
+"${compiler[@]}" -std=c99 -Wall -Wextra -Werror tests/test_ota_version.c -o "$output/ota-version"
+"$output/ota-version"
 "${compiler[@]}" -std=c99 -Wall -Wextra -Werror tests/test_gesture.c -o "$output/gesture"
 "$output/gesture"
 "${compiler[@]}" -std=c99 -Wall -Wextra -Werror tests/test_a1_buttons.c -o "$output/a1-buttons"
@@ -82,6 +83,9 @@ json_dir="$output/json_c"
 # Product callbacks need the actual JSON lifetime overlays, including their
 # headers. CI starts with a pristine SDK, so run after preparing this copy.
 PHICOMM_TEST_JSON_DIR="$json_dir" python3 -m unittest tests.test_json_integer_parse tests.test_json_sized_resize tests.test_http_callbacks
+# M1's production display encoder also uses the patched printbuf failure flag.
+# Pass the same disposable SDK copy as the callbacks rather than pristine headers.
+PHICOMM_TEST_JSON_DIR="$json_dir" python3 -m unittest tests.test_m1_boot_config tests.test_stock_runtime tests.test_m1_display_source tests.test_m1_display_format tests.test_m1_storage_v10 tests.test_backup tests.test_m1_particles_mqtt
 # Production MQTT tests require every pinned SDK; never silently skip in CI.
 for sdk in build/a1-sdk/mico-os build/m1-sdk/mico-os build/tc1-sdk-3.6.4/mico-os; do
     python3 tools/prepare_sdk.py "$sdk"
@@ -109,6 +113,8 @@ ota_port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)
 export PHICOMM_TEST_OTA_PORT="$ota_port"
 "${compiler[@]}" -std=gnu99 -DPHICOMM_OTA_CN_BASE_URL='"http://127.0.0.1:'"$ota_port"'"' -Itests/stubs -I"$json_dir" tests/test_update.c common/json_owned.c "$json_dir"/*.c -o "$output/update"
 python3 tests/test_update.py "$output/update"
+"${compiler[@]}" -std=gnu99 -Itests/stubs -I"$json_dir" tests/test_device_update_version.c common/json_owned.c "$json_dir"/*.c -o "$output/device-update-version"
+"$output/device-update-version"
 # Isolated lifetime vectors use the exact shared production helper bodies.
 python3 - "$output/mqtt_owned_helpers.inc" <<'PYMQTT'
 from pathlib import Path
