@@ -2,7 +2,7 @@
 
 M1 主控固件可以通过网络更新，**不需要 J-Link，也不需要拆机**。当前使用电脑上的 Python 脚本升级，电脑需能通过局域网访问 M1。
 
-**本文刷的是“传感器主控”，不是“Wi-Fi MCU”。** EMW3080 联网模块负责 Wi-Fi 和网页；ATSAMD20G18A 传感器主控负责与机内传感器通信，以及屏幕、按键和蜂鸣器。为降低新手误刷导致设备无法使用的风险，传感器主控没有 WebUI 上传入口。请使用下文电脑脚本，通过 `POST /api/v1/mcu/exchange` API 烧录并校验；普通网页“固件更新”只更新 Wi-Fi MCU。
+**本文刷的是“传感器主控”，不是“Wi-Fi MCU”。** EMW3080 联网模块负责 Wi-Fi 和网页；ATSAMD20G18A 传感器主控负责与机内传感器通信，以及屏幕、按键和蜂鸣器。为降低新手误刷导致设备无法使用的风险，传感器主控没有 WebUI 上传入口。请使用下文电脑脚本，通过 MCU 升级 API 烧录并校验；普通网页“固件更新”只更新 Wi-Fi MCU。
 
 **先核对主控版本：推荐原厂 11.x 迁移，17.1.2.3 / 17.x 差异较大，暂不建议迁移。** 本教程不会把联网版本当作主控版本；版本未知时先查明硬件与原始版本。
 
@@ -10,29 +10,29 @@ M1 主控固件可以通过网络更新，**不需要 J-Link，也不需要拆�
 
 ## 1. 确认 Wi-Fi 固件版本
 
-M1 必须先安装支持主控网络升级的配套社区 Wi-Fi 固件：**公开发布版本最低为 v0.9.26**，该版本加入 `POST /api/v1/mcu/exchange` 主控升级桥接接口。原厂 Wi-Fi 固件及 v0.9.24 或更早的社区固件不能直接使用本文方法；v0.9.25 只有源码 tag，没有公开 Release，因此不作为下载起点。
+原厂 11.x 主控需要支持**整包缓冲转发**的社区 Wi-Fi 固件。不要仅凭版本号判断：通过 `capabilities.get` 或 `/api/v1/capabilities` 检查 `data.mcu_ota_max_bytes`，当前实现为 **32768**。这项功能已加入 Wi-Fi 源码 main；下载安装时还需确认所用构建包含它。旧版 v0.9.26 起提供的逐块桥接，以及 `1.0.0-39a5b0`，均不包含这个新能力。
 
-在 M1 网页查看当前 Wi-Fi 固件版本。低于 v0.9.26 时，先通过正常的 Wi-Fi 固件更新入口安装 [M1 Wi-Fi v0.9.26 或更新版本]({{SITE_URL}}#releases)，确认设备恢复上线，再升级主控。两者版本号相互独立：这里的 v0.9.26 是 **Wi-Fi 版本**，下文 v0.9.4 是 **主控版本**。
+原因是原厂 11.1.2.1 在开始接收后有约 10 秒的复位窗口。逐块 HTTP 往返可能超过这个窗口；新接口先在 Wi-Fi 模块接收完整文件，再在本机快速逐块发送并核对应答。新的电脑工具会自动选用它；原厂主控配旧 Wi-Fi 时，会在发送升级帧前拒绝。已经运行社区主控的设备仍可使用旧逐块桥接。
 
 如需在网页中使用主控的 RTTTL 音乐、四种提示音和闹钟曲目，配套 Wi-Fi 固件需要 **v0.9.27 或更新版本**，还需另外刷入主控 v0.9.3 或更新版本并通过能力检测；网页颗粒物详情需要主控 v0.9.4 的完整帧能力。只升级 Wi-Fi 不会自动获得这些功能，详见[主控功能与版本条件](m1-mcu-firmware)。
 
 ## 2. 下载主控文件与脚本
 
-从 [MCU v0.9.4 Release](https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20/releases/tag/v0.9.4) 下载以下两个文件，放在同一目录，保留文件名：
+从 [MCU v1.0.0-rc Release](https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20/releases/tag/v1.0.0-rc) 下载以下两个文件，放在同一目录，保留文件名：
 
 - `m1-mcu-ota.bin`
 - `m1-mcu-ota.json`
 
 这两个文件必须来自同一个 Release，不要混用不同版本。脚本会核对镜像长度、SHA-256、芯片目标、应用地址及清单。下载区还提供 SHA256SUMS 和独立的调试恢复包，网络更新不需要使用恢复包或原厂整片备份。
 
-电脑需要 Python 3。首次使用可通过 Git 获取 v0.9.4 配套工具；脚本仅使用 Python 标准库，无需安装 pip 依赖：
+电脑需要 Python 3。首次使用请通过 Git 获取 main 上支持缓冲转发的新工具（旧 Release tag 内的工具不含此修复）；脚本仅使用 Python 标准库，无需安装 pip 依赖：
 
 ```sh
-git clone --depth 1 --branch v0.9.4 https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20.git
+git clone --depth 1 --branch main https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20.git
 cd phicomm_m1_mcu_atsamd20
 ```
 
-也可在该 Release 页面下载 Source code ZIP，解压后打开终端并进入源码目录。不要只单独下载 `m1_network.py`：它还需要同目录的 `tools/pack_ota.py`。
+也可在源码 main 页面选择 Code → Download ZIP，解压后打开终端并进入源码目录。不要只单独下载 `m1_network.py`：它还需要同目录的 `tools/pack_ota.py`。
 
 ## 3. 填写自己的设备信息
 
@@ -84,7 +84,7 @@ python3 tools/m1_network.py \
 
 macOS / Linux 的多行命令请整体复制，行末 `\` 表示命令还没结束；Windows 命令已经合为一行。
 
-默认不刷写。检查输出中的 `device_id`、`before_mcu`、`candidate`、`sha256` 和 `bytes`，确认目标设备和待写入的主控版本正确。此步骤核对本地镜像并读取设备身份与主控版本，**不会实际发送升级帧，也不能代替前面的 Wi-Fi 最低版本检查**。
+默认不刷写。检查输出中的 `device_id`、`before_mcu`、`candidate`、`sha256`、`bytes` 和 `mcu_ota_max_bytes`，确认目标设备和待写入的主控版本正确。此步骤核对本地镜像并读取设备身份与主控版本，**不会实际发送升级帧，也不能代替前面的 Wi-Fi 最低版本检查**。
 
 ## 5. 加上 --flash 正式更新
 
@@ -111,9 +111,9 @@ python3 tools/m1_network.py \
 
 <!-- /os -->
 
-升级期间保持供电，不要同时升级 Wi-Fi、重启设备或修改配置。脚本逐块等待应答并显示进度；主控重启会让 Wi-Fi 暂时断开，工具随后等待网络恢复，并核对同一设备新的主控版本回报，最多等待约 120 秒。
+升级期间保持供电，不要同时升级 Wi-Fi、重启设备或修改配置。缓冲方式先发送整包，再由 Wi-Fi 本机逐块等待应答；旧桥接方式在电脑上显示块进度；主控重启会让 Wi-Fi 暂时断开，工具随后等待网络恢复，并核对同一设备新的主控版本回报，最多等待约 120 秒。
 
-本次 **MCU v0.9.4** 发布包应回报 **`0.9.4-1ce539`**。只有看到 `Verified MCU runtime` 且版本匹配，才表示工具已确认升级后运行版本。`Commit transmitted` 仅表示已发送提交，不能单独作为成功依据。
+本次 **MCU v1.0.0-rc** 发布包应回报 **`1.0.0-rc-97a03b`**。只有看到 `Verified MCU runtime` 且版本匹配，才表示工具已确认升级后运行版本。`Commit transmitted` 仅表示已发送提交，不能单独作为成功依据。
 
 如果提示版本未确认或超时，先等设备重新上线，核对供电、IP、设备身份和实际主控版本；不要盲目重复刷写。`HTTP 401` 通常需要检查网页密码；升级接口 `404` 时检查 Wi-Fi 固件是否已达到支持版本；设备忙时等待其他升级或配置操作结束。
 
@@ -121,4 +121,8 @@ python3 tools/m1_network.py \
 
 该过程**只更新链接于 0x4000 的主控应用，保留原厂 Bootloader**，不会刷入独立新 Boot。原厂 Boot 不具备新 Boot 增加的 CRC 日志与中断搬运恢复保证。原厂整片备份与 Boot 镜像不能作为本流程的应用 OTA 文件。
 
-使用对应 Release 的镜像与清单，升级期间保持供电。功能与原厂备份见 [M1 主控开源固件](m1-mcu-firmware)，实现细节见[主控网络升级协议](https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20/blob/v0.9.4/docs/network-ota.md)。
+使用对应 Release 的镜像与清单，升级期间保持供电。功能与原厂备份见 [M1 主控开源固件](m1-mcu-firmware)，实现细节见[主控网络升级协议](https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20/blob/main/docs/network-ota.md)。
+
+## 本次验证
+
+2026-10-26，一台原厂主控 11.1.2.1 的 M1 使用整包接口升级到 `1.0.0-rc-97a03b`。镜像 26052 字节，提交响应约 6.6 秒；重启后版本、按键和双区域显示能力均匹配，现场确认屏幕、指示灯和单击开关屏正常。保留原厂 Boot，未据此验证其他硬件修订、17.x 或升级中断电恢复。

@@ -45,11 +45,22 @@ static void app_ota_abort(const char*r){assert(r);aborts++;job=false;}
 '''.replace('MODEL',model).replace('app_',prefix+'_')
      if model=='M1':
       stubs+=r'''
-static unsigned mcu_calls;static bool mcu_fail;
+static unsigned mcu_calls,mcu_commits,mcu_received,mcu_expected,m1_lock;static bool mcu_fail;
+static struct {bool mcu_updating,ota_active,reboot_pending,wifi_trial_active,uart_ready;} m1_state={.uart_ready=true};
+static void mico_rtos_lock_mutex(unsigned*p){assert(!*p);*p=1;}
+static void mico_rtos_unlock_mutex(unsigned*p){assert(*p);*p=0;}
 static bool m1_mcu_exchange(const uint8_t*p,size_t n,uint8_t out[20]){
- assert(n==12&&p[0]==0x23&&p[1]==0x70);mcu_calls++;
- memset(out,0,20);out[0]=0x23;out[1]=0x70;out[19]=0x21;return !mcu_fail;
+ assert(p[0]==0x23);mcu_calls++;memset(out,0,20);out[0]=0x23;out[19]=0x21;
+ if(p[1]==0x16&&p[2]==1){m1_state.mcu_updating=false;return true;}
+ if(mcu_fail)return false;
+ if(p[1]==0x70){assert(n==12);out[1]=0x70;return true;}
+ out[1]=0x14;
+ if(p[1]==0x12){assert(n==12);mcu_expected=p[2]*256+p[3];mcu_received=0;m1_state.mcu_updating=true;}
+ else if(p[1]==0x13){assert(n>=6&&n<=262);mcu_received+=n-6;out[2]=p[2];out[3]=p[3];out[4]=1;}
+ else {assert(p[1]==0x16&&n==12&&mcu_received==mcu_expected);mcu_commits++;m1_state.mcu_updating=false;}
+ return true;
 }
+
 '''
      if model=='A1':
       stubs+='''
@@ -189,6 +200,17 @@ int main(int argc,char**argv){
  assert(((const unsigned char*)x.response.body)[19]==0x21&&!product.wire);finish(true);
  assert(start("POST","/api/v1/mcu/exchange",12)==PH_HTTP_READ_BODY);assert(app.body(&x,frame,5));app.complete(&x);assert(x.response.status==409&&mcu_calls==1);finish(false);
  mcu_fail=true;assert(start("POST","/api/v1/mcu/exchange",12)==PH_HTTP_READ_BODY);assert(app.body(&x,frame,12));app.complete(&x);assert(x.response.status==409&&mcu_calls==2);finish(true);
+ mcu_fail=false;unsigned calls_before=mcu_calls;
+ unsigned char image[164]={0};uint32_t sp=0x20008000,pc=0x4041;memcpy(image,&sp,4);memcpy(image+4,&pc,4);
+ assert(start_auth("POST","/api/v1/mcu/ota",164,"Basic YmFk")==PH_HTTP_REPLY&&x.response.status==401);finish(false);
+ assert(start("POST","/api/v1/mcu/ota",163)==PH_HTTP_REPLY&&x.response.status==400);finish(false);
+ assert(start("POST","/api/v1/mcu/ota",32769)==PH_HTTP_REPLY&&x.response.status==400);finish(false);
+ m1_state.mcu_updating=true;assert(start("POST","/api/v1/mcu/ota",164)==PH_HTTP_REPLY&&x.response.status==409);finish(false);m1_state.mcu_updating=false;
+ assert(start("POST","/api/v1/mcu/ota",164)==PH_HTTP_READ_BODY);assert(app.body(&x,image,3));finish(false);assert(mcu_calls==calls_before);
+ image[0]=1;assert(start("POST","/api/v1/mcu/ota",164)==PH_HTTP_READ_BODY);assert(app.body(&x,image,164));app.complete(&x);assert(x.response.status==409&&mcu_calls==calls_before);finish(true);image[0]=0;
+ assert(start("POST","/api/v1/mcu/ota",164)==PH_HTTP_READ_BODY);assert(app.body(&x,image,1)&&app.body(&x,image+1,163));app.complete(&x);assert(x.response.status==202&&mcu_commits==1&&mcu_received==164);finish(true);
+ mcu_fail=true;assert(start("POST","/api/v1/mcu/ota",164)==PH_HTTP_READ_BODY);assert(app.body(&x,image,164));app.complete(&x);assert(x.response.status==409&&mcu_commits==1&&!m1_state.mcu_updating);finish(true);mcu_fail=false;
+
 ''').replace('TC1_VERIFY_RECOVERY_CHECK' ,'' if model!='TC1' else r'''
  unsigned before_reboots=reboots,before_activations=activations;
  assert(start("POST","/api/v1/ota/upload",3)==PH_HTTP_WAIT);assert(app.retry(&x)==PH_HTTP_READ_BODY);assert(app.body(&x,"123",3));app.complete(&x);assert(x.response.status==202&&job&&activations==before_activations);finish(false);assert(!job&&reboots==before_reboots&&activations==before_activations);
