@@ -112,12 +112,13 @@ void m1_display_switch_get(m1_display_switch_config_t *out)
     for(unsigned i=0;i<M1_DISPLAY_LANES;i++)if(c->lanes[i].source!=M1_DISPLAY_NONE)out->present=true;
     mico_rtos_unlock_mutex(&config_lock);
 }
-bool m1_display_lane_get(unsigned slot,m1_display_lane_config_t *out,uint32_t *revision)
+bool m1_display_lane_get(unsigned slot,m1_display_lane_config_t *out,m1_display_remote_t *remote,uint32_t *revision)
 {
     if(slot>=M1_DISPLAY_LANES)return false;
     mico_rtos_lock_mutex(&config_lock);
     const m1_display_config_t *c=&((app_storage_t *)app_config)->display;
     *out=c->lanes[slot];*revision=c->revision;bool configured=c->configured;
+    if(remote)*remote=c->remote[slot];
     mico_rtos_unlock_mutex(&config_lock);return configured;
 }
 const char *m1_display_config_save(const m1_display_config_t *next)
@@ -349,6 +350,7 @@ int application_start(void)
     if (app_config->magic != M1_CONFIG_MAGIC || app_config->version < 1 || app_config->version > M1_CONFIG_VERSION ||
         (app_config->version >= 8 && !m1_co2_source_config_valid(&((app_storage_t *)app_config)->co2_source)) ||
         (app_config->version == 9 && !m1_display_v9_valid(&((app_storage_t *)app_config)->display)) ||
+        (app_config->version == 10 && !m1_display_v10_valid(&((app_storage_t *)app_config)->display)) ||
         (app_config->version == M1_CONFIG_VERSION && !m1_display_config_valid(&((app_storage_t *)app_config)->display))) {
         config_recovery=true;
         memset(app_config,0,sizeof(app_storage_t));
@@ -361,6 +363,7 @@ int application_start(void)
     bool source_migration = app_config->version < 8;
     bool display_migration = app_config->version < 9;
     bool presentation_migration = app_config->version == 9;
+    bool field_migration = app_config->version == 9 || app_config->version == 10;
     if (app_config->magic == M1_CONFIG_MAGIC &&
         (app_config->version == 1 || app_config->version == 2)) {
         m1_storage_v2_t *old = malloc(sizeof(*old));
@@ -419,8 +422,14 @@ int application_start(void)
     }
     if(presentation_migration){
         /* A v9 dual/legacy profile retains its exact source lanes and active
-         * behavior. New presentation options require an explicit v3 save. */
+         * behavior. New presentation options require an explicit profile save. */
         m1_display_upgrade_v9(&((app_storage_t *)app_config)->display);
+        app_config->version=M1_CONFIG_VERSION;migration_changed=true;
+    }
+    if(field_migration){
+        /* Preserve the complete old profile; append its stable field binding
+         * without reading arbitrary bytes beyond the former layout. */
+        m1_display_upgrade_remote(&((app_storage_t *)app_config)->display);
         app_config->version=M1_CONFIG_VERSION;migration_changed=true;
     }
     /* Normalize the retained ABI byte without changing credentials or layout. */

@@ -7444,6 +7444,192 @@
         "reason": "Author reviewed both languages against the specified source paths; scope and authentication/variant boundaries agree. Independent review is not claimed.",
         "reviewed_content_sha256": "011be62bee01206d4781edc43a82813f01c81943ab99227128c4dca1ab4bc0d3"
       }
+    },
+    {
+      "change_id": "v1-generic-number-field-publication",
+      "version": "1.0.0-rc.1",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "m1",
+          "a1",
+          "tc1",
+          "daikin"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources",
+          "hub"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "设备按字段发布通用数值",
+        "en": "Publish generic numeric fields"
+      },
+      "description": {
+        "zh-CN": "设备以传感器数据 schema 2 发布任意字段 ID 及其名称、类型、单位、数值、有效标志和读数年龄（`name/type/unit/value/valid/age_ms`）。TC1 功率、A1 主风机生效输出、大金和 M1 的传感器读数均声明为 `number`；A1 输出为 0–100%，不是 RPM。无效数值使用 `null`，不以 0 代替。 本版传感器数据采用 schema 2、M1 显示配置采用 schema 4，不兼容 v1.0.0-rc 的对应旧接口；自定义调用方需按 RC1 协议调整，并使用配套前端。",
+        "en": "Devices publish arbitrary field IDs using sensor-data schema 2, with a name, type, unit, value, validity flag and reading age (`name/type/unit/value/valid/age_ms`). TC1 power, A1 effective main-fan output, and DAIKIN and M1 sensor readings declare `number`. A1 output is 0–100%, not RPM. Invalid values use `null` instead of a fabricated zero. Sensor data now uses schema 2 and M1 display profiles use schema 4, without compatibility with the corresponding v1.0.0-rc interfaces. Custom clients must follow the RC1 protocol and use the matching frontend."
+      },
+      "ota_summary": {
+        "zh-CN": "设备以传感器数据 schema 2 发布任意字段 ID 及其名称、类型、单位、数值、有效标志和读数年龄（`name/type/unit/value/valid/age_ms`）。TC1 功率、A1 主风机生效输出、大金和 M1 的传感器读数均声明为 `number`；A1 输出为 0–100%，不是 RPM。无效数值使用 `null`，不以 0 代替。 本版传感器数据采用 schema 2、M1 显示配置采用 schema 4，不兼容 v1.0.0-rc 的对应旧接口；自定义调用方需按 RC1 协议调整，并使用配套前端。",
+        "en": "Devices publish arbitrary field IDs using sensor-data schema 2, with a name, type, unit, value, validity flag and reading age (`name/type/unit/value/valid/age_ms`). TC1 power, A1 effective main-fan output, and DAIKIN and M1 sensor readings declare `number`. A1 output is 0–100%, not RPM. Invalid values use `null` instead of a fabricated zero. Sensor data now uses schema 2 and M1 display profiles use schema 4, without compatibility with the corresponding v1.0.0-rc interfaces. Custom clients must follow the RC1 protocol and use the matching frontend."
+      },
+      "summary_complete": true,
+      "critical": true,
+      "source_refs": [
+        "v1.0.0-rc.1:b010",
+        "v1.0.0-rc.1:b013"
+      ],
+      "evidence": {
+        "protocol_commit": "3aeb59607ed51233cc3e033f189ecda83c60ec90",
+        "source_paths": [
+          "common/numeric_feed.h",
+          "common/sensor_field.h",
+          "common/runtime.c",
+          "common/service_product.inc",
+          "M1/mqtt.c",
+          "M1/display_source.c",
+          "M1/display_source.h",
+          "A1/mqtt.c",
+          "TC1/mqtt_server/user_mqtt_client.c",
+          "DAIKIN/src/mqtt.inc",
+          "DAIKIN/src/sessions.inc",
+          "tests/test_m1_generic_fields.py",
+          "tests/test_numeric_feed.py"
+        ],
+        "firmware_source_sha256": {
+          "common/numeric_feed.h": "08a56bba7a0a634aa7482c71e3171b786669f49dc043122bf202f4c006fa6647",
+          "common/sensor_field.h": "38c559b580ff3fd7a3ca3f954b6dfd1f9c40a1d71293355cc0cbc524b93e0600",
+          "common/runtime.c": "0186c533d40e9777057da43566afc042c71b571b0bc23d3d5f7b351589ef9f40",
+          "common/service_product.inc": "0bd5d9b7fa47ca50777d22fb50ed57cf93aa4eea9deead4f2fedf15dc4d267a8",
+          "M1/mqtt.c": "f17938156ffa7ab03dbf39c80666dfd04fdb8492f66aa29b400eddf05fccfc11",
+          "M1/display_source.c": "8c973f35f8f8f464965d06fc27ede995b5b9f2646230acb3479fd49e07f2ddd3",
+          "M1/display_source.h": "8789de39aba972148ed8a954038f706b52568b2d58aa849d3a858ff679efc461",
+          "A1/mqtt.c": "5717a8bbd3381919533b691f2f5164658bef5c875cdf34b1cd7b580eee7d5fbc",
+          "TC1/mqtt_server/user_mqtt_client.c": "1b4e70ccef2b16b9e7092e69af78f3552e5f15ff39e97c6ea78041ba27568c2e",
+          "DAIKIN/src/mqtt.inc": "1c5d30346aaa905e5950ae94a0e5d5fb9edb3914716202cd3c0fc0bc3221305e",
+          "DAIKIN/src/sessions.inc": "8307df0c51502d0414d5a659c318a02adb47bbead022821a0f270f7f2a5c79ac",
+          "tests/test_m1_generic_fields.py": "4a9bb52a2e35376bcf863dd18a359c233636cbe6f511aca4acfd27e6ae9b5aea",
+          "tests/test_numeric_feed.py": "8f7c919aecb3d8a286d9424eff364467a92fafffce5afa0c56022f59c6e3d5eb"
+        },
+        "frontend_source_sha256": {
+          "protocols.lock.json": "82b04bd9990de3ba892abddd3f6f57b4d4d62abc321a4d7a5dd28f5b302f9c0d",
+          "frontend/src/sensorFeed.js": "d8290f1d1dba4f55b9a14ebd7a1c74661cd5b76df421965b01872f05a731dc37",
+          "frontend/src/sensorFeed.test.js": "584dced3f9f63bf8270088dd073a40eee844d180696e8f49afd5d500e096ea2d",
+          "M1/web/display-profile.js": "d562cb58055462e58f289f432c7d8e527013ad857c2005d26cc18cbbfa3fa58e",
+          "M1/web/display-format.js": "4aa6a107bb202dd979905347838a15643e22f052c69da4945b92e0ad12fe51a9",
+          "tests/test_m1_display_profile.cjs": "148207224f5cd3455095e91e8601147e1e6a5dca17a3051a1c61a0fbd9377fcd",
+          "tests/test_m1_display_format.cjs": "57f0b49d5bac24c2980d5f522646581b78a3e58dd42036302119987a5381c538",
+          "frontend/tests/m1-display-built.mjs": "a6ada50ae202c490f382699b8a1b7ccc35e362e09f736aa477e4e5669b4b18ad"
+        },
+        "review_basis": "Author checked actual working-tree source against the pinned protocol; root and implementation owners reported host/browser test PASS. Final firmware/frontend commits, signed assets and physical acceptance are separate.",
+        "firmware_base_commit": "4a132c8c8a04b79fea592ff8ac01f93a63b713d0",
+        "frontend_review_commit": "b2232084f2e6c9663d741f19652806054924e6bd"
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root/public_pages",
+        "reviewed_utc": "2026-10-26T09:39:40.474241+00:00",
+        "reason": "Author reviewed both languages against the pinned schema2/schema4 contract and actual producer/consumer source. Model and variant scopes, number/null semantics, type/unit binding and old-RC migration agree. Independent review is not claimed.",
+        "reviewed_content_sha256": "5aa192caa036d93b952f9ed779f6f8d0dd81b5dfdd661a5af51673381733ab5e"
+      }
+    },
+    {
+      "change_id": "v1-m1-device-field-display-source",
+      "version": "1.0.0-rc.1",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "m1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "M1 按设备和字段选择数值来源",
+        "en": "Select M1 numeric sources by device and field"
+      },
+      "description": {
+        "zh-CN": "M1 显示配置 schema 4 按“设备 + 字段”选择来源，不再按设备型号适配。来源设备增加数值字段后，无需新增型号映射；M1 仅接受类型和单位匹配的 `number`。缺失、无效或 `unknown` 等非数值字段不再沿用旧读数；协议保留未来类型扩展。 本版传感器数据采用 schema 2、M1 显示配置采用 schema 4，不兼容 v1.0.0-rc 的对应旧接口；自定义调用方需按 RC1 协议调整，并使用配套前端。",
+        "en": "M1 display-profile schema 4 selects a source by device and field, rather than adapting to its model. New numeric fields do not need another model mapping. M1 accepts only `number` fields matching the configured type and unit. Missing, invalid, `unknown` or other nonnumeric fields revoke the old reading; the protocol reserves future type extensions. Sensor data now uses schema 2 and M1 display profiles use schema 4, without compatibility with the corresponding v1.0.0-rc interfaces. Custom clients must follow the RC1 protocol and use the matching frontend."
+      },
+      "ota_summary": {
+        "zh-CN": "M1 显示配置 schema 4 按“设备 + 字段”选择来源，不再按设备型号适配。来源设备增加数值字段后，无需新增型号映射；M1 仅接受类型和单位匹配的 `number`。缺失、无效或 `unknown` 等非数值字段不再沿用旧读数；协议保留未来类型扩展。 本版传感器数据采用 schema 2、M1 显示配置采用 schema 4，不兼容 v1.0.0-rc 的对应旧接口；自定义调用方需按 RC1 协议调整，并使用配套前端。",
+        "en": "M1 display-profile schema 4 selects a source by device and field, rather than adapting to its model. New numeric fields do not need another model mapping. M1 accepts only `number` fields matching the configured type and unit. Missing, invalid, `unknown` or other nonnumeric fields revoke the old reading; the protocol reserves future type extensions. Sensor data now uses schema 2 and M1 display profiles use schema 4, without compatibility with the corresponding v1.0.0-rc interfaces. Custom clients must follow the RC1 protocol and use the matching frontend."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc.1:b011",
+        "v1.0.0-rc.1:b013"
+      ],
+      "evidence": {
+        "protocol_commit": "3aeb59607ed51233cc3e033f189ecda83c60ec90",
+        "source_paths": [
+          "M1/display_source.c",
+          "M1/display_source.h",
+          "common/sensor_field.h",
+          "tests/test_m1_generic_fields.py"
+        ],
+        "firmware_source_sha256": {
+          "M1/display_source.c": "8c973f35f8f8f464965d06fc27ede995b5b9f2646230acb3479fd49e07f2ddd3",
+          "M1/display_source.h": "8789de39aba972148ed8a954038f706b52568b2d58aa849d3a858ff679efc461",
+          "common/sensor_field.h": "38c559b580ff3fd7a3ca3f954b6dfd1f9c40a1d71293355cc0cbc524b93e0600",
+          "tests/test_m1_generic_fields.py": "4a9bb52a2e35376bcf863dd18a359c233636cbe6f511aca4acfd27e6ae9b5aea"
+        },
+        "frontend_source_sha256": {
+          "protocols.lock.json": "82b04bd9990de3ba892abddd3f6f57b4d4d62abc321a4d7a5dd28f5b302f9c0d",
+          "frontend/src/sensorFeed.js": "d8290f1d1dba4f55b9a14ebd7a1c74661cd5b76df421965b01872f05a731dc37",
+          "frontend/src/sensorFeed.test.js": "584dced3f9f63bf8270088dd073a40eee844d180696e8f49afd5d500e096ea2d",
+          "M1/web/display-profile.js": "d562cb58055462e58f289f432c7d8e527013ad857c2005d26cc18cbbfa3fa58e",
+          "M1/web/display-format.js": "4aa6a107bb202dd979905347838a15643e22f052c69da4945b92e0ad12fe51a9",
+          "tests/test_m1_display_profile.cjs": "148207224f5cd3455095e91e8601147e1e6a5dca17a3051a1c61a0fbd9377fcd",
+          "tests/test_m1_display_format.cjs": "57f0b49d5bac24c2980d5f522646581b78a3e58dd42036302119987a5381c538",
+          "frontend/tests/m1-display-built.mjs": "a6ada50ae202c490f382699b8a1b7ccc35e362e09f736aa477e4e5669b4b18ad"
+        },
+        "review_basis": "Author checked actual working-tree source against the pinned protocol; root and implementation owners reported host/browser test PASS. Final firmware/frontend commits, signed assets and physical acceptance are separate.",
+        "firmware_base_commit": "4a132c8c8a04b79fea592ff8ac01f93a63b713d0",
+        "frontend_review_commit": "b2232084f2e6c9663d741f19652806054924e6bd"
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root/public_pages",
+        "reviewed_utc": "2026-10-26T09:39:40.474241+00:00",
+        "reason": "Author reviewed both languages against the pinned schema2/schema4 contract and actual producer/consumer source. Model and variant scopes, number/null semantics, type/unit binding and old-RC migration agree. Independent review is not claimed.",
+        "reviewed_content_sha256": "db26b6858ec5198c21756b4f417eb5df945ddea320d665555865a3ad2446ba3b"
+      }
     }
   ],
   "merges": []

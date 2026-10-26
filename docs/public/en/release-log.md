@@ -4,7 +4,7 @@ English translation of the published release history. Historical validation stat
 
 ## v1.0.0-rc.1
 
-The second v1.0.0 release candidate retains the features of the published v1.0.0-rc. This section lists the new DAIKIN hub and web-entry changes. Support for the hub’s own sensors in HomeKit is retained from the published RC.
+The second v1.0.0 release candidate retains the features of the published v1.0.0-rc. This section lists the generic numeric sources, DAIKIN hub and web-entry changes. Support for the hub’s own sensors in HomeKit is retained from the published RC.
 
 ### DAIKIN hub device list
 
@@ -18,6 +18,15 @@ The second v1.0.0 release candidate retains the features of the published v1.0.0
 ### HomeKit status display
 
 - After changing the HomeKit switch or resetting pairing, the page continues checking status while the hub restarts, shows the current state when the service returns, and prompts for sign-in if the session expires. It does not replay the change or reset request, or display stale pairing codes while waiting.
+
+### Generic numeric sources
+
+- Devices publish arbitrary field IDs using sensor-data schema 2, with a name, type, unit, value, validity flag and reading age (`name/type/unit/value/valid/age_ms`). TC1 power, A1 effective main-fan output, and DAIKIN and M1 sensor readings declare `number`. A1 output is 0–100%, not RPM. Invalid values use `null` instead of a fabricated zero.
+- M1 display-profile schema 4 selects a source by device and field, rather than adapting to its model. New numeric fields do not need another model mapping. M1 accepts only `number` fields matching the configured type and unit. Missing, invalid, `unknown` or other nonnumeric fields revoke the old reading; the protocol reserves future type extensions.
+
+Readings retain the existing boot identifier (`boot`), sequence number (`sequence`) and `age_ms` freshness checks to distinguish data across restarts, duplicate messages and expired readings.
+
+Sensor data now uses schema 2 and M1 display profiles use schema 4, without compatibility with the corresponding v1.0.0-rc interfaces. Custom clients must follow the RC1 protocol and use the matching frontend.
 
 [Features since 0.9.27, device guides and downloads](https://phicomm-io.github.io/). Candidates and stable releases are shown separately. This section does not replace the complete notes for the published v1.0.0-rc.
 

@@ -48,6 +48,7 @@ trap 'rm -rf "$output"' EXIT
 "${compiler[@]}" -std=c99 -Wall -Wextra -Werror -Wno-misleading-indentation tests/test_a1_fresh_air.c -lm -o "$output/a1-fresh-air"
 "$output/a1-fresh-air"
 python3 -m unittest tests.test_a1_fresh_air
+python3 -m unittest tests.test_numeric_feed
 python3 -m unittest discover -s A1/tests -p test_fan_sensor.py
 python3 -m unittest discover -s TC1/tests -p test_power_sensor.py
 python3 -m unittest tests.test_a1_filter_storage tests.test_status_views tests.test_status_direct tests.test_typed_tc1_status tests.test_tc1_status_guard tests.test_tc1_status_dispatch
@@ -85,7 +86,7 @@ json_dir="$output/json_c"
 PHICOMM_TEST_JSON_DIR="$json_dir" python3 -m unittest tests.test_json_integer_parse tests.test_json_sized_resize tests.test_http_callbacks
 # M1's production display encoder also uses the patched printbuf failure flag.
 # Pass the same disposable SDK copy as the callbacks rather than pristine headers.
-PHICOMM_TEST_JSON_DIR="$json_dir" python3 -m unittest tests.test_m1_boot_config tests.test_stock_runtime tests.test_m1_display_source tests.test_m1_display_format tests.test_m1_storage_v10 tests.test_backup tests.test_m1_particles_mqtt
+PHICOMM_TEST_JSON_DIR="$json_dir" python3 -m unittest tests.test_m1_boot_config tests.test_stock_runtime tests.test_m1_display_source tests.test_m1_display_format tests.test_m1_generic_fields tests.test_m1_storage_v10 tests.test_backup tests.test_m1_particles_mqtt
 # Production MQTT tests require every pinned SDK; never silently skip in CI.
 for sdk in build/a1-sdk/mico-os build/m1-sdk/mico-os build/tc1-sdk-3.6.4/mico-os; do
     python3 tools/prepare_sdk.py "$sdk"

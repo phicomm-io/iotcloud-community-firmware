@@ -5,6 +5,7 @@
 #include "json_owned.h"
 #include "printbuf.h"
 #include "phicomm_features.h"
+#include "sensor_field.h"
 #include "sntp.h"
 #include <math.h>
 #include <stdio.h>
@@ -325,6 +326,14 @@ static void sensor_decode(json_object *o, feature_sample_t *s) {
   memset(s,0,sizeof(*s));s->partial=true;s->received_ms=s->co2_received_ms=now_ms();
   for(unsigned f=0;f<5;f++) {
     json_object *field=json_object_object_get(values,names[f]);
+    /* UDP v2 permits its historical body; numeric MQTT schema2 requires
+     * an explicit descriptor. Unknown future types never become numbers. */
+    if(values && integer(o,"schema")==2){
+      json_object *name=json_object_object_get(field,"name"),*unit=json_object_object_get(field,"unit");
+      if(strcmp(string(field,"type"),"number") || json_object_get_string_len(json_object_object_get(field,"type"))!=6 ||
+         !sensor_field_text(string(field,"name"),name?json_object_get_string_len(name):0,1,SENSOR_FIELD_NAME_MAX) ||
+         !sensor_field_text(string(field,"unit"),unit?json_object_get_string_len(unit):0,0,SENSOR_FIELD_UNIT_MAX))continue;
+    }
     json_object *v=json_object_object_get(values?field:o,names[f]);
     if(values)v=json_object_object_get(field,"value");
     json_object *age=json_object_object_get(values?field:o,values?"age_ms":f==4?"co2_age_ms":"age_ms");
@@ -376,6 +385,7 @@ static json_object *sample_body(const feature_sample_t *s, uint32_t now) {
     if(i==4&&!s->co2_supported)continue;
     bool fresh=i==4?feature_co2_fresh(s,now):(feature_sample_fresh_fields(s,now)&(1u<<i))!=0;
     json_object *field=json_object_new_object();
+    js(field,"type","number");js(field,"name",i==4?"co2":keys[i]);
     js(field,"unit",units[i]);json_build_object_add(field,"valid",json_object_new_boolean(fresh));
     number(field,"age_ms",i==4?s->co2_age_ms+(uint32_t)(now-s->co2_received_ms):s->age_ms+(uint32_t)(now-s->received_ms));
     json_object_object_add(field,"value",fresh?json_object_new_double(i==4?s->co2:s->value[i]):NULL);
@@ -1023,14 +1033,14 @@ static __attribute__((noinline)) bool display_availability_input(const mqtt_acco
   size_t n=strlen(prefix);
   if(strncmp(topic,prefix,n))return false;
   const char *model=topic+n,*slash=strchr(model,'/');
-  if(!slash || slash-model<2 || slash-model>6 || strlen(slash+1)!=25 || strcmp(slash+13,"/availability"))return false;
-  char model_name[7],id[13];memcpy(model_name,model,slash-model);model_name[slash-model]=0;
-  if(strcmp(model_name,"m1")&&strcmp(model_name,"daikin")&&strcmp(model_name,"tc1")&&strcmp(model_name,"a1"))return false;
+  if(!slash || slash==model || slash-model>32 || strlen(slash+1)!=25 || strcmp(slash+13,"/availability"))return false;
+  for(const char *p=model;p<slash;p++)if((unsigned char)*p<=0x20 || *p==0x7f || *p=='+' || *p=='#')return false;
+  char id[13];
   memcpy(id,slash+1,12);id[12]=0;
   for(unsigned i=0;i<12;i++)if(!((id[i]>='0'&&id[i]<='9')||(id[i]>='a'&&id[i]<='f')))return false;
   /* An online announcement cannot renew a measurement lease. Retained
    * announcements also cannot restore cache state after reconnect. */
-  if(!retained && length==7 && !memcmp(data,"offline",7))m1_display_source_offline(model_name,id);
+  if(!retained && length==7 && !memcmp(data,"offline",7))m1_display_source_offline(NULL,id);
   return true;
 }
 #endif
@@ -1058,10 +1068,15 @@ bool feature_mqtt_input(const char *t, const void *data, size_t n,
     memcpy(mac,suffix,12);mac[12]=0;char normalized[13];if(!feature_mac(mac,normalized))return true;
     json_object *o=parse(data,n);if(!o)return true;
     json_object *schema=json_object_object_get(o,"schema"),*id=json_object_object_get(o,"device_id"),*boot=json_object_object_get(o,"boot"),*seq=json_object_object_get(o,"sequence");
-    if(!json_object_is_type(schema,json_type_int)||json_object_get_int64(schema)!=1 ||
-       !json_object_is_type(id,json_type_string)||json_object_get_string_len(id)!=12||strcmp(string(o,"device_id"),normalized) ||
-       !json_object_is_type(boot,json_type_int)||json_object_get_int64(boot)<1||json_object_get_int64(boot)>UINT32_MAX ||
-       !json_object_is_type(seq,json_type_int)||json_object_get_int64(seq)<1||json_object_get_int64(seq)>UINT32_MAX){json_object_put(o);return true;}
+    if(!schema || !json_object_is_type(schema,json_type_int)||json_object_get_int64(schema)!=2 ||
+       !id || !json_object_is_type(id,json_type_string)||json_object_get_string_len(id)!=12||strcmp(string(o,"device_id"),normalized) ||
+       !boot || !json_object_is_type(boot,json_type_int)||json_object_get_int64(boot)<1||json_object_get_int64(boot)>UINT32_MAX ||
+       !seq || !json_object_is_type(seq,json_type_int)||json_object_get_int64(seq)<1||json_object_get_int64(seq)>UINT32_MAX){json_object_put(o);return true;}
+#ifndef FEATURE_DEVICE_A1
+    /* Numeric bindings are independent of the legacy linkage decoder's
+     * known sensor subset. A new field/model needs no firmware adaptation. */
+    m1_display_source_sample(normalized,o);
+#endif
     feature_sample_t sample;sensor_decode(o,&sample);
     if(!sample.boot||!sample.sequence){json_object_put(o);return true;}
 #ifdef FEATURE_DEVICE_A1
@@ -1075,7 +1090,6 @@ bool feature_mqtt_input(const char *t, const void *data, size_t n,
     }unlock();
 #else
     m1_co2_source_sample(normalized,&sample);
-    m1_display_source_sample(normalized,o);
 #endif
     json_object_put(o);return true;
   }

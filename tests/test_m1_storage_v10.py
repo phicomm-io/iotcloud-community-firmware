@@ -1,4 +1,4 @@
-"""Run M1's actual layout gate and v9->v10 boot migration with Flash faults."""
+"""Run M1's actual layout gate and v9/v10->v11 boot migration with Flash faults."""
 import os
 from pathlib import Path
 import subprocess
@@ -59,6 +59,7 @@ static void seed(unsigned version,bool configured){
     strcpy(live.display.lanes[1].device_id,"123456abcdef");
     /* Bytes outside the old on-flash size are deliberately invalid styles. */
     memset(live.display.style,0xa5,sizeof(live.display.style));
+    memset(live.display.remote,0xa5,sizeof(live.display.remote));
     flash=live;config_recovery=fail_flash=false;writes=unsupported=migration_failures=0;
 }
 static void assert_v9_prefix(const app_storage_t *before){
@@ -66,11 +67,13 @@ static void assert_v9_prefix(const app_storage_t *before){
     assert(!memcmp(&live,&expected,sizeof(m1_storage_v9_t)));
     assert(!memcmp(live.display.style,(m1_display_style_t[2]){{0},{0}},sizeof(live.display.style)));
     assert(m1_display_config_valid(&live.display)&&!live.display.reserved);
+    assert(!strcmp(live.display.remote[1].field_id,"fan_speed_percent")&&!strcmp(live.display.remote[1].unit,"%"));
+    assert(!live.display.remote[0].field_id[0]&&!live.display.remote[0].unit[0]);
     assert(!memcmp(&flash,&live,sizeof(live)));
 }
 int main(void){
-    assert(M1_CONFIG_VERSION==10&&sizeof(m1_storage_v8_t)==2856);
-    assert(sizeof(m1_storage_v9_t)==2928&&sizeof(app_storage_t)==2944);
+    assert(M1_CONFIG_VERSION==11&&sizeof(m1_storage_v8_t)==2856);
+    assert(sizeof(m1_storage_v9_t)==2928&&sizeof(m1_storage_v10_t)==2944&&sizeof(app_storage_t)==3064);
     assert(offsetof(app_storage_t,display.style)==sizeof(m1_storage_v9_t));
     assert(sizeof(m1_display_style_t)==8&&sizeof(m1_display_lane_config_t)==32);
     for(unsigned configured=0;configured<2;configured++){
@@ -84,6 +87,24 @@ int main(void){
         assert_v9_prefix(&before);
         const app_storage_t current=live;assert(boot()==0&&writes==1);
         assert(!memcmp(&current,&live,sizeof(live)));
+    }
+    /* v10's complete presentation prefix survives; absent v11 bytes may be
+     * arbitrary and must not be read by its exact-size validator. */
+    for(unsigned formatted=0;formatted<2;formatted++){
+        seed(10,true);memset(live.display.style,0,sizeof(live.display.style));
+        if(formatted){
+            live.display.reserved=M1_DISPLAY_FORMATTED;
+            live.display.lanes[0].scale=1;live.display.lanes[0].decimals=0;live.display.lanes[1].color=0;
+            live.display.style[0]=(m1_display_style_t){.lamps=0x155,.mode=M1_DISPLAY_AUTO_KILO,.show_unit=1};
+            live.display.style[1]=(m1_display_style_t){.lamps=0xaa,.show_label=1};
+        }
+        const app_storage_t old=live;flash=live;
+        void *exact=malloc(sizeof(m1_display_config_v10_t));assert(exact);
+        memcpy(exact,&live.display,sizeof(m1_display_config_v10_t));assert(m1_display_v10_valid(exact));free(exact);
+        assert(!boot()&&writes==1&&!unsupported);app_storage_t expected=old;expected.base.version=M1_CONFIG_VERSION;
+        assert(!memcmp(&live,&expected,sizeof(m1_storage_v10_t)));
+        assert(!strcmp(live.display.remote[1].field_id,"fan_speed_percent")&&!strcmp(live.display.remote[1].unit,"%"));
+        assert(m1_display_config_valid(&live.display));
     }
     seed(9,true);const app_storage_t old_flash=flash;fail_flash=true;
     assert(boot()!=0&&config_recovery&&writes==1&&!unsupported&&migration_failures==1);
@@ -121,7 +142,7 @@ int main(void){
 
     /* Booting a valid current formatted profile neither rewrites it nor
      * projects its configured segments back into the old scalar profile. */
-    seed(M1_CONFIG_VERSION,true);live.display.reserved=M1_DISPLAY_FORMATTED;
+    seed(M1_CONFIG_VERSION,true);m1_display_upgrade_remote(&live.display);live.display.reserved=M1_DISPLAY_FORMATTED;
     live.display.lanes[0].scale=1;live.display.lanes[0].decimals=0;
     live.display.lanes[1].color=0;
     live.display.style[0]=(m1_display_style_t){.lamps=0x155,.mode=M1_DISPLAY_AUTO_KILO,.show_unit=1};
@@ -129,7 +150,7 @@ int main(void){
     assert(m1_display_config_valid(&live.display));const app_storage_t current=live;
     assert(boot()==0&&!writes&&!unsupported&&!migration_failures);
     assert(!memcmp(&current,&live,sizeof(live)));
-    puts("M1 v10 boot: frozen v9 prefix, append-only styles, unsupported recovery and Flash failures PASS");
+    puts("M1 v11 boot: frozen v9/v10 prefixes, append-only numeric bindings, unsupported recovery and Flash failures PASS");
 }
 '''.replace('CALLBACKS', callbacks).replace('GATE', source[gate_start:migration_start]).replace('MIGRATION', source[migration_start:migration_end])
         with tempfile.TemporaryDirectory() as temporary:

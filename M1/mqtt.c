@@ -4,6 +4,7 @@
 #include "../common/mqtt_cleanup.h"
 #include "../common/json_owned.h"
 #include "../common/mqtt/service.h"
+#include "../common/numeric_feed.h"
 
 int m1_mqtt_read(Network *, unsigned char *, int, int);
 
@@ -32,6 +33,8 @@ static mico_thread_t mqtt_owner_thread;
 static ph_mqtt_startup mqtt_startup;
 static mqtt_account_t account;
 static char base[192], command_topic[MQTT_TOPIC_MAX], availability_topic[MQTT_TOPIC_MAX];
+static uint32_t sensor_boot, sensor_sequence, sensor_at;
+static bool sensor_started;
 static bool rediscover, cleanup_pending;
 static uint8_t discovery_language;
 static m1_config_t session_config;
@@ -88,6 +91,42 @@ static int publish_leaf(const char *leaf, const char *payload, bool retain)
 {
     char topic[MQTT_TOPIC_MAX]; snprintf(topic, sizeof(topic), "%s/%s", base, leaf);
     return publish(topic, payload, retain);
+}
+static int publish_typed_sensors(const mqtt_state_t *s, uint32_t now)
+{
+    /* Owner-only periodic work, including random/encoding/resource failures.
+     * Never retry an optional feed on every 10 ms owner turn. */
+    if(sensor_started && (uint32_t)(now-sensor_at)<5000u)return MQTT_SUCCESS;
+    sensor_started=true;sensor_at=now;
+    if(!sensor_boot && (MicoRandomNumberRead((uint8_t *)&sensor_boot,sizeof(sensor_boot))!=kNoErr || !sensor_boot)){
+        sensor_boot=0;return MQTT_SUCCESS;
+    }
+    const m1_sample_t *v=&s->sample;
+    uint32_t age=v->received?now-v->updated_ms:0;
+    unsigned fresh=m1_sample_fresh(v,now)?m1_sample_fields(v):0;
+    numeric_feed_field_t all[6]={
+        {"temperature","Temperature","°C",v->temperature_deci_c/10.0f,age,(fresh&1)!=0},
+        {"humidity","Humidity","%",v->humidity_deci_pct/10.0f,age,(fresh&2)!=0},
+        {"formaldehyde","Formaldehyde","mg/m³",v->hcho_ug_m3/1000.0f,age,(fresh&8)!=0},
+        {"pm25","PM2.5","µg/m³",v->pm25_ug_m3,age,(fresh&4)!=0}
+    };
+    /* Leave room for optional hardware without exposing absent sensors. */
+    unsigned count=4;
+    if(s->scd40.ready || s->scd40.received)all[count++]=(numeric_feed_field_t){
+        "co2","Carbon dioxide","ppm",s->scd40.co2_ppm,
+        s->scd40.received?now-s->scd40.updated_ms:0,
+        s->scd40.ready&&s->scd40.received&&s->scd40.co2_ppm&&(uint32_t)(now-s->scd40.updated_ms)<20000};
+    if(s->barometer.ready || s->barometer.received)all[count++]=(numeric_feed_field_t){
+        "pressure","Pressure","Pa",s->barometer.pressure_centi_pa/100.0f,
+        s->barometer.received?now-s->barometer.updated_ms:0,m1_barometer_fresh(&s->barometer,now)};
+    char topic[MQTT_TOPIC_MAX],payload[1280];
+    uint32_t sequence=sensor_sequence+1u;if(!sequence)sequence=1;
+    if(!mqtt_aux(&account,"sensor",account.mac,topic,sizeof(topic)) ||
+       !mqtt_format(topic+strlen(topic),sizeof(topic)-strlen(topic),"/state") ||
+       !numeric_feed_encode(payload,sizeof(payload),"m1",account.mac,sensor_boot,sequence,all,count))return MQTT_SUCCESS;
+    sensor_sequence=sequence;
+    int rc=publish(topic,payload,false);
+    return rc==PH_MQTT_MORE?MQTT_SUCCESS:rc;
 }
 
 #include "../common/mqtt/service.h"
@@ -357,6 +396,8 @@ static int session_cycle(void *context) {
             if(ota_job_active())return MQTT_SUCCESS;
             mqtt_state_get(&state); m1_config_get(&current);
             if (!state.wifi_connected || !same_connection(&cfg, &current)) return PH_MQTT_RECONFIGURE;
+            rc=publish_typed_sensors(&state,mico_rtos_get_time());
+            if(rc!=MQTT_SUCCESS)return rc;
             uint8_t language=device_language_get();
             if(language!=discovery_language){discovery_language=language;rediscover=true;}
             if (state.scd40.received && !co2_discovered) { rediscover = true; co2_discovered = true; }

@@ -163,9 +163,9 @@ void m1_display_switch_get(m1_display_switch_config_t *out){
  for(unsigned i=0;i<M1_DISPLAY_LANES;i++)if(display_config.lanes[i].source!=M1_DISPLAY_NONE)out->present=true;
  BASE_UNLOCK();
 }
-bool m1_display_lane_get(unsigned slot,m1_display_lane_config_t *out,uint32_t *revision){
+bool m1_display_lane_get(unsigned slot,m1_display_lane_config_t *out,m1_display_remote_t *remote,uint32_t *revision){
  if(slot>=M1_DISPLAY_LANES)return false;
- BASE_LOCK();*out=display_config.lanes[slot];*revision=display_config.revision;bool configured=display_config.configured;BASE_UNLOCK();return configured;
+ BASE_LOCK();*out=display_config.lanes[slot];if(remote)*remote=display_config.remote[slot];*revision=display_config.revision;bool configured=display_config.configured;BASE_UNLOCK();return configured;
 }
 const char *m1_display_config_save(const m1_display_config_t *c){
  if(!m1_display_config_valid(c))return "invalid_params";

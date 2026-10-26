@@ -116,7 +116,7 @@ int main(void){
     assert(sizeof(m1_storage_v8_t)==sizeof(legacy_m1_storage_v8_t));
     assert(sizeof(legacy_m1_display_lane_v9_t)==32&&sizeof(legacy_m1_display_v9_t)==76);
     assert(sizeof(legacy_m1_storage_v9_t)==2928&&sizeof(m1_storage_v9_t)==2928);
-    assert(sizeof(app_storage_t)==2944&&offsetof(app_storage_t,display)==2852);
+    assert(sizeof(m1_storage_v10_t)==2944&&sizeof(app_storage_t)==3064&&offsetof(app_storage_t,display)==2852);
     assert(offsetof(app_storage_t,display.style)==2928);
 #define V8_OFFSET(member) assert(offsetof(legacy_m1_storage_v8_t,member)==offsetof(app_storage_t,member))
     V8_OFFSET(base);V8_OFFSET(features);V8_OFFSET(automation);V8_OFFSET(reserved_controller_config);
@@ -283,6 +283,34 @@ int main(void){
     ph_backup_seal(bad,"m1",PHICOMM_FIRMWARE_VARIANT,FIRMWARE_VERSION,9,v9_bytes+4);
     reject_backup(bad,v9_length+4);
 
+    /* An exact-size v10 backup retains its presentation and gains canonical
+     * field bindings, with no dependence on bytes outside the old payload. */
+    m1_storage_v10_t v10;memcpy(&v10,&live,sizeof(v10));v10.base.version=10;
+    v10.display.prefix.reserved=M1_DISPLAY_FORMATTED;
+    v10.display.prefix.lanes[0].color=v10.display.prefix.lanes[0].decimals=0;
+    v10.display.prefix.lanes[0].scale=1;
+    v10.display.style[0]=(m1_display_style_t){.lamps=0x155,.mode=M1_DISPLAY_AUTO_KILO,.show_unit=1};
+    v10.display.style[1]=(m1_display_style_t){.lamps=0xaa,.show_label=1};
+    const size_t v10_length=sizeof(ph_backup_header)+sizeof(v10);
+    void *v10_data=malloc(v10_length);assert(v10_data);
+    memcpy((char*)v10_data+sizeof(ph_backup_header),&v10,sizeof(v10));
+    ph_backup_seal(v10_data,"m1",PHICOMM_FIRMWARE_VARIANT,FIRMWARE_VERSION,10,sizeof(v10));
+    before=live;write_fail=true;assert(!strcmp(device_backup_import(v10_data,v10_length),"storage_error"));
+    assert(!memcmp(&live,&before,sizeof(live)));write_fail=false;
+    assert(!strcmp(device_backup_import(v10_data,v10_length),"accepted"));
+    assert(live.base.version==M1_CONFIG_VERSION&&live.display.revision==v10.display.prefix.revision);
+    assert(!strcmp(live.display.remote[0].field_id,"co2")&&!strcmp(live.display.remote[0].unit,"ppm"));
+    assert(!memcmp(live.display.style,v10.display.style,sizeof(v10.display.style)));
+    for(unsigned kind=0;kind<4;kind++){
+        memcpy(bad,v10_data,v10_length);m1_storage_v10_t *old=(void*)((char*)bad+sizeof(ph_backup_header));
+        if(kind==0)old->display.style[1].lamps=512;
+        if(kind==1)old->display.prefix.lanes[0].metric=M1_DISPLAY_CUSTOM;
+        if(kind==2)old->display.prefix.reserved=2;
+        if(kind==3)old->base.version=M1_CONFIG_VERSION;
+        ph_backup_seal(bad,"m1",PHICOMM_FIRMWARE_VARIANT,FIRMWARE_VERSION,10,sizeof(v10));reject_backup(bad,v10_length);
+    }
+    free(v10_data);
+
     /* Current backups include all independently configured lamp segments and
      * preserve them through Flash rollback and a successful full round-trip. */
     live.display.reserved=M1_DISPLAY_FORMATTED;
@@ -302,7 +330,7 @@ int main(void){
     candidate->display.style[1].lamps=512;
     ph_backup_seal(bad,"m1",PHICOMM_FIRMWARE_VARIANT,FIRMWARE_VERSION,M1_CONFIG_VERSION,sizeof(live));
     reject_backup(bad,length);
-    puts("M1 backup: exact v8/v9 payloads, v10 styles, strict envelope and rollback PASS");
+    puts("M1 backup: exact v8/v9/v10 payloads, v11 generic bindings, strict envelope and rollback PASS");
     free(v9_data);
     free(old_data);
     free(data);free(bad);return 0;

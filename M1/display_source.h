@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <math.h>
 #include <string.h>
+#include "../common/sensor_field.h"
 
 #define M1_DISPLAY_MAGIC 0x4d314453u
 #define M1_DISPLAY_LANES 2u
@@ -40,11 +41,18 @@ typedef struct {
     uint16_t lamps;
     uint8_t mode, show_label, show_unit, reserved[3];
 } m1_display_style_t;
+/* v11 appends generic bindings after the complete v10 record. Type is
+ * deliberately implicit: this firmware only consumes numeric fields. */
+typedef struct {
+    char field_id[SENSOR_FIELD_ID_MAX+1];
+    char unit[SENSOR_FIELD_UNIT_MAX+1];
+} m1_display_remote_t;
 typedef struct {
     uint32_t magic, revision;
     uint8_t configured, selected, double_click, reserved;
     m1_display_lane_config_t lanes[M1_DISPLAY_LANES];
     m1_display_style_t style[M1_DISPLAY_LANES];
+    m1_display_remote_t remote[M1_DISPLAY_LANES];
 } m1_display_config_t;
 typedef struct {
     float value;
@@ -73,6 +81,18 @@ static inline uint8_t m1_display_metric_unit(unsigned metric)
         M1_DISPLAY_CELSIUS,M1_DISPLAY_PERCENT,M1_DISPLAY_PA,
         M1_DISPLAY_UG_M3,M1_DISPLAY_PPB,M1_DISPLAY_WATTS,M1_DISPLAY_KWH,M1_DISPLAY_PERCENT,M1_DISPLAY_UNITLESS};
     return metric<M1_DISPLAY_METRIC_COUNT?units[metric]:M1_DISPLAY_UNIT_COUNT;
+}
+static const char *const m1_display_metric_names[]={"co2","pm25","formaldehyde","temperature",
+    "humidity","pressure","pm10","tvoc","power","energy","fan_speed_percent","custom"};
+static const char *const m1_display_unit_names[]={"ppm","µg/m³","mg/m³","°C","%","Pa","ppb","W","kWh",""};
+static inline void m1_display_upgrade_remote(m1_display_config_t *c)
+{
+    memset(c->remote,0,sizeof(c->remote));
+    for(unsigned i=0;i<M1_DISPLAY_LANES;i++)if(c->lanes[i].source==M1_DISPLAY_MQTT &&
+       c->lanes[i].metric<M1_DISPLAY_CUSTOM && c->lanes[i].unit<M1_DISPLAY_UNIT_COUNT){
+        strcpy(c->remote[i].field_id,m1_display_metric_names[c->lanes[i].metric]);
+        strcpy(c->remote[i].unit,m1_display_unit_names[c->lanes[i].unit]);
+    }
 }
 static inline bool m1_display_metric_value_valid(unsigned metric,float value)
 {
@@ -104,7 +124,13 @@ static inline bool m1_display_config_valid(const m1_display_config_t *c)
            !isfinite(l->high) || (l->color_mode==M1_DISPLAY_COLOR_THRESHOLDS && l->low>=l->high) || l->device_id[12])return false;
         if(l->metric!=M1_DISPLAY_CUSTOM && l->unit!=m1_display_metric_unit(l->metric))return false;
         if(l->source==M1_DISPLAY_LOCAL && l->metric>M1_DISPLAY_PRESSURE)return false;
-        if(l->source==M1_DISPLAY_MQTT && l->metric==M1_DISPLAY_CUSTOM)return false;
+        const m1_display_remote_t *r=&c->remote[i];
+        const char *field_end=memchr(r->field_id,0,sizeof(r->field_id));
+        const char *unit_end=memchr(r->unit,0,sizeof(r->unit));
+        if(l->source==M1_DISPLAY_MQTT){
+            if(!field_end || !unit_end || !sensor_field_token(r->field_id,(size_t)(field_end-r->field_id),SENSOR_FIELD_ID_MAX) ||
+               !sensor_field_text(r->unit,(size_t)(unit_end-r->unit),0,SENSOR_FIELD_UNIT_MAX))return false;
+        }else for(unsigned j=0;j<sizeof(*r);j++)if(((const unsigned char *)r)[j])return false;
         if(l->source==M1_DISPLAY_NONE && (l->metric!=M1_DISPLAY_CUSTOM || l->unit!=M1_DISPLAY_UNITLESS))return false;
         for(unsigned j=0;j<13;j++){
             unsigned char x=l->device_id[j];
@@ -162,7 +188,7 @@ static inline bool m1_display_encode_formatted(const m1_display_lane_config_t *c
 {
     *out=(m1_display_value_t){0};
     if(slot>=M1_DISPLAY_LANES || !ttl || ttl>60 || !isfinite(value) || value<0 ||
-       !m1_display_metric_value_valid(c->metric,value) || s->mode>=M1_DISPLAY_MODE_COUNT ||
+       (c->source!=M1_DISPLAY_MQTT && !m1_display_metric_value_valid(c->metric,value)) || s->mode>=M1_DISPLAY_MODE_COUNT ||
        (slot==1 && s->mode!=M1_DISPLAY_INTEGER) || s->show_label>1 || s->show_unit>1 || lamps>M1_DISPLAY_LAMPS_MAX)return false;
     bool decimal=false;float scaled=value;unsigned max=999,step=1;
     if(s->mode==M1_DISPLAY_AUTO_KILO && value>=1000){scaled=value/10.0f;decimal=true;}
