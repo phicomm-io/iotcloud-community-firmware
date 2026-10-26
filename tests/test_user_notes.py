@@ -1,4 +1,5 @@
 """Static migration/review guarantees; no firmware build or device mutations."""
+import base64
 import copy
 import hashlib
 import importlib.util
@@ -9,6 +10,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools/release'))
@@ -220,6 +222,101 @@ class UserNotesTests(unittest.TestCase):
         self.assertNotIn('changes', json.loads(reply.stdout))
         reply = subprocess.run(cmd + ['--format', 'text'], capture_output=True, text=True, check=True)
         self.assertIn('0.9.14', reply.stdout)
+
+
+class LegacyProvenanceTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.data = self.root / 'data'
+        shutil.copytree(notes.DATA, self.data)
+
+    def catalog(self):
+        return notes.read(self.data / 'catalog.legacy-v0.9.json')
+
+    def archive(self, catalog):
+        archive = self.root / 'archive'
+        (archive / 'releases').mkdir(parents=True, exist_ok=True)
+        (archive / 'releases/index.json').write_bytes(notes.encoded(catalog))
+        return archive
+
+    def changed_proof(self, change):
+        path = self.data / 'legacy-provenance.json'
+        document = notes.read(path)
+        change(document)
+        path.write_bytes(notes.encoded(document))
+        return notes.digest(path.read_bytes())
+
+    def test_exact_legacy_scope_retains_original_23_identities(self):
+        releases, identities = notes.legacy_provenance(self.data)
+        original = notes.read(self.data / 'archive-identities.json')
+        self.assertEqual(len(releases), 26)
+        self.assertEqual(len(notes.read(self.data / 'legacy-provenance.json')['frontend_locks']), 20)
+        self.assertTrue(all(identities[tag] == row for tag, row in original['releases'].items()))
+        self.assertTrue(all(tag.startswith('v0.9.') for tag in releases))
+
+    def test_changed_catalog_bytes_fail_the_trusted_pin(self):
+        path = self.data / 'catalog.legacy-v0.9.json'
+        path.write_bytes(path.read_bytes() + b' ')
+        with self.assertRaisesRegex(ValueError, 'provenance hash'):
+            notes.legacy_provenance(self.data)
+
+    def test_changed_lock_bytes_fail_even_if_the_proof_file_is_repinned(self):
+        def corrupt(document):
+            row = next(iter(document['frontend_locks'].values()))
+            raw = base64.b64decode(row['bytes_base64'])
+            row['bytes_base64'] = base64.b64encode(raw + b' ').decode()
+        changed_hash = self.changed_proof(corrupt)
+        with self.assertRaisesRegex(ValueError, 'provenance hash'):
+            notes.legacy_provenance(self.data)
+        with patch.object(notes, 'LEGACY_PROVENANCE_SHA256', changed_hash):
+            with self.assertRaisesRegex(ValueError, 'frontend lock provenance'):
+                notes.legacy_provenance(self.data)
+
+    def test_changed_legacy_source_identity_is_not_a_lock_fallback(self):
+        def corrupt(document):
+            row = next(iter(document['releases']['v0.9.27']['targets'].values()))
+            row['source_commit'] = '0' * 40
+        changed_hash = self.changed_proof(corrupt)
+        with patch.object(notes, 'LEGACY_PROVENANCE_SHA256', changed_hash):
+            with self.assertRaisesRegex(ValueError, 'source provenance'):
+                notes.legacy_provenance(self.data)
+
+    def test_changed_actual_legacy_source_is_rejected(self):
+        catalog = self.catalog()
+        next(r for r in catalog['releases'] if r['tag'] == 'v0.9.24')['commit'] = '0' * 40
+        with self.assertRaisesRegex(ValueError, 'legacy metadata changed'):
+            notes.compile_manifest(self.data, archive=self.archive(catalog))
+
+    def test_formal_archive_cannot_drop_a_retained_release(self):
+        catalog = self.catalog()
+        catalog['releases'] = [r for r in catalog['releases'] if r['tag'] != 'v0.9.24']
+        with self.assertRaisesRegex(ValueError, 'legacy metadata changed or is missing'):
+            notes.compile_manifest(self.data, archive=self.archive(catalog), formal=True)
+
+    def test_new_candidate_cannot_reuse_a_legacy_lock_without_its_git_object(self):
+        self.check_current_lock_required(predeclare=False)
+
+    def test_predeclared_candidate_still_requires_its_actual_git_lock(self):
+        self.check_current_lock_required(predeclare=True)
+
+    def check_current_lock_required(self, predeclare):
+        catalog = self.catalog()
+        candidate = copy.deepcopy(catalog['releases'][0])
+        candidate.update(tag='v1.0.0-rc', version='1.0.0-rc', channel='candidate',
+                         prerelease=True, notes='/releases/v1.0.0-rc/notes.md')
+        catalog['releases'].append(candidate)
+        if predeclare:
+            path = self.data / 'archive-identities.json'
+            identities = notes.read(path)
+            identities['releases'][candidate['tag']] = copy.deepcopy(identities['releases']['v0.9.23'])
+            path.write_bytes(notes.encoded(identities))
+        empty_git = self.root / 'source'
+        subprocess.run(['git', 'init', '--quiet', str(empty_git)], check=True)
+        with patch.object(notes, 'ROOT', empty_git):
+            with self.assertRaisesRegex(ValueError, 'verifiable frontend lock: v1.0.0-rc source 99770efc322e'):
+                notes.compile_manifest(self.data, archive=self.archive(catalog), formal=True)
 
 
 if __name__ == '__main__':
