@@ -30,6 +30,8 @@ public:
   std::function<std::string()> bemfaStatus;
   std::function<void(JsonObject)> homeStatus;
   std::function<bool()> homeReset;
+  // Runtime identity, not an owner-editable registration or a stored slot.
+  std::string localMac;
   explicit HubService(DynamicJsonDocument &configuration)
       : config(configuration) {}
   bool ready() const {
@@ -258,7 +260,7 @@ public:
       if (ready())
         return fail(409, "hub_already_configured");
       if (!request.setupAuthorized)
-        return fail(403, "set_web_password_first");
+        return fail(403, "unauthorized");
       if (!fields(input.as<JsonObjectConst>(), "|username||password|") ||
           !nameValid(input["username"]) || !string(input["password"], 63, 8))
         return fail(400, "invalid_params");
@@ -383,7 +385,19 @@ public:
     }
     if (path == "/api/devices") {
       if (get) {
-        output.set(config["hub"]["devices"]);
+        auto devices = output.to<JsonArray>();
+        if (!localMac.empty()) {
+          auto self = devices.createNestedObject();
+          self["mac"] = localMac;
+          self["model"] = "daikin";
+          self["version"] = "v2";
+          self["status"] = "active";
+          self["username"] = user();
+          self["self"] = true;
+        }
+        for (JsonObjectConst device : config["hub"]["devices"].as<JsonArrayConst>())
+          if (localMac.empty() || device["mac"] != localMac)
+            devices.add(device);
         return json(output);
       }
       if (request.method != "POST")
@@ -392,6 +406,8 @@ public:
       input["username"] = user();
       if (!deviceValid(input.as<JsonObjectConst>()))
         return fail(400, "invalid_params");
+      if (!localMac.empty() && input["mac"] == localMac)
+        return fail(409, "conflict");
       for (JsonObjectConst d : config["hub"]["devices"].as<JsonArrayConst>())
         if (d["mac"] == input["mac"])
           return fail(409, "conflict");
@@ -409,6 +425,8 @@ public:
       std::string id = path.substr(13);
       if (id.size() != 12)
         return fail(400, "invalid_params");
+      if (!localMac.empty() && id == localMac)
+        return fail(403, "hub_local_device");
       DynamicJsonDocument next(candidateCapacity(request));
       next.set(config);
       auto devices = next["hub"]["devices"].as<JsonArray>();

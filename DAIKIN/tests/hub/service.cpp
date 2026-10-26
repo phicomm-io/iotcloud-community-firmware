@@ -42,6 +42,20 @@ int main() {
     return hex(hash, sizeof(hash));
   };
   using Request = iotcloud::HubService::Request;
+  {
+    // HTTP authorizes an unset Web password too. The hub still requires its
+    // own credentials and does not create or change a device Web password.
+    DynamicJsonDocument openConfig(1024);
+    iotcloud::HubService open(openConfig);
+    open.randomHex = service.randomHex;
+    open.derive = service.derive;
+    open.store = [&](DynamicJsonDocument &next) { openConfig = std::move(next); return true; };
+    assert(open.handle(Request("POST", "/api/hub/setup",
+        R"({"username":"owner","password":"owner-password"})", "", "", true), 0).status == 201);
+    assert(openConfig["auth"]["password"].isNull() &&
+           open.authenticate("owner", "owner-password", 1));
+    assert(open.handle(Request("GET", "/api/devices"), 1).status == 401);
+  }
   assert(
       service
           .handle(Request("GET", "/api/register/status", "", "", "192.168.1.2"),
@@ -360,6 +374,47 @@ int main() {
   auto listing = service.handle(Request("GET", "/api/devices", "", token), 8);
   DynamicJsonDocument devices(8192);
   assert(listing.status == 200 && !deserializeJson(devices, listing.body) && devices.size() == 12);
+  // The hub itself is runtime identity: visible even with all 12 user slots
+  // occupied, without changing stored registrations or making a flash write.
+  service.localMac = "9c9c1ff76748";
+  unsigned selfWrites = writes;
+  const auto savedDevices = config["hub"]["devices"].size();
+  listing = service.handle(Request("GET", "/api/devices", "", token), 8);
+  assert(listing.status == 200 && !deserializeJson(devices, listing.body) && devices.size() == 13);
+  assert(devices[0]["mac"] == service.localMac && devices[0]["model"] == "daikin" &&
+         devices[0]["self"] == true && devices[0]["username"] == "local");
+  assert(service.handle(Request("DELETE", "/api/devices/9c9c1ff76748", "", token), 8).status == 403);
+  assert(service.handle(Request("POST", "/api/devices",
+      R"({"mac":"9c9c1ff76748","model":"daikin","version":"v2"})", token), 8).status == 409);
+  assert(config["hub"]["devices"].size() == savedDevices && writes == selfWrites);
+  // Existing manually registered self rows must not produce duplicate cards.
+  config["hub"]["devices"][0]["mac"] = "9c9c1ff76748";
+  listing = service.handle(Request("GET", "/api/devices", "", token), 8);
+  assert(!deserializeJson(devices, listing.body) && devices.size() == 12 && devices[0]["self"] == true);
+  config["hub"]["devices"][0]["mac"] = "000000000001";
+  {
+    // Exercise the response pool and wire budget with the maximum owner name
+    // repeated across all twelve saved devices, plus the automatic local row.
+    DynamicJsonDocument maximum(16384);
+    maximum.set(config);
+    const char *owner = "abcdefghijklmnopqrstuvwxyz012345";
+    maximum["hub"]["username"] = owner;
+    for (JsonObject d : maximum["hub"]["devices"].as<JsonArray>()) {
+      d["username"] = owner;
+      d["model"] = "daikin";
+    }
+    assert(!maximum.overflowed() && iotcloud::HubService::valid(maximum["hub"]));
+    iotcloud::HubService large(maximum);
+    large.localMac = service.localMac;
+    large.derive = service.derive;
+    large.randomHex = service.randomHex;
+    auto auth = large.handle(Request("POST", "/api/auth/login",
+        R"({"username":"abcdefghijklmnopqrstuvwxyz012345","password":"local-password"})"), 8);
+    assert(auth.status == 200 && !auth.token.empty());
+    auto all = large.handle(Request("GET", "/api/devices", "", auth.token), 8);
+    assert(all.status == 200 && !deserializeJson(devices, all.body) && devices.size() == 13);
+    for (JsonObjectConst d : devices.as<JsonArrayConst>()) assert(d["username"] == owner);
+  }
   // Failed storage leaves credentials, sessions, routes and the running broker
   // alone.
   fail = true;

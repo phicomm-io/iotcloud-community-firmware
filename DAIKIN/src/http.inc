@@ -167,8 +167,6 @@ static esp_err_t uploadHandler(httpd_req_t *req){
 #ifndef IOTCLOUD_HUB
 static esp_err_t convertHandler(httpd_req_t *req){
   if(!authorized(req))return ESP_OK;
-  bool passwordSet;portENTER_CRITICAL(&authMux);passwordSet=*webPassword;portEXIT_CRITICAL(&authMux);
-  if(!passwordSet)return jsonResponse(req,"403 Forbidden","{\"code\":\"set_web_password_first\"}");
   if(configRecovery)return jsonResponse(req,"409 Conflict","{\"code\":\"migration_required\"}");
   if(otaActive||webPending||!webDone||rebootAt)return jsonResponse(req,"409 Conflict","{\"code\":\"busy\"}");
   char target[8]={},confirm[16]={};
@@ -221,7 +219,8 @@ static esp_err_t hubApiHandler(httpd_req_t *req){
   bool setupAuthorized=false;
   if(path=="/api/hub/setup"){
     if(!authorized(req))return ESP_OK;
-    portENTER_CRITICAL(&authMux);setupAuthorized=*webPassword;portEXIT_CRITICAL(&authMux);
+    // authorized() permits an unset Web password and verifies an existing one.
+    setupAuthorized=true;
   }
   if(req->content_len>12288||req->content_len<0)return jsonResponse(req,"413 Payload Too Large","{\"code\":\"invalid_params\"}");
   if(!get&&req->method!=HTTP_DELETE){char type[64]={};if(httpd_req_get_hdr_value_str(req,"Content-Type",type,sizeof(type))!=ESP_OK||strncmp(type,"application/json",16))return jsonResponse(req,"415 Unsupported Media Type","{\"code\":\"invalid_params\"}");}

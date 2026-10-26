@@ -296,6 +296,7 @@ static void hubLocalPublish(const String &topic, const String &body,
 }
 static void hubInit() {
   hubInbox = xQueueCreate(3, sizeof(HubMessage));
+  hubService.localMac = deviceId.c_str();
   hubService.homeStatus = homeStatus;
   hubService.homeReset = homeReset;
   hubHome.randomHex = hubRandom;

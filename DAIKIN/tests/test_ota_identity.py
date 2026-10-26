@@ -358,15 +358,16 @@ extern "C" int count(int which){
             self.assertEqual(json.loads(self.lib.reply())['code'], 'accepted')
             self.assertEqual(self.lib.response_header(b'Cache-Control'), b'no-store')
 
-    def test_conversion_requires_nonempty_web_password_and_actual_basic_auth(self):
+    def test_conversion_allows_unset_web_password_but_checks_existing_password(self):
         signed = self.signed(self.image('hub'))
-        for auth in (0, 2, 3, 4):
-            self.assertEqual(self.convert(signed, auth=auth), 403 if auth == 0 else 401)
-            self.assertEqual(json.loads(self.lib.reply())['code'],
-                             'set_web_password_first' if auth == 0 else 'unauthorized')
+        self.assertEqual(self.convert(signed, auth=0), 202)
+        self.assertEqual(json.loads(self.lib.reply())['code'], 'accepted')
+        self.assertEqual(self.lib.count(0), 1)
+        for auth in (2, 3, 4):
+            self.assertEqual(self.convert(signed, auth=auth), 401)
+            self.assertEqual(json.loads(self.lib.reply())['code'], 'unauthorized')
             self.assertEqual(self.lib.count(0), 0)
-            if auth != 0:
-                self.assertTrue(self.lib.response_header(b'WWW-Authenticate').startswith(b'Basic '))
+            self.assertTrue(self.lib.response_header(b'WWW-Authenticate').startswith(b'Basic '))
 
     def test_conversion_headers_are_required_and_exact(self):
         signed = self.signed(self.image('hub'))

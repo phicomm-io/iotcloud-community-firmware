@@ -46,23 +46,25 @@ Add this device's MAC and optional IP in the updated A1 settings. MQTT under the
 
 A1 offers automation sources according to currently valid data, independently of the monitor model. Missing formaldehyde or stale readings hide the corresponding options while preserving saved rules. If required control data is unavailable, A1 uses its configured offline speed. TVOC is not currently a fan-control metric.
 
-## v1.0.0-rc hub (prerelease)
+## v1.0.0-rc.1 hub (prerelease)
 
 The separate `hub` variant includes local accounts, an MQTT TCP / WebSocket Broker, LAN Home Assistant, an upstream MQTT client and Bemfa forwarding. The ordinary image remains a sensor device. Local accounts do not include email or GitHub login.
 
-Select **Hub management** on the device page, or open `http://DEVICE-IP/iotcloud/#/`. First set the device web administration password, then create a local account: usernames contain 3–32 ASCII letters, digits or underscores, and passwords contain 8–63 bytes. After login, manage devices, upstream forwarding, Bemfa mappings and Apple Home.
+Select **Hub management** on the device page, or open `http://DEVICE-IP/iotcloud/#/`. Create a local account: usernames contain 3–32 ASCII letters, digits or underscores, and passwords contain 8–63 bytes. The device web administration password is optional; if one is already configured, enter it to authorize account creation. After login, manage devices, upstream forwarding, Bemfa mappings and Apple Home.
 
-On each device, set its MQTT host to the hub IP, port to `1883`, and credentials to the local account's MQTT username/password. WebSocket clients use `ws://HUB-IP:9001/mqtt`. The device management page provides manual setup instructions; Home Assistant can connect to the same Broker.
+The DAIKIN itself appears automatically in the hub device list. Its MQTT connection does not need to point back to itself.
 
-Apple Home uses HAP bridging. Enable it separately under **Apple Home** to obtain the pairing code; it is off by default. Matter is currently unavailable. v1.0.0-rc provides a separate `hub` image; ordinary images do not include these hub features. The stable v1.0.0 release is not yet available.
+On each other device, set its MQTT host to the hub IP, port to `1883`, and credentials to the local account's MQTT username/password. WebSocket clients use `ws://HUB-IP:9001/mqtt`. The device management page provides manual setup instructions; Home Assistant can connect to the same Broker.
+
+Apple Home uses HAP bridging. Enable it separately under **Apple Home** to obtain the pairing code; it is off by default. Matter is currently unavailable. v1.0.0-rc.1 provides a separate `hub` image; ordinary images do not include these hub features. The stable v1.0.0 release is not yet available.
 
 ### Switch from full to hub
 
 Only newer `full` firmware that advertises this operation provides the conversion option. The image must fit the device's actual OTA slot. Use local HTTP and a real signed `hub` OTA file; 0.9.x full images do not provide this feature.
 
-1. Open the device on your LAN and set a web administration password, or keep the existing password. **Set web password** on the upgrade page opens its settings form.
+1. Open the device on your LAN. A web administration password is optional; if one is configured, use it to authenticate.
 2. Open **Settings → Firmware → Advanced**, select the matching signed `hub` OTA file and enable **Switch to hub firmware**. This option cannot be combined with unsigned recovery.
 3. Select **Upload and install**, review the confirmation and explicitly approve the conversion. Wi-Fi, MQTT and the web administration password are retained.
-4. Reopen the device after restart, confirm its variant is `hub`, select **Hub management**, and use the original web administration password to create the first local account. HomeKit is off by default; enable it separately when needed.
+4. Reopen the device after restart, confirm its variant is `hub`, select **Hub management**, and create the first local account. If a web administration password is configured, enter it to authorize setup. HomeKit is off by default; enable it separately when needed.
 
 Normal signed updates and unsigned recovery still accept only the current variant. Direct OTA from `hub → full` is unsupported.
