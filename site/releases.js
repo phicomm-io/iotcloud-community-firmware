@@ -34,6 +34,7 @@ function releaseCard(release, latest, snapshot, candidate = false) {
   const box = el(latest || candidate ? 'article' : 'details'); box.className = 'release';
   const head = el(latest || candidate ? 'h3' : 'summary', release.tag); box.append(head);
   if (latest || candidate) { const badge = el('span', candidate ? t('候选版 · 预发布', 'Release candidate · Prerelease') : t('稳定最新版', 'Latest stable')); badge.className = 'tag'; head.append(badge); }
+  if (candidate && release.tag === 'v1.0.0-rc') box.append(el('p', t('Deprecated · 旧联网 RC 仅保留历史下载。请改用 RC.1，并同步更新来源设备、M1 接收端和前端；传感器数据 / 显示配置接口不兼容。独立 M1 主控 RC 不受影响。', 'Deprecated · This Wi-Fi RC is retained for historical downloads. Use RC.1 and update source devices, M1 receivers and frontend together; sensor-data / display-profile interfaces are incompatible. The independent M1 controller RC is unaffected.')));
   const table = el('table'); table.className = 'downloads';
   const tr = el('tr'); for (const text of [t('型号', 'Model'), t('固件下载', 'Firmware')]) tr.append(el('th', text)); table.append(tr);
   for (const [model, original] of Object.entries(release.models)) {

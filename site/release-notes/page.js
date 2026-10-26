@@ -82,7 +82,9 @@
             list.append(row);
           }
           if (!list.childElementCount) continue;
-          available = true; group.append(element('h4', release.tag + ' · RC'), list);
+          available = true; group.append(element('h4', release.tag + (release.tag === 'v1.0.0-rc' ? ' · Deprecated' : ' · RC')));
+          if (release.tag === 'v1.0.0-rc') group.append(element('p', t('旧联网 RC 已 deprecated，仅保留历史下载；请改用 RC.1，同时更新来源设备、M1 接收端和前端。传感器数据 / 显示配置接口不兼容，独立 M1 主控 RC 不受影响。', 'This Wi-Fi RC is deprecated and retained for historical downloads. Use RC.1 and update source devices, M1 receivers and frontend together. Sensor-data / display-profile interfaces are incompatible; the independent M1 controller RC is unaffected.')));
+          group.append(list);
           const checksum = element('a', t('SHA256 校验文件', 'SHA256 checksums')); checksum.href = '/releases/' + release.tag + '/SHA256SUMS';
           const links = element('p', null, 'notes-actions'); links.append(checksum);
           const github = 'https://github.com/phicomm-io/iotcloud-community-firmware/releases/tag/' + release.tag;
