@@ -10,7 +10,7 @@ M1 主控固件可以通过网络更新，**不需要 J-Link，也不需要拆�
 
 ## 1. 确认 Wi-Fi 固件版本
 
-原厂 11.x 主控需要支持**整包缓冲转发**的社区 Wi-Fi 固件。不要仅凭版本号判断：通过 `capabilities.get` 或 `/api/v1/capabilities` 检查 `data.mcu_ota_max_bytes`，当前实现为 **32768**。这项功能已加入 Wi-Fi 源码 main；下载安装时还需确认所用构建包含它。旧版 v0.9.26 起提供的逐块桥接，以及 `1.0.0-39a5b0`，均不包含这个新能力。
+原厂 11.x 主控需要支持**整包缓冲转发**的社区 Wi-Fi 固件。不要仅凭版本号判断：通过 `capabilities.get` 或 `/api/v1/capabilities` 检查 `data.mcu_ota_max_bytes`，当前实现为 **32768**。本教程使用 **M1 Wi-Fi v1.0.0-rc 候选版本**，仍须核对该能力后再更新传感器主控。旧版 v0.9.26 起提供的逐块桥接，以及 `1.0.0-39a5b0`，均不包含这个新能力。
 
 原因是原厂 11.1.2.1 在开始接收后有约 10 秒的复位窗口。逐块 HTTP 往返可能超过这个窗口；新接口先在 Wi-Fi 模块接收完整文件，再在本机快速逐块发送并核对应答。新的电脑工具会自动选用它；原厂主控配旧 Wi-Fi 时，会在发送升级帧前拒绝。已经运行社区主控的设备仍可使用旧逐块桥接。
 
@@ -25,14 +25,15 @@ M1 主控固件可以通过网络更新，**不需要 J-Link，也不需要拆�
 
 这两个文件必须来自同一个 Release，不要混用不同版本。脚本会核对镜像长度、SHA-256、芯片目标、应用地址及清单。下载区还提供 SHA256SUMS 和独立的调试恢复包，网络更新不需要使用恢复包或原厂整片备份。
 
-电脑需要 Python 3。首次使用请通过 Git 获取 main 上支持缓冲转发的新工具（旧 Release tag 内的工具不含此修复）；脚本仅使用 Python 标准库，无需安装 pip 依赖：
+电脑需要 Python 3。使用下列固定工具版本 **`01af1ebccdaf48b73d02eaaf7023f68d5a0d280f`**，它支持原厂主控的整包缓冲转发；**MCU v1.0.0-rc 标签内的工具不包含这项修复**。工具版本与镜像版本分开：仍使用上面 Release 的 `m1-mcu-ota.bin` 和 JSON，不要重新构建或替换镜像。
 
 ```sh
-git clone --depth 1 --branch main https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20.git
+git clone https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20.git
 cd phicomm_m1_mcu_atsamd20
+git checkout --detach 01af1ebccdaf48b73d02eaaf7023f68d5a0d280f
 ```
 
-也可在源码 main 页面选择 Code → Download ZIP，解压后打开终端并进入源码目录。不要只单独下载 `m1_network.py`：它还需要同目录的 `tools/pack_ota.py`。
+也可下载[此工具版本的源码 ZIP](https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20/archive/01af1ebccdaf48b73d02eaaf7023f68d5a0d280f.zip)，解压后进入源码目录。脚本仅使用 Python 标准库，无需安装 pip 依赖。不要只单独下载 `m1_network.py`：它还需要同目录的 `tools/pack_ota.py`。
 
 ## 3. 填写自己的设备信息
 

@@ -13,9 +13,9 @@ MCU means microcontroller. M1 contains two; their firmware and version numbers a
 | Wi-Fi MCU / Wi-Fi module | EMW3080: Wi-Fi, local web interface and MQTT | Ordinary web firmware update; M1 Wi-Fi package |
 | Sensor controller / controller MCU | ATSAMD20G18A: communicates with built-in sensors and drives the screen, button and buzzer | Computer script through the API; `m1-mcu-ota.bin` with its matching JSON |
 
-**“Controller” on this page means the sensor controller.** Updating Wi-Fi to v0.9.27 does not update this controller. To reduce the risk of beginners flashing the wrong image and making the device unusable, controller flashing has no WebUI upload button. Use the [API-based network update guide](m1-mcu-update); the script handles the API exchange and verification.
+**“Controller” on this page means the sensor controller.** Updating Wi-Fi to v1.0.0-rc does not update this controller. To reduce the risk of beginners flashing the wrong image and making the device unusable, controller flashing has no WebUI upload button. Use the [API-based network update guide](m1-mcu-update); the script handles the API exchange and verification.
 
-Wi-Fi v0.9.27 adds web controls that need a separately updated open-source sensor controller: four tones and custom RTTTL music require controller v0.9.3 or newer; particle details and raw sensor frames require the capabilities published in controller v0.9.4. CO₂ on the physical screen requires controller v0.9.2 or newer and valid CO₂ data. Basic PM2.5, formaldehyde, temperature and humidity readings do not require this additional flash.
+The current recommendation is to install **Wi-Fi v1.0.0-rc and sensor controller v1.0.0-rc separately** for dual-region user readings, double-click actions and PM2.5 smoothing. Older features retain their minimum compatibility requirements: four tones and custom RTTTL music require controller v0.9.3 or newer; particle details and raw sensor frames require the capabilities published in controller v0.9.4. CO₂ on the physical screen requires controller v0.9.2 or newer and valid CO₂ data. Basic PM2.5, formaldehyde, temperature and humidity readings do not require this additional flash.
 
 [Source](https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20) · [Controller releases and downloads]({{SITE_URL}}#m1-mcu-releases) · [M1 operation](m1-guide)
 [Network update guide](m1-mcu-update)
@@ -24,7 +24,7 @@ Wi-Fi v0.9.27 adds web controls that need a separately updated open-source senso
 
 PM2.5, formaldehyde, temperature, humidity, clock and brightness remain the basic functions. Extensions need compatible Wi-Fi firmware that checks the controller version and reported capabilities.
 
-| Capability | What the open-source controller adds | Availability |
+| Capability | What the open-source controller adds | First version and compatibility requirements |
 | --- | --- | --- |
 | CO₂ on the physical screen | Replace the formaldehyde or PM field, or alternate at a configurable interval; expired data restores the original readings; CO₂ color thresholds | v0.9.2; requires an external sensor and valid readings from the Wi-Fi module; the original hardware cannot measure CO₂ on its own |
 | Display and buzzer diagnostics | Override values, read/write the 29-byte segment RAM, test all segments and set PWM frequency/duration; temporary overrides expire | v0.9.2, new 0x70 extension protocol |
@@ -34,11 +34,13 @@ PM2.5, formaldehyde, temperature, humidity, clock and brightness remain the basi
 | Complete sensor frames | Two sets of PM1.0/PM2.5/PM10, six cumulative particle counts, raw formaldehyde, raw temperature/humidity and status; includes age, health and checksum information | Controller v0.9.4; Wi-Fi v0.9.27 provides WebUI readings; computer queries also supported |
 | Auditable update and recovery | Open receive/stage/verification logic; the independent new Boot adds CRC32 journal checks and restarts interrupted copying | New Boot behavior requires replacing Boot; CRC is not a signature or old-version rollback |
 
-Custom pollutant thresholds control indicator colors and high-level buzzer alarms, with a query for the current configuration.
+Custom pollutant thresholds control indicator colors, with configuration readback. High-level buzzer alarms can be enabled separately for formaldehyde and PM2.5 and are off by default.
 
 ## Downloads and requirements
 
-The latest public controller release is **v1.0.0-rc, a development preview / prerelease**; the stable v1.0.0 release is not yet available. Network flashing and sensor-frame queries require Wi-Fi v0.9.26 or newer; web music, tone controls and particle details require Wi-Fi v0.9.27 or newer and matching controller capabilities. The dedicated download section lists public releases including prereleases, separately from Wi-Fi firmware. Update the controller and Wi-Fi module separately.
+The current recommended download is **controller v1.0.0-rc, a release candidate / prerelease**; stable v1.0.0 is not yet available. Use the image from that Release, reporting `1.0.0-rc-97a03b`. Obtain the pinned buffering-aware tools through the [network update guide](m1-mcu-update), rather than the older tools in the RC tag. Network migration from stock 11.x requires companion Wi-Fi v1.0.0-rc and a check of its `mcu_ota_max_bytes` buffering capability.
+
+Older compatibility requirements remain: controllers already running community firmware can use Wi-Fi v0.9.26 or newer for network updates and complete-frame queries. Web music, tone controls and particle details require at least Wi-Fi v0.9.27 and matching controller capabilities. These minimum versions do not replace the buffered-upgrade requirement for stock 11.x. The download section lists all public controller releases, including prereleases, separately from Wi-Fi firmware. Update the two MCUs separately.
 
 
 - `m1-mcu-ota.bin` is the controller application linked at **0x4000**. Check its JSON manifest and SHA256SUMS.
@@ -48,7 +50,7 @@ The latest public controller release is **v1.0.0-rc, a development preview / pre
 
 ## Read additional sensor data
 
-With **Wi-Fi v0.9.27 or newer + sensor controller v0.9.4 capabilities**, open the local M1 home page and find **Particle details**. It shows PM1.0, PM10 and six cumulative particle counts; PM2.5 remains in the main reading card. Expand the details for CF=1 concentrations and raw sensor diagnostics. “Two sets” means two concentration conventions (atmospheric and CF=1), not two physical particle sensors. Six counts mean particles larger than each size threshold per 0.1 L of air, not six separate concentrations.
+With the recommended **Wi-Fi v1.0.0-rc + sensor controller v1.0.0-rc** (older minimum: Wi-Fi v0.9.27 + controller v0.9.4 complete-frame capabilities), open the local M1 home page and find **Particle details**. It shows PM1.0, PM10 and six cumulative particle counts; PM2.5 remains in the main reading card. Expand the details for CF=1 concentrations and raw sensor diagnostics. “Two sets” means two concentration conventions (atmospheric and CF=1), not two physical particle sensors. Six counts mean particles larger than each size threshold per 0.1 L of air, not six separate concentrations.
 
 No computer commands are needed for web readings. Missing support, warming up, unhealthy or expired data is not a zero reading; unavailable measurements show “—”. These readings also have MQTT reporting and Home Assistant discovery; see [M1 operation](m1-guide).
 
