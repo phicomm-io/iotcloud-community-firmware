@@ -244,6 +244,57 @@ class ValidationReuseTests(unittest.TestCase):
         for steps in reuse.JOBS.values():
             for name in steps: self.assertIn('- name: ' + name, text)
 
+    def assert_release_scheduling(self, text):
+        """Guard the real YAML condition; do not emulate GitHub's scheduler."""
+        job = re.search(r'^  release:\n(.*?)(?=^  [\w-]+:|\Z)', text, re.M | re.S)
+        self.assertIsNotNone(job)
+        self.assertRegex(job[1], re.compile(r'^    needs: \[sign-ota\]$', re.M))
+        condition = re.search(r'^    if: (.*?)(?=^    [\w-]+:|\Z)', job[1], re.M | re.S)
+        self.assertIsNotNone(condition)
+        expression = condition[1].strip().removeprefix('>-').strip()
+        self.assertEqual(' '.join(expression.split()),
+            "always() && needs.sign-ota.result == 'success' && "
+            "github.event_name == 'push' && github.ref_type == 'tag'")
+        return job[0]
+
+    def test_release_allows_signed_tag_after_a_skipped_ancestor(self):
+        text = (ROOT / reuse.WORKFLOW).read_text()
+        job = self.assert_release_scheduling(text)
+        # The original tag-only condition inherited implicit success() and skipped
+        # publication after verified reuse. It must fail this structural guard.
+        old = re.sub(r'    if: >-\n.*?(?=^    [\w-]+:)',
+            "    if: github.event_name == 'push' && github.ref_type == 'tag'\n",
+            job, count=1, flags=re.M | re.S)
+        self.assertNotEqual(old, job)
+        with self.assertRaises(AssertionError):
+            self.assert_release_scheduling(text.replace(job, old, 1))
+
+    def test_release_guard_rejects_failed_skipped_or_unchecked_signing(self):
+        text = (ROOT / reuse.WORKFLOW).read_text()
+        job = self.assert_release_scheduling(text)
+        guard = "needs.sign-ota.result == 'success' &&"
+        for replacement in ("needs.sign-ota.result == 'failure' &&",
+                            "needs.sign-ota.result == 'skipped' &&", ''):
+            changed = job.replace(guard, replacement, 1)
+            self.assertNotEqual(changed, job)
+            with self.subTest(signing=replacement), self.assertRaises(AssertionError):
+                self.assert_release_scheduling(text.replace(job, changed, 1))
+
+    def test_release_guard_rejects_non_tag_or_non_push_publication(self):
+        text = (ROOT / reuse.WORKFLOW).read_text()
+        job = self.assert_release_scheduling(text)
+        for original, replacement in (
+            ("github.event_name == 'push' &&", ''),
+            ("github.event_name == 'push'", "github.event_name == 'workflow_dispatch'"),
+            ("github.event_name == 'push'", "github.event_name == 'pull_request'"),
+            ("&& github.ref_type == 'tag'", ''),
+            ("github.ref_type == 'tag'", "github.ref_type == 'branch'"),
+        ):
+            changed = job.replace(original, replacement, 1)
+            self.assertNotEqual(changed, job)
+            with self.subTest(condition=replacement), self.assertRaises(AssertionError):
+                self.assert_release_scheduling(text.replace(job, changed, 1))
+
 
 if __name__ == '__main__':
     unittest.main()

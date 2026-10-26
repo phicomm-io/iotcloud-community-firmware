@@ -515,7 +515,10 @@ jobs:
   release:
     name: Publish OTA and Pages
     needs: [sign-ota]
-    if: github.event_name == 'push' && github.ref_type == 'tag'
+    # Heavy validation reuse skips an ancestor; require successful signing explicitly.
+    if: >-
+      always() && needs.sign-ota.result == 'success' &&
+      github.event_name == 'push' && github.ref_type == 'tag'
     runs-on: >-
       ${{ fromJSON(
         (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
