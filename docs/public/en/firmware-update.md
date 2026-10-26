@@ -2,7 +2,9 @@
 
 This page covers web OTA after community firmware is installed. Factory devices need their model-specific first installation. M1 can use [factory LAN migration](m1-no-disassembly), **starting with 0.9.21 or newer**; do not upload the community signature wrapper to the factory interface.
 
-**M1 has two MCUs.** This page updates the EMW3080 Wi-Fi module. It does not update the ATSAMD20G18A sensor controller. Some Wi-Fi v0.9.27 features require a separate controller update through the API; see [controller features](m1-mcu-firmware) and [controller update steps](m1-mcu-update).
+This guide uses the **v1.0.0-rc release candidate** as its current baseline. The 0.9.x series remains a historical archive; stable v1.0.0 is not yet available. Check the candidate tag, model and variant before downloading.
+
+**M1 has two MCUs.** This page updates the EMW3080 Wi-Fi module, not the ATSAMD20G18A sensor controller. Dual-region user readings and double-click actions require the companion open-source controller v1.0.0-rc. See [controller features](m1-mcu-firmware) for older features’ minimum versions and follow the separate [controller update steps](m1-mcu-update).
 
 ## Check for updates on the device
 
@@ -55,7 +57,7 @@ If the WebUI is reachable, check the file, model, version and network, then retr
 
 ## Full and slim firmware
 
-DAIKIN BRY88AX151K has one universal full image that detects PM2005 / PM2105 and the optional formaldehyde module. Use the local file procedure above; online checks and URL downloads are unavailable.
+DAIKIN BRY88AX151K provides ordinary `full` and separate `hub` images in v1.0.0-rc. Both detect PM2005 / PM2105 and the optional formaldehyde module. Use the local file procedure above; online checks and URL downloads are unavailable. Normal OTA must match the current variant. Use the [hub conversion procedure](daikin-guide#switch-from-full-to-hub) for `full → hub`; direct `hub → full` OTA is unsupported.
 
 Default files include the complete device UI. Files containing `-no-frontend-resources` keep an offline setup page for Wi-Fi, initial MQTT settings and the web password, available through the device hotspot or LAN address. Use [local device management]({{SITE_URL}}local/) or IoTCloud for full controls and settings. Both share the same appearance. MQTT is not required to complete Wi-Fi setup.
 

@@ -6,7 +6,7 @@ M1 provides PM2.5, formaldehyde, temperature, humidity and screen brightness con
 
 ## Two separate firmware updates
 
-M1 has a **Wi-Fi MCU (EMW3080)** for networking and the web interface, and a **sensor controller (ATSAMD20G18A)** for built-in sensors, the screen and buzzer. An ordinary web update installs Wi-Fi firmware only. Some Wi-Fi v0.9.27 features need the open-source sensor controller too: tones/music require controller v0.9.3 or newer; particle details require v0.9.4 capabilities. Basic readings remain usable with the stock controller.
+M1 has a **Wi-Fi MCU (EMW3080)** for networking and the web interface, and a **sensor controller (ATSAMD20G18A)** for built-in sensors, the screen and buzzer. An ordinary web update installs Wi-Fi firmware only. The current baseline is **Wi-Fi v1.0.0-rc + open-source sensor controller v1.0.0-rc**, downloaded and updated separately. Dual-region user readings, double-click actions and PM2.5 smoothing need matching versions. Basic readings remain usable with the stock controller. Older tones/music require controller v0.9.3 or newer; particle details require v0.9.4 complete-frame capabilities.
 
 To reduce accidental wrong-image flashing, there is no controller upload button in the WebUI. Use the [computer script through the API](m1-mcu-update) for that separate update. See [controller features and version requirements](m1-mcu-firmware).
 
@@ -14,7 +14,9 @@ To reduce accidental wrong-image flashing, there is no controller upload button 
 
 The home page shows particle concentration (PM2.5), formaldehyde concentration, ambient temperature and relative humidity. Colors and labels indicate reading quality, such as excellent, good or poor.
 
-## Particle details (Wi-Fi v0.9.27)
+<span id="particle-details-wi-fi-v0927"></span>
+
+## Particle details
 
 With a sensor controller that supports complete frames (published in controller v0.9.4), the local home page provides a **Particle details** card: PM1.0, PM10 and six cumulative particle counts. PM2.5 stays in its main card. Expand details for CF=1 concentrations and raw diagnostics. Counts use particles per 0.1 L, not μg/m³; atmospheric and CF=1 are two reporting conventions from the same sensor.
 
@@ -63,7 +65,7 @@ Disabling an output drives its GPIO low. An unconfigured MQTT connection is not 
 
 After updating **both the open-source sensor MCU and Wi-Fi firmware** to versions supporting staged recovery:
 
-- A single click toggles the screen after about 350 ms to distinguish a double click. Double clicks stop a ringing alarm first, then switch both original/user readings according to the configured action.
+- A single click toggles the screen after about 350 ms to distinguish a double click. While an alarm is ringing, a double click only stops it. Otherwise, it switches both original/user readings according to the configured action.
 - Hold for at least 3 seconds and release before 10 seconds to clear Wi-Fi and the WebUI password and start provisioning again. MQTT and other settings are preserved.
 - Hold continuously for 10 seconds to restore factory settings, including Wi-Fi, MQTT, the WebUI password and other network-module settings. Custom music stored separately on the sensor MCU is preserved.
 

@@ -10,7 +10,7 @@ You can update M1 controller firmware over the network **without J-Link or openi
 
 ## 1. Check Wi-Fi firmware
 
-Stock 11.x controllers require community Wi-Fi firmware with **buffered image forwarding**. Check `data.mcu_ota_max_bytes` in `capabilities.get` or `/api/v1/capabilities`; the current limit is **32768**. The feature is in Wi-Fi source main; confirm that the build you install includes it. The per-frame bridge introduced in v0.9.26 and the `1.0.0-39a5b0` build do not include this capability.
+Stock 11.x controllers require community Wi-Fi firmware with **buffered image forwarding**. Check `data.mcu_ota_max_bytes` in `capabilities.get` or `/api/v1/capabilities`; the current limit is **32768**. This guide uses the **M1 Wi-Fi v1.0.0-rc release candidate**; still check this capability before updating the sensor controller. The per-frame bridge introduced in v0.9.26 and the `1.0.0-39a5b0` build do not include this capability.
 
 Stock 11.1.2.1 starts an approximately ten-second reset timer when receiving begins. Per-frame HTTP round trips can exceed that window. The new endpoint buffers the whole image on Wi-Fi first, then sends and acknowledges each UART block locally. The updated computer tool selects it automatically and refuses stock-controller upgrades through older Wi-Fi before sending any update frames. Controllers already running community firmware can still use the older per-frame bridge.
 
@@ -25,14 +25,15 @@ Download these two files from the [MCU v1.0.0-rc Release](https://github.com/phi
 
 Both must come from the same Release. The script verifies image length, SHA-256, chip target, application address and manifest. SHA256SUMS and debugging/recovery files are also available, but network flashing does not use the recovery package or the full stock backup.
 
-Install Python 3. Obtain the updated buffering-aware tools from main; older Release tags do not contain this fix:
+Install Python 3. Use the pinned tool version **`01af1ebccdaf48b73d02eaaf7023f68d5a0d280f`**, which supports buffered forwarding for stock controllers. **The tools in the MCU v1.0.0-rc tag do not contain this fix.** Tool and image versions are separate: keep using `m1-mcu-ota.bin` and its JSON from the Release above; do not rebuild or substitute the image.
 
 ```sh
-git clone --depth 1 --branch main https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20.git
+git clone https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20.git
 cd phicomm_m1_mcu_atsamd20
+git checkout --detach 01af1ebccdaf48b73d02eaaf7023f68d5a0d280f
 ```
 
-Alternatively, choose Code → Download ZIP on source main, extract it and open a terminal in the source directory. The script uses only the Python standard library; no pip dependencies are needed. Keep `tools/pack_ota.py` alongside `tools/m1_network.py` rather than downloading the latter alone.
+Alternatively, download the [source ZIP for this tool version](https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20/archive/01af1ebccdaf48b73d02eaaf7023f68d5a0d280f.zip), extract it and enter the source directory. The script uses only the Python standard library; no pip dependencies are needed. Keep `tools/pack_ota.py` alongside `tools/m1_network.py` rather than downloading the latter alone.
 
 ## 3. Enter your device details
 
