@@ -63,6 +63,29 @@ typedef struct {
     m1_co2_config_t co2;
     m1_co2_source_config_t co2_source;
 } legacy_m1_storage_v8_t;
+/* Independent v9 fixture: the source lane and complete record are frozen,
+ * rather than borrowing the newer display type and truncating its size. */
+typedef struct {
+    char device_id[13];
+    uint8_t source, metric, unit;
+    uint16_t scale;
+    uint8_t decimals, ttl_seconds, color_mode, color, reserved[2];
+    float low, high;
+} legacy_m1_display_lane_v9_t;
+typedef struct {
+    uint32_t magic, revision;
+    uint8_t configured, selected, double_click, reserved;
+    legacy_m1_display_lane_v9_t lanes[2];
+} legacy_m1_display_v9_t;
+typedef struct {
+    m1_config_t base;
+    feature_config_storage_t features;
+    automation_config_t automation;
+    uint8_t reserved_controller_config[20];
+    m1_co2_config_t co2;
+    m1_co2_source_config_t co2_source;
+    legacy_m1_display_v9_t display;
+} legacy_m1_storage_v9_t;
 static app_storage_t live;
 char m1_id[13]="aabbccddeeff";
 static mico_mutex_t lock;
@@ -91,7 +114,10 @@ static void reject_backup(const void *data,size_t length){
 int main(void){
     assert(sizeof(legacy_m1_storage_v8_t)==2856&&__alignof__(legacy_m1_storage_v8_t)==8);
     assert(sizeof(m1_storage_v8_t)==sizeof(legacy_m1_storage_v8_t));
-    assert(sizeof(app_storage_t)==2928&&offsetof(app_storage_t,display)==2852);
+    assert(sizeof(legacy_m1_display_lane_v9_t)==32&&sizeof(legacy_m1_display_v9_t)==76);
+    assert(sizeof(legacy_m1_storage_v9_t)==2928&&sizeof(m1_storage_v9_t)==2928);
+    assert(sizeof(app_storage_t)==2944&&offsetof(app_storage_t,display)==2852);
+    assert(offsetof(app_storage_t,display.style)==2928);
 #define V8_OFFSET(member) assert(offsetof(legacy_m1_storage_v8_t,member)==offsetof(app_storage_t,member))
     V8_OFFSET(base);V8_OFFSET(features);V8_OFFSET(automation);V8_OFFSET(reserved_controller_config);
     V8_OFFSET(co2);V8_OFFSET(co2_source);
@@ -195,7 +221,89 @@ int main(void){
     memcpy(bad,data,length);candidate=(void*)((char*)bad+sizeof(ph_backup_header));candidate->base.version=8;
     ph_backup_seal(bad,"m1",PHICOMM_FIRMWARE_VARIANT,FIRMWARE_VERSION,M1_CONFIG_VERSION,sizeof(live));
     reject_backup(bad,length);
-    puts("M1 backup: real v8 sizeof2856/padding, v9 sizeof2928, strict envelope and rollback PASS");
+
+    /* Import a real v9 payload while a formatted v10 profile is active.
+     * New styles must be initialized, not retained from the prior profile. */
+    legacy_m1_storage_v9_t v9;
+    memcpy(&v9,&original,sizeof(v9));v9.base.version=9;
+    v9.display.revision=19;
+    v9.display.lanes[0].source=M1_DISPLAY_MQTT;
+    strcpy(v9.display.lanes[0].device_id,"123456abcdef");
+    v9.display.lanes[0].metric=M1_DISPLAY_CO2;v9.display.lanes[0].unit=M1_DISPLAY_PPM;
+    v9.display.lanes[0].scale=1000;v9.display.lanes[0].decimals=2;
+    const size_t v9_bytes=sizeof(v9),v9_length=sizeof(ph_backup_header)+v9_bytes;
+    void *v9_data=malloc(v9_length);assert(v9_data);
+    memcpy((char*)v9_data+sizeof(ph_backup_header),&v9,sizeof(v9));
+    ph_backup_seal(v9_data,"m1",PHICOMM_FIRMWARE_VARIANT,FIRMWARE_VERSION,9,v9_bytes);
+    assert(m1_display_v9_valid(&v9.display));
+    live.display.reserved=M1_DISPLAY_FORMATTED;
+    live.display.style[0]=(m1_display_style_t){.lamps=0x155,.mode=M1_DISPLAY_AUTO_KILO,.show_unit=1};
+    live.display.style[1]=(m1_display_style_t){.lamps=0x0aa,.mode=M1_DISPLAY_INTEGER,.show_label=1};
+    assert(m1_display_config_valid(&live.display));
+    before=live;unsigned v9_writes=writes,v9_finishes=finishes;
+    write_fail=true;assert(!strcmp(device_backup_import(v9_data,v9_length),"storage_error"));
+    assert(writes==v9_writes+1&&finishes==v9_finishes+1&&!committed&&!lock);
+    assert(!memcmp(&live,&before,sizeof(live)));
+    write_fail=false;occupied=true;
+    assert(!strcmp(device_backup_import(v9_data,v9_length),"busy")&&writes==v9_writes+1&&!lock);
+    assert(!memcmp(&live,&before,sizeof(live)));occupied=false;
+    recovery=true;assert(!strcmp(device_backup_import(v9_data,v9_length),"busy"));
+    assert(writes==v9_writes+1&&!memcmp(&live,&before,sizeof(live)));recovery=false;
+    assert(!strcmp(device_backup_import(v9_data,v9_length),"accepted"));
+    assert(writes==v9_writes+2&&finishes==v9_finishes+2&&committed&&!lock);
+    assert(live.base.version==M1_CONFIG_VERSION&&live.base.revision==before.base.revision+1);
+    before=live;before.base.version=9;before.base.revision=v9.base.revision;
+    assert(!memcmp(&before,&v9,sizeof(v9)));
+    assert(!memcmp(live.display.style,(m1_display_style_t[2]){{0},{0}},sizeof(live.display.style)));
+    assert(live.display.configured&&live.display.selected&&live.display.double_click);
+    assert(live.display.revision==19&&!live.display.reserved&&m1_display_config_valid(&live.display));
+    reject_backup(v9_data,v9_length-1);
+    for(unsigned kind=0;kind<7;kind++){
+        memcpy(bad,v9_data,v9_length);
+        legacy_m1_storage_v9_t *old=(void*)((char*)bad+sizeof(ph_backup_header));
+        if(kind==0)old->display.reserved=M1_DISPLAY_FORMATTED;
+        if(kind==1)old->display.lanes[0].reserved[0]=1;
+        if(kind==2)old->display.lanes[0].scale=10;
+        if(kind==3)old->display.lanes[0].color=4;
+        if(kind==4)strcpy(old->display.lanes[0].device_id,m1_id);
+        if(kind==5)old->base.version=M1_CONFIG_VERSION;
+        if(kind==6)old->display.revision=UINT32_MAX;
+        ph_backup_seal(bad,"m1",PHICOMM_FIRMWARE_VARIANT,FIRMWARE_VERSION,9,v9_bytes);
+        reject_backup(bad,v9_length);
+    }
+    for(unsigned kind=0;kind<3;kind++){
+        memcpy(bad,v9_data,v9_length);
+        ph_backup_seal(bad,kind==0?"a1":"m1",kind==1?"wrong-variant":PHICOMM_FIRMWARE_VARIANT,
+                       FIRMWARE_VERSION,kind==2?M1_CONFIG_VERSION+1:9,v9_bytes);
+        reject_backup(bad,v9_length);
+    }
+    memcpy(bad,v9_data,v9_length);ph_backup_seal(bad,"m1",PHICOMM_FIRMWARE_VARIANT,FIRMWARE_VERSION,9,v9_bytes-4);
+    reject_backup(bad,v9_length-4);
+    memcpy(bad,v9_data,v9_length);memset((char*)bad+v9_length,0,4);
+    ph_backup_seal(bad,"m1",PHICOMM_FIRMWARE_VARIANT,FIRMWARE_VERSION,9,v9_bytes+4);
+    reject_backup(bad,v9_length+4);
+
+    /* Current backups include all independently configured lamp segments and
+     * preserve them through Flash rollback and a successful full round-trip. */
+    live.display.reserved=M1_DISPLAY_FORMATTED;
+    live.display.lanes[0].color=live.display.lanes[0].decimals=0;
+    live.display.lanes[0].scale=1;
+    live.display.style[0]=(m1_display_style_t){.lamps=0x155,.mode=M1_DISPLAY_MILLI,.show_unit=1};
+    live.display.style[1]=(m1_display_style_t){.lamps=0x0aa,.mode=M1_DISPLAY_INTEGER,.show_label=1};
+    assert(m1_display_config_valid(&live.display));
+    assert(device_backup_export(data,length));const app_storage_t formatted=live;
+    memset(live.display.style,0,sizeof(live.display.style));before=live;
+    write_fail=true;assert(!strcmp(device_backup_import(data,length),"storage_error"));
+    assert(!memcmp(&live,&before,sizeof(live))&&!lock);write_fail=false;
+    assert(!strcmp(device_backup_import(data,length),"accepted"));
+    before=formatted;before.base.revision=formatted.base.revision+1;
+    assert(!memcmp(&live,&before,sizeof(live))&&!lock);
+    memcpy(bad,data,length);candidate=(void*)((char*)bad+sizeof(ph_backup_header));
+    candidate->display.style[1].lamps=512;
+    ph_backup_seal(bad,"m1",PHICOMM_FIRMWARE_VARIANT,FIRMWARE_VERSION,M1_CONFIG_VERSION,sizeof(live));
+    reject_backup(bad,length);
+    puts("M1 backup: exact v8/v9 payloads, v10 styles, strict envelope and rollback PASS");
+    free(v9_data);
     free(old_data);
     free(data);free(bad);return 0;
 }
@@ -206,6 +314,6 @@ int main(void){
             subprocess.run([os.environ.get('CC','cc'),'-std=c99','-Wall','-Wextra','-Werror',
                             '-fsanitize=address,undefined','-fno-omit-frame-pointer',
                             '-I',str(ROOT/'tests/host'),'-I',str(ROOT),'-I',str(ROOT/'M1'),
-                            '-I',str(ROOT/'build/m1-sdk/mico-os/libraries/utilities/json_c'),
+                            '-I',str(Path(os.environ.get('PHICOMM_TEST_JSON_DIR', ROOT/'build/m1-sdk/mico-os/libraries/utilities/json_c'))),
                             str(source_file),'-o',str(binary)],check=True)
             subprocess.run([str(binary)],check=True)

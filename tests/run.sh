@@ -17,7 +17,7 @@ python3 -m unittest tests.test_json_build_gate tests.test_service_json_failure_s
 python3 -m unittest tests.test_memory_admission tests.test_emw3080_release_memory tests.test_http_browser_queue tests.test_tc1_http_trace
 python3 -m unittest tests.test_a1_provision_memory
 python3 -m unittest tests.test_info_metadata tests.test_m1_mqtt_display_session tests.test_host_rng tests.test_capabilities_wire
-python3 -m unittest tests.test_m1_boot_config tests.test_stock_runtime tests.test_m1_display_source tests.test_backup tests.test_m1_particles_mqtt
+python3 -m unittest tests.test_m1_boot_config tests.test_stock_runtime tests.test_m1_display_source tests.test_m1_display_format tests.test_m1_storage_v10 tests.test_backup tests.test_m1_particles_mqtt
 python3 -m unittest tests.test_m1_barometer tests.test_m1_barometer_captures
 compiler=("${CC:-cc}")
 if [[ "${SANITIZE:-0}" == 1 ]]; then
@@ -86,7 +86,7 @@ PHICOMM_TEST_JSON_DIR="$json_dir" python3 -m unittest tests.test_json_integer_pa
 for sdk in build/a1-sdk/mico-os build/m1-sdk/mico-os build/tc1-sdk-3.6.4/mico-os; do
     python3 tools/prepare_sdk.py "$sdk"
 done
-python3 -m unittest tests.test_json_number_cache tests.test_json_numeric_checked tests.test_json_numeric_stack tests.test_json_numeric_link
+python3 -m unittest tests.test_json_number_cache tests.test_json_numeric_checked tests.test_json_numeric_stack tests.test_json_numeric_link tests.test_json_float32
 PHICOMM_TEST_JSON_DIR="$json_dir" python3 -m unittest tests.test_bemfa tests.test_mqtt_stack_budget tests.test_mqtt_optional_json tests.test_shared_mqtt tests.test_mqtt_buffer_storage tests.test_mqtt_preflight_deferral tests.test_mqtt_http_mixed tests.test_mixed_report tests.test_a1_mqtt_progress tests.test_mqtt_birth_progress tests.test_tc1_mqtt_lifecycle tests.test_m1_mqtt_startup
 "${compiler[@]}" -std=gnu99 -Wall -Wextra -Werror -DWATCHDOG_HOST -Itests/watchdog -Itests/stubs -I"$json_dir" tests/test_watchdog.c "$json_dir"/*.c -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -o "$output/watchdog"
 "$output/watchdog"

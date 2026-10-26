@@ -257,6 +257,9 @@ def check(frames,model):
         if 'json_primitive' in names and 'allocation observation' not in label:
             prefix=names[:names.index('json_primitive')+1]+['json_object_double_to_json_string']
             add_numeric(prefix,label+' numeric','format')
+            if model=='M1':
+                prefix=names[:names.index('json_primitive')+1]+['display_float32_encode']
+                add_numeric(prefix,label+' float32 numeric','float32')
         if 'parse' in names:
             add_numeric(names[:names.index('parse')+1]+['json_tokener_parse_ex'],label+' numeric','scan')
     add_numeric(dispatch+['service_parse','json_tokener_parse_ex'],'MQTT command numeric parse','scan')

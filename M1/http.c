@@ -22,7 +22,7 @@
 #define http_diag_snapshot ph_http_snapshot
 static ph_http_product product;
 static const char *query_action;
-static enum { QUERY, COMMAND, LIGHT, UPLOAD, MCU, DIRECT , BACKUP, RESTORE } operation;
+static enum { QUERY, COMMAND, LIGHT, UPLOAD, MCU, MCU_BULK, DIRECT , BACKUP, RESTORE } operation;
 static bool upload_open, upload_pending;
 static bool response(ph_http_exchange *x,unsigned status,const char *type,const void *body,size_t length,bool gzip)
 {
@@ -90,8 +90,51 @@ static void memory_response(ph_http_exchange *x)
 }
 
 
+
+/* Stock 11.x has a ten-second transaction timer. Buffer before begin so
+ * network round trips cannot consume that UART-only transfer window. */
+static bool mcu_bulk(const uint8_t *image,size_t n)
+{
+    uint32_t sp,pc;uint8_t f[262]={0x23,0x12},ack[20];
+    if(n<164 || n>32768)return false;
+    memcpy(&sp,image,4);memcpy(&pc,image+4,4);
+    if(sp<=0x20000000u || sp>0x20008000u || (sp&7) || !(pc&1) ||
+       (pc&~1u)<0x4000 || (pc&~1u)+2>0x4000+n)return false;
+    f[2]=n/256;f[3]=n%256;f[11]=0x21;
+    uint32_t start=mico_rtos_get_time();
+    if(!m1_mcu_exchange(f,12,ack) || ack[1]!=0x14 || ack[2] || ack[3])goto cancel;
+    for(size_t offset=0,index=1;offset<=n;offset+=256,index++) {
+        size_t take=n-offset;if(take>256)take=256;
+        uint16_t crc=0;
+        for(size_t i=0;i<take;i++)for(int bit=7;bit>=0;bit--){
+            bool high=crc&0x8000;crc=(uint16_t)((crc<<1)|((image[offset+i]>>bit)&1));
+            if(high)crc^=0x1021;
+        }
+        f[1]=0x13;f[2]=index>>8;f[3]=index;memcpy(f+4,image+offset,take);
+        f[4+take]=crc>>8;f[5+take]=crc;
+        if((uint32_t)(mico_rtos_get_time()-start)>8500 ||
+           !m1_mcu_exchange(f,take+6,ack) || ack[1]!=0x14 ||
+           ack[2]!=f[2] || ack[3]!=f[3] || ack[4]!=1)goto cancel;
+        if(take<256)break;
+    }
+    /* UART owner must consume the separate receive-complete notification. */
+    mico_thread_msleep(50);
+    memset(f,0,12);f[0]=0x23;f[1]=0x16;f[11]=0x21;
+    if((uint32_t)(mico_rtos_get_time()-start)>9000 || !m1_mcu_exchange(f,12,ack))goto cancel;
+    return true; /* UART transmit receipt; runtime version is still required. */
+cancel:
+    memset(f,0,12);f[0]=0x23;f[1]=0x16;f[2]=1;f[11]=0x21;
+    m1_mcu_exchange(f,12,ack);return false;
+}
+
 static ph_http_action prepare(ph_http_exchange *x)
 {
+    if(operation==MCU_BULK) {
+        product.capacity=x->request->length;
+        product.body=json_heap_malloc(product.capacity+1);
+        if(!product.body){ph_http_busy(x);return PH_HTTP_REPLY;}
+        return PH_HTTP_READ_BODY;
+    }
     if(upload_pending) {
         upload_pending=false;
         bool rescue=!strcmp(x->request->path,"/api/v1/ota/upload-unsigned");
@@ -150,6 +193,16 @@ static ph_http_action begin(ph_http_exchange *x)
             return PH_HTTP_REPLY;
         }
     }
+    if(!strcmp(r->method,"POST") && !strcmp(r->path,"/api/v1/mcu/ota")) {
+        if(!r->have_length || r->length<164 || r->length>32768){ph_http_message(&product,x,400,"Invalid MCU image");return PH_HTTP_REPLY;}
+        mico_rtos_lock_mutex(&m1_lock);
+        bool busy=m1_state.mcu_updating || m1_state.ota_active || m1_state.reboot_pending ||
+            m1_state.wifi_trial_active || !m1_state.uart_ready;
+        mico_rtos_unlock_mutex(&m1_lock);
+        if(busy){ph_http_message(&product,x,409,"MCU busy");return PH_HTTP_REPLY;}
+        operation=MCU_BULK;x->body_idle_ms=5000;x->body_total_ms=30000;
+        return prepare(x);
+    }
     if(!strcmp(r->method,"POST") && !strcmp(r->path,"/api/v1/mcu/exchange")) {
         if(!r->have_length || r->length<6 || r->length>262) {
             ph_http_message(&product,x,400,"Invalid MCU frame size");return PH_HTTP_REPLY;
@@ -190,6 +243,11 @@ static void complete(ph_http_exchange *x)
     if(operation==UPLOAD) {
         bool ok=m1_ota_finish();upload_open=false;
         ph_http_message(&product,x,ok?202:400,ok?"OTA verified; rebooting":"OTA rejected; see /ota for details");return;
+    }
+    if(operation==MCU_BULK) {
+        bool ok=product.used==x->request->length && mcu_bulk((const uint8_t *)product.body,product.used);
+        json_heap_free(product.body);product.body=NULL;
+        ph_http_message(&product,x,ok?202:409,ok?"MCU commit sent; verify runtime version":"MCU transfer failed; not confirmed");return;
     }
     if(operation==MCU) {
         uint8_t reply[20];

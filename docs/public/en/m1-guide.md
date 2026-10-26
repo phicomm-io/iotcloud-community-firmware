@@ -87,8 +87,48 @@ M1 uses TMCP (v2) topics only, with no Legacy selector. See [MQTT and automation
 
 Dual-position screen readings and steadier PM2.5 are in development and have not been released. They require matching open-source controller, Wi-Fi firmware and frontend.
 
-In Device settings, open **User readings on the device screen**. Configure the formaldehyde and PM2.5 positions separately using this M1's sensors, another device on the same MQTT account and broker (TC1 power, A1 main-fan output, DAIKIN CO₂ or other readings), or an API / manually written value. A1 provides its current effective output percentage (0–100%), including fresh-air variants. Each position has three digits; use the preview to choose decimal places and scaling. Only the original reading in its original position at ÷1 keeps its original label and unit; other units are hidden.
+In Device settings, open **User readings on the device screen**. Configure the formaldehyde and PM2.5 regions separately using this M1's sensors, another device on the same MQTT account and broker (TC1 power, A1 main-fan output, DAIKIN CO₂ or other readings), or an API / manual write. A1 provides its current effective output percentage (0–100%), including fresh-air variants. Other devices' MAC addresses accept both `aabbccddeeff` and `aa:bb:cc:dd:ee:ff`, with either letter case.
 
-Set **Double-press action** to **Switch both original/user readings** to switch the pair together. A ringing alarm is stopped first. Set each position's maximum reading age and color rule independently: missing, expired or out-of-range data restores only that position's original reading. Choose a fixed color or thresholds in the original physical units, before display scaling. User readings do not replace original sensor acquisition or alarms.
+Each region has three digits. **The PM2.5 region supports integers only**, rounded to the nearest integer and capped at `999`; positive overflow also shows `999`. **The formaldehyde region has a fixed decimal point after the first digit**, with five display modes. These conversions apply only to local / MQTT readings:
+
+| Display mode | Rule and example | Display limit |
+| --- | --- | --- |
+| Integer | Round to the nearest integer: `123.6` → `124` | `999` |
+| Automatic kilo scaling | Below 1000, show an integer; from 1000, divide by 1000: `1234` → `1.23` | `9.99` after scaling |
+| Two decimal places | Fixed x.xx: `1.234` → `1.23` | `9.99` |
+| One decimal place, trailing zero | Fixed x.x0: `1.26` → `1.30` | `9.90` |
+| Always divide by 1000 | Divide by 1000 and show x.xx: `1234` → `1.23` | `9.99` |
+
+Positive overflow stays at the display limit. The original “甲醛” / “PM2.5” label and each region's unit can be shown or hidden independently. The formaldehyde region has **mg/m³**; the PM2.5 region has **µg/m³**. The screen cannot display arbitrary text or other units such as ppm, W or %. Choose whether to retain the original label and unit according to the external data's meaning.
+
+The panel glass has the following 19 groups, with **PM2.5 on the left and formaldehyde on the right**. Each `8` indicates a digit position, not an actual reading. The temperature and humidity digit layouts do not specify sensor sampling precision.
+
+| No. | Position | Digits or symbol |
+| --- | --- | --- |
+| 1 | Top left | Date `8888-88-88`, including hyphens |
+| 2 | Top, just right of center | Time `88:88`, including the colon |
+| 3 | Far top right | Wi-Fi icon and `×` |
+| 4 | Above the middle-left digits | “PM2.5” label |
+| 5 | Middle left | PM2.5 digits `888` |
+| 6 | To the right of the middle-left digits | `µg/m³` unit |
+| 7 | Above the middle-right digits | “甲醛” (formaldehyde) label |
+| 8 | Middle right | Formaldehyde digits `8.88`, including the fixed decimal point |
+| 9 | To the right of the middle-right digits | `mg/m³` unit |
+| 10 | Lower left | Horizontal color bar with rounded corners for PM2.5 status |
+| 11 | Lower right | Horizontal color bar with rounded corners for formaldehyde status |
+| 12 | Bottom-left corner | Thermometer icon |
+| 13 | Lower left | “温度” (temperature) label |
+| 14 | Lower left, toward the right | Temperature digits `88.8`, including the decimal point |
+| 15 | To the right of the temperature digits | `°C` unit |
+| 16 | Lower right | Water-drop icon |
+| 17 | Lower right, toward the center | “湿度” (humidity) label |
+| 18 | Lower right, toward the right edge | Humidity digits `88.8`, including the decimal point |
+| 19 | Bottom-right corner | `%` unit |
+
+Items 10 and 11 are the PM2.5 and formaldehyde status bars respectively. Each region has left, middle and right lamp positions. The red, green and yellow segments at every position switch independently, giving **9 segments per region**; multiple colors can be on at the same position. Alternatively, set two color thresholds using the original physical value before conversion: green below the lower threshold, yellow from the lower threshold, and red from the upper threshold.
+
+After selecting and saving the API / manual source, write an integer from `0–999`, the decimal-point flag, original label and unit flags, and all 9 lamp segments directly. In the formaldehyde region, number `123` with the decimal point enabled shows `1.23`; the PM2.5 region rejects the decimal-point flag. **API writes do not apply the display modes or color thresholds above.** Fractional numbers and numbers above `999` are rejected. Written values expire and need periodic updates. See the [display API developer documentation](https://phicomm-io.github.io/iotcloud-community-protocols/en/device-http/#m1-display_profile-api) for the complete fields and calls.
+
+Set **Double-press action** to **Switch both original/user readings** to switch the pair together. A ringing alarm is stopped first. Set each region's maximum reading age independently: missing, expired, offline or invalid data restores only that region's original reading, without affecting the other. User readings do not replace original sensor acquisition or alarms.
 
 v1 also plans separate over-threshold buzzer switches for formaldehyde and PM2.5, both off by default. Light thresholds, alarms and manual tones remain separately controlled.

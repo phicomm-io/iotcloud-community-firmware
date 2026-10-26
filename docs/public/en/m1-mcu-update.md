@@ -2,7 +2,7 @@
 
 You can update M1 controller firmware over the network **without J-Link or opening the case**. The current method uses a Python script on a computer that can reach M1 over the LAN.
 
-**This updates the sensor controller, not the Wi-Fi MCU.** EMW3080 runs Wi-Fi and the web interface; ATSAMD20G18A communicates with sensors and controls the screen and buzzer. To reduce accidental wrong-image flashing, the sensor controller has no WebUI upload button. Use the computer script below: it calls `POST /api/v1/mcu/exchange` and verifies the image and runtime version. Ordinary web firmware updates only update Wi-Fi.
+**This updates the sensor controller, not the Wi-Fi MCU.** EMW3080 runs Wi-Fi and the web interface; ATSAMD20G18A communicates with sensors and controls the screen and buzzer. To reduce accidental wrong-image flashing, the sensor controller has no WebUI upload button. Use the computer script below: it calls the MCU update API and verifies the image and runtime version. Ordinary web firmware updates only update Wi-Fi.
 
 **Check the controller version first: migration is recommended for stock 11.x. Stock 17.1.2.3 / 17.x differs substantially and migration is discouraged.** Wi-Fi and controller versions are separate. If the controller version is unknown, identify the hardware and original version first.
 
@@ -10,29 +10,29 @@ You can update M1 controller firmware over the network **without J-Link or openi
 
 ## 1. Check Wi-Fi firmware
 
-The minimum publicly released compatible community **Wi-Fi firmware is v0.9.26**, which introduces the `POST /api/v1/mcu/exchange` bridge. Stock Wi-Fi firmware and community v0.9.24 or earlier do not support this procedure. v0.9.25 has a source tag but no public Release, so it is not the download baseline.
+Stock 11.x controllers require community Wi-Fi firmware with **buffered image forwarding**. Check `data.mcu_ota_max_bytes` in `capabilities.get` or `/api/v1/capabilities`; the current limit is **32768**. The feature is in Wi-Fi source main; confirm that the build you install includes it. The per-frame bridge introduced in v0.9.26 and the `1.0.0-39a5b0` build do not include this capability.
 
-Check the Wi-Fi version in the M1 web interface. If it is older, install [M1 Wi-Fi v0.9.26 or newer]({{SITE_URL}}#releases) using the ordinary Wi-Fi updater, wait for the device to reconnect, then update the controller. These are separate version sequences: v0.9.26 here means **Wi-Fi firmware**, while v0.9.4 below means **controller firmware**.
+Stock 11.1.2.1 starts an approximately ten-second reset timer when receiving begins. Per-frame HTTP round trips can exceed that window. The new endpoint buffers the whole image on Wi-Fi first, then sends and acknowledges each UART block locally. The updated computer tool selects it automatically and refuses stock-controller upgrades through older Wi-Fi before sending any update frames. Controllers already running community firmware can still use the older per-frame bridge.
 
 Web controls for RTTTL music, the four notification tones and alarm tunes require **Wi-Fi v0.9.27 or newer** and a separately flashed controller v0.9.3 or newer with matching capabilities. Particle details require controller v0.9.4 capabilities. Installing Wi-Fi alone does not enable these features. See [controller features](m1-mcu-firmware).
 
 ## 2. Download the image and tools
 
-Download these two files from the [MCU v0.9.4 Release](https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20/releases/tag/v0.9.4), keep their names and place them in the same directory:
+Download these two files from the [MCU v1.0.0-rc Release](https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20/releases/tag/v1.0.0-rc), keep their names and place them in the same directory:
 
 - `m1-mcu-ota.bin`
 - `m1-mcu-ota.json`
 
 Both must come from the same Release. The script verifies image length, SHA-256, chip target, application address and manifest. SHA256SUMS and debugging/recovery files are also available, but network flashing does not use the recovery package or the full stock backup.
 
-Install Python 3. To obtain the matching tools using Git:
+Install Python 3. Obtain the updated buffering-aware tools from main; older Release tags do not contain this fix:
 
 ```sh
-git clone --depth 1 --branch v0.9.4 https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20.git
+git clone --depth 1 --branch main https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20.git
 cd phicomm_m1_mcu_atsamd20
 ```
 
-Alternatively, download Source code ZIP from the Release, extract it and open a terminal in the source directory. The script uses only the Python standard library; no pip dependencies are needed. Keep `tools/pack_ota.py` alongside `tools/m1_network.py` rather than downloading the latter alone.
+Alternatively, choose Code → Download ZIP on source main, extract it and open a terminal in the source directory. The script uses only the Python standard library; no pip dependencies are needed. Keep `tools/pack_ota.py` alongside `tools/m1_network.py` rather than downloading the latter alone.
 
 ## 3. Enter your device details
 
@@ -82,7 +82,7 @@ python3 tools/m1_network.py \
 
 <!-- /os -->
 
-Without `--flash`, no firmware is written. Check `device_id`, `before_mcu`, `candidate`, `sha256` and `bytes`. This validates the local image and reads device identity and controller version. **It does not send update frames or prove that the bridge endpoint is supported**, so the Wi-Fi version prerequisite still applies.
+Without `--flash`, no firmware is written. Check `device_id`, `before_mcu`, `candidate`, `sha256`, `bytes` and `mcu_ota_max_bytes`. This validates the local image and reads device identity and controller version. **It does not send update frames or prove that the bridge endpoint is supported**, so the Wi-Fi version prerequisite still applies.
 
 ## 5. Flash the application
 
@@ -109,9 +109,9 @@ python3 tools/m1_network.py \
 
 <!-- /os -->
 
-Keep power connected. Do not simultaneously update Wi-Fi, reboot or change configuration. The script waits for each block acknowledgment and reports progress. Controller reboot temporarily disconnects Wi-Fi; the tool then waits approximately 120 seconds at most for reconnection and a fresh matching controller version from the same device.
+Keep power connected. Do not simultaneously update Wi-Fi, reboot or change configuration. Buffered mode uploads one image and Wi-Fi then acknowledges each UART block locally; the older bridge reports block progress on the computer. Controller reboot temporarily disconnects Wi-Fi; the tool then waits approximately 120 seconds at most for reconnection and a fresh matching controller version from the same device.
 
-The **MCU v0.9.4** package should report **`0.9.4-1ce539`**. `Verified MCU runtime` with the matching version confirms the post-update runtime. `Commit transmitted` alone only confirms that the commit was sent.
+The **MCU v1.0.0-rc** package should report **`1.0.0-rc-97a03b`**. `Verified MCU runtime` with the matching version confirms the post-update runtime. `Commit transmitted` alone only confirms that the commit was sent.
 
 If runtime confirmation times out, wait for the device to reconnect and check power, IP, identity and actual controller version before repeating. For `HTTP 401`, check the web password. If the bridge returns `404`, check the Wi-Fi version. If busy, wait for conflicting operations to finish.
 
@@ -119,4 +119,8 @@ If runtime confirmation times out, wait for the device to reconnect and check po
 
 This procedure **updates only the controller application linked at 0x4000 and preserves the stock Bootloader**. It does not install the independent new Boot or its added CRC journal/interrupted-copy recovery guarantees. Do not use a full stock backup or Boot image as application OTA payload.
 
-Use an image and manifest from the same Release, and keep power connected during the update. See [controller features and stock backup](m1-mcu-firmware) and the [network update protocol](https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20/blob/v0.9.4/docs/network-ota.md).
+Use an image and manifest from the same Release, and keep power connected during the update. See [controller features and stock backup](m1-mcu-firmware) and the [network update protocol](https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20/blob/main/docs/network-ota.md).
+
+## Verification record
+
+On 2026-10-26, one M1 running stock controller 11.1.2.1 was updated to `1.0.0-rc-97a03b` through the buffered endpoint. The image was 26052 bytes and the commit response took about 6.6 seconds. After reboot, the reported version, button and dual-display capabilities matched; the user confirmed the display, indicators and single-click screen toggle worked. The stock Boot was retained. This does not validate other hardware revisions, 17.x or power loss during installation.
