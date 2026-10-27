@@ -241,11 +241,11 @@ test('candidate download links reject foreign or traversal paths and require a s
   }finally{p.close();}
 });
 
-async function controllerHomepage({locale='zh',releases=[],fallback=false,candidateError=null}={}) {
+async function controllerHomepage({locale='zh',releases=[],fallback=false,candidateError=null,candidateSnapshot=null}={}) {
   const root=require('node:path').resolve(__dirname,'..'),calls=[],f=CandidateUI.fixture();
   const dom=new JSDOM(readFileSync(root+'/site/'+(locale==='en'?'index-en.html':'index.html'),'utf8'),
     {url:'https://phicomm-io.github.io/'+(locale==='en'?'en/':''),runScripts:'outside-only'});
-  Object.assign(dom.window,{ReleaseNotes:Notes,ReleaseNotesClient:{snapshot:async(_source,options={})=>{if(options.channel==='candidate'){if(candidateError)throw candidateError;return f.candidate;}return f.stable;}},AbortController,
+  Object.assign(dom.window,{ReleaseNotes:Notes,ReleaseNotesClient:{snapshot:async(_source,options={})=>{if(options.channel==='candidate'){if(candidateError)throw candidateError;return candidateSnapshot||f.candidate;}return f.stable;}},AbortController,
     fetch:async url=>{calls.push(String(url));return {ok:!fallback||calls.length>1,status:503,json:async()=>releases};}});
   try {
     await dom.window.eval(readFileSync(root+'/site/releases.js','utf8'));
@@ -304,7 +304,7 @@ test('homepage lists all ten RC targets separately from stable, including after 
     try {
       const d=p.dom.window.document,area=d.getElementById('candidate-releases');
       assert.match(area.querySelector('h3').textContent,/v1\.0\.0-rc/);
-      assert.match(area.querySelector('.tag').textContent,locale==='en'?/Prerelease/:/预发布/);
+      assert.match(area.querySelector('.tag').textContent,locale==='en'?/Beta.*Not recommended/:/Beta.*不建议使用/);
       assert.equal(area.querySelectorAll('a[href$=".ota.bin.signed"]').length,10);
       assert.equal(area.querySelectorAll('.downloads tr').length,11);
       assert.ok([...area.querySelectorAll('a')].every(a=>a.origin==='https://phicomm-io.github.io'));
@@ -326,6 +326,53 @@ test('candidate catalog failure leaves stable downloads usable and displays no u
       assert.equal(d.getElementById('candidate-releases').childElementCount,0);
       assert.match(d.querySelector('#latest h3').textContent,/^v0\.9\.27/);
       assert.match(d.getElementById('candidate-release-status').textContent,code==='CANDIDATE_UNAVAILABLE'?/No release candidate/:/could not be verified/);
+    }finally{p.close();}
+  }
+});
+
+function multipleCandidates() {
+  const f=CandidateUI.fixture();
+  CandidateUI.appendCandidate(f.candidate,'1.0.0-rc.1','1.0.0-rc',103);
+  CandidateUI.appendCandidate(f.candidate,'1.0.0-rc.10','1.0.0-rc.2',105);
+  CandidateUI.appendCandidate(f.candidate,'1.0.0-rc.2','1.0.0-rc.1',104);
+  return f;
+}
+test('homepage displays only the latest numeric RC and explains Beta stability in both languages',async()=>{
+  for(const locale of ['zh','en']) {
+    const f=multipleCandidates(),p=await controllerHomepage({locale,candidateSnapshot:f.candidate});
+    try {
+      const d=p.dom.window.document,area=d.getElementById('candidate-releases');
+      assert.equal(area.children.length,1);assert.match(area.querySelector('h3').textContent,/v1\.0\.0-rc\.10/);
+      assert.equal(area.querySelectorAll('a[href$=".ota.bin.signed"]').length,10);
+      assert.ok([...area.querySelectorAll('a')].every(a=>a.pathname.includes('/v1.0.0-rc.10/')));
+      assert.match(d.getElementById('candidate-release-status').textContent,locale==='en'?/beta.*Major changes.*not recommended/:/Beta.*较大改动.*不建议使用/);
+      assert.match(d.querySelector('.version-note').textContent,locale==='en'?/beta.*Major changes.*not recommended/:/Beta.*较大改动.*不建议使用/);
+      assert.match(d.querySelector('#latest h3').textContent,/^v0\.9\.27/);
+    }finally{p.close();}
+  }
+});
+test('candidate comparison hides old RC choices while accepting an installed old RC as the source',async()=>{
+  for(const locale of ['zh','en']) {
+    const f=multipleCandidates(),p=mounted({locale,url:'https://phicomm-io.github.io/guides/release-log.html?channel=candidate&from=1.0.0-rc.1&to=1.0.0-rc.10&model=m1&variant=full',client:{snapshot:async()=>f.candidate}});
+    try {
+      await p.controller.ready;
+      assert.deepEqual([...p.field('to').options].map(o=>o.value),['1.0.0-rc.10']);
+      assert.equal(p.field('from').value,'1.0.0-rc.1');assert.equal(p.app.dataset.reportState,'complete');
+      assert.ok(p.field('result').querySelector('.notes-target a').pathname.includes('/v1.0.0-rc.10/'));
+      assert.ok([...p.field('candidate-downloads').querySelectorAll('a')].filter(a=>a.pathname.startsWith('/releases/')).every(a=>a.pathname.includes('/v1.0.0-rc.10/')));
+      assert.match(p.field('candidate-status').textContent,locale==='en'?/beta.*Major changes.*not recommended/:/Beta.*较大改动.*不建议使用/);
+    }finally{p.close();}
+  }
+});
+test('a withdrawn RC share requires confirmation of the latest target and supplies no old download',async()=>{
+  for(const locale of ['zh','en']) for(const to of ['1.0.0-rc','v1.0.0-rc.1']) {
+    const f=multipleCandidates(),p=mounted({locale,url:'https://phicomm-io.github.io/guides/release-log.html?channel=candidate&from=0.9.27&model=m1&variant=full&to='+to,client:{snapshot:async()=>f.candidate}});
+    try {
+      await p.controller.ready;assert.equal(p.app.dataset.reportState,'error');assert.match(p.field('status').textContent,/WITHDRAWN_CANDIDATE/);
+      assert.equal(p.field('share').hidden,true);assert.equal(p.field('result').childElementCount,0);
+      assert.deepEqual([...p.field('to').options].map(o=>o.value),['1.0.0-rc.10']);
+      p.submit();assert.equal(p.app.dataset.reportState,'complete');
+      assert.ok(p.field('result').querySelector('.notes-target a').pathname.includes('/v1.0.0-rc.10/'));
     }finally{p.close();}
   }
 });

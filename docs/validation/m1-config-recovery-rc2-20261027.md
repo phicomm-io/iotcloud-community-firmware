@@ -36,6 +36,11 @@ No public command shape, persisted layout, schema version or MCU firmware change
 The frontend code is shared across products; firmware publication still builds
 the repository's complete ten-variant matrix.
 
+The public download pages show only the latest RC and label RC builds as Beta,
+with major future changes expected and use not recommended. Historical artifacts
+and release-chain records remain intact. Older target links require the user to
+confirm the latest target; an installed older RC can still be compared as a source.
+
 ## Local verification (2026-10-27)
 
 | Verification | Result | Evidence and boundary |
@@ -44,6 +49,8 @@ the repository's complete ten-variant matrix.
 | Existing full and minimal pages | PASS | Frontend `test_web.cjs` for M1/A1/TC1 and `test_setup.cjs` |
 | Frontend unit, Python and syntax checks | PASS | 78 frontend unit tests, 7 Python tests and four-product syntax validation; frontend source and archive identities are pinned in `frontend.lock.json` |
 | Frontend hotfix CI | PASS | [Branch run](https://github.com/phicomm-io/iotcloud-community-frontend/actions/runs/40499404791) and [PR run](https://github.com/phicomm-io/iotcloud-community-frontend/actions/runs/40499411002), including Chromium/WebKit and compressed-page tests; [PR 31](https://github.com/phicomm-io/iotcloud-community-frontend/pull/31) merged as `3002c64c3136a59a7f9692a4a57f8e5fe455d9af` |
+| Frontend release reuse | PASS | Published the unmodified successful branch-CI archive for `6a92cc6ef7f8608937d3229d696ffb5f0f930679`, an ancestor of main with an identical source tree to its merge commit. Downloaded and verified the published archive against the pinned SHA-256. Redundant main CI was cancelled with the user's authorization |
+| Latest Beta display | PASS | 60 JavaScript comparison/client/page tests; Chromium: four bilingual desktop/mobile scenarios plus two no-JavaScript scenarios. Latest numeric RC only, old target shares fail closed, old installed versions remain valid sources, stable history is preserved |
 | Production M1 reset/UART/boot + pinned SDK | PASS | `tests.test_m1_config_recovery`: actual product defaults/reset/frame handling and SDK CRC, commit and boot-read functions; ASan/UBSan; test Flash partitions, no hardware |
 | Baseline negative control | PASS | The new M1 regression fails on the unpatched main source at `!m1_reset(false)`, detecting the false success |
 | Existing storage/boot regressions | PASS | `tests.test_config_commit`, `tests.test_m1_boot_config`, `tests.test_a1_filter_storage` plus the new M1 case: 9 tests, one unavailable local TC1 SDK case skipped; M1/A1 actual SDK fault and power-loss boundaries exercised |

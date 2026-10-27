@@ -56,4 +56,9 @@ function resources(snapshot, channel = snapshot.channel || 'stable') {
   if (channel === 'candidate') Object.assign(index, {channel, source: {scope: channel, kind: 'relative-archive'}});
   return {[directory + 'index.json']: Buffer.from(JSON.stringify(index)), [catalogPath]: catalog, [manifestPath]: manifest};
 }
-module.exports = {fixture, resources, hash};
+function appendCandidate(snapshot, version, previous, sequence) {
+  const next = release(version, 'candidate', previous, sequence);
+  snapshot.catalog.releases.push(next.archive); snapshot.manifest.releases.push(next.record);
+  snapshot.manifest.sources[next.source.commit] = next.source;
+}
+module.exports = {fixture, resources, hash, appendCandidate};

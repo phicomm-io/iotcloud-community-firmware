@@ -41,6 +41,11 @@ else
   echo "Keeping retained archive; upstream refresh failed." >&2
  fi
 fi
+if [[ "$mode" != build && "${PHICOMM_PAGES_INCLUDE_CANDIDATES:-}" == 1 ]]; then
+ # Candidate tags publish immutable R2 assets separately. Fetch and verify them
+ # explicitly when updating the public Beta display after a candidate release.
+ python3 tools/release/archive_pages.py "$target/archive" --include-candidates --candidates-r2
+fi
 python3 tools/release/archive_pages.py "$target/archive" --existing
 python3 tests/test_site_docs.py
 python3 site/build.py build/pages --archive "$target/archive" --formal
