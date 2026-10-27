@@ -48,7 +48,7 @@ A1 offers automation sources according to currently valid data, independently of
 
 ## Hub edition
 
-The hub baseline was introduced in v1.0.0-rc. Use the current v1.0.0-rc.1 candidate for automatic local-device listing, the optional Web password and restart recovery described below. The previous Wi-Fi RC is deprecated; its sensor-data interface is incompatible with RC.1, so update source devices and M1 receivers together and use the matching frontend.
+**The hub is an RC / Beta feature. Major changes are still expected; using it is not recommended.** See the [latest release notes](release-log.html?channel=candidate) for available builds. Automatic local-device listing, the optional Web password and restart recovery require matching versions. The old Wi-Fi sensor-data interface is incompatible with the current interface; testing requires updating source devices, M1 receivers and the matching frontend together.
 
 The separate `hub` variant includes local accounts, an MQTT TCP / WebSocket Broker, LAN Home Assistant, an upstream MQTT client and Bemfa forwarding. The ordinary image remains a sensor device. Local accounts do not include email or GitHub login.
 
