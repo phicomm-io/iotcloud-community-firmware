@@ -75,6 +75,35 @@ class BuildTests(unittest.TestCase):
             self.assertTrue(page.exists(), f'{slug} not built')
             self.assertIn(title, page.read_text(encoding='utf-8'), f'{slug} is missing its title')
 
+    def test_candidate_archive_refresh_replaces_retained_notes_pointer(self):
+        import hashlib
+        import json
+        import shutil
+        import subprocess
+        archive = Path(self._tmp.name) / 'candidate-archive'
+        retained = archive / 'releases/notes/candidate'
+        retained.mkdir(parents=True)
+        catalog = (ROOT / 'docs/release-notes/catalog.snapshot.json').read_bytes()
+        (archive / 'releases/index.json').write_bytes(catalog)
+        (archive / 'releases/candidates.json').write_text(json.dumps({
+            'schema': 1, 'channel': 'candidate', 'releases': []}))
+        # A previously generated snapshot must not survive a catalog refresh.
+        shutil.copyfile(self.out / 'releases/notes/index.json', retained / 'index.json')
+        output = Path(self._tmp.name) / 'candidate-pages'
+        subprocess.run([sys.executable, str(ROOT / 'site/build.py'), str(output),
+                        '--archive', str(archive)], check=True)
+        self.assertEqual((output / 'releases/index.json').read_bytes(), catalog)
+        pointer = json.loads((output / 'releases/notes/candidate/index.json').read_bytes())
+        self.assertEqual(pointer['channel'], 'candidate')
+        self.assertEqual(pointer['source']['scope'], 'candidate')
+        for name in ['catalog', 'manifest']:
+            entry = pointer[name]
+            resource = (output / entry['path'].lstrip('/')).read_bytes()
+            self.assertEqual(hashlib.sha256(resource).hexdigest(), entry['sha256'])
+            self.assertEqual(len(resource), entry['size'])
+        combined = json.loads((output / pointer['catalog']['path'].lstrip('/')).read_bytes())
+        self.assertEqual(combined, json.loads(catalog))
+
     def test_pages_carry_the_site_shell(self):
         for slug, _, _, _ in PAGES:
             html = (self.out / 'guides' / f'{slug}.html').read_text(encoding='utf-8')
