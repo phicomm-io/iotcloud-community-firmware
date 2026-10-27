@@ -20,7 +20,7 @@ independent bug fixes keep separate IDs. Components are `firmware`, `bundled_web
 and `service`. Only the first two enter firmware comparisons. Scope always lists
 models, variants, hardware, branches and channels explicitly.
 
-Current migration: 142 blocks, 93 approved, 47 excluded, 2 pending; 81 reviewed
+The initial migration covered 142 blocks, 93 approved, 47 excluded, 2 pending; 81 reviewed
 change revisions. v0.9.0 only has a commit link. v0.9.5 contains one unclear TMCP
 and binding statement. Their comparisons are blocked. v0.9.4 reuses the previous
 implementation and adds no feature. Pending source text and internal evidence
@@ -40,6 +40,24 @@ add bilingual changes and their proof references, then compile. A reviewed
 baseline means the authored change IDs have a known state at that release; it
 never invents descriptions for missing historical material. A pending source
 version is not a permitted comparison endpoint or intermediate release.
+
+## Candidate history through v1.0.0-rc.3
+
+The rc.3 original notes contain its new A1 recovery sequences followed by the
+complete rc.2, rc.1 and rc notes under their source versions. These inherited
+blocks are excluded from new rc.3 changes and point to the original review
+blocks where applicable. The explicit candidate chain still follows
+`0.9.27 → 1.0.0-rc → 1.0.0-rc.1 → 1.0.0-rc.2 → 1.0.0-rc.3`, so comparisons
+retain all applicable cumulative changes. Original source bytes and reviews for
+the preceding candidates remain unchanged even when their public releases are
+hidden. Publication must retain those historical candidate catalog entries.
+
+The new A1 change has an author review of both languages, with the content hash
+computed by `digest(encoded({title, description, ota_summary}))`; this does not
+claim independent review. Local build and host-test evidence is separate from
+physical acceptance, which remains pending. Guides recommend stable v0.9.27 for
+everyday use and label rc.3 as Beta. Wi-Fi rc.3 does not rename or replace the
+separately released M1 sensor-controller rc package.
 
 ## Public resources and integrity
 

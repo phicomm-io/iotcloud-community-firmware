@@ -2,6 +2,8 @@
 
 A1 provides fan control, a light ring, child lock, night mode and automatic control using valid readings from M1, DAIKIN and other sensor providers. For installation, see [A1 / M1 flashing](a1-m1-flash).
 
+**Use stable v0.9.27 for everyday operation. The current v1.0.0-rc.3 candidate is a beta build. Major changes are still expected, and daily use is not recommended.** See the [complete candidate release notes](release-log.html?channel=candidate) for version requirements and cumulative changes.
+
 ## Power and fan
 
 The home page provides independent power and operating-mode controls.
@@ -93,14 +95,14 @@ The Wi-Fi button performs recovery **on release**:
 
 A short pulse marks each full second held without changing saved lighting settings. It only indicates time; recovery never executes early. Recovery bypasses child lock. Ensure you can provision Wi-Fi again because factory reset clears user settings. A full reset is also available in the WebUI.
 
-Some original touch panels report release after about 2–3 seconds of continuous contact, preventing the longer holds above. This branch adds these alternatives (**not available in rc.2; install a subsequent firmware containing this fix**):
+Some original touch panels report release after about 2–3 seconds of continuous contact, preventing the longer holds above. **v1.0.0-rc.3 adds** these alternatives (unavailable in rc.2 and earlier):
 
 | Wi-Fi button gesture | Action |
 | --- | --- |
 | Two short taps, then hold the third touch for 1–2 seconds and release | Reset network |
 | Three short taps, then hold the fourth touch for 1–2 seconds and release | Factory reset |
 
-Release after each short tap and leave less than 0.3 seconds between touches. The final hold must last at least 1 second and less than 5 seconds. These reserved recovery sequences execute when the panel reports release, bypass child lock, and consume the preceding taps and final hold without running their custom actions. Separate click groups, standalone holds and two-button combinations remain available. Factory reset clears user settings, so ensure you can provision Wi-Fi again.
+Release after each short tap and leave less than 0.3 seconds between touches. The final hold must last at least 1 second and less than 5 seconds. These reserved recovery sequences execute when the panel reports release, bypass child lock, and consume the preceding taps and final hold without running their custom actions. Separate click groups, standalone holds and two-button combinations remain available. The new sequences passed host regressions and local builds and image checks for all four A1 variants; **physical acceptance is still pending**. Factory reset clears user settings, so ensure you can provision Wi-Fi again.
 
 ## MQTT
 

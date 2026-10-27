@@ -27,17 +27,19 @@ TC1 的 A1 硬件版本与 A1 空气净化器是不同产品，固件不能混�
 
 已有社区固件的日常网页更新使用匹配产品的 `.ota.bin.signed`；原生应用 `.ota.bin.raw` 仅用于教程明确支持的迁移或救援入口。`.all.bin` 是有线安装的完整镜像，不能用于网页 OTA。更新和恢复见[固件更新](https://phicomm-io.github.io/guides/firmware-update.html)。
 
-大金原厂 OTA 布局的应用槽为 **`0x180000`（1.5 MiB）**，普通版首次迁移按[原厂 OTA 教程](https://phicomm-io.github.io/guides/daikin-stock-ota.html)执行。v1.0.0-rc 的 `full → hub` 签名切换见[中枢指南](https://phicomm-io.github.io/guides/daikin-guide.html#普通版切换为中枢)，需支持该入口的新固件和符合设备容量的镜像。
+大金原厂 OTA 布局的应用槽为 **`0x180000`（1.5 MiB）**，普通版首次迁移按[原厂 OTA 教程](https://phicomm-io.github.io/guides/daikin-stock-ota.html)执行。v1.0.0-rc.3 的 `full → hub` 签名切换见[中枢指南](https://phicomm-io.github.io/guides/daikin-guide.html#普通版切换为中枢)，需支持该入口的新固件和符合设备容量的镜像。
 
-## v1.0.0-rc 候选版
+## v1.0.0-rc.3 Beta 候选版
 
-**[v1.0.0-rc](https://github.com/phicomm-io/iotcloud-community-firmware/releases/tag/v1.0.0-rc) 为预发布版本，稳定通道仍为 v0.9.27。** 下载区保留 0.9.x 历史制品，具体功能与配套版本以发布说明为准。
+**RC 实际属于 Beta 测试版本，后续仍会有较大改动，不建议日常使用；日常使用推荐稳定版 [v0.9.27](https://phicomm-io.github.io/#releases)。** 当前候选为 [v1.0.0-rc.3](https://github.com/phicomm-io/iotcloud-community-firmware/releases/tag/v1.0.0-rc.3)，完整发布说明按来源保留 rc、rc.1、rc.2 的累计变化；旧候选不再作为下载入口。联网固件、M1 传感器主控、前端和平台分别发布，配套版本以说明为准。
 
 | 方向 | 候选版功能 |
 | --- | --- |
 | 使用与升级 | 中英文界面、设备语言、配置备份恢复、迁移失败保护与升级差异 |
 | M1 | 甲醛 / PM2.5 两位置分别选本机传感器、TC1 功率、A1 主风机生效输出（0–100%）、大金 CO₂ 等数据或 API；双击整体切换原始 / 用户读数，各自过期回退，颜色按阈值或固定值；PM2.5 稳定处理，甲醛 / PM2.5 超阈值蜂鸣独立开关、默认关闭，色灯阈值、闹钟与手动鸣叫独立 |
-| DAIKIN `hub` | 独立中枢变体：本地账户、TCP / WebSocket MQTT Broker、局域网 Home Assistant、上游 MQTT 客户端与巴法云转发；普通版继续用于传感器 |
+| A1 恢复 | rc.3 新增 Wi-Fi 键短触组合：短按两次、第三次按住 1–2 秒后松手重置网络；短按三次、第四次按住 1–2 秒后松手恢复出厂。保留原 5 秒 / 10 秒长按，新增手势尚待实机验收 |
+| DAIKIN `hub` | 独立中枢变体：本地账户、TCP / WebSocket MQTT Broker、局域网 Home Assistant、上游 MQTT 客户端与巴法云转发；自动列出本机，网页密码可选；普通版继续用于传感器 |
+| 配套接口与恢复 | 沿用 rc.1 的通用数值字段及 M1 显示配置接口、rc.2 的 M1 配置恢复与网页恢复入口修复；自定义调用方须使用当前接口和配套前端 |
 
 Apple 家庭采用 `hub` 的实验性 HomeKit HAP 桥接，配对、控制和重启恢复仍待真机验证；当前不包含 Matter。
 
