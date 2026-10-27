@@ -2504,6 +2504,692 @@
       "basis": [
         "v1.0.0-rc.2:b011"
       ]
+    },
+    "v1.0.0-rc.3:b001": {
+      "block_sha256": "0dcfe194a5452a12dbd18806769c697f031f028d2de3c3713088734c33e3e925",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Beta guidance, headings, retained behavior or validation and matching-component limits; not an additional rc.3 behavior change.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b001"
+      ]
+    },
+    "v1.0.0-rc.3:b002": {
+      "block_sha256": "3ca2463d66ca7b0acc7147a06ff17eacd5caca5d3659162148a70dc0e86cb95a",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Beta guidance, headings, retained behavior or validation and matching-component limits; not an additional rc.3 behavior change.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b002"
+      ]
+    },
+    "v1.0.0-rc.3:b003": {
+      "block_sha256": "a78eeb34b85f17ce091af04fa4dcb440912978ec576bb1272400b66f543276da",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "approved",
+      "reason": "Author reviewed A1/buttons.h and the gesture and regression sources against both languages. Local validation and pending physical acceptance are stated separately; independent review is not claimed.",
+      "change_refs": [
+        "a1-short-touch-recovery@1.0.0-rc.3"
+      ],
+      "basis": [
+        "v1.0.0-rc.3:b003"
+      ]
+    },
+    "v1.0.0-rc.3:b004": {
+      "block_sha256": "2a815bdb86b64419b34947b7f3379e6e4e14f9e4fcb52b33e309950729257a48",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "approved",
+      "reason": "Author reviewed A1/buttons.h and the gesture and regression sources against both languages. Local validation and pending physical acceptance are stated separately; independent review is not claimed.",
+      "change_refs": [
+        "a1-short-touch-recovery@1.0.0-rc.3"
+      ],
+      "basis": [
+        "v1.0.0-rc.3:b004"
+      ]
+    },
+    "v1.0.0-rc.3:b005": {
+      "block_sha256": "1cf14c453b966c4a70189ee7ac445ec1fdcbfe5351e4a353d45965f8e2cb8f69",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "approved",
+      "reason": "Author reviewed A1/buttons.h and the gesture and regression sources against both languages. Local validation and pending physical acceptance are stated separately; independent review is not claimed.",
+      "change_refs": [
+        "a1-short-touch-recovery@1.0.0-rc.3"
+      ],
+      "basis": [
+        "v1.0.0-rc.3:b005"
+      ]
+    },
+    "v1.0.0-rc.3:b006": {
+      "block_sha256": "4de559ca1db85d047f07cd48405eed649270a12aa5246649ebbd0b8f555fe2cd",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Beta guidance, headings, retained behavior or validation and matching-component limits; not an additional rc.3 behavior change.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b006"
+      ]
+    },
+    "v1.0.0-rc.3:b007": {
+      "block_sha256": "db95b30eca793da3b6806542f826903f18f1c27677c9b9bf867751abd9cdfd54",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Beta guidance, headings, retained behavior or validation and matching-component limits; not an additional rc.3 behavior change.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b007"
+      ]
+    },
+    "v1.0.0-rc.3:b008": {
+      "block_sha256": "7338ae89e82f464a83d993e918fc7a13d0039ea451f8d8187f0f4a0503530c92",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Beta guidance, headings, retained behavior or validation and matching-component limits; not an additional rc.3 behavior change.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b008"
+      ]
+    },
+    "v1.0.0-rc.3:b009": {
+      "block_sha256": "c2313a0e772f8ad082ed536998e467a7259e82b41f34328aee9976a521835603",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Beta guidance, headings, retained behavior or validation and matching-component limits; not an additional rc.3 behavior change.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b009"
+      ]
+    },
+    "v1.0.0-rc.3:b010": {
+      "block_sha256": "f561f5d756a2bd978bca63d984155d99c59919d65536669d2b0b9bf9c648444f",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Beta guidance, headings, retained behavior or validation and matching-component limits; not an additional rc.3 behavior change.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b010"
+      ]
+    },
+    "v1.0.0-rc.3:b011": {
+      "block_sha256": "d0d03e1fad002d6a8e5599920b6ec75925bef2ea6034354156863e09d7553c1d",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b011"
+      ]
+    },
+    "v1.0.0-rc.3:b012": {
+      "block_sha256": "d0885f687abc9b8319bc49c7877132af834fa632e1447ebbf8fd7f5cd3880af2",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b012",
+        "v1.0.0-rc.2:b001"
+      ]
+    },
+    "v1.0.0-rc.3:b013": {
+      "block_sha256": "00b81b3b62d04a84dbdb859cf3bbb9ec91acfedaa19edad539604ed4afc673a8",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b013",
+        "v1.0.0-rc.2:b002"
+      ]
+    },
+    "v1.0.0-rc.3:b014": {
+      "block_sha256": "b3ffdf48a8459f71ec81585baa8055b0433150e241ea7a11d7b326de8ea3a276",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b014",
+        "v1.0.0-rc.2:b003"
+      ]
+    },
+    "v1.0.0-rc.3:b015": {
+      "block_sha256": "d74c2018112ad4953ce2e9abcc8ebb9156008d8f2939171f399fbc43fa8965a2",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b015",
+        "v1.0.0-rc.2:b004"
+      ]
+    },
+    "v1.0.0-rc.3:b016": {
+      "block_sha256": "8a0513d3b025a4ff2f8805dc739e782e51670e067df855f1c1861d2604e05f48",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b016",
+        "v1.0.0-rc.2:b005"
+      ]
+    },
+    "v1.0.0-rc.3:b017": {
+      "block_sha256": "e987b1f5851bb49b46a94d4eb16303eec9ea2678ce9126fb8aa4736bb0c7cb6c",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b017",
+        "v1.0.0-rc.2:b006"
+      ]
+    },
+    "v1.0.0-rc.3:b018": {
+      "block_sha256": "8fb2f3e97cf63e4ecfdeaa62d6d4da3f6f41928b581572cd9d687e0975e427f7",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b018",
+        "v1.0.0-rc.2:b007"
+      ]
+    },
+    "v1.0.0-rc.3:b019": {
+      "block_sha256": "5c39e7964c77364172fbaa0ebc7c24be032d506fb3c205115c4cb0ebaf2e5258",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b019",
+        "v1.0.0-rc.2:b008"
+      ]
+    },
+    "v1.0.0-rc.3:b020": {
+      "block_sha256": "51032a30e999b05cec3a5a5e01649fc58742398211f1e139f22d402ff6534d00",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b020",
+        "v1.0.0-rc.2:b009"
+      ]
+    },
+    "v1.0.0-rc.3:b021": {
+      "block_sha256": "0d2b6337706e9fcb3ebad450d11e5d55f54fcabfdac485e0ecd5cce4b51c1963",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b021",
+        "v1.0.0-rc.2:b010"
+      ]
+    },
+    "v1.0.0-rc.3:b022": {
+      "block_sha256": "f546856fabaca5d49e3a28cd30cd658994ffec6385123f6067ef5fdf12a58aab",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b022",
+        "v1.0.0-rc.2:b011"
+      ]
+    },
+    "v1.0.0-rc.3:b023": {
+      "block_sha256": "f87fa33fb382915b90f67b048c2b66f8424c6178d57c1c1befae595721035534",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b023"
+      ]
+    },
+    "v1.0.0-rc.3:b024": {
+      "block_sha256": "9c7cb3ce24ce0a597f114a6a8935539bcbdd9ec57fb34919967c6391e6776f5f",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b024",
+        "v1.0.0-rc.1:b001"
+      ]
+    },
+    "v1.0.0-rc.3:b025": {
+      "block_sha256": "046bf31e5c8a04ef4ac1e167d5c7b5d346044f48ff99bf499cdaed067d89037f",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b025",
+        "v1.0.0-rc.1:b002"
+      ]
+    },
+    "v1.0.0-rc.3:b026": {
+      "block_sha256": "9f46561188937f01a30e03491f4d1efc8512b5129b806c228b67acc96eecc360",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b026",
+        "v1.0.0-rc.1:b003"
+      ]
+    },
+    "v1.0.0-rc.3:b027": {
+      "block_sha256": "766db66a809824765a4edb95e2da32c15ea254b67e88b436ae8a989761bd1b7f",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b027",
+        "v1.0.0-rc.1:b004"
+      ]
+    },
+    "v1.0.0-rc.3:b028": {
+      "block_sha256": "e00a896018acf27b550e0358ba272673e93fc5f52657b7b050d1738db728467a",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b028",
+        "v1.0.0-rc.1:b005"
+      ]
+    },
+    "v1.0.0-rc.3:b029": {
+      "block_sha256": "1ef66403d34a2883dbb92b66d254ba679823ea0795f2f0dcc8c2e6714a699ca9",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b029",
+        "v1.0.0-rc.1:b006"
+      ]
+    },
+    "v1.0.0-rc.3:b030": {
+      "block_sha256": "45431a0adce2eca20b9e81a45ff88f163025db8bf923dfd944badd27abd0593f",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b030",
+        "v1.0.0-rc.1:b007"
+      ]
+    },
+    "v1.0.0-rc.3:b031": {
+      "block_sha256": "3cd579541c2ce423d09fee165b973a276ba15b96c4c08943851b6d722bf2b907",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b031",
+        "v1.0.0-rc.1:b008"
+      ]
+    },
+    "v1.0.0-rc.3:b032": {
+      "block_sha256": "c64fcea25be7a6a7c4950977ca4af3e24ffcc0fe6c32dcc89015eed043bb5eda",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b032",
+        "v1.0.0-rc.1:b009"
+      ]
+    },
+    "v1.0.0-rc.3:b033": {
+      "block_sha256": "bf714b3014c11924008ded67bf75e147ebcdf5ddd495e74544f5cfa25d00159f",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b033",
+        "v1.0.0-rc.1:b010"
+      ]
+    },
+    "v1.0.0-rc.3:b034": {
+      "block_sha256": "b957b9eb10d36d597f049bd95ed5f73f71121265461e2876baef7ff3f891747b",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b034",
+        "v1.0.0-rc.1:b011"
+      ]
+    },
+    "v1.0.0-rc.3:b035": {
+      "block_sha256": "d27d77b62ba315f3f51d8e1e64f09c9ed0fc549225e12d6e4e01c556c01097bb",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b035",
+        "v1.0.0-rc.1:b012"
+      ]
+    },
+    "v1.0.0-rc.3:b036": {
+      "block_sha256": "af4fcfe6f5265bda7d19a2519ddb8ac7d572b6ea06a870d95709ae894cd9da6b",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b036",
+        "v1.0.0-rc.1:b013"
+      ]
+    },
+    "v1.0.0-rc.3:b037": {
+      "block_sha256": "2f970d4e304f1d552b33c1cb9143b4020d976971568a7da8358249d39df5af1e",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b037",
+        "v1.0.0-rc.1:b014"
+      ]
+    },
+    "v1.0.0-rc.3:b038": {
+      "block_sha256": "9414aef8f910e3d1e81aff4826fbf54f4a2418f3f1b485a7957cc1a9ae329d92",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b038"
+      ]
+    },
+    "v1.0.0-rc.3:b039": {
+      "block_sha256": "df7f78f89a3678bc09e96cc16c328b5315e3e3b803b2bcff8e24819e8e9a3a1f",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b039",
+        "v1.0.0-rc:b001"
+      ]
+    },
+    "v1.0.0-rc.3:b040": {
+      "block_sha256": "f6c27882f9c53548977c3982ada1acdbda25767d41b733b860ce7704915bed94",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b040",
+        "v1.0.0-rc:b002"
+      ]
+    },
+    "v1.0.0-rc.3:b041": {
+      "block_sha256": "7afe992a52495455e0204e83a9c7d275218406c1b8e83e6485af927871b0da6e",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b041",
+        "v1.0.0-rc:b003"
+      ]
+    },
+    "v1.0.0-rc.3:b042": {
+      "block_sha256": "f430ede43d204615ede6992e129ba8ecde55ee2bfb8193c58781b493543749e8",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b042",
+        "v1.0.0-rc:b004"
+      ]
+    },
+    "v1.0.0-rc.3:b043": {
+      "block_sha256": "9de7e3dedf4e1569934fccbd12b111479d48d26715c1e9ce3a8eeae2499f3f8e",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b043",
+        "v1.0.0-rc:b005"
+      ]
+    },
+    "v1.0.0-rc.3:b044": {
+      "block_sha256": "ea2fd8967dd244d132d7e04b2b26055954c9e548bcb19ad711a6a33c46a9eeca",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b044",
+        "v1.0.0-rc:b006"
+      ]
+    },
+    "v1.0.0-rc.3:b045": {
+      "block_sha256": "ba09bc02a38156ce65a88dad524ba7473ed028d59c6f84e06d8b0235843236fb",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b045",
+        "v1.0.0-rc:b007"
+      ]
+    },
+    "v1.0.0-rc.3:b046": {
+      "block_sha256": "196a345ddc9f4f68e12df98bbd632eaefae452d067427fb49a3b03d91958664c",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b046",
+        "v1.0.0-rc:b008"
+      ]
+    },
+    "v1.0.0-rc.3:b047": {
+      "block_sha256": "0c92d4f13438c7e2bccb5a9fb7045d38c540a150daa75bfee1c7a05fc4dda6e2",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b047",
+        "v1.0.0-rc:b009"
+      ]
+    },
+    "v1.0.0-rc.3:b048": {
+      "block_sha256": "0fc0a1abe2df6be7c7f868ff5032a2a05dc11f0232de0472131669b4fedba434",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b048",
+        "v1.0.0-rc:b010"
+      ]
+    },
+    "v1.0.0-rc.3:b049": {
+      "block_sha256": "2492ae647b1053203e5d277245ce76bd838e971ca2e4568d39dfa073f93b03f0",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b049",
+        "v1.0.0-rc:b011"
+      ]
+    },
+    "v1.0.0-rc.3:b050": {
+      "block_sha256": "9c443366cf07f4d5f0d19a1fc9e64f868e919dba2e2328060dcc5a176294b188",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b050",
+        "v1.0.0-rc:b012"
+      ]
+    },
+    "v1.0.0-rc.3:b051": {
+      "block_sha256": "322811fd98a45d9e7775abf0cd913ebc0fce9c8d8b3302f70582b0695e5c8ec0",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b051",
+        "v1.0.0-rc:b013"
+      ]
+    },
+    "v1.0.0-rc.3:b052": {
+      "block_sha256": "25221102861a187c1718f2d4ee020bca92b9be14575cd148cfa4316a78dc43ae",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b052",
+        "v1.0.0-rc:b014"
+      ]
+    },
+    "v1.0.0-rc.3:b053": {
+      "block_sha256": "504242d28cb9330fabff4b72d21a0ba2cea76fa3d342bcdc735052dccb55c91a",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b053",
+        "v1.0.0-rc:b015"
+      ]
+    },
+    "v1.0.0-rc.3:b054": {
+      "block_sha256": "a43b30e26ab83e194fa7b7edf7eafda21cb7b60c314b38ffd2a24c5f81b29013",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b054",
+        "v1.0.0-rc:b016"
+      ]
+    },
+    "v1.0.0-rc.3:b055": {
+      "block_sha256": "63f335bee2eee8944929d0b1704973eb4a22919c441f02462fa9c601212d1200",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b055",
+        "v1.0.0-rc:b017"
+      ]
+    },
+    "v1.0.0-rc.3:b056": {
+      "block_sha256": "575c55ad01b4ebc73d83e1bb850b0f2f6211dee7a6d686e5b57a65e508bbc8ce",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b056",
+        "v1.0.0-rc:b018"
+      ]
+    },
+    "v1.0.0-rc.3:b057": {
+      "block_sha256": "825cc8fcd4dc0a640fb1ad94d3c5367d01abd2b10ed0b34624b9aa2eab81c842",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b057",
+        "v1.0.0-rc:b019"
+      ]
+    },
+    "v1.0.0-rc.3:b058": {
+      "block_sha256": "74f4cd4a5d72be377a7a3b24b34d26a6caf7a734dcb876b2d8186ded860dde6c",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b058",
+        "v1.0.0-rc:b020"
+      ]
+    },
+    "v1.0.0-rc.3:b059": {
+      "block_sha256": "c832cd1bf8b6763c9666a243ff637309c4a3a3e6d141edff72d0afb73cfde62d",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b059",
+        "v1.0.0-rc:b021"
+      ]
+    },
+    "v1.0.0-rc.3:b060": {
+      "block_sha256": "c464a6ab448358ac833d253de40acd13bf567e66ba9cd92e11d33cc3fce5ad23",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b060",
+        "v1.0.0-rc:b022"
+      ]
+    },
+    "v1.0.0-rc.3:b061": {
+      "block_sha256": "7e2737a0ecb65dfdadd4c60d8a061febbd83245d6ee95c901824689895f6c85b",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b061",
+        "v1.0.0-rc:b023"
+      ]
+    },
+    "v1.0.0-rc.3:b062": {
+      "block_sha256": "efcab010d1dd7366b961c2033508044f03e2baf7f31e5010c4a36d7aaa7873bc",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b062",
+        "v1.0.0-rc:b024"
+      ]
+    },
+    "v1.0.0-rc.3:b063": {
+      "block_sha256": "386994c7516808cc22b7ff7ba62347a371298be2ed5aafba4d2f6c6b06c6495a",
+      "release_sha256": "ba7f132620777dee8e65c037dc02c3a221f8d0290f0a2fb3b8bcef201f30dae3",
+      "status": "excluded",
+      "reason": "Complete inherited historical notes, retained under their original version. Their behavior changes remain represented by the existing candidate chain and are not new rc.3 changes.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.3:b063",
+        "v1.0.0-rc:b025"
+      ]
     }
   }
 }

@@ -7847,6 +7847,77 @@
         "reason": "Author reviewed both languages against the actual implementation and stated model, variant and recovery boundaries. Independent review is not claimed.",
         "reviewed_content_sha256": "4a5cded8e49fa81ad3185e9554788f6de97b1d7b530543dcb34ba47f3c38e48c"
       }
+    },
+    {
+      "change_id": "a1-short-touch-recovery",
+      "version": "1.0.0-rc.3",
+      "type": "bugfix",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "A1 新增短触组合恢复手势",
+        "en": "Add A1 recovery sequences for touch panels with short holds"
+      },
+      "description": {
+        "zh-CN": "A1 Wi-Fi 键新增保留恢复组合：短按两次，第 3 次按住 1–2 秒后松手重置网络；短按三次，第 4 次按住 1–2 秒后松手恢复出厂。每次短按须松手，相邻触碰间隔小于 0.3 秒，最终按住至少 1 秒、不足 5 秒，面板报告松开才触发。绕过童锁，不执行本组连击或最终长按的自定义动作；原 5 秒 / 10 秒恢复手势保留。恢复出厂清除用户设置。新增手势尚未实机验收。",
+        "en": "A1 reserves two Wi-Fi recovery sequences: tap twice, hold the third touch for 1–2 seconds and release to reset networking; tap three times, hold the fourth touch for 1–2 seconds and release to factory reset. Release each short tap, leave less than 0.3 seconds between touches and hold the final touch for at least 1 second and less than 5 seconds. Recovery runs only when the panel reports release, bypasses child lock and suppresses custom click and hold actions for this sequence. Existing 5 / 10 second recovery holds remain. Factory reset clears user settings. The new sequences await physical acceptance."
+      },
+      "ota_summary": {
+        "zh-CN": "A1 Wi-Fi 键新增保留恢复组合：短按两次，第 3 次按住 1–2 秒后松手重置网络；短按三次，第 4 次按住 1–2 秒后松手恢复出厂。每次短按须松手，相邻触碰间隔小于 0.3 秒，最终按住至少 1 秒、不足 5 秒，面板报告松开才触发。绕过童锁，不执行本组连击或最终长按的自定义动作；原 5 秒 / 10 秒恢复手势保留。恢复出厂清除用户设置。新增手势尚未实机验收。",
+        "en": "A1 reserves two Wi-Fi recovery sequences: tap twice, hold the third touch for 1–2 seconds and release to reset networking; tap three times, hold the fourth touch for 1–2 seconds and release to factory reset. Release each short tap, leave less than 0.3 seconds between touches and hold the final touch for at least 1 second and less than 5 seconds. Recovery runs only when the panel reports release, bypasses child lock and suppresses custom click and hold actions for this sequence. Existing 5 / 10 second recovery holds remain. Factory reset clears user settings. The new sequences await physical acceptance."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc.3:b003",
+        "v1.0.0-rc.3:b004",
+        "v1.0.0-rc.3:b005"
+      ],
+      "evidence": {
+        "firmware_review_commit": "194ed50e92fda329df8d8c08147e3a8bf8e39d7d",
+        "source_paths": [
+          "A1/buttons.h",
+          "common/gesture.h",
+          "tests/test_a1_buttons.c"
+        ],
+        "firmware_source_sha256": {
+          "A1/buttons.h": "4b7b66ab1dce782f4bbb6bab05ed64b855ea110becede88596c8c74412218646",
+          "common/gesture.h": "19a0093042d52c70788ded3cbe8472aef957654f5011fee08b561c10e1dc64a5",
+          "tests/test_a1_buttons.c": "2e329ea21d36ce6682e5318b5a02be9b9cee910e77fd4c04de731f97b7a0c5f5"
+        },
+        "review_basis": "Author reviewed the actual A1 arbitration and gesture implementation and regression cases. The primary executor reports GCC 5.4.1 builds and image gates for all four A1 variants, sanitized host regressions and a negative rc.2 control. CI, signing, publication and physical acceptance are separate.",
+        "physical_acceptance": "not_run"
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root/rc3_documentation",
+        "reviewed_utc": "2026-10-27T17:23:41.254557+00:00",
+        "reason": "Author reviewed both languages against the gesture implementation, recovery boundaries and pending physical acceptance. Independent review is not claimed.",
+        "reviewed_content_sha256": "270ae168e6ff9bca3a1401b7922e00c36ae6e4a489fbf30b0698adb01010be7b"
+      }
     }
   ],
   "merges": []

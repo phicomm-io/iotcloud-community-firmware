@@ -1,6 +1,6 @@
 # v1.0 Beta feature preview
 
-**RC releases are beta builds. Major changes are still expected; using them is not recommended. The stable channel remains on v0.9.27.** This page groups the v1 Beta features by device. Check the latest release notes for available builds and changes. Wi-Fi firmware, the M1 sensor controller, frontend and platform are released separately. Updating one does not update the others.
+**RC releases are beta builds. Major changes are still expected; using them is not recommended. The stable channel remains on v0.9.27.** This page groups the v1 Beta features by device. The current candidate is **v1.0.0-rc.3**; its latest release notes retain the complete cumulative rc / rc.1 / rc.2 changes under their source versions. Wi-Fi firmware, the M1 sensor controller, frontend and platform are released separately. Updating one does not update the others.
 
 [Candidate downloads and release notes](release-log.html?channel=candidate) · [Choose an update image](firmware-update)
 
@@ -42,7 +42,7 @@ A1 publishes the main fan's effective **0–100%** output, including the fresh-a
 - **Independent hub image and console.** Adds local accounts, device management and hub settings alongside sensor functions. The embedded `/iotcloud/#/` console configures the owner, Broker, upstream MQTT, Bemfa and HomeKit, without cloud email registration or GitHub login.
 - **LAN Broker and upstream client together.** MQTT TCP 1883 and WebSocket 9001/mqtt accept local credentials for LAN devices and Home Assistant. The Broker can run alongside an upstream MQTT Client with explicit event-forwarding rules and Bemfa device / channel mappings.
 - **Optional HomeKit HAP bridge.** Off by default, this experimental feature provides TC1's six Switches, A1 fan / light, and valid M1 / DAIKIN sensors. The hub’s own sensors are included automatically. **Matter is not included.**
-- **Explicit conversion to hub.** Supporting `full` firmware accepts a signed `hub` image that fits the installed slot, with explicit confirmation and retained network settings. **The published v1.0.0-rc requires a device Web password first.** Ordinary OTA preserves variants; direct `hub → full` OTA is unsupported. Conversion does not enlarge OTA partitions: check the actual slot capacity.
+- **Explicit conversion to hub.** Supporting `full` firmware accepts a signed `hub` image that fits the installed slot, with explicit confirmation and retained network settings. The current rc.3 retains the optional device Web password introduced in rc.1; the original rc password requirement is historical. Ordinary OTA preserves variants; direct `hub → full` OTA is unsupported. Conversion does not enlarge OTA partitions: check the actual slot capacity.
 
 [DAIKIN operation, installation and hub settings](daikin-guide)
 
@@ -61,3 +61,8 @@ RC.1 adds the following changes to the original RC:
 - After restart, the console recovers through read-only requests. HTTP 401 from an expired session returns to login without replaying configuration writes or reboot requests.
 
 Use the [release notes](release-log.html?channel=candidate) for actual candidate availability and confirmed changes. IoTCloud platform versions are independent of Wi-Fi firmware versions.
+
+## Retained rc.2 fixes and new rc.3 recovery sequences
+
+- **The rc.2 configuration and web recovery fixes remain.** With incompatible configuration, M1 no longer reports a network-only reset as a successful full clear. Full and minimal pages refresh recovery state, wait for restart after an explicitly confirmed clear and allow Wi-Fi setup to continue. The full Reboot and recovery page displays its controls. This adds no automatic migration for unknown third-party layouts.
+- **rc.3 adds A1 alternative recovery sequences.** For panels that report release after about 2–3 seconds of continuous contact, tap Wi-Fi twice, hold the third touch for 1–2 seconds and release to reset networking; tap three times, hold the fourth touch for 1–2 seconds and release to factory reset. Release each short tap, leave less than 0.3 seconds between touches and hold the final touch for at least 1 second and less than 5 seconds. Recovery runs on release and bypasses child lock. Existing 5 / 10 second recovery holds remain. The new sequences await physical acceptance; see [A1 recovery](a1-guide#recovery-gestures).
