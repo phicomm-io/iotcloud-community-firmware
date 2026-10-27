@@ -89,6 +89,9 @@
           group.append(list);
           const checksum = element('a', t('SHA256 校验文件', 'SHA256 checksums')); checksum.href = '/releases/' + release.tag + '/SHA256SUMS';
           const links = element('p', null, 'notes-actions'); links.append(checksum);
+          if (release.notes === '/releases/' + release.tag + '/notes.md') {
+            const notes = element('a', t('完整累计发布说明', 'Complete cumulative notes (Chinese original)')); notes.href = release.notes; links.append(notes);
+          }
           const github = 'https://github.com/phicomm-io/iotcloud-community-firmware/releases/tag/' + release.tag;
           if (release.github_release === github) { const link = element('a', t('GitHub 候选版', 'GitHub prerelease')); link.href = github; links.append(link); }
           group.append(links);

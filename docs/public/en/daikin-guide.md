@@ -2,6 +2,8 @@
 
 The ESP32 / 4 MB Flash board uses one universal image that detects PM2005 / PM2105 and the optional formaldehyde module. Its web interface shares M1 reading cards, comfort scales and linked-device information, with local access, IoTCloud and Home Assistant support.
 
+**Use stable v0.9.27 for everyday operation. The current v1.0.0-rc.3 candidate is a beta build. Major changes are still expected, and daily use is not recommended.** See the [complete candidate release notes](release-log.html?channel=candidate) for version requirements and cumulative changes.
+
 ## Readings and controls
 
 - Temperature and humidity use the model recovered from this unit’s stock firmware: temperature is reduced by 4.9 °C; humidity is corrected through the mixing ratio and corrected temperature, then bounded to 0–100%. In General settings, customize the temperature subtraction (default 4.9 °C) and humidity adjustment (default 0 %RH), or restore defaults. Saved values apply immediately and survive restart. Positive temperature offsets lower readings; negative offsets raise them. Humidity follows the corrected temperature. This is not an independently verified calibration.
@@ -21,7 +23,7 @@ The Wi-Fi lamp indicates system status: three long and three short pulses when u
 
 ## First installation
 
-Choose a release that **explicitly includes DAIKIN** on the [downloads page](../../index.html#releases). Do not substitute another model's image when an older archive lists only Phicomm devices. Existing 0.9.x archives provide the full image only. v1.0.0-rc also provides a separate `hub` variant as a prerelease.
+Choose a release that **explicitly includes DAIKIN** on the [downloads page](../../index.html#releases). Do not substitute another model's image when an older archive lists only Phicomm devices. Existing 0.9.x archives provide the full image only. The current v1.0.0-rc.3 also provides a separate `hub` variant as a beta prerelease.
 
 1. Confirm the ESP32 / 4 MB Flash board and wiring, then back up the entire original Flash. Keep that backup private because it contains network credentials.
 2. Hold GPIO0 / BOOT0 low while powering on to enter the ESP32 bootloader. Use ESPTool to write `daikin_BRY88AX151K.all.bin` at **0x0**. Never upload the factory image through web OTA.
@@ -58,7 +60,7 @@ The DAIKIN itself appears automatically in the hub device list. Its MQTT connect
 
 On each other device, set its MQTT host to the hub IP, port to `1883`, and credentials to the local account's MQTT username/password. WebSocket clients use `ws://HUB-IP:9001/mqtt`. The device management page provides manual setup instructions; Home Assistant can connect to the same Broker.
 
-Apple Home uses HAP bridging. Enable it separately under **Apple Home** to obtain the pairing code; it is off by default. Matter is currently unavailable. v1.0.0-rc already provides a separate `hub` image; ordinary images do not include these hub features. The stable v1.0.0 release is not yet available.
+Apple Home uses HAP bridging. Enable it separately under **Apple Home** to obtain the pairing code; it is off by default. Matter is currently unavailable. The current v1.0.0-rc.3 provides a separate `hub` image; ordinary images do not include these hub features. The stable v1.0.0 release is not yet available.
 
 ### Switch from full to hub
 

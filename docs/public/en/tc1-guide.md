@@ -2,6 +2,8 @@
 
 TC1 provides six outlet controls, metering, child lock, an indicator and schedules. For first installation, see [TC1 flashing](tc1-flash).
 
+**Use stable v0.9.27 for everyday operation. The current v1.0.0-rc.3 candidate is a beta build. Major changes are still expected, and daily use is not recommended.** See the [complete candidate release notes](release-log.html?channel=candidate) for version requirements and cumulative changes.
+
 ## Outlets and home page
 
 The home page shows all six outlets and a master switch. Control each outlet separately or switch all six together. Each outlet can have a custom name saved on the device. Child lock blocks custom physical-button actions.
