@@ -5,6 +5,7 @@ docs/public/*.md is the single source for both surfaces. This tool rewrites the
 link forms the site uses into the forms the GitHub Wiki understands:
 
   * inter-page links  (quick-start)      ->  (快速开始)
+  * guide queries     release-log.html?channel=candidate -> absolute Pages URL
   * asset links       assets/x.png       ->  raw.githubusercontent wiki URL
 
 Usage:
@@ -50,10 +51,14 @@ def rewrite(text, language="zh"):
             anchor = '#' + frag
         if target.startswith('assets/'):
             return f']({WIKI_ASSETS}{target[len("assets/"):]}{anchor})'
-        if target in page_by_slug:
-            return f']({wiki_link_target(page_by_slug[target])}{anchor})'
-        if target.endswith('.md') and target[:-3] in page_by_slug:
-            return f']({wiki_link_target(page_by_slug[target[:-3]])}{anchor})'
+        path, query_separator, query = target.partition('?')
+        slug = re.sub(r'\.(?:md|html)$', '', path)
+        if slug in page_by_slug:
+            if query_separator:
+                # Wiki cannot select interactive guide views such as candidates.
+                language_path = 'en/' if language == 'en' else ''
+                return f']({SITE_URL}guides/{language_path}{slug}.html?{query}{anchor})'
+            return f']({wiki_link_target(page_by_slug[slug])}{anchor})'
         return match.group(0)
 
     return re.sub(r'\]\(([^)\s]+)(\s+"[^"]*")?\)', one, text)
