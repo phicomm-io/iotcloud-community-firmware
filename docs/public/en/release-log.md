@@ -2,6 +2,26 @@
 
 English translation of the published release history. Historical validation statements apply to the release named in each section, not to later firmware. Release notes are authored in the Wiki and frozen into the source repository before tagging.
 
+## v1.0.0-rc.2
+
+**RC releases are beta builds. Major changes are still expected; using them is not recommended.** The third v1.0.0 candidate fixes M1 configuration recovery and web recovery controls, retaining the features and interfaces of rc.1.
+
+### M1 configuration recovery
+
+- When an incompatible configuration requires explicit clearing, a network-only reset no longer reports success or sends a success acknowledgement to the controller. The original storage remains preserved; explicitly confirm a full clear in the web page before setting up Wi-Fi again.
+- Full clearing still checks the actual storage commit. Failed commits retain recovery and allow retrying; uncertain commits continue blocking writes.
+
+### Web recovery controls
+
+- Fix the full interface's unmounted restart and recovery page, which hid the clearing controls.
+- Full and minimal setup pages re-read configuration state during recovery, wait for restart after clearing, and retire the old migration warning after reconnecting. Wi-Fi setup can continue in the same tab; ordinary refreshes preserve unsaved input.
+- Accepted clearing requests show a restart wait and prevent duplicate submissions. If recovery persists after restarting, the page explicitly reports an unconfirmed clear and allows retrying.
+
+### Scope and validation
+
+- This fix adds no automatic migration for unknown third-party layouts. Host regressions for the pages and actual SDK storage functions passed; the reported M1 still needs physical acceptance.
+- The separate A1 Wi-Fi touch-key long-press issue remains under investigation and is not claimed fixed in this release.
+
 ## v1.0.0-rc.1
 
 The second v1.0.0 release candidate retains the features of the published v1.0.0-rc. This section lists the generic numeric sources, DAIKIN hub and web-entry changes. Support for the hub’s own sensors in HomeKit is retained from the published RC.

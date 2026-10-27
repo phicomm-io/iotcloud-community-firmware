@@ -35,8 +35,11 @@
     let deviceVersion = null, firstLoad = true, destroyed = false, stableSource = fields.source.value;
     const candidateSelected = () => fields.channel.value === 'candidate';
     function scopedReleases(targetsOnly = false) {
+      const latest = snapshot.manifest.releases.filter(release => release.branch === 'main' && release.channel === 'candidate')
+        .sort((a, b) => Notes.compareVersions(b.version, a.version))[0]?.version;
       return snapshot.manifest.releases.filter(release => release.branch === 'main' &&
-        (release.channel === fields.channel.value || (!targetsOnly && candidateSelected() && release.channel === 'stable')));
+        ((release.channel === fields.channel.value && (!candidateSelected() || release.version === latest)) ||
+          (!targetsOnly && candidateSelected() && release.channel === 'stable')));
     }
     function configureSource() {
       const candidate = candidateSelected();
@@ -59,7 +62,7 @@
     function renderCandidates() {
       const releases = snapshot.catalog.releases.filter(release => release.channel === 'candidate' && release.prerelease === true &&
         release.tag === 'v' + release.version && Notes.parseVersion(release.version).prerelease)
-        .sort((a, b) => Notes.compareVersions(b.version, a.version));
+        .sort((a, b) => Notes.compareVersions(b.version, a.version)).slice(0, 1);
       if (!releases.length) throw {code: 'CANDIDATE_UNAVAILABLE', reason: 'No release candidate is available in this archive.'};
       for (const [model, label] of [['m1', t('M1 空气检测仪', 'M1 air quality monitor')], ['a1', t('A1 空气净化器', 'A1 air purifier')],
         ['tc1', t('TC1 智能排插', 'TC1 power strip')], ['daikin', t('DAIKIN 大金检测仪', 'DAIKIN air quality monitor')]]) {
@@ -82,8 +85,7 @@
             list.append(row);
           }
           if (!list.childElementCount) continue;
-          available = true; group.append(element('h4', release.tag + (release.tag === 'v1.0.0-rc' ? ' · Deprecated' : ' · RC')));
-          if (release.tag === 'v1.0.0-rc') group.append(element('p', t('旧联网 RC 已 deprecated，仅保留历史下载；请改用 RC.1，同时更新来源设备、M1 接收端和前端。传感器数据 / 显示配置接口不兼容，独立 M1 主控 RC 不受影响。', 'This Wi-Fi RC is deprecated and retained for historical downloads. Use RC.1 and update source devices, M1 receivers and frontend together. Sensor-data / display-profile interfaces are incompatible; the independent M1 controller RC is unaffected.')));
+          available = true; group.append(element('h4', release.tag + ' · Beta (RC)'));
           group.append(list);
           const checksum = element('a', t('SHA256 校验文件', 'SHA256 checksums')); checksum.href = '/releases/' + release.tag + '/SHA256SUMS';
           const links = element('p', null, 'notes-actions'); links.append(checksum);
@@ -94,7 +96,8 @@
         if (!available) group.append(element('p', t('暂无此型号的候选版文件。', 'No candidate files are available for this model.')));
         candidateDownloads.append(group);
       }
-      candidateStatus.textContent = t('稳定版仍为 ', 'The stable release remains ') + snapshot.catalog.stable + (english ? '.' : '。');
+      candidateStatus.textContent = t('RC 实际属于 Beta 测试版本，后续仍会有较大改动，不建议使用。稳定版仍为 ',
+        'RC releases are beta builds. Major changes are still expected; using them is not recommended. The stable release remains ') + snapshot.catalog.stable + (english ? '.' : '。');
     }
     function clearResult() { resultBox.replaceChildren(); share.hidden = true; app.removeAttribute('data-report-state'); }
     function invalidate() {
@@ -107,6 +110,7 @@
         HARDWARE_REQUIRED: '此范围含硬件专用说明，需先确认硬件版本。', INVALID_VERSION: '请选择有效的固件版本。', UNKNOWN_BUILD: '此开发版或提交后缀未能匹配已发布源码，不能当作正式版计算。',
         UNKNOWN_SOURCE: '当前版本不在正式归档中。', UNKNOWN_TARGET: '目标版本不在正式归档中。', DOWNGRADE: '当前选择是降级，不提供升级差异。',
         TARGET_NOT_FOUND: '该版本没有此型号或固件类型的归档。', SCOPE_REQUIRED: '请选择型号和固件类型。', UNSUPPORTED_SCOPE: '此分支或渠道没有已审核数据。',
+        WITHDRAWN_CANDIDATE: '此旧 RC 已撤下展示，请确认最新 Beta 版本后重新查询。',
         REVIEW_REQUIRED: '相关版本仍有记录待审核，暂不提供完整差异。', LANGUAGE_MISSING: '相关说明缺少已审核的对应语言，暂不提供完整差异。',
         INCOMPLETE_SUMMARY: '连续修订缺少完整审核说明，暂不提供完整差异。', BASELINE_UNKNOWN: '无法确认当前版本的功能状态。',
         COVERAGE_UNKNOWN: '无法确认该设备范围的说明覆盖情况。', BROKEN_RELEASE_CHAIN: '发布链不完整，不能推断中间版本。',
@@ -143,7 +147,7 @@
       fields.from.value = original || '';
       const targets = releases.filter(release => release.channel === fields.channel.value).map(release => release.version);
       setOptions(fields.to, targets, targets.includes(toValue) ? toValue : targets.includes(snapshot.manifest.stable) ? snapshot.manifest.stable : targets[0], v => 'v' + v);
-      if (toValue && !targets.includes(toValue)) { option(fields.to, toValue, toValue); fields.to.value = toValue; }
+      if (toValue && !targets.includes(toValue) && !candidateSelected()) { option(fields.to, toValue, toValue); fields.to.value = toValue; }
     }
     function variants(wanted = fields.variant.value, fromValue, toValue) {
       const values = [...new Set(scopedReleases(true).flatMap(r => r.targets.filter(x => x.model === fields.model.value).map(x => x.variant)))];
@@ -235,6 +239,9 @@
         submit.disabled = false; status.textContent = t('发布数据已校验，选择当前版本后查询。', 'Release data verified. Choose the current version to compare.');
         if (firstLoad && initial.variant && !supported().some(r => r.targets.some(x => x.model === wanted && x.variant === initial.variant))) {
           clearResult(); app.dataset.reportState = 'error'; showError({code: 'TARGET_NOT_FOUND', reason: 'The shared firmware scope is unavailable.'});
+        } else if (firstLoad && candidateSelected() && initial.to && initial.to.replace(/^v/, '') !== fields.to.value) {
+          clearResult(); app.dataset.reportState = 'error'; selectTab('compare');
+          showError({code: 'WITHDRAWN_CANDIDATE', reason: 'This older RC has been withdrawn from display. Confirm the latest beta target and compare again.'});
         } else if (firstLoad && initial.from) { selectTab('compare'); comparison(); }
         firstLoad = false;
       } catch (error) {

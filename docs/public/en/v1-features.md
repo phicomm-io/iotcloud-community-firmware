@@ -1,6 +1,6 @@
-# What's new in v1.0.0-rc.1
+# v1.0 Beta feature preview
 
-This page groups the features added **between v0.9.27 and v1.0.0-rc.1** by device. Repeated implementations and fixes introduced while developing the same feature are consolidated. **v1.0.0-rc.1 is the current prerelease candidate; the stable channel remains on v0.9.27.** The previous Wi-Fi v1.0.0-rc is deprecated and retained for historical downloads. Its sensor-data and M1 display-profile interfaces are incompatible with RC.1; update source devices and M1 receivers together and use the matching frontend. The independently released M1 sensor-controller RC is unaffected. Wi-Fi firmware, the M1 sensor controller, frontend and platform are released separately. Updating one does not update the others.
+**RC releases are beta builds. Major changes are still expected; using them is not recommended. The stable channel remains on v0.9.27.** This page groups the v1 Beta features by device. Check the latest release notes for available builds and changes. Wi-Fi firmware, the M1 sensor controller, frontend and platform are released separately. Updating one does not update the others.
 
 [Candidate downloads and release notes](release-log.html?channel=candidate) · [Choose an update image](firmware-update)
 

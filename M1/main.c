@@ -282,6 +282,13 @@ bool m1_reset(bool full)
     app_storage_t *old = malloc(sizeof(*old));
     if (!old) return false;
     mico_rtos_lock_mutex(&config_lock);
+    /* A guarded SDK update can skip persistence with kNoErr. Never ACK a
+     * network-only reset in recovery; clearing needs explicit full consent. */
+    if (!full && device_config_recovery()) {
+        mico_rtos_unlock_mutex(&config_lock);
+        free(old);
+        return false;
+    }
     mico_rtos_lock_mutex(&m1_lock);
     bool ok = !m1_state.ota_active && !m1_state.mcu_updating && !m1_state.reboot_pending && !m1_state.wifi_trial_active;
     if (ok) { m1_state.reboot_pending = true; m1_state.reboot_at = mico_rtos_get_time() + 0x7fffffffu; }

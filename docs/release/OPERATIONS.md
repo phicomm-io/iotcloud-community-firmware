@@ -57,6 +57,12 @@ tools/release/pages.sh --preview
 
 线上 `main` 在发布流程末尾由 `tools/release/pages.sh` 更新。公开站点由 `wiki-demo.yml` Actions 工作流部署，白名单必须包含 `ota/` 及与 demo 匹配的前端锁文件和读取工具。发布后检查该工作流及本次发布的各变体元数据；必要时用 `gh workflow run wiki-demo.yml --repo phicomm-io/phicomm-io.github.io` 重新部署，再读回线上文件。
 
+RC 标签发布后，需要同步 Beta 下载展示时，使用已有 R2 凭据运行
+`PHICOMM_PAGES_INCLUDE_CANDIDATES=1 tools/release/pages.sh`。该选项从 R2
+读取并校验候选版文件；页面只展示最新 RC，历史归档保留供升级差异核验。
+RC 实际属于 Beta 测试版本，后续仍会有较大改动，不建议使用。
+新版本及页面上线后，再将被替代的 GitHub RC Release 改为 draft，保留标签与资产。
+
 ## 术语
 
 公开文档统一使用设备的完整名称。注意区分两个容易混淆的概念：
