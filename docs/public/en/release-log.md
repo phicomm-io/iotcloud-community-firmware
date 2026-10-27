@@ -2,9 +2,29 @@
 
 English translation of the published release history. Historical validation statements apply to the release named in each section, not to later firmware. Release notes are authored in the Wiki and frozen into the source repository before tagging.
 
+## v1.0.0-rc.2
+
+**RC releases are beta builds. Major changes are still expected; using them is not recommended.** The third v1.0.0 candidate fixes M1 configuration recovery and web recovery controls, retaining the features and interfaces of rc.1.
+
+### M1 configuration recovery
+
+- When an incompatible configuration requires explicit clearing, a network-only reset no longer reports success or sends a success acknowledgement to the controller. The original storage remains preserved; explicitly confirm a full clear in the web page before setting up Wi-Fi again.
+- Full clearing still checks the actual storage commit. Failed commits retain recovery and allow retrying; uncertain commits continue blocking writes.
+
+### Web recovery controls
+
+- Fix the full interface's unmounted restart and recovery page, which hid the clearing controls.
+- Full and minimal setup pages re-read configuration state during recovery, wait for restart after clearing, and retire the old migration warning after reconnecting. Wi-Fi setup can continue in the same tab; ordinary refreshes preserve unsaved input.
+- Accepted clearing requests show a restart wait and prevent duplicate submissions. If recovery persists after restarting, the page explicitly reports an unconfirmed clear and allows retrying.
+
+### Scope and validation
+
+- This fix adds no automatic migration for unknown third-party layouts. Host regressions for the pages and actual SDK storage functions passed; the reported M1 still needs physical acceptance.
+- The separate A1 Wi-Fi touch-key long-press issue remains under investigation and is not claimed fixed in this release.
+
 ## v1.0.0-rc.1
 
-The second v1.0.0 release candidate retains the features of the published v1.0.0-rc. This section lists the new DAIKIN hub and web-entry changes. Support for the hub’s own sensors in HomeKit is retained from the published RC.
+The second v1.0.0 release candidate retains the features of the published v1.0.0-rc. This section lists the generic numeric sources, DAIKIN hub and web-entry changes. Support for the hub’s own sensors in HomeKit is retained from the published RC.
 
 ### DAIKIN hub device list
 
@@ -18,6 +38,15 @@ The second v1.0.0 release candidate retains the features of the published v1.0.0
 ### HomeKit status display
 
 - After changing the HomeKit switch or resetting pairing, the page continues checking status while the hub restarts, shows the current state when the service returns, and prompts for sign-in if the session expires. It does not replay the change or reset request, or display stale pairing codes while waiting.
+
+### Generic numeric sources
+
+- Devices publish arbitrary field IDs using sensor-data schema 2, with a name, type, unit, value, validity flag and reading age (`name/type/unit/value/valid/age_ms`). TC1 power, A1 effective main-fan output, and DAIKIN and M1 sensor readings declare `number`. A1 output is 0–100%, not RPM. Invalid values use `null` instead of a fabricated zero.
+- M1 display-profile schema 4 selects a source by device and field, rather than adapting to its model. New numeric fields do not need another model mapping. M1 accepts only `number` fields matching the configured type and unit. Missing, invalid, `unknown` or other nonnumeric fields revoke the old reading; the protocol reserves future type extensions.
+
+Readings retain the existing boot identifier (`boot`), sequence number (`sequence`) and `age_ms` freshness checks to distinguish data across restarts, duplicate messages and expired readings.
+
+Sensor data now uses schema 2 and M1 display profiles use schema 4, without compatibility with the corresponding v1.0.0-rc interfaces. Custom clients must follow the RC1 protocol and use the matching frontend.
 
 [Features since 0.9.27, device guides and downloads](https://phicomm-io.github.io/). Candidates and stable releases are shown separately. This section does not replace the complete notes for the published v1.0.0-rc.
 

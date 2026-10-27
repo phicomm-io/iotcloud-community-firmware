@@ -80,7 +80,7 @@ static const char *actions[]={"status.get","config.get","capabilities.get","bind
 static void capabilities(JsonObject out){
   out["model"]="daikin";out["firmware_variant"]=DAIKIN_VARIANT;out["hardware_model"]="BRY88AX151K";out["protocol"]=2;
   out["config_backup"]=1;out["config_recovery"]=configRecovery;out["device_language"]="zh-CN,en";out["mqtt_protocol"]="tmcp";out["mqtt_protocol_version"]=2;
-  out["formaldehyde_present"]=hchoPresent;out["sensor_session_protocol"]=2;out["sensor_schema"]=1;
+  out["formaldehyde_present"]=hchoPresent;out["sensor_session_protocol"]=2;out["sensor_schema"]=2;
   out["indicator_rules_supported"]=true;
 #ifndef IOTCLOUD_HUB
   out["ota_variant_conversion"]="full-to-hub";

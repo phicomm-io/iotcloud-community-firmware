@@ -23,6 +23,8 @@ class BirthProgress(unittest.TestCase):
             # discovery path. Later state encoding is a separate test.
             self.assertIn(tail, cycle)
             cycle = cycle[:cycle.index(tail)] + 'return rc;\n}'
+            if model == 'M1':
+                cycle = 'static int publish_typed_sensors(const void *s,uint32_t now){(void)s;(void)now;return MQTT_SUCCESS;}\n' + cycle
             fixture = r'''
 #include <assert.h>
 #include <stdbool.h>

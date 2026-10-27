@@ -2233,10 +2233,10 @@
       ]
     },
     "v1.0.0-rc.1:b001": {
-      "block_sha256": "9fda6c43d64ac8f71fc16ad1b4d485af9085c3a58a32077eded08da3ecacd8bf",
-      "release_sha256": "6134f07a73ba7c4087ead94f8d3b91324c421cfe3c849eab3dce0e26a907fb9b",
+      "block_sha256": "9c7cb3ce24ce0a597f114a6a8935539bcbdd9ec57fb34919967c6391e6776f5f",
+      "release_sha256": "531bba04b742169e45ee673b209e44c0abcd68d6b59b4fb0dde1676283dc4394",
       "status": "excluded",
-      "reason": "候选版本范围、分组标题或文档下载导航，不单独作为固件功能变更。",
+      "reason": "原有新鲜度机制、章节范围、标题或导航；不单独计为本版新增功能。",
       "change_refs": [],
       "basis": [
         "v1.0.0-rc.1:b001"
@@ -2244,9 +2244,9 @@
     },
     "v1.0.0-rc.1:b002": {
       "block_sha256": "01bf73adde61b6c8050a1c6de121caa99122d2171e96e27c5db869b23e3a9d62",
-      "release_sha256": "6134f07a73ba7c4087ead94f8d3b91324c421cfe3c849eab3dce0e26a907fb9b",
+      "release_sha256": "531bba04b742169e45ee673b209e44c0abcd68d6b59b4fb0dde1676283dc4394",
       "status": "excluded",
-      "reason": "候选版本范围、分组标题或文档下载导航，不单独作为固件功能变更。",
+      "reason": "原有新鲜度机制、章节范围、标题或导航；不单独计为本版新增功能。",
       "change_refs": [],
       "basis": [
         "v1.0.0-rc.1:b002"
@@ -2254,7 +2254,7 @@
     },
     "v1.0.0-rc.1:b003": {
       "block_sha256": "9f46561188937f01a30e03491f4d1efc8512b5129b806c228b67acc96eecc360",
-      "release_sha256": "6134f07a73ba7c4087ead94f8d3b91324c421cfe3c849eab3dce0e26a907fb9b",
+      "release_sha256": "531bba04b742169e45ee673b209e44c0abcd68d6b59b4fb0dde1676283dc4394",
       "status": "approved",
       "reason": "按本次真实生产与网页实现核对用户可见增量，保留鉴权、变体和容量边界；HomeKit刷新列为问题修复，不冒充新功能。",
       "change_refs": [
@@ -2266,9 +2266,9 @@
     },
     "v1.0.0-rc.1:b004": {
       "block_sha256": "6097394cf9343c6c89fdd7726a8f3d6cb7104e058a9562b413cbdd60736ab4f6",
-      "release_sha256": "6134f07a73ba7c4087ead94f8d3b91324c421cfe3c849eab3dce0e26a907fb9b",
+      "release_sha256": "531bba04b742169e45ee673b209e44c0abcd68d6b59b4fb0dde1676283dc4394",
       "status": "excluded",
-      "reason": "候选版本范围、分组标题或文档下载导航，不单独作为固件功能变更。",
+      "reason": "原有新鲜度机制、章节范围、标题或导航；不单独计为本版新增功能。",
       "change_refs": [],
       "basis": [
         "v1.0.0-rc.1:b004"
@@ -2276,7 +2276,7 @@
     },
     "v1.0.0-rc.1:b005": {
       "block_sha256": "e00a896018acf27b550e0358ba272673e93fc5f52657b7b050d1738db728467a",
-      "release_sha256": "6134f07a73ba7c4087ead94f8d3b91324c421cfe3c849eab3dce0e26a907fb9b",
+      "release_sha256": "531bba04b742169e45ee673b209e44c0abcd68d6b59b4fb0dde1676283dc4394",
       "status": "approved",
       "reason": "按本次真实生产与网页实现核对用户可见增量，保留鉴权、变体和容量边界；HomeKit刷新列为问题修复，不冒充新功能。",
       "change_refs": [
@@ -2288,7 +2288,7 @@
     },
     "v1.0.0-rc.1:b006": {
       "block_sha256": "1ef66403d34a2883dbb92b66d254ba679823ea0795f2f0dcc8c2e6714a699ca9",
-      "release_sha256": "6134f07a73ba7c4087ead94f8d3b91324c421cfe3c849eab3dce0e26a907fb9b",
+      "release_sha256": "531bba04b742169e45ee673b209e44c0abcd68d6b59b4fb0dde1676283dc4394",
       "status": "approved",
       "reason": "按本次真实生产与网页实现核对用户可见增量，保留鉴权、变体和容量边界；HomeKit刷新列为问题修复，不冒充新功能。",
       "change_refs": [
@@ -2300,9 +2300,9 @@
     },
     "v1.0.0-rc.1:b007": {
       "block_sha256": "fb3de5420ac9c662d33030733fcde8da36df7a700061aec2ff2b1a9f76c10294",
-      "release_sha256": "6134f07a73ba7c4087ead94f8d3b91324c421cfe3c849eab3dce0e26a907fb9b",
+      "release_sha256": "531bba04b742169e45ee673b209e44c0abcd68d6b59b4fb0dde1676283dc4394",
       "status": "excluded",
-      "reason": "候选版本范围、分组标题或文档下载导航，不单独作为固件功能变更。",
+      "reason": "原有新鲜度机制、章节范围、标题或导航；不单独计为本版新增功能。",
       "change_refs": [],
       "basis": [
         "v1.0.0-rc.1:b007"
@@ -2310,7 +2310,7 @@
     },
     "v1.0.0-rc.1:b008": {
       "block_sha256": "3cd579541c2ce423d09fee165b973a276ba15b96c4c08943851b6d722bf2b907",
-      "release_sha256": "6134f07a73ba7c4087ead94f8d3b91324c421cfe3c849eab3dce0e26a907fb9b",
+      "release_sha256": "531bba04b742169e45ee673b209e44c0abcd68d6b59b4fb0dde1676283dc4394",
       "status": "approved",
       "reason": "按本次真实生产与网页实现核对用户可见增量，保留鉴权、变体和容量边界；HomeKit刷新列为问题修复，不冒充新功能。",
       "change_refs": [
@@ -2321,13 +2321,188 @@
       ]
     },
     "v1.0.0-rc.1:b009": {
-      "block_sha256": "2f970d4e304f1d552b33c1cb9143b4020d976971568a7da8358249d39df5af1e",
-      "release_sha256": "6134f07a73ba7c4087ead94f8d3b91324c421cfe3c849eab3dce0e26a907fb9b",
+      "block_sha256": "35bddfe9fe4d777da6d407492418e960ce3fa761a13cc97da091161cbb7e68ea",
+      "release_sha256": "531bba04b742169e45ee673b209e44c0abcd68d6b59b4fb0dde1676283dc4394",
       "status": "excluded",
-      "reason": "候选版本范围、分组标题或文档下载导航，不单独作为固件功能变更。",
+      "reason": "原有新鲜度机制、章节范围、标题或导航；不单独计为本版新增功能。",
       "change_refs": [],
       "basis": [
         "v1.0.0-rc.1:b009"
+      ]
+    },
+    "v1.0.0-rc.1:b010": {
+      "block_sha256": "bf714b3014c11924008ded67bf75e147ebcdf5ddd495e74544f5cfa25d00159f",
+      "release_sha256": "531bba04b742169e45ee673b209e44c0abcd68d6b59b4fb0dde1676283dc4394",
+      "status": "approved",
+      "reason": "通用数值发布与M1字段消费按已固定协议和实际源码核对，接口迁移随核心功能说明，不另计功能。",
+      "change_refs": [
+        "v1-generic-number-field-publication@1.0.0-rc.1"
+      ],
+      "basis": [
+        "v1.0.0-rc.1:b010"
+      ]
+    },
+    "v1.0.0-rc.1:b011": {
+      "block_sha256": "b957b9eb10d36d597f049bd95ed5f73f71121265461e2876baef7ff3f891747b",
+      "release_sha256": "531bba04b742169e45ee673b209e44c0abcd68d6b59b4fb0dde1676283dc4394",
+      "status": "approved",
+      "reason": "通用数值发布与M1字段消费按已固定协议和实际源码核对，接口迁移随核心功能说明，不另计功能。",
+      "change_refs": [
+        "v1-m1-device-field-display-source@1.0.0-rc.1"
+      ],
+      "basis": [
+        "v1.0.0-rc.1:b011"
+      ]
+    },
+    "v1.0.0-rc.1:b012": {
+      "block_sha256": "d27d77b62ba315f3f51d8e1e64f09c9ed0fc549225e12d6e4e01c556c01097bb",
+      "release_sha256": "531bba04b742169e45ee673b209e44c0abcd68d6b59b4fb0dde1676283dc4394",
+      "status": "excluded",
+      "reason": "原有新鲜度机制、章节范围、标题或导航；不单独计为本版新增功能。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.1:b012"
+      ]
+    },
+    "v1.0.0-rc.1:b013": {
+      "block_sha256": "af4fcfe6f5265bda7d19a2519ddb8ac7d572b6ea06a870d95709ae894cd9da6b",
+      "release_sha256": "531bba04b742169e45ee673b209e44c0abcd68d6b59b4fb0dde1676283dc4394",
+      "status": "approved",
+      "reason": "通用数值发布与M1字段消费按已固定协议和实际源码核对，接口迁移随核心功能说明，不另计功能。",
+      "change_refs": [
+        "v1-generic-number-field-publication@1.0.0-rc.1",
+        "v1-m1-device-field-display-source@1.0.0-rc.1"
+      ],
+      "basis": [
+        "v1.0.0-rc.1:b013"
+      ]
+    },
+    "v1.0.0-rc.1:b014": {
+      "block_sha256": "2f970d4e304f1d552b33c1cb9143b4020d976971568a7da8358249d39df5af1e",
+      "release_sha256": "531bba04b742169e45ee673b209e44c0abcd68d6b59b4fb0dde1676283dc4394",
+      "status": "excluded",
+      "reason": "原有新鲜度机制、章节范围、标题或导航；不单独计为本版新增功能。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.1:b014"
+      ]
+    },
+    "v1.0.0-rc.2:b001": {
+      "block_sha256": "d0885f687abc9b8319bc49c7877132af834fa632e1447ebbf8fd7f5cd3880af2",
+      "release_sha256": "85eb61fa005c49cf165642f56b3accd31936f06373f5775b357d4c1548eec00d",
+      "status": "excluded",
+      "reason": "Beta warning and release scope; not a firmware behavior change.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.2:b001"
+      ]
+    },
+    "v1.0.0-rc.2:b002": {
+      "block_sha256": "828e72f744cbe1125f0bed1bfc59c5f2696566ce5beae1df1fbb7fec321ce404",
+      "release_sha256": "85eb61fa005c49cf165642f56b3accd31936f06373f5775b357d4c1548eec00d",
+      "status": "excluded",
+      "reason": "Release scope, heading, retained storage safeguards or validation limits; not an additional behavior change.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.2:b002"
+      ]
+    },
+    "v1.0.0-rc.2:b003": {
+      "block_sha256": "b3ffdf48a8459f71ec81585baa8055b0433150e241ea7a11d7b326de8ea3a276",
+      "release_sha256": "85eb61fa005c49cf165642f56b3accd31936f06373f5775b357d4c1548eec00d",
+      "status": "approved",
+      "reason": "Author checked the product reset or frontend behavior and regression evidence; no physical acceptance is claimed.",
+      "change_refs": [
+        "m1-recovery-network-reset-rejection@1.0.0-rc.2"
+      ],
+      "basis": [
+        "v1.0.0-rc.2:b003"
+      ]
+    },
+    "v1.0.0-rc.2:b004": {
+      "block_sha256": "d74c2018112ad4953ce2e9abcc8ebb9156008d8f2939171f399fbc43fa8965a2",
+      "release_sha256": "85eb61fa005c49cf165642f56b3accd31936f06373f5775b357d4c1548eec00d",
+      "status": "excluded",
+      "reason": "Release scope, heading, retained storage safeguards or validation limits; not an additional behavior change.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.2:b004"
+      ]
+    },
+    "v1.0.0-rc.2:b005": {
+      "block_sha256": "cb8dbec31729758b52c49938ae52ef780eb6e7291623266377a5203e575638e3",
+      "release_sha256": "85eb61fa005c49cf165642f56b3accd31936f06373f5775b357d4c1548eec00d",
+      "status": "excluded",
+      "reason": "Release scope, heading, retained storage safeguards or validation limits; not an additional behavior change.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.2:b005"
+      ]
+    },
+    "v1.0.0-rc.2:b006": {
+      "block_sha256": "e987b1f5851bb49b46a94d4eb16303eec9ea2678ce9126fb8aa4736bb0c7cb6c",
+      "release_sha256": "85eb61fa005c49cf165642f56b3accd31936f06373f5775b357d4c1548eec00d",
+      "status": "approved",
+      "reason": "Author checked the product reset or frontend behavior and regression evidence; no physical acceptance is claimed.",
+      "change_refs": [
+        "web-maintenance-page-mount@1.0.0-rc.2"
+      ],
+      "basis": [
+        "v1.0.0-rc.2:b006"
+      ]
+    },
+    "v1.0.0-rc.2:b007": {
+      "block_sha256": "8fb2f3e97cf63e4ecfdeaa62d6d4da3f6f41928b581572cd9d687e0975e427f7",
+      "release_sha256": "85eb61fa005c49cf165642f56b3accd31936f06373f5775b357d4c1548eec00d",
+      "status": "approved",
+      "reason": "Author checked the product reset or frontend behavior and regression evidence; no physical acceptance is claimed.",
+      "change_refs": [
+        "web-config-recovery-refresh@1.0.0-rc.2"
+      ],
+      "basis": [
+        "v1.0.0-rc.2:b007"
+      ]
+    },
+    "v1.0.0-rc.2:b008": {
+      "block_sha256": "5c39e7964c77364172fbaa0ebc7c24be032d506fb3c205115c4cb0ebaf2e5258",
+      "release_sha256": "85eb61fa005c49cf165642f56b3accd31936f06373f5775b357d4c1548eec00d",
+      "status": "approved",
+      "reason": "Author checked the product reset or frontend behavior and regression evidence; no physical acceptance is claimed.",
+      "change_refs": [
+        "web-config-recovery-refresh@1.0.0-rc.2"
+      ],
+      "basis": [
+        "v1.0.0-rc.2:b008"
+      ]
+    },
+    "v1.0.0-rc.2:b009": {
+      "block_sha256": "c57f26b8f783b6b9cfbdd17e629ecfa8b16abbe97c1f065344cfa45ab45a26b2",
+      "release_sha256": "85eb61fa005c49cf165642f56b3accd31936f06373f5775b357d4c1548eec00d",
+      "status": "excluded",
+      "reason": "Release scope, heading, retained storage safeguards or validation limits; not an additional behavior change.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.2:b009"
+      ]
+    },
+    "v1.0.0-rc.2:b010": {
+      "block_sha256": "0d2b6337706e9fcb3ebad450d11e5d55f54fcabfdac485e0ecd5cce4b51c1963",
+      "release_sha256": "85eb61fa005c49cf165642f56b3accd31936f06373f5775b357d4c1548eec00d",
+      "status": "excluded",
+      "reason": "Release scope, heading, retained storage safeguards or validation limits; not an additional behavior change.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.2:b010"
+      ]
+    },
+    "v1.0.0-rc.2:b011": {
+      "block_sha256": "f546856fabaca5d49e3a28cd30cd658994ffec6385123f6067ef5fdf12a58aab",
+      "release_sha256": "85eb61fa005c49cf165642f56b3accd31936f06373f5775b357d4c1548eec00d",
+      "status": "excluded",
+      "reason": "Release scope, heading, retained storage safeguards or validation limits; not an additional behavior change.",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.2:b011"
       ]
     }
   }

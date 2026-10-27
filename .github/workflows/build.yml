@@ -17,6 +17,10 @@ on:
         description: Sign and validate release artifacts without publishing (main only)
         type: boolean
         default: false
+      validation_run_id:
+        description: Exact successful main push run for heavy tests (tag only; invalid evidence fails)
+        type: string
+        default: ''
       runner:
         description: Runner for build, tests, signing and publication
         required: true
@@ -37,6 +41,12 @@ env:
 jobs:
   frontend:
     name: Verify locked frontend dependency
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      reuse-heavy-validation: ${{ steps.validation.outputs.reuse }}
+      validation-run-id: ${{ steps.validation.outputs.run-id }}
     # Use the same trusted-runner policy as firmware. This job never publishes
     # a frontend release or changes the committed lock.
     runs-on: >-
@@ -60,7 +70,26 @@ jobs:
         with:
           python-version: '3.11'
       - name: Test locked dependency validation
-        run: python3 -m unittest discover -s tests -p test_frontend_dependency.py
+        run: python3 -m unittest tests.test_frontend_dependency tests.test_ci_validation_reuse
+      - name: Read exact protocol dependency
+        id: protocol-pin
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import sys
+          sys.path.insert(0, 'tools/ci')
+          from validation_reuse import fingerprint
+          print('commit=' + fingerprint()['protocols_commit'])
+          PY
+      - uses: actions/checkout@v4
+        with:
+          repository: phicomm-io/iotcloud-community-protocols
+          ref: ${{ steps.protocol-pin.outputs.commit }}
+          path: build/ci-protocols
+          persist-credentials: false
+      - name: Validate pinned protocol contracts
+        run: |
+          python3 -m pip install jsonschema==4.25.1
+          python3 build/ci-protocols/tools/validate.py --consumer .
       - name: Prepare exact frontend archive
         env:
           # Main/tag builds and fork PRs always require the published release.
@@ -74,6 +103,12 @@ jobs:
           if [ "$ALLOW_CANDIDATE_SOURCE" = true ]; then args+=(--allow-candidate-source); fi
           python3 tools/ci/prepare_frontend.py \
             --output build/ci-frontend/frontend.tar.gz "${args[@]}"
+      - name: Find exact-source main validation evidence
+        id: validation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REUSE_VALIDATION_RUN: ${{ inputs.validation_run_id }}
+        run: python3 tools/ci/validation_reuse.py resolve --output build/ci-frontend/validation-reuse.json
       - uses: actions/upload-artifact@v4
         with:
           name: verified-frontend
@@ -155,7 +190,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: ./"${MODEL^^}"/build.sh
       - name: Test TC1 protocol and HTTP regressions
-        if: ${{ !cancelled() && matrix.model == 'tc1' && steps.prep.outcome == 'success' }}
+        if: ${{ !cancelled() && matrix.model == 'tc1' && steps.prep.outcome == 'success' && needs.frontend.outputs.reuse-heavy-validation != 'true' }}
         run: |
           bash tools/ci/require_arm_tools.sh
           test -s build/tc1-sdk-3.6.4/mico-os/libraries/utilities/json_c/json_number_reent.h
@@ -297,7 +332,7 @@ jobs:
           npm install --prefix build/esp-tests --no-save jsdom@26.1.0
           NODE_PATH=build/esp-tests/node_modules node DAIKIN/tests/web.cjs
       - name: Check out pinned ESP-IDF NVS host-test sources
-        if: matrix.variant == 'hub'
+        if: matrix.variant == 'hub' && needs.frontend.outputs.reuse-heavy-validation != 'true'
         uses: actions/checkout@v4
         with:
           repository: espressif/esp-idf
@@ -311,7 +346,7 @@ jobs:
             components/esp_common/include
             components/log/include
       - name: Test hub broker, transports and bounded storage
-        if: matrix.variant == 'hub'
+        if: matrix.variant == 'hub' && needs.frontend.outputs.reuse-heavy-validation != 'true'
         env:
           DAIKIN_NVS_IDF_SOURCE: ${{ github.workspace }}/build/esp-idf-nvs
         run: |
@@ -326,12 +361,12 @@ jobs:
             ASAN_OPTIONS=detect_leaks=1 "build/daikin-hub-$scenario"
           done
       - name: Test production HAP value handling and byte output
-        if: matrix.variant == 'hub'
+        if: matrix.variant == 'hub' && needs.frontend.outputs.reuse-heavy-validation != 'true'
         run: |
           python3 -m unittest discover -s DAIKIN/tests -p 'test_hap*.py'
           python3 DAIKIN/tests/test_frontend_prepare.py
       - name: Identify exact frontend source for hub integration tests
-        if: matrix.variant == 'hub'
+        if: matrix.variant == 'hub' && needs.frontend.outputs.reuse-heavy-validation != 'true'
         id: hub-frontend
         run: |
           python3 - <<'PY' >> "$GITHUB_OUTPUT"
@@ -343,14 +378,14 @@ jobs:
           print(f"commit={lock['commit']}")
           PY
       - uses: actions/checkout@v4
-        if: matrix.variant == 'hub'
+        if: matrix.variant == 'hub' && needs.frontend.outputs.reuse-heavy-validation != 'true'
         with:
           repository: ${{ steps.hub-frontend.outputs.repository }}
           ref: ${{ steps.hub-frontend.outputs.commit }}
           path: build/hub-frontend-source
           persist-credentials: false
       - name: Test locked hub frontend with production broker
-        if: matrix.variant == 'hub'
+        if: matrix.variant == 'hub' && needs.frontend.outputs.reuse-heavy-validation != 'true'
         env:
           FIRMWARE_ROOT: ${{ github.workspace }}
           HUB_TEST_CONSOLE: ${{ github.workspace }}/build/daikin-hub-console
@@ -391,8 +426,11 @@ jobs:
 
   sign-ota:
     name: Sign production OTA packages
-    needs: [firmware, esp, feature-tests]
-    if: (github.event_name == 'push' && github.ref_type == 'tag') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.release_dry_run)
+    needs: [firmware, esp, validation-evidence]
+    if: >-
+      always() && needs.validation-evidence.result == 'success' &&
+      ((github.event_name == 'push' && github.ref_type == 'tag') ||
+       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.release_dry_run))
     runs-on: >-
       ${{ fromJSON(
         (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
@@ -477,7 +515,10 @@ jobs:
   release:
     name: Publish OTA and Pages
     needs: [sign-ota]
-    if: github.event_name == 'push' && github.ref_type == 'tag'
+    # Heavy validation reuse skips an ancestor; require successful signing explicitly.
+    if: >-
+      always() && needs.sign-ota.result == 'success' &&
+      github.event_name == 'push' && github.ref_type == 'tag'
     runs-on: >-
       ${{ fromJSON(
         (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
@@ -574,6 +615,67 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: tools/release/pages.sh
 
+  release-checks:
+    name: Lightweight release checks
+    needs: [frontend, firmware]
+    runs-on: >-
+      ${{ fromJSON(
+        (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
+        ((github.event_name == 'workflow_dispatch' && inputs.runner == 'self-hosted') ||
+         (vars.PHICOMM_CI_RUNNER == 'self-hosted' &&
+          (github.event_name != 'workflow_dispatch' || inputs.runner == 'auto'))) &&
+        '["self-hosted","linux","x64","phicomm-build"]' || '["ubuntu-22.04"]') }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install release check dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libssl-dev openssl
+          python3 -m pip install cryptography==46.0.3
+      - uses: actions/cache@v4
+        with:
+          path: build/mico-upstream.git
+          key: mico-bare-${{ hashFiles('common/mico-sdk.json') }}
+      - name: Prepare pinned JSON and SHA sources for actual OTA checks
+        run: python3 tools/prepare_sdk.py build/a1-sdk/mico-os
+      - uses: actions/download-artifact@v4
+        with:
+          name: tc1-full-firmware
+          path: release
+      - uses: actions/download-artifact@v4
+        with:
+          name: a1-full-firmware
+          path: release
+      - uses: actions/download-artifact@v4
+        with:
+          name: m1-full-firmware
+          path: release
+      - name: Test signed OTA vectors and Flash faults
+        env:
+          TC1_TEST_IMAGE: release/phicomm_tc1_a1.ota.bin.raw
+          A1_TEST_IMAGE: release/phicomm_a1.ota.bin.raw
+          M1_TEST_IMAGE: release/phicomm_m1.ota.bin.raw
+        run: |
+          test -s "$TC1_TEST_IMAGE"
+          test -s "$A1_TEST_IMAGE"
+          test -s "$M1_TEST_IMAGE"
+          tests/ota/run.sh
+      - name: Test OTA release tooling and Worker
+        run: |
+          python3 -m unittest discover -s tests -p test_release.py
+          python3 -m unittest tests.test_version tests.test_branch_policy tests.test_release_budget tests.test_release_variant tests.test_release_publish tests.test_release_candidate tests.test_archive_pages tests.test_ci_validation_reuse
+          node --test tests/test_ota_worker.mjs
+      - name: Test production TLS transport with real TLS and sanitizers
+        run: python3 tests/test_ota_fetch.py
+
   feature-tests:
     env:
       ARM_CC: ${{ github.workspace }}/build/ci-tools/gcc-arm-none-eabi-5_4-2016q2/bin/arm-none-eabi-gcc
@@ -582,6 +684,7 @@ jobs:
       PHICOMM_FRONTEND_ARCHIVE: ${{ github.workspace }}/build/ci-frontend/frontend.tar.gz
     name: Binding and automation host scenarios
     needs: [frontend, firmware]
+    if: needs.frontend.outputs.reuse-heavy-validation != 'true'
     runs-on: >-
       ${{ fromJSON(
         (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
@@ -643,40 +746,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - uses: actions/download-artifact@v4
-        with:
-          name: tc1-full-firmware
-          path: release
-      - uses: actions/download-artifact@v4
-        with:
-          name: a1-full-firmware
-          path: release
-      - uses: actions/download-artifact@v4
-        with:
-          name: m1-full-firmware
-          path: release
-      - name: Test signed OTA vectors and Flash faults
-        env:
-          TC1_TEST_IMAGE: release/phicomm_tc1_a1.ota.bin.raw
-          A1_TEST_IMAGE: release/phicomm_a1.ota.bin.raw
-          M1_TEST_IMAGE: release/phicomm_m1.ota.bin.raw
-        run: |
-          python3 -m pip install cryptography==46.0.3
-          test -s "$TC1_TEST_IMAGE"
-          test -s "$A1_TEST_IMAGE"
-          test -s "$M1_TEST_IMAGE"
-          tests/ota/run.sh
-      - name: Test OTA release tooling and Worker
-        run: |
-          python3 -m unittest discover -s tests -p test_release.py
-          python3 -m unittest tests.test_version tests.test_branch_policy tests.test_release_budget tests.test_release_variant tests.test_release_publish tests.test_release_candidate tests.test_archive_pages
-          node --test tests/test_ota_worker.mjs
-      - name: Test production TLS transport with real TLS and sanitizers
-        run: |
-          python3 tests/test_ota_fetch.py
       - name: Test engines, binding runtime and WebUI syntax
         run: |
-          python3 -m pip install Markdown==3.7 Jinja2==3.1.6 -r requirements-build.txt
+          python3 -m pip install Markdown==3.7 Jinja2==3.1.6 cryptography==46.0.3 -r requirements-build.txt
           tests/run.sh
       - name: Prepare pinned SDKs for MQTT transport tests
         env:
@@ -695,3 +767,29 @@ jobs:
           tests/run_mqtt_v2.sh
       - name: Test actual SDK workers against the embedded hub broker
         run: HUB_TEST_WORKERS=1 python3 -m unittest DAIKIN.tests.test_hub_mqtt.HubTests.test_actual_sdk_workers_share_broker_and_home_assistant
+
+  validation-evidence:
+    name: Validate complete test evidence
+    needs: [frontend, firmware, esp, release-checks, feature-tests]
+    if: always()
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Require all builds and current or reusable tests
+        env:
+          VALIDATION_NEEDS: ${{ toJSON(needs) }}
+        run: python3 tools/ci/validation_reuse.py gate
+      - name: Record complete main source validation
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          VALIDATION_NEEDS: ${{ toJSON(needs) }}
+        run: python3 tools/ci/validation_reuse.py create --output build/full-validation/validation.json
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        with:
+          name: full-validation-evidence
+          path: build/full-validation/validation.json
+          if-no-files-found: error
+          retention-days: 30

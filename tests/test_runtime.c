@@ -65,7 +65,7 @@ void m1_display_source_sample(const char *id, json_object *sample) {
 }
 void m1_display_source_offline(const char *model, const char *id) {
   ++display_offline_calls;
-  snprintf(display_offline_model, sizeof(display_offline_model), "%s", model);
+  snprintf(display_offline_model, sizeof(display_offline_model), "%s", model?model:"");
   snprintf(display_offline_id, sizeof(display_offline_id), "%s", id);
 }
 void m1_display_source_mqtt_reset(void) { ++display_reset_calls; }
@@ -838,9 +838,9 @@ static void display_runtime_bridge(void) {
   char topic[FEATURE_TOPIC_MAX], outside[FEATURE_TOPIC_MAX];
   assert(mqtt_aux(&owner, "sensor", "112233445566/state", topic, sizeof(topic)));
   assert(mqtt_aux(&other, "sensor", "112233445566/state", outside, sizeof(outside)));
-  const char *sample = "{\"schema\":1,\"device_id\":\"112233445566\",\"model\":\"tc1\","
+  const char *sample = "{\"schema\":2,\"device_id\":\"112233445566\",\"model\":\"tc1\","
       "\"boot\":4294967295,\"sequence\":4294967295,"
-      "\"sensors\":{\"power\":{\"value\":12.5,\"unit\":\"W\",\"valid\":true,\"age_ms\":100}}}";
+      "\"sensors\":{\"power\":{\"type\":\"number\",\"name\":\"Power\",\"value\":12.5,\"unit\":\"W\",\"valid\":true,\"age_ms\":100}}}";
   unsigned samples_before = display_sample_calls;
   assert(feature_mqtt_input(topic, sample, strlen(sample), true));
   assert(!feature_mqtt_input(outside, sample, strlen(sample), false));
@@ -855,9 +855,9 @@ static void display_runtime_bridge(void) {
   const char *invalid_counter[] = {"0", "-1", "4294967296", "1.5", "true", "\"1\""};
   char wire[192];
   for (unsigned i = 0; i < sizeof(invalid_counter) / sizeof(invalid_counter[0]); ++i) {
-    snprintf(wire, sizeof(wire), "{\"schema\":1,\"device_id\":\"112233445566\",\"boot\":%s,\"sequence\":1}", invalid_counter[i]);
+    snprintf(wire, sizeof(wire), "{\"schema\":2,\"device_id\":\"112233445566\",\"boot\":%s,\"sequence\":1}", invalid_counter[i]);
     assert(feature_mqtt_input(topic, wire, strlen(wire), false));
-    snprintf(wire, sizeof(wire), "{\"schema\":1,\"device_id\":\"112233445566\",\"boot\":1,\"sequence\":%s}", invalid_counter[i]);
+    snprintf(wire, sizeof(wire), "{\"schema\":2,\"device_id\":\"112233445566\",\"boot\":1,\"sequence\":%s}", invalid_counter[i]);
     assert(feature_mqtt_input(topic, wire, strlen(wire), false));
   }
   assert(display_sample_calls == samples_before + 1);
@@ -874,7 +874,7 @@ static void display_runtime_bridge(void) {
     assert(display_offline_calls == offline_before + i);
     assert(feature_mqtt_input(topic, "offline", 7, false));
     assert(display_offline_calls == offline_before + i + 1);
-    assert(!strcmp(display_offline_model, models[i]) && !strcmp(display_offline_id, "112233445566"));
+    assert(!display_offline_model[0] && !strcmp(display_offline_id, "112233445566"));
   }
   feature_mqtt_session(&saved);
   assert(display_reset_calls == resets + 3);
@@ -946,7 +946,7 @@ static void generic_measurements(void){
  feature_config_t saved=configuration;feature_sample_t old[FEATURE_MAX_PEERS];memcpy(old,samples,sizeof(old));
  feature_defaults(&configuration);configuration.peer_count=1;strcpy(configuration.peers[0].id,"9c9c1ff76748");
  mqtt_account_t account=mqtt_snapshot();char topic[FEATURE_TOPIC_MAX];mqtt_aux(&account,"sensor","9c9c1ff76748/state",topic,sizeof(topic));
- const char *wire="{\"boot\":123,\"sequence\":1,\"schema\":1,\"device_id\":\"9c9c1ff76748\",\"sensors\":{\"pm25\":{\"valid\":true,\"value\":42,\"unit\":\"µg/m³\",\"age_ms\":0}}}";
+ const char *wire="{\"boot\":123,\"sequence\":1,\"schema\":2,\"device_id\":\"9c9c1ff76748\",\"sensors\":{\"pm25\":{\"type\":\"number\",\"name\":\"pm25\",\"valid\":true,\"value\":42,\"unit\":\"µg/m³\",\"age_ms\":0}}}";
  memset(samples,0,sizeof(samples));
  assert(feature_mqtt_input(topic,wire,strlen(wire),true));assert(!samples[0].valid);
  assert(feature_mqtt_input(topic,wire,strlen(wire),false));assert(samples[0].valid&&samples[0].fields==4);
@@ -955,9 +955,9 @@ static void generic_measurements(void){
  assert(result[2]==42 && isnan(result[3]) && isnan(result[0]));
  json_object *average=average_body(samples,1,now_ms());assert(integer(json_object_object_get(average,"fields"),"pm25"));
  assert(!integer(json_object_object_get(average,"fields"),"formaldehyde"));assert(!json_object_object_get(average,"formaldehyde"));json_object_put(average);
- const char *bad="{\"boot\":123,\"sequence\":2,\"schema\":1,\"device_id\":\"9c9c1ff76748\",\"sensors\":{\"pm25\":{\"valid\":true,\"value\":42,\"unit\":\"ppm\",\"age_ms\":0}}}";
+ const char *bad="{\"boot\":123,\"sequence\":2,\"schema\":2,\"device_id\":\"9c9c1ff76748\",\"sensors\":{\"pm25\":{\"type\":\"number\",\"name\":\"pm25\",\"valid\":true,\"value\":42,\"unit\":\"ppm\",\"age_ms\":0}}}";
  feature_mqtt_input(topic,bad,strlen(bad),false);assert(!samples[0].valid);
- const char *co2="{\"boot\":123,\"sequence\":3,\"schema\":1,\"device_id\":\"9c9c1ff76748\",\"sensors\":{\"co2\":{\"valid\":true,\"value\":1800,\"unit\":\"ppm\",\"age_ms\":0}}}";
+ const char *co2="{\"boot\":123,\"sequence\":3,\"schema\":2,\"device_id\":\"9c9c1ff76748\",\"sensors\":{\"co2\":{\"type\":\"number\",\"name\":\"co2\",\"valid\":true,\"value\":1800,\"unit\":\"ppm\",\"age_ms\":0}}}";
  feature_mqtt_input(topic,co2,strlen(co2),false);assert(!samples[0].valid&&feature_co2_fresh(&samples[0],now_ms()));
  average=average_body(samples,1,now_ms());assert(integer(json_object_object_get(average,"fields"),"co2"));assert(integer(average,"co2")==1800);json_object_put(average);
 

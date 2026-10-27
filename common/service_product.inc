@@ -94,7 +94,7 @@ json_object *service_product_capabilities(void){
     svc_string(o,"device_language","zh-CN,en");json_build_object_add(o,"config_backup",json_object_new_int(1));json_build_object_add(o,"config_recovery",json_object_new_boolean(device_config_recovery()));
 #ifndef FEATURE_DEVICE_A1
     json_build_object_add(o,"sensor_session_protocol",json_object_new_int(2));
-    json_build_object_add(o,"sensor_schema",json_object_new_int(1));
+    json_build_object_add(o,"sensor_schema",json_object_new_int(2));
     json_build_object_add(o,"sensor_alarm_config_schema",json_object_new_int(1));
     json_build_object_add(o,"mcu_ota_max_bytes",json_object_new_int(32768));
 #endif
@@ -137,7 +137,7 @@ static bool svc_capabilities_visit(status_sink *sink,const char *id,const char *
         emit_string(sink,"device_language","zh-CN,en");emit_int(sink,"config_backup",1);
         emit_bool(sink,"config_recovery",recovery);
 #ifndef FEATURE_DEVICE_A1
-        emit_int(sink,"sensor_session_protocol",2);emit_int(sink,"sensor_schema",1);
+        emit_int(sink,"sensor_session_protocol",2);emit_int(sink,"sensor_schema",2);
         emit_int(sink,"sensor_alarm_config_schema",1);
         emit_int(sink,"mcu_ota_max_bytes",32768);
 #endif

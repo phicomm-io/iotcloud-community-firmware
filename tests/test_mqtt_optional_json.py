@@ -86,6 +86,7 @@ int main(void){
         # Execute only when M1 testing is authorized. Full production cycle,
         # including configuration guards and all normal publication cursors.
         cycle=function((ROOT/'M1/mqtt.c').read_text(),'static int session_cycle(')
+        cycle='static int publish_typed_sensors(const void *s,uint32_t now){(void)s;(void)now;return MQTT_SUCCESS;}\n'+cycle
         fixture=r'''
 #include <assert.h>
 #include <stdbool.h>

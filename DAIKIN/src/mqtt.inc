@@ -31,7 +31,7 @@ static void publishState(){
   // Release the JSON pool before the SDK/local broker copies the wire payload.
   // Also release the first wire payload before building the typed sensor feed.
   {String text;if(mqttStateJson(text,state))publish(mqttRoot+"/state",text);}
-  {String text;if(mqttStateJson(text,sensorBody,1024))publish(sensorRoot+"/state",text,false);}
+  {String text;if(mqttStateJson(text,sensorBody,2048))publish(sensorRoot+"/state",text,false);}
 }
 
 static void discovery(){

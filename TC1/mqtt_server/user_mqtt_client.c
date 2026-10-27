@@ -110,13 +110,13 @@ static int power_sensor_cycle(bool *handled) {
         power_sensor_boot=0;return MQTT_SUCCESS;
     }
     tc1_power_sample_t sample;PowerSampleRead(&sample);
-    char topic[192],payload[320],value[48]="null";
+    char topic[192],payload[448],value[48]="null";
     if(sample.valid && json_number_format_fixed(value,sizeof(value),sample.watts,3)<0)return MQTT_SUCCESS;
     uint32_t sequence=power_sensor_sequence+1u;if(!sequence)sequence=1;
     if(!mqtt_aux(&account,"sensor",account.mac,topic,sizeof(topic)) ||
        !mqtt_format(topic+strlen(topic),sizeof(topic)-strlen(topic),"/state") ||
        !mqtt_format(payload,sizeof(payload),
-          "{\"schema\":1,\"model\":\"tc1\",\"device_id\":\"%s\",\"boot\":%lu,\"sequence\":%lu,\"sensors\":{\"power\":{\"value\":%s,\"unit\":\"W\",\"valid\":%s,\"age_ms\":%lu}}}",
+          "{\"schema\":2,\"model\":\"tc1\",\"device_id\":\"%s\",\"boot\":%lu,\"sequence\":%lu,\"sensors\":{\"power\":{\"type\":\"number\",\"name\":\"Power\",\"value\":%s,\"unit\":\"W\",\"valid\":%s,\"age_ms\":%lu}}}",
           account.mac,(unsigned long)power_sensor_boot,(unsigned long)sequence,value,
           sample.valid?"true":"false",(unsigned long)sample.age_ms))return MQTT_SUCCESS;
     power_sensor_sequence=sequence;

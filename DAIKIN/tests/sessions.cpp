@@ -70,6 +70,9 @@ int main(){
     assert(reply["id"].as<int32_t>()==INT32_MIN);
     assert(reply["body"]["boot"].is<uint32_t>()&&reply["body"]["boot"].as<uint32_t>()==UINT32_MAX);
     assert(reply["body"]["model"]=="daikin");
+    assert(reply["body"]["schema"]==2);
+    assert(reply["body"]["sensors"]["pm25"]["type"]=="number");
+    assert(reply["body"]["sensors"]["pm25"]["name"]=="PM2.5");
     assert(reply["body"]["sensors"]["pm25"]["value"].as<int>()==12);
   }
   // A retry with the same bits must preserve the established session.

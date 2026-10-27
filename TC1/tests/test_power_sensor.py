@@ -51,13 +51,15 @@ class PowerSensor(unittest.TestCase):
             self.assertEqual(marker, 'PUB')
             self.assertEqual(retained, '0')
             body = json.loads(payload)
-            self.assertEqual(body['schema'], 1)
+            self.assertEqual(body['schema'], 2)
             self.assertEqual(body['model'], 'tc1')
             self.assertEqual(body['device_id'], 'aabbccddeeff')
             for field in ('boot', 'sequence'):
                 self.assertIs(type(body[field]), int)
                 self.assertTrue(0 < body[field] <= 0xffffffff)
             power = body['sensors']['power']
+            self.assertEqual(power['type'], 'number')
+            self.assertEqual(power['name'], 'Power')
             self.assertEqual(power['unit'], 'W')
             self.assertIs(type(power['valid']), bool)
             self.assertIs(type(power['age_ms']), int)
@@ -106,15 +108,15 @@ class PowerSensor(unittest.TestCase):
         self.assertEqual(len(messages), 5)
         self.assertEqual(messages[0][0], 'phicomm/v2/u_74657374/sensor/aabbccddeeff/state')
         self.assertEqual(messages[0][1]['sensors']['power'],
-                         dict(value=3.109, unit='W', valid=True, age_ms=100))
+                         dict(type='number', name='Power', value=3.109, unit='W', valid=True, age_ms=100))
         self.assertEqual(messages[1][1]['sensors']['power']['age_ms'], 5100)
         self.assertFalse(messages[2][1]['sensors']['power']['valid'])
         self.assertEqual(messages[2][1]['sensors']['power']['age_ms'], 20000)
         self.assertEqual(messages[3][0], 'phicomm/v2/u_6e6578742f6f776e6572/sensor/aabbccddeeff/state')
         self.assertEqual(messages[3][1]['sensors']['power'],
-                         dict(value=None, unit='W', valid=False, age_ms=0xffffffff))
+                         dict(type='number', name='Power', value=None, unit='W', valid=False, age_ms=0xffffffff))
         self.assertEqual(messages[4][1]['sensors']['power'],
-                         dict(value=12.5, unit='W', valid=True, age_ms=0))
+                         dict(type='number', name='Power', value=12.5, unit='W', valid=True, age_ms=0))
         self.assertEqual([m[1]['sequence'] for m in messages], [1, 2, 3, 4, 5])
         self.assertEqual({m[1]['boot'] for m in messages}, {0xffffffff})
 
@@ -139,7 +141,8 @@ class PowerSensor(unittest.TestCase):
         messages = self.scenario('bounds')
         self.assertEqual(messages[0][0], 'phicomm/v2/u_' + '75' * 63 + '/sensor/aabbccddeeff/state')
         self.assertFalse(messages[0][1]['sensors']['power']['valid'])
-        self.assertEqual(messages[1][1]['sensors']['power'], dict(value=0, unit='W', valid=True, age_ms=0))
+        self.assertEqual(messages[1][1]['sensors']['power'],
+                             dict(type='number', name='Power', value=0, unit='W', valid=True, age_ms=0))
 
 
 if __name__ == '__main__':

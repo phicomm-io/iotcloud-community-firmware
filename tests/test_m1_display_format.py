@@ -94,7 +94,7 @@ static void v3_select(void){v3_step(25,250);assert(sent[4]==1);v3_reply();}
 static void v3_query(unsigned slot){v3_step(26,250);assert(sent[4]==slot);v3_reply();}
 static void v3_confirmed(bool both,bool left,bool right){
     json_object *o=m1_display_profile_json(),*r=json_object_object_get(o,"runtime");
-    assert(json_object_get_int(json_object_object_get(o,"schema"))==3);
+    assert(json_object_get_int(json_object_object_get(o,"schema"))==4);
     assert(json_object_get_boolean(json_object_object_get(r,"confirmed"))==both);
     json_object *a=json_object_object_get(r,"lanes");
     assert(json_object_get_boolean(json_object_object_get(json_object_array_get_idx(a,0),"confirmed"))==left);
@@ -205,25 +205,20 @@ int main(void){
 }
 ''')
 
-    def test_frozen_v2_ids_remain_canonical_while_v3_normalizes(self):
+    def test_removed_v2_http_profile_is_rejected(self):
         self.run_scenario(r'''
     m1_display_defaults(&live.display);live.co2_source.magic=M1_CO2_SOURCE_MAGIC;
-    json_object *p=json_tokener_parse(settings),*lane=json_object_array_get_idx(json_object_object_get(p,"lanes"),0);
-    json_object_object_add(lane,"source",json_object_new_string("mqtt"));
-    const char *bad[]={"123456ABCDEF","12:34:56:ab:cd:ef","12:34:56:AB:CD:EF"},*code;
-    for(unsigned i=0;i<sizeof(bad)/sizeof(*bad);i++){
-        json_object_object_add(lane,"device_id",json_object_new_string(bad[i]));
-        assert(!m1_display_source_set(p,&code)&&!strcmp(code,"invalid_params")&&writes==0);
-    }
-    json_object_object_add(lane,"device_id",json_object_new_string("123456abcdef"));
-    done(m1_display_source_set(p,&code));assert(!strcmp(code,"accepted")&&writes==1);json_object_put(p);
+    const char *code;json_object *p=json_tokener_parse(settings);
+    assert(!m1_display_source_set(p,&code)&&!strcmp(code,"invalid_params")&&!writes);
+    json_object_put(p);
 ''')
 
     def test_malformed_mqtt_samples_do_not_crash_or_create_valid_values(self):
-        sample = {'boot': 42, 'sequence': 1, 'model': 'tc1', 'sensors': {
-            'power': {'valid': True, 'value': 1234, 'unit': 'W', 'age_ms': 0}}}
+        sample = {'schema': 2, 'device_id': '123456abcdef', 'boot': 42, 'sequence': 1, 'sensors': {
+            'power': {'name': 'Power', 'type': 'number', 'valid': True, 'value': 1234, 'unit': 'W', 'age_ms': 0}}}
         cases = [None, False, 0, '', [], {}]
-        for path in (('boot',), ('sequence',), ('model',), ('sensors',), ('sensors', 'power'),
+        for path in (('schema',), ('device_id',), ('boot',), ('sequence',), ('sensors',), ('sensors', 'power'),
+                     ('sensors', 'power', 'name'), ('sensors', 'power', 'type'),
                      ('sensors', 'power', 'valid'), ('sensors', 'power', 'value'),
                      ('sensors', 'power', 'unit'), ('sensors', 'power', 'age_ms')):
             for replacement in (None, [], {}):
@@ -245,7 +240,7 @@ int main(void){
 int main(void){
     m1_display_defaults(&live.display);live.co2_source.magic=M1_CO2_SOURCE_MAGIC;
     done(v3_call(profile,false,"accepted"));
-    live.display.lanes[1].source=M1_DISPLAY_MQTT;strcpy(live.display.lanes[1].device_id,"123456abcdef");
+    live.display.lanes[1].source=M1_DISPLAY_MQTT;strcpy(live.display.lanes[1].device_id,"123456abcdef");m1_display_upgrade_remote(&live.display);
     for(unsigned i=0;i<sizeof(invalid)/sizeof(*invalid);i++){
         m1_display_source_reset();json_object *p=json_tokener_parse(invalid[i]);
         m1_display_source_sample("123456abcdef",p);m1_display_value_t v;
@@ -280,11 +275,11 @@ int main(void){
     json_object *lane=json_object_array_get_idx(json_object_object_get(json_object_object_get(read,"runtime"),"lanes"),0);
     assert((float)json_object_get_double(json_object_object_get(lane,"value"))==123/100.0f);
     json_object_put(read);json_object_put(o);
-    /* The frozen v2 view keeps its original six-digit wire spelling. */
+    /* Legacy action aliases use the same lossless current view. */
     live.display.reserved=0;live.display.lanes[0].low=1;live.display.lanes[0].high=0x1.000002p0f;
     o=m1_display_source_json();read=json_tokener_parse(json_object_to_json_string(o));assert(read);
     json_object *color=json_object_object_get(json_object_array_get_idx(json_object_object_get(read,"lanes"),0),"color");
-    assert(json_object_get_double(json_object_object_get(color,"low"))==1&&json_object_get_double(json_object_object_get(color,"high"))==1);
+    assert(json_object_get_double(json_object_object_get(color,"low"))==1&&(float)json_object_get_double(json_object_object_get(color,"high"))==0x1.000002p0f);
     json_object_put(read);json_object_put(o);
 ''')
 
@@ -330,10 +325,11 @@ int main(void){
     m1_display_source_value(&live.display,1,&v);assert(!v.valid&&writes==2);
     assert(!call("{\"revision\":1,\"slot\":0,\"value\":1,\"unit\":\"ppm\",\"ttl_seconds\":1}",true,"invalid_params"));
     json_object *old=m1_display_source_json(),*a=json_object_object_get(old,"lanes");
-    assert(!strcmp(json_object_get_string(json_object_object_get(json_object_array_get_idx(a,0),"source")),"none"));json_object_put(old);
+    assert(json_object_get_int(json_object_object_get(old,"schema"))==4&&!strcmp(json_object_get_string(json_object_object_get(json_object_array_get_idx(a,0),"source")),"api"));json_object_put(old);
     json_object *p=json_tokener_parse(profile),*lanes=json_object_object_get(p,"lanes"),*l=json_object_array_get_idx(lanes,0);const char *code;
     json_object_object_add(p,"revision",json_object_new_int(1));json_object_object_add(l,"source",json_object_new_string("mqtt"));
     json_object_object_add(l,"device_id",json_object_new_string("12:34:56:AB:CD:EF"));
+    json_object_object_del(l,"metric");json_object_object_add(l,"field_id",json_object_new_string("custom_sensor"));json_object_object_add(l,"type",json_object_new_string("number"));
     done(m1_display_profile_set(p,&code));assert(!strcmp(code,"accepted")&&!strcmp(live.display.lanes[0].device_id,"123456abcdef"));
     json_object_object_add(p,"revision",json_object_new_int(2));json_object_object_add(l,"device_id",json_object_new_string("AA:BB:CC:DD:EE:FF"));
     assert(!m1_display_profile_set(p,&code)&&!strcmp(code,"invalid_params"));
@@ -376,8 +372,8 @@ int main(void){
     m1_state.scd40.ready=m1_state.scd40.received=true;m1_state.scd40.co2_ppm=1234;m1_state.scd40.updated_ms=now;
     m1_display_value_t v;m1_display_source_value(&live.display,0,&v);
     assert(v.valid&&!v.direct&&v.number==123&&v.format==5&&v.lamps==0x1c0&&v.value==1234);
-    live.display.lanes[1].source=M1_DISPLAY_MQTT;strcpy(live.display.lanes[1].device_id,"123456abcdef");
-    json_object *sample=json_tokener_parse("{\"boot\":42,\"sequence\":1,\"model\":\"tc1\",\"sensors\":{\"power\":{\"valid\":true,\"value\":1234,\"unit\":\"W\",\"age_ms\":0}}}");
+    live.display.lanes[1].source=M1_DISPLAY_MQTT;strcpy(live.display.lanes[1].device_id,"123456abcdef");m1_display_upgrade_remote(&live.display);
+    json_object *sample=json_tokener_parse("{\"schema\":2,\"device_id\":\"123456abcdef\",\"boot\":42,\"sequence\":1,\"model\":\"new_model\",\"sensors\":{\"power\":{\"name\":\"Power\",\"type\":\"number\",\"valid\":true,\"value\":1234,\"unit\":\"W\",\"age_ms\":0}}}");
     m1_display_source_sample("123456abcdef",sample);m1_display_source_value(&live.display,1,&v);
     assert(v.valid&&!v.direct&&v.number==999&&v.lamps==0x115&&v.value==1234);
     m1_display_source_offline("tc1","123456abcdef");m1_display_source_value(&live.display,1,&v);assert(!v.valid);

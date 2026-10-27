@@ -19,13 +19,14 @@ static bool hexText(const char *text,size_t length){
 }
 static void sensorBody(JsonObject out){
   if(!++sensorSequence)++sensorSequence;
-  out["schema"]=1;out["device_id"]=deviceId;out["model"]="daikin";out["boot"]=sensorBoot;out["sequence"]=sensorSequence;
+  out["schema"]=2;out["device_id"]=deviceId;out["model"]="daikin";out["boot"]=sensorBoot;out["sequence"]=sensorSequence;
   JsonObject values=out.createNestedObject("sensors");
+  const char *names[]={"PM2.5","Carbon dioxide","Temperature","Humidity","TVOC","Formaldehyde","PM10"};
   const uint32_t now=millis();
   for(unsigned i=0;i<SENSOR_COUNT;i++){
     if(!sensorPresent(i))continue;
     JsonObject value=values.createNestedObject(keys[i]);bool valid=readings[i].valid(now);
-    value["valid"]=valid;value["unit"]=units[i];
+    value["type"]="number";value["name"]=names[i];value["valid"]=valid;value["unit"]=units[i];
     value["age_ms"]=readings[i].received?uint32_t(now-readings[i].at):0;
     if(valid)value["value"]=readings[i].value;else value["value"]=nullptr;
   }

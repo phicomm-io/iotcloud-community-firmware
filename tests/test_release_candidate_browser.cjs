@@ -15,6 +15,8 @@ function retainedSnapshot(directory) {
 }
 async function main() {
   const f = CandidateUI.fixture(retainedSnapshot(process.env.PHICOMM_RC_BASE_ARCHIVE));
+  CandidateUI.appendCandidate(f.candidate, '1.0.0-rc.1', '1.0.0-rc', 103);
+  CandidateUI.appendCandidate(f.candidate, '1.0.0-rc.2', '1.0.0-rc.1', 104);
   const resources = {...CandidateUI.resources(f.stable), ...CandidateUI.resources(f.candidate)};
   const pages = JSON.parse(execFileSync(process.env.PYTHON || 'python3', ['-c', `import sys,json
 from pathlib import Path
@@ -65,11 +67,15 @@ print(json.dumps({lang:build.render_guide('release-log','Release Log','Releases'
             await page.locator('#notes-channel').selectOption('candidate');
             await Playwright.expect(page.locator('#notes-candidate-downloads article')).toHaveCount(4);
             await Playwright.expect(page.locator('#notes-from')).toHaveValue('0.9.27');
-            await Playwright.expect(page.locator('#notes-to')).toHaveValue('1.0.0-rc');
+            await Playwright.expect(page.locator('#notes-to')).toHaveValue('1.0.0-rc.2');
+            await Playwright.expect(page.locator('#notes-to option')).toHaveCount(1);
+            await Playwright.expect(page.locator('#notes-candidate-status')).toContainText(locale === 'en' ? 'not recommended' : '不建议使用');
+            await Playwright.expect(page.locator('#notes-candidate-status')).toContainText(locale === 'en' ? 'Major changes' : '较大改动');
             await Playwright.expect(page.locator('#notes-source option')).toHaveCount(1);
             await Playwright.expect(page.locator('#notes-candidate-downloads a[href$=".ota.bin.signed"]')).toHaveCount(10);
             const links = await page.locator('#notes-candidate-downloads a').evaluateAll(nodes => nodes.map(node => node.getAttribute('href')));
             assert.ok(links.every(value => value.startsWith('/') || value.startsWith('https://github.com/phicomm-io/iotcloud-community-firmware/releases/tag/')));
+            assert.ok(links.filter(value => value.startsWith('/releases/')).every(value => value.includes('/v1.0.0-rc.2/')));
             for (const model of ['m1', 'a1', 'tc1', 'daikin']) {
               await page.locator('#notes-model').selectOption(model); await page.locator('#notes-form').evaluate(form => form.requestSubmit());
               await Playwright.expect(page.locator('[data-release-notes]')).toHaveAttribute('data-report-state', 'complete');

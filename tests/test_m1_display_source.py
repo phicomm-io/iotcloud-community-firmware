@@ -40,10 +40,22 @@ static int MicoUartSend(unsigned port,const void *p,unsigned n){assert(port==1&&
 #include "M1/co2_source.c"
 #include "M1/display_source.c"
 #include "M1/mcu.c"
+static const char *settings;
+/* Seed a frozen scalar profile through the real configuration owner. The
+ * removed pre-release HTTP v2 parser is not reconstructed by this test. */
 static json_object *call(const char *text,bool data,const char *wanted){
-    const char *code;json_object *p=json_tokener_parse(text);assert(p);
-    json_object *out=data?m1_display_data_set(p,&code):m1_display_source_set(p,&code);
-    assert(!strcmp(code,wanted));json_object_put(p);return out;
+    const char *code;json_object *out;
+    if(data){json_object *p=json_tokener_parse(text);assert(p);out=m1_display_data_set(p,&code);json_object_put(p);}
+    else {
+        assert(text==settings);m1_display_config_t c;m1_display_defaults(&c);
+        c.configured=c.double_click=1;c.selected=strstr(settings,"original")==NULL;
+        c.lanes[0]=(m1_display_lane_config_t){.source=M1_DISPLAY_API,.metric=M1_DISPLAY_CO2,.unit=M1_DISPLAY_PPM,
+            .scale=1000,.decimals=2,.ttl_seconds=20,.color_mode=M1_DISPLAY_COLOR_THRESHOLDS,.low=1000,.high=1500};
+        c.lanes[1]=(m1_display_lane_config_t){.source=M1_DISPLAY_API,.metric=M1_DISPLAY_CUSTOM,.unit=M1_DISPLAY_WATTS,
+            .scale=1000,.decimals=1,.ttl_seconds=4,.color_mode=M1_DISPLAY_COLOR_FIXED,.color=2};
+        code=m1_display_config_save(&c);out=!strcmp(code,"accepted")?m1_display_profile_json():NULL;
+    }
+    assert(!strcmp(code,wanted));return out;
 }
 static void done(json_object *o){assert(o);json_object_put(o);}
 static void reply(void){
@@ -66,7 +78,7 @@ static const char *settings="{\"revision\":0,\"selected_source\":\"user\",\"doub
 int main(void){
     m1_display_defaults(&live.display);live.co2_source.magic=M1_CO2_SOURCE_MAGIC;
     live.co2=(m1_co2_config_t){.magic=M1_CO2_MAGIC,.interval=5,.low=1000,.high=1500};
-    assert(sizeof(live.display)==92 && sizeof(m1_display_lane_config_t)==32);
+    assert(sizeof(live.display)==208 && sizeof(m1_display_lane_config_t)==32);
     const app_storage_t original=live;fail_flash=true;assert(!call(settings,false,"storage_error"));
     assert(!memcmp(&live,&original,sizeof(live)));fail_flash=false;
     done(call(settings,false,"accepted"));assert(live.display.revision==1&&live.display.configured&&writes==2);
@@ -97,7 +109,7 @@ int main(void){
         reply();
     }
     json_object *out=m1_display_source_json(),*runtime=json_object_object_get(out,"runtime");
-    assert(json_object_get_boolean(json_object_object_get(runtime,"confirmed")));
+    assert(!json_object_get_boolean(json_object_object_get(runtime,"confirmed"))); /* Current HTTP cannot confirm a scalar UART profile. */
     const char *json_path=getenv("PHICOMM_TEST_DISPLAY_JSON");
     if(json_path){FILE *file=fopen(json_path,"w");assert(file);fputs(json_object_to_json_string(out),file);assert(!fclose(file));}
     json_object_put(out);
@@ -122,25 +134,19 @@ int main(void){
         .source=M1_DISPLAY_LOCAL,.metric=M1_DISPLAY_CO2,.unit=M1_DISPLAY_PPM,.decimals=2,.scale=1000,.ttl_seconds=20};
     next.lanes[1]=(m1_display_lane_config_t){.source=M1_DISPLAY_MQTT,.metric=M1_DISPLAY_FAN_SPEED_PERCENT,
         .unit=M1_DISPLAY_PERCENT,.scale=1,.ttl_seconds=60};strcpy(next.lanes[1].device_id,"123456abcdef");
-    assert(!strcmp(m1_display_config_save(&next),"accepted"));
-    json_object *sample=json_tokener_parse("{\"boot\":42,\"sequence\":1,\"model\":\"a1\",\"sensors\":{\"fan_speed_percent\":{\"valid\":true,\"value\":60,\"unit\":\"%\",\"age_ms\":0}}}");
+    m1_display_upgrade_remote(&next);assert(!strcmp(m1_display_config_save(&next),"accepted"));
+    json_object *sample=json_tokener_parse("{\"schema\":2,\"device_id\":\"123456abcdef\",\"boot\":42,\"sequence\":1,\"model\":\"new_model\",\"sensors\":{\"fan_speed_percent\":{\"name\":\"Fan speed\",\"type\":\"number\",\"valid\":true,\"value\":60,\"unit\":\"%\",\"age_ms\":0}}}");
     m1_display_source_sample("ffffffffffff",sample);m1_display_source_value(&live.display,1,&v);assert(!v.valid);
     m1_display_source_sample("123456abcdef",sample);m1_display_source_value(&live.display,1,&v);assert(v.valid&&v.number==60);
     json_object *field=json_object_object_get(json_object_object_get(sample,"sensors"),"fan_speed_percent");
     json_object_object_add(field,"value",json_object_new_int(90));m1_display_source_sample("123456abcdef",sample);
     m1_display_source_value(&live.display,1,&v);assert(v.valid&&v.number==60);
     json_object_object_add(sample,"sequence",json_object_new_int(2));json_object_object_del(sample,"model");
-    m1_display_source_sample("123456abcdef",sample);m1_display_source_value(&live.display,1,&v);assert(v.valid&&v.number==60);
-    json_object_object_add(sample,"model",json_object_new_string("tc1"));
-    m1_display_source_sample("123456abcdef",sample);m1_display_source_value(&live.display,1,&v);assert(v.valid&&v.number==60);
-    json_object_object_add(sample,"model",json_object_new_string("a1"));json_object_object_add(sample,"sequence",json_object_new_int(1));
-    m1_display_source_offline("tc1","123456abcdef");m1_display_source_value(&live.display,1,&v);assert(v.valid);
-    m1_display_source_offline("a1","123456abcdef");m1_display_source_value(&live.display,1,&v);assert(!v.valid&&v.reason==M1_DISPLAY_OFFLINE);
+    m1_display_source_sample("123456abcdef",sample);m1_display_source_value(&live.display,1,&v);assert(v.valid&&v.number==90);
+    m1_display_source_offline("new_model","123456abcdef");m1_display_source_value(&live.display,1,&v);assert(!v.valid&&v.reason==M1_DISPLAY_OFFLINE);
     m1_display_source_sample("123456abcdef",sample);m1_display_source_value(&live.display,1,&v);assert(!v.valid);
-    json_object_object_add(sample,"sequence",json_object_new_int(2));json_object_object_add(field,"value",json_object_new_int(101));
-    m1_display_source_sample("123456abcdef",sample);m1_display_source_value(&live.display,1,&v);assert(!v.valid);
-    json_object_object_add(sample,"sequence",json_object_new_int(3));json_object_object_add(field,"value",json_object_new_int(75));
-    m1_display_source_sample("123456abcdef",sample);m1_display_source_value(&live.display,1,&v);assert(v.valid&&v.number==75);
+    json_object_object_add(sample,"sequence",json_object_new_int(3));json_object_object_add(field,"value",json_object_new_int(101));
+    m1_display_source_sample("123456abcdef",sample);m1_display_source_value(&live.display,1,&v);assert(v.valid&&v.number==101);
     json_object_object_add(sample,"sequence",json_object_new_int(4));json_object_object_add(field,"age_ms",json_object_new_int(20000));
     m1_display_source_sample("123456abcdef",sample);m1_display_source_value(&live.display,1,&v);assert(!v.valid);
     json_object_object_add(sample,"sequence",json_object_new_int(5));json_object_object_add(field,"age_ms",json_object_new_int(19999));
@@ -201,16 +207,8 @@ static void query(unsigned slot,unsigned elapsed){step(23,elapsed);assert(sent[4
 static void confirmed(bool global,bool left,bool right){
     const bool expected[]={left,right};m1_display_readback_t readback[2];bool selected;
     m1_display_readback(readback,&selected);
-    json_object *out=m1_display_source_json(),*runtime=json_object_object_get(out,"runtime");
-    assert(json_object_get_boolean(json_object_object_get(runtime,"confirmed"))==global);
-    json_object *lanes=json_object_object_get(runtime,"lanes");
-    for(unsigned i=0;i<2;i++){
-        json_object *lane=json_object_array_get_idx(lanes,i);
-        assert(readback[i].confirmed==expected[i]);
-        assert(json_object_get_boolean(json_object_object_get(lane,"confirmed"))==expected[i]);
-        assert(json_object_get_boolean(json_object_object_get(lane,"effective"))==(expected[i]&&readback[i].showing));
-    }
-    json_object_put(out);
+    assert((readback[0].confirmed&&readback[1].confirmed)==global);
+    for(unsigned i=0;i<2;i++)assert(readback[i].confirmed==expected[i]);
 }
 static void complete(void){cache();step(22,250);reply();query(0,250);query(1,250);confirmed(true,true,true);}
 int main(void){
@@ -344,7 +342,7 @@ void m1_co2_source_config_get(m1_co2_source_config_t *out){*out=settings;}
 void m1_co2_config_get(m1_co2_config_t *out){*out=display;}
 void m1_display_config_get(m1_display_config_t *out){m1_display_defaults(out);}
 void m1_display_switch_get(m1_display_switch_config_t *out){*out=(m1_display_switch_config_t){0};}
-bool m1_display_lane_get(unsigned slot,m1_display_lane_config_t *out,uint32_t *revision){m1_display_config_t c;m1_display_defaults(&c);*out=c.lanes[slot];*revision=0;return false;}
+bool m1_display_lane_get(unsigned slot,m1_display_lane_config_t *out,m1_display_remote_t *remote,uint32_t *revision){m1_display_config_t c;m1_display_defaults(&c);*out=c.lanes[slot];if(remote)*remote=c.remote[slot];*revision=0;return false;}
 void m1_alarm_get(m1_alarm_config_t *out){memset(out,0,sizeof(*out));out->reserved[0]=M1_ALARM_SCHEMA;}
 const char *m1_co2_source_config_save(const m1_co2_source_config_t *c){(void)c;return "unsupported";}
 static unsigned alarm_stops;

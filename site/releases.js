@@ -33,7 +33,7 @@ function reviewedNotes(release, manifest) {
 function releaseCard(release, latest, snapshot, candidate = false) {
   const box = el(latest || candidate ? 'article' : 'details'); box.className = 'release';
   const head = el(latest || candidate ? 'h3' : 'summary', release.tag); box.append(head);
-  if (latest || candidate) { const badge = el('span', candidate ? t('候选版 · 预发布', 'Release candidate · Prerelease') : t('稳定最新版', 'Latest stable')); badge.className = 'tag'; head.append(badge); }
+  if (latest || candidate) { const badge = el('span', candidate ? t('Beta（RC）· 不建议使用', 'Beta (RC) · Not recommended') : t('稳定最新版', 'Latest stable')); badge.className = 'tag'; head.append(badge); }
   const table = el('table'); table.className = 'downloads';
   const tr = el('tr'); for (const text of [t('型号', 'Model'), t('固件下载', 'Firmware')]) tr.append(el('th', text)); table.append(tr);
   for (const [model, original] of Object.entries(release.models)) {
@@ -78,11 +78,11 @@ async function loadCandidateCatalog() {
     const snapshot = await ReleaseNotesClient.snapshot('', {channel: 'candidate'});
     const candidates = snapshot.catalog.releases
       .filter(release => release.channel === 'candidate' && release.prerelease === true)
-      .sort((a, b) => ReleaseNotes.compareVersions(b.version, a.version));
+      .sort((a, b) => ReleaseNotes.compareVersions(b.version, a.version)).slice(0, 1);
     target.replaceChildren();
     for (const release of candidates) target.append(releaseCard(release, false, snapshot, true));
     message.textContent = candidates.length
-      ? t('候选版供体验与测试；下载来自本站归档，稳定通道保持不变。', 'Candidates are for testing; downloads use this site archive and leave the stable channel unchanged.')
+      ? t('RC 实际属于 Beta 测试版本，后续仍会有较大改动，不建议使用。', 'RC releases are beta builds. Major changes are still expected; using them is not recommended.')
       : t('目前没有可用候选版。', 'No release candidate is currently available.');
   } catch (error) {
     target.replaceChildren();

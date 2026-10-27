@@ -16,7 +16,7 @@
 #define M1_VERSION FIRMWARE_VERSION
 #define M1_PRODUCT "PHICOMM_M1_EMW3080"
 #define M1_CONFIG_MAGIC 0x4d314346u
-#define M1_CONFIG_VERSION 10u
+#define M1_CONFIG_VERSION 11u
 #define M1_APP_OFFSET 0x75000u
 #define M1_APP_CPU_ADDRESS 0x08088000u
 #define M1_APP_LIMIT 0x40000u
@@ -75,7 +75,7 @@ json_object *m1_co2_source_set(json_object *,const char **);
 bool m1_button_rx(const uint8_t [20]);
 void m1_display_config_get(m1_display_config_t *);
 void m1_display_switch_get(m1_display_switch_config_t *);
-bool m1_display_lane_get(unsigned,m1_display_lane_config_t *,uint32_t *);
+bool m1_display_lane_get(unsigned,m1_display_lane_config_t *,m1_display_remote_t *,uint32_t *);
 const char *m1_display_config_save(const m1_display_config_t *);
 void m1_display_source_reset(void);
 void m1_display_source_mqtt_reset(void);

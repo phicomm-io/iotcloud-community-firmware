@@ -339,12 +339,14 @@ static void verifySnapshots() {
   assert(full["ota_partitions"]["entries"].size() == 3);
   assert(full["indicator_rules_supported"] == true);
   assert(full["sensors"].size() == SENSOR_COUNT && typed["sensors"].size() == SENSOR_COUNT);
-  assert(typed["schema"] == 1 && typed["model"] == "daikin" && typed["device_id"] == "aabbccddeeff");
+  assert(typed["schema"] == 2 && typed["model"] == "daikin" && typed["device_id"] == "aabbccddeeff");
   assert(typed["boot"].as<uint32_t>() == sensorBoot && typed["boot"].as<uint64_t>() == sensorBoot);
   assert(typed["sequence"].as<uint32_t>() == sensorSequence && typed["sequence"].as<uint64_t>() == sensorSequence);
   for (unsigned i = 0; i < SENSOR_COUNT; ++i) {
     const auto a = full["sensors"][keys[i]], b = typed["sensors"][keys[i]];
     assert(a["unit"] == units[i] && b["unit"] == units[i]);
+    const char *names[]={"PM2.5","Carbon dioxide","Temperature","Humidity","TVOC","Formaldehyde","PM10"};
+    assert(b["type"] == "number" && b["name"] == names[i]);
     assert(a["valid"].as<bool>() == (i != TVOC) && b["valid"].as<bool>() == (i != TVOC));
     if (i == TVOC) assert(a["value"].isNull() && b["value"].isNull());
     else assert(a["value"].as<float>() == readings[i].value && b["value"].as<float>() == readings[i].value);
@@ -458,7 +460,7 @@ static void statePublication(unsigned repetitions) {
     inPublish = false;
     assert(poolLive == 0 && published == 2);
     const auto fullCapacity = verifyAttempts(0, 4096, measuredFull.memory);
-    const auto typedCapacity = verifyAttempts(1, 1024, measuredTyped.memory);
+    const auto typedCapacity = verifyAttempts(1, 2048, measuredTyped.memory);
     assert(poolPeak == std::max(fullCapacity, typedCapacity));
     assert(stringBytes() == stringBaseline && firstWire && firstWireFreed);
     assert(sensorSequence && sensorSequence > previousSequence);

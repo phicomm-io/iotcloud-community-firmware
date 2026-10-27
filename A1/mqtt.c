@@ -283,13 +283,13 @@ static int fan_sensor_cycle(bool on,unsigned speed,bool *handled) {
     }
     unsigned percent=on?speed:0;
     bool valid=fan_sensor_ready() && percent<=100;
-    char topic[192],payload[320],value[8]="null";
+    char topic[192],payload[448],value[8]="null";
     if(valid && !mqtt_format(value,sizeof(value),"%u",percent))return MQTT_SUCCESS;
     uint32_t sequence=fan_sensor_sequence+1u;if(!sequence)sequence=1;
     if(!mqtt_aux(&account,"sensor",account.mac,topic,sizeof(topic)) ||
        !mqtt_format(topic+strlen(topic),sizeof(topic)-strlen(topic),"/state") ||
        !mqtt_format(payload,sizeof(payload),
-          "{\"schema\":1,\"model\":\"a1\",\"device_id\":\"%s\",\"boot\":%lu,\"sequence\":%lu,\"sensors\":{\"fan_speed_percent\":{\"value\":%s,\"unit\":\"%%\",\"valid\":%s,\"age_ms\":0}}}",
+          "{\"schema\":2,\"model\":\"a1\",\"device_id\":\"%s\",\"boot\":%lu,\"sequence\":%lu,\"sensors\":{\"fan_speed_percent\":{\"type\":\"number\",\"name\":\"Fan speed\",\"value\":%s,\"unit\":\"%%\",\"valid\":%s,\"age_ms\":0}}}",
           account.mac,(unsigned long)fan_sensor_boot,(unsigned long)sequence,value,
           valid?"true":"false"))return MQTT_SUCCESS;
     fan_sensor_sequence=sequence;

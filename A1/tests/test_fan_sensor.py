@@ -50,11 +50,13 @@ class FanSensor(unittest.TestCase):
                     marker, retained, topic, payload = line.split('\t', 3)
                     self.assertEqual((marker, retained), ('PUB', '0'))
                     body = json.loads(payload)
-                    self.assertEqual((body['schema'], body['model'], body['device_id']), (1, 'a1', 'aabbccddeeff'))
+                    self.assertEqual((body['schema'], body['model'], body['device_id']), (2, 'a1', 'aabbccddeeff'))
                     for field in ('boot', 'sequence'):
                         self.assertIs(type(body[field]), int)
                         self.assertTrue(0 < body[field] <= 0xffffffff)
                     value = body['sensors']['fan_speed_percent']
+                    self.assertEqual(value['type'], 'number')
+                    self.assertEqual(value['name'], 'Fan speed')
                     self.assertEqual(value['unit'], '%')
                     self.assertIs(type(value['valid']), bool)
                     self.assertEqual(value['age_ms'], 0)

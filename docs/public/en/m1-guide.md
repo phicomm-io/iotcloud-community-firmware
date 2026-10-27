@@ -6,7 +6,7 @@ M1 provides PM2.5, formaldehyde, temperature, humidity and screen brightness con
 
 ## Two separate firmware updates
 
-M1 has a **Wi-Fi MCU (EMW3080)** for networking and the web interface, and a **sensor controller (ATSAMD20G18A)** for built-in sensors, the screen and buzzer. An ordinary web update installs Wi-Fi firmware only. The current baseline is **Wi-Fi v1.0.0-rc + open-source sensor controller v1.0.0-rc**, downloaded and updated separately. Dual-region user readings, double-click actions and PM2.5 smoothing need matching versions. Basic readings remain usable with the stock controller. Older tones/music require controller v0.9.3 or newer; particle details require v0.9.4 complete-frame capabilities.
+M1 has a **Wi-Fi MCU (EMW3080)** for networking and the web interface, and a **sensor controller (ATSAMD20G18A)** for built-in sensors, the screen and buzzer. An ordinary web update installs Wi-Fi firmware only. The current baseline is **Wi-Fi v1.0.0-rc.1 + open-source sensor controller v1.0.0-rc**, downloaded and updated separately. Dual-region user readings, double-click actions and PM2.5 smoothing need matching versions. Basic readings remain usable with the stock controller. Older tones/music require controller v0.9.3 or newer; particle details require v0.9.4 complete-frame capabilities.
 
 To reduce accidental wrong-image flashing, there is no controller upload button in the WebUI. Use the [computer script through the API](m1-mcu-update) for that separate update. See [controller features and version requirements](m1-mcu-firmware).
 
@@ -85,11 +85,13 @@ IoTCloud reuses the M1 CO₂ detail card and shows fresh CO₂ readings in devic
 
 M1 uses TMCP (v2) topics only, with no Legacy selector. See [MQTT and automation](mqtt-link).
 
-## v1.0.0-rc user readings and PM2.5 smoothing
+## v1 candidates: user readings and PM2.5 smoothing
 
-v1.0.0-rc provides dual-position screen readings and steadier PM2.5. They require matching open-source controller, Wi-Fi firmware and frontend. This is a prerelease; the stable v1.0.0 release is not yet available.
+The v1 candidates provide dual-position screen readings and steadier PM2.5. They require matching open-source controller, Wi-Fi firmware and frontend. This is a prerelease; the stable v1.0.0 release is not yet available.
 
 In Device settings, open **User readings on the device screen**. Configure the formaldehyde and PM2.5 regions separately using this M1's sensors, another device on the same MQTT account and broker (TC1 power, A1 main-fan output, DAIKIN CO₂ or other readings), or an API / manual write. A1 provides its current effective output percentage (0–100%), including fresh-air variants. Other devices' MAC addresses accept both `aabbccddeeff` and `aa:bb:cc:dd:ee:ff`, with either letter case.
+
+**RC.1 source configuration:** source devices publish schema 2 field descriptors, and M1 display-profile schema 4 selects a device + stable field ID with matching `number` type and unit, without model adapters. Names label fields; they are not the saved binding. TC1 power, effective A1 fan output and sensor readings use the same interface. Invalid values are `null`, never zero; new snapshots immediately remove missing, invalid or unsupported fields, while saved source settings remain. Update source devices, M1 Wi-Fi firmware and the matching frontend together. The old Wi-Fi RC is deprecated and its corresponding MQTT / HTTP profile interfaces are incompatible with RC.1; the independent sensor-controller RC stays unchanged. See the [generic profile API](https://phicomm-io.github.io/iotcloud-community-protocols/en/device-http/#m1-generic-profile4) for custom integrations.
 
 Each region has three digits. **The PM2.5 region supports integers only**, rounded to the nearest integer and capped at `999`; positive overflow also shows `999`. **The formaldehyde region has a fixed decimal point after the first digit**, with five display modes. These conversions apply only to local / MQTT readings:
 
