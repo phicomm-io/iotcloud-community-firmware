@@ -93,6 +93,15 @@ The Wi-Fi button performs recovery **on release**:
 
 A short pulse marks each full second held without changing saved lighting settings. It only indicates time; recovery never executes early. Recovery bypasses child lock. Ensure you can provision Wi-Fi again because factory reset clears user settings. A full reset is also available in the WebUI.
 
+Some original touch panels report release after about 2–3 seconds of continuous contact, preventing the longer holds above. This branch adds these alternatives (**not available in rc.2; install a subsequent firmware containing this fix**):
+
+| Wi-Fi button gesture | Action |
+| --- | --- |
+| Two short taps, then hold the third touch for 1–2 seconds and release | Reset network |
+| Three short taps, then hold the fourth touch for 1–2 seconds and release | Factory reset |
+
+Release after each short tap and leave less than 0.3 seconds between touches. The final hold must last at least 1 second and less than 5 seconds. These reserved recovery sequences execute when the panel reports release, bypass child lock, and consume the preceding taps and final hold without running their custom actions. Separate click groups, standalone holds and two-button combinations remain available. Factory reset clears user settings, so ensure you can provision Wi-Fi again.
+
 ## MQTT
 
 A1 uses TMCP (v2) topics only, with no Legacy selector. See [MQTT and automation](mqtt-link).
