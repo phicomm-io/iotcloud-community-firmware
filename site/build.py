@@ -257,6 +257,11 @@ def main():
         (out / 'releases').mkdir(exist_ok=True)
         shutil.copyfile(DATA / 'catalog.snapshot.json', out / 'releases/index.json')
     notes_manifest = write_public(out, archive=out if args.archive else None, formal=args.formal)
+    has_candidates = bool(args.archive and (out / 'releases/candidates.json').is_file())
+    if has_candidates:
+        # Retained archives may contain an older notes pointer even after their
+        # candidate firmware catalog has been refreshed. Recompile both together.
+        write_public(out, archive=out, formal=args.formal, include_candidates=True)
 
     for name in ['style.css', 'theme.js', 'site.js', 'releases.js']:
         shutil.copyfile(HERE / name, out / name)
@@ -327,6 +332,8 @@ def main():
     write_discovery(out)
     from user_notes import verify_output
     verify_output(out, formal=args.formal)
+    if has_candidates:
+        verify_output(out, formal=args.formal, include_candidates=True)
     print(f'Wrote {len(PAGES) - len(missing)} guide pages to {out}')
 
 
