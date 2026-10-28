@@ -6,6 +6,7 @@ No product case is moved into the historical SDK-only group to hide a failure.
 
 | Old fixture / assertions | Native equivalent | Owner / current gap |
 | --- | --- | --- |
+| `test_watchdog.c`: mandatory worker deadlines, latched failure, startup/clock wrap, network/OTA bounds, Flash progress and failure, cached boot reasons, monitor failures | Same full original assertions and actual watchdog capture + native status fields | features; ASan/UBSan PASS |
 | `test_a1_control.c`: button/slider FIFO, overflow, expiry/wrap, lock/toggles, OTA/provisioning busy, reset and invalid transport params | Same full original assertions against actual typed control and automation; all wire allocations are denied and asserted unused | features; ASan/UBSan PASS |
 | `test_runtime_metrics.c`: missing heap, sampled minimum, consuming boot-reason cache and tick wrap on portable/MOC | Same original assertions encode native `device_runtime_mp`; both variants in `test_native_features` | features; ASan/UBSan PASS |
 | `test_engine.c`, `test_sensor_aggregate.c`: PID, hysteresis, statistics, sleep/schedule, rollover, partial-field/CO2 freshness | Same unmodified C bodies, `test_native_features` | features; preserve in full |
@@ -36,7 +37,7 @@ DUT installation, concurrency P95, busy recovery, or physical-button acceptance.
 
 ## Executable entries (this branch)
 
-- `SANITIZE=1 bash tests/run.sh --native-common`: 11 unittest cases; automation
+- `SANITIZE=1 bash tests/run.sh --native-common`: 12 unittest cases; automation
   compiles and executes three model variants. No SDK/JSON objects are linked.
 - `PHICOMM_TEST_JSON_DIR=... bash tests/run.sh --legacy-sdk`: explicit historical
   SDK JSON library-only coverage. ARM cache/stack history is opt-in via

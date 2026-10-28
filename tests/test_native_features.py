@@ -60,6 +60,14 @@ class NativeFeatures(unittest.TestCase):
         sources = [(ROOT / p).read_text() for p in ('tests/test_runtime_controls_mp.c', 'tests/runtime_control_scenarios.inc')]
         self.compile_run('tests/test_runtime_controls_mp.c', vectors=header(sources, {}), controls=controls)
 
+    def test_watchdog_original_deadline_latch_flash_and_reset_matrix(self):
+        with tempfile.TemporaryDirectory(prefix='watchdog-native-') as td:
+            exe=Path(td)/'watchdog'
+            cmd=['cc','-std=gnu99','-Wall','-Wextra','-Werror','-Wno-unused-function','-Wno-misleading-indentation','-DWATCHDOG_HOST','-DPHICOMM_APPLICATION_WATCHDOG=1','-I'+str(ROOT/'tests/watchdog'),'-I'+str(ROOT/'tests/stubs'),str(ROOT/'tests/test_watchdog.c'),str(ROOT/'common/typed_wire.c'),str(ROOT/'common/wire_buffer.c'),'-lm','-o',str(exe)]
+            if os.environ.get('SANITIZE')=='1':cmd+=['-fsanitize=address,undefined','-fno-omit-frame-pointer','-no-pie']
+            subprocess.run(cmd,check=True)
+            subprocess.run([str(exe)],check=True)
+
     def test_a1_local_controls_and_panel_fifo_without_allocator(self):
         # Compile the original panel/FIFO/reset assertions against native controls.
         with tempfile.TemporaryDirectory(prefix='a1-control-native-') as td:
