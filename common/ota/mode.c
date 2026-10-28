@@ -1,6 +1,6 @@
 #include "mico.h"
 #include "mode.h"
-#include "../service.h"
+#include "../service_mp.h"
 #ifdef OTA_MODEL_A1
 #include "a1.h"
 #define JOB_ID a1_id
@@ -81,8 +81,8 @@ void ota_job_release(void){
     heap_restored=MicoGetMemoryInfo()->free_memory;claimed=false;phase="idle";
     mico_rtos_unlock_mutex(&job_lock);
 }
-json_object *ota_job_status(void){
-    json_object *o=json_object_new_object();char state[32],error[128];unsigned progress;
+void ota_job_status_mp(ph_writer *o){
+    phw_begin(o,NULL,false);char state[32],error[128];unsigned progress;
 #ifdef OTA_MODEL_A1
     mico_rtos_lock_mutex(&a1_lock);snprintf(state,sizeof(state),"%s",a1_state.ota_state);snprintf(error,sizeof(error),"%s",a1_state.ota_error);progress=a1_state.ota_progress;mico_rtos_unlock_mutex(&a1_lock);
 #elif defined(OTA_MODEL_M1)
@@ -90,14 +90,14 @@ json_object *ota_job_status(void){
 #else
     tc1_ota_snapshot(state,error,&progress);
 #endif
-    json_build_object_add(o,"device_id",json_object_new_string(JOB_ID));
-    json_build_object_add(o,"version",json_object_new_string(FIRMWARE_VERSION));
-    json_build_object_add(o,"ota_state",json_object_new_string(state));json_build_object_add(o,"ota_error",json_object_new_string(error));
-    json_build_object_add(o,"ota_progress",json_object_new_int(progress));
-    mico_rtos_lock_mutex(&job_lock);json_build_object_add(o,"ota_mode",json_object_new_string(phase));json_build_object_add(o,"ota_active",json_object_new_boolean(claimed));json_build_object_add(o,"heap_before",json_object_new_int(heap_before));json_build_object_add(o,"heap_quiesced",json_object_new_int(heap_quiesced));json_build_object_add(o,"heap_min",json_object_new_int(heap_min));json_build_object_add(o,"heap_restored",json_object_new_int(heap_restored));mico_rtos_unlock_mutex(&job_lock);
-    json_build_object_add(o,"free_memory",json_object_new_int(MicoGetMemoryInfo()->free_memory));
+    phw_text(o,"device_id",JOB_ID);
+    phw_text(o,"version",FIRMWARE_VERSION);
+    phw_text(o,"ota_state",state);phw_text(o,"ota_error",error);
+    phw_int(o,"ota_progress",progress);
+    mico_rtos_lock_mutex(&job_lock);phw_text(o,"ota_mode",phase);phw_bool(o,"ota_active",claimed);phw_int(o,"heap_before",heap_before);phw_int(o,"heap_quiesced",heap_quiesced);phw_int(o,"heap_min",heap_min);phw_int(o,"heap_restored",heap_restored);mico_rtos_unlock_mutex(&job_lock);
+    phw_int(o,"free_memory",MicoGetMemoryInfo()->free_memory);
 #ifndef OTA_MODEL_TC1
-    json_build_object_add(o,"binding_running",json_object_new_boolean(feature_running()));
+    phw_bool(o,"binding_running",feature_running());
 #endif
-    return o;
+    phw_end(o);
 }

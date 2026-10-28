@@ -31,6 +31,7 @@ void service_product_capabilities_mp(ph_writer *output,
 void service_product_status_mp(ph_writer *output);
 /* Immutable info payload, without a full status capture. */
 void service_product_info_mp(ph_writer *output);
+bool service_product_ota_start(const char *url);
 
 /* Invalidate full status and/or capability bytes after authoritative changes.
  * Safe before service_init. No capture, allocation or IO occurs here. */
