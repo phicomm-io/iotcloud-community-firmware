@@ -64,7 +64,9 @@ def worker_paths(frames,model,binding,symbols=None):
         for label,prefix in callbacks:
             control=prefix+[execute,'a1_control_apply']+extra(['control_broadcast','panel_state'])
             add(label+' typed control persistence',control+['feature_fan_apply']+extra(['install_config'])+['feature_config_save'])
-            add(label+' typed group encode',control+['feature_group_control_mp']+extra(['group_envelope_mp','group_envelope_token_mp'])+['phw_value','phw_visit']+extra(['phw_prefix','phw_bytes'])+['ph_buf_reserve','ph_wire_malloc'])
+            group=control+['feature_group_control_mp']+extra(['group_envelope_mp','group_envelope_token_mp'])+['phw_value','phw_visit']
+            add(label+' typed group encode',group+extra(['phw_prefix','phw_bytes'])+['ph_buf_reserve','ph_wire_malloc'])
+            add(label+' typed group borrowed traversal',group+['phv_next']+extra(['phv_scan','phv_head','binary_token','ph_wire_utf8']))
             add(label+' light persistence',prefix+[execute,'feature_light_select_mp']+extra(['install_config'])+['feature_config_save'])
             add(label+' filter persistence',prefix+[execute,'a1_filter_change'])
             add(label+' panel inspection',prefix+[execute,'a1_panel_inspect'])
