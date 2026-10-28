@@ -294,6 +294,10 @@ bool service_product_mp(const char *action,const ph_value *p,ph_writer *w,const 
  }
  STATE state;GET_STATE(&state);bool query=strlen(action)>4&&!strcmp(action+strlen(action)-4,".get");
 #ifndef FEATURE_DEVICE_A1
+ /* Stopping an alarm is an immediate safety action, including during OTA. */
+ if(!strcmp(action,"wake_alarm.get")||!strcmp(action,"wake_alarm.stop")){
+  if(!phv_keys(p,""))goto invalid;if(!strcmp(action,"wake_alarm.stop"))m1_wake_alarm_stop();smp_wake_alarm(w);*code=!strcmp(action,"wake_alarm.get")?"ok":"accepted";return true;
+ }
  if(!query&&state.mcu_updating)goto busy;
 #endif
  if(!query&&(state.ota_active||state.reboot_pending||state.wifi_trial_active))goto busy;
@@ -319,9 +323,6 @@ bool service_product_mp(const char *action,const ph_value *p,ph_writer *w,const 
   if(!phv_keys(p,"|sensor||yellow||red||revision||buzzer_enabled|")||!smp_text(p,"sensor",sensor,sizeof(sensor),true)||(strcmp(sensor,"hcho")&&strcmp(sensor,"pm25"))||!smp_int(p,"yellow",&low,0,65535)||!smp_int(p,"red",&high,1,65535)||!smp_int(p,"revision",&revision,0,INT32_MAX)||low>high)goto invalid;
   if(smp_has(p,"buzzer_enabled")){if(!smp_bool(p,"buzzer_enabled",&buzzer))goto invalid;buzzer_value=buzzer;}
   *code=m1_alarm_set(!strcmp(sensor,"pm25"),low,high,revision,buzzer_value);if(!strcmp(*code,"accepted"))smp_alarm(w);else smp_empty(w);return true;
- }
- if(!strcmp(action,"wake_alarm.get")||!strcmp(action,"wake_alarm.stop")){
-  if(!phv_keys(p,""))goto invalid;if(!strcmp(action,"wake_alarm.stop"))m1_wake_alarm_stop();smp_wake_alarm(w);*code=!strcmp(action,"wake_alarm.get")?"ok":"accepted";return true;
  }
  if(!strcmp(action,"wake_alarm.start")){
   int seconds=60,tone=0;if(!phv_keys(p,"|duration_seconds||tone|")||(smp_has(p,"duration_seconds")&&!smp_int(p,"duration_seconds",&seconds,1,180))||(smp_has(p,"tone")&&!smp_int(p,"tone",&tone,0,5)))goto invalid;
