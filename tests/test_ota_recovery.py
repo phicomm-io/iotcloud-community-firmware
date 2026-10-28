@@ -10,7 +10,7 @@ ROOT=Path(__file__).resolve().parents[1]
 class OtaRecovery(unittest.TestCase):
  def test_production_recovery(self):
   mode=(ROOT/'common/ota/mode.c').read_text()
-  mode=mode[mode.index('static mico_mutex_t job_lock;'):mode.index('json_object *ota_job_status(')]
+  mode=mode[mode.index('static mico_mutex_t job_lock;'):mode.index('void ota_job_status_mp(')]
   runtime=(ROOT/'common/runtime.c').read_text()
   runtime='\n'.join(function(runtime,s) for s in ('static bool feature_worker_should_stop(', 'OSStatus feature_resume_step(', 'OSStatus feature_resume('))
   runtime+='\n'+function((ROOT/'common/runtime.c').read_text(),'bool feature_running(')+'\n'+function((ROOT/'common/runtime.c').read_text(),'bool feature_pause(').replace('bool feature_pause(', 'static bool actual_feature_pause(')
