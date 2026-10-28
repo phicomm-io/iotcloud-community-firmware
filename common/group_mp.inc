@@ -7,17 +7,31 @@ typedef struct {char src[13],dst[13],group[49],op[20],domain[16],kind[16];uint32
 static struct {char ip[16];uint32_t sent,retry_at,request,boot,last_id[11],retired_boot[4];unsigned failures,successes;bool lan,joined;ph_buf *pending;} group_members[8];
 static bool group_token_empty(const uint8_t token[16]){unsigned bits=0;for(unsigned i=0;i<16;i++)bits|=token[i];return !bits;}
 static bool group_text(const ph_value *root,const char *key,char *out,size_t cap){ph_value v;return phv_get(root,key,&v)&&phv_text(&v,out,cap);}
-static ph_buf *group_envelope_mp(const feature_config_t *c,unsigned i,const char *op,uint32_t id,const char *domain,const char *kind,const ph_value *body)
+static ph_buf *group_envelope_token_mp(const feature_config_t *c,unsigned i,const char *op,uint32_t id,const char *domain,const char *kind,const ph_value *body,const uint8_t token[16])
 {
  ph_writer w;if(!phw_init_capacity(&w,PH_WIRE_MSGPACK,256))return NULL;
- phw_begin(&w,NULL,false);phw_uint(&w,"v",3);phw_text(&w,"src",LOCAL_ID);phw_text(&w,"dst",c->members[i].id);phw_text(&w,"group",c->group);phw_text(&w,"op",op);phw_u32(&w,"boot",boot_id);phw_u32(&w,"id",id?id:next_request());phw_bytes_value(&w,"token",c->group_token,16);
+ phw_begin(&w,NULL,false);phw_uint(&w,"v",3);phw_text(&w,"src",LOCAL_ID);phw_text(&w,"dst",c->members[i].id);phw_text(&w,"group",c->group);phw_text(&w,"op",op);phw_u32(&w,"boot",boot_id);phw_u32(&w,"id",id?id:next_request());phw_bytes_value(&w,"token",token,16);
  if(domain)phw_text(&w,"domain",domain);if(kind)phw_text(&w,"kind",kind);if(body)phw_value(&w,"body",body);phw_end(&w);return phw_take(&w);
+}
+static ph_buf *group_envelope_mp(const feature_config_t *c,unsigned i,const char *op,uint32_t id,const char *domain,const char *kind,const ph_value *body)
+{
+ return group_envelope_token_mp(c,i,op,id,domain,kind,body,c->group_token);
 }
 static bool group_send_wire(const char *ip,const ph_buf *wire)
 {
  if(!wire||wire->len>FEATURE_WIRE_MAX||udp<0||!ip||!ip[0])return false;
  struct sockaddr_in a={0};a.sin_family=AF_INET;a.sin_port=htons(FEATURE_PORT);a.sin_addr.s_addr=inet_addr(ip);
  if(!a.sin_addr.s_addr||a.sin_addr.s_addr==INADDR_NONE)return false;
+ ph_value root,op;char peer[13];uint8_t token[16];
+ if(phv_parse(PH_WIRE_MSGPACK,wire->buf,wire->len,&root)&&lan_id(&root,"dst",peer)&&phv_get(&root,"op",&op)&&!phv_equal_text(&op,"group_ack")&&lan_client_token(peer,ip,4u,token)){
+  char *storage=malloc(FEATURE_WIRE_MAX);if(!storage)return false;ph_buf buf;ph_writer writer;size_t length=0;
+  if(phw_init_fixed(&writer,PH_WIRE_MSGPACK,&buf,storage,FEATURE_WIRE_MAX)){
+   phw_begin(&writer,NULL,false);ph_iterator it;ph_value value;char key[128];
+   if(phv_iter(&root,&it))while(phv_next(&it,key,&value)){if(!strcmp(key,"token"))phw_bytes_value(&writer,key,token,16);else phw_value(&writer,key,&value);}
+   phw_end(&writer);length=phw_finish_fixed(&writer);
+  }
+  bool sent=length&&sendto(udp,storage,length,0,(struct sockaddr*)&a,sizeof(a))==(int)length;free(storage);return sent;
+ }
  return sendto(udp,wire->buf,wire->len,0,(struct sockaddr*)&a,sizeof(a))==(int)wire->len;
 }
 static void group_mqtt_mp(unsigned i,const feature_config_t *c,const ph_buf *wire)
@@ -49,7 +63,8 @@ static bool group_input_mp(const ph_value *root,bool lan,bool retained,const cha
  feature_config_t *c=malloc(sizeof(*c));if(!c)return true;feature_config_get(c);unsigned i;for(i=0;i<c->member_count;i++)if(!strcmp(c->members[i].id,m.src))break;
  if(i==c->member_count||!c->group[0]||strcmp(c->group,m.group)||!strcmp(m.src,LOCAL_ID))goto done;
  if(!strcmp(m.op,"group_join")&&!lan&&(strcmp(m.src,LOCAL_ID)<0||group_token_empty(c->group_token))){if(memcmp(c->group_token,m.token,16)){memcpy(c->group_token,m.token,16);if(!install_config(c))goto done;}}
- if(group_token_empty(c->group_token)||memcmp(c->group_token,m.token,16)){if(!lan||!feature_lan_auth(m.src,m.token,4u))goto done;}
+ uint8_t expected[16];bool outgoing_ack=lan&&!strcmp(m.op,"group_ack")&&lan_client_token(m.src,ip,4u,expected)&&!memcmp(expected,m.token,16);
+ if(!outgoing_ack&&(group_token_empty(c->group_token)||memcmp(c->group_token,m.token,16))){if(!lan||!feature_lan_auth(m.src,m.token,4u))goto done;}
  lock();member_seen[i]=now_ms();if(ip&&ip[0])snprintf(group_members[i].ip,sizeof(group_members[i].ip),"%s",ip);
  unsigned slot=10;const char *domains[]={"binding","linkage","light","schedule","sleep","time"};if(!strcmp(m.op,"group_config"))for(unsigned k=0;k<6;k++)if(!strcmp(m.domain,domains[k]))slot=k;
  if(!strcmp(m.op,"group_control"))slot=!strcmp(m.kind,"fan")?6:!strcmp(m.kind,"light")?7:!strcmp(m.kind,"child_lock")?8:9;
@@ -58,7 +73,7 @@ static bool group_input_mp(const ph_value *root,bool lan,bool retained,const cha
  if(!strcmp(m.op,"group_ack")){group_members[i].joined=true;ph_buf *old=NULL;if(group_members[i].pending&&m.id==group_members[i].request){old=group_members[i].pending;group_members[i].pending=NULL;if(lan&&++group_members[i].successes>=2)group_members[i].lan=true;}unlock();ph_buf_free(old);goto done;}
  bool duplicate=(int32_t)(m.id-group_members[i].last_id[slot])<=0;unlock();
  bool ok=true;if(!duplicate){if(!strcmp(m.op,"group_control")){const char *code="invalid_params";ok=feature_control_mp(m.kind,&m.body,&code);}else if(!strcmp(m.op,"group_config"))ok=feature_config_decode_mp(c,m.domain,&m.body)&&install_config(c);else ok=!strcmp(m.op,"group_probe")||!strcmp(m.op,"group_join");}
- if(ok){if(!duplicate){lock();group_members[i].last_id[slot]=m.id;unlock();}ph_buf *reply=group_envelope_mp(c,i,"group_ack",m.id,NULL,NULL,NULL);if(lan)group_send_wire(ip,reply);else group_mqtt_mp(i,c,reply);ph_buf_free(reply);}
+ if(ok){if(!duplicate){lock();group_members[i].last_id[slot]=m.id;unlock();}ph_buf *reply=group_envelope_token_mp(c,i,"group_ack",m.id,NULL,NULL,NULL,m.token);if(lan)group_send_wire(ip,reply);else group_mqtt_mp(i,c,reply);ph_buf_free(reply);}
  done:free(c);return true;
 }
 static void group_poll(const feature_config_t *c,uint32_t now)
@@ -71,7 +86,9 @@ static void group_poll(const feature_config_t *c,uint32_t now)
   lock();strcpy(ip,c->members[i].ip[0]?c->members[i].ip:group_members[i].ip);
   if(group_members[i].pending&&(uint32_t)(now-group_members[i].sent)>=c->group_timeout_ms){expired=group_members[i].pending;group_members[i].pending=NULL;group_members[i].lan=false;group_members[i].failures++;group_members[i].successes=0;group_members[i].retry_at=now+c->group_recovery_seconds*1000;}
   joined=group_members[i].joined;lan=group_members[i].lan&&!c->group_force_mqtt;pending=group_members[i].pending!=NULL;retry=group_members[i].retry_at;sent=group_members[i].sent;unlock();
-  if(expired){group_mqtt_mp(i,c,expired);ph_buf_free(expired);}
+  uint8_t local_token[16];
+  if(lan_client_token(c->members[i].id,ip,4u,local_token)){joined=true;lock();group_members[i].joined=true;unlock();}
+  if(expired){lan_client_invalidate(c->members[i].id);group_mqtt_mp(i,c,expired);ph_buf_free(expired);}
   if(!joined&&feature_is_coordinator()&&(uint32_t)(now-sent)>=5000){ph_buf *wire=group_envelope_mp(c,i,"group_join",0,NULL,NULL,NULL);group_mqtt_mp(i,c,wire);ph_buf_free(wire);lock();group_members[i].sent=now;unlock();}
   if(joined&&!pending&&ip[0]&&!lan&&!c->group_force_mqtt&&(retry==0||c->group_recovery)&&(int32_t)(now-retry)>=0){
    uint32_t request=next_request();ph_buf *wire=group_envelope_mp(c,i,"group_probe",request,NULL,NULL,NULL);if(!wire)continue;

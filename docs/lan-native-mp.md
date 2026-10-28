@@ -4,7 +4,7 @@ This wire change requires coordinated upgrades of sensor and linked purifier pee
 There is no JSON receive fallback and no JSON-to-binary conversion on UDP.
 Existing binary configuration and backup layouts are unchanged by this module.
 
-Sensor datagrams have `v:3`, 12-character uppercase hexadecimal `src`/`dst`,
+Sensor datagrams have `v:3`, 12-character lowercase hexadecimal `src`/`dst`,
 nonzero uint32 `boot`/`id`, `op` (`read`, `probe`, `sample`, `pong`), and
 16-byte binary `token`. Only `sample` has `body`. It contains `boot`, `sequence`,
 `fields` (bits 0..4), `co2_supported`, and five-element integer `values`/`ages`.
@@ -41,3 +41,24 @@ failure fallback, timeout counters, and an ACK delivered synchronously inside
 sendto. These fixtures do not establish target fit, device compatibility, physical
 button latency, or live network performance; those require the integrated build
 and device campaign.
+
+Local pairing sender is an independent state machine: `lan.pair` copies peer,
+unicast IP, password and scopes into RAM; `accepted` only means queued. Every
+request carries a random 16-byte nonce. Responses must match peer, source IP,
+operation and nonce. Pairing success is reported only after the remote key is
+saved under the initiating local credential epoch and a resume returns a token.
+Outbound remote keys live in separate records from inbound authorization keys.
+A reboot resumes configured peers from the durable remote key. Passwords are
+never persisted and are erased on pairing completion/failure. Three attempts
+are spaced one second apart; failed automatic resumes wait one minute.
+
+For sensors, each pending read records its actual token independently from the
+MQTT-issued session token. Local-pair reads can operate without MQTT. Group
+requests substitute the local token only on UDP and echo it in ACKs; their MQTT
+fallback retains the group credential. Configured local group peers may probe
+without waiting for an MQTT join exchange. Changing local credentials cancels
+in-flight local pairing; it does not clear the independent MQTT sensor grant.
+
+The broker-only sensor grant also uses MP v3: `sensor.session.set` parameters are
+`{v:3,a1:lowercase-peer,boot:nonzero-uint32,token:bin16}`. There is no JSON grant
+adapter. The MQTT adapter discards retained grant commands.

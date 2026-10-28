@@ -61,7 +61,7 @@ typedef struct {
   unsigned failures;
   bool lan, pending, authorized, auth_sent;
   char ip[16];
-  uint8_t session_token[16];
+  uint8_t session_token[16],request_token[16];
   uint32_t last_seen;
 } peer_runtime_t;
 static peer_runtime_t peers[FEATURE_MAX_PEERS];
@@ -345,6 +345,7 @@ static json_object *sample_body(const feature_sample_t *s, uint32_t now) {
   #endif
   return o;
 }
+#include "lan_client_adapter.inc"
 #include "lan_sensor.inc"
 #ifdef FEATURE_DEVICE_A1
 /* Caller supplies a stable snapshot. Missing/stale data is never a zero reading. */
@@ -386,32 +387,23 @@ static json_object *average_body(const feature_sample_t *current, unsigned count
 #include "group_mp.inc"
 #ifndef FEATURE_DEVICE_A1
 /* Only the MQTT command adapter invokes this grant; no UDP/HTTP grant path. */
-int feature_sensor_session_set(json_object *o) {
-  char id[13]; uint8_t token[16];
-  const char *raw=string(o,"a1"), *text=string(o,"token");
-  json_object *v=json_object_object_get(o,"v"), *boot=json_object_object_get(o,"boot");
-  if(!json_object_is_type(o,json_type_object) || !v || !json_object_is_type(v,json_type_int) || integer(o,"v")!=2 ||
-     !boot || !json_object_is_type(boot,json_type_int) || json_object_get_int64(boot)<INT32_MIN || json_object_get_int64(boot)>UINT32_MAX ||
-     strlen(raw)!=12 || json_object_get_string_len(json_object_object_get(o,"a1"))!=12 || !feature_mac(raw,id) || !strcmp(id,LOCAL_ID) ||
-     json_object_get_string_len(json_object_object_get(o,"token"))!=32 || !token_read(text,token)) return 400;
-  unsigned bits=0;for(unsigned k=0;k<16;k++)bits|=token[k];if(!bits)return 400;
-  json_object_object_foreach(o,key,value) { (void)value;
-    if(strcmp(key,"v") && strcmp(key,"a1") && strcmp(key,"boot") && strcmp(key,"token"))return 400;
-  }
-  uint32_t now=now_ms(); unsigned slot=FEATURE_MAX_PEERS;
+bool feature_sensor_session_mp(const ph_value *o,const char **code) {
+  char id[13];uint8_t token[16];const void *raw;size_t bytes;uint32_t version,boot;ph_value v;
+  *code="invalid_params";
+  if(!o||o->kind!=PHV_MAP||!phv_keys(o,"|v||a1||boot||token|")||!lan_u32(o,"v",&version)||version!=3||!lan_u32(o,"boot",&boot)||!boot||!lan_id(o,"a1",id)||!strcmp(id,LOCAL_ID)||!phv_get(o,"token",&v)||!phv_bytes(&v,&raw,&bytes)||bytes!=16)return false;
+  unsigned bits=0;for(unsigned k=0;k<16;k++)bits|=((const uint8_t*)raw)[k];if(!bits)return false;memcpy(token,raw,16);
+  uint32_t now=now_ms();unsigned slot=FEATURE_MAX_PEERS;
   lock();
-  for(unsigned i=0;i<FEATURE_MAX_PEERS;i++) {
+  for(unsigned i=0;i<FEATURE_MAX_PEERS;i++){
     sensor_session_t *p=&sensor_sessions[i];
-    if(p->valid && (uint32_t)(now-p->last_seen)>=SENSOR_SESSION_IDLE_MS)p->valid=false;
-    if(p->valid && !strcmp(p->id,id)) { slot=i;break; }
-    if(!p->valid && slot==FEATURE_MAX_PEERS)slot=i;
+    if(p->valid&&(uint32_t)(now-p->last_seen)>=SENSOR_SESSION_IDLE_MS)p->valid=false;
+    if(p->valid&&!strcmp(p->id,id)){slot=i;break;}
+    if(!p->valid&&slot==FEATURE_MAX_PEERS)slot=i;
   }
-  if(slot==FEATURE_MAX_PEERS) { unlock();return 409; }
-  sensor_session_t *p=&sensor_sessions[slot];
-  bool same=p->valid && p->boot==integer(o,"boot") && !memcmp(p->token,token,16);
-  if(!same)memset(p,0,sizeof(*p));
-  strcpy(p->id,id);memcpy(p->token,token,16);p->boot=integer(o,"boot");p->last_seen=now;p->valid=true;
-  unlock();return 200;
+  if(slot==FEATURE_MAX_PEERS){unlock();*code="busy";return false;}
+  sensor_session_t *p=&sensor_sessions[slot];bool same=p->valid&&p->boot==boot&&!memcmp(p->token,token,16);
+  if(!same)memset(p,0,sizeof(*p));strcpy(p->id,id);memcpy(p->token,token,16);p->boot=boot;p->last_seen=now;p->valid=true;
+  unlock();*code="accepted";return true;
 }
 #endif
 bool feature_bound(void) {
@@ -930,10 +922,7 @@ bool feature_mqtt_input(const char *t, const void *data, size_t n,
   char grant_topic[FEATURE_TOPIC_MAX],leaf[32];snprintf(leaf,sizeof(leaf),"%s/command",LOCAL_ID);
   mqtt_aux(&account,"sensor",leaf,grant_topic,sizeof(grant_topic));
   if(!strcmp(t,grant_topic)) {
-    if(!retained){json_object *o=parse(data,n);if(o){
-      if(!strcmp(string(o,"action"),"sensor.session.set"))feature_sensor_session_set(json_object_object_get(o,"params"));
-      json_object_put(o);
-    }}return true;
+    if(!retained){ph_value root,action,params;if(phv_parse(PH_WIRE_MSGPACK,data,n,&root)&&phv_get(&root,"action",&action)&&phv_equal_text(&action,"sensor.session.set")&&phv_get(&root,"params",&params)){const char *code;feature_sensor_session_mp(&params,&code);}}return true;
   }
 #endif
   char sensor_prefix[FEATURE_TOPIC_MAX];mqtt_aux(&account,"sensor","",sensor_prefix,sizeof(sensor_prefix));
@@ -1124,27 +1113,24 @@ static bool sensor_grant(const feature_config_t *c,unsigned i,uint32_t now) {
     if(!new_token(token))return false;
     lock();if(!peer_current(c,i)){unlock();return false;}memcpy(peers[i].session_token,token,16);unlock();
   }
-  json_object *o=json_object_new_object(),*p=json_object_new_object();
-  if(!o || !p){if(o)json_object_put(o);if(p)json_object_put(p);return false;}
-  js(o,"action","sensor.session.set");number(p,"v",2);js(p,"a1",LOCAL_ID);number(p,"boot",boot_id);
-  char text[33];lock();token_text(peers[i].session_token,text);unlock();js(p,"token",text);
-  json_build_object_add(o,"params",p);
-  char topic[FEATURE_TOPIC_MAX];mqtt_account_t account=mqtt_snapshot();
-  mqtt_target_t target;mqtt_target_set(&target,&account);strcpy(target.model,"m1");strcpy(target.mac,c->peers[i].id);
-  lock();bool legacy=peers[i].failures>=2;unlock();
-  bool sent;
-  if(legacy)sent=mqtt_target_leaf(&target,"command",topic,sizeof(topic)) && enqueue(topic,o,false);
-  else {char leaf[32];snprintf(leaf,sizeof(leaf),"%s/command",c->peers[i].id);sent=mqtt_aux(&account,"sensor",leaf,topic,sizeof(topic)) && enqueue(topic,o,false);}
-  json_object_put(o);
+  char storage[256];ph_buf buffer;ph_writer writer;
+  if(!phw_init_fixed(&writer,PH_WIRE_MSGPACK,&buffer,storage,sizeof(storage)))return false;
+  lock();memcpy(token,peers[i].session_token,16);unlock();
+  phw_begin(&writer,NULL,false);phw_text(&writer,"action","sensor.session.set");phw_begin(&writer,"params",false);
+  phw_uint(&writer,"v",3);phw_text(&writer,"a1",LOCAL_ID);phw_u32(&writer,"boot",boot_id);phw_bytes_value(&writer,"token",token,16);phw_end(&writer);phw_end(&writer);
+  size_t length=phw_finish_fixed(&writer);if(!length)return false;
+  char topic[FEATURE_TOPIC_MAX];mqtt_account_t account=mqtt_snapshot();char leaf[32];snprintf(leaf,sizeof(leaf),"%s/command",c->peers[i].id);
+  bool sent=false;
+  if(mqtt_aux(&account,"sensor",leaf,topic,sizeof(topic))){uint32_t generation;mico_rtos_lock_mutex(&namespace_lock);generation=mqtt_generation;mico_rtos_unlock_mutex(&namespace_lock);sent=ph_mqtt_enqueue_send_generation(topic,storage,length,1,false,generation)==0;}
   lock();if(peer_current(c,i)) { peers[i].auth_at=now;peers[i].auth_sent=sent; }unlock();
   return sent;
 }
 static void sensor_poll(const feature_config_t *c,unsigned i,uint32_t now,bool mqtt_connected) {
-  char ip[16];bool grant,due;unsigned failures;
+  char ip[16];bool grant,due,timed_out=false;unsigned failures;
   lock();
   if(!peer_current(c,i)){unlock();return;}
   if(peers[i].pending && (uint32_t)(now-peers[i].sent)>=c->peers[i].timeout_ms) {
-    peers[i].pending=false;peers[i].lan=false;
+    peers[i].pending=false;peers[i].lan=false;timed_out=true;
     if(peers[i].failures<6)peers[i].failures++;
     peers[i].recover_at=now+(peers[i].failures==1?1000u:peers[i].failures==2?5000u:peers[i].failures==3?15000u:60000u);
   }
@@ -1154,11 +1140,13 @@ static void sensor_poll(const feature_config_t *c,unsigned i,uint32_t now,bool m
       (!peers[i].sent || ((int32_t)(now-peers[i].recover_at)>=0 && (c->peers[i].recovery || failures==0))));
   snprintf(ip,sizeof(ip),"%s",c->peers[i].ip[0]?c->peers[i].ip:peers[i].ip);
   unlock();
-  if(grant)sensor_grant(c,i,now);
-  lock();bool ready=peers[i].auth_sent;unlock();if(!due || !ready)return;
+  if(timed_out&&failures>=2)lan_client_invalidate(c->peers[i].id);
+  uint8_t local_token[16];bool local_ready=lan_client_token(c->peers[i].id,ip,2u,local_token);
+  if(!local_ready&&grant)sensor_grant(c,i,now);
+  lock();bool ready=local_ready||peers[i].auth_sent;unlock();if(!due || !ready)return;
   /* An explicit address wins. A learned address is retried before broadcast discovery. */
   if(!ip[0] || (!c->peers[i].ip[0] && failures>=2))strcpy(ip,"255.255.255.255");
-  unsigned request=next_request();lan_packet packet={0};packet.op=LAN_READ;strcpy(packet.src,LOCAL_ID);strcpy(packet.dst,c->peers[i].id);packet.boot=boot_id;packet.id=request;lock();memcpy(packet.token,peers[i].session_token,16);unlock();
+  unsigned request=next_request();lan_packet packet={0};packet.op=LAN_READ;strcpy(packet.src,LOCAL_ID);strcpy(packet.dst,c->peers[i].id);packet.boot=boot_id;packet.id=request;lock();memcpy(packet.token,local_ready?local_token:peers[i].session_token,16);memcpy(peers[i].request_token,packet.token,16);unlock();
   /* Publish pending before sendto so an immediate reply cannot race its request slot. */
   lock();if(!peer_current(c,i)){unlock();return;}
   peers[i].request=request;peers[i].sent=now;peers[i].pending=true;unlock();
@@ -1325,6 +1313,7 @@ static void feature_worker(mico_thread_arg_t arg) {
       unlock();
     }
 #endif
+    lan_client_poll();
     if (udp >= 0) {
       fd_set fds;
       FD_ZERO(&fds);
@@ -1340,9 +1329,9 @@ static void feature_worker(mico_thread_arg_t arg) {
           ph_value request;
           if(phv_parse(PH_WIRE_MSGPACK,wire,(size_t)n,&request)){
             /* Pair operations borrow the datagram only during this call. */
-            ph_value operation;bool paired=false;
+            ph_value operation;bool paired=lan_client_response(&request,ip);
             bool auth_op=phv_get(&request,"op",&operation)&&(phv_equal_text(&operation,"auth_pair")||phv_equal_text(&operation,"auth_resume")||phv_equal_text(&operation,"auth_unpair"));
-            char *response=auth_op?malloc(FEATURE_WIRE_MAX):NULL;
+            char *response=auth_op&&!paired?malloc(FEATURE_WIRE_MAX):NULL;
             if(response){ph_buf buf;ph_writer writer;
               if(phw_init_fixed(&writer,PH_WIRE_MSGPACK,&buf,response,FEATURE_WIRE_MAX)&&feature_lan_pair(&request,&writer,ip)){
                 size_t bytes=phw_finish_fixed(&writer);
@@ -1431,6 +1420,8 @@ void feature_clock_tick(void) {
 }
 OSStatus feature_start(void) {
   OSStatus e = mico_rtos_init_mutex(&namespace_lock);
+  if (e != kNoErr) return e;
+  e = mico_rtos_init_mutex(&lan_client_lock);
   if (e != kNoErr) return e;
   e = mico_rtos_init_mutex(&feature_lock);
   if (e != kNoErr)

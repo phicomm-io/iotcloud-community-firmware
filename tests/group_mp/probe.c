@@ -34,32 +34,37 @@ static mqtt_account_t mqtt_snapshot(void){return feature_account;}
 static int mqtt_format(char *out,size_t cap,const char *fmt,const char *key){return snprintf(out,cap,fmt,key);}
 static bool mqtt_link_topic(const mqtt_account_t *a,const char *model,const char *dst,const char *src,const char *op,char *out,size_t cap){(void)model;(void)dst;(void)src;(void)op;snprintf(out,cap,"phicomm/v2/%s/test",a->key);return true;}
 static int ph_mqtt_enqueue_send_generation(const char *t,const void *p,size_t n,unsigned qos,bool retained,uint32_t gen){(void)t;(void)p;(void)n;(void)qos;(void)retained;(void)gen;mqtt_sends++;return 0;}
+static bool local_ready;static uint8_t last_sent_token;
+static bool lan_client_token(const char *p,const char *ip,unsigned scopes,uint8_t out[16]){(void)p;(void)ip;(void)scopes;if(local_ready)memset(out,0xaa,16);return local_ready;}
+static void lan_client_invalidate(const char *peer){(void)peer;}
 static bool fast_ack;
 static ssize_t simulated_sendto(int,const void *,size_t,int,const struct sockaddr *,socklen_t);
 #define sendto simulated_sendto
 #include "common/group_mp.inc"
 static ph_buf *packet(uint32_t boot,uint32_t id,const char *op){
- char saved[13];strcpy(saved,localid);strcpy(localid,"AABBCCDDEEFF");strcpy(config.members[0].id,saved);
+ char saved[13];strcpy(saved,localid);strcpy(localid,"aabbccddeeff");strcpy(config.members[0].id,saved);
  uint32_t savedboot=boot_id;boot_id=boot;
  ph_buf *wire=group_envelope_mp(&config,0,op,id,NULL,"fan",NULL);
- boot_id=savedboot;strcpy(localid,saved);strcpy(config.members[0].id,"AABBCCDDEEFF");return wire;
+ boot_id=savedboot;strcpy(localid,saved);strcpy(config.members[0].id,"aabbccddeeff");return wire;
 }
 static ssize_t simulated_sendto(int fd,const void *data,size_t n,int flags,const struct sockaddr *dst,socklen_t len){
  (void)fd;(void)flags;(void)dst;(void)len;
  ph_value request;uint32_t id;assert(phv_parse(PH_WIRE_MSGPACK,data,n,&request));assert(lan_u32(&request,"id",&id));
- if(fast_ack){ph_buf *ack=packet(2,id,"group_ack");ph_value v;assert(phv_parse(PH_WIRE_MSGPACK,ack->buf,ack->len,&v));assert(group_input_mp(&v,true,false,"10.0.0.2"));ph_buf_free(ack);}
+ ph_value tv;const void *token;size_t token_bytes;assert(phv_get(&request,"token",&tv)&&phv_bytes(&tv,&token,&token_bytes)&&token_bytes==16);last_sent_token=((const uint8_t*)token)[0];
+ if(fast_ack){uint8_t saved_token[16];memcpy(saved_token,config.group_token,16);memcpy(config.group_token,token,16);ph_buf *ack=packet(2,id,"group_ack");memcpy(config.group_token,saved_token,16);ph_value v;assert(phv_parse(PH_WIRE_MSGPACK,ack->buf,ack->len,&v));assert(group_input_mp(&v,true,false,"10.0.0.2"));ph_buf_free(ack);}
  return (ssize_t)n;
 }
 static void receive(uint32_t boot,uint32_t id){ph_buf *b=packet(boot,id,"group_control");assert(b);ph_value v;assert(phv_parse(PH_WIRE_MSGPACK,b->buf,b->len,&v));assert(group_input_mp(&v,false,false,NULL));ph_buf_free(b);}
 int main(void){
- strcpy(config.group,"test");config.member_count=1;strcpy(config.members[0].id,"AABBCCDDEEFF");memset(config.group_token,7,16);config.group_timeout_ms=100;config.group_recovery_seconds=1;
+ strcpy(config.group,"test");config.member_count=1;strcpy(config.members[0].ip,"10.0.0.2");strcpy(config.members[0].id,"aabbccddeeff");memset(config.group_token,7,16);config.group_timeout_ms=100;config.group_recovery_seconds=1;
  receive(1,1);assert(controls==1);receive(1,1);assert(controls==1);
  allow_control=false;receive(1,2);assert(controls==2);allow_control=true;receive(1,2);assert(controls==3);receive(1,2);assert(controls==3);
  receive(2,1);assert(controls==4);receive(1,3);assert(controls==4); /* retired boot cannot revive */
  group_members[0].lan=true;ph_buf *b=packet(2,10,"group_control");group_send_mp(&config,0,b,10);ph_buf_free(b);assert(!group_members[0].pending); /* failed UDP frees owned slot + MQTT fallback */
  b=packet(2,11,"group_control");group_members[0].pending=b;group_members[0].sent=ticks;group_members[0].joined=true;group_members[0].lan=true;ticks+=101;int before=mqtt_sends;group_poll(&config,ticks);assert(!group_members[0].pending&&group_members[0].failures==1&&mqtt_sends==before+1);
  /* ACK is delivered synchronously inside sendto and frees the pending copy. */
- udp=1;fast_ack=true;group_members[0].lan=true;b=packet(2,30,"group_control");group_send_mp(&config,0,b,30);ph_buf_free(b);assert(!group_members[0].pending);fast_ack=false;udp=-1;
+ udp=1;fast_ack=true;group_members[0].lan=true;b=packet(2,30,"group_control");group_send_mp(&config,0,b,30);ph_buf_free(b);assert(!group_members[0].pending);fast_ack=false;
+ local_ready=true;fast_ack=true;group_members[0].lan=true;b=packet(2,31,"group_control");group_send_mp(&config,0,b,31);ph_buf_free(b);assert(last_sent_token==0xaa&&!group_members[0].pending);assert(config.group_token[0]==7);local_ready=false;fast_ack=false;udp=-1;
  /* Async pending keeps independent bytes after borrowed input is destroyed. */
  b=packet(2,12,"group_control");group_members[0].pending=ph_buf_new(b->len+1);memcpy(group_members[0].pending->buf,b->buf,b->len);group_members[0].pending->len=b->len;ph_buf_free(b);assert(phv_parse(PH_WIRE_MSGPACK,group_members[0].pending->buf,group_members[0].pending->len,&(ph_value){0}));
  feature_config_t changed=config;strcpy(changed.group,"other");group_config_changed(&config,&changed);assert(!group_members[0].pending);

@@ -42,7 +42,7 @@ static void lan_sensor_input(const lan_packet *packet,const char *ip)
   unsigned i;for(i=0;i<c->peer_count;i++)if(!strcmp(c->peers[i].id,packet->src))break;
   if(i==c->peer_count){free(c);return;}
   lock();
-  bool matched=peer_current(c,i)&&peers[i].pending&&packet->id==peers[i].request&&!memcmp(peers[i].session_token,packet->token,16);
+  bool matched=peer_current(c,i)&&peers[i].pending&&packet->id==peers[i].request&&!memcmp(peers[i].request_token,packet->token,16);
   if(matched){peers[i].pending=false;peers[i].lan=peers[i].authorized=true;peers[i].failures=0;peers[i].last_seen=now_ms();snprintf(peers[i].ip,sizeof(peers[i].ip),"%s",ip);}
   if(matched&&packet->op==LAN_SAMPLE){
     const lan_sample *wire=&packet->sample;bool retired=false;

@@ -11,7 +11,7 @@ static bool lan_id(const ph_value *map,const char *key,char out[13])
 {
     ph_value v;
     if(!phv_get(map,key,&v)||!phv_text(&v,out,13)||strlen(out)!=12)return false;
-    for(unsigned i=0;i<12;i++)if(!((out[i]>='0'&&out[i]<='9')||(out[i]>='A'&&out[i]<='F')))return false;
+    for(unsigned i=0;i<12;i++)if(!((out[i]>='0'&&out[i]<='9')||(out[i]>='a'&&out[i]<='f')))return false;
     return true;
 }
 bool lan_decode(const void *data,size_t length,lan_packet *out)
