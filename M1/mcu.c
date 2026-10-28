@@ -1,6 +1,6 @@
 #include "m1.h"
 #include "../common/device_status.h"
-#include "../common/json_build.h"
+#include "../common/service_mp.h"
 #include "sensor_details.h"
 #include "display_source.h"
 static m1_details_t details;
@@ -371,32 +371,34 @@ void m1_co2_capture(device_m1_co2_t *out)
         .present=source.external||m1_state.scd40.serial[0]!=0,.valid=valid,.showing=shown_co2 && valid};
     mico_rtos_unlock_mutex(&m1_lock);
 }
-json_object *m1_co2_json(void)
+static void m1_co2_write_mp(ph_writer *w)
 {
-    device_m1_co2_t c;m1_co2_capture(&c);
-    json_object *o=json_object_new_object();
-#define NUM(k,v) json_build_object_add(o,k,json_object_new_int(v))
-#define BOOL(k,v) json_build_object_add(o,k,json_object_new_boolean(v))
-    BOOL("available",c.supported && c.present);BOOL("mcu_supported",c.supported);BOOL("module_present",c.present);
-    NUM("revision",c.revision);NUM("mode",c.mode);NUM("slot",c.slot);NUM("interval_seconds",c.interval);
-    NUM("low",c.low);NUM("high",c.high);NUM("mcu_co2_ppm",c.ppm);BOOL("mcu_data_valid",c.valid);BOOL("showing_co2",c.showing);
+ device_m1_co2_t c;m1_co2_capture(&c);phw_begin(w,NULL,false);
+#define NUM(k,v) phw_u32(w,k,v)
+#define BOOL(k,v) phw_bool(w,k,v)
+ BOOL("available",c.supported&&c.present);BOOL("mcu_supported",c.supported);BOOL("module_present",c.present);
+ NUM("revision",c.revision);NUM("mode",c.mode);NUM("slot",c.slot);NUM("interval_seconds",c.interval);NUM("low",c.low);NUM("high",c.high);NUM("mcu_co2_ppm",c.ppm);BOOL("mcu_data_valid",c.valid);BOOL("showing_co2",c.showing);
 #undef NUM
 #undef BOOL
-    return o;
+ phw_end(w);
 }
-json_object *m1_co2_set(json_object *p,const char **code)
+static void m1_sensor_details_mp(ph_writer *,bool);
+bool m1_mcu_mp(const char *action,const ph_value *p,ph_writer *w,const char **code)
 {
-    *code="invalid_params";
-    const char *keys[]={"mode","slot","interval_seconds","low","high","revision"};int values[6];
-    const int hi[]={2,1,3600,65535,65535,INT32_MAX};
-    json_object_object_foreach(p,key,value){(void)value;bool found=false;for(unsigned i=0;i<6;i++)if(!strcmp(key,keys[i]))found=true;if(!found)return NULL;}
-    for(unsigned i=0;i<6;i++){json_object *v=json_object_object_get(p,keys[i]);if(!v || !json_object_is_type(v,json_type_int))return NULL;values[i]=json_object_get_int(v);if(values[i]<0 || values[i]>hi[i])return NULL;}
-    if(!values[2] || values[3]>values[4])return NULL;
-    m1_co2_source_config_t source;m1_co2_source_config_get(&source);
-    mico_rtos_lock_mutex(&m1_lock);bool available=m1_state.mcu_extended && m1_state.mcu_version_received && (source.external||m1_state.scd40.serial[0]);mico_rtos_unlock_mutex(&m1_lock);
-    if(!available){*code="unsupported";return NULL;}
-    m1_co2_config_t c={.magic=M1_CO2_MAGIC,.revision=values[5],.mode=values[0],.slot=values[1],.interval=values[2],.low=values[3],.high=values[4]};
-    *code=m1_co2_config_save(&c);return !strcmp(*code,"accepted")?m1_co2_json():NULL;
+ bool get=!strcmp(action,"co2_display.get"),set=!strcmp(action,"co2_display.set"),details_query=!strcmp(action,"sensor_details.get");
+ if(!get&&!set&&!details_query)return false;
+ *code="invalid_params";
+ if(!set){if(!phv_keys(p,""))goto invalid;if(get)m1_co2_write_mp(w);else m1_sensor_details_mp(w,true);*code="ok";return true;}
+ const char *keys[]={"mode","slot","interval_seconds","low","high","revision"};int values[6];const int hi[]={2,1,3600,65535,65535,INT32_MAX};
+ if(!phv_keys(p,"|mode||slot||interval_seconds||low||high||revision|"))goto invalid;
+ for(unsigned i=0;i<6;i++){ph_value v;int64_t n;if(!phv_get(p,keys[i],&v)||!phv_int(&v,&n)||n<0||n>hi[i])goto invalid;values[i]=(int)n;}
+ if(!values[2]||values[3]>values[4])goto invalid;
+ m1_co2_source_config_t source;m1_co2_source_config_get(&source);
+ mico_rtos_lock_mutex(&m1_lock);bool available=m1_state.mcu_extended&&m1_state.mcu_version_received&&(source.external||m1_state.scd40.serial[0]);mico_rtos_unlock_mutex(&m1_lock);
+ if(!available){*code="unsupported";goto invalid;}
+ m1_co2_config_t c={.magic=M1_CO2_MAGIC,.revision=values[5],.mode=values[0],.slot=values[1],.interval=values[2],.low=values[3],.high=values[4]};
+ *code=m1_co2_config_save(&c);if(!strcmp(*code,"accepted"))m1_co2_write_mp(w);else{phw_begin(w,NULL,false);phw_end(w);}return true;
+invalid:phw_begin(w,NULL,false);phw_end(w);return true;
 }
 
 bool m1_button_rx(const uint8_t p[20])
@@ -466,49 +468,25 @@ bool m1_music_supported(void)
 void m1_details_snapshot(m1_details_t *out)
 {mico_rtos_lock_mutex(&m1_lock);*out=details;mico_rtos_unlock_mutex(&m1_lock);}
 
-/* Snapshot under the UART lock; JSON allocation belongs to the network owner. */
-static json_object *sensor_details_json(bool diagnostics)
+/* Snapshot under UART lock; encoding is owned by the network caller. */
+static void m1_sensor_details_mp(ph_writer *w,bool diagnostics)
 {
-    m1_details_t d;uint32_t now;
-    mico_rtos_lock_mutex(&m1_lock);d=details;now=mico_rtos_get_time();mico_rtos_unlock_mutex(&m1_lock);
-    json_object *o=json_object_new_object();
-#define DB(k,v) json_build_object_add(o,k,json_object_new_boolean(v))
-    bool valid=m1_details_valid(&d,now);
-    DB("available",d.supported && valid);DB("supported",d.supported);
-    DB("fresh",d.frames[0].received && m1_details_age(&d.frames[0],now)<M1_DETAILS_STALE_MS);
-    DB("healthy",d.frames[0].received && d.frames[0].health==1);
-#undef DB
-    if(d.frames[0].received)json_build_object_add(o,"age_ms",json_object_new_int64(m1_details_age(&d.frames[0],now)));
-    else json_object_object_add(o,"age_ms",NULL);
-    json_build_object_add(o,"stale_after_ms",json_object_new_int(M1_DETAILS_STALE_MS));
-    if(valid){
-        json_object *pm=json_object_new_object();const uint8_t *raw=d.frames[0].raw;
-        const char *groups[]={"cf1_ug_m3","atmospheric_ug_m3","particles_per_0_1_l"};
-        const char *keys[]={"pm1","pm25","pm10","gt_0_3","gt_0_5","gt_1_0","gt_2_5","gt_5_0","gt_10_0"};
-        for(unsigned g=0;g<3;g++){
-            json_object *values=json_object_new_object();unsigned count=g==2?6:3;
-            for(unsigned i=0;i<count;i++)json_build_object_add(values,keys[(g==2?3:0)+i],json_object_new_int(m1_details_u16(raw+4+g*6+i*2)));
-            json_build_object_add(pm,groups[g],values);
-        }
-        json_build_object_add(pm,"error_code",json_object_new_int(raw[29]));json_build_object_add(o,"pm",pm);
-    }
-    if(!diagnostics)return o;
-    json_object *diag=json_object_new_object();
-    const char *names[]={"pm","hcho","sht","sht_status","sht_aux","hcho_probe","pm_probe"};
-    for(unsigned i=0;i<7;i++){
-        const m1_sensor_frame_t *s=&d.frames[i];json_object *v=json_object_new_object();char hex[65];
-        for(unsigned j=0;j<s->length;j++)snprintf(hex+j*2,3,"%02x",s->raw[j]);hex[s->length*2]=0;
-        json_build_object_add(v,"captured",json_object_new_boolean(s->received));
-        json_build_object_add(v,"raw_hex",json_object_new_string(hex));
-        json_build_object_add(v,"generation",json_object_new_int(s->generation));
-        json_build_object_add(v,"flags",json_object_new_int(s->flags));
-        json_build_object_add(v,"health",json_object_new_int(s->health));
-        if(s->received)json_build_object_add(v,"age_ms",json_object_new_int64(m1_details_age(s,now)));
-        else json_object_object_add(v,"age_ms",NULL);
-        json_build_object_add(diag,names[i],v);
-    }
-    json_build_object_add(o,"diagnostics",diag);return o;
+ m1_details_t d;uint32_t now;mico_rtos_lock_mutex(&m1_lock);d=details;now=mico_rtos_get_time();mico_rtos_unlock_mutex(&m1_lock);
+ phw_begin(w,NULL,false);bool valid=m1_details_valid(&d,now);
+ phw_bool(w,"available",d.supported&&valid);phw_bool(w,"supported",d.supported);
+ phw_bool(w,"fresh",d.frames[0].received&&m1_details_age(&d.frames[0],now)<M1_DETAILS_STALE_MS);phw_bool(w,"healthy",d.frames[0].received&&d.frames[0].health==1);
+ if(d.frames[0].received)phw_u32(w,"age_ms",m1_details_age(&d.frames[0],now));else phw_null(w,"age_ms");phw_u32(w,"stale_after_ms",M1_DETAILS_STALE_MS);
+ if(valid){
+  const uint8_t *raw=d.frames[0].raw;const char *groups[]={"cf1_ug_m3","atmospheric_ug_m3","particles_per_0_1_l"};const char *keys[]={"pm1","pm25","pm10","gt_0_3","gt_0_5","gt_1_0","gt_2_5","gt_5_0","gt_10_0"};phw_begin(w,"pm",false);
+  for(unsigned g=0;g<3;g++){phw_begin(w,groups[g],false);unsigned count=g==2?6:3;for(unsigned i=0;i<count;i++)phw_u32(w,keys[(g==2?3:0)+i],m1_details_u16(raw+4+g*6+i*2));phw_end(w);}phw_u32(w,"error_code",raw[29]);phw_end(w);
+ }
+ if(diagnostics){
+  const char *names[]={"pm","hcho","sht","sht_status","sht_aux","hcho_probe","pm_probe"};static const char digits[]="0123456789abcdef";
+  phw_begin(w,"diagnostics",false);
+  for(unsigned i=0;i<7;i++){
+   const m1_sensor_frame_t *s=&d.frames[i];char hex[65];for(unsigned j=0;j<s->length;j++){hex[j*2]=digits[s->raw[j]>>4];hex[j*2+1]=digits[s->raw[j]&15];}hex[s->length*2]=0;
+   phw_begin(w,names[i],false);phw_bool(w,"captured",s->received);phw_text(w,"raw_hex",hex);phw_u32(w,"generation",s->generation);phw_u32(w,"flags",s->flags);phw_u32(w,"health",s->health);
+   if(s->received)phw_u32(w,"age_ms",m1_details_age(s,now));else phw_null(w,"age_ms");phw_end(w);
+  }phw_end(w);
+ }phw_end(w);
 }
-
-json_object *m1_sensor_details_json(void){return sensor_details_json(true);}
-json_object *m1_particles_json(void){return sensor_details_json(false);}

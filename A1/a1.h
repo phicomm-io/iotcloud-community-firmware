@@ -68,8 +68,6 @@ bool a1_reset(bool full);
 void a1_state_get(a1_state_t *);
 bool a1_reboot_later(uint32_t ms);
 bool a1_upgrade_reserve(void);
-json_object *a1_json_parse(const char *, size_t);
-bool a1_control_json(const char *kind, json_object *object);
 enum { A1_CONTROL_FAN, A1_CONTROL_LIGHT, A1_CONTROL_LOCK };
 enum { A1_SET_ON=1, A1_SET_SPEED=2, A1_SET_MODE=4, A1_SET_ENABLED=8,
        A1_SET_ALWAYS=16, A1_SET_BRIGHTNESS=32, A1_SET_COLOR=64 };
@@ -80,7 +78,6 @@ typedef struct {
     uint8_t kind, on, speed, mode, enabled, always_on, brightness, red, green, blue;
 } a1_control_t;
 bool a1_control_apply(a1_control_t *, bool button, bool broadcast);
-bool a1_control_light_percent(json_object *);
 enum { A1_INPUT_BUTTON, A1_INPUT_SLIDER, A1_INPUT_NETWORK_RESET, A1_INPUT_FULL_RESET };
 bool a1_input_push(unsigned kind, unsigned key, unsigned clicks, unsigned seconds, int delta);
 void a1_input_poll(void);
@@ -121,7 +118,6 @@ json_object *a1_filter_json(void);
 
 #include "../common/phicomm_features.h"
 
-bool a1_control_local(const char *, json_object *);
 
 #include "../common/mqtt/bemfa.h"
 bool a1_mqtt_config_save(const a1_config_t *,const bemfa_config_t *);

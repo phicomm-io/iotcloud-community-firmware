@@ -1,5 +1,5 @@
 NAME := App_A1
-$(NAME)_SOURCES := main.c watchdog.c service.c features.c protocol.c control.c hardware.c network.c mqtt.c http.c ota.c ota_signature.c ota_crypto.c
+$(NAME)_SOURCES := main.c watchdog.c wire.c service.c features.c protocol.c control.c hardware.c network.c mqtt.c http.c ota.c ota_signature.c ota_crypto.c
 $(NAME)_INCLUDES := . generated
 # Keep control callees shared and bound stack growth in the fixed A1 slot.
 $(NAME)_CFLAGS += -fstack-usage -fno-inline-small-functions -fconserve-stack
