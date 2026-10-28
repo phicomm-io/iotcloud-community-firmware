@@ -24,8 +24,10 @@ void service_product_status_mp(ph_writer *w){
 }
 void service_product_capabilities_mp(ph_writer *w,const char *const *extra,bool restricted){
  phw_begin(w,NULL,false);
+ phw_text(w,"model",DEVICE_MODEL);phw_text(w,"device_id",DEVICE_ID);
+ phw_text(w,"firmware_version",DEVICE_VERSION);phw_text(w,"variant",PHICOMM_FIRMWARE_VARIANT);
  if(!restricted){
-  phw_text(w,"model",DEVICE_MODEL);phw_u32(w,"protocol",2);phw_text(w,"mqtt_protocol","tmcp");phw_u32(w,"mqtt_protocol_version",2);
+  phw_u32(w,"protocol",2);phw_text(w,"mqtt_protocol","tmcp");phw_u32(w,"mqtt_protocol_version",2);
   phw_u32(w,"wire_version",1);phw_begin(w,"wire_formats",true);phw_text(w,NULL,"msgpack");phw_end(w);phw_text(w,"default_wire_format","msgpack");
   phw_begin(w,"status_views",true);phw_text(w,NULL,"full");phw_end(w);phw_text(w,"device_language","zh-CN,en");
   phw_u32(w,"config_backup",1);phw_bool(w,"config_recovery",device_config_recovery());

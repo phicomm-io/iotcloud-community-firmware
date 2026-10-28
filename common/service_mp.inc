@@ -135,7 +135,7 @@ static ph_buf *mp_dispatch(mp_request *r,const void *raw,size_t length,bool mqtt
         if(start&&phv_get(p,"password",&v))valid=valid&&phv_text(&v,password,sizeof(password));
         if(!valid){code="invalid_params";mp_empty(&w);}
         else if(start){if(feature_lan_pair_start)feature_lan_pair_start(peer,ip,password,(unsigned)scopes,&code);else code="unsupported";mp_empty(&w);}
-        else if(feature_lan_pair_status){code=feature_lan_pair_status(peer,&w)?"ok":"invalid_params";}
+        else if(feature_lan_pair_status){code=feature_lan_pair_status(peer,&w)?"ok":"not_found";}
         else{code="unsupported";mp_empty(&w);}
         memset(password,0,sizeof(password));
     }
