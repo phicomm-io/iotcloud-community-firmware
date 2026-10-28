@@ -9,7 +9,11 @@ from pathlib import Path
 import re
 import subprocess
 
-FORBIDDEN = re.compile(r'^(?:_?json_object(?:_|$)|_?json_tokener(?:_|$)|_?json_num_(?:strtod|dtoa)|_?json_c_(?:object|version))')
+FORBIDDEN = re.compile(
+    r'^(?:_?json_(?:object|tokener|heap|number|num|build|owned|c)(?:_|$)'
+    r'|_?printbuf(?:_|$)'
+    r'|(?:ph_binary_parse|json_owned_to_wire|json_owned_to_wire_result|'
+    r'service_command_wire|service_query_wire|device_status_encode|device_status_wire)(?:[.$]|$))')
 
 
 def inspect(elf, nm):
