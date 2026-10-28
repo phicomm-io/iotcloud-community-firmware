@@ -1,0 +1,72 @@
+# RC4 UDP pairing integration evidence
+
+The local RC4 integration branch includes native pairing on A1, M1, TC1 and
+Daikin. This is source, host-test and target-build evidence. No RC4 device
+flash, live performance result or physical power-loss acceptance is claimed.
+
+## Implemented behavior
+
+- Empty or configured device password pairing exchanges an independent durable
+  peer key for a scoped, boot-local UDP token. HTTP uses separate bearer sessions.
+- Sender jobs own their inputs; successful responses must match the pending
+  peer, IP, operation and binary nonce. Address changes invalidate the old token
+  and start a fresh resume handshake at the new address.
+- Removing or reducing one peer's permission revokes all of that peer's local
+  sessions while preserving other peers and independent MQTT-issued grants.
+- Successful durable unpair requests have four bounded 30-second receipts.
+  Matching retransmissions do not repeat persistence. Incorrect peer, IP,
+  nonce or token does not match; password/recovery epoch changes and reboot
+  invalidate receipts. Failed persistence never creates a success receipt.
+- Daikin uses the same LAN v3 binary sensor packets and declared integer units
+  as MiCO. Both directions of pairing and lost-unpair-ACK recovery are exercised
+  with production functions, not hand-written replacements for those functions.
+
+## Storage and migration
+
+Daikin commits configuration and incoming/outgoing durable peer tables in a
+single NVS blob. Version 2 stores the configuration as MessagePack; version 1
+JSON envelopes and legacy configuration remain readable. The existing JSON
+backup/import format and logical configuration limits remain unchanged.
+Uncertain readback enters recovery and blocks authorization; known unchanged
+storage returns failure without replacing the live configuration.
+
+On the official IDF 4.4.7 NVS implementation with a 20 KiB NOR model, a valid
+maximum 6144-byte hub configuration, Wi-Fi/HAP data and 24 directional keys
+exposed a capacity regression in the initial JSON envelope: its 6936-byte blob
+failed the second update. The MessagePack envelope is 6177 bytes and passed
+three updates/reboots. The original configuration without pairing keys passed
+the same three-update comparison. These are host NOR simulations, not reads
+of a device's partition table. Older 16 KiB layouts require separate checks.
+
+## Verification
+
+- Integration source through `0b98efd`: 92 native regression tests passed, no
+  skips. Subsequent local-input, metrics and watchdog coverage brings the
+  canonical native set to 95 passing tests; the historical full gate still has
+  migration work and is not represented by this subset.
+- Integration `29ad292`: 7 focused Daikin pairing, auth and official NVS tests
+  passed, including valid maximum configuration, failure/reboot/reset and
+  per-byte interrupted writes for both variants. Nonempty incoming/outgoing
+  key migration was then strengthened in `c3507ad` and retested successfully.
+- Independent review reproduced the old multi-peer revocation and IP-change
+  failures, then verified the fixes. The original Daikin-to-MiCO lost-ACK
+  reproducer also passed after the shared receipt fix.
+- Both Daikin full/hub builds and A1 full/fresh-air, M1 and TC1 builds passed
+  their applicable image, stack and packaging checks after the shared fix.
+  MiCO final ELF checks reject JSON object/parser libraries. These builds still
+  use development version/frontend pins and are not release-ready RC4 images.
+
+Reproduce the official NVS comparison after preparing pinned ArduinoJson and
+the IDF dependency:
+
+```sh
+DAIKIN_NVS_IDF_SOURCE=/path/to/esp-idf-4.4.7 \
+DAIKIN_NVS_RC3_COMPARE=1 \
+python3 -m unittest DAIKIN.tests.test_lan_pairing \
+  DAIKIN.tests.test_auth_storage DAIKIN.tests.test_web_auth \
+  DAIKIN.tests.test_hub_config_storage -v
+```
+
+Before flashing: finish remaining regression migration, verify the target NVS
+layout, freeze the exact frontend pin/version and rebuild the candidate, then
+verify identity, backups and rollback artifacts for each device.
