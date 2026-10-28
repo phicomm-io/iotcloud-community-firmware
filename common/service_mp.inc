@@ -96,6 +96,10 @@ static ph_buf *mp_dispatch(mp_request *r,const void *raw,size_t length,bool mqtt
 {
     const char *action=r->action,*code="invalid_params";const ph_value *p=&r->params;
     bool query=strlen(action)>4&&!strcmp(action+strlen(action)-4,".get");
+    if((!strcmp(action,"capabilities.get")||!strcmp(action,"info.get")||!strcmp(action,"ota.status.get")||!strcmp(action,"ota.cancel"))&&!phv_keys(p,""))return service_error_mp(r->id,"invalid_params");
+    if(!strcmp(action,"status.get")){
+        ph_value view;if(!phv_keys(p,"|view|")||(phv_get(p,"view",&view)&&!phv_equal_text(&view,"full")&&!phv_equal_text(&view,"live")))return service_error_mp(r->id,"invalid_params");
+    }
     if(device_config_recovery() && !query && strcmp(action,"system.reset") && strcmp(action,"system.reboot") && strcmp(action,"wifi.scan"))return service_error_mp(r->id,"migration_required");
     if(device_config_recovery()&&!strcmp(action,"system.reset")){ph_value full;bool yes;if(!phv_get(p,"full",&full)||!phv_bool(&full,&yes)||!yes)return service_error_mp(r->id,"migration_required");}
     bool receipt=r->id[0]&&!query&&strncmp(action,"config.",7)&&strncmp(action,"wifi.",5)&&strncmp(action,"ota.",4)&&strcmp(action,"sensor.session.set");
@@ -118,7 +122,7 @@ static ph_buf *mp_dispatch(mp_request *r,const void *raw,size_t length,bool mqtt
     }else if(!strcmp(action,"info.get")&&phv_keys(p,"")){service_product_info_mp(&w);code="ok";}
 #ifdef PHICOMM_DEVICE_OTA
     else if(!strcmp(action,"ota.cancel")&&phv_keys(p,"")){code=ota_job_cancel()?"accepted":"busy";mp_empty(&w);}
-    else if((!strcmp(action,"ota.status.get")||!strcmp(action,"status.get"))&&active){ota_job_status_mp(&w);code="ok";}
+    else if(!strcmp(action,"ota.status.get")||(!strcmp(action,"status.get")&&active)){ota_job_status_mp(&w);code="ok";}
     else if(active&&strcmp(action,"ota.check.get")&&strcmp(action,"ota.sources.get")&&strcmp(action,"ota.notes.get")){code="busy";mp_empty(&w);}
 #endif
     else if(!strcmp(action,"logs.get"))mp_logs(p,&w,&code);
