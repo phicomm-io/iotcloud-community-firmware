@@ -79,7 +79,7 @@ static ph_value mp_at(ph_value o,unsigned i){ph_value v={.kind=PHV_MISSING};phv_
 static bool mp_has(ph_value v){return phv_exists(&v);}
 static bool mp_is(ph_value v,unsigned k){return v.kind==k;}
 static bool mp_integer(ph_value v){return v.kind==PHV_UINT||v.kind==PHV_NEG;}
-static int64_t mp_int(ph_value v){int64_t n=0;phv_int(&v,&n);return n;}
+static int64_t cfg_mp_integer_value(ph_value v){int64_t n=0;phv_int(&v,&n);return n;}
 static double mp_num(ph_value v){double n=0;if(v.kind==PHV_TRUE)return 1;if(v.kind!=PHV_FALSE)phv_number(&v,&n);return n;}
 static bool mp_decode_fields(ph_value o,void *data,const mp_field_t *f,unsigned n){
  if(o.kind!=PHV_MAP)return false;
@@ -153,7 +153,7 @@ static bool config_decode_mp_value(feature_config_t *c, const char *d, ph_value 
               return false;
             for (unsigned k = 0; k < 3; k++) {
               ph_value v = mp_at(rgb, k);
-              int x = mp_int(v);
+              int x = cfg_mp_integer_value(v);
               if (!mp_integer(v) || x < 0 || x > 255)
                 return false;
               t->colors[j][k] = x;
@@ -204,7 +204,7 @@ static bool config_decode_mp_value(feature_config_t *c, const char *d, ph_value 
       return false;
     ph_value v = mp_get(o, "timezone_minutes");
     if (mp_has(v)) {
-      int x = mp_int(v);
+      int x = cfg_mp_integer_value(v);
       if (!mp_integer(v) || x < -720 || x > 840)
         return false;
       c->timezone_minutes = x;
