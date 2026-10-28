@@ -30,7 +30,7 @@ python3 "$project_dir/tools/prepare_sdk.py" "$sdk_dir"
 # Binary numbers and the allocation-free HA decimal writer do not use printf float.
 python3 "$project_dir/tools/install_nano_printf_sdk.py" "$sdk_dir"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/easylink-bonjour-bounds.patch"
-python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/bonjour-lan-mdns-oom.patch"
+python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/bonjour-lan-mdns-oom.patch" "$project_dir/common/bonjour-lan-mdns-compact.patch"
 # Validate configuration recovery and commit overlays as one ordered stack.
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \
     "$project_dir/common/config-recovery-mico36.patch" \

@@ -1,0 +1,21 @@
+--- a/MiCO/system/mdns/mico_mdns.c
++++ b/MiCO/system/mdns/mico_mdns.c
+@@ -19,6 +19,18 @@
+ #include "StringUtils.h"
+ #include "SocketUtils.h"
+ 
++/* Share repeated SDK assertion output without changing its file, caller,
++ * line, message, run-time enable switch or stdio mutex ownership. The pinned
++ * debug.h implementations do not print the A/B expression arguments. */
++#if defined(DEBUG) && !defined(MICO_DISABLE_STDIO) && !defined(MICO_ASSERT_INFO_DISABLE)
++static __attribute__((noinline,noclone)) void mdns_assert_log(const char *file,unsigned line,const char *function,const char *message)
++{
++  debug_print_assert(0,NULL,message,file,line,function);
++}
++#undef debug_print_assert
++#define debug_print_assert(A,B,C,D,E,F) mdns_assert_log(D,E,F,C)
++#endif
++
+ /** "224.0.0.251" */
+ #define INADDR_MULTICAST_MDNS  ((uint32_t)0xE00000FBUL)
+ 
