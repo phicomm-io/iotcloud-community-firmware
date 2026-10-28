@@ -77,7 +77,7 @@ static bool m1_config_commit(void *opaque,const ph_auth_store *auth_store)
         mico_rtos_unlock_mutex(&config_lock); return false;
     }
     m1_config_t old = *app_config;
-    ph_auth_store auth_before=AUTH_STORE;AUTH_STORE=*auth_store;
+    const ph_auth_store *auth_before=device_local_auth()?&device_local_auth()->store:NULL;AUTH_STORE=*auth_store;
     memcpy(app_config, c, sizeof(*c));
     app_config->revision = old.revision + 1;
     feature_config_storage_t *features = &((app_storage_t *)app_config)->features;
@@ -86,7 +86,7 @@ static bool m1_config_commit(void *opaque,const ph_auth_store *auth_store)
     if (language >= 0) features->language = language;
     features->timezone_minutes = c->timezone_minutes;
     OSStatus err = mico_system_context_update(m1_context);
-    if (err != kNoErr) { AUTH_STORE=auth_before; memcpy(app_config, &old, sizeof(old)); features->timezone_minutes = old_timezone; features->language = old_language; }
+    if (err != kNoErr) { if(auth_before)AUTH_STORE=*auth_before; memcpy(app_config, &old, sizeof(old)); features->timezone_minutes = old_timezone; features->language = old_language; }
     mico_rtos_unlock_mutex(&config_lock);
     if (err != kNoErr) return false;
     mico_rtos_lock_mutex(&m1_lock);
@@ -333,9 +333,9 @@ static bool m1_reset_commit(void *opaque,const ph_auth_store *auth_store)
 
 bool m1_reset(bool full)
 {
-    ph_auth_store empty;ph_auth_store_empty(&empty);
+    const ph_auth_store *empty=ph_auth_store_empty_value();
     return device_local_auth()?ph_auth_credential_commit(device_local_auth(),"",true,m1_reset_commit,&full):
-        m1_reset_commit(&full,&empty);
+        m1_reset_commit(&full,empty);
 }
 
 void m1_state_get(m1_state_t *out)

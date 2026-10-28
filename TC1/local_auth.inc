@@ -16,11 +16,11 @@ static bool tc1_auth_password_commit(void *opaque,const ph_auth_store *store)
     const char *password=opaque;if(!tc1_config_reserve())return false;
     mico_rtos_lock_mutex(&tc1_auth_config_lock);
     char before[33];memcpy(before,user_config->web_password,33);
-    ph_auth_store previous=user_config->local_auth;
+    const ph_auth_store *previous=&device_local_auth()->store;
     tc1_status_lock();memset(user_config->web_password,0,33);
     memcpy(user_config->web_password,password,strlen(password));user_config->local_auth=*store;tc1_status_unlock();
     bool ok=!device_config_recovery()&&mico_system_context_update(sys_config)==kNoErr;
-    if(!ok){tc1_status_lock();memcpy(user_config->web_password,before,33);user_config->local_auth=previous;tc1_status_unlock();}
+    if(!ok){tc1_status_lock();memcpy(user_config->web_password,before,33);user_config->local_auth=*previous;tc1_status_unlock();}
     memset(before,0,sizeof(before));mico_rtos_unlock_mutex(&tc1_auth_config_lock);tc1_config_release();return ok;
 }
 bool tc1_auth_password_save(const char *password)

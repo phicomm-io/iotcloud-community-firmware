@@ -23,9 +23,10 @@ static bool local_auth_save(void *user,const ph_auth_store *next)
     if(!AUTH_SAVE_RESERVE())return false;
 #endif
     mico_rtos_lock_mutex(&AUTH_CONFIG_LOCK);
-    ph_auth_store before=AUTH_STORE;AUTH_STORE=*next;
+    /* Core retains the old store until this synchronous save succeeds. */
+    AUTH_STORE=*next;
     bool ok=!device_config_recovery()&&mico_system_context_update(AUTH_CONTEXT)==kNoErr;
-    if(!ok)AUTH_STORE=before;
+    if(!ok)AUTH_STORE=local_auth.store;
     mico_rtos_unlock_mutex(&AUTH_CONFIG_LOCK);
 #ifdef AUTH_SAVE_RELEASE
     AUTH_SAVE_RELEASE();
@@ -40,6 +41,7 @@ bool device_local_auth_init(void)
     if(!AUTH_INIT_CONFIG())return false;
 #endif
     if(mico_rtos_init_mutex(&local_auth_mutex)!=kNoErr)return false;
+    local_auth.store=AUTH_STORE;
     /* The old SDK CRC covers the entire partition, including the erased tail.
      * An old prefix can therefore be retained without memcpy into a new layout.
      * Unknown/newer trailer schemas are preserved in recovery, never reset. */
@@ -52,9 +54,9 @@ bool device_local_auth_init(void)
                             local_auth_unlock,local_auth_password,local_auth_save};
             local_auth_ready=ph_auth_init(&local_auth,&ops,NULL);return local_auth_ready;
         }
-        ph_auth_store empty;ph_auth_store_empty(&empty);
-        if(device_config_recovery())AUTH_STORE=empty;
-        else if(!local_auth_save(NULL,&empty))return false;
+        const ph_auth_store *empty=ph_auth_store_empty_value();
+        if(device_config_recovery())AUTH_STORE=*empty;
+        else if(!local_auth_save(NULL,empty))return false;
     }
     ph_auth_ops ops={NULL,local_auth_now,local_auth_random,local_auth_lock,
                      local_auth_unlock,local_auth_password,local_auth_save};

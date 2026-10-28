@@ -138,9 +138,9 @@ static bool a1_reset_commit(void *opaque,const ph_auth_store *auth_store)
 
 bool a1_reset(bool full)
 {
-    ph_auth_store empty;ph_auth_store_empty(&empty);
+    const ph_auth_store *empty=ph_auth_store_empty_value();
     return device_local_auth()?ph_auth_credential_commit(device_local_auth(),"",true,a1_reset_commit,&full):
-        a1_reset_commit(&full,&empty);
+        a1_reset_commit(&full,empty);
 }
 
 void a1_state_get(a1_state_t *out)
@@ -197,13 +197,13 @@ static bool a1_config_commit(void *opaque,const ph_auth_store *auth_store)
     mico_rtos_unlock_mutex(&a1_lock);
     if (!valid) { mico_rtos_unlock_mutex(&a1_config_lock); return false; }
     a1_config_t old = *a1_config;
-    ph_auth_store auth_before=AUTH_STORE;AUTH_STORE=*auth_store;
+    const ph_auth_store *auth_before=device_local_auth()?&device_local_auth()->store:NULL;AUTH_STORE=*auth_store;
     uint8_t *stored_language = &((app_storage_t *)a1_config)->features.language;
     uint8_t old_language = *stored_language;
     if (language >= 0) *stored_language = language;
     *a1_config = *c; a1_config->revision = old.revision + 1;
     bool ok = flush_locked();
-    if (!ok) { AUTH_STORE=auth_before; *a1_config = old; *stored_language = old_language; }
+    if (!ok) { if(auth_before)AUTH_STORE=*auth_before; *a1_config = old; *stored_language = old_language; }
     else {
         mico_rtos_lock_mutex(&a1_lock); a1_state.config_generation++; mico_rtos_unlock_mutex(&a1_lock);
     }

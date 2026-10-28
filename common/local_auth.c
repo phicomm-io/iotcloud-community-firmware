@@ -52,6 +52,10 @@ static void ph_auth_private_hex(const uint8_t*p,char*out) {
     }
     out[32]=0;
 }
+const ph_auth_store *ph_auth_store_empty_value(void) {
+    static const ph_auth_store empty={.magic=PH_AUTH_STORE_MAGIC,.version=PH_AUTH_STORE_VERSION};
+    return &empty;
+}
 void ph_auth_store_empty(ph_auth_store*p) {
     memset(p,0,sizeof(*p));
     p->magic=PH_AUTH_STORE_MAGIC;
@@ -355,23 +359,21 @@ bool ph_auth_password_changed(ph_auth_state*s) {
 }
 bool ph_auth_credential_commit(ph_auth_state*s,const char*password,bool force,
                                ph_auth_commit_fn commit,void*user) {
-    ph_auth_store next;
+    const ph_auth_store *next;
     bool changed,ok;
     if(!s||!password||strlen(password)>32||!commit)return false;
     ph_auth_private_lock(s);
     changed=force||strcmp(password,s->credential)!=0;
-    next=s->store;
-    if(changed)ph_auth_store_empty(&next);
-    ok=commit(user,&next);
+    next=changed?ph_auth_store_empty_value():&s->store;
+    ok=commit(user,next);
     if(ok&&changed) {
-        s->store=next;
+        s->store=*next;
         memset(s->http,0,sizeof(s->http));
         memset(s->local,0,sizeof(s->local));
         memset(s->credential,0,sizeof(s->credential));
         memcpy(s->credential,password,strlen(password));
         if(!++s->credential_epoch)++s->credential_epoch;
     }
-    memset(&next,0,sizeof(next));
     ph_auth_private_unlock(s);
     return ok;
 }
