@@ -3,6 +3,7 @@
 #include "MQTTClient.h"
 #include "../common/mqtt_cleanup.h"
 #include "../common/json_owned.h"
+#include "../common/ha_json.h"
 #include "../common/mqtt/service.h"
 #include "../common/numeric_feed.h"
 
@@ -171,12 +172,9 @@ static void ha_birth(MessageData *data)
         rediscover = true;
 }
 
-static void str(json_object *o, const char *key, const char *value)
-{ json_build_object_add(o, key, json_object_new_string(value)); }
-
 enum { MQTT_BRIGHTNESS_INDEX=5, MQTT_PRESSURE_INDEX, MQTT_PARTICLES_INDEX, MQTT_DISCOVERY_COUNT=MQTT_PARTICLES_INDEX+8 };
 
-static int discovery_build(const m1_config_t *c,unsigned index,service_mqtt_json_scope *scope)
+static int discovery_build(const m1_config_t *c,unsigned index,ha_json *o)
 {
     static const char *keys[] = {"temperature", "humidity", "formaldehyde", "pm25", "co2", "brightness", "pressure", "pm1", "pm10", "gt_0_3", "gt_0_5", "gt_1_0", "gt_2_5", "gt_5_0", "gt_10_0"};
     static const char *names[] = {"温度", "湿度", "甲醛", "PM2.5", "二氧化碳", "屏幕亮度", "气压", "PM1.0", "PM10", ">0.3 µm", ">0.5 µm", ">1.0 µm", ">2.5 µm", ">5.0 µm", ">10 µm"};
@@ -192,64 +190,53 @@ static int discovery_build(const m1_config_t *c,unsigned index,service_mqtt_json
         char topic[MQTT_TOPIC_MAX], text[MQTT_TOPIC_MAX];
         if(i>=MQTT_PARTICLES_INDEX && !particles_supported){
             mqtt_ha(&account,"sensor",keys[i],topic,sizeof(topic));
-            service_mqtt_json_end(scope);return publish(topic,"",true);
+            return publish(topic,"",true);
         }
-        json_object *o = json_object_new_object();
-        if (!o) return service_mqtt_json_error(scope, PH_MQTT_ERROR_APP_DISCOVERY_GRAPH);
-        str(o, "name", ph_i18n(device_language_get(),names[i],english[i]));
-        mqtt_leaf(&account,"state",text,sizeof(text));str(o,"json_attributes_topic",text);
-        str(o,"json_attributes_template",i == MQTT_PRESSURE_INDEX ?
+        ha_json_begin(o,NULL,false);
+        ha_json_string(o, "name", ph_i18n(device_language_get(),names[i],english[i]));
+        mqtt_leaf(&account,"state",text,sizeof(text));ha_json_string(o,"json_attributes_topic",text);
+        ha_json_string(o,"json_attributes_template",i == MQTT_PRESSURE_INDEX ?
             "{{ {\"ip\": value_json.ip, \"firmware\": value_json.version, \"barometer_valid\": value_json.barometer.valid} | tojson }}" :
             "{{ {\"ip\": value_json.ip, \"firmware\": value_json.version, \"sensor_valid\": value_json.sensor_valid} | tojson }}");
-        json_build_object_add(o, "retain", json_object_new_boolean(false));
-        mqtt_identity(&account, keys[i], text, sizeof(text)); str(o, "unique_id", text);
-        json_object *device = json_object_new_object(), *ids = json_object_new_array();
-        if (!device || !ids) {
-            if (device) json_object_put(device);
-            if (ids) json_object_put(ids);
-            json_object_put(o); return service_mqtt_json_error(scope, PH_MQTT_ERROR_APP_DISCOVERY_GRAPH);
-        }
-        mqtt_identity(&account, "", text, sizeof(text));
-        json_build_array_add(ids, json_object_new_string(text));
-        json_build_object_add(device, "identifiers", ids);
-        str(device, "name", c->name); str(device, "model", "M1 EMW3080B");
-        str(device, "manufacturer", "Phicomm"); str(device, "sw_version", M1_VERSION);
-        json_build_object_add(o, "device", device);
+        ha_json_bool(o,"retain",false);
+        mqtt_identity(&account, keys[i], text, sizeof(text)); ha_json_string(o, "unique_id", text);
+        ha_json_begin(o,"device",false);
+        ha_json_begin(o,"identifiers",true);
+        mqtt_identity(&account,"",text,sizeof(text));ha_json_string(o,NULL,text);
+        ha_json_end(o);
+        ha_json_string(o,"name",c->name);ha_json_string(o,"model","M1 EMW3080B");
+        ha_json_string(o,"manufacturer","Phicomm");ha_json_string(o,"sw_version",M1_VERSION);
+        ha_json_end(o);
         if (i != MQTT_BRIGHTNESS_INDEX) {
-            snprintf(text, sizeof(text), "%s/%s", base, i>=MQTT_PARTICLES_INDEX ? "particles" : i == MQTT_PRESSURE_INDEX ? "pressure" : i == 4 ? "co2" : "sensor"); str(o, "state_topic", text);
+            snprintf(text, sizeof(text), "%s/%s", base, i>=MQTT_PARTICLES_INDEX ? "particles" : i == MQTT_PRESSURE_INDEX ? "pressure" : i == 4 ? "co2" : "sensor"); ha_json_string(o, "state_topic", text);
             if(i>=MQTT_PARTICLES_INDEX)snprintf(text,sizeof(text),"{{ value_json.pm.%s.%s if value_json.available else none }}",i<MQTT_PARTICLES_INDEX+2?"atmospheric_ug_m3":"particles_per_0_1_l",keys[i]);
-            else snprintf(text, sizeof(text), "{{ value_json.%s }}", keys[i]); str(o, "value_template", text);
-            str(o, "unit_of_measurement", units[i]); str(o, "state_class", "measurement");
-            if (classes[i]) str(o, "device_class", classes[i]);
-            json_build_object_add(o, "expire_after", json_object_new_int(i>=MQTT_PARTICLES_INDEX ? 6 : i == MQTT_PRESSURE_INDEX ? M1_BAROMETER_STALE_MS/1000u : i == 4 ? 20 : 15));
-            json_object *availability = json_object_new_array();
-            json_object *node = json_object_new_object(), *sensor = json_object_new_object();
-            if (!availability || !node || !sensor) {
-                if (availability) json_object_put(availability);
-                if (node) json_object_put(node);
-                if (sensor) json_object_put(sensor);
-                json_object_put(o); return service_mqtt_json_error(scope, PH_MQTT_ERROR_APP_DISCOVERY_GRAPH);
-            }
-            str(node, "topic", availability_topic);
-            snprintf(text, sizeof(text), "%s/%s", base, i>=MQTT_PARTICLES_INDEX ? "particles" : i == MQTT_PRESSURE_INDEX ? "pressure_availability" : i == 4 ? "co2_availability" : "sensor_availability"); str(sensor, "topic", text);
-            if(i>=MQTT_PARTICLES_INDEX)str(sensor,"value_template","{{ 'online' if value_json.available else 'offline' }}");
-            json_build_array_add(availability, node); json_build_array_add(availability, sensor);
-            json_build_object_add(o, "availability", availability);
-            str(o, "availability_mode", "all");
+            else snprintf(text, sizeof(text), "{{ value_json.%s }}", keys[i]); ha_json_string(o, "value_template", text);
+            ha_json_string(o, "unit_of_measurement", units[i]); ha_json_string(o, "state_class", "measurement");
+            if (classes[i]) ha_json_string(o, "device_class", classes[i]);
+            ha_json_int(o,"expire_after",i>=MQTT_PARTICLES_INDEX ? 6 : i == MQTT_PRESSURE_INDEX ? M1_BAROMETER_STALE_MS/1000u : i == 4 ? 20 : 15);
+            ha_json_begin(o,"availability",true);
+            ha_json_begin(o,NULL,false);ha_json_string(o,"topic",availability_topic);ha_json_end(o);
+            ha_json_begin(o,NULL,false);
+            snprintf(text,sizeof(text),"%s/%s",base,i>=MQTT_PARTICLES_INDEX?"particles":i==MQTT_PRESSURE_INDEX?"pressure_availability":i==4?"co2_availability":"sensor_availability");
+            ha_json_string(o,"topic",text);
+            if(i>=MQTT_PARTICLES_INDEX)ha_json_string(o,"value_template","{{ 'online' if value_json.available else 'offline' }}");
+            ha_json_end(o);ha_json_end(o);
+            ha_json_string(o, "availability_mode", "all");
         } else {
-            str(o, "command_topic", command_topic);
-            snprintf(text, sizeof(text), "%s/brightness/state", base); str(o, "state_topic", text);
-            str(o, "availability_topic", availability_topic);
-            json_build_object_add(o, "min", json_object_new_int(0));
-            json_build_object_add(o, "max", json_object_new_int(100));
-            json_build_object_add(o, "step", json_object_new_int(25));
-            str(o, "mode", "slider");
-            str(o,"command_template","{\"action\":\"display.set\",\"params\":{\"brightness\":{{ value | int }}}}");
-            str(o,"value_template","{{ (value | int) * 25 }}");
-            str(o,"entity_category","config");
+            ha_json_string(o, "command_topic", command_topic);
+            snprintf(text, sizeof(text), "%s/brightness/state", base); ha_json_string(o, "state_topic", text);
+            ha_json_string(o, "availability_topic", availability_topic);
+            ha_json_int(o,"min",0);
+            ha_json_int(o,"max",100);
+            ha_json_int(o,"step",25);
+            ha_json_string(o, "mode", "slider");
+            ha_json_string(o,"command_template","{\"action\":\"display.set\",\"params\":{\"brightness\":{{ value | int }}}}");
+            ha_json_string(o,"value_template","{{ (value | int) * 25 }}");
+            ha_json_string(o,"entity_category","config");
         }
         mqtt_ha(&account, i != MQTT_BRIGHTNESS_INDEX ? "sensor" : "number", keys[i], topic, sizeof(topic));
-        int rc = service_mqtt_optional_send(publish,topic,o,true,scope);
+        ha_json_end(o);
+        int rc = ha_json_done(o)?publish(topic,o->data,true):PH_MQTT_MORE;
         if (rc != MQTT_SUCCESS) return rc;
     }
     return MQTT_SUCCESS;
@@ -263,12 +250,10 @@ static int discovery(const m1_config_t *c,unsigned index)
      * One fixed index is retried at most once/second; normal state keeps moving. */
     uint32_t now=mico_rtos_get_time();
     if(discovery_deferred && (uint32_t)(now-discovery_retry_at)<1000u)return PH_MQTT_MORE;
-    service_mqtt_json_scope scope;
+    /* Single bounded output allocation; no JSON graph or allocator lease. */
+    char *bytes=malloc(3072);
     int rc=PH_MQTT_MORE;
-    if(service_mqtt_json_begin(&scope,&mqtt_owner_thread)) {
-        rc=discovery_build(c,index,&scope);
-        service_mqtt_json_end(&scope);
-    }
+    if(bytes){ha_json writer;ha_json_init(&writer,bytes,3072);rc=discovery_build(c,index,&writer);free(bytes);}
     discovery_deferred=rc==PH_MQTT_MORE;
     if(discovery_deferred)discovery_retry_at=now;
     return rc;
