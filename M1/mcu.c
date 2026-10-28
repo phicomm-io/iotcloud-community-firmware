@@ -463,6 +463,9 @@ bool m1_music_supported(void)
     mico_rtos_unlock_mutex(&m1_lock);return supported;
 }
 
+void m1_details_snapshot(m1_details_t *out)
+{mico_rtos_lock_mutex(&m1_lock);*out=details;mico_rtos_unlock_mutex(&m1_lock);}
+
 /* Snapshot under the UART lock; JSON allocation belongs to the network owner. */
 static json_object *sensor_details_json(bool diagnostics)
 {

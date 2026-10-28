@@ -188,6 +188,7 @@ struct device_m1_co2;
 void m1_co2_capture(struct device_m1_co2 *);
 json_object *m1_co2_json(void);
 json_object *m1_sensor_details_json(void);
+void m1_details_snapshot(m1_details_t *out);
 json_object *m1_particles_json(void);
 json_object *m1_co2_set(json_object *,const char **);
 bool m1_mcu_exchange(const uint8_t *,size_t,uint8_t reply[20]);
