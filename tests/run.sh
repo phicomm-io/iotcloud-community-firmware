@@ -4,7 +4,7 @@ cd "$(dirname "$0")/.."
 root="$PWD"
 # The background JSON scenarios also compile the production SHA-256 service.
 source tests/host_hash.sh
-python3 -m unittest tests.test_msgpack_core tests.test_status_msgpack tests.test_service_mp tests.test_release_manifest_mp tests.test_http_product_mp
+python3 -m unittest tests.test_msgpack_core tests.test_status_msgpack tests.test_service_mp tests.test_release_manifest_mp tests.test_http_product_mp tests.test_mqtt_ota_mp
 python3 -m unittest tests.test_prepare_sdk tests.test_apply_sdk_patch
 python3 -m unittest tests.test_config_commit
 python3 tools/check_version.py
