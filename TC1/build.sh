@@ -14,6 +14,7 @@ export PHICOMM_WEB_OUTPUT_DIR="$project_dir/build/tc1${variant_suffix}-web"
 sdk_dir="${TC1_SDK_DIR:-$project_dir/build/tc1-sdk-3.6.4/mico-os}"
 workspace="$project_dir/build/tc1${variant_suffix}-workspace-3.6.4"
 python3 "$project_dir/tools/prepare_sdk.py" "$sdk_dir"
+python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/easylink-bonjour-bounds.patch"
 # Validate configuration recovery and commit overlays as one ordered stack.
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \
     "$project_dir/common/config-recovery-mico36.patch" \

@@ -1,5 +1,6 @@
 #define AUTOMATION_TC1
 #include "main.h"
+#include "status_guard.h"
 #include "user_gpio.h"
 #include "user_wifi.h"
 #include "user_power.h"

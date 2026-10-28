@@ -24,6 +24,7 @@ target=M1@MK3080B@moc
 mkdir -p "$tools_dir" "$workspace" "$(dirname "$sdk_dir")"
 
 python3 "$project_dir/tools/prepare_sdk.py" "$sdk_dir"
+python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/easylink-bonjour-bounds.patch"
 # Validate configuration recovery and commit overlays as one ordered stack.
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \
     "$project_dir/common/config-recovery-mico36.patch" \
