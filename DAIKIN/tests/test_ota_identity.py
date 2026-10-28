@@ -51,7 +51,9 @@ static int SHA256Result(SHA256Context *s,uint8_t *p){return !SHA256_Final(p,s);}
         # token table. Preserve the actual authorization decision and inject
         # an already validated bearer session at this boundary.
         decision='static bool authorized(httpd_req_t *req){'+http.split('static bool authorized(httpd_req_t *req){',1)[1].split('\n',1)[0]+'\n'
-        (d / 'authorization.inc').write_text(r'''static bool bearerSession(httpd_req_t *){return requestHeaders["Authorization"]=="Bearer valid-session";}
+        (d / 'authorization.inc').write_text(r'''struct ph_auth_context{};static bool localAuthReady=true;static int localAuth;
+static bool requestAuthorization(httpd_req_t *,char header[80]){const auto &value=requestHeaders["Authorization"];if(value.size()>=80)return false;memcpy(header,value.c_str(),value.size()+1);return true;}
+static bool ph_auth_http_check(int*,const char*header,ph_auth_context*){return !strcmp(header,"Bearer valid-session");}
 static esp_err_t jsonResponse(httpd_req_t *req,const char *status,const String &body){httpd_resp_set_status(req,status);httpd_resp_set_hdr(req,"Cache-Control","no-store");httpd_resp_set_type(req,"application/msgpack");return httpd_resp_send(req,body.c_str(),body.size());}
 '''+decision)
         (d / 'options.inc').write_text('static esp_err_t optionsHandler(' + http.split(
@@ -388,8 +390,8 @@ extern "C" int count(int which){
             self.assertEqual(self.convert(signed, busy=busy), 409)
             self.assertEqual(json.loads(self.lib.reply())['code'], 'busy')
             self.assertEqual(self.lib.count(0), 0)
-        self.assertEqual(self.convert(signed, recovery=True), 409)
-        self.assertEqual(json.loads(self.lib.reply())['code'], 'migration_required')
+        self.assertEqual(self.convert(signed, recovery=True), 401)
+        self.assertEqual(json.loads(self.lib.reply())['code'], 'unauthorized')
         self.assertEqual(self.lib.count(0), 0)
 
     def test_conversion_cannot_run_from_hub_or_convert_back_to_full(self):
@@ -562,6 +564,7 @@ class VariantHttpSurface(unittest.TestCase):
 #include <iostream>
 #include <string>
 #include <vector>
+static const char *deviceId="9c9c1ff76748",*version="1.0.0-rc.4";
 static bool configRecovery=false,hchoPresent=false;
 #include "capabilities.inc"
 static std::vector<std::string> routes;

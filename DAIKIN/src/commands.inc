@@ -78,9 +78,9 @@ static void state(JsonObject out){
 }
 static const char *actions[]={"status.get","config.get","capabilities.get","binding.status.get","config.set","wifi.scan","wifi.scan.get","indicator.set","co2.calibrate","system.reboot","system.reset"};
 static void capabilities(JsonObject out){
-  out["model"]="daikin";out["firmware_variant"]=DAIKIN_VARIANT;out["hardware_model"]="BRY88AX151K";out["protocol"]=2;
+  out["device_id"]=deviceId;out["model"]="daikin";out["firmware_version"]=version;out["variant"]=DAIKIN_VARIANT;out["firmware_variant"]=DAIKIN_VARIANT;out["hardware_model"]="BRY88AX151K";out["protocol"]=2;
   out["config_backup"]=1;out["config_recovery"]=configRecovery;out["device_language"]="zh-CN,en";out["mqtt_protocol"]="tmcp";out["mqtt_protocol_version"]=2;
-  out["formaldehyde_present"]=hchoPresent;out["sensor_session_protocol"]=2;out["sensor_schema"]=2;
+  out["formaldehyde_present"]=hchoPresent;out["sensor_session_protocol"]=3;out["sensor_schema"]=3;
   out["indicator_rules_supported"]=true;
 #ifndef IOTCLOUD_HUB
   out["ota_variant_conversion"]="full-to-hub";
@@ -120,14 +120,19 @@ static bool validSection(const String &section,JsonObjectConst values) {
 }
 static bool validConfig(JsonObjectConst candidate){
   #ifdef IOTCLOUD_HUB
-  if(candidate.isNull()||!knownFields(candidate,"|_version||device||auth||wifi||mqtt||climate||indicator_rules||indicator||hub|"))return false;
+  if(candidate.isNull()||!knownFields(candidate,"|_version||device||auth||wifi||mqtt||climate||indicator_rules||indicator||lan_peers||hub|"))return false;
 #else
-  if(candidate.isNull()||!knownFields(candidate,"|_version||device||auth||wifi||mqtt||climate||indicator_rules||indicator|"))return false;
+  if(candidate.isNull()||!knownFields(candidate,"|_version||device||auth||wifi||mqtt||climate||indicator_rules||indicator||lan_peers|"))return false;
 #endif
   if(candidate.containsKey("_version")&&(!candidate["_version"].is<unsigned>()||candidate["_version"].as<unsigned>()!=1))return false;
   for(JsonPairConst kv:candidate){
     String section=kv.key().c_str();
     if(section=="_version")continue;
+    if(section=="lan_peers"){
+      JsonArrayConst peers=kv.value().as<JsonArrayConst>();if(peers.isNull()||peers.size()>12)return false;
+      for(JsonObjectConst peer:peers){IPAddress address;if(peer.size()!=2||!knownFields(peer,"|peer||ip|")||!peer["peer"].is<const char*>()||!lc_peer(peer["peer"])||!address.fromString(peer["ip"]|""))return false;}
+      continue;
+    }
 #ifdef IOTCLOUD_HUB
     if(section=="hub"){if(!iotcloud::HubService::valid(kv.value()))return false;continue;}
 #endif
@@ -159,7 +164,13 @@ static String execute(const String &body,bool binary=true){
   JsonObject data=reply.createNestedObject("data");
   if(!strcmp(code,"ok")){
     if(configRecovery&&!query&&action!="system.reset"&&action!="system.reboot"&&action!="wifi.scan")code="migration_required";
-    else if(query&&params.size()!=0)code="invalid_params";
+    else if(query&&action!="lan.pair.get"&&params.size()!=0)code="invalid_params";
+    else if(action=="lan.pair"){
+      IPAddress ip;const char *peer=params["peer"]|"",*address=params["ip"]|"",*password=params["password"]|"";
+      if(!knownFields(params,"|peer||ip||password||scopes|")||params.size()!=4||!params["password"].is<const char*>()||!params["scopes"].is<unsigned>()||!ip.fromString(address))code="invalid_params";
+      else lanPairStart(peer,address,password,params["scopes"].as<unsigned>(),&code);
+    }else if(action=="lan.unpair"){if(!knownFields(params,"|peer|")||params.size()!=1)code="invalid_params";else lanUnpairStart(params["peer"]|"",&code);
+    }else if(action=="lan.pair.get"){if(!knownFields(params,"|peer|")||params.size()!=1||!lanPairStatus(params["peer"]|"",data))code="invalid_params";}
     else if(action=="status.get")state(data);
     else if(action=="binding.status.get")sessionStatus(data);
     else if(action=="capabilities.get")capabilities(data);
@@ -188,7 +199,7 @@ static String execute(const String &body,bool binary=true){
 #ifdef IOTCLOUD_HUB
       else if(action=="system.reset"&&!homeFactoryReset())code="storage_error";
 #endif
-      else if(action=="system.reset"&&!prefs.clear())code="storage_error";
+      else if(action=="system.reset"&&!resetConfiguration())code="storage_error";
       else{
 #ifdef IOTCLOUD_HUB
         if(action=="system.reset")hubRestoreChanged();

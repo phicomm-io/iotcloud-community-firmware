@@ -33,8 +33,27 @@ Sensor-v3 publishes retained `sensor/<id>/metadata` before nonretained complete
 `/state` snapshots. Descriptor revision is the present-sensor bitset plus one,
 so optional HCHO/PM10 field changes produce a new revision within a boot. The
 metadata describes field names/types/units; snapshots carry value/valid/age,
-boot, sequence and descriptor revision. Existing MQTT-authorized UDP grants
-remain required. UDP password pairing is not implemented by this lane.
+boot, sequence and descriptor revision. Native LAN uses the shared v3 typed packet codec (binary 16-byte token,
+uint32 counters, fixed milli-Celsius/milli-percent/milli-PM25, micro-HCHO and
+integer CO2 units). MQTT temporary grants remain separate from local pairing.
+
+Local UDP pairing supports empty or configured device passwords, durable
+incoming and outgoing keys, explicit resume to a boot-local token, and
+`lan.pair`, `lan.pair.get`, `lan.unpair` management actions. Sender challenges
+bind peer, source IP, operation, nonce and credential epoch; asynchronous jobs
+own their password/key/token data. A changed trusted peer IP starts a new
+challenge. A successful unpair reply can be repeated for 30 seconds only for
+the same peer/IP/nonce/token/epoch, so a lost acknowledgement does not make a
+successful revoke appear to fail. Removing an outgoing key follows a peer ACK.
+
+Configuration and both pairing directions share a versioned atomic NVS blob.
+A failed acknowledgement is resolved by exact readback: new means committed,
+old means unchanged, and any unknown state enters recovery and blocks HTTP and
+UDP authorization. Password change, reset and restore revoke local device
+sessions and both key stores; MQTT grants remain independent. Backups export
+configuration and routing addresses only, never pairing secrets. Legacy config
+keys are left untouched, so flashing older firmware can restore old credentials;
+this is a rollback boundary, not a supported credential-revocation mechanism.
 
 ## Validation boundary
 
@@ -51,3 +70,13 @@ expiry, and existing OTA/HAP/restore/OOM behavior. Full and hub builds must both
 fit their target partitions. No device flash or physical HAP acceptance is
 claimed by these host/build checks. Embedded frontend remains the pinned rc.3
 bundle until the frontend lane's lock update is integrated.
+
+The follow-up host fixtures execute actual production persistence functions
+with injected old/new/unknown outcomes, reboot, force-revoke and failed-save
+rollback for full and hub. The LAN fixture calls the actual MiCO encoder,
+DAIKIN pollSessions, shared decoder, sender and receiver. It checks unsigned
+counter boundaries, binary tokens, fixed units, invalid fields, empty/configured
+passwords, key-vs-token distinction, durable resume, outgoing unpair and lost ACK.
+Physical NVS capacity/power-loss verification and physical device pairing remain
+separate pending acceptance gates. HAP reset spans another namespace and is not
+made atomic with the management blob by this change.

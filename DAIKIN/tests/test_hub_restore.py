@@ -27,7 +27,7 @@ class HubRestore(unittest.TestCase):
         cls.tmp = tempfile.TemporaryDirectory(prefix='daikin-hub-restore-')
         root = Path(cls.tmp.name)
         parts = {
-            'save.inc': section('DAIKIN/src/main.cpp', 'static bool saveConfig(', 'static void startAccessPoint('),
+            'save.inc': section('DAIKIN/src/main.cpp', 'static bool saveConfigTransaction(DynamicJsonDocument &candidate', 'static void startAccessPoint('),
             'backup.inc': section('DAIKIN/src/http.inc', 'static String backupExecute()', 'static esp_err_t backupHandler('),
             'backup-handler.inc': section('DAIKIN/src/http.inc', 'static esp_err_t backupHandler(', 'static volatile bool otaActive'),
             'json-response.inc': section('DAIKIN/src/http.inc', 'static esp_err_t jsonResponse(', 'static bool authorized('),
@@ -41,17 +41,20 @@ class HubRestore(unittest.TestCase):
         }
         for name, text in parts.items():
             (root / name).write_text(text)
+        (root/'mbedtls').mkdir()
+        (root/'mbedtls/sha256.h').write_text('#include <openssl/sha.h>\nstatic int mbedtls_sha256_ret(const unsigned char*p,size_t n,unsigned char*out,int){return SHA256(p,n,out)?0:-1;}\n')
         includes = [ROOT / 'DAIKIN/.pio/libdeps/bry88ab-hub/ArduinoJson/src',
                     ROOT / 'DAIKIN/.pio/libdeps/bry88ab/ArduinoJson/src']
         codec = next((p for p in includes if (p / 'ArduinoJson.h').exists()), None)
         if codec is None:
             raise RuntimeError('Build one DAIKIN PlatformIO target to fetch the pinned ArduinoJson dependency')
+        subprocess.run(['cc','-fsanitize=address,undefined','-fno-pie','-c',str(ROOT/'common/local_auth.c'),'-o',str(root/'auth.o')],check=True)
         cls.binary = root / 'restore'
         subprocess.run(['c++', '-std=c++11', '-Wall', '-Wextra', '-Werror',
                         '-fsanitize=address,undefined', '-fno-omit-frame-pointer', '-fno-pie', '-no-pie',
                         '-I' + str(root), '-I' + str(ROOT / 'DAIKIN/include'), '-I' + str(codec),
                         '-I' + str(ROOT / 'common'), str(ROOT / 'DAIKIN/tests/hub/restore.cpp'),
-                        '-lcrypto', '-o', str(cls.binary)], check=True)
+                        str(root/'auth.o'), '-lcrypto', '-o', str(cls.binary)], check=True)
 
     @classmethod
     def tearDownClass(cls):

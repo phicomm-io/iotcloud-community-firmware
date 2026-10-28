@@ -34,7 +34,7 @@ int main(void){
  strcpy(cfg.name,"test name");strcpy(cfg.ssid,"test ssid");strcpy(cfg.web_password,"secret");state.wifi_connected=true;
  device_status_t frozen;device_status_full_t full;LOWER_status_capture(&frozen,&full);assert(expensive&&full.network.web_password_set&&!held);expensive=0;
  device_status_t live;LOWER_status_capture(&live,NULL);assert(!expensive&&!held);
- allow_getters=false;ph_buf*wire=encode(&frozen,&full);assert(!strstr(wire->buf,"secret"));
+ allow_getters=false;ph_buf*wire=encode(&frozen,&full);for(size_t i=0;i+6<=wire->len;i++)assert(memcmp(wire->buf+i,"secret",6));
  memset(&cfg,0xa5,sizeof(cfg));memset(&state,0xa5,sizeof(state));now=999999;memory.free_memory=1;
  ph_buf*again=encode(&frozen,&full);assert(wire->len==again->len&&!memcmp(wire->buf,again->buf,wire->len));ph_buf_free(wire);ph_buf_free(again);
  for(unsigned i=0;i<10000;i++){wire=encode(&frozen,&full);ph_buf_free(wire);}assert(!blocks);
