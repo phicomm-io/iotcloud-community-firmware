@@ -9,7 +9,8 @@ static uint32_t now(void){return clock_ms;}static uint32_t current_epoch(void){r
 static bool random_nonce(uint8_t out[16]){memset(out,sequence++,16);return true;}
 static bool load(const char *peer,char key[33],unsigned *scope){assert(!strcmp(peer,"aabbccddeeff"));if(!stored)return false;strcpy(key,saved_key);*scope=saved_scopes;return true;}
 static bool save(const char *peer,const char *key,unsigned scope,uint32_t e){assert(!strcmp(peer,"aabbccddeeff"));if(fail_save||e!=epoch)return false;strcpy(saved_key,key);saved_scopes=scope;stored=true;return true;}
-static bool send_packet(const char *ip,const void *data,size_t n){assert(!strcmp(ip,"10.0.0.2"));assert(n<=sizeof(sent_wire));memcpy(sent_wire,data,n);sent_length=n;sends++;return true;}
+static const char *expected_ip="10.0.0.2";
+static bool send_packet(const char *ip,const void *data,size_t n){assert(!strcmp(ip,expected_ip));assert(n<=sizeof(sent_wire));memcpy(sent_wire,data,n);sent_length=n;sends++;return true;}
 static lc_ops ops={"001122334455",now,current_epoch,random_nonce,load,save,send_packet};
 static void response(lc_state *s,const char *code,bool wrong_nonce,const char *ip){
  ph_value request,v;assert(phv_parse(PH_WIRE_MSGPACK,sent_wire,sent_length,&request));char op[20];assert(phv_get(&request,"op",&v)&&phv_text(&v,op,sizeof(op)));const void *nonce;size_t n;assert(phv_get(&request,"nonce",&v)&&phv_bytes(&v,&nonce,&n)&&n==16);
@@ -28,5 +29,29 @@ int main(void){lc_state state={0};const char *code;char password[33]="adminfjr";
  /* Durable failure never yields a usable token; no RAM-only pairing success. */
  assert(lc_start(&state,&ops,"aabbccddeeff","10.0.0.2","adminfjr",2,&code));lc_tick(&state,&ops);fail_save=true;response(&state,"ok",false,"10.0.0.2");assert(state.jobs[0].phase==LC_FAILED&&!strcmp(state.jobs[0].code,"storage_error"));fail_save=false;
  assert(lc_start(&state,&ops,"aabbccddeeff","10.0.0.2","adminfjr",2,&code));lc_tick(&state,&ops);for(unsigned i=0;i<3;i++){clock_ms+=1000;lc_tick(&state,&ops);}assert(state.jobs[0].phase==LC_FAILED&&!strcmp(state.jobs[0].code,"timeout")&&!state.jobs[0].password[0]);
+ /* Moving a configured peer invalidates an in-flight old-address nonce. */
+ memset(&state,0,sizeof(state));
+ assert(!lc_token(&state,&ops,"aabbccddeeff","10.0.0.2",2,token));lc_tick(&state,&ops);
+ uint8_t previous_nonce[16];memcpy(previous_nonce,state.jobs[0].nonce,16);
+ assert(!lc_token(&state,&ops,"aabbccddeeff","10.0.0.3",2,token));
+ assert(!strcmp(state.jobs[0].ip,"10.0.0.3")&&memcmp(previous_nonce,state.jobs[0].nonce,16));
+ response(&state,"ok",false,"10.0.0.2");assert(state.jobs[0].phase==LC_RESUME);
+ expected_ip="10.0.0.3";lc_tick(&state,&ops);
+ response(&state,"ok",false,"10.0.0.2");assert(state.jobs[0].phase==LC_RESUME);
+ response(&state,"ok",false,"10.0.0.3");assert(state.jobs[0].phase==LC_READY);
+ /* A ready token is unusable immediately after an address change. */
+ assert(!lc_token(&state,&ops,"aabbccddeeff","10.0.0.4",2,token));
+ for(unsigned i=0;i<16;i++)assert(!state.jobs[0].token[i]);
+ expected_ip="10.0.0.4";lc_tick(&state,&ops);
+ response(&state,"ok",false,"10.0.0.3");assert(state.jobs[0].phase==LC_RESUME);
+ response(&state,"ok",false,"10.0.0.4");assert(state.jobs[0].phase==LC_READY);
+ assert(lc_token(&state,&ops,"aabbccddeeff","10.0.0.4",2,token));
+ assert(!lc_token(&state,&ops,"aabbccddeeff","1234567890123456",2,token));assert(!strcmp(state.jobs[0].ip,"10.0.0.4"));
+ /* A stale explicit pairing password is also erased on address replacement. */
+ memset(&state,0,sizeof(state));stored=false;expected_ip="10.0.0.2";
+ assert(lc_start(&state,&ops,"aabbccddeeff","10.0.0.2","adminfjr",2,&code));lc_tick(&state,&ops);
+ assert(!lc_token(&state,&ops,"aabbccddeeff","10.0.0.3",2,token));
+ assert(state.jobs[0].phase==LC_FAILED&&!state.jobs[0].password[0]);
+ response(&state,"ok",false,"10.0.0.2");assert(!stored&&state.jobs[0].phase==LC_FAILED);
  puts("LAN pair sender identity/nonce/persistence/reboot/retry PASS");return 0;
 }
