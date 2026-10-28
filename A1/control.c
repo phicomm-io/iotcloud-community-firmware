@@ -1,11 +1,12 @@
 #include "a1.h"
 #include "../common/automation.h"
+#include "../common/service_mp.h"
 #include "../common/control_mp.h"
 #include "../common/feature_mp.h"
 #include "../common/typed_wire.h"
 extern bool feature_group_control_mp(const char *,const ph_value *);
 
-/* One schema for JSON transport validation and group encoding. Local actions
+/* One schema for borrowed transport validation and group encoding. Local actions
  * use the typed request directly and never walk this table. max=0 is boolean. */
 static const struct {
     const char *key;
