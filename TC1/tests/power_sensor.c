@@ -5,9 +5,11 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "TC1/user_power.h"
 #include "common/mqtt_account.h"
+#include "tests/sensor_mp_fixture.h"
 
 #define MQTT_SUCCESS 0
 #define PH_MQTT_MORE 2
@@ -20,7 +22,7 @@
 static struct { uint16_t power_coefficient_x100; uint32_t p_count_1_day_ago; } config={1710,0}, *user_config=&config;
 static uint64_t clock_ns;
 static uint32_t now_ms, random_value=UINT32_MAX;
-static bool random_failure, format_failure, current_session=true, ota_active;
+static bool random_failure, allocation_failure, current_session=true, ota_active;
 static unsigned random_calls, sends, attempts, powers, statuses,capabilities;
 static int send_result,synchronous_error;
 static mqtt_account_t account;
@@ -39,15 +41,12 @@ static int MicoRandomNumberRead(uint8_t *out,size_t n) {
     if(random_failure)return -1;
     memcpy(out,&random_value,n);return kNoErr;
 }
-static int json_number_format_fixed(char *out,unsigned capacity,double value,unsigned precision) {
-    if(format_failure)return -1;
-    int n=snprintf(out,capacity,"%.*f",precision,value);
-    return n>=0 && (unsigned)n<capacity?n:-1;
-}
-static int service_sender(const char *topic,const char *body,bool retained) {
-    assert(!retained && strlen(topic)<192 && strlen(body)<320);++attempts;
+static int service_sender(const char *topic,const void *body,size_t n,bool retained) {
+    assert(strlen(topic)<192 && n<512);
+    if(retained){assert(fixture_sensor_output(topic,body,n,true,"power","Power","W",0));return 0;}
+    ++attempts;fixture_sensor_output(topic,body,n,false,"power","Power","W",send_result);
     if(send_result)return send_result;
-    ++sends;printf("PUB\t%d\t%s\t%s\n",retained,topic,body);return MQTT_SUCCESS;
+    ++sends;return 0;
 }
 static bool session_current(void) { return current_session; }
 static int ota_service(const char *base) { assert(base==account.base);return MQTT_SUCCESS; }
@@ -57,17 +56,31 @@ static int snapshot_step(void) {
     if(discovery_index<12)++discovery_index;else state_index=10;
     return MQTT_SUCCESS;
 }
-static int service_mqtt_snapshot(int (*sender)(const char *,const char *,bool),const mqtt_account_t *a) {
+static int service_mqtt_snapshot(int (*sender)(const char *,const void *,size_t,bool),const mqtt_account_t *a) {
     assert(sender==service_sender && a==&account);++statuses;return MQTT_SUCCESS;
 }
-static int service_mqtt_capabilities(int (*sender)(const char *,const char *,bool),const mqtt_account_t *a) {
+static int service_mqtt_capabilities(int (*sender)(const char *,const void *,size_t,bool),const mqtt_account_t *a) {
     assert(sender==service_sender && a==&account);++capabilities;return MQTT_SUCCESS;
 }
+void *ph_wire_malloc(size_t n){return allocation_failure?NULL:malloc(n);}
 #include "production.inc"
 
 static void pulse(uint64_t at) { clock_ns=at;now_ms=(uint32_t)(at/1000000);assert(power_irq);power_irq(NULL); }
 static void sample(void) { PowerInit();pulse(100000000);pulse(1200000000);clock_ns=1300000000;now_ms=1300; }
-static void account_set(const char *user) { assert(mqtt_account_init(&account,1,"tc1",user,"AABBCCDDEEFF")); }
+static bool prime_metadata=true;
+static void account_set(const char *user) {
+ assert(mqtt_account_init(&account,1,"tc1",user,"AABBCCDDEEFF"));
+ /* Explicit successful retained descriptor phase; the assertions below retain
+  * their original state-only cadence/IRQ scope. Reconnect re-sends metadata. */
+ if(prime_metadata && !power_sensor_metadata){
+  bool handled;
+  if(power_sensor_turn)assert(!power_sensor_cycle(&handled)&&!handled);
+  assert(!power_sensor_cycle(&handled)&&handled);
+  assert(fixture_metadata);
+  assert(!power_sensor_cycle(&handled)&&!handled);
+  power_sensor_started=false;
+ }
+}
 static void cycle(void) { assert(session_cycle(NULL)==send_result); }
 static void feed_at(uint32_t at) { now_ms=at;assert(!session_cycle(NULL));assert(!session_cycle(NULL)); }
 static void next_feed(void) { feed_at(now_ms+5000); }
@@ -114,27 +127,28 @@ static void payload(void) {
     account_set("next/owner");assert(!session_initial(NULL) && capabilities==1);
     for(unsigned i=0;i<13;i++)assert(!session_cycle(NULL));
     assert(discovery_index==12 && state_index==10 && sends==3 && power_sensor_sequence==3);
-    next_feed();assert(sends==4 && random_calls==1);
+    account_set("next/owner");next_feed();assert(sends==4 && random_calls==1);
     power_sample_commit(125,now_ms+5000);next_feed();assert(sends==5 && random_calls==1);
 }
 static void counters(void) {
-    account_set("test");sample();power_sensor_boot=UINT32_MAX;power_sensor_sequence=UINT32_MAX-1;
+    power_sensor_boot=UINT32_MAX;power_sensor_sequence=UINT32_MAX-1;account_set("test");sample();
     cycle();next_feed();assert(sends==2 && !random_calls && power_sensor_sequence==1);
 }
 static void backoff(void) {
     account_set("test");sample();send_result=PH_MQTT_MORE;cycle();assert(attempts==1 && !sends);
     uint32_t start=now_ms;for(now_ms=start;now_ms-start<1000;now_ms++)assert(!session_cycle(NULL));
-    send_result=0;cycle();assert(attempts==2 && sends==1 && power_sensor_sequence==2);
+    send_result=0;cycle();assert(attempts==2 && sends==1 && power_sensor_sequence==1);
     for(now_ms=start+1001;now_ms-start<6000;now_ms++)assert(!session_cycle(NULL));
     assert(attempts==2);cycle();assert(attempts==3 && sends==2);
     now_ms+=6000;send_result=-7;assert(!session_cycle(NULL));cycle();assert(attempts==4);
 }
 static void failures(void) {
-    account_set("test");sample();random_failure=true;cycle();assert(!sends && random_calls==1);
+    prime_metadata=false;account_set("test");sample();random_failure=true;cycle();assert(!sends && random_calls==1);
     uint32_t start=now_ms;for(now_ms=start;now_ms-start<1000;now_ms++)assert(!session_cycle(NULL));
     random_failure=false;random_value=0;cycle();assert(!sends && random_calls==2);
-    now_ms+=1000;assert(!session_cycle(NULL));random_value=UINT32_MAX;format_failure=true;cycle();assert(!sends && random_calls==3);
-    now_ms+=1000;assert(!session_cycle(NULL));format_failure=false;cycle();assert(sends==1 && random_calls==3);
+    now_ms+=1000;assert(!session_cycle(NULL));random_value=UINT32_MAX;allocation_failure=true;cycle();assert(!sends && random_calls==3);
+    now_ms+=1000;assert(!session_cycle(NULL));allocation_failure=false;cycle();assert(!sends && random_calls==3 && power_sensor_metadata);
+    cycle();cycle();assert(sends==1 && random_calls==3);
 }
 static void gates(void) {
     account_set("test");sample();current_session=false;

@@ -1,7 +1,6 @@
 import os
 from pathlib import Path
 import subprocess
-from tests.sdk_json import copy_patched_json
 import tempfile
 import unittest
 
@@ -22,61 +21,43 @@ class M1BarometerTest(unittest.TestCase):
             subprocess.run([str(binary)], check=True)
 
     def test_status_json_identity_units_and_expiry(self):
-        source = (ROOT / 'common/device_status.c').read_text()
-        helpers = '#include "common/firmware_variant.h"\n#include "common/status_emit.inc"'
-        fields = source[source.index('    emit_begin(o,"barometer",false)'):source.index('    emit_int(o, "brightness_requested"')]
+        # Keep the historical case name, but exercise the complete production
+        # MP status writer. Missing readings are explicit nil in native output.
         harness = r'''
 #include <assert.h>
 #include <math.h>
 #include <string.h>
-#include <stdint.h>
-#include <stdio.h>
-#include "json.h"
-#include "common/json_build.h"
-#include "M1/barometer.h"
-HELPERS
-static json_object *snapshot(barometer_state_t state,uint32_t now) {
-    struct { struct { struct { barometer_state_t barometer; } m1; } sensor; } frozen={{{state}}}, *snapshot=&frozen;
-    char buf[2048];status_sink sink={.buf=buf,.capacity=sizeof(buf)-1},*o=&sink;
-    emit_begin(o,NULL,false);
-    FIELDS
-    emit_end(o);assert(!sink.failed);buf[sink.used]=0;
-    json_object *root=json_tokener_parse(buf);assert(root);
-    json_object *result=json_object_object_get(root,"barometer");json_object_get(result);json_object_put(root);return result;
+#include "common/device_status.h"
+static ph_buf *bytes;
+static ph_value snapshot(barometer_state_t state,uint32_t now){
+    device_status_t frozen={0};device_status_full_t full={0};
+    frozen.model=DEVICE_M1;frozen.captured=63;frozen.now_ms=now;
+    frozen.identity.version="1.0.0-rc.4";strcpy(frozen.identity.id,"aabbccddeeff");
+    frozen.sensor.m1.barometer=state;full.watchdog.fault="";full.watchdog.reset_name="unknown";
+    ph_writer writer;assert(phw_init(&writer,PH_WIRE_MSGPACK));device_status_mp(&writer,&frozen,&full);
+    ph_buf_free(bytes);bytes=phw_take(&writer);assert(bytes);ph_value root,b;
+    assert(phv_parse(PH_WIRE_MSGPACK,bytes->buf,bytes->len,&root));assert(phv_get(&root,"barometer",&b)&&b.kind==PHV_MAP);return b;
 }
-int main(void) {
-    barometer_state_t state={0};json_object *b=snapshot(state,0);
-    assert(!json_object_object_get(b,"model") && !json_object_object_get(b,"chip_id"));
-    assert(!json_object_object_get(b,"address") && !json_object_object_get(b,"pressure_hpa"));
-    assert(!json_object_object_get(b,"age_ms"));json_object_put(b);
+static ph_value get(ph_value b,const char *key){ph_value value;assert(phv_get(&b,key,&value));return value;}
+static void nil(ph_value b,const char *key){assert(get(b,key).kind==PHV_NULL);}
+static void text(ph_value b,const char *key,const char *expected){ph_value v=get(b,key);assert(phv_equal_text(&v,expected));}
+static void integer(ph_value b,const char *key,int64_t expected){ph_value v=get(b,key);int64_t n;assert(phv_int(&v,&n)&&n==expected);}
+static void valid(ph_value b,bool expected){ph_value v=get(b,"valid");bool flag;assert(phv_bool(&v,&flag)&&flag==expected);}
+int main(void){
+    barometer_state_t state={0};ph_value b=snapshot(state,0);
+    nil(b,"model");nil(b,"chip_id");nil(b,"address");nil(b,"pressure_hpa");nil(b,"age_ms");
     state=(barometer_state_t){.ready=true,.received=true,.chip_id=0x50,.address=0x77,.pressure_centi_pa=10132400};
-    b=snapshot(state,9999);
-    assert(!strcmp(json_object_get_string(json_object_object_get(b,"model")),"BMP388"));
-    assert(json_object_get_int(json_object_object_get(b,"chip_id"))==80);
-    assert(json_object_get_int(json_object_object_get(b,"address"))==119);
-    assert(fabs(json_object_get_double(json_object_object_get(b,"pressure_hpa"))-1013.24)<0.000001);
-    assert(json_object_get_boolean(json_object_object_get(b,"valid")));json_object_put(b);
-    b=snapshot(state,10000);assert(!json_object_object_get(b,"pressure_hpa"));
-    assert(!json_object_get_boolean(json_object_object_get(b,"valid")));json_object_put(b);
-    state.chip_id=0x60;state.address=0x76;b=snapshot(state,1);
-    assert(!strcmp(json_object_get_string(json_object_object_get(b,"model")),"BMP390"));json_object_put(b);
-    state.ready=false;b=snapshot(state,1);assert(!json_object_object_get(b,"pressure_hpa"));json_object_put(b);
+    b=snapshot(state,9999);text(b,"model","BMP388");integer(b,"chip_id",80);integer(b,"address",119);
+    ph_value pressure=get(b,"pressure_hpa");double n;assert(phv_number(&pressure,&n)&&fabs(n-1013.24)<0.000001);valid(b,true);
+    b=snapshot(state,10000);nil(b,"pressure_hpa");valid(b,false);
+    state.chip_id=0x60;state.address=0x76;b=snapshot(state,1);text(b,"model","BMP390");
+    state.ready=false;b=snapshot(state,1);nil(b,"pressure_hpa");
+    ph_buf_free(bytes);return 0;
 }
-'''.replace('HELPERS', helpers).replace('FIELDS', fields)
-        json_dir = Path(os.environ.get('PHICOMM_TEST_JSON_DIR', ROOT / 'build/a1-sdk/mico-os/libraries/utilities/json_c'))
+'''
         with tempfile.TemporaryDirectory() as temporary:
-            directory = Path(temporary)
-            copied = copy_patched_json(json_dir, directory / 'sdk')
-            # MiCO json-c assumes 32-bit long; adapt only the disposable host copy.
-            for file in copied.glob('*.c'):
-                file.write_text(file.read_text().replace('%ld', '%d'))
-            probe = directory / 'status.c'
-            probe.write_text(harness)
-            binary = directory / 'status'
-            command = [os.environ.get('CC', 'cc'), '-std=gnu99', '-I'+str(ROOT), '-I'+str(copied),
-                            '-I'+str(ROOT/'tests/host'), '-I'+str(ROOT/'tests/stubs'),
-                            str(probe), *map(str,copied.glob('*.c')), '-lm', '-o', str(binary)]
-            if os.environ.get('SANITIZE') == '1':
-                command += ['-g', '-fno-omit-frame-pointer', '-fsanitize=address,undefined', '-fno-pie', '-no-pie']
-            subprocess.run(command, check=True)
-            subprocess.run([str(binary)], check=True)
+            directory=Path(temporary);probe=directory/'status.c';probe.write_text(harness);binary=directory/'status'
+            command=[os.environ.get('CC','cc'),'-std=gnu99','-DPHICOMM_APPLICATION_WATCHDOG=1','-I'+str(ROOT),str(probe),
+                     *[str(ROOT/p) for p in ('common/device_status.c','common/typed_wire.c','common/wire_buffer.c')],'-lm','-o',str(binary)]
+            if os.environ.get('SANITIZE')=='1':command+=['-g','-fno-omit-frame-pointer','-fsanitize=address,undefined','-fno-pie','-no-pie']
+            subprocess.run(command,check=True);subprocess.run([str(binary)],check=True)

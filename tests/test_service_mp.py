@@ -18,10 +18,11 @@ class NativeService(unittest.TestCase):
  def run_c(self,body,runs=1,ota=False,ilp32=False,worker_prefix=None):
   with tempfile.TemporaryDirectory(prefix='service-mp-') as temporary:
    t=Path(temporary);(t/'generated').mkdir();(t/'generated/build_ota.h').write_text('')
+   (t/'version.h').write_text('extern const char *test_local_version;\n#define FIRMWARE_VERSION test_local_version\n')
    (t/'case.c').write_text((ROOT/'tests/service_mp/fixture.inc').read_text()+body)
    cmd=shlex.split(os.environ.get('CC','cc'))+['-std=gnu99','-DMOC=1','-Wall','-Wextra','-Werror','-Wno-deprecated-declarations','-Wno-misleading-indentation','-Wno-unused-function','-Wno-unused-variable','-g','-I'+str(ROOT/'tests/service_mp'),'-I'+str(t),'-I'+str(SOURCE),'-pthread']
    if ota or worker_prefix:cmd+=['-DPHICOMM_DEVICE_OTA=1']
-   if worker_prefix:cmd+=['-DTEST_ACTUAL_OTA_WORKER=1','-DFEATURE_DEVICE_A1=1','-DFIRMWARE_VERSION="1.0.0-rc.4"','-DPHICOMM_OTA_METADATA_PREFIX="'+worker_prefix+'"',str(ROOT/'tests/service_mp/ota_worker_hooks.c')]
+   if worker_prefix:cmd+=['-DTEST_ACTUAL_OTA_WORKER=1','-DFEATURE_DEVICE_A1=1','-include',str(t/'version.h'),'-DPHICOMM_OTA_METADATA_PREFIX="'+worker_prefix+'"',str(ROOT/'tests/service_mp/ota_worker_hooks.c')]
    if ilp32:cmd+=['-DTEST_ILP32_STRTOL=1','-Wl,--wrap=strtol']
    if os.environ.get('SANITIZE')=='1':cmd+=['-fsanitize=address,undefined','-fno-omit-frame-pointer','-no-pie']
    cmd += [str(t/'case.c'),str(ROOT/'tests/service_mp/ota_dispatcher.c' if ota else SOURCE/'common/service.c'),str(ROOT/'tests/service_mp/hooks.c'),str(SOURCE/'common/typed_wire.c'),str(SOURCE/'common/wire_buffer.c'),'-Wl,--wrap=malloc','-Wl,--wrap=free','-lcrypto','-lm','-o',str(t/'case')]
@@ -389,6 +390,80 @@ int main(void){
 '''
   for prefix in ['/ota/candidate','/ota/v1']:
    with self.subTest(prefix=prefix):self.run_c(body,worker_prefix=prefix)
+
+ def test_legacy_update_worker_matrix_and_admission(self):
+  """All 16 old device-update cases through real service.c, now native MP."""
+  golden=(ROOT/'tests/release_manifest_mp/publisher.msgpack').read_bytes()
+  body='\nstatic const unsigned char golden[]={'+','.join(map(str,golden))+'};\n'+r'''
+#include "mico.h"
+#include "common/ota/release_manifest.h"
+extern const char *test_local_version;
+extern bool ota_job_active(void);
+extern ph_buf *test_manifest;
+extern unsigned test_fetch_calls;
+static void manifest(const char *version,const char *model,const char *path){
+ ph_value root,v;assert(phv_parse(1,golden,sizeof(golden),&root));ph_iterator it;assert(phv_iter(&root,&it));
+ ph_writer w;assert(phw_init(&w,1));phw_begin(&w,NULL,false);char key[128],tag[80];snprintf(tag,sizeof(tag),"v%s",version);
+ while(phv_next(&it,key,&v)){
+  if(!strcmp(key,"version"))phw_text(&w,key,version);
+  else if(!strcmp(key,"tag"))phw_text(&w,key,tag);
+  else if(!strcmp(key,"model"))phw_text(&w,key,model);
+  else if(!strcmp(key,"path"))phw_text(&w,key,path);
+  else phw_value(&w,key,&v);
+ }phw_end(&w);ph_buf_free(test_manifest);test_manifest=phw_take(&w);assert(test_manifest);
+}
+static ph_buf *check_request(const char *source){
+ ph_writer w;assert(phw_init(&w,1));phw_begin(&w,NULL,false);phw_text(&w,"action","ota.check");phw_begin(&w,"params",false);
+ if(source)phw_text(&w,"source",source);phw_end(&w);phw_end(&w);return phw_take(&w);
+}
+static void check(const char *remote,const char *model,const char *path,const char *expected){
+ manifest(remote,model,path);unsigned before=test_fetch_calls,started=installs;
+ command_code(check_request("cn"),"accepted");assert(ota_job_active());
+ command_code(check_request("cn"),"busy");assert(test_fetch_calls==before);
+ ph_buf *out=service_query_mp("ota.check.get");ph_value d=data_value(out),v;bool busy;
+ assert(phv_get(&d,"busy",&v)&&phv_bool(&v,&busy)&&busy);ph_buf_free(out);
+ test_run_worker();assert(!ota_job_active()&&test_fetch_calls==before+1);
+ out=service_query_mp("ota.check.get");code(out,"ok");d=data_value(out);bool available;
+ assert(phv_get(&d,"state",&v)&&phv_equal_text(&v,expected));
+ assert(phv_get(&d,"busy",&v)&&phv_bool(&v,&busy)&&!busy);
+ assert(phv_get(&d,"available",&v)&&phv_bool(&v,&available)&&available==!strcmp(expected,"available"));
+ assert(phv_get(&d,"version",&v)&&phv_equal_text(&v,!strcmp(expected,"failed")?"":remote));ph_buf_free(out);
+ command_code(request("ota.install",NULL,-1),available?"accepted":"invalid_params");assert(installs==started+(unsigned)available);
+ if(available)assert(!strcmp(installed_url,"http://phicomm.fjrcn.cn/releases/v1.0.0/fw.bin.signed"));
+}
+int main(void){
+ static const struct{const char *local,*remote,*state;} cases[]={
+ {"1.0.0-rc-abcdef","1.0.0-123456","available"},
+ {"1.0.0-abcdef","1.0.0-rc-123456","up_to_date"},
+ {"1.0.0-rc.2-abcdef","1.0.0-rc.10-123456","available"},
+ {"1.0.0-rc.10-abcdef","1.0.0-rc.2-123456","up_to_date"},
+ {"1.0.0-rc-abcdef","1.0.0-rc.0","available"},
+ {"1.0.0-abcdef-dirty","1.0.0+metadata.1","up_to_date"},
+ {"1.0.0-rc.2+old","1.0.0-rc.2+new","up_to_date"},
+ {"0.9.27-abcdef","1.0.0-rc-123456","available"},
+ {"1.0.0-rc-abcdef","0.9.27-123456","up_to_date"},
+ {"1.0.1-abcdef","1.0.0","up_to_date"},
+ {"1.0.0-rc-abcdef","1.0.0-rc.01","failed"},
+ {"1.0.0-rc-abcdef","1.0.0-rc-garbage","failed"},
+ {"1.0.0-rc-abcdef","9.0.0-beta","failed"},
+ {"1.0.0-rc-abcdef","01.0.0","failed"},
+ {"1.0.0-rc-abcdef","4294967296.0.0","failed"},
+ {"1.0.0-unknown","2.0.0","failed"}};
+ ph_ota_version_t parsed;assert(ph_ota_version_parse("0.10.0",&parsed)&&parsed.core[1]==10);
+ assert(!ph_ota_version_parse("latest",&parsed));assert(!ph_release_path("/releases/v1/../../escape"));
+ service_init();command_code(check_request("missing"),"invalid_params");command_code(check_request(NULL),"invalid_params");command_code(check_request("invalid"),"invalid_params");assert(!ota_job_active()&&!test_fetch_calls);
+ for(unsigned i=0;i<sizeof(cases)/sizeof(*cases);i++){
+  test_local_version=cases[i].local;check(cases[i].remote,"A1","/releases/v1.0.0/fw.bin.signed",cases[i].state);
+ }
+ test_local_version="1.0.0";
+ check("9.10.0","A1","/releases/v1.0.0/fw.bin.signed","available");
+ check("0.0.0","A1","/releases/v1.0.0/fw.bin.signed","up_to_date");
+ check("9.10.0","TC1","/releases/v1.0.0/fw.bin.signed","failed");
+ check("9.10.0","A1","http://evil.invalid/fw","failed");
+ ph_buf_free(test_manifest);test_manifest=NULL;assert(!live_blocks&&total_allocations==total_frees);return 0;
+}
+'''
+  self.run_c(body,worker_prefix='/ota/candidate')
 
 class LanPairService(unittest.TestCase):
  run_c=NativeService.run_c

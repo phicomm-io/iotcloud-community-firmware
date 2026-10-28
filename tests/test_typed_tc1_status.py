@@ -1,9 +1,17 @@
-"""Actual TC1 capture, pinned SDK object layout, common encoder under ARM ABI."""
+"""Actual TC1 capture with pinned SDK layouts and direct native MP output.
+
+Normal schema is checked by test_status_views; this test owns fixed SDK source
+bounds, guard admission, post-unlock getters, secret exclusion and freezing.
+"""
+import os
 from pathlib import Path
+import shutil
+import subprocess
+import tempfile
 import unittest
-from tests import test_http_json_budget as budget
-ROOT=budget.ROOT
-function=budget.function
+from tests.test_runtime_mqtt_mp import function
+ROOT=Path(__file__).resolve().parents[1]
+
 class TypedTC1Status(unittest.TestCase):
  def test_real_sdk_capture_and_source_boundaries(self):
   capture=function((ROOT/'TC1/main.c').read_text(),'bool tc1_status_capture(')
@@ -12,8 +20,6 @@ class TypedTC1Status(unittest.TestCase):
 #include "TC1/user_wifi.h"
 #include "TC1/mqtt_server/user_mqtt_client.h"
 #include "common/device_status.h"
-#include "common/json_build.h"
-#include "json_heap.h"
 #include <assert.h>
 #include <time.h>
 #include <string.h>
@@ -39,60 +45,53 @@ static micoMemInfo_t memory;
 micoMemInfo_t *MicoGetMemoryInfo(void){getter();assert(!held);expensive++;return &memory;}
 time_t time(time_t*t){getter();assert(!held);expensive++;if(t)*t=1700000000;return 1700000000;}
 CAPTURE
-#include "common/device_status.c"
-
-#include "TC1/http_server/json_buffer.h"
-#include "common/firmware_variant.h"
-OSStatus mico_time_get_time(mico_time_t*out){*out=mico_rtos_get_time();return kNoErr;}
-char *GetSocketStatus(void){static char text[32];snprintf(text,sizeof(text),"%d,%d,%d,%d,%d,%d",user.socket_status[0],user.socket_status[1],user.socket_status[2],user.socket_status[3],user.socket_status[4],user.socket_status[5]);return text;}
-json_object *service_parse(const void*bytes,size_t n){char*p=malloc(n+1);assert(p);memcpy(p,bytes,n);p[n]=0;json_object*o=json_tokener_parse(p);free(p);return o;}
-#include "tests/http_core/legacy_tc1_status.c"
-static void equal_json(json_object*a,json_object*b){
- assert((!a)==(!b));if(!a)return;assert(json_object_get_type(a)==json_object_get_type(b));
- if(json_object_is_type(a,json_type_object)){
-  unsigned ac=0,bc=0;json_object_object_foreach(a,k,v){ac++;equal_json(v,json_object_object_get(b,k));}json_object_object_foreach(b,k2,v2){(void)k2;(void)v2;bc++;}assert(ac==bc);
- }else if(json_object_is_type(a,json_type_array)){
-  assert(json_object_array_length(a)==json_object_array_length(b));for(unsigned i=0;i<json_object_array_length(a);i++)equal_json(json_object_array_get_idx(a,i),json_object_array_get_idx(b,i));
- }else assert(!strcmp(json_object_to_json_string(a),json_object_to_json_string(b)));
-}
-
+static ph_buf *encode(const device_status_t*s,const device_status_full_t*f){ph_writer w;assert(phw_init(&w,PH_WIRE_MSGPACK));device_status_mp(&w,s,f);ph_buf*b=phw_take(&w);assert(b);return b;}
+static void text(const ph_value*root,const char*key,const char*expected){ph_value v;assert(phv_get(root,key,&v)&&phv_equal_text(&v,expected));}
+static bool contains(const ph_buf*b,const char*s){for(size_t i=0;i+strlen(s)<=b->len;i++)if(!memcmp(b->buf+i,s,strlen(s)))return true;return false;}
 int main(void){
- assert(sizeof(sys_config->micoSystemConfig.name)==32);
- assert(sizeof(sys_config->micoSystemConfig.ssid)==32);
+ assert(sizeof(sys_config->micoSystemConfig.name)==32);assert(sizeof(sys_config->micoSystemConfig.ssid)==32);
  memset(sys_config,0,sizeof(*sys_config));memset(&user,0,sizeof(user));
  memset(sys_config->micoSystemConfig.name,'N',32);memset(sys_config->micoSystemConfig.ssid,'S',32);
- strcpy(sys_config->micoSystemConfig.user_key,"SECRET_SENTINEL_MUST_NOT_ESCAPE");
- strcpy(user.mqtt_password,"MQTT_SECRET");strcpy(user.web_password,"WEB_SECRET");
+ strcpy(sys_config->micoSystemConfig.user_key,"SECRET_SENTINEL_MUST_NOT_ESCAPE");strcpy(user.mqtt_password,"MQTT_SECRET");strcpy(user.web_password,"WEB_SECRET");
  for(unsigned i=0;i<6;i++){memset(user.socket_names[i],'A'+i,sizeof(user.socket_names[i]));user.socket_status[i]=i%2;}
- memory.free_memory=30000;
- device_status_t snapshot;device_status_full_t full;
- /* Normal terminated source: compare every value/type/field to both real old
-  * builders. Object insertion order is not part of the JSON wire schema. */
- strcpy(sys_config->micoSystemConfig.name,"normal name");strcpy(sys_config->micoSystemConfig.ssid,"normal ssid");
- for(unsigned i=0;i<6;i++)strcpy(user.socket_names[i],"outlet");
- assert(tc1_status_capture(&snapshot,&full));json_object*a=device_status_encode(&snapshot,&full),*b=legacy_tc1_status_json();equal_json(a,b);json_object_put(a);json_object_put(b);
- assert(tc1_status_capture(&snapshot,NULL));a=device_status_encode(&snapshot,NULL);b=legacy_tc1_status_live_json();equal_json(a,b);json_object_put(a);json_object_put(b);
- memset(sys_config->micoSystemConfig.name,'N',32);memset(sys_config->micoSystemConfig.ssid,'S',32);
- for(unsigned i=0;i<6;i++)memset(user.socket_names[i],'A'+i,sizeof(user.socket_names[i]));expensive=0;
-
- busy=true;assert(!tc1_status_capture(&snapshot,NULL));assert(!expensive&&!held);
+ memory.free_memory=30000;device_status_t snapshot;device_status_full_t full;
+ busy=true;assert(!tc1_status_capture(&snapshot,NULL));assert(!tc1_status_capture(&snapshot,&full));assert(!expensive&&!held);
  busy=false;assert(tc1_status_capture(&snapshot,NULL));assert(!expensive&&!held);
  assert(strlen(snapshot.identity.name)==32&&!memcmp(snapshot.identity.name,sys_config->micoSystemConfig.name,32));
- json_object*live=device_status_encode(&snapshot,NULL);assert(live&&!json_object_object_get(live,"ssid"));json_object_put(live);
+ ph_value root,v;ph_writer unavailable;assert(phw_init(&unavailable,1));device_status_mp(&unavailable,&snapshot,NULL);assert(!phw_take(&unavailable)); /* public contract is full only */
  assert(tc1_status_capture(&snapshot,&full));assert(expensive==2&&!held);
  assert(strlen(full.network.ssid)==32&&!memcmp(full.network.ssid,sys_config->micoSystemConfig.ssid,32));
  for(unsigned i=0;i<6;i++)assert(strlen(full.model.tc1.socket_names[i])==63);
- allowed=false;
- json_object*o=device_status_encode(&snapshot,&full);assert(o);const char*wire=json_object_to_json_string(o);
- assert(!strstr(wire,"SECRET")&&!strstr(wire,"MQTT_SECRET")&&!strstr(wire,"WEB_SECRET"));
- assert(strlen(json_object_get_string(json_object_object_get(o,"ssid")))==32);
- char*saved=strdup(wire);json_object_put(o);
+ allowed=false;ph_buf*first=encode(&snapshot,&full);assert(phv_parse(1,first->buf,first->len,&root));
+ assert(!contains(first,"SECRET")&&!contains(first,"MQTT_SECRET")&&!contains(first,"WEB_SECRET"));
+ char expected[33];memset(expected,'S',32);expected[32]=0;text(&root,"ssid",expected);
+ assert(phv_get(&root,"socket_names",&v)&&v.kind==PHV_ARRAY&&v.count==6);
+ for(unsigned i=0;i<6;i++){char label[64];memset(label,'A'+i,63);label[63]=0;ph_value item;assert(phv_at(&v,i,&item)&&phv_equal_text(&item,label));}
+ text(&root,"model","tc1");text(&root,"device_id","aabbccddeeff");text(&root,"wifi_trial_status","idle");text(&root,"ota_state","idle");
+ assert(phv_get(&root,"socket_states",&v)&&v.count==6);for(unsigned i=0;i<6;i++){ph_value item;int64_t state;assert(phv_at(&v,i,&item)&&phv_int(&item,&state)&&state==(int64_t)(i%2));}
+ const char*flags[]={"wifi_password_set","mqtt_password_set","web_password_set","wifi_connected","mqtt_connected","child_lock"};
+ for(unsigned i=0;i<sizeof(flags)/sizeof(*flags);i++){bool yes;assert(phv_get(&root,flags[i],&v)&&phv_bool(&v,&yes)&&yes);}
+ const char*numbers[]={"utc_time","free_memory","uptime_seconds","ota_progress"};const int64_t values[]={1700000000,30000,25,0};
+ for(unsigned i=0;i<4;i++){int64_t number;assert(phv_get(&root,numbers[i],&v)&&phv_int(&v,&number)&&number==values[i]);}
  memset(sys_config,0xa5,sizeof(*sys_config));memset(&user,0xa5,sizeof(user));
- o=device_status_encode(&snapshot,&full);assert(o&&!strcmp(saved,json_object_to_json_string(o)));free(saved);json_object_put(o);
- json_heap_stats_t stats;json_heap_snapshot(&stats);assert(!stats.live_blocks);
- printf("TC1 actual SDK name/SSID32 bounded + frozen pure full/live PASS base=%u full=%u\n",(unsigned)sizeof(snapshot),(unsigned)sizeof(full));
- return 0;
+ ph_buf*second=encode(&snapshot,&full);assert(first->len==second->len&&!memcmp(first->buf,second->buf,first->len));ph_buf_free(first);ph_buf_free(second);
+ puts("TC1 SDK name/SSID32, outlet63, guarded capture, secret-free frozen native MP PASS");return 0;
 }
 '''.replace('CAPTURE',capture)
-  budget.JsonBudget().compile_arm('TC1',fixture,budget=False,product=False,host=True)
+  sdk=Path(os.environ.get('PHICOMM_TC1_SDK',ROOT/'build/tc1-sdk-3.6.4/mico-os'))
+  cc=Path(os.environ.get('ARM_CC',ROOT/'build/tc1-tools/gcc-arm-none-eabi-5_4-2016q2/bin/arm-none-eabi-gcc'))
+  qemu=shutil.which('qemu-arm') or shutil.which('qemu-arm-static')
+  self.assertTrue((sdk/'include/mico.h').is_file(),'prepare pinned TC1 SDK or set PHICOMM_TC1_SDK')
+  self.assertTrue(cc.is_file(),'prepare pinned compiler or set ARM_CC');self.assertTrue(qemu,'qemu-arm required')
+  includes=['include','platform','platform/include','platform/Cortex-M4','platform/Cortex-M4/CMSIS','platform/MCU/MW3xx','platform/MCU/MW3xx/peripherals','platform/MCU/MW3xx/interface','board/MK3031','MiCO/system','MiCO/system/include','libraries/utilities','MiCO/security','MiCO/security/TLS/mocSSL','libraries/drivers','libraries/drivers/MiCOKit_EXT']
+  includes+=['platform/MCU/MW3xx/peripherals/sdk/src/incl/'+p for p in ('sdk','platform/os/micortos','sdk/drivers','sdk/drivers/mw300','sdk/drivers/mw300/regs')]
+  flags=['-std=gnu11','-DMOC=1','-DMW310','-DCONFIG_VARIANT_MW310','-I'+str(ROOT),'-I'+str(ROOT/'TC1'),'-I'+str(ROOT/'common'),*['-I'+str(sdk/p) for p in includes]]
+  files=[str(ROOT/p) for p in ('common/device_status.c','common/typed_wire.c','common/wire_buffer.c')]
+  with tempfile.TemporaryDirectory() as tmp:
+   d=Path(tmp);source=d/'probe.c';source.write_text(fixture)
+   for host in (False,True):
+    binary=d/('probe-host' if host else 'probe-arm')
+    if host:command=[os.environ.get('CC','cc'),*flags,'-Dsize_t=size_t','-Dssize_t=ssize_t','-g','-fsanitize=address,undefined','-fno-omit-frame-pointer','-no-pie',str(source),*files,'-lm','-o',str(binary)]
+    else:command=[str(cc),*flags,'-Os','-mthumb','-mcpu=cortex-m3','-nostartfiles','--specs=nano.specs','--specs=nosys.specs','-Wl,-e,_start,-Ttext=0x10000',str(source),*files,str(ROOT/'tests/http_core/json_arm_runtime.c'),'-lm','-o',str(binary)]
+    subprocess.run(command,check=True,timeout=30);subprocess.run([str(binary)] if host else [qemu,str(binary)],check=True,timeout=30)
 if __name__=='__main__':unittest.main()

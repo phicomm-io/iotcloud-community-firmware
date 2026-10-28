@@ -5,6 +5,7 @@
 #include "mico.h"
 #include <stdio.h>
 #include <string.h>
+const char *test_local_version="1.0.0-rc.4";
 static bool claimed;
 static void (*pending_worker)(mico_thread_arg_t);
 static mico_thread_arg_t pending_arg;

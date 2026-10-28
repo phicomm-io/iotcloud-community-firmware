@@ -58,6 +58,7 @@ class Fetch(unittest.TestCase):
                             stop=min(stop,len(payload)-1);body=payload[start:stop+1]
                             status='206 Partial Content' if tls else '200 OK'
                             if fault=='ignored_range':status='200 OK'
+                            if fault=='redirect':status='302 Found'
                             lines=['HTTP/1.1 '+status,f'Content-Length: {len(body)}']
                             if tls:lines.append(f'Content-Range: bytes {start+(fault=="wrong_offset")}-{stop}/{len(payload)+(fault=="changed_total" and start>0)}')
                             if fault=='duplicate_length':lines.append(f'Content-Length: {len(body)}')
@@ -81,6 +82,12 @@ class Fetch(unittest.TestCase):
     def test_real_tls_wrong_certificate_and_http(self):
         for tls in (False,True):self.assertEqual(self.case(tls=tls).returncode,0)
         self.assertIn('127.0.0.1',self.names)
+    def test_metadata_http_redirect_and_chunked_rejected(self):
+        # Old discovery/update fixture assertions, using the actual fetch.c
+        # transport rather than substituting its result in the MP worker.
+        for fault in ('redirect','chunked'):
+            with self.subTest(fault=fault):
+                self.assertNotEqual(self.case(fault,tls=False).returncode,0)
     def test_reconnect(self):self.assertEqual(self.case('close').returncode,0)
     def test_nonblocking_returns(self):
         for fault in ('want_write','want_read','read_wants_write'):

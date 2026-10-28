@@ -109,7 +109,7 @@ int main(void){
 '''.replace('/* STARTUP */',startup).replace('/* PRODUCTION */',functions)
         with tempfile.TemporaryDirectory() as d:
             p=Path(d);(p/'probe.c').write_text(fixture)
-            sdk=ROOT/'build/tc1-sdk-3.6.4/mico-os/libraries/protocols/mqtt'
+            sdk=Path(os.environ.get('PHICOMM_TC1_SDK',ROOT/'build/tc1-sdk-3.6.4/mico-os'))/'libraries/protocols/mqtt'
             subprocess.run([os.environ.get('CC','cc'),'-std=gnu99','-pthread','-g',
                 '-fsanitize='+os.environ.get('PHICOMM_MQTT_SANITIZER','address,undefined'),'-fno-pie','-no-pie',
                 '-I'+str(ROOT/'tests/mqtt_core/stubs'),'-I'+str(ROOT/'common/mqtt'),

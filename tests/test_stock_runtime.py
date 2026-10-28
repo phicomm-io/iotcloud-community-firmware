@@ -10,28 +10,38 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def run_host(source):
-    json_dir = Path(os.environ.get('PHICOMM_TEST_JSON_DIR', ROOT / 'build/a1-sdk/mico-os/libraries/utilities/json_c'))
+    from tests.mp_fixture_vectors import header
     with tempfile.TemporaryDirectory() as directory:
         tmp = Path(directory)
-        sdk = tmp / 'sdk'
-        patched = sdk / 'libraries/utilities/json_c'
-        shutil.copytree(json_dir, patched)
-        patches = ['json-newlib-reent', 'json-printbuf-oom', 'json-allocation-safety',
-                   'json-heap-budget', 'json-newlib-nano-abi', 'json-integer-parse',
-                   'json-sized-resize', 'json-number-cache-cleanup', 'json-number-checked']
-        subprocess.run(['python3', str(ROOT/'tools/apply_sdk_patch.py'), str(sdk),
-                        *[str(ROOT/'common'/f'{name}.patch') for name in patches]], check=True)
-        subprocess.run(['python3', str(ROOT/'tools/install_json_numeric.py'), str(sdk)], check=True)
-        (tmp / 'json').symlink_to(patched, target_is_directory=True)
-        for path in (tmp / 'json').glob('*.c'):
-            path.write_text(path.read_text().replace('%ld', '%d'))
+        (tmp / 'mp_fixture_vectors.inc').write_text(header([source], {}))
         (tmp / 'test.c').write_text(source)
-        command = [os.environ.get('CC', 'cc'), '-std=gnu99', '-g', '-fsanitize=undefined,address', '-DJSON_ALLOCATION_SAFETY=1',
-                   '-I'+str(ROOT), '-I'+str(ROOT/'M1'), '-I'+str(ROOT/'tests/host'), '-I'+str(tmp/'json'),
+        command = [os.environ.get('CC', 'cc'), '-std=gnu99', '-g', '-fsanitize=undefined,address', '-no-pie',
+                   '-I'+str(ROOT), '-I'+str(ROOT/'M1'), '-I'+str(ROOT/'tests/host'), '-I'+str(tmp),
                    '-Wno-pointer-sign', str(tmp/'test.c'), str(ROOT/'M1/protocol.c'),
-                   *map(str, (tmp/'json').glob('*.c')), '-o', str(tmp/'test')]
+                   str(ROOT/'common/typed_wire.c'), str(ROOT/'common/wire_buffer.c'), '-lm', '-o', str(tmp/'test')]
         subprocess.run(command, check=True)
         subprocess.run([str(tmp/'test')], check=True)
+
+
+def run_oracle_host(source):
+    """Frozen JSON assertion oracle only; actual display business receives MP.
+
+    Separate from run_host so the stock UART/reset product fixture cannot gain
+    a hidden DOM dependency. The test-only adapter is never firmware code.
+    """
+    from tests.sdk_json import copy_patched_json
+    json_source = Path(os.environ.get('PHICOMM_TEST_JSON_DIR', ROOT/'build/a1-sdk/mico-os/libraries/utilities/json_c'))
+    with tempfile.TemporaryDirectory() as directory:
+        tmp=Path(directory);json_dir=copy_patched_json(json_source,tmp/'sdk')
+        for path in json_dir.glob('*.c'):
+            path.write_text(path.read_text().replace('%ld','%d'))
+        src=tmp/'test.c';src.write_text(source)
+        command=[os.environ.get('CC','cc'),'-std=gnu99','-g','-fsanitize=address,undefined','-no-pie',
+                 '-I'+str(ROOT),'-I'+str(ROOT/'M1'),'-I'+str(ROOT/'tests/host'),'-I'+str(json_dir),
+                 str(src),str(ROOT/'M1/protocol.c'),str(ROOT/'common/typed_wire.c'),str(ROOT/'common/wire_buffer.c'),
+                 *map(str,json_dir.glob('*.c')),'-lm','-o',str(tmp/'test')]
+        subprocess.run(command,check=True);subprocess.run([str(tmp/'test')],check=True)
+
 
 
 class StockRuntimeTest(unittest.TestCase):
@@ -41,6 +51,7 @@ class StockRuntimeTest(unittest.TestCase):
         migration = main[main.index('    bool migration_changed'):main.index('    err = mico_system_init')]
         harness = r'''
 #include "M1/m1.h"
+#include "common/device_status.h"
 #include "M1/config_legacy.h"
 #include "M1/storage.h"
 #include "common/automation.h"
@@ -199,15 +210,21 @@ void m1_scd40_tick(void){
 bool m1_scan_start(void){return false;}
 bool m1_wifi_trial(const m1_config_t *c){(void)c;return false;}
 bool m1_ota_download(const char *s){(void)s;return false;}
-json_object *m1_status_json(void){return json_object_new_object();}
-json_object *feature_json(const char *s){(void)s;return NULL;}
-int feature_set(const char *s,json_object *p,json_object **o){(void)s;(void)p;(void)o;return 400;}
-json_object *service_parse(const void *p,size_t n){char *s=strndup(p,n);json_object *o=json_tokener_parse(s);free(s);return o;}
 #define HOST_M1 1
-json_object *m1_status_live_json(void){return json_object_new_object();}
 int mico_rtos_create_thread(void *t,int p,const char *n,void (*f)(mico_thread_arg_t),unsigned stack,int arg){(void)t;(void)p;(void)n;(void)f;(void)stack;(void)arg;return 0;}
+bool feature_mp(const char*a,const ph_value*p,ph_writer*w,const char**c){(void)a;(void)p;(void)w;(void)c;return false;}
+bool feature_ntp_set_mp(const char*h,const char**c){(void)h;(void)c;return false;}
+void service_cache_changed(unsigned m){(void)m;}
+bool service_control_begin(void){return true;}void service_control_end(void){}
+void m1_status_capture(device_status_t*a,device_status_full_t*b){(void)a;(void)b;abort();}
+void device_status_mp(ph_writer*w,const device_status_t*a,const device_status_full_t*b){(void)w;(void)a;(void)b;abort();}
 #include "common/service_product.inc"
-static const char *command(const char *a,const char *params){json_object *p=json_tokener_parse(params);const char *code;json_object *o=service_product(a,p,&code);if(o)json_object_put(o);json_object_put(p);return code;}
+#include "mp_fixture_vectors.inc"
+#include "tests/host/stock_mp_assert.h"
+static const char *command(const char *a,const char *params){
+ ph_value p;bool found=false;for(unsigned i=0;i<sizeof(fixture_vectors)/sizeof(*fixture_vectors);i++)if(!strcmp(params,fixture_vectors[i].text)){assert(phv_parse(PH_WIRE_MSGPACK,fixture_vectors[i].bytes,fixture_vectors[i].length,&p));found=true;break;}assert(found);
+ ph_writer w;assert(phw_init(&w,PH_WIRE_MSGPACK));const char *code;assert(service_product_mp(a,&p,&w,&code));ph_buf*b=phw_take(&w);assert(b);ph_buf_free(b);return code;
+}
 int main(void){
  app_config=&live.base;appRestoreDefault_callback(&live,sizeof(live));
  assert(!m1_uart_buzzer(true,100));queue_ready=true;
@@ -238,6 +255,15 @@ int main(void){
  m1_state.ota_active=true;
  assert(!strcmp(command("wake_alarm.start","{}"),"busy"));
  assert(!strcmp(command("wake_alarm.stop","{}"),"accepted"));
+ /* Stop remains a local safety operation under every network/OTA gate. */
+ bool *stop_busy[]={&m1_state.ota_active,&m1_state.mcu_updating,&m1_state.wifi_trial_active,&m1_state.reboot_pending};
+ m1_state.ota_active=false;
+ for(unsigned i=0;i<4;i++){
+  *stop_busy[i]=true;m1_state.wake_alarm_active=true;m1_state.wake_alarm_until=now+60000;
+  assert(!strcmp(command("wake_alarm.stop","{\"unexpected\":1}"),"invalid_params") && m1_state.wake_alarm_active);
+  assert(!strcmp(command("wake_alarm.stop","{}"),"accepted") && !m1_state.wake_alarm_active);
+  *stop_busy[i]=false;
+ }
  for(unsigned version=1;version<=5;version++){
   appRestoreDefault_callback(&live,sizeof(live));live.base.version=version;strcpy(live.base.ssid,"keep");
   live.features.magic=FEATURE_MAGIC;live.automation.magic=AUTOMATION_MAGIC;
@@ -271,8 +297,8 @@ int main(void){
  memset(live.reserved_controller_config,0xa5,20);
  m1_alarm_config_t blank;m1_alarm_get(&blank);assert(!blank.configured && !blank.revision && !blank.reserved[1]);
  unsigned blank_attempts=threshold_attempts;alarm_sync();assert(threshold_attempts==blank_attempts);
- json_object *caps=service_product_capabilities();
- const char *caps_text=json_object_to_json_string(caps);assert(strstr(caps_text,"alarm.get") && strstr(caps_text,"alarm.set"));json_object_put(caps);
+ fixture_value *caps=service_product_capabilities();
+ const char *caps_text=fixture_description(caps);assert(strstr(caps_text,"alarm.get") && strstr(caps_text,"alarm.set"));fixture_release(caps);
  assert(!strcmp(command("alarm.get","{}"),"ok"));
  assert(!strcmp(command("alarm.get","{\"other\":1}"),"invalid_params"));
  assert(!strcmp(command("alarm.set","{}"),"invalid_params"));
@@ -309,8 +335,8 @@ int main(void){
  threshold_attempts=threshold_success=0;alarm_sync();
  assert(threshold_attempts==1 && threshold_frame[1]==5 && threshold_frame[3]==80 && threshold_frame[5]==100);
  alarm_sync();assert(threshold_attempts==1); /* no repeated successful write */
- json_object *out=m1_alarm_json();assert(json_object_get_boolean(json_object_object_get(out,"uart_sent")));
- assert(!strcmp(json_object_get_string(json_object_object_get(out,"confirmation")),"uart_send_only"));json_object_put(out);
+ fixture_value *out=m1_alarm_json();assert(fixture_bool(fixture_get(out,"uart_sent")));
+ assert(!strcmp(fixture_text(fixture_get(out,"confirmation")),"uart_send_only"));fixture_release(out);
  assert(!strcmp(command("alarm.set","{\"sensor\":\"pm25\",\"yellow\":4660,\"red\":43981,\"revision\":1}"),"accepted"));
  m1_alarm_get(&a);assert(a.configured==3 && a.hcho[0]==80 && a.pm25[1]==43981);
  assert(!m1_state.alarm_uart_sent);
@@ -346,7 +372,7 @@ int main(void){
  live=flash;m1_co2_config_get(&c);assert(c.mode==2 && c.interval==3 && c.revision==1);
  m1_state.scd40.ready=m1_state.scd40.received=true;m1_state.scd40.co2_ppm=700;m1_state.scd40.updated_ms=now;
  for(unsigned i=0;i<4;i++){now+=10;m1_mcu_tick();}
- out=m1_co2_json();assert(json_object_get_boolean(json_object_object_get(out,"available")) && json_object_get_boolean(json_object_object_get(out,"mcu_data_valid")));json_object_put(out);
+ out=m1_co2_json();assert(fixture_bool(fixture_get(out,"available")) && fixture_bool(fixture_get(out,"mcu_data_valid")));fixture_release(out);
  uint8_t req[12]={0x23,0x70,0,77,0,0,0,0,0,0,0,0x21},reply[20];
  assert(m1_mcu_exchange(req,12,reply) && reply[3]==77 && reply[5]==2);
  m1_state.ota_active=true;assert(!m1_mcu_exchange(req,12,reply));m1_state.ota_active=false;
@@ -412,7 +438,7 @@ int main(void){
  memset(&details,0,sizeof(details));
  assert(!strcmp(command("sensor_details.get","{}"),"ok"));
  assert(!strcmp(command("sensor_details.get","{\"unexpected\":1}"),"invalid_params"));
- out=m1_sensor_details_json();assert(json_object_to_json_string(out));assert(!json_object_get_boolean(json_object_object_get(out,"available")));assert(!json_object_object_get(out,"pm"));json_object_put(out);
+ out=m1_sensor_details_json();assert(fixture_description(out));assert(!fixture_bool(fixture_get(out,"available")));assert(!fixture_get(out,"pm"));fixture_release(out);
  /* Actual UART capability response, not a version comparison, opens OP10. */
  auto_waiting=true;auto_op=0;auto_sequence=42;
  uint8_t cap[20]={0x23,0x70,0,42,0,2,0xff,0xff,0,0,1,1,7,9,0,0,0,0,0,0x21};
@@ -420,12 +446,12 @@ int main(void){
  static const uint8_t pmraw[32]={0x42,0x4d,0,0x1c,0,13,0,19,0,19,0,13,0,19,0,19,8,0x94,2,0x7f,0,0x72,0,0,0,0,0,0,0x97,0,3,0x37};
  details.frames[0]=(m1_sensor_frame_t){.length=32,.flags=3,.health=1,.received=true,.at=now,.age_ms=628};
  memcpy(details.frames[0].raw,pmraw,32);
- out=m1_sensor_details_json();assert(json_object_to_json_string(out));assert(json_object_get_boolean(json_object_object_get(out,"available")));
- json_object *pm=json_object_object_get(out,"pm"),*counts=json_object_object_get(pm,"particles_per_0_1_l");
- assert(json_object_get_int(json_object_object_get(counts,"gt_0_3"))==2196);
- assert(json_object_get_int(json_object_object_get(counts,"gt_2_5"))==0);
- assert(json_object_get_int(json_object_object_get(json_object_object_get(pm,"atmospheric_ug_m3"),"pm1"))==13);json_object_put(out);
- now+=5372;out=m1_sensor_details_json();assert(!json_object_get_boolean(json_object_object_get(out,"available")));assert(!json_object_object_get(out,"pm"));json_object_put(out);
+ out=m1_sensor_details_json();assert(fixture_description(out));assert(fixture_bool(fixture_get(out,"available")));
+ fixture_value *pm=fixture_get(out,"pm"),*counts=fixture_get(pm,"particles_per_0_1_l");
+ assert(fixture_int(fixture_get(counts,"gt_0_3"))==2196);
+ assert(fixture_int(fixture_get(counts,"gt_2_5"))==0);
+ assert(fixture_int(fixture_get(fixture_get(pm,"atmospheric_ug_m3"),"pm1"))==13);fixture_release(out);
+ now+=5372;out=m1_sensor_details_json();assert(!fixture_bool(fixture_get(out,"available")));assert(!fixture_get(out,"pm"));fixture_release(out);
 
  /* Real automatic scheduler performs metadata + four chunks + verification. */
  phase=10;details=(m1_details_t){.supported=true};auto_phase=6;auto_waiting=false;auto_due=manual_until=now;
@@ -448,15 +474,15 @@ int main(void){
  m1_state.mcu_version_received=true;strcpy(m1_state.mcu_version,"0.9.3-test");
  m1_mcu_tick();assert(m1_state.mcu_alarm_schema==1 && !alarm_writes);
  m1_mcu_tick();assert(alarm_writes==1 && !alarm_reads && !m1_state.alarm_buzzer_received && alarm_device_mask==0);
- out=m1_alarm_json();assert(!json_object_get_boolean(json_object_object_get(out,"buzzer_confirmed")));json_object_put(out);
+ out=m1_alarm_json();assert(!fixture_bool(fixture_get(out,"buzzer_confirmed")));fixture_release(out);
  m1_mcu_tick();assert(alarm_reads==1 && m1_state.alarm_buzzer_received);
- out=m1_alarm_json();assert(json_object_to_json_string(out));
- assert(json_object_get_boolean(json_object_object_get(out,"buzzer_confirmed")));
- assert(!strcmp(json_object_get_string(json_object_object_get(out,"buzzer_confirmation")),"mcu_readback"));json_object_put(out);
+ out=m1_alarm_json();assert(fixture_description(out));
+ assert(fixture_bool(fixture_get(out,"buzzer_confirmed")));
+ assert(!strcmp(fixture_text(fixture_get(out,"buzzer_confirmation")),"mcu_readback"));fixture_release(out);
  const char *hcho_on="{\"sensor\":\"hcho\",\"yellow\":90,\"red\":240,\"revision\":0,\"buzzer_enabled\":true}";
  assert(!strcmp(command("alarm.set",hcho_on),"accepted"));m1_alarm_get(&a);
  assert(a.reserved[1]==1 && a.hcho[0]==90);live=flash;m1_alarm_get(&a);assert(a.reserved[1]==1);
- out=m1_alarm_json();assert(!json_object_get_boolean(json_object_object_get(out,"buzzer_confirmed")));json_object_put(out);
+ out=m1_alarm_json();assert(!fixture_bool(fixture_get(out,"buzzer_confirmed")));fixture_release(out);
  assert(!strcmp(command("alarm.set",hcho_on),"busy"));
  const char *pm25_on="{\"sensor\":\"pm25\",\"yellow\":40,\"red\":80,\"revision\":1,\"buzzer_enabled\":true}";
  preserved=live;fail_flash=true;assert(!strcmp(command("alarm.set",pm25_on),"storage_error"));fail_flash=false;
@@ -469,22 +495,22 @@ int main(void){
   m1_state.alarm_buzzer_received=false;alarm_need_read=false;auto_waiting=false;auto_due=manual_until=now;alarm_due=now;
   alarm_io_fault=fault<4?fault:0;m1_mcu_tick();
   if(fault>=4){alarm_io_fault=fault;m1_mcu_tick();}
-  out=m1_alarm_json();assert(json_object_to_json_string(out) && !json_object_get_boolean(json_object_object_get(out,"buzzer_confirmed")));json_object_put(out);
+  out=m1_alarm_json();assert(fixture_description(out) && !fixture_bool(fixture_get(out,"buzzer_confirmed")));fixture_release(out);
   for(unsigned turn=0;turn<28;turn++){now+=250;m1_mcu_tick();}
   assert(m1_state.alarm_buzzer_received && alarm_device_mask==2);
-  out=m1_alarm_json();assert(json_object_get_boolean(json_object_object_get(out,"buzzer_confirmed")));json_object_put(out);
+  out=m1_alarm_json();assert(fixture_bool(fixture_get(out,"buzzer_confirmed")));fixture_release(out);
  }
  /* Old capability data never authorizes OP20, nor invents actual OFF state. */
  unsigned before_alarms=alarm_writes+alarm_reads;
  m1_state.mcu_alarm_schema=0;m1_state.alarm_buzzer_received=false;
  for(unsigned turn=0;turn<24;turn++){now+=250;m1_mcu_tick();}
  assert(alarm_writes+alarm_reads==before_alarms);
- out=m1_alarm_json();assert(json_object_to_json_string(out));
- assert(!json_object_get_boolean(json_object_object_get(out,"buzzer_supported")));
- assert(!json_object_object_get(out,"mcu_hcho_buzzer_enabled"));
- assert(!strcmp(json_object_get_string(json_object_object_get(out,"buzzer_confirmation")),"requires_mcu_upgrade"));json_object_put(out);
+ out=m1_alarm_json();assert(fixture_description(out));
+ assert(!fixture_bool(fixture_get(out,"buzzer_supported")));
+ assert(!fixture_get(out,"mcu_hcho_buzzer_enabled"));
+ assert(!strcmp(fixture_text(fixture_get(out,"buzzer_confirmation")),"requires_mcu_upgrade"));fixture_release(out);
  m1_state.mcu_alarm_schema=1;m1_state.alarm_buzzer_received=true;m1_state.alarm_buzzer_updated_ms=now-15000;
- out=m1_alarm_json();assert(!json_object_get_boolean(json_object_object_get(out,"buzzer_confirmed")) && !json_object_object_get(out,"mcu_pm25_buzzer_enabled"));json_object_put(out);
+ out=m1_alarm_json();assert(!fixture_bool(fixture_get(out,"buzzer_confirmed")) && !fixture_get(out,"mcu_pm25_buzzer_enabled"));fixture_release(out);
  cap[1]=0x17;m1_mcu_rx(cap);assert(!m1_state.mcu_alarm_schema && !m1_state.alarm_buzzer_received && !m1_state.alarm_uart_sent);
  /* Physical reset works offline and retries rejection/storage/TX failures.
   * A duplicate must neither ACK uncommitted settings nor commit twice. */

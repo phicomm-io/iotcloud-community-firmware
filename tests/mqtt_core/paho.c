@@ -187,7 +187,7 @@ static int prepare(void *ctx,ph_mqtt_connection *spec){
   unsigned a=multi_attempt++;
   open_fail=a<6;subscribe_fail=a==6;missing_ack=a==7;inject_large=a==8;
  }
- *spec=(ph_mqtt_connection){&account,"broker","user","password","device","tx/availability",1883,50,NULL};return 1;
+ *spec=(ph_mqtt_connection){&account,"broker","user","password","device","tx/availability",1883,50,NULL,"test","full"};return 1;
 }
 static bool subscription_plan(void *ctx,unsigned i,ph_mqtt_subscription *spec){
  (void)ctx;if(i)return false;*spec=(ph_mqtt_subscription){"rx/#",QOS1,handler};return true;

@@ -36,11 +36,11 @@ class PowerSensor(unittest.TestCase):
             function(source, 'static int session_initial(') + '\n' +
             function(source, 'static int session_cycle('))
         cls.binary = build / 'power-sensor'
-        subprocess.run([os.environ.get('CC', 'cc'), '-std=gnu99', '-g', '-Wall', '-Wextra', '-Werror',
+        subprocess.run([os.environ.get('CC', 'cc'), '-std=gnu99', '-g', '-Wall', '-Wextra', '-Werror', '-Wno-misleading-indentation',
                         '-Wno-unused-parameter',
                         '-fsanitize=address,undefined', '-fno-omit-frame-pointer', '-fno-pie', '-no-pie',
                         '-I' + str(ROOT), '-I' + str(build), str(ROOT / 'TC1/tests/power_sensor.c'),
-                        '-pthread', '-lm', '-o', str(cls.binary)], check=True)
+                        str(ROOT / 'common/typed_wire.c'), str(ROOT / 'common/wire_buffer.c'), '-pthread', '-lm', '-o', str(cls.binary)], check=True)
 
     def scenario(self, name):
         result = subprocess.run([str(self.binary), name], check=True, timeout=15, capture_output=True,
@@ -51,8 +51,8 @@ class PowerSensor(unittest.TestCase):
             self.assertEqual(marker, 'PUB')
             self.assertEqual(retained, '0')
             body = json.loads(payload)
-            self.assertEqual(body['schema'], 2)
-            self.assertEqual(body['model'], 'tc1')
+            # Host observer joins separately validated retained metadata with MP state.
+            self.assertEqual(body['schema'], 3)
             self.assertEqual(body['device_id'], 'aabbccddeeff')
             for field in ('boot', 'sequence'):
                 self.assertIs(type(body[field]), int)
@@ -108,7 +108,7 @@ class PowerSensor(unittest.TestCase):
         self.assertEqual(len(messages), 5)
         self.assertEqual(messages[0][0], 'phicomm/v2/u_74657374/sensor/aabbccddeeff/state')
         self.assertEqual(messages[0][1]['sensors']['power'],
-                         dict(type='number', name='Power', value=3.109, unit='W', valid=True, age_ms=100))
+                         dict(type='number', name='Power', value=3.109090805053711, unit='W', valid=True, age_ms=100))
         self.assertEqual(messages[1][1]['sensors']['power']['age_ms'], 5100)
         self.assertFalse(messages[2][1]['sensors']['power']['valid'])
         self.assertEqual(messages[2][1]['sensors']['power']['age_ms'], 20000)
@@ -126,9 +126,9 @@ class PowerSensor(unittest.TestCase):
 
     def test_resource_retry_is_bounded_and_network_error_propagates(self):
         messages = self.scenario('backoff')
-        self.assertEqual([m[1]['sequence'] for m in messages], [2, 3])
+        self.assertEqual([m[1]['sequence'] for m in messages], [1, 2])
 
-    def test_random_zero_random_failure_and_numeric_failure_back_off(self):
+    def test_random_zero_random_failure_and_writer_allocation_failure_back_off(self):
         self.scenario('failures')
 
     def test_no_feed_for_legacy_ota_stale_session_or_initial_discovery(self):

@@ -19,7 +19,7 @@ static int pace_prepare(void *ctx, ph_mqtt_connection *spec) {
     (void)ctx;
     rx_at = rx_size = tx_size = 0;
     *spec = (ph_mqtt_connection){&account,"broker","user","password",
-        "device","tx/availability",1883,50,NULL};
+        "device","tx/availability",1883,50,NULL,"test","full"};
     return PH_MQTT_PREPARE_READY;
 }
 static int pace_initial(void *ctx) { (void)ctx; return MQTT_SUCCESS; }

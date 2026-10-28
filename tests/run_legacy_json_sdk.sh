@@ -34,6 +34,11 @@ flags=(-std=gnu99 -Wall -Wextra -Werror -Wno-misleading-indentation -Wno-unused-
 "$output/allocation"
 "${compiler[@]}" "${flags[@]}" -pthread tests/test_json_heap.c "$json_dir"/*.c -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc -Wl,--wrap=strdup -Wl,--wrap=free -o "$output/heap"
 "$output/heap"
+# Overlay replay against each pinned historical JSON SDK is also historical.
+python3 -m unittest \
+  tests.test_apply_sdk_patch.ApplySdkPatchTests.test_a1_real_json_stack_reruns_from_every_prefix \
+  tests.test_apply_sdk_patch.ApplySdkPatchTests.test_m1_real_json_stack_reruns_from_every_prefix \
+  tests.test_apply_sdk_patch.ApplySdkPatchTests.test_tc1_real_json_stack_reruns_from_every_prefix
 # Private newlib cache/stack history requires the optional pinned ARM/QEMU lane.
 # It remains available explicitly, rather than silently skipped by host CI.
 if [[ "${LEGACY_SDK_ARM:-0}" == 1 ]]; then

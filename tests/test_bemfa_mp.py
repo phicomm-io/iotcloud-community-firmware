@@ -77,16 +77,26 @@ bool tc1_automation_execute(const automation_action_t*a,bool b){return apply(a,b
 #include "common/mqtt/bemfa_config.c"
 ''' + body+r'''
 static void deliver(unsigned i,char *payload){MQTTMessage m={false,payload,strlen(payload)};MQTTString t={worker->config.topics[i]};MessageData d={&m,&t};bemfa_command(&d);memset(payload,0,strlen(payload));bemfa_dispatch(NULL);}
-int main(void){bemfa_defaults(&live,"a1","aabbccddeeff");live.enabled=1;worker->config=live;
+int main(void){
+#ifdef BEMFA_TC1
+ bemfa_defaults(&live,"tc1","aabbccddeeff");
+#else
+ bemfa_defaults(&live,"a1","aabbccddeeff");
+#endif
+ live.enabled=1;worker->config=live;
  char bytes[8]="on";deliver(0,bytes);assert(calls==1&&last.value==1);
 #ifdef BEMFA_TC1
  assert(last.kind==AUTO_OUTLET&&last.target==0);
+ for(unsigned i=0;i<6;i++){strcpy(bytes,"on");deliver(i,bytes);assert(last.kind==AUTO_OUTLET&&last.target==i&&last.value);strcpy(bytes,"off");deliver(i,bytes);assert(!last.value);}
 #else
  assert(last.kind==AUTO_FAN&&last.speed==0);
- strcpy(bytes,"on#3");deliver(0,bytes);assert(last.speed==75);
+ const unsigned speeds[]={20,50,75,100};
+ for(unsigned i=0;i<4;i++){snprintf(bytes,sizeof(bytes),"on#%u",i+1);deliver(0,bytes);assert(last.kind==AUTO_FAN&&last.speed==speeds[i]&&last.value&&!last.reserved);}
+ strcpy(bytes,"off");deliver(0,bytes);assert(!last.value&&last.speed==0);
+ strcpy(bytes,"on#50");deliver(1,bytes);assert(last.kind==AUTO_LIGHT&&last.value&&last.speed==50);
  strcpy(bytes,"on");deliver(1,bytes);assert(last.kind==AUTO_LIGHT&&last.speed==255);
 #endif
- unsigned before=calls;network=false;strcpy(bytes,"on");deliver(0,bytes);assert(calls==before);network=true;
+ unsigned before=calls;strcpy(bytes,"on#bad");deliver(0,bytes);assert(calls==before);network=false;strcpy(bytes,"on");deliver(0,bytes);assert(calls==before);network=true;
  MQTTMessage m={false,"off",3};MQTTString t={worker->config.topics[0]};MessageData d={&m,&t};
  bemfa_command(&d);session_generation++;bemfa_dispatch(NULL);assert(calls==before);
  bemfa_command(&d);live.revision++;bemfa_dispatch(NULL);assert(calls==before);worker->config=live;

@@ -10,7 +10,7 @@ import unittest
 from tools.apply_sdk_patch import apply_stack
 
 ROOT = Path(__file__).resolve().parents[1]
-SDK = ROOT / 'build/tc1-sdk-3.6.4/mico-os'
+SDK = Path(os.environ.get('PHICOMM_TC1_SDK', ROOT / 'build/tc1-sdk-3.6.4/mico-os'))
 
 
 class MQTTBufferStorage(unittest.TestCase):

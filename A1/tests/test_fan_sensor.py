@@ -33,10 +33,10 @@ class FanSensor(unittest.TestCase):
         cls.binaries = []
         for fresh in (False, True):
             binary = build / ('fresh-fan-sensor' if fresh else 'fan-sensor')
-            subprocess.run([os.environ.get('CC', 'cc'), '-std=gnu99', '-g', '-Wall', '-Wextra', '-Werror',
+            subprocess.run([os.environ.get('CC', 'cc'), '-std=gnu99', '-g', '-Wall', '-Wextra', '-Werror', '-Wno-misleading-indentation',
                             '-fsanitize=address,undefined', '-fno-omit-frame-pointer', '-fno-pie', '-no-pie',
                             *(['-DA1_FRESH_AIR'] if fresh else []), '-I' + str(ROOT), '-I' + str(build),
-                            str(ROOT / 'A1/tests/fan_sensor.c'), '-o', str(binary)], check=True)
+                            str(ROOT / 'A1/tests/fan_sensor.c'), str(ROOT / 'common/typed_wire.c'), str(ROOT / 'common/wire_buffer.c'), '-lm', '-o', str(binary)], check=True)
             cls.binaries.append(binary)
 
     def scenario(self, name):
@@ -50,7 +50,8 @@ class FanSensor(unittest.TestCase):
                     marker, retained, topic, payload = line.split('\t', 3)
                     self.assertEqual((marker, retained), ('PUB', '0'))
                     body = json.loads(payload)
-                    self.assertEqual((body['schema'], body['model'], body['device_id']), (2, 'a1', 'aabbccddeeff'))
+                    # Host observer joins separately validated retained metadata with MP state.
+                    self.assertEqual((body['schema'], body['device_id']), (3, 'aabbccddeeff'))
                     for field in ('boot', 'sequence'):
                         self.assertIs(type(body[field]), int)
                         self.assertTrue(0 < body[field] <= 0xffffffff)
@@ -91,7 +92,7 @@ class FanSensor(unittest.TestCase):
 
     def test_resource_retry_and_fatal_error_propagation(self):
         for messages in self.scenario('backoff'):
-            self.assertEqual([m[1]['sequence'] for m in messages], [2, 3])
+            self.assertEqual([m[1]['sequence'] for m in messages], [1, 2])
 
     def test_failed_or_zero_random_is_bounded_and_never_reuses_boot(self):
         self.scenario('failures')

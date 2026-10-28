@@ -1,10 +1,9 @@
-"""Production optional graph attribution, allocator and encoder negative controls."""
+"""Native optional work fairness, isolated writer failures and retry controls."""
 import os
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
-from tests.sdk_json import copy_patched_json
 from tests.test_http_json_budget import function
 ROOT=Path(__file__).resolve().parents[1]
 class OptionalJson(unittest.TestCase):
@@ -16,12 +15,13 @@ class OptionalJson(unittest.TestCase):
 #include <stdbool.h>
 #include <assert.h>
 #include <stddef.h>
+#include <stdlib.h>
 #define MQTT_SUCCESS 0
 #define PH_MQTT_MORE 2
 #define PH_MQTT_RECONFIGURE 1
 typedef struct {unsigned revision,speed;bool fan_on;}a1_config_t;
 typedef struct {bool wifi_connected,led_visible;}mqtt_state_t;
-typedef struct {unsigned token,claim;}service_mqtt_json_scope;
+typedef struct {unsigned unused;}ha_json;
 typedef unsigned mico_thread_t;
 typedef struct {unsigned n;}a1_filter_storage_t;
 static mico_thread_t mqtt_owner_thread;
@@ -34,11 +34,12 @@ static uint32_t discovery_retry_at,now,filter_sent_at;
 static unsigned attempts,builds,normal,features,discovery_index,feature_revision;
 static unsigned count,state_index,state_pending,state_seen,revision,old_speed;
 static a1_filter_storage_t sent_filter;
-static char base[1],feature_filters[1];static int publish,account;
+static char base[1],feature_filters[1];static int publish,publish_bytes,account;
 static uint32_t mico_rtos_get_time(void){return now;}
-static bool service_mqtt_json_begin(service_mqtt_json_scope*s,mico_thread_t*t){(void)s;(void)t;attempts++;return !deny;}
-static void service_mqtt_json_end(service_mqtt_json_scope*s){(void)s;}
-static int discovery_build(const a1_config_t*c,unsigned i,service_mqtt_json_scope*s){(void)c;(void)s;assert(i==builds);builds++;return 0;}
+static void *probe_malloc(size_t n){attempts++;return deny?NULL:malloc(n);}
+#define malloc probe_malloc
+static void ha_json_init(ha_json *w,void *data,size_t n){(void)w;(void)data;(void)n;}
+static int discovery_build(const a1_config_t*c,unsigned i,ha_json*s){(void)c;(void)s;assert(i==builds);builds++;return 0;}
 static void ota_job_poll(void){}
 static int ota_service(const char*b){(void)b;return 0;}
 static bool ota_job_active(void){return false;}
@@ -88,6 +89,9 @@ int main(void){
         cycle=function((ROOT/'M1/mqtt.c').read_text(),'static int session_cycle(')
         cycle='static int publish_typed_sensors(const void *s,uint32_t now){(void)s;(void)now;return MQTT_SUCCESS;}\n'+cycle
         fixture=r'''
+#include "common/typed_wire.h"
+#include "common/mqtt_account.h"
+typedef int (*service_mqtt_sender)(const char*,const void*,size_t,bool);
 #include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -109,16 +113,11 @@ static unsigned m1_lock,particles_at,mqtt_owner_thread,particle_attempts;
 static struct {bool mcu_sensor_details;}m1_state;
 static void mico_rtos_lock_mutex(unsigned *m){(void)m;}
 static void mico_rtos_unlock_mutex(unsigned *m){(void)m;}
-typedef unsigned service_mqtt_json_scope;
-typedef void json_object;
-#define MQTT_TOPIC_MAX 64
-static bool service_mqtt_json_begin(service_mqtt_json_scope *s,unsigned *owner){(void)s;(void)owner;particle_attempts++;return false;}
-static json_object *m1_particles_json(void){assert(0);return NULL;}
-static void mqtt_leaf(int *a,const char *leaf,char *out,unsigned n){(void)a;(void)leaf;(void)out;(void)n;assert(0);}
-static int service_mqtt_optional_send(int p,const char *topic,json_object *o,bool retain,service_mqtt_json_scope *s){(void)p;(void)topic;(void)o;(void)retain;(void)s;assert(0);return -1;}
-static void service_mqtt_json_end(service_mqtt_json_scope *s){(void)s;assert(0);}
+static int ha_particles(void){particle_attempts++;return PH_MQTT_MORE;}
+static int ha_state(void){return MQTT_SUCCESS;}
 static unsigned feature_revision,count,discovery_index=MQTT_DISCOVERY_COUNT,initial_index=2,connect_sequence,sequence,co2_sequence,pressure_sequence,snapshot_at,now;
-static int old_fresh=-1,old_co2_fresh=-1,old_pressure_fresh=-1,old_brightness=-1,publish,account;
+static int old_fresh=-1,old_co2_fresh=-1,old_pressure_fresh=-1,old_brightness=-1,publish;
+static mqtt_account_t account;
 static char base[1],feature_filters[1];
 static unsigned snapshots,sensors,features;static int snapshot_result=PH_MQTT_MORE;
 static bool connection_ok=true,filters_ok=true;
@@ -126,7 +125,21 @@ static uint32_t mico_rtos_get_time(void){return now;}
 static void ota_job_poll(void){}
 static bool ota_job_active(void){return false;}
 static int ota_service(const char*x){(void)x;return 0;}
-static int service_mqtt_snapshot(int p,int*a){(void)p;(void)a;snapshots++;return snapshot_result;}
+static bool snapshot_deferred,capabilities_pending;
+static uint32_t snapshot_retry_at;
+#define PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED 9
+static int ph_mqtt_resource_ready(void){return MQTT_SUCCESS;}
+static int publish_bytes(const char *topic,const void *data,size_t length,bool retained){
+ assert(strstr(topic,"/state")&&retained);ph_value v;assert(phv_parse(PH_WIRE_MSGPACK,data,length,&v)&&v.kind==PHV_MAP);
+ assert(memchr(data,0,length));return snapshot_result;
+}
+static ph_buf *service_query_mp(const char *action){
+ assert(!strcmp(action,"status.get"));snapshots++;
+ if(snapshot_result==PH_MQTT_MORE)return NULL;
+ ph_writer w;assert(phw_init(&w,PH_WIRE_MSGPACK));phw_begin(&w,NULL,false);
+ phw_u32(&w,"sequence",0);phw_text(&w,"model","m1");phw_end(&w);return phw_take(&w);
+}
+/* SNAPSHOT */
 static void mqtt_state_get(mqtt_state_t*s){s->wifi_connected=true;s->sample.sequence++;}
 static void m1_config_get(m1_config_t*c){*c=cfg;}
 static bool same_connection(const m1_config_t*a,const m1_config_t*b){(void)a;(void)b;return connection_ok;}
@@ -138,6 +151,7 @@ static int publish_leaf(const char*leaf,const char*value,bool retain){(void)valu
 static int feature_mqtt_service(int p,bool connected){(void)p;assert(connected);features++;return 0;}
 /* PRODUCTION */
 int main(void){
+ assert(mqtt_account_init(&account,1,"m1","test","aabbccddeeff"));
  now=UINT32_MAX-2500;snapshot_at=now-5000u;
  for(unsigned i=0;i<600;i++){assert(session_cycle(NULL)==0);now+=20;}
  assert(snapshots==3 && sensors==600 && features==600);
@@ -155,110 +169,60 @@ int main(void){
  assert(session_cycle(NULL)==MQTT_SUCCESS);
 }
 '''.replace('/* PRODUCTION */',cycle)
+        service=(ROOT/'common/mqtt/service.c').read_text()
+        fixture=fixture.replace('/* SNAPSHOT */','\n'.join(function(service,s) for s in ('static int snapshot_wait(', 'static int publish_query(', 'static int try_capabilities(', 'int service_mqtt_snapshot(')))
         with tempfile.TemporaryDirectory() as d:
             source=(ROOT/'M1/mqtt.c').read_text()
             fixture='#include \"'+str(ROOT/'M1/barometer.h')+'\"\n'+source[source.index('enum { MQTT_BRIGHTNESS_INDEX'):source.index(';',source.index('enum { MQTT_BRIGHTNESS_INDEX'))+1]+'\n'+fixture
             src=Path(d)/'m1-fair.c';binary=Path(d)/'m1-fair';src.write_text(fixture)
-            flags=[os.environ.get('CC','cc'),'-std=gnu99','-fsanitize=address,undefined','-fno-pie','-no-pie',str(src),'-o',str(binary)]
+            flags=[os.environ.get('CC','cc'),'-std=gnu99','-fsanitize=address,undefined','-fno-pie','-no-pie','-I'+str(ROOT),str(src),str(ROOT/'common/typed_wire.c'),str(ROOT/'common/wire_buffer.c'),'-lm','-o',str(binary)]
             subprocess.run(flags,check=True)
             subprocess.run([str(binary)],check=True,timeout=10)
             begin=fixture.index('            if(!ota_job_active() &&')
             end=fixture.index('            rc=ota_service(base);',begin)
-            mutation=fixture[:begin]+'''            if(!ota_job_active() && (uint32_t)(mico_rtos_get_time()-snapshot_at)>=5000){rc=service_mqtt_snapshot(publish,&account);if(rc!=MQTT_SUCCESS)return rc;snapshot_at=mico_rtos_get_time();}
+            mutation=fixture[:begin]+'''            if(!ota_job_active() && (uint32_t)(mico_rtos_get_time()-snapshot_at)>=5000){rc=service_mqtt_snapshot(publish_bytes,&account);if(rc!=MQTT_SUCCESS)return rc;snapshot_at=mico_rtos_get_time();}
 '''+fixture[end:]
             src.write_text(mutation);subprocess.run(flags,check=True)
             result=subprocess.run([str(binary)],stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=10)
             self.assertNotEqual(result.returncode,0,'original snapshot early return must fail fairness')
 
     def test_scoped_resource_and_structural_failures(self):
-        source=(ROOT/'common/mqtt/service.c').read_text()
-        names=('bool service_mqtt_json_begin(',
-               'static unsigned service_mqtt_json_finish(', 'void service_mqtt_json_end(',
-               'int service_mqtt_json_error(', 'int service_mqtt_optional_send(')
-        service=(ROOT/'common/service.c').read_text()
-        functions='static struct {unsigned token,failed;void *owner;} json_scope;\n'+'\n'.join(function(service,n) for n in ('void json_heap_failure(', 'bool service_json_scope_begin(', 'unsigned service_json_scope_failed(', 'unsigned service_json_scope_end('))+'\n'+'\n'.join(function(source,n) for n in names)
+        # Native writers own their failure flag: no global JSON allocation
+        # observer/token exists. A foreign writer failure cannot taint a reply.
         fixture=r'''
+#include "common/typed_wire.h"
 #include <assert.h>
 #include <pthread.h>
-#include <stdint.h>
-#include <stdbool.h>
 #include <stdlib.h>
-#include <stdio.h>
 #include <string.h>
-#include "common/json_owned.h"
-#include "common/json_build.h"
-#include "json_heap.h"
-#include "json_object_private.h"
-#include "printbuf.h"
-#define PH_MQTT_MORE 2
-#define MQTT_FAILURE -1
-#define PH_MQTT_ERROR_APP_DISCOVERY_ENCODING 10
-#define PH_MQTT_ERROR_APP_DISCOVERY_GRAPH 8
-typedef pthread_t mico_thread_t;
-typedef struct {unsigned token,claim;}service_mqtt_json_scope;
-static pthread_mutex_t lock=PTHREAD_MUTEX_INITIALIZER,service_lock=PTHREAD_MUTEX_INITIALIZER;
-static bool ready=true;static unsigned json_owner;
-static void mico_rtos_lock_mutex(pthread_mutex_t *m){assert(!pthread_mutex_lock(m));}
-static void mico_rtos_unlock_mutex(pthread_mutex_t *m){assert(!pthread_mutex_unlock(m));}
-static bool busy,deny_claim,token_live,claim_live,deny_alloc,oom;
-static unsigned tags,sends;
-void json_heap_lock(void){assert(!pthread_mutex_lock(&lock));}
-void json_heap_unlock(void){assert(!pthread_mutex_unlock(&lock));}
-int json_heap_permit(size_t n){(void)n;return !deny_alloc;}
-void *__real_malloc(size_t n);
-void *__real_calloc(size_t n,size_t m);
-void *__wrap_calloc(size_t n,size_t m){if(oom){oom=false;return NULL;}return __real_calloc(n,m);}
-void *__wrap_malloc(size_t n){if(oom){oom=false;return NULL;}return __real_malloc(n);}
-static bool mico_rtos_is_current_thread(mico_thread_t *t){return pthread_equal(*t,pthread_self());}
-static unsigned service_json_claim(void){if(busy)return 0;assert(!token_live);token_live=true;json_owner=1;return 1;}
-static unsigned service_memory_claim(size_t n){(void)n;if(deny_claim)return 0;assert(!claim_live);claim_live=true;return 1;}
-static void service_json_release(unsigned t){assert(t&&token_live);token_live=false;json_owner=0;}
-static void service_memory_release(unsigned t){assert(t&&claim_live);claim_live=false;}
-static int ph_mqtt_app_error(unsigned stage,int rc){assert(stage==8||stage==10);tags++;return rc;}
-/* PRODUCTION */
-static mico_thread_t owner;
-static service_mqtt_json_scope scope;
-static void clean(void){json_heap_stats_t s;json_heap_snapshot(&s);assert(!s.live_blocks&&!token_live&&!claim_live&&!json_scope.owner);}
-static int send(const char *t,const char *w,bool r){assert(t&&w&&r&&!token_live&&!claim_live&&!json_scope.owner);sends++;return -17;}
-static int bad_encoder(json_object *o,struct printbuf *p){(void)o;(void)p;return -1;}
-static void *foreign(void *arg){(void)arg;deny_alloc=true;assert(!json_object_new_object());deny_alloc=false;return NULL;}
-int main(void){
- owner=pthread_self();busy=true;assert(!service_mqtt_json_begin(&scope,&owner));busy=false;clean();
- deny_claim=true;assert(!service_mqtt_json_begin(&scope,&owner));deny_claim=false;clean();
- for(unsigned kind=0;kind<2;kind++){
-  assert(service_mqtt_json_begin(&scope,&owner));deny_alloc=kind==0;oom=kind==1;
-  assert(!json_object_new_object());deny_alloc=false;
-  assert(service_mqtt_json_error(&scope,8)==PH_MQTT_MORE&&!tags);clean();
- }
- assert(service_mqtt_json_begin(&scope,&owner));
- pthread_t other;assert(!pthread_create(&other,NULL,foreign,NULL));assert(!pthread_join(other,NULL));
- json_object *o=json_object_new_object();assert(o);json_build_object_add(o,"required",NULL);
- assert(service_mqtt_optional_send(send,"topic",o,true,&scope)==-1&&tags==1&&!sends);clean();
- /* A definitive excessive-depth error dominates even an earlier own denial. */
- o=json_object_new_object();json_object *cursor=o;
- for(unsigned i=0;i<33;i++){json_object *child=json_object_new_object();json_build_object_add(cursor,"child",child);cursor=child;}
- assert(service_mqtt_json_begin(&scope,&owner));deny_alloc=true;assert(!json_object_new_object());deny_alloc=false;
- assert(service_mqtt_optional_send(send,"topic",o,true,&scope)==-1&&tags==2&&!sends);clean();
- assert(service_mqtt_json_begin(&scope,&owner));deny_alloc=true;assert(!json_object_new_object());deny_alloc=false;
- o=json_object_new_string("invalid encoder");o->_to_json_string=bad_encoder;
- assert(service_mqtt_optional_send(send,"topic",o,true,&scope)==-1&&tags==3&&!sends);clean();
- assert(service_mqtt_json_begin(&scope,&owner));deny_alloc=true;assert(!json_object_new_object());deny_alloc=false;
- assert(!json_heap_calloc(SIZE_MAX,2));assert(service_mqtt_json_error(&scope,8)==-1&&tags==4);clean();
- /* An own failed temporary allocation is sticky even when the final graph
-  * happens to encode: never publish an incomplete optional attempt. */
- assert(service_mqtt_json_begin(&scope,&owner));deny_alloc=true;assert(!json_object_new_object());deny_alloc=false;
- o=json_object_new_object();json_build_object_add(o,"value",json_object_new_int(1));
- assert(service_mqtt_optional_send(send,"topic",o,true,&scope)==PH_MQTT_MORE&&!sends&&tags==4);clean();
- assert(service_mqtt_json_begin(&scope,&owner));o=json_object_new_object();json_build_object_add(o,"value",json_object_new_int(1));
- assert(service_mqtt_optional_send(send,"topic",o,true,&scope)==-17&&sends==1&&tags==4);clean();
- puts("actual allocator owner-scoped guard/NULL/foreign-thread/invalid-depth/overflow/sender cleanup PASS");
+static __thread unsigned calls,fail_at;static unsigned live;
+void *ph_wire_malloc(size_t n){if(++calls==fail_at)return NULL;void *p=malloc(n);if(p)__atomic_add_fetch(&live,1,__ATOMIC_RELAXED);return p;}
+void ph_wire_free(void *p){if(p){assert(__atomic_load_n(&live,__ATOMIC_RELAXED));__atomic_sub_fetch(&live,1,__ATOMIC_RELAXED);free(p);}}
+static void *foreign(void *unused){
+ (void)unused;ph_writer w;calls=0;fail_at=1;assert(!phw_init(&w,1));assert(!phw_take(&w));return NULL;
 }
-'''.replace('/* PRODUCTION */',functions)
-        sdk=ROOT/'build/a1-sdk/mico-os/libraries/utilities/json_c'
+int main(void){
+ for(unsigned boundary=1;boundary<=5;boundary++){
+  ph_writer w;calls=0;fail_at=boundary;
+  bool opened=phw_init_capacity(&w,1,16);
+  if(opened){phw_begin(&w,NULL,false);phw_text(&w,"value","abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz");phw_end(&w);}
+  ph_buf *b=phw_take(&w);
+  if(b){ph_value root;assert(phv_parse(1,b->buf,b->len,&root));ph_buf_free(b);}
+  assert(!live);
+ }
+ fail_at=0;calls=0;ph_writer owner;assert(phw_init(&owner,1));phw_begin(&owner,NULL,false);
+ pthread_t thread;assert(!pthread_create(&thread,NULL,foreign,NULL));assert(!pthread_join(thread,NULL));
+ phw_bool(&owner,"complete",true);phw_end(&owner);ph_buf *reply=phw_take(&owner);assert(reply);ph_buf_free(reply);assert(!live);
+ char storage[32];ph_buf fixed;ph_writer w;assert(phw_init_fixed(&w,1,&fixed,storage,sizeof(storage)));
+ phw_begin(&w,NULL,false);phw_text(&w,"oversized","abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz");assert(w.failed);
+ phw_bool(&w,"later",true);phw_end(&w);assert(!phw_finish_fixed(&w)); /* sticky, never partial publication */
+ assert(phw_init_fixed(&w,1,&fixed,storage,sizeof(storage)));
+ for(unsigned i=0;i<13;i++)phw_begin(&w,NULL,true);assert(w.failed&&!phw_finish_fixed(&w));
+ ph_value root;const unsigned char duplicate[]={0x82,0xa1,'x',1,0xa1,'x',2};assert(!phv_parse(1,duplicate,sizeof(duplicate),&root));
+ assert(!live);return 0;
+}
+'''
         with tempfile.TemporaryDirectory() as directory:
-            tmp=Path(directory);json=copy_patched_json(sdk,tmp/'sdk')
-            for p in json.glob('*.c'):p.write_text(p.read_text().replace('%ld','%d'))
-            src=tmp/'fixture.c';src.write_text(fixture)
-            binary=tmp/'fixture'
-            subprocess.run([os.environ.get('CC','cc'),'-std=gnu99','-g','-pthread','-fsanitize=address,undefined','-fno-pie','-no-pie','-I'+str(ROOT),'-I'+str(ROOT/'tests/stubs'),'-I'+str(json),str(src),str(ROOT/'common/json_owned.c'),*map(str,json.glob('*.c')),'-Wl,--wrap=malloc,--wrap=calloc','-o',str(binary)],check=True)
-            subprocess.run([str(binary)],check=True,timeout=30)
+            p=Path(directory);src=p/'native.c';src.write_text(fixture);exe=p/'native'
+            subprocess.run([os.environ.get('CC','cc'),'-std=gnu99','-pthread','-fsanitize=address,undefined','-fno-pie','-no-pie','-I'+str(ROOT),str(src),str(ROOT/'common/typed_wire.c'),str(ROOT/'common/wire_buffer.c'),'-lm','-o',str(exe)],check=True)
+            subprocess.run([str(exe)],check=True)

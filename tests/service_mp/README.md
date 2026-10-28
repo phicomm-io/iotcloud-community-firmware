@@ -45,3 +45,44 @@ assert exact requested URLs, lowercase URL model versus uppercase manifest model
 newer/equal/older release availability, signed-only install paths, cleared stale
 availability after failure and exactly one selected-source fetch without fallback.
 It does not test TLS, firmware signature verification or physical installation.
+
+### Legacy OTA coverage migration
+
+`test_legacy_update_worker_matrix_and_admission` preserves every local/remote
+string and expected result from `test_device_update_version.c`'s 16-row matrix
+(including dirty/commit suffixes, metadata, unnumbered and numbered RC, promotion,
+downgrade, leading zero, overflow and invalid local identity). Each row runs the
+actual deferred worker, checks exactly one fetch, releases its job, clears busy,
+compares the reported remote version (empty on failure), and checks install code,
+exact install count and selected-source signed URL. Request storage is not used
+by the deferred worker. Existing channel tests additionally poison/free the
+request before running that worker.
+
+| Old `test_update.c` / `test_update.py` assertion | Native coverage |
+| --- | --- |
+| `0.10.0` parses to minor 10; `latest` and traversal rejected | Exact assertions in the new matrix test, using production version/path helpers. |
+| Missing/invalid source rejected; valid cn accepted; second check busy | Exact native commands in the new test, including busy before any fetch. |
+| New 9.10.0 / old 0.0.0 / wrong model / hostile absolute path | Actual-worker matrix tail, plus the strict manifest parser suite. |
+| Each of the Python driver's RC/version rows | Included verbatim among the 16 device-worker rows. |
+| HTTP 302 and chunked transfer rejected | `tests.test_ota_fetch.Fetch.test_metadata_http_redirect_and_chunked_rejected` and inherited `Tc1Fetch` case run actual `fetch.c` against a local HTTP server under both kernel socket ownership contracts. |
+| Availability controls install; no implicit install | Every worker row checks install count before/after explicit native `ota.install`. |
+
+The real-network fetch test and real-worker test are separate boundary tests;
+this does not claim a single real-network worker execution, TLS publisher trust,
+or physical flashing. `tests.test_ota_recovery` separately preserves the actual
+job/feature-worker stop, retry and resume scheduler assertions. The retired JSON
+fixtures are not production compatibility tests: the native path deliberately
+requires the complete schema-1 MessagePack manifest (publisher golden), while
+retaining their version ordering, busy/admission and transport failure behavior.
+
+`tests.test_product_metadata_mp` additionally compiles the actual A1/M1
+`service_product_info_mp` and `service_product_capabilities_mp` functions and
+production action lists for ten full/bootstrap, fresh-air and Bemfa combinations.
+It checks canonical identity/version/variant and tmcp2/wire1 fields, typed resource
+flags, product-only actions, added OTA actions, recovery and restricted output,
+and all allocation cutpoints. This preserves the old metadata/capabilities
+business assertions without retaining JSON graph fallbacks, byte order or
+obsolete full/live status capture. Native envelope, malformed params, replay and
+HTTP failure/recovery assertions remain in service/HTTP fixtures. TC1's separate
+product writers require its owner's fixtures; these A1/M1 assertions do not
+claim TC1 coverage.

@@ -3,7 +3,7 @@
 #define main existing_paho_scenarios
 #include "paho.c"
 #undef main
-#include "../../common/busy_reply.h"
+#include "../../common/mqtt/binary_busy.h"
 static unsigned busy_sent,generic_busy_sent;
 static size_t expected_large;
 static char received[128],modern_topic[512],result_topic[512];
@@ -18,11 +18,11 @@ static void overload_handler(MessageData *d) {
     memcpy(received,d->message->payload,d->message->payloadlen);received[d->message->payloadlen]=0;
 }
 static void overload_publication(const unsigned char *topic,unsigned tn,const unsigned char *body,size_t n) {
-    if(n>=6 && memmem(body,n,"\"busy\"",6)) {
+    ph_value root,code,id;
+    if(phv_parse(PH_WIRE_MSGPACK,body,n,&root) && phv_get(&root,"code",&code) && phv_equal_text(&code,"busy")) {
         assert(tn==strlen(result_topic) && !memcmp(topic,result_topic,tn));
-        if(memmem(body,n,"\"request_id\":",13))
-            assert(memmem(body,n,"\"request_id\":\"paho-1\"",21));
-        else {assert(n==strlen("{\"code\":\"busy\",\"data\":{}}"));generic_busy_sent++;}
+        if(phv_get(&root,"request_id",&id))assert(phv_equal_text(&id,"paho-1"));
+        else generic_busy_sent++;
         busy_sent++;
     }
 }
@@ -152,7 +152,7 @@ int main(void) {
         fresh();before=snap();busy=busy_sent;allocations=native_allocs;
         if(!mode)heap_capacity=charged_live+16384+32;
         else fail_allocation=native_allocs+1;
-        incoming(modern_topic,"{\"request_id\":\"paho-1\"}",903+mode);
+        incoming(modern_topic,"\x81\xaarequest_id\xa6paho-1",903+mode);
         assert(!ph_mqtt_yield(&client,1));unchanged_connection(before,0,0);
         assert(!snap().queued[0]);
         if(!mode)assert(native_allocs==allocations);

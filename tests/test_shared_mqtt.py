@@ -8,7 +8,6 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
-from tests.test_http_json_owned import copy_patched_json
 ROOT = Path(__file__).resolve().parents[1]
 class SharedMQTT(unittest.TestCase):
     @contextmanager
@@ -50,6 +49,10 @@ class SharedMQTT(unittest.TestCase):
             command = [os.environ.get('CC', 'cc'), '-D_GNU_SOURCE', '-std=gnu99', '-g',
                        '-fsanitize=' + os.environ.get('PHICOMM_MQTT_SANITIZER','address,undefined'), '-fno-pie', '-no-pie',
                        '-I' + str(ROOT / 'common/mqtt')]
+            sources=list(sources)
+            if any(ROOT/name in sources for name in ('common/mqtt/session.c','common/mqtt/client.c')):
+                for native in ('common/typed_wire.c','common/wire_buffer.c'):
+                    if ROOT/native not in sources:sources.append(ROOT/native)
             command += ['-I' + str(p) for p in includes]
             command += list(defines) + [str(p) for p in sources] + ['-o', str(binary)]
             subprocess.run(command, check=True, timeout=60)
@@ -191,19 +194,11 @@ int main(void){
                 *sorted((protocol/'MQTTPacket').glob('*.c'))],
                 [ROOT/'tests/mqtt_core/stubs',protocol,protocol/'mico',protocol/'MQTTPacket'], ['-pthread'])
     def test_actual_service(self):
-        self.check_service_fixture()
+        from tests.test_native_service_mqtt import NativeServicePaho
+        NativeServicePaho().run_actual_service()
     def test_large_service_receipt_during_dispatch(self):
-        self.check_service_fixture(extra_defines=['-DLARGE_RECEIPT_FIXTURE'])
-        # The invalid callback-only gate rejects this legitimate receipt growth.
-        source=(ROOT/'common/mqtt/client.c').read_text()
-        original='c == ctx->client && ctx->core.protocol_depth &&\n        permit(NULL, bytes)'
-        blocked=source.replace(original,
-            'c == ctx->client && ctx->core.protocol_depth &&\n        !ctx->core.dispatch_depth && permit(NULL, bytes)')
-        self.assertNotEqual(source,blocked)
-        with tempfile.TemporaryDirectory() as directory:
-            client=Path(directory)/'client.c';client.write_text(blocked)
-            with self.assertRaises(subprocess.CalledProcessError):
-                self.check_service_fixture(extra_defines=['-DLARGE_RECEIPT_FIXTURE'],client_source=client)
+        from tests.test_native_service_mqtt import NativeServicePaho
+        NativeServicePaho().run_large_receipt_during_dispatch()
     def test_tc1_application_conversion_sources(self):
         from tests.test_http_json_budget import function
         source=(ROOT/'TC1/mqtt_server/user_mqtt_client.c').read_text()
@@ -214,39 +209,30 @@ int main(void){
 #include <string.h>
 #include <stdbool.h>
 #define PH_MQTT_ERROR_APP_SEND_CONVERSION 13
-#define MAX_MQTT_TOPIC_SIZE 512
-#define MAX_MQTT_DATA_SIZE 2048
-#define QOS0 0
 #define QOS1 1
-#define kNoMemoryErr -4
-#define kParamErr -5
 #define MQTT_FAILURE -1
-static struct {int mode;} account={1};static int c;
-static bool synchronous_send,oom,convert=true,current=true;
-static unsigned tagged,sent;static int sdk_rc;
-static int ph_mqtt_app_error(unsigned stage,int rc){assert(stage==13 && rc<0);tagged++;return rc;}
-static void *allocate(size_t n){return oom?NULL:malloc(n);}
-#define malloc allocate
-static bool account_message(const char*t,const char*b,char*x,char*y){(void)t;(void)b;strcpy(x,"topic");strcpy(y,"body");return convert;}
-static int MqttMsgPublish(int*p,const char*t,int q,int r,const unsigned char*b,size_t n){(void)p;(void)t;(void)q;(void)r;(void)b;(void)n;sent++;return sdk_rc;}
-typedef struct {bool retained;} ph_mqtt_item;
-static const char *ph_mqtt_item_topic(const ph_mqtt_item*i){(void)i;return "homeassistant/x";}
-static const char *ph_mqtt_item_payload(const ph_mqtt_item*i){(void)i;return "body";}
+static int c;static bool current=true;static unsigned tagged,sent;static int sdk_rc;
+static const void *expected;static size_t expected_length;static int expected_qos,expected_retained;
+static int ph_mqtt_app_error(unsigned stage,int rc){assert(stage==13&&rc<0);tagged++;return rc;}
+static int MqttMsgPublish(int*p,const char*t,int q,int r,const unsigned char*b,size_t n){
+ assert(p==&c&&!strcmp(t,"topic")&&q==expected_qos&&r==expected_retained);
+ assert(n==expected_length&&!memcmp(b,expected,n));sent++;return sdk_rc;
+}
+typedef struct {bool retained;int qos;size_t length;const void *payload;} ph_mqtt_item;
+static const char *ph_mqtt_item_topic(const ph_mqtt_item*i){(void)i;return "topic";}
+static const void *ph_mqtt_item_payload(const ph_mqtt_item*i){return i->payload;}
 static bool session_current(void){return current;}
 /* BODY */
 int main(void){
- ph_mqtt_item i={0};oom=true;
- assert(send_owned("homeassistant/x","body",true)==-4 && !tagged && !sent);
- synchronous_send=true;
- assert(send_owned("homeassistant/x","body",true)==-4 && tagged==1 && !sent);
- oom=false;convert=false;
- assert(send_owned("homeassistant/x","body",true)==-5 && tagged==2 && !sent);
- synchronous_send=false;
- assert(send_owned("homeassistant/x","body",true)==-5 && tagged==2 && !sent);
- assert(outgoing(&i)==-5 && tagged==3 && !sent);
- convert=true;assert(outgoing(&i)==0 && tagged==3 && sent==1);
- sdk_rc=-17;assert(outgoing(&i)==-17 && tagged==4 && sent==2);
- current=false;assert(outgoing(&i)==-1 && tagged==4 && sent==2);
+ const unsigned char binary[]={0x82,0xa1,'v',0,0xa1,'x',0xc3};
+ ph_mqtt_item i={true,0,sizeof(binary),binary};
+ expected="body";expected_length=4;expected_qos=1;expected_retained=1;
+ assert(send_owned("topic","body",true)==0&&sent==1&&!tagged);
+ expected=binary;expected_length=sizeof(binary);expected_qos=0;
+ assert(outgoing(&i)==0&&sent==2&&!tagged); /* embedded NUL preserved */
+ sdk_rc=-17;assert(outgoing(&i)==-17&&sent==3&&tagged==1);
+ current=false;assert(outgoing(&i)==-1&&sent==3&&tagged==1);
+ return 0;
 }
 '''.replace('/* BODY */',body)
         with tempfile.TemporaryDirectory() as temp:
@@ -254,40 +240,18 @@ int main(void){
             self.compile_run([path])
 
     def test_a1_application_sources(self):
-        from tests.test_http_json_budget import function
-        source=(ROOT/'A1/mqtt.c').read_text()
-        builders='\n'.join(function(source,name) for name in
-            ('static void str(', 'static void topic(',
-             'static __attribute__((noinline)) int filter_discovery(', 'static int fresh_discovery(', 'static int discovery_build(const a1_config_t *c,', 'static int discovery('))
-        builders='static int discovery_build(const a1_config_t *,unsigned,service_mqtt_json_scope *);\n'+builders
-        fixture=(ROOT/'tests/mqtt_core/a1_builders.in').read_text().replace('/* BUILDERS */',builders)
-        with tempfile.TemporaryDirectory() as temp:
-            Path(temp,'a1_builders.inc').write_text(fixture)
-            self.check_service_fixture([ROOT,Path(temp)], ['-DA1_BUILDERS_FIXTURE'])
-            # Restore the pre-fix fatal allocation policy as a negative control.
-            old_builders=builders.replace(
-                'service_mqtt_json_error(scope, PH_MQTT_ERROR_APP_DISCOVERY_GRAPH)',
-                'ph_mqtt_app_error(PH_MQTT_ERROR_APP_DISCOVERY_GRAPH,MQTT_FAILURE)')
-            self.assertNotEqual(old_builders,builders)
-            Path(temp,'a1_builders.inc').write_text(
-                (ROOT/'tests/mqtt_core/a1_builders.in').read_text().replace('/* BUILDERS */',old_builders))
-            with self.assertRaises(subprocess.CalledProcessError):
-                self.check_service_fixture([ROOT,Path(temp)], ['-DA1_BUILDERS_FIXTURE'])
+        from tests.test_ha_json import HaJson
+        HaJson().test_a1_discovery_resource_retry_and_fatal_errors()
 
     def check_service_fixture(self, extra_includes=(), extra_defines=(), client_source=None):
-        sdk = ROOT/'build/a1-sdk/mico-os'
-        protocol=sdk/'libraries/protocols/mqtt'
-        with self.protocol('A1') as protocol, tempfile.TemporaryDirectory() as directory:
-            json=copy_patched_json(sdk/'libraries/utilities/json_c',Path(directory)/'sdk')
-            for p in json.glob('*.c'): p.write_text(p.read_text().replace('%ld','%d'))
-            sha=ROOT/'build/a1-sdk/mico-os/MiCO/security/SHAUtils'
-            self.compile_run([ROOT/'tests/mqtt_core/service.c',ROOT/'common/mqtt/core.c',
-                client_source or ROOT/'common/mqtt/client.c',ROOT/'common/mqtt/session.c',ROOT/'common/mqtt/service.c',
-                ROOT/'common/json_owned.c', protocol/'MQTTClient.c',
-                *sorted((protocol/'MQTTPacket').glob('*.c')), *json.glob('*.c'),
-                sha/'sha224-256.c'],
-                [ROOT/'tests/mqtt_core/stubs',ROOT/'tests/stubs',protocol,protocol/'mico',protocol/'MQTTPacket',json,sha,*extra_includes],
-                [*extra_defines,'-include','stdint.h','-DMOC=1','-DMAX_MESSAGE_HANDLERS=12','-Wl,--wrap=malloc,--wrap=free,--wrap=realloc,--wrap=calloc,--wrap=strdup'])
+        from tests.test_native_service_mqtt import NativeServicePaho
+        if extra_includes or client_source:
+            raise ValueError('native fixture owns its source and injection controls')
+        harness=NativeServicePaho()
+        if not extra_defines:return harness.run_actual_service()
+        if extra_defines==['-DPREFLIGHT_FIXTURE']:return harness.run_preflight_receipts()
+        if extra_defines==['-DLARGE_RECEIPT_FIXTURE']:return harness.run_large_receipt_during_dispatch()
+        raise ValueError('unknown native service fixture profile')
     def test_a1_protocol(self): self.check_protocol('A1')
     def test_m1_protocol(self): self.check_protocol('M1')
     def test_tc1_protocol(self): self.check_protocol('TC1')

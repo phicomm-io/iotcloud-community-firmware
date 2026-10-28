@@ -8,6 +8,39 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def a1_discovery_source():
+    source = (ROOT / 'A1/mqtt.c').read_text()
+    code = source[source.index('static void topic(ha_json'):source.index('static void primary_snapshot(')]
+    code += source[source.index('static int discovery_build(const a1_config_t *c'):source.index('static int ha_state(')]
+    prelude = r'''
+#include "common/ha_json.h"
+#include <stdio.h>
+#include <stdlib.h>
+#define MQTT_TOPIC_MAX 256
+#define FEATURE_TOPIC_MAX 256
+#define MQTT_SUCCESS 0
+#define MQTT_FAILURE -1
+#define PH_MQTT_MORE 1
+#define PH_MQTT_ERROR_APP_DISCOVERY_IDENTITY 1
+#define A1_VERSION "rc4"
+#define A1_FILTER_MAX_HOURS 20000
+#define A1_FRESH_AIR
+typedef struct {char name[64];} a1_config_t;
+static int account;
+static bool bound;
+static const char *base="device",*availability_topic="device/availability";
+static bool feature_bound(void){return bound;}
+static bool feature_ha_device(char *id,size_t n,char *name,size_t m,bool *grouped){snprintf(id,n,"parent");snprintf(name,m,"Parent");*grouped=true;return true;}
+static int ph_mqtt_app_error(int a,int b){(void)a;return b;}
+static int device_language_get(void){return 1;}
+static const char *ph_i18n(int lang,const char *zh,const char *en){return lang?en:zh;}
+static void mqtt_identity(int *a,const char *leaf,char *out,size_t n){(void)a;snprintf(out,n,"uid_%s",leaf);}
+static void mqtt_ha(int *a,const char *component,const char *key,char *out,size_t n){(void)a;snprintf(out,n,"ha/%s/%s",component,key);}
+static int publish(const char *topic,const char *body,bool retain){(void)retain;printf("%s\t%s\n",topic,body);return 0;}
+'''
+    return code, prelude
+
+
 class HaJson(unittest.TestCase):
     def run_c(self, source):
         with tempfile.TemporaryDirectory() as d:
@@ -87,35 +120,7 @@ return 0;}
                 self.assertEqual(data['availability_mode'], 'all')
 
     def test_a1_discovery_matrix(self):
-        source = (ROOT / 'A1/mqtt.c').read_text()
-        code = source[source.index('static void topic(ha_json'):source.index('static void primary_snapshot(')]
-        code += source[source.index('static int discovery_build(const a1_config_t *c'):source.index('static int ha_state(')]
-        prelude = r'''
-#include "common/ha_json.h"
-#include <stdio.h>
-#include <stdlib.h>
-#define MQTT_TOPIC_MAX 256
-#define FEATURE_TOPIC_MAX 256
-#define MQTT_SUCCESS 0
-#define MQTT_FAILURE -1
-#define PH_MQTT_MORE 1
-#define PH_MQTT_ERROR_APP_DISCOVERY_IDENTITY 1
-#define A1_VERSION "rc4"
-#define A1_FILTER_MAX_HOURS 20000
-#define A1_FRESH_AIR
-typedef struct {char name[64];} a1_config_t;
-static int account;
-static bool bound;
-static const char *base="device",*availability_topic="device/availability";
-static bool feature_bound(void){return bound;}
-static bool feature_ha_device(char *id,size_t n,char *name,size_t m,bool *grouped){snprintf(id,n,"parent");snprintf(name,m,"Parent");*grouped=true;return true;}
-static int ph_mqtt_app_error(int a,int b){(void)a;return b;}
-static int device_language_get(void){return 1;}
-static const char *ph_i18n(int lang,const char *zh,const char *en){return lang?en:zh;}
-static void mqtt_identity(int *a,const char *leaf,char *out,size_t n){(void)a;snprintf(out,n,"uid_%s",leaf);}
-static void mqtt_ha(int *a,const char *component,const char *key,char *out,size_t n){(void)a;snprintf(out,n,"ha/%s/%s",component,key);}
-static int publish(const char *topic,const char *body,bool retain){(void)retain;printf("%s\t%s\n",topic,body);return 0;}
-'''
+        code, prelude = a1_discovery_source()
         output = self.run_c(prelude + code + r'''
 int main(void){a1_config_t c={"Name\"中文"};for(unsigned mode=0;mode<2;mode++){bound=mode;
 for(unsigned i=0;i<12;i++){char bytes[3072];ha_json w;ha_json_init(&w,bytes,sizeof(bytes));if(discovery_build(&c,i,&w))return 1;}}
@@ -137,6 +142,47 @@ return 0;}
                 self.assertEqual(data['options'], ['Automatic', 'Manual'])
             if key == 'fan':
                 self.assertEqual(data['preset_modes'], ['auto', 'manual'])
+
+    def test_a1_discovery_resource_retry_and_fatal_errors(self):
+        from tests.test_tc1_mqtt_stack import extract
+        code, prelude = a1_discovery_source()
+        prelude=prelude.replace('static bool bound;', 'static bool bound, identity_failure;')
+        prelude=prelude.replace('snprintf(id,n,"parent");', 'if(identity_failure)return false;snprintf(id,n,"parent");')
+        prelude=prelude.replace('static int ph_mqtt_app_error(int a,int b){(void)a;return b;}',
+            'static unsigned tagged;static int ph_mqtt_app_error(int a,int b){assert(a==PH_MQTT_ERROR_APP_DISCOVERY_IDENTITY);tagged++;return b;}')
+        prelude=prelude.replace('printf("%s\\t%s\\n",topic,body);return 0;', '(void)topic;(void)body;return 0;')
+        # Direct SDK publish failures remain fatal; allocation/encoding pressure
+        # is retryable and must not replace its first cause with a graph error.
+        begin=prelude.index('static int publish(')
+        prelude=prelude[:begin]+r'''
+static unsigned sent,allocations,frees;static bool oom;static int send_rc;
+static int publish(const char *topic,const char *body,bool retain){assert(topic&&body&&retain);sent++;return send_rc;}
+static unsigned now;static unsigned mico_rtos_get_time(void){return now;}
+static void *probe_malloc(size_t n){allocations++;return oom?NULL:malloc(n);}
+static void probe_free(void *p){assert(p);frees++;free(p);}
+#define malloc probe_malloc
+#define free probe_free
+'''
+        lifecycle=extract((ROOT/'A1/mqtt.c').read_text(),'static int discovery(const a1_config_t *c,')
+        source='#include <assert.h>\n'+prelude+code+'\nstatic bool discovery_deferred;static unsigned discovery_retry_at;\n'+lifecycle+r'''
+int main(void){
+ a1_config_t c={"host"};now=0xffffff00u;oom=true;
+ assert(discovery(&c,0)==PH_MQTT_MORE&&allocations==1&&!sent&&!tagged);
+ now+=999;assert(discovery(&c,0)==PH_MQTT_MORE&&allocations==1&&!sent);
+ now++;oom=false;assert(discovery(&c,0)==0&&sent==1&&allocations==2&&frees==1&&!tagged);
+ bound=true;identity_failure=true;
+ assert(discovery(&c,4)==MQTT_FAILURE&&sent==1&&tagged==1&&frees==2);
+ bound=false;identity_failure=false;send_rc=-17;
+ assert(discovery(&c,0)==-17&&sent==2&&tagged==1&&frees==3);
+ send_rc=0;assert(discovery(&c,0)==0&&sent==3&&frees==4);
+ return 0;
+}
+'''
+        self.run_c(source)
+        # Restoring fatal OOM behavior must fail this same real-source fixture.
+        broken=source.replace('int rc=PH_MQTT_MORE;', 'int rc=MQTT_FAILURE;')
+        self.assertNotEqual(source,broken)
+        with self.assertRaises(subprocess.CalledProcessError):self.run_c(broken)
 
     def test_ha_command_restricted_parser(self):
         self.run_c(r''' 

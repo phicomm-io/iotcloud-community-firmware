@@ -1,6 +1,6 @@
 """Compile the production discovery builder; inspect every additional entity."""
 import unittest
-from tests.test_stock_runtime import ROOT, run_host
+from tests.test_stock_runtime import ROOT, run_oracle_host as run_host
 from tests.test_http_json_budget import function
 
 class ParticlesDiscovery(unittest.TestCase):

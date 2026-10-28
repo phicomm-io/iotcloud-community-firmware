@@ -3,10 +3,15 @@
 #define main existing_paho_scenarios
 #include "paho.c"
 #undef main
+#include "../../common/typed_wire.h"
 static unsigned busy_sent;
 static void overload_handler(MessageData *d) { (void)d;executions++; }
 static void overload_publication(const unsigned char *t,unsigned tn,const unsigned char *b,size_t n) {
- (void)t;(void)tn;if(memmem(b,n,"\"busy\"",6))busy_sent++;
+ (void)t;(void)tn;ph_value root,code;if(phv_parse(1,b,n,&root)&&phv_get(&root,"code",&code)&&phv_equal_text(&code,"busy"))busy_sent++;
+}
+static void incoming_binary(const char *topic,const void *body,size_t length,unsigned id){
+ unsigned char p[12000];MQTTString t=MQTTString_initializer;t.cstring=(char*)topic;
+ int n=MQTTSerialize_publish(p,sizeof(p),0,1,0,id,t,(unsigned char*)body,length);assert(n>0);append(p,n);
 }
 static ph_mqtt_diagnostics snap(void){ph_mqtt_diagnostics d;ph_mqtt_snapshot(&d);return d;}
 static int text(const char *topic,const char *body){MQTTMessage m={0};m.qos=QOS1;m.retained=1;m.payload=(void*)body;m.payloadlen=strlen(body);return ph_mqtt_publish(&client,topic,&m);}
@@ -75,7 +80,8 @@ static void external_wait(void){
 static void emergency_wait(void){
  fresh();char topic[512];mqtt_leaf(&account,"command",topic,sizeof(topic));
  assert(!ph_mqtt_subscribe(&client,topic,QOS1,handler));
- for(unsigned i=0;i<6;i++)incoming(topic,"{\"request_id\":\"busy-identity\"}",200+i);
+ const unsigned char request[]={0x81,0xaa,'r','e','q','u','e','s','t','_','i','d',0xad,'b','u','s','y','-','i','d','e','n','t','i','t','y'};
+ for(unsigned i=0;i<6;i++)incoming_binary(topic,request,sizeof(request),200+i);
  for(unsigned i=0;i<6;i++)assert(!ph_mqtt_yield(&client,1));assert(snap().queued[0]==4);
  heap_capacity=charged_live+16416;unsigned busy=busy_sent,ran=executions;
  assert(ph_mqtt_poll(&client)==PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED);
@@ -90,8 +96,10 @@ static void busy_capacity_wait(void){
  fresh();char topic[512],body[2048],external[4096];mqtt_leaf(&account,"command",topic,sizeof(topic));
  assert(!ph_mqtt_subscribe(&client,topic,QOS1,handler));
  size_t n=2048-sizeof(ph_mqtt_item)-strlen(topic)-2-16;
- memset(body,' ',n);memcpy(body,"{\"request_id\":\"capacity\"}",25);body[n]=0;
- for(unsigned i=0;i<4;i++)incoming(topic,body,700+i);
+ assert(n>28);memcpy(body,"\x82\xaa" "request_id" "\xa8" "capacity" "\xa3" "pad" "\xda",26);
+ body[26]=(unsigned char)((n-28)>>8);body[27]=(unsigned char)(n-28);memset(body+28,'x',n-28);
+ ph_value validated;assert(phv_parse(1,body,n,&validated));
+ for(unsigned i=0;i<4;i++)incoming_binary(topic,body,n,700+i);
  for(unsigned i=0;i<4;i++)assert(!ph_mqtt_yield(&client,1));
  n=4096-sizeof(ph_mqtt_item)-strlen("external/capacity")-2-16;
  memset(external,'x',n);external[n]=0;

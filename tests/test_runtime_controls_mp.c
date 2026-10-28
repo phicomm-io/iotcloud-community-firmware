@@ -89,4 +89,18 @@ static void binding_limits_and_install_mapping(void){
  next=stored;next.peers[1].token[0]^=1;assert(install_config(&next)&&!samples[1].valid&&!peers[1].authorized);
  before=configuration;next=stored;next.linkage.fixed_speed=99;fail_save=true;assert(!install_config(&next)&&!memcmp(&before,&configuration,sizeof(before)));fail_save=false;
 }
-int main(void){feature_defaults(&stored);configuration=stored;effective_controls();automatic_profiles();animation_speed();transaction_boundaries();average_snapshots();binding_limits_and_install_mapping();assert(invalidations&&commits);return 0;}
+static void internal_values(void) {
+  feature_config_t saved=configuration;float previous[4];memcpy(previous,aggregate,sizeof(previous));
+  float previous_co2=aggregate_co2;unsigned n=available,nc=available_co2;bool valid=data_valid;
+  configuration.peer_count=2;configuration.linkage.statistic=STAT_MAX;
+  available=2;available_co2=1;data_valid=true;
+  aggregate[0]=29;aggregate[1]=60;aggregate[2]=123;aggregate[3]=.2;aggregate_co2=1400;
+  feature_values_t v;feature_values_snapshot(&v);
+  assert(v.valid && v.sample_count==2 && v.co2_sample_count==1 && v.configured_count==2);
+  assert(v.statistic==STAT_MAX && v.value[2]==123 && v.co2==1400);
+  available=available_co2=0;data_valid=false;feature_values_snapshot(&v);
+  assert(!v.valid && !v.sample_count && !v.co2_sample_count);
+  configuration=saved;memcpy(aggregate,previous,sizeof(previous));aggregate_co2=previous_co2;
+  available=n;available_co2=nc;data_valid=valid;
+}
+int main(void){feature_defaults(&stored);configuration=stored;effective_controls();automatic_profiles();animation_speed();transaction_boundaries();average_snapshots();internal_values();binding_limits_and_install_mapping();assert(invalidations&&commits);return 0;}
