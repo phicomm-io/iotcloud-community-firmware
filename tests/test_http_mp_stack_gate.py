@@ -104,6 +104,10 @@ class HTTPMessagePackStackGate(unittest.TestCase):
             frames=read_frames(root,'TC1')
             self.assertEqual(frames['tc1_ota_verify'],640);self.assertEqual(frames['phv_scan'],512)
             source.write_text('app.c:1:1:service_command_mp\t64\tdynamic\n')
-            with self.assertRaisesRegex(ValueError,'Unbounded/nonstatic'):read_frames(root,'TC1')
+            frames=read_frames(root,'TC1')
+            with self.assertRaisesRegex(ValueError,'unbounded/nonstatic'):
+                validate_paths({'actual path':(3072,['service_command_mp'])},frames)
+            with redirect_stdout(io.StringIO()):
+                validate_paths({'other owner':(3072,[])},frames)
 
 if __name__=='__main__':unittest.main()

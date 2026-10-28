@@ -84,13 +84,18 @@ def check_symbols(symbols):
         if name in symbols:raise ValueError('Legacy HTTP/JSON product bridge linked: '+name)
 
 
+class StackFrames(dict):
+    def __init__(self):
+        super().__init__();self.unbounded={}
+
+
 def read_frames(modules,model):
-    frames={};verify={}
+    frames=StackFrames();verify={}
     for directory in (Path(modules)/model,Path(modules)/'phicomm_httpd',Path(modules)/'phicomm_mqtt'):
         for path in directory.rglob('*.su'):
             for line in path.read_text().splitlines():
                 location,size,kind=line.split('\t');full=location.rsplit(':',1)[-1];name=full.split('.')[0]
-                if kind!='static':raise ValueError('Unbounded/nonstatic stack record: '+line)
+                if kind!='static':frames.unbounded[name]=kind
                 frames[name]=max(frames.get(name,0),int(size))
                 if name=='tc1_ota_verify':verify[full]=max(verify.get(full,0),int(size))
     # GCC splits this entry into an entry and retained .part body, unlike
@@ -160,6 +165,8 @@ def validate_paths(paths,frames,budget=HTTP_BUDGET):
     if budget!=HTTP_BUDGET:raise ValueError('HTTP stack budget must remain 12288 bytes')
     for label,(reserve,names) in paths.items():
         if reserve<HTTP_RESERVE:raise ValueError(label+': insufficient SDK/crypto reserve')
+        unbounded=set(names)&getattr(frames,'unbounded',{}).keys()
+        if unbounded:raise ValueError(f'{label}: unbounded/nonstatic actual .su frames: {sorted(unbounded)}')
         missing=set(names)-frames.keys()
         if missing:raise ValueError(f'{label}: missing actual .su frames: {sorted(missing)}')
         size=sum(frames[name] for name in names)
