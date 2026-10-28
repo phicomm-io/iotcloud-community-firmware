@@ -481,9 +481,9 @@ void MqttClientThread(mico_thread_arg_t arg) {
 // callback, msg received from mqtt server
 static bool ota_launch(const char *url) { return ota_server_start((char *)url,NULL,NULL)==kNoErr; }
 static void ota_snapshot(char *state,char *error,unsigned *progress) { tc1_ota_snapshot(state,error,progress); }
-static int ota_publish(const char *leaf,const char *text,bool retained) {
+static int ota_publish(const char *leaf,const void *bytes,size_t length,bool retained) {
     char topic[MQTT_TOPIC_MAX];mqtt_leaf(&account,leaf,topic,sizeof(topic));
-    return MqttMsgPublish(&c,topic,QOS1,retained,(const unsigned char *)text,strlen(text));
+    return MqttMsgPublish(&c,topic,QOS1,retained,(const unsigned char *)bytes,length);
 }
 #include "../../common/ota/mqtt_ota.inc"
 static int service_sender(const char *topic,const void *body,size_t length,bool retain){return MqttMsgPublish(&c,topic,QOS1,retain,body,length);}
@@ -513,7 +513,7 @@ static int send_owned(const char *topic,const char *body,bool retained) {
 }
 static int outgoing(const ph_mqtt_item *message) {
     if(!session_current())return MQTT_FAILURE;
-    int rc=send_owned(ph_mqtt_item_topic(message),ph_mqtt_item_payload(message),message->retained);
+    int rc=MqttMsgPublish(&c,ph_mqtt_item_topic(message),message->qos,message->retained,ph_mqtt_item_payload(message),message->length);
     /* The external SEND result is fatal; an SDK first cause still wins. */
     return rc<0?ph_mqtt_app_error(PH_MQTT_ERROR_APP_SEND_CONVERSION,rc):rc;
 }

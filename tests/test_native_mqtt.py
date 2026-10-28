@@ -100,3 +100,43 @@ int main(void){
             binary = Path(temporary) / 'test'
             subprocess.run(['cc','-std=gnu99','-g','-fsanitize=address,undefined','-no-pie','-I'+str(ROOT),str(ROOT/'tests/tc1_business_mp.c'),str(ROOT/'common/typed_wire.c'),str(ROOT/'common/wire_buffer.c'),'-o',str(binary)],check=True)
             subprocess.run([str(binary)],check=True)
+
+    def test_tc1_exact_topic_binary_ingress(self):
+        from tests.test_tc1_mqtt_stack import extract
+        from tests import test_sensor_producers_mp as producers
+        source=(ROOT/'TC1/mqtt_server/user_mqtt_client.c').read_text()
+        body=extract(source,'static bool tc1_topic_bytes(')+'\n'+extract(source,'static bool ingress_accept(')
+        producers.SensorProducers().compile_run(r'''
+#define _POSIX_C_SOURCE 200809L
+#include <assert.h>
+#include <string.h>
+#include <stdbool.h>
+#define MQTT_TOPIC_MAX 64
+#define MAX_MQTT_DATA_SIZE 64
+static char command_topic[]="scope/device/command";
+typedef struct{char *cstring;struct{int len;char *data;}lenstring;}MQTTString;
+typedef struct{void *payload;size_t payloadlen;bool retained;}MQTTMessage;
+typedef struct{MQTTString *topicName;MQTTMessage *message;}MessageData;
+typedef void(*messageHandler)(MessageData *);
+static void ha_birth(MessageData *d){(void)d;}
+static void command(MessageData *d){(void)d;}
+''' + body + r'''
+int main(void){
+ unsigned char binary[]={0x81,0xa1,'v',0};char borrowed[24];memcpy(borrowed,command_topic,sizeof(command_topic)-1);memset(borrowed+sizeof(command_topic)-1,'X',sizeof(borrowed)-sizeof(command_topic)+1);
+ MQTTString topic={.lenstring={sizeof(command_topic)-1,borrowed}};
+ MQTTMessage message={binary,sizeof(binary),false};MessageData d={&topic,&message};
+ assert(ingress_accept(&d,command)); /* Borrowed topic has no terminating NUL. */
+ topic.lenstring.len--;assert(!ingress_accept(&d,command));
+ topic.lenstring.len=sizeof(command_topic)-1;borrowed[2]=0;assert(!ingress_accept(&d,command));borrowed[2]=command_topic[2];
+ message.retained=true;assert(!ingress_accept(&d,command));message.retained=false;
+ topic.cstring="scope/device/ha/command";assert(!ingress_accept(&d,command));
+ message.payload="{}";message.payloadlen=2;assert(ingress_accept(&d,command));
+ topic.cstring="scope/device/command/extra";message.payload=binary;message.payloadlen=sizeof(binary);assert(!ingress_accept(&d,command));
+ topic.cstring=NULL;topic.lenstring.len=-1;assert(!ingress_accept(&d,command));topic.lenstring.len=sizeof(command_topic)-1;
+ topic.lenstring.data=NULL;assert(!ingress_accept(&d,command));topic.cstring=command_topic;
+ message.payloadlen=MAX_MQTT_DATA_SIZE;assert(!ingress_accept(&d,command));message.payloadlen=0;assert(!ingress_accept(&d,command));
+ message.payload="online";message.payloadlen=6;message.retained=true;assert(ingress_accept(&d,ha_birth));
+ message.payload="onlineX";message.payloadlen=7;assert(!ingress_accept(&d,ha_birth));
+ return 0;
+}
+''')

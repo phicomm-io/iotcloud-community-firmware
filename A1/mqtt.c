@@ -84,8 +84,8 @@ static void ota_snapshot(char *state,char *error,unsigned *progress) {
     snprintf(error,128,"%s",a1_state.ota_error);*progress=a1_state.ota_progress;
     mico_rtos_unlock_mutex(&a1_lock);
 }
-static int ota_publish(const char *leaf,const char *text,bool retained) {
-    char topic[MQTT_TOPIC_MAX];snprintf(topic,sizeof(topic),"%s/%s",base,leaf);return publish(topic,text,retained);
+static int ota_publish(const char *leaf,const void *bytes,size_t length,bool retained) {
+    char topic[MQTT_TOPIC_MAX];snprintf(topic,sizeof(topic),"%s/%s",base,leaf);return publish_bytes(topic,bytes,length,retained);
 }
 #include "../common/ota/mqtt_ota.inc"
 static void command(MessageData *d)

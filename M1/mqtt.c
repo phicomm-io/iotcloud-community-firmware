@@ -159,7 +159,7 @@ static void ota_snapshot(char *state,char *error,unsigned *progress) {
     snprintf(state,32,"%s",m1_state.ota_state);snprintf(error,128,"%s",m1_state.ota_error);
     *progress=m1_state.ota_progress;mico_rtos_unlock_mutex(&m1_lock);
 }
-static int ota_publish(const char *leaf,const char *text,bool retained) { char topic[MQTT_TOPIC_MAX];mqtt_leaf(&account,leaf,topic,sizeof(topic));return publish(topic,text,retained); }
+static int ota_publish(const char *leaf,const void *bytes,size_t length,bool retained) { char topic[MQTT_TOPIC_MAX];mqtt_leaf(&account,leaf,topic,sizeof(topic));return publish_bytes(topic,bytes,length,retained); }
 #include <ctype.h>
 #include "../common/ota/mqtt_ota.inc"
 
