@@ -6,6 +6,7 @@ No product case is moved into the historical SDK-only group to hide a failure.
 
 | Old fixture / assertions | Native equivalent | Owner / current gap |
 | --- | --- | --- |
+| `test_runtime_metrics.c`: missing heap, sampled minimum, consuming boot-reason cache and tick wrap on portable/MOC | Same original assertions encode native `device_runtime_mp`; both variants in `test_native_features` | features; ASan/UBSan PASS |
 | `test_engine.c`, `test_sensor_aggregate.c`: PID, hysteresis, statistics, sleep/schedule, rollover, partial-field/CO2 freshness | Same unmodified C bodies, `test_native_features` | features; preserve in full |
 | `test_automation.c`, `countdown_scenarios.inc`: IDs, persistence-before-action, reboot-last, no replay/catch-up, busy/missed/capacity, all button gestures/pagination, A1 uptime countdown cancel/restart/edit/reboot/wrap, M1 weekly alarms/tone/bounds | Same scenarios and assertions now call `automation_mp` with build-time constant MP vectors; responses use borrowed `ph_value`; `test_native_features` runs A1/M1/TC1 | features; native + ASan/UBSan PASS |
 | `test_runtime.c` transaction validation / CAS / flash rejection / binding limits / six domains | `test_config_mp.c`, `test_feature_mp.c`; historical validation vectors, four/five peer limit, legacy-clamped reads, actual install sample remapping/credential change/save rejection added | features; do not equate existing short MP smoke coverage with all 1049 old lines |

@@ -110,14 +110,9 @@ python3 -m unittest tests.test_json_number_cache tests.test_json_numeric_checked
 PHICOMM_TEST_JSON_DIR="$json_dir" python3 -m unittest tests.test_bemfa tests.test_mqtt_stack_budget tests.test_mqtt_optional_json tests.test_shared_mqtt tests.test_mqtt_buffer_storage tests.test_mqtt_preflight_deferral tests.test_mqtt_http_mixed tests.test_mixed_report tests.test_a1_mqtt_progress tests.test_mqtt_birth_progress tests.test_tc1_mqtt_lifecycle tests.test_m1_mqtt_startup
 "${compiler[@]}" -std=gnu99 -Wall -Wextra -Werror -DWATCHDOG_HOST -Itests/watchdog -Itests/stubs -I"$json_dir" tests/test_watchdog.c "$json_dir"/*.c -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -o "$output/watchdog"
 "$output/watchdog"
-for target in portable moc-mx1290; do
-    target_defines=()
-    if [[ "$target" == moc-mx1290 ]]; then target_defines=(-DMOC=1 -DCONFIG_CPU_MX1290); fi
-    # This runtime-only fixture includes the encoder without a product model;
-    # product schema helpers are deliberately outside its exercised surface.
-    "${compiler[@]}" "${target_defines[@]}" -std=gnu99 -Wall -Wextra -Werror -Wno-unused-function -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -Itests/stubs -I"$json_dir" tests/test_runtime_metrics.c "$json_dir"/*.c -o "$output/runtime-metrics-$target"
-    "$output/runtime-metrics-$target"
-done
+# Original portable/MOC reset/heap/wrap assertions now run native MP through
+# test_native_features; do not relink the historical JSON library into this test.
+
 "${compiler[@]}" -std=gnu99 -Wall -Wextra -Werror -Wno-misleading-indentation -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -Itests/stubs -I"$json_dir" tests/test_json_printbuf_failure.c "$json_dir"/*.c -Wl,--wrap=json_heap_resize -o "$output/json-printbuf-failure"
 "$output/json-printbuf-failure"
 "${compiler[@]}" -std=gnu99 -Wall -Wextra -Werror -Wno-misleading-indentation -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -Itests/stubs -I"$json_dir" tests/test_json_allocation_failure.c "$json_dir"/*.c -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc -Wl,--wrap=strdup -o "$output/json-allocation-failure"
