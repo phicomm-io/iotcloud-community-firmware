@@ -1,3 +1,4 @@
+#include "../../common/firmware_variant_defs.h"
 #include "../../common/i18n.h"
 #include "../../common/ota/mode.h"
 #include "ota_server/signed_adapter.h"
@@ -389,7 +390,7 @@ static int session_prepare(void *context,ph_mqtt_connection *spec) {
     else{sprintf(topic_set,MQTT_CLIENT_SUB_TOPIC1,str_mac);sprintf(topic_state,MQTT_CLIENT_PUB_TOPIC,str_mac);}
     rediscover=false;
     *spec=(ph_mqtt_connection){&account,session_host,session_user,session_password,
-        client_id,availability_topic,session_port,MQTT_CMD_TIMEOUT,tc1_mqtt_read};
+        client_id,availability_topic,session_port,MQTT_CMD_TIMEOUT,tc1_mqtt_read,VERSION,PHICOMM_FIRMWARE_VARIANT};
     return PH_MQTT_PREPARE_READY;
 }
 static bool session_subscription(void *context,unsigned index,ph_mqtt_subscription *out) {

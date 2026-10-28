@@ -1,3 +1,4 @@
+#include "../common/firmware_variant_defs.h"
 #include "../common/ota/mode.h"
 #include "m1.h"
 #include "MQTTClient.h"
@@ -371,7 +372,7 @@ static int session_prepare(void *context,ph_mqtt_connection *spec) {
         if(session_need_availability && !mqtt_format(source_availability_filter,sizeof(source_availability_filter),"phicomm/v2/%s/+/+/availability",account.key))return PH_MQTT_PREPARE_WAIT;
         rediscover=false;
         *spec=(ph_mqtt_connection){&account,cfg.mqtt_host,cfg.mqtt_user,cfg.mqtt_password,
-            client_id,availability_topic,cfg.mqtt_port,5000,m1_mqtt_read};
+            client_id,availability_topic,cfg.mqtt_port,5000,m1_mqtt_read,M1_VERSION,PHICOMM_FIRMWARE_VARIANT};
         return PH_MQTT_PREPARE_READY;
 }
 static bool session_subscription(void *context,unsigned index,ph_mqtt_subscription *out) {

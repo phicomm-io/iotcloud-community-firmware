@@ -1,3 +1,4 @@
+#include "../common/firmware_variant_defs.h"
 #include "../common/ota/mode.h"
 #include "a1.h"
 #ifdef A1_FRESH_AIR
@@ -578,7 +579,7 @@ static int session_prepare(void *context,ph_mqtt_connection *spec) {
         if(count>sizeof(feature_filters)/sizeof(feature_filters[0]))return PH_MQTT_PREPARE_WAIT;
         rediscover=false;
         *spec=(ph_mqtt_connection){&account,cfg.mqtt_host,cfg.mqtt_user,cfg.mqtt_password,
-            client_id,availability_topic,cfg.mqtt_port,5000,mqtt_socket_read};
+            client_id,availability_topic,cfg.mqtt_port,5000,mqtt_socket_read,A1_VERSION,PHICOMM_FIRMWARE_VARIANT};
         return PH_MQTT_PREPARE_READY;
 }
 static bool session_subscription(void *context,unsigned index,ph_mqtt_subscription *out) {

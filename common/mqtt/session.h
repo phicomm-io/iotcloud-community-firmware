@@ -9,6 +9,7 @@ typedef struct {
     const char *host, *user, *password, *client_id, *availability;
     unsigned port, command_timeout_ms;
     int(*read)(Network *, unsigned char *, int, int);
+    const char *firmware_version, *variant;
 }
 
 ph_mqtt_connection;
