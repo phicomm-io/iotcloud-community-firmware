@@ -20,7 +20,9 @@ The following execute production business models through a synchronous
 Historical embedded-MQTT suites are explicitly skipped, not counted as passed:
 `test_hub_mqtt`, `test_hub_admission`, `test_hub_byte_memory`,
 `test_hub_topic_budget`, `test_hub_transport_will`.
-Their C++ fixtures are retained for traceability, not product support.
+Their C++ fixtures are retained for traceability, not product support. The
+production `hub_broker.h` and `hub_transport.h` are removed; those historical
+fixtures intentionally no longer compile against this product tree.
 
 `test_hub_reload` and `test_hub_restore` extract old embedded transport lifecycle
 code and rely on TCP client/retained-store assertions. They are also explicitly
