@@ -22,13 +22,17 @@
 #define http_diag_snapshot ph_http_snapshot
 static ph_http_product product;
 static const char *query_action;
-static enum { QUERY, COMMAND, LIGHT, UPLOAD, MCU, MCU_BULK, DIRECT , BACKUP, RESTORE } operation;
+static enum { QUERY, AUTH, COMMAND, LIGHT, UPLOAD, MCU, MCU_BULK, DIRECT , BACKUP, RESTORE } operation;
 static bool upload_open, upload_pending;
 static bool response(ph_http_exchange *x,unsigned status,const char *type,const void *body,size_t length,bool gzip)
 {
     x->response.status=status;x->response.type=type;x->response.body=body;
     x->response.length=length;x->response.gzip=gzip;return true;
 }
+#define HTTP_AUTH_MODEL "m1"
+#define HTTP_AUTH_ID m1_id
+#define HTTP_AUTH_VERSION FIRMWARE_VERSION
+#include "../common/httpd/local_auth.inc"
 static void str(json_object *o, const char *key, const char *value)
 { json_build_object_add(o, key, json_object_new_string(value)); }
 static void integer(json_object *o, const char *key, int value)
@@ -160,15 +164,22 @@ static ph_http_action begin(ph_http_exchange *x)
     const ph_http_request *r=x->request;
     x->response.cors=phicomm_cors_headers(r->origin);
     if(!strcmp(r->method,"OPTIONS")) { response(x,*x->response.cors?200:403,"text/plain","",0,false);return PH_HTTP_REPLY; }
-    m1_config_t cfg;m1_config_get(&cfg);
-    if(!ph_http_basic(r->authorization,"admin",cfg.web_password)) {
-        ph_http_message(&product,x,401,"Authentication required");x->response.realm="M1";return PH_HTTP_REPLY;
+    if(!strcmp(r->method,"GET") && !strcmp(r->path,"/api/v1/info")){
+        http_auth_info(&product,x);return PH_HTTP_REPLY;
+    }
+    if(http_auth_route(r->path)){
+        if(strcmp(r->method,"POST")||!r->length||r->length>256){http_auth_reply(&product,x,400,"invalid_request",NULL);return PH_HTTP_REPLY;}
+        operation=AUTH;return prepare(x);
+    }
+    bool asset=!strcmp(r->path,"/")||!strcmp(r->path,"/index.html")||!strcmp(r->path,"/favicon.ico");
+    if(!asset && !http_auth_authorized(r->authorization)){
+        http_auth_reply(&product,x,401,"unauthorized",NULL);return PH_HTTP_REPLY;
     }
     if(strncmp(r->path,"/api/v1/",8) && strcmp(r->path,"/") && strcmp(r->path,"/index.html") && strcmp(r->path,"/favicon.ico")) {
         ph_http_message(&product,x,404,"Not found");return PH_HTTP_REPLY;
     }
     if(!strcmp(r->path,"/api/v1/config/backup") || !strcmp(r->path,"/api/v1/config/restore")) {
-        if(!cfg.web_password[0]){ph_http_message(&product,x,403,"set_web_password_first");return PH_HTTP_REPLY;}
+        if(!ph_auth_password_is_set(device_local_auth())){ph_http_message(&product,x,403,"set_web_password_first");return PH_HTTP_REPLY;}
         if(!strcmp(r->method,"GET") && !strcmp(r->path,"/api/v1/config/backup")){operation=BACKUP;return prepare(x);}
         if(!strcmp(r->method,"POST") && !strcmp(r->path,"/api/v1/config/restore")){
             if(!r->have_length || r->length!=device_backup_size()){ph_http_message(&product,x,400,"invalid_backup");return PH_HTTP_REPLY;}
@@ -240,6 +251,7 @@ static bool body_chunk(ph_http_exchange *x,const void *data,size_t n)
 }
 static void complete(ph_http_exchange *x)
 {
+    if(operation==AUTH){http_auth_complete(&product,x);return;}
     if(operation==UPLOAD) {
         bool ok=m1_ota_finish();upload_open=false;
         ph_http_message(&product,x,ok?202:400,ok?"OTA verified; rebooting":"OTA rejected; see /ota for details");return;
