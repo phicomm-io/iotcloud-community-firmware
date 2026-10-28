@@ -26,7 +26,11 @@ esac
 # explicit scenario mapping in tests/coverage/rc4-native-migration.md.
 source tests/host_hash.sh
 python3 -m tests.run_native_rc4
-python3 -m unittest tests.test_prepare_sdk tests.test_apply_sdk_patch tests.test_config_commit
+python3 -m unittest tests.test_prepare_sdk tests.test_config_commit \
+  tests.test_apply_sdk_patch.ApplySdkPatchTests.test_ordered_stack_preserves_edits_and_rejects_partial_or_incompatible_state \
+  tests.test_apply_sdk_patch.ApplySdkPatchTests.test_nested_archive_is_patched_and_idempotent \
+  tests.test_apply_sdk_patch.ApplySdkPatchTests.test_sdk_git_repository_is_patched_and_idempotent \
+  tests.test_apply_sdk_patch.ApplySdkPatchTests.test_plain_sdk_preserves_lf_when_patch_context_is_crlf
 python3 -m unittest tests.test_version tests.test_package_stale_signature tests.test_mixed_candidate_completion tests.test_accepted_upload_postcheck
 python3 -m unittest tests.test_readonly_stress tests.test_readonly_input_edges tests.test_readonly_shared_httpd tests.test_readonly_http_scheduling tests.test_readonly_parallel tests.test_summarize_readonly_evidence tests.test_audit_shared_candidate_completion
 python3 -m unittest tests.test_http_core tests.test_http_core_tcp tests.test_shared_http_adversarial tests.test_shared_http_arm tests.test_shared_http_soak tests.test_shared_http_tcp_soak tests.test_http_mico_sdk_abi
