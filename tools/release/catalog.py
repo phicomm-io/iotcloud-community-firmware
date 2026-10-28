@@ -90,6 +90,9 @@ def make(tag, commit, directory, notes, legacy=False, require_variants=False, ke
     (directory / 'notes.md').write_text(notes)
     (directory / 'index.html').write_text('<!doctype html><meta charset="utf-8"><title>' + tag +
                                          '</title><h1>' + tag + '</h1><pre>' + html.escape(notes) + '</pre>')
+    if not legacy:
+        from device_manifest import write_release
+        write_release(release, directory)
     (directory / 'release.json').write_text(json.dumps(release, ensure_ascii=False, indent=2) + '\n')
     return release
 

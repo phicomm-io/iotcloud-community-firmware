@@ -9,6 +9,7 @@ from pathlib import Path
 from cloudflare import api, ACCOUNT, usage
 from verify import verify as verify_signature
 from release_version import parse_tag, version_key
+from device_manifest import document, encoded, verify_manifests
 BUCKET=f'/accounts/{ACCOUNT}/r2/buckets/phicomm-ota/objects/'
 def get(key):
     return api(BUCKET+urllib.parse.quote(key,safe=''),content_type='application/octet-stream',missing_ok=True)
@@ -31,6 +32,14 @@ def verify(release):
                 if hashlib.sha256(body).hexdigest()!=asset['sha256']:raise ValueError('mirror hash mismatch')
                 if kind=='signed':verify_signature(body,model_name,release['version'],model.get('source_commit',release['commit']),
                                                   variant=variant if parse_tag(release['tag']).core >= (1,0,0) else None)
+        def fetch_manifest(path):
+            req = urllib.request.Request(base + path, headers={'Accept-Encoding': 'identity', 'User-Agent': ''})
+            with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req, timeout=30) as response:
+                if response.url != req.full_url or response.status != 200:
+                    raise ValueError('Device manifest must be a direct download')
+                return response.read()
+        verify_manifests(release, fetch_manifest)
+
 def verify_candidate(release, directory):
     """Read every staged object through the authenticated API, without the Worker."""
     tag = release['tag']
@@ -55,6 +64,8 @@ def verify_candidate(release, directory):
                     raise ValueError('Authenticated candidate asset size or hash mismatch: ' + path)
                 if kind == 'signed':
                     verify_signature(body, model_name, release['version'], model.get('source_commit', release['commit']), variant=variant)
+    verify_manifests(release, bodies.__getitem__)
+
 def smoke(release, bridge=None):
     if parse_tag(release['tag']).prerelease:
         raise ValueError('Release candidates have no production latest manifests')
@@ -76,6 +87,17 @@ def smoke(release, bridge=None):
                 latest=json.load(response)
             if latest['tag']!=selected['tag'] or latest['model']!=model or latest['sha256']!=entry['sha256'] or latest.get('firmware_variant','full')!=variant:
                 raise ValueError('latest manifest smoke test failed')
+            if 'device_manifests' in selected:
+                canonical = document(selected, model, variant, entry)
+                if latest != canonical:
+                    raise ValueError('JSON latest differs from canonical device manifest')
+                # Legacy readers stay on JSON; new v1 devices use MP.
+                if current:
+                    binary_url = url.replace('/latest.json?', '/latest.msgpack?')
+                    with opener.open(urllib.request.Request(binary_url, headers={'User-Agent':'','Accept-Encoding':'identity'}), timeout=30) as response:
+                        if response.read() != encoded(canonical)['msgpack']:
+                            raise ValueError('Binary latest differs from canonical device manifest')
+
 
 def version(tag):return parse_tag(tag).core
 def main():

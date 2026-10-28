@@ -62,3 +62,32 @@ selection; neither `releases/index.json` nor the default note pointer is changed
 `--verify-output OUTPUT --formal --include-candidates` verifies that independent
 snapshot. These files are for the local Pages archive; the stable mirror-note
 publisher does not publish the candidate pointer.
+
+## Dual-format device metadata
+
+New catalogs produce `<asset-stem>.latest.json` and
+`<asset-stem>.latest.msgpack` together in the immutable release directory.
+`release.json.device_manifests["<model>/<variant>"]` indexes both files by
+`path`, byte `size`, and `sha256`. The ten firmware variants, signed firmware
+layout, and firmware signature verification are unchanged. `SHA256SUMS` includes
+both metadata formats; metadata is not itself a new signed firmware envelope.
+Retries reject different manifest bytes under the same immutable name.
+Historical immutable release directories are not regenerated or modified.
+
+Both files have the same flat schema-1 document: string fields `tag`, `version`,
+`commit`, `model`, `firmware_variant`, `path`, `sha256`, `release_log`, plus
+unsigned integer fields `schema` (1) and `size` (signed image length). Strings
+use UTF-8; MP uses standard string, map, and unsigned integer wire types. There
+are no extension types, floats, or numbered fields. Both documents must fit
+4096 bytes. Publication readback and archive validation compare both files to
+the canonical document, not only to their self-reported hashes.
+
+The stable Worker can serve `/ota/v1/<model>/<variant>/latest.msgpack` from
+the indexed immutable asset selected by `stable.json`; older stable releases
+without an indexed binary manifest return 404. JSON and legacy bridge routes
+retain their existing behavior. The Worker continues to reject candidate URLs.
+When explicitly generating a candidate Pages archive, separate
+`/ota/candidate/<model>/<variant>/latest.json` and `latest.msgpack` pointers
+select the highest candidate version. Removing a candidate catalog also removes
+these candidate pointers. These files never select or overwrite stable/legacy
+pointers. Generating them locally does not publish a site or deploy a Worker.

@@ -504,7 +504,7 @@ jobs:
           tag="v$(cat VERSION)"
           printf '%s\n' 'Release validation only; not published.' > release-dry-run.md
           python3 tools/release/catalog.py "$tag" "$(git rev-parse HEAD)" release release-dry-run.md
-          (cd release && sha256sum *.bin *.bin.raw *.bin.signed *.json notes.md index.html > SHA256SUMS && sha256sum -c SHA256SUMS)
+          (cd release && sha256sum *.bin *.bin.raw *.bin.signed *.json *.msgpack notes.md index.html > SHA256SUMS && sha256sum -c SHA256SUMS)
       - uses: actions/upload-artifact@v4
         with:
           name: signed-release
@@ -557,7 +557,7 @@ jobs:
           python3 tools/release/notes.py "$TAG_NAME" --output release-notes.md
           python3 tools/release/catalog.py "$TAG_NAME" "$GITHUB_SHA" release release-notes.md
           (cd release && sha256sum -c SHA256SUMS)
-          (cd release && sha256sum *.bin *.bin.raw *.bin.signed *.json notes.md index.html > SHA256SUMS && sha256sum -c SHA256SUMS)
+          (cd release && sha256sum *.bin *.bin.raw *.bin.signed *.json *.msgpack notes.md index.html > SHA256SUMS && sha256sum -c SHA256SUMS)
       - name: Verify reviewed notes against staged signed firmware
         env:
           GH_TOKEN: ${{ github.token }}
@@ -671,7 +671,7 @@ jobs:
       - name: Test OTA release tooling and Worker
         run: |
           python3 -m unittest discover -s tests -p test_release.py
-          python3 -m unittest tests.test_version tests.test_branch_policy tests.test_release_budget tests.test_release_variant tests.test_release_publish tests.test_release_candidate tests.test_archive_pages tests.test_ci_validation_reuse
+          python3 -m unittest tests.test_version tests.test_branch_policy tests.test_release_budget tests.test_release_variant tests.test_release_publish tests.test_device_manifest tests.test_release_candidate tests.test_archive_pages tests.test_ci_validation_reuse
           node --test tests/test_ota_worker.mjs
       - name: Test production TLS transport with real TLS and sanitizers
         run: python3 tests/test_ota_fetch.py
