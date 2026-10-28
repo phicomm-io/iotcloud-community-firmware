@@ -1,19 +1,41 @@
-"""Run production storage/service functions with a fallible RAM Flash driver."""
+"""Production storage + typed service with a fallible RAM Flash driver.
+
+Readable input tables are encoded to MessagePack in Python before C runs.
+The C binary links no JSON graph/parser/allocator (checked with nm). Legacy
+product declarations still require SDK JSON headers only. MiCO Flash and
+initialised platform-auth/UDP tasks are outside this RAM-backed host test.
+"""
 import os
+import json
+import re
+import struct
+import shlex
 from pathlib import Path
 from tests.test_http_json_budget import function
-from tests.sdk_json import copy_patched_json
 import subprocess
 import tempfile
 import unittest
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(os.environ.get("NATIVE_MP_ROOT", Path(__file__).resolve().parents[1]))
+
+
+def pack_params(value):
+    if type(value) is bool: return b'\xc3' if value else b'\xc2'
+    if type(value) is int: return b'\xd3' + struct.pack('>q', value)
+    if type(value) is float: return b'\xcb' + struct.pack('>d', value)
+    if isinstance(value, str):
+        encoded = value.encode()
+        return (bytes([0xa0 | len(encoded)]) if len(encoded) < 32 else b'\xda' + struct.pack('>H', len(encoded))) + encoded
+    if isinstance(value, dict):
+        return bytes([0x80 | len(value)]) + b''.join(pack_params(k) + pack_params(v) for k,v in value.items())
+    raise ValueError('Unsupported filter test value')
 
 
 class FilterStorageTest(unittest.TestCase):
     def test_storage_commands_and_migration(self):
         main = (ROOT / 'A1/main.c').read_text()
         prefix = main[main.index('static bool config_recovery'):main.index('#include "../common/service.h"')] + main[main.index('mico_mutex_t a1_lock'):main.index('static OSStatus startup_result')] + main[main.index('void automation_load('):main.index('#include "../common/device_status.h"')]
+        prefix = prefix.replace('#include "../common/local_auth_mico.inc"', '')
         migration = main[main.index('    /* The SDK validates'):main.index('#ifdef A1_FRESH_AIR\n    err=startup_result("fresh air GPIO"')]
         weight = function((ROOT / 'common/runtime.c').read_text(), 'unsigned feature_filter_weight(')
         harness = r'''
@@ -46,20 +68,19 @@ static int mico_system_init(void *ctx){(void)ctx;if(sdk_write)assert(!app_config
 static void mico_wlan_get_mac_address(uint8_t *mac){const uint8_t value[]={0xaa,0xbb,0xcc,0xdd,0xee,0xff};memcpy(mac,value,6);}
 PRODUCTION
 static int migrate(void){a1_config_t c;OSStatus err;MIGRATION return config_recovery?-1:0;}
-json_object *a1_status_json(void){return json_object_new_object();}
-json_object *a1_status_live_json(void){return json_object_new_object();}
+/* This fixture tests storage with the local-auth platform not initialized.
+ * Real pure auth-store constructors/transaction core remain linked below. */
+ph_auth_state *device_local_auth(void){return NULL;}
+void device_local_auth_revoke(void){}
+void service_cache_changed(unsigned mask){(void)mask;}
 bool a1_panel_inspect(void){return false;}
-json_object *fresh_command(const char *a,json_object *p,const char **c){(void)a;(void)p;*c="unsupported";return NULL;}
 bool a1_scan_start(void){return false;}
 bool a1_wifi_trial(const a1_config_t *c){(void)c;return false;}
 bool a1_ota_download(const char *u){(void)u;return false;}
-bool a1_control_json(const char *k,json_object *p){(void)k;(void)p;return false;}
 bool a1_control_apply(a1_control_t *r,bool b,bool g){(void)r;(void)b;(void)g;return false;}
-bool a1_control_light_percent(json_object *p){(void)p;return false;}
-int feature_light_select(unsigned effect,json_object **response){(void)effect;(void)response;return 400;}
-json_object *feature_json(const char *d){(void)d;return NULL;}
-int feature_set(const char *d,json_object *p,json_object **o){(void)d;(void)p;(void)o;return 400;}
-json_object *service_parse(const void *data,size_t n){char *copy=strndup(data,n);json_object *o=json_tokener_parse(copy);free(copy);return o;}
+bool fresh_mp(const char *a,const ph_value *p,ph_writer *w,const char **c){(void)a;(void)p;(void)w;*c="unsupported";return false;}
+bool feature_mp(const char *a,const ph_value *p,ph_writer *w,const char **c){(void)a;(void)p;(void)w;(void)c;return false;}
+bool feature_ntp_set_mp(const char *host,const char **code){(void)host;*code="unsupported";return false;}
 #include "common/service_product.inc"
 static app_storage_t live;
 static void init(void){
@@ -69,9 +90,15 @@ static void init(void){
  config_recovery=config_initializing=config_update_pending=false;
  save_at=0;writes=fail_write=sdk_write=0;now=0;
 }
+PARAM_FIXTURES
 static const char *cmd(const char *action,const char *params){
- json_object *p=json_tokener_parse(params);const char *code;json_object *out=service_product(action,p,&code);
- if(out)json_object_put(out);json_object_put(p);return code;
+ const unsigned char *data=NULL;size_t size=0;
+ for(unsigned i=0;i<sizeof(param_cases)/sizeof(param_cases[0]);i++)if(!strcmp(params,param_cases[i].text)){data=param_cases[i].bytes;size=param_cases[i].size;break;}
+ assert(data);ph_value p;assert(phv_parse(PH_WIRE_MSGPACK,data,size,&p));
+ const char *code=NULL;ph_writer w;assert(phw_init(&w,PH_WIRE_MSGPACK));
+ assert(service_product_mp(action,&p,&w,&code));ph_buf *out=phw_take(&w);
+ assert(code&&out);ph_value body;assert(phv_parse(PH_WIRE_MSGPACK,out->buf,out->len,&body)&&body.kind==PHV_MAP);
+ ph_buf_free(out);return code;
 }
 int main(void){
  configuration.light.quality_pm=75;configuration.light.quality_hcho=.1f;
@@ -179,8 +206,8 @@ int main(void){
  live.fresh_air.speed=61;live.fresh_air.fallback_speed=43;strcpy(live.bemfa.app_id,"kept-id");strcpy(live.bemfa.secret_key,"kept-key");
  live.co2.target_co2=917;live.filter.used_seconds=4320*1800;
  memset(&live.filter_stock,0xa5,sizeof(live.filter_stock));
- app_storage_t v9_before=live;v9_before.base.version=10;
- assert(migrate()==0 && live.base.version==10 && !live.filter_stock.weighted);
+ app_storage_t v9_before=live;v9_before.base.version=A1_CONFIG_VERSION;
+ assert(migrate()==0 && live.base.version==A1_CONFIG_VERSION && !live.filter_stock.weighted);
  assert(!memcmp(&v9_before,&live,offsetof(app_storage_t,filter_stock)));
  assert(live.filter_stock.usage==6000000 && !live.filter_stock.air_litres);
  app_storage_t reboot=live;writes=0;assert(migrate()==0 && writes==0 && !memcmp(&live,&reboot,sizeof(live)));
@@ -188,7 +215,7 @@ int main(void){
  /* v9 appends stock accounting without moving old fields or resetting life. */
  init();live.base.version=9;live.filter.used_seconds=4320*1800;
  memset(&live.filter_stock,0xa5,sizeof(live.filter_stock));
- assert(migrate()==0 && live.base.version==10 && !live.filter_stock.weighted);
+ assert(migrate()==0 && live.base.version==A1_CONFIG_VERSION && !live.filter_stock.weighted);
  assert(live.filter_stock.usage==6000000 && a1_filter_stock_remaining(&live.filter_stock)==50);
  assert(!strcmp(cmd("filter.model.set","{\"weighted\":1}"),"invalid_params"));
  assert(!strcmp(cmd("filter.model.set","{\"weighted\":true,\"extra\":1}"),"invalid_params"));
@@ -222,21 +249,49 @@ int main(void){
  fail_write=0;live=flash;assert(device_language_get()==PH_LANG_EN);
  assert(!strcmp(cmd("config.set","{\"section\":\"device\",\"values\":{\"language\":\"zh-CN\"}}"),"accepted"));
  assert(device_language_get()==PH_LANG_ZH && flash.features.language==PH_LANG_ZH && !strcmp(live.base.name,"kept-user-name"));
- puts("A1 persisted language: validation, atomic name rollback, restart and credential preservation OK");
+ /* A stale revision must not commit a language/name pair over a newer save. */
+ a1_config_t stale,current;a1_config_get(&stale);current=stale;
+ strcpy(current.name,"newer-name");assert(a1_device_config_save(&current,PH_LANG_EN));
+ app_storage_t cas_before=live;unsigned cas_writes=writes;
+ strcpy(stale.name,"stale-name");assert(!a1_device_config_save(&stale,PH_LANG_ZH));
+ assert(writes==cas_writes && !memcmp(&live,&cas_before,sizeof(live)));
+ assert(device_language_get()==PH_LANG_EN && !strcmp(flash.base.name,"newer-name"));
+ puts("A1 persisted language: validation, atomic name rollback, restart, stale CAS and credential preservation OK");
  puts("A1 filter production persistence, Flash failure/retry, commands, resets and v1-v6 migration: OK");
 }
 '''.replace('PRODUCTION', prefix).replace('MIGRATION', migration).replace('WEIGHT', weight)
-        json_dir = Path(os.environ.get('PHICOMM_TEST_JSON_DIR', ROOT / 'build/a1-sdk/mico-os/libraries/utilities/json_c'))
+        # Existing readable table inputs are encoded once in Python. The C
+        # fixture links no JSON parser or graph and calls the real typed API.
+        literals = set()
+        for literal in re.findall(r'"(?:\\.|[^"\\])*"', harness):
+            try:
+                text = json.loads(literal)
+                if text.startswith('{'):
+                    json.loads(text)
+                    literals.add(text)
+            except (ValueError, TypeError):
+                pass
+        fixtures = []
+        for i, text in enumerate(sorted(literals)):
+            data = pack_params(json.loads(text))
+            fixtures.append('static const unsigned char param_%d[]={%s};' %
+                            (i, ','.join(map(str, data))))
+        fixtures.append('static const struct { const char *text; const unsigned char *bytes; size_t size; } param_cases[]={')
+        for i, text in enumerate(sorted(literals)):
+            fixtures.append('{%s,param_%d,sizeof(param_%d)},' % (json.dumps(text),i,i))
+        fixtures.append('};')
+        harness = harness.replace('PARAM_FIXTURES', '\n'.join(fixtures))
         with tempfile.TemporaryDirectory() as temp:
-            host_json = copy_patched_json(json_dir, Path(temp) / 'sdk')
-            for path in host_json.glob('*.c'):
-                path.write_text(path.read_text().replace('%ld', '%d'))
-            json_dir = host_json
             source = Path(temp) / 'filter.c'
             source.write_text(harness)
             binary = Path(temp) / 'filter'
-            command = [os.environ.get('CC', 'cc'), '-std=gnu99', '-ffunction-sections', '-Wl,--gc-sections', '-DFEATURE_DEVICE_A1', '-Wno-pointer-sign', '-Wno-misleading-indentation', '-I'+str(ROOT), '-I'+str(ROOT/'A1'), '-I'+str(ROOT/'tests/host'), '-I'+str(json_dir), str(source), str(ROOT/'A1/fresh_air_defaults.c'), str(ROOT/'common/mqtt/bemfa_config.c'), *map(str, json_dir.glob('*.c')), '-lm', '-o', str(binary)]
+            # Legacy product headers still declare HA JSON types. Headers only;
+            # no SDK JSON implementation or allocator is linked by this test.
+            json_headers = Path(os.environ.get('PHICOMM_TEST_JSON_DIR', ROOT / 'build/a1-sdk/mico-os/libraries/utilities/json_c'))
+            command = shlex.split(os.environ.get('CC', 'cc')) + ['-std=gnu99', '-ffunction-sections', '-Wl,--gc-sections', '-DFEATURE_DEVICE_A1', '-Wno-pointer-sign', '-Wno-misleading-indentation', '-I'+str(ROOT), '-I'+str(ROOT/'A1'), '-I'+str(ROOT/'tests/host'), '-I'+str(json_headers), str(source), str(ROOT/'A1/fresh_air_defaults.c'), str(ROOT/'common/mqtt/bemfa_config.c'), str(ROOT/'common/typed_wire.c'), str(ROOT/'common/wire_buffer.c'), str(ROOT/'common/local_auth.c'), '-lm', '-o', str(binary)]
             if os.environ.get('SANITIZE') == '1':
-                command += ['-g', '-fno-omit-frame-pointer', '-fsanitize=address,undefined']
+                command += ['-g', '-fno-omit-frame-pointer', '-fsanitize=address,undefined', '-no-pie']
             subprocess.run(command, check=True)
             subprocess.run([binary], check=True)
+            symbols = subprocess.check_output(['nm', '--defined-only', str(binary)], text=True)
+            self.assertNotRegex(symbols, r'(?m)\b(?:json_object_|json_tokener_|json_heap_|printbuf_)[A-Za-z0-9_]*$')
