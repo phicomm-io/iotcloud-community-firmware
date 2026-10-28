@@ -658,9 +658,14 @@ void m1_status_capture(device_status_t *snapshot, device_status_full_t *full)
     snapshot->now_ms=mico_rtos_get_time(); /* after copying all timestamped state */
     if(full) {
         snapshot->captured|=STATUS_DIAGNOSTIC;
-        runtime_metrics_capture(&full->runtime,snapshot->now_ms);
-        watchdog_status_capture(&full->watchdog); full->http=ph_http_snapshot();
     }
+}
+
+void m1_diagnostics_capture(device_status_t *snapshot,device_status_full_t *full)
+{
+    m1_status_capture(snapshot,full);
+    runtime_metrics_capture(&full->runtime,snapshot->now_ms);
+    watchdog_status_capture(&full->watchdog);full->http=ph_http_snapshot();
 }
 
 #define BACKUP_MODEL "m1"

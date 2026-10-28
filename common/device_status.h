@@ -16,6 +16,7 @@ static inline void device_status_text(char *out,size_t capacity,const char *in,s
 #include "../M1/barometer.h"
 #include "sensor_values.h"
 #include "watchdog.h"
+#include "memory_budget.h"
 #include "httpd/http.h"
 #include "../A1/filter.h"
 #include "../A1/filter_stock.h"
@@ -95,6 +96,7 @@ typedef struct {
     device_network_full_t network; device_ota_full_t ota;
     device_runtime_t runtime; watchdog_status_t watchdog;
     ph_http_diagnostics http;
+    bool service_memory_valid;service_memory_state_t service_memory;
     union {
         struct { a1_filter_storage_t filter; a1_filter_stock_t filter_stock; uint32_t panel_errors, hardware_errors;
             int panel_last_error; uint8_t panel_raw[3]; } a1;
@@ -119,3 +121,9 @@ void device_runtime_mp(ph_writer *,const device_runtime_t *);
 void a1_status_capture(device_status_t *, device_status_full_t *);
 void m1_status_capture(device_status_t *, device_status_full_t *);
 bool tc1_status_capture(device_status_t *, device_status_full_t *);
+
+/* On-demand numeric diagnostic fields; no transport/cache ownership. */
+void device_diagnostics_mp(ph_writer *,const device_status_t *,const device_status_full_t *);
+void a1_diagnostics_capture(device_status_t *,device_status_full_t *);
+void m1_diagnostics_capture(device_status_t *,device_status_full_t *);
+bool tc1_diagnostics_capture(device_status_t *,device_status_full_t *);

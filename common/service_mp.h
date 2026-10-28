@@ -31,6 +31,7 @@ bool service_product_mqtt_mp(const char *action, const ph_value *params,
 void service_product_capabilities_mp(ph_writer *output,
                                     const char *const *extra, bool restricted);
 void service_product_status_mp(ph_writer *output);
+void service_product_diagnostics_mp(ph_writer *output);
 /* Immutable info payload, without a full status capture. */
 void service_product_info_mp(ph_writer *output);
 bool service_product_ota_start(const char *url);

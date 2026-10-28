@@ -341,9 +341,18 @@ bool tc1_status_capture(device_status_t *snapshot, device_status_full_t *full)
     snapshot->now_ms=mico_rtos_get_time();
     if(full){
         full->model.tc1.utc_time=(int32_t)time(NULL);
-        const micoMemInfo_t *memory=MicoGetMemoryInfo();
-        if(memory){full->runtime.memory_valid=true;full->runtime.free_memory=memory->free_memory;}
+
     }
+    return true;
+}
+
+bool tc1_diagnostics_capture(device_status_t *snapshot,device_status_full_t *full)
+{
+    if(!tc1_status_capture(snapshot,full))return false;
+    full->runtime.now_ms=snapshot->now_ms;
+    const micoMemInfo_t *memory=MicoGetMemoryInfo();
+    if(memory){full->runtime.memory_valid=true;full->runtime.free_memory=memory->free_memory;
+        full->runtime.allocated_memory=memory->allocted_memory;full->runtime.free_memory_chunks=memory->num_of_chunks;full->runtime.minimum_free=memory->free_memory;}
     return true;
 }
 

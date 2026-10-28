@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include "common/service.h"
-static unsigned mutations,captures,caps,mqtt_calls;
+static unsigned mutations,captures,caps,mqtt_calls,diagnostics;
 static bool change_during_capture,fail_capture,caps_restricted;
 static bool exhaust_capture,exhaust_mutation;
 static unsigned large_calls;
@@ -54,6 +54,7 @@ static void object(ph_writer *w){phw_begin(w,NULL,false);phw_u32(w,"value",123);
 void service_product_status_mp(ph_writer *w){captures++;if(status_payload_bytes&&!fail_capture&&!change_during_capture&&!exhaust_capture){char value[6000];assert(status_payload_bytes<=sizeof(value));memset(value,'x',status_payload_bytes);phw_begin(w,NULL,false);phw_text_n(w,"large",value,status_payload_bytes);phw_end(w);return;}if(change_during_capture){change_during_capture=false;service_event("info","system","boot");}if(fail_capture){fail_capture=false;w->failed=true;return;}if(exhaust_capture){exhaust_capture=false;test_heap_free=SERVICE_MEMORY_RESERVE;char large[1200];memset(large,'x',sizeof(large));phw_begin(w,NULL,false);phw_text_n(w,"large",large,sizeof(large));phw_end(w);return;}object(w);}
 void service_product_capabilities_mp(ph_writer *w,const char *const *extra,bool restricted){(void)extra;caps_restricted=restricted;caps++;object(w);}
 void service_product_info_mp(ph_writer *w){object(w);}
+void service_product_diagnostics_mp(ph_writer *w){diagnostics++;object(w);}
 bool service_product_mp(const char *action,const ph_value *p,ph_writer *w,const char **out){
  if(!strcmp(action,"large.set")){
   ph_value v;const void *bytes;size_t length;

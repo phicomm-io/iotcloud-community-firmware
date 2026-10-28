@@ -116,6 +116,7 @@ void service_product_status_mp(ph_writer *output)
 {phw_begin(output,NULL,false);phw_text(output,"model","fixture");phw_end(output);}
 void service_product_capabilities_mp(ph_writer *output,const char *const *extra,bool restricted)
 {(void)extra;(void)restricted;phw_begin(output,NULL,false);phw_end(output);}
+void service_product_diagnostics_mp(ph_writer *output){phw_begin(output,NULL,false);phw_end(output);}
 void service_product_info_mp(ph_writer *output)
 {phw_begin(output,NULL,false);phw_text(output,"model","fixture");phw_end(output);}
 bool service_product_ota_start(const char *url){(void)url;return true;}

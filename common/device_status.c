@@ -19,34 +19,6 @@ static void runtime_fields(status_sink *o,const device_runtime_t *s)
     emit_int(o,"free_memory_chunks",s->free_memory_chunks);emit_int(o,"min_observed_free_memory",s->minimum_free);
 }
 #if defined(PHICOMM_APPLICATION_WATCHDOG)
-static void device_http_encode(status_sink *o,const ph_http_diagnostics *snapshot,unsigned requested)
-{
-    ph_http_diagnostics diag = *snapshot;
-    emit_int(o, "http_accept_ok", (int)diag.accepted);
-    emit_int(o, "http_accept_fail", (int)diag.accept_failures);
-    emit_int(o, "http_accept_errno", diag.accept_errno);
-    emit_int(o, "http_accept_last_fd", diag.last_fd);
-    emit_int(o, "http_accept_queue_ok", (int)diag.queued);
-    emit_int(o, "http_accept_queue_reject", (int)diag.rejected);
-    emit_null(o,"http_accept_queue_last_rc");
-    emit_int(o, "http_accept_busy_fcntl_fail", (int)diag.nonblock_failures);
-    emit_int(o, "http_accept_busy_drained", (int)diag.drained);
-    emit_int(o, "http_accept_busy_send_ok", (int)diag.busy_sent);
-    emit_int(o, "http_accept_busy_send_fail", (int)diag.busy_failed);
-    emit_int(o, "http_accept_busy_send_errno", diag.busy_errno);
-    emit_int(o, "http_accept_busy_send_bytes", (int)diag.busy_bytes);
-    emit_int(o, "http_accept_overflow_close", (int)diag.rejected);
-    emit_int(o, "http_accept_queue_capacity", PH_HTTP_WAIT_SLOTS);
-    emit_int(o, "http_tcp_limit_requested", requested);
-    emit_int(o, "http_tcp_limit_set_rc", diag.set_rc);
-    emit_int(o, "http_tcp_limit_set_errno", diag.set_errno);
-    emit_int(o, "http_tcp_limit_get_rc", diag.limit_get_rc);
-    if (diag.limit_get_rc == 0) emit_int(o,"http_tcp_limit_readback",diag.limit);
-    else emit_null(o,"http_tcp_limit_readback");
-    emit_int(o, "http_tcp_connections_get_rc", diag.connections_get_rc);
-    if (diag.connections_get_rc == 0) emit_int(o,"http_tcp_connections",diag.connections);
-    else emit_null(o,"http_tcp_connections");
-}
 #if !defined(PHICOMM_STATUS_MODEL) || PHICOMM_STATUS_MODEL == 0
 static void device_filter_encode(status_sink *o,const a1_filter_storage_t *f,const a1_filter_stock_t *stock)
 {
@@ -67,9 +39,7 @@ static __attribute__((noinline)) void encode_a1(status_sink *o,const device_stat
     emit_string(o,"model","a1");
     if (!live) {
         variant_fields(o);
-        runtime_fields(o, &full->runtime);
-        device_http_encode(o,&full->http,3);
-        watchdog_fields(o, &full->watchdog);
+        emit_int(o,"uptime_seconds",snapshot->now_ms/1000);
         emit_begin(o,"filter",false); device_filter_encode(o,&full->model.a1.filter,&full->model.a1.filter_stock); emit_end(o);
     } else emit_int(o, "uptime_seconds", snapshot->now_ms/1000);
     emit_string(o, "version", snapshot->identity.version); emit_string(o, "device_id", snapshot->identity.id); emit_string(o, "name", snapshot->identity.name);
@@ -80,7 +50,7 @@ static __attribute__((noinline)) void encode_a1(status_sink *o,const device_stat
         emit_string(o, "mqtt_host", full->network.mqtt_host); emit_int(o, "mqtt_port", full->network.mqtt_port); emit_string(o, "mqtt_user", full->network.mqtt_user);
         emit_string(o, "mqtt_topic_mode", "tmcp");
         emit_string(o, "mqtt_protocol", "tmcp"); emit_int(o, "mqtt_protocol_version", 2);
-        emit_int(o, "mqtt_errors", full->network.mqtt_errors); emit_string(o, "mqtt_last_error", full->network.mqtt_last_error);
+
         emit_bool(o, "web_password_set", full->network.web_password_set);
         emit_bool(o, "wifi_password_set", full->network.wifi_password_set);
         emit_bool(o, "mqtt_password_set", full->network.mqtt_password_set);
@@ -114,15 +84,7 @@ static __attribute__((noinline)) void encode_a1(status_sink *o,const device_stat
     emit_bool(o, "led_always_on", snapshot->control.a1.led_always_on); emit_int(o, "brightness", snapshot->control.a1.brightness);
     emit_int(o, "red", snapshot->control.a1.red); emit_int(o, "green", snapshot->control.a1.green); emit_int(o, "blue", snapshot->control.a1.blue);
     emit_bool(o, "child_lock", snapshot->control.a1.child_lock); emit_bool(o, "panel_ready", snapshot->control.a1.panel_ready);
-    if (!live) {
-        emit_int(o, "panel_errors", full->model.a1.panel_errors); emit_int(o, "hardware_errors", full->model.a1.hardware_errors);
-        emit_int(o, "panel_last_error", full->model.a1.panel_last_error);
-        char raw[7];
-        static const char hex[]="0123456789abcdef";
-        for (unsigned i = 0; i < 3; i++) { unsigned b=full->model.a1.panel_raw[i];raw[i*2]=hex[b>>4];raw[i*2+1]=hex[b&15]; }
-        raw[6]=0;
-        emit_string(o, "panel_raw", raw);
-    }
+
     if(snapshot->captured & STATUS_SENSOR) {
         const feature_values_t *v=&snapshot->sensor.a1;
         emit_begin(o,"sensors",false);
@@ -143,12 +105,7 @@ static __attribute__((noinline)) void encode_a1(status_sink *o,const device_stat
         emit_end(o);
     }
     emit_bool(o, "config_dirty", snapshot->control.a1.config_dirty); emit_string(o, "save_error", snapshot->control.a1.save_error);
-    if (!live) {
-        emit_bool(o,"ota_signature_verified",full->ota.signature_verified);
-        emit_bool(o,"ota_image_verified",full->ota.image_verified);
-        emit_int(o,"ota_key_id",full->ota.key_id);emit_int(o,"ota_image_length",full->ota.image_length);
-        emit_string(o,"ota_release_counter",full->ota.release_counter);emit_string(o,"ota_version",full->ota.version);
-    }
+
     emit_string(o, "ota_state", snapshot->ota.state); emit_string(o, "ota_error", snapshot->ota.error);
     emit_int(o, "ota_progress", snapshot->ota.progress); emit_bool(o, "ota_active", snapshot->ota.active);
     emit_bool(o, "reboot_pending", snapshot->ota.reboot_pending); emit_bool(o, "scan_busy", snapshot->ota.scan_busy);
@@ -164,9 +121,7 @@ static __attribute__((noinline)) void encode_m1(status_sink *o,const device_stat
     emit_string(o,"model","m1");
     if (!live) {
         variant_fields(o);
-        runtime_fields(o, &full->runtime);
-        device_http_encode(o,&full->http,4);
-        watchdog_fields(o, &full->watchdog);
+        emit_int(o,"uptime_seconds",snapshot->now_ms/1000);
     } else emit_int(o, "uptime_seconds", snapshot->now_ms/1000);
     emit_string(o, "version", snapshot->identity.version); emit_string(o, "device_id", snapshot->identity.id); emit_string(o, "name", snapshot->identity.name);
     emit_bool(o, "wifi_trial_active", snapshot->network.wifi_trial_active);
@@ -176,7 +131,7 @@ static __attribute__((noinline)) void encode_m1(status_sink *o,const device_stat
         emit_string(o, "mqtt_host", full->network.mqtt_host); emit_int(o, "mqtt_port", full->network.mqtt_port); emit_string(o, "mqtt_user", full->network.mqtt_user);
         emit_string(o, "mqtt_topic_mode", "tmcp");
         emit_string(o, "mqtt_protocol", "tmcp"); emit_int(o, "mqtt_protocol_version", 2);
-        emit_int(o, "mqtt_errors", full->network.mqtt_errors); emit_string(o, "mqtt_last_error", full->network.mqtt_last_error);
+
         emit_int(o, "timezone_minutes", full->model.m1.timezone_minutes);
         const char *ntp_host = full->model.m1.ntp_host;
         emit_string(o, "ntp_host", ntp_host);
@@ -202,8 +157,8 @@ static __attribute__((noinline)) void encode_m1(status_sink *o,const device_stat
     else emit_null(o,"age_ms");
     emit_begin(o,"sensor_health",false);
     const m1_sample_t *sample=&snapshot->sensor.m1.sample;
-    emit_bool(o,"received",sample->received);emit_int(o,"pm25_raw",sample->pm25_status);
-    emit_int(o,"climate_raw",sample->climate_status);emit_int(o,"auxiliary_raw",sample->auxiliary_status);
+    emit_bool(o,"received",sample->received);
+
     emit_bool(o,"pm25_valid",fresh && sample->pm25_status);emit_bool(o,"climate_valid",fresh && sample->climate_status);
     emit_bool(o,"all_flags_ok",fresh && sample->pm25_status && sample->climate_status && sample->auxiliary_status);
     emit_end(o);
@@ -219,16 +174,7 @@ static __attribute__((noinline)) void encode_m1(status_sink *o,const device_stat
     bool co2_fresh = snapshot->sensor.m1.co2.ready && snapshot->sensor.m1.co2.received &&
         (uint32_t)(now - snapshot->sensor.m1.co2.updated_ms) < 20000;
     emit_bool(o, "ready", snapshot->sensor.m1.co2.ready); emit_bool(o, "valid", co2_fresh);
-    emit_string(o, "serial", snapshot->sensor.m1.co2.serial);
-    emit_int(o, "errors", snapshot->sensor.m1.co2.errors);
-    emit_int(o, "last_error", snapshot->sensor.m1.co2.last_error);
-    if (!live) {
-        emit_int(o, "samples", full->model.m1.co2_samples);
-        emit_int(o, "crc_errors", full->model.m1.co2_crc_errors);
-        emit_bool(o, "bus_initialized", full->model.m1.co2_bus_initialized);
-        emit_int(o, "last_command", full->model.m1.co2_last_command);
-        emit_int(o, "error_phase", full->model.m1.co2_error_phase);
-    }
+
     if (snapshot->sensor.m1.co2.received) emit_int(o, "age_ms", (uint32_t)(now - snapshot->sensor.m1.co2.updated_ms));
     else emit_null(o,"age_ms");
     if (co2_fresh) {
@@ -245,22 +191,17 @@ static __attribute__((noinline)) void encode_m1(status_sink *o,const device_stat
     emit_bool(o, "valid", pressure_fresh);
     if (barometer_model) {
         emit_string(o, "model", barometer_model);
-        emit_int(o, "chip_id", b->chip_id);
-        emit_int(o, "address", b->address);
+
     } else {
         emit_null(o,"model");
-        emit_null(o,"chip_id");
-        emit_null(o,"address");
+
     }
     if (pressure_fresh)
         emit_double(o,"pressure_hpa",b->pressure_centi_pa / 10000.0);
     else emit_null(o,"pressure_hpa");
     if (b->received) emit_int(o, "age_ms", (uint32_t)(now - b->updated_ms));
     else emit_null(o,"age_ms");
-    emit_int(o, "samples", b->samples);
-    emit_int(o, "errors", b->errors);
-    emit_int(o, "attempts", b->attempts);
-    emit_int(o, "last_error", b->last_error);
+
     emit_end(o);
     emit_int(o, "brightness_requested", snapshot->control.m1.brightness_requested);
     if (snapshot->sensor.m1.sample.received) emit_double(o,"temperature",snapshot->sensor.m1.sample.temperature_deci_c / 10.0);
@@ -271,18 +212,7 @@ static __attribute__((noinline)) void encode_m1(status_sink *o,const device_stat
     else emit_null(o,"formaldehyde");
     if (snapshot->sensor.m1.sample.received) emit_int(o,"pm25",snapshot->sensor.m1.sample.pm25_ug_m3);
     else emit_null(o,"pm25");
-    if (!live) {
-        emit_int(o, "rx_frames", full->model.m1.rx_frames); emit_int(o, "unknown_frames", full->model.m1.unknown_frames);
-        emit_int(o, "uart_errors", full->model.m1.uart_errors); emit_int(o, "discarded_bytes", full->model.m1.discarded_bytes);
-        char frame[41];
-        static const char hex[]="0123456789abcdef";
-        for (unsigned i = 0; i < 20; i++) { unsigned b=full->model.m1.last_frame[i];frame[i*2]=hex[b>>4];frame[i*2+1]=hex[b&15]; }
-        frame[40]=0;
-        emit_string(o, "last_frame", frame); emit_bool(o,"ota_signature_verified",full->ota.signature_verified);
-        emit_bool(o,"ota_image_verified",full->ota.image_verified);
-        emit_int(o,"ota_key_id",full->ota.key_id);emit_int(o,"ota_image_length",full->ota.image_length);
-        emit_string(o,"ota_release_counter",full->ota.release_counter);emit_string(o,"ota_version",full->ota.version);
-    }
+
     emit_string(o, "ota_state", snapshot->ota.state); emit_string(o, "ota_error", snapshot->ota.error);
     emit_int(o, "ota_progress", snapshot->ota.progress); emit_bool(o, "ota_active", snapshot->ota.active);
     emit_bool(o, "scan_busy", snapshot->ota.scan_busy);
@@ -309,7 +239,7 @@ static __attribute__((noinline)) void encode_tc1(status_sink *o,const device_sta
         emit_end(o);
         emit_int(o,"mqtt_port",full->network.mqtt_port);
         emit_int(o,"report_seconds",full->model.tc1.report_seconds);emit_int(o,"powerCoefficientX100",full->model.tc1.power_coefficient);
-        if(full->runtime.memory_valid)emit_int(o,"free_memory",full->runtime.free_memory);
+
         emit_bool(o,"wifi_password_set",full->network.wifi_password_set);emit_bool(o,"mqtt_password_set",full->network.mqtt_password_set);emit_bool(o,"web_password_set",full->network.web_password_set);
         variant_fields(o);
     }
@@ -348,9 +278,7 @@ static bool device_status_visit(status_sink *o,const device_status_t *s,const de
         emit_bool(o,"bemfa_enabled",s->network.bemfa_enabled);
         emit_bool(o,"bemfa_connected",s->network.bemfa_status==5);
         emit_string(o,"bemfa_status",device_mqtt_status(s->network.bemfa_status));
-        emit_int(o,"bemfa_errors",s->network.bemfa_errors);
-        emit_int(o,"bemfa_last_stage",s->network.bemfa_last_stage);
-        emit_int(o,"bemfa_last_error",s->network.bemfa_last_error);
+
     }
 #endif
     emit_end(o);
@@ -382,4 +310,109 @@ void device_status_mp(ph_writer *o,const device_status_t *s,const device_status_
         }
     }
     if(!full||!device_status_visit(o,s,full,NULL))o->failed=true;
+}
+
+/* On-demand diagnostics. Stable IDs are generated from diagnostics-schema.json.
+ * Pairs keep numeric IDs without relaxing the string-map request parser. */
+#include "diagnostics_ids.h"
+static void diagnostic_field(ph_writer *w,unsigned id){phw_begin(w,NULL,true);phw_u32(w,NULL,id);}
+void device_diagnostics_mp(ph_writer *w,const device_status_t *s,const device_status_full_t *f)
+{
+ if(!w)return;
+ if(!s||!f||!(s->captured&STATUS_DIAGNOSTIC)){w->failed=true;return;}
+ char raw[7],frame[41];static const char hex[]="0123456789abcdef";
+ for(unsigned i=0;i<3;i++){unsigned b=f->model.a1.panel_raw[i];raw[i*2]=hex[b>>4];raw[i*2+1]=hex[b&15];}raw[6]=0;
+ for(unsigned i=0;i<20;i++){unsigned b=f->model.m1.last_frame[i];frame[i*2]=hex[b>>4];frame[i*2+1]=hex[b&15];}frame[40]=0;
+ phw_begin(w,NULL,false);phw_u32(w,"schema",PH_DIAGNOSTICS_SCHEMA);
+ phw_begin(w,"fields",true);
+ if(f->runtime.reset_valid){diagnostic_field(w,PH_DIAG_LAST_RESET_REASON);phw_i32(w,NULL,f->runtime.reset_reason);phw_end(w);}
+ {diagnostic_field(w,PH_DIAG_UPTIME_MS);phw_u32(w,NULL,s->now_ms);phw_end(w);}
+ {diagnostic_field(w,PH_DIAG_UPTIME_SECONDS);phw_i32(w,NULL,s->now_ms/1000);phw_end(w);}
+ if(f->runtime.memory_valid){diagnostic_field(w,PH_DIAG_FREE_MEMORY);phw_i32(w,NULL,f->runtime.free_memory);phw_end(w);}
+ if(f->runtime.memory_valid){diagnostic_field(w,PH_DIAG_ALLOCATED_MEMORY);phw_i32(w,NULL,f->runtime.allocated_memory);phw_end(w);}
+ if(f->runtime.memory_valid){diagnostic_field(w,PH_DIAG_FREE_MEMORY_CHUNKS);phw_i32(w,NULL,f->runtime.free_memory_chunks);phw_end(w);}
+ if(f->runtime.memory_valid){diagnostic_field(w,PH_DIAG_MIN_OBSERVED_FREE_MEMORY);phw_i32(w,NULL,f->runtime.minimum_free);phw_end(w);}
+ if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_RESET_REASON);phw_text(w,NULL,f->watchdog.reset_name);phw_end(w);}
+ if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_RESET_REASON_RAW);phw_i32(w,NULL,f->watchdog.reset_raw);phw_end(w);}
+ if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_WATCHDOG_ENABLED);phw_bool(w,NULL,f->watchdog.enabled);phw_end(w);}
+ if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_WATCHDOG_STATE);phw_text(w,NULL,f->watchdog.failed?"fault":f->watchdog.ready?"healthy":"starting");phw_end(w);}
+ if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_WATCHDOG_FAULT);phw_text(w,NULL,f->watchdog.fault);phw_end(w);}
+ if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_HTTP_ACCEPT_OK);phw_i32(w,NULL,(int)f->http.accepted);phw_end(w);}
+ if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_HTTP_ACCEPT_FAIL);phw_i32(w,NULL,(int)f->http.accept_failures);phw_end(w);}
+ if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_HTTP_ACCEPT_ERRNO);phw_i32(w,NULL,f->http.accept_errno);phw_end(w);}
+ if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_HTTP_ACCEPT_LAST_FD);phw_i32(w,NULL,f->http.last_fd);phw_end(w);}
+ if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_HTTP_ACCEPT_QUEUE_OK);phw_i32(w,NULL,(int)f->http.queued);phw_end(w);}
+ if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_HTTP_ACCEPT_QUEUE_REJECT);phw_i32(w,NULL,(int)f->http.rejected);phw_end(w);}
+ if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_HTTP_ACCEPT_BUSY_FCNTL_FAIL);phw_i32(w,NULL,(int)f->http.nonblock_failures);phw_end(w);}
+ if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_HTTP_ACCEPT_BUSY_DRAINED);phw_i32(w,NULL,(int)f->http.drained);phw_end(w);}
+ if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_HTTP_ACCEPT_BUSY_SEND_OK);phw_i32(w,NULL,(int)f->http.busy_sent);phw_end(w);}
+ if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_HTTP_ACCEPT_BUSY_SEND_FAIL);phw_i32(w,NULL,(int)f->http.busy_failed);phw_end(w);}
+ if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_HTTP_ACCEPT_BUSY_SEND_ERRNO);phw_i32(w,NULL,f->http.busy_errno);phw_end(w);}
+ if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_HTTP_ACCEPT_BUSY_SEND_BYTES);phw_i32(w,NULL,(int)f->http.busy_bytes);phw_end(w);}
+ if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_HTTP_ACCEPT_OVERFLOW_CLOSE);phw_i32(w,NULL,(int)f->http.rejected);phw_end(w);}
+ if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_HTTP_ACCEPT_QUEUE_CAPACITY);phw_i32(w,NULL,PH_HTTP_WAIT_SLOTS);phw_end(w);}
+ if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_HTTP_TCP_LIMIT_REQUESTED);phw_i32(w,NULL,PH_HTTP_WAIT_SLOTS+1);phw_end(w);}
+ if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_HTTP_TCP_LIMIT_SET_RC);phw_i32(w,NULL,f->http.set_rc);phw_end(w);}
+ if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_HTTP_TCP_LIMIT_SET_ERRNO);phw_i32(w,NULL,f->http.set_errno);phw_end(w);}
+ if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_HTTP_TCP_LIMIT_GET_RC);phw_i32(w,NULL,f->http.limit_get_rc);phw_end(w);}
+ if(s->model!=DEVICE_TC1&&f->http.limit_get_rc==0){diagnostic_field(w,PH_DIAG_HTTP_TCP_LIMIT_READBACK);phw_i32(w,NULL,f->http.limit);phw_end(w);}
+ if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_HTTP_TCP_CONNECTIONS_GET_RC);phw_i32(w,NULL,f->http.connections_get_rc);phw_end(w);}
+ if(s->model!=DEVICE_TC1&&f->http.connections_get_rc==0){diagnostic_field(w,PH_DIAG_HTTP_TCP_CONNECTIONS);phw_i32(w,NULL,f->http.connections);phw_end(w);}
+ if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_MQTT_ERRORS);phw_i32(w,NULL,f->network.mqtt_errors);phw_end(w);}
+ if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_MQTT_LAST_ERROR);phw_text(w,NULL,f->network.mqtt_last_error);phw_end(w);}
+ if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_OTA_SIGNATURE_VERIFIED);phw_bool(w,NULL,f->ota.signature_verified);phw_end(w);}
+ if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_OTA_IMAGE_VERIFIED);phw_bool(w,NULL,f->ota.image_verified);phw_end(w);}
+ if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_OTA_KEY_ID);phw_i32(w,NULL,f->ota.key_id);phw_end(w);}
+ if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_OTA_IMAGE_LENGTH);phw_i32(w,NULL,f->ota.image_length);phw_end(w);}
+ if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_OTA_RELEASE_COUNTER);phw_text(w,NULL,f->ota.release_counter);phw_end(w);}
+ if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_OTA_VERSION);phw_text(w,NULL,f->ota.version);phw_end(w);}
+ if(s->model==DEVICE_A1){diagnostic_field(w,PH_DIAG_PANEL_ERRORS);phw_i32(w,NULL,f->model.a1.panel_errors);phw_end(w);}
+ if(s->model==DEVICE_A1){diagnostic_field(w,PH_DIAG_HARDWARE_ERRORS);phw_i32(w,NULL,f->model.a1.hardware_errors);phw_end(w);}
+ if(s->model==DEVICE_A1){diagnostic_field(w,PH_DIAG_PANEL_LAST_ERROR);phw_i32(w,NULL,f->model.a1.panel_last_error);phw_end(w);}
+ if(s->model==DEVICE_A1){diagnostic_field(w,PH_DIAG_PANEL_RAW);phw_text(w,NULL,raw);phw_end(w);}
+ if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_RX_FRAMES);phw_i32(w,NULL,f->model.m1.rx_frames);phw_end(w);}
+ if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_UNKNOWN_FRAMES);phw_i32(w,NULL,f->model.m1.unknown_frames);phw_end(w);}
+ if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_UART_ERRORS);phw_i32(w,NULL,f->model.m1.uart_errors);phw_end(w);}
+ if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_DISCARDED_BYTES);phw_i32(w,NULL,f->model.m1.discarded_bytes);phw_end(w);}
+ if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_LAST_FRAME);phw_text(w,NULL,frame);phw_end(w);}
+ if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_SENSOR_HEALTH_PM25_RAW);phw_i32(w,NULL,s->sensor.m1.sample.pm25_status);phw_end(w);}
+ if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_SENSOR_HEALTH_CLIMATE_RAW);phw_i32(w,NULL,s->sensor.m1.sample.climate_status);phw_end(w);}
+ if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_SENSOR_HEALTH_AUXILIARY_RAW);phw_i32(w,NULL,s->sensor.m1.sample.auxiliary_status);phw_end(w);}
+ if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_SCD40_SERIAL);phw_text(w,NULL,s->sensor.m1.co2.serial);phw_end(w);}
+ if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_SCD40_ERRORS);phw_i32(w,NULL,s->sensor.m1.co2.errors);phw_end(w);}
+ if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_SCD40_LAST_ERROR);phw_i32(w,NULL,s->sensor.m1.co2.last_error);phw_end(w);}
+ if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_SCD40_SAMPLES);phw_i32(w,NULL,f->model.m1.co2_samples);phw_end(w);}
+ if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_SCD40_CRC_ERRORS);phw_i32(w,NULL,f->model.m1.co2_crc_errors);phw_end(w);}
+ if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_SCD40_BUS_INITIALIZED);phw_bool(w,NULL,f->model.m1.co2_bus_initialized);phw_end(w);}
+ if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_SCD40_LAST_COMMAND);phw_i32(w,NULL,f->model.m1.co2_last_command);phw_end(w);}
+ if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_SCD40_ERROR_PHASE);phw_i32(w,NULL,f->model.m1.co2_error_phase);phw_end(w);}
+ if(s->model==DEVICE_M1&&m1_barometer_model(s->sensor.m1.barometer.chip_id)){diagnostic_field(w,PH_DIAG_BAROMETER_CHIP_ID);phw_i32(w,NULL,s->sensor.m1.barometer.chip_id);phw_end(w);}
+ if(s->model==DEVICE_M1&&m1_barometer_model(s->sensor.m1.barometer.chip_id)){diagnostic_field(w,PH_DIAG_BAROMETER_ADDRESS);phw_i32(w,NULL,s->sensor.m1.barometer.address);phw_end(w);}
+ if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_BAROMETER_SAMPLES);phw_i32(w,NULL,s->sensor.m1.barometer.samples);phw_end(w);}
+ if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_BAROMETER_ERRORS);phw_i32(w,NULL,s->sensor.m1.barometer.errors);phw_end(w);}
+ if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_BAROMETER_ATTEMPTS);phw_i32(w,NULL,s->sensor.m1.barometer.attempts);phw_end(w);}
+ if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_BAROMETER_LAST_ERROR);phw_i32(w,NULL,s->sensor.m1.barometer.last_error);phw_end(w);}
+#ifdef PHICOMM_BEMFA
+ if(s->model!=DEVICE_M1){diagnostic_field(w,PH_DIAG_BEMFA_ERRORS);phw_i32(w,NULL,s->network.bemfa_errors);phw_end(w);}
+#endif
+#ifdef PHICOMM_BEMFA
+ if(s->model!=DEVICE_M1){diagnostic_field(w,PH_DIAG_BEMFA_LAST_STAGE);phw_i32(w,NULL,s->network.bemfa_last_stage);phw_end(w);}
+#endif
+#ifdef PHICOMM_BEMFA
+ if(s->model!=DEVICE_M1){diagnostic_field(w,PH_DIAG_BEMFA_LAST_ERROR);phw_i32(w,NULL,s->network.bemfa_last_error);phw_end(w);}
+#endif
+ if(f->service_memory_valid){
+  diagnostic_field(w,PH_DIAG_SERVICE_MEMORY_RESERVED);phw_u32(w,NULL,f->service_memory.reserved);phw_end(w);
+  diagnostic_field(w,PH_DIAG_SERVICE_MEMORY_ACTIVE);phw_u32(w,NULL,f->service_memory.active);phw_end(w);
+  diagnostic_field(w,PH_DIAG_SERVICE_MEMORY_DENIED);phw_u32(w,NULL,f->service_memory.denied);phw_end(w);
+  diagnostic_field(w,PH_DIAG_SERVICE_MEMORY_WAITING);phw_u32(w,NULL,f->service_memory.waiting);phw_end(w);
+  diagnostic_field(w,PH_DIAG_SERVICE_MEMORY_MINIMUM_FREE);phw_u32(w,NULL,f->service_memory.minimum_free);phw_end(w);
+  diagnostic_field(w,PH_DIAG_SERVICE_MEMORY_MQTT_PENDING);phw_u32(w,NULL,f->service_memory.mqtt_pending);phw_end(w);
+  diagnostic_field(w,PH_DIAG_SERVICE_MEMORY_MQTT_PEAK);phw_u32(w,NULL,f->service_memory.mqtt_peak);phw_end(w);
+  diagnostic_field(w,PH_DIAG_SERVICE_MEMORY_MQTT_OVERFLOW);phw_u32(w,NULL,f->service_memory.mqtt_overflow);phw_end(w);
+  diagnostic_field(w,PH_DIAG_SERVICE_MEMORY_MQTT_MAX_DELAY);phw_u32(w,NULL,f->service_memory.mqtt_max_delay);phw_end(w);
+  diagnostic_field(w,PH_DIAG_SERVICE_MEMORY_WIRE_ALLOC_FAILED);phw_u32(w,NULL,f->service_memory.wire_alloc_failed);phw_end(w);
+  diagnostic_field(w,PH_DIAG_SERVICE_MEMORY_WIRE_GUARD_DENIED);phw_u32(w,NULL,f->service_memory.wire_guard_denied);phw_end(w);
+ }
+ phw_end(w);phw_end(w);
 }

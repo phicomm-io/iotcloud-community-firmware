@@ -45,9 +45,9 @@ static void integer(ph_value b,const char *key,int64_t expected){ph_value v=get(
 static void valid(ph_value b,bool expected){ph_value v=get(b,"valid");bool flag;assert(phv_bool(&v,&flag)&&flag==expected);}
 int main(void){
     barometer_state_t state={0};ph_value b=snapshot(state,0);
-    nil(b,"model");nil(b,"chip_id");nil(b,"address");nil(b,"pressure_hpa");nil(b,"age_ms");
+    nil(b,"model");assert(!phv_get(&b,"chip_id",&(ph_value){0}));assert(!phv_get(&b,"address",&(ph_value){0}));nil(b,"pressure_hpa");nil(b,"age_ms");
     state=(barometer_state_t){.ready=true,.received=true,.chip_id=0x50,.address=0x77,.pressure_centi_pa=10132400};
-    b=snapshot(state,9999);text(b,"model","BMP388");integer(b,"chip_id",80);integer(b,"address",119);
+    b=snapshot(state,9999);text(b,"model","BMP388");assert(!phv_get(&b,"chip_id",&(ph_value){0}));assert(!phv_get(&b,"address",&(ph_value){0}));
     ph_value pressure=get(b,"pressure_hpa");double n;assert(phv_number(&pressure,&n)&&fabs(n-1013.24)<0.000001);valid(b,true);
     b=snapshot(state,10000);nil(b,"pressure_hpa");valid(b,false);
     state.chip_id=0x60;state.address=0x76;b=snapshot(state,1);text(b,"model","BMP390");

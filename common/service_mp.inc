@@ -122,7 +122,7 @@ static ph_buf *mp_dispatch(mp_request *r,const void *raw,size_t length,bool mqtt
 {
     const char *action=r->action,*code="invalid_params";const ph_value *p=&r->params;
     bool query=strlen(action)>4&&!strcmp(action+strlen(action)-4,".get");
-    if((!strcmp(action,"capabilities.get")||!strcmp(action,"info.get")||!strcmp(action,"ota.status.get")||!strcmp(action,"ota.cancel"))&&!phv_keys(p,""))return service_error_mp(r->id,"invalid_params");
+    if((!strcmp(action,"diagnostics.get")||!strcmp(action,"capabilities.get")||!strcmp(action,"info.get")||!strcmp(action,"ota.status.get")||!strcmp(action,"ota.cancel"))&&!phv_keys(p,""))return service_error_mp(r->id,"invalid_params");
     if(!strcmp(action,"status.get")){
         ph_value view;if(!phv_keys(p,"|view|")||(phv_get(p,"view",&view)&&!phv_equal_text(&view,"full")&&!phv_equal_text(&view,"live")))return service_error_mp(r->id,"invalid_params");
     }
@@ -147,7 +147,8 @@ static ph_buf *mp_dispatch(mp_request *r,const void *raw,size_t length,bool mqtt
     }else if(!strcmp(action,"capabilities.get")&&phv_keys(p,"")){
         if(active){service_product_capabilities_mp(&w,update_capability_names,true);code="ok";}
         else{payload=mp_cached(1);code=payload?"ok":"busy";}
-    }else if(!strcmp(action,"info.get")&&phv_keys(p,"")){service_product_info_mp(&w);code="ok";}
+    }else if(!strcmp(action,"diagnostics.get")&&!active){service_product_diagnostics_mp(&w);code="ok";}
+    else if(!strcmp(action,"info.get")&&phv_keys(p,"")){service_product_info_mp(&w);code="ok";}
 #ifdef PHICOMM_DEVICE_OTA
     else if(!strcmp(action,"ota.cancel")&&phv_keys(p,"")){code=ota_job_cancel()?"accepted":"busy";mp_empty(&w);}
     else if(!strcmp(action,"ota.status.get")||(!strcmp(action,"status.get")&&active)){ota_job_status_mp(&w);code="ok";}

@@ -32,7 +32,10 @@ CAPTURE
 static ph_buf*encode(const device_status_t*s,const device_status_full_t*f){ph_writer w;assert(phw_init(&w,PH_WIRE_MSGPACK));device_status_mp(&w,s,f);ph_buf*b=phw_take(&w);assert(b);return b;}
 int main(void){
  strcpy(cfg.name,"test name");strcpy(cfg.ssid,"test ssid");strcpy(cfg.web_password,"secret");state.wifi_connected=true;
- device_status_t frozen;device_status_full_t full;LOWER_status_capture(&frozen,&full);assert(expensive&&full.network.web_password_set&&!held);expensive=0;
+ device_status_t frozen;device_status_full_t full;LOWER_status_capture(&frozen,&full);assert(full.network.web_password_set&&!held);
+ /* Normal full business capture does not sample runtime/HTTP/watchdog. */
+ assert(!full.runtime.memory_valid);expensive=0;
+ LOWER_diagnostics_capture(&frozen,&full);assert(expensive>=3&&full.runtime.memory_valid&&!held);expensive=0;
  device_status_t live;LOWER_status_capture(&live,NULL);assert(!expensive&&!held);
  allow_getters=false;ph_buf*wire=encode(&frozen,&full);for(size_t i=0;i+6<=wire->len;i++)assert(memcmp(wire->buf+i,"secret",6));
  memset(&cfg,0xa5,sizeof(cfg));memset(&state,0xa5,sizeof(state));now=999999;memory.free_memory=1;
@@ -70,7 +73,7 @@ class StatusViewsTest(unittest.TestCase):
  def test_capture_is_owned_pure_and_race_safe(self):
   for model in ('A1','M1'):
    with self.subTest(model=model),tempfile.TemporaryDirectory() as tmp:
-    d=Path(tmp);prefix=model.lower();capture=function((ROOT/model/'main.c').read_text(),f'void {prefix}_status_capture(')
+    d=Path(tmp);prefix=model.lower();capture=function((ROOT/model/'main.c').read_text(),f'void {prefix}_status_capture(')+'\n'+function((ROOT/model/'main.c').read_text(),f'void {prefix}_diagnostics_capture(')
     text=COMMON
     for key,value in [('MODEL_SETUP',A1 if model=='A1' else M1),('ON_WAIT','' if model=='A1' else M1_RACE),('CAPTURE',capture),('SENSOR_CHECK',A1_CHECK if model=='A1' else M1_CHECK),('LOWER',prefix),('MODEL',model)]:text=text.replace(key,value)
     src=d/'case.c';src.write_text(text)

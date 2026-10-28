@@ -59,7 +59,7 @@ int main(void){
  busy=false;assert(tc1_status_capture(&snapshot,NULL));assert(!expensive&&!held);
  assert(strlen(snapshot.identity.name)==32&&!memcmp(snapshot.identity.name,sys_config->micoSystemConfig.name,32));
  ph_value root,v;ph_writer unavailable;assert(phw_init(&unavailable,1));device_status_mp(&unavailable,&snapshot,NULL);assert(!phw_take(&unavailable)); /* public contract is full only */
- assert(tc1_status_capture(&snapshot,&full));assert(expensive==2&&!held);
+ assert(tc1_status_capture(&snapshot,&full));assert(expensive==1&&!held);
  assert(strlen(full.network.ssid)==32&&!memcmp(full.network.ssid,sys_config->micoSystemConfig.ssid,32));
  for(unsigned i=0;i<6;i++)assert(strlen(full.model.tc1.socket_names[i])==63);
  allowed=false;ph_buf*first=encode(&snapshot,&full);assert(phv_parse(1,first->buf,first->len,&root));
@@ -71,8 +71,8 @@ int main(void){
  assert(phv_get(&root,"socket_states",&v)&&v.count==6);for(unsigned i=0;i<6;i++){ph_value item;int64_t state;assert(phv_at(&v,i,&item)&&phv_int(&item,&state)&&state==(int64_t)(i%2));}
  const char*flags[]={"wifi_password_set","mqtt_password_set","web_password_set","wifi_connected","mqtt_connected","child_lock"};
  for(unsigned i=0;i<sizeof(flags)/sizeof(*flags);i++){bool yes;assert(phv_get(&root,flags[i],&v)&&phv_bool(&v,&yes)&&yes);}
- const char*numbers[]={"utc_time","free_memory","uptime_seconds","ota_progress"};const int64_t values[]={1700000000,30000,25,0};
- for(unsigned i=0;i<4;i++){int64_t number;assert(phv_get(&root,numbers[i],&v)&&phv_int(&v,&number)&&number==values[i]);}
+ const char*numbers[]={"utc_time","uptime_seconds","ota_progress"};const int64_t values[]={1700000000,25,0};
+ for(unsigned i=0;i<3;i++){int64_t number;assert(phv_get(&root,numbers[i],&v)&&phv_int(&v,&number)&&number==values[i]);}
  memset(sys_config,0xa5,sizeof(*sys_config));memset(&user,0xa5,sizeof(user));
  ph_buf*second=encode(&snapshot,&full);assert(first->len==second->len&&!memcmp(first->buf,second->buf,first->len));ph_buf_free(first);ph_buf_free(second);
  puts("TC1 SDK name/SSID32, outlet63, guarded capture, secret-free frozen native MP PASS");return 0;

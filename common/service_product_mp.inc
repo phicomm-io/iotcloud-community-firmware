@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Native business adapters: borrowed typed parameters, direct wire output. */
 #include "service_mp.h"
+#include "diagnostics_ids.h"
 static bool smp_has(const ph_value *p,const char *key){ph_value v;return phv_get(p,key,&v);}
 static bool smp_int(const ph_value *p,const char *key,int *out,int lo,int hi){ph_value v;int64_t n;if(!phv_get(p,key,&v)||!phv_int(&v,&n)||n<lo||n>hi)return false;*out=(int)n;return true;}
 static bool smp_bool(const ph_value *p,const char *key,bool *out){ph_value v;return phv_get(p,key,&v)&&phv_bool(&v,out);}
@@ -22,6 +23,16 @@ void service_product_status_mp(ph_writer *w){
 #endif
  device_status_mp(w,&snapshot,&full);
 }
+void service_product_diagnostics_mp(ph_writer *w){
+ device_status_t snapshot;device_status_full_t full;
+#ifdef FEATURE_DEVICE_A1
+ a1_diagnostics_capture(&snapshot,&full);
+#else
+ m1_diagnostics_capture(&snapshot,&full);
+#endif
+ service_memory_snapshot(&full.service_memory);full.service_memory_valid=true;
+ device_diagnostics_mp(w,&snapshot,&full);
+}
 void service_product_capabilities_mp(ph_writer *w,const char *const *extra,bool restricted){
  phw_begin(w,NULL,false);
  phw_text(w,"model",DEVICE_MODEL);phw_text(w,"device_id",DEVICE_ID);
@@ -30,6 +41,7 @@ void service_product_capabilities_mp(ph_writer *w,const char *const *extra,bool 
   phw_u32(w,"protocol",2);phw_text(w,"mqtt_protocol","tmcp");phw_u32(w,"mqtt_protocol_version",2);
   phw_u32(w,"wire_version",1);phw_begin(w,"wire_formats",true);phw_text(w,NULL,"msgpack");phw_end(w);phw_text(w,"default_wire_format","msgpack");
   phw_begin(w,"status_views",true);phw_text(w,NULL,"full");phw_end(w);phw_text(w,"device_language","zh-CN,en");
+  phw_u32(w,"diagnostics_schema",PH_DIAGNOSTICS_SCHEMA);phw_bool(w,"business_status",true);
   phw_u32(w,"config_backup",1);phw_bool(w,"config_recovery",device_config_recovery());
 #ifndef FEATURE_DEVICE_A1
   phw_u32(w,"sensor_session_protocol",2);phw_u32(w,"sensor_schema",3);phw_u32(w,"sensor_alarm_config_schema",1);phw_u32(w,"mcu_ota_max_bytes",32768);
