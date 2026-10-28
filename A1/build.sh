@@ -87,7 +87,15 @@ if [[ ! -x "$python2" ]]; then
     )
 fi
 compiler_version="$($gcc_dir/bin/arm-none-eabi-gcc -dumpversion)"
-[[ "$compiler_version" == 5.4.1 ]] || { echo 'Expected ARM GCC 5.4.1' >&2; exit 1; }
+expected_compiler_version="${PHICOMM_BUILD_COMPILER_EXPECTED:-5.4.1}"
+case "$expected_compiler_version" in
+    5.4.1|14.3.1) ;;
+    *) echo "Unsupported ARM GCC expectation: $expected_compiler_version" >&2; exit 1 ;;
+esac
+[[ "$compiler_version" == "$expected_compiler_version" ]] || {
+    echo "Expected ARM GCC $expected_compiler_version, got $compiler_version" >&2
+    exit 1
+}
 
 micoder="$tools_dir/MiCoder"
 mkdir -p "$micoder/cmd/Linux64" "$micoder/compiler/arm-none-eabi-5_4-2016q2-20160622"
