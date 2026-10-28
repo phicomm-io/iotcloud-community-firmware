@@ -218,7 +218,9 @@ bool ph_auth_pair(ph_auth_state*s,const char*p,const char*peer,unsigned scopes,c
             r->scopes=(uint8_t)scopes;
             if(i==next.count)next.count++;
             if(ph_auth_private_save(s,&next)) {
-                memset(&s->local[i],0,sizeof(s->local[i]));
+                /* Sessions are identified by peer, not by a mutable store index. */
+                for(unsigned slot=0;slot<PH_AUTH_PAIR_SLOTS;slot++)
+                    if(!strcmp(s->local[slot].peer,peer))memset(&s->local[slot],0,sizeof(s->local[slot]));
                 ph_auth_private_hex(t,out);
                 ok=true;
             }
@@ -283,7 +285,10 @@ bool ph_auth_pair_unpair(ph_auth_state*s,const char*peer,const char*token) {
             memmove(&next.pairs[j],&next.pairs[j+1],(next.count-j-1)*sizeof(next.pairs[0]));
             memset(&next.pairs[--next.count],0,sizeof(next.pairs[0]));
             ok=ph_auth_private_save(s,&next);
-            if(ok)memset(r,0,sizeof(*r));
+            /* Removing a durable record compacts indices. Reset the parallel
+             * local table so no old or duplicate peer token survives. MQTT
+             * grants are independent and deliberately remain untouched. */
+            if(ok)memset(s->local,0,sizeof(s->local));
             break;
         }
         break;
@@ -434,7 +439,9 @@ bool ph_auth_pair_store_epoch(ph_auth_state*s,const char*peer,const char*key,uns
         r->scopes=(uint8_t)scopes;
         if(i==next.count)next.count++;
         if(ph_auth_private_save(s,&next)) {
-            memset(&s->local[i],0,sizeof(s->local[i]));
+            /* Sessions are identified by peer, not by a mutable store index. */
+                for(unsigned slot=0;slot<PH_AUTH_PAIR_SLOTS;slot++)
+                    if(!strcmp(s->local[slot].peer,peer))memset(&s->local[slot],0,sizeof(s->local[slot]));
             ok=true;
         }
     }
