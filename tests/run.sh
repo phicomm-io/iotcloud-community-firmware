@@ -25,6 +25,16 @@ esac
 # Native behavior replaces the deleted device-DOM architecture only after an
 # explicit scenario mapping in tests/coverage/rc4-native-migration.md.
 source tests/host_hash.sh
+# The original gate prepared every product SDK before MQTT fixtures. Native
+# MQTT/storage now execute first, so establish those prerequisites before them.
+export A1_SDK_DIR="${A1_SDK_DIR:-$root/build/a1-sdk/mico-os}"
+export M1_SDK_DIR="${M1_SDK_DIR:-$root/build/m1-sdk/mico-os}"
+export TC1_SDK_DIR="${TC1_SDK_DIR:-$root/build/tc1-sdk-3.6.4/mico-os}"
+export PHICOMM_M1_SDK="${PHICOMM_M1_SDK:-$M1_SDK_DIR}"
+export PHICOMM_TC1_SDK="${PHICOMM_TC1_SDK:-$TC1_SDK_DIR}"
+for sdk in "$A1_SDK_DIR" "$M1_SDK_DIR" "$TC1_SDK_DIR"; do
+    python3 tools/prepare_sdk.py "$sdk"
+done
 python3 -m tests.run_native_rc4
 python3 -m unittest tests.test_prepare_sdk tests.test_config_commit \
   tests.test_apply_sdk_patch.ApplySdkPatchTests.test_ordered_stack_preserves_edits_and_rejects_partial_or_incompatible_state \

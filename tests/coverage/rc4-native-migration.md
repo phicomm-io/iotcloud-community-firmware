@@ -65,7 +65,10 @@ DUT installation, concurrency P95, busy recovery, or physical-button acceptance.
   + qemu execution (no skips), separate from the host subset. Actual linked
   native status/codec allocator-ledger ownership/OOM/recovery, all three models.
   This does not measure closed-MiCO-allocator or maximum full-runtime peaks.
-- `bash tests/run.sh --all`: unified default native + retained full gate.
+- `ARM_CC=... bash tests/run.sh --all`: unified default native + retained full gate.
+  It prepares all three pinned SDKs before the first product fixture; external
+  checkouts can be provided through `A1_SDK_DIR`, `M1_SDK_DIR`, `TC1_SDK_DIR`,
+  with `PHICOMM_M1_SDK`/`PHICOMM_TC1_SDK` inherited from those locations.
   `--historical-product` preserves the previous script, including old deleted-API
   implementation assertions; it is not a compatibility promise or release job.
 
