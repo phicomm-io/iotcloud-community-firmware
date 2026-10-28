@@ -2,12 +2,14 @@
 import contextlib
 import io
 import unittest
-from tools.check_lan_stack import lan_paths,validate_lan_paths
+import tempfile
+from pathlib import Path
+from tools.check_lan_stack import lan_paths,validate_lan_paths,add_sha_utils_frames
 from tools.check_http_core import StackFrames
 class LanStackGate(unittest.TestCase):
  def fixture(self,model):
   paths=lan_paths({},model);frames=StackFrames();frames.update({n:16 for names,r in paths.values() for n in names})
-  frames.update({n:16 for n in ('lan_business_input','lan_business_dispatch','lv4_emit','service_command_enter','service_lan_context_valid','runtime_metrics_capture','device_status_visit','emit_string','phv_scan','phv_next','phw_prefix','phw_bytes','bonjour_lan_start','bonjour_lan_field','SHA256Input','SHA256ProcessMessageBlock')})
+  frames.update({n:16 for n in ('lan_business_input','lan_business_dispatch','lv4_emit','service_command_enter','service_lan_context_valid','runtime_metrics_capture','device_status_visit','emit_string','phv_scan','phv_next','phw_prefix','phw_bytes','bonjour_lan_start','bonjour_lan_field','SHA256Input','SHA224_256ProcessMessageBlock')})
   return frames,lan_paths(frames,model,frames)
  def test_all_models_include_full_business_auth_and_fragment_chain(self):
   for model in ('A1','M1','TC1'):
@@ -30,3 +32,20 @@ class LanStackGate(unittest.TestCase):
   with self.assertRaisesRegex(ValueError,'reserve'):validate_lan_paths({'x':(['mp_dispatch'],1)},frames)
   frames,paths=self.fixture('TC1');frames.unbounded['tc1_lan_worker']='dynamic'
   with self.assertRaisesRegex(ValueError,'unbounded'):validate_lan_paths(paths,frames)
+
+ def test_sdk_sha_frames_are_required_when_linked_and_dynamic_fails(self):
+  with tempfile.TemporaryDirectory() as directory:
+   root=Path(directory);frames=StackFrames();symbols={'SHA256Reset':1,'SHA224_256ProcessMessageBlock':1}
+   add_sha_utils_frames(frames,root,{})
+   with self.assertRaisesRegex(ValueError,'Missing actual SDK'):
+    add_sha_utils_frames(frames,root,symbols)
+   path=root/'mico-os/MiCO/security/SHAUtils/sha224-256.su';path.parent.mkdir(parents=True)
+   path.write_text('sha.c:10:1:SHA256Reset\t0\tstatic\n')
+   with self.assertRaisesRegex(ValueError,'helper missing actual'):
+    add_sha_utils_frames(frames,root,symbols)
+   path.write_text(path.read_text()+'sha.c:20:1:SHA224_256ProcessMessageBlock\t256\tdynamic\n')
+   add_sha_utils_frames(frames,root,symbols)
+   self.assertEqual(frames['SHA256Reset'],0)
+   self.assertEqual(frames['SHA224_256ProcessMessageBlock'],256)
+   with contextlib.redirect_stdout(io.StringIO()),self.assertRaisesRegex(ValueError,'unbounded'):
+    validate_lan_paths({'sha':(['SHA256Reset','SHA224_256ProcessMessageBlock'],2048)},frames)
