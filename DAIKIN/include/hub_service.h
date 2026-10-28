@@ -29,6 +29,8 @@ public:
       changed; // true: credentials changed, drop sessions/connections.
   std::function<std::string()> bemfaStatus;
   std::function<void(JsonObject)> homeStatus;
+  // Owner-authenticated, derived LAN inventory only; never serialize peer keys.
+  std::function<void(JsonObject)> lanStatus;
   std::function<bool()> homeReset;
   // Runtime identity, not an owner-editable registration or a stored slot.
   std::string localMac;
@@ -244,8 +246,9 @@ public:
       output["enabled"] = false;
       output["hub"] = true;
       output["setup_required"] = !ready();
-      output["mqtt_uri"] = "mqtt://" + request.host + ":1883";
-      output["mqtt_ws_uri"] = "ws://" + request.host + ":9001/mqtt";
+      output["lan_protocol"] = 4;
+      output["lan_codec"] = "msgpack";
+      output["lan_discovery"] = "mdns";
       return json(output);
     }
     if (path == "/api/auth/github/status" && get) {
@@ -317,6 +320,16 @@ public:
       for (auto &s : session)
         if (constant(s.token, request.token))
           s = Session();
+      return json(output);
+    }
+    if (path == "/api/hub/lan") {
+      if (!get) return fail(405, "method_not_allowed");
+      output["protocol"] = 4;
+      output["codec"] = "msgpack";
+      output["discovery"] = "mdns";
+      output["ready"] = false;
+      output.createNestedArray("devices");
+      if (lanStatus) lanStatus(output.as<JsonObject>());
       return json(output);
     }
     if (path == "/api/hub/homekit") {
@@ -566,9 +579,11 @@ private:
     return value;
   }
   size_t outputCapacity(const Request &request) const {
+    if (request.method == "GET" && request.path == "/api/hub/lan") return 8192;
     return std::max<size_t>(2048, responseValue(request).memoryUsage() + 1024);
   }
   size_t responseCapacity(const Request &request) const {
+    if (request.method == "GET" && request.path == "/api/hub/lan") return 8192;
     // Repeated JSON strings share pool storage, while escaped strings expand
     // on the wire. Budget the serialized bytes separately from the JSON pool.
     // The margin covers bridge MQTT metadata (127-byte host, 63-byte user,

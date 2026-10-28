@@ -60,7 +60,7 @@ int main() {
       service
           .handle(Request("GET", "/api/register/status", "", "", "192.168.1.2"),
                   0)
-          .body.find("mqtt://192.168.1.2:1883") != std::string::npos);
+          .body.find("\"lan_protocol\":4") != std::string::npos);
   auto setup = Request("POST", "/api/hub/setup",
                        R"({"username":"local","password":"local-password"})");
   assert(service.handle(setup, 0).status == 403 && writes == 0);
@@ -86,6 +86,40 @@ int main() {
          response["username"] == "local" && response["is_admin"] == false);
   assert(service.handle(Request("GET", "/api/auth/me", "", token), 3).status ==
          200);
+  // Derived LAN inventory is owner-only and carries no transport credentials.
+  {
+    const std::string path="/api/hub/lan";
+    unsigned calls=0;
+    auto empty=service.handle(Request("GET",path,"",token),3);
+    DynamicJsonDocument lan(16384);assert(empty.status==200&&!deserializeJson(lan,empty.body));
+    assert(lan["protocol"]==4&&lan["codec"]=="msgpack"&&lan["discovery"]=="mdns");
+    assert(lan["ready"]==false&&lan["devices"].size()==0);
+    service.lanStatus=[&](JsonObject out){
+      ++calls;out["ready"]=true;auto rows=out["devices"].as<JsonArray>();
+      for(unsigned i=0;i<iotcloud::HubService::Devices;++i){
+        auto d=rows.createNestedObject();d["device_id"]="aabbccddeeff";d["model"]="a1";
+        d["variant"]="standard";d["firmware"]="1.0.0-rc.4";d["ip"]="192.0.2.1";d["port"]=11288;
+        d["compatible"]=i!=0;d["registered"]=i!=0;d["paired"]=i!=0;d["online"]=true;
+        d["code"]=i?"ok":"incompatible";
+      }
+    };
+    for(const auto &key:{std::string(),std::string(64,'x')})
+      assert(service.handle(Request("GET",path,"",key),3).status==401);
+    assert(calls==0);
+    auto full=service.handle(Request("GET",path,"",token),3);
+    assert(full.status==200&&!deserializeJson(lan,full.body)&&calls==1);
+    assert(lan["ready"]==true&&lan["devices"].size()==iotcloud::HubService::Devices);
+    auto unknown=lan["devices"][0];assert(unknown["compatible"]==false&&unknown["paired"]==false);
+    assert(unknown["device_id"]=="aabbccddeeff"&&unknown["model"]=="a1"&&unknown["variant"]=="standard");
+    assert(unknown["firmware"]=="1.0.0-rc.4"&&unknown["ip"]=="192.0.2.1"&&unknown["port"]==11288);
+    assert(unknown["registered"]==false&&unknown["online"]==true&&unknown["code"]=="incompatible");
+    assert(full.body.find("password")==std::string::npos&&full.body.find("token")==std::string::npos);
+    for(const auto &method:{"POST","PUT","DELETE"})
+      assert(service.handle(Request(method,path,"{}",token),3).status==405);
+    assert(calls==1);service.lanStatus=nullptr;
+    auto advertised=service.handle(Request("GET","/api/register/status","","","192.168.1.2"),3);
+    assert(advertised.body.find("mqtt_uri")==std::string::npos&&advertised.body.find("mqtt_ws_uri")==std::string::npos);
+  }
   // HomeKit belongs to the locally authenticated owner. Setup authorization,
   // another hub's session, and cloud credentials do not authorize its API.
   {
