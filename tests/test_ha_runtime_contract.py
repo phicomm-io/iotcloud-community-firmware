@@ -83,7 +83,11 @@ int main(void){
   allocation_fail=true;assert(feature_mqtt_filters(f.topics,cap)==FEATURE_MQTT_FILTER_ERROR);assert(!feature_mqtt_filters_current(f.topics,expected));allocation_fail=false;
   assert(!feature_mqtt_filters_current(f.topics,cap+1));assert(f.before==0x12345678&&f.after==0x87654321);
  }
- assert(mqtt_account_init(&account,1,model,"bob",LOCAL_ID));assert(!feature_mqtt_filters_current(f.topics,1));
+ unsigned previous=feature_mqtt_filters(f.topics,cap);assert(previous!=FEATURE_MQTT_FILTER_ERROR&&feature_mqtt_filters_current(f.topics,previous));
+#ifdef FEATURE_DEVICE_A1
+ config.peer_count=0;config.group[0]=0;assert(!feature_mqtt_filters_current(f.topics,previous));config.peer_count=FEATURE_MAX_PEERS;strcpy(config.group,"same-name");assert(feature_mqtt_filters_current(f.topics,previous));
+#endif
+ assert(mqtt_account_init(&account,1,model,"bob",LOCAL_ID));assert(!feature_mqtt_filters_current(f.topics,previous));
  return 0;
 }
 ''')
