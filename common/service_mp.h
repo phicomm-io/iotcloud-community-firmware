@@ -6,6 +6,8 @@ void service_init(void);
 void service_event(const char *level,const char *module,const char *event);
 bool service_control_begin(void);
 void service_control_end(void);
+/* Admission only, before command/control dispatch: may evict expendable caches
+ * under the command mutex. Never call while holding a service_control lease. */
 unsigned service_memory_claim(size_t input_bytes);
 void service_memory_release(unsigned claim);
 void service_memory_waiting(bool enter);

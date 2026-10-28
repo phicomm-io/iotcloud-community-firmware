@@ -43,11 +43,21 @@ void *ph_wire_malloc(size_t bytes){
  return p;
 }
 void ph_wire_free(void *p){free(p);}
+/* Never called with command_lock held: admission precedes dispatch. */
+static bool mp_cache_evict(void);
 unsigned service_memory_claim(size_t input_bytes) {
     if (!ready) return 0;
     mico_rtos_lock_mutex(&service_lock);
     unsigned claim = memory_budget_claim(&memory_state, service_free_memory(), input_bytes);
     mico_rtos_unlock_mutex(&service_lock);
+    /* Cache bytes are expendable, unlike mutation receipts. Do not hold the
+     * snapshot lock while taking command_lock (dispatch takes them in reverse).
+     * A low-heap cache must not permanently prevent login/body admission. */
+    if (!claim && service_memory_cost(input_bytes) && mp_cache_evict()) {
+        mico_rtos_lock_mutex(&service_lock);
+        claim = memory_budget_claim(&memory_state, service_free_memory(), input_bytes);
+        mico_rtos_unlock_mutex(&service_lock);
+    }
     return claim;
 }
 void service_memory_release(unsigned claim) {

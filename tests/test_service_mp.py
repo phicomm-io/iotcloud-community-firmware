@@ -15,12 +15,13 @@ ROOT=Path(__file__).resolve().parents[1]
 SOURCE=Path(os.environ.get('NATIVE_MP_ROOT',ROOT))
 
 class NativeService(unittest.TestCase):
- def run_c(self,body,runs=1,ota=False,ilp32=False,worker_prefix=None):
+ def run_c(self,body,runs=1,ota=False,ilp32=False,worker_prefix=None,release=False):
   with tempfile.TemporaryDirectory(prefix='service-mp-') as temporary:
    t=Path(temporary);(t/'generated').mkdir();(t/'generated/build_ota.h').write_text('')
    (t/'version.h').write_text('extern const char *test_local_version;\n#define FIRMWARE_VERSION test_local_version\n')
    (t/'case.c').write_text((ROOT/'tests/service_mp/fixture.inc').read_text()+body)
    cmd=shlex.split(os.environ.get('CC','cc'))+['-std=gnu99','-DMOC=1','-Wall','-Wextra','-Werror','-Wno-deprecated-declarations','-Wno-misleading-indentation','-Wno-unused-function','-Wno-unused-variable','-g','-I'+str(ROOT/'tests/service_mp'),'-I'+str(t),'-I'+str(SOURCE),'-pthread']
+   if release:cmd += ['-DPHICOMM_EMW3080_RELEASE_MEMORY=1']
    if ota or worker_prefix:cmd+=['-DPHICOMM_DEVICE_OTA=1']
    if worker_prefix:cmd+=['-DTEST_ACTUAL_OTA_WORKER=1','-DFEATURE_DEVICE_A1=1','-include',str(t/'version.h'),'-DPHICOMM_OTA_METADATA_PREFIX="'+worker_prefix+'"',str(ROOT/'tests/service_mp/ota_worker_hooks.c')]
    if ilp32:cmd+=['-DTEST_ILP32_STRTOL=1','-Wl,--wrap=strtol']
@@ -497,5 +498,75 @@ int main(void){
  command_code(pair_request("lan.pair.get","000000000000",0),"not_found");return 0;
 }
 ''')
+
+
+class CachePeak(unittest.TestCase):
+ run_c=NativeService.run_c
+ def test_large_status_rebuild_reuses_cache_and_bounded_envelope(self):
+  self.run_c(r'''
+int main(void){
+ service_init();test_heap_dynamic=true;test_heap_free=SERVICE_MEMORY_RESERVE+8916;status_payload_bytes=4000;
+ ph_buf *out=service_query_mp("status.get");code(out,"ok");ph_buf_free(out);size_t cached=live_bytes;assert(cached>4000);
+ peak_live_bytes=live_bytes;test_clock_ms+=1000;out=service_query_mp("status.get");code(out,"ok");assert(captures==2);ph_buf_free(out);
+ assert(live_bytes==cached);assert(peak_live_bytes<=cached+4512);
+ service_memory_state_t m;service_memory_snapshot(&m);assert(!m.wire_guard_denied&&!m.wire_alloc_failed);
+ /* A failed overwrite cannot publish the previous generation or partial data. */
+ fail_capture=true;service_cache_changed(SERVICE_CACHE_STATUS);out=service_query_mp("status.get");code(out,"busy");ph_buf_free(out);assert(!live_bytes);
+ out=service_query_mp("status.get");code(out,"ok");assert(captures==4);ph_buf_free(out);return 0;
+}
+''',release=True)
+
+ def test_cache_eviction_recovers_admission_in_allocator_floor_gap(self):
+  self.run_c(r'''
+int main(void){
+ service_init();test_heap_dynamic=true;status_payload_bytes=4000;
+ for(unsigned gap=32;gap<SERVICE_MEMORY_WORK;gap+=113){
+  test_heap_free=64000;ph_buf *out=service_query_mp("status.get");code(out,"ok");ph_buf_free(out);
+  out=service_query_mp("capabilities.get");code(out,"ok");ph_buf_free(out);size_t cached=live_bytes;assert(cached>4000);
+  /* A bounded SDK/network allocation can move persistent cache bytes into
+   * the interval the allocator allows but even an empty login cannot claim. */
+  test_heap_free=(uint32_t)(cached+SERVICE_MEMORY_RESERVE+gap);
+  unsigned claim=service_memory_claim(256);assert(claim==SERVICE_MEMORY_WORK+256);assert(!live_bytes);service_memory_release(claim);
+  /* Idle alone is irrelevant: admission already recovered, without another
+   * cache generation/event or clearing independent mutation receipts. */
+  claim=service_memory_claim(0);assert(claim);service_memory_release(claim);
+  test_heap_free=64000;out=service_query_mp("status.get");code(out,"ok");ph_buf_free(out);
+ }
+ return 0;
+}
+''',release=True)
+
+ def test_cache_reclaim_and_dispatch_keep_lock_order_and_owned_responses(self):
+  self.run_c(r'''
+static void *reader(void *unused){(void)unused;for(unsigned i=0;i<300;i++){
+ ph_buf *out=service_query_mp("status.get");code(out,"ok");ph_buf_free(out);
+}return NULL;}
+static void *reclaimer(void *unused){(void)unused;for(unsigned i=0;i<300;i++){
+ assert(!service_memory_claim(16384));
+}return NULL;}
+int main(void){
+ service_init();test_heap_free=20000;pthread_t readers[3],reclaim;
+ for(unsigned i=0;i<3;i++)assert(!pthread_create(&readers[i],NULL,reader,NULL));
+ assert(!pthread_create(&reclaim,NULL,reclaimer,NULL));
+ for(unsigned i=0;i<3;i++)assert(!pthread_join(readers[i],NULL));assert(!pthread_join(reclaim,NULL));
+ service_memory_state_t m;service_memory_snapshot(&m);assert(!m.active&&!m.reserved);return 0;
+}
+''')
+
+
+
+class CacheReceiptSafety(unittest.TestCase):
+ run_c=NativeService.run_c
+ def test_reclaim_keeps_mutation_replay_receipt(self):
+  self.run_c(r'''
+int main(void){
+ service_init();test_heap_dynamic=true;test_heap_free=64000;
+ command_code(request("fan.set","held-receipt",-1),"accepted");size_t receipts=live_bytes;assert(receipts&&mutations==1);
+ status_payload_bytes=4000;ph_buf *out=service_query_mp("status.get");code(out,"ok");ph_buf_free(out);size_t cached=live_bytes;assert(cached>receipts+4000);
+ assert(!service_memory_claim(16385));assert(live_bytes==cached);
+ test_heap_free=(uint32_t)(cached+SERVICE_MEMORY_RESERVE+64);unsigned claim=service_memory_claim(0);assert(claim);service_memory_release(claim);assert(live_bytes==receipts);
+ test_heap_free=64000;command_code(request("fan.set","held-receipt",-1),"accepted");assert(mutations==1);return 0;
+}
+''',release=True)
 
 if __name__=='__main__':unittest.main()

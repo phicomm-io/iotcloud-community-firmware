@@ -142,6 +142,7 @@ def http_paths(frames,model,symbols=None):
         paths['HTTP '+label+' logs']=(HTTP_RESERVE,dispatch+extra(['mp_logs'])+['phw_text']+extra(['phw_text_n','phw_prefix','phw_quote','phw_bytes'])+['ph_buf_reserve','ph_wire_malloc'])
     admission=owner+extra(['acquire','action'])+['begin','prepare','ph_http_claim','service_memory_claim']
     paths['HTTP admission']=(HTTP_RESERVE,admission)
+    paths['HTTP admission cache reclaim']=(HTTP_RESERVE,admission+extra(['mp_cache_evict'])+['ph_buf_free','ph_wire_free'])
     paths['HTTP cleanup']=(HTTP_RESERVE,owner+extra(['close_slot'])+['release','ph_http_product_release','service_memory_release'])
     paths['HTTP buffer cleanup']=(HTTP_RESERVE,owner+extra(['close_slot'])+['release','ph_http_product_release','ph_buf_free','ph_wire_free'])
     paths['HTTP response']=(HTTP_RESERVE,owner+extra(['respond','response_header','transmit','send_part']))

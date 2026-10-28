@@ -16,6 +16,16 @@ void service_cache_changed(unsigned mask)
     for(unsigned i=0;i<2;i++)if(mask&(1u<<i))if(!++mp_generation[i])++mp_generation[i];
     mico_rtos_unlock_mutex(&service_lock);
 }
+static bool mp_cache_evict(void)
+{
+    bool freed=false;
+    mico_rtos_lock_mutex(&command_lock);
+    for(unsigned i=0;i<2;i++)if(mp_cache[i].payload){
+        ph_buf_free(mp_cache[i].payload);mp_cache[i].payload=NULL;freed=true;
+    }
+    mico_rtos_unlock_mutex(&command_lock);
+    return freed;
+}
 static ph_buf *mp_copy(const ph_buf *src)
 {
     if(!src)return NULL;
@@ -33,7 +43,11 @@ static const char *mp_message(const char *code)
 static ph_buf *mp_envelope(const char *id,const char *code,const ph_buf *data)
 {
     ph_writer w;
-    if(!phw_init(&w,PH_WIRE_MSGPACK))return NULL;
+    /* One bounded allocation for payload plus map/text headers. The payload
+     * is already frozen; copying it must not require old+new growth buffers. */
+    size_t overhead=64+(id?strlen(id):0)+strlen(code)+strlen(mp_message(code));
+    size_t capacity=data && data->len<=PHW_MAX_BYTES-overhead ? data->len+overhead : data?PHW_MAX_BYTES+1:overhead;
+    if(!phw_init_capacity(&w,PH_WIRE_MSGPACK,capacity))return NULL;
     phw_begin(&w,NULL,false);
     if(id && *id)phw_text(&w,"request_id",id);
     phw_text(&w,"code",code);phw_text(&w,"message",mp_message(code));
@@ -90,11 +104,18 @@ static ph_buf *mp_cached(unsigned index)
      * even without an external event. Capabilities remain purely event-driven. */
     if(mp_cache[index].payload && mp_cache[index].generation==generation &&
        (index || mp_cache[index].clock_second==clock_second))return mp_cache[index].payload;
-    ph_writer w;if(!phw_init(&w,PH_WIRE_MSGPACK))return NULL;
+    ph_writer w;
+    ph_buf *previous=mp_cache[index].payload;
+    /* Every reference stays under command_lock; no transport borrows cache
+     * storage. Invalidate before overwriting, so any failed capture discards
+     * its partial bytes and a later read captures current state again. */
+    mp_cache[index].payload=NULL;
+    if(previous){memset(&w,0,sizeof(w));w.format=PH_WIRE_MSGPACK;w.wire=previous;previous->len=0;previous->buf[0]=0;}
+    else if(!phw_init(&w,PH_WIRE_MSGPACK))return NULL;
     if(index==0)service_product_status_mp(&w);
     else service_product_capabilities_mp(&w,update_capability_names,false);
     ph_buf *next=phw_take(&w);if(!next)return NULL;
-    ph_buf_free(mp_cache[index].payload);mp_cache[index].payload=next;mp_cache[index].generation=generation;mp_cache[index].clock_second=clock_second;
+    mp_cache[index].payload=next;mp_cache[index].generation=generation;mp_cache[index].clock_second=clock_second;
     return next;
 }
 static ph_buf *mp_dispatch(mp_request *r,const void *raw,size_t length,bool mqtt)
@@ -116,7 +137,9 @@ static ph_buf *mp_dispatch(mp_request *r,const void *raw,size_t length,bool mqtt
         mico_rtos_unlock_mutex(&command_lock);return response;
     }
     ph_buf *payload=NULL,*response=NULL;bool owned=false,active=ota_job_active(),record_receipt=receipt;
-    ph_writer w;if(!phw_init(&w,PH_WIRE_MSGPACK)){mico_rtos_unlock_mutex(&command_lock);return NULL;}
+    ph_writer w;memset(&w,0,sizeof(w));
+    bool cached_query=(!strcmp(action,"status.get")||!strcmp(action,"capabilities.get"))&&!active;
+    if(!cached_query&&!phw_init(&w,PH_WIRE_MSGPACK)){mico_rtos_unlock_mutex(&command_lock);return NULL;}
     if(!strcmp(action,"status.get")&&!active){
         ph_value view;bool valid=phv_keys(p,"|view|");
         if(phv_get(p,"view",&view))valid=valid&&(phv_equal_text(&view,"full")||phv_equal_text(&view,"live"));
@@ -150,6 +173,7 @@ static ph_buf *mp_dispatch(mp_request *r,const void *raw,size_t length,bool mqtt
         if(!handled)handled=service_product_mp(action,p,&w,&code);
         if(!handled){code="unsupported";mp_empty(&w);}
     }
+    if(!payload && !w.wire && !phw_init(&w,PH_WIRE_MSGPACK)){mico_rtos_unlock_mutex(&command_lock);return NULL;}
     if(!payload){if(!w.depth && !w.wire->len)mp_empty(&w);payload=phw_take(&w);owned=true;}else phw_discard(&w);
     response=payload?mp_envelope(r->id,code,payload):NULL;if(owned)ph_buf_free(payload);
     if(record_receipt){mp_receipt *saved=&mp_receipts[mp_receipt_next++%8];ph_buf_free(saved->response);memset(saved,0,sizeof(*saved));strcpy(saved->id,r->id);memcpy(saved->digest,digest,32);saved->response=mp_copy(response);}

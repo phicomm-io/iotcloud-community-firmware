@@ -86,3 +86,17 @@ obsolete full/live status capture. Native envelope, malformed params, replay and
 HTTP failure/recovery assertions remain in service/HTTP fixtures. TC1's separate
 product writers require its owner's fixtures; these A1/M1 assertions do not
 claim TC1 coverage.
+
+The cache-peak regressions optionally subtract every live wrapped allocation
+from the injected heap report, instead of treating the free-heap value as a
+constant. `CachePeak` exercises a 4,000-byte status under the release reserve:
+cold capture and next-second overwrite both succeed without a guard denial;
+a failed overwrite invalidates and frees the previous cache before recovery.
+The same tests against unmodified `97de7f7` fail the warm-capture and low-floor
+admission assertions. `CachePeak` also moves cached heap into the allocator
+floor/admission gap (reserve+32 through reserve+511), proving that a login-sized
+claim can evict expendable status/capability caches and recover immediately.
+Concurrent claim/reclaim/read loops retain independently owned responses, and
+`CacheReceiptSafety` verifies eviction never discards mutation replay receipts.
+These are host allocator-policy reproductions, not device free-heap or P95
+measurements. The HTTP stack gate includes the admission/reclaim/free tail.

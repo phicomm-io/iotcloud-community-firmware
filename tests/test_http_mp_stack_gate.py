@@ -17,7 +17,7 @@ class HTTPMessagePackStackGate(unittest.TestCase):
         for name in ['mp_decode','phv_scan','phv_next','phv_duplicate','phv_head',
                      'phv_skip_validated','binary_token','phw_bytes','phw_prefix','install_config',
                      'phw_quote','phw_head','device_status_visit','emit_string',
-                     'runtime_fields','mp_copy','memory_response','acquire',
+                     'runtime_fields','mp_copy','mp_cache_evict','memory_response','acquire',
                      'action','read_body','close_slot','respond','transmit']:
             frames[name]=16
         return frames,http_paths(frames,model,frames)
@@ -27,7 +27,7 @@ class HTTPMessagePackStackGate(unittest.TestCase):
             with redirect_stdout(io.StringIO()):validate_paths(paths,frames)
             names={n for reserve,stack in paths.values() for n in stack}
             self.assertTrue({'mp_dispatch','mp_cached','service_product_status_mp',
-                             'device_status_mp','phv_scan','phw_cached_value'}<=names)
+                             'device_status_mp','phv_scan','phw_cached_value','mp_cache_evict'}<=names)
             self.assertTrue(all(reserve>=3072 for reserve,names in paths.values()))
             self.assertFalse(any('json' in n for n in names))
             with self.assertRaisesRegex(ValueError,'budget must remain'):

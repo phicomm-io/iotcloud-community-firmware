@@ -9,7 +9,10 @@ static unsigned mutations,captures,caps,mqtt_calls;
 static bool change_during_capture,fail_capture,caps_restricted;
 static bool exhaust_capture,exhaust_mutation;
 static unsigned large_calls;
+static unsigned status_payload_bytes;
 extern uint32_t test_heap_free;
+extern size_t test_heap_live_bytes;
+extern bool test_heap_dynamic;
 static long allocation_budget=-1;
 static char async_session[64];
 extern uint32_t test_clock_ms;
@@ -21,20 +24,20 @@ void __real_free(void *);
  * outside --wrap and deliberately outside these accounting assertions. */
 typedef union { struct {size_t bytes;uint64_t magic;} owned;long double align;void *pointer; } allocation_header;
 static pthread_mutex_t allocation_lock=PTHREAD_MUTEX_INITIALIZER;
-static size_t live_blocks,live_bytes,total_allocations,total_frees;
+static size_t live_blocks,live_bytes,total_allocations,total_frees,peak_live_bytes;
 #define ALLOCATION_MAGIC UINT64_C(0x9d0a473e65bc128f)
 void *__wrap_malloc(size_t n){
  pthread_mutex_lock(&allocation_lock);
  if(!allocation_budget){pthread_mutex_unlock(&allocation_lock);return NULL;}
  if(allocation_budget>0)--allocation_budget;
  allocation_header *h=__real_malloc(sizeof(*h)+n);
- if(h){h->owned.bytes=n;h->owned.magic=ALLOCATION_MAGIC;live_blocks++;live_bytes+=n;total_allocations++;}
+ if(h){h->owned.bytes=n;h->owned.magic=ALLOCATION_MAGIC;live_blocks++;live_bytes+=n;test_heap_live_bytes=live_bytes;if(live_bytes>peak_live_bytes)peak_live_bytes=live_bytes;total_allocations++;}
  pthread_mutex_unlock(&allocation_lock);return h?h+1:NULL;
 }
 void __wrap_free(void *p){
  if(!p)return;allocation_header *h=(allocation_header *)p-1;
  pthread_mutex_lock(&allocation_lock);assert(h->owned.magic==ALLOCATION_MAGIC);
- assert(live_blocks&&live_bytes>=h->owned.bytes);live_blocks--;live_bytes-=h->owned.bytes;total_frees++;
+ assert(live_blocks&&live_bytes>=h->owned.bytes);live_blocks--;live_bytes-=h->owned.bytes;test_heap_live_bytes=live_bytes;total_frees++;
  h->owned.magic=0;pthread_mutex_unlock(&allocation_lock);__real_free(h);
 }
 extern bool device_config_recovery(void);
@@ -48,7 +51,7 @@ static ph_value data_value(ph_buf *out){ph_value root,data;assert(out&&phv_parse
 static void code(ph_buf *out,const char *expected){ph_value root,v;assert(out&&phv_parse(1,out->buf,out->len,&root)&&phv_get(&root,"code",&v)&&phv_equal_text(&v,expected));}
 static void command_code(ph_buf *request,const char *expected){ph_buf *out=service_command_mp(request->buf,request->len);code(out,expected);ph_buf_free(out);ph_buf_free(request);}
 static void object(ph_writer *w){phw_begin(w,NULL,false);phw_u32(w,"value",123);phw_end(w);}
-void service_product_status_mp(ph_writer *w){captures++;if(change_during_capture){change_during_capture=false;service_event("info","system","boot");}if(fail_capture){fail_capture=false;w->failed=true;return;}if(exhaust_capture){exhaust_capture=false;test_heap_free=SERVICE_MEMORY_RESERVE;char large[1200];memset(large,'x',sizeof(large));phw_begin(w,NULL,false);phw_text_n(w,"large",large,sizeof(large));phw_end(w);return;}object(w);}
+void service_product_status_mp(ph_writer *w){captures++;if(status_payload_bytes&&!fail_capture&&!change_during_capture&&!exhaust_capture){char value[6000];assert(status_payload_bytes<=sizeof(value));memset(value,'x',status_payload_bytes);phw_begin(w,NULL,false);phw_text_n(w,"large",value,status_payload_bytes);phw_end(w);return;}if(change_during_capture){change_during_capture=false;service_event("info","system","boot");}if(fail_capture){fail_capture=false;w->failed=true;return;}if(exhaust_capture){exhaust_capture=false;test_heap_free=SERVICE_MEMORY_RESERVE;char large[1200];memset(large,'x',sizeof(large));phw_begin(w,NULL,false);phw_text_n(w,"large",large,sizeof(large));phw_end(w);return;}object(w);}
 void service_product_capabilities_mp(ph_writer *w,const char *const *extra,bool restricted){(void)extra;caps_restricted=restricted;caps++;object(w);}
 void service_product_info_mp(ph_writer *w){object(w);}
 bool service_product_mp(const char *action,const ph_value *p,ph_writer *w,const char **out){
