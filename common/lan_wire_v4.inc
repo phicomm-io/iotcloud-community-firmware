@@ -3,6 +3,7 @@
 #define PH_LAN_WIRE_V4_IMPLEMENTATION
 #include "lan_wire_v4.h"
 #include <string.h>
+static const char *const lv4_names[]={"","command","result","pull","ack"};
 static bool lv4_id(const char *s)
 {
     if(!s||strlen(s)!=12)return false;
@@ -36,7 +37,6 @@ static bool lv4_valid(const lan_v4_packet *p)
 }
 bool lan_v4_decode_value(const ph_value *root,lan_v4_packet *out)
 {
-    static const char *const names[]={"","command","result","pull","ack"};
     lan_v4_packet p;ph_value v;uint32_t n;memset(&p,0,sizeof(p));
     if(!out||!root||root->kind!=PHV_MAP||!lv4_u32(root,"v",&n)||n!=4||
        !phv_get(root,"src",&v)||!phv_text(&v,p.src,sizeof(p.src))||
@@ -46,25 +46,28 @@ bool lan_v4_decode_value(const ph_value *root,lan_v4_packet *out)
     const void *token;size_t length;
     if(!phv_bytes(&v,&token,&length)||length!=16)return false;memcpy(p.token,token,16);
     if(!phv_get(root,"op",&v))return false;
-    for(unsigned i=LAN_V4_COMMAND;i<=LAN_V4_ACK;i++)if(phv_equal_text(&v,names[i]))p.op=(lan_v4_operation)i;
-    const char *keys="|v||src||dst||boot||id||op||token|";
+    for(unsigned i=LAN_V4_COMMAND;i<=LAN_V4_ACK;i++)if(phv_equal_text(&v,lv4_names[i]))p.op=(lan_v4_operation)i;
+    /* Every accepted field below is mandatory. Parsing already guarantees
+     * unique keys: the exact field count therefore rejects unknown fields
+     * without a second map walk and repeated per-operation allowlists. */
+    unsigned fields=7;
     if(p.op==LAN_V4_COMMAND){
-        keys="|v||src||dst||boot||id||op||token||body|";
+        fields=8;
         if(!phv_get(root,"body",&v)||!phv_bytes(&v,&p.body,&p.body_length))return false;
     }else if(p.op==LAN_V4_PULL){
-        keys="|v||src||dst||boot||id||op||token||part|";
+        fields=8;
         if(!lv4_u32(root,"part",&n)||n>UINT16_MAX)return false;p.part=(uint16_t)n;
     }else if(p.op==LAN_V4_RESULT){
         if(!lv4_u32(root,"request_boot",&p.request_boot)||!phv_get(root,"code",&v)||!phv_text(&v,p.code,sizeof(p.code)))return false;
-        keys="|v||src||dst||boot||id||op||token||request_boot||code|";
+        fields=9;
         if(!strcmp(p.code,"ok")){
-            keys="|v||src||dst||boot||id||op||token||request_boot||code||body||part||total||size|";
+            fields=13;
             if(!phv_get(root,"body",&v)||!phv_bytes(&v,&p.body,&p.body_length)||!lv4_u32(root,"part",&n)||n>UINT16_MAX)return false;p.part=(uint16_t)n;
             if(!lv4_u32(root,"total",&n)||n>UINT16_MAX)return false;p.total=(uint16_t)n;
             if(!lv4_u32(root,"size",&n)||n>UINT16_MAX)return false;p.size=(uint16_t)n;
         }
     }
-    if(!phv_keys(root,keys)||!lv4_valid(&p))return false;*out=p;return true;
+    if(root->count!=fields||!lv4_valid(&p))return false;*out=p;return true;
 }
 bool lan_v4_decode(const void *data,size_t length,lan_v4_packet *out)
 {
@@ -72,10 +75,9 @@ bool lan_v4_decode(const void *data,size_t length,lan_v4_packet *out)
 }
 bool lan_v4_encode(ph_writer *w,const lan_v4_packet *p)
 {
-    static const char *const names[]={"","command","result","pull","ack"};
     if(!w||w->format!=PH_WIRE_MSGPACK||!lv4_valid(p)){if(w)w->failed=true;return false;}
     phw_begin(w,NULL,false);phw_uint(w,"v",4);phw_text(w,"src",p->src);phw_text(w,"dst",p->dst);
-    phw_u32(w,"boot",p->boot);phw_u32(w,"id",p->id);phw_text(w,"op",names[p->op]);phw_bytes_value(w,"token",p->token,16);
+    phw_u32(w,"boot",p->boot);phw_u32(w,"id",p->id);phw_text(w,"op",lv4_names[p->op]);phw_bytes_value(w,"token",p->token,16);
     if(p->op==LAN_V4_COMMAND)phw_bytes_value(w,"body",p->body,p->body_length);
     if(p->op==LAN_V4_PULL)phw_uint(w,"part",p->part);
     if(p->op==LAN_V4_RESULT){
@@ -149,7 +151,7 @@ bool lan_v4_server_input(lan_v4_server *s,const lan_v4_ops *o,const lan_v4_packe
     bool admitted=true;ph_buf *response=o->dispatch(o->user,p->body,p->body_length,&context,&admitted);
     if(!admitted){ph_buf_free(response);return lv4_emit(s,o,p,ip,port,"busy",0,scratch,capacity);}
     /* Commit the high-water mark even if encoding/IO fails after a mutation. */
-    lan_v4_server_release(s);r->used=true;r->context=context;r->boot=p->boot;r->last_id=p->id;
+    r->used=true;r->context=context;r->boot=p->boot;r->last_id=p->id;
     memcpy(r->token,p->token,16);memcpy(r->digest,digest,32);
     if(!response)return lv4_emit(s,o,p,ip,port,"expired",0,scratch,capacity);
     if(!response->len||response->len>LAN_V4_RESPONSE_MAX){ph_buf_free(response);return lv4_emit(s,o,p,ip,port,"too_large",0,scratch,capacity);}
