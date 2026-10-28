@@ -14,43 +14,34 @@ class NativeServicePaho(unittest.TestCase):
     def _compile_fixture(self, defines=(), client_source=None):
         from tests.test_shared_mqtt import SharedMQTT
 
-        sdk = Path('/home/fjr/hobbies/phicomm-community-firmware/build/a1-sdk/mico-os')
-        env_key = 'PHICOMM_A1_SDK'
-        previous = os.environ.get(env_key)
-        if previous is None and sdk.is_dir():
-            os.environ[env_key] = str(sdk)
-        try:
-            with SharedMQTT().protocol('A1') as protocol, tempfile.TemporaryDirectory() as temp:
-                temporary = Path(temp)
-                generated = temporary / 'generated'
-                generated.mkdir()
-                (generated / 'build_ota.h').write_text('')
-                binary = temporary / 'service-test'
-                source = [ROOT / 'tests/mqtt_core/service_mp.c',
-                          ROOT / 'common/mqtt/core.c',
-                          Path(client_source) if client_source else ROOT / 'common/mqtt/client.c',
-                          ROOT / 'common/mqtt/session.c',
-                          protocol / 'MQTTClient.c',
-                          *sorted((protocol / 'MQTTPacket').glob('*.c')),
-                          ROOT / 'common/typed_wire.c', ROOT / 'common/wire_buffer.c']
-                command = [os.environ.get('CC', 'cc'), '-D_GNU_SOURCE', '-std=gnu99', '-g',
-                           '-fsanitize=' + os.environ.get('PHICOMM_MQTT_SANITIZER', 'address,undefined'),
-                           '-fno-pie', '-no-pie', '-I' + str(temporary),
-                           '-I' + str(ROOT / 'common/mqtt'),
-                           '-I' + str(ROOT / 'tests/mqtt_core/stubs'),
-                           '-I' + str(ROOT / 'tests/service_mp'), '-I' + str(ROOT)]
-                command += ['-I' + str(path) for path in
-                            (protocol, protocol / 'mico', protocol / 'MQTTPacket')]
-                command += ['-include', 'stdint.h', '-DMOC=1',
-                            '-DMAX_MESSAGE_HANDLERS=12', '-DPH_EXPECTED_MESSAGE_HANDLERS=12',
-                            '-Wl,--wrap=malloc,--wrap=free,--wrap=realloc,--wrap=calloc,--wrap=strdup']
-                command += list(defines) + [str(path) for path in source]
-                command += ['-lcrypto', '-lm', '-o', str(binary)]
-                subprocess.run(command, check=True, timeout=60)
-                subprocess.run([str(binary)], check=True, timeout=30)
-        finally:
-            if previous is None:
-                os.environ.pop(env_key, None)
+        with SharedMQTT().protocol('A1') as protocol, tempfile.TemporaryDirectory() as temp:
+            temporary = Path(temp)
+            generated = temporary / 'generated'
+            generated.mkdir()
+            (generated / 'build_ota.h').write_text('')
+            binary = temporary / 'service-test'
+            source = [ROOT / 'tests/mqtt_core/service_mp.c',
+                      ROOT / 'common/mqtt/core.c',
+                      Path(client_source) if client_source else ROOT / 'common/mqtt/client.c',
+                      ROOT / 'common/mqtt/session.c',
+                      protocol / 'MQTTClient.c',
+                      *sorted((protocol / 'MQTTPacket').glob('*.c')),
+                      ROOT / 'common/typed_wire.c', ROOT / 'common/wire_buffer.c']
+            command = [os.environ.get('CC', 'cc'), '-D_GNU_SOURCE', '-std=gnu99', '-g',
+                       '-fsanitize=' + os.environ.get('PHICOMM_MQTT_SANITIZER', 'address,undefined'),
+                       '-fno-pie', '-no-pie', '-I' + str(temporary),
+                       '-I' + str(ROOT / 'common/mqtt'),
+                       '-I' + str(ROOT / 'tests/mqtt_core/stubs'),
+                       '-I' + str(ROOT / 'tests/service_mp'), '-I' + str(ROOT)]
+            command += ['-I' + str(path) for path in
+                        (protocol, protocol / 'mico', protocol / 'MQTTPacket')]
+            command += ['-include', 'stdint.h', '-DMOC=1',
+                        '-DMAX_MESSAGE_HANDLERS=12', '-DPH_EXPECTED_MESSAGE_HANDLERS=12',
+                        '-Wl,--wrap=malloc,--wrap=free,--wrap=realloc,--wrap=calloc,--wrap=strdup']
+            command += list(defines) + [str(path) for path in source]
+            command += ['-lcrypto', '-lm', '-o', str(binary)]
+            subprocess.run(command, check=True, timeout=60)
+            subprocess.run([str(binary)], check=True, timeout=30)
 
     def run_actual_service(self):
         """Exercise the actual shared dispatcher and admission/error paths."""
