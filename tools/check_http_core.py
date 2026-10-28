@@ -125,6 +125,15 @@ def http_paths(frames,model,symbols=None):
         for key,(names,reserve) in writer_paths(frames,'HTTP '+label+' envelope',dispatch+['mp_envelope'],HTTP_RESERVE,symbols).items():paths[key]=(reserve,names)
         for helper in ('service_product_mp','service_product_capabilities_mp','service_product_info_mp'):
             for key,(names,reserve) in writer_paths(frames,'HTTP '+label+' '+helper,dispatch+[helper],HTTP_RESERVE,symbols).items():paths[key]=(reserve,names)
+        # Typed product helpers retain configuration/scan scratch while walking
+        # nested parameter values. Their validation tails are distinct from the
+        # top-level envelope parser, and must not disappear from the bound.
+        business=dispatch+['service_product_mp']+extra(['smp_config','smp_control',
+                  'smp_music','smp_text','smp_int','smp_has'])
+        paths['HTTP '+label+' business parameter validation']=(HTTP_RESERVE,
+            business+['phv_get']+extra(['phv_iter','phv_child_reader','phv_next',
+            'phv_scan','phv_duplicate','phv_skip_validated','phv_head',
+            'binary_token','binary_take','ph_wire_utf8']))
         paths['HTTP '+label+' logs']=(HTTP_RESERVE,dispatch+extra(['mp_logs'])+['phw_text']+extra(['phw_text_n','phw_prefix','phw_quote','phw_bytes'])+['ph_buf_reserve','ph_wire_malloc'])
     admission=owner+extra(['acquire','action'])+['begin','prepare','ph_http_claim','service_memory_claim']
     paths['HTTP admission']=(HTTP_RESERVE,admission)
