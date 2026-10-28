@@ -78,6 +78,8 @@ static void mp_logs(const ph_value *p,ph_writer *w,const char **code)
 /* Implementations copy anything retained by an asynchronous job. */
 extern bool service_product_mqtt_mp(const char *,const ph_value *,ph_writer *,const char **) __attribute__((weak));
 extern bool automation_mp(const char *,const ph_value *,ph_writer *,const char **);
+extern bool feature_lan_pair_start(const char *,const char *,const char *,unsigned,const char **) __attribute__((weak));
+extern bool feature_lan_pair_status(const char *,ph_writer *) __attribute__((weak));
 static bool update_command_mp(const char *,const ph_value *,ph_writer *,const char **);
 static void mp_empty(ph_writer *w){phw_begin(w,NULL,false);phw_end(w);}
 static ph_buf *mp_cached(unsigned index)
@@ -102,7 +104,7 @@ static ph_buf *mp_dispatch(mp_request *r,const void *raw,size_t length,bool mqtt
     }
     if(device_config_recovery() && !query && strcmp(action,"system.reset") && strcmp(action,"system.reboot") && strcmp(action,"wifi.scan"))return service_error_mp(r->id,"migration_required");
     if(device_config_recovery()&&!strcmp(action,"system.reset")){ph_value full;bool yes;if(!phv_get(p,"full",&full)||!phv_bool(&full,&yes)||!yes)return service_error_mp(r->id,"migration_required");}
-    bool receipt=r->id[0]&&!query&&strncmp(action,"config.",7)&&strncmp(action,"wifi.",5)&&strncmp(action,"ota.",4)&&strcmp(action,"sensor.session.set");
+    bool receipt=r->id[0]&&!query&&strncmp(action,"config.",7)&&strncmp(action,"wifi.",5)&&strncmp(action,"ota.",4)&&strcmp(action,"sensor.session.set")&&strncmp(action,"lan.pair",8);
     unsigned char digest[32];
     if(receipt){SHA256Context sha;if(SHA256Reset(&sha)||SHA256Input(&sha,raw,length)||SHA256Result(&sha,digest))return service_error_mp(r->id,"busy");}
     mico_rtos_lock_mutex(&command_lock);
@@ -125,6 +127,18 @@ static ph_buf *mp_dispatch(mp_request *r,const void *raw,size_t length,bool mqtt
     else if(!strcmp(action,"ota.status.get")||(!strcmp(action,"status.get")&&active)){ota_job_status_mp(&w);code="ok";}
     else if(active&&strcmp(action,"ota.check.get")&&strcmp(action,"ota.sources.get")&&strcmp(action,"ota.notes.get")){code="busy";record_receipt=false;mp_empty(&w);}
 #endif
+    else if(!strcmp(action,"lan.pair")||!strcmp(action,"lan.pair.get")){
+        ph_value v;char peer[13],ip[16],password[33]={0};int64_t scopes;
+        bool start=!strcmp(action,"lan.pair");
+        bool valid=phv_keys(p,start?"|peer||ip||password||scopes|":"|peer|")&&phv_get(p,"peer",&v)&&phv_text(&v,peer,sizeof(peer));
+        if(start)valid=valid&&phv_get(p,"ip",&v)&&phv_text(&v,ip,sizeof(ip))&&phv_get(p,"scopes",&v)&&phv_int(&v,&scopes)&&scopes>=1&&scopes<=3;
+        if(start&&phv_get(p,"password",&v))valid=valid&&phv_text(&v,password,sizeof(password));
+        if(!valid){code="invalid_params";mp_empty(&w);}
+        else if(start){if(feature_lan_pair_start)feature_lan_pair_start(peer,ip,password,(unsigned)scopes,&code);else code="unsupported";mp_empty(&w);}
+        else if(feature_lan_pair_status){code=feature_lan_pair_status(peer,&w)?"ok":"invalid_params";}
+        else{code="unsupported";mp_empty(&w);}
+        memset(password,0,sizeof(password));
+    }
     else if(!strcmp(action,"logs.get"))mp_logs(p,&w,&code);
     else{
         bool handled=update_command_mp(action,p,&w,&code);
