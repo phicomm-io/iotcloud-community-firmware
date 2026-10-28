@@ -32,9 +32,9 @@ static void haStateBody(JsonObject out){
   for(unsigned i=0;i<SENSOR_COUNT;i++)if(sensorPresent(i)){JsonObject value=sensors.createNestedObject(keys[i]);bool valid=readings[i].valid(now);value["valid"]=valid;if(valid)value["value"]=readings[i].value;else value["value"]=nullptr;}
 }
 static void publishState(){
-  // Release the JSON pool before the SDK/local broker copies the wire payload.
-  // Also release the first wire payload before building the typed sensor feed.
-  {String text;if(mqttStateJson(text,state,4096,true))publish(mqttRoot+"/state",text);}
+  // Reuse the owned business snapshot; only HA and sensor feeds build here.
+  if(businessStatusInvalid)pollBusinessStatusCache(millis());
+  if(businessStatusReady)publish(mqttRoot+"/state",cachedBusinessState());
   {String text;if(mqttStateJson(text,haStateBody,2048))publish(mqttRoot+"/ha/state",text);}
   {String text;if(mqttStateJson(text,sensorMetadata,2048,true))publish(sensorRoot+"/metadata",text);}
   {String text;if(mqttStateJson(text,sensorBody,2048,true))publish(sensorRoot+"/state",text,false);}

@@ -18,8 +18,8 @@ static void otaPartitionStatus(JsonObject out){
   }
   esp_partition_iterator_release(it);
 }
-static void state(JsonObject out){
-  uint32_t now=millis();
+static void buildBusinessState(JsonObject out,uint32_t now){
+  out["snapshot_uptime_ms"]=now;
   out["model"]="daikin";out["firmware_variant"]=DAIKIN_VARIANT;out["hardware_model"]="BRY88AX151K";out["pm_sensor"]=pmModel;
   out["migration_state"]=configRecovery?"confirmation_required":"ready";out["language"]=config["device"]["language"]|"zh-CN";out["name"]=config["device"]["name"]|"DAIKIN";out["device_id"]=deviceId;out["version"]=version;
   out["co2_warmup_seconds_remaining"]=!co2Module.warmed&&now<180000?(180000-now+999)/1000:0;
@@ -59,6 +59,69 @@ static void state(JsonObject out){
     if(readings[i].received)s["age_ms"]=uint32_t(now-readings[i].at);else s["age_ms"]=nullptr;
   }
 }
+// Owned cache is accessed only by the application loop, never SDK callbacks.
+// Source keys compare exact typed values; no business JSON is built on a hit.
+struct BusinessStatusKey {
+  struct Sample {float value;uint32_t at;bool received,present,valid;};
+  Sample samples[SENSOR_COUNT];
+  uint32_t warmup,cooldown,requested,completed;
+  unsigned calibration,target,wifiMode;
+  int wifiStatus,rssi;
+  bool available,pending,awaiting,attempted,button,mqtt,hcho,indicator,recovery,hub;
+  String ip;
+  bool operator==(const BusinessStatusKey &other)const {
+    for(unsigned i=0;i<SENSOR_COUNT;i++){
+      const auto &a=samples[i],&b=other.samples[i];
+      if(memcmp(&a.value,&b.value,sizeof(float))||a.at!=b.at||a.received!=b.received||a.present!=b.present||a.valid!=b.valid)return false;
+    }
+    return warmup==other.warmup&&cooldown==other.cooldown&&requested==other.requested&&completed==other.completed&&calibration==other.calibration&&target==other.target&&wifiMode==other.wifiMode&&wifiStatus==other.wifiStatus&&rssi==other.rssi&&available==other.available&&pending==other.pending&&awaiting==other.awaiting&&attempted==other.attempted&&button==other.button&&mqtt==other.mqtt&&hcho==other.hcho&&indicator==other.indicator&&recovery==other.recovery&&hub==other.hub&&ip==other.ip;
+  }
+};
+static bool businessStatusInvalid=true,businessStatusReady=false;
+static unsigned businessStatusBuilds=0;
+static BusinessStatusKey businessStatusKey;
+static DynamicJsonDocument businessStatusDocument(4096);
+static String businessStatusWire,businessStatusHttpWire;
+static void invalidateBusinessStatusCache(){businessStatusInvalid=true;}
+static BusinessStatusKey businessStatusSource(uint32_t now){
+  BusinessStatusKey key={};
+  for(unsigned i=0;i<SENSOR_COUNT;i++){auto &s=key.samples[i];const auto &r=readings[i];s.value=r.value;s.at=r.at;s.received=r.received;s.present=sensorPresent(i);s.valid=r.valid(now);}
+  key.warmup=!co2Module.warmed&&now<180000?(180000-now+999)/1000:0;
+  key.cooldown=co2Module.cooldown(now);key.available=co2Module.canCalibrate(now);
+  key.requested=co2Module.requestedAt;key.completed=co2Module.completedAt;
+  key.calibration=unsigned(co2Module.calibration);key.target=co2Module.target;
+  key.pending=co2Module.pending();key.awaiting=co2Module.awaitingMeasurement;key.attempted=co2Module.attempted;
+  key.wifiStatus=WiFi.status();key.wifiMode=WiFi.getMode();key.rssi=WiFi.RSSI();
+  key.ip=(key.wifiStatus==WL_CONNECTED?WiFi.localIP():WiFi.softAPIP()).toString();
+  key.button=digitalRead(34)==LOW;key.mqtt=mqttConnected;key.hcho=hchoPresent;key.indicator=indicator;key.recovery=configRecovery;
+#ifdef IOTCLOUD_HUB
+  key.hub=hubReady();
+#endif
+  return key;
+}
+static bool pollBusinessStatusCache(uint32_t now){
+  const BusinessStatusKey next=businessStatusSource(now);
+  if(businessStatusReady&&!businessStatusInvalid&&next==businessStatusKey)return true;
+  // Invalidate before rebuilding so OOM never serves a known-stale valid sample.
+  businessStatusReady=false;businessStatusWire="";businessStatusHttpWire="";
+  businessStatusDocument.clear();buildBusinessState(businessStatusDocument.to<JsonObject>(),now);
+  if(businessStatusDocument.overflowed())return false;
+  String wire,http;
+  const size_t n=measureMsgPack(businessStatusDocument);
+  if(!wire.reserve(n)||serializeWireMP(businessStatusDocument,wire)!=n)return false;
+  DynamicJsonDocument envelope(4096);envelope["code"]="ok";envelope["data"]=businessStatusDocument.as<JsonObjectConst>();
+  const size_t m=measureMsgPack(envelope);
+  if(envelope.overflowed()||!http.reserve(m)||serializeWireMP(envelope,http)!=m)return false;
+  businessStatusWire=std::move(wire);businessStatusHttpWire=std::move(http);
+  businessStatusKey=next;businessStatusInvalid=false;businessStatusReady=true;++businessStatusBuilds;return true;
+}
+static const String &cachedBusinessState(){return businessStatusWire;}
+static const String &cachedHttpStatus(){return businessStatusHttpWire;}
+static void state(JsonObject out){
+  // Bootstrap is allowed before the first loop; normal reads only copy cache.
+  if((!businessStatusReady||businessStatusInvalid)&&!pollBusinessStatusCache(millis()))return;
+  out.set(businessStatusDocument.as<JsonObjectConst>());
+}
 // Only populated diagnostic fields are emitted. A false or zero value is data.
 template<class T> static void diagnosticField(JsonArray fields,unsigned id,const T &value){
   JsonArray pair=fields.createNestedArray();pair.add(id);pair.add(value);
@@ -95,11 +158,6 @@ static void diagnostics(JsonObject out){
     }
   }
 #ifdef IOTCLOUD_HUB
-  diagnosticField(fields,PH_DIAG_HUB_CLIENTS,hubTransport.broker.count());
-  diagnosticField(fields,PH_DIAG_HUB_MAX_CLIENTS,unsigned(iotcloud::HubBroker::Clients));
-  diagnosticField(fields,PH_DIAG_HUB_RETAINED_BYTES,hubTransport.broker.retainedBytes());
-  diagnosticField(fields,PH_DIAG_HUB_REFUSED,hubTransport.broker.refused);
-  diagnosticField(fields,PH_DIAG_HUB_DROPPED,hubTransport.broker.dropped);
   diagnosticField(fields,PH_DIAG_HUB_FREE_BYTE_HEAP,heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));
   diagnosticField(fields,PH_DIAG_HUB_LARGEST_BYTE_BLOCK,heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));
   diagnosticField(fields,PH_DIAG_HUB_MIN_BYTE_HEAP,heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));
