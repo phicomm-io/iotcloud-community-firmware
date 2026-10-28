@@ -18,11 +18,16 @@ MODULES = (
     'test_http_mp_stack_gate', 'test_worker_mp_stack_gate',
     'test_local_auth', 'test_auth_routes_mp', 'test_storage_auth',
     'test_backup', 'test_m1_config_recovery', 'test_m1_storage_v10',
-    'test_lan_wire', 'test_lan_client', 'test_group_mp', 'test_sensor_grant_mp',
+    'test_lan_wire', 'test_lan_client', 'test_group_mp', 'test_sensor_grant_mp', 'test_native_udp_runtime',
     'test_release_manifest_mp', 'test_mqtt_ota_mp', 'test_native_mqtt',
     'test_bemfa_mp', 'test_ha_json', 'test_runtime_mqtt_mp',
     'test_sensor_producers_mp', 'test_sensor_mp', 'test_m1_display_mp',
     'test_tc1_native_sdk', 'test_no_json_objects',
+    'test_shared_mqtt', 'test_mqtt_preflight_deferral', 'test_mqtt_birth_progress',
+    'test_mqtt_buffer_storage', 'test_tc1_mqtt_lifecycle', 'test_bemfa',
+    'test_native_service_mqtt', 'test_tc1_mqtt_stack', 'test_tc1_checked_number_calls',
+    'test_mqtt_optional_json',
+    'test_m1_mqtt_display_session', 'test_m1_mqtt_startup', 'test_m1_particles_mqtt',
 )
 
 if __name__ == '__main__':

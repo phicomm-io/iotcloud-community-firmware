@@ -34,9 +34,9 @@ or latency measurements. ASan/UBSan run on every executable.
 | Same MQTT account preserves RAM sessions; account change clears them | Same passive fixture | Actual `feature_mqtt_session` and actual session table |
 | Grant/read/session activity does not write product configuration | Same passive fixture | Production functions link without product save/Flash callbacks; all state resides in RAM session table |
 | Sensor metadata/snapshot units, freshness, sequence and borrowed lifetime | `test_sensor_mp` | Separate sensor owner production codec/consumer fixture |
-| M1 unsupported binding/linkage/light/probe writes; time/sleep allowed | Native-tests feature owner follow-up | Owner adding actual M1 feature-domain fixture; not claimed by this fixture |
-| Binding output omits response_ids and advertises session_protocol 3 | Same feature-owner follow-up | Not substituted with a source-text assertion |
-| M1 local sample does not autonomously publish MQTT | Same feature-owner follow-up | Owner extracting actual local-sample and MQTT-service paths |
+| M1 unsupported binding/linkage/light/probe writes; time/sleep allowed | `test_native_features`, `test_m1_feature_mp.c` | Actual feature-domain functions; all original 405/200 assertions preserved |
+| Binding output omits response_ids and advertises session_protocol 3 | Same feature fixture | Actual MP encode and borrowed decode; no response_ids, protocol=3 |
+| M1 local sample does not autonomously publish MQTT | Same feature fixture | Actual local-sample copy + virtual_service + feature_mqtt_service, zero captured publications |
 
 Run this lane without SDK/JSON dependencies:
 

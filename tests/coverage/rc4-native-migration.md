@@ -13,7 +13,7 @@ No product case is moved into the historical SDK-only group to hide a failure.
 | `test_automation.c`, `countdown_scenarios.inc`: IDs, persistence-before-action, reboot-last, no replay/catch-up, busy/missed/capacity, all button gestures/pagination, A1 uptime countdown cancel/restart/edit/reboot/wrap, M1 weekly alarms/tone/bounds | Same scenarios and assertions now call `automation_mp` with build-time constant MP vectors; responses use borrowed `ph_value`; `test_native_features` runs A1/M1/TC1 | features; native + ASan/UBSan PASS |
 | `test_runtime.c` transaction validation / CAS / flash rejection / binding limits / six domains | `test_config_mp.c`, `test_feature_mp.c`; historical validation vectors, four/five peer limit, legacy-clamped reads, actual install sample remapping/credential change/save rejection added | features; do not equate existing short MP smoke coverage with all 1049 old lines |
 | `test_runtime.c` applied fan snapshot, day/night caps/fallback, manual resume, light sleep, animation speed/effect boundaries | Extract real runtime functions with unchanged historical assertion bodies, native command inputs | features; native + ASan/UBSan PASS |
-| `test_runtime.c` group ACK/timeout/retry ownership/auth/replay, `passive_scenarios.inc`, sensor grant | `test_group_mp`, `test_lan_wire`, `test_lan_client`, `test_sensor_grant_mp` | auth owner must confirm old-to-new scenario equivalence |
+| `test_runtime.c` group ACK/timeout/retry ownership/auth/replay, `passive_scenarios.inc`, sensor grant | `test_group_mp`, `test_lan_wire`, `test_lan_client`, `test_sensor_grant_mp` | auth owner; complete timing/OOM/recovery mapping in `tests/native_udp_runtime/COVERAGE.md`; native + ASan/UBSan PASS |
 | `test_runtime.c` generic sensor MQTT/display bridge | `test_m1_display_mp`, `test_sensor_producers_mp`, `test_sensor_mp`; real producer/consumer schema3 metadata + snapshot, strict full-u32 counters, descriptor/unit/TTL/replay/reconnect/borrowed-buffer checks | protocol owner; ASan/UBSan PASS. `test_runtime_session_mp` preserves actual M1 ingress/session wiring, namespace/offline notifications/native grant dispatch |
 | `test_runtime.c` account namespace/filter bounds/coalescing/stale generations, old MQTT receipts/preflight/first-cause tests | `test_runtime_mqtt_mp`, `test_native_mqtt` plus actual shared Paho lifecycle tests | decimal owner migrating gaps; not complete |
 | `test_runtime.c` HA identity/names/optional entity cleanup; `test_mqtt_discovery_budget` | `test_runtime_mqtt_mp` fixed tiny JSON producer max-size, cursor/transport retry and actual parsed HA payloads; retain identity/layout/name/cursor/OOM cases | features + decimal owner; gap audit pending |
@@ -37,7 +37,7 @@ DUT installation, concurrency P95, busy recovery, or physical-button acceptance.
 
 ## Executable entries (this branch)
 
-- `SANITIZE=1 bash tests/run.sh --native-common`: 12 unittest cases; automation
+- `SANITIZE=1 bash tests/run.sh --native-common`: 13 unittest cases; automation
   compiles and executes three model variants. No SDK/JSON objects are linked.
 - `PHICOMM_TEST_JSON_DIR=... bash tests/run.sh --legacy-sdk`: explicit historical
   SDK JSON library-only coverage. ARM cache/stack history is opt-in via
@@ -62,9 +62,10 @@ transport are seams. The separate group/LAN modules own packet-level evidence.
 
 ## Remaining gates
 
-- Original full `test_runtime.c` remains in `--all` until the auth/UDP owner has
-  mapped passive-link/sensor-session pacing and all historical group simulator
-  scenarios. Current native group/LAN tests are not presumed equivalent.
+- Original full `test_runtime.c` remains in `--all` while residual account/filter
+  and HA-layout assertions are audited. Native group/LAN timing/OOM/recovery
+  equivalence is now mapped in `tests/native_udp_runtime/COVERAGE.md`; M1 passive
+  domain and no-autonomous-publication assertions run in `test_m1_feature_mp.c`.
 - Shared MQTT receipt/preflight/filter/first-cause cases remain owned by the
   MQTT migration lane; original gates are retained pending that complete map.
 - The native ARM32 codec ownership/allocator ledger is a separate job. Its
@@ -89,3 +90,9 @@ in 7.039 s (`/tmp/rc4-native-common-final.log`).
 The legacy SDK host entry was rerun after isolating integer-width vectors:
 5 Python library tests + 3 C binaries PASS; final leak ledger live=0 after
 10000 serial and 4000 concurrent cycles. `/tmp/rc4-legacy-sdk-final.log`.
+
+Latest pre-MQTT-expanded result on source `2b45131`: 95 host tests PASS, zero
+skipped, 49.994 s (`/tmp/rc4-native-expanded-final.log`). The newly integrated
+MQTT/session fixtures and UDP timing fixtures are being verified together; this
+95-case result does not represent those later additions. M1 passive domains and
+original A1 internal-values assertions were independently executed with ASan/UBSan.

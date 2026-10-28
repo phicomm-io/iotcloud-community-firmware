@@ -55,10 +55,18 @@ class NativeFeatures(unittest.TestCase):
         peer_start = runtime.index('typedef struct {', runtime.index('static unsigned available;'))
         peer_end = runtime.index('static peer_runtime_t peers[FEATURE_MAX_PEERS];', peer_start) + len('static peer_runtime_t peers[FEATURE_MAX_PEERS];')
         controls = runtime[peer_start:peer_end] + '\n' + function(runtime, 'static bool install_config(') + '\n'
+        controls += function(runtime, 'void feature_values_snapshot(') + '\n'
         controls += '#include "feature_mp.inc"\n'
         controls += runtime[runtime.index('static void reset_controller(bool preserve_gate) {'):runtime.index('unsigned feature_mqtt_filters(')]
         sources = [(ROOT / p).read_text() for p in ('tests/test_runtime_controls_mp.c', 'tests/runtime_control_scenarios.inc')]
         self.compile_run('tests/test_runtime_controls_mp.c', vectors=header(sources, {}), controls=controls)
+
+    def test_m1_passive_domains_binding_and_no_sample_mqtt_publications(self):
+        from tests.test_runtime_mqtt_mp import function
+        runtime=(ROOT/'common/runtime.c').read_text()
+        controls='\n'.join(function(runtime,n) for n in ('void feature_local_sample(', 'static void virtual_service(int (*publish)(const char *, const void *, size_t, bool)) {', 'static int checked_publish(', 'int feature_mqtt_service('))
+        source=(ROOT/'tests/test_m1_feature_mp.c').read_text()
+        self.compile_run('tests/test_m1_feature_mp.c',controls=controls,vectors=header([source],{}))
 
     def test_watchdog_original_deadline_latch_flash_and_reset_matrix(self):
         with tempfile.TemporaryDirectory(prefix='watchdog-native-') as td:
