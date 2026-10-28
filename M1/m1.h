@@ -5,6 +5,7 @@
 #include "mico.h"
 #include "mico_system.h"
 #include "protocol.h"
+#include "sensor_details.h"
 #include "json.h"
 #include "../common/phicomm_features.h"
 #include "../common/mqtt_account.h"
