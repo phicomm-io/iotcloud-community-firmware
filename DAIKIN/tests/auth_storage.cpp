@@ -33,6 +33,7 @@ static const int ESP_OK=0;static int nvs_get_stats(const char*,nvs_stats_t*s){*s
 #include "../src/auth_storage.inc"
 static bool webPending=false,webDone=false,webAuthRequired=false,otaActive=false;static ph_auth_context webAuthContext;static int webMux=0,webOperation=0,hubHttpStatus=0;static String webResult,webBody,hubHttpToken;static char httpStatusBody[4096];static unsigned dispatched=0;
 static String execute(const String&){++dispatched;return "executed";}static String backupExecute(){++dispatched;return "backup";}static void hubApiExecute(){++dispatched;}static bool mqttStateJson(String&,char*,int,bool){++dispatched;return true;}
+static unsigned invalidations=0;static void invalidateBusinessStatusCache(){++invalidations;}static bool businessStatusReady=false;static String cachedHttpStatus(){return "cached";}
 #include "transaction.inc"
 static void boot(){localAuthReady=false;configRecovery=false;config=DynamicJsonDocument(16384);String wire=loadAuthConfigText();auto error=deserializeJson(config,wire.c_str(),wire.length());if(error)fprintf(stderr,"boot wire %s error %s\n",wire.c_str(),error.c_str());assert(!error);config.shrinkToFit();updatePassword();initLocalAuth();assert(localAuthReady&&!configRecovery);}
 int main(){
@@ -42,7 +43,8 @@ int main(){
  auto original=prefs.values;boot();assert(ph_auth_pair_resume(&localAuth,"aabbccddee01",key,token));unsigned scopes;assert(ph_auth_remote_get(&localAuth,"aabbccddee02",remote,&scopes)&&scopes==2);
  // Config edits preserve both directions; password changes atomically clear them.
  DynamicJsonDocument next(16384);next=DynamicJsonDocument(16384);next.set(config);next["device"]["name"]="newname";assert(saveConfig(next));boot();assert(ph_auth_pair_resume(&localAuth,"aabbccddee01",key,token));
- prefs.mode=Preferences::FAIL_OLD;next=DynamicJsonDocument(16384);next.set(config);next["auth"]["password"]="adminfjr";assert(!saveConfig(next));assert(configRecovery&&String(webPassword)=="");assert(device_local_auth()==nullptr);boot();assert(ph_auth_pair_resume(&localAuth,"aabbccddee01",key,token));
+ std::string beforeFailedConfig;serializeJson(config,beforeFailedConfig);unsigned beforeFailedInvalidations=invalidations;
+ prefs.mode=Preferences::FAIL_OLD;next=DynamicJsonDocument(16384);next.set(config);next["auth"]["password"]="adminfjr";assert(!saveConfig(next));assert(configRecovery&&String(webPassword)=="");std::string afterFailedConfig;serializeJson(config,afterFailedConfig);assert(afterFailedConfig==beforeFailedConfig&&invalidations==beforeFailedInvalidations);assert(device_local_auth()==nullptr);boot();assert(ph_auth_pair_resume(&localAuth,"aabbccddee01",key,token));
  prefs.mode=Preferences::FAIL_NEW;next=DynamicJsonDocument(16384);next.set(config);next["auth"]["password"]="adminfjr";assert(!saveConfig(next)&&configRecovery);assert(String(webPassword)=="");prefs.mode=Preferences::OK;boot();assert(!ph_auth_pair_resume(&localAuth,"aabbccddee01",key,token));assert(!ph_auth_remote_get(&localAuth,"aabbccddee02",remote,&scopes));
  assert(ph_auth_pair(&localAuth,"adminfjr","aabbccddee01",2,key));assert(ph_auth_http_login(&localAuth,"adminfjr",token));char header[80];snprintf(header,sizeof(header),"Bearer %s",token);
  next=DynamicJsonDocument(16384);next.set(config);assert(saveConfigTransaction(next,true));ph_auth_context ctx;assert(!ph_auth_http_check(&localAuth,header,&ctx));boot();assert(!ph_auth_pair_resume(&localAuth,"aabbccddee01",key,token));
