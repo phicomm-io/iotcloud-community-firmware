@@ -8,7 +8,7 @@ Devices already running community firmware should follow [Firmware updates](firm
 
 ## Connect the stock device
 
-If the router already lists A1, preserve its Wi-Fi configuration and record its IP and MAC. Otherwise use EasyLink as described in [Stock Wi-Fi setup](stock-provision). Connect the computer to the target 2.4 GHz Wi-Fi network. The original app is not required.
+If the router already lists A1, preserve its Wi-Fi configuration and record its IP and MAC. Otherwise use EasyLink as described in [Stock Wi-Fi setup](stock-provision). Connect the computer to the target 2.4 GHz Wi-Fi network. The original app is not required. Start sending in the tool, then hold only the Wi-Fi icon button for 1–2 seconds and release. The receive window lasts about 60 seconds.
 
 ## Read-only connection check
 

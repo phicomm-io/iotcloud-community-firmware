@@ -1,5 +1,7 @@
 # Troubleshooting
 
+This page covers community firmware. For A1 / M1 still running factory firmware, see [stock Wi-Fi setup](stock-provision).
+
 ## Connection indicators
 
 Connection warnings take priority over normal lighting:
@@ -35,11 +37,11 @@ Find the device MAC in the router's DHCP client list. The setup hotspot opens on
 
 TC1's main button and A1's Wi-Fi button reserve recovery gestures, performed **on release**: hold for 5 to less than 10 seconds to reset the network, or at least 10 seconds for a factory reset. Ensure you can provision Wi-Fi again; factory reset clears user settings.
 
-M1 uses the original panel's long-press event to clear Wi-Fi and the WebUI password. Follow [A1 / M1 flashing and recovery](a1-m1-flash); do not apply TC1 / A1 custom button settings to M1.
+On M1 with the stock sensor controller, **hold the body button for 9 seconds or longer, then release**. This clears Wi-Fi and the WebUI password and reboots, preserving other user settings.
 
 ### Buttons seem unresponsive
 
-Disable child lock for custom actions. Actions are recognized after release; recovery never executes while a button is still held. Five seconds and above are reserved, not custom long presses. Multi-click actions wait until the click interval finishes.
+Disable child lock for custom actions. TC1 / A1 custom actions and recovery execute after release. Five seconds and above are reserved, not custom long presses. Multi-click actions wait until the click interval finishes.
 
 ### A1 sensor automation does not work
 

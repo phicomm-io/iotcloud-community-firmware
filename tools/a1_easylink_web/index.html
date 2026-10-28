@@ -15,7 +15,7 @@
     <p>无需原厂 App。电脑先无线连接目标 <strong>2.4 GHz Wi-Fi</strong>，再填写同一个网络的信息。</p>
     <ol class="steps">
       <li>电脑使用 Wi-Fi 连接，不能用网线代替。</li>
-      <li>开始发送后，让 A1 进入配网模式；接收窗口约 60 秒。</li>
+      <li>开始发送后，单独按住 A1 面板的 Wi-Fi 图标键 1–2 秒后松开；接收窗口约 60 秒。</li>
       <li>发送结束后，在路由器客户端列表确认 A1 获得 IP。</li>
     </ol>
     <form id="provision" autocomplete="off">
@@ -47,9 +47,9 @@
       <progress id="progress" value="0" max="50" aria-label="发送进度"></progress>
       <p id="counts" class="help"></p>
     </section>
-    <p class="footnote">信息仅提交给本机发送服务，不上传云端、不保存密码。关闭页面不会立即停止发送，请使用“停止”或退出终端。当前已通过原厂解码指令仿真，实机无线配网尚未验证。</p>
+    <p class="footnote">Wi-Fi 信息仅在本机处理，不上传云端。关闭页面不会停止发送，请点击“停止”或退出终端。</p>
     <details class="footnote"><summary>如何让 A1 进入配网模式？</summary>
-      <p>原厂代码在特定触摸输入持续约 1 秒后启动配网。触摸寄存器与面板具体图标尚未核对，因此这里不能指定某个按键。首次使用需先确认设备已进入配网状态；未配置开机也不能仅凭日志认定自动进入。</p>
+      <p>单独按住面板的 Wi-Fi 图标键 1–2 秒后松开，接收窗口约 60 秒，无需连接设备热点。已经保存过 Wi-Fi 也能重新配网。本工具按原厂固件逆向实现，A1 理论上可用。</p>
     </details>
     <noscript>需要启用 JavaScript 才能使用本机配网页面。</noscript>
   </main>

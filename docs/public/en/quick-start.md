@@ -15,7 +15,12 @@ This project provides open-source firmware for discontinued IoT devices or devic
 
 **`tc1(a1)` means the A1 hardware revision of the TC1 power strip, not the A1 air purifier. They are different products and cannot use each other's firmware.** Check the model before flashing.
 
-For ESP32 serial installation, see [DAIKIN installation and recovery](daikin-guide). For a first installation, M1 can use [factory LAN migration](m1-no-disassembly), starting with 0.9.21 or newer. Wired procedures are [TC1 flashing](tc1-flash) (EMW3031, J-Link) and [A1 / M1 flashing and recovery](a1-m1-flash) (EMW3080B, J-Link or serial bootloader).
+| Device | First installation | Wired installation and recovery |
+| --- | --- | --- |
+| TC1 A1 hardware | [Illustrated OTA guide](tc1-no-disassembly-ethernet-wifi-ap), stock 1.0.0.24 / 1.0.0.26 | [J-Link](tc1-flash) |
+| M1 | [Factory LAN migration](m1-no-disassembly), starting at 0.9.21 | [J-Link / serial](a1-m1-flash) |
+| A1 air purifier | Use wired installation; [OTA migration awaits validation](a1-no-disassembly) | [J-Link / serial](a1-m1-flash) |
+| DAIKIN | BRY88AB151K supports [stock OTA](daikin-stock-ota) | [ESP32 serial installation](daikin-guide#first-installation) |
 
 ## First Wi-Fi setup
 

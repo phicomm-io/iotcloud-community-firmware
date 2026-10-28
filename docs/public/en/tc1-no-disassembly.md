@@ -1,10 +1,8 @@
-# Flash TC1 without disassembly
+# TC1 OTA internals and custom images
 
 **For TC1 A1 hardware (EMW3031 / MK3031) running stock firmware 1.0.0.26 or 1.0.0.24.** Other stock versions, TC1 A2 and the A1 air purifier are not supported.
 
-Install community firmware over Wi-Fi without opening the case, soldering, serial or SWD wiring, or the vendor cloud.
-
-Illustrated subpage: [One Ethernet adapter + one Wi-Fi adapter + one AP](tc1-no-disassembly-ethernet-wifi-ap), with firmware and payload downloads and commands for Windows, Linux and macOS.
+This page covers factory OTA internals, image packaging and alternative network layouts. To install directly, follow the [illustrated OTA guide](tc1-no-disassembly-ethernet-wifi-ap), with prepared files and Windows / macOS / Linux steps.
 
 ## How it works
 
@@ -20,7 +18,7 @@ There are two connections: **the computer first joins the TC1 provisioning AP to
 
 - A **TC1 A1 hardware power strip** running stock firmware **1.0.0.26** or **1.0.0.24**.
 - A computer with **Ethernet and Wi-Fi adapters**, and a router that supports **2.4 GHz open Wi-Fi**.
-- An Ethernet cable, Python 3, `curl` and **tftpd or another TFTP server** on the computer. The Python TFTP service provided on this page is another option.
+- An Ethernet cable, `curl` and **tftpd or another TFTP server**. Python 3 is needed for custom image packaging or the scripts below.
 - The community application-slot image `tc1_community.image.bin` for this hardware.
 
 Other equivalent topologies work too. You need a client that can join the TC1 provisioning AP to send the trigger, and a file server that TC1 can reach through the OTA AP afterward.
@@ -117,7 +115,7 @@ curl -s -m 5 http://10.10.10.1:8000/read-domain
 
 ### 3. Send the trigger request
 
-Download the payload for your stock version to skip Python generation: [tftp-trigger.bin](assets/tools/tc1-no-disassembly/tftp-trigger.bin) for 1.0.0.26, [tftp-trigger-1.0.0.24.bin](assets/tools/tc1-no-disassembly/tftp-trigger-1.0.0.24.bin) for 1.0.0.24. Complete Windows / Linux / macOS commands are in the [illustrated subpage](tc1-no-disassembly-ethernet-wifi-ap).
+Download the payload for your stock version to skip Python generation: [tftp-trigger.bin](assets/tools/tc1-no-disassembly/tftp-trigger.bin) for 1.0.0.26, [tftp-trigger-1.0.0.24.bin](assets/tools/tc1-no-disassembly/tftp-trigger-1.0.0.24.bin) for 1.0.0.24. Complete Windows / macOS / Linux commands are in the [illustrated OTA guide](tc1-no-disassembly-ethernet-wifi-ap).
 
 The payload target address depends on the stock version; both versions share the same in-frame offsets and differ only by an address shift:
 

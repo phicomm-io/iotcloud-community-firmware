@@ -2,7 +2,7 @@
 
 Read these common requirements before following a model-specific guide. The individual guides describe wiring points and differences between products.
 
-Factory M1 also supports the [LAN migration procedure](m1-no-disassembly), starting at 0.9.21 or newer. Keep its normal power supply as described there. The wiring and independent-supply requirements below apply when opening a device and connecting a programmer.
+For OTA migration, keep the normal power supply as described in the model's guide. The wiring and independent-supply requirements below apply when opening a device and connecting a programmer.
 
 ## Electrical safety
 
@@ -20,7 +20,7 @@ A full image overwrites the original firmware and some settings. Save a full Fla
 
 | Device | Module | First-install method | Guide |
 | --- | --- | --- | --- |
-| TC1 power strip | EMW3031 | J-Link + FlashPlus, full image at Flash offset 0 | [TC1 flashing](tc1-flash) |
+| TC1 power strip | EMW3031 | Stock 1.0.0.24 / 1.0.0.26 OTA, or J-Link + FlashPlus | [Illustrated OTA](tc1-no-disassembly-ethernet-wifi-ap) · [Wired recovery](tc1-flash) |
 | M1 air quality monitor | EMW3080B / MK3080B | Factory LAN OTA, or J-Link / serial bootloader | [LAN migration](m1-no-disassembly) · [Wired recovery](a1-m1-flash) |
 | A1 air purifier | EMW3080B / MK3080B | J-Link or serial bootloader | [A1 / M1 flashing](a1-m1-flash) |
 

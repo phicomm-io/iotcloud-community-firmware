@@ -18,7 +18,9 @@ Connect the computer to the same router as M1 over Ethernet or Wi-Fi, with clien
 
 If the router already lists M1, keep its configuration and record the IP and label MAC. No reset is needed.
 
-Otherwise enter factory provisioning and confirm an open `EasyLink_XXXXXX` hotspot appears. Join it and submit your **2.4 GHz** network settings to `10.0.0.1:8000/config-write-uap`. See [stock Wi-Fi setup](stock-provision) for the entry limits and system-specific commands. No original app is required.
+To provision again, **hold the body button for about 3–4 seconds, then release**, and find the open `EasyLink_XXXXXX` hotspot. Join it and submit your **2.4 GHz** network settings to `10.0.0.1:8000/config-write-uap`. See [stock Wi-Fi setup](stock-provision) for the full procedure. No original app is required.
+
+A short press switches the screen display. **Holding about 9 seconds and then releasing restores factory network and application settings and reboots.** For ordinary provisioning, release after 3–4 seconds.
 
 The window is about two minutes. Once the hotspot disappears, reconnect your computer to the router and match the new DHCP lease to the label MAC. Blinking Wi-Fi, an X icon or a disappearing hotspot alone does not prove connection. Avoid repeatedly pressing the pairing button.
 
