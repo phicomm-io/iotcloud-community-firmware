@@ -28,7 +28,8 @@ python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/
 # Validate configuration recovery and commit overlays as one ordered stack.
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \
     "$project_dir/common/config-recovery-mico36.patch" \
-    "$project_dir/common/config-commit-mico36.patch"
+    "$project_dir/common/config-commit-mico36.patch" \
+    "$project_dir/common/config-write-bounded-mico36.patch"
 if git -C "$sdk_dir" apply --reverse --check "$app_dir/sdk.patch" 2>/dev/null; then
     : # already applied
 else

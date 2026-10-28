@@ -14,7 +14,8 @@ STORAGE = 'MiCO/system/mico_system_para_storage.c'
 CHECKSUM = 'libraries/utilities/CheckSumUtils.c'
 APPLY = ROOT / 'tools/apply_sdk_patch.py'
 PATCHES = [ROOT / 'common' / name for name in (
-    'config-recovery-mico36.patch', 'config-commit-mico36.patch')]
+    'config-recovery-mico36.patch', 'config-commit-mico36.patch',
+    'config-write-bounded-mico36.patch')]
 SDK_NAMES = {'M1': 'm1-sdk', 'A1': 'a1-sdk', 'TC1': 'tc1-sdk-3.6.4'}
 
 
@@ -52,7 +53,7 @@ class ConfigCommitTests(unittest.TestCase):
             seen += 1
             self.assertEqual(subprocess.check_output(['git', '-C', str(sdk), 'rev-parse', 'HEAD'], text=True).strip(), pin)
             baseline = pinned_bytes(sdk, STORAGE)
-            for prefix in range(3):
+            for prefix in range(len(PATCHES) + 1):
                 with self.subTest(model=model, prefix=prefix), tempfile.TemporaryDirectory(prefix='config-commit-stack-') as tmp:
                     isolated = Path(tmp)
                     target = isolated / STORAGE
@@ -133,6 +134,36 @@ class ConfigCommitTests(unittest.TestCase):
                     print(result.stdout, end='', flush=True)
         if not seen:
             self.skipTest('pinned product SDK checkout unavailable')
+
+    def test_previous_overlay_fails_hidden_kernel_allocation_contract(self):
+        sdk = next((sdk_for(model) for model in selected_models()
+                    if (sdk_for(model) / '.git').exists()), None)
+        if sdk is None:
+            self.skipTest('pinned product SDK checkout unavailable')
+        with tempfile.TemporaryDirectory(prefix='config-commit-old-write-') as tmp:
+            temporary = Path(tmp)
+            target = temporary / STORAGE
+            target.parent.mkdir(parents=True)
+            target.write_bytes(pinned_bytes(sdk, STORAGE))
+            apply(temporary, PATCHES[:-1])
+            source = target.read_text()
+            checksum = pinned_bytes(sdk, CHECKSUM).decode().replace('\r\n', '\n')
+            actual = checksum[checksum.index('uint16_t UpdateCRC16'):]
+            actual += source[source.index('static bool para_commit_uncertain'):source.index('OSStatus mico_system_context_restore')]
+            actual += function(source, 'OSStatus MICOReadConfiguration(')
+            actual += function(source, 'OSStatus mico_system_context_update(')
+            probe, binary = temporary / 'probe.c', temporary / 'probe'
+            probe.write_text((ROOT / 'tests/config_commit.c').read_text().replace('/* SDK_FUNCTIONS */', actual))
+            subprocess.run([os.environ.get('CC', 'cc'), '-std=gnu99', '-O1', '-g',
+                            '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined',
+                            str(probe), '-o', str(binary)], check=True)
+            environment = os.environ.copy()
+            environment['CONFIG_COMMIT_BOUNDED_WRITE_ONLY'] = '1'
+            environment['ASAN_OPTIONS'] = 'detect_leaks=0:abort_on_error=1'
+            result = subprocess.run([str(binary)], env=environment, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('mico_system_context_update(mico_system_context_get()) == kNoErr', result.stderr)
+            print('previous actual SDK overlay: 4648-byte app fails the 1024-byte hidden allocation contract (negative control) PASS', flush=True)
 
     def test_actual_product_hooks_remain_readonly_until_restart(self):
         sdk = sdk_for('M1')
@@ -367,6 +398,10 @@ int main(void) {
             self.assertLess(before, after)
             self.assertIn('\\\n', source[before:after])
             self.assertEqual(source.count('common/config-commit-mico36.patch'), 1)
+            bounded = source.index('common/config-write-bounded-mico36.patch')
+            self.assertLess(after, bounded)
+            self.assertIn('\\\n', source[after:bounded])
+            self.assertEqual(source.count('common/config-write-bounded-mico36.patch'), 1)
 
 
 if __name__ == '__main__':
