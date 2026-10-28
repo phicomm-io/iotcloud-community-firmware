@@ -21,4 +21,6 @@ typedef struct {
 } lan_packet;
 /* Decode makes an independent typed copy. No borrowed pointers escape. */
 bool lan_decode(const void *,size_t,lan_packet *);
+/* Accept an already validated synchronous borrowed view; output still owns data. */
+bool lan_decode_value(const ph_value *,lan_packet *);
 bool lan_encode(ph_writer *,const lan_packet *);

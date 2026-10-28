@@ -1129,7 +1129,7 @@ static void feature_worker(mico_thread_arg_t arg) {
                 paired=true;
               }free(response);
             }
-            if(!paired&&!auth_op&&!group_input_mp(&request,true,false,ip)){lan_packet packet;if(lan_decode(wire,(size_t)n,&packet))lan_sensor_input(&packet,ip);}
+            if(!paired&&!auth_op&&!group_input_mp(&request,true,false,ip)){lan_packet packet;if(lan_decode_value(&request,&packet))lan_sensor_input(&packet,ip);}
           }
         }
       }

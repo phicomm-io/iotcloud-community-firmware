@@ -14,23 +14,23 @@ static bool lan_id(const ph_value *map,const char *key,char out[13])
     for(unsigned i=0;i<12;i++)if(!((out[i]>='0'&&out[i]<='9')||(out[i]>='a'&&out[i]<='f')))return false;
     return true;
 }
-bool lan_decode(const void *data,size_t length,lan_packet *out)
+bool lan_decode_value(const ph_value *root,lan_packet *out)
 {
     static const char *ops[]={"","read","probe","sample","pong"};
-    ph_value root,v,body;lan_packet p={0};uint32_t version;
-    if(!out||!phv_parse(PH_WIRE_MSGPACK,data,length,&root)||root.kind!=PHV_MAP||
-       !phv_keys(&root,"|v||src||dst||boot||id||op||token||body|")||
-       !lan_u32(&root,"v",&version)||version!=3||!lan_id(&root,"src",p.src)||
-       !lan_id(&root,"dst",p.dst)||!strcmp(p.src,p.dst)||
-       !lan_u32(&root,"boot",&p.boot)||!p.boot||!lan_u32(&root,"id",&p.id)||!p.id||
-       !phv_get(&root,"op",&v))return false;
+    ph_value v,body;lan_packet p={0};uint32_t version;
+    if(!out||!root||root->kind!=PHV_MAP||
+       !phv_keys(root,"|v||src||dst||boot||id||op||token||body|")||
+       !lan_u32(root,"v",&version)||version!=3||!lan_id(root,"src",p.src)||
+       !lan_id(root,"dst",p.dst)||!strcmp(p.src,p.dst)||
+       !lan_u32(root,"boot",&p.boot)||!p.boot||!lan_u32(root,"id",&p.id)||!p.id||
+       !phv_get(root,"op",&v))return false;
     for(unsigned i=1;i<=LAN_PONG;i++)if(phv_equal_text(&v,ops[i]))p.op=(lan_operation)i;
     const void *token;size_t n;
-    if(!p.op||!phv_get(&root,"token",&v)||!phv_bytes(&v,&token,&n)||n!=16)return false;
+    if(!p.op||!phv_get(root,"token",&v)||!phv_bytes(&v,&token,&n)||n!=16)return false;
     unsigned bits=0;for(unsigned i=0;i<16;i++)bits|=((const uint8_t*)token)[i];
     if(!bits)return false;
     memcpy(p.token,token,16);
-    bool have_body=phv_get(&root,"body",&body);
+    bool have_body=phv_get(root,"body",&body);
     if(p.op!=LAN_SAMPLE){if(have_body)return false;*out=p;return true;}
     uint32_t fields;
     if(!have_body||body.kind!=PHV_MAP||!phv_keys(&body,"|boot||sequence||fields||co2_supported||values||ages|")||
@@ -52,6 +52,12 @@ bool lan_decode(const void *data,size_t length,lan_packet *out)
     }
     *out=p;return true;
 }
+bool lan_decode(const void *data,size_t length,lan_packet *out)
+{
+    ph_value root;
+    return phv_parse(PH_WIRE_MSGPACK,data,length,&root)&&lan_decode_value(&root,out);
+}
+
 bool lan_encode(ph_writer *w,const lan_packet *p)
 {
     static const char *ops[]={"","read","probe","sample","pong"};
