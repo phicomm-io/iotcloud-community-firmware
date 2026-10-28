@@ -7,6 +7,8 @@ python3 tools/apply_sdk_patch.py "$tc1_sdk" \
     common/mqtt-socket-close.patch M1/mqtt-packet-deadline.patch \
     common/mqtt-response-deadline.patch common/mqtt-buffer-storage.patch
 sdk=$tc1_sdk/libraries/protocols/mqtt
+export PHICOMM_TC1_SDK="$tc1_sdk"
+python3 -m unittest tests.test_native_mqtt tests.test_ha_json tests.test_sensor_producers_mp tests.test_tc1_http_trace tests.test_bemfa_mp tests.test_mqtt_stack_budget
 # This job builds only TC1; shared product callbacks must use its prepared
 # pinned JSON library instead of silently depending on an A1 build tree.
 export PHICOMM_TEST_JSON_DIR=${PHICOMM_TEST_JSON_DIR:-$tc1_sdk/libraries/utilities/json_c}

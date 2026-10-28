@@ -12,7 +12,7 @@ static int cause_prepare(void *context, ph_mqtt_connection *spec) {
     fail_send = missing_ack = subscribe_fail = false;
     open_fail = cause_mode == 4;
     *spec = (ph_mqtt_connection){&account, "broker", "user", "password",
-        "device", "tx/availability", 1883, 50, NULL};
+        "device", "tx/availability", 1883, 50, NULL,"test","full"};
     return PH_MQTT_PREPARE_READY;
 }
 static int cause_initial(void *context) { (void)context; return MQTT_SUCCESS; }

@@ -37,7 +37,7 @@ static int builder_encode(int(*p)(const char*,const char*,bool),const char*t,jso
 #undef publish
 static int builder_prepare(void *context,ph_mqtt_connection *spec){
     (void)context;rx_at=rx_size=tx_size=0;fail_send=missing_ack=open_fail=false;
-    *spec=(ph_mqtt_connection){&account,"broker","","","host","tx/availability",1883,50,NULL};
+    *spec=(ph_mqtt_connection){&account,"broker","","","host","tx/availability",1883,50,NULL,"test","full"};
     return PH_MQTT_PREPARE_READY;
 }
 static bool builder_subscription(void*c,unsigned i,ph_mqtt_subscription*s){(void)c;(void)i;(void)s;return false;}
