@@ -32,7 +32,7 @@ bool feature_lan_auth(const char *peer,const uint8_t token[16],unsigned scopes)
 }
 bool feature_lan_pair(const ph_value *request,ph_writer *reply,const char *ip)
 {
-    (void)ip;ph_value value;char op[16],peer[13],secret[33]={0},output[33]={0};
+    ph_value value;char op[16],peer[13],secret[33]={0},output[33]={0};
     const char *code="invalid_params",*result_key=NULL;bool ok=false;
     uint8_t nonce[16];const void *nonce_view;size_t nonce_length;
     if(!phv_get(request,"op",&value)||!phv_text(&value,op,sizeof(op))||
@@ -55,7 +55,7 @@ bool feature_lan_pair(const ph_value *request,ph_writer *reply,const char *ip)
         ok=ph_auth_pair_resume(s,peer,secret,output);result_key="token";code=ok?"ok":"auth_required";
     }else{
         if(!phv_keys(request,"|op||src||token||nonce|")||!lan_auth_secret(request,"token",secret))goto finish;
-        ok=ph_auth_pair_unpair(s,peer,secret);code=ok?"ok":"auth_required";
+        ok=ph_auth_pair_unpair_request(s,peer,secret,ip,nonce);code=ok?"ok":"auth_required";
     }
 finish:
     phw_begin(reply,NULL,false);phw_text(reply,"op",op);phw_text(reply,"code",code);

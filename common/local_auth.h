@@ -13,6 +13,8 @@ extern "C" {
 #define PH_AUTH_MQTT_SLOTS 4
 #define PH_AUTH_IDLE_MS UINT32_C(1800000)
 #define PH_AUTH_MAX_MS UINT32_C(86400000)
+#define PH_AUTH_UNPAIR_RECEIPTS 4
+#define PH_AUTH_UNPAIR_RECEIPT_MS UINT32_C(30000)
 #define PH_AUTH_STORE_MAGIC UINT32_C(0x31415550)
 #define PH_AUTH_STORE_VERSION 1
 #define PH_AUTH_SCOPE_CONTROL 1u
@@ -29,6 +31,10 @@ typedef struct { uint32_t magic; uint16_t version; uint16_t count;
  /* Outbound secrets never authorize an incoming datagram. */
  uint16_t remote_count,reserved;ph_auth_pair_record remote[PH_AUTH_PAIR_SLOTS]; } ph_auth_store;
 typedef struct { uint8_t token[16]; uint32_t born,last; uint32_t generation; uint8_t active,scopes; char peer[13]; } ph_auth_session;
+/* Boot-local success receipts; never persisted or exported. IPv4 adapters use
+ * canonical dotted addresses. Four entries bound RAM and retry admission. */
+typedef struct { uint32_t born,epoch; uint8_t token[16],nonce[16];
+ char peer[13],ip[16]; uint8_t active; } ph_auth_unpair_receipt;
 typedef struct ph_auth_state ph_auth_state;
 typedef struct { ph_auth_state *owner; ph_auth_source source; uint32_t generation;
  uint8_t slot,scopes; char peer[13]; } ph_auth_context;
@@ -44,6 +50,7 @@ typedef struct {
 } ph_auth_ops;
 struct ph_auth_state { ph_auth_ops ops; ph_auth_store store;
  ph_auth_session http[PH_AUTH_HTTP_SLOTS],local[PH_AUTH_PAIR_SLOTS],mqtt[PH_AUTH_MQTT_SLOTS];
+ ph_auth_unpair_receipt unpair[PH_AUTH_UNPAIR_RECEIPTS];
  uint32_t generation,credential_epoch; char credential[33]; };
 void ph_auth_store_empty(ph_auth_store *);
 /* Immutable empty trailer for synchronous commits; avoids large stack copies. */
@@ -65,6 +72,10 @@ bool ph_auth_pair(ph_auth_state *,const char *password,const char *peer,unsigned
 bool ph_auth_pair_resume(ph_auth_state *,const char *peer,const char *key,char token[33]);
 bool ph_auth_pair_remove(ph_auth_state *,const char *peer);
 bool ph_auth_pair_unpair(ph_auth_state *,const char *peer,const char *token);
+/* auth_unpair only: an exact retry may reuse a successful durable revocation
+ * for 30s. No receipt on persistence failure; epoch changes invalidate it. */
+bool ph_auth_pair_unpair_request(ph_auth_state *,const char *peer,const char *token,
+                                const char *ipv4,const uint8_t nonce[16]);
 bool ph_auth_udp_check(ph_auth_state *,const char *peer,const char *token,ph_auth_context *);
 /* Only the already broker/ACL/target-validated MQTT adapter may call these. */
 bool ph_auth_mqtt_grant(ph_auth_state *,const char *peer,const char *token,unsigned scopes);

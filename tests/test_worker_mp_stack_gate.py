@@ -35,7 +35,7 @@ class WorkerMessagePackStackGate(unittest.TestCase):
         self.assertIn('ph_auth_credential_commit',names)
     def test_missing_core_or_emitted_helper_rejected(self):
         for missing in ['feature_worker','automation_poll','phv_parse','lan_decode_value',
-                        'ph_auth_pair','ph_auth_remote_store','m1_automation_execute',
+                        'ph_auth_pair','ph_auth_pair_unpair_request','ph_auth_remote_store','m1_automation_execute',
                         'ph_auth_credential_commit']:
             frames,paths=self.fixture('M1');del frames[missing]
             with self.subTest(missing=missing),redirect_stdout(io.StringIO()):

@@ -62,3 +62,17 @@ in-flight local pairing; it does not clear the independent MQTT sensor grant.
 The broker-only sensor grant also uses MP v3: `sensor.session.set` parameters are
 `{v:3,a1:lowercase-peer,boot:nonzero-uint32,token:bin16}`. There is no JSON grant
 adapter. The MQTT adapter discards retained grant commands.
+
+### Unpair retries
+
+A successful `auth_unpair` writes a boot-local receipt only after durable peer
+revocation succeeds. The shared authentication core serializes receipt lookup,
+revocation and insertion with its authentication mutex. Four receipts (288 bytes
+on ARM) are retained for at most 30 seconds, without extending expiry on retry.
+An exact duplicate receives `ok`; it must match operation, peer, canonical IPv4
+source address, token, nonce and credential epoch. The API is exclusively for
+`auth_unpair`, so a receipt cannot authorize another operation. Mismatches and
+expired receipts follow normal authentication and fail once the token is revoked.
+Persistence failures create no receipt. Password changes, restore/reset and boot
+clear receipts. Unrelated local peers and MQTT-issued temporary sessions survive.
+The receipt contains copied request data and is neither persisted nor backed up.
