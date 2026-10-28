@@ -1,5 +1,11 @@
 /* HA is a separate JSON surface. Discovery never parses or mutates another
  * JSON document; IDs follow the existing account namespace exactly. */
+static void tc1_ha_identity(unsigned index,const char *entity,char *out,size_t capacity)
+{
+    static const char *const old[]={"s0","s1","s2","s3","s4","s5","total_socket","led","child_lock","reboot","soft_reboot","p","pc","sut","pc_today","pc_yesterday","energy_session"};
+    if(account.mode)mqtt_identity(&account,entity,out,capacity);
+    else mqtt_format(out,capacity,"tc1_%s%s%s",account.upper_mac,index<17?"_":"",index<17?old[index]:"");
+}
 static void tc1_ha_discovery(unsigned index)
 {
     static const char *const entities[]={"socket_0","socket_1","socket_2","socket_3","socket_4","socket_5","total_socket","led","childLock","reboot","soft_reboot","power","powerConsumption","startupTime","powerConsumptionToday","powerConsumptionYesterday","energySession"};
@@ -11,10 +17,10 @@ static void tc1_ha_discovery(unsigned index)
     const char *entity=entities[index],*component=index<9?"switch":index<11?"button":"sensor";
     ha_json w;ha_json_init(&w,bytes,MAX_MQTT_DATA_SIZE);ha_json_begin(&w,NULL,false);
     ha_json_string(&w,"name",index<6?user_config->socket_names[index]:ph_i18n(user_config->bemfa.language,chinese[index],english[index]));
-    mqtt_identity(&account,entity,text,sizeof(text));ha_json_string(&w,"uniq_id",text);ha_json_string(&w,"object_id",text);
+    tc1_ha_identity(index,entity,text,sizeof(text));ha_json_string(&w,"uniq_id",text);ha_json_string(&w,"object_id",text);
     ha_json_bool(&w,"retain",false);mqtt_leaf(&account,"availability",text,sizeof(text));ha_json_string(&w,"availability_topic",text);
     ha_json_begin(&w,"device",false);ha_json_begin(&w,"identifiers",true);
-    mqtt_identity(&account,"",text,sizeof(text));ha_json_string(&w,NULL,text);ha_json_end(&w);
+    tc1_ha_identity(17,"",text,sizeof(text));ha_json_string(&w,NULL,text);ha_json_end(&w);
     ha_json_string(&w,"name",sys_config->micoSystemConfig.name);ha_json_string(&w,"model","TC1");ha_json_string(&w,"manufacturer","PHICOMM");ha_json_string(&w,"sw_version",VERSION);ha_json_end(&w);
     if(index<11){
         mqtt_leaf(&account,"ha/command",text,sizeof(text));ha_json_string(&w,"cmd_t",text);

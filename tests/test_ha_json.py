@@ -180,17 +180,23 @@ static int UserMqttSendTopic(char *topic,char *body,char retained){assert(retain
 int main(void){
  assert(mqtt_account_init(&account,1,"tc1","user","aabbccddeeff"));
  strcpy(sys_config->micoSystemConfig.name,"Device\"中文");config.bemfa.language=1;
- for(unsigned i=0;i<17;i++)tc1_ha_discovery(i);
+ for(unsigned mode=0;mode<2;mode++){
+ assert(mqtt_account_init(&account,mode,"tc1","user","aabbccddeeff"));
+ for(unsigned i=0;i<17;i++)tc1_ha_discovery(i);}
  return 0;
 }
 ''')
         rows = output.splitlines()
-        self.assertEqual(len(rows), 17)
+        self.assertEqual(len(rows), 34)
         ids = set()
-        for row in rows:
+        for index, row in enumerate(rows):
             topic, raw = row.split('\t')
             data = json.loads(raw)
             self.assertEqual(data['device']['name'], 'Device"中文')
+            if index < 17:
+                suffix = ['s0','s1','s2','s3','s4','s5','total_socket','led','child_lock','reboot','soft_reboot','p','pc','sut','pc_today','pc_yesterday','energy_session'][index]
+                self.assertEqual(data['uniq_id'], 'tc1_AABBCCDDEEFF_' + suffix)
+                self.assertEqual(data['device']['identifiers'], ['tc1_AABBCCDDEEFF'])
             self.assertNotIn(data['uniq_id'], ids)
             ids.add(data['uniq_id'])
             if 'cmd_t' in data:
