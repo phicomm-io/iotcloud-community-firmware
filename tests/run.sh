@@ -146,8 +146,9 @@ PYMQTT
 "$output/service-memory"
 # Full A1/M1/TC1 scheduler/button/countdown cases in test_automation.c now
 # execute automation_mp via test_native_features above; no JSON service link.
-"${compiler[@]}" -std=gnu99 -Wall -Wextra -Werror -Wno-misleading-indentation -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-value -Wno-nonnull-compare -Itests/host -I"$json_dir" tests/test_a1_control.c "$json_dir"/*.c -o "$output/a1-control"
-"$output/a1-control"
+# Same full local-control/FIFO/gesture/reset vectors run via native_features
+# with all wire allocations denied; no JSON transport adapter is linked.
+
 for device in M1 A1 TC1; do
     "${compiler[@]}" -std=gnu99 -Wall -Wextra -Werror -DHOST_$device -Itests/host -I"$json_dir" tests/test_migration.c -o "$output/migrate-$device"
     "$output/migrate-$device"

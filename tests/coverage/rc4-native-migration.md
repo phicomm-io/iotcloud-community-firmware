@@ -6,6 +6,7 @@ No product case is moved into the historical SDK-only group to hide a failure.
 
 | Old fixture / assertions | Native equivalent | Owner / current gap |
 | --- | --- | --- |
+| `test_a1_control.c`: button/slider FIFO, overflow, expiry/wrap, lock/toggles, OTA/provisioning busy, reset and invalid transport params | Same full original assertions against actual typed control and automation; all wire allocations are denied and asserted unused | features; ASan/UBSan PASS |
 | `test_runtime_metrics.c`: missing heap, sampled minimum, consuming boot-reason cache and tick wrap on portable/MOC | Same original assertions encode native `device_runtime_mp`; both variants in `test_native_features` | features; ASan/UBSan PASS |
 | `test_engine.c`, `test_sensor_aggregate.c`: PID, hysteresis, statistics, sleep/schedule, rollover, partial-field/CO2 freshness | Same unmodified C bodies, `test_native_features` | features; preserve in full |
 | `test_automation.c`, `countdown_scenarios.inc`: IDs, persistence-before-action, reboot-last, no replay/catch-up, busy/missed/capacity, all button gestures/pagination, A1 uptime countdown cancel/restart/edit/reboot/wrap, M1 weekly alarms/tone/bounds | Same scenarios and assertions now call `automation_mp` with build-time constant MP vectors; responses use borrowed `ph_value`; `test_native_features` runs A1/M1/TC1 | features; native + ASan/UBSan PASS |
@@ -35,7 +36,7 @@ DUT installation, concurrency P95, busy recovery, or physical-button acceptance.
 
 ## Executable entries (this branch)
 
-- `SANITIZE=1 bash tests/run.sh --native-common`: 10 unittest cases; automation
+- `SANITIZE=1 bash tests/run.sh --native-common`: 11 unittest cases; automation
   compiles and executes three model variants. No SDK/JSON objects are linked.
 - `PHICOMM_TEST_JSON_DIR=... bash tests/run.sh --legacy-sdk`: explicit historical
   SDK JSON library-only coverage. ARM cache/stack history is opt-in via
@@ -83,3 +84,7 @@ nano and qemu: A1/M1 retained 2824 B, modeled overlap peak 7472 B; TC1 retained
 all models return to zero owned bytes. Log: `/tmp/rc4-native-arm-entry.log`.
 After the runtime metrics migration, `--native-common` was rerun: 10 tests PASS
 in 7.039 s (`/tmp/rc4-native-common-final.log`).
+
+The legacy SDK host entry was rerun after isolating integer-width vectors:
+5 Python library tests + 3 C binaries PASS; final leak ledger live=0 after
+10000 serial and 4000 concurrent cycles. `/tmp/rc4-legacy-sdk-final.log`.

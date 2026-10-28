@@ -60,6 +60,16 @@ class NativeFeatures(unittest.TestCase):
         sources = [(ROOT / p).read_text() for p in ('tests/test_runtime_controls_mp.c', 'tests/runtime_control_scenarios.inc')]
         self.compile_run('tests/test_runtime_controls_mp.c', vectors=header(sources, {}), controls=controls)
 
+    def test_a1_local_controls_and_panel_fifo_without_allocator(self):
+        # Compile the original panel/FIFO/reset assertions against native controls.
+        with tempfile.TemporaryDirectory(prefix='a1-control-native-') as td:
+            path=Path(td)
+            (path/'mp_fixture_vectors.inc').write_text(header([(ROOT/'tests/test_a1_control.c').read_text()],{}))
+            command=['cc','-std=gnu99','-Wall','-Wextra','-Werror','-Wno-unused-function','-Wno-misleading-indentation','-I'+str(ROOT/'tests/host'),'-I'+str(ROOT/'common'),'-I'+str(path),str(ROOT/'tests/test_a1_control.c'),str(ROOT/'common/typed_wire.c'),str(ROOT/'common/wire_buffer.c'),'-lm','-o',str(path/'test')]
+            if os.environ.get('SANITIZE')=='1':command+=['-fsanitize=address,undefined','-fno-omit-frame-pointer','-no-pie']
+            subprocess.run(command,check=True)
+            subprocess.run([str(path/'test')],check=True)
+
     def test_runtime_metrics_missing_heap_reset_cache_and_wrap(self):
         for model,defines in (('portable', []), ('moc-mx1290', ['MOC=1', 'CONFIG_CPU_MX1290'])):
             with self.subTest(model=model):
