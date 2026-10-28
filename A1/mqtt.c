@@ -7,6 +7,7 @@
 #include "../common/mqtt_transport.h"
 #include "../common/mqtt/client.h"
 #include "../common/ha_json.h"
+#include "../common/sensor_mp.h"
 #include "../common/ha_command.h"
 #include "../common/mqtt/service.h"
 #include "../common/mqtt_cleanup.h"
@@ -263,7 +264,7 @@ static void primary_snapshot(const a1_config_t *c,bool *on,unsigned *speed) {
  * This owner snapshot also applies to the fresh-air build. */
 static uint32_t fan_sensor_boot,fan_sensor_sequence,fan_sensor_at;
 static uint32_t fan_sensor_wait=5000;
-static bool fan_sensor_started,fan_sensor_turn;
+static bool fan_sensor_started,fan_sensor_turn,fan_sensor_metadata;
 static bool fan_sensor_ready(void) {
     mico_rtos_lock_mutex(&a1_lock);
     bool ready=a1_state.fan_ready && !a1_state.ota_active && !a1_state.reboot_pending;
@@ -281,20 +282,26 @@ static int fan_sensor_cycle(bool on,unsigned speed,bool *handled) {
     if(!fan_sensor_boot && (MicoRandomNumberRead((uint8_t *)&fan_sensor_boot,sizeof(fan_sensor_boot))!=kNoErr || !fan_sensor_boot)) {
         fan_sensor_boot=0;return MQTT_SUCCESS;
     }
-    unsigned percent=on?speed:0;
-    bool valid=fan_sensor_ready() && percent<=100;
-    char topic[192],payload[448],value[8]="null";
-    if(valid && !mqtt_format(value,sizeof(value),"%u",percent))return MQTT_SUCCESS;
+    char topic[192];ph_writer w;
+    bool metadata=!fan_sensor_metadata;
     uint32_t sequence=fan_sensor_sequence+1u;if(!sequence)sequence=1;
     if(!mqtt_aux(&account,"sensor",account.mac,topic,sizeof(topic)) ||
-       !mqtt_format(topic+strlen(topic),sizeof(topic)-strlen(topic),"/state") ||
-       !mqtt_format(payload,sizeof(payload),
-          "{\"schema\":2,\"model\":\"a1\",\"device_id\":\"%s\",\"boot\":%lu,\"sequence\":%lu,\"sensors\":{\"fan_speed_percent\":{\"type\":\"number\",\"name\":\"Fan speed\",\"value\":%s,\"unit\":\"%%\",\"valid\":%s,\"age_ms\":0}}}",
-          account.mac,(unsigned long)fan_sensor_boot,(unsigned long)sequence,value,
-          valid?"true":"false"))return MQTT_SUCCESS;
-    fan_sensor_sequence=sequence;
-    int rc=publish(topic,payload,false);
-    if(rc==MQTT_SUCCESS)fan_sensor_wait=5000;
+       !mqtt_format(topic+strlen(topic),sizeof(topic)-strlen(topic),metadata?"/metadata":"/state") ||
+       !phw_init(&w,PH_WIRE_MSGPACK))return MQTT_SUCCESS;
+    if(metadata){
+        ph_sensor_metadata_begin(&w,account.mac,fan_sensor_boot,1);
+        ph_sensor_descriptor_write(&w,"fan_speed_percent","Fan speed","%");
+    }else{
+        ph_sensor_snapshot_begin(&w,account.mac,fan_sensor_boot,sequence,1);
+        ph_sensor_reading_write(&w,"fan_speed_percent",on?speed:0,fan_sensor_ready() && (!on || speed<=100),0);
+    }
+    ph_sensor_finish(&w);ph_buf *payload=phw_take(&w);
+    if(!payload)return MQTT_SUCCESS;
+    int rc=publish_bytes(topic,payload->buf,payload->len,metadata);ph_buf_free(payload);
+    if(rc==MQTT_SUCCESS){
+        if(metadata){fan_sensor_metadata=true;fan_sensor_wait=0;}
+        else{fan_sensor_sequence=sequence;fan_sensor_wait=5000;}
+    }
     return rc;
 }
 static int discovery_build(const a1_config_t *c,unsigned index,ha_json *o)
@@ -583,6 +590,7 @@ static bool session_subscription(void *context,unsigned index,ph_mqtt_subscripti
     return true;
 }
 static int session_initial(void *context) {
+    fan_sensor_metadata=false;fan_sensor_started=false;
     feature_mqtt_session(&account);
     (void)context;
     int rc=service_mqtt_capabilities(publish_bytes,&account);

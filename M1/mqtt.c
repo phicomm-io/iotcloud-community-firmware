@@ -5,7 +5,7 @@
 #include "../common/ha_json.h"
 #include "../common/ha_command.h"
 #include "../common/mqtt/service.h"
-#include "../common/numeric_feed.h"
+#include "../common/sensor_mp.h"
 
 int m1_mqtt_read(Network *, unsigned char *, int, int);
 
@@ -35,7 +35,9 @@ static ph_mqtt_startup mqtt_startup;
 static mqtt_account_t account;
 static char base[192], command_topic[MQTT_TOPIC_MAX], availability_topic[MQTT_TOPIC_MAX];
 static uint32_t sensor_boot, sensor_sequence, sensor_at;
-static bool sensor_started;
+static bool sensor_started,sensor_metadata;
+static unsigned sensor_mask;
+static uint32_t sensor_revision=1;
 static bool rediscover, cleanup_pending;
 static uint8_t discovery_language;
 static m1_config_t session_config;
@@ -113,7 +115,7 @@ static int publish_typed_sensors(const mqtt_state_t *s, uint32_t now)
     const m1_sample_t *v=&s->sample;
     uint32_t age=v->received?now-v->updated_ms:0;
     unsigned fresh=m1_sample_fresh(v,now)?m1_sample_fields(v):0;
-    numeric_feed_field_t all[6]={
+    struct sensor_field {const char *id,*name,*unit;double value;uint32_t age;bool valid;} all[6]={
         {"temperature","Temperature","°C",v->temperature_deci_c/10.0f,age,(fresh&1)!=0},
         {"humidity","Humidity","%",v->humidity_deci_pct/10.0f,age,(fresh&2)!=0},
         {"formaldehyde","Formaldehyde","mg/m³",v->hcho_ug_m3/1000.0f,age,(fresh&8)!=0},
@@ -121,20 +123,32 @@ static int publish_typed_sensors(const mqtt_state_t *s, uint32_t now)
     };
     /* Leave room for optional hardware without exposing absent sensors. */
     unsigned count=4;
-    if(s->scd40.ready || s->scd40.received)all[count++]=(numeric_feed_field_t){
+    if(s->scd40.ready || s->scd40.received)all[count++]=(struct sensor_field){
         "co2","Carbon dioxide","ppm",s->scd40.co2_ppm,
         s->scd40.received?now-s->scd40.updated_ms:0,
         s->scd40.ready&&s->scd40.received&&s->scd40.co2_ppm&&(uint32_t)(now-s->scd40.updated_ms)<20000};
-    if(s->barometer.ready || s->barometer.received)all[count++]=(numeric_feed_field_t){
+    if(s->barometer.ready || s->barometer.received)all[count++]=(struct sensor_field){
         "pressure","Pressure","Pa",s->barometer.pressure_centi_pa/100.0f,
         s->barometer.received?now-s->barometer.updated_ms:0,m1_barometer_fresh(&s->barometer,now)};
-    char topic[MQTT_TOPIC_MAX],payload[1280];
+    unsigned mask=(s->scd40.ready||s->scd40.received?1u:0u)|(s->barometer.ready||s->barometer.received?2u:0u);
+    if(mask!=sensor_mask){sensor_mask=mask;if(!++sensor_revision)sensor_revision=1;sensor_metadata=false;}
+    bool metadata=!sensor_metadata;
+    char topic[MQTT_TOPIC_MAX];ph_writer w;
     uint32_t sequence=sensor_sequence+1u;if(!sequence)sequence=1;
     if(!mqtt_aux(&account,"sensor",account.mac,topic,sizeof(topic)) ||
-       !mqtt_format(topic+strlen(topic),sizeof(topic)-strlen(topic),"/state") ||
-       !numeric_feed_encode(payload,sizeof(payload),"m1",account.mac,sensor_boot,sequence,all,count))return MQTT_SUCCESS;
-    sensor_sequence=sequence;
-    int rc=publish(topic,payload,false);
+       !mqtt_format(topic+strlen(topic),sizeof(topic)-strlen(topic),metadata?"/metadata":"/state") ||
+       !phw_init(&w,PH_WIRE_MSGPACK))return MQTT_SUCCESS;
+    if(metadata){
+        ph_sensor_metadata_begin(&w,account.mac,sensor_boot,sensor_revision);
+        for(unsigned i=0;i<count;i++)ph_sensor_descriptor_write(&w,all[i].id,all[i].name,all[i].unit);
+    }else{
+        ph_sensor_snapshot_begin(&w,account.mac,sensor_boot,sequence,sensor_revision);
+        for(unsigned i=0;i<count;i++)ph_sensor_reading_write(&w,all[i].id,all[i].value,all[i].valid,all[i].age);
+    }
+    ph_sensor_finish(&w);ph_buf *payload=phw_take(&w);
+    if(!payload)return MQTT_SUCCESS;
+    int rc=publish_bytes(topic,payload->buf,payload->len,metadata);ph_buf_free(payload);
+    if(rc==MQTT_SUCCESS){if(metadata){sensor_metadata=true;sensor_started=false;}else sensor_sequence=sequence;}
     return rc==PH_MQTT_MORE?MQTT_SUCCESS:rc;
 }
 
@@ -353,7 +367,7 @@ static int session_prepare(void *context,ph_mqtt_connection *spec) {
          * the full feature configuration merely to form its fixed topic. */
         char sensor_leaf[32];snprintf(sensor_leaf,sizeof(sensor_leaf),"%s/command",account.mac);
         if(!mqtt_aux(&account,"sensor",sensor_leaf,sensor_filter,sizeof(sensor_filter)))return PH_MQTT_PREPARE_WAIT;
-        if(!mqtt_aux(&account,"sensor","+/state",co2_filter,sizeof(co2_filter)))return PH_MQTT_PREPARE_WAIT;
+        if(!mqtt_aux(&account,"sensor","+/+",co2_filter,sizeof(co2_filter)))return PH_MQTT_PREPARE_WAIT;
         if(session_need_availability && !mqtt_format(source_availability_filter,sizeof(source_availability_filter),"phicomm/v2/%s/+/+/availability",account.key))return PH_MQTT_PREPARE_WAIT;
         rediscover=false;
         *spec=(ph_mqtt_connection){&account,cfg.mqtt_host,cfg.mqtt_user,cfg.mqtt_password,
@@ -374,6 +388,7 @@ static bool session_subscription(void *context,unsigned index,ph_mqtt_subscripti
     return true;
 }
 static int session_initial(void *context) {
+    sensor_metadata=false;sensor_started=false;
     if(!session_current())return PH_MQTT_RECONFIGURE;
     feature_mqtt_session(&account);
     /* The shared owner calls initial only after every planned SUBACK succeeds.

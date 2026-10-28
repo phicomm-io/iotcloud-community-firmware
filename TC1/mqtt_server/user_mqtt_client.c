@@ -7,6 +7,7 @@
 #include "../../common/mqtt/service.h"
 #include "../../common/a1_decimal.h"
 #include "../../common/ha_json.h"
+#include "../../common/sensor_mp.h"
 #include "../../common/ha_command.h"
 /**
  ******************************************************************************
@@ -37,7 +38,6 @@
 #include "user_gpio.h"
 #include "user_power.h"
 #include "user_mqtt_client.h"
-#include "json.h"
 
 /* The moc SDK socket has a five-second receive timeout. Poll first so MQTT's
  * shorter yield deadline is honored and an idle connection is not an error. */
@@ -78,7 +78,6 @@ MqttMsgPublish(Client *c, const char *topic, char qos, char retained, const unsi
                uint32_t msg_len);
 
 
-void ProcessHaCmd(char *cmd);
 
 static bool isconnect;
 unsigned tc1_mqtt_status = MQTT_DISCONNECTED;
@@ -99,7 +98,7 @@ static bool power_pending,power_turn;
  * defers this optional feed; it must not invent a reusable boot identity. */
 static uint32_t power_sensor_boot, power_sensor_sequence, power_sensor_at;
 static uint32_t power_sensor_wait=5000;
-static bool power_sensor_started, power_sensor_turn;
+static bool power_sensor_started, power_sensor_turn, power_sensor_metadata;
 static int power_sensor_cycle(bool *handled) {
     *handled=false;
     if(!account.mode)return MQTT_SUCCESS;
@@ -112,18 +111,26 @@ static int power_sensor_cycle(bool *handled) {
         power_sensor_boot=0;return MQTT_SUCCESS;
     }
     tc1_power_sample_t sample;PowerSampleRead(&sample);
-    char topic[192],payload[448],value[48]="null";
-    if(sample.valid && ph_decimal_format_float32(value,sizeof(value),sample.watts)<0)return MQTT_SUCCESS;
+    char topic[192];ph_writer w;
+    bool metadata=!power_sensor_metadata;
     uint32_t sequence=power_sensor_sequence+1u;if(!sequence)sequence=1;
     if(!mqtt_aux(&account,"sensor",account.mac,topic,sizeof(topic)) ||
-       !mqtt_format(topic+strlen(topic),sizeof(topic)-strlen(topic),"/state") ||
-       !mqtt_format(payload,sizeof(payload),
-          "{\"schema\":2,\"model\":\"tc1\",\"device_id\":\"%s\",\"boot\":%lu,\"sequence\":%lu,\"sensors\":{\"power\":{\"type\":\"number\",\"name\":\"Power\",\"value\":%s,\"unit\":\"W\",\"valid\":%s,\"age_ms\":%lu}}}",
-          account.mac,(unsigned long)power_sensor_boot,(unsigned long)sequence,value,
-          sample.valid?"true":"false",(unsigned long)sample.age_ms))return MQTT_SUCCESS;
-    power_sensor_sequence=sequence;
-    int rc=service_sender(topic,payload,strlen(payload),false);
-    if(rc==MQTT_SUCCESS)power_sensor_wait=5000;
+       !mqtt_format(topic+strlen(topic),sizeof(topic)-strlen(topic),metadata?"/metadata":"/state") ||
+       !phw_init(&w,PH_WIRE_MSGPACK))return MQTT_SUCCESS;
+    if(metadata){
+        ph_sensor_metadata_begin(&w,account.mac,power_sensor_boot,1);
+        ph_sensor_descriptor_write(&w,"power","Power","W");
+    }else{
+        ph_sensor_snapshot_begin(&w,account.mac,power_sensor_boot,sequence,1);
+        ph_sensor_reading_write(&w,"power",sample.watts,sample.valid,sample.age_ms);
+    }
+    ph_sensor_finish(&w);ph_buf *payload=phw_take(&w);
+    if(!payload)return MQTT_SUCCESS;
+    int rc=service_sender(topic,payload->buf,payload->len,metadata);ph_buf_free(payload);
+    if(rc==MQTT_SUCCESS){
+        if(metadata){power_sensor_metadata=true;power_sensor_wait=0;}
+        else{power_sensor_sequence=sequence;power_sensor_wait=5000;}
+    }
     return rc;
 }
 
@@ -396,6 +403,7 @@ static bool session_subscription(void *context,unsigned index,ph_mqtt_subscripti
 }
 
 static int session_initial(void *context) {
+    power_sensor_metadata=false;power_sensor_started=false;
     (void)context;
     PowerSampleInvalidate();
     cleanup_pending=true;discovery_index=state_index=publication_cursor=0;synchronous_error=0;
