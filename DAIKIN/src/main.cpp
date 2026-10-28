@@ -6,6 +6,7 @@
 #include <WiFiUdp.h>
 #include <Wire.h>
 #include <Preferences.h>
+#include <nvs.h>
 #include <memory>
 #include <atomic>
 #include <freertos/semphr.h>

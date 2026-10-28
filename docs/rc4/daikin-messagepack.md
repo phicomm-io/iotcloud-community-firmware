@@ -77,41 +77,66 @@ rollback for full and hub. The LAN fixture calls the actual MiCO encoder,
 DAIKIN pollSessions, shared decoder, sender and receiver. It checks unsigned
 counter boundaries, binary tokens, fixed units, invalid fields, empty/configured
 passwords, key-vs-token distinction, durable resume, outgoing unpair and lost ACK.
-The official IDF NVS + stock-size NOR host model also verifies capacity and
+The official IDF NVS + 16/20 KiB NOR host models also verifies capacity and
 byte-by-byte interrupted writes. Physical device pairing and physical power-cut
 acceptance remain untested. HAP reset spans another namespace and is not
 made atomic with the management blob by this change.
 
 ## NVS host gate and rc.3 comparison
 
-The NOR model uses the repository partition CSV’s 20 KiB NVS size and official IDF 4.4.7 sources at
+The NOR model tests both four-page (16 KiB) and five-page (20 KiB) NVS with
+unchanged official IDF 4.4.7 sources at
 `38eeba213aa695aabfd6d89aa9f5078dbe5a94c3`. The five compiled NVS translation
 units and ROM CRC source were compared byte-for-byte with that official commit.
 Flash reads, writes and erases are modeled; this is not a device power-cut test.
-This does not establish a deployed device’s partition table: a retained older
-16 KiB layout would need its own capacity acceptance.
-WiFi occupies 512 bytes and a separate HAP namespace occupies 2048 bytes.
+20 KiB is the current repository partition CSV, not an established physical
+stock partition. The deployed DUT partition table remains unknown and must be
+checked before device acceptance. WiFi occupies 512 bytes and a separate HAP
+namespace occupies 2048 bytes in both capacity models.
 
-| Implementation | Legal JSON-equivalent config | Pair records | Durable blob | Three updates + reboots |
-| --- | ---: | ---: | ---: | --- |
-| rc.3 writer from `6950338` | 6144 B | 0 (feature absent) | 6144 B | PASS |
-| Initial rc.4 JSON envelope | 6144 B | 12 incoming + 12 outgoing | 6936 B | Second update safely rejected |
-| rc.4 MP envelope | 6144 B | 12 incoming + 12 outgoing | 6177 B | PASS |
+| Capacity | Implementation / key count | Typical config, 12 real updates + reboots | Legal 6144 B config |
+| --- | --- | --- | --- |
+| 16 KiB | rc.3 `6950338`, no pairing feature | PASS, JSON/blob 3538 B | Existing capacity boundary: first update rejected; old config survives reboot |
+| 16 KiB | rc.4 MP, 0 or 24 keys | PASS, JSON 3538 B / blob 3548 B | Admission rejects before any NOR write; old config/keys survive reboot |
+| 20 KiB | rc.3 `6950338`, no pairing feature | PASS, JSON/blob 3538 B | Blob 6144 B; 12 real updates + reboots PASS |
+| 20 KiB | rc.4 MP, 0 or 24 keys | PASS, JSON 3538 B / blob 3548 B | Blob 6177 B; 12 real updates + reboots PASS |
 
-The legal fixture includes 12 devices, eight Bemfa mappings, eight bridge
-mappings, a 32-byte owner, 63-byte device name, and valid topic lengths selected
-to reach the unchanged 6144-byte limit. No arbitrary padding is used in this
-legal comparison. Full also sustains twelve updates at its 3999-byte writer
-limit with both full key tables and the same WiFi/HAP pressure.
+Each typical update changes the name and asserts additional NOR work; maximum
+updates use distinct names too. The legal fixture includes 12 devices, eight
+Bemfa mappings, eight bridge mappings, a 32-byte owner, 63-byte device name, and
+valid topic lengths selected to reach the unchanged 6144-byte limit. No arbitrary
+padding is used in this legal comparison. The fixed auth-store trailer is 780 B
+whether zero or all 12 incoming plus 12 outgoing records are populated: filling
+the records adds no further envelope length. MP config savings offset most of
+that fixed cost in this fixture. No business limits were reduced.
 
-A separate nonbusiness padding probe deliberately removes the format savings:
-hub's second 6144-byte padding update is rejected and the previous config and
-keys remain readable. This failure is retained as a capacity boundary, not
-reported as a successful maximum business configuration.
+The initial rc.4 JSON envelope was 6936 B for this 6144 B legal configuration;
+its second update failed even with 20 KiB. The MP envelope fixes that regression.
+A separate nonbusiness padding probe removes the format savings: hub's second
+6144 B padding update is safely rejected in both capacities. Full's 3999 B
+padding config with 24 keys is safely rejected on the second update at 16 KiB;
+it sustains twelve updates at 20 KiB. These padding boundaries are preserved,
+not reported as successful maximum business configurations.
 
-For full and hub, every byte cut of first password+key revocation (969 cases)
-and update (965 cases) reboots into matching old config+keys or matching new
-config+empty keys: 3868 cases total. Failed writes, reboot and reset also pass.
+Before a changed blob write, admission requires `ceil(blob_bytes/32) +
+2*partition_pages + 1 + 126` free NVS entries: data, conservative chunk headers
+and rounding, index, and a GC page. Global partition statistics include WiFi/HAP
+and erased entries; this is a conservative admission check, not a guarantee
+against concurrent writes or arbitrary fragmentation. IDF 4.4.7 can erase old
+chunks while cleaning up a failed alternate-version multi-page write. Therefore
+`putBytes != expected_length` immediately enters recovery, returns failure and
+blocks HTTP/UDP authorization; it never reads the ambiguous generation back or
+acknowledges success. Reboot loads and validates the actual persisted generation.
+Successful writes still require exact readback. Capacity admission rejection
+occurs before flash mutation and keeps current authorization usable.
+
+For each capacity and each full/hub variant, every byte cut of first
+password+key revocation (969 cases) and update (965 cases) reboots into matching
+old config+keys or matching new config+empty keys: 7736 cases total. Failed NOR
+writes, reboot and reset pass. Separate actual production-function fixtures
+cover failed acknowledgements with old, new and corrupt persisted bytes;
+failed acknowledgements always enter recovery, and no old credential is silently
+restored from the legacy key when the authoritative envelope is invalid.
 The envelope now stores MP (version 2) while reading prior version-1 JSON
 blobs; exported backup files remain JSON. Fresh `{}` configurations are tested
 after `shrinkToFit`, so the first pair can grow `_version` safely.

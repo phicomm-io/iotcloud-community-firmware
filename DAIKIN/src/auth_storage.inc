@@ -48,8 +48,16 @@ static bool persistAuthConfig(DynamicJsonDocument &candidate,const ph_auth_store
   if(oldSize){if(prefs.getBytes(authConfigKey,verify.get(),oldSize)!=oldSize){configRecovery=true;return false;}if(mbedtls_sha256_ret(verify.get(),oldSize,oldHash,0)){configRecovery=true;return false;}}
   const AuthConfigHeader header{authConfigMagic,2,0,uint32_t(storedLength)};
   memcpy(bytes.get(),&header,sizeof(header));memcpy(bytes.get()+sizeof(header),store,sizeof(*store));memcpy(bytes.get()+sizeof(header)+sizeof(*store),text.c_str(),storedLength);
-  // NVS commit acknowledgement alone is insufficient for an ambiguous failure.
-  prefs.putBytes(authConfigKey,bytes.get(),size);
+  // Keep one GC page plus a complete new blob generation before touching flash.
+  // Every physical page can contribute at most one new split-blob chunk.
+  nvs_stats_t stats={};if(nvs_get_stats(nullptr,&stats)!=ESP_OK)return false;
+  const size_t pages=stats.total_entries/126;
+  const size_t requiredEntries=(size+31)/32+2*pages+1+126;
+  if((oldSize!=size||memcmp(bytes.get(),verify.get(),size))&&stats.free_entries<requiredEntries)return false;
+  // A failed IDF 4.4.7 multi-page write can leave incomplete chunks in RAM.
+  // Do not read that ambiguous generation: recovery blocks auth until reboot.
+  if(prefs.putBytes(authConfigKey,bytes.get(),size)!=size){configRecovery=true;return false;}
+  // A successful acknowledgement still requires exact readback.
   const size_t actual=prefs.isKey(authConfigKey)?prefs.getBytesLength(authConfigKey):0;
   bool read=actual&&actual<=std::max(oldSize,size)&&prefs.getBytes(authConfigKey,verify.get(),actual)==actual;
   if(!read||actual!=size||memcmp(bytes.get(),verify.get(),size)){

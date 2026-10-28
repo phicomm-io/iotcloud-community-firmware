@@ -95,6 +95,8 @@ using SemaphoreHandle_t=void*;static SemaphoreHandle_t localAuthMutex;
 static void*xSemaphoreCreateMutex(){return nullptr;}static void xSemaphoreTake(void*,int){}static void xSemaphoreGive(void*){}
 static void esp_fill_random(void*,size_t){}
 static String loadLegacyConfigText(){return "{}";}
+struct nvs_stats_t{size_t total_entries=10000,free_entries=10000;};
+static const int ESP_OK=0;static int nvs_get_stats(const char*,nvs_stats_t*s){*s=nvs_stats_t();return ESP_OK;}
 #include "../../src/auth_storage.inc"
 #include "save.inc"
 static bool lc_peer(const char*p){return p&&strlen(p)==12;}
@@ -169,7 +171,7 @@ static unsigned requestSlot=0;
 // Run the production HTTP handler too: delay() dispatches its queued operation
 // as loop() would. Authentication itself is covered by the OTA handler suite.
 using esp_err_t=int;
-static constexpr int ESP_OK=0,ESP_FAIL=-1,HTTP_GET=0,HTTP_POST=1;
+static constexpr int ESP_FAIL=-1,HTTP_GET=0,HTTP_POST=1;
 using std::min;
 struct httpd_req_t {
   int method=HTTP_GET,content_len=0;
@@ -239,6 +241,7 @@ static void assertLive(const std::string &token,int fd){
   assert(sessions[0].used&&mqttQueued&&mqttReceiving&&mqtt&&bemfaMqtt);
   uint8_t byte;assert(::recv(fd,&byte,1,MSG_DONTWAIT)<0);
 }
+static void assertRecovery(){assert(configRecovery&&!hubReady()&&device_local_auth()==nullptr);assert(!rebootAt);}
 static void assertQuiesced(const std::string &token,int fd){
   assert(hubRestartPending()&&!hubReady()&&!hubTransport.running());
   assert(hubTransport.broker.count()==0&&hubTransport.broker.retainedCount()==0);
@@ -349,7 +352,7 @@ int main(int argc,char **argv){
     }else result=execute(request,false);
     if(prefs.fail){
       assert(result.find("storage_error")!=String::npos&&prefs.persisted==before);
-      assertLive(login.token,fd);assert(!hubReload&&!mqttRestart&&hubEpoch==0);
+      assertRecovery();assert(!hubReload&&!mqttRestart&&hubEpoch==0);
     }else{
       assert(result.find("accepted")!=String::npos&&config["mqtt"]["host"]=="new-broker.example");
       assert(!mqtt&&!mqttConnected&&!mqttQueued&&!mqttReceiving&&!mqttReceived&&!mqttPending[0]);
@@ -365,7 +368,7 @@ int main(int argc,char **argv){
   }else if(scenario=="reset"||scenario=="reset-fail"){
     prefs.fail=prefs.clearFail=scenario=="reset-fail";
     auto result=execute(R"({"request_id":"reset","action":"system.reset","params":{"full":true}})",false);
-    if(prefs.clearFail){assert(result.find("storage_error")!=String::npos);assert(!prefs.persisted.empty());assertLive(login.token,fd);assert(!rebootAt);}
+    if(prefs.clearFail){assert(result.find("storage_error")!=String::npos);assert(!prefs.persisted.empty());assertRecovery();assert(!rebootAt);}
     else{assert(result.find("accepted")!=String::npos);assert(loadAuthConfigText()=="{\"_version\":1}");assertQuiesced(login.token,fd);assert(rebootAt);}
   }else{
     DynamicJsonDocument backup(configCapacity+1024);
@@ -374,9 +377,9 @@ int main(int argc,char **argv){
     assert(validConfig(backup["config"]));serializeJson(backup,webBody);
     if(scenario=="restore-fail"){
       auto before=prefs.persisted;prefs.fail=true;
-      assert(backupExecute().find("storage_error")!=String::npos);assert(prefs.persisted==before);assertLive(login.token,fd);assert(!rebootAt);
+      assert(backupExecute().find("storage_error")!=String::npos);assert(prefs.persisted==before);assertRecovery();assert(!rebootAt);
       prefs.fail=false;backup["variant"]="full";webBody="";serializeJson(backup,webBody);
-      assert(backupExecute().find("invalid_backup")!=String::npos);assertLive(login.token,fd);assert(!rebootAt);
+      assert(backupExecute().find("migration_required")!=String::npos);assertRecovery();assert(!rebootAt);
     }else{
       assert(backupExecute().find("accepted")!=String::npos);
       assert(hubService.user()==(scenario=="same"?"oldowner":"newowner"));assertQuiesced(login.token,fd);assert(rebootAt);

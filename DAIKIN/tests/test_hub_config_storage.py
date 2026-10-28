@@ -1,4 +1,4 @@
-"""Production config/Preferences with IDF 4.4.7 NVS and the stock 20 KiB NOR model.
+"""Production config/Preferences with IDF 4.4.7 NVS and 16/20 KiB NOR models.
 
 Set DAIKIN_NVS_IDF_SOURCE to an unpacked official esp-idf source tree at commit
 38eeba213aa695aabfd6d89aa9f5078dbe5a94c3 (v4.4.7). The test uses
@@ -94,25 +94,30 @@ class HubConfigStorage(unittest.TestCase):
     def tearDownClass(cls):
         cls.temp.cleanup()
 
-    def scenario(self, name, variant='hub'):
+    def scenario(self, name, variant='hub', pages=5, no_pairs=False):
         # A real power loss discards the whole heap. Throwing from the NOR shim
         # instead abandons IDF's local non-RAII temporary list; that host-only
         # artifact must not be mistaken for an ordinary-operation firmware leak.
         leaks = '0' if name == 'power' else '1'
         subprocess.run([str(self.binary[variant]), name], check=True, timeout=90,
-                       env={**os.environ, 'ASAN_OPTIONS': 'detect_leaks=' + leaks})
+                       env={**{k:v for k,v in os.environ.items() if k!='DAIKIN_NVS_NO_PAIRS'}, **({'DAIKIN_NVS_NO_PAIRS':'1'} if no_pairs else {}), 'ASAN_OPTIONS': 'detect_leaks=' + leaks,'DAIKIN_NVS_PAGES':str(pages)})
 
     def test_valid_twelve_devices_and_mapping_budget(self):
-        self.scenario('valid-budget')
-        if 'rc3' in self.binary:self.scenario('valid-budget','rc3')
+        for pages in (4,5):
+            if 'rc3' in self.binary:self.scenario('valid-budget','rc3',pages=pages)
+            self.scenario('valid-budget',pages=pages,no_pairs=True)
+            self.scenario('valid-budget',pages=pages)
 
     def test_nonbusiness_padding_capacity_or_safe_unchanged_rejection(self):
-        self.scenario('budget');self.scenario('budget','full')
+        for pages in (4,5):
+            self.scenario('budget',pages=pages);self.scenario('budget','full',pages=pages)
 
     def test_password_and_keys_atomic_at_every_nor_byte(self):
-        self.scenario('power');self.scenario('power','full')
+        for pages in (4,5):
+            self.scenario('power',pages=pages);self.scenario('power','full',pages=pages)
 
     def test_failed_write_reboot_and_factory_reset(self):
-        self.scenario('failure');self.scenario('failure','full')
+        for pages in (4,5):
+            self.scenario('failure',pages=pages);self.scenario('failure','full',pages=pages)
 
 if __name__ == '__main__': unittest.main()

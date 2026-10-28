@@ -19,7 +19,7 @@ extern "C" void _esp_error_check_failed(esp_err_t code, const char *file, int li
 struct PowerLoss {};
 class Nor : public nvs::Partition {
 public:
-  std::vector<uint8_t> bytes = std::vector<uint8_t>(20480, 255);
+  std::vector<uint8_t> bytes = std::vector<uint8_t>((getenv("DAIKIN_NVS_PAGES")?atoi(getenv("DAIKIN_NVS_PAGES")):5)*4096, 255);
   long cut = -1;
   bool fail = false;
   size_t work = 0;
@@ -61,7 +61,7 @@ static Nor *flash;
 static void bootNor(Nor &nor) {
   storage.reset(); flash = &nor;
   storage.reset(new(std::nothrow) nvs::Storage(&nor)); assert(storage);
-  assert(storage->init(0, 5) == ESP_OK);
+  assert(storage->init(0, nor.bytes.size()/4096) == ESP_OK);
   assert(storage->createOrOpenNamespace("daikin", true, space) == ESP_OK);
 }
 static esp_err_t get(const char *key, nvs::ItemType type, void *out, size_t *length) {
@@ -77,6 +77,7 @@ extern "C" esp_err_t nvs_get_blob(nvs_handle_t, const char *key, void *out, size
 extern "C" esp_err_t nvs_set_str(nvs_handle_t, const char *key, const char *value) { return storage->writeItem(space, nvs::ItemType::SZ, key, value, strlen(value) + 1); }
 extern "C" esp_err_t nvs_set_blob(nvs_handle_t, const char *key, const void *value, size_t length) { return storage->writeItem(space, nvs::ItemType::BLOB, key, value, length); }
 // IDF 4.4.7 NVSHandleSimple::commit() is a validity check, with no deferred writes.
+extern "C" esp_err_t nvs_get_stats(const char*,nvs_stats_t*out){return storage->fillStats(*out);}
 extern "C" esp_err_t nvs_commit(nvs_handle_t) { return ESP_OK; }
 #define NUMBER(name, type) extern "C" esp_err_t nvs_get_##name(nvs_handle_t, const char *key, type *out) { return storage->readItem(space, key, *out); }
 NUMBER(i8, int8_t) NUMBER(u8, uint8_t) NUMBER(i16, int16_t) NUMBER(u16, uint16_t)
@@ -133,7 +134,7 @@ static std::string snapshot(){std::string text;serializeJson(config,text);return
 static void validBudget() {
   Nor nor; seed(nor); boot(nor);
 #ifndef DAIKIN_BASELINE
-fillPairs();
+if(!getenv("DAIKIN_NVS_NO_PAIRS"))fillPairs();
 #endif
 iotcloud::HubService service(config);
   service.store = saveConfig;
@@ -175,12 +176,26 @@ iotcloud::HubService service(config);
   request.clear(); serializeJson(body, request);
   assert(service.handle(R("PUT", "/api/hub/bridge", request, login.token), 22).status == 200);
   auto expected = snapshot(); boot(nor); assert(loadAuthConfigText() == expected); intact();
+  printf("matrix pages=%zu codec=%s typical_json=%zu blob=%zu pairs=%u+%u PASS\n",nor.bytes.size()/4096,
+#ifdef DAIKIN_BASELINE
+"rc3-json",prefs.getBytesLength("config_hub"),prefs.getBytesLength("config_hub"),0u,0u);
+#else
+"rc4-mp",measureJson(config),prefs.getBytesLength(authConfigKey),localAuth.store.count,localAuth.store.remote_count);
+#endif
+  for(unsigned round=0;round<12;round++){DynamicJsonDocument edit(configCapacity);edit.set(config);edit["device"]["name"]=std::string("typical-")+std::to_string(round);size_t work=nor.work;assert(saveConfig(edit));assert(nor.work>work);auto previous=snapshot();unsigned in=localAuth.store.count,out=localAuth.store.remote_count;boot(nor);assert(snapshot()==previous&&localAuth.store.count==in&&localAuth.store.remote_count==out);intact();}
+  printf("matrix pages=%zu typical 12updates+reboots PASS\n",nor.bytes.size()/4096);
   DynamicJsonDocument maximal(configCapacity);maximal.set(config);maximal["device"]["name"]=std::string(63,'n');
   maximal["hub"]["username"]=std::string(32,'u');for(JsonObject d:maximal["hub"]["devices"].as<JsonArray>())d["username"]=std::string(32,'u');for(JsonObject m:maximal["hub"]["bemfa"]["mappings"].as<JsonArray>())m["device"]["username"]=std::string(32,'u');
   for(JsonObject route:maximal["hub"]["bridge"]["mappings"].as<JsonArray>())for(const char *key:{"local_topic","remote_topic"}){size_t size=measureJson(maximal);if(size<authConfigLimit){std::string topic=route[key].as<std::string>();topic.append(std::min(size_t(512-topic.size()),authConfigLimit-size),'x');route[key]=topic;}}
   assert(measureJson(maximal)==authConfigLimit&&iotcloud::HubService::valid(maximal["hub"]));
-  for(unsigned round=0;round<3;round++){DynamicJsonDocument edit(configCapacity);edit.set(maximal);edit["device"]["name"]=std::string(63,char('a'+round));bool saved=saveConfig(edit);if(!saved)fprintf(stderr,"LEGAL MAX config %zu round%u write failure recovery%d\n",measureJson(maximal),round,configRecovery);assert(saved);boot(nor);intact();}
-  printf("legal maximum JSON=%zu blob=%zu 3updates PASS\n",measureJson(config),prefs.getBytesLength(
+  for(unsigned round=0;round<12;round++){DynamicJsonDocument edit(configCapacity);edit.set(maximal);edit["device"]["name"]=std::string(63,char('a'+round));size_t beforeWork=nor.work;bool saved=saveConfig(edit);if(!saved){
+#ifndef DAIKIN_BASELINE
+assert(nor.work==beforeWork);
+#else
+(void)beforeWork;
+#endif
+assert(!configRecovery);auto previous=snapshot();unsigned in=localAuth.store.count,out=localAuth.store.remote_count;boot(nor);assert(snapshot()==previous&&localAuth.store.count==in&&localAuth.store.remote_count==out);intact();printf("matrix pages=%zu legal_max_json=%zu round=%u SAFE_UNCHANGED_REJECTION\n",nor.bytes.size()/4096,measureJson(maximal),round);assert(nor.bytes.size()==16384);return;}boot(nor);intact();}
+  printf("matrix pages=%zu legal maximum JSON=%zu blob=%zu 12updates PASS\n",nor.bytes.size()/4096,measureJson(config),prefs.getBytesLength(
 #ifdef DAIKIN_BASELINE
 "config_hub"
 #else
