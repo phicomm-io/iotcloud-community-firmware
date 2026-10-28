@@ -38,7 +38,7 @@ MODULES = (
 
 if __name__ == '__main__':
     subprocess.run([sys.executable, str(ROOT / 'tools/check_version.py')], check=True)
-    print('RC4 native migration subset: %u modules; historical --all remains separate.' % len(MODULES), flush=True)
+    print('RC4 native host regression: %u entries; retained gates additionally run in --all.' % len(MODULES), flush=True)
     suite = unittest.defaultTestLoader.loadTestsFromNames(['tests.' + m for m in MODULES])
     result = unittest.TextTestRunner(verbosity=2).run(suite)
     if result.skipped:
