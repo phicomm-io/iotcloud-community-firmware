@@ -117,6 +117,7 @@ static bool ph_auth_private_fresh(ph_auth_state*s,uint8_t t[16]) {
     return true;
 }
 static void ph_auth_private_install(ph_auth_state*s,ph_auth_session*r,const uint8_t*t,const char*peer,unsigned scopes) {
+    for(unsigned i=0;i<PH_AUTH_PAIR_SLOTS;i++)if(r==&s->local[i])s->local_boot[i]=0;
     memset(r,0,sizeof(*r));
     memcpy(r->token,t,16);
     r->born=r->last=s->ops.now(s->ops.user);
@@ -256,6 +257,29 @@ bool ph_auth_pair_resume(ph_auth_state*s,const char*peer,const char*key,char out
     }
     ph_auth_private_unlock(s);
     return ok;
+}
+bool ph_auth_pair_resume_boot(ph_auth_state*s,const char*peer,const char*key,uint32_t boot,char out[33]) {
+    uint8_t decoded[16],token[16]={0};bool ok=false;
+    if(!s||!out||!boot||!ph_auth_private_peer_ok(peer)||!ph_auth_token_decode(key,decoded))return false;
+    ph_auth_private_lock(s);
+    for(unsigned i=0;i<s->store.count;i++)if(!strcmp(s->store.pairs[i].peer,peer)&&ph_auth_private_eq(decoded,s->store.pairs[i].key,16)) {
+        unsigned available=PH_AUTH_PAIR_SLOTS;uint32_t now=s->ops.now(s->ops.user);
+        for(unsigned j=0;j<PH_AUTH_PAIR_SLOTS;j++) {
+            ph_auth_session *r=&s->local[j];bool alive=ph_auth_private_alive(r,now);
+            if(alive&&!strcmp(r->peer,peer)&&r->scopes==s->store.pairs[i].scopes) {
+                if(s->local_boot[j]==boot){ph_auth_private_hex(r->token,out);ok=true;goto finish_boot;}
+                available=j;break;
+            }
+            if(!alive&&available==PH_AUTH_PAIR_SLOTS)available=j;
+        }
+        if(available<PH_AUTH_PAIR_SLOTS&&ph_auth_private_fresh(s,token)) {
+            ph_auth_private_install(s,&s->local[available],token,peer,s->store.pairs[i].scopes);
+            s->local_boot[available]=boot;ph_auth_private_hex(token,out);ok=true;
+        }
+        break;
+    }
+finish_boot:
+    memset(decoded,0,sizeof(decoded));memset(token,0,sizeof(token));ph_auth_private_unlock(s);return ok;
 }
 bool ph_auth_pair_remove(ph_auth_state*s,const char*peer) {
     ph_auth_store next;

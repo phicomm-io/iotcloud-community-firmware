@@ -11,7 +11,7 @@ static bool load(const char *peer,char key[33],unsigned *scope){assert(!strcmp(p
 static bool save(const char *peer,const char *key,unsigned scope,uint32_t e){assert(!strcmp(peer,"aabbccddeeff"));if(fail_save||e!=epoch)return false;strcpy(saved_key,key);saved_scopes=scope;stored=true;return true;}
 static const char *expected_ip="10.0.0.2";
 static bool send_packet(const char *ip,const void *data,size_t n){assert(!strcmp(ip,expected_ip));assert(n<=sizeof(sent_wire));memcpy(sent_wire,data,n);sent_length=n;sends++;return true;}
-static lc_ops ops={"001122334455",now,current_epoch,random_nonce,load,save,send_packet};
+static lc_ops ops={"001122334455",now,current_epoch,random_nonce,load,save,send_packet,NULL};
 static void response(lc_state *s,const char *code,bool wrong_nonce,const char *ip){
  ph_value request,v;assert(phv_parse(PH_WIRE_MSGPACK,sent_wire,sent_length,&request));char op[20];assert(phv_get(&request,"op",&v)&&phv_text(&v,op,sizeof(op)));const void *nonce;size_t n;assert(phv_get(&request,"nonce",&v)&&phv_bytes(&v,&nonce,&n)&&n==16);
  unsigned char storage[256],secret[16],bad_nonce[16];memset(secret,0xab,16);memset(bad_nonce,0xee,16);ph_buf buffer;ph_writer w;assert(phw_init_fixed(&w,PH_WIRE_MSGPACK,&buffer,storage,sizeof(storage)));

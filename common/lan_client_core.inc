@@ -19,6 +19,8 @@ typedef struct {
  bool (*load)(const char *,char[33],unsigned *);
  bool (*save)(const char *,const char *,unsigned,uint32_t);
  bool (*send)(const char *,const void *,size_t);
+ /* Optional business peer boot. NULL keeps the v3 sensor resume contract. */
+ uint32_t (*business_boot)(void);
 } lc_ops;
 static lc_job *lc_find(lc_state *state,const char *peer,bool create)
 {
@@ -84,7 +86,7 @@ static void lc_tick(lc_state *state,const lc_ops *ops)
   if(!phw_init_fixed(&writer,PH_WIRE_MSGPACK,&buf,storage,sizeof(storage))){lc_fail(job,"busy");continue;}
   phw_begin(&writer,NULL,false);phw_text(&writer,"op",job->phase==LC_PAIR?"auth_pair":"auth_resume");phw_text(&writer,"src",ops->local);phw_bytes_value(&writer,"nonce",job->nonce,16);
   if(job->phase==LC_PAIR){phw_text(&writer,"password",job->password);phw_uint(&writer,"scopes",job->scopes);}
-  else {unsigned scopes;if(!ops->load(job->peer,keyhex,&scopes)||!ph_auth_token_decode(keyhex,key)){memset(keyhex,0,sizeof(keyhex));lc_fail(job,"not_paired");continue;}phw_bytes_value(&writer,"key",key,16);memset(key,0,sizeof(key));memset(keyhex,0,sizeof(keyhex));}
+  else {unsigned scopes;if(!ops->load(job->peer,keyhex,&scopes)||!ph_auth_token_decode(keyhex,key)){memset(keyhex,0,sizeof(keyhex));lc_fail(job,"not_paired");continue;}phw_bytes_value(&writer,"key",key,16);memset(key,0,sizeof(key));memset(keyhex,0,sizeof(keyhex));if(ops->business_boot){uint32_t boot=ops->business_boot();if(!boot){lc_fail(job,"invalid_params");continue;}phw_u32(&writer,"boot",boot);}}
   phw_end(&writer);size_t length=phw_finish_fixed(&writer);job->sent=now;job->attempts++;
   if(length)ops->send(job->ip,storage,length);memset(storage,0,sizeof(storage));
  }

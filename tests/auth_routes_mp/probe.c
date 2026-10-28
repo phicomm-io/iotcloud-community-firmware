@@ -21,7 +21,9 @@ static int persist(void *context){assert(context==&config&&config_mutex);++write
 #define AUTH_STORE config.store
 #define AUTH_PASSWORD config.password
 #define AUTH_CONTEXT (&config)
+#ifndef AUTH_DEVICE_ID
 #define AUTH_DEVICE_ID "aabbccddeeff"
+#endif
 #include "../../common/local_auth_mico.inc"
 #define HTTP_AUTH_MODEL "a1"
 #define HTTP_AUTH_ID AUTH_DEVICE_ID
@@ -111,4 +113,5 @@ int main(void){
     assert(device_local_auth_init()&&writes==1&&ph_auth_store_valid(&disk.store)&&!disk.password[0]);
     test_http();test_lan();test_unknown_trailer_recovery();assert(!local_auth_mutex&&!config_mutex);
     puts("MP auth: empty auto-token, 401/503, logout/expiry/change, public info and local UDP scopes PASS");
+    return 0;
 }
