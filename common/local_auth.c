@@ -7,6 +7,7 @@ static void ph_auth_private_lock(ph_auth_state *s) {
         memset(s->http,0,sizeof(s->http));
         memset(s->local,0,sizeof(s->local));
         ph_auth_store_empty(&s->store);
+        memset(s->unpair,0,sizeof(s->unpair));
         if(!++s->credential_epoch)++s->credential_epoch;
         memcpy(s->credential,p,sizeof(p));
     }
@@ -276,10 +277,8 @@ bool ph_auth_pair_remove(ph_auth_state*s,const char*peer) {
     ph_auth_private_unlock(s);
     return ok;
 }
-bool ph_auth_pair_unpair(ph_auth_state*s,const char*peer,const char*token) {
-    ph_auth_store next;uint8_t decoded[16];unsigned i,j;bool ok=false;
-    if(!ph_auth_private_peer_ok(peer)||!ph_auth_token_decode(token,decoded))return false;
-    ph_auth_private_lock(s);
+static bool ph_auth_private_unpair(ph_auth_state*s,const char*peer,const uint8_t decoded[16]) {
+    ph_auth_store next;unsigned i,j;bool ok=false;
     for(i=0;i<PH_AUTH_PAIR_SLOTS;i++) {
         ph_auth_session *r=&s->local[i];
         if(!ph_auth_private_alive(r,s->ops.now(s->ops.user))||strcmp(peer,r->peer)||
@@ -297,9 +296,41 @@ bool ph_auth_pair_unpair(ph_auth_state*s,const char*peer,const char*token) {
         }
         break;
     }
-    memset(decoded,0,sizeof(decoded));
-    ph_auth_private_unlock(s);
     return ok;
+}
+bool ph_auth_pair_unpair(ph_auth_state*s,const char*peer,const char*token) {
+    uint8_t decoded[16];bool ok;
+    if(!s||!ph_auth_private_peer_ok(peer)||!ph_auth_token_decode(token,decoded))return false;
+    ph_auth_private_lock(s);ok=ph_auth_private_unpair(s,peer,decoded);
+    memset(decoded,0,sizeof(decoded));ph_auth_private_unlock(s);return ok;
+}
+bool ph_auth_pair_unpair_request(ph_auth_state*s,const char*peer,const char*token,
+                                const char*ip,const uint8_t nonce[16]) {
+    uint8_t decoded[16];bool ok=false;unsigned slot=0;uint32_t oldest=0;
+    if(!s||!ip||!ip[0]||strlen(ip)>=sizeof(s->unpair[0].ip)||!nonce||
+       !ph_auth_private_peer_ok(peer)||!ph_auth_token_decode(token,decoded))return false;
+    ph_auth_private_lock(s);
+    uint32_t now=s->ops.now(s->ops.user);
+    for(unsigned i=0;i<PH_AUTH_UNPAIR_RECEIPTS;i++) {
+        ph_auth_unpair_receipt*r=&s->unpair[i];
+        if(r->active&&(r->epoch!=s->credential_epoch||
+           (uint32_t)(now-r->born)>=PH_AUTH_UNPAIR_RECEIPT_MS))memset(r,0,sizeof(*r));
+        if(r->active&&!strcmp(r->peer,peer)&&!strcmp(r->ip,ip)&&
+           ph_auth_private_eq(r->token,decoded,16)&&ph_auth_private_eq(r->nonce,nonce,16)) {
+            ok=true;goto done; /* Do not extend the original receipt lifetime. */
+        }
+        uint32_t age=r->active?(uint32_t)(now-r->born):UINT32_MAX;
+        if(age>=oldest){oldest=age;slot=i;}
+    }
+    ok=ph_auth_private_unpair(s,peer,decoded);
+    if(ok) {
+        ph_auth_unpair_receipt*r=&s->unpair[slot];memset(r,0,sizeof(*r));
+        r->active=1;r->epoch=s->credential_epoch;r->born=now;
+        memcpy(r->token,decoded,16);memcpy(r->nonce,nonce,16);
+        strcpy(r->peer,peer);strcpy(r->ip,ip);
+    }
+done:
+    memset(decoded,0,sizeof(decoded));ph_auth_private_unlock(s);return ok;
 }
 bool ph_auth_udp_check(ph_auth_state*s,const char*peer,const char*token,ph_auth_context*c) {
     uint8_t t[16];
@@ -360,6 +391,7 @@ bool ph_auth_password_changed(ph_auth_state*s) {
      * On failure the caller must retain the old durable password. Reboot may
      * reload the old pairs, so false must never be reported as revocation. */
     if(!ok)ph_auth_store_empty(&s->store);
+    memset(s->unpair,0,sizeof(s->unpair));
     if(!++s->credential_epoch)++s->credential_epoch;
     memset(s->http,0,sizeof(s->http));
     memset(s->local,0,sizeof(s->local));
@@ -381,6 +413,7 @@ bool ph_auth_credential_commit(ph_auth_state*s,const char*password,bool force,
         memset(s->local,0,sizeof(s->local));
         memset(s->credential,0,sizeof(s->credential));
         memcpy(s->credential,password,strlen(password));
+        memset(s->unpair,0,sizeof(s->unpair));
         if(!++s->credential_epoch)++s->credential_epoch;
     }
     ph_auth_private_unlock(s);
@@ -407,6 +440,7 @@ bool ph_auth_context_valid(const ph_auth_context*c,unsigned required) {
 }
 void ph_auth_local_revoke(ph_auth_state*s,const ph_auth_store*p) {
     ph_auth_private_lock(s);
+    memset(s->unpair,0,sizeof(s->unpair));
     if(!++s->credential_epoch)++s->credential_epoch;
     memset(s->http,0,sizeof(s->http));
     memset(s->local,0,sizeof(s->local));

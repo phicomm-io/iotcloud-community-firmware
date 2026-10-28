@@ -73,7 +73,25 @@ static void test_lan(void){
     const void *raw;size_t length;assert(phv_get(&parsed,"key",&v)&&phv_bytes(&v,&raw,&length)&&length==16);
     char key[33],token[33];lan_auth_hex(raw,key);assert(ph_auth_pair_resume(device_local_auth(),"001122334455",key,token));
     uint8_t decoded[16];assert(ph_auth_token_decode(token,decoded));assert(feature_lan_auth("001122334455",decoded,2)&&!feature_lan_auth("001122334455",decoded,4));
-    assert(ph_auth_pair_unpair(device_local_auth(),"001122334455",token));assert(!feature_lan_auth("001122334455",decoded,2));
+    ph_buf_free(input);
+    assert(phw_init(&request,PH_WIRE_MSGPACK));phw_begin(&request,NULL,false);
+    phw_text(&request,"op","auth_unpair");phw_text(&request,"src","001122334455");
+    phw_bytes_value(&request,"token",decoded,16);phw_bytes_value(&request,"nonce",nonce,16);phw_end(&request);
+    input=phw_take(&request);
+    unsigned before=writes;
+    for(unsigned retry=0;retry<3;retry++){
+        assert(phv_parse(PH_WIRE_MSGPACK,input->buf,input->len,&parsed));
+        phw_init_fixed(&reply,PH_WIRE_MSGPACK,&b,response,sizeof(response));
+        assert(feature_lan_pair(&parsed,&reply,"192.0.2.1"));n=phw_finish_fixed(&reply);
+        assert(phv_parse(PH_WIRE_MSGPACK,response,n,&parsed));
+        assert(phv_get(&parsed,"code",&v)&&phv_equal_text(&v,"ok"));
+        assert(writes==before+1&&!feature_lan_auth("001122334455",decoded,2));
+    }
+    assert(phv_parse(PH_WIRE_MSGPACK,input->buf,input->len,&parsed));
+    phw_init_fixed(&reply,PH_WIRE_MSGPACK,&b,response,sizeof(response));
+    assert(feature_lan_pair(&parsed,&reply,"192.0.2.2"));n=phw_finish_fixed(&reply);
+    assert(phv_parse(PH_WIRE_MSGPACK,response,n,&parsed));
+    assert(phv_get(&parsed,"code",&v)&&phv_equal_text(&v,"auth_required"));
     ph_buf_free(input);
 }
 static void test_unknown_trailer_recovery(void){

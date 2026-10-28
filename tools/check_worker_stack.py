@@ -92,8 +92,8 @@ def worker_paths(frames,model,binding,symbols=None):
     # async commands must already own validated data (separate lifecycle tests).
     decode=worker+['lan_decode_value','phv_get']+extra(['phv_iter','phv_next','phv_scan','phv_head'])
     add('binding UDP typed packet',decode)
-    for auth in ['ph_auth_pair','ph_auth_pair_resume','ph_auth_pair_unpair']:
-        add('binding UDP '+auth,worker+['feature_lan_pair',auth]+extra(['ph_auth_private_lock','ph_auth_private_install','ph_auth_private_save','local_auth_save']))
+    for auth in ['ph_auth_pair','ph_auth_pair_resume','ph_auth_pair_unpair_request']:
+        add('binding UDP '+auth,worker+['feature_lan_pair',auth]+extra(['ph_auth_private_lock','ph_auth_private_install','ph_auth_private_unpair','ph_auth_private_save','local_auth_save']))
     add('binding UDP response',worker+['feature_lan_pair','phw_text']+extra(['phw_text_n','phw_prefix','phw_quote','phw_bytes']))
     add('binding paired client persist',worker+extra(['lan_client_response','lc_response','lan_client_save'])+['ph_auth_remote_store']+extra(['ph_auth_private_save','local_auth_save']))
     add('binding paired client tick',worker+extra(['lan_client_poll','lc_tick','lc_emit','lan_client_send']))

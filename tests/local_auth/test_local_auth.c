@@ -192,4 +192,56 @@ static void test_pair_compaction_revokes_sessions(void){
  assert(!ph_auth_udp_check(&s,peers[1],renewed,&context));
  assert(ph_auth_udp_check(&s,peers[0],token[0],&context));
 }
-int main(void){test_pair_compaction_revokes_sessions();test_remote_direction_and_revocation();test_atomic_credential_commit();test_failed_password_transaction();test_basic();test_expiry();test_capacity_failure();test_boot_revoke_mqtt();test_pending_pair_epoch();test_pair_retry();test_concurrent();puts("local_auth: all tests passed");return 0;}
+static void test_unpair_receipts(void){
+ fixture f;ph_auth_state s,reboot;ph_auth_context other,c;char key[33],token[33],bkey[33],btoken[33];
+ uint8_t nonce[16]={1},wrong[16]={2};setup(&f,&s);f.now=UINT_MAX-100;
+ assert(ph_auth_pair(&s,"","peer-b",1,bkey)&&ph_auth_pair_resume(&s,"peer-b",bkey,btoken));
+ assert(ph_auth_udp_check(&s,"peer-b",btoken,&other));
+ const char *mqtt="fedcba9876543210fedcba9876543210";assert(ph_auth_mqtt_grant(&s,"cloud",mqtt,2));
+ assert(ph_auth_pair(&s,"","peer",1,key)&&ph_auth_pair_resume(&s,"peer",key,token));
+ f.fail_save=true;unsigned saves=f.saves;
+ assert(!ph_auth_pair_unpair_request(&s,"peer",token,"192.0.2.1",nonce));
+ assert(!ph_auth_pair_unpair_request(&s,"peer",token,"192.0.2.1",nonce));
+ assert(f.saves==saves&&ph_auth_udp_check(&s,"peer",token,&c));
+ f.fail_save=false;assert(ph_auth_pair_unpair_request(&s,"peer",token,"192.0.2.1",nonce));
+ assert(f.saves==saves+1&&!ph_auth_udp_check(&s,"peer",token,&c));
+ f.now+=1000;assert(ph_auth_pair_unpair_request(&s,"peer",token,"192.0.2.1",nonce));
+ assert(f.saves==saves+1); /* Lost ACK retries never write or revive credentials. */
+ assert(!ph_auth_pair_unpair_request(&s,"other",token,"192.0.2.1",nonce));
+ assert(!ph_auth_pair_unpair_request(&s,"peer",token,"192.0.2.2",nonce));
+ assert(!ph_auth_pair_unpair_request(&s,"peer",token,"192.0.2.1",wrong));
+ assert(!ph_auth_pair_unpair_request(&s,"peer",mqtt,"192.0.2.1",nonce));
+ assert(!ph_auth_pair_unpair_request(&s,"peer",token,NULL,nonce));
+ assert(!ph_auth_pair_unpair_request(&s,"peer",token,"1234567890123456",nonce));
+ assert(ph_auth_context_valid(&other,1)&&ph_auth_udp_check(&s,"cloud",mqtt,&c));
+ assert(ph_auth_init(&reboot,&s.ops,&f.disk));
+ assert(!ph_auth_pair_unpair_request(&reboot,"peer",token,"192.0.2.1",nonce));
+ f.now+=PH_AUTH_UNPAIR_RECEIPT_MS-1000;
+ assert(!ph_auth_pair_unpair_request(&s,"peer",token,"192.0.2.1",nonce)); /* wrap + exact expiry */
+ assert(ph_auth_pair(&s,"","peer",1,key)&&ph_auth_pair_resume(&s,"peer",key,token));
+ assert(ph_auth_pair_unpair_request(&s,"peer",token,"192.0.2.1",nonce));
+ ph_auth_local_revoke(&s,NULL);assert(!ph_auth_pair_unpair_request(&s,"peer",token,"192.0.2.1",nonce));
+ assert(ph_auth_pair(&s,"","peer",1,key)&&ph_auth_pair_resume(&s,"peer",key,token));
+ assert(ph_auth_pair_unpair_request(&s,"peer",token,"192.0.2.1",nonce));
+ commit_fixture commit={&f,"adminfjr",false};
+ assert(ph_auth_credential_commit(&s,commit.password,false,commit_password,&commit));
+ assert(!ph_auth_pair_unpair_request(&s,"peer",token,"192.0.2.1",nonce));
+ assert(ph_auth_udp_check(&s,"cloud",mqtt,&c));
+ assert(ph_auth_pair(&s,"adminfjr","peer",1,key)&&ph_auth_pair_resume(&s,"peer",key,token));
+ assert(ph_auth_pair_unpair_request(&s,"peer",token,"192.0.2.1",nonce));
+ commit.fail=true;
+ assert(!ph_auth_credential_commit(&s,commit.password,true,commit_password,&commit));
+ assert(ph_auth_pair_unpair_request(&s,"peer",token,"192.0.2.1",nonce));
+ commit.fail=false;assert(ph_auth_credential_commit(&s,commit.password,true,commit_password,&commit));
+ assert(!ph_auth_pair_unpair_request(&s,"peer",token,"192.0.2.1",nonce)); /* same-password restore */
+ /* A bounded receipt set admits a fifth success by evicting the oldest. */
+ char first[33]={0};for(unsigned i=0;i<PH_AUTH_UNPAIR_RECEIPTS+1;i++){
+   char peer[13];snprintf(peer,sizeof(peer),"receipt%u",i);
+   assert(ph_auth_pair(&s,"adminfjr",peer,1,key)&&ph_auth_pair_resume(&s,peer,key,token));
+   if(!i)strcpy(first,token);
+   assert(ph_auth_pair_unpair_request(&s,peer,token,"192.0.2.1",nonce));f.now++;
+ }
+ assert(!ph_auth_pair_unpair_request(&s,"receipt0",first,"192.0.2.1",nonce));
+ assert(ph_auth_pair_unpair_request(&s,"receipt4",token,"192.0.2.1",nonce));
+}
+int main(void){test_unpair_receipts();test_pair_compaction_revokes_sessions();test_remote_direction_and_revocation();test_atomic_credential_commit();test_failed_password_transaction();test_basic();test_expiry();test_capacity_failure();test_boot_revoke_mqtt();test_pending_pair_epoch();test_pair_retry();test_concurrent();puts("local_auth: all tests passed");return 0;}
