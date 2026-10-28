@@ -104,6 +104,12 @@ static void backup_finish(bool ok){finishes++;committed=ok;}
 #define BACKUP_LIVE (&live.base)
 #define BACKUP_LOCK lock
 #define BACKUP_CONTEXT (&live)
+static ph_auth_state auth;
+ph_auth_state *device_local_auth(void){return &auth;}
+static uint32_t auth_now(void *u){(void)u;return 0;}
+static bool auth_rng(void *u,uint8_t *p,size_t n){(void)u;memset(p,1,n);return true;}
+static bool auth_password(void *u,char p[33]){(void)u;memcpy(p,live.base.web_password,33);return true;}
+#include "common/local_auth.c"
 #include "common/backup_mico.inc"
 static void reject_backup(const void *data,size_t length){
     const app_storage_t before=live;
@@ -116,7 +122,7 @@ int main(void){
     assert(sizeof(m1_storage_v8_t)==sizeof(legacy_m1_storage_v8_t));
     assert(sizeof(legacy_m1_display_lane_v9_t)==32&&sizeof(legacy_m1_display_v9_t)==76);
     assert(sizeof(legacy_m1_storage_v9_t)==2928&&sizeof(m1_storage_v9_t)==2928);
-    assert(sizeof(m1_storage_v10_t)==2944&&sizeof(app_storage_t)==3064&&offsetof(app_storage_t,display)==2852);
+    assert(sizeof(m1_storage_v10_t)==2944&&sizeof(m1_storage_v11_t)==3064 && offsetof(app_storage_t,local_auth)==3064&&offsetof(app_storage_t,display)==2852);
     assert(offsetof(app_storage_t,display.style)==2928);
 #define V8_OFFSET(member) assert(offsetof(legacy_m1_storage_v8_t,member)==offsetof(app_storage_t,member))
     V8_OFFSET(base);V8_OFFSET(features);V8_OFFSET(automation);V8_OFFSET(reserved_controller_config);
@@ -135,7 +141,10 @@ int main(void){
     live.features.revision=13;live.features.last_event=UINT64_C(0x123456789abcdef0);
     strcpy(live.features.ntp_host,"clock.example");live.automation.revision=17;
     memset(live.reserved_controller_config,0x6c,sizeof(live.reserved_controller_config));
-    const size_t length=device_backup_size();assert(length<=PH_BACKUP_LIMIT);
+    ph_auth_store_empty(&live.local_auth);
+    ph_auth_ops ops={0};ops.now=auth_now;ops.random=auth_rng;ops.password=auth_password;
+    assert(ph_auth_init(&auth,&ops,&live.local_auth));
+    const size_t length=device_backup_size();assert(length==sizeof(ph_backup_header)+sizeof(m1_storage_v11_t)&&length<=PH_BACKUP_LIMIT);
     void *data=malloc(length),*bad=malloc(length);assert(data&&bad);
     assert(device_backup_export(data,length));
     const app_storage_t original=live;
@@ -150,7 +159,7 @@ int main(void){
     assert(!strcmp(device_backup_import(bad,length),"invalid_backup"));assert(writes==1);
     memcpy(bad,data,length);app_storage_t *candidate=(void*)((char*)bad+sizeof(ph_backup_header));
     candidate->features.language=99;
-    ph_backup_seal(bad,"m1",PHICOMM_FIRMWARE_VARIANT,FIRMWARE_VERSION,M1_CONFIG_VERSION,sizeof(live));
+    ph_backup_seal(bad,"m1",PHICOMM_FIRMWARE_VARIANT,FIRMWARE_VERSION,M1_CONFIG_VERSION,offsetof(app_storage_t,local_auth));
     assert(!strcmp(device_backup_import(bad,length),"invalid_backup"));assert(writes==1);
     write_fail=false;assert(!strcmp(device_backup_import(data,length),"accepted"));
     assert(writes==2&&finishes==2&&committed&&!lock);
@@ -219,7 +228,7 @@ int main(void){
     ((char*)old_data)[old_length-1]^=1;
     reject_backup(old_data,old_length);
     memcpy(bad,data,length);candidate=(void*)((char*)bad+sizeof(ph_backup_header));candidate->base.version=8;
-    ph_backup_seal(bad,"m1",PHICOMM_FIRMWARE_VARIANT,FIRMWARE_VERSION,M1_CONFIG_VERSION,sizeof(live));
+    ph_backup_seal(bad,"m1",PHICOMM_FIRMWARE_VARIANT,FIRMWARE_VERSION,M1_CONFIG_VERSION,offsetof(app_storage_t,local_auth));
     reject_backup(bad,length);
 
     /* Import a real v9 payload while a formatted v10 profile is active.
@@ -328,7 +337,7 @@ int main(void){
     assert(!memcmp(&live,&before,sizeof(live))&&!lock);
     memcpy(bad,data,length);candidate=(void*)((char*)bad+sizeof(ph_backup_header));
     candidate->display.style[1].lamps=512;
-    ph_backup_seal(bad,"m1",PHICOMM_FIRMWARE_VARIANT,FIRMWARE_VERSION,M1_CONFIG_VERSION,sizeof(live));
+    ph_backup_seal(bad,"m1",PHICOMM_FIRMWARE_VARIANT,FIRMWARE_VERSION,M1_CONFIG_VERSION,offsetof(app_storage_t,local_auth));
     reject_backup(bad,length);
     puts("M1 backup: exact v8/v9/v10 payloads, v11 generic bindings, strict envelope and rollback PASS");
     free(v9_data);
@@ -339,9 +348,12 @@ int main(void){
         with tempfile.TemporaryDirectory() as temporary:
             source_file, binary = Path(temporary)/'adapter.c', Path(temporary)/'adapter'
             source_file.write_text(source)
+            shim=Path(temporary)/'shim';shim.mkdir()
+            generated=Path(temporary)/'common/generated';generated.mkdir(parents=True)
+            (generated/'build_version.h').write_text('#define FIRMWARE_VERSION "host-backup-test"\n')
             subprocess.run([os.environ.get('CC','cc'),'-std=c99','-Wall','-Wextra','-Werror',
                             '-fsanitize=address,undefined','-fno-omit-frame-pointer',
-                            '-I',str(ROOT/'tests/host'),'-I',str(ROOT),'-I',str(ROOT/'M1'),
+                            '-I',str(shim),'-I',str(ROOT/'tests/host'),'-I',str(ROOT),'-I',str(ROOT/'M1'),
                             '-I',str(Path(os.environ.get('PHICOMM_TEST_JSON_DIR', ROOT/'build/m1-sdk/mico-os/libraries/utilities/json_c'))),
                             str(source_file),'-o',str(binary)],check=True)
             subprocess.run([str(binary)],check=True)

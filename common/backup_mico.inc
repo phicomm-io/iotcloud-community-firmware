@@ -53,18 +53,48 @@ static bool backup_storage_valid(const app_storage_t *next) {
 #endif
     return true;
 }
-size_t device_backup_size(void) {return sizeof(ph_backup_header)+sizeof(app_storage_t);}
+size_t device_backup_size(void) {return sizeof(ph_backup_header)+offsetof(app_storage_t,local_auth);}
 bool device_backup_export(void *out,size_t capacity) {
     if(capacity!=device_backup_size() || device_config_recovery())return false;
     mico_rtos_lock_mutex(&BACKUP_LOCK);
-    memcpy((uint8_t *)out+sizeof(ph_backup_header),BACKUP_LIVE,sizeof(app_storage_t));
+    memcpy((uint8_t *)out+sizeof(ph_backup_header),BACKUP_LIVE,offsetof(app_storage_t,local_auth));
     mico_rtos_unlock_mutex(&BACKUP_LOCK);
-    ph_backup_seal(out,BACKUP_MODEL,PHICOMM_FIRMWARE_VARIANT,FIRMWARE_VERSION,BACKUP_VERSION,sizeof(app_storage_t));return true;
+    ph_backup_seal(out,BACKUP_MODEL,PHICOMM_FIRMWARE_VARIANT,FIRMWARE_VERSION,BACKUP_VERSION,offsetof(app_storage_t,local_auth));return true;
+}
+typedef struct {const app_storage_t *next;size_t size;
+#ifndef FEATURE_DEVICE_A1
+    unsigned version;
+#endif
+    const char *result;} backup_restore_args;
+static bool backup_restore_commit(void *opaque,const ph_auth_store *auth_store)
+{
+    backup_restore_args *args=opaque;const app_storage_t *next=args->next;size_t restore_size=args->size;
+#ifndef FEATURE_DEVICE_A1
+    unsigned restore_version=args->version;
+#endif
+    app_storage_t *before=malloc(sizeof(*before));if(!before){args->result="busy";return false;}
+    mico_rtos_lock_mutex(&BACKUP_LOCK);
+    if(device_config_recovery() || !backup_reserve()){mico_rtos_unlock_mutex(&BACKUP_LOCK);free(before);args->result="busy";return false;}
+    memcpy(before,BACKUP_LIVE,sizeof(*before));memcpy(BACKUP_LIVE,next,restore_size);
+#ifndef FEATURE_DEVICE_A1
+    if(restore_version==8){
+        m1_display_defaults(&((app_storage_t *)BACKUP_LIVE)->display);
+    }
+    if(restore_version==9)m1_display_upgrade_v9(&((app_storage_t *)BACKUP_LIVE)->display);
+    if(restore_version==9 || restore_version==10)m1_display_upgrade_remote(&((app_storage_t *)BACKUP_LIVE)->display);
+    BACKUP_LIVE->version=BACKUP_VERSION;
+#endif
+    ((app_storage_t *)BACKUP_LIVE)->local_auth=*auth_store;
+    BACKUP_LIVE->revision=before->base.revision+1;
+    bool ok=mico_system_context_update(BACKUP_CONTEXT)==kNoErr;
+    if(!ok)memcpy(BACKUP_LIVE,before,sizeof(*before));
+    backup_finish(ok);mico_rtos_unlock_mutex(&BACKUP_LOCK);free(before);
+    args->result=ok?"accepted":"storage_error";return ok;
 }
 const char *device_backup_import(const void *data,size_t length) {
-    const app_storage_t *next=ph_backup_open(data,length,BACKUP_MODEL,PHICOMM_FIRMWARE_VARIANT,BACKUP_VERSION,sizeof(app_storage_t));
+    const app_storage_t *next=ph_backup_open(data,length,BACKUP_MODEL,PHICOMM_FIRMWARE_VARIANT,BACKUP_VERSION,offsetof(app_storage_t,local_auth));
     if(next && next->base.version!=BACKUP_VERSION)return "invalid_backup";
-    size_t restore_size=sizeof(app_storage_t);
+    size_t restore_size=offsetof(app_storage_t,local_auth);
 #ifndef FEATURE_DEVICE_A1
     unsigned restore_version=BACKUP_VERSION;
     if(!next){
@@ -84,21 +114,11 @@ const char *device_backup_import(const void *data,size_t length) {
     }
 #endif
     if(!next || !backup_storage_valid(next))return "invalid_backup";
-    app_storage_t *before=malloc(sizeof(*before));if(!before)return "busy";
-    mico_rtos_lock_mutex(&BACKUP_LOCK);
-    if(device_config_recovery() || !backup_reserve()){mico_rtos_unlock_mutex(&BACKUP_LOCK);free(before);return "busy";}
-    memcpy(before,BACKUP_LIVE,sizeof(*before));memcpy(BACKUP_LIVE,next,restore_size);
+    backup_restore_args args={next,restore_size,
 #ifndef FEATURE_DEVICE_A1
-    if(restore_version==8){
-        m1_display_defaults(&((app_storage_t *)BACKUP_LIVE)->display);
-    }
-    if(restore_version==9)m1_display_upgrade_v9(&((app_storage_t *)BACKUP_LIVE)->display);
-    if(restore_version==9 || restore_version==10)m1_display_upgrade_remote(&((app_storage_t *)BACKUP_LIVE)->display);
-    BACKUP_LIVE->version=BACKUP_VERSION;
+        restore_version,
 #endif
-    BACKUP_LIVE->revision=before->base.revision+1;
-    bool ok=mico_system_context_update(BACKUP_CONTEXT)==kNoErr;
-    if(!ok)memcpy(BACKUP_LIVE,before,sizeof(*before));
-    backup_finish(ok);mico_rtos_unlock_mutex(&BACKUP_LOCK);free(before);
-    return ok?"accepted":"storage_error";
+        "busy"};
+    if(device_local_auth())ph_auth_credential_commit(device_local_auth(),next->base.web_password,true,backup_restore_commit,&args);
+    return args.result;
 }

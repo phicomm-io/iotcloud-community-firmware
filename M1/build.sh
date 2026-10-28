@@ -104,9 +104,9 @@ ln -sfn "$(command -v make)" "$micoder/cmd/Linux64/make"
     make HOST_OS=Linux64 TOOLS_ROOT="$micoder" PYTHON="$python2" TLS=mocSSL \
         DISABLE_MICO_BLUENRG=1 -f mico-os/makefiles/Makefile "$target" total
 )
-python3 "$project_dir/tools/check_worker_stack.py" "$workspace/build/$target/Modules/M1" "$project_dir/common/phicomm_features.h"
+python3 "$project_dir/tools/check_worker_stack.py" "$workspace/build/$target/Modules/M1" "$project_dir/common/phicomm_features.h" "$gcc_dir/bin/arm-none-eabi-nm"
 python3 "$app_dir/tools/check_image.py" "$workspace/build/$target/binary/$target.ota.bin"
 python3 "$project_dir/tools/check_http_core.py" "$workspace/build/$target/Modules" M1 "$gcc_dir/bin/arm-none-eabi-nm" "$workspace/build/$target/binary/$target.elf"
-python3 "$project_dir/tools/check_json_float.py" "$gcc_dir/bin/arm-none-eabi-nm" "$workspace/build/$target/binary/$target.elf"
+python3 "$project_dir/tools/check_no_json_objects.py" --model m1 --nm "$gcc_dir/bin/arm-none-eabi-nm" "$workspace/build/$target/binary/$target.elf"
 python3 "$app_dir/tools/package.py" "$workspace/build/$target/binary" "$project_dir/build/m1${variant_suffix}-release" "$sdk_commit"
 

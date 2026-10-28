@@ -6,15 +6,13 @@
 #include "filter.h"
 #include "../common/ota/signed_ota.h"
 #include "web_data.h"
-#include "../common/firmware_variant.h"
+#include "../common/firmware_variant_defs.h"
 #include "../common/http_cors.h"
 #include "favicon.h"
 #include <ctype.h>
 #include <errno.h>
 #include "../common/device_status.h"
 #include <limits.h>
-#include "printbuf.h"
-#include "json_heap.h"
 #include "../common/httpd/product.h"
 #include "../common/backup.h"
 
@@ -25,95 +23,34 @@
 #define http_diag_snapshot ph_http_snapshot
 static ph_http_product product;
 static const char *query_action;
-static enum { QUERY, COMMAND, LIGHT, UPLOAD, DIRECT , BACKUP, RESTORE } operation;
+static enum { QUERY, AUTH, COMMAND, LIGHT, UPLOAD, DIRECT , BACKUP, RESTORE } operation;
 static bool upload_open, upload_pending;
 static bool response(ph_http_exchange *x,unsigned status,const char *type,const void *body,size_t length,bool gzip)
 {
     x->response.status=status;x->response.type=type;x->response.body=body;
     x->response.length=length;x->response.gzip=gzip;return true;
 }
-static void str(json_object *o, const char *key, const char *value)
-{ json_build_object_add(o, key, json_object_new_string(value)); }
-static void integer(json_object *o, const char *key, int value)
-{ json_build_object_add(o, key, json_object_new_int(value)); }
-static void json_bool(json_object *o, const char *key, bool value)
-{ json_build_object_add(o, key, json_object_new_boolean(value)); }
-static __attribute__((noinline)) json_object *a1_status_full(void)
-{
-    device_status_t snapshot; device_status_full_t full;
-    a1_status_capture(&snapshot,&full);
-    return device_status_encode(&snapshot,&full);
-}
-static __attribute__((noinline)) json_object *a1_status_live(void)
-{
-    device_status_t snapshot; a1_status_capture(&snapshot,NULL);
-    return device_status_encode(&snapshot,NULL);
-}
-static __attribute__((noinline)) json_object *a1_status_json_view(bool live)
-{ return live ? a1_status_live() : a1_status_full(); }
-json_object *a1_status_json(void) { return a1_status_json_view(false); }
-json_object *a1_status_live_json(void) { return a1_status_json_view(true); }
+#define HTTP_AUTH_MODEL "a1"
+#define HTTP_AUTH_ID a1_id
+#define HTTP_AUTH_VERSION FIRMWARE_VERSION
+#include "../common/httpd/local_auth.inc"
+#include "../common/httpd/memory_mp.inc"
 
-static void memory_response(ph_http_exchange *x)
+static void light_command(ph_http_exchange *x,const ph_value *body)
 {
-    /* Keep diagnostics usable when building the full status JSON fails.
-     * Authentication is applied by handle() before reaching this route. */
-    const micoMemInfo_t *memory = MicoGetMemoryInfo();
-    if (!memory) {
-        static const char unavailable[] = "{\"code\":\"unavailable\"}";
-        response(x, 503, "application/json", unavailable, sizeof(unavailable) - 1, false);
-        return;
-    }
-    micoMemInfo_t snapshot = *memory;
-    service_memory_state_t budget; service_memory_snapshot(&budget);
-    /* Request-owned diagnostics scratch; guard failure preserves the small
-     * allocation-free base response. Never increase permanent scalar RAM. */
-    size_t capacity=2304;product.body=snapshot.free_memory>=SERVICE_MEMORY_RESERVE+capacity+32?json_heap_malloc(capacity):NULL;
-    char *body=product.body?product.body:product.scalar;
-    if(!product.body)capacity=sizeof(product.scalar);
-    int length = snprintf(body, capacity,
-        "{\"code\":\"ok\",\"data\":{\"free_memory\":%d,\"allocated_memory\":%d,"
-        "\"free_memory_chunks\":%d,\"uptime_ms\":%lu,\"memory_reserve\":%u,"
-        "\"memory_reserved\":%lu,\"memory_active\":%lu,\"memory_waiting\":%lu,"
-        "\"memory_denied\":%lu,\"minimum_sampled_free\":%lu,"
-        "\"json_live_blocks\":%lu,\"json_peak_blocks\":%lu,\"json_alloc_failures\":%lu,\"json_guard_denied\":%lu,"
-        "\"mqtt_pending\":%lu,\"mqtt_peak\":%lu,\"mqtt_overflow\":%lu,\"mqtt_max_delay_ms\":%lu}}",
-        snapshot.free_memory, snapshot.allocted_memory, snapshot.num_of_chunks,
-        (unsigned long)mico_rtos_get_time(), SERVICE_MEMORY_RESERVE,
-        (unsigned long)budget.reserved, (unsigned long)budget.active,
-        (unsigned long)budget.waiting, (unsigned long)budget.denied,
-        (unsigned long)budget.minimum_free,
-        (unsigned long)budget.json_live, (unsigned long)budget.json_peak,
-        (unsigned long)budget.json_failed, (unsigned long)budget.json_denied,
-        (unsigned long)budget.mqtt_pending, (unsigned long)budget.mqtt_peak,
-        (unsigned long)budget.mqtt_overflow, (unsigned long)budget.mqtt_max_delay);
-    ph_http_diagnostics d=ph_http_snapshot();
-    if(length>0)length=ph_http_diag_append(body,capacity,length,&d);
-    if(length>0)length=ph_mqtt_diag_append(body,capacity,length,product.body!=NULL);
-    if (length > 0 && (size_t)length < capacity)
-        response(x, 200, "application/json", body, (size_t)length, false);
-}
-
-
-static void light_command(ph_http_exchange *x,json_object *body)
-{
-    json_object *slot=body?json_object_object_get(body,"slot"):NULL;
-    if(!slot || !json_object_is_type(slot,json_type_int) || json_object_get_int(slot)<0 || json_object_get_int(slot)>32) {
-        ph_http_message(&product,x,400,"slot must be 0 (exit) or 1..32");return;
-    }
-    json_object *neighbors=json_object_object_get(body,"neighbors");
-    if(neighbors && !json_object_is_type(neighbors,json_type_boolean)) {
-        ph_http_message(&product,x,400,"neighbors must be boolean");return;
-    }
-    unsigned n=json_object_get_int(slot);bool adjacent=neighbors && json_object_get_boolean(neighbors);
-    mico_rtos_lock_mutex(&a1_lock);
-    bool busy=a1_state.ota_active || a1_state.reboot_pending;
-    if(!busy) { a1_state.light_test_slot=n;a1_state.light_test_neighbors=adjacent;a1_state.light_test_until=n?mico_rtos_get_time()+120000:0; }
-    mico_rtos_unlock_mutex(&a1_lock);
-    ph_http_message(&product,x,busy?409:200,busy?"Device busy":"Light test updated");
+ ph_value slot,v;int64_t n;bool adjacent=false;
+ if(!phv_keys(body,"|slot||neighbors|")||!phv_get(body,"slot",&slot)||!phv_int(&slot,&n)||n<0||n>32){ph_http_message(&product,x,400,"slot must be 0 (exit) or 1..32");return;}
+ if(phv_get(body,"neighbors",&v)&&!phv_bool(&v,&adjacent)){ph_http_message(&product,x,400,"neighbors must be boolean");return;}
+ mico_rtos_lock_mutex(&a1_lock);bool busy=a1_state.ota_active||a1_state.reboot_pending;
+ if(!busy){a1_state.light_test_slot=(unsigned)n;a1_state.light_test_neighbors=adjacent;a1_state.light_test_until=n?mico_rtos_get_time()+120000:0;}
+ mico_rtos_unlock_mutex(&a1_lock);service_cache_changed(SERVICE_CACHE_STATUS);
+ ph_http_message(&product,x,busy?409:200,busy?"Device busy":"Light test updated");
 }
 static ph_http_action prepare(ph_http_exchange *x)
 {
+    if(operation!=AUTH && !http_auth_authorized(x->request->authorization)){
+        http_auth_reply(&product,x,401,"unauthorized",NULL);return PH_HTTP_REPLY;
+    }
     if(upload_pending) {
         upload_pending=false;
         bool rescue=!strcmp(x->request->path,"/api/v1/ota/upload-unsigned");
@@ -139,15 +76,22 @@ static ph_http_action begin(ph_http_exchange *x)
     const ph_http_request *r=x->request;
     x->response.cors=phicomm_cors_headers(r->origin);
     if(!strcmp(r->method,"OPTIONS")) { response(x,*x->response.cors?200:403,"text/plain","",0,false);return PH_HTTP_REPLY; }
-    a1_config_t cfg;a1_config_get(&cfg);
-    if(!ph_http_basic(r->authorization,"admin",cfg.web_password)) {
-        ph_http_message(&product,x,401,"Authentication required");x->response.realm="A1";return PH_HTTP_REPLY;
+    if(!strcmp(r->method,"GET") && !strcmp(r->path,"/api/v1/info")){
+        http_auth_info(&product,x);return PH_HTTP_REPLY;
+    }
+    if(http_auth_route(r->path)){
+        if(strcmp(r->method,"POST")||!r->length||r->length>256){http_auth_reply(&product,x,400,"invalid_request",NULL);return PH_HTTP_REPLY;}
+        operation=AUTH;return prepare(x);
+    }
+    bool asset=!strcmp(r->path,"/")||!strcmp(r->path,"/index.html")||!strcmp(r->path,"/favicon.ico");
+    if(!asset && !http_auth_authorized(r->authorization)){
+        http_auth_reply(&product,x,401,"unauthorized",NULL);return PH_HTTP_REPLY;
     }
     if(strncmp(r->path,"/api/v1/",8) && strcmp(r->path,"/") && strcmp(r->path,"/index.html") && strcmp(r->path,"/favicon.ico")) {
         ph_http_message(&product,x,404,"Not found");return PH_HTTP_REPLY;
     }
     if(!strcmp(r->path,"/api/v1/config/backup") || !strcmp(r->path,"/api/v1/config/restore")) {
-        if(!cfg.web_password[0]){ph_http_message(&product,x,403,"set_web_password_first");return PH_HTTP_REPLY;}
+        if(!ph_auth_password_is_set(device_local_auth())){ph_http_message(&product,x,403,"set_web_password_first");return PH_HTTP_REPLY;}
         if(!strcmp(r->method,"GET") && !strcmp(r->path,"/api/v1/config/backup")){operation=BACKUP;return prepare(x);}
         if(!strcmp(r->method,"POST") && !strcmp(r->path,"/api/v1/config/restore")){
             if(!r->have_length || r->length!=device_backup_size()){ph_http_message(&product,x,400,"invalid_backup");return PH_HTTP_REPLY;}
@@ -178,7 +122,7 @@ static ph_http_action begin(ph_http_exchange *x)
         if(ota_job_active() && (operation==LIGHT || r->length>1024)) {
             ph_http_message(&product,x,409,"OTA in progress");return PH_HTTP_REPLY;
         }
-        if(r->length>A1_JSON_LIMIT) { ph_http_message(&product,x,400,"Invalid JSON size");return PH_HTTP_REPLY; }
+        if(r->length>8192u) { ph_http_message(&product,x,400,"Invalid MessagePack size");return PH_HTTP_REPLY; }
         return prepare(x);
     }
     if(!strcmp(r->method,"POST") && (!strcmp(r->path,"/api/v1/ota/upload") || !strcmp(r->path,"/api/v1/ota/upload-unsigned"))) {
@@ -202,19 +146,20 @@ static bool body_chunk(ph_http_exchange *x,const void *data,size_t n)
 }
 static void complete(ph_http_exchange *x)
 {
+    if(operation!=AUTH && !http_auth_authorized(x->request->authorization)){
+        http_auth_reply(&product,x,401,"unauthorized",NULL);return;
+    }
+    if(operation==AUTH){http_auth_complete(&product,x);return;}
     if(operation==UPLOAD) {
         bool ok=a1_ota_finish();upload_open=false;
         ph_http_message(&product,x,ok?202:400,ok?"OTA verified; rebooting":"OTA rejected; see /ota for details");return;
     }
     if(operation==RESTORE){const char *code=device_backup_import(product.body,product.used);ph_http_message(&product,x,!strcmp(code,"accepted")?202:!strcmp(code,"busy")?409:400,code);return;}
-    json_object *request=ph_http_body_json(&product,x);
-    if(operation==LIGHT)light_command(x,request);
-    else {
-        ph_http_command(&product,x,request);
-        /* Wire owns all text, including any borrowed request_id. */
-        json_object_put(request);request=NULL;
-    }
-    if(request)json_object_put(request);
+    if(product.used!=x->request->length){ph_http_message(&product,x,400,"invalid_request");return;}
+    if(operation==LIGHT){ph_value request;if(!phv_parse(PH_WIRE_MSGPACK,product.body,product.used,&request)||request.kind!=PHV_MAP)ph_http_message(&product,x,400,"invalid_request");else light_command(x,&request);}
+    else ph_http_command_mp(&product,x,product.body,product.used);
+    /* Synchronous borrowed parameters have expired; output owns all bytes. */
+    ph_wire_free(product.body);product.body=NULL;
 }
 static void release(ph_http_exchange *x,bool sent)
 {

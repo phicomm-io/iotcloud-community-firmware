@@ -21,6 +21,13 @@ char m1_id[13];
 m1_state_t m1_state;
 mico_Context_t *m1_context;
 
+#define AUTH_DEVICE_ID m1_id
+#define AUTH_CONFIG_LOCK config_lock
+#define AUTH_STORE (((app_storage_t *)app_config)->local_auth)
+#define AUTH_PASSWORD (app_config->web_password)
+#define AUTH_CONTEXT m1_context
+#include "../common/local_auth_mico.inc"
+
 void appRestoreDefault_callback(void *data, uint32_t size)
 {
     if (size < sizeof(m1_config_t)) return;
@@ -32,6 +39,7 @@ void appRestoreDefault_callback(void *data, uint32_t size)
     if (size >= sizeof(app_storage_t)) ((app_storage_t *)data)->co2=(m1_co2_config_t){.magic=M1_CO2_MAGIC,.interval=5,.low=1000,.high=1500};
     if (size >= sizeof(app_storage_t)) ((app_storage_t *)data)->co2_source=(m1_co2_source_config_t){.magic=M1_CO2_SOURCE_MAGIC};
     if (size >= sizeof(app_storage_t)) m1_display_defaults(&((app_storage_t *)data)->display);
+    if(size>=sizeof(app_storage_t))ph_auth_store_empty(&((app_storage_t *)data)->local_auth);
     c->magic = M1_CONFIG_MAGIC; c->version = M1_CONFIG_VERSION;
     c->mqtt_port = 1883; c->mqtt_topic_mode = MQTT_TOPIC_TMCP;
     c->brightness = c->last_on = 4; c->timezone_minutes = 480;
@@ -60,13 +68,16 @@ uint8_t device_language_get(void)
     return language == PH_LANG_EN ? PH_LANG_EN : PH_LANG_ZH;
 }
 
-static bool m1_config_save_language(const m1_config_t *c, int language)
+typedef struct {const m1_config_t *config;int language;} m1_config_commit_args;
+static bool m1_config_commit(void *opaque,const ph_auth_store *auth_store)
 {
+    m1_config_commit_args *args=opaque;const m1_config_t *c=args->config;int language=args->language;
     mico_rtos_lock_mutex(&config_lock);
-    if (c->revision != app_config->revision && c->magic == app_config->magic) {
+    if (device_config_recovery() || (c->revision != app_config->revision && c->magic == app_config->magic)) {
         mico_rtos_unlock_mutex(&config_lock); return false;
     }
     m1_config_t old = *app_config;
+    const ph_auth_store *auth_before=device_local_auth()?&device_local_auth()->store:NULL;AUTH_STORE=*auth_store;
     memcpy(app_config, c, sizeof(*c));
     app_config->revision = old.revision + 1;
     feature_config_storage_t *features = &((app_storage_t *)app_config)->features;
@@ -75,13 +86,20 @@ static bool m1_config_save_language(const m1_config_t *c, int language)
     if (language >= 0) features->language = language;
     features->timezone_minutes = c->timezone_minutes;
     OSStatus err = mico_system_context_update(m1_context);
-    if (err != kNoErr) { memcpy(app_config, &old, sizeof(old)); features->timezone_minutes = old_timezone; features->language = old_language; }
+    if (err != kNoErr) { if(auth_before)AUTH_STORE=*auth_before; memcpy(app_config, &old, sizeof(old)); features->timezone_minutes = old_timezone; features->language = old_language; }
     mico_rtos_unlock_mutex(&config_lock);
     if (err != kNoErr) return false;
     mico_rtos_lock_mutex(&m1_lock);
     m1_state.config_generation++;
     mico_rtos_unlock_mutex(&m1_lock);
     return true;
+}
+
+static bool m1_config_save_language(const m1_config_t *c,int language)
+{
+    m1_config_commit_args args={c,language};
+    return device_local_auth()?ph_auth_credential_commit(device_local_auth(),c->web_password,false,m1_config_commit,&args):
+        m1_config_commit(&args,&AUTH_STORE);
 }
 
 bool m1_config_save(const m1_config_t *c) { return m1_config_save_language(c, -1); }
@@ -277,8 +295,9 @@ const char *m1_alarm_set(bool pm25, uint16_t low, uint16_t high, uint32_t revisi
     return result;
 }
 
-bool m1_reset(bool full)
+static bool m1_reset_commit(void *opaque,const ph_auth_store *auth_store)
 {
+    bool full=*(bool *)opaque;
     app_storage_t *old = malloc(sizeof(*old));
     if (!old) return false;
     mico_rtos_lock_mutex(&config_lock);
@@ -299,6 +318,7 @@ bool m1_reset(bool full)
         if(full)config_recovery=false;
         if (full) appRestoreDefault_callback(app_config, sizeof(*old));
         else { app_config->ssid[0] = 0; app_config->wifi_password[0] = 0; app_config->web_password[0] = 0; }
+        AUTH_STORE=*auth_store;
         ok = mico_system_context_update(m1_context) == kNoErr;
         if (!ok) { memcpy(app_config, old, sizeof(*old)); config_recovery=was_recovery || config_commit_uncertain; }
         mico_rtos_lock_mutex(&m1_lock);
@@ -309,6 +329,13 @@ bool m1_reset(bool full)
     mico_rtos_unlock_mutex(&config_lock);
     free(old);
     return ok;
+}
+
+bool m1_reset(bool full)
+{
+    const ph_auth_store *empty=ph_auth_store_empty_value();
+    return device_local_auth()?ph_auth_credential_commit(device_local_auth(),"",true,m1_reset_commit,&full):
+        m1_reset_commit(&full,empty);
 }
 
 void m1_state_get(m1_state_t *out)
@@ -478,6 +505,7 @@ int application_start(void)
         if (*p >= 'a' && *p <= 'f') *p -= 'a' - 'A';
     strcpy(m1_state.ota_state, "idle");
     m1_state.brightness_requested = c.brightness;
+    if(!device_local_auth_init())return kNoMemoryErr;
     err = feature_start(); if (err != kNoErr) return err;
     err = m1_uart_start(); if (err != kNoErr) return err;
     err = m1_http_start(); if (err != kNoErr) return err;

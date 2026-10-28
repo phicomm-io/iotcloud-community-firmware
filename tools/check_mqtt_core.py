@@ -27,123 +27,58 @@ def context_frames(paths):
         names[:]=expanded
 
 def check(frames,model):
-    root=Path(__file__).resolve().parents[1]
-    source=(root/('TC1/mqtt_server/user_mqtt_client.c' if model=='TC1' else model+'/mqtt.c')).read_text()
+    """Native MP only. Explicit public frames; bounded HA recursion is separate."""
+    try:
+        from .status_stack import emitted, status_paths, writer_paths
+    except ImportError:
+        from status_stack import emitted, status_paths, writer_paths
+    source=(Path(__file__).resolve().parents[1]/('TC1/mqtt_server/user_mqtt_client.c' if model=='TC1' else model+'/mqtt.c')).read_text()
     budget=int(re.search(r'mqtt_thread_stack_size = (0x[0-9a-fA-F]+|[0-9]+)',source).group(1),0) if model=='TC1' else int(re.search(r'mqtt_worker,\s*(\d+),',source).group(1))
     reserve=3072 if model=='TC1' else 4096
     worker='MqttClientThread' if model=='TC1' else 'mqtt_worker'
     callback='MessageArrived' if model=='TC1' else 'command' if model=='A1' else 'native_command'
-    owner=[worker,'ph_mqtt_session_run']
-    dispatch=owner+['ph_mqtt_poll',callback,'service_mqtt_input','service_mqtt_command_wire']
-    execute=['service_command_wire','service_command','service_command_execute','service_product']
-    encode=['json_owned_to_wire','json_owned_to_wire_result','json_write','json_primitive','json_append']
+    extra=lambda names:emitted(frames,names)
+    owner=[worker,'ph_mqtt_session_run'];cycle=owner+['session_cycle']
+    incoming=owner+['ph_mqtt_poll',callback]
+    dispatch=incoming+['service_mqtt_input','service_mqtt_command_mp','mp_dispatch']
+    paths={}
     transport=['ph_mqtt_publish','ingress','ph_mqtt_enqueue_route','ph_mqtt_enqueue_generation']
-    cycle=owner+['session_cycle']
-    paths={
-      'MQTT startup binding':([worker,'ph_mqtt_startup_wait','ph_mqtt_owner_init'],reserve),
-      'MQTT connect ingress':(owner+['open_session','ph_mqtt_connect']+transport[1:],reserve),
-      'MQTT subscribe ingress':(owner+['subscribe_plan','ph_mqtt_subscribe']+transport[1:],reserve),
-      'MQTT yield ingress':(owner+['ph_mqtt_yield']+transport[1:],reserve),
-      'MQTT deferred result encode':(dispatch+['service_command_wire']+encode,reserve),
-      'MQTT result PUBACK ingress':(dispatch+['ph_mqtt_receipt_send','receipt_retry','publish_owned']+transport,reserve),
-      'MQTT pending result PUBACK ingress':(owner+['ph_mqtt_poll','receipt_retry','publish_owned']+transport,reserve),
-      'MQTT emergency PUBACK ingress':(owner+['ph_mqtt_poll']+(['send_emergency'] if 'send_emergency' in frames else [])+['publish_owned']+transport,reserve),
-      'MQTT bootstrap PUBACK ingress':(owner+(['announce'] if 'announce' in frames else [])+['publish_wait','publish_text']+transport,reserve),
-      'MQTT deferred control':(dispatch+execute+['service_product_inner'],reserve),
-
-      'MQTT capabilities encode':(cycle+['service_mqtt_snapshot','service_mqtt_try_capabilities']+encode,reserve),
-      'MQTT snapshot PUBACK ingress':(cycle+['service_mqtt_snapshot','service_sender' if model=='TC1' else 'publish']+transport,reserve),
-    }
-    if model=='A1':
-        for label in ('MQTT snapshot PUBACK ingress','MQTT capabilities encode'):
-            paths[label][0].extend(n for n in ('states_step','states') if n in frames)
-    # Status capture and encoding are sequential tails. Never charge the
-    # unrelated service_product_inner configuration scratch on a status path.
-    status=model.lower()+'_status_json'
-    common=dispatch+execute+[status,status+'_view',model.lower()+'_status_full']
-    # Periodic telemetry invokes the same builder directly, outside command
-    # dispatch; include its retained cycle/leaf frames as a separate path.
-    leaf = [n for n in ('states_step', 'states') if n in frames] if model=='A1' else []
-    telemetry=cycle+leaf+['service_mqtt_snapshot','service_product_status_wire']
-    try:
-        from .status_stack import status_paths
-    except ImportError:
-        from status_stack import status_paths
-    paths.update(status_paths(frames,model,'MQTT status',common,reserve,compat=True))
-    paths.update(status_paths(frames,model,'MQTT periodic status',telemetry,reserve))
-    paths.update(status_paths(frames,model,'MQTT command status',dispatch+['service_command_wire','service_product_status_wire'],reserve))
-    if model=='A1':
-        control=['a1_control_json','a1_control_apply']+[n for n in ('control_broadcast','control_parse','control_value','control_busy','panel_state') if n in frames]
-        paths['MQTT deferred control'][0].extend(control+['feature_group_control','group_send','parse'])
-        paths['MQTT feature deferred control']=(owner+['ph_mqtt_poll','feature_command','feature_mqtt_input']+execute+['service_product_inner']+control+['feature_group_control','group_send','parse'],reserve)
-        paths['MQTT control persistence']=(dispatch+execute+['service_product_inner']+control+['feature_fan_apply','install_config','feature_config_save'],reserve)
-        virtual=cycle+['feature_mqtt_service','virtual_service']
-        paths['MQTT virtual discovery encode']=(virtual+['discovery_virtual_step','service_mqtt_optional_send']+encode[1:],reserve)
-        paths['MQTT virtual domain encode']=(virtual+['direct_json_optional','service_mqtt_optional_send']+encode[1:],reserve)
-        paths['MQTT virtual layout capture']=(virtual+[n for n in ('discovery_layout_capture',) if n in frames],reserve)
-        paths['MQTT virtual telemetry encode']=(virtual+[n for n in ('direct_json_claimed',) if n in frames]+encode,reserve)
-        paths['MQTT virtual telemetry ingress']=(virtual+(['direct_leaf'] if 'direct_leaf' in frames else [])+['checked_publish','publish']+transport,reserve)
-
-    elif model=='M1':
-        paths['MQTT sensor session grant']=(dispatch+['service_product_mqtt','feature_sensor_session_set'],reserve)
-
+    for name,tail in [('connect',['open_session','ph_mqtt_connect']),('subscribe',['subscribe_plan','ph_mqtt_subscribe']),('yield',['ph_mqtt_yield'])]:
+        paths['MQTT '+name]=(owner+tail+transport[1:],reserve)
+    paths['MQTT bootstrap']=(owner+extra(['announce','ph_mqtt_discovery_mp','publish_wait'])+transport,reserve)
+    paths['MQTT pending receipt']=(owner+['ph_mqtt_poll']+extra(['receipt_retry','publish_owned'])+transport,reserve)
+    paths['MQTT result receipt']=(incoming+['service_mqtt_input','ph_mqtt_receipt_send_bytes']+extra(['receipt_retry','publish_owned'])+transport,reserve)
+    decode=['phv_parse']+extra(['phv_scan','phv_duplicate','phv_head','phv_skip_validated','binary_token','binary_take','ph_wire_utf8'])
+    paths['MQTT input decode']=(incoming+['service_mqtt_input','service_mqtt_command_mp']+extra(['mp_decode'])+decode,reserve)
+    for helper in ('service_product_mp','service_product_capabilities_mp','service_product_info_mp'):
+        prefix=dispatch+[helper]+extra(['tc1_product_inner_mp'] if model=='TC1' else ['smp_config','smp_control'])
+        paths.update(writer_paths(frames,'MQTT '+helper,prefix,reserve))
+        paths['MQTT '+helper+' validation']=(prefix+['phv_get']+extra(['phv_scan','phv_iter','phv_next','phv_duplicate','phv_head','phv_skip_validated','binary_token','binary_take']),reserve)
+    periodic=cycle+extra(['states_step','states','snapshot_step'])+['service_mqtt_snapshot']+extra(['publish_query'])+['service_query_mp','service_command_mp','mp_dispatch']
+    for label,prefix in [('command',dispatch),('periodic',periodic)]:
+        paths.update(status_paths(frames,model,'MQTT '+label+' status',prefix+['mp_cached','service_product_status_mp'],reserve))
+        paths['MQTT '+label+' cache']=(prefix+['mp_envelope','phw_cached_value']+extra(['phw_prefix','phw_bytes'])+['ph_buf_reserve','ph_wire_malloc'],reserve)
+    # HA owns a fixed 1536-byte bridge until its synchronous command returns.
+    ha=incoming+extra(['ha_command_input'])
+    paths['HA input grammar']=(ha+extra(['ha_command_pack'])+['hac_value']*8+extra(['hac_string','hac_u16','hac_ws'])+['phw_text']+extra(['phw_text_n','phw_prefix','phw_quote','phw_bytes']),reserve)
+    paths['HA command business']=(ha+['service_command_mp','mp_dispatch','service_product_mp']+extra(['tc1_product_inner_mp','smp_config','smp_control'])+['phv_get']+extra(['phv_scan','phv_iter','phv_next','phv_duplicate','phv_head','binary_token']),reserve)
+    if model=='TC1':
+        power=cycle+extra(['snapshot_step'])+['UserMqttHassPower']
+        decimal=['ph_decimal_format_float32','pd_format']+extra(['pd_mul','pd_word','pd_bits','pd_shift','pd_cmp'])
+        paths['HA TC1 energy decimal']=(power+decimal,reserve)
+        paths['HA TC1 energy send']=(power+extra(['UserMqttSendTopic','send_owned','account_message'])+transport,reserve)
     else:
-        paths['MQTT TC1 legacy control']=(owner+['ph_mqtt_poll','MessageArrived','ProcessHaCmd','UserMqttSendTopic','send_owned','account_message']+transport,reserve)
-        # snapshot_step is inlined into session_cycle in the pinned compiler;
-        # add it if a future compiler emits a separate frame.
-        outer=cycle+(['snapshot_step'] if 'snapshot_step' in frames else [])
-        for helper in ('UserMqttHassAuto','UserMqttHassAutoPower','UserMqttHassPower'):
-            paths['MQTT TC1 '+helper]=(outer+[helper,'UserMqttSendTopic','send_owned','account_message']+transport,reserve)
-    # Native optional graphs acquire/release their own admission scope. Static
-    # product wrappers and finish can inline; externally visible APIs and the
-    # allocator hook must be represented by actual emitted frames (even zero).
-    # SDK allocator/RTOS interiors stay in the unchanged reserve; explicitly add
-    # the new application hook nested below encoding/build allocation calls.
-    optional_sources = {}
-    finish = ['service_mqtt_json_finish'] if 'service_mqtt_json_finish' in frames else []
-    if model != 'TC1':
-        native = cycle + [n for n in ('discovery', 'discovery_build') if n in frames]
-        optional_sources['discovery'] = native
-        if model == 'A1':
-            optional_sources['filter discovery'] = native + ['filter_discovery']
-            optional_sources['virtual discovery'] = virtual + ['discovery_virtual_step']
-            optional_sources['virtual domain'] = virtual
-        paths['MQTT discovery admission'] = (cycle + ([ 'discovery' ] if 'discovery' in frames else []) + ['service_mqtt_json_begin'], reserve)
-        paths['MQTT discovery final cleanup'] = (cycle + ([ 'discovery' ] if 'discovery' in frames else []) + ['service_mqtt_json_end'] + finish + ['service_json_scope_end','json_heap_lock'], reserve)
-        for label, retained in optional_sources.items():
-            send_prefix=retained+(['direct_json_optional'] if label=='virtual domain' else [])
-            paths['MQTT '+label+' scope admission'] = (retained + ['service_mqtt_json_begin','service_json_scope_begin','json_heap_lock'], reserve)
-            paths['MQTT '+label+' scope owner'] = (retained + ['ph_mqtt_owner_thread','ph_mqtt_owner','current','mutex_lock'], reserve)
-            encoder = send_prefix + ['service_mqtt_optional_send', 'json_owned_to_wire_result', 'json_write', 'json_primitive', 'json_append']
-            paths['MQTT '+label+' encode'] = (encoder, reserve)
-            paths['MQTT '+label+' allocation observation'] = (encoder + ['json_heap_failure'], reserve)
-            paths['MQTT '+label+' graph allocation observation'] = (retained + ['json_heap_failure'], reserve)
-            paths['MQTT '+label+' graph cleanup'] = (retained + ['service_mqtt_json_error'] + finish + ['service_json_scope_end','json_heap_lock'], reserve)
-            paths['MQTT '+label+' encoding cleanup'] = (send_prefix + ['service_mqtt_optional_send'] + finish + ['service_json_scope_end','json_heap_lock'], reserve)
-            paths['MQTT '+label+' PUBACK ingress'] = (send_prefix + ['service_mqtt_optional_send'] + (['checked_publish'] if label.startswith('virtual ') else []) + ['publish'] + transport, reserve)
-    # Known-owner attribution is a bounded application tail. Include both its
-    # lease/scope operations and owner-handle lookup; SDK thread/mutex internals
-    # remain in the unchanged reserve. Builder and attribution are siblings.
-    scope_sources = {
-        'command': dispatch,
-        'snapshot': cycle+leaf+['service_mqtt_snapshot'],
-        'capabilities': cycle+leaf+['service_mqtt_snapshot','service_mqtt_try_capabilities'],
-    }
-    for label, retained in scope_sources.items():
-        for tail in ('service_json_scope_begin','service_json_scope_failed','service_json_scope_end','service_json_release'):
-            paths['MQTT '+label+' '+tail] = (retained+[tail,'json_heap_lock'],reserve)
-        paths['MQTT '+label+' owner handle'] = (retained+['ph_mqtt_owner_thread','ph_mqtt_owner','current','mutex_lock'],reserve)
-    # Successful snapshot cleanup occurs inside the noinline publication
-    # wrapper, before the sender. Its frame remains live for both scope tails.
-    publication=cycle+leaf+['service_mqtt_snapshot']
-    for tail in ('service_json_scope_end','service_json_release'):
-        paths['MQTT snapshot publication '+tail]=(publication+[tail,'json_heap_lock'],reserve)
-    paths['MQTT command failure attribution'] = (dispatch+['service_command','service_caller_graph_failed','json_heap_lock'],reserve)
-    paths['MQTT snapshot failure attribution'] = (cycle+leaf+['service_mqtt_snapshot','service_query','service_command','service_caller_graph_failed','json_heap_lock'],reserve)
-    if model!='TC1':paths['MQTT OTA recovery']=(cycle+['ota_job_poll','feature_resume_step'],reserve)
-    # Protocol error recording runs AFTER Paho returns. Adapter callbacks run
-    # WITH Paho live (covered by the unchanged SDK reserve), but are application
-    # frames themselves. Never add the ingress/JSON encoding sibling tails.
+        paths['HA discovery']=(cycle+extra(['discovery','discovery_build','filter_discovery'])+extra(['publish'])+transport,reserve)
+    # The HA bridge retains owner scratch while executing; a status request
+    # still traverses the same direct sink and must fit without JSON scratch.
+    paths.update(status_paths(frames,model,'HA status',ha+['service_command_mp','mp_dispatch','mp_cached','service_product_status_mp'],reserve))
+    if model in ('A1','TC1'):
+        root=['owner','bemfa_poll']
+        paths['Bemfa owned POD dispatch']=(['owner','bemfa_dispatch',model.lower()+'_automation_execute']+extra(['a1_control_apply','feature_fan_apply','install_config','feature_config_save','tc1_config_commit_reserved']),reserve)
+        paths['Bemfa input copy']=(root+['bm_poll','bemfa_command']+extra(['bemfa_parse']),reserve)
+        paths['Bemfa report capture']=(root+extra(['bemfa_report_one','bemfa_capture'])+[model.lower()+'_status_capture']+extra(['bemfa_config_get','runtime_metrics_capture','feature_fan_snapshot','ph_http_snapshot','tc1_status_begin','tc1_ota_snapshot']),reserve)
+        for api in ('connect','subscribe','yield','publish'):
+            paths['Bemfa '+api]=(root+extra(['bemfa_report_one'] if api=='publish' else [])+['bm_'+api]+transport[1:],reserve)
     owner_hook = ['ph_mqtt_is_owner', 'current', 'mutex_lock']
     failure = ['ph_mqtt_error', 'ph_mqtt_record_failure'] + owner_hook
     emitted_end = ['end'] if 'end' in frames else []
@@ -165,12 +100,7 @@ def check(frames,model):
             retained = [n for n in retained if n != 'account_message']
             if model == 'TC1' and 'MqttMsgPublish' not in retained and 'publish_owned' not in retained: retained += ['MqttMsgPublish']
             sites[label.removeprefix('MQTT ')] = retained + ['ph_mqtt_publish']
-    sites['external SEND'] = owner + ['ph_mqtt_poll'] + (['outgoing', 'send_owned', 'MqttMsgPublish'] if model == 'TC1' else []) + ['ph_mqtt_publish']
-    if model == 'A1':
-        sites['virtual discovery'] = virtual + ['discovery_virtual_step', 'service_mqtt_optional_send', 'checked_publish', 'publish', 'ph_mqtt_publish']
-        # Native optional publication sites were derived from PUBACK paths above.
-    elif model == 'M1':
-        pass  # Native optional sites above already account for emitted wrappers.
+    sites['external SEND'] = owner + ['ph_mqtt_poll'] + (extra(['outgoing','send_owned'])+['MqttMsgPublish'] if model == 'TC1' else []) + ['ph_mqtt_publish']
     for label, retained in sites.items():
         paths['MQTT '+label+' error record'] = (retained + emitted_end + failure, reserve)
         if retained[-1] == 'ph_mqtt_publish':
@@ -192,113 +122,13 @@ def check(frames,model):
         paths['MQTT '+label+' guarded read owner'] = (retained + ['guarded_read', 'ph_mqtt_protocol_buffers'] + owner_hook, reserve)
         paths['MQTT '+label+' guarded read adapter'] = (retained + ['guarded_read', read_adapter], reserve)
         paths['MQTT '+label+' guarded write'] = (retained + ['guarded_write'], reserve)
-    # Immediate application-failure markers run after encoding/allocation helpers
-    # return; do not retain their mutually exclusive frames. SDK failures still
-    # record via the independent protocol tails above.
-    app_marker = ['ph_mqtt_app_error', 'ph_mqtt_record_operation'] + owner_hook
-    app_sites = {'receipt admission': owner + ['ph_mqtt_poll']}
-    if model != 'TC1':
-        for label, retained in optional_sources.items():
-            app_sites[label+' graph'] = retained + ['service_mqtt_json_error']
-            app_sites[label+' identity'] = retained
-            app_sites[label+' encoding'] = retained + (['direct_json_optional'] if label=='virtual domain' else []) + ['service_mqtt_optional_send']
-    else:
-        app_sites['send conversion'] = owner + ['ph_mqtt_poll', 'outgoing']
-        # Void legacy command replies ignore conversion errors; only synchronous
-        # snapshot publication and external SEND have fatal application returns.
-        for helper in ('UserMqttHassAuto', 'UserMqttHassAutoPower', 'UserMqttHassPower',
-                       'UserMqttHassAutoLed', 'UserMqttHassAutoTotalSocket',
-                       'UserMqttHassAutoChildLock', 'UserMqttHassAutoRebootButton',
-                       'UserMqttHassAutoSoftRebootButton', 'UserMqttSendSocketState',
-                       'UserMqttSendLedState', 'UserMqttSendTotalSocketState',
-                       'UserMqttSendChildLockState'):
-            app_sites['TC1 '+helper] = outer + [helper, 'UserMqttSendTopic', 'send_owned']
-    # ota_service/ota_emit can inline into the product cycle. Charge each only
-    # if emitted, while the marker itself and its lock helper are required.
-    app_sites['OTA graph or encoding'] = cycle + [n for n in ('ota_service', 'ota_emit') if n in frames]
-    for label, retained in app_sites.items():
-        paths['MQTT '+label+' source marker'] = (retained + app_marker, reserve)
-    for label, (names, spare) in list(paths.items()):
-        if 'json_owned_to_wire' in names:
-            paths[label+' allocation observation'] = (names + ['json_heap_failure'], spare)
-    # Actual compiled patched json_heap.c frames are required, separately from
-    # the strong application hook. permit (guard) and created (malloc NULL)
-    # are sibling tails, not nested. Sized replacement uses native malloc
-    # directly; it never nests json_heap_malloc. RTOS interiors remain SDK.
-    for label, (names, spare) in list(paths.items()):
-        if not label.endswith('allocation observation'): continue
-        for api in ('json_heap_malloc', 'json_heap_calloc', 'json_heap_resize', 'json_heap_strdup'):
-            allocator = [api]
-            for tail in ('permit', 'created'):
-                paths[label+' '+api+' '+tail] = (names[:-1] + allocator + ['json_heap.'+tail, 'json_heap_failure'], spare)
-    paths['MQTT resource scheduler expiry'] = (owner + ['ph_mqtt_resource_ready'] + failure, reserve)
-    paths['MQTT pending result expiry'] = (owner + ['ph_mqtt_poll','receipt_retry','ph_mqtt_resource_ready'] + failure, reserve)
-    paths['MQTT resource scheduler owner'] = (owner + ['ph_mqtt_resource_ready','ph_mqtt_owner','current','mutex_lock'], reserve)
-    paths['MQTT initial result cleanup'] = (dispatch + ['ph_mqtt_receipt_send','receipt_retry','receipt_clear','service_mqtt_receipt_release'], reserve)
-    paths['MQTT pending result cleanup'] = (owner + ['ph_mqtt_poll','receipt_retry','receipt_clear','service_mqtt_receipt_release'], reserve)
-    paths['MQTT session result cleanup'] = (owner + ['ph_mqtt_pending_clear','pending_release','receipt_clear','service_mqtt_receipt_release'], reserve)
-    paths['MQTT client result cleanup'] = (owner + ['close_session','ph_mqtt_client_deinit','pending_release','receipt_clear','service_mqtt_receipt_release'], reserve)
-    # The indirect owned-wire destructor continues through printbuf and the
-    # patched JSON allocator. Lock and unlock are sibling tails, not nested.
-    for label in ('initial result cleanup','pending result cleanup','session result cleanup','client result cleanup'):
-        names,spare=paths['MQTT '+label]
-        for tail in ('json_heap_lock','json_heap_unlock'):
-            paths['MQTT '+label+' '+tail]=(names+['printbuf_free','json_heap_free',tail],spare)
-    paths['MQTT network error record'] = (owner + ['open_session'] + failure, reserve)
-    paths['MQTT session error record'] = (owner + failure, reserve)
-    try:
-        from .json_numeric_stack import numeric_tails
-    except ImportError:
-        from json_numeric_stack import numeric_tails
-    def add_numeric(prefix,label,operation):
-        for branch,tail in numeric_tails(frames,operation).items():
-            paths[label+' '+branch]=(prefix+tail,reserve)
-    for label,(names,spare) in list(paths.items()):
-        if 'json_primitive' in names and 'allocation observation' not in label:
-            prefix=names[:names.index('json_primitive')+1]+['json_object_double_to_json_string']
-            add_numeric(prefix,label+' numeric','format')
-            if model=='M1':
-                prefix=names[:names.index('json_primitive')+1]+['display_float32_encode']
-                add_numeric(prefix,label+' float32 numeric','float32')
-        if 'parse' in names:
-            add_numeric(names[:names.index('parse')+1]+['json_tokener_parse_ex'],label+' numeric','scan')
-    add_numeric(dispatch+['service_parse','json_tokener_parse_ex'],'MQTT command numeric parse','scan')
-    if model=='TC1':
-        power=outer+['UserMqttHassPower']+[n for n in ('power_legacy','power_number') if n in frames]
-        add_numeric(power,'MQTT TC1 power numeric','fixed')
-        for helper in ('UserMqttHassAuto','UserMqttHassAutoPower','UserMqttHassPower'):
-            prefix=outer+[helper,'UserMqttSendTopic','send_owned','account_message',
-                          'json_tokener_parse','json_tokener_parse_verbose','json_tokener_parse_ex']
-            add_numeric(prefix,'MQTT TC1 '+helper+' account numeric parse','scan')
-    if model in ('A1','TC1'):
-        # The second session runs on the HTTP owner stack, independently of
-        # the primary MQTT worker. Business dispatch follows Paho return.
-        secondary=12288
-        root=['owner','bemfa_poll']
-        paths['Bemfa queue ingress']=(root+['bm_poll','bemfa_command'],reserve)
-        paths['Bemfa owner teardown']=(['owner','bemfa_stop','bemfa_close_connection','bm_disconnect'],4096)
-        paths['Bemfa config check']=(root+['bemfa_current_config','bemfa_config_get'],reserve)
-        captures=[model.lower()+'_status_capture']+[n for n in ('bemfa_status_capture','bemfa_config_get','runtime_metrics_capture','feature_fan_snapshot','watchdog_status_capture','a1_filter_get','ph_http_snapshot','tc1_status_begin','tc1_ota_snapshot','reset_name','device_status_text') if n in frames]
-        paths['Bemfa report capture']=(root+(['bemfa_report_one'] if 'bemfa_report_one' in frames else [])+(['bemfa_capture'] if 'bemfa_capture' in frames else [])+captures,reserve)
-        for api in ('connect','subscribe','yield','publish'):
-            prefix=root+(['bemfa_report_one'] if api=='publish' and 'bemfa_report_one' in frames else [])+['bm_'+api]
-            for label,tail in (
-                ('ingress',['ingress','ph_mqtt_enqueue_route','ph_mqtt_enqueue_generation']),
-                ('read',['guarded_read',read_adapter]),
-                ('buffer',['mqtt_buffer_allocation_permit','ph_mqtt_owner','current','mutex_lock']),
-                ('error',emitted_end+failure)):
-                paths['Bemfa '+api+' '+label]=(prefix+tail,reserve)
-        for name in ('a1_mqtt_config_save','bemfa_config_encode','bemfa_config_values'):
-            if name in frames:paths['MQTT config '+name]=(dispatch+execute+['service_product_inner',name],reserve)
-        for label,(names,spare) in list(paths.items()):
-            if label.startswith('Bemfa '):
-                for branch,tail in (numeric_tails(frames,'scan').items() if 'parse' in names else []):
-                    paths[label+' numeric '+branch]=(names[:names.index('parse')+1]+['json_tokener_parse_ex']+tail,spare)
-    context_frames(names for names,spare in paths.values())
+
+    # Expand every explicit context wrapper without changing SDK reserve.
+    context_frames(names for names,_ in paths.values())
     for label,(names,spare) in paths.items():
         missing=set(names)-frames.keys()
         if missing:raise ValueError(f'{label}: missing actual .su frames {sorted(missing)}')
         size=sum(frames[n] for n in names)
-        limit=secondary if label.startswith('Bemfa ') else budget
+        limit=12288 if label.startswith('Bemfa ') else budget
         if size+spare>limit:raise ValueError(f'{label}: {size}+{spare}>{limit}')
         print(f'{label}: {size} application + {spare} reserve <= {limit} bytes')

@@ -19,7 +19,16 @@ class LinkedDependencyGate(unittest.TestCase):
             for symbol, rejected in [('json_object_new_object', True),
                                      ('json_tokener_parse_ex', True),
                                      ('json_num_strtod', True),
+                                     ('json_number_scan', True),
+                                     ('json_heap_resize', True),
+                                     ('json_build_object_add', True),
+                                     ('printbuf_free', True),
+                                     ('ph_binary_parse', True),
+                                     ('service_query_wire', True),
                                      ('ha_json_write_string', False),
+                                     ('ha_command_parse', False),
+                                     ('_printf_float', False),
+                                     ('phv_parse', False),
                                      ('phw_map', False)]:
                 source, elf = root / 'fixture.c', root / 'fixture'
                 source.write_text(f'int {symbol}(void) {{ return 1; }}\nint main(void) {{ return {symbol}(); }}\n')

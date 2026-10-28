@@ -1,0 +1,162 @@
+#include "../../common/local_auth.h"
+#include <assert.h>
+#include <pthread.h>
+#include <stdio.h>
+#include <string.h>
+#include <limits.h>
+typedef struct {uint32_t now,sequence;char password[33];bool fail_random,fail_save;unsigned saves;ph_auth_store disk;pthread_mutex_t mutex;} fixture;
+static uint32_t now(void*u){return ((fixture*)u)->now;}
+static bool rng(void*u,uint8_t*p,size_t n){fixture*f=u;size_t i;if(f->fail_random)return false;memset(p,0,n);uint32_t v=++f->sequence;for(i=0;i<4;i++)p[i]=(uint8_t)(v>>(i*8));return true;}
+static bool password(void*u,char*p){memcpy(p,((fixture*)u)->password,33);return true;}
+static bool save(void*u,const ph_auth_store*p){fixture*f=u;if(f->fail_save)return false;f->disk=*p;f->saves++;return true;}
+static void lock(void*u){assert(!pthread_mutex_lock(&((fixture*)u)->mutex));}
+static void unlock(void*u){assert(!pthread_mutex_unlock(&((fixture*)u)->mutex));}
+static void setup(fixture*f,ph_auth_state*s){memset(f,0,sizeof(*f));assert(!pthread_mutex_init(&f->mutex,0));ph_auth_store_empty(&f->disk);ph_auth_ops o={f,now,rng,lock,unlock,password,save};assert(ph_auth_init(s,&o,&f->disk));}
+static void bearer(char out[40],const char*t){strcpy(out,"Bearer ");strcat(out,t);}
+static void test_basic(void){fixture f;ph_auth_state s;ph_auth_context c;char t[33],a[40],key[33],udp[33];setup(&f,&s);assert(!ph_auth_http_login(&s,"wrong",t));assert(ph_auth_http_login(&s,"",t));bearer(a,t);assert(ph_auth_http_check(&s,a,&c));assert(ph_auth_context_valid(&c,PH_AUTH_SCOPE_ADMIN));assert(!ph_auth_http_check(&s,t,&c));assert(!ph_auth_http_check(&s,"Basic YWRtaW46",&c));assert(ph_auth_pair(&s,"","controller",PH_AUTH_SCOPE_SENSOR,key));assert(ph_auth_pair_resume(&s,"controller",key,udp));assert(!ph_auth_udp_check(&s,"controller",t,&c));bearer(a,udp);assert(!ph_auth_http_check(&s,a,&c));assert(!ph_auth_pair_resume(&s,"other",key,udp));assert(ph_auth_udp_check(&s,"controller",udp,&c));assert(ph_auth_context_valid(&c,PH_AUTH_SCOPE_SENSOR));assert(!ph_auth_context_valid(&c,PH_AUTH_SCOPE_ADMIN));assert(!ph_auth_pair(&s,"","admin",PH_AUTH_SCOPE_ADMIN,key));}
+static void test_expiry(void){fixture f;ph_auth_state s;ph_auth_context c;char t[33],a[40];setup(&f,&s);f.now=UINT_MAX-100;assert(ph_auth_http_login(&s,"",t));bearer(a,t);f.now+=1000;assert(ph_auth_http_check(&s,a,&c));f.now+=PH_AUTH_IDLE_MS;assert(!ph_auth_context_valid(&c,PH_AUTH_SCOPE_CONTROL));assert(!ph_auth_http_check(&s,a,&c));assert(ph_auth_http_login(&s,"",t));bearer(a,t);unsigned i;for(i=0;i<48;i++){f.now+=PH_AUTH_IDLE_MS-1;assert(ph_auth_http_check(&s,a,&c));}f.now+=48;assert(!ph_auth_http_check(&s,a,&c));}
+static void test_capacity_failure(void){fixture f;ph_auth_state s;char t[33],a[40],key[33];setup(&f,&s);unsigned i;for(i=0;i<4;i++)assert(ph_auth_http_login(&s,"",t));assert(!ph_auth_http_login(&s,"",t));bearer(a,t);assert(ph_auth_http_logout(&s,a));assert(ph_auth_http_login(&s,"",t));f.fail_random=true;assert(!ph_auth_pair(&s,"","peer",1,key));assert(s.store.count==0);f.fail_random=false;f.fail_save=true;assert(!ph_auth_pair(&s,"","peer",1,key));assert(s.store.count==0);f.fail_save=false;for(i=0;i<12;i++){char p[13];snprintf(p,sizeof(p),"peer%u",i);assert(ph_auth_pair(&s,"",p,1,key));}assert(!ph_auth_pair(&s,"","overflow",1,key));assert(s.store.count==12);assert(ph_auth_pair_remove(&s,"peer0"));assert(s.store.count==11);assert(ph_auth_pair(&s,"","overflow",1,key));}
+static void test_boot_revoke_mqtt(void){fixture f;ph_auth_state s,reboot;ph_auth_context c,old;char key[33],udp[33],http[33],a[40];setup(&f,&s);assert(ph_auth_http_login(&s,"",http));bearer(a,http);assert(ph_auth_http_check(&s,a,&old));assert(ph_auth_pair(&s,"","sensor",2,key));assert(ph_auth_pair_resume(&s,"sensor",key,udp));assert(ph_auth_init(&reboot,&s.ops,&f.disk));assert(!ph_auth_http_check(&reboot,a,&c));assert(!ph_auth_udp_check(&reboot,"sensor",udp,&c));assert(ph_auth_pair_resume(&reboot,"sensor",key,udp));const char*mt="fedcba9876543210fedcba9876543210";assert(ph_auth_mqtt_grant(&s,"mqttsensor",mt,2));assert(ph_auth_password_changed(&s));assert(!ph_auth_context_valid(&old,1));assert(!ph_auth_pair_resume(&s,"sensor",key,udp));assert(ph_auth_udp_check(&s,"mqttsensor",mt,&c));assert(ph_auth_context_valid(&c,2));ph_auth_mqtt_context(&s,&c);assert(ph_auth_context_valid(&c,8));strcpy(f.password,"changed");assert(!ph_auth_http_login(&s,"",http));assert(ph_auth_http_login(&s,"changed",http));assert(ph_auth_udp_check(&s,"mqttsensor",mt,&c));}
+static void test_pending_pair_epoch(void){fixture f;ph_auth_state s;char t[33];setup(&f,&s);uint32_t before=ph_auth_credential_epoch(&s);assert(before);assert(ph_auth_http_login(&s,"",t));assert(ph_auth_credential_epoch(&s)==before);const char *key="1234567890abcdef1234567890abcdef";assert(ph_auth_pair_store_epoch(&s,"peer",key,2,before));assert(ph_auth_password_changed(&s));unsigned saves=f.saves;assert(ph_auth_credential_epoch(&s)!=before);assert(!ph_auth_pair_store_epoch(&s,"peer",key,2,before));assert(!s.store.count&&f.saves==saves);uint32_t next=ph_auth_credential_epoch(&s);assert(ph_auth_pair_store_epoch(&s,"peer",key,2,next));ph_auth_local_revoke(&s,NULL);assert(ph_auth_credential_epoch(&s)!=next);assert(!ph_auth_pair_store_epoch(&s,"peer",key,2,next));}
+typedef struct{ph_auth_state*s;unsigned success;} thread;
+static void test_pair_retry(void){
+    fixture f;ph_auth_state s;ph_auth_context ctx;char key[33],retry[33],token[33],again[33];
+    setup(&f,&s);f.now=UINT_MAX-100;
+    assert(ph_auth_pair(&s,"","peer",PH_AUTH_SCOPE_SENSOR,key));
+    unsigned saves=f.saves;uint32_t epoch=ph_auth_credential_epoch(&s);
+    f.fail_random=f.fail_save=true;
+    assert(!ph_auth_pair(&s,"wrong","peer",PH_AUTH_SCOPE_SENSOR,retry));
+    assert(ph_auth_pair(&s,"","peer",PH_AUTH_SCOPE_SENSOR,retry));
+    assert(!strcmp(key,retry)&&f.saves==saves&&ph_auth_credential_epoch(&s)==epoch);
+    f.fail_random=f.fail_save=false;
+    assert(ph_auth_pair_resume(&s,"peer",key,token));
+    assert(ph_auth_udp_check(&s,"peer",token,&ctx));
+    uint32_t generation=ctx.generation;f.now+=1000;
+    f.fail_random=true;
+    assert(ph_auth_pair_resume(&s,"peer",key,again)&&!strcmp(token,again));
+    assert(ph_auth_context_valid(&ctx,PH_AUTH_SCOPE_SENSOR)&&ctx.generation==generation);
+    assert(!ph_auth_pair_resume(&s,"other",key,again));
+    assert(!ph_auth_pair_resume(&s,"peer",token,again));
+    /* Duplicate incoming credentials must not revoke an existing session either. */
+    assert(ph_auth_pair_store_epoch(&s,"peer",key,PH_AUTH_SCOPE_SENSOR,epoch));
+    assert(f.saves==saves&&ph_auth_context_valid(&ctx,PH_AUTH_SCOPE_SENSOR));
+    f.now+=PH_AUTH_IDLE_MS-1000;
+    assert(!ph_auth_pair_resume(&s,"peer",key,again)); /* expired + RNG failure */
+    assert(!ph_auth_context_valid(&ctx,PH_AUTH_SCOPE_SENSOR));
+    f.fail_random=false;
+    assert(ph_auth_pair_resume(&s,"peer",key,again)&&strcmp(token,again));
+    strcpy(token,again);
+    /* Scope changes rotate the key and revoke old contexts. */
+    assert(ph_auth_udp_check(&s,"peer",token,&ctx));
+    assert(ph_auth_pair(&s,"","peer",PH_AUTH_SCOPE_GROUP,retry)&&strcmp(key,retry));
+    assert(!ph_auth_context_valid(&ctx,PH_AUTH_SCOPE_SENSOR));
+    assert(!ph_auth_pair_resume(&s,"peer",key,again));
+    assert(ph_auth_pair_resume(&s,"peer",retry,token));
+    uint32_t born=s.local[0].born;
+    for(unsigned i=0;i<48;i++){
+        f.now+=PH_AUTH_IDLE_MS-1;
+        assert(ph_auth_pair_resume(&s,"peer",retry,again)&&!strcmp(token,again));
+        assert(ph_auth_udp_check(&s,"peer",token,&ctx));
+        assert(s.local[0].born==born);
+    }
+    f.now+=48;
+    assert(ph_auth_pair_resume(&s,"peer",retry,again)&&strcmp(token,again));
+    assert(!ph_auth_context_valid(&ctx,PH_AUTH_SCOPE_GROUP));
+    assert(ph_auth_pair_remove(&s,"peer"));
+    assert(!ph_auth_pair_resume(&s,"peer",retry,again));
+    assert(ph_auth_pair(&s,"","peer",PH_AUTH_SCOPE_GROUP,key)&&strcmp(key,retry));
+    strcpy(f.password,"changed");
+    assert(!ph_auth_pair(&s,"","peer",PH_AUTH_SCOPE_GROUP,again));
+    assert(!ph_auth_pair_resume(&s,"peer",key,again));
+    assert(ph_auth_pair(&s,"changed","peer",PH_AUTH_SCOPE_GROUP,again)&&strcmp(key,again));
+}
+static void*concurrent(void*u){thread*t=u;char token[33];if(ph_auth_http_login(t->s,"",token))t->success=1;return 0;}
+static void test_concurrent(void){fixture f;ph_auth_state s;pthread_t ids[12];thread t[12];unsigned i,n=0;setup(&f,&s);for(i=0;i<12;i++){t[i]=(thread){&s,0};assert(!pthread_create(&ids[i],0,concurrent,&t[i]));}for(i=0;i<12;i++){pthread_join(ids[i],0);n+=t[i].success;}assert(n==4);}
+static void test_failed_password_transaction(void){
+ fixture f;ph_auth_state s,reboot;char key[33],token[33];setup(&f,&s);
+ assert(ph_auth_pair(&s,"","peer",2,key));assert(ph_auth_pair_resume(&s,"peer",key,token));
+ f.fail_save=true;assert(!ph_auth_password_changed(&s));
+ assert(!ph_auth_pair_resume(&s,"peer",key,token));
+ /* Failed revoke is NOT a committed password change; the old credential
+  * and old pair remain durable and return together on a reboot. */
+ assert(!f.password[0]);assert(ph_auth_init(&reboot,&s.ops,&f.disk));
+ assert(ph_auth_pair_resume(&reboot,"peer",key,token));
+ f.fail_save=false;assert(ph_auth_password_changed(&reboot));
+ /* Crash before password commit: pairs must still be gone on boot. */
+ assert(ph_auth_init(&s,&reboot.ops,&f.disk));
+ assert(!ph_auth_pair_resume(&s,"peer",key,token));
+ strcpy(f.password,"new-password");
+ assert(ph_auth_init(&reboot,&s.ops,&f.disk));
+ assert(!ph_auth_pair_resume(&reboot,"peer",key,token));
+ assert(!ph_auth_http_login(&reboot,"",token));
+ assert(ph_auth_http_login(&reboot,"new-password",token));
+}
+typedef struct {fixture *f;const char *password;bool fail;} commit_fixture;
+static bool commit_password(void *u,const ph_auth_store *store){
+    commit_fixture *c=u;
+    /* Auth lock must cover both pairing trailer and credential write. */
+    assert(pthread_mutex_trylock(&c->f->mutex)!=0);
+    if(c->fail)return false;
+    c->f->disk=*store;strcpy(c->f->password,c->password);++c->f->saves;
+    return true;
+}
+static void test_atomic_credential_commit(void){
+    fixture f;ph_auth_state s,reboot;ph_auth_context ctx;char key[33],udp[33],http[33],a[40];
+    setup(&f,&s);assert(ph_auth_pair(&s,"","peer",2,key));
+    assert(ph_auth_pair_resume(&s,"peer",key,udp));assert(ph_auth_http_login(&s,"",http));
+    bearer(a,http);assert(ph_auth_http_check(&s,a,&ctx));
+    const char *mqtt="fedcba9876543210fedcba9876543210";
+    assert(ph_auth_mqtt_grant(&s,"cloud",mqtt,2));
+    commit_fixture c={&f,"adminfjr",true};uint32_t epoch=ph_auth_credential_epoch(&s);
+    assert(!ph_auth_credential_commit(&s,c.password,false,commit_password,&c));
+    assert(!f.password[0]&&f.disk.count==1&&ph_auth_credential_epoch(&s)==epoch);
+    assert(ph_auth_context_valid(&ctx,1));assert(ph_auth_pair_resume(&s,"peer",key,udp));
+    c.fail=false;assert(ph_auth_credential_commit(&s,c.password,false,commit_password,&c));
+    assert(!f.disk.count&&!ph_auth_context_valid(&ctx,1));
+    assert(!ph_auth_pair_resume(&s,"peer",key,udp));
+    assert(ph_auth_udp_check(&s,"cloud",mqtt,&ctx));
+    assert(ph_auth_init(&reboot,&s.ops,&f.disk));
+    assert(!ph_auth_pair_resume(&reboot,"peer",key,udp));
+    assert(ph_auth_http_login_result(&reboot,"",http)==PH_AUTH_LOGIN_DENIED);
+    assert(ph_auth_http_login_result(&reboot,"adminfjr",http)==PH_AUTH_LOGIN_OK);
+    bearer(a,http);assert(ph_auth_http_check(&reboot,a,&ctx));
+    assert(ph_auth_pair(&reboot,"adminfjr","peer",2,key));
+    epoch=ph_auth_credential_epoch(&reboot);
+    assert(ph_auth_credential_commit(&reboot,c.password,false,commit_password,&c));
+    assert(ph_auth_credential_epoch(&reboot)==epoch&&f.disk.count==1&&ph_auth_context_valid(&ctx,1));
+    assert(ph_auth_credential_commit(&reboot,c.password,true,commit_password,&c));
+    assert(ph_auth_credential_epoch(&reboot)!=epoch&&!f.disk.count&&!ph_auth_context_valid(&ctx,1));
+    assert(ph_auth_password_is_set(&reboot));
+    for(unsigned i=0;i<4;i++)assert(ph_auth_http_login(&reboot,"adminfjr",http));
+    assert(ph_auth_http_login_result(&reboot,"adminfjr",http)==PH_AUTH_LOGIN_BUSY);
+    assert(ph_auth_http_login_result(&reboot,"wrong",http)==PH_AUTH_LOGIN_DENIED);
+}
+static void test_remote_direction_and_revocation(void){
+    fixture f;ph_auth_state s,reboot;char key[33],out[33],token[33];unsigned scopes;ph_auth_context ctx;
+    setup(&f,&s);const char *remote="1234567890abcdef1234567890abcdef";
+    uint32_t epoch=ph_auth_credential_epoch(&s);
+    assert(!ph_auth_remote_store(&s,"target",remote,2,0));
+    assert(ph_auth_remote_store(&s,"target",remote,2,epoch));
+    assert(ph_auth_remote_get(&s,"target",out,&scopes)&&!strcmp(out,remote)&&scopes==2);
+    unsigned saves=f.saves;
+    assert(ph_auth_remote_store(&s,"target",remote,2,epoch)&&f.saves==saves);
+    assert(!ph_auth_pair_resume(&s,"target",remote,token));
+    assert(!ph_auth_udp_check(&s,"target",remote,&ctx));
+    assert(ph_auth_pair(&s,"","target",2,key)&&strcmp(key,remote));
+    assert(ph_auth_init(&reboot,&s.ops,&f.disk));
+    assert(ph_auth_remote_get(&reboot,"target",out,&scopes));
+    f.fail_save=true;assert(!ph_auth_remote_remove(&reboot,"target"));
+    assert(ph_auth_remote_get(&reboot,"target",out,&scopes));
+    f.fail_save=false;assert(ph_auth_remote_remove(&reboot,"target"));
+    assert(!ph_auth_remote_get(&reboot,"target",out,&scopes));
+    assert(ph_auth_remote_store(&reboot,"target",remote,2,epoch));
+    commit_fixture c={&f,"adminfjr",false};
+    assert(ph_auth_credential_commit(&reboot,c.password,false,commit_password,&c));
+    assert(!f.disk.remote_count&&!f.disk.count);
+    assert(!ph_auth_remote_store(&reboot,"target",remote,2,epoch));
+    assert(ph_auth_init(&s,&reboot.ops,&f.disk));
+    assert(!ph_auth_remote_get(&s,"target",out,&scopes));
+    ph_auth_store invalid=f.disk;invalid.remote_count=PH_AUTH_PAIR_SLOTS+1;
+    assert(!ph_auth_store_valid(&invalid));invalid=f.disk;invalid.reserved=1;assert(!ph_auth_store_valid(&invalid));
+}
+int main(void){test_remote_direction_and_revocation();test_atomic_credential_commit();test_failed_password_transaction();test_basic();test_expiry();test_capacity_failure();test_boot_revoke_mqtt();test_pending_pair_epoch();test_pair_retry();test_concurrent();puts("local_auth: all tests passed");return 0;}

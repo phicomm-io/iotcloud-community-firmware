@@ -42,10 +42,7 @@ int main(void) {
     }
     assert(mqtt_account_init(&b,0,"tc1","old","aabbccddeeff"));
     assert(b.mode==MQTT_TOPIC_LEGACY);
-    assert(strstr(mqtt_announcement(&b), "\"protocol_version\":1"));
     assert(mqtt_account_init(&b,1,"a1","alice","aabbccddeeff"));
-    assert(strstr(mqtt_announcement(&b), "\"protocol\":\"tmcp\""));
-    assert(strstr(mqtt_announcement(&b), "\"version\":\"v2\""));
     assert(mqtt_retry_seconds(0)==1 && mqtt_retry_seconds(4)==15 && mqtt_retry_seconds(99)==30);
     puts("MQTT UTF-8 identity, byte boundaries and TMCP-only namespace and old mode normalization passed");
 }

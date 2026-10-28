@@ -29,6 +29,9 @@ int ph_mqtt_publish(Client *, const char *, MQTTMessage *);
 /* Transfers one already encoded receipt to the owner. An owned wire is retained
  * without a copy; a borrowed busy wire fits the fixed failure buffer. The
  * existing command credit remains held until the actual send or teardown. */
+/* Binary receipt variant: length includes embedded NUL bytes. Ownership and
+ * retry lifetime are identical to the legacy text wrapper. */
+int ph_mqtt_receipt_send_bytes(const mqtt_target_t *, const void *, size_t, void *, void(*)(void *));
 int ph_mqtt_receipt_send(const mqtt_target_t *, const char *, void *, void(*)(void *));
 /* Telemetry turn only; command receipts are sent after this scope unwinds. */
 void ph_mqtt_turn_begin(unsigned);
@@ -42,6 +45,9 @@ int ph_mqtt_poll(Client *);
 bool ph_mqtt_work_pending(void);
 /* Modern command only: after parsing/copying all borrowed input, consume its
  * queue entry and reserve the maximum result before executing any mutation. */
+/* Reserve maximum receipt credit while the typed parameter view still borrows
+ * ingress. Refusal must precede business mutations. */
+bool ph_mqtt_input_admit(void);
 bool ph_mqtt_input_consumed(void);
 void ph_mqtt_outgoing(int(*)(const ph_mqtt_item *));
 bool ph_mqtt_owner(void);
