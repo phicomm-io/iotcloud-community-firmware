@@ -31,6 +31,8 @@ public:
   std::function<void(JsonObject)> homeStatus;
   // Owner-authenticated, derived LAN inventory only; never serialize peer keys.
   std::function<void(JsonObject)> lanStatus;
+  // Synchronous borrow: asynchronous operations must copy input before return.
+  std::function<const char *(const std::string &,JsonObjectConst,JsonObject)> lanOperation;
   std::function<bool()> homeReset;
   // Runtime identity, not an owner-editable registration or a stored slot.
   std::string localMac;
@@ -322,6 +324,47 @@ public:
           s = Session();
       return json(output);
     }
+    const std::string lanPairPrefix="/api/hub/lan/pair/";
+    if (path == "/api/hub/lan/pair" || path == "/api/hub/lan/unpair" ||
+        path.compare(0,lanPairPrefix.size(),lanPairPrefix)==0) {
+      std::string op;
+      if (path == "/api/hub/lan/pair") {
+        if (request.method!="POST") return fail(405,"method_not_allowed");
+        if (input.size()!=4 || !fields(input.as<JsonObjectConst>(),"|peer||ip||password||scopes|") ||
+            !hex(input["peer"],12) || !string(input["ip"],15,7) ||
+            !string(input["password"],32) || !input["scopes"].is<unsigned>() || input["scopes"]!=1)
+          return fail(400,"invalid_params");
+        const std::string ip=input["ip"].as<std::string>();
+        unsigned parts=0,value=0,digits=0;
+        for(size_t i=0;i<=ip.size();++i){
+          if(i==ip.size() || ip[i]=='.'){
+            if(!digits || value>255 || ++parts>4) return fail(400,"invalid_params");
+            digits=value=0;
+          }else if(ip[i]>='0'&&ip[i]<='9'){
+            if(++digits>3) return fail(400,"invalid_params");
+            value=value*10+unsigned(ip[i]-'0');
+          }else return fail(400,"invalid_params");
+        }
+        if(parts!=4) return fail(400,"invalid_params");
+        op="pair";
+      }else if(path == "/api/hub/lan/unpair"){
+        if(request.method!="POST") return fail(405,"method_not_allowed");
+        if(input.size()!=1 || !fields(input.as<JsonObjectConst>(),"|peer|") || !hex(input["peer"],12))
+          return fail(400,"invalid_params");
+        op="unpair";
+      }else{
+        if(!get) return fail(405,"method_not_allowed");
+        const std::string peer=path.substr(lanPairPrefix.size());
+        // GET normally has no input pool; keep the generated request bounded.
+        if(peer.size()!=12 || peer.find_first_not_of("0123456789abcdef")!=std::string::npos)
+          return fail(400,"invalid_params");
+        if(!lanOperation) return fail(503,"not_ready");
+        DynamicJsonDocument statusInput(128);statusInput["peer"]=peer;
+        return lanReply("status",statusInput.as<JsonObjectConst>(),output);
+      }
+      if(!lanOperation) return fail(503,"not_ready");
+      return lanReply(op,input.as<JsonObjectConst>(),output);
+    }
     if (path == "/api/hub/lan") {
       if (!get) return fail(405, "method_not_allowed");
       output["protocol"] = 4;
@@ -551,9 +594,24 @@ public:
   }
 
 private:
+  Reply lanReply(const std::string &op,JsonObjectConst input,DynamicJsonDocument &output){
+    const char *result=lanOperation(op,input,output.to<JsonObject>());
+    const std::string code=result?result:"internal_error";
+    int status=500;
+    if(code=="ok") status=200;
+    else if(code=="accepted") status=202;
+    else if(code=="busy"||code=="storage_error"||code=="not_ready") status=503;
+    else if(code=="invalid_params") status=400;
+    else if(code=="auth_required"||code=="unauthorized"||code=="forbidden") status=403;
+    else if(code=="migration_required") status=409;
+    output["code"]=status==500?"internal_error":code;
+    return json(output,status);
+  }
   static bool needsCandidate(const Request &request) {
     return request.method != "GET" && request.path != "/api/auth/login" &&
            request.path != "/api/auth/logout" &&
+           request.path != "/api/hub/lan/pair" &&
+           request.path != "/api/hub/lan/unpair" &&
            request.path != "/api/hub/homekit/pairing";
   }
   static size_t inputCapacity(const Request &request) {

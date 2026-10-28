@@ -120,6 +120,47 @@ int main() {
     auto advertised=service.handle(Request("GET","/api/register/status","","","192.168.1.2"),3);
     assert(advertised.body.find("mqtt_uri")==std::string::npos&&advertised.body.find("mqtt_ws_uri")==std::string::npos);
   }
+  // Owner token authorizes LAN pairing separately from device-local Web tokens.
+  {
+    const std::string pair="/api/hub/lan/pair",unpair="/api/hub/lan/unpair",status=pair+"/aabbccddeeff";
+    const std::string valid=R"({"peer":"aabbccddeeff","ip":"192.0.2.1","password":"pair-secret","scopes":1})";
+    unsigned calls=0;std::string lastOp;
+    assert(service.handle(Request("POST",pair,valid,token),3).status==503);
+    service.lanOperation=[&](const std::string &op,JsonObjectConst in,JsonObject out)->const char*{
+      ++calls;lastOp=op;assert(in["peer"]=="aabbccddeeff");
+      if(op=="pair"){assert(in["password"]=="pair-secret"&&in["scopes"]==1);out["phase"]="queued";return "accepted";}
+      if(op=="status"){out["phase"]="paired";return "ok";}
+      assert(op=="unpair");return "accepted";
+    };
+    assert(service.handle(Request("POST",pair,valid),3).status==401);
+    assert(service.handle(Request("GET",status),3).status==401);
+    for(const auto &bad:{
+      R"({"peer":"wrong","ip":"192.0.2.1","password":"pair-secret","scopes":1})",
+      R"({"peer":"aabbccddeeff","ip":"999.0.2.1","password":"pair-secret","scopes":1})",
+      R"({"peer":"aabbccddeeff","ip":"1..2.1","password":"pair-secret","scopes":1})",
+      R"({"peer":"aabbccddeeff","ip":"192.0.2.1","password":"pair-secret","scopes":2})",
+      R"({"peer":"aabbccddeeff","ip":"192.0.2.1","password":"123456789012345678901234567890123","scopes":1})",
+      R"({"peer":"aabbccddeeff","ip":"192.0.2.1","password":"pair-secret","scopes":1,"extra":true})"})
+      assert(service.handle(Request("POST",pair,bad,token),3).status==400);
+    assert(service.handle(Request("POST",unpair,R"({"peer":"aabbccddeeff","extra":1})",token),3).status==400);
+    assert(service.handle(Request("GET",pair+"/unknown","",token),3).status==400);
+    assert(calls==0);
+    auto accepted=service.handle(Request("POST",pair,valid,token),3);
+    assert(accepted.status==202&&lastOp=="pair"&&calls==1);
+    assert(accepted.body.find("pair-secret")==std::string::npos&&accepted.body.find("password")==std::string::npos);
+    auto current=service.handle(Request("GET",status,"",token),3);
+    assert(current.status==200&&lastOp=="status"&&current.body.find("paired")!=std::string::npos);
+    assert(service.handle(Request("POST",unpair,R"({"peer":"aabbccddeeff"})",token),3).status==202&&lastOp=="unpair");
+    const unsigned before=calls;
+    assert(service.handle(Request("DELETE",pair,valid,token),3).status==405&&calls==before);
+    for(const auto &code:{"busy","invalid_params","auth_required","migration_required","storage_error","unexpected"}){
+      service.lanOperation=[&](const std::string &,JsonObjectConst,JsonObject)->const char*{return code;};
+      auto result=service.handle(Request("POST",pair,valid,token),3);
+      const int expected=std::string(code)=="invalid_params"?400:std::string(code)=="auth_required"?403:std::string(code)=="migration_required"?409:std::string(code)=="unexpected"?500:503;
+      assert(result.status==expected);
+    }
+    service.lanOperation=nullptr;
+  }
   // HomeKit belongs to the locally authenticated owner. Setup authorization,
   // another hub's session, and cloud credentials do not authorize its API.
   {
