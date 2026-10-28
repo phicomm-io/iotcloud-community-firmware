@@ -1,22 +1,53 @@
 """Exercise CI's MQTT overlay handoff against the actual pinned SDK objects."""
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
 
-from tools.apply_sdk_patch import changed_paths
+from tools.apply_sdk_patch import changed_paths, apply_stack
+from tests import test_shared_mqtt as shared
 
 ROOT = Path(__file__).resolve().parents[1]
 PATCHES = [ROOT / name for name in (
     'common/mqtt-mico36.patch', 'common/mqtt-publish-bounds.patch',
     'common/mqtt-socket-close.patch', 'M1/mqtt-packet-deadline.patch',
-    'common/mqtt-response-deadline.patch', 'common/mqtt-buffer-storage.patch')]
+    'common/mqtt-response-deadline.patch', 'common/mqtt-buffer-storage.patch',
+    'common/mqtt-subscribe-qos.patch')]
 
 
 class MQTTOverlayPreparationTests(unittest.TestCase):
+    def test_all_product_builders_use_the_complete_ordered_stack(self):
+        expected = [str(p.relative_to(ROOT)) for p in PATCHES]
+        for name in ('A1/build.sh', 'M1/build.sh', 'TC1/build.sh',
+                     'tests/build_host.sh', 'tests/run_tc1.sh', 'tests/simulator/build.sh'):
+            with self.subTest(builder=name):
+                text = (ROOT / name).read_text()
+                commands = text.replace('\\\n', ' ').splitlines()
+                stacks = [re.findall(r'(?:common|M1)/mqtt-[a-z0-9-]+\.patch', line)
+                          for line in commands if 'mqtt-buffer-storage.patch' in line]
+                self.assertEqual(stacks, [expected])
+
+    def test_all_product_sdk_old_prefix_upgrade_matches_fresh_and_repeats(self):
+        # Include each board's real Yield/handler patches before the common
+        # stack. All source comes from the pinned SDK, never a mocked client.
+        for model in ('A1', 'M1', 'TC1'):
+            with self.subTest(model=model):
+                fixture = shared.SharedMQTT()
+                with fixture.protocol(model, with_qos=False) as old:
+                    self.assertIn(b'(int *)&qos', (old / 'MQTTClient.c').read_bytes())
+                    sdk = old.parents[2]
+                    for repeat in range(2):
+                        apply_stack(sdk, PATCHES)
+                    upgraded = {p.relative_to(old): p.read_bytes()
+                                for p in old.rglob('*') if p.is_file()}
+                with fixture.protocol(model) as fresh:
+                    self.assertEqual(upgraded, {p.relative_to(fresh): p.read_bytes()
+                                               for p in fresh.rglob('*') if p.is_file()})
+
     def test_fresh_stack_is_idempotent_and_partial_preparation_is_rejected(self):
         # Read only the few touched upstream files, never copy or mutate a
         # product SDK. CI has this bare repository from its pinned SDK cache.
@@ -57,6 +88,17 @@ class MQTTOverlayPreparationTests(unittest.TestCase):
             result = apply(*PATCHES)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(complete, {p: (sdk / p).read_bytes() for p in paths})
+
+            # A complete previous-release six-overlay SDK is a valid prefix,
+            # unlike the incompatible partial state above. Upgrade and repeat.
+            restore()
+            result = apply(*PATCHES[:-1])
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(b'(int *)&qos', (sdk / 'libraries/protocols/mqtt/MQTTClient.c').read_bytes())
+            for repeat in range(2):
+                result = apply(*PATCHES)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(complete, {p: (sdk / p).read_bytes() for p in paths})
 
 
 if __name__ == '__main__':

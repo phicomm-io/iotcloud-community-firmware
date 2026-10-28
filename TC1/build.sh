@@ -38,7 +38,8 @@ python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \
     "$project_dir/common/mqtt-socket-close.patch" \
     "$project_dir/M1/mqtt-packet-deadline.patch" \
     "$project_dir/common/mqtt-response-deadline.patch" \
-    "$project_dir/common/mqtt-buffer-storage.patch"
+    "$project_dir/common/mqtt-buffer-storage.patch" \
+    "$project_dir/common/mqtt-subscribe-qos.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/http-retained-sdk.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/parameters-sdk.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/signed-ota-sdk.patch"

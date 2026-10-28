@@ -40,7 +40,8 @@ for model in "${models[@]}"; do
     python3 tools/apply_sdk_patch.py "$sdk" \
         common/mqtt-mico36.patch common/mqtt-publish-bounds.patch \
         common/mqtt-socket-close.patch M1/mqtt-packet-deadline.patch \
-        common/mqtt-response-deadline.patch common/mqtt-buffer-storage.patch
+        common/mqtt-response-deadline.patch common/mqtt-buffer-storage.patch \
+        common/mqtt-subscribe-qos.patch
     mqtt="$sdk/libraries/protocols/mqtt"
     cc -std=gnu99 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
         -I"$mqtt/MQTTPacket" tests/test_mqtt_publish_bounds.c \

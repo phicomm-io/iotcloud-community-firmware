@@ -43,7 +43,8 @@ python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \
     "$project_dir/common/mqtt-socket-close.patch" \
     "$project_dir/M1/mqtt-packet-deadline.patch" \
     "$project_dir/common/mqtt-response-deadline.patch" \
-    "$project_dir/common/mqtt-buffer-storage.patch"
+    "$project_dir/common/mqtt-buffer-storage.patch" \
+    "$project_dir/common/mqtt-subscribe-qos.patch"
 # Isolate newlib floating conversion scratch across HTTP/MQTT/runtime threads.
 # Validate these overlapping overlays together, including on repeated builds.
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \

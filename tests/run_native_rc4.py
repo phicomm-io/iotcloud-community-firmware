@@ -24,7 +24,7 @@ MODULES = (
     'test_sensor_producers_mp', 'test_sensor_mp', 'test_m1_display_mp',
     'test_tc1_native_sdk', 'test_no_json_objects',
     'test_shared_mqtt', 'test_mqtt_preflight_deferral', 'test_mqtt_birth_progress',
-    'test_mqtt_buffer_storage', 'test_tc1_mqtt_lifecycle', 'test_bemfa',
+    'test_mqtt_buffer_storage', 'test_mqtt_subscribe_qos', 'test_tc1_mqtt_lifecycle', 'test_bemfa',
     'test_native_service_mqtt', 'test_tc1_mqtt_stack', 'test_tc1_checked_number_calls',
     'test_mqtt_optional_json',
     'test_mqtt_discovery_budget.DiscoveryBudget.test_host_discovery_lifecycle_sanitizers',

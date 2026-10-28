@@ -4,15 +4,13 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
-from tools.apply_sdk_patch import apply_stack
 from tests import test_mqtt_buffer_storage as storage
 ROOT=Path(__file__).resolve().parents[1]
 
 class MQTTSubscribeQoS(unittest.TestCase):
  def run_sdk(self,fixed,short_enum):
   with tempfile.TemporaryDirectory() as temp:
-   path=Path(temp);protocol=storage.MQTTBufferStorage().protocol(path,with_fix=True)
-   if fixed:apply_stack(path,[ROOT/'common/mqtt-subscribe-qos.patch'])
+   path=Path(temp);protocol=storage.MQTTBufferStorage().protocol(path,with_fix=True,with_qos=fixed)
    binary=path/'qos';cmd=[os.environ.get('CC','cc'),'-std=gnu99','-g','-fsanitize=address,undefined','-fno-omit-frame-pointer','-fno-pie','-no-pie']
    if short_enum:cmd+=['-fshort-enums']
    for include in (ROOT/'tests/mqtt_core/stubs',protocol,protocol/'mico',protocol/'MQTTPacket'):cmd+=['-I'+str(include)]

@@ -763,7 +763,7 @@ jobs:
           done
           # build_host.sh owns the complete ordered MQTT stack. Pre-applying
           # only selected overlays creates an incompatible non-prefix state.
-          python3 -m unittest tests.test_mqtt_overlay_preparation
+          python3 -m unittest tests.test_mqtt_overlay_preparation tests.test_mqtt_subscribe_qos
       - name: Test TMCP using real SDK workers and an isolated broker
         run: |
           python3 -m pip install paho-mqtt==2.1.0 Jinja2==3.1.6

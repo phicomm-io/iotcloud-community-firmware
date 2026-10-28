@@ -14,7 +14,7 @@ SDK = Path(os.environ.get('PHICOMM_TC1_SDK', ROOT / 'build/tc1-sdk-3.6.4/mico-os
 
 
 class MQTTBufferStorage(unittest.TestCase):
-    def protocol(self, directory, with_fix):
+    def protocol(self, directory, with_fix, with_qos=True):
         pin = subprocess.check_output(
             ['python3', str(ROOT / 'tools/prepare_sdk.py'), '--commit'], text=True
         ).strip()
@@ -36,6 +36,8 @@ class MQTTBufferStorage(unittest.TestCase):
         ]
         if with_fix:
             patches.append('common/mqtt-buffer-storage.patch')
+        if with_qos:
+            patches.append('common/mqtt-subscribe-qos.patch')
         apply_stack(directory, [ROOT / patch for patch in patches])
         return directory / 'libraries/protocols/mqtt'
 
@@ -62,7 +64,7 @@ class MQTTBufferStorage(unittest.TestCase):
 
     def test_original_stack_reproduces_hidden_shrink_capacity(self):
         with tempfile.TemporaryDirectory() as temp:
-            protocol = self.protocol(Path(temp), with_fix=False)
+            protocol = self.protocol(Path(temp), with_fix=False, with_qos=False)
             self.compile_and_run(protocol, negative_control=True)
 
     def test_fixed_stack_tracks_real_tx_rx_storage(self):

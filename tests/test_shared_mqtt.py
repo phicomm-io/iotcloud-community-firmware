@@ -11,7 +11,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 class SharedMQTT(unittest.TestCase):
     @contextmanager
-    def protocol(self, model):
+    def protocol(self, model, with_qos=True):
         name = 'tc1-sdk-3.6.4' if model == 'TC1' else model.lower() + '-sdk'
         sdk = Path(os.environ.get('PHICOMM_' + model + '_SDK', ROOT / 'build' / name / 'mico-os'))
         self.assertTrue((sdk / 'libraries/protocols/mqtt/MQTTClient.c').is_file(),
@@ -37,10 +37,13 @@ class SharedMQTT(unittest.TestCase):
                 apply_stack(copy, [ROOT/model/'features-sdk.patch'])
             if model == 'TC1':
                 apply_stack(copy, [ROOT/'TC1/mqtt-handlers-sdk.patch'])
-            apply_stack(copy, [ROOT/p for p in ('common/mqtt-mico36.patch',
+            patches = [ROOT/p for p in ('common/mqtt-mico36.patch',
                 'common/mqtt-publish-bounds.patch', 'common/mqtt-socket-close.patch',
                 'M1/mqtt-packet-deadline.patch', 'common/mqtt-response-deadline.patch',
-                'common/mqtt-buffer-storage.patch')])
+                'common/mqtt-buffer-storage.patch')]
+            if with_qos:
+                patches.append(ROOT/'common/mqtt-subscribe-qos.patch')
+            apply_stack(copy, patches)
             yield copy/'libraries/protocols/mqtt'
 
     def compile_run(self, sources, includes=(), defines=()):
