@@ -1200,7 +1200,7 @@ static bool discovery_virtual_step(int (*publish)(const char *, const void *, si
         *cursor=position+1;return *cursor==sets*11;
       }
       /* Only HA uses JSON. Fixed owner scratch replaces the full DOM library. */
-      static char discovery_wire[4096];ha_json writer;ha_json *o=&writer;
+      static char discovery_wire[5120];ha_json writer;ha_json *o=&writer;
       ha_json_init(o,discovery_wire,sizeof(discovery_wire));ha_json_begin(o,NULL,false);
       ha_json_begin(o,"device",false);ha_json_begin(o,"identifiers",true);ha_json_string(o,NULL,device_id);ha_json_end(o);
       ha_json_string(o,"name",device_name);ha_json_string(o,"manufacturer","Phicomm");ha_json_string(o,"model","A1 Air Purifier (EMW3080B)");ha_json_end(o);
@@ -1245,7 +1245,7 @@ static bool discovery_virtual_step(int (*publish)(const char *, const void *, si
             ha_json_string(o,"payload_on",on);ha_json_string(o,"payload_off",off);ha_json_string(o,"state_on","ON");ha_json_string(o,"state_off","OFF");
         }
       }
-      mqtt_leaf(&account,"state",topic,sizeof(topic));ha_json_string(o,"json_attributes_topic",topic);
+      mqtt_leaf(&account,"ha/state",topic,sizeof(topic));ha_json_string(o,"json_attributes_topic",topic);
       ha_json_string(o,"json_attributes_template","{{ {\"ip\": value_json.ip, \"firmware\": value_json.version} | tojson }}");
       if(i==2 || i==3)ha_json_string(o,"entity_category","config");
       ha_json_begin(o,"availability",true);
