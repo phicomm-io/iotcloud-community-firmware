@@ -233,7 +233,7 @@ class ValidationReuseTests(unittest.TestCase):
     def test_workflow_keeps_tag_compiles_actual_ota_and_release_gates(self):
         text = (ROOT / reuse.WORKFLOW).read_text()
         for name in ('Build full firmware', 'Build firmware without frontend resources', 'Build and collect A1 fresh-air variants',
-                     'Build universal image and enforce stock OTA resource budgets', 'Test actual OTA handler and signed variant identity',
+                     'Build universal image and enforce stock OTA resource budgets', 'Test actual OTA handler, MessagePack wire and device sessions',
                      'Validate pinned protocol contracts', 'Prepare exact frontend archive', 'Test signed OTA vectors and Flash faults'):
             match = re.search(r'^      - name: ' + re.escape(name) + r'\n(.*?)(?=^      - |\Z)', text, re.M | re.S)
             self.assertIsNotNone(match, name)
@@ -241,8 +241,28 @@ class ValidationReuseTests(unittest.TestCase):
         self.assertIn('needs.validation-evidence.result == \'success\'', text)
         self.assertIn('python3 tools/release/verify_user_notes_release.py', text)
         self.assertIn("if: needs.frontend.outputs.reuse-heavy-validation != 'true'", text)
-        for steps in reuse.JOBS.values():
-            for name in steps: self.assertIn('- name: ' + name, text)
+        jobs = dict(re.findall(r'^  ([\w-]+):\n(.*?)(?=^  [\w-]+:|\Z)', text, re.M | re.S))
+        owners = {
+            'Verify locked frontend dependency': 'frontend',
+            'tc1 firmware variants': 'firmware', 'a1 firmware variants': 'firmware', 'm1 firmware variants': 'firmware',
+            'DAIKIN ESP32 full firmware': 'esp', 'DAIKIN ESP32 hub firmware': 'esp',
+            'Lightweight release checks': 'release-checks',
+            'Binding and automation host scenarios': 'feature-tests',
+            'Validate complete test evidence': 'validation-evidence',
+        }
+        self.assertEqual(set(owners), set(reuse.JOBS))
+        for job, steps in reuse.JOBS.items():
+            for name in steps:
+                matches = re.findall(r'^      - name: ' + re.escape(name) + r'$', jobs[owners[job]], re.M)
+                self.assertEqual(len(matches), 1, (job, name))
+        ota = re.search(r'^      - name: Test actual OTA handler, MessagePack wire and device sessions\n'
+                        r'(.*?)(?=^      - |\Z)', jobs['esp'], re.M | re.S)
+        self.assertIsNotNone(ota)
+        self.assertNotRegex(ota[1], r'(?m)^        if:')
+        self.assertIn('        variant: [full, hub]', jobs['esp'])
+        for module in ('test_ota_identity.py', 'test_wire_msgpack.py', 'test_web_auth.py',
+                       'test_lan_pairing.py', 'test_auth_storage.py', 'test_hub_mixed_devices.py'):
+            self.assertIn("          python3 -m unittest discover -s DAIKIN/tests -p '" + module + "'", ota[1])
 
     def assert_release_scheduling(self, text):
         """Guard the real YAML condition; do not emulate GitHub's scheduler."""
