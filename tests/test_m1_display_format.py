@@ -183,8 +183,6 @@ int main(void){
 ''')
 
     def test_real_command_ingress_rejects_unicode_and_literal_nul(self):
-        parse = function((test_m1_display_source.ROOT/'common/service.c').read_text(),
-                         'json_object *service_parse(')
         invalid = []
         for path in (('selected_source',), ('double_click',), ('lanes', 0, 'source'),
                      ('lanes', 0, 'device_id'), ('lanes', 0, 'metric'), ('lanes', 0, 'unit')):
@@ -192,16 +190,21 @@ int main(void){
             node = profile
             for part in path[:-1]:
                 node = node[part]
-            node[path[-1]] += '\0'
+            node[path[-1]] += '~'
             invalid.append(json.dumps(json.dumps({'action': 'display_profile.set', 'params': profile})))
-        source = self.source() + '\n#include <ctype.h>\n' + parse
+        source = self.source()
         source += '\nstatic const char *invalid[]={' + ','.join(invalid) + '};\n'
         run_host(source + r'''
 int main(void){
-    json_object *p=service_parse(profile,strlen(profile));assert(p);json_object_put(p);
-    for(unsigned i=0;i<sizeof(invalid)/sizeof(*invalid);i++)assert(!service_parse(invalid[i],strlen(invalid[i])));
-    char literal[]="{\"request\":1}";literal[3]=0;
-    assert(!service_parse(literal,sizeof(literal)-1));return 0;
+    json_object *p=json_tokener_parse(profile);assert(p);ph_value view;
+    ph_buf *bytes=fixture_mp_view(p,&view);assert(bytes);ph_buf_free(bytes);json_object_put(p);
+    for(unsigned i=0;i<sizeof(invalid)/sizeof(*invalid);i++){
+        p=json_tokener_parse(invalid[i]);assert(p);bytes=fixture_mp_view(p,&view);assert(bytes);json_object_put(p);
+        unsigned char *marker=memchr(bytes->buf,'~',bytes->len);assert(marker);*marker=0;
+        assert(!phv_parse(PH_WIRE_MSGPACK,bytes->buf,bytes->len,&view));ph_buf_free(bytes);
+    }
+    unsigned char literal[]={0x81,0xa7,'r','e','q',0,'e','s','t',1};
+    assert(!phv_parse(PH_WIRE_MSGPACK,literal,sizeof(literal),&view));assert(!writes);return 0;
 }
 ''')
 
@@ -251,7 +254,7 @@ int main(void){
 }
 ''')
 
-    def test_v3_get_roundtrips_adjacent_float32_thresholds_and_runtime(self):
+    def test_mp_get_roundtrips_adjacent_float32_thresholds_and_runtime(self):
         self.run_scenario(r'''
     m1_display_defaults(&live.display);live.co2_source.magic=M1_CO2_SOURCE_MAGIC;
     const float limits[][2]={{1.0f,0x1.000002p0f},{-0x1.fffffep127f,-0x1.fffffcp127f},
@@ -263,21 +266,20 @@ int main(void){
         json_object_object_add(color,"low",json_object_new_double(limits[i][0]));
         json_object_object_add(color,"high",json_object_new_double(limits[i][1]));
         done(m1_display_profile_set(p,&code));assert(!strcmp(code,"accepted"));json_object_put(p);
-        json_object *o=m1_display_profile_json();const char *wire=json_object_to_json_string(o);assert(wire);
-        json_object *read=json_tokener_parse(wire);assert(read);
+        json_object *o=m1_display_profile_json();json_object *read=fixture_mp_roundtrip(o);assert(read);
         color=json_object_object_get(json_object_array_get_idx(json_object_object_get(read,"lanes"),0),"color");
         float low=(float)json_object_get_double(json_object_object_get(color,"low"));
         float high=(float)json_object_get_double(json_object_object_get(color,"high"));
         assert(low==limits[i][0]&&high==limits[i][1]&&low<high);
         json_object_put(read);json_object_put(o);
     }
-    v3_values();json_object *o=m1_display_profile_json(),*read=json_tokener_parse(json_object_to_json_string(o));assert(read);
+    v3_values();json_object *o=m1_display_profile_json(),*read=fixture_mp_roundtrip(o);assert(read);
     json_object *lane=json_object_array_get_idx(json_object_object_get(json_object_object_get(read,"runtime"),"lanes"),0);
     assert((float)json_object_get_double(json_object_object_get(lane,"value"))==123/100.0f);
     json_object_put(read);json_object_put(o);
     /* Legacy action aliases use the same lossless current view. */
     live.display.reserved=0;live.display.lanes[0].low=1;live.display.lanes[0].high=0x1.000002p0f;
-    o=m1_display_source_json();read=json_tokener_parse(json_object_to_json_string(o));assert(read);
+    o=m1_display_source_json();read=fixture_mp_roundtrip(o);assert(read);
     json_object *color=json_object_object_get(json_object_array_get_idx(json_object_object_get(read,"lanes"),0),"color");
     assert(json_object_get_double(json_object_object_get(color,"low"))==1&&(float)json_object_get_double(json_object_object_get(color,"high"))==0x1.000002p0f);
     json_object_put(read);json_object_put(o);

@@ -145,22 +145,31 @@ static void sample_value(unsigned slot,bool valid,float expected,unsigned reason
         if(kind==9)json_object_object_add(field,"type",json_object_new_string("future_type"));
         if(kind==10)json_object_object_add(field,"name",json_object_new_string("\xed\xa0\x80"));
         m1_display_source_reset();m1_display_source_sample("123456abcdef",feed);
-        sample_value(0,false,0,M1_DISPLAY_INVALID);sample_value(1,true,42,0);json_object_put(feed);
+        /* A rejected descriptor never creates a received sample in v3. An
+         * invalid UTF8 descriptor rejects the whole metadata document. */
+        unsigned reason=(kind<4||kind>=9)?M1_DISPLAY_MISSING:M1_DISPLAY_INVALID;
+        sample_value(0,false,0,reason);
+        if(kind==10)sample_value(1,false,0,M1_DISPLAY_MISSING);else sample_value(1,true,42,0);
+        json_object_put(feed);
     }
     /* Descriptor constraints are byte based and don't limit numeric ranges. */
     json_object *p=generic_profile(),*l=json_object_array_get_idx(json_object_object_get(p,"lanes"),0);const char *code;
     json_object_object_add(l,"unit",json_object_new_string(""));json_object_object_add(l,"field_id",json_object_new_string("abcdefghijklmnopqrstuvwxyz012345"));
     done(m1_display_profile_set(p,&code));assert(!strcmp(code,"accepted"));json_object_put(p);
 '''.replace('BAD', cases)
-        parse = function((test_m1_display_format.test_m1_display_source.ROOT/'common/service.c').read_text(),
-                         'json_object *service_parse(')
         nul_cases = []
         for key in ('field_id', 'unit'):
-            p = copy.deepcopy(good);p['lanes'][0][key] += '\0suffix'
+            p = copy.deepcopy(good);p['lanes'][0][key] += '~suffix'
             nul_cases.append(json.dumps(json.dumps({'action': 'display_profile.set', 'params': p})))
         body += '\nconst char *nul_commands[]={' + ','.join(nul_cases) + '};\n'
-        body += 'for(unsigned i=0;i<sizeof(nul_commands)/sizeof(*nul_commands);i++)assert(!service_parse(nul_commands[i],strlen(nul_commands[i])));\n'
-        self.run_scenario(body, prefix='\n#include <ctype.h>\n' + parse)
+        body += r'''for(unsigned i=0;i<sizeof(nul_commands)/sizeof(*nul_commands);i++){
+            json_object *command=json_tokener_parse(nul_commands[i]);assert(command);ph_value view;
+            ph_buf *bytes=fixture_mp_view(command,&view);assert(bytes);json_object_put(command);
+            unsigned char *marker=memchr(bytes->buf,'~',bytes->len);assert(marker);*marker=0;
+            assert(!phv_parse(PH_WIRE_MSGPACK,bytes->buf,bytes->len,&view));ph_buf_free(bytes);
+        }
+'''
+        self.run_scenario(body)
 
     def test_envelope_limits_and_empty_snapshot_revoke_all_lanes(self):
         self.run_scenario(r'''

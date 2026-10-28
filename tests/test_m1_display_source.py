@@ -22,6 +22,7 @@ static unsigned writes,stops;
 static uint32_t now=1000;
 char m1_id[13]="aabbccddeeff";
 mico_mutex_t m1_lock;
+void service_cache_changed(unsigned mask){(void)mask;}
 m1_state_t m1_state;
 mico_Context_t *m1_context;
 uint32_t mico_rtos_get_time(void){return now;}
@@ -39,6 +40,7 @@ static bool uart_fail;
 static int MicoUartSend(unsigned port,const void *p,unsigned n){assert(port==1&&n==12);memcpy(sent,p,n);sends++;return uart_fail?-1:0;}
 #include "M1/co2_source.c"
 #include "M1/display_source.c"
+#include "tests/host/display_mp_adapter.h"
 #include "M1/mcu.c"
 static const char *settings;
 /* Seed a frozen scalar profile through the real configuration owner. The
@@ -335,6 +337,7 @@ uint32_t mico_rtos_get_time(void){return now;}
 void mico_thread_msleep(unsigned n){now+=n;}
 char m1_id[13]="aabbccddeeff";
 mico_mutex_t m1_lock;
+void service_cache_changed(unsigned mask){(void)mask;}
 m1_state_t m1_state;
 static m1_co2_source_config_t settings={.magic=M1_CO2_SOURCE_MAGIC,.revision=1,.external=1,.double_click=1,.device_id="123456abcdef"};
 static m1_co2_config_t display={.magic=M1_CO2_MAGIC,.revision=1,.mode=1,.interval=5,.low=1000,.high=1500};
@@ -407,5 +410,5 @@ int main(void){
             json_dir=Path(os.environ.get('PHICOMM_TEST_JSON_DIR',ROOT/'build/m1-sdk/mico-os/libraries/utilities/json_c'))
             subprocess.run([os.environ.get('CC','cc'),'-std=gnu99','-Wall','-Wextra','-Werror','-Wno-misleading-indentation',
                             '-ffunction-sections','-fdata-sections','-fsanitize=address,undefined','-fno-omit-frame-pointer',
-                            '-I',str(ROOT/'tests/host'),'-I',str(ROOT),'-I',str(json_dir),str(src),str(ROOT/'M1/protocol.c'),'-Wl,--gc-sections','-lm','-o',str(binary)],check=True)
+                            '-I',str(ROOT/'tests/host'),'-I',str(ROOT),'-I',str(json_dir),str(src),str(ROOT/'M1/protocol.c'),str(ROOT/'common/typed_wire.c'),str(ROOT/'common/wire_buffer.c'),'-Wl,--gc-sections','-lm','-o',str(binary)],check=True)
             subprocess.run([str(binary)],check=True)
