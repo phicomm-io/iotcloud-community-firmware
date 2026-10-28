@@ -46,6 +46,8 @@ struct ph_auth_state { ph_auth_ops ops; ph_auth_store store;
  ph_auth_session http[PH_AUTH_HTTP_SLOTS],local[PH_AUTH_PAIR_SLOTS],mqtt[PH_AUTH_MQTT_SLOTS];
  uint32_t generation,credential_epoch; char credential[33]; };
 void ph_auth_store_empty(ph_auth_store *);
+/* Immutable empty trailer for synchronous commits; avoids large stack copies. */
+const ph_auth_store *ph_auth_store_empty_value(void);
 bool ph_auth_store_valid(const ph_auth_store *);
 bool ph_auth_init(ph_auth_state *,const ph_auth_ops *,const ph_auth_store *);
 bool ph_auth_http_login(ph_auth_state *,const char *password,char token[33]);
