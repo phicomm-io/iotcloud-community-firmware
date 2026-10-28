@@ -266,5 +266,16 @@ int main() {
   assert(!home.devices[1].reachable(40000));
   assert(home.configure(saved.as<JsonArrayConst>(), prefix, "aabbcc000001") &&
          home.devices[1].aid == aid && !home.devices[1].seen);
+  // A discovered MP device follows exactly the same acknowledged-control
+  // contract, including an allocation-free MP confirmation status query.
+  DynamicJsonDocument advertisement(2048),binaryState(1024);
+  advertisement["schema"]=2;advertisement["protocol"]="tmcp";advertisement["protocol_version"]=2;advertisement["version"]="v2";advertisement["model"]="tc1";advertisement["device_id"]="aabbccddeeff";advertisement["firmware_version"]="1.0-rc.4";advertisement["variant"]="standard";advertisement["wire_version"]=1;advertisement["default_wire_format"]="msgpack";advertisement.createNestedArray("wire_formats").add("msgpack");
+  std::string packed;serializeMsgPack(advertisement,packed);iotcloud::hubWire.observe(prefix+"discovery/aabbccddeeff",packed);assert(iotcloud::hubWire.binary(base));
+  assert(!deserializeJson(binaryState,off));packed.clear();serializeMsgPack(binaryState,packed);home.tick(100);home.observe(base+"/state",packed);assert(home.begin(1,Home::Outlet,0,1));
+  assert(!deserializeMsgPack(cmd,body)&&cmd["action"]=="outlet.set"&&cmd["params"]["index"]==0&&cmd["params"]["on"]==true);
+  binaryState.clear();binaryState["request_id"]=cmd["request_id"];binaryState["code"]="accepted";packed.clear();serializeMsgPack(binaryState,packed);home.observe(base+"/result",packed);
+  assert(!deserializeMsgPack(cmd,body)&&cmd["action"]=="status.get"&&cmd["params"].is<JsonObject>()&&cmd["params"].size()==0);
+  home.observe(base+"/state",on);assert(!home.finished());
+  assert(!deserializeJson(binaryState,on));packed.clear();serializeMsgPack(binaryState,packed);home.observe(base+"/state",packed);assert(home.finished()&&home.finish());
   puts("hub home bridge model tests passed");
 }

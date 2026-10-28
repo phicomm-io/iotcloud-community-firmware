@@ -136,12 +136,12 @@ static bool validConfig(JsonObjectConst candidate){
   }
   return true;
 }
-static String execute(const String &body){
+static String execute(const String &body,bool binary=true){
   DynamicJsonDocument request(6144),reply(8192);
   const char *code="ok",*message="ok";
-  if(deserializeJson(request,body)||!request.is<JsonObject>()||!request["action"].is<const char*>()||
+  if((binary?deserializeMsgPack(request,body.c_str(),body.length()):deserializeJson(request,body))||!request.is<JsonObject>()||!request["action"].is<const char*>()||
      !request["params"].is<JsonObject>()||!knownFields(request.as<JsonObjectConst>(),"|request_id||action||params|")){
-    reply["code"]="invalid_params";reply["message"]="Invalid command envelope";String text;serializeJson(reply,text);return text;
+    reply["code"]="invalid_params";reply["message"]="Invalid command envelope";String text;if(binary)serializeWireMP(reply,text);else serializeJson(reply,text);return text;
   }
   String action=request["action"].as<String>();JsonObjectConst params=request["params"];
   const bool query=action.endsWith(".get");
@@ -154,7 +154,7 @@ static String execute(const String &body){
 #endif
   if(!query&&!strcmp(code,"ok"))for(int i=0;i<8;i++)if(lastRequest[i]==id){
     if(lastBody[i]==body)return lastResponse[i];
-    reply["code"]="conflict";reply["message"]="request_id reused with different content";String text;serializeJson(reply,text);return text;
+    reply["code"]="conflict";reply["message"]="request_id reused with different content";String text;if(binary)serializeWireMP(reply,text);else serializeJson(reply,text);return text;
   }
   JsonObject data=reply.createNestedObject("data");
   if(!strcmp(code,"ok")){
@@ -218,7 +218,7 @@ static String execute(const String &body){
   }
   if(reply.overflowed()){reply.clear();code="internal_error";}
   reply["code"]=code;reply["message"]=strcmp(code,"ok")==0||strcmp(code,"accepted")==0?message:code;
-  String result;serializeJson(reply,result);
+  String result;if(binary)serializeWireMP(reply,result);else serializeJson(reply,result);
   if(!query&&!id.isEmpty()&&strcmp(code,"invalid_params")!=0){unsigned i=requestSlot++%8;lastRequest[i]=id;lastBody[i]=body;lastResponse[i]=result;}
   return result;
 }

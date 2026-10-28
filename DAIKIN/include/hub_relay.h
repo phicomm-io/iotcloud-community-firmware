@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #pragma once
 #include "hub_service.h"
+#include "hub_wire.h"
 
 namespace iotcloud {
 // Explicit, directed routes. Neither transport reconnects nor retained replays
@@ -69,7 +70,7 @@ public:
     if (!mapped)
       return;
     DynamicJsonDocument state(8192);
-    if (deserializeJson(state, body) || !state.is<JsonObject>())
+    if (hubWire.decode(state, topic.substr(0,topic.size()-6), body) || !state.is<JsonObject>())
       return;
     size_t index = 0;
     for (JsonObjectConst m :
@@ -145,7 +146,7 @@ public:
           return false;
         doc["request_id"] = id;
         std::string payload;
-        serializeJson(doc, payload);
+        hubWire.encode(doc, target, payload);
         slot->used = true;
         slot->id = id;
         slot->base = target;
@@ -311,7 +312,7 @@ private:
     for (auto &p : pending)
       if (p.used && topic == p.base + "/result") {
         DynamicJsonDocument doc(1024);
-        if (!deserializeJson(doc, body) && doc["request_id"] == p.id) {
+        if (!hubWire.decode(doc, p.base, body) && doc["request_id"] == p.id) {
           p.used = false;
           std::string code = doc["code"] | "";
           status = code == "ok" || code == "accepted" ? "connected"
@@ -341,7 +342,7 @@ private:
           slot->seen = false;
       } else {
         DynamicJsonDocument state(8192);
-        if (body.size() > HubBroker::Packet || deserializeJson(state, body) ||
+        if (body.size() > HubBroker::Packet || hubWire.decode(state, topic.substr(0,topic.size()-6), body) ||
             !state.is<JsonObject>())
           return;
         if (saved["model"] == "a1" &&

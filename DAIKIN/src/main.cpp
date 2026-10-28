@@ -1,6 +1,7 @@
 #include "../../common/i18n.h"
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include "wire_mp.h"
 #include <WiFi.h>
 #include <WiFiUdp.h>
 #include <Wire.h>
@@ -212,8 +213,9 @@ void setup(){
   if(httpd_start(&web,&server)==ESP_OK){
     httpd_uri_t root={};root.uri="/";root.method=HTTP_GET;root.handler=rootHandler;httpd_register_uri_handler(web,&root);
     httpd_uri_t info={};info.uri="/api/v1/info";info.method=HTTP_GET;info.handler=infoHandler;httpd_register_uri_handler(web,&info);
+    for(auto path:{"/api/v1/auth/login","/api/v1/auth/logout"}){httpd_uri_t auth={};auth.uri=path;auth.method=HTTP_POST;auth.handler=strstr(path,"logout")?logoutHandler:loginHandler;httpd_register_uri_handler(web,&auth);}
     httpd_uri_t status={};status.uri="/api/v1/status";status.method=HTTP_GET;status.handler=statusHandler;httpd_register_uri_handler(web,&status);
-    for(auto path:{"/api/v1/info","/api/v1/status","/api/v1/command","/api/v1/ota/upload","/api/v1/ota/upload-unsigned","/api/v1/config/backup","/api/v1/config/restore"}){httpd_uri_t options={};options.uri=path;options.method=HTTP_OPTIONS;options.handler=optionsHandler;httpd_register_uri_handler(web,&options);}
+    for(auto path:{"/api/v1/auth/login","/api/v1/auth/logout","/api/v1/info","/api/v1/status","/api/v1/command","/api/v1/ota/upload","/api/v1/ota/upload-unsigned","/api/v1/config/backup","/api/v1/config/restore"}){httpd_uri_t options={};options.uri=path;options.method=HTTP_OPTIONS;options.handler=optionsHandler;httpd_register_uri_handler(web,&options);}
     for(auto path:{"/api/v1/config/backup","/api/v1/config/restore"}){httpd_uri_t backup={};backup.uri=path;backup.method=strstr(path,"restore")?HTTP_POST:HTTP_GET;backup.handler=backupHandler;httpd_register_uri_handler(web,&backup);}
     httpd_uri_t cmd={};cmd.uri="/api/v1/command";cmd.method=HTTP_POST;cmd.handler=commandHandler;httpd_register_uri_handler(web,&cmd);
     for(auto path:{"/api/v1/ota/upload","/api/v1/ota/upload-unsigned"}){httpd_uri_t ota={};ota.uri=path;ota.method=HTTP_POST;ota.handler=uploadHandler;httpd_register_uri_handler(web,&ota);}
@@ -237,13 +239,17 @@ void loop(){
 #ifdef IOTCLOUD_HUB
     if(webOperation==3){if(otaActive){hubHttpStatus=503;hubHttpToken="";webResult="{\"code\":\"busy\"}";}else hubApiExecute();}else
 #endif
-    if(webOperation==4){if(!mqttStateJson(webResult,httpStatusBody))webResult="{\"code\":\"busy\"}";}else webResult=otaActive?"{\"code\":\"busy\",\"message\":\"OTA active\"}":webOperation?backupExecute():execute(webBody);portENTER_CRITICAL(&webMux);webPending=false;webDone=true;portEXIT_CRITICAL(&webMux);}
-  if(mqttQueued){String body(mqttPending);bool sensor=mqttSensorCommand;portENTER_CRITICAL(&mqttMux);mqttQueued=false;portEXIT_CRITICAL(&mqttMux);if(!otaActive){if(sensor)sessionGrant(body);else if(!sessionGrant(body))publish(mqttRoot+"/result",execute(body),false);}}
+    if(webOperation==4){if(!mqttStateJson(webResult,httpStatusBody,4096,true))webResult="{\"code\":\"busy\"}";}else webResult=otaActive?"{\"code\":\"busy\",\"message\":\"OTA active\"}":webOperation?backupExecute():execute(webBody);portENTER_CRITICAL(&webMux);webPending=false;webDone=true;portEXIT_CRITICAL(&webMux);}
+  if(mqttQueued){String body(mqttPending,mqttReceived);bool sensor=mqttSensorCommand;portENTER_CRITICAL(&mqttMux);mqttQueued=false;portEXIT_CRITICAL(&mqttMux);if(!otaActive){if(sensor)sessionGrant(body);else if(!sessionGrant(body))publish(mqttRoot+"/result",execute(body),false);}}
   if(mqttOnline){mqttOnline=false;
-    DynamicJsonDocument doc(1024);capabilities(doc.to<JsonObject>());String text;serializeJson(doc,text);publish(mqttRoot+"/capabilities",text);publish(mqttRoot+"/availability","online");
+    DynamicJsonDocument doc(1024);capabilities(doc.to<JsonObject>());String text;serializeWireMP(doc,text);publish(mqttRoot+"/capabilities",text);publish(mqttRoot+"/availability","online");
     String discoveryTopic=mqttRoot.substring(0,mqttRoot.indexOf("/daikin/"))+"/discovery/"+deviceId;
-    publish(discoveryTopic,"{\"schema\":1,\"model\":\"daikin\",\"protocol\":\"tmcp\",\"protocol_version\":2,\"version\":\"v2\"}");haBirth=true;
-    publish(sensorRoot.substring(0,sensorRoot.indexOf("/sensor/"))+"/address/"+deviceId,String("{\"ip\":\"")+WiFi.localIP().toString()+"\"}");
+    doc.clear();doc["schema"]=2;doc["model"]="daikin";doc["protocol"]="tmcp";doc["protocol_version"]=2;doc["version"]="v2";
+    doc["device_id"]=deviceId;doc["firmware_version"]=version;doc["variant"]=DAIKIN_VARIANT;doc["wire_version"]=1;
+    doc.createNestedArray("wire_formats").add("msgpack");doc["default_wire_format"]="msgpack";
+    text="";serializeWireMP(doc,text);publish(discoveryTopic,text);haBirth=true;
+    doc.clear();doc["ip"]=WiFi.localIP().toString();text="";serializeWireMP(doc,text);
+    publish(sensorRoot.substring(0,sensorRoot.indexOf("/sensor/"))+"/address/"+deviceId,text);
   }
   static bool previousHcho=false,previousPm10=false;
   if(previousHcho!=hchoPresent||previousPm10!=sensorPresent(PM10)){previousHcho=hchoPresent;previousPm10=sensorPresent(PM10);haBirth=true;}
@@ -277,7 +283,7 @@ void loop(){
   static String serialBody;static bool serialOverflow=false;
   while(Serial.available()){
     char c=Serial.read();if(c=='\r')continue;
-    if(c=='\n'){if(!serialOverflow&&serialBody.length())Serial.println(otaActive?"{\"code\":\"busy\"}":execute(serialBody));serialBody="";serialOverflow=false;}
+    if(c=='\n'){if(!serialOverflow&&serialBody.length())Serial.println(otaActive?"{\"code\":\"busy\"}":execute(serialBody,false));serialBody="";serialOverflow=false;}
     else if(!serialOverflow){if(serialBody.length()<4096)serialBody+=c;else{serialBody="";serialOverflow=true;}}
   }
   delay(2);

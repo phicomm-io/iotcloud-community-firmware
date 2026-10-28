@@ -47,7 +47,13 @@ static int SHA256Result(SHA256Context *s,uint8_t *p){return !SHA256_Final(p,s);}
         handler = http.split('static volatile bool otaActive=false;', 1)[1].split(
             'static esp_err_t infoHandler(', 1)[0]
         (d / 'handler.inc').write_text('static volatile bool otaActive=false;' + handler)
-        (d / 'authorization.inc').write_text(http.split('// HTTP handlers run', 1)[0])
+        # OTA tests isolate the signed-image pipeline from the separately tested
+        # token table. Preserve the actual authorization decision and inject
+        # an already validated bearer session at this boundary.
+        decision='static bool authorized(httpd_req_t *req){'+http.split('static bool authorized(httpd_req_t *req){',1)[1].split('\n',1)[0]+'\n'
+        (d / 'authorization.inc').write_text(r'''static bool bearerSession(httpd_req_t *){return requestHeaders["Authorization"]=="Bearer valid-session";}
+static esp_err_t jsonResponse(httpd_req_t *req,const char *status,const String &body){httpd_resp_set_status(req,status);httpd_resp_set_hdr(req,"Cache-Control","no-store");httpd_resp_set_type(req,"application/msgpack");return httpd_resp_send(req,body.c_str(),body.size());}
+'''+decision)
         (d / 'options.inc').write_text('static esp_err_t optionsHandler(' + http.split(
             'static esp_err_t optionsHandler(', 1)[1].split('\n', 1)[0] + '\n')
         (d / 'harness.cpp').write_text(r'''
@@ -91,7 +97,7 @@ static daikin::FirmwareIdentity daikin_target;
 struct Prefs {bool signedImage=false;void putBool(const char *key,bool value){if(strcmp(key,"ota_signed"))abort();signedImage=value;preferencesWrites++;}};
 static Prefs prefs;
 static char webPassword[33]={};
-static int authMux=0;
+static int authMux __attribute__((unused))=0;
 #define portENTER_CRITICAL(mux) (void)(mux)
 #define portEXIT_CRITICAL(mux) (void)(mux)
 static uint32_t millis(){return 100;}
@@ -106,7 +112,7 @@ static void httpd_resp_set_hdr(httpd_req_t *,const char *name,const char *value)
 static void httpd_resp_set_status(httpd_req_t *,const char *status){statusCode=atoi(status);}
 static void httpd_resp_set_type(httpd_req_t *,const char *){}
 static int httpd_resp_send(httpd_req_t *,const char *body,size_t n){response.assign(body?body:"",n);return ESP_OK;}
-static int mbedtls_base64_decode(uint8_t *out,size_t capacity,size_t *length,const uint8_t *input,size_t n){
+static int __attribute__((unused)) mbedtls_base64_decode(uint8_t *out,size_t capacity,size_t *length,const uint8_t *input,size_t n){
   if(n%4||n/4*3>capacity)return -1;
   int used=EVP_DecodeBlock(out,input,n);if(used<0)return -1;
   while(n&&input[n-1]=='='){--used;--n;}*length=used;return 0;
@@ -175,7 +181,7 @@ static void initialize(int hub,int failure,int authorizedRequest){
   strcpy(webPassword,"device-password");
   std::string credentials=authorizedRequest?"admin:device-password":"admin:wrong-password";
   uint8_t encoded[128];EVP_EncodeBlock(encoded,reinterpret_cast<const uint8_t *>(credentials.data()),credentials.size());
-  requestHeaders["Authorization"]="Basic "+std::string(reinterpret_cast<char *>(encoded));
+  requestHeaders["Authorization"]=authorizedRequest?"Bearer valid-session":"Bearer invalid-session";
   // Even ordinary uploads carry the conversion headers. They must never relax
   // the running variant's identity check on either signed or unsigned route.
   requestHeaders["X-IoTCloud-Target-Variant"]="hub";
@@ -358,16 +364,13 @@ extern "C" int count(int which){
             self.assertEqual(json.loads(self.lib.reply())['code'], 'accepted')
             self.assertEqual(self.lib.response_header(b'Cache-Control'), b'no-store')
 
-    def test_conversion_allows_unset_web_password_but_checks_existing_password(self):
+    def test_conversion_requires_valid_session_even_if_password_unset(self):
         signed = self.signed(self.image('hub'))
-        self.assertEqual(self.convert(signed, auth=0), 202)
-        self.assertEqual(json.loads(self.lib.reply())['code'], 'accepted')
-        self.assertEqual(self.lib.count(0), 1)
-        for auth in (2, 3, 4):
+        for auth in (0, 2, 3, 4):
             self.assertEqual(self.convert(signed, auth=auth), 401)
             self.assertEqual(json.loads(self.lib.reply())['code'], 'unauthorized')
             self.assertEqual(self.lib.count(0), 0)
-            self.assertTrue(self.lib.response_header(b'WWW-Authenticate').startswith(b'Basic '))
+            self.assertEqual(self.lib.response_header(b'WWW-Authenticate'), b'')
 
     def test_conversion_headers_are_required_and_exact(self):
         signed = self.signed(self.image('hub'))

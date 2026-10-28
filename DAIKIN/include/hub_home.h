@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #pragma once
 #include "hub_service.h"
+#include "hub_wire.h"
 #include <cmath>
 
 namespace iotcloud {
@@ -79,7 +80,7 @@ public:
         DynamicJsonDocument doc(capacity);
         if (!doc.capacity())
           return;
-        auto error = deserializeJson(doc, body);
+        auto error = hubWire.decode(doc, d.base, body);
         if (error == DeserializationError::NoMemory && capacity < 8192) {
           // Dense JSON can need far more pool space than its wire length.
           // Release this pool before retrying, preserving the existing limit.
@@ -177,7 +178,7 @@ public:
     pending.sequence = d.sequence;
     request["request_id"] = pending.id;
     std::string body;
-    serializeJson(request, body);
+    hubWire.encode(request, d.base, body);
     if (!broker.publish(d.base + "/command", body, false,
                         HubBroker::Origin::Internal)) {
       pending = Pending();
@@ -235,10 +236,14 @@ private:
   void query(Device &d) {
     d.queriedAt = clock;
     d.query = identifier();
-    if (!d.query.empty() &&
-        !broker.publish(d.base + "/command",
-                        "{\"action\":\"status.get\",\"request_id\":\"" +
-                            d.query + "\"}",
+    std::string body;
+    if(hubWire.binary(d.base)){
+      body="\x83\xa6" "action" "\xaa" "status.get" "\xaa" "request_id";
+      if(d.query.size()<32)body.push_back(char(0xa0|d.query.size()));
+      else {body.push_back(char(0xd9));body.push_back(char(d.query.size()));}
+      body+=d.query;body+="\xa6" "params" "\x80";
+    }else body="{\"action\":\"status.get\",\"request_id\":\""+d.query+"\",\"params\":{}}";
+    if (!d.query.empty() && !broker.publish(d.base + "/command",body,
                         false, HubBroker::Origin::Internal))
       d.query.clear();
   }

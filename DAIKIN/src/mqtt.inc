@@ -8,7 +8,7 @@ static void publish(const String &topic,const String &text,bool retain=true){
   hubLocalPublish(topic,text,retain);
 #endif
 }
-static bool mqttStateJson(String &text,void (*fill)(JsonObject),size_t capacity=4096){
+static bool mqttStateJson(String &text,void (*fill)(JsonObject),size_t capacity=4096,bool binary=false){
   text="";
   for(;;){
     DynamicJsonDocument doc(capacity);
@@ -18,20 +18,26 @@ static bool mqttStateJson(String &text,void (*fill)(JsonObject),size_t capacity=
       if(capacity>=8192)return false;
       capacity*=2;continue;
     }
-    const size_t length=measureJson(doc);
+    const size_t length=binary?measureMsgPack(doc):measureJson(doc);
     if(!text.reserve(length))return false;
-    const size_t written=serializeJson(doc,text);
+    const size_t written=binary?serializeWireMP(doc,text):serializeJson(doc,text);
     return text&&written==length&&text.length()==length;
   }
 }
 static void httpStatusBody(JsonObject out){
   out["code"]="ok";state(out.createNestedObject("data"));
 }
+static void haStateBody(JsonObject out){
+  JsonObject sensors=out.createNestedObject("sensors");uint32_t now=millis();
+  for(unsigned i=0;i<SENSOR_COUNT;i++)if(sensorPresent(i)){JsonObject value=sensors.createNestedObject(keys[i]);bool valid=readings[i].valid(now);value["valid"]=valid;if(valid)value["value"]=readings[i].value;else value["value"]=nullptr;}
+}
 static void publishState(){
   // Release the JSON pool before the SDK/local broker copies the wire payload.
   // Also release the first wire payload before building the typed sensor feed.
-  {String text;if(mqttStateJson(text,state))publish(mqttRoot+"/state",text);}
-  {String text;if(mqttStateJson(text,sensorBody,2048))publish(sensorRoot+"/state",text,false);}
+  {String text;if(mqttStateJson(text,state,4096,true))publish(mqttRoot+"/state",text);}
+  {String text;if(mqttStateJson(text,haStateBody,2048))publish(mqttRoot+"/ha/state",text);}
+  {String text;if(mqttStateJson(text,sensorMetadata,2048,true))publish(sensorRoot+"/metadata",text);}
+  {String text;if(mqttStateJson(text,sensorBody,2048,true))publish(sensorRoot+"/state",text,false);}
 }
 
 static void discovery(){
@@ -42,7 +48,7 @@ static void discovery(){
   for(unsigned i=0;i<SENSOR_COUNT;i++){
     if(!sensorPresent(i)){publish(haRoot+keys[i]+"/config","");continue;}
     DynamicJsonDocument doc(1536);doc["name"]=ph_i18n(String(config["device"]["language"]|"zh-CN")=="en"?PH_LANG_EN:PH_LANG_ZH,(const char *const[]){"PM2.5","二氧化碳","温度","湿度","总挥发性有机物","甲醛","PM10"}[i],(const char *const[]){"PM2.5","Carbon dioxide","Temperature","Humidity","TVOC","Formaldehyde","PM10"}[i]);doc["unique_id"]=encoded+"_daikin_"+deviceId+"_"+keys[i];
-    doc["state_topic"]=mqttRoot+"/state";doc["availability_topic"]=mqttRoot+"/availability";
+    doc["state_topic"]=mqttRoot+"/ha/state";doc["availability_topic"]=mqttRoot+"/availability";
     doc["value_template"]=String("{{ value_json.sensors.")+keys[i]+".value if value_json.sensors."+keys[i]+".valid else 'None' }}";
     doc["unit_of_measurement"]=units[i];if(*classes[i])doc["device_class"]=classes[i];doc["state_class"]="measurement";doc["expire_after"]=30;
     JsonObject dev=doc.createNestedObject("device");dev["identifiers"]=encoded+"_daikin_"+deviceId;dev["name"]=config["device"]["name"]|"DAIKIN";dev["model"]="BRY88AX151K";dev["manufacturer"]="Daikin";dev["sw_version"]=version;
@@ -70,10 +76,10 @@ static void mqttEvent(void *,esp_event_base_t,int32_t eventId,void *eventData){
     if(mqttQueued)return;
     if(String(event->topic,event->topic_len)=="homeassistant/status"){if(String(event->data,event->data_len)=="online")haBirth=true;return;}
     mqttSensorCommand=String(event->topic,event->topic_len)==sensorRoot+"/command";
-    mqttReceiving=(String(event->topic,event->topic_len)==mqttRoot+"/command"||String(event->topic,event->topic_len)==sensorRoot+"/command")&&event->total_data_len<=4096&&!mqttQueued;
+    mqttReceiving=(String(event->topic,event->topic_len)==mqttRoot+"/command"||String(event->topic,event->topic_len)==sensorRoot+"/command")&&event->total_data_len>0&&event->total_data_len<=4096&&!mqttQueued;
     mqttReceived=0;
   }
-  if(!mqttReceiving||event->current_data_offset!=(int)mqttReceived)return;
+  if(!mqttReceiving||event->current_data_offset!=(int)mqttReceived||event->data_len<=0||event->data_len>event->total_data_len-event->current_data_offset||mqttReceived+size_t(event->data_len)>4096){mqttReceiving=false;return;}
   memcpy(mqttPending+mqttReceived,event->data,event->data_len);mqttReceived+=event->data_len;
   if(mqttReceived==(size_t)event->total_data_len){mqttPending[mqttReceived]=0;portENTER_CRITICAL(&mqttMux);mqttQueued=true;portEXIT_CRITICAL(&mqttMux);mqttReceiving=false;}
 }

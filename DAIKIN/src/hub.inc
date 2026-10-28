@@ -282,7 +282,7 @@ static void hubLocalPublish(const String &topic, const String &body,
   if (!iotcloud::nativeMessageSize(topic.c_str(), topic.length(), topicRules, 2,
                                   iotcloud::HubBroker::Topic, targetLength) ||
       !iotcloud::nativeMessageSize(body.c_str(), body.length(), bodyRules,
-                                  topic.startsWith("homeassistant/") ? 2 : 1,
+                                  topic.startsWith("homeassistant/") ? 2 : 0,
                                   iotcloud::HubBroker::Packet, payloadLength) ||
       targetLength + payloadLength + 4 > iotcloud::HubBroker::Packet ||
       !hubAllocationReady(2 * (targetLength + payloadLength) + 2048)) return;
@@ -290,7 +290,7 @@ static void hubLocalPublish(const String &topic, const String &body,
   target.reserve(targetLength); payload.reserve(payloadLength);
   iotcloud::nativeMessageAppend(target, topic.c_str(), topic.length(), topicRules, 2);
   iotcloud::nativeMessageAppend(payload, body.c_str(), body.length(), bodyRules,
-                                topic.startsWith("homeassistant/") ? 2 : 1);
+                                topic.startsWith("homeassistant/") ? 2 : 0);
   hubTransport.broker.publish(target, payload, retain,
                               iotcloud::HubBroker::Origin::Internal);
 }
@@ -342,6 +342,7 @@ static void hubInit() {
   hubTransport.broker.event = [](const std::string &topic,
                                  const std::string &body, bool retain,
                                  iotcloud::HubBroker::Origin origin) {
+    iotcloud::hubWire.observe(topic,body);
     if(origin==iotcloud::HubBroker::Origin::Local || origin==iotcloud::HubBroker::Origin::Internal){hubHome.tick(millis());hubHome.observe(topic,body);}
     hubRelay.local(topic, body, retain, origin);
     if (topic == "homeassistant/status" && body == "online")
@@ -353,10 +354,11 @@ static void hubInit() {
         (topic == base + "/command" || topic == sensor + "/command")) {
       if (otaActive)
         return;
-      if (!sessionGrant(body.c_str()) && topic == base + "/command")
-        hubTransport.broker.publish(base + "/result",
-                                    execute(body.c_str()).c_str(), false,
+      if (!sessionGrant(String(body.data(),body.size())) && topic == base + "/command"){
+        String result=execute(String(body.data(),body.size()));
+        hubTransport.broker.publish(base + "/result",std::string(result.c_str(),result.length()),false,
                                     iotcloud::HubBroker::Origin::Internal);
+      }
     }
   };
   hubRelay.randomHex = hubRandom;

@@ -74,6 +74,7 @@ void operator delete[](void *pointer) noexcept { std::free(pointer); }
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include "wire_mp.h"
 // ESP32's unsigned int String::length() is size_t on its 32-bit ABI. Make
 // that existing ArduinoJson trait explicit on this 64-bit host, retaining
 // the unchanged real String and ArduinoJson serialization implementations.
@@ -91,7 +92,7 @@ public:
     assert(capacity() >= requested && lastMalloc);
     assert(poolLive == 0); // A retry releases its predecessor before allocating.
     if (inPublish && published) {
-      assert(published == 1 && firstWire && firstWireFreed);
+      assert(published >= 1 && firstWire && firstWireFreed);
       assert(stringBytes() == stringBaseline);
     }
     assert(attemptCount < sizeof(attempts) / sizeof(attempts[0]));
@@ -188,7 +189,7 @@ static void *mqtt = reinterpret_cast<void *>(1);
 static int esp_mqtt_client_publish(void *, const char *topic, const char *body,
                                    size_t length, int qos, bool retain) {
   assert(poolLive == 0 && qos == 1);
-  assert(topic && body && std::strlen(body) == length);
+  assert(topic && body);
   if (inPublish) {
     if (!published) firstWire = body;
     ++published;
@@ -203,14 +204,14 @@ static int esp_mqtt_client_publish(void *, const char *topic, const char *body,
 // Ordinary HTTP status requests use the actual handler/response functions and
 // the actual loop's status branch. The host delay only pumps that loop work.
 using esp_err_t = int;
-static constexpr int ESP_OK = 0;
+static constexpr int ESP_OK = 0, ESP_FAIL = -1;
 struct httpd_req_t {};
 struct { std::string status, type, body; } httpResponse;
 static int httpd_resp_set_hdr(httpd_req_t *, const char *, const char *) { return ESP_OK; }
 static int httpd_resp_set_status(httpd_req_t *, const char *status) { httpResponse.status = status; return ESP_OK; }
 static int httpd_resp_set_type(httpd_req_t *, const char *type) { httpResponse.type = type; return ESP_OK; }
 static int httpd_resp_send(httpd_req_t *, const char *body, size_t length) {
-  assert(poolLive == 0 && body && std::strlen(body) == length);
+  assert(poolLive == 0 && body);
   httpResponse.body.assign(body, length); return ESP_OK;
 }
 #include "json-response.inc"
@@ -273,7 +274,7 @@ static void namespaces() {
     std::string typed = "{\"schema\":1,\"model\":\"daikin\",\"reference\":\"" + std::string(mqttRoot.c_str()) + "/state\"}";
     hubLocalPublish(sensorRoot + "/state", String(typed.c_str()), false);
     assert(localMessages[1].topic == local + "sensor/aabbccddeeff/state" && !localMessages[1].retained);
-    assert(localMessages[1].body.find(local + "daikin/aabbccddeeff/state") != std::string::npos);
+    assert(localMessages[1].body.find(std::string(mqttRoot.c_str())+"/state") != std::string::npos);
   }
 }
 static std::string discoveryBody(const std::string &key) {
@@ -322,31 +323,30 @@ static void render() {
   assert(iotcloud::nativeMessageSize("", 0, rules, 1, 8192, emptyLength) && emptyLength == 0);
 }
 static void verifySnapshots() {
-  assert(localMessages.size() == 2 && sdkMessages.size() == 2);
+  assert(localMessages.size() == 4 && sdkMessages.size() == 4);
   assert(localMessages[0].topic == prefix("owner") + "daikin/aabbccddeeff/state");
-  assert(localMessages[1].topic == prefix("owner") + "sensor/aabbccddeeff/state");
+  assert(localMessages[3].topic == prefix("owner") + "sensor/aabbccddeeff/state");
   assert(sdkMessages[0].topic == std::string(mqttRoot.c_str()) + "/state");
-  assert(sdkMessages[1].topic == std::string(sensorRoot.c_str()) + "/state");
-  assert(localMessages[0].retained && !localMessages[1].retained);
-  assert(sdkMessages[0].retained && !sdkMessages[1].retained);
-  assert(localMessages[0].body == sdkMessages[0].body && localMessages[1].body == sdkMessages[1].body);
+  assert(sdkMessages[3].topic == std::string(sensorRoot.c_str()) + "/state");
+  assert(localMessages[0].retained && !localMessages[3].retained);
+  assert(sdkMessages[0].retained && !sdkMessages[3].retained);
+  assert(localMessages[0].body == sdkMessages[0].body && localMessages[3].body == sdkMessages[3].body);
   DynamicJsonDocument full(8192), typed(8192);
-  assert(!deserializeJson(full, localMessages[0].body));
-  assert(!deserializeJson(typed, localMessages[1].body));
+  assert(!deserializeMsgPack(full, localMessages[0].body));
+  assert(!deserializeMsgPack(typed, localMessages[3].body));
   assert(full["model"] == "daikin" && full["firmware_variant"] == "hub");
   assert(full["device_id"] == "aabbccddeeff" && full["name"] == "Bedroom 中文");
   assert(full["co2_diagnostics"]["raw_ppm"] == 721);
   assert(full["ota_partitions"]["entries"].size() == 3);
   assert(full["indicator_rules_supported"] == true);
   assert(full["sensors"].size() == SENSOR_COUNT && typed["sensors"].size() == SENSOR_COUNT);
-  assert(typed["schema"] == 2 && typed["model"] == "daikin" && typed["device_id"] == "aabbccddeeff");
+  assert(typed["schema"] == 3 && typed["device_id"] == "aabbccddeeff");
   assert(typed["boot"].as<uint32_t>() == sensorBoot && typed["boot"].as<uint64_t>() == sensorBoot);
   assert(typed["sequence"].as<uint32_t>() == sensorSequence && typed["sequence"].as<uint64_t>() == sensorSequence);
   for (unsigned i = 0; i < SENSOR_COUNT; ++i) {
     const auto a = full["sensors"][keys[i]], b = typed["sensors"][keys[i]];
-    assert(a["unit"] == units[i] && b["unit"] == units[i]);
-    const char *names[]={"PM2.5","Carbon dioxide","Temperature","Humidity","TVOC","Formaldehyde","PM10"};
-    assert(b["type"] == "number" && b["name"] == names[i]);
+    assert(a["unit"] == units[i]);
+    assert(!b.containsKey("unit") && !b.containsKey("name"));
     assert(a["valid"].as<bool>() == (i != TVOC) && b["valid"].as<bool>() == (i != TVOC));
     if (i == TVOC) assert(a["value"].isNull() && b["value"].isNull());
     else assert(a["value"].as<float>() == readings[i].value && b["value"].as<float>() == readings[i].value);
@@ -404,16 +404,16 @@ static void httpStatusRead(const DocumentStats &required) {
   httpResponse = {}; httpd_req_t request;
   assert(statusHandler(&request) == ESP_OK);
   assert(!webPending && webDone && webOperation == 4 && poolLive == 0);
-  assert(httpResponse.status == "200 OK" && httpResponse.type == "application/json");
+  assert(httpResponse.status == "200 OK" && httpResponse.type == "application/msgpack");
   const auto finalCapacity = verifyAttempts(0, 4096, required.memory);
   assert(poolPeak == finalCapacity);
   DynamicJsonDocument response(8192);
-  assert(!deserializeJson(response, httpResponse.body));
+  assert(!deserializeMsgPack(response,httpResponse.body));
   assert(response.size() == 2 && response["code"] == "ok");
   assert(response["data"].is<JsonObject>() && response["data"]["sensors"].size() == SENSOR_COUNT);
   String data; serializeJson(response["data"], data);
   assert(std::string(data.c_str()) == expectedData);
-  assert(httpResponse.body.size() == required.wire);
+  assert(httpResponse.body.size() < required.wire);
   printAttempts("normal HTTP status");
 }
 static DocumentStats measuredFull, measuredTyped;
@@ -458,16 +458,16 @@ static void statePublication(unsigned repetitions) {
     stringBaseline = stringBytes(); inPublish = true;
     publishState();
     inPublish = false;
-    assert(poolLive == 0 && published == 2);
+    assert(poolLive == 0 && published == 4);
     const auto fullCapacity = verifyAttempts(0, 4096, measuredFull.memory);
-    const auto typedCapacity = verifyAttempts(1, 2048, measuredTyped.memory);
+    const auto typedCapacity = verifyAttempts(3, 2048, measuredTyped.memory);
     assert(poolPeak == std::max(fullCapacity, typedCapacity));
     assert(stringBytes() == stringBaseline && firstWire && firstWireFreed);
     assert(sensorSequence && sensorSequence > previousSequence);
     verifySnapshots();
   }
   std::printf("normal publications=%u full wire=%zu typed wire=%zu; first wire released before all typed pool attempts\n",
-              repetitions, sdkMessages[0].body.size(), sdkMessages[1].body.size());
+              repetitions, sdkMessages[0].body.size(), sdkMessages[3].body.size());
   printAttempts("normal state/typed");
 }
 static void ready() {

@@ -53,6 +53,8 @@ struct String:std::string {
   size_t write(uint8_t c){return write(&c,1);}
   size_t write(const uint8_t *p,size_t n){n=std::min(n,stringWriteLimit>size()?stringWriteLimit-size():size_t(0));append(reinterpret_cast<const char *>(p),n);return n;}
 };
+
+#include "wire_mp.h"
 namespace ArduinoJson {
 template<> struct Converter<String> {
   static String fromJson(JsonVariantConst value){return value.as<std::string>();}
@@ -161,7 +163,7 @@ static bool webPending=false,webDone=true;
 static void httpd_resp_set_hdr(httpd_req_t *req,const char *key,const char *value){if(!strcmp(key,"Cache-Control"))req->cache=value;}
 static void httpd_resp_set_status(httpd_req_t *req,const char *status){req->status=status;}
 static void httpd_resp_set_type(httpd_req_t *req,const char *type){req->type=type;}
-static esp_err_t httpd_resp_send(httpd_req_t *req,const char *body,size_t length){req->body.assign(body?body:"",length);return ESP_OK;}
+static esp_err_t httpd_resp_send(httpd_req_t *req,const char *body,size_t length){req->body.assign(body?body:"",length);if(length&&uint8_t(body[0])>=0x80&&uint8_t(body[0])<=0x8f){StaticJsonDocument<768> doc;assert(!deserializeMsgPack(doc,body,length));req->body.clear();serializeJson(doc,req->body);}return ESP_OK;}
 static int httpd_req_recv(httpd_req_t *req,char *out,int size){size_t n=std::min(size_t(size),req->input.size()-req->offset);memcpy(out,req->input.data()+req->offset,n);req->offset+=n;return int(n);}
 static bool authorized(httpd_req_t *){return true;}
 static void delay(unsigned n){now+=n;if(webPending&&!webDone){webResult=backupExecute();webPending=false;webDone=true;}}
@@ -235,7 +237,7 @@ static void assertQuiesced(const std::string &token,int fd){
   hubHttpToken=token;hubApiExecute();assert(hubHttpStatus==503&&hubHttpToken.empty());
   unsigned writes=prefs.writes;
   DynamicJsonDocument next(configCapacity);next.set(config);assert(!saveConfig(next)&&prefs.writes==writes);
-  assert(execute(R"({"request_id":"after","action":"config.set","params":{"section":"device","values":{"name":"rewrite"}}})").find("restart_required")!=String::npos);
+  assert(execute(R"({"request_id":"after","action":"config.set","params":{"section":"device","values":{"name":"rewrite"}}})",false).find("restart_required")!=String::npos);
   assert(prefs.writes==writes&&backupExecute().find("restart_required")!=String::npos);
 }
 int main(int argc,char **argv){
@@ -314,7 +316,7 @@ int main(int argc,char **argv){
     if(scenario=="mqtt-local"){
       const std::string topic=hubService.prefix()+"daikin/aabbccddeeff/command";
       hubTransport.broker.event=[&](const std::string &t,const std::string &body,bool,iotcloud::HubBroker::Origin origin){
-        if(t==topic&&origin==iotcloud::HubBroker::Origin::Local)result=execute(body);
+        if(t==topic&&origin==iotcloud::HubBroker::Origin::Local)result=execute(body,false);
       };
       std::vector<uint8_t> body;text(body,topic);body.insert(body.end(),request.begin(),request.end());
       std::vector<uint8_t> packet={0x30};size_t length=body.size();
@@ -323,7 +325,7 @@ int main(int argc,char **argv){
       assert(::send(fd,packet.data(),packet.size(),0)==int(packet.size()));
       for(unsigned i=0;i<100&&result.empty();++i)pollHub(++now);
       assert(!result.empty());
-    }else result=execute(request);
+    }else result=execute(request,false);
     if(prefs.fail){
       assert(result.find("storage_error")!=String::npos&&prefs.persisted==before);
       assertLive(login.token,fd);assert(!hubReload&&!mqttRestart&&hubEpoch==0);
@@ -341,7 +343,7 @@ int main(int argc,char **argv){
     }
   }else if(scenario=="reset"||scenario=="reset-fail"){
     prefs.clearFail=scenario=="reset-fail";
-    auto result=execute(R"({"request_id":"reset","action":"system.reset","params":{"full":true}})");
+    auto result=execute(R"({"request_id":"reset","action":"system.reset","params":{"full":true}})",false);
     if(prefs.clearFail){assert(result.find("storage_error")!=String::npos);assert(!prefs.persisted.empty());assertLive(login.token,fd);assert(!rebootAt);}
     else{assert(result.find("accepted")!=String::npos);assert(prefs.persisted.empty());assertQuiesced(login.token,fd);assert(rebootAt);}
   }else{

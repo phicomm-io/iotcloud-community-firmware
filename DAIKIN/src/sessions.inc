@@ -17,16 +17,19 @@ static bool hexText(const char *text,size_t length){
   for(size_t i=0;i<length;i++)if(!isxdigit((unsigned char)text[i]))return false;
   return true;
 }
+static uint32_t sensorDescriptorRevision(){uint32_t mask=0;for(unsigned i=0;i<SENSOR_COUNT;i++)if(sensorPresent(i))mask|=1u<<i;return mask+1;}
+static void sensorMetadata(JsonObject out){
+  out["schema"]=3;out["device_id"]=deviceId;out["boot"]=sensorBoot;out["descriptor_revision"]=sensorDescriptorRevision();
+  JsonObject fields=out.createNestedObject("fields");
+  const char *names[]={"PM2.5","Carbon dioxide","Temperature","Humidity","TVOC","Formaldehyde","PM10"};
+  for(unsigned i=0;i<SENSOR_COUNT;i++)if(sensorPresent(i)){JsonObject field=fields.createNestedObject(keys[i]);field["type"]="number";field["name"]=names[i];field["unit"]=units[i];}
+}
 static void sensorBody(JsonObject out){
   if(!++sensorSequence)++sensorSequence;
-  out["schema"]=2;out["device_id"]=deviceId;out["model"]="daikin";out["boot"]=sensorBoot;out["sequence"]=sensorSequence;
-  JsonObject values=out.createNestedObject("sensors");
-  const char *names[]={"PM2.5","Carbon dioxide","Temperature","Humidity","TVOC","Formaldehyde","PM10"};
-  const uint32_t now=millis();
-  for(unsigned i=0;i<SENSOR_COUNT;i++){
-    if(!sensorPresent(i))continue;
-    JsonObject value=values.createNestedObject(keys[i]);bool valid=readings[i].valid(now);
-    value["type"]="number";value["name"]=names[i];value["valid"]=valid;value["unit"]=units[i];
+  out["schema"]=3;out["device_id"]=deviceId;out["boot"]=sensorBoot;out["sequence"]=sensorSequence;out["descriptor_revision"]=sensorDescriptorRevision();
+  JsonObject values=out.createNestedObject("sensors");const uint32_t now=millis();
+  for(unsigned i=0;i<SENSOR_COUNT;i++)if(sensorPresent(i)){
+    JsonObject value=values.createNestedObject(keys[i]);bool valid=readings[i].valid(now);value["valid"]=valid;
     value["age_ms"]=readings[i].received?uint32_t(now-readings[i].at):0;
     if(valid)value["value"]=readings[i].value;else value["value"]=nullptr;
   }
@@ -40,7 +43,7 @@ static void sessionStatus(JsonObject out){
   }
 }
 static bool sessionGrant(const String &text){
-  DynamicJsonDocument doc(1024);if(deserializeJson(doc,text))return false;
+  DynamicJsonDocument doc(1024);if(deserializeMsgPack(doc,text.c_str(),text.length()))return false;
   if(strcmp(doc["action"]|"","sensor.session.set"))return false;
   JsonObjectConst p=doc["params"];
   uint32_t boot;
@@ -58,7 +61,7 @@ static void __attribute__((noinline)) pollSessions(){
   int size=sensorUdp.parsePacket();if(!size)return;
   if(size>1200){while(sensorUdp.available())sensorUdp.read();return;}
   char wire[1201];int n=sensorUdp.read(wire,size);if(n!=size)return;wire[n]=0;
-  DynamicJsonDocument doc(4096);if(deserializeJson(doc,wire))return;
+  DynamicJsonDocument doc(4096);if(deserializeMsgPack(doc,wire,size))return;
   const char *op=doc["op"]|"";
   uint32_t boot,id;
   if(doc["v"]!=2||deviceId!=(doc["dst"]|"")||(strcmp(op,"read")&&strcmp(op,"probe"))||
@@ -68,6 +71,6 @@ static void __attribute__((noinline)) pollSessions(){
     DynamicJsonDocument reply(4096);reply["v"]=2;reply["src"]=deviceId;reply["dst"]=s.id;reply["boot"]=int32_t(sensorBoot);
     reply["id"]=int32_t(id);reply["token"]=s.token;reply["op"]=!strcmp(op,"read")?"sample":"pong";
     if(!strcmp(op,"read"))sensorBody(reply.createNestedObject("body"));
-    String body;serializeJson(reply,body);sensorUdp.beginPacket(s.ip,11288);sensorUdp.write((const uint8_t*)body.c_str(),body.length());sensorUdp.endPacket();break;
+    String body;serializeWireMP(reply,body);sensorUdp.beginPacket(s.ip,11288);sensorUdp.write((const uint8_t*)body.c_str(),body.length());sensorUdp.endPacket();break;
   }
 }

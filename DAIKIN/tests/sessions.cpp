@@ -11,8 +11,12 @@
 struct String:std::string {
   using std::string::string;
   String(const std::string &value):std::string(value){}
+  bool reserve(size_t n){std::string::reserve(n);return true;}
+  bool concat(const char *p,size_t n){append(p,n);return true;}
   void toLowerCase(){for(auto &c:*this)c=std::tolower(static_cast<unsigned char>(c));}
 };
+
+#include "wire_mp.h"
 namespace ArduinoJson {
 template<> struct Converter<String> {
   static String fromJson(JsonVariantConst value){return value.as<std::string>();}
@@ -44,13 +48,14 @@ static const char *keys[]={"pm25"},*units[]={"µg/m³"};
 static bool sensorPresent(unsigned){return true;}
 #include "../src/sessions.inc"
 
+static String pack(const std::string &json){DynamicJsonDocument doc(4096);assert(!deserializeJson(doc,json));std::string wire;serializeMsgPack(doc,wire);return String(wire);}
 static String grant(const char *boot){
-  return std::string("{\"action\":\"sensor.session.set\",\"params\":{\"v\":2,\"a1\":\"aabbccddee01\",\"boot\":")+boot+
-    ",\"token\":\"abababababababababababababababab\"}}";
+  return pack(std::string("{\"action\":\"sensor.session.set\",\"params\":{\"v\":2,\"a1\":\"aabbccddee01\",\"boot\":")+boot+
+    ",\"token\":\"abababababababababababababababab\"}}");
 }
 static void readSession(const char *boot,const char *id="-2147483648"){
-  sensorUdp.incoming=std::string("{\"v\":2,\"src\":\"aabbccddee01\",\"dst\":\"9c9c1ff76748\",\"op\":\"read\",\"boot\":")+boot+
-    ",\"id\":"+id+",\"token\":\"abababababababababababababababab\"}";
+  sensorUdp.incoming=pack(std::string("{\"v\":2,\"src\":\"aabbccddee01\",\"dst\":\"9c9c1ff76748\",\"op\":\"read\",\"boot\":")+boot+
+    ",\"id\":"+id+",\"token\":\"abababababababababababababababab\"}");
   pollSessions();
 }
 int main(){
@@ -58,6 +63,7 @@ int main(){
     {"1",1},{"2147483647",INT32_MAX},{"-2147483648",0x80000000u},
     {"-1",UINT32_MAX},{"4294967295",UINT32_MAX}
   };
+  DynamicJsonDocument metadata(1024);sensorMetadata(metadata.to<JsonObject>());assert(metadata["schema"]==3&&metadata["descriptor_revision"]==2&&metadata["fields"]["pm25"]["type"]=="number"&&metadata["fields"]["pm25"]["unit"]=="µg/m³");
   sensorBoot=UINT32_MAX;readings[0].set(12,now);
   for(const auto &value:counters){
     assert(sessionGrant(grant(value.wire))&&sessions[0].boot==value.bits);
@@ -65,14 +71,12 @@ int main(){
     readSession(value.wire);
     assert(sensorUdp.sent==before+1&&sessions[0].active);
     DynamicJsonDocument reply(4096);
-    assert(!deserializeJson(reply,sensorUdp.outgoing));
+    assert(!deserializeMsgPack(reply,sensorUdp.outgoing));
     assert(reply["boot"].as<int32_t>()==-1);
     assert(reply["id"].as<int32_t>()==INT32_MIN);
     assert(reply["body"]["boot"].is<uint32_t>()&&reply["body"]["boot"].as<uint32_t>()==UINT32_MAX);
-    assert(reply["body"]["model"]=="daikin");
-    assert(reply["body"]["schema"]==2);
-    assert(reply["body"]["sensors"]["pm25"]["type"]=="number");
-    assert(reply["body"]["sensors"]["pm25"]["name"]=="PM2.5");
+    assert(reply["body"]["schema"]==3);
+    assert(reply["body"]["descriptor_revision"]==2);
     assert(reply["body"]["sensors"]["pm25"]["value"].as<int>()==12);
   }
   // A retry with the same bits must preserve the established session.
@@ -98,7 +102,7 @@ int main(){
   // Both unsigned and signed representations echo the same request bits.
   readSession("-1","4294967295");
   DynamicJsonDocument reply(4096);
-  assert(!deserializeJson(reply,sensorUdp.outgoing)&&reply["id"].as<int32_t>()==-1);
+  assert(!deserializeMsgPack(reply,sensorUdp.outgoing)&&reply["id"].as<int32_t>()==-1);
   sensorSequence=INT32_MAX;
   DynamicJsonDocument body(1024);sensorBody(body.to<JsonObject>());
   assert(body["sequence"].is<uint32_t>()&&body["sequence"].as<uint32_t>()==0x80000000u);

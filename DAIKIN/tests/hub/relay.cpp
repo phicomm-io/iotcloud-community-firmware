@@ -168,5 +168,15 @@ int main() {
   broker.publish(fresh + "/state", R"({"fan_on":true,"percentage":100})",
                  true, iotcloud::HubBroker::Origin::Local);
   assert(!relay.incomingBemfa("fan003", "off", false));
+  relay.reset();
+  DynamicJsonDocument advertisement(2048);
+  advertisement["schema"]=2;advertisement["protocol"]="tmcp";advertisement["protocol_version"]=2;advertisement["version"]="v2";advertisement["model"]="a1";advertisement["device_id"]="aabbccddeeff";advertisement["firmware_version"]="1.0-rc.4";advertisement["variant"]="standard";advertisement["wire_version"]=1;advertisement["default_wire_format"]="msgpack";advertisement.createNestedArray("wire_formats").add("msgpack");
+  std::string packed;serializeMsgPack(advertisement,packed);iotcloud::hubWire.observe(service.prefix()+"discovery/aabbccddeeff",packed);assert(iotcloud::hubWire.binary(fresh));
+  assert(!deserializeJson(state,R"({"fan_on":true,"percentage":100,"fresh_air_on":true,"fresh_air_speed":75})"));packed.clear();serializeMsgPack(state,packed);
+  broker.publish(fresh+"/state",packed,true,iotcloud::HubBroker::Origin::Local);
+  assert(relay.incomingBemfa("fan003","off",false));
+  assert(!deserializeMsgPack(command,std::get<1>(local.back()))&&command["action"]=="fresh_air.set"&&command["params"]["on"]==false);
+  state.clear();state["request_id"]=command["request_id"];state["code"]="accepted";packed.clear();serializeMsgPack(state,packed);
+  broker.publish(fresh+"/result",packed,false,iotcloud::HubBroker::Origin::Local);assert(relay.status=="connected");
   puts("hub bridge/Bemfa tests passed");
 }

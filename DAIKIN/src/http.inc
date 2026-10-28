@@ -1,19 +1,41 @@
 static esp_err_t jsonResponse(httpd_req_t *req,const char *status,const String &body){
-  httpd_resp_set_hdr(req,"Access-Control-Allow-Origin","*");httpd_resp_set_status(req,status);httpd_resp_set_type(req,"application/json");httpd_resp_set_hdr(req,"Cache-Control","no-store");
+  httpd_resp_set_hdr(req,"Access-Control-Allow-Origin","*");httpd_resp_set_status(req,status);httpd_resp_set_type(req,"application/msgpack");httpd_resp_set_hdr(req,"Cache-Control","no-store");
+  httpd_resp_set_hdr(req,"X-Content-Type-Options","nosniff");
+  if(body.startsWith("{")){
+    String wire;
+    if(body.length()<384){StaticJsonDocument<768> doc;if(deserializeJson(doc,body))return ESP_FAIL;if(!serializeWireMP(doc,wire)){httpd_resp_set_status(req,"503 Service Unavailable");return httpd_resp_send(req,"\x81\xa4" "code" "\xa4" "busy",11);}}
+    else {DynamicJsonDocument doc(12288);if(deserializeJson(doc,body)){httpd_resp_set_status(req,"503 Service Unavailable");return httpd_resp_send(req,"\x81\xa4" "code" "\xa4" "busy",11);}if(!serializeWireMP(doc,wire)){httpd_resp_set_status(req,"503 Service Unavailable");return httpd_resp_send(req,"\x81\xa4" "code" "\xa4" "busy",11);}}
+    return httpd_resp_send(req,wire.c_str(),wire.length());
+  }
   return httpd_resp_send(req,body.c_str(),body.length());
 }
-static bool authorized(httpd_req_t *req){
-  char pass[33];portENTER_CRITICAL(&authMux);memcpy(pass,webPassword,sizeof(pass));portEXIT_CRITICAL(&authMux);if(!*pass)return true;
-  char header[160];uint8_t decoded[100];size_t n=0;
-  bool ok=httpd_req_get_hdr_value_str(req,"Authorization",header,sizeof(header))==ESP_OK&&strncmp(header,"Basic ",6)==0&&
-    mbedtls_base64_decode(decoded,sizeof(decoded)-1,&n,(unsigned char*)header+6,strlen(header+6))==0;
-  String expected=String("admin:")+pass;uint8_t diff=n^expected.length();
-  if(ok)for(size_t i=0;i<n;i++)diff|=decoded[i]^(i<expected.length()?expected[i]:0);
-  memset(decoded,0,sizeof(decoded));
-  if(ok&&!diff)return true;
-  httpd_resp_set_hdr(req,"WWW-Authenticate","Basic realm=\"DAIKIN\"");jsonResponse(req,"401 Unauthorized","{\"code\":\"unauthorized\",\"message\":\"Authentication required\"}");return false;
+static bool authorized(httpd_req_t *req);
+// HTTP server owns these sessions. Credentials changing on the application
+// task invalidate all tokens on the next request; tokens never enter config.
+struct WebSession {String token;uint32_t created=0,seen=0;};
+static WebSession webSessions[4];
+static String sessionPassword;
+static String currentWebPassword(){char password[33];portENTER_CRITICAL(&authMux);memcpy(password,webPassword,sizeof(password));portEXIT_CRITICAL(&authMux);return String(password);}
+static void refreshWebSessions(){String password=currentWebPassword();if(password!=sessionPassword){for(auto &s:webSessions)s=WebSession();sessionPassword=password;}uint32_t now=millis();for(auto &s:webSessions)if(s.token.length()&&(uint32_t(now-s.seen)>=1800000||uint32_t(now-s.created)>=86400000))s=WebSession();}
+static WebSession *bearerSession(httpd_req_t *req){refreshWebSessions();char header[80]={};if(httpd_req_get_hdr_value_str(req,"Authorization",header,sizeof(header))!=ESP_OK||strncmp(header,"Bearer ",7))return nullptr;for(auto &s:webSessions)if(s.token.length()&&s.token==header+7){s.seen=millis();return &s;}return nullptr;}
+static bool authorized(httpd_req_t *req){if(bearerSession(req))return true;jsonResponse(req,"401 Unauthorized","{\"code\":\"unauthorized\"}");return false;}
+static esp_err_t loginHandler(httpd_req_t *req){
+  refreshWebSessions();char type[64]={};
+  if(httpd_req_get_hdr_value_str(req,"Content-Type",type,sizeof(type))!=ESP_OK||strcmp(type,"application/msgpack"))return jsonResponse(req,"415 Unsupported Media Type","{\"code\":\"invalid_params\"}");
+  if(req->content_len<=0||req->content_len>128)return jsonResponse(req,"400 Bad Request","{\"code\":\"invalid_params\"}");
+  char body[128];int left=req->content_len,read=0;while(left){int n=httpd_req_recv(req,body+read,left);if(n<=0)return ESP_FAIL;read+=n;left-=n;}
+  DynamicJsonDocument input(512);if(deserializeMsgPack(input,body,read)||!input.is<JsonObject>()||input.size()!=1||!input["password"].is<const char*>())return jsonResponse(req,"400 Bad Request","{\"code\":\"invalid_params\"}");
+  const char *password=input["password"];if(input["password"].as<JsonString>().size()!=strlen(password))return jsonResponse(req,"400 Bad Request","{\"code\":\"invalid_params\"}");unsigned difference=strlen(password)^sessionPassword.length();for(size_t i=0;i<sessionPassword.length();i++)difference|=uint8_t(sessionPassword[i])^uint8_t(i<strlen(password)?password[i]:0);
+  if(difference)return jsonResponse(req,"401 Unauthorized","{\"code\":\"unauthorized\"}");
+  WebSession *slot=nullptr;for(auto &s:webSessions)if(!s.token.length()){slot=&s;break;}
+  if(!slot)return jsonResponse(req,"503 Service Unavailable","{\"code\":\"busy\"}");
+  char token[33];for(unsigned i=0;i<4;i++)snprintf(token+i*8,9,"%08lx",(unsigned long)esp_random());
+  slot->token=token;slot->created=slot->seen=millis();
+  DynamicJsonDocument reply(1536);reply["code"]="ok";JsonObject data=reply.createNestedObject("data");data["token"]=slot->token;data["expires_in"]=1800;
+  String result;serializeWireMP(reply,result);return jsonResponse(req,"200 OK",result);
 }
-// HTTP handlers run in the server task; commands and hardware/config use loop().
+static esp_err_t logoutHandler(httpd_req_t *req){auto session=bearerSession(req);if(!session)return jsonResponse(req,"401 Unauthorized","{\"code\":\"unauthorized\"}");*session=WebSession();return jsonResponse(req,"200 OK","{\"code\":\"ok\"}");}
+// HTTP handlers run on the server task; application work is queued below.
 static portMUX_TYPE webMux=portMUX_INITIALIZER_UNLOCKED;
 static volatile bool webPending=false,webDone=true;
 static String webBody,webResult;
@@ -24,7 +46,6 @@ static int hubHttpStatus=200;
 static String hubHttpToken;
 #endif
 static esp_err_t rootHandler(httpd_req_t *req){
-  if(!authorized(req))return ESP_OK;
   httpd_resp_set_type(req,"text/html; charset=utf-8");httpd_resp_set_hdr(req,"Content-Encoding","gzip");
   return httpd_resp_send(req,(const char*)web_data,sizeof(web_data));
 }
@@ -32,9 +53,9 @@ static esp_err_t commandHandler(httpd_req_t *req){
   if(!authorized(req))return ESP_OK;
   if(webPending||!webDone)return jsonResponse(req,"503 Service Unavailable","{\"code\":\"busy\",\"message\":\"Command still pending\"}");
   if(req->content_len<=0||req->content_len>4096)return jsonResponse(req,"413 Payload Too Large","{\"code\":\"invalid_params\",\"message\":\"Command too large\"}");
-  char type[64];if(httpd_req_get_hdr_value_str(req,"Content-Type",type,sizeof(type))!=ESP_OK||strncmp(type,"application/json",16))return jsonResponse(req,"415 Unsupported Media Type","{\"code\":\"invalid_params\",\"message\":\"Expected JSON\"}");
-  String body;body.reserve(req->content_len);char buffer[512];int left=req->content_len;
-  while(left){int n=httpd_req_recv(req,buffer,min(left,(int)sizeof(buffer)));if(n<=0)return ESP_FAIL;body.concat(buffer,n);left-=n;}
+  char type[64];if(httpd_req_get_hdr_value_str(req,"Content-Type",type,sizeof(type))!=ESP_OK||strcmp(type,"application/msgpack"))return jsonResponse(req,"415 Unsupported Media Type","{\"code\":\"invalid_params\",\"message\":\"Expected MessagePack\"}");
+  String body;body.reserve(req->content_len);char buffer[513];int left=req->content_len;
+  while(left){int n=httpd_req_recv(req,buffer,min(left,512));if(n<=0)return ESP_FAIL;buffer[n]=0;body.concat(buffer,n);left-=n;}
   webOperation=0;webBody=body;webDone=false;
   portENTER_CRITICAL(&webMux);webPending=true;portEXIT_CRITICAL(&webMux);
   const uint32_t started=millis();
@@ -92,9 +113,9 @@ static esp_err_t backupHandler(httpd_req_t *req){
   if(webPending||!webDone)return jsonResponse(req,"409 Conflict","{\"code\":\"busy\"}");
   const bool restore=req->method==HTTP_POST;
   if(restore&&(req->content_len<=0||req->content_len>int(configCapacity+1024)))return jsonResponse(req,"400 Bad Request","{\"code\":\"invalid_backup\"}");
-  String body;char buffer[512];int left=restore?req->content_len:0;
+  String body;char buffer[513];int left=restore?req->content_len:0;
   if(restore&&!body.reserve(left))return jsonResponse(req,"503 Service Unavailable","{\"code\":\"busy\"}");
-  while(left){int n=httpd_req_recv(req,buffer,min(left,(int)sizeof(buffer)));if(n<=0)return ESP_FAIL;if(!body.concat(buffer,n))return jsonResponse(req,"503 Service Unavailable","{\"code\":\"busy\"}");left-=n;}
+  while(left){int n=httpd_req_recv(req,buffer,min(left,512));if(n<=0)return ESP_FAIL;buffer[n]=0;if(!body.concat(buffer,n))return jsonResponse(req,"503 Service Unavailable","{\"code\":\"busy\"}");left-=n;}
   webBody=std::move(body);webOperation=restore?2:1;webDone=false;
   portENTER_CRITICAL(&webMux);webPending=true;portEXIT_CRITICAL(&webMux);
   uint32_t started=millis();while(!webDone){if(uint32_t(millis()-started)>=10000)return jsonResponse(req,"503 Service Unavailable","{\"code\":\"timeout\"}");delay(1);}
@@ -146,7 +167,7 @@ static esp_err_t uploadFirmware(httpd_req_t *req,bool signedImage,const daikin::
   }
   if(ok&&!signedImage)ok=otaErase(&flash);
   if(ok){ok=signedImage?signed_ota_write(&verifier,buffer+envelope,prefix):otaWrite(&flash,0,buffer,prefix);left-=prefix;}
-  while(ok&&left>0){int n=httpd_req_recv(req,(char*)buffer,min(left,(int)sizeof(buffer)));if(n<=0){ok=false;break;}ok=signedImage?signed_ota_write(&verifier,buffer,n):otaWrite(&flash,0,buffer,n);left-=n;}
+  while(ok&&left>0){int n=httpd_req_recv(req,(char*)buffer,min(left,512));if(n<=0){ok=false;break;}ok=signedImage?signed_ota_write(&verifier,buffer,n):otaWrite(&flash,0,buffer,n);left-=n;}
   if(ok&&signedImage)ok=signed_ota_finish(&verifier);
   // Verify the actual staged identity again after signature/digest validation.
   if(ok)ok=otaRead(&flash,0,buffer,prefix)&&daikin::matchingFirmwarePrefix(buffer,prefix,expected,self->project_name);
@@ -179,11 +200,12 @@ static esp_err_t convertHandler(httpd_req_t *req){
 }
 #endif
 static esp_err_t infoHandler(httpd_req_t *req){
-  if(!authorized(req))return ESP_OK;
-  DynamicJsonDocument reply(512);reply["code"]="ok";JsonObject data=reply.createNestedObject("data");
+  DynamicJsonDocument reply(1536);reply["code"]="ok";JsonObject data=reply.createNestedObject("data");
   data["api_version"]=1;data["model"]="daikin";data["firmware_variant"]=DAIKIN_VARIANT;
   data["version"]=version;data["device_id"]=deviceId;data["mac"]=deviceId;
-  String body;serializeJson(reply,body);return jsonResponse(req,"200 OK",body);
+  data["api_version"]=1;data["model"]="daikin";data["variant"]=DAIKIN_VARIANT;data["device_id"]=deviceId;data["fw"]=version;data["firmware_version"]=version;
+  data["auth"]="bearer";data["password_set"]=currentWebPassword().length()>0;data["auth_required"]=true;data["wire_version"]=1;data.createNestedArray("wire_formats").add("msgpack");data["default_wire_format"]="msgpack";
+  String body;serializeWireMP(reply,body);return jsonResponse(req,"200 OK",body);
 }
 static esp_err_t statusHandler(httpd_req_t *req){
   if(!authorized(req))return ESP_OK;
@@ -223,19 +245,22 @@ static esp_err_t hubApiHandler(httpd_req_t *req){
     setupAuthorized=true;
   }
   if(req->content_len>12288||req->content_len<0)return jsonResponse(req,"413 Payload Too Large","{\"code\":\"invalid_params\"}");
-  if(!get&&req->method!=HTTP_DELETE){char type[64]={};if(httpd_req_get_hdr_value_str(req,"Content-Type",type,sizeof(type))!=ESP_OK||strncmp(type,"application/json",16))return jsonResponse(req,"415 Unsupported Media Type","{\"code\":\"invalid_params\"}");}
-  String body;body.reserve(req->content_len);char buffer[512];int left=req->content_len;
-  while(left){int n=httpd_req_recv(req,buffer,min(left,(int)sizeof(buffer)));if(n<=0)return ESP_FAIL;body.concat(buffer,n);left-=n;}
+  if(!get&&req->method!=HTTP_DELETE){char type[64]={};if(httpd_req_get_hdr_value_str(req,"Content-Type",type,sizeof(type))!=ESP_OK||strcmp(type,"application/msgpack"))return jsonResponse(req,"415 Unsupported Media Type","{\"code\":\"invalid_params\"}");}
+  String body;body.reserve(req->content_len);char buffer[513];int left=req->content_len;
+  while(left){int n=httpd_req_recv(req,buffer,min(left,512));if(n<=0)return ESP_FAIL;buffer[n]=0;body.concat(buffer,n);left-=n;}
+  if(body.length()){
+    DynamicJsonDocument decoded(24576);if(deserializeMsgPack(decoded,body.c_str(),body.length())||!decoded.is<JsonObject>())return jsonResponse(req,"400 Bad Request","{\"code\":\"invalid_params\"}");
+    String internal;serializeJson(decoded,internal);body=std::move(internal);
+  }
   std::string token;
   if(httpd_req_get_hdr_value_str(req,"Authorization",authorization,sizeof(authorization))==ESP_OK&&!strncmp(authorization,"Bearer ",7))token=authorization+7;
-  hubHttpRequest=iotcloud::HubService::Request(get?"GET":req->method==HTTP_POST?"POST":req->method==HTTP_PUT?"PUT":"DELETE",path.c_str(),body.c_str(),token,hostname.c_str(),setupAuthorized);
+  hubHttpRequest=iotcloud::HubService::Request(get?"GET":req->method==HTTP_POST?"POST":req->method==HTTP_PUT?"PUT":"DELETE",path.c_str(),std::string(body.c_str(),body.length()),token,hostname.c_str(),setupAuthorized);
   webOperation=3;webDone=false;hubHttpToken="";
   portENTER_CRITICAL(&webMux);webPending=true;portEXIT_CRITICAL(&webMux);
   uint32_t started=millis();while(!webDone){if(uint32_t(millis()-started)>=10000)return jsonResponse(req,"503 Service Unavailable","{\"code\":\"timeout\"}");delay(1);}
   const char *status=hubHttpStatus==200?"200 OK":hubHttpStatus==201?"201 Created":hubHttpStatus==202?"202 Accepted":hubHttpStatus==400?"400 Bad Request":hubHttpStatus==401?"401 Unauthorized":hubHttpStatus==403?"403 Forbidden":hubHttpStatus==404?"404 Not Found":hubHttpStatus==405?"405 Method Not Allowed":hubHttpStatus==409?"409 Conflict":hubHttpStatus==429?"429 Too Many Requests":"503 Service Unavailable";
   if(hubHttpToken.length())httpd_resp_set_hdr(req,"X-IotCloud-Session",hubHttpToken.c_str());
-  httpd_resp_set_status(req,status);httpd_resp_set_type(req,"application/json");httpd_resp_set_hdr(req,"Cache-Control","no-store");
-  return httpd_resp_send(req,webResult.c_str(),webResult.length());
+  return jsonResponse(req,status,webResult);
 }
 static void registerHubHttp(){
   if(!web)return;
