@@ -167,10 +167,9 @@ void feature_config_get(feature_config_t *);
 uint32_t feature_config_revision(void);
 bool feature_config_save(const feature_config_t *);
 OSStatus feature_start(void);
-json_object *feature_json(const char *domain);
+
 void feature_values_snapshot(feature_values_t *);
-/* Returns HTTP status; response ownership passes to caller. */
-int feature_set(const char *domain, json_object *, json_object **response);
+
 #ifndef FEATURE_DEVICE_A1
 /* Called only by the admitted MQTT command adapter. Never persists a token. */
 int feature_sensor_session_set(json_object *);
@@ -204,9 +203,9 @@ void feature_manual_fan(bool on);
 bool feature_fan_auto(void);
 unsigned feature_fan_limit(void);
 /* Validated mode/cap update; 0=failure, 1=manual, 2=auto. */
-int feature_fan_command(json_object *);
+
 int feature_fan_apply(unsigned mode, int speed);
-int feature_light_select(unsigned effect,json_object **response);
+
 bool feature_group_active(void);
 bool feature_group_control(const char *kind, json_object *);
 void feature_clock_valid(void);

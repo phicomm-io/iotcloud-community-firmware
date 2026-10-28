@@ -19,6 +19,8 @@
 #define LOCAL_ID m1_id
 #endif
 #include "config_json.c"
+#include "config_mp.inc"
+#include "service_mp.h"
 #include "engine.c"
 static mico_mutex_t feature_lock;
 static mico_mutex_t namespace_lock;
@@ -317,6 +319,7 @@ static bool install_config(feature_config_t *c) {
 #ifdef FEATURE_DEVICE_A1
   free(next);
 #endif
+  service_cache_changed(SERVICE_CACHE_ALL);
   return true;
 }
 static void sensor_decode(json_object *o, feature_sample_t *s) {
@@ -395,42 +398,6 @@ static json_object *sample_body(const feature_sample_t *s, uint32_t now) {
   #endif
   return o;
 }
-#ifdef FEATURE_DEVICE_A1
-/* Caller supplies a stable snapshot. Missing/stale data is never a zero reading. */
-static json_object *average_body(const feature_sample_t *current, unsigned count, uint32_t now) {
-  float mean[4]={NAN,NAN,NAN,NAN};
-  unsigned n = feature_aggregate(current, count, now, STAT_MEAN, mean, NULL);
-  json_object *o = json_object_new_object();
-  number(o, "sample_count", n);
-  float co2=0; unsigned nc=feature_co2_aggregate(current,count,now,STAT_MEAN,&co2);
-  bool supported=false; for(unsigned i=0;i<count && i<FEATURE_MAX_PEERS;i++) supported |= current[i].co2_supported;
-  json_build_object_add(o,"co2_supported",json_object_new_boolean(supported));
-  json_build_object_add(o,"co2_valid",json_object_new_boolean(nc != 0));
-  number(o,"co2_sample_count",nc);
-  if(nc) json_build_object_add(o,"co2",json_object_new_double(co2));
-  else json_object_object_add(o,"co2",NULL);
-  number(o, "configured_count", count);
-  json_build_object_add(o, "valid", json_object_new_boolean(n != 0));
-  const char *keys[] = {"temperature", "humidity", "pm25", "formaldehyde"};
-  // The legacy complete sample already proves all four fields are available.
-  // Only partial samples need the explicit mask; avoid a redundant JSON graph
-  // on every complete sample in memory-constrained A1 background publishing.
-  bool complete=n!=0;
-  for(unsigned i=0;i<4;i++)complete=complete&&isfinite(mean[i]);
-  json_object *fields=complete?NULL:json_object_new_object();
-  for (unsigned i = 0; i < 4; ++i) {
-    bool valid=n && isfinite(mean[i]);
-    if(!complete)json_build_object_add(fields,keys[i],json_object_new_boolean(valid));
-    if(valid)json_build_object_add(o,keys[i],json_object_new_double(mean[i]));
-    else json_object_object_add(o,keys[i],NULL);
-  }
-  if(!complete){
-    json_build_object_add(fields,"co2",json_object_new_boolean(nc!=0));
-    json_build_object_add(o,"fields",fields);
-  }
-  return o;
-}
-#endif
 #include "group.c"
 #ifndef FEATURE_DEVICE_A1
 /* Only the MQTT command adapter invokes this grant; no UDP/HTTP grant path. */
@@ -564,6 +531,7 @@ void feature_local_sample(const feature_sample_t *s) {
   lock();
   local_sample = *s;
   unlock();
+  service_cache_changed(SERVICE_CACHE_STATUS);
 }
 #ifdef FEATURE_DEVICE_A1
 void feature_values_snapshot(feature_values_t *out) {
@@ -577,178 +545,8 @@ void feature_values_snapshot(feature_values_t *out) {
   unlock();
 }
 #endif
-void feature_clock_valid(void) { clock_ok = true; }
-json_object *feature_json(const char *d) {
-
-  feature_config_t *c = malloc(sizeof(*c));
-  if (!c)
-    return NULL;
-  feature_config_get(c);
-  json_object *o;
-#ifdef FEATURE_DEVICE_A1
-  if (!strcmp(d, "average")) {
-    feature_sample_t current[FEATURE_MAX_PEERS];
-    lock(); memcpy(current, samples, sizeof(current)); unlock();
-    o = average_body(current, c->peer_count, now_ms());
-  } else
-#endif
-  if (!strcmp(d, "status")) {
-    o = json_object_new_object();
-    lock();
-    number(o, "available", available);
-    number(o, "co2_available", available_co2);
-    json_build_object_add(o, "data_valid",
-                           json_object_new_boolean(data_valid));
-    json_build_object_add(o, "clock_valid", json_object_new_boolean(clock_ok));
-    json_build_object_add(o, "automatic_on",
-                           json_object_new_boolean(effective_on));
-    number(o, "automatic_speed", automatic_speed);
-    json_object *a = json_object_new_array();
-#ifdef FEATURE_DEVICE_A1
-    for (unsigned i = 0; i < c->peer_count; i++) {
-      json_object *p = json_object_new_object();
-      js(p, "mac", c->peers[i].id);
-      json_build_object_add(p,"session_ready",json_object_new_boolean(peers[i].authorized||samples[i].partial));
-      json_build_object_add(p,"co2_supported",json_object_new_boolean(samples[i].co2_supported));
-      json_build_object_add(p,"co2_valid",json_object_new_boolean(feature_co2_fresh(&samples[i],now_ms())));
-      js(p, "ip", c->peers[i].ip[0] ? c->peers[i].ip : peers[i].ip);
-      js(p, "transport",
-         peers[i].lan ? "lan" : (feature_sample_fresh(&samples[i],now_ms())||feature_co2_fresh(&samples[i],now_ms())?"mqtt":"offline"));
-      json_build_object_add(p, "pending",
-                             json_object_new_boolean(peers[i].pending));
-      json_build_object_add(
-          p, "fresh",
-          json_object_new_boolean(feature_sample_fresh(&samples[i], now_ms())||feature_co2_fresh(&samples[i],now_ms())));
-      json_build_array_add(a, p);
-    }
-#else
-    for(unsigned i=0;i<FEATURE_MAX_PEERS;i++) {
-      sensor_session_t *session=&sensor_sessions[i];
-      if(!session->valid || (uint32_t)(now_ms()-session->last_seen)>=SENSOR_SESSION_IDLE_MS)continue;
-      json_object *p=json_object_new_object();js(p,"mac",session->id);js(p,"ip",session->ip);
-      uint32_t idle=now_ms()-(session->active?session->last_read:session->last_seen);
-      json_build_object_add(p,"session_ready",json_object_new_boolean(session->active && idle<FEATURE_STALE_MS));
-      number(p,"idle_ms",idle);json_build_array_add(a,p);
-    }
-    number(o,"max_sessions",FEATURE_MAX_PEERS);
-#endif
-#ifdef FEATURE_DEVICE_A1
-    json_build_object_add(o, "average", average_body(samples, c->peer_count, now_ms()));
-    json_object *members = json_object_new_array();
-    for (unsigned i = 0; i < c->member_count; i++) {
-      json_object *m = json_object_new_object();
-      js(m, "mac", c->members[i].id);
-      js(m, "ip", c->members[i].ip[0] ? c->members[i].ip : group_members[i].ip);
-      json_build_object_add(
-          m, "pending",
-          json_object_new_boolean(group_members[i].pending != NULL));
-      js(m, "transport",
-         group_members[i].lan && !c->group_force_mqtt ? "lan" : "mqtt");
-      number(m, "timeouts", group_members[i].failures);
-      json_build_array_add(members, m);
-    }
-    json_build_object_add(o, "members", members);
-#endif
-    js(o, "linkage_status",
-       !c->linkage.enabled ? "disabled"
-       : data_valid        ? "active"
-                           : "sensor_failed");
-    unlock();
-    json_build_object_add(o, "peers", a);
-  } else
-    o = config_encode(c, d);
-  if (!strcmp(d, "binding")) {
-#ifndef FEATURE_DEVICE_A1
-    json_object_put(o);
-    o = json_object_new_object();
-#endif
-    js(o,"sensor_transport","lan");
-    number(o,"session_protocol",2);
-    number(o,"max_peers",FEATURE_MAX_PEERS);
-  }
-  free(c);
-  return o;
-}
-static json_object *feature_result(int code,unsigned revision,json_object *o) {
-  json_object *result;
-  result = json_object_new_object();
-  number(result, "code", code);
-  number(result, "revision", revision);
-  js(result, "message",
-     code == 200 ? "Saved"
-     : code == 409
-         ? "Revision conflict, binding required, or persistence unavailable"
-         : "Invalid configuration");
-  json_object *request = json_object_object_get(o, "request_id");
-  if (request)
-    json_build_object_add(result, "request_id", json_object_get(request));
-  return result;
-}
-int feature_set(const char *d, json_object *o, json_object **response) {
-  int code = 200;
-  if (!strcmp(d, "status")) {
-    *response = json_object_new_object();
-    number(*response, "code", 405);
-    return 405;
-  }
-  feature_config_t *c = malloc(sizeof(*c));
-  if (!c)
-    return 500;
-  feature_config_get(c);
-#ifndef FEATURE_DEVICE_A1
-  if (!strcmp(d,"linkage") || !strcmp(d,"light") || !strcmp(d,"probe")) {
-    free(c); *response=json_object_new_object(); number(*response,"code",405);
-    js(*response,"message","Linkage is read-only; configure rules on A1"); return 405;
-  }
-  if (!strcmp(d,"binding")) {
-    free(c);*response=json_object_new_object();number(*response,"code",405);
-    js(*response,"message","Configure sensor sources on A1");return 405;
-  }
-#endif
-  json_object *v = json_object_object_get(o, "revision");
-  if (v && integer(o, "revision") != c->revision) {
-    code = 409;
-    goto end;
-  }
-#ifdef FEATURE_DEVICE_A1
-  if (!strcmp(d, "probe")) {
-    char mac[13];
-    if (!feature_mac(string(o, "mac"), mac)) {
-      code = 400;
-      goto end;
-    }
-    bool found = false;
-    lock();
-    for (unsigned i = 0; i < c->peer_count; i++)
-      if (!strcmp(c->peers[i].id, mac)) {
-        peers[i].recover_at = 0;
-        peers[i].sent = 0;peers[i].failures=0;
-        peers[i].pending = false;
-        peers[i].lan = false;
-        found = true;
-      }
-    unlock();
-    if (!found)
-      found = group_manual_probe(c, mac);
-    if (!found)
-      code = 404;
-    goto end;
-  }
-#endif
-  if (!config_decode(c, d, o)) {
-    code = 400;
-    goto end;
-  }
-
-  if (!install_config(c))
-    code = 409;
-  else
-    group_broadcast_config(d, o);
-end:
-  *response=feature_result(code,c->revision,o);
-  free(c);
-  return code;
-}
+void feature_clock_valid(void) { clock_ok = true; service_cache_changed(SERVICE_CACHE_STATUS); }
+#include "feature_mp.inc"
 /* Reinitialize PID math without erasing the hysteresis latch or dwell time
  * when a limit, night profile, or unrelated setting changes. */
 static void reset_controller(bool preserve_gate) {
@@ -823,10 +621,12 @@ void feature_effective_fan(bool requested_on, unsigned requested_speed,
     automatic_valid = false;
     automatic_speed = 0;
   }
+  bool changed = effective_speed != *speed || effective_on != *on;
   effective_speed = *speed;
   automatic_on = *on;
   effective_on = *on;
   unlock();
+  if(changed)service_cache_changed(SERVICE_CACHE_STATUS);
 }
 void feature_fan_snapshot(bool *on,unsigned *speed,bool *automatic,unsigned *limit)
 {
@@ -846,19 +646,14 @@ unsigned feature_fan_limit(void) {
     ? configuration.sleeps[automatic_night].max_speed : configuration.linkage.max_speed;
   unlock(); return value;
 }
-int feature_fan_command(json_object *o) {
-  unsigned selection=0;
-  json_object *mode=json_object_object_get(o,"mode");
-  if(mode){
-    if(!json_object_is_type(mode,json_type_string) ||
-       strlen(json_object_get_string(mode))!=(size_t)json_object_get_string_len(mode))return 0;
-    const char *v=json_object_get_string(mode);
-    if(!strcmp(v,"auto"))selection=2;
-    else if(!strcmp(v,"manual"))selection=1;
-    else return 0;
-  }
-  json_object *speed=json_object_object_get(o,"speed");
-  return feature_fan_apply(selection,speed?json_object_get_int(speed):-1);
+int feature_fan_command_mp(const ph_value *o) {
+ unsigned selection=0;ph_value mode,speed;int64_t n=-1;
+ if(phv_get(o,"mode",&mode)){
+  if(phv_equal_text(&mode,"auto"))selection=2;
+  else if(phv_equal_text(&mode,"manual"))selection=1;else return 0;
+ }
+ if(phv_get(o,"speed",&speed)&&(!phv_int(&speed,&n)||n<0||n>100))return 0;
+ return feature_fan_apply(selection,(int)n);
 }
 int feature_fan_apply(unsigned mode, int speed) {
   if(mode>3 || speed < -1 || speed>100)return 0;
@@ -890,25 +685,19 @@ int feature_fan_apply(unsigned mode, int speed) {
 bool feature_group_active(void) {
   lock();bool active=configuration.group[0] && configuration.member_count;unlock();return active;
 }
-int feature_light_select(unsigned effect,json_object **response) {
-  if(effect>EFFECT_COLOR_BREATHE && effect!=255)return 400;
-  feature_config_t *c=malloc(sizeof(*c));if(!c)return 500;
-  feature_config_get(c);
-  c->light.effect=effect==255?(c->light.effect+1)%(EFFECT_COLOR_BREATHE+1):effect;
-  unsigned selected=c->light.effect;
-  bool ok=install_config(c);
-  unsigned revision=c->revision;
-  free(c);
-  /* Group serialization is optional delivery, after local persistence. */
-  if(ok && feature_group_active()){
-    uint64_t failures=service_memory_failures();
-    json_object *o=json_object_new_object();
-    if(o){number(o,"effect",selected);
-      if(!service_caller_graph_failed(failures))group_broadcast_config("light",o);json_object_put(o);}
+int feature_light_select_mp(unsigned effect,ph_writer *response) {
+ if(effect>EFFECT_COLOR_BREATHE&&effect!=255)return 400;
+ feature_config_t *c=malloc(sizeof(*c));if(!c)return 500;
+ feature_config_get(c);c->light.effect=effect==255?(c->light.effect+1)%(EFFECT_COLOR_BREATHE+1):effect;
+ unsigned selected=c->light.effect;bool ok=install_config(c);unsigned revision=c->revision;free(c);
+ if(ok&&feature_group_active()){
+  unsigned char bytes[32];ph_buf buffer;ph_writer w;
+  if(phw_init_fixed(&w,PH_WIRE_MSGPACK,&buffer,bytes,sizeof(bytes))){
+   phw_begin(&w,NULL,false);phw_uint(&w,"effect",selected);phw_end(&w);size_t n=phw_finish_fixed(&w);ph_value v;
+   if(n&&phv_parse(PH_WIRE_MSGPACK,bytes,n,&v))group_broadcast_config_mp("light",&v);
   }
-  int code=ok?200:409;
-  if(response)*response=feature_result(code,revision,NULL);
-  return code;
+ }
+ int status=ok?200:409;if(response)feature_result_mp(response,status,revision,NULL);return status;
 }
 unsigned feature_light_cap(unsigned brightness) {
   lock();
@@ -1445,6 +1234,7 @@ static void feature_worker(mico_thread_arg_t arg) {
       if (!data_valid) { reset_controller(configuration.linkage.hysteresis_enabled); pid.condition=0; }
       automatic_valid = false;
       unlock();
+      service_cache_changed(SERVICE_CACHE_STATUS);
     }
 #endif
     if (udp >= 0) {

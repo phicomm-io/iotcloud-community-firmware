@@ -307,9 +307,8 @@ static void linkage_encode_mp(ph_writer *w,const feature_linkage_t *l,const feat
  encode_fields_mp(w,co2,mp_co2_fields,mp_COUNT(mp_co2_fields));
  phw_uint(w,"fallback_speed",fallback);
 }
-bool feature_config_encode_mp(const feature_config_t *c,const char *d,ph_writer *w){
+static bool feature_config_fields_mp(const feature_config_t *c,const char *d,ph_writer *w){
  if(strcmp(d,"linkage")&&strcmp(d,"light")&&strcmp(d,"schedule")&&strcmp(d,"sleep")&&strcmp(d,"time")&&strcmp(d,"binding"))return false;
- phw_begin(w,NULL,false);
  if(!strcmp(d,"linkage"))linkage_encode_mp(w,&c->linkage,&c->co2,c->automatic.fallback_speed);
  else if(!strcmp(d,"light")){
   /* speed is normalized once; do not emit duplicate map keys. */
@@ -345,10 +344,14 @@ bool feature_config_encode_mp(const feature_config_t *c,const char *d,ph_writer 
   for(unsigned i=0;i<c->member_count;i++){phw_begin(w,NULL,false);phw_text(w,"mac",c->members[i].id);phw_text(w,"ip",c->members[i].ip);phw_end(w);}
   phw_end(w);
  }
- phw_uint(w,"revision",c->revision);phw_end(w);return !w->failed;
+ phw_uint(w,"revision",c->revision);return !w->failed;
 }
 
 #undef mp_U
 #undef mp_W
 #undef mp_F
 #undef mp_COUNT
+
+bool feature_config_encode_mp(const feature_config_t *c,const char *d,ph_writer *w){
+ phw_begin(w,NULL,false);bool ok=feature_config_fields_mp(c,d,w);phw_end(w);return ok&&!w->failed;
+}
