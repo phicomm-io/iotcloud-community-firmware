@@ -316,6 +316,25 @@ void device_status_mp(ph_writer *o,const device_status_t *s,const device_status_
  * Pairs keep numeric IDs without relaxing the string-map request parser. */
 #include "diagnostics_ids.h"
 static void diagnostic_field(ph_writer *w,unsigned id){phw_begin(w,NULL,true);phw_u32(w,NULL,id);}
+/* Share the complete [id, value] call sequence. Keep these small helpers
+ * out of line on both supported GCC versions; their actual frames are charged
+ * separately by diagnostic_paths(), never hidden by a reduced stack reserve. */
+static __attribute__((noinline,noclone)) void diagnostic_i32(ph_writer *w,unsigned id,int32_t value)
+{
+ diagnostic_field(w,id);phw_i32(w,NULL,value);phw_end(w);
+}
+static __attribute__((noinline,noclone)) void diagnostic_u32(ph_writer *w,unsigned id,uint32_t value)
+{
+ diagnostic_field(w,id);phw_u32(w,NULL,value);phw_end(w);
+}
+static __attribute__((noinline,noclone)) void diagnostic_bool(ph_writer *w,unsigned id,bool value)
+{
+ diagnostic_field(w,id);phw_bool(w,NULL,value);phw_end(w);
+}
+static __attribute__((noinline,noclone)) void diagnostic_text(ph_writer *w,unsigned id,const char *value)
+{
+ diagnostic_field(w,id);phw_text(w,NULL,value);phw_end(w);
+}
 void device_diagnostics_mp(ph_writer *w,const device_status_t *s,const device_status_full_t *f)
 {
  if(!w)return;
@@ -336,96 +355,96 @@ void device_diagnostics_mp(ph_writer *w,const device_status_t *s,const device_st
 #endif
  phw_begin(w,NULL,false);phw_u32(w,"schema",PH_DIAGNOSTICS_SCHEMA);
  phw_begin(w,"fields",true);
- if(f->runtime.reset_valid){diagnostic_field(w,PH_DIAG_LAST_RESET_REASON);phw_i32(w,NULL,f->runtime.reset_reason);phw_end(w);}
- {diagnostic_field(w,PH_DIAG_UPTIME_MS);phw_u32(w,NULL,s->now_ms);phw_end(w);}
- {diagnostic_field(w,PH_DIAG_UPTIME_SECONDS);phw_i32(w,NULL,s->now_ms/1000);phw_end(w);}
- if(f->runtime.memory_valid){diagnostic_field(w,PH_DIAG_FREE_MEMORY);phw_i32(w,NULL,f->runtime.free_memory);phw_end(w);}
- if(f->runtime.memory_valid){diagnostic_field(w,PH_DIAG_ALLOCATED_MEMORY);phw_i32(w,NULL,f->runtime.allocated_memory);phw_end(w);}
- if(f->runtime.memory_valid){diagnostic_field(w,PH_DIAG_FREE_MEMORY_CHUNKS);phw_i32(w,NULL,f->runtime.free_memory_chunks);phw_end(w);}
- if(f->runtime.memory_valid){diagnostic_field(w,PH_DIAG_MIN_OBSERVED_FREE_MEMORY);phw_i32(w,NULL,f->runtime.minimum_free);phw_end(w);}
+ if(f->runtime.reset_valid){diagnostic_i32(w,PH_DIAG_LAST_RESET_REASON,f->runtime.reset_reason);}
+ {diagnostic_u32(w,PH_DIAG_UPTIME_MS,s->now_ms);}
+ {diagnostic_i32(w,PH_DIAG_UPTIME_SECONDS,s->now_ms/1000);}
+ if(f->runtime.memory_valid){diagnostic_i32(w,PH_DIAG_FREE_MEMORY,f->runtime.free_memory);}
+ if(f->runtime.memory_valid){diagnostic_i32(w,PH_DIAG_ALLOCATED_MEMORY,f->runtime.allocated_memory);}
+ if(f->runtime.memory_valid){diagnostic_i32(w,PH_DIAG_FREE_MEMORY_CHUNKS,f->runtime.free_memory_chunks);}
+ if(f->runtime.memory_valid){diagnostic_i32(w,PH_DIAG_MIN_OBSERVED_FREE_MEMORY,f->runtime.minimum_free);}
 #if !defined(PHICOMM_STATUS_MODEL) || PHICOMM_STATUS_MODEL != 2
- if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_RESET_REASON);phw_text(w,NULL,f->watchdog.reset_name);phw_end(w);}
- if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_RESET_REASON_RAW);phw_i32(w,NULL,f->watchdog.reset_raw);phw_end(w);}
- if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_WATCHDOG_ENABLED);phw_bool(w,NULL,f->watchdog.enabled);phw_end(w);}
- if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_WATCHDOG_STATE);phw_text(w,NULL,f->watchdog.failed?"fault":f->watchdog.ready?"healthy":"starting");phw_end(w);}
- if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_WATCHDOG_FAULT);phw_text(w,NULL,f->watchdog.fault);phw_end(w);}
- if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_HTTP_ACCEPT_OK);phw_i32(w,NULL,(int)f->http.accepted);phw_end(w);}
- if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_HTTP_ACCEPT_FAIL);phw_i32(w,NULL,(int)f->http.accept_failures);phw_end(w);}
- if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_HTTP_ACCEPT_ERRNO);phw_i32(w,NULL,f->http.accept_errno);phw_end(w);}
- if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_HTTP_ACCEPT_LAST_FD);phw_i32(w,NULL,f->http.last_fd);phw_end(w);}
- if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_HTTP_ACCEPT_QUEUE_OK);phw_i32(w,NULL,(int)f->http.queued);phw_end(w);}
- if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_HTTP_ACCEPT_QUEUE_REJECT);phw_i32(w,NULL,(int)f->http.rejected);phw_end(w);}
- if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_HTTP_ACCEPT_BUSY_FCNTL_FAIL);phw_i32(w,NULL,(int)f->http.nonblock_failures);phw_end(w);}
- if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_HTTP_ACCEPT_BUSY_DRAINED);phw_i32(w,NULL,(int)f->http.drained);phw_end(w);}
- if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_HTTP_ACCEPT_BUSY_SEND_OK);phw_i32(w,NULL,(int)f->http.busy_sent);phw_end(w);}
- if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_HTTP_ACCEPT_BUSY_SEND_FAIL);phw_i32(w,NULL,(int)f->http.busy_failed);phw_end(w);}
- if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_HTTP_ACCEPT_BUSY_SEND_ERRNO);phw_i32(w,NULL,f->http.busy_errno);phw_end(w);}
- if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_HTTP_ACCEPT_BUSY_SEND_BYTES);phw_i32(w,NULL,(int)f->http.busy_bytes);phw_end(w);}
- if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_HTTP_ACCEPT_OVERFLOW_CLOSE);phw_i32(w,NULL,(int)f->http.rejected);phw_end(w);}
- if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_HTTP_ACCEPT_QUEUE_CAPACITY);phw_i32(w,NULL,PH_HTTP_WAIT_SLOTS);phw_end(w);}
- if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_HTTP_TCP_LIMIT_REQUESTED);phw_i32(w,NULL,PH_HTTP_WAIT_SLOTS+1);phw_end(w);}
- if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_HTTP_TCP_LIMIT_SET_RC);phw_i32(w,NULL,f->http.set_rc);phw_end(w);}
- if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_HTTP_TCP_LIMIT_SET_ERRNO);phw_i32(w,NULL,f->http.set_errno);phw_end(w);}
- if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_HTTP_TCP_LIMIT_GET_RC);phw_i32(w,NULL,f->http.limit_get_rc);phw_end(w);}
- if(s->model!=DEVICE_TC1&&f->http.limit_get_rc==0){diagnostic_field(w,PH_DIAG_HTTP_TCP_LIMIT_READBACK);phw_i32(w,NULL,f->http.limit);phw_end(w);}
- if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_HTTP_TCP_CONNECTIONS_GET_RC);phw_i32(w,NULL,f->http.connections_get_rc);phw_end(w);}
- if(s->model!=DEVICE_TC1&&f->http.connections_get_rc==0){diagnostic_field(w,PH_DIAG_HTTP_TCP_CONNECTIONS);phw_i32(w,NULL,f->http.connections);phw_end(w);}
- if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_MQTT_ERRORS);phw_i32(w,NULL,f->network.mqtt_errors);phw_end(w);}
- if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_MQTT_LAST_ERROR);phw_text(w,NULL,f->network.mqtt_last_error);phw_end(w);}
- if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_OTA_SIGNATURE_VERIFIED);phw_bool(w,NULL,f->ota.signature_verified);phw_end(w);}
- if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_OTA_IMAGE_VERIFIED);phw_bool(w,NULL,f->ota.image_verified);phw_end(w);}
- if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_OTA_KEY_ID);phw_i32(w,NULL,f->ota.key_id);phw_end(w);}
- if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_OTA_IMAGE_LENGTH);phw_i32(w,NULL,f->ota.image_length);phw_end(w);}
- if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_OTA_RELEASE_COUNTER);phw_text(w,NULL,f->ota.release_counter);phw_end(w);}
- if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_OTA_VERSION);phw_text(w,NULL,f->ota.version);phw_end(w);}
+ if(s->model!=DEVICE_TC1){diagnostic_text(w,PH_DIAG_RESET_REASON,f->watchdog.reset_name);}
+ if(s->model!=DEVICE_TC1){diagnostic_i32(w,PH_DIAG_RESET_REASON_RAW,f->watchdog.reset_raw);}
+ if(s->model!=DEVICE_TC1){diagnostic_bool(w,PH_DIAG_WATCHDOG_ENABLED,f->watchdog.enabled);}
+ if(s->model!=DEVICE_TC1){diagnostic_text(w,PH_DIAG_WATCHDOG_STATE,f->watchdog.failed?"fault":f->watchdog.ready?"healthy":"starting");}
+ if(s->model!=DEVICE_TC1){diagnostic_text(w,PH_DIAG_WATCHDOG_FAULT,f->watchdog.fault);}
+ if(s->model!=DEVICE_TC1){diagnostic_i32(w,PH_DIAG_HTTP_ACCEPT_OK,(int)f->http.accepted);}
+ if(s->model!=DEVICE_TC1){diagnostic_i32(w,PH_DIAG_HTTP_ACCEPT_FAIL,(int)f->http.accept_failures);}
+ if(s->model!=DEVICE_TC1){diagnostic_i32(w,PH_DIAG_HTTP_ACCEPT_ERRNO,f->http.accept_errno);}
+ if(s->model!=DEVICE_TC1){diagnostic_i32(w,PH_DIAG_HTTP_ACCEPT_LAST_FD,f->http.last_fd);}
+ if(s->model!=DEVICE_TC1){diagnostic_i32(w,PH_DIAG_HTTP_ACCEPT_QUEUE_OK,(int)f->http.queued);}
+ if(s->model!=DEVICE_TC1){diagnostic_i32(w,PH_DIAG_HTTP_ACCEPT_QUEUE_REJECT,(int)f->http.rejected);}
+ if(s->model!=DEVICE_TC1){diagnostic_i32(w,PH_DIAG_HTTP_ACCEPT_BUSY_FCNTL_FAIL,(int)f->http.nonblock_failures);}
+ if(s->model!=DEVICE_TC1){diagnostic_i32(w,PH_DIAG_HTTP_ACCEPT_BUSY_DRAINED,(int)f->http.drained);}
+ if(s->model!=DEVICE_TC1){diagnostic_i32(w,PH_DIAG_HTTP_ACCEPT_BUSY_SEND_OK,(int)f->http.busy_sent);}
+ if(s->model!=DEVICE_TC1){diagnostic_i32(w,PH_DIAG_HTTP_ACCEPT_BUSY_SEND_FAIL,(int)f->http.busy_failed);}
+ if(s->model!=DEVICE_TC1){diagnostic_i32(w,PH_DIAG_HTTP_ACCEPT_BUSY_SEND_ERRNO,f->http.busy_errno);}
+ if(s->model!=DEVICE_TC1){diagnostic_i32(w,PH_DIAG_HTTP_ACCEPT_BUSY_SEND_BYTES,(int)f->http.busy_bytes);}
+ if(s->model!=DEVICE_TC1){diagnostic_i32(w,PH_DIAG_HTTP_ACCEPT_OVERFLOW_CLOSE,(int)f->http.rejected);}
+ if(s->model!=DEVICE_TC1){diagnostic_i32(w,PH_DIAG_HTTP_ACCEPT_QUEUE_CAPACITY,PH_HTTP_WAIT_SLOTS);}
+ if(s->model!=DEVICE_TC1){diagnostic_i32(w,PH_DIAG_HTTP_TCP_LIMIT_REQUESTED,PH_HTTP_WAIT_SLOTS+1);}
+ if(s->model!=DEVICE_TC1){diagnostic_i32(w,PH_DIAG_HTTP_TCP_LIMIT_SET_RC,f->http.set_rc);}
+ if(s->model!=DEVICE_TC1){diagnostic_i32(w,PH_DIAG_HTTP_TCP_LIMIT_SET_ERRNO,f->http.set_errno);}
+ if(s->model!=DEVICE_TC1){diagnostic_i32(w,PH_DIAG_HTTP_TCP_LIMIT_GET_RC,f->http.limit_get_rc);}
+ if(s->model!=DEVICE_TC1&&f->http.limit_get_rc==0){diagnostic_i32(w,PH_DIAG_HTTP_TCP_LIMIT_READBACK,f->http.limit);}
+ if(s->model!=DEVICE_TC1){diagnostic_i32(w,PH_DIAG_HTTP_TCP_CONNECTIONS_GET_RC,f->http.connections_get_rc);}
+ if(s->model!=DEVICE_TC1&&f->http.connections_get_rc==0){diagnostic_i32(w,PH_DIAG_HTTP_TCP_CONNECTIONS,f->http.connections);}
+ if(s->model!=DEVICE_TC1){diagnostic_i32(w,PH_DIAG_MQTT_ERRORS,f->network.mqtt_errors);}
+ if(s->model!=DEVICE_TC1){diagnostic_text(w,PH_DIAG_MQTT_LAST_ERROR,f->network.mqtt_last_error);}
+ if(s->model!=DEVICE_TC1){diagnostic_bool(w,PH_DIAG_OTA_SIGNATURE_VERIFIED,f->ota.signature_verified);}
+ if(s->model!=DEVICE_TC1){diagnostic_bool(w,PH_DIAG_OTA_IMAGE_VERIFIED,f->ota.image_verified);}
+ if(s->model!=DEVICE_TC1){diagnostic_i32(w,PH_DIAG_OTA_KEY_ID,f->ota.key_id);}
+ if(s->model!=DEVICE_TC1){diagnostic_i32(w,PH_DIAG_OTA_IMAGE_LENGTH,f->ota.image_length);}
+ if(s->model!=DEVICE_TC1){diagnostic_text(w,PH_DIAG_OTA_RELEASE_COUNTER,f->ota.release_counter);}
+ if(s->model!=DEVICE_TC1){diagnostic_text(w,PH_DIAG_OTA_VERSION,f->ota.version);}
 #endif
 #if !defined(PHICOMM_STATUS_MODEL) || PHICOMM_STATUS_MODEL == 0
- if(s->model==DEVICE_A1){diagnostic_field(w,PH_DIAG_PANEL_ERRORS);phw_i32(w,NULL,f->model.a1.panel_errors);phw_end(w);}
- if(s->model==DEVICE_A1){diagnostic_field(w,PH_DIAG_HARDWARE_ERRORS);phw_i32(w,NULL,f->model.a1.hardware_errors);phw_end(w);}
- if(s->model==DEVICE_A1){diagnostic_field(w,PH_DIAG_PANEL_LAST_ERROR);phw_i32(w,NULL,f->model.a1.panel_last_error);phw_end(w);}
- if(s->model==DEVICE_A1){diagnostic_field(w,PH_DIAG_PANEL_RAW);phw_text(w,NULL,raw);phw_end(w);}
+ if(s->model==DEVICE_A1){diagnostic_i32(w,PH_DIAG_PANEL_ERRORS,f->model.a1.panel_errors);}
+ if(s->model==DEVICE_A1){diagnostic_i32(w,PH_DIAG_HARDWARE_ERRORS,f->model.a1.hardware_errors);}
+ if(s->model==DEVICE_A1){diagnostic_i32(w,PH_DIAG_PANEL_LAST_ERROR,f->model.a1.panel_last_error);}
+ if(s->model==DEVICE_A1){diagnostic_text(w,PH_DIAG_PANEL_RAW,raw);}
 #endif
 #if !defined(PHICOMM_STATUS_MODEL) || PHICOMM_STATUS_MODEL == 1
- if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_RX_FRAMES);phw_i32(w,NULL,f->model.m1.rx_frames);phw_end(w);}
- if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_UNKNOWN_FRAMES);phw_i32(w,NULL,f->model.m1.unknown_frames);phw_end(w);}
- if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_UART_ERRORS);phw_i32(w,NULL,f->model.m1.uart_errors);phw_end(w);}
- if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_DISCARDED_BYTES);phw_i32(w,NULL,f->model.m1.discarded_bytes);phw_end(w);}
- if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_LAST_FRAME);phw_text(w,NULL,frame);phw_end(w);}
- if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_SENSOR_HEALTH_PM25_RAW);phw_i32(w,NULL,s->sensor.m1.sample.pm25_status);phw_end(w);}
- if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_SENSOR_HEALTH_CLIMATE_RAW);phw_i32(w,NULL,s->sensor.m1.sample.climate_status);phw_end(w);}
- if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_SENSOR_HEALTH_AUXILIARY_RAW);phw_i32(w,NULL,s->sensor.m1.sample.auxiliary_status);phw_end(w);}
- if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_SCD40_SERIAL);phw_text(w,NULL,s->sensor.m1.co2.serial);phw_end(w);}
- if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_SCD40_ERRORS);phw_i32(w,NULL,s->sensor.m1.co2.errors);phw_end(w);}
- if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_SCD40_LAST_ERROR);phw_i32(w,NULL,s->sensor.m1.co2.last_error);phw_end(w);}
- if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_SCD40_SAMPLES);phw_i32(w,NULL,f->model.m1.co2_samples);phw_end(w);}
- if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_SCD40_CRC_ERRORS);phw_i32(w,NULL,f->model.m1.co2_crc_errors);phw_end(w);}
- if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_SCD40_BUS_INITIALIZED);phw_bool(w,NULL,f->model.m1.co2_bus_initialized);phw_end(w);}
- if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_SCD40_LAST_COMMAND);phw_i32(w,NULL,f->model.m1.co2_last_command);phw_end(w);}
- if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_SCD40_ERROR_PHASE);phw_i32(w,NULL,f->model.m1.co2_error_phase);phw_end(w);}
- if(s->model==DEVICE_M1&&m1_barometer_model(s->sensor.m1.barometer.chip_id)){diagnostic_field(w,PH_DIAG_BAROMETER_CHIP_ID);phw_i32(w,NULL,s->sensor.m1.barometer.chip_id);phw_end(w);}
- if(s->model==DEVICE_M1&&m1_barometer_model(s->sensor.m1.barometer.chip_id)){diagnostic_field(w,PH_DIAG_BAROMETER_ADDRESS);phw_i32(w,NULL,s->sensor.m1.barometer.address);phw_end(w);}
- if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_BAROMETER_SAMPLES);phw_i32(w,NULL,s->sensor.m1.barometer.samples);phw_end(w);}
- if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_BAROMETER_ERRORS);phw_i32(w,NULL,s->sensor.m1.barometer.errors);phw_end(w);}
- if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_BAROMETER_ATTEMPTS);phw_i32(w,NULL,s->sensor.m1.barometer.attempts);phw_end(w);}
- if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_BAROMETER_LAST_ERROR);phw_i32(w,NULL,s->sensor.m1.barometer.last_error);phw_end(w);}
+ if(s->model==DEVICE_M1){diagnostic_i32(w,PH_DIAG_RX_FRAMES,f->model.m1.rx_frames);}
+ if(s->model==DEVICE_M1){diagnostic_i32(w,PH_DIAG_UNKNOWN_FRAMES,f->model.m1.unknown_frames);}
+ if(s->model==DEVICE_M1){diagnostic_i32(w,PH_DIAG_UART_ERRORS,f->model.m1.uart_errors);}
+ if(s->model==DEVICE_M1){diagnostic_i32(w,PH_DIAG_DISCARDED_BYTES,f->model.m1.discarded_bytes);}
+ if(s->model==DEVICE_M1){diagnostic_text(w,PH_DIAG_LAST_FRAME,frame);}
+ if(s->model==DEVICE_M1){diagnostic_i32(w,PH_DIAG_SENSOR_HEALTH_PM25_RAW,s->sensor.m1.sample.pm25_status);}
+ if(s->model==DEVICE_M1){diagnostic_i32(w,PH_DIAG_SENSOR_HEALTH_CLIMATE_RAW,s->sensor.m1.sample.climate_status);}
+ if(s->model==DEVICE_M1){diagnostic_i32(w,PH_DIAG_SENSOR_HEALTH_AUXILIARY_RAW,s->sensor.m1.sample.auxiliary_status);}
+ if(s->model==DEVICE_M1){diagnostic_text(w,PH_DIAG_SCD40_SERIAL,s->sensor.m1.co2.serial);}
+ if(s->model==DEVICE_M1){diagnostic_i32(w,PH_DIAG_SCD40_ERRORS,s->sensor.m1.co2.errors);}
+ if(s->model==DEVICE_M1){diagnostic_i32(w,PH_DIAG_SCD40_LAST_ERROR,s->sensor.m1.co2.last_error);}
+ if(s->model==DEVICE_M1){diagnostic_i32(w,PH_DIAG_SCD40_SAMPLES,f->model.m1.co2_samples);}
+ if(s->model==DEVICE_M1){diagnostic_i32(w,PH_DIAG_SCD40_CRC_ERRORS,f->model.m1.co2_crc_errors);}
+ if(s->model==DEVICE_M1){diagnostic_bool(w,PH_DIAG_SCD40_BUS_INITIALIZED,f->model.m1.co2_bus_initialized);}
+ if(s->model==DEVICE_M1){diagnostic_i32(w,PH_DIAG_SCD40_LAST_COMMAND,f->model.m1.co2_last_command);}
+ if(s->model==DEVICE_M1){diagnostic_i32(w,PH_DIAG_SCD40_ERROR_PHASE,f->model.m1.co2_error_phase);}
+ if(s->model==DEVICE_M1&&m1_barometer_model(s->sensor.m1.barometer.chip_id)){diagnostic_i32(w,PH_DIAG_BAROMETER_CHIP_ID,s->sensor.m1.barometer.chip_id);}
+ if(s->model==DEVICE_M1&&m1_barometer_model(s->sensor.m1.barometer.chip_id)){diagnostic_i32(w,PH_DIAG_BAROMETER_ADDRESS,s->sensor.m1.barometer.address);}
+ if(s->model==DEVICE_M1){diagnostic_i32(w,PH_DIAG_BAROMETER_SAMPLES,s->sensor.m1.barometer.samples);}
+ if(s->model==DEVICE_M1){diagnostic_i32(w,PH_DIAG_BAROMETER_ERRORS,s->sensor.m1.barometer.errors);}
+ if(s->model==DEVICE_M1){diagnostic_i32(w,PH_DIAG_BAROMETER_ATTEMPTS,s->sensor.m1.barometer.attempts);}
+ if(s->model==DEVICE_M1){diagnostic_i32(w,PH_DIAG_BAROMETER_LAST_ERROR,s->sensor.m1.barometer.last_error);}
 #endif
 #if defined(PHICOMM_BEMFA) && (!defined(PHICOMM_STATUS_MODEL) || PHICOMM_STATUS_MODEL != 1)
- if(s->model!=DEVICE_M1){diagnostic_field(w,PH_DIAG_BEMFA_ERRORS);phw_i32(w,NULL,s->network.bemfa_errors);phw_end(w);}
- if(s->model!=DEVICE_M1){diagnostic_field(w,PH_DIAG_BEMFA_LAST_STAGE);phw_i32(w,NULL,s->network.bemfa_last_stage);phw_end(w);}
- if(s->model!=DEVICE_M1){diagnostic_field(w,PH_DIAG_BEMFA_LAST_ERROR);phw_i32(w,NULL,s->network.bemfa_last_error);phw_end(w);}
+ if(s->model!=DEVICE_M1){diagnostic_i32(w,PH_DIAG_BEMFA_ERRORS,s->network.bemfa_errors);}
+ if(s->model!=DEVICE_M1){diagnostic_i32(w,PH_DIAG_BEMFA_LAST_STAGE,s->network.bemfa_last_stage);}
+ if(s->model!=DEVICE_M1){diagnostic_i32(w,PH_DIAG_BEMFA_LAST_ERROR,s->network.bemfa_last_error);}
 #endif
  if(f->service_memory_valid){
-  diagnostic_field(w,PH_DIAG_SERVICE_MEMORY_RESERVED);phw_u32(w,NULL,f->service_memory.reserved);phw_end(w);
-  diagnostic_field(w,PH_DIAG_SERVICE_MEMORY_ACTIVE);phw_u32(w,NULL,f->service_memory.active);phw_end(w);
-  diagnostic_field(w,PH_DIAG_SERVICE_MEMORY_DENIED);phw_u32(w,NULL,f->service_memory.denied);phw_end(w);
-  diagnostic_field(w,PH_DIAG_SERVICE_MEMORY_WAITING);phw_u32(w,NULL,f->service_memory.waiting);phw_end(w);
-  diagnostic_field(w,PH_DIAG_SERVICE_MEMORY_MINIMUM_FREE);phw_u32(w,NULL,f->service_memory.minimum_free);phw_end(w);
-  diagnostic_field(w,PH_DIAG_SERVICE_MEMORY_MQTT_PENDING);phw_u32(w,NULL,f->service_memory.mqtt_pending);phw_end(w);
-  diagnostic_field(w,PH_DIAG_SERVICE_MEMORY_MQTT_PEAK);phw_u32(w,NULL,f->service_memory.mqtt_peak);phw_end(w);
-  diagnostic_field(w,PH_DIAG_SERVICE_MEMORY_MQTT_OVERFLOW);phw_u32(w,NULL,f->service_memory.mqtt_overflow);phw_end(w);
-  diagnostic_field(w,PH_DIAG_SERVICE_MEMORY_MQTT_MAX_DELAY);phw_u32(w,NULL,f->service_memory.mqtt_max_delay);phw_end(w);
-  diagnostic_field(w,PH_DIAG_SERVICE_MEMORY_WIRE_ALLOC_FAILED);phw_u32(w,NULL,f->service_memory.wire_alloc_failed);phw_end(w);
-  diagnostic_field(w,PH_DIAG_SERVICE_MEMORY_WIRE_GUARD_DENIED);phw_u32(w,NULL,f->service_memory.wire_guard_denied);phw_end(w);
+  diagnostic_u32(w,PH_DIAG_SERVICE_MEMORY_RESERVED,f->service_memory.reserved);
+  diagnostic_u32(w,PH_DIAG_SERVICE_MEMORY_ACTIVE,f->service_memory.active);
+  diagnostic_u32(w,PH_DIAG_SERVICE_MEMORY_DENIED,f->service_memory.denied);
+  diagnostic_u32(w,PH_DIAG_SERVICE_MEMORY_WAITING,f->service_memory.waiting);
+  diagnostic_u32(w,PH_DIAG_SERVICE_MEMORY_MINIMUM_FREE,f->service_memory.minimum_free);
+  diagnostic_u32(w,PH_DIAG_SERVICE_MEMORY_MQTT_PENDING,f->service_memory.mqtt_pending);
+  diagnostic_u32(w,PH_DIAG_SERVICE_MEMORY_MQTT_PEAK,f->service_memory.mqtt_peak);
+  diagnostic_u32(w,PH_DIAG_SERVICE_MEMORY_MQTT_OVERFLOW,f->service_memory.mqtt_overflow);
+  diagnostic_u32(w,PH_DIAG_SERVICE_MEMORY_MQTT_MAX_DELAY,f->service_memory.mqtt_max_delay);
+  diagnostic_u32(w,PH_DIAG_SERVICE_MEMORY_WIRE_ALLOC_FAILED,f->service_memory.wire_alloc_failed);
+  diagnostic_u32(w,PH_DIAG_SERVICE_MEMORY_WIRE_GUARD_DENIED,f->service_memory.wire_guard_denied);
  }
  phw_end(w);phw_end(w);
 }

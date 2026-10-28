@@ -88,4 +88,16 @@ def diagnostic_paths(frames,model,label,prefix,reserve,symbols=None):
         emitted(frames,['diagnostic_field'],symbols),reserve,symbols,kinds={'begin','unsigned'},finalize=False))
     paths.update(writer_paths(frames,label+' value',schema,reserve,symbols,
                               kinds={'string','integer','unsigned','bool','null'},finalize=False))
+    # The compact typed [id,value] helpers are sibling calls. An emitted helper
+    # must have an actual frame; charge it on both its pair and value tails.
+    for helper,kind in [('diagnostic_i32','integer'),('diagnostic_u32','unsigned'),
+                        ('diagnostic_bool','bool'),('diagnostic_text','string')]:
+        actual=emitted(frames,[helper],symbols)
+        if not actual:continue
+        call=schema+actual
+        paths.update(writer_paths(frames,label+' '+helper+' pair',call+
+            emitted(frames,['diagnostic_field'],symbols),reserve,symbols,
+            kinds={'begin','unsigned'},finalize=False))
+        paths.update(writer_paths(frames,label+' '+helper+' value',call,reserve,
+                                  symbols,kinds={kind},finalize=False))
     return paths
