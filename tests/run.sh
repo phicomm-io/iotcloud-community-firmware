@@ -7,11 +7,14 @@ case "${1:-}" in
   --native-common)
     exec python3 -m unittest tests.test_native_features tests.test_runtime_mqtt_mp
     ;;
+  --native-rc4)
+    exec python3 -m tests.run_native_rc4
+    ;;
   --legacy-sdk)
     exec bash tests/run_legacy_json_sdk.sh
     ;;
   ""|--all) ;;
-  *) echo 'Usage: tests/run.sh [--all|--native-common|--legacy-sdk]' >&2; exit 2 ;;
+  *) echo 'Usage: tests/run.sh [--all|--native-common|--native-rc4|--legacy-sdk]' >&2; exit 2 ;;
 esac
 # The background JSON scenarios also compile the production SHA-256 service.
 source tests/host_hash.sh

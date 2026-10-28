@@ -1,10 +1,10 @@
 """Exercise the production accessory controller and command codec with fake GPIO."""
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import tempfile
 import unittest
+from tests.mp_fixture_vectors import header
 ROOT=Path(__file__).resolve().parents[1]
 class FreshAirTest(unittest.TestCase):
  def test_controller(self):
@@ -12,7 +12,6 @@ class FreshAirTest(unittest.TestCase):
 #include "A1/a1.h"
 #include "A1/storage.h"
 #include "common/config_mp.inc"
-#include "json.h"
 #include "common/service_mp.h"
 void service_cache_changed(unsigned mask){(void)mask;}
 #define MICO_GPIO_9 9
@@ -45,22 +44,21 @@ bool feature_fresh_values(unsigned stat,unsigned metrics,float v[4],float *co2){
 CODECS
 STORAGE
 #include "A1/fresh_air.c"
-/* JSON text is a fixture shorthand only; production sees encoded MP. */
-static void fixture_emit(ph_writer *w,const char *key,json_object *v){
- if(!v){phw_null(w,key);return;}
- switch(json_object_get_type(v)){
- case json_type_object:phw_begin(w,key,false);json_object_object_foreach(v,k,item){fixture_emit(w,k,item);}phw_end(w);break;
- case json_type_array:phw_begin(w,key,true);for(unsigned i=0;i<(unsigned)json_object_array_length(v);i++)fixture_emit(w,NULL,json_object_array_get_idx(v,i));phw_end(w);break;
- case json_type_string:phw_text(w,key,json_object_get_string(v));break;
- case json_type_boolean:phw_bool(w,key,json_object_get_boolean(v));break;
- case json_type_int:phw_int(w,key,json_object_get_int64(v));break;
- case json_type_double:phw_number(w,key,json_object_get_double(v));break;
- default:phw_null(w,key);break;
- }
+/* Human-readable vectors are encoded by Python before C compilation. */
+#include "mp_fixture_vectors.inc"
+static const char *cmd_value(const char *action,const ph_value *p){
+ ph_writer writer;const char *code;assert(phw_init(&writer,PH_WIRE_MSGPACK));
+ assert(fresh_mp(action,p,&writer,&code));ph_buf *result=phw_take(&writer);assert(result);ph_buf_free(result);return code;
 }
 static const char *cmd(const char *action,const char *body){
- json_object *fixture=json_tokener_parse(body);assert(fixture);ph_writer writer;assert(phw_init(&writer,PH_WIRE_MSGPACK));fixture_emit(&writer,NULL,fixture);json_object_put(fixture);ph_buf *wire=phw_take(&writer);assert(wire);ph_value p;assert(phv_parse(PH_WIRE_MSGPACK,wire->buf,wire->len,&p));
- const char *code;assert(phw_init(&writer,PH_WIRE_MSGPACK));assert(fresh_mp(action,&p,&writer,&code));ph_buf *result=phw_take(&writer);assert(result);ph_buf_free(result);ph_buf_free(wire);return code;
+ for(unsigned i=0;i<sizeof(fixture_vectors)/sizeof(*fixture_vectors);i++)if(!strcmp(body,fixture_vectors[i].text)){
+  ph_value p;assert(phv_parse(PH_WIRE_MSGPACK,fixture_vectors[i].bytes,fixture_vectors[i].length,&p));return cmd_value(action,&p);
+ }
+ assert(!"missing constant MP vector");return NULL;
+}
+static const char *independent_coupling(void){
+ ph_writer w;assert(phw_init(&w,PH_WIRE_MSGPACK));phw_begin(&w,NULL,false);phw_int(&w,"revision",storage.fresh_air.revision);phw_int(&w,"coupling",2);phw_end(&w);
+ ph_buf *b=phw_take(&w);assert(b);ph_value p;assert(phv_parse(PH_WIRE_MSGPACK,b->buf,b->len,&p));const char *code=cmd_value("fresh_air.config.set",&p);ph_buf_free(b);return code;
 }
 static void tick(bool master,unsigned desired){unsigned next;now+=100;fresh_prepare(master,desired,primary,now,&next);primary=next;fresh_finish(primary,now);}
 int main(void){
@@ -103,8 +101,7 @@ int main(void){
  sensor_valid=true;ppm=2000;primary=100;current.applied=50;published.reason=2;
  controller.initialized=true;controller.integral=70;controller.last_ms=now-5000;control_at=now-5000;
  tick(true,0);assert(controller.integral==70 && current.applied==50);
- char independent[80];snprintf(independent,sizeof(independent),"{\"revision\":%u,\"coupling\":2}",storage.fresh_air.revision);
- assert(!strcmp(cmd("fresh_air.config.set",independent),"accepted"));
+ assert(!strcmp(independent_coupling(),"accepted"));
  assert(!strcmp(cmd("fresh_air.set","{\"mode\":\"manual\",\"speed\":100}"),"accepted"));
  for(unsigned i=0;i<15;i++)tick(true,0);assert(primary==0 && current.applied==100);
  tick(false,0);assert(!primary && !current.applied);
@@ -117,8 +114,10 @@ int main(void){
   main=(ROOT/'A1/main.c').read_text();storage=main[main.index('void fresh_config_get('):main.rindex('#endif')]
   harness=harness.replace('CODECS',codecs).replace('STORAGE',storage)
   with tempfile.TemporaryDirectory() as temp:
-   temp=Path(temp);j=temp/'json';shutil.copytree(ROOT/'build/a1-sdk/mico-os/libraries/utilities/json_c',j)
-   for p in j.glob('*.c'):p.write_text(p.read_text().replace('%ld','%d'))
+   temp=Path(temp)
+   (temp/'mp_fixture_vectors.inc').write_text(header([harness],{}))
    source=temp/'test.c';source.write_text(harness);out=temp/'test'
-   subprocess.run(['cc','-std=gnu99','-ffunction-sections','-Wl,--gc-sections','-DA1_FRESH_AIR','-DFEATURE_DEVICE_A1','-I'+str(ROOT),'-I'+str(ROOT/'A1'),'-I'+str(ROOT/'common'),'-I'+str(ROOT/'tests/host'),'-I'+str(j),'-I'+str(Path(os.environ.get('PH_TYPED_WIRE_ROOT',str(ROOT)))/'common'),str(source),str(ROOT/'A1/fresh_air_defaults.c'),str(ROOT/'common/engine.c'),str(Path(os.environ.get('PH_TYPED_WIRE_ROOT',str(ROOT)))/'common/typed_wire.c'),str(ROOT/'common/wire_buffer.c'),*map(str,j.glob('*.c')),'-lm','-o',str(out)],check=True)
+   command=['cc','-std=gnu99','-ffunction-sections','-Wl,--gc-sections','-DA1_FRESH_AIR','-DFEATURE_DEVICE_A1','-I'+str(ROOT),'-I'+str(ROOT/'A1'),'-I'+str(ROOT/'common'),'-I'+str(ROOT/'tests/host'),'-I'+str(temp),str(source),str(ROOT/'A1/fresh_air_defaults.c'),str(ROOT/'common/engine.c'),str(ROOT/'common/typed_wire.c'),str(ROOT/'common/wire_buffer.c'),'-lm','-o',str(out)]
+   if os.environ.get('SANITIZE')=='1':command+=['-fsanitize=address,undefined','-fno-omit-frame-pointer','-no-pie']
+   subprocess.run(command,check=True)
    subprocess.run([out],check=True)
