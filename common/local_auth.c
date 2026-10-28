@@ -236,17 +236,20 @@ bool ph_auth_pair_resume(ph_auth_state*s,const char*peer,const char*key,char out
     if(!ph_auth_private_peer_ok(peer)||!ph_auth_token_decode(key,k))return false;
     ph_auth_private_lock(s);
     for(i=0;i<s->store.count;i++)if(!strcmp(peer,s->store.pairs[i].peer)&&ph_auth_private_eq(k,s->store.pairs[i].key,16)) {
-        /* Only reuse this boot's live local session after checking its durable key.
-         * A handshake retry never extends the idle or absolute session lifetime. */
-        ph_auth_session*r=&s->local[i];
-        if(ph_auth_private_alive(r,s->ops.now(s->ops.user))&&
-           !strcmp(r->peer,peer)&&r->scopes==s->store.pairs[i].scopes) {
-            ph_auth_private_hex(r->token,out);
-            ok=true;
-        } else if(ph_auth_private_fresh(s,t)) {
-            ph_auth_private_install(s,&s->local[i],t,peer,s->store.pairs[i].scopes);
-            ph_auth_private_hex(t,out);
-            ok=true;
+        /* Session slots stay independent of the compact durable record table.
+         * Preserve other peers and already captured slot/generation contexts. */
+        uint32_t now=s->ops.now(s->ops.user);unsigned available=PH_AUTH_PAIR_SLOTS;
+        for(unsigned slot=0;slot<PH_AUTH_PAIR_SLOTS;slot++) {
+            ph_auth_session *r=&s->local[slot];
+            if(!ph_auth_private_alive(r,now)) {
+                if(available==PH_AUTH_PAIR_SLOTS)available=slot;
+            } else if(!strcmp(r->peer,peer)&&r->scopes==s->store.pairs[i].scopes) {
+                ph_auth_private_hex(r->token,out);ok=true;break;
+            }
+        }
+        if(!ok&&available<PH_AUTH_PAIR_SLOTS&&ph_auth_private_fresh(s,t)) {
+            ph_auth_private_install(s,&s->local[available],t,peer,s->store.pairs[i].scopes);
+            ph_auth_private_hex(t,out);ok=true;
         }
         break;
     }
@@ -264,7 +267,8 @@ bool ph_auth_pair_remove(ph_auth_state*s,const char*peer) {
         memmove(&next.pairs[i],&next.pairs[i+1],(next.count-i-1)*sizeof(next.pairs[0]));
         memset(&next.pairs[--next.count],0,sizeof(next.pairs[0]));
         if(ph_auth_private_save(s,&next)) {
-            memset(s->local,0,sizeof(s->local));
+            for(unsigned slot=0;slot<PH_AUTH_PAIR_SLOTS;slot++)
+                if(!strcmp(s->local[slot].peer,peer))memset(&s->local[slot],0,sizeof(s->local[slot]));
             ok=true;
         }
         break;
@@ -285,10 +289,10 @@ bool ph_auth_pair_unpair(ph_auth_state*s,const char*peer,const char*token) {
             memmove(&next.pairs[j],&next.pairs[j+1],(next.count-j-1)*sizeof(next.pairs[0]));
             memset(&next.pairs[--next.count],0,sizeof(next.pairs[0]));
             ok=ph_auth_private_save(s,&next);
-            /* Removing a durable record compacts indices. Reset the parallel
-             * local table so no old or duplicate peer token survives. MQTT
-             * grants are independent and deliberately remain untouched. */
-            if(ok)memset(s->local,0,sizeof(s->local));
+            /* Revoke this peer only. Independent slots keep unrelated peers'
+             * tokens and captured contexts stable across durable compaction. */
+            if(ok)for(unsigned slot=0;slot<PH_AUTH_PAIR_SLOTS;slot++)
+                if(!strcmp(s->local[slot].peer,peer))memset(&s->local[slot],0,sizeof(s->local[slot]));
             break;
         }
         break;

@@ -160,26 +160,36 @@ static void test_remote_direction_and_revocation(void){
     assert(!ph_auth_store_valid(&invalid));invalid=f.disk;invalid.reserved=1;assert(!ph_auth_store_valid(&invalid));
 }
 static void test_pair_compaction_revokes_sessions(void){
- fixture f;ph_auth_state s;ph_auth_context context;char key[3][33],token[3][33],renewed[33];
+ fixture f;ph_auth_state s;ph_auth_context context,other;char key[3][33],token[3][33],renewed[33];
  const char *peers[]={"peer-a","peer-b","peer-c"};setup(&f,&s);
  for(unsigned i=0;i<3;i++){assert(ph_auth_pair(&s,"",peers[i],1,key[i]));assert(ph_auth_pair_resume(&s,peers[i],key[i],token[i]));}
  const char *mqtt="fedcba9876543210fedcba9876543210";
  assert(ph_auth_mqtt_grant(&s,"cloud",mqtt,2));
+ assert(ph_auth_udp_check(&s,peers[1],token[1],&other));
  f.fail_save=true;assert(!ph_auth_pair_unpair(&s,peers[0],token[0]));
  assert(ph_auth_udp_check(&s,peers[2],token[2],&context));
  f.fail_save=false;assert(ph_auth_pair_unpair(&s,peers[0],token[0]));
- /* A durable-store compaction also resets its parallel local session table. */
- assert(!ph_auth_udp_check(&s,peers[2],token[2],&context));
- assert(ph_auth_pair_resume(&s,peers[2],key[2],renewed));
+ /* Compacting durable records preserves unrelated slots and contexts. */
+ assert(ph_auth_context_valid(&other,1));
+ assert(ph_auth_udp_check(&s,peers[1],token[1],&context));
+ assert(ph_auth_udp_check(&s,peers[2],token[2],&context));
+ assert(ph_auth_pair_resume(&s,peers[2],key[2],renewed)&&!strcmp(renewed,token[2]));
  assert(ph_auth_pair_unpair(&s,peers[2],renewed));
  assert(!ph_auth_udp_check(&s,peers[2],renewed,&context));
  assert(!ph_auth_udp_check(&s,peers[2],token[2],&context));
  assert(ph_auth_udp_check(&s,"cloud",mqtt,&context));
+ assert(ph_auth_context_valid(&other,1));
+ assert(ph_auth_udp_check(&s,peers[1],token[1],&context));
  assert(ph_auth_pair_resume(&s,peers[1],key[1],renewed));
  assert(ph_auth_pair(&s,"",peers[1],2,key[1]));
  assert(!ph_auth_udp_check(&s,peers[1],renewed,&context));
  assert(ph_auth_pair_resume(&s,peers[1],key[1],renewed));
  assert(ph_auth_udp_check(&s,peers[1],renewed,&context)&&ph_auth_context_valid(&context,2));
  assert(!ph_auth_context_valid(&context,1));
+ assert(ph_auth_pair(&s,"",peers[0],1,key[0]));
+ assert(ph_auth_pair_resume(&s,peers[0],key[0],token[0]));
+ assert(ph_auth_pair_remove(&s,peers[1]));
+ assert(!ph_auth_udp_check(&s,peers[1],renewed,&context));
+ assert(ph_auth_udp_check(&s,peers[0],token[0],&context));
 }
 int main(void){test_pair_compaction_revokes_sessions();test_remote_direction_and_revocation();test_atomic_credential_commit();test_failed_password_transaction();test_basic();test_expiry();test_capacity_failure();test_boot_revoke_mqtt();test_pending_pair_epoch();test_pair_retry();test_concurrent();puts("local_auth: all tests passed");return 0;}
