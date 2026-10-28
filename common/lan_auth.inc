@@ -20,7 +20,7 @@ static bool lan_auth_secret(const ph_value *request,const char *key,char text[33
 {
     ph_value value;const void *bytes;size_t length;
     if(!phv_get(request,key,&value)||!phv_bytes(&value,&bytes,&length)||length!=16)return false;
-    lan_auth_hex(bytes,text);return true;
+    lan_auth_hex((const uint8_t *)bytes,text);return true;
 }
 bool feature_lan_auth(const char *peer,const uint8_t token[16],unsigned scopes)
 {
