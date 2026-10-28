@@ -60,6 +60,11 @@ class NativeFeatures(unittest.TestCase):
         sources = [(ROOT / p).read_text() for p in ('tests/test_runtime_controls_mp.c', 'tests/runtime_control_scenarios.inc')]
         self.compile_run('tests/test_runtime_controls_mp.c', vectors=header(sources, {}), controls=controls)
 
+    def test_runtime_metrics_missing_heap_reset_cache_and_wrap(self):
+        for model,defines in (('portable', []), ('moc-mx1290', ['MOC=1', 'CONFIG_CPU_MX1290'])):
+            with self.subTest(model=model):
+                self.compile_run('tests/test_runtime_metrics.c',defines)
+
     def test_engine_numeric_control_schedule_render_and_ids(self):
         self.compile_run('tests/test_engine.c', ['FEATURE_HOST'], ['common/engine.c'])
 
