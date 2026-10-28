@@ -8,11 +8,13 @@ from tests import test_mqtt_buffer_storage as storage
 ROOT=Path(__file__).resolve().parents[1]
 
 class MQTTSubscribeQoS(unittest.TestCase):
- def run_sdk(self,fixed,short_enum):
+ def run_sdk(self,fixed,short_enum,unsigned_char=False):
   with tempfile.TemporaryDirectory() as temp:
    path=Path(temp);protocol=storage.MQTTBufferStorage().protocol(path,with_fix=True,with_qos=fixed)
    binary=path/'qos';cmd=[os.environ.get('CC','cc'),'-std=gnu99','-g','-fsanitize=address,undefined','-fno-omit-frame-pointer','-fno-pie','-no-pie']
    if short_enum:cmd+=['-fshort-enums']
+   if unsigned_char:cmd+=['-funsigned-char']
+   if fixed:cmd+=['-DEXPECT_SUBSCRIBE_DENIED=1']
    for include in (ROOT/'tests/mqtt_core/stubs',protocol,protocol/'mico',protocol/'MQTTPacket'):cmd+=['-I'+str(include)]
    cmd+=[str(ROOT/'tests/mqtt_subscribe_qos_harness.c'),str(protocol/'MQTTClient.c')]+[str(p) for p in sorted((protocol/'MQTTPacket').glob('*.c'))]+['-o',str(binary)]
    subprocess.run(cmd,check=True,timeout=60)
@@ -27,3 +29,5 @@ class MQTTSubscribeQoS(unittest.TestCase):
   result=self.run_sdk(True,True);self.assertEqual(result.returncode,0,result.stderr)
  def test_fixed_default_enum_qos_0_1_2_and_suback(self):
   result=self.run_sdk(True,False);self.assertEqual(result.returncode,0,result.stderr)
+ def test_fixed_arm_unsigned_char_refusal_is_distinct(self):
+  result=self.run_sdk(True,True,True);self.assertEqual(result.returncode,0,result.stderr)

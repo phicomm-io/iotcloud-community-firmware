@@ -16,7 +16,7 @@ PATCHES = [ROOT / name for name in (
     'common/mqtt-mico36.patch', 'common/mqtt-publish-bounds.patch',
     'common/mqtt-socket-close.patch', 'M1/mqtt-packet-deadline.patch',
     'common/mqtt-response-deadline.patch', 'common/mqtt-buffer-storage.patch',
-    'common/mqtt-subscribe-qos.patch')]
+    'common/mqtt-subscribe-qos.patch', 'common/mqtt-subscribe-result.patch')]
 
 
 class MQTTOverlayPreparationTests(unittest.TestCase):
@@ -89,16 +89,17 @@ class MQTTOverlayPreparationTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(complete, {p: (sdk / p).read_bytes() for p in paths})
 
-            # A complete previous-release six-overlay SDK is a valid prefix,
-            # unlike the incompatible partial state above. Upgrade and repeat.
-            restore()
-            result = apply(*PATCHES[:-1])
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn(b'(int *)&qos', (sdk / 'libraries/protocols/mqtt/MQTTClient.c').read_bytes())
-            for repeat in range(2):
-                result = apply(*PATCHES)
+            # Both complete prior stacks (before QoS and before distinct
+            # SUBACK refusal) upgrade without discarding their SDK checkouts.
+            for prefix in (PATCHES[:-2], PATCHES[:-1]):
+                restore()
+                result = apply(*prefix)
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(complete, {p: (sdk / p).read_bytes() for p in paths})
+                self.assertNotIn(b'MQTT_SUBSCRIBE_DENIED', (sdk / 'libraries/protocols/mqtt/MQTTClient.h').read_bytes())
+                for repeat in range(2):
+                    result = apply(*PATCHES)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(complete, {p: (sdk / p).read_bytes() for p in paths})
 
 
 if __name__ == '__main__':

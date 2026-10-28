@@ -51,7 +51,8 @@ for model in "${models[@]}"; do
   common/mqtt-mico36.patch common/mqtt-publish-bounds.patch \
   common/mqtt-socket-close.patch M1/mqtt-packet-deadline.patch \
   common/mqtt-response-deadline.patch common/mqtt-buffer-storage.patch \
-    common/mqtt-subscribe-qos.patch
+    common/mqtt-subscribe-qos.patch \
+    common/mqtt-subscribe-result.patch
  sdk="$sdk/libraries/protocols/mqtt"
  extra=()
  if [[ $model == A1 ]]; then extra=(A1/control.c); else extra=(M1/mqtt_transport.c M1/co2_source.c M1/display_source.c); fi

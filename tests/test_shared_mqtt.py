@@ -43,6 +43,7 @@ class SharedMQTT(unittest.TestCase):
                 'common/mqtt-buffer-storage.patch')]
             if with_qos:
                 patches.append(ROOT/'common/mqtt-subscribe-qos.patch')
+                patches.append(ROOT/'common/mqtt-subscribe-result.patch')
             apply_stack(copy, patches)
             yield copy/'libraries/protocols/mqtt'
 

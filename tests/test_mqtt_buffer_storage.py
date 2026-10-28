@@ -38,6 +38,7 @@ class MQTTBufferStorage(unittest.TestCase):
             patches.append('common/mqtt-buffer-storage.patch')
         if with_qos:
             patches.append('common/mqtt-subscribe-qos.patch')
+            patches.append('common/mqtt-subscribe-result.patch')
         apply_stack(directory, [ROOT / patch for patch in patches])
         return directory / 'libraries/protocols/mqtt'
 
