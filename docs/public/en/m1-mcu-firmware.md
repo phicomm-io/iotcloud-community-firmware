@@ -81,6 +81,12 @@ python3 tools/m1_sensors.py --host DEVICE_IP --device-id DEVICE_ID --sensor pm
 If a web password is configured, set `M1_WEB_PASSWORD` as described in the [network update guide](m1-mcu-update). The tool checks controller capabilities first and also supports offline frame decoding. PM1.0/PM2.5/PM10 use μg/m³, cumulative particle counts use particles per 0.1 L, and temperature/humidity conversions exclude M1 display compensation. Unknown bytes remain raw data.
 
 
+## How the stock controller handles provisioning and Wi-Fi reset
+
+The stock controller handles the body button and notifies Wi-Fi over UART. A short press switches the screen display; holding about 3 seconds starts provisioning; holding about 9 seconds and then releasing restores factory network and application settings. For ordinary provisioning, release after 3–4 seconds; see [stock Wi-Fi setup](stock-provision).
+
+The controller also drives Wi-Fi **CHIP_EN** through PA24. An update commit restarts Wi-Fi as well, causing a temporary disconnection. This hardware restart alone does not clear Wi-Fi settings.
+
 ## Stock controller backup
 
 The **ATSAMD20G18A stock 11.1.2.1 main Flash backup** is available for development and recovery on matching hardware. It contains 256 KiB (262144 bytes). It includes stock Boot and application, but **excludes NVM User Row, fuses and auxiliary calibration regions**. It is not Wi-Fi module firmware.

@@ -2,7 +2,7 @@
 
 You can update M1 controller firmware over the network **without J-Link or opening the case**. The current method uses a Python script on a computer that can reach M1 over the LAN.
 
-**This updates the sensor controller, not the Wi-Fi MCU.** EMW3080 runs Wi-Fi and the web interface; ATSAMD20G18A communicates with sensors and controls the screen and buzzer. To reduce accidental wrong-image flashing, the sensor controller has no WebUI upload button. Use the computer script below: it calls the MCU update API and verifies the image and runtime version. Ordinary web firmware updates only update Wi-Fi.
+**This updates the ATSAMD20G18A sensor controller for sensors, the screen, buttons and buzzer.** Use the Python tool below. Ordinary web firmware updates only update the EMW3080 Wi-Fi module.
 
 **Check the controller version first: migration is recommended for stock 11.x. Stock 17.1.2.3 / 17.x differs substantially and migration is discouraged.** Wi-Fi and controller versions are separate. If the controller version is unknown, identify the hardware and original version first.
 
@@ -110,7 +110,7 @@ python3 tools/m1_network.py \
 
 <!-- /os -->
 
-Keep power connected. Do not simultaneously update Wi-Fi, reboot or change configuration. Buffered mode uploads one image and Wi-Fi then acknowledges each UART block locally; the older bridge reports block progress on the computer. Controller reboot temporarily disconnects Wi-Fi; the tool then waits approximately 120 seconds at most for reconnection and a fresh matching controller version from the same device.
+Keep power connected. Do not simultaneously update Wi-Fi, change settings or hold the body button. The controller update restarts Wi-Fi and preserves its settings. The tool waits up to about 120 seconds and checks the controller version after reconnection. See [controller and Wi-Fi reset](m1-mcu-firmware#how-the-stock-controller-handles-provisioning-and-wi-fi-reset).
 
 The **MCU v1.0.0-rc** package should report **`1.0.0-rc-97a03b`**. `Verified MCU runtime` with the matching version confirms the post-update runtime. `Commit transmitted` alone only confirms that the commit was sent.
 

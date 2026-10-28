@@ -14,6 +14,13 @@
   const preserveSection=()=>{languageLink.hash=location.hash;};
   preserveSection();window.addEventListener('hashchange',preserveSection);
  }
+ // Keep the article visible on small screens; both directories remain usable without JS.
+ const compact=window.matchMedia?.('(max-width:1000px)');
+ if(compact){
+  const directories=[...document.querySelectorAll('.guide-directory,.guide-toc')];
+  const arrange=()=>directories.forEach(directory=>{directory.open=!compact.matches;});
+  arrange();compact.addEventListener?.('change',arrange);
+ }
  const key='phicomm.appearance',choices=['system','light','dark'];
  const pick=document.getElementById('themePick');
  if(pick){
