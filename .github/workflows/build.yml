@@ -396,7 +396,7 @@ jobs:
         if: matrix.variant == 'hub' && needs.frontend.outputs.reuse-heavy-validation != 'true'
         env:
           FIRMWARE_ROOT: ${{ github.workspace }}
-          HUB_TEST_DIST: ${{ github.workspace }}/build/hub-ci-dist
+          HUB_LAN_DIST: ${{ github.workspace }}/build/hub-ci-dist
           VITE_HUB: '1'
           VITE_BASE_PATH: /iotcloud/
         working-directory: build/hub-frontend-source/frontend
@@ -404,7 +404,7 @@ jobs:
           test -f tests/hub-lan-management.mjs
           npm ci
           npx playwright install --with-deps chromium
-          npm run build -- --outDir "$HUB_TEST_DIST" --emptyOutDir
+          npm run build -- --outDir "$HUB_LAN_DIST" --emptyOutDir
           # Browser API fixtures cover management UX; production UDP and HAP
           # business paths run separately above, not through a simulated broker.
           node tests/hub-lan-management.mjs
