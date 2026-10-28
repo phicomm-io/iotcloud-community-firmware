@@ -9,6 +9,7 @@ static void memory_response(ph_http_exchange *x)
  phw_int(&w,"free_memory",m.free_memory);phw_int(&w,"allocated_memory",m.allocted_memory);phw_int(&w,"free_memory_chunks",m.num_of_chunks);phw_u32(&w,"uptime_ms",mico_rtos_get_time());
  phw_u32(&w,"memory_reserve",SERVICE_MEMORY_RESERVE);phw_u32(&w,"memory_reserved",b.reserved);phw_u32(&w,"memory_active",b.active);phw_u32(&w,"memory_waiting",b.waiting);phw_u32(&w,"memory_denied",b.denied);phw_u32(&w,"minimum_sampled_free",b.minimum_free);
  phw_u32(&w,"json_live_blocks",b.json_live);phw_u32(&w,"json_peak_blocks",b.json_peak);phw_u32(&w,"json_alloc_failures",b.json_failed);phw_u32(&w,"json_guard_denied",b.json_denied);
+ phw_u32(&w,"wire_alloc_failures",b.wire_alloc_failed);phw_u32(&w,"wire_guard_denied",b.wire_guard_denied);
  phw_u32(&w,"mqtt_pending",b.mqtt_pending);phw_u32(&w,"mqtt_peak",b.mqtt_peak);phw_u32(&w,"mqtt_overflow",b.mqtt_overflow);phw_u32(&w,"mqtt_max_delay_ms",b.mqtt_max_delay);
  ph_http_diagnostics d=ph_http_snapshot();
  phw_u32(&w,"http_core_owner_state",d.owner_state);phw_u32(&w,"http_core_restarts",d.restarts);phw_u32(&w,"http_core_close_failures",d.close_failures);phw_int(&w,"http_core_last_close_rc",d.last_close_rc);phw_int(&w,"http_core_last_close_errno",d.last_close_errno);
