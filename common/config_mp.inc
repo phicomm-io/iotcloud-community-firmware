@@ -7,13 +7,17 @@
 #include <string.h>
 typedef struct {
   const char *key;
-  size_t offset;
-  unsigned type;
+  uint16_t offset;
+  uint8_t type;
   double low, high;
 } mp_field_t;
-#define mp_U(T, k, lo, hi) {#k, offsetof(T, k), 1, lo, hi}
-#define mp_W(T, k, lo, hi) {#k, offsetof(T, k), 2, lo, hi}
-#define mp_F(T, k, lo, hi) {#k, offsetof(T, k), 3, lo, hi}
+/* Descriptor offsets are storage offsets, not wire integers. Fail compilation
+ * rather than truncating if a future field exceeds the compact range. Numeric
+ * limits remain doubles; serialization and validation precision are unchanged. */
+#define mp_OFFSET(T, k) ((uint16_t)(offsetof(T, k) + 0 * sizeof(char[offsetof(T, k) <= UINT16_MAX ? 1 : -1])))
+#define mp_U(T, k, lo, hi) {#k, mp_OFFSET(T, k), 1, lo, hi}
+#define mp_W(T, k, lo, hi) {#k, mp_OFFSET(T, k), 2, lo, hi}
+#define mp_F(T, k, lo, hi) {#k, mp_OFFSET(T, k), 3, lo, hi}
 static const mp_field_t mp_linkage_fields[] = {
     mp_U(feature_linkage_t, enabled, 0, 1),
     mp_U(feature_linkage_t, hysteresis_enabled, 0, 1),
