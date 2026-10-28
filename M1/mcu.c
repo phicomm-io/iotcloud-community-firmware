@@ -205,7 +205,7 @@ bool m1_mcu_rx(const uint8_t p[20])
     }
     mico_rtos_unlock_mutex(&m1_lock);
     bool handled=match || p[1]==0x70 || p[1]==0x14 || p[1]==0x15 || p[1]==0x17 || p[1]==0x1a;
-    if(handled)service_cache_changed(SERVICE_CACHE_ALL);
+    if(handled)service_cache_changed(SERVICE_CACHE_STATUS);
     return handled;
 }
 
