@@ -66,6 +66,25 @@ class HTTPMessagePackStackGate(unittest.TestCase):
         self.assertFalse(set(cached)&{'phv_parse','service_product_status_mp','device_status_mp'})
         with self.assertRaisesRegex(ValueError,'JSON compatibility'):
             status_paths(frames,'A1','bad',[],3072,compat=True)
+    def test_cold_sizing_charges_actual_writer_and_visitor_siblings(self):
+        frames,paths=self.fixture('TC1')
+        cold='HTTP GET full status cold sizing wire double number'
+        regular='HTTP GET full status wire double number'
+        self.assertEqual(paths[cold],paths[regular])
+        self.assertEqual(paths[cold][1].count('device_status_visit'),1)
+        self.assertNotIn('tc1_status_capture',paths[cold][1])
+        for api,branch in [('phw_init_measure','init'),('phw_finish_fixed','finish')]:
+            broken=dict(frames);del broken[api]
+            with redirect_stdout(io.StringIO()),self.assertRaisesRegex(ValueError,'missing actual .su'):
+                validate_paths(paths,broken)
+            oversized=dict(frames);oversized[api]=10000
+            with redirect_stdout(io.StringIO()),self.assertRaisesRegex(ValueError,'>12288'):
+                validate_paths(paths,oversized)
+            self.assertIn(api,paths['HTTP GET full status cold sizing '+branch][1])
+        oversized=dict(frames);oversized['device_status_visit']=10000
+        with redirect_stdout(io.StringIO()),self.assertRaisesRegex(ValueError,'>12288'):
+            validate_paths({cold:paths[cold]},oversized)
+
     def test_symbols_require_real_core_and_forbid_json_bridges(self):
         required=['ph_http_server_step','ph_http_parser_feed','ph_http_start',
             'ph_mqtt_session_run','ph_mqtt_poll','ph_mqtt_enqueue_generation',

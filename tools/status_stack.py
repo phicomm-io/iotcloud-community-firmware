@@ -44,7 +44,8 @@ def status_paths(frames,model,label,prefix,reserve,compat=False,capture=True,sym
             'ph_http_snapshot','tc1_status_begin','tc1_ota_snapshot','reset_name',
             'device_status_text','m1_co2_capture','m1_co2_config_get'],symbols)
         paths[label+' capture']=(prefix+captures,reserve)
-    paths[label+' cold sizing init']=(prefix+['device_status_mp']+emitted(frames,['phw_init_measure'],symbols),reserve)
+    paths[label+' cold sizing init']=(prefix+['device_status_mp','phw_init_measure'],reserve)
+    paths[label+' cold sizing finish']=(prefix+['device_status_mp','phw_finish_fixed'],reserve)
     paths[label+' cold sizing buffer']=(prefix+['device_status_mp','ph_buf_reserve','ph_wire_malloc'],reserve)
     schema=prefix+['device_status_mp']+emitted(frames,['device_status_visit'],symbols)+['encode_'+model.lower()]
     # Frozen schema callbacks are tiny and may inline. Sum any emitted schema
@@ -55,5 +56,11 @@ def status_paths(frames,model,label,prefix,reserve,compat=False,capture=True,sym
                            ('bool','bool'),('null','null'),('begin','begin')]:
         field=schema+emitted(frames,['emit_'+kind],symbols)
         paths.update(writer_paths(frames,label+' wire '+kind,field,reserve,
+                                  symbols,kinds={primitive},finalize=False))
+        # The cold sizing walk borrows the same frozen schema and calls the
+        # same writer primitives. Its stack is a sibling of emission, never a
+        # second retained visitor. Charge the allocator tail conservatively
+        # even though the fixed measure writer cannot allocate.
+        paths.update(writer_paths(frames,label+' cold sizing wire '+kind,field,reserve,
                                   symbols,kinds={primitive},finalize=False))
     return paths
