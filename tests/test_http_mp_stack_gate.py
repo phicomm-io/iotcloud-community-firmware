@@ -15,7 +15,7 @@ class HTTPMessagePackStackGate(unittest.TestCase):
         paths=http_paths({},model)
         frames={name:16 for reserve,names in paths.values() for name in names}
         for name in ['mp_decode','phv_scan','phv_next','phv_duplicate','phv_head',
-                     'phv_skip_validated','binary_token','phw_bytes','phw_prefix',
+                     'phv_skip_validated','binary_token','phw_bytes','phw_prefix','install_config',
                      'phw_quote','phw_head','device_status_visit','emit_string',
                      'runtime_fields','mp_copy','memory_response','acquire',
                      'action','read_body','close_slot','respond','transmit']:
@@ -35,7 +35,7 @@ class HTTPMessagePackStackGate(unittest.TestCase):
     def test_missing_emitted_core_frames_fail_closed(self):
         for missing in ['mp_dispatch','mp_cached','service_command_mp',
                         'phv_parse','device_status_mp','encode_a1',
-                        'a1_status_capture','phw_cached_value','ph_wire_malloc']:
+                        'a1_status_capture','phw_cached_value','ph_wire_malloc','feature_light_select_mp','feature_mp']:
             frames,paths=self.fixture();del frames[missing]
             with self.subTest(missing=missing),redirect_stdout(io.StringIO()):
                 with self.assertRaisesRegex(ValueError,'missing actual .su'):
