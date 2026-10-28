@@ -35,7 +35,7 @@ DUT installation, concurrency P95, busy recovery, or physical-button acceptance.
 
 ## Executable entries (this branch)
 
-- `SANITIZE=1 bash tests/run.sh --native-common`: 9 unittest cases; automation
+- `SANITIZE=1 bash tests/run.sh --native-common`: 10 unittest cases; automation
   compiles and executes three model variants. No SDK/JSON objects are linked.
 - `PHICOMM_TEST_JSON_DIR=... bash tests/run.sh --legacy-sdk`: explicit historical
   SDK JSON library-only coverage. ARM cache/stack history is opt-in via
@@ -45,6 +45,10 @@ DUT installation, concurrency P95, busy recovery, or physical-button acceptance.
   prerequisites are failures, and any skip makes the launcher fail. It generates
   the version header before compilation. See `tests/run_native_rc4.py` for the
   exact list, including isolated HA JSON-output oracle tests.
+- `ARM_CC=... bash tests/run.sh --native-arm`: mandatory pinned ARM32 compiler
+  + qemu execution (no skips), separate from the host subset. Actual linked
+  native status/codec allocator-ledger ownership/OOM/recovery, all three models.
+  This does not measure closed-MiCO-allocator or maximum full-runtime peaks.
 - `bash tests/run.sh --all`: preserved full gate. Other owners are still
   migrating old product/HTTP/MQTT fixtures; no full PASS is claimed.
 
@@ -72,3 +76,10 @@ fixture used `PHICOMM_TC1_SDK` and actual M1 Flash recovery used `M1_SDK_DIR`,
 both pointing to existing pinned SDK checkouts; fixtures archive/extract code
 into disposable directories and do not patch those checkouts. This is host
 regression evidence only. It does not close the remaining gates above.
+
+The native ARM entry was executed successfully using pinned GCC 5.4.1/newlib
+nano and qemu: A1/M1 retained 2824 B, modeled overlap peak 7472 B; TC1 retained
+768 B, modeled overlap peak 1992 B. OOM sweeps preserve the first response and
+all models return to zero owned bytes. Log: `/tmp/rc4-native-arm-entry.log`.
+After the runtime metrics migration, `--native-common` was rerun: 10 tests PASS
+in 7.039 s (`/tmp/rc4-native-common-final.log`).
