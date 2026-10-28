@@ -13,8 +13,7 @@ static inline bool binary_take(binary_reader *r,unsigned bytes,uint64_t *out)
     if(bytes>(size_t)(r->end-r->p))return false;
     *out=0;while(bytes--)*out=(*out<<8)|*r->p++;return true;
 }
-/* Firmware shares one validated token decoder with the owned-JSON adapter.
- * Standalone consumers keep the header-only implementation. */
+/* Standalone consumers use the header-inline token decoder. */
 #ifdef PH_WIRE_PRIMITIVES_EXTERNAL
 bool binary_token(binary_reader *,binary_item *);
 #else

@@ -157,7 +157,7 @@ size_t phw_finish_fixed(ph_writer *w){return w->fixed&&!w->failed&&!w->depth&&!w
 static void phw_head(ph_writer *w,unsigned kind,uint64_t n)
 { unsigned char bytes[9];size_t count=ph_wire_head(w->format,kind,n,bytes);if(!count)w->failed=true;else phw_bytes(w,bytes,count); }
 static void phw_quote(ph_writer *w,const char *text,size_t size)
-{ if(!text||!ph_wire_utf8((const unsigned char *)text,size)){w->failed=true;return;}phw_head(w,PHV_TEXT,size);phw_bytes(w,text,size); }
+{ if(!text||size>PHW_MAX_BYTES||!ph_wire_utf8((const unsigned char *)text,size)){w->failed=true;return;}phw_head(w,PHV_TEXT,size);phw_bytes(w,text,size); }
 void phw_root_key(ph_writer *w,const char *key)
 { if(w->root_key||!key||!w->depth||w->arrays[w->depth-1])w->failed=true;else w->root_key=key; }
 static void phw_prefix(ph_writer *w,const char *key)
@@ -227,6 +227,14 @@ static void phw_visit(ph_writer *w,const char *key,const ph_value *v,bool canoni
   }
   if(!used||w->failed)return;
  }
+}
+void phw_cached_value(ph_writer *w,const char *key,const ph_buf *value,unsigned depth)
+{
+ if(w->failed)return;
+ if(!value||!value->buf||!value->len||value->len>=value->cap||
+    w->depth>PHW_DEPTH||depth>PHW_DEPTH-w->depth||value==w->wire||
+    (w->wire&&value->buf==w->wire->buf)){w->failed=true;return;}
+ phw_prefix(w,key);phw_bytes(w,value->buf,value->len);
 }
 void phw_value(ph_writer *w,const char *key,const ph_value *v){phw_visit(w,key,v,false);}
 void phw_value_canonical(ph_writer *w,const char *key,const ph_value *v){phw_visit(w,key,v,true);}

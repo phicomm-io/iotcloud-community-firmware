@@ -63,5 +63,8 @@ void phw_bool(ph_writer *,const char *key,bool);
 void phw_null(ph_writer *,const char *key);
 void phw_value(ph_writer *,const char *key,const ph_value *);
 void phw_value_canonical(ph_writer *,const char *key,const ph_value *);
+/* Internal cache only: one already validated self-generated value, with true
+ * maximum container depth. Never pass request bytes or aliased writer storage. */
+void phw_cached_value(ph_writer *,const char *key,const ph_buf *,unsigned depth);
 ph_buf *phw_take(ph_writer *); /* NULL on failure, frees partial output */
 void phw_discard(ph_writer *);
