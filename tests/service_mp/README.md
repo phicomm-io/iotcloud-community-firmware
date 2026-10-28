@@ -74,3 +74,15 @@ job/feature-worker stop, retry and resume scheduler assertions. The retired JSON
 fixtures are not production compatibility tests: the native path deliberately
 requires the complete schema-1 MessagePack manifest (publisher golden), while
 retaining their version ordering, busy/admission and transport failure behavior.
+
+`tests.test_product_metadata_mp` additionally compiles the actual A1/M1
+`service_product_info_mp` and `service_product_capabilities_mp` functions and
+production action lists for ten full/bootstrap, fresh-air and Bemfa combinations.
+It checks canonical identity/version/variant and tmcp2/wire1 fields, typed resource
+flags, product-only actions, added OTA actions, recovery and restricted output,
+and all allocation cutpoints. This preserves the old metadata/capabilities
+business assertions without retaining JSON graph fallbacks, byte order or
+obsolete full/live status capture. Native envelope, malformed params, replay and
+HTTP failure/recovery assertions remain in service/HTTP fixtures. TC1's separate
+product writers require its owner's fixtures; these A1/M1 assertions do not
+claim TC1 coverage.
