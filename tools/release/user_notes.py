@@ -414,9 +414,14 @@ def pending_report(data=DATA):
 
 def history_html(manifest, locale):
     esc = lambda s: html.escape(str(s), quote=True)
+    dates = read(DATA / 'display-dates.json')
     out = []
     for release in reversed(manifest['releases']):
-        out.append(f'<section class="notes-history-version" id="{release["tag"]}"><h2>{release["tag"]}</h2>')
+        date = dates.get(release['tag'])
+        heading = f'<time datetime="{esc(date)}">{esc(date)}</time>' if date else esc(release['tag'])
+        out.append(f'<section class="notes-history-version" id="{release["tag"]}"><h2>{heading}</h2>')
+        if date:
+            out.append(f'<h3>{esc(release["tag"])}</h3>')
         status = release['history_status']
         messages = {
             'zh-CN': {'insufficient': '仅有提交链接，资料不足，暂不能生成升级差异。', 'pending': '部分记录仍在整理；以下仅列已审核内容，涉及本版的完整升级差异暂停提供。', 'no_user_changes': '本版没有新增用户可见变化，与上一版使用相同实现。'},
@@ -430,19 +435,19 @@ def history_html(manifest, locale):
             rows = [r for r in manifest['changes'] if r['version'] == release['version'] and r['component'] == component]
             if not rows:
                 continue
-            out.append('<h3>' + component_title + '</h3>')
+            out.append('<h4>' + component_title + '</h4>')
             for kind in TYPES:
                 items = [r for r in rows if r['type'] == kind]
                 if not items:
                     continue
-                out.append('<h4>' + LABELS[locale][kind] + '</h4><ul class="notes-reviewed">')
+                out.append('<h5>' + LABELS[locale][kind] + '</h5><ol class="notes-reviewed">')
                 for row in items:
                     if not all(row.get(k, {}).get(locale) for k in ('title', 'description')):
                         out.append('<li>' + ('翻译待审核' if locale == 'zh-CN' else 'Translation pending review') + '</li>')
                         continue
                     scope = ', '.join(m.upper() for m in row['scope']['models']) + ' · ' + ', '.join(row['scope']['variants'])
                     out.append(f'<li><b>{esc(row["title"][locale])}</b><p>{esc(row["description"][locale])}</p><small>{esc(scope)}</small></li>')
-                out.append('</ul>')
+                out.append('</ol>')
         out.append('</section>')
     return ''.join(out)
 

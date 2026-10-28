@@ -52,6 +52,9 @@
       fields.source.disabled = candidate;
       candidateBox.hidden = !candidate; candidateDownloads.replaceChildren(); candidateStatus.textContent = '';
       app.dataset.channel = fields.channel.value;
+      for (const history of app.querySelectorAll('[data-notes-channel]')) {
+        history.hidden = history.dataset.notesChannel !== fields.channel.value;
+      }
     }
     function candidateLink(asset, release) {
       if (!asset || !Number.isSafeInteger(asset.size) || asset.size < 1 || !/^[a-f0-9]{64}$/.test(asset.sha256)) return null;
@@ -257,7 +260,7 @@
     on(fields.source, 'change', () => { stableSource = fields.source.value; load(); });
     on(fields.channel, 'change', () => {
       deviceVersion = null; fields.from.value = ''; fields.to.value = '';
-      if (candidateSelected()) selectTab('compare'); load();
+      load();
     });
     on(get('device-form'), 'submit', async event => {
       event.preventDefault(); invalidate(); const epoch = conditionEpoch;
@@ -282,7 +285,7 @@
       destroyed = true; sourceEpoch++; invalidate(); sourceController?.abort(); for (const remove of removers) remove();
       delete app.releaseNotesController;
     }};
-    if (params.get('view') === 'compare' || candidateSelected()) selectTab('compare');
+    if (params.get('view') === 'compare') selectTab('compare');
     app.releaseNotesController = controller; controller.ready = load(); return controller;
   }
   return Object.freeze({mount});

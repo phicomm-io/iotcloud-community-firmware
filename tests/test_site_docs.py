@@ -184,7 +184,7 @@ class BuildTests(unittest.TestCase):
             home = (self.out / relative).read_text()
             nav = re.search(r'<nav class="site-nav"[^>]*>(.*?)</nav>', home).group(1)
             targets = re.findall(r'href="([^"]+)"', nav)
-            self.assertEqual(targets, ['#devices', '#install', '#faq', '#develop'])
+            self.assertEqual(targets, ['#devices', '#install', '#releases', '#faq', '#develop'])
             for anchor in ('devices', 'install', 'faq', 'develop', 'features', 'iotcloud',
                            'demos', 'docs', 'releases', 'community', 'm1-mcu', 'm1-mcu-releases'):
                 self.assertIn(f'id="{anchor}"', home)
@@ -201,13 +201,21 @@ class BuildTests(unittest.TestCase):
             if not url.scheme and not url.netloc and url.path.endswith('.html'):
                 self.assertTrue((self.out / unquote(url.path)).is_file(), target)
 
-    def test_shared_flashing_guide_is_discoverable_for_both_devices(self):
+    def test_device_flashing_guides_are_separate_and_discoverable(self):
         for device in ('m1', 'a1'):
             items = next(items for group, _, items in GROUPS if group == device)
-            self.assertIn('a1-m1-flash', [item[0] for item in items])
-        html = (self.out / 'guides' / 'a1-m1-flash.html').read_text()
-        for anchor in ('j-link-刷机', 'bootloader-刷机'):
-            self.assertIn(f'id="{anchor}"', html)
+            self.assertIn(device + '-flash', [item[0] for item in items])
+            self.assertNotIn('a1-m1-flash', [item[0] for item in items])
+            html = (self.out / 'guides' / (device + '-flash.html')).read_text()
+            for anchor in ('j-link-刷机', 'bootloader-刷机'):
+                self.assertIn(f'id="{anchor}"', html)
+            self.assertIn(f'phicomm_{device}.all.bin', html)
+            other = 'a1' if device == 'm1' else 'm1'
+            self.assertNotIn(f'phicomm_{other}.', html)
+        m1 = (self.out / 'guides/m1-flash.html').read_text()
+        self.assertLess(m1.index('<h2 id="bootloader-刷机"'), m1.index('<h2 id="j-link-刷机"'))
+        a1 = (self.out / 'guides/a1-flash.html').read_text()
+        self.assertLess(a1.index('<h2 id="j-link-刷机"'), a1.index('<h2 id="bootloader-刷机"'))
 
     def test_device_entries_reach_install_update_use_and_recovery(self):
         from html import unescape
@@ -238,10 +246,14 @@ class BuildTests(unittest.TestCase):
                         self.assertIn(f'href="#docs-{device}"', text)
                         self.assertIn(f'id="docs-{device}" open', text)
 
-    def test_old_flashing_urls_reach_shared_guide(self):
-        for alias in ('a1-flash', 'm1-flash'):
-            html = (self.out / 'guides' / f'{alias}.html').read_text()
-            self.assertIn('url=a1-m1-flash.html', html)
+    def test_retired_combined_urls_reach_a_readable_device_chooser(self):
+        for language in ('', 'en/'):
+            for alias in ('a1-m1-flash', 'stock-provision'):
+                html = (self.out / 'guides' / language / f'{alias}.html').read_text()
+                self.assertIn('url=quick-start.html', html)
+                self.assertIn('href="quick-start.html"', html)
+            html = (self.out / 'guides' / language / 'v1-features.html').read_text()
+            self.assertIn('release-log.html?channel=candidate#v1-overview', html)
 
     def test_all_demos_link_back_to_the_website(self):
         import importlib.util
@@ -325,7 +337,7 @@ class BuildTests(unittest.TestCase):
                     self.choices.append(attrs['value'])
 
         for language in ('', 'en/'):
-            for slug in ('stock-provision', 'a1-no-disassembly', 'm1-no-disassembly'):
+            for slug in ('a1-no-disassembly', 'm1-no-disassembly'):
                 text = (self.out / 'guides' / language / f'{slug}.html').read_text()
                 parser = OSParser()
                 parser.feed(text)

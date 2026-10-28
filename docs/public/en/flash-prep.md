@@ -21,8 +21,8 @@ A full image overwrites the original firmware and some settings. Save a full Fla
 | Device | Module | First-install method | Guide |
 | --- | --- | --- | --- |
 | TC1 power strip | EMW3031 | Stock 1.0.0.24 / 1.0.0.26 OTA, or J-Link + FlashPlus | [Illustrated OTA](tc1-no-disassembly-ethernet-wifi-ap) · [Wired recovery](tc1-flash) |
-| M1 air quality monitor | EMW3080B / MK3080B | Factory LAN OTA, or J-Link / serial bootloader | [LAN migration](m1-no-disassembly) · [Wired recovery](a1-m1-flash) |
-| A1 air purifier | EMW3080B / MK3080B | J-Link or serial bootloader | [A1 / M1 flashing](a1-m1-flash) |
+| M1 air quality monitor | EMW3080B / MK3080B | Factory OTA; serial bootloader recommended for wired recovery, with accessible pads and a common USB-TTL adapter | [OTA installation](m1-no-disassembly) · [Wired recovery](m1-flash) |
+| A1 air purifier | EMW3080B / MK3080B | Factory OTA, or solder-free J-Link / serial | [OTA installation](a1-no-disassembly) · [Wired recovery](a1-flash) |
 
 The TC1 A1 hardware revision and the A1 air purifier are different products. Download firmware by product.
 
@@ -32,12 +32,13 @@ The TC1 A1 hardware revision and the A1 air purifier are different products. Dow
 | --- | --- | --- |
 | `.all.bin` | Native full Flash image | Yes, full-address programming |
 | `.ota.bin.signed` | Signed OTA update package | No, only devices already running this firmware |
-| `.ota.bin.raw` | Native OTA image | Factory M1 can use the full image from 0.9.21 or newer; follow each guide for other uses |
+| `.ota.bin.raw` | Native OTA image | Use the full image for the matching product; M1 requires 0.9.21 or newer. Follow the product's guide |
 
 **Community web updates use `.ota.bin.signed`; factory migration follows the model-specific guide. Never upload `.all.bin` or `.usr.bin` as OTA.** Verify downloads against `SHA256SUMS` from the same release.
 
 ## Wiring and instructions
 
 - [TC1 flashing](tc1-flash): module pads, factory test points and FlashPlus.
-- [A1 / M1 flashing](a1-m1-flash): module SWD / UART pins, A1 factory test points, J-Link and bootloader methods.
+- [M1 wired recovery](m1-flash): serial bootloader recommended, with accessible solder pads and commonly available USB-TTL adapters; J-Link is also covered.
+- [A1 wired recovery](a1-flash): solder-free J-Link via factory test points recommended; serial is also covered.
 - [Asset sources](sources) and [asset checksums](assets/SHA256SUMS).

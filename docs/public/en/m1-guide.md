@@ -1,6 +1,6 @@
 # M1 operation
 
-M1 provides PM2.5, formaldehyde, temperature, humidity and screen brightness controls. It can supply readings for A1 automation. This page covers daily use after installation. For first installation, see [factory LAN migration](m1-no-disassembly) or [wired flashing and recovery](a1-m1-flash).
+M1 provides PM2.5, formaldehyde, temperature, humidity and screen brightness controls. It can supply readings for A1 automation. This page covers daily use after installation. For first installation, see [factory LAN migration](m1-no-disassembly) or [wired flashing and recovery](m1-flash).
 
 **Controller compatibility:** the GPL-3.0 open-source controller is recommended for stock 11.x. Stock 17.1.2.3 / 17.x differs substantially and awaits analysis; migration is discouraged. Check Wi-Fi and controller versions separately. Unreadable versions remain unknown.
 
@@ -69,7 +69,7 @@ After updating **both the open-source sensor MCU and Wi-Fi firmware** to version
 - Hold for at least 3 seconds and release before 10 seconds to clear Wi-Fi and the WebUI password and start provisioning again. MQTT and other settings are preserved.
 - Hold continuously for 10 seconds to restore factory settings, including Wi-Fi, MQTT, the WebUI password and other network-module settings. Custom music stored separately on the sensor MCU is preserved.
 
-Both recovery actions save settings before restarting the sensor and Wi-Fi MCUs; Wi-Fi connectivity is not required. Recovery gestures are disabled during updates. Stock sensor firmware retains its original long-press provisioning event and does not support these staged gestures. See [A1 / M1 recovery](a1-m1-flash); a full reset is also available in the WebUI.
+Both recovery actions save settings before restarting the sensor and Wi-Fi MCUs; Wi-Fi connectivity is not required. Recovery gestures are disabled during updates. Stock sensor firmware retains its original long-press provisioning event and does not support these staged gestures. See [M1 wired recovery](m1-flash); a full reset is also available in the WebUI.
 
 The current EMW3080 SDK does not provide WPA3 connectivity. Use WPA2-PSK/AES; WPA2/WPA3 transition networks must allow WPA2 clients. See the [module specifications](https://docs.mxchip.com/attach/zh/DS0122CN_EMW3080_V2.8.pdf).
 

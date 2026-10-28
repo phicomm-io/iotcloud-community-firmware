@@ -17,6 +17,8 @@
 | `images/flashplus-config.png` | [EMW3031 / FlashPlus 工具说明 PDF](https://github.com/IoTDevice/phicomm_tc1_a1/blob/master/工具和文档/EMW3031说明文档_flashplus.pdf)，第 2 页配置区域裁剪；仅用于识别芯片与 Flash 配置，擦除及校验选项以本项目教程为准 |
 | `tools/FlashPlus_v1.0.10.msi` | Marvell FlashPlus v1.0.10，[IoTDevice 工具镜像](https://github.com/IoTDevice/phicomm_tc1_a1/blob/master/工具和文档/FlashPlus_v1.0.10.msi)，安装包保持原样 |
 | `tools/a1-easylink.zip` | 本项目的 A1 EasyLink 配网工具，包含 `tools/a1_easylink.py`、`tools/a1_easylink_web.py` 和三个网页资源；无固件文件，工具包校验和见清单 |
+| `tools/easylink-linux/easylink_v2_linux.c` | 本项目 Linux mac80211 帧注入工具，源自 M1 实机成功使用的 EasyLink V2 发送程序；A1 使用相同协议。普通 UDP 工具仍为实验用途 |
+| `tools/a1-dns-migration/a1_dns_migration.py` | 依据 A1 原厂 v1.47 的更新域名、HTTPS 请求、顶层 JSON、版本比较和下载校验逻辑实现；DNS 迁移尚待实机验证 |
 
 图片与第三方工具的版权属于原作者及供应商，保存副本不改变原有授权；FlashPlus 不属于本项目固件源码。**EMW3031 数据手册明确限制配图转载，因此教程仅链接原文。**
 

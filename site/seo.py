@@ -14,12 +14,13 @@ PRODUCT_TITLES = {
     'tc1-no-disassembly': '斐讯 TC1 免拆刷机：原理与自备镜像',
     'tc1-no-disassembly-ethernet-wifi-ap': '斐讯 TC1 免拆刷机图文教程（有线网卡、无线网卡与 AP）',
     'm1-mcu-firmware': '斐讯 M1 ATSAMD20G18A 主控开源固件、下载与原厂备份',
-    'm1-no-disassembly': '斐讯 M1 免拆刷机：内网 / 公网',
-    'a1-no-disassembly': '斐讯 A1 免拆刷机：内网 / 公网',
+    'm1-no-disassembly': '斐讯 M1 原厂配网与免拆刷机：局域网 OTA / DNS 迁移',
+    'a1-no-disassembly': '斐讯 A1 原厂配网与免拆刷机：局域网 OTA / DNS 迁移',
     'm1-guide': '斐讯 M1 空气检测仪功能与操作',
     'daikin-guide': 'DAIKIN BRY88AX151K 空气检测仪功能与安装',
     'a1-guide': '斐讯 A1 空气净化器功能与操作',
-    'a1-m1-flash': '斐讯 A1 / M1 刷机教程：J-Link 与 Bootloader',
+    'a1-flash': '斐讯 A1 有线刷机：免焊 J-Link 与串口恢复',
+    'm1-flash': '斐讯 M1 有线刷机：串口 Bootloader 与 J-Link 恢复',
 }
 
 

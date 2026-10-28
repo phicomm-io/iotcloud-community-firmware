@@ -23,8 +23,8 @@
 | 设备 | 模块 | 首刷方式 | 文档 |
 | --- | --- | --- | --- |
 | TC1 智能排插 | EMW3031 | 原厂 1.0.0.24 / 1.0.0.26 免拆 OTA，或 J-Link + FlashPlus | [免拆图文](tc1-no-disassembly-ethernet-wifi-ap) · [有线恢复](tc1-flash) |
-| M1 空气检测仪 | EMW3080B / MK3080B | 原厂内网 OTA，或 J-Link / 串口 Bootloader | [免拆迁移](m1-no-disassembly) · [有线恢复](a1-m1-flash) |
-| A1 空气净化器 | EMW3080B / MK3080B | J-Link 或串口 Bootloader | [A1 刷机](a1-m1-flash) |
+| M1 空气检测仪 | EMW3080B / MK3080B | 原厂 OTA；有线推荐串口 Bootloader，焊点易接、USB-TTL 常见 | [免拆迁移](m1-no-disassembly) · [有线恢复](m1-flash) |
+| A1 空气净化器 | EMW3080B / MK3080B | 原厂 OTA，或免焊 J-Link / 串口 | [免拆安装](a1-no-disassembly) · [有线恢复](a1-flash) |
 
 **TC1 的 A1 硬件版本与 A1 空气净化器是两个产品**，固件文件必须按产品选择。
 
@@ -34,14 +34,15 @@
 | --- | --- | --- |
 | `.all.bin` | 完整原生烧录镜像 | 是（完整地址烧录） |
 | `.ota.bin.signed` | 签名 OTA 升级包 | 否，仅用于已运行本项目固件的设备 |
-| `.ota.bin.raw` | 原生 OTA 镜像 | M1 原厂免拆可使用 0.9.21 起的完整版；其他用途按各自指南确认 |
+| `.ota.bin.raw` | 原生 OTA 镜像 | 原厂迁移使用对应产品完整版；M1 至少 0.9.21，详见各自教程 |
 
 **社区网页更新使用 `.ota.bin.signed`；原厂迁移按机型指南选择，不上传 `.all.bin` 或 `.usr.bin`。** 下载后按同版本 `SHA256SUMS` 校验。
 
 ## 接线图与操作步骤
 
 - [TC1 刷机](tc1-flash)：EMW3031 模块飞线、工厂测试点及 FlashPlus 步骤。
-- [A1 / M1 刷机](a1-m1-flash)：EMW3080B 模块 SWD 与串口点位、A1 工厂测试点、J-Link 和 Bootloader 两种方式。
+- [M1 有线恢复](m1-flash)：推荐串口 Bootloader，模块焊点便于焊接，也可使用 J-Link。
+- [A1 有线恢复](a1-flash)：推荐 J-Link，可用工厂测试点免焊连接，也保留串口方法。
 
 ## 图片与工具来源
 
