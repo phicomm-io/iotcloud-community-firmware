@@ -181,7 +181,8 @@ test('the default stable page hides candidates even if a combined snapshot is ac
 });
 test('explicit candidate selection uses the stable baseline, groups all four devices and shares the candidate channel', async()=>{
   const f=CandidateUI.fixture(),calls=[],p=mounted({client:{snapshot:async(source,options)=>{calls.push({source,channel:options.channel});return f[options.channel];}}});
-  try{await p.controller.ready;const history=p.field('history').innerHTML;
+  try{await p.controller.ready;const stableHistory=p.app.querySelector('[data-notes-channel=stable]'),history=stableHistory.innerHTML;
+    assert.equal(stableHistory.hidden,false);assert.equal(p.app.querySelector('[data-notes-channel=candidate]').hidden,true);
     p.change('source','https://phicomm.fjrcn.cn');await tick();p.change('channel','candidate');await tick();
     assert.deepEqual(calls.at(-1),{source:'',channel:'candidate'});assert.equal(p.field('source').disabled,true);
     assert.deepEqual([...p.field('source').options].map(o=>o.value),['']);
@@ -189,7 +190,9 @@ test('explicit candidate selection uses the stable baseline, groups all four dev
     assert.deepEqual([...p.field('candidate-downloads').children].map(n=>n.id),['notes-candidate-m1','notes-candidate-a1','notes-candidate-tc1','notes-candidate-daikin']);
     const links=[...p.field('candidate-downloads').querySelectorAll('a')];
     assert.equal(links.filter(a=>a.pathname.endsWith('.ota.bin.signed')).length,10);
-    assert.ok(links.every(a=>!a.href.includes('phicomm.fjrcn.')));assert.equal(p.field('history').innerHTML,history);
+    assert.ok(links.every(a=>!a.href.includes('phicomm.fjrcn.')));assert.equal(stableHistory.innerHTML,history);
+    assert.equal(stableHistory.hidden,true);assert.equal(p.app.querySelector('[data-notes-channel=candidate]').hidden,false);
+    assert.equal(p.field('history').hidden,false);
     p.submit();assert.equal(p.app.dataset.reportState,'complete');assert.equal(p.field('result').querySelectorAll('.notes-change').length,1);
     assert.equal(new URL(p.field('share').href).searchParams.get('channel'),'candidate');
     assert.ok(p.field('result').querySelector('.notes-target a').pathname.startsWith('/releases/v1.0.0-rc/'));

@@ -20,13 +20,13 @@
 | 设备 | 首次安装 | 有线安装与恢复 |
 | --- | --- | --- |
 | TC1 A1 硬件版 | [免拆图文教程](tc1-no-disassembly-ethernet-wifi-ap)，原厂 1.0.0.24 / 1.0.0.26 | [J-Link](tc1-flash) |
-| M1 | [原厂内网免拆迁移](m1-no-disassembly)，首次从 0.9.21 起 | [J-Link / 串口](a1-m1-flash) |
-| A1 空气净化器 | 有线安装；[免拆方案仍待验证](a1-no-disassembly) | [J-Link / 串口](a1-m1-flash) |
+| M1 | [原厂配网与免拆安装](m1-no-disassembly)，首次从 0.9.21 起 | [串口（推荐）/ J-Link](m1-flash) |
+| A1 空气净化器 | [原厂配网与免拆安装](a1-no-disassembly) | [免焊 J-Link（推荐）/ 串口](a1-flash) |
 | DAIKIN | BRY88AB151K 可用[原厂 OTA](daikin-stock-ota) | [ESP32 串口安装](daikin-guide#首次安装) |
 
 ## 首次配网
 
-以下是社区固件的首次配网；尚在原厂固件时先看 [免 App 原厂配网](stock-provision)。
+以下是社区固件的首次配网；尚在原厂固件时先看 [M1 原厂配网](m1-no-disassembly) / [A1 原厂配网](a1-no-disassembly)。
 
 设备上电后若未配置 Wi-Fi，会开启配网热点。用手机或电脑连接该热点，浏览器访问下表中的配网地址完成设置。
 

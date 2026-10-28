@@ -24,7 +24,7 @@ const {chromium}=require(process.env.PHICOMM_PLAYWRIGHT||'@playwright/test');
   for(const locale of ['zh','en']){
    const page=await browser.newPage({javaScriptEnabled:false,viewport:{width:390,height:900}});
    await page.goto(base+(locale==='en'?'/guides/en/release-log.html':'/guides/release-log.html'));
-   assert.equal(await page.locator('.notes-history-version').count(),releaseCount);assert.equal(await page.locator('#notes-history').isVisible(),true);
+   assert.equal(await page.locator('[data-notes-channel=stable] .notes-history-version').count(),releaseCount);assert.equal(await page.locator('#notes-history').isVisible(),true);
    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
    await page.screenshot({path:`build/notes-evidence/${locale}-nojs.png`,fullPage:true});await page.close();cases++;
   }

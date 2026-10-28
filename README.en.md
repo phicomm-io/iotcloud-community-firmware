@@ -12,7 +12,7 @@ Community firmware for TC1 power strips, M1 air monitors, A1 air purifiers and D
 | --- | --- | --- |
 | TC1 power strip, A1 hardware revision | Six outlets, power and energy, schedules, child lock and button controls | [Install](https://phicomm-io.github.io/guides/en/tc1-no-disassembly.html) · [Use](https://phicomm-io.github.io/guides/en/tc1-guide.html) |
 | M1 air monitor | PM2.5, formaldehyde, temperature, humidity, brightness and A1 automation; matching open-source controller firmware adds particle details, CO₂ display and music | [Install](https://phicomm-io.github.io/guides/en/m1-no-disassembly.html) · [Use](https://phicomm-io.github.io/guides/en/m1-guide.html) |
-| A1 air purifier | Fan, automatic mode, filter, light ring, night mode and multiple sensor providers; a fresh-air variant is also available | [Install](https://phicomm-io.github.io/guides/en/a1-m1-flash.html) · [Use](https://phicomm-io.github.io/guides/en/a1-guide.html) |
+| A1 air purifier | Fan, automatic mode, filter, light ring, night mode and multiple sensor providers; a fresh-air variant is also available | [Install](https://phicomm-io.github.io/guides/en/a1-no-disassembly.html) · [Use](https://phicomm-io.github.io/guides/en/a1-guide.html) |
 | DAIKIN air monitor | PM2.5, PM10, CO₂, temperature, humidity, TVOC, optional formaldehyde and A1 automation | [Install and use](https://phicomm-io.github.io/guides/en/daikin-guide.html) |
 
 TC1's A1 hardware revision and the A1 purifier are different products; their images are not interchangeable. TC1 A2 is unsupported. M1 / A1 require the original EMW3080B / MK3080B modules. Check the documented ESP32 / 4 MB Flash model for DAIKIN.

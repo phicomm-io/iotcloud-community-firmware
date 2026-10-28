@@ -1,30 +1,129 @@
-# M1 installation without disassembly: LAN upload and DNS migration
+# M1: stock Wi-Fi setup and installation without disassembly
 
-M1 can join your router through its factory hotspot, then accept community firmware from a computer without the original app. This procedure updates the Wi-Fi module and keeps the original main MCU program.
+This guide updates only the M1 Wi-Fi module and retains the sensor controller. It covers two factory provisioning methods and two OTA methods. Prefer the official app for provisioning if available.
 
-**The first migration from factory firmware must use 0.9.21 or newer.** Choose the **full M1 native OTA image, `phicomm_m1.ota.bin.raw`**. Older versions can repeatedly restart during first boot; do not install an old version as a stepping stone. This guide pins downloads to 0.9.21.
-
-This guide covers factory LAN uploads and self-hosted DNS migration for the M1 Wi-Fi module. After installation, confirm the version, web access and sensors in step 5. Use the separate installation guide for an A1 purifier.
-
-Select your computer system to show the matching commands. Replace example device IPs with the address in your router's client list.
+Use the **full native M1 OTA image**, version **0.9.21 or newer**. The commands below use stable **v0.9.27**. Keep power connected throughout.
 
 <!-- os-picker -->
 
-## 1. Prepare the local network
+## 1. Provision stock Wi-Fi
 
-Connect the computer to the same router as M1 over Ethernet or Wi-Fi, with client isolation disabled. No public device ports are needed. For stalled uploads, see the self-hosted DNS migration in section 6. There is no public migration DNS address to enter directly.
+If M1 is already listed by your router, preserve its settings and record its IP and MAC. Otherwise use one of the following methods. The target network must be 2.4 GHz WPA2/AES with DHCP; disable client isolation.
 
-## 2. Connect the factory M1
+### Method A: hotspot HTTP setup
 
-If the router already lists M1, keep its configuration and record the IP and label MAC. No reset is needed.
+**Hold the body button for 3–4 seconds, then release.** Join the open `EasyLink_XXXXXX` hotspot (last six hexadecimal MAC digits) within about two minutes.
 
-To provision again, **hold the body button for about 3–4 seconds, then release**, and find the open `EasyLink_XXXXXX` hotspot. Join it and submit your **2.4 GHz** network settings to `10.0.0.1:8000/config-write-uap`. See [stock Wi-Fi setup](stock-provision) for the full procedure. No original app is required.
+A short press changes the screen. Holding about **9 seconds and releasing restores factory network and application settings and restarts**. Ordinary provisioning uses the 3–4 second gesture.
 
-A short press switches the screen display. **Holding about 9 seconds and then releasing restores factory network and application settings and reboots.** For ordinary provisioning, release after 3–4 seconds.
+### Connect and inspect
 
-The window is about two minutes. Once the hotspot disappears, reconnect your computer to the router and match the new DHCP lease to the label MAC. Blinking Wi-Fi, an X icon or a disappearing hotspot alone does not prove connection. Avoid repeatedly pressing the pairing button.
+Join the target `EasyLink_XXXXXX` network. “No Internet” is expected. The factory configuration uses `10.0.0.1/24`, HTTP port 8000.
 
-## 3. Identify the LAN target
+<!-- os:windows -->
+
+```powershell
+$DeviceIp = "10.0.0.1"
+curl.exe --http1.0 --noproxy "*" --connect-timeout 3 --max-time 5 "http://${DeviceIp}:8000/config-read"
+```
+
+<!-- /os -->
+
+<!-- os:mac linux -->
+
+```sh
+DeviceIp="10.0.0.1"
+curl --http1.0 --noproxy '*' --connect-timeout 3 --max-time 5 "http://${DeviceIp}:8000/config-read"
+```
+
+<!-- /os -->
+
+If unreachable, check the active Wi-Fi network and its `10.0.0.x` address. The hotspot window may have expired. No TC1 TFTP server or secondary Ethernet address is needed.
+
+### Submit Wi-Fi settings
+
+Replace the SSID and password and run in the same terminal:
+
+<!-- os:windows -->
+
+```powershell
+$Config = [ordered]@{
+    SSID = "RescueWiFi"
+    PASSWORD = "replace-with-your-wifi-password"
+    DHCP = $true
+    IDENTIFIER = 1
+}
+$ConfigFile = Join-Path $PWD.Path "m1-wifi.json"
+$Json = $Config | ConvertTo-Json -Compress
+[System.IO.File]::WriteAllText($ConfigFile, $Json, [System.Text.UTF8Encoding]::new($false))
+
+curl.exe --http1.0 --noproxy "*" --connect-timeout 3 --max-time 10 --header "Content-Type: application/json" --header "Expect:" --data-binary "@$ConfigFile" "http://${DeviceIp}:8000/config-write-uap"
+```
+
+<!-- /os -->
+
+<!-- os:mac linux -->
+
+Create a UTF-8 JSON file. Escape any `"` or `\` in strings according to JSON rules:
+
+```sh
+umask 077
+cat > m1-wifi.json <<'JSON'
+{"SSID":"RescueWiFi","PASSWORD":"replace-with-your-wifi-password","DHCP":true,"IDENTIFIER":1}
+JSON
+curl --http1.0 --noproxy '*' --connect-timeout 3 --max-time 10 --header 'Content-Type: application/json' --header 'Expect:' --data-binary '@m1-wifi.json' "http://${DeviceIp}:8000/config-write-uap"
+```
+
+<!-- /os -->
+
+Fields are case-sensitive and top-level. `DHCP` is a Boolean; `IDENTIFIER` is an integer used by the provisioning callback, not an account or binding token.
+
+The factory path responds, waits about one second, closes the hotspot and attempts to join the router. Reconnect the computer to the router and look for M1's new DHCP lease. The file and terminal input records contain the password; use your own computer and delete the file when finished:
+
+<!-- os:windows -->
+
+```powershell
+Remove-Item -LiteralPath $ConfigFile
+```
+
+<!-- /os -->
+
+<!-- os:mac linux -->
+
+```sh
+rm -- m1-wifi.json
+```
+
+<!-- /os -->
+
+
+### Method B: Linux EasyLink V2
+
+App-free EasyLink has succeeded only with **mac80211 frame injection on Linux**. Prefer the official app if available. Ordinary Windows, macOS or Linux UDP senders are not verified provisioning methods.
+
+Use a spare adapter supporting monitor mode and injection, Linux, `iw` and a C compiler. Use a 2.4 GHz WPA2/AES network and record its channel. Channel 1 has worked; channel 6 is not mandatory. Another adapter can keep the computer on the target LAN.
+
+Download the [Linux injection sender source](assets/tools/easylink-linux/easylink_v2_linux.c) and [SHA256SUMS](assets/tools/easylink-linux/SHA256SUMS). Run these commands on Linux. Replace `phy1`, channel `1` and `192.168.1.23` with the spare radio, target channel and computer's IPv4 on the target LAN:
+
+```sh
+sha256sum -c SHA256SUMS
+cc -O2 -Wall -Wextra -o easylink_v2_linux easylink_v2_linux.c
+iw dev
+sudo iw phy phy1 interface add easylink-mon type monitor
+sudo ip link set easylink-mon up
+sudo iw dev easylink-mon set channel 1
+sudo ./easylink_v2_linux easylink-mon 192.168.1.23 60
+```
+
+Enter the target SSID and password when prompted (password is hidden). Once sending starts, hold M1's body button for 3–4 seconds and release. After sending, remove the temporary monitor interface:
+
+```sh
+sudo iw dev easylink-mon del
+```
+
+Confirm a DHCP lease matching the device MAC before continuing. Packet counts do not establish successful provisioning.
+
+## 2. Identify the LAN target
 
 Replace the example IP and keep this terminal open for subsequent commands:
 
@@ -48,12 +147,12 @@ curl --noproxy '*' --connect-timeout 3 --max-time 5 "http://${DeviceIp}:8000/con
 
 Match the response name and MAC suffix against the device label and router record. Resolve IP changes, failed provisioning or client isolation before uploading.
 
-## 4. Download 0.9.21, verify and upload once
+## 3. Method A: upload through the factory LAN OTA interface
 
-Download these two **0.9.21** files into an empty folder and open a terminal there:
+Download these two **0.9.27** files into an empty folder and open a terminal there:
 
-- [Full M1 native OTA image]({{SITE_URL}}releases/v0.9.21/phicomm_m1.ota.bin.raw)
-- [SHA256SUMS]({{SITE_URL}}releases/v0.9.21/SHA256SUMS)
+- [Full M1 native OTA image]({{SITE_URL}}releases/v0.9.27/phicomm_m1.ota.bin.raw)
+- [SHA256SUMS]({{SITE_URL}}releases/v0.9.27/SHA256SUMS)
 
 **Check that the model is M1 and the version is at least 0.9.21.** Use the full image specified here for first migration, rather than `no-frontend-resources`. A full Flash backup or `.all.bin` is for other recovery procedures; `.ota.bin.signed` is for devices already running community firmware. None is the factory upload body. Renaming a file to `.raw` does not convert it.
 
@@ -106,56 +205,18 @@ curl --http1.0 --noproxy '*' --connect-timeout 5 --max-time 300 --header 'Conten
 
 **The tested factory upload closed the connection after receiving the complete image, producing `(52) Empty reply from server` and `http=000`.** This alone proves neither failure nor success. Record the uploaded byte count, leave power connected and allow about 2–3 minutes. Check the community hotspot and version in section 5 before taking further action. Do not immediately resend, reset or disconnect power because of this message.
 
-## 5. Join the community hotspot and finish setup
+## 4. Method B: DNS migration: let the stock M1 download the image
 
-First migration may require Wi-Fi setup again. If the old IP is unreachable after upload, scan for the community hotspot.
-
-| Stage | Hotspot | Access while joined |
-| --- | --- | --- |
-| Factory setup | Open `EasyLink_XXXXXX` | `http://10.0.0.1:8000/config-read` |
-| Community first boot | Open `M1-AP-XXXXXX` | `http://192.168.0.1/`, port 80 |
-| Community on the LAN | Find the new IP in the router | `http://device-IP/`, port 80 |
-
-1. Join the `M1-AP-XXXXXX` matching your device's MAC suffix. Stay connected even if your computer reports no Internet.
-2. Open `http://192.168.0.1/` and save your 2.4 GHz Wi-Fi settings in the initial setup page. Allow time to connect.
-3. Rejoin the router and find M1 by its label MAC. The new IP may match the factory IP or change. Open `http://device-IP/` using port 80, rather than the factory port 8000.
-4. Confirm model M1, version **0.9.21 or newer**, updating temperature/humidity and PM2.5 readings, and normal display and device communication.
-5. After installation and connectivity are confirmed, a normal power cycle can check boot, automatic reconnection and retained settings.
-
-For a read-only status check, update the address in the same terminal:
-
-<!-- os:windows -->
-
-```powershell
-$DeviceIp = "192.168.1.123"
-curl.exe --noproxy "*" --connect-timeout 3 --max-time 5 "http://${DeviceIp}/api/v1/status"
-```
-
-<!-- /os -->
-
-<!-- os:mac linux -->
-
-```sh
-DeviceIp="192.168.1.123"
-curl --noproxy '*' --connect-timeout 3 --max-time 5 "http://${DeviceIp}/api/v1/status"
-```
-
-<!-- /os -->
-
-A community hotspot establishes that the new system offers setup. Confirm the version, web access and updating sensors before calling migration successful. For later community upgrades, use signed packages as described in [firmware updates](firmware-update).
-
-## 6. DNS migration: let the stock M1 download the image
-
-Use this alternative if LAN uploads stall. On 2026-10-26, one M1 with stock Wi-Fi `14.2.4.1` and controller `11.1.2.1` successfully migrated to full build `1.0.0-39a5b0`. Complete download, community hotspot, web access, Wi-Fi setup, automatic reconnection after a software reboot and updating sensor readings were verified. A physical cold boot was not tested. This 1.0.0 build identifier does not imply a formal Release exists or that every stock revision has been validated.
+Use this alternative if LAN uploads stall. This path has been verified on M1 with stock Wi-Fi `14.2.4.1` and controller `11.1.2.1`.
 
 Uploads to `:8000/OTA` from two computers stalled after the first few KB; the device-initiated download completed. The upload fault remains unexplained. HTTP 000 or a slowly blinking Wi-Fi icon does not establish success. Do not repeatedly upload.
 
 ### What you need
 
-- A stock M1 connected and identified using sections 2–3. Reserve its DHCP address on the router so it stays unchanged during migration.
+- A stock M1 connected and identified using sections 1–2. Reserve its DHCP address on the router so it stays unchanged during migration.
 - An OpenWrt / ImmortalWrt router with SSH access, `dnsmasq` and `nft`, on the same LAN as M1 and the computer.
 - A Linux computer with Python 3 and `openssl`, kept running throughout. Run the server and router commands in Linux / router shells. Windows and macOS users can use a Linux host on the same LAN.
-- A **full native M1 OTA image** with a verified SHA-256, selected as in section 4. Do not use `.all.bin`, `.signed` or a controller image. Native source-build output may be named `phicomm_m1.ota.bin`, while the published download may end in `.ota.bin.raw`; validate its contents rather than converting by renaming.
+- A **full native M1 OTA image** with a verified SHA-256, selected as in section 3. Do not use `.all.bin`, `.signed` or a controller image. Native source-build output may be named `phicomm_m1.ota.bin`, while the published download may end in `.ota.bin.raw`; validate its contents rather than converting by renaming.
 - Download the [migration server script](assets/tools/m1-dns-migration/m1_dns_migration.py) and [SHA256SUMS](assets/tools/m1-dns-migration/SHA256SUMS). Run `sha256sum -c SHA256SUMS` in their directory.
 
 Examples use router `192.168.1.1`, computer `192.168.1.10`, M1 `192.168.1.123` and M1 MAC `00:11:22:33:44:55`. **Replace every example with your own values.** Computer ports `29080`, `29443`, `29000` and router port `5533` must be free. Allow the device and router to reach those computer ports through any firewall.
@@ -256,17 +317,55 @@ uci export dhcp > /tmp/m1-dns-migration/dhcp.after
 cmp /tmp/m1-dns-migration/dhcp.before /tmp/m1-dns-migration/dhcp.after
 ```
 
-No output from the two `cmp` commands confirms these original configurations did not change. Keep the logs; do not overwrite the entire router configuration with old snapshots. Press `Ctrl+C` in the computer's server window. You may then remove its temporary certificate directory. Future updates use community signed OTA and do not need this service. The M1 hardware result does not establish A1 compatibility.
+No output from the two `cmp` commands confirms these original configurations did not change. Keep the logs; do not overwrite the entire router configuration with old snapshots. Press `Ctrl+C` in the computer's server window. You may then remove its temporary certificate directory. Future updates use community signed OTA and do not need this service.
 
-## 7. Troubleshooting
+## 5. Join the community hotspot and finish setup
+
+First migration may require Wi-Fi setup again. If the old IP is unreachable after upload, scan for the community hotspot.
+
+| Stage | Hotspot | Access while joined |
+| --- | --- | --- |
+| Factory setup | Open `EasyLink_XXXXXX` | `http://10.0.0.1:8000/config-read` |
+| Community first boot | Open `M1-AP-XXXXXX` | `http://192.168.0.1/`, port 80 |
+| Community on the LAN | Find the new IP in the router | `http://device-IP/`, port 80 |
+
+1. Join the `M1-AP-XXXXXX` matching your device's MAC suffix. Stay connected even if your computer reports no Internet.
+2. Open `http://192.168.0.1/` and save your 2.4 GHz Wi-Fi settings in the initial setup page. Allow time to connect.
+3. Rejoin the router and find M1 by its label MAC. The new IP may match the factory IP or change. Open `http://device-IP/` using port 80, rather than the factory port 8000.
+4. Confirm model M1, version **0.9.21 or newer**, updating temperature/humidity and PM2.5 readings, and normal display and device communication.
+5. After installation and connectivity are confirmed, a normal power cycle can check boot, automatic reconnection and retained settings.
+
+For a read-only status check, update the address in the same terminal:
+
+<!-- os:windows -->
+
+```powershell
+$DeviceIp = "192.168.1.123"
+curl.exe --noproxy "*" --connect-timeout 3 --max-time 5 "http://${DeviceIp}/api/v1/status"
+```
+
+<!-- /os -->
+
+<!-- os:mac linux -->
+
+```sh
+DeviceIp="192.168.1.123"
+curl --noproxy '*' --connect-timeout 3 --max-time 5 "http://${DeviceIp}/api/v1/status"
+```
+
+<!-- /os -->
+
+A community hotspot establishes that the new system offers setup. Confirm the version, web access and updating sensors before calling migration successful. For later community upgrades, use signed packages as described in [firmware updates](firmware-update).
+
+## 6. Troubleshooting
 
 | Symptom | Action |
 | --- | --- |
 | Empty reply / HTTP 000 | Check whether upload completed, keep power connected and check the community hotspot and version before retrying |
 | Neither the old IP nor expected hotspot works | The community name is `M1-AP-XXXXXX`; check router leases and scan results rather than only the old IP |
 | Community hotspot exists, old IP fails | Join the hotspot and set up Wi-Fi at `192.168.0.1` |
-| Upload stalls after a few KB | Let the request finish; after stock access is restored, use device-initiated downloading in section 6 instead of repeated uploads |
+| Upload stalls after a few KB | Let the request finish; after stock access is restored, use device-initiated downloading in section 4 instead of repeated uploads |
 | Blinking icon with a DHCP lease | Verify HTTP access; the icon may reflect the factory cloud connection |
-| No web access, hotspot or client record after waiting | Keep image hashes and upload output, stop repeated writes and read boot logs using the [serial / J-Link recovery guide](a1-m1-flash) |
+| No web access, hotspot or client record after waiting | Keep image hashes and upload output, stop repeated writes and read boot logs using the [serial / J-Link recovery guide](m1-flash) |
 
 This procedure only updates the Wi-Fi module. The sensor controller uses a [separate update procedure](m1-mcu-update).

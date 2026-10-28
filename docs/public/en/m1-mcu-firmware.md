@@ -83,7 +83,7 @@ If a web password is configured, set `M1_WEB_PASSWORD` as described in the [netw
 
 ## How the stock controller handles provisioning and Wi-Fi reset
 
-The stock controller handles the body button and notifies Wi-Fi over UART. A short press switches the screen display; holding about 3 seconds starts provisioning; holding about 9 seconds and then releasing restores factory network and application settings. For ordinary provisioning, release after 3–4 seconds; see [stock Wi-Fi setup](stock-provision).
+The stock controller handles the body button and notifies Wi-Fi over UART. A short press switches the screen display; holding about 3 seconds starts provisioning; holding about 9 seconds and then releasing restores factory network and application settings. For ordinary provisioning, release after 3–4 seconds; see [stock Wi-Fi setup](m1-no-disassembly#1-provision-stock-wi-fi).
 
 The controller also drives Wi-Fi **CHIP_EN** through PA24. An update commit restarts Wi-Fi as well, causing a temporary disconnection. This hardware restart alone does not clear Wi-Fi settings.
 

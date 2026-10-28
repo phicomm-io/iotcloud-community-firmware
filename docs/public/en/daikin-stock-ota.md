@@ -81,7 +81,33 @@ The test computer received `192.168.4.2/24` through DHCP, with device/gateway **
 
 On Windows, use the Wi-Fi menu when possible. In the remote SSH test, a current-user `netsh` profile returned `0x57`; an all-users profile for this hotspot worked. Do not delete unrelated network profiles.
 
-## 5. Upload the application
+## 5. Probe the accepted version label
+
+Stock firmware accepts only a version label higher than its current version. The old fixed `.16` label therefore fails on newer devices. Stay on the device network and probe an explicit range without an image:
+
+<!-- os:windows -->
+
+```powershell
+py -3 .\daikin_stock_ota.py --probe-versions SV.02.00.01.16 SV.02.00.01.32
+```
+
+<!-- /os -->
+
+<!-- os:mac linux -->
+
+```sh
+python3 ./daikin_stock_ota.py --probe-versions SV.02.00.01.16 SV.02.00.01.32
+```
+
+<!-- /os -->
+
+The scan waits **2 seconds** between attempts and stops immediately on `ToDo`, an unexpected response, a timeout or another communication error. It sends only handshake/version headers: **0 firmware bytes**, no `End` or checksum, no Wi-Fi switching and no automatic upload.
+
+For example, `.16` through `.20` may return `b'No' / EOF`, followed by `.21` returning `b'ToDo' / complete`. This gives the highest explicit rejection `.20` and first acceptance `.21`. Only under the assumption of the same prefix and strictly higher-version acceptance can the installed version be inferred as `.20`. The boundary neither directly reads the installed version nor proves image compatibility. A scan without an adjacent rejected/accepted pair makes no version inference.
+
+Use the first accepted label explicitly in the separate upload command below; change the example `.21` to your result. If communication failed, resolve it before trying another command.
+
+## 6. Upload the application
 
 Confirm that the computer is connected to your device's hotspot, then run the sender. Its default destination is `192.168.4.1:8555`.
 
@@ -90,7 +116,7 @@ Confirm that the computer is connected to your device's hotspot, then run the se
 Windows PowerShell:
 
 ```powershell
-py -3 .\daikin_stock_ota.py .\daikin-bry88ab.application.bin --sha256 649a7b81b35e19510f9f7edb8488157418117849361bc62c6f4e13c61a5fb19e
+py -3 .\daikin_stock_ota.py .\daikin-bry88ab.application.bin --sha256 649a7b81b35e19510f9f7edb8488157418117849361bc62c6f4e13c61a5fb19e --version SV.02.00.01.21
 ```
 
 <!-- /os -->
@@ -100,25 +126,25 @@ py -3 .\daikin_stock_ota.py .\daikin-bry88ab.application.bin --sha256 649a7b81b3
 macOS / Linux:
 
 ```sh
-python3 ./daikin_stock_ota.py ./daikin-bry88ab.application.bin --sha256 649a7b81b35e19510f9f7edb8488157418117849361bc62c6f4e13c61a5fb19e
+python3 ./daikin_stock_ota.py ./daikin-bry88ab.application.bin --sha256 649a7b81b35e19510f9f7edb8488157418117849361bc62c6f4e13c61a5fb19e --version SV.02.00.01.21
 ```
 
 <!-- /os -->
 
-The default stock protocol version label is `SV.02.00.01.16`. It passes the tested stock version check; it does not change the image or represent the community version. When using another image in future, use its actual publisher-provided SHA-256 and separately verify model and stock-layout compatibility.
+`--version` is the stock protocol admission label, not the community firmware version; it does not modify the image. The uploader requires this explicit choice and never reuses a probe result automatically. Confirm the image's model, layout and SHA-256 independently.
 
 Expected output includes:
 
 ```text
 Kit2 Version Up -> Okey
-SV.02.00.01.16 -> ToDo
+SV.02.00.01.21 -> ToDo
 ACK .../1027296 (...%)
 Final response: b'OK'
 ```
 
 Wait for the final `OK` and reboot. The sender waits for each length ACK and separates `End` from the final checksum. This service is not an HTTP upload endpoint: do not replace the sender with `curl` or combine protocol messages into one write.
 
-## 6. Verify the community application
+## 7. Verify the community application
 
 After reboot, connect to the new open hotspot **`DAIKIN-XXXXXX`**, using the last six MAC digits. The tested hotspot became `DAIKIN-f76748`. An old SSID can remain in scan caches briefly.
 
@@ -130,13 +156,13 @@ PM2.5, temperature, humidity and TVOC had valid readings after boot. CO2 was sti
 
 Serial logs confirmed that the stock bootloader and partition table remained and the community application booted from the second stock slot, `0x190000`. Stock network settings do not automatically become community configuration. Configuration persistence in the smaller stock NVS, power-cycle retention and a second community OTA were not verified in this test. Future images must still fit the stock 1.5MiB slots.
 
-## 7. Troubleshooting and recovery
+## 8. Troubleshooting and recovery
 
 | Symptom | Action |
 | --- | --- |
 | No hotspot | Check model/version, normal stock boot and gesture timing. The OTA task does not necessarily create an AP in every configuration state. |
 | Hotspot connects but TCP 8555 times out/refuses | Check network switching and the actual gateway. A hotspot alone does not prove the OTA service started; inspect the two serial markers if available. |
-| Handshake or version rejected | Stop and check the stock version and compatibility. Do not invent a higher label to bypass compatibility checks. |
+| Handshake or version rejected | Use the handshake-only scan in section 5. Select an accepted label explicitly for upload, and check image compatibility separately. |
 | Transfer interrupted, invalid ACK or final NG | Save the output and observe the powered device. Acknowledged bytes alone do not prove successful flashing. |
 | OK but no new hotspot | Wait for reboot, rescan and inspect the device startup logs. |
 | Device will not boot | Stop repeated wireless update attempts and seek serial recovery using your own complete Flash backup. |

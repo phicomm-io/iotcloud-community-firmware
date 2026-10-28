@@ -1,28 +1,37 @@
-# Flash A1 / M1
+# A1: wired installation and recovery
 
-For the A1 air purifier and M1 monitor with original EMW3080B / MK3080B modules. Their interfaces are the same, but firmware is product-specific: **never interchange A1 and M1 files**. TC1 A1 is a different product; see [TC1 flashing](tc1-flash).
+For the A1 with the original EMW3080B / MK3080B Wi-Fi module. Use only `A1` firmware files. For installation over Wi-Fi, see [A1 stock OTA](a1-no-disassembly).
 
 Read [Before flashing](flash-prep). Disconnect mains, original supplies and loads, use a stable independent **3.3 V** supply, and back up the complete Flash before writing. A full image overwrites the bootloader, original firmware and some settings.
+
+**Recommended: J-Link.** The A1 factory DIO / CLK and JP9 power points accept jumper wires, so soldering is unnecessary. Serial Bootloader remains an alternative.
 
 ## Choose a method
 
 | Method | Requirements |
 | --- | --- |
-| J-Link | J-Link plus OpenOCD (Windows / Linux); validates and writes full-image segments for first installation / recovery. A1 factory points can accept jumper wires |
-| Serial bootloader | 3.3 V USB-TTL and YMODEM software; original bootloader must work. M1 has more room around its module and does not require buying J-Link |
+| J-Link | J-Link plus OpenOCD (Windows / Linux); validates and writes full-image segments for first installation / recovery. Factory points can accept jumper wires |
+| Serial bootloader | 3.3 V USB-TTL and YMODEM software; original bootloader must work. No J-Link is required |
 
 | Product | J-Link full image | Input for preparing serial images |
 | --- | --- | --- |
 | A1 purifier | `phicomm_a1.all.bin` | `phicomm_a1.ota.bin.raw` |
-| M1 monitor | `phicomm_m1.all.bin` | `phicomm_m1.ota.bin.raw` |
 
 Download the correct product and verify `SHA256SUMS` from that release. `.ota.bin` / `.ota.bin.signed` are signed web-update packages, not full images or directly transferable serial user applications.
 
 ## J-Link flashing
 
+### A1 factory points
+
+A1's JP9 GND / 3V3 supply points and nearby DIO / CLK points avoid soldering to module pads. JP9 also has UART TX / RX: do not confuse them with SWD. In the red box, **DIO is above CLK in the photo orientation**. Check the photo and silkscreen; make firm jumper / header contacts.
+
+![A1 factory programming points](assets/images/a1-jlink-points.png)
+
+VCC here means module **3.3 V**, not the original supply input. Disconnect the original supply and fan. Wire colors are only visual references.
+
 ### Module pads
 
-Either product can use wires soldered to the module pads. Check orientation by pin numbers.
+A1 can use wires soldered to its module pads. Check orientation by pin numbers.
 
 ![EMW3080B SWD pins](assets/images/emw3080-swd-pins.png)
 
@@ -36,14 +45,6 @@ Either product can use wires soldered to the module pads. Check orientation by p
 VTref is a sensing input, not a power output. Do not connect J-Link's 5 V output. Use signal labels for compact programmers rather than assuming standard pin numbers. SWD flashing does not require grounding BOOT.
 
 ![Standard J-Link SWD connector](assets/images/jlink-swd.png)
-
-### A1 factory points
-
-A1's JP9 GND / 3V3 supply points and nearby DIO / CLK points avoid soldering to module pads. JP9 also has UART TX / RX: do not confuse them with SWD. In the red box, **DIO is above CLK in the photo orientation**. Check the photo and silkscreen; make firm jumper / header contacts.
-
-![A1 factory programming points](assets/images/a1-jlink-points.png)
-
-VCC here means module **3.3 V**, not the original supply input. Disconnect the original supply and fan. Wire colors are only visual references. M1 uses the module pads above.
 
 ### Prepare OpenOCD and the helper scripts
 
@@ -61,7 +62,7 @@ Extract the helper files into the working directory, outside `3080-tool`:
 phicomm/
   emw3080.py
   mx1290-modern.cfg
-  phicomm_m1.all.bin       # phicomm_a1.all.bin for A1
+  phicomm_a1.all.bin
   SHA256SUMS
   3080-tool/
     flash_prog.elf
@@ -87,13 +88,7 @@ py -3 .\emw3080.py check --tool-dir .\3080-tool --engine legacy
 
 Look for approximately 3.3 V `Vref`, a SWD ID and `MX1290.cpu`, followed by a successful exit. Fix wiring, power or driver problems before proceeding.
 
-For **M1**:
-
-```powershell
-py -3 .\emw3080.py flash .\phicomm_m1.all.bin --model m1 --checksums .\SHA256SUMS --tool-dir .\3080-tool --engine legacy
-```
-
-For the **A1 purifier**, change both the filename and model:
+For **A1**:
 
 ```powershell
 py -3 .\emw3080.py flash .\phicomm_a1.all.bin --model a1 --checksums .\SHA256SUMS --tool-dir .\3080-tool --engine legacy
@@ -113,12 +108,6 @@ python3 emw3080.py check --tool-dir ./3080-tool --engine modern
 
 Use **OpenOCD 0.11 / 0.12**. This mode loads the helper's `mx1290-modern.cfg`, not the legacy package's `MX1290.cfg`. For USB permission errors, check your distribution's OpenOCD udev rules and group permissions, log in again and reconnect J-Link. Install equivalent packages and USB rules on other distributions.
 
-For M1:
-
-```sh
-python3 emw3080.py flash phicomm_m1.all.bin --model m1 --checksums SHA256SUMS --tool-dir ./3080-tool --engine modern
-```
-
 For the A1 purifier:
 
 ```sh
@@ -134,10 +123,10 @@ Before accessing J-Link, `flash` validates the release SHA256, product, image bo
 To split without connecting a device (replace `python3` with `py -3` on Windows):
 
 ```sh
-python3 emw3080.py split phicomm_m1.all.bin --model m1 --checksums SHA256SUMS --output firmware
+python3 emw3080.py split phicomm_a1.all.bin --model a1 --checksums SHA256SUMS --output firmware
 ```
 
-For A1, change both the filename and `--model`. The output directory must not exist; existing files are never overwritten.
+The output directory must not exist; existing files are never overwritten.
 
 | Output | Full-image range (end exclusive) | Programmer partition ID | Offset within partition |
 | --- | --- | --- | --- |
@@ -169,7 +158,7 @@ shutdown
 
 ## Bootloader flashing
 
-Use a **3.3 V, 921600-baud** USB-TTL adapter, independent 3.3 V supply and YMODEM-capable terminal. Retain M1's original sensor controller.
+Use a **3.3 V, 921600-baud** USB-TTL adapter, independent 3.3 V supply and YMODEM-capable terminal. Disconnect the original supply and fan.
 
 ### Wiring and download mode
 
@@ -183,7 +172,7 @@ Use a **3.3 V, 921600-baud** USB-TTL adapter, independent 3.3 V supply and YMODE
 | 10, user UART RX | USB-TTL TX |
 | 19, BOOT | Ground during download; release afterward |
 
-Cross TX / RX. This is the **user UART, not the log UART**. If another board controller drives module RX, isolate its output first to avoid two TX drivers. Disconnect A1's original supply and fan.
+Cross TX / RX. This is the **user UART, not the log UART**. If another board controller drives module RX, isolate its output first to avoid two TX drivers. Disconnect the original supply and fan.
 
 Wire with power off and BOOT low. Use **921600, 8N1, no flow control**, then power on. Wait for `MXCHIP>`. If it does not appear, check power, ground, TX / RX and BOOT; never send erase commands blindly. This method preserves the original bootloader and applies only to the menu and partition layout below.
 
@@ -212,7 +201,7 @@ The MiCO region includes the user application, at offset `0x75000` from MiCO's s
 
 ### 2. Prepare serial images
 
-Verify the product's raw OTA file against the release checksums. Set `model` below to `m1` or `a1`. **Never send `.all.bin` to menu 1 or 2, or an unconverted OTA file to menu 2.**
+Verify the product's raw OTA file against the release checksums. The script fixes `model = 'a1'`. **Never send `.all.bin` to menu 1 or 2, or an unconverted OTA file to menu 2.**
 
 Raw `.ota.bin.raw` contains `0x75000` bytes of kernel / padding, then the user application and a 16-byte MD5 trailer. `FWUPDATE` needs contiguous kernel / application data **without the MD5 trailer**. `USERUPDATE` needs the application including its 8-byte length / CRC header.
 
@@ -225,7 +214,7 @@ import binascii
 import hashlib
 import struct
 
-model = 'm1'  # change to 'a1' for the A1 purifier
+model = 'a1'
 image = Path(f'phicomm_{model}.ota.bin.raw').read_bytes()
 offset = 0x75000
 assert offset + 144 <= len(image) <= offset + 0x40000 + 16, 'Invalid image length'
@@ -287,13 +276,7 @@ PY
 
 ### 5. Confirm application execution
 
-`Booting.......` means the bootloader is starting the application. A running M1 switches the user UART to **115200, 8N1, no flow control**. Staying at 921600 produces garbled text. At 115200, hex mode shows this 12-byte sensor query about every five seconds:
-
-```text
-23 01 00 00 00 00 00 00 00 00 00 21
-```
-
-That frame is M1-specific. On A1, restore wiring and check the setup hotspot, WebUI and panel instead.
+Restore wiring and check the A1 setup hotspot, WebUI, fan and panel.
 
 ## Finish and provision Wi-Fi
 
@@ -301,7 +284,7 @@ That frame is M1-specific. On A1, restore wiring and check the setup hotspot, We
 
 1. Power off, release BOOT ground if used and remove programming wires.
 2. Restore original wiring, reassemble, then reconnect the normal supply.
-3. Join `A1-AP-<last six MAC digits>` or `M1-AP-<last six MAC digits>` and open `http://192.168.0.1/`.
-4. Verify model and connectivity. Check A1's fan, ring and panel, or M1's readings and screen. Configure MQTT if needed and confirm connection.
+3. Join `A1-AP-<last six MAC digits>` and open `http://192.168.0.1/`.
+4. Verify model and connectivity. Check the fan, ring and panel. Configure MQTT if needed and confirm connection.
 
-See [A1 operation](a1-guide), [M1 operation](m1-guide) and [firmware updates](firmware-update). Module wiring and serial procedures reference the [MXCHIP EMW3080 flashing guide](https://docs.mxchip.com/zh/foiwqd8gbgh23xu2/bwyo0fs5t2rquekz/antua5wkt8m3qx7l/lqdz2h5zpp117imt.html).
+See [A1 operation](a1-guide) and [firmware updates](firmware-update). Module wiring and serial procedures reference the [MXCHIP EMW3080 flashing guide](https://docs.mxchip.com/zh/foiwqd8gbgh23xu2/bwyo0fs5t2rquekz/antua5wkt8m3qx7l/lqdz2h5zpp117imt.html).
