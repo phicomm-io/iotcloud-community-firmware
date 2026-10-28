@@ -5,7 +5,7 @@
 #define FIRMWARE_REVISION FIRMWARE_VERSION
 #define MANUFACTURER "Phicomm Community"
 #define SERIAL_NUMBER "M1"
-#define PROTOCOL "phicomm.m1.local"
+#define PROTOCOL "openiot.m1.local"
 /* Foreign factory layout initialization nests the application and defaults
  * frames (at least 4296 bytes in GCC 5.4.1), before SDK/RTOS callees. */
 #define MICO_DEFAULT_APPLICATION_STACK_SIZE 8192
