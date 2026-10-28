@@ -1,4 +1,6 @@
 """Accessible static history with an optional browser comparison form."""
+from pathlib import Path
+import markdown
 from user_notes import history_html
 
 
@@ -7,10 +9,17 @@ def body(manifest, locale):
     def t(zh, en):
         return en if english else zh
 
+    overview_source = Path(__file__).resolve().parents[1] / 'docs/release-notes' / f'v1-overview.{locale}.md'
+    overview = markdown.markdown(overview_source.read_text(), extensions=['tables', 'fenced_code'])
+    beta = f'''<section class="notes-history-version" data-notes-channel="candidate" id="v1.0.0-rc.3">
+<h2><time datetime="2026-10-27">2026-10-27</time></h2><h3>v1.0.0-rc.3 · Beta</h3>
+<details class="notes-overview" id="v1-overview" open><summary>{t('v1 Beta 累计功能（相对 v0.9.27）', 'v1 Beta cumulative changes since v0.9.27')}</summary>{overview}</details></section>'''
+
     return f'''<div class="notes-app" data-release-notes data-locale="{locale}">
 <p class="eyebrow">{t('发布与升级', 'RELEASES & UPGRADES')}</p>
 <h1>Release Log</h1>
-<p>{t('按版本查阅已审核说明，或查看当前设备升级后会发生什么变化。', 'Read reviewed release history, or see what changes when your device upgrades.')}</p>
+<p>{t('按日期和版本查阅更新，也可以比较两个固件版本的变化。', 'Browse changes by date and release, or compare two firmware versions.')}</p>
+<p><a class="btn" href="{'../../en/' if english else '../'}#releases">{t('固件下载', 'Firmware downloads')}</a></p>
 <div class="notes-fields"><label for="notes-channel">{t('发布渠道', 'Release channel')}<select id="notes-channel" disabled><option value="stable">{t('稳定版', 'Stable releases')}</option><option value="candidate">{t('Beta（RC，不建议使用）', 'Beta (RC, not recommended)')}</option></select></label></div>
 <div class="notes-tabs" role="tablist" aria-label="{t('查看方式', 'View')}">
 <button type="button" role="tab" id="notes-history-tab" aria-controls="notes-history" aria-selected="true">{t('版本历史', 'Version history')}</button>
@@ -45,6 +54,6 @@ def body(manifest, locale):
 <div id="notes-result" aria-live="polite"></div>
 <noscript><p>{t('升级区间计算需要 JavaScript；下方版本历史仍可直接阅读。', 'Upgrade comparisons require JavaScript; the release history below remains readable.')}</p></noscript>
 </section>
-<section id="notes-history" role="tabpanel" aria-labelledby="notes-history-tab">{history_html(manifest, locale)}</section>
+<section id="notes-history" role="tabpanel" aria-labelledby="notes-history-tab">{beta}<div data-notes-channel="stable">{history_html(manifest, locale)}</div></section>
 <noscript><p>{t('稳定版历史仍可直接阅读。候选版下载与升级比较需启用 JavaScript。', 'Stable release history remains readable. Enable JavaScript for candidate downloads and upgrade comparisons.')}</p></noscript>
 </div>'''

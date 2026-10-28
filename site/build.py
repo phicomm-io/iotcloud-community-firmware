@@ -25,9 +25,9 @@ from seo import EN_INDEX_TITLE, EN_INDEX_DESCRIPTION, guide_metadata, metadata, 
 EXTENSIONS = ['tables', 'fenced_code', 'attr_list', 'toc']
 SITE_NAME = 'PHICOMM COMMUNITY'
 # Nav anchors live on the home page, so guides reach them through '../'.
-HOME_ANCHORS = [('devices', '设备与功能'), ('install', '安装升级'),
+HOME_ANCHORS = [('devices', '设备与功能'), ('install', '安装升级'), ('releases', '固件下载'),
                 ('faq', '常见问题'), ('develop', '参与开发')]
-EN_HOME_ANCHORS = [('devices', 'Devices and features'), ('install', 'Install and update'),
+EN_HOME_ANCHORS = [('devices', 'Devices and features'), ('install', 'Install and update'), ('releases', 'Firmware downloads'),
                    ('faq', 'Common questions'), ('develop', 'Contribute')]
 
 
@@ -336,12 +336,16 @@ def main():
         print('Missing guide sources: ' + ', '.join(missing), file=sys.stderr)
 
     for alias, target in ALIASES.items():
-        (guides / f'{alias}.html').write_text(
-            '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
-            f'<meta http-equiv="refresh" content="0;url={target}.html">'
-            f'<link rel="canonical" href="{SITE_URL}guides/{target}.html"><title>刷机教程</title>'
-            f'</head><body><a href="{target}.html">查看 A1 / M1 刷机教程</a></body></html>',
-            encoding='utf-8')
+        slug, separator, query = target.partition('?')
+        destination = slug + '.html' + (separator + query if separator else '')
+        for language, directory in (('zh-CN', guides), ('en', english_dir)):
+            prefix = 'en/' if language == 'en' else ''
+            label = 'Open the updated guide' if language == 'en' else '查看更新后的文档'
+            (directory / f'{alias}.html').write_text(
+                f'<!doctype html><html lang="{language}"><head><meta charset="utf-8">'
+                f'<meta http-equiv="refresh" content="0;url={esc(destination)}">'
+                f'<link rel="canonical" href="{SITE_URL}guides/{prefix}{slug}.html"><title>{label}</title>'
+                f'</head><body><a href="{esc(destination)}">{label}</a></body></html>', encoding='utf-8')
 
     # Every demo comes from the same pinned frontend release as firmware UI.
     from frontend_release import fetch

@@ -18,13 +18,13 @@ This project provides open-source firmware for discontinued IoT devices or devic
 | Device | First installation | Wired installation and recovery |
 | --- | --- | --- |
 | TC1 A1 hardware | [Illustrated OTA guide](tc1-no-disassembly-ethernet-wifi-ap), stock 1.0.0.24 / 1.0.0.26 | [J-Link](tc1-flash) |
-| M1 | [Factory LAN migration](m1-no-disassembly), starting at 0.9.21 | [J-Link / serial](a1-m1-flash) |
-| A1 air purifier | Use wired installation; [OTA migration awaits validation](a1-no-disassembly) | [J-Link / serial](a1-m1-flash) |
+| M1 | [Factory Wi-Fi setup and OTA installation](m1-no-disassembly), starting at 0.9.21 | [Serial (recommended) / J-Link](m1-flash) |
+| A1 air purifier | [Factory Wi-Fi setup and OTA installation](a1-no-disassembly) | [Solder-free J-Link (recommended) / serial](a1-flash) |
 | DAIKIN | BRY88AB151K supports [stock OTA](daikin-stock-ota) | [ESP32 serial installation](daikin-guide#first-installation) |
 
 ## First Wi-Fi setup
 
-This section describes community firmware. Devices still running factory firmware should use [stock Wi-Fi setup without the app](stock-provision) first.
+This section describes community firmware. Devices still running factory firmware should use [M1 factory setup](m1-no-disassembly) / [A1 factory setup](a1-no-disassembly) first.
 
 If Wi-Fi has not been configured, the device opens a setup access point. Connect a phone or computer and open `http://192.168.0.1/`.
 

@@ -1,8 +1,10 @@
-# A1 / M1 刷机
+# A1 有线安装与恢复
 
-适用于原装 **EMW3080B / MK3080B** 模块的 A1 空气净化器和 M1 空气检测仪。两者的模块接口相同，**固件必须按产品分别下载，不能混刷**。TC1 的 A1 硬件版本是另一款产品，见 [TC1 刷机](tc1-flash)。
+适用于使用原装 **EMW3080B / MK3080B** 联网模块的 A1。固件只选择 `A1` 对应文件。需要免拆安装时，见 [A1 原厂 OTA 教程](a1-no-disassembly)。
 
 先阅读[刷机前准备](flash-prep)，断开市电、原电源及负载，烧录期间使用独立稳定的 **3.3V** 电源。刷写前保存本机完整 Flash 备份；完整镜像会覆盖 Bootloader、原固件及部分设置。
+
+**推荐 J-Link。** A1 的 DIO / CLK 工厂测试点与 JP9 供电点可用杜邦线连接，不需要焊接；也可使用串口 Bootloader。
 
 ## 选择刷机方式
 
@@ -11,23 +13,30 @@
 
 | 方式 | 工具与适用情况 |
 | --- | --- |
-| J-Link | J-Link + OpenOCD（Windows / Linux）；校验并分段写入完整镜像，适用于首刷和恢复。A1 可以使用工厂测试点接杜邦线 |
-| 串口 Bootloader | 3.3V USB-TTL + YMODEM 软件；要求原 Bootloader 正常。M1 模块附近空间较充裕，不想购买 J-Link 时可选此方法 |
+| J-Link | J-Link + OpenOCD（Windows / Linux）；校验并分段写入完整镜像，适用于首刷和恢复。可使用工厂测试点接杜邦线 |
+| 串口 Bootloader | 3.3V USB-TTL + YMODEM 软件；要求原 Bootloader 正常。不需要 J-Link |
 
 | 设备 | J-Link 完整镜像 | 串口镜像准备的输入文件 |
 | --- | --- | --- |
 | A1 空气净化器 | `phicomm_a1.all.bin` | `phicomm_a1.ota.bin.raw` |
-| M1 空气检测仪 | `phicomm_m1.all.bin` | `phicomm_m1.ota.bin.raw` |
 
 从下载页选择产品并下载固件和 `SHA256SUMS`，校验通过再操作。`.ota.bin` / `.ota.bin.signed` 用于网页签名升级，不能直接当作完整镜像或串口用户应用发送。
 
 ## J-Link 刷机
 
-### 模块点位：A1 / M1 均可飞线
+### A1 工厂测试点：可直接插杜邦线
 
-两款设备都可以在模块对应焊盘焊接导线。下图为模块正向引脚图，按引脚编号确认方向。
+A1 可使用下图标出的工厂点位，免去在模块焊盘飞线：**JP9 的 GND / 3V3 用于供电，DIO / CLK 用于 SWD**。图中 JP9 同时有 UART TX/RX，不要把它们误接到 SWD。DIO、CLK 按新版照片的红框定位：**以照片方向为准，上方为 DIO，下方为 CLK**；杜邦线或排针接触必须牢固。
 
-![A1 / M1 的 EMW3080B 模块 SWD 引脚图](assets/images/emw3080-swd-pins.png)
+![A1 工厂点位：JP9 的 GND、3V3 与旁边的 DIO、CLK](assets/images/a1-jlink-points.png)
+
+图中的 VCC 指模块 **3.3V**，不是原机电源输入。接线前断开原电源和风机；照片中的线色仅供定位，以丝印与信号名为准。
+
+### 模块 SWD 点位
+
+可在模块对应焊盘焊接导线。下图为模块正向引脚图，按引脚编号确认方向。
+
+![EMW3080B 模块 SWD 引脚图](assets/images/emw3080-swd-pins.png)
 
 | 模块引脚 | 连接 |
 | --- | --- |
@@ -39,14 +48,6 @@
 **VTref 是电压检测输入，不是电源输出。不要连接 J-Link 的 5V 输出。** 小型下载器按自身的信号标记接线，不要照搬标准接口针号。J-Link 方式不需要把串口 BOOT 引脚拉低。
 
 ![J-Link 标准 SWD 接口](assets/images/jlink-swd.png)
-
-### A1 工厂测试点：可直接插杜邦线
-
-A1 可使用下图标出的工厂点位，免去在模块焊盘飞线：**JP9 的 GND / 3V3 用于供电，DIO / CLK 用于 SWD**。图中 JP9 同时有 UART TX/RX，不要把它们误接到 SWD。DIO、CLK 按新版照片的红框定位：**以照片方向为准，上方为 DIO，下方为 CLK**；杜邦线或排针接触必须牢固。
-
-![A1 工厂点位：JP9 的 GND、3V3 与旁边的 DIO、CLK](assets/images/a1-jlink-points.png)
-
-图中的 VCC 指模块 **3.3V**，不是原机电源输入。接线前断开原电源和风机；照片中的线色仅供定位，以丝印与信号名为准。M1 使用上方模块 SWD 点位。
 
 ### 准备 OpenOCD 工具与脚本
 
@@ -64,7 +65,7 @@ A1 可使用下图标出的工厂点位，免去在模块焊盘飞线：**JP9 �
 phicomm/
   emw3080.py
   mx1290-modern.cfg
-  phicomm_m1.all.bin       # A1 则为 phicomm_a1.all.bin
+  phicomm_a1.all.bin
   SHA256SUMS
   3080-tool/
     flash_prog.elf
@@ -90,13 +91,7 @@ py -3 .\emw3080.py check --tool-dir .\3080-tool --engine legacy
 
 应看到 `Vref` 约为 3.3V、SWD ID 和 `MX1290.cpu`，命令正常退出。连接失败先排查接线、供电和驱动。
 
-确认是 **M1** 后执行：
-
-```powershell
-py -3 .\emw3080.py flash .\phicomm_m1.all.bin --model m1 --checksums .\SHA256SUMS --tool-dir .\3080-tool --engine legacy
-```
-
-**A1 空气净化器**使用以下命令，不能只改文件名而遗漏型号：
+确认是 **A1** 后执行：
 
 ```powershell
 py -3 .\emw3080.py flash .\phicomm_a1.all.bin --model a1 --checksums .\SHA256SUMS --tool-dir .\3080-tool --engine legacy
@@ -116,12 +111,6 @@ python3 emw3080.py check --tool-dir ./3080-tool --engine modern
 
 使用 **OpenOCD 0.11 / 0.12**。此模式加载脚本包中的 `mx1290-modern.cfg`，不要替换成旧包的 `MX1290.cfg`。若报 USB 权限错误，检查发行版的 OpenOCD udev 规则及其用户组权限；重新登录并拔插 J-Link 后再试。其他 Linux 发行版安装同名软件包及相应 USB 规则。
 
-M1 烧录：
-
-```sh
-python3 emw3080.py flash phicomm_m1.all.bin --model m1 --checksums SHA256SUMS --tool-dir ./3080-tool --engine modern
-```
-
 A1 空气净化器烧录：
 
 ```sh
@@ -137,10 +126,10 @@ python3 emw3080.py flash phicomm_a1.all.bin --model a1 --checksums SHA256SUMS --
 若只需切分、不连接设备，可执行（Windows 将 `python3` 换成 `py -3`）：
 
 ```sh
-python3 emw3080.py split phicomm_m1.all.bin --model m1 --checksums SHA256SUMS --output firmware
+python3 emw3080.py split phicomm_a1.all.bin --model a1 --checksums SHA256SUMS --output firmware
 ```
 
-A1 同时将文件名和 `--model` 改为 A1 对应值。输出目录必须不存在，脚本不会覆盖已有文件。
+输出目录必须不存在，脚本不会覆盖已有文件。
 
 | 输出 | 完整镜像内的范围（结束地址不包含） | 烧录分区 ID | 分区内偏移 |
 | --- | --- | --- | --- |
@@ -172,11 +161,11 @@ shutdown
 
 ## Bootloader 刷机
 
-不需要 J-Link；准备支持 **3.3V 电平、921600 波特率**的 USB-TTL、独立 3.3V 电源和支持 YMODEM 的串口软件。M1 模块周围空间较大，可直接在模组点位飞线；保留原传感器控制器。
+不需要 J-Link；准备支持 **3.3V 电平、921600 波特率**的 USB-TTL、独立 3.3V 电源和支持 YMODEM 的串口软件。烧录期间断开原电源和风机。
 
 ### 模块点位与进入下载模式
 
-![A1 / M1 的 EMW3080B 串口 Bootloader 点位：9、10、16、17、19](assets/images/emw3080-pins.png)
+![EMW3080B 串口 Bootloader 点位：9、10、16、17、19](assets/images/emw3080-pins.png)
 
 | 模块引脚 | 连接 |
 | --- | --- |
@@ -186,7 +175,7 @@ shutdown
 | 10：用户 UART RX | USB-TTL TX |
 | 19：BOOT | 下载时接 GND，完成后解除 |
 
-用户串口 TX/RX 交叉连接，**不是日志串口**。若主板其他控制器仍在驱动模块 RX，应先隔离该端输出，避免两个 TX 争用。A1 烧录期间断开原电源和风机。
+用户串口 TX/RX 交叉连接，**不是日志串口**。若主板其他控制器仍在驱动模块 RX，应先隔离该端输出，避免两个 TX 争用。烧录期间断开原电源和风机。
 
 断电接线并把 BOOT 拉低，串口设 **921600、8N1、无流控**，再上电；看到 `MXCHIP>` 提示后继续。没有提示先检查供电、共地、TX/RX 和 BOOT，不要盲发擦写命令。
 
@@ -221,11 +210,11 @@ MiCO 区域包含用户应用，应用相对 MiCO 起点的偏移为 `0x75000`�
 
 ### 2. 准备串口镜像
 
-下载对应产品的固件与同一 Release 中的 `SHA256SUMS`，校验所用文件。下列脚本先设置 `model`：M1 使用 `m1`，A1 使用 `a1`。
+下载对应产品的固件与同一 Release 中的 `SHA256SUMS`，校验所用文件。下列脚本已固定 `model = 'a1'`。
 
 > **不要将 `.all.bin` 发送给 `1` 或 `2`，也不要将未经转换的 OTA 文件发送给 `2`。** `.all.bin` 含 Bootloader 等区域，只用于完整地址烧录流程。
 
-A1/M1 的原始 `.ota.bin.raw` 的结构为：内核及填充 `0x75000` 字节 + 用户应用 + 末尾 16 字节 MD5。
+A1 的原始 `.ota.bin.raw` 的结构为：内核及填充 `0x75000` 字节 + 用户应用 + 末尾 16 字节 MD5。
 
 - 串口 `FWUPDATE` 使用**去掉 MD5 尾部**后的连续内核与应用数据。
 - `USERUPDATE` 使用带 8 字节长度/CRC 头的 `.usr.bin`。
@@ -239,7 +228,7 @@ import binascii
 import hashlib
 import struct
 
-model = 'm1'  # A1 空气净化器改为 'a1'
+model = 'a1'
 image = Path(f'phicomm_{model}.ota.bin.raw').read_bytes()
 offset = 0x75000
 assert offset + 144 <= len(image) <= offset + 0x40000 + 16, '镜像长度异常'
@@ -308,16 +297,7 @@ PY
 
 ### 5. 判断应用是否运行
 
-`Booting.......` 表示 Bootloader 正在启动应用。M1 应用运行后：
-
-- 用户串口使用 **115200、8N1、无流控**；**保持 921600 会看到乱码。**
-- 切换至 115200 后，可在串口工具的十六进制显示模式下查看每约 5 秒发送的 12 字节传感器查询帧：
-
-```text
-23 01 00 00 00 00 00 00 00 00 00 21
-```
-
-此查询帧仅适用于 M1；A1 应在恢复原接线后检查配网热点、网页与面板状态。
+恢复原接线，检查 A1 配网热点、网页、风机与面板状态。
 
 ## 完成与配网
 
@@ -325,9 +305,9 @@ PY
 
 1. 断电，解除 BOOT 接地（串口方式），移除下载线。
 2. 恢复原接线并装回外壳后，再接原电源正常上电。
-3. A1 连接 `A1-AP-<MAC后六位>`，M1 连接 `M1-AP-<MAC后六位>`，访问 `http://192.168.0.1/` 配网。
-4. 核对设备型号和网络状态。A1 检查风机、灯环和面板；M1 检查传感器读数与屏幕。需要 MQTT 时填写 Broker 并确认连接。
+3. 连接 `A1-AP-<MAC后六位>`，访问 `http://192.168.0.1/` 配网。
+4. 核对设备型号和网络状态。检查风机、灯环和面板。需要 MQTT 时填写 Broker 并确认连接。
 
-日常操作见 [A1 功能与操作](a1-guide)、[M1 功能与操作](m1-guide)，后续升级见[固件更新](firmware-update)。
+日常操作见 [A1 功能与操作](a1-guide)，后续升级见[固件更新](firmware-update)。
 
 模块点位与串口流程参考[庆科 EMW3080 系列模组固件烧录方法](https://docs.mxchip.com/zh/foiwqd8gbgh23xu2/bwyo0fs5t2rquekz/antua5wkt8m3qx7l/lqdz2h5zpp117imt.html)。

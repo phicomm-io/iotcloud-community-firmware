@@ -1,6 +1,6 @@
 # Firmware updates
 
-This page covers web OTA after community firmware is installed. Factory devices need their model-specific first installation. M1 can use [factory LAN migration](m1-no-disassembly), **starting with 0.9.21 or newer**; do not upload the community signature wrapper to the factory interface.
+This page covers web OTA after community firmware is installed. Factory devices need their model-specific procedure, including [M1 factory Wi-Fi setup and installation](m1-no-disassembly) or [A1 factory Wi-Fi setup and installation](a1-no-disassembly). M1 first migration requires the full native OTA image from 0.9.21 or newer. Factory interfaces do not accept the community signature wrapper.
 
 **Use stable v0.9.27 for everyday operation. The current v1.0.0-rc.3 candidate is a beta build. Major changes are still expected, and daily use is not recommended; stable v1.0.0 is not yet available.** Before testing it, read the [complete cumulative notes](release-log.html?channel=candidate) and check the tag, model and variant. Candidates require a manual download and installation and do not replace the stable OTA channel.
 
@@ -53,7 +53,7 @@ Unsigned recovery from older community firmware may use `.ota.bin.raw` under its
 
 Updates pause linkage and other business responses while keeping update status and cancellation available. Reduce concurrent access during an update; sustained multi-client pressure updating has not passed full acceptance.
 
-If the WebUI is reachable, check the file, model, version and network, then retry. If the device cannot boot, use the corresponding wired recovery guide: [TC1](tc1-flash), [M1 / A1](a1-m1-flash), [DAIKIN](daikin-guide). Normal OTA updates do not require opening the device.
+If the WebUI is reachable, check the file, model, version and network, then retry. If the device cannot boot, use the corresponding wired recovery guide: [TC1](tc1-flash), [M1](m1-flash) · [A1](a1-flash), [DAIKIN](daikin-guide). Normal OTA updates do not require opening the device.
 
 ## Full and slim firmware
 

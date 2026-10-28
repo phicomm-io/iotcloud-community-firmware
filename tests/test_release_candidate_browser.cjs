@@ -61,9 +61,9 @@ print(json.dumps({lang:build.render_guide('release-log','Release Log','Releases'
             await Playwright.expect(page.locator('#notes-to')).toHaveValue('0.9.27');
             await Playwright.expect(page.locator('#notes-channel')).toHaveValue('stable');
             await Playwright.expect(page.locator('#notes-candidates')).toBeHidden();
-            await Playwright.expect(page.locator('.notes-history-version')).toHaveCount(f.stable.manifest.releases.length);
+            await Playwright.expect(page.locator('[data-notes-channel=stable] .notes-history-version')).toHaveCount(f.stable.manifest.releases.length);
             assert.ok(calls.every(value => !value.includes('/candidate/')));
-            const history = await page.locator('#notes-history').innerHTML();
+            const history = await page.locator('[data-notes-channel=stable]').innerHTML();
             await page.locator('#notes-channel').selectOption('candidate');
             await Playwright.expect(page.locator('#notes-candidate-downloads article')).toHaveCount(4);
             await Playwright.expect(page.locator('#notes-from')).toHaveValue('0.9.27');
@@ -81,7 +81,7 @@ print(json.dumps({lang:build.render_guide('release-log','Release Log','Releases'
               await Playwright.expect(page.locator('[data-release-notes]')).toHaveAttribute('data-report-state', 'complete');
               await Playwright.expect(page.locator('.notes-change-group .notes-change')).toHaveCount(1);
             }
-            assert.equal(await page.locator('#notes-history').innerHTML(), history);
+            assert.equal(await page.locator('[data-notes-channel=stable]').innerHTML(), history);
             const share = await page.locator('#notes-share').getAttribute('href'); assert.equal(new URL(share).searchParams.get('channel'), 'candidate');
             assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
             await page.screenshot({path: path.join(out, `candidate-${name}-${locale}-${width}.png`), fullPage: true});
@@ -109,7 +109,7 @@ print(json.dumps({lang:build.render_guide('release-log','Release Log','Releases'
             const page = await context.newPage();
             await page.goto(base + '/guides/' + (locale === 'en' ? 'en/' : '') + 'release-log.html');
             await Playwright.expect(page.locator('#notes-history')).toBeVisible();
-            await Playwright.expect(page.locator('.notes-history-version')).toHaveCount(f.stable.manifest.releases.length);
+            await Playwright.expect(page.locator('[data-notes-channel=stable] .notes-history-version')).toHaveCount(f.stable.manifest.releases.length);
             await Playwright.expect(page.locator('#notes-channel')).toBeDisabled();
             await Playwright.expect(page.locator('#notes-channel')).toHaveValue('stable');
             await Playwright.expect(page.locator('#notes-candidates')).toBeHidden();

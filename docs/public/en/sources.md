@@ -17,6 +17,8 @@ Guide images and tools are hosted under `guides/assets/`. [SHA256SUMS](assets/SH
 | `images/flashplus-config.png` | Configuration crop from page 2 of the [EMW3031 / FlashPlus manual](https://github.com/IoTDevice/phicomm_tc1_a1/blob/master/工具和文档/EMW3031说明文档_flashplus.pdf). Used only for chip / Flash identification; use this project's erase and verification instructions |
 | `tools/FlashPlus_v1.0.10.msi` | Marvell FlashPlus v1.0.10 from the [IoTDevice mirror](https://github.com/IoTDevice/phicomm_tc1_a1/blob/master/工具和文档/FlashPlus_v1.0.10.msi), unmodified installer |
 | `tools/a1-easylink.zip` | Project-owned A1 EasyLink tools: `tools/a1_easylink.py`, `tools/a1_easylink_web.py` and three web assets; no firmware included; archive checksum in SHA256SUMS |
+| `tools/easylink-linux/easylink_v2_linux.c` | Project Linux mac80211 injection tool, derived from the EasyLink V2 sender used successfully with a physical M1; A1 uses the same protocol. Ordinary UDP tools remain experimental |
+| `tools/a1-dns-migration/a1_dns_migration.py` | Derived from A1 stock v1.47 update domains, HTTPS requests, top-level JSON, version comparison and download verification; DNS migration awaits device validation |
 
 Images and third-party tools remain copyrighted by their authors and vendors; hosting copies does not change their licenses. FlashPlus is not part of this project's firmware source. The EMW3031 datasheet restricts reproduction of its illustrations, so the guide links to it instead.
 
