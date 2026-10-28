@@ -1,49 +1,8 @@
 /* Request-local frozen status encoder shared by HTTP and MQTT. */
 #include "device_status.h"
-#include "json_build.h"
-#include "firmware_variant.h"
+#include "firmware_variant_defs.h"
 #include <math.h>
-#include <stdio.h>
 #include <string.h>
-static void status_string(struct json_object *o,const char *k,const char *s)
-{
-    if(!o)return;
-    json_object_object_foreach(o,key,value) {
-        (void)key;
-        if(value && json_object_is_type(value,json_type_string) &&
-           !strcmp(json_object_get_string(value),s)) {
-            json_build_object_add(o,k,json_object_get(value));return;
-        }
-    }
-    json_build_object_add(o,k,json_object_new_string(s));
-}
-static void status_int(struct json_object *o,const char *k,int n)
-{
-    if(!o)return;
-    /* Status graphs are immutable. Share equal primitives inside this one
-     * response, as with booleans, without a persistent cache or allocation. */
-    json_object_object_foreach(o,key,value) {
-        (void)key;
-        if(value && json_object_is_type(value,json_type_int) && json_object_get_int(value)==n) {
-            json_build_object_add(o,k,json_object_get(value));return;
-        }
-    }
-    json_build_object_add(o,k,json_object_new_int(n));
-}
-static void status_bool(struct json_object *o,const char *k,bool b)
-{
-    if(!o)return;
-    /* Share only a primitive already owned by this response. The fixed schema
-     * bounds this scan; no persistent JSON/cache or mutable node is shared. */
-    json_object_object_foreach(o,key,value) {
-        (void)key;
-        if(value && json_object_is_type(value,json_type_boolean) &&
-           json_object_get_boolean(value)==b) {
-            json_build_object_add(o,k,json_object_get(value));return;
-        }
-    }
-    json_build_object_add(o,k,json_object_new_boolean(b));
-}
 #include "status_emit.inc"
 static const char *device_mqtt_status(unsigned state)
 {
@@ -159,7 +118,9 @@ static __attribute__((noinline)) void encode_a1(status_sink *o,const device_stat
         emit_int(o, "panel_errors", full->model.a1.panel_errors); emit_int(o, "hardware_errors", full->model.a1.hardware_errors);
         emit_int(o, "panel_last_error", full->model.a1.panel_last_error);
         char raw[7];
-        for (unsigned i = 0; i < 3; i++) snprintf(raw + 2 * i, 3, "%02x", full->model.a1.panel_raw[i]);
+        static const char hex[]="0123456789abcdef";
+        for (unsigned i = 0; i < 3; i++) { unsigned b=full->model.a1.panel_raw[i];raw[i*2]=hex[b>>4];raw[i*2+1]=hex[b&15]; }
+        raw[6]=0;
         emit_string(o, "panel_raw", raw);
     }
     if(snapshot->captured & STATUS_SENSOR) {
@@ -314,7 +275,9 @@ static __attribute__((noinline)) void encode_m1(status_sink *o,const device_stat
         emit_int(o, "rx_frames", full->model.m1.rx_frames); emit_int(o, "unknown_frames", full->model.m1.unknown_frames);
         emit_int(o, "uart_errors", full->model.m1.uart_errors); emit_int(o, "discarded_bytes", full->model.m1.discarded_bytes);
         char frame[41];
-        for (unsigned i = 0; i < 20; i++) snprintf(frame + i * 2, 3, "%02x", full->model.m1.last_frame[i]);
+        static const char hex[]="0123456789abcdef";
+        for (unsigned i = 0; i < 20; i++) { unsigned b=full->model.m1.last_frame[i];frame[i*2]=hex[b>>4];frame[i*2+1]=hex[b&15]; }
+        frame[40]=0;
         emit_string(o, "last_frame", frame); emit_bool(o,"ota_signature_verified",full->ota.signature_verified);
         emit_bool(o,"ota_image_verified",full->ota.image_verified);
         emit_int(o,"ota_key_id",full->ota.key_id);emit_int(o,"ota_image_length",full->ota.image_length);
@@ -394,46 +357,16 @@ static bool device_status_visit(status_sink *o,const device_status_t *s,const de
     return valid && !o->failed;
 }
 
-void device_runtime_encode(struct json_object *o,const device_runtime_t *s)
+/* Emit members into a caller-opened runtime/capability map. */
+void device_runtime_mp(ph_writer *o,const device_runtime_t *s)
 {
-    if(s->reset_valid)status_int(o,"last_reset_reason",s->reset_reason);
-    json_build_object_add(o,"uptime_ms",json_object_new_double(s->now_ms));
-    status_int(o,"uptime_seconds",s->now_ms/1000);
-    if(!s->memory_valid)return;
-    status_int(o,"free_memory",s->free_memory);status_int(o,"allocated_memory",s->allocated_memory);
-    status_int(o,"free_memory_chunks",s->free_memory_chunks);status_int(o,"min_observed_free_memory",s->minimum_free);
+    if(!o)return;
+    if(!s){o->failed=true;return;}
+    runtime_fields(o,s);
 }
-json_object *device_status_encode(const device_status_t *s,const device_status_full_t *full)
+/* Complete frozen payload only. Transport envelope and caching belong to caller. */
+void device_status_mp(ph_writer *o,const device_status_t *s,const device_status_full_t *full)
 {
-    /* Compatibility graph API. Public transports use the wire directly. Keep
-     * one schema/encoder in the constrained flash, and parse only for old callers. */
-    struct printbuf *wire=device_status_wire(s,full,false,NULL);
-    if(!wire)return NULL;
-    json_object *out=json_tokener_parse(wire->buf);printbuf_free(wire);return out;
-}
-static bool status_wire_visit(status_sink *sink,const device_status_t *s,const device_status_full_t *full,bool envelope,const char *id)
-{
-    if(envelope) {
-        emit_begin(sink,NULL,false);
-        if(id)emit_string(sink,"request_id",id);
-        emit_string(sink,"code","ok");emit_string(sink,"message","操作成功");
-    }
-    bool ok=device_status_visit(sink,s,full,envelope?"data":NULL);
-    if(envelope)emit_end(sink);
-    return ok && !sink->failed && !sink->depth;
-}
-struct printbuf *device_status_wire(const device_status_t *s,const device_status_full_t *full,bool envelope,const char *id)
-{
-    status_sink sink={0};
-    if(!status_wire_visit(&sink,s,full,envelope,id) || sink.used>=INT_MAX)return NULL;
-    size_t length=sink.used;
-    struct printbuf *wire=json_heap_calloc(1,sizeof(*wire));
-    if(!wire)return NULL;
-    wire->buf=json_heap_malloc(length+1);
-    if(!wire->buf) { printbuf_free(wire);return NULL; }
-    wire->size=(int)length+1;
-    memset(&sink,0,sizeof(sink));sink.buf=wire->buf;sink.capacity=length;
-    if(!status_wire_visit(&sink,s,full,envelope,id) || sink.used!=length) { printbuf_free(wire);return NULL; }
-    wire->bpos=(int)length;wire->buf[length]=0;
-    return wire;
+    if(!o)return;
+    if(!full||!device_status_visit(o,s,full,NULL))o->failed=true;
 }
