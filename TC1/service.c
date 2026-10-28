@@ -10,6 +10,7 @@
 #include "../common/i18n.h"
 #include "../common/service.c"
 #include "../common/device_status.h"
+#include "../common/firmware_variant_defs.h"
 #include "../common/service_mp.h"
 extern char str_mac[16];
 static void reboot_worker(mico_thread_arg_t arg){(void)arg;mico_rtos_thread_msleep(1500);MicoSystemReboot();mico_rtos_delete_thread(NULL);}
@@ -28,7 +29,8 @@ void service_product_info_mp(ph_writer *out)
 void service_product_capabilities_mp(ph_writer *out,const char *const *extra,bool restricted)
 {
     static const char *const actions[]={"time.get","time.set","power.get","status.get","capabilities.get","config.get","logs.get","schedules.get","schedules.put","schedules.delete","schedules.enable","buttons.get","buttons.set","config.set","wifi.scan","wifi.scan.get","ota.start","system.reset","system.reboot","outlet.set","indicator.set","child_lock.set",NULL};
-    phw_begin(out,NULL,false);phw_text(out,"model","tc1");phw_text(out,"mqtt_protocol","tmcp");
+    phw_begin(out,NULL,false);phw_text(out,"model","tc1");phw_text(out,"device_id",str_mac);
+    phw_text(out,"firmware_version",VERSION);phw_text(out,"variant",PHICOMM_FIRMWARE_VARIANT);phw_text(out,"mqtt_protocol","tmcp");
     phw_int(out,"mqtt_protocol_version",2);phw_int(out,"protocol",2);
     phw_begin(out,"actions",true);
     if(restricted){phw_text(out,NULL,"info.get");phw_text(out,NULL,"status.get");phw_text(out,NULL,"capabilities.get");}
