@@ -27,3 +27,12 @@ equivalent ARM32 concurrent peak-heap watermark. That measurement remains an
 explicit validation gap; legacy source fixtures are retained, not silently
 claimed as passing native tests. Historical JSON primitive-sharing and count/fill
 implementation tests likewise cannot run against functions intentionally removed.
+
+`test_native_status_arm` additionally runs the actual native encoder and codec
+under pinned ARM GCC 5.4.1/newlib-nano plus QEMU ARM32. It retains one completed
+status while encoding another and injects all 128-byte budget steps, verifying
+the retained owner, refusal cleanup and subsequent recovery. Current zero-state
+fixtures: A1/M1 retained 2824 B and overlap peak 7472 B; TC1 768/1992 B in the
+explicit align8(request)+8 ledger. These are fixture watermarks, not maximal
+product snapshots or the closed SDK physical allocator. The old complete
+virtual-runtime concurrent producer watermark remains a separate gap.
