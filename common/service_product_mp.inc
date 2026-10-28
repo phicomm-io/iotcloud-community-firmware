@@ -210,8 +210,9 @@ static bool smp_config(const ph_value *p,ph_writer *w,const char **code)
   if(!phv_keys(&values,"|host||port||user||password||enabled|")||!smp_text(&values,"host",c.mqtt_host,sizeof(c.mqtt_host),true)||!smp_text(&values,"user",c.mqtt_user,sizeof(c.mqtt_user),true)||!smp_text(&values,"password",c.mqtt_password,sizeof(c.mqtt_password),false)||!smp_int(&values,"port",&number,1,65535))goto invalid;
   c.mqtt_port=number;
 #if defined(FEATURE_DEVICE_A1) && defined(PHICOMM_BEMFA)
-  extern bool bemfa_mqtt_save_mp(const ph_value *,const CONFIG *);
-  ok=bemfa_mqtt_save_mp(&values,&c);
+  bemfa_config_t next;bemfa_config_get(&next);ph_value enabled;bool active;
+  if(phv_get(&values,"enabled",&enabled)){if(!phv_bool(&enabled,&active))goto invalid;next.mqtt_enabled=active;}
+  next.revision++;ok=a1_mqtt_config_save(&c,&next);
 #else
   if(smp_has(&values,"enabled"))goto invalid;ok=SAVE_CONFIG(&c);
 #endif

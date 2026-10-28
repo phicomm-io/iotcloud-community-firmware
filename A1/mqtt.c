@@ -441,7 +441,7 @@ static int cleanup_all(void)
     int result = cleanup_discovery();
     for(unsigned i=0;i<2;i++)if(fresh_discovery(&session_config,true,i,NULL)!=MQTT_SUCCESS)result=MQTT_FAILURE;
     for(unsigned i=0;i<6;i++)if(filter_discovery(&session_config,true,i,NULL)!=MQTT_SUCCESS)result=MQTT_FAILURE;
-    if (feature_mqtt_cleanup(publish) != MQTT_SUCCESS) result = MQTT_FAILURE;
+    if (feature_mqtt_cleanup(publish_bytes) != MQTT_SUCCESS) result = MQTT_FAILURE;
     return result;
 }
 static bool same_connection(const a1_config_t *a, const a1_config_t *b)
@@ -617,7 +617,7 @@ static int session_cycle(void *context) {
             if(feature_changed && !feature_mqtt_filters_current(feature_filters,count))return PH_MQTT_RECONFIGURE;
             /* A birth received during a batch requests a complete subsequent pass.
              * Do not consume it by restarting the partially published pass. */
-            if(rediscover && discovery_index==12) {feature_mqtt_service(publish,false);discovery_index=0;rediscover=false;sent=false;state_index=0;state_pending=0x7fu;state_seen=0;}
+            if(rediscover && discovery_index==12) {feature_mqtt_service(publish_bytes,false);discovery_index=0;rediscover=false;sent=false;state_index=0;state_pending=0x7fu;state_seen=0;}
             if(discovery_index<12) {
                 rc=discovery(&current,discovery_index);
                 if(rc==MQTT_SUCCESS)++discovery_index;
@@ -686,7 +686,7 @@ static void session_closing(void *context,bool connected,int rc) {
             cleanup_pending = false;
             mico_rtos_lock_mutex(&a1_lock); a1_state.mqtt_cleanup_warning = cleanup != MQTT_SUCCESS; mico_rtos_unlock_mutex(&a1_lock);
         }
-        feature_mqtt_service(publish,false);
+        feature_mqtt_service(publish_bytes,false);
 }
 static void session_event(void *context,unsigned event,int rc) {
     (void)context;
