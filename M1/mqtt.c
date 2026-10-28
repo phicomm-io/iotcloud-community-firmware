@@ -381,10 +381,11 @@ static bool session_subscription(void *context,unsigned index,ph_mqtt_subscripti
     else if(index==1)*out=(ph_mqtt_subscription){"homeassistant/status",QOS0,ha_birth};
     else if(index==2)*out=(ph_mqtt_subscription){sensor_filter,QOS1,native_command};
     else if(index==3)*out=(ph_mqtt_subscription){co2_filter,QOS1,native_command};
+    else if(index==4)*out=(ph_mqtt_subscription){command_topic,QOS1,native_command};
     /* The original four filters stay usable with existing broker ACLs. A
      * configured MQTT lane needs offline delivery even while displaying the
      * original values, because a button may select that lane at any time. */
-    else if(index==4 && session_need_availability)*out=(ph_mqtt_subscription){source_availability_filter,QOS1,native_command};
+    else if(index==5 && session_need_availability)*out=(ph_mqtt_subscription){source_availability_filter,QOS1,native_command};
     else return false;
     return true;
 }

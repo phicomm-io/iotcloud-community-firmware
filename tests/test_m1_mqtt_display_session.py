@@ -87,7 +87,7 @@ static bool feature_mqtt_input(const char *t,const void *p,size_t n,bool retaine
  assert(phv_parse(PH_WIRE_MSGPACK,p,n,&body)&&phv_get(&body,"schema",&schema)&&phv_int(&schema,&version)&&version==3);
  assert(memchr(p,0,n));assert(!retained);inputs++;cache_valid=true;return true;
 }
-static void feature_mqtt_service(int (*p)(const char*,const char*,bool),bool connected){(void)p;(void)connected;}
+static void feature_mqtt_service(int (*p)(const char*,const void*,size_t,bool),bool connected){(void)p;(void)connected;}
 static int publish(const char *t,const char *p,bool r){(void)t;(void)p;(void)r;return 0;}
 static int publish_leaf(const char *t,const char *p,bool r){return publish(t,p,r);}
 static int publish_bytes(const char *t,const void *p,size_t n,bool r){assert(n);(void)t;(void)p;(void)r;return 0;}
@@ -132,9 +132,9 @@ static bool subscribe_product(void *ctx,unsigned index,ph_mqtt_subscription *s){
  bool present=session_subscription(ctx,index,s);
  if(present){
   plans[session_count-1]++;
-  if(index==4){last_subscribe_bytes=(unsigned)strlen(s->filter)+7;assert(s->handler==native_command&&s->qos==QOS1);}
-  subscribe_fail=index==4&&deny_availability==1;
-  diagnostic_ack_mode=index==4?deny_availability:0;
+  if(index==5){last_subscribe_bytes=(unsigned)strlen(s->filter)+7;assert(s->handler==native_command&&s->qos==QOS1);}
+  subscribe_fail=index==5&&deny_availability==1;
+  diagnostic_ack_mode=index==5?deny_availability:0;
   /* Simulate an application delivery before the plan is fully acknowledged. */
   unsigned before=inputs;receive();assert(inputs==before&&!cache_valid);
  }
@@ -180,15 +180,15 @@ int main(int argc,char **argv){
  assert(argc==2);strcpy(live.mqtt_host,"fixture");strcpy(live.mqtt_user,"abc");
  strcpy(live.name,"fixture");live.mqtt_port=1883;m1_state.wifi_connected=true;
  m1_display_defaults(&display);unsigned mode=(unsigned)atoi(argv[1]);
- if(mode==0){display.lanes[0].source=M1_DISPLAY_MQTT;deny_availability=1;run();assert(plans[0]==4&&ready_count==1&&!sub_errors);}
- if(mode==1){configure(false);display.lanes[1].source=M1_DISPLAY_LOCAL;deny_availability=1;run();assert(plans[0]==4&&ready_count==1&&!sub_errors);}
- if(mode==2){configure(true);display.selected=0;deny_availability=1;run();assert(plans[0]==5&&sub_errors==1&&!initial_calls&&!ready_count&&!inputs&&final_rc==MQTT_FAILURE&&last_subscribe_bytes==43);}
- if(mode==3){configure(true);display.selected=1;run();assert(plans[0]==5&&ready_count==1&&!sub_errors&&observed_live);}
- if(mode==4){configure(false);transition=1;stop_after=2;run();assert(session_count==2&&plans[0]==4&&plans[1]==5&&ready_count==2&&initial_calls==2);}
- if(mode==5){configure(true);transition=2;stop_after=2;run();assert(session_count==2&&plans[0]==5&&plans[1]==4&&ready_count==2&&initial_calls==2);}
- if(mode==6){configure(true);transition=4;run();assert(session_count==1&&plans[0]==5&&ready_count==1&&changed);}
- if(mode==7){configure(false);transition=3;stop_after=2;run();assert(session_count==2&&plans[0]==4&&plans[1]==5&&ready_count==1&&initial_calls==2&&observed_live);}
- if(mode==8||mode==9){configure(true);deny_availability=mode==8?2:3;run();assert(plans[0]==5&&sub_errors==1&&!initial_calls&&!ready_count&&!inputs&&final_rc==MQTT_FAILURE);}
+ if(mode==0){display.lanes[0].source=M1_DISPLAY_MQTT;deny_availability=1;run();assert(plans[0]==5&&ready_count==1&&!sub_errors);}
+ if(mode==1){configure(false);display.lanes[1].source=M1_DISPLAY_LOCAL;deny_availability=1;run();assert(plans[0]==5&&ready_count==1&&!sub_errors);}
+ if(mode==2){configure(true);display.selected=0;deny_availability=1;run();assert(plans[0]==6&&sub_errors==1&&!initial_calls&&!ready_count&&!inputs&&final_rc==MQTT_FAILURE&&last_subscribe_bytes==43);}
+ if(mode==3){configure(true);display.selected=1;run();assert(plans[0]==6&&ready_count==1&&!sub_errors&&observed_live);}
+ if(mode==4){configure(false);transition=1;stop_after=2;run();assert(session_count==2&&plans[0]==5&&plans[1]==6&&ready_count==2&&initial_calls==2);}
+ if(mode==5){configure(true);transition=2;stop_after=2;run();assert(session_count==2&&plans[0]==6&&plans[1]==5&&ready_count==2&&initial_calls==2);}
+ if(mode==6){configure(true);transition=4;run();assert(session_count==1&&plans[0]==6&&ready_count==1&&changed);}
+ if(mode==7){configure(false);transition=3;stop_after=2;run();assert(session_count==2&&plans[0]==5&&plans[1]==6&&ready_count==1&&initial_calls==2&&observed_live);}
+ if(mode==8||mode==9){configure(true);deny_availability=mode==8?2:3;run();assert(plans[0]==6&&sub_errors==1&&!initial_calls&&!ready_count&&!inputs&&final_rc==MQTT_FAILURE);}
  if(mode==10){
   configure(true);ph_mqtt_connection spec;assert(session_prepare(NULL,&spec)==PH_MQTT_PREPARE_READY);
   unsigned before=inputs;receive();assert(inputs==before&&!cache_valid);
@@ -233,10 +233,10 @@ int main(int argc,char **argv){
     def case(self, mode):
         subprocess.run([str(self.binary), str(mode)], check=True, timeout=20)
 
-    def test_unconfigured_profile_preserves_four_filter_plan(self): self.case(0)
-    def test_local_and_api_sources_preserve_four_filter_plan(self): self.case(1)
+    def test_unconfigured_profile_preserves_five_filter_plan(self): self.case(0)
+    def test_local_and_api_sources_preserve_five_filter_plan(self): self.case(1)
     def test_original_selection_still_requires_mqtt_availability(self): self.case(2)
-    def test_all_five_subacks_enable_user_mqtt_input(self): self.case(3)
+    def test_all_six_subacks_enable_user_mqtt_input(self): self.case(3)
     def test_adding_mqtt_source_reconnects_and_clears_cache(self): self.case(4)
     def test_removing_mqtt_source_reconnects_and_clears_cache(self): self.case(5)
     def test_selection_change_keeps_needed_subscription(self): self.case(6)
@@ -246,10 +246,10 @@ int main(int argc,char **argv){
     def test_prepare_subscribe_failure_and_wifi_loss_close_input_gate(self): self.case(10)
 
     def test_old_unconditional_filter_is_a_failing_negative_control(self):
-        needle = 'index==4 && session_need_availability'
+        needle = 'index==5 && session_need_availability'
         self.assertIn(needle, self.source)
         binary = self.path / 'old-unconditional'
-        self.build(self.source.replace(needle, 'index==4'), binary)
+        self.build(self.source.replace(needle, 'index==5'), binary)
         result = subprocess.run([str(binary), '0'], stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE, timeout=20)
         self.assertNotEqual(result.returncode, 0)

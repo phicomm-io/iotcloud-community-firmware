@@ -515,7 +515,7 @@ static bool ingress_accept(MessageData *d,messageHandler handler) {
 
 static a1_config_t cfg,current;
 static mqtt_state_t state;
-static char client_id[192],wildcard[MQTT_TOPIC_MAX];
+static char client_id[192],wildcard[MQTT_TOPIC_MAX],ha_command_topic[MQTT_TOPIC_MAX];
 static unsigned count,feature_revision;
 static bool old_on,sent,old_visible,filter_turn;
 static unsigned discovery_index,state_index,state_pending,state_seen;
@@ -571,6 +571,7 @@ static int session_prepare(void *context,ph_mqtt_connection *spec) {
         strcpy(base, account.base);
         mqtt_identity(&account, "", client_id, sizeof(client_id));
         mqtt_leaf(&account, "command", wildcard, sizeof(wildcard));
+        mqtt_leaf(&account, "ha/command", ha_command_topic, sizeof(ha_command_topic));
         mqtt_leaf(&account, "availability", availability_topic, sizeof(availability_topic));
         session_config = cfg;discovery_language=device_language_get();
         feature_mqtt_session(&account);
@@ -586,7 +587,8 @@ static bool session_subscription(void *context,unsigned index,ph_mqtt_subscripti
     (void)context;
     if(index==0)*out=(ph_mqtt_subscription){wildcard,QOS1,command};
     else if(index==1)*out=(ph_mqtt_subscription){"homeassistant/status",QOS0,ha_birth};
-    else if(index-2<count)*out=(ph_mqtt_subscription){feature_filters[index-2],QOS1,feature_command};
+    else if(index==2)*out=(ph_mqtt_subscription){ha_command_topic,QOS1,command};
+    else if(index>=3 && index-3<count)*out=(ph_mqtt_subscription){feature_filters[index-3],QOS1,feature_command};
     else return false;
     return true;
 }
