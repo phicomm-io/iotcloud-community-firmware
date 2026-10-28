@@ -6,6 +6,7 @@
 #include "service.h"
 #include "../mqtt_transport.h"
 #include "../device_status.h"
+#include "../automation.h"
 #include <stdlib.h>
 #include <string.h>
 #ifdef BEMFA_TC1
@@ -90,28 +91,20 @@ void bemfa_dispatch(void *owner) {
        item.session!=__atomic_load_n(&session_generation,__ATOMIC_ACQUIRE)) {
         __atomic_store_n(&command_tail,tail+1,__ATOMIC_RELEASE);return;
     }
-    service_mqtt_json_scope scope;
-    if(!service_mqtt_json_begin(&scope,owner))return;
+    (void)owner;
     __atomic_store_n(&command_tail,tail+1,__ATOMIC_RELEASE);
-    bemfa_command_t parsed=item.command;
-    unsigned kind=parsed.kind,i=parsed.index;
-    json_object *request=json_object_new_object(),*params=json_object_new_object();
-    if(request && params) {
-        const char *action=kind==BEMFA_SOCKET?"outlet.set":kind==BEMFA_FAN?"fan.set":"light.set";
-        json_build_object_add(request,"action",json_object_new_string(action));
-        json_build_object_add(params,kind==BEMFA_LIGHT?"enabled":"on",json_object_new_boolean(parsed.on));
-        if(kind==BEMFA_SOCKET)json_build_object_add(params,"index",json_object_new_int(i));
-        if(parsed.has_value)json_build_object_add(params,kind==BEMFA_FAN?"speed":"brightness",json_object_new_int(parsed.value));
-        json_build_object_add(request,"params",params);params=NULL;
-        /* No business action is allowed after a partial graph allocation. */
-        if(!service_json_scope_failed(scope.token)) {
-            json_object *result=service_command(request);
-            if(result)json_object_put(result);
-        }
-    }
-    if(params)json_object_put(params);
-    if(request)json_object_put(request);
-    service_mqtt_json_end(&scope);
+    bemfa_command_t parsed=item.command;unsigned i=parsed.index;
+    automation_action_t action={0};action.value=parsed.on;action.speed=parsed.has_value?parsed.value:255;
+#ifdef BEMFA_TC1
+    extern bool tc1_automation_execute(const automation_action_t *,bool);
+    action.kind=AUTO_OUTLET;action.target=i;
+    tc1_automation_execute(&action,false);
+#else
+    extern bool a1_automation_execute(const automation_action_t *,bool);
+    action.kind=parsed.kind==BEMFA_FAN?AUTO_FAN:AUTO_LIGHT;
+    if(parsed.kind==BEMFA_FAN&&!parsed.has_value)action.speed=0;
+    a1_automation_execute(&action,false);
+#endif
     /* Reports are captured from canonical product state, never the request. */
     __atomic_fetch_or(&report_dirty,1u<<i,__ATOMIC_RELEASE);
 }
@@ -175,7 +168,7 @@ void bemfa_stop(void) {
 }
 /* The always-running HTTP owner has a verified 12 KiB stack. Polling here
  * saves a second RTOS stack while keeping both sessions/queues independent.
- * Protocol calls finish before JSON/business dispatch starts. */
+ * Protocol calls finish before typed business dispatch starts. */
 void bemfa_poll(void *owner) {
     bemfa_config_t c;bemfa_config_get(&c);
     if(worker && (!c.enabled || c.revision!=worker->config.revision || !bemfa_network_ready())) {

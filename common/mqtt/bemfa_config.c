@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "bemfa.h"
-#include "../json_build.h"
 #include <string.h>
 #include <stdio.h>
 #include <ctype.h>
@@ -29,44 +28,46 @@ bool bemfa_config_valid(const bemfa_config_t *c, bool tc1) {
     }
     return !c->enabled || (active && c->app_id[0] && c->secret_key[0]);
 }
-static bool text_value(struct json_object *v, char *out, size_t cap) {
-    if (!v || !json_object_is_type(v,json_type_string)) return false;
-    const char *s=json_object_get_string(v);size_t n=json_object_get_string_len(v);
-    if (n>=cap || n!=strlen(s)) return false;
-    memcpy(out,s,n+1);return true;
-}
-bool bemfa_config_values(bemfa_config_t *c, struct json_object *v, bool tc1) {
-    if (!v || !json_object_is_type(v,json_type_object)) return false;
-    json_object_object_foreach(v,k,x) {
-        if (!strcmp(k,"enabled")) {
-            if(!x || !json_object_is_type(x,json_type_boolean))return false;
-            c->enabled=json_object_get_boolean(x);
-        } else if(!strcmp(k,"app_id")) {if(!text_value(x,c->app_id,sizeof(c->app_id)))return false;}
-        else if(!strcmp(k,"secret_key")) {if(!text_value(x,c->secret_key,sizeof(c->secret_key)))return false;}
-        else if(!strcmp(k,"topics")) {
-            unsigned n=tc1?6:2;
-            if(!x || !json_object_is_type(x,json_type_array) || json_object_array_length(x)!=n)return false;
-            for(unsigned i=0;i<n;i++)if(!text_value(json_object_array_get_idx(x,i),c->topics[i],BEMFA_TOPIC_BYTES))return false;
-        } else return false;
+bool bemfa_config_values_mp(bemfa_config_t *c,const ph_value *v,bool tc1)
+{
+    if(!c || !v || v->kind!=PHV_MAP || !phv_keys(v,"|enabled||app_id||secret_key||topics|"))return false;
+    bemfa_config_t next=*c;ph_value x;bool enabled;
+    if(phv_get(v,"enabled",&x)){if(!phv_bool(&x,&enabled))return false;next.enabled=enabled;}
+    if(phv_get(v,"app_id",&x)&&!phv_text(&x,next.app_id,sizeof(next.app_id)))return false;
+    if(phv_get(v,"secret_key",&x)&&!phv_text(&x,next.secret_key,sizeof(next.secret_key)))return false;
+    if(phv_get(v,"topics",&x)){
+        unsigned n=tc1?6:2;if(x.kind!=PHV_ARRAY||x.count!=n)return false;
+        for(unsigned i=0;i<n;i++){ph_value topic;if(!phv_at(&x,i,&topic)||!phv_text(&topic,next.topics[i],BEMFA_TOPIC_BYTES))return false;}
     }
-    c->revision++;
-    return bemfa_config_valid(c,tc1);
+    next.revision++;
+    if(!bemfa_config_valid(&next,tc1))return false;
+    *c=next;return true;
 }
 #ifdef PHICOMM_BEMFA
-void bemfa_config_encode(struct json_object *o) {
+bool bemfa_config_set_mp(const ph_value *params,const char **code)
+{
+    bemfa_config_t next;bemfa_config_get(&next);
+#ifdef BEMFA_TC1
+    bool tc1=true;
+#else
+    bool tc1=false;
+#endif
+    if(!bemfa_config_values_mp(&next,params,tc1)){*code="invalid_params";return false;}
+    bool ok=bemfa_config_save(&next);*code=ok?"accepted":"storage_error";return ok;
+}
+void bemfa_config_write_mp(ph_writer *w){bemfa_config_mp_fields(w);}
+void bemfa_config_mp_fields(ph_writer *w)
+{
     bemfa_config_t c;bemfa_config_get(&c);
-    json_build_object_add(o,"mqtt_enabled",json_object_new_boolean(c.mqtt_enabled));
-    struct json_object *b=json_object_new_object(),*topics=json_object_new_array();
-    json_build_object_add(b,"enabled",json_object_new_boolean(c.enabled));
-    json_build_object_add(b,"app_id",json_object_new_string(c.app_id));
-    json_build_object_add(b,"secret_key_set",json_object_new_boolean(c.secret_key[0]));
+    phw_bool(w,"mqtt_enabled",c.mqtt_enabled);phw_begin(w,"bemfa",false);
+    phw_bool(w,"enabled",c.enabled);phw_text(w,"app_id",c.app_id);phw_bool(w,"secret_key_set",c.secret_key[0]);
+    phw_begin(w,"topics",true);
 #ifdef BEMFA_TC1
     unsigned n=6;
 #else
     unsigned n=2;
 #endif
-    for(unsigned i=0;i<n;i++)json_build_array_add(topics,json_object_new_string(c.topics[i]));
-    json_build_object_add(b,"topics",topics);json_build_object_add(o,"bemfa",b);
+    for(unsigned i=0;i<n;i++)phw_text(w,NULL,c.topics[i]);phw_end(w);phw_end(w);
 }
 #endif
 unsigned bemfa_gear_speed(unsigned gear) { static const unsigned speeds[]={0,20,50,75,100}; return gear<5?speeds[gear]:0; }

@@ -1,4 +1,5 @@
 #include "main.h"
+#include "../common/service_mp.h"
 #include "user_gpio.h"
 #include "status_guard.h"
 #include "mqtt_server/user_mqtt_client.h"

@@ -658,7 +658,7 @@ static int session_cycle(void *context) {
             /* Pending native work retains its cursor, but cannot suppress the
              * independent feature producer during resource backoff or quota. */
             if (rc == MQTT_SUCCESS || rc == PH_MQTT_MORE) {
-                int feature_rc=feature_mqtt_service(publish,true);
+                int feature_rc=feature_mqtt_service(publish_bytes,true);
                 if(feature_rc!=MQTT_SUCCESS)rc=feature_rc;
             }
     return rc;
