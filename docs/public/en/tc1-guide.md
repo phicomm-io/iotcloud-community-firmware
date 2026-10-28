@@ -1,6 +1,6 @@
 # TC1 operation
 
-TC1 provides six outlet controls, metering, child lock, an indicator and schedules. For first installation, see [TC1 flashing](tc1-flash).
+TC1 provides six outlet controls, metering, child lock, an indicator and schedules. This page covers daily use after installation. For first installation, see the [illustrated OTA guide](tc1-no-disassembly-ethernet-wifi-ap) or [wired flashing and recovery](tc1-flash).
 
 **Use stable v0.9.27 for everyday operation. The current v1.0.0-rc.3 candidate is a beta build. Major changes are still expected, and daily use is not recommended.** See the [complete candidate release notes](release-log.html?channel=candidate) for version requirements and cumulative changes.
 

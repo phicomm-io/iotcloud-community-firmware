@@ -8,7 +8,7 @@
 
 ## 原厂设备联网
 
-若路由器已列出设备，保留现有 Wi-Fi 配置，记下 IP 与 MAC。尚未联网时，按[原厂配网指南](stock-provision)使用 EasyLink 工具。电脑需连接目标 2.4 GHz Wi-Fi；无需原厂 App。
+若路由器已列出设备，保留现有 Wi-Fi 配置，记下 IP 与 MAC。尚未联网时，按[原厂配网指南](stock-provision)使用 EasyLink 工具。电脑需连接目标 2.4 GHz Wi-Fi；无需原厂 App。 在工具中开始发送后，单独按住 **Wi-Fi 图标键 1–2 秒后松开**，接收窗口约 60 秒。
 
 ## 只读检查连接
 

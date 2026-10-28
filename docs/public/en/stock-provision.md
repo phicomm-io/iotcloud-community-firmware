@@ -2,9 +2,9 @@
 
 A1 can receive EasyLink packets from a computer. M1 can expose a hotspot and accept Wi-Fi settings over HTTP. These paths do not require the original app or a cloud account.
 
-The instructions come from the backed-up factory firmware. The A1 sender passed host tests and emulation of the original ARM decoder; physical A1 provisioning remains untested. M1 hotspot submission returned HTTP 200 in an earlier test. Separately, sending EasyLink V2 from a router's 2.4 GHz radio produced confirmed M1 association, DHCP and factory HTTP identity. Ordinary computer Wi-Fi driver compatibility still needs separate verification.
+M1 provisioning has been verified on hardware. Reverse engineering of A1's factory firmware indicates that its provisioning method should also work.
 
-The analyzed backups are A1 `v1.47` and M1 `14.2.4.1`; other factory versions may differ.
+Applies to stock A1 `v1.47`, M1 Wi-Fi module `14.2.4.1` and M1 sensor controller `11.1.2.1`.
 
 <!-- os-picker -->
 
@@ -20,11 +20,9 @@ For initial checks, use a separate 2.4 GHz WPA2-Personal/AES network, a short AS
 
 ### Enter provisioning mode
 
-The factory touch handler starts EasyLink after a particular input remains active for about one second, provided that this press has not triggered it already and no provisioning task is active. The listening window is about 60 seconds. Having saved Wi-Fi credentials does not prevent this trigger.
+**Hold only the Wi-Fi icon button on A1's panel for 1–2 seconds, then release.** The listening window is about 60 seconds. You can provision again even with saved Wi-Fi credentials.
 
-**The corresponding physical touch icon has not been identified on hardware.** The sampling threshold cannot yet be presented as a verified instruction to hold a named panel button. First boot, Wi-Fi loss, a DNS change or a running sender do not prove that reception has started.
-
-This A1 path listens for wireless packets. Do not expect a hotspot named after the community firmware.
+Start the sender below, then hold the Wi-Fi icon button. No device hotspot connection is needed.
 
 ### Use the local web tool
 
@@ -71,7 +69,7 @@ python3 ./a1_easylink_web.py
 
 The browser opens `http://127.0.0.1:8765`. If it does not, visit the URL printed by the terminal. Enter the same SSID, password and Wi-Fi adapter IPv4.
 
-Once the device's trigger is known, start sending and immediately put A1 into its listening window. The default transmission lasts 50 seconds. Keep the computer on the target Wi-Fi, then check the router's DHCP clients. Add `--port 0` to the launcher command if its port is occupied.
+Start sending, then immediately **hold only A1's Wi-Fi icon button for 1–2 seconds and release**. The default transmission lasts 50 seconds. Keep the computer on the target Wi-Fi, then check the router's DHCP clients. Add `--port 0` to the launcher command if its port is occupied.
 
 Closing the browser tab does not stop a running transmission. Use the page's stop button or press Ctrl+C in the terminal. “Sending finished” reports the computer's progress, not the device's connection.
 
@@ -95,19 +93,19 @@ python3 ./a1_easylink.py --ssid "RescueWiFi" --interface-ip 192.168.1.23
 
 The password is requested interactively without echo. Use `--open` explicitly for an open network. `--dry-run` checks parameters and encoding without sending packets.
 
-EasyLink V2 carries two data bytes in multicast destination MAC addresses and a sequence number in packet length. Addresses `239.126.X.Y` map to MAC addresses `01:00:5e:7e:X:Y`. Wi-Fi encryption does not hide that destination header, allowing reception before association. Encoded data also carries the password, so provision on a trusted wireless network. Ordinary UDP broadcast cannot replace this encoding. A normal web page cannot send these UDP packets directly; the local Python helper sends them.
+The local Python service sends EasyLink wireless provisioning packets; an ordinary online page cannot replace it. The packets carry the Wi-Fi password, so use a trusted wireless environment.
 
 ## 3. M1: join its hotspot and submit credentials
 
 ### Enter provisioning mode
 
-The factory thread creates an open hotspot named `EasyLink_XXXXXX`, with a MAC suffix and a 120-second window.
+**Hold M1's body button for about 3–4 seconds, then release** and wait for the open hotspot `EasyLink_XXXXXX`. The suffix is the last six hexadecimal characters of the device MAC.
 
-A Wi-Fi module GPIO handler starts provisioning on release after a press longer than 50 ms and shorter than 3 seconds. A 3-second hold clears parameters and restarts. The main MCU also has a separate serial reset path.
+A short press switches the screen display; holding about 3 seconds starts provisioning. **Holding about 9 seconds and then releasing restores factory network and application settings and reboots.** For ordinary provisioning, release after 3–4 seconds.
 
-**The exterior button's connection to that GPIO is not confirmed.** If a clearly marked pairing/reset button exists, a short press and observation of the hotspot can check the entry. Do not guess longer holds if it does not appear. The unconfigured startup branch also starts provisioning; verify that the hotspot actually appears.
+An unconfigured device also enters provisioning on boot. Connect and submit credentials within about two minutes of the hotspot appearing. If it is missing or the window expires, hold for 3–4 seconds to retrigger.
 
-EasyLink V2 also works on M1. The successful 2.4 GHz test used channel 1, so channel 6 is not mandatory. V2 depends on the multicast destination MAC and frame length over the air; successful UDP sends alone do not prove device reception. Prefer the hotspot HTTP method below to avoid sender driver and multicast-forwarding differences.
+M1 also supports EasyLink V2, verified on 2.4 GHz channel 1; channel 6 is not required. Prefer the hotspot HTTP method below.
 
 ### Connect and inspect
 
@@ -217,13 +215,9 @@ Check device identity and access, then perform a normal power cycle and verify a
 | --- | --- |
 | A1 never receives | Listening entry, actual 2.4 GHz Wi-Fi transmission, adapter IPv4 |
 | A1 does not join | SSID, password, security mode, multicast filtering, VPN and driver behavior |
-| No M1 hotspot | Device entry, existing connection, expired window |
+| No M1 hotspot | Hold the body button for 3–4 seconds; refresh the network list and retrigger after the window ends; holding to 9 seconds and releasing restores defaults |
 | Blinking Wi-Fi or a changing X icon | Match DHCP and HTTP identity; icons may also reflect factory cloud connectivity |
 | M1 hotspot disappears | Rejoin the router and check the lease before assuming failure |
 | Lease exists but HTTP fails | Device identity, current IP and client isolation |
 
 Continue with [A1 LAN / public migration](a1-no-disassembly) or [M1 LAN / public migration](m1-no-disassembly). **M1 first migration must start at 0.9.21 or newer.** A1 still requires a physically validated compatible image; M1 results do not establish A1 compatibility.
-
-## Appendix: evidence boundary
-
-A1's touch input is `FF 00 nonzero`, with the third byte valid for at least ten samples, one trigger per press and no active task. Its physical icon mapping remains unverified. M1 registers GPIO enum 12; this is not a physical pin number. Its exterior wiring and MCU-controlled button behavior remain unverified. Button entry findings come from the factory binaries, not third-party button instructions. M1 wireless connection was verified under the conditions above; physical A1 reception, exterior button mappings and other Wi-Fi adapters still require separate checks.

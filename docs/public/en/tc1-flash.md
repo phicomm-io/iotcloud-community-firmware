@@ -1,6 +1,8 @@
-# Flash TC1 (A1 hardware revision)
+# TC1 wired flashing and recovery (A1 hardware revision)
 
 Only for the TC1 power strip with A1 hardware and an EMW3031 module. TC1 A2 is unsupported. Read [Before flashing](flash-prep) first.
+
+This procedure opens the case and uses J-Link. Stock `1.0.0.26` / `1.0.0.24` can use the [illustrated OTA guide](tc1-no-disassembly-ethernet-wifi-ap) instead.
 
 ## Tools and opening the case
 
