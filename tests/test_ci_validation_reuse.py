@@ -267,7 +267,7 @@ class ValidationReuseTests(unittest.TestCase):
     def test_hub_validation_requires_udp_and_management_without_embedded_broker(self):
         text = (ROOT / reuse.WORKFLOW).read_text()
         self.assertIn('DAIKIN.tests.test_hub_lan_client DAIKIN.tests.test_hub_lan_home DAIKIN.tests.test_hub_lan_discovery', text)
-        self.assertIn("-p 'test_lan_business.py'", text)
+        self.assertIn('python3 -m unittest DAIKIN.tests.test_lan_business', text)
         self.assertIn('node tests/hub-lan-management.mjs', text)
         self.assertIn('tests/run_mqtt_v2.sh', text)  # external-broker SDK coverage remains
         self.assertNotIn('tests/hub/console.cpp', text)

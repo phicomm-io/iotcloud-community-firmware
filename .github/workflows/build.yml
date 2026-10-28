@@ -358,7 +358,7 @@ jobs:
           # Explicit modules prevent a missing UDP lane from passing an empty glob.
           SANITIZE=1 python3 -m unittest DAIKIN.tests.test_hub_lan_client DAIKIN.tests.test_hub_lan_home DAIKIN.tests.test_hub_lan_discovery
           python3 -m unittest discover -s DAIKIN/tests -p 'test_native_publish.py'
-          python3 -m unittest discover -s DAIKIN/tests -p 'test_lan_business.py'
+          python3 -m unittest DAIKIN.tests.test_lan_business
           for scenario in home http relay service storage; do
             c++ -std=c++11 -Wall -Wextra -Werror -fsanitize=address,undefined \
               -fno-omit-frame-pointer -fno-pie -no-pie -IDAIKIN/include \
