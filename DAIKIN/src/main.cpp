@@ -314,7 +314,11 @@ void loop(){
   // Close initial recovery AP after station has been stable for two minutes.
   static uint32_t connectedSince=0;
   if(WiFi.status()==WL_CONNECTED){if(!connectedSince){connectedSince=now;if(MDNS.begin(("daikin-"+deviceId).c_str())){MDNS.addService("http","tcp",80);advertiseLanBusiness();}}if(!configRecovery&&uint32_t(now-connectedSince)>120000&&uint32_t(now-connectAt)>120000)WiFi.softAPdisconnect(true);}
-  else{if(connectedSince)MDNS.end();connectedSince=0;if(!(WiFi.getMode()&WIFI_AP))startAccessPoint();}
+  else{if(connectedSince){
+#ifdef IOTCLOUD_HUB
+    hubLanMdnsEnding();
+#endif
+    MDNS.end();}connectedSince=0;if(!(WiFi.getMode()&WIFI_AP))startAccessPoint();}
   #ifdef IOTCLOUD_HUB
   pollHome(millis());
   #endif

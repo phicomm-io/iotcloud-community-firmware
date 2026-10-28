@@ -26,6 +26,9 @@ static void hubLanStatus(JsonObject out){
     row["code"]=!peer.online(now)?"offline":!hubLanRegistered(peer)?"not_registered":!hubLanPaired(peer.id)?"auth_required":!hubLanRouteConfirmed(peer)?"route_changed":"ready";
   }
 }
+// mdns_free() owns/frees outstanding async searches. Drop our borrowed handle
+// before MDNS.end(), so the next connection cannot poll freed SDK memory.
+static void hubLanMdnsEnding(){hubLanSearch=nullptr;hubLanNextDiscovery=0;}
 static void hubLanDiscover(uint32_t now){
   if(hubLanSearch){
     mdns_result_t *results=nullptr;
@@ -33,6 +36,7 @@ static void hubLanDiscover(uint32_t now){
     mdns_query_async_delete(hubLanSearch);hubLanSearch=nullptr;
     for(auto *result=results;result;result=result->next){
       if(!result->service_type||strcmp(result->service_type,LAN_V4_MDNS_SERVICE)||!result->proto||strcmp(result->proto,LAN_V4_MDNS_PROTO))continue;
+      if(result->port!=LAN_V4_PORT||result->txt_count>16||!result->txt||!result->txt_value_len)continue;
       std::map<std::string,std::string> txt;bool duplicate=false;
       for(size_t i=0;i<result->txt_count;i++){
         const char *key=result->txt[i].key,*value=result->txt[i].value;

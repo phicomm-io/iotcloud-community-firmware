@@ -15,3 +15,12 @@ Periodic `status.get` runs independently of HomeKit being enabled. Only a matchi
 The DAIKIN device server permits CONTROL-scoped status/capabilities reads and indicator/CO2 calibration business actions. It does not grant configuration, password, reset or reboot privileges to CONTROL tokens. Existing v3 sensor-session authorization and password pairing remain available.
 
 Host evidence includes actual localhost UDP through the production client/shared server plus production Home model; token authentication and physical TC1 business are explicit fixtures. Tests cover chunk loss/retry, ACK-before-state rejection, no duplicate mutation, wrong identity/token/port and revocation. These are not DUT, real mDNS network, physical HomeKit pairing, production cloud, or pressure-test acceptance. Those gates remain required before deployment.
+
+### mDNS teardown ownership
+
+`MDNS.end()` calls IDF `mdns_free()`, which frees outstanding asynchronous
+search objects. Before ending mDNS on station disconnect the hub drops its
+borrowed search handle and resets the discovery deadline. Reconnection creates
+a fresh query; it never polls or deletes the old SDK allocation. Discovery TXT
+is bounded to 16 entries and requires the contract UDP port 11288, consistent
+with the authenticated pairing transport.
