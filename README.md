@@ -12,7 +12,7 @@
 | --- | --- | --- |
 | TC1 智能排插（A1 硬件版本） | 六路插口、功率与电量、定时、童锁、按键操作 | [安装](https://phicomm-io.github.io/guides/tc1-no-disassembly.html) · [操作](https://phicomm-io.github.io/guides/tc1-guide.html) |
 | M1 空气检测仪 | PM2.5、甲醛、温湿度、屏幕亮度与 A1 联动；配套开源主控可扩展颗粒物详情、CO₂ 显示和音乐 | [安装](https://phicomm-io.github.io/guides/m1-no-disassembly.html) · [操作](https://phicomm-io.github.io/guides/m1-guide.html) |
-| A1 空气净化器 | 风机、自动模式、滤芯、灯环、夜间模式与多检测仪联动；另有新风版 | [安装](https://phicomm-io.github.io/guides/a1-m1-flash.html) · [操作](https://phicomm-io.github.io/guides/a1-guide.html) |
+| A1 空气净化器 | 风机、自动模式、滤芯、灯环、夜间模式与多检测仪联动；另有新风版 | [安装](https://phicomm-io.github.io/guides/a1-no-disassembly.html) · [操作](https://phicomm-io.github.io/guides/a1-guide.html) |
 | DAIKIN 大金空气检测仪 | PM2.5、PM10、CO₂、温湿度、TVOC 与可选甲醛，支持 A1 联动 | [安装与操作](https://phicomm-io.github.io/guides/daikin-guide.html) |
 
 TC1 的 A1 硬件版本与 A1 空气净化器是不同产品，固件不能混用。TC1 A2 暂不支持。M1 / A1 适用于原装 EMW3080B / MK3080B 模组；大金请按教程核对 ESP32 / 4 MB Flash 型号。

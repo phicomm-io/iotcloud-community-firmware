@@ -10,32 +10,26 @@ page footers.
 # (group id, group title, [(slug, title, summary, wiki page name), ...])
 GROUPS = [
     ('m1', 'M1 空气检测仪', [
-        ('stock-provision', '原厂固件配网（免 App）', 'A1 EasyLink 与 M1 热点配网，按系统显示命令', 'A1-M1-原厂配网'),
-        ('m1-no-disassembly', 'M1 免拆安装', '局域网上传、单设备 DNS 迁移与首次配网', 'M1-免拆刷机'),
-        ('a1-m1-flash', 'A1 / M1 有线安装与恢复', '共用教程：模组飞线、工厂测试点与串口刷机', 'A1-M1-刷机'),
+        ('m1-no-disassembly', 'M1 原厂配网与免拆安装', '热点 / Linux EasyLink 配网，局域网 / DNS 两种 OTA', 'M1-免拆刷机'),
+        ('m1-flash', 'M1 有线安装与恢复', '推荐串口 Bootloader，也可使用 J-Link', 'M1-刷机'),
         ('m1-guide', 'M1 功能与操作', '读数、屏幕亮度、指示灯与恢复', 'M1-功能与操作'),
         ('m1-mcu-firmware', 'M1 开源传感器主控', '新增功能、主控 Release 与原厂备份', 'M1-主控开源固件'),
         ('m1-mcu-update', 'M1 传感器主控升级', 'Wi-Fi 最低版本、脚本升级与版本确认', 'M1-主控网络升级'),
-        ('v1-features', 'v1 Beta 功能预览', '按设备查看自 0.9.27 以来的功能与版本条件', 'v1-候选版新功能'),
     ]),
     ('a1', 'A1 空气净化器', [
-        ('stock-provision', '原厂固件配网（免 App）', 'A1 EasyLink 与 M1 热点配网，按系统显示命令', 'A1-M1-原厂配网'),
-        ('a1-no-disassembly', 'A1 免拆安装兼容性', '原厂版本限制、联网检查与有线安装入口', 'A1-免拆刷机'),
-        ('a1-m1-flash', 'A1 / M1 有线安装与恢复', '共用教程：模组飞线、工厂测试点与串口刷机', 'A1-M1-刷机'),
+        ('a1-no-disassembly', 'A1 原厂配网与免拆安装', 'EasyLink 配网、已验证的局域网 OTA 与 DNS 升级路径', 'A1-免拆刷机'),
+        ('a1-flash', 'A1 有线安装与恢复', '推荐免焊 J-Link 工厂测试点，也可使用串口', 'A1-刷机'),
         ('a1-guide', 'A1 功能与操作', '风机、灯环、夜间模式与联动', 'A1-功能与操作'),
-        ('v1-features', 'v1 Beta 功能预览', '按设备查看自 0.9.27 以来的功能与版本条件', 'v1-候选版新功能'),
     ]),
     ('tc1', 'TC1 智能排插', [
         ('tc1-no-disassembly-ethernet-wifi-ap', '免拆刷机图文教程', '有线网卡、无线网卡与 AP：下载文件并按系统操作', 'TC1-免拆刷机-有线无线AP'),
         ('tc1-no-disassembly', '免拆原理与自备镜像', '原厂 OTA 原理、镜像打包与其他网络拓扑', 'TC1-免拆刷机'),
         ('tc1-flash', 'TC1 有线安装与恢复', 'EMW3031：J-Link 首次安装与恢复', 'TC1-刷机'),
         ('tc1-guide', 'TC1 功能与操作', '六路开关、计量、童锁、定时与按键', 'TC1-功能与操作'),
-        ('v1-features', 'v1 Beta 功能预览', '按设备查看自 0.9.27 以来的功能与版本条件', 'v1-候选版新功能'),
     ]),
     ('daikin', 'DAIKIN 大金检测仪', [
         ('daikin-guide', 'DAIKIN 功能、安装与恢复', 'BRY88AX151K：通用 ESP32 固件、读数与 A1 联动', 'DAIKIN-功能与安装'),
         ('daikin-stock-ota', 'DAIKIN 原厂 OTA 安装', 'BRY88AB151K：按键触发、配套发送器与实机迁移', 'DAIKIN-原厂OTA'),
-        ('v1-features', 'v1 Beta 功能预览', '按设备查看自 0.9.27 以来的功能与版本条件', 'v1-候选版新功能'),
     ]),
     ('common', '通用设置与排查', [
         ('quick-start', '快速开始', '设备、配网与访问方式', '快速开始'),
@@ -49,7 +43,7 @@ GROUPS = [
         ('iotcloud-deploy', '自行部署 IoTCloud', '静态前端托管、独立后端与 MQTT 连接', 'IotCloud-部署'),
         ('build-deps', '构建依赖', '工具链、SDK 归档与本地构建', '构建依赖'),
         ('sources', '资源来源', '刷机图片与工具的来源与校验', '资源来源'),
-        ('release-log', 'Release Log', '各版本发布说明', 'Release-Log'),
+        ('release-log', '更新日志 / Release Log', '按日期查阅版本变化与 v1 Beta 功能', 'Release-Log'),
     ]),
 ]
 
@@ -60,7 +54,7 @@ DEVICE_ACTIONS = {
            ('update', 'firmware-update', '', ''),
            ('use', 'm1-guide', '', ''),
            ('recover', 'm1-guide', '按键与恢复', 'buttons-and-recovery')],
-    'a1': [('install', 'a1-m1-flash', '', ''),
+    'a1': [('install', 'a1-no-disassembly', '', ''),
            ('update', 'firmware-update', '', ''),
            ('use', 'a1-guide', '', ''),
            ('recover', 'a1-guide', '恢复手势', 'recovery-gestures')],
@@ -81,7 +75,8 @@ PAGES = list({page[0]: page for _, _, items in GROUPS for page in items}.values(
 PARENTS = {"tc1-no-disassembly": "tc1-no-disassembly-ethernet-wifi-ap"}
 
 # Preserve published URLs when guides are consolidated.
-ALIASES = {"a1-flash": "a1-m1-flash", "m1-flash": "a1-m1-flash"}
+ALIASES = {"a1-m1-flash": "quick-start", "stock-provision": "quick-start",
+           "v1-features": "release-log?channel=candidate#v1-overview"}
 BY_SLUG = {slug: (title, summary, wiki) for slug, title, summary, wiki in PAGES}
 GROUP_OF = {slug: (gid, gtitle) for gid, gtitle, items in GROUPS for slug, _, _, _ in items}
 
@@ -91,13 +86,11 @@ SITE_URL = 'https://phicomm-io.github.io/'
 
 # English guides share the same slugs, ordering and asset collection.
 EN_TITLES = {
- 'v1-features': ('v1 Beta feature preview', 'Features since 0.9.27, grouped by device and release requirements'),
  'm1-mcu-update': ('Update the M1 controller over the network', 'Minimum Wi-Fi version, Python flashing and runtime verification'),
  'm1-mcu-firmware': ('M1 open-source controller firmware', 'Added capabilities, controller releases and stock backup'),
  'daikin-stock-ota': ('Daikin stock OTA migration', 'BRY88AB151K button gesture, sender and verified first boot'),
- 'stock-provision': ('Stock Wi-Fi setup without the app', 'A1 EasyLink and M1 hotspot setup on Windows, macOS and Linux'),
- 'a1-no-disassembly': ('A1 no-disassembly compatibility', 'Stock-version limits, connection checks and wired installation'),
- 'm1-no-disassembly': ('M1 installation without disassembly', 'LAN upload, per-device DNS migration and first Wi-Fi setup'),
+ 'a1-no-disassembly': ('A1 stock Wi-Fi setup and OTA installation', 'EasyLink, verified LAN OTA and a firmware-derived DNS update path'),
+ 'm1-no-disassembly': ('M1 stock Wi-Fi setup and OTA installation', 'Hotspot / Linux EasyLink setup and LAN / DNS OTA'),
  'quick-start': ('Quick start', 'Devices, Wi-Fi setup and local access'),
  'flash-prep': ('Before flashing', 'Power, backups and image selection'),
  'firmware-update': ('Firmware updates', 'OTA sources, packages and recovery'),
@@ -111,7 +104,8 @@ EN_TITLES = {
  'm1-guide': ('M1 operation', 'Readings, brightness, icons and recovery'),
  'daikin-guide': ('DAIKIN operation and installation', 'BRY88AX151K: universal ESP32 firmware, readings and A1 automation'),
  'a1-guide': ('A1 operation', 'Fan, ring, night mode and automation'),
- 'a1-m1-flash': ('Flash A1 / M1', 'SWD, factory points and serial bootloader'),
+ 'a1-flash': ('A1 wired installation and recovery', 'Recommended: solder-free J-Link factory points; serial alternative'),
+ 'm1-flash': ('M1 wired installation and recovery', 'Recommended: serial bootloader; J-Link alternative'),
  'iotcloud-deploy': ('Deploy IoTCloud', 'China / US nodes, hosting and local devices'),
  'build-deps': ('Build dependencies', 'Toolchains, SDK archives and local builds'),
  'sources': ('Asset sources', 'Image / tool provenance and checksums'),

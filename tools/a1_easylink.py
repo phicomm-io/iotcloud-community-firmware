@@ -133,7 +133,7 @@ def send(packets, interface_ip, duration=50.0, interval=0.01, port=DEFAULT_PORT,
 
 def make_parser():
     parser = argparse.ArgumentParser(
-        description="A1 原厂固件 EasyLink V2 本地配网（无需原厂 App）")
+        description="A1 EasyLink V2 UDP 实验发送器（成功方案仅限 Linux mac80211 注入）")
     parser.add_argument("--ssid", help="目标 2.4 GHz Wi-Fi 名称；省略则交互输入")
     parser.add_argument("--interface-ip", required=True,
                         help="电脑连接目标 Wi-Fi 后，该 Wi-Fi 网卡的 IPv4 地址")
@@ -173,6 +173,7 @@ def main(argv=None):
         if args.dry_run:
             print("离线检查完成，未发送网络数据；尚未验证设备接收。")
             return 0
+        print("普通 UDP 发包尚未验证成功；有条件建议使用官方 App，或按教程使用 Linux mac80211 帧注入。")
         print(f"从 Wi-Fi 网卡 {address} 发送，持续 {args.duration:g} 秒。")
         print("请让 A1 进入配网模式；发送期间保持电脑连接目标 2.4 GHz Wi-Fi。")
         count, cycles = send(

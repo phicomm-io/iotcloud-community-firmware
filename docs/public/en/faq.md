@@ -1,6 +1,6 @@
 # Troubleshooting
 
-This page covers community firmware. For A1 / M1 still running factory firmware, see [stock Wi-Fi setup](stock-provision).
+This page covers community firmware. For A1 / M1 still running factory firmware, see [M1 factory setup](m1-no-disassembly) / [A1 factory setup](a1-no-disassembly).
 
 ## Connection indicators
 
@@ -49,7 +49,7 @@ Check the provider MAC and optional IP on A1; M1 and DAIKIN need no manual pairi
 
 ### Update failed
 
-Keep power connected during updates. If the WebUI remains available, verify the file and network and retry. Otherwise recover with a programmer: [TC1](tc1-flash) [A1 / M1](a1-m1-flash) or [DAIKIN](daikin-guide).
+Keep power connected during updates. If the WebUI remains available, verify the file and network and retry. Otherwise recover with a programmer: [TC1](tc1-flash) [M1](m1-flash) · [A1](a1-flash) or [DAIKIN](daikin-guide).
 
 ### Settings were not saved
 
