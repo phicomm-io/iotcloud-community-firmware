@@ -13,6 +13,12 @@
 #include <arpa/inet.h>
 typedef int OSStatus;
 typedef unsigned mico_mutex_t;
+typedef unsigned mico_semaphore_t;
+static inline int mico_rtos_deinit_semaphore(mico_semaphore_t *s){*s=0;return 0;}
+#define MICO_WAIT_FOREVER UINT32_MAX
+static inline int mico_rtos_init_semaphore(mico_semaphore_t *s,int n){(void)n;*s=0;return 0;}
+static inline int mico_rtos_set_semaphore(mico_semaphore_t *s){assert(!*s);*s=1;return 0;}
+static inline int mico_rtos_get_semaphore(mico_semaphore_t *s,uint32_t wait){(void)wait;if(!*s)return -1;*s=0;return 0;}
 typedef uintptr_t mico_thread_arg_t;
 typedef uintptr_t mico_thread_t;
 static inline bool mico_rtos_is_current_thread(mico_thread_t *thread){return *thread==1;}

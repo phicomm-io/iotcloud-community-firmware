@@ -19,6 +19,8 @@ typedef struct {uint32_t sequence,uptime,utc;int32_t argument;uint8_t level,modu
 static service_record_t records[LOG_COUNT];
 static uint32_t sequence;
 static mico_mutex_t service_lock,command_lock;
+static bool command_lock_ready;
+#include "service_lock.inc"
 static bool ready,service_lock_ready;
 /* Independent lock: writers may allocate while the service snapshot lock is
  * held. Failure accounting must never recursively take that lock. */
@@ -45,6 +47,12 @@ void *ph_wire_malloc(size_t bytes){
 void ph_wire_free(void *p){free(p);}
 /* Never called with command_lock held: admission precedes dispatch. */
 static bool mp_cache_evict(void);
+unsigned service_memory_try_claim(size_t input_bytes) {
+    if(!ready)return 0;
+    mico_rtos_lock_mutex(&service_lock);
+    unsigned claim=memory_budget_claim(&memory_state,service_free_memory(),input_bytes);
+    mico_rtos_unlock_mutex(&service_lock);return claim;
+}
 unsigned service_memory_claim(size_t input_bytes) {
     if (!ready) return 0;
     mico_rtos_lock_mutex(&service_lock);
@@ -97,18 +105,19 @@ void service_init(void) {
     if (!service_lock_ready) return;
     if(!wire_diag_ready)wire_diag_ready=mico_rtos_init_mutex(&wire_diag_lock)==kNoErr;
     if(!wire_diag_ready)return;
-    ready = mico_rtos_init_mutex(&command_lock)==kNoErr;
+    if(!command_lock_ready)command_lock_ready=mico_rtos_init_mutex(&command_lock)==kNoErr;
+    ready=command_lock_ready&&service_command_gate_init();
     if (!ready) return;
     ota_job_init();
     service_event("info","system","boot");
 }
 bool service_control_begin(void) {
     if (!ready) return false;
-    mico_rtos_lock_mutex(&command_lock);
-    if (ota_job_active()) { mico_rtos_unlock_mutex(&command_lock); return false; }
+    if(!service_command_enter(true))return false;
+    if (ota_job_active()) { service_command_leave(); return false; }
     return true;
 }
-void service_control_end(void) { mico_rtos_unlock_mutex(&command_lock); }
+void service_control_end(void) { service_command_leave(); }
 static bool identifier(const char *s,size_t max) {
     size_t n=strlen(s); if (!n || n>=max) return false;
     for (size_t i=0;i<n;i++) if (!isalnum((unsigned char)s[i]) && s[i]!='_' && s[i]!='.' && s[i]!='-') return false;

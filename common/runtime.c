@@ -221,6 +221,7 @@ static bool install_config(feature_config_t *c) {
 }
 #include "lan_client_adapter.inc"
 #include "lan_sensor.inc"
+#include "runtime_lan_business.inc"
 #include "feature_mp.h"
 #include "group_mp.inc"
 #ifndef FEATURE_DEVICE_A1
@@ -799,6 +800,11 @@ static void feature_worker(mico_thread_arg_t arg) {
       udp = -1;
     }
   }
+#ifdef FEATURE_DEVICE_A1
+  lan_business_start(boot_id,"a1",A1_VERSION);
+#else
+  lan_business_start(boot_id,"m1",M1_VERSION);
+#endif
   for (;;) {
 #ifdef PHICOMM_DEVICE_OTA
     if(feature_worker_should_stop())break;
@@ -906,6 +912,7 @@ static void feature_worker(mico_thread_arg_t arg) {
     }
 #endif
     lan_client_poll();
+    lan_business_poll();
     if (udp >= 0) {
       fd_set fds;
       FD_ZERO(&fds);
@@ -920,6 +927,11 @@ static void feature_worker(mico_thread_arg_t arg) {
           char ip[16];mqtt_format(ip,sizeof(ip),"%s",inet_ntoa(from.sin_addr));
           ph_value request;
           if(phv_parse(PH_WIRE_MSGPACK,wire,(size_t)n,&request)){
+#ifdef FEATURE_DEVICE_A1
+            a1_input_poll();
+#endif
+            bool business=lan_business_input(&request,ip,ntohs(from.sin_port),wire,FEATURE_WIRE_MAX);
+            if(!business){
             /* Pair operations borrow the datagram only during this call. */
             ph_value operation;bool paired=lan_client_response(&request,ip);
             bool auth_op=phv_get(&request,"op",&operation)&&(phv_equal_text(&operation,"auth_pair")||phv_equal_text(&operation,"auth_resume")||phv_equal_text(&operation,"auth_unpair"));
@@ -932,6 +944,10 @@ static void feature_worker(mico_thread_arg_t arg) {
               }free(response);
             }
             if(!paired&&!auth_op&&!group_input_mp(&request,true,false,ip)){lan_packet packet;if(lan_decode_value(&request,&packet))lan_sensor_input(&packet,ip);}
+            }
+#ifdef FEATURE_DEVICE_A1
+            a1_input_poll();
+#endif
           }
         }
       }
@@ -940,6 +956,7 @@ static void feature_worker(mico_thread_arg_t arg) {
     watchdog_beat(WATCHDOG_BINDING);
   }
 #ifdef PHICOMM_DEVICE_OTA
+  lan_business_stop();
   if(udp>=0){close(udp);udp=-1;}
   free(wire);free(c);
   lock();
@@ -1029,9 +1046,7 @@ OSStatus feature_start(void) {
   scheduled_speed = configuration.scheduled_speed;
   if (MicoRandomNumberRead((uint8_t *)&boot_id, sizeof(boot_id)) != kNoErr)
     return kUnknownErr;
-#ifndef FEATURE_DEVICE_A1
   if(!boot_id)boot_id=1;
-#endif
 #ifdef PHICOMM_DEVICE_OTA
   return feature_resume();
 #else

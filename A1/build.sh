@@ -28,6 +28,7 @@ mkdir -p "$tools_dir" "$workspace" "$(dirname "$sdk_dir")"
 
 python3 "$project_dir/tools/prepare_sdk.py" "$sdk_dir"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/easylink-bonjour-bounds.patch"
+python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/bonjour-lan-mdns-oom.patch"
 # Validate configuration recovery and commit overlays as one ordered stack.
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \
     "$project_dir/common/config-recovery-mico36.patch" \
@@ -113,5 +114,6 @@ python3 "$app_dir/tools/check_button_stack.py" "$workspace/build/$target/Modules
 python3 "$project_dir/tools/check_worker_stack.py" "$workspace/build/$target/Modules/A1" "$project_dir/common/phicomm_features.h" "$gcc_dir/bin/arm-none-eabi-nm"
 python3 "$app_dir/tools/check_image.py" "$workspace/build/$target/binary/$target.ota.bin"
 python3 "$project_dir/tools/check_http_core.py" "$workspace/build/$target/Modules" A1 "$gcc_dir/bin/arm-none-eabi-nm" "$workspace/build/$target/binary/$target.elf"
+python3 "$project_dir/tools/check_lan_stack.py" "$workspace/build/$target/Modules" A1 "$gcc_dir/bin/arm-none-eabi-nm" "$workspace/build/$target/binary/$target.elf"
 python3 "$project_dir/tools/check_no_json_objects.py" --model a1 --nm "$gcc_dir/bin/arm-none-eabi-nm" "$workspace/build/$target/binary/$target.elf"
 python3 "$app_dir/tools/package.py" "$workspace/build/$target/binary" "$project_dir/build/a1${variant_suffix}-release" "$sdk_commit"

@@ -9,6 +9,8 @@ bool app_config_persist_allowed(void) { return !config_recovery && !config_commi
 #include "ota_server/signed_adapter.h"
 #include "main.h"
 #include "status_guard.h"
+#include "lan.h"
+#include "../common/ota/mode.h"
 #include "config_legacy.h"
 #include <stddef.h>
 
@@ -261,6 +263,8 @@ int application_start(void) {
     tc1_log("version:%d", user_config->version);
 
     require_action(device_local_auth_init(),exit,err=kNoMemoryErr);
+    err=tc1_lan_start();
+    require_action(err==kNoErr || err==kInProgressErr,exit,err=err);
     TasksInit();
     WifiInit();
     if (!open_ap) {
@@ -286,6 +290,7 @@ int application_start(void) {
 
 
     while (1) {
+        ota_job_poll();
         automation_poll(rtc_init == 1);
         mico_thread_msleep(1000);
     }

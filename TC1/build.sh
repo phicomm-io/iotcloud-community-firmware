@@ -15,6 +15,7 @@ sdk_dir="${TC1_SDK_DIR:-$project_dir/build/tc1-sdk-3.6.4/mico-os}"
 workspace="$project_dir/build/tc1${variant_suffix}-workspace-3.6.4"
 python3 "$project_dir/tools/prepare_sdk.py" "$sdk_dir"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/easylink-bonjour-bounds.patch"
+python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/bonjour-lan-mdns-oom.patch"
 # Validate configuration recovery and commit overlays as one ordered stack.
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \
     "$project_dir/common/config-recovery-mico36.patch" \
@@ -107,6 +108,7 @@ ln -sfn "$(command -v make)" "$micoder/cmd/Linux64/make"
         -f mico-os/makefiles/Makefile "$target" total
 )
 python3 "$project_dir/tools/check_http_core.py" "$workspace/build/$target/Modules" TC1 "$gcc_dir/bin/arm-none-eabi-nm" "$workspace/build/$target/binary/$target.elf"
+python3 "$project_dir/tools/check_lan_stack.py" "$workspace/build/$target/Modules" TC1 "$gcc_dir/bin/arm-none-eabi-nm" "$workspace/build/$target/binary/$target.elf"
 python3 "$project_dir/tools/check_no_json_objects.py" --model tc1 --nm "$gcc_dir/bin/arm-none-eabi-nm" "$workspace/build/$target/binary/$target.elf"
 python3 "$project_dir/tools/check_tc1_trace.py" "$gcc_dir/bin/arm-none-eabi-nm" "$workspace/build/$target/binary/$target.elf"
 python3 "$app_dir/tools/package.py" "$workspace/build/$target/binary" "$project_dir/build/tc1${variant_suffix}-release"
