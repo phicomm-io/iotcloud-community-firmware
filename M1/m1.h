@@ -6,7 +6,6 @@
 #include "mico_system.h"
 #include "protocol.h"
 #include "sensor_details.h"
-#include "json.h"
 #include "../common/phicomm_features.h"
 #include "../common/mqtt_account.h"
 #include <stdio.h>
@@ -163,8 +162,6 @@ bool m1_ota_write(const uint8_t *, size_t);
 bool m1_ota_finish(void);
 void m1_ota_abort(const char *);
 bool m1_ota_download(const char *url);
-json_object *m1_status_json(void);
-json_object *m1_status_live_json(void);
 
 /* Socket helpers use a bounded wait even if the peer never sends a byte. */
 int m1_socket_read(int fd, void *buf, size_t length, unsigned timeout_ms);
@@ -176,11 +173,9 @@ int m1_socket_line(int fd, char *buf, size_t capacity);
 
 bool m1_uart_version_query(void);
 bool m1_uart_buzzer(bool enabled, unsigned duration_ms);
-json_object *m1_mcu_json(void);
 void m1_alarm_get(m1_alarm_config_t *);
 /* buzzer: -1 preserves the saved selection; 0/1 explicitly selects it. */
 const char *m1_alarm_set(bool pm25, uint16_t low, uint16_t high, uint32_t revision, int buzzer);
-json_object *m1_alarm_json(void);
 void m1_co2_config_get(m1_co2_config_t *);
 const char *m1_co2_config_save(const m1_co2_config_t *);
 struct device_m1_co2;
@@ -194,7 +189,6 @@ bool m1_tone_supported(void);
 bool m1_music_supported(void);
 bool m1_wake_alarm_tone_start(unsigned duration_seconds,unsigned tone);
 void m1_wake_alarm_stop(void);
-json_object *m1_wake_alarm_json(void);
 
 #include "../common/i18n.h"
 uint8_t device_language_get(void);

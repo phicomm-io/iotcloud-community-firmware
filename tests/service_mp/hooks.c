@@ -5,3 +5,5 @@ uint32_t test_clock_ms=123000;
 static bool recovery;
 bool device_config_recovery(void){return recovery;}
 void device_config_recovery_set(bool value){recovery=value;}
+
+uint32_t test_heap_free=1024u*1024u;
