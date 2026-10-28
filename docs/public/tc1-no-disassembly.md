@@ -1,10 +1,8 @@
-# TC1 免拆刷机
+# TC1 免拆刷机：原理与自备镜像
 
 **适用于 TC1 A1 硬件（EMW3031 / MK3031）、原厂版本 1.0.0.26 与 1.0.0.24。** 其他原厂版本、TC1 A2 与 A1 空气净化器不适用。
 
-通过 Wi-Fi 安装社区固件，无需拆壳、焊接、串口或 SWD，也不依赖原厂云服务。
-
-图文操作子页：[一个有线＋一个无线＋一个 AP](tc1-no-disassembly-ethernet-wifi-ap)，含配套固件、payload 下载，以及 Windows / Linux / macOS 命令。
+本页介绍原厂 OTA 原理、镜像打包和其他网络拓扑。直接安装请看[免拆刷机图文教程](tc1-no-disassembly-ethernet-wifi-ap)，内含配套文件和 Windows / macOS / Linux 操作。
 
 ## 原理
 
@@ -20,7 +18,7 @@
 
 - 一台 **TC1 A1 硬件版排插**，原厂版本为 **1.0.0.26** 或 **1.0.0.24**。
 - 一台同时有**有线网卡和无线网卡**的电脑，以及一台支持 **2.4 GHz 开放 Wi-Fi** 的路由器。
-- 一根网线，电脑上安装 Python 3、`curl` 和 **tftpd 等 TFTP 服务软件**。也可使用本页提供的 Python TFTP 服务。
+- 一根网线、`curl` 和 **tftpd 等 TFTP 服务软件**；自行打包镜像或运行下文脚本时需要 Python 3。
 - 对应设备的社区应用槽镜像 `tc1_community.image.bin`。
 
 也可以使用其他等效拓扑。关键是同时具备两条连接：一个客户端能连接 TC1 配网热点发送请求，TC1 随后能通过 OTA 热点访问文件服务器。
@@ -117,7 +115,7 @@ curl -s -m 5 http://10.10.10.1:8000/read-domain
 
 ### 3. 发送触发请求
 
-可直接下载对应版本的 payload 文件，跳过 Python 生成步骤：1.0.0.26 用 [tftp-trigger.bin](assets/tools/tc1-no-disassembly/tftp-trigger.bin)，1.0.0.24 用 [tftp-trigger-1.0.0.24.bin](assets/tools/tc1-no-disassembly/tftp-trigger-1.0.0.24.bin)。Windows / Linux / macOS 的完整命令见[图文操作子页](tc1-no-disassembly-ethernet-wifi-ap)。
+可直接下载对应版本的 payload 文件，跳过 Python 生成步骤：1.0.0.26 用 [tftp-trigger.bin](assets/tools/tc1-no-disassembly/tftp-trigger.bin)，1.0.0.24 用 [tftp-trigger-1.0.0.24.bin](assets/tools/tc1-no-disassembly/tftp-trigger-1.0.0.24.bin)。Windows / macOS / Linux 的完整命令见[免拆刷机图文教程](tc1-no-disassembly-ethernet-wifi-ap)。
 
 payload 的目标地址随原厂版本变化；两个版本的帧内偏移相同，只是地址平移：
 

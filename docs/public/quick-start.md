@@ -17,10 +17,12 @@
 
 如果你还没有安装本项目固件，请按对应型号的刷机文档操作：
 
-- [DAIKIN 安装与恢复](daikin-guide)：ESP32 串口首次安装，同一镜像自动探测模块
-- [TC1 刷机](tc1-flash)：EMW3031，J-Link 烧录
-- [M1 免拆迁移](m1-no-disassembly)：从原厂内网 OTA 安装，首次必须使用 0.9.21 或更新版本
-- [A1 / M1 有线刷机与恢复](a1-m1-flash)：EMW3080B，J-Link 或串口 Bootloader
+| 设备 | 首次安装 | 有线安装与恢复 |
+| --- | --- | --- |
+| TC1 A1 硬件版 | [免拆图文教程](tc1-no-disassembly-ethernet-wifi-ap)，原厂 1.0.0.24 / 1.0.0.26 | [J-Link](tc1-flash) |
+| M1 | [原厂内网免拆迁移](m1-no-disassembly)，首次从 0.9.21 起 | [J-Link / 串口](a1-m1-flash) |
+| A1 空气净化器 | 有线安装；[免拆方案仍待验证](a1-no-disassembly) | [J-Link / 串口](a1-m1-flash) |
+| DAIKIN | BRY88AB151K 可用[原厂 OTA](daikin-stock-ota) | [ESP32 串口安装](daikin-guide#首次安装) |
 
 ## 首次配网
 

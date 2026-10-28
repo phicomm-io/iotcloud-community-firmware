@@ -1,8 +1,6 @@
-# TC1 flashing: one Ethernet adapter + one Wi-Fi adapter + one AP
+# TC1 illustrated OTA guide
 
-[Back to TC1 flashing without disassembly](tc1-no-disassembly)
-
-The computer serves firmware over **Ethernet**, sends the trigger over **Wi-Fi**, and a router or AP supplies the OTA network. This guide covers preparation, flashing, first boot and cleanup on Windows, Linux and macOS. Select your computer’s operating system to follow its instructions.
+The computer serves firmware over **Ethernet** and sends the trigger over **Wi-Fi**, while a router or AP supplies the OTA network. No case opening, soldering or Python installation is needed. Supports Windows, macOS and Linux.
 
 **For TC1 A1 hardware (EMW3031 / MK3031), stock firmware 1.0.0.26 or 1.0.0.24.** Other stock versions, TC1 A2 and the A1 air purifier are outside this procedure.
 
@@ -12,7 +10,7 @@ The computer serves firmware over **Ethernet**, sends the trigger over **Wi-Fi**
 
 Use a computer with Ethernet and Wi-Fi, an Ethernet cable, and a router or AP supporting **2.4 GHz open Wi-Fi bridged to its LAN ports**. A USB Ethernet adapter works too. Keep TC1 on stable power and disconnect loads from its outlets.
 
-Create a `tc1-flash` folder and download both files into it:
+Create a `tc1-flash` folder. Download the firmware and **one trigger file matching your stock version**:
 
 | Download | Purpose |
 | --- | --- |
@@ -20,9 +18,9 @@ Create a `tc1-flash` folder and download both files into it:
 | [tftp-trigger.bin (payload, 1.0.0.26)](assets/tools/tc1-no-disassembly/tftp-trigger.bin) | Trigger sent to the stock OTA endpoint; for 1.0.0.26 |
 | [tftp-trigger-1.0.0.24.bin (payload, 1.0.0.24)](assets/tools/tc1-no-disassembly/tftp-trigger-1.0.0.24.bin) | Same trigger with the address shifted for 1.0.0.24 |
 
-Their sizes are **649,344 bytes** and **397 bytes**. Use [SHA256SUMS](assets/SHA256SUMS) to verify downloads. These are fixed tutorial files; see [Firmware updates](firmware-update) for later upgrades.
+The firmware is **649,344 bytes**; each trigger file is **397 bytes**. Verify with [SHA256SUMS](assets/SHA256SUMS). See [Firmware updates](firmware-update) for later upgrades.
 
-**No Python or firmware/payload generation is needed.** Prepare `curl` and a TFTP server. Download all files and tools before switching Wi-Fi networks.
+Prepare `curl` and a TFTP server. Download the files and tools before switching Wi-Fi networks, and keep the original filenames.
 
 <!-- os:windows -->
 
@@ -60,11 +58,11 @@ curl --version
 
 After receiving the trigger, TC1 leaves its provisioning hotspot and joins `PHICOMM_OTA_AP` to download firmware. Prepare that network first.
 
-```text
-Computer Ethernet (10.0.0.2/8, TFTP) ──cable── router / AP LAN port
-Computer Wi-Fi ──connects to── TC1 provisioning AP Phicomm_TC1_XXXX
-TC1 after receiving the trigger ──connects to── PHICOMM_OTA_AP
-```
+| Connection | Connects to | Purpose |
+| --- | --- | --- |
+| Computer Ethernet, `10.0.0.2/8` | Router / AP LAN port | Serve the firmware over TFTP |
+| Computer Wi-Fi | TC1's `Phicomm_TC1_XXXX` hotspot | Read the version and send the trigger |
+| TC1 after receiving the trigger | Router's `PHICOMM_OTA_AP` hotspot | Download firmware from the computer |
 
 Configure the router or AP's **2.4 GHz** network:
 
@@ -263,7 +261,7 @@ Check **`VERSION` = `1.0.0.26` or `1.0.0.24`**. The screenshot's `COMMITID` is `
 
 <!-- /os -->
 
-## 6. Send the payload and wait
+## 6. Send the trigger file and wait
 
 Open a terminal in the `tc1-flash` folder containing **`tftp-trigger.bin`** (use `tftp-trigger-1.0.0.24.bin` for a 1.0.0.24 device). Confirm TFTP is running, Ethernet still has `10.0.0.2`, and Wi-Fi is connected to TC1. Send **once**:
 
@@ -361,3 +359,5 @@ Disable the temporary open AP or restore its original SSID and password. Remove 
 | No TFTP request | Verify open 2.4 GHz AP, exact SSID, LAN bridging, server binding and firewall |
 | Transfer starts then stalls | Check session ports, computer sleep and Ethernet connection |
 | Download finishes but no new hotspot | Keep power on and check file size and checksum; do not repeatedly trigger OTA |
+
+For custom images or other network layouts, see [OTA internals and custom images](tc1-no-disassembly). For programmer-based recovery, see [wired flashing and recovery](tc1-flash).

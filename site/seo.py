@@ -10,9 +10,9 @@ EN_INDEX_DESCRIPTION = 'Open-source firmware for discontinued IoT devices or dev
 PRODUCT_TITLES = {
     'm1-mcu-update': '斐讯 M1 主控 MCU 网络升级教程（免拆机）',
     'tc1-guide': '斐讯 TC1 智能排插功能与操作',
-    'tc1-flash': '斐讯 TC1 刷机教程（A1 硬件版本）',
-    'tc1-no-disassembly': '斐讯 TC1 免拆刷机教程（A1 硬件版本）',
-    'tc1-no-disassembly-ethernet-wifi-ap': '斐讯 TC1 免拆刷机：一个有线＋一个无线＋一个 AP',
+    'tc1-flash': '斐讯 TC1 有线刷机与恢复（A1 硬件版本）',
+    'tc1-no-disassembly': '斐讯 TC1 免拆刷机：原理与自备镜像',
+    'tc1-no-disassembly-ethernet-wifi-ap': '斐讯 TC1 免拆刷机图文教程（有线网卡、无线网卡与 AP）',
     'm1-mcu-firmware': '斐讯 M1 ATSAMD20G18A 主控开源固件、下载与原厂备份',
     'm1-no-disassembly': '斐讯 M1 免拆刷机：内网 / 公网',
     'a1-no-disassembly': '斐讯 A1 免拆刷机：内网 / 公网',

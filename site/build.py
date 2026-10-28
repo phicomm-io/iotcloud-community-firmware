@@ -95,8 +95,8 @@ def guide_nav(active_slug, language="zh"):
     out = []
     for group, title, items in (EN_GROUPS if language == "en" else GROUPS):
         opened = ' open' if any(slug == active_slug for slug, *_ in items) else ''
-        out.append(f'<details class="guide-nav-group" data-guide-group="{group}"{opened}>'
-                   f'<summary>{esc(title)}</summary>{device_actions(group, "", language, active_slug)}')
+        out.append(f'<details class="guide-nav-group guide-section" data-guide-group="{group}"{opened}>'
+                   f'<summary>{esc(title)}</summary>{device_actions(group, "", language, active_slug if opened else None)}')
         featured = {item[1] for item in DEVICE_ACTIONS.get(group, [])}
         for slug, page_title, _, _ in items:
             if slug in featured:
@@ -106,7 +106,33 @@ def guide_nav(active_slug, language="zh"):
             out.append(f'<a href="{slug}.html"{child}{current}>{esc(page_title)}</a>')
         out.append('</details>')
     label = 'Documentation navigation' if language == 'en' else '文档导航'
-    return f'<nav class="guide-nav" aria-label="{label}">{"".join(out)}</nav>'
+    return (f'<details class="guide-directory" open><summary>{label}</summary>'
+            f'<nav class="guide-nav" aria-label="{label}">{"".join(out)}</nav></details>')
+
+
+def guide_breadcrumb(slug, language="zh"):
+    groups = EN_GROUPS if language == "en" else GROUPS
+    titles = dict((page[0], page[1]) for _, _, items in groups for page in items)
+    products = [title for _, title, items in groups if any(page[0] == slug for page in items)]
+    home = '../../en/#docs' if language == 'en' else '../#docs'
+    label, docs = ('Breadcrumb', 'Documentation') if language == 'en' else ('当前位置', '文档')
+    items = [f'<li><a href="{home}">{docs}</a></li>', f'<li>{esc(" / ".join(products))}</li>']
+    if slug in PARENTS:
+        parent = PARENTS[slug]
+        items.append(f'<li><a href="{parent}.html">{esc(titles[parent])}</a></li>')
+    return f'<nav class="guide-breadcrumb" aria-label="{label}"><ol>{"".join(items)}</ol></nav>'
+
+
+def guide_contents(body, language="zh"):
+    headings = re.findall(r'<h2\b[^>]*\bid="([^"]+)"[^>]*>(.*?)</h2>', body, re.S)
+    if len(headings) < 3:
+        return body
+    links = ''.join(f'<li><a href="#{esc(anchor)}">{esc(html.unescape(re.sub(r"<[^>]+>", "", title)))}</a></li>'
+                    for anchor, title in headings)
+    label = 'On this page' if language == 'en' else '本文目录'
+    contents = (f'<details class="guide-toc" open><summary>{label}</summary>'
+                f'<nav aria-label="{label}"><ul>{links}</ul></nav></details>')
+    return re.sub(r'(?=<h2\b)', lambda _: contents, body, count=1)
 
 
 def pager(slug, language="zh"):
@@ -206,6 +232,7 @@ def render_guide(slug, title, summary, source, language="zh", notes_manifest=Non
         body = notes_body(notes_manifest, 'en' if english else 'zh-CN')
         scripts = ''.join(f'<script src="{base}releases/notes/{name}.js"></script>'
                           for name in ('core', 'client', 'page'))
+    body = guide_contents(body, language)
     return (f'<!doctype html><html lang="{"en" if english else "zh-CN"}"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width,initial-scale=1">'
             f'{guide_metadata(slug, title, summary, language)}'
@@ -215,7 +242,8 @@ def render_guide(slug, title, summary, source, language="zh", notes_manifest=Non
             f'<div class="guide-layout">'
             f'{guide_nav(slug, language)}'
             f'<main class="guide-main" id="main">'
-            f'<p class="guide-language" aria-label="Language">{switch}</p><article class="prose">{body}</article>'
+            f'<div class="guide-context">{guide_breadcrumb(slug, language)}'
+            f'<p class="guide-language" aria-label="Language">{switch}</p></div><article class="prose">{body}</article>'
             f'{pager(slug, language)}'
             f'</main></div>'
             f'{footer(language)}'
