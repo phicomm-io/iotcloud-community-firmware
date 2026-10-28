@@ -2,10 +2,11 @@
 #include "mqtt/queue.h"
 #include "mqtt/service.h"
 #include "automation.h"
-#include "json_owned.h"
-#include "printbuf.h"
 #include "phicomm_features.h"
 #include "sensor_field.h"
+#include "sensor_mp.h"
+#include "ha_json.h"
+#include "ha_command.h"
 #include "sntp.h"
 #include <math.h>
 #include <stdio.h>
@@ -18,7 +19,6 @@
 #include "m1.h"
 #define LOCAL_ID m1_id
 #endif
-#include "config_json.c"
 #include "config_mp.inc"
 #include "service_mp.h"
 #include "engine.c"
@@ -130,80 +130,27 @@ static bool peer_current(const feature_config_t *c, unsigned i) {
          !memcmp(configuration.peers[i].token, c->peers[i].token, 16);
 }
 
-static bool enqueue(const char *t, json_object *o, bool retain) {
-  if (!o) return false;
-  char prefix[160];uint32_t generation;
-  mico_rtos_lock_mutex(&namespace_lock);
-  mqtt_format(prefix,sizeof(prefix),"phicomm/v2/%s/",feature_account.key);
-  generation=mqtt_generation;
-  mico_rtos_unlock_mutex(&namespace_lock);
-  size_t prefix_length=strlen(prefix);
-  if(strncmp(t,prefix,prefix_length) || strlen(t+prefix_length)>=128)return false;
-  const char *wire=json_object_to_json_string(o);
-  if(!wire)return false;
-  return ph_mqtt_enqueue_send_generation(t,wire,strlen(wire),1,retain,generation)==0;
+static bool enqueue_mp(const char *topic,const ph_buf *wire,bool retain) {
+ if(!wire)return false;char prefix[160];uint32_t generation;
+ mico_rtos_lock_mutex(&namespace_lock);mqtt_format(prefix,sizeof(prefix),"phicomm/v2/%s/",feature_account.key);generation=mqtt_generation;mico_rtos_unlock_mutex(&namespace_lock);
+ size_t n=strlen(prefix);if(strncmp(topic,prefix,n)||strlen(topic+n)>=128)return false;
+ return ph_mqtt_enqueue_send_generation(topic,wire->buf,wire->len,1,retain,generation)==0;
 }
-
-static json_object *parse(const void *data, size_t n) {
-  if (!n || n > 8192 || memchr(data, 0, n))
-    return NULL;
-  for(size_t i=0;i+6<=n;i++)if(!memcmp((const char *)data+i,"\\u0000",6))return NULL;
-  struct json_tokener *t = json_tokener_new();
-  if (!t)
-    return NULL;
-  json_object *o = json_tokener_parse_ex(t, data, n);
-  bool ok = t->err == json_tokener_success && o &&
-            json_object_is_type(o, json_type_object);
-  int used = t->char_offset;
-  while (used < (int)n && ((const char *)data)[used] <= ' ')
-    used++;
-  ok = ok && used == (int)n;
-  json_tokener_free(t);
-  if (ok) {
-    json_object_object_foreach(o, key, value) {
-      UNUSED_PARAMETER(key);
-      if (!value)
-        ok = false;
-    }
-  }
-  if (!ok) {
-    if (o)
-      json_object_put(o);
-    return NULL;
-  }
-  return o;
+static ph_buf *domain_get_wire_mp(const char *domain){
+ ph_writer w;if(!phw_init_capacity(&w,PH_WIRE_MSGPACK,512))return NULL;
+ if(!feature_domain_get_mp(domain,&w)){phw_discard(&w);return NULL;}return phw_take(&w);
+}
+static ph_buf *domain_set_wire_mp(const char *domain,const ph_value *params,int *status){
+ *status=500;ph_writer w;if(!phw_init_capacity(&w,PH_WIRE_MSGPACK,512))return NULL;
+ *status=feature_domain_set_mp(domain,params,&w);return phw_take(&w);
+}
+static ph_buf *domain_config_wire_mp(const feature_config_t *c,const char *domain,bool source){
+ ph_writer w;if(!phw_init_capacity(&w,PH_WIRE_MSGPACK,512))return NULL;phw_begin(&w,NULL,false);
+ if(!feature_config_fields_mp(c,domain,&w)){phw_discard(&w);return NULL;}
+ if(source)phw_text(&w,"_source",LOCAL_ID);phw_end(&w);return phw_take(&w);
 }
 static const char *topic_domain(const char *d) {
   return !strcmp(d, "light") ? "light/config" : d;
-}
-static unsigned integer(json_object *o, const char *k) {
-  return (unsigned)json_object_get_int64(json_object_object_get(o, k));
-}
-static const char *string(json_object *o, const char *k) {
-  json_object *v = json_object_object_get(o, k);
-  return v && json_object_is_type(v, json_type_string)
-             ? json_object_get_string(v)
-             : "";
-}
-static void number(json_object *o, const char *k, unsigned n) {
-  /* MiCO JSON emits signed 32-bit counters; readers preserve their bits. */
-  json_build_object_add(o, k, json_object_new_int((int32_t)n));
-}
-static void token_text(const uint8_t t[16], char out[33]) {
-  for (unsigned i = 0; i < 16; i++)
-    sprintf(out + i * 2, "%02x", t[i]);
-}
-static bool token_read(const char *s, uint8_t out[16]) {
-  if (strlen(s) != 32)
-    return false;
-  for (unsigned i = 0; i < 16; i++) {
-    unsigned v;
-    char pair[3] = {s[i * 2], s[i * 2 + 1], 0};
-    if (strspn(pair, "0123456789abcdef") != 2 || sscanf(pair, "%x", &v) != 1)
-      return false;
-    out[i] = v;
-  }
-  return true;
 }
 static bool new_token(uint8_t t[16]) {
   if (MicoRandomNumberRead(t, 16) != kNoErr)
@@ -271,82 +218,6 @@ static bool install_config(feature_config_t *c) {
 #endif
   service_cache_changed(SERVICE_CACHE_ALL);
   return true;
-}
-static void sensor_decode(json_object *o, feature_sample_t *s) {
-  const char *names[]={"temperature","humidity","pm25","formaldehyde","co2"};
-  const char *units[]={"°C","%","µg/m³","mg/m³","ppm"};
-  json_object *values=json_object_object_get(o,"sensors");
-  memset(s,0,sizeof(*s));s->partial=true;s->received_ms=s->co2_received_ms=now_ms();
-  for(unsigned f=0;f<5;f++) {
-    json_object *field=json_object_object_get(values,names[f]);
-    /* UDP v2 permits its historical body; numeric MQTT schema2 requires
-     * an explicit descriptor. Unknown future types never become numbers. */
-    if(values && integer(o,"schema")==2){
-      json_object *name=json_object_object_get(field,"name"),*unit=json_object_object_get(field,"unit");
-      if(strcmp(string(field,"type"),"number") || json_object_get_string_len(json_object_object_get(field,"type"))!=6 ||
-         !sensor_field_text(string(field,"name"),name?json_object_get_string_len(name):0,1,SENSOR_FIELD_NAME_MAX) ||
-         !sensor_field_text(string(field,"unit"),unit?json_object_get_string_len(unit):0,0,SENSOR_FIELD_UNIT_MAX))continue;
-    }
-    json_object *v=json_object_object_get(values?field:o,names[f]);
-    if(values)v=json_object_object_get(field,"value");
-    json_object *age=json_object_object_get(values?field:o,values?"age_ms":f==4?"co2_age_ms":"age_ms");
-    bool enabled=values?integer(field,"valid"):integer(o,f==4?"co2_valid":"valid");
-    if(f==4)s->co2_supported=values?field!=NULL:integer(o,"co2_supported");
-    if(!enabled || (values&&(!json_object_is_type(json_object_object_get(field,"valid"),json_type_boolean) ||
-       strcmp(string(field,"unit"),units[f]) || json_object_get_string_len(json_object_object_get(field,"unit"))!=(int)strlen(units[f]))) || !age || !json_object_is_type(age,json_type_int) ||
-       json_object_get_int64(age)<0 || json_object_get_int64(age)>=(f==4?20000u:FEATURE_STALE_MS) ||
-       (!json_object_is_type(v,json_type_int)&&!json_object_is_type(v,json_type_double)))continue;
-    float value=json_object_get_double(v);
-    if(!isfinite(value)||(f==0&&(value < -40 || value>125))||(f==1&&(value<0||value>100))||(f>=2&&value<0)||(f==4&&(value==0||value>65535)))continue;
-    if(f==4){s->co2=value;s->co2_valid=true;s->co2_age_ms=integer(values?field:o,values?"age_ms":"co2_age_ms");}
-    else {s->fields|=1u<<f;s->value[f]=value;s->field_age_ms[f]=json_object_get_int(age);if((unsigned)json_object_get_int(age)>s->age_ms)s->age_ms=json_object_get_int(age);}
-  }
-  s->valid=s->fields!=0;s->boot=integer(o,"boot");s->sequence=integer(o,"sequence");
-}
-static void co2_body(json_object *o, const feature_sample_t *s, uint32_t now) {
-  json_build_object_add(o,"co2_supported",json_object_new_boolean(s->co2_supported));
-  json_build_object_add(o,"co2_valid",json_object_new_boolean(feature_co2_fresh(s,now)));
-  number(o,"co2_age_ms",s->co2_age_ms+(uint32_t)(now-s->co2_received_ms));
-  if(feature_co2_fresh(s,now)) json_build_object_add(o,"co2",json_object_new_double(s->co2));
-  else json_object_object_add(o,"co2",NULL);
-}
-static json_object *sample_body(const feature_sample_t *s, uint32_t now) {
-  json_object *o = json_object_new_object();
-  if (!o)
-    return NULL;
-  co2_body(o,s,now);
-#ifdef FEATURE_DEVICE_A1
-  number(o, "sequence", s->sequence);
-  number(o, "boot", s->boot);
-#else
-  /* Typed MQTT measurements use positive uint32 counters. Keep the UDP
-   * control envelope's historical bit-preserving representation separate. */
-  json_build_object_add(o,"sequence",json_object_new_int64(s->sequence));
-  json_build_object_add(o,"boot",json_object_new_int64(s->boot));
-#endif
-  number(o, "age_ms", s->age_ms + (uint32_t)(now - s->received_ms));
-  json_build_object_add(o, "valid",
-                         json_object_new_boolean(feature_sample_fresh(s, now)));
-  const char *keys[] = {"temperature", "humidity", "pm25", "formaldehyde"};
-  for (unsigned i = 0; i < 4; i++)
-    json_object_object_add(o, keys[i], (feature_sample_fresh_fields(s,now)&(1u<<i))?json_object_new_double(s->value[i]):NULL);
-  #ifndef FEATURE_DEVICE_A1
-  js(o,"model","m1");
-  json_object *values=json_object_new_object();
-  const char *units[]={"°C","%","µg/m³","mg/m³","ppm"};
-  for(unsigned i=0;i<5;i++) {
-    if(i==4&&!s->co2_supported)continue;
-    bool fresh=i==4?feature_co2_fresh(s,now):(feature_sample_fresh_fields(s,now)&(1u<<i))!=0;
-    json_object *field=json_object_new_object();
-    js(field,"type","number");js(field,"name",i==4?"co2":keys[i]);
-    js(field,"unit",units[i]);json_build_object_add(field,"valid",json_object_new_boolean(fresh));
-    number(field,"age_ms",i==4?s->co2_age_ms+(uint32_t)(now-s->co2_received_ms):s->age_ms+(uint32_t)(now-s->received_ms));
-    json_object_object_add(field,"value",fresh?json_object_new_double(i==4?s->co2:s->value[i]):NULL);
-    json_build_object_add(values,i==4?"co2":keys[i],field);
-  }
-  json_build_object_add(o,"sensors",values);
-  #endif
-  return o;
 }
 #include "lan_client_adapter.inc"
 #include "lan_sensor.inc"
@@ -656,7 +527,7 @@ unsigned feature_mqtt_filters(char filters[][FEATURE_TOPIC_MAX], unsigned capaci
   mqtt_link_topic(&a,"a1",LOCAL_ID,"+","request",filters[n++],FEATURE_TOPIC_MAX);
   mqtt_aux(&a,"address","+",filters[n++],FEATURE_TOPIC_MAX);
   if(c->peer_count || c->group[0]) {char root[FEATURE_TOPIC_MAX];root_for(c,0,root);mqtt_format(filters[n++],FEATURE_TOPIC_MAX,"%s/#",root);}
-  if(c->peer_count)mqtt_aux(&a,"sensor","+/state",filters[n++],FEATURE_TOPIC_MAX);
+  if(c->peer_count)mqtt_aux(&a,"sensor","+/+",filters[n++],FEATURE_TOPIC_MAX);
 #else
   char leaf[32];snprintf(leaf,sizeof(leaf),"%s/command",LOCAL_ID);
   mqtt_aux(&a,"sensor",leaf,filters[n++],FEATURE_TOPIC_MAX);
@@ -703,6 +574,7 @@ static __attribute__((noinline)) bool display_availability_input(const mqtt_acco
   return true;
 }
 #endif
+#include "runtime_sensor_mp.inc"
 bool feature_mqtt_input(const char *t, const void *data, size_t n,
                         bool retained) {
   mqtt_account_t account = mqtt_snapshot();
@@ -714,41 +586,7 @@ bool feature_mqtt_input(const char *t, const void *data, size_t n,
     if(!retained){ph_value root,action,params;if(phv_parse(PH_WIRE_MSGPACK,data,n,&root)&&phv_get(&root,"action",&action)&&phv_equal_text(&action,"sensor.session.set")&&phv_get(&root,"params",&params)){const char *code;feature_sensor_session_mp(&params,&code);}}return true;
   }
 #endif
-  char sensor_prefix[FEATURE_TOPIC_MAX];mqtt_aux(&account,"sensor","",sensor_prefix,sizeof(sensor_prefix));
-  size_t prefix_len=strlen(sensor_prefix);
-  if(!strncmp(t,sensor_prefix,prefix_len)){
-    // Account-scoped read-only measurements. Model is deliberately absent.
-    // Retained snapshots cannot prove freshness after reconnection.
-    const char *suffix=t+prefix_len;char mac[13];
-    if(retained || strlen(suffix)!=18 || strcmp(suffix+12,"/state"))return true;
-    memcpy(mac,suffix,12);mac[12]=0;char normalized[13];if(!feature_mac(mac,normalized))return true;
-    json_object *o=parse(data,n);if(!o)return true;
-    json_object *schema=json_object_object_get(o,"schema"),*id=json_object_object_get(o,"device_id"),*boot=json_object_object_get(o,"boot"),*seq=json_object_object_get(o,"sequence");
-    if(!schema || !json_object_is_type(schema,json_type_int)||json_object_get_int64(schema)!=2 ||
-       !id || !json_object_is_type(id,json_type_string)||json_object_get_string_len(id)!=12||strcmp(string(o,"device_id"),normalized) ||
-       !boot || !json_object_is_type(boot,json_type_int)||json_object_get_int64(boot)<1||json_object_get_int64(boot)>UINT32_MAX ||
-       !seq || !json_object_is_type(seq,json_type_int)||json_object_get_int64(seq)<1||json_object_get_int64(seq)>UINT32_MAX){json_object_put(o);return true;}
-#ifndef FEATURE_DEVICE_A1
-    /* Numeric bindings are independent of the legacy linkage decoder's
-     * known sensor subset. A new field/model needs no firmware adaptation. */
-    m1_display_source_sample(normalized,o);
-#endif
-    feature_sample_t sample;sensor_decode(o,&sample);
-    if(!sample.boot||!sample.sequence){json_object_put(o);return true;}
-#ifdef FEATURE_DEVICE_A1
-    lock();for(unsigned i=0;i<configuration.peer_count;i++)if(!strcmp(configuration.peers[i].id,normalized)){
-      if(peers[i].lan && (uint32_t)(now_ms()-peers[i].last_seen)<FEATURE_STALE_MS)break;
-      bool retired=false;for(unsigned k=0;k<4;k++)retired|=peers[i].retired_boot[k]==sample.boot;
-      if(retired || (samples[i].partial && sample.boot==samples[i].boot && (int32_t)(sample.sequence-samples[i].sequence)<=0))break;
-      if(samples[i].partial && samples[i].boot!=sample.boot){memmove(peers[i].retired_boot+1,peers[i].retired_boot,3*sizeof(uint32_t));peers[i].retired_boot[0]=samples[i].boot;}
-      if(!peers[i].lan || (uint32_t)(now_ms()-peers[i].last_seen)>=FEATURE_STALE_MS)samples[i]=sample;
-      break;
-    }unlock();
-#else
-    m1_co2_source_sample(normalized,&sample);
-#endif
-    json_object_put(o);return true;
-  }
+  if(runtime_sensor_input_mp(&account,t,data,n,retained))return true;
   char address_prefix[192];
   mqtt_aux(&account,"address","",address_prefix,sizeof(address_prefix));
   size_t address_length = strlen(address_prefix);
@@ -756,30 +594,12 @@ bool feature_mqtt_input(const char *t, const void *data, size_t n,
 #ifndef FEATURE_DEVICE_A1
     return false;
 #else
-    json_object *o = parse(data, n);
-    if (o) {
-      char mac[13];
-      const char *ip = string(o, "ip");
-      if (feature_mac(t + address_length, mac) && strlen(ip) < 16 &&
-          inet_addr(ip) != INADDR_NONE && inet_addr(ip) != 0) {
-        lock();
-        for (unsigned i = 0; i < configuration.peer_count; i++)
-          if (!strcmp(configuration.peers[i].id, mac)) {
-            strcpy(peers[i].ip, ip);
-            if (!retained)
-              peers[i].last_seen = now_ms();
-          }
-        for (unsigned i = 0; i < configuration.member_count; i++)
-          if (!strcmp(configuration.members[i].id, mac)) {
-#ifdef FEATURE_DEVICE_A1
-            strcpy(group_members[i].ip, ip);
-#endif
-            if (!retained)
-              member_seen[i] = now_ms();
-          }
-        unlock();
-      }
-      json_object_put(o);
+    ph_value body,field;char mac[13],ip[16];
+    if(phv_parse(PH_WIRE_MSGPACK,data,n,&body)&&body.kind==PHV_MAP&&phv_get(&body,"ip",&field)&&phv_text(&field,ip,sizeof(ip))&&feature_mac(t+address_length,mac)&&inet_addr(ip)!=INADDR_NONE&&inet_addr(ip)!=0){
+      lock();
+      for(unsigned i=0;i<configuration.peer_count;i++)if(!strcmp(configuration.peers[i].id,mac)){strcpy(peers[i].ip,ip);if(!retained)peers[i].last_seen=now_ms();}
+      for(unsigned i=0;i<configuration.member_count;i++)if(!strcmp(configuration.members[i].id,mac)){strcpy(group_members[i].ip,ip);if(!retained)member_seen[i]=now_ms();}
+      unlock();service_cache_changed(SERVICE_CACHE_STATUS);
     }
     return true;
 #endif
@@ -809,16 +629,10 @@ bool feature_mqtt_input(const char *t, const void *data, size_t n,
       if (!strcmp(leaf, action)) {
         if (retained)
           return true;
-        json_object *o = parse(data, n), *r = NULL;
-        if (o) {
-          feature_set(domains[d], o, &r);
-          json_object_put(o);
-          if (r) {
-            mqtt_format(result, sizeof(result), "%s%s/result", original,
-                     topic_domain(domains[d]));
-            enqueue(result, r, false);
-            json_object_put(r);
-          }
+        ph_value params;
+        if(phv_parse(PH_WIRE_MSGPACK,data,n,&params)&&params.kind==PHV_MAP){
+          int status;ph_buf *reply=domain_set_wire_mp(domains[d],&params,&status);
+          if(reply){mqtt_format(result,sizeof(result),"%s%s/result",original,topic_domain(domains[d]));enqueue_mp(result,reply,false);ph_buf_free(reply);}
         }
         return true;
       }
@@ -826,21 +640,17 @@ bool feature_mqtt_input(const char *t, const void *data, size_t n,
       if (!strcmp(leaf, action)) {
         if (retained)
           return true;
-        json_object *o = feature_json(domains[d]);
-        if (o) {
-          mqtt_format(result, sizeof(result), "%s%s/state", original,
-                   topic_domain(domains[d]));
-          enqueue(result, o, true);
-          json_object_put(o);
-        }
+        ph_buf *wire=domain_get_wire_mp(domains[d]);
+        if(wire){mqtt_format(result,sizeof(result),"%s%s/state",original,topic_domain(domains[d]));enqueue_mp(result,wire,true);ph_buf_free(wire);}
         return true;
       }
     }
   }
   return virtual_input(t, data, n, retained);
 }
-static void virtual_service(int (*publish)(const char *, const char *, bool));
+static void virtual_service(int (*publish)(const char *, const void *, size_t, bool));
 void feature_mqtt_session(const mqtt_account_t *account) {
+  sensor_descriptors_reset();
 #ifndef FEATURE_DEVICE_A1
   m1_co2_source_reset();
   m1_display_source_mqtt_reset();
@@ -875,12 +685,12 @@ void feature_mqtt_session(const mqtt_account_t *account) {
 #endif
   unlock();
 }
-static int (*active_publish)(const char *, const char *, bool);
-static int checked_publish(const char *topic, const char *body, bool retain) {
+static int (*active_publish)(const char *, const void *, size_t, bool);
+static int checked_publish(const char *topic, const void *body,size_t length, bool retain) {
   if (publish_error) return publish_error;
-  publish_error=active_publish(topic,body,retain); return publish_error;
+  publish_error=active_publish(topic,body,length,retain); return publish_error;
 }
-int feature_mqtt_service(int (*publish)(const char *, const char *, bool), bool connected) {
+int feature_mqtt_service(int (*publish)(const char *, const void *, size_t, bool), bool connected) {
   if (!connected) { mqtt_online=false; return 0; }
   active_publish=publish; publish_error=0;
   virtual_service(checked_publish);
@@ -1064,19 +874,11 @@ static void feature_worker(mico_thread_arg_t arg) {
       char topic[FEATURE_TOPIC_MAX];
       mqtt_account_t account = mqtt_snapshot();
       mqtt_aux(&account,"address",LOCAL_ID,topic,sizeof(topic));
-      json_object *o = json_object_new_object();
-      js(o, "mac", LOCAL_ID);
-      js(o, "ip", state.ip);
-      js(o, "group", c->group);
-      number(o, "boot", boot_id);
-#ifdef FEATURE_DEVICE_A1
-      number(o, "kind", FEATURE_A1);
-#else
-      number(o, "kind", FEATURE_M1);
-#endif
-      enqueue(topic, o, true);
-      enqueue(topic, o, false);
-      json_object_put(o);
+      ph_writer w;
+      if(phw_init_capacity(&w,PH_WIRE_MSGPACK,256)){
+       phw_begin(&w,NULL,false);phw_text(&w,"mac",LOCAL_ID);phw_text(&w,"ip",state.ip);phw_text(&w,"group",c->group);phw_u32(&w,"boot",boot_id);phw_uint(&w,"kind",FEATURE_A1);phw_end(&w);
+       ph_buf *wire=phw_take(&w);if(wire){enqueue_mp(topic,wire,true);enqueue_mp(topic,wire,false);ph_buf_free(wire);}
+      }
     }
     group_poll(c,now);
     for(unsigned i=0;i<c->peer_count;i++)sensor_poll(c,i,now,state.mqtt_connected);
@@ -1239,202 +1041,72 @@ OSStatus feature_start(void) {
 }
 static const char *domains[] = {"binding",  "linkage", "light",
                                 "schedule", "sleep",   "time"};
-static bool virtual_input(const char *t, const void *data, size_t n,
-                          bool retained) {
+static bool virtual_input(const char *t,const void *data,size_t n,bool retained){
 #ifndef FEATURE_DEVICE_A1
-  return false;
-#endif
-  feature_config_t *c = malloc(sizeof(*c));
-  if (!c)
-    return false;
-  feature_config_get(c);
-  char root[FEATURE_TOPIC_MAX];
-  root_for(c, 0, root);
-  const char *leaf = NULL;
-#ifndef FEATURE_DEVICE_A1
-  char selected_root[FEATURE_TOPIC_MAX];
-  mqtt_format(selected_root, sizeof(selected_root), "%s", root);
-#endif
-#ifdef FEATURE_DEVICE_A1
-  if (!strncmp(t, root, strlen(root)) && t[strlen(root)] == '/')
-    leaf = t + strlen(root) + 1;
+ (void)t;(void)data;(void)n;(void)retained;return false;
 #else
-  for (unsigned i = 0; i < c->peer_count; i++) {
-    root_for(c, i, root);
-    if (!strncmp(t, root, strlen(root)) && t[strlen(root)] == '/') {
-      leaf = t + strlen(root) + 1;
-      break;
-    }
+ feature_config_t *c=malloc(sizeof(*c));if(!c)return false;feature_config_get(c);
+ char root[FEATURE_TOPIC_MAX];root_for(c,0,root);size_t root_n=strlen(root);
+ if(strncmp(t,root,root_n)||t[root_n]!='/'){free(c);return false;}
+ const char *leaf=t+root_n+1;if(retained){free(c);return true;}
+ char member[20],mac[18];feature_colon_mac(LOCAL_ID,mac);mqtt_format(member,sizeof(member),"%s/",mac);if(!strncmp(leaf,member,strlen(member)))leaf+=strlen(member);
+ if(!strcmp(leaf,"command")||!strcmp(leaf,"ha/command")){
+  bool coordinator=feature_is_coordinator();free(c);if(!coordinator)return true;
+  ph_buf *reply=NULL;
+  if(!strcmp(leaf,"ha/command")){unsigned char bytes[1536];size_t bytes_n=ha_command_pack(data,n,bytes,sizeof(bytes));if(bytes_n)reply=service_command_mp(bytes,bytes_n);}
+  else reply=service_command_mp(data,n);
+  if(reply){char topic[FEATURE_TOPIC_MAX];mqtt_format(topic,sizeof(topic),"%s/result",root);enqueue_mp(topic,reply,false);ph_buf_free(reply);}return true;
+ }
+ for(unsigned d=0;d<sizeof(domains)/sizeof(domains[0]);d++){
+  char get[40],set[40],topic[FEATURE_TOPIC_MAX];mqtt_format(get,sizeof(get),"%s/get",topic_domain(domains[d]));mqtt_format(set,sizeof(set),"%s/set",topic_domain(domains[d]));
+  if(!strcmp(leaf,get)){
+   free(c);if(feature_is_coordinator()){ph_buf *wire=domain_get_wire_mp(domains[d]);if(wire){mqtt_format(topic,sizeof(topic),"%s/%s/state",root,topic_domain(domains[d]));enqueue_mp(topic,wire,true);ph_buf_free(wire);}}return true;
   }
+  if(!strcmp(leaf,set)){
+   bool permitted=!c->group[0]||feature_is_coordinator();free(c);if(!permitted)return true;ph_value params;
+   if(phv_parse(PH_WIRE_MSGPACK,data,n,&params)&&params.kind==PHV_MAP){
+    int status;ph_buf *reply=domain_set_wire_mp(domains[d],&params,&status);
+    if(status==200){feature_config_t *updated=malloc(sizeof(*updated));if(updated){feature_config_get(updated);ph_buf *state=domain_config_wire_mp(updated,domains[d],true);free(updated);if(state){mqtt_format(topic,sizeof(topic),"%s/%s/state",root,topic_domain(domains[d]));enqueue_mp(topic,state,true);ph_buf_free(state);}}}
+    if(reply){if(feature_is_coordinator()){mqtt_format(topic,sizeof(topic),"%s/%s/result",root,topic_domain(domains[d]));enqueue_mp(topic,reply,false);}ph_buf_free(reply);}
+   }return true;
+  }
+  char state[40];mqtt_format(state,sizeof(state),"%s/state",topic_domain(domains[d]));
+  if(c->group[0]&&!strcmp(leaf,state)){
+   ph_value params,v;char raw[18],source[13];
+   if(phv_parse(PH_WIRE_MSGPACK,data,n,&params)&&params.kind==PHV_MAP&&phv_get(&params,"_source",&v)&&phv_text(&v,raw,sizeof(raw))&&feature_mac(raw,source)&&strcmp(source,LOCAL_ID)){
+    bool authorized=false;for(unsigned i=0;i<c->member_count;i++)authorized|=!strcmp(c->members[i].id,source);
+    if(authorized){feature_config_t *next=malloc(sizeof(*next));if(next){*next=*c;if(feature_config_decode_mp(next,domains[d],&params)&&memcmp(c,next,sizeof(*c)))install_config(next);free(next);}}
+   }free(c);return true;
+  }
+ }
+ const char *kind=NULL,*key=NULL;
+ if(!strcmp(leaf,"fan/set")){kind="fan";key="on";}else if(!strcmp(leaf,"fan/percentage/set")){kind="fan";key="speed";}
+ else if(!strcmp(leaf,"light/set"))kind="light";else if(!strcmp(leaf,"child_lock/set")){kind="child_lock";key="enabled";}
+ else if(!strcmp(leaf,"led_always_on/set")){kind="light";key="always_on";}
+ free(c);
+ /* Historical HA native leaves accept only their documented scalar settings.
+  * General cloud commands and config leaves above accept MessagePack only. */
+ if(kind&&n&&n<FEATURE_WIRE_MAX){
+  unsigned char bytes[1536];size_t length=0;
+  if(!key)length=ha_command_pack(data,n,bytes,sizeof(bytes));
+  else if(n<16&&!memchr(data,0,n)){
+   char value[16];memcpy(value,data,n);value[n]=0;ph_writer w;ph_buf buffer;
+   if(phw_init_fixed(&w,PH_WIRE_MSGPACK,&buffer,bytes,sizeof(bytes))){phw_begin(&w,NULL,false);
+    if(!strcmp(key,"speed")){char *end;long speed=strtol(value,&end,10);if(end!=value&&!*end&&speed>=0&&speed<=100)phw_uint(&w,key,speed);else w.failed=true;}
+    else if(!strcmp(value,"ON")||!strcmp(value,"OFF"))phw_bool(&w,key,!strcmp(value,"ON"));else w.failed=true;
+    phw_end(&w);length=phw_finish_fixed(&w);
+   }
+  }
+  ph_value params;if(length&&phv_parse(PH_WIRE_MSGPACK,bytes,length,&params)){const char *code;feature_control_mp(kind,&params,&code);}
+ }
+ return true;
 #endif
-  if (!leaf) {
-    free(c);
-    return false;
-  }
-  if (retained) {
-    free(c);
-    return true;
-  }
-#ifdef FEATURE_DEVICE_A1
-  char member[20], member_mac[18];
-  feature_colon_mac(LOCAL_ID, member_mac);
-  mqtt_format(member, sizeof(member), "%s/", member_mac);
-  if (!strncmp(leaf, member, strlen(member)))
-    leaf += strlen(member);
-  if(!strcmp(leaf,"command")){
-    if(feature_is_coordinator()){
-      json_object *q=service_parse(data,n),*reply=service_command(q);if(q)json_object_put(q);
-      if(reply){char topic[FEATURE_TOPIC_MAX];mqtt_format(topic,sizeof(topic),"%s/result",root);enqueue(topic,reply,false);json_object_put(reply);}
-    }
-    free(c);return true;
-  }
-  for (unsigned d = 0; d < COUNT(domains); d++) {
-    char get[40], set[40], topic[FEATURE_TOPIC_MAX];
-    mqtt_format(get, sizeof(get), "%s/get", topic_domain(domains[d]));
-    mqtt_format(set, sizeof(set), "%s/set", topic_domain(domains[d]));
-    if (!strcmp(leaf, get)) {
-      if (feature_is_coordinator()) {
-        json_object *o = feature_json(domains[d]);
-        mqtt_format(topic, sizeof(topic), "%s/%s/state", root,
-                 topic_domain(domains[d]));
-        if (o) {
-          enqueue(topic, o, true);
-          json_object_put(o);
-        }
-      }
-      free(c);
-      return true;
-    }
-    if (!strcmp(leaf, set)) {
-      if (c->group[0] && !feature_is_coordinator()) {
-        free(c);
-        return true;
-      }
-      json_object *o = parse(data, n), *r = NULL;
-      if (o) {
-        int code = feature_set(domains[d], o, &r);
-        if (code == 200) {
-          json_object *state = feature_json(domains[d]);
-          if (state) {
-            js(state, "_source", LOCAL_ID);
-            mqtt_format(topic, sizeof(topic), "%s/%s/state", root,
-                     topic_domain(domains[d]));
-            enqueue(topic, state, true);
-            json_object_put(state);
-          }
-        }
-        json_object_put(o);
-        if (r && feature_is_coordinator()) {
-          mqtt_format(topic, sizeof(topic), "%s/%s/result", root,
-                   topic_domain(domains[d]));
-          enqueue(topic, r, false);
-        }
-        if (r)
-          json_object_put(r);
-      }
-      free(c);
-      return true;
-    }
-  }
-  if (c->group[0])
-    for (unsigned d = 0; d < COUNT(domains); d++) {
-      char state[40];
-      mqtt_format(state, sizeof(state), "%s/state", topic_domain(domains[d]));
-      if (!strcmp(leaf, state)) {
-        json_object *o = parse(data, n);
-        if (o && strcmp(string(o, "_source"), LOCAL_ID) &&
-            feature_mac(string(o, "_source"), (char[13]){0})) {
-          bool member = false;
-          for (unsigned i = 0; i < c->member_count; i++)
-            member |= !strcmp(c->members[i].id, string(o, "_source"));
-          if (member) {
-            json_object *local = config_encode(c, domains[d]);
-            json_object_object_del(o, "revision");
-            json_object_object_del(o, "_source");
-            if (local) {
-              json_object_object_del(local, "revision");
-              const char *local_wire = json_object_to_json_string(local);
-              const char *remote_wire = json_object_to_json_string(o);
-              if (local_wire && remote_wire && strcmp(local_wire, remote_wire) &&
-                  config_decode(c, domains[d], o))
-                install_config(c);
-              json_object_put(local);
-            }
-          }
-        }
-        if (o)
-          json_object_put(o);
-        free(c);
-        return true;
-      }
-    }
-  const char *kind = NULL, *key = NULL;
-  if (!strcmp(leaf, "fan/set")) {
-    kind = "fan";
-    key = "on";
-  } else if (!strcmp(leaf, "fan/percentage/set")) {
-    kind = "fan";
-    key = "speed";
-  } else if (!strcmp(leaf, "light/set"))
-    kind = "light";
-  else if (!strcmp(leaf, "child_lock/set")) {
-    kind = "child_lock";
-    key = "enabled";
-  } else if (!strcmp(leaf, "led_always_on/set")) {
-    kind = "light";
-    key = "always_on";
-  }
-  if (kind && n && n < FEATURE_WIRE_MAX) {
-    json_object *o = NULL;
-    if (!key)
-      o = parse(data, n);
-    else {
-      char b[16];
-      if (n < sizeof(b)) {
-        memcpy(b, data, n);
-        b[n] = 0;
-        o = json_object_new_object();
-        if (!strcmp(key, "speed")) {
-          char *end;
-          long value = strtol(b, &end, 10);
-          if (end == b || *end || value < 0 || value > 100) {
-            json_object_put(o);
-            o = NULL;
-          } else
-            number(o, key, value);
-        } else if (!strcmp(b, "ON") || !strcmp(b, "OFF"))
-          json_build_object_add(o, key,
-                                 json_object_new_boolean(!strcmp(b, "ON")));
-        else {
-          json_object_put(o);
-          o = NULL;
-        }
-      }
-    }
-    if (o) {
-      a1_control_local(kind, o);
-      json_object_put(o);
-    }
-  }
-#endif
-  free(c);
-  return true;
 }
-static int direct_leaf(int (*p)(const char *, const char *, bool),
-                        const char *root, const char *leaf, const char *body,
-                        bool retain) {
-  if (!body) return -1;
-  char topic[FEATURE_TOPIC_MAX];
-  mqtt_format(topic, sizeof(topic), "%s/%s", root, leaf);
-  return p(topic, body, retain);
+static int direct_leaf(int (*p)(const char *,const void *,size_t,bool),const char *root,const char *leaf,const char *body,bool retain){
+ if(!body)return -1;char topic[FEATURE_TOPIC_MAX];mqtt_format(topic,sizeof(topic),"%s/%s",root,leaf);return p(topic,body,strlen(body),retain);
 }
-/* Newly built telemetry/discovery graphs have no users after publication.
- * Retire them before the MQTT owner can block or dispatch packet callbacks. */
-static __attribute__((noinline)) int direct_json_optional(int (*p)(const char *, const char *, bool),
-                        const char *root,const char *leaf,json_object *o,bool retain,service_mqtt_json_scope *scope) {
-  char topic[FEATURE_TOPIC_MAX];
-  mqtt_format(topic,sizeof(topic),"%s/%s",root,leaf);
-  return service_mqtt_optional_send(p,topic,o,retain,scope);
+static int direct_wire_mp(int (*p)(const char *,const void *,size_t,bool),const char *root,const char *leaf,ph_buf *wire,bool retain){
+ if(!wire)return PH_MQTT_MORE;char topic[FEATURE_TOPIC_MAX];mqtt_format(topic,sizeof(topic),"%s/%s",root,leaf);int rc=p(topic,wire->buf,wire->len,retain);ph_buf_free(wire);return rc;
 }
 #ifdef FEATURE_DEVICE_A1
 /* Shared by virtual controls and per-A1 filter entities. Keep their parent
@@ -1479,7 +1151,7 @@ bool feature_ha_device(char *id, size_t id_size, char *name, size_t name_size,
   free(c);
   return ok;
 }
-static bool discovery_virtual_step(int (*publish)(const char *, const char *, bool),
+static bool discovery_virtual_step(int (*publish)(const char *, const void *, size_t, bool),
                               const discovery_layout_t *c, const char *root,
                               bool remove, unsigned *cursor) {
   const char *keys[] = {"fan",           "light",       "child_lock",
@@ -1524,97 +1196,77 @@ static bool discovery_virtual_step(int (*publish)(const char *, const char *, bo
       if (remove || i >= 4) {
         /* Retire every old proxy sensor, including optional SCD40 entities.
          * Keep the resumable cursor and owner send budget during migration. */
-        if(publish(path,"",true))return false;
+        if(publish(path,"",0,true))return false;
         *cursor=position+1;return *cursor==sets*11;
       }
-      service_mqtt_json_scope scope;
-      if(!service_mqtt_json_begin(&scope,ph_mqtt_owner_thread())) {
-        discovery_resource_wait();return false;
-      }
-      json_object *o = json_object_new_object(),
-                  *device = json_object_new_object(),
-                  *ids = json_object_new_array();
-      if (!o || !device || !ids) {
-        if (o)
-          json_object_put(o);
-        if (device)
-          json_object_put(device);
-        if (ids)
-          json_object_put(ids);
-        int rc=service_mqtt_json_error(&scope,PH_MQTT_ERROR_APP_DISCOVERY_GRAPH);
-        if(rc==PH_MQTT_MORE)discovery_resource_wait();else publish_error=rc;
-        return false;
-      }
-      json_build_array_add(ids, json_object_new_string(device_id));
-      json_build_object_add(device, "identifiers", ids);
-      js(device, "name", device_name);
-      js(device, "manufacturer", "Phicomm");
-      js(device, "model", "A1 Air Purifier (EMW3080B)");
-      json_build_object_add(o, "device", device);
-      js(o, "unique_id", uid);
-      json_build_object_add(o,"retain",json_object_new_boolean(false));
-      js(o, "name", ph_i18n(device_language_get(),names[i],english[i]));
-      if (icons[i]) js(o, "icon", icons[i]);
+      /* Only HA uses JSON. Fixed owner scratch replaces the full DOM library. */
+      static char discovery_wire[4096];ha_json writer;ha_json *o=&writer;
+      ha_json_init(o,discovery_wire,sizeof(discovery_wire));ha_json_begin(o,NULL,false);
+      ha_json_begin(o,"device",false);ha_json_begin(o,"identifiers",true);ha_json_string(o,NULL,device_id);ha_json_end(o);
+      ha_json_string(o,"name",device_name);ha_json_string(o,"manufacturer","Phicomm");ha_json_string(o,"model","A1 Air Purifier (EMW3080B)");ha_json_end(o);
+      ha_json_string(o, "unique_id", uid);
+      ha_json_bool(o,"retain",false);
+      ha_json_string(o, "name", ph_i18n(device_language_get(),names[i],english[i]));
+      if (icons[i]) ha_json_string(o, "icon", icons[i]);
       static char topic[FEATURE_TOPIC_MAX];
       if (i < 4) {
-        mqtt_format(topic, sizeof(topic), "%s/command", root);
-        js(o, "command_topic", topic);
+        mqtt_format(topic, sizeof(topic), "%s/ha/command", root);
+        ha_json_string(o, "command_topic", topic);
         mqtt_format(topic, sizeof(topic), "%s/%s/state", root, keys[i]);
-        js(o, "state_topic", topic);
+        ha_json_string(o, "state_topic", topic);
         if (i == 0) {
-          mqtt_format(topic, sizeof(topic), "%s/command", root);
-          js(o, "percentage_command_topic", topic);
-          js(o,"preset_mode_command_topic",topic);
-          js(o,"preset_mode_command_template","{\"action\":\"fan.mode.set\",\"params\":{\"mode\":{{ value | tojson }}}}");
+          mqtt_format(topic, sizeof(topic), "%s/ha/command", root);
+          ha_json_string(o, "percentage_command_topic", topic);
+          ha_json_string(o,"preset_mode_command_topic",topic);
+          ha_json_string(o,"preset_mode_command_template","{\"action\":\"fan.mode.set\",\"params\":{\"mode\":{{ value | tojson }}}}");
           mqtt_format(topic,sizeof(topic),"%s/fan/mode/state",root);
-          js(o,"preset_mode_state_topic",topic);
-          json_object *modes=json_object_new_array();
-          json_build_array_add(modes,json_object_new_string("auto"));
-          json_build_array_add(modes,json_object_new_string("manual"));
-          json_build_object_add(o,"preset_modes",modes);
-          js(o,"command_template","{\"action\":\"fan.set\",\"params\":{\"on\":{{ 'true' if value == 'ON' else 'false' }}}}");
-          js(o,"percentage_command_template","{\"action\":\"fan.set\",\"params\":{\"mode\":\"manual\",\"speed\":{{ value | int }}}}");
+          ha_json_string(o,"preset_mode_state_topic",topic);
+          ha_json_begin(o,"preset_modes",true);ha_json_string(o,NULL,"auto");ha_json_string(o,NULL,"manual");ha_json_end(o);
+          ha_json_string(o,"command_template","{\"action\":\"fan.set\",\"params\":{\"on\":{{ 'true' if value == 'ON' else 'false' }}}}");
+          ha_json_string(o,"percentage_command_template","{\"action\":\"fan.set\",\"params\":{\"mode\":\"manual\",\"speed\":{{ value | int }}}}");
           mqtt_format(topic, sizeof(topic), "%s/fan/percentage/state", root);
-          js(o, "percentage_state_topic", topic);
-          number(o, "speed_range_min", 1);
-          number(o, "speed_range_max", 100);
+          ha_json_string(o, "percentage_state_topic", topic);
+          ha_json_int(o, "speed_range_min", 1);
+          ha_json_int(o, "speed_range_max", 100);
         }
         if (i == 1) {
-            js(o,"schema","template");
-            js(o,"command_on_template","{\"action\":\"light.set\",\"params\":{\"enabled\":true{% if brightness is defined %},\"brightness\":{{ ((brightness | int) * 100 / 255) | round | int }}{% endif %}{% if red is defined %},\"color\":{\"r\":{{ red }},\"g\":{{ green }},\"b\":{{ blue }}}{% endif %}}}");
-            js(o,"command_off_template","{\"action\":\"light.set\",\"params\":{\"enabled\":false}}");
-            js(o,"state_template","{{ value_json.state | lower }}");
-            js(o,"brightness_template","{{ value_json.brightness }}");
-            js(o,"red_template","{{ value_json.color.r }}");
-            js(o,"green_template","{{ value_json.color.g }}");
-            js(o,"blue_template","{{ value_json.color.b }}");
-        } else if(i==0) { js(o,"payload_on","ON");js(o,"payload_off","OFF"); }
+            ha_json_string(o,"schema","template");
+            ha_json_string(o,"command_on_template","{\"action\":\"light.set\",\"params\":{\"enabled\":true{% if brightness is defined %},\"brightness\":{{ ((brightness | int) * 100 / 255) | round | int }}{% endif %}{% if red is defined %},\"color\":{\"r\":{{ red }},\"g\":{{ green }},\"b\":{{ blue }}}{% endif %}}}");
+            ha_json_string(o,"command_off_template","{\"action\":\"light.set\",\"params\":{\"enabled\":false}}");
+            ha_json_string(o,"state_template","{{ value_json.state | lower }}");
+            ha_json_string(o,"brightness_template","{{ value_json.brightness }}");
+            ha_json_string(o,"red_template","{{ value_json.color.r }}");
+            ha_json_string(o,"green_template","{{ value_json.color.g }}");
+            ha_json_string(o,"blue_template","{{ value_json.color.b }}");
+        } else if(i==0) { ha_json_string(o,"payload_on","ON");ha_json_string(o,"payload_off","OFF"); }
         else {
             const char *on=i==2?"{\"action\":\"child_lock.set\",\"params\":{\"enabled\":true}}":"{\"action\":\"light.set\",\"params\":{\"always_on\":true}}";
             const char *off=i==2?"{\"action\":\"child_lock.set\",\"params\":{\"enabled\":false}}":"{\"action\":\"light.set\",\"params\":{\"always_on\":false}}";
-            js(o,"payload_on",on);js(o,"payload_off",off);js(o,"state_on","ON");js(o,"state_off","OFF");
+            ha_json_string(o,"payload_on",on);ha_json_string(o,"payload_off",off);ha_json_string(o,"state_on","ON");ha_json_string(o,"state_off","OFF");
         }
       }
-      mqtt_leaf(&account,"state",topic,sizeof(topic));js(o,"json_attributes_topic",topic);
-      js(o,"json_attributes_template","{{ {\"ip\": value_json.ip, \"firmware\": value_json.version} | tojson }}");
-      if(i==2 || i==3)js(o,"entity_category","config");
-      json_object *availability = json_object_new_array();
+      mqtt_leaf(&account,"state",topic,sizeof(topic));ha_json_string(o,"json_attributes_topic",topic);
+      ha_json_string(o,"json_attributes_template","{{ {\"ip\": value_json.ip, \"firmware\": value_json.version} | tojson }}");
+      if(i==2 || i==3)ha_json_string(o,"entity_category","config");
+      ha_json_begin(o,"availability",true);
       for (unsigned member = 0; member <= c->member_count; member++) {
         const char *id = member ? c->members[member - 1].id : LOCAL_ID;
         if (member && !strcmp(id, LOCAL_ID))
           continue;
-        json_object *node = json_object_new_object();
+        ha_json_begin(o,NULL,false);
         static mqtt_account_t member_account;
         /* Reuse the already encoded owner namespace without decoding credentials. */
         member_account=account;
         mqtt_format(member_account.base,sizeof(member_account.base),"phicomm/v2/%s/a1/%s",account.key,id);
         mqtt_leaf(&member_account,"availability",topic,sizeof(topic));
-        js(node, "topic", topic);
-        json_build_array_add(availability, node);
+        ha_json_string(o,"topic",topic);
+        ha_json_end(o);
       }
-      json_build_object_add(o, "availability", availability);
-      js(o, "availability_mode", "any");
-      int rc=service_mqtt_optional_send(publish,path,o,true,&scope);
+      ha_json_end(o);
+      ha_json_string(o, "availability_mode", "any");
+      ha_json_end(o);
+      if(!ha_json_done(o)){publish_error=PH_MQTT_ERROR_APP_DISCOVERY_GRAPH;return false;}
+      int rc=publish(path,o->data,o->length,true);
       if(rc) {
         if(rc==PH_MQTT_MORE && !publish_error)discovery_resource_wait();
         else publish_error=rc;
@@ -1626,7 +1278,7 @@ static bool discovery_virtual_step(int (*publish)(const char *, const char *, bo
   return true;
 }
 /* Cleanup is finite and explicit; ordinary owner turns use only step(). */
-static void discovery_virtual(int (*publish)(const char *,const char *,bool),
+static void discovery_virtual(int (*publish)(const char *,const void *,size_t,bool),
                               const discovery_layout_t *c,const char *root,bool remove) {
   unsigned cursor=0;
   for(;;) {
@@ -1636,17 +1288,17 @@ static void discovery_virtual(int (*publish)(const char *,const char *,bool),
   }
 }
 #endif
-static void virtual_service(int (*publish)(const char *, const char *, bool)) {
+static void virtual_service(int (*publish)(const char *, const void *, size_t, bool)) {
   uint32_t now = now_ms();
 #ifdef FEATURE_DEVICE_A1
   if(mqtt_capture_deferred && (uint32_t)(now-mqtt_discovery_retry_at)<1000u)return;
   mqtt_capture_deferred=false;
-  unsigned snapshot_token=service_json_claim();if(!snapshot_token)return;
+
 #endif
   feature_config_t *c = malloc(sizeof(*c));
   if (!c) {
 #ifdef FEATURE_DEVICE_A1
-    service_json_release(snapshot_token);
+
     mqtt_capture_deferred=true;discovery_resource_wait();
 #endif
     return;
@@ -1669,7 +1321,7 @@ static void virtual_service(int (*publish)(const char *, const char *, bool)) {
       (!was_coordinator && coordinator);
   bool discovery_wait=mqtt_discovery_deferred && (uint32_t)(now-mqtt_discovery_retry_at)<1000u;
   if(coordinator && discovery_needed && !discovery_wait) {
-    service_json_release(snapshot_token);snapshot_token=0;
+
     if(!mqtt_discovery_pending || mqtt_discovery_revision!=revision) {
       mqtt_discovery_pending=true;mqtt_discovery_stage=0;
       mqtt_discovery_cursor=mqtt_domain_cursor=0;
@@ -1695,25 +1347,12 @@ static void virtual_service(int (*publish)(const char *, const char *, bool)) {
       if(bound && !discovery_virtual_step(publish,&layout,root,false,&mqtt_discovery_cursor))return;
       mqtt_discovery_stage=2;return;
     }
-    if(bound && mqtt_domain_cursor<COUNT(domains)) {
-      service_mqtt_json_scope scope;
-      if(!service_mqtt_json_begin(&scope,ph_mqtt_owner_thread())) {
-        free(c);discovery_resource_wait();return;
-      }
-      json_object *o=config_encode(c,domains[mqtt_domain_cursor]);
-      if(o)js(o,"_source",LOCAL_ID);
-      free(c);c=NULL;
-      if(!o) {
-        int rc=service_mqtt_json_error(&scope,PH_MQTT_ERROR_APP_DISCOVERY_GRAPH);
-        if(rc==PH_MQTT_MORE)discovery_resource_wait();else publish_error=rc;
-        return;
-      }
-      char leaf[40];
-      mqtt_format(leaf,sizeof(leaf),"%s/state",topic_domain(domains[mqtt_domain_cursor]));
-      int rc=direct_json_optional(publish,root,leaf,o,true,&scope);
-      if(!rc){++mqtt_domain_cursor;mqtt_discovery_deferred=false;}
-      else if(rc==PH_MQTT_MORE && !publish_error)discovery_resource_wait();
-      else publish_error=rc;
+    if(bound && mqtt_domain_cursor<sizeof(domains)/sizeof(domains[0])) {
+      ph_buf *wire=domain_config_wire_mp(c,domains[mqtt_domain_cursor],true);free(c);c=NULL;
+      if(!wire){discovery_resource_wait();return;}
+      char leaf[40];mqtt_format(leaf,sizeof(leaf),"%s/state",topic_domain(domains[mqtt_domain_cursor]));
+      int rc=direct_wire_mp(publish,root,leaf,wire,true);
+      if(!rc){++mqtt_domain_cursor;mqtt_discovery_deferred=false;}else if(rc==PH_MQTT_MORE&&!publish_error)discovery_resource_wait();else publish_error=rc;
       return;
     }
     if(bound) {
@@ -1727,7 +1366,7 @@ static void virtual_service(int (*publish)(const char *, const char *, bool)) {
   /* Periodic publishing needs only this compact configuration snapshot. The
    * large native config must not survive socket/PUBACK waits or JSON builds. */
   bool grouped=c->group[0];
-  free(c);c=NULL;service_json_release(snapshot_token);
+  free(c);c=NULL;
   if(bound && (uint32_t)(now-mqtt_tick)>=5000) {
     mqtt_tick=now;
     mqtt_leaf_pending|=(1u<<(grouped?14:7))-1u;
@@ -1808,7 +1447,7 @@ static void virtual_service(int (*publish)(const char *, const char *, bool)) {
   free(c);
 }
 
-int feature_mqtt_cleanup(int (*publish)(const char *, const char *, bool)) {
+int feature_mqtt_cleanup(int (*publish)(const char *, const void *, size_t, bool)) {
   active_publish=publish; publish_error=0;
 #ifdef FEATURE_DEVICE_A1
   if (published_root[0]) {

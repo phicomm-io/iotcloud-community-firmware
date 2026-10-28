@@ -170,17 +170,13 @@ OSStatus feature_start(void);
 
 void feature_values_snapshot(feature_values_t *);
 
-#ifndef FEATURE_DEVICE_A1
-/* Called only by the admitted MQTT command adapter. Never persists a token. */
-int feature_sensor_session_set(json_object *);
-#endif
 bool feature_mqtt_input(const char *, const void *, size_t, bool);
 /* MQTT owner only; discovery progresses over bounded owner turns. */
 bool feature_mqtt_initial_ready(void);
-int feature_mqtt_service(int (*publish)(const char *, const char *, bool),
+int feature_mqtt_service(int (*publish)(const char *, const void *, size_t, bool),
                           bool);
 void feature_mqtt_session(const mqtt_account_t *);
-int feature_mqtt_cleanup(int (*publish)(const char *, const char *, bool));
+int feature_mqtt_cleanup(int (*publish)(const char *, const void *, size_t, bool));
 #define FEATURE_MQTT_FILTER_ERROR (~0u)
 #define FEATURE_MQTT_A1_FILTER_MAX 4u
 #define FEATURE_MQTT_M1_FILTER_MAX FEATURE_MAX_PEERS
