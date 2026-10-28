@@ -54,8 +54,19 @@ static bool lc_resume(lc_job *job,const lc_ops *ops)
 }
 static bool lc_token(lc_state *state,const lc_ops *ops,const char *peer,const char *ip,unsigned scope,uint8_t token[16])
 {
+ /* Only callers with trusted configuration/learned addressing may select IP.
+  * A new address starts a fresh exchange; packets from the old address cannot
+  * complete it, even when they carry the previous matching nonce. */
+ if(!ip||!ip[0]||strlen(ip)>15)return false;
  lc_job *job=lc_find(state,peer,false);
  if(!job){char key[33]={0};unsigned scopes;bool exists=ops->load(peer,key,&scopes);memset(key,0,sizeof(key));if(!exists||!(scopes&scope))return false;job=lc_find(state,peer,true);if(!job)return false;strcpy(job->ip,ip);if(!lc_resume(job,ops))return false;}
+ if(strcmp(job->ip,ip)){
+  strcpy(job->ip,ip);
+  memset(job->password,0,sizeof(job->password));
+  memset(job->token,0,sizeof(job->token));
+  memset(job->nonce,0,sizeof(job->nonce));
+  if(!lc_resume(job,ops))return false;
+ }
  if(job->phase==LC_FAILED&&(uint32_t)(ops->now()-job->sent)>=60000u)lc_resume(job,ops);
  if(job->phase==LC_READY&&job->epoch!=ops->epoch()){memset(job->token,0,sizeof(job->token));lc_resume(job,ops);}
  if(job->phase==LC_READY&&(uint32_t)(ops->now()-job->ready)>=1200000u)lc_resume(job,ops);
