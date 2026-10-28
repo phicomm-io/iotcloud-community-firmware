@@ -6,8 +6,8 @@
 #include "MQTTClient.h"
 #include "../common/mqtt_transport.h"
 #include "../common/mqtt/client.h"
-#include "../common/json_owned.h"
 #include "../common/ha_json.h"
+#include "../common/ha_command.h"
 #include "../common/mqtt/service.h"
 #include "../common/mqtt_cleanup.h"
 #include <ctype.h>
@@ -44,6 +44,14 @@ static void mqtt_error(const char *operation, int result)
     mico_rtos_unlock_mutex(&a1_lock);
 }
 
+static int publish_bytes(const char *topic,const void *bytes,size_t length,bool retained)
+{
+    MQTTMessage message={0};message.qos=QOS1;message.retained=retained;
+    message.payload=(void *)bytes;message.payloadlen=length;
+    int rc=ph_mqtt_publish(&client,topic,&message);
+    if(rc==PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED)return PH_MQTT_MORE;
+    if(rc!=PH_MQTT_MORE)mqtt_error("publish",rc);return rc;
+}
 static int publish(const char *topic, const char *payload, bool retain)
 {
     if (!payload) { mqtt_error("serialize", MQTT_FAILURE); return MQTT_FAILURE; }
@@ -58,7 +66,7 @@ static int publish(const char *topic, const char *payload, bool retain)
 }
 static int leaf(const char *name, const char *payload)
 {
-    char topic[MQTT_TOPIC_MAX]; snprintf(topic, sizeof(topic), "%s/%s", base, name);
+    char topic[MQTT_TOPIC_MAX]; snprintf(topic, sizeof(topic), "%s/ha/%s", base, name);
     return publish(topic, payload, true);
 }
 static bool topic_is(MessageData *d, const char *suffix)
@@ -83,7 +91,8 @@ static void command(MessageData *d)
 {
     if (!session_current()) return;
     MQTTMessage *m = d->message;
-    if(topic_is(d,"command")){service_mqtt_input(publish,&account,m->payload,m->payloadlen,m->retained);return;}
+    if(topic_is(d,"command")){service_mqtt_input(publish_bytes,&account,m->payload,m->payloadlen,m->retained);return;}
+    if(topic_is(d,"ha/command")){if(!m->retained && !ota_job_active())ha_command_input(m->payload,m->payloadlen);return;}
     if(topic_is(d,"ota/set")){ota_command(base,m->payload,m->payloadlen,m->retained);return;}
     if(ota_job_active())return;
     if (m->retained || !m->payloadlen || m->payloadlen > A1_JSON_LIMIT) return;
@@ -92,10 +101,6 @@ static void command(MessageData *d)
     if(fn<sizeof(ftopic)){memcpy(ftopic,ft->cstring?ft->cstring:ft->lenstring.data,fn);ftopic[fn]=0;if(feature_mqtt_input(ftopic,m->payload,m->payloadlen,m->retained))return;}
     /* Wildcard also receives our own states: dispatch only these exact commands. */
     a1_control_t r={0};
-    if(topic_is(d,"light/set")){
-        json_object *o=a1_json_parse(m->payload,m->payloadlen);
-        if(o){a1_control_local("light",o);json_object_put(o);}return;
-    }
     if(topic_is(d,"fan/set")){r.kind=A1_CONTROL_FAN;r.fields=A1_SET_ON;}
     else if(topic_is(d,"fan/percentage/set")){r.kind=A1_CONTROL_FAN;r.fields=A1_SET_SPEED;}
     else if(topic_is(d,"child_lock/set")){r.kind=A1_CONTROL_LOCK;r.fields=A1_SET_ENABLED;}
@@ -140,7 +145,7 @@ static void ha_birth(MessageData *d)
 }
 static void topic(ha_json *o, const char *key, const char *suffix)
 {
-    char value[MQTT_TOPIC_MAX]; snprintf(value, sizeof(value), "%s/%s", base, suffix); ha_json_string(o, key, value);
+    char value[MQTT_TOPIC_MAX]; snprintf(value, sizeof(value), "%s/ha/%s", base, suffix); ha_json_string(o, key, value);
 }
 /* Keep this frame visible to the production MQTT stack-budget check. */
 static __attribute__((noinline)) int filter_discovery(const a1_config_t *c, bool clear,unsigned index,ha_json *o)
@@ -364,6 +369,24 @@ static int discovery_build(const a1_config_t *c,unsigned index,ha_json *o)
     if(fresh)return MQTT_SUCCESS;
     return index>=4?filter_discovery(c,false,index-4,o):MQTT_SUCCESS;
 }
+static int ha_state(void)
+{
+    char bytes[640],ip[16];bool dirty;
+    mico_rtos_lock_mutex(&a1_lock);memcpy(ip,a1_state.ip,sizeof(ip));dirty=a1_state.config_dirty;mico_rtos_unlock_mutex(&a1_lock);
+    a1_filter_storage_t f;a1_filter_get(&f);
+    ha_json w;ha_json_init(&w,bytes,sizeof(bytes));ha_json_begin(&w,NULL,false);
+    ha_json_string(&w,"ip",ip);ha_json_string(&w,"version",A1_VERSION);ha_json_bool(&w,"config_dirty",dirty);
+    ha_json_string(&w,"fan_mode",feature_fan_auto()?"auto":"manual");
+    ha_json_begin(&w,"filter",false);ha_json_int(&w,"remaining_percent",a1_filter_remaining(&f));
+    ha_json_int(&w,"used_seconds",f.used_seconds);ha_json_int(&w,"lifetime_hours",f.lifetime_hours);
+    ha_json_bool(&w,"replacement_due",!a1_filter_remaining(&f));ha_json_end(&w);
+#ifdef A1_FRESH_AIR
+    fresh_snapshot_t fresh;fresh_snapshot(&fresh);
+    ha_json_bool(&w,"fresh_air_requested_on",fresh.requested_on);ha_json_string(&w,"fresh_air_mode",fresh.automatic?"auto":"manual");
+    ha_json_int(&w,"fresh_air_speed",fresh.requested_speed);ha_json_int(&w,"fresh_air_rpm",fresh.rpm);
+#endif
+    ha_json_end(&w);return ha_json_done(&w)?leaf("state",bytes):PH_MQTT_MORE;
+}
 static int states(const a1_config_t *c, const mqtt_state_t *s,unsigned index)
 {
     bool on; unsigned desired;primary_snapshot(c,&on,&desired);
@@ -376,7 +399,7 @@ static int states(const a1_config_t *c, const mqtt_state_t *s,unsigned index)
     if (index==3 && rc==MQTT_SUCCESS) rc = leaf("light/state", light);
     if (index==4 && rc==MQTT_SUCCESS) rc = leaf("child_lock/state", c->child_lock ? "ON" : "OFF");
     if (index==5 && rc==MQTT_SUCCESS) rc = leaf("led_always_on/state", c->led_always_on ? "ON" : "OFF");
-    if(index==6 && rc==MQTT_SUCCESS)rc=service_mqtt_snapshot(publish,&account);
+    if(index==6 && rc==MQTT_SUCCESS)rc=ha_state();
     return rc;
 }
 static bool discovery_deferred;
@@ -562,7 +585,7 @@ static bool session_subscription(void *context,unsigned index,ph_mqtt_subscripti
 static int session_initial(void *context) {
     feature_mqtt_session(&account);
     (void)context;
-    int rc=service_mqtt_capabilities(publish,&account);
+    int rc=service_mqtt_capabilities(publish_bytes,&account);
     discovery_deferred=false;discovery_retry_at=0;
     discovery_index=state_index=0;state_pending=0x7fu;state_seen=0;
     old_on=sent=old_visible=filter_turn=false;old_speed=revision=filter_sent_at=0;
@@ -613,7 +636,7 @@ static int session_cycle(void *context) {
             int sensor_rc=fan_sensor_cycle(on,speed,&sensor_handled);
             if(sensor_handled)return sensor_rc;
             if (filter_priority(a1_filter_mqtt_due(&filter, &sent_filter, mico_rtos_get_time(), filter_sent_at))) {
-                rc = service_mqtt_snapshot(publish, &account);
+                rc = service_mqtt_snapshot(publish_bytes, &account);
                 if (rc == MQTT_SUCCESS) {
                     sent_filter = filter; filter_sent_at = mico_rtos_get_time();
                     state_pending &= ~(1u << 6); state_seen |= 1u << 6;

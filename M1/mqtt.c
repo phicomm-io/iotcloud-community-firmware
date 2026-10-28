@@ -2,8 +2,8 @@
 #include "m1.h"
 #include "MQTTClient.h"
 #include "../common/mqtt_cleanup.h"
-#include "../common/json_owned.h"
 #include "../common/ha_json.h"
+#include "../common/ha_command.h"
 #include "../common/mqtt/service.h"
 #include "../common/numeric_feed.h"
 
@@ -74,6 +74,14 @@ static void mqtt_error(const char *operation, int result)
     mico_rtos_unlock_mutex(&m1_lock);
 }
 
+static int publish_bytes(const char *topic,const void *bytes,size_t length,bool retained)
+{
+    MQTTMessage message={0};message.qos=QOS1;message.retained=retained;
+    message.payload=(void *)bytes;message.payloadlen=length;
+    int rc=ph_mqtt_publish(&client,topic,&message);
+    if(rc==PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED)return PH_MQTT_MORE;
+    if(rc!=PH_MQTT_MORE)mqtt_error("publish",rc);return rc;
+}
 static int publish(const char *topic, const char *payload, bool retain)
 {
     if (!payload) { mqtt_error("serialize", MQTT_FAILURE); return MQTT_FAILURE; }
@@ -90,7 +98,7 @@ static int publish(const char *topic, const char *payload, bool retain)
 
 static int publish_leaf(const char *leaf, const char *payload, bool retain)
 {
-    char topic[MQTT_TOPIC_MAX]; snprintf(topic, sizeof(topic), "%s/%s", base, leaf);
+    char topic[MQTT_TOPIC_MAX]; snprintf(topic, sizeof(topic), "%s/ha/%s", base, leaf);
     return publish(topic, payload, retain);
 }
 static int publish_typed_sensors(const mqtt_state_t *s, uint32_t now)
@@ -137,18 +145,9 @@ static void ota_snapshot(char *state,char *error,unsigned *progress) {
     snprintf(state,32,"%s",m1_state.ota_state);snprintf(error,128,"%s",m1_state.ota_error);
     *progress=m1_state.ota_progress;mico_rtos_unlock_mutex(&m1_lock);
 }
-static int ota_publish(const char *leaf,const char *text,bool retained) { return publish_leaf(leaf,text,retained); }
+static int ota_publish(const char *leaf,const char *text,bool retained) { char topic[MQTT_TOPIC_MAX];mqtt_leaf(&account,leaf,topic,sizeof(topic));return publish(topic,text,retained); }
 #include <ctype.h>
 #include "../common/ota/mqtt_ota.inc"
-static void brightness_command(MessageData *data)
-{
-    if(ota_job_active())return;
-    MQTTMessage *m = data->message;
-    /* Controls are never retained; ignore replayed commands from old clients. */
-    if (m->retained || m->payloadlen != 1) return;
-    char c = *(char *)m->payload;
-    if (c >= '0' && c <= '4') m1_set_brightness(c - '0');
-}
 
 static void native_command(MessageData *d)
 {
@@ -158,12 +157,12 @@ static void native_command(MessageData *d)
     if(n>=sizeof(topic))return;
     memcpy(topic,t->cstring?t->cstring:t->lenstring.data,n);topic[n]=0;
     char cmd[MQTT_TOPIC_MAX];mqtt_leaf(&account,"command",cmd,sizeof(cmd));
-    if(!strcmp(topic,cmd)){service_mqtt_input(publish,&account,d->message->payload,d->message->payloadlen,d->message->retained);return;}
+    if(!strcmp(topic,cmd)){service_mqtt_input(publish_bytes,&account,d->message->payload,d->message->payloadlen,d->message->retained);return;}
     char ota_topic[MQTT_TOPIC_MAX]; mqtt_leaf(&account,"ota/set",ota_topic,sizeof(ota_topic));
     if(!strcmp(topic,ota_topic)) { ota_command(base,d->message->payload,d->message->payloadlen,d->message->retained);return; }
     if(ota_job_active())return;
     if(session_subscribed && feature_mqtt_input(topic,d->message->payload,d->message->payloadlen,d->message->retained))return;
-    if(!strcmp(topic,command_topic))brightness_command(d);
+    if(!strcmp(topic,command_topic) && !d->message->retained)ha_command_input(d->message->payload,d->message->payloadlen);
 }
 static void ha_birth(MessageData *data)
 {
@@ -194,7 +193,7 @@ static int discovery_build(const m1_config_t *c,unsigned index,ha_json *o)
         }
         ha_json_begin(o,NULL,false);
         ha_json_string(o, "name", ph_i18n(device_language_get(),names[i],english[i]));
-        mqtt_leaf(&account,"state",text,sizeof(text));ha_json_string(o,"json_attributes_topic",text);
+        mqtt_leaf(&account,"ha/state",text,sizeof(text));ha_json_string(o,"json_attributes_topic",text);
         ha_json_string(o,"json_attributes_template",i == MQTT_PRESSURE_INDEX ?
             "{{ {\"ip\": value_json.ip, \"firmware\": value_json.version, \"barometer_valid\": value_json.barometer.valid} | tojson }}" :
             "{{ {\"ip\": value_json.ip, \"firmware\": value_json.version, \"sensor_valid\": value_json.sensor_valid} | tojson }}");
@@ -208,7 +207,7 @@ static int discovery_build(const m1_config_t *c,unsigned index,ha_json *o)
         ha_json_string(o,"manufacturer","Phicomm");ha_json_string(o,"sw_version",M1_VERSION);
         ha_json_end(o);
         if (i != MQTT_BRIGHTNESS_INDEX) {
-            snprintf(text, sizeof(text), "%s/%s", base, i>=MQTT_PARTICLES_INDEX ? "particles" : i == MQTT_PRESSURE_INDEX ? "pressure" : i == 4 ? "co2" : "sensor"); ha_json_string(o, "state_topic", text);
+            snprintf(text, sizeof(text), "%s/ha/%s", base, i>=MQTT_PARTICLES_INDEX ? "particles" : i == MQTT_PRESSURE_INDEX ? "pressure" : i == 4 ? "co2" : "sensor"); ha_json_string(o, "state_topic", text);
             if(i>=MQTT_PARTICLES_INDEX)snprintf(text,sizeof(text),"{{ value_json.pm.%s.%s if value_json.available else none }}",i<MQTT_PARTICLES_INDEX+2?"atmospheric_ug_m3":"particles_per_0_1_l",keys[i]);
             else snprintf(text, sizeof(text), "{{ value_json.%s }}", keys[i]); ha_json_string(o, "value_template", text);
             ha_json_string(o, "unit_of_measurement", units[i]); ha_json_string(o, "state_class", "measurement");
@@ -217,14 +216,14 @@ static int discovery_build(const m1_config_t *c,unsigned index,ha_json *o)
             ha_json_begin(o,"availability",true);
             ha_json_begin(o,NULL,false);ha_json_string(o,"topic",availability_topic);ha_json_end(o);
             ha_json_begin(o,NULL,false);
-            snprintf(text,sizeof(text),"%s/%s",base,i>=MQTT_PARTICLES_INDEX?"particles":i==MQTT_PRESSURE_INDEX?"pressure_availability":i==4?"co2_availability":"sensor_availability");
+            snprintf(text,sizeof(text),"%s/ha/%s",base,i>=MQTT_PARTICLES_INDEX?"particles":i==MQTT_PRESSURE_INDEX?"pressure_availability":i==4?"co2_availability":"sensor_availability");
             ha_json_string(o,"topic",text);
             if(i>=MQTT_PARTICLES_INDEX)ha_json_string(o,"value_template","{{ 'online' if value_json.available else 'offline' }}");
             ha_json_end(o);ha_json_end(o);
             ha_json_string(o, "availability_mode", "all");
         } else {
             ha_json_string(o, "command_topic", command_topic);
-            snprintf(text, sizeof(text), "%s/brightness/state", base); ha_json_string(o, "state_topic", text);
+            snprintf(text, sizeof(text), "%s/ha/brightness/state", base); ha_json_string(o, "state_topic", text);
             ha_json_string(o, "availability_topic", availability_topic);
             ha_json_int(o,"min",0);
             ha_json_int(o,"max",100);
@@ -242,6 +241,36 @@ static int discovery_build(const m1_config_t *c,unsigned index,ha_json *o)
     return MQTT_SUCCESS;
 }
 
+static int ha_particles(void)
+{
+    m1_details_t snapshot;m1_details_snapshot(&snapshot);
+    char bytes[640];ha_json w;ha_json_init(&w,bytes,sizeof(bytes));ha_json_begin(&w,NULL,false);
+    bool valid=snapshot.supported && m1_details_valid(&snapshot,mico_rtos_get_time());
+    ha_json_bool(&w,"available",valid);
+    if(valid){
+        const uint8_t *raw=snapshot.frames[0].raw;
+        static const char *const groups[]={"atmospheric_ug_m3","particles_per_0_1_l"};
+        static const char *const fields[]={"pm1","pm25","pm10","gt_0_3","gt_0_5","gt_1_0","gt_2_5","gt_5_0","gt_10_0"};
+        ha_json_begin(&w,"pm",false);
+        for(unsigned g=0;g<2;g++){
+            ha_json_begin(&w,groups[g],false);
+            for(unsigned i=0;i<(g?6u:3u);i++)ha_json_int(&w,fields[(g?3:0)+i],m1_details_u16(raw+10+g*6+i*2));
+            ha_json_end(&w);
+        }
+        ha_json_end(&w);
+    }
+    ha_json_end(&w);return ha_json_done(&w)?publish_leaf("particles",bytes,false):PH_MQTT_MORE;
+}
+static int ha_state(void)
+{
+    char bytes[256],ip[16];bool valid,pressure;
+    mico_rtos_lock_mutex(&m1_lock);memcpy(ip,m1_state.ip,sizeof(ip));
+    valid=m1_sample_fresh(&m1_state.sample,mico_rtos_get_time());pressure=m1_barometer_fresh(&m1_state.barometer,mico_rtos_get_time());mico_rtos_unlock_mutex(&m1_lock);
+    ha_json w;ha_json_init(&w,bytes,sizeof(bytes));ha_json_begin(&w,NULL,false);
+    ha_json_string(&w,"ip",ip);ha_json_string(&w,"version",M1_VERSION);ha_json_bool(&w,"sensor_valid",valid);
+    ha_json_begin(&w,"barometer",false);ha_json_bool(&w,"valid",pressure);ha_json_end(&w);ha_json_end(&w);
+    return ha_json_done(&w)?publish_leaf("state",bytes,true):PH_MQTT_MORE;
+}
 static bool discovery_deferred;
 static uint32_t discovery_retry_at;
 static int discovery(const m1_config_t *c,unsigned index)
@@ -316,7 +345,7 @@ static int session_prepare(void *context,ph_mqtt_connection *spec) {
         mqtt_identity(&account, "", client_id, sizeof(client_id));
         mqtt_leaf(&account, "command", wildcard, sizeof(wildcard));
         mqtt_leaf(&account, "availability", availability_topic, sizeof(availability_topic));
-        mqtt_leaf(&account, "command", command_topic, sizeof(command_topic));
+        mqtt_leaf(&account, "ha/command", command_topic, sizeof(command_topic));
         session_config = cfg;discovery_language=device_language_get();
         session_need_availability=display_mqtt_needed();
         feature_mqtt_session(&account);
@@ -351,7 +380,7 @@ static int session_initial(void *context) {
      * Never admit a generic measurement from a partial/failed subscription. */
     session_subscribed=true;
     (void)context;
-    int rc=service_mqtt_capabilities(publish,&account);
+    int rc=service_mqtt_capabilities(publish_bytes,&account);
     if(rc==MQTT_SUCCESS)rc=publish_leaf("sensor_availability","offline",true);
     discovery_deferred=false;discovery_retry_at=0;
     discovery_index=initial_index=0;
@@ -373,7 +402,8 @@ static int session_cycle(void *context) {
                  * suppress independent bounded sensor/feature publication.
                  * Retry on the existing period, not every owner turn. */
                 snapshot_at=mico_rtos_get_time();
-                rc=service_mqtt_snapshot(publish,&account);
+                rc=service_mqtt_snapshot(publish_bytes,&account);
+                if(rc==MQTT_SUCCESS)rc=ha_state();
                 if(rc!=MQTT_SUCCESS && rc!=PH_MQTT_MORE)return rc;
                 rc=MQTT_SUCCESS;
             }
@@ -452,17 +482,8 @@ static int session_cycle(void *context) {
                 if (rc == MQTT_SUCCESS) old_pressure_fresh=pressure_fresh;
             }
             if(rc==MQTT_SUCCESS && (uint32_t)(mico_rtos_get_time()-particles_at)>=3000u){
-                service_mqtt_json_scope scope;
-                /* Retry optional work at a bounded cadence under heap pressure. */
-                particles_at=mico_rtos_get_time();
-                if(service_mqtt_json_begin(&scope,&mqtt_owner_thread)){
-                    json_object *payload=m1_particles_json();
-                    char topic[MQTT_TOPIC_MAX];mqtt_leaf(&account,"particles",topic,sizeof(topic));
-                    rc=service_mqtt_optional_send(publish,topic,payload,false,&scope);
-                    service_mqtt_json_end(&scope);
-                    if(rc==MQTT_SUCCESS)particles_at=mico_rtos_get_time();
-                    if(rc==PH_MQTT_MORE)rc=MQTT_SUCCESS;
-                }
+                particles_at=mico_rtos_get_time();rc=ha_particles();
+                if(rc==PH_MQTT_MORE)rc=MQTT_SUCCESS;
             }
             if (rc == MQTT_SUCCESS && old_brightness != state.brightness_requested) {
                 char value[4]; snprintf(value, sizeof(value), "%u", state.brightness_requested);
