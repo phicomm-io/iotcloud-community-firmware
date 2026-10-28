@@ -153,7 +153,7 @@ static ph_http_action begin(ph_http_exchange *x)
         return prepare(x);
     }
     if(!strcmp(r->method,"POST") && !strcmp(r->path,"/api/v1/mcu/exchange")) {
-        if(!r->have_length || r->length<6 || r->length>262) {
+        if(!r->have_length || r->length<10 || r->length>288) {
             ph_http_message(&product,x,400,"Invalid MCU frame size");return PH_HTTP_REPLY;
         }
         operation=MCU;x->body_idle_ms=5000;x->body_total_ms=5000;
@@ -200,13 +200,15 @@ static void complete(ph_http_exchange *x)
         ph_http_message(&product,x,ok?202:409,ok?"MCU commit sent; verify runtime version":"MCU transfer failed; not confirmed");return;
     }
     if(operation==MCU) {
-        uint8_t reply[20];
-        bool ok=product.used==x->request->length &&
-            m1_mcu_exchange((const uint8_t *)product.body,product.used,reply);
-        if(ok) {
-            memcpy(product.scalar,reply,sizeof(reply));
-            response(x,200,"application/octet-stream",product.scalar,sizeof(reply),false);
-        } else ph_http_message(&product,x,409,"MCU busy or response timeout");
+        ph_value request,frame;const void *bytes;size_t length;uint8_t reply[20];
+        bool valid=product.used==x->request->length&&phv_parse(PH_WIRE_MSGPACK,product.body,product.used,&request)&&request.kind==PHV_MAP&&phv_keys(&request,"|frame|")&&phv_get(&request,"frame",&frame)&&phv_bytes(&frame,&bytes,&length)&&length>=6&&length<=262;
+        if(!valid){ph_http_message(&product,x,400,"Invalid MCU frame");return;}
+        bool ok=m1_mcu_exchange(bytes,length,reply);
+        if(ok){
+            ph_writer w;ph_buf b;phw_init_fixed(&w,PH_WIRE_MSGPACK,&b,product.scalar,sizeof(product.scalar));
+            phw_begin(&w,NULL,false);phw_text(&w,"code","ok");phw_begin(&w,"data",false);phw_bytes_value(&w,"reply",reply,sizeof(reply));phw_end(&w);phw_end(&w);
+            size_t size=phw_finish_fixed(&w);if(size)response(x,200,"application/msgpack",product.scalar,size,false);else ph_http_busy(x);
+        }else ph_http_message(&product,x,409,"MCU busy or response timeout");
         return;
     }
     if(operation==RESTORE){const char *code=device_backup_import(product.body,product.used);ph_http_message(&product,x,!strcmp(code,"accepted")?202:!strcmp(code,"busy")?409:400,code);return;}

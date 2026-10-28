@@ -110,7 +110,7 @@ static ph_buf *mp_dispatch(mp_request *r,const void *raw,size_t length,bool mqtt
         ph_buf *response=!memcmp(mp_receipts[i].digest,digest,32)?(mp_receipts[i].response?mp_copy(mp_receipts[i].response):service_error_mp(r->id,"busy")):service_error_mp(r->id,"conflict");
         mico_rtos_unlock_mutex(&command_lock);return response;
     }
-    ph_buf *payload=NULL,*response=NULL;bool owned=false,active=ota_job_active();
+    ph_buf *payload=NULL,*response=NULL;bool owned=false,active=ota_job_active(),record_receipt=receipt;
     ph_writer w;if(!phw_init(&w,PH_WIRE_MSGPACK)){mico_rtos_unlock_mutex(&command_lock);return NULL;}
     if(!strcmp(action,"status.get")&&!active){
         ph_value view;bool valid=phv_keys(p,"|view|");
@@ -123,7 +123,7 @@ static ph_buf *mp_dispatch(mp_request *r,const void *raw,size_t length,bool mqtt
 #ifdef PHICOMM_DEVICE_OTA
     else if(!strcmp(action,"ota.cancel")&&phv_keys(p,"")){code=ota_job_cancel()?"accepted":"busy";mp_empty(&w);}
     else if(!strcmp(action,"ota.status.get")||(!strcmp(action,"status.get")&&active)){ota_job_status_mp(&w);code="ok";}
-    else if(active&&strcmp(action,"ota.check.get")&&strcmp(action,"ota.sources.get")&&strcmp(action,"ota.notes.get")){code="busy";mp_empty(&w);}
+    else if(active&&strcmp(action,"ota.check.get")&&strcmp(action,"ota.sources.get")&&strcmp(action,"ota.notes.get")){code="busy";record_receipt=false;mp_empty(&w);}
 #endif
     else if(!strcmp(action,"logs.get"))mp_logs(p,&w,&code);
     else{
@@ -135,7 +135,7 @@ static ph_buf *mp_dispatch(mp_request *r,const void *raw,size_t length,bool mqtt
     }
     if(!payload){if(!w.depth && !w.wire->len)mp_empty(&w);payload=phw_take(&w);owned=true;}else phw_discard(&w);
     response=payload?mp_envelope(r->id,code,payload):NULL;if(owned)ph_buf_free(payload);
-    if(receipt){mp_receipt *saved=&mp_receipts[mp_receipt_next++%8];ph_buf_free(saved->response);memset(saved,0,sizeof(*saved));strcpy(saved->id,r->id);memcpy(saved->digest,digest,32);saved->response=mp_copy(response);}
+    if(record_receipt){mp_receipt *saved=&mp_receipts[mp_receipt_next++%8];ph_buf_free(saved->response);memset(saved,0,sizeof(*saved));strcpy(saved->id,r->id);memcpy(saved->digest,digest,32);saved->response=mp_copy(response);}
     mico_rtos_unlock_mutex(&command_lock);
     if(!query){service_cache_changed(SERVICE_CACHE_ALL);service_event(!strcmp(code,"accepted")||!strcmp(code,"ok")?"info":"warn","command",!strcmp(code,"accepted")||!strcmp(code,"ok")?"accepted":"rejected");}
     return response;
