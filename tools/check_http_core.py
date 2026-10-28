@@ -151,8 +151,8 @@ def http_paths(frames,model,symbols=None):
     else:paths['HTTP OTA recovery']=(4096,owner+['admission','ota_job_poll','feature_resume_step'])
     if model=='A1':
         control=post+['mp_dispatch','service_product_mp']+extra(['smp_control'])+['a1_control_apply']+extra(['control_broadcast','panel_state','a1_control_light_percent'])
-        paths['HTTP control persistence']=(HTTP_RESERVE,control+['feature_fan_apply','install_config','feature_config_save'])
-        paths['HTTP light effect persistence']=(HTTP_RESERVE,post+['mp_dispatch','service_product_mp','feature_light_select','install_config','feature_config_save'])
+        paths['HTTP control persistence']=(HTTP_RESERVE,control+['feature_fan_apply']+extra(['install_config'])+['feature_config_save'])
+        paths['HTTP light effect persistence']=(HTTP_RESERVE,post+['mp_dispatch','service_product_mp','feature_mp','feature_light_select_mp']+extra(['install_config'])+['feature_config_save'])
     return paths
 
 
