@@ -66,6 +66,18 @@ int main(void){
 }
 ''')
 
+ def test_clock_values_expire_status_but_keep_unchanged_capabilities(self):
+  self.run_c(r'''
+int main(void){
+ service_init();ph_buf *out=service_query_mp("status.get");code(out,"ok");ph_buf_free(out);assert(captures==1);
+ out=service_query_mp("capabilities.get");code(out,"ok");ph_buf_free(out);assert(caps==1);
+ test_clock_ms+=999;out=service_query_mp("status.get");ph_buf_free(out);assert(captures==1);
+ test_clock_ms++;out=service_query_mp("status.get");code(out,"ok");ph_buf_free(out);assert(captures==2);
+ out=service_query_mp("capabilities.get");code(out,"ok");ph_buf_free(out);assert(caps==1);
+ service_cache_changed(SERVICE_CACHE_STATUS);out=service_query_mp("status.get");ph_buf_free(out);assert(captures==3);return 0;
+}
+''')
+
  def test_mqtt_only_session_route_and_input_lifetime(self):
   self.run_c(r'''
 int main(void){

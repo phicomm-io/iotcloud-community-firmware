@@ -6,6 +6,7 @@ static unsigned mutations,captures,caps,mqtt_calls;
 static bool change_during_capture,fail_capture,caps_restricted;
 static long allocation_budget=-1;
 static char async_session[64];
+extern uint32_t test_clock_ms;
 void *__real_malloc(size_t);
 void __real_free(void *);
 void *__wrap_malloc(size_t n){if(!allocation_budget)return NULL;if(allocation_budget>0)--allocation_budget;return __real_malloc(n);}
