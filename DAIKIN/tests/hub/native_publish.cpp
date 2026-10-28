@@ -216,6 +216,7 @@ static int httpd_resp_send(httpd_req_t *, const char *body, size_t length) {
 }
 #include "json-response.inc"
 static bool authorized(httpd_req_t *) { return true; }
+static bool captureWebAuthorization(httpd_req_t *) { return true; }
 static bool webPending = false, webDone = true;
 static String webBody, webResult;
 static unsigned webOperation = 0;

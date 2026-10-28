@@ -8,6 +8,12 @@
 #include <Preferences.h>
 #include <memory>
 #include <atomic>
+#include <freertos/semphr.h>
+extern "C" {
+#include "../../common/local_auth.h"
+#include "../../common/typed_wire.h"
+#include "../../common/lan_wire.h"
+}
 #include <ESPmDNS.h>
 #include <esp_http_server.h>
 #include <esp_ota_ops.h>
@@ -117,7 +123,14 @@ static void updatePassword(){
 }
 static const char *pmModel="detecting";
 
-static String loadConfigText(){
+static ph_auth_state localAuth;
+static ph_auth_store loadedAuthStore;
+static SemaphoreHandle_t localAuthMutex;
+static bool localAuthReady=false;
+static bool saveConfig(DynamicJsonDocument &);
+static bool saveConfigTransaction(DynamicJsonDocument &,bool);
+#include "auth_storage.inc"
+static String loadLegacyConfigText(){
   const char *key="config";
 #ifdef IOTCLOUD_HUB
   // Never reuse the legacy string key for a blob: IDF may retain both types.
@@ -137,30 +150,18 @@ static String loadConfigText(){
   return prefs.getString(key,"{}");
 }
 static bool due(uint32_t now,uint32_t at){return int32_t(now-at)>=0;}
-static bool saveConfig(DynamicJsonDocument &candidate){
-#ifdef IOTCLOUD_HUB
-  if(hubRestartPending())return false;
-#endif
-  if(configRecovery||candidate.overflowed())return false;
-  candidate["_version"]=1;
-  if(candidate.overflowed())return false;
-  const size_t length=measureJson(candidate);
-#ifdef IOTCLOUD_HUB
-  if(length>6144)return false;
-#else
-  if(length>3999)return false;
-#endif
-  String text;text.reserve(length);serializeJson(candidate,text);
-  if(text.length()!=length)return false;
-#ifdef IOTCLOUD_HUB
-  // Stock NVS is 16 KiB. This is a document limit, not a free-space promise;
-  // NVS can still reject an update while preserving the previous generation.
-  // Keep the legacy key intact until and after the separate hub blob commits.
-  if(prefs.putBytes("config_hub",text.c_str(),length)!=length)return false;
-#else
-  if(prefs.putString("config",text)!=length)return false;
-#endif
-  config=std::move(candidate);config.shrinkToFit();updatePassword();return true;
+static bool saveConfigTransaction(DynamicJsonDocument &candidate,bool forceRevoke){
+  if(!localAuthReady)return persistAuthConfig(candidate,ph_auth_store_empty_value());
+  struct Transaction {DynamicJsonDocument *candidate;} transaction{&candidate};
+  char password[33];strlcpy(password,candidate["auth"]["password"]|"",sizeof(password));
+  bool saved=ph_auth_credential_commit(&localAuth,password,forceRevoke,
+    [](void *opaque,const ph_auth_store *store){return persistAuthConfig(*static_cast<Transaction*>(opaque)->candidate,store);},&transaction);
+  memset(password,0,sizeof(password));return saved;
+}
+static bool saveConfig(DynamicJsonDocument &candidate){return saveConfigTransaction(candidate,false);}
+static bool resetConfiguration(){
+  DynamicJsonDocument empty(128);empty.to<JsonObject>();
+  bool recovery=configRecovery;configRecovery=false;bool saved=saveConfigTransaction(empty,true);if(!saved)configRecovery=recovery||configRecovery;return saved;
 }
 static void startAccessPoint(){
   const IPAddress address(192,168,0,1),netmask(255,255,255,0);
@@ -177,6 +178,7 @@ static void startWifi(){
 }
 #include "sensors.inc"
 #include "indicators.inc"
+#include "lan_pairing.inc"
 #include "sessions.inc"
 #include "commands.inc"
 #include "http.inc"
@@ -189,13 +191,13 @@ void setup(){
   Serial.begin(115200);
   if(!prefs.begin("daikin",false)){Serial.println("NVS unavailable");while(true)delay(1000);}
   {
-    String text=loadConfigText();
+    String text=loadAuthConfigText();
     if(deserializeJson(config,text)||!config.is<JsonObject>()||!validConfig(config.as<JsonObjectConst>())){
       configRecovery=true;config.clear();config.to<JsonObject>();Serial.println("Configuration recovery required");
     }
   }
   config.shrinkToFit();
-  updatePassword();indicator=config["indicator"]|false;
+  updatePassword();initLocalAuth();indicator=config["indicator"]|false;
   customLightSettings=daikin::readLightSettings(config["indicator_rules"],lightSettings);
   WiFi.mode(WIFI_AP_STA);deviceId=WiFi.macAddress();deviceId.replace(":","");deviceId.toLowerCase();
   apName="BRY88AX151K-AP-"+deviceId.substring(6);apName.toUpperCase();
@@ -234,12 +236,19 @@ void setup(){
 }
 void loop(){
   uint32_t now=millis();
-  if(!otaActive){pollSensors(now);pollSessions();}
+  if(!otaActive){pollSensors(now);pollSessions();pollLanPairing();}
   if(webPending){
+    if(webAuthRequired&&!ph_auth_context_valid(&webAuthContext,PH_AUTH_SCOPE_ADMIN)){
+      webResult="{\"code\":\"unauthorized\"}";
+#ifdef IOTCLOUD_HUB
+      hubHttpStatus=401;
+#endif
+    }else{
 #ifdef IOTCLOUD_HUB
     if(webOperation==3){if(otaActive){hubHttpStatus=503;hubHttpToken="";webResult="{\"code\":\"busy\"}";}else hubApiExecute();}else
 #endif
-    if(webOperation==4){if(!mqttStateJson(webResult,httpStatusBody,4096,true))webResult="{\"code\":\"busy\"}";}else webResult=otaActive?"{\"code\":\"busy\",\"message\":\"OTA active\"}":webOperation?backupExecute():execute(webBody);portENTER_CRITICAL(&webMux);webPending=false;webDone=true;portEXIT_CRITICAL(&webMux);}
+    if(webOperation==4){if(!mqttStateJson(webResult,httpStatusBody,4096,true))webResult="{\"code\":\"busy\"}";}else webResult=otaActive?"{\"code\":\"busy\",\"message\":\"OTA active\"}":webOperation?backupExecute():execute(webBody);}
+    portENTER_CRITICAL(&webMux);webPending=false;webDone=true;portEXIT_CRITICAL(&webMux);}
   if(mqttQueued){String body(mqttPending,mqttReceived);bool sensor=mqttSensorCommand;portENTER_CRITICAL(&mqttMux);mqttQueued=false;portEXIT_CRITICAL(&mqttMux);if(!otaActive){if(sensor)sessionGrant(body);else if(!sessionGrant(body))publish(mqttRoot+"/result",execute(body),false);}}
   if(mqttOnline){mqttOnline=false;
     DynamicJsonDocument doc(1024);capabilities(doc.to<JsonObject>());String text;serializeWireMP(doc,text);publish(mqttRoot+"/capabilities",text);publish(mqttRoot+"/availability","online");

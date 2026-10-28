@@ -10,36 +10,29 @@ static esp_err_t jsonResponse(httpd_req_t *req,const char *status,const String &
   return httpd_resp_send(req,body.c_str(),body.length());
 }
 static bool authorized(httpd_req_t *req);
-// HTTP server owns these sessions. Credentials changing on the application
-// task invalidate all tokens on the next request; tokens never enter config.
-struct WebSession {String token;uint32_t created=0,seen=0;};
-static WebSession webSessions[4];
-static String sessionPassword;
+// HTTP and LAN share the credential epoch; restore revokes even unchanged passwords.
 static String currentWebPassword(){char password[33];portENTER_CRITICAL(&authMux);memcpy(password,webPassword,sizeof(password));portEXIT_CRITICAL(&authMux);return String(password);}
-static void refreshWebSessions(){String password=currentWebPassword();if(password!=sessionPassword){for(auto &s:webSessions)s=WebSession();sessionPassword=password;}uint32_t now=millis();for(auto &s:webSessions)if(s.token.length()&&(uint32_t(now-s.seen)>=1800000||uint32_t(now-s.created)>=86400000))s=WebSession();}
-static WebSession *bearerSession(httpd_req_t *req){refreshWebSessions();char header[80]={};if(httpd_req_get_hdr_value_str(req,"Authorization",header,sizeof(header))!=ESP_OK||strncmp(header,"Bearer ",7))return nullptr;for(auto &s:webSessions)if(s.token.length()&&s.token==header+7){s.seen=millis();return &s;}return nullptr;}
-static bool authorized(httpd_req_t *req){if(bearerSession(req))return true;jsonResponse(req,"401 Unauthorized","{\"code\":\"unauthorized\"}");return false;}
+static bool requestAuthorization(httpd_req_t *req,char header[80]){return httpd_req_get_hdr_value_str(req,"Authorization",header,80)==ESP_OK;}
+static bool authorized(httpd_req_t *req){char header[80]={};ph_auth_context context;if(!configRecovery&&localAuthReady&&requestAuthorization(req,header)&&ph_auth_http_check(&localAuth,header,&context))return true;jsonResponse(req,"401 Unauthorized","{\"code\":\"unauthorized\"}");return false;}
 static esp_err_t loginHandler(httpd_req_t *req){
-  refreshWebSessions();char type[64]={};
+  char type[64]={};
   if(httpd_req_get_hdr_value_str(req,"Content-Type",type,sizeof(type))!=ESP_OK||strcmp(type,"application/msgpack"))return jsonResponse(req,"415 Unsupported Media Type","{\"code\":\"invalid_params\"}");
   if(req->content_len<=0||req->content_len>128)return jsonResponse(req,"400 Bad Request","{\"code\":\"invalid_params\"}");
   char body[128];int left=req->content_len,read=0;while(left){int n=httpd_req_recv(req,body+read,left);if(n<=0)return ESP_FAIL;read+=n;left-=n;}
-  DynamicJsonDocument input(512);if(deserializeMsgPack(input,body,read)||!input.is<JsonObject>()||input.size()!=1||!input["password"].is<const char*>())return jsonResponse(req,"400 Bad Request","{\"code\":\"invalid_params\"}");
-  const char *password=input["password"];if(input["password"].as<JsonString>().size()!=strlen(password))return jsonResponse(req,"400 Bad Request","{\"code\":\"invalid_params\"}");unsigned difference=strlen(password)^sessionPassword.length();for(size_t i=0;i<sessionPassword.length();i++)difference|=uint8_t(sessionPassword[i])^uint8_t(i<strlen(password)?password[i]:0);
-  if(difference)return jsonResponse(req,"401 Unauthorized","{\"code\":\"unauthorized\"}");
-  WebSession *slot=nullptr;for(auto &s:webSessions)if(!s.token.length()){slot=&s;break;}
-  if(!slot)return jsonResponse(req,"503 Service Unavailable","{\"code\":\"busy\"}");
-  char token[33];for(unsigned i=0;i<4;i++)snprintf(token+i*8,9,"%08lx",(unsigned long)esp_random());
-  slot->token=token;slot->created=slot->seen=millis();
-  DynamicJsonDocument reply(1536);reply["code"]="ok";JsonObject data=reply.createNestedObject("data");data["token"]=slot->token;data["expires_in"]=1800;
-  String result;serializeWireMP(reply,result);return jsonResponse(req,"200 OK",result);
+  ph_value root,value;char password[33]={};if(!phv_parse(PH_WIRE_MSGPACK,body,read,&root)||!phv_keys(&root,"|password|")||!phv_get(&root,"password",&value)||!phv_text(&value,password,sizeof(password)))return jsonResponse(req,"400 Bad Request","{\"code\":\"invalid_params\"}");
+  char token[33]={};auto result=localAuthReady&&!configRecovery?ph_auth_http_login_result(&localAuth,password,token):PH_AUTH_LOGIN_BUSY;memset(password,0,sizeof(password));
+  if(result!=PH_AUTH_LOGIN_OK)return jsonResponse(req,result==PH_AUTH_LOGIN_BUSY?"503 Service Unavailable":"401 Unauthorized",result==PH_AUTH_LOGIN_BUSY?"{\"code\":\"busy\"}":"{\"code\":\"unauthorized\"}");
+  DynamicJsonDocument reply(768);reply["code"]="ok";reply["data"]["token"]=token;reply["data"]["expires_in"]=1800;String wire;serializeWireMP(reply,wire);memset(token,0,sizeof(token));return jsonResponse(req,"200 OK",wire);
 }
-static esp_err_t logoutHandler(httpd_req_t *req){auto session=bearerSession(req);if(!session)return jsonResponse(req,"401 Unauthorized","{\"code\":\"unauthorized\"}");*session=WebSession();return jsonResponse(req,"200 OK","{\"code\":\"ok\"}");}
+static esp_err_t logoutHandler(httpd_req_t *req){char header[80]={};if(!localAuthReady||!requestAuthorization(req,header)||!ph_auth_http_logout(&localAuth,header))return jsonResponse(req,"401 Unauthorized","{\"code\":\"unauthorized\"}");return jsonResponse(req,"200 OK","{\"code\":\"ok\"}");}
 // HTTP handlers run on the server task; application work is queued below.
 static portMUX_TYPE webMux=portMUX_INITIALIZER_UNLOCKED;
 static volatile bool webPending=false,webDone=true;
 static String webBody,webResult;
 static unsigned webOperation=0;
+static ph_auth_context webAuthContext;
+static bool webAuthRequired=false;
+static bool captureWebAuthorization(httpd_req_t *req){char header[80]={};if(configRecovery||!localAuthReady||!requestAuthorization(req,header)||!ph_auth_http_check(&localAuth,header,&webAuthContext)){jsonResponse(req,"401 Unauthorized","{\"code\":\"unauthorized\"}");return false;}webAuthRequired=true;return true;}
 #ifdef IOTCLOUD_HUB
 static iotcloud::HubService::Request hubHttpRequest("","");
 static int hubHttpStatus=200;
@@ -56,6 +49,7 @@ static esp_err_t commandHandler(httpd_req_t *req){
   char type[64];if(httpd_req_get_hdr_value_str(req,"Content-Type",type,sizeof(type))!=ESP_OK||strcmp(type,"application/msgpack"))return jsonResponse(req,"415 Unsupported Media Type","{\"code\":\"invalid_params\",\"message\":\"Expected MessagePack\"}");
   String body;body.reserve(req->content_len);char buffer[513];int left=req->content_len;
   while(left){int n=httpd_req_recv(req,buffer,min(left,512));if(n<=0)return ESP_FAIL;buffer[n]=0;body.concat(buffer,n);left-=n;}
+  if(!captureWebAuthorization(req))return ESP_OK;
   webOperation=0;webBody=body;webDone=false;
   portENTER_CRITICAL(&webMux);webPending=true;portEXIT_CRITICAL(&webMux);
   const uint32_t started=millis();
@@ -99,7 +93,7 @@ static String backupExecute(){
     size_t candidateCapacity=restored.memoryUsage()+1024;if(candidateCapacity>configCapacity)candidateCapacity=configCapacity;
     DynamicJsonDocument candidate(candidateCapacity);
     if(!candidate.capacity()||!candidate.set(restored)||candidate.overflowed())return "{\"code\":\"busy\"}";
-    if(!saveConfig(candidate))return "{\"code\":\"storage_error\"}";
+    if(!saveConfigTransaction(candidate,true))return "{\"code\":\"storage_error\"}";
 #ifdef IOTCLOUD_HUB
     hubRestoreChanged();
 #endif
@@ -116,6 +110,7 @@ static esp_err_t backupHandler(httpd_req_t *req){
   String body;char buffer[513];int left=restore?req->content_len:0;
   if(restore&&!body.reserve(left))return jsonResponse(req,"503 Service Unavailable","{\"code\":\"busy\"}");
   while(left){int n=httpd_req_recv(req,buffer,min(left,512));if(n<=0)return ESP_FAIL;buffer[n]=0;if(!body.concat(buffer,n))return jsonResponse(req,"503 Service Unavailable","{\"code\":\"busy\"}");left-=n;}
+  if(!captureWebAuthorization(req))return ESP_OK;
   webBody=std::move(body);webOperation=restore?2:1;webDone=false;
   portENTER_CRITICAL(&webMux);webPending=true;portEXIT_CRITICAL(&webMux);
   uint32_t started=millis();while(!webDone){if(uint32_t(millis()-started)>=10000)return jsonResponse(req,"503 Service Unavailable","{\"code\":\"timeout\"}");delay(1);}
@@ -210,6 +205,7 @@ static esp_err_t infoHandler(httpd_req_t *req){
 static esp_err_t statusHandler(httpd_req_t *req){
   if(!authorized(req))return ESP_OK;
   if(webPending||!webDone)return jsonResponse(req,"503 Service Unavailable","{\"code\":\"busy\"}");
+  if(!captureWebAuthorization(req))return ESP_OK;
   webBody="";webOperation=4;webDone=false;
   portENTER_CRITICAL(&webMux);webPending=true;portEXIT_CRITICAL(&webMux);
   uint32_t started=millis();while(!webDone){if(uint32_t(millis()-started)>=10000)return jsonResponse(req,"503 Service Unavailable","{\"code\":\"timeout\"}");delay(1);}
@@ -255,6 +251,7 @@ static esp_err_t hubApiHandler(httpd_req_t *req){
   std::string token;
   if(httpd_req_get_hdr_value_str(req,"Authorization",authorization,sizeof(authorization))==ESP_OK&&!strncmp(authorization,"Bearer ",7))token=authorization+7;
   hubHttpRequest=iotcloud::HubService::Request(get?"GET":req->method==HTTP_POST?"POST":req->method==HTTP_PUT?"PUT":"DELETE",path.c_str(),std::string(body.c_str(),body.length()),token,hostname.c_str(),setupAuthorized);
+  webAuthRequired=false;if(setupAuthorized&&!captureWebAuthorization(req))return ESP_OK;
   webOperation=3;webDone=false;hubHttpToken="";
   portENTER_CRITICAL(&webMux);webPending=true;portEXIT_CRITICAL(&webMux);
   uint32_t started=millis();while(!webDone){if(uint32_t(millis()-started)>=10000)return jsonResponse(req,"503 Service Unavailable","{\"code\":\"timeout\"}");delay(1);}
