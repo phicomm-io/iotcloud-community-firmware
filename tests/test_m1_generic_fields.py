@@ -6,7 +6,7 @@ from pathlib import Path
 import unittest
 
 from tests import test_m1_display_format
-from tests.test_stock_runtime import run_host
+from tests.test_stock_runtime import run_oracle_host as run_host
 from tests.test_http_json_budget import function
 
 

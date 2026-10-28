@@ -4,7 +4,7 @@ import json
 import unittest
 from tests import test_m1_display_source
 from tests.test_http_json_budget import function
-from tests.test_stock_runtime import run_host
+from tests.test_stock_runtime import run_oracle_host as run_host
 
 
 class DisplayFormatTest(unittest.TestCase):

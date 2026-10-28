@@ -174,11 +174,11 @@ int main(void){
         return source
 
     def test_dual_configuration_leases_and_uart_readback(self):
-        from tests.test_stock_runtime import run_host
+        from tests.test_stock_runtime import run_oracle_host as run_host
         run_host(self._dual_source())
 
     def _run_uart(self, body, *, original=True):
-        from tests.test_stock_runtime import run_host
+        from tests.test_stock_runtime import run_oracle_host as run_host
         source = self._dual_source().split('int main(void){', 1)[0]
         if original:
             source = source.replace(r'\"selected_source\":\"user\"', r'\"selected_source\":\"original\"')

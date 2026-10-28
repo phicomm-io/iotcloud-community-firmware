@@ -23,6 +23,26 @@ def run_host(source):
         subprocess.run([str(tmp/'test')], check=True)
 
 
+def run_oracle_host(source):
+    """Frozen JSON assertion oracle only; actual display business receives MP.
+
+    Separate from run_host so the stock UART/reset product fixture cannot gain
+    a hidden DOM dependency. The test-only adapter is never firmware code.
+    """
+    from tests.sdk_json import copy_patched_json
+    json_source = Path(os.environ.get('PHICOMM_TEST_JSON_DIR', ROOT/'build/a1-sdk/mico-os/libraries/utilities/json_c'))
+    with tempfile.TemporaryDirectory() as directory:
+        tmp=Path(directory);json_dir=copy_patched_json(json_source,tmp/'sdk')
+        for path in json_dir.glob('*.c'):
+            path.write_text(path.read_text().replace('%ld','%d'))
+        src=tmp/'test.c';src.write_text(source)
+        command=[os.environ.get('CC','cc'),'-std=gnu99','-g','-fsanitize=address,undefined','-no-pie',
+                 '-I'+str(ROOT),'-I'+str(ROOT/'M1'),'-I'+str(ROOT/'tests/host'),'-I'+str(json_dir),
+                 str(src),str(ROOT/'M1/protocol.c'),str(ROOT/'common/typed_wire.c'),str(ROOT/'common/wire_buffer.c'),
+                 *map(str,json_dir.glob('*.c')),'-lm','-o',str(tmp/'test')]
+        subprocess.run(command,check=True);subprocess.run([str(tmp/'test')],check=True)
+
+
 
 class StockRuntimeTest(unittest.TestCase):
     def test_m1_storage_commands_and_uart(self):

@@ -76,7 +76,7 @@ class Emw3080ReleaseMemory(unittest.TestCase):
         service = (ROOT / 'common/service.c').read_text()
         mqtt = (ROOT / 'common/mqtt/client.c').read_text()
         production = '\n'.join((function(service, 'static uint32_t service_free_memory('),
-                                function(service, 'int json_heap_permit('),
+                                function(service, 'void *ph_wire_malloc('),
                                 function(mqtt, 'static bool permit(')))
         source = r'''
 #undef NDEBUG
@@ -88,7 +88,10 @@ typedef struct { int free_memory; } micoMemInfo_t;
 static micoMemInfo_t heap;
 static bool memory_available=true;
 static const micoMemInfo_t *MicoGetMemoryInfo(void){return memory_available?&heap:NULL;}
+static bool wire_diag_ready;static uint32_t wire_alloc_failed,wire_guard_denied;static unsigned wire_diag_lock;
+static void mico_rtos_lock_mutex(unsigned*p){(void)p;}static void mico_rtos_unlock_mutex(unsigned*p){(void)p;}
 PRODUCTION
+static bool native_permit(size_t n){void*p=ph_wire_malloc(n);bool yes=p!=NULL;free(p);return yes;}
 int main(void){
  const uint32_t floor=SERVICE_MEMORY_RESERVE;
  service_memory_state_t state={.minimum_free=UINT32_MAX};
@@ -108,22 +111,22 @@ int main(void){
  unsigned maximum=memory_budget_claim(&state,floor+16896,16384);assert(maximum==16896);
  memory_budget_release(&state,maximum);assert(!state.active && !state.reserved);
  heap.free_memory=(int)floor-1;
- assert(!json_heap_permit(0) && !permit(NULL,0));
+ assert(!native_permit(0) && !permit(NULL,0));
  heap.free_memory=(int)floor+32;
- assert(!json_heap_permit(1) && !permit(NULL,1));
+ assert(!native_permit(1) && !permit(NULL,1));
  heap.free_memory=INT32_MAX;
- assert(!json_heap_permit(SIZE_MAX) && !permit(NULL,SIZE_MAX));
- memory_available=false;assert(!json_heap_permit(0) && !permit(NULL,0));memory_available=true;
+ assert(!native_permit(SIZE_MAX) && !permit(NULL,SIZE_MAX));
+ memory_available=false;assert(!native_permit(0) && !permit(NULL,0));memory_available=true;
  /* Boundary pressure is deliberately below the separate 12 KiB stress target.
-  * Production JSON/MQTT hooks must permit real mallocs while retaining 8 KiB. */
+  * Production binary/MQTT hooks must permit real mallocs while retaining 8 KiB. */
  if(floor==8192){
   for(uint32_t available=floor+33;available<12288;available+=127){
    heap.free_memory=(int)available;size_t bytes=available-floor-32;
-   assert(json_heap_permit(bytes) && permit(NULL,bytes));
-   assert(!json_heap_permit(bytes+1) && !permit(NULL,bytes+1));
+   assert(native_permit(bytes) && permit(NULL,bytes));
+   assert(!native_permit(bytes+1) && !permit(NULL,bytes+1));
    void *allocation=malloc(bytes);assert(allocation);
    heap.free_memory-=(int)(bytes+32);assert(heap.free_memory==(int)floor);
-   assert(!json_heap_permit(1) && !permit(NULL,1));free(allocation);
+   assert(!native_permit(1) && !permit(NULL,1));free(allocation);
    state=(service_memory_state_t){.minimum_free=UINT32_MAX};
    if(available>=floor+512){
     unsigned claim=memory_budget_claim(&state,available,0);assert(claim==512);

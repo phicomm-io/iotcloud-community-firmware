@@ -1,6 +1,6 @@
 """Explicit RC4 native migration subset; not the complete historical gate.
 
-Keep this list reviewable. Unmigrated historical scenarios stay in run.sh --all.
+Keep this list reviewable. The remaining product/tool gates run in run.sh --all.
 Tests may use a pinned SDK/frozen legacy schema as an oracle, but production
 business paths under test must be native MessagePack or the isolated HA writer.
 """
@@ -27,6 +27,12 @@ MODULES = (
     'test_mqtt_buffer_storage', 'test_tc1_mqtt_lifecycle', 'test_bemfa',
     'test_native_service_mqtt', 'test_tc1_mqtt_stack', 'test_tc1_checked_number_calls',
     'test_mqtt_optional_json',
+    'test_mqtt_discovery_budget.DiscoveryBudget.test_host_discovery_lifecycle_sanitizers',
+    'test_mqtt_discovery_budget.DiscoveryBudget.test_missing_capture_backoff_negative_control',
+    'test_ha_runtime_contract',
+    'test_product_metadata_mp', 'test_ota_recovery', 'test_stock_runtime',
+    'test_m1_display_source', 'test_m1_display_format', 'test_m1_generic_fields',
+    'test_tc1_status_guard',
     'test_m1_mqtt_display_session', 'test_m1_mqtt_startup', 'test_m1_particles_mqtt',
 )
 
