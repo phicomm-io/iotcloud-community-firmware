@@ -18,6 +18,26 @@ except ImportError:
  from check_http_core import linked_symbols
 LAN_BUDGET=12288
 LAN_RESERVE=2048
+SHA_UTIL_FRAMES={
+ 'SHA256Reset','SHA256Input','SHA256Result',
+ 'SHA224_256ProcessMessageBlock','SHA224_256PadMessage','SHA224_256ResultN.part.0',
+}
+
+def add_sha_utils_frames(frames,modules,symbols):
+ path=Path(modules)/'mico-os/MiCO/security/SHAUtils/sha224-256.su'
+ linked=SHA_UTIL_FRAMES&symbols.keys()
+ if not linked:return
+ if not path.is_file():raise ValueError('Missing actual SDK SHAUtils .su file: '+str(path))
+ found={}
+ for line in path.read_text().splitlines():
+  location,size,kind=line.split('\t')
+  name=location.rsplit(':',1)[-1]
+  if name in linked:found[name]=(int(size),kind)
+ missing=linked-found.keys()
+ if missing:raise ValueError('Emitted SHAUtils helper missing actual .su frame: '+str(sorted(missing)))
+ for name,(size,kind) in found.items():
+  frames[name]=size
+  if kind!='static':frames.unbounded[name]=kind
 
 def lan_paths(frames,model,symbols=None):
  if model not in ('A1','M1','TC1'):raise ValueError('Unknown LAN model: '+model)
@@ -40,7 +60,7 @@ def lan_paths(frames,model,symbols=None):
   add(label,prefix+['ph_auth_context_valid']+extra(['ph_auth_private_lock','ph_auth_private_alive']))
  add('nonblocking admission',server+extra(['lan_business_dispatch'])+['service_memory_try_claim'])
  add('command gate',dispatch+extra(['service_command_enter']))
- sha=extra(['SHA256Reset','SHA256Input','SHA256Result','SHA256ProcessMessageBlock','SHA256PadMessage'])
+ sha=extra(SHA_UTIL_FRAMES)
  add('body digest',server+extra(['lan_business_digest'])+sha)
  add('receipt namespace digest',service+sha)
  add('receipt digest',dispatch+sha)
@@ -90,6 +110,7 @@ def check(modules,model,nm,elf):
  budget=int(re.search(r'#define '+macro+r' (\d+)u',header.read_text()).group(1))
  frames=read_worker_frames(Path(modules)/model)
  symbols=linked_symbols(subprocess.check_output([nm,'--defined-only',elf],text=True))
+ add_sha_utils_frames(frames,Path(modules),symbols)
  for api in ('lan_v4_server_input','lan_v4_decode_value','service_lan_try_command_mp','ph_auth_pair_resume_boot','bonjour_lan_txt'):
   if symbols.get(api)!=1:raise ValueError('Expected one actual linked LAN entry: '+api)
  validate_lan_paths(lan_paths(frames,model,symbols),frames,budget)
