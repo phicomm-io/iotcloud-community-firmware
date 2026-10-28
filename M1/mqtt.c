@@ -316,7 +316,7 @@ static int cleanup_discovery(void)
 static int cleanup_all(void)
 {
     int result = cleanup_discovery();
-    if (feature_mqtt_cleanup(publish) != MQTT_SUCCESS) result = MQTT_FAILURE;
+    if (feature_mqtt_cleanup(publish_bytes) != MQTT_SUCCESS) result = MQTT_FAILURE;
     return result;
 }
 static bool same_connection(const m1_config_t *a, const m1_config_t *b)
@@ -438,7 +438,7 @@ static int session_cycle(void *context) {
             /* A birth received during a batch requests a complete subsequent pass.
              * Do not consume it by restarting the partially published pass. */
             if (rediscover && discovery_index==MQTT_DISCOVERY_COUNT) {
-                feature_mqtt_service(publish,false);
+                feature_mqtt_service(publish_bytes,false);
                 discovery_index=0;rediscover=false;
                 old_brightness = old_fresh = old_co2_fresh = old_pressure_fresh = -1; sequence = co2_sequence = pressure_sequence = 0;
             }
@@ -506,7 +506,7 @@ static int session_cycle(void *context) {
                 rc = publish_leaf("brightness/state", value, true);
                 if(rc==MQTT_SUCCESS)old_brightness=state.brightness_requested;
             }
-            if (rc == MQTT_SUCCESS) rc = feature_mqtt_service(publish, true);
+            if (rc == MQTT_SUCCESS) rc = feature_mqtt_service(publish_bytes, true);
     return rc;
 }
 static bool session_valid(void *context) {
@@ -535,7 +535,7 @@ static void session_closing(void *context,bool connected,int rc) {
             cleanup_pending = false;
             mico_rtos_lock_mutex(&m1_lock); m1_state.mqtt_cleanup_warning = cleanup != MQTT_SUCCESS; mico_rtos_unlock_mutex(&m1_lock);
         }
-        feature_mqtt_service(publish,false);
+        feature_mqtt_service(publish_bytes,false);
 }
 static void session_event(void *context,unsigned event,int rc) {
     (void)context;

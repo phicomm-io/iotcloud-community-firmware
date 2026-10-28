@@ -29,7 +29,7 @@ MODULES = (
     'test_mqtt_optional_json',
     'test_mqtt_discovery_budget.DiscoveryBudget.test_host_discovery_lifecycle_sanitizers',
     'test_mqtt_discovery_budget.DiscoveryBudget.test_missing_capture_backoff_negative_control',
-    'test_ha_runtime_contract',
+    'test_ha_runtime_contract', 'test_m1_mqtt_cleanup_callback',
     'test_product_metadata_mp', 'test_ota_recovery', 'test_stock_runtime',
     'test_m1_display_source', 'test_m1_display_format', 'test_m1_generic_fields',
     'test_tc1_status_guard',
