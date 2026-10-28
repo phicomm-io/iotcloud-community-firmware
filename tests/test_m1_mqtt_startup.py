@@ -6,6 +6,7 @@ import tempfile
 import unittest
 
 from tests.test_http_json_budget import function
+from tests.m1_mqtt_fixture import observe_discovery
 from tests import test_shared_mqtt as shared
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -70,7 +71,8 @@ void __wrap_ph_mqtt_session_run(Client *c,const ph_mqtt_session_hooks *hooks){
  ph_mqtt_session_hooks bounded=*hooks;bounded.stop=stop;
  __real_ph_mqtt_session_run(c,&bounded);
 }
-#define session_prepare prepare
+static int prepare_mp(void *ctx,ph_mqtt_connection *spec){int rc=prepare(ctx,spec);spec->firmware_version="1.0.0-rc.4-test";spec->variant="m1-test";return rc;}
+#define session_prepare prepare_mp
 #define session_subscription subscription_plan
 #define session_initial initial
 #define session_cycle cycle
@@ -96,14 +98,15 @@ int main(int argc,char **argv){
  dispatch();
  assert(created==(mode==3?2u:1u)&&!deleted);
  assert(owner_attempts==failures+1&&session_runs==1&&ready_events==1);
- assert(now_ms>=failures*1000u&&cycles==2&&close_events==1);
+ assert(now_ms>=failures*1000u&&cycles==2&&close_events==1&&fixture_discoveries==1);
  assert(!native_live&&!charged_live);ph_mqtt_owner_end();
  assert(!ph_mqtt_owner());
  printf("M1 actual startup/session: case=%u init_attempts=%u threads=%u READY=%u PASS\n",
         mode,owner_attempts,created,ready_events);
  return 0;
 }
-'''.replace('/* WORKER */', worker).replace('/* START */', start)
+'''.replace('/* WORKER */', worker).replace('/* START */', start).replace(
+            '#include "tests/mqtt_core/paho.c"', observe_discovery((ROOT/'tests/mqtt_core/paho.c').read_text()))
 
     @classmethod
     def build(cls, source, binary):
@@ -116,7 +119,8 @@ int main(int argc,char **argv){
             '-I' + str(protocol), '-I' + str(protocol / 'mico'), '-I' + str(protocol / 'MQTTPacket'),
             '-DMAX_MESSAGE_HANDLERS=12', '-DPH_EXPECTED_MESSAGE_HANDLERS=12',
             str(path), str(ROOT / 'common/mqtt/core.c'), str(ROOT / 'common/mqtt/client.c'),
-            str(ROOT / 'common/mqtt/session.c'), str(protocol / 'MQTTClient.c'),
+            str(ROOT / 'common/mqtt/session.c'), str(ROOT / 'common/typed_wire.c'),
+            str(ROOT / 'common/wire_buffer.c'), str(protocol / 'MQTTClient.c'),
             *map(str, sorted((protocol / 'MQTTPacket').glob('*.c'))),
             '-Wl,--wrap=mico_rtos_init_mutex,--wrap=ph_mqtt_session_run',
             '-Wl,--wrap=malloc,--wrap=free,--wrap=realloc,--wrap=calloc,--wrap=strdup',
