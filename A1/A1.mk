@@ -35,3 +35,6 @@ ifeq ($(A1_FRESH_AIR),1)
 GLOBAL_DEFINES += A1_FRESH_AIR=1
 $(NAME)_SOURCES += fresh_air.c
 endif
+
+# Share stateless HA codecs while retaining per-owner input buffers.
+GLOBAL_DEFINES += PHICOMM_SHARED_HA_CODEC=1

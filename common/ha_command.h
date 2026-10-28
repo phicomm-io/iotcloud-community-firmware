@@ -6,6 +6,14 @@
 /* HA command templates emit only maps, strings, booleans and integer settings.
  * This restricted JSON bridge is isolated from HTTP/cloud MQTT. It borrows
  * bytes synchronously, uses bounded scratch and never builds a JSON graph. */
+#if defined(PHICOMM_SHARED_HA_CODEC) && !defined(PHICOMM_HA_CODEC_IMPLEMENTATION)
+size_t ha_command_pack(const void *data,size_t length,void *output,size_t capacity);
+#else
+#ifdef PHICOMM_SHARED_HA_CODEC
+#define PH_HA_COMMAND_API
+#else
+#define PH_HA_COMMAND_API static inline
+#endif
 typedef struct {const unsigned char *p,*end;unsigned nodes;} ha_reader;
 static inline void hac_ws(ha_reader *r)
 {while(r->p<r->end && (*r->p==' ' || *r->p=='\t' || *r->p=='\n' || *r->p=='\r'))r->p++;}
@@ -71,7 +79,7 @@ static inline bool hac_value(ha_reader *r,ph_writer *w,const char *key,unsigned 
     if(value>9007199254740991ULL)return false;
     phw_int(w,key,negative?-(int64_t)value:(int64_t)value);return !w->failed;
 }
-static inline size_t ha_command_pack(const void *data,size_t length,void *output,size_t capacity)
+PH_HA_COMMAND_API size_t ha_command_pack(const void *data,size_t length,void *output,size_t capacity)
 {
     if(!data || !length || length>1024 || memchr(data,0,length))return 0;
     ha_reader r={(const unsigned char *)data,(const unsigned char *)data+length,0};
@@ -83,6 +91,8 @@ static inline size_t ha_command_pack(const void *data,size_t length,void *output
     if(!n || !phv_parse(PH_WIRE_MSGPACK,output,n,&checked))return 0;
     return n;
 }
+#undef PH_HA_COMMAND_API
+#endif
 static inline void ha_command_input(const void *data,size_t length)
 {
     /* Only the product MQTT owner calls this synchronous adapter. Keeping
