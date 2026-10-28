@@ -1,6 +1,7 @@
 #include "watchdog.h"
 #include "mico.h"
 #include "service.h"
+#include "json_build.h"
 #include <string.h>
 
 #if defined(MICO_SYSTEM_MONITOR_ENABLE) || defined(MICO_DISABLE_WATCHDOG)

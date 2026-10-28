@@ -1,7 +1,8 @@
 /* Shared M1/A1 adapter, compiled once per firmware. */
 #include "service.h"
-#include "firmware_variant.h"
+#include "firmware_variant_defs.h"
 #include "feature_mp.h"
+#include "automation.h"
 #ifdef FEATURE_DEVICE_A1
 #include "a1.h"
 #include "filter.h"

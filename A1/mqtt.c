@@ -6,7 +6,9 @@
 #include "MQTTClient.h"
 #include "../common/mqtt_transport.h"
 #include "../common/mqtt/client.h"
-#include "../common/json_owned.h"
+#include "../common/ha_json.h"
+#include "../common/sensor_mp.h"
+#include "../common/ha_command.h"
 #include "../common/mqtt/service.h"
 #include "../common/mqtt_cleanup.h"
 #include <ctype.h>
@@ -43,6 +45,14 @@ static void mqtt_error(const char *operation, int result)
     mico_rtos_unlock_mutex(&a1_lock);
 }
 
+static int publish_bytes(const char *topic,const void *bytes,size_t length,bool retained)
+{
+    MQTTMessage message={0};message.qos=QOS1;message.retained=retained;
+    message.payload=(void *)bytes;message.payloadlen=length;
+    int rc=ph_mqtt_publish(&client,topic,&message);
+    if(rc==PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED)return PH_MQTT_MORE;
+    if(rc!=PH_MQTT_MORE)mqtt_error("publish",rc);return rc;
+}
 static int publish(const char *topic, const char *payload, bool retain)
 {
     if (!payload) { mqtt_error("serialize", MQTT_FAILURE); return MQTT_FAILURE; }
@@ -57,7 +67,7 @@ static int publish(const char *topic, const char *payload, bool retain)
 }
 static int leaf(const char *name, const char *payload)
 {
-    char topic[MQTT_TOPIC_MAX]; snprintf(topic, sizeof(topic), "%s/%s", base, name);
+    char topic[MQTT_TOPIC_MAX]; snprintf(topic, sizeof(topic), "%s/ha/%s", base, name);
     return publish(topic, payload, true);
 }
 static bool topic_is(MessageData *d, const char *suffix)
@@ -74,15 +84,16 @@ static void ota_snapshot(char *state,char *error,unsigned *progress) {
     snprintf(error,128,"%s",a1_state.ota_error);*progress=a1_state.ota_progress;
     mico_rtos_unlock_mutex(&a1_lock);
 }
-static int ota_publish(const char *leaf,const char *text,bool retained) {
-    char topic[MQTT_TOPIC_MAX];snprintf(topic,sizeof(topic),"%s/%s",base,leaf);return publish(topic,text,retained);
+static int ota_publish(const char *leaf,const void *bytes,size_t length,bool retained) {
+    char topic[MQTT_TOPIC_MAX];snprintf(topic,sizeof(topic),"%s/%s",base,leaf);return publish_bytes(topic,bytes,length,retained);
 }
 #include "../common/ota/mqtt_ota.inc"
 static void command(MessageData *d)
 {
     if (!session_current()) return;
     MQTTMessage *m = d->message;
-    if(topic_is(d,"command")){service_mqtt_input(publish,&account,m->payload,m->payloadlen,m->retained);return;}
+    if(topic_is(d,"command")){service_mqtt_input(publish_bytes,&account,m->payload,m->payloadlen,m->retained);return;}
+    if(topic_is(d,"ha/command")){if(!m->retained && !ota_job_active())ha_command_input(m->payload,m->payloadlen);return;}
     if(topic_is(d,"ota/set")){ota_command(base,m->payload,m->payloadlen,m->retained);return;}
     if(ota_job_active())return;
     if (m->retained || !m->payloadlen || m->payloadlen > A1_JSON_LIMIT) return;
@@ -91,10 +102,6 @@ static void command(MessageData *d)
     if(fn<sizeof(ftopic)){memcpy(ftopic,ft->cstring?ft->cstring:ft->lenstring.data,fn);ftopic[fn]=0;if(feature_mqtt_input(ftopic,m->payload,m->payloadlen,m->retained))return;}
     /* Wildcard also receives our own states: dispatch only these exact commands. */
     a1_control_t r={0};
-    if(topic_is(d,"light/set")){
-        json_object *o=a1_json_parse(m->payload,m->payloadlen);
-        if(o){a1_control_local("light",o);json_object_put(o);}return;
-    }
     if(topic_is(d,"fan/set")){r.kind=A1_CONTROL_FAN;r.fields=A1_SET_ON;}
     else if(topic_is(d,"fan/percentage/set")){r.kind=A1_CONTROL_FAN;r.fields=A1_SET_SPEED;}
     else if(topic_is(d,"child_lock/set")){r.kind=A1_CONTROL_LOCK;r.fields=A1_SET_ENABLED;}
@@ -137,14 +144,12 @@ static void ha_birth(MessageData *d)
     if (!session_current()) return;
     if (d->message->payloadlen == 6 && !memcmp(d->message->payload, "online", 6)) rediscover = true;
 }
-static void str(json_object *o, const char *key, const char *value)
-{ json_build_object_add(o, key, json_object_new_string(value)); }
-static void topic(json_object *o, const char *key, const char *suffix)
+static void topic(ha_json *o, const char *key, const char *suffix)
 {
-    char value[MQTT_TOPIC_MAX]; snprintf(value, sizeof(value), "%s/%s", base, suffix); str(o, key, value);
+    char value[MQTT_TOPIC_MAX]; snprintf(value, sizeof(value), "%s/ha/%s", base, suffix); ha_json_string(o, key, value);
 }
 /* Keep this frame visible to the production MQTT stack-budget check. */
-static __attribute__((noinline)) int filter_discovery(const a1_config_t *c, bool clear,unsigned index,service_mqtt_json_scope *scope)
+static __attribute__((noinline)) int filter_discovery(const a1_config_t *c, bool clear,unsigned index,ha_json *o)
 {
     static const char *keys[] = {"filter_remaining", "filter_used", "filter_replacement", "filter_lifetime", "filter_reset", "fan_mode"};
     static const char *components[] = {"sensor", "sensor", "binary_sensor", "number", "button", "select"};
@@ -161,93 +166,89 @@ static __attribute__((noinline)) int filter_discovery(const a1_config_t *c, bool
         mqtt_ha(&account, components[i], keys[i], path, sizeof(path));
         /* Wear belongs to this physical A1 even when fan control is grouped. */
         if (clear) { if (publish(path, "", true) != MQTT_SUCCESS) return MQTT_FAILURE; continue; }
-        json_object *o = json_object_new_object(), *device = json_object_new_object(), *ids = json_object_new_array();
-        if (!o || !device || !ids) {
-            if (o) json_object_put(o);
-            if (device) json_object_put(device);
-            if (ids) json_object_put(ids);
-            return service_mqtt_json_error(scope, PH_MQTT_ERROR_APP_DISCOVERY_GRAPH);
-        }
+        ha_json_begin(o,NULL,false);
+        ha_json_begin(o,"device",false);
+        ha_json_begin(o,"identifiers",true);
         mqtt_identity(&account, "", identity, sizeof(identity));
-        json_build_array_add(ids, json_object_new_string(bound ? parent_id : identity));
-        json_build_object_add(device, "identifiers", ids);
-        str(device, "name", bound ? parent_name : c->name); str(device, "model", "A1 Air Purifier (EMW3080B)");
-        str(device, "manufacturer", "Phicomm"); str(device, "sw_version", A1_VERSION);
-        json_build_object_add(o, "device", device);
+        ha_json_string(o,NULL,bound?parent_id:identity);
+        ha_json_end(o);
+        ha_json_string(o, "name", bound ? parent_name : c->name); ha_json_string(o, "model", "A1 Air Purifier (EMW3080B)");
+        ha_json_string(o, "manufacturer", "Phicomm"); ha_json_string(o, "sw_version", A1_VERSION);
+        ha_json_end(o);
         if (bound && grouped) {
             static char label[160];
             snprintf(label, sizeof(label), "%s %s", c->name, ph_i18n(device_language_get(),names[i],english[i]));
-            str(o, "name", label);
-        } else str(o, "name", ph_i18n(device_language_get(),names[i],english[i]));
-        mqtt_identity(&account, keys[i], identity, sizeof(identity)); str(o, "unique_id", identity);
-        str(o, "availability_topic", availability_topic); str(o, "icon", i == 5 ? "mdi:fan-auto" : "mdi:air-filter");
-        if (i < 5) str(o, "entity_category", i < 3 ? "diagnostic" : "config");
-        json_build_object_add(o, "retain", json_object_new_boolean(false));
+            ha_json_string(o, "name", label);
+        } else ha_json_string(o, "name", ph_i18n(device_language_get(),names[i],english[i]));
+        mqtt_identity(&account, keys[i], identity, sizeof(identity)); ha_json_string(o, "unique_id", identity);
+        ha_json_string(o, "availability_topic", availability_topic); ha_json_string(o, "icon", i == 5 ? "mdi:fan-auto" : "mdi:air-filter");
+        if (i < 5) ha_json_string(o, "entity_category", i < 3 ? "diagnostic" : "config");
+        ha_json_bool(o,"retain",false);
         topic(o, "json_attributes_topic", "state");
-        str(o, "json_attributes_template", "{{ {\"ip\": value_json.ip, \"firmware\": value_json.version, \"config_dirty\": value_json.config_dirty} | tojson }}");
+        ha_json_string(o, "json_attributes_template", "{{ {\"ip\": value_json.ip, \"firmware\": value_json.version, \"config_dirty\": value_json.config_dirty} | tojson }}");
         if (i < 4 || i == 5) topic(o, "state_topic", "state");
         if (i == 0) {
-            str(o, "value_template", "{{ value_json.filter.remaining_percent }}");
-            str(o, "unit_of_measurement", "%"); str(o, "state_class", "measurement");
+            ha_json_string(o, "value_template", "{{ value_json.filter.remaining_percent }}");
+            ha_json_string(o, "unit_of_measurement", "%"); ha_json_string(o, "state_class", "measurement");
         } else if (i == 1) {
-            str(o, "value_template", "{{ (value_json.filter.used_seconds / 3600) | round(1) }}");
-            str(o, "unit_of_measurement", "h"); str(o, "device_class", "duration");
+            ha_json_string(o, "value_template", "{{ (value_json.filter.used_seconds / 3600) | round(1) }}");
+            ha_json_string(o, "unit_of_measurement", "h"); ha_json_string(o, "device_class", "duration");
         } else if (i == 2) {
-            str(o, "value_template", "{{ 'ON' if value_json.filter.replacement_due else 'OFF' }}");
-            str(o, "device_class", "problem");
+            ha_json_string(o, "value_template", "{{ 'ON' if value_json.filter.replacement_due else 'OFF' }}");
+            ha_json_string(o, "device_class", "problem");
         } else if (i == 3) {
-            str(o, "value_template", "{{ value_json.filter.lifetime_hours }}");
+            ha_json_string(o, "value_template", "{{ value_json.filter.lifetime_hours }}");
             topic(o, "command_topic", "command");
-            str(o, "command_template", "{\"action\":\"filter.set\",\"params\":{\"lifetime_hours\":{{ value | int }}}}");
-            str(o, "unit_of_measurement", "h"); str(o, "mode", "box");
-            json_build_object_add(o, "min", json_object_new_int(1));
-            json_build_object_add(o, "max", json_object_new_int(A1_FILTER_MAX_HOURS));
-            json_build_object_add(o, "step", json_object_new_int(1));
+            ha_json_string(o, "command_template", "{\"action\":\"filter.set\",\"params\":{\"lifetime_hours\":{{ value | int }}}}");
+            ha_json_string(o, "unit_of_measurement", "h"); ha_json_string(o, "mode", "box");
+            ha_json_int(o,"min",1);
+            ha_json_int(o,"max",A1_FILTER_MAX_HOURS);
+            ha_json_int(o,"step",1);
         } else if (i == 4) {
             topic(o, "command_topic", "command");
-            str(o, "payload_press", "{\"action\":\"filter.reset\",\"params\":{}}");
+            ha_json_string(o, "payload_press", "{\"action\":\"filter.reset\",\"params\":{}}");
         } else {
             topic(o, "command_topic", "command");
             const uint8_t language = device_language_get();
-            str(o, "value_template", ph_i18n(language,
+            ha_json_string(o, "value_template", ph_i18n(language,
                 "{{ '自动' if value_json.fan_mode == 'auto' else '手动' }}",
                 "{{ 'Automatic' if value_json.fan_mode == 'auto' else 'Manual' }}"));
-            str(o, "command_template", ph_i18n(language,
+            ha_json_string(o, "command_template", ph_i18n(language,
                 "{\"action\":\"fan.mode.set\",\"params\":{\"mode\":\"{{ 'auto' if value == '自动' else 'manual' }}\"}}",
                 "{\"action\":\"fan.mode.set\",\"params\":{\"mode\":\"{{ 'auto' if value == 'Automatic' else 'manual' }}\"}}"));
-            json_object *options = json_object_new_array();
-            json_build_array_add(options, json_object_new_string(ph_i18n(language, "自动", "Automatic")));
-            json_build_array_add(options, json_object_new_string(ph_i18n(language, "手动", "Manual")));
-            json_build_object_add(o, "options", options);
+            ha_json_begin(o,"options",true);
+            ha_json_string(o,NULL,ph_i18n(language,"自动","Automatic"));
+            ha_json_string(o,NULL,ph_i18n(language,"手动","Manual"));
+            ha_json_end(o);
         }
-        int rc = service_mqtt_optional_send(publish,path,o,true,scope);
+        ha_json_end(o);
+        int rc=ha_json_done(o)?publish(path,o->data,true):PH_MQTT_MORE;
         if (rc != MQTT_SUCCESS) return rc;
     }
     return MQTT_SUCCESS;
 }
 /* Accessory identity is always the physical A1, even with grouped primary control. */
-static int discovery_build(const a1_config_t *,unsigned,service_mqtt_json_scope *);
-static int fresh_discovery(const a1_config_t *c,bool clear,unsigned i,service_mqtt_json_scope *scope) {
+static int discovery_build(const a1_config_t *,unsigned,ha_json *);
+static int fresh_discovery(const a1_config_t *c,bool clear,unsigned i,ha_json *o) {
     char path[MQTT_TOPIC_MAX],identity[MQTT_TOPIC_MAX];
     const char *key=i?"fresh_air_feedback":"fresh_air";
     mqtt_ha(&account,i?"sensor":"fan",key,path,sizeof(path));
 #ifndef A1_FRESH_AIR
     clear=true;
-    (void)c;(void)scope;
+    (void)c;(void)o;
 #endif
     if(clear)return publish(path,"",true);
-    if(!i)return discovery_build(c,10,scope);
+    if(!i)return discovery_build(c,10,o);
 #ifdef A1_FRESH_AIR
-    json_object *o=json_object_new_object(),*device=json_object_new_object(),*ids=json_object_new_array();
-    if(!o||!device||!ids){if(o)json_object_put(o);if(device)json_object_put(device);if(ids)json_object_put(ids);return service_mqtt_json_error(scope,PH_MQTT_ERROR_APP_DISCOVERY_GRAPH);}
-    mqtt_identity(&account,"",identity,sizeof(identity));json_build_array_add(ids,json_object_new_string(identity));
-    json_build_object_add(device,"identifiers",ids);str(device,"name",c->name);str(device,"manufacturer","Phicomm");str(device,"model","A1 Air Purifier (EMW3080B)");str(device,"sw_version",A1_VERSION);
-    json_build_object_add(o,"device",device);str(o,"name",i?ph_i18n(device_language_get(),"新风转速","Fresh air speed"):ph_i18n(device_language_get(),"新风风机","Fresh air fan"));
-    mqtt_identity(&account,key,identity,sizeof(identity));str(o,"unique_id",identity);
-    str(o,"availability_topic",availability_topic);topic(o,"state_topic","state");
-    str(o,"value_template","{{ value_json.fresh_air_rpm }}");
-    str(o,"unit_of_measurement","rpm");str(o,"state_class","measurement");str(o,"entity_category","diagnostic");
-    return service_mqtt_optional_send(publish,path,o,true,scope);
+    ha_json_begin(o,NULL,false);ha_json_begin(o,"device",false);ha_json_begin(o,"identifiers",true);
+    mqtt_identity(&account,"",identity,sizeof(identity));ha_json_string(o,NULL,identity);ha_json_end(o);
+    ha_json_string(o,"name",c->name);ha_json_string(o,"manufacturer","Phicomm");ha_json_string(o,"model","A1 Air Purifier (EMW3080B)");ha_json_string(o,"sw_version",A1_VERSION);
+    ha_json_end(o);ha_json_string(o,"name",i?ph_i18n(device_language_get(),"新风转速","Fresh air speed"):ph_i18n(device_language_get(),"新风风机","Fresh air fan"));
+    mqtt_identity(&account,key,identity,sizeof(identity));ha_json_string(o,"unique_id",identity);
+    ha_json_string(o,"availability_topic",availability_topic);topic(o,"state_topic","state");
+    ha_json_string(o,"value_template","{{ value_json.fresh_air_rpm }}");
+    ha_json_string(o,"unit_of_measurement","rpm");ha_json_string(o,"state_class","measurement");ha_json_string(o,"entity_category","diagnostic");
+    ha_json_end(o);return ha_json_done(o)?publish(path,o->data,true):PH_MQTT_MORE;
 #else
     return MQTT_SUCCESS;
 #endif
@@ -263,7 +264,7 @@ static void primary_snapshot(const a1_config_t *c,bool *on,unsigned *speed) {
  * This owner snapshot also applies to the fresh-air build. */
 static uint32_t fan_sensor_boot,fan_sensor_sequence,fan_sensor_at;
 static uint32_t fan_sensor_wait=5000;
-static bool fan_sensor_started,fan_sensor_turn;
+static bool fan_sensor_started,fan_sensor_turn,fan_sensor_metadata;
 static bool fan_sensor_ready(void) {
     mico_rtos_lock_mutex(&a1_lock);
     bool ready=a1_state.fan_ready && !a1_state.ota_active && !a1_state.reboot_pending;
@@ -281,27 +282,33 @@ static int fan_sensor_cycle(bool on,unsigned speed,bool *handled) {
     if(!fan_sensor_boot && (MicoRandomNumberRead((uint8_t *)&fan_sensor_boot,sizeof(fan_sensor_boot))!=kNoErr || !fan_sensor_boot)) {
         fan_sensor_boot=0;return MQTT_SUCCESS;
     }
-    unsigned percent=on?speed:0;
-    bool valid=fan_sensor_ready() && percent<=100;
-    char topic[192],payload[448],value[8]="null";
-    if(valid && !mqtt_format(value,sizeof(value),"%u",percent))return MQTT_SUCCESS;
+    char topic[192];ph_writer w;
+    bool metadata=!fan_sensor_metadata;
     uint32_t sequence=fan_sensor_sequence+1u;if(!sequence)sequence=1;
     if(!mqtt_aux(&account,"sensor",account.mac,topic,sizeof(topic)) ||
-       !mqtt_format(topic+strlen(topic),sizeof(topic)-strlen(topic),"/state") ||
-       !mqtt_format(payload,sizeof(payload),
-          "{\"schema\":2,\"model\":\"a1\",\"device_id\":\"%s\",\"boot\":%lu,\"sequence\":%lu,\"sensors\":{\"fan_speed_percent\":{\"type\":\"number\",\"name\":\"Fan speed\",\"value\":%s,\"unit\":\"%%\",\"valid\":%s,\"age_ms\":0}}}",
-          account.mac,(unsigned long)fan_sensor_boot,(unsigned long)sequence,value,
-          valid?"true":"false"))return MQTT_SUCCESS;
-    fan_sensor_sequence=sequence;
-    int rc=publish(topic,payload,false);
-    if(rc==MQTT_SUCCESS)fan_sensor_wait=5000;
+       !mqtt_format(topic+strlen(topic),sizeof(topic)-strlen(topic),metadata?"/metadata":"/state") ||
+       !phw_init(&w,PH_WIRE_MSGPACK))return MQTT_SUCCESS;
+    if(metadata){
+        ph_sensor_metadata_begin(&w,account.mac,fan_sensor_boot,1);
+        ph_sensor_descriptor_write(&w,"fan_speed_percent","Fan speed","%");
+    }else{
+        ph_sensor_snapshot_begin(&w,account.mac,fan_sensor_boot,sequence,1);
+        ph_sensor_reading_write(&w,"fan_speed_percent",on?speed:0,fan_sensor_ready() && (!on || speed<=100),0);
+    }
+    ph_sensor_finish(&w);ph_buf *payload=phw_take(&w);
+    if(!payload)return MQTT_SUCCESS;
+    int rc=publish_bytes(topic,payload->buf,payload->len,metadata);ph_buf_free(payload);
+    if(rc==MQTT_SUCCESS){
+        if(metadata){fan_sensor_metadata=true;fan_sensor_wait=0;}
+        else{fan_sensor_sequence=sequence;fan_sensor_wait=5000;}
+    }
     return rc;
 }
-static int discovery_build(const a1_config_t *c,unsigned index,service_mqtt_json_scope *scope)
+static int discovery_build(const a1_config_t *c,unsigned index,ha_json *o)
 {
-    if(index==11)return fresh_discovery(c,false,1,scope);
+    if(index==11)return fresh_discovery(c,false,1,o);
 #ifndef A1_FRESH_AIR
-    if(index==10)return fresh_discovery(c,true,0,scope);
+    if(index==10)return fresh_discovery(c,true,0,o);
 #endif
     bool fresh=index==10;
     unsigned begin=fresh?0:index;
@@ -311,68 +318,81 @@ static int discovery_build(const a1_config_t *c,unsigned index,service_mqtt_json
     const char *english[] = {"Air purifier", "Light ring", "Child lock", "Always-on light ring"};
     for (unsigned i=begin; i<4 && i==begin; i++) {
         if (!fresh && feature_bound()) { char path[MQTT_TOPIC_MAX]; mqtt_ha(&account, components[i], fresh?"fresh_air":keys[i], path, sizeof(path)); int rc=publish(path,"",true); if(rc!=MQTT_SUCCESS)return rc; continue; }
-        json_object *o = json_object_new_object(), *device = json_object_new_object(), *ids = json_object_new_array();
-        if (!o || !device || !ids) {
-            if (o) json_object_put(o);
-            if (device) json_object_put(device);
-            if (ids) json_object_put(ids);
-            return service_mqtt_json_error(scope, PH_MQTT_ERROR_APP_DISCOVERY_GRAPH);
-        }
+        ha_json_begin(o,NULL,false);
+        ha_json_begin(o,"device",false);
+        ha_json_begin(o,"identifiers",true);
         char text[MQTT_TOPIC_MAX], path[MQTT_TOPIC_MAX];
         mqtt_identity(&account, "", text, sizeof(text));
-        json_build_array_add(ids, json_object_new_string(text));
-        json_build_object_add(device, "identifiers", ids);
-        str(device, "name", c->name); str(device, "model", "A1 Air Purifier (EMW3080B)");
-        str(device, "manufacturer", "Phicomm"); str(device, "sw_version", A1_VERSION);
-        json_build_object_add(o, "device", device); str(o, "name", fresh?ph_i18n(device_language_get(),"新风风机","Fresh air fan"):ph_i18n(device_language_get(),names[i],english[i]));
-        mqtt_identity(&account, fresh?"fresh_air":keys[i], text, sizeof(text)); str(o, "unique_id", text);
-        str(o, "availability_topic", availability_topic);
+        ha_json_string(o,NULL,text);
+        ha_json_end(o);
+        ha_json_string(o, "name", c->name); ha_json_string(o, "model", "A1 Air Purifier (EMW3080B)");
+        ha_json_string(o, "manufacturer", "Phicomm"); ha_json_string(o, "sw_version", A1_VERSION);
+        ha_json_end(o); ha_json_string(o, "name", fresh?ph_i18n(device_language_get(),"新风风机","Fresh air fan"):ph_i18n(device_language_get(),names[i],english[i]));
+        mqtt_identity(&account, fresh?"fresh_air":keys[i], text, sizeof(text)); ha_json_string(o, "unique_id", text);
+        ha_json_string(o, "availability_topic", availability_topic);
         topic(o,"json_attributes_topic","state");
-        str(o,"json_attributes_template","{{ {\"ip\": value_json.ip, \"firmware\": value_json.version, \"config_dirty\": value_json.config_dirty} | tojson }}");
-        json_build_object_add(o, "retain", json_object_new_boolean(false));
+        ha_json_string(o,"json_attributes_template","{{ {\"ip\": value_json.ip, \"firmware\": value_json.version, \"config_dirty\": value_json.config_dirty} | tojson }}");
+        ha_json_bool(o,"retain",false);
         topic(o, "command_topic", "command");
         snprintf(text, sizeof(text), "%s/state", keys[i]); topic(o, "state_topic", fresh?"state":text);
-        if(fresh)str(o,"state_value_template","{{ 'ON' if value_json.fresh_air_requested_on else 'OFF' }}");
+        if(fresh)ha_json_string(o,"state_value_template","{{ 'ON' if value_json.fresh_air_requested_on else 'OFF' }}");
         if (i == 0) {
-            str(o, "icon", "mdi:air-purifier");
+            ha_json_string(o, "icon", "mdi:air-purifier");
             topic(o,"preset_mode_command_topic","command");
             topic(o,"preset_mode_state_topic",fresh?"state":"fan/mode/state");
-            if(fresh)str(o,"preset_mode_value_template","{{ value_json.fresh_air_mode }}");
-            snprintf(text,sizeof(text),"{\"action\":\"%s\",\"params\":{\"mode\":{{ value | tojson }}}}",fresh?"fresh_air.set":"fan.mode.set");str(o,"preset_mode_command_template",text);
-            json_object *modes=json_object_new_array();
-            json_build_array_add(modes,json_object_new_string("auto"));
-            json_build_array_add(modes,json_object_new_string("manual"));
-            json_build_object_add(o,"preset_modes",modes);
+            if(fresh)ha_json_string(o,"preset_mode_value_template","{{ value_json.fresh_air_mode }}");
+            snprintf(text,sizeof(text),"{\"action\":\"%s\",\"params\":{\"mode\":{{ value | tojson }}}}",fresh?"fresh_air.set":"fan.mode.set");ha_json_string(o,"preset_mode_command_template",text);
+            ha_json_begin(o,"preset_modes",true);
+            ha_json_string(o,NULL,"auto");ha_json_string(o,NULL,"manual");ha_json_end(o);
             topic(o, "percentage_command_topic", "command");
-            snprintf(text,sizeof(text),"{\"action\":\"%s\",\"params\":{\"on\":{{ 'true' if value == 'ON' else 'false' }}}}",fresh?"fresh_air.set":"fan.set");str(o,"command_template",text);
-            snprintf(text,sizeof(text),"{\"action\":\"%s\",\"params\":{\"mode\":\"manual\",%s\"speed\":{{ value | int }}}}",fresh?"fresh_air.set":"fan.set",fresh?"\"on\":{{ 'true' if value | int > 0 else 'false' }},":"");str(o,"percentage_command_template",text);
+            snprintf(text,sizeof(text),"{\"action\":\"%s\",\"params\":{\"on\":{{ 'true' if value == 'ON' else 'false' }}}}",fresh?"fresh_air.set":"fan.set");ha_json_string(o,"command_template",text);
+            snprintf(text,sizeof(text),"{\"action\":\"%s\",\"params\":{\"mode\":\"manual\",%s\"speed\":{{ value | int }}}}",fresh?"fresh_air.set":"fan.set",fresh?"\"on\":{{ 'true' if value | int > 0 else 'false' }},":"");ha_json_string(o,"percentage_command_template",text);
             topic(o, "percentage_state_topic", fresh?"state":"fan/percentage/state");
-            if(fresh)str(o,"percentage_value_template","{{ value_json.fresh_air_speed }}");
-            json_build_object_add(o, "speed_range_min", json_object_new_int(1));
-            json_build_object_add(o, "speed_range_max", json_object_new_int(100));
+            if(fresh)ha_json_string(o,"percentage_value_template","{{ value_json.fresh_air_speed }}");
+            ha_json_int(o,"speed_range_min",1);
+            ha_json_int(o,"speed_range_max",100);
         }
         if (i == 1) {
-            str(o,"schema","template");
-            str(o,"command_on_template","{\"action\":\"light.set\",\"params\":{\"enabled\":true{% if brightness is defined %},\"brightness\":{{ ((brightness | int) * 100 / 255) | round | int }}{% endif %}{% if red is defined %},\"color\":{\"r\":{{ red }},\"g\":{{ green }},\"b\":{{ blue }}}{% endif %}}}");
-            str(o,"command_off_template","{\"action\":\"light.set\",\"params\":{\"enabled\":false}}");
-            str(o,"state_template","{{ value_json.state | lower }}");
-            str(o,"brightness_template","{{ value_json.brightness }}");
-            str(o,"red_template","{{ value_json.color.r }}");
-            str(o,"green_template","{{ value_json.color.g }}");
-            str(o,"blue_template","{{ value_json.color.b }}");
-        } else if(i==0) { str(o,"payload_on","ON");str(o,"payload_off","OFF"); }
+            ha_json_string(o,"schema","template");
+            ha_json_string(o,"command_on_template","{\"action\":\"light.set\",\"params\":{\"enabled\":true{% if brightness is defined %},\"brightness\":{{ ((brightness | int) * 100 / 255) | round | int }}{% endif %}{% if red is defined %},\"color\":{\"r\":{{ red }},\"g\":{{ green }},\"b\":{{ blue }}}{% endif %}}}");
+            ha_json_string(o,"command_off_template","{\"action\":\"light.set\",\"params\":{\"enabled\":false}}");
+            ha_json_string(o,"state_template","{{ value_json.state | lower }}");
+            ha_json_string(o,"brightness_template","{{ value_json.brightness }}");
+            ha_json_string(o,"red_template","{{ value_json.color.r }}");
+            ha_json_string(o,"green_template","{{ value_json.color.g }}");
+            ha_json_string(o,"blue_template","{{ value_json.color.b }}");
+        } else if(i==0) { ha_json_string(o,"payload_on","ON");ha_json_string(o,"payload_off","OFF"); }
         else {
             const char *on=i==2?"{\"action\":\"child_lock.set\",\"params\":{\"enabled\":true}}":"{\"action\":\"light.set\",\"params\":{\"always_on\":true}}";
             const char *off=i==2?"{\"action\":\"child_lock.set\",\"params\":{\"enabled\":false}}":"{\"action\":\"light.set\",\"params\":{\"always_on\":false}}";
-            str(o,"payload_on",on);str(o,"payload_off",off);str(o,"state_on","ON");str(o,"state_off","OFF");
+            ha_json_string(o,"payload_on",on);ha_json_string(o,"payload_off",off);ha_json_string(o,"state_on","ON");ha_json_string(o,"state_off","OFF");
         }
-        if (i >= 2) str(o, "entity_category", "config");
+        if (i >= 2) ha_json_string(o, "entity_category", "config");
         mqtt_ha(&account, components[i], fresh?"fresh_air":keys[i], path, sizeof(path));
-        int rc = service_mqtt_optional_send(publish,path,o,true,scope);
+        ha_json_end(o);
+        int rc=ha_json_done(o)?publish(path,o->data,true):PH_MQTT_MORE;
         if (rc != MQTT_SUCCESS) return rc;
     }
     if(fresh)return MQTT_SUCCESS;
-    return index>=4?filter_discovery(c,false,index-4,scope):MQTT_SUCCESS;
+    return index>=4?filter_discovery(c,false,index-4,o):MQTT_SUCCESS;
+}
+static int ha_state(void)
+{
+    char bytes[640],ip[16];bool dirty;
+    mico_rtos_lock_mutex(&a1_lock);memcpy(ip,a1_state.ip,sizeof(ip));dirty=a1_state.config_dirty;mico_rtos_unlock_mutex(&a1_lock);
+    a1_filter_storage_t f;a1_filter_get(&f);
+    ha_json w;ha_json_init(&w,bytes,sizeof(bytes));ha_json_begin(&w,NULL,false);
+    ha_json_string(&w,"ip",ip);ha_json_string(&w,"version",A1_VERSION);ha_json_bool(&w,"config_dirty",dirty);
+    ha_json_string(&w,"fan_mode",feature_fan_auto()?"auto":"manual");
+    ha_json_begin(&w,"filter",false);ha_json_int(&w,"remaining_percent",a1_filter_remaining(&f));
+    ha_json_int(&w,"used_seconds",f.used_seconds);ha_json_int(&w,"lifetime_hours",f.lifetime_hours);
+    ha_json_bool(&w,"replacement_due",!a1_filter_remaining(&f));ha_json_end(&w);
+#ifdef A1_FRESH_AIR
+    fresh_snapshot_t fresh;fresh_snapshot(&fresh);
+    ha_json_bool(&w,"fresh_air_requested_on",fresh.requested_on);ha_json_string(&w,"fresh_air_mode",fresh.automatic?"auto":"manual");
+    ha_json_int(&w,"fresh_air_speed",fresh.requested_speed);ha_json_int(&w,"fresh_air_rpm",fresh.rpm);
+#endif
+    ha_json_end(&w);return ha_json_done(&w)?leaf("state",bytes):PH_MQTT_MORE;
 }
 static int states(const a1_config_t *c, const mqtt_state_t *s,unsigned index)
 {
@@ -386,7 +406,7 @@ static int states(const a1_config_t *c, const mqtt_state_t *s,unsigned index)
     if (index==3 && rc==MQTT_SUCCESS) rc = leaf("light/state", light);
     if (index==4 && rc==MQTT_SUCCESS) rc = leaf("child_lock/state", c->child_lock ? "ON" : "OFF");
     if (index==5 && rc==MQTT_SUCCESS) rc = leaf("led_always_on/state", c->led_always_on ? "ON" : "OFF");
-    if(index==6 && rc==MQTT_SUCCESS)rc=service_mqtt_snapshot(publish,&account);
+    if(index==6 && rc==MQTT_SUCCESS)rc=ha_state();
     return rc;
 }
 static bool discovery_deferred;
@@ -397,12 +417,9 @@ static int discovery(const a1_config_t *c,unsigned index)
      * One fixed index is retried at most once/second; normal state keeps moving. */
     uint32_t now=mico_rtos_get_time();
     if(discovery_deferred && (uint32_t)(now-discovery_retry_at)<1000u)return PH_MQTT_MORE;
-    service_mqtt_json_scope scope;
+    char *bytes=malloc(3072);
     int rc=PH_MQTT_MORE;
-    if(service_mqtt_json_begin(&scope,&mqtt_owner_thread)) {
-        rc=discovery_build(c,index,&scope);
-        service_mqtt_json_end(&scope);
-    }
+    if(bytes){ha_json writer;ha_json_init(&writer,bytes,3072);rc=discovery_build(c,index,&writer);free(bytes);}
     discovery_deferred=rc==PH_MQTT_MORE;
     if(discovery_deferred)discovery_retry_at=now;
     return rc;
@@ -573,9 +590,10 @@ static bool session_subscription(void *context,unsigned index,ph_mqtt_subscripti
     return true;
 }
 static int session_initial(void *context) {
+    fan_sensor_metadata=false;fan_sensor_started=false;
     feature_mqtt_session(&account);
     (void)context;
-    int rc=service_mqtt_capabilities(publish,&account);
+    int rc=service_mqtt_capabilities(publish_bytes,&account);
     discovery_deferred=false;discovery_retry_at=0;
     discovery_index=state_index=0;state_pending=0x7fu;state_seen=0;
     old_on=sent=old_visible=filter_turn=false;old_speed=revision=filter_sent_at=0;
@@ -626,7 +644,7 @@ static int session_cycle(void *context) {
             int sensor_rc=fan_sensor_cycle(on,speed,&sensor_handled);
             if(sensor_handled)return sensor_rc;
             if (filter_priority(a1_filter_mqtt_due(&filter, &sent_filter, mico_rtos_get_time(), filter_sent_at))) {
-                rc = service_mqtt_snapshot(publish, &account);
+                rc = service_mqtt_snapshot(publish_bytes, &account);
                 if (rc == MQTT_SUCCESS) {
                     sent_filter = filter; filter_sent_at = mico_rtos_get_time();
                     state_pending &= ~(1u << 6); state_seen |= 1u << 6;

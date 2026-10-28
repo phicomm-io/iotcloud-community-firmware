@@ -21,7 +21,8 @@ enum
 
 #define WIFI_SCAN_RESULT_JSON "{'success':%d,'ssids':[%s],'secs':[%s]}"
 OSStatus WifiScanStart(void);
-char *WifiScanJson(void);
+#include "../common/typed_wire.h"
+bool WifiScanMp(ph_writer *out);
 extern char wifi_status;
 
 typedef struct {

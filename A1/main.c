@@ -22,6 +22,13 @@ a1_config_t *a1_config;
 char a1_id[13];
 a1_state_t a1_state;
 mico_Context_t *a1_context;
+#define AUTH_DEVICE_ID a1_id
+#define AUTH_CONFIG_LOCK a1_config_lock
+#define AUTH_STORE (((app_storage_t *)a1_config)->local_auth)
+#define AUTH_PASSWORD (a1_config->web_password)
+#define AUTH_CONTEXT a1_context
+#include "../common/local_auth_mico.inc"
+
 static uint32_t save_at;
 static a1_filter_clock_t filter_clock;
 static a1_filter_stock_clock_t stock_clock;
@@ -82,6 +89,7 @@ void appRestoreDefault_callback(void *data, uint32_t size)
     if (size >= sizeof(app_storage_t)) a1_filter_defaults(&((app_storage_t *)data)->filter);
     if(size>=sizeof(app_storage_t))memset(&((app_storage_t *)data)->bemfa,0,sizeof(bemfa_config_t));
     if (size >= sizeof(app_storage_t)) a1_filter_stock_defaults(&((app_storage_t *)data)->filter_stock, true);
+    if(size>=sizeof(app_storage_t))ph_auth_store_empty(&((app_storage_t *)data)->local_auth);
     c->magic = A1_CONFIG_MAGIC; c->version = A1_CONFIG_VERSION;
     c->mqtt_port = 1883; c->mqtt_topic_mode = MQTT_TOPIC_TMCP; c->speed = 60;
     c->led_enabled = 1; c->brightness = 255; c->blue = 255;
@@ -94,8 +102,9 @@ void a1_config_get(a1_config_t *out)
     mico_rtos_unlock_mutex(&a1_config_lock);
 }
 
-bool a1_reset(bool full)
+static bool a1_reset_commit(void *opaque,const ph_auth_store *auth_store)
 {
+    bool full=*(bool *)opaque;
     app_storage_t *old = malloc(sizeof(*old));
     if (!old) return false;
     mico_rtos_lock_mutex(&a1_config_lock);
@@ -110,6 +119,7 @@ bool a1_reset(bool full)
         if(full)config_recovery=false;
         if (full) appRestoreDefault_callback(a1_config, sizeof(*old));
         else { a1_config->ssid[0] = 0; a1_config->wifi_password[0] = 0; a1_config->web_password[0] = 0; }
+        AUTH_STORE=*auth_store;
         ok = mico_system_context_update(a1_context) == kNoErr;
         if (!ok) { memcpy(a1_config, old, sizeof(*old)); config_recovery=was_recovery || config_commit_uncertain; }
         else {
@@ -124,6 +134,13 @@ bool a1_reset(bool full)
     mico_rtos_unlock_mutex(&a1_config_lock);
     free(old);
     return ok;
+}
+
+bool a1_reset(bool full)
+{
+    ph_auth_store empty;ph_auth_store_empty(&empty);
+    return device_local_auth()?ph_auth_credential_commit(device_local_auth(),"",true,a1_reset_commit,&full):
+        a1_reset_commit(&full,&empty);
 }
 
 void a1_state_get(a1_state_t *out)
@@ -167,8 +184,10 @@ uint8_t device_language_get(void)
     return language == PH_LANG_EN ? PH_LANG_EN : PH_LANG_ZH;
 }
 
-static bool a1_config_save_language(const a1_config_t *c, int language)
+typedef struct {const a1_config_t *config;int language;} a1_config_commit_args;
+static bool a1_config_commit(void *opaque,const ph_auth_store *auth_store)
 {
+    a1_config_commit_args *args=opaque;const a1_config_t *c=args->config;int language=args->language;
     mico_rtos_lock_mutex(&a1_config_lock);
     mico_rtos_lock_mutex(&a1_lock);
     bool reset = a1_config->magic != A1_CONFIG_MAGIC || a1_config->version != A1_CONFIG_VERSION;
@@ -178,17 +197,25 @@ static bool a1_config_save_language(const a1_config_t *c, int language)
     mico_rtos_unlock_mutex(&a1_lock);
     if (!valid) { mico_rtos_unlock_mutex(&a1_config_lock); return false; }
     a1_config_t old = *a1_config;
+    ph_auth_store auth_before=AUTH_STORE;AUTH_STORE=*auth_store;
     uint8_t *stored_language = &((app_storage_t *)a1_config)->features.language;
     uint8_t old_language = *stored_language;
     if (language >= 0) *stored_language = language;
     *a1_config = *c; a1_config->revision = old.revision + 1;
     bool ok = flush_locked();
-    if (!ok) { *a1_config = old; *stored_language = old_language; }
+    if (!ok) { AUTH_STORE=auth_before; *a1_config = old; *stored_language = old_language; }
     else {
         mico_rtos_lock_mutex(&a1_lock); a1_state.config_generation++; mico_rtos_unlock_mutex(&a1_lock);
     }
     mico_rtos_unlock_mutex(&a1_config_lock);
     return ok;
+}
+
+static bool a1_config_save_language(const a1_config_t *c,int language)
+{
+    a1_config_commit_args args={c,language};
+    return device_local_auth()?ph_auth_credential_commit(device_local_auth(),c->web_password,false,a1_config_commit,&args):
+        a1_config_commit(&args,&AUTH_STORE);
 }
 
 bool a1_config_save(const a1_config_t *c) { return a1_config_save_language(c, -1); }
@@ -443,6 +470,7 @@ int application_start(void)
         if (*p >= 'a' && *p <= 'f') *p -= 'a' - 'A';
     strcpy(a1_state.ota_state, "idle");
     a1_state.led_until = mico_rtos_get_time() + 2000;
+    if(!device_local_auth_init())return kNoMemoryErr;
     err = startup_result("features", feature_start()); if (err != kNoErr) return err;
     err = startup_result("HTTP", a1_http_start()); if (err != kNoErr) return err;
     /* Keep provisioning available when peripheral initialization fails. */

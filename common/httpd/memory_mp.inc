@@ -15,5 +15,8 @@ static void memory_response(ph_http_exchange *x)
  phw_u32(&w,"http_core_slot_bytes",d.slot_bytes);phw_u32(&w,"http_core_server_bytes",d.server_bytes);phw_int(&w,"http_core_last_select_rc",d.last_select_rc);phw_int(&w,"http_core_last_read_rc",d.last_read_rc);phw_u32(&w,"http_core_occupied",d.occupied);phw_u32(&w,"http_tcp_sample_ms",d.connections_sample_ms);
  phw_u32(&w,"http_core_accepted",d.accepted);phw_u32(&w,"http_core_rejected",d.rejected);phw_int(&w,"http_core_tcp_limit",d.limit);phw_int(&w,"http_core_tcp_connections",d.connections);phw_int(&w,"http_core_tcp_rc",d.connections_get_rc);phw_int(&w,"http_core_read_errno",d.read_errno);
  phw_begin(&w,"http_core_closed",true);for(unsigned i=0;i<7;i++)phw_u32(&w,NULL,d.closed[i]);phw_end(&w);
+#ifdef PH_HTTP_MEMORY_EXTRA
+ PH_HTTP_MEMORY_EXTRA(&w);
+#endif
  ph_mqtt_diag_write_mp(&w,true);phw_end(&w);phw_end(&w);ph_http_wire_take(&product,x,phw_take(&w));
 }

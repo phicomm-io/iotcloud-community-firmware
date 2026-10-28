@@ -57,15 +57,20 @@ void ph_auth_store_empty(ph_auth_store*p) {
     p->magic=PH_AUTH_STORE_MAGIC;
     p->version=PH_AUTH_STORE_VERSION;
 }
-bool ph_auth_store_valid(const ph_auth_store*p) {
+static bool ph_auth_private_records_valid(const ph_auth_pair_record *records,unsigned count) {
     unsigned i,j;
-    if(!p||p->magic!=PH_AUTH_STORE_MAGIC||p->version!=PH_AUTH_STORE_VERSION||p->count>PH_AUTH_PAIR_SLOTS)return false;
-    for(i=0;i<p->count;i++) {
-        const ph_auth_pair_record*r=&p->pairs[i];
+    if(count>PH_AUTH_PAIR_SLOTS)return false;
+    for(i=0;i<count;i++) {
+        const ph_auth_pair_record*r=&records[i];
         if(!memchr(r->peer,0,sizeof(r->peer))||!ph_auth_private_peer_ok(r->peer)||!ph_auth_private_nonzero(r->key)||!r->scopes||(r->scopes&~(PH_AUTH_SCOPE_CONTROL|PH_AUTH_SCOPE_SENSOR|PH_AUTH_SCOPE_GROUP))||r->reserved[0]||r->reserved[1])return false;
-        for(j=0;j<i;j++)if(!strcmp(p->pairs[j].peer,r->peer))return false;
+        for(j=0;j<i;j++)if(!strcmp(records[j].peer,r->peer))return false;
     }
     return true;
+}
+bool ph_auth_store_valid(const ph_auth_store*p) {
+    return p&&p->magic==PH_AUTH_STORE_MAGIC&&p->version==PH_AUTH_STORE_VERSION&&!p->reserved&&
+        ph_auth_private_records_valid(p->pairs,p->count)&&
+        ph_auth_private_records_valid(p->remote,p->remote_count);
 }
 bool ph_auth_init(ph_auth_state*s,const ph_auth_ops*o,const ph_auth_store*p) {
     if(!s||!o||!o->now||!o->random||!o->password||((o->lock==0)!=(o->unlock==0))||(p&&!ph_auth_store_valid(p)))return false;
@@ -467,4 +472,41 @@ bool ph_auth_pair_peer(ph_auth_state*s,unsigned index,char peer[13],unsigned*sco
     if(found){memcpy(peer,s->store.pairs[index].peer,13);*scopes=s->store.pairs[index].scopes;}
     ph_auth_private_unlock(s);
     return found;
+}
+
+bool ph_auth_remote_get(ph_auth_state*s,const char*peer,char key[33],unsigned*scopes) {
+    if(!s||!peer||!key||!scopes)return false;
+    bool ok=false;ph_auth_private_lock(s);
+    for(unsigned i=0;i<s->store.remote_count;i++)if(!strcmp(peer,s->store.remote[i].peer)) {
+        ph_auth_private_hex(s->store.remote[i].key,key);*scopes=s->store.remote[i].scopes;ok=true;break;
+    }
+    ph_auth_private_unlock(s);return ok;
+}
+bool ph_auth_remote_store(ph_auth_state*s,const char*peer,const char*key,unsigned scopes,uint32_t epoch) {
+    uint8_t decoded[16];
+    if(!s||!ph_auth_private_peer_ok(peer)||!ph_auth_token_decode(key,decoded)||!scopes||
+       (scopes&~(PH_AUTH_SCOPE_CONTROL|PH_AUTH_SCOPE_SENSOR|PH_AUTH_SCOPE_GROUP)))return false;
+    bool ok=false;ph_auth_private_lock(s);
+    if(!epoch||epoch!=s->credential_epoch)goto done;
+    ph_auth_store next=s->store;unsigned i;
+    for(i=0;i<next.remote_count;i++)if(!strcmp(peer,next.remote[i].peer))break;
+    if(i==PH_AUTH_PAIR_SLOTS)goto done;
+    if(i<next.remote_count&&next.remote[i].scopes==scopes&&
+       ph_auth_private_eq(next.remote[i].key,decoded,16)){ok=true;goto done;}
+    if(i==next.remote_count)++next.remote_count;
+    memset(&next.remote[i],0,sizeof(next.remote[i]));strcpy(next.remote[i].peer,peer);
+    memcpy(next.remote[i].key,decoded,16);next.remote[i].scopes=(uint8_t)scopes;
+    ok=ph_auth_private_save(s,&next);
+ done:
+    memset(decoded,0,sizeof(decoded));ph_auth_private_unlock(s);return ok;
+}
+bool ph_auth_remote_remove(ph_auth_state*s,const char*peer) {
+    if(!s||!peer)return false;
+    bool ok=false;ph_auth_private_lock(s);ph_auth_store next=s->store;
+    for(unsigned i=0;i<next.remote_count;i++)if(!strcmp(peer,next.remote[i].peer)) {
+        memmove(&next.remote[i],&next.remote[i+1],(next.remote_count-i-1)*sizeof(next.remote[0]));
+        memset(&next.remote[--next.remote_count],0,sizeof(next.remote[0]));
+        ok=ph_auth_private_save(s,&next);break;
+    }
+    ph_auth_private_unlock(s);return ok;
 }
