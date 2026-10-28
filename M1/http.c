@@ -133,6 +133,9 @@ cancel:
 
 static ph_http_action prepare(ph_http_exchange *x)
 {
+    if(operation!=AUTH && !http_auth_authorized(x->request->authorization)){
+        http_auth_reply(&product,x,401,"unauthorized",NULL);return PH_HTTP_REPLY;
+    }
     if(operation==MCU_BULK) {
         product.capacity=x->request->length;
         product.body=json_heap_malloc(product.capacity+1);
@@ -251,6 +254,9 @@ static bool body_chunk(ph_http_exchange *x,const void *data,size_t n)
 }
 static void complete(ph_http_exchange *x)
 {
+    if(operation!=AUTH && !http_auth_authorized(x->request->authorization)){
+        http_auth_reply(&product,x,401,"unauthorized",NULL);return;
+    }
     if(operation==AUTH){http_auth_complete(&product,x);return;}
     if(operation==UPLOAD) {
         bool ok=m1_ota_finish();upload_open=false;

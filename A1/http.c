@@ -118,6 +118,9 @@ static void light_command(ph_http_exchange *x,json_object *body)
 }
 static ph_http_action prepare(ph_http_exchange *x)
 {
+    if(operation!=AUTH && !http_auth_authorized(x->request->authorization)){
+        http_auth_reply(&product,x,401,"unauthorized",NULL);return PH_HTTP_REPLY;
+    }
     if(upload_pending) {
         upload_pending=false;
         bool rescue=!strcmp(x->request->path,"/api/v1/ota/upload-unsigned");
@@ -213,6 +216,9 @@ static bool body_chunk(ph_http_exchange *x,const void *data,size_t n)
 }
 static void complete(ph_http_exchange *x)
 {
+    if(operation!=AUTH && !http_auth_authorized(x->request->authorization)){
+        http_auth_reply(&product,x,401,"unauthorized",NULL);return;
+    }
     if(operation==AUTH){http_auth_complete(&product,x);return;}
     if(operation==UPLOAD) {
         bool ok=a1_ota_finish();upload_open=false;

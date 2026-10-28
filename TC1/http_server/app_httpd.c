@@ -127,6 +127,9 @@ static bool route_matches(const char *path,const char *route)
 }
 static ph_http_action prepare(ph_http_exchange *x)
 {
+    if(operation!=AUTH && !http_auth_authorized(x->request->authorization)){
+        http_auth_reply(&product,x,401,"unauthorized",NULL);return PH_HTTP_REPLY;
+    }
     if(operation==UPLOAD) {
         if(!upload_entered) {
             upload_entered=true;
@@ -225,6 +228,9 @@ static bool body_chunk(ph_http_exchange *x,const void *data,size_t n)
 }
 static void complete(ph_http_exchange *x)
 {
+    if(operation!=AUTH && !http_auth_authorized(x->request->authorization)){
+        http_auth_reply(&product,x,401,"unauthorized",NULL);return;
+    }
     if(operation==AUTH){http_auth_complete(&product,x);return;}
     if(operation==UPLOAD) {
         upload_verified=tc1_ota_verify();
