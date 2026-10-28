@@ -113,13 +113,31 @@ static void acquire(ph_http_server *s, unsigned i)
     s->exchange.body_idle_ms=5000u; s->exchange.body_total_ms=15000u;
     action(s,i,s->app->begin(&s->exchange));
 }
+static int oldest_ready(ph_http_server *s)
+{
+    int first=s->queued;
+    if(first<0 || s->slots[first].state!=PH_SLOT_READY)first=-1;
+    for(unsigned n=0;n<PH_HTTP_CLIENT_SLOTS;++n)
+        if(s->slots[n].state==PH_SLOT_READY &&
+           (first<0 || (int32_t)(s->slots[n].deadline-s->slots[first].deadline)<0))first=(int)n;
+    return first;
+}
 static void ready(ph_http_server *s, unsigned i)
 {
     ph_http_slot *c=&s->slots[i];
     c->remaining=c->parser.request.length;
-    if(s->active<0) { acquire(s,i); return; }
-    if(s->queued<0) {
-        s->queued=(int)i; count(&s->diagnostics.queued);c->state=PH_SLOT_READY;
+    if(s->active<0) {
+        s->queued=oldest_ready(s);
+        if(s->queued<0) { acquire(s,i); return; }
+        acquire(s,(unsigned)s->queued);
+    }
+    unsigned waiting=0;
+    for(unsigned n=0;n<PH_HTTP_CLIENT_SLOTS;++n)
+        waiting+=s->slots[n].state==PH_SLOT_READY;
+    if(waiting<PH_HTTP_WAIT_SLOTS) {
+        s->queued=oldest_ready(s);
+        if(s->queued<0)s->queued=(int)i;
+        count(&s->diagnostics.queued);c->state=PH_SLOT_READY;
         c->deadline=s->io->now()+PH_HTTP_READY_MS;
     } else simple_reply(s,i,true);
 }
@@ -246,6 +264,9 @@ void ph_http_server_step(ph_http_server *s)
         }
     }
     if(!s->running)return;
+    /* Earliest ready deadline wins, including across clock wrap. Waiting
+     * requests own only a slot, never the shared application/body buffer. */
+    s->queued=oldest_ready(s);
     if(s->active<0 && s->queued>=0)acquire(s,(unsigned)s->queued);
     for(unsigned i=0;i<PH_HTTP_CLIENT_SLOTS;++i) {
         ph_http_slot *c=&s->slots[i];

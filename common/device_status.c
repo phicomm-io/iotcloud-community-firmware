@@ -36,7 +36,7 @@ static void device_http_encode(status_sink *o,const ph_http_diagnostics *snapsho
     emit_int(o, "http_accept_busy_send_errno", diag.busy_errno);
     emit_int(o, "http_accept_busy_send_bytes", (int)diag.busy_bytes);
     emit_int(o, "http_accept_overflow_close", (int)diag.rejected);
-    emit_int(o, "http_accept_queue_capacity", 1);
+    emit_int(o, "http_accept_queue_capacity", PH_HTTP_WAIT_SLOTS);
     emit_int(o, "http_tcp_limit_requested", requested);
     emit_int(o, "http_tcp_limit_set_rc", diag.set_rc);
     emit_int(o, "http_tcp_limit_set_errno", diag.set_errno);

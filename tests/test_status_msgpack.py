@@ -49,6 +49,9 @@ static void same(const ph_value *value,json_object *expected){
 static void check(device_status_t *s,device_status_full_t *f){
  struct printbuf *old=reference_device_status_wire(s,f,false,NULL);assert(old);
  json_object *schema=json_tokener_parse(old->buf);assert(schema);printbuf_free(old);
+ /* Explicit RC4 policy delta: frozen rc3 reported one waiting request. */
+ json_object *old_queue=json_object_object_get(schema,"http_accept_queue_capacity");
+ if(old_queue){assert(json_object_get_int(old_queue)==1);json_object_object_add(schema,"http_accept_queue_capacity",json_object_new_int(PH_HTTP_WAIT_SLOTS));}
  ph_writer writer;assert(phw_init(&writer,1));device_status_mp(&writer,s,f);ph_buf *wire=phw_take(&writer);assert(wire);
  ph_value root;assert(phv_parse(1,wire->buf,wire->len,&root));same(&root,schema);
  ph_writer measured;ph_buf size;assert(phw_init_measure(&measured,1,&size));budget=0;device_status_mp(&measured,s,f);budget=-1;assert(phw_finish_fixed(&measured)==wire->len);

@@ -17,7 +17,7 @@
 #include "../common/backup.h"
 
 
-#define HTTP_PENDING_CLIENTS 1u
+#define HTTP_PENDING_CLIENTS PH_HTTP_WAIT_SLOTS
 #define HTTP_TCP_CLIENT_LIMIT 3
 #define http_diag_t ph_http_diagnostics
 #define http_diag_snapshot ph_http_snapshot
