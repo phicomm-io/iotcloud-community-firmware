@@ -270,6 +270,7 @@ class ValidationReuseTests(unittest.TestCase):
         self.assertIn('python3 -m unittest DAIKIN.tests.test_lan_business', text)
         self.assertIn('python3 -m unittest DAIKIN.tests.test_pair_route', text)
         self.assertIn('python3 -m unittest DAIKIN.tests.test_local_control_priority', text)
+        self.assertIn('python3 -m unittest DAIKIN.tests.test_hub_lifecycle', text)
         self.assertIn('node tests/hub-lan-management.mjs', text)
         self.assertIn('tests/run_mqtt_v2.sh', text)  # external-broker SDK coverage remains
         self.assertNotIn('tests/hub/console.cpp', text)
