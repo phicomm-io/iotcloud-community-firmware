@@ -1,3 +1,4 @@
+#include "../../common/firmware_variant_defs.h"
 #include "../../common/i18n.h"
 #include "../../common/ota/mode.h"
 #include "ota_server/signed_adapter.h"
@@ -389,7 +390,7 @@ static int session_prepare(void *context,ph_mqtt_connection *spec) {
     else{sprintf(topic_set,MQTT_CLIENT_SUB_TOPIC1,str_mac);sprintf(topic_state,MQTT_CLIENT_PUB_TOPIC,str_mac);}
     rediscover=false;
     *spec=(ph_mqtt_connection){&account,session_host,session_user,session_password,
-        client_id,availability_topic,session_port,MQTT_CMD_TIMEOUT,tc1_mqtt_read};
+        client_id,availability_topic,session_port,MQTT_CMD_TIMEOUT,tc1_mqtt_read,VERSION,PHICOMM_FIRMWARE_VARIANT};
     return PH_MQTT_PREPARE_READY;
 }
 static bool session_subscription(void *context,unsigned index,ph_mqtt_subscription *out) {
@@ -574,6 +575,12 @@ extern void UserMqttHassPower(void) {
     }
     if (!__atomic_load_n(&isconnect,__ATOMIC_ACQUIRE) && !synchronous_send) return;
     {
+        char state[128],state_topic[MQTT_TOPIC_MAX];ha_json w;IPStatusTypedef ip={0};
+        if(micoWlanGetIPStatus(&ip,Station)!=kNoErr)ip.ip[0]=0;ip.ip[sizeof(ip.ip)-1]=0;
+        ha_json_init(&w,state,sizeof(state));ha_json_begin(&w,NULL,false);
+        ha_json_string(&w,"ip",ip.ip);ha_json_string(&w,"version",VERSION);ha_json_end(&w);
+        mqtt_leaf(&account,"ha/state",state_topic,sizeof(state_topic));
+        if(!ha_json_done(&w) || UserMqttSendTopic(state_topic,state,1)!=kNoErr)return;
         uint32_t today=p_count>=(uint32_t)user_config->p_count_1_day_ago?p_count-user_config->p_count_1_day_ago:0;
         uint32_t yesterday=user_config->p_count_1_day_ago>=user_config->p_count_2_days_ago?user_config->p_count_1_day_ago-user_config->p_count_2_days_ago:0;
         mico_time_t ms=0; mico_time_get_time(&ms); unsigned sec=ms/1000;

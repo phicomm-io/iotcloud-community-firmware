@@ -6,6 +6,35 @@ from tests import test_shared_mqtt as shared
 ROOT=shared.ROOT
 
 class NativeMqtt(unittest.TestCase):
+    def test_native_discovery_schema_and_fixed_bounds(self):
+        import subprocess
+        source = r'''
+#include "common/mqtt/discovery_mp.h"
+#include <assert.h>
+int main(void){
+ mqtt_account_t account;unsigned char bytes[512];
+ const char *models[]={"a1","m1","tc1"};
+ for(unsigned i=0;i<3;i++){
+  assert(mqtt_account_init(&account,1,models[i],"alice","aabbccddeeff"));
+  size_t n=ph_mqtt_discovery_mp(&account,"1.0.0-rc.4","full",bytes,sizeof(bytes));assert(n);
+  ph_value root,v;int64_t x;assert(phv_parse(1,bytes,n,&root));
+  assert(phv_get(&root,"schema",&v)&&phv_int(&v,&x)&&x==2);
+  assert(phv_get(&root,"model",&v)&&phv_equal_text(&v,models[i]));
+  assert(phv_get(&root,"protocol",&v)&&phv_equal_text(&v,"tmcp"));
+  assert(phv_get(&root,"firmware_version",&v)&&phv_equal_text(&v,"1.0.0-rc.4"));
+  assert(phv_get(&root,"device_id",&v)&&phv_equal_text(&v,"aabbccddeeff"));
+  assert(phv_get(&root,"wire_formats",&v)&&v.kind==PHV_ARRAY&&v.count==1);
+  for(size_t cap=0;cap<=n;cap++)assert(!ph_mqtt_discovery_mp(&account,"1.0.0-rc.4","full",bytes,cap));
+  assert(ph_mqtt_discovery_mp(&account,"1.0.0-rc.4","full",bytes,n+1)==n);
+ }
+ assert(!ph_mqtt_discovery_mp(&account,NULL,"full",bytes,sizeof(bytes)));return 0;
+}
+'''
+        with tempfile.TemporaryDirectory() as td:
+            p=Path(td);(p/'test.c').write_text(source)
+            subprocess.run(['cc','-std=c99','-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-fsanitize=address,undefined','-I'+str(ROOT),str(p/'test.c'),str(ROOT/'common/typed_wire.c'),str(ROOT/'common/wire_buffer.c'),'-lm','-o',str(p/'test')],check=True)
+            subprocess.run([str(p/'test')],check=True)
+
     def test_actual_paho_receipt_embedded_nul_retry_and_release(self):
         fixture = r'''
 #define OVERLOAD_FIXTURE 1

@@ -191,7 +191,7 @@ static bool a1_config_commit(void *opaque,const ph_auth_store *auth_store)
     mico_rtos_lock_mutex(&a1_config_lock);
     mico_rtos_lock_mutex(&a1_lock);
     bool reset = a1_config->magic != A1_CONFIG_MAGIC || a1_config->version != A1_CONFIG_VERSION;
-    bool valid = !a1_state.ota_active && !a1_state.reboot_pending &&
+    bool valid = !device_config_recovery() && !a1_state.ota_active && !a1_state.reboot_pending &&
         c->magic == A1_CONFIG_MAGIC && c->version == A1_CONFIG_VERSION &&
         (reset || c->revision == a1_config->revision);
     mico_rtos_unlock_mutex(&a1_lock);
