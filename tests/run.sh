@@ -2,9 +2,20 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 root="$PWD"
+# Narrow migration entries are explicit subsets, never full-regression claims.
+case "${1:-}" in
+  --native-common)
+    exec python3 -m unittest tests.test_native_features tests.test_runtime_mqtt_mp
+    ;;
+  --legacy-sdk)
+    exec bash tests/run_legacy_json_sdk.sh
+    ;;
+  ""|--all) ;;
+  *) echo 'Usage: tests/run.sh [--all|--native-common|--legacy-sdk]' >&2; exit 2 ;;
+esac
 # The background JSON scenarios also compile the production SHA-256 service.
 source tests/host_hash.sh
-python3 -m unittest tests.test_msgpack_core tests.test_status_msgpack tests.test_service_mp tests.test_release_manifest_mp tests.test_http_product_mp tests.test_mqtt_ota_mp tests.test_http_mp_stack_gate tests.test_worker_mp_stack_gate
+python3 -m unittest tests.test_native_features tests.test_runtime_mqtt_mp tests.test_msgpack_core tests.test_status_msgpack tests.test_service_mp tests.test_release_manifest_mp tests.test_http_product_mp tests.test_mqtt_ota_mp tests.test_http_mp_stack_gate tests.test_worker_mp_stack_gate
 python3 -m unittest tests.test_prepare_sdk tests.test_apply_sdk_patch
 python3 -m unittest tests.test_config_commit
 python3 tools/check_version.py
@@ -132,11 +143,8 @@ PYMQTT
 "$output/service-failure"
 "${compiler[@]}" -std=gnu99 -Wall -Wextra -Werror -Wno-misleading-indentation -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-but-set-variable -Wno-unused-value -Wno-nonnull-compare -Itests/stubs -I"$json_dir" tests/test_service_memory.c common/json_owned.c "$json_dir"/*.c -o "$output/service-memory"
 "$output/service-memory"
-for device in A1 TC1 M1; do
-define=(); if [[ "$device" == A1 ]]; then define=(-DFEATURE_DEVICE_A1); elif [[ "$device" == TC1 ]]; then define=(-DAUTOMATION_TC1); fi
-"${compiler[@]}" "${define[@]}" -std=gnu99 -Wall -Wextra -Wno-misleading-indentation -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-value -Wno-nonnull-compare -Itests/stubs -I"$json_dir" common/service.c tests/test_automation.c common/json_owned.c "$json_dir"/*.c -o "$output/automation"
-"$output/automation"
-done
+# Full A1/M1/TC1 scheduler/button/countdown cases in test_automation.c now
+# execute automation_mp via test_native_features above; no JSON service link.
 "${compiler[@]}" -std=gnu99 -Wall -Wextra -Werror -Wno-misleading-indentation -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-unused-value -Wno-nonnull-compare -Itests/host -I"$json_dir" tests/test_a1_control.c "$json_dir"/*.c -o "$output/a1-control"
 "$output/a1-control"
 for device in M1 A1 TC1; do

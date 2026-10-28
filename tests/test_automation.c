@@ -11,8 +11,6 @@ static unsigned order[16];
 time_t time(time_t *out){if(out)*out=epoch;return epoch;}
 void automation_load(automation_config_t *out){*out=stored;}
 bool automation_save(const automation_config_t *c){if(fail_save || c->revision!=stored.revision+1)return false;stored=*c;return true;}
-json_object *service_product_capabilities(void){return json_object_new_object();}
-json_object *service_product(const char *a,json_object *p,const char **code){(void)p;*code=busy?"busy":"accepted";if(!strcmp(a,"status.get")){*code="ok";return json_object_new_object();}if(!busy){assert(calls<16);order[calls++]=!strcmp(a,"system.reboot")?AUTO_REBOOT:AUTO_FAN;}return NULL;}
 #include "../common/automation.c"
 #ifdef FEATURE_DEVICE_A1
 /* Scheduling harness checks persistence/order; product controls are exercised
@@ -22,6 +20,10 @@ bool a1_automation_execute(const automation_action_t *a,bool button){
  assert(calls<16);order[calls++]=a->kind==AUTO_REBOOT?AUTO_REBOOT:AUTO_FAN;return true;
 }
 #endif
+#if !defined(FEATURE_DEVICE_A1) && !defined(AUTOMATION_TC1)
+bool m1_automation_execute(const automation_action_t*a,bool button){(void)button;if(!a->kind)return true;if(busy)return false;assert(calls<16);order[calls++]=a->kind==AUTO_REBOOT?AUTO_REBOOT:AUTO_FAN;return true;}
+#endif
+void service_event(const char*a,const char*b,const char*c){(void)a;(void)b;(void)c;}
 #ifdef AUTOMATION_TC1
 bool tc1_automation_load_button(unsigned key,unsigned slot,automation_action_t *out){*out=stored.buttons[key][slot];return true;}
 bool tc1_automation_execute(const automation_action_t *a,bool button){
@@ -29,8 +31,23 @@ bool tc1_automation_execute(const automation_action_t *a,bool button){
  assert(calls<16);order[calls++]=a->kind==AUTO_REBOOT?AUTO_REBOOT:AUTO_FAN;return true;
 }
 #endif
-static json_object *request(const char *s,const char *code){json_object *q=service_parse(s,strlen(s));assert(q);json_object *r=service_command(q);json_object_put(q);assert(r);const char *got=json_object_get_string(json_object_object_get(r,"code"));if(strcmp(got,code)){fprintf(stderr,"%s expected=%s got=%s\n",s,code,json_object_to_json_string(r));abort();}return r;}
-#define CHECK(s,c) do{json_object *r=request(s,c);json_object_put(r);}while(0)
+/* Host-only static MP vectors preserve historical readable scenarios. */
+#include "mp_fixture_vectors.inc"
+static ph_buf *reply_wire;
+static ph_value mp_get(ph_value p,const char*k){ph_value v;assert(phv_get(&p,k,&v));return v;}
+static ph_value mp_at(ph_value p,unsigned i){ph_value v;assert(phv_at(&p,i,&v));return v;}
+static int64_t mp_int(ph_value p){int64_t v;assert(phv_int(&p,&v));return v;}
+static const char *mp_text(ph_value p){static char b[128];assert(phv_text(&p,b,sizeof(b)));return b;}
+static unsigned mp_count(ph_value p){assert(p.kind==PHV_ARRAY);return p.count;}
+static void mp_release(ph_value p){(void)p;ph_buf_free(reply_wire);reply_wire=NULL;}
+static ph_value request_wire(const void *bytes,size_t length,const char *code){
+ assert(!reply_wire);ph_value root,params,action;assert(phv_parse(PH_WIRE_MSGPACK,bytes,length,&root));assert(phv_get(&root,"action",&action)&&phv_get(&root,"params",&params));char name[64];assert(phv_text(&action,name,sizeof(name)));
+ ph_writer w;assert(phw_init(&w,PH_WIRE_MSGPACK));const char *got;assert(automation_mp(name,&params,&w,&got));assert(got);if(strcmp(got,code)){fprintf(stderr,"%s expected=%s got=%s\n",name,code,got);abort();}reply_wire=phw_take(&w);assert(reply_wire);ph_value result;assert(phv_parse(PH_WIRE_MSGPACK,reply_wire->buf,reply_wire->len,&result));return result;
+}
+static ph_value request(const char*s,const char*code){for(unsigned i=0;i<sizeof(fixture_vectors)/sizeof(*fixture_vectors);i++)if(!strcmp(s,fixture_vectors[i].text))return request_wire(fixture_vectors[i].bytes,fixture_vectors[i].length,code);fprintf(stderr,"missing fixture: %s\n",s);abort();}
+#define CHECK(s,c) do{ph_value r=request(s,c);mp_release(r);}while(0)
+static ph_value page(unsigned offset){ph_writer w;assert(phw_init(&w,PH_WIRE_MSGPACK));phw_begin(&w,NULL,false);phw_text(&w,"action","buttons.get");phw_begin(&w,"params",false);phw_uint(&w,"offset",offset);phw_end(&w);phw_end(&w);ph_buf *b=phw_take(&w);ph_value result=request_wire(b->buf,b->len,"ok");ph_buf_free(b);return result;}
+static void weekly_alarm(unsigned days,unsigned minute){ph_writer w;assert(phw_init(&w,PH_WIRE_MSGPACK));phw_begin(&w,NULL,false);phw_text(&w,"action","schedules.put");phw_begin(&w,"params",false);phw_bool(&w,"enabled",true);phw_text(&w,"trigger","weekly");phw_uint(&w,"days",days);phw_uint(&w,"minute",minute);phw_text(&w,"action","wake_alarm.start");phw_begin(&w,"params",false);phw_uint(&w,"duration_seconds",30);phw_end(&w);phw_end(&w);phw_end(&w);ph_buf*b=phw_take(&w);ph_value r=request_wire(b->buf,b->len,"accepted");mp_release(r);ph_buf_free(b);}
 static void tick(unsigned seconds){epoch+=seconds;test_now+=seconds*1000;automation_poll(true);}
 #ifdef AUTOMATION_TC1
 #define CONTROL "outlet.set"
@@ -48,7 +65,7 @@ static void tick(unsigned seconds){epoch+=seconds;test_now+=seconds*1000;automat
 #define KEY "0"
 #define KEY_INDEX 0
 #endif
-int main(void){automation_defaults(&stored);service_init();
+int main(void){automation_defaults(&stored);
 #ifdef AUTOMATION_TC1
  for(unsigned k=0;k<AUTOMATION_KEYS;k++)for(unsigned i=0;i<34;i++)assert(stored.buttons[k][i].kind==AUTO_NONE);
  automation_button(0,1,0);automation_button(0,0,1);assert(calls==0);
@@ -99,7 +116,7 @@ int main(void){automation_defaults(&stored);service_init();
  /* Dense migrated key maps must remain bounded on small device heaps. */
  for(unsigned k=0;k<AUTOMATION_KEYS;k++)for(unsigned b=0;b<34;b++)stored.buttons[k][b].kind=AUTO_REBOOT;
  unsigned total=0,offset=0;
- while(offset<AUTOMATION_BUTTON_SLOTS){char query[128];snprintf(query,sizeof(query),"{\"action\":\"buttons.get\",\"params\":{\"offset\":%u}}",offset);json_object *r=request(query,"ok"),*d=json_object_object_get(r,"data"),*items=json_object_object_get(d,"items");unsigned count=json_object_array_length(items);assert(count<=8);total+=count;unsigned next=json_object_get_int(json_object_object_get(d,"next"));assert(next>offset);offset=next;json_object_put(r);}
+ while(offset<AUTOMATION_BUTTON_SLOTS){ph_value r=page(offset),d=r,items=mp_get(d,"items");unsigned count=mp_count(items);assert(count<=8);total+=count;unsigned next=mp_int(mp_get(d,"next"));assert(next>offset);offset=next;mp_release(r);}
  assert(total==AUTOMATION_BUTTON_SLOTS);
  CHECK("{\"action\":\"buttons.get\",\"params\":{\"limit\":9}}","invalid_params");
 #ifdef FEATURE_DEVICE_A1
@@ -113,9 +130,9 @@ int main(void){automation_defaults(&stored);service_init();
  CHECK("{\"action\":\"schedules.put\",\"params\":{\"enabled\":true,\"trigger\":\"once\",\"at\":1900000000,\"action\":\"wake_alarm.start\",\"params\":{\"duration_seconds\":60,\"tone\":6}}}","invalid_params");
  CHECK("{\"action\":\"schedules.put\",\"params\":{\"enabled\":true,\"trigger\":\"once\",\"at\":1900000000,\"action\":\"wake_alarm.start\",\"params\":{\"duration_seconds\":60,\"tone\":3}}}","accepted");
  assert(stored.tasks[0].action.speed==3);
- json_object *tones=request("{\"action\":\"schedules.get\",\"params\":{}}","ok");
- json_object *tone_item=json_object_array_get_idx(json_object_object_get(json_object_object_get(tones,"data"),"items"),0);
- assert(json_object_get_int(json_object_object_get(json_object_object_get(tone_item,"params"),"tone"))==3);json_object_put(tones);
+ ph_value tones=request("{\"action\":\"schedules.get\",\"params\":{}}","ok");
+ ph_value tone_item=mp_at(mp_get(tones,"items"),0);
+ assert(mp_int(mp_get(mp_get(tone_item,"params"),"tone"))==3);mp_release(tones);
  automation_defaults(&stored);
  CHECK("{\"action\":\"schedules.put\",\"params\":{\"enabled\":true,\"trigger\":\"once\",\"at\":1900000000,\"action\":\"wake_alarm.start\",\"params\":{\"duration_seconds\":181}}}","invalid_params");
  CHECK("{\"action\":\"schedules.put\",\"params\":{\"enabled\":true,\"trigger\":\"once\",\"at\":1900000000,\"action\":\"wake_alarm.start\",\"params\":{\"duration_seconds\":0}}}","invalid_params");
@@ -124,15 +141,15 @@ int main(void){automation_defaults(&stored);service_init();
  epoch=1899999990;test_now=1000;automation_poll(false);assert(!calls);
  CHECK("{\"action\":\"schedules.put\",\"params\":{\"enabled\":true,\"trigger\":\"once\",\"at\":1900000000,\"action\":\"wake_alarm.start\",\"params\":{\"duration_seconds\":60}}}","accepted");
  assert(stored.tasks[0].action.kind==AUTO_WAKE_ALARM && stored.tasks[0].action.value==60);
- json_object *r=request("{\"action\":\"schedules.get\",\"params\":{}}","ok"),*d=json_object_object_get(r,"data"),*item=json_object_array_get_idx(json_object_object_get(d,"items"),0);
- assert(!strcmp(json_object_get_string(json_object_object_get(item,"action")),"wake_alarm.start"));
- assert(json_object_get_int(json_object_object_get(json_object_object_get(item,"params"),"duration_seconds"))==60);json_object_put(r);
+ ph_value r=request("{\"action\":\"schedules.get\",\"params\":{}}","ok"),d=r,item=mp_at(mp_get(d,"items"),0);
+ assert(!strcmp(mp_text(mp_get(item,"action")),"wake_alarm.start"));
+ assert(mp_int(mp_get(mp_get(item,"params"),"duration_seconds"))==60);mp_release(r);
  automation_poll(true);tick(10);assert(calls==1 && !stored.tasks[0].enabled);tick(1);assert(calls==1);
  /* Fixed UTC clock; weekday and minute are computed using persisted timezone. */
  automation_defaults(&stored);stored.timezone=480;armed=false;previous=highwater=0;
  epoch=1900000040;test_now+=1000;automation_poll(true);
  unsigned due=epoch+60-epoch%60,day=((due+480*60)/86400+3)%7,minute=((due+480*60)/60)%1440;
- char req[512];snprintf(req,sizeof(req),"{\"action\":\"schedules.put\",\"params\":{\"enabled\":true,\"trigger\":\"weekly\",\"days\":%u,\"minute\":%u,\"action\":\"wake_alarm.start\",\"params\":{\"duration_seconds\":30}}}",1u<<day,minute);CHECK(req,"accepted");
+ weekly_alarm(1u<<day,minute);
  CHECK("{\"action\":\"schedules.enable\",\"params\":{\"id\":1,\"enabled\":false}}","accepted");
  tick(due-epoch);assert(calls==1);
  CHECK("{\"action\":\"schedules.enable\",\"params\":{\"id\":1,\"enabled\":true}}","accepted");
@@ -144,5 +161,3 @@ int main(void){automation_defaults(&stored);service_init();
 #endif
  puts("PASS automation: stable IDs, persistence before action, reboot last, no catch-up/replay, busy and bounds");
 }
-
-#include "stubs/status_wire.inc"

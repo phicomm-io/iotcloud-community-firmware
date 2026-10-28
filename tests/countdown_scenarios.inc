@@ -4,8 +4,8 @@
  const char *start="{\"action\":\"schedules.put\",\"params\":{\"enabled\":true,\"trigger\":\"countdown\",\"seconds\":60,\"action\":\"fan.set\",\"params\":{\"on\":false}}}";
  const char *restart="{\"action\":\"schedules.enable\",\"params\":{\"id\":1,\"enabled\":true}}";
  const char *cancel="{\"action\":\"schedules.enable\",\"params\":{\"id\":1,\"enabled\":false}}";
- json_object *r=request(start,"accepted"),*d=json_object_object_get(r,"data");
- assert(json_object_get_int(json_object_object_get(d,"remaining_seconds"))==60);json_object_put(r);
+ ph_value r=request(start,"accepted"),d=r;
+ assert(mp_int(mp_get(d,"remaining_seconds"))==60);mp_release(r);
  assert(stored.tasks[0].once==2 && stored.tasks[0].at==60);
  epoch=0;test_now+=59000;automation_poll(false);assert(!calls);
  /* A forward/backward wall-clock correction cannot change the deadline. */
