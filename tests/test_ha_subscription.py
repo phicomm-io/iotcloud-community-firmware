@@ -1,5 +1,6 @@
 """Actual product subscription plans deliver only isolated HA JSON commands."""
 from pathlib import Path
+import re
 import tempfile
 import unittest
 from tests.test_runtime_mqtt_mp import function
@@ -46,7 +47,10 @@ bool service_control_begin(void){return true;}
 void service_control_end(void){}
 static bool a1_control_apply(a1_control_t*r,bool a,bool b){(void)r;(void)a;(void)b;return true;}
 '''
-    if model=='A1':code+=function(source,'static bool topic_is(')+'\n'
+    if model=='A1':
+     declaration=re.search(r'static char client_id\[192\],wildcard.*?;',source,re.S).group(0)
+     code=code.replace('static char base[192],wildcard[512],ha_command_topic[512],command_topic[512];', 'static char base[192],command_topic[512];\n'+declaration)
+     code+=function(source,'static bool topic_is(')+'\n'
     code+=function(source,'static void '+route+'(')+'\n'+function(source,'static bool session_subscription(')
     code+=r'''
 static void deliver(ph_mqtt_subscription*s,const void*p,size_t n,bool retained,bool length_topic){
@@ -55,7 +59,12 @@ static void deliver(ph_mqtt_subscription*s,const void*p,size_t n,bool retained,b
  MessageData d={&m,&topic};s->handler(&d);
 }
 int main(void){
- assert(mqtt_account_init(&account,1,"MODEL","alice","aabbccddeeff"));strcpy(base,account.base);
+ char user[MQTT_USER_MAX+1];memset(user,'x',MQTT_USER_MAX);user[MQTT_USER_MAX]=0;
+ assert(mqtt_account_init(&account,1,"MODEL",user,"aabbccddeeff"));
+ mqtt_account_t longest=account;memset(longest.base,'x',sizeof(longest.base)-1);longest.base[sizeof(longest.base)-1]=0;
+ assert(mqtt_leaf(&longest,"command",wildcard,sizeof(wildcard)));
+ assert(mqtt_leaf(&longest,"ha/command",ha_command_topic,sizeof(ha_command_topic)));
+ strcpy(base,account.base);
  assert(mqtt_leaf(&account,"command",wildcard,sizeof(wildcard)));
  assert(mqtt_leaf(&account,"ha/command",ha_command_topic,sizeof(ha_command_topic)));strcpy(command_topic,ha_command_topic);
  const char json[]="{\"action\":\"status.get\",\"params\":{}}";
@@ -83,6 +92,8 @@ int main(void){
  }
 }
 '''.replace('MODEL',model.lower()).replace('EXPECTED','3+features' if model=='A1' else '5+availability')
+    if model=='A1':
+     code=code.replace('int main(void){','int main(void){assert(sizeof(wildcard)+sizeof(ha_command_topic)==403);')
     code=code.replace('#include <limits.h>','#include <limits.h>\n#include <stdio.h>')
     with tempfile.TemporaryDirectory() as tmp:
      path=Path(tmp)/'probe.c';path.write_text(code)

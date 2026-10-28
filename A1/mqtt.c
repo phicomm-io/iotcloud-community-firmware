@@ -515,7 +515,10 @@ static bool ingress_accept(MessageData *d,messageHandler handler) {
 
 static a1_config_t cfg,current;
 static mqtt_state_t state;
-static char client_id[192],wildcard[MQTT_TOPIC_MAX],ha_command_topic[MQTT_TOPIC_MAX];
+/* Both subscription strings remain immutable until owner deinitialization.
+ * Account base includes its NUL; suffix sizes below include the slash. */
+static char client_id[192],wildcard[sizeof(account.base)+sizeof("/command")-1],
+    ha_command_topic[sizeof(account.base)+sizeof("/ha/command")-1];
 static unsigned count,feature_revision;
 static bool old_on,sent,old_visible,filter_turn;
 static unsigned discovery_index,state_index,state_pending,state_seen;
