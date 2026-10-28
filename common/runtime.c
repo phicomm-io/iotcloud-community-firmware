@@ -1958,19 +1958,5 @@ unsigned feature_primary_ceiling(void) {
         cap=configuration.sleeps[automatic_night].max_speed;
     unlock(); return cap;
 }
-json_object *feature_fresh_encode(const fresh_config_t *f) {
-    return linkage_encode(&f->linkage,&f->co2,f->fallback_speed);
-}
-bool feature_fresh_decode(fresh_config_t *f,json_object *o) {
-    /* Accept only the shared linkage codec's keys, plus optimistic revision. */
-    json_object_object_foreach(o,key,value) {
-        bool known=!strcmp(key,"revision")||!strcmp(key,"fallback_speed");
-        for(unsigned i=0;i<COUNT(linkage_fields);i++)if(!strcmp(key,linkage_fields[i].key))known=true;
-        for(unsigned i=0;i<COUNT(co2_fields);i++)if(!strcmp(key,co2_fields[i].key))known=true;
-        if(!known)return false;
-    }
-    bool ok=linkage_decode(&f->linkage,&f->co2,&f->fallback_speed,o);
-    if(ok)f->linkage.enabled=1;
-    return ok;
-}
+#include "fresh_config_mp.inc"
 #endif
