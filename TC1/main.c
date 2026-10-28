@@ -39,7 +39,6 @@ bool app_config_migrate_legacy(void *data, uint32_t size)
 #include "time_server/user_rtc.h"
 #include "user_power.h"
 #include "mqtt_server/user_mqtt_client.h"
-#include "http_server/auth.h"
 #include "http_server/app_httpd.h"
 #include "timed_task/timed_task.h"
 

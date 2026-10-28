@@ -38,7 +38,6 @@
 #include <string.h>
 #include "mico.h"
 #include "app_httpd.h"
-#include "auth.h"
 #include "main.h"
 #include "user_gpio.h"
 #include "user_wifi.h"
@@ -55,7 +54,7 @@
 #include <web_data.c>
 static ph_http_product product;
 static const char *query_action;
-static enum { DIRECT, QUERY, COMMAND, UPLOAD, BACKUP, RESTORE } operation;
+static enum { DIRECT, QUERY, AUTH, COMMAND, UPLOAD, BACKUP, RESTORE } operation;
 static bool upload_open, upload_verified, upload_entered;
 static void response(ph_http_exchange *x,unsigned status,const char *type,const void *body,size_t n)
 { x->response.status=status;x->response.type=type;x->response.body=body;x->response.length=n; }
@@ -66,6 +65,10 @@ static void tc1_memory_extra(ph_writer *w)
     if(!sampled){reason=get_last_reset_reason();sampled=true;}
     phw_int(w,"last_reset_reason",reason);
 }
+#define HTTP_AUTH_MODEL "tc1"
+#define HTTP_AUTH_ID str_mac
+#define HTTP_AUTH_VERSION VERSION
+#include "../../common/httpd/local_auth.inc"
 #define PH_HTTP_MEMORY_EXTRA tc1_memory_extra
 #include "../../common/httpd/memory_mp.inc"
 
@@ -82,6 +85,9 @@ static bool route_matches(const char *path,const char *route)
 }
 static ph_http_action prepare(ph_http_exchange *x)
 {
+    if(operation!=AUTH && !http_auth_authorized(x->request->authorization)){
+        http_auth_reply(&product,x,401,"unauthorized",NULL);return PH_HTTP_REPLY;
+    }
     if(operation==UPLOAD) {
         if(!upload_entered) {
             upload_entered=true;
@@ -93,7 +99,7 @@ static ph_http_action prepare(ph_http_exchange *x)
         x->body_idle_ms=15000;x->body_total_ms=300000;
         return PH_HTTP_READ_BODY;
     }
-    ph_http_action a=ph_http_claim(&product,x,operation==BACKUP?device_backup_size():operation==QUERY?0:x->request->length,operation==COMMAND || operation==BACKUP || operation==RESTORE);
+    ph_http_action a=ph_http_claim(&product,x,operation==BACKUP?device_backup_size():operation==QUERY?0:x->request->length,operation==AUTH || operation==COMMAND || operation==BACKUP || operation==RESTORE);
     if(a==PH_HTTP_REPLY && product.claim && operation==QUERY)
         ph_http_query(&product,x,query_action);
     if(a==PH_HTTP_READ_BODY && operation==BACKUP){
@@ -111,24 +117,32 @@ static ph_http_action begin(ph_http_exchange *x)
     query_action=route_matches(r->path,"/api/v1/info")?"info.get":route_matches(r->path,"/api/v1/status")?"status.get":
       route_matches(r->path,"/api/v1/capabilities")?"capabilities.get":route_matches(r->path,"/api/v1/config")?"config.get":
       route_matches(r->path,"/api/v1/schedules")?"schedules.get":route_matches(r->path,"/api/v1/logs")?"logs.get":NULL;
+    bool auth=http_auth_route(r->path);
     bool asset=route_matches(r->path,"/") || !strncmp(r->path,"/assets",7);
     bool command=route_matches(r->path,"/api/v1/command");
     bool backup=route_matches(r->path,"/api/v1/config/backup"),restore=route_matches(r->path,"/api/v1/config/restore");
     bool ota=route_matches(r->path,"/api/v1/ota/upload") || route_matches(r->path,"/api/v1/ota/upload-unsigned");
     bool memory=route_matches(r->path,"/api/v1/memory"),trace=route_matches(r->path,"/api/v1/http-trace");
     /* TC1 historically selects an actual route before OPTIONS/authentication. */
-    if(!query_action && !asset && !command && !backup && !restore && !ota && !memory && !trace) {
-        response(x,404,"text/plain","",0);return PH_HTTP_REPLY;
+    if(!auth && !query_action && !asset && !command && !backup && !restore && !ota && !memory && !trace) {
+        ph_http_message(&product,x,404,"not_found");return PH_HTTP_REPLY;
     }
     x->response.cors=phicomm_cors_headers(r->origin);
     if(!strcmp(r->method,"OPTIONS")) {
         response(x,*x->response.cors?200:403,"text/plain","",0);return PH_HTTP_REPLY;
     }
-    if(!tc1_http_authorized(r->authorization)) {
-        response(x,401,"text/plain","",0);x->response.realm="TC1";return PH_HTTP_REPLY;
+    if(!strcmp(r->method,"GET") && route_matches(r->path,"/api/v1/info")){
+        http_auth_info(&product,x);return PH_HTTP_REPLY;
+    }
+    if(auth){
+        if(strcmp(r->method,"POST")||!r->length||r->length>256){http_auth_reply(&product,x,400,"invalid_request",NULL);return PH_HTTP_REPLY;}
+        operation=AUTH;return prepare(x);
+    }
+    if(!asset && !http_auth_authorized(r->authorization)){
+        http_auth_reply(&product,x,401,"unauthorized",NULL);return PH_HTTP_REPLY;
     }
     if(backup || restore){
-        if(!user_config->web_password[0]){ph_http_message(&product,x,403,"set_web_password_first");return PH_HTTP_REPLY;}
+        if(!ph_auth_password_is_set(device_local_auth())){ph_http_message(&product,x,403,"set_web_password_first");return PH_HTTP_REPLY;}
         if(backup && !strcmp(r->method,"GET")){operation=BACKUP;return prepare(x);}
         if(restore && !strcmp(r->method,"POST") && r->have_length && r->length==device_backup_size()){operation=RESTORE;return prepare(x);}
         ph_http_message(&product,x,400,"invalid_backup");return PH_HTTP_REPLY;
@@ -148,7 +162,7 @@ static ph_http_action begin(ph_http_exchange *x)
     }
     if(!strcmp(r->method,"POST") && command) {
         if(!r->length || r->length>(ota_job_active()?1024u:8192u)) {
-            response(x,400,"text/plain","",0);return PH_HTTP_REPLY;
+            ph_http_message(&product,x,400,"invalid_request");return PH_HTTP_REPLY;
         }
         operation=COMMAND;return prepare(x);
     }
@@ -160,7 +174,7 @@ static ph_http_action begin(ph_http_exchange *x)
          * synchronous flash/signature initialization callback runs. */
         return PH_HTTP_WAIT;
     }
-    response(x,404,"text/plain","",0);return PH_HTTP_REPLY;
+    ph_http_message(&product,x,404,"not_found");return PH_HTTP_REPLY;
 }
 static bool body_chunk(ph_http_exchange *x,const void *data,size_t n)
 {
@@ -172,6 +186,10 @@ static bool body_chunk(ph_http_exchange *x,const void *data,size_t n)
 }
 static void complete(ph_http_exchange *x)
 {
+    if(operation==AUTH){http_auth_complete(&product,x);return;}
+    if(!http_auth_authorized(x->request->authorization)){
+        http_auth_reply(&product,x,401,"unauthorized",NULL);return;
+    }
     if(operation==UPLOAD) {
         upload_verified=tc1_ota_verify();
         ph_http_message(&product,x,upload_verified?202:400,upload_verified?"文件校验通过，设备正在重启":"OTA rejected");return;

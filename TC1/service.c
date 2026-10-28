@@ -1,6 +1,5 @@
 #define AUTOMATION_TC1
 #include "main.h"
-#include "http_server/auth.h"
 #include "user_gpio.h"
 #include "user_wifi.h"
 #include "user_power.h"
@@ -30,7 +29,7 @@ void service_product_capabilities_mp(ph_writer *out,const char *const *extra,boo
 {
     static const char *const actions[]={"time.get","time.set","power.get","status.get","capabilities.get","config.get","logs.get","schedules.get","schedules.put","schedules.delete","schedules.enable","buttons.get","buttons.set","config.set","wifi.scan","wifi.scan.get","ota.start","system.reset","system.reboot","outlet.set","indicator.set","child_lock.set",NULL};
     phw_begin(out,NULL,false);phw_text(out,"model","tc1");phw_text(out,"mqtt_protocol","tmcp");
-    phw_int(out,"mqtt_protocol_version",3);phw_int(out,"protocol",3);
+    phw_int(out,"mqtt_protocol_version",2);phw_int(out,"protocol",2);
     phw_begin(out,"actions",true);
     if(restricted){phw_text(out,NULL,"info.get");phw_text(out,NULL,"status.get");phw_text(out,NULL,"capabilities.get");}
     else for(unsigned i=0;actions[i];i++)phw_text(out,NULL,actions[i]);

@@ -39,8 +39,7 @@ $(NAME)_SOURCES := http_trace.c\
 				   user_power.c\
 				   timed_task/timed_task.c\
 				   http_server/web_log.c\
-				   http_server/app_httpd.c\
-                   http_server/auth.c
+				   http_server/app_httpd.c
 
 $(NAME)_COMPONENTS := protocols/SNTP\
 					protocols/mqtt\

@@ -38,7 +38,8 @@ static void UserLedSet(bool enabled){(void)enabled;}
 static void UserRelaySet(unsigned i,bool on){assert(i<6);config.socket_status[i]=on;relay_writes++;}
 static void UserRelaySetAll(bool on){for(unsigned i=0;i<6;i++)UserRelaySet(i,on);}
 static void UserMqttRefreshState(bool discovery){(void)discovery;refreshes++;}
-static int httpd_auth_init(const char *u,const char *p){(void)u;(void)p;return 0;}
+static bool tc1_auth_password_save(const char *p){strcpy(config.web_password,p);return true;}
+static bool tc1_auth_reset(bool full){(void)full;return true;}
 static char owned_ssid[33],owned_password[65],owned_url[512];
 static bool WifiConnect(char *ssid,char *password){strcpy(owned_ssid,ssid);strcpy(owned_password,password);return true;}
 static int WifiScanStart(void){return 0;}
