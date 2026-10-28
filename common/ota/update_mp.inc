@@ -16,11 +16,14 @@
 #endif
 #if defined(AUTOMATION_TC1)
 #define UPDATE_MODEL "tc1"
+#define UPDATE_MANIFEST_MODEL "TC1"
 #define UPDATE_PRIORITY (MICO_APPLICATION_PRIORITY+1)
 #elif defined(FEATURE_DEVICE_A1)
 #define UPDATE_MODEL "a1"
+#define UPDATE_MANIFEST_MODEL "A1"
 #else
 #define UPDATE_MODEL "m1"
+#define UPDATE_MANIFEST_MODEL "M1"
 #endif
 #ifndef UPDATE_PRIORITY
 #define UPDATE_PRIORITY MICO_APPLICATION_PRIORITY
@@ -67,7 +70,7 @@ static void update_worker(mico_thread_arg_t arg){
             /* TLS buffers are released before bounded borrowed-view parsing. */
             if(ok){
                 ph_release_manifest manifest;ph_ota_version_t remote,local;
-                ok=ph_release_manifest_parse(b.body,b.length,UPDATE_MODEL,PHICOMM_FIRMWARE_VARIANT,&manifest)&&
+                ok=ph_release_manifest_parse(b.body,b.length,UPDATE_MANIFEST_MODEL,PHICOMM_FIRMWARE_VARIANT,&manifest)&&
                    ph_ota_version_parse(manifest.version,&remote)&&ph_ota_version_parse(FIRMWARE_VERSION,&local);
                 if(ok){
                     mico_rtos_lock_mutex(&service_lock);
