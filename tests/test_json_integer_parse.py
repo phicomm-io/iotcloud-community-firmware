@@ -166,41 +166,65 @@ int main(void){
 ''')
 
     def test_m1_production_counter_body(self):
-        from tests.test_stock_runtime import run_host
-        runtime = (ROOT/'common/runtime.c').read_text()
-        start = runtime.index('static void co2_body(')
-        production = runtime[start:runtime.index('#ifdef FEATURE_DEVICE_A1', runtime.index('  return o;', start))]
-        engine = (ROOT/'common/engine.c').read_text()
-        start = engine.index('unsigned feature_sample_fresh_fields(')
-        freshness = engine[start:engine.index('/* The same statistic', start)]
-        start = engine.index('bool feature_co2_fresh(')
-        freshness += engine[start:engine.index('unsigned feature_co2_aggregate(', start)]
-        run_host(r'''
+        # Counter transport moved from runtime JSON to the actual M1 schema3
+        # producer; keep the full unsigned range, not only signed-int examples.
+        from tests.test_sensor_producers_mp import SensorProducers
+        source = (ROOT/'M1/mqtt.c').read_text()
+        start = source.index('static int publish_typed_sensors')
+        production = source[start:source.index('\n#include "../common/mqtt/service.h"', start)]
+        SensorProducers().compile_run(r'''
+#include "common/sensor_mp.h"
+#include "common/mqtt_account.h"
 #include <assert.h>
-#include "M1/m1.h"
-#include "common/json_build.h"
-FRESHNESS
-uint32_t mico_rtos_get_time(void){return 1000;}
-static void number(json_object *o,const char *key,unsigned value){json_build_object_add(o,key,json_object_new_int((int32_t)value));}
-static void js(json_object *o,const char *key,const char *value){json_build_object_add(o,key,json_object_new_string(value));}
+#include <limits.h>
+#define MQTT_SUCCESS 0
+#define PH_MQTT_MORE 1
+#define kNoErr 0
+static mqtt_account_t account;
+static uint32_t sensor_boot,sensor_sequence,sensor_at,sensor_revision=1;
+static bool sensor_started,sensor_metadata;static unsigned sensor_mask;
+static unsigned calls;static bool retained;static unsigned char bytes[2048];static size_t length;
+typedef struct{bool received;uint32_t updated_ms;int temperature_deci_c,humidity_deci_pct,hcho_ug_m3,pm25_ug_m3;}m1_sample_t;
+typedef struct{bool received,ready;uint32_t updated_ms;int pressure_centi_pa;}pressure_t;
+typedef struct{m1_sample_t sample;pressure_t barometer;struct{bool ready,received;uint32_t updated_ms;int co2_ppm;}scd40;}mqtt_state_t;
+static bool m1_sample_fresh(const m1_sample_t *s,uint32_t now){return s->received&&now-s->updated_ms<20000;}
+static unsigned m1_sample_fields(const m1_sample_t *s){(void)s;return 15;}
+static bool m1_barometer_fresh(const pressure_t *s,uint32_t now){return s->received&&s->ready&&now-s->updated_ms<20000;}
+static int MicoRandomNumberRead(uint8_t *out,size_t n){(void)out;(void)n;assert(0);return -1;}
+static int publish_bytes(const char *topic,const void *data,size_t n,bool retain){
+ assert(strstr(topic,retain?"/metadata":"/state"));assert(n<sizeof(bytes));
+ memcpy(bytes,data,n);length=n;retained=retain;calls++;return 0;}
 PRODUCTION
+static void verify(uint32_t counter,bool metadata){
+ ph_value root,number;int64_t n;ph_sensor_view view;
+ assert(phv_parse(PH_WIRE_MSGPACK,bytes,length,&root));
+ assert(ph_sensor_view_parse(&root,account.mac,metadata,&view));
+ assert(view.boot==counter&&view.descriptor_revision==counter);
+ assert(phv_get(&root,"boot",&number)&&phv_int(&number,&n)&&n==(int64_t)counter);
+ if(!metadata){
+  assert(view.sequence==counter&&sensor_sequence==counter);
+  assert(phv_get(&root,"sequence",&number)&&phv_int(&number,&n)&&n==(int64_t)counter);
+  assert(view.fields.count==4);
+  float value;uint32_t age;assert(ph_sensor_reading(&view,"temperature",20000,&value,&age)&&value==25&&age==0);
+ }
+}
 int main(void){
+ assert(mqtt_account_init(&account,1,"m1","user","aabbccddeeff"));
+ mqtt_state_t sample={0};sample.sample.received=true;sample.sample.updated_ms=1000;sample.sample.temperature_deci_c=250;
  const uint32_t counters[]={1,INT32_MAX,UINT32_C(2147483648),UINT32_MAX};
  for(unsigned i=0;i<sizeof(counters)/sizeof(*counters);i++){
-  feature_sample_t s={.boot=counters[i],.sequence=counters[i],.valid=true,.fields=15,.partial=true,
-   .received_ms=1000,.value={25,60,12,.05f},.co2_supported=true,.co2_valid=true,.co2=1200,.co2_received_ms=1000};
-  json_object *body=sample_body(&s,1000);assert(body);
-  const char *wire=json_object_to_json_string(body);assert(wire);
-  json_object *roundtrip=json_tokener_parse(wire);assert(roundtrip);
-  json_object *boot=json_object_object_get(roundtrip,"boot"),*sequence=json_object_object_get(roundtrip,"sequence");
-  assert(json_object_is_type(boot,json_type_int)&&json_object_is_type(sequence,json_type_int));
-  assert(json_object_get_int64(boot)==counters[i]&&json_object_get_int64(sequence)==counters[i]);
-  assert(!strcmp(json_object_get_string(json_object_object_get(roundtrip,"model")),"m1"));
-  json_object_put(roundtrip);json_object_put(body);
+  sensor_boot=sensor_revision=counters[i];sensor_sequence=counters[i]-1;
+  sensor_started=sensor_metadata=false;
+  unsigned before=calls;assert(!publish_typed_sensors(&sample,1000));assert(retained&&calls==before+1);verify(counters[i],true);
+  assert(!publish_typed_sensors(&sample,1000));assert(!retained&&calls==before+2);verify(counters[i],false);
  }
+ /* The next full snapshot after UINT32_MAX wraps to positive sequence 1. */
+ sensor_started=false;assert(!publish_typed_sensors(&sample,1000));
+ ph_value root;ph_sensor_view view;assert(phv_parse(PH_WIRE_MSGPACK,bytes,length,&root));
+ assert(ph_sensor_view_parse(&root,account.mac,false,&view)&&view.boot==UINT32_MAX&&view.sequence==1);
  return 0;
 }
-'''.replace('PRODUCTION', production).replace('FRESHNESS', freshness))
+'''.replace('PRODUCTION', production))
 
 
 if __name__ == '__main__':
