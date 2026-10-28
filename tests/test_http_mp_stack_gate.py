@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from tools.check_http_core import (HTTP_BUDGET, HTTP_RESERVE, check_symbols,
     http_paths, linked_symbols, read_frames, validate_paths, check_tc1_ota_decimal, check_tc1_ota_progress)
-from tools.status_stack import status_paths
+from tools.status_stack import status_paths, diagnostic_paths
 
 class HTTPMessagePackStackGate(unittest.TestCase):
     def fixture(self,model='A1'):
@@ -40,6 +40,18 @@ class HTTPMessagePackStackGate(unittest.TestCase):
         frames,paths=self.fixture();frames['device_diagnostics_mp']=10000
         with redirect_stdout(io.StringIO()),self.assertRaisesRegex(ValueError,'>12288'):
             validate_paths(paths,frames)
+
+    def test_tc1_diagnostics_charge_flag_reader_and_reset_helpers(self):
+        helpers=['bemfa_status_capture','bemfa_config_flags_get',
+                 'tc1_status_begin','tc1_ota_snapshot','reset_name','device_status_text']
+        frames=dict.fromkeys(helpers,16)
+        paths=diagnostic_paths(frames,'TC1','diagnostics',[],3072,frames)
+        names=paths['diagnostics business capture'][0]
+        self.assertTrue(set(helpers)<=set(names))
+        self.assertNotIn('bemfa_config_get',names)
+        missing=dict(frames);del missing['bemfa_config_flags_get']
+        with self.assertRaisesRegex(ValueError,'Emitted helper missing'):
+            diagnostic_paths(missing,'TC1','diagnostics',[],3072,frames)
 
     def test_missing_emitted_core_frames_fail_closed(self):
         for missing in ['mp_dispatch','mp_cached','service_command_mp',
