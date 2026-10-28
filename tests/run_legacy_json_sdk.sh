@@ -20,6 +20,7 @@ PY
 json_dir="$output/sdk/libraries/utilities/json_c"
 PHICOMM_TEST_JSON_DIR="$json_dir" python3 -m unittest \
   tests.test_json_integer_parse.JsonIntegerParseTest.test_integer_conversion_ignores_errno_host_sanitizers \
+  tests.test_json_integer_parse.JsonIntegerParseTest.test_json_integer_width_and_float_paths \
   tests.test_json_sized_resize tests.test_json_numeric_link \
   tests.test_json_float32.JsonFloat32.test_host_roundtrip_and_capacity
 compiler=("${CC:-cc}")
