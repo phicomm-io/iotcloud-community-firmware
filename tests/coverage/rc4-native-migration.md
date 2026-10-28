@@ -2,9 +2,10 @@
 
 Baseline: `2fbe51b`. A passing native subset is not a full-regression result.
 The default `tests/run.sh --all` combines the explicit native manifest with the
-retained transport/tooling/hardware/recovery/OTA/Web gates. The previous full
-script and its old implementation fixtures remain available through
-`--historical-product`; the pure JSON SDK library has its own `--legacy-sdk` job.
+retained transport/tooling/hardware/recovery/OTA/Web gates. The historical DOM
+fixture entry remains available through `--historical-product`, alongside
+already-migrated native coverage; it is not a byte-for-byte frozen old runner.
+The pure JSON SDK library has its own `--legacy-sdk` job.
 The device JSON compatibility contract was intentionally removed: deleted DOM
 implementation assertions do not require a production compatibility adapter.
 Business assertions are replaced only by the explicit mappings below.
@@ -70,8 +71,9 @@ DUT installation, concurrency P95, busy recovery, or physical-button acceptance.
   It prepares all three pinned SDKs before the first product fixture; external
   checkouts can be provided through `A1_SDK_DIR`, `M1_SDK_DIR`, `TC1_SDK_DIR`,
   with `PHICOMM_M1_SDK`/`PHICOMM_TC1_SDK` inherited from those locations.
-  `--historical-product` preserves the previous script, including old deleted-API
-  implementation assertions; it is not a compatibility promise or release job.
+  `--historical-product` preserves the residual old deleted-API assertions plus
+  already-migrated native supplements; it is not a frozen old checkout,
+  compatibility promise or release job.
 
 The runtime controls test extracts the current production implementation on every
 run, including `install_config`, applied-state/PID/manual/cap/animation functions
