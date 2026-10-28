@@ -170,10 +170,10 @@ class LanPairService(unittest.TestCase):
  run_c=NativeService.run_c
  def test_pairing_borrows_input_without_retaining_credentials_or_receipt(self):
   self.run_c(r'''
-static unsigned pairs;static char pair_password[33];
+static unsigned pairs,last_scope;static char pair_password[33];
 bool feature_lan_pair_start(const char *peer,const char *ip,const char *password,unsigned scopes,const char **code){
- assert(!strcmp(peer,"001122aabbcc")&&!strcmp(ip,"10.0.0.2")&&scopes==3);
- strcpy(pair_password,password);pairs++;*code="accepted";return true;
+ assert(!strcmp(peer,"001122aabbcc")&&!strcmp(ip,"10.0.0.2")&&scopes>=1&&scopes<=7);
+ strcpy(pair_password,password);last_scope=scopes;pairs++;*code="accepted";return true;
 }
 bool feature_lan_pair_status(const char *peer,ph_writer *w){
  if(strcmp(peer,"001122aabbcc"))return false;phw_begin(w,NULL,false);phw_text(w,"phase","paired");phw_end(w);return true;
@@ -181,15 +181,19 @@ bool feature_lan_pair_status(const char *peer,ph_writer *w){
 static ph_buf *pair_request(const char *action,const char *peer,int scopes){
  ph_writer w;assert(phw_init(&w,1));phw_begin(&w,NULL,false);phw_text(&w,"action",action);phw_text(&w,"request_id","same");
  phw_begin(&w,"params",false);phw_text(&w,"peer",peer);
- if(!strcmp(action,"lan.pair")){phw_text(&w,"ip","10.0.0.2");phw_text(&w,"password","synthetic-secret");phw_int(&w,"scopes",scopes);}
+ if(!strcmp(action,"lan.pair")){phw_text(&w,"ip","10.0.0.2");phw_text(&w,"password","adminfjr");phw_int(&w,"scopes",scopes);}
  phw_end(&w);phw_end(&w);return phw_take(&w);
 }
 int main(void){
- service_init();command_code(pair_request("lan.pair","001122aabbcc",4),"invalid_params");assert(!pairs);
+ service_init();command_code(pair_request("lan.pair","001122aabbcc",8),"invalid_params");command_code(pair_request("lan.pair","001122aabbcc",0),"invalid_params");assert(!pairs);
  ph_buf *q=pair_request("lan.pair","001122aabbcc",3),*out=service_command_mp(q->buf,q->len);code(out,"accepted");
  ph_value data=data_value(out),v;assert(!phv_get(&data,"password",&v));ph_buf_free(out);
- memset(q->buf,0,q->len);ph_buf_free(q);assert(pairs==1&&!strcmp(pair_password,"synthetic-secret"));
+ memset(q->buf,0,q->len);ph_buf_free(q);assert(pairs==1&&!strcmp(pair_password,"adminfjr"));
  command_code(pair_request("lan.pair","001122aabbcc",3),"accepted");assert(pairs==2);/* credentials deliberately never retained as receipts */
+ for(unsigned scope=4;scope<=7;scope++){
+  command_code(pair_request("lan.pair","001122aabbcc",scope),"accepted");assert(last_scope==scope);
+ }
+ assert(pairs==6);
  command_code(pair_request("lan.pair.get","001122aabbcc",0),"ok");
  command_code(pair_request("lan.pair.get","000000000000",0),"not_found");return 0;
 }

@@ -192,6 +192,18 @@ def check_tc1_ota_decimal(frames,budget,symbols=None):
     print(f'OTA progress decimal: {size} application + 3072 reserve <= {budget} bytes')
 
 
+def check_tc1_ota_progress(frames,budget,symbols=None,decimal=False):
+    if decimal:return check_tc1_ota_decimal(frames,budget,symbols)
+    # Integer-only percentage logging retains WebLog, then SDK printf/RTOS
+    # within the unchanged reserve. The public float state does no formatting.
+    names=['download_worker','ota_fetch','fetch_write','OtaServerStatusHandler','WebLog']
+    missing=set(names)-frames.keys()
+    if missing:raise ValueError('OTA progress integer: missing .su frames '+str(sorted(missing)))
+    size=sum(frames[n] for n in names)
+    if size+3072>budget:raise ValueError(f'OTA progress integer: {size}+3072>{budget}')
+    print(f'OTA progress integer: {size} application + 3072 reserve <= {budget} bytes')
+
+
 def check(modules,model,nm,elf):
     modules=Path(modules)
     symbols=linked_symbols(subprocess.check_output([nm,'--defined-only',elf],text=True))
@@ -214,7 +226,9 @@ def check(modules,model,nm,elf):
             size=sum(frames[n] for n in names)
             if size+3072>ota_budget:raise ValueError(f'OTA download {branch}: {size}+3072>{ota_budget}')
             print(f'OTA download {branch}: {size} application + 3072 reserve <= {ota_budget} bytes')
-        check_tc1_ota_decimal(frames,ota_budget,symbols)
+        callback=(root/'TC1/ota_server/user_ota.c').read_text()
+        check_tc1_ota_progress(frames,ota_budget,symbols,
+                              decimal='ph_decimal_format_float32(' in callback)
     for name in ('phicomm_httpd','phicomm_mqtt'):
         if not (modules.parent/'libraries'/ (name+'.a')).exists():raise ValueError('Shared core archive missing: '+name)
     print(f'{model}: linked MessagePack dispatcher/direct status; no JSON product bridge')

@@ -134,7 +134,7 @@ static ph_buf *mp_dispatch(mp_request *r,const void *raw,size_t length,bool mqtt
         ph_value v;char peer[13],ip[16],password[33]={0};int64_t scopes;
         bool start=!strcmp(action,"lan.pair");
         bool valid=phv_keys(p,start?"|peer||ip||password||scopes|":"|peer|")&&phv_get(p,"peer",&v)&&phv_text(&v,peer,sizeof(peer));
-        if(start)valid=valid&&phv_get(p,"ip",&v)&&phv_text(&v,ip,sizeof(ip))&&phv_get(p,"scopes",&v)&&phv_int(&v,&scopes)&&scopes>=1&&scopes<=3;
+        if(start)valid=valid&&phv_get(p,"ip",&v)&&phv_text(&v,ip,sizeof(ip))&&phv_get(p,"scopes",&v)&&phv_int(&v,&scopes)&&scopes>=1&&scopes<=7;
         if(start&&phv_get(p,"password",&v))valid=valid&&phv_text(&v,password,sizeof(password));
         if(!valid){code="invalid_params";mp_empty(&w);}
         else if(start){if(feature_lan_pair_start)feature_lan_pair_start(peer,ip,password,(unsigned)scopes,&code);else code="unsupported";mp_empty(&w);}

@@ -85,6 +85,10 @@ static inline size_t ha_command_pack(const void *data,size_t length,void *output
 }
 static inline void ha_command_input(const void *data,size_t length)
 {
-    unsigned char bytes[1536];size_t n=ha_command_pack(data,length,bytes,sizeof(bytes));
+    /* Only the product MQTT owner calls this synchronous adapter. Keeping
+     * its scratch in owner storage avoids retaining 1536 stack bytes during
+     * business dispatch; borrowed values never escape service_command_mp. */
+    static unsigned char bytes[1536];
+    size_t n=ha_command_pack(data,length,bytes,sizeof(bytes));
     if(n){ph_buf *response=service_command_mp(bytes,n);ph_buf_free(response);}
 }
