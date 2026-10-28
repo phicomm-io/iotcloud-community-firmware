@@ -89,6 +89,9 @@ int main(void){
         cycle=function((ROOT/'M1/mqtt.c').read_text(),'static int session_cycle(')
         cycle='static int publish_typed_sensors(const void *s,uint32_t now){(void)s;(void)now;return MQTT_SUCCESS;}\n'+cycle
         fixture=r'''
+#include "common/typed_wire.h"
+#include "common/mqtt_account.h"
+typedef int (*service_mqtt_sender)(const char*,const void*,size_t,bool);
 #include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -110,16 +113,11 @@ static unsigned m1_lock,particles_at,mqtt_owner_thread,particle_attempts;
 static struct {bool mcu_sensor_details;}m1_state;
 static void mico_rtos_lock_mutex(unsigned *m){(void)m;}
 static void mico_rtos_unlock_mutex(unsigned *m){(void)m;}
-typedef unsigned service_mqtt_json_scope;
-typedef void json_object;
-#define MQTT_TOPIC_MAX 64
-static bool service_mqtt_json_begin(service_mqtt_json_scope *s,unsigned *owner){(void)s;(void)owner;particle_attempts++;return false;}
-static json_object *m1_particles_json(void){assert(0);return NULL;}
-static void mqtt_leaf(int *a,const char *leaf,char *out,unsigned n){(void)a;(void)leaf;(void)out;(void)n;assert(0);}
-static int service_mqtt_optional_send(int p,const char *topic,json_object *o,bool retain,service_mqtt_json_scope *s){(void)p;(void)topic;(void)o;(void)retain;(void)s;assert(0);return -1;}
-static void service_mqtt_json_end(service_mqtt_json_scope *s){(void)s;assert(0);}
+static int ha_particles(void){particle_attempts++;return PH_MQTT_MORE;}
+static int ha_state(void){return MQTT_SUCCESS;}
 static unsigned feature_revision,count,discovery_index=MQTT_DISCOVERY_COUNT,initial_index=2,connect_sequence,sequence,co2_sequence,pressure_sequence,snapshot_at,now;
-static int old_fresh=-1,old_co2_fresh=-1,old_pressure_fresh=-1,old_brightness=-1,publish,account;
+static int old_fresh=-1,old_co2_fresh=-1,old_pressure_fresh=-1,old_brightness=-1,publish;
+static mqtt_account_t account;
 static char base[1],feature_filters[1];
 static unsigned snapshots,sensors,features;static int snapshot_result=PH_MQTT_MORE;
 static bool connection_ok=true,filters_ok=true;
@@ -127,7 +125,21 @@ static uint32_t mico_rtos_get_time(void){return now;}
 static void ota_job_poll(void){}
 static bool ota_job_active(void){return false;}
 static int ota_service(const char*x){(void)x;return 0;}
-static int service_mqtt_snapshot(int p,int*a){(void)p;(void)a;snapshots++;return snapshot_result;}
+static bool snapshot_deferred,capabilities_pending;
+static uint32_t snapshot_retry_at;
+#define PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED 9
+static int ph_mqtt_resource_ready(void){return MQTT_SUCCESS;}
+static int publish_bytes(const char *topic,const void *data,size_t length,bool retained){
+ assert(strstr(topic,"/state")&&retained);ph_value v;assert(phv_parse(PH_WIRE_MSGPACK,data,length,&v)&&v.kind==PHV_MAP);
+ assert(memchr(data,0,length));return snapshot_result;
+}
+static ph_buf *service_query_mp(const char *action){
+ assert(!strcmp(action,"status.get"));snapshots++;
+ if(snapshot_result==PH_MQTT_MORE)return NULL;
+ ph_writer w;assert(phw_init(&w,PH_WIRE_MSGPACK));phw_begin(&w,NULL,false);
+ phw_u32(&w,"sequence",0);phw_text(&w,"model","m1");phw_end(&w);return phw_take(&w);
+}
+/* SNAPSHOT */
 static void mqtt_state_get(mqtt_state_t*s){s->wifi_connected=true;s->sample.sequence++;}
 static void m1_config_get(m1_config_t*c){*c=cfg;}
 static bool same_connection(const m1_config_t*a,const m1_config_t*b){(void)a;(void)b;return connection_ok;}
@@ -139,6 +151,7 @@ static int publish_leaf(const char*leaf,const char*value,bool retain){(void)valu
 static int feature_mqtt_service(int p,bool connected){(void)p;assert(connected);features++;return 0;}
 /* PRODUCTION */
 int main(void){
+ assert(mqtt_account_init(&account,1,"m1","test","aabbccddeeff"));
  now=UINT32_MAX-2500;snapshot_at=now-5000u;
  for(unsigned i=0;i<600;i++){assert(session_cycle(NULL)==0);now+=20;}
  assert(snapshots==3 && sensors==600 && features==600);
@@ -156,16 +169,18 @@ int main(void){
  assert(session_cycle(NULL)==MQTT_SUCCESS);
 }
 '''.replace('/* PRODUCTION */',cycle)
+        service=(ROOT/'common/mqtt/service.c').read_text()
+        fixture=fixture.replace('/* SNAPSHOT */','\n'.join(function(service,s) for s in ('static int snapshot_wait(', 'static int publish_query(', 'static int try_capabilities(', 'int service_mqtt_snapshot(')))
         with tempfile.TemporaryDirectory() as d:
             source=(ROOT/'M1/mqtt.c').read_text()
             fixture='#include \"'+str(ROOT/'M1/barometer.h')+'\"\n'+source[source.index('enum { MQTT_BRIGHTNESS_INDEX'):source.index(';',source.index('enum { MQTT_BRIGHTNESS_INDEX'))+1]+'\n'+fixture
             src=Path(d)/'m1-fair.c';binary=Path(d)/'m1-fair';src.write_text(fixture)
-            flags=[os.environ.get('CC','cc'),'-std=gnu99','-fsanitize=address,undefined','-fno-pie','-no-pie',str(src),'-o',str(binary)]
+            flags=[os.environ.get('CC','cc'),'-std=gnu99','-fsanitize=address,undefined','-fno-pie','-no-pie','-I'+str(ROOT),str(src),str(ROOT/'common/typed_wire.c'),str(ROOT/'common/wire_buffer.c'),'-lm','-o',str(binary)]
             subprocess.run(flags,check=True)
             subprocess.run([str(binary)],check=True,timeout=10)
             begin=fixture.index('            if(!ota_job_active() &&')
             end=fixture.index('            rc=ota_service(base);',begin)
-            mutation=fixture[:begin]+'''            if(!ota_job_active() && (uint32_t)(mico_rtos_get_time()-snapshot_at)>=5000){rc=service_mqtt_snapshot(publish,&account);if(rc!=MQTT_SUCCESS)return rc;snapshot_at=mico_rtos_get_time();}
+            mutation=fixture[:begin]+'''            if(!ota_job_active() && (uint32_t)(mico_rtos_get_time()-snapshot_at)>=5000){rc=service_mqtt_snapshot(publish_bytes,&account);if(rc!=MQTT_SUCCESS)return rc;snapshot_at=mico_rtos_get_time();}
 '''+fixture[end:]
             src.write_text(mutation);subprocess.run(flags,check=True)
             result=subprocess.run([str(binary)],stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=10)
