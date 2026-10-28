@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "tag": "v1.0.0-rc.4",
+  "version": "1.0.0-rc.4",
+  "commit": "69503385676ba40217e248cfb429e09b712ac580",
+  "model": "A1",
+  "firmware_variant": "full",
+  "path": "/releases/v1.0.0-rc.4/A1.ota.bin.signed",
+  "size": 378120,
+  "sha256": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+  "release_log": "/releases/v1.0.0-rc.4/release-log.md"
+}
