@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include <esp_heap_caps.h>
-// All configuration and broker callbacks run on loop(). ESP MQTT tasks only
+// All configuration and device bus callbacks run on loop(). ESP MQTT tasks only
 // assemble bounded messages and enqueue them; they never read mutable JSON.
 // INTERNAL alone includes instruction RAM that cannot hold byte buffers.
 static size_t hubByteHeap() {
@@ -206,7 +206,7 @@ static void hubResetInbox() {
   for (auto &message : hubMessages) message.reset();
 }
 static void hubUpstreamChanged() {
-  // config.set may run inside the local broker's poll callback. Stop the old
+  // config.set may run inside a local UDP command callback. Stop the old
   // account now, then let the next reload retire both inbox generations before
   // starting a new client, including when this poll has already drained input.
   stopMqtt();
@@ -220,7 +220,8 @@ static void hubRestoreChanged() {
   homeQuiesce();
   hubService.clearSessions();
   hubHttpToken = "";
-  hubTransport.stop();
+  hubDeviceBus.dispatch = nullptr;
+  hubLanReset();
   stopMqtt();
   stopBemfa();
   hubRelay.reset();
@@ -229,7 +230,7 @@ static void hubRestoreChanged() {
   hubReload = hubCredentials = hubBirth = mqttRestart = wifiRestart = false;
 }
 static bool hubReady() {
-  return !hubRestoring && !configRecovery && hubService.ready() && hubTransport.running();
+  return !hubRestoring && !configRecovery && hubService.ready() && bool(hubDeviceBus.dispatch);
 }
 static void hubApiExecute() {
   if (hubRestoring) {
@@ -259,9 +260,9 @@ static void hubApiExecute() {
 static void hubLocalPublish(const String &topic, const String &body,
                             bool retain) {
   // Admit namespace scratch before constructing any owning string. The byte
-  // reserve in broker.publish() cannot protect allocations made by its caller.
-  if (!topic || !body || topic.length() > iotcloud::HubBroker::Topic ||
-      body.length() > iotcloud::HubBroker::Packet ||
+  // reserve in device bus dispatch cannot protect allocations made by its caller.
+  if (!topic || !body || topic.length() > iotcloud::HubDeviceBus::Topic ||
+      body.length() > iotcloud::HubDeviceBus::Packet ||
       !hubReady() || !hubAllocationReady(2048))
     return;
   // Native sensor/HA messages are materialized independently for the local
@@ -280,24 +281,25 @@ static void hubLocalPublish(const String &topic, const String &body,
   const iotcloud::NativeRule bodyRules[] = {{from, to}, {idFrom, idTo}};
   size_t targetLength = 0, payloadLength = 0;
   if (!iotcloud::nativeMessageSize(topic.c_str(), topic.length(), topicRules, 2,
-                                  iotcloud::HubBroker::Topic, targetLength) ||
+                                  iotcloud::HubDeviceBus::Topic, targetLength) ||
       !iotcloud::nativeMessageSize(body.c_str(), body.length(), bodyRules,
                                   topic.startsWith("homeassistant/") ? 2 : 0,
-                                  iotcloud::HubBroker::Packet, payloadLength) ||
-      targetLength + payloadLength + 4 > iotcloud::HubBroker::Packet ||
+                                  iotcloud::HubDeviceBus::Packet, payloadLength) ||
+      targetLength + payloadLength + 4 > iotcloud::HubDeviceBus::Packet ||
       !hubAllocationReady(2 * (targetLength + payloadLength) + 2048)) return;
   std::string target, payload;
   target.reserve(targetLength); payload.reserve(payloadLength);
   iotcloud::nativeMessageAppend(target, topic.c_str(), topic.length(), topicRules, 2);
   iotcloud::nativeMessageAppend(payload, body.c_str(), body.length(), bodyRules,
                                 topic.startsWith("homeassistant/") ? 2 : 0);
-  hubTransport.broker.publish(target, payload, retain,
-                              iotcloud::HubBroker::Origin::Internal);
+  hubDeviceBus.publish(target, payload, retain,
+                              iotcloud::HubDeviceBus::Origin::Internal);
 }
 static void hubInit() {
   hubInbox = xQueueCreate(3, sizeof(HubMessage));
   hubService.localMac = deviceId.c_str();
   hubService.homeStatus = homeStatus;
+  hubService.lanStatus = hubLanStatus;
   hubService.homeReset = homeReset;
   hubHome.randomHex = hubRandom;
   hubService.randomHex = hubRandom;
@@ -308,58 +310,27 @@ static void hubInit() {
     hubCredentials |= credentials;
   };
   hubService.bemfaStatus = []() { return hubRelay.status; };
-  hubTransport.admission = []() {
-    // Peer and broker slots already exist. Reserve for the first bounded read
-    // and parser scratch; larger MQTT/WS buffers check their actual growth.
-    return hubAllocationReady(iotcloud::HubTransport::InitialAllocation);
-  };
-  hubTransport.websocketAccept = [](const std::string &key) {
-    auto input = key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
-    uint8_t hash[20];
-    char result[32];
-    size_t n = 0;
-#if MBEDTLS_VERSION_MAJOR >= 3
-    int hashResult = mbedtls_sha1((const uint8_t *)input.data(), input.size(), hash);
-#else
-    int hashResult = mbedtls_sha1_ret((const uint8_t *)input.data(), input.size(), hash);
-#endif
-    if (hashResult ||
-        mbedtls_base64_encode((uint8_t *)result, sizeof(result), &n, hash,
-                              sizeof(hash)))
-      return std::string();
-    return std::string(result, n);
-  };
-  hubTransport.broker.allocate = [](size_t n) {
-    return hubAllocationReady(n);
-  };
-  hubTransport.broker.authenticate = [](const std::string &u,
-                                        const std::string &p) {
-    return !configRecovery && hubService.authenticate(u, p, millis());
-  };
-  hubTransport.broker.authorize = [](const std::string &t, bool write) {
-    return hubService.allowed(t, write);
-  };
-  hubTransport.broker.event = [](const std::string &topic,
-                                 const std::string &body, bool retain,
-                                 iotcloud::HubBroker::Origin origin) {
-    iotcloud::hubWire.observe(topic,body);
-    if(origin==iotcloud::HubBroker::Origin::Local || origin==iotcloud::HubBroker::Origin::Internal){hubHome.tick(millis());hubHome.observe(topic,body);}
-    hubRelay.local(topic, body, retain, origin);
-    if (topic == "homeassistant/status" && body == "online")
-      haBirth = true;
-    auto base = hubService.prefix() + "daikin/" + std::string(deviceId.c_str());
-    auto sensor =
-        hubService.prefix() + "sensor/" + std::string(deviceId.c_str());
-    if (!retain &&
-        (topic == base + "/command" || topic == sensor + "/command")) {
-      if (otaActive)
-        return;
-      if (!sessionGrant(String(body.data(),body.size())) && topic == base + "/command"){
-        String result=execute(String(body.data(),body.size()));
-        hubTransport.broker.publish(base + "/result",std::string(result.c_str(),result.length()),false,
-                                    iotcloud::HubBroker::Origin::Internal);
-      }
+  hubDeviceBus.dispatch = [](const std::string &topic,const std::string &body,
+                              bool retain,iotcloud::HubDeviceBus::Origin origin) {
+    if(hubRestoring || configRecovery)return false;
+    const bool local=origin==iotcloud::HubDeviceBus::Origin::Local || origin==iotcloud::HubDeviceBus::Origin::Internal;
+    if(local){
+      iotcloud::hubWire.observe(topic,body);
+      hubHome.tick(millis());hubHome.observe(topic,body);
+      hubRelay.local(topic,body,retain,origin);
     }
+    const auto base=hubService.prefix()+"daikin/"+std::string(deviceId.c_str());
+    const auto sensor=hubService.prefix()+"sensor/"+std::string(deviceId.c_str());
+    if(topic==base+"/command" || topic==sensor+"/command"){
+      if(retain || otaActive)return false;
+      if(!sessionGrant(String(body.data(),body.size())) && topic==base+"/command"){
+        const String result=execute(String(body.data(),body.size()));
+        return hubDeviceBus.publish(base+"/result",std::string(result.c_str(),result.length()),false,iotcloud::HubDeviceBus::Origin::Internal);
+      }
+      return true;
+    }
+    if(topic.size()>=8&&topic.compare(topic.size()-8,8,"/command")==0)return hubLanSend(topic,body,retain);
+    return local;
   };
   hubRelay.randomHex = hubRandom;
   hubRelay.upstream = [](const std::string &t, const std::string &b,
@@ -380,14 +351,9 @@ static void pollHub(uint32_t now) {
   if (hubReload) {
     hubReload = false;
     homeChanged();
-    if (hubCredentials) {
-      hubCredentials = false;
-      hubTransport.broker.reset();
-      hubBirth = hubTransport.running();
-    }
-    if (!configRecovery && hubService.ready() && !hubTransport.running()) {
-      hubBirth = hubTransport.start();
-    }
+    hubLanReset();
+    if(hubCredentials)hubCredentials=false;
+    hubBirth=!configRecovery && hubService.ready();
     // SDK callbacks copy the current epoch into each queued message. Join both
     // old client tasks before publishing a new epoch or changing their topics.
     stopMqtt();
@@ -420,7 +386,7 @@ static void pollHub(uint32_t now) {
     hubRelay.status = "connected";
   else if (!bemfaConnected && hubRelay.status == "connected")
     hubRelay.status = "disconnected";
-  hubTransport.poll(now);
+  pollHubLan(now);
   if (hubBirth) {
     hubBirth = false;
     mqttOnline = true;

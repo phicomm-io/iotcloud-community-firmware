@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "hub_home_budget.h"
 #include <esp_heap_caps.h>
-// HAP is deliberately opt-in. Only local MQTT publications are trusted as
+// HAP is deliberately opt-in. Only authenticated local UDP state are trusted as
 // live state; upstream retained messages cannot confirm a Home control.
 static iotcloud::HomeStorage homeStorage;
 static bool homeStarted=false,homePaused=false;
@@ -32,7 +32,7 @@ static bool homeControl(size_t device,iotcloud::HubHome::Control control,unsigne
   if(!homeHealthy()||otaActive||!hubHome.begin(device,control,channel,value,powerUpdated,power))return false;
   const uint32_t began=millis();
   do{
-    auto now=millis();hubHome.tick(now);hubTransport.poll(now);
+    auto now=millis();pollLocalControls(now);hubHome.tick(now);pollHubLan(now);
     if(!homeHealthy()){hubHome.finish();return false;}
     if(hubHome.finished())return hubHome.finish();
     delay(1);

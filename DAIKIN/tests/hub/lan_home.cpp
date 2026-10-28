@@ -37,7 +37,7 @@ int main(){
  ops.digest=[](void*,const void*p,size_t n,uint8_t hash[32]){return SHA256(static_cast<const unsigned char*>(p),n,hash)!=nullptr;};
  ops.dispatch=[](void*,const void*p,size_t n,const ph_auth_context*,bool *admitted){*admitted=true;return executeFixture(p,n);};
  ops.send=[](void*,const char*,uint16_t,const void*p,size_t n){return drop||udp(serverfd,clientAddress,p,n);};
- iotcloud::HubDeviceBus bus;iotcloud::HubHome home(bus);iotcloud::HubLanClient client;
+ iotcloud::HubDeviceBus bus;iotcloud::HubHome home(bus);iotcloud::HubLanClient client;client.authorize=[](const std::string&,const std::string&,uint16_t,const uint8_t*){return true;};
  const std::string prefix="phicomm/v2/u_66697874757265/",base=prefix+"tc1/"+device;
  DynamicJsonDocument saved(512);auto d=saved.to<JsonArray>().createNestedObject();d["mac"]=device;d["model"]="tc1";
  assert(home.configure(saved.as<JsonArrayConst>(),prefix,hub));

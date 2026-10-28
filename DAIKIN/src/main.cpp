@@ -14,6 +14,7 @@ extern "C" {
 #include "../../common/local_auth.h"
 #include "../../common/typed_wire.h"
 #include "../../common/lan_wire.h"
+#include "../../common/lan_wire_v4.h"
 }
 #include <ESPmDNS.h>
 #include <esp_http_server.h>
@@ -24,10 +25,13 @@ extern "C" {
 #ifdef IOTCLOUD_HUB
 #include <esp_heap_caps.h>
 #include <mbedtls/pkcs5.h>
-#include <mbedtls/sha1.h>
 #include "hub_service.h"
 #include "hub_native_publish.h"
-#include "hub_transport.h"
+#include "hub_device_bus.h"
+#include "hub_lan_discovery.h"
+#include "hub_lan_client.h"
+#include "hub_lan_result.h"
+#include <mdns.h>
 #include "hub_relay.h"
 #include "hub_home.h"
 #include "hub_home_storage.h"
@@ -49,6 +53,7 @@ static TwoWire pmBus(0), thBus(1);
 static HardwareSerial co2Uart(2), hchoUart(1);
 enum Sensor { PM25, CO2, TEMPERATURE, HUMIDITY, TVOC, HCHO, PM10, SENSOR_COUNT };
 static daikin::Sample readings[SENSOR_COUNT];
+static uint32_t sensorBoot=0,sensorSequence=0;
 static const char *keys[]={"pm25","co2","temperature","humidity","tvoc","formaldehyde","pm10"};
 static const char *units[]={"µg/m³","ppm","°C","%","ppb","mg/m³","µg/m³"};
 static Preferences prefs;
@@ -78,9 +83,9 @@ static DynamicJsonDocument config(configCapacity);
 static bool configRecovery=false;
 #ifdef IOTCLOUD_HUB
 static iotcloud::HubService hubService(config);
-static iotcloud::HubTransport hubTransport;
-static iotcloud::HubRelay hubRelay(config,hubService,hubTransport.broker);
-static iotcloud::HubHome hubHome(hubTransport.broker);
+static iotcloud::HubDeviceBus hubDeviceBus;
+static iotcloud::HubRelay hubRelay(config,hubService,hubDeviceBus);
+static iotcloud::HubHome hubHome(hubDeviceBus);
 static bool homeReset();
 static bool homeFactoryReset();
 static void homeStatus(JsonObject);
@@ -89,6 +94,12 @@ static void homeQuiesce();
 static void homeInit();
 static void pollHome(uint32_t);
 static bool hubReady();
+static void pollLocalControls(uint32_t);
+static bool hubAllocationReady(size_t);
+static bool hubLanSend(const std::string &,const std::string &,bool);
+static void pollHubLan(uint32_t);
+static void hubLanReset();
+static void hubLanStatus(JsonObject);
 static void hubApiExecute();
 static void hubLocalPublish(const String &,const String &,bool);
 static bool hubCapture(esp_mqtt_event_handle_t,unsigned);
@@ -128,6 +139,15 @@ static ph_auth_state localAuth;
 static ph_auth_store loadedAuthStore;
 static SemaphoreHandle_t localAuthMutex;
 static bool localAuthReady=false;
+static void invalidateBusinessStatusCache();
+static bool pollBusinessStatusCache(uint32_t);
+static bool lanBusinessPacket(const ph_value *,const char *,uint16_t);
+static void pollLanBusiness();
+static void advertiseLanBusiness();
+#ifdef IOTCLOUD_HUB
+static bool hubLanPacket(const ph_value *,const char *,uint16_t);
+static void initHubLan();
+#endif
 static bool saveConfig(DynamicJsonDocument &);
 static bool saveConfigTransaction(DynamicJsonDocument &,bool);
 #include "auth_storage.inc"
@@ -152,12 +172,12 @@ static String loadLegacyConfigText(){
 }
 static bool due(uint32_t now,uint32_t at){return int32_t(now-at)>=0;}
 static bool saveConfigTransaction(DynamicJsonDocument &candidate,bool forceRevoke){
-  if(!localAuthReady)return persistAuthConfig(candidate,ph_auth_store_empty_value());
+  if(!localAuthReady){bool saved=persistAuthConfig(candidate,ph_auth_store_empty_value());if(saved)invalidateBusinessStatusCache();return saved;}
   struct Transaction {DynamicJsonDocument *candidate;} transaction{&candidate};
   char password[33];strlcpy(password,candidate["auth"]["password"]|"",sizeof(password));
   bool saved=ph_auth_credential_commit(&localAuth,password,forceRevoke,
     [](void *opaque,const ph_auth_store *store){return persistAuthConfig(*static_cast<Transaction*>(opaque)->candidate,store);},&transaction);
-  memset(password,0,sizeof(password));return saved;
+  memset(password,0,sizeof(password));if(saved)invalidateBusinessStatusCache();return saved;
 }
 static bool saveConfig(DynamicJsonDocument &candidate){return saveConfigTransaction(candidate,false);}
 static bool resetConfiguration(){
@@ -183,11 +203,25 @@ static void startWifi(){
 #include "sessions.inc"
 #include "commands.inc"
 #include "http.inc"
+#include "lan_business.inc"
 #include "mqtt.inc"
 #ifdef IOTCLOUD_HUB
+#include "hub_lan.inc"
 #include "hub.inc"
 #include "home.inc"
 #endif
+// Called by loop and by bounded HAP waits; never re-enters homeSpan.poll().
+static void pollLocalControls(uint32_t now){
+  // GPIO34 reset key: hold >=5 s to reopen provisioning, retaining device settings.
+  static uint32_t pressedAt=0;static bool pressed=false,handled=false;
+  if(digitalRead(34)==LOW){
+    if(!pressed){pressed=true;handled=false;pressedAt=now;}
+    else if(!handled&&!otaActive&&uint32_t(now-pressedAt)>=5000){handled=true;startWifi();}
+  }else{pressed=false;handled=false;}
+  pollIndicators(now);
+  if(!otaActive)pollSensors(now);
+  pollBusinessStatusCache(now);
+}
 void setup(){
   Serial.begin(115200);
   if(!prefs.begin("daikin",false)){Serial.println("NVS unavailable");while(true)delay(1000);}
@@ -228,16 +262,19 @@ void setup(){
 #endif
   }
 #ifdef IOTCLOUD_HUB
-  registerHubHttp();hubInit();homeInit();
+  sensorBoot=esp_random()|1;
+  registerHubHttp();hubInit();initHubLan();homeInit();
 #endif
   // Confirm local startup once the command server is available.
   if(web)esp_ota_mark_app_valid_cancel_rollback();
-  sensorBoot=esp_random()|1;sensorUdp.begin(11288);
+  if(!sensorBoot)sensorBoot=esp_random()|1;sensorUdp.begin(11288);
   startMqtt();Serial.printf("DAIKIN BRY88AX151K %s %s\n",pmModel,deviceId.c_str());
 }
 void loop(){
   uint32_t now=millis();
-  if(!otaActive){pollSensors(now);pollSessions();pollLanPairing();}
+  pollLocalControls(now);
+  if(!otaActive){pollSessions();pollLanPairing();}
+  pollBusinessStatusCache(now);pollLanBusiness();
   if(webPending){
     if(webAuthRequired&&!localAuthContextValid(&webAuthContext)){
       webResult="{\"code\":\"unauthorized\"}";
@@ -248,7 +285,7 @@ void loop(){
 #ifdef IOTCLOUD_HUB
     if(webOperation==3){if(otaActive){hubHttpStatus=503;hubHttpToken="";webResult="{\"code\":\"busy\"}";}else hubApiExecute();}else
 #endif
-    if(webOperation==4){if(!mqttStateJson(webResult,httpStatusBody,4096,true))webResult="{\"code\":\"busy\"}";}else webResult=otaActive?"{\"code\":\"busy\",\"message\":\"OTA active\"}":webOperation?backupExecute():execute(webBody);}
+    if(webOperation==4){if(businessStatusReady)webResult=cachedHttpStatus();else webResult="{\"code\":\"busy\"}";}else webResult=otaActive?"{\"code\":\"busy\",\"message\":\"OTA active\"}":webOperation?backupExecute():execute(webBody);}
     portENTER_CRITICAL(&webMux);webPending=false;webDone=true;portEXIT_CRITICAL(&webMux);}
   if(mqttQueued){String body(mqttPending,mqttReceived);bool sensor=mqttSensorCommand;portENTER_CRITICAL(&mqttMux);mqttQueued=false;portEXIT_CRITICAL(&mqttMux);if(!otaActive){if(sensor)sessionGrant(body);else if(!sessionGrant(body))publish(mqttRoot+"/result",execute(body),false);}}
   if(mqttOnline){mqttOnline=false;
@@ -274,15 +311,9 @@ void loop(){
   if(mqttRestart){mqttRestart=false;startMqtt();}
   if(wifiRestart){wifiRestart=false;startWifi();}
   pollIndicators(now);
-  // GPIO34 reset key: hold >=5 s to reopen provisioning, retaining device settings.
-  static uint32_t pressedAt=0;static bool pressed=false,handled=false;
-  if(digitalRead(34)==LOW){
-    if(!pressed){pressed=true;handled=false;pressedAt=now;}
-    else if(!handled&&!otaActive&&uint32_t(now-pressedAt)>=5000){handled=true;startWifi();}
-  }else{pressed=false;handled=false;}
   // Close initial recovery AP after station has been stable for two minutes.
   static uint32_t connectedSince=0;
-  if(WiFi.status()==WL_CONNECTED){if(!connectedSince){connectedSince=now;if(MDNS.begin(("daikin-"+deviceId).c_str()))MDNS.addService("http","tcp",80);}if(!configRecovery&&uint32_t(now-connectedSince)>120000&&uint32_t(now-connectAt)>120000)WiFi.softAPdisconnect(true);}
+  if(WiFi.status()==WL_CONNECTED){if(!connectedSince){connectedSince=now;if(MDNS.begin(("daikin-"+deviceId).c_str())){MDNS.addService("http","tcp",80);advertiseLanBusiness();}}if(!configRecovery&&uint32_t(now-connectedSince)>120000&&uint32_t(now-connectAt)>120000)WiFi.softAPdisconnect(true);}
   else{if(connectedSince)MDNS.end();connectedSince=0;if(!(WiFi.getMode()&WIFI_AP))startAccessPoint();}
   #ifdef IOTCLOUD_HUB
   pollHome(millis());
