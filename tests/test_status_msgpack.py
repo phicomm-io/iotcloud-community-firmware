@@ -68,6 +68,18 @@ static void check(device_status_t *s,device_status_full_t *f){
  assert(diagnostics&&phv_parse(1,diagnostics->buf,diagnostics->len,&dr));
  assert(phv_get(&dr,"schema",&version)&&version.count==1);
  assert(phv_get(&dr,"fields",&fields)&&fields.kind==PHV_ARRAY);
+ ph_writer dm;ph_buf dm_size;assert(phw_init_measure(&dm,1,&dm_size));budget=0;device_diagnostics_mp(&dm,s,f);budget=-1;
+ assert(phw_finish_fixed(&dm)==diagnostics->len);
+ char diag_storage[4096];ph_writer df;ph_buf diag_borrowed;
+ assert(phw_init_fixed(&df,1,&diag_borrowed,diag_storage,sizeof(diag_storage)));budget=0;device_diagnostics_mp(&df,s,f);budget=-1;
+ assert(phw_finish_fixed(&df)==diagnostics->len&&!memcmp(diag_storage,diagnostics->buf,diagnostics->len));
+ size_t diagnostic_blocks=blocks;
+ for(int fail=0;fail<12;fail++){
+  budget=fail;ph_writer failure;ph_buf *partial=NULL;
+  if(phw_init(&failure,1)){device_diagnostics_mp(&failure,s,f);partial=phw_take(&failure);}else phw_discard(&failure);
+  if(partial)ph_buf_free(partial);budget=-1;assert((size_t)blocks==diagnostic_blocks);
+ }
+
  bool seen_ids[1024]={0};
  for(unsigned n=0;n<fields.count;n++){
   assert(phv_at(&fields,n,&item)&&item.kind==PHV_ARRAY&&item.count==2);
