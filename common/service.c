@@ -20,6 +20,11 @@ static service_record_t records[LOG_COUNT];
 static uint32_t sequence;
 static mico_mutex_t service_lock,command_lock;
 static bool ready,service_lock_ready;
+/* Independent lock: writers may allocate while the service snapshot lock is
+ * held. Failure accounting must never recursively take that lock. */
+static mico_mutex_t wire_diag_lock;
+static bool wire_diag_ready;
+static uint32_t wire_alloc_failed,wire_guard_denied;
 static service_memory_state_t memory_state={.minimum_free=UINT32_MAX};
 static uint32_t service_free_memory(void) {
 #if defined(MOC) && MOC == 1
@@ -32,8 +37,10 @@ static uint32_t service_free_memory(void) {
 /* Independent binary allocations retain the network/RTOS reserve. */
 void *ph_wire_malloc(size_t bytes){
  uint32_t available=service_free_memory();
- if(available<SERVICE_MEMORY_RESERVE+32u || bytes>available-SERVICE_MEMORY_RESERVE-32u)return NULL;
- return malloc(bytes);
+ bool denied=available<SERVICE_MEMORY_RESERVE+32u || bytes>available-SERVICE_MEMORY_RESERVE-32u;
+ void *p=denied?NULL:malloc(bytes);
+ if(!p&&wire_diag_ready){mico_rtos_lock_mutex(&wire_diag_lock);uint32_t *counter=denied?&wire_guard_denied:&wire_alloc_failed;if(*counter!=UINT32_MAX)++*counter;mico_rtos_unlock_mutex(&wire_diag_lock);}
+ return p;
 }
 void ph_wire_free(void *p){free(p);}
 unsigned service_memory_claim(size_t input_bytes) {
@@ -62,6 +69,7 @@ void service_memory_snapshot(service_memory_state_t *out) {
     uint32_t free_bytes = service_free_memory();
     if (free_bytes < memory_state.minimum_free) memory_state.minimum_free = free_bytes;
     *out = memory_state;
+    if(wire_diag_ready){mico_rtos_lock_mutex(&wire_diag_lock);out->wire_alloc_failed=wire_alloc_failed;out->wire_guard_denied=wire_guard_denied;mico_rtos_unlock_mutex(&wire_diag_lock);}
     mico_rtos_unlock_mutex(&service_lock);
 }
 void service_memory_mqtt(unsigned pending, bool overflow, uint32_t delay_ms) {
@@ -77,6 +85,8 @@ void service_init(void) {
     if (ready) return;
     if (!service_lock_ready) service_lock_ready = mico_rtos_init_mutex(&service_lock)==kNoErr;
     if (!service_lock_ready) return;
+    if(!wire_diag_ready)wire_diag_ready=mico_rtos_init_mutex(&wire_diag_lock)==kNoErr;
+    if(!wire_diag_ready)return;
     ready = mico_rtos_init_mutex(&command_lock)==kNoErr;
     if (!ready) return;
     ota_job_init();

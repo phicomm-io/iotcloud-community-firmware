@@ -43,6 +43,7 @@ python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/http-retain
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/parameters-sdk.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/signed-ota-sdk.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/no-unsigned-sdk-write.patch"
+python3 "$project_dir/tools/install_tc1_native_sdk.py" "$sdk_dir"
 mkdir -p "$workspace"
 ln -sfn "$sdk_dir" "$workspace/mico-os"
 ln -sfn "$app_dir" "$workspace/TC1"
@@ -94,6 +95,6 @@ ln -sfn "$(command -v make)" "$micoder/cmd/Linux64/make"
         -f mico-os/makefiles/Makefile "$target" total
 )
 python3 "$project_dir/tools/check_http_core.py" "$workspace/build/$target/Modules" TC1 "$gcc_dir/bin/arm-none-eabi-nm" "$workspace/build/$target/binary/$target.elf"
-python3 "$project_dir/tools/check_json_float.py" "$gcc_dir/bin/arm-none-eabi-nm" "$workspace/build/$target/binary/$target.elf"
+python3 "$project_dir/tools/check_no_json_objects.py" --model tc1 --nm "$gcc_dir/bin/arm-none-eabi-nm" "$workspace/build/$target/binary/$target.elf"
 python3 "$project_dir/tools/check_tc1_trace.py" "$gcc_dir/bin/arm-none-eabi-nm" "$workspace/build/$target/binary/$target.elf"
 python3 "$app_dir/tools/package.py" "$workspace/build/$target/binary" "$project_dir/build/tc1${variant_suffix}-release"
