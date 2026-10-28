@@ -76,9 +76,21 @@ static void test_lan(void){
     assert(ph_auth_pair_unpair(device_local_auth(),"001122334455",token));assert(!feature_lan_auth("001122334455",decoded,2));
     ph_buf_free(input);
 }
+static void test_unknown_trailer_recovery(void){
+    /* Simulate a fresh boot over a future schema. Preserve both the password
+     * and opaque trailer; the recovery gate must prevent a pairing write. */
+    config.store.version=PH_AUTH_STORE_VERSION+1;
+    ph_auth_store before=config.store;unsigned before_writes=writes;
+    local_auth_ready=false;local_auth_mutex=0;recovery=false;
+    assert(device_local_auth_init()&&recovery&&writes==before_writes);
+    assert(!memcmp(&config.store,&before,sizeof(before)));
+    assert(ph_auth_password_is_set(device_local_auth()));
+    char key[33];assert(!ph_auth_pair(device_local_auth(),"adminfjr","001122334455",2,key));
+    assert(writes==before_writes&&!memcmp(&config.store,&before,sizeof(before)));
+}
 int main(void){
     memset(&config,0,sizeof(config));memset(&config.store,255,sizeof(config.store));
     assert(device_local_auth_init()&&writes==1&&ph_auth_store_valid(&disk.store)&&!disk.password[0]);
-    test_http();test_lan();assert(!local_auth_mutex&&!config_mutex);
+    test_http();test_lan();test_unknown_trailer_recovery();assert(!local_auth_mutex&&!config_mutex);
     puts("MP auth: empty auto-token, 401/503, logout/expiry/change, public info and local UDP scopes PASS");
 }
