@@ -1,5 +1,6 @@
 #include "../common/watchdog.h"
 #include "m1.h"
+#include "../common/service_mp.h"
 #include "indicator.h"
 #include <time.h>
 
@@ -301,6 +302,7 @@ static void uart_worker(mico_thread_arg_t arg)
                 } else m1_state.unknown_frames++;
             }
             mico_rtos_unlock_mutex(&m1_lock);
+            service_cache_changed(SERVICE_CACHE_STATUS);
         }
         m1_config_get(&cfg);
         mico_rtos_lock_mutex(&m1_lock);

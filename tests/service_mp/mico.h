@@ -7,4 +7,5 @@ typedef pthread_mutex_t mico_mutex_t;
 static inline int mico_rtos_init_mutex(mico_mutex_t *m){return pthread_mutex_init(m,NULL);}
 static inline void mico_rtos_lock_mutex(mico_mutex_t *m){assert(!pthread_mutex_lock(m));}
 static inline void mico_rtos_unlock_mutex(mico_mutex_t *m){assert(!pthread_mutex_unlock(m));}
-static inline uint32_t mico_rtos_get_time(void){return 123000;}
+extern uint32_t test_clock_ms;
+static inline uint32_t mico_rtos_get_time(void){return test_clock_ms;}

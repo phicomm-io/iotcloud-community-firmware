@@ -7,7 +7,7 @@ typedef struct { char id[65]; unsigned char digest[32]; ph_buf *response; } mp_r
 static mp_receipt mp_receipts[8];
 static unsigned mp_receipt_next;
 static uint32_t mp_generation[2]={1,1};
-static struct { uint32_t generation; ph_buf *payload; } mp_cache[2];
+static struct { uint32_t generation,clock_second; ph_buf *payload; } mp_cache[2];
 
 void service_cache_changed(unsigned mask)
 {
@@ -28,7 +28,7 @@ static const char *mp_message(const char *code)
 {
     return !strcmp(code,"ok")?"操作成功":!strcmp(code,"accepted")?"请求已接受":
         !strcmp(code,"busy")?"设备忙":!strcmp(code,"unsupported")?"不支持此功能":
-        !strcmp(code,"conflict")?"请求编号冲突":!strcmp(code,"storage_error")?"配置保存失败":"参数无效";
+        !strcmp(code,"conflict")?"请求编号冲突":!strcmp(code,"not_found")?"未找到目标":!strcmp(code,"storage_error")?"配置保存失败":"参数无效";
 }
 static ph_buf *mp_envelope(const char *id,const char *code,const ph_buf *data)
 {
@@ -84,14 +84,17 @@ static bool update_command_mp(const char *,const ph_value *,ph_writer *,const ch
 static void mp_empty(ph_writer *w){phw_begin(w,NULL,false);phw_end(w);}
 static ph_buf *mp_cached(unsigned index)
 {
-    uint32_t generation;
+    uint32_t generation,clock_second=mico_rtos_get_time()/1000u;
     mico_rtos_lock_mutex(&service_lock);generation=mp_generation[index];mico_rtos_unlock_mutex(&service_lock);
-    if(mp_cache[index].payload && mp_cache[index].generation==generation)return mp_cache[index].payload;
+    /* Status contains ages/countdowns/uptime: elapsed seconds are real changes,
+     * even without an external event. Capabilities remain purely event-driven. */
+    if(mp_cache[index].payload && mp_cache[index].generation==generation &&
+       (index || mp_cache[index].clock_second==clock_second))return mp_cache[index].payload;
     ph_writer w;if(!phw_init(&w,PH_WIRE_MSGPACK))return NULL;
     if(index==0)service_product_status_mp(&w);
     else service_product_capabilities_mp(&w,update_capability_names,false);
     ph_buf *next=phw_take(&w);if(!next)return NULL;
-    ph_buf_free(mp_cache[index].payload);mp_cache[index].payload=next;mp_cache[index].generation=generation;
+    ph_buf_free(mp_cache[index].payload);mp_cache[index].payload=next;mp_cache[index].generation=generation;mp_cache[index].clock_second=clock_second;
     return next;
 }
 static ph_buf *mp_dispatch(mp_request *r,const void *raw,size_t length,bool mqtt)
