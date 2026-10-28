@@ -160,7 +160,6 @@ void feature_render(const feature_light_t *, const float[4], const bool[4],
                     unsigned, unsigned, bool, uint32_t, uint32_t out[32]);
 
 #ifndef FEATURE_HOST
-#include "json_build.h"
 #include "mico.h"
 void feature_config_get(feature_config_t *);
 /* Authoritative revision under the product configuration lock; no snapshot allocation. */
@@ -203,7 +202,6 @@ unsigned feature_fan_limit(void);
 int feature_fan_apply(unsigned mode, int speed);
 
 bool feature_group_active(void);
-bool feature_group_control(const char *kind, json_object *);
 void feature_clock_valid(void);
 void feature_clock_tick(void);
 #endif

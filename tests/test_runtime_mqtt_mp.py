@@ -134,6 +134,72 @@ int main(void){
             self.assertIn("binary NUL preserved", result.stderr)
             print(result.stderr.strip())
 
+    def test_native_virtual_commands_and_owned_group_updates(self):
+        runtime = (ROOT / "common/runtime.c").read_text()
+        fixture = r'''#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "common/mqtt_account.h"
+#include "common/typed_wire.h"
+#include "common/ha_command.h"
+#define FEATURE_DEVICE_A1 1
+#define FEATURE_TOPIC_MAX MQTT_TOPIC_MAX
+#define FEATURE_WIRE_MAX 1200
+#define LOCAL_ID "aabbccddeeff"
+typedef struct {char id[13];} member;
+typedef struct {char group[33];unsigned member_count;member members[8];int value;} feature_config_t;
+static feature_config_t current;
+static bool coordinator=true;
+static unsigned command_count,control_count,set_count,install_count;
+static const char *domains[]={"binding","linkage","light","schedule","sleep","time"};
+static const char *topic_domain(const char*d){return !strcmp(d,"light")?"light/config":d;}
+static void feature_config_get(feature_config_t*c){*c=current;}
+static bool feature_is_coordinator(void){return coordinator;}
+static void root_for(const feature_config_t*c,unsigned i,char*out){(void)c;(void)i;strcpy(out,"phicomm/v2/u/group/G");}
+static void feature_colon_mac(const char*in,char*out){(void)in;strcpy(out,"aa:bb:cc:dd:ee:ff");}
+static bool feature_mac(const char*in,char*out){if(strlen(in)!=12||strspn(in,"0123456789abcdef")!=12)return false;strcpy(out,in);return true;}
+static ph_buf *empty_wire(void){ph_writer w;assert(phw_init_capacity(&w,PH_WIRE_MSGPACK,32));phw_begin(&w,NULL,false);phw_end(&w);return phw_take(&w);}
+ph_buf *service_command_mp(const void*d,size_t n){ph_value p,v;if(phv_parse(PH_WIRE_MSGPACK,d,n,&p)&&phv_get(&p,"action",&v)&&phv_equal_text(&v,"fan.set"))command_count++;return NULL;}
+static bool feature_control_mp(const char*kind,const ph_value*p,const char**code){ph_value v;bool enabled;*code=NULL;assert(!strcmp(kind,"fan")||!strcmp(kind,"light"));assert(phv_get(p,"on",&v)||phv_get(p,"enabled",&v));assert(phv_bool(&v,&enabled)&&enabled);control_count++;return true;}
+static ph_buf *domain_get_wire_mp(const char*d){(void)d;return empty_wire();}
+static ph_buf *domain_set_wire_mp(const char*d,const ph_value*p,int*status){(void)d;ph_value v;int64_t n;*status=400;if(phv_get(p,"value",&v)&&phv_int(&v,&n)){current.value=n;set_count++;*status=200;}return empty_wire();}
+static ph_buf *domain_config_wire_mp(const feature_config_t*c,const char*d,bool source){(void)c;(void)d;assert(source);return empty_wire();}
+static bool feature_config_decode_mp(feature_config_t*c,const char*d,const ph_value*p){(void)d;ph_value v;int64_t n;if(!phv_get(p,"value",&v)||!phv_int(&v,&n))return false;c->value=n;return true;}
+static bool install_config(feature_config_t*c){current=*c;install_count++;return true;}
+static bool enqueue_mp(const char*t,const ph_buf*b,bool retained){assert(t&&b);(void)retained;return true;}
+'''
+        fixture += function(runtime, "static bool virtual_input(const char *t,const void *data,size_t n,bool retained){")
+        fixture += r'''
+static void input(const char*leaf,const void*d,size_t n,bool retained){char topic[512];snprintf(topic,sizeof(topic),"phicomm/v2/u/group/G/%s",leaf);assert(virtual_input(topic,d,n,retained));}
+static size_t pack(const char*text,unsigned char*out){size_t n=ha_command_pack(text,strlen(text),out,1024);assert(n);return n;}
+int main(void){
+ strcpy(current.group,"G");current.member_count=1;strcpy(current.members[0].id,"001122334455");
+ unsigned char wire[1024];const char*cmd="{\"action\":\"fan.set\",\"params\":{\"speed\":0}}";size_t n=pack(cmd,wire);assert(memchr(wire,0,n));
+ input("command",wire,n,false);assert(command_count==1);
+ input("command",cmd,strlen(cmd),false);assert(command_count==1);
+ input("command",wire,n,true);assert(command_count==1);
+ coordinator=false;input("command",wire,n,false);assert(command_count==1);coordinator=true;
+ input("ha/command",cmd,strlen(cmd),false);assert(command_count==2);
+ input("fan/set","ON",2,false);input("light/set","{\"enabled\":true}",16,false);assert(control_count==2);
+ n=pack("{\"value\":0}",wire);input("linkage/set",wire,n,false);assert(set_count==1&&current.value==0);
+ coordinator=false;input("linkage/set",wire,n,false);assert(set_count==1);coordinator=true;
+ n=pack("{\"_source\":\"001122334455\",\"value\":7}",wire);input("linkage/state",wire,n,false);assert(install_count==1&&current.value==7);
+ memset(wire,0,sizeof(wire));assert(current.value==7); /* transport bytes have no owner in persisted config */
+ n=pack("{\"_source\":\"001122334455\",\"value\":7}",wire);input("linkage/state",wire,n,false);assert(install_count==1);
+ n=pack("{\"_source\":\"112233445566\",\"value\":9}",wire);input("linkage/state",wire,n,false);assert(install_count==1&&current.value==7);
+ n=pack("{\"_source\":\"001122334455\",\"value\":\"bad\"}",wire);input("linkage/state",wire,n,false);assert(install_count==1&&current.value==7);
+ assert(!virtual_input("other/native",wire,n,false));
+ return 0;
+}
+'''
+        with tempfile.TemporaryDirectory() as tmp:
+            source, binary = Path(tmp) / "fixture.c", Path(tmp) / "fixture"
+            source.write_text(fixture)
+            subprocess.run(["cc", "-std=c99", "-g", "-fsanitize=address,undefined", "-fno-omit-frame-pointer", "-no-pie", "-I", str(ROOT), "-I", str(ROOT / "common"), str(source), str(ROOT / "common/typed_wire.c"), str(ROOT / "common/wire_buffer.c"), "-lm", "-o", str(binary)], check=True)
+            result = subprocess.run([str(binary)], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
