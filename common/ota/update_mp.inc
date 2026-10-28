@@ -62,7 +62,7 @@ static void update_worker(mico_thread_arg_t arg){
             ok=ota_fetch(url,16384,notes_begin,notes_write,NULL,&error);
             if(ok){mico_rtos_lock_mutex(&service_lock);trim_utf8();mico_rtos_unlock_mutex(&service_lock);}
         }else{
-            snprintf(url,sizeof(url),"%s/ota/v1/" UPDATE_MODEL "/" PHICOMM_FIRMWARE_VARIANT "/latest.msgpack",update_bases[update_source]);
+            snprintf(url,sizeof(url),"%s" PHICOMM_OTA_METADATA_PREFIX "/" UPDATE_MODEL "/" PHICOMM_FIRMWARE_VARIANT "/latest.msgpack",update_bases[update_source]);
             ok=ota_fetch(url,4096,meta_begin,meta_write,&b,&error);
             /* TLS buffers are released before bounded borrowed-view parsing. */
             if(ok){
