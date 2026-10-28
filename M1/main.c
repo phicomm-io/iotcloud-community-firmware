@@ -73,7 +73,7 @@ static bool m1_config_commit(void *opaque,const ph_auth_store *auth_store)
 {
     m1_config_commit_args *args=opaque;const m1_config_t *c=args->config;int language=args->language;
     mico_rtos_lock_mutex(&config_lock);
-    if (c->revision != app_config->revision && c->magic == app_config->magic) {
+    if (device_config_recovery() || (c->revision != app_config->revision && c->magic == app_config->magic)) {
         mico_rtos_unlock_mutex(&config_lock); return false;
     }
     m1_config_t old = *app_config;
