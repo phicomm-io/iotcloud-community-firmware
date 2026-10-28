@@ -557,10 +557,27 @@ static __attribute__((noinline)) int ctx_ph_mqtt_subscribe(port_state *ctx, Clie
     unsigned at = 0;
     while (at < MAX_MESSAGE_HANDLERS && ctx->subscriptions[at].filter && strcmp(ctx->subscriptions[at].filter, filter))
         at++;
-    int rc = at == MAX_MESSAGE_HANDLERS ? MQTT_FAILURE : MQTTSubscribe(c, filter, qos, ingress);
-    if (rc == MQTT_SUCCESS) {
-        ctx->subscriptions[at].filter = filter;
-        ctx->subscriptions[at].handler = handler;
+    int rc = MQTT_FAILURE;
+    if (at < MAX_MESSAGE_HANDLERS) {
+        bool provisional = !ctx->subscriptions[at].filter;
+        if (provisional) {
+            ctx->subscriptions[at].filter = filter;
+            ctx->subscriptions[at].handler = handler;
+        }
+        /* MQTT permits retained PUBLISH before SUBACK. Paho installs a new
+         * handler after SUBACK; its temporary default copies early input into
+         * our bounded queue. Business dispatch is forbidden in protocol_depth. */
+        messageHandler previous = c->defaultMessageHandler;
+        c->defaultMessageHandler = ingress;
+        rc = MQTTSubscribe(c, filter, qos, ingress);
+        c->defaultMessageHandler = previous;
+        if (rc == MQTT_SUCCESS) {
+            ctx->subscriptions[at].filter = filter;
+            ctx->subscriptions[at].handler = handler;
+        } else if (provisional) {
+            ph_mqtt_discard_route(&ctx->core, at);
+            memset(&ctx->subscriptions[at], 0, sizeof(ctx->subscriptions[at]));
+        }
     }
     return end(ctx, PH_MQTT_ERROR_SUBSCRIBE, rc);
 }

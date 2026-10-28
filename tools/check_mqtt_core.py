@@ -91,6 +91,14 @@ def check(frames,model):
         'availability': owner + ['publish_text', 'ph_mqtt_publish'],
         'disconnect': owner + ['close_session', 'ph_mqtt_disconnect'],
     }
+    if model == 'M1':
+        for label, prefix in (
+                ('metadata initial', owner + ['session_initial', 'subscribe_metadata', 'ph_mqtt_subscribe']),
+                ('metadata retry', cycle + extra(['retry_metadata']) + ['subscribe_metadata', 'ph_mqtt_subscribe'])):
+            sites[label] = prefix
+            paths['MQTT '+label] = (prefix + transport[1:], reserve)
+    if model in ('A1', 'TC1'):
+        paths['Bemfa subscribe rollback'] = (root + ['bm_subscribe', 'ph_mqtt_discard_route'] + owner_hook, reserve)
     # Preserve the retained product/session/sender frames of each audited
     # publication. account_message has returned before TC1 send_owned publishes.
     for label, (names, _) in list(paths.items()):
@@ -103,6 +111,8 @@ def check(frames,model):
     sites['external SEND'] = owner + ['ph_mqtt_poll'] + (extra(['outgoing','send_owned'])+['MqttMsgPublish'] if model == 'TC1' else []) + ['ph_mqtt_publish']
     for label, retained in sites.items():
         paths['MQTT '+label+' error record'] = (retained + emitted_end + failure, reserve)
+        if retained[-1] == 'ph_mqtt_subscribe':
+            paths['MQTT '+label+' rollback'] = (retained + ['ph_mqtt_discard_route'] + owner_hook, reserve)
         if retained[-1] == 'ph_mqtt_publish':
             paths['MQTT '+label+' admission record'] = (retained + ['ph_mqtt_resource_ready'] + failure, reserve)
         if label != 'disconnect':

@@ -1,0 +1,122 @@
+SDK: 6c465211d3ff8797cd835e400ec54a06530dd476
+All SDK envs: /home/fjr/hobbies/phicomm-rc4/native-acceptance-sdk/mico-os
+ASan/UBSan: python3 -m unittest -v tests.test_m1_mqtt_display_session tests.test_shared_mqtt.SharedMQTT.test_core tests.test_shared_mqtt.SharedMQTT.test_concurrent_clear tests.test_shared_mqtt.SharedMQTT.test_m1_protocol tests.test_shared_mqtt.SharedMQTT.test_dual_owners tests.test_mqtt_birth_progress tests.test_mqtt_optional_json tests.test_ha_subscription
+
+test_adding_mqtt_source_reconnects_and_clears_cache (tests.test_m1_mqtt_display_session.DisplayMqttSession.test_adding_mqtt_source_reconnects_and_clears_cache) ... M1 display session case 4 PASS filters=5 ready=2 subscribe_errors=0 last_packet=43
+ok
+test_all_six_subacks_enable_user_mqtt_input (tests.test_m1_mqtt_display_session.DisplayMqttSession.test_all_six_subacks_enable_user_mqtt_input) ... M1 display session case 3 PASS filters=6 ready=1 subscribe_errors=0 last_packet=43
+ok
+test_broad_sensor_filter_is_a_failing_negative_control (tests.test_m1_mqtt_display_session.DisplayMqttSession.test_broad_sensor_filter_is_a_failing_negative_control) ... ok
+test_configuration_change_during_bootstrap_cannot_open_gate (tests.test_m1_mqtt_display_session.DisplayMqttSession.test_configuration_change_during_bootstrap_cannot_open_gate) ... M1 display session case 7 PASS filters=5 ready=1 subscribe_errors=0 last_packet=43
+ok
+test_denied_early_descriptor_is_not_reused_by_later_grant (tests.test_m1_mqtt_display_session.DisplayMqttSession.test_denied_early_descriptor_is_not_reused_by_later_grant) ... M1 display session case 20 PASS filters=5 ready=1 subscribe_errors=0 last_packet=0
+ok
+test_denied_metadata_retries_after_30s_across_wrap_then_stops (tests.test_m1_mqtt_display_session.DisplayMqttSession.test_denied_metadata_retries_after_30s_across_wrap_then_stops) ... M1 display session case 17 PASS filters=5 ready=1 subscribe_errors=0 last_packet=0
+ok
+test_early_descriptor_cannot_mask_suback_timeout (tests.test_m1_mqtt_display_session.DisplayMqttSession.test_early_descriptor_cannot_mask_suback_timeout) ... M1 display session case 21 PASS filters=5 ready=0 subscribe_errors=0 last_packet=0
+ok
+test_local_and_api_sources_preserve_five_filter_plan (tests.test_m1_mqtt_display_session.DisplayMqttSession.test_local_and_api_sources_preserve_five_filter_plan) ... M1 display session case 1 PASS filters=5 ready=1 subscribe_errors=0 last_packet=0
+ok
+test_metadata_denial_preserves_core_ready_and_native_commands (tests.test_m1_mqtt_display_session.DisplayMqttSession.test_metadata_denial_preserves_core_ready_and_native_commands) ... M1 display session case 11 PASS filters=5 ready=1 subscribe_errors=0 last_packet=0
+ok
+test_missing_suback_is_not_ignored (tests.test_m1_mqtt_display_session.DisplayMqttSession.test_missing_suback_is_not_ignored) ... M1 display session case 9 PASS filters=6 ready=0 subscribe_errors=1 last_packet=43
+ok
+test_old_post_suback_route_is_a_failing_negative_control (tests.test_m1_mqtt_display_session.DisplayMqttSession.test_old_post_suback_route_is_a_failing_negative_control) ... ok
+test_old_retained_gate_is_a_failing_negative_control (tests.test_m1_mqtt_display_session.DisplayMqttSession.test_old_retained_gate_is_a_failing_negative_control) ... ok
+test_old_unconditional_filter_is_a_failing_negative_control (tests.test_m1_mqtt_display_session.DisplayMqttSession.test_old_unconditional_filter_is_a_failing_negative_control) ... ok
+test_optional_malformed_header_remains_fatal (tests.test_m1_mqtt_display_session.DisplayMqttSession.test_optional_malformed_header_remains_fatal) ... M1 display session case 15 PASS filters=5 ready=0 subscribe_errors=0 last_packet=0
+ok
+test_optional_read_failure_remains_fatal (tests.test_m1_mqtt_display_session.DisplayMqttSession.test_optional_read_failure_remains_fatal) ... M1 display session case 16 PASS filters=5 ready=0 subscribe_errors=0 last_packet=0
+ok
+test_optional_timeout_remains_fatal (tests.test_m1_mqtt_display_session.DisplayMqttSession.test_optional_timeout_remains_fatal) ... M1 display session case 14 PASS filters=5 ready=0 subscribe_errors=0 last_packet=0
+ok
+test_optional_wrong_packet_id_remains_fatal (tests.test_m1_mqtt_display_session.DisplayMqttSession.test_optional_wrong_packet_id_remains_fatal) ... M1 display session case 13 PASS filters=5 ready=0 subscribe_errors=0 last_packet=0
+ok
+test_original_selection_still_requires_mqtt_availability (tests.test_m1_mqtt_display_session.DisplayMqttSession.test_original_selection_still_requires_mqtt_availability) ... M1 display session case 2 PASS filters=6 ready=0 subscribe_errors=1 last_packet=43
+ok
+test_prepare_subscribe_failure_and_wifi_loss_close_input_gate (tests.test_m1_mqtt_display_session.DisplayMqttSession.test_prepare_subscribe_failure_and_wifi_loss_close_input_gate) ... M1 display session case 10 PASS filters=0 ready=0 subscribe_errors=0 last_packet=0
+ok
+test_removing_mqtt_source_reconnects_and_clears_cache (tests.test_m1_mqtt_display_session.DisplayMqttSession.test_removing_mqtt_source_reconnects_and_clears_cache) ... M1 display session case 5 PASS filters=6 ready=2 subscribe_errors=0 last_packet=43
+ok
+test_retained_descriptor_before_suback_waits_for_grant (tests.test_m1_mqtt_display_session.DisplayMqttSession.test_retained_descriptor_before_suback_waits_for_grant) ... M1 display session case 19 PASS filters=5 ready=1 subscribe_errors=0 last_packet=0
+ok
+test_retained_metadata_uses_real_ingress_with_max_username (tests.test_m1_mqtt_display_session.DisplayMqttSession.test_retained_metadata_uses_real_ingress_with_max_username) ... M1 display session case 12 PASS filters=5 ready=1 subscribe_errors=0 last_packet=0
+ok
+test_retry_transport_failure_ends_the_session (tests.test_m1_mqtt_display_session.DisplayMqttSession.test_retry_transport_failure_ends_the_session) ... M1 display session case 18 PASS filters=5 ready=1 subscribe_errors=0 last_packet=0
+ok
+test_selection_change_keeps_needed_subscription (tests.test_m1_mqtt_display_session.DisplayMqttSession.test_selection_change_keeps_needed_subscription) ... M1 display session case 6 PASS filters=6 ready=1 subscribe_errors=0 last_packet=43
+ok
+test_unconfigured_profile_preserves_five_filter_plan (tests.test_m1_mqtt_display_session.DisplayMqttSession.test_unconfigured_profile_preserves_five_filter_plan) ... M1 display session case 0 PASS filters=5 ready=1 subscribe_errors=0 last_packet=0
+ok
+test_wrong_suback_id_is_not_ignored (tests.test_m1_mqtt_display_session.DisplayMqttSession.test_wrong_suback_id_is_not_ignored) ... M1 display session case 8 PASS filters=6 ready=0 subscribe_errors=1 last_packet=43
+ok
+test_core (tests.test_shared_mqtt.SharedMQTT.test_core) ... actual common MQTT core: bounds, route rollback, owner/depth, in-flight/credit cleanup and fragmented RX framing PASS
+ok
+test_concurrent_clear (tests.test_shared_mqtt.SharedMQTT.test_concurrent_clear) ... actual common queue: 3 concurrent producers/snapshot readers and 3000 clears/rebinds; charged peak=11904 <= 12288; all 4432 allocations released
+ok
+test_m1_protocol (tests.test_shared_mqtt.SharedMQTT.test_m1_protocol) ... pinned Paho + actual shared owner: deferred/overlap/partial TX/nested ACK/timeout/oversize/wrong-thread recovery PASS (144 business calls)
+ok
+test_dual_owners (tests.test_shared_mqtt.SharedMQTT.test_dual_owners) ... dual production owners + pinned Paho: independent streams, six subscriptions, overload, primary producer routing, secondary failures and 100 leak-free restarts PASS
+ok
+test_a1_birth_finishes_current_batch_before_replay (tests.test_mqtt_birth_progress.BirthProgress.test_a1_birth_finishes_current_batch_before_replay) ... ok
+test_m1_birth_finishes_current_batch_before_replay (tests.test_mqtt_birth_progress.BirthProgress.test_m1_birth_finishes_current_batch_before_replay) ... ok
+test_tc1_birth_finishes_snapshot_batch_before_replay (tests.test_mqtt_birth_progress.BirthProgress.test_tc1_birth_finishes_snapshot_batch_before_replay) ... ok
+test_m1_snapshot_pressure_does_not_starve_independent_work (tests.test_mqtt_optional_json.OptionalJson.test_m1_snapshot_pressure_does_not_starve_independent_work) ... /tmp/tmpqg8twxlw/m1-fair.c: In function ‘session_cycle’:
+/tmp/tmpqg8twxlw/m1-fair.c:117:38: warning: passing argument 1 of ‘feature_mqtt_service’ makes integer from pointer without a cast [-Wint-conversion]
+  117 |                 feature_mqtt_service(publish_bytes,false);
+      |                                      ^~~~~~~~~~~~~
+      |                                      |
+      |                                      int (*)(const char *, const void *, size_t,  _Bool) {aka int (*)(const char *, const void *, long unsigned int,  _Bool)}
+/tmp/tmpqg8twxlw/m1-fair.c:83:37: note: expected ‘int’ but argument is of type ‘int (*)(const char *, const void *, size_t,  _Bool)’ {aka ‘int (*)(const char *, const void *, long unsigned int,  _Bool)’}
+   83 | static int feature_mqtt_service(int p,bool connected){(void)p;assert(connected);features++;return 0;}
+      |                                 ~~~~^
+/tmp/tmpqg8twxlw/m1-fair.c:185:63: warning: passing argument 1 of ‘feature_mqtt_service’ makes integer from pointer without a cast [-Wint-conversion]
+  185 |             if (rc == MQTT_SUCCESS) rc = feature_mqtt_service(publish_bytes, true);
+      |                                                               ^~~~~~~~~~~~~
+      |                                                               |
+      |                                                               int (*)(const char *, const void *, size_t,  _Bool) {aka int (*)(const char *, const void *, long unsigned int,  _Bool)}
+/tmp/tmpqg8twxlw/m1-fair.c:83:37: note: expected ‘int’ but argument is of type ‘int (*)(const char *, const void *, size_t,  _Bool)’ {aka ‘int (*)(const char *, const void *, long unsigned int,  _Bool)’}
+   83 | static int feature_mqtt_service(int p,bool connected){(void)p;assert(connected);features++;return 0;}
+      |                                 ~~~~^
+/tmp/tmpqg8twxlw/m1-fair.c: In function ‘session_cycle’:
+/tmp/tmpqg8twxlw/m1-fair.c:108:38: warning: passing argument 1 of ‘feature_mqtt_service’ makes integer from pointer without a cast [-Wint-conversion]
+  108 |                 feature_mqtt_service(publish_bytes,false);
+      |                                      ^~~~~~~~~~~~~
+      |                                      |
+      |                                      int (*)(const char *, const void *, size_t,  _Bool) {aka int (*)(const char *, const void *, long unsigned int,  _Bool)}
+/tmp/tmpqg8twxlw/m1-fair.c:83:37: note: expected ‘int’ but argument is of type ‘int (*)(const char *, const void *, size_t,  _Bool)’ {aka ‘int (*)(const char *, const void *, long unsigned int,  _Bool)’}
+   83 | static int feature_mqtt_service(int p,bool connected){(void)p;assert(connected);features++;return 0;}
+      |                                 ~~~~^
+/tmp/tmpqg8twxlw/m1-fair.c:176:63: warning: passing argument 1 of ‘feature_mqtt_service’ makes integer from pointer without a cast [-Wint-conversion]
+  176 |             if (rc == MQTT_SUCCESS) rc = feature_mqtt_service(publish_bytes, true);
+      |                                                               ^~~~~~~~~~~~~
+      |                                                               |
+      |                                                               int (*)(const char *, const void *, size_t,  _Bool) {aka int (*)(const char *, const void *, long unsigned int,  _Bool)}
+/tmp/tmpqg8twxlw/m1-fair.c:83:37: note: expected ‘int’ but argument is of type ‘int (*)(const char *, const void *, size_t,  _Bool)’ {aka ‘int (*)(const char *, const void *, long unsigned int,  _Bool)’}
+   83 | static int feature_mqtt_service(int p,bool connected){(void)p;assert(connected);features++;return 0;}
+      |                                 ~~~~^
+ok
+test_native_cycle_defer_fairness_and_wrap (tests.test_mqtt_optional_json.OptionalJson.test_native_cycle_defer_fairness_and_wrap) ... ok
+test_scoped_resource_and_structural_failures (tests.test_mqtt_optional_json.OptionalJson.test_scoped_resource_and_structural_failures) ... ok
+test_original_a1_ingress_rejects_ha_negative_control (tests.test_ha_subscription.HaSubscription.test_original_a1_ingress_rejects_ha_negative_control) ... test: /tmp/tmpkny9ns9b/probe.c:204: main: Assertion `ha_calls==h+2&&native_calls==n' failed.
+ok
+test_product_plans_and_routes (tests.test_ha_subscription.HaSubscription.test_product_plans_and_routes) ... ok
+
+----------------------------------------------------------------------
+Ran 38 tests in 20.404s
+
+OK
+
+Stack gate: python3 -m unittest -v tests.test_mqtt_stack_budget
+
+test_error_and_socket_tails_are_exclusive (tests.test_mqtt_stack_budget.MqttStackBudget.test_error_and_socket_tails_are_exclusive) ... ok
+test_error_socket_and_drop_callbacks_are_required (tests.test_mqtt_stack_budget.MqttStackBudget.test_error_socket_and_drop_callbacks_are_required) ... ok
+test_ha_recursive_rejection_keeps_eight_frames (tests.test_mqtt_stack_budget.MqttStackBudget.test_ha_recursive_rejection_keeps_eight_frames) ... ok
+test_missing_public_native_frames_fail_closed (tests.test_mqtt_stack_budget.MqttStackBudget.test_missing_public_native_frames_fail_closed) ... ok
+test_native_status_and_cache_have_distinct_tails (tests.test_mqtt_stack_budget.MqttStackBudget.test_native_status_and_cache_have_distinct_tails) ... ok
+test_subscribe_rollback_requires_its_actual_frame_and_owner_tail (tests.test_mqtt_stack_budget.MqttStackBudget.test_subscribe_rollback_requires_its_actual_frame_and_owner_tail) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.023s
+
+OK

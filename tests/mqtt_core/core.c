@@ -28,6 +28,27 @@ static void framing(void){
  unsigned char terminal[]={0x30,0x7e};ph_mqtt_rx_init(&r,128);assert(ph_mqtt_rx_feed(&r,terminal,2));assert(r.left==126);
  terminal[1]=0x7f;ph_mqtt_rx_init(&r,128);assert(!ph_mqtt_rx_feed(&r,terminal,2));
 }
+static void routes(void){
+ fixture f={.owner=true};ph_mqtt_hooks h={&f,lock,unlock,owner,now,permit,allocate,release};ph_mqtt_core s;
+ assert(ph_mqtt_core_init(&s,&h));ph_mqtt_discard_route(&s,7);assert(!s.bytes&&!f.frees);
+ assert(ph_mqtt_enqueue_route(&s,0,"a",1,"1",1,1,false,5));
+ assert(ph_mqtt_enqueue_route(&s,0,"x",1,"2",1,1,true,7));
+ assert(ph_mqtt_enqueue_route(&s,0,"b",1,"3",1,1,false,5));
+ assert(ph_mqtt_enqueue_route(&s,0,"y",1,"4",1,1,true,7));
+ assert(ph_mqtt_enqueue_route(&s,1,"s",1,"5",1,1,true,7));
+ size_t charge=s.head[0]->charge,send=s.kind_bytes[1];assert(ph_mqtt_credit_acquire(&s,64));
+ f.owner=false;ph_mqtt_discard_route(&s,7);assert(s.count[0]==4&&!f.frees);f.owner=true;
+ assert(ph_mqtt_dispatch_begin(&s));ph_mqtt_discard_route(&s,7);assert(s.count[0]==4);ph_mqtt_dispatch_end(&s);
+ assert(ph_mqtt_protocol_begin(&s));ph_mqtt_discard_route(&s,7);ph_mqtt_protocol_end(&s);
+ assert(s.count[0]==2&&s.bytes==2*charge+send&&s.kind_bytes[0]==2*charge&&s.credit==64&&s.count[1]==1);
+ assert(!strcmp(s.head[0]->data,"a")&&!strcmp(s.tail[0]->data,"b")&&f.frees==2);
+ ph_mqtt_item *inflight=ph_mqtt_pop(&s,0);assert(inflight&&inflight->route==5);
+ assert(ph_mqtt_enqueue_route(&s,0,"z",1,"6",1,1,true,7));
+ ph_mqtt_discard_route(&s,5);assert(s.inflight[0]==inflight&&s.count[0]==2&&!strcmp(s.head[0]->data,"z"));
+ ph_mqtt_discard_route(&s,7);assert(s.count[0]==1&&!s.head[0]&&!s.tail[0]&&s.credit==64&&s.count[1]==1);
+ ph_mqtt_item_release(&s,inflight);assert(!s.count[0]&&s.bytes==send&&s.credit==64);
+ assert(ph_mqtt_clear(&s)&&!s.bytes&&!s.credit&&f.allocations==f.frees);
+}
 int main(void){
  fixture f={.owner=true};ph_mqtt_hooks h={&f,lock,unlock,owner,now,permit,allocate,release};ph_mqtt_core s;
  assert(ph_mqtt_core_init(&s,&h));
@@ -76,5 +97,5 @@ int main(void){
  ph_mqtt_core_snapshot(&s,&d);assert(d.ingress_dropped==UINT32_MAX&&d.busy_overflow==UINT32_MAX);
  assert(ph_mqtt_core_reset(&s));ph_mqtt_core_snapshot(&s,&d);
  assert(!d.ingress_dropped&&!d.busy_overflow);
- framing();puts("actual common MQTT core: bounds, owner/depth, in-flight/credit cleanup and fragmented RX framing PASS");
+ framing();routes();puts("actual common MQTT core: bounds, route rollback, owner/depth, in-flight/credit cleanup and fragmented RX framing PASS");
 }

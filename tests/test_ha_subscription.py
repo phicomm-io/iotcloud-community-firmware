@@ -36,8 +36,9 @@ class HaSubscription(unittest.TestCase):
 static mqtt_account_t account;
 static char base[192],wildcard[512],ha_command_topic[512],command_topic[512];
 static char feature_filters[4][512],sensor_filter[512]="sensor/command",co2_filter[512]="sensor/+/+",source_availability_filter[512]="source/availability";
+static char metadata_filter[512];
 static unsigned count,ha_calls,native_calls;
-static bool session_need_availability,session_subscribed,current=true,ota;
+static bool session_need_availability,session_subscribed,metadata_subscribed,current=true,ota;
 static bool session_current(void){return current;}
 static bool ota_job_active(void){return ota;}
 static void feature_command(MessageData*d){(void)d;}
@@ -55,11 +56,11 @@ bool service_control_begin(void){return true;}
 void service_control_end(void){}
 static bool a1_control_apply(a1_control_t*r,bool a,bool b){(void)r;(void)a;(void)b;return true;}
 '''
+    code+=function((ROOT/'common/mqtt/client.c').read_text(),'bool ph_mqtt_topic_matches(')+'\n'
     if model=='A1':
      declaration=re.search(r'static char client_id\[192\],wildcard.*?;',source,re.S).group(0)
      code=code.replace('static char base[192],wildcard[512],ha_command_topic[512],command_topic[512];', 'static char base[192],command_topic[512];\n'+declaration)
      code+=function(source,'static bool topic_is(')+'\n'
-     code+=function((ROOT/'common/mqtt/client.c').read_text(),'bool ph_mqtt_topic_matches(')+'\n'
      code+=function(source,'static bool feature_ingress_topic(')+'\n'
      gate=function(source,'static bool ingress_accept(')
      if negative:
@@ -67,7 +68,8 @@ static bool a1_control_apply(a1_control_t*r,bool a,bool b){(void)r;(void)a;(void
       gate=gate.replace('topic_is(d,"ha/command") || ','')
      code+=gate+'\n#define TEST_A1 1\n#define ADMIT(d,h) ingress_accept(d,h)\n'
     else:
-     code+='\n#define ADMIT(d,h) true\n'
+     code+='static void native_command(MessageData *);\n'
+     code+=function(source,'static bool ingress_accept(')+'\n#define ADMIT(d,h) ingress_accept(d,h)\n'
     code+=function(source,'static void '+route+'(')+'\n'+function(source,'static bool session_subscription(')
     code+=r'''
 static void deliver(ph_mqtt_subscription*s,const void*p,size_t n,bool retained,bool length_topic){

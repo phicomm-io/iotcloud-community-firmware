@@ -52,6 +52,7 @@ static int old_brightness,old_fresh,old_co2_fresh,old_pressure_fresh;
 static unsigned sequence,co2_sequence,pressure_sequence,count,snapshot_at;
 static char base[8],feature_filters[4][32];static int account,publish,publish_bytes;
 static int ha_state(void){return 0;}
+static int retry_metadata(void){return MQTT_SUCCESS;}
 static unsigned calls,resets,trace[40],inject_at;static bool injected,fail_once,language_change;
 static void ota_job_poll(void){}
 static bool ota_job_active(void){return false;}

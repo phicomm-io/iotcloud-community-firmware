@@ -110,6 +110,8 @@ void ph_mqtt_protocol_end(ph_mqtt_core *);
 bool ph_mqtt_enqueue(ph_mqtt_core *, unsigned, const void *, size_t, const void *, size_t, unsigned, bool);
 bool ph_mqtt_enqueue_route(ph_mqtt_core *, unsigned, const void *, size_t, const void *, size_t, unsigned, bool, unsigned);
 bool ph_mqtt_enqueue_generation(ph_mqtt_core *, unsigned, const void *, size_t, const void *, size_t, unsigned, bool, unsigned, uint32_t);
+/* Owner rollback of a new subscription: only queued input for this route. */
+void ph_mqtt_discard_route(ph_mqtt_core *, unsigned);
 ph_mqtt_item *ph_mqtt_pop(ph_mqtt_core *, unsigned);
 void ph_mqtt_item_release(ph_mqtt_core *, ph_mqtt_item *);
 /* Single owner credit; no allocation, and never a substitute for checking an

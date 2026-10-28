@@ -4,7 +4,7 @@ import io
 import unittest
 from tools.check_mqtt_core import check,context_frames
 SYMBOLS = """a1_automation_execute a1_control_apply a1_status_capture bemfa_command bemfa_config_get bemfa_dispatch bemfa_poll bm_connect bm_poll bm_publish bm_subscribe bm_yield close_session command current device_status_mp device_status_visit discovery discovery_build emit_begin emit_bool emit_double emit_int emit_null emit_string encode_a1 feature_config_save feature_fan_apply filter_discovery guarded_read guarded_write ha_command_input hac_string hac_u16 hac_value hac_ws ingress install_config mp_cached mp_dispatch mp_envelope mqtt_buffer_allocation_permit mqtt_socket_read mqtt_worker mutex_lock open_session owner ph_buf_free ph_buf_reserve ph_mqtt_client_init ph_mqtt_connect ph_mqtt_disconnect ph_mqtt_enqueue_generation ph_mqtt_enqueue_route ph_mqtt_error ph_mqtt_is_owner ph_mqtt_owner ph_mqtt_poll ph_mqtt_protocol_buffers ph_mqtt_publish ph_mqtt_receipt_send_bytes ph_mqtt_record_failure ph_mqtt_record_ingress_drop ph_mqtt_resource_ready ph_mqtt_session_run ph_mqtt_subscribe ph_mqtt_yield ph_wire_free ph_wire_malloc phv_get phv_parse phw_begin phw_bool phw_cached_value phw_i32 phw_int phw_null phw_number phw_take phw_text phw_text_n phw_u32 phw_uint publish publish_owned publish_text publish_wait receipt_retry runtime_fields service_command_mp service_mqtt_command_mp service_mqtt_input service_mqtt_snapshot service_product_capabilities_mp service_product_info_mp service_product_mp service_product_status_mp service_query_mp session_cycle subscribe_plan""".split()
-SYMBOLS+=['phw_init_measure','phw_finish_fixed']
+SYMBOLS+=['phw_init_measure','phw_finish_fixed','ph_mqtt_discard_route']
 expanded=[SYMBOLS.copy()];context_frames(expanded);SYMBOLS+=expanded[0]
 
 class MqttStackBudget(unittest.TestCase):
@@ -43,3 +43,12 @@ class MqttStackBudget(unittest.TestCase):
         out=self.run_budget({'guarded_read':1500,'guarded_write':1500,'ph_mqtt_error':1500,'ph_mqtt_record_failure':1500})
         self.assertIn('MQTT yield error record: 3000 application',out)
         self.assertIn('MQTT yield guarded write: 1500 application',out)
+
+    def test_subscribe_rollback_requires_its_actual_frame_and_owner_tail(self):
+        with self.assertRaisesRegex(ValueError,'missing actual .su'):
+            self.run_budget(missing='ph_mqtt_discard_route')
+        out=self.run_budget({'ph_mqtt_discard_route':100,'ph_mqtt_is_owner':200})
+        self.assertIn('MQTT subscribe rollback: 300 application',out)
+        self.assertIn('Bemfa subscribe rollback: 300 application',out)
+        with self.assertRaisesRegex(ValueError,'>12288|>16384'):
+            self.run_budget({'ph_mqtt_discard_route':13000})

@@ -35,6 +35,12 @@ static mico_thread_t mqtt_owner_thread;
 static ph_mqtt_startup mqtt_startup;
 static mqtt_account_t account;
 static char base[192], command_topic[MQTT_TOPIC_MAX], availability_topic[MQTT_TOPIC_MAX];
+/* Paho borrows both filters until owner deinitialization. Their combined
+ * account-bounded storage is smaller than the previous single 512-byte filter. */
+static char co2_filter[MQTT_KEY_MAX+sizeof("phicomm/v2//sensor/+/state")-1],
+    metadata_filter[MQTT_KEY_MAX+sizeof("phicomm/v2//sensor/+/metadata")-1];
+static bool metadata_subscribed;
+static uint32_t metadata_subscribe_at;
 static uint32_t sensor_boot, sensor_sequence, sensor_at;
 static bool sensor_started,sensor_metadata;
 static unsigned sensor_mask;
@@ -55,6 +61,7 @@ static bool display_mqtt_needed(void)
 static void session_display_reset(void)
 {
     session_subscribed=false;
+    metadata_subscribed=false;
     m1_display_source_mqtt_reset();
 }
 static bool session_current(void)
@@ -176,7 +183,9 @@ static void native_command(MessageData *d)
     char ota_topic[MQTT_TOPIC_MAX]; mqtt_leaf(&account,"ota/set",ota_topic,sizeof(ota_topic));
     if(!strcmp(topic,ota_topic)) { ota_command(base,d->message->payload,d->message->payloadlen,d->message->retained);return; }
     if(ota_job_active())return;
-    if(session_subscribed && feature_mqtt_input(topic,d->message->payload,d->message->payloadlen,d->message->retained))return;
+    bool metadata=ph_mqtt_topic_matches(metadata_filter,topic,n);
+    if(session_subscribed && (!metadata || metadata_subscribed) &&
+       feature_mqtt_input(topic,d->message->payload,d->message->payloadlen,d->message->retained))return;
     if(!strcmp(topic,command_topic) && !d->message->retained)ha_command_input(d->message->payload,d->message->payloadlen);
 }
 static void ha_birth(MessageData *data)
@@ -327,14 +336,18 @@ static bool same_connection(const m1_config_t *a, const m1_config_t *b)
 }
 
 static bool ingress_accept(MessageData *d,messageHandler handler) {
-    return handler==ha_birth || !d->message->retained;
+    if(handler==ha_birth || !d->message->retained)return true;
+    MQTTString *t=d->topicName;
+    const char *topic=t->cstring?t->cstring:t->lenstring.data;
+    size_t length=t->cstring?strlen(t->cstring):(size_t)t->lenstring.len;
+    /* Descriptors are retained; retained measurements and commands stay out. */
+    return handler==native_command && ph_mqtt_topic_matches(metadata_filter,topic,length);
 }
 
 static m1_config_t cfg,current;
 static mqtt_state_t state;
 static char client_id[192],wildcard[MQTT_TOPIC_MAX];
 static char sensor_filter[FEATURE_TOPIC_MAX];
-static char co2_filter[FEATURE_TOPIC_MAX];
 static char source_availability_filter[FEATURE_TOPIC_MAX];
 static unsigned discovery_index,initial_index;
 static uint32_t connect_sequence,co2_sequence,pressure_sequence,sequence,snapshot_at;
@@ -368,7 +381,8 @@ static int session_prepare(void *context,ph_mqtt_connection *spec) {
          * the full feature configuration merely to form its fixed topic. */
         char sensor_leaf[32];snprintf(sensor_leaf,sizeof(sensor_leaf),"%s/command",account.mac);
         if(!mqtt_aux(&account,"sensor",sensor_leaf,sensor_filter,sizeof(sensor_filter)))return PH_MQTT_PREPARE_WAIT;
-        if(!mqtt_aux(&account,"sensor","+/+",co2_filter,sizeof(co2_filter)))return PH_MQTT_PREPARE_WAIT;
+        if(!mqtt_aux(&account,"sensor","+/state",co2_filter,sizeof(co2_filter)) ||
+           !mqtt_aux(&account,"sensor","+/metadata",metadata_filter,sizeof(metadata_filter)))return PH_MQTT_PREPARE_WAIT;
         if(session_need_availability && !mqtt_format(source_availability_filter,sizeof(source_availability_filter),"phicomm/v2/%s/+/+/availability",account.key))return PH_MQTT_PREPARE_WAIT;
         rediscover=false;
         *spec=(ph_mqtt_connection){&account,cfg.mqtt_host,cfg.mqtt_user,cfg.mqtt_password,
@@ -389,6 +403,23 @@ static bool session_subscription(void *context,unsigned index,ph_mqtt_subscripti
     else return false;
     return true;
 }
+static __attribute__((noinline)) int subscribe_metadata(void)
+{
+    metadata_subscribe_at=mico_rtos_get_time();
+    int rc=ph_mqtt_subscribe(&client,metadata_filter,QOS1,native_command);
+    bool granted=rc==MQTT_SUCCESS;
+    metadata_subscribed=granted;
+    /* Only an exact, correlated SUBACK128 makes this optional source
+     * unavailable. Timeout, malformed ACK and transport failure remain fatal. */
+    if(rc==MQTT_SUBSCRIBE_DENIED){mqtt_error("optional metadata",rc);return MQTT_SUCCESS;}
+    return rc;
+}
+static int retry_metadata(void)
+{
+    if(!metadata_subscribed && (uint32_t)(mico_rtos_get_time()-metadata_subscribe_at)>=30000u)
+        return subscribe_metadata();
+    return MQTT_SUCCESS;
+}
 static int session_initial(void *context) {
     sensor_metadata=false;sensor_started=false;
     if(!session_current())return PH_MQTT_RECONFIGURE;
@@ -397,7 +428,9 @@ static int session_initial(void *context) {
      * Never admit a generic measurement from a partial/failed subscription. */
     session_subscribed=true;
     (void)context;
-    int rc=service_mqtt_capabilities(publish_bytes,&account);
+    int rc=subscribe_metadata();
+    if(rc!=MQTT_SUCCESS)return rc;
+    rc=service_mqtt_capabilities(publish_bytes,&account);
     if(rc==MQTT_SUCCESS)rc=publish_leaf("sensor_availability","offline",true);
     discovery_deferred=false;discovery_retry_at=0;
     discovery_index=initial_index=0;
@@ -428,6 +461,9 @@ static int session_cycle(void *context) {
             if(ota_job_active())return MQTT_SUCCESS;
             mqtt_state_get(&state); m1_config_get(&current);
             if (!state.wifi_connected || !same_connection(&cfg, &current)) return PH_MQTT_RECONFIGURE;
+            /* This bounded retry runs on the MQTT owner, independently of the
+             * local buttons/display. Core state subscriptions remain mandatory. */
+            rc=retry_metadata();if(rc!=MQTT_SUCCESS)return rc;
             rc=publish_typed_sensors(&state,mico_rtos_get_time());
             if(rc!=MQTT_SUCCESS)return rc;
             uint8_t language=device_language_get();

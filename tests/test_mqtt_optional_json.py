@@ -115,6 +115,7 @@ static void mico_rtos_lock_mutex(unsigned *m){(void)m;}
 static void mico_rtos_unlock_mutex(unsigned *m){(void)m;}
 static int ha_particles(void){particle_attempts++;return PH_MQTT_MORE;}
 static int ha_state(void){return MQTT_SUCCESS;}
+static int retry_metadata(void){return MQTT_SUCCESS;}
 static unsigned feature_revision,count,discovery_index=MQTT_DISCOVERY_COUNT,initial_index=2,connect_sequence,sequence,co2_sequence,pressure_sequence,snapshot_at,now;
 static int old_fresh=-1,old_co2_fresh=-1,old_pressure_fresh=-1,old_brightness=-1,publish;
 static mqtt_account_t account;
