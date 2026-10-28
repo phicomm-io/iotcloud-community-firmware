@@ -330,7 +330,10 @@ bool service_product_mp(const char *action,const ph_value *p,ph_writer *w,const 
  if(!strcmp(action,"mcu.version.get")){if(!phv_keys(p,""))goto invalid;smp_mcu(w);*code="ok";return true;}
 #endif
  if(feature_mp(action,p,w,code))return true;
- bool ok=false,value;int number;
+ bool ok=false,value;
+#ifndef FEATURE_DEVICE_A1
+ int number;
+#endif
  if(!strcmp(action,"system.reboot")){if(!phv_keys(p,""))goto invalid;ok=REBOOT(1500);}
  else if(!strcmp(action,"system.reset")){if(!phv_keys(p,"|full|")||!smp_bool(p,"full",&value))goto invalid;ok=RESET(value);}
  else if(!strcmp(action,"wifi.scan")){if(!phv_keys(p,""))goto invalid;ok=SCAN();}
