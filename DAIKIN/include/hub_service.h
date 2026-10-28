@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #pragma once
-#include "hub_broker.h"
+#include "hub_device_bus.h"
 #include <ArduinoJson.h>
 
 namespace iotcloud {
@@ -76,7 +76,7 @@ public:
       return false;
     auto s = value.as<std::string>();
     return s.size() >= min && s.size() <= max &&
-           s.find('\0') == std::string::npos && HubBroker::utf8(s);
+           s.find('\0') == std::string::npos && HubDeviceBus::utf8(s);
   }
   static bool hex(JsonVariantConst value, size_t length) {
     if (!string(value, length, length))
@@ -125,7 +125,7 @@ public:
       if (!fields(r, "|direction||local_topic||remote_topic||retain||allow_"
                      "retained|") ||
           (direction != "in" && direction != "out") ||
-          !HubBroker::topicValid(local) || !HubBroker::topicValid(remote) ||
+          !HubDeviceBus::topicValid(local) || !HubDeviceBus::topicValid(remote) ||
           !r["retain"].is<bool>() || !r["allow_retained"].is<bool>() ||
           (!local.compare(0, 11, "phicomm/v2/") &&
            local.compare(0, prefix.size(), prefix)) ||
