@@ -5,7 +5,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from tools.check_http_core import (HTTP_BUDGET, HTTP_RESERVE, check_symbols,
-    http_paths, linked_symbols, read_frames, validate_paths, check_tc1_ota_decimal)
+    http_paths, linked_symbols, read_frames, validate_paths, check_tc1_ota_decimal, check_tc1_ota_progress)
 from tools.status_stack import status_paths
 
 class HTTPMessagePackStackGate(unittest.TestCase):
@@ -95,6 +95,17 @@ class HTTPMessagePackStackGate(unittest.TestCase):
         frames['pd_format']=1500
         with self.assertRaisesRegex(ValueError,'>4096'):
             check_tc1_ota_decimal(frames,4096,frames)
+
+    def test_integer_ota_progress_counts_logging_but_not_decimal(self):
+        frames={'download_worker':32,'ota_fetch':1896,'fetch_write':176,
+                'OtaServerStatusHandler':24,'WebLog':192}
+        with redirect_stdout(io.StringIO()):check_tc1_ota_progress(frames,6144)
+        absent=dict(frames);del absent['WebLog']
+        with self.assertRaisesRegex(ValueError,'missing .su'):
+            check_tc1_ota_progress(absent,6144)
+        frames['WebLog']=2000
+        with self.assertRaisesRegex(ValueError,'>6144'):
+            check_tc1_ota_progress(frames,6144)
 
     def test_stack_files_dynamic_and_split_verification(self):
         with tempfile.TemporaryDirectory() as temporary:
