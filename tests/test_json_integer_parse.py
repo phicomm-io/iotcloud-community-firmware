@@ -11,6 +11,24 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 
+def run_sdk_host(source):
+    """Historical library fixture only; no product headers, source or runtime."""
+    from tests.sdk_json import copy_patched_json
+    json_source = Path(os.environ.get('PHICOMM_TEST_JSON_DIR', ROOT / 'build/a1-sdk/mico-os/libraries/utilities/json_c'))
+    with tempfile.TemporaryDirectory(prefix='sdk-integer-width-') as temporary:
+        temporary = Path(temporary)
+        json = copy_patched_json(json_source, temporary / 'sdk')
+        for path in json.glob('*.c'):
+            path.write_text(path.read_text().replace('%ld', '%d'))
+        c = temporary / 'test.c'; c.write_text(source)
+        binary = temporary / 'test'
+        subprocess.run([os.environ.get('CC', 'cc'), '-std=gnu99', '-g',
+                        '-fsanitize=address,undefined', '-no-pie',
+                        '-I' + str(json), '-I' + str(ROOT / 'tests/stubs'),
+                        str(c), *map(str, json.glob('*.c')), '-lm', '-o', str(binary)], check=True)
+        subprocess.run([str(binary)], check=True)
+
+
 HARNESS = r'''
 #include <stdint.h>
 #include <stddef.h>
@@ -130,14 +148,13 @@ class JsonIntegerParseTest(unittest.TestCase):
         self.compile_and_run(True)
 
     def test_json_integer_width_and_float_paths(self):
-        from tests.test_stock_runtime import run_host
-        run_host(r'''
+        run_sdk_host(r'''
 #include <assert.h>
 #include <math.h>
 #include <limits.h>
-#include "M1/m1.h"
+#include <stdint.h>
+#include <string.h>
 #include "json.h"
-uint32_t mico_rtos_get_time(void){return 0;}
 int main(void){
  const struct{const char *text;int64_t value;int32_t narrow;} integers[]={
   {"2147483647",INT32_MAX,INT32_MAX},{"2147483648",INT64_C(2147483648),INT32_MAX},
