@@ -84,10 +84,12 @@ made atomic with the management blob by this change.
 
 ## NVS host gate and rc.3 comparison
 
-The NOR model uses the stock 20 KiB partition and official IDF 4.4.7 sources at
+The NOR model uses the repository partition CSV’s 20 KiB NVS size and official IDF 4.4.7 sources at
 `38eeba213aa695aabfd6d89aa9f5078dbe5a94c3`. The five compiled NVS translation
 units and ROM CRC source were compared byte-for-byte with that official commit.
 Flash reads, writes and erases are modeled; this is not a device power-cut test.
+This does not establish a deployed device’s partition table: a retained older
+16 KiB layout would need its own capacity acceptance.
 WiFi occupies 512 bytes and a separate HAP namespace occupies 2048 bytes.
 
 | Implementation | Legal JSON-equivalent config | Pair records | Durable blob | Three updates + reboots |
