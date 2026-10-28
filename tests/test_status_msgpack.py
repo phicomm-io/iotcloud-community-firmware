@@ -11,6 +11,7 @@ import unittest
 from tests.sdk_json import copy_patched_json
 
 ROOT=Path(__file__).resolve().parents[1]
+SOURCE=Path(os.environ.get('NATIVE_MP_ROOT',ROOT))
 
 HARNESS=r'''
 #include <assert.h>
@@ -24,8 +25,15 @@ HARNESS=r'''
 #include "printbuf.h"
 struct printbuf *reference_device_status_wire(const device_status_t *,const device_status_full_t *,bool,const char *);
 static long budget=-1,blocks=0;
-void *ph_wire_malloc(size_t n){if(!budget)return NULL;if(budget>0)--budget;void *p=malloc(n);if(p)blocks++;return p;}
-void ph_wire_free(void *p){if(p){blocks--;free(p);}}
+static size_t live_bytes,peak_bytes,wire_ceiling=SIZE_MAX;
+typedef union {size_t bytes;long double aligned;void *pointer;} allocation_header;
+void *ph_wire_malloc(size_t n){
+ if(!budget||live_bytes>wire_ceiling||n>wire_ceiling-live_bytes)return NULL;
+ if(budget>0)--budget;allocation_header *p=malloc(sizeof(*p)+n);
+ if(p){p->bytes=n;blocks++;live_bytes+=n;if(live_bytes>peak_bytes)peak_bytes=live_bytes;}
+ return p?p+1:NULL;
+}
+void ph_wire_free(void *p){if(p){allocation_header *h=(allocation_header *)p-1;assert(blocks&&live_bytes>=h->bytes);blocks--;live_bytes-=h->bytes;free(h);}}
 static void same(const ph_value *value,json_object *expected){
  if(!expected){assert(value->kind==PHV_NULL);return;}
  enum json_type type=json_object_get_type(expected);
@@ -52,14 +60,27 @@ static void check(device_status_t *s,device_status_full_t *f){
  /* Explicit RC4 policy delta: frozen rc3 reported one waiting request. */
  json_object *old_queue=json_object_object_get(schema,"http_accept_queue_capacity");
  if(old_queue){assert(json_object_get_int(old_queue)==1);json_object_object_add(schema,"http_accept_queue_capacity",json_object_new_int(PH_HTTP_WAIT_SLOTS));}
- ph_writer writer;assert(phw_init(&writer,1));device_status_mp(&writer,s,f);ph_buf *wire=phw_take(&writer);assert(wire);
+ ph_writer writer;assert(phw_init(&writer,1));device_status_mp(&writer,s,f);ph_buf *wire=phw_take(&writer);assert(wire&&wire->cap==wire->len+1);
  ph_value root;assert(phv_parse(1,wire->buf,wire->len,&root));same(&root,schema);
  ph_writer measured;ph_buf size;assert(phw_init_measure(&measured,1,&size));budget=0;device_status_mp(&measured,s,f);budget=-1;assert(phw_finish_fixed(&measured)==wire->len);
  char storage[8192];ph_writer fixed;ph_buf borrowed;assert(wire->len<sizeof(storage));assert(phw_init_fixed(&fixed,1,&borrowed,storage,sizeof(storage)));budget=0;device_status_mp(&fixed,s,f);budget=-1;assert(phw_finish_fixed(&fixed)==wire->len&&!memcmp(storage,wire->buf,wire->len));
  /* Frozen encoder must be deterministic, pure, and safe for every refusal. */
  ph_writer again;assert(phw_init(&again,1));device_status_mp(&again,s,f);ph_buf *copy=phw_take(&again);assert(copy&&wire->len==copy->len&&!memcmp(wire->buf,copy->buf,wire->len));ph_buf_free(copy);
  ph_writer wrapped;assert(phw_init(&wrapped,1));phw_begin(&wrapped,NULL,false);phw_root_key(&wrapped,"data");device_status_mp(&wrapped,s,f);phw_end(&wrapped);copy=phw_take(&wrapped);assert(copy);ph_buf_free(copy);
- size_t saved=blocks;for(int fail=0;fail<20;fail++){budget=fail;ph_writer w;if(phw_init_capacity(&w,1,1)){device_status_mp(&w,s,f);copy=phw_take(&w);if(copy)ph_buf_free(copy);}else phw_discard(&w);budget=-1;assert((size_t)blocks==saved);}
+ /* Capabilities can already occupy heap when the first status is requested.
+  * Keep that owned buffer resident and allow only this frozen status's exact
+  * final bytes plus the initial 128-byte scratch, not a geometric-growth pair. */
+ ph_buf *resident_caps=ph_buf_new(1800);assert(resident_caps);size_t held_bytes=live_bytes;
+ wire_ceiling=held_bytes+sizeof(ph_buf)+wire->len+1+PHW_INITIAL_CAPACITY;
+ peak_bytes=live_bytes;ph_writer cold;assert(phw_init(&cold,1));device_status_mp(&cold,s,f);
+ copy=phw_take(&cold);assert(copy&&copy->len==wire->len&&!memcmp(copy->buf,wire->buf,wire->len));
+ assert(peak_bytes<=wire_ceiling);ph_buf_free(copy);assert(live_bytes==held_bytes);
+ wire_ceiling=SIZE_MAX;ph_buf_free(resident_caps);
+ size_t saved=blocks;for(int fail=0;fail<6;fail++){
+  budget=fail;ph_writer cold_failure;if(phw_init(&cold_failure,1)){device_status_mp(&cold_failure,s,f);copy=phw_take(&cold_failure);if(copy)ph_buf_free(copy);}else phw_discard(&cold_failure);
+  budget=-1;assert((size_t)blocks==saved);
+ }
+ for(int fail=0;fail<20;fail++){budget=fail;ph_writer w;if(phw_init_capacity(&w,1,1)){device_status_mp(&w,s,f);copy=phw_take(&w);if(copy)ph_buf_free(copy);}else phw_discard(&w);budget=-1;assert((size_t)blocks==saved);}
  ph_buf_free(wire);json_object_put(schema);assert(!blocks);json_heap_stats_t heap;json_heap_snapshot(&heap);assert(!heap.live_blocks);
 }
 int main(void){
@@ -125,7 +146,7 @@ class StatusMessagePack(unittest.TestCase):
     if fresh:flags+=['-DA1_FRESH_AIR=1']
     if bemfa:flags+=['-DPHICOMM_BEMFA=1']
     if os.environ.get('SANITIZE','0')=='1':flags+=['-fsanitize=address,undefined','-fno-omit-frame-pointer','-no-pie']
-    sources=[fixture,ROOT/'common/device_status.c',ROOT/'common/typed_wire.c',ROOT/'common/wire_buffer.c',ROOT/'tests/status_msgpack/reference_status.c',*json.glob('*.c')]
+    sources=[fixture,SOURCE/'common/device_status.c',SOURCE/'common/typed_wire.c',SOURCE/'common/wire_buffer.c',ROOT/'tests/status_msgpack/reference_status.c',*json.glob('*.c')]
     built=subprocess.run(cc+flags+[str(p) for p in sources]+['-lm','-o',str(path/'case')],capture_output=True,text=True,timeout=60)
     self.assertEqual(built.returncode,0,built.stdout+built.stderr)
     ran=subprocess.run([str(path/'case')],capture_output=True,text=True,timeout=60)

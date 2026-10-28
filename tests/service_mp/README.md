@@ -100,3 +100,13 @@ Concurrent claim/reclaim/read loops retain independently owned responses, and
 `CacheReceiptSafety` verifies eviction never discards mutation replay receipts.
 These are host allocator-policy reproductions, not device free-heap or P95
 measurements. The HTTP stack gate includes the admission/reclaim/free tail.
+
+Cold status sizing is covered by `test_status_msgpack` using the actual shared
+three-product frozen visitor. A resident 1,800-byte capability buffer remains
+allocated while only the exact status size plus the initial 128-byte scratch
+is available. Five resource/fresh-air/Bemfa combinations preserve complete
+reference-schema equality and exact output bytes; refusal at every allocation
+boundary releases partial output. The unchanged 97de visitor fails all five
+cold-capacity assertions. Sizing walks the same captured snapshot twice only
+for a cold standalone writer, never recaptures device state, and never runs
+business mutations. Existing warm cache capacity keeps the single output walk.

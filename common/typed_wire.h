@@ -41,6 +41,7 @@ static inline bool phv_exists(const ph_value *v){return v && v->kind!=PHV_MISSIN
  * One writer per response, no mutation is executed twice for a sizing pass. */
 #define PHW_DEPTH 12u
 #define PHW_MAX_BYTES 16384u
+#define PHW_INITIAL_CAPACITY 128u
 typedef struct { ph_buf *wire; ph_wire_format format; size_t starts[PHW_DEPTH]; uint16_t counts[PHW_DEPTH]; bool arrays[PHW_DEPTH]; unsigned depth; bool failed,fixed; const char *root_key; } ph_writer;
 bool phw_init(ph_writer *,ph_wire_format);
 /* Capacity includes the trailing NUL; measure borrows only a buffer counter. */

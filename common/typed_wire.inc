@@ -140,7 +140,7 @@ bool phw_init_capacity(ph_writer *w,ph_wire_format format,size_t capacity)
  if(format!=PH_WIRE_MSGPACK||!capacity||capacity>PHW_MAX_BYTES+1){w->failed=true;return false;}
  w->wire=ph_buf_new(capacity);if(!w->wire){w->failed=true;return false;}return true;
 }
-bool phw_init(ph_writer *w,ph_wire_format format){return phw_init_capacity(w,format,128);}
+bool phw_init(ph_writer *w,ph_wire_format format){return phw_init_capacity(w,format,PHW_INITIAL_CAPACITY);}
 bool phw_init_measure(ph_writer *w,ph_wire_format format,ph_buf *wire)
 {
  memset(w,0,sizeof(*w));w->fixed=true;w->format=format;

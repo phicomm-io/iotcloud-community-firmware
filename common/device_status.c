@@ -368,5 +368,18 @@ void device_runtime_mp(ph_writer *o,const device_runtime_t *s)
 void device_status_mp(ph_writer *o,const device_status_t *s,const device_status_full_t *full)
 {
     if(!o)return;
+    /* Only a cold standalone status needs a sizing walk. Both walks use the
+     * same frozen snapshot; no recapture, mutation or temporary payload exists.
+     * Warm caches already own their capacity and take the single-pass path. */
+    if(!o->fixed && !o->depth && o->wire && !o->wire->len &&
+       o->wire->cap==PHW_INITIAL_CAPACITY){
+        ph_writer measure;ph_buf measured;
+        if(!phw_init_measure(&measure,PH_WIRE_MSGPACK,&measured) || !full ||
+           !device_status_visit(&measure,s,full,NULL) ||
+           !phw_finish_fixed(&measure) ||
+           !ph_buf_reserve(o->wire,measured.len+1)){
+            o->failed=true;return;
+        }
+    }
     if(!full||!device_status_visit(o,s,full,NULL))o->failed=true;
 }

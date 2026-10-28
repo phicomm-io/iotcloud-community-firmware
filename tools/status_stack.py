@@ -44,6 +44,8 @@ def status_paths(frames,model,label,prefix,reserve,compat=False,capture=True,sym
             'ph_http_snapshot','tc1_status_begin','tc1_ota_snapshot','reset_name',
             'device_status_text','m1_co2_capture','m1_co2_config_get'],symbols)
         paths[label+' capture']=(prefix+captures,reserve)
+    paths[label+' cold sizing init']=(prefix+['device_status_mp']+emitted(frames,['phw_init_measure'],symbols),reserve)
+    paths[label+' cold sizing buffer']=(prefix+['device_status_mp','ph_buf_reserve','ph_wire_malloc'],reserve)
     schema=prefix+['device_status_mp']+emitted(frames,['device_status_visit'],symbols)+['encode_'+model.lower()]
     # Frozen schema callbacks are tiny and may inline. Sum any emitted schema
     # helpers conservatively; runtime_fields and per-field emitters are siblings.
