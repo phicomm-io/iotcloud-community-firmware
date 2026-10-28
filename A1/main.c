@@ -626,6 +626,12 @@ void a1_diagnostics_capture(device_status_t *snapshot,device_status_full_t *full
     watchdog_status_capture(&full->watchdog);full->http=ph_http_snapshot();
 }
 
+void bemfa_config_flags_get(bool *mqtt_enabled,bool *enabled) {
+    mico_rtos_lock_mutex(&a1_config_lock);
+    const bemfa_config_t *config=&((app_storage_t *)a1_config)->bemfa;
+    *mqtt_enabled=config->mqtt_enabled!=0;*enabled=config->enabled!=0;
+    mico_rtos_unlock_mutex(&a1_config_lock);
+}
 void bemfa_config_get(bemfa_config_t *out) {
     mico_rtos_lock_mutex(&a1_config_lock);*out=((app_storage_t *)a1_config)->bemfa;mico_rtos_unlock_mutex(&a1_config_lock);
 }

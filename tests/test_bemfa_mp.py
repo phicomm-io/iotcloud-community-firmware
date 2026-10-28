@@ -104,3 +104,43 @@ int main(void){
  return 0;
 }
 ''')
+
+ def test_status_flags_capture_without_credential_copy(self):
+  capture=function((ROOT/'common/mqtt/bemfa.c').read_text(),'void bemfa_status_capture(')
+  for model in ('A1','TC1'):
+   getter=function((ROOT/model/'main.c').read_text(),'void bemfa_config_flags_get(')
+   setup = ("typedef struct {bemfa_config_t bemfa;} app_storage_t;\n"
+            "static app_storage_t storage;static void *a1_config=&storage;static int a1_config_lock;\n"
+            "static void mico_rtos_lock_mutex(int *m){(void)m;assert(!locked);locked=true;}\n"
+            "static void mico_rtos_unlock_mutex(int *m){(void)m;assert(locked);locked=false;}\n"
+            "#define CONFIG storage.bemfa\n" if model=='A1' else
+            "static struct {bemfa_config_t bemfa;} storage,*user_config=&storage;\n"
+            "static void tc1_status_lock(void){assert(!locked);locked=true;}\n"
+            "static void tc1_status_unlock(void){assert(locked);locked=false;}\n"
+            "#define CONFIG storage.bemfa\n")
+   with self.subTest(model=model):
+    producers.SensorProducers().compile_run(r'''
+#include "common/mqtt/bemfa.h"
+#define PHICOMM_BEMFA 1
+#include "common/device_status.h"
+#include <assert.h>
+#include <string.h>
+static bool locked;
+static unsigned state=2,errors=9,last_stage=4;
+static int last_error=-31;
+/* A status read must never copy the retained credential/topic structure. */
+void bemfa_config_get(bemfa_config_t *out){(void)out;assert(0);}
+'''+setup+getter+capture+r'''
+int main(void){
+ memset(&CONFIG,0xa5,sizeof(CONFIG));
+ for(unsigned m=0;m<4;m++){
+  CONFIG.mqtt_enabled=(m&1)?255:0;CONFIG.enabled=(m&2)?7:0;
+  bemfa_config_t before=CONFIG;struct device_network n;memset(&n,0,sizeof(n));
+  bemfa_status_capture(&n);
+  assert(!locked&&n.mqtt_enabled==!!(m&1)&&n.bemfa_enabled==!!(m&2));
+  assert(n.bemfa_status==2&&n.bemfa_errors==9&&n.bemfa_last_error==-31&&n.bemfa_last_stage==4);
+  assert(!memcmp(&before,&CONFIG,sizeof(CONFIG)));
+ }
+ return 0;
+}
+''')

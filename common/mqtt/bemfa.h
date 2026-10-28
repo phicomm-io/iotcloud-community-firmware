@@ -27,6 +27,8 @@ struct device_network;
 void bemfa_status_capture(struct device_network *);
 /* Product implementations serialize configuration access with their own lock. */
 void bemfa_config_get(bemfa_config_t *);
+/* Coherent status flags without copying credentials and the topic table. */
+void bemfa_config_flags_get(bool *mqtt_enabled, bool *enabled);
 bool bemfa_config_save(const bemfa_config_t *);
 bool bemfa_primary_enabled(void);
 bool bemfa_network_ready(void);

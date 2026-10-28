@@ -40,8 +40,7 @@ typedef struct {
 /* Only the HTTP owner accesses this allocation; status copies scalar atomics. */
 static worker_t *worker;
 void bemfa_status_capture(struct device_network *s) {
-    bemfa_config_t c;bemfa_config_get(&c);
-    s->mqtt_enabled=c.mqtt_enabled;s->bemfa_enabled=c.enabled;
+    bemfa_config_flags_get(&s->mqtt_enabled,&s->bemfa_enabled);
     s->bemfa_status=__atomic_load_n(&state,__ATOMIC_ACQUIRE);
     s->bemfa_errors=__atomic_load_n(&errors,__ATOMIC_RELAXED);
     s->bemfa_last_error=__atomic_load_n(&last_error,__ATOMIC_RELAXED);

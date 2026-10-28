@@ -39,7 +39,7 @@ def status_paths(frames,model,label,prefix,reserve,compat=False,capture=True,sym
     paths={}
     if capture:
         captures=[model.lower()+'_status_capture']+emitted(frames,[
-            'bemfa_status_capture','bemfa_config_get',
+            'bemfa_status_capture','bemfa_config_flags_get',
             'feature_fan_snapshot','a1_filter_get',
             'tc1_status_begin','tc1_ota_snapshot','reset_name',
             'device_status_text','m1_co2_capture','m1_co2_config_get'],symbols)
@@ -72,9 +72,9 @@ def diagnostic_paths(frames,model,label,prefix,reserve,symbols=None):
     product=prefix+['service_product_diagnostics_mp']
     capture=product+[model.lower()+'_diagnostics_capture']
     paths={label+' business capture':(capture+[model.lower()+'_status_capture']+
-        emitted(frames,['bemfa_status_capture','feature_fan_snapshot','a1_filter_get',
+        emitted(frames,['bemfa_status_capture','bemfa_config_flags_get','feature_fan_snapshot','a1_filter_get',
                         'a1_filter_stock_get','feature_values_snapshot','fresh_snapshot',
-                        'tc1_status_begin','tc1_ota_snapshot','device_status_text',
+                        'tc1_status_begin','tc1_ota_snapshot','reset_name','device_status_text',
                         'm1_co2_capture','m1_co2_config_get'],symbols),reserve)}
     if model!='TC1':
         for getter in ['runtime_metrics_capture','watchdog_status_capture','ph_http_snapshot']:

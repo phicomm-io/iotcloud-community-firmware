@@ -361,6 +361,10 @@ bool tc1_diagnostics_capture(device_status_t *snapshot,device_status_full_t *ful
     return true;
 }
 
+void bemfa_config_flags_get(bool *mqtt_enabled,bool *enabled) {
+    tc1_status_lock();*mqtt_enabled=user_config->bemfa.mqtt_enabled!=0;
+    *enabled=user_config->bemfa.enabled!=0;tc1_status_unlock();
+}
 void bemfa_config_get(bemfa_config_t *out) {
     tc1_status_lock();*out=user_config->bemfa;tc1_status_unlock();
 }
