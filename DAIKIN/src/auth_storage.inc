@@ -83,3 +83,5 @@ static void initLocalAuth(){
   localAuthReady=ph_auth_init(&localAuth,&ops,&loadedAuthStore);if(!localAuthReady)configRecovery=true;
 }
 extern "C" ph_auth_state *device_local_auth(){return localAuthReady&&!configRecovery?&localAuth:nullptr;}
+
+static inline bool localAuthContextValid(const ph_auth_context *context){return !configRecovery&&localAuthReady&&context&&context->owner==&localAuth&&ph_auth_context_valid(context,PH_AUTH_SCOPE_ADMIN);}

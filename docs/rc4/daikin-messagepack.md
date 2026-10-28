@@ -125,7 +125,9 @@ and erased entries; this is a conservative admission check, not a guarantee
 against concurrent writes or arbitrary fragmentation. IDF 4.4.7 can erase old
 chunks while cleaning up a failed alternate-version multi-page write. Therefore
 `putBytes != expected_length` immediately enters recovery, returns failure and
-blocks HTTP/UDP authorization; it never reads the ambiguous generation back or
+blocks HTTP/UDP authorization, including HTTP work captured before the failure;
+queued execution rechecks recovery, readiness, context ownership and scopes. It
+never reads the ambiguous generation back or
 acknowledges success. Reboot loads and validates the actual persisted generation.
 Successful writes still require exact readback. Capacity admission rejection
 occurs before flash mutation and keeps current authorization usable.

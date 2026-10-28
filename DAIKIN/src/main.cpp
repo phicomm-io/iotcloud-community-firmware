@@ -239,7 +239,7 @@ void loop(){
   uint32_t now=millis();
   if(!otaActive){pollSensors(now);pollSessions();pollLanPairing();}
   if(webPending){
-    if(webAuthRequired&&!ph_auth_context_valid(&webAuthContext,PH_AUTH_SCOPE_ADMIN)){
+    if(webAuthRequired&&!localAuthContextValid(&webAuthContext)){
       webResult="{\"code\":\"unauthorized\"}";
 #ifdef IOTCLOUD_HUB
       hubHttpStatus=401;
