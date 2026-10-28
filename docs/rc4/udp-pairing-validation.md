@@ -27,8 +27,11 @@ Daikin commits configuration and incoming/outgoing durable peer tables in a
 single NVS blob. Version 2 stores the configuration as MessagePack; version 1
 JSON envelopes and legacy configuration remain readable. The existing JSON
 backup/import format and logical configuration limits remain unchanged.
-Uncertain readback enters recovery and blocks authorization; known unchanged
-storage returns failure without replacing the live configuration.
+Uncertain persistence enters recovery and blocks authorization, including
+already-queued HTTP contexts. A failed NVS write is not read back because the
+IDF 4.4.7 partial-write cleanup can invalidate old chunks. Successful writes
+still require exact readback. A capacity rejection occurs before any write and
+preserves the live configuration and peer tables.
 
 On the official IDF 4.4.7 NVS implementation with a 20 KiB NOR model, a valid
 maximum 6144-byte hub configuration, Wi-Fi/HAP data and 24 directional keys
@@ -36,7 +39,16 @@ exposed a capacity regression in the initial JSON envelope: its 6936-byte blob
 failed the second update. The MessagePack envelope is 6177 bytes and passed
 three updates/reboots. The original configuration without pairing keys passed
 the same three-update comparison. These are host NOR simulations, not reads
-of a device's partition table. Older 16 KiB layouts require separate checks.
+of a device's partition table.
+
+The final capacity guard was checked on both 16 and 20 KiB NOR layouts, with
+zero or 24 directional keys. Typical configurations passed 12 distinct writes
+and reboots (each write increased flash work). At 16 KiB, the maximum legal hub
+configuration is safely rejected without flash writes, matching the original
+firmware's capacity boundary. At 20 KiB, the maximum passed 12 distinct writes
+and reboots. Both variants' password revocation was also checked at 7736
+interrupted-write cut points. These simulations do not establish the actual
+partition layout or physical power-loss behavior of a device.
 
 ## Verification
 
@@ -55,6 +67,10 @@ of a device's partition table. Older 16 KiB layouts require separate checks.
   their applicable image, stack and packaging checks after the shared fix.
   MiCO final ELF checks reject JSON object/parser libraries. These builds still
   use development version/frontend pins and are not release-ready RC4 images.
+- Integration `76ec124`: 7 focused tests passed, including the strengthened
+  official NVS dual-capacity comparison. Integration `3c11b8e` additionally
+  rejects queued reset, reboot, state and special status operations after an
+  uncertain commit, using the production queue dispatch branch in the test.
 
 Reproduce the official NVS comparison after preparing pinned ArduinoJson and
 the IDF dependency:
