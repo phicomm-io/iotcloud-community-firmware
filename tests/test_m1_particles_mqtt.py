@@ -8,6 +8,7 @@ class ParticlesDiscovery(unittest.TestCase):
   source=(ROOT/'M1/mqtt.c').read_text()
   enum=source[source.index('enum { MQTT_BRIGHTNESS_INDEX'):source.index('static int discovery_build')]
   harness=r'''
+#include "json.h" /* Host-only oracle for HA JSON; not a product dependency. */
 #include "M1/m1.h"
 #include "common/ha_json.h"
 #include "common/mqtt/owner.h"
