@@ -359,6 +359,7 @@ jobs:
           SANITIZE=1 python3 -m unittest DAIKIN.tests.test_hub_lan_client DAIKIN.tests.test_hub_lan_home DAIKIN.tests.test_hub_lan_discovery
           python3 -m unittest discover -s DAIKIN/tests -p 'test_native_publish.py'
           python3 -m unittest DAIKIN.tests.test_lan_business
+          python3 -m unittest DAIKIN.tests.test_pair_route
           for scenario in home http relay service storage; do
             c++ -std=c++11 -Wall -Wextra -Werror -fsanitize=address,undefined \
               -fno-omit-frame-pointer -fno-pie -no-pie -IDAIKIN/include \
