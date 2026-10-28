@@ -108,6 +108,7 @@ public:
 static_assert(sizeof(ObservedJsonDocument) == sizeof(DynamicJsonDocument),
               "The JSON observer must not add instance data");
 #include "hub_native_publish.h"
+#include "hub_broker.h"
 #include "hub_service.h"
 #include "frames.h"
 #include "cm1106.h"
@@ -340,8 +341,22 @@ static void verifySnapshots() {
   assert(!deserializeMsgPack(typed, localMessages[3].body));
   assert(full["model"] == "daikin" && full["firmware_variant"] == "hub");
   assert(full["device_id"] == "aabbccddeeff" && full["name"] == "Bedroom 中文");
-  assert(full["co2_diagnostics"]["raw_ppm"] == 721);
-  assert(full["ota_partitions"]["entries"].size() == 3);
+  assert(!full["co2_diagnostics"].containsKey("raw_ppm"));
+  assert(!full.containsKey("ota_partitions") && !full.containsKey("free_memory"));
+  DynamicJsonDocument diagnostic(8192);diagnostics(diagnostic.to<JsonObject>());
+  assert(diagnostic["schema"]==1);
+  bool raw=false,partitions=false,zero=false;
+  for(JsonArrayConst pair:diagnostic["fields"].as<JsonArrayConst>()){
+    assert(pair.size()==2 && pair[0].is<unsigned>());
+    if(pair[0]==PH_DIAG_CO2_DIAGNOSTICS_RAW_PPM){assert(pair[1]==721);raw=true;}
+    if(pair[0]==PH_DIAG_OTA_PARTITIONS){assert(pair[1]["entries"].size()==3);partitions=true;}
+    if(pair[0]==PH_DIAG_MQTT_ERROR_TYPE){assert(pair[1]==0);zero=true;}
+  }
+  assert(raw&&partitions&&zero);
+  bool received=co2Module.received;co2Module.received=false;
+  diagnostic.clear();diagnostics(diagnostic.to<JsonObject>());
+  for(JsonArrayConst pair:diagnostic["fields"].as<JsonArrayConst>())assert(pair[0]!=PH_DIAG_CO2_DIAGNOSTICS_RAW_PPM);
+  co2Module.received=received;
   assert(full["indicator_rules_supported"] == true);
   assert(full["sensors"].size() == SENSOR_COUNT && typed["sensors"].size() == SENSOR_COUNT);
   assert(typed["schema"] == 3 && typed["device_id"] == "aabbccddeeff"&&typed["descriptor_revision"]==metadata["descriptor_revision"]);

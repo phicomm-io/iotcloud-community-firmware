@@ -71,13 +71,14 @@ char *dtostrf(double,int,unsigned int,char*);
             'mqtt.inc': section(src / 'mqtt.inc', 'static void publish(', 'static void discovery('),
             'native.inc': section(src / 'hub.inc', 'static void hubLocalPublish(', 'static void hubInit('),
             'ready.inc': section(src / 'hub.inc', 'static bool hubReady()', 'static void hubApiExecute('),
-            'state.inc': section(src / 'commands.inc', 'static void otaPartitionStatus(', 'static const char *actions'),
+            'state.inc': '#include "diagnostics_ids.h"\n' + section(src / 'commands.inc', 'static void otaPartitionStatus(', 'static const char *actions'),
             'typed.inc': section(src / 'sessions.inc', 'static uint32_t sensorDescriptorRevision()', 'static void sessionStatus('),
             'indicators.inc': (src / 'indicators.inc').read_text(),
             'status-work.inc': section(src / 'main.cpp', 'if(webOperation==4){', 'else webResult=otaActive?'),
             'status-handler.inc': section(src / 'http.inc', 'static esp_err_t statusHandler(', 'static esp_err_t optionsHandler('),
             'json-response.inc': section(src / 'http.inc', 'static esp_err_t jsonResponse(', 'static bool authorized('),
         }
+        shutil.copyfile(src / 'diagnostics_ids.h', temp / 'diagnostics_ids.h')
         for name, source in extracts.items():
             (temp / name).write_text(source)
         cls.binary = temp / 'native-publish'
