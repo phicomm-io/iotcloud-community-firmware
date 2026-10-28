@@ -131,4 +131,32 @@ static void test_atomic_credential_commit(void){
     assert(ph_auth_http_login_result(&reboot,"adminfjr",http)==PH_AUTH_LOGIN_BUSY);
     assert(ph_auth_http_login_result(&reboot,"wrong",http)==PH_AUTH_LOGIN_DENIED);
 }
-int main(void){test_atomic_credential_commit();test_failed_password_transaction();test_basic();test_expiry();test_capacity_failure();test_boot_revoke_mqtt();test_pending_pair_epoch();test_pair_retry();test_concurrent();puts("local_auth: all tests passed");return 0;}
+static void test_remote_direction_and_revocation(void){
+    fixture f;ph_auth_state s,reboot;char key[33],out[33],token[33];unsigned scopes;ph_auth_context ctx;
+    setup(&f,&s);const char *remote="1234567890abcdef1234567890abcdef";
+    uint32_t epoch=ph_auth_credential_epoch(&s);
+    assert(!ph_auth_remote_store(&s,"target",remote,2,0));
+    assert(ph_auth_remote_store(&s,"target",remote,2,epoch));
+    assert(ph_auth_remote_get(&s,"target",out,&scopes)&&!strcmp(out,remote)&&scopes==2);
+    unsigned saves=f.saves;
+    assert(ph_auth_remote_store(&s,"target",remote,2,epoch)&&f.saves==saves);
+    assert(!ph_auth_pair_resume(&s,"target",remote,token));
+    assert(!ph_auth_udp_check(&s,"target",remote,&ctx));
+    assert(ph_auth_pair(&s,"","target",2,key)&&strcmp(key,remote));
+    assert(ph_auth_init(&reboot,&s.ops,&f.disk));
+    assert(ph_auth_remote_get(&reboot,"target",out,&scopes));
+    f.fail_save=true;assert(!ph_auth_remote_remove(&reboot,"target"));
+    assert(ph_auth_remote_get(&reboot,"target",out,&scopes));
+    f.fail_save=false;assert(ph_auth_remote_remove(&reboot,"target"));
+    assert(!ph_auth_remote_get(&reboot,"target",out,&scopes));
+    assert(ph_auth_remote_store(&reboot,"target",remote,2,epoch));
+    commit_fixture c={&f,"adminfjr",false};
+    assert(ph_auth_credential_commit(&reboot,c.password,false,commit_password,&c));
+    assert(!f.disk.remote_count&&!f.disk.count);
+    assert(!ph_auth_remote_store(&reboot,"target",remote,2,epoch));
+    assert(ph_auth_init(&s,&reboot.ops,&f.disk));
+    assert(!ph_auth_remote_get(&s,"target",out,&scopes));
+    ph_auth_store invalid=f.disk;invalid.remote_count=PH_AUTH_PAIR_SLOTS+1;
+    assert(!ph_auth_store_valid(&invalid));invalid=f.disk;invalid.reserved=1;assert(!ph_auth_store_valid(&invalid));
+}
+int main(void){test_remote_direction_and_revocation();test_atomic_credential_commit();test_failed_password_transaction();test_basic();test_expiry();test_capacity_failure();test_boot_revoke_mqtt();test_pending_pair_epoch();test_pair_retry();test_concurrent();puts("local_auth: all tests passed");return 0;}

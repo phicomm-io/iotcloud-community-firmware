@@ -25,7 +25,9 @@ typedef enum { PH_AUTH_NONE=0, PH_AUTH_HTTP=1, PH_AUTH_UDP_PAIR=2,
 typedef struct { char peer[13]; uint8_t key[16]; uint8_t scopes; uint8_t reserved[2]; } ph_auth_pair_record;
 /* Append-only trailer, never insert into the frozen product configuration prefix. */
 typedef struct { uint32_t magic; uint16_t version; uint16_t count;
- ph_auth_pair_record pairs[PH_AUTH_PAIR_SLOTS]; } ph_auth_store;
+ ph_auth_pair_record pairs[PH_AUTH_PAIR_SLOTS];
+ /* Outbound secrets never authorize an incoming datagram. */
+ uint16_t remote_count,reserved;ph_auth_pair_record remote[PH_AUTH_PAIR_SLOTS]; } ph_auth_store;
 typedef struct { uint8_t token[16]; uint32_t born,last; uint32_t generation; uint8_t active,scopes; char peer[13]; } ph_auth_session;
 typedef struct ph_auth_state ph_auth_state;
 typedef struct { ph_auth_state *owner; ph_auth_source source; uint32_t generation;
@@ -70,6 +72,9 @@ bool ph_auth_pair_store(ph_auth_state *,const char *peer,const char *key,unsigne
 bool ph_auth_pair_key(ph_auth_state *,const char *peer,char key[33]);
 bool ph_auth_pair_peer(ph_auth_state *,unsigned index,char peer[13],unsigned *scopes);
 bool ph_auth_pair_store_epoch(ph_auth_state *,const char *peer,const char *key,unsigned scopes,uint32_t expected_epoch);
+bool ph_auth_remote_get(ph_auth_state *,const char *peer,char key[33],unsigned *scopes);
+bool ph_auth_remote_store(ph_auth_state *,const char *peer,const char *key,unsigned scopes,uint32_t expected_epoch);
+bool ph_auth_remote_remove(ph_auth_state *,const char *peer);
 /* Revoke phase BEFORE persisting a new password. true means the pairing
  * store is durably empty and the caller may then commit the replacement
  * password. false means DO NOT commit it: old durable pairs may return on

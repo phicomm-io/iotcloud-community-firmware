@@ -7,7 +7,7 @@ import unittest
 ROOT=Path(__file__).resolve().parents[1]
 class AuthStorage(unittest.TestCase):
  def test_frozen_prefixes(self):
-  for model in ('A1','M1'):
+  for model in ('A1','M1','TC1'):
    with self.subTest(model=model), tempfile.TemporaryDirectory() as temp:
     exe=Path(temp)/'probe'
     shim=Path(temp)/'shim';shim.mkdir()

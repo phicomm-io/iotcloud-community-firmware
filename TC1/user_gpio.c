@@ -196,30 +196,7 @@ void UserSoftReboot(void) {
 }
 
 static void FixedRecovery(bool full) {
-    if (!tc1_config_reserve()) return;
-    user_config_t *old_user = malloc(sizeof(*old_user));
-    if (!old_user) { tc1_config_release(); return; }
-    *old_user = *user_config;
-    __typeof__(sys_config->micoSystemConfig) old_system = sys_config->micoSystemConfig;
-    OSStatus err = kNoErr;
-    if (full) {
-        err = mico_system_context_restore(sys_config);
-    } else {
-        sys_config->micoSystemConfig.ssid[0] = 0;
-        sys_config->micoSystemConfig.user_key[0] = 0;
-        sys_config->micoSystemConfig.user_keyLength = 0;
-        sys_config->micoSystemConfig.key[0] = 0;
-        sys_config->micoSystemConfig.keyLength = 0;
-        user_config->web_password[0] = 0;
-    }
-    if (err == kNoErr) err = mico_system_context_update(sys_config);
-    if (err != kNoErr) {
-        *user_config = *old_user;
-        sys_config->micoSystemConfig = old_system;
-        free(old_user); tc1_config_release(); return;
-    }
-    free(old_user);
-    MicoSystemReboot();
+    if(tc1_auth_reset(full))MicoSystemReboot();
 }
 
 static void KeyEventHandler(int num, boolean longPress) {
