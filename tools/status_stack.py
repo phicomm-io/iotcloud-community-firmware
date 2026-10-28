@@ -39,9 +39,9 @@ def status_paths(frames,model,label,prefix,reserve,compat=False,capture=True,sym
     paths={}
     if capture:
         captures=[model.lower()+'_status_capture']+emitted(frames,[
-            'bemfa_status_capture','bemfa_config_get','runtime_metrics_capture',
-            'feature_fan_snapshot','watchdog_status_capture','a1_filter_get',
-            'ph_http_snapshot','tc1_status_begin','tc1_ota_snapshot','reset_name',
+            'bemfa_status_capture','bemfa_config_get',
+            'feature_fan_snapshot','a1_filter_get',
+            'tc1_status_begin','tc1_ota_snapshot','reset_name',
             'device_status_text','m1_co2_capture','m1_co2_config_get'],symbols)
         paths[label+' capture']=(prefix+captures,reserve)
     paths[label+' cold sizing init']=(prefix+['device_status_mp','phw_init_measure'],reserve)
@@ -63,4 +63,29 @@ def status_paths(frames,model,label,prefix,reserve,compat=False,capture=True,sym
         # even though the fixed measure writer cannot allocate.
         paths.update(writer_paths(frames,label+' cold sizing wire '+kind,field,reserve,
                                   symbols,kinds={primitive},finalize=False))
+    return paths
+
+
+def diagnostic_paths(frames,model,label,prefix,reserve,symbols=None):
+    """On-demand diagnostics capture and encoding are sequential stack tails."""
+    if model not in ('A1','M1','TC1'):raise ValueError('Unknown diagnostic model: '+model)
+    product=prefix+['service_product_diagnostics_mp']
+    capture=product+[model.lower()+'_diagnostics_capture']
+    paths={label+' business capture':(capture+[model.lower()+'_status_capture']+
+        emitted(frames,['bemfa_status_capture','feature_fan_snapshot','a1_filter_get',
+                        'a1_filter_stock_get','feature_values_snapshot','fresh_snapshot',
+                        'tc1_status_begin','tc1_ota_snapshot','device_status_text',
+                        'm1_co2_capture','m1_co2_config_get'],symbols),reserve)}
+    if model!='TC1':
+        for getter in ['runtime_metrics_capture','watchdog_status_capture','ph_http_snapshot']:
+            # Private runtime helper can inline into the capture owner; public
+            # watchdog/HTTP entry points are mandatory in a product build.
+            tail=emitted(frames,[getter],symbols) if getter=='runtime_metrics_capture' else [getter]
+            paths[label+' '+getter]=(capture+tail,reserve)
+    paths[label+' service memory']=(product+['service_memory_snapshot'],reserve)
+    schema=product+['device_diagnostics_mp']
+    paths.update(writer_paths(frames,label+' pair',schema+
+        emitted(frames,['diagnostic_field'],symbols),reserve,symbols,kinds={'begin','unsigned'},finalize=False))
+    paths.update(writer_paths(frames,label+' value',schema,reserve,symbols,
+                              kinds={'string','integer','unsigned','bool','null'},finalize=False))
     return paths

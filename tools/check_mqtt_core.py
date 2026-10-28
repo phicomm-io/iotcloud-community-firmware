@@ -29,9 +29,9 @@ def context_frames(paths):
 def check(frames,model):
     """Native MP only. Explicit public frames; bounded HA recursion is separate."""
     try:
-        from .status_stack import emitted, status_paths, writer_paths
+        from .status_stack import emitted, status_paths, diagnostic_paths, writer_paths
     except ImportError:
-        from status_stack import emitted, status_paths, writer_paths
+        from status_stack import emitted, status_paths, diagnostic_paths, writer_paths
     source=(Path(__file__).resolve().parents[1]/('TC1/mqtt_server/user_mqtt_client.c' if model=='TC1' else model+'/mqtt.c')).read_text()
     budget=int(re.search(r'mqtt_thread_stack_size = (0x[0-9a-fA-F]+|[0-9]+)',source).group(1),0) if model=='TC1' else int(re.search(r'mqtt_worker,\s*(\d+),',source).group(1))
     reserve=3072 if model=='TC1' else 4096
@@ -54,6 +54,7 @@ def check(frames,model):
         prefix=dispatch+[helper]+extra(['tc1_product_inner_mp'] if model=='TC1' else ['smp_config','smp_control'])
         paths.update(writer_paths(frames,'MQTT '+helper,prefix,reserve))
         paths['MQTT '+helper+' validation']=(prefix+['phv_get']+extra(['phv_scan','phv_iter','phv_next','phv_duplicate','phv_head','phv_skip_validated','binary_token','binary_take']),reserve)
+    paths.update(diagnostic_paths(frames,model,'MQTT command diagnostics',dispatch,reserve))
     periodic=cycle+extra(['states_step','states','snapshot_step'])+['service_mqtt_snapshot']+extra(['publish_query'])+['service_query_mp','service_command_mp','mp_dispatch']
     for label,prefix in [('command',dispatch),('periodic',periodic)]:
         paths.update(status_paths(frames,model,'MQTT '+label+' status',prefix+['mp_cached','service_product_status_mp'],reserve))

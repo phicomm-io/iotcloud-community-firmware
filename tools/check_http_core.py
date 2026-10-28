@@ -70,7 +70,7 @@ def check_symbols(symbols):
     required=('ph_http_server_step','ph_http_parser_feed','ph_http_start',
               'ph_mqtt_session_run','ph_mqtt_poll','ph_mqtt_enqueue_generation',
               'service_command_mp','service_query_mp','service_product_mp',
-              'service_product_status_mp','device_status_mp','phv_parse',
+              'service_product_status_mp','service_product_diagnostics_mp','device_diagnostics_mp','phv_parse',
               'phw_cached_value','phw_number','ph_buf_reserve')
     for name in required:
         if symbols.get(name)!=1:raise ValueError('Expected one linked '+name)
@@ -106,9 +106,9 @@ def read_frames(modules,model):
 
 def http_paths(frames,model,symbols=None):
     try:
-        from .status_stack import emitted, status_paths, writer_paths
+        from .status_stack import emitted, status_paths, diagnostic_paths, writer_paths
     except ImportError:
-        from status_stack import emitted, status_paths, writer_paths
+        from status_stack import emitted, status_paths, diagnostic_paths, writer_paths
     if model not in ('A1','M1','TC1'):raise ValueError('Unknown HTTP model: '+model)
     extra=lambda names:emitted(frames,names,symbols)
     owner=['owner','ph_http_server_step']
@@ -122,6 +122,7 @@ def http_paths(frames,model,symbols=None):
         for api in ['phv_parse','phv_keys','phv_get']:
             paths['HTTP '+label+' decode '+api]=(HTTP_RESERVE,decode+[api]+extra(['phv_iter','phv_child_reader','phv_next','phv_scan','phv_duplicate','phv_skip_validated','phv_head','binary_token','binary_take','ph_wire_utf8']))
         dispatch=prefix+['mp_dispatch']
+        for key,(names,reserve) in diagnostic_paths(frames,model,'HTTP '+label+' diagnostics',dispatch,HTTP_RESERVE,symbols).items():paths[key]=(reserve,names)
         status=dispatch+['mp_cached','service_product_status_mp']
         for key,(names,reserve) in status_paths(frames,model,'HTTP '+label+' full status',status,HTTP_RESERVE,symbols=symbols).items():paths[key]=(reserve,names)
         cached=dispatch+['mp_envelope','phw_cached_value']+extra(['phw_prefix','phw_quote','phw_head','phw_bytes'])
