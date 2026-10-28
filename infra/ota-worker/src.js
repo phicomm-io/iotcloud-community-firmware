@@ -6,7 +6,7 @@ export default {
     const path = new URL(request.url).pathname;
     try {
       let body, type = 'application/json; charset=utf-8', ttl = 60;
-      const current = path.match(/^\/ota\/v1\/(tc1|m1|a1|daikin)\/(full|no-frontend-resources|fresh-air|fresh-air-no-frontend-resources|hub)\/latest\.json$/);
+      const current = path.match(/^\/ota\/v1\/(tc1|m1|a1|daikin)\/(full|no-frontend-resources|fresh-air|fresh-air-no-frontend-resources|hub)\/latest\.(json|msgpack)$/);
       const latest = current || path.match(/^\/ota\/(tc1|m1|a1|daikin)(\/(?:no-frontend-resources|fresh-air|fresh-air-no-frontend-resources))?\/latest\.json$/);
       if (latest) {
         const stable = await env.RELEASES.get('stable.json');
@@ -27,6 +27,18 @@ export default {
         if (latest[1] === 'daikin' && !['full','hub'].includes(variant)) return new Response('Not found', {status:404,headers});
         const model = variant === 'full' ? original : original?.variants?.[variant];
         if (!model) return new Response('Model unavailable', {status:404,headers});
+        if (current && current[3] === 'msgpack') {
+          const asset = release.device_manifests?.[`${latest[1]}/${variant}`]?.msgpack;
+          if (!asset || !asset.path.startsWith(`/releases/${release.tag}/`) ||
+              !/^\/releases\/v\d+\.\d+\.\d+\/[A-Za-z0-9_.-]+\.latest\.msgpack$/.test(asset.path))
+            return new Response('Binary manifest unavailable', {status:404,headers});
+          const object = await env.RELEASES.get(asset.path.slice(1));
+          if (!object || object.size !== asset.size)
+            return new Response('Binary manifest unavailable', {status:503,headers:{...headers,'Cache-Control':'no-store'}});
+          return new Response(request.method === 'HEAD' ? null : object.body, {headers:{...headers,
+            'Content-Type':'application/msgpack','Content-Length':String(object.size),
+            'Cache-Control':'public, max-age=60, no-transform',ETag:object.httpEtag}});
+        }
         body = JSON.stringify({schema:1,tag:release.tag,version:release.version,commit:release.commit,model:latest[1],firmware_variant:variant,path:model.path,size:model.size,sha256:model.sha256,release_log:model.release_log});
       } else if (path === '/' || path === '/health') {
         body = JSON.stringify({service:'phicomm-ota',schema:1,index:'/releases/index.json'});
@@ -39,7 +51,7 @@ export default {
         const object = await env.RELEASES.get(key);
         if (!object) return new Response('Not found', {status:404,headers});
         object.writeHttpMetadata(new Headers());
-        type = key.endsWith('.json') ? type : key.endsWith('.md') ? 'text/plain; charset=utf-8' : key.endsWith('.html') ? 'text/html; charset=utf-8' : 'application/octet-stream';
+        type = key.endsWith('.msgpack') ? 'application/msgpack' : key.endsWith('.json') ? type : key.endsWith('.md') ? 'text/plain; charset=utf-8' : key.endsWith('.html') ? 'text/html; charset=utf-8' : 'application/octet-stream';
         ttl = key === 'releases/index.json' || notesIndex ? 60 : 31536000;
         headers['Content-Length'] = String(object.size);
         headers.ETag = object.httpEtag;

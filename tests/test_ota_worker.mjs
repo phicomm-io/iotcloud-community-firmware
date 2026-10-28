@@ -42,3 +42,23 @@ test('reviewed note data uses a short-lived pointer and immutable hashed manifes
  for(const path of ['/releases/notes/private.json','/releases/notes/manifest.short.json','/releases/notes/index.json/extra'])
   assert.equal((await worker.fetch(new Request('https://ota'+path),storage)).status,404);
 });
+
+test('v1 binary metadata follows one stable index with exact GET/HEAD bytes',async()=>{
+ const payload=Buffer.from([0x81,0xa6,...Buffer.from('schema'),0x01]);
+ const path='/releases/v1.0.0/phicomm_m1.latest.msgpack';
+ const release={tag:'v1.0.0',version:'1.0.0',models:{m1:{path:'/releases/v1.0.0/image.signed'}},device_manifests:{'m1/full':{msgpack:{path,size:payload.length,sha256:'a'.repeat(64)}}}};
+ const storage={RELEASES:{async get(key){
+  if(key==='stable.json')return {json:async()=>release};
+  if(key===path.slice(1))return {size:payload.length,body:payload,httpEtag:'"manifest"'};
+  return null;
+ }}};
+ for(const method of ['GET','HEAD']){
+  const response=await worker.fetch(new Request('http://ota/ota/v1/m1/full/latest.msgpack',{method}),storage);
+  assert.equal(response.status,200);assert.equal(response.headers.get('Content-Type'),'application/msgpack');
+  assert.equal(response.headers.get('Content-Length'),String(payload.length));
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()),method==='HEAD'?Buffer.alloc(0):payload);
+ }
+ delete release.device_manifests;
+ assert.equal((await worker.fetch(new Request('http://ota/ota/v1/m1/full/latest.msgpack'),storage)).status,404);
+ assert.equal((await worker.fetch(new Request('http://ota/ota/candidate/m1/full/latest.msgpack'),storage)).status,404);
+});
