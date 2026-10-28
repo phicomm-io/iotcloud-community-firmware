@@ -597,6 +597,9 @@ int main(){
                                     '-I' + str(codec), *defines, str(directory / 'surface.cpp'),
                                     '-o', str(binary)], check=True)
                     result = json.loads(subprocess.check_output([str(binary)], text=True))
+                    for key,value in {'device_id':'9c9c1ff76748','model':'daikin','firmware_version':'1.0.0-rc.4','variant':variant}.items():
+                        self.assertEqual(result['capabilities'][key],value)
+                    self.assertEqual(result['capabilities']['sensor_session_protocol'],3)
                     if variant == 'full':
                         self.assertEqual(result['capabilities']['ota_variant_conversion'], 'full-to-hub')
                         self.assertEqual(result['routes'], ['POST /api/v1/ota/convert',
