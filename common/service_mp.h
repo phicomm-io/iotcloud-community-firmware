@@ -1,6 +1,15 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #pragma once
 #include "typed_wire.h"
+#include "memory_budget.h"
+void service_init(void);
+void service_event(const char *level,const char *module,const char *event);
+bool service_control_begin(void);
+void service_control_end(void);
+unsigned service_memory_claim(size_t input_bytes);
+void service_memory_release(unsigned claim);
+void service_memory_waiting(bool enter);
+void service_memory_snapshot(service_memory_state_t *out);
 
 /* Request memory is borrowed for this call only. The returned wire buffer is
  * independently owned; release it with ph_buf_free(), after transport IO. All
