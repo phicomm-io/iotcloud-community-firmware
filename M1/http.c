@@ -5,7 +5,7 @@
 #include "m1.h"
 #include "../common/ota/signed_ota.h"
 #include "web_data.h"
-#include "../common/firmware_variant.h"
+#include "../common/firmware_variant_defs.h"
 #include "../common/http_cors.h"
 #include "favicon.h"
 #include <ctype.h>
@@ -33,70 +33,8 @@ static bool response(ph_http_exchange *x,unsigned status,const char *type,const 
 #define HTTP_AUTH_ID m1_id
 #define HTTP_AUTH_VERSION FIRMWARE_VERSION
 #include "../common/httpd/local_auth.inc"
-static void str(json_object *o, const char *key, const char *value)
-{ json_build_object_add(o, key, json_object_new_string(value)); }
-static void integer(json_object *o, const char *key, int value)
-{ json_build_object_add(o, key, json_object_new_int(value)); }
-static void json_bool(json_object *o, const char *key, bool value)
-{ json_build_object_add(o, key, json_object_new_boolean(value)); }
+#include "../common/httpd/memory_mp.inc"
 
-static __attribute__((noinline)) json_object *m1_status_full(void)
-{
-    device_status_t snapshot; device_status_full_t full;
-    m1_status_capture(&snapshot,&full);
-    return device_status_encode(&snapshot,&full);
-}
-static __attribute__((noinline)) json_object *m1_status_live(void)
-{
-    device_status_t snapshot; m1_status_capture(&snapshot,NULL);
-    return device_status_encode(&snapshot,NULL);
-}
-static __attribute__((noinline)) json_object *m1_status_json_view(bool live)
-{ return live ? m1_status_live() : m1_status_full(); }
-json_object *m1_status_json(void) { return m1_status_json_view(false); }
-json_object *m1_status_live_json(void) { return m1_status_json_view(true); }
-
-static void memory_response(ph_http_exchange *x)
-{
-    /* Keep diagnostics usable when building the full status JSON fails.
-     * Authentication is applied by handle() before reaching this route. */
-    const micoMemInfo_t *memory = MicoGetMemoryInfo();
-    if (!memory) {
-        static const char unavailable[] = "{\"code\":\"unavailable\"}";
-        response(x, 503, "application/json", unavailable, sizeof(unavailable) - 1, false);
-        return;
-    }
-    micoMemInfo_t snapshot = *memory;
-    service_memory_state_t budget; service_memory_snapshot(&budget);
-    /* Request-owned diagnostics scratch; guard failure preserves the small
-     * allocation-free base response. Never increase permanent scalar RAM. */
-    size_t capacity=2304;product.body=snapshot.free_memory>=SERVICE_MEMORY_RESERVE+capacity+32?json_heap_malloc(capacity):NULL;
-    char *body=product.body?product.body:product.scalar;
-    if(!product.body)capacity=sizeof(product.scalar);
-    int length = snprintf(body, capacity,
-        "{\"code\":\"ok\",\"data\":{\"free_memory\":%d,\"allocated_memory\":%d,"
-        "\"free_memory_chunks\":%d,\"uptime_ms\":%lu,\"memory_reserve\":%u,"
-        "\"memory_reserved\":%lu,\"memory_active\":%lu,\"memory_waiting\":%lu,"
-        "\"memory_denied\":%lu,\"minimum_sampled_free\":%lu,"
-        "\"json_live_blocks\":%lu,\"json_peak_blocks\":%lu,\"json_alloc_failures\":%lu,\"json_guard_denied\":%lu}}",
-        snapshot.free_memory, snapshot.allocted_memory, snapshot.num_of_chunks,
-        (unsigned long)mico_rtos_get_time(), SERVICE_MEMORY_RESERVE,
-        (unsigned long)budget.reserved, (unsigned long)budget.active,
-        (unsigned long)budget.waiting, (unsigned long)budget.denied,
-        (unsigned long)budget.minimum_free,
-        (unsigned long)budget.json_live, (unsigned long)budget.json_peak,
-        (unsigned long)budget.json_failed, (unsigned long)budget.json_denied);
-    ph_http_diagnostics d=ph_http_snapshot();
-    if(length>0)length=ph_http_diag_append(body,capacity,length,&d);
-    if(length>0)length=ph_mqtt_diag_append(body,capacity,length,product.body!=NULL);
-    if (length > 0 && (size_t)length < capacity)
-        response(x, 200, "application/json", body, (size_t)length, false);
-}
-
-
-
-/* Stock 11.x has a ten-second transaction timer. Buffer before begin so
- * network round trips cannot consume that UART-only transfer window. */
 static bool mcu_bulk(const uint8_t *image,size_t n)
 {
     uint32_t sp,pc;uint8_t f[262]={0x23,0x12},ack[20];
@@ -138,7 +76,7 @@ static ph_http_action prepare(ph_http_exchange *x)
     }
     if(operation==MCU_BULK) {
         product.capacity=x->request->length;
-        product.body=json_heap_malloc(product.capacity+1);
+        product.body=ph_wire_malloc(product.capacity+1);
         if(!product.body){ph_http_busy(x);return PH_HTTP_REPLY;}
         return PH_HTTP_READ_BODY;
     }
@@ -218,7 +156,7 @@ static ph_http_action begin(ph_http_exchange *x)
         return prepare(x);
     }
     if(!strcmp(r->method,"POST") && !strcmp(r->path,"/api/v1/mcu/exchange")) {
-        if(!r->have_length || r->length<6 || r->length>262) {
+        if(!r->have_length || r->length<10 || r->length>288) {
             ph_http_message(&product,x,400,"Invalid MCU frame size");return PH_HTTP_REPLY;
         }
         operation=MCU;x->body_idle_ms=5000;x->body_total_ms=5000;
@@ -230,7 +168,7 @@ static ph_http_action begin(ph_http_exchange *x)
         if(ota_job_active() && (operation==LIGHT || r->length>1024)) {
             ph_http_message(&product,x,409,"OTA in progress");return PH_HTTP_REPLY;
         }
-        if(r->length>M1_JSON_LIMIT) { ph_http_message(&product,x,400,"Invalid JSON size");return PH_HTTP_REPLY; }
+        if(r->length>8192u) { ph_http_message(&product,x,400,"Invalid MessagePack size");return PH_HTTP_REPLY; }
         return prepare(x);
     }
     if(!strcmp(r->method,"POST") && (!strcmp(r->path,"/api/v1/ota/upload") || !strcmp(r->path,"/api/v1/ota/upload-unsigned"))) {
@@ -264,24 +202,25 @@ static void complete(ph_http_exchange *x)
     }
     if(operation==MCU_BULK) {
         bool ok=product.used==x->request->length && mcu_bulk((const uint8_t *)product.body,product.used);
-        json_heap_free(product.body);product.body=NULL;
+        ph_wire_free(product.body);product.body=NULL;
         ph_http_message(&product,x,ok?202:409,ok?"MCU commit sent; verify runtime version":"MCU transfer failed; not confirmed");return;
     }
     if(operation==MCU) {
-        uint8_t reply[20];
-        bool ok=product.used==x->request->length &&
-            m1_mcu_exchange((const uint8_t *)product.body,product.used,reply);
-        if(ok) {
-            memcpy(product.scalar,reply,sizeof(reply));
-            response(x,200,"application/octet-stream",product.scalar,sizeof(reply),false);
-        } else ph_http_message(&product,x,409,"MCU busy or response timeout");
+        ph_value request,frame;const void *bytes;size_t length;uint8_t reply[20];
+        bool valid=product.used==x->request->length&&phv_parse(PH_WIRE_MSGPACK,product.body,product.used,&request)&&request.kind==PHV_MAP&&phv_keys(&request,"|frame|")&&phv_get(&request,"frame",&frame)&&phv_bytes(&frame,&bytes,&length)&&length>=6&&length<=262;
+        if(!valid){ph_http_message(&product,x,400,"Invalid MCU frame");return;}
+        bool ok=m1_mcu_exchange(bytes,length,reply);
+        if(ok){
+            ph_writer w;ph_buf b;phw_init_fixed(&w,PH_WIRE_MSGPACK,&b,product.scalar,sizeof(product.scalar));
+            phw_begin(&w,NULL,false);phw_text(&w,"code","ok");phw_begin(&w,"data",false);phw_bytes_value(&w,"reply",reply,sizeof(reply));phw_end(&w);phw_end(&w);
+            size_t size=phw_finish_fixed(&w);if(size)response(x,200,"application/msgpack",product.scalar,size,false);else ph_http_busy(x);
+        }else ph_http_message(&product,x,409,"MCU busy or response timeout");
         return;
     }
     if(operation==RESTORE){const char *code=device_backup_import(product.body,product.used);ph_http_message(&product,x,!strcmp(code,"accepted")?202:!strcmp(code,"busy")?409:400,code);return;}
-    json_object *request=ph_http_body_json(&product,x);
-    ph_http_command(&product,x,request);
-    /* Wire owns all text, including any borrowed request_id. */
-    json_object_put(request);
+    if(product.used!=x->request->length){ph_http_message(&product,x,400,"invalid_request");return;}
+    ph_http_command_mp(&product,x,product.body,product.used);
+    ph_wire_free(product.body);product.body=NULL;
 }
 static void release(ph_http_exchange *x,bool sent)
 {

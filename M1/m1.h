@@ -69,9 +69,10 @@ static inline bool m1_co2_source_config_valid(const m1_co2_source_config_t *c)
 }
 void m1_co2_source_reset(void);
 void m1_co2_source_sample(const char *,const feature_sample_t *);
+void m1_co2_source_invalidate(const char *);
 bool m1_co2_source_value(uint16_t *,uint16_t *);
-json_object *m1_co2_source_json(void);
-json_object *m1_co2_source_set(json_object *,const char **);
+#include "../common/typed_wire.h"
+bool m1_co2_source_mp(const char *,const ph_value *,ph_writer *,const char **);
 bool m1_button_rx(const uint8_t [20]);
 void m1_display_config_get(m1_display_config_t *);
 void m1_display_switch_get(m1_display_switch_config_t *);
@@ -79,19 +80,16 @@ bool m1_display_lane_get(unsigned,m1_display_lane_config_t *,m1_display_remote_t
 const char *m1_display_config_save(const m1_display_config_t *);
 void m1_display_source_reset(void);
 void m1_display_source_mqtt_reset(void);
-void m1_display_source_sample(const char *,json_object *);
+void m1_display_source_metadata(const char *,const ph_value *);
+void m1_display_source_sample(const char *,const ph_value *);
 void m1_display_source_offline(const char *,const char *);
 void m1_display_source_value(const m1_display_config_t *,unsigned,m1_display_value_t *);
 void m1_display_data_store(unsigned,uint32_t,float,uint8_t,int);
 void m1_display_frame_store(unsigned,uint32_t,unsigned,unsigned,unsigned,unsigned);
 const char *m1_display_data_save(unsigned,uint32_t,float,unsigned,unsigned,int);
 const char *m1_display_frame_save(unsigned,uint32_t,unsigned,unsigned,unsigned,unsigned);
-json_object *m1_display_source_json(void);
-json_object *m1_display_source_set(json_object *,const char **);
-json_object *m1_display_data_set(json_object *,const char **);
-json_object *m1_display_profile_json(void);
-json_object *m1_display_profile_set(json_object *,const char **);
-json_object *m1_display_value_set(json_object *,const char **);
+void m1_display_profile_write(ph_writer *);
+bool m1_display_mp(const char *,const ph_value *,ph_writer *,const char **);
 void m1_display_readback(m1_display_readback_t [M1_DISPLAY_LANES],bool *);
 
 typedef struct {
@@ -186,10 +184,7 @@ void m1_co2_config_get(m1_co2_config_t *);
 const char *m1_co2_config_save(const m1_co2_config_t *);
 struct device_m1_co2;
 void m1_co2_capture(struct device_m1_co2 *);
-json_object *m1_co2_json(void);
-json_object *m1_sensor_details_json(void);
-json_object *m1_particles_json(void);
-json_object *m1_co2_set(json_object *,const char **);
+void m1_details_snapshot(m1_details_t *out);
 bool m1_mcu_exchange(const uint8_t *,size_t,uint8_t reply[20]);
 void m1_mcu_tick(void);
 bool m1_mcu_rx(const uint8_t frame[20]);

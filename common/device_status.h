@@ -110,13 +110,12 @@ typedef struct {
     } model;
 } device_status_full_t;
 
-struct json_object;
-/* Pure encoding: no clock, state getters, locks, sockets or hardware calls. */
-struct json_object *device_status_encode(const device_status_t *, const device_status_full_t *);
-void device_runtime_encode(struct json_object *, const device_runtime_t *);
+#include "typed_wire.h"
+/* Pure encoding: no clock, state getters, locks, sockets or hardware calls.
+ * Status emits one root payload and requires full!=NULL; wrapper/caching is caller-owned. */
+void device_status_mp(ph_writer *,const device_status_t *,const device_status_full_t *);
+/* Emit runtime members into an already opened caller map, not a root value. */
+void device_runtime_mp(ph_writer *,const device_runtime_t *);
 void a1_status_capture(device_status_t *, device_status_full_t *);
 void m1_status_capture(device_status_t *, device_status_full_t *);
 bool tc1_status_capture(device_status_t *, device_status_full_t *);
-
-/* Independent text; no graph is built. Free with printbuf_free(). */
-struct printbuf *device_status_wire(const device_status_t *, const device_status_full_t *, bool envelope, const char *request_id);

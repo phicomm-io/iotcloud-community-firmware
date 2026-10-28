@@ -1,7 +1,7 @@
 #pragma once
 #include <stdint.h>
 #include <stdbool.h>
-#include "service.h"
+#include "typed_wire.h"
 #define AUTOMATION_MAGIC 0x41555432u
 #ifdef AUTOMATION_TC1
 #define AUTOMATION_TASKS 128
@@ -53,7 +53,10 @@ void automation_defaults(automation_config_t *);
 void automation_load(automation_config_t *);
 bool automation_save(const automation_config_t *);
 /* Uses same transport dispatcher; unknown action leaves handled=false. */
-json_object *automation_command(const char *,json_object *,const char **,bool *handled);
+bool automation_mp(const char *,const ph_value *,ph_writer *,const char **);
+#if !defined(FEATURE_DEVICE_A1) && !defined(AUTOMATION_TC1)
+bool m1_automation_execute(const automation_action_t *,bool button);
+#endif
 void automation_poll(bool clock_valid);
 void automation_button(unsigned key,unsigned clicks,unsigned seconds);
 #ifdef FEATURE_DEVICE_A1

@@ -1,33 +1,25 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #pragma once
 #include "http.h"
-#include "../service.h"
-#include "json_heap.h"
-#include "printbuf.h"
+#include "../service_mp.h"
 #ifndef PH_HTTP_SCALAR_BYTES
 #define PH_HTTP_SCALAR_BYTES 1536
 #endif
-/* One business lease, never one allocation per pending connection. */
+/* One bounded business lease, independent of pending connection slots. */
 typedef struct {
-    unsigned claim, json_claim;
-    bool waiting, ota, json_scoped, graph_denied;
-    char *body;
-    size_t used, capacity;
-    uint64_t failures;
-    struct printbuf *wire;
-    char scalar[PH_HTTP_SCALAR_BYTES];
+ unsigned claim;
+ bool waiting,ota;
+ char *body;
+ size_t used,capacity;
+ ph_buf *wire;
+ char scalar[PH_HTTP_SCALAR_BYTES];
 } ph_http_product;
-void ph_http_product_init(ph_http_product *, ph_http_exchange *);
+void ph_http_product_init(ph_http_product *,ph_http_exchange *);
 void ph_http_busy(ph_http_exchange *);
-void ph_http_message(ph_http_product *, ph_http_exchange *, unsigned, const char *);
-void ph_http_json(ph_http_product *, ph_http_exchange *, json_object *);
-ph_http_action ph_http_claim(ph_http_product *, ph_http_exchange *, size_t input, bool read_body);
-bool ph_http_body_copy(ph_http_product *, const void *, size_t);
-json_object *ph_http_body_json(ph_http_product *, ph_http_exchange *);
-bool ph_http_graph_failed(const ph_http_product *);
+void ph_http_message(ph_http_product *,ph_http_exchange *,unsigned,const char *);
+ph_http_action ph_http_claim(ph_http_product *,ph_http_exchange *,size_t,bool);
+bool ph_http_body_copy(ph_http_product *,const void *,size_t);
 void ph_http_product_release(ph_http_product *);
-
-size_t ph_http_diag_append(char *, size_t capacity, size_t used, const ph_http_diagnostics *);
-
-void ph_http_command(ph_http_product *, ph_http_exchange *, json_object *);
-void ph_http_query(ph_http_product *, ph_http_exchange *, const char *);
+void ph_http_wire_take(ph_http_product *,ph_http_exchange *,ph_buf *);
+void ph_http_command_mp(ph_http_product *,ph_http_exchange *,const void *,size_t);
+void ph_http_query(ph_http_product *,ph_http_exchange *,const char *);
