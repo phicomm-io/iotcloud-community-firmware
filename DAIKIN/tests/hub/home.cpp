@@ -6,8 +6,8 @@
 #include <cstdio>
 #include <string>
 // Exercise the pinned ArduinoJson implementation with an actual allocation
-// ceiling, including its NoMemory result. Other C++/broker allocations are not
-// capped here; they are covered by the byte-memory broker suite.
+// ceiling, including its NoMemory result. Other C++/bus allocations are not
+// capped here; they are covered by the byte-memory bus suite.
 static size_t jsonLimit=SIZE_MAX,jsonAttempts=0,jsonDenied=0,jsonLargest=0;
 static size_t jsonLive=0,jsonPeak=0;
 static void *homeJsonAllocate(size_t n){
@@ -39,13 +39,12 @@ static void memoryTests(){
   using Home=iotcloud::HubHome;
   DynamicJsonDocument saved(1024);
   assert(!deserializeJson(saved,R"([{"mac":"112233445566","model":"m1"},{"mac":"aabbccddeeff","model":"tc1"}])"));
-  iotcloud::HubBroker broker;Home home(broker);
-  broker.authorize=[](const std::string &,bool){return true;};
+  iotcloud::HubDeviceBus bus;Home home(bus);
   unsigned serial=0;
   home.randomHex=[&](size_t n){auto s=std::to_string(++serial);return std::string(n*2-s.size(),'0')+s;};
   assert(home.configure(saved.as<JsonArrayConst>(),"lab/","aabbcc000001"));
   std::string command;
-  broker.event=[&](const std::string &,const std::string &body,bool,iotcloud::HubBroker::Origin){command=body;};
+  bus.dispatch=[&](const std::string &,const std::string &body,bool,iotcloud::HubDeviceBus::Origin){command=body;return true;};
   auto observe=[&](const std::string &topic,const std::string &body,size_t ceiling){
     const auto live=jsonLive;jsonLimit=ceiling;jsonAttempts=jsonDenied=jsonLargest=0;jsonPeak=live;
     home.observe(topic,body);jsonLimit=SIZE_MAX;
@@ -91,13 +90,10 @@ int main() {
   DynamicJsonDocument saved(2048);
   assert(!deserializeJson(saved,
       R"([{"mac":"aabbccddeeff","model":"tc1"},{"mac":"112233445566","model":"m1"},{"mac":"a1a2a3a4a5a6","model":"a1"}])"));
-  iotcloud::HubBroker broker;
-  iotcloud::HubHome home(broker);
+  iotcloud::HubDeviceBus bus;
+  iotcloud::HubHome home(bus);
   using Home = iotcloud::HubHome;
   const std::string prefix = "phicomm/v2/u_6c6f63616c/";
-  broker.authorize = [&](const std::string &topic, bool) {
-    return topic.compare(0, prefix.size(), prefix) == 0;
-  };
   unsigned serial = 0;
   home.randomHex = [&](size_t n) {
     auto s = std::to_string(++serial);
@@ -107,11 +103,12 @@ int main() {
   assert(home.size == 4 && home.devices[1].aid != home.devices[2].aid);
   auto aid = home.devices[1].aid;
   std::string topic, body;
-  broker.event = [&](const std::string &t, const std::string &b, bool retain,
-                     iotcloud::HubBroker::Origin) {
+  bus.dispatch = [&](const std::string &t, const std::string &b, bool retain,
+                     iotcloud::HubDeviceBus::Origin) {
     assert(!retain);
     topic = t;
     body = b;
+    return true;
   };
   home.tick(100);
   assert(!home.begin(1, Home::Outlet, 0, 1));
