@@ -1,5 +1,7 @@
 #include "a1.h"
 #include "../common/automation.h"
+#include "../common/typed_wire.h"
+extern bool feature_group_control_mp(const char *,const ph_value *);
 
 json_object *a1_json_parse(const char *data, size_t length)
 {
@@ -45,28 +47,29 @@ static bool control_busy(void)
     return busy;
 }
 
-/* Serialize only at the group transport boundary, after the local mutation.
- * With no group, local controls allocate no JSON at all. */
+/* Encode only at the group boundary. The view remains local to this call;
+ * group retry queues copy their own encoded bytes before returning. */
 static void control_broadcast(const a1_control_t *r)
 {
     if (!feature_group_active()) return;
-    uint64_t failures=service_memory_failures();
-    json_object *o=json_object_new_object();
-    if (!o) return;
+    char storage[256];ph_buf buffer;ph_writer writer;
+    if(!phw_init_fixed(&writer,PH_WIRE_MSGPACK,&buffer,storage,sizeof(storage)))return;
+    phw_begin(&writer,NULL,false);
     for(unsigned i=0;i<sizeof(control_fields)/sizeof(control_fields[0]);i++){
         if(!(r->fields&control_fields[i].field))continue;
-        unsigned v=*((const uint8_t *)r+control_fields[i].offset);
-        json_build_object_add(o,control_fields[i].key,control_fields[i].max?json_object_new_int(v):json_object_new_boolean(v));
+        unsigned value=*((const uint8_t *)r+control_fields[i].offset);
+        if(control_fields[i].max)phw_uint(&writer,control_fields[i].key,value);
+        else phw_bool(&writer,control_fields[i].key,value!=0);
     }
-    if(r->fields&A1_SET_MODE)json_build_object_add(o,"mode",json_object_new_string(r->mode==2?"auto":"manual"));
+    if(r->fields&A1_SET_MODE)phw_text(&writer,"mode",r->mode==2?"auto":"manual");
     if(r->fields&A1_SET_COLOR){
-        json_object *color=json_object_new_object();
-        for(unsigned i=0;i<3;i++)json_build_object_add(color,color_keys[i],json_object_new_int(((const uint8_t *)r)[offsetof(a1_control_t,red)+i]));
-        json_build_object_add(o,"color",color);
+        phw_begin(&writer,"color",false);
+        for(unsigned i=0;i<3;i++)phw_uint(&writer,color_keys[i],((const uint8_t *)r)[offsetof(a1_control_t,red)+i]);
+        phw_end(&writer);
     }
-    if(!service_caller_graph_failed(failures))
-        feature_group_control(r->kind==A1_CONTROL_FAN?"fan":r->kind==A1_CONTROL_LIGHT?"light":"child_lock",o);
-    json_object_put(o);
+    phw_end(&writer);size_t length=phw_finish_fixed(&writer);ph_value view;
+    if(length&&phv_parse(PH_WIRE_MSGPACK,storage,length,&view))
+        feature_group_control_mp(r->kind==A1_CONTROL_FAN?"fan":r->kind==A1_CONTROL_LIGHT?"light":"child_lock",&view);
 }
 
 static bool panel_state(bool *on,uint8_t *speed)
