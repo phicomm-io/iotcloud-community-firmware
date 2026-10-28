@@ -264,6 +264,16 @@ class ValidationReuseTests(unittest.TestCase):
                        'test_lan_pairing.py', 'test_auth_storage.py', 'test_hub_mixed_devices.py'):
             self.assertIn("          python3 -m unittest discover -s DAIKIN/tests -p '" + module + "'", ota[1])
 
+    def test_hub_validation_requires_udp_and_management_without_embedded_broker(self):
+        text = (ROOT / reuse.WORKFLOW).read_text()
+        self.assertIn('DAIKIN.tests.test_hub_lan_client DAIKIN.tests.test_hub_lan_home DAIKIN.tests.test_hub_lan_discovery', text)
+        self.assertIn("-p 'test_lan_business.py'", text)
+        self.assertIn('node tests/hub-lan-management.mjs', text)
+        self.assertIn('tests/run_mqtt_v2.sh', text)  # external-broker SDK coverage remains
+        self.assertNotIn('tests/hub/console.cpp', text)
+        self.assertNotIn('node tests/hub-mqtt-interop.mjs', text)
+        self.assertNotIn('HubTests.test_actual_sdk_workers_share_broker_and_home_assistant', text)
+
     def assert_release_scheduling(self, text):
         """Guard the real YAML condition; do not emulate GitHub's scheduler."""
         job = re.search(r'^  release:\n(.*?)(?=^  [\w-]+:|\Z)', text, re.M | re.S)

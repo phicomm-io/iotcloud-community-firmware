@@ -25,12 +25,12 @@ JOBS = {
     'm1 firmware variants': ('Build full firmware', 'Build firmware without frontend resources'),
     'DAIKIN ESP32 full firmware': ('Test actual OTA handler, MessagePack wire and device sessions', 'Test ESP32 protocol and actual embedded page'),
     'DAIKIN ESP32 hub firmware': ('Test actual OTA handler, MessagePack wire and device sessions',
-        'Check out pinned ESP-IDF NVS host-test sources', 'Test hub broker, transports and bounded storage',
-        'Test production HAP value handling and byte output', 'Test locked hub frontend with production broker'),
+        'Check out pinned ESP-IDF NVS host-test sources', 'Test hub UDP, device bus and bounded storage',
+        'Test production HAP value handling and byte output', 'Test locked hub LAN management frontend'),
     'Lightweight release checks': ('Test signed OTA vectors and Flash faults', 'Test OTA release tooling and Worker',
         'Test production TLS transport with real TLS and sanitizers'),
     'Binding and automation host scenarios': ('Test engines, binding runtime and WebUI syntax',
-        'Test TMCP using real SDK workers and an isolated broker', 'Test actual SDK workers against the embedded hub broker'),
+        'Test TMCP using real SDK workers and an isolated broker', 'Test local LAN codec and client lifecycle'),
     'Validate complete test evidence': ('Require all builds and current or reusable tests',),
 }
 

@@ -349,14 +349,16 @@ jobs:
             components/esp_rom/linux
             components/esp_common/include
             components/log/include
-      - name: Test hub broker, transports and bounded storage
+      - name: Test hub UDP, device bus and bounded storage
         if: matrix.variant == 'hub' && needs.frontend.outputs.reuse-heavy-validation != 'true'
         env:
           DAIKIN_NVS_IDF_SOURCE: ${{ github.workspace }}/build/esp-idf-nvs
         run: |
-          python3 -m pip install paho-mqtt==2.1.0
           SANITIZE=1 python3 -m unittest discover -s DAIKIN/tests -p 'test_hub*.py'
+          # Explicit modules prevent a missing UDP lane from passing an empty glob.
+          SANITIZE=1 python3 -m unittest DAIKIN.tests.test_hub_lan_client DAIKIN.tests.test_hub_lan_home DAIKIN.tests.test_hub_lan_discovery
           python3 -m unittest discover -s DAIKIN/tests -p 'test_native_publish.py'
+          python3 -m unittest discover -s DAIKIN/tests -p 'test_lan_business.py'
           for scenario in home http relay service storage; do
             c++ -std=c++11 -Wall -Wextra -Werror -fsanitize=address,undefined \
               -fno-omit-frame-pointer -fno-pie -no-pie -IDAIKIN/include \
@@ -388,29 +390,22 @@ jobs:
           ref: ${{ steps.hub-frontend.outputs.commit }}
           path: build/hub-frontend-source
           persist-credentials: false
-      - name: Test locked hub frontend with production broker
+      - name: Test locked hub LAN management frontend
         if: matrix.variant == 'hub' && needs.frontend.outputs.reuse-heavy-validation != 'true'
         env:
           FIRMWARE_ROOT: ${{ github.workspace }}
-          HUB_TEST_CONSOLE: ${{ github.workspace }}/build/daikin-hub-console
           HUB_TEST_DIST: ${{ github.workspace }}/build/hub-ci-dist
-          HUB_MQTT_REPORT: ${{ github.workspace }}/build/hub-mqtt-interop.json
           VITE_HUB: '1'
           VITE_BASE_PATH: /iotcloud/
         working-directory: build/hub-frontend-source/frontend
         run: |
-          test -f tests/hub-console.mjs
-          test -f tests/hub-mqtt-interop.mjs
+          test -f tests/hub-lan-management.mjs
           npm ci
           npx playwright install --with-deps chromium
           npm run build -- --outDir "$HUB_TEST_DIST" --emptyOutDir
-          c++ -std=c++11 -g -Wall -Wextra -Werror \
-            -I"$FIRMWARE_ROOT/DAIKIN/include" \
-            -I"$FIRMWARE_ROOT/DAIKIN/.pio/libdeps/bry88ab-hub/ArduinoJson/src" \
-            "$FIRMWARE_ROOT/DAIKIN/tests/hub/console.cpp" \
-            -lcrypto -pthread -o "$HUB_TEST_CONSOLE"
-          node tests/hub-console.mjs
-          node tests/hub-mqtt-interop.mjs
+          # Browser API fixtures cover management UX; production UDP and HAP
+          # business paths run separately above, not through a simulated broker.
+          node tests/hub-lan-management.mjs
       - name: Collect ESP release assets
         run: |
           mkdir -p release
@@ -769,8 +764,8 @@ jobs:
           python3 -m pip install paho-mqtt==2.1.0 Jinja2==3.1.6
           tests/build_host.sh
           tests/run_mqtt_v2.sh
-      - name: Test actual SDK workers against the embedded hub broker
-        run: HUB_TEST_WORKERS=1 python3 -m unittest DAIKIN.tests.test_hub_mqtt.HubTests.test_actual_sdk_workers_share_broker_and_home_assistant
+      - name: Test local LAN codec and client lifecycle
+        run: SANITIZE=1 python3 -m unittest tests.test_lan_wire tests.test_lan_client
 
   validation-evidence:
     name: Validate complete test evidence
