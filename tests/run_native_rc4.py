@@ -20,7 +20,7 @@ MODULES = (
     'test_backup', 'test_m1_config_recovery', 'test_m1_storage_v10',
     'test_lan_wire', 'test_lan_client', 'test_group_mp', 'test_sensor_grant_mp', 'test_native_udp_runtime',
     'test_release_manifest_mp', 'test_mqtt_ota_mp', 'test_native_mqtt',
-    'test_bemfa_mp', 'test_ha_json', 'test_ha_codec_shared', 'test_runtime_mqtt_mp',
+    'test_bemfa_mp', 'test_ha_json', 'test_ha_codec_shared', 'test_ha_subscription', 'test_runtime_mqtt_mp',
     'test_sensor_producers_mp', 'test_sensor_mp', 'test_m1_display_mp',
     'test_tc1_native_sdk', 'test_easylink_bonjour', 'test_no_json_objects',
     'test_shared_mqtt', 'test_mqtt_preflight_deferral', 'test_mqtt_birth_progress',
