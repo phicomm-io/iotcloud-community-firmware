@@ -97,7 +97,10 @@ bool ph_auth_password_changed(ph_auth_state *);
 /* Serialize configuration and pairing changes in one durable transaction.
  * commit runs under the auth lock and must atomically persist the supplied
  * trailer together with new_password. It may take the product config lock,
- * but must not re-enter auth. On false, durable and RAM config stay unchanged.
+ * but must not re-enter auth. On false, core auth state is not published.
+ * The adapter must keep config coherent; if the durable result is uncertain,
+ * it must enter recovery and reject authorization, including queued contexts,
+ * until storage is reloaded. False alone does not prove storage unchanged.
  * force_revoke is used by backup restore, even when its password is unchanged. */
 typedef bool (*ph_auth_commit_fn)(void *,const ph_auth_store *);
 bool ph_auth_credential_commit(ph_auth_state *,const char *new_password,bool force_revoke,
