@@ -1,6 +1,7 @@
 #pragma once
 /* Legacy JSON adapter; binary producers include firmware_variant_defs.h. */
 #include "firmware_variant_defs.h"
+#include "json_build.h"
 static inline void phicomm_variant_json(json_object *o)
 {
 #define STATUS_INT(k,v) json_build_object_add(o,k,json_object_new_int(v))
