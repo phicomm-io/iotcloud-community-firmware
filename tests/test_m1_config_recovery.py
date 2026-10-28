@@ -85,6 +85,7 @@ void service_event(const char *level,const char *domain,const char *event) {
             product += function(main, 'void appRestoreDefault_callback(')
             product += '#define AUTH_STORE (((app_storage_t *)app_config)->local_auth)\n'
             product += 'ph_auth_state *device_local_auth(void) { return NULL; }\n'
+            product += main[main.index('typedef struct {const m1_config_t *config;'):main.index('void m1_co2_config_get(')]
             product += function(main, 'static bool m1_reset_commit(')
             product += function(main, 'bool m1_reset(')
             gate = main.index('    if (app_config->magic != M1_CONFIG_MAGIC')
