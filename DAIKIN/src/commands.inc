@@ -76,7 +76,7 @@ static void state(JsonObject out){
     if(readings[i].received)s["age_ms"]=uint32_t(now-readings[i].at);else s["age_ms"]=nullptr;
   }
 }
-static const char *actions[]={"status.get","config.get","capabilities.get","binding.status.get","config.set","wifi.scan","wifi.scan.get","indicator.set","co2.calibrate","system.reboot","system.reset"};
+static const char *actions[]={"status.get","config.get","capabilities.get","binding.status.get","lan.pair","lan.pair.get","lan.unpair","config.set","wifi.scan","wifi.scan.get","indicator.set","co2.calibrate","system.reboot","system.reset"};
 static void capabilities(JsonObject out){
   out["device_id"]=deviceId;out["model"]="daikin";out["firmware_version"]=version;out["variant"]=DAIKIN_VARIANT;out["firmware_variant"]=DAIKIN_VARIANT;out["hardware_model"]="BRY88AX151K";out["protocol"]=2;
   out["config_backup"]=1;out["config_recovery"]=configRecovery;out["device_language"]="zh-CN,en";out["mqtt_protocol"]="tmcp";out["mqtt_protocol_version"]=2;

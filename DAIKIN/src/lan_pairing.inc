@@ -67,30 +67,10 @@ static void pollLanPairing(){
     size_t n=phw_finish_fixed(&writer);job.sent=millis();job.attempts++;if(n)lanSend(job.ip,bytes,n);
   }
 }
-// Successful unpair ACKs are retransmittable for one bounded challenge only.
-struct LanReceipt {char peer[13]={},ip[16]={};uint8_t nonce[16]={},token[16]={};uint32_t epoch=0,at=0;bool used=false;};
-static LanReceipt lanReceipts[4];
-static bool lanReceiptRequest(const ph_value *root,char peer[13],uint8_t nonce[16],uint8_t token[16]){
-  ph_value value;const void *bytes;size_t n;
-  if(!phv_keys(root,"|op||src||token||nonce|")||!phv_get(root,"op",&value)||!phv_equal_text(&value,"auth_unpair")||!lan_auth_peer(root,peer))return false;
-  if(!phv_get(root,"nonce",&value)||!phv_bytes(&value,&bytes,&n)||n!=16)return false;memcpy(nonce,bytes,16);
-  if(!phv_get(root,"token",&value)||!phv_bytes(&value,&bytes,&n)||n!=16)return false;memcpy(token,bytes,16);return true;
-}
 static bool lanPairPacket(const ph_value *root,const char *ip){
   if(configRecovery||!localAuthReady)return true;
   initLanClient();if(lanUnpairReply(root,ip))return true;if(lc_response(&lanClient,&lanOps,root,ip))return true;
-  char peer[13];uint8_t nonce[16],token[16];bool unpair=lanReceiptRequest(root,peer,nonce,token);
-  for(auto &receipt:lanReceipts){
-    if(receipt.used&&(receipt.epoch!=lanOps.epoch()||uint32_t(millis()-receipt.at)>=30000))receipt=LanReceipt();
-    if(unpair&&receipt.used&&!strcmp(receipt.peer,peer)&&!strcmp(receipt.ip,ip)&&!memcmp(receipt.nonce,nonce,16)&&!memcmp(receipt.token,token,16)){
-      char output[128];ph_buf buffer;ph_writer writer;phw_init_fixed(&writer,PH_WIRE_MSGPACK,&buffer,output,sizeof(output));phw_begin(&writer,nullptr,false);phw_text(&writer,"op","auth_unpair");phw_text(&writer,"code","ok");phw_text(&writer,"src",deviceId.c_str());phw_bytes_value(&writer,"nonce",nonce,16);phw_end(&writer);size_t n=phw_finish_fixed(&writer);if(n)lanSend(ip,output,n);return true;
-    }
-  }
   char bytes[384];ph_buf buffer;ph_writer writer;if(!phw_init_fixed(&writer,PH_WIRE_MSGPACK,&buffer,bytes,sizeof(bytes)))return true;
   if(!feature_lan_pair(root,&writer,ip))return false;size_t length=phw_finish_fixed(&writer);
-  if(length&&unpair){ph_value reply,code;if(phv_parse(PH_WIRE_MSGPACK,bytes,length,&reply)&&phv_get(&reply,"code",&code)&&phv_equal_text(&code,"ok")){
-    LanReceipt *slot=&lanReceipts[0];for(auto &receipt:lanReceipts)if(!receipt.used){slot=&receipt;break;}
-    strcpy(slot->peer,peer);strcpy(slot->ip,ip);memcpy(slot->nonce,nonce,16);memcpy(slot->token,token,16);slot->epoch=lanOps.epoch();slot->at=millis();slot->used=true;
-  }}
   if(length)lanSend(ip,bytes,length);memset(bytes,0,sizeof(bytes));return true;
 }

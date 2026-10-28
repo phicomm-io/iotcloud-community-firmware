@@ -90,7 +90,7 @@ int main(){
  pollLanPairing();request=sensorUdp.outgoing;response=remoteReply(remoteAuth,request);deliver(response);assert(lc_find(&lanClient,"aabbccddee03",false)->phase==LC_READY);
  // Reboot destroys RAM token, reloads remote key and resumes automatically.
  lanClient=lc_state();pollLanPairing();assert(lc_find(&lanClient,"aabbccddee03",false)->phase==LC_RESUME);request=sensorUdp.outgoing;response=remoteReply(remoteAuth,request);deliver(response);assert(lc_find(&lanClient,"aabbccddee03",false)->phase==LC_READY);
- assert(lanUnpairStart("aabbccddee03",&code));pollLanPairing();request=sensorUdp.outgoing;response=remoteReply(remoteAuth,request);deliver(response);assert(!ph_auth_remote_get(&localAuth,"aabbccddee03",remoteKey,&scopes));assert(!strcmp(lc_find(&lanClient,"aabbccddee03",false)->code,"unpaired"));
+ assert(lanUnpairStart("aabbccddee03",&code));pollLanPairing();request=sensorUdp.outgoing;response=remoteReply(remoteAuth,request);/* drop first successful ACK */now+=1000;pollLanPairing();assert(sensorUdp.outgoing==request);response=remoteReply(remoteAuth,sensorUdp.outgoing);deliver(response);assert(!ph_auth_remote_get(&localAuth,"aabbccddee03",remoteKey,&scopes));assert(!strcmp(lc_find(&lanClient,"aabbccddee03",false)->code,"unpaired"));
  configRecovery=true;assert(deliver(encode(read)).empty());assert(deliver(pair).empty());assert(deliver(authPacket("auth_resume",peer,"key",key.c_str())).empty());configRecovery=false;
  puts("production DAIKIN native v3/auth pairing interop PASS");
 }

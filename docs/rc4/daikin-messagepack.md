@@ -77,6 +77,52 @@ rollback for full and hub. The LAN fixture calls the actual MiCO encoder,
 DAIKIN pollSessions, shared decoder, sender and receiver. It checks unsigned
 counter boundaries, binary tokens, fixed units, invalid fields, empty/configured
 passwords, key-vs-token distinction, durable resume, outgoing unpair and lost ACK.
-Physical NVS capacity/power-loss verification and physical device pairing remain
-separate pending acceptance gates. HAP reset spans another namespace and is not
+The official IDF NVS + stock-size NOR host model also verifies capacity and
+byte-by-byte interrupted writes. Physical device pairing and physical power-cut
+acceptance remain untested. HAP reset spans another namespace and is not
 made atomic with the management blob by this change.
+
+## NVS host gate and rc.3 comparison
+
+The NOR model uses the repository partition CSV’s 20 KiB NVS size and official IDF 4.4.7 sources at
+`38eeba213aa695aabfd6d89aa9f5078dbe5a94c3`. The five compiled NVS translation
+units and ROM CRC source were compared byte-for-byte with that official commit.
+Flash reads, writes and erases are modeled; this is not a device power-cut test.
+This does not establish a deployed device’s partition table: a retained older
+16 KiB layout would need its own capacity acceptance.
+WiFi occupies 512 bytes and a separate HAP namespace occupies 2048 bytes.
+
+| Implementation | Legal JSON-equivalent config | Pair records | Durable blob | Three updates + reboots |
+| --- | ---: | ---: | ---: | --- |
+| rc.3 writer from `6950338` | 6144 B | 0 (feature absent) | 6144 B | PASS |
+| Initial rc.4 JSON envelope | 6144 B | 12 incoming + 12 outgoing | 6936 B | Second update safely rejected |
+| rc.4 MP envelope | 6144 B | 12 incoming + 12 outgoing | 6177 B | PASS |
+
+The legal fixture includes 12 devices, eight Bemfa mappings, eight bridge
+mappings, a 32-byte owner, 63-byte device name, and valid topic lengths selected
+to reach the unchanged 6144-byte limit. No arbitrary padding is used in this
+legal comparison. Full also sustains twelve updates at its 3999-byte writer
+limit with both full key tables and the same WiFi/HAP pressure.
+
+A separate nonbusiness padding probe deliberately removes the format savings:
+hub's second 6144-byte padding update is rejected and the previous config and
+keys remain readable. This failure is retained as a capacity boundary, not
+reported as a successful maximum business configuration.
+
+For full and hub, every byte cut of first password+key revocation (969 cases)
+and update (965 cases) reboots into matching old config+keys or matching new
+config+empty keys: 3868 cases total. Failed writes, reboot and reset also pass.
+The envelope now stores MP (version 2) while reading prior version-1 JSON
+blobs; exported backup files remain JSON. Fresh `{}` configurations are tested
+after `shrinkToFit`, so the first pair can grow `_version` safely.
+
+Reproduce the optional NOR suite with official source prepared locally:
+
+```sh
+DAIKIN_NVS_IDF_SOURCE=/path/to/esp-idf-4.4.7 \
+DAIKIN_NVS_RC3_COMPARE=1 \
+python3 -m unittest DAIKIN.tests.test_hub_config_storage -v
+```
+
+The rc.3 comparison option requires commit `6950338` in the local Git history.
+Without the optional IDF source, this suite reports SKIP, not PASS.

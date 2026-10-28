@@ -7,9 +7,9 @@
 #include <cassert>
 #include <cstring>
 #include <cstdio>
-struct String:std::string {using std::string::string;String(const std::string&s):std::string(s){}bool reserve(size_t n){std::string::reserve(n);return true;}size_t write(uint8_t c){push_back(char(c));return 1;}size_t write(const uint8_t*p,size_t n){append(reinterpret_cast<const char*>(p),n);return n;}};
+struct String:std::string {using std::string::string;String(const std::string&s):std::string(s){}bool reserve(size_t n){std::string::reserve(n);return true;}bool concat(const char*p,size_t n){append(p,n);return true;}size_t write(uint8_t c){push_back(char(c));return 1;}size_t write(const uint8_t*p,size_t n){append(reinterpret_cast<const char*>(p),n);return n;}};
 namespace ArduinoJson {template<>struct Converter<String>{static void toJson(const String&s,JsonVariant v){v.set(static_cast<const std::string&>(s));}};}
-static DynamicJsonDocument config(16384);static bool configRecovery=false,localAuthReady=false;static ph_auth_state localAuth;static ph_auth_store loadedAuthStore;static char webPassword[33]={};
+static const size_t configCapacity=16384;static DynamicJsonDocument config(configCapacity);static bool configRecovery=false,localAuthReady=false;static ph_auth_state localAuth;static ph_auth_store loadedAuthStore;static char webPassword[33]={};
 static int authMux;
 #define portENTER_CRITICAL(m) ((void)(m))
 #define portEXIT_CRITICAL(m) ((void)(m))
@@ -30,7 +30,7 @@ struct Preferences {
 static String legacy="{}";static String loadLegacyConfigText(){return legacy;}
 #include "../src/auth_storage.inc"
 #include "transaction.inc"
-static void boot(){localAuthReady=false;configRecovery=false;config=DynamicJsonDocument(16384);String wire=loadAuthConfigText();auto error=deserializeJson(config,wire.c_str(),wire.length());if(error)fprintf(stderr,"boot wire %s error %s\n",wire.c_str(),error.c_str());assert(!error);updatePassword();initLocalAuth();assert(localAuthReady&&!configRecovery);}
+static void boot(){localAuthReady=false;configRecovery=false;config=DynamicJsonDocument(16384);String wire=loadAuthConfigText();auto error=deserializeJson(config,wire.c_str(),wire.length());if(error)fprintf(stderr,"boot wire %s error %s\n",wire.c_str(),error.c_str());assert(!error);config.shrinkToFit();updatePassword();initLocalAuth();assert(localAuthReady&&!configRecovery);}
 int main(){
  (void)hubRestartPending;boot();char key[33],remote[33],token[33];
  assert(ph_auth_pair(&localAuth,"","aabbccddee01",2,key));assert(ph_auth_pair_resume(&localAuth,"aabbccddee01",key,token));
@@ -46,5 +46,7 @@ int main(){
  // The corrupt authoritative blob never falls back to legacy old credentials.
  legacy="{\"auth\":{\"password\":\"old-password\"}}";assert(loadAuthConfigText()=="invalid");prefs.values=original;boot();assert(ph_auth_pair_resume(&localAuth,"aabbccddee01",key,token)==false);
  assert(resetConfiguration());boot();assert(localAuth.store.count==0&&localAuth.store.remote_count==0&&String(webPassword)=="");
+ // Migrate the previously integrated v1 JSON+auth envelope without losing keys.
+ const std::string oldJson="{\"_version\":1,\"auth\":{\"password\":\"adminfjr\"}}";AuthConfigHeader blobHeader{authConfigMagic,1,0,uint32_t(oldJson.size())};ph_auth_store oldStore;ph_auth_store_empty(&oldStore);oldStore.count=oldStore.remote_count=1;strcpy(oldStore.pairs[0].peer,"aabbccddee11");strcpy(oldStore.remote[0].peer,"aabbccddee12");memset(oldStore.pairs[0].key,0x6b,16);memset(oldStore.remote[0].key,0x6b,16);oldStore.pairs[0].scopes=oldStore.remote[0].scopes=2;std::string oldBlob(sizeof(blobHeader)+sizeof(oldStore)+oldJson.size(),0);memcpy(&oldBlob[0],&blobHeader,sizeof(blobHeader));memcpy(&oldBlob[sizeof(blobHeader)],&oldStore,sizeof(oldStore));memcpy(&oldBlob[sizeof(blobHeader)+sizeof(oldStore)],oldJson.data(),oldJson.size());prefs.values[authConfigKey]=oldBlob;boot();assert(String(webPassword)=="adminfjr");next=DynamicJsonDocument(16384);next.set(config);assert(saveConfig(next));memcpy(&blobHeader,prefs.values[authConfigKey].data(),sizeof(blobHeader));assert(blobHeader.version==2);boot();assert(String(webPassword)=="adminfjr");assert(ph_auth_pair_resume(&localAuth,"aabbccddee11","6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b",token));assert(ph_auth_remote_get(&localAuth,"aabbccddee12",remote,&scopes)&&!strcmp(remote,"6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b"));
  puts("production atomic config/pair storage PASS");
 }
