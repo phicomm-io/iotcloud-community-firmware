@@ -72,10 +72,12 @@
 
 /************************************************************************
  * Add service _easylink._tcp._local. for discovery */
-#define MICO_SYSTEM_DISCOVERY_ENABLE  
+/* Legacy _easylink._tcp advertises the removed SDK :8000 JSON server. */
+/* #define MICO_SYSTEM_DISCOVERY_ENABLE */
 
 /************************************************************************
  * MiCO TCP server used for configuration and ota. */
-#define MICO_CONFIG_SERVER_ENABLE 
+/* Native MP WebUI owns provisioning; no legacy SDK JSON server on :8000. */
+/* #define MICO_CONFIG_SERVER_ENABLE */
 #define MICO_CONFIG_SERVER_PORT    8000
 
