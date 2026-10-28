@@ -6,6 +6,7 @@ import tempfile
 import unittest
 
 from tests.test_http_json_budget import function
+from tests.m1_mqtt_fixture import observe_discovery
 from tests import test_shared_mqtt as shared_mqtt
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,6 +36,7 @@ class DisplayMqttSession(unittest.TestCase):
         paho = paho.replace('append(ack,sizeof(ack));\n }\n if(tx[0]>>4==3)',
             'if(diagnostic_ack_mode==2)ack[3]^=1;\n'
             '  if(diagnostic_ack_mode!=3)append(ack,sizeof(ack));\n }\n if(tx[0]>>4==3)')
+        paho = observe_discovery(paho)
         cls.source = r'''
 static unsigned diagnostic_ack_mode;
 #define main existing_paho_scenarios
@@ -43,6 +45,9 @@ static unsigned diagnostic_ack_mode;
 #undef publish
 #undef main
 #include "M1/display_source.h"
+#include "common/typed_wire.h"
+#define M1_VERSION "1.0.0-rc.4-test"
+#define PHICOMM_FIRMWARE_VARIANT "m1-test"
 #define FEATURE_TOPIC_MAX 512
 typedef struct {
  char mqtt_host[128],mqtt_user[64],mqtt_password[128],name[64];
@@ -60,7 +65,7 @@ static struct {bool wifi_connected,mqtt_connected,mcu_sensor_details,mqtt_cleanu
  unsigned mqtt_status,mqtt_errors;char mqtt_last_error[96];} m1_state;
 static unsigned m1_lock;
 static bool session_need_availability,session_subscribed,rediscover,cleanup_pending;
-static bool discovery_deferred,co2_discovered,pressure_discovered,particles_discovered;
+static bool discovery_deferred,co2_discovered,pressure_discovered,particles_discovered,sensor_metadata,sensor_started;
 static unsigned discovery_language,discovery_retry_at,discovery_index,initial_index;
 static unsigned connect_sequence,co2_sequence,pressure_sequence,sequence,particles_at,snapshot_at;
 static int old_co2_fresh,old_pressure_fresh,old_brightness,old_fresh;
@@ -78,19 +83,22 @@ static void mqtt_state_get(mqtt_state_t *out){out->wifi_connected=m1_state.wifi_
 static void m1_display_source_mqtt_reset(void){resets++;cache_valid=false;}
 static void feature_mqtt_session(const mqtt_account_t *a){(void)a;m1_display_source_mqtt_reset();}
 static bool feature_mqtt_input(const char *t,const void *p,size_t n,bool retained){
- (void)t;(void)p;(void)n;assert(!retained);inputs++;cache_valid=true;return true;
+ assert(strstr(t,"/sensor/123456abcdef/state"));ph_value body,schema;int64_t version;
+ assert(phv_parse(PH_WIRE_MSGPACK,p,n,&body)&&phv_get(&body,"schema",&schema)&&phv_int(&schema,&version)&&version==3);
+ assert(memchr(p,0,n));assert(!retained);inputs++;cache_valid=true;return true;
 }
 static void feature_mqtt_service(int (*p)(const char*,const char*,bool),bool connected){(void)p;(void)connected;}
 static int publish(const char *t,const char *p,bool r){(void)t;(void)p;(void)r;return 0;}
 static int publish_leaf(const char *t,const char *p,bool r){return publish(t,p,r);}
-static int service_mqtt_capabilities(int (*p)(const char*,const char*,bool),const mqtt_account_t *a){(void)p;(void)a;capabilities++;return 0;}
-static void service_mqtt_input(int (*p)(const char*,const char*,bool),const mqtt_account_t *a,const void *d,size_t n,bool r){(void)p;(void)a;(void)d;(void)n;(void)r;}
+static int publish_bytes(const char *t,const void *p,size_t n,bool r){assert(n);(void)t;(void)p;(void)r;return 0;}
+static int service_mqtt_capabilities(int (*p)(const char*,const void*,size_t,bool),const mqtt_account_t *a){(void)p;(void)a;capabilities++;return 0;}
+static void service_mqtt_input(int (*p)(const char*,const void*,size_t,bool),const mqtt_account_t *a,const void *d,size_t n,bool r){(void)p;(void)a;(void)d;(void)n;(void)r;}
 static void service_mqtt_clear(void){}
 static void ota_job_poll(void){}
 static bool ota_job_active(void){return false;}
 static void ota_command(const char *b,const void *p,size_t n,bool r){(void)b;(void)p;(void)n;(void)r;}
 static void ota_forget(void){}
-static void brightness_command(MessageData *d){(void)d;assert(0);}
+static void ha_command_input(const void *p,size_t n){(void)p;(void)n;assert(0);}
 static unsigned device_language_get(void){return 0;}
 static int cleanup_all(void){return 0;}
 static int mqtt_cleanup_reconnect(Client *c,mqtt_account_t *a,const char *h,unsigned p,const char *u,const char *s,int (*f)(void)){
@@ -100,8 +108,14 @@ int m1_mqtt_read(Network *n,unsigned char *p,int bytes,int timeout){return read_
 static bool same_connection(const m1_config_t*,const m1_config_t*);
 /* CALLBACKS */
 static void receive(void){
- MQTTString topic=MQTTString_initializer;topic.cstring=co2_filter;
- MQTTMessage msg={0};msg.qos=QOS1;msg.payload="{}";msg.payloadlen=2;
+ char topic_bytes[512];assert(mqtt_aux(&account,"sensor","123456abcdef/state",topic_bytes,sizeof(topic_bytes)));
+ MQTTString topic=MQTTString_initializer;topic.cstring=topic_bytes;
+ unsigned char bytes[256];ph_writer writer;ph_buf buffer;
+ assert(phw_init_fixed(&writer,PH_WIRE_MSGPACK,&buffer,bytes,sizeof(bytes)));
+ phw_begin(&writer,NULL,false);phw_int(&writer,"schema",3);phw_text(&writer,"device_id","123456abcdef");
+ phw_u32(&writer,"boot",1);phw_u32(&writer,"sequence",1);phw_u32(&writer,"descriptor_revision",1);
+ phw_begin(&writer,"sensors",false);phw_end(&writer);phw_end(&writer);size_t length=phw_finish_fixed(&writer);assert(length);
+ MQTTMessage msg={0};msg.qos=QOS1;msg.payload=bytes;msg.payloadlen=length;
  MessageData data={&msg,&topic};native_command(&data);
 }
 static void configure(bool mqtt){
@@ -186,6 +200,7 @@ int main(int argc,char **argv){
   assert(session_prepare(NULL,&spec)==PH_MQTT_PREPARE_WAIT&&!cache_valid&&!session_subscribed);
  }
  if(mode>10)assert(0);
+ if(mode!=10)assert(fixture_discoveries>=ready_count);
  printf("M1 display session case %u PASS filters=%u ready=%u subscribe_errors=%u last_packet=%u\n",mode,plans[0],ready_count,sub_errors,last_subscribe_bytes);
  return 0;
 }
@@ -204,7 +219,8 @@ int main(int argc,char **argv){
             '-I' + str(protocol), '-I' + str(protocol / 'mico'), '-I' + str(protocol / 'MQTTPacket'),
             '-DMAX_MESSAGE_HANDLERS=12', '-DPH_EXPECTED_MESSAGE_HANDLERS=12',
             str(path), str(ROOT / 'common/mqtt/core.c'), str(ROOT / 'common/mqtt/client.c'),
-            str(ROOT / 'common/mqtt/session.c'), str(protocol / 'MQTTClient.c'),
+            str(ROOT / 'common/mqtt/session.c'), str(ROOT / 'common/typed_wire.c'),
+            str(ROOT / 'common/wire_buffer.c'), str(protocol / 'MQTTClient.c'),
             *map(str, sorted((protocol / 'MQTTPacket').glob('*.c'))),
             '-Wl,--wrap=malloc,--wrap=free,--wrap=realloc,--wrap=calloc,--wrap=strdup',
             '-o', str(binary)], check=True, timeout=60)
