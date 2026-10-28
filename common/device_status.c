@@ -320,9 +320,20 @@ void device_diagnostics_mp(ph_writer *w,const device_status_t *s,const device_st
 {
  if(!w)return;
  if(!s||!f||!(s->captured&STATUS_DIAGNOSTIC)){w->failed=true;return;}
- char raw[7],frame[41];static const char hex[]="0123456789abcdef";
+ /* Product builds already fix this model for the business status visitor.
+  * Apply the same selection to diagnostics: omit unreachable field emitters
+  * and do not format another product's union member on every request. */
+#if !defined(PHICOMM_STATUS_MODEL) || PHICOMM_STATUS_MODEL != 2
+ static const char hex[]="0123456789abcdef";
+#endif
+#if !defined(PHICOMM_STATUS_MODEL) || PHICOMM_STATUS_MODEL == 0
+ char raw[7];
  for(unsigned i=0;i<3;i++){unsigned b=f->model.a1.panel_raw[i];raw[i*2]=hex[b>>4];raw[i*2+1]=hex[b&15];}raw[6]=0;
+#endif
+#if !defined(PHICOMM_STATUS_MODEL) || PHICOMM_STATUS_MODEL == 1
+ char frame[41];
  for(unsigned i=0;i<20;i++){unsigned b=f->model.m1.last_frame[i];frame[i*2]=hex[b>>4];frame[i*2+1]=hex[b&15];}frame[40]=0;
+#endif
  phw_begin(w,NULL,false);phw_u32(w,"schema",PH_DIAGNOSTICS_SCHEMA);
  phw_begin(w,"fields",true);
  if(f->runtime.reset_valid){diagnostic_field(w,PH_DIAG_LAST_RESET_REASON);phw_i32(w,NULL,f->runtime.reset_reason);phw_end(w);}
@@ -332,6 +343,7 @@ void device_diagnostics_mp(ph_writer *w,const device_status_t *s,const device_st
  if(f->runtime.memory_valid){diagnostic_field(w,PH_DIAG_ALLOCATED_MEMORY);phw_i32(w,NULL,f->runtime.allocated_memory);phw_end(w);}
  if(f->runtime.memory_valid){diagnostic_field(w,PH_DIAG_FREE_MEMORY_CHUNKS);phw_i32(w,NULL,f->runtime.free_memory_chunks);phw_end(w);}
  if(f->runtime.memory_valid){diagnostic_field(w,PH_DIAG_MIN_OBSERVED_FREE_MEMORY);phw_i32(w,NULL,f->runtime.minimum_free);phw_end(w);}
+#if !defined(PHICOMM_STATUS_MODEL) || PHICOMM_STATUS_MODEL != 2
  if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_RESET_REASON);phw_text(w,NULL,f->watchdog.reset_name);phw_end(w);}
  if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_RESET_REASON_RAW);phw_i32(w,NULL,f->watchdog.reset_raw);phw_end(w);}
  if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_WATCHDOG_ENABLED);phw_bool(w,NULL,f->watchdog.enabled);phw_end(w);}
@@ -366,10 +378,14 @@ void device_diagnostics_mp(ph_writer *w,const device_status_t *s,const device_st
  if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_OTA_IMAGE_LENGTH);phw_i32(w,NULL,f->ota.image_length);phw_end(w);}
  if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_OTA_RELEASE_COUNTER);phw_text(w,NULL,f->ota.release_counter);phw_end(w);}
  if(s->model!=DEVICE_TC1){diagnostic_field(w,PH_DIAG_OTA_VERSION);phw_text(w,NULL,f->ota.version);phw_end(w);}
+#endif
+#if !defined(PHICOMM_STATUS_MODEL) || PHICOMM_STATUS_MODEL == 0
  if(s->model==DEVICE_A1){diagnostic_field(w,PH_DIAG_PANEL_ERRORS);phw_i32(w,NULL,f->model.a1.panel_errors);phw_end(w);}
  if(s->model==DEVICE_A1){diagnostic_field(w,PH_DIAG_HARDWARE_ERRORS);phw_i32(w,NULL,f->model.a1.hardware_errors);phw_end(w);}
  if(s->model==DEVICE_A1){diagnostic_field(w,PH_DIAG_PANEL_LAST_ERROR);phw_i32(w,NULL,f->model.a1.panel_last_error);phw_end(w);}
  if(s->model==DEVICE_A1){diagnostic_field(w,PH_DIAG_PANEL_RAW);phw_text(w,NULL,raw);phw_end(w);}
+#endif
+#if !defined(PHICOMM_STATUS_MODEL) || PHICOMM_STATUS_MODEL == 1
  if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_RX_FRAMES);phw_i32(w,NULL,f->model.m1.rx_frames);phw_end(w);}
  if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_UNKNOWN_FRAMES);phw_i32(w,NULL,f->model.m1.unknown_frames);phw_end(w);}
  if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_UART_ERRORS);phw_i32(w,NULL,f->model.m1.uart_errors);phw_end(w);}
@@ -392,13 +408,10 @@ void device_diagnostics_mp(ph_writer *w,const device_status_t *s,const device_st
  if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_BAROMETER_ERRORS);phw_i32(w,NULL,s->sensor.m1.barometer.errors);phw_end(w);}
  if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_BAROMETER_ATTEMPTS);phw_i32(w,NULL,s->sensor.m1.barometer.attempts);phw_end(w);}
  if(s->model==DEVICE_M1){diagnostic_field(w,PH_DIAG_BAROMETER_LAST_ERROR);phw_i32(w,NULL,s->sensor.m1.barometer.last_error);phw_end(w);}
-#ifdef PHICOMM_BEMFA
+#endif
+#if defined(PHICOMM_BEMFA) && (!defined(PHICOMM_STATUS_MODEL) || PHICOMM_STATUS_MODEL != 1)
  if(s->model!=DEVICE_M1){diagnostic_field(w,PH_DIAG_BEMFA_ERRORS);phw_i32(w,NULL,s->network.bemfa_errors);phw_end(w);}
-#endif
-#ifdef PHICOMM_BEMFA
  if(s->model!=DEVICE_M1){diagnostic_field(w,PH_DIAG_BEMFA_LAST_STAGE);phw_i32(w,NULL,s->network.bemfa_last_stage);phw_end(w);}
-#endif
-#ifdef PHICOMM_BEMFA
  if(s->model!=DEVICE_M1){diagnostic_field(w,PH_DIAG_BEMFA_LAST_ERROR);phw_i32(w,NULL,s->network.bemfa_last_error);phw_end(w);}
 #endif
  if(f->service_memory_valid){
