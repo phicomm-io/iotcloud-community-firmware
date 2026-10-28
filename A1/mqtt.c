@@ -503,7 +503,7 @@ static bool ingress_accept(MessageData *d,messageHandler handler) {
         return feature_ingress_topic(topic, length);
     }
     if(d->message->retained)return false;
-    if(topic_is(d,"command") || topic_is(d,"ota/set") || topic_is(d,"fan/set") ||
+    if(topic_is(d,"command") || topic_is(d,"ha/command") || topic_is(d,"ota/set") || topic_is(d,"fan/set") ||
        topic_is(d,"fan/percentage/set") || topic_is(d,"light/set") ||
        topic_is(d,"child_lock/set") || topic_is(d,"led_always_on/set"))return true;
     MQTTString *t=d->topicName;const char *p=t->cstring?t->cstring:t->lenstring.data;
