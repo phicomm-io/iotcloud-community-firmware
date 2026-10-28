@@ -1,7 +1,7 @@
 static esp_err_t jsonResponse(httpd_req_t *req,const char *status,const String &body){
   httpd_resp_set_hdr(req,"Access-Control-Allow-Origin","*");httpd_resp_set_status(req,status);httpd_resp_set_type(req,"application/msgpack");httpd_resp_set_hdr(req,"Cache-Control","no-store");
   httpd_resp_set_hdr(req,"X-Content-Type-Options","nosniff");
-  if(body.startsWith("{")){
+  if(body.startsWith("{")||body.startsWith("[")){
     String wire;
     if(body.length()<384){StaticJsonDocument<768> doc;if(deserializeJson(doc,body))return ESP_FAIL;if(!serializeWireMP(doc,wire)){httpd_resp_set_status(req,"503 Service Unavailable");return httpd_resp_send(req,"\x81\xa4" "code" "\xa4" "busy",11);}}
     else {DynamicJsonDocument doc(12288);if(deserializeJson(doc,body)){httpd_resp_set_status(req,"503 Service Unavailable");return httpd_resp_send(req,"\x81\xa4" "code" "\xa4" "busy",11);}if(!serializeWireMP(doc,wire)){httpd_resp_set_status(req,"503 Service Unavailable");return httpd_resp_send(req,"\x81\xa4" "code" "\xa4" "busy",11);}}
