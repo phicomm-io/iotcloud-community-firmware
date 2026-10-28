@@ -2,7 +2,6 @@
 #include "mico.h"
 #include "mico_system.h"
 #include "protocol.h"
-#include "json.h"
 #include "../common/mqtt_account.h"
 #include <stdio.h>
 #include <string.h>
@@ -98,8 +97,6 @@ bool a1_ota_write(const uint8_t *, size_t);
 bool a1_ota_finish(void);
 void a1_ota_abort(const char *);
 bool a1_ota_download(const char *);
-json_object *a1_status_json(void);
-json_object *a1_status_live_json(void);
 int a1_socket_read(int, void *, size_t, unsigned);
 bool a1_socket_send(int, const void *, size_t);
 int a1_socket_line(int, char *, size_t);
@@ -114,7 +111,6 @@ void a1_filter_tick(bool running);
 void a1_filter_get(a1_filter_storage_t *);
 /* Returns accepted, busy, or storage_error; parameters are prevalidated. */
 const char *a1_filter_change(unsigned lifetime_hours, bool reset);
-json_object *a1_filter_json(void);
 
 #include "../common/phicomm_features.h"
 
