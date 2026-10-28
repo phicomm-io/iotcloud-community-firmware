@@ -26,7 +26,7 @@ NAME := App_TC1
 
 $(NAME)_SOURCES := http_trace.c\
                    main.c status_guard.c\
-                   service.c control.c\
+                   service.c control.c wire.c\
                    ota_signature.c\
                    ota_crypto.c\
                    ota_server/signed_adapter.c\
@@ -44,7 +44,6 @@ $(NAME)_SOURCES := http_trace.c\
 
 $(NAME)_COMPONENTS := protocols/SNTP\
 					protocols/mqtt\
-					utilities/json_c\
 					utilities/url\
 					phicomm_httpd phicomm_mqtt
 

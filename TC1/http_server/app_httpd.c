@@ -51,68 +51,23 @@
 #include "../../common/http_cors.h"
 #include "../../common/firmware_variant.h"
 #include "../../common/ota/mode.h"
-#include "json_buffer.h"
 #include "../../common/device_status.h"
 #include <web_data.c>
 static ph_http_product product;
 static const char *query_action;
-static enum { DIRECT, QUERY, AUTH, COMMAND, UPLOAD, BACKUP, RESTORE } operation;
+static enum { DIRECT, QUERY, COMMAND, UPLOAD, BACKUP, RESTORE } operation;
 static bool upload_open, upload_verified, upload_entered;
 static void response(ph_http_exchange *x,unsigned status,const char *type,const void *body,size_t n)
 { x->response.status=status;x->response.type=type;x->response.body=body;x->response.length=n; }
-#define HTTP_AUTH_MODEL "tc1"
-#define HTTP_AUTH_ID str_mac
-#define HTTP_AUTH_VERSION VERSION
-#include "../../common/httpd/local_auth.inc"
-static __attribute__((noinline)) json_object *tc1_status_full(void)
+static void tc1_memory_extra(ph_writer *w)
 {
-    device_status_t snapshot;device_status_full_t full;
-    if(!tc1_status_capture(&snapshot,&full))return NULL;
-    return device_status_encode(&snapshot,&full);
-}
-static __attribute__((noinline)) json_object *tc1_status_live(void)
-{
-    device_status_t snapshot;
-    if(!tc1_status_capture(&snapshot,NULL))return NULL;
-    return device_status_encode(&snapshot,NULL);
-}
-static __attribute__((noinline)) json_object *tc1_status_json_view(bool live)
-{ return live ? tc1_status_live() : tc1_status_full(); }
-json_object *tc1_status_json(void){return tc1_status_json_view(false);}
-json_object *tc1_status_live_json(void){return tc1_status_json_view(true);}
-
-static void memory_response(ph_http_exchange *x){
     extern int get_last_reset_reason(void);
-    static bool reset_sampled;static int reset_reason;
-    if(!reset_sampled){reset_reason=get_last_reset_reason();reset_sampled=true;}
-    const micoMemInfo_t *m=MicoGetMemoryInfo();if(!m)return;
-    micoMemInfo_t snapshot=*m;service_memory_state_t b;service_memory_snapshot(&b);
-    ph_http_diagnostics d=ph_http_snapshot();
-    int tcp_limit=d.limit,tcp_connections=d.connections,tcp_rc=d.connections_get_rc;
-    /* Request-owned diagnostics scratch; guard failure preserves the small
-     * allocation-free base response. Never increase permanent scalar RAM. */
-    size_t capacity=2304;product.body=snapshot.free_memory>=SERVICE_MEMORY_RESERVE+capacity+32?json_heap_malloc(capacity):NULL;
-    char *out=product.body?product.body:product.scalar;
-    if(!product.body)capacity=sizeof(product.scalar);int n=snprintf(out,capacity,
-        "{\"code\":\"ok\",\"data\":{\"free_memory\":%d,\"allocated_memory\":%d,"
-        "\"free_memory_chunks\":%d,\"uptime_ms\":%lu,\"last_reset_reason\":%d,\"memory_reserve\":%u,"
-        "\"http_tcp_limit\":%d,\"http_tcp_connections\":%d,\"http_tcp_get_rc\":%d,"
-        "\"memory_reserved\":%lu,\"memory_active\":%lu,\"memory_waiting\":%lu,"
-        "\"memory_denied\":%lu,\"minimum_sampled_free\":%lu,"
-        "\"json_live_blocks\":%lu,\"json_peak_blocks\":%lu,\"json_alloc_failures\":%lu,\"json_guard_denied\":%lu,"
-        "\"mqtt_pending\":%lu,\"mqtt_peak\":%lu,\"mqtt_overflow\":%lu,\"mqtt_max_delay_ms\":%lu}}",
-        snapshot.free_memory,snapshot.allocted_memory,snapshot.num_of_chunks,
-        (unsigned long)mico_rtos_get_time(),reset_reason,SERVICE_MEMORY_RESERVE,tcp_limit,tcp_connections,tcp_rc,
-        (unsigned long)b.reserved,(unsigned long)b.active,(unsigned long)b.waiting,
-        (unsigned long)b.denied,(unsigned long)b.minimum_free,
-        (unsigned long)b.json_live,(unsigned long)b.json_peak,
-        (unsigned long)b.json_failed,(unsigned long)b.json_denied,
-        (unsigned long)b.mqtt_pending,(unsigned long)b.mqtt_peak,
-        (unsigned long)b.mqtt_overflow,(unsigned long)b.mqtt_max_delay);
-    if(n>0)n=ph_http_diag_append(out,capacity,n,&d);
-    if(n>0)n=ph_mqtt_diag_append(out,capacity,n,product.body!=NULL);
-    if(n>0 && (size_t)n<capacity)response(x,200,"application/json",out,n);
+    static bool sampled;static int reason;
+    if(!sampled){reason=get_last_reset_reason();sampled=true;}
+    phw_int(w,"last_reset_reason",reason);
 }
+#define PH_HTTP_MEMORY_EXTRA tc1_memory_extra
+#include "../../common/httpd/memory_mp.inc"
 
 /* Preserve the registered TC1 anchored routes' query/trailing-slash aliases.
  * Assets remain a deliberate prefix route with their own exact file check. */
@@ -127,9 +82,6 @@ static bool route_matches(const char *path,const char *route)
 }
 static ph_http_action prepare(ph_http_exchange *x)
 {
-    if(operation!=AUTH && !http_auth_authorized(x->request->authorization)){
-        http_auth_reply(&product,x,401,"unauthorized",NULL);return PH_HTTP_REPLY;
-    }
     if(operation==UPLOAD) {
         if(!upload_entered) {
             upload_entered=true;
@@ -141,7 +93,7 @@ static ph_http_action prepare(ph_http_exchange *x)
         x->body_idle_ms=15000;x->body_total_ms=300000;
         return PH_HTTP_READ_BODY;
     }
-    ph_http_action a=ph_http_claim(&product,x,operation==BACKUP?device_backup_size():operation==QUERY?0:x->request->length,operation==AUTH || operation==COMMAND || operation==BACKUP || operation==RESTORE);
+    ph_http_action a=ph_http_claim(&product,x,operation==BACKUP?device_backup_size():operation==QUERY?0:x->request->length,operation==COMMAND || operation==BACKUP || operation==RESTORE);
     if(a==PH_HTTP_REPLY && product.claim && operation==QUERY)
         ph_http_query(&product,x,query_action);
     if(a==PH_HTTP_READ_BODY && operation==BACKUP){
@@ -159,32 +111,24 @@ static ph_http_action begin(ph_http_exchange *x)
     query_action=route_matches(r->path,"/api/v1/info")?"info.get":route_matches(r->path,"/api/v1/status")?"status.get":
       route_matches(r->path,"/api/v1/capabilities")?"capabilities.get":route_matches(r->path,"/api/v1/config")?"config.get":
       route_matches(r->path,"/api/v1/schedules")?"schedules.get":route_matches(r->path,"/api/v1/logs")?"logs.get":NULL;
-    bool auth=http_auth_route(r->path);
     bool asset=route_matches(r->path,"/") || !strncmp(r->path,"/assets",7);
     bool command=route_matches(r->path,"/api/v1/command");
     bool backup=route_matches(r->path,"/api/v1/config/backup"),restore=route_matches(r->path,"/api/v1/config/restore");
     bool ota=route_matches(r->path,"/api/v1/ota/upload") || route_matches(r->path,"/api/v1/ota/upload-unsigned");
     bool memory=route_matches(r->path,"/api/v1/memory"),trace=route_matches(r->path,"/api/v1/http-trace");
     /* TC1 historically selects an actual route before OPTIONS/authentication. */
-    if(!auth && !query_action && !asset && !command && !backup && !restore && !ota && !memory && !trace) {
+    if(!query_action && !asset && !command && !backup && !restore && !ota && !memory && !trace) {
         response(x,404,"text/plain","",0);return PH_HTTP_REPLY;
     }
     x->response.cors=phicomm_cors_headers(r->origin);
     if(!strcmp(r->method,"OPTIONS")) {
         response(x,*x->response.cors?200:403,"text/plain","",0);return PH_HTTP_REPLY;
     }
-    if(!strcmp(r->method,"GET") && route_matches(r->path,"/api/v1/info")){
-        http_auth_info(&product,x);return PH_HTTP_REPLY;
-    }
-    if(auth){
-        if(strcmp(r->method,"POST")||!r->length||r->length>256){http_auth_reply(&product,x,400,"invalid_request",NULL);return PH_HTTP_REPLY;}
-        operation=AUTH;return prepare(x);
-    }
-    if(!asset && !http_auth_authorized(r->authorization)){
-        http_auth_reply(&product,x,401,"unauthorized",NULL);return PH_HTTP_REPLY;
+    if(!tc1_http_authorized(r->authorization)) {
+        response(x,401,"text/plain","",0);x->response.realm="TC1";return PH_HTTP_REPLY;
     }
     if(backup || restore){
-        if(!ph_auth_password_is_set(device_local_auth())){ph_http_message(&product,x,403,"set_web_password_first");return PH_HTTP_REPLY;}
+        if(!user_config->web_password[0]){ph_http_message(&product,x,403,"set_web_password_first");return PH_HTTP_REPLY;}
         if(backup && !strcmp(r->method,"GET")){operation=BACKUP;return prepare(x);}
         if(restore && !strcmp(r->method,"POST") && r->have_length && r->length==device_backup_size()){operation=RESTORE;return prepare(x);}
         ph_http_message(&product,x,400,"invalid_backup");return PH_HTTP_REPLY;
@@ -194,8 +138,8 @@ static ph_http_action begin(ph_http_exchange *x)
         if(query_action) { operation=QUERY;return prepare(x); }
         if(memory) { memory_response(x);return PH_HTTP_REPLY; }
         if(trace) {
-            size_t n=tc1_http_trace_format(product.scalar,sizeof(product.scalar));
-            if(n)response(x,200,"application/json",product.scalar,n);return PH_HTTP_REPLY;
+            ph_writer w;if(!phw_init(&w,PH_WIRE_MSGPACK)){ph_http_busy(x);return PH_HTTP_REPLY;}
+            tc1_http_trace_mp(&w);ph_http_wire_take(&product,x,phw_take(&w));return PH_HTTP_REPLY;
         }
         if(asset && (route_matches(r->path,"/") || !strcmp(r->path,"/assets/index.html"))) {
             response(x,200,"text/html",web_index_html,sizeof(web_index_html));x->response.gzip=true;
@@ -228,19 +172,13 @@ static bool body_chunk(ph_http_exchange *x,const void *data,size_t n)
 }
 static void complete(ph_http_exchange *x)
 {
-    if(operation!=AUTH && !http_auth_authorized(x->request->authorization)){
-        http_auth_reply(&product,x,401,"unauthorized",NULL);return;
-    }
-    if(operation==AUTH){http_auth_complete(&product,x);return;}
     if(operation==UPLOAD) {
         upload_verified=tc1_ota_verify();
         ph_http_message(&product,x,upload_verified?202:400,upload_verified?"文件校验通过，设备正在重启":"OTA rejected");return;
     }
     if(operation==RESTORE){const char *code=device_backup_import(product.body,product.used);ph_http_message(&product,x,!strcmp(code,"accepted")?202:!strcmp(code,"busy")?409:400,code);return;}
-    json_object *request=ph_http_body_json(&product,x);
-    ph_http_command(&product,x,request);
-    /* Wire owns all text, including any borrowed request_id. */
-    json_object_put(request);
+    ph_http_command_mp(&product,x,product.body,product.used);
+    /* Request is borrowed synchronously; response owns all output bytes. */
 }
 static void release(ph_http_exchange *x,bool sent)
 {
