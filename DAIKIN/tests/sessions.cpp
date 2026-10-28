@@ -64,6 +64,7 @@ int main(){
  ph_auth_store_empty(&persisted);ph_auth_ops ops={};ops.now=[](void*){return now;};ops.random=[](void*,uint8_t*b,size_t n){esp_fill_random(b,n);return true;};ops.password=[](void*,char out[33]){strcpy(out,currentPassword);return true;};ops.save=[](void*,const ph_auth_store*s){if(saveFailed)return false;persisted=*s;return true;};assert(ph_auth_init(&localAuth,&ops,&persisted));
  sensorBoot=UINT32_MAX;for(auto &r:readings){r.received=true;r.at=now;}readings[TEMPERATURE].value=-3.125f;readings[HUMIDITY].value=45.5f;readings[PM25].value=12.125f;readings[HCHO].value=.123f;readings[CO2].value=625;
  lan_packet read={};read.op=LAN_READ;strcpy(read.src,"aabbccddee01");strcpy(read.dst,deviceId.c_str());read.boot=UINT32_MAX;read.id=0x80000000;memset(read.token,0xab,16);
+ assert(deliver(R"({"v":2,"op":"read","src":"aabbccddee01","token":"abababababababababababababababab"})").empty());assert(deliver(R"({"op":"auth_pair","src":"aabbccddee01","password":""})").empty());
  assert(deliver(encode(read)).empty());assert(sessionGrant(grant("abababababababababababababababab")));
  lan_packet sample;auto wire=deliver(encode(read));assert(lan_decode(wire.data(),wire.size(),&sample));assert(sample.boot==UINT32_MAX&&sample.id==0x80000000&&sample.sample.fields==31);assert(sample.sample.value[0]==-3125&&sample.sample.value[1]==45500&&sample.sample.value[2]==12125&&sample.sample.value[3]==123000&&sample.sample.value[4]==625);
  now+=1000;wire=deliver(encode(read));assert(lan_decode(wire.data(),wire.size(),&sample)&&sample.sample.age_ms[0]==1000);

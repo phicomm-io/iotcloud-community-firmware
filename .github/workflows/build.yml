@@ -319,6 +319,7 @@ jobs:
           python3 -m unittest discover -s DAIKIN/tests -p 'test_web_auth.py'
           python3 -m unittest discover -s DAIKIN/tests -p 'test_lan_pairing.py'
           python3 -m unittest discover -s DAIKIN/tests -p 'test_auth_storage.py'
+          python3 -m unittest discover -s DAIKIN/tests -p 'test_hub_mixed_devices.py'
       - name: Test ESP32 protocol and actual embedded page
         if: matrix.variant == 'full'
         run: |

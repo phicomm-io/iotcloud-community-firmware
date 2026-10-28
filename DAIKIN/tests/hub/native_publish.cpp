@@ -332,6 +332,9 @@ static void verifySnapshots() {
   assert(localMessages[0].retained && !localMessages[3].retained);
   assert(sdkMessages[0].retained && !sdkMessages[3].retained);
   assert(localMessages[0].body == sdkMessages[0].body && localMessages[3].body == sdkMessages[3].body);
+  assert(localMessages[2].topic==prefix("owner")+"sensor/aabbccddeeff/metadata"&&localMessages[2].retained&&sdkMessages[2].retained);
+  DynamicJsonDocument metadata(4096);assert(!deserializeMsgPack(metadata,localMessages[2].body));assert(metadata["schema"]==3&&metadata["device_id"]=="aabbccddeeff"&&metadata["boot"].as<uint32_t>()==sensorBoot&&metadata["descriptor_revision"].as<uint32_t>()==sensorDescriptorRevision()&&metadata["fields"].size()==SENSOR_COUNT);
+  for(unsigned i=0;i<SENSOR_COUNT;i++){auto field=metadata["fields"][keys[i]];assert(field["type"]=="number"&&field["unit"]==units[i]);}
   DynamicJsonDocument full(8192), typed(8192);
   assert(!deserializeMsgPack(full, localMessages[0].body));
   assert(!deserializeMsgPack(typed, localMessages[3].body));
@@ -341,7 +344,7 @@ static void verifySnapshots() {
   assert(full["ota_partitions"]["entries"].size() == 3);
   assert(full["indicator_rules_supported"] == true);
   assert(full["sensors"].size() == SENSOR_COUNT && typed["sensors"].size() == SENSOR_COUNT);
-  assert(typed["schema"] == 3 && typed["device_id"] == "aabbccddeeff");
+  assert(typed["schema"] == 3 && typed["device_id"] == "aabbccddeeff"&&typed["descriptor_revision"]==metadata["descriptor_revision"]);
   assert(typed["boot"].as<uint32_t>() == sensorBoot && typed["boot"].as<uint64_t>() == sensorBoot);
   assert(typed["sequence"].as<uint32_t>() == sensorSequence && typed["sequence"].as<uint64_t>() == sensorSequence);
   for (unsigned i = 0; i < SENSOR_COUNT; ++i) {
