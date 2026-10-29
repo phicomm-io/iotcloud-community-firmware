@@ -46,3 +46,7 @@ limitations remain: response conflict processing is empty; QU/legacy unicast
 handling is incomplete; compression-name parsing is not bounded. This narrow
 space patch neither introduces nor fixes these limitations and is not evidence
 of complete mDNS standards conformance or physical discovery acceptance.
+
+The subsequent integrated A1/M1 GCC5/GCC14 rebuilds, compiler provenance,
+packaging correction and remaining physical acceptance are recorded in
+[the 2026-10-29 matrix](mdns-gcc-matrix-20261029.md).
