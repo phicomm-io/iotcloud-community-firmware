@@ -33,6 +33,12 @@ class LanStackGate(unittest.TestCase):
   frames,paths=self.fixture('TC1');frames.unbounded['tc1_lan_worker']='dynamic'
   with self.assertRaisesRegex(ValueError,'unbounded'):validate_lan_paths(paths,frames)
 
+ def test_all_products_collect_sdk_stack_frames(self):
+  root=Path(__file__).resolve().parents[1]
+  for model in ('A1','M1','TC1'):
+   with self.subTest(model=model):
+    self.assertIn('GLOBAL_CFLAGS += -fstack-usage',(root/model/(model+'.mk')).read_text())
+
  def test_sdk_sha_frames_are_required_when_linked_and_dynamic_fails(self):
   with tempfile.TemporaryDirectory() as directory:
    root=Path(directory);frames=StackFrames();symbols={'SHA256Reset':1,'SHA224_256ProcessMessageBlock':1}

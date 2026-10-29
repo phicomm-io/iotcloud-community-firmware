@@ -3,6 +3,8 @@ $(NAME)_SOURCES := main.c watchdog.c wire.c service.c features.c protocol.c cont
 $(NAME)_INCLUDES := . generated
 # Keep control callees shared and bound stack growth in the fixed A1 slot.
 $(NAME)_CFLAGS += -fstack-usage -fno-inline-small-functions -fconserve-stack
+# Capture SDK SHAUtils frames required by the LAN stack gate as well.
+GLOBAL_CFLAGS += -fstack-usage
 $(NAME)_COMPONENTS := protocols/SNTP protocols/mqtt utilities/json_c phicomm_httpd phicomm_mqtt
 GLOBAL_DEFINES += DEV_MODEL=\"PHICOMM_A1_EMW3080\" DISABLE_MICO_BLUENRG=1
 
