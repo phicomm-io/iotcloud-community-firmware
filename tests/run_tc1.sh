@@ -7,7 +7,9 @@ python3 tools/apply_sdk_patch.py "$tc1_sdk" \
     common/mqtt-socket-close.patch M1/mqtt-packet-deadline.patch \
     common/mqtt-response-deadline.patch common/mqtt-buffer-storage.patch \
     common/mqtt-subscribe-qos.patch \
-    common/mqtt-subscribe-result.patch
+    common/mqtt-subscribe-result.patch \
+    common/mqtt-receive-recovery.patch \
+    common/mqtt-post-send-workspace.patch
 sdk=$tc1_sdk/libraries/protocols/mqtt
 export PHICOMM_TC1_SDK="$tc1_sdk"
 python3 -m unittest tests.test_native_mqtt tests.test_ha_json tests.test_sensor_producers_mp tests.test_tc1_http_trace tests.test_bemfa_mp tests.test_mqtt_stack_budget

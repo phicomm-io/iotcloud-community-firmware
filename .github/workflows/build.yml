@@ -124,10 +124,6 @@ jobs:
       matrix:
         model: [tc1, m1, a1]
     env:
-      TC1_TOOLS_DIR: ${{ github.workspace }}/build/ci-tools
-      M1_TOOLS_DIR: ${{ github.workspace }}/build/ci-tools
-      A1_TOOLS_DIR: ${{ github.workspace }}/build/ci-tools
-      ARM_CC: ${{ github.workspace }}/build/ci-tools/gcc-arm-none-eabi-5_4-2016q2/bin/arm-none-eabi-gcc
       PHICOMM_FRONTEND_ARCHIVE: ${{ github.workspace }}/build/ci-frontend/frontend.tar.gz
     runs-on: >-
       ${{ fromJSON(
@@ -144,6 +140,9 @@ jobs:
         with:
           name: verified-frontend
           path: build/ci-frontend/
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
       - name: Install build dependencies
         run: |
           sudo apt-get update
@@ -151,24 +150,26 @@ jobs:
           python3 -m pip install -r requirements-build.txt
       - name: Identify tool cache location
         id: tool-path
-        run: echo "key=$(printf '%s' "$GITHUB_WORKSPACE" | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+        run: echo "key=$(printf '%s' "$HOME/.cache/phicomm" | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v4
         with:
-          path: build/mico-upstream.git
+          path: ~/.cache/phicomm/mico-upstream.git
           key: mico-bare-${{ hashFiles('common/mico-sdk.json') }}
       - uses: actions/cache@v4
         with:
           path: |
-            build/ci-tools/gcc-arm-none-eabi-5_4-2016q2
-            build/ci-tools/python2
-          key: ci-tools-ubuntu22-${{ runner.arch }}-gcc541-python2718-v1-${{ steps.tool-path.outputs.key }}
+            ~/.cache/phicomm/gcc5
+            ~/.cache/phicomm/gcc14
+            ~/.cache/phicomm/python2
+          key: shared-tools-ubuntu22-${{ runner.arch }}-gcc1431-runtime541-python2718-v2-${{ steps.tool-path.outputs.key }}
       - name: Validate restored tools and project version
         id: prep
         env:
           TAG_NAME: ${{ github.ref_name }}
           REF_TYPE: ${{ github.ref_type }}
         run: |
-          bash tools/ci/check_cached_tools.sh
+          python3 tools/prepare_toolchain.py --profile gcc14 --github-env "$GITHUB_ENV"
+          python3 -m unittest tests.test_compiler_profile
           if [ "$REF_TYPE" = tag ]; then
             python3 tools/check_version.py --tag "$TAG_NAME"
           else
@@ -189,9 +190,17 @@ jobs:
           PHICOMM_FIRMWARE_VARIANT: no-frontend-resources
           GH_TOKEN: ${{ github.token }}
         run: ./"${MODEL^^}"/build.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ${{ matrix.model }}-compiler-logs
+          path: build/toolchain-logs/
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Test TC1 protocol and HTTP regressions
         if: ${{ !cancelled() && matrix.model == 'tc1' && steps.prep.outcome == 'success' && needs.frontend.outputs.reuse-heavy-validation != 'true' }}
         run: |
+          export ARM_CC="$PHICOMM_TOOLS_HOME/gcc5/bin/arm-none-eabi-gcc"
           bash tools/ci/require_arm_tools.sh
           test -s build/tc1-sdk-3.6.4/mico-os/libraries/utilities/json_c/json_number_reent.h
           tests/run_tc1.sh
@@ -644,7 +653,7 @@ jobs:
           python3 -m pip install cryptography==46.0.3
       - uses: actions/cache@v4
         with:
-          path: build/mico-upstream.git
+          path: ~/.cache/phicomm/mico-upstream.git
           key: mico-bare-${{ hashFiles('common/mico-sdk.json') }}
       - name: Prepare pinned JSON and SHA sources for actual OTA checks
         run: python3 tools/prepare_sdk.py build/a1-sdk/mico-os
@@ -680,7 +689,6 @@ jobs:
 
   feature-tests:
     env:
-      ARM_CC: ${{ github.workspace }}/build/ci-tools/gcc-arm-none-eabi-5_4-2016q2/bin/arm-none-eabi-gcc
       PHICOMM_OTA_CN_BASE_URL: ""
       PHICOMM_OTA_GLOBAL_BASE_URL: ""
       PHICOMM_FRONTEND_ARCHIVE: ${{ github.workspace }}/build/ci-frontend/frontend.tar.gz
@@ -702,33 +710,31 @@ jobs:
         with:
           name: verified-frontend
           path: build/ci-frontend/
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
       - name: Install host test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential libssl-dev openssl python3-pip curl git qemu-user libc6-i386 bzip2 libncurses5 libtinfo5
+          sudo apt-get install -y build-essential libssl-dev openssl python3-pip curl git qemu-user libc6-i386 bzip2 libncurses5 libtinfo5 zlib1g-dev
       - name: Identify tool cache location
         id: tool-path
-        run: echo "key=$(printf '%s' "$GITHUB_WORKSPACE" | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+        run: echo "key=$(printf '%s' "$HOME/.cache/phicomm" | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v4
         with:
-          path: build/mico-upstream.git
+          path: ~/.cache/phicomm/mico-upstream.git
           key: mico-bare-${{ hashFiles('common/mico-sdk.json') }}
       - uses: actions/cache@v4
         with:
           path: |
-            build/ci-tools/gcc-arm-none-eabi-5_4-2016q2
-            build/ci-tools/python2
-          key: ci-tools-ubuntu22-${{ runner.arch }}-gcc541-python2718-v1-${{ steps.tool-path.outputs.key }}
+            ~/.cache/phicomm/gcc5
+            ~/.cache/phicomm/gcc14
+            ~/.cache/phicomm/python2
+          key: shared-tools-ubuntu22-${{ runner.arch }}-gcc1431-runtime541-python2718-v2-${{ steps.tool-path.outputs.key }}
+      - name: Prepare pinned GCC5 ARM host test tools
+        run: python3 tools/prepare_toolchain.py --profile gcc5 --github-env "$GITHUB_ENV"
       - name: Require pinned ARM host test tools
-        run: |
-          bash tools/ci/check_cached_tools.sh
-          if [ ! -x "$ARM_CC" ]; then
-            mkdir -p build/ci-tools
-            curl -fsSL --retry 3 'https://launchpad.net/gcc-arm-embedded/5.0/5-2016-q2-update/+download/gcc-arm-none-eabi-5_4-2016q2-20160622-linux.tar.bz2' -o "$RUNNER_TEMP/gcc.tar.bz2"
-            echo "9910b6b5df12efe564dbb3856bf1599d4c16178a6f28bd8a23c9e5c3edc219e4  $RUNNER_TEMP/gcc.tar.bz2" | sha256sum -c -
-            tar -xjf "$RUNNER_TEMP/gcc.tar.bz2" -C build/ci-tools
-          fi
-          bash tools/ci/require_arm_tools.sh
+        run: bash tools/ci/require_arm_tools.sh
       - name: Prepare all pinned SDKs for early ARM and JSON tests
         run: |
           for sdk in a1-sdk m1-sdk tc1-sdk-3.6.4; do
