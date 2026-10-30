@@ -118,7 +118,11 @@ static uint32_t now=1;static uint32_t millis(){return now;}
 static void esp_fill_random(void*p,size_t n){static uint8_t counter;for(size_t i=0;i<n;i++)static_cast<uint8_t*>(p)[i]=++counter;}
 static bool hubRestartPending(){return false;}
 static void updatePassword(){strlcpy(webPassword,config["auth"]["password"]|"",sizeof(webPassword));}
+#ifdef DAIKIN_FIXED_AUTH_V2
+#include "auth_storage_v2_baseline.inc"
+#else
 #include "../../src/auth_storage.inc"
+#endif
 #include "load.inc"
 static unsigned invalidations=0;static void invalidateBusinessStatusCache(){++invalidations;}
 #ifdef DAIKIN_BASELINE
@@ -209,4 +213,95 @@ authConfigKey
 static void budget(){Nor nor;seed(nor);boot(nor);fillPairs();for(unsigned round=0;round<12;round++){DynamicJsonDocument next(16384);next.set(config);next["_version"]=1;next["padding"]="";size_t base=measureJson(next);next["padding"]=std::string(authConfigLimit-base,char('a'+round));assert(measureJson(next)==authConfigLimit);bool saved=saveConfig(next);if(!saved)fprintf(stderr,"budget round%u recovery%d keysize%zu configlen%zu\n",round,configRecovery,prefs.getBytesLength(authConfigKey),measureJson(next));if(!saved){assert(!configRecovery);boot(nor);assert(localAuth.store.count==12&&localAuth.store.remote_count==12);assert(config["padding"].as<std::string>()==std::string(authConfigLimit-base,char('a'+round-1)));intact();printf("nonbusiness padding boundary safely rejected round%u config%zu\n",round,authConfigLimit);return;}boot(nor);assert(localAuth.store.count==12&&localAuth.store.remote_count==12);assert(measureJson(config)==authConfigLimit);intact();}printf("actual IDF NVS budget %zu config + %zu auth + wifi512 + HAP2048,12updates PASS\n",authConfigLimit,sizeof(ph_auth_store));}
 static void power(bool update){Nor before;seed(before);boot(before);char key[33];assert(ph_auth_pair(&localAuth,"","aabbccddee01",2,key));if(update){DynamicJsonDocument next(configCapacity);next.set(config);next["device"]["name"]="before";assert(saveConfig(next));}auto image=before.bytes;DynamicJsonDocument wanted(configCapacity);wanted.set(config);wanted["auth"]["password"]="adminfjr";before.work=0;assert(saveConfig(wanted));size_t bytes=before.work;for(size_t cut=0;cut<=bytes;cut++){Nor nor;nor.bytes=image;boot(nor);DynamicJsonDocument next(configCapacity);next.set(config);next["auth"]["password"]="adminfjr";nor.cut=cut;try{saveConfig(next);}catch(const PowerLoss&){}nor.cut=-1;boot(nor);bool changed=std::string(webPassword)=="adminfjr";assert(changed?localAuth.store.count==0:localAuth.store.count==1);intact();}printf("actual IDF NVS password+pair atomic %s %zu byte cuts PASS\n",update?"update":"first",bytes+1);}
 static void failure(){Nor nor;seed(nor);boot(nor);fillPairs();auto old=nor.bytes;const auto oldConfig=snapshot();const unsigned beforeInvalidations=invalidations;nor.fail=true;DynamicJsonDocument next(configCapacity);next.set(config);next["auth"]["password"]="adminfjr";assert(!saveConfig(next));assert(snapshot()==oldConfig&&invalidations==beforeInvalidations&&nor.bytes==old);assert(localAuth.store.count==12&&localAuth.store.remote_count==12);nor.fail=false;boot(nor);assert(localAuth.store.count==12&&localAuth.store.remote_count==12&&std::string(webPassword)=="");intact();assert(resetConfiguration());boot(nor);assert(localAuth.store.count==0&&localAuth.store.remote_count==0);}
-int main(int argc,char**argv){assert(argc==2);std::string test=argv[1];if(test=="valid-budget")validBudget();else if(test=="budget")budget();else if(test=="power"){power(false);power(true);}else if(test=="failure")failure();else abort();}
+// Two retained legacy keys plus the authoritative combined blob on 16KiB NVS.
+static void dualKey(){
+  Nor nor;seed(nor);
+  DynamicJsonDocument legacy(8192);legacy["_version"]=1;legacy["auth"]["password"]="adminfjr";legacy["device"]["name"]="synthetic-hub";
+  legacy["legacy_padding"]=std::string(1800,'x');std::string text;serializeJson(legacy,text);
+  assert(prefs.putBytes("config_hub",text.data(),text.size())==text.size());
+  boot(nor);assert(std::string(webPassword)=="adminfjr");
+  // Add the authority key without erasing either legacy key.
+  DynamicJsonDocument first(configCapacity);first.set(config);bool initial=saveConfig(first);
+  assert(initial);assert(authStorageSnapshot().error==AuthStorageError::ok);
+  const std::string otherLegacy(1600,'l');assert(prefs.putString("config",otherLegacy.c_str())==otherLegacy.size());
+  for(unsigned round=0;round<16;round++){
+    auto before=nor.bytes;auto old=snapshot();DynamicJsonDocument next(configCapacity);next.set(config);next["auth"]["password"]=(round%2)?"adminfjr":"";
+    bool saved=saveConfig(next);const auto d=authStorageSnapshot();
+    assert(d.attempted&&d.stats&&d.required&&d.sizes&&d.oldBytes>0&&d.newBytes>0);
+    printf("dual-key pages%zu round%u saved%d free%zu used%zu total%zu required%zu old%zu new%zu error%u\n",nor.bytes.size()/4096,round,saved,d.freeEntries,d.usedEntries,d.totalEntries,d.requiredEntries,d.oldBytes,d.newBytes,unsigned(d.error));
+    if(!saved){assert(d.error==AuthStorageError::insufficient_entries);assert(!configRecovery&&nor.bytes==before&&snapshot()==old);}
+    std::string retained(text.size(),0);assert(prefs.isKey("config_hub"));assert(prefs.getString("config","")==otherLegacy.c_str());
+    boot(nor);
+  }
+}
+static std::vector<uint8_t> migrationImage(){
+ for(unsigned padding=1;padding<8192;padding+=32){
+  Nor nor;seed(nor);DynamicJsonDocument legacy(8192);legacy["_version"]=1;legacy["auth"]["password"]="adminfjr";legacy["device"]["name"]="initial";legacy["padding"]="";
+  const size_t target=1758;legacy["padding"]=std::string(target-measureMsgPack(legacy)-2,'p');assert(measureMsgPack(legacy)==target);
+  std::string text;serializeJson(legacy,text);assert(prefs.putBytes("config_hub",text.data(),text.size())==text.size());
+  std::string other(padding,'c');if(prefs.putBytes("config",other.data(),other.size())!=other.size())continue;
+  nvs_stats_t stats={};assert(nvs_get_stats(nullptr,&stats)==ESP_OK);if(stats.free_entries==196)return nor.bytes;
+ }
+ assert(false);return {};
+}
+static std::string blobSnapshot(const char *key){std::string value(prefs.getBytesLength(key),0);assert(prefs.getBytes(key,&value[0],value.size())==value.size());return value;}
+static void migration(bool faults){
+ Nor before;before.bytes=migrationImage();boot(before);assert(!prefs.isKey("authcfg_hub"));const auto image=before.bytes;const auto oldConfig=snapshot();const auto oldLegacy=blobSnapshot("config"),oldHub=blobSnapshot("config_hub");
+ DynamicJsonDocument next(configCapacity);next.set(config);next["auth"]["password"]="";before.work=0;bool saved=saveConfig(next);const auto d=authStorageSnapshot();
+ assert(d.stats&&d.freeEntries==196&&d.totalEntries==504);
+#ifdef DAIKIN_FIXED_AUTH_V2
+ assert(d.oldBytes==0);assert(!saved&&d.newBytes==2542&&d.requiredEntries==215&&d.error==AuthStorageError::insufficient_entries&&before.bytes==image&&snapshot()==oldConfig);
+ printf("v2 equivalent live layout: free196 required215 new2542 safe reject PASS\n");return;
+#else
+ assert(d.oldBytes==oldHub.size());assert(saved&&d.newBytes==1766&&d.requiredEntries==191&&d.error==AuthStorageError::ok);boot(before);assert(std::string(webPassword)=="");
+ const size_t work=before.work;const auto newConfig=snapshot();const auto newHub=blobSnapshot("config_hub");printf("v3 equivalent live layout: free196 required191 new1766 migrate PASS\n");
+ if(!faults)return;
+ // Ordinary I/O failure cannot publish a new in-memory credential.
+ Nor failed;failed.bytes=image;boot(failed);failed.fail=true;next=DynamicJsonDocument(configCapacity);next.set(config);next["auth"]["password"]="";assert(!saveConfig(next)&&snapshot()==oldConfig&&failed.bytes==image);failed.fail=false;boot(failed);assert(std::string(webPassword)=="adminfjr");
+ for(size_t cut=0;cut<=work;cut++){
+  Nor nor;nor.bytes=image;boot(nor);next=DynamicJsonDocument(configCapacity);next.set(config);next["auth"]["password"]="";nor.cut=cut;
+  try{saveConfig(next);}catch(const PowerLoss&){}nor.cut=-1;boot(nor);
+  assert(snapshot()==oldConfig||snapshot()==newConfig);assert(localAuth.store.count==0&&localAuth.store.remote_count==0);
+  uint8_t ns;assert(storage->createOrOpenNamespace("nvs.net80211",false,ns)==ESP_OK);std::string wifi(512,0);assert(storage->readItem(ns,nvs::ItemType::BLOB,"wifi-state",&wifi[0],wifi.size())==ESP_OK&&wifi==std::string(512,'w'));
+  assert(storage->createOrOpenNamespace("HAP",false,ns)==ESP_OK);std::string hap(2048,0);assert(storage->readItem(ns,nvs::ItemType::BLOB,"pairings",&hap[0],hap.size())==ESP_OK&&hap==std::string(2048,'h'));
+  assert(blobSnapshot("config")==oldLegacy);const auto hub=blobSnapshot("config_hub");assert(hub==oldHub||hub==newHub);
+ }
+ printf("v3 first-authority migration %zu NOR byte cuts preserve WiFi/HAP/legacy PASS\n",work+1);
+ Nor repeated;repeated.bytes=image;boot(repeated);next=DynamicJsonDocument(configCapacity);next.set(config);next["auth"]["password"]="";assert(saveConfig(next));
+ char key[33];for(unsigned i=0;i<8;i++){
+  next=DynamicJsonDocument(configCapacity);next.set(config);next["device"]["name"]=std::string("updated-")+std::to_string(i);assert(saveConfig(next));boot(repeated);assert(config["device"]["name"]==std::string("updated-")+std::to_string(i));
+ }
+ for(unsigned i=1;i<=3;i++){char peer[13];snprintf(peer,sizeof(peer),"aabbccddee%02x",i);assert(ph_auth_pair(&localAuth,"",peer,PH_AUTH_SCOPE_CONTROL,key));boot(repeated);char token[33];assert(ph_auth_pair_resume(&localAuth,peer,key,token));}assert(!prefs.isKey("authcfg_hub"));
+ printf("v3 existing blob atomic migration +8 updates +3 durable pairs PASS\n");
+ // Leave budget for another full generation before exercising GC. The live
+ // 16 KiB boundary is intentionally allowed to reject growth without I/O;
+ // padding is synthetic, not a business field or a reason to relax the guard.
+ next=DynamicJsonDocument(configCapacity);next.set(config);
+ std::string padding=next["padding"].as<std::string>();assert(padding.size()>128);
+ next["padding"]=padding.substr(0,padding.size()-128);assert(saveConfig(next));boot(repeated);
+ // Locate a real GC update, then interrupt every programmed/erased byte.
+ for(unsigned round=0;round<32;round++){
+  const auto gcImage=repeated.bytes;const auto gcOld=snapshot();const size_t initialWork=repeated.work;
+  next=DynamicJsonDocument(configCapacity);next.set(config);next["device"]["name"]=std::string("gc-")+std::to_string(round);assert(saveConfig(next));const size_t delta=repeated.work-initialWork;const auto gcNew=snapshot();
+  if(delta<4096)continue;
+  for(size_t cut=0;cut<=delta;cut++){
+   Nor nor;nor.bytes=gcImage;boot(nor);next=DynamicJsonDocument(configCapacity);next.set(config);next["device"]["name"]=std::string("gc-")+std::to_string(round);nor.cut=cut;
+   try{saveConfig(next);}catch(const PowerLoss&){}nor.cut=-1;boot(nor);assert(snapshot()==gcOld||snapshot()==gcNew);
+   assert(localAuth.store.count==3&&localAuth.store.remote_count==0);assert(blobSnapshot("config")==oldLegacy);
+   uint8_t ns;assert(storage->createOrOpenNamespace("nvs.net80211",false,ns)==ESP_OK);std::string wifi(512,0);assert(storage->readItem(ns,nvs::ItemType::BLOB,"wifi-state",&wifi[0],wifi.size())==ESP_OK&&wifi==std::string(512,'w'));
+   assert(storage->createOrOpenNamespace("HAP",false,ns)==ESP_OK);std::string hap(2048,0);assert(storage->readItem(ns,nvs::ItemType::BLOB,"pairings",&hap[0],hap.size())==ESP_OK&&hap==std::string(2048,'h'));
+  }
+  printf("v3 live-equivalent GC update %zu NOR byte cuts preserve config/pair/WiFi/HAP PASS\n",delta+1);return;
+ }
+ assert(false&&"expected a real GC update");
+#endif
+}
+static void authority(){
+ Nor wrong;seed(wrong);assert(prefs.putString("config_hub","{}")>0);assert(loadAuthConfigText()=="invalid");
+ Nor good;seed(good);assert(prefs.putBytes("config_hub","{}",2)==2);assert(loadAuthConfigText()=="{}"&&!strcmp(authConfigKey,"config_hub"));
+ // A present primary authority cannot be bypassed by legacy credentials.
+ assert(prefs.putBytes("authcfg_hub","bad",3)==3);assert(loadAuthConfigText()=="invalid");
+ Nor corrupt;seed(corrupt);AuthConfigHeader h{authConfigMagic,99,0,0};assert(prefs.putBytes("config_hub",&h,sizeof(h))==sizeof(h));assert(loadAuthConfigText()=="invalid");
+ printf("legacy BLOB selection/STR rejection/authority precedence/corrupt v3 fail-closed PASS\n");
+}
+int main(int argc,char**argv){assert(argc==2);std::string test=argv[1];if(test=="authority")authority();else if(test=="migration")migration(true);else if(test=="dual-key")dualKey();else if(test=="valid-budget")validBudget();else if(test=="budget")budget();else if(test=="power"){power(false);power(true);}else if(test=="failure")failure();else abort();}

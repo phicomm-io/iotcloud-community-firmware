@@ -77,6 +77,15 @@ bool ph_auth_store_valid(const ph_auth_store*p) {
         ph_auth_private_records_valid(p->pairs,p->count)&&
         ph_auth_private_records_valid(p->remote,p->remote_count);
 }
+bool ph_auth_store_migrate_legacy(ph_auth_store *p) {
+    if(!p||p->magic!=PH_AUTH_STORE_MAGIC||p->version!=PH_AUTH_STORE_VERSION||
+       !ph_auth_private_records_valid(p->pairs,p->count))return false;
+    const size_t offset=offsetof(ph_auth_store,remote_count);
+    const uint8_t *tail=(const uint8_t *)p+offset;
+    for(size_t i=0;i<sizeof(*p)-offset;i++)if(tail[i]!=255)return false;
+    memset((uint8_t *)p+offset,0,sizeof(*p)-offset);
+    return true;
+}
 bool ph_auth_init(ph_auth_state*s,const ph_auth_ops*o,const ph_auth_store*p) {
     if(!s||!o||!o->now||!o->random||!o->password||((o->lock==0)!=(o->unlock==0))||(p&&!ph_auth_store_valid(p)))return false;
     memset(s,0,sizeof(*s));

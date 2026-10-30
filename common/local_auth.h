@@ -59,6 +59,9 @@ void ph_auth_store_empty(ph_auth_store *);
 /* Immutable empty trailer for synchronous commits; avoids large stack copies. */
 const ph_auth_store *ph_auth_store_empty_value(void);
 bool ph_auth_store_valid(const ph_auth_store *);
+/* Recognize the frozen inbound-only v1 prefix and an entirely erased appended
+ * directional area. Preserve every prefix byte; reject unknown/mixed trailers. */
+bool ph_auth_store_migrate_legacy(ph_auth_store *);
 bool ph_auth_init(ph_auth_state *,const ph_auth_ops *,const ph_auth_store *);
 bool ph_auth_http_login(ph_auth_state *,const char *password,char token[33]);
 typedef enum { PH_AUTH_LOGIN_OK,PH_AUTH_LOGIN_DENIED,PH_AUTH_LOGIN_BUSY } ph_auth_login_result;
