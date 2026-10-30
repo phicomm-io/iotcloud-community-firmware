@@ -73,6 +73,7 @@ static bool mqttConnected = true;
 #include "indicators.inc"
 #include "state.inc"
 #include "public_read.inc"
+#include "account_scope.inc"
 
 static void httpReads(){
  String original;
@@ -136,6 +137,9 @@ static void concurrentCopies(){
 }
 
 int main(){
+ assert(mqttAccountScope("")=="local");
+ assert(mqttAccountScope("a/B-9")=="u_612f422d39");
+ assert(mqttAccountScope("\xe6\xb5\x8b\xe8\xaf\x95")=="u_e6b58be8af95");
  assert(businessReadSnapshot.begin());
  config["hub"]["username"]="owner";config["device"]["name"]="initial";
  co2Module.warmed=true;co2Module.received=true;co2Module.measuredAt=clockMs;

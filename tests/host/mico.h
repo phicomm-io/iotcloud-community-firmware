@@ -37,6 +37,7 @@ typedef int mico_gpio_t, WiFiEvent;
 #define kNoMemoryErr -3
 #define kDeletedErr -4
 #define kConnectionErr -5
+#define kNotPreparedErr -6745
 /* Match MiCODriverRng.h; short or failed Linux reads cannot create a valid
  * producer boot identifier in the real-SDK host worker. */
 static inline OSStatus MicoRandomNumberRead(void *buffer,int bytes){

@@ -42,8 +42,11 @@ class FilterStorageTest(unittest.TestCase):
 #define A1_FRESH_AIR
 #include "A1/storage.h"
 #include "A1/config_legacy.h"
+#include "common/device_hostname_mico.h"
 #include <stddef.h>
 #include <math.h>
+/* Keep hostname formatting real; the RAM fixture has no MiCO network stack. */
+char *ph_mico_sethostname(char *name){assert(!strcmp(name,"iotcloud-a1-ddeeff"));return name;}
 static feature_config_t configuration;
 static unsigned data_fields;
 static float aggregate[4];
