@@ -57,6 +57,12 @@ def overlay(app, sdk, run, boot_trace=False):
     replace('src/hal/bk7231/hal_main_bk7231.c','#include "../../new_common.h"','#include "../../new_common.h"\n#include "../../phicomm/src/boot_trace.h"')
     replace('src/hal/bk7231/hal_main_bk7231.c','\tMain_Init();','\tPH_BOOT_START();\n\tMain_Init();\n\tPH_BOOT_STAGE("main-returned");')
     replace('src/hal/bk7231/hal_main_bk7231.c','\tADDLOGF_DEBUG("initialised oneshot timers");','\tADDLOGF_DEBUG("initialised oneshot timers");\n\tPH_BOOT_STAGE("timers-ready");')
+    # SDK printf and OpenBeken's buffered logger have independent port selectors.
+    # UART2/P1 belongs exclusively to the 4800 8E1 HLW8032 meter. Set the native
+    # logger's defaults before any timer callback can emit onto that UART.
+    replace('src/logging/logging.c',
+        'int UART_PORT = UART2_PORT;\nint UART_PORT_INDEX = 1;',
+        'int UART_PORT = UART1_PORT;\nint UART_PORT_INDEX = 0;')
     replace('src/user_main.c','void QuickTick(void* param)\n{','void QuickTick(void* param)\n{\n    PH_BL_Tick();')
     replace('src/user_main.c','void Main_OnEverySecond()\n{','void Main_OnEverySecond()\n{\n    PH_BOOT_STAGE("second-enter");')
     replace('src/user_main.c','\tHAL_Run_WDT();\n#endif','\tHAL_Run_WDT();\n#endif\n    PH_BOOT_STAGE("second-done");')
@@ -143,6 +149,12 @@ def overlay(app, sdk, run, boot_trace=False):
     # through header parsing as well as body reads so the native worker emits
     # error -> end and releases the OTA reservation instead of spinning.
     http='src/httpclient/http_client.c'
+    # Per-255-byte logging is unnecessary for the public OTA progress counter.
+    # Keep it available at debug level without pacing normal downloads on UART.
+    replace(http,'    ADDLOG_INFO(LOG_FEATURE_HTTP_CLIENT, "httpclient_recv %u bytes has been read", *p_read_len);',
+        '    ADDLOG_DEBUG(LOG_FEATURE_HTTP_CLIENT, "httpclient_recv %u bytes has been read", *p_read_len);')
+    replace(ota,'      addLogAdv(LOG_INFO, LOG_FEATURE_OTA,"%x", addr);',
+        '      addLogAdv(LOG_DEBUG, LOG_FEATURE_OTA,"%x", addr);')
     replace(http,'        //timeout\n        return 0;',
         '        /* The read deadline expired without data. */\n'
         '        return ERROR_NET_TIMEOUT;')
@@ -327,7 +339,7 @@ def main():
         (sdk/'apps'/APP_NAME).unlink(missing_ok=True)
         (sdk/'apps'/APP_NAME).symlink_to(app,target_is_directory=True)
         # Restore only files that this overlay owns before applying updated hooks.
-        for rel in ['src/user_main.c','src/new_cfg.c','src/hal/bk7231/hal_main_bk7231.c','src/hal/bk7231/hal_wifi_bk7231.c','src/hal/bk7231/hal_ota_bk7231.c','src/httpclient/http_client.c','src/httpclient/utils_net.c','src/httpclient/utils_timer.c','src/cmnds/cmd_tasmota.c','src/httpserver/new_http.c','src/httpserver/http_tcp_server.c','src/httpserver/http_fns.c','components.mk']:
+        for rel in ['src/user_main.c','src/new_cfg.c','src/hal/bk7231/hal_main_bk7231.c','src/hal/bk7231/hal_wifi_bk7231.c','src/hal/bk7231/hal_ota_bk7231.c','src/httpclient/http_client.c','src/httpclient/utils_net.c','src/httpclient/utils_timer.c','src/logging/logging.c','src/cmnds/cmd_tasmota.c','src/httpserver/new_http.c','src/httpserver/http_tcp_server.c','src/httpserver/http_fns.c','components.mk']:
             shutil.copy2(APP_CACHE/rel,app/rel)
             if rel.endswith('.c'):
                 (app/Path(rel).with_suffix('.o')).unlink(missing_ok=True)
