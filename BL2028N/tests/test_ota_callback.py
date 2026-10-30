@@ -23,6 +23,8 @@ typedef int PROTECT_TYPE;
 #define START_ADR_OF_BK_PARTITION_OTA 0x12a000u
 #define LFS_BLOCKS_END 0x1d0000u
 #define LFS_START 0x1c8000u
+#define OTA_LIMIT (LFS_START-START_ADR_OF_BK_PARTITION_OTA)
+#define OTA_END (START_ADR_OF_BK_PARTITION_OTA+OTA_LIMIT)
 #define FLASH_XTX_16M_SR_WRITE_ENABLE 0
 #define FLASH_PROTECT_NONE 0
 #define FLASH_UNPROTECT_LAST_BLOCK 1
@@ -43,12 +45,12 @@ static void flash_init(void) {}
 void flash_protection_op(UINT8 mode, PROTECT_TYPE type) {(void)mode;protection=type;}
 UINT32 flash_read(char *p, UINT32 n, UINT32 a) {assert(a+n<=sizeof flash);memcpy(p,flash+a,n);return 0;}
 UINT32 flash_write(char *p, UINT32 n, UINT32 a) {
-    assert(n<=512 && a>=START_ADR_OF_BK_PARTITION_OTA && a+n<=LFS_START && erased[a/4096]);
+    assert(n<=512 && a>=START_ADR_OF_BK_PARTITION_OTA && a+n<=OTA_END && erased[a/4096]);
     memcpy(flash+a,p,n);return 0;
 }
 UINT32 flash_ctrl(UINT32 cmd, void *arg) {
     if(cmd==CMD_FLASH_ERASE_SECTOR){unsigned a=*(unsigned*)arg;
-        assert(!(a%4096) && a>=START_ADR_OF_BK_PARTITION_OTA && a+4096<=LFS_START);
+        assert(!(a%4096) && a>=START_ADR_OF_BK_PARTITION_OTA && a+4096<=OTA_END);
         memset(flash+a,255,4096);erased[a/4096]=true;++erases;
     }return 0;
 }
@@ -70,7 +72,7 @@ typedef struct {int state;httpclient_t client;httpclient_data_t client_data;} ht
 SCENARIOS = r'''
 static void untouched(void) {
     for(unsigned i=0;i<START_ADR_OF_BK_PARTITION_OTA;++i)assert(flash[i]==0xa5);
-    for(unsigned i=LFS_START;i<sizeof flash;++i)assert(flash[i]==0xa5);
+    for(unsigned i=OTA_END;i<sizeof flash;++i)assert(flash[i]==0xa5);
 }
 static void begin(unsigned n, int status) {
     assert(!sector && !http_buf);memset(flash,0xa5,sizeof flash);reboots=erases=progress=total_bytes=0;
@@ -104,7 +106,7 @@ int main(int argc,char **argv) {
     assert(!chunk(rbl,8192));httprequest.state=-2;assert(!myhttpclientcallback(&httprequest));end(0);
     begin(n,200);assert(!chunk(rbl,8192));end(0); /* Silent short body. */
     begin(n,404);assert(chunk(rbl,2048)==1);end(0);
-    begin(LFS_START-START_ADR_OF_BK_PARTITION_OTA+1,200);assert(chunk(rbl,2048)==1);end(0);
+    begin(OTA_LIMIT+1,200);assert(chunk(rbl,2048)==1);end(0);
     begin(0,200);assert(chunk(rbl,2048)==1);end(0);
     begin(n,200);unsigned char bad[96]={0};assert(chunk(bad,sizeof bad)==1);end(0);
     fail_alloc=1;begin(n,200);assert(chunk(rbl,2048)==1);end(0);fail_alloc=0;
@@ -115,6 +117,13 @@ int main(int argc,char **argv) {
     end(1);assert(!memcmp(flash+START_ADR_OF_BK_PARTITION_OTA,rbl,n));
     assert(erases==(n+4095)/4096);
     for(unsigned i=n;i<((n+4095)&~4095u);++i)assert(flash[START_ADR_OF_BK_PARTITION_OTA+i]==255);
+    /* Exercise the exact partition boundary independently of package hashes. */
+    unsigned char *full=malloc(OTA_LIMIT);assert(full);
+    memset(full,255,OTA_LIMIT);memcpy(full,rbl,n);begin(OTA_LIMIT,200);
+    for(unsigned offset=0;offset<OTA_LIMIT;){unsigned take=OTA_LIMIT-offset;if(take>2047)take=2047;
+        assert(!chunk(full+offset,take));offset+=take;}
+    end(1);assert(!memcmp(flash+START_ADR_OF_BK_PARTITION_OTA,full,OTA_LIMIT));
+    assert(erases==OTA_LIMIT/4096);free(full);
     free(rbl);puts("PASS: native OTA callback: 7 rejection cases, complete RBL, retry and flash boundaries");return 0;
 }
 '''
@@ -125,13 +134,22 @@ def main():
     parser.add_argument('--app-source', type=Path, required=True)
     parser.add_argument('--firmware', type=Path, required=True)
     parser.add_argument('--run-dir', type=Path, required=True)
+    parser.add_argument('--stock-layout', action='store_true')
     args = parser.parse_args()
     run = args.run_dir.resolve()
     run.mkdir(parents=True, exist_ok=True)
     path = args.app_source/'src/hal/bk7231/hal_ota_bk7231.c'
     source = path.read_text()
     native = source[source.index('static unsigned char *sector'):source.index('  // NOTE: these MUST persist')]
-    (run/'ota_callback.c').write_text(STUBS+native+SCENARIOS)
+    stubs = STUBS
+    if args.stock_layout:
+        stubs = stubs.replace('0x12a000u', '0x132000u').replace(
+            '#define OTA_LIMIT (LFS_START-START_ADR_OF_BK_PARTITION_OTA)',
+            '#define OTA_LIMIT 0xAE000u')
+        stubs = stubs.replace('static unsigned CFG_GetLFS_Size(void) {return 32768;}\n', '')
+        if 'unsigned int limit = 0xAE000u;' not in native:
+            raise SystemExit('Stock-layout callback source required')
+    (run/'ota_callback.c').write_text(stubs+native+SCENARIOS)
     compiler = shutil.which('clang')
     if not compiler:
         raise SystemExit('Host clang is required')
@@ -148,6 +166,7 @@ def main():
     (run/'result.json').write_text(json.dumps({'status': 'PASS', 'source': str(path),
                                              'firmware': str(args.firmware.resolve()),
                                              'sanitizers': ['address', 'undefined'],
+                                             'stock_layout': args.stock_layout,
                                              'hardware_verified': False}, indent=2)+'\n')
     print((run/'test.log').read_text(), end='')
 

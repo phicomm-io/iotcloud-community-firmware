@@ -67,7 +67,14 @@ def main():
     raw=(folder/f'BL2028N_app_{v}.bin').read_bytes()
     assert (b'[S30-BOOT] ' in raw)==bool(manifest.get('boot_trace',False)), 'Boot trace does not match build manifest'
     packages={}
-    for flavor,boot in [('BK7231N','bk7231n_bootloader_enc.bin'),('BK7231M','bk7231n_bootloader.bin')]:
+    stock_layout=manifest.get('flash_layout')
+    flavors=[] if stock_layout else [('BK7231N','bk7231n_bootloader_enc.bin'),('BK7231M','bk7231n_bootloader.bin')]
+    if stock_layout:
+        from stock_layout import LAYOUT
+        assert stock_layout==LAYOUT
+        assert not any('_QIO_' in name or ('_UA_' in name and '_STOCK_UA_' not in name) for name in sizes)
+        assert (len(raw)+31)//32*34<=LAYOUT['app_end']-LAYOUT['app_start']-102
+    for flavor,boot in flavors:
         qio=(folder/f'BL2028N_{flavor}_QIO_{v}.bin').read_bytes();ua=(folder/f'BL2028N_{flavor}_UA_{v}.bin').read_bytes()
         loader=(CACHE/'openbeken/bk7231n-upstream/platforms/bk7231n/bk7231n_os/tools/generate'/boot).read_bytes()
         assert len(qio)==1220464 and len(ua)==1150832
@@ -81,7 +88,7 @@ def main():
         cipher=BekenCodeCipher(coefficients)
         assert bytes(cipher.decrypt(cipher.pad(payload),stream_start_offset=0x10000)[:code_length])==raw.ljust(code_length,b'\xff')
         packages[flavor]=ua
-    assert packages['BK7231N']!=packages['BK7231M']
+    if not stock_layout:assert packages['BK7231N']!=packages['BK7231M']
     rbl=(folder/f'BL2028N_OTA_{v}.rbl').read_bytes();ug=(folder/f'BL2028N_UG_{v}.bin').read_bytes()
     magic,algorithm,_,stamp,name,version,sn,payload_crc,fnv,raw_n,package_n,header_crc=struct.unpack('<4sHHI16s24s24sIIIII',rbl[:96])
     assert magic==b'RBL\0' and algorithm==0x102 and name.startswith(b'app\0')
@@ -89,13 +96,23 @@ def main():
     assert zlib.crc32(rbl[:92])==header_crc and zlib.crc32(rbl[96:])==payload_crc
     assert len(rbl)==96+package_n and raw_n==len(raw)
     assert fnv1a(raw)==fnv
+    if stock_layout:
+        ua=(folder/f'BL2028N_STOCK_UA_{v}.bin').read_bytes()
+        assert len(ua)==LAYOUT['app_end']-LAYOUT['app_start']
+        end=(len(raw)+31)//32*34
+        assert crc_blocks(ua[:end])==raw.ljust((len(raw)+31)//32*32,b'\xff')
+        assert all(b==255 for b in ua[end:-102])
+        assert crc_blocks(ua[-102:])==rbl[:96]
     decrypted=subprocess.run(['openssl','enc','-d','-aes-256-cbc','-K',b'0123456789ABCDEF0123456789ABCDEF'.hex(),'-iv',b'0123456789ABCDEF'.hex()],input=rbl[96:],capture_output=True,check=True).stdout
     assert gzip.decompress(decrypted)==raw
     assert ug[:4]==bytes.fromhex('55aa55aa') and ug[28:32]==bytes.fromhex('aa55aa55') and ug[32:]==rbl
     assert struct.unpack('>III',ug[16:28])==(len(rbl),sum(rbl)&0xffffffff,sum(ug[:24])&0xffffffff)
     # Default 32 KiB LFS starts at 0x1c8000; preserve it with this OTA image.
-    ota_start=0x12a000;rounded=((len(rbl)+4095)//4096)*4096
-    assert ota_start+rounded<0x1c8000
+    ota_start=0x132000 if stock_layout else 0x12a000
+    ota_end=0x1e0000 if stock_layout else 0x1c8000
+    rounded=((len(rbl)+4095)//4096)*4096
+    if stock_layout:assert ota_start+rounded<=ota_end
+    else:assert ota_start+rounded<ota_end
     elf=run/f'OpenBK7231N_{v}.axf'
     symbols=subprocess.check_output([CACHE/'gcc5/bin/arm-none-eabi-nm',elf],text=True)
     for symbol in ('PH_BL_Init','PH_BL_Tick','PH_BL_StartHTTP','PH_BL_FactoryMac','ph_command','ph_meter_byte','ph_udp_handle','ph_http_server_step','ph_mqtt_session_run','ph_mqtt_core_init','MQTTConnect'):
@@ -105,6 +122,12 @@ def main():
     size=subprocess.check_output([CACHE/'gcc5/bin/arm-none-eabi-size',elf],text=True)
     (run/'size.log').write_text(size)
     result={'status':'PASS','source_hashes':'PASS','firmware_sha256':'PASS','qio_ua_layout_and_crc':'PASS','n_and_zero_key_cipher_roundtrip':'PASS','deterministic_application_padding':'PASS','rbl_crc_fnv_aes_gzip_roundtrip':'PASS','ug_header':'PASS','ota_preserves_default_littlefs':'PASS','required_symbols':'PASS','no_legacy_json_or_other_framework_symbols':'PASS','sizes':sizes,'hardware_verified':False}
+    if stock_layout:
+        for key in ['qio_ua_layout_and_crc','n_and_zero_key_cipher_roundtrip','deterministic_application_padding']:
+            result[key]='NOT_EMITTED: preserves the device stock bootloader'
+        result['stock_layout']=stock_layout
+        result['stock_uart_application_crc_and_footer']='PASS'
+        result['stock_uart_write_start']='0x11000'
     (run/'firmware-validation.json').write_text(json.dumps(result,indent=2)+'\n');print(json.dumps(result,indent=2));print(size)
 
 if __name__=='__main__':main()

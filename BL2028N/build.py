@@ -43,7 +43,7 @@ def pinned_sources():
         if subprocess.check_output(['git','status','--porcelain','--untracked-files=no'],cwd=path,text=True):
             raise SystemExit(f'Shared upstream is modified: {path}')
 
-def overlay(app, sdk, run, boot_trace=False):
+def overlay(app, sdk, run, boot_trace=False, stock_layout=True):
     patches=[]
     def replace(relative, before, after):
         p=app/relative; old=p.read_text()
@@ -246,16 +246,19 @@ def overlay(app, sdk, run, boot_trace=False):
     (target/'src/web.h').write_text(header(html))
     (run/'web.html').write_bytes(html)
     (run/'framework.patch').write_text(''.join(patches))
+    if stock_layout:
+        from stock_layout import apply
+        apply(app, sdk, run)
     (app/'beken378').symlink_to(sdk/'platforms/bk7231n/bk7231n_os/beken378',target_is_directory=True)
 
-def prepare(run, boot_trace=False):
+def prepare(run, boot_trace=False, stock_layout=True):
     pinned_sources()
     build=run/'build';app=build/'app';sdk=build/'sdk'
     if build.exists():raise SystemExit(f'Build directory exists; use --incremental to refresh overlay: {build}')
     shutil.copytree(APP_CACHE,app,ignore=shutil.ignore_patterns('.git','sdk','output'))
     shutil.copytree(SDK_CACHE,sdk,ignore=shutil.ignore_patterns('.git','toolchain'))
     (sdk/'apps'/APP_NAME).symlink_to(app,target_is_directory=True)
-    overlay(app,sdk,run,boot_trace)
+    overlay(app,sdk,run,boot_trace,stock_layout)
 
 def normalize_factory(data,version):
     """SDK packager leaves bytes after C-string terminators uninitialized.
@@ -273,7 +276,7 @@ def normalize_factory(data,version):
         data[end-102:end]=encoded
     return bytes(data)
 
-def package(run, version, log, metadata, boot_trace=False):
+def package(run, version, log, metadata, boot_trace=False, stock_layout=True):
     build=run/'build';app=build/'app';sdk=build/'sdk'
     src=app/'output'/version;dest=run/'firmware';dest.mkdir(exist_ok=True)
     base=f'{APP_NAME}_{version}';raw=src/(base+'.bin')
@@ -285,7 +288,12 @@ def package(run, version, log, metadata, boot_trace=False):
     plain=raw.read_bytes();code_length=(len(plain)+15)//32*32+16
     code_name=base+'.code.bin'
     (generate/code_name).write_bytes(plain.ljust(code_length,b'\xff'))
-    for flavor,keys,boot in [('BK7231N',['510fb093','a3cbeadc','5993a17e','c7adeb03'],'bk7231n_bootloader_enc.bin'),('BK7231M',['00000000']*4,'bk7231n_bootloader.bin')]:
+    flavors=[] if stock_layout else [('BK7231N',['510fb093','a3cbeadc','5993a17e','c7adeb03'],'bk7231n_bootloader_enc.bin'),('BK7231M',['00000000']*4,'bk7231n_bootloader.bin')]
+    if stock_layout:
+        from stock_layout import LAYOUT
+        if (len(plain)+31)//32*34 > LAYOUT['app_end']-LAYOUT['app_start']-102:
+            raise SystemExit('Application exceeds the stock bootloader app partition')
+    for flavor,keys,boot in flavors:
         command([tool/'encrypt',code_name,*keys,'10000'],generate,log)
         # The SDK encrypt executable reads beyond EOF and emits extra bytes.
         # Its word cipher preserves length; the packager adds block padding.
@@ -302,8 +310,14 @@ def package(run, version, log, metadata, boot_trace=False):
     command([tool/'rt_ota_packaging_tool_cli','-f',base+'.bin','-v',version,'-o',base+'.rbl','-p','app','-c','gzip','-s','aes','-k','0123456789ABCDEF0123456789ABCDEF','-i','0123456789ABCDEF'],generate,log)
     command([tool/'package',base+'.rbl',base+'_UG.bin',version],generate,log)
     shutil.copy2(generate/(base+'.rbl'),dest/f'BL2028N_OTA_{version}.rbl')
+    if stock_layout:
+        from stock_layout import application_image
+        uart=application_image(plain,(generate/(base+'.rbl')).read_bytes()[:96])
+        (dest/f'BL2028N_STOCK_UA_{version}.bin').write_bytes(uart)
     ug=generate/(base+'_UG.bin')
-    if ug.stat().st_size>679936:raise SystemExit('OTA exceeds the OpenBeken BK7231N upgrade partition')
+    limit=0xAE000 if stock_layout else 679936
+    ota_package=generate/(base+'.rbl') if stock_layout else ug
+    if ota_package.stat().st_size>limit:raise SystemExit('OTA exceeds the selected upgrade partition')
     shutil.copy2(ug,dest/f'BL2028N_UG_{version}.bin')
     shutil.copy2(raw,dest/f'BL2028N_app_{version}.bin')
     for suffix in ['.axf','.map']:
@@ -314,7 +328,9 @@ def package(run, version, log, metadata, boot_trace=False):
     project_head=subprocess.check_output(['git','rev-parse','HEAD'],cwd=HERE,text=True).strip()
     branch=subprocess.check_output(['git','branch','--show-current'],cwd=HERE,text=True).strip()
     dirty=bool(subprocess.check_output(['git','status','--porcelain'],cwd=HERE,text=True))
-    (run/'build-manifest.json').write_text(json.dumps({'version':version,'version_metadata':metadata,'framework':'OpenBeken','openbeken_sha':APP_SHA,'sdk_sha':SDK_SHA,'project_head':project_head,'branch':branch,'dirty':dirty,'compiler':'GCC 5.4.1','boot_trace':boot_trace,'source_sha256':inputs,'hardware_verified':False},indent=2)+'\n')
+    manifest={'version':version,'version_metadata':metadata,'framework':'OpenBeken','openbeken_sha':APP_SHA,'sdk_sha':SDK_SHA,'project_head':project_head,'branch':branch,'dirty':dirty,'compiler':'GCC 5.4.1','boot_trace':boot_trace,'source_sha256':inputs,'hardware_verified':False}
+    if stock_layout: manifest['flash_layout']=LAYOUT
+    (run/'build-manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
@@ -325,6 +341,7 @@ def main():
     parser.add_argument('--incremental',action='store_true')
     parser.add_argument('--keep-build',action='store_true')
     parser.add_argument('--boot-trace',action='store_true',help='Diagnostic UART1 TX/P11 log at 4800 8E1; disable for final acceptance')
+    parser.add_argument('--stock-layout',action='store_true',default=True,help='Default S30-V1B stock-bootloader layout (option retained for existing build scripts)')
     args=parser.parse_args();run=args.run_dir.resolve();run.mkdir(parents=True,exist_ok=True)
     verify_sources()
     tag=args.tag or (os.environ.get('GITHUB_REF_NAME') if os.environ.get('GITHUB_REF_TYPE')=='tag' else None)
@@ -333,7 +350,7 @@ def main():
     (run/'version.json').write_text(json.dumps(metadata,indent=2)+'\n')
     gcc=CACHE/'gcc5/bin/arm-none-eabi-gcc'
     if subprocess.check_output([gcc,'-dumpversion'],text=True).strip()!='5.4.1':raise SystemExit('This checkout requires shared GCC 5.4.1')
-    if not args.incremental:prepare(run,args.boot_trace)
+    if not args.incremental:prepare(run,args.boot_trace,args.stock_layout)
     else:
         pinned_sources();app=run/'build/app';sdk=run/'build/sdk'
         (sdk/'apps'/APP_NAME).unlink(missing_ok=True)
@@ -348,8 +365,10 @@ def main():
                          'platforms/bk7231n/bk7231n_os/beken378/os/FreeRTOSv9.0.0/FreeRTOS/Source/portable/MemMang/heap_4.c']:
             shutil.copy2(SDK_CACHE/relative,sdk/relative)
             (sdk/Path(relative).with_suffix('.o')).unlink(missing_ok=True)
+        for rel in ['src/hal/hal_ota.h','src/littlefs/our_lfs.h']:
+            shutil.copy2(APP_CACHE/rel,app/rel)
         (app/'beken378').unlink(missing_ok=True)
-        overlay(app,sdk,run,args.boot_trace)
+        overlay(app,sdk,run,args.boot_trace,args.stock_layout)
         # Overlay revisions may remove headers or whole translation units. Old
         # generated dependencies must not retain deleted implementation files.
         for dep in (sdk/'platforms/bk7231n/bk7231n_os/Debug/obj').glob('*.d'):
@@ -360,7 +379,7 @@ def main():
     osdir=run/'build/sdk/platforms/bk7231n/bk7231n_os'
     with (run/'build.log').open('wb') as log:
         command(['make','-f','application.mk',f'-j{args.jobs}',f'APP_BIN_NAME={APP_NAME}',f'USER_SW_VER={version}',f'APP_VERSION={version}','TARGET_PLATFORM=bk7231n','OBK_VARIANT=0','CFG_USE_MQTT_TLS=0',f'ARM_GCC_TOOLCHAIN={gcc.parent}'],osdir,log)
-        package(run,version,log,metadata,args.boot_trace)
+        package(run,version,log,metadata,args.boot_trace,args.stock_layout)
     command([sys.executable,HERE/'verify_firmware.py','--run-dir',run])
     if not args.keep_build:shutil.rmtree(run/'build')
     print(f'Firmware and checksums: {run}/firmware')
