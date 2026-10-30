@@ -52,7 +52,10 @@ class MQTTOverlayPreparationTests(unittest.TestCase):
     def test_fresh_stack_is_idempotent_and_partial_preparation_is_rejected(self):
         # Read only the few touched upstream files, never copy or mutate a
         # product SDK. CI has this bare repository from its pinned SDK cache.
-        repository = Path(os.environ.get('PHICOMM_TEST_MICO_GIT_DIR', ROOT / 'build/mico-upstream.git'))
+        tools_home = Path(os.environ.get('PHICOMM_TOOLS_HOME',
+                          Path(os.environ.get('XDG_CACHE_HOME', Path.home() / '.cache')) / 'phicomm'))
+        repository = Path(os.environ.get('PHICOMM_TEST_MICO_GIT_DIR',
+                          os.environ.get('MICO_SDK_CACHE', tools_home / 'mico-upstream.git')))
         commit = json.loads((ROOT / 'common/mico-sdk.json').read_text())['commit']
         paths = set().union(*(changed_paths(p.read_bytes()) for p in PATCHES))
         baseline = {p: subprocess.check_output(

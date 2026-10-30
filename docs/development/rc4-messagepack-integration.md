@@ -66,7 +66,7 @@ Build all ten release variants and run cross-language vectors, malformed input,
 OOM, ASan/UBSan, actual stack/ELF and full business coverage checks. Verify
 authentication lifecycle, backup/recovery, OTA signatures and local buttons.
 
-Live targets: A1 .111, M1 .103, TC1 .120, Daikin .110 on 10.117.152.0/24.
+Configured lab targets: A1 .114, M1 .103, TC1 .120, Daikin .110 on 10.117.152.0/24.
 Freeze identities, backups and exact rollback artifacts before writes.
 Compare rc.3, MP without cache and MP with cache, three 600-second rounds each.
 Keep HA, MQTT user, HTTP home and heavy settings concurrent, with three tab
@@ -78,4 +78,37 @@ no increase in timeouts. Recovery scenarios probe read-only at 250ms, targeting
 P95 <=2s and maximum <=5s; record unrecovered events separately. Do not inflate
 queues/retries to conceal overload. Record build, transfer, runtime identity,
 performance and physical acceptance independently. No experimental PB, CBOR,
-numeric-key format, lazy MQTT or compiler change enters this release by default.
+numeric-key business format or lazy MQTT enters this release by default. The
+selected integration explicitly enables the approved GCC14 code generator with
+the pinned GCC5 headers/linker/runtime; it does not substitute runtime libraries.
+
+
+## Selected integration branch
+
+Firmware and frontend use `hotfix/rc4-selected-integration`. The frontend is
+locked to a complete source commit and exact archive SHA-256; candidate PR
+validation may rebuild that source and must reproduce the locked archive hash.
+Normal release validation still requires the published matching asset.
+
+Included changes are the A1 parameter-error/busy fix, ordered MQTT SDK buffer
+patches, independently acknowledged native/HA publications, bounded hub storage
+and routing/queue recovery, idle HTTP reclamation, serial browser HTTP with
+write priority/deduplicated reads/stale-response isolation and bounded confirms,
+A1 local animation, ordinary A1/M1/Daikin5s reads, native business/diagnostics
+separation and cache invalidation, minimal mDNS/shared UDP, and matching UDP hub
+management. TC1's rejected extra polling slowdown and M1's rejected optional
+alarm/particle slowdown are not included. WS/PB/CBOR/lazy-MQTT comparison builds
+remain exploration inputs.
+
+M1 capacity changes retain all full-build features: real SDK `release` profile,
+GCC14 compilation with GCC5 runtime, removal of unused JSON/numeric/SNTP link
+inputs, shared frontend queue injection, device capability pruning, and host
+Zopfli output compatible with standard gzip. The selected clean build
+`dd5457453aab6fe1aaefbde9d5d09838eb188bae` uses256608 of262144 application
+bytes, leaving5536. This is capacity evidence, not a measured P95 improvement.
+
+Host/CI acceptance is recorded separately from device flashing, performance
+comparison and stability acceptance. No rc.4 tag or production publication is
+created merely by collecting these integration results. Historical JSON broker
+fixtures and their replacement boundaries are inventoried explicitly in
+`tests/coverage/rc4-native-migration.md`; the native broker entry links no DOM.

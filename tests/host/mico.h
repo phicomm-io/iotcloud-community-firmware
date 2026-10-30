@@ -78,6 +78,9 @@ static inline void mico_start_timer(mico_timer_t *t){(void)t;}
 static inline void mico_stop_timer(mico_timer_t *t){(void)t;}
 typedef struct { int is_connected; } LinkStatusTypeDef;
 static inline void micoWlanGetLinkStatus(LinkStatusTypeDef *s){s->is_connected=1;}
+typedef struct { char ip[16]; } IPStatusTypedef;
+enum { Station };
+static inline int micoWlanGetIPStatus(IPStatusTypedef *s,int interface){(void)interface;strcpy(s->ip,"127.0.0.1");return kNoErr;}
 static inline void mico_time_get_time(mico_time_t *out){*out=mico_rtos_get_time();}
 static inline int mico_system_context_update(void *p){(void)p;return 0;}
 static inline void MicoSystemReboot(void){}

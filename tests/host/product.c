@@ -23,7 +23,6 @@ uint32_t feature_config_revision(void){return features.revision;}
 void feature_config_get(feature_config_t *out){*out=features;feature_config_limit_peers(out);}
 bool feature_fan_auto(void){return features.linkage.enabled;}
 unsigned feature_fan_limit(void){return features.linkage.max_speed;}
-int feature_fan_command(json_object *o){(void)o;return 1;}
 bool feature_bound(void){return false;}
 #ifdef HOST_A1
 bool feature_ha_device(char *id,size_t ni,char *name,size_t nn,bool *grouped){
@@ -35,8 +34,8 @@ bool feature_mqtt_input(const char *t,const void *d,size_t n,bool retained){(voi
 bool feature_mqtt_filters_current(char f[][FEATURE_TOPIC_MAX], unsigned n){(void)f;(void)n;return true;}
 void feature_mqtt_session(const mqtt_account_t *a){(void)a;}
 bool feature_mqtt_initial_ready(void){return true;}
-int feature_mqtt_service(int (*p)(const char *,const char *,bool),bool connected){(void)p;(void)connected;return 0;}
-int feature_mqtt_cleanup(int (*p)(const char *,const char *,bool)){(void)p;return 0;}
+int feature_mqtt_service(int (*p)(const char *,const void *,size_t,bool),bool connected){(void)p;(void)connected;return 0;}
+int feature_mqtt_cleanup(int (*p)(const char *,const void *,size_t,bool)){(void)p;return 0;}
 void feature_effective_fan(bool a,unsigned b,bool *on,unsigned *speed){*on=a;*speed=b;}
 uint32_t mico_rtos_get_time(void){return host_now()-started;}
 static void trace_status(void);
@@ -56,8 +55,8 @@ void m1_display_source_mqtt_reset(void){}
 void m1_state_get(m1_state_t *out){
     *out=m1_state;
 }
-json_object *m1_particles_json(void){return json_object_new_object();}
-bool m1_set_brightness(unsigned n){++controls;m1_state.brightness_requested=n;printf("CONTROL brightness=%u\n",n);fflush(stdout);return true;}
+void m1_details_snapshot(m1_details_t *out){memset(out,0,sizeof(*out));}
+bool m1_set_brightness(unsigned n){++controls;m1_state.brightness_requested=n;service_cache_changed(SERVICE_CACHE_STATUS);printf("CONTROL brightness=%u\n",n);fflush(stdout);return true;}
 bool m1_sample_fresh(const m1_sample_t *s,uint32_t now){return s->received && (uint32_t)(now-s->updated_ms)<15000;}
 #define WORKER mqtt_worker
 #elif defined(HOST_A1)
@@ -69,14 +68,12 @@ void a1_filter_get(a1_filter_storage_t *out){a1_filter_defaults(out);}
 void a1_filter_stock_get(a1_filter_stock_t *out){a1_filter_stock_defaults(out,false);}
 void a1_config_get(a1_config_t *out){*out=config;}
 void a1_state_get(a1_state_t *out){*out=a1_state;}
-bool a1_control_local(const char *kind,json_object *o){++controls;printf("CONTROL %s\n",kind);fflush(stdout);if(!strcmp(kind,"fan")){json_object *v=json_object_object_get(o,"on");if(v)config.fan_on=json_object_get_boolean(v);v=json_object_object_get(o,"speed");if(v)config.speed=json_object_get_int(v);}++config.revision;return true;}
 bool a1_control_apply(a1_control_t *r,bool button,bool broadcast){
  (void)button;(void)broadcast;++controls;
  printf("CONTROL %s\n",r->kind==A1_CONTROL_FAN?"fan":r->kind==A1_CONTROL_LIGHT?"light":"child_lock");fflush(stdout);
  if(r->kind==A1_CONTROL_FAN){if(r->fields&A1_SET_ON)config.fan_on=r->on;if(r->fields&A1_SET_SPEED)config.speed=r->speed;}
- ++config.revision;return true;
+ ++config.revision;service_cache_changed(SERVICE_CACHE_STATUS);return true;
 }
-json_object *a1_json_parse(const char *s,size_t n){(void)n;return json_tokener_parse(s);}
 #define WORKER mqtt_worker
 #else
 #define WEB_LOG_H
@@ -94,7 +91,7 @@ char str_mac[16]="AABBCCDDEEFF";int childLockEnabled;
 volatile uint32_t power_session_pulses=100;
 uint32_t p_count=100;float real_time_power=12.5;
 void UserLedSet(char n){(void)n;}
-void UserRelaySet(unsigned char i,char on){if(i>=6)return;++controls;config.socket_status[i]=on;printf("CONTROL socket=%u on=%d\n",i,on);fflush(stdout);}
+void UserRelaySet(unsigned char i,char on){if(i>=6)return;++controls;config.socket_status[i]=on;service_cache_changed(SERVICE_CACHE_STATUS);printf("CONTROL socket=%u on=%d\n",i,on);fflush(stdout);}
 void UserRelaySetAll(char on){for(unsigned i=0;i<6;++i)UserRelaySet(i,on);}
 bool RelayOut(void){for(unsigned i=0;i<6;++i)if(config.socket_status[i])return true;return false;}
 void UserSoftReboot(void){}

@@ -29,29 +29,8 @@ port=$(docker port "$container" 1883/tcp | sed 's/.*://')
 python3 tests/mqtt_broker_ready.py "$port"
 "${MQTT_TEST_PYTHON:-python3}" -m unittest tests.test_mqtt_observer tests.test_mqtt_broker_ready
 "${MQTT_TEST_PYTHON:-python3}" tests/test_mqtt_v2.py "$port"
-bash tests/simulator/build.sh
-if [[ " ${models[*]} " == *" A1 "* ]]; then
-  "${MQTT_TEST_PYTHON:-python3}" tests/test_a1_filter_mqtt.py "$port"
-else
-  echo 'NOT_RUN A1 filter MQTT: A1 not selected'
-fi
-if [[ " ${models[*]} " == *" M1 "* ]]; then
-  "${MQTT_TEST_PYTHON:-python3}" tests/test_m1_co2_mqtt.py "$port"
-  "${MQTT_TEST_PYTHON:-python3}" tests/test_m1_external_co2_mqtt.py "$port"
-  "${MQTT_TEST_PYTHON:-python3}" tests/test_m1_dual_display_mqtt.py "$port"
-  "${MQTT_TEST_PYTHON:-python3}" tests/test_m1_pressure_mqtt.py "$port"
-  if [[ " ${models[*]} " == *" A1 "* ]]; then
-    "${MQTT_TEST_PYTHON:-python3}" tests/test_sensor_session_mqtt.py "$port"
-    "${MQTT_TEST_PYTHON:-python3}" tests/test_a1_auto_mqtt.py "$port"
-    "${MQTT_TEST_PYTHON:-python3}" tests/test_a1_co2_mqtt.py "$port"
-  else
-    echo 'PAUSED A1 automatic MQTT: requires A1 and M1; A1 not selected'
-    echo 'PAUSED A1/M1 CO2 linkage MQTT: requires A1 and M1; A1 not selected'
-  fi
-  "${MQTT_TEST_PYTHON:-python3}" tests/test_resource_mqtt.py "$port"
-else
-  echo 'PAUSED A1 automatic MQTT: scenario starts an M1 host simulator'
-  echo 'PAUSED M1 CO2 MQTT: M1 testing is paused'
-  echo 'PAUSED A1/M1 CO2 linkage MQTT: scenario starts an M1 host simulator'
-  echo 'PAUSED M1 resource MQTT: M1 testing is paused'
-fi
+# The removed JSON-device protocol is not a supported native fallback. The
+# native functional manifest runs in tests/run.sh before this broker gate;
+# see the explicit historical-scenario mapping, including remaining gaps.
+# Do not compile a JSON adapter to make obsolete wire assertions pass.
+echo 'Native product, UDP/session, sensor, display and HA functional coverage: tests/coverage/rc4-native-migration.md'
