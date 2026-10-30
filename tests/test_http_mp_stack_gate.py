@@ -35,7 +35,11 @@ class HTTPMessagePackStackGate(unittest.TestCase):
                      'phv_skip_validated','binary_token','phw_bytes','phw_prefix','install_config',
                      'phw_quote','phw_head','device_status_visit','emit_string',
                      'runtime_fields','mp_copy','mp_cache_evict','memory_response','acquire',
-                     'action','read_body','close_slot','respond','transmit']:
+                     'action','read_body','close_slot','respond','transmit',
+                     'mp_dispatch','mp_query','ph_http_service_status','mp_receipt_save',
+                     'mp_receipt_copy','mp_receipt_release','mp_receipt_difference',
+                     'mp_receipt_apply','mp_receipt_u16','mp_receipt_put_u16',
+                     'keys','number','boolparam','strparam','tc1_mp_get','tc1_mp_has']:
             frames[name]=16
         return frames,http_paths(frames,model,frames)
     def test_actual_mp_paths_and_unchanged_budget(self):
@@ -43,7 +47,7 @@ class HTTPMessagePackStackGate(unittest.TestCase):
             frames,paths=self.fixture(model)
             with redirect_stdout(io.StringIO()):validate_paths(paths,frames)
             names={n for reserve,stack in paths.values() for n in stack}
-            self.assertTrue({'mp_dispatch','mp_cached','service_product_status_mp',
+            self.assertTrue({'mp_dispatch_authenticated','mp_cached','service_product_status_mp',
                              'device_status_mp','phv_scan','phw_cached_value','mp_cache_evict'}<=names)
             self.assertTrue(all(reserve>=3072 for reserve,names in paths.values()))
             self.assertFalse(any('json' in n for n in names))
@@ -71,7 +75,7 @@ class HTTPMessagePackStackGate(unittest.TestCase):
             diagnostic_paths(missing,'TC1','diagnostics',[],3072,frames)
 
     def test_missing_emitted_core_frames_fail_closed(self):
-        for missing in ['mp_dispatch','mp_cached','service_command_mp',
+        for missing in ['mp_dispatch_authenticated','mp_cached','service_http_command_mp',
                         'phv_parse','device_status_mp','encode_a1',
                         'a1_status_capture','phw_cached_value','ph_wire_malloc','feature_light_select_mp','feature_mp']:
             frames,paths=self.fixture();del frames[missing]
@@ -86,6 +90,45 @@ class HTTPMessagePackStackGate(unittest.TestCase):
         paths=http_paths(frames,'A1',frames)
         with redirect_stdout(io.StringIO()):validate_paths(paths,frames)
         self.assertTrue(any('phv_parse' in names for reserve,names in paths.values()))
+
+    def test_tc1_business_branches_and_http_wrappers_follow_real_calls(self):
+        frames,paths=self.fixture('TC1')
+        with redirect_stdout(io.StringIO()):validate_paths(paths,frames,8192,'TC1')
+        generic=paths['HTTP POST business generic string'][1]
+        control=paths['HTTP POST business control number scan'][1]
+        self.assertIn('tc1_product_inner_mp',generic);self.assertNotIn('tc1_control_mp',generic)
+        self.assertIn('tc1_control_mp',control);self.assertNotIn('tc1_product_inner_mp',control)
+        self.assertIn('service_http_command_mp',control);self.assertIn('mp_dispatch_authenticated',control)
+        self.assertNotIn('mp_dispatch',control);self.assertNotIn('service_command_mp',control)
+        self.assertEqual(control.count('phv_get'),1);self.assertNotIn('boolparam',control)
+        metadata=paths['HTTP GET service_product_info_mp string'][1]
+        self.assertIn('service_http_query_mp',metadata);self.assertIn('mp_query',metadata)
+        self.assertFalse(set(metadata)&{'tc1_product_inner_mp','tc1_control_mp'})
+        error=paths['HTTP GET service status phv_parse'][1]
+        self.assertIn('ph_http_service_status',error)
+        self.assertFalse(set(error)&{'mp_query','mp_dispatch_authenticated','service_http_query_mp'})
+
+    def test_tc1_new_frames_and_receipt_helpers_cannot_hide_stack_overflow(self):
+        for name in ['tc1_product_inner_mp','tc1_control_mp','service_http_query_mp',
+                     'service_http_command_mp','mp_dispatch_authenticated']:
+            frames,paths=self.fixture('TC1');del frames[name]
+            with self.subTest(name=name),redirect_stdout(io.StringIO()),self.assertRaisesRegex(ValueError,'missing actual .su'):
+                validate_paths(paths,frames,8192,'TC1')
+            frames,paths=self.fixture('TC1');frames[name]=5200
+            with self.subTest(name=name),redirect_stdout(io.StringIO()),self.assertRaisesRegex(ValueError,'>8192'):
+                validate_paths(paths,frames,8192,'TC1')
+        for name in ['mp_query','ph_http_service_status','mp_receipt_save',
+                     'mp_receipt_difference','mp_receipt_copy','mp_receipt_apply','mp_receipt_release']:
+            frames,paths=self.fixture('TC1');symbols=dict(frames);del frames[name]
+            with self.subTest(name=name),self.assertRaisesRegex(ValueError,'Emitted helper missing'):
+                http_paths(frames,'TC1',symbols)
+        frames,paths=self.fixture('TC1')
+        receipt=paths['HTTP POST receipt save difference'][1]
+        self.assertTrue({'mp_receipt_save','mp_receipt_difference'}<=set(receipt))
+        self.assertFalse(set(receipt)&{'mp_receipt_copy','mp_receipt_release','ph_wire_malloc'})
+        frames['mp_receipt_save']=5200
+        with redirect_stdout(io.StringIO()),self.assertRaisesRegex(ValueError,'>8192'):
+            validate_paths(paths,frames,8192,'TC1')
     def test_overbudget_and_weakened_reserve_fail(self):
         frames,paths=self.fixture();frames['service_product_status_mp']=10000
         with redirect_stdout(io.StringIO()),self.assertRaisesRegex(ValueError,'>12288'):
@@ -127,6 +170,7 @@ class HTTPMessagePackStackGate(unittest.TestCase):
         required=['ph_http_server_step','ph_http_parser_feed','ph_http_start',
             'ph_mqtt_session_run','ph_mqtt_poll','ph_mqtt_enqueue_generation',
             'service_command_mp','service_query_mp','service_product_mp',
+            'service_http_command_mp','service_http_query_mp',
             'service_product_status_mp','service_product_diagnostics_mp','device_diagnostics_mp','phv_parse',
             'phw_cached_value','phw_number','ph_buf_reserve']
         symbols=linked_symbols('\n'.join('00001000 T '+n for n in required))

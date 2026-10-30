@@ -7,6 +7,54 @@ static bool keys(const ph_value *p,const char *allowed){return phv_keys(p,allowe
 static bool boolparam(const ph_value *p,const char *key,bool *value){ph_value v;return phv_get(p,key,&v)&&phv_bool(&v,value);}
 static bool number(const ph_value *p,const char *key,int *out,int lo,int hi){ph_value v;int64_t n;if(!phv_get(p,key,&v)||!phv_int(&v,&n)||n<lo||n>hi)return false;*out=(int)n;return true;}
 static bool strparam(const ph_value *p,const char *key,char *out,size_t capacity,bool required){ph_value v;if(!phv_get(p,key,&v))return !required;return phv_text(&v,out,capacity);}
+/* Ordinary controls change only a few bytes. Keep their rollback on the
+ * stack, rather than borrowing heap for saved schedules and authentication.
+ * The dispatcher already owns command admission; config reservation still
+ * excludes OTA, restore and Wi-Fi trials through persistence and rollback. */
+static __attribute__((noinline)) bool tc1_control_mp(const char *action,const ph_value *p,const char **code)
+{
+    enum { OUTLET, INDICATOR, CHILD_LOCK } kind;
+    if(!strcmp(action,"outlet.set"))kind=OUTLET;
+    else if(!strcmp(action,"indicator.set"))kind=INDICATOR;
+    else if(!strcmp(action,"child_lock.set"))kind=CHILD_LOCK;
+    else return false;
+    bool enabled;int index=-1;
+    bool valid=kind==OUTLET ? keys(p,"|index||on|") && boolparam(p,"on",&enabled) &&
+        (!tc1_mp_has(p,"index") || number(p,"index",&index,0,SOCKET_NUM-1)) :
+        keys(p,"|enabled|") && boolparam(p,"enabled",&enabled);
+    if(!valid){*code="invalid_params";return true;}
+    if(!tc1_config_reserve()){*code="busy";return true;}
+
+    char old_sockets[SOCKET_NUM],old_child;int old_led,old_lock;
+    tc1_status_lock();
+    memcpy(old_sockets,user_config->socket_status,sizeof(old_sockets));
+    old_led=user_config->power_led_enabled;old_child=user_config->user[0];old_lock=childLockEnabled;
+    tc1_status_unlock();
+    bool changed=false;
+    if(kind==OUTLET){
+        for(unsigned i=0;i<SOCKET_NUM;i++)if((index<0 || i==(unsigned)index) && old_sockets[i]!=enabled){
+            UserRelaySet(i,enabled);changed=true;
+        }
+    }else if(kind==INDICATOR){
+        changed=old_led!=enabled;
+        if(changed){tc1_status_lock();user_config->power_led_enabled=enabled;tc1_status_unlock();UserLedSet(RelayOut() && enabled);}
+    }else{
+        changed=old_child!=enabled || old_lock!=enabled;
+        if(changed){tc1_status_lock();user_config->user[0]=enabled;childLockEnabled=enabled;tc1_status_unlock();}
+    }
+    bool saved=!changed || mico_system_context_update(sys_config)==kNoErr;
+    if(!saved){
+        if(kind==OUTLET){
+            for(unsigned i=0;i<SOCKET_NUM;i++)if((index<0 || i==(unsigned)index) && old_sockets[i]!=enabled)UserRelaySet(i,old_sockets[i]);
+        }else if(kind==INDICATOR){
+            tc1_status_lock();user_config->power_led_enabled=old_led;tc1_status_unlock();
+            UserLedSet(RelayOut() && old_led);
+        }else{
+            tc1_status_lock();user_config->user[0]=old_child;childLockEnabled=old_lock;tc1_status_unlock();
+        }
+    }else UserMqttRefreshState(false);
+    tc1_config_release();*code=saved?"accepted":"storage_error";return true;
+}
 static __attribute__((noinline)) bool tc1_product_inner_mp(const char *action,const ph_value *p,ph_writer *out,const char **code){
     *code="invalid_params";
     if(!strcmp(action,"config.get")){
@@ -58,16 +106,8 @@ static __attribute__((noinline)) bool tc1_product_inner_mp(const char *action,co
     if(!tc1_config_reserve()){*code="busy";return true;}
     user_config_t *before=malloc(sizeof(*before));if(!before){tc1_config_release();*code="busy";return true;}*before=*user_config;
     char old_name[maxNameLen];strcpy(old_name,sys_config->micoSystemConfig.name);
-    bool valid=false,enabled=false,saved=true;int index=0;
-    if(!strcmp(action,"outlet.set")){
-        valid=keys(p,"|index||on|") && boolparam(p,"on",&enabled);
-        if(tc1_mp_has(p,"index"))valid=valid && number(p,"index",&index,0,5);else index=-1;
-        if(valid){if(index<0)UserRelaySetAll(enabled);else UserRelaySet(index,enabled);}
-    }else if(!strcmp(action,"indicator.set")){
-        valid=keys(p,"|enabled|") && boolparam(p,"enabled",&enabled);if(valid){user_config->power_led_enabled=enabled;UserLedSet(RelayOut() && enabled);}
-    }else if(!strcmp(action,"child_lock.set")){
-        valid=keys(p,"|enabled|") && boolparam(p,"enabled",&enabled);if(valid){user_config->user[0]=enabled;childLockEnabled=enabled;}
-    }else if(!strcmp(action,"system.reboot")){
+    bool valid=false,saved=true;int index=0;
+    if(!strcmp(action,"system.reboot")){
         valid=keys(p,"");if(valid){saved=mico_rtos_create_thread(NULL,MICO_APPLICATION_PRIORITY,"reboot",reboot_worker,1024,0)==kNoErr;*code=saved?"accepted":"busy";free(before);if(!saved)tc1_config_release();return true;}
     }else if(!strcmp(action,"wifi.scan")){
         valid=keys(p,"");if(valid){saved=WifiScanStart()==kNoErr;*code=saved?"accepted":"busy";free(before);tc1_config_release();return true;}
@@ -112,7 +152,8 @@ bool service_product_mp(const char *action,const ph_value *params,ph_writer *out
     unsigned i;for(i=0;actions[i];i++)if(!strcmp(actions[i],action))break;
     if(!actions[i])return false;
     unsigned depth=out->depth;size_t length=out->wire->len;
-    bool handled=tc1_product_inner_mp(action,params,out,code);
+    bool handled=tc1_control_mp(action,params,code);
+    if(!handled)handled=tc1_product_inner_mp(action,params,out,code);
     if(out->depth==depth && out->wire->len==length){phw_begin(out,NULL,false);phw_end(out);}
     return handled;
 }

@@ -11,11 +11,11 @@ import sys
 try:
  from .status_stack import emitted,status_paths,diagnostic_paths,writer_paths,feature_read_paths
  from .check_worker_stack import read_worker_frames
- from .check_http_core import linked_symbols
+ from .check_http_core import linked_symbols,dispatch_frames,receipt_paths,tc1_product_paths
 except ImportError:
  from status_stack import emitted,status_paths,diagnostic_paths,writer_paths,feature_read_paths
  from check_worker_stack import read_worker_frames
- from check_http_core import linked_symbols
+ from check_http_core import linked_symbols,dispatch_frames,receipt_paths,tc1_product_paths
 LAN_BUDGET=12288
 LAN_RESERVE=2048
 SHA_UTIL_FRAMES={
@@ -46,7 +46,7 @@ def lan_paths(frames,model,symbols=None):
  adapter=worker+extra(['lan_business_input'])
  server=adapter+['lan_v4_server_input']
  service=server+extra(['lan_business_dispatch'])+['service_lan_try_command_mp']
- dispatch=service+['mp_dispatch']
+ dispatch=service+dispatch_frames(frames,symbols)
  paths={}
  def add(label,names):paths['LAN '+label]=(names,LAN_RESERVE)
  scan=extra(['phv_iter','phv_child_reader','phv_next','phv_scan','phv_duplicate','phv_skip_validated','phv_head','binary_token','binary_take','ph_wire_utf8'])
@@ -67,13 +67,14 @@ def lan_paths(frames,model,symbols=None):
  paths.update(status_paths(frames,model,'LAN full status',dispatch+['mp_cached','service_product_status_mp'],LAN_RESERVE,symbols=symbols))
  paths.update(feature_read_paths(frames,model,'LAN feature config',dispatch,LAN_RESERVE,symbols))
  paths.update(diagnostic_paths(frames,model,'LAN diagnostics',dispatch,LAN_RESERVE,symbols))
- for helper in ('service_product_capabilities_mp','service_product_info_mp','service_product_mp'):
+ for helper in (('service_product_capabilities_mp','service_product_info_mp') if model=='TC1' else ('service_product_capabilities_mp','service_product_info_mp','service_product_mp')):
   paths.update(writer_paths(frames,'LAN '+helper,dispatch+[helper],LAN_RESERVE,symbols))
  paths.update(writer_paths(frames,'LAN envelope',dispatch+['mp_envelope'],LAN_RESERVE,symbols))
  add('cached envelope',dispatch+['mp_envelope','phw_cached_value']+extra(['phw_prefix','phw_head','phw_bytes'])+['ph_buf_reserve','ph_wire_malloc'])
- add('receipt copy',dispatch+extra(['mp_copy'])+['ph_buf_new','ph_wire_malloc'])
+ paths.update(receipt_paths(frames,'LAN receipt',dispatch,LAN_RESERVE,symbols))
  business=dispatch+['service_product_mp']+extra(['smp_control','smp_music','smp_text','smp_int','smp_has'])
- add('business validation',business+['phv_get']+scan)
+ if model=='TC1':paths.update(tc1_product_paths(frames,'LAN business',dispatch,LAN_RESERVE,symbols))
+ else:add('business validation',business+['phv_get']+scan)
  if model=='A1':
   control=dispatch+['service_product_mp']+extra(['smp_control'])+['a1_control_apply']+extra(['control_broadcast','panel_state','a1_control_light_percent'])
   add('control persistence',control+['feature_fan_apply']+extra(['install_config'])+['feature_config_save'])
