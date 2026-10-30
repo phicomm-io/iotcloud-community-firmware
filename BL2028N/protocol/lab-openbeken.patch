@@ -303,7 +303,15 @@
  static bool modern(port_state *ctx, const char *topic, size_t n);
  static bool begin(port_state *ctx, Client *c, unsigned stage);
  static int end(port_state *ctx, unsigned stage, int rc);
-@@ -130,7 +134,10 @@
+@@ -123,14 +127,17 @@
+ static __attribute__((noinline)) int ctx_ph_mqtt_client_deinit(port_state *ctx, Client *c);
+ static __attribute__((noinline)) int ctx_ph_mqtt_connect(port_state *ctx, Client *c, MQTTPacket_connectData *data);
+ static __attribute__((noinline)) int ctx_ph_mqtt_disconnect(port_state *ctx, Client *c);
+-static __attribute__((noinline)) int ctx_ph_mqtt_subscribe(port_state *ctx, Client *c, const char *filter, enum QoS qos, messageHandler handler);
++static __attribute__((noinline)) int ctx_ph_mqtt_subscribe(port_state *ctx, Client *c, const char *filter, enum QoS qos, messageHandler handler, bool optional);
+ static __attribute__((noinline)) int ctx_ph_mqtt_yield(port_state *ctx, Client *c, int timeout);
+ static __attribute__((noinline)) int ctx_ph_mqtt_resource_ready(port_state *ctx);
+ static __attribute__((noinline)) void ctx_ph_mqtt_resource_round_end(port_state *ctx, bool complete);
  static __attribute__((noinline)) int ctx_ph_mqtt_publish(port_state *ctx, Client *c, const char *topic, MQTTMessage *m);
  static __attribute__((noinline)) int publish_owned(port_state *ctx, Client *c, const char *topic, MQTTMessage *m);
  static __attribute__((noinline)) int receipt_retry(port_state *ctx, Client *c);
@@ -477,7 +485,29 @@
          /* Positive partial writes are supported by Paho, not a failure. */
          if (rc <= 0 && !ctx->cause) ctx->cause = PH_MQTT_CAUSE_WRITE;
      }
-@@ -604,7 +613,7 @@
+@@ -559,7 +568,7 @@
+     return end(ctx, PH_MQTT_ERROR_SESSION, MQTTDisconnect(c));
+ }
+ 
+-static __attribute__((noinline)) int ctx_ph_mqtt_subscribe(port_state *ctx, Client *c, const char *filter, enum QoS qos, messageHandler handler) {
++static __attribute__((noinline)) int ctx_ph_mqtt_subscribe(port_state *ctx, Client *c, const char *filter, enum QoS qos, messageHandler handler, bool optional) {
+     if (!filter || !handler || !begin(ctx, c, PH_MQTT_ERROR_SUBSCRIBE))
+         return MQTT_FAILURE;
+     unsigned at = 0;
+@@ -587,6 +596,12 @@
+             memset(&ctx->subscriptions[at], 0, sizeof(ctx->subscriptions[at]));
+         }
+     }
++    if (optional && rc == MQTT_SUBSCRIPTION_REJECTED) {
++        /* Finish the protocol scope without latching an optional ACL refusal
++         * as the session's fatal cause. A concurrently latched failure wins. */
++        int completed = end(ctx, PH_MQTT_ERROR_SUBSCRIBE, MQTT_SUCCESS);
++        return completed == MQTT_SUCCESS ? MQTT_SUBSCRIPTION_REJECTED : completed;
++    }
+     return end(ctx, PH_MQTT_ERROR_SUBSCRIBE, rc);
+ }
+ 
+@@ -604,7 +619,7 @@
          return MQTT_FAILURE;
      if (!ctx->resource_active)
          return MQTT_SUCCESS;
@@ -486,7 +516,7 @@
      if (elapsed >= 30000u) {
          ctx->cause = PH_MQTT_CAUSE_RESOURCE_EXPIRED;
          ctx->packet_bytes = ctx->resource_packet;
-@@ -614,7 +623,7 @@
+@@ -614,7 +629,7 @@
          ctx->failed = true;
          return MQTT_FAILURE;
      }
@@ -495,7 +525,7 @@
          ctx->resource_seen = true;
          return PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED;
      }
-@@ -631,7 +640,7 @@
+@@ -631,7 +646,7 @@
  }
  
  static __attribute__((noinline)) int ctx_ph_mqtt_publish(port_state *ctx, Client *c, const char *topic, MQTTMessage *m) {
@@ -504,7 +534,7 @@
          return MQTT_FAILURE;
      if (c != ctx->client || ctx->failed || ctx->core.protocol_depth)
          return MQTT_FAILURE;
-@@ -647,7 +656,7 @@
+@@ -647,7 +662,7 @@
      /* SDK serializes a second copy, while callback RX can coexist. Its own
       * allocation is still fallible; this check is a soft live-heap admission. */
      if (!permit(NULL, packet + 32)) {
@@ -513,7 +543,7 @@
          if (!ctx->resource_active) {
              ctx->resource_since = now;
              ctx->resource_packet = packet;
-@@ -702,19 +711,19 @@
+@@ -702,19 +717,19 @@
      return rc;
  }
  
@@ -538,7 +568,7 @@
          ctx->receipt.wire = ctx->receipt.busy;
      }
      return receipt_retry(ctx, ctx->client);
-@@ -744,15 +753,25 @@
+@@ -744,15 +759,25 @@
  static __attribute__((noinline)) int ctx_ph_mqtt_enqueue_send_generation(port_state *ctx, const char *topic, const void *payload, size_t n, unsigned qos, bool retain, uint32_t generation) {
      if (!initialized(ctx) || !topic || !generation)
          return MQTT_FAILURE;
@@ -568,7 +598,7 @@
  static int send_emergency(port_state *ctx, Client *c) {
      if(!ctx->busy)return MQTT_SUCCESS;
      for (unsigned i = 0; i < 2; i++)
-@@ -760,7 +779,7 @@
+@@ -760,7 +785,7 @@
          char topic[MQTT_TOPIC_MAX], wire[SERVICE_BUSY_BYTES];
          if (!mqtt_target_leaf(&ctx->busy[i].target, "result", topic, sizeof(topic)))
              return MQTT_FAILURE;
@@ -577,7 +607,7 @@
          MQTTMessage m = {0};
          m.qos = QOS1;
          m.payload = wire;
-@@ -828,8 +847,9 @@
+@@ -828,8 +853,9 @@
                  char wire[SERVICE_BUSY_BYTES];
                  mqtt_target_t target;
                  mqtt_target_set(&target, ctx->account);
@@ -589,7 +619,7 @@
                  if (rc != PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED)
                      ph_mqtt_item_release(&ctx->core, i);
                  if (rc < 0)
-@@ -906,9 +926,9 @@
+@@ -906,9 +932,9 @@
  #ifdef PHICOMM_BEMFA
  bool bm_owner(void) { return ctx_ph_mqtt_owner(secondary_port); }
  #endif
@@ -602,7 +632,7 @@
  #endif
  bool ph_mqtt_receipt_pending(void) { return ctx_ph_mqtt_receipt_pending(&primary_port); }
  #ifdef PHICOMM_BEMFA
-@@ -954,9 +974,9 @@
+@@ -954,9 +980,9 @@
  #ifdef PHICOMM_BEMFA
  void bm_pending_clear(void) { ctx_ph_mqtt_pending_clear(secondary_port); }
  #endif
@@ -615,7 +645,21 @@
  #endif
  int ph_mqtt_client_init(Client *c, Network *n, unsigned timeout) { return ctx_ph_mqtt_client_init(&primary_port, c, n, timeout); }
  #ifdef PHICOMM_BEMFA
-@@ -991,13 +1011,18 @@
+@@ -974,9 +1000,10 @@
+ #ifdef PHICOMM_BEMFA
+ int bm_disconnect(Client *c) { return ctx_ph_mqtt_disconnect(secondary_port, c); }
+ #endif
+-int ph_mqtt_subscribe(Client *c, const char *filter, enum QoS qos, messageHandler handler) { return ctx_ph_mqtt_subscribe(&primary_port, c, filter, qos, handler); }
+-#ifdef PHICOMM_BEMFA
+-int bm_subscribe(Client *c, const char *filter, enum QoS qos, messageHandler handler) { return ctx_ph_mqtt_subscribe(secondary_port, c, filter, qos, handler); }
++int ph_mqtt_subscribe(Client *c, const char *filter, enum QoS qos, messageHandler handler) { return ctx_ph_mqtt_subscribe(&primary_port, c, filter, qos, handler, false); }
++int ph_mqtt_subscribe_optional(Client *c, const char *filter, enum QoS qos, messageHandler handler) { return ctx_ph_mqtt_subscribe(&primary_port, c, filter, qos, handler, true); }
++#ifdef PHICOMM_BEMFA
++int bm_subscribe(Client *c, const char *filter, enum QoS qos, messageHandler handler) { return ctx_ph_mqtt_subscribe(secondary_port, c, filter, qos, handler, false); }
+ #endif
+ int ph_mqtt_yield(Client *c, int timeout) { return ctx_ph_mqtt_yield(&primary_port, c, timeout); }
+ #ifdef PHICOMM_BEMFA
+@@ -991,13 +1018,18 @@
  void bm_resource_round_end(bool complete) { ctx_ph_mqtt_resource_round_end(secondary_port, complete); }
  #endif
  int ph_mqtt_publish(Client *c, const char *topic, MQTTMessage *m) { return ctx_ph_mqtt_publish(&primary_port, c, topic, m); }
@@ -638,7 +682,7 @@
  #endif
  void ph_mqtt_turn_begin(unsigned limit) { ctx_ph_mqtt_turn_begin(&primary_port, limit); }
  #ifdef PHICOMM_BEMFA
-@@ -1019,20 +1044,7 @@
+@@ -1019,20 +1051,7 @@
  #ifdef PHICOMM_BEMFA
  int bm_enqueue_send(const char *topic, const void *payload, size_t n, unsigned qos, bool retain) { return ctx_ph_mqtt_enqueue_send(secondary_port, topic, payload, n, qos, retain); }
  #endif
@@ -659,7 +703,7 @@
  #ifdef PHICOMM_BEMFA
  bool bm_input_consumed(void) { return ctx_ph_mqtt_input_consumed(secondary_port); }
  #endif
-@@ -1045,20 +1057,23 @@
+@@ -1045,20 +1064,23 @@
  int bm_poll(Client *c) { return ctx_ph_mqtt_poll(secondary_port, c); }
  #endif
  #ifdef PHICOMM_BEMFA
@@ -703,7 +747,7 @@
  #include "core.h"
  #include "owner.h"
  #include "../mqtt_account.h"
-@@ -18,7 +19,7 @@
+@@ -18,20 +19,22 @@
  uint32_t ph_mqtt_startup_prepare(ph_mqtt_startup *);
  void ph_mqtt_startup_publish(ph_mqtt_startup *, uint32_t, bool);
  bool ph_mqtt_startup_wait(ph_mqtt_startup *, uint32_t);
@@ -712,8 +756,11 @@
  int ph_mqtt_client_init(Client *, Network *, unsigned);
  int ph_mqtt_client_deinit(Client *);
  int ph_mqtt_connect(Client *, MQTTPacket_connectData *);
-@@ -26,12 +27,11 @@
+ int ph_mqtt_disconnect(Client *);
  int ph_mqtt_subscribe(Client *, const char *, enum QoS, messageHandler);
++/* Explicit opt-in for product-owned optional subscriptions. Only a validated
++ * broker SUBACK 0x80 is nonfatal; transport/allocation errors remain fatal. */
++int ph_mqtt_subscribe_optional(Client *, const char *, enum QoS, messageHandler);
  int ph_mqtt_yield(Client *, int);
  int ph_mqtt_publish(Client *, const char *, MQTTMessage *);
 +/* Primary MQTT owner only; binary bytes retain their explicit length. */
@@ -727,7 +774,7 @@
  int ph_mqtt_receipt_send(const mqtt_target_t *, const char *, void *, void(*)(void *));
  /* Telemetry turn only; command receipts are sent after this scope unwinds. */
  void ph_mqtt_turn_begin(unsigned);
-@@ -45,13 +45,7 @@
+@@ -45,13 +48,7 @@
  bool ph_mqtt_work_pending(void);
  /* Modern command only: after parsing/copying all borrowed input, consume its
   * queue entry and reserve the maximum result before executing any mutation. */
@@ -741,7 +788,7 @@
  void ph_mqtt_outgoing(int(*)(const ph_mqtt_item *));
  bool ph_mqtt_owner(void);
  void ph_mqtt_owner_end(void);
-@@ -72,3 +66,5 @@
+@@ -72,3 +69,5 @@
  void ph_mqtt_reconnect(void);
  void ph_mqtt_snapshot(ph_mqtt_diagnostics *);
  #endif
@@ -1184,7 +1231,7 @@
 -}
 --- a/protocol/paho/MQTTClient.c
 +++ b/protocol/paho/MQTTClient.c
-@@ -1,851 +1,874 @@
+@@ -1,851 +1,880 @@
 -/*******************************************************************************
 - * Copyright (c) 2014 IBM Corp.
 - *
@@ -2722,7 +2769,13 @@
 +    if (received != SUBACK ||
 +        c->readbuf[0] != 0x90 || c->readbuf[1] != 3 ||
 +        MQTTDeserialize_suback(&acknowledged, 1, &count, &granted, c->readbuf, c->readbuf_size) != 1 ||
-+        count != 1 || acknowledged != packet || granted < 0 || granted > qos) return MQTT_FAILURE;
++        count != 1 || acknowledged != packet) return MQTT_FAILURE;
++    /* The pinned packet reader returns char; 0x80 may sign-extend on hosts. */
++    granted = (unsigned char)granted;
++    /* A matching, well-formed MQTT 3.1.1 refusal is distinct from transport,
++     * allocation and malformed-packet failures. Required callers still fail. */
++    if (granted == 0x80) return MQTT_SUBSCRIPTION_REJECTED;
++    if (granted > QOS2 || granted > qos) return MQTT_FAILURE;
 +    c->messageHandlers[slot].topicFilter = topicFilter;
 +    c->messageHandlers[slot].fp = handler;
 +    return MQTT_SUCCESS;
@@ -3055,7 +3108,7 @@
 +#define MAX_SIZE_PASSWORD  (12+1)
 +
 +// all failure return codes must be negative
-+enum returnCode { MQTT_SOCKET_ERR = -3, MQTT_BUFFER_OVERFLOW = -2, MQTT_FAILURE = -1, MQTT_SUCCESS = 0 };
++enum returnCode { MQTT_SUBSCRIPTION_REJECTED = -4, MQTT_SOCKET_ERR = -3, MQTT_BUFFER_OVERFLOW = -2, MQTT_FAILURE = -1, MQTT_SUCCESS = 0 };
 +enum QoS { QOS0, QOS1, QOS2 };
 +
 +struct MQTTMessage

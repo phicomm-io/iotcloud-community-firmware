@@ -43,10 +43,12 @@ def lan_pair_resume(sock,password,peer='001122334455',boot=888):
 class Broker:
  def __init__(self):
   self.listener=socket.socket();self.listener.bind(('127.0.0.1',0));self.listener.listen(3)
-  self.port=self.listener.getsockname()[1];self.messages=[];self.acks=set();self.subscriptions=set();self.cv=threading.Condition();self.lock=threading.Lock();self.error=None;self.sock=None;self.stopping=False;self.root='';self.connections=0
+  self.port=self.listener.getsockname()[1];self.messages=[];self.acks=set();self.subscriptions=set();self.subscription_events=[];self.cv=threading.Condition();self.lock=threading.Lock();self.error=None;self.sock=None;self.stopping=False;self.root='';self.connections=0
   self.thread=threading.Thread(target=self.run,daemon=True);self.thread.start()
  def send(self,data):
   with self.lock:self.sock.sendall(data)
+ def suback(self,topic,identifier):
+  return b'\x90\x03'+identifier+b'\x01'
  def run(self):
   try:
    while not self.stopping:
@@ -64,10 +66,11 @@ class Broker:
        for b in b'\x20\x02\0\0':self.send(bytes([b]));time.sleep(.002)
       elif kind==8:
        size=int.from_bytes(p[2:4],'big');topic=p[4:4+size].decode()
-       self.subscriptions.add(topic)
+       with self.cv:self.subscriptions.add(topic);self.subscription_events.append((time.monotonic(),topic,self.connections));self.cv.notify_all()
        parts=topic.split('/')
        if len(parts)==6 and parts[:2]==['phicomm','v2'] and parts[3]=='s30-v1b' and parts[5]=='command':self.root=topic[:-8]
-       self.send(b'\x90\x03'+p[:2]+b'\x01')
+       ack=self.suback(topic,p[:2])
+       if ack is not None:self.send(ack)
       elif kind==3:
        size=int.from_bytes(p[:2],'big');topic=p[2:2+size].decode();at=2+size
        if (h>>1)&3:self.send(b'\x40\x02'+p[at:at+2]);at+=2

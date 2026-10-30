@@ -1,6 +1,6 @@
 {
   "lab": {
-    "head": "91d402a4c0e5babfe3777d74a25a577b0067c973",
+    "head": "990dcfdd2dd0635d25c0829ba6248eb44483c126",
     "dirty": false,
     "scope": "listed upstream source paths"
   },
@@ -44,12 +44,12 @@
     "protocol/mqtt/client.c": {
       "source": "common/mqtt/client.c",
       "upstream_sha256": "6fa3c8eac5777e3f887208db32e00c7e321d182e5a4d2190b93e37a84d4cf07d",
-      "sha256": "d6b4bf9bdbba1b7daad5b2922f6a60aa4e9a6a6073cee32a04ed6811ff3f0b99"
+      "sha256": "ae595dbabb11da7b3af4fd4ddb03bc9a3bb9c5c4944031d04f563d6e1c02f140"
     },
     "protocol/mqtt/client.h": {
       "source": "common/mqtt/client.h",
       "upstream_sha256": "b4b6e8865ab960cf28a876518e21666c23eee83348344b85445de1625dc50095",
-      "sha256": "5fa8859351be9e2b98fd978d6c5719f4dbc8ea16bd7a59d1e3655a843d3070c0"
+      "sha256": "c965c4a42a7dfb0be692581e13f8f16555db669f7d3b4ea2ee76a24b3c3453b0"
     },
     "protocol/mqtt/session.c": {
       "source": "common/mqtt/session.c",
@@ -105,13 +105,13 @@
     "protocol/paho/MQTTClient.c": {
       "source": "paho/MQTTClient.c",
       "upstream_sha256": "a75d6da2b5bfe5b0d41dae451b676bc0fce3bf398ffa4b1797622d20fa9c9567",
-      "sha256": "798e7a3f213b0a3caa3eb2e1a718d877d3fbcc2cf3699c65b1990a02a6d57117",
+      "sha256": "c225940a7fa11af2cf44539e34e9f2a3adea535ac061ac0c695d966c974a39c1",
       "historical_source_snapshot_sha256": "d646deb4bed3c14cd219f467b005f88214a0f6b8857049f51fada8520b3bcd9e"
     },
     "protocol/paho/MQTTClient.h": {
       "source": "paho/MQTTClient.h",
       "upstream_sha256": "6fb05dd152711e3d6bd960db13aa6bf93e8670fa426eeccab6dc4e444412710e",
-      "sha256": "ec84d5e48b4f81316233777b70d8eb45f1fe8184f87a41cff8402fbd19d2482f",
+      "sha256": "d1292cafb436adce12b469bb788c83248b114b4a05317306fd304eb322d50a77",
       "historical_source_snapshot_sha256": "d646deb4bed3c14cd219f467b005f88214a0f6b8857049f51fada8520b3bcd9e"
     },
     "protocol/paho/MQTTPacket/MQTTConnectServer.c": {
@@ -378,12 +378,12 @@
     "common/mqtt-post-send-workspace.patch": "80b459e721c3f88a021579fde6df5a566a9c358dc68d97bb5d08cc49fc7c1870"
   },
   "adaptation_patch_sha256": {
-    "protocol/lab-openbeken.patch": "9f28a72fe67001fd79dfd4a97cbde1cbb308f708d64c9604c19d8a486f064043",
+    "protocol/lab-openbeken.patch": "e3ff45d2ed9ba63d2d2dbf56fc2832db3d9574458512c0296637acb43553de75",
     "web/frontend-openbeken.patch": "95449ee17d4538deda6bb72717e4a5f88272060d32f3d2fdd0bacc796796f426",
     "patches/mdns-init-checked.patch": "d13b6c9d2c92aa4ea9b121a62398d3063f20a796512dae82f6f8bd82bc0b2d83"
   },
   "source_snapshot": {
-    "file": "shared-source-snapshot-rc4-repair-round2.tar.gz",
+    "file": "shared-source-snapshot-rc4-optional.tar.gz",
     "sha256": "66bf06d3bdb66ea4d1ac3873ae9e6b259510219881e96801338641cd4282522f",
     "entries": 73
   },

@@ -16,9 +16,9 @@ class ResetBroker(Broker):
   super().send(data)
 
 class Trial:
- def __init__(self,host,run,idle,static_credit=0):
+ def __init__(self,host,run,idle,static_credit=0,broker=None):
   self.run=run;run.mkdir(parents=True,exist_ok=True);self.generation=0;self.idle=idle;self.control=run/'heap-control';self.stats=run/'heap-stats';self.configure()
-  self.broker=ResetBroker();self.port=free_port();self.err=(run/'stderr.log').open('w')
+  self.broker=broker if broker is not None else ResetBroker();self.port=free_port();self.err=(run/'stderr.log').open('w')
   env=dict(os.environ,PH_HOST_HEAP_CONTROL=str(self.control),PH_HOST_HEAP_STATS=str(self.stats),PH_HOST_STATIC_HEAP_CREDIT=str(static_credit))
   self.process=subprocess.Popen([str(host),str(self.broker.port),str(self.port),str(run/'storage')],stdout=subprocess.PIPE,stderr=self.err,env=env,text=True)
   assert self.process.stdout.readline().strip()=='READY'

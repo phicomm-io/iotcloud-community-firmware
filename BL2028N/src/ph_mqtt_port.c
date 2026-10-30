@@ -19,6 +19,8 @@ static char sensor_topic[192];
 static unsigned port,discovery,publication,last_fields[2];
 static uint32_t sent_at[2],last_sequence[2],ha_serial;
 static int application_error;
+static uint32_t sensor_retry_at;
+static bool sensor_subscribed;
 static bool initialized;
 /* Storage belongs to the already-reserved owner stack. It remains alive across
  * deferred receipt retries; native/HA publication must wait for that receipt. */
@@ -141,7 +143,6 @@ static bool subscription(void *unused,unsigned i,ph_mqtt_subscription *s) {
  if(i==0)*s=(ph_mqtt_subscription){command_topic,QOS1,command_arrived};
  else if(i==1)*s=(ph_mqtt_subscription){ha_topic,QOS1,ha_arrived};
  else if(i==2)*s=(ph_mqtt_subscription){"homeassistant/status",QOS1,ha_birth};
- else if(i==3)*s=(ph_mqtt_subscription){sensor_topic,QOS1,sensor_grant_arrived};
  else return false;return true;
 }
 /* JSON is used exclusively for Home Assistant discovery and state. */
@@ -174,6 +175,12 @@ static int publish_cycle(void *unused) {
  (void)unused;if(application_error<0)return application_error;
  if(ph_mqtt_receipt_pending())return PH_MQTT_MORE;
  cache_budget();
+ if(!sensor_subscribed&&(int32_t)(ph_os_now()-sensor_retry_at)>=0) {
+  int sub=ph_mqtt_subscribe_optional(&client,sensor_topic,QOS1,sensor_grant_arrived);
+  if(sub==MQTT_SUCCESS)sensor_subscribed=true;
+  else if(sub==MQTT_SUBSCRIPTION_REJECTED)sensor_retry_at=ph_os_now()+60000u;
+  else return sub;
+ }
  char topic[512];unsigned char *bytes=workspace;size_t n;int rc;bool waiting=false;
  while(discovery<6) {
   n=ha_discovery(discovery,(char*)bytes,PH_OUTPUT_MAX,topic,sizeof(topic));if(!n)return MQTT_FAILURE;
@@ -196,11 +203,11 @@ static int publish_cycle(void *unused) {
  }
  return waiting?PH_MQTT_MORE:MQTT_SUCCESS;
 }
-static int initial(void *unused) {discovery=publication=0;application_error=0;return publish_cycle(unused);}
+static int initial(void *unused) {discovery=publication=0;application_error=0;sensor_subscribed=false;sensor_retry_at=ph_os_now();return publish_cycle(unused);}
 /* Optional discovery/full-state packets can wait for heap recovery while the
  * subscribed connection and its compact HA state are already operational. */
 static bool initial_ready(void *unused) {(void)unused;return (publication&2u)!=0;}
-static void closing(void *unused,bool connected,int rc) {(void)unused;(void)connected;(void)rc;cache_budget();bl_lock();bl_mqtt_status=MQTT_DISCONNECTED;memset(bl_auth.mqtt,0,sizeof(bl_auth.mqtt));bl_unlock();memset(password,0,sizeof(password));}
+static void closing(void *unused,bool connected,int rc) {(void)unused;(void)connected;(void)rc;cache_budget();sensor_subscribed=false;sensor_retry_at=0;bl_lock();bl_mqtt_status=MQTT_DISCONNECTED;memset(bl_auth.mqtt,0,sizeof(bl_auth.mqtt));bl_unlock();memset(password,0,sizeof(password));}
 static void event(void *unused,unsigned state,int rc) {
  (void)unused;unsigned status=state==PH_MQTT_READY?MQTT_READY:state==PH_MQTT_CONNECTING?MQTT_CONNECTING:
   (rc==4||rc==5)?MQTT_AUTH_FAILED:MQTT_DISCONNECTED;

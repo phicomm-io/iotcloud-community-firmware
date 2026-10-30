@@ -684,7 +684,13 @@ int MQTTSubscribe(Client* c, const char* topicFilter, enum QoS qos, messageHandl
     if (received != SUBACK ||
         c->readbuf[0] != 0x90 || c->readbuf[1] != 3 ||
         MQTTDeserialize_suback(&acknowledged, 1, &count, &granted, c->readbuf, c->readbuf_size) != 1 ||
-        count != 1 || acknowledged != packet || granted < 0 || granted > qos) return MQTT_FAILURE;
+        count != 1 || acknowledged != packet) return MQTT_FAILURE;
+    /* The pinned packet reader returns char; 0x80 may sign-extend on hosts. */
+    granted = (unsigned char)granted;
+    /* A matching, well-formed MQTT 3.1.1 refusal is distinct from transport,
+     * allocation and malformed-packet failures. Required callers still fail. */
+    if (granted == 0x80) return MQTT_SUBSCRIPTION_REJECTED;
+    if (granted > QOS2 || granted > qos) return MQTT_FAILURE;
     c->messageHandlers[slot].topicFilter = topicFilter;
     c->messageHandlers[slot].fp = handler;
     return MQTT_SUCCESS;

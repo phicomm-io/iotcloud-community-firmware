@@ -42,10 +42,16 @@ def main():
   storage=run/f'meter-uart-storage-{safe}';shutil.rmtree(storage,ignore_errors=True)
   command([run/'meter-uart-test',storage,safe],f'meter-uart-{safe}.log')
  command(flags+host_flags+sources+['-lm','-lpthread','-o',run/'network-tests'],'shared-compiler.log')
+ suback=[s for s in sources if s.name not in ('network.c','client.c')]
+ command(flags+host_flags+[HERE/'mqtt_suback.c']+suback+['-Wl,--wrap=malloc','-lm','-lpthread','-o',run/'mqtt-suback-tests'],'mqtt-suback-compiler.log')
+ command([run/'mqtt-suback-tests'],'mqtt-suback.log')
+ command(flags+['-funsigned-char']+host_flags+[HERE/'mqtt_suback.c']+suback+['-Wl,--wrap=malloc','-lm','-lpthread','-o',run/'mqtt-suback-unsigned-tests'],'mqtt-suback-unsigned-compiler.log')
+ command([run/'mqtt-suback-unsigned-tests'],'mqtt-suback-unsigned.log')
  shutil.rmtree(run/'host-storage',ignore_errors=True)
  command([sys.executable,HERE/'test_network.py',run/'network-tests',run],'network-tests.log')
  command(flags+host_flags+sources+[HERE/'mqtt_heap.c','-Wl,--wrap=malloc,--wrap=calloc,--wrap=free,--wrap=realloc,--wrap=xPortGetFreeHeapSize,--wrap=ph_mqtt_receipt_send_bytes','-lm','-lpthread','-o',run/'mqtt-heap-tests'],'mqtt-heap-compiler.log')
  command([sys.executable,HERE/'test_mqtt_heap.py',run/'mqtt-heap-tests',run/'mqtt-heap'],'mqtt-heap.log')
+ command([sys.executable,HERE/'test_mqtt_optional.py',run/'mqtt-heap-tests',run/'mqtt-optional'],'mqtt-optional.log')
  if os.environ.get('PHICOMM_PLAYWRIGHT_MODULE'):
   command([sys.executable,HERE/'test_browser.py',run/'network-tests',run],'browser-tests.log')
  print(f'PASS: sanitized core and actual shared HTTP/Paho MQTT/UDP. Evidence: {run}')
