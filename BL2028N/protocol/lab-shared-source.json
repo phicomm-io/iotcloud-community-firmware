@@ -292,7 +292,7 @@
     "web/page.js": {
       "source": "frontend/TC1/http_server/web/page.js",
       "upstream_sha256": "fb3e7d5870fb5a0ab86d540815037eb0eb9d86535895d69845ba02726b9f3e8a",
-      "sha256": "414994eaa9b59623fb92f2befab6c02dac595c54f82dc914bd44c62db9154d95"
+      "sha256": "839d80666fd9e79c76c2bb4a6068ce2a0d307d8f02d819cb0cdf8fbad8bea2ac"
     },
     "web/shared/wire.js": {
       "source": "frontend/generated/wire.js",
@@ -321,7 +321,7 @@
   "wire_bundle_sha256": "b4638a695f4009bfdb2849aed3b445fc954545ae152834177486f74c300de491",
   "adaptation_patch_sha256": {
     "protocol/lab-openbeken.patch": "3ffcb11fe34e861d2f232a60a7c841d2568a3efcba20042f55fee4ae8f3852e8",
-    "web/frontend-openbeken.patch": "41aba673713a610fe6ea579fa1a7c3e80f1a070625f3a5d2ef9ede1eafecd923"
+    "web/frontend-openbeken.patch": "b3aa9a37980e28f60e8093c11fa3712b198110ce1e6310f8e9981faf7c57193b"
   },
   "source_snapshot": {
     "file": "lab-shared-source-snapshot-complete.tar.gz",
