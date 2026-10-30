@@ -30,6 +30,9 @@ class BirthProgress(unittest.TestCase):
 #include <stdbool.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include "common/mqtt/publication.h"
+static ph_mqtt_publication ha_publication;
+static bool service_mqtt_status_due(bool changed){(void)changed;return false;}
 #define MQTT_SUCCESS 0
 #define PH_MQTT_RECONFIGURE -3
 #define PH_MQTT_MORE 2
@@ -109,6 +112,7 @@ static unsigned ha_refresh_pending;
 static unsigned discovery_index,state_index,publication_cursor,snapshot_at;
 static unsigned calls,trace[64],inject_at;
 static bool session_current(void){return true;}
+static bool service_mqtt_status_due(bool changed){(void)changed;return false;}
 static bool ota_job_active(void){return false;}
 static int ota_service(const char*x){(void)x;return 0;}
 static int power_sensor_cycle(bool *handled){*handled=false;return 0;}
@@ -161,7 +165,7 @@ int main(void){
             source = path/'probe.c'
             source.write_text(fixture)
             binary = path/'probe'
-            subprocess.run([os.environ.get('CC', 'cc'), '-std=c99', '-g',
+            subprocess.run([os.environ.get('CC', 'cc'), '-std=c99', '-g', '-I'+str(ROOT),
                             '-fsanitize=address,undefined', '-fno-pie', '-no-pie',
                             str(source), '-o', str(binary)], check=True, timeout=30)
             subprocess.run([str(binary)], check=True, timeout=10)

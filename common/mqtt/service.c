@@ -5,10 +5,12 @@
 #include "../ota/mode.h"
 #include "mico.h"
 #include "../a1_decimal.inc"
+#include "publication.h"
+static ph_mqtt_publication status_publication;
 static bool snapshot_deferred,capabilities_pending;
 static uint32_t snapshot_retry_at;
 static int snapshot_wait(void){snapshot_deferred=true;snapshot_retry_at=mico_rtos_get_time();return PH_MQTT_MORE;}
-void service_mqtt_clear(void){capabilities_pending=false;snapshot_deferred=false;ph_mqtt_pending_clear();}
+void service_mqtt_clear(void){capabilities_pending=false;snapshot_deferred=false;memset(&status_publication,0,sizeof(status_publication));ph_mqtt_pending_clear();}
 int service_mqtt_flush(service_mqtt_sender sender){(void)sender;return ph_mqtt_poll(NULL);}
 static void receipt_release(void *wire){ph_buf_free(wire);}
 int service_mqtt_input(service_mqtt_sender sender,const mqtt_account_t *scope,const void *payload,size_t length,bool retained)
@@ -38,11 +40,14 @@ static int try_capabilities(service_mqtt_sender sender,const mqtt_account_t *sco
 }
 int service_mqtt_snapshot(service_mqtt_sender sender,const mqtt_account_t *scope)
 {
+    ph_mqtt_publication_attempt(&status_publication,mico_rtos_get_time());
     int ready=ph_mqtt_resource_ready();if(ready!=MQTT_SUCCESS)return ready==PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED?PH_MQTT_MORE:ready;
     if(snapshot_deferred && (uint32_t)(mico_rtos_get_time()-snapshot_retry_at)<1000u)return PH_MQTT_MORE;
     if(capabilities_pending){int rc=try_capabilities(sender,scope);if(rc!=MQTT_SUCCESS)return rc;}
     if(ota_job_active())return snapshot_wait();
-    int rc=publish_query(sender,scope,"status.get","state");if(rc==MQTT_SUCCESS)snapshot_deferred=false;return rc;
+    int rc=publish_query(sender,scope,"status.get","state");if(rc==MQTT_SUCCESS){snapshot_deferred=false;ph_mqtt_publication_complete(&status_publication,mico_rtos_get_time());}return rc;
 }
+bool service_mqtt_status_due(bool changed)
+{return ph_mqtt_publication_due(&status_publication,mico_rtos_get_time(),5000u,1000u,changed);}
 int service_mqtt_capabilities(service_mqtt_sender sender,const mqtt_account_t *scope)
-{capabilities_pending=true;return try_capabilities(sender,scope);}
+{capabilities_pending=true;memset(&status_publication,0,sizeof(status_publication));return try_capabilities(sender,scope);}

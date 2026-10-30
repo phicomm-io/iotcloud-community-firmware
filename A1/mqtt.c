@@ -649,17 +649,16 @@ static int session_cycle(void *context) {
             bool sensor_handled;
             int sensor_rc=fan_sensor_cycle(on,speed,&sensor_handled);
             if(sensor_handled)return sensor_rc;
-            if (filter_priority(a1_filter_mqtt_due(&filter, &sent_filter, mico_rtos_get_time(), filter_sent_at))) {
+            /* Native and HA are independent producers. HA's one-second
+             * fresh-air report cannot acknowledge or postpone native state. */
+            if (filter_priority(service_mqtt_status_due(a1_filter_mqtt_due(&filter, &sent_filter, mico_rtos_get_time(), filter_sent_at)))) {
                 rc = service_mqtt_snapshot(publish_bytes, &account);
                 if (rc == MQTT_SUCCESS) {
                     sent_filter = filter; filter_sent_at = mico_rtos_get_time();
-                    state_pending &= ~(1u << 6); state_seen |= 1u << 6;
-                    sent = state_seen == 0x7fu;
                 }
             } else if (state_pending) {
                 bool snapshot_sent;
                 rc=states_step(&current,&state,false,&snapshot_sent);
-                if (snapshot_sent) { sent_filter = filter; filter_sent_at = mico_rtos_get_time(); }
             }
             /* Pending native work retains its cursor, but cannot suppress the
              * independent feature producer during resource backoff or quota. */

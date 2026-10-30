@@ -7,5 +7,6 @@ typedef int (*service_mqtt_sender)(const char *,const void *,size_t,bool);
 int service_mqtt_input(service_mqtt_sender,const mqtt_account_t *,const void *,size_t,bool);
 int service_mqtt_flush(service_mqtt_sender);
 int service_mqtt_snapshot(service_mqtt_sender,const mqtt_account_t *);
+bool service_mqtt_status_due(bool changed);
 int service_mqtt_capabilities(service_mqtt_sender,const mqtt_account_t *);
 void service_mqtt_clear(void);
