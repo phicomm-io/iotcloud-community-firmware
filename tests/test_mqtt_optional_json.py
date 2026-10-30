@@ -53,6 +53,8 @@ static int feature_mqtt_service(int p,bool connected){(void)p;assert(connected);
 static void feature_effective_fan(bool a,unsigned b,bool*c,unsigned*d){*c=a;*d=b;}
 static void a1_filter_get(a1_filter_storage_t*f){f->n=0;}
 static bool a1_filter_mqtt_due(const a1_filter_storage_t*a,const a1_filter_storage_t*b,uint32_t c,uint32_t d){(void)a;(void)b;(void)c;(void)d;return false;}
+/* Discovery fairness fixture: the native producer has no changed input. */
+static bool service_mqtt_status_due(bool changed){return changed;}
 static bool filter_priority(bool b){return b;}
 static int service_mqtt_snapshot(int p,int*a){(void)p;(void)a;return 0;}
 static int states_step(const a1_config_t*c,const mqtt_state_t*s,bool b,bool*out){(void)c;(void)s;(void)b;*out=false;normal++;return deny?PH_MQTT_MORE:0;}
@@ -91,6 +93,7 @@ int main(void){
         fixture=r'''
 #include "common/typed_wire.h"
 #include "common/mqtt_account.h"
+#include "common/mqtt/publication.h"
 typedef int (*service_mqtt_sender)(const char*,const void*,size_t,bool);
 #include <assert.h>
 #include <stdbool.h>
@@ -127,6 +130,7 @@ static void ota_job_poll(void){}
 static bool ota_job_active(void){return false;}
 static int ota_service(const char*x){(void)x;return 0;}
 static bool snapshot_deferred,capabilities_pending;
+static ph_mqtt_publication status_publication,ha_publication;
 static uint32_t snapshot_retry_at;
 #define PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED 9
 static int ph_mqtt_resource_ready(void){return MQTT_SUCCESS;}
@@ -149,17 +153,17 @@ static bool feature_mqtt_filters_current(void*f,unsigned n){(void)f;(void)n;retu
 static int discovery(const m1_config_t*c,unsigned i){(void)c;(void)i;assert(0);return -1;}
 static bool m1_sample_fresh(const m1_sample_t*s,uint32_t t){(void)s;(void)t;return true;}
 static int publish_leaf(const char*leaf,const char*value,bool retain){(void)value;(void)retain;if(!__builtin_strcmp(leaf,"sensor"))sensors++;return 0;}
-static int feature_mqtt_service(int p,bool connected){(void)p;assert(connected);features++;return 0;}
+static int feature_mqtt_service(service_mqtt_sender p,bool connected){(void)p;assert(connected);features++;return 0;}
 /* PRODUCTION */
 int main(void){
  assert(mqtt_account_init(&account,1,"m1","test","aabbccddeeff"));
  now=UINT32_MAX-2500;snapshot_at=now-5000u;
  for(unsigned i=0;i<600;i++){assert(session_cycle(NULL)==0);now+=20;}
- assert(snapshots==3 && sensors==600 && features==600);
+ assert(snapshots==12 && sensors==600 && features==600);
  assert(particle_attempts==4); /* Bounded optional retries across clock rollover. */
- /* Recovery at the next original period; no repeated full state attempts. */
- snapshot_result=0;now=snapshot_at+5000u;
- assert(session_cycle(NULL)==0 && snapshots==4 && sensors==601 && features==601);
+ /* Native retry is bounded to one second, independent of HA completion. */
+ snapshot_result=0;now=status_publication.attempted_at+1000u;
+ assert(session_cycle(NULL)==0 && snapshots==13 && sensors==601 && features==601);
  /* Actual SDK error remains fatal and cannot silently become a deferral. */
  snapshot_result=-17;now+=5000u;
  assert(session_cycle(NULL)==-17 && sensors==601 && features==601);
@@ -171,7 +175,7 @@ int main(void){
 }
 '''.replace('/* PRODUCTION */',cycle)
         service=(ROOT/'common/mqtt/service.c').read_text()
-        fixture=fixture.replace('/* SNAPSHOT */','\n'.join(function(service,s) for s in ('static int snapshot_wait(', 'static int publish_query(', 'static int try_capabilities(', 'int service_mqtt_snapshot(')))
+        fixture=fixture.replace('/* SNAPSHOT */','\n'.join(function(service,s) for s in ('static int snapshot_wait(', 'static int publish_query(', 'static int try_capabilities(', 'int service_mqtt_snapshot(', 'bool service_mqtt_status_due(')))
         with tempfile.TemporaryDirectory() as d:
             source=(ROOT/'M1/mqtt.c').read_text()
             fixture='#include \"'+str(ROOT/'M1/barometer.h')+'\"\n'+source[source.index('enum { MQTT_BRIGHTNESS_INDEX'):source.index(';',source.index('enum { MQTT_BRIGHTNESS_INDEX'))+1]+'\n'+fixture

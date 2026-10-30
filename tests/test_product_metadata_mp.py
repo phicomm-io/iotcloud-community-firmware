@@ -15,6 +15,7 @@ class ProductMetadata(unittest.TestCase):
 #include <string.h>
 #include "common/service_mp.h"
 #include "common/firmware_variant_defs.h"
+#include "common/diagnostics_ids.h"
 static bool recovery;
 bool device_config_recovery(void){return recovery;}
 #define DEVICE_ID "aabbccddeeff"

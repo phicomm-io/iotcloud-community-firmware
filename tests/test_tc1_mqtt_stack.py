@@ -87,7 +87,9 @@ int main(void){
 static struct{int mode;char base[8];}account={1,"base"};
 static bool power_pending,power_turn,rediscover;
 static unsigned ha_refresh_pending;
-static unsigned discovery_index=12,state_index=10,publication_cursor,snapshot_at,now;
+#include "common/mqtt/publication.h"
+static ph_mqtt_publication status_publication;
+static unsigned discovery_index=12,state_index=10,publication_cursor,now;
 static unsigned powers,statuses,attempts;
 static bool busy;
 #define service_sender 0
@@ -97,7 +99,8 @@ static int power_sensor_cycle(bool *handled){*handled=false;return 0;}
 static bool ota_job_active(void){return false;}
 static unsigned mico_rtos_get_time(void){return now;}
 static int snapshot_step(void){powers++;now+=6000;state_index=10;return 0;}
-static int service_mqtt_snapshot(int sender,const void*a){(void)sender;(void)a;attempts++;if(busy)return PH_MQTT_MORE;statuses++;now+=6000;return 0;}
+static bool service_mqtt_status_due(bool changed){return ph_mqtt_publication_due(&status_publication,mico_rtos_get_time(),5000u,1000u,changed);}
+static int service_mqtt_snapshot(int sender,const void*a){(void)sender;(void)a;attempts++;ph_mqtt_publication_attempt(&status_publication,now);if(busy)return PH_MQTT_MORE;statuses++;now+=6000;ph_mqtt_publication_complete(&status_publication,now);return 0;}
 /* PRODUCTION */
 int main(void){
  for(unsigned i=0;i<100;i++){
@@ -107,22 +110,22 @@ int main(void){
  }
  assert(powers==50&&statuses==50);
  /* A busy typed producer remains due, yet cannot starve power. */
- busy=true;unsigned old_at=snapshot_at,old_powers=powers,old_attempts=attempts;
+ busy=true;unsigned old_at=status_publication.sent_at,old_powers=powers,old_attempts=attempts;
  for(unsigned i=0;i<20;i++){
   __atomic_store_n(&power_pending,true,__ATOMIC_RELEASE);
   int rc=session_cycle(0);assert(rc==0||rc==PH_MQTT_MORE);
-  assert(snapshot_at==old_at);
+  assert(status_publication.sent_at==old_at);
  }
  assert(powers==old_powers+10&&attempts==old_attempts+10);
  busy=false;__atomic_store_n(&power_pending,true,__ATOMIC_RELEASE);
  unsigned before=statuses;for(unsigned i=0;i<2;i++)assert(!session_cycle(0));
- assert(statuses==before+1&&snapshot_at>old_at);return 0;
+ assert(statuses==before+1&&status_publication.sent_at>old_at);return 0;
 }
 '''.replace('/* PRODUCTION */',functions)
         with tempfile.TemporaryDirectory() as d:
             p=Path(d);(p/'probe.c').write_text(fixture)
             subprocess.run([os.environ.get('CC','cc'),'-std=c99','-Wall','-Wextra','-Werror',
-                '-fsanitize=address,undefined','-no-pie',str(p/'probe.c'),'-o',str(p/'probe')],check=True)
+                '-fsanitize=address,undefined','-no-pie','-I'+str(ROOT),str(p/'probe.c'),'-o',str(p/'probe')],check=True)
             subprocess.run([str(p/'probe')],check=True,timeout=10)
 
     def test_power_topic_and_payload(self):

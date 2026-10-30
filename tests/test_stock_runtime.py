@@ -217,6 +217,10 @@ bool feature_ntp_set_mp(const char*h,const char**c){(void)h;(void)c;return false
 void service_cache_changed(unsigned m){(void)m;}
 bool service_control_begin(void){return true;}void service_control_end(void){}
 void m1_status_capture(device_status_t*a,device_status_full_t*b){(void)a;(void)b;abort();}
+/* This business/UART fixture must never enter the diagnostics producer. */
+void m1_diagnostics_capture(device_status_t*a,device_status_full_t*b){(void)a;(void)b;abort();}
+void service_memory_snapshot(service_memory_state_t*out){(void)out;abort();}
+void device_diagnostics_mp(ph_writer*w,const device_status_t*a,const device_status_full_t*b){(void)w;(void)a;(void)b;abort();}
 void device_status_mp(ph_writer*w,const device_status_t*a,const device_status_full_t*b){(void)w;(void)a;(void)b;abort();}
 #include "common/service_product.inc"
 #include "mp_fixture_vectors.inc"

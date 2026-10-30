@@ -67,7 +67,7 @@ int main(void){
  for(unsigned group=0;group<2;group++)for(unsigned peers=0;peers<=FEATURE_MAX_PEERS;peers++){
   memset(&config,0,sizeof(config));config.peer_count=peers;if(group)strcpy(config.group,"same-name");
 #ifdef FEATURE_DEVICE_A1
-  unsigned expected=2+(group||peers?1:0);
+  unsigned expected=3;
 #else
   unsigned expected=1;
 #endif
@@ -76,7 +76,7 @@ int main(void){
   assert(feature_mqtt_filters(f.topics,cap)==expected);for(unsigned i=0;i<expected;i++)assert(strstr(f.topics[i],account.key));
 #ifdef FEATURE_DEVICE_A1
   for(unsigned i=0;i<expected;i++)assert(!strstr(f.topics[i],"/sensor/+/+"));
-  if(group||peers)assert(strstr(f.topics[expected-1],"/#"));
+  assert(strstr(f.topics[expected-1],"/#"));
   for(unsigned i=expected;i<cap;i++)assert(!f.topics[i][0]);
 #else
   assert(strstr(f.topics[0],"/sensor/aabbccddeeff/command"));
@@ -87,7 +87,8 @@ int main(void){
  }
  unsigned previous=feature_mqtt_filters(f.topics,cap);assert(previous!=FEATURE_MQTT_FILTER_ERROR&&feature_mqtt_filters_current(f.topics,previous));
 #ifdef FEATURE_DEVICE_A1
- config.peer_count=0;config.group[0]=0;assert(!feature_mqtt_filters_current(f.topics,previous));config.peer_count=FEATURE_MAX_PEERS;strcpy(config.group,"same-name");assert(feature_mqtt_filters_current(f.topics,previous));
+ config.peer_count=0;assert(feature_mqtt_filters_current(f.topics,previous));
+ config.group[0]=0;assert(!feature_mqtt_filters_current(f.topics,previous));config.peer_count=FEATURE_MAX_PEERS;strcpy(config.group,"same-name");assert(feature_mqtt_filters_current(f.topics,previous));
 #endif
  assert(mqtt_account_init(&account,1,model,"bob",LOCAL_ID));assert(!feature_mqtt_filters_current(f.topics,previous));
  return 0;

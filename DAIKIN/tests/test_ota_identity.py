@@ -44,9 +44,9 @@ static int SHA256Result(SHA256Context *s,uint8_t *p){return !SHA256_Final(p,s);}
         # Compile the actual handler so ordering, route selection and activation
         # assertions cover production code as well as the pure prefix parser.
         http = (ROOT / 'DAIKIN/src/http.inc').read_text()
-        handler = http.split('static volatile bool otaActive=false;', 1)[1].split(
+        handler = http.split('struct OtaFlash {', 1)[1].split(
             'static esp_err_t infoHandler(', 1)[0]
-        (d / 'handler.inc').write_text('static volatile bool otaActive=false;' + handler)
+        (d / 'handler.inc').write_text('static volatile bool otaActive=false;\nstruct OtaFlash {' + handler)
         # OTA tests isolate the signed-image pipeline from the separately tested
         # token table. Preserve the actual authorization decision and inject
         # an already validated bearer session at this boundary.

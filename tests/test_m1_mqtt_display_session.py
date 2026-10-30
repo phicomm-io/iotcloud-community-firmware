@@ -67,6 +67,7 @@ static void early_metadata(void);
 #include "M1/display_source.h"
 #include "common/typed_wire.h"
 #include "common/sensor_mp.h"
+#include "common/mqtt/publication.h"
 #define M1_VERSION "1.0.0-rc.4-test"
 #define PHICOMM_FIRMWARE_VARIANT "m1-test"
 #define FEATURE_TOPIC_MAX 512
@@ -89,7 +90,8 @@ static bool session_need_availability,session_subscribed,rediscover,cleanup_pend
 static uint32_t metadata_subscribe_at;
 static bool discovery_deferred,co2_discovered,pressure_discovered,particles_discovered,sensor_metadata,sensor_started;
 static unsigned discovery_language,discovery_retry_at,discovery_index,initial_index;
-static unsigned connect_sequence,co2_sequence,pressure_sequence,sequence,particles_at,snapshot_at;
+static unsigned connect_sequence,co2_sequence,pressure_sequence,sequence,particles_at;
+static ph_mqtt_publication ha_publication;
 static int old_co2_fresh,old_pressure_fresh,old_brightness,old_fresh;
 static char base[192],command_topic[512],availability_topic[512],client_id[192],wildcard[512];
 static char sensor_filter[512],source_availability_filter[512];
