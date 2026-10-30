@@ -15,6 +15,9 @@ static void initLanClient(){
   lanOps.load=[](const char *peer,char key[33],unsigned *scopes){return localAuthReady&&ph_auth_remote_get(&localAuth,peer,key,scopes);};
   lanOps.save=[](const char *peer,const char *key,unsigned scopes,uint32_t epoch){return localAuthReady&&ph_auth_remote_store(&localAuth,peer,key,scopes,epoch);};
   lanOps.send=lanSend;
+#ifdef IOTCLOUD_HUB
+  lanOps.business_boot=[]()->uint32_t{return sensorBoot;};
+#endif
 }
 static bool lanPairStart(const char *peer,const char *ip,const char *password,unsigned scopes,const char **code){
   initLanClient();if(configRecovery||!localAuthReady){*code="migration_required";return false;}

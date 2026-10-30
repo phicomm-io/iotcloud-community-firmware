@@ -124,10 +124,6 @@ jobs:
       matrix:
         model: [tc1, m1, a1]
     env:
-      TC1_TOOLS_DIR: ${{ github.workspace }}/build/ci-tools
-      M1_TOOLS_DIR: ${{ github.workspace }}/build/ci-tools
-      A1_TOOLS_DIR: ${{ github.workspace }}/build/ci-tools
-      ARM_CC: ${{ github.workspace }}/build/ci-tools/gcc-arm-none-eabi-5_4-2016q2/bin/arm-none-eabi-gcc
       PHICOMM_FRONTEND_ARCHIVE: ${{ github.workspace }}/build/ci-frontend/frontend.tar.gz
     runs-on: >-
       ${{ fromJSON(
@@ -144,6 +140,9 @@ jobs:
         with:
           name: verified-frontend
           path: build/ci-frontend/
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
       - name: Install build dependencies
         run: |
           sudo apt-get update
@@ -151,24 +150,26 @@ jobs:
           python3 -m pip install -r requirements-build.txt
       - name: Identify tool cache location
         id: tool-path
-        run: echo "key=$(printf '%s' "$GITHUB_WORKSPACE" | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+        run: echo "key=$(printf '%s' "$HOME/.cache/phicomm" | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v4
         with:
-          path: build/mico-upstream.git
+          path: ~/.cache/phicomm/mico-upstream.git
           key: mico-bare-${{ hashFiles('common/mico-sdk.json') }}
       - uses: actions/cache@v4
         with:
           path: |
-            build/ci-tools/gcc-arm-none-eabi-5_4-2016q2
-            build/ci-tools/python2
-          key: ci-tools-ubuntu22-${{ runner.arch }}-gcc541-python2718-v1-${{ steps.tool-path.outputs.key }}
+            ~/.cache/phicomm/gcc5
+            ~/.cache/phicomm/gcc14
+            ~/.cache/phicomm/python2
+          key: shared-tools-ubuntu22-${{ runner.arch }}-gcc1431-runtime541-python2718-v2-${{ steps.tool-path.outputs.key }}
       - name: Validate restored tools and project version
         id: prep
         env:
           TAG_NAME: ${{ github.ref_name }}
           REF_TYPE: ${{ github.ref_type }}
         run: |
-          bash tools/ci/check_cached_tools.sh
+          python3 tools/prepare_toolchain.py --profile gcc14 --github-env "$GITHUB_ENV"
+          python3 -m unittest tests.test_compiler_profile
           if [ "$REF_TYPE" = tag ]; then
             python3 tools/check_version.py --tag "$TAG_NAME"
           else
@@ -189,9 +190,17 @@ jobs:
           PHICOMM_FIRMWARE_VARIANT: no-frontend-resources
           GH_TOKEN: ${{ github.token }}
         run: ./"${MODEL^^}"/build.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ${{ matrix.model }}-compiler-logs
+          path: build/toolchain-logs/
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Test TC1 protocol and HTTP regressions
         if: ${{ !cancelled() && matrix.model == 'tc1' && steps.prep.outcome == 'success' && needs.frontend.outputs.reuse-heavy-validation != 'true' }}
         run: |
+          export ARM_CC="$PHICOMM_TOOLS_HOME/gcc5/bin/arm-none-eabi-gcc"
           bash tools/ci/require_arm_tools.sh
           test -s build/tc1-sdk-3.6.4/mico-os/libraries/utilities/json_c/json_number_reent.h
           tests/run_tc1.sh
@@ -349,14 +358,19 @@ jobs:
             components/esp_rom/linux
             components/esp_common/include
             components/log/include
-      - name: Test hub broker, transports and bounded storage
+      - name: Test hub UDP, device bus and bounded storage
         if: matrix.variant == 'hub' && needs.frontend.outputs.reuse-heavy-validation != 'true'
         env:
           DAIKIN_NVS_IDF_SOURCE: ${{ github.workspace }}/build/esp-idf-nvs
         run: |
-          python3 -m pip install paho-mqtt==2.1.0
           SANITIZE=1 python3 -m unittest discover -s DAIKIN/tests -p 'test_hub*.py'
+          # Explicit modules prevent a missing UDP lane from passing an empty glob.
+          SANITIZE=1 python3 -m unittest DAIKIN.tests.test_hub_lan_client DAIKIN.tests.test_hub_lan_home DAIKIN.tests.test_hub_lan_discovery
+          SANITIZE=1 python3 -m unittest DAIKIN.tests.test_hub_lifecycle
           python3 -m unittest discover -s DAIKIN/tests -p 'test_native_publish.py'
+          python3 -m unittest DAIKIN.tests.test_lan_business
+          python3 -m unittest DAIKIN.tests.test_pair_route
+          python3 -m unittest DAIKIN.tests.test_local_control_priority
           for scenario in home http relay service storage; do
             c++ -std=c++11 -Wall -Wextra -Werror -fsanitize=address,undefined \
               -fno-omit-frame-pointer -fno-pie -no-pie -IDAIKIN/include \
@@ -388,29 +402,22 @@ jobs:
           ref: ${{ steps.hub-frontend.outputs.commit }}
           path: build/hub-frontend-source
           persist-credentials: false
-      - name: Test locked hub frontend with production broker
+      - name: Test locked hub LAN management frontend
         if: matrix.variant == 'hub' && needs.frontend.outputs.reuse-heavy-validation != 'true'
         env:
           FIRMWARE_ROOT: ${{ github.workspace }}
-          HUB_TEST_CONSOLE: ${{ github.workspace }}/build/daikin-hub-console
-          HUB_TEST_DIST: ${{ github.workspace }}/build/hub-ci-dist
-          HUB_MQTT_REPORT: ${{ github.workspace }}/build/hub-mqtt-interop.json
+          HUB_LAN_DIST: ${{ github.workspace }}/build/hub-ci-dist
           VITE_HUB: '1'
           VITE_BASE_PATH: /iotcloud/
         working-directory: build/hub-frontend-source/frontend
         run: |
-          test -f tests/hub-console.mjs
-          test -f tests/hub-mqtt-interop.mjs
+          test -f tests/hub-lan-management.mjs
           npm ci
           npx playwright install --with-deps chromium
-          npm run build -- --outDir "$HUB_TEST_DIST" --emptyOutDir
-          c++ -std=c++11 -g -Wall -Wextra -Werror \
-            -I"$FIRMWARE_ROOT/DAIKIN/include" \
-            -I"$FIRMWARE_ROOT/DAIKIN/.pio/libdeps/bry88ab-hub/ArduinoJson/src" \
-            "$FIRMWARE_ROOT/DAIKIN/tests/hub/console.cpp" \
-            -lcrypto -pthread -o "$HUB_TEST_CONSOLE"
-          node tests/hub-console.mjs
-          node tests/hub-mqtt-interop.mjs
+          npm run build -- --outDir "$HUB_LAN_DIST" --emptyOutDir
+          # Browser API fixtures cover management UX; production UDP and HAP
+          # business paths run separately above, not through a simulated broker.
+          node tests/hub-lan-management.mjs
       - name: Collect ESP release assets
         run: |
           mkdir -p release
@@ -428,9 +435,55 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  s30:
+    name: S30-V1B BK7231N firmware
+    needs: frontend
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install native build and socket test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang libssl-dev bzip2 libc6-i386 libtinfo5
+          python3 -m pip install -r requirements-build.txt -r BL2028N/requirements-build.txt -r BL2028N/requirements-test.txt
+      - name: Prepare shared GCC5 tools
+        run: python3 tools/prepare_toolchain.py --profile gcc5 --github-env "$GITHUB_ENV"
+      - name: Build and verify stock-layout native firmware
+        run: python3 BL2028N/build.py --run-dir build/s30-release
+      - name: Test sanitized S30 business and real HTTP MQTT UDP services
+        run: python3 BL2028N/tests/run.py --run-dir build/s30-host
+      - name: Prepare native S30 release assets
+        run: python3 tools/release/s30_assets.py build/s30-release release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: s30-firmware
+          path: release/
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: s30-validation-logs
+          path: |
+            build/s30-release/*.log
+            build/s30-release/*.json
+            build/s30-release/*.patch
+            build/s30-host/*.log
+          if-no-files-found: ignore
+          retention-days: 7
+
   sign-ota:
     name: Sign production OTA packages
-    needs: [firmware, esp, validation-evidence]
+    needs: [firmware, esp, s30, validation-evidence]
     if: >-
       always() && needs.validation-evidence.result == 'success' &&
       ((github.event_name == 'push' && github.ref_type == 'tag') ||
@@ -501,14 +554,16 @@ jobs:
             fi
             python3 tools/release/verify.py "release/$stem.ota.bin.signed" "$model" "$TAG_NAME" "$(git rev-parse HEAD)" --variant "$variant"
           done < "$RUNNER_TEMP/release-targets.txt"
-          (cd release && sha256sum *.bin *.bin.raw *.bin.signed > SHA256SUMS && sha256sum -c SHA256SUMS)
+          # S30 keeps the stock bootloader's native RBL/UA format. It is not
+          # wrapped in the PHI envelope used by the other products.
+          (cd release && sha256sum *.bin *.rbl *.bin.raw *.bin.signed *.json > SHA256SUMS && sha256sum -c SHA256SUMS)
       - name: Validate complete release catalog
         if: github.event_name == 'workflow_dispatch' && inputs.release_dry_run
         run: |
           tag="v$(cat VERSION)"
           printf '%s\n' 'Release validation only; not published.' > release-dry-run.md
           python3 tools/release/catalog.py "$tag" "$(git rev-parse HEAD)" release release-dry-run.md
-          (cd release && sha256sum *.bin *.bin.raw *.bin.signed *.json *.msgpack notes.md index.html > SHA256SUMS && sha256sum -c SHA256SUMS)
+          (cd release && sha256sum *.bin *.rbl *.bin.raw *.bin.signed *.json *.msgpack notes.md index.html > SHA256SUMS && sha256sum -c SHA256SUMS)
       - uses: actions/upload-artifact@v4
         with:
           name: signed-release
@@ -561,7 +616,7 @@ jobs:
           python3 tools/release/notes.py "$TAG_NAME" --output release-notes.md
           python3 tools/release/catalog.py "$TAG_NAME" "$GITHUB_SHA" release release-notes.md
           (cd release && sha256sum -c SHA256SUMS)
-          (cd release && sha256sum *.bin *.bin.raw *.bin.signed *.json *.msgpack notes.md index.html > SHA256SUMS && sha256sum -c SHA256SUMS)
+          (cd release && sha256sum *.bin *.rbl *.bin.raw *.bin.signed *.json *.msgpack notes.md index.html > SHA256SUMS && sha256sum -c SHA256SUMS)
       - name: Verify reviewed notes against staged signed firmware
         env:
           GH_TOKEN: ${{ github.token }}
@@ -585,7 +640,7 @@ jobs:
             gh release create "$TAG_NAME" --draft --title "$TAG_NAME" --notes-file release-notes.md release/*
           else
             gh release download "$TAG_NAME" --dir existing
-            for file in release/*.bin* release/SHA256SUMS; do cmp "$file" "existing/$(basename "$file")"; done
+            for file in release/*.bin* release/*.rbl release/SHA256SUMS; do cmp "$file" "existing/$(basename "$file")"; done
           fi
           python3 tools/release/deploy_worker.py
           python3 tools/release/publish.py release
@@ -603,20 +658,19 @@ jobs:
             gh release create "$TAG_NAME" --draft --prerelease --latest=false --title "$TAG_NAME" --notes-file release-notes.md release/*
           else
             gh release download "$TAG_NAME" --dir existing
-            for file in release/*.bin* release/SHA256SUMS; do cmp "$file" "existing/$(basename "$file")"; done
+            for file in release/*.bin* release/*.rbl release/SHA256SUMS; do cmp "$file" "existing/$(basename "$file")"; done
           fi
           python3 tools/release/publish.py release
           gh release edit "$TAG_NAME" --draft=false --prerelease --latest=false
           python3 tools/release/publish.py release --candidate
       - uses: actions/setup-node@v4
-        if: steps.release-channel.outputs.channel == 'stable'
         with:
           node-version: '24'
       - name: Build and publish public Pages allowlist
-        if: steps.release-channel.outputs.channel == 'stable'
         env:
           GH_TOKEN: ${{ secrets.PAGES_DEPLOY_TOKEN }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PHICOMM_PAGES_INCLUDE_CANDIDATES: ${{ steps.release-channel.outputs.channel == 'candidate' && '1' || '0' }}
         run: tools/release/pages.sh
 
   release-checks:
@@ -646,7 +700,7 @@ jobs:
           python3 -m pip install cryptography==46.0.3
       - uses: actions/cache@v4
         with:
-          path: build/mico-upstream.git
+          path: ~/.cache/phicomm/mico-upstream.git
           key: mico-bare-${{ hashFiles('common/mico-sdk.json') }}
       - name: Prepare pinned JSON and SHA sources for actual OTA checks
         run: python3 tools/prepare_sdk.py build/a1-sdk/mico-os
@@ -675,14 +729,13 @@ jobs:
       - name: Test OTA release tooling and Worker
         run: |
           python3 -m unittest discover -s tests -p test_release.py
-          python3 -m unittest tests.test_version tests.test_branch_policy tests.test_release_budget tests.test_release_variant tests.test_release_publish tests.test_device_manifest tests.test_release_candidate tests.test_archive_pages tests.test_ci_validation_reuse
+          python3 -m unittest tests.test_version tests.test_branch_policy tests.test_release_budget tests.test_release_variant tests.test_release_publish tests.test_device_manifest tests.test_release_candidate tests.test_archive_pages tests.test_ci_validation_reuse tests.test_s30_release
           node --test tests/test_ota_worker.mjs
       - name: Test production TLS transport with real TLS and sanitizers
         run: python3 tests/test_ota_fetch.py
 
   feature-tests:
     env:
-      ARM_CC: ${{ github.workspace }}/build/ci-tools/gcc-arm-none-eabi-5_4-2016q2/bin/arm-none-eabi-gcc
       PHICOMM_OTA_CN_BASE_URL: ""
       PHICOMM_OTA_GLOBAL_BASE_URL: ""
       PHICOMM_FRONTEND_ARCHIVE: ${{ github.workspace }}/build/ci-frontend/frontend.tar.gz
@@ -704,33 +757,31 @@ jobs:
         with:
           name: verified-frontend
           path: build/ci-frontend/
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
       - name: Install host test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential libssl-dev openssl python3-pip curl git qemu-user libc6-i386 bzip2 libncurses5 libtinfo5
+          sudo apt-get install -y build-essential libssl-dev openssl python3-pip curl git qemu-user libc6-i386 bzip2 libncurses5 libtinfo5 zlib1g-dev
       - name: Identify tool cache location
         id: tool-path
-        run: echo "key=$(printf '%s' "$GITHUB_WORKSPACE" | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+        run: echo "key=$(printf '%s' "$HOME/.cache/phicomm" | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v4
         with:
-          path: build/mico-upstream.git
+          path: ~/.cache/phicomm/mico-upstream.git
           key: mico-bare-${{ hashFiles('common/mico-sdk.json') }}
       - uses: actions/cache@v4
         with:
           path: |
-            build/ci-tools/gcc-arm-none-eabi-5_4-2016q2
-            build/ci-tools/python2
-          key: ci-tools-ubuntu22-${{ runner.arch }}-gcc541-python2718-v1-${{ steps.tool-path.outputs.key }}
+            ~/.cache/phicomm/gcc5
+            ~/.cache/phicomm/gcc14
+            ~/.cache/phicomm/python2
+          key: shared-tools-ubuntu22-${{ runner.arch }}-gcc1431-runtime541-python2718-v2-${{ steps.tool-path.outputs.key }}
+      - name: Prepare pinned GCC5 ARM host test tools
+        run: python3 tools/prepare_toolchain.py --profile gcc5 --github-env "$GITHUB_ENV"
       - name: Require pinned ARM host test tools
-        run: |
-          bash tools/ci/check_cached_tools.sh
-          if [ ! -x "$ARM_CC" ]; then
-            mkdir -p build/ci-tools
-            curl -fsSL --retry 3 'https://launchpad.net/gcc-arm-embedded/5.0/5-2016-q2-update/+download/gcc-arm-none-eabi-5_4-2016q2-20160622-linux.tar.bz2' -o "$RUNNER_TEMP/gcc.tar.bz2"
-            echo "9910b6b5df12efe564dbb3856bf1599d4c16178a6f28bd8a23c9e5c3edc219e4  $RUNNER_TEMP/gcc.tar.bz2" | sha256sum -c -
-            tar -xjf "$RUNNER_TEMP/gcc.tar.bz2" -C build/ci-tools
-          fi
-          bash tools/ci/require_arm_tools.sh
+        run: bash tools/ci/require_arm_tools.sh
       - name: Prepare all pinned SDKs for early ARM and JSON tests
         run: |
           for sdk in a1-sdk m1-sdk tc1-sdk-3.6.4; do
@@ -766,15 +817,15 @@ jobs:
           python3 -m unittest tests.test_mqtt_overlay_preparation tests.test_mqtt_subscribe_qos tests.test_easylink_bonjour
       - name: Test TMCP using real SDK workers and an isolated broker
         run: |
-          python3 -m pip install paho-mqtt==2.1.0 Jinja2==3.1.6
+          python3 -m pip install paho-mqtt==2.1.0 Jinja2==3.1.6 msgpack==1.1.2
           tests/build_host.sh
           tests/run_mqtt_v2.sh
-      - name: Test actual SDK workers against the embedded hub broker
-        run: HUB_TEST_WORKERS=1 python3 -m unittest DAIKIN.tests.test_hub_mqtt.HubTests.test_actual_sdk_workers_share_broker_and_home_assistant
+      - name: Test local LAN codec and client lifecycle
+        run: SANITIZE=1 python3 -m unittest tests.test_lan_wire tests.test_lan_client
 
   validation-evidence:
     name: Validate complete test evidence
-    needs: [frontend, firmware, esp, release-checks, feature-tests]
+    needs: [frontend, firmware, esp, s30, release-checks, feature-tests]
     if: always()
     runs-on: ubuntu-22.04
     steps:

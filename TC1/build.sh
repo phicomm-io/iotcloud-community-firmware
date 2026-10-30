@@ -15,10 +15,12 @@ sdk_dir="${TC1_SDK_DIR:-$project_dir/build/tc1-sdk-3.6.4/mico-os}"
 workspace="$project_dir/build/tc1${variant_suffix}-workspace-3.6.4"
 python3 "$project_dir/tools/prepare_sdk.py" "$sdk_dir"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/easylink-bonjour-bounds.patch"
+python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/bonjour-lan-mdns-oom.patch" "$project_dir/common/bonjour-lan-mdns-compact.patch"
 # Validate configuration recovery and commit overlays as one ordered stack.
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \
     "$project_dir/common/config-recovery-mico36.patch" \
-    "$project_dir/common/config-commit-mico36.patch"
+    "$project_dir/common/config-commit-mico36.patch" \
+    "$project_dir/common/config-write-bounded-mico36.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/mqtt-handlers-sdk.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \
     "$project_dir/common/json-newlib-reent.patch" \
@@ -41,7 +43,10 @@ python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \
     "$project_dir/common/mqtt-response-deadline.patch" \
     "$project_dir/common/mqtt-buffer-storage.patch" \
     "$project_dir/common/mqtt-subscribe-qos.patch" \
-    "$project_dir/common/mqtt-subscribe-result.patch"
+    "$project_dir/common/mqtt-subscribe-result.patch" \
+    "$project_dir/common/mqtt-receive-recovery.patch" \
+    "$project_dir/TC1/mqtt-yield-errors.patch" \
+    "$project_dir/common/mqtt-post-send-workspace.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/http-retained-sdk.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/parameters-sdk.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/signed-ota-sdk.patch"
@@ -52,7 +57,10 @@ ln -sfn "$sdk_dir" "$workspace/mico-os"
 ln -sfn "$app_dir" "$workspace/TC1"
 ln -sfn "$project_dir/common/httpd" "$workspace/phicomm_httpd"
 ln -sfn "$project_dir/common/mqtt" "$workspace/phicomm_mqtt"
-tools_dir="${TC1_TOOLS_DIR:-$project_dir/build/tc1-tools}"
+shared_tools="${PHICOMM_TOOLS_HOME:-${XDG_CACHE_HOME:-$HOME/.cache}/phicomm}"
+compiler_major="${PHICOMM_BUILD_COMPILER_EXPECTED:-5.4.1}"
+compiler_major="${compiler_major%%.*}"
+tools_dir="${TC1_TOOLS_DIR:-$shared_tools/profiles/gcc$compiler_major}"
 target=TC1@MK3031@moc
 version_args=()
 if [[ "${GITHUB_REF_TYPE:-}" == tag ]]; then
@@ -62,24 +70,24 @@ python3 "$project_dir/tools/check_version.py" "${version_args[@]}"
 mkdir -p "$tools_dir"
 gcc_dir="$tools_dir/gcc-arm-none-eabi-5_4-2016q2"
 python2="${TC1_PYTHON2:-$tools_dir/python2/bin/python2.7}"
-if [[ ! -x "$gcc_dir/bin/arm-none-eabi-gcc" ]]; then
-    curl -fsSL --retry 3 'https://launchpad.net/gcc-arm-embedded/5.0/5-2016-q2-update/+download/gcc-arm-none-eabi-5_4-2016q2-20160622-linux.tar.bz2' -o "$tools_dir/gcc.tar.bz2"
-    echo "9910b6b5df12efe564dbb3856bf1599d4c16178a6f28bd8a23c9e5c3edc219e4  $tools_dir/gcc.tar.bz2" | sha256sum -c -
-    tar -xjf "$tools_dir/gcc.tar.bz2" -C "$tools_dir"
-fi
-if [[ ! -x "$python2" ]]; then
-    curl -fsSL --retry 3 https://www.python.org/ftp/python/2.7.18/Python-2.7.18.tgz -o "$tools_dir/python.tgz"
-    echo "da3080e3b488f648a3d7a4560ddee895284c3380b11d6de75edb986526b9a814  $tools_dir/python.tgz" | sha256sum -c -
-    tar -xzf "$tools_dir/python.tgz" -C "$tools_dir"
-    (
-        cd "$tools_dir/Python-2.7.18"
-        ./configure --prefix="$tools_dir/python2" > "$tools_dir/python-build.log" 2>&1
-        make -j4 >> "$tools_dir/python-build.log" 2>&1
-        make install >> "$tools_dir/python-build.log" 2>&1
-    )
+if [[ ! -x "$gcc_dir/bin/arm-none-eabi-gcc" || ! -x "$python2" ]]; then
+    if [[ "$tools_dir" != "$shared_tools/profiles/gcc$compiler_major" ]]; then
+        echo "Custom tool profile is incomplete: $tools_dir; use tools/prepare_toolchain.py in the shared cache" >&2
+        exit 1
+    fi
+    python3 "$project_dir/tools/prepare_toolchain.py" --home "$shared_tools" \
+        --profile "gcc$compiler_major" --log-dir "$project_dir/build/toolchain-logs"
 fi
 compiler_version="$($gcc_dir/bin/arm-none-eabi-gcc -dumpversion)"
-[[ "$compiler_version" == 5.4.1 ]] || { echo 'Expected ARM GCC 5.4.1' >&2; exit 1; }
+expected_compiler_version="${PHICOMM_BUILD_COMPILER_EXPECTED:-5.4.1}"
+case "$expected_compiler_version" in
+    5.4.1|14.3.1) ;;
+    *) echo "Unsupported ARM GCC expectation: $expected_compiler_version" >&2; exit 1 ;;
+esac
+[[ "$compiler_version" == "$expected_compiler_version" ]] || {
+    echo "Expected ARM GCC $expected_compiler_version, got $compiler_version" >&2
+    exit 1
+}
 
 micoder="$tools_dir/MiCoder"
 mkdir -p "$micoder/cmd/Linux64" "$micoder/compiler/arm-none-eabi-5_4-2016q2-20160622"
@@ -98,6 +106,7 @@ ln -sfn "$(command -v make)" "$micoder/cmd/Linux64/make"
         -f mico-os/makefiles/Makefile "$target" total
 )
 python3 "$project_dir/tools/check_http_core.py" "$workspace/build/$target/Modules" TC1 "$gcc_dir/bin/arm-none-eabi-nm" "$workspace/build/$target/binary/$target.elf"
+python3 "$project_dir/tools/check_lan_stack.py" "$workspace/build/$target/Modules" TC1 "$gcc_dir/bin/arm-none-eabi-nm" "$workspace/build/$target/binary/$target.elf"
 python3 "$project_dir/tools/check_no_json_objects.py" --model tc1 --nm "$gcc_dir/bin/arm-none-eabi-nm" "$workspace/build/$target/binary/$target.elf"
 python3 "$project_dir/tools/check_tc1_trace.py" "$gcc_dir/bin/arm-none-eabi-nm" "$workspace/build/$target/binary/$target.elf"
 python3 "$app_dir/tools/package.py" "$workspace/build/$target/binary" "$project_dir/build/tc1${variant_suffix}-release"

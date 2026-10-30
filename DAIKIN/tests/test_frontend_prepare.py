@@ -83,7 +83,7 @@ class FrontendPrepareTest(unittest.TestCase):
         import zopfli.gzip
         out = self.run_build('hub')
         self.assertEqual(gzip.decompress(self.root_bytes(out)), self.files['standalone-daikin.html'])
-        self.assertEqual(self.root_bytes(out), zopfli.gzip.compress(self.files['standalone-daikin.html'], numiterations=15))
+        self.assertEqual(self.root_bytes(out), zopfli.gzip.compress(self.files['standalone-daikin.html'], numiterations=500))
         header = (out / 'hub_web.h').read_text()
         arrays = re.findall(r'static const unsigned char hub_asset_\d+\[\] = \{([\d,]*)\}', header)
         retained = [(name, data) for name, data in sorted(self.files.items()) if name not in ('standalone-daikin.html', 'sw.js', 'config.json')]
@@ -91,7 +91,7 @@ class FrontendPrepareTest(unittest.TestCase):
         for encoded, (name, original) in zip(arrays, retained):
             compressed = bytes(map(int, encoded.split(',')))
             self.assertEqual(gzip.decompress(compressed), original, name)
-            expected = gzip.compress(original, compresslevel=9, mtime=0) if name.endswith('.png') else zopfli.gzip.compress(original, numiterations=15)
+            expected = gzip.compress(original, compresslevel=9, mtime=0) if name.endswith('.png') else zopfli.gzip.compress(original, numiterations=500)
             self.assertEqual(compressed, expected, name)
             self.assertIn('/iotcloud/' + name, header)
         self.assertNotIn('standalone-daikin.html', header)

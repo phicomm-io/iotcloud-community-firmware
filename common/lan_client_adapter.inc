@@ -14,7 +14,7 @@ static bool lan_client_send(const char *ip,const void *data,size_t n)
  if(!address.sin_addr.s_addr||address.sin_addr.s_addr==INADDR_NONE)return false;
  return sendto(udp,data,n,0,(struct sockaddr*)&address,sizeof(address))==(int)n;
 }
-static lc_ops lan_client_ops={LOCAL_ID,now_ms,lan_client_epoch,new_token,lan_client_load,lan_client_save,lan_client_send};
+static lc_ops lan_client_ops={LOCAL_ID,now_ms,lan_client_epoch,new_token,lan_client_load,lan_client_save,lan_client_send,NULL};
 bool feature_lan_pair_start(const char *peer,const char *ip,const char *password,unsigned scopes,const char **code)
 {
  if(!code)return false;

@@ -260,7 +260,7 @@ static void gated_sessions(void){
   if(mode>=3&&mode<=6)assert(online_publications==gate_online_before);
   if(mode==2||mode==7||mode==8)assert(online_publications==gate_online_before+1);
   if(mode==9)assert(subscriptions==subscribed+1);
-  if(mode==10)assert(subscriptions==subscribed+2);
+  if(mode==10)assert(subscriptions==subscribed+1);
  }
  gate_mode=0;
 }

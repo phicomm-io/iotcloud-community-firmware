@@ -185,6 +185,14 @@ int mqtt_buffer_allocation_permit(Client *c, size_t bytes) {
         permit(NULL, bytes);
 }
 
+/* The SDK calls this only for required storage, never an optional shrink.
+ * Record no payload and preserve the first actual failure in this operation. */
+void mqtt_buffer_allocation_failed(Client *c, int admitted) {
+    port_state *ctx=callback_port();
+    if (ctx_ph_mqtt_owner(ctx) && c == ctx->client && ctx->core.protocol_depth && !ctx->cause)
+        ctx->cause = admitted ? PH_MQTT_CAUSE_ALLOCATION : PH_MQTT_CAUSE_HEAP_ADMISSION;
+}
+
 static void *allocate(void *p, size_t n) {
     (void) p;
     return malloc(n);
@@ -1017,6 +1025,14 @@ bool ph_mqtt_input_admit(void) {
         ph_mqtt_credit_replace(&ctx->core,PH_MQTT_RECEIPT_BYTES);
 }
 bool ph_mqtt_input_consumed(void) { return ctx_ph_mqtt_input_consumed(&primary_port); }
+bool ph_mqtt_query_consumed(size_t reply_bytes) {
+    port_state *ctx=&primary_port;
+    if (!ctx_ph_mqtt_owner(ctx) || !ctx->core.dispatch_depth || ctx->core.protocol_depth)
+        return false;
+    ph_mqtt_item_release(&ctx->core, ctx->core.inflight[PH_MQTT_COMMAND]);
+    return reply_bytes && reply_bytes <= PH_MQTT_RECEIPT_BYTES &&
+        ph_mqtt_credit_replace(&ctx->core, reply_bytes);
+}
 #ifdef PHICOMM_BEMFA
 bool bm_input_consumed(void) { return ctx_ph_mqtt_input_consumed(secondary_port); }
 #endif

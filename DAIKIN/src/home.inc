@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "hub_home_budget.h"
 #include <esp_heap_caps.h>
-// HAP is deliberately opt-in. Only local MQTT publications are trusted as
+// HAP is deliberately opt-in. Only authenticated local UDP state are trusted as
 // live state; upstream retained messages cannot confirm a Home control.
 static iotcloud::HomeStorage homeStorage;
 static bool homeStarted=false,homePaused=false;
@@ -32,7 +32,7 @@ static bool homeControl(size_t device,iotcloud::HubHome::Control control,unsigne
   if(!homeHealthy()||otaActive||!hubHome.begin(device,control,channel,value,powerUpdated,power))return false;
   const uint32_t began=millis();
   do{
-    auto now=millis();hubHome.tick(now);hubTransport.poll(now);
+    auto now=millis();pollLocalControls(now);hubHome.tick(now);pollHubLan(now);
     if(!homeHealthy()){hubHome.finish();return false;}
     if(hubHome.finished())return hubHome.finish();
     delay(1);
@@ -155,8 +155,8 @@ static void homeInit(){
   else if(result!=ESP_OK||strlen(homeSetupId)!=4||strspn(homeSetupId,"0123456789abcdef")!=4){nvs_close(metadata);return;}
   nvs_close(metadata);
   if(!homeSpan.iotcloudStorage(homeStorage.partition.label))return;
-  homeSpan.setLogLevel(-1).setPortNum(51826).setHostNameSuffix(deviceId.c_str()).setQRID(homeSetupId);
-  homeSpan.begin(Category::Bridges,"IoTCloud Hub","daikin-","IoTCloud Hub");
+  homeSpan.setLogLevel(-1).setPortNum(51826).setHostNameSuffix(deviceId.substring(6).c_str()).setQRID(homeSetupId);
+  homeSpan.begin(Category::Bridges,"IoTCloud Hub",deviceHostname.substring(0,deviceHostname.length()-6).c_str(),"IoTCloud Hub");
   if(!homeSpan.iotcloudStorageHealthy()){homeSpan.iotcloudStop();return;}
   // Generate the SRP verifier once. Fail closed if its atomic NVS write failed.
   nvs_handle srp=0;if(nvs_open_from_partition(homeStorage.partition.label,"SRP",NVS_READWRITE,&srp)!=ESP_OK){homeSpan.iotcloudStop();return;}

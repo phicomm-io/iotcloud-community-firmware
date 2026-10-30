@@ -221,6 +221,7 @@ static bool install_config(feature_config_t *c) {
 }
 #include "lan_client_adapter.inc"
 #include "lan_sensor.inc"
+#include "runtime_lan_business.inc"
 #include "feature_mp.h"
 #include "group_mp.inc"
 #ifndef FEATURE_DEVICE_A1
@@ -270,9 +271,19 @@ bool feature_is_coordinator(void) {
 }
 void feature_local_sample(const feature_sample_t *s) {
   lock();
+  /* A scheduler tick is not a new sample. Compare named fields rather than
+   * struct padding, preserving validity, per-field freshness and boot/seq. */
+  bool changed=memcmp(local_sample.value,s->value,sizeof(s->value))||
+    local_sample.sequence!=s->sequence||local_sample.boot!=s->boot||
+    local_sample.received_ms!=s->received_ms||local_sample.age_ms!=s->age_ms||
+    local_sample.valid!=s->valid||memcmp(&local_sample.co2,&s->co2,sizeof(s->co2))||
+    local_sample.co2_received_ms!=s->co2_received_ms||local_sample.co2_age_ms!=s->co2_age_ms||
+    local_sample.co2_supported!=s->co2_supported||local_sample.co2_valid!=s->co2_valid||
+    local_sample.fields!=s->fields||local_sample.partial!=s->partial||
+    memcmp(local_sample.field_age_ms,s->field_age_ms,sizeof(s->field_age_ms));
   local_sample = *s;
   unlock();
-  service_cache_changed(SERVICE_CACHE_STATUS);
+  if(changed)service_cache_changed(SERVICE_CACHE_STATUS);
 }
 #ifdef FEATURE_DEVICE_A1
 void feature_values_snapshot(feature_values_t *out) {
@@ -438,7 +449,7 @@ int feature_light_select_mp(unsigned effect,ph_writer *response) {
    if(n&&phv_parse(PH_WIRE_MSGPACK,bytes,n,&v))group_broadcast_config_mp("light",&v);
   }
  }
- int status=ok?200:409;if(response)feature_result_mp(response,status,revision,NULL);return status;
+ int status=ok?200:500;if(ok&&response)feature_result_mp(response,status,revision,NULL);return status;
 }
 unsigned feature_light_cap(unsigned brightness) {
   lock();
@@ -518,16 +529,20 @@ unsigned feature_mqtt_filters(char filters[][FEATURE_TOPIC_MAX], unsigned capaci
   mqtt_account_t a=mqtt_snapshot();unsigned n=0;
   feature_config_t *c=malloc(sizeof(*c));if(!c)return FEATURE_MQTT_FILTER_ERROR;feature_config_get(c);
 #ifdef FEATURE_DEVICE_A1
-  unsigned required=2u+(c->peer_count || c->group[0] ? 1u : 0u)+(c->peer_count?1u:0u);
+  unsigned required=3;
 #else
   unsigned required=1;
 #endif
   if(capacity<required){free(c);return FEATURE_MQTT_FILTER_ERROR;}
+  memset(filters,0,capacity*sizeof(*filters));
 #ifdef FEATURE_DEVICE_A1
   mqtt_link_topic(&a,"a1",LOCAL_ID,"+","request",filters[n++],FEATURE_TOPIC_MAX);
   mqtt_aux(&a,"address","+",filters[n++],FEATURE_TOPIC_MAX);
-  if(c->peer_count || c->group[0]) {char root[FEATURE_TOPIC_MAX];root_for(c,0,root);mqtt_format(filters[n++],FEATURE_TOPIC_MAX,"%s/#",root);}
-  if(c->peer_count)mqtt_aux(&a,"sensor","+/+",filters[n++],FEATURE_TOPIC_MAX);
+  /* Keep the own/group linkage subscription stable across peer edits.
+   * First/last sensor binding must not disconnect MQTT session grants. */
+  {char root[FEATURE_TOPIC_MAX];root_for(c,0,root);mqtt_format(filters[n++],FEATURE_TOPIC_MAX,"%s/#",root);}
+  /* Sensor samples use LAN UDP; MQTT only publishes the session grant.
+   * A broad sensor subscription is unnecessary and may be denied by ACLs. */
 #else
   char leaf[32];snprintf(leaf,sizeof(leaf),"%s/command",LOCAL_ID);
   mqtt_aux(&a,"sensor",leaf,filters[n++],FEATURE_TOPIC_MAX);
@@ -799,6 +814,11 @@ static void feature_worker(mico_thread_arg_t arg) {
       udp = -1;
     }
   }
+#ifdef FEATURE_DEVICE_A1
+  lan_business_start(boot_id,"a1",A1_VERSION);
+#else
+  lan_business_start(boot_id,"m1",M1_VERSION);
+#endif
   for (;;) {
 #ifdef PHICOMM_DEVICE_OTA
     if(feature_worker_should_stop())break;
@@ -906,6 +926,7 @@ static void feature_worker(mico_thread_arg_t arg) {
     }
 #endif
     lan_client_poll();
+    lan_business_poll();
     if (udp >= 0) {
       fd_set fds;
       FD_ZERO(&fds);
@@ -920,6 +941,11 @@ static void feature_worker(mico_thread_arg_t arg) {
           char ip[16];mqtt_format(ip,sizeof(ip),"%s",inet_ntoa(from.sin_addr));
           ph_value request;
           if(phv_parse(PH_WIRE_MSGPACK,wire,(size_t)n,&request)){
+#ifdef FEATURE_DEVICE_A1
+            a1_input_poll();
+#endif
+            bool business=lan_business_input(&request,ip,ntohs(from.sin_port),wire,FEATURE_WIRE_MAX);
+            if(!business){
             /* Pair operations borrow the datagram only during this call. */
             ph_value operation;bool paired=lan_client_response(&request,ip);
             bool auth_op=phv_get(&request,"op",&operation)&&(phv_equal_text(&operation,"auth_pair")||phv_equal_text(&operation,"auth_resume")||phv_equal_text(&operation,"auth_unpair"));
@@ -932,6 +958,10 @@ static void feature_worker(mico_thread_arg_t arg) {
               }free(response);
             }
             if(!paired&&!auth_op&&!group_input_mp(&request,true,false,ip)){lan_packet packet;if(lan_decode_value(&request,&packet))lan_sensor_input(&packet,ip);}
+            }
+#ifdef FEATURE_DEVICE_A1
+            a1_input_poll();
+#endif
           }
         }
       }
@@ -940,6 +970,7 @@ static void feature_worker(mico_thread_arg_t arg) {
     watchdog_beat(WATCHDOG_BINDING);
   }
 #ifdef PHICOMM_DEVICE_OTA
+  lan_business_stop();
   if(udp>=0){close(udp);udp=-1;}
   free(wire);free(c);
   lock();
@@ -1029,9 +1060,7 @@ OSStatus feature_start(void) {
   scheduled_speed = configuration.scheduled_speed;
   if (MicoRandomNumberRead((uint8_t *)&boot_id, sizeof(boot_id)) != kNoErr)
     return kUnknownErr;
-#ifndef FEATURE_DEVICE_A1
   if(!boot_id)boot_id=1;
-#endif
 #ifdef PHICOMM_DEVICE_OTA
   return feature_resume();
 #else

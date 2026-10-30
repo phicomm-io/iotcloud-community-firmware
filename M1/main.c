@@ -1,6 +1,7 @@
 #include "../common/automation.h"
 
 #include "../common/backup.h"
+#include "../common/device_hostname_mico.h"
 static bool config_recovery, config_commit_uncertain;
 bool device_config_recovery(void) { return config_recovery || config_commit_uncertain; }
 void device_config_recovery_set(bool recovery) { config_recovery=recovery || config_commit_uncertain; }
@@ -496,6 +497,7 @@ int application_start(void)
     mico_wlan_get_mac_address(mac);
     snprintf(m1_id, sizeof(m1_id), "%02x%02x%02x%02x%02x%02x",
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    if(!ph_device_hostname_mico("m1",m1_id))return kNotPreparedErr;
     if (!c.name[0]) {
         snprintf(c.name, sizeof(c.name), "M1-%02X%02X", mac[4], mac[5]);
         if (!m1_config_save(&c)) return kUnknownErr;
@@ -658,9 +660,14 @@ void m1_status_capture(device_status_t *snapshot, device_status_full_t *full)
     snapshot->now_ms=mico_rtos_get_time(); /* after copying all timestamped state */
     if(full) {
         snapshot->captured|=STATUS_DIAGNOSTIC;
-        runtime_metrics_capture(&full->runtime,snapshot->now_ms);
-        watchdog_status_capture(&full->watchdog); full->http=ph_http_snapshot();
     }
+}
+
+void m1_diagnostics_capture(device_status_t *snapshot,device_status_full_t *full)
+{
+    m1_status_capture(snapshot,full);
+    runtime_metrics_capture(&full->runtime,snapshot->now_ms);
+    watchdog_status_capture(&full->watchdog);full->http=ph_http_snapshot();
 }
 
 #define BACKUP_MODEL "m1"

@@ -59,7 +59,7 @@ int ph_close(int fd){
 }
 static void (*pending_thread)(mico_thread_arg_t);
 static mico_thread_arg_t pending_arg;
-int mico_rtos_create_thread(void*a,int p,const char*n,void(*fn)(mico_thread_arg_t),unsigned stack,mico_thread_arg_t arg){(void)p;(void)n;assert(a&&stack==12288);if(mode==10)return -7;*(mico_thread_t*)a=1;pending_thread=fn;pending_arg=arg;return 0;}
+int mico_rtos_create_thread(void*a,int p,const char*n,void(*fn)(mico_thread_arg_t),unsigned stack,mico_thread_arg_t arg){(void)p;(void)n;assert(a&&stack==PH_HTTP_STACK_BYTES);if(mode==10)return -7;*(mico_thread_t*)a=1;pending_thread=fn;pending_arg=arg;return 0;}
 /* The production creator publishes the returned handle before the scheduled
  * owner runs. Execute deterministically after that publication in this fake. */
 static int start_then_run(const ph_http_app *application,unsigned cap){

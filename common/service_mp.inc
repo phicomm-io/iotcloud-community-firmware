@@ -2,12 +2,17 @@
 /* Included once by service.c. No JSON views/objects cross this API. */
 #include "service_mp.h"
 
-typedef struct { char id[65],action[48]; ph_value params; } mp_request;
-typedef struct { char id[65]; unsigned char digest[32]; ph_buf *response; } mp_receipt;
+typedef struct { char id[65],receipt_key[65],action[48]; ph_value params; } mp_request;
+typedef struct { char id[65]; unsigned char digest[32]; ph_buf *response; bool lan; } mp_receipt;
 static mp_receipt mp_receipts[8];
 static unsigned mp_receipt_next;
 static uint32_t mp_generation[2]={1,1};
 static struct { uint32_t generation,clock_second; ph_buf *payload; } mp_cache[2];
+uint32_t service_cache_revision(void)
+{
+    if(!ready)return 0;
+    mico_rtos_lock_mutex(&service_lock);uint32_t n=mp_generation[0];mico_rtos_unlock_mutex(&service_lock);return n;
+}
 
 void service_cache_changed(unsigned mask)
 {
@@ -19,11 +24,11 @@ void service_cache_changed(unsigned mask)
 static bool mp_cache_evict(void)
 {
     bool freed=false;
-    mico_rtos_lock_mutex(&command_lock);
+    if(!service_command_enter(true))return false;
     for(unsigned i=0;i<2;i++)if(mp_cache[i].payload){
         ph_buf_free(mp_cache[i].payload);mp_cache[i].payload=NULL;freed=true;
     }
-    mico_rtos_unlock_mutex(&command_lock);
+    service_command_leave();
     return freed;
 }
 static ph_buf *mp_copy(const ph_buf *src)
@@ -118,11 +123,19 @@ static ph_buf *mp_cached(unsigned index)
     mp_cache[index].payload=next;mp_cache[index].generation=generation;mp_cache[index].clock_second=clock_second;
     return next;
 }
-static ph_buf *mp_dispatch(mp_request *r,const void *raw,size_t length,bool mqtt)
+/* A build without local-auth integration must fail closed for the LAN API. */
+extern bool ph_auth_context_valid(const ph_auth_context *,unsigned) __attribute__((weak));
+static bool service_lan_context_valid(const ph_auth_context *context)
+{
+    return context&&ph_auth_context_valid&&
+        (context->source==PH_AUTH_UDP_PAIR||context->source==PH_AUTH_UDP_MQTT)&&
+        ph_auth_context_valid(context,PH_AUTH_SCOPE_CONTROL);
+}
+static ph_buf *mp_dispatch(mp_request *r,const void *raw,size_t length,bool mqtt,const ph_auth_context *lan,bool *admitted)
 {
     const char *action=r->action,*code="invalid_params";const ph_value *p=&r->params;
     bool query=strlen(action)>4&&!strcmp(action+strlen(action)-4,".get");
-    if((!strcmp(action,"capabilities.get")||!strcmp(action,"info.get")||!strcmp(action,"ota.status.get")||!strcmp(action,"ota.cancel"))&&!phv_keys(p,""))return service_error_mp(r->id,"invalid_params");
+    if((!strcmp(action,"diagnostics.get")||!strcmp(action,"capabilities.get")||!strcmp(action,"info.get")||!strcmp(action,"ota.status.get")||!strcmp(action,"ota.cancel"))&&!phv_keys(p,""))return service_error_mp(r->id,"invalid_params");
     if(!strcmp(action,"status.get")){
         ph_value view;if(!phv_keys(p,"|view|")||(phv_get(p,"view",&view)&&!phv_equal_text(&view,"full")&&!phv_equal_text(&view,"live")))return service_error_mp(r->id,"invalid_params");
     }
@@ -131,15 +144,17 @@ static ph_buf *mp_dispatch(mp_request *r,const void *raw,size_t length,bool mqtt
     bool receipt=r->id[0]&&!query&&strncmp(action,"config.",7)&&strncmp(action,"wifi.",5)&&strncmp(action,"ota.",4)&&strcmp(action,"sensor.session.set")&&strncmp(action,"lan.pair",8);
     unsigned char digest[32];
     if(receipt){SHA256Context sha;if(SHA256Reset(&sha)||SHA256Input(&sha,raw,length)||SHA256Result(&sha,digest))return service_error_mp(r->id,"busy");}
-    mico_rtos_lock_mutex(&command_lock);
-    if(receipt)for(unsigned i=0;i<8;i++)if(!strcmp(mp_receipts[i].id,r->id)){
+    if(!service_command_enter(lan==NULL)){if(admitted)*admitted=false;return service_error_mp(r->id,"busy");}
+    if(lan&&!service_lan_context_valid(lan)){service_command_leave();return service_error_mp(r->id,"auth_required");}
+    const char *receipt_key=r->receipt_key[0]?r->receipt_key:r->id;
+    if(receipt)for(unsigned i=0;i<8;i++)if(mp_receipts[i].lan==(lan!=NULL)&&!strcmp(mp_receipts[i].id,receipt_key)){
         ph_buf *response=!memcmp(mp_receipts[i].digest,digest,32)?(mp_receipts[i].response?mp_copy(mp_receipts[i].response):service_error_mp(r->id,"busy")):service_error_mp(r->id,"conflict");
-        mico_rtos_unlock_mutex(&command_lock);return response;
+        service_command_leave();return response;
     }
     ph_buf *payload=NULL,*response=NULL;bool owned=false,active=ota_job_active(),record_receipt=receipt;
     ph_writer w;memset(&w,0,sizeof(w));
     bool cached_query=(!strcmp(action,"status.get")||!strcmp(action,"capabilities.get"))&&!active;
-    if(!cached_query&&!phw_init(&w,PH_WIRE_MSGPACK)){mico_rtos_unlock_mutex(&command_lock);return NULL;}
+    if(!cached_query&&!phw_init(&w,PH_WIRE_MSGPACK)){service_command_leave();return NULL;}
     if(!strcmp(action,"status.get")&&!active){
         ph_value view;bool valid=phv_keys(p,"|view|");
         if(phv_get(p,"view",&view))valid=valid&&(phv_equal_text(&view,"full")||phv_equal_text(&view,"live"));
@@ -147,7 +162,8 @@ static ph_buf *mp_dispatch(mp_request *r,const void *raw,size_t length,bool mqtt
     }else if(!strcmp(action,"capabilities.get")&&phv_keys(p,"")){
         if(active){service_product_capabilities_mp(&w,update_capability_names,true);code="ok";}
         else{payload=mp_cached(1);code=payload?"ok":"busy";}
-    }else if(!strcmp(action,"info.get")&&phv_keys(p,"")){service_product_info_mp(&w);code="ok";}
+    }else if(!strcmp(action,"diagnostics.get")&&!active){service_product_diagnostics_mp(&w);code="ok";}
+    else if(!strcmp(action,"info.get")&&phv_keys(p,"")){service_product_info_mp(&w);code="ok";}
 #ifdef PHICOMM_DEVICE_OTA
     else if(!strcmp(action,"ota.cancel")&&phv_keys(p,"")){code=ota_job_cancel()?"accepted":"busy";mp_empty(&w);}
     else if(!strcmp(action,"ota.status.get")||(!strcmp(action,"status.get")&&active)){ota_job_status_mp(&w);code="ok";}
@@ -173,22 +189,38 @@ static ph_buf *mp_dispatch(mp_request *r,const void *raw,size_t length,bool mqtt
         if(!handled)handled=service_product_mp(action,p,&w,&code);
         if(!handled){code="unsupported";mp_empty(&w);}
     }
-    if(!payload && !w.wire && !phw_init(&w,PH_WIRE_MSGPACK)){mico_rtos_unlock_mutex(&command_lock);return NULL;}
+    if(!payload && !w.wire && !phw_init(&w,PH_WIRE_MSGPACK)){service_command_leave();return NULL;}
     if(!payload){if(!w.depth && !w.wire->len)mp_empty(&w);payload=phw_take(&w);owned=true;}else phw_discard(&w);
     response=payload?mp_envelope(r->id,code,payload):NULL;if(owned)ph_buf_free(payload);
-    if(record_receipt){mp_receipt *saved=&mp_receipts[mp_receipt_next++%8];ph_buf_free(saved->response);memset(saved,0,sizeof(*saved));strcpy(saved->id,r->id);memcpy(saved->digest,digest,32);saved->response=mp_copy(response);}
-    mico_rtos_unlock_mutex(&command_lock);
+    if(record_receipt){mp_receipt *saved=&mp_receipts[mp_receipt_next++%8];ph_buf_free(saved->response);memset(saved,0,sizeof(*saved));strcpy(saved->id,receipt_key);memcpy(saved->digest,digest,32);saved->response=mp_copy(response);saved->lan=lan!=NULL;}
+    service_command_leave();
     if(!query){service_cache_changed(SERVICE_CACHE_ALL);service_event(!strcmp(code,"accepted")||!strcmp(code,"ok")?"info":"warn","command",!strcmp(code,"accepted")||!strcmp(code,"ok")?"accepted":"rejected");}
     return response;
 }
 ph_buf *service_command_mp(const void *data,size_t length)
-{mp_request r;if(!mp_decode(data,length,&r))return service_error_mp(r.id,"invalid_params");return mp_dispatch(&r,data,length,false);}
+{mp_request r;if(!mp_decode(data,length,&r))return service_error_mp(r.id,"invalid_params");return mp_dispatch(&r,data,length,false,NULL,NULL);}
 ph_buf *service_mqtt_command_mp(const void *data,size_t length)
-{mp_request r;if(!mp_decode(data,length,&r))return service_error_mp(r.id,"invalid_params");return mp_dispatch(&r,data,length,true);}
+{mp_request r;if(!mp_decode(data,length,&r))return service_error_mp(r.id,"invalid_params");return mp_dispatch(&r,data,length,true,NULL,NULL);}
 ph_buf *service_query_mp(const char *action)
 {
-    ph_writer w;if(!action||!phw_init(&w,PH_WIRE_MSGPACK))return NULL;
-    phw_begin(&w,NULL,false);phw_text(&w,"action",action);phw_begin(&w,"params",false);phw_end(&w);phw_end(&w);
-    ph_buf *request=phw_take(&w);if(!request)return NULL;
-    ph_buf *response=service_command_mp(request->buf,request->len);ph_buf_free(request);return response;
+    static const unsigned char empty_map=0x80;
+    mp_request r={0};
+    if(!action||!identifier(action,sizeof(r.action)))return NULL;
+    size_t n=strlen(action);if(n<=4||strcmp(action+n-4,".get"))return NULL;
+    strcpy(r.action,action);
+    if(!phv_parse(PH_WIRE_MSGPACK,&empty_map,1,&r.params))return NULL;
+    /* Internal queries already have typed parameters. Do not serialize and
+     * parse a synthetic request just to enter the same dispatcher. */
+    return mp_dispatch(&r,NULL,0,false,NULL,NULL);
 }
+bool service_readonly_mp(const void *data,size_t length)
+{
+    mp_request r;if(!mp_decode(data,length,&r))return false;
+    /* Only reviewed, side-effect-free reads may charge their actual reply
+     * after execution. A future action ending in .get may start network work
+     * (for example an OTA check); it must keep write-style pre-admission. */
+    return !strcmp(r.action,"status.get")||!strcmp(r.action,"capabilities.get")||
+        !strcmp(r.action,"diagnostics.get")||!strcmp(r.action,"info.get")||
+        !strcmp(r.action,"config.get")||!strcmp(r.action,"logs.get");
+}
+#include "service_lan.inc"

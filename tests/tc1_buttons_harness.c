@@ -1,4 +1,4 @@
-/* Production gesture, automation, control, GPIO and JSON memory policy with
+/* Production gesture, automation, control, GPIO and binary memory policy with
  * host substitutes for the RTOS, Flash and physical pins. */
 #define AUTOMATION_TC1
 #define PHICOMM_DEVICE_OTA 1
@@ -6,6 +6,22 @@
 #define __MAIN_H_
 #define __USER_KEY_H_
 #include "mico.h"
+/* Synchronous RTOS substitute: the real service gate still enforces exclusive
+ * command/control ownership; this fixture never schedules concurrent callers. */
+typedef unsigned mico_semaphore_t;
+#define MICO_WAIT_FOREVER UINT32_MAX
+static int mico_rtos_init_semaphore(mico_semaphore_t *s, unsigned maximum) {
+    assert(maximum == 1); *s = 0; return kNoErr;
+}
+static int mico_rtos_set_semaphore(mico_semaphore_t *s) {
+    assert(!*s); *s = 1; return kNoErr;
+}
+static int mico_rtos_get_semaphore(mico_semaphore_t *s, uint32_t timeout) {
+    (void)timeout; if (!*s) return kUnknownErr; *s = 0; return kNoErr;
+}
+static int mico_rtos_deinit_semaphore(mico_semaphore_t *s) {
+    *s = 0; return kNoErr;
+}
 #define mico_rtos_delete_thread(thread) ((void)(thread))
 #include "common/automation.h"
 #include "common/gesture.h"
@@ -67,17 +83,21 @@ void tc1_config_release(void) { assert(reserved); reserved = false; }
 void ota_job_init(void) {}
 bool ota_job_active(void) { return ota_active; }
 bool ota_job_cancel(void) { return false; }
-json_object *ota_job_status(void) { return NULL; }
+void ota_job_status_mp(ph_writer *w) { phw_begin(w, NULL, false); phw_end(w); }
 void automation_load(automation_config_t *out) { *out = config.automation; }
 bool automation_save(const automation_config_t *next) { config.automation = *next; return true; }
-json_object *service_product_capabilities(void) { return NULL; }
-json_object *service_product(const char *action, json_object *p, const char **code) {
-    (void)action; (void)p;
+void service_product_capabilities_mp(ph_writer *w, const char *const *extra, bool restricted) {
+    (void)extra; (void)restricted; phw_begin(w, NULL, false); phw_end(w);
+}
+void service_product_status_mp(ph_writer *w) { phw_begin(w, NULL, false); phw_end(w); }
+void service_product_info_mp(ph_writer *w) { phw_begin(w, NULL, false); phw_end(w); }
+void service_product_diagnostics_mp(ph_writer *w) { phw_begin(w, NULL, false); phw_end(w); }
+bool service_product_mp(const char *action, const ph_value *p, ph_writer *w, const char **code) {
+    (void)action; (void)p; (void)w;
     ++product_calls;
     *code = "busy";
-    return NULL;
+    return false;
 }
-#include "tests/stubs/status_wire.inc"
 
 static void *button_malloc(size_t size) {
     ++allocation_attempts;
@@ -143,7 +163,9 @@ static void gestures(void) {
         for (unsigned low = 0; low < 2; ++low) {
             memory.free_memory = low ? 16000 : 65536;
             deny_allocations = low;
-            assert(json_heap_permit(1) == !low);
+            void *probe = ph_wire_malloc(1);
+            assert((probe != NULL) == !low);
+            ph_wire_free(probe);
             unsigned prior = saves;
             ha_refresh_pending = 0;
             tap(); sockets(true);
@@ -161,7 +183,7 @@ static void gestures(void) {
     }
 }
 static void control_failures(void) {
-    /* Continue with all button-path malloc calls rejected and JSON below its
+    /* Continue with all button-path malloc calls rejected and binary below its
      * reserve. The GPIO, persisted config and asynchronous refresh must agree. */
     unsigned prior = saves;
     reserved = true;

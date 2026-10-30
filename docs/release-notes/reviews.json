@@ -3190,6 +3190,254 @@
         "v1.0.0-rc.3:b063",
         "v1.0.0-rc:b025"
       ]
+    },
+    "v1.0.0-rc.4:b001": {
+      "block_sha256": "6741231947d827dd092375960123e2e7d61ede1539c66373af48bbfc28a6454d",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "excluded",
+      "reason": "版本说明、标题、链接或验证边界；保留原文，不重复计算为用户功能。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.4:b001"
+      ]
+    },
+    "v1.0.0-rc.4:b002": {
+      "block_sha256": "8364e038f3a043114e8fec1f3d3e7b0264836a859ad2dd31343368b81ac821ec",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "excluded",
+      "reason": "版本说明、标题、链接或验证边界；保留原文，不重复计算为用户功能。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.4:b002"
+      ]
+    },
+    "v1.0.0-rc.4:b003": {
+      "block_sha256": "45f875db254e9b06fde0857f03cc97eb18d5d05cefafd83a4df95f3fe081bf33",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "approved",
+      "reason": "作者逐项核对中英文与当前实现；不声称独立审查。",
+      "change_refs": [
+        "openiot-binary-default@1.0.0-rc.4"
+      ],
+      "basis": [
+        "v1.0.0-rc.4:b003"
+      ]
+    },
+    "v1.0.0-rc.4:b004": {
+      "block_sha256": "e06fa0864fdb5e4bfa49a7bce7c359d85055b701124b46e6d3fc7c62e3d966c7",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "excluded",
+      "reason": "版本说明、标题、链接或验证边界；保留原文，不重复计算为用户功能。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.4:b004"
+      ]
+    },
+    "v1.0.0-rc.4:b005": {
+      "block_sha256": "a0c3cde0d51ce699e4699fb13870c6529e45ab8b0197702eab29326b7d3f4a96",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "approved",
+      "reason": "作者逐项核对中英文与当前实现；不声称独立审查。",
+      "change_refs": [
+        "business-status-diagnostics-cache@1.0.0-rc.4"
+      ],
+      "basis": [
+        "v1.0.0-rc.4:b005"
+      ]
+    },
+    "v1.0.0-rc.4:b006": {
+      "block_sha256": "70836192b8c677d6e27764287addaed9b99144af39350c74bd61f0f457958d72",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "excluded",
+      "reason": "版本说明、标题、链接或验证边界；保留原文，不重复计算为用户功能。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.4:b006"
+      ]
+    },
+    "v1.0.0-rc.4:b007": {
+      "block_sha256": "3b9923fb77d504ce309efd13a5b8511895a76a2f4aa7e0dfd8ec8277a2f9fe64",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "approved",
+      "reason": "作者逐项核对中英文与当前实现；不声称独立审查。",
+      "change_refs": [
+        "web-request-coordination@1.0.0-rc.4"
+      ],
+      "basis": [
+        "v1.0.0-rc.4:b007"
+      ]
+    },
+    "v1.0.0-rc.4:b008": {
+      "block_sha256": "d1cf59e4b851e5147caa0d573ec60813ed435cfa5515c9fdfb8d231f59069525",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "excluded",
+      "reason": "版本说明、标题、链接或验证边界；保留原文，不重复计算为用户功能。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.4:b008"
+      ]
+    },
+    "v1.0.0-rc.4:b009": {
+      "block_sha256": "3cfc571c069542546b8e63475b6bc34cf07ea60bc3f9da587e2951ffc2cd0b26",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "approved",
+      "reason": "作者逐项核对中英文与当前实现；不声称独立审查。",
+      "change_refs": [
+        "mqtt-busy-recovery@1.0.0-rc.4"
+      ],
+      "basis": [
+        "v1.0.0-rc.4:b009"
+      ]
+    },
+    "v1.0.0-rc.4:b010": {
+      "block_sha256": "a1a8ceaaa28638f7d8ee268065b60eb9d931f653a34f8ffc96f62a755ed9dc75",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "excluded",
+      "reason": "版本说明、标题、链接或验证边界；保留原文，不重复计算为用户功能。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.4:b010"
+      ]
+    },
+    "v1.0.0-rc.4:b011": {
+      "block_sha256": "3eaf9c7d10c882b9906fa2b60114cc0be61e49e9c070ecae13cada9d02650b6a",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "approved",
+      "reason": "作者逐项核对中英文与当前实现；不声称独立审查。",
+      "change_refs": [
+        "authenticated-lan-v4@1.0.0-rc.4"
+      ],
+      "basis": [
+        "v1.0.0-rc.4:b011"
+      ]
+    },
+    "v1.0.0-rc.4:b012": {
+      "block_sha256": "d3dec17b3c0e2dd90c0eb6a8ab214ddb8095b75086644ee295c59d5b680eb887",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "excluded",
+      "reason": "版本说明、标题、链接或验证边界；保留原文，不重复计算为用户功能。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.4:b012"
+      ]
+    },
+    "v1.0.0-rc.4:b013": {
+      "block_sha256": "207d2e56569f5196ffdf291a8c08a10e4d7c0da8e65ec845855b5863deb19158",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "approved",
+      "reason": "作者逐项核对中英文与当前实现；不声称独立审查。",
+      "change_refs": [
+        "hub-mdns-udp-runtime@1.0.0-rc.4"
+      ],
+      "basis": [
+        "v1.0.0-rc.4:b013"
+      ]
+    },
+    "v1.0.0-rc.4:b014": {
+      "block_sha256": "e70a93915212db6e2789dbb411e45845d791fd379915c801c75c757dce5de5cb",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "excluded",
+      "reason": "版本说明、标题、链接或验证边界；保留原文，不重复计算为用户功能。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.4:b014"
+      ]
+    },
+    "v1.0.0-rc.4:b015": {
+      "block_sha256": "6a997e21caddeafe8ba97d449c8c2ef88e849555ffc71eca98bb90ce35f3d65c",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "approved",
+      "reason": "作者逐项核对中英文与当前实现；不声称独立审查。",
+      "change_refs": [
+        "webui-auth-and-config-recovery@1.0.0-rc.4"
+      ],
+      "basis": [
+        "v1.0.0-rc.4:b015"
+      ]
+    },
+    "v1.0.0-rc.4:b016": {
+      "block_sha256": "75507dc39ec71d20b9cad55e369358d6b5e709010e43d4ab4feb01d16ad70dd4",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "excluded",
+      "reason": "版本说明、标题、链接或验证边界；保留原文，不重复计算为用户功能。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.4:b016"
+      ]
+    },
+    "v1.0.0-rc.4:b017": {
+      "block_sha256": "85b79ee9322ffb5048ef01cbc6de115d9461fb815d986f82f8afbdb2d14bc039",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "approved",
+      "reason": "作者逐项核对中英文与当前实现；不声称独立审查。",
+      "change_refs": [
+        "compact-builds-and-hostnames@1.0.0-rc.4"
+      ],
+      "basis": [
+        "v1.0.0-rc.4:b017"
+      ]
+    },
+    "v1.0.0-rc.4:b018": {
+      "block_sha256": "79d46aaaa7ca4a3e76321db4b869cb6d788641755e5a64a8de19c92b91274bba",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "excluded",
+      "reason": "版本说明、标题、链接或验证边界；保留原文，不重复计算为用户功能。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.4:b018"
+      ]
+    },
+    "v1.0.0-rc.4:b019": {
+      "block_sha256": "09900eca00427657784714d2aa31c63ea01a94c75f03684c232738251c6999f9",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "approved",
+      "reason": "作者逐项核对中英文与当前实现；不声称独立审查。",
+      "change_refs": [
+        "s30-v1b-native-support@1.0.0-rc.4"
+      ],
+      "basis": [
+        "v1.0.0-rc.4:b019"
+      ]
+    },
+    "v1.0.0-rc.4:b020": {
+      "block_sha256": "5d0a3d5e9d14653206e1bc8b1ca11189e5b285119ed6971e706da2c3271e3198",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "excluded",
+      "reason": "版本说明、标题、链接或验证边界；保留原文，不重复计算为用户功能。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.4:b020"
+      ]
+    },
+    "v1.0.0-rc.4:b021": {
+      "block_sha256": "feff291cef1bfeedb7e11172e8dfe783d0b191acb32f194cf0fb73df13ddc8e3",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "excluded",
+      "reason": "版本说明、标题、链接或验证边界；保留原文，不重复计算为用户功能。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.4:b021"
+      ]
+    },
+    "v1.0.0-rc.4:b022": {
+      "block_sha256": "e9b35f1f5f99f734e5ac7d76bf06cce45e1f125812ae6672d5e657299d5150bc",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "excluded",
+      "reason": "版本说明、标题、链接或验证边界；保留原文，不重复计算为用户功能。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.4:b022"
+      ]
+    },
+    "v1.0.0-rc.4:b023": {
+      "block_sha256": "c8de7f141d1ef2e313bf710849b058f83823b89c73a9bdefdc83f3d0bcd25192",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "excluded",
+      "reason": "版本说明、标题、链接或验证边界；保留原文，不重复计算为用户功能。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.4:b023"
+      ]
     }
   }
 }

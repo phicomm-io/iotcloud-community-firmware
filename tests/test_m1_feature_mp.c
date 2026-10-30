@@ -48,6 +48,12 @@ int main(void){
  assert(phv_parse(1,b->buf,b->len,&root)&&!phv_get(&root,"response_ids",&v)&&phv_get(&root,"session_protocol",&v)&&phv_int(&v,&version)&&version==3);ph_buf_free(b);
  feature_sample_t sample={.value={20,50,100,.1f},.sequence=9,.boot=7,.received_ms=100,.valid=true};
  feature_local_sample(&sample);memset(&sample,0,sizeof(sample));assert(local_sample.sequence==9&&local_sample.value[2]==100&&invalidations==1);
+ sample=local_sample;unsigned before=invalidations;
+ for(unsigned i=0;i<1000;i++)feature_local_sample(&sample);
+ assert(invalidations==before);
+ sample.sequence++;feature_local_sample(&sample);assert(invalidations==before+1);
+ sample.valid=false;feature_local_sample(&sample);assert(invalidations==before+2);
+ sample.field_age_ms[2]++;feature_local_sample(&sample);assert(invalidations==before+3);
  assert(!feature_mqtt_service(capture,true)&&!publications&&mqtt_online&&mqtt_revision==configuration.revision);
  local_sample.sequence++;assert(!feature_mqtt_service(capture,true)&&!publications);assert(!feature_mqtt_service(capture,false)&&!mqtt_online);
  puts("M1 passive domain restrictions, v3 binding, owned local sample and no extra MQTT producer PASS");return 0;

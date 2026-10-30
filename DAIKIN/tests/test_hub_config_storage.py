@@ -75,12 +75,13 @@ class HubConfigStorage(unittest.TestCase):
                       'nvs_storage.cpp', 'nvs_item_hash_list.cpp')]
         sources += [sdk / 'components/esp_rom/linux/esp_rom_crc.c']
         cls.binary = {}
-        for variant in ('hub', 'full'):
+        for variant in ('hub', 'full', 'v2'):
             binary = temp / variant
             command = ['c++', '-std=c++11', '-g', '-O1', '-DLINUX_TARGET', '-DNO_DEBUG_STORAGE',
                        '-fsanitize=address,undefined', '-fno-omit-frame-pointer', '-fno-pie', '-no-pie']
-            if variant == 'hub':
+            if variant in ('hub','v2'):
                 command.append('-DIOTCLOUD_HUB=1')
+            if variant=='v2': command.append('-DDAIKIN_FIXED_AUTH_V2=1')
             command += ['-I' + str(p) for p in includes] + [str(p) for p in sources]
             command += [str(temp/'auth.o'),'-lcrypto','-o', str(binary)]
             subprocess.run(command, check=True)
@@ -98,9 +99,19 @@ class HubConfigStorage(unittest.TestCase):
         # A real power loss discards the whole heap. Throwing from the NOR shim
         # instead abandons IDF's local non-RAII temporary list; that host-only
         # artifact must not be mistaken for an ordinary-operation firmware leak.
-        leaks = '0' if name == 'power' else '1'
+        leaks = '0' if name in ('power','migration') else '1'
         subprocess.run([str(self.binary[variant]), name], check=True, timeout=90,
                        env={**{k:v for k,v in os.environ.items() if k!='DAIKIN_NVS_NO_PAIRS'}, **({'DAIKIN_NVS_NO_PAIRS':'1'} if no_pairs else {}), 'ASAN_OPTIONS': 'detect_leaks=' + leaks,'DAIKIN_NVS_PAGES':str(pages)})
+
+    def test_authority_key_type_and_precedence(self):
+        self.scenario("authority",pages=4)
+
+    def test_live_equivalent_first_authority_migration_power_cuts(self):
+        self.scenario("migration","v2",pages=4)
+        self.scenario("migration",pages=4)
+
+    def test_dual_legacy_keys_observe_safe_save_budget(self):
+        for pages in (4,5): self.scenario("dual-key",pages=pages)
 
     def test_valid_twelve_devices_and_mapping_budget(self):
         for pages in (4,5):

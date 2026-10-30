@@ -65,7 +65,7 @@ WRITE_FAIL=r'''
 class Callbacks(unittest.TestCase):
  def test_product_callbacks(self):
   rounds=soak_rounds()
-  for model,slots in (('A1',3),('M1',4),('TC1',3),('TC1',4)):
+  for model,slots in (('A1',3),('A1',4),('M1',4),('TC1',3),('TC1',4)):
    with self.subTest(model=model,slots=slots),tempfile.TemporaryDirectory() as temp:
     temp=Path(temp)
     source=(ROOT/(model+'/http.c' if model!='TC1' else 'TC1/http_server/app_httpd.c')).read_text()

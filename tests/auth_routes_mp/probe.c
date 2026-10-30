@@ -21,7 +21,9 @@ static int persist(void *context){assert(context==&config&&config_mutex);++write
 #define AUTH_STORE config.store
 #define AUTH_PASSWORD config.password
 #define AUTH_CONTEXT (&config)
+#ifndef AUTH_DEVICE_ID
 #define AUTH_DEVICE_ID "aabbccddeeff"
+#endif
 #include "../../common/local_auth_mico.inc"
 #define HTTP_AUTH_MODEL "a1"
 #define HTTP_AUTH_ID AUTH_DEVICE_ID
@@ -94,6 +96,27 @@ static void test_lan(void){
     assert(phv_get(&parsed,"code",&v)&&phv_equal_text(&v,"auth_required"));
     ph_buf_free(input);
 }
+static void test_inbound_only_migration(void){
+    char key[33],resumed[33];assert(ph_auth_pair(device_local_auth(),"adminfjr","001122334455",2,key));
+    ph_auth_store expected=config.store;
+    size_t prefix=offsetof(ph_auth_store,remote_count);
+    memset((uint8_t*)&config.store+prefix,255,sizeof(config.store)-prefix);disk=config;
+    unsigned before=writes;local_auth_ready=false;local_auth_mutex=0;recovery=false;
+    assert(device_local_auth_init()&&!recovery&&writes==before+1);
+    assert(!memcmp(&disk.store,&expected,sizeof(expected)));
+    assert(ph_auth_pair_resume(device_local_auth(),"001122334455",key,resumed));
+    // The next boot is already current and must not write again.
+    before=writes;local_auth_ready=false;local_auth_mutex=0;
+    assert(device_local_auth_init()&&writes==before&&!recovery);
+    // A failed commit retains all persisted bytes and enters read-only recovery.
+    memset((uint8_t*)&config.store+prefix,255,sizeof(config.store)-prefix);disk=config;
+    ph_auth_store durable=disk.store;fail_write=true;before=writes;
+    local_auth_ready=false;local_auth_mutex=0;
+    assert(device_local_auth_init()&&recovery&&writes==before+1);
+    assert(!memcmp(&disk.store,&durable,sizeof(durable)));
+    assert(!ph_auth_pair(device_local_auth(),"adminfjr","aabbccddeeff",1,resumed));
+    assert(writes==before+1);fail_write=false;recovery=false;
+}
 static void test_unknown_trailer_recovery(void){
     /* Simulate a fresh boot over a future schema. Preserve both the password
      * and opaque trailer; the recovery gate must prevent a pairing write. */
@@ -109,6 +132,7 @@ static void test_unknown_trailer_recovery(void){
 int main(void){
     memset(&config,0,sizeof(config));memset(&config.store,255,sizeof(config.store));
     assert(device_local_auth_init()&&writes==1&&ph_auth_store_valid(&disk.store)&&!disk.password[0]);
-    test_http();test_lan();test_unknown_trailer_recovery();assert(!local_auth_mutex&&!config_mutex);
+    test_http();test_lan();test_inbound_only_migration();test_unknown_trailer_recovery();assert(!local_auth_mutex&&!config_mutex);
     puts("MP auth: empty auto-token, 401/503, logout/expiry/change, public info and local UDP scopes PASS");
+    return 0;
 }

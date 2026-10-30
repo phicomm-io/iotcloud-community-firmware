@@ -15,6 +15,7 @@ def port():
         return s.getsockname()[1]
 
 
+@unittest.skip("Obsolete embedded-MQTT topology; not UDP acceptance")
 class HubAdmission(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

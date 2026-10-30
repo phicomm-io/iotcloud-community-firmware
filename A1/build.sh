@@ -20,18 +20,25 @@ export PHICOMM_FULL_RESOURCES A1_FRESH_AIR
 export PHICOMM_WEB_OUTPUT_DIR="$project_dir/build/a1${variant_suffix}-web"
 
 sdk_dir="${A1_SDK_DIR:-$project_dir/build/a1-sdk/mico-os}"
-tools_dir="${A1_TOOLS_DIR:-$project_dir/build/a1-tools}"
+shared_tools="${PHICOMM_TOOLS_HOME:-${XDG_CACHE_HOME:-$HOME/.cache}/phicomm}"
+compiler_major="${PHICOMM_BUILD_COMPILER_EXPECTED:-5.4.1}"
+compiler_major="${compiler_major%%.*}"
+tools_dir="${A1_TOOLS_DIR:-$shared_tools/profiles/gcc$compiler_major}"
 workspace="$project_dir/build/a1${variant_suffix}-workspace"
 sdk_commit="$(python3 "$project_dir/tools/prepare_sdk.py" --commit)"
 target=A1@MK3080B@moc
 mkdir -p "$tools_dir" "$workspace" "$(dirname "$sdk_dir")"
 
 python3 "$project_dir/tools/prepare_sdk.py" "$sdk_dir"
+# Binary numbers and the allocation-free HA decimal writer do not use printf float.
+python3 "$project_dir/tools/install_nano_printf_sdk.py" "$sdk_dir"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/easylink-bonjour-bounds.patch"
+python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$project_dir/common/bonjour-lan-mdns-oom.patch" "$project_dir/common/bonjour-lan-mdns-compact.patch"
 # Validate configuration recovery and commit overlays as one ordered stack.
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \
     "$project_dir/common/config-recovery-mico36.patch" \
-    "$project_dir/common/config-commit-mico36.patch"
+    "$project_dir/common/config-commit-mico36.patch" \
+    "$project_dir/common/config-write-bounded-mico36.patch"
 # Validate overlapping board overlays as one idempotent patch stack.
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \
     "$app_dir/sdk.patch" "$app_dir/features-sdk.patch" "$app_dir/fresh-air-sdk.patch"
@@ -46,7 +53,9 @@ python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \
     "$project_dir/common/mqtt-response-deadline.patch" \
     "$project_dir/common/mqtt-buffer-storage.patch" \
     "$project_dir/common/mqtt-subscribe-qos.patch" \
-    "$project_dir/common/mqtt-subscribe-result.patch"
+    "$project_dir/common/mqtt-subscribe-result.patch" \
+    "$project_dir/common/mqtt-receive-recovery.patch" \
+    "$project_dir/common/mqtt-post-send-workspace.patch"
 # Isolate newlib floating conversion scratch across HTTP/MQTT/runtime threads.
 # Validate these overlapping overlays together, including on repeated builds.
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \
@@ -69,24 +78,24 @@ python3 "$app_dir/tools/pack_web.py"
 
 gcc_dir="$tools_dir/gcc-arm-none-eabi-5_4-2016q2"
 python2="${A1_PYTHON2:-$tools_dir/python2/bin/python2.7}"
-if [[ ! -x "$gcc_dir/bin/arm-none-eabi-gcc" ]]; then
-    curl -fsSL --retry 3 'https://launchpad.net/gcc-arm-embedded/5.0/5-2016-q2-update/+download/gcc-arm-none-eabi-5_4-2016q2-20160622-linux.tar.bz2' -o "$tools_dir/gcc.tar.bz2"
-    echo "9910b6b5df12efe564dbb3856bf1599d4c16178a6f28bd8a23c9e5c3edc219e4  $tools_dir/gcc.tar.bz2" | sha256sum -c -
-    tar -xjf "$tools_dir/gcc.tar.bz2" -C "$tools_dir"
-fi
-if [[ ! -x "$python2" ]]; then
-    curl -fsSL --retry 3 https://www.python.org/ftp/python/2.7.18/Python-2.7.18.tgz -o "$tools_dir/python.tgz"
-    echo "da3080e3b488f648a3d7a4560ddee895284c3380b11d6de75edb986526b9a814  $tools_dir/python.tgz" | sha256sum -c -
-    tar -xzf "$tools_dir/python.tgz" -C "$tools_dir"
-    (
-        cd "$tools_dir/Python-2.7.18"
-        ./configure --prefix="$tools_dir/python2" > "$tools_dir/python-build.log" 2>&1
-        make -j4 >> "$tools_dir/python-build.log" 2>&1
-        make install >> "$tools_dir/python-build.log" 2>&1
-    )
+if [[ ! -x "$gcc_dir/bin/arm-none-eabi-gcc" || ! -x "$python2" ]]; then
+    if [[ "$tools_dir" != "$shared_tools/profiles/gcc$compiler_major" ]]; then
+        echo "Custom tool profile is incomplete: $tools_dir; use tools/prepare_toolchain.py in the shared cache" >&2
+        exit 1
+    fi
+    python3 "$project_dir/tools/prepare_toolchain.py" --home "$shared_tools" \
+        --profile "gcc$compiler_major" --log-dir "$project_dir/build/toolchain-logs"
 fi
 compiler_version="$($gcc_dir/bin/arm-none-eabi-gcc -dumpversion)"
-[[ "$compiler_version" == 5.4.1 ]] || { echo 'Expected ARM GCC 5.4.1' >&2; exit 1; }
+expected_compiler_version="${PHICOMM_BUILD_COMPILER_EXPECTED:-5.4.1}"
+case "$expected_compiler_version" in
+    5.4.1|14.3.1) ;;
+    *) echo "Unsupported ARM GCC expectation: $expected_compiler_version" >&2; exit 1 ;;
+esac
+[[ "$compiler_version" == "$expected_compiler_version" ]] || {
+    echo "Expected ARM GCC $expected_compiler_version, got $compiler_version" >&2
+    exit 1
+}
 
 micoder="$tools_dir/MiCoder"
 mkdir -p "$micoder/cmd/Linux64" "$micoder/compiler/arm-none-eabi-5_4-2016q2-20160622"
@@ -104,5 +113,6 @@ python3 "$app_dir/tools/check_button_stack.py" "$workspace/build/$target/Modules
 python3 "$project_dir/tools/check_worker_stack.py" "$workspace/build/$target/Modules/A1" "$project_dir/common/phicomm_features.h" "$gcc_dir/bin/arm-none-eabi-nm"
 python3 "$app_dir/tools/check_image.py" "$workspace/build/$target/binary/$target.ota.bin"
 python3 "$project_dir/tools/check_http_core.py" "$workspace/build/$target/Modules" A1 "$gcc_dir/bin/arm-none-eabi-nm" "$workspace/build/$target/binary/$target.elf"
+python3 "$project_dir/tools/check_lan_stack.py" "$workspace/build/$target/Modules" A1 "$gcc_dir/bin/arm-none-eabi-nm" "$workspace/build/$target/binary/$target.elf"
 python3 "$project_dir/tools/check_no_json_objects.py" --model a1 --nm "$gcc_dir/bin/arm-none-eabi-nm" "$workspace/build/$target/binary/$target.elf"
 python3 "$app_dir/tools/package.py" "$workspace/build/$target/binary" "$project_dir/build/a1${variant_suffix}-release" "$sdk_commit"

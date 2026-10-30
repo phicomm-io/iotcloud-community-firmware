@@ -45,6 +45,14 @@ bool device_local_auth_init(void)
     /* The old SDK CRC covers the entire partition, including the erased tail.
      * An old prefix can therefore be retained without memcpy into a new layout.
      * Unknown/newer trailer schemas are preserved in recovery, never reset. */
+    if(!ph_auth_store_valid(&AUTH_STORE) && ph_auth_store_migrate_legacy(&AUTH_STORE)){
+        /* The SDK checked the old partition CRC, including the erased tail.
+         * Only the known extension changes. Retain a usable read-only state if
+         * persistence fails; never turn a failed migration into a boot loop. */
+        local_auth.store=AUTH_STORE;
+        if(!device_config_recovery()&&!local_auth_save(NULL,&AUTH_STORE))
+            device_config_recovery_set(true);
+    }
     if(!ph_auth_store_valid(&AUTH_STORE)){
         const uint8_t *p=(const uint8_t *)&AUTH_STORE;bool erased=true,zero=true;
         for(size_t i=0;i<sizeof(AUTH_STORE);i++){erased=erased&&p[i]==255;zero=zero&&p[i]==0;}

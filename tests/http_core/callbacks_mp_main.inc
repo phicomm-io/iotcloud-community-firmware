@@ -29,7 +29,15 @@ int main(int argc,char**argv){
  assert(phv_get(&data,"mqtt_busy_overflow",&v)&&phv_int(&v,&num)&&num==UINT32_MAX);
  assert(phv_get(&data,"mqtt_failure",&failure)&&phv_get(&failure,"free",&v)&&phv_int(&v,&num)&&num==UINT32_MAX);
  assert(phv_get(&failure,"read",&arr)&&arr.count==4&&phv_at(&arr,0,&item)&&phv_int(&item,&num)&&num==INT32_MIN);finish(true);
- maximum=false;memory.free_memory=50000;fail_diagnostics_alloc=true;assert(start("GET","/api/v1/memory",0)==PH_HTTP_REPLY);assert(x.response.status==503);parsed(503);finish(true);
+ maximum=false;memory.free_memory=50000;
+ /* Both initial allocation failure and later grow failure must retain readable
+  * emergency diagnostics, a valid owned MP body and no leaked partial output. */
+ for(unsigned allocation=1;allocation<=4;allocation++){
+  fail_wire_at=wire_allocations+allocation;
+  assert(start("GET","/api/v1/memory",0)==PH_HTTP_REPLY);mem=parsed(200);
+  assert(phv_get(&mem,"data",&data)&&phv_get(&data,"low_memory",&v));bool low;
+  assert(phv_bool(&v,&low)&&low);finish(true);fail_wire_at=0;
+ }
  const char*paths[]={"/api/v1/info","/api/v1/status","/api/v1/capabilities","/api/v1/config","/api/v1/logs","/api/v1/schedules"};
  for(unsigned i=0;i<6;i++){assert(start("GET",paths[i],0)==PH_HTTP_REPLY);parsed(200);finish(true);}
  deny=true;assert(start("GET","/api/v1/status",0)==PH_HTTP_WAIT);assert(waiting&&!claims);finish(false);

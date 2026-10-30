@@ -5,7 +5,6 @@ import subprocess
 import tempfile
 import unittest
 
-from tests.sdk_json import copy_patched_json
 from tests.test_tc1_sdk_migration import function
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,10 +16,6 @@ class TC1Buttons(unittest.TestCase):
         sha = sdk/'MiCO/security/SHAUtils'
         with tempfile.TemporaryDirectory() as temporary:
             out = Path(temporary)
-            json = copy_patched_json(sdk/'libraries/utilities/json_c', out/'sdk')
-            # Native long is 64 bits; the pinned firmware library targets ILP32.
-            for source in json.glob('*.c'):
-                source.write_text(source.read_text().replace('%ld', '%d'))
             gpio = (ROOT/'TC1/user_gpio.c').read_text()
             mqtt = (ROOT/'TC1/mqtt_server/user_mqtt_client.c').read_text()
             functions = '\n'.join(function(gpio, signature) for signature in (
@@ -31,10 +26,10 @@ class TC1Buttons(unittest.TestCase):
             (out/'tc1_button_functions.inc').write_text(functions)
             command = [os.environ.get('CC', 'cc'), '-std=gnu99', '-g',
                        '-fsanitize=address,undefined', '-fno-omit-frame-pointer', '-no-pie',
-                       '-I'+str(ROOT/'tests/stubs'), '-I'+str(ROOT), '-I'+str(json),
+                       '-I'+str(ROOT/'tests/stubs'), '-I'+str(ROOT),
                        '-I'+str(out), '-I'+str(sha),
-                       str(ROOT/'tests/tc1_buttons_harness.c'), str(ROOT/'common/json_owned.c'),
-                       *map(str, sorted(json.glob('*.c'))),
+                       str(ROOT/'tests/tc1_buttons_harness.c'),
+                       str(ROOT/'common/typed_wire.c'), str(ROOT/'common/wire_buffer.c'),
                        str(sha/'sha224-256.c'),
                        '-o', str(out/'buttons')]
             compiled = subprocess.run(command, capture_output=True, text=True)

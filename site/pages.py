@@ -39,6 +39,10 @@ GROUPS = [
         ('mqtt-link', 'MQTT 与联动', 'MQTT 模式、管理平台与 A1 数据联动', 'MQTT与联动'),
         ('faq', '故障排查', '连接状态、灯语总则与常见问题', '故障排查'),
     ]),
+    ('s30', 'S30-V1B 计量插座', [
+        ('s30-flash', '免拆与串口刷机', '原厂网络 OTA、VTX / VRX、完整备份与应用镜像', 'S30-V1B-刷机'),
+        ('s30-guide', '功能与操作', '配网、单路开关、红蓝灯、长按恢复与计量', 'S30-V1B-功能与操作'),
+    ]),
     ('dev', '开发与维护', [
         ('iotcloud-deploy', '自行部署 IoTCloud', '静态前端托管、独立后端与 MQTT 连接', 'IotCloud-部署'),
         ('build-deps', '构建依赖', '工具链、SDK 归档与本地构建', '构建依赖'),
@@ -104,6 +108,8 @@ EN_TITLES = {
  'm1-guide': ('M1 operation', 'Readings, brightness, icons and recovery'),
  'daikin-guide': ('DAIKIN operation and installation', 'BRY88AX151K: universal ESP32 firmware, readings and A1 automation'),
  'a1-guide': ('A1 operation', 'Fan, ring, night mode and automation'),
+ 's30-flash': ('S30-V1B network and serial installation', 'Stock network OTA, UART test points, backups and application images'),
+ 's30-guide': ('S30-V1B operation', 'Wi-Fi, outlet, red/blue LEDs, recovery gestures and metering'),
  'a1-flash': ('A1 wired installation and recovery', 'Recommended: solder-free J-Link factory points; serial alternative'),
  'm1-flash': ('M1 wired installation and recovery', 'Recommended: serial bootloader; J-Link alternative'),
  'iotcloud-deploy': ('Deploy IoTCloud', 'China / US nodes, hosting and local devices'),
@@ -113,7 +119,7 @@ EN_TITLES = {
 }
 EN_GROUP_NAMES = {'m1': 'M1 air quality monitor', 'a1': 'A1 air purifier',
                   'tc1': 'TC1 power strip', 'daikin': 'DAIKIN air quality monitor',
-                  'common': 'Shared setup and troubleshooting', 'dev': 'Development and maintenance'}
+                  's30': 'S30-V1B metering socket', 'common': 'Shared setup and troubleshooting', 'dev': 'Development and maintenance'}
 EN_GROUPS = [(gid, EN_GROUP_NAMES[gid], [
     (slug, *EN_TITLES[slug], 'EN-' + slug) for slug, _, _, _ in items
 ]) for gid, _, items in GROUPS]

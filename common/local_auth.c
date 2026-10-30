@@ -77,6 +77,15 @@ bool ph_auth_store_valid(const ph_auth_store*p) {
         ph_auth_private_records_valid(p->pairs,p->count)&&
         ph_auth_private_records_valid(p->remote,p->remote_count);
 }
+bool ph_auth_store_migrate_legacy(ph_auth_store *p) {
+    if(!p||p->magic!=PH_AUTH_STORE_MAGIC||p->version!=PH_AUTH_STORE_VERSION||
+       !ph_auth_private_records_valid(p->pairs,p->count))return false;
+    const size_t offset=offsetof(ph_auth_store,remote_count);
+    const uint8_t *tail=(const uint8_t *)p+offset;
+    for(size_t i=0;i<sizeof(*p)-offset;i++)if(tail[i]!=255)return false;
+    memset((uint8_t *)p+offset,0,sizeof(*p)-offset);
+    return true;
+}
 bool ph_auth_init(ph_auth_state*s,const ph_auth_ops*o,const ph_auth_store*p) {
     if(!s||!o||!o->now||!o->random||!o->password||((o->lock==0)!=(o->unlock==0))||(p&&!ph_auth_store_valid(p)))return false;
     memset(s,0,sizeof(*s));
@@ -117,6 +126,7 @@ static bool ph_auth_private_fresh(ph_auth_state*s,uint8_t t[16]) {
     return true;
 }
 static void ph_auth_private_install(ph_auth_state*s,ph_auth_session*r,const uint8_t*t,const char*peer,unsigned scopes) {
+    for(unsigned i=0;i<PH_AUTH_PAIR_SLOTS;i++)if(r==&s->local[i])s->local_boot[i]=0;
     memset(r,0,sizeof(*r));
     memcpy(r->token,t,16);
     r->born=r->last=s->ops.now(s->ops.user);
@@ -256,6 +266,29 @@ bool ph_auth_pair_resume(ph_auth_state*s,const char*peer,const char*key,char out
     }
     ph_auth_private_unlock(s);
     return ok;
+}
+bool ph_auth_pair_resume_boot(ph_auth_state*s,const char*peer,const char*key,uint32_t boot,char out[33]) {
+    uint8_t decoded[16],token[16]={0};bool ok=false;
+    if(!s||!out||!boot||!ph_auth_private_peer_ok(peer)||!ph_auth_token_decode(key,decoded))return false;
+    ph_auth_private_lock(s);
+    for(unsigned i=0;i<s->store.count;i++)if(!strcmp(s->store.pairs[i].peer,peer)&&ph_auth_private_eq(decoded,s->store.pairs[i].key,16)) {
+        unsigned available=PH_AUTH_PAIR_SLOTS;uint32_t now=s->ops.now(s->ops.user);
+        for(unsigned j=0;j<PH_AUTH_PAIR_SLOTS;j++) {
+            ph_auth_session *r=&s->local[j];bool alive=ph_auth_private_alive(r,now);
+            if(alive&&!strcmp(r->peer,peer)&&r->scopes==s->store.pairs[i].scopes) {
+                if(s->local_boot[j]==boot){ph_auth_private_hex(r->token,out);ok=true;goto finish_boot;}
+                available=j;break;
+            }
+            if(!alive&&available==PH_AUTH_PAIR_SLOTS)available=j;
+        }
+        if(available<PH_AUTH_PAIR_SLOTS&&ph_auth_private_fresh(s,token)) {
+            ph_auth_private_install(s,&s->local[available],token,peer,s->store.pairs[i].scopes);
+            s->local_boot[available]=boot;ph_auth_private_hex(token,out);ok=true;
+        }
+        break;
+    }
+finish_boot:
+    memset(decoded,0,sizeof(decoded));memset(token,0,sizeof(token));ph_auth_private_unlock(s);return ok;
 }
 bool ph_auth_pair_remove(ph_auth_state*s,const char*peer) {
     ph_auth_store next;

@@ -26,8 +26,11 @@ class HTTP(unittest.TestCase):
    subprocess.run([os.environ.get('CC','cc'),'-std=c11','-Wall','-Wextra','-Werror','-g','-fsanitize=address,undefined','-no-pie','-I'+str(ROOT/'tests/http_core/auth_stubs'),'-I'+str(ROOT/'TC1/http_server'),str(ROOT/'tests/http_core/auth.c'),str(ROOT/'TC1/http_server/auth.c'),str(ROOT/'common/httpd/parser.c'),'-o',str(exe)],check=True)
    subprocess.run([str(exe)],check=True)
  def test_mico_owner_startup_failures(self):
+  for model in (None,0,1,2):self.check_mico_owner_startup_failures(model)
+ def check_mico_owner_startup_failures(self,model):
   with tempfile.TemporaryDirectory() as temp:
    exe=Path(temp)/'port'
-   subprocess.run([os.environ.get('CC','cc'),'-std=c11','-Wall','-Wextra','-Werror','-g','-fsanitize=address,undefined','-no-pie','-DPH_HTTP_HOST_TEST','-I'+str(ROOT/'tests/http_core/port_stubs'),'-I'+str(ROOT/'common/httpd'),str(ROOT/'tests/http_core/port.c'),str(ROOT/'common/httpd/mico_port.c'),str(ROOT/'common/httpd/core.c'),str(ROOT/'common/httpd/parser.c'),'-o',str(exe)],check=True)
+   definitions=['-DPH_HTTP_HOST_TEST']+([] if model is None else ['-DPHICOMM_STATUS_MODEL='+str(model)])
+   subprocess.run([os.environ.get('CC','cc'),'-std=c11','-Wall','-Wextra','-Werror','-g','-fsanitize=address,undefined','-no-pie',*definitions,'-I'+str(ROOT/'tests/http_core/port_stubs'),'-I'+str(ROOT/'common/httpd'),str(ROOT/'tests/http_core/port.c'),str(ROOT/'common/httpd/mico_port.c'),str(ROOT/'common/httpd/core.c'),str(ROOT/'common/httpd/parser.c'),'-o',str(exe)],check=True)
    subprocess.run([str(exe)],check=True)
 if __name__=='__main__':unittest.main()

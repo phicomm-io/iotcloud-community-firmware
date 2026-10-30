@@ -8,14 +8,14 @@ namespace iotcloud {
 // create a new forwarding event. Echoes are bounded by count and age.
 class HubRelay {
 public:
-  using Origin = HubBroker::Origin;
+  using Origin = HubDeviceBus::Origin;
   using Publish =
       std::function<bool(const std::string &, const std::string &, bool)>;
   Publish upstream, bemfa;
   std::function<std::string(size_t)> randomHex;
   std::string status = "disabled";
-  HubRelay(DynamicJsonDocument &config, HubService &service, HubBroker &broker)
-      : config(config), service(service), broker(broker) {}
+  HubRelay(DynamicJsonDocument &config, HubService &service, HubDeviceBus &bus)
+      : config(config), service(service), bus(bus) {}
   void reset() {
     for (auto &e : echoes)
       e = Echo();
@@ -102,7 +102,7 @@ public:
         std::string local = r["local_topic"] | "";
         if (retained && r["allow_retained"] != true)
           return;
-        broker.publish(local, body,
+        bus.publish(local, body,
                        (r["retain"] | false) && !HubService::command(local),
                        Origin::Upstream);
         return;
@@ -151,7 +151,7 @@ public:
         slot->id = id;
         slot->base = target;
         slot->at = clock;
-        if (!broker.publish(target + "/command", payload, false,
+        if (!bus.publish(target + "/command", payload, false,
                             Origin::Bemfa)) {
           slot->used = false;
           status = "device_rejected";
@@ -246,7 +246,7 @@ public:
 private:
   DynamicJsonDocument &config;
   HubService &service;
-  HubBroker &broker;
+  HubDeviceBus &bus;
   uint32_t clock = 0;
   struct Echo {
     uint64_t hash = 0;
@@ -342,7 +342,7 @@ private:
           slot->seen = false;
       } else {
         DynamicJsonDocument state(8192);
-        if (body.size() > HubBroker::Packet || hubWire.decode(state, topic.substr(0,topic.size()-6), body) ||
+        if (body.size() > HubDeviceBus::Packet || hubWire.decode(state, topic.substr(0,topic.size()-6), body) ||
             !state.is<JsonObject>())
           return;
         if (saved["model"] == "a1" &&

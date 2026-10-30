@@ -58,7 +58,7 @@ class SharedHTTPSoakTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0)
             self.assertIn("shared HTTP soak PASS", result.stdout)
             self.assertIn("healthy_final=1", result.stdout)
-            for metric in ("three_slot", "body_lease", "wait_lease",
+            for metric in ("waiting_full", "body_lease", "wait_lease",
                            "queued_ok", "busy_503", "busy_send_error",
                            "body_complete", "wait_retry"):
                 self.assertRegex(result.stdout, rf"{metric}=[1-9][0-9]*")

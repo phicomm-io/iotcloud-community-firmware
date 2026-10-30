@@ -53,7 +53,7 @@ if [[ "$mode" == build ]]; then
  echo "Built and verified build/pages against actual archived firmware."
  exit 0
 fi
-for entry in .github tools; do
+for entry in .github tools alpha; do
  if [[ -d "$target/public/$entry" ]]; then cp -a "$target/public/$entry" build/pages/; fi
 done
 # Pages builds IotCloud from its own lock. Publish the same verified frontend

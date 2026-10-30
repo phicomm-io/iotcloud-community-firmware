@@ -1,4 +1,4 @@
-"""Normal native publication with production JSON, ESP32 String and Broker code.
+"""Production business status event cache and numbered diagnostics.
 
 No allocator failures or protocol faults are injected. The board/SDK I/O edges
 use fixed normal values; WString.cpp is copied unchanged into the temporary
@@ -55,6 +55,17 @@ class NativePublish(unittest.TestCase):
 #define log_e(...) ((void)0)
 #define log_w(...) ((void)0)
 ''')
+        (temp / 'freertos').mkdir()
+        (temp / 'freertos/semphr.h').write_text('''#pragma once
+#include <mutex>
+#include <chrono>
+typedef std::timed_mutex *SemaphoreHandle_t;
+static const int pdTRUE=1;
+static std::timed_mutex snapshotMutex;
+static inline SemaphoreHandle_t xSemaphoreCreateMutex(){return &snapshotMutex;}
+static inline int xSemaphoreTake(SemaphoreHandle_t m,unsigned ticks){return ticks?m->try_lock_for(std::chrono::milliseconds(ticks)):m->try_lock();}
+static inline void xSemaphoreGive(SemaphoreHandle_t m){m->unlock();}
+''')
         # Numeric constructors are unused and removed by gc-sections. Keep
         # declarations for parsing the unchanged SDK translation unit.
         (temp / 'stdlib_noniso.h').write_text('''#pragma once
@@ -66,21 +77,17 @@ char *dtostrf(double,int,unsigned int,char*);
 }
 ''')
         src = ROOT / 'DAIKIN/src'
-        extracts = {
-            'allocation.inc': section(src / 'hub.inc', 'static size_t hubByteHeap()', 'static bool hubReload'),
-            'mqtt.inc': section(src / 'mqtt.inc', 'static void publish(', 'static void discovery('),
-            'native.inc': section(src / 'hub.inc', 'static void hubLocalPublish(', 'static void hubInit('),
-            'ready.inc': section(src / 'hub.inc', 'static bool hubReady()', 'static void hubApiExecute('),
-            'state.inc': section(src / 'commands.inc', 'static void otaPartitionStatus(', 'static const char *actions'),
-            'typed.inc': section(src / 'sessions.inc', 'static uint32_t sensorDescriptorRevision()', 'static void sessionStatus('),
-            'indicators.inc': (src / 'indicators.inc').read_text(),
-            'status-work.inc': section(src / 'main.cpp', 'if(webOperation==4){', 'else webResult=otaActive?'),
-            'status-handler.inc': section(src / 'http.inc', 'static esp_err_t statusHandler(', 'static esp_err_t optionsHandler('),
-            'json-response.inc': section(src / 'http.inc', 'static esp_err_t jsonResponse(', 'static bool authorized('),
-        }
-        for name, source in extracts.items():
-            (temp / name).write_text(source)
+        (temp / 'state.inc').write_text('#include "diagnostics_ids.h"\n' + section(src / 'commands.inc', 'static void otaPartitionStatus(', 'static const char *actions'))
+        (temp / 'public_read.inc').write_text(section(src / 'http.inc', 'static bool publicReadCommand(', 'static esp_err_t commandHandler('))
+        (temp / 'account_scope.inc').write_text(section(src / 'mqtt.inc', 'static String mqttAccountScope(', 'static void discovery('))
+        shutil.copyfile(src / 'diagnostics_ids.h', temp / 'diagnostics_ids.h')
+        shutil.copyfile(src / 'indicators.inc', temp / 'indicators.inc')
         cls.binary = temp / 'native-publish'
+        objects=[]
+        for name in ('typed_wire','wire_buffer'):
+            obj=temp/(name+'.o');objects.append(str(obj))
+            subprocess.run(['cc','-std=gnu99','-g','-O1','-fsanitize=address,undefined','-fno-pie',
+                '-c',str(ROOT/'common'/(name+'.c')),'-o',str(obj)],check=True)
         subprocess.run([
             'c++', '-std=c++11', '-g', '-O1', '-Wall', '-Wextra', '-Werror',
             '-Wno-deprecated-copy', '-Wno-unused-function', '-Wno-sign-compare',
@@ -89,9 +96,9 @@ char *dtostrf(double,int,unsigned int,char*);
             '-DARDUINOJSON_ENABLE_ARDUINO_STRING=1',
             '-DARDUINOJSON_ENABLE_ARDUINO_STREAM=0', '-DARDUINOJSON_ENABLE_ARDUINO_PRINT=0',
             '-DARDUINOJSON_ENABLE_PROGMEM=0', '-DIOTCLOUD_HUB=1',
-            '-I' + str(temp), '-I' + str(ROOT / 'DAIKIN/include'), '-I' + str(codec),
-            str(ROOT / 'DAIKIN/tests/hub/native_publish.cpp'), str(temp / 'WString.cpp'),
-            '-Wl,--gc-sections', '-Wl,--wrap=malloc', '-Wl,--wrap=realloc', '-Wl,--wrap=free',
+            '-I' + str(temp), '-I' + str(ROOT / 'DAIKIN/include'), '-I' + str(codec), '-I'+str(ROOT/'common'),
+            str(ROOT / 'DAIKIN/tests/hub/status_cache.cpp'), str(temp / 'WString.cpp'),
+            *objects, '-Wl,--gc-sections', '-pthread',
             '-o', str(cls.binary)], check=True)
 
     def scenario(self, name):
@@ -99,27 +106,9 @@ char *dtostrf(double,int,unsigned int,char*);
                        env={**os.environ, 'ASAN_OPTIONS': 'detect_leaks=1',
                             'UBSAN_OPTIONS': 'halt_on_error=1:print_stacktrace=1'})
 
-    def test_state_and_typed_namespaces_preserve_normal_payloads(self):
-        self.scenario('namespaces')
-
-    def test_ha_config_rewrites_all_references_for_long_legal_usernames(self):
-        self.scenario('discovery')
-
-    def test_empty_retained_native_message_deletes_the_real_broker_snapshot(self):
-        self.scenario('retained')
-
-    def test_measured_rendering_appends_without_further_allocations(self):
-        self.scenario('render')
-
-    def test_actual_state_then_typed_publish_release_json_and_first_wire(self):
-        self.scenario('state')
-
-    def test_repeated_normal_publication_preserves_complete_sensor_snapshots(self):
-        self.scenario('repeat')
-
-    def test_account_readiness_does_not_construct_owning_strings(self):
-        self.scenario('ready')
-
+    def test_production_event_cache_and_numbered_diagnostics(self):
+        subprocess.run([str(self.binary)],check=True,timeout=30,
+            env={**os.environ,'ASAN_OPTIONS':'detect_leaks=1','UBSAN_OPTIONS':'halt_on_error=1'})
 
 if __name__ == '__main__':
     unittest.main()

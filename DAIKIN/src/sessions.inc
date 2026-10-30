@@ -1,6 +1,5 @@
 // Account-scoped MQTT authorizes tokens; UDP can only read an existing grant.
 
-static uint32_t sensorBoot=0,sensorSequence=0;
 static String sensorRoot;
 struct SensorSession {String id,token;uint32_t boot=0,seen=0,readAt=0;IPAddress ip;bool used=false,active=false;};
 static SensorSession sessions[4];
@@ -48,7 +47,12 @@ static void __attribute__((noinline)) pollSessions(){
   char wire[1201];int n=sensorUdp.read(wire,size);if(n!=size)return;wire[n]=0;
   if(configRecovery||!localAuthReady)return;
   ph_value root;if(!phv_parse(PH_WIRE_MSGPACK,wire,size,&root))return;
-  String address=sensorUdp.remoteIP().toString();if(lanPairPacket(&root,address.c_str()))return;
+  String address=sensorUdp.remoteIP().toString();
+#ifdef IOTCLOUD_HUB
+  if(hubLanPacket(&root,address.c_str(),sensorUdp.remotePort()))return;
+#endif
+  if(lanBusinessPacket(&root,address.c_str(),sensorUdp.remotePort()))return;
+  if(lanPairPacket(&root,address.c_str()))return;
   lan_packet request;if(!lan_decode_value(&root,&request)||strcmp(request.dst,deviceId.c_str())||(request.op!=LAN_READ&&request.op!=LAN_PROBE))return;
   bool granted=false;
   for(auto &s:sessions){uint8_t token[16];if(s.used&&uint32_t(millis()-s.seen)<1800000&&s.id==request.src&&s.boot==request.boot&&ph_auth_token_decode(s.token.c_str(),token)&&!memcmp(token,request.token,16)){s.ip=sensorUdp.remoteIP();s.seen=s.readAt=millis();s.active=true;granted=true;break;}}

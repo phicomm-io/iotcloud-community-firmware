@@ -17,13 +17,16 @@ output.mkdir(parents=True, exist_ok=True)
 # A newly packaged raw image invalidates any envelope produced for the prior image.
 (output / (artifact + '.ota.bin.signed')).unlink(missing_ok=True)
 # Explicit artifact list; full image is packaged on request and contains ATE.
-prefix = "M1@MK3080B@moc"
+prefix = os.environ.get('PHICOMM_M1_BUILD_TARGET', 'M1@MK3080B@moc')
+if prefix not in ('M1@MK3080B@moc', 'M1@MK3080B@moc@release'):
+    raise ValueError('Unknown M1 build target')
 version = project_version()
 version_metadata = build_metadata()
-manifest = {"version": version, "sdk_commit": sdk, "target": prefix, "toolchain": "ARM GCC 5.4.1", "files": {}}
+manifest = {"version": version, "sdk_commit": sdk, "target": prefix, "toolchain": "ARM GCC "+os.environ.get("PHICOMM_BUILD_COMPILER_EXPECTED", "5.4.1"), "files": {}}
 manifest.update(version_metadata)
 manifest['sdk'] = json.loads((Path(__file__).resolve().parents[2] / 'common/mico-sdk.json').read_text())
 manifest['firmware_variant'] = variant
+manifest['sdk_build_type'] = os.environ.get('PHICOMM_M1_BUILD_TYPE', 'release_log')
 manifest['frontend_http_queue_sha256'] = hashlib.sha256((Path(__file__).resolve().parents[2] / 'common/web/http_queue.js').read_bytes()).hexdigest()
 frontend_root = Path(__file__).resolve().parents[2]
 frontend_metadata = frontend_root / 'build/frontend-m1-provenance.json'

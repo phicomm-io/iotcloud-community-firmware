@@ -1,0 +1,26 @@
+--- a/libraries/protocols/mqtt/MQTTClient.c
++++ b/libraries/protocols/mqtt/MQTTClient.c
+@@ -810,16 +810,13 @@
+         goto exit; // there was a problem
+     }
+ 
+-    /* Serialization is complete. Do not retain a large TX copy while RX
+-     * packets and deferred ingress coexist during the acknowledgement wait.
+-     * No old bytes are needed here; release before allocating the small ACK
+-     * workspace so shrinking cannot be refused by old/new heap overlap. */
+-    if (c->buf_size > DEFAULT_SENDBUF_SIZE) {
+-        free(c->buf); c->buf = NULL; c->buf_size = 0;
+-        if (!mqtt_buffer_resize(c, &c->buf, &c->buf_size, DEFAULT_SENDBUF_SIZE, 0)) {
+-            rc = MQTT_BUFFER_OVERFLOW; goto exit;
+-        }
+-    }
++    /* Serialization is complete. Prefer a small ACK workspace, but retain
++     * the already-owned TX buffer if shrink admission/allocation fails.
++     * Network send may consume heap after preflight. Never create a new
++     * mandatory allocation after bytes are on the wire: PUBACK/heartbeat
++     * must still be processed with storage that is already available. */
++    if (c->buf_size > DEFAULT_SENDBUF_SIZE)
++        (void)mqtt_buffer_resize(c, &c->buf, &c->buf_size, DEFAULT_SENDBUF_SIZE, 0);
+ 
+     if (message->qos == QOS1)
+     {

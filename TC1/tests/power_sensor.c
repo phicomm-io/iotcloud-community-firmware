@@ -9,6 +9,7 @@
 #include <string.h>
 #include "TC1/user_power.h"
 #include "common/mqtt_account.h"
+#include "common/mqtt/publication.h"
 #include "tests/sensor_mp_fixture.h"
 
 #define MQTT_SUCCESS 0
@@ -28,7 +29,7 @@ static int send_result,synchronous_error;
 static mqtt_account_t account;
 static bool power_pending,power_turn,rediscover,cleanup_pending;
 static unsigned ha_refresh_pending,discovery_index=12,state_index=10,publication_cursor;
-static uint32_t snapshot_at;
+static ph_mqtt_publication native_publication;
 static void (*power_irq)(void *);
 static uint64_t mico_nanosecond_clock_value(void) { return clock_ns; }
 static uint32_t mico_rtos_get_time(void) { return now_ms; }
@@ -57,10 +58,13 @@ static int snapshot_step(void) {
     return MQTT_SUCCESS;
 }
 static int service_mqtt_snapshot(int (*sender)(const char *,const void *,size_t,bool),const mqtt_account_t *a) {
-    assert(sender==service_sender && a==&account);++statuses;return MQTT_SUCCESS;
+    assert(sender==service_sender && a==&account);++statuses;
+    ph_mqtt_publication_attempt(&native_publication,now_ms);ph_mqtt_publication_complete(&native_publication,now_ms);return MQTT_SUCCESS;
 }
+static bool service_mqtt_status_due(bool changed){return ph_mqtt_publication_due(&native_publication,now_ms,5000,1000,changed);}
 static int service_mqtt_capabilities(int (*sender)(const char *,const void *,size_t,bool),const mqtt_account_t *a) {
-    assert(sender==service_sender && a==&account);++capabilities;return MQTT_SUCCESS;
+    assert(sender==service_sender && a==&account);++capabilities;
+    memset(&native_publication,0,sizeof(native_publication));return MQTT_SUCCESS;
 }
 void *ph_wire_malloc(size_t n){return allocation_failure?NULL:malloc(n);}
 #include "production.inc"

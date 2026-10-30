@@ -2,6 +2,7 @@
 #pragma once
 #include "typed_wire.h"
 #include "memory_budget.h"
+#include "local_auth.h"
 void service_init(void);
 void service_event(const char *level,const char *module,const char *event);
 bool service_control_begin(void);
@@ -9,6 +10,8 @@ void service_control_end(void);
 /* Admission only, before command/control dispatch: may evict expendable caches
  * under the command mutex. Never call while holding a service_control lease. */
 unsigned service_memory_claim(size_t input_bytes);
+/* LAN owner never waits for cache eviction/another command as admission. */
+unsigned service_memory_try_claim(size_t input_bytes);
 void service_memory_release(unsigned claim);
 void service_memory_waiting(bool enter);
 void service_memory_snapshot(service_memory_state_t *out);
@@ -18,7 +21,13 @@ void service_memory_snapshot(service_memory_state_t *out);
  * asynchronous business adapters must copy the validated typed parameters. */
 ph_buf *service_command_mp(const void *data, size_t length);
 ph_buf *service_mqtt_command_mp(const void *data, size_t length);
+/* Authenticated UDP business only; fixed allowlist excludes administration.
+ * Context is checked again under the command mutex before receipts/mutation. */
+ph_buf *service_lan_command_mp(const void *data,size_t length,const ph_auth_context *);
+ph_buf *service_lan_try_command_mp(const void *,size_t,const ph_auth_context *,bool *admitted);
 ph_buf *service_query_mp(const char *action);
+/* Same validated .get classification as dispatch; never admits a mutation. */
+bool service_readonly_mp(const void *,size_t);
 ph_buf *service_error_mp(const char *request_id, const char *code);
 
 /* Product emits exactly one data value (usually a map). Returning false means
@@ -31,6 +40,7 @@ bool service_product_mqtt_mp(const char *action, const ph_value *params,
 void service_product_capabilities_mp(ph_writer *output,
                                     const char *const *extra, bool restricted);
 void service_product_status_mp(ph_writer *output);
+void service_product_diagnostics_mp(ph_writer *output);
 /* Immutable info payload, without a full status capture. */
 void service_product_info_mp(ph_writer *output);
 bool service_product_ota_start(const char *url);
@@ -40,3 +50,5 @@ bool service_product_ota_start(const char *url);
 enum { SERVICE_CACHE_STATUS = 1, SERVICE_CACHE_CAPABILITIES = 2,
        SERVICE_CACHE_ALL = 3 };
 void service_cache_changed(unsigned mask);
+/* Cheap version only: never captures, allocates, or acknowledges a channel. */
+uint32_t service_cache_revision(void);

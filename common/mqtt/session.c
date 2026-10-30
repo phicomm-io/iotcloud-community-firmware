@@ -90,7 +90,7 @@ static int announce(Client *client, const ph_mqtt_connection *spec, const ph_mqt
     message.payload=bytes;message.payloadlen=n;return ph_mqtt_publish(client,topic,&message);
 }
 
-static int subscribe_plan(Client *client, const ph_mqtt_session_hooks *h) {
+static __attribute__((noinline)) int subscribe_plan(Client *client, const ph_mqtt_session_hooks *h) {
     ph_mqtt_subscription subscription;
     for (unsigned i = 0; h->subscription(h->context, i, &subscription); i++) {
         if (i >= MAX_MESSAGE_HANDLERS)
@@ -141,7 +141,6 @@ void ph_mqtt_session_run(Client *client, const ph_mqtt_session_hooks *h) {
          * Publish it once only after CONNECT, subscriptions and initial setup
          * succeed; a failed publication must prevent a false READY state. */
         bool online = false;
-        uint32_t acl_at = mico_rtos_get_time();
         if (rc == MQTT_SUCCESS && !session_valid(h))
             rc = PH_MQTT_RECONFIGURE;
         if (rc == MQTT_SUCCESS && (!h->initial_ready || h->initial_ready(h->context))) {
@@ -150,7 +149,6 @@ void ph_mqtt_session_run(Client *client, const ph_mqtt_session_hooks *h) {
                 rc = PH_MQTT_RECONFIGURE;
             if (rc == MQTT_SUCCESS) {
                 online = true;
-                acl_at = mico_rtos_get_time();
                 attempt = 0;
                 event(h, PH_MQTT_READY, 0);
             }
@@ -197,21 +195,15 @@ void ph_mqtt_session_run(Client *client, const ph_mqtt_session_hooks *h) {
                     break;
                 else {
                     online = true;
-                    acl_at = mico_rtos_get_time();
                     attempt = 0;
                     event(h, PH_MQTT_READY, 0);
                 }
             }
-            /* Retained HA birth may restart discovery after the first READY.
-             * Refreshing subscriptions during that batch can replay birth and
-             * restart it forever with otherwise valid slow acknowledgements. */
-            if (online && (!h->initial_ready || h->initial_ready(h->context)) &&
-                (uint32_t)(mico_rtos_get_time() - acl_at) >= 30000) {
-                rc = subscribe_plan(client, h);
-                acl_at = mico_rtos_get_time();
-                if (rc != MQTT_SUCCESS)
-                    event(h, PH_MQTT_SUBSCRIBE_ERROR, rc);
-            }
+            /* Successful MQTT subscriptions persist for this connection.
+             * Re-subscribing periodically replays retained configuration and
+             * HA birth, creating avoidable RX allocations during publication.
+             * A denied initial subscription already retries a fresh session;
+             * namespace/filter edits are handled by session_valid(). */
             /* Keep both poll budgets and the product turn on every round.
              * A short positive protocol slice still reads/maintains keepalive;
              * idle owners retain their original pacing. No drain-until-empty. */

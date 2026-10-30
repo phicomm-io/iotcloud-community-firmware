@@ -2,6 +2,7 @@
 #include "../common/automation.h"
 
 #include "../common/backup.h"
+#include "../common/device_hostname_mico.h"
 static bool config_recovery, config_commit_uncertain, config_initializing, config_update_pending;
 bool device_config_recovery(void) { return config_recovery || config_commit_uncertain; }
 void device_config_recovery_set(bool recovery) { config_recovery=recovery || config_commit_uncertain; }
@@ -441,6 +442,7 @@ int application_start(void)
     if (err != kNoErr) return err;
     uint8_t mac[6]; mico_wlan_get_mac_address(mac);
     snprintf(a1_id, sizeof(a1_id), "%02x%02x%02x%02x%02x%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    if(!ph_device_hostname_mico("a1",a1_id))return kNotPreparedErr;
     bemfa_config_t *b=&((app_storage_t *)a1_config)->bemfa;
     if(b->magic!=BEMFA_MAGIC || b->version!=1) {
         bemfa_defaults(b,"a1",a1_id);
@@ -614,13 +616,24 @@ void a1_status_capture(device_status_t *snapshot, device_status_full_t *full)
     snapshot->now_ms=mico_rtos_get_time(); /* after copying all timestamped state */
     if(full) {
         snapshot->captured|=STATUS_DIAGNOSTIC;
-        runtime_metrics_capture(&full->runtime,snapshot->now_ms);
-        watchdog_status_capture(&full->watchdog); full->http=ph_http_snapshot();
         a1_filter_get(&full->model.a1.filter);
         a1_filter_stock_get(&full->model.a1.filter_stock);
     }
 }
 
+void a1_diagnostics_capture(device_status_t *snapshot,device_status_full_t *full)
+{
+    a1_status_capture(snapshot,full);
+    runtime_metrics_capture(&full->runtime,snapshot->now_ms);
+    watchdog_status_capture(&full->watchdog);full->http=ph_http_snapshot();
+}
+
+void bemfa_config_flags_get(bool *mqtt_enabled,bool *enabled) {
+    mico_rtos_lock_mutex(&a1_config_lock);
+    const bemfa_config_t *config=&((app_storage_t *)a1_config)->bemfa;
+    *mqtt_enabled=config->mqtt_enabled!=0;*enabled=config->enabled!=0;
+    mico_rtos_unlock_mutex(&a1_config_lock);
+}
 void bemfa_config_get(bemfa_config_t *out) {
     mico_rtos_lock_mutex(&a1_config_lock);*out=((app_storage_t *)a1_config)->bemfa;mico_rtos_unlock_mutex(&a1_config_lock);
 }

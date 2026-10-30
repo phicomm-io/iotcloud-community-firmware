@@ -50,6 +50,7 @@ int main(void){
 #include <assert.h>
 #include <string.h>
 #include "common/typed_wire.h"
+#include "common/diagnostics_ids.h"
 #define VERSION "rc4-metadata-host"
 #define PHICOMM_FIRMWARE_VARIANT "full"
 static char str_mac[]="aabbccddeeff";
@@ -67,7 +68,8 @@ int main(void){
   assert(phv_get(&root,"mqtt_protocol_version",&v)&&phv_int(&v,&value)&&value==2);assert(phv_get(&root,"protocol",&v)&&phv_int(&v,&value)&&value==2);
   assert(phv_get(&root,"config_recovery",&v)&&phv_bool(&v,&yes)&&yes==(bool)r);assert(phv_get(&root,"dual_mqtt",&v)&&phv_bool(&v,&yes)&&yes);
   assert(phv_get(&root,"config_backup",&v)&&phv_int(&v,&value)&&value==1);assert(phv_get(&root,"status_views",&v)&&v.count==1&&phv_at(&v,0,&item)&&phv_equal_text(&item,"full"));
-  assert(phv_get(&root,"actions",&v));assert(v.count==(restricted?4:23));assert(phv_at(&v,v.count-1,&item)&&phv_equal_text(&item,"lan.pair"));
+  assert(phv_get(&root,"diagnostics_schema",&v)&&phv_int(&v,&value)&&value==PH_DIAGNOSTICS_SCHEMA);
+  assert(phv_get(&root,"actions",&v));assert(v.count==(restricted?4:24));assert(phv_at(&v,v.count-1,&item)&&phv_equal_text(&item,"lan.pair"));
   if(restricted){const char*names[]={"info.get","status.get","capabilities.get"};for(unsigned i=0;i<3;i++)assert(phv_at(&v,i,&item)&&phv_equal_text(&item,names[i]));}
   /* Fixed output OOM is sticky; no truncated object can become publishable. */
   assert(!phw_init_fixed(&w,1,&storage,bytes,0));

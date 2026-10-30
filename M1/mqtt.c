@@ -6,6 +6,7 @@
 #include "../common/ha_json.h"
 #include "../common/ha_command.h"
 #include "../common/mqtt/service.h"
+#include "../common/mqtt/publication.h"
 #include "../common/sensor_mp.h"
 
 int m1_mqtt_read(Network *, unsigned char *, int, int);
@@ -350,7 +351,8 @@ static char client_id[192],wildcard[MQTT_TOPIC_MAX];
 static char sensor_filter[FEATURE_TOPIC_MAX];
 static char source_availability_filter[FEATURE_TOPIC_MAX];
 static unsigned discovery_index,initial_index;
-static uint32_t connect_sequence,co2_sequence,pressure_sequence,sequence,snapshot_at;
+static uint32_t connect_sequence,co2_sequence,pressure_sequence,sequence;
+static ph_mqtt_publication ha_publication;
 static bool co2_discovered,pressure_discovered,particles_discovered;
 static uint32_t particles_at;
 static int old_co2_fresh,old_pressure_fresh,old_brightness,old_fresh;
@@ -440,20 +442,25 @@ static int session_initial(void *context) {
     particles_at=mico_rtos_get_time()-3000u;
     mico_rtos_lock_mutex(&m1_lock);particles_discovered=m1_state.mcu_sensor_details;mico_rtos_unlock_mutex(&m1_lock);
     old_pressure_fresh=old_co2_fresh=old_brightness=old_fresh=-1;
-    snapshot_at=mico_rtos_get_time()-5000u;
+    memset(&ha_publication,0,sizeof(ha_publication));
     return rc;
 }
 static int session_cycle(void *context) {
     (void)context;
             ota_job_poll();
             int rc=MQTT_SUCCESS;
-            if(!ota_job_active() && (uint32_t)(mico_rtos_get_time()-snapshot_at)>=5000) {
+            if(!ota_job_active() && service_mqtt_status_due(false)) {
                 /* Resource pressure on the optional full snapshot must not
                  * suppress independent bounded sensor/feature publication.
                  * Retry on the existing period, not every owner turn. */
-                snapshot_at=mico_rtos_get_time();
                 rc=service_mqtt_snapshot(publish_bytes,&account);
-                if(rc==MQTT_SUCCESS)rc=ha_state();
+                if(rc!=MQTT_SUCCESS && rc!=PH_MQTT_MORE)return rc;
+                rc=MQTT_SUCCESS;
+            }
+            if(!ota_job_active() && ph_mqtt_publication_due(&ha_publication,mico_rtos_get_time(),5000u,1000u,false)) {
+                ph_mqtt_publication_attempt(&ha_publication,mico_rtos_get_time());
+                rc=ha_state();
+                if(rc==MQTT_SUCCESS)ph_mqtt_publication_complete(&ha_publication,mico_rtos_get_time());
                 if(rc!=MQTT_SUCCESS && rc!=PH_MQTT_MORE)return rc;
                 rc=MQTT_SUCCESS;
             }

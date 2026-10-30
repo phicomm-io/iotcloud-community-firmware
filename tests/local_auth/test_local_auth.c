@@ -244,4 +244,25 @@ static void test_unpair_receipts(void){
  assert(!ph_auth_pair_unpair_request(&s,"receipt0",first,"192.0.2.1",nonce));
  assert(ph_auth_pair_unpair_request(&s,"receipt4",token,"192.0.2.1",nonce));
 }
-int main(void){test_unpair_receipts();test_pair_compaction_revokes_sessions();test_remote_direction_and_revocation();test_atomic_credential_commit();test_failed_password_transaction();test_basic();test_expiry();test_capacity_failure();test_boot_revoke_mqtt();test_pending_pair_epoch();test_pair_retry();test_concurrent();puts("local_auth: all tests passed");return 0;}
+static void test_inbound_only_store_migration(void){
+ fixture f;ph_auth_state state;setup(&f,&state);char key[33];
+ assert(ph_auth_pair(&state,"","001122334455",2,key));
+ ph_auth_store expected=state.store,legacy=expected;
+ const size_t prefix=offsetof(ph_auth_store,remote_count);
+ memset((uint8_t*)&legacy+prefix,255,sizeof(legacy)-prefix);
+ ph_auth_store frozen=legacy;
+ assert(!ph_auth_store_valid(&legacy)&&ph_auth_store_migrate_legacy(&legacy));
+ assert(!memcmp(&legacy,&frozen,prefix)&&!memcmp(&legacy,&expected,sizeof(expected)));
+ assert(ph_auth_store_valid(&legacy)&&!ph_auth_store_migrate_legacy(&legacy));
+ // Future headers, damaged prefix records and every non-erased extension byte
+ // remain byte-for-byte untouched, including plausible mixed/partial writes.
+ legacy=frozen;legacy.version++;ph_auth_store before=legacy;
+ assert(!ph_auth_store_migrate_legacy(&legacy)&&!memcmp(&legacy,&before,sizeof(before)));
+ legacy=frozen;legacy.pairs[0].scopes=128;before=legacy;
+ assert(!ph_auth_store_migrate_legacy(&legacy)&&!memcmp(&legacy,&before,sizeof(before)));
+ for(size_t i=prefix;i<sizeof(legacy);i++){
+  legacy=frozen;((uint8_t*)&legacy)[i]=0;before=legacy;
+  assert(!ph_auth_store_migrate_legacy(&legacy)&&!memcmp(&legacy,&before,sizeof(before)));
+ }
+}
+int main(void){test_inbound_only_store_migration();test_unpair_receipts();test_pair_compaction_revokes_sessions();test_remote_direction_and_revocation();test_atomic_credential_commit();test_failed_password_transaction();test_basic();test_expiry();test_capacity_failure();test_boot_revoke_mqtt();test_pending_pair_epoch();test_pair_retry();test_concurrent();puts("local_auth: all tests passed");return 0;}

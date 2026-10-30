@@ -51,11 +51,17 @@ typedef struct {
 struct ph_auth_state { ph_auth_ops ops; ph_auth_store store;
  ph_auth_session http[PH_AUTH_HTTP_SLOTS],local[PH_AUTH_PAIR_SLOTS],mqtt[PH_AUTH_MQTT_SLOTS];
  ph_auth_unpair_receipt unpair[PH_AUTH_UNPAIR_RECEIPTS];
+ /* Volatile business-client boot, indexed by local session slot. Never part
+  * of ph_auth_store or a backup/configuration/Flash schema. */
+ uint32_t local_boot[PH_AUTH_PAIR_SLOTS];
  uint32_t generation,credential_epoch; char credential[33]; };
 void ph_auth_store_empty(ph_auth_store *);
 /* Immutable empty trailer for synchronous commits; avoids large stack copies. */
 const ph_auth_store *ph_auth_store_empty_value(void);
 bool ph_auth_store_valid(const ph_auth_store *);
+/* Recognize the frozen inbound-only v1 prefix and an entirely erased appended
+ * directional area. Preserve every prefix byte; reject unknown/mixed trailers. */
+bool ph_auth_store_migrate_legacy(ph_auth_store *);
 bool ph_auth_init(ph_auth_state *,const ph_auth_ops *,const ph_auth_store *);
 bool ph_auth_http_login(ph_auth_state *,const char *password,char token[33]);
 typedef enum { PH_AUTH_LOGIN_OK,PH_AUTH_LOGIN_DENIED,PH_AUTH_LOGIN_BUSY } ph_auth_login_result;
@@ -70,6 +76,9 @@ bool ph_auth_pair(ph_auth_state *,const char *password,const char *peer,unsigned
 /* Matching current key reuses this boot's live local token, without extending
  * its idle/max lifetime. Expired/revoked/rebooted sessions cannot be reused. */
 bool ph_auth_pair_resume(ph_auth_state *,const char *peer,const char *key,char token[33]);
+/* Business resume: a changed nonzero client boot rotates only this peer's
+ * token; identical boot retries reuse it without extending idle/max lifetime. */
+bool ph_auth_pair_resume_boot(ph_auth_state *,const char *,const char *,uint32_t boot,char token[33]);
 bool ph_auth_pair_remove(ph_auth_state *,const char *peer);
 bool ph_auth_pair_unpair(ph_auth_state *,const char *peer,const char *token);
 /* auth_unpair only: an exact retry may reuse a successful durable revocation

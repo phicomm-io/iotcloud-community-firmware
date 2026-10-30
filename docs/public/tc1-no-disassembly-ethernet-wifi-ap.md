@@ -2,7 +2,7 @@
 
 用电脑的**有线网卡传固件、无线网卡发送触发请求**，另用路由器或 AP 提供刷机热点。无需拆机、焊接或安装 Python。支持 Windows、macOS 和 Linux。
 
-**适用设备：TC1 智能排插 A1 硬件版（EMW3031 / MK3031），原厂固件 1.0.0.26 或 1.0.0.24。** TC1 A2、其他原厂版本和 A1 空气净化器不适用。
+**适用设备：TC1 智能排插 A1 硬件版（EMW3031 / MK3031），原厂固件 1.0.0.26、1.0.0.24 或 1.0.0.21。** TC1 A2、其他原厂版本和 A1 空气净化器不适用。
 
 <!-- os-picker -->
 
@@ -17,8 +17,9 @@
 | [mico_ota.bin](assets/tools/tc1-no-disassembly/mico_ota.bin) | 已准备好的配套固件，放到 TFTP 服务目录，文件名必须保持不变 |
 | [tftp-trigger.bin（payload，1.0.0.26）](assets/tools/tc1-no-disassembly/tftp-trigger.bin) | 发送给原厂 OTA 接口的触发文件，用于 1.0.0.26 |
 | [tftp-trigger-1.0.0.24.bin（payload，1.0.0.24）](assets/tools/tc1-no-disassembly/tftp-trigger-1.0.0.24.bin) | 同一触发文件，目标地址按 1.0.0.24 平移 |
+| [tftp-trigger-1.0.0.21.bin（payload，1.0.0.21）](assets/tools/tc1-no-disassembly/tftp-trigger-1.0.0.21.bin) | 同一触发文件，目标地址按 1.0.0.21 平移 |
 
-固件为 **649,344 字节**，两个触发文件各 **397 字节**，请用[校验和](assets/SHA256SUMS)核对。后续日常升级见[固件更新](firmware-update)。
+固件为 **649,344 字节**，各触发文件均为 **397 字节**，请用[校验和](assets/SHA256SUMS)核对。后续日常升级见[固件更新](firmware-update)。
 
 电脑需要 `curl` 和 TFTP 服务。先下载好文件和工具，再切换 Wi-Fi；保留下载文件的原名。
 
@@ -255,7 +256,7 @@ curl --noproxy '*' --fail --max-time 5 http://10.10.10.1:8000/read-domain
 
 <!-- /os -->
 
-返回信息中核对 **`VERSION` 为 `1.0.0.26` 或 `1.0.0.24`**，本页截图的 `COMMITID` 为 `d1ecc7616f55bbf781be3bd80e23bab7c03dc047`。如果版本或构建标识不符，停止使用本页 payload；payload 必须与识别出的版本对应（1.0.0.26 用 `tftp-trigger.bin`，1.0.0.24 用 `tftp-trigger-1.0.0.24.bin`），不要仅凭热点名称判断兼容。
+返回信息中核对 **`VERSION` 为 `1.0.0.26`、`1.0.0.24` 或 `1.0.0.21`**（1.0.0.21 的 `COMPILE_TIME` 为 `Oct 29 2017 11:09:21`，另两个为 `Apr 13 2018 10:09:06`），本页截图的 `COMMITID` 为 `d1ecc7616f55bbf781be3bd80e23bab7c03dc047`（1.0.0.21 为 `d22fb6bcbbb63537ce33e596278963424bf11fbb`）。如果版本或构建标识不符，停止使用本页 payload；payload 必须与识别出的版本对应（1.0.0.26 用 `tftp-trigger.bin`，1.0.0.24 用 `tftp-trigger-1.0.0.24.bin`，1.0.0.21 用 `tftp-trigger-1.0.0.21.bin`），不要仅凭热点名称判断兼容。
 
 <!-- os:windows -->
 
@@ -265,7 +266,7 @@ curl --noproxy '*' --fail --max-time 5 http://10.10.10.1:8000/read-domain
 
 ## 6. 发送触发文件，等待固件下载
 
-打开保存 **`tftp-trigger.bin`** 的 `tc1-flash` 文件夹，在这里打开终端。设备是 1.0.0.24 时请使用 `tftp-trigger-1.0.0.24.bin`（命令中文件名随之替换）。确认 TFTP 正在运行、有线地址仍为 `10.0.0.2`、无线仍连接 TC1，然后**只发送一次**：
+打开保存 **`tftp-trigger.bin`** 的 `tc1-flash` 文件夹，在这里打开终端。设备是 1.0.0.24 时请使用 `tftp-trigger-1.0.0.24.bin`，设备是 1.0.0.21 时使用 `tftp-trigger-1.0.0.21.bin`（命令中文件名随之替换）。确认 TFTP 正在运行、有线地址仍为 `10.0.0.2`、无线仍连接 TC1，然后**只发送一次**：
 
 <!-- os:windows -->
 

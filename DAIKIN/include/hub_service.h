@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #pragma once
-#include "hub_broker.h"
+#include "hub_device_bus.h"
 #include <ArduinoJson.h>
 
 namespace iotcloud {
@@ -29,6 +29,10 @@ public:
       changed; // true: credentials changed, drop sessions/connections.
   std::function<std::string()> bemfaStatus;
   std::function<void(JsonObject)> homeStatus;
+  // Owner-authenticated, derived LAN inventory only; never serialize peer keys.
+  std::function<void(JsonObject)> lanStatus;
+  // Synchronous borrow: asynchronous operations must copy input before return.
+  std::function<const char *(const std::string &,JsonObjectConst,JsonObject)> lanOperation;
   std::function<bool()> homeReset;
   // Runtime identity, not an owner-editable registration or a stored slot.
   std::string localMac;
@@ -76,7 +80,7 @@ public:
       return false;
     auto s = value.as<std::string>();
     return s.size() >= min && s.size() <= max &&
-           s.find('\0') == std::string::npos && HubBroker::utf8(s);
+           s.find('\0') == std::string::npos && HubDeviceBus::utf8(s);
   }
   static bool hex(JsonVariantConst value, size_t length) {
     if (!string(value, length, length))
@@ -125,7 +129,7 @@ public:
       if (!fields(r, "|direction||local_topic||remote_topic||retain||allow_"
                      "retained|") ||
           (direction != "in" && direction != "out") ||
-          !HubBroker::topicValid(local) || !HubBroker::topicValid(remote) ||
+          !HubDeviceBus::topicValid(local) || !HubDeviceBus::topicValid(remote) ||
           !r["retain"].is<bool>() || !r["allow_retained"].is<bool>() ||
           (!local.compare(0, 11, "phicomm/v2/") &&
            local.compare(0, prefix.size(), prefix)) ||
@@ -244,8 +248,9 @@ public:
       output["enabled"] = false;
       output["hub"] = true;
       output["setup_required"] = !ready();
-      output["mqtt_uri"] = "mqtt://" + request.host + ":1883";
-      output["mqtt_ws_uri"] = "ws://" + request.host + ":9001/mqtt";
+      output["lan_protocol"] = 4;
+      output["lan_codec"] = "msgpack";
+      output["lan_discovery"] = "mdns";
       return json(output);
     }
     if (path == "/api/auth/github/status" && get) {
@@ -317,6 +322,58 @@ public:
       for (auto &s : session)
         if (constant(s.token, request.token))
           s = Session();
+      output["code"]="ok";
+      return json(output);
+    }
+    const std::string lanPairPrefix="/api/hub/lan/pair/";
+    if (path == "/api/hub/lan/pair" || path == "/api/hub/lan/unpair" ||
+        path.compare(0,lanPairPrefix.size(),lanPairPrefix)==0) {
+      std::string op;
+      if (path == "/api/hub/lan/pair") {
+        if (request.method!="POST") return fail(405,"method_not_allowed");
+        if (input.size()!=4 || !fields(input.as<JsonObjectConst>(),"|peer||ip||password||scopes|") ||
+            !hex(input["peer"],12) || !string(input["ip"],15,7) ||
+            !string(input["password"],32) || !input["scopes"].is<unsigned>() || input["scopes"]!=1)
+          return fail(400,"invalid_params");
+        const std::string ip=input["ip"].as<std::string>();
+        unsigned parts=0,value=0,digits=0;
+        for(size_t i=0;i<=ip.size();++i){
+          if(i==ip.size() || ip[i]=='.'){
+            if(!digits || value>255 || ++parts>4) return fail(400,"invalid_params");
+            digits=value=0;
+          }else if(ip[i]>='0'&&ip[i]<='9'){
+            if(++digits>3) return fail(400,"invalid_params");
+            value=value*10+unsigned(ip[i]-'0');
+          }else return fail(400,"invalid_params");
+        }
+        if(parts!=4) return fail(400,"invalid_params");
+        op="pair";
+      }else if(path == "/api/hub/lan/unpair"){
+        if(request.method!="POST") return fail(405,"method_not_allowed");
+        if(input.size()!=1 || !fields(input.as<JsonObjectConst>(),"|peer|") || !hex(input["peer"],12))
+          return fail(400,"invalid_params");
+        op="unpair";
+      }else{
+        if(!get) return fail(405,"method_not_allowed");
+        const std::string peer=path.substr(lanPairPrefix.size());
+        // GET normally has no input pool; keep the generated request bounded.
+        if(peer.size()!=12 || peer.find_first_not_of("0123456789abcdef")!=std::string::npos)
+          return fail(400,"invalid_params");
+        if(!lanOperation) return fail(503,"not_ready");
+        DynamicJsonDocument statusInput(128);statusInput["peer"]=peer;
+        return lanReply("status",statusInput.as<JsonObjectConst>(),output);
+      }
+      if(!lanOperation) return fail(503,"not_ready");
+      return lanReply(op,input.as<JsonObjectConst>(),output);
+    }
+    if (path == "/api/hub/lan") {
+      if (!get) return fail(405, "method_not_allowed");
+      output["protocol"] = 4;
+      output["codec"] = "msgpack";
+      output["discovery"] = "mdns";
+      output["ready"] = false;
+      output.createNestedArray("devices");
+      if (lanStatus) lanStatus(output.as<JsonObject>());
       return json(output);
     }
     if (path == "/api/hub/homekit") {
@@ -538,9 +595,24 @@ public:
   }
 
 private:
+  Reply lanReply(const std::string &op,JsonObjectConst input,DynamicJsonDocument &output){
+    const char *result=lanOperation(op,input,output.to<JsonObject>());
+    const std::string code=result?result:"internal_error";
+    int status=500;
+    if(code=="ok") status=200;
+    else if(code=="accepted") status=202;
+    else if(code=="busy"||code=="storage_error"||code=="not_ready") status=503;
+    else if(code=="invalid_params") status=400;
+    else if(code=="auth_required"||code=="unauthorized"||code=="forbidden") status=403;
+    else if(code=="migration_required") status=409;
+    output["code"]=status==500?"internal_error":code;
+    return json(output,status);
+  }
   static bool needsCandidate(const Request &request) {
     return request.method != "GET" && request.path != "/api/auth/login" &&
            request.path != "/api/auth/logout" &&
+           request.path != "/api/hub/lan/pair" &&
+           request.path != "/api/hub/lan/unpair" &&
            request.path != "/api/hub/homekit/pairing";
   }
   static size_t inputCapacity(const Request &request) {
@@ -566,9 +638,11 @@ private:
     return value;
   }
   size_t outputCapacity(const Request &request) const {
+    if (request.method == "GET" && request.path == "/api/hub/lan") return 8192;
     return std::max<size_t>(2048, responseValue(request).memoryUsage() + 1024);
   }
   size_t responseCapacity(const Request &request) const {
+    if (request.method == "GET" && request.path == "/api/hub/lan") return 8192;
     // Repeated JSON strings share pool storage, while escaped strings expand
     // on the wire. Budget the serialized bytes separately from the JSON pool.
     // The margin covers bridge MQTT metadata (127-byte host, 63-byte user,

@@ -19,13 +19,16 @@ TC1 的 A1 硬件版本与 A1 空气净化器是不同产品，固件不能混�
 
 **M1 的 Wi-Fi 模块与传感器主控分别升级。** [GPL-3.0 开源主控](https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20)推荐用于原厂 **11.x**；原厂 **17.1.2.3 / 17.x** 差异较大，尚待分析，暂不建议迁移。按实际读到的主控版本判断，未知版本不作推测。普通 Wi-Fi OTA 不更新主控，基本空气读数无需另刷主控。详见[主控兼容说明](https://phicomm-io.github.io/guides/m1-mcu-firmware.html)。
 
+新增设备 **ORVIBO S30-V1B**（BL2028N 模块）：使用 OpenBeken / BK7231N、HLW8032 计量及二进制 MQTT/HTTP/UDP 协议，单独构建；已验证原电源下的真实负载计量，默认系数尚未经过标准仪表校准。[拆机串口刷机](docs/public/s30-flash.md) · [功能与操作](docs/public/s30-guide.md) · [构建与协议](BL2028N/README.md)。
+
 ## 安装与更新
+
 
 1. 阅读[刷机前准备](https://phicomm-io.github.io/guides/flash-prep.html)，确认硬件、备份、供电和恢复方式。
 2. 从[现有下载](https://phicomm-io.github.io/#releases)选择机型与变体，核对 `SHA256SUMS`，按对应教程安装。
 3. 按[快速开始](https://phicomm-io.github.io/guides/quick-start.html)配网，访问设备 IP；按需接入 [MQTT / Home Assistant](https://phicomm-io.github.io/guides/mqtt-link.html) 或 [IoTCloud](https://phicomm-io.github.io/guides/iotcloud-connect.html)。
 
-已有社区固件的日常网页更新使用匹配产品的 `.ota.bin.signed`；原生应用 `.ota.bin.raw` 仅用于教程明确支持的迁移或救援入口。`.all.bin` 是有线安装的完整镜像，不能用于网页 OTA。更新和恢复见[固件更新](https://phicomm-io.github.io/guides/firmware-update.html)。
+已有社区固件的日常网页更新使用匹配产品的 `.ota.bin.signed`；原生应用 `.ota.bin.raw` 仅用于教程明确支持的迁移或救援入口。`.all.bin` 是有线安装的完整镜像，不能用于网页 OTA。更新和恢复见[固件更新](https://phicomm-io.github.io/guides/firmware-update.html)。S30-V1B 使用本设备的 `.rbl` URL 升级，当前不支持本地文件上传或签名验证；首次安装请按其串口教程执行。
 
 大金原厂 OTA 布局的应用槽为 **`0x180000`（1.5 MiB）**，普通版首次迁移按[原厂 OTA 教程](https://phicomm-io.github.io/guides/daikin-stock-ota.html)执行。v1.0.0-rc.3 的 `full → hub` 签名切换见[中枢指南](https://phicomm-io.github.io/guides/daikin-guide.html#普通版切换为中枢)，需支持该入口的新固件和符合设备容量的镜像。
 
@@ -55,7 +58,10 @@ Apple 家庭采用 `hub` 的实验性 HomeKit HAP 桥接，配对、控制和重
 | [iotcloud-community-protocols](https://github.com/phicomm-io/iotcloud-community-protocols) | 跨仓库开发约定 |
 | [phicomm_m1_mcu_atsamd20](https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20) | M1 传感器主控 |
 
+新增设备和后续开发遵循 [统一设备开发规范](AGENTS.md)，包括项目与协议标识、统一前端、版本规则、配网及重置手势。
+
 按[构建依赖](docs/public/build-deps.md)准备 Linux 工具链与 SDK，然后执行：
+
 
 ```sh
 python3 -m pip install -r requirements-build.txt

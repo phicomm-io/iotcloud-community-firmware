@@ -1,6 +1,7 @@
 #include "../common/service.h"
 
 #include "../common/backup.h"
+#include "../common/device_hostname_mico.h"
 static bool config_recovery, config_commit_uncertain;
 bool device_config_recovery(void) { return config_recovery || config_commit_uncertain; }
 void device_config_recovery_set(bool recovery) { config_recovery=recovery || config_commit_uncertain; }
@@ -9,7 +10,13 @@ bool app_config_persist_allowed(void) { return !config_recovery && !config_commi
 #include "ota_server/signed_adapter.h"
 #include "main.h"
 #include "status_guard.h"
+#include "lan.h"
+#include "../common/ota/mode.h"
 #include "config_legacy.h"
+
+static uint32_t config_source_version, config_auth_magic, config_auth_version;
+static uint16_t config_auth_count,config_auth_remote_count,config_auth_reserved;
+static bool config_auth_valid;
 #include <stddef.h>
 
 uint32_t app_config_legacy_size(void) { return sizeof(user_config_v12_t); }
@@ -185,6 +192,14 @@ int application_start(void) {
     user_config = ((system_context_t *) sys_config)->user_config_data;
     require_action(user_config, exit, err = kNoMemoryErr);
 
+    /* Capture non-secret layout metadata before defaults or auth initialization. */
+    config_source_version=(uint8_t)user_config->version;
+    config_auth_magic=user_config->local_auth.magic;
+    config_auth_version=user_config->local_auth.version;
+    config_auth_count=user_config->local_auth.count;
+    config_auth_remote_count=user_config->local_auth.remote_count;
+    config_auth_reserved=user_config->local_auth.reserved;
+    config_auth_valid=ph_auth_store_valid(&user_config->local_auth);
     if(user_config->version!=USER_CONFIG_VERSION) {
         config_recovery=true;memset(user_config,0,sizeof(*user_config));
         appRestoreDefault_callback(user_config,sizeof(*user_config));
@@ -217,6 +232,7 @@ int application_start(void) {
     mico_wlan_get_mac_address(mac);
     sprintf(str_mac, "%02X%02X%02X%02X%02X%02X",
             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);tc1_log("str_mac[%s]", str_mac);
+    require_action(ph_device_hostname_mico("tc1",str_mac),exit,err=kNotPreparedErr);
 
     bool open_ap = false;
     MicoGpioInitialize((mico_gpio_t) Button, INPUT_PULL_UP);
@@ -261,6 +277,8 @@ int application_start(void) {
     tc1_log("version:%d", user_config->version);
 
     require_action(device_local_auth_init(),exit,err=kNoMemoryErr);
+    err=tc1_lan_start();
+    require_action(err==kNoErr || err==kInProgressErr,exit,err=err);
     TasksInit();
     WifiInit();
     if (!open_ap) {
@@ -286,6 +304,7 @@ int application_start(void) {
 
 
     while (1) {
+        ota_job_poll();
         automation_poll(rtc_init == 1);
         mico_thread_msleep(1000);
     }
@@ -341,12 +360,41 @@ bool tc1_status_capture(device_status_t *snapshot, device_status_full_t *full)
     snapshot->now_ms=mico_rtos_get_time();
     if(full){
         full->model.tc1.utc_time=(int32_t)time(NULL);
-        const micoMemInfo_t *memory=MicoGetMemoryInfo();
-        if(memory){full->runtime.memory_valid=true;full->runtime.free_memory=memory->free_memory;}
+
     }
     return true;
 }
 
+bool tc1_diagnostics_capture(device_status_t *snapshot,device_status_full_t *full)
+{
+    if(!tc1_status_capture(snapshot,full))return false;
+    full->model.tc1.config_recovery=device_config_recovery();
+    full->model.tc1.config_source_version=config_source_version;
+    full->model.tc1.config_auth_magic=config_auth_magic;
+    full->model.tc1.config_auth_version=config_auth_version;
+    full->runtime.now_ms=snapshot->now_ms;
+    const micoMemInfo_t *memory=MicoGetMemoryInfo();
+    if(memory){full->runtime.memory_valid=true;full->runtime.free_memory=memory->free_memory;
+        full->runtime.allocated_memory=memory->allocted_memory;full->runtime.free_memory_chunks=memory->num_of_chunks;full->runtime.minimum_free=memory->free_memory;}
+    return true;
+}
+
+/* Non-secret, boot-captured metadata also available under low-memory admission. */
+void tc1_config_diagnostics_mp(ph_writer *w){
+    phw_bool(w,"config_recovery",device_config_recovery());
+    phw_u32(w,"config_auth_count",config_auth_count);
+    phw_u32(w,"config_auth_remote_count",config_auth_remote_count);
+    phw_u32(w,"config_auth_reserved",config_auth_reserved);
+    phw_bool(w,"config_auth_valid",config_auth_valid);
+    phw_u32(w,"config_source_version",config_source_version);
+    phw_u32(w,"config_auth_magic",config_auth_magic);
+    phw_u32(w,"config_auth_version",config_auth_version);
+}
+
+void bemfa_config_flags_get(bool *mqtt_enabled,bool *enabled) {
+    tc1_status_lock();*mqtt_enabled=user_config->bemfa.mqtt_enabled!=0;
+    *enabled=user_config->bemfa.enabled!=0;tc1_status_unlock();
+}
 void bemfa_config_get(bemfa_config_t *out) {
     tc1_status_lock();*out=user_config->bemfa;tc1_status_unlock();
 }

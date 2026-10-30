@@ -11,8 +11,8 @@
 #include <limits.h>
 #include "common/mqtt/diagnostics.h"
 static bool maximum,command_alias,fail_diagnostics_alloc;
-static unsigned wire_live;
-void *ph_wire_malloc(size_t n){if(fail_diagnostics_alloc){fail_diagnostics_alloc=false;return NULL;}void *p=malloc(n);if(p)wire_live++;return p;}
+static unsigned wire_live,wire_allocations,fail_wire_at;
+void *ph_wire_malloc(size_t n){wire_allocations++;if(fail_wire_at&&wire_allocations==fail_wire_at)return NULL;if(fail_diagnostics_alloc){fail_diagnostics_alloc=false;return NULL;}void *p=malloc(n);if(p)wire_live++;return p;}
 void ph_wire_free(void *p){if(p){assert(wire_live);wire_live--;free(p);}}
 void ph_mqtt_snapshot(ph_mqtt_diagnostics *d){memset(d,maximum?0xff:0,sizeof(*d));if(maximum){d->bytes=d->peak_bytes=d->credit=d->rx_buffer_bytes=d->tx_buffer_bytes=UINT32_MAX;d->last_error=INT32_MIN;d->failure.read.requested=d->failure.read.returned=d->failure.write.requested=d->failure.write.returned=INT32_MIN;}}
 ph_http_diagnostics ph_http_snapshot(void){ph_http_diagnostics d;memset(&d,maximum?0xff:0,sizeof(d));if(maximum){d.last_close_rc=d.last_close_errno=d.last_select_rc=d.last_read_rc=d.limit=d.connections=d.connections_get_rc=d.read_errno=INT32_MIN;}return d;}
@@ -53,8 +53,8 @@ ph_buf *service_command_mp(const void*p,size_t n){ph_value v;if(!phv_parse(PH_WI
 /* Auth core and token routes execute in test_auth_routes_mp. Here a revocable
  * bearer boundary isolates the real product routes/lifetimes/flash adapter. */
 static bool token_valid=true;
-static void *device_local_auth(void){return password;}
-static bool ph_auth_password_is_set(void*p){return *(const char*)p!=0;}
+ph_auth_state *device_local_auth(void){return (ph_auth_state *)password;}
+bool ph_auth_password_is_set(ph_auth_state*p){return *(const char*)p!=0;}
 static bool http_auth_authorized(const char*a){return token_valid&&!strcmp(a,"Bearer valid");}
 static bool http_auth_route(const char*p){return !strcmp(p,"/api/v1/auth/login")||!strcmp(p,"/api/v1/auth/logout");}
 static void http_auth_reply(ph_http_product*p,ph_http_exchange*x,unsigned status,const char*c,const char*t){(void)t;ph_http_message(p,x,status,c);}

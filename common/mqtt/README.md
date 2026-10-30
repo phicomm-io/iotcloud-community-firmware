@@ -172,12 +172,13 @@ notifications), not distinct failed sessions. Successful reconnects retain the
 previous cause; a subsequent owner rebind still resets the diagnostic core.
 
 
-HTTP diagnostics allocate a request-owned 2304-byte scratch only after checking
-the application reserve. It lives until response cleanup. On insufficient heap
-or allocation failure the original smaller response includes
-`mqtt_diag_unavailable:true`; it does not fabricate zero counters or enlarge
-permanent BSS/thread stacks. Counter-expansion fixtures cover UINT32_MAX and
-INT32_MIN, valid JSON, low-heap fallback and exact cleanup.
+HTTP diagnostics copy the owner snapshot into a typed local value and emit it
+directly into the request-owned MessagePack response. They do not construct a
+JSON object or retain a separate formatted-text scratch. On insufficient heap
+or allocation failure the memory endpoint emits a smaller binary response
+using fixed HTTP-owned storage. MQTT counters omitted from that fallback must
+not be interpreted as zero. Native writer fixtures cover UINT32_MAX, INT32_MIN,
+reserve admission and exact cleanup.
 
 ## Cleanup exception and closed-kernel boundary
 

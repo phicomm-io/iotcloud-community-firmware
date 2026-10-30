@@ -39,7 +39,7 @@ static void same(const ph_value *value,json_object *expected){
  enum json_type type=json_object_get_type(expected);
  switch(value->kind){
  case PHV_MAP:{assert(type==json_type_object);size_t count=0;
-  json_object_object_foreach(expected,key,old){ph_value got;assert(phv_get(value,key,&got));same(&got,old);count++;}
+  json_object_object_foreach(expected,key,old){ph_value got;if(!phv_get(value,key,&got)){fprintf(stderr,"missing field %s\n",key);abort();}same(&got,old);count++;}
   assert(count==value->count);break;}
  case PHV_ARRAY:{assert(type==json_type_array);assert((size_t)json_object_array_length(expected)==value->count);
   for(unsigned i=0;i<value->count;i++){ph_value got;assert(phv_at(value,i,&got));same(&got,json_object_array_get_idx(expected,i));}break;}
@@ -55,11 +55,56 @@ static void same(const ph_value *value,json_object *expected){
  }
 }
 static void check(device_status_t *s,device_status_full_t *f){
+ f->runtime.now_ms=s->now_ms;
  struct printbuf *old=reference_device_status_wire(s,f,false,NULL);assert(old);
  json_object *schema=json_tokener_parse(old->buf);assert(schema);printbuf_free(old);
  /* Explicit RC4 policy delta: frozen rc3 reported one waiting request. */
  json_object *old_queue=json_object_object_get(schema,"http_accept_queue_capacity");
  if(old_queue){assert(json_object_get_int(old_queue)==1);json_object_object_add(schema,"http_accept_queue_capacity",json_object_new_int(PH_HTTP_WAIT_SLOTS));}
+ /* Reunite independently emitted diagnostics with business schema to prove
+  * no old field or numeric precision was silently lost during the split. */
+ ph_writer diag;assert(phw_init(&diag,1));device_diagnostics_mp(&diag,s,f);
+ ph_buf *diagnostics=phw_take(&diag);ph_value dr,fields,item,id,value,version;
+ assert(diagnostics&&phv_parse(1,diagnostics->buf,diagnostics->len,&dr));
+ assert(phv_get(&dr,"schema",&version)&&version.count==1);
+ assert(phv_get(&dr,"fields",&fields)&&fields.kind==PHV_ARRAY);
+ ph_writer dm;ph_buf dm_size;assert(phw_init_measure(&dm,1,&dm_size));budget=0;device_diagnostics_mp(&dm,s,f);budget=-1;
+ assert(phw_finish_fixed(&dm)==diagnostics->len);
+ char diag_storage[4096];ph_writer df;ph_buf diag_borrowed;
+ assert(phw_init_fixed(&df,1,&diag_borrowed,diag_storage,sizeof(diag_storage)));budget=0;device_diagnostics_mp(&df,s,f);budget=-1;
+ assert(phw_finish_fixed(&df)==diagnostics->len&&!memcmp(diag_storage,diagnostics->buf,diagnostics->len));
+ size_t diagnostic_blocks=blocks;
+ for(int fail=0;fail<12;fail++){
+  budget=fail;ph_writer failure;ph_buf *partial=NULL;
+  if(phw_init(&failure,1)){device_diagnostics_mp(&failure,s,f);partial=phw_take(&failure);}else phw_discard(&failure);
+  if(partial)ph_buf_free(partial);budget=-1;assert((size_t)blocks==diagnostic_blocks);
+ }
+
+ bool seen_ids[1024]={0};
+ for(unsigned n=0;n<fields.count;n++){
+  assert(phv_at(&fields,n,&item)&&item.kind==PHV_ARRAY&&item.count==2);
+  assert(phv_at(&item,0,&id)&&id.kind==PHV_UINT&&id.count<1024&&!seen_ids[id.count]);seen_ids[id.count]=true;
+  assert(phv_at(&item,1,&value));
+  const char *path=diagnostic_paths[id.count];assert(path);
+  char key[128];strcpy(key,path);char *leaf=strchr(key,'.');json_object *parent=schema;
+  if(leaf){*leaf++=0;parent=json_object_object_get(schema,key);}else leaf=key;
+  json_object *old=parent?json_object_object_get(parent,leaf):NULL;
+  bool present=false;if(parent){json_object_object_foreach(parent,k,v){(void)v;if(!strcmp(k,leaf))present=true;}}
+  if(present){
+   if(!strcmp(path,"http_tcp_limit_requested")){assert(value.count==PH_HTTP_WAIT_SLOTS+1);}
+   else same(&value,old);
+   if(strcmp(path,"uptime_seconds"))json_object_object_del(parent,leaf);
+  }
+ }
+ /* Unsupported legacy nil placeholders are omitted, never fabricated. */
+ json_object_object_del(schema,"http_accept_queue_last_rc");
+ if(f->http.limit_get_rc)json_object_object_del(schema,"http_tcp_limit_readback");
+ if(f->http.connections_get_rc)json_object_object_del(schema,"http_tcp_connections");
+ if(s->model==DEVICE_M1&&!m1_barometer_model(s->sensor.m1.barometer.chip_id)){
+  json_object *barometer=json_object_object_get(schema,"barometer");
+  json_object_object_del(barometer,"chip_id");json_object_object_del(barometer,"address");
+ }
+ ph_buf_free(diagnostics);
  ph_writer writer;assert(phw_init(&writer,1));device_status_mp(&writer,s,f);ph_buf *wire=phw_take(&writer);assert(wire&&wire->cap==wire->len+1);
  ph_value root;assert(phv_parse(1,wire->buf,wire->len,&root));same(&root,schema);
  ph_writer measured;ph_buf size;assert(phw_init_measure(&measured,1,&size));budget=0;device_status_mp(&measured,s,f);budget=-1;assert(phw_finish_fixed(&measured)==wire->len);
@@ -120,6 +165,8 @@ int main(void){
 }
 '''
 
+DIAGNOSTIC_PATHS='static const char *const diagnostic_paths[1024]={'+','.join('[%d]=%s'%(f['id'],json_module.dumps(f['path'])) for f in json_module.loads((ROOT/'common/diagnostics-schema.json').read_text())['fields'])+'};'
+
 class StatusMessagePack(unittest.TestCase):
  def test_frozen_full_schema_variants_faults_and_precision(self):
   sdk=Path(os.environ.get('M1_SDK_DIR',ROOT/'build/m1-sdk/mico-os'))
@@ -140,7 +187,7 @@ class StatusMessagePack(unittest.TestCase):
      selected=path/'pristine/libraries/utilities/json_c'
     json=copy_patched_json(selected,path/'sdk')
     for p in json.glob('*.c'):p.write_text(p.read_text().replace('%ld','%d'))
-    fixture=path/'case.c';fixture.write_text(HARNESS)
+    fixture=path/'case.c';fixture.write_text(HARNESS.replace('static long budget=',DIAGNOSTIC_PATHS+'\nstatic long budget='))
     cc=shlex.split(os.environ.get('CC','cc'))
     flags=['-std=gnu99','-g','-Wall','-Wextra','-Wno-misleading-indentation','-Wno-unused-function','-Wno-unused-parameter','-Wno-sign-compare','-Wno-implicit-fallthrough','-Wno-unused-value','-Wno-unused-but-set-variable','-Wno-nonnull-compare','-I'+str(ROOT),'-I'+str(ROOT/'common'),'-I'+str(ROOT/'tests/stubs'),'-I'+str(json),'-DPHICOMM_APPLICATION_WATCHDOG=1','-DPHICOMM_FULL_RESOURCES='+str(resources)]
     if fresh:flags+=['-DA1_FRESH_AIR=1']

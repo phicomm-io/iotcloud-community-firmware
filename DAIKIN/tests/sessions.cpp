@@ -22,6 +22,7 @@ namespace ArduinoJson {template<> struct Converter<String>{static String fromJso
 struct IPAddress {String address="127.0.0.1";String toString()const{return address;}bool fromString(const char*p){if(!p||strlen(p)>15||!strchr(p,'.'))return false;address=p;return true;}};
 struct WiFiUDP {
  std::string incoming,outgoing;unsigned sent=0;IPAddress remote;
+ uint16_t remotePort()const{return 11288;}
  int parsePacket()const{return incoming.size();}int available()const{return 0;}int read(){return -1;}
  int read(char*out,int n){incoming.copy(out,n);incoming.clear();return n;}IPAddress remoteIP()const{return remote;}
  bool beginPacket(IPAddress,unsigned){outgoing.clear();return true;}size_t write(const uint8_t*p,size_t n){outgoing.assign(reinterpret_cast<const char*>(p),n);return n;}int endPacket(){sent++;return 1;}
@@ -38,15 +39,21 @@ enum Sensor {PM25,CO2,TEMPERATURE,HUMIDITY,TVOC,HCHO,PM10,SENSOR_COUNT};
 static daikin::Sample readings[SENSOR_COUNT];
 static const char *keys[]={"pm25","co2","temperature","humidity","tvoc","hcho","pm10"},*units[]={"ug/m3","ppm","C","%","ppb","mg/m3","ug/m3"};
 static bool sensorPresent(unsigned){return true;}
+static uint32_t sensorBoot=1,sensorSequence=0;
+// The v4 business adapter has its own production test; this fixture owns the
+// legacy authenticated sensor path and must leave non-business packets to it.
+static bool lanBusinessPacket(const ph_value*,const char*,uint16_t){return false;}
 #include "../src/lan_pairing.inc"
 #include "../src/sessions.inc"
 namespace remote {
+#define feature_lan_context remote_feature_lan_context
 #define lan_auth_peer remote_lan_auth_peer
 #define lan_auth_secret remote_lan_auth_secret
 #define lan_auth_hex remote_lan_auth_hex
 #define AUTH_DEVICE_ID "aabbccddee03"
 #include "lan_auth.inc"
 #undef AUTH_DEVICE_ID
+#undef feature_lan_context
 #undef lan_auth_peer
 #undef lan_auth_secret
 #undef lan_auth_hex

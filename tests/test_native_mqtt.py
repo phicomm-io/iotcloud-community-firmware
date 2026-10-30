@@ -97,6 +97,12 @@ static const ph_mqtt_core *ph_mqtt_debug_core(void){return &core;}
 static bool ota_job_active(void){return active;}
 static bool ph_mqtt_input_admit(void){return admit;}
 static bool ph_mqtt_input_consumed(void){memset(input->buf,0,input->len);consumes++;return true;}
+/* This fixture exercises write admission. Read classification and post-reply
+ * charging are covered by the actual Paho READ_QUERY_FIXTURE in service_mp.c. */
+bool service_readonly_mp(const void *data,size_t n){
+ ph_value root,v;assert(phv_parse(1,data,n,&root));assert(phv_get(&root,"action",&v)&&phv_equal_text(&v,"outlet.set"));return false;
+}
+static bool ph_mqtt_query_consumed(size_t reply_bytes){(void)reply_bytes;assert(!"write used read admission");return false;}
 ph_buf *service_mqtt_command_mp(const void *data,size_t n){
  ph_value root,v;assert(phv_parse(1,data,n,&root));assert(phv_get(&root,"request_id",&v)&&phv_equal_text(&v,"borrow-1"));calls++;
  ph_writer w;assert(phw_init(&w,1));phw_begin(&w,NULL,false);phw_text(&w,"request_id","borrow-1");phw_text(&w,"code","accepted");phw_int(&w,"zero",0);phw_end(&w);return phw_take(&w);

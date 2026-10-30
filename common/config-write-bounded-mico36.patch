@@ -1,0 +1,45 @@
+--- a/MiCO/system/mico_system_para_storage.c
++++ b/MiCO/system/mico_system_para_storage.c
+@@ -307,6 +307,22 @@
+     return result;
+ }
+ 
++/* The pinned MOC kernel copies each write into a same-sized heap buffer.
++ * Bound that hidden allocation as well as the SDK verification scratch. */
++static OSStatus para_write_data(mico_partition_t part, uint32_t *offset, uint8_t *data, uint32_t length)
++{
++    while (length) {
++        uint32_t start = *offset, len = length > 1024 ? 1024 : length;
++        OSStatus err = MicoFlashWrite(part, offset, data, len);
++        if (err) return err;
++        /* The MOC wrapper discards errors, including allocation failures. */
++        if (*offset != start + len) return kWriteErr;
++        data += len;
++        length -= len;
++    }
++    return kNoErr;
++}
++
+ static OSStatus para_write_config(mico_partition_t part, system_context_t *context, uint8_t *tmp)
+ {
+     OSStatus err, write_err;
+@@ -332,16 +348,16 @@
+     if (err) return err;
+     if (offset != partition->partition_length || stored != 0xffff) return kWriteErr;
+     offset = 0;
+-    err = MicoFlashWrite(part, &offset, (uint8_t *)&context->flashContentInRam, sizeof(system_config_t));
++    err = para_write_data(part, &offset, (uint8_t *)&context->flashContentInRam, sizeof(system_config_t));
+     if (err) return err;
+     if (offset != sizeof(system_config_t)) return kWriteErr;
+     offset = mico_context_section_offsets[PARA_APP_DATA_SECTION];
+-    err = MicoFlashWrite(part, &offset, context->user_config_data, context->user_config_data_size);
++    err = para_write_data(part, &offset, context->user_config_data, context->user_config_data_size);
+     if (err) return err;
+     if (offset != mico_context_section_offsets[PARA_APP_DATA_SECTION] + context->user_config_data_size) return kWriteErr;
+ #ifdef MICO_EXTRA_AP_NUM
+     offset = mico_context_section_offsets[PARA_SYS_EXTRA_SECTION];
+-    err = MicoFlashWrite(part, &offset, (uint8_t *)context->extra_ap, sizeof(context->extra_ap));
++    err = para_write_data(part, &offset, (uint8_t *)context->extra_ap, sizeof(context->extra_ap));
+     if (err) return err;
+     if (offset != mico_context_section_offsets[PARA_SYS_EXTRA_SECTION] + sizeof(context->extra_ap)) return kWriteErr;
+ #endif

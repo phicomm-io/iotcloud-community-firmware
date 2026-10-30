@@ -35,7 +35,7 @@ public:
   std::array<Device, Capacity> devices;
   size_t size = 0;
   std::function<std::string(size_t)> randomHex;
-  explicit HubHome(HubBroker &broker) : broker(broker) {}
+  explicit HubHome(HubDeviceBus &bus) : bus(bus) {}
   // Reconfiguration discards old state and pending commands, preventing an
   // account/device change from inheriting a previous device's readings.
   bool configure(JsonArrayConst saved, const std::string &prefix,
@@ -73,7 +73,7 @@ public:
       bool result = topic == d.base + "/result";
       if (topic != d.base + "/state" && !result)
         continue;
-      if (body.size() > HubBroker::Packet)
+      if (body.size() > HubDeviceBus::Packet)
         return;
       size_t capacity = std::min(size_t(8192), body.size() * 2 + 512);
       for (;;) {
@@ -179,8 +179,8 @@ public:
     request["request_id"] = pending.id;
     std::string body;
     hubWire.encode(request, d.base, body);
-    if (!broker.publish(d.base + "/command", body, false,
-                        HubBroker::Origin::Internal)) {
+    if (!bus.publish(d.base + "/command", body, false,
+                        HubDeviceBus::Origin::Internal)) {
       pending = Pending();
       return false;
     }
@@ -197,7 +197,7 @@ public:
   }
 
 private:
-  HubBroker &broker;
+  HubDeviceBus &bus;
   uint32_t clock = 0;
   size_t queryCursor = 0;
   struct Pending {
@@ -243,8 +243,8 @@ private:
       else {body.push_back(char(0xd9));body.push_back(char(d.query.size()));}
       body+=d.query;body+="\xa6" "params" "\x80";
     }else body="{\"action\":\"status.get\",\"request_id\":\""+d.query+"\",\"params\":{}}";
-    if (!d.query.empty() && !broker.publish(d.base + "/command",body,
-                        false, HubBroker::Origin::Internal))
+    if (!d.query.empty() && !bus.publish(d.base + "/command",body,
+                        false, HubDeviceBus::Origin::Internal))
       d.query.clear();
   }
   void value(Device &d, Metric key, JsonVariantConst v, bool valid,

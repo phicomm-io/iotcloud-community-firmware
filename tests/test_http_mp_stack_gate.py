@@ -5,10 +5,27 @@ from pathlib import Path
 import tempfile
 import unittest
 from tools.check_http_core import (HTTP_BUDGET, HTTP_RESERVE, check_symbols,
-    http_paths, linked_symbols, read_frames, validate_paths, check_tc1_ota_decimal, check_tc1_ota_progress)
-from tools.status_stack import status_paths
+    HTTP_MODEL_BUDGETS, model_http_budget, http_paths, linked_symbols, read_frames,
+    validate_paths, check_tc1_ota_decimal, check_tc1_ota_progress)
+from tools.status_stack import status_paths, diagnostic_paths
 
 class HTTPMessagePackStackGate(unittest.TestCase):
+    def test_model_stack_budgets_keep_reserve_and_reject_oversized_paths(self):
+        root=Path(__file__).resolve().parents[1]
+        for model,budget in HTTP_MODEL_BUDGETS.items():
+            self.assertEqual(model_http_budget(root,model),budget)
+            frames={'capture':budget-HTTP_RESERVE}
+            paths={'capture':(HTTP_RESERVE,['capture'])}
+            with redirect_stdout(io.StringIO()):validate_paths(paths,frames,budget,model)
+            frames['capture']+=1
+            with self.assertRaisesRegex(ValueError,'>'+str(budget)):
+                validate_paths(paths,frames,budget,model)
+            if budget!=HTTP_BUDGET:
+                with self.assertRaisesRegex(ValueError,'budget must remain'):
+                    validate_paths(paths,frames,HTTP_BUDGET,model)
+            with self.assertRaisesRegex(ValueError,'insufficient SDK'):
+                validate_paths({'capture':(HTTP_RESERVE-1,[])},{},budget,model)
+
     def fixture(self,model='A1'):
         # First discover required public/noinline frames. Emit all known
         # private helpers as a separate second pass, simulating un-inlining.
@@ -32,6 +49,27 @@ class HTTPMessagePackStackGate(unittest.TestCase):
             self.assertFalse(any('json' in n for n in names))
             with self.assertRaisesRegex(ValueError,'budget must remain'):
                 validate_paths(paths,frames,HTTP_BUDGET+1)
+    def test_diagnostic_entrypoints_are_charged_and_cannot_hide_overflow(self):
+        for missing in ['device_diagnostics_mp','service_product_diagnostics_mp','a1_diagnostics_capture']:
+            frames,paths=self.fixture();del frames[missing]
+            with redirect_stdout(io.StringIO()),self.assertRaisesRegex(ValueError,'missing actual .su'):
+                validate_paths(paths,frames)
+        frames,paths=self.fixture();frames['device_diagnostics_mp']=10000
+        with redirect_stdout(io.StringIO()),self.assertRaisesRegex(ValueError,'>12288'):
+            validate_paths(paths,frames)
+
+    def test_tc1_diagnostics_charge_flag_reader_and_reset_helpers(self):
+        helpers=['bemfa_status_capture','bemfa_config_flags_get',
+                 'tc1_status_begin','tc1_ota_snapshot','reset_name','device_status_text']
+        frames=dict.fromkeys(helpers,16)
+        paths=diagnostic_paths(frames,'TC1','diagnostics',[],3072,frames)
+        names=paths['diagnostics business capture'][0]
+        self.assertTrue(set(helpers)<=set(names))
+        self.assertNotIn('bemfa_config_get',names)
+        missing=dict(frames);del missing['bemfa_config_flags_get']
+        with self.assertRaisesRegex(ValueError,'Emitted helper missing'):
+            diagnostic_paths(missing,'TC1','diagnostics',[],3072,frames)
+
     def test_missing_emitted_core_frames_fail_closed(self):
         for missing in ['mp_dispatch','mp_cached','service_command_mp',
                         'phv_parse','device_status_mp','encode_a1',
@@ -89,7 +127,7 @@ class HTTPMessagePackStackGate(unittest.TestCase):
         required=['ph_http_server_step','ph_http_parser_feed','ph_http_start',
             'ph_mqtt_session_run','ph_mqtt_poll','ph_mqtt_enqueue_generation',
             'service_command_mp','service_query_mp','service_product_mp',
-            'service_product_status_mp','device_status_mp','phv_parse',
+            'service_product_status_mp','service_product_diagnostics_mp','device_diagnostics_mp','phv_parse',
             'phw_cached_value','phw_number','ph_buf_reserve']
         symbols=linked_symbols('\n'.join('00001000 T '+n for n in required))
         check_symbols(symbols)

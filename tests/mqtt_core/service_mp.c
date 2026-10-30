@@ -29,8 +29,12 @@ static void real_handler(MessageData *data)
 static int fixture_receipt_send_bytes(const mqtt_target_t *,const void *,size_t,
                                       void *,void (*)(void *));
 #define ph_mqtt_receipt_send_bytes(...) fixture_receipt_send_bytes(__VA_ARGS__)
+#ifdef LEGACY_READ_CREDIT
+#define service_readonly_mp(...) false
+#endif
 #include "common/mqtt/service.c"
 #undef ph_mqtt_receipt_send_bytes
+#undef service_readonly_mp
 
 static int fixture_receipt_send_bytes(const mqtt_target_t *target,const void *wire,
                                       size_t length,void *owned,void (*release)(void *))
@@ -116,6 +120,7 @@ void service_product_status_mp(ph_writer *output)
 {phw_begin(output,NULL,false);phw_text(output,"model","fixture");phw_end(output);}
 void service_product_capabilities_mp(ph_writer *output,const char *const *extra,bool restricted)
 {(void)extra;(void)restricted;phw_begin(output,NULL,false);phw_end(output);}
+void service_product_diagnostics_mp(ph_writer *output){phw_begin(output,NULL,false);phw_end(output);}
 void service_product_info_mp(ph_writer *output)
 {phw_begin(output,NULL,false);phw_text(output,"model","fixture");phw_end(output);}
 bool service_product_ota_start(const char *url){(void)url;return true;}
@@ -136,7 +141,47 @@ bool service_product_mp(const char *action,const ph_value *params,ph_writer *out
 bool service_product_mqtt_mp(const char *action,const ph_value *params,ph_writer *output,const char **code)
 {return fixture_product(action,params,output,code);}
 
-#ifdef PREFLIGHT_FIXTURE
+#ifdef READ_QUERY_FIXTURE
+int main(void)
+{
+    service_init();assert(mqtt_account_init(&account,1,"a1","test","aabbccddeeff"));
+    assert(ph_mqtt_owner_init(&account,8192,&thread,accept));heap_capacity=64000;
+    start_service_client();
+    ph_buf *read=request_mp("status.get","small-read",-1);
+    ph_buf *write=request_mp("fan.set","protected-write",1);
+    ph_buf *unknown=request_mp("future.get","future",-1);
+    assert(service_readonly_mp(read->buf,read->len));
+    assert(!service_readonly_mp(write->buf,write->len));
+    assert(!service_readonly_mp(unknown->buf,unknown->len));
+    assert(!service_readonly_mp(read->buf,read->len-1));
+    /* The backlog fits both requests and their small reply, but not the old
+     * unconditional 8 KiB write-receipt reservation. Execute actual Paho
+     * callback/owner paths, including a freed borrowed request under ASan. */
+    char padding[7000];memset(padding,'x',sizeof(padding));
+    ph_writer w;assert(phw_init(&w,PH_WIRE_MSGPACK));phw_begin(&w,NULL,false);
+    phw_text(&w,"action","future.get");phw_begin(&w,"params",false);
+    phw_text_n(&w,"padding",padding,sizeof(padding));phw_end(&w);phw_end(&w);
+    ph_buf *backlog=phw_take(&w);assert(backlog);
+    incoming_bytes(command_topic,read->buf,read->len,41);
+    incoming_bytes(command_topic,write->buf,write->len,42);
+    incoming_bytes(command_topic,backlog->buf,backlog->len,43);
+    assert(ph_mqtt_yield(&client,1)==MQTT_SUCCESS);
+    assert(ph_mqtt_poll(&client)==MQTT_SUCCESS);
+    assert(result_count==1&&!strcmp(last_result_code,"ok")&&!mutations&&!busy_count);
+    /* The backlog remains. Mutations still require the full result
+     * reservation before execution; overload cannot execute a hidden write. */
+    assert(ph_mqtt_poll(&client)==MQTT_SUCCESS);
+    assert(result_count==2&&!strcmp(last_result_code,"busy")&&!mutations&&busy_count==1);
+    assert(!ph_mqtt_debug_core()->credit&&!ph_mqtt_receipt_pending());
+    assert(ph_mqtt_poll(&client)==MQTT_SUCCESS); /* Drain the unknown read. */
+    /* Once drained, that same write executes once, then replays its receipt. */
+    assert(command_mp(write)==MQTT_SUCCESS&&mutations==1);
+    assert(command_mp(write)==MQTT_SUCCESS&&mutations==1);
+    ph_buf_free(read);ph_buf_free(write);ph_buf_free(unknown);ph_buf_free(backlog);
+    finish_service_client();clear_receipts();assert(mp_cache_evict());assert(!native_live&&!charged_live);
+    ph_mqtt_owner_end();puts("native service read actual-size credit, borrowed lifetime, write pre-admission/replay PASS");return 0;
+}
+#elif defined(PREFLIGHT_FIXTURE)
 #include "preflight_service_mp.in"
 #elif defined(LARGE_RECEIPT_FIXTURE)
 int main(void)

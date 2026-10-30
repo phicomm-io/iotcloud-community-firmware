@@ -1,0 +1,371 @@
+{
+  "lab": {
+    "head": "260b840f6759b5249446c8c925b9628563d0727f",
+    "dirty": false,
+    "scope": "listed upstream source paths"
+  },
+  "frontend": {
+    "head": "5fa481cf429bec22fb9be529472f70777c32e2c6",
+    "dirty": false,
+    "scope": "listed upstream source paths"
+  },
+  "paho_sdk_pin": "6c465211d3ff8797cd835e400ec54a06530dd476",
+  "files": {
+    "protocol/httpd/core.c": {
+      "source": "common/httpd/core.c",
+      "upstream_sha256": "fed7ef5d71717e98b629379e4bc53997692528ca3d24eb233fd19df9e2ddade5",
+      "sha256": "93790ef9323e3a42a49ce36833b85cc5a911c3a6cc2eb04711831a9241b54e02"
+    },
+    "protocol/httpd/parser.c": {
+      "source": "common/httpd/parser.c",
+      "upstream_sha256": "f4f60b9040bd73ee56be58e985cc495a153831dbcaf8c7ed5871d831f77cc6f6",
+      "sha256": "47e3a904f1df7e375355771aa22ae25920c61bbbf23c042a4ff525306b9da565"
+    },
+    "protocol/httpd/http.h": {
+      "source": "common/httpd/http.h",
+      "upstream_sha256": "94fcd94dc5cf19cc6ab252d337f82be1a317ca2e6d68a4007445be59978f8280",
+      "sha256": "f9f5f5dcd00c17b758dfe78dd766eb6025685aef9da8ac7cfaa4f3f05a78cae3"
+    },
+    "protocol/httpd/http_trace_hooks.h": {
+      "source": "common/httpd/http_trace_hooks.h",
+      "upstream_sha256": "2c0ac2cca90e1857dd24a7c81b8b922c0de14fc3f68ed82dab7c23b5ac2cb2df",
+      "sha256": "2c0ac2cca90e1857dd24a7c81b8b922c0de14fc3f68ed82dab7c23b5ac2cb2df"
+    },
+    "protocol/mqtt/core.c": {
+      "source": "common/mqtt/core.c",
+      "upstream_sha256": "de879046396529456d4d0917795a195e713d9a89033bfd1a95833dded8e651ca",
+      "sha256": "de879046396529456d4d0917795a195e713d9a89033bfd1a95833dded8e651ca"
+    },
+    "protocol/mqtt/core.h": {
+      "source": "common/mqtt/core.h",
+      "upstream_sha256": "14031690e71bcd1bca367611950d88c32e11912ab651bd8ef13fc7d95d6514a3",
+      "sha256": "14031690e71bcd1bca367611950d88c32e11912ab651bd8ef13fc7d95d6514a3"
+    },
+    "protocol/mqtt/client.c": {
+      "source": "common/mqtt/client.c",
+      "upstream_sha256": "6fa3c8eac5777e3f887208db32e00c7e321d182e5a4d2190b93e37a84d4cf07d",
+      "sha256": "d6b4bf9bdbba1b7daad5b2922f6a60aa4e9a6a6073cee32a04ed6811ff3f0b99"
+    },
+    "protocol/mqtt/client.h": {
+      "source": "common/mqtt/client.h",
+      "upstream_sha256": "b4b6e8865ab960cf28a876518e21666c23eee83348344b85445de1625dc50095",
+      "sha256": "5fa8859351be9e2b98fd978d6c5719f4dbc8ea16bd7a59d1e3655a843d3070c0"
+    },
+    "protocol/mqtt/session.c": {
+      "source": "common/mqtt/session.c",
+      "upstream_sha256": "a201c35faee1ba34cff36c65da31a1bd193254bf59953d84eef9251fdaddd056",
+      "sha256": "282122d3b9e873a7a4acfa03653bb3716faf1df10b542bc45d85ad4ee53e0c24"
+    },
+    "protocol/mqtt/session.h": {
+      "source": "common/mqtt/session.h",
+      "upstream_sha256": "645a7a2eee2df82379d21574b661535963c67afe5bcba477784200f21d1cf3dc",
+      "sha256": "645a7a2eee2df82379d21574b661535963c67afe5bcba477784200f21d1cf3dc"
+    },
+    "protocol/mqtt/owner.h": {
+      "source": "common/mqtt/owner.h",
+      "upstream_sha256": "841ba095e2ba3f6125a463819a594a8f7208d4630bf6b98efd38c841c64ac7b2",
+      "sha256": "dd0f73c658329b86b07a7895204c9947acb816813cafe091eb213860a0edba3d"
+    },
+    "protocol/mqtt/queue.h": {
+      "source": "common/mqtt/queue.h",
+      "upstream_sha256": "e51ed04f8300bfeb380c366953fb2ed50e57022de85a1bbf2d1b2edc4df0729c",
+      "sha256": "e51ed04f8300bfeb380c366953fb2ed50e57022de85a1bbf2d1b2edc4df0729c"
+    },
+    "protocol/mqtt/wire.h": {
+      "source": "common/mqtt/wire.h",
+      "upstream_sha256": "8fb862e4d67b63827166e7ada956014624481f2f4f72513f74d8905359159dba",
+      "sha256": "f3a979f508aceb396dd6d3c9ada048fa86aa464c97852044741336743aeb19cd",
+      "historical_source_snapshot_sha256": "d646deb4bed3c14cd219f467b005f88214a0f6b8857049f51fada8520b3bcd9e"
+    },
+    "protocol/mqtt/diagnostics.c": {
+      "source": "common/mqtt/diagnostics.c",
+      "upstream_sha256": "67c4dc57c26f05617410f47d4f5f8800aa44abad804a5a94fd56af6ab970e7c9",
+      "sha256": "19ee47426746bd2cd9cadad4af5210b841adba83f63c78c3a8899eb50c5fb15d"
+    },
+    "protocol/mqtt/diagnostics.h": {
+      "source": "common/mqtt/diagnostics.h",
+      "upstream_sha256": "704ca1d543b9418d0b76e211f9b6a920f328c88203be82706a2d136740a956aa",
+      "sha256": "06486f85cb723b93e609651ec551c7aa4c9e35a1839951ba8c0e412cd5dc0b0f"
+    },
+    "protocol/mqtt_account.h": {
+      "source": "common/mqtt_account.h",
+      "upstream_sha256": "b1087caaf7fc9ba511570951777fd7c2abfb7a34eef47531a6e1789043bac3d2",
+      "sha256": "aa35e8aef1d2f433e115ad9e402539ccbd3a4e5416d10235cf757cd228568d52"
+    },
+    "protocol/memory_budget.h": {
+      "source": "common/memory_budget.h",
+      "upstream_sha256": "15fbe2c9eb254ef906aad2fcc1bc65ee2f31abd37c516030c727bb567e8d711f",
+      "sha256": "3df49dcad40248940cbbe917703f72f2d19f3a8a117856ff92315e069bca3f54"
+    },
+    "protocol/busy_reply.h": {
+      "source": "common/busy_reply.h",
+      "upstream_sha256": "753e685f1e3470cd2981d9c02b4e14f2134b78b02ccab0ee9827d0ad7df88890",
+      "sha256": "aacc56b7eac7b7fe282a6891224ca9523bb22026eecfa4c07b17965eb0d0affd"
+    },
+    "protocol/paho/MQTTClient.c": {
+      "source": "paho/MQTTClient.c",
+      "upstream_sha256": "a75d6da2b5bfe5b0d41dae451b676bc0fce3bf398ffa4b1797622d20fa9c9567",
+      "sha256": "798e7a3f213b0a3caa3eb2e1a718d877d3fbcc2cf3699c65b1990a02a6d57117",
+      "historical_source_snapshot_sha256": "d646deb4bed3c14cd219f467b005f88214a0f6b8857049f51fada8520b3bcd9e"
+    },
+    "protocol/paho/MQTTClient.h": {
+      "source": "paho/MQTTClient.h",
+      "upstream_sha256": "6fb05dd152711e3d6bd960db13aa6bf93e8670fa426eeccab6dc4e444412710e",
+      "sha256": "ec84d5e48b4f81316233777b70d8eb45f1fe8184f87a41cff8402fbd19d2482f",
+      "historical_source_snapshot_sha256": "d646deb4bed3c14cd219f467b005f88214a0f6b8857049f51fada8520b3bcd9e"
+    },
+    "protocol/paho/MQTTPacket/MQTTConnectServer.c": {
+      "source": "paho/MQTTPacket/MQTTConnectServer.c",
+      "upstream_sha256": "7c9fd2cacb12a90368f1a4710ed8ff139c9e6fc4cd45effcc6e6b1aae2b7be4d",
+      "sha256": "0c09fcba6129bc5f055d498a77a74b0f19e07b7deeb4744d879c8dd0ce5965e0",
+      "historical_source_snapshot_sha256": "d646deb4bed3c14cd219f467b005f88214a0f6b8857049f51fada8520b3bcd9e"
+    },
+    "protocol/paho/MQTTPacket/MQTTUnsubscribeServer.c": {
+      "source": "paho/MQTTPacket/MQTTUnsubscribeServer.c",
+      "upstream_sha256": "a973e92a65592f64ea5afe4c6ebeadddcddcff812c08e010499b49eeed1ad2ae",
+      "sha256": "4b682e2ebac6db59ac724f94e08c5020772cab3fe586995dd8c4da3467bb2f5d",
+      "historical_source_snapshot_sha256": "d646deb4bed3c14cd219f467b005f88214a0f6b8857049f51fada8520b3bcd9e"
+    },
+    "protocol/paho/MQTTPacket/MQTTPacket.h": {
+      "source": "paho/MQTTPacket/MQTTPacket.h",
+      "upstream_sha256": "8a565113d573228b923e17d36a07dc91d6b895b2edc83a718cef41296d723aed",
+      "sha256": "f454bec87a4e22a82ff9fbc1e50cc84cd234c2e83c1ad6385ee87c765d49409e",
+      "historical_source_snapshot_sha256": "d646deb4bed3c14cd219f467b005f88214a0f6b8857049f51fada8520b3bcd9e"
+    },
+    "protocol/paho/MQTTPacket/MQTTSubscribe.h": {
+      "source": "paho/MQTTPacket/MQTTSubscribe.h",
+      "upstream_sha256": "4d93884552919acfa6b0cbf7a7259e6325635c19967032f60da81beeaaaf217f",
+      "sha256": "60bb99e9754e0519c7e7d1e38b639ed8a90a32ccb317630cb67f4f6388479724",
+      "historical_source_snapshot_sha256": "d646deb4bed3c14cd219f467b005f88214a0f6b8857049f51fada8520b3bcd9e"
+    },
+    "protocol/paho/MQTTPacket/MQTTSerializePublish.c": {
+      "source": "paho/MQTTPacket/MQTTSerializePublish.c",
+      "upstream_sha256": "ecae85cdf123987ded96d7637f1fc10d5b065090473134a34d61e8b72ef18847",
+      "sha256": "2c954bfb9a475eb6c27df6c3db560d78e41df2b6a9a0a2af7c9bebec48e7d7f4",
+      "historical_source_snapshot_sha256": "d646deb4bed3c14cd219f467b005f88214a0f6b8857049f51fada8520b3bcd9e"
+    },
+    "protocol/paho/MQTTPacket/MQTTUnsubscribeClient.c": {
+      "source": "paho/MQTTPacket/MQTTUnsubscribeClient.c",
+      "upstream_sha256": "a5689fad6adf12d05883efec6c4ed009c6cfcdfab6f2c71322990b81e7656430",
+      "sha256": "b562cbcceb1295fd5d22232257abf68a85012d3449410b7a2f481d2b11ac3b9f",
+      "historical_source_snapshot_sha256": "d646deb4bed3c14cd219f467b005f88214a0f6b8857049f51fada8520b3bcd9e"
+    },
+    "protocol/paho/MQTTPacket/MQTTConnectClient.c": {
+      "source": "paho/MQTTPacket/MQTTConnectClient.c",
+      "upstream_sha256": "e9b3461f6c3dd975a6dca94ad286480576de0d172ffb72318fae511b76fc3c9f",
+      "sha256": "4034b264b71b02626acc01409f94a117f6e2243e301c0a424e60e8b246dcb2b9",
+      "historical_source_snapshot_sha256": "d646deb4bed3c14cd219f467b005f88214a0f6b8857049f51fada8520b3bcd9e"
+    },
+    "protocol/paho/MQTTPacket/MQTTPublish.h": {
+      "source": "paho/MQTTPacket/MQTTPublish.h",
+      "upstream_sha256": "dd84e49853c13abc0e1e2ec23220185691dbb8f9e4fabe3ed789615efbbdf962",
+      "sha256": "524c4634a82a76c1974e9c2418f3eb7ae4b846e45a37bd7c66801aeeeaba7393",
+      "historical_source_snapshot_sha256": "d646deb4bed3c14cd219f467b005f88214a0f6b8857049f51fada8520b3bcd9e"
+    },
+    "protocol/paho/MQTTPacket/MQTTSubscribeClient.c": {
+      "source": "paho/MQTTPacket/MQTTSubscribeClient.c",
+      "upstream_sha256": "9e6dcfd502e7dd79e8cc930529c033675c1545e1b79d6be9cb0a2fd7055198bd",
+      "sha256": "2314caf4e629d33cbdcb99b2a63890649effd17b2715d5221bd9785d97942d59",
+      "historical_source_snapshot_sha256": "d646deb4bed3c14cd219f467b005f88214a0f6b8857049f51fada8520b3bcd9e"
+    },
+    "protocol/paho/MQTTPacket/MQTTFormat.c": {
+      "source": "paho/MQTTPacket/MQTTFormat.c",
+      "upstream_sha256": "bc3979ff713721d079107bfb07928e45a6a6ee97b0db2303ec2d27e649adcbcd",
+      "sha256": "bea71905dd1457e6d75085f306e80869321e760c85ad11a34b4cdb86b58769d4",
+      "historical_source_snapshot_sha256": "d646deb4bed3c14cd219f467b005f88214a0f6b8857049f51fada8520b3bcd9e"
+    },
+    "protocol/paho/MQTTPacket/MQTTSubscribeServer.c": {
+      "source": "paho/MQTTPacket/MQTTSubscribeServer.c",
+      "upstream_sha256": "c7111e232b7085f23814cb943c05533db79b73942fa6b094c327aaa8e0344ee2",
+      "sha256": "8033c7e96cb85d6e94fa763219943da364a6b94570dbbb1b1fa1ca382f9a3d53",
+      "historical_source_snapshot_sha256": "d646deb4bed3c14cd219f467b005f88214a0f6b8857049f51fada8520b3bcd9e"
+    },
+    "protocol/paho/MQTTPacket/MQTTPacket.c": {
+      "source": "paho/MQTTPacket/MQTTPacket.c",
+      "upstream_sha256": "ab6fedda38e4d5f16653fa51585e017049ce55bd823f3f563bfe4e70c2ee100b",
+      "sha256": "04c987eba1d507d00039acc30c2f4d499d84bcfa8bb8752b97cc7ba44ed5bb0f",
+      "historical_source_snapshot_sha256": "d646deb4bed3c14cd219f467b005f88214a0f6b8857049f51fada8520b3bcd9e"
+    },
+    "protocol/paho/MQTTPacket/MQTTDeserializePublish.c": {
+      "source": "paho/MQTTPacket/MQTTDeserializePublish.c",
+      "upstream_sha256": "b17660cd52db61261aa2777eeb14e243d700a4dcfeec8b138aa6b7f507964504",
+      "sha256": "fdd881a73e49ce6b5c8da7086800f1f3c845cec901108d2e966ff4e2a4b50eaa",
+      "historical_source_snapshot_sha256": "d646deb4bed3c14cd219f467b005f88214a0f6b8857049f51fada8520b3bcd9e"
+    },
+    "protocol/paho/MQTTPacket/MQTTFormat.h": {
+      "source": "paho/MQTTPacket/MQTTFormat.h",
+      "upstream_sha256": "00b1730f85981f1180138961969cb4e9b5fa372744427b002c75bb006673c92d",
+      "sha256": "fd972d342a69ea67986f26857b93f7c847926c8424053921927552c7a0fd2155",
+      "historical_source_snapshot_sha256": "d646deb4bed3c14cd219f467b005f88214a0f6b8857049f51fada8520b3bcd9e"
+    },
+    "protocol/paho/MQTTPacket/StackTrace.h": {
+      "source": "paho/MQTTPacket/StackTrace.h",
+      "upstream_sha256": "f3dd956623aa1eb3fcfbbaa9ee4000fa912781fac76d4201f818fe01a67e313d",
+      "sha256": "01fa6119fd9eddd2d9e46bad92895edc6316f1845e7a878b395d1f00ec7e2b9d",
+      "historical_source_snapshot_sha256": "d646deb4bed3c14cd219f467b005f88214a0f6b8857049f51fada8520b3bcd9e"
+    },
+    "protocol/paho/MQTTPacket/MQTTUnsubscribe.h": {
+      "source": "paho/MQTTPacket/MQTTUnsubscribe.h",
+      "upstream_sha256": "2720cd3669a7c2b5b89118b8752bf59524e9ba055fdd4903be1581daf291f01c",
+      "sha256": "0797b90cc51a7ef3e3ed680be3b3205cffe33fb5af8a73da875d02ba3401bef8",
+      "historical_source_snapshot_sha256": "d646deb4bed3c14cd219f467b005f88214a0f6b8857049f51fada8520b3bcd9e"
+    },
+    "protocol/paho/MQTTPacket/MQTTConnect.h": {
+      "source": "paho/MQTTPacket/MQTTConnect.h",
+      "upstream_sha256": "a50261514d83def820da60c04e5694e68b8f1560e2b1663aaff053b2c36976a5",
+      "sha256": "9a3fa992b612fe9564a8cd7337ba13b76d0be996beb06765b62ff033bda41c96",
+      "historical_source_snapshot_sha256": "d646deb4bed3c14cd219f467b005f88214a0f6b8857049f51fada8520b3bcd9e"
+    },
+    "web/shared/style.css": {
+      "source": "frontend/common/web/style.css",
+      "upstream_sha256": "a7169a9855b43394772a1ecb7445e79dbef9cc9ff6af9a9b8b9d254c83c887f3",
+      "sha256": "a7169a9855b43394772a1ecb7445e79dbef9cc9ff6af9a9b8b9d254c83c887f3"
+    },
+    "web/shared/appearance.js": {
+      "source": "frontend/common/web/appearance.js",
+      "upstream_sha256": "afdf9672e22338b82d1ac7ffa944e33cade436e4bd00b3a57ca8e45d710fb352",
+      "sha256": "afdf9672e22338b82d1ac7ffa944e33cade436e4bd00b3a57ca8e45d710fb352"
+    },
+    "web/shared/i18n.js": {
+      "source": "frontend/common/web/i18n.js",
+      "upstream_sha256": "bef05b39aa91b32e4aaf555349c5bddd686a0f6925acd3ca4d17efc4589690b3",
+      "sha256": "bef05b39aa91b32e4aaf555349c5bddd686a0f6925acd3ca4d17efc4589690b3"
+    },
+    "web/shared/service.js": {
+      "source": "frontend/common/web/service.js",
+      "upstream_sha256": "198e420f5341765a0d8f599be59504d586be84d5cbb2b367f93f12ccf4acef27",
+      "sha256": "f2dd2a3891cfd6b678767cc7dea324034fa363f833c9b81db8b4bb04aa1e265b"
+    },
+    "web/shared/ui.js": {
+      "source": "frontend/common/web/ui.js",
+      "upstream_sha256": "f3875cc24c90a04ce40e4b2aa42b264a4806dbd67e9ce22cd8784d561b746d63",
+      "sha256": "f3875cc24c90a04ce40e4b2aa42b264a4806dbd67e9ce22cd8784d561b746d63"
+    },
+    "web/shared/provision.js": {
+      "source": "frontend/common/web/provision.js",
+      "upstream_sha256": "f8a4d2e54b0ba8eaadd625ff3b8d956e7a312218f0f6df97a4385cf83a44dd95",
+      "sha256": "f8a4d2e54b0ba8eaadd625ff3b8d956e7a312218f0f6df97a4385cf83a44dd95"
+    },
+    "web/shared/automation.js": {
+      "source": "frontend/common/web/automation.js",
+      "upstream_sha256": "f7e242efc045a52dd8895f6e8a55eb43d8d61a82c4084bb7f37f5662cf0936f2",
+      "sha256": "f7e242efc045a52dd8895f6e8a55eb43d8d61a82c4084bb7f37f5662cf0936f2"
+    },
+    "protocol/typed_wire.h": {
+      "source": "common/typed_wire.h",
+      "upstream_sha256": "d50684618440ce52821f6335a3c40fda09669122f675e0d47bba1a5a66e8736c",
+      "sha256": "489a66a757f93d4a3a474dfa846e8185068d72093bb60dfc67e010b14424056c"
+    },
+    "protocol/typed_wire.inc": {
+      "source": "common/typed_wire.inc",
+      "upstream_sha256": "41bfd130e20dc5f5f6447ae08b1f69e127f4400c465561d6a7f559036778e43d",
+      "sha256": "e7228ae882d60460ffd6bc92c98af2f398e9abef40e0e1216deed571de783e5e"
+    },
+    "protocol/wire_format.h": {
+      "source": "common/wire_format.h",
+      "upstream_sha256": "e921d1f080a988b6b6429a7bb34b790fff879e847bf3a400af9b93d99025e209",
+      "sha256": "7574eae2abc26370b6466e8c90d9bfc275eb5eac15c6713dd495b9a5bc563c0d"
+    },
+    "protocol/wire_primitives.inc": {
+      "source": "common/wire_primitives.inc",
+      "upstream_sha256": "85775c49328cbdb7b461bc98fadb731a840545754a1eaaaaae47eaa93210d875",
+      "sha256": "e2386e48b4fbeb86d659629d7e18e42dc3570fa3d3913ab4275de5b657e33363"
+    },
+    "protocol/binary_reader.h": {
+      "source": "common/binary_reader.h",
+      "upstream_sha256": "fa70953364ea9131ebb914dc62b13b11f10c529244bba554f7fe26ce34fa0d4b",
+      "sha256": "eaffea0bdece20ee6e29f819e96bf42c05603339316a03fe9e10e3d1b1c70b79"
+    },
+    "protocol/binary_reader.inc": {
+      "source": "common/binary_reader.inc",
+      "upstream_sha256": "163a27532743fe608adb10b3e2e3195485cc94752b82449e66aa1573f7e8ba8b",
+      "sha256": "a27d7a0218f97a864baac97c7c650383d8b751cc11679cbce5041e19f308f424"
+    },
+    "protocol/status_request.h": {
+      "source": "common/status_request.h",
+      "upstream_sha256": "81116ffaa7756bce9f02e198b75f4b84c2eaf419bc3dbf9fb68c9e3e19012154",
+      "sha256": "81116ffaa7756bce9f02e198b75f4b84c2eaf419bc3dbf9fb68c9e3e19012154",
+      "historical_source_snapshot_sha256": "d646deb4bed3c14cd219f467b005f88214a0f6b8857049f51fada8520b3bcd9e"
+    },
+    "protocol/local_auth.h": {
+      "source": "common/local_auth.h",
+      "upstream_sha256": "1ad87c5e38551f1395b09711694f0a580b9bce0565e8ca307ae8f07bfd569c61",
+      "sha256": "7424b7df561de9962a7ed8e7a56ecbfb9b9c80a5b621099e5c11cc18af26e9fa"
+    },
+    "protocol/local_auth.c": {
+      "source": "common/local_auth.c",
+      "upstream_sha256": "853ee7649cebe7e50d1ffbec03d958952b8d0116366b30968dcc4499cd41befb",
+      "sha256": "7fa17abf944d50de23491e4db6698240684310f85430b5eb2a8518870428dd30"
+    },
+    "protocol/json_number_checked.h": {
+      "source": "common/json_number_checked.h",
+      "upstream_sha256": "6d01c4fd18cc9db739ed4918d2c18628182a7179ba2a92c7f21c1f3718c3cd43",
+      "sha256": "6d01c4fd18cc9db739ed4918d2c18628182a7179ba2a92c7f21c1f3718c3cd43"
+    },
+    "protocol/http_cors.h": {
+      "source": "common/http_cors.h",
+      "upstream_sha256": "ce7e7c808b4c6ebd3246c9c8e727e9045313f4ee22afcada7a1059b420d4eac7",
+      "sha256": "ce7e7c808b4c6ebd3246c9c8e727e9045313f4ee22afcada7a1059b420d4eac7"
+    },
+    "web/index.html": {
+      "source": "frontend/S30/web/index.html",
+      "upstream_sha256": "b6de6fcb3d835e4d1f53f84e788c26adb9d14271a48f700319467b921f6c5a8c",
+      "sha256": "b6de6fcb3d835e4d1f53f84e788c26adb9d14271a48f700319467b921f6c5a8c"
+    },
+    "web/page.js": {
+      "source": "frontend/S30/web/page.js",
+      "upstream_sha256": "6971f2f5b15467713ec335dd88db7a80a25a4764f1e2dbb2291dfdf7951f297b",
+      "sha256": "6971f2f5b15467713ec335dd88db7a80a25a4764f1e2dbb2291dfdf7951f297b"
+    },
+    "protocol/udp/packet.h": {
+      "source": "common/feature_wire.inc",
+      "upstream_sha256": "7165ce70a5c12ffafa7ce03180a4f996898129a46634da8dd43ea41720231922",
+      "extraction": "prefix before static bool feature_parse(",
+      "base_sha256": "7165ce70a5c12ffafa7ce03180a4f996898129a46634da8dd43ea41720231922",
+      "sha256": "03d5dcf2e4a2fdaa3b1f08a9937371f94cfd14834bab9e2b60a36e8fc54cc1de",
+      "historical_source_snapshot_sha256": "d646deb4bed3c14cd219f467b005f88214a0f6b8857049f51fada8520b3bcd9e"
+    },
+    "protocol/diagnostics_ids.h": {
+      "source": "common/diagnostics_ids.h",
+      "upstream_sha256": "ee00543715ed947d6f05d1f78cd5d3f81da247df42657b4d7ec6c27d45b37111",
+      "sha256": "ee00543715ed947d6f05d1f78cd5d3f81da247df42657b4d7ec6c27d45b37111"
+    },
+    "web/shared/diagnostics-schema.js": {
+      "source": "frontend/common/web/diagnostics-schema.js",
+      "upstream_sha256": "89c47f5cbe3dbc9e1f4216e239be44b40f18b23dc1448f649ca5a191d14d24c1",
+      "sha256": "89c47f5cbe3dbc9e1f4216e239be44b40f18b23dc1448f649ca5a191d14d24c1"
+    },
+    "protocol/mqtt/discovery_mp.h": {
+      "source": "common/mqtt/discovery_mp.h",
+      "upstream_sha256": "85a968ce242d9f4f9e9f030895a23d58943437d59e9bdebc8da853ced279a83c",
+      "sha256": "da8163ba45fa3d0f0a98e43faa90a426c44ead550ba0125e5699f5d9ee9a9c5e"
+    }
+  },
+  "paho_patch_stack": {
+    "TC1/mqtt-handlers-sdk.patch": "2dbab7d216a07835bd49db5c00b51f5d16abd1b4cee31daa31c1d27927a9da92",
+    "common/mqtt-mico36.patch": "b603e62ab2507cd5b689c9f979ffd7bd7a84b4961104fc21efdc5d6016453978",
+    "common/mqtt-publish-bounds.patch": "df16a2b40e87d25a245dccebac517126ff82fefd4b73ecf805adf6af8ab8e06b",
+    "common/mqtt-socket-close.patch": "111e8607ede01bddd25a670100166ad7be20b356a2366a2ff40fda2beabce298",
+    "M1/mqtt-packet-deadline.patch": "c9ef943014d85baa6fea466e0dc20da02e00b851112e8022163c3ad09f541450",
+    "common/mqtt-response-deadline.patch": "690ea92afd622446981b11c756d46494fc1dfd76cf21660e4edd4b6aa841d8cb",
+    "common/mqtt-buffer-storage.patch": "b33074d1187f8b54a6dadd732ea2c7115567468075c02e04aeba7c2b976ee991",
+    "common/mqtt-receive-recovery.patch": "027dae055dd2a61c13dd3bf73e70aef6d7521fec3ab40a27ff710c6eaa5d4ae8",
+    "common/mqtt-post-send-workspace.patch": "80b459e721c3f88a021579fde6df5a566a9c358dc68d97bb5d08cc49fc7c1870"
+  },
+  "adaptation_patch_sha256": {
+    "protocol/lab-openbeken.patch": "4027fcd650c11fc64e0f08a9ccbc49ef62345f2d2b72d83ac910b03ef5a31ad9",
+    "web/frontend-openbeken.patch": "95449ee17d4538deda6bb72717e4a5f88272060d32f3d2fdd0bacc796796f426"
+  },
+  "source_snapshot": {
+    "file": "shared-source-snapshot-5fa481c.tar.gz",
+    "sha256": "809d42290004a4234f5aee1aa346cef889a96498eb1eec011a2050a7f0bcedb3",
+    "entries": 68
+  },
+  "auth_bundle_sources": {
+    "tools/bundle_auth.cjs": "82a8655edca9459b60668e089c495c1bb1ebcbded01e84e06867bbadb215e79e",
+    "frontend/src/deviceAuth.js": "9f5a916a2392149da57365960af9011c92a13d98b7840e233f423f7fed91342f",
+    "frontend/src/deviceWire.js": "3fb50231bdf778139f632e52f8ca119ed389f28985c5323860027a798df02461",
+    "frontend/src/wireCodec.js": "d9273e1e19a6791a82a0f369b9afed1259a883bf42d10e915c7f7ba3f25db6c1",
+    "common/web/auth.js": "cc157c8b3f158aff080ddc9b871f4b4fe9df7fd277e80d4a257cd8b893e2554d"
+  }
+}

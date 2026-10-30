@@ -20,3 +20,5 @@ static void *mico_system_context_get(void){return NULL;}
 static void mico_system_power_perform(void*p,int state){(void)p;assert(state==1);reboots++;job=false;}
 int ph_http_stop(void){return 0;}
 static const unsigned char web_index_html[]={31,139,1,2};
+
+void tc1_config_diagnostics_mp(ph_writer*w){phw_bool(w,"config_recovery",true);phw_u32(w,"config_source_version",12);phw_u32(w,"config_auth_magic",0xffffffffu);phw_u32(w,"config_auth_version",0xffffffffu);}

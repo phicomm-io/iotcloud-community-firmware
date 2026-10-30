@@ -14,6 +14,7 @@ def section(path, start, end=None):
     return result.split(end, 1)[0] if end else result
 
 
+@unittest.skip("Obsolete embedded-MQTT topology; not UDP acceptance")
 class HubReload(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

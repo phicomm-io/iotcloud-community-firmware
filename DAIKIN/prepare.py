@@ -17,7 +17,7 @@ variant = 'hub' if env['PIOENV'] == 'bry88ab-hub' else 'full'
 
 def compress_text(content):
     import zopfli.gzip
-    compressed = zopfli.gzip.compress(content, numiterations=15)
+    compressed = zopfli.gzip.compress(content, numiterations=500)
     if gzip.decompress(compressed) != content:
         raise RuntimeError('Hub frontend gzip round-trip mismatch')
     return compressed

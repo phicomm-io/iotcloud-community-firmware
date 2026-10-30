@@ -343,7 +343,6 @@ static int cleanup_discovery(void) {
 }
 static bool cleanup_pending;
 static char client_id[192];
-static uint32_t snapshot_at;
 static bool tc1_topic_bytes(const MQTTString *topic,const char **bytes,size_t *length)
 {
     if(!topic)return false;
@@ -408,7 +407,6 @@ static int session_initial(void *context) {
     (void)context;
     PowerSampleInvalidate();
     cleanup_pending=true;discovery_index=state_index=publication_cursor=0;synchronous_error=0;
-    snapshot_at=mico_rtos_get_time()-5000u;
     return account.mode?service_mqtt_capabilities(service_sender,&account):MQTT_SUCCESS;
 }
 static int session_cycle(void *context) {
@@ -428,7 +426,7 @@ static int session_cycle(void *context) {
     bool sensor_handled;
     int sensor_rc=power_sensor_cycle(&sensor_handled);
     if(sensor_handled)return sensor_rc;
-    bool status_due=account.mode && (uint32_t)(mico_rtos_get_time()-snapshot_at)>=5000;
+    bool status_due=account.mode && service_mqtt_status_due(false);
     /* A slow PUBACK can make both producers due on every turn. Alternate
      * completed publication batches instead of starving either one. */
     if(status_due && (!power_turn || !__atomic_load_n(&power_pending,__ATOMIC_ACQUIRE))) {
@@ -436,7 +434,6 @@ static int session_cycle(void *context) {
          * after a real send. MORE keeps the typed snapshot due for retry. */
         power_turn=true;
         int snapshot_rc=service_mqtt_snapshot(service_sender,&account);
-        if(snapshot_rc==MQTT_SUCCESS)snapshot_at=mico_rtos_get_time();
         return snapshot_rc;
     }
     if(power_requested()) {

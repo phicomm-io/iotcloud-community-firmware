@@ -32,7 +32,7 @@ typedef struct {
     uint64_t response_complete, response_failed, healthy_response, final_recovery;
     uint64_t queued_response, body_response, wait_response;
     uint64_t busy_response, busy_send_failed;
-    uint64_t body_completed, wait_retries, three_slot_rounds;
+    uint64_t body_completed, wait_retries, waiting_full_rounds;
     uint64_t scenario[7], scenario_success[7];
     unsigned max_occupied;
 } totals;
@@ -212,7 +212,7 @@ static void app_release(ph_http_exchange *exchange, bool sent)
             ++count.wait_response;
     } else ++count.response_failed;
 }
-static unsigned app_admission(void) { return 3; }
+static unsigned app_admission(void) { return 4; }
 
 static const ph_http_io fake_io = {
     io_now, io_open, io_limit, io_accept, io_nonblock, io_wait, io_recv,
@@ -285,10 +285,11 @@ static int slot_for_fd(unsigned fd)
             return (int)i;
     return -1;
 }
-static void run_three_slot_cycle(unsigned *fd_cursor, uint32_t round_index)
+static void run_waiting_full_cycle(unsigned *fd_cursor, uint32_t round_index)
 {
     unsigned owner = next_fd(fd_cursor);
     unsigned queued = next_fd(fd_cursor);
+    unsigned queued_second = next_fd(fd_cursor);
     unsigned busy = next_fd(fd_cursor);
     bool use_body = (round_index & 1u) == 0;
     static const char body_head[] =
@@ -313,6 +314,19 @@ static void run_three_slot_cycle(unsigned *fd_cursor, uint32_t round_index)
         step();
     assert(server.queued >= 0 && server.slots[server.queued].fd == (int)queued);
     assert(server.slots[server.queued].state == PH_SLOT_READY);
+
+    /* Fill both waiting slots before asking the fourth socket to return busy.
+     * Waiting requests must not acquire a business lease or replace the FIFO. */
+    append_bytes(queued_second, queued_request, sizeof(queued_request) - 1);
+    queue_fd(queued_second);
+    int second_slot = -1;
+    for (unsigned i = 0; i < 128 && endpoints[queued_second].live; ++i) {
+        second_slot = slot_for_fd(queued_second);
+        if (second_slot >= 0 && server.slots[second_slot].state == PH_SLOT_READY) break;
+        step();
+    }
+    assert(second_slot >= 0 && server.slots[second_slot].state == PH_SLOT_READY);
+    assert(server.slots[server.queued].fd == (int)queued && !server.slots[second_slot].lease);
 
     bool fail_busy_send = round_index % 11u == 0;
     endpoints[busy].send_again = fail_busy_send ? 0 : round_index % 2u;
@@ -341,22 +355,24 @@ static void run_three_slot_cycle(unsigned *fd_cursor, uint32_t round_index)
         assert(strstr(endpoints[busy].tx, "HTTP/1.1 503 Service Unavailable\r\n"));
         ++count.busy_response;
     }
-    ++count.three_slot_rounds;
-    assert(count.max_occupied >= 3);
+    ++count.waiting_full_rounds;
+    assert(count.max_occupied >= 4);
 
     if (use_body) {
         static const char body[] = "hello";
         append_bytes(owner, body, sizeof(body) - 1);
     }
-    for (unsigned i = 0; i < 3000 && (endpoints[owner].live || endpoints[queued].live); ++i)
+    for (unsigned i = 0; i < 3000 && (endpoints[owner].live || endpoints[queued].live || endpoints[queued_second].live); ++i)
         step();
-    assert(!endpoints[owner].live && !endpoints[queued].live);
+    assert(!endpoints[owner].live && !endpoints[queued].live && !endpoints[queued_second].live);
     assert(strstr(endpoints[queued].tx, "HTTP/1.1 200 OK\r\n"));
+    assert(strstr(endpoints[queued_second].tx, "HTTP/1.1 200 OK\r\n"));
     assert(server.active == -1 && server.queued == -1);
     for (unsigned i = 0; i < PH_HTTP_CLIENT_SLOTS; ++i)
         assert(server.slots[i].state == PH_SLOT_FREE && !server.slots[i].lease);
     assert(endpoints[owner].close_count == 1);
     assert(endpoints[queued].close_count == 1);
+    assert(endpoints[queued_second].close_count == 1);
     assert(endpoints[busy].close_count == 1);
     assert(count.lease_acquired == count.lease_released);
 }
@@ -461,7 +477,7 @@ static void run_round(unsigned *fd_cursor, uint32_t round_index)
     assert(count.lease_acquired == count.lease_released);
     assert(count.closed == count.accepted);
     if (round_index % 97u == 0)
-        run_three_slot_cycle(fd_cursor, round_index);
+        run_waiting_full_cycle(fd_cursor, round_index);
 }
 
 static double monotonic_seconds(void)
@@ -500,7 +516,7 @@ int main(int argc, char **argv)
     memset(&server, 0, sizeof(server));
     memset(endpoints, 0, sizeof(endpoints));
     memset(&count, 0, sizeof(count));
-    assert(ph_http_server_open(&server, &fake_io, &fake_app, 3));
+    assert(ph_http_server_open(&server, &fake_io, &fake_app, 4));
     double started = monotonic_seconds();
     while (count.rounds < min_rounds || monotonic_seconds() - started < seconds) {
         run_round(&cursor, (uint32_t)count.rounds);
@@ -524,10 +540,10 @@ int main(int argc, char **argv)
     assert(count.healthy_response == count.rounds);
     for (unsigned i = 0; i < 7; ++i)
         assert(count.scenario[i] == count.scenario_success[i]);
-    assert(count.three_slot_rounds > 0 && count.busy_response > 0);
+    assert(count.waiting_full_rounds > 0 && count.busy_response > 0);
     assert(count.busy_send_failed > 0);
     assert(count.body_response > 0 && count.wait_response > 0);
-    assert(count.queued_response == count.three_slot_rounds);
+    assert(count.queued_response == count.waiting_full_rounds * 2);
     assert(count.body_completed > 0 && count.wait_retries > 0);
     assert(server.diagnostics.slot_bytes == sizeof(ph_http_slot));
     assert(server.diagnostics.server_bytes == sizeof(ph_http_server));
@@ -546,7 +562,7 @@ int main(int argc, char **argv)
            count.response_failed, count.final_recovery, count.max_occupied);
     printf("scenarios healthy=%" PRIu64 " body=%" PRIu64 " malformed=%" PRIu64
            " send_error=%" PRIu64 " eof=%" PRIu64 " partial_eof=%" PRIu64
-           " recv_error=%" PRIu64 " three_slot=%" PRIu64
+           " recv_error=%" PRIu64 " waiting_full=%" PRIu64
            " body_lease=%" PRIu64 " wait_lease=%" PRIu64
            " queued_ok=%" PRIu64 " busy_503=%" PRIu64
            " busy_send_error=%" PRIu64
@@ -554,7 +570,7 @@ int main(int argc, char **argv)
            " all_completed=yes\n",
            count.rounds, count.scenario[1], count.scenario[3],
            count.scenario[2], count.scenario[4], count.scenario[5],
-           count.scenario[6], count.three_slot_rounds, count.body_response,
+           count.scenario[6], count.waiting_full_rounds, count.body_response,
            count.wait_response, count.queued_response, count.busy_response,
            count.busy_send_failed,
            count.body_completed, count.wait_retries);

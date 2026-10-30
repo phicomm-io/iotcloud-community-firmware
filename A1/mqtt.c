@@ -452,16 +452,25 @@ static bool same_connection(const a1_config_t *a, const a1_config_t *b)
 /* The broad virtual-device subscription also echoes our own live telemetry.
  * Admit only leaves with a deferred business consumer; a broker's transport
  * PUBACK must not turn outgoing state into a flood of no-op commands. */
-static bool feature_ingress_topic(const char *topic, size_t length)
+static bool feature_ingress_topic(const char *topic, size_t length, bool retained)
 {
-    for (unsigned i = 0; i < 3; ++i)
-        if (feature_filters[i][0] && ph_mqtt_topic_matches(feature_filters[i], topic, length))
-            return true; /* Link RPC request/response and retained address. */
-    size_t filter_length = strlen(feature_filters[3]);
-    if (filter_length < 2)
+    const char *root_filter = NULL;
+    for (unsigned i = 0; i < FEATURE_MQTT_A1_FILTER_MAX; ++i) {
+        const char *filter = feature_filters[i];
+        if (!filter[0] || !ph_mqtt_topic_matches(filter, topic, length))
+            continue;
+        size_t n = strlen(filter);
+        if (n >= 2 && !strcmp(filter + n - 2, "/#"))
+            root_filter = filter;
+        else
+            /* Address discovery consumes retained messages. RPC requests do
+             * not; neither may turn retained controls into business work. */
+            return !retained || (n >= 10 && !strcmp(filter + n - 10, "/address/+"));
+    }
+    if (!root_filter || retained)
         return false;
-    size_t root_length = filter_length - 2; /* Session-owned root + "/#". */
-    if (length <= root_length || memcmp(topic, feature_filters[3], root_length) ||
+    size_t root_length = strlen(root_filter) - 2;
+    if (length <= root_length || memcmp(topic, root_filter, root_length) ||
         topic[root_length] != '/')
         return false;
     const char *leaf = topic + root_length + 1;
@@ -500,7 +509,7 @@ static bool ingress_accept(MessageData *d,messageHandler handler) {
         MQTTString *t = d->topicName;
         const char *topic = t->cstring ? t->cstring : t->lenstring.data;
         size_t length = t->cstring ? strlen(t->cstring) : (size_t)t->lenstring.len;
-        return feature_ingress_topic(topic, length);
+        return feature_ingress_topic(topic, length, d->message->retained);
     }
     if(d->message->retained)return false;
     if(topic_is(d,"command") || topic_is(d,"ha/command") || topic_is(d,"ota/set") || topic_is(d,"fan/set") ||
@@ -649,17 +658,16 @@ static int session_cycle(void *context) {
             bool sensor_handled;
             int sensor_rc=fan_sensor_cycle(on,speed,&sensor_handled);
             if(sensor_handled)return sensor_rc;
-            if (filter_priority(a1_filter_mqtt_due(&filter, &sent_filter, mico_rtos_get_time(), filter_sent_at))) {
+            /* Native and HA are independent producers. HA's one-second
+             * fresh-air report cannot acknowledge or postpone native state. */
+            if (filter_priority(service_mqtt_status_due(a1_filter_mqtt_due(&filter, &sent_filter, mico_rtos_get_time(), filter_sent_at)))) {
                 rc = service_mqtt_snapshot(publish_bytes, &account);
                 if (rc == MQTT_SUCCESS) {
                     sent_filter = filter; filter_sent_at = mico_rtos_get_time();
-                    state_pending &= ~(1u << 6); state_seen |= 1u << 6;
-                    sent = state_seen == 0x7fu;
                 }
             } else if (state_pending) {
                 bool snapshot_sent;
                 rc=states_step(&current,&state,false,&snapshot_sent);
-                if (snapshot_sent) { sent_filter = filter; filter_sent_at = mico_rtos_get_time(); }
             }
             /* Pending native work retains its cursor, but cannot suppress the
              * independent feature producer during resource backoff or quota. */
@@ -713,7 +721,11 @@ static void mqtt_worker(mico_thread_arg_t arg) {
 OSStatus a1_mqtt_start(void)
 {
     uint32_t generation=ph_mqtt_startup_prepare(&mqtt_startup);
+    /* GCC stack gates include a 4 KiB SDK/RTOS reserve. Keep this allocation
+     * at 12 KiB: live startup can lack a contiguous 16 KiB heap block. */
     OSStatus rc=mico_rtos_create_thread(&mqtt_owner_thread,MICO_APPLICATION_PRIORITY,
-        "a1_mqtt",mqtt_worker,16384,generation);
-    ph_mqtt_startup_publish(&mqtt_startup,generation,rc==kNoErr);return rc;
+        "a1_mqtt",mqtt_worker,12288,generation);
+    ph_mqtt_startup_publish(&mqtt_startup,generation,rc==kNoErr);
+    if(rc!=kNoErr)mqtt_error("thread",rc);
+    return rc;
 }

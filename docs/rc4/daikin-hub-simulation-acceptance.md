@@ -1,4 +1,7 @@
-# DAIKIN rc.4 hub simulation acceptance
+# Historical DAIKIN embedded-MQTT simulation acceptance
+
+> Historical topology only. The following PASS evidence predates the removal of the embedded broker and does not accept the current mDNS/UDP architecture. The current production source has no internal MQTT/TCP/WebSocket server. See `DAIKIN/docs/hub-lan.md` and `DAIKIN/tests/HUB_LAN_MIGRATION.md` for current scope and remaining hardware gates.
+
 
 Production snapshot: DAIKIN at `af03637`, byte-identical to root `05c328c`.
 This change adds tests and CI wiring; it does not alter firmware behavior,

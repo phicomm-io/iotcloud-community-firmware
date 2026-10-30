@@ -117,3 +117,43 @@ preserve the first response and return to zero owned bytes. Log:
 The explicit legacy SDK host entry passed 5 Python library tests + 3 C binaries,
 with live=0 after10000 serial +4000 concurrent cycles. It is historical library
 evidence, not a product JSON dependency (`/tmp/rc4-legacy-sdk-final.log`).
+
+## Selected integration: real-broker entry
+
+`tests/build_host.sh` now compiles the complete A1/M1/TC1 MQTT workers, shared
+service/core/session and pinned Paho stack without JSON headers or the JSON DOM
+library. The host product adapter supplies fake peripherals; it does not stand
+in for the product validation/storage gates above. `tests/test_mqtt_v2.py` uses
+host-only `msgpack==1.1.2` as an independent wire decoder and an isolated
+Mosquitto2.0.22 broker. It covers native discovery, binary commands containing
+NUL, read-after-write, retained command rejection, duplicate receipts/conflicts,
+non-retained replies/retained snapshots, HA JSON templates/state and birth
+rediscovery. TC1's historical topic namespace retains its HA identity while
+using the same MP command protocol; this does not restore old text/JSON control.
+
+The old JSON simulator is retained as a porting reference and is no longer
+invoked by the released-protocol broker entry. In particular, no host JSON DOM
+shim is added to the new firmware to satisfy its deleted wire assumptions.
+The following mappings are component/runtime evidence, not a claim that the old
+multi-process broker+UDP scenarios have all been re-executed unchanged:
+
+| Historical broker scenario | Current functional gate and boundary |
+| --- | --- |
+| `test_a1_filter_mqtt.py`: filter storage/reset/lifetime, usage timer, grouped identity and HA birth | `test_a1_filter_storage`, `test_runtime_mqtt_mp`, `test_ha_runtime_contract` and complete A1 worker broker birth/control above; the old 75-second filter-timer+broker combination is not claimed by the shorter broker entry |
+| `test_m1_co2_mqtt.py`, `test_m1_pressure_mqtt.py`: independent availability, HA optional discovery, stale/recovery and units | `test_numeric_feed`, `test_m1_barometer`, `test_m1_barometer_captures`, `test_ha_runtime_contract`, `test_runtime_mqtt_mp`; full M1 worker/HA broker startup above. Timed optional-sensor+broker combinations remain separate acceptance |
+| `test_m1_external_co2_mqtt.py`, `test_m1_dual_display_mqtt.py`: metadata, remote sources, lane selection, TTL, data rejection and expiry | Complete retained `test_m1_display_source`, `test_m1_display_format`, `test_m1_generic_fields`, `test_m1_display_mp`, `test_sensor_mp`, `test_runtime_session_mp`; actual producer/consumer native bytes, not old JSON samples |
+| `test_a1_auto_mqtt.py`, `test_a1_co2_mqtt.py`: mode/manual fallback, caps, PID/hysteresis and sensor freshness | `test_native_features` retains engine/runtime/control matrices; `test_a1_fresh_air`, `test_sensor_mp`, `test_runtime_session_mp`, `test_native_udp_runtime` preserve native producer/control boundaries. Whole multi-process timed integration remains separate acceptance |
+| `test_sensor_session_mqtt.py`: MQTT-issued authorization plus quiet UDP, timeout/restart recovery | `test_sensor_grant_mp`, `test_runtime_session_mp`, `test_native_udp_runtime` and `tests/native_udp_runtime/COVERAGE.md`; the original 65-second multi-process broker-outage campaign is not claimed here |
+| `test_resource_mqtt.py`: owned rename receipt, session capacity, original destination and bounded rejection | `test_native_service_mqtt`, `test_shared_mqtt`, `test_runtime_mqtt_mp`, `test_sensor_grant_mp` exercise real Paho receipt ownership/credit/reconfiguration and bounded sessions; ordinary full-worker native command/results additionally run on the isolated broker |
+
+`tests/ota/run.sh` also runs the actual native MQTT OTA include with strict MP
+schema, rejected JSON/trailing input, retained suppression, borrowed input
+poisoning, request deduplication, busy, owner isolation, fixed-writer failure,
+send retry and final-result publication. JSON graph-allocation failure no
+longer describes this adapter; actual fixed-writer/send faults replace it.
+
+The deterministic HTTP soak fills one active owner and **two** waiting requests
+before testing a fourth socket's503 path, then requires both queued200 replies,
+exactly one business lease, balanced release/close counts and final recovery.
+Real TCP soak retains both three- and four-socket cap checks. These are host
+transport checks; they are not DUT busy-rate or P95 measurements.

@@ -32,17 +32,27 @@ static void haStateBody(JsonObject out){
   for(unsigned i=0;i<SENSOR_COUNT;i++)if(sensorPresent(i)){JsonObject value=sensors.createNestedObject(keys[i]);bool valid=readings[i].valid(now);value["valid"]=valid;if(valid)value["value"]=readings[i].value;else value["value"]=nullptr;}
 }
 static void publishState(){
-  // Release the JSON pool before the SDK/local broker copies the wire payload.
-  // Also release the first wire payload before building the typed sensor feed.
-  {String text;if(mqttStateJson(text,state,4096,true))publish(mqttRoot+"/state",text);}
+  // Reuse the owned business snapshot; only HA and sensor feeds build here.
+  if(businessStatusInvalid)pollBusinessStatusCache(millis());
+  if(businessStatusReady)publish(mqttRoot+"/state",cachedBusinessState());
   {String text;if(mqttStateJson(text,haStateBody,2048))publish(mqttRoot+"/ha/state",text);}
   {String text;if(mqttStateJson(text,sensorMetadata,2048,true))publish(sensorRoot+"/metadata",text);}
   {String text;if(mqttStateJson(text,sensorBody,2048,true))publish(sensorRoot+"/state",text,false);}
 }
 
+static String mqttAccountScope(const char *user){
+  if(!*user)return "local";
+  String encoded="u_";
+  encoded.reserve(2+strlen(user)*2);
+  static const char hex[]="0123456789abcdef";
+  for(;*user;user++){
+    const uint8_t c=(uint8_t)*user;
+    encoded+=hex[c>>4];encoded+=hex[c&15];
+  }
+  return encoded;
+}
 static void discovery(){
-  String userKey=config["mqtt"]["user"]|"";String encoded="local";
-  if(userKey.length()){encoded="u_";for(size_t i=0;i<userKey.length();i++){char hex[3];snprintf(hex,3,"%02x",(uint8_t)userKey[i]);encoded+=hex;}}
+  String encoded=mqttAccountScope(config["mqtt"]["user"]|"");
   String haRoot="homeassistant/sensor/"+encoded+"/daikin_"+deviceId+"_";
   const char *classes[]={"pm25","carbon_dioxide","temperature","humidity","volatile_organic_compounds_parts","","pm10"};
   for(unsigned i=0;i<SENSOR_COUNT;i++){
@@ -98,8 +108,7 @@ static void startMqtt(){
   hubConfigureUpstream();mqttOnline=hubReady();
 #endif
   const char *host=config["mqtt"]["host"]|"";
-  String user=config["mqtt"]["user"]|"",userKey="local";
-  if(user.length()){userKey="u_";for(size_t i=0;i<user.length();i++){char hex[3];snprintf(hex,3,"%02x",(uint8_t)user[i]);userKey+=hex;}}
+  String userKey=mqttAccountScope(config["mqtt"]["user"]|"");
   mqttRoot="phicomm/v2/"+userKey+"/daikin/"+deviceId;
   sensorRoot="phicomm/v2/"+userKey+"/sensor/"+deviceId;
   if(!*host)return;

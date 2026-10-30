@@ -1,3 +1,4 @@
+#include "diagnostics_ids.h"
 static void otaPartitionStatus(JsonObject out){
   // Report the table installed on this device, independently of the build CSV.
   const auto *running=esp_ota_get_running_partition();
@@ -17,26 +18,12 @@ static void otaPartitionStatus(JsonObject out){
   }
   esp_partition_iterator_release(it);
 }
-static void state(JsonObject out){
-  uint32_t now=millis();
+static void buildBusinessState(JsonObject out,uint32_t now){
+  out["snapshot_uptime_ms"]=now;
   out["model"]="daikin";out["firmware_variant"]=DAIKIN_VARIANT;out["hardware_model"]="BRY88AX151K";out["pm_sensor"]=pmModel;
   out["migration_state"]=configRecovery?"confirmation_required":"ready";out["language"]=config["device"]["language"]|"zh-CN";out["name"]=config["device"]["name"]|"DAIKIN";out["device_id"]=deviceId;out["version"]=version;
-  out["ota_signature_verified"]=prefs.getBool("ota_signed",false);
-  otaPartitionStatus(out.createNestedObject("ota_partitions"));
-  out["uptime_seconds"]=now/1000;out["free_memory"]=ESP.getFreeHeap();
-  out["minimum_free_memory"]=ESP.getMinFreeHeap();out["max_free_block"]=ESP.getMaxAllocHeap();
-  out["reset_reason"]=unsigned(esp_reset_reason());
   out["co2_warmup_seconds_remaining"]=!co2Module.warmed&&now<180000?(180000-now+999)/1000:0;
   JsonObject co2=out.createNestedObject("co2_diagnostics");
-  co2["protocol"]="cm1106";co2["received"]=co2Module.received;co2["fresh"]=co2Module.fresh(now);
-  co2["status_format"]=co2Module.statusFlagsSupported?"bitmask_v06":"legacy_reserved";
-  co2["status_flags_supported"]=co2Module.statusFlagsSupported;
-  co2["reserved_raw"]=nullptr;if(co2Module.received)co2["reserved_raw"]=co2Module.reserved;
-  co2["raw_ppm"]=nullptr;co2["status_raw"]=nullptr;co2["age_ms"]=nullptr;
-  if(co2Module.received){co2["raw_ppm"]=co2Module.raw;co2["status_raw"]=co2Module.status;co2["age_ms"]=uint32_t(now-co2Module.measuredAt);}
-  const char *flags[]={"preheating","sensor_error","over_range","under_range","uncalibrated","light_aging","drift"};
-  for(unsigned i=0;i<7;i++){if(co2Module.received&&co2Module.statusFlagsSupported)co2[flags[i]]=bool(co2Module.status&(1<<i));else co2[flags[i]]=nullptr;}
-  co2["frame_errors"]=co2Module.errors;co2["response_timeouts"]=co2Module.timeouts;
   co2["calibration_available"]=co2Module.canCalibrate(now);
   co2["cooldown_seconds"]=co2Module.cooldown(now);
   JsonObject calibration=co2.createNestedObject("calibration");
@@ -47,7 +34,6 @@ static void state(JsonObject out){
   JsonObject climate=out.createNestedObject("climate_compensation");
   climate["temperature_offset"]=config["climate"]["temperature_offset"]|4.9f;
   climate["humidity_offset"]=config["climate"]["humidity_offset"]|0.0f;
-  out["mqtt_last_event"]=mqttLastEvent;out["mqtt_error_type"]=mqttErrorType;out["mqtt_socket_error"]=mqttSocketError;
   out["button_pressed"]=digitalRead(34)==LOW;
   out["wifi_connected"]=WiFi.status()==WL_CONNECTED;out["ssid"]=config["wifi"]["ssid"]|"";
   out["ip"]=(WiFi.status()==WL_CONNECTED?WiFi.localIP():WiFi.softAPIP()).toString();out["rssi"]=WiFi.RSSI();
@@ -61,10 +47,7 @@ static void state(JsonObject out){
   out["formaldehyde_present"]=hchoPresent;out["indicator_enabled"]=indicator;
   indicatorStatus(out,now);
 #ifdef IOTCLOUD_HUB
-  JsonObject hub=out.createNestedObject("hub");hub["ready"]=hubReady();hub["clients"]=hubTransport.broker.count();hub["max_clients"]=unsigned(iotcloud::HubBroker::Clients);hub["retained_bytes"]=hubTransport.broker.retainedBytes();hub["refused"]=hubTransport.broker.refused;hub["dropped"]=hubTransport.broker.dropped;hub["account_set"]=hubService.ready();hub["username"]=hubService.user();
-  hub["free_byte_heap"]=heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT);
-  hub["largest_byte_block"]=heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT);
-  hub["min_byte_heap"]=heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT);
+  JsonObject hub=out.createNestedObject("hub");hub["ready"]=hubReady();hub["account_set"]=hubService.ready();hub["username"]=hubService.user();
 #endif
   JsonObject sensors=out.createNestedObject("sensors");
   for(unsigned i=0;i<SENSOR_COUNT;i++){
@@ -76,7 +59,134 @@ static void state(JsonObject out){
     if(readings[i].received)s["age_ms"]=uint32_t(now-readings[i].at);else s["age_ms"]=nullptr;
   }
 }
-static const char *actions[]={"status.get","config.get","capabilities.get","binding.status.get","lan.pair","lan.pair.get","lan.unpair","config.set","wifi.scan","wifi.scan.get","indicator.set","co2.calibrate","system.reboot","system.reset"};
+// The document/source key belong to the application loop. HTTP copies the
+// immutable encoded publication through HttpReadSnapshot, never this document.
+// Source keys compare exact typed values; no business JSON is built on a hit.
+struct BusinessStatusKey {
+  struct Sample {float value;uint32_t at;bool received,present,valid;};
+  Sample samples[SENSOR_COUNT];
+  uint32_t warmup,cooldown,requested,completed;
+  unsigned calibration,target,wifiMode;
+  int wifiStatus,rssi;
+  bool available,pending,awaiting,attempted,button,mqtt,hcho,indicator,recovery,hub;
+  String ip;
+  bool operator==(const BusinessStatusKey &other)const {
+    for(unsigned i=0;i<SENSOR_COUNT;i++){
+      const auto &a=samples[i],&b=other.samples[i];
+      if(memcmp(&a.value,&b.value,sizeof(float))||a.at!=b.at||a.received!=b.received||a.present!=b.present||a.valid!=b.valid)return false;
+    }
+    return warmup==other.warmup&&cooldown==other.cooldown&&requested==other.requested&&completed==other.completed&&calibration==other.calibration&&target==other.target&&wifiMode==other.wifiMode&&wifiStatus==other.wifiStatus&&rssi==other.rssi&&available==other.available&&pending==other.pending&&awaiting==other.awaiting&&attempted==other.attempted&&button==other.button&&mqtt==other.mqtt&&hcho==other.hcho&&indicator==other.indicator&&recovery==other.recovery&&hub==other.hub&&ip==other.ip;
+  }
+};
+static bool businessStatusInvalid=true,businessStatusReady=false;
+static unsigned businessStatusBuilds=0;
+static BusinessStatusKey businessStatusKey;
+static DynamicJsonDocument businessStatusDocument(4096);
+static HttpReadSnapshot businessReadSnapshot;
+static void invalidateBusinessStatusCache(){businessStatusInvalid=true;businessReadSnapshot.invalidate();}
+static BusinessStatusKey businessStatusSource(uint32_t now){
+  BusinessStatusKey key={};
+  for(unsigned i=0;i<SENSOR_COUNT;i++){auto &s=key.samples[i];const auto &r=readings[i];s.value=r.value;s.at=r.at;s.received=r.received;s.present=sensorPresent(i);s.valid=r.valid(now);}
+  key.warmup=!co2Module.warmed&&now<180000?(180000-now+999)/1000:0;
+  key.cooldown=co2Module.cooldown(now);key.available=co2Module.canCalibrate(now);
+  key.requested=co2Module.requestedAt;key.completed=co2Module.completedAt;
+  key.calibration=unsigned(co2Module.calibration);key.target=co2Module.target;
+  key.pending=co2Module.pending();key.awaiting=co2Module.awaitingMeasurement;key.attempted=co2Module.attempted;
+  key.wifiStatus=WiFi.status();key.wifiMode=WiFi.getMode();key.rssi=WiFi.RSSI();
+  key.ip=(key.wifiStatus==WL_CONNECTED?WiFi.localIP():WiFi.softAPIP()).toString();
+  key.button=digitalRead(34)==LOW;key.mqtt=mqttConnected;key.hcho=hchoPresent;key.indicator=indicator;key.recovery=configRecovery;
+#ifdef IOTCLOUD_HUB
+  key.hub=hubReady();
+#endif
+  return key;
+}
+static bool pollBusinessStatusCache(uint32_t now){
+  const BusinessStatusKey next=businessStatusSource(now);
+  if(businessStatusReady&&!businessStatusInvalid&&next==businessStatusKey){businessReadSnapshot.refresh(now);return true;}
+  // Ordinary updates replace a complete publication only after encoding.
+  // A known-invalid sample is different: stop publishing its old valid flag
+  // immediately. Configuration changes invalidate explicitly at commit time.
+  uint32_t freshFor=0x7fffffffu;
+  for(unsigned i=0;i<SENSOR_COUNT;i++){
+    if(businessStatusKey.samples[i].valid&&!next.samples[i].valid)businessReadSnapshot.invalidate();
+    if(next.samples[i].valid)freshFor=std::min(freshFor,20000u-uint32_t(now-next.samples[i].at));
+  }
+  businessStatusReady=false;
+  businessStatusDocument.clear();buildBusinessState(businessStatusDocument.to<JsonObject>(),now);
+  if(businessStatusDocument.overflowed())return false;
+  String wire,http;
+  const size_t n=measureMsgPack(businessStatusDocument);
+  if(!wire.reserve(n)||serializeWireMP(businessStatusDocument,wire)!=n)return false;
+  // Reuse the encoded value instead of copying the object tree and encoding
+  // the same business data a second time for GET /status.
+  ph_writer envelope;if(!phw_init_capacity(&envelope,PH_WIRE_MSGPACK,n+64))return false;
+  ph_buf cached={const_cast<char*>(wire.c_str()),wire.length(),wire.length()+1};
+  phw_begin(&envelope,nullptr,false);phw_text(&envelope,"code","ok");
+  phw_cached_value(&envelope,"data",&cached,8);phw_end(&envelope);
+  ph_buf *encoded=phw_take(&envelope);
+  const bool complete=encoded&&http.reserve(encoded->len)&&http.concat(encoded->buf,encoded->len);
+  ph_buf_free(encoded);if(!complete)return false;
+  if(!businessReadSnapshot.publish(std::move(wire),std::move(http),now,freshFor==0x7fffffffu?0:freshFor))return false;
+  businessStatusKey=next;businessStatusInvalid=false;businessStatusReady=true;++businessStatusBuilds;return true;
+}
+static const String &cachedBusinessState(){return businessReadSnapshot.data();}
+static const String &cachedHttpStatus(){return businessReadSnapshot.envelope();}
+static void state(JsonObject out){
+  // Bootstrap is allowed before the first loop; normal reads only copy cache.
+  if((!businessStatusReady||businessStatusInvalid)&&!pollBusinessStatusCache(millis()))return;
+  out.set(businessStatusDocument.as<JsonObjectConst>());
+}
+// Only populated diagnostic fields are emitted. A false or zero value is data.
+template<class T> static void diagnosticField(JsonArray fields,unsigned id,const T &value){
+  JsonArray pair=fields.createNestedArray();pair.add(id);pair.add(value);
+}
+static void diagnostics(JsonObject out){
+  const uint32_t now=millis();out["schema"]=PH_DIAGNOSTICS_SCHEMA;
+  JsonArray fields=out.createNestedArray("fields");
+  const auto storage=authStorageSnapshot();
+  if(storage.attempted)diagnosticField(fields,PH_DIAG_STORAGE_LAST_ERROR,unsigned(storage.error));
+  if(storage.sizes){diagnosticField(fields,PH_DIAG_STORAGE_OLD_BLOB_BYTES,storage.oldBytes);diagnosticField(fields,PH_DIAG_STORAGE_NEW_BLOB_BYTES,storage.newBytes);}
+  if(storage.required)diagnosticField(fields,PH_DIAG_STORAGE_REQUIRED_ENTRIES,storage.requiredEntries);
+  if(storage.stats){diagnosticField(fields,PH_DIAG_STORAGE_NVS_FREE_ENTRIES,storage.freeEntries);diagnosticField(fields,PH_DIAG_STORAGE_NVS_USED_ENTRIES,storage.usedEntries);diagnosticField(fields,PH_DIAG_STORAGE_NVS_TOTAL_ENTRIES,storage.totalEntries);}
+  diagnosticField(fields,PH_DIAG_UPTIME_SECONDS,now/1000);
+  diagnosticField(fields,PH_DIAG_FREE_MEMORY,ESP.getFreeHeap());
+  diagnosticField(fields,PH_DIAG_MINIMUM_FREE_MEMORY,ESP.getMinFreeHeap());
+  diagnosticField(fields,PH_DIAG_MAX_FREE_BLOCK,ESP.getMaxAllocHeap());
+  diagnosticField(fields,PH_DIAG_RESET_REASON,unsigned(esp_reset_reason()));
+  diagnosticField(fields,PH_DIAG_HTTP_SNAPSHOT_UNAVAILABLE,businessReadSnapshot.unavailable());
+  diagnosticField(fields,PH_DIAG_HTTP_SNAPSHOT_EXPIRED,businessReadSnapshot.expired());
+  diagnosticField(fields,PH_DIAG_HTTP_SNAPSHOT_CONTENDED,businessReadSnapshot.contended());
+  diagnosticField(fields,PH_DIAG_HTTP_SNAPSHOT_ALLOCATION_FAILED,businessReadSnapshot.allocationFailed());
+  diagnosticField(fields,PH_DIAG_OTA_SIGNATURE_VERIFIED,prefs.getBool("ota_signed",false));
+  diagnosticField(fields,PH_DIAG_MQTT_LAST_EVENT,int(mqttLastEvent));
+  diagnosticField(fields,PH_DIAG_MQTT_ERROR_TYPE,int(mqttErrorType));
+  diagnosticField(fields,PH_DIAG_MQTT_SOCKET_ERROR,int(mqttSocketError));
+  diagnosticField(fields,PH_DIAG_CO2_DIAGNOSTICS_PROTOCOL,"cm1106");
+  diagnosticField(fields,PH_DIAG_CO2_DIAGNOSTICS_RECEIVED,co2Module.received);
+  diagnosticField(fields,PH_DIAG_CO2_DIAGNOSTICS_FRESH,co2Module.fresh(now));
+  diagnosticField(fields,PH_DIAG_CO2_DIAGNOSTICS_STATUS_FORMAT,co2Module.statusFlagsSupported?"bitmask_v06":"legacy_reserved");
+  diagnosticField(fields,PH_DIAG_CO2_DIAGNOSTICS_STATUS_FLAGS_SUPPORTED,co2Module.statusFlagsSupported);
+  diagnosticField(fields,PH_DIAG_CO2_DIAGNOSTICS_FRAME_ERRORS,co2Module.errors);
+  diagnosticField(fields,PH_DIAG_CO2_DIAGNOSTICS_RESPONSE_TIMEOUTS,co2Module.timeouts);
+  JsonArray partitionPair=fields.createNestedArray();partitionPair.add(PH_DIAG_OTA_PARTITIONS);
+  otaPartitionStatus(partitionPair.createNestedObject());
+  if(co2Module.received){
+    diagnosticField(fields,PH_DIAG_CO2_DIAGNOSTICS_RESERVED_RAW,co2Module.reserved);
+    diagnosticField(fields,PH_DIAG_CO2_DIAGNOSTICS_RAW_PPM,co2Module.raw);
+    diagnosticField(fields,PH_DIAG_CO2_DIAGNOSTICS_STATUS_RAW,co2Module.status);
+    diagnosticField(fields,PH_DIAG_CO2_DIAGNOSTICS_AGE_MS,uint32_t(now-co2Module.measuredAt));
+    if(co2Module.statusFlagsSupported){
+      const unsigned ids[]={PH_DIAG_CO2_DIAGNOSTICS_PREHEATING,PH_DIAG_CO2_DIAGNOSTICS_SENSOR_ERROR,PH_DIAG_CO2_DIAGNOSTICS_OVER_RANGE,PH_DIAG_CO2_DIAGNOSTICS_UNDER_RANGE,PH_DIAG_CO2_DIAGNOSTICS_UNCALIBRATED,PH_DIAG_CO2_DIAGNOSTICS_LIGHT_AGING,PH_DIAG_CO2_DIAGNOSTICS_DRIFT};
+      for(unsigned i=0;i<7;i++)diagnosticField(fields,ids[i],bool(co2Module.status&(1<<i)));
+    }
+  }
+#ifdef IOTCLOUD_HUB
+  diagnosticField(fields,PH_DIAG_HUB_FREE_BYTE_HEAP,heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));
+  diagnosticField(fields,PH_DIAG_HUB_LARGEST_BYTE_BLOCK,heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));
+  diagnosticField(fields,PH_DIAG_HUB_MIN_BYTE_HEAP,heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));
+#endif
+}
+static const char *actions[]={"status.get","diagnostics.get","config.get","capabilities.get","binding.status.get","lan.pair","lan.pair.get","lan.unpair","config.set","wifi.scan","wifi.scan.get","indicator.set","co2.calibrate","system.reboot","system.reset"};
 static void capabilities(JsonObject out){
   out["device_id"]=deviceId;out["model"]="daikin";out["firmware_version"]=version;out["variant"]=DAIKIN_VARIANT;out["firmware_variant"]=DAIKIN_VARIANT;out["hardware_model"]="BRY88AX151K";out["protocol"]=2;
   out["config_backup"]=1;out["config_recovery"]=configRecovery;out["device_language"]="zh-CN,en";out["mqtt_protocol"]="tmcp";out["mqtt_protocol_version"]=2;
@@ -172,6 +282,7 @@ static String execute(const String &body,bool binary=true){
     }else if(action=="lan.unpair"){if(!knownFields(params,"|peer|")||params.size()!=1)code="invalid_params";else lanUnpairStart(params["peer"]|"",&code);
     }else if(action=="lan.pair.get"){if(!knownFields(params,"|peer|")||params.size()!=1||!lanPairStatus(params["peer"]|"",data))code="invalid_params";}
     else if(action=="status.get")state(data);
+    else if(action=="diagnostics.get")diagnostics(data);
     else if(action=="binding.status.get")sessionStatus(data);
     else if(action=="capabilities.get")capabilities(data);
     else if(action=="config.get"){

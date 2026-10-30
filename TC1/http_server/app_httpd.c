@@ -64,6 +64,7 @@ static void tc1_memory_extra(ph_writer *w)
     static bool sampled;static int reason;
     if(!sampled){reason=get_last_reset_reason();sampled=true;}
     phw_int(w,"last_reset_reason",reason);
+    extern void tc1_config_diagnostics_mp(ph_writer *);tc1_config_diagnostics_mp(w);
 }
 #define HTTP_AUTH_MODEL "tc1"
 #define HTTP_AUTH_ID str_mac

@@ -33,13 +33,13 @@
 
 #pragma once
 
-#define APP_INFO   "MiCO BASIC Demo"
+#define APP_INFO "Phicomm TC1 community firmware"
 
 #include "../common/generated/build_version.h"
 #define FIRMWARE_REVISION FIRMWARE_VERSION
-#define MANUFACTURER        "ZYC Inc."
-#define SERIAL_NUMBER       "20190105"
-#define PROTOCOL            "com.zyc.basic"
+#define MANUFACTURER "Phicomm Community"
+#define SERIAL_NUMBER "TC1"
+#define PROTOCOL "openiot.tc1.local"
 
 /************************************************************************
  * Application thread stack size */

@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Native business adapters: borrowed typed parameters, direct wire output. */
 #include "service_mp.h"
+#include "diagnostics_ids.h"
 static bool smp_has(const ph_value *p,const char *key){ph_value v;return phv_get(p,key,&v);}
 static bool smp_int(const ph_value *p,const char *key,int *out,int lo,int hi){ph_value v;int64_t n;if(!phv_get(p,key,&v)||!phv_int(&v,&n)||n<lo||n>hi)return false;*out=(int)n;return true;}
 static bool smp_bool(const ph_value *p,const char *key,bool *out){ph_value v;return phv_get(p,key,&v)&&phv_bool(&v,out);}
@@ -22,6 +23,16 @@ void service_product_status_mp(ph_writer *w){
 #endif
  device_status_mp(w,&snapshot,&full);
 }
+void service_product_diagnostics_mp(ph_writer *w){
+ device_status_t snapshot;device_status_full_t full;
+#ifdef FEATURE_DEVICE_A1
+ a1_diagnostics_capture(&snapshot,&full);
+#else
+ m1_diagnostics_capture(&snapshot,&full);
+#endif
+ service_memory_snapshot(&full.service_memory);full.service_memory_valid=true;
+ device_diagnostics_mp(w,&snapshot,&full);
+}
 void service_product_capabilities_mp(ph_writer *w,const char *const *extra,bool restricted){
  phw_begin(w,NULL,false);
  phw_text(w,"model",DEVICE_MODEL);phw_text(w,"device_id",DEVICE_ID);
@@ -30,6 +41,7 @@ void service_product_capabilities_mp(ph_writer *w,const char *const *extra,bool 
   phw_u32(w,"protocol",2);phw_text(w,"mqtt_protocol","tmcp");phw_u32(w,"mqtt_protocol_version",2);
   phw_u32(w,"wire_version",1);phw_begin(w,"wire_formats",true);phw_text(w,NULL,"msgpack");phw_end(w);phw_text(w,"default_wire_format","msgpack");
   phw_begin(w,"status_views",true);phw_text(w,NULL,"full");phw_end(w);phw_text(w,"device_language","zh-CN,en");
+  phw_u32(w,"diagnostics_schema",PH_DIAGNOSTICS_SCHEMA);phw_bool(w,"business_status",true);
   phw_u32(w,"config_backup",1);phw_bool(w,"config_recovery",device_config_recovery());
 #ifndef FEATURE_DEVICE_A1
   phw_u32(w,"sensor_session_protocol",2);phw_u32(w,"sensor_schema",3);phw_u32(w,"sensor_alarm_config_schema",1);phw_u32(w,"mcu_ota_max_bytes",32768);
@@ -166,25 +178,26 @@ static void smp_mcu(ph_writer *o) {
 extern bool feature_mp(const char *,const ph_value *,ph_writer *,const char **);
 extern bool feature_ntp_set_mp(const char *,const char **);
 #ifdef FEATURE_DEVICE_A1
-static bool smp_control(const char *action,const ph_value *p)
+static const char *smp_control(const char *action,const ph_value *p)
 {
  a1_control_t r={0};ph_value v;bool b;int number;
  bool fan=!strcmp(action,"fan.set")||!strcmp(action,"fan.mode.set");
  bool lock=!strcmp(action,"child_lock.set");r.kind=fan?A1_CONTROL_FAN:lock?A1_CONTROL_LOCK:A1_CONTROL_LIGHT;
  const char *keys=fan?"|on||speed||mode|":lock?"|enabled|":"|enabled||always_on||brightness||color|";
- if(!phv_keys(p,keys))return false;
+ if(!phv_keys(p,keys))return "invalid_params";
  const char *bools[]={"on","enabled","always_on"};const unsigned flags[]={A1_SET_ON,A1_SET_ENABLED,A1_SET_ALWAYS};
  uint8_t *targets[]={&r.on,&r.enabled,&r.always_on};
- for(unsigned i=0;i<3;i++)if(phv_get(p,bools[i],&v)){if(!phv_bool(&v,&b))return false;*targets[i]=b;r.fields|=flags[i];}
- if(smp_has(p,"speed")){if(!smp_int(p,"speed",&number,0,100))return false;r.speed=number;r.fields|=A1_SET_SPEED;}
- if(smp_has(p,"brightness")){if(!smp_int(p,"brightness",&number,0,100))return false;r.brightness=(number*255+50)/100;r.fields|=A1_SET_BRIGHTNESS;}
- if(phv_get(p,"mode",&v)){if(phv_equal_text(&v,"auto"))r.mode=2;else if(phv_equal_text(&v,"manual"))r.mode=1;else return false;r.fields|=A1_SET_MODE;}
+ for(unsigned i=0;i<3;i++)if(phv_get(p,bools[i],&v)){if(!phv_bool(&v,&b))return "invalid_params";*targets[i]=b;r.fields|=flags[i];}
+ if(smp_has(p,"speed")){if(!smp_int(p,"speed",&number,0,100))return "invalid_params";r.speed=number;r.fields|=A1_SET_SPEED;}
+ if(smp_has(p,"brightness")){if(!smp_int(p,"brightness",&number,0,100))return "invalid_params";r.brightness=(number*255+50)/100;r.fields|=A1_SET_BRIGHTNESS;}
+ if(phv_get(p,"mode",&v)){if(phv_equal_text(&v,"auto"))r.mode=2;else if(phv_equal_text(&v,"manual"))r.mode=1;else return "invalid_params";r.fields|=A1_SET_MODE;}
  if(phv_get(p,"color",&v)){
-  if(v.kind!=PHV_MAP||!phv_keys(&v,"|r||g||b|"))return false;
+  if(v.kind!=PHV_MAP||!phv_keys(&v,"|r||g||b|"))return "invalid_params";
   const char *colors[]={"r","g","b"};uint8_t *channels[]={&r.red,&r.green,&r.blue};
-  for(unsigned i=0;i<3;i++){if(!smp_int(&v,colors[i],&number,0,255))return false;*channels[i]=number;}r.fields|=A1_SET_COLOR;
+  for(unsigned i=0;i<3;i++){if(!smp_int(&v,colors[i],&number,0,255))return "invalid_params";*channels[i]=number;}r.fields|=A1_SET_COLOR;
  }
- return r.fields&&a1_control_apply(&r,false,true);
+ if(!r.fields)return "invalid_params";
+ return a1_control_apply(&r,false,true)?"accepted":"busy";
 }
 #endif
 static bool smp_config(const ph_value *p,ph_writer *w,const char **code)
@@ -341,7 +354,7 @@ bool service_product_mp(const char *action,const ph_value *p,ph_writer *w,const 
  else if(!strcmp(action,"wifi.scan")){if(!phv_keys(p,""))goto invalid;ok=SCAN();}
  else if(!strcmp(action,"ota.start")){char url[512];if(!phv_keys(p,"|url|")||!smp_text(p,"url",url,sizeof(url),true))goto invalid;ok=DOWNLOAD(url);}
 #ifdef FEATURE_DEVICE_A1
- else if(!strcmp(action,"fan.set")||!strcmp(action,"fan.mode.set")||!strcmp(action,"light.set")||!strcmp(action,"child_lock.set"))ok=smp_control(action,p);
+ else if(!strcmp(action,"fan.set")||!strcmp(action,"fan.mode.set")||!strcmp(action,"light.set")||!strcmp(action,"child_lock.set")){*code=smp_control(action,p);smp_empty(w);return true;}
  else if(!strcmp(action,"fan.panel")){if(!phv_keys(p,""))goto invalid;ok=a1_panel_inspect();}
  else if(!strcmp(action,"fan.mode.toggle")){if(!phv_keys(p,""))goto invalid;a1_control_t r={.kind=A1_CONTROL_FAN,.fields=A1_SET_MODE,.mode=3};ok=a1_control_apply(&r,false,true);}
  else if(!strcmp(action,"light_always.set")){if(!phv_keys(p,"|enabled|")||!smp_bool(p,"enabled",&value))goto invalid;a1_control_t r={.kind=A1_CONTROL_LIGHT,.fields=A1_SET_ALWAYS,.always_on=value};ok=a1_control_apply(&r,false,true);}

@@ -4,6 +4,14 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
+#include <semaphore.h>
+#include <errno.h>
+typedef sem_t mico_semaphore_t;
+static inline int mico_rtos_deinit_semaphore(mico_semaphore_t *s){return sem_destroy(s);}
+#define MICO_WAIT_FOREVER UINT32_MAX
+static inline int mico_rtos_init_semaphore(mico_semaphore_t *s,int n){(void)n;return sem_init(s,0,0);}
+static inline int mico_rtos_set_semaphore(mico_semaphore_t *s){return sem_post(s);}
+static inline int mico_rtos_get_semaphore(mico_semaphore_t *s,uint32_t timeout){if(!timeout)return sem_trywait(s);int rc;do{rc=sem_wait(s);}while(rc&&errno==EINTR);return rc;}
 typedef pthread_mutex_t mico_mutex_t;
 #define kNoErr 0
 static inline int mico_rtos_init_mutex(mico_mutex_t *m){return pthread_mutex_init(m,NULL);}

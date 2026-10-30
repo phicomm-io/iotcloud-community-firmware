@@ -18,7 +18,9 @@
 
 
 #define HTTP_PENDING_CLIENTS PH_HTTP_WAIT_SLOTS
-#define HTTP_TCP_CLIENT_LIMIT 3
+/* Reserve the fourth slot for an overload reply, never a third waiter.
+ * Match A1.mk so mocIP can admit the overload socket to the HTTP owner. */
+#define HTTP_TCP_CLIENT_LIMIT PH_HTTP_CLIENT_SLOTS
 #define http_diag_t ph_http_diagnostics
 #define http_diag_snapshot ph_http_snapshot
 static ph_http_product product;

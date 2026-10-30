@@ -20,7 +20,7 @@ output.mkdir(parents=True, exist_ok=True)
 prefix = "A1@MK3080B@moc"
 version = project_version()
 version_metadata = build_metadata()
-manifest = {"version": version, "sdk_commit": sdk, "target": prefix, "toolchain": "ARM GCC 5.4.1", "files": {}}
+manifest = {"version": version, "sdk_commit": sdk, "target": prefix, "toolchain": "ARM GCC "+os.environ.get("PHICOMM_BUILD_COMPILER_EXPECTED", "5.4.1"), "files": {}}
 manifest.update(version_metadata)
 manifest['sdk'] = json.loads((Path(__file__).resolve().parents[2] / 'common/mico-sdk.json').read_text())
 manifest['firmware_variant'] = variant
