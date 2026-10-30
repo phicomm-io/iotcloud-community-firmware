@@ -5,20 +5,29 @@ New firmware speaks MessagePack on `/api/v1/*` structured routes. Assets and
 capabilities, `auth: bearer`, and `password_set`; it never exposes Wi-Fi or broker
 settings. OTA image and PHCBACK1 backup bodies remain opaque binary bytes.
 
-`POST /api/v1/auth/login` accepts `{password: string}` and returns
-`{code: 'ok', data: {token: '32 lowercase hex digits'}}`. An unset password is an
-empty string: the UI obtains a token without presenting a password dialog.
+When no management password is set, local HTTP requests pass directly. The UI
+does not prompt for a password. `POST /api/v1/auth/login` accepts
+`{password: ''}` and returns `{code: 'ok', data: {password_required: false,
+token: ''}}`, without allocating a session or reading the random source.
+
+With a password set, login accepts `{password: string}` and returns
+`{code: 'ok', data: {password_required: true, token: '32 lowercase hex digits'}}`.
 A wrong password returns 401/`unauthorized`. Four occupied HTTP slots or random
-source failure returns 503/`busy`, without evicting any active session.
+source failure returns 503/`busy`, without evicting an active session.
 `POST /api/v1/auth/logout` accepts an empty map with `Authorization: Bearer …`.
-Neither JSON login nor Basic authentication is accepted by this firmware.
-Frontend/cloud alone maintain explicit compatibility with old devices.
+Protected requests accept a valid Bearer token or `admin` Basic credentials.
+Basic authentication does not allocate a token slot. Structured HTTP bodies,
+including login, use MessagePack.
 
 HTTP tokens are boot-local, expire after 30 minutes idle or 24 hours total, and
 are invalidated by a committed password change, restore, or reset. Request bodies
 are borrowed only during synchronous handling; UDP retries own their encoded
-bytes. Authentication is checked again after queued admission/body reception,
-so a request cannot retain authorization across a password change while waiting.
+bytes. The HTTP owner captures authorization at admission and revalidates the
+same context after waiting or receiving a body, and again under the business
+lock before returning receipts or cached data or executing a command. Password changes and restore
+advance the credential epoch, revoking previously admitted requests, including
+Basic and requests admitted without a password. Restore revokes those contexts
+even when it preserves the password.
 
 ## Persistent layout and recovery
 

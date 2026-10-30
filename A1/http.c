@@ -50,7 +50,7 @@ static void light_command(ph_http_exchange *x,const ph_value *body)
 }
 static ph_http_action prepare(ph_http_exchange *x)
 {
-    if(operation!=AUTH && !http_auth_authorized(x->request->authorization)){
+    if(operation!=AUTH && !http_auth_authorized(&product,x->request->authorization)){
         http_auth_reply(&product,x,401,"unauthorized",NULL);return PH_HTTP_REPLY;
     }
     if(upload_pending) {
@@ -86,7 +86,7 @@ static ph_http_action begin(ph_http_exchange *x)
         operation=AUTH;return prepare(x);
     }
     bool asset=!strcmp(r->path,"/")||!strcmp(r->path,"/index.html")||!strcmp(r->path,"/favicon.ico");
-    if(!asset && !http_auth_authorized(r->authorization)){
+    if(!asset && !http_auth_authorized(&product,r->authorization)){
         http_auth_reply(&product,x,401,"unauthorized",NULL);return PH_HTTP_REPLY;
     }
     if(strncmp(r->path,"/api/v1/",8) && strcmp(r->path,"/") && strcmp(r->path,"/index.html") && strcmp(r->path,"/favicon.ico")) {
@@ -148,7 +148,7 @@ static bool body_chunk(ph_http_exchange *x,const void *data,size_t n)
 }
 static void complete(ph_http_exchange *x)
 {
-    if(operation!=AUTH && !http_auth_authorized(x->request->authorization)){
+    if(operation!=AUTH && !http_auth_authorized(&product,x->request->authorization)){
         http_auth_reply(&product,x,401,"unauthorized",NULL);return;
     }
     if(operation==AUTH){http_auth_complete(&product,x);return;}

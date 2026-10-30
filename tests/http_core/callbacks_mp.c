@@ -48,14 +48,14 @@ void service_memory_release(unsigned c){assert(c&&claims);claims--;}
 void service_memory_waiting(bool enter){if(enter)waiting++;else{assert(waiting);waiting--;}}
 void service_memory_snapshot(service_memory_state_t*s){memset(s,maximum?0xff:0,sizeof(*s));}
 void service_cache_changed(unsigned mask){assert(mask);}
-ph_buf *service_query_mp(const char*a){assert(a);queries++;ph_writer w;assert(phw_init(&w,PH_WIRE_MSGPACK));phw_begin(&w,NULL,false);phw_text(&w,"action",a);phw_end(&w);return phw_take(&w);}
-ph_buf *service_command_mp(const void*p,size_t n){ph_value v;if(!phv_parse(PH_WIRE_MSGPACK,p,n,&v))return service_query_mp("invalid_request");commands++;ph_writer w;assert(phw_init(&w,PH_WIRE_MSGPACK));phw_begin(&w,NULL,false);phw_text(&w,"action","command");phw_value(&w,"input",&v);phw_end(&w);return phw_take(&w);}
+ph_buf *service_http_query_mp(const char*a,const ph_auth_context*auth){(void)auth;assert(a);queries++;ph_writer w;assert(phw_init(&w,PH_WIRE_MSGPACK));phw_begin(&w,NULL,false);phw_text(&w,"action",a);phw_end(&w);return phw_take(&w);}
+ph_buf *service_http_command_mp(const void*p,size_t n,const ph_auth_context*auth){(void)auth;ph_value v;if(!phv_parse(PH_WIRE_MSGPACK,p,n,&v))return service_http_query_mp("invalid_request",auth);commands++;ph_writer w;assert(phw_init(&w,PH_WIRE_MSGPACK));phw_begin(&w,NULL,false);phw_text(&w,"action","command");phw_value(&w,"input",&v);phw_end(&w);return phw_take(&w);}
 /* Auth core and token routes execute in test_auth_routes_mp. Here a revocable
  * bearer boundary isolates the real product routes/lifetimes/flash adapter. */
 static bool token_valid=true;
 ph_auth_state *device_local_auth(void){return (ph_auth_state *)password;}
 bool ph_auth_password_is_set(ph_auth_state*p){return *(const char*)p!=0;}
-static bool http_auth_authorized(const char*a){return token_valid&&!strcmp(a,"Bearer valid");}
+static bool http_auth_authorized(ph_http_product*p,const char*a){(void)p;return token_valid&&!strcmp(a,"Bearer valid");}
 static bool http_auth_route(const char*p){return !strcmp(p,"/api/v1/auth/login")||!strcmp(p,"/api/v1/auth/logout");}
 static void http_auth_reply(ph_http_product*p,ph_http_exchange*x,unsigned status,const char*c,const char*t){(void)t;ph_http_message(p,x,status,c);}
 static void http_auth_info(ph_http_product*p,ph_http_exchange*x){ph_http_message(p,x,200,"public_info");}

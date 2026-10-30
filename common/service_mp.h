@@ -20,6 +20,10 @@ void service_memory_snapshot(service_memory_state_t *out);
  * independently owned; release it with ph_buf_free(), after transport IO. All
  * asynchronous business adapters must copy the validated typed parameters. */
 ph_buf *service_command_mp(const void *data, size_t length);
+/* HTTP retains its original admin context across waits. Recheck it after the
+ * blocking command admission, before receipts, cache reads or mutation. */
+ph_buf *service_http_command_mp(const void *,size_t,const ph_auth_context *);
+ph_buf *service_http_query_mp(const char *,const ph_auth_context *);
 ph_buf *service_mqtt_command_mp(const void *data, size_t length);
 /* Authenticated UDP business only; fixed allowlist excludes administration.
  * Context is checked again under the command mutex before receipts/mutation. */

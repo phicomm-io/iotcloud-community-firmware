@@ -86,7 +86,7 @@ static bool route_matches(const char *path,const char *route)
 }
 static ph_http_action prepare(ph_http_exchange *x)
 {
-    if(operation!=AUTH && !http_auth_authorized(x->request->authorization)){
+    if(operation!=AUTH && !http_auth_authorized(&product,x->request->authorization)){
         http_auth_reply(&product,x,401,"unauthorized",NULL);return PH_HTTP_REPLY;
     }
     if(operation==UPLOAD) {
@@ -139,7 +139,7 @@ static ph_http_action begin(ph_http_exchange *x)
         if(strcmp(r->method,"POST")||!r->length||r->length>256){http_auth_reply(&product,x,400,"invalid_request",NULL);return PH_HTTP_REPLY;}
         operation=AUTH;return prepare(x);
     }
-    if(!asset && !http_auth_authorized(r->authorization)){
+    if(!asset && !http_auth_authorized(&product,r->authorization)){
         http_auth_reply(&product,x,401,"unauthorized",NULL);return PH_HTTP_REPLY;
     }
     if(backup || restore){
@@ -188,7 +188,7 @@ static bool body_chunk(ph_http_exchange *x,const void *data,size_t n)
 static void complete(ph_http_exchange *x)
 {
     if(operation==AUTH){http_auth_complete(&product,x);return;}
-    if(!http_auth_authorized(x->request->authorization)){
+    if(!http_auth_authorized(&product,x->request->authorization)){
         http_auth_reply(&product,x,401,"unauthorized",NULL);return;
     }
     if(operation==UPLOAD) {

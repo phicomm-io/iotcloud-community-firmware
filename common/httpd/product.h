@@ -12,6 +12,7 @@ typedef struct {
  char *body;
  size_t used,capacity;
  ph_buf *wire;
+ ph_auth_context auth;
  char scalar[PH_HTTP_SCALAR_BYTES];
 } ph_http_product;
 void ph_http_product_init(ph_http_product *,ph_http_exchange *);
