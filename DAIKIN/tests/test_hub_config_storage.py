@@ -101,13 +101,17 @@ class HubConfigStorage(unittest.TestCase):
         # A real power loss discards the whole heap. Throwing from the NOR shim
         # instead abandons IDF's local non-RAII temporary list; that host-only
         # artifact must not be mistaken for an ordinary-operation firmware leak.
-        leaks = '0' if name in ('power','migration','live-reclaim-power','live-legacy') else '1'
+        leaks = '0' if name in ('power','migration','live-reclaim-power','live-legacy','route-power') else '1'
         timeout = 300 if name in ('live-reclaim-power', 'live-legacy') else 90
         subprocess.run([str(self.binary[variant]), name], check=True, timeout=timeout,
                        env={**{k:v for k,v in os.environ.items() if k!='DAIKIN_NVS_NO_PAIRS'}, **({'DAIKIN_NVS_NO_PAIRS':'1'} if no_pairs else {}), 'ASAN_OPTIONS': 'detect_leaks=' + leaks,'DAIKIN_NVS_PAGES':str(pages)})
 
     def test_authority_key_type_and_precedence(self):
         self.scenario("authority",pages=4)
+
+    def test_outbound_route_and_key_atomic_at_every_nor_byte(self):
+        for variant in ('hub', 'full'):
+            for pages in (4,5): self.scenario('route-power',variant,pages=pages)
 
     def test_live_16k_reclaim_pair_and_six_existing_routes(self):
         self.scenario('live-reclaim',pages=4)

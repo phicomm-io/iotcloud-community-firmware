@@ -439,4 +439,35 @@ static void liveLegacy(){
 static void liveReclaim(bool){abort();}
 static void liveLegacy(){abort();}
 #endif
-int main(int argc,char**argv){assert(argc==2);std::string test=argv[1];if(test=="authority")authority();else if(test=="live-reclaim")liveReclaim(false);else if(test=="live-reclaim-power")liveReclaim(true);else if(test=="live-legacy")liveLegacy();else if(test=="migration")migration(true);else if(test=="dual-key")dualKey();else if(test=="valid-budget")validBudget();else if(test=="budget")budget();else if(test=="power"){power(false);power(true);}else if(test=="failure")failure();else abort();}
+#if !defined(DAIKIN_FIXED_AUTH_V2) && !defined(DAIKIN_BASELINE)
+static bool routeCommit(bool remove){
+ const char *peer="aabbccddee02";lanPairRoutePeer=peer;lanPairRouteIP="192.0.2.20";
+ bool saved=remove?ph_auth_remote_remove(&localAuth,peer):ph_auth_remote_store(&localAuth,peer,"abcdef1234567890abcdef1234567890",1,ph_auth_credential_epoch(&localAuth));
+ lanPairRoutePeer=nullptr;lanPairRouteIP=nullptr;return saved;
+}
+static void routePower(){
+ Nor before;seed(before);boot(before);char inbound[33];assert(ph_auth_pair(&localAuth,"","aabbccddee03",2,inbound));
+ DynamicJsonDocument next(configCapacity);next.set(config);auto fixed=next.createNestedArray("lan_peers").createNestedObject();fixed["peer"]="aabbccddee01";fixed["ip"]="192.0.2.10";assert(saveConfig(next));
+ assert(ph_auth_remote_store(&localAuth,"aabbccddee01","1234567890abcdef1234567890abcdef",1,ph_auth_credential_epoch(&localAuth)));
+ for(bool remove:{false,true}){
+  const auto image=before.bytes;const auto oldConfig=snapshot();const auto oldStore=localAuth.store;
+  before.work=0;assert(routeCommit(remove));const auto work=before.work;const auto newConfig=snapshot();const auto newStore=localAuth.store;
+  for(bool powerCut:{false,true})for(size_t cut=0;cut<=work;cut++){
+   Nor nor;nor.bytes=image;boot(nor);if(powerCut)nor.cut=cut;else nor.failAfter=cut;
+   try{routeCommit(remove);}catch(const PowerLoss&){}
+   lanPairRoutePeer=nullptr;lanPairRouteIP=nullptr;nor.cut=nor.failAfter=-1;boot(nor);
+   const auto actual=snapshot();assert(actual==oldConfig||actual==newConfig);
+   assert(!memcmp(&localAuth.store,actual==oldConfig?&oldStore:&newStore,sizeof(ph_auth_store)));
+   assert(lanRouteMatches("aabbccddee02","192.0.2.20")==bool(lanRouteRecord(localAuth.store,"aabbccddee02")));
+   assert(lanRouteMatches("aabbccddee01","192.0.2.10")&&localAuth.store.count==1);intact();
+  }
+  boot(before);
+  printf("route %s pages%zu: %zu NOR power cuts + %zu I/O failures, whole pin/key and original peer preserved PASS\n",remove?"unpair":"pair",before.bytes.size()/4096,work+1,work+1);
+ }
+}
+#endif
+int main(int argc,char**argv){assert(argc==2);std::string test=argv[1];
+#if !defined(DAIKIN_FIXED_AUTH_V2) && !defined(DAIKIN_BASELINE)
+if(test=="route-power"){routePower();return 0;}
+#endif
+if(test=="authority")authority();else if(test=="live-reclaim")liveReclaim(false);else if(test=="live-reclaim-power")liveReclaim(true);else if(test=="live-legacy")liveLegacy();else if(test=="migration")migration(true);else if(test=="dual-key")dualKey();else if(test=="valid-budget")validBudget();else if(test=="budget")budget();else if(test=="power"){power(false);power(true);}else if(test=="failure")failure();else abort();}

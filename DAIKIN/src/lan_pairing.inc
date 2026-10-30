@@ -13,7 +13,18 @@ static void initLanClient(){
   lanOps.local=deviceId.c_str();lanOps.now=[]()->uint32_t{return millis();};lanOps.epoch=[](){return ph_auth_credential_epoch(&localAuth);};
   lanOps.random=[](uint8_t nonce[16]){esp_fill_random(nonce,16);return true;};
   lanOps.load=[](const char *peer,char key[33],unsigned *scopes){return localAuthReady&&ph_auth_remote_get(&localAuth,peer,key,scopes);};
-  lanOps.save=[](const char *peer,const char *key,unsigned scopes,uint32_t epoch){return localAuthReady&&ph_auth_remote_store(&localAuth,peer,key,scopes,epoch);};
+  lanOps.save=[](const char *peer,const char *key,unsigned scopes,uint32_t epoch){
+    lc_job *job=lc_find(&lanClient,peer,false);if(!localAuthReady||!job||job->phase!=LC_PAIR)return false;
+    lanPairRoutePeer=peer;lanPairRouteIP=job->ip;
+    const bool saved=ph_auth_remote_store(&localAuth,peer,key,scopes,epoch);
+    lanPairRoutePeer=nullptr;lanPairRouteIP=nullptr;
+    if(!saved)return false;
+    // Re-pairing an unchanged key is a core no-op. The owner may still have
+    // explicitly selected a new IP; commit that pin without rotating the key.
+    if(lanRouteMatches(peer,job->ip))return true;
+    DynamicJsonDocument candidate(std::min(configCapacity,config.memoryUsage()+1024));
+    return candidate.set(config)&&lanRouteSet(candidate,peer,job->ip)&&saveConfig(candidate);
+  };
   lanOps.send=lanSend;
 #ifdef IOTCLOUD_HUB
   lanOps.business_boot=[]()->uint32_t{return sensorBoot;};
@@ -21,15 +32,15 @@ static void initLanClient(){
 }
 static bool lanPairStart(const char *peer,const char *ip,const char *password,unsigned scopes,const char **code){
   initLanClient();if(configRecovery||!localAuthReady){*code="migration_required";return false;}
-  // Persist only routing information here; passwords, keys and tokens are never
-  // in exported configuration. A rejected pairing cannot authorize this route.
+  // The selected address belongs to this pending job until authenticated pair
+  // success commits its route and key together. Rejections do not pin an IP.
   IPAddress address;
   if(!ip||!address.fromString(ip)||!lc_peer(peer)||!strcmp(peer,deviceId.c_str())||!password||strlen(password)>32||!scopes||(scopes&~7u)){*code="invalid_params";return false;}
   lc_job *existing=lc_find(&lanClient,peer,false);if(existing&&(existing->phase==LC_PAIR||existing->phase==LC_RESUME||existing->phase==LC_UNPAIR)){*code="busy";return false;}
-  DynamicJsonDocument candidate(configCapacity);candidate.set(config);JsonArray peers=candidate["lan_peers"].as<JsonArray>();if(peers.isNull())peers=candidate.createNestedArray("lan_peers");
-  JsonObject target;for(JsonObject entry:peers)if(String(entry["peer"]|"")==peer){target=entry;break;}
-  if(target.isNull()){if(peers.size()>=LC_SLOTS){*code="busy";return false;}target=peers.createNestedObject();}
-  target["peer"]=String(peer);target["ip"]=String(ip);if(!saveConfig(candidate)){*code="storage_error";return false;}
+  if(config["lan_peers"].size()>=LC_SLOTS){
+    bool pinned=false;for(JsonObjectConst entry:config["lan_peers"].as<JsonArrayConst>())if(!strcmp(entry["peer"]|"",peer)){pinned=true;break;}
+    if(!pinned){*code="busy";return false;}
+  }
   return lc_start(&lanClient,&lanOps,peer,ip,password,scopes,code);
 }
 static bool lanUnpairStart(const char *peer,const char **code){
@@ -56,6 +67,9 @@ static void pollLanPairing(){
   if(!localAuthReady||configRecovery)return;initLanClient();
   for(JsonObjectConst entry:config["lan_peers"].as<JsonArrayConst>()){
     const char *peer=entry["peer"]|"",*ip=entry["ip"]|"";if(!lc_peer(peer)||strlen(ip)>15)continue;
+    lc_job *job=lc_find(&lanClient,peer,false);
+    if(job&&(job->phase==LC_PAIR||job->phase==LC_RESUME||job->phase==LC_UNPAIR||
+      (job->phase==LC_FAILED&&uint32_t(millis()-job->sent)<60000u)))continue;
     char key[33];unsigned scopes=0;if(!lanOps.load(peer,key,&scopes))continue;memset(key,0,sizeof(key));
     unsigned scope=(scopes&PH_AUTH_SCOPE_SENSOR)?PH_AUTH_SCOPE_SENSOR:(scopes&PH_AUTH_SCOPE_CONTROL)?PH_AUTH_SCOPE_CONTROL:PH_AUTH_SCOPE_GROUP;
     uint8_t token[16];lc_token(&lanClient,&lanOps,peer,ip,scope,token);memset(token,0,sizeof(token));

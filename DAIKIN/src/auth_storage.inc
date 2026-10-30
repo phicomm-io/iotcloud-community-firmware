@@ -149,17 +149,13 @@ static bool persistAuthConfig(DynamicJsonDocument &candidate,const ph_auth_store
   if(&candidate!=&config){config=std::move(candidate);config.shrinkToFit();}
   updatePassword();return finish(AuthStorageError::ok);
 }
+#include "lan_route_storage.inc"
 static void initLocalAuth(){
   localAuthMutex=xSemaphoreCreateMutex();if(!localAuthMutex){configRecovery=true;return;}
   ph_auth_ops ops={};ops.now=[](void*)->uint32_t{return millis();};ops.random=[](void*,uint8_t *bytes,size_t n){esp_fill_random(bytes,n);return true;};
   ops.lock=[](void*){xSemaphoreTake(localAuthMutex,portMAX_DELAY);};ops.unlock=[](void*){xSemaphoreGive(localAuthMutex);};
   ops.password=[](void*,char out[33]){portENTER_CRITICAL(&authMux);memcpy(out,webPassword,33);portEXIT_CRITICAL(&authMux);return true;};
-  ops.save=[](void*,const ph_auth_store *store){
-    if(config["_version"]==1)return persistAuthConfig(config,store);
-    // A fresh empty config was shrinkToFit'd at boot and has no room even
-    // for _version. Grow a candidate rather than poisoning the live document.
-    DynamicJsonDocument candidate(std::min(configCapacity,config.memoryUsage()+1024));if(!candidate.set(config))return false;return persistAuthConfig(candidate,store);
-  };
+  ops.save=[](void*,const ph_auth_store *store){return persistLanPairingStore(store);};
   localAuthReady=ph_auth_init(&localAuth,&ops,&loadedAuthStore);if(!localAuthReady)configRecovery=true;
 }
 extern "C" ph_auth_state *device_local_auth(){return localAuthReady&&!configRecovery?&localAuth:nullptr;}
