@@ -5,7 +5,9 @@ test('DAIKIN uses shared metric scales, optional HCHO and expiring live data',()
  const html=require('node:zlib').gunzipSync(Buffer.from(source.match(/\{([^}]+)\}/)[1].split(',').map(Number))).toString();
  const dom=new JSDOM(html,{runScripts:'outside-only',url:'http://device.local'}),w=dom.window;
  try{
-  let now=100;const ticks=[];w.TextEncoder=TextEncoder;w.scrollTo=()=>{};w.setTimeout=()=>0;w.setInterval=fn=>{ticks.push(fn);return ticks.length;};
+  let now=100;const ticks=[];w.TextEncoder=TextEncoder;w.TextDecoder=TextDecoder;w.scrollTo=()=>{};w.setTimeout=()=>0;w.setInterval=fn=>{ticks.push(fn);return ticks.length;};
+  // UI.start is replaced below: sensor rendering must not issue network IO.
+  w.fetch=()=>{throw Error('Unexpected network request in sensor-render fixture');};
   Object.defineProperty(w.performance,'now',{value:()=>now});
   const scripts=[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m=>m[1]);
   scripts.forEach((source,i)=>{if(i===scripts.length-1)w.UI.start=dev=>{w.UI.device=dev;};vm.runInContext(source,dom.getInternalVMContext());});
