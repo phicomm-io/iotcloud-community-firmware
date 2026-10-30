@@ -11,6 +11,12 @@ typedef uintptr_t mico_thread_t;
 typedef uintptr_t mico_thread_arg_t;
 typedef uint64_t mico_utc_time_ms_t;
 typedef unsigned mico_mutex_t;
+typedef unsigned mico_semaphore_t;
+#define MICO_WAIT_FOREVER UINT32_MAX
+static inline int mico_rtos_init_semaphore(mico_semaphore_t*s,int n){(void)n;*s=0;return 0;}
+static inline int mico_rtos_deinit_semaphore(mico_semaphore_t*s){*s=0;return 0;}
+static inline int mico_rtos_set_semaphore(mico_semaphore_t*s){assert(!*s);*s=1;return 0;}
+static inline int mico_rtos_get_semaphore(mico_semaphore_t*s,uint32_t wait){(void)wait;if(!*s)return -1;*s=0;return 0;}
 typedef struct { int free_memory; } micoMemInfo_t;
 #define kNoErr 0
 int mico_rtos_init_mutex(mico_mutex_t *);

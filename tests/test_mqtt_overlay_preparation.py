@@ -16,7 +16,8 @@ PATCHES = [ROOT / name for name in (
     'common/mqtt-mico36.patch', 'common/mqtt-publish-bounds.patch',
     'common/mqtt-socket-close.patch', 'M1/mqtt-packet-deadline.patch',
     'common/mqtt-response-deadline.patch', 'common/mqtt-buffer-storage.patch',
-    'common/mqtt-subscribe-qos.patch', 'common/mqtt-subscribe-result.patch')]
+    'common/mqtt-subscribe-qos.patch', 'common/mqtt-subscribe-result.patch',
+    'common/mqtt-receive-recovery.patch', 'common/mqtt-post-send-workspace.patch')]
 
 
 class MQTTOverlayPreparationTests(unittest.TestCase):
@@ -41,7 +42,7 @@ class MQTTOverlayPreparationTests(unittest.TestCase):
                     self.assertIn(b'(int *)&qos', (old / 'MQTTClient.c').read_bytes())
                     sdk = old.parents[2]
                     for repeat in range(2):
-                        apply_stack(sdk, PATCHES)
+                        apply_stack(sdk, PATCHES + ([ROOT / 'TC1/mqtt-yield-errors.patch'] if model == 'TC1' else []))
                     upgraded = {p.relative_to(old): p.read_bytes()
                                 for p in old.rglob('*') if p.is_file()}
                 with fixture.protocol(model) as fresh:
@@ -89,13 +90,13 @@ class MQTTOverlayPreparationTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(complete, {p: (sdk / p).read_bytes() for p in paths})
 
-            # Both complete prior stacks (before QoS and before distinct
-            # SUBACK refusal) upgrade without discarding their SDK checkouts.
-            for prefix in (PATCHES[:-2], PATCHES[:-1]):
+            # Every complete prior stack upgrades without replacing its SDK:
+            # before QoS, distinct SUBACK refusal, RX recovery or TX retention.
+            for prefix in (PATCHES[:6], PATCHES[:7], PATCHES[:8], PATCHES[:9]):
                 restore()
                 result = apply(*prefix)
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertNotIn(b'MQTT_SUBSCRIBE_DENIED', (sdk / 'libraries/protocols/mqtt/MQTTClient.h').read_bytes())
+                self.assertEqual(b'MQTT_SUBSCRIBE_DENIED' in (sdk / 'libraries/protocols/mqtt/MQTTClient.h').read_bytes(), len(prefix) >= 8)
                 for repeat in range(2):
                     result = apply(*PATCHES)
                     self.assertEqual(result.returncode, 0, result.stderr)

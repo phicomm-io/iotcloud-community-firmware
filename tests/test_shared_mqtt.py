@@ -44,6 +44,9 @@ class SharedMQTT(unittest.TestCase):
             if with_qos:
                 patches.append(ROOT/'common/mqtt-subscribe-qos.patch')
                 patches.append(ROOT/'common/mqtt-subscribe-result.patch')
+                patches.append(ROOT/'common/mqtt-receive-recovery.patch')
+                patches.append(ROOT/'common/mqtt-post-send-workspace.patch')
+                if model=='TC1': patches.append(ROOT/'TC1/mqtt-yield-errors.patch')
             apply_stack(copy, patches)
             yield copy/'libraries/protocols/mqtt'
 
@@ -93,6 +96,12 @@ class SharedMQTT(unittest.TestCase):
         self.check_session_fixture('overload','M1')
     def test_tc1_ingress_overload(self):
         self.check_session_fixture('overload','TC1')
+    def test_post_send_pressure(self):
+        for model in ('A1','M1','TC1'):
+            self.check_session_fixture('post_send_pressure',model)
+    def test_receive_recovery(self):
+        for model in ('A1','M1','TC1'):
+            self.check_session_fixture('receive_recovery',model)
     def test_a1_failure_evidence(self):
         self.check_session_fixture('failure_evidence','A1')
     def test_m1_failure_evidence(self):
@@ -176,10 +185,28 @@ int main(void){
  unsigned char p[2048];MQTTString retained_topic=MQTTString_initializer;retained_topic.cstring=t;
  int size=MQTTSerialize_publish(p,sizeof(p),0,1,1,600,retained_topic,(unsigned char*)"{}",2);
  assert(size>0);append(p,size);assert(!ph_mqtt_yield(&client,1)&&!ph_mqtt_poll(&client)&&observed_retained);
+ /* Replay ignored retained configuration states through real Paho, not just
+  * the string filter; valid retained addresses above must remain delivered. */
+ const char *replayed[]={"binding/state","linkage/state","light/config/state","command"};
+ for(unsigned i=0;i<4;i++){
+  snprintf(t,sizeof(t),"%s/linkage/%s",base,replayed[i]);retained_topic.cstring=t;
+  size=MQTTSerialize_publish(p,sizeof(p),0,1,1,610+i,retained_topic,(unsigned char*)"{}",2);
+  assert(size>0);append(p,size);unsigned before=executions;
+  assert(!ph_mqtt_yield(&client,1)&&!ph_mqtt_debug_core()->count[0]);
+  assert(!ph_mqtt_poll(&client)&&executions==before);
+ }
  incoming("homeassistant/status","online",601);assert(!ph_mqtt_yield(&client,1)&&!ph_mqtt_poll(&client)&&births==1);
- snprintf(feature_filters[3],512,"group/room/#");
- assert(!feature_ingress_topic("group/room/get",strlen("group/room/get")));
- assert(feature_ingress_topic("group/room/linkage/get",strlen("group/room/linkage/get")));
+ /* The deployed LAN-only filter set puts the root at index 2. */
+ strcpy(feature_filters[0],feature_filters[1]);
+ strcpy(feature_filters[1],feature_filters[2]);
+ strcpy(feature_filters[2],feature_filters[3]);feature_filters[3][0]=0;
+ snprintf(t,sizeof(t),"%s/linkage/fan/state",base);
+ assert(!feature_ingress_topic(t,strlen(t),false));
+ snprintf(t,sizeof(t),"%s/linkage/fan/set",base);
+ assert(feature_ingress_topic(t,strlen(t),false));
+ snprintf(feature_filters[2],512,"group/room/#");
+ assert(!feature_ingress_topic("group/room/get",strlen("group/room/get"),false));
+ assert(feature_ingress_topic("group/room/linkage/get",strlen("group/room/linkage/get"),false));
  cleanup();ph_mqtt_owner_end();assert(!native_live&&!charged_live);return 0;
 }
 '''.replace('/* POLICY */',policy)

@@ -185,6 +185,14 @@ int mqtt_buffer_allocation_permit(Client *c, size_t bytes) {
         permit(NULL, bytes);
 }
 
+/* The SDK calls this only for required storage, never an optional shrink.
+ * Record no payload and preserve the first actual failure in this operation. */
+void mqtt_buffer_allocation_failed(Client *c, int admitted) {
+    port_state *ctx=callback_port();
+    if (ctx_ph_mqtt_owner(ctx) && c == ctx->client && ctx->core.protocol_depth && !ctx->cause)
+        ctx->cause = admitted ? PH_MQTT_CAUSE_ALLOCATION : PH_MQTT_CAUSE_HEAP_ADMISSION;
+}
+
 static void *allocate(void *p, size_t n) {
     (void) p;
     return malloc(n);
