@@ -20,6 +20,17 @@ static uint32_t alarm_request_revision, alarm_due;
 static uint16_t shown_ppm;
 static bool shown_valid, shown_co2;
 static uint32_t shown_at, shown_until;
+/* Only these readback fields enter full business status. Repeated diagnostic
+ * replies and TTL refreshes must not dirty status or wake every subscriber. */
+static bool mcu_business_changed(uint32_t now)
+{
+    static uint16_t ppm;static unsigned flags;static bool captured;
+    bool valid=shown_valid&&(int32_t)(now-shown_until)<0&&(uint32_t)(now-shown_at)<5000;
+    unsigned next=(m1_state.mcu_extended&&m1_state.mcu_version_received?1u:0u)|
+        (valid?2u:0u)|(shown_co2&&valid?4u:0u);
+    bool changed=!captured||ppm!=shown_ppm||flags!=next;
+    captured=true;ppm=shown_ppm;flags=next;return changed;
+}
 static int manual_display_mode=-1;
 static uint32_t manual_display_revision,manual_source_revision;
 static bool button_seen;
@@ -203,15 +214,18 @@ bool m1_mcu_rx(const uint8_t p[20])
             auto_due=now+(alarm_need_read?0:250);
         }
     }
+    bool changed=mcu_business_changed(now);
     mico_rtos_unlock_mutex(&m1_lock);
     bool handled=match || p[1]==0x70 || p[1]==0x14 || p[1]==0x15 || p[1]==0x17 || p[1]==0x1a;
-    if(handled)service_cache_changed(SERVICE_CACHE_STATUS);
+    if(changed)service_cache_changed(SERVICE_CACHE_STATUS);
     return handled;
 }
 
 void m1_mcu_tick(void)
 {
     uint32_t now=mico_rtos_get_time();uint8_t f[262];size_t n=0;
+    mico_rtos_lock_mutex(&m1_lock);bool changed=mcu_business_changed(now);mico_rtos_unlock_mutex(&m1_lock);
+    if(changed)service_cache_changed(SERVICE_CACHE_STATUS);
     mico_rtos_lock_mutex(&m1_lock);
     if(m1_state.mcu_updating && due(now,transfer_until))m1_state.mcu_updating=false;
     if(exchange_pending) {
