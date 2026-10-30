@@ -17,17 +17,17 @@ def body(manifest, locale):
 
     return f'''<div class="notes-app" data-release-notes data-locale="{locale}">
 <p class="eyebrow">{t('发布与升级', 'RELEASES & UPGRADES')}</p>
-<h1>Release Log</h1>
+<h1>{t('更新日志','Release Log')}</h1>
 <p>{t('按日期和版本查阅更新，也可以比较两个固件版本的变化。', 'Browse changes by date and release, or compare two firmware versions.')}</p>
 <p><a class="btn" href="{'../../en/' if english else '../'}#releases">{t('固件下载', 'Firmware downloads')}</a></p>
-<div class="notes-fields"><label for="notes-channel">{t('发布渠道', 'Release channel')}<select id="notes-channel" disabled><option value="stable">{t('稳定版', 'Stable releases')}</option><option value="candidate">{t('Beta（RC，不建议使用）', 'Beta (RC, not recommended)')}</option></select></label></div>
+<div class="notes-fields"><label for="notes-channel">{t('发布渠道', 'Release channel')}<select id="notes-channel" disabled><option value="stable">{t('稳定版', 'Stable releases')}</option><option value="candidate">{t('Beta（RC）', 'Beta (RC)')}</option></select></label></div>
 <div class="notes-tabs" role="tablist" aria-label="{t('查看方式', 'View')}">
 <button type="button" role="tab" id="notes-history-tab" aria-controls="notes-history" aria-selected="true">{t('版本历史', 'Version history')}</button>
 <button type="button" role="tab" id="notes-compare-tab" aria-controls="notes-comparison" aria-selected="false">{t('升级差异', 'Upgrade comparison')}</button>
 </div>
 <section id="notes-candidates" aria-labelledby="notes-candidates-title" hidden>
-<h2 id="notes-candidates-title">{t('Beta 下载（RC，不建议使用）', 'Beta downloads (RC, not recommended)')}</h2>
-<p>{t('RC 实际属于 Beta 测试版本，后续仍会有较大改动，不建议使用。请按设备型号和固件类型选择。', 'RC releases are beta builds. Major changes are still expected; using them is not recommended. Choose your device model and firmware variant.')}</p>
+<h2 id="notes-candidates-title">{t('Beta 下载（RC）', 'Beta downloads (RC)')}</h2>
+<p>{t('RC 用于 Beta 测试。请按设备型号和固件类型选择。', 'RC builds are for beta testing. Choose your device model and firmware variant.')}</p>
 <p id="notes-candidate-status" role="status" aria-live="polite"></p>
 <div id="notes-candidate-downloads"></div>
 </section>

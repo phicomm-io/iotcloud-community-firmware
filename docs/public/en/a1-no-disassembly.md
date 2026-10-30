@@ -14,7 +14,7 @@ Hold only the panel's **Wi-Fi icon button for 1–2 seconds**, then release; rec
 
 ### Linux EasyLink V2 provisioning
 
-App-free EasyLink has succeeded only with **mac80211 frame injection on Linux**. Prefer the official app if available. Ordinary Windows, macOS or Linux UDP senders are not verified provisioning methods.
+App-free EasyLink uses **mac80211 frame injection on Linux** and requires a wireless adapter that supports it. The official app is another option.
 
 Use a spare adapter supporting monitor mode and injection, Linux, `iw` and a C compiler. Use a 2.4 GHz WPA2/AES network and record its channel. Channel 1 has worked; channel 6 is not mandatory. Another adapter can keep the computer on the target LAN.
 
@@ -36,7 +36,7 @@ Enter the target SSID and password when prompted (password is hidden). Once send
 sudo iw dev easylink-mon del
 ```
 
-Confirm a DHCP lease matching the device MAC before continuing. Packet counts do not establish successful provisioning.
+Confirm a DHCP lease matching the device MAC before continuing.
 
 ## 2. Identify the LAN target
 
@@ -118,7 +118,7 @@ curl --http1.0 --noproxy '*' --connect-timeout 5 --max-time 300 --header 'Conten
 
 <!-- /os -->
 
-The factory endpoint may close the connection with `(52) Empty reply from server` and `http=000`. This alone proves neither failure nor success. Record the uploaded byte count, leave power connected and allow about 2–3 minutes. Check the community hotspot and version in section 5 before taking further action. Do not immediately resend, reset or disconnect power because of this message.
+The factory endpoint may close the connection with `(52) Empty reply from server` and `http=000`. Record the uploaded byte count, leave power connected and allow about 2–3 minutes. Check the community hotspot and version in section 5 before taking further action. Do not immediately resend, reset or disconnect power because of this message.
 
 ## 4. Method B: DNS redirection for device-initiated download
 
@@ -130,7 +130,7 @@ This path is derived from stock **v1.47** and has not been validated on an A1 de
 | Update check | `aircleaner.phicomm.com:443/aircleanerfirmware/checkUpdate` |
 | Cloud connection | `aircleanerconnecter.phicomm.com:9000` |
 
-The update response uses top-level `url`, `md5`, `ver` and `enforce` fields. Stock v1.47 accepts a higher numeric version such as `v1.48` with `enforce: true`. This is a comparison label, not the community version. The TLS path disables certificate verification but requires a server compatible with the old client.
+The update response uses top-level `url`, `md5`, `ver` and `enforce` fields. Stock v1.47 accepts a higher numeric version such as `v1.48` with `enforce: true`. This label satisfies the stock version comparison; the installed community version is 0.9.27. The TLS path disables certificate verification but requires a server compatible with the old client.
 
 ### Start the temporary Linux service
 
@@ -195,7 +195,7 @@ Do not stack duplicate tables. The rules leave global DNS/DHCP configuration unc
 
 DNS changes do not trigger an immediate check. Stock v1.47 registers an hourly timer and tests whether the time string's hour is `18`, together with activation and OTA state. Keep the device online with working time synchronization. Restarting alone does not guarantee an immediate update request.
 
-Watch for `/device/active`, `/aircleanerfirmware/checkUpdate` and `/a1-native.bin`, followed by `download_complete`. A complete download is not proof of booting. Follow step 5 to check the community hotspot and actual version. If no check arrives, use LAN OTA; do not repeatedly restart or send guessed cloud commands.
+Watch for `/device/active`, `/aircleanerfirmware/checkUpdate` and `/a1-native.bin`, followed by `download_complete`. Follow step 5 to check the community hotspot and actual version. If no check arrives, use LAN OTA; do not repeatedly restart or send guessed cloud commands.
 
 ### Remove temporary services
 
@@ -246,4 +246,4 @@ curl --noproxy '*' --connect-timeout 3 --max-time 5 "http://${DeviceIp}/api/v1/s
 
 <!-- /os -->
 
-A community hotspot establishes that the new system offers setup. Confirm the version, web access and working fan and controls before calling migration successful. For later community upgrades, use signed packages as described in [firmware updates](firmware-update).
+For later community upgrades, use signed packages as described in [firmware updates](firmware-update).

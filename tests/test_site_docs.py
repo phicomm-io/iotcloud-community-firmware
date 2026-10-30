@@ -189,7 +189,7 @@ class BuildTests(unittest.TestCase):
                            'demos', 'docs', 'releases', 'community', 'm1-mcu', 'm1-mcu-releases'):
                 self.assertIn(f'id="{anchor}"', home)
             for slug, *_ in PAGES:
-                self.assertIn(f'href="{guide_base}{slug}.html"', home)
+                self.assertRegex(home, r'href="' + re.escape(guide_base + slug + '.html') + r'(?:#[^"]+)?"')
             self.assertIn('data-home-language', home)
             self.assertNotIn('{{', home)
             self.assertNotRegex(home, r'href="[^\"]*/releases/(?:download/)?v1[./]')
@@ -221,26 +221,31 @@ class BuildTests(unittest.TestCase):
         from html import unescape
         from urllib.parse import unquote, urlsplit
 
-        devices = ('m1', 'a1', 'tc1', 'daikin')
+        devices = ('m1', 'a1', 'tc1', 's30', 'daikin')
         for language in ('', 'en/'):
             home = self.out / (language + 'index.html')
             paths = [home, self.out / 'guides/en/index.html'] if language else [home]
             paths += [self.out / 'guides' / language / (slug + '.html') for slug, *_ in PAGES]
             for path in paths:
                 text = path.read_text()
-                entries = re.findall(r'<div class="device-doc-actions"[^>]*data-device-actions="([^"]+)"[^>]*>(.*?)</div>', text)
+                entries = re.findall(r'<div class="device-doc-sections"[^>]*data-device-sections="([^"]+)"[^>]*>(.*?)</div>', text)
                 self.assertEqual([device for device, _ in entries], list(devices), path)
                 for device, entry in entries:
-                    links = re.findall(r'<a href="([^"]+)" data-guide-action="([^"]+)"', entry)
-                    self.assertEqual([action for _, action in links], ['install', 'update', 'use', 'recover'])
-                    for href, action in links:
-                        url = urlsplit(unescape(href))
-                        target = path.parent / unquote(url.path)
-                        self.assertTrue(target.is_file(), f'{path}: missing {device} {action}: {href}')
-                        if url.fragment:
-                            self.assertIn(f'id="{unquote(url.fragment)}"', target.read_text(), href)
-                        if action in ('use', 'recover'):
-                            self.assertEqual(target.name, device + '-guide.html', href)
+                    sections = re.findall(r'<section data-device-section="([^"]+)"[^>]*>(.*?)</section>', entry)
+                    self.assertEqual([name for name, _ in sections], ['install', 'common', 'automation', 'features'])
+                    for name, section in sections:
+                        links = re.findall(r'<a href="([^"]+)"', section)
+                        self.assertTrue(links, f'{device}: empty {name}')
+                        if name == 'install':
+                            self.assertGreaterEqual(len(links), 2, device)
+                        if name == 'common':
+                            self.assertEqual(len(links), 3, device)
+                        for href in links:
+                            url = urlsplit(unescape(href))
+                            target = path.parent / unquote(url.path)
+                            self.assertTrue(target.is_file(), f'{path}: missing {device} {name}: {href}')
+                            if url.fragment:
+                                self.assertIn(f'id="{unquote(url.fragment)}"', target.read_text(), href)
                 if path == home:
                     for device in devices:
                         self.assertIn(f'href="#docs-{device}"', text)

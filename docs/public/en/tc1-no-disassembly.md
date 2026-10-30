@@ -23,7 +23,7 @@ There are two connections: **the computer first joins the TC1 provisioning AP to
 
 Other equivalent topologies work too. You need a client that can join the TC1 provisioning AP to send the trigger, and a file server that TC1 can reach through the OTA AP afterward.
 
-Review [power and wiring requirements](flash-prep) and [firmware package selection](firmware-update). Flashing erases the inactive application slot and reboots the device. The retained stock slot is **not** a guaranteed automatic rollback.
+Review [power and wiring requirements](flash-prep) and [firmware package selection](firmware-update). Flashing erases the inactive application slot and reboots the device. Use [wired recovery](tc1-flash) if installation fails.
 
 ### Prepare the update file
 
@@ -141,7 +141,7 @@ curl --max-time 30 --header 'Content-Type: application/json' \
 
 A small helper script is also included: [gen-trigger.py](assets/tools/tc1-no-disassembly/gen-trigger.py), run `python3 gen-trigger.py --version 1.0.0.21 --out tftp-trigger.bin`.
 
-`OTA AAAA...` only means the request was accepted — **not** that flashing succeeded. If the connection drops, watch the device and do not retrigger immediately.
+After receiving `OTA AAAA...`, wait for download and reboot. If the connection drops, watch the device and do not retrigger immediately.
 
 ### 4. Wait for the download and first boot
 
@@ -155,7 +155,7 @@ After a successful first boot, the open AP **`TC1_A1-AP-<last six MAC chars in u
 
 ### 5. Confirm success and restore your network
 
-Check the stock identity, complete TFTP transfer, new firmware AP and local web UI separately. HTTP 200, a device disconnect or a TFTP transfer alone does not prove success.
+Check the stock identity and complete TFTP transfer, then join the new firmware hotspot and confirm the version in its local WebUI.
 
 Once the new firmware works, shut down the temporary OTA AP and TFTP service and restore the interface addresses and firewall rules changed for flashing. If you created temporary interfaces and dnsmasq TFTP settings on OpenWrt / ImmortalWrt, remove those settings and restore the original network.
 

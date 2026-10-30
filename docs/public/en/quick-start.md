@@ -1,8 +1,8 @@
 # Quick start
 
-This project provides open-source firmware for discontinued IoT devices or devices whose cloud service providers have ended support. It currently supports the Phicomm TC1 power strip, M1 air quality monitor, A1 air purifier and DAIKIN BRY88AX151K air quality monitor. It provides local web control, MQTT and Home Assistant integration. Firmware downloads are free; the manufacturer's cloud is not required.
+This project provides open-source firmware for discontinued IoT devices or devices whose cloud service providers have ended support. It supports the Phicomm TC1 power strip, M1 air quality monitor, A1 air purifier, DAIKIN BRY88AX151K air quality monitor and ORVIBO S30-V1B smart socket. It provides local web control, MQTT and Home Assistant integration. Firmware downloads are free; the manufacturer's cloud is not required.
 
-**Use stable v0.9.27 for everyday operation. The current v1.0.0-rc.3 candidate is a beta build. Major changes are still expected, and daily use is not recommended; stable v1.0.0 is not yet available.** See the [complete cumulative candidate notes](release-log.html?channel=candidate). Downloads also retain the 0.9.x archive. M1 Wi-Fi and sensor-controller firmware update separately; the open-source controller is recommended for stock 11.x. Migration from 17.1.2.3 / 17.x is currently discouraged.
+**v0.9.27 is the stable release. v1.0.0-rc.4 is for beta testing and adds S30-V1B support.** See the [complete cumulative candidate notes](release-log.html?channel=candidate). Downloads also retain the 0.9.x archive. M1 Wi-Fi and sensor-controller firmware update separately; the open-source controller is recommended for stock 11.x. Migration from 17.1.2.3 / 17.x is currently discouraged.
 
 ## Identify your device
 
@@ -12,6 +12,7 @@ This project provides open-source firmware for discontinued IoT devices or devic
 | M1 air quality monitor | PM2.5, formaldehyde, temperature, humidity and screen brightness | Original EMW3080B / MK3080B module; retain the ATSAMD20 |
 | DAIKIN BRY88AX151K | PM2.5, PM10, CO₂, temperature, humidity, TVOC and optional formaldehyde; A1 automation | ESP32 / 4 MB Flash; PM2005 / PM2105 auto detection |
 | A1 air purifier | Fan, light ring, child lock, night mode and environmental-data automation | Original EMW3080B / MK3080B module |
+| ORVIBO S30-V1B | Relay, voltage, current, power, energy and power-on/off policy | BL2028N / BK7231N, HLW8032 meter |
 
 **`tc1(a1)` means the A1 hardware revision of the TC1 power strip, not the A1 air purifier. They are different products and cannot use each other's firmware.** Check the model before flashing.
 
@@ -21,6 +22,7 @@ This project provides open-source firmware for discontinued IoT devices or devic
 | M1 | [Factory Wi-Fi setup and OTA installation](m1-no-disassembly), starting at 0.9.21 | [Serial (recommended) / J-Link](m1-flash) |
 | A1 air purifier | [Factory Wi-Fi setup and OTA installation](a1-no-disassembly) | [Solder-free J-Link (recommended) / serial](a1-flash) |
 | DAIKIN | BRY88AB151K supports [stock OTA](daikin-stock-ota) | [ESP32 serial installation](daikin-guide#first-installation) |
+| S30-V1B | [Stock 2M.1220 network installation](s30-flash#network-installation-from-stock-firmware) | [Serial installation and recovery](s30-flash#disassembly-and-uart) |
 
 ## First Wi-Fi setup
 
@@ -34,6 +36,7 @@ If Wi-Fi has not been configured, the device opens a setup access point. Connect
 | M1 | `M1-AP-<last six MAC digits>` |
 | DAIKIN | `BRY88AX151K-AP-<last six MAC digits in uppercase>` |
 | A1 air purifier | `A1-AP-<last six MAC digits>` |
+| S30-V1B | `S30M_V1B_<last six MAC digits>` |
 
 All setup AP names use uppercase MAC digits. Older firmware may use a different hotspot name or setup address; check its release notes.
 
@@ -45,7 +48,7 @@ Theme preferences are stored locally in the browser and shared with the device U
 
 ## Next steps
 
-- Daily operation: [TC1](tc1-guide), [M1](m1-guide), [A1](a1-guide), [DAIKIN](daikin-guide).
+- Daily operation: [TC1](tc1-guide), [M1](m1-guide), [A1](a1-guide), [DAIKIN](daikin-guide), [S30-V1B](s30-guide).
 - [Firmware updates](firmware-update).
 - [Connect to IoTCloud](iotcloud-connect) for remote device management.
 - [MQTT, Home Assistant and A1 sensor automation](mqtt-link).

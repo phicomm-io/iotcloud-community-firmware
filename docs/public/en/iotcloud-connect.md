@@ -1,6 +1,6 @@
 # Connect devices to IoTCloud
 
-IoTCloud is a web management platform for the TC1 power strip, M1 and DAIKIN air quality monitors, and A1 air purifier. Connect devices to view online status, air readings and power usage in one place, and remotely use each device's supported controls and settings. Account mode saves the device list so you can continue from another phone or computer on the same node and account.
+IoTCloud is a web management platform for the TC1 power strip, M1 and DAIKIN air quality monitors, A1 air purifier and ORVIBO S30-V1B smart socket. Connect devices to view online status, air readings and power usage in one place, and remotely use each device's supported controls and settings. Account mode saves the device list so you can continue from another phone or computer on the same node and account.
 
 [Open IoTCloud]({{SITE_URL}}iotcloud/) · [Try the simulated demo]({{SITE_URL}}demos/platform/)
 
@@ -36,7 +36,7 @@ Choose either method below, using the same Broker and account details.
    | Port | `1883` |
    | Username | Platform username registered on that node |
    | Password | Current MQTT password; initially the registration password |
-   | Topic mode | On TC1, select **TMCP (v2)** under Advanced. M1, A1 and DAIKIN always use TMCP |
+   | Topic mode | On TC1, select **TMCP (v2)** under Advanced. M1, A1, DAIKIN and S30-V1B always use TMCP |
 
 3. Save and wait for the device's MQTT status to show connected. If it keeps reconnecting, check the host, username and password.
 
@@ -47,7 +47,7 @@ Choose either method below, using the same Broker and account details.
 1. On a phone or computer that can reach the device's LAN, open IoTCloud Settings → MQTT connection or Device management and choose the option to fill settings into a local device.
 2. Enter the device IP or local URL. Check the Broker hostname, TCP port `1883`, platform username and current MQTT password, confirm the destination and open the device window.
 3. In the new device window, check the sending platform's origin and accept the prefill request. The device's existing WebUI password still applies.
-4. Review the prefilled values, click Save on the device page and confirm MQTT is connected. A platform message that values were prefilled only confirms delivery to the device WebUI.
+4. Review the prefilled values, click Save on the device page and confirm MQTT is connected.
 
 Keep the platform window open and accept within two minutes. Send only to a verified device address on a trusted LAN. If popups are blocked, the request expires or the device WebUI does not support this feature, enter settings manually.
 
@@ -58,19 +58,19 @@ Return to IoTCloud on the same node. TMCP devices using the same MQTT account ap
 If a device is missing, first check its local MQTT status. You can also use Device management → Add device, entering the **MAC address** shown in its WebUI, the correct model and protocol. MAC addresses have 12 hexadecimal characters; colon or hyphen separators are also accepted. Adding a device to the list does not configure its MQTT connection.
 
 - **TC1:** TMCP is recommended for this project's firmware. Legacy (v1) is for TC1 devices actually using the old protocol and requires manual addition.
-- **M1, A1 and DAIKIN:** Select the correct model; the protocol is always TMCP.
+- **M1, A1, DAIKIN and S30-V1B:** Select the correct model; the protocol is always TMCP.
 
 Confirm that platform MQTT is connected, the device card is online and readings keep updating. Open an M1's live readings, or adjust its screen brightness and check the physical device. Check other devices' functions as needed. Once connected, you can switch your phone to mobile data and manage online devices without forwarding ports to them.
 
 DAIKIN details show separate PM2.5 / PM10 cards, CO₂, temperature, humidity and TVOC scales, with a TVOC reference of ≤300 ppb. The formaldehyde card stays hidden without its module. The linked-device area shows A1 sessions that have actually read the monitor.
 
-See [TC1](tc1-guide), [M1](m1-guide), [A1](a1-guide) and [DAIKIN](daikin-guide) for daily operation. Configure A1 source authorization and automatic control separately using [MQTT and automation](mqtt-link).
+See [TC1](tc1-guide), [M1](m1-guide), [A1](a1-guide), [DAIKIN](daikin-guide) and [S30-V1B](s30-guide) for daily operation. Configure A1 source authorization and automatic control separately using [MQTT and automation](mqtt-link).
 
 ## Troubleshooting
 
 | Symptom | What to check |
 | --- | --- |
-| Website login works but platform MQTT is disconnected | Select the platform Broker in Settings → MQTT connection, check the current MQTT password and connect. Website login does not confirm MQTT connectivity |
+| Website login works but platform MQTT is disconnected | Select the platform Broker in Settings → MQTT connection, check the current MQTT password and connect. Connect MQTT after signing in |
 | Platform MQTT is connected but the device is offline | Check local Wi-Fi and MQTT status, Broker host, port `1883`, node account and current MQTT password; confirm device internet access |
 | Device is not discovered | Use the same node and MQTT username on both sides; select TMCP on TC1. Legacy TC1 requires manual addition |
 | Manually added device stays offline | Check MAC, model and protocol, and save MQTT settings on the device itself |

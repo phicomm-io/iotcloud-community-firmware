@@ -17,6 +17,8 @@ async function main() {
   const f = CandidateUI.fixture(retainedSnapshot(process.env.PHICOMM_RC_BASE_ARCHIVE));
   CandidateUI.appendCandidate(f.candidate, '1.0.0-rc.1', '1.0.0-rc', 103);
   CandidateUI.appendCandidate(f.candidate, '1.0.0-rc.2', '1.0.0-rc.1', 104);
+  CandidateUI.appendCandidate(f.candidate, '1.0.0-rc.4', '1.0.0-rc.2', 105);
+  const nativeCatalog=fs.readFileSync(path.join(root,'site/native-downloads.json'),'utf8');
   const resources = {...CandidateUI.resources(f.stable), ...CandidateUI.resources(f.candidate)};
   const pages = JSON.parse(execFileSync(process.env.PYTHON || 'python3', ['-c', `import sys,json
 from pathlib import Path
@@ -31,9 +33,11 @@ print(json.dumps({lang:build.render_guide('release-log','Release Log','Releases'
     let body, type = 'application/json';
     if (pathname === '/guides/release-log.html' || pathname === '/guides/en/release-log.html') {
       body = pages[pathname.includes('/en/') ? 'en' : 'zh']; type = 'text/html; charset=utf-8';
+    } else if(pathname==='/'||pathname==='/en/') {
+      body=fs.readFileSync(path.join(root,'site',pathname==='/en/'?'index-en.html':'index.html'),'utf8').replace('</head>','<script type="application/json" id="native-downloads">'+nativeCatalog+'</script></head>');type='text/html; charset=utf-8';
     } else if (pathname === '/releases/notes/candidate/index.json' && !candidateAvailable) body = undefined;
     else if (resources[pathname]) body = resources[pathname];
-    else if (['/style.css', '/theme.js', '/site.js'].includes(pathname)) {
+    else if (['/style.css', '/theme.js', '/site.js','/releases.js'].includes(pathname)) {
       body = fs.readFileSync(path.join(root, 'site', pathname.slice(1))); type = pathname.endsWith('.css') ? 'text/css' : 'text/javascript';
     } else if (/^\/releases\/notes\/(core|client|page)\.js$/.test(pathname)) {
       body = fs.readFileSync(path.join(root, 'site/release-notes', path.basename(pathname))); type = 'text/javascript';
@@ -55,6 +59,7 @@ print(json.dumps({lang:build.render_guide('release-log','Release Log','Releases'
           const context = await browser.newContext({viewport: {width, height: 1000}, locale: locale === 'zh' ? 'zh-CN' : 'en', serviceWorkers: 'block'});
           try {
             const page = await context.newPage(), errors = [], calls = [];
+            await page.route('https://api.github.com/**',route=>route.fulfill({contentType:'application/json',headers:{'access-control-allow-origin':'*'},body:'[]'}));
             page.on('pageerror', error => errors.push(error.message)); page.on('request', request => calls.push(new URL(request.url()).pathname));
             const route = '/guides/' + (locale === 'en' ? 'en/' : '') + 'release-log.html';
             await page.goto(base + route + '?view=compare&model=m1');
@@ -67,15 +72,15 @@ print(json.dumps({lang:build.render_guide('release-log','Release Log','Releases'
             await page.locator('#notes-channel').selectOption('candidate');
             await Playwright.expect(page.locator('#notes-candidate-downloads article')).toHaveCount(4);
             await Playwright.expect(page.locator('#notes-from')).toHaveValue('0.9.27');
-            await Playwright.expect(page.locator('#notes-to')).toHaveValue('1.0.0-rc.2');
+            await Playwright.expect(page.locator('#notes-to')).toHaveValue('1.0.0-rc.4');
             await Playwright.expect(page.locator('#notes-to option')).toHaveCount(1);
-            await Playwright.expect(page.locator('#notes-candidate-status')).toContainText(locale === 'en' ? 'not recommended' : '不建议使用');
-            await Playwright.expect(page.locator('#notes-candidate-status')).toContainText(locale === 'en' ? 'Major changes' : '较大改动');
+            await Playwright.expect(page.locator('#notes-candidate-status')).toContainText(locale === 'en' ? 'beta testing' : 'Beta 测试');
+            await Playwright.expect(page.locator('#notes-candidate-status')).toContainText('v0.9.27');
             await Playwright.expect(page.locator('#notes-source option')).toHaveCount(1);
             await Playwright.expect(page.locator('#notes-candidate-downloads a[href$=".ota.bin.signed"]')).toHaveCount(10);
             const links = await page.locator('#notes-candidate-downloads a').evaluateAll(nodes => nodes.map(node => node.getAttribute('href')));
             assert.ok(links.every(value => value.startsWith('/') || value.startsWith('https://github.com/phicomm-io/iotcloud-community-firmware/releases/tag/')));
-            assert.ok(links.filter(value => value.startsWith('/releases/')).every(value => value.includes('/v1.0.0-rc.2/')));
+            assert.ok(links.filter(value => value.startsWith('/releases/')).every(value => value.includes('/v1.0.0-rc.4/')));
             for (const model of ['m1', 'a1', 'tc1', 'daikin']) {
               await page.locator('#notes-model').selectOption(model); await page.locator('#notes-form').evaluate(form => form.requestSubmit());
               await Playwright.expect(page.locator('[data-release-notes]')).toHaveAttribute('data-report-state', 'complete');
@@ -98,6 +103,23 @@ print(json.dumps({lang:build.render_guide('release-log','Release Log','Releases'
             await Playwright.expect(page.locator('[data-release-notes]')).toHaveAttribute('data-report-state', 'error');
             await Playwright.expect(page.locator('#notes-candidate-downloads')).toBeEmpty();
             assert.deepEqual(calls.slice(before), ['/releases/notes/candidate/index.json']); candidateAvailable = true;
+            await page.goto(base+(locale==='en'?'/en/':'/'));
+            const downloads=page.locator('#candidate-releases');
+            await Playwright.expect(downloads.locator('[data-download-model]')).toHaveCount(5);
+            for(const model of ['m1','a1','tc1','s30','daikin']){
+              const card=downloads.locator('[data-download-model="'+model+'"]'),button=card.locator(':scope > button'),dialog=card.locator('dialog');
+              await button.click();await Playwright.expect(dialog).toBeVisible();
+              assert.ok(await dialog.locator('.firmware-file').count()>=2);
+              assert.ok(await dialog.evaluate(node=>node.scrollWidth<=node.clientWidth));
+              if(model==='s30'){
+                await Playwright.expect(dialog.locator('.firmware-file')).toHaveCount(2);
+                await Playwright.expect(dialog).toContainText('0x11000');
+                await page.screenshot({path:path.join(out,`downloads-${name}-${locale}-${width}.png`)});
+              }
+              await page.keyboard.press('Escape');await Playwright.expect(dialog).toBeHidden();
+              await Playwright.expect(button).toBeFocused();
+            }
+            assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
             assert.deepEqual(errors, []);
             report.cases.push({browser: name, locale, width, stableDefault: true, explicitCandidateOnly: true, stableBaseline: '0.9.27', deviceGroups: 4,
               syntheticSignedTargets: 10, candidateComparisonAndShare: true, stableHistoryUnchanged: true, unavailableCandidateFailsClosed: true, overflow: false});

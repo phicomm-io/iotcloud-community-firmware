@@ -1,8 +1,8 @@
 # 快速开始
 
-本项目为已淘汰或云服务厂商停止服务的 IoT 设备提供开源固件，现已支持斐讯 TC1 智能排插、M1 空气检测仪、A1 空气净化器及 DAIKIN BRY88AX151K 空气检测仪，提供本地网页控制、MQTT 与 Home Assistant 接入。固件免费，无需厂商云服务。
+本项目为已淘汰或云服务厂商停止服务的 IoT 设备提供开源固件，支持斐讯 TC1 智能排插、M1 空气检测仪、A1 空气净化器、DAIKIN BRY88AX151K 空气检测仪及 ORVIBO S30-V1B 智能插座，提供本地网页控制、MQTT 与 Home Assistant 接入。固件免费，无需厂商云服务。
 
-**日常使用推荐稳定版 v0.9.27。当前候选 v1.0.0-rc.3 实际属于 Beta 测试版本，后续仍会有较大改动，不建议日常使用；v1.0.0 稳定版尚未发布。** 候选版完整累计变化见[更新记录](release-log.html?channel=candidate)，下载区同时保留 0.9.x 归档。M1 的 Wi-Fi 与传感器主控独立升级；原厂主控 11.x 推荐使用开源版，17.1.2.3 / 17.x 暂不建议迁移。
+**v0.9.27 为稳定版；v1.0.0-rc.4 用于 Beta 测试，新增 S30-V1B 支持。** 候选版完整累计变化见[更新记录](release-log.html?channel=candidate)，下载区同时保留 0.9.x 归档。M1 的 Wi-Fi 与传感器主控独立升级；原厂主控 11.x 推荐使用开源版，17.1.2.3 / 17.x 暂不建议迁移。
 
 ## 先确认你的设备
 
@@ -12,6 +12,7 @@
 | **M1 空气检测仪** | PM2.5、甲醛、温湿度读数和屏幕亮度设置 | 原装 EMW3080B / MK3080B，保留 ATSAMD20 |
 | **DAIKIN BRY88AX151K** | PM2.5、PM10、CO₂、温湿度、TVOC 和可选甲醛，A1 数据联动 | ESP32 / 4 MB Flash，PM2005 / PM2105 自动识别 |
 | **A1 空气净化器** | 风机、灯环、童锁、夜间模式和环境数据联动 | 原装 EMW3080B / MK3080B |
+| **ORVIBO S30-V1B** | 开关、电压、电流、功率、电量与来电开／关 | BL2028N / BK7231N，HLW8032 计量 |
 
 > **`tc1(a1)` 指 TC1 的 A1 硬件版本，不是 A1 空气净化器。** 这是两个不同产品，固件文件不通用。刷写前务必确认型号。
 
@@ -23,6 +24,7 @@
 | M1 | [原厂配网与免拆安装](m1-no-disassembly)，首次从 0.9.21 起 | [串口（推荐）/ J-Link](m1-flash) |
 | A1 空气净化器 | [原厂配网与免拆安装](a1-no-disassembly) | [免焊 J-Link（推荐）/ 串口](a1-flash) |
 | DAIKIN | BRY88AB151K 可用[原厂 OTA](daikin-stock-ota) | [ESP32 串口安装](daikin-guide#首次安装) |
+| S30-V1B | [原厂 2M.1220 网络安装](s30-flash#原厂免拆网络安装) | [串口安装与恢复](s30-flash#拆机串口方式) |
 
 ## 首次配网
 
@@ -36,6 +38,7 @@
 | M1 | `M1-AP-<MAC后六位>` | `http://192.168.0.1/` |
 | DAIKIN | `BRY88AX151K-AP-<MAC后六位大写>` | `http://192.168.0.1/` |
 | A1 空气净化器 | `A1-AP-<MAC后六位>` | `http://192.168.0.1/` |
+| S30-V1B | `S30M_V1B_<MAC后六位>` | `http://192.168.0.1/` |
 
 各型号热点名称中的 MAC 后六位均为大写。旧版本的热点名称和配网地址可能不同，请核对所选 Release 的版本说明。
 
@@ -49,7 +52,7 @@ WebUI 顶部可切换中文、英文及明暗主题。设置按**网络、设备
 
 ## 下一步
 
-- 日常操作、灯语与按键：[TC1](tc1-guide) · [M1](m1-guide) · [A1](a1-guide) · [DAIKIN](daikin-guide)
+- 日常操作、灯语与按键：[TC1](tc1-guide) · [M1](m1-guide) · [A1](a1-guide) · [DAIKIN](daikin-guide) · [S30-V1B](s30-guide)
 - 更新固件：[固件更新](firmware-update)
 - 远程集中管理设备：[接入 IoTCloud](iotcloud-connect)
 - 接入 Home Assistant 或配置 A1 环境数据联动：[MQTT 与联动](mqtt-link)

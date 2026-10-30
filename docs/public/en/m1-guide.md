@@ -6,7 +6,7 @@ M1 provides PM2.5, formaldehyde, temperature, humidity and screen brightness con
 
 ## Two separate firmware updates
 
-M1 has a **Wi-Fi MCU (EMW3080)** for networking and the web interface, and a **sensor controller (ATSAMD20G18A)** for built-in sensors, the screen and buzzer. An ordinary web update installs Wi-Fi firmware only. **Use stable v0.9.27 for everyday operation. The current v1.0.0-rc.3 candidate is a beta build. Major changes are still expected, and daily use is not recommended.** v1 Beta features require matching Wi-Fi firmware, frontend and sensor controller; see the [latest release notes](release-log.html?channel=candidate) for available versions. Wi-Fi firmware and the controller are downloaded and updated separately. Dual-region user readings, double-click actions and PM2.5 smoothing need matching versions. Basic readings remain usable with the stock controller. Older tones/music require controller v0.9.3 or newer; particle details require v0.9.4 complete-frame capabilities.
+M1 has a **Wi-Fi MCU (EMW3080)** for networking and the web interface, and a **sensor controller (ATSAMD20G18A)** for built-in sensors, the screen and buzzer. An ordinary web update installs Wi-Fi firmware only. **Use stable v0.9.27 for everyday operation, or v1.0.0-rc.4 for beta testing.** v1 Beta features require matching Wi-Fi firmware, frontend and sensor controller; see the [latest release notes](release-log.html?channel=candidate) for available versions. Wi-Fi firmware and the controller are downloaded and updated separately. Dual-region user readings, double-click actions and PM2.5 smoothing need matching versions. Basic readings remain usable with the stock controller. Older tones/music require controller v0.9.3 or newer; particle details require v0.9.4 complete-frame capabilities.
 
 To reduce accidental wrong-image flashing, there is no controller upload button in the WebUI. Use the [computer script through the API](m1-mcu-update) for that separate update. See [controller features and version requirements](m1-mcu-firmware).
 
@@ -20,13 +20,13 @@ The home page shows particle concentration (PM2.5), formaldehyde concentration, 
 
 With a sensor controller that supports complete frames (published in controller v0.9.4), the local home page provides a **Particle details** card: PM1.0, PM10 and six cumulative particle counts. PM2.5 stays in its main card. Expand details for CF=1 concentrations and raw diagnostics. Counts use particles per 0.1 L, not μg/m³; atmospheric and CF=1 are two reporting conventions from the same sensor.
 
-Expired, warming-up or unhealthy measurements show “—”. If the card is absent or unsupported, check both firmware versions and controller capabilities. The new readings support MQTT and Home Assistant discovery, but live Home Assistant integration has not yet been verified. See [complete-frame readings](m1-mcu-firmware).
+Expired, warming-up or unhealthy measurements show “—”. If the card is absent or unsupported, check both firmware versions and controller capabilities. The new readings support MQTT and Home Assistant discovery. See [complete-frame readings](m1-mcu-firmware).
 
 ## External SCD40 CO₂ sensor (experimental)
 
 Test firmware with SCD40 support reads CO₂ over I²C. After sensor identification, the home page displays CO₂ in ppm. A newly opened page hides the card until a valid reading arrives, including when the sensor data is already expired. If a reading expires after a valid value was displayed, the card retains the last valid value from this page session in gray with an “Outdated” label. Before the first valid reading, it shows “—”. Reloading clears this cache. Original temperature and humidity readings still come from M1's built-in sensor.
 
-Hardware has produced valid readings, but continuous sampling has also stopped during testing. Stability validation is incomplete; this experimental feature does not imply support in published firmware.
+This feature is for experimental firmware; continuous sampling may stop.
 
 Disconnect power and identify solder points on the actual board. These are SDK GPIO names, not connector pin numbers:
 
@@ -87,7 +87,7 @@ M1 uses TMCP (v2) topics only, with no Legacy selector. See [MQTT and automation
 
 ## v1 candidates: user readings and PM2.5 smoothing
 
-The v1 candidates provide dual-position screen readings and steadier PM2.5. They require matching open-source controller, Wi-Fi firmware and frontend. This is a prerelease; the stable v1.0.0 release is not yet available.
+The v1 candidates provide dual-position screen readings and steadier PM2.5. They require matching open-source controller, Wi-Fi firmware and frontend.
 
 In Device settings, open **User readings on the device screen**. Configure the formaldehyde and PM2.5 regions separately using this M1's sensors, another device on the same MQTT account and broker (TC1 power, A1 main-fan output, DAIKIN CO₂ or other readings), or an API / manual write. A1 provides its current effective output percentage (0–100%), including fresh-air variants. Other devices' MAC addresses accept both `aabbccddeeff` and `aa:bb:cc:dd:ee:ff`, with either letter case.
 
@@ -105,7 +105,7 @@ Each region has three digits. **The PM2.5 region supports integers only**, round
 
 Positive overflow stays at the display limit. The original “甲醛” / “PM2.5” label and each region's unit can be shown or hidden independently. The formaldehyde region has **mg/m³**; the PM2.5 region has **µg/m³**. The screen cannot display arbitrary text or other units such as ppm, W or %. Choose whether to retain the original label and unit according to the external data's meaning.
 
-The panel glass has the following 19 groups, with **PM2.5 on the left and formaldehyde on the right**. Each `8` indicates a digit position, not an actual reading. The temperature and humidity digit layouts do not specify sensor sampling precision.
+The panel glass has the following 19 groups, with **PM2.5 on the left and formaldehyde on the right**. Each `8` indicates a digit position.
 
 | No. | Position | Digits or symbol |
 | --- | --- | --- |

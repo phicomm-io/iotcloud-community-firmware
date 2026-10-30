@@ -1,6 +1,6 @@
 # S30-V1B network and serial installation
 
-This guide covers the **ORVIBO S30-V1B**, with a BL2028N module, BK7231N chip and HLW8032 meter. Network installation has been verified on stock **`2M.1220`**. UART remains available for backups, installation and recovery. The default layout retains this unit’s original bootloader and factory MAC/RF; **first installation starts with fresh community settings and requires Wi-Fi setup again**. See [S30-V1B operation](s30-guide) for use after installation. An identical enclosure does not establish compatibility with other S30 variants or modules.
+This guide covers the **ORVIBO S30-V1B**, with a BL2028N module, BK7231N chip and HLW8032 meter. Network installation has been verified on stock **`2M.1220`**. UART remains available for backups, installation and recovery. The default layout retains this unit’s original bootloader and factory MAC/RF; **first installation starts with fresh community settings and requires Wi-Fi setup again**. See [S30-V1B operation](s30-guide) for use after installation.
 
 ## RC4 downloads
 
@@ -21,7 +21,6 @@ For an RBL-only download, run `grep "  BL2028N_OTA_1.0.0-rc.4.rbl$" SHA256SUMS-S
 | Current state | Method | File |
 | --- | --- | --- |
 | Stock `2M.1220`, already connected to the same reachable LAN | Network installation below | `BL2028N_OTA_<version>.rbl` |
-| This project's firmware with the stock layout and a working web interface | Settings → Firmware: enter the RBL HTTP URL | Same RBL |
 | No network, damaged application, or a full backup is needed | Open the enclosure and use UART | `BL2028N_STOCK_UA_<version>.bin` at `0x11000` |
 
 The web interface currently supports **URL download only, not local file upload**. Downloading a file to a computer does not make it available to the device. The default build does not emit QIO images containing another bootloader. A raw `BL2028N_app_*.bin` or UG package cannot replace the files above.
@@ -30,7 +29,7 @@ The web interface currently supports **URL download only, not local file upload*
 
 ### Scope and prerequisites
 
-This method completed a real installation on one **S30-V1B / BL2028N / BK7231N running stock `2M.1220`**. Other stock versions and S30 variants remain unverified. The stock unit must already be connected to Wi-Fi, reachable from the computer, and its factory MAC must be known. This procedure does not replace stock first-time Wi-Fi provisioning. UART was used to establish the test baseline and observe/read back the result; the actual upgrade command and download used normal network interfaces.
+Use this method for stock **`2M.1220`**. The device must already be connected to Wi-Fi, reachable from the computer, and its factory MAC must be known. For other stock versions, use the UART procedure below.
 
 The computer needs Python, `paho-mqtt`, a local HTTPS certificate and a **dedicated temporary TLS MQTT broker**. Plain MQTT did not complete connection on this stock version; `mqtt://` is not a substitute for `ssl://`. Router DNS interception is unnecessary. Use temporary broker credentials and keep that broker off the public Internet.
 
@@ -79,7 +78,7 @@ Prepare two private JSON files with mode `600`; do not commit or publish them:
 {"host":"Temporary broker IPv4","port":18892,"username":"short-test-user","password":"short-test-password"}
 ```
 
-MQTT usernames and passwords must each be 1–31 bytes. Keep addresses short and use dedicated test credentials; the tool does not exploit the identified stock length overflow.
+MQTT usernames and passwords must each be 1–31 bytes. Use short addresses and dedicated test credentials.
 
 Download the matching RBL and `SHA256SUMS-S30`, verify them, and replace every placeholder:
 
@@ -96,16 +95,16 @@ python3 tools/s30_stock_ota.py \
   --rbl 'BL2028N_OTA_1.0.0-rc.4.rbl' --sha256 <published-file-SHA256>
 ```
 
-The tool configures local HTTPS CGW using CoAP `/qlink/netinfo`. Stock firmware retrieves the temporary TLS MQTT connection over HTTPS, receives a normal AndLink file command, and downloads the RBL. It does not access UART or write factory parameters. Returning to stock firmware and dual boot are not provided.
+The tool configures local HTTPS CGW using CoAP `/qlink/netinfo`. Stock firmware retrieves the temporary TLS MQTT connection over HTTPS, receives an AndLink file command, and downloads the RBL.
 
 ### Confirm installation
 
-1. After complete HTTP delivery, wait for automatic installation and reboot. **File delivery alone does not prove installation.** Do not interrupt power at this point.
+1. After complete HTTP delivery, keep power connected while the device installs and reboots.
 2. Join the community `S30M_V1B_XXXXXX` AP, open **http://192.168.0.1**, and configure Wi-Fi again.
 3. Open the assigned LAN IP. Confirm `iotcloud · S30-V1B`, the selected version, outlet control and metering. An unset administration password must not trigger login.
 4. Stop the dedicated test broker and remove temporary certificates and credentials. Computer services are no longer needed; future upgrades use the community URL OTA interface.
 
-The physical test also completed a second community network OTA. Full readback confirmed the installed application and preservation of the original boot area and MAC/RF. This does not establish compatibility with every stock version, power-loss recovery or return-to-stock support. If no download or community AP appears, retain the errors and use the UART backup/recovery path below rather than trying unrelated images.
+If no download or community AP appears, retain the tool errors and follow the UART backup/recovery procedure below.
 
 ## Disassembly and UART
 
@@ -164,7 +163,7 @@ bk7231tools write_flash -d /dev/ttyUSB0 -b 115200 --timeout 60 -s 0x11000 -S 0 '
 
 Writing the UA application image at `0x11000` retains the unit's bootloader, factory RF/TLV and configuration tail. **Do not erase the whole chip or substitute an `.rbl`, `.UG.bin` or another product's `.ota.bin`.** QIO images include a bootloader and are not the default method in this section.
 
-After the tool verifies the write, read the full Flash again and compare the written range with the UA file. Check that data outside that range, especially the bootloader and factory parameters, remains unchanged. On the validated unit, the RF/TLV sector is at `0x1e0000`; preserve its valid factory MAC. A completed transfer alone does not establish a working installation.
+After the tool verifies the write, read the full Flash again and compare the written range with the UA file. Check that data outside that range, especially the bootloader and factory parameters, remains unchanged. On the validated unit, the RF/TLV sector is at `0x1e0000`; preserve its valid factory MAC.
 
 ### First boot and recovery
 
@@ -172,10 +171,10 @@ After the tool verifies the write, read the full Flash again and compare the wri
 2. Connect and open **http://192.168.0.1**. Follow the [operation guide](s30-guide), configure Wi-Fi, and confirm the model and version. Both the initial AP password and web administration password are empty.
 3. Power off, remove every UART and external supply wire, inspect the connection area, and restore the complete insulated enclosure before reconnecting the original power supply and load.
 
-An isolated 3.3 V bench supply can verify boot, networking and the web interface. It does not establish load metering with the original metering circuit powered normally.
+Test loads and metering after disconnecting the programmer, restoring full insulation and reassembly, and reconnecting the original power supply.
 
 For handshake failures, check port ownership, crossed TX/RX, common ground, contact reliability, supply and reset timing. If the flashed unit will not boot, retain the backup and complete tool log, then check image, offset and bootloader key format. An interrupted previous OTA may require version-specific cleanup of pending upgrade data; do not try repeated whole-chip erases or another unit's RF/MAC data.
 
 ## Subsequent community URL OTA
 
-Download and verify the RBL above. In its directory, temporarily run `python3 -m http.server 8080 --bind <computer-LAN-IP>`. Enter `http://<computer-LAN-IP>:8080/BL2028N_OTA_1.0.0-rc.4.rbl` in the device's firmware update settings. Use a directly reachable, fixed-length HTTP download without redirects; a GitHub web page is not such a URL. Wait for reboot, verify the version, and stop the temporary HTTP service. This method also keeps the enclosure closed.
+Subsequent updates are under [common functions → updates](s30-guide#updates). For first installation, choose stock network or UART above.

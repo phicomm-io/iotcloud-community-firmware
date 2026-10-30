@@ -1,4 +1,4 @@
-# TC1 wired flashing and recovery (A1 hardware revision)
+# TC1 wired installation and recovery (A1 hardware revision)
 
 Only for the TC1 power strip with A1 hardware and an EMW3031 module. TC1 A2 is unsupported. Read [Before flashing](flash-prep) first.
 

@@ -1,4 +1,4 @@
-**RC releases are Beta builds. Major changes are still expected; everyday use is not recommended. The stable channel remains on v0.9.27.** The current candidate is **v1.0.0-rc.4**. This page describes current features; earlier candidates retain their original notes and validation limits. Wi-Fi firmware, the M1 sensor controller, frontend and cloud platform are released separately. Updating one does not update the others.
+**v0.9.27 is the stable release; v1.0.0-rc.4 is the current beta.** This page summarizes current features; see the release notes for version history. Wi-Fi firmware, the M1 sensor controller, frontend and cloud platform are released separately. Updating one does not update the others.
 
 [Candidate downloads and release notes](release-log.html?channel=candidate) · [Choose an update image](firmware-update.html)
 
@@ -6,10 +6,10 @@
 
 - **Binary business interfaces.** HTTP, device MQTT and UDP default to MessagePack. Legacy JSON business paths are removed; compact JSON remains for Home Assistant. Use the matching frontend and a cloud platform supporting device discovery. Existing JSON scripts require changes.
 - **Separate business state and diagnostics.** Coalesce changes before encoding, reuse unchanged snapshots, and fetch shared numeric diagnostic fields on demand with `diagnostics.get`. MQTT and HA track delivery independently; command receipts are separate.
-- **Fewer duplicate web requests.** Serialize and coalesce HTTP reads, prioritize writes and bound confirmation reads. Cancel stale reads and isolate old responses. Automation settings retain previous content and unsaved edits. A1 renders animation locally; ordinary A1/M1 state reads run about every five seconds, with faster confirmation after controls. This does not establish new P95 results.
+- **Fewer duplicate web requests.** Serialize and coalesce HTTP reads, prioritize writes and bound confirmation reads. Cancel stale reads and isolate old responses. Automation settings retain previous content and unsaved edits. A1 renders animation locally; ordinary A1/M1 state reads run about every five seconds, with faster confirmation after controls.
 - **Authentication and LAN automation.** Unset device passwords permit direct access without consuming login sessions. Configured passwords use tokens with admin Basic retained. mDNS discovery and password-paired UDP coexist with existing MQTT sensor-session grants. All three MXCHIP products allow at most two waiting requests and return bounded overload responses.
-- **Migration and builds.** Recognized 0.9.x layouts can migrate; unknown layouts enter protected recovery. Frontend resources follow device capabilities. MXCHIP uses the GCC14 compiler with GCC5 runtime libraries; S30 uses GCC5. Size, build checks and physical stability are validated separately.
-- **S30-V1B outlet.** ORVIBO S30-V1B uses BL2028N/BK7231N/HLW8032 and provides outlet control, voltage, current, power, energy and persistent multiplier settings. Native RBL and bootloader-preserving STOCK_UA files use the stock layout by default. Initial network installation from stock `2M.1220` and community URL OTA were tested on the unit; first installation requires Wi-Fi setup again. Return to stock and dual boot are not provided. Other stock versions, reference-meter accuracy and power-loss recovery remain unverified.
+- **Migration and builds.** Recognized 0.9.x layouts can migrate; unknown layouts enter protected recovery. Frontend resources follow device capabilities. MXCHIP uses the GCC14 compiler with GCC5 runtime libraries; S30 uses GCC5.
+- **S30-V1B outlet.** ORVIBO S30-V1B uses BL2028N/BK7231N/HLW8032 and provides outlet control, voltage, current, power, energy and persistent multiplier settings. Native RBL and bootloader-preserving STOCK_UA files use the stock layout by default. Supports network installation from stock `2M.1220` and community URL OTA; configure Wi-Fi again after first installation.
 
 [S30-V1B network and serial installation](s30-flash.html) · [Operation, LEDs and recovery](s30-guide.html)
 
@@ -36,13 +36,13 @@
 
 #### TC1: provide power to other devices
 
-TC1 publishes power for M1 user readings with device identity, freshness and validity markers. Pair the LAN devices or use an existing MQTT sensor-session grant. Unavailable readings are not represented as zero. Existing outlet controls, schedules and metering remain available and are not counted again as new features.
+TC1 publishes power for M1 user readings with device identity, freshness and validity markers. Pair the LAN devices or use an existing MQTT sensor-session grant. Unavailable readings are not represented as zero.
 
 [TC1 operation and connection](tc1-guide.html)
 
 #### A1: provide effective fan output
 
-A1 publishes the main fan's effective **0–100%** output, including the fresh-air variant, for M1 displays. This is neither RPM nor a requested level that has not taken effect. Data includes identity, freshness and validity; unavailable values are not represented as zero. EMW3080 release images for A1 / M1 allow allocation down to an 8 KiB reserve while retaining a 12 KiB test-acceptance threshold.
+A1 publishes the main fan's effective **0–100%** output, including the fresh-air variant, for M1 displays. This is neither RPM nor a requested level that has not taken effect. Data includes identity, freshness and validity; unavailable values are not represented as zero.
 
 [A1 operation and connection](a1-guide.html)
 
@@ -51,7 +51,7 @@ A1 publishes the main fan's effective **0–100%** output, including the fresh-a
 - **Independent hub image and console.** Adds device discovery, pairing, management and hub settings alongside sensor functions. The embedded `/iotcloud/#/` console configures upstream MQTT, Bemfa and HomeKit, without cloud email registration or GitHub login.
 - **mDNS and UDP replace the embedded Broker.** RC4 no longer hosts MQTT TCP 1883 or a WebSocket Broker. The hub discovers devices through mDNS, uses paired UDP communication and forwards upstream MQTT and Bemfa messages. Local Home Assistant and MQTT clients must use an external Broker; change old embedded-Broker connections.
 - **Optional HomeKit HAP bridge.** Off by default, this experimental feature provides TC1's six Switches, A1 fan / light, and valid M1 / DAIKIN sensors. The hub’s own sensors are included automatically. **Matter is not included.**
-- **Explicit conversion to hub.** Supporting `full` firmware accepts a signed `hub` image that fits the installed slot, with explicit confirmation and retained network settings. The current rc.4 retains the optional device Web password introduced in rc.1; the original rc password requirement is historical. Ordinary OTA preserves variants; direct `hub → full` OTA is unsupported. Conversion does not enlarge OTA partitions: check the actual slot capacity.
+- **Explicit conversion to hub.** Supporting `full` firmware accepts a signed `hub` image that fits the installed slot, with explicit confirmation and retained network settings. Device Web passwords are optional; configured passwords require authentication. Ordinary OTA preserves variants; direct `hub → full` OTA is unsupported. Conversion does not enlarge OTA partitions: check the actual slot capacity.
 
 [DAIKIN operation, installation and hub settings](daikin-guide.html)
 
@@ -74,4 +74,4 @@ Use the [release notes](release-log.html?channel=candidate) for actual candidate
 #### Retained rc.2 fixes and new rc.3 recovery sequences
 
 - **The rc.2 configuration and web recovery fixes remain.** With incompatible configuration, M1 no longer reports a network-only reset as a successful full clear. Full and minimal pages refresh recovery state, wait for restart after an explicitly confirmed clear and allow Wi-Fi setup to continue. The full Reboot and recovery page displays its controls. This adds no automatic migration for unknown third-party layouts.
-- **rc.3 adds A1 alternative recovery sequences.** For panels that report release after about 2–3 seconds of continuous contact, tap Wi-Fi twice, hold the third touch for 1–2 seconds and release to reset networking; tap three times, hold the fourth touch for 1–2 seconds and release to factory reset. Release each short tap, leave less than 0.3 seconds between touches and hold the final touch for at least 1 second and less than 5 seconds. Recovery runs on release and bypasses child lock. Existing 5 / 10 second recovery holds remain. The new sequences await physical acceptance; see [A1 recovery](a1-guide.html#recovery-gestures).
+- **rc.3 adds A1 alternative recovery sequences.** For panels that report release after about 2–3 seconds of continuous contact, tap Wi-Fi twice, hold the third touch for 1–2 seconds and release to reset networking; tap three times, hold the fourth touch for 1–2 seconds and release to factory reset. Release each short tap, leave less than 0.3 seconds between touches and hold the final touch for at least 1 second and less than 5 seconds. Recovery runs on release and bypasses child lock. Existing 5 / 10 second recovery holds remain. These alternative sequences remain experimental; see [A1 recovery](a1-guide.html#recovery-gestures).

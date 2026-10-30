@@ -7,7 +7,7 @@ MQTT is optional: local device functions work without it. Configure a Broker add
 | Device | Supported mode |
 | --- | --- |
 | TC1 | Legacy (v1) and TMCP (v2); TMCP is the default for a new setup |
-| M1 / A1 / DAIKIN | TMCP (v2) only; no Legacy selector |
+| M1 / A1 / DAIKIN / S30-V1B | TMCP (v2) only; no Legacy selector |
 
 M1 and A1 normalize old mode flags to TMCP at boot, retaining the Broker address, port and credentials. They do not switch back to old topics at runtime.
 

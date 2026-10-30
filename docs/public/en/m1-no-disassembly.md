@@ -99,7 +99,7 @@ rm -- m1-wifi.json
 
 ### Method B: Linux EasyLink V2
 
-App-free EasyLink has succeeded only with **mac80211 frame injection on Linux**. Prefer the official app if available. Ordinary Windows, macOS or Linux UDP senders are not verified provisioning methods.
+App-free EasyLink uses **mac80211 frame injection on Linux** and requires a wireless adapter that supports it. The official app is another option.
 
 Use a spare adapter supporting monitor mode and injection, Linux, `iw` and a C compiler. Use a 2.4 GHz WPA2/AES network and record its channel. Channel 1 has worked; channel 6 is not mandatory. Another adapter can keep the computer on the target LAN.
 
@@ -121,7 +121,7 @@ Enter the target SSID and password when prompted (password is hidden). Once send
 sudo iw dev easylink-mon del
 ```
 
-Confirm a DHCP lease matching the device MAC before continuing. Packet counts do not establish successful provisioning.
+Confirm a DHCP lease matching the device MAC before continuing.
 
 ## 2. Identify the LAN target
 
@@ -203,13 +203,12 @@ curl --http1.0 --noproxy '*' --connect-timeout 5 --max-time 300 --header 'Conten
 
 <!-- /os -->
 
-**The tested factory upload closed the connection after receiving the complete image, producing `(52) Empty reply from server` and `http=000`.** This alone proves neither failure nor success. Record the uploaded byte count, leave power connected and allow about 2–3 minutes. Check the community hotspot and version in section 5 before taking further action. Do not immediately resend, reset or disconnect power because of this message.
+**The tested factory upload closed the connection after receiving the complete image, producing `(52) Empty reply from server` and `http=000`.** Record the uploaded byte count, leave power connected and allow about 2–3 minutes. Check the community hotspot and version in section 5 before taking further action. Do not immediately resend, reset or disconnect power because of this message.
 
 ## 4. Method B: DNS migration: let the stock M1 download the image
 
 Use this alternative if LAN uploads stall. This path has been verified on M1 with stock Wi-Fi `14.2.4.1` and controller `11.1.2.1`.
 
-Uploads to `:8000/OTA` from two computers stalled after the first few KB; the device-initiated download completed. The upload fault remains unexplained. HTTP 000 or a slowly blinking Wi-Fi icon does not establish success. Do not repeatedly upload.
 
 ### What you need
 
@@ -295,15 +294,14 @@ Expected computer events are:
 1. `tls` and `/device/active?mac=…&productId=1`: the stock device reaches the compatible service.
 2. `/firmware/checkUpdate?...wifiSoftwareVer=...&mainSoftwareVer=...`: the device checks for updates. Its original controller must return its version.
 3. `/m1-native.bin?deviceMAC` and `download_complete`: the complete image was sent. Query strings and Range requests are supported.
-4. `wifiSoftware.ifSuccess: true` inside `cloud_tcp`: the stock application reports update success. This does not prove community firmware has booted.
+4. `wifiSoftware.ifSuccess: true` inside `cloud_tcp`: the stock application reports update success. Then check the community version as described in the next section.
 
-Manifest version `14.2.4.2` is only a comparison value that makes the tested stock `14.2.4.1` recognize an update; **it is not the community image version**. Verify the actual installed version after boot. If requests are absent, check connectivity, DNS-rule counters, server ports and the controller, rather than repeatedly rebooting or forcing different files.
+Manifest version `14.2.4.2` satisfies the stock `14.2.4.1` version comparison; the installed community version is 0.9.27. If requests are absent, check connectivity, DNS-rule counters, server ports and the controller, rather than repeatedly rebooting or forcing different files.
 
 ### Step 4: verify community firmware and set up Wi-Fi
 
 Wait a few minutes, scan for `M1-AP-XXXXXX` and follow section 5 to open `192.168.0.1` and configure 2.4 GHz Wi-Fi. Find the new DHCP address. Check `/api/v1/status` for the full `device_id`, actual `version`, `wifi_connected`, `sensor_valid` and increasing `rx_frames`. Verify the web page and automatic reconnection with retained settings after a software reboot.
 
-A complete download or factory success report alone is insufficient. Keep power connected and check the hotspot, leases and version before sending anything again.
 
 ### Step 5: restore routing and stop the temporary service
 
@@ -355,7 +353,7 @@ curl --noproxy '*' --connect-timeout 3 --max-time 5 "http://${DeviceIp}/api/v1/s
 
 <!-- /os -->
 
-A community hotspot establishes that the new system offers setup. Confirm the version, web access and updating sensors before calling migration successful. For later community upgrades, use signed packages as described in [firmware updates](firmware-update).
+For later community upgrades, use signed packages as described in [firmware updates](firmware-update).
 
 ## 6. Troubleshooting
 

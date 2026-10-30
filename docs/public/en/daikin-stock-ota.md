@@ -103,7 +103,7 @@ python3 ./daikin_stock_ota.py --probe-versions SV.02.00.01.16 SV.02.00.01.32
 
 The scan waits **2 seconds** between attempts and stops immediately on `ToDo`, an unexpected response, a timeout or another communication error. It sends only handshake/version headers: **0 firmware bytes**, no `End` or checksum, no Wi-Fi switching and no automatic upload.
 
-For example, `.16` through `.20` may return `b'No' / EOF`, followed by `.21` returning `b'ToDo' / complete`. This gives the highest explicit rejection `.20` and first acceptance `.21`. Only under the assumption of the same prefix and strictly higher-version acceptance can the installed version be inferred as `.20`. The boundary neither directly reads the installed version nor proves image compatibility. A scan without an adjacent rejected/accepted pair makes no version inference.
+For example, if `.16` through `.20` return `b'No' / EOF` and `.21` returns `b'ToDo' / complete`, use `.21` as the first accepted label in the upload command.
 
 Use the first accepted label explicitly in the separate upload command below; change the example `.21` to your result. If communication failed, resolve it before trying another command.
 
@@ -152,17 +152,17 @@ Open **http://192.168.4.1** and verify the model, device ID and version. The tes
 
 The transition image included with this guide uses the older hotspot name and address above. After updating to v0.9.25, the recovery hotspot uses `BRY88AX151K-AP-<last six MAC digits in uppercase>` at `http://192.168.0.1/`. Once router Wi-Fi is configured, continue using the router-assigned IP for normal access.
 
-PM2.5, temperature, humidity and TVOC had valid readings after boot. CO2 was still warming up; HCHO was not detected and had also reported no-data errors under stock. Successful transfer does not prove every sensor works.
+Check readings after sensor warm-up. CO₂ may take longer; devices without a formaldehyde sensor have no HCHO reading.
 
-Serial logs confirmed that the stock bootloader and partition table remained and the community application booted from the second stock slot, `0x190000`. Stock network settings do not automatically become community configuration. Configuration persistence in the smaller stock NVS, power-cycle retention and a second community OTA were not verified in this test. Future images must still fit the stock 1.5MiB slots.
+This procedure retains the stock bootloader and partition table and starts the community application from the second slot, `0x190000`. Configure Wi-Fi again on first boot. Future images must still fit the stock 1.5 MiB application slots.
 
 ## 8. Troubleshooting and recovery
 
 | Symptom | Action |
 | --- | --- |
 | No hotspot | Check model/version, normal stock boot and gesture timing. The OTA task does not necessarily create an AP in every configuration state. |
-| Hotspot connects but TCP 8555 times out/refuses | Check network switching and the actual gateway. A hotspot alone does not prove the OTA service started; inspect the two serial markers if available. |
+| Hotspot connects but TCP 8555 times out/refuses | Check network switching and the actual gateway. Inspect the two OTA startup log markers if available. |
 | Handshake or version rejected | Use the handshake-only scan in section 5. Select an accepted label explicitly for upload, and check image compatibility separately. |
-| Transfer interrupted, invalid ACK or final NG | Save the output and observe the powered device. Acknowledged bytes alone do not prove successful flashing. |
+| Transfer interrupted, invalid ACK or final NG | Save the output and observe the powered device. Wait for reboot and confirm the community version before another update. |
 | OK but no new hotspot | Wait for reboot, rescan and inspect the device startup logs. |
 | Device will not boot | Stop repeated wireless update attempts and seek serial recovery using your own complete Flash backup. |

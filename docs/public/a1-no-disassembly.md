@@ -14,7 +14,7 @@
 
 ### Linux EasyLink V2 配网
 
-免 App EasyLink 目前仅在 **Linux 通过 mac80211 帧注入**成功实现。有条件建议使用官方 App；普通 Windows / macOS / Linux UDP 发包工具不作为已验证方案。
+免 App 配网使用 **Linux mac80211 帧注入**，需要支持此功能的无线网卡；也可使用官方 App。
 
 准备支持 monitor 模式和帧注入的备用无线网卡、Linux、`iw` 与 C 编译器。目标网络使用 2.4 GHz WPA2/AES，记下实际信道；实测信道 1 可用，不要求信道 6。电脑可通过另一张网卡连接路由器。
 
@@ -36,7 +36,7 @@ sudo ./easylink_v2_linux easylink-mon 192.168.1.23 60
 sudo iw dev easylink-mon del
 ```
 
-在路由器中按机身 MAC 确认设备获得 IP，再进行下一步。发送包数不代表配网成功。
+在路由器中按机身 MAC 确认设备获得 IP，再进行下一步。
 
 ## 2. 核对内网设备身份
 
@@ -118,7 +118,7 @@ curl --http1.0 --noproxy '*' --connect-timeout 5 --max-time 300 --header 'Conten
 
 <!-- /os -->
 
-原厂端可能在接收后直接关闭连接，curl 显示 `(52) Empty reply from server` 和 `http=000`。 这既不能单独判失败，也不能当成功。记下上传字节数，保持供电，等待约 2–3 分钟，按第 5 节查社区热点和版本；不要因为这个报错立刻重发、按复位键或断电。
+原厂端可能在接收后直接关闭连接，curl 显示 `(52) Empty reply from server` 和 `http=000`。记下上传字节数，保持供电，等待约 2–3 分钟，按第 5 节查社区热点和版本；不要因为这个报错立刻重发、按复位键或断电。
 
 ## 4. 方式二：DNS 重定向，让原厂主动下载
 
@@ -130,7 +130,7 @@ curl --http1.0 --noproxy '*' --connect-timeout 5 --max-time 300 --header 'Conten
 | 更新检查 | `aircleaner.phicomm.com:443/aircleanerfirmware/checkUpdate` |
 | 业务连接 | `aircleanerconnecter.phicomm.com:9000` |
 
-更新清单直接使用顶层 `url`、`md5`、`ver`、`enforce`。原厂 v1.47 要求版本数值更高（例如 `v1.48`）且 `enforce: true`；这里的标签不代表社区固件版本。原厂这条 TLS 路径不校验证书，但服务端需要兼容旧客户端。
+更新清单直接使用顶层 `url`、`md5`、`ver`、`enforce`。原厂 v1.47 要求版本数值更高（例如 `v1.48`）且 `enforce: true`；此值仅用于满足原厂版本比较，安装后的社区版本为 0.9.27。原厂这条 TLS 路径不校验证书，但服务端需要兼容旧客户端。
 
 ### 在 Linux 电脑启动临时服务
 
@@ -246,4 +246,4 @@ curl --noproxy '*' --connect-timeout 3 --max-time 5 "http://${DeviceIp}/api/v1/s
 
 <!-- /os -->
 
-出现社区热点只说明新系统已经提供配网入口；以实际版本、网页访问、风机与面板状态为成功依据。后续从社区固件升级时，按 [固件更新](firmware-update) 使用签名 OTA 包。
+后续升级按 [固件更新](firmware-update) 使用签名 OTA 包。

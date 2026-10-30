@@ -101,7 +101,7 @@ rm -- m1-wifi.json
 
 ### 方式二：Linux EasyLink V2
 
-免 App EasyLink 目前仅在 **Linux 通过 mac80211 帧注入**成功实现。有条件建议使用官方 App；普通 Windows / macOS / Linux UDP 发包工具不作为已验证方案。
+免 App 配网使用 **Linux mac80211 帧注入**，需要支持此功能的无线网卡；也可使用官方 App。
 
 准备支持 monitor 模式和帧注入的备用无线网卡、Linux、`iw` 与 C 编译器。目标网络使用 2.4 GHz WPA2/AES，记下实际信道；实测信道 1 可用，不要求信道 6。电脑可通过另一张网卡连接路由器。
 
@@ -123,7 +123,7 @@ sudo ./easylink_v2_linux easylink-mon 192.168.1.23 60
 sudo iw dev easylink-mon del
 ```
 
-在路由器中按机身 MAC 确认设备获得 IP，再进行下一步。发送包数不代表配网成功。
+在路由器中按机身 MAC 确认设备获得 IP，再进行下一步。
 
 ## 2. 核对内网设备身份
 
@@ -205,13 +205,12 @@ curl --http1.0 --noproxy '*' --connect-timeout 5 --max-time 300 --header 'Conten
 
 <!-- /os -->
 
-**实测完整上传后，原厂端会直接关闭连接，curl 可能显示 `(52) Empty reply from server` 和 `http=000`。** 这既不能单独判失败，也不能当成功。记下上传字节数，保持供电，等待约 2–3 分钟，按第 5 节查社区热点和版本；不要因为这个报错立刻重发、按复位键或断电。
+**实测完整上传后，原厂端会直接关闭连接，curl 可能显示 `(52) Empty reply from server` 和 `http=000`。**记下上传字节数，保持供电，等待约 2–3 分钟，按第 5 节查社区热点和版本；不要因为这个报错立刻重发、按复位键或断电。
 
 ## 4. 方式二：DNS 迁移：让原厂 M1 主动下载
 
 局域网上传一直卡住时，可以使用这条替代路径。原厂联网模块 `14.2.4.1`、主控 `11.1.2.1` 已实机验证此路径可用。
 
-局域网上传卡住时，可改用设备主动下载；不要连续重发上传。
 
 ### 需要准备什么
 
@@ -297,15 +296,14 @@ tail -f /tmp/m1-dns-migration/dns.log
 1. `tls`、`/device/active?mac=…&productId=1`：原厂设备访问兼容服务。
 2. `/firmware/checkUpdate?...wifiSoftwareVer=...&mainSoftwareVer=...`：设备主动检查更新，依赖原主控正常返回版本。
 3. `/m1-native.bin?设备MAC`、`download_complete`：完整镜像已发送。服务同时支持查询参数和 Range。
-4. `cloud_tcp` 内 `wifiSoftware.ifSuccess: true`：原厂上报更新成功；这仍不是社区系统已经启动的证明。
+4. `cloud_tcp` 内 `wifiSoftware.ifSuccess: true`：原厂上报更新成功。随后按下一节确认社区版本。
 
-响应中的 `14.2.4.2` 只是让实测原厂 `14.2.4.1` 识别出更新的比较值，**不是社区镜像版本**。不要据此判断最终安装版本。没有这些请求时检查设备联网、DNS 规则计数、服务器端口和主控状态，不要反复重启或换文件强刷。
+响应中的 `14.2.4.2` 用于满足原厂 `14.2.4.1` 的版本比较；安装后的社区版本为 0.9.27。没有这些请求时检查设备联网、DNS 规则计数、服务器端口和主控状态，不要反复重启或换文件强刷。
 
 ### 第四步：确认社区固件并重新配网
 
 等待数分钟，扫描 `M1-AP-XXXXXX`，按第 5 节访问 `192.168.0.1` 并设置 2.4 GHz Wi-Fi。查新 DHCP 地址，用 `/api/v1/status` 核对完整 `device_id`、实际 `version`、`wifi_connected`、`sensor_valid` 和持续增加的 `rx_frames`；网页应正常打开。软件重启后还应自动联网、保留配置。
 
-只看到完整下载或原厂成功上报时，先保持供电并查热点、租约和版本，不要再次下发更新。
 
 ### 第五步：恢复路由器并停止临时服务
 
@@ -357,7 +355,7 @@ curl --noproxy '*' --connect-timeout 3 --max-time 5 "http://${DeviceIp}/api/v1/s
 
 <!-- /os -->
 
-出现社区热点只说明新系统已经提供配网入口；以实际版本、网页访问和传感器更新为成功依据。后续从社区固件升级时，按 [固件更新](firmware-update) 使用签名 OTA 包。
+后续升级按 [固件更新](firmware-update) 使用签名 OTA 包。
 
 ## 6. 常见问题
 

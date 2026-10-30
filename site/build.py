@@ -6,7 +6,7 @@ names, navigation order and the Wiki pages cannot drift apart. The page shell
 (header, sidebar, footer) is generated here so every guide shares the site's
 design language instead of carrying its own markup.
 """
-import argparse, html, re, shutil, sys
+import argparse, hashlib, html, json, re, shutil, sys
 from pathlib import Path
 
 import markdown
@@ -17,7 +17,7 @@ ROOT = HERE.parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(ROOT / 'tools'))
 sys.path.insert(0, str(ROOT / 'tools/release'))
-from pages import ALIASES, DEVICE_ACTIONS, GROUPS, PAGES, PARENTS, SITE_URL, EN_GROUPS, EN_PAGES, validate_translations  # noqa: E402
+from pages import ALIASES, DEVICE_SECTIONS, GROUPS, PAGES, PARENTS, SITE_URL, EN_GROUPS, EN_PAGES, validate_translations  # noqa: E402
 from demo_navigation import add_navigation
 from public_links import expand_public_links, PUBLIC_LINKS
 from seo import EN_INDEX_TITLE, EN_INDEX_DESCRIPTION, guide_metadata, metadata, write_discovery  # noqa: E402
@@ -71,24 +71,27 @@ def footer(language="zh"):
             '</div></footer>')
 
 
-def device_actions(group, base, language="zh", active_slug=None):
+def device_sections(group, base, language="zh", active_slug=None):
     english = language == 'en'
-    labels = {'install': ('刷机', 'Flash'), 'update': ('升级', 'Update'),
-              'use': ('使用', 'Use'), 'recover': ('恢复', 'Recovery')}
     titles = {slug: title for slug, title, *_ in (EN_PAGES if english else PAGES)}
-    links = []
-    for action, slug, chinese, translated in DEVICE_ACTIONS.get(group, []):
-        anchor = translated if english else chinese
-        target = base + slug + '.html' + ('#' + anchor if anchor else '')
-        current = ' aria-current="page"' if slug == active_slug and not anchor else ''
-        links.append(f'<a href="{esc(target)}" data-guide-action="{action}" '
-                     f'title="{esc(titles[slug])}"{current}>'
-                     f'{labels[action][english]}</a>')
-    if not links:
-        return ''
-    label = group.upper() + (' guides' if english else ' 文档入口')
-    return (f'<div class="device-doc-actions" role="group" aria-label="{label}" '
-            f'data-device-actions="{group}">{"".join(links)}</div>')
+    sections = []
+    for name, chinese_title, english_title, entries in DEVICE_SECTIONS.get(group, []):
+        links = []
+        for slug, chinese, translated, chinese_label, english_label in entries:
+            anchor = translated if english else chinese
+            target = base + slug + '.html' + ('#' + anchor if anchor else '')
+            current = ' aria-current="page"' if slug == active_slug and not anchor else ''
+            label = (english_label if english else chinese_label) or titles[slug]
+            links.append(f'<li><a href="{esc(target)}"{current}>{esc(label)}</a></li>')
+        title = english_title if english else chinese_title
+        sections.append(f'<section data-device-section="{name}"><h4>{esc(title)}</h4>'
+                        f'<ul>{"".join(links)}</ul></section>')
+    return (f'<div class="device-doc-sections" data-device-sections="{group}">'
+            f'{"".join(sections)}</div>') if sections else ''
+
+
+def section_pages(group):
+    return {entry[0] for _, _, _, entries in DEVICE_SECTIONS.get(group, []) for entry in entries}
 
 
 def guide_nav(active_slug, language="zh"):
@@ -96,8 +99,8 @@ def guide_nav(active_slug, language="zh"):
     for group, title, items in (EN_GROUPS if language == "en" else GROUPS):
         opened = ' open' if any(slug == active_slug for slug, *_ in items) else ''
         out.append(f'<details class="guide-nav-group guide-section" data-guide-group="{group}"{opened}>'
-                   f'<summary>{esc(title)}</summary>{device_actions(group, "", language, active_slug if opened else None)}')
-        featured = {item[1] for item in DEVICE_ACTIONS.get(group, [])}
+                   f'<summary>{esc(title)}</summary>{device_sections(group, "", language, active_slug if opened else None)}')
+        featured = section_pages(group)
         for slug, page_title, _, _ in items:
             if slug in featured:
                 continue
@@ -153,16 +156,43 @@ def docs_index(language="zh", base="guides/"):
     """Device guides first, followed by shared setup and developer material."""
     out = []
     for group, title, items in (EN_GROUPS if language == 'en' else GROUPS):
-        featured = {item[1] for item in DEVICE_ACTIONS.get(group, [])}
+        featured = section_pages(group)
         links = ''.join(
             f'<li class="{"doc-child" if slug in PARENTS else "doc-page"}"><a href="{base}{slug}.html">{esc(page_title)}'
             f'<span>{esc(summary)}</span></a></li>'
             for slug, page_title, summary, _ in items if slug not in featured)
-        opened = ' open' if group in DEVICE_ACTIONS else ''
+        opened = ' open' if group in DEVICE_SECTIONS else ''
         listing = f'<ul>{links}</ul>' if links else ''
         out.append(f'<details class="doc-group" id="docs-{group}"{opened}><summary>{esc(title)}</summary>'
-                   f'{device_actions(group, base, language)}{listing}</details>')
+                   f'{device_sections(group, base, language)}{listing}</details>')
     return ''.join(out)
+
+
+def native_downloads(archive=None, formal=False):
+    """Publish only explicit native images, with hashes checked in formal builds."""
+    catalog = json.loads((HERE / 'native-downloads.json').read_text())
+    if catalog.get('schema') != 1:
+        raise ValueError('Unsupported native download catalog')
+    for release in catalog['releases']:
+        tag = release['tag']
+        if not re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+(?:-rc(?:\.[0-9]+)?)?', tag):
+            raise ValueError('Invalid native release tag')
+        prefix = 'https://github.com/phicomm-io/iotcloud-community-firmware/releases/download/' + tag + '/'
+        for model, record in release['models'].items():
+            if model != 's30' or record['checksums'] != prefix + 'SHA256SUMS-S30':
+                raise ValueError('Invalid native device or checksum URL')
+            for kind, file in record['downloads'].items():
+                pattern = {'rbl': 'BL2028N_OTA_' + tag[1:] + '.rbl',
+                           'stock_ua': 'BL2028N_STOCK_UA_' + tag[1:] + '.bin'}
+                if kind not in pattern or file['path'] != prefix + pattern[kind]:
+                    raise ValueError('Invalid native image path')
+                if not re.fullmatch('[0-9a-f]{64}', file['sha256']) or file['size'] <= 0:
+                    raise ValueError('Invalid native image identity')
+                if formal:
+                    path = archive / 'releases' / tag / pattern[kind] if archive else None
+                    if not path or not path.is_file() or path.stat().st_size != file['size'] or hashlib.sha256(path.read_bytes()).hexdigest() != file['sha256']:
+                        raise ValueError('Native release image missing or mismatched: ' + pattern[kind])
+    return json.dumps(catalog, ensure_ascii=False).replace('<', '\u003c')
 
 
 def rewrite_links(text):
@@ -300,6 +330,7 @@ def main():
         ('en', 'index-en.html', out / 'en/index.html', '../guides/en/'),
     ):
         home = expand_public_links((HERE / source_name).read_text(encoding='utf-8'))
+        home = home.replace('</head>', '<script type="application/json" id="native-downloads">' + native_downloads(args.archive, args.formal) + '</script></head>')
         placeholder = '<div class="doc-groups" id="docs-index"></div>'
         if placeholder not in home:
             raise SystemExit(f'site/{source_name}: docs index container not found')
@@ -320,7 +351,7 @@ def main():
         + metadata(EN_INDEX_TITLE, EN_INDEX_DESCRIPTION, 'guides/en/', 'en') + '<link rel="stylesheet" href="../../style.css">'
         '<script src="../../theme.js"></script></head><body>' + header('../../', 'en') +
         '<main class="wrap docs-directory" id="main"><p><a href="../../#docs" lang="zh-CN">简体中文</a> · English</p>'
-        '<h1>Guides by device</h1><p>Choose M1, A1, TC1 or DAIKIN for flashing, updates, use and recovery.</p>'
+        '<h1>Guides by device</h1><p>Choose a device for flashing methods, common functions, automation and device features.</p>'
         '<div class="doc-groups">' + docs_index('en', '') + '</div></main>' + footer('en') +
         '<script src="../../site.js"></script></body></html>', encoding='utf-8')
     sources = markdown_sources()

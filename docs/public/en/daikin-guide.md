@@ -1,19 +1,19 @@
-# DAIKIN BRY88AX151K air quality monitor
+# DAIKIN functions, installation and recovery
 
 The ESP32 / 4 MB Flash board uses one universal image that detects PM2005 / PM2105 and the optional formaldehyde module. Its web interface shares M1 reading cards, comfort scales and linked-device information, with local access, IoTCloud and Home Assistant support.
 
-**Use stable v0.9.27 for everyday operation. The current v1.0.0-rc.3 candidate is a beta build. Major changes are still expected, and daily use is not recommended.** See the [complete candidate release notes](release-log.html?channel=candidate) for version requirements and cumulative changes.
+**Use stable v0.9.27 for everyday operation, or v1.0.0-rc.4 for beta testing.** See the [complete candidate release notes](release-log.html?channel=candidate) for version requirements and cumulative changes.
 
 ## Readings and controls
 
-- Temperature and humidity use the model recovered from this unit’s stock firmware: temperature is reduced by 4.9 °C; humidity is corrected through the mixing ratio and corrected temperature, then bounded to 0–100%. In General settings, customize the temperature subtraction (default 4.9 °C) and humidity adjustment (default 0 %RH), or restore defaults. Saved values apply immediately and survive restart. Positive temperature offsets lower readings; negative offsets raise them. Humidity follows the corrected temperature. This is not an independently verified calibration.
+- Temperature and humidity use the model recovered from this unit’s stock firmware: temperature is reduced by 4.9 °C; humidity is corrected through the mixing ratio and corrected temperature, then bounded to 0–100%. In General settings, customize the temperature subtraction (default 4.9 °C) and humidity adjustment (default 0 %RH), or restore defaults. Saved values apply immediately and survive restart. Positive temperature offsets lower readings; negative offsets raise them. Humidity follows the corrected temperature.
 - Read PM2.5, PM10, CO₂, temperature, humidity and TVOC. PM2005 / PM2105 provide both particulate readings in one frame; the interface displays separate cards in one row; PM10 stays hidden when it is unavailable. The CO₂ module needs about three minutes to warm up; the interface reports no valid reading during this period.
-- Supporting firmware adds Settings → General → CO₂ module diagnostics and calibration, with raw readings, status bytes, communication errors and calibration results. The current legacy compatibility profile retains reserved status bytes without decoding fault flags, which remain unknown. Manual calibration requires a known reference concentration of 400–1500 ppm, stable for at least two minutes. Outdoor air is not necessarily 400 ppm. A module acknowledgement does not verify accuracy; compare subsequent readings against the reference. A missing acknowledgement is reported as an unknown outcome and is not retried automatically.
+- Supporting firmware adds Settings → General → CO₂ module diagnostics and calibration, with raw readings, status bytes, communication errors and calibration results. The current legacy compatibility profile retains reserved status bytes without decoding fault flags, which remain unknown. Manual calibration requires a known reference concentration of 400–1500 ppm, stable for at least two minutes. Outdoor air is not necessarily 400 ppm. After calibration, compare subsequent readings against the reference. A missing acknowledgement is reported as an unknown outcome and is not retried automatically.
 - Formaldehyde is detected automatically. Without the module, its card and entity stay hidden. A previously detected module that stops responding becomes invalid; old readings never become zero measurements.
 - Comfort scales follow fresh readings. Stale values do not contribute to comfort ratings. TVOC uses the module's native ppb unit, with a ventilation reference of ≤300 ppb independent of custom indicator thresholds. Particulate display bands follow HJ 633—2026 table 3; these instantaneous readings are not a calculated AQI.
 - Configure the name, network, web password and indicators in Settings. Hold the rear button for five seconds to reopen the setup hotspot without clearing settings.
 
-The OLED and internal GPIO26 indicator are currently unused. BRY88AA151K has different wiring and ADC TVOC, so compatibility with that board is not established.
+The OLED and internal GPIO26 indicator are currently unused. BRY88AA151K has different wiring and ADC TVOC and is unsupported by this image.
 
 ## Indicator settings
 
@@ -23,7 +23,7 @@ The Wi-Fi lamp indicates system status: three long and three short pulses when u
 
 ## First installation
 
-Choose a release that **explicitly includes DAIKIN** on the [downloads page](../../index.html#releases). Do not substitute another model's image when an older archive lists only Phicomm devices. Existing 0.9.x archives provide the full image only. The current v1.0.0-rc.3 also provides a separate `hub` variant as a beta prerelease.
+Choose a release that **explicitly includes DAIKIN** on the [downloads page](../../index.html#releases). Do not substitute another model's image when an older archive lists only Phicomm devices. Existing 0.9.x archives provide the full image only. The current v1.0.0-rc.4 also provides a separate `hub` variant as a beta prerelease.
 
 1. Confirm the ESP32 / 4 MB Flash board and wiring, then back up the entire original Flash. Keep that backup private because it contains network credentials.
 2. Hold GPIO0 / BOOT0 low while powering on to enter the ESP32 bootloader. Use ESPTool to write `daikin_BRY88AX151K.all.bin` at **0x0**. Never upload the factory image through web OTA.
@@ -50,17 +50,17 @@ A1 offers automation sources according to currently valid data, independently of
 
 ## Hub edition
 
-**The hub is an RC / Beta feature. Major changes are still expected; using it is not recommended.** See the [latest release notes](release-log.html?channel=candidate) for available builds. Automatic local-device listing, the optional Web password and restart recovery require matching versions. The old Wi-Fi sensor-data interface is incompatible with the current interface; testing requires updating source devices, M1 receivers and the matching frontend together.
+**The hub is a beta feature provided in a separate `hub` image.** See the [release notes](release-log.html?channel=candidate) for matching versions. Update source devices, M1 receivers and the frontend together; the old sensor interface is incompatible.
 
-The separate `hub` variant includes local accounts, an MQTT TCP / WebSocket Broker, LAN Home Assistant, an upstream MQTT client and Bemfa forwarding. The ordinary image remains a sensor device. Local accounts do not include email or GitHub login.
+The hub discovers devices through mDNS, communicates over paired UDP, and forwards upstream MQTT and Bemfa messages. Local Home Assistant and MQTT clients use an external broker. The full edition remains a sensor device.
 
 Select **Hub management** on the device page, or open `http://DEVICE-IP/iotcloud/#/`. Create a local account: usernames contain 3–32 ASCII letters, digits or underscores, and passwords contain 8–63 bytes. The device web administration password is optional; if one is already configured, enter it to authorize account creation. After login, manage devices, upstream forwarding, Bemfa mappings and Apple Home.
 
-The DAIKIN itself appears automatically in the hub device list. Its MQTT connection does not need to point back to itself.
+The DAIKIN itself appears automatically in the hub device list.
 
-On each other device, set its MQTT host to the hub IP, port to `1883`, and credentials to the local account's MQTT username/password. WebSocket clients use `ws://HUB-IP:9001/mqtt`. The device management page provides manual setup instructions; Home Assistant can connect to the same Broker.
+In Hub management, select a discovered LAN device, check its model, ID and IP, and pair using that device's management password. Confirm and pair again if its IP changes. Move devices previously connected to the hub's embedded broker to an external broker.
 
-Apple Home uses HAP bridging. Enable it separately under **Apple Home** to obtain the pairing code; it is off by default. Matter is currently unavailable. The current v1.0.0-rc.3 provides a separate `hub` image; ordinary images do not include these hub features. The stable v1.0.0 release is not yet available.
+Apple Home uses experimental HAP bridging, off by default. Enable it under **Apple Home** to obtain the pairing code. Matter is unavailable.
 
 ### Switch from full to hub
 
