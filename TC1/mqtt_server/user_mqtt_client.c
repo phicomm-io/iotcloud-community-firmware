@@ -91,9 +91,18 @@ static unsigned ha_refresh_pending;
 void UserMqttRefreshState(bool discovery) {
     __atomic_fetch_or(&ha_refresh_pending, discovery ? 3u : 1u, __ATOMIC_RELEASE);
 }
-/* External periodic producer requests work only. Account/topic/cursors remain
- * exclusively owned by the MQTT worker, including during reconfiguration. */
-static bool power_pending,power_turn;
+/* The existing MQTT owner schedules periodic work. External requests only
+ * coalesce a flag; account/topic/cursors never leave the owner. */
+static bool power_pending,power_turn,power_report_started;
+static uint32_t power_report_at;
+static void power_report_poll(void) {
+    uint32_t now=mico_rtos_get_time();
+    int seconds=user_config->mqtt_report_freq;
+    if(seconds<=0 || seconds>3600)seconds=2;
+    if(power_report_started && (uint32_t)(now-power_report_at)<(uint32_t)seconds*1000u)return;
+    power_report_started=true;power_report_at=now;
+    __atomic_store_n(&power_pending,true,__ATOMIC_RELEASE);
+}
 /* sensor-values-v1 is owner-local and independent of retained HA telemetry.
  * Process counters survive MQTT reconnect/account changes. Random failure
  * defers this optional feed; it must not invent a reusable boot identity. */
@@ -404,6 +413,7 @@ static bool session_subscription(void *context,unsigned index,ph_mqtt_subscripti
 
 static int session_initial(void *context) {
     power_sensor_metadata=false;power_sensor_started=false;
+    power_report_started=false;
     (void)context;
     PowerSampleInvalidate();
     cleanup_pending=true;discovery_index=state_index=publication_cursor=0;synchronous_error=0;
@@ -414,6 +424,7 @@ static int session_cycle(void *context) {
     if(!session_current())return PH_MQTT_RECONFIGURE;
     int rc=ota_service(account.base);if(rc!=MQTT_SUCCESS)return rc;
     if(ota_job_active())return MQTT_SUCCESS;
+    power_report_poll();
     if(discovery_index==12 && state_index==10) {
         unsigned pending=__atomic_exchange_n(&ha_refresh_pending,0u,__ATOMIC_ACQ_REL);
         if(pending & 2u)rediscover=true;
