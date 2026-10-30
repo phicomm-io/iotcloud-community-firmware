@@ -103,6 +103,9 @@ class FanSensor(unittest.TestCase):
     def test_slow_typed_publishes_leave_native_and_features_progress(self):
         self.scenario('fairness')
 
+    def test_native_and_ha_have_independent_success_and_retry_cursors(self):
+        self.scenario('independent')
+
     def test_maximum_account_and_clock_wrap_keep_bounded_cadence(self):
         for messages in self.scenario('bounds'):
             self.assertEqual(len(messages), 2)

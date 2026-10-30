@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "common/mqtt_account.h"
+#include "common/mqtt/publication.h"
 #include "tests/sensor_mp_fixture.h"
 
 #define MQTT_SUCCESS 0
@@ -33,6 +34,8 @@ static unsigned feature_revision=1,count,discovery_index=12;
 static unsigned state_index,state_pending=127,state_seen,revision,old_speed;
 static a1_filter_storage_t sent_filter;
 static char base[1],feature_filters[1];
+static ph_mqtt_publication native_publication;
+static int snapshot_result;
 
 static void mico_rtos_lock_mutex(unsigned *lock) { assert(lock==&a1_lock && !locked);locked=1;++lock_calls; }
 static void mico_rtos_unlock_mutex(unsigned *lock) { assert(lock==&a1_lock && locked);locked=0; }
@@ -71,7 +74,8 @@ static uint32_t feature_config_revision(void) { return cfg.revision; }
 static bool feature_mqtt_filters_current(void *filters,unsigned n) { assert(filters==feature_filters && n==count);return true; }
 static void feature_mqtt_session(const mqtt_account_t *a) { assert(a==&account); }
 static int service_mqtt_capabilities(sender_t sender,const mqtt_account_t *a) {
-    assert(sender==publish_bytes && a==&account);++capabilities;return MQTT_SUCCESS;
+    assert(sender==publish_bytes && a==&account);++capabilities;
+    memset(&native_publication,0,sizeof(native_publication));return MQTT_SUCCESS;
 }
 static int feature_mqtt_service(sender_t sender,bool connected) {
     assert(sender==publish_bytes);if(connected)++features;return MQTT_SUCCESS;
@@ -81,7 +85,13 @@ static bool a1_filter_mqtt_due(const a1_filter_storage_t *a,const a1_filter_stor
     (void)a;(void)b;(void)now;(void)at;return false;
 }
 static int service_mqtt_snapshot(sender_t sender,const mqtt_account_t *a) {
-    assert(sender==publish_bytes && a==&account);++snapshots;return MQTT_SUCCESS;
+    assert(sender==publish_bytes && a==&account);++snapshots;
+    ph_mqtt_publication_attempt(&native_publication,now_ms);
+    if(!snapshot_result)ph_mqtt_publication_complete(&native_publication,now_ms);
+    return snapshot_result;
+}
+static bool service_mqtt_status_due(bool changed) {
+    return ph_mqtt_publication_due(&native_publication,now_ms,5000,1000,changed);
 }
 static int discovery(const a1_config_t *c,unsigned i) { assert(c==&current && i<12);return discovery_result; }
 static int states(const a1_config_t *c,const mqtt_state_t *s,unsigned i) {
@@ -164,9 +174,29 @@ static void fairness(void) {
     account_set("test");native_result=PH_MQTT_MORE;
     for(unsigned i=0;i<60;i++) {
         now_ms+=6000;state_pending=127;
-        assert(session_cycle(NULL)==(i%2?PH_MQTT_MORE:MQTT_SUCCESS));
+        int rc=session_cycle(NULL);assert(rc==MQTT_SUCCESS||rc==PH_MQTT_MORE);
     }
-    assert(sends==30 && normal==30 && features==30 && !snapshots);
+    assert(sends==30 && normal==15 && features==30 && snapshots==15);
+}
+static void independent(void) {
+    account_set("test");
+    /* A native success cannot acknowledge any of HA's seven initial leaves. */
+    fan_sensor_turn=true;filter_turn=false;state_index=state_seen=0;state_pending=127;sent=false;
+    revision=cfg.revision;old_on=true;old_speed=37;old_visible=false;
+    assert(!session_cycle(NULL));assert(snapshots==1&&!state_seen&&state_pending==127&&!sent);
+    for(unsigned i=0;i<8;i++)assert(!session_cycle(NULL));
+    assert(sent&&state_seen==127);
+    /* Continuous HA/filter updates must leave native heartbeats and retries
+     * progressing. A deferred native publish retains its own deadline. */
+    now_ms=5000;snapshot_result=PH_MQTT_MORE;filter_turn=false;fan_sensor_turn=true;
+    assert(session_cycle(NULL)==PH_MQTT_MORE);assert(snapshots==2);
+    for(unsigned i=0;i<1000;i++){now_ms=5000+i;assert(!session_cycle(NULL));}
+    assert(snapshots==2);now_ms=6000;snapshot_result=0;
+    for(unsigned i=0;i<4;i++)assert(!session_cycle(NULL));
+    assert(snapshots==3&&native_publication.sent_at==6000);
+    now_ms=11000;state_pending=127;
+    for(unsigned i=0;i<4;i++)assert(!session_cycle(NULL));
+    assert(snapshots==4);
 }
 static void bounds(void) {
     char user[MQTT_USER_MAX+1];memset(user,'u',MQTT_USER_MAX);user[MQTT_USER_MAX]=0;
@@ -185,6 +215,7 @@ int main(int argc,char **argv) {
     else if(!strcmp(argv[1],"failures"))failures();
     else if(!strcmp(argv[1],"gates"))gates();
     else if(!strcmp(argv[1],"fairness"))fairness();
+    else if(!strcmp(argv[1],"independent"))independent();
     else {assert(!strcmp(argv[1],"bounds"));bounds();}
     assert(!locked);return 0;
 }
