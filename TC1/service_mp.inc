@@ -7,6 +7,25 @@ static bool keys(const ph_value *p,const char *allowed){return phv_keys(p,allowe
 static bool boolparam(const ph_value *p,const char *key,bool *value){ph_value v;return phv_get(p,key,&v)&&phv_bool(&v,value);}
 static bool number(const ph_value *p,const char *key,int *out,int lo,int hi){ph_value v;int64_t n;if(!phv_get(p,key,&v)||!phv_int(&v,&n)||n<lo||n>hi)return false;*out=(int)n;return true;}
 static bool strparam(const ph_value *p,const char *key,char *out,size_t capacity,bool required){ph_value v;if(!phv_get(p,key,&v))return !required;return phv_text(&v,out,capacity);}
+/* These mutually exclusive string buffers must not remain below Bemfa's
+ * transactional validator or any other product branch. */
+static __attribute__((noinline)) void tc1_ota_start_mp(const ph_value *p,const char **code)
+{
+    char url[512];
+    if(keys(p,"|url|") && strparam(p,"url",url,sizeof(url),true))
+        *code=ota_server_start(url,NULL,NULL)==kNoErr?"accepted":"busy";
+}
+static __attribute__((noinline)) bool tc1_mqtt_config_mp(const ph_value *v)
+{
+    char host[sizeof(user_config->mqtt_host)],user[64],password[257],protocol[8];int port;
+    strcpy(protocol,"tmcp");strcpy(password,user_config->mqtt_password);
+    bool enabled=user_config->bemfa.mqtt_enabled;
+    bool toggle=!tc1_mp_has(v,"enabled") || boolparam(v,"enabled",&enabled);
+    /* Zero is the factory sentinel for unconfigured MQTT. */
+    bool valid=toggle && keys(v,"|host||port||user||password||protocol||enabled|") && strparam(v,"host",host,sizeof(host),true) && strparam(v,"user",user,sizeof(user),true) && strparam(v,"password",password,sizeof(password),false) && number(v,"port",&port,0,65535) && (port || !host[0]) && strparam(v,"protocol",protocol,sizeof(protocol),false) && !strcmp(protocol,"tmcp");
+    if(valid){tc1_status_lock();user_config->bemfa.mqtt_enabled=enabled;user_config->bemfa.revision++;tc1_status_unlock();strcpy(user_config->mqtt_host,host);strcpy(user_config->mqtt_user,user);strcpy(user_config->mqtt_password,password);user_config->mqtt_port=port;user_config->mqtt_topic_mode=!strcmp(protocol,"tmcp");}
+    return valid;
+}
 /* Ordinary controls change only a few bytes. Keep their rollback on the
  * stack, rather than borrowing heap for saved schedules and authentication.
  * The dispatcher already owns command admission; config reservation still
@@ -83,7 +102,7 @@ static __attribute__((noinline)) bool tc1_product_inner_mp(const char *action,co
         if(!WifiScanMp(out))*code="busy";else *code="ok";
         return true;
     }
-    if(!strcmp(action,"ota.start")){char url[512];if(!keys(p,"|url|") || !strparam(p,"url",url,sizeof(url),true))return true;*code=ota_server_start(url,NULL,NULL)==kNoErr?"accepted":"busy";return true;}
+    if(!strcmp(action,"ota.start")){tc1_ota_start_mp(p,code);return true;}
     if(!strcmp(action,"config.set")){
         ph_value section_value=tc1_mp_get(p,"section"),values=tc1_mp_get(p,"values");
         const ph_value *section=&section_value,*v=&values;
@@ -122,15 +141,13 @@ static __attribute__((noinline)) bool tc1_product_inner_mp(const char *action,co
             else if(!strcmp(s,"socket")){char name[SOCKET_NAME_LENGTH];valid=keys(v,"|index||name|") && number(v,"index",&index,0,5) && strparam(v,"name",name,sizeof(name),true) && name[0];if(valid)strcpy(user_config->socket_names[index],name);}
             else if(!strcmp(s,"meter")){int n;valid=keys(v,"|coefficient_x100|") && number(v,"coefficient_x100",&n,POWER_COEFFICIENT_MIN_X100,POWER_COEFFICIENT_MAX_X100);if(valid)user_config->power_coefficient_x100=n;}
             else if(!strcmp(s,"report")){int n;valid=keys(v,"|seconds|") && number(v,"seconds",&n,1,3600);if(valid)user_config->mqtt_report_freq=n;}
-            else if(!strcmp(s,"bemfa")){bemfa_config_t next;bemfa_config_get(&next);valid=bemfa_config_values_mp(&next,v,true);if(valid){tc1_status_lock();user_config->bemfa=next;tc1_status_unlock();}}
-            else if(!strcmp(s,"mqtt")){
-                char host[sizeof(user_config->mqtt_host)],user[64],password[257],protocol[8];int port;strcpy(protocol,"tmcp");strcpy(password,user_config->mqtt_password);
-                bool enabled=user_config->bemfa.mqtt_enabled;
-                bool toggle=!tc1_mp_has(v,"enabled") || boolparam(v,"enabled",&enabled);
-                /* Zero is the factory sentinel for unconfigured MQTT. */
-                valid=toggle && keys(v,"|host||port||user||password||protocol||enabled|") && strparam(v,"host",host,sizeof(host),true) && strparam(v,"user",user,sizeof(user),true) && strparam(v,"password",password,sizeof(password),false) && number(v,"port",&port,0,65535) && (port || !host[0]) && strparam(v,"protocol",protocol,sizeof(protocol),false) && !strcmp(protocol,"tmcp");
-                if(valid){tc1_status_lock();user_config->bemfa.mqtt_enabled=enabled;user_config->bemfa.revision++;tc1_status_unlock();strcpy(user_config->mqtt_host,host);strcpy(user_config->mqtt_user,user);strcpy(user_config->mqtt_password,password);user_config->mqtt_port=port;user_config->mqtt_topic_mode=!strcmp(protocol,"tmcp");}
+            else if(!strcmp(s,"bemfa")){
+                /* The validator commits only a fully valid snapshot. The
+                 * transaction's existing backup supplies persistence rollback;
+                 * do not keep a second 592-byte Bemfa snapshot on this stack. */
+                tc1_status_lock();valid=bemfa_config_values_mp(&user_config->bemfa,v,true);tc1_status_unlock();
             }
+            else if(!strcmp(s,"mqtt")){valid=tc1_mqtt_config_mp(v);}
         }
     }else{*code="unsupported";free(before);tc1_config_release();return true;}
 finish:

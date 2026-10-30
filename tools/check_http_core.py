@@ -149,7 +149,7 @@ def receipt_paths(frames,label,prefix,reserve,symbols=None):
 
 
 def tc1_product_paths(frames,label,prefix,reserve,symbols=None):
-    """TC1's two noinline business branches never retain each other's scratch."""
+    """TC1 controls and string-heavy branches retain only their own scratch."""
     try:
         from .status_stack import emitted,writer_paths
     except ImportError:
@@ -174,10 +174,20 @@ def tc1_product_paths(frames,label,prefix,reserve,symbols=None):
         paths[key+' scan']=(call+['phv_next']+extra(['phv_scan'])+head,reserve)
     for branch,owner,helpers in [
         ('control',control,['keys','boolparam','tc1_mp_has','number']),
-        ('generic',generic,['keys','boolparam','tc1_mp_has','number','strparam','tc1_mp_get'])]:
+        ('generic',generic,['keys','boolparam','tc1_mp_has','number','strparam','tc1_mp_get']),
+        ('mqtt config',generic+['tc1_mqtt_config_mp'],['keys','boolparam','tc1_mp_has','number','strparam']),
+        ('ota start',generic+['tc1_ota_start_mp'],['keys','strparam'])]:
         for helper in helpers:lookup(branch,owner,helper,'phv_keys' if helper=='keys' else 'phv_get')
     bemfa=generic+['bemfa_config_values_mp']
     for api in ['phv_keys','phv_get','phv_at']:lookup('bemfa',bemfa,'',api)
+    paths[label+' mqtt config status lock']=(generic+['tc1_mqtt_config_mp','tc1_status_lock'],reserve)
+    # URL parsing and OTA reservation return before a worker is created. The
+    # worker's transfer scratch belongs to its own existing stack budget.
+    ota=generic+['tc1_ota_start_mp','ota_server_start']
+    for branch,tail in [('URL',['ota_url_valid']+extra(['parse_url'])),
+                        ('claim',['ota_job_claim']),('reservation',['tc1_ota_reserve']),
+                        ('abort',['tc1_ota_abort']),('release',['ota_job_release']+extra(['job_phase']))]:
+        paths[label+' ota start '+branch]=(ota+tail,reserve)
     for name,tail in [
         ('reservation',['tc1_config_reserve']),('release',['tc1_config_release']),
         ('status lock',['tc1_status_lock']),('HA refresh',['UserMqttRefreshState']),

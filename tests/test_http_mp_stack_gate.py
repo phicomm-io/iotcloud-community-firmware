@@ -129,6 +129,47 @@ class HTTPMessagePackStackGate(unittest.TestCase):
         frames['mp_receipt_save']=5200
         with redirect_stdout(io.StringIO()),self.assertRaisesRegex(ValueError,'>8192'):
             validate_paths(paths,frames,8192,'TC1')
+    def test_tc1_string_helpers_keep_callers_and_exclusive_scratch_on_all_transports(self):
+        from tools.check_http_core import StackFrames
+        from tools.check_mqtt_core import mqtt_paths,check as check_mqtt
+        from tools.check_lan_stack import lan_paths,validate_lan_paths
+        factories=[
+            ('HTTP POST',lambda f:http_paths(f,'TC1',f),
+             lambda p,f:validate_paths(p,f,8192,'TC1'),True),
+            ('MQTT',lambda f:mqtt_paths(f,'TC1',f)[0],
+             lambda p,f:check_mqtt(f,'TC1',f),False),
+            ('LAN',lambda f:lan_paths(f,'TC1',f),
+             lambda p,f:validate_lan_paths(p,f,8192),False),
+        ]
+        for protocol,factory,validate,http in factories:
+            first=factory({});frames=StackFrames()
+            frames.update({name:16 for pair in first.values() for name in pair[1 if http else 0]})
+            frames.update(dict.fromkeys(['keys','number','strparam','boolparam','tc1_mp_has',
+                                         'phv_scan','phv_head','parse_url','job_phase'],16))
+            paths=factory(frames)
+            with self.subTest(protocol=protocol),redirect_stdout(io.StringIO()):validate(paths,frames)
+            names=lambda label:paths[protocol+' business '+label][1 if http else 0]
+            mqtt=names('mqtt config strparam scan');ota=names('ota start strparam scan')
+            bemfa=names('bemfa phv_keys scan')
+            self.assertTrue({'tc1_product_inner_mp','tc1_mqtt_config_mp','strparam','phv_get','phv_scan'}<=set(mqtt))
+            self.assertTrue({'tc1_product_inner_mp','tc1_ota_start_mp','strparam','phv_get','phv_scan'}<=set(ota))
+            self.assertNotIn('tc1_ota_start_mp',mqtt);self.assertNotIn('tc1_mqtt_config_mp',ota)
+            self.assertFalse({'tc1_mqtt_config_mp','tc1_ota_start_mp'}&set(bemfa))
+            self.assertTrue({'tc1_product_inner_mp','tc1_ota_start_mp','ota_server_start',
+                             'ota_url_valid','parse_url'}<=set(names('ota start URL')))
+            for helper in ['tc1_mqtt_config_mp','tc1_ota_start_mp','ota_server_start','ota_url_valid']:
+                missing=StackFrames();missing.update(frames);del missing[helper]
+                with self.subTest(protocol=protocol,missing=helper),redirect_stdout(io.StringIO()),self.assertRaisesRegex(ValueError,'missing actual .su'):
+                    validate(paths,missing)
+                oversized=StackFrames();oversized.update(frames);oversized[helper]=8192
+                with self.subTest(protocol=protocol,oversized=helper),redirect_stdout(io.StringIO()),self.assertRaisesRegex(ValueError,'>8192'):
+                    validate(paths,oversized)
+            missing=dict(frames);del missing['parse_url']
+            with self.assertRaisesRegex(ValueError,'Emitted helper missing'):
+                # Keep the linked-symbol proof when the .su frame disappears.
+                if http:http_paths(missing,'TC1',frames)
+                elif protocol=='MQTT':mqtt_paths(missing,'TC1',frames)
+                else:lan_paths(missing,'TC1',frames)
     def test_overbudget_and_weakened_reserve_fail(self):
         frames,paths=self.fixture();frames['service_product_status_mp']=10000
         with redirect_stdout(io.StringIO()),self.assertRaisesRegex(ValueError,'>12288'):

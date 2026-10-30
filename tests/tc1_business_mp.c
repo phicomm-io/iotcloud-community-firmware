@@ -5,6 +5,7 @@
 #include <string.h>
 #include "common/typed_wire.h"
 #include "common/i18n.h"
+#include "common/mqtt/bemfa_config.c"
 #define maxNameLen 64
 #define SOCKET_NAME_LENGTH 64
 #define SOCKET_NUM 6
@@ -14,14 +15,13 @@
 #define MICO_APPLICATION_PRIORITY 1
 #define kNoErr 0
 typedef int mico_thread_arg_t;
-typedef struct {bool mqtt_enabled;unsigned revision;uint8_t language;} bemfa_config_t;
 typedef struct {char mqtt_host[128],mqtt_user[64],mqtt_password[257],web_password[33],socket_names[6][64];int mqtt_port,mqtt_report_freq;uint8_t mqtt_topic_mode,user[64],socket_status[6];bool power_led_enabled;int power_coefficient_x100;struct{int timezone;} automation;bemfa_config_t bemfa;} user_config_t;
 static user_config_t config,*user_config=&config;
 static struct {struct {char name[64],ssid[33],user_key[65],key[65];unsigned user_keyLength,keyLength;}micoSystemConfig;} system_data,*sys_config=&system_data;
 static char str_mac[16]="AABBCCDDEEFF";
-static bool reserved,deny_reserve,fail_storage,recovery,fail_backup_alloc;
+static bool reserved,deny_reserve,fail_storage,recovery,fail_backup_alloc,fail_ota;
 static bool relay_outputs[6],led_output;
-static unsigned writes,relay_writes,refreshes,reboots,reserve_attempts,backup_allocations,state_locks;
+static unsigned writes,relay_writes,refreshes,reboots,reserve_attempts,backup_allocations,state_locks,ota_calls;
 static int childLockEnabled;
 static float real_time_power=125;
 static unsigned p_count;
@@ -46,11 +46,10 @@ static char owned_ssid[33],owned_password[65],owned_url[512];
 static bool WifiConnect(char *ssid,char *password){strcpy(owned_ssid,ssid);strcpy(owned_password,password);return true;}
 static int WifiScanStart(void){return 0;}
 static bool WifiScanMp(ph_writer *w){phw_begin(w,NULL,false);phw_bool(w,"scanning",false);phw_begin(w,"networks",true);phw_end(w);phw_end(w);return true;}
-static int ota_server_start(char *url,void *md5,void *cb){(void)md5;(void)cb;strcpy(owned_url,url);return 0;}
+static int ota_server_start(char *url,void *md5,void *cb){(void)md5;(void)cb;ota_calls++;strcpy(owned_url,url);return fail_ota?-1:0;}
 static float PowerPulseCountToKwh(unsigned n){return n/1000.0f;}
-static void bemfa_config_get(bemfa_config_t *next){*next=config.bemfa;}
-static bool bemfa_config_values_mp(bemfa_config_t *next,const ph_value *p,bool require){(void)next;(void)p;(void)require;return false;}
-static void bemfa_config_mp_fields(ph_writer *w){phw_bool(w,"mqtt_enabled",config.bemfa.mqtt_enabled);}
+void bemfa_config_get(bemfa_config_t *next){*next=config.bemfa;}
+void bemfa_config_mp_fields(ph_writer *w){phw_bool(w,"mqtt_enabled",config.bemfa.mqtt_enabled);}
 static void *control_backup_malloc(size_t n){backup_allocations++;return fail_backup_alloc?NULL:malloc(n);}
 #define malloc control_backup_malloc
 #include "TC1/service_mp.inc"
@@ -129,7 +128,65 @@ static void test_control_transactions(void){
  deny_reserve=false;fail_backup_alloc=false;
  puts("PASS TC1 controls: no backup allocation, 14 storage rollbacks, idempotent writes, invalid admission and HA refresh");
 }
+static void section(ph_writer *q,const char *name){start(q);phw_text(q,"section",name);phw_begin(q,"values",false);}
+static void mqtt_values(ph_writer *q,const char *host,const char *user,const char *password){
+ section(q,"mqtt");phw_text(q,"host",host);phw_int(q,"port",host[0]?1883:0);phw_text(q,"user",user);
+ if(password)phw_text(q,"password",password);phw_end(q);
+}
+static void test_config_scratch_and_rollback(void){
+ ph_writer q;char host[128],user[64],password[257];
+ memset(host,'h',127);host[127]=0;memset(user,'u',63);user[63]=0;memset(password,'p',256);password[256]=0;
+ mqtt_values(&q,host,user,password);check(&q,"config.set","accepted");
+ assert(!strcmp(config.mqtt_host,host)&&!strcmp(config.mqtt_user,user)&&!strcmp(config.mqtt_password,password));
+ user_config_t before=config;unsigned saved=writes,published=refreshes;
+ fail_storage=true;mqtt_values(&q,"new-broker","new-user","new-secret");check(&q,"config.set","storage_error");
+ assert(!memcmp(&before,&config,sizeof(config))&&writes==saved+1&&refreshes==published);fail_storage=false;
+ mqtt_values(&q,"broker","user",NULL);check(&q,"config.set","accepted");assert(!strcmp(config.mqtt_password,password));
+ mqtt_values(&q,"","","");check(&q,"config.set","accepted");assert(!config.mqtt_host[0]&&!config.mqtt_password[0]&&!config.mqtt_port);
+ before=config;saved=writes;published=refreshes;
+ section(&q,"mqtt");phw_text(&q,"host","broker");phw_int(&q,"port",0);phw_text(&q,"user","");phw_end(&q);check(&q,"config.set","invalid_params");
+ assert(!memcmp(&before,&config,sizeof(config))&&writes==saved&&refreshes==published);
+
+ /* Use the real 592-byte config and transactional validator. Boundary-sized
+  * credentials survive the request buffer being poisoned/freed by check(). */
+ char app[65],secret[129];memset(app,'a',64);app[64]=0;memset(secret,'s',128);secret[128]=0;
+ unsigned revision=config.bemfa.revision;
+ section(&q,"bemfa");phw_bool(&q,"enabled",true);phw_text(&q,"app_id",app);phw_text(&q,"secret_key",secret);phw_end(&q);check(&q,"config.set","accepted");
+ assert(config.bemfa.enabled&&config.bemfa.revision==revision+1&&!strcmp(config.bemfa.app_id,app)&&!strcmp(config.bemfa.secret_key,secret));
+ before=config;saved=writes;published=refreshes;
+ for(unsigned failure=0;failure<4;failure++){
+  section(&q,"bemfa");
+  if(failure==0)phw_int(&q,"enabled",1);
+  else if(failure==1)phw_text(&q,"unknown","rejected");
+  else{
+   phw_begin(&q,"topics",true);
+   for(unsigned i=0;i<(failure==2?5:6);i++)phw_text(&q,NULL,"duplicate001");
+   phw_end(&q);
+  }
+  phw_end(&q);check(&q,"config.set","invalid_params");
+  assert(!memcmp(&before,&config,sizeof(config))&&writes==saved&&refreshes==published);
+ }
+ fail_storage=true;section(&q,"bemfa");phw_text(&q,"secret_key","replacement");phw_end(&q);check(&q,"config.set","storage_error");
+ assert(!memcmp(&before,&config,sizeof(config))&&writes==saved+1&&refreshes==published);fail_storage=false;
+ section(&q,"bemfa");phw_text(&q,"app_id","new-app");phw_end(&q);check(&q,"config.set","accepted");
+ assert(config.bemfa.revision==before.bemfa.revision+1&&!strcmp(config.bemfa.app_id,"new-app")&&!strcmp(config.bemfa.secret_key,secret));
+ assert(!reserved&&!state_locks);
+ puts("PASS TC1 actual Bemfa validator and MQTT scratch: boundary credentials, omitted secrets, rejected maps and persistence rollback");
+}
+static void test_ota_scratch(void){
+ ph_writer q;char url[513];memset(url,'u',sizeof(url));url[511]=0;
+ unsigned calls=ota_calls,saved=writes;
+ start(&q);phw_text(&q,"url",url);check(&q,"ota.start","accepted");assert(ota_calls==calls+1&&!strcmp(owned_url,url));
+ fail_ota=true;start(&q);phw_text(&q,"url","busy");check(&q,"ota.start","busy");fail_ota=false;assert(ota_calls==calls+2);
+ start(&q);check(&q,"ota.start","invalid_params");
+ start(&q);phw_int(&q,"url",1);check(&q,"ota.start","invalid_params");
+ start(&q);phw_text(&q,"url","valid");phw_bool(&q,"unknown",true);check(&q,"ota.start","invalid_params");
+ url[511]='u';url[512]=0;start(&q);phw_text(&q,"url",url);check(&q,"ota.start","invalid_params");
+ assert(ota_calls==calls+2&&writes==saved&&!reserved&&!state_locks);
+ puts("PASS TC1 OTA scratch: owned 511-byte URL, overlength/type/key rejection and busy propagation");
+}
 int main(void){
+ bemfa_defaults(&config.bemfa,"tc1",str_mac);
  ph_writer q;
  const char *reads[]={"config.get","power.get","time.get","wifi.scan.get",NULL};
  for(unsigned i=0;reads[i];i++){start(&q);check(&q,reads[i],"ok");start(&q);phw_int(&q,"unknown",1);check(&q,reads[i],"invalid_params");}
@@ -148,5 +205,6 @@ int main(void){
  start(&q);check(&q,"wifi.scan","accepted");assert(!reserved);
  assert(refreshes&&relay_writes);
  test_control_transactions();
+ test_config_scratch_and_rollback();test_ota_scratch();
  return 0;
 }

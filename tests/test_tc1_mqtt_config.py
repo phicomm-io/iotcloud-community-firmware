@@ -32,7 +32,8 @@ class TC1MqttConfig(unittest.TestCase):
         helpers = '\n'.join(extract(service, signature) for signature in (
             'static bool tc1_mp_has(', 'static bool keys(',
             'static bool boolparam(', 'static bool number(',
-            'static bool strparam('))
+            'static bool strparam(',
+            'static __attribute__((noinline)) bool tc1_mqtt_config_mp('))
         branch = extract(service, 'else if(!strcmp(s,"mqtt"))')
         initial = dict(host='lab', port=18884, user='test',
                        password='temporary', enabled=True)
