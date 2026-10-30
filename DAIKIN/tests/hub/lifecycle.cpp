@@ -23,7 +23,15 @@ struct Bus{void(*dispatch)()=nullptr;} hubDeviceBus;
 struct Relay{void reset(){events.push_back("relay-reset");}} hubRelay;
 static bool hubAllocationReady(size_t){return true;}
 static const int pdTRUE=1;
-static int xQueueSend(QueueHandle_t,const HubMessage*p,int){queue.push_back(*p);return pdTRUE;}
+static unsigned pdMS_TO_TICKS(unsigned ms){return ms;}
+static bool consumeOnWait=false;
+static unsigned waitedSends=0;
+static int xQueueSend(QueueHandle_t,const HubMessage*p,int wait){
+ assert(wait==50);
+ if(queue.size()==3&&consumeOnWait){queue.pop_front();++waitedSends;}
+ if(queue.size()==3)return 0;
+ queue.push_back(*p);return pdTRUE;
+}
 static void xQueueReset(QueueHandle_t){events.push_back("inbox-reset");queue.clear();}
 struct Event {int current_data_offset=0,topic_len=0,total_data_len=0,data_len=0;const char *topic=nullptr,*data=nullptr;bool retain=false;};
 using esp_mqtt_event_handle_t=Event*;
@@ -47,6 +55,16 @@ static void seedInbox(){
 }
 static size_t index(const char *event){auto i=std::find(events.begin(),events.end(),event);assert(i!=events.end());return size_t(i-events.begin());}
 int main(){
+ // Model loop() freeing a bounded inbox slot while the SDK callback yields.
+ hubInbox=reinterpret_cast<void*>(1);hubRemoteTopics={"up"};
+ Event burst;burst.topic="up";burst.topic_len=2;burst.total_data_len=burst.data_len=1;burst.data="x";
+ for(unsigned i=0;i<3;++i)assert(hubCapture(&burst,0));
+ assert(queue.size()==3&&!hubInboxDropped);
+ consumeOnWait=true;burst.data="y";assert(hubCapture(&burst,0));consumeOnWait=false;
+ assert(waitedSends==1&&queue.size()==3&&!hubInboxDropped&&queue.back().body[0]=='y'&&!hubMessages[0]);
+ assert(hubCapture(&burst,0));assert(queue.size()==3&&hubInboxDropped==1&&!hubMessages[0]);
+ queue.clear();hubInboxDropped=0;
+
  (void)bemfaMqtt;hubUpstreamChanged();assert(hubReload&&!mqttRestart);events.clear();
  client.authorize=[](const std::string&,const std::string&,uint16_t,const uint8_t*){return true;};
  client.send=[](const std::string&,uint16_t,const void*,size_t){++sent;return true;};

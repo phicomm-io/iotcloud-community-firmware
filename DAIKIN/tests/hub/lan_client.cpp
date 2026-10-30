@@ -1,6 +1,7 @@
 /* Actual localhost UDP, production v4 client and shared server/codec. Auth is
  * a fixed-token fixture; this test does not claim password-pairing acceptance. */
 #include "hub_lan_client.h"
+#include "hub_lan_queue.h"
 #include "hub_lan_result.h"
 #include <cassert>
 #include <cstdio>
@@ -16,7 +17,21 @@ static uint8_t token[16]={1};static int serverfd,clientfd;static sockaddr_in ser
 static bool udp(int fd,const sockaddr_in &address,const void *bytes,size_t length){return sendto(fd,bytes,length,0,reinterpret_cast<const sockaddr*>(&address),sizeof(address))==ssize_t(length);}
 static sockaddr_in bindSocket(int &fd){fd=socket(AF_INET,SOCK_DGRAM,0);assert(fd>=0);sockaddr_in address={};address.sin_family=AF_INET;address.sin_addr.s_addr=htonl(INADDR_LOOPBACK);assert(!bind(fd,reinterpret_cast<sockaddr*>(&address),sizeof(address)));socklen_t length=sizeof(address);assert(!getsockname(fd,reinterpret_cast<sockaddr*>(&address),&length));return address;}
 static ph_buf *response(){ph_writer w;assert(phw_init(&w,PH_WIRE_MSGPACK));phw_begin(&w,nullptr,false);phw_text(&w,"code","ok");phw_text(&w,"request_id","fixture");phw_begin(&w,"data",false);std::string payload(3100,'X');phw_text_n(&w,"payload",payload.data(),payload.size());phw_end(&w);phw_end(&w);return phw_take(&w);}
-int main(){
+static void queueTests(){
+ iotcloud::HubLanQueue q;std::string source="owned";unsigned starts=0,failures=0;
+ assert(q.push("route",source,UINT32_MAX-10));source="mutated";
+ assert(q.push("second","second-body",UINT32_MAX-10));assert(!q.push("third","overflow",0));
+ auto start=[&](const std::string&r,const std::string&b)->const char*{++starts;assert(r=="route"&&b=="owned");return nullptr;};
+ auto fail=[&](const std::string&r,const std::string&b,const char*c){assert(r=="second"&&b=="second-body"&&!strcmp(c,"busy"));++failures;};
+ q.poll(20,true,start,fail);assert(q.size()==2&&!starts&&!failures);
+ q.poll(20,false,start,fail);assert(q.size()==1&&starts==1);
+ q.poll(5000,true,start,fail);assert(q.size()==0&&failures==1);
+ assert(q.push("route","owned",6000));
+ q.poll(5999,true,start,fail);assert(q.size()==1&&failures==1);
+ q.poll(6001,false,[](const std::string&,const std::string&)->const char*{return "busy";},fail);assert(q.size()==1);
+ q.clear();assert(!q.size());q.poll(12000,false,start,fail);assert(starts==1&&failures==1);
+}
+int main(){queueTests();
  serverAddress=bindSocket(serverfd);clientAddress=bindSocket(clientfd);lan_v4_server server={};lan_v4_ops ops={};ops.local=device;ops.boot=91;
  ops.now=[](void*){return now;};ops.authorize=[](void*,const char *peer,const uint8_t incoming[16],ph_auth_context *context){if(!authorized||strcmp(peer,hub)||memcmp(incoming,token,16))return false;memset(context,0,sizeof(*context));return true;};ops.valid=[](void*,const ph_auth_context*){return authorized;};ops.digest=[](void*,const void *data,size_t length,uint8_t hash[32]){return SHA256(static_cast<const unsigned char*>(data),length,hash)!=nullptr;};ops.dispatch=[](void*,const void*,size_t,const ph_auth_context*,bool *admitted){*admitted=true;++calls;return response();};ops.send=[](void*,const char*,uint16_t,const void *bytes,size_t length){return udp(serverfd,clientAddress,bytes,length);};
  iotcloud::HubLanClient client;client.authorize=[](const std::string&,const std::string&,uint16_t,const uint8_t*){return clientAuthorized;};std::vector<std::string> sends;unsigned completed=0;
@@ -46,5 +61,9 @@ int main(){
  ph_buf *snapshot=response();assert(snapshot);assert(iotcloud::routeHubLanResult(bus,"route/command",snapshot->buf,snapshot->len,true,"fixture"));assert(states==1&&results==1&&available==1);
  assert(iotcloud::routeHubLanResult(bus,"route/command",snapshot->buf,snapshot->len,false,"fixture"));assert(states==1&&results==2);
  assert(!iotcloud::routeHubLanResult(bus,"route/command",snapshot->buf,snapshot->len,true,"wrong"));assert(states==1&&results==2);ph_buf_free(snapshot);
+ // Timeout reports the owned original request exactly once, with no new ID.
+ drain();unsigned failures=0;
+ client.failed=[&](const std::string&r,const std::string&b,const char*c){assert(r=="route"&&b==body&&!strcmp(c,"timeout"));++failures;};
+ assert(start());unsigned timeoutId=client.lastId;now+=LAN_V4_RESPONSE_MS;client.tick(now);assert(failures==1&&!client.busy()&&client.lastId==timeoutId);client.tick(now+5000);assert(failures==1);
  lan_v4_server_release(&server);close(serverfd);close(clientfd);
 }

@@ -30,6 +30,7 @@ extern "C" {
 #include "hub_device_bus.h"
 #include "hub_lan_discovery.h"
 #include "hub_lan_client.h"
+#include "hub_lan_queue.h"
 #include "hub_lan_result.h"
 #include <mdns.h>
 #include "hub_relay.h"
@@ -96,6 +97,8 @@ static void pollHome(uint32_t);
 static bool hubReady();
 static void pollLocalControls(uint32_t);
 static bool hubAllocationReady(size_t);
+static size_t hubByteHeap();
+static size_t hubByteBlock();
 static bool hubLanSend(const std::string &,const std::string &,bool);
 static void pollHubLan(uint32_t);
 static void hubLanReset();

@@ -322,6 +322,7 @@ public:
       for (auto &s : session)
         if (constant(s.token, request.token))
           s = Session();
+      output["code"]="ok";
       return json(output);
     }
     const std::string lanPairPrefix="/api/hub/lan/pair/";

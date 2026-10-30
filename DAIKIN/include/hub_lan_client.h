@@ -17,7 +17,8 @@ public:
   HubLanClient()=default;
   HubLanClient(const HubLanClient&)=delete;
   HubLanClient& operator=(const HubLanClient&)=delete;
-  Send send;Complete complete;
+  using Failed=std::function<void(const std::string&,const std::string&,const char*)>;
+  Send send;Complete complete;Failed failed;
   using Authorize=std::function<bool(const std::string &,const std::string &,uint16_t,const uint8_t *)>;
   Authorize authorize;
   const char *lastCode="idle";
@@ -35,28 +36,28 @@ public:
   }
   bool receive(const lan_v4_packet &packet,const std::string &ip,uint16_t port,uint32_t now){
     if(!busy()||packet.op!=LAN_V4_RESULT||ip!=pending.ip||port!=pending.port||packet.src!=pending.peer||packet.dst!=pending.local||packet.id!=pending.id||packet.request_boot!=pending.boot||std::memcmp(packet.token,pending.token,16))return false;
-    if(!authorize||!authorize(pending.peer,pending.ip,pending.port,pending.token)){reset();lastCode="auth_required";return true;}
+    if(!authorize||!authorize(pending.peer,pending.ip,pending.port,pending.token)){fail("auth_required");return true;}
     if(std::strcmp(packet.code,"ok")){
       if(!std::strcmp(packet.code,"busy")){lastCode="busy";return true;}
       if(!std::strcmp(packet.code,"acked"))return true;
       // Terminal transport errors do not authorize another execution.
       const char *code=!std::strcmp(packet.code,"expired")?"expired":!std::strcmp(packet.code,"conflict")?"conflict":!std::strcmp(packet.code,"auth_required")?"auth_required":"transport_error";
-      reset();lastCode=code;return true;
+      fail(code);return true;
     }
-    if(!packet.size||packet.size>LAN_V4_RESPONSE_MAX||packet.total!=(packet.size+LAN_V4_CHUNK-1)/LAN_V4_CHUNK||packet.part>=packet.total||!packet.body||packet.body_length!=(packet.part+1u==packet.total?packet.size-packet.part*LAN_V4_CHUNK:LAN_V4_CHUNK)){reset();lastCode="invalid_result";return true;}
+    if(!packet.size||packet.size>LAN_V4_RESPONSE_MAX||packet.total!=(packet.size+LAN_V4_CHUNK-1)/LAN_V4_CHUNK||packet.part>=packet.total||!packet.body||packet.body_length!=(packet.part+1u==packet.total?packet.size-packet.part*LAN_V4_CHUNK:LAN_V4_CHUNK)){fail("invalid_result");return true;}
     if(packet.part!=pending.nextPart)return true;
     if(!pending.response){
       if(packet.part)return true;
       pending.response=ph_buf_new(packet.size+1);
-      if(!pending.response){reset();lastCode="busy";return true;}
+      if(!pending.response){fail("busy");return true;}
       pending.size=packet.size;pending.total=packet.total;pending.deviceBoot=packet.boot;
     }
-    if(packet.boot!=pending.deviceBoot||packet.size!=pending.size||packet.total!=pending.total||pending.response->len+packet.body_length>pending.size){reset();lastCode="conflict";return true;}
+    if(packet.boot!=pending.deviceBoot||packet.size!=pending.size||packet.total!=pending.total||pending.response->len+packet.body_length>pending.size){fail("conflict");return true;}
     std::memcpy(pending.response->buf+pending.response->len,packet.body,packet.body_length);pending.response->len+=packet.body_length;pending.response->buf[pending.response->len]=0;
     ++pending.nextPart;pending.attempts=0;
     if(pending.nextPart<pending.total){transmit(now);return true;}
-    if(pending.response->len!=pending.size){reset();lastCode="conflict";return true;}
-    ph_value root;if(!phv_parse(PH_WIRE_MSGPACK,pending.response->buf,pending.response->len,&root)||root.kind!=PHV_MAP){reset();lastCode="invalid_result";return true;}
+    if(pending.response->len!=pending.size){fail("conflict");return true;}
+    ph_value root;if(!phv_parse(PH_WIRE_MSGPACK,pending.response->buf,pending.response->len,&root)||root.kind!=PHV_MAP){fail("invalid_result");return true;}
     transmit(now,true);
     const std::string route=pending.route;ph_buf *response=pending.response;pending.response=nullptr;pending=Pending();lastCode="ok";
     // Completion may synchronously begin the next status query. The completed
@@ -66,8 +67,8 @@ public:
   }
   void tick(uint32_t now){
     if(!busy())return;
-    if(!authorize||!authorize(pending.peer,pending.ip,pending.port,pending.token)){reset();lastCode="auth_required";return;}
-    if(uint32_t(now-pending.started)>=LAN_V4_RESPONSE_MS){reset();lastCode="timeout";return;}
+    if(!authorize||!authorize(pending.peer,pending.ip,pending.port,pending.token)){fail("auth_required");return;}
+    if(uint32_t(now-pending.started)>=LAN_V4_RESPONSE_MS){fail("timeout");return;}
     if(uint32_t(now-pending.sent)>=400&&pending.attempts<4)transmit(now);
   }
 private:
@@ -77,6 +78,10 @@ private:
     uint8_t token[16]={};uint32_t boot=0,deviceBoot=0,id=0,started=0,sent=0;
     unsigned attempts=0;ph_buf *response=nullptr;
   } pending;
+  void fail(const char *code){
+    const std::string route=std::move(pending.route),body=std::move(pending.body);
+    reset();lastCode=code;if(failed)failed(route,body,code);
+  }
   bool transmit(uint32_t now,bool ack=false){
     lan_v4_packet packet={};packet.op=ack?LAN_V4_ACK:pending.nextPart?LAN_V4_PULL:LAN_V4_COMMAND;
     std::memcpy(packet.src,pending.local.c_str(),13);std::memcpy(packet.dst,pending.peer.c_str(),13);std::memcpy(packet.token,pending.token,16);packet.boot=pending.boot;packet.id=pending.id;

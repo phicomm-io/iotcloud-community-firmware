@@ -127,7 +127,11 @@ static bool hubCapture(esp_mqtt_event_handle_t event, unsigned source) {
   part.length += event->data_len;
   if (part.length == part.total) {
     part.body[part.length] = 0;
-    if (xQueueSend(hubInbox, &part, 0)!=pdTRUE)
+    // Yield the SDK receive task briefly so loop() can drain the fixed inbox.
+    // A zero-wait send drops ordinary four-command bursts before the owner
+    // loop can return a correlated busy result. This never blocks loop() or
+    // grows the inbox; persistent overload still increments the drop counter.
+    if (xQueueSend(hubInbox, &part, pdMS_TO_TICKS(50))!=pdTRUE)
       ++hubInboxDropped;
     message.reset();
   }
