@@ -244,6 +244,9 @@ void setup(){
   const uint8_t hdcConfig[]={2,0x10,0};writeI2c(thBus,0x40,hdcConfig,3);
   const uint8_t hchoMode[]={0xff,1,0x78,0x41,0,0,0,0,0x46};hchoUart.write(hchoMode,9);
   httpd_config_t server=HTTPD_DEFAULT_CONFIG();server.stack_size=10240;server.recv_wait_timeout=10;server.max_uri_handlers=48;
+  // Separate browser pages retain idle keep-alive sockets. Reclaim the oldest
+  // idle connection when the fixed connection table fills.
+  server.lru_purge_enable=true;
 #ifdef IOTCLOUD_HUB
   server.uri_match_fn=httpd_uri_match_wildcard;
 #endif
