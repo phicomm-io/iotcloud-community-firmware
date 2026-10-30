@@ -2,9 +2,9 @@
 
 S30-V1B 单路计量插座，模块 BL2028N、芯片 BK7231N、计量 HLW8032。运行框架仅为 OpenBeken 和 BK7231N SDK/HAL/RTOS；公共协议与前端直接移植自 `phicomm-messagepack-lab`，不引入 MiCO、Arduino 或 ESPHome 运行时。对外项目名 `iotcloud`、协议名 `openiot`，命令封装为 TMCP v2。
 
-用户说明：[拆机串口刷机](../docs/public/s30-flash.md) · [功能与操作](../docs/public/s30-guide.md)。首次安装暂时只提供拆机刷机，VTX/VRX 与插头面 PCB 右上方外侧的电源触点接线见刷机说明。
+用户说明：[免拆与串口刷机](../docs/public/s30-flash.md) · [功能与操作](../docs/public/s30-guide.md)。原厂 `2M.1220` 的免拆网络 OTA 已实测通过；串口可用于备份、首次安装或恢复。默认采用原厂免拆布局并保留本机启动器及工厂 MAC/RF，首次安装社区固件需重新配网。VTX/VRX 与电源触点见刷机说明。
 
-开发状态与接续入口：[工作记录](WORK_STATUS.md) · [原厂 OTA 静态分析](research/stock-ota.md)。当前集成已修复原生 HTTP 超时错误传播，并通过完整客户端的真实 TCP 回归；已构建集成候选，实机仍运行旧固件，尚未合入 `main`。
+开发状态与接续入口：[工作记录](WORK_STATUS.md) · [原厂 OTA 静态分析](research/stock-ota.md)。当前集成已完成原厂 `2M.1220` → 社区网络 OTA、社区二次 OTA 和完整 Flash 回读；启动器及工厂参数保留。尚未合入 `main`，其它原厂版本未验证。实测见 [原厂免拆记录](research/stock-ota-live-test.md)。
 
 本版修复 SDK 读取错误工厂分区导致 MAC 尾部全零的问题，并接入实际公共 HTTPD、MQTT 服务和完整公共前端。2026-10-30 已在 S30-V1B 上验证工厂身份、DHCP hostname、公共网页、HTTP/MQTT/UDP、空密码/有密码鉴权及此前版本的 URL OTA 自动重启上线；此前覆盖的错误下载可恢复服务。用户已确认短按、红灯、输出开启时蓝灯常亮、长按恢复以及每秒一次、松手恢复的计时灯语。修正计量串口为 UART2 后，已在原电源及真实负载下连续采样验证电压、电流、功率与累计电量，30 次采样均有效、期间坏帧数未增长；默认系数尚未经过标准仪表校准，不声明计量精度。
 
@@ -143,9 +143,11 @@ HTTP 接收和 Flash 流缓冲区各为 512 字节，写入单位为 512 字节�
 
 计量依据 [HLW8032 Rev 1.5 手册](https://raw.githubusercontent.com/Khaalidi/HLW8032/master/Docs/DS_HLW8032_EN_Rev1.5.pdf)，实现 24 字节帧、校验、状态/更新位、5 秒有效期及 17 位 PF 脉冲计数。缺失/校验错误/无效寄存器使用 null，不用假零。PF 计数处理回绕及异常跳变重建基线。
 
-默认电压/电流/功率系数 `1.88 / 1 / 1.88` 仅为启动值，未校准。网页可分别设置，实际系数须标准负载核验。累计电量每 5 分钟、配置保存及正常重启前持久化，突然断电可能丢失最近 5 分钟。
+默认电压/电流/功率系数采用 S30-V1B 原厂 `2M.1220` 程序中提取的 `1.894288 / 1.0102 / 1.88835008906368`，见[原厂系数证据](research/stock-meter-coefficients.md)。这是型号换算系数，未发现独立的逐台计量校准记录，也未经过标准仪表精度验收。网页“设置 → 常规 → 计量校准”可分别设置 `0.001..100` 的有限数值，保留完整小数精度，保存后立即参与读数换算并持久化。`calibrated` 表示用户已保存过校准参数。
 
-产品配置用带 CRC 的 littlefs 临时文件、sync、原子 rename；显式迁移旧版布局，保留校准、配对、累计电量、童锁及上电策略。网络和管理密码保存在 OpenBeken 原生 CFG。
+升级仅自动替换 `calibrated=false` 且三项恰为旧默认值 `1.88 / 1 / 1.88` 的配置；已保存的校准参数、任何其它系数组合及累计电量保持。兼容 v1/v2 配置，迁移使用原子保存，保存失败不覆盖旧文件，后续启动重试。Wi-Fi 重置保留系数，恢复出厂设置恢复上述原厂型号系数。累计电量每 5 分钟、配置保存及正常重启前持久化，突然断电可能丢失最近 5 分钟。
+
+产品配置用带 CRC 的 littlefs 临时文件、sync、原子 rename；同一社区分区内支持已实现的配置结构迁移。原厂安装及旧上游分区切换不迁移配置，需重新配网；本版本内的后续 OTA 保留校准、配对、累计电量、童锁及上电策略。网络和管理密码保存在 OpenBeken 原生 CFG。
 
 公共服务在原生启动延时结束后、HTTP 接纳连接前初始化，正常启动及 OpenBeken 安全模式均启动产品状态、按键/计量定时器和网络服务。安全模式保留恢复访问，继电器以关闭状态启动，但不改写已保存的上电策略。
 
@@ -157,13 +159,13 @@ HTTP 接收和 Flash 流缓冲区各为 512 字节，写入单位为 512 字节�
 ./BL2028N/build.sh --run-dir /path/to/lab/private/bl2028n-run
 ```
 
+默认分区为 `s30-v1b-stock-v1`：应用 `0x11000–0x132000`、下载 `0x132000–0x1e0000`、CFG `0x1e2000`、LittleFS `0x1f0000–0x1f8000`。不再默认生成包含其它启动器的 QIO；`--stock-layout` 仅保留为兼容参数。
+
 `--keep-build` 保留活跃构建，`--incremental` 更新覆盖层；默认成功后回收 SDK 副本。版本遵循 `tools/check_version.py` 的仓库标签、HEAD 前六位及必要的 `-dirty`；标签构建校验 HEAD 和干净状态。run 保存 compiler/build 日志、version、manifest、framework/SDK patch、ELF/map、校验结果及固件 SHA256SUMS。
 
 | 文件 | 用途 |
 | --- | --- |
-| `BL2028N_BK7231N_QIO_*.bin` | 常规 N 密钥工厂镜像，含 bootloader，起点 0 |
-| `BL2028N_BK7231M_QIO_*.bin` | 零密钥工厂镜像，含 bootloader，起点 0 |
-| `BL2028N_*_UA_*.bin` | 对应密钥的 UART 应用镜像，起点 0x11000，保留 bootloader |
+| `BL2028N_STOCK_UA_*.bin` | 原厂布局的零密钥 UART 纯应用镜像，起点 `0x11000`，止于 `0x132000`，保留本机 bootloader |
 | `BL2028N_OTA_*.rbl` | OpenBeken 原生 URL OTA |
 | `BL2028N_UG_*.bin` | 带 UG 头的升级工具格式 |
 | `BL2028N_app_*.bin` | 未加密应用，仅分析，不直接刷写 |

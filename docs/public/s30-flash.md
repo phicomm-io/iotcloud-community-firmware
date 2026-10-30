@@ -1,6 +1,68 @@
-# S30-V1B 拆机刷机
+# S30-V1B 免拆与串口刷机
 
-适用于 **ORVIBO S30-V1B**：BL2028N 模块、BK7231N 芯片、HLW8032 计量。本设备首次安装暂时只提供**拆机串口刷机**；安装后的操作见 [S30-V1B 功能与操作](s30-guide)。其他 S30 系列或不同模块的设备不能仅凭外壳相同套用本教程。
+适用于 **ORVIBO S30-V1B**：BL2028N 模块、BK7231N 芯片、HLW8032 计量。已在原厂 **`2M.1220`** 上实测通过免拆网络 OTA，也保留拆机串口备份、安装与恢复方式。默认固件采用原厂免拆布局，保留本机启动器和工厂 MAC/RF；**首次安装社区固件需重新配网，不保留原厂应用配置**。安装后的操作见 [S30-V1B 功能与操作](s30-guide)。其他 S30 系列或不同模块的设备不能仅凭外壳相同套用本教程。
+
+## 先选择刷机方式
+
+| 当前状态 | 方法 | 文件 |
+| --- | --- | --- |
+| 原厂 `2M.1220`，已经联网，电脑可访问同一局域网 | 下文的免拆网络安装 | `BL2028N_OTA_<版本>.rbl` |
+| 已安装本项目、使用原厂布局且网页可访问 | 网页“设置 → 固件更新”，填写 RBL 的 HTTP 地址 | 同上 |
+| 无法联网、应用损坏或需要完整备份 | 拆机串口方式 | `BL2028N_STOCK_UA_<版本>.bin`，从 `0x11000` 写入 |
+
+目前网页**只支持 URL 下载升级，不支持选择本地文件上传**。不能把固件下载到电脑后直接拖入页面。默认不生成含其它启动器的 QIO；未加密的 `BL2028N_app_*.bin` 和 UG 包也不能替代上述文件。
+
+## 原厂免拆网络安装
+
+### 适用范围与准备
+
+此入口已在一台 **S30-V1B / BL2028N / BK7231N、原厂 `2M.1220`** 上实际完成安装；其它原厂版本及 S30 变体尚未验证。需要设备已经连接可用 Wi-Fi，电脑与设备互通，并知道本机工厂 MAC。此流程不代替原厂设备首次配网。测试中的串口用于建立原厂基线和观察/回读；执行升级的下载及命令入口均为正常网络接口。
+
+电脑需要 Python、`paho-mqtt`、本地 HTTPS 证书，以及一个**专用的临时 TLS MQTT broker**。普通明文 MQTT 在本次原厂版本中不能完成连接，不能用 `mqtt://` 代替 `ssl://`。不需要改路由器 DNS。不要复用日常 broker 的设备账号，也不要把测试 broker 暴露到公网。
+
+本流程会把原厂设备的 CGW/云连接指向测试服务。首次社区启动使用默认配置；原厂账号、Wi-Fi、MQTT、配对及计量配置不迁移。请先记录需要重新设置的内容。
+
+### 运行本地安装工具
+
+使用与候选固件一起审查的 [s30_stock_ota.py 工具](https://github.com/phicomm-io/iotcloud-community-firmware/blob/hotfix/rc4-selected-integration/tools/s30_stock_ota.py)。本机、目标设备与临时 broker 的 IPv4 地址必须相互可达；放行本机 TCP `15683`（HTTPS CGW）、`8080`（固件 HTTP）及所选 broker 端口。证书须包含服务 IP，临时 broker 使用其对应证书，电脑用 `--mqtt-ca` 校验证书。
+
+准备两个权限为 `600` 的私有 JSON 文件，不要提交到 Git 或公开：
+
+```json
+{"ssid":"你的 2.4 GHz Wi-Fi","password":"Wi-Fi 密码"}
+```
+
+```json
+{"host":"临时 broker 的 IPv4","port":18892,"username":"短测试账号","password":"短测试密码"}
+```
+
+MQTT 用户名、密码各限 1–31 字节。只使用短地址和专用测试账号，本工具不利用原厂已发现的长度溢出。
+
+取得对应 `.rbl` 与 `SHA256SUMS`，先校验，随后运行；替换全部占位符：
+
+```sh
+chmod 600 wifi.private.json mqtt.private.json
+sha256sum -c SHA256SUMS
+python3 tools/s30_stock_ota.py \
+  --device <原厂设备IP> --device-id <本机12位工厂MAC> \
+  --host <电脑局域网IP> \
+  --wifi-file wifi.private.json --mqtt-file mqtt.private.json \
+  --mqtt-ca broker-cert.pem --cert gateway-cert.pem --key gateway-key.pem \
+  --rbl 'BL2028N_OTA_<版本>.rbl' --sha256 <该文件公布的SHA256>
+```
+
+工具通过 CoAP `/qlink/netinfo` 配置本地 HTTPS CGW，原厂设备经 HTTPS 获取临时 TLS MQTT 连接，再接收正常 AndLink 文件命令并下载 RBL。它不访问串口、不写工厂参数、不要求刷回原厂，也不提供双系统切换。
+
+### 确认安装成功
+
+1. 工具提示 RBL 完整 HTTP 发送后，等待设备自动安装并重启；**文件发完不等于安装成功**，不要在此时断电。
+2. 查找 `S30M_V1B_XXXXXX` 社区热点，连接后打开 **http://192.168.0.1**，重新设置 Wi-Fi。
+3. 设备联网后打开其新 IP，确认首页为 `iotcloud · S30-V1B`、版本与所选包一致，检查开关和计量。未设管理密码时直接进入，不应弹出登录框。
+4. 确认后停止专用测试 broker，删除临时证书和账号文件。无需保留电脑服务；后续升级使用社区网页的 URL OTA。
+
+本次实测还完成了第二次社区网络 OTA，并回读核对原厂启动区、MAC/RF 保留和安装应用一致。没有把这一结果外推为所有原厂版本、断电恢复或刷回原厂的保证。若一直没有下载或社区热点，不要反复发送不同型号镜像；保留工具错误记录，使用下文串口备份/恢复路径排查。
+
+## 拆机串口方式
 
 ## 供电与准备
 
@@ -43,16 +105,16 @@ cmp s30-stock-1.bin s30-stock-2.bin
 本次验证的 BL2028N 使用**零密钥 bootloader**，串口保留 bootloader 刷写应选：
 
 ```text
-BL2028N_BK7231M_UA_<版本>.bin
+BL2028N_STOCK_UA_<版本>.bin
 写入起点：0x11000
 ```
 
-文件名中的 `BK7231M` 表示此处采用的零密钥打包格式，**设备芯片仍为 BK7231N**。不能仅凭芯片名选常规 N 密钥镜像。不同批次应先确认本机 bootloader/加密格式；本教程不把本次样机结论外推到所有 BL2028N。
+`STOCK_UA` 是原厂布局的零密钥、带 CRC 的应用镜像，写入范围止于 `0x132000`，包含原厂安装约定的应用尾块，**不含 bootloader 或本机工厂数据**。设备芯片仍为 BK7231N。旧版 `BK7231M_UA` 的尾块/分区位置不同，不能因同为零密钥而混用。若此前已换成其它启动器，先用本机备份恢复并核对启动区；仅写应用不能替换启动器。
 
 校验固件后执行，替换下方版本占位符；等待连接时再复位模块：
 
 ```sh
-bk7231tools write_flash -d /dev/ttyUSB0 -b 115200 --timeout 60 -s 0x11000 -S 0 'BL2028N_BK7231M_UA_<版本>.bin'
+bk7231tools write_flash -d /dev/ttyUSB0 -b 115200 --timeout 60 -s 0x11000 -S 0 'BL2028N_STOCK_UA_<版本>.bin'
 ```
 
 使用 UA 应用镜像并从 `0x11000` 写入，保留本机 bootloader、原厂 RF/TLV 与尾部配置。**不要全片擦除，也不要将 `.rbl`、`.UG.bin` 或其他产品的 `.ota.bin` 当作该串口镜像。** QIO 包含 bootloader，不是本节默认刷法。

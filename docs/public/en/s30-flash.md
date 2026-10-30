@@ -1,6 +1,68 @@
-# S30-V1B disassembly and serial flashing
+# S30-V1B network and serial installation
 
-This guide covers the **ORVIBO S30-V1B**, with a BL2028N module, BK7231N chip and HLW8032 meter. First installation currently requires **opening the enclosure and flashing over UART**. See [S30-V1B operation](s30-guide) for use after installation. An identical enclosure does not establish compatibility with other S30 variants or modules.
+This guide covers the **ORVIBO S30-V1B**, with a BL2028N module, BK7231N chip and HLW8032 meter. Network installation has been verified on stock **`2M.1220`**. UART remains available for backups, installation and recovery. The default layout retains this unit’s original bootloader and factory MAC/RF; **first installation starts with fresh community settings and requires Wi-Fi setup again**. See [S30-V1B operation](s30-guide) for use after installation. An identical enclosure does not establish compatibility with other S30 variants or modules.
+
+## Choose an installation method
+
+| Current state | Method | File |
+| --- | --- | --- |
+| Stock `2M.1220`, already connected to the same reachable LAN | Network installation below | `BL2028N_OTA_<version>.rbl` |
+| This project's firmware with the stock layout and a working web interface | Settings → Firmware: enter the RBL HTTP URL | Same RBL |
+| No network, damaged application, or a full backup is needed | Open the enclosure and use UART | `BL2028N_STOCK_UA_<version>.bin` at `0x11000` |
+
+The web interface currently supports **URL download only, not local file upload**. Downloading a file to a computer does not make it available to the device. The default build does not emit QIO images containing another bootloader. A raw `BL2028N_app_*.bin` or UG package cannot replace the files above.
+
+## Network installation from stock firmware
+
+### Scope and prerequisites
+
+This method completed a real installation on one **S30-V1B / BL2028N / BK7231N running stock `2M.1220`**. Other stock versions and S30 variants remain unverified. The stock unit must already be connected to Wi-Fi, reachable from the computer, and its factory MAC must be known. This procedure does not replace stock first-time Wi-Fi provisioning. UART was used to establish the test baseline and observe/read back the result; the actual upgrade command and download used normal network interfaces.
+
+The computer needs Python, `paho-mqtt`, a local HTTPS certificate and a **dedicated temporary TLS MQTT broker**. Plain MQTT did not complete connection on this stock version; `mqtt://` is not a substitute for `ssl://`. Router DNS interception is unnecessary. Use temporary broker credentials and keep that broker off the public Internet.
+
+The procedure redirects the stock device's CGW/cloud configuration to these test services. Community first boot uses fresh settings: stock accounts, Wi-Fi, MQTT, pairing and meter settings are not migrated. Record any settings that must be entered again.
+
+### Run the local installation tool
+
+Use [s30_stock_ota.py](https://github.com/phicomm-io/iotcloud-community-firmware/blob/hotfix/rc4-selected-integration/tools/s30_stock_ota.py), reviewed alongside the candidate firmware. The computer, stock device and broker IPv4 addresses must be mutually reachable. Allow TCP `15683` for HTTPS CGW, `8080` for the firmware download, and the broker's selected port. Certificates must include their service IP; `--mqtt-ca` verifies the broker certificate on the computer.
+
+Prepare two private JSON files with mode `600`; do not commit or publish them:
+
+```json
+{"ssid":"Your 2.4 GHz Wi-Fi","password":"Wi-Fi password"}
+```
+
+```json
+{"host":"Temporary broker IPv4","port":18892,"username":"short-test-user","password":"short-test-password"}
+```
+
+MQTT usernames and passwords must each be 1–31 bytes. Keep addresses short and use dedicated test credentials; the tool does not exploit the identified stock length overflow.
+
+Obtain the matching RBL and `SHA256SUMS`, verify them, and replace every placeholder:
+
+```sh
+chmod 600 wifi.private.json mqtt.private.json
+sha256sum -c SHA256SUMS
+python3 tools/s30_stock_ota.py \
+  --device <stock-device-IP> --device-id <this-unit-12-digit-factory-MAC> \
+  --host <computer-LAN-IP> \
+  --wifi-file wifi.private.json --mqtt-file mqtt.private.json \
+  --mqtt-ca broker-cert.pem --cert gateway-cert.pem --key gateway-key.pem \
+  --rbl 'BL2028N_OTA_<version>.rbl' --sha256 <published-file-SHA256>
+```
+
+The tool configures local HTTPS CGW using CoAP `/qlink/netinfo`. Stock firmware retrieves the temporary TLS MQTT connection over HTTPS, receives a normal AndLink file command, and downloads the RBL. It does not access UART or write factory parameters. Returning to stock firmware and dual boot are not provided.
+
+### Confirm installation
+
+1. After complete HTTP delivery, wait for automatic installation and reboot. **File delivery alone does not prove installation.** Do not interrupt power at this point.
+2. Join the community `S30M_V1B_XXXXXX` AP, open **http://192.168.0.1**, and configure Wi-Fi again.
+3. Open the assigned LAN IP. Confirm `iotcloud · S30-V1B`, the selected version, outlet control and metering. An unset administration password must not trigger login.
+4. Stop the dedicated test broker and remove temporary certificates and credentials. Computer services are no longer needed; future upgrades use the community URL OTA interface.
+
+The physical test also completed a second community network OTA. Full readback confirmed the installed application and preservation of the original boot area and MAC/RF. This does not establish compatibility with every stock version, power-loss recovery or return-to-stock support. If no download or community AP appears, retain the errors and use the UART backup/recovery path below rather than trying unrelated images.
+
+## Disassembly and UART
 
 ## Power and preparation
 
@@ -43,16 +105,16 @@ Both files must contain 2097152 bytes and have identical SHA-256 hashes. `cmp` m
 The BL2028N unit validated here uses a **zero-key bootloader**. To retain that bootloader, use:
 
 ```text
-BL2028N_BK7231M_UA_<version>.bin
+BL2028N_STOCK_UA_<version>.bin
 Write start: 0x11000
 ```
 
-Here, `BK7231M` in the filename identifies zero-key image packaging; **the chip remains BK7231N**. Do not select the regular N-key image solely from the chip name. Verify the bootloader/encryption format on other batches rather than assuming every BL2028N matches this sample.
+`STOCK_UA` is the zero-key, CRC-framed application image for the stock layout. It ends at `0x132000` and includes the stock application footer, but contains **no bootloader or unit-specific factory data**. The chip remains BK7231N. Older `BK7231M_UA` packages use different partition/footer positions and are not interchangeable. If another bootloader was installed, restore and verify this unit’s backed-up boot area first: writing an application cannot replace it.
 
 After verifying the firmware, replace the version placeholder below and run the command. Reset the module once the tool is waiting:
 
 ```sh
-bk7231tools write_flash -d /dev/ttyUSB0 -b 115200 --timeout 60 -s 0x11000 -S 0 'BL2028N_BK7231M_UA_<version>.bin'
+bk7231tools write_flash -d /dev/ttyUSB0 -b 115200 --timeout 60 -s 0x11000 -S 0 'BL2028N_STOCK_UA_<version>.bin'
 ```
 
 Writing the UA application image at `0x11000` retains the unit's bootloader, factory RF/TLV and configuration tail. **Do not erase the whole chip or substitute an `.rbl`, `.UG.bin` or another product's `.ota.bin`.** QIO images include a bootloader and are not the default method in this section.

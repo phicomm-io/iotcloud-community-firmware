@@ -40,7 +40,7 @@ GROUPS = [
         ('faq', '故障排查', '连接状态、灯语总则与常见问题', '故障排查'),
     ]),
     ('s30', 'S30-V1B 计量插座', [
-        ('s30-flash', '拆机串口刷机', 'VTX / VRX、供电触点、完整备份与应用镜像', 'S30-V1B-刷机'),
+        ('s30-flash', '免拆与串口刷机', '原厂网络 OTA、VTX / VRX、完整备份与应用镜像', 'S30-V1B-刷机'),
         ('s30-guide', '功能与操作', '配网、单路开关、红蓝灯、长按恢复与计量', 'S30-V1B-功能与操作'),
     ]),
     ('dev', '开发与维护', [
@@ -108,7 +108,7 @@ EN_TITLES = {
  'm1-guide': ('M1 operation', 'Readings, brightness, icons and recovery'),
  'daikin-guide': ('DAIKIN operation and installation', 'BRY88AX151K: universal ESP32 firmware, readings and A1 automation'),
  'a1-guide': ('A1 operation', 'Fan, ring, night mode and automation'),
- 's30-flash': ('S30-V1B serial flashing', 'UART test points, power contacts, backups and application images'),
+ 's30-flash': ('S30-V1B network and serial installation', 'Stock network OTA, UART test points, backups and application images'),
  's30-guide': ('S30-V1B operation', 'Wi-Fi, outlet, red/blue LEDs, recovery gestures and metering'),
  'a1-flash': ('A1 wired installation and recovery', 'Recommended: solder-free J-Link factory points; serial alternative'),
  'm1-flash': ('M1 wired installation and recovery', 'Recommended: serial bootloader; J-Link alternative'),

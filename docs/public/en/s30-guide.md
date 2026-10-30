@@ -1,6 +1,6 @@
 # S30-V1B operation
 
-The **ORVIBO S30-V1B** is a single-outlet metering socket with a BL2028N module, BK7231N chip and HLW8032 meter. The firmware uses the project's common home page, settings navigation, themes and language controls. Its project name is `iotcloud` and protocol name is `openiot`. For first installation, see [S30-V1B serial flashing](s30-flash).
+The **ORVIBO S30-V1B** is a single-outlet metering socket with a BL2028N module, BK7231N chip and HLW8032 meter. The firmware uses the project's common home page, settings navigation, themes and language controls. Its project name is `iotcloud` and protocol name is `openiot`. For first installation, see [S30-V1B network and serial installation](s30-flash).
 
 Meter frame reception, live readings and increasing accumulated energy have been verified with the original power supply and a real load. The default coefficients have not been calibrated against reference instruments, so no accuracy claim is made. Do not use the current readings for billing or safety protection.
 
@@ -14,7 +14,7 @@ The initial web administration password is empty, so pages open directly without
 
 ## Outlet and settings
 
-The home page provides one outlet switch and meter readings. A short button press also toggles output, and the blue LED follows output state. Child lock blocks short presses, while web control and long-press recovery remain available.
+The home page provides one outlet switch, voltage (V), current (A), active power (W) and accumulated energy. Iotcloud device cards and device details also show voltage and current from the same status data, without adding meter polling. A short button press also toggles output, and the blue LED follows output state. Child lock blocks short presses, while web control and long-press recovery remain available.
 
 Settings cover device and outlet names, power-on state, indicators, child lock, reporting interval, Wi-Fi, MQTT and administration password. The default power-on state is off. After a restart, the saved power-on policy applies rather than necessarily restoring the previous temporary output state. Remote switching may return busy for about 1.5 seconds after a short press to avoid immediately overriding local operation.
 
@@ -48,7 +48,11 @@ A Wi-Fi reset clears the primary and backup networks, preserving product setting
 
 The HLW8032 provides voltage, current, active power and accumulated energy. Real-time fields appear only with valid samples. Missing samples or fields not updated for about 5 seconds appear as unavailable, which must not be interpreted as zero load power.
 
-Default voltage, current and power coefficients are `1.88 / 1 / 1.88`; they are starting values only. Calibration requires a stable load and independent reference instruments for each measurement. A nameplate or approximate wattage does not establish accuracy. Energy is saved about every 5 minutes, when settings are saved and before a normal restart. Sudden power loss may lose roughly the latest 5 minutes of accumulated energy.
+The default voltage, current and power multipliers are `1.894288 / 1.0102 / 1.88835008906368`, extracted from fixed conversion constants in this model's stock `2M.1220` firmware. Accuracy against reference instruments has not been verified, and a separate per-unit metering calibration record has not been identified.
+
+Open **Settings → General → Calibration** to edit the three multipliers separately. Each accepts a finite value from `0.001` to `100`, retaining the full decimal precision shown above. Saving applies the values immediately and keeps them after a restart. Calibration requires a stable load and independent reference instruments for each measurement. A nameplate or approximate wattage does not establish accuracy. “Calibrated” only means that calibration parameters have been saved by a user.
+
+Upgrades replace the old `1.88 / 1 / 1.88` defaults only when they have never been saved as a calibration. Manually saved multipliers, other combinations and accumulated energy are preserved. A Wi-Fi reset keeps the multipliers; a factory reset restores the stock model defaults above. Energy is saved about every 5 minutes, when settings are saved and before a normal restart. Sudden power loss may lose roughly the latest 5 minutes of accumulated energy.
 
 If output is on but readings remain unavailable, check metering validity rather than increasing coefficients to create a reading. Power off and remove the load before inspecting meter wiring. Mains must be disconnected before reconnecting UART or external DC power.
 
@@ -62,4 +66,4 @@ HTTP, MQTT and UDP business messages use the project's `openiot` MessagePack / C
 
 After installing this firmware, enter an **HTTP download URL for this device's `.rbl` image** in the web upgrade settings. The device must be able to reach the URL directly. Obtain both image and matching checksums from a trusted source. During the update, MQTT, UDP, scanning and new control/configuration operations pause; HTTP status remains available. Failed downloads restore services; a successful update restarts automatically. The saved power-on policy applies after reboot, so first confirm that the load allows interruption and power restoration.
 
-Local file upload and digital signature verification are not implemented. Other devices' signed `.ota.bin` packages are incompatible, and RBL integrity checking does not provide signature authentication. First installation still follows the [disassembly guide](s30-flash).
+Local file upload and digital signature verification are not implemented. Other devices' signed `.ota.bin` packages are incompatible, and RBL integrity checking does not provide signature authentication. For first installation and recovery, see [network and serial installation](s30-flash).
