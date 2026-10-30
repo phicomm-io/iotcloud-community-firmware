@@ -77,7 +77,14 @@
      if (r->private_cache) ADD("Vary: Authorization\r\n");
 --- a/protocol/httpd/parser.c
 +++ b/protocol/httpd/parser.c
-@@ -25,6 +25,16 @@
+@@ -1,6 +1,5 @@
+ /* SPDX-License-Identifier: GPL-3.0-or-later */
+ #include "http.h"
+-#include "basic.h"
+ #include <string.h>
+ #include <strings.h>
+ 
+@@ -26,6 +25,16 @@
      return copy(p->request.method, sizeof(p->request.method), method) &&
             copy(p->request.path, sizeof(p->request.path), path);
  }
@@ -94,7 +101,7 @@
  static bool header_line(ph_http_parser *p)
  {
      char *value = strchr(p->line, ':');
-@@ -45,6 +55,14 @@
+@@ -46,6 +55,14 @@
              n = n*10u + (unsigned)(*s-'0');
          }
          r->length = n; r->have_length = true;
@@ -109,7 +116,7 @@
      } else if (!strcasecmp(p->line, "Transfer-Encoding") || !strcasecmp(p->line, "Expect")) {
          return false;
      } else if (!strcasecmp(p->line, "Authorization")) {
-@@ -55,8 +73,7 @@
+@@ -56,8 +73,7 @@
          /* Oversized validators cannot match our bounded generated tag. */
          if (!copy(r->if_none_match, sizeof(r->if_none_match), value)) r->if_none_match[0] = 0;
      }
@@ -119,6 +126,32 @@
      return true;
  }
  int ph_http_parser_feed(ph_http_parser *p, unsigned char c)
+@@ -81,5 +97,24 @@
+ }
+ bool ph_http_basic(const char *authorization, const char *user, const char *password)
+ {
+-    return ph_http_basic_match(authorization, user, password);
++    if (!password[0]) return true;
++    static const char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
++    char raw[72], expected[104] = "Basic ";
++    size_t u = strlen(user), p = strlen(password);
++    if (u + p + 1 >= sizeof(raw)) return false;
++    memcpy(raw, user, u); raw[u] = ':'; memcpy(raw + u + 1, password, p);
++    size_t n = u + p + 1, pos = 6;
++    for (size_t i = 0; i < n; i += 3) {
++        uint32_t v = (uint32_t)(unsigned char)raw[i] << 16;
++        if (i+1 < n) v |= (uint32_t)(unsigned char)raw[i+1] << 8;
++        if (i+2 < n) v |= (unsigned char)raw[i+2];
++        expected[pos++] = alphabet[v>>18]; expected[pos++] = alphabet[(v>>12)&63];
++        expected[pos++] = i+1<n ? alphabet[(v>>6)&63] : '=';
++        expected[pos++] = i+2<n ? alphabet[v&63] : '=';
++    }
++    expected[pos] = 0;
++    if (strlen(authorization) != pos) return false;
++    unsigned diff = 0;
++    for (size_t i=0; i<pos; ++i) diff |= (unsigned char)authorization[i] ^ (unsigned char)expected[i];
++    return diff == 0;
+ }
 --- a/protocol/httpd/http.h
 +++ b/protocol/httpd/http.h
 @@ -3,6 +3,7 @@
@@ -7814,7 +7847,7 @@
 +#endif /* MQTTCONNECT_H_ */
 --- a/protocol/typed_wire.h
 +++ b/protocol/typed_wire.h
-@@ -1,15 +1,15 @@
+@@ -1,11 +1,12 @@
  /* SPDX-License-Identifier: GPL-3.0-or-later */
  #pragma once
 -/* Borrowed, validated MessagePack values; no parser allocations. */
@@ -7829,11 +7862,7 @@
  #define PHV_MISSING 255u
  #define PHV_UINT 0u
  #define PHV_NEG 1u
--#define PHV_BYTES 2u
- #define PHV_TEXT 3u
- #define PHV_ARRAY 4u
- #define PHV_MAP 5u
-@@ -19,9 +19,9 @@
+@@ -19,9 +20,9 @@
  #define PHV_REAL 27u
  /* kind selects count (integers/containers) or real; integers retain all 53 safe bits. */
  typedef struct { const unsigned char *begin,*end,*text; size_t size; union { uint64_t count; double real; }; ph_wire_format format; unsigned kind; } ph_value;
@@ -7845,15 +7874,17 @@
  bool phv_get(const ph_value *,const char *,ph_value *);
  bool phv_at(const ph_value *,unsigned,ph_value *);
  /* key/value at map index; decoded keys are <128 bytes. */
-@@ -29,7 +29,6 @@
+@@ -29,8 +30,8 @@
  bool phv_iter(const ph_value *,ph_iterator *);
  bool phv_next(ph_iterator *,char key[128],ph_value *);
  bool phv_pair(const ph_value *,unsigned,char key[128],ph_value *);
--bool phv_bytes(const ph_value *,const void **,size_t *);
- bool phv_text(const ph_value *,char *,size_t);
++bool phv_text(const ph_value *,char *,size_t);
+ bool phv_bytes(const ph_value *,const void **,size_t *);
+-bool phv_text(const ph_value *,char *,size_t);
  bool phv_equal_text(const ph_value *,const char *);
  bool phv_int(const ph_value *,int64_t *);
-@@ -41,18 +40,16 @@
+ bool phv_number(const ph_value *,double *);
+@@ -41,31 +42,36 @@
   * One writer per response, no mutation is executed twice for a sizing pass. */
  #define PHW_DEPTH 12u
  #define PHW_MAX_BYTES 16384u
@@ -7875,8 +7906,9 @@
 -void phw_bytes_value(ph_writer *,const char *key,const void *,size_t);
  void phw_text(ph_writer *,const char *key,const char *);
  void phw_text_n(ph_writer *,const char *key,const char *,size_t);
++void phw_bytes_value(ph_writer *,const char *key,const void *,size_t);
  void phw_int(ph_writer *,const char *key,int64_t);
-@@ -60,12 +57,18 @@
+ void phw_uint(ph_writer *,const char *key,uint64_t);
  void phw_i32(ph_writer *,const char *key,int32_t);
  void phw_u32(ph_writer *,const char *key,uint32_t);
  void phw_number(ph_writer *,const char *key,double);
@@ -7901,7 +7933,7 @@
 +struct printbuf *service_query_typed(const char *,ph_wire_format output);
 --- a/protocol/typed_wire.inc
 +++ b/protocol/typed_wire.inc
-@@ -1,246 +1,234 @@
+@@ -1,246 +1,237 @@
  /* SPDX-License-Identifier: GPL-3.0-or-later */
  #include "typed_wire.h"
  #include "binary_reader.h"
@@ -7963,7 +7995,7 @@
 - unsigned pending=v->kind==PHV_MAP?(unsigned)v->count*2:v->kind==PHV_ARRAY?(unsigned)v->count:0;
 - while(pending){ph_value item;if(!phv_head(r,&item))return false;pending--;if(item.kind==PHV_MAP)pending+=(unsigned)item.count*2;else if(item.kind==PHV_ARRAY)pending+=(unsigned)item.count;}
 + if(++r->nodes>PH_BINARY_NODES)return false;if(!r->format)phv_ws(r);if(r->p==r->end)return false;v->begin=r->p;
-+ if(r->format){binary_reader b={.p=r->p,.end=r->end,.f=r->format};binary_item item={0};if(!binary_token(&b,&item))return false;r->p=b.p;v->kind=item.kind;if(item.kind==PHV_REAL)v->real=item.real;else v->count=item.n;v->text=item.text;v->size=item.kind==PHV_TEXT?(size_t)item.n:0;}
++ if(r->format){binary_reader b={.p=r->p,.end=r->end,.f=r->format};binary_item item={0};if(!binary_token(&b,&item))return false;r->p=b.p;v->kind=item.kind;if(item.kind==PHV_REAL)v->real=item.real;else v->count=item.n;v->text=item.text;v->size=(item.kind==PHV_TEXT||item.kind==PHV_BYTES)?(size_t)item.n:0;}
 + else {
 +  unsigned c=*r->p;
 +  if(c=='"'){if(!phv_json_string(r,v))return false;}
@@ -8008,7 +8040,7 @@
 + memset(v,0,sizeof(*v));v->format=r->format;v->begin=r->p;
 + if(r->format){
 +  binary_reader b={.p=r->p,.end=r->end,.f=r->format};binary_item item={0};
-+  if(!binary_token(&b,&item))return false;v->kind=item.kind;v->text=item.text;v->size=item.kind==PHV_TEXT?(size_t)item.n:0;
++  if(!binary_token(&b,&item))return false;v->kind=item.kind;v->text=item.text;v->size=(item.kind==PHV_TEXT||item.kind==PHV_BYTES)?(size_t)item.n:0;
 +  unsigned pending=item.kind==PHV_MAP?(unsigned)item.n*2:item.kind==PHV_ARRAY?(unsigned)item.n:0;
 +  while(pending){if(!binary_token(&b,&item))return false;pending--;if(item.kind==PHV_MAP)pending+=(unsigned)item.n*2;else if(item.kind==PHV_ARRAY)pending+=(unsigned)item.n;}
 +  r->p=b.p;
@@ -8217,6 +8249,7 @@
 -{
 +
 +bool phv_parse(ph_wire_format format,const void *bytes,size_t size,ph_value *out){if(!out)return false;memset(out,0,sizeof(*out));out->kind=PHV_MISSING;if(!bytes||!size||size>PH_BINARY_BYTES||(format!=PH_WIRE_MSGPACK&&format!=PH_WIRE_CBOR))return false;phv_reader r={bytes,(const unsigned char *)bytes+size,format,0};if(!phv_scan(&r,out,0,true))return false;if(!format)phv_ws(&r);return r.p==r.end;}
++bool phv_bytes(const ph_value *v,const void **bytes,size_t *size){if(!v||v->kind!=PHV_BYTES||!bytes||!size)return false;*bytes=v->text;*size=v->size;return true;}
 +bool phv_text(const ph_value *v,char *text,size_t capacity){if(!v||v->kind!=PHV_TEXT||!text||!capacity)return false;if(!v->format)return phv_unquote(v->text,v->text+v->size,text,capacity,NULL);if(v->size>=capacity)return false;memcpy(text,v->text,v->size);text[v->size]=0;return true;}
 +bool phv_equal_text(const ph_value *v,const char *text){
 + if(!v||v->kind!=PHV_TEXT||!text)return false;if(v->format)return strlen(text)==v->size&&!memcmp(v->text,text,v->size);
@@ -8257,6 +8290,7 @@
 +void phw_begin(ph_writer *w,const char *key,bool array){phw_prefix(w,key);if(w->failed)return;if(w->depth>=PHW_DEPTH){w->failed=true;return;}unsigned d=w->depth++;w->arrays[d]=array;w->counts[d]=0;w->starts[d]=(size_t)w->wire->bpos;if(w->format){unsigned char b[3]={w->format==PH_WIRE_CBOR?(array?0x99:0xb9):(array?0xdc:0xde),0,0};phw_bytes(w,b,3);}else phw_bytes(w,array?"[":"{",1);}
 +void phw_end(ph_writer *w){if(w->failed)return;if(!w->depth){w->failed=true;return;}unsigned d=--w->depth;if(w->format){size_t p=w->starts[d];if(w->wire->buf){w->wire->buf[p+1]=(char)(w->counts[d]>>8);w->wire->buf[p+2]=(char)w->counts[d];}}else phw_bytes(w,w->arrays[d]?"]":"}",1);}
 +void phw_text_n(ph_writer *w,const char *key,const char *text,size_t size){phw_prefix(w,key);if(!text){w->failed=true;return;}phw_quote(w,text,size);}
++void phw_bytes_value(ph_writer *w,const char *key,const void *bytes,size_t size){phw_prefix(w,key);if(!w->format||(!bytes&&size)){w->failed=true;return;}phw_head(w,PHV_BYTES,size);phw_bytes(w,bytes,size);}
 +void phw_text(ph_writer *w,const char *key,const char *text){if(!text){w->failed=true;return;}phw_text_n(w,key,text,strlen(text));}
 +static void phw_digits(ph_writer *w,uint64_t n,bool negative){char b[24];unsigned count=0;do{b[count++]=(char)('0'+n%10);n/=10;}while(n);if(negative)b[count++]='-';for(unsigned i=0;i<count/2;i++){char c=b[i];b[i]=b[count-1-i];b[count-1-i]=c;}phw_bytes(w,b,count);}
 +void phw_uint(ph_writer *w,const char *key,uint64_t n){phw_prefix(w,key);if(n>PH_BINARY_SAFE){w->failed=true;return;}if(w->format)phw_head(w,0,n);else phw_digits(w,n,false);}
@@ -8283,7 +8317,7 @@
     case PHV_FALSE:case PHV_TRUE:phw_bool(w,key,current.kind==PHV_TRUE);break;
     case PHV_NULL:phw_null(w,key);break;
 -   case PHV_TEXT:phw_text_n(w,key,(const char *)current.text,current.size);break;
--   case PHV_BYTES:phw_bytes_value(w,key,current.text,current.size);break;
+    case PHV_BYTES:phw_bytes_value(w,key,current.text,current.size);break;
 +   case PHV_TEXT:
 +    if(current.format)phw_text_n(w,key,(const char *)current.text,current.size);
 +    else {size_t n;if(!phv_unquote(current.text,current.text+current.size,NULL,0,&n)){w->failed=true;return;}
@@ -8360,31 +8394,23 @@
  size_t ph_wire_head(ph_wire_format,unsigned,uint64_t,unsigned char [9]);
 --- a/protocol/wire_primitives.inc
 +++ b/protocol/wire_primitives.inc
-@@ -1,7 +1,12 @@
+@@ -1,8 +1,13 @@
  /* SPDX-License-Identifier: GPL-3.0-or-later */
  PH_WIRE_PRIMITIVE size_t ph_wire_head(ph_wire_format f,unsigned kind,uint64_t n,unsigned char out[9])
  {
 -    if(f!=PH_WIRE_MSGPACK)return 0;
+-    /* kind: 0 unsigned, 1 negative magnitude (-1-n), 3 text, 4 array, 5 map */
 +    if(f==PH_WIRE_CBOR) {
 +        unsigned a=n<24?0:n<=255?1:n<=65535?2:n<=UINT32_MAX?4:8;
 +        out[0]=(unsigned char)((kind<<5)|(a==0?n:a==1?24:a==2?25:a==4?26:27));
 +        for(unsigned i=0;i<a;i++)out[1+i]=(unsigned char)(n>>(8*(a-i-1)));
 +        return a+1;
 +    }
-     /* kind: 0 unsigned, 1 negative magnitude (-1-n), 3 text, 4 array, 5 map */
++    /* kind: 0 unsigned, 1 negative magnitude (-1-n), 2 bytes, 3 text, 4 array, 5 map */
      if(kind==0 && n<128){out[0]=(unsigned char)n;return 1;}
      if(kind==1 && n<32){out[0]=(unsigned char)(0xff-n);return 1;}
-@@ -14,16 +19,15 @@
-           (n<=127?1:n<=32767?2:n<=INT32_MAX?4:8);
-         out[0]=(unsigned char)((kind==0?0xcc:0xd0)+(a==1?0:a==2?1:a==4?2:3));n=v;
-     } else {
--        a=(kind==2 || kind==3) && n<=255?1:n<=65535?2:4;
--        out[0]=(unsigned char)(kind==2?(a==1?0xc4:a==2?0xc5:0xc6):kind==3?(a==1?0xd9:a==2?0xda:0xdb):kind==4?(a==2?0xdc:0xdd):(a==2?0xde:0xdf));
-+        a=kind==3 && n<=255?1:n<=65535?2:4;
-+        out[0]=(unsigned char)(kind==3?(a==1?0xd9:a==2?0xda:0xdb):kind==4?(a==2?0xdc:0xdd):(a==2?0xde:0xdf));
-     }
-     for(unsigned i=0;i<a;i++)out[1+i]=(unsigned char)(n>>(8*(a-i-1)));
-     return a+1;
+     if(kind==3 && n<32){out[0]=(unsigned char)(0xa0+n);return 1;}
+@@ -22,8 +27,7 @@
  }
  PH_WIRE_PRIMITIVE size_t ph_wire_double(ph_wire_format f,double value,unsigned char out[9])
  {
@@ -8408,7 +8434,12 @@
  #else
 --- a/protocol/binary_reader.inc
 +++ b/protocol/binary_reader.inc
-@@ -5,7 +5,16 @@
+@@ -1,11 +1,20 @@
+ /* SPDX-License-Identifier: GPL-3.0-or-later */
+-/* Normalized tokens: uint=0, neg=1, string=3, array=4, map=5,
++/* Normalized tokens: uint=0, neg=1, bytes=2, string=3, array=4, map=5,
+  * false=20, true=21, null=22, real=27. */
+ PH_BINARY_PRIMITIVE bool binary_token(binary_reader *r,binary_item *v)
  {
      if(r->p==r->end || ++r->nodes>PH_BINARY_NODES)return false;
      unsigned c=*r->p++,width=0;v->n=0;v->text=NULL;
@@ -8421,32 +8452,20 @@
 +            if(ai==20 || ai==21 || ai==22)v->kind=ai;
 +            else if(ai==25 || ai==26 || ai==27)goto floating;
 +            else return false;
-+        } else if(v->kind!=0 && v->kind!=1 && v->kind!=3 && v->kind!=4 && v->kind!=5)return false;
++        } else if(v->kind!=0 && v->kind!=1 && v->kind!=2 && v->kind!=3 && v->kind!=4 && v->kind!=5)return false;
 +    } else {
          if(c<128){v->kind=0;v->n=c;}
          else if(c>=0xe0){v->kind=1;v->n=0xff-c;}
          else if((c&0xe0)==0xa0){v->kind=3;v->n=c&31;}
-@@ -16,7 +25,6 @@
-         else {
-             if(c>=0xcc && c<=0xcf){v->kind=0;width=1u<<(c-0xcc);}
-             else if(c>=0xd0 && c<=0xd3){v->kind=0;width=1u<<(c-0xd0);}
--            else if(c>=0xc4 && c<=0xc6){v->kind=2;width=1u<<(c-0xc4);}
-             else if(c>=0xd9 && c<=0xdb){v->kind=3;width=1u<<(c-0xd9);}
-             else if(c==0xdc || c==0xdd){v->kind=4;width=c==0xdc?2:4;}
-             else if(c==0xde || c==0xdf){v->kind=5;width=c==0xde?2:4;}
-@@ -28,8 +36,9 @@
+@@ -28,6 +37,7 @@
              }
              if(c==0xca || c==0xcb)goto floating;
          }
--    if(v->kind==2 || v->kind==3) {
--        if(v->n>(uint64_t)(r->end-r->p) || (v->kind==3 && !ph_wire_utf8(r->p,(size_t)v->n)))return false;
 +    }
-+    if(v->kind==3) {
-+        if(v->n>(uint64_t)(r->end-r->p) || !ph_wire_utf8(r->p,(size_t)v->n))return false;
+     if(v->kind==2 || v->kind==3) {
+         if(v->n>(uint64_t)(r->end-r->p) || (v->kind==3 && !ph_wire_utf8(r->p,(size_t)v->n)))return false;
          v->text=r->p;r->p+=(size_t)v->n;
-     }
-     if((v->kind<=1 && v->n>PH_BINARY_SAFE-(v->kind==1)) ||
-@@ -38,6 +47,20 @@
+@@ -38,6 +48,20 @@
  floating:
      if(width==8){uint64_t bits=v->n;memcpy(&v->real,&bits,8);}
      else if(width==4){uint32_t bits=(uint32_t)v->n;float f;memcpy(&f,&bits,4);v->real=f;}
@@ -8467,457 +8486,6 @@
      v->kind=27;return isfinite(v->real);
  }
  
---- a/protocol/local_auth.h
-+++ b/protocol/local_auth.h
-@@ -13,8 +13,6 @@
- #define PH_AUTH_MQTT_SLOTS 4
- #define PH_AUTH_IDLE_MS UINT32_C(1800000)
- #define PH_AUTH_MAX_MS UINT32_C(86400000)
--#define PH_AUTH_UNPAIR_RECEIPTS 4
--#define PH_AUTH_UNPAIR_RECEIPT_MS UINT32_C(30000)
- #define PH_AUTH_STORE_MAGIC UINT32_C(0x31415550)
- #define PH_AUTH_STORE_VERSION 1
- #define PH_AUTH_SCOPE_CONTROL 1u
-@@ -27,14 +25,8 @@
- typedef struct { char peer[13]; uint8_t key[16]; uint8_t scopes; uint8_t reserved[2]; } ph_auth_pair_record;
- /* Append-only trailer, never insert into the frozen product configuration prefix. */
- typedef struct { uint32_t magic; uint16_t version; uint16_t count;
-- ph_auth_pair_record pairs[PH_AUTH_PAIR_SLOTS];
-- /* Outbound secrets never authorize an incoming datagram. */
-- uint16_t remote_count,reserved;ph_auth_pair_record remote[PH_AUTH_PAIR_SLOTS]; } ph_auth_store;
-+ ph_auth_pair_record pairs[PH_AUTH_PAIR_SLOTS]; } ph_auth_store;
- typedef struct { uint8_t token[16]; uint32_t born,last; uint32_t generation; uint8_t active,scopes; char peer[13]; } ph_auth_session;
--/* Boot-local success receipts; never persisted or exported. IPv4 adapters use
-- * canonical dotted addresses. Four entries bound RAM and retry admission. */
--typedef struct { uint32_t born,epoch; uint8_t token[16],nonce[16];
-- char peer[13],ip[16]; uint8_t active; } ph_auth_unpair_receipt;
- typedef struct ph_auth_state ph_auth_state;
- typedef struct { ph_auth_state *owner; ph_auth_source source; uint32_t generation;
-  uint8_t slot,scopes; char peer[13]; } ph_auth_context;
-@@ -50,23 +42,11 @@
- } ph_auth_ops;
- struct ph_auth_state { ph_auth_ops ops; ph_auth_store store;
-  ph_auth_session http[PH_AUTH_HTTP_SLOTS],local[PH_AUTH_PAIR_SLOTS],mqtt[PH_AUTH_MQTT_SLOTS];
-- ph_auth_unpair_receipt unpair[PH_AUTH_UNPAIR_RECEIPTS];
-- /* Volatile business-client boot, indexed by local session slot. Never part
--  * of ph_auth_store or a backup/configuration/Flash schema. */
-- uint32_t local_boot[PH_AUTH_PAIR_SLOTS];
-  uint32_t generation,credential_epoch; char credential[33]; };
- void ph_auth_store_empty(ph_auth_store *);
--/* Immutable empty trailer for synchronous commits; avoids large stack copies. */
--const ph_auth_store *ph_auth_store_empty_value(void);
- bool ph_auth_store_valid(const ph_auth_store *);
--/* Recognize the frozen inbound-only v1 prefix and an entirely erased appended
-- * directional area. Preserve every prefix byte; reject unknown/mixed trailers. */
--bool ph_auth_store_migrate_legacy(ph_auth_store *);
- bool ph_auth_init(ph_auth_state *,const ph_auth_ops *,const ph_auth_store *);
- bool ph_auth_http_login(ph_auth_state *,const char *password,char token[33]);
--typedef enum { PH_AUTH_LOGIN_OK,PH_AUTH_LOGIN_DENIED,PH_AUTH_LOGIN_BUSY } ph_auth_login_result;
--ph_auth_login_result ph_auth_http_login_result(ph_auth_state *,const char *,char token[33]);
--bool ph_auth_password_is_set(ph_auth_state *);
- bool ph_auth_http_check(ph_auth_state *,const char *authorization,ph_auth_context *);
- bool ph_auth_http_logout(ph_auth_state *,const char *authorization);
- /* Pair returns a durable secret. Resume exchanges it for a boot-local token. */
-@@ -76,15 +56,7 @@
- /* Matching current key reuses this boot's live local token, without extending
-  * its idle/max lifetime. Expired/revoked/rebooted sessions cannot be reused. */
- bool ph_auth_pair_resume(ph_auth_state *,const char *peer,const char *key,char token[33]);
--/* Business resume: a changed nonzero client boot rotates only this peer's
-- * token; identical boot retries reuse it without extending idle/max lifetime. */
--bool ph_auth_pair_resume_boot(ph_auth_state *,const char *,const char *,uint32_t boot,char token[33]);
- bool ph_auth_pair_remove(ph_auth_state *,const char *peer);
--bool ph_auth_pair_unpair(ph_auth_state *,const char *peer,const char *token);
--/* auth_unpair only: an exact retry may reuse a successful durable revocation
-- * for 30s. No receipt on persistence failure; epoch changes invalidate it. */
--bool ph_auth_pair_unpair_request(ph_auth_state *,const char *peer,const char *token,
--                                const char *ipv4,const uint8_t nonce[16]);
- bool ph_auth_udp_check(ph_auth_state *,const char *peer,const char *token,ph_auth_context *);
- /* Only the already broker/ACL/target-validated MQTT adapter may call these. */
- bool ph_auth_mqtt_grant(ph_auth_state *,const char *peer,const char *token,unsigned scopes);
-@@ -94,26 +66,8 @@
- bool ph_auth_pair_key(ph_auth_state *,const char *peer,char key[33]);
- bool ph_auth_pair_peer(ph_auth_state *,unsigned index,char peer[13],unsigned *scopes);
- bool ph_auth_pair_store_epoch(ph_auth_state *,const char *peer,const char *key,unsigned scopes,uint32_t expected_epoch);
--bool ph_auth_remote_get(ph_auth_state *,const char *peer,char key[33],unsigned *scopes);
--bool ph_auth_remote_store(ph_auth_state *,const char *peer,const char *key,unsigned scopes,uint32_t expected_epoch);
--bool ph_auth_remote_remove(ph_auth_state *,const char *peer);
--/* Revoke phase BEFORE persisting a new password. true means the pairing
-- * store is durably empty and the caller may then commit the replacement
-- * password. false means DO NOT commit it: old durable pairs may return on
-- * reboot, although this boot forgets them and clears HTTP/local sessions.
-- * A crash between successful revoke and password commit only loses pairs. */
-+/* Called after a password change has persisted. Clears local pairs durably first. */
- bool ph_auth_password_changed(ph_auth_state *);
--/* Serialize configuration and pairing changes in one durable transaction.
-- * commit runs under the auth lock and must atomically persist the supplied
-- * trailer together with new_password. It may take the product config lock,
-- * but must not re-enter auth. On false, core auth state is not published.
-- * The adapter must keep config coherent; if the durable result is uncertain,
-- * it must enter recovery and reject authorization, including queued contexts,
-- * until storage is reloaded. False alone does not prove storage unchanged.
-- * force_revoke is used by backup restore, even when its password is unchanged. */
--typedef bool (*ph_auth_commit_fn)(void *,const ph_auth_store *);
--bool ph_auth_credential_commit(ph_auth_state *,const char *new_password,bool force_revoke,
--                              ph_auth_commit_fn,void *);
- void ph_auth_local_revoke(ph_auth_state *,const ph_auth_store *);
- ph_auth_state *device_local_auth(void);
- bool device_local_auth_init(void);
---- a/protocol/local_auth.c
-+++ b/protocol/local_auth.c
-@@ -7,7 +7,6 @@
-         memset(s->http,0,sizeof(s->http));
-         memset(s->local,0,sizeof(s->local));
-         ph_auth_store_empty(&s->store);
--        memset(s->unpair,0,sizeof(s->unpair));
-         if(!++s->credential_epoch)++s->credential_epoch;
-         memcpy(s->credential,p,sizeof(p));
-     }
-@@ -53,37 +52,19 @@
-     }
-     out[32]=0;
- }
--const ph_auth_store *ph_auth_store_empty_value(void) {
--    static const ph_auth_store empty={.magic=PH_AUTH_STORE_MAGIC,.version=PH_AUTH_STORE_VERSION};
--    return &empty;
--}
- void ph_auth_store_empty(ph_auth_store*p) {
-     memset(p,0,sizeof(*p));
-     p->magic=PH_AUTH_STORE_MAGIC;
-     p->version=PH_AUTH_STORE_VERSION;
- }
--static bool ph_auth_private_records_valid(const ph_auth_pair_record *records,unsigned count) {
-+bool ph_auth_store_valid(const ph_auth_store*p) {
-     unsigned i,j;
--    if(count>PH_AUTH_PAIR_SLOTS)return false;
--    for(i=0;i<count;i++) {
--        const ph_auth_pair_record*r=&records[i];
-+    if(!p||p->magic!=PH_AUTH_STORE_MAGIC||p->version!=PH_AUTH_STORE_VERSION||p->count>PH_AUTH_PAIR_SLOTS)return false;
-+    for(i=0;i<p->count;i++) {
-+        const ph_auth_pair_record*r=&p->pairs[i];
-         if(!memchr(r->peer,0,sizeof(r->peer))||!ph_auth_private_peer_ok(r->peer)||!ph_auth_private_nonzero(r->key)||!r->scopes||(r->scopes&~(PH_AUTH_SCOPE_CONTROL|PH_AUTH_SCOPE_SENSOR|PH_AUTH_SCOPE_GROUP))||r->reserved[0]||r->reserved[1])return false;
--        for(j=0;j<i;j++)if(!strcmp(records[j].peer,r->peer))return false;
--    }
--    return true;
--}
--bool ph_auth_store_valid(const ph_auth_store*p) {
--    return p&&p->magic==PH_AUTH_STORE_MAGIC&&p->version==PH_AUTH_STORE_VERSION&&!p->reserved&&
--        ph_auth_private_records_valid(p->pairs,p->count)&&
--        ph_auth_private_records_valid(p->remote,p->remote_count);
--}
--bool ph_auth_store_migrate_legacy(ph_auth_store *p) {
--    if(!p||p->magic!=PH_AUTH_STORE_MAGIC||p->version!=PH_AUTH_STORE_VERSION||
--       !ph_auth_private_records_valid(p->pairs,p->count))return false;
--    const size_t offset=offsetof(ph_auth_store,remote_count);
--    const uint8_t *tail=(const uint8_t *)p+offset;
--    for(size_t i=0;i<sizeof(*p)-offset;i++)if(tail[i]!=255)return false;
--    memset((uint8_t *)p+offset,0,sizeof(*p)-offset);
-+        for(j=0;j<i;j++)if(!strcmp(p->pairs[j].peer,r->peer))return false;
-+    }
-     return true;
- }
- bool ph_auth_init(ph_auth_state*s,const ph_auth_ops*o,const ph_auth_store*p) {
-@@ -126,7 +107,6 @@
-     return true;
- }
- static void ph_auth_private_install(ph_auth_state*s,ph_auth_session*r,const uint8_t*t,const char*peer,unsigned scopes) {
--    for(unsigned i=0;i<PH_AUTH_PAIR_SLOTS;i++)if(r==&s->local[i])s->local_boot[i]=0;
-     memset(r,0,sizeof(*r));
-     memcpy(r->token,t,16);
-     r->born=r->last=s->ops.now(s->ops.user);
-@@ -136,35 +116,26 @@
-     r->scopes=(uint8_t)scopes;
-     if(peer)strcpy(r->peer,peer);
- }
--ph_auth_login_result ph_auth_http_login_result(ph_auth_state*s,const char*p,char out[33]) {
--    unsigned i;
--    uint8_t t[16];
--    ph_auth_login_result result=PH_AUTH_LOGIN_DENIED;
--    ph_auth_private_lock(s);
--    if(ph_auth_private_password_ok(s,p)) {
--        result=PH_AUTH_LOGIN_BUSY;
--        if(!ph_auth_private_fresh(s,t))goto done;
-+bool ph_auth_http_login(ph_auth_state*s,const char*p,char out[33]) {
-+    unsigned i;
-+    uint8_t t[16];
-+    bool ok=false;
-+    ph_auth_private_lock(s);
-+    if(ph_auth_private_password_ok(s,p)&&ph_auth_private_fresh(s,t)) {
-         uint32_t now=s->ops.now(s->ops.user);
--        for(i=0;i<PH_AUTH_HTTP_SLOTS;i++)if(!ph_auth_private_alive(&s->http[i],now)) {
--            ph_auth_private_install(s,&s->http[i],t,0,PH_AUTH_SCOPE_ALL);
--            ph_auth_private_hex(t,out);
--            result=PH_AUTH_LOGIN_OK;
--            break;
--        }
--    }
--done:
--    memset(t,0,sizeof(t));
--    ph_auth_private_unlock(s);
--    return result;
--}
--bool ph_auth_http_login(ph_auth_state*s,const char*p,char out[33]) {
--    return ph_auth_http_login_result(s,p,out)==PH_AUTH_LOGIN_OK;
--}
--bool ph_auth_password_is_set(ph_auth_state*s) {
--    ph_auth_private_lock(s);
--    bool set=s->credential[0]!=0;
--    ph_auth_private_unlock(s);
--    return set;
-+        unsigned slot=0;
-+        for(i=0;i<PH_AUTH_HTTP_SLOTS;i++) {
-+            if(!ph_auth_private_alive(&s->http[i],now)){slot=i;break;}
-+            if((uint32_t)(now-s->http[i].last)>(uint32_t)(now-s->http[slot].last))slot=i;
-+        }
-+        /* A valid password can replace the least recently used HTTP session.
-+         * Reloading pages must not lock out the owner for the idle timeout. */
-+        ph_auth_private_install(s,&s->http[slot],t,0,PH_AUTH_SCOPE_ALL);
-+        ph_auth_private_hex(t,out);
-+        ok=true;
-+    }
-+    ph_auth_private_unlock(s);
-+    return ok;
- }
- static void ph_auth_private_ctx(ph_auth_state*s,ph_auth_context*c,ph_auth_source source,unsigned slot,ph_auth_session*r) {
-     memset(c,0,sizeof(*c));
-@@ -229,9 +200,7 @@
-             r->scopes=(uint8_t)scopes;
-             if(i==next.count)next.count++;
-             if(ph_auth_private_save(s,&next)) {
--                /* Sessions are identified by peer, not by a mutable store index. */
--                for(unsigned slot=0;slot<PH_AUTH_PAIR_SLOTS;slot++)
--                    if(!strcmp(s->local[slot].peer,peer))memset(&s->local[slot],0,sizeof(s->local[slot]));
-+                memset(&s->local[i],0,sizeof(s->local[i]));
-                 ph_auth_private_hex(t,out);
-                 ok=true;
-             }
-@@ -247,48 +216,22 @@
-     if(!ph_auth_private_peer_ok(peer)||!ph_auth_token_decode(key,k))return false;
-     ph_auth_private_lock(s);
-     for(i=0;i<s->store.count;i++)if(!strcmp(peer,s->store.pairs[i].peer)&&ph_auth_private_eq(k,s->store.pairs[i].key,16)) {
--        /* Session slots stay independent of the compact durable record table.
--         * Preserve other peers and already captured slot/generation contexts. */
--        uint32_t now=s->ops.now(s->ops.user);unsigned available=PH_AUTH_PAIR_SLOTS;
--        for(unsigned slot=0;slot<PH_AUTH_PAIR_SLOTS;slot++) {
--            ph_auth_session *r=&s->local[slot];
--            if(!ph_auth_private_alive(r,now)) {
--                if(available==PH_AUTH_PAIR_SLOTS)available=slot;
--            } else if(!strcmp(r->peer,peer)&&r->scopes==s->store.pairs[i].scopes) {
--                ph_auth_private_hex(r->token,out);ok=true;break;
--            }
--        }
--        if(!ok&&available<PH_AUTH_PAIR_SLOTS&&ph_auth_private_fresh(s,t)) {
--            ph_auth_private_install(s,&s->local[available],t,peer,s->store.pairs[i].scopes);
--            ph_auth_private_hex(t,out);ok=true;
-+        /* Only reuse this boot's live local session after checking its durable key.
-+         * A handshake retry never extends the idle or absolute session lifetime. */
-+        ph_auth_session*r=&s->local[i];
-+        if(ph_auth_private_alive(r,s->ops.now(s->ops.user))&&
-+           !strcmp(r->peer,peer)&&r->scopes==s->store.pairs[i].scopes) {
-+            ph_auth_private_hex(r->token,out);
-+            ok=true;
-+        } else if(ph_auth_private_fresh(s,t)) {
-+            ph_auth_private_install(s,&s->local[i],t,peer,s->store.pairs[i].scopes);
-+            ph_auth_private_hex(t,out);
-+            ok=true;
-         }
-         break;
-     }
-     ph_auth_private_unlock(s);
-     return ok;
--}
--bool ph_auth_pair_resume_boot(ph_auth_state*s,const char*peer,const char*key,uint32_t boot,char out[33]) {
--    uint8_t decoded[16],token[16]={0};bool ok=false;
--    if(!s||!out||!boot||!ph_auth_private_peer_ok(peer)||!ph_auth_token_decode(key,decoded))return false;
--    ph_auth_private_lock(s);
--    for(unsigned i=0;i<s->store.count;i++)if(!strcmp(s->store.pairs[i].peer,peer)&&ph_auth_private_eq(decoded,s->store.pairs[i].key,16)) {
--        unsigned available=PH_AUTH_PAIR_SLOTS;uint32_t now=s->ops.now(s->ops.user);
--        for(unsigned j=0;j<PH_AUTH_PAIR_SLOTS;j++) {
--            ph_auth_session *r=&s->local[j];bool alive=ph_auth_private_alive(r,now);
--            if(alive&&!strcmp(r->peer,peer)&&r->scopes==s->store.pairs[i].scopes) {
--                if(s->local_boot[j]==boot){ph_auth_private_hex(r->token,out);ok=true;goto finish_boot;}
--                available=j;break;
--            }
--            if(!alive&&available==PH_AUTH_PAIR_SLOTS)available=j;
--        }
--        if(available<PH_AUTH_PAIR_SLOTS&&ph_auth_private_fresh(s,token)) {
--            ph_auth_private_install(s,&s->local[available],token,peer,s->store.pairs[i].scopes);
--            s->local_boot[available]=boot;ph_auth_private_hex(token,out);ok=true;
--        }
--        break;
--    }
--finish_boot:
--    memset(decoded,0,sizeof(decoded));memset(token,0,sizeof(token));ph_auth_private_unlock(s);return ok;
- }
- bool ph_auth_pair_remove(ph_auth_state*s,const char*peer) {
-     ph_auth_store next;
-@@ -301,69 +244,13 @@
-         memmove(&next.pairs[i],&next.pairs[i+1],(next.count-i-1)*sizeof(next.pairs[0]));
-         memset(&next.pairs[--next.count],0,sizeof(next.pairs[0]));
-         if(ph_auth_private_save(s,&next)) {
--            for(unsigned slot=0;slot<PH_AUTH_PAIR_SLOTS;slot++)
--                if(!strcmp(s->local[slot].peer,peer))memset(&s->local[slot],0,sizeof(s->local[slot]));
-+            memset(s->local,0,sizeof(s->local));
-             ok=true;
-         }
-         break;
-     }
-     ph_auth_private_unlock(s);
-     return ok;
--}
--static bool ph_auth_private_unpair(ph_auth_state*s,const char*peer,const uint8_t decoded[16]) {
--    ph_auth_store next;unsigned i,j;bool ok=false;
--    for(i=0;i<PH_AUTH_PAIR_SLOTS;i++) {
--        ph_auth_session *r=&s->local[i];
--        if(!ph_auth_private_alive(r,s->ops.now(s->ops.user))||strcmp(peer,r->peer)||
--           !ph_auth_private_eq(decoded,r->token,16))continue;
--        next=s->store;
--        for(j=0;j<next.count;j++)if(!strcmp(peer,next.pairs[j].peer)) {
--            memmove(&next.pairs[j],&next.pairs[j+1],(next.count-j-1)*sizeof(next.pairs[0]));
--            memset(&next.pairs[--next.count],0,sizeof(next.pairs[0]));
--            ok=ph_auth_private_save(s,&next);
--            /* Revoke this peer only. Independent slots keep unrelated peers'
--             * tokens and captured contexts stable across durable compaction. */
--            if(ok)for(unsigned slot=0;slot<PH_AUTH_PAIR_SLOTS;slot++)
--                if(!strcmp(s->local[slot].peer,peer))memset(&s->local[slot],0,sizeof(s->local[slot]));
--            break;
--        }
--        break;
--    }
--    return ok;
--}
--bool ph_auth_pair_unpair(ph_auth_state*s,const char*peer,const char*token) {
--    uint8_t decoded[16];bool ok;
--    if(!s||!ph_auth_private_peer_ok(peer)||!ph_auth_token_decode(token,decoded))return false;
--    ph_auth_private_lock(s);ok=ph_auth_private_unpair(s,peer,decoded);
--    memset(decoded,0,sizeof(decoded));ph_auth_private_unlock(s);return ok;
--}
--bool ph_auth_pair_unpair_request(ph_auth_state*s,const char*peer,const char*token,
--                                const char*ip,const uint8_t nonce[16]) {
--    uint8_t decoded[16];bool ok=false;unsigned slot=0;uint32_t oldest=0;
--    if(!s||!ip||!ip[0]||strlen(ip)>=sizeof(s->unpair[0].ip)||!nonce||
--       !ph_auth_private_peer_ok(peer)||!ph_auth_token_decode(token,decoded))return false;
--    ph_auth_private_lock(s);
--    uint32_t now=s->ops.now(s->ops.user);
--    for(unsigned i=0;i<PH_AUTH_UNPAIR_RECEIPTS;i++) {
--        ph_auth_unpair_receipt*r=&s->unpair[i];
--        if(r->active&&(r->epoch!=s->credential_epoch||
--           (uint32_t)(now-r->born)>=PH_AUTH_UNPAIR_RECEIPT_MS))memset(r,0,sizeof(*r));
--        if(r->active&&!strcmp(r->peer,peer)&&!strcmp(r->ip,ip)&&
--           ph_auth_private_eq(r->token,decoded,16)&&ph_auth_private_eq(r->nonce,nonce,16)) {
--            ok=true;goto done; /* Do not extend the original receipt lifetime. */
--        }
--        uint32_t age=r->active?(uint32_t)(now-r->born):UINT32_MAX;
--        if(age>=oldest){oldest=age;slot=i;}
--    }
--    ok=ph_auth_private_unpair(s,peer,decoded);
--    if(ok) {
--        ph_auth_unpair_receipt*r=&s->unpair[slot];memset(r,0,sizeof(*r));
--        r->active=1;r->epoch=s->credential_epoch;r->born=now;
--        memcpy(r->token,decoded,16);memcpy(r->nonce,nonce,16);
--        strcpy(r->peer,peer);strcpy(r->ip,ip);
--    }
--done:
--    memset(decoded,0,sizeof(decoded));ph_auth_private_unlock(s);return ok;
- }
- bool ph_auth_udp_check(ph_auth_state*s,const char*peer,const char*token,ph_auth_context*c) {
-     uint8_t t[16];
-@@ -420,35 +307,10 @@
-     ph_auth_store_empty(&next);
-     ph_auth_private_lock(s);
-     ok=ph_auth_private_save(s,&next);
--    /* This is the revoke phase BEFORE persisting a replacement password.
--     * On failure the caller must retain the old durable password. Reboot may
--     * reload the old pairs, so false must never be reported as revocation. */
--    if(!ok)ph_auth_store_empty(&s->store);
--    memset(s->unpair,0,sizeof(s->unpair));
-+    /* Fail closed even if durable write fails; caller must reject password change. */
-     if(!++s->credential_epoch)++s->credential_epoch;
-     memset(s->http,0,sizeof(s->http));
-     memset(s->local,0,sizeof(s->local));
--    ph_auth_private_unlock(s);
--    return ok;
--}
--bool ph_auth_credential_commit(ph_auth_state*s,const char*password,bool force,
--                               ph_auth_commit_fn commit,void*user) {
--    const ph_auth_store *next;
--    bool changed,ok;
--    if(!s||!password||strlen(password)>32||!commit)return false;
--    ph_auth_private_lock(s);
--    changed=force||strcmp(password,s->credential)!=0;
--    next=changed?ph_auth_store_empty_value():&s->store;
--    ok=commit(user,next);
--    if(ok&&changed) {
--        s->store=*next;
--        memset(s->http,0,sizeof(s->http));
--        memset(s->local,0,sizeof(s->local));
--        memset(s->credential,0,sizeof(s->credential));
--        memcpy(s->credential,password,strlen(password));
--        memset(s->unpair,0,sizeof(s->unpair));
--        if(!++s->credential_epoch)++s->credential_epoch;
--    }
-     ph_auth_private_unlock(s);
-     return ok;
- }
-@@ -473,7 +335,6 @@
- }
- void ph_auth_local_revoke(ph_auth_state*s,const ph_auth_store*p) {
-     ph_auth_private_lock(s);
--    memset(s->unpair,0,sizeof(s->unpair));
-     if(!++s->credential_epoch)++s->credential_epoch;
-     memset(s->http,0,sizeof(s->http));
-     memset(s->local,0,sizeof(s->local));
-@@ -510,9 +371,7 @@
-         r->scopes=(uint8_t)scopes;
-         if(i==next.count)next.count++;
-         if(ph_auth_private_save(s,&next)) {
--            /* Sessions are identified by peer, not by a mutable store index. */
--                for(unsigned slot=0;slot<PH_AUTH_PAIR_SLOTS;slot++)
--                    if(!strcmp(s->local[slot].peer,peer))memset(&s->local[slot],0,sizeof(s->local[slot]));
-+            memset(&s->local[i],0,sizeof(s->local[i]));
-             ok=true;
-         }
-     }
-@@ -553,40 +412,3 @@
-     ph_auth_private_unlock(s);
-     return found;
- }
--
--bool ph_auth_remote_get(ph_auth_state*s,const char*peer,char key[33],unsigned*scopes) {
--    if(!s||!peer||!key||!scopes)return false;
--    bool ok=false;ph_auth_private_lock(s);
--    for(unsigned i=0;i<s->store.remote_count;i++)if(!strcmp(peer,s->store.remote[i].peer)) {
--        ph_auth_private_hex(s->store.remote[i].key,key);*scopes=s->store.remote[i].scopes;ok=true;break;
--    }
--    ph_auth_private_unlock(s);return ok;
--}
--bool ph_auth_remote_store(ph_auth_state*s,const char*peer,const char*key,unsigned scopes,uint32_t epoch) {
--    uint8_t decoded[16];
--    if(!s||!ph_auth_private_peer_ok(peer)||!ph_auth_token_decode(key,decoded)||!scopes||
--       (scopes&~(PH_AUTH_SCOPE_CONTROL|PH_AUTH_SCOPE_SENSOR|PH_AUTH_SCOPE_GROUP)))return false;
--    bool ok=false;ph_auth_private_lock(s);
--    if(!epoch||epoch!=s->credential_epoch)goto done;
--    ph_auth_store next=s->store;unsigned i;
--    for(i=0;i<next.remote_count;i++)if(!strcmp(peer,next.remote[i].peer))break;
--    if(i==PH_AUTH_PAIR_SLOTS)goto done;
--    if(i<next.remote_count&&next.remote[i].scopes==scopes&&
--       ph_auth_private_eq(next.remote[i].key,decoded,16)){ok=true;goto done;}
--    if(i==next.remote_count)++next.remote_count;
--    memset(&next.remote[i],0,sizeof(next.remote[i]));strcpy(next.remote[i].peer,peer);
--    memcpy(next.remote[i].key,decoded,16);next.remote[i].scopes=(uint8_t)scopes;
--    ok=ph_auth_private_save(s,&next);
-- done:
--    memset(decoded,0,sizeof(decoded));ph_auth_private_unlock(s);return ok;
--}
--bool ph_auth_remote_remove(ph_auth_state*s,const char*peer) {
--    if(!s||!peer)return false;
--    bool ok=false;ph_auth_private_lock(s);ph_auth_store next=s->store;
--    for(unsigned i=0;i<next.remote_count;i++)if(!strcmp(peer,next.remote[i].peer)) {
--        memmove(&next.remote[i],&next.remote[i+1],(next.remote_count-i-1)*sizeof(next.remote[0]));
--        memset(&next.remote[--next.remote_count],0,sizeof(next.remote[0]));
--        ok=ph_auth_private_save(s,&next);break;
--    }
--    ph_auth_private_unlock(s);return ok;
--}
 --- a/protocol/udp/packet.h
 +++ b/protocol/udp/packet.h
 @@ -1,3 +1,9 @@

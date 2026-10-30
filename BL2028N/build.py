@@ -20,6 +20,34 @@ SDK_SHA = '07fd9e0e2da0aabaddab00be2a897589be235158'
 APP_CACHE = CACHE/'openbeken/app-1.18.319'
 SDK_CACHE = CACHE/'openbeken/bk7231n-upstream'
 APP_NAME = 'OpenBK7231N'
+SDK_MDNS_FILES = (
+    'platforms/bk7231n/bk7231n_os/beken378/func/lwip_intf/lwip-2.1.3/src/apps/mdns/mdns.c',
+    'platforms/bk7231n/bk7231n_os/beken378/func/lwip_intf/lwip-2.1.3/src/include/lwip/apps/mdns.h',
+)
+COPY_LOCAL_IP_FUNCTION = '''#ifndef PH_HOST_TEST
+#include "lwip/ip4_addr.h"
+#endif
+int PH_BL_CopyLocalIPAddress(char *out, size_t capacity)
+{
+    struct wlan_ip_config snapshot;
+    void *interface;
+    int buflen;
+
+    if (!out || !capacity) return 0;
+    out[0] = '\\0';
+    buflen = capacity < IP4ADDR_STRLEN_MAX ? (int)capacity : IP4ADDR_STRLEN_MAX;
+    interface = g_bOpenAccessPointMode ? net_get_uap_handle() : net_get_sta_handle();
+    if (!interface) return 0;
+    memset(&snapshot, 0, sizeof(snapshot));
+    if (net_get_if_addr(&snapshot, interface) != 0 || snapshot.ipv4.address == 0)
+        return 0;
+    if (!ip4addr_ntoa_r((const ip4_addr_t *)&snapshot.ipv4.address, out, buflen)) {
+        out[0] = '\\0';
+        return 0;
+    }
+    return 1;
+}
+'''
 sys.path.insert(0,str(HERE.parent/'tools'))
 from check_version import resolve_version
 
@@ -84,6 +112,8 @@ def overlay(app, sdk, run, boot_trace=False, stock_layout=True):
     replace('src/user_main.c','HAL_SetupWiFiOpenAccessPoint(CFG_GetDeviceName());','if (PH_BL_APName()[0]) HAL_SetupWiFiOpenAccessPoint(PH_BL_APName());')
     replace('src/hal/bk7231/hal_wifi_bk7231.c','"192.168.4.1"\n#define APP_DRONE_DEF_NET_MASK','"192.168.0.1"\n#define APP_DRONE_DEF_NET_MASK')
     replace('src/hal/bk7231/hal_wifi_bk7231.c','"192.168.4.1"\n#define APP_DRONE_DEF_CHANNEL','"192.168.0.1"\n#define APP_DRONE_DEF_CHANNEL')
+    replace('src/hal/bk7231/hal_wifi_bk7231.c','const char* HAL_GetMyIPString() {',
+        COPY_LOCAL_IP_FUNCTION+'\nconst char* HAL_GetMyIPString() {')
     replace('src/user_main.c','\tCFG_ApplyChannelStartValues();','\t/* No generic channel/GPIO ownership in this product. */')
     replace('src/user_main.c','\tinit_rest();','\t/* Legacy JSON REST is replaced by PH_BL_HTTP. */')
     replace('src/cmnds/cmd_tasmota.c','\tCMD_RegisterCommand("Json", cmnd_JsonCommand, NULL);','\t/* JSON command compatibility is disabled; JSON is HA-only. */')
@@ -206,7 +236,14 @@ def overlay(app, sdk, run, boot_trace=False, stock_layout=True):
         p.write_text(new)
         with (run/'sdk-board.patch').open('a') as patch:
             patch.write(''.join(difflib.unified_diff(old.splitlines(True),new.splitlines(True),fromfile='a/'+relative,tofile='b/'+relative)))
-    # Password changes revoke durable LAN grants before native CFG is persisted.
+    # The SDK responder reports allocation/bind failure and bounds TXT octets.
+    # The incremental path restores these pinned inputs before each overlay.
+    mdns_patch=HERE/'patches/mdns-init-checked.patch'
+    with (run/'sdk-mdns-patch.log').open('wb') as patch_log:
+        command(['patch','-p1','--batch','-i',mdns_patch],cwd=sdk,log=patch_log)
+    with (run/'sdk-board.patch').open('a') as patch:
+        patch.write(mdns_patch.read_text())
+    # Password and grant changes share one authoritative atomic product record.
     replace('src/new_cfg.c','#include "new_cfg.h"','#include "new_cfg.h"\n#include "phicomm/src/port.h"')
     replace('src/new_cfg.c',
         'const char *CFG_GetOpenBekenHostName() {\n'
@@ -222,9 +259,18 @@ def overlay(app, sdk, run, boot_trace=False, stock_layout=True):
         '\t\tWiFI_SetMacAddress((char*)factory_mac);\n'
         '\t}\n\n\t// copy shortDeviceName to MQTT Client ID, set version=3')
     replace('src/new_cfg.c','mainConfig_t g_cfg = { 0 };','mainConfig_t g_cfg = { 0 };\nint PH_BL_MqttTlsEnabled(void) { return g_cfg.mqtt_use_tls; }')
-    replace('src/new_cfg.c','\tif(strcpy_safe_checkForChanges(g_cfg.webPassword, s,sizeof(g_cfg.webPassword))) {','\tchar previous[sizeof(g_cfg.webPassword)];\n\tmemcpy(previous, g_cfg.webPassword, sizeof(previous));\n\tif(strcpy_safe_checkForChanges(g_cfg.webPassword, s,sizeof(g_cfg.webPassword))) {\n\t\tif (!PH_BL_PasswordChanged()) { memcpy(g_cfg.webPassword, previous, sizeof(previous)); return; }')
+    # Product auth owns the atomic password+grant record. Native callers enter
+    # that transaction before changing g_cfg; its raw adapter never recurses.
+    replace('src/new_cfg.c','void CFG_SetWebPassword(const char *s) {',
+        'void CFG_SetWebPassword(const char *s) {\n'
+        '\t(void)PH_BL_WebPasswordSet(s);\n}\n'
+        'void PH_BL_SetWebPasswordMemory(const char *s) {')
     # No Berry runtime or TLS dependencies are pulled into this dedicated port.
     replace('components.mk','include $(OBK_DIR)/libraries/berry.mk','# Berry disabled for BL2028N')
+    replace('components.mk','CPPDEFINES += -DOBK_VARIANT=$(OBK_VARIANT)',
+            'CPPDEFINES += -DOBK_VARIANT=$(OBK_VARIANT) -DPH_S30_LAN_V4')
+    with (app/'components.mk').open('a') as definitions:
+        definitions.write('\nINCLUDES += -I./beken378/func/wolfssl\n')
     # The SDK recursively enumerates src even when interpreter features are off.
     shutil.rmtree(app/'src/berry',ignore_errors=True)
     shutil.rmtree(app/'src/libraries/IRremoteESP8266',ignore_errors=True)
@@ -237,6 +283,7 @@ def overlay(app, sdk, run, boot_trace=False, stock_layout=True):
     shutil.rmtree(target,ignore_errors=True)
     shutil.copytree(HERE/'src',target/'src',dirs_exist_ok=True)
     shutil.copytree(HERE/'protocol',target/'protocol',dirs_exist_ok=True)
+    shutil.copytree(HERE/'common',target/'common',dirs_exist_ok=True)
     # This SDK flattens object names into Debug/obj. Preserve both shared cores.
     for service in ('httpd','mqtt'):
         directory=target/'protocol'/service
@@ -362,7 +409,8 @@ def main():
                 (app/Path(rel).with_suffix('.o')).unlink(missing_ok=True)
         for relative in ['platforms/bk7231n/bk7231n_os/beken378/func/user_driver/BkDriverFlash.c',
                          'platforms/bk7231n/bk7231n_os/beken378/driver/irda/irda.c',
-                         'platforms/bk7231n/bk7231n_os/beken378/os/FreeRTOSv9.0.0/FreeRTOS/Source/portable/MemMang/heap_4.c']:
+                         'platforms/bk7231n/bk7231n_os/beken378/os/FreeRTOSv9.0.0/FreeRTOS/Source/portable/MemMang/heap_4.c',
+                         *SDK_MDNS_FILES]:
             shutil.copy2(SDK_CACHE/relative,sdk/relative)
             (sdk/Path(relative).with_suffix('.o')).unlink(missing_ok=True)
         for rel in ['src/hal/hal_ota.h','src/littlefs/our_lfs.h']:

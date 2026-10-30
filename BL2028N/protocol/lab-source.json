@@ -1,17 +1,17 @@
 {
   "source": "phicomm-community-firmware/common",
-  "git_head": "260b840f6759b5249446c8c925b9628563d0727f",
+  "git_head": "91d402a4c0e5babfe3777d74a25a577b0067c973",
   "note": "Clean shared inputs with portable binary-only adaptations recorded in lab-openbeken.patch.",
   "files": {
-    "typed_wire.h": "489a66a757f93d4a3a474dfa846e8185068d72093bb60dfc67e010b14424056c",
-    "typed_wire.inc": "e7228ae882d60460ffd6bc92c98af2f398e9abef40e0e1216deed571de783e5e",
+    "typed_wire.h": "7f865471a07e31254a6d5f3b76437a54fa19c7e4a39d8532f2ba20c78c0379ae",
+    "typed_wire.inc": "a62cd254d89265208c9daddc7adab9884f590b3b86525608969411dc37abab87",
     "wire_format.h": "7574eae2abc26370b6466e8c90d9bfc275eb5eac15c6713dd495b9a5bc563c0d",
-    "wire_primitives.inc": "e2386e48b4fbeb86d659629d7e18e42dc3570fa3d3913ab4275de5b657e33363",
+    "wire_primitives.inc": "f1d986a5c98af8ffaadef00adef523210a7ddd037d96a00c12454bbcb42efab2",
     "binary_reader.h": "eaffea0bdece20ee6e29f819e96bf42c05603339316a03fe9e10e3d1b1c70b79",
-    "binary_reader.inc": "a27d7a0218f97a864baac97c7c650383d8b751cc11679cbce5041e19f308f424",
+    "binary_reader.inc": "64bcec0b8f175c0e99535b05e17281ad817caa721d567ef12f3663042d229aff",
     "status_request.h": "81116ffaa7756bce9f02e198b75f4b84c2eaf419bc3dbf9fb68c9e3e19012154",
-    "local_auth.h": "7424b7df561de9962a7ed8e7a56ecbfb9b9c80a5b621099e5c11cc18af26e9fa",
-    "local_auth.c": "7fa17abf944d50de23491e4db6698240684310f85430b5eb2a8518870428dd30",
+    "local_auth.h": "dbad035d9f3d5efc387340e4eacfefb61d118c28f97dc9cff5c42ac484f60b8b",
+    "local_auth.c": "f024a90cacf93932b50002d05d69418dec65e259386ae392ecd44e1995d8d7ba",
     "json_number_checked.h": "6d01c4fd18cc9db739ed4918d2c18628182a7179ba2a92c7f21c1f3718c3cd43"
   },
   "adaptations": {

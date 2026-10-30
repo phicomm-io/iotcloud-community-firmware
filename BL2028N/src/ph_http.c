@@ -10,12 +10,14 @@
 #ifndef PH_HTTP_PORT
 #define PH_HTTP_PORT 80
 #endif
+extern int PH_BL_CopyLocalIPAddress(char *out,size_t capacity);
 /* The shared HTTP core grants one response/body lease across all idle sockets.
  * These bounded buffers live until release(), including partial sends. */
 static unsigned char input[PH_INPUT_MAX],output[PH_OUTPUT_MAX];
 static size_t used;
 static ph_wire_format format;
-static bool authenticated,admin;
+static bool authenticated;
+static ph_auth_context request_auth;
 static bool route_is(const ph_http_request *r,const char *path) {
  size_t n=strcspn(r->path,"?");return strlen(path)==n&&!memcmp(r->path,path,n);
 }
@@ -31,21 +33,24 @@ static ph_http_action fail(ph_http_exchange *x,unsigned status,const char *code)
  response(x,status,bl_error(output,sizeof(output),format,code));return PH_HTTP_REPLY;
 }
 static bool local_origin(const char *origin) {
- char own[80];if(PH_HTTP_PORT==80)snprintf(own,sizeof(own),"http://%s",HAL_GetMyIPString());
- else snprintf(own,sizeof(own),"http://%s:%u",HAL_GetMyIPString(),(unsigned)PH_HTTP_PORT);
+ if(!*origin||!strcmp(origin,"http://192.168.0.1")||*phicomm_cors_headers(origin))return true;
+ char ip[16],own[80];if(!PH_BL_CopyLocalIPAddress(ip,sizeof(ip)))return false;
+ if(PH_HTTP_PORT==80)snprintf(own,sizeof(own),"http://%s",ip);
+ else snprintf(own,sizeof(own),"http://%s:%u",ip,(unsigned)PH_HTTP_PORT);
  size_t n=strlen(own);
- return !*origin||!strcmp(origin,own)||(!strncmp(origin,own,n)&&!strcmp(origin+n,":80"))||
-  !strcmp(origin,"http://192.168.0.1")||*phicomm_cors_headers(origin);
+ return !strcmp(origin,own)||(PH_HTTP_PORT==80&&!strncmp(origin,own,n)&&!strcmp(origin+n,":80"));
 }
-static bool authenticate(const char *authorization,bool *is_admin) {
- bool ok;ph_auth_context ctx;
+static bool context_valid_locked(unsigned scopes) {
+ return authenticated&&request_auth.owner==&bl_auth&&ph_auth_context_valid(&request_auth,scopes);
+}
+static bool authenticate(const char *authorization) {
+ bool ok;
  bl_lock();
- if(ph_http_basic(authorization,"admin",CFG_GetWebPassword())){ph_auth_internal_context(&bl_auth,&ctx);ok=true;}
- else ok=ph_auth_http_check(&bl_auth,authorization,&ctx)&&ph_auth_context_valid(&ctx,PH_AUTH_SCOPE_CONTROL);
- *is_admin=ok&&ph_auth_context_valid(&ctx,PH_AUTH_SCOPE_ADMIN);bl_unlock();return ok;
+ ok=ph_auth_http_check(&bl_auth,authorization,&request_auth)&&ph_auth_context_valid(&request_auth,PH_AUTH_SCOPE_CONTROL);
+ bl_unlock();return ok;
 }
 static ph_http_action begin(ph_http_exchange *x) {
- const ph_http_request *r=x->request;used=0;authenticated=admin=false;
+ const ph_http_request *r=x->request;used=0;authenticated=false;memset(&request_auth,0,sizeof(request_auth));
  format=r->have_accept==1&&ph_binary_format(r->accept_format)?r->accept_format:
   r->have_type==1&&ph_binary_format(r->content_format)?r->content_format:PH_WIRE_MSGPACK;
  x->response.cors=phicomm_cors_headers(r->origin);
@@ -55,7 +60,7 @@ static ph_http_action begin(ph_http_exchange *x) {
  }
  if(!local_origin(r->origin))return fail(x,403,"forbidden_origin");
  if(!bl_ready)return fail(x,503,"not_ready");
- authenticated=authenticate(r->authorization,&admin);
+ authenticated=authenticate(r->authorization);
  bool home=route_is(r,"/")||route_is(r,"/index.html");
  if(home) {
   if(strcmp(r->method,"GET")&&strcmp(r->method,"HEAD"))return fail(x,405,"method_not_allowed");
@@ -66,7 +71,7 @@ static ph_http_action begin(ph_http_exchange *x) {
  if(r->have_accept && (r->have_accept!=1||!ph_binary_format(r->accept_format)))return fail(x,406,"not_acceptable");
  if(route_is(r,"/api/v1/auth/status")&&!strcmp(r->method,"GET")) {
   ph_writer w;struct printbuf b;phw_init_fixed(&w,format,&b,output,sizeof(output));phw_begin(&w,NULL,false);
-  phw_bool(&w,"password_required",*CFG_GetWebPassword()!=0);phw_bool(&w,"authenticated",authenticated);phw_end(&w);
+  bl_lock();phw_bool(&w,"password_required",*CFG_GetWebPassword()!=0);phw_bool(&w,"authenticated",context_valid_locked(PH_AUTH_SCOPE_CONTROL));bl_unlock();phw_end(&w);
   response(x,200,phw_finish_fixed(&w));return PH_HTTP_REPLY;
  }
  bool login=route_is(r,"/api/v1/auth/login");
@@ -80,6 +85,7 @@ static ph_http_action begin(ph_http_exchange *x) {
   ph_writer w;struct printbuf b;phw_init_fixed(&w,format,&b,output,sizeof(output));
   phw_begin(&w,NULL,false);phw_text(&w,"code","ok");phw_text(&w,"message","ok");phw_begin(&w,"data",false);
   bl_lock();
+  if(!info&&!context_valid_locked(PH_AUTH_SCOPE_CONTROL)){bl_unlock();return fail(x,401,"unauthorized");}
   if(!strcmp(action,"info.get")){
    unsigned char bytes[768];size_t k=ph_query(&bl_device,action,PH_WIRE_MSGPACK,bytes,sizeof(bytes));
    if(k)phw_cached_fields(&w,bytes,k);else w.failed=true;
@@ -102,29 +108,32 @@ static void complete(ph_http_exchange *x) {
  const ph_http_request *r=x->request;
  if(used!=r->length){fail(x,400,"incomplete_body");return;}
  if(route_is(r,"/api/v1/command")) {
-  /* Revalidate after receiving: password/grants may have changed meanwhile. */
-  if(!authenticate(r->authorization,&admin)){fail(x,401,"unauthorized");return;}
-  bl_lock();size_t n=ph_command(&bl_device,input,used,r->content_format,format,true,admin,output,sizeof(output));bl_unlock();
+  /* Keep the original context through body and lock waits. Check and execute
+   * in one critical section, before any receipt or cached query is returned. */
+  bl_lock();
+  if(!context_valid_locked(PH_AUTH_SCOPE_CONTROL)){bl_unlock();fail(x,401,"unauthorized");return;}
+  bool admin=context_valid_locked(PH_AUTH_SCOPE_ADMIN);
+  size_t n=ph_command(&bl_device,input,used,r->content_format,format,true,admin,output,sizeof(output));bl_unlock();
   if(!n)fail(x,400,"invalid_params");else response(x,200,n);return;
  }
- ph_value root,v;char password[33]={0},token[33]={0};bool ok=false;
+ ph_value root,v;char password[33]={0},token[33]={0};bool ok=false,busy=false,password_required;
  if(!phv_parse(r->content_format,input,used,&root)||root.kind!=PHV_MAP){fail(x,400,"invalid_params");return;}
  bl_lock();
  if(route_is(r,"/api/v1/auth/logout")) {
-  ok=!root.count; if(ok)ph_auth_http_logout(&bl_auth,r->authorization);
+  ok=!root.count&&context_valid_locked(PH_AUTH_SCOPE_CONTROL)&&ph_auth_http_logout(&bl_auth,r->authorization);
  } else if(phv_keys(&root,"|password|")&&phv_get(&root,"password",&v)&&phv_text(&v,password,sizeof(password))) {
-  /* Empty-password devices require no login and consume no session slots. */
-  ok=!*CFG_GetWebPassword()||ph_auth_http_login(&bl_auth,password,token);
+  ph_auth_login_result result=ph_auth_http_login_result(&bl_auth,password,token);
+  ok=result==PH_AUTH_LOGIN_OK;busy=result==PH_AUTH_LOGIN_BUSY;
  }
- bl_unlock();memset(password,0,sizeof(password));
- if(!ok){fail(x,401,"unauthorized");return;}
+ password_required=*CFG_GetWebPassword()!=0;bl_unlock();memset(password,0,sizeof(password));
+ if(!ok){fail(x,busy?503:401,busy?"busy":"unauthorized");return;}
  ph_writer w;struct printbuf b;phw_init_fixed(&w,format,&b,output,sizeof(output));phw_begin(&w,NULL,false);
  phw_text(&w,"code","ok");phw_begin(&w,"data",false);
  phw_text(&w,"token",token);phw_text(&w,"token_type","Bearer");phw_u32(&w,"expires_in",PH_AUTH_IDLE_MS/1000);
- phw_bool(&w,"password_required",*CFG_GetWebPassword()!=0);phw_end(&w);phw_end(&w);
+ phw_bool(&w,"password_required",password_required);phw_end(&w);phw_end(&w);
  response(x,200,phw_finish_fixed(&w));memset(token,0,sizeof(token));
 }
-static void release(ph_http_exchange *x,bool sent) {(void)x;(void)sent;memset(input,0,used);used=0;}
+static void release(ph_http_exchange *x,bool sent) {(void)x;(void)sent;memset(input,0,used);used=0;authenticated=false;memset(&request_auth,0,sizeof(request_auth));}
 static unsigned admission(void) {
  if(!bl_ready)return 0;
  bl_lock();bool upgrading=bl_ota_pending;bl_unlock();

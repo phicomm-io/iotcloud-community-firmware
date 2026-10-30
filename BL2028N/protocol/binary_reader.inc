@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
-/* Normalized tokens: uint=0, neg=1, string=3, array=4, map=5,
+/* Normalized tokens: uint=0, neg=1, bytes=2, string=3, array=4, map=5,
  * false=20, true=21, null=22, real=27. */
 PH_BINARY_PRIMITIVE bool binary_token(binary_reader *r,binary_item *v)
 {
@@ -13,7 +13,7 @@ PH_BINARY_PRIMITIVE bool binary_token(binary_reader *r,binary_item *v)
             if(ai==20 || ai==21 || ai==22)v->kind=ai;
             else if(ai==25 || ai==26 || ai==27)goto floating;
             else return false;
-        } else if(v->kind!=0 && v->kind!=1 && v->kind!=3 && v->kind!=4 && v->kind!=5)return false;
+        } else if(v->kind!=0 && v->kind!=1 && v->kind!=2 && v->kind!=3 && v->kind!=4 && v->kind!=5)return false;
     } else {
         if(c<128){v->kind=0;v->n=c;}
         else if(c>=0xe0){v->kind=1;v->n=0xff-c;}
@@ -25,6 +25,7 @@ PH_BINARY_PRIMITIVE bool binary_token(binary_reader *r,binary_item *v)
         else {
             if(c>=0xcc && c<=0xcf){v->kind=0;width=1u<<(c-0xcc);}
             else if(c>=0xd0 && c<=0xd3){v->kind=0;width=1u<<(c-0xd0);}
+            else if(c>=0xc4 && c<=0xc6){v->kind=2;width=1u<<(c-0xc4);}
             else if(c>=0xd9 && c<=0xdb){v->kind=3;width=1u<<(c-0xd9);}
             else if(c==0xdc || c==0xdd){v->kind=4;width=c==0xdc?2:4;}
             else if(c==0xde || c==0xdf){v->kind=5;width=c==0xde?2:4;}
@@ -37,8 +38,8 @@ PH_BINARY_PRIMITIVE bool binary_token(binary_reader *r,binary_item *v)
             if(c==0xca || c==0xcb)goto floating;
         }
     }
-    if(v->kind==3) {
-        if(v->n>(uint64_t)(r->end-r->p) || !ph_wire_utf8(r->p,(size_t)v->n))return false;
+    if(v->kind==2 || v->kind==3) {
+        if(v->n>(uint64_t)(r->end-r->p) || (v->kind==3 && !ph_wire_utf8(r->p,(size_t)v->n)))return false;
         v->text=r->p;r->p+=(size_t)v->n;
     }
     if((v->kind<=1 && v->n>PH_BINARY_SAFE-(v->kind==1)) ||

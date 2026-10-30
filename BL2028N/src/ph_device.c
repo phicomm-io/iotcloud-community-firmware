@@ -90,6 +90,16 @@ static void status_build(ph_device *d, ph_writer *w) {
 void ph_status_cache_release(ph_device *d) {
     free(d->status_cache);d->status_cache=NULL;d->status_size=0;
 }
+void ph_status_cache_suspend(ph_device *d,bool enabled) {
+    d->cache_suspended=enabled;
+    if(enabled)ph_status_cache_release(d);
+}
+void ph_status_cache_budget(ph_device *d,size_t available,size_t reserve) {
+    /* Admission includes the entire optional allocation. Repeated HTTP reads
+     * cannot take back memory reserved by a pending MQTT result. */
+    bool room=available>=reserve && available-reserve>=(d->status_cache?0u:PH_STATUS_CACHE_MAX);
+    ph_status_cache_suspend(d,!room);
+}
 void ph_device_set_maintenance(ph_device *d,bool enabled) {
     d->maintenance=enabled;
     if(enabled)ph_status_cache_release(d);
@@ -99,7 +109,7 @@ void ph_status(ph_device *d,ph_writer *w) {
     uint32_t network=d->ops.network_stamp?d->ops.network_stamp(d->ops.user):0;
     /* OTA reclaims this optional cache. Polling must not allocate it again
      * while the downloader needs its stack, receive and flash buffers. */
-    if(d->maintenance||(d->ops.network_info&&!d->ops.network_stamp)){status_build(d,w);return;}
+    if(d->maintenance||d->cache_suspended||(d->ops.network_info&&!d->ops.network_stamp)){status_build(d,w);return;}
     if(!d->status_cache)d->status_cache=malloc(PH_STATUS_CACHE_MAX);
     if(!d->status_cache){status_build(d,w);return;}
     if(!d->status_size||d->cache_sequence!=d->sequence||d->cache_frames!=d->meter.frames||d->cache_fields!=fields||d->cache_network!=network){
@@ -179,7 +189,50 @@ static size_t canonical_params(const ph_value *p, void *out, size_t size) {
     }
     phw_end(&w);return phw_finish_fixed(&w);
 }
-static const char *execute(ph_device *d, const char *action, const ph_value *p, ph_writer *w, bool admin) {
+/* Keep the settings snapshot out of read-only and platform-action call
+ * chains. In particular, password commits do not need a second auth store. */
+static __attribute__((noinline)) const char *execute_settings(ph_device *d,const char *section,
+                                                             const ph_value *values,ph_writer *w) {
+    ph_settings next=d->settings;ph_value v;bool on;
+    if (!strcmp(section, "indicator.set") || !strcmp(section, "child_lock.set")) {
+        if (!phv_keys(values, "|enabled|") || !boolean(values, "enabled", &on)) return "invalid_params";
+        if (!strcmp(section, "indicator.set")) next.indicator = on; else next.child_lock = on;
+    } else {
+        if(!strcmp(section,"device")) {
+            if(!values->count || !phv_keys(values,"|name||power_on|"))return "invalid_params";
+            if(phv_get(values,"name",&v)) {
+                if(!phv_text(&v,next.name,sizeof(next.name)))return "invalid_params";
+                if(!*next.name)strcpy(next.name,"S30-V1B");
+            }
+            if(phv_get(values,"power_on",&v)){if(!phv_bool(&v,&on))return "invalid_params";next.power_on=on;}
+        } else if(!strcmp(section,"socket")) {
+            int64_t index;
+            if(values->count!=2 || !phv_keys(values,"|index||name|") ||
+                !phv_get(values,"index",&v)||!phv_int(&v,&index)||index!=0 ||
+                !text_field(values,"name",next.socket_name,sizeof(next.socket_name))||!*next.socket_name)return "invalid_params";
+        } else if(!strcmp(section,"report")) {
+            int64_t seconds;
+            if(values->count!=1||!phv_get(values,"seconds",&v)||!phv_int(&v,&seconds)||seconds<1||seconds>3600)return "invalid_params";
+            next.report_seconds=(uint32_t)seconds;
+        } else if(!strcmp(section,"meter")) {
+            const char *coeff[]={"voltage_coefficient","current_coefficient","power_coefficient"};
+            if(!values->count||!phv_keys(values,"|voltage_coefficient||current_coefficient||power_coefficient|"))return "invalid_params";
+            for(unsigned i=0;i<3;++i)if(phv_get(values,coeff[i],&v)) {
+                double c;if(!phv_number(&v,&c)||!isfinite(c)||c<0.001||c>100)return "invalid_params";
+                next.coefficients[i]=c;next.calibrated=1;
+            }
+        } else return "unsupported";
+    }
+    if (next.revision == INT32_MAX) return "busy";
+    ++next.revision;
+    next.energy_kwh=d->meter.energy_kwh;
+    if (!d->ops.save(d->ops.user, &next)) return "storage_error";
+    d->settings = next;
+    /* Recompute fresh samples immediately when calibration changes. */
+    for(unsigned i=0;i<3;++i){d->meter.value[i]=d->meter.raw[i]*next.coefficients[i];if(d->meter.value[i]>(i==0?500:i==1?100:25000))d->meter.fields&=~(1u<<i);}
+    ++d->sequence; phw_u32(w,"revision",next.revision); return "accepted";
+}
+static const char *execute(ph_device *d, const char *action, const ph_value *p, ph_writer *w, bool admin,bool control) {
     bool on; ph_value v;
     if (!strcmp(action, "status.get")) {
         if (!phv_keys(p, "|view|")) return "invalid_params";
@@ -207,94 +260,111 @@ static const char *execute(ph_device *d, const char *action, const ph_value *p, 
         d->relay = on; ++d->sequence; d->ops.relay(d->ops.user, on); phw_bool(w, "on", on); return "accepted";
     }
     if (!strcmp(action,"wifi.scan.get"))return d->ops.platform_action?d->ops.platform_action(d->ops.user,action,p,w,admin):"unsupported";
-    if (!admin) return "unauthorized";
+    if (!admin && !(control&&(!strcmp(action,"indicator.set")||!strcmp(action,"child_lock.set")))) return "unauthorized";
     if (!strcmp(action, "system.reboot")) {
         if (p->count) return "invalid_params";
         if (!d->ops.reboot) return "unsupported";
         d->ops.reboot(d->ops.user); return "accepted";
     }
-    ph_settings next = d->settings;
-    if (!strcmp(action, "indicator.set") || !strcmp(action, "child_lock.set")) {
-        if (!phv_keys(p, "|enabled|") || !boolean(p, "enabled", &on)) return "invalid_params";
-        if (!strcmp(action, "indicator.set")) next.indicator = on; else next.child_lock = on;
-    } else if (!strcmp(action, "config.set")) {
+    if(!strcmp(action,"indicator.set")||!strcmp(action,"child_lock.set"))
+        return execute_settings(d,action,p,w);
+    if(!strcmp(action,"config.set")) {
         char section[24];ph_value values;
-        if(p->count!=2 || !phv_keys(p,"|section||values|") ||
-           !text_field(p,"section",section,sizeof(section)) || !phv_get(p,"values",&values) || values.kind!=PHV_MAP)return "invalid_params";
-        if(!strcmp(section,"device")) {
-            if(!values.count || !phv_keys(&values,"|name||power_on|"))return "invalid_params";
-            if(phv_get(&values,"name",&v)) {
-                if(!phv_text(&v,next.name,sizeof(next.name)))return "invalid_params";
-                if(!*next.name)strcpy(next.name,"S30-V1B");
-            }
-            if(phv_get(&values,"power_on",&v)){if(!phv_bool(&v,&on))return "invalid_params";next.power_on=on;}
-        } else if(!strcmp(section,"socket")) {
-            int64_t index;
-            if(values.count!=2 || !phv_keys(&values,"|index||name|") ||
-                !phv_get(&values,"index",&v)||!phv_int(&v,&index)||index!=0 ||
-                !text_field(&values,"name",next.socket_name,sizeof(next.socket_name))||!*next.socket_name)return "invalid_params";
-        } else if(!strcmp(section,"report")) {
-            int64_t seconds;
-            if(values.count!=1||!phv_get(&values,"seconds",&v)||!phv_int(&v,&seconds)||seconds<1||seconds>3600)return "invalid_params";
-            next.report_seconds=(uint32_t)seconds;
-        } else if(!strcmp(section,"meter")) {
-            const char *coeff[]={"voltage_coefficient","current_coefficient","power_coefficient"};
-            if(!values.count||!phv_keys(&values,"|voltage_coefficient||current_coefficient||power_coefficient|"))return "invalid_params";
-            for(unsigned i=0;i<3;++i)if(phv_get(&values,coeff[i],&v)) {
-                double c;if(!phv_number(&v,&c)||!isfinite(c)||c<0.001||c>100)return "invalid_params";
-                next.coefficients[i]=c;next.calibrated=1;
-            }
-        } else return d->ops.platform_action?d->ops.platform_action(d->ops.user,action,p,w,admin):"unsupported";
-    } else return d->ops.platform_action?d->ops.platform_action(d->ops.user,action,p,w,admin):"unsupported";
-    if (next.revision == INT32_MAX) return "busy";
-    ++next.revision;
-    next.energy_kwh=d->meter.energy_kwh;
-    if (!d->ops.save(d->ops.user, &next)) return "storage_error";
-    d->settings = next;
-    /* Recompute fresh samples immediately when calibration changes. */
-    for(unsigned i=0;i<3;++i){d->meter.value[i]=d->meter.raw[i]*next.coefficients[i];if(d->meter.value[i]>(i==0?500:i==1?100:25000))d->meter.fields&=~(1u<<i);}
-    ++d->sequence; phw_u32(w,"revision",next.revision); return "accepted";
+        if(p->count!=2||!phv_keys(p,"|section||values|")||
+           !text_field(p,"section",section,sizeof(section))||!phv_get(p,"values",&values)||values.kind!=PHV_MAP)
+            return "invalid_params";
+        if(!strcmp(section,"device")||!strcmp(section,"socket")||!strcmp(section,"report")||!strcmp(section,"meter"))
+            return execute_settings(d,section,&values,w);
+    }
+    return d->ops.platform_action?d->ops.platform_action(d->ops.user,action,p,w,admin):"unsupported";
+}
+
+/* Queries have no replay snapshot. Emit their data directly into the reserved
+ * response, rather than retaining a second 4 KiB map on the MQTT owner stack.
+ * Map member order is immaterial in both binary formats. */
+static __attribute__((noinline)) size_t query_result(ph_device *d,const char *action,const ph_value *params,
+                  const char *id,ph_wire_format output,bool admin,bool control,void *out,size_t capacity) {
+    ph_writer w;struct printbuf b;
+    phw_init_fixed(&w,output,&b,out,capacity);phw_begin(&w,NULL,false);
+    if(identifier(id))phw_text(&w,"request_id",id);
+    phw_begin(&w,"data",false);const char *code=execute(d,action,params,&w,admin,control);phw_end(&w);
+    phw_text(&w,"code",code);phw_text(&w,"message",code);phw_end(&w);
+    return phw_finish_fixed(&w);
+}
+static size_t command_response(const char *id,const char *code,const void *data,size_t data_n,
+                               ph_wire_format output,void *out,size_t capacity) {
+    ph_writer w;struct printbuf b;
+    phw_init_fixed(&w,output,&b,out,capacity);phw_begin(&w,NULL,false);
+    if(identifier(id))phw_text(&w,"request_id",id);
+    phw_text(&w,"code",code);phw_text(&w,"message",code);
+    phw_begin(&w,"data",false);if(data_n)phw_cached_fields(&w,data,data_n);phw_end(&w);
+    phw_end(&w);return phw_finish_fixed(&w);
 }
 /* Fixed response storage and an eight-command idempotency window are reserved
- * before mutations. Canonical params also catch conflicts across wire formats. */
-size_t ph_command(ph_device *d, const void *bytes, size_t n, ph_wire_format input,
-                  ph_wire_format output, bool authorized, bool admin, void *out, size_t capacity) {
-    ph_value root, params; char id[65] = "", action[40] = "";
-    unsigned char data[PH_OUTPUT_MAX], canonical[512]; size_t data_n = 0, canonical_n = 0;
+ * before mutations. Canonical params catch conflicts across wire formats;
+ * domains prevent a remote wire ID from colliding with a LAN session hash. */
+static __attribute__((noinline)) size_t command_parsed(ph_device *d,const char *action,const ph_value *params,
+                  const char *id,const char *receipt_key,uint8_t domain,ph_wire_format output,
+                  bool authorized,bool admin,bool control,void *out,size_t capacity) {
+    unsigned char data[sizeof(d->receipts[0].data)], canonical[512]; size_t data_n = 0, canonical_n = 0;
     ph_writer w; struct printbuf b; const char *code = "invalid_params";
-    /* Guarantee response capacity before changing hardware or Flash. */
-    if (!ph_binary_format(input) || !ph_binary_format(output) || capacity < PH_OUTPUT_MAX || n > PH_INPUT_MAX) return 0;
-    if (!phv_parse(input, bytes, n, &root) || root.kind != PHV_MAP) goto response;
-    if (!phv_keys(&root, "|request_id||action||params|") || (phv_get(&root,"request_id",&params) && (!text_field(&root,"request_id",id,sizeof(id)) || !identifier(id))) || !text_field(&root, "action", action, sizeof(action)) || !phv_get(&root, "params", &params) || params.kind != PHV_MAP) goto response;
     if (!authorized) { code = "unauthorized"; goto response; }
-    canonical_n=canonical_params(&params,canonical,sizeof(canonical));
+    canonical_n=canonical_params(params,canonical,sizeof(canonical));
     if (!canonical_n) goto response;
     size_t action_len=strlen(action);
     bool mutation = action_len<4 || strcmp(action+action_len-4,".get") != 0;
+    if(!mutation)return query_result(d,action,params,id,output,admin,control,out,capacity);
     if (mutation && !identifier(id))goto response;
     if (mutation) for (unsigned i = 0; i < 8; ++i) {
-        ph_receipt *r = &d->receipts[i]; if (strcmp(id, r->id)) continue;
+        ph_receipt *r = &d->receipts[i]; if (r->domain!=domain||strcmp(receipt_key,r->id)) continue;
         if (strcmp(action, r->action) || canonical_n != r->params_len || memcmp(canonical, r->params, canonical_n)) { code = "conflict"; goto response; }
         code = r->code; memcpy(data, r->data, r->data_len); data_n = r->data_len; goto response;
     }
     if(mutation && d->maintenance){code="busy";goto response;}
     phw_init_fixed(&w, PH_WIRE_MSGPACK, &b, data, mutation ? sizeof(d->receipts[0].data) : sizeof(data)); phw_begin(&w, NULL, false);
-    code = execute(d, action, &params, &w, admin); phw_end(&w); data_n = phw_finish_fixed(&w);
+    code = execute(d, action, params, &w, admin,control); phw_end(&w); data_n = phw_finish_fixed(&w);
     if (!data_n) return 0;
     if(mutation&&!strcmp(code,"accepted"))d->status_size=0;
     if (mutation && strcmp(code, "busy") && strcmp(code, "unauthorized")) {
         ph_receipt *r = &d->receipts[d->next_receipt++ % 8];
-        strcpy(r->id, id); strcpy(r->action, action); memcpy(r->params, canonical, canonical_n); r->params_len = canonical_n;
+        strcpy(r->id,receipt_key);r->domain=domain;strcpy(r->action,action);memcpy(r->params,canonical,canonical_n);r->params_len=canonical_n;
         memcpy(r->data, data, data_n); r->data_len = data_n; r->code = code;
     }
 response:
-    phw_init_fixed(&w, output, &b, out, capacity); phw_begin(&w, NULL, false);
-    if (identifier(id)) phw_text(&w, "request_id", id);
-    phw_text(&w, "code", code); phw_text(&w, "message", code);
-    phw_begin(&w, "data", false);
-    if (data_n) phw_cached_fields(&w, data, data_n);
-    phw_end(&w);
-    phw_end(&w); return phw_finish_fixed(&w);
+    return command_response(id,code,data,data_n,output,out,capacity);
+}
+size_t ph_command(ph_device *d,const void *bytes,size_t n,ph_wire_format input,
+                  ph_wire_format output,bool authorized,bool admin,void *out,size_t capacity) {
+    ph_value root,params;char id[65]="",action[40]="";
+    if(!ph_binary_format(input)||!ph_binary_format(output)||capacity<PH_OUTPUT_MAX||n>PH_INPUT_MAX)return 0;
+    if(!phv_parse(input,bytes,n,&root)||root.kind!=PHV_MAP||
+       !phv_keys(&root,"|request_id||action||params|")||
+       (phv_get(&root,"request_id",&params)&&(!text_field(&root,"request_id",id,sizeof(id))||!identifier(id)))||
+       !text_field(&root,"action",action,sizeof(action))||!phv_get(&root,"params",&params)||params.kind!=PHV_MAP)
+        return command_response(id,"invalid_params",NULL,0,output,out,capacity);
+    return command_parsed(d,action,&params,id,id,0,output,authorized,admin,false,out,capacity);
+}
+size_t ph_command_context(ph_device *d,const char *action,const ph_value *params,
+                          const char *id,const char *receipt_key,const ph_auth_context *context,
+                          ph_wire_format output,void *out,size_t capacity,bool *admitted) {
+    static const char *const allowed[]={"status.get","info.get","capabilities.get","diagnostics.get",
+                                       "power.get","outlet.set","indicator.set","child_lock.set"};
+    if(admitted)*admitted=false;
+    if(!d||!admitted||!action||!params||!id||!receipt_key||!out||
+       !ph_binary_format(output)||capacity<PH_OUTPUT_MAX)return 0;
+    if(!context||(context->source!=PH_AUTH_UDP_PAIR&&context->source!=PH_AUTH_UDP_MQTT))return 0;
+    bool control=ph_auth_context_valid(context,PH_AUTH_SCOPE_CONTROL);
+    if(!control&&!ph_auth_context_valid(context,PH_AUTH_SCOPE_SENSOR))return 0;
+    *admitted=true;
+    if(strlen(id)>64||!identifier(id)||strlen(action)>=sizeof(d->receipts[0].action)||
+       strlen(receipt_key)!=64||!identifier(receipt_key)||params->kind!=PHV_MAP)
+        return command_response(id,"invalid_params",NULL,0,output,out,capacity);
+    bool supported=false;for(unsigned i=0;i<sizeof(allowed)/sizeof(*allowed);++i)if(!strcmp(action,allowed[i]))supported=true;
+    if(!supported)return command_response(id,"unsupported",NULL,0,output,out,capacity);
+    size_t length=strlen(action);
+    if(!control&&(length<4||strcmp(action+length-4,".get")))
+        return command_response(id,"unauthorized",NULL,0,output,out,capacity);
+    return command_parsed(d,action,params,id,receipt_key,1,output,true,false,control,out,capacity);
 }
 bool ph_local_toggle(ph_device *d) {
     if (d->settings.child_lock || d->maintenance) return false;
