@@ -25,10 +25,3 @@ static inline void ph_mw_uint(ph_mqtt_wire *w,const char *key,uint32_t n) {
 static inline void ph_mw_bool(ph_mqtt_wire *w,const char *key,bool value) {
     ph_mw_text(w,key);unsigned char b=value?0xc3:0xc2;ph_mw_bytes(w,&b,1);
 }
-static inline size_t ph_mqtt_announcement_wire(const char *model,void *bytes,size_t capacity) {
-    ph_mqtt_wire w={bytes,capacity,0,false};ph_mw_head(&w,5,7);
-    ph_mw_uint(&w,"schema",1);ph_mw_string(&w,"model",model);ph_mw_string(&w,"protocol","openiot");ph_mw_string(&w,"command_protocol","tmcp");
-    ph_mw_uint(&w,"protocol_version",2);ph_mw_string(&w,"version","v2");
-    ph_mw_text(&w,"wire_formats");ph_mw_head(&w,4,2);ph_mw_text(&w,"msgpack");ph_mw_text(&w,"cbor");
-    return w.failed?0:w.used;
-}

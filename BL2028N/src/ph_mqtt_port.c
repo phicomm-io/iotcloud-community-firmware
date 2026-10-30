@@ -79,7 +79,7 @@ static int prepare(void *unused,ph_mqtt_connection *spec) {
  bl_unlock();
  mqtt_identity(&account,"",client_id,sizeof(client_id));mqtt_leaf(&account,"availability",availability,sizeof(availability));
  mqtt_leaf(&account,"command",command_topic,sizeof(command_topic));mqtt_leaf(&account,"ha/set",ha_topic,sizeof(ha_topic));
- *spec=(ph_mqtt_connection){&account,host,user,password,client_id,availability,port,3000,NULL};return PH_MQTT_PREPARE_READY;
+ *spec=(ph_mqtt_connection){&account,host,user,password,client_id,availability,port,3000,NULL,bl_device.version,"full"};return PH_MQTT_PREPARE_READY;
 }
 static bool subscription(void *unused,unsigned i,ph_mqtt_subscription *s) {
  (void)unused;

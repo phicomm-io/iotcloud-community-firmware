@@ -1,11 +1,11 @@
 {
   "lab": {
-    "head": "d68cd83d0d70c5e5e37a61fb397bf145fa213c37",
+    "head": "ffb5e54b93698cba5324b90ca7643b27a761852e",
     "dirty": false,
     "scope": "listed upstream source paths"
   },
   "frontend": {
-    "head": "5ba16da4681850b3206ab8efa90e3fd903392816",
+    "head": "7c6f9a9bacfb62cd5e54740f7e0d8087b8ffef5b",
     "dirty": false,
     "scope": "listed upstream source paths"
   },
@@ -54,12 +54,12 @@
     "protocol/mqtt/session.c": {
       "source": "common/mqtt/session.c",
       "upstream_sha256": "a201c35faee1ba34cff36c65da31a1bd193254bf59953d84eef9251fdaddd056",
-      "sha256": "a4c22c4ca76bda7a238a4dd247122cef0788247575bbfcf65b6dd9fd2d916c43"
+      "sha256": "282122d3b9e873a7a4acfa03653bb3716faf1df10b542bc45d85ad4ee53e0c24"
     },
     "protocol/mqtt/session.h": {
       "source": "common/mqtt/session.h",
       "upstream_sha256": "645a7a2eee2df82379d21574b661535963c67afe5bcba477784200f21d1cf3dc",
-      "sha256": "da6859fe7605015ea4bbf50884501b3b46540dfb5616c43736b97c709fcf67ae"
+      "sha256": "645a7a2eee2df82379d21574b661535963c67afe5bcba477784200f21d1cf3dc"
     },
     "protocol/mqtt/owner.h": {
       "source": "common/mqtt/owner.h",
@@ -74,7 +74,7 @@
     "protocol/mqtt/wire.h": {
       "source": "common/mqtt/wire.h",
       "upstream_sha256": "8fb862e4d67b63827166e7ada956014624481f2f4f72513f74d8905359159dba",
-      "sha256": "ec0a6f1aef1c5aa8f6503d9bd427007c92b65583da799aa543711d538754699a",
+      "sha256": "f3a979f508aceb396dd6d3c9ada048fa86aa464c97852044741336743aeb19cd",
       "historical_source_snapshot_sha256": "d646deb4bed3c14cd219f467b005f88214a0f6b8857049f51fada8520b3bcd9e"
     },
     "protocol/mqtt/diagnostics.c": {
@@ -228,7 +228,7 @@
     },
     "web/shared/i18n.js": {
       "source": "frontend/common/web/i18n.js",
-      "upstream_sha256": "911236b559d901fe39ef90d59ec18083dbd6c189a69fff807627c4cf2e4d875c",
+      "upstream_sha256": "ac7ca882f549824fca1471470904e6def4860bb7b8890c262f9be5e73dd39da9",
       "sha256": "ac7ca882f549824fca1471470904e6def4860bb7b8890c262f9be5e73dd39da9"
     },
     "web/shared/service.js": {
@@ -238,7 +238,7 @@
     },
     "web/shared/ui.js": {
       "source": "frontend/common/web/ui.js",
-      "upstream_sha256": "ffeeea6acd0c25587fe63aadcc12b02a16d7e333cdfc72407fecceb4100ad0a7",
+      "upstream_sha256": "f3875cc24c90a04ce40e4b2aa42b264a4806dbd67e9ce22cd8784d561b746d63",
       "sha256": "f3875cc24c90a04ce40e4b2aa42b264a4806dbd67e9ce22cd8784d561b746d63"
     },
     "web/shared/provision.js": {
@@ -308,13 +308,13 @@
       "sha256": "ce7e7c808b4c6ebd3246c9c8e727e9045313f4ee22afcada7a1059b420d4eac7"
     },
     "web/index.html": {
-      "source": "frontend/TC1/http_server/web/index.html",
-      "upstream_sha256": "73c79511f959a3b6b33f2eb76e48c574e32118d37d0073564ba05334e7cb3865",
-      "sha256": "2ebf62f027f449bdcc91a189d0969dd0da068cbb834a9cc92ef97fe5b81944b6"
+      "source": "frontend/S30/web/index.html",
+      "upstream_sha256": "a016267aafd5f03bb6435cbb316b28e6a1d69d39c3dbccdb1af1fd5cd8b3b14c",
+      "sha256": "a016267aafd5f03bb6435cbb316b28e6a1d69d39c3dbccdb1af1fd5cd8b3b14c"
     },
     "web/page.js": {
-      "source": "frontend/TC1/http_server/web/page.js",
-      "upstream_sha256": "fb3e7d5870fb5a0ab86d540815037eb0eb9d86535895d69845ba02726b9f3e8a",
+      "source": "frontend/S30/web/page.js",
+      "upstream_sha256": "8635af36b2b3b5800e8ab20e809d5ef5efa108ff1f65d0b660f5eccca3c87cec",
       "sha256": "8635af36b2b3b5800e8ab20e809d5ef5efa108ff1f65d0b660f5eccca3c87cec"
     },
     "protocol/udp/packet.h": {
@@ -334,6 +334,11 @@
       "source": "frontend/common/web/diagnostics-schema.js",
       "upstream_sha256": "89c47f5cbe3dbc9e1f4216e239be44b40f18b23dc1448f649ca5a191d14d24c1",
       "sha256": "89c47f5cbe3dbc9e1f4216e239be44b40f18b23dc1448f649ca5a191d14d24c1"
+    },
+    "protocol/mqtt/discovery_mp.h": {
+      "source": "common/mqtt/discovery_mp.h",
+      "upstream_sha256": "85a968ce242d9f4f9e9f030895a23d58943437d59e9bdebc8da853ced279a83c",
+      "sha256": "da8163ba45fa3d0f0a98e43faa90a426c44ead550ba0125e5699f5d9ee9a9c5e"
     }
   },
   "paho_patch_stack": {
@@ -348,13 +353,13 @@
     "common/mqtt-post-send-workspace.patch": "80b459e721c3f88a021579fde6df5a566a9c358dc68d97bb5d08cc49fc7c1870"
   },
   "adaptation_patch_sha256": {
-    "protocol/lab-openbeken.patch": "0f39bcfd6fa5f950f7c5a40865addefca75fea21cd4ccf7e239fd267be02d6e2",
-    "web/frontend-openbeken.patch": "abb851225e0a7742507ffbb19e3ce99b0e51b365754be930d242d302c64e9937"
+    "protocol/lab-openbeken.patch": "4027fcd650c11fc64e0f08a9ccbc49ef62345f2d2b72d83ac910b03ef5a31ad9",
+    "web/frontend-openbeken.patch": "95449ee17d4538deda6bb72717e4a5f88272060d32f3d2fdd0bacc796796f426"
   },
   "source_snapshot": {
-    "file": "shared-source-snapshot.tar.gz",
-    "sha256": "4531fc0b6f058b14643166d0cc672b1547d9c6aeafb9a15ba14e965b5a263d2e",
-    "entries": 67
+    "file": "shared-source-snapshot-7c6f9a9.tar.gz",
+    "sha256": "94662121b95e556f0764e709d292e4b71bbf977619b697ae9548e27760974140",
+    "entries": 68
   },
   "auth_bundle_sources": {
     "tools/bundle_auth.cjs": "82a8655edca9459b60668e089c495c1bb1ebcbded01e84e06867bbadb215e79e",

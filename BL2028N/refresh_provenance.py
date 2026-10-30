@@ -35,6 +35,9 @@ def main():
     manifest['files'].pop('web/shared/wire.js', None)
     manifest.pop('wire_bundle_sha256', None)
     manifest['files']['protocol/diagnostics_ids.h'] = {'source': 'common/diagnostics_ids.h'}
+    manifest['files']['protocol/mqtt/discovery_mp.h'] = {'source': 'common/mqtt/discovery_mp.h'}
+    manifest['files']['web/index.html'] = {'source': 'frontend/S30/web/index.html'}
+    manifest['files']['web/page.js'] = {'source': 'frontend/S30/web/page.js'}
     manifest['files']['web/shared/diagnostics-schema.js'] = {'source': 'frontend/common/web/diagnostics-schema.js'}
     patches = {'protocol': [], 'web': []}
     snapshot = {}
@@ -75,7 +78,7 @@ def main():
         raw = (FIRMWARE / rel).read_bytes()
         snapshot['lab/' + rel] = raw
         manifest['paho_patch_stack'][rel] = digest(raw)
-    for key, root, paths in [('lab', FIRMWARE, current_paths), ('frontend', frontend, ['common/web', *auth_sources])]:
+    for key, root, paths in [('lab', FIRMWARE, current_paths), ('frontend', frontend, ['common/web', 'S30/web', *auth_sources])]:
         # Only adaptation files may be dirty, never the pinned upstream inputs.
         if subprocess.run(['git', 'diff', '--quiet', 'HEAD', '--', *paths], cwd=root).returncode:
             raise SystemExit('Commit shared inputs before pinning: ' + key)

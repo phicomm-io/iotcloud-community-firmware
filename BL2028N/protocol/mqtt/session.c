@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "../../src/os.h"
 #include "session.h"
-#include "wire.h"
+#include "discovery_mp.h"
 #include <string.h>
 static void event(const ph_mqtt_session_hooks *h, unsigned state, int rc) {
     if (h->event)
@@ -75,13 +75,14 @@ static __attribute__((noinline)) int publish_wait(Client *client, const char *to
     }
 }
 
-static int announce(Client *client, const mqtt_account_t *account, const ph_mqtt_session_hooks *h) {
+static int announce(Client *client, const ph_mqtt_connection *spec, const ph_mqtt_session_hooks *h) {
+    const mqtt_account_t *account=spec->account;
     if (!account->mode)
         return MQTT_SUCCESS;
     char topic[MQTT_TOPIC_MAX];
     if (!mqtt_aux(account, "discovery", account->mac, topic, sizeof(topic)))
         return MQTT_FAILURE;
-    unsigned char bytes[192];size_t length=ph_mqtt_announcement_wire(account->model,bytes,sizeof(bytes));
+    unsigned char bytes[512];size_t length=ph_mqtt_discovery_mp(account,spec->firmware_version,spec->variant,bytes,sizeof(bytes));
     if(!length)return MQTT_FAILURE;
     for (;;) {
         if(h && !session_valid(h))return PH_MQTT_RECONFIGURE;
@@ -126,7 +127,7 @@ void ph_mqtt_session_run(Client *client, const ph_mqtt_session_hooks *h) {
         if (!connected)
             event(h, PH_MQTT_CONNECT_ERROR, rc);
         if (rc == MQTT_SUCCESS)
-            rc = announce(client, spec.account, h);
+            rc = announce(client, &spec, h);
         if (rc == MQTT_SUCCESS) {
             rc = subscribe_plan(client, h);
             if (rc != MQTT_SUCCESS)
@@ -260,13 +261,18 @@ int ph_mqtt_cleanup(Client *client, const mqtt_account_t *account, const char *h
     char id[192], topic[MQTT_TOPIC_MAX];
     if (!mqtt_identity(account, "", id, sizeof(id)) || !mqtt_leaf(account, "availability", topic, sizeof(topic)))
         return MQTT_FAILURE;
-    ph_mqtt_connection spec = {account, host, user, password, id, topic, port, 5000, NULL};
+    ph_mqtt_connection spec = {account, host, user, password, id, topic, port, 5000, NULL, NULL, NULL};
     Network network = {0};
     network.my_socket = -1;
     memset(client, 0, sizeof(*client));
     int rc = open_session(client, &network, &spec);
     if (rc == MQTT_SUCCESS) {
-        rc = announce(client, account, NULL);
+        /* Remove the old retained identity rather than announce stale firmware. */
+        char discovery[MQTT_TOPIC_MAX];
+        rc = MQTT_SUCCESS;
+        if(account->mode)
+            rc=mqtt_aux(account,"discovery",account->mac,discovery,sizeof(discovery)) ?
+                publish_text(client,discovery,"") : MQTT_FAILURE;
         if (rc == MQTT_SUCCESS)
             rc = cleanup();
         if (publish_text(client, topic, "offline") != MQTT_SUCCESS)

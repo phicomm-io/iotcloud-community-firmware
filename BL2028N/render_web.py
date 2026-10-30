@@ -8,6 +8,8 @@ WEB = Path(__file__).resolve().parent / 'web'
 
 def render():
     text = (WEB / 'index.html').read_text()
+    # Match the common renderer, which installs appearance before first paint.
+    text = text.replace('</head>', '<script>/* @include appearance.js */</script></head>', 1)
     provenance = json.loads((WEB / 'shared/provenance.json').read_text())
     for name, expected in provenance['sha256'].items():
         data = (WEB / 'shared' / name).read_bytes()

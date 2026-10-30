@@ -716,16 +716,13 @@
 +int ph_mqtt_receipt_send_bytes(const mqtt_target_t *,const void *,size_t,void *,void(*)(void *));
 --- a/protocol/mqtt/session.c
 +++ b/protocol/mqtt/session.c
-@@ -1,7 +1,7 @@
+@@ -1,5 +1,5 @@
  /* SPDX-License-Identifier: GPL-3.0-or-later */
 -#include "mico.h"
 +#include "../../src/os.h"
  #include "session.h"
--#include "discovery_mp.h"
-+#include "wire.h"
+ #include "discovery_mp.h"
  #include <string.h>
- static void event(const ph_mqtt_session_hooks *h, unsigned state, int rc) {
-     if (h->event)
 @@ -25,8 +25,8 @@
      ph_mqtt_session_begin();
      memset(network, 0, sizeof(*network));
@@ -737,7 +734,7 @@
      if (rc != MQTT_SUCCESS) {
          ph_mqtt_error(PH_MQTT_ERROR_NETWORK, rc);
          return rc;
-@@ -63,34 +63,36 @@
+@@ -63,34 +63,37 @@
  
  /* Bootstrap text has stable borrowed bytes. Keep it pending across preflight
   * refusal and service bounded protocol slices; never announce READY early. */
@@ -754,11 +751,12 @@
          rc = ph_mqtt_yield(client, 10);
          if (rc != MQTT_SUCCESS) return rc;
 -        mico_thread_msleep(10);
--    }
--}
--
--static int announce(Client *client, const ph_mqtt_connection *spec, const ph_mqtt_session_hooks *h) {
--    const mqtt_account_t *account=spec->account;
++        ph_os_sleep(10);
+     }
+ }
+ 
+ static int announce(Client *client, const ph_mqtt_connection *spec, const ph_mqtt_session_hooks *h) {
+     const mqtt_account_t *account=spec->account;
 -    if (!account->mode) return MQTT_SUCCESS;
 -    char topic[MQTT_TOPIC_MAX];unsigned char bytes[512];
 -    if (!mqtt_aux(account,"discovery",account->mac,topic,sizeof(topic))) return MQTT_FAILURE;
@@ -771,17 +769,12 @@
 -}
 -
 -static __attribute__((noinline)) int subscribe_plan(Client *client, const ph_mqtt_session_hooks *h) {
-+        ph_os_sleep(10);
-+    }
-+}
-+
-+static int announce(Client *client, const mqtt_account_t *account, const ph_mqtt_session_hooks *h) {
 +    if (!account->mode)
 +        return MQTT_SUCCESS;
 +    char topic[MQTT_TOPIC_MAX];
 +    if (!mqtt_aux(account, "discovery", account->mac, topic, sizeof(topic)))
 +        return MQTT_FAILURE;
-+    unsigned char bytes[192];size_t length=ph_mqtt_announcement_wire(account->model,bytes,sizeof(bytes));
++    unsigned char bytes[512];size_t length=ph_mqtt_discovery_mp(account,spec->firmware_version,spec->variant,bytes,sizeof(bytes));
 +    if(!length)return MQTT_FAILURE;
 +    for (;;) {
 +        if(h && !session_valid(h))return PH_MQTT_RECONFIGURE;
@@ -796,7 +789,7 @@
      ph_mqtt_subscription subscription;
      for (unsigned i = 0; h->subscription(h->context, i, &subscription); i++) {
          if (i >= MAX_MESSAGE_HANDLERS)
-@@ -112,7 +114,7 @@
+@@ -112,7 +115,7 @@
          if (ready == PH_MQTT_PREPARE_STOP)
              break;
          if (ready != PH_MQTT_PREPARE_READY) {
@@ -805,16 +798,7 @@
              continue;
          }
          Network network = {0};
-@@ -124,7 +126,7 @@
-         if (!connected)
-             event(h, PH_MQTT_CONNECT_ERROR, rc);
-         if (rc == MQTT_SUCCESS)
--            rc = announce(client, &spec, h);
-+            rc = announce(client, spec.account, h);
-         if (rc == MQTT_SUCCESS) {
-             rc = subscribe_plan(client, h);
-             if (rc != MQTT_SUCCESS)
-@@ -141,6 +143,7 @@
+@@ -141,6 +144,7 @@
           * Publish it once only after CONNECT, subscriptions and initial setup
           * succeed; a failed publication must prevent a false READY state. */
          bool online = false;
@@ -822,7 +806,7 @@
          if (rc == MQTT_SUCCESS && !session_valid(h))
              rc = PH_MQTT_RECONFIGURE;
          if (rc == MQTT_SUCCESS && (!h->initial_ready || h->initial_ready(h->context))) {
-@@ -149,6 +152,7 @@
+@@ -149,6 +153,7 @@
                  rc = PH_MQTT_RECONFIGURE;
              if (rc == MQTT_SUCCESS) {
                  online = true;
@@ -830,7 +814,7 @@
                  attempt = 0;
                  event(h, PH_MQTT_READY, 0);
              }
-@@ -195,15 +199,21 @@
+@@ -195,15 +200,21 @@
                      break;
                  else {
                      online = true;
@@ -857,7 +841,7 @@
              /* Keep both poll budgets and the product turn on every round.
               * A short positive protocol slice still reads/maintains keepalive;
               * idle owners retain their original pacing. No drain-until-empty. */
-@@ -223,7 +233,7 @@
+@@ -223,7 +234,7 @@
              ph_mqtt_resource_round_end(rc == MQTT_SUCCESS);
              bool active = rc == MQTT_SUCCESS &&
                  (unfinished || (h->initial_ready && !h->initial_ready(h->context)));
@@ -866,7 +850,7 @@
          }
          /* Result send was completed by poll before a rename is noticed here.
           * Clear callbacks queued for this old session before model cleanup. */
-@@ -239,7 +249,7 @@
+@@ -239,7 +250,7 @@
          event(h, PH_MQTT_STOPPED, rc);
          if (!h->stop || !h->stop(h->context)) {
              ph_mqtt_reconnect();
@@ -875,37 +859,15 @@
          }
      }
  }
-@@ -250,18 +260,13 @@
-     char id[192], topic[MQTT_TOPIC_MAX];
-     if (!mqtt_identity(account, "", id, sizeof(id)) || !mqtt_leaf(account, "availability", topic, sizeof(topic)))
-         return MQTT_FAILURE;
--    ph_mqtt_connection spec = {account, host, user, password, id, topic, port, 5000, NULL, NULL, NULL};
-+    ph_mqtt_connection spec = {account, host, user, password, id, topic, port, 5000, NULL};
-     Network network = {0};
-     network.my_socket = -1;
+@@ -256,7 +267,7 @@
      memset(client, 0, sizeof(*client));
      int rc = open_session(client, &network, &spec);
      if (rc == MQTT_SUCCESS) {
 -        /* Withdraw only our old retained discovery, never advertise stale identity. */
--        char discovery[MQTT_TOPIC_MAX];
--        rc = MQTT_SUCCESS;
--        if(account->mode)
--            rc=mqtt_aux(account,"discovery",account->mac,discovery,sizeof(discovery)) ?
--                publish_text(client,discovery,"") : MQTT_FAILURE;
-+        rc = announce(client, account, NULL);
-         if (rc == MQTT_SUCCESS)
-             rc = cleanup();
-         if (publish_text(client, topic, "offline") != MQTT_SUCCESS)
---- a/protocol/mqtt/session.h
-+++ b/protocol/mqtt/session.h
-@@ -9,7 +9,6 @@
-     const char *host, *user, *password, *client_id, *availability;
-     unsigned port, command_timeout_ms;
-     int(*read)(Network *, unsigned char *, int, int);
--    const char *firmware_version, *variant;
- }
- 
- ph_mqtt_connection;
++        /* Remove the old retained identity rather than announce stale firmware. */
+         char discovery[MQTT_TOPIC_MAX];
+         rc = MQTT_SUCCESS;
+         if(account->mode)
 --- a/protocol/mqtt/owner.h
 +++ b/protocol/mqtt/owner.h
 @@ -1,7 +1,7 @@
@@ -928,19 +890,17 @@
      PH_MQTT_ERROR_APP_DISCOVERY_GRAPH, PH_MQTT_ERROR_APP_DISCOVERY_IDENTITY,
 --- a/protocol/mqtt/wire.h
 +++ b/protocol/mqtt/wire.h
-@@ -26,9 +26,9 @@
+@@ -25,10 +25,3 @@
+ static inline void ph_mw_bool(ph_mqtt_wire *w,const char *key,bool value) {
      ph_mw_text(w,key);unsigned char b=value?0xc3:0xc2;ph_mw_bytes(w,&b,1);
  }
- static inline size_t ph_mqtt_announcement_wire(const char *model,void *bytes,size_t capacity) {
+-static inline size_t ph_mqtt_announcement_wire(const char *model,void *bytes,size_t capacity) {
 -    ph_mqtt_wire w={bytes,capacity,0,false};ph_mw_head(&w,5,6);
 -    ph_mw_uint(&w,"schema",1);ph_mw_string(&w,"model",model);ph_mw_string(&w,"protocol","tmcp");
-+    ph_mqtt_wire w={bytes,capacity,0,false};ph_mw_head(&w,5,7);
-+    ph_mw_uint(&w,"schema",1);ph_mw_string(&w,"model",model);ph_mw_string(&w,"protocol","openiot");ph_mw_string(&w,"command_protocol","tmcp");
-     ph_mw_uint(&w,"protocol_version",2);ph_mw_string(&w,"version","v2");
+-    ph_mw_uint(&w,"protocol_version",2);ph_mw_string(&w,"version","v2");
 -    ph_mw_text(&w,"wire_formats");ph_mw_head(&w,4,3);ph_mw_text(&w,"json");ph_mw_text(&w,"msgpack");ph_mw_text(&w,"cbor");
-+    ph_mw_text(&w,"wire_formats");ph_mw_head(&w,4,2);ph_mw_text(&w,"msgpack");ph_mw_text(&w,"cbor");
-     return w.failed?0:w.used;
- }
+-    return w.failed?0:w.used;
+-}
 --- a/protocol/mqtt/diagnostics.c
 +++ b/protocol/mqtt/diagnostics.c
 @@ -1,48 +1,26 @@
@@ -8979,3 +8939,20 @@
   ph_value v=fv_get(o,key);if(v.kind==PHV_TRUE)return true;int64_t n=0;return phv_int(&v,&n)&&n!=0;
  }
  static bool packet_parse(ph_value o,feature_packet_t *p){
+--- a/protocol/mqtt/discovery_mp.h
++++ b/protocol/mqtt/discovery_mp.h
+@@ -6,12 +6,12 @@
+ static inline size_t ph_mqtt_discovery_mp(const mqtt_account_t *a,const char *version,
+                                         const char *variant,void *bytes,size_t capacity)
+ {
+-    ph_writer w;ph_buf buffer;
++    ph_writer w;struct printbuf buffer;
+     if(!a||!version||!variant||!phw_init_fixed(&w,PH_WIRE_MSGPACK,&buffer,bytes,capacity))return 0;
+     phw_begin(&w,NULL,false);
+     phw_int(&w,"schema",2);phw_text(&w,"model",a->model);
+     phw_text(&w,"device_id",a->mac);phw_text(&w,"variant",variant);
+-    phw_text(&w,"firmware_version",version);phw_text(&w,"protocol","tmcp");
++    phw_text(&w,"firmware_version",version);phw_text(&w,"protocol","openiot");phw_text(&w,"command_protocol","tmcp");
+     phw_int(&w,"protocol_version",2);phw_text(&w,"version","v2");
+     phw_int(&w,"wire_version",1);phw_begin(&w,"wire_formats",true);
+     phw_text(&w,NULL,"msgpack");phw_end(&w);phw_text(&w,"default_wire_format","msgpack");
