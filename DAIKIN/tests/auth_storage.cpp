@@ -7,6 +7,7 @@
 #include <cassert>
 #include <cstring>
 #include <cstdio>
+#include "host_strings.h"
 struct String:std::string {using std::string::string;String(const std::string&s):std::string(s){}bool reserve(size_t n){std::string::reserve(n);return true;}bool concat(const char*p,size_t n){append(p,n);return true;}size_t write(uint8_t c){push_back(char(c));return 1;}size_t write(const uint8_t*p,size_t n){append(reinterpret_cast<const char*>(p),n);return n;}};
 namespace ArduinoJson {template<>struct Converter<String>{static void toJson(const String&s,JsonVariant v){v.set(static_cast<const std::string&>(s));}};}
 static const size_t configCapacity=16384;static DynamicJsonDocument config(configCapacity);static bool configRecovery=false,localAuthReady=false;static ph_auth_state localAuth;static ph_auth_store loadedAuthStore;static char webPassword[33]={};

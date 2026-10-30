@@ -1,6 +1,7 @@
 """Actual DAIKIN token handlers with real MessagePack parsing on the host."""
 from pathlib import Path
 import subprocess,tempfile,unittest
+from DAIKIN.tests.arduinojson import codec_source
 ROOT=Path(__file__).resolve().parents[1]
 class Auth(unittest.TestCase):
  def test_sessions(self):
@@ -70,5 +71,5 @@ int main(){
    objects=[]
    for name in ('local_auth','typed_wire','wire_buffer'):
     obj=temp/(name+'.o');subprocess.run(['cc','-fsanitize=address,undefined','-fno-pie','-c',str(ROOT.parent/'common'/f'{name}.c'),'-o',str(obj)],check=True);objects.append(str(obj))
-   subprocess.run(['c++','-std=c++11','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-fno-pie','-no-pie','-I'+str(temp),'-I'+str(ROOT.parent/'common'),'-I'+str(ROOT/'include'),'-I'+str(ROOT/'.pio/libdeps/bry88ab-hub/ArduinoJson/src'),str(temp/'test.cpp'),*objects,'-o',str(temp/'test')],check=True)
+   subprocess.run(['c++','-std=c++11','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-fno-pie','-no-pie','-I'+str(temp),'-I'+str(ROOT.parent/'common'),'-I'+str(ROOT/'include'),'-I'+str(codec_source()),str(temp/'test.cpp'),*objects,'-o',str(temp/'test')],check=True)
    subprocess.run([str(temp/'test')],check=True)

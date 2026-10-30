@@ -7,6 +7,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include "../host_strings.h"
 
 struct String:std::string {using std::string::string;String(const std::string&s):std::string(s){}bool reserve(size_t n){std::string::reserve(n);return true;}bool concat(const char*p,size_t n){append(p,n);return true;}size_t write(uint8_t c){push_back(char(c));return 1;}size_t write(const uint8_t*p,size_t n){append(reinterpret_cast<const char*>(p),n);return n;}};
 extern "C" void esp_log_write(int, const char *, const char *, ...) {}

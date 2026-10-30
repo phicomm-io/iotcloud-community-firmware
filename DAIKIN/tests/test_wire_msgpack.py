@@ -3,6 +3,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from DAIKIN.tests.arduinojson import codec_source
 
 ROOT=Path(__file__).resolve().parents[1]
 class Wire(unittest.TestCase):
@@ -29,5 +30,5 @@ int main(){
  body.clear();serializeMsgPack(doc,body);wire.observe(topic,body);assert(wire.binary(base)); // invalid discovery cannot downgrade
 }
 ''')
-   subprocess.run(['c++','-std=c++11','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-fno-pie','-no-pie','-I'+str(ROOT/'include'),'-I'+str(ROOT/'.pio/libdeps/bry88ab-hub/ArduinoJson/src'),str(source),'-o',str(temp/'wire')],check=True)
+   subprocess.run(['c++','-std=c++11','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-fno-pie','-no-pie','-I'+str(ROOT/'include'),'-I'+str(codec_source()),str(source),'-o',str(temp/'wire')],check=True)
    subprocess.run([str(temp/'wire')],check=True)
