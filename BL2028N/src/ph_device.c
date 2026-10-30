@@ -8,7 +8,9 @@
 bool ph_binary_format(ph_wire_format f) { return f == PH_WIRE_MSGPACK || f == PH_WIRE_CBOR; }
 void ph_settings_default(ph_settings *s) {
     memset(s, 0, sizeof(*s)); s->magic = PH_STORE_MAGIC; s->indicator = 1; s->report_seconds=30; strcpy(s->name,"S30-V1B"); strcpy(s->socket_name,"S30-V1B");
-    s->coefficients[0]=1.88;s->coefficients[1]=1;s->coefficients[2]=1.88;
+    s->coefficients[0]=PH_METER_DEFAULT_VOLTAGE_COEFFICIENT;
+    s->coefficients[1]=PH_METER_DEFAULT_CURRENT_COEFFICIENT;
+    s->coefficients[2]=PH_METER_DEFAULT_POWER_COEFFICIENT;
     ph_auth_store_empty(&s->auth);
 }
 bool ph_settings_valid(const ph_settings *s) {
@@ -19,6 +21,16 @@ bool ph_settings_valid(const ph_settings *s) {
         isfinite(s->coefficients[0]) && s->coefficients[0]>=0.001 && s->coefficients[0]<=100 &&
         isfinite(s->coefficients[1]) && s->coefficients[1]>=0.001 && s->coefficients[1]<=100 &&
         isfinite(s->coefficients[2]) && s->coefficients[2]>=0.001 && s->coefficients[2]<=100 && ph_auth_store_valid(&s->auth);
+}
+bool ph_settings_migrate_meter_defaults(ph_settings *s) {
+    /* Only the exact, never-edited community defaults are eligible. Any
+     * explicit calibration, even one equal to the old defaults, wins. */
+    if (!ph_settings_valid(s) || s->calibrated || s->coefficients[0]!=1.88 ||
+        s->coefficients[1]!=1.0 || s->coefficients[2]!=1.88) return false;
+    s->coefficients[0]=PH_METER_DEFAULT_VOLTAGE_COEFFICIENT;
+    s->coefficients[1]=PH_METER_DEFAULT_CURRENT_COEFFICIENT;
+    s->coefficients[2]=PH_METER_DEFAULT_POWER_COEFFICIENT;
+    return true;
 }
 static bool mac_valid(const char *s) {
     if (!s || strlen(s) != 12) return false;

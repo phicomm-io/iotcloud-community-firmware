@@ -20,8 +20,8 @@ int main(int argc,char **argv){
  host_uart_feed(UART_PORT_INDEX_1,frame+11,13);PH_BL_Tick();
  assert(bl_device.meter.frames==1&&bl_device.meter.received_bytes==24&&!bl_device.meter.bad_frames);
  assert(ph_meter_fields(&bl_device.meter,rtos_get_time())==7);
- assert(fabs(bl_device.meter.value[0]-229.9992)<0.0001&&bl_device.meter.value[1]==1);
- assert(fabs(bl_device.meter.value[2]-229.9992)<0.0001);
+ assert(fabs(bl_device.meter.value[0]-231.74719392)<0.0001&&bl_device.meter.value[1]==1.0102);
+ assert(fabs(bl_device.meter.value[2]-231.0207498960506)<0.0001);
  assert(UART_GetDataSizeEx(UART_PORT_INDEX_1)==0&&UART_GetDataSizeEx(UART_PORT_INDEX_0)==24);
  puts("PASS: product tick receives fragmented HLW8032 frames from UART2, ignores programming UART1, and keeps SDK logs off the meter UART");
 }

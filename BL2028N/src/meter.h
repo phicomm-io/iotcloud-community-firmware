@@ -2,6 +2,11 @@
 #pragma once
 #include "../protocol/typed_wire.h"
 #define PH_METER_FRESH_MS 5000u
+/* S30-V1B stock 2M.1220 meter constants, not per-unit calibration.
+ * See research/stock-meter-coefficients.md for binary evidence. */
+#define PH_METER_DEFAULT_VOLTAGE_COEFFICIENT 1.894288
+#define PH_METER_DEFAULT_CURRENT_COEFFICIENT 1.0102
+#define PH_METER_DEFAULT_POWER_COEFFICIENT 1.88835008906368
 typedef struct {
     unsigned char buffer[24]; unsigned used, fields;
     uint32_t byte_at, field_at[3], frame_at, pulse_at, pulse;

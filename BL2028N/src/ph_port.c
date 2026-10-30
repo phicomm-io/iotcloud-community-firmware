@@ -130,7 +130,12 @@ static bool load(ph_settings *s) {
             s->energy_kwh=old.settings.energy_kwh;s->auth=old.settings.auth;ok=ph_settings_valid(s);
         }
     }
-    lfs_file_close(&lfs,&f);return ok;
+    lfs_file_close(&lfs,&f);
+    /* Normalize before safe-mode changes the in-memory relay policy. An
+     * atomic-save failure keeps the old record intact; use corrected defaults
+     * for this boot and retry next boot, without discarding any settings. */
+    if(ok && ph_settings_migrate_meter_defaults(s)) (void)save(NULL,s);
+    return ok;
 }
 static bool auth_save(void *unused, const ph_auth_store *store) {
     ph_settings next=bl_device.settings; next.auth=*store;next.energy_kwh=bl_device.meter.energy_kwh;
@@ -149,12 +154,12 @@ int PH_BL_PasswordChanged(void) {
 static void set_relay(void *unused, bool on) { (void)unused; HAL_PIN_SetOutputValue(RELAY_PIN,on?PH_RELAY_ACTIVE:!PH_RELAY_ACTIVE); }
 static void reboot(void *unused) { (void)unused; reboot_pending=true; reboot_at=now(NULL)+3000; }
 /* Caller holds the product mutex. Checkpoint without wearing flash per frame. */
-static void checkpoint(uint32_t t, bool force) {
-    if(!force && (uint32_t)(t-energy_saved_at)<300000)return;
-    energy_saved_at=t;
-    if(bl_device.settings.energy_kwh==bl_device.meter.energy_kwh)return;
+static bool checkpoint(uint32_t t, bool force) {
+    if(!force && (uint32_t)(t-energy_saved_at)<300000)return true;
+    if(bl_device.settings.energy_kwh==bl_device.meter.energy_kwh){energy_saved_at=t;return true;}
     ph_settings next=bl_device.settings;next.energy_kwh=bl_device.meter.energy_kwh;
-    if(save(NULL,&next))bl_device.settings=next;
+    if(!save(NULL,&next))return false;
+    bl_device.settings=next;energy_saved_at=t;return true;
 }
 static void network_info(void *unused, ph_writer *w) {
     (void)unused; phw_text(w,"ip",HAL_GetMyIPString()); phw_int(w,"rssi",HAL_GetWifiStrength());
@@ -246,6 +251,9 @@ static const char *platform_action(void *unused,const char *action,const ph_valu
  if(!strcmp(action,"ota.start")) {
   if(p->count!=1||!get_text(p,"url",a,sizeof(a))||strncmp(a,"http://",7)||strpbrk(a,"\r\n\t ")||strlen(a)<12)return "invalid_params";
   if(bl_ota_pending||OTA_GetProgress()>=0||reboot_pending||reset_requested||scan_state)return "busy";
+  /* The downloader reboots inside the SDK rather than our normal reboot
+   * path. Persist the latest energy before accepting and pausing services. */
+  if(!checkpoint(now(NULL),true))return "storage_error";
   strcpy(ota_url,a);ota_at=now(NULL)+1500;bl_ota_pending=true;ph_device_set_maintenance(&bl_device,true);ota_failed=false;return "accepted";
  }
  if(strcmp(action,"config.set"))return "unsupported";

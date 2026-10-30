@@ -49,6 +49,7 @@ typedef struct {
 bool ph_binary_format(ph_wire_format);
 void ph_settings_default(ph_settings *);
 bool ph_settings_valid(const ph_settings *);
+bool ph_settings_migrate_meter_defaults(ph_settings *);
 bool ph_device_init(ph_device *, const ph_device_ops *, const ph_settings *, const char *, const char *, uint32_t);
 /* Caller serializes state access; all views and output buffers are borrowed. */
 /* Release the optional cache before reinitializing or disposing an initialized device. */

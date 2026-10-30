@@ -158,10 +158,31 @@ class Core(unittest.TestCase):
                 self.assertIsNone(self.packet('command',{'request_id':'scope-on','action':'outlet.set','params':{'on':True}},token,id=4,f=f))
                 self.assertFalse(self.query()['power'])
     def test_calibration_and_persistence(self):
+        config=self.query('config.get')
+        self.assertEqual([config[k+'_coefficient'] for k in ('voltage','current','power')],
+                         [1.894288,1.0102,1.88835008906368])
         r=self.command('config.set',{'section':'meter','values':{'voltage_coefficient':2.0,'current_coefficient':0.5,'power_coefficient':1.0}})
         self.assertEqual(r['code'],'accepted');self.assertTrue(self.query()['metering']['calibrated'])
         self.mp('X');self.assertEqual(self.query('config.get')['current_coefficient'],0.5)
         self.assertEqual(self.command('config.set',{'section':'meter','values':{'current_coefficient':0}})['code'],'invalid_params')
+    def test_precise_coefficients_rescale_and_atomic_save(self):
+        before=self.meter()
+        values={'voltage_coefficient':1.894288,'current_coefficient':1.0102,'power_coefficient':1.88835008906368}
+        for i,f in enumerate((1,2)):
+            self.meter()
+            values['current_coefficient']=1.01023456789+i
+            result=self.command('config.set',{'section':'meter','values':values},rid=f'precise-{i}',i=f,o=f)
+            self.assertEqual(result['code'],'accepted')
+            self.assertAlmostEqual(self.query()['metering']['current'],values['current_coefficient'])
+            self.mp('X');config=self.query('config.get',f=f)
+            self.assertEqual({k:config[k] for k in values},values)
+        self.mp('F 1')
+        self.assertEqual(self.command('config.set',{'section':'meter','values':{'current_coefficient':3}},rid='failed-save')['code'],'storage_error')
+        self.assertEqual(self.query()['current_coefficient'],values['current_coefficient'])
+        self.mp('X');self.assertEqual(self.query()['current_coefficient'],values['current_coefficient'])
+        for i,value in enumerate((0,0.0009,100.001,float('nan'),float('inf'),-float('inf'),'1.01',True)):
+            self.assertEqual(self.command('config.set',{'section':'meter','values':{'voltage_coefficient':value}},rid=f'bad-{i}')['code'],'invalid_params')
+        self.assertTrue(before['valid'])
     @staticmethod
     def frame(state=0x55,flags=0x70,pulse=1,measures=(1000,1000,1000)):
         b=bytearray([state,0x5a])
@@ -170,7 +191,7 @@ class Core(unittest.TestCase):
         b.append(sum(b[2:])&255);return b
     def meter(self,**kw):return self.mp('M '+self.frame(**kw).hex())['metering']
     def test_meter_frames_checksum_freshness(self):
-        m=self.meter();self.assertTrue(m['valid']);self.assertAlmostEqual(m['voltage'],229.9992);self.assertEqual(m['current'],1)
+        m=self.meter();self.assertTrue(m['valid']);self.assertAlmostEqual(m['voltage'],231.74719392);self.assertEqual(m['current'],1.0102)
         self.assertNotIn('received_bytes',m)
         self.assertEqual(self.diagnostics()['metering.received_bytes'],24)
         self.assertFalse(m['calibrated']);self.assertEqual(m['energy_kwh'],0)
@@ -180,7 +201,7 @@ class Core(unittest.TestCase):
         m=self.meter(flags=0);self.assertFalse(m['valid'])
     def test_meter_energy_rollover_and_faults(self):
         self.meter(pulse=131071);self.mp('T 10050');m=self.meter(pulse=0)
-        self.assertAlmostEqual(m['energy_kwh'],122340*1.88/3.6e12)
+        self.assertAlmostEqual(m['energy_kwh'],122340*1.88835008906368/3.6e12)
         self.mp('T 10100');m=self.meter(pulse=50000);self.assertEqual(self.diagnostics()['metering.discontinuities'],1)
         saved=m['energy_kwh'];self.assertEqual(self.command('indicator.set',{'enabled':False})['code'],'accepted')
         self.mp('X');self.assertAlmostEqual(self.query()['metering']['energy_kwh'],saved)
