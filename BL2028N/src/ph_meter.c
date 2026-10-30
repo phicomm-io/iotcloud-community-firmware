@@ -38,6 +38,7 @@ static void frame(ph_meter *m, uint32_t t, const double c[3]) {
     m->pulse=pulses;m->pulse_at=t;m->pulse_ready=true;
 }
 bool ph_meter_byte(ph_meter *m, unsigned char b, uint32_t t, const double c[3]) {
+    ++m->received_bytes;
     if((uint32_t)(t-m->byte_at)>150)m->used=0;
     m->byte_at=t;m->buffer[m->used++]=b;
     if(m->used<24)return false;
@@ -58,6 +59,7 @@ void ph_meter_write(const ph_meter *m, ph_writer *w, uint32_t t, bool calibrated
     double apparent=m->value[0]*m->value[1];
     if((fields&3)==3)phw_number(w,"apparent_power",apparent);else phw_null(w,"apparent_power");
     if(fields==7 && apparent>0)phw_number(w,"power_factor",fmin(m->value[2]/apparent,1));else phw_null(w,"power_factor");
-    phw_number(w,"energy_kwh",m->energy_kwh);phw_u32(w,"frames",m->frames);phw_u32(w,"bad_frames",m->bad_frames);
+    phw_number(w,"energy_kwh",m->energy_kwh);phw_u32(w,"received_bytes",m->received_bytes);
+    phw_u32(w,"frames",m->frames);phw_u32(w,"bad_frames",m->bad_frames);
     phw_u32(w,"discontinuities",m->discontinuities);phw_end(w);
 }

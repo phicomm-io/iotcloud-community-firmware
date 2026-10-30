@@ -27,6 +27,10 @@ def main():
  host_flags=['-D_DEFAULT_SOURCE','-DPH_HOST_TEST','-DPH_HTTP_PORT=ph_host_http_port','-I',HERE,'-I',ROOT/'src','-I',run,'-Wno-unused-parameter','-Wno-missing-field-initializers','-Wno-unused-variable','-Wno-unused-function','-Wno-unused-but-set-variable','-Wno-parentheses-equality']
  command(flags+host_flags+[HERE/'migration.c',HERE/'platform_host.c']+core+['-lm','-lpthread','-o',run/'migration-test'],'migration-compiler.log')
  command([run/'migration-test',run/'migration-storage'],'migration.log')
+ command(flags+host_flags+[HERE/'meter_uart.c',HERE/'platform_host.c']+core+['-lm','-lpthread','-o',run/'meter-uart-test'],'meter-uart-compiler.log')
+ for safe in (0,1):
+  storage=run/f'meter-uart-storage-{safe}';shutil.rmtree(storage,ignore_errors=True)
+  command([run/'meter-uart-test',storage,safe],f'meter-uart-{safe}.log')
  command(flags+host_flags+sources+['-lm','-lpthread','-o',run/'network-tests'],'shared-compiler.log')
  shutil.rmtree(run/'host-storage',ignore_errors=True)
  command([sys.executable,HERE/'test_network.py',run/'network-tests',run],'network-tests.log')

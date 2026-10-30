@@ -10,6 +10,7 @@
 #include "../../littlefs/our_lfs.h"
 #include "../../driver/drv_uart.h"
 #include "rw_pub.h"
+extern void set_printf_port(unsigned char);
 #endif
 #include "port.h"
 #include "device.h"
@@ -47,6 +48,8 @@ extern void OTA_RequestDownloadFromHTTP(const char *);
 #define BLUE_PIN 7
 #define RED_PIN 8
 #define RELAY_PIN 9
+/* Stock S30-V1B receives HLW8032 frames on UART2 RX/P1. UART1 is VTX/VRX. */
+#define METER_UART_PORT UART_PORT_INDEX_1
 extern OSStatus BkRandomNumberRead(void *,int);
 ph_device bl_device;
 ph_auth_state bl_auth;
@@ -178,10 +181,10 @@ void PH_BL_Tick(void) {
     static ph_button button;
     uint32_t t=now(NULL); bool raw=HAL_PIN_ReadDigitalInput(BUTTON_PIN)==PH_BUTTON_ACTIVE;
     lock();
-    int count=UART_GetDataSizeEx(UART_PORT_INDEX_0);
+    int count=UART_GetDataSizeEx(METER_UART_PORT);
     if(count>128)count=128;
-    for(int i=0;i<count;++i)ph_meter_byte(&bl_device.meter,UART_GetByteEx(UART_PORT_INDEX_0,i),t,bl_device.settings.coefficients);
-    UART_ConsumeBytesEx(UART_PORT_INDEX_0,count);
+    for(int i=0;i<count;++i)ph_meter_byte(&bl_device.meter,UART_GetByteEx(METER_UART_PORT,i),t,bl_device.settings.coefficients);
+    UART_ConsumeBytesEx(METER_UART_PORT,count);
     ph_button_event event=ph_button_tick(&button,raw,t);
     if(event==PH_BUTTON_CLICK)ph_local_toggle(&bl_device);
     else if(event==PH_BUTTON_WIFI)reset_requested=1;
@@ -328,6 +331,9 @@ static void network_thread(beken_thread_arg_t arg) {
 }
 void PH_BL_Init(int safe_mode) {
  if(bl_ready)return;
+ /* SDK log-port numbers are one-based, unlike UART_PORT_INDEX_* enums.
+  * Release UART2 for the meter before configuring its baud/parity/callback. */
+ set_printf_port(1);
  PH_BOOT_RESULT("product-init",safe_mode);
  HAL_PIN_Setup_Output_Initial(RELAY_PIN,!PH_RELAY_ACTIVE);
  HAL_PIN_Setup_Output_Initial(RED_PIN,!PH_RED_ACTIVE);HAL_PIN_Setup_Output_Initial(BLUE_PIN,!PH_BLUE_ACTIVE);
@@ -354,11 +360,10 @@ void PH_BL_Init(int safe_mode) {
  ph_auth_ops ao={NULL,now,random_bytes,NULL,NULL,password,auth_save};
  if(!ph_auth_init(&bl_auth,&ao,&bl_device.settings.auth))return;
  PH_BOOT_STAGE("auth-ready");
- UART_InitReceiveRingBufferEx(UART_PORT_INDEX_0,512);
- PH_BOOT_RESULT("meter-buffer",UART_GetReceiveRingBufferSizeEx(UART_PORT_INDEX_0));
- if(UART_GetReceiveRingBufferSizeEx(UART_PORT_INDEX_0)!=512){set_relay(NULL,false);return;}
- /* Confirmed default UART1 RX/P10, HLW8032 4800 baud, even parity. */
- UART_InitUARTEx(UART_PORT_INDEX_0,4800,2,false);
+ UART_InitReceiveRingBufferEx(METER_UART_PORT,512);
+ PH_BOOT_RESULT("meter-buffer",UART_GetReceiveRingBufferSizeEx(METER_UART_PORT));
+ if(UART_GetReceiveRingBufferSizeEx(METER_UART_PORT)!=512){set_relay(NULL,false);return;}
+ UART_InitUARTEx(METER_UART_PORT,4800,2,false);
  PH_BOOT_STAGE("meter-uart-ready");
  bl_ready=true;
  result=rtos_create_thread(NULL,BEKEN_APPLICATION_PRIORITY,"openiot-lan",network_thread,16384,0);

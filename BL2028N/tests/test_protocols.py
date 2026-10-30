@@ -161,6 +161,7 @@ class Core(unittest.TestCase):
     def meter(self,**kw):return self.mp('M '+self.frame(**kw).hex())['metering']
     def test_meter_frames_checksum_freshness(self):
         m=self.meter();self.assertTrue(m['valid']);self.assertAlmostEqual(m['voltage'],229.9992);self.assertEqual(m['current'],1)
+        self.assertEqual(m['received_bytes'],24)
         self.assertFalse(m['calibrated']);self.assertEqual(m['energy_kwh'],0)
         bad=self.frame();bad[-1]^=1;m=self.mp('M '+bad.hex())['metering'];self.assertEqual(m['frames'],1)
         m=self.mp('M '+(b'noise'+self.frame(pulse=2)).hex())['metering'];self.assertEqual(m['frames'],2);self.assertGreater(m['bad_frames'],0)

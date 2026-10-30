@@ -13,6 +13,7 @@ typedef long lfs_soff_t;
 typedef struct {FILE *file;} lfs_file_t;
 enum {LFS_O_RDONLY=1,LFS_O_WRONLY=2,LFS_O_CREAT=4,LFS_O_TRUNC=8};
 #define UART_PORT_INDEX_0 0
+#define UART_PORT_INDEX_1 1
 extern lfs_t lfs;
 extern char store_dir[1024];
 extern int mqtt_port;
@@ -55,6 +56,8 @@ void CFG_SetMQTTUserName(const char *);
 void CFG_SetMQTTPass(const char *);
 void CFG_SetMQTTPort(int);
 void CFG_Save_IfThereArePendingChanges(void);
+void set_printf_port(unsigned char);
+void host_uart_feed(int,const unsigned char *,int);
 void UART_InitReceiveRingBufferEx(int,int);
 int UART_GetReceiveRingBufferSizeEx(int);
 int UART_InitUARTEx(int,int,int,bool);

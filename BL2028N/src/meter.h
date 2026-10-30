@@ -5,7 +5,7 @@
 typedef struct {
     unsigned char buffer[24]; unsigned used, fields;
     uint32_t byte_at, field_at[3], frame_at, pulse_at, pulse;
-    uint32_t frames, bad_frames, discontinuities;
+    uint32_t received_bytes, frames, bad_frames, discontinuities;
     bool pulse_ready;
     double raw[3], value[3], energy_kwh;
 } ph_meter;

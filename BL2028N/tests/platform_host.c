@@ -66,12 +66,16 @@ void CFG_SetMQTTUserName(const char *p){snprintf(mqtt_user,sizeof(mqtt_user),"%s
 void CFG_SetMQTTPass(const char *p){snprintf(mqtt_pass,sizeof(mqtt_pass),"%s",p);}
 void CFG_SetMQTTPort(int p){mqtt_port=p;}
 void CFG_Save_IfThereArePendingChanges(void){}
-void UART_InitReceiveRingBufferEx(int port,int n){(void)port;(void)n;}
-int UART_GetReceiveRingBufferSizeEx(int port){(void)port;return 512;}
-int UART_InitUARTEx(int port,int baud,int parity,bool flow){assert(port==0&&baud==4800&&parity==2&&!flow);return 0;}
-int UART_GetDataSizeEx(int port){(void)port;return 0;}
-unsigned char UART_GetByteEx(int port,int i){(void)port;(void)i;return 0;}
-void UART_ConsumeBytesEx(int port,int n){(void)port;(void)n;}
+static struct {unsigned char bytes[512];int used,capacity;} uart[2];
+static unsigned char printf_port=2;
+void set_printf_port(unsigned char port){assert(port==1);printf_port=port;}
+void host_uart_feed(int port,const unsigned char *p,int n){assert(port>=0&&port<2&&n>=0&&uart[port].used+n<=512);memcpy(uart[port].bytes+uart[port].used,p,(size_t)n);uart[port].used+=n;}
+void UART_InitReceiveRingBufferEx(int port,int n){assert(port>=0&&port<2&&n==512);uart[port].capacity=n;uart[port].used=0;}
+int UART_GetReceiveRingBufferSizeEx(int port){assert(port>=0&&port<2);return uart[port].capacity;}
+int UART_InitUARTEx(int port,int baud,int parity,bool flow){assert(printf_port==1&&port==1&&uart[port].capacity==512&&baud==4800&&parity==2&&!flow);return 0;}
+int UART_GetDataSizeEx(int port){assert(port>=0&&port<2);return uart[port].used;}
+unsigned char UART_GetByteEx(int port,int i){assert(port>=0&&port<2&&i>=0&&i<uart[port].used);return uart[port].bytes[i];}
+void UART_ConsumeBytesEx(int port,int n){assert(port>=0&&port<2&&n>=0&&n<=uart[port].used);uart[port].used-=n;memmove(uart[port].bytes,uart[port].bytes+n,(size_t)uart[port].used);}
 
 int PH_BL_MqttTlsEnabled(void){return 0;}
 int OTA_GetProgress(void){return -1;}

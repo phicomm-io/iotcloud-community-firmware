@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #pragma once
-/* Opt-in diagnostics on the existing programming TX/P11. RX/P10 keeps the
- * HLW8032's 4800 8E1 configuration. Ordinary builds keep the native UART2 log. */
+/* Opt-in diagnostics on programming TX/P11 (UART1), away from the meter's
+ * UART2 RX/P1. Product initialization also routes ordinary logs to UART1. */
 #if PH_BL_BOOT_TRACE && !defined(PH_HOST_TEST)
 #include "../../../beken378/func/user_driver/BkDriverUart.h"
 #include "task.h"
