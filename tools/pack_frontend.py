@@ -19,11 +19,14 @@ def adapt_http_queue(data, model):
         raise ValueError('Locked frontend has no unique head insertion point')
     # Serialize API requests through body completion. Keep explanatory comments
     # here: every byte in the injected adapter consumes device OTA capacity.
-    adapter = (ROOT / 'common/web/http_queue.js').read_bytes()
-    html = html.replace(marker, marker + b'<script>' + adapter + b'</script>', 1)
+    if b'DeviceHttpQueue' not in html:
+        adapter = (ROOT / 'common/web/http_queue.js').read_bytes()
+        html = html.replace(marker, marker + b'<script>' + adapter + b'</script>', 1)
     # Compress the final bytes after injection, just like the frontend release.
     # Host-only: the device still serves a normal gzip stream verbatim.
-    output = zopfli.gzip.compress(html, numiterations=15)
+    # M1's full UI is close to its fixed OTA slot. More host-side search keeps
+    # the ordinary gzip stream and costs no device RAM or decoding work.
+    output = zopfli.gzip.compress(html, numiterations=500 if model == 'm1' else 15)
     if gzip.decompress(output) != html:
         raise ValueError('Adapted frontend gzip round-trip mismatch')
     return output
