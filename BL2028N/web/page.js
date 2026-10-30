@@ -71,7 +71,7 @@ async function pollPower(){
   powerHistory.push(p.power_watts);if(powerHistory.length>60)powerHistory.shift();
   const values=powerHistory;
   const max=Math.max(...values,1),min=Math.min(...values),top=max*1.25;
-  $('peak').textContent=max+' W';$('sparkRange').textContent=min+'–'+max+' W';
+  $('peak').textContent=max.toFixed(1)+' W';$('sparkRange').textContent=min.toFixed(1)+'–'+max.toFixed(1)+' W';
   const points=values.map((y,i)=>(i/Math.max(values.length-1,1)*300).toFixed(1)+','+(62-(y/top)*58).toFixed(1)).join(' ');
   $('spark').innerHTML='<polyline points="0,64 '+points+' 300,64" class="area"/><polyline points="'+points+'" class="line"/>';
  }catch{}

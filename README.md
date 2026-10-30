@@ -19,7 +19,7 @@ TC1 的 A1 硬件版本与 A1 空气净化器是不同产品，固件不能混�
 
 **M1 的 Wi-Fi 模块与传感器主控分别升级。** [GPL-3.0 开源主控](https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20)推荐用于原厂 **11.x**；原厂 **17.1.2.3 / 17.x** 差异较大，尚待分析，暂不建议迁移。按实际读到的主控版本判断，未知版本不作推测。普通 Wi-Fi OTA 不更新主控，基本空气读数无需另刷主控。详见[主控兼容说明](https://phicomm-io.github.io/guides/m1-mcu-firmware.html)。
 
-新增开发目标 **ORVIBO S30-V1B**（BL2028N 模块）：使用 OpenBeken / BK7231N、HLW8032 计量及二进制 MQTT/HTTP/UDP 协议，单独构建；计量实机验收尚未完成。[拆机串口刷机](docs/public/s30-flash.md) · [功能与操作](docs/public/s30-guide.md) · [构建与协议](BL2028N/README.md)。
+新增设备 **ORVIBO S30-V1B**（BL2028N 模块）：使用 OpenBeken / BK7231N、HLW8032 计量及二进制 MQTT/HTTP/UDP 协议，单独构建；已验证原电源下的真实负载计量，默认系数尚未经过标准仪表校准。[拆机串口刷机](docs/public/s30-flash.md) · [功能与操作](docs/public/s30-guide.md) · [构建与协议](BL2028N/README.md)。
 
 ## 安装与更新
 

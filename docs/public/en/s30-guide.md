@@ -2,7 +2,7 @@
 
 The **ORVIBO S30-V1B** is a single-outlet metering socket with a BL2028N module, BK7231N chip and HLW8032 meter. The firmware uses the project's common home page, settings navigation, themes and language controls. Its project name is `iotcloud` and protocol name is `openiot`. For first installation, see [S30-V1B serial flashing](s30-flash).
 
-Physical metering validation is in progress, and the default coefficients have not been calibrated against reference instruments. Do not use the current readings for billing or safety protection.
+Meter frame reception, live readings and increasing accumulated energy have been verified with the original power supply and a real load. The default coefficients have not been calibrated against reference instruments, so no accuracy claim is made. Do not use the current readings for billing or safety protection.
 
 ## Wi-Fi setup and access
 
