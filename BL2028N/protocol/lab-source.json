@@ -1,6 +1,6 @@
 {
   "source": "phicomm-community-firmware/common",
-  "git_head": "dc3a36f0a52ac00fab849709e079b927a6346c8a",
+  "git_head": "260b840f6759b5249446c8c925b9628563d0727f",
   "note": "Clean shared inputs with portable binary-only adaptations recorded in lab-openbeken.patch.",
   "files": {
     "typed_wire.h": "489a66a757f93d4a3a474dfa846e8185068d72093bb60dfc67e010b14424056c",

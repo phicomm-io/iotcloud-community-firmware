@@ -1,11 +1,11 @@
 {
   "lab": {
-    "head": "dc3a36f0a52ac00fab849709e079b927a6346c8a",
+    "head": "260b840f6759b5249446c8c925b9628563d0727f",
     "dirty": false,
     "scope": "listed upstream source paths"
   },
   "frontend": {
-    "head": "b099af584325fa9ef040806d1b5de7ee7c0de80d",
+    "head": "5fa481cf429bec22fb9be529472f70777c32e2c6",
     "dirty": false,
     "scope": "listed upstream source paths"
   },
@@ -357,7 +357,7 @@
     "web/frontend-openbeken.patch": "95449ee17d4538deda6bb72717e4a5f88272060d32f3d2fdd0bacc796796f426"
   },
   "source_snapshot": {
-    "file": "shared-source-snapshot-b099af5.tar.gz",
+    "file": "shared-source-snapshot-5fa481c.tar.gz",
     "sha256": "809d42290004a4234f5aee1aa346cef889a96498eb1eec011a2050a7f0bcedb3",
     "entries": 68
   },
