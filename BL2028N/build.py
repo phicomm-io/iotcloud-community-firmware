@@ -110,6 +110,13 @@ def overlay(app, sdk, run, boot_trace=False, stock_layout=True):
     replace('src/user_main.c','\tPIN_SetupPins();','\t/* Product GPIO is initialized before the shared services. */')
     replace('src/user_main.c','\tQuickTick_StartThread();','\t/* Product ticks also run in native safe mode. */')
     replace('src/user_main.c','HAL_SetupWiFiOpenAccessPoint(CFG_GetDeviceName());','if (PH_BL_APName()[0]) HAL_SetupWiFiOpenAccessPoint(PH_BL_APName());')
+    # AP client association is not a station connection to a router. Keeping
+    # these states separate also prevents an AP phone from suppressing retries
+    # or hiding the product's Wi-Fi failure indicator.
+    replace('src/user_main.c','case WIFI_AP_CONNECTED:\n\t\tg_bHasWiFiConnected = 1;',
+        'case WIFI_AP_CONNECTED:\n\t\t/* AP client only; retain STA connection state. */')
+    replace('src/user_main.c','case WIFI_AP_FAILED:\n\t\tg_bHasWiFiConnected = 0;',
+        'case WIFI_AP_FAILED:\n\t\t/* AP client only; retain STA connection state. */')
     replace('src/hal/bk7231/hal_wifi_bk7231.c','"192.168.4.1"\n#define APP_DRONE_DEF_NET_MASK','"192.168.0.1"\n#define APP_DRONE_DEF_NET_MASK')
     replace('src/hal/bk7231/hal_wifi_bk7231.c','"192.168.4.1"\n#define APP_DRONE_DEF_CHANNEL','"192.168.0.1"\n#define APP_DRONE_DEF_CHANNEL')
     replace('src/hal/bk7231/hal_wifi_bk7231.c','const char* HAL_GetMyIPString() {',
@@ -224,6 +231,41 @@ def overlay(app, sdk, run, boot_trace=False, stock_layout=True):
     off='    reg = REG_READ(TRNG_CTRL);\n    reg &= ~TRNG_EN;\n    REG_WRITE(TRNG_CTRL, reg);'
     if old.count(before)!=1 or old.count(off)!=1:raise SystemExit('RNG SDK patch no longer matches')
     new=old.replace(before,'\tREG_WRITE(TRNG_CTRL, value);').replace(off,'    /* Socket firmware keeps the generator enabled between samples. */')
+    p.write_text(new)
+    with (run/'sdk-board.patch').open('a') as patch:
+        patch.write(''.join(difflib.unified_diff(old.splitlines(True),new.splitlines(True),fromfile='a/'+relative,tofile='b/'+relative)))
+    # Manual scans stream borrowed beacon frames into the product's fixed
+    # metadata list. They never allocate or release the supplicant's full IE
+    # table. Connection/reconnection scans retain the native SDK behavior.
+    relative='platforms/bk7231n/bk7231n_os/beken378/func/rwnx_intf/rw_msg_rx.c'
+    p=sdk/relative;old=p.read_text();new=old
+    changes=[
+        ('/* scan result malloc item */',
+         'extern void PH_BL_ScanResult(const unsigned char *,unsigned,int);\n'
+         'extern void PH_BL_ScanCompleted(void *, uint8_t);\n'
+         'static void ph_scan_result_view(struct ke_msg *msg) {\n'
+         '    SCAN_IND_PTR ind = (SCAN_IND_PTR)msg->param;\n'
+         '    UINT32 prefix = (UINT8 *)ind->payload - (UINT8 *)ind;\n'
+         '    if (msg->param_len < prefix || ind->length > msg->param_len - prefix) return;\n'
+         '    PH_BL_ScanResult((const unsigned char *)ind->payload,ind->length,ind->rssi);\n'
+         '}\n\n/* scan result malloc item */'),
+        ('    return os_zalloc(vies_len + sizeof(struct sta_scan_res));',
+         '    if (vies_len > (UINT32)-1 - sizeof(struct sta_scan_res)) return 0;\n'
+         '    return os_zalloc(vies_len + sizeof(struct sta_scan_res));'),
+        ('    ptr = os_zalloc(layer1_space_len + layer2_space_len);\n\n    ASSERT(ptr);',
+         '    ptr = os_zalloc(layer1_space_len + layer2_space_len);'),
+        ('        mhdr_scanu_start_cfm(rx_msg, scan_rst_set_ptr);',
+         '        mhdr_scanu_start_cfm(rx_msg, scan_cfm_cb.cb == PH_BL_ScanCompleted ? 0 : scan_rst_set_ptr);'),
+        ('    case SCANU_RESULT_IND:\n',
+         '    case SCANU_RESULT_IND:\n'
+         '        if (scan_cfm_cb.cb == PH_BL_ScanCompleted) {\n'
+         '            ph_scan_result_view(rx_msg);\n            break;\n        }\n'),
+        ('            ASSERT(scan_rst_set_ptr);',
+         '            if (!scan_rst_set_ptr) break; /* Keep the radio task alive on OOM. */'),
+    ]
+    for before,after in changes:
+        if new.count(before)!=1:raise SystemExit('Scan SDK patch no longer matches: '+before[:60])
+        new=new.replace(before,after)
     p.write_text(new)
     with (run/'sdk-board.patch').open('a') as patch:
         patch.write(''.join(difflib.unified_diff(old.splitlines(True),new.splitlines(True),fromfile='a/'+relative,tofile='b/'+relative)))
@@ -409,6 +451,7 @@ def main():
                 (app/Path(rel).with_suffix('.o')).unlink(missing_ok=True)
         for relative in ['platforms/bk7231n/bk7231n_os/beken378/func/user_driver/BkDriverFlash.c',
                          'platforms/bk7231n/bk7231n_os/beken378/driver/irda/irda.c',
+                         'platforms/bk7231n/bk7231n_os/beken378/func/rwnx_intf/rw_msg_rx.c',
                          'platforms/bk7231n/bk7231n_os/beken378/os/FreeRTOSv9.0.0/FreeRTOS/Source/portable/MemMang/heap_4.c',
                          *SDK_MDNS_FILES]:
             shutil.copy2(SDK_CACHE/relative,sdk/relative)

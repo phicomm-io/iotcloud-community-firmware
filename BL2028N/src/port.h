@@ -8,5 +8,7 @@ int PH_BL_WebPasswordSet(const char *);
 /* SDK adapter: bounded copy/dirty marker, without recursive auth callbacks. */
 void PH_BL_SetWebPasswordMemory(const char *);
 int PH_BL_MqttTlsEnabled(void);
+void PH_BL_ScanResult(const unsigned char *frame,unsigned bytes,int rssi);
+void PH_BL_ScanCompleted(void *,unsigned char);
 const char *PH_BL_APName(void);
 const char *PH_BL_HostName(void);

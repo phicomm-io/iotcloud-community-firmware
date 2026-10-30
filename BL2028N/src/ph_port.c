@@ -83,15 +83,18 @@ static unsigned char udp_in[LAN_V4_FRAME_MAX+1];
 static unsigned char udp_in[PH_INPUT_MAX+1],udp_out[PH_OUTPUT_MAX];
 #endif
 static int udp_fd=-1;
-static unsigned scan_state,scan_count;
+static volatile unsigned scan_state;
+static unsigned scan_count,scan_collect_count;
 static uint32_t scan_at;
-static volatile bool scan_done;
 static bool safe_boot;
 /* A password transaction is authoritative in the same atomic product record
  * as its grants. Legacy records keep using the framework's existing value. */
 static bool credential_owned;
 static char committed_password[33];
-static struct {char ssid[33];int rssi,security;} networks[20];
+typedef struct {char ssid[33];int rssi,security;} scan_network;
+static scan_network networks[20];
+extern int get_security_type_from_ie(unsigned char *,int,unsigned short);
+extern unsigned char rw_ieee80211_is_scan_rst_in_countrycode(unsigned char);
 void bl_lock(void) { rtos_lock_mutex(&mutex); }
 void bl_unlock(void) { rtos_unlock_mutex(&mutex); }
 #define lock bl_lock
@@ -338,9 +341,12 @@ static bool get_text(const ph_value *p,const char *key,char *out,size_t cap) {
 }
 static const char *platform_action(void *unused,const char *action,const ph_value *p,ph_writer *w,bool admin) {
  (void)unused;ph_value values,v;char section[24],a[128]={0},b[128]={0},c[128]={0};int64_t port;
+ bool restart_after_save=false;
  if(!strcmp(action,"wifi.scan.get")) {
   if(p->count)return "invalid_params";
-  phw_bool(w,"scanning",scan_state!=0);phw_begin(w,"networks",true);
+  phw_bool(w,"scanning",scan_state==1||scan_state==2);
+  if(scan_state==3)phw_text(w,"error","timeout");
+  phw_begin(w,"networks",true);
   for(unsigned i=0;i<scan_count;++i){phw_begin(w,NULL,false);phw_text(w,"ssid",networks[i].ssid);phw_int(w,"rssi",networks[i].rssi);phw_int(w,"security",networks[i].security);phw_end(w);}
   phw_end(w);return "ok";
  }
@@ -348,7 +354,12 @@ static const char *platform_action(void *unused,const char *action,const ph_valu
  if(!strcmp(action,"wifi.scan")) {
   if(p->count)return "invalid_params";
   if(bl_ota_pending)return "busy";
-  if(!scan_state){scan_state=1;scan_count=0;}return "accepted";
+  /* A timeout does not cancel the radio scan. Wait for its completion rather
+   * than overlap requests or free storage still owned by the SDK. */
+  if(scan_state==3)return "busy";
+  size_t start_heap=Main_IsConnectedToWiFi()?PH_SCAN_RUNNING_HEAP:PH_SCAN_START_HEAP;
+  if(!scan_state&&xPortGetFreeHeapSize()<start_heap)return "busy";
+  if(!scan_state){scan_state=1;scan_count=scan_collect_count=0;}return "accepted";
  }
  if(!strcmp(action,"system.reset")) {
   bool full=false;
@@ -369,7 +380,7 @@ static const char *platform_action(void *unused,const char *action,const ph_valu
   bool has_pass=phv_get(&values,"password",&v);
   if(!phv_keys(&values,"|ssid||password|")||!get_text(&values,"ssid",a,33)||!*a)return "invalid_params";
   if(has_pass&&(!get_text(&values,"password",b,64)||(*b&&strlen(b)<8)))return "invalid_params";
-  CFG_SetWiFiSSID(a);if(has_pass)CFG_SetWiFiPass(b);reboot(NULL);
+  CFG_SetWiFiSSID(a);if(has_pass)CFG_SetWiFiPass(b);restart_after_save=true;
  } else if(!strcmp(section,"mqtt")) {
   bool has_pass=phv_get(&values,"password",&v);
   if(!phv_keys(&values,"|host||port||user||password||protocol|")||!get_text(&values,"host",a,sizeof(a))||
@@ -384,26 +395,61 @@ static const char *platform_action(void *unused,const char *action,const ph_valu
   if(!web_password_set_locked(a))return "storage_error";
  } else return "unsupported";
  memset(a,0,sizeof(a));memset(b,0,sizeof(b));memset(c,0,sizeof(c));
- CFG_Save_IfThereArePendingChanges();return "accepted";
+ CFG_Save_IfThereArePendingChanges();
+ if(restart_after_save)reboot(NULL);
+ return "accepted";
 }
-static void scan_callback(void *context,uint8_t param) {(void)context;(void)param;scan_done=true;}
-static void scan_step(uint32_t t) {
- if(scan_state==1) {
-  scan_done=false;scan_at=t;scan_state=2;
-  bk_wlan_scan_ap_reg_cb(scan_callback);bk_wlan_start_scan();
- } else if(scan_state==2&&(scan_done||(uint32_t)(t-scan_at)>=7000)) {
-  struct scanu_rst_upload *results=sr_get_scan_results();
-  int count=bk_wlan_get_scan_ap_result_numbers();
-  scan_count=0;
-  if(results)for(int i=0;i<count&&scan_count<20;++i) {
-   if(!results->res[i])continue;
-   memcpy(networks[scan_count].ssid,results->res[i]->ssid,32);networks[scan_count].ssid[32]=0;
-   if(!*networks[scan_count].ssid)continue;
-   networks[scan_count].rssi=results->res[i]->level;
-   networks[scan_count].security=results->res[i]->security;scan_count++;
+void PH_BL_ScanResult(const unsigned char *frame,unsigned bytes,int rssi) {
+ /* Borrow a complete beacon/probe response only for this callback. Keep no
+  * SDK pointer or beacon IE allocation: the UI needs three small fields. */
+ if(!frame||bytes<36)return;
+ const unsigned char *ssid=NULL;unsigned ssid_len=0;
+ for(unsigned at=36;at<bytes;) {
+  if(bytes-at<2||frame[at+1]>bytes-at-2)return;
+  unsigned n=frame[at+1];
+  if(frame[at]==0&&!ssid){ssid=frame+at+2;ssid_len=n;}
+  if(frame[at]==3&&(n!=1||!rw_ieee80211_is_scan_rst_in_countrycode(frame[at+2])))return;
+  at+=n+2;
+ }
+ /* 802.11 SSIDs are byte strings; our text protocol requires UTF-8. */
+ if(!ssid||!ssid_len||ssid_len>32||memchr(ssid,0,ssid_len)||!ph_wire_utf8(ssid,ssid_len))return;
+ int security=get_security_type_from_ie((unsigned char*)frame+36,(int)(bytes-36),
+                                       frame[34]|((unsigned)frame[35]<<8));
+ lock();
+ if(scan_state!=2&&scan_state!=3){unlock();return;}
+ unsigned slot=scan_collect_count;
+ for(unsigned i=0;i<scan_collect_count;++i)
+  if(strlen(networks[i].ssid)==ssid_len&&!memcmp(networks[i].ssid,ssid,ssid_len)&&networks[i].security==security){
+   if(rssi>networks[i].rssi)networks[i].rssi=rssi;
+   unlock();return;
   }
-  if(results)sr_release_scan_results(results);
-  scan_state=0;
+ if(slot==20) {
+  slot=0;for(unsigned i=1;i<20;++i)if(networks[i].rssi<networks[slot].rssi)slot=i;
+  if(rssi<=networks[slot].rssi){unlock();return;}
+ } else ++scan_collect_count;
+ memcpy(networks[slot].ssid,ssid,ssid_len);networks[slot].ssid[ssid_len]=0;
+ networks[slot].rssi=rssi;networks[slot].security=security;unlock();
+}
+void PH_BL_ScanCompleted(void *context,uint8_t param) {
+ (void)context;(void)param;lock();
+ if(scan_state==2||scan_state==3) {
+  for(unsigned i=0;i<scan_collect_count;++i)for(unsigned j=i+1;j<scan_collect_count;++j)
+   if(networks[j].rssi>networks[i].rssi){scan_network tmp=networks[i];networks[i]=networks[j];networks[j]=tmp;}
+  scan_count=scan_collect_count;scan_state=0;
+ }
+ unlock();
+}
+static void scan_step(uint32_t t) {
+ bool start=false;
+ lock();
+ if(!bl_ota_pending&&scan_state==1) {
+  scan_at=t;scan_state=2;start=true;
+ } else if(scan_state==2&&(uint32_t)(t-scan_at)>=7000)scan_state=3;
+ unlock();
+ if(start) {
+  /* Station initialization may wait on SDK tasks. Keep the local button and
+   * HTTP/control state mutex available throughout that work. */
+  bk_wlan_scan_ap_reg_cb(PH_BL_ScanCompleted);bk_wlan_start_scan();
  }
 }
 #ifdef PH_S30_LAN_V4
@@ -440,7 +486,7 @@ static void network_thread(beken_thread_arg_t arg) {
  PH_BOOT_STAGE("lan-thread");
  for(;;) {
   uint32_t t=now(NULL);unsigned reset=0;char url[128]="";bool restart=false;
-  lock();if(!bl_ota_pending)scan_step(t);
+  scan_step(t);lock();
   if(!bl_ota_pending&&(int32_t)(t-reboot_at)>=0) {
    restart=reboot_pending;reset=reset_requested;reset_requested=0;
   }

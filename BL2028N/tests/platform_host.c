@@ -36,6 +36,9 @@ int PH_BL_CopyLocalIPAddress(char *out,size_t capacity){
  if(!out||n>=capacity)return 0;memcpy(out,ip,n+1);return 1;
 }
 int HAL_GetWifiStrength(void){return -42;}
+/* Native security parsing is SDK-owned; the host supplies deterministic metadata. */
+int get_security_type_from_ie(unsigned char *p,int n,unsigned short caps){(void)p;(void)n;return caps&16?1:0;}
+unsigned char rw_ieee80211_is_scan_rst_in_countrycode(unsigned char channel){return channel>=1&&channel<=13;}
 void WiFI_GetMacAddress(char *out){const unsigned char mac[]={0xaa,0xbb,0xcc,0xdd,0xee,0xff};memcpy(out,mac,6);}
 const char *PH_BL_HostName(void){static char name[32];unsigned char mac[6];WiFI_GetMacAddress((char*)mac);ph_mac_host_name(name,mac);return name;}
 void HAL_PIN_Setup_Output_Initial(int pin,int value){(void)pin;(void)value;}

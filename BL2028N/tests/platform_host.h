@@ -67,7 +67,8 @@ void UART_ConsumeBytesEx(int,int);
 int OTA_GetProgress(void);
 int OTA_GetTotalBytes(void);
 struct host_scan {unsigned char ssid[32];int level,security;};
-struct scanu_rst_upload {struct host_scan *res[20];};
+/* Match the SDK's count plus separately allocated pointer table. */
+struct scanu_rst_upload {uint8_t scanu_num;struct host_scan **res;};
 void bk_wlan_scan_ap_reg_cb(void (*)(void *,uint8_t));
 void bk_wlan_start_scan(void);
 struct scanu_rst_upload *sr_get_scan_results(void);

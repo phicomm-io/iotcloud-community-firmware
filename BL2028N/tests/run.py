@@ -37,6 +37,8 @@ def main():
  lan=[ROOT/'src'/name for name in ('ph_lan_v4.c','ph_mdns.c','ph_sha256.c')]
  command(flags+host_flags+[HERE/'migration.c',HERE/'platform_host.c']+core+lan+['-lm','-lpthread','-o',run/'migration-test'],'migration-compiler.log')
  command([run/'migration-test',run/'migration-storage'],'migration.log')
+ command(flags+host_flags+[HERE/'wifi.c',HERE/'platform_host.c']+core+lan+['-Wl,--wrap=rtos_get_time,--wrap=xPortGetFreeHeapSize,--wrap=bk_wlan_scan_ap_reg_cb,--wrap=bk_wlan_start_scan,--wrap=sr_get_scan_results,--wrap=bk_wlan_get_scan_ap_result_numbers,--wrap=sr_release_scan_results,--wrap=CFG_Save_IfThereArePendingChanges','-lm','-lpthread','-o',run/'wifi-test'],'wifi-compiler.log')
+ command([run/'wifi-test'],'wifi.log')
  command(flags+host_flags+[HERE/'meter_uart.c',HERE/'platform_host.c']+core+lan+['-lm','-lpthread','-o',run/'meter-uart-test'],'meter-uart-compiler.log')
  for safe in (0,1):
   storage=run/f'meter-uart-storage-{safe}';shutil.rmtree(storage,ignore_errors=True)
