@@ -1,6 +1,17 @@
-**RC releases are beta builds. Major changes are still expected; using them is not recommended. The stable channel remains on v0.9.27.** This page groups the v1 Beta features by device. The current candidate is **v1.0.0-rc.3**; its latest release notes retain the complete cumulative rc / rc.1 / rc.2 changes under their source versions. Wi-Fi firmware, the M1 sensor controller, frontend and platform are released separately. Updating one does not update the others.
+**RC releases are Beta builds. Major changes are still expected; everyday use is not recommended. The stable channel remains on v0.9.27.** The current candidate is **v1.0.0-rc.4**. This page describes current features; earlier candidates retain their original notes and validation limits. Wi-Fi firmware, the M1 sensor controller, frontend and cloud platform are released separately. Updating one does not update the others.
 
 [Candidate downloads and release notes](release-log.html?channel=candidate) · [Choose an update image](firmware-update.html)
+
+#### RC4: communication, web interface and S30-V1B
+
+- **Binary business interfaces.** HTTP, device MQTT and UDP default to MessagePack. Legacy JSON business paths are removed; compact JSON remains for Home Assistant. Use the matching frontend and a cloud platform supporting device discovery. Existing JSON scripts require changes.
+- **Separate business state and diagnostics.** Coalesce changes before encoding, reuse unchanged snapshots, and fetch shared numeric diagnostic fields on demand with `diagnostics.get`. MQTT and HA track delivery independently; command receipts are separate.
+- **Fewer duplicate web requests.** Serialize and coalesce HTTP reads, prioritize writes and bound confirmation reads. Cancel stale reads and isolate old responses. Automation settings retain previous content and unsaved edits. A1 renders animation locally; ordinary A1/M1 state reads run about every five seconds, with faster confirmation after controls. This does not establish new P95 results.
+- **Authentication and LAN automation.** Unset device passwords permit direct access without consuming login sessions. Configured passwords use tokens with admin Basic retained. mDNS discovery and password-paired UDP coexist with existing MQTT sensor-session grants. All three MXCHIP products allow at most two waiting requests and return bounded overload responses.
+- **Migration and builds.** Recognized 0.9.x layouts can migrate; unknown layouts enter protected recovery. Frontend resources follow device capabilities. MXCHIP uses the GCC14 compiler with GCC5 runtime libraries; S30 uses GCC5. Size, build checks and physical stability are validated separately.
+- **S30-V1B outlet.** ORVIBO S30-V1B uses BL2028N/BK7231N/HLW8032 and provides outlet control, voltage, current, power, energy and persistent multiplier settings. Native RBL and bootloader-preserving STOCK_UA files use the stock layout by default. Initial network installation from stock `2M.1220` and community URL OTA were tested on the unit; first installation requires Wi-Fi setup again. Return to stock and dual boot are not provided. Other stock versions, reference-meter accuracy and power-loss recovery remain unverified.
+
+[S30-V1B network and serial installation](s30-flash.html) · [Operation, LEDs and recovery](s30-guide.html)
 
 #### All devices and the platform
 
@@ -15,7 +26,7 @@
 - **Separate firmware versions.** The page shows the original Wi-Fi and sensor MCU versions separately, or unknown when unreadable. The open-source controller is recommended first for stock **11.x; migration from 17.1.2.3 / 17.x is currently discouraged**. Wi-Fi OTA does not update the sensor MCU.
 - **Steadier PM2.5 and optional buzzer alarms.** The matching open-source controller uses a three-sample median and adaptive smoothing to suppress spikes while following sustained increases quickly. Raw sensor frames remain available. Formaldehyde / PM2.5 threshold buzzer switches are separate and off by default, independent of lamps, scheduled alarms and manual tones. Web controls verify saved settings and show capability limits on older controllers.
 - **Single press, double press and separate holds.** With the matching controller, a single press toggles the screen. A double press first stops a ringing alarm; otherwise it can switch both regions between original and user readings. Release after holding at least 3 but under 10 seconds to clear Wi-Fi and the web password while retaining MQTT and other settings. Hold for 10 seconds to reset network-module settings, retaining independent controller music. Both MCUs restart after settings save successfully, including offline.
-- **Independent data for each region.** Configure local sensors, live devices on the same MQTT account and broker, or API / manual values for both formaldehyde and PM2.5 regions. Sources include external CO₂ and other sensors, DAIKIN readings, TC1 power and effective A1 main-fan output. Each region has its own expiry. Missing, expired, offline or invalid data restores only that region without changing physical acquisition or alarms.
+- **Independent data for each region.** Configure local sensors, paired LAN devices or authorized MQTT sensors, or API / manual values for both formaldehyde and PM2.5 regions. Sources include external CO₂ and other sensors, DAIKIN readings, TC1 power and effective A1 main-fan output. Each region has its own expiry. Missing, expired, offline or invalid data restores only that region without changing physical acquisition or alarms.
 - **Formats and legends match the glass.** PM2.5 supports three integer digits up to 999. The formaldehyde region supports integer, automatic kilo scaling, two decimals, one decimal with a trailing zero, and fixed division by 1000. Its decimal point is fixed after the first digit. Native legends and units can be hidden separately; the glass still has only µg/m³ and mg/m³, with no new ppm, W or % symbols. Positive local / MQTT overflow is limited to the selected mode maximum.
 - **Nine lamp segments per region.** Red, green and yellow segments at each of three positions can be controlled independently, including multiple colors at one position. Alternatively, apply two thresholds to the original physical value before display conversion.
 - **Web configuration and raw API.** The full page configures sources, expiry, format, legend / unit visibility, lamps and double-press action for both regions, with a fixed-glass preview and MCU support / confirmation status. `display_profile.get/set` uses revision checks and accepts compact or colon-separated MACs in either case. Probe capabilities first; raw API / UART and defined configuration migration remain available; the former MQTT feed and HTTP display-profile shapes are replaced in RC.1. For regions configured as API inputs, `display_value.set` writes integer digits 0–999, the decimal point, legends and nine lamps directly, without scaling, rounding, clamping or threshold colors. Fractional / out-of-range digits and PM decimal points are rejected; TTL 0 clears only that region.
@@ -25,7 +36,7 @@
 
 #### TC1: provide power to other devices
 
-TC1 publishes power for M1 user readings with device identity, freshness and validity markers. Use the same MQTT account and broker. Unavailable readings are not represented as zero. Existing outlet controls, schedules and metering remain available and are not counted again as new features.
+TC1 publishes power for M1 user readings with device identity, freshness and validity markers. Pair the LAN devices or use an existing MQTT sensor-session grant. Unavailable readings are not represented as zero. Existing outlet controls, schedules and metering remain available and are not counted again as new features.
 
 [TC1 operation and connection](tc1-guide.html)
 
@@ -37,16 +48,16 @@ A1 publishes the main fan's effective **0–100%** output, including the fresh-a
 
 #### DAIKIN: a separate hub edition
 
-- **Independent hub image and console.** Adds local accounts, device management and hub settings alongside sensor functions. The embedded `/iotcloud/#/` console configures the owner, Broker, upstream MQTT, Bemfa and HomeKit, without cloud email registration or GitHub login.
-- **LAN Broker and upstream client together.** MQTT TCP 1883 and WebSocket 9001/mqtt accept local credentials for LAN devices and Home Assistant. The Broker can run alongside an upstream MQTT Client with explicit event-forwarding rules and Bemfa device / channel mappings.
+- **Independent hub image and console.** Adds device discovery, pairing, management and hub settings alongside sensor functions. The embedded `/iotcloud/#/` console configures upstream MQTT, Bemfa and HomeKit, without cloud email registration or GitHub login.
+- **mDNS and UDP replace the embedded Broker.** RC4 no longer hosts MQTT TCP 1883 or a WebSocket Broker. The hub discovers devices through mDNS, uses paired UDP communication and forwards upstream MQTT and Bemfa messages. Local Home Assistant and MQTT clients must use an external Broker; change old embedded-Broker connections.
 - **Optional HomeKit HAP bridge.** Off by default, this experimental feature provides TC1's six Switches, A1 fan / light, and valid M1 / DAIKIN sensors. The hub’s own sensors are included automatically. **Matter is not included.**
-- **Explicit conversion to hub.** Supporting `full` firmware accepts a signed `hub` image that fits the installed slot, with explicit confirmation and retained network settings. The current rc.3 retains the optional device Web password introduced in rc.1; the original rc password requirement is historical. Ordinary OTA preserves variants; direct `hub → full` OTA is unsupported. Conversion does not enlarge OTA partitions: check the actual slot capacity.
+- **Explicit conversion to hub.** Supporting `full` firmware accepts a signed `hub` image that fits the installed slot, with explicit confirmation and retained network settings. The current rc.4 retains the optional device Web password introduced in rc.1; the original rc password requirement is historical. Ordinary OTA preserves variants; direct `hub → full` OTA is unsupported. Conversion does not enlarge OTA partitions: check the actual slot capacity.
 
 [DAIKIN operation, installation and hub settings](daikin-guide.html)
 
 #### Documentation and development
 
-Installation, updates, use and recovery guides remain grouped by M1 / A1 / TC1 / DAIKIN. Bilingual [developer documentation](https://phicomm-io.github.io/iotcloud-community-protocols/en/) centralizes interfaces, protocols, configuration compatibility and examples. The v0.9.x artifacts and notes remain archived. CI, issue / PR templates, contribution rules and pinned cross-repository dependencies have been organized. Maintained code uses GPL-3.0; third-party notices remain applicable.
+Installation, updates, use and recovery guides remain grouped by M1 / A1 / TC1 / DAIKIN / S30-V1B. Bilingual [developer documentation](https://phicomm-io.github.io/iotcloud-community-protocols/en/) centralizes interfaces, protocols, configuration compatibility and examples. The v0.9.x artifacts and notes remain archived. CI, issue / PR templates, contribution rules and pinned cross-repository dependencies have been organized. Maintained code uses GPL-3.0; third-party notices remain applicable.
 
 #### Wi-Fi firmware v1.0.0-rc.1: generic fields and hub updates
 

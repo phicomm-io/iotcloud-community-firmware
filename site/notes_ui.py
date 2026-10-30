@@ -11,8 +11,8 @@ def body(manifest, locale):
 
     overview_source = Path(__file__).resolve().parents[1] / 'docs/release-notes' / f'v1-overview.{locale}.md'
     overview = markdown.markdown(overview_source.read_text(), extensions=['tables', 'fenced_code'])
-    beta = f'''<section class="notes-history-version" data-notes-channel="candidate" id="v1.0.0-rc.3">
-<h2><time datetime="2026-10-27">2026-10-27</time></h2><h3>v1.0.0-rc.3 · Beta</h3>
+    beta = f'''<section class="notes-history-version" data-notes-channel="candidate" id="v1.0.0-rc.4">
+<h2><time datetime="2026-10-30">2026-10-30</time></h2><h3>v1.0.0-rc.4 · Beta</h3>
 <details class="notes-overview" id="v1-overview" open><summary>{t('v1 Beta 累计功能（相对 v0.9.27）', 'v1 Beta cumulative changes since v0.9.27')}</summary>{overview}</details></section>'''
 
     return f'''<div class="notes-app" data-release-notes data-locale="{locale}">

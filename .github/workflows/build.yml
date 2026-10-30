@@ -435,9 +435,55 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  s30:
+    name: S30-V1B BK7231N firmware
+    needs: frontend
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install native build and socket test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang libssl-dev bzip2 libc6-i386 libtinfo5
+          python3 -m pip install -r requirements-build.txt -r BL2028N/requirements-build.txt
+      - name: Prepare shared GCC5 tools
+        run: python3 tools/prepare_toolchain.py --profile gcc5 --github-env "$GITHUB_ENV"
+      - name: Build and verify stock-layout native firmware
+        run: python3 BL2028N/build.py --run-dir build/s30-release
+      - name: Test sanitized S30 business and real HTTP MQTT UDP services
+        run: python3 BL2028N/tests/run.py --run-dir build/s30-host
+      - name: Prepare native S30 release assets
+        run: python3 tools/release/s30_assets.py build/s30-release release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: s30-firmware
+          path: release/
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: s30-validation-logs
+          path: |
+            build/s30-release/*.log
+            build/s30-release/*.json
+            build/s30-release/*.patch
+            build/s30-host/*.log
+          if-no-files-found: ignore
+          retention-days: 7
+
   sign-ota:
     name: Sign production OTA packages
-    needs: [firmware, esp, validation-evidence]
+    needs: [firmware, esp, s30, validation-evidence]
     if: >-
       always() && needs.validation-evidence.result == 'success' &&
       ((github.event_name == 'push' && github.ref_type == 'tag') ||
@@ -508,14 +554,16 @@ jobs:
             fi
             python3 tools/release/verify.py "release/$stem.ota.bin.signed" "$model" "$TAG_NAME" "$(git rev-parse HEAD)" --variant "$variant"
           done < "$RUNNER_TEMP/release-targets.txt"
-          (cd release && sha256sum *.bin *.bin.raw *.bin.signed > SHA256SUMS && sha256sum -c SHA256SUMS)
+          # S30 keeps the stock bootloader's native RBL/UA format. It is not
+          # wrapped in the PHI envelope used by the other products.
+          (cd release && sha256sum *.bin *.rbl *.bin.raw *.bin.signed *.json > SHA256SUMS && sha256sum -c SHA256SUMS)
       - name: Validate complete release catalog
         if: github.event_name == 'workflow_dispatch' && inputs.release_dry_run
         run: |
           tag="v$(cat VERSION)"
           printf '%s\n' 'Release validation only; not published.' > release-dry-run.md
           python3 tools/release/catalog.py "$tag" "$(git rev-parse HEAD)" release release-dry-run.md
-          (cd release && sha256sum *.bin *.bin.raw *.bin.signed *.json *.msgpack notes.md index.html > SHA256SUMS && sha256sum -c SHA256SUMS)
+          (cd release && sha256sum *.bin *.rbl *.bin.raw *.bin.signed *.json *.msgpack notes.md index.html > SHA256SUMS && sha256sum -c SHA256SUMS)
       - uses: actions/upload-artifact@v4
         with:
           name: signed-release
@@ -568,7 +616,7 @@ jobs:
           python3 tools/release/notes.py "$TAG_NAME" --output release-notes.md
           python3 tools/release/catalog.py "$TAG_NAME" "$GITHUB_SHA" release release-notes.md
           (cd release && sha256sum -c SHA256SUMS)
-          (cd release && sha256sum *.bin *.bin.raw *.bin.signed *.json *.msgpack notes.md index.html > SHA256SUMS && sha256sum -c SHA256SUMS)
+          (cd release && sha256sum *.bin *.rbl *.bin.raw *.bin.signed *.json *.msgpack notes.md index.html > SHA256SUMS && sha256sum -c SHA256SUMS)
       - name: Verify reviewed notes against staged signed firmware
         env:
           GH_TOKEN: ${{ github.token }}
@@ -592,7 +640,7 @@ jobs:
             gh release create "$TAG_NAME" --draft --title "$TAG_NAME" --notes-file release-notes.md release/*
           else
             gh release download "$TAG_NAME" --dir existing
-            for file in release/*.bin* release/SHA256SUMS; do cmp "$file" "existing/$(basename "$file")"; done
+            for file in release/*.bin* release/*.rbl release/SHA256SUMS; do cmp "$file" "existing/$(basename "$file")"; done
           fi
           python3 tools/release/deploy_worker.py
           python3 tools/release/publish.py release
@@ -610,20 +658,19 @@ jobs:
             gh release create "$TAG_NAME" --draft --prerelease --latest=false --title "$TAG_NAME" --notes-file release-notes.md release/*
           else
             gh release download "$TAG_NAME" --dir existing
-            for file in release/*.bin* release/SHA256SUMS; do cmp "$file" "existing/$(basename "$file")"; done
+            for file in release/*.bin* release/*.rbl release/SHA256SUMS; do cmp "$file" "existing/$(basename "$file")"; done
           fi
           python3 tools/release/publish.py release
           gh release edit "$TAG_NAME" --draft=false --prerelease --latest=false
           python3 tools/release/publish.py release --candidate
       - uses: actions/setup-node@v4
-        if: steps.release-channel.outputs.channel == 'stable'
         with:
           node-version: '24'
       - name: Build and publish public Pages allowlist
-        if: steps.release-channel.outputs.channel == 'stable'
         env:
           GH_TOKEN: ${{ secrets.PAGES_DEPLOY_TOKEN }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PHICOMM_PAGES_INCLUDE_CANDIDATES: ${{ steps.release-channel.outputs.channel == 'candidate' && '1' || '0' }}
         run: tools/release/pages.sh
 
   release-checks:
@@ -682,7 +729,7 @@ jobs:
       - name: Test OTA release tooling and Worker
         run: |
           python3 -m unittest discover -s tests -p test_release.py
-          python3 -m unittest tests.test_version tests.test_branch_policy tests.test_release_budget tests.test_release_variant tests.test_release_publish tests.test_device_manifest tests.test_release_candidate tests.test_archive_pages tests.test_ci_validation_reuse
+          python3 -m unittest tests.test_version tests.test_branch_policy tests.test_release_budget tests.test_release_variant tests.test_release_publish tests.test_device_manifest tests.test_release_candidate tests.test_archive_pages tests.test_ci_validation_reuse tests.test_s30_release
           node --test tests/test_ota_worker.mjs
       - name: Test production TLS transport with real TLS and sanitizers
         run: python3 tests/test_ota_fetch.py
@@ -778,7 +825,7 @@ jobs:
 
   validation-evidence:
     name: Validate complete test evidence
-    needs: [frontend, firmware, esp, release-checks, feature-tests]
+    needs: [frontend, firmware, esp, s30, release-checks, feature-tests]
     if: always()
     runs-on: ubuntu-22.04
     steps:

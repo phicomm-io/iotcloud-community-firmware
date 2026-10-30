@@ -2,6 +2,52 @@
 
 English translation of the published release history. Historical validation statements apply to the release named in each section, not to later firmware. Release notes are authored in the Wiki and frozen into the source repository before tagging.
 
+## v1.0.0-rc.4
+
+**RC releases are Beta builds. The stable channel remains on v0.9.27.** RC4 integrates the selected binary communication, cached state, hub and web optimizations and adds S30-V1B. Back up settings first. Device firmware, the M1 sensor controller, web frontend and cloud platform are released separately.
+
+### Use binary HTTP, device MQTT and UDP interfaces
+
+Device business APIs default to MessagePack with typed parameter views and direct output. Legacy JSON business interfaces are removed; Home Assistant keeps a separate compact JSON path. Use the matching frontend and a discovery-aware cloud platform; migrate custom JSON clients.
+
+### Cache complete business state and separate diagnostics
+
+The complete business snapshot remains available. Changes are coalesced before encoding and unchanged snapshots are reused. Read runtime, HTTP, panel and serial diagnostics on demand with diagnostics.get and shared numeric field IDs, skipping absent fields. Native MQTT and HA track delivery separately; command receipts remain independent.
+
+### Coordinate reads and retain content during tab changes
+
+The shared HTTP queue coalesces reads, prioritizes writes and bounds confirmation. It cancels stale reads and isolates late responses without cancelling issued writes. Automation pages retain existing content and unsaved forms and apply grouped updates atomically. Login layout and busy/503 handling are corrected. A1 animates locally; ordinary A1/M1 state reads run about every five seconds with brief faster confirmation after control.
+
+### Correct busy errors and MQTT memory fallback
+
+A1 distinguishes invalid parameters, revision conflicts and storage failures from resource contention. MQTT buffer-shrink failure handling preserves subscriptions and avoids replaying retained work. TC1 accepts embedded NUL bytes in binary MQTT messages. HTTP queues at most two waiting requests and returns bounded overload errors.
+
+### Discover with mDNS and communicate over paired UDP
+
+LAN business uses shared binary packets and bounded parsing. It supports administration-password pairing and existing MQTT-granted sensor sessions. Synchronous requests borrow input only during processing; asynchronous work owns its data. Shared mDNS/UDP logic reduces duplication while retaining discovery, pairing and rediscovery.
+
+### Replace the embedded hub broker with mDNS and UDP
+
+The hub discovers devices with mDNS, pairs and communicates over UDP, and provides shared web management. Upstream MQTT, Bemfa and experimental HomeKit bridging remain available. Local Home Assistant and MQTT clients must use an external broker. Pair storage, forwarding ownership/correlation, bounded queues and idle HTTP reclamation are corrected. The former embedded broker is no longer a LAN endpoint.
+
+### Optional web authentication and protected configuration migration
+
+An unset administration password permits direct web access without consuming login sessions. Configured passwords use token sessions while retaining admin Basic access. Password changes, logout and restart follow device authentication rules. Recognized 0.9.x configuration layouts preserve settings during migration; unknown layouts or unsafe writes enter recovery instead of being overwritten. Back up before upgrading and follow the model-specific migration and recovery guide.
+
+### Trim resources, pin compilers and use iotcloud hostnames
+
+The matching frontend is trimmed by device capability and unused resources and formatting dependencies are reduced. MXCHIP release builds use pinned GCC14 with the existing GCC5 runtime; S30 uses GCC5. DHCP hostnames include iotcloud, the actual model and a valid factory-MAC suffix. A1/M1/TC1 protocol identities use openiot. Size savings alone do not establish P95 or stability improvements.
+
+### Add the S30-V1B metering socket and stock network installation
+
+Add ORVIBO S30-V1B (BL2028N/BK7231N/HLW8032) using the shared web UI and binary HTTP/MQTT/UDP services. It provides outlet control, power, voltage, current, energy and persistent meter multipliers. Native RBL and STOCK_UA images use the stock partition layout; write STOCK_UA at 0x11000. First network installation from stock 2M.1220 was physically verified; configure Wi-Fi again on community first boot. The AP retains S30M_V1B_. See the operation guide for LEDs and release-triggered 5/10-second recovery. Web OTA accepts a URL only.
+
+### Downloads and validation limits
+
+- [RC4 firmware and checksums](https://github.com/phicomm-io/iotcloud-community-firmware/releases/tag/v1.0.0-rc.4) · [S30-V1B network and UART installation](https://phicomm-io.github.io/guides/en/s30-flash.html) · [Operation, LEDs and multipliers](https://phicomm-io.github.io/guides/en/s30-guide.html). S30 native files do not use the signed envelopes of other products. Select the correct model, variant and layout.
+- S30 stock 2M.1220 → community and community → community network OTA, outlet control, multiplier save and restart persistence were tested on the physical unit. Reference-meter accuracy, other stock versions and power-loss recovery remain unverified. Earlier device results used development builds from this integration; release-tag build checks and subsequent hardware acceptance are separate. No new P95 or long-term stability comparison is claimed.
+- Applicable rc through rc.3 features and fixes remain, with original notes and limits below. MessagePack is the default; protobuf, WebSocket push and unbounded queues are not included.
+
 ## v1.0.0-rc.3
 
 **RC releases are beta builds. Major changes are still expected, and daily use is not recommended. Use stable v0.9.27 for everyday operation.** The current candidate is v1.0.0-rc.3. It adds alternative A1 recovery sequences on top of rc.2 and retains the rc, rc.1 and rc.2 features and fixes. The complete cumulative notes below keep their source versions; inherited changes are not newly introduced here. Older candidates are no longer download entry points; their tags and original history remain.

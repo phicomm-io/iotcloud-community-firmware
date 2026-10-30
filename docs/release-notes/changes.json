@@ -7918,6 +7918,623 @@
         "reason": "Author reviewed both languages against the gesture implementation, recovery boundaries and pending physical acceptance. Independent review is not claimed.",
         "reviewed_content_sha256": "270ae168e6ff9bca3a1401b7922e00c36ae6e4a489fbf30b0698adb01010be7b"
       }
+    },
+    {
+      "change_id": "openiot-binary-default",
+      "version": "1.0.0-rc.4",
+      "type": "breaking",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1",
+          "m1",
+          "tc1",
+          "daikin"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources",
+          "hub"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "HTTP、设备 MQTT 与 UDP 统一二进制接口",
+        "en": "Use binary HTTP, device MQTT and UDP interfaces"
+      },
+      "description": {
+        "zh-CN": "设备业务默认使用 MessagePack，内部使用类型化参数视图和直接输出；不再保留旧 JSON 业务接口。Home Assistant 独立保留精简 JSON。升级时必须使用本版配套网页及支持发现协议的云平台；旧 JSON 调用方需改造。",
+        "en": "Device business APIs default to MessagePack with typed parameter views and direct output. Legacy JSON business interfaces are removed; Home Assistant keeps a separate compact JSON path. Use the matching frontend and a discovery-aware cloud platform; migrate custom JSON clients."
+      },
+      "ota_summary": {
+        "zh-CN": "设备业务默认使用 MessagePack，内部使用类型化参数视图和直接输出；不再保留旧 JSON 业务接口。Home Assistant 独立保留精简 JSON。升级时必须使用本版配套网页及支持发现协议的云平台；旧 JSON 调用方需改造。",
+        "en": "Device business APIs default to MessagePack with typed parameter views and direct output. Legacy JSON business interfaces are removed; Home Assistant keeps a separate compact JSON path. Use the matching frontend and a discovery-aware cloud platform; migrate custom JSON clients."
+      },
+      "summary_complete": true,
+      "critical": true,
+      "source_refs": [
+        "v1.0.0-rc.4:b003"
+      ],
+      "evidence": {
+        "firmware_sources": [
+          "common/typed_wire.c",
+          "common/service_mp.inc",
+          "common/service_product.inc"
+        ],
+        "firmware_source_sha256": {
+          "common/typed_wire.c": "ad2323c4b121c974632de64273f56ec7ac8e01252b9ebc29332bd1d53e44a3be",
+          "common/service_mp.inc": "1c98c5f95128ce9a97570589740f5406263c6db9784663f8d3fb6de679483abb",
+          "common/service_product.inc": "624781d3bfa196e2587e70a3bc3f3e6024b07c8f19daec937b70242cb12b4d0a"
+        },
+        "review_basis": "Author reviewed the selected implementation and existing host/device evidence; final CI, publication and release-tag hardware acceptance remain separate."
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root",
+        "reviewed_utc": "2026-10-30T10:20:32.649364+00:00",
+        "reason": "Author checked both languages against implementation and verification limits; independent review is not claimed.",
+        "reviewed_content_sha256": "4af956b70ca776d1a58c469cf23b4557bf1a7a315d4c99a668dfdf0e633330b5"
+      }
+    },
+    {
+      "change_id": "business-status-diagnostics-cache",
+      "version": "1.0.0-rc.4",
+      "type": "improvement",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1",
+          "m1",
+          "tc1",
+          "daikin"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources",
+          "hub"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "完整业务状态缓存与独立诊断",
+        "en": "Cache complete business state and separate diagnostics"
+      },
+      "description": {
+        "zh-CN": "完整状态保持可读；状态变化标记后合并编码，无变化时复用缓存。运行时、HTTP、面板及串口诊断通过 diagnostics.get 按需读取，采用所有设备共用的固定数字字段编号，缺失字段跳过。原生 MQTT 与 HA 分别记录发送进度，命令回执独立处理。",
+        "en": "The complete business snapshot remains available. Changes are coalesced before encoding and unchanged snapshots are reused. Read runtime, HTTP, panel and serial diagnostics on demand with diagnostics.get and shared numeric field IDs, skipping absent fields. Native MQTT and HA track delivery separately; command receipts remain independent."
+      },
+      "ota_summary": {
+        "zh-CN": "完整状态保持可读；状态变化标记后合并编码，无变化时复用缓存。运行时、HTTP、面板及串口诊断通过 diagnostics.get 按需读取，采用所有设备共用的固定数字字段编号，缺失字段跳过。原生 MQTT 与 HA 分别记录发送进度，命令回执独立处理。",
+        "en": "The complete business snapshot remains available. Changes are coalesced before encoding and unchanged snapshots are reused. Read runtime, HTTP, panel and serial diagnostics on demand with diagnostics.get and shared numeric field IDs, skipping absent fields. Native MQTT and HA track delivery separately; command receipts remain independent."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc.4:b005"
+      ],
+      "evidence": {
+        "firmware_sources": [
+          "common/diagnostics_ids.h",
+          "common/device_status.h",
+          "common/mqtt/service.c"
+        ],
+        "firmware_source_sha256": {
+          "common/diagnostics_ids.h": "ee00543715ed947d6f05d1f78cd5d3f81da247df42657b4d7ec6c27d45b37111",
+          "common/device_status.h": "d0d79138e708381f474cf747e51b762d3d345d34ad63af65463549af7895dc71",
+          "common/mqtt/service.c": "8c5862831461ee38dbf84538c4faf1741b78507266f001319542aeb9c397a770"
+        },
+        "review_basis": "Author reviewed the selected implementation and existing host/device evidence; final CI, publication and release-tag hardware acceptance remain separate."
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root",
+        "reviewed_utc": "2026-10-30T10:20:32.649364+00:00",
+        "reason": "Author checked both languages against implementation and verification limits; independent review is not claimed.",
+        "reviewed_content_sha256": "42b9f9390ef40c9a83bdc78389f798d2dd2dc40f391da66cd6a312d9bd5aec0c"
+      }
+    },
+    {
+      "change_id": "web-request-coordination",
+      "version": "1.0.0-rc.4",
+      "type": "bugfix",
+      "component": "bundled_web",
+      "scope": {
+        "models": [
+          "a1",
+          "m1",
+          "tc1",
+          "daikin"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources",
+          "hub"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "减少重复读取并保留切页内容",
+        "en": "Coordinate reads and retain content during tab changes"
+      },
+      "description": {
+        "zh-CN": "公共 HTTP 请求串行合并，优先写操作并进行有限确认；合并重复读取、取消过期只读请求并隔离旧响应，不取消已发出的写操作。联动页保留旧内容和未保存表单，成组数据原子更新；修复登录布局及 busy/503 处理。A1 本地刷新圆环动画，A1/M1 普通状态约每 5 秒读取，调速后短时加快确认。",
+        "en": "The shared HTTP queue coalesces reads, prioritizes writes and bounds confirmation. It cancels stale reads and isolates late responses without cancelling issued writes. Automation pages retain existing content and unsaved forms and apply grouped updates atomically. Login layout and busy/503 handling are corrected. A1 animates locally; ordinary A1/M1 state reads run about every five seconds with brief faster confirmation after control."
+      },
+      "ota_summary": {
+        "zh-CN": "公共 HTTP 请求串行合并，优先写操作并进行有限确认；合并重复读取、取消过期只读请求并隔离旧响应，不取消已发出的写操作。联动页保留旧内容和未保存表单，成组数据原子更新；修复登录布局及 busy/503 处理。A1 本地刷新圆环动画，A1/M1 普通状态约每 5 秒读取，调速后短时加快确认。",
+        "en": "The shared HTTP queue coalesces reads, prioritizes writes and bounds confirmation. It cancels stale reads and isolates late responses without cancelling issued writes. Automation pages retain existing content and unsaved forms and apply grouped updates atomically. Login layout and busy/503 handling are corrected. A1 animates locally; ordinary A1/M1 state reads run about every five seconds with brief faster confirmation after control."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc.4:b007"
+      ],
+      "evidence": {
+        "firmware_sources": [
+          "frontend.lock.json"
+        ],
+        "firmware_source_sha256": {
+          "frontend.lock.json": "df485f03a8c4d06dfdab81cc8cc09b97dd50dc66027c24b8231a71bd3dcb3a44"
+        },
+        "review_basis": "Author reviewed the selected implementation and existing host/device evidence; final CI, publication and release-tag hardware acceptance remain separate."
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root",
+        "reviewed_utc": "2026-10-30T10:20:32.649364+00:00",
+        "reason": "Author checked both languages against implementation and verification limits; independent review is not claimed.",
+        "reviewed_content_sha256": "716f090d73bc91bdc870a1da692dc04a543ca1b1e1d0e81874420e6cab37afca"
+      }
+    },
+    {
+      "change_id": "mqtt-busy-recovery",
+      "version": "1.0.0-rc.4",
+      "type": "bugfix",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1",
+          "m1",
+          "tc1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "修复 busy 分类与 MQTT 内存回退",
+        "en": "Correct busy errors and MQTT memory fallback"
+      },
+      "description": {
+        "zh-CN": "A1 将非法参数、版本冲突和存储失败与资源繁忙区分，避免误报 busy。修复 MQTT 缩小接收缓冲失败时的断连处理，保留订阅状态，避免重放保留的工作消息；TC1 二进制 MQTT 不再因消息包含 NUL 字节而拒收。HTTP 最多保留两个等待请求，过载仍有界返回。",
+        "en": "A1 distinguishes invalid parameters, revision conflicts and storage failures from resource contention. MQTT buffer-shrink failure handling preserves subscriptions and avoids replaying retained work. TC1 accepts embedded NUL bytes in binary MQTT messages. HTTP queues at most two waiting requests and returns bounded overload errors."
+      },
+      "ota_summary": {
+        "zh-CN": "A1 将非法参数、版本冲突和存储失败与资源繁忙区分，避免误报 busy。修复 MQTT 缩小接收缓冲失败时的断连处理，保留订阅状态，避免重放保留的工作消息；TC1 二进制 MQTT 不再因消息包含 NUL 字节而拒收。HTTP 最多保留两个等待请求，过载仍有界返回。",
+        "en": "A1 distinguishes invalid parameters, revision conflicts and storage failures from resource contention. MQTT buffer-shrink failure handling preserves subscriptions and avoids replaying retained work. TC1 accepts embedded NUL bytes in binary MQTT messages. HTTP queues at most two waiting requests and returns bounded overload errors."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc.4:b009"
+      ],
+      "evidence": {
+        "firmware_sources": [
+          "common/mqtt-receive-recovery.patch",
+          "common/httpd/core.c",
+          "A1/main.c"
+        ],
+        "firmware_source_sha256": {
+          "common/mqtt-receive-recovery.patch": "027dae055dd2a61c13dd3bf73e70aef6d7521fec3ab40a27ff710c6eaa5d4ae8",
+          "common/httpd/core.c": "fed7ef5d71717e98b629379e4bc53997692528ca3d24eb233fd19df9e2ddade5",
+          "A1/main.c": "9c2ca064539767e6be3164e302ec78134686211ff882c00b5d84c30e1076ed46"
+        },
+        "review_basis": "Author reviewed the selected implementation and existing host/device evidence; final CI, publication and release-tag hardware acceptance remain separate."
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root",
+        "reviewed_utc": "2026-10-30T10:20:32.649364+00:00",
+        "reason": "Author checked both languages against implementation and verification limits; independent review is not claimed.",
+        "reviewed_content_sha256": "43612b182ac9da5f03463a5b04626f54b312411664d4d45bca590e46d3d3acbd"
+      }
+    },
+    {
+      "change_id": "authenticated-lan-v4",
+      "version": "1.0.0-rc.4",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1",
+          "m1",
+          "tc1",
+          "daikin"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources",
+          "hub"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "mDNS 发现与经过配对的 UDP 通信",
+        "en": "Discover with mDNS and communicate over paired UDP"
+      },
+      "description": {
+        "zh-CN": "内网业务使用统一二进制封包及有界参数解析，支持管理密码配对和已有 MQTT 下发传感器会话授权。同步请求仅借用输入数据，异步操作持有独立数据；精简 mDNS/UDP 的重复逻辑，同时保留发现、配对和重新发现路径。",
+        "en": "LAN business uses shared binary packets and bounded parsing. It supports administration-password pairing and existing MQTT-granted sensor sessions. Synchronous requests borrow input only during processing; asynchronous work owns its data. Shared mDNS/UDP logic reduces duplication while retaining discovery, pairing and rediscovery."
+      },
+      "ota_summary": {
+        "zh-CN": "内网业务使用统一二进制封包及有界参数解析，支持管理密码配对和已有 MQTT 下发传感器会话授权。同步请求仅借用输入数据，异步操作持有独立数据；精简 mDNS/UDP 的重复逻辑，同时保留发现、配对和重新发现路径。",
+        "en": "LAN business uses shared binary packets and bounded parsing. It supports administration-password pairing and existing MQTT-granted sensor sessions. Synchronous requests borrow input only during processing; asynchronous work owns its data. Shared mDNS/UDP logic reduces duplication while retaining discovery, pairing and rediscovery."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc.4:b011"
+      ],
+      "evidence": {
+        "firmware_sources": [
+          "common/runtime_lan_business.inc"
+        ],
+        "firmware_source_sha256": {
+          "common/runtime_lan_business.inc": "8ff00d11c363221ce08f73e326c9fd8c3edf1e0537cd7f44e1e26b29f293280c"
+        },
+        "review_basis": "Author reviewed the selected implementation and existing host/device evidence; final CI, publication and release-tag hardware acceptance remain separate."
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root",
+        "reviewed_utc": "2026-10-30T10:20:32.649364+00:00",
+        "reason": "Author checked both languages against implementation and verification limits; independent review is not claimed.",
+        "reviewed_content_sha256": "92233415ea8889489581b5ea729a2d414faaf48a7677719862c6b3929c9d809e"
+      }
+    },
+    {
+      "change_id": "hub-mdns-udp-runtime",
+      "version": "1.0.0-rc.4",
+      "type": "breaking",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "daikin"
+        ],
+        "variants": [
+          "hub"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "中枢移除内置 Broker，改用 mDNS 与 UDP",
+        "en": "Replace the embedded hub broker with mDNS and UDP"
+      },
+      "description": {
+        "zh-CN": "中枢通过 mDNS 自动发现、UDP 配对及通信，提供统一网页设备管理，保留上游 MQTT、巴法云与实验性 HomeKit 桥接。本地 Home Assistant 及 MQTT 客户端须连接外部 Broker。修复配对存储、转发归属/关联、有限队列及空闲 HTTP 连接回收；旧内置 Broker 配置不能继续作为局域网连接入口。",
+        "en": "The hub discovers devices with mDNS, pairs and communicates over UDP, and provides shared web management. Upstream MQTT, Bemfa and experimental HomeKit bridging remain available. Local Home Assistant and MQTT clients must use an external broker. Pair storage, forwarding ownership/correlation, bounded queues and idle HTTP reclamation are corrected. The former embedded broker is no longer a LAN endpoint."
+      },
+      "ota_summary": {
+        "zh-CN": "中枢通过 mDNS 自动发现、UDP 配对及通信，提供统一网页设备管理，保留上游 MQTT、巴法云与实验性 HomeKit 桥接。本地 Home Assistant 及 MQTT 客户端须连接外部 Broker。修复配对存储、转发归属/关联、有限队列及空闲 HTTP 连接回收；旧内置 Broker 配置不能继续作为局域网连接入口。",
+        "en": "The hub discovers devices with mDNS, pairs and communicates over UDP, and provides shared web management. Upstream MQTT, Bemfa and experimental HomeKit bridging remain available. Local Home Assistant and MQTT clients must use an external broker. Pair storage, forwarding ownership/correlation, bounded queues and idle HTTP reclamation are corrected. The former embedded broker is no longer a LAN endpoint."
+      },
+      "summary_complete": true,
+      "critical": true,
+      "source_refs": [
+        "v1.0.0-rc.4:b013"
+      ],
+      "evidence": {
+        "firmware_sources": [
+          "DAIKIN/src/hub_lan.inc",
+          "DAIKIN/include/hub_service.h",
+          "DAIKIN/src/http.inc"
+        ],
+        "firmware_source_sha256": {
+          "DAIKIN/src/hub_lan.inc": "2d98eb355487f336175204cce46ce0b6de21c8b951c421bb4af40f0a2c2579a1",
+          "DAIKIN/include/hub_service.h": "9f9f76839af3b37d203946297384f9353be937c86e0a07c75801f64ee479c22e",
+          "DAIKIN/src/http.inc": "970a0490472ff4e7657e7c19d347608f076c2452f048aa61aac019379c685de4"
+        },
+        "review_basis": "Author reviewed the selected implementation and existing host/device evidence; final CI, publication and release-tag hardware acceptance remain separate."
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root",
+        "reviewed_utc": "2026-10-30T10:20:32.649364+00:00",
+        "reason": "Author checked both languages against implementation and verification limits; independent review is not claimed.",
+        "reviewed_content_sha256": "eb2fd818db2adaee43c1eff18effa55cf87c379d35c40bef243777f9a04344c3"
+      }
+    },
+    {
+      "change_id": "webui-auth-and-config-recovery",
+      "version": "1.0.0-rc.4",
+      "type": "security",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1",
+          "m1",
+          "tc1",
+          "daikin"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources",
+          "hub"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "可选网页认证与受保护的配置迁移",
+        "en": "Optional web authentication and protected configuration migration"
+      },
+      "description": {
+        "zh-CN": "未设管理密码时直接进入网页且不占登录会话；设密码后使用 token 会话，保留 admin Basic 访问。密码变化、退出及重启按设备认证策略处理。已识别的 0.9.x 配置布局迁移保留原有设置；未知或无法可靠写入的布局进入配置恢复，不盲目覆盖。请在升级前备份，并按各机型迁移/恢复说明操作。",
+        "en": "An unset administration password permits direct web access without consuming login sessions. Configured passwords use token sessions while retaining admin Basic access. Password changes, logout and restart follow device authentication rules. Recognized 0.9.x configuration layouts preserve settings during migration; unknown layouts or unsafe writes enter recovery instead of being overwritten. Back up before upgrading and follow the model-specific migration and recovery guide."
+      },
+      "ota_summary": {
+        "zh-CN": "未设管理密码时直接进入网页且不占登录会话；设密码后使用 token 会话，保留 admin Basic 访问。密码变化、退出及重启按设备认证策略处理。已识别的 0.9.x 配置布局迁移保留原有设置；未知或无法可靠写入的布局进入配置恢复，不盲目覆盖。请在升级前备份，并按各机型迁移/恢复说明操作。",
+        "en": "An unset administration password permits direct web access without consuming login sessions. Configured passwords use token sessions while retaining admin Basic access. Password changes, logout and restart follow device authentication rules. Recognized 0.9.x configuration layouts preserve settings during migration; unknown layouts or unsafe writes enter recovery instead of being overwritten. Back up before upgrading and follow the model-specific migration and recovery guide."
+      },
+      "summary_complete": true,
+      "critical": true,
+      "source_refs": [
+        "v1.0.0-rc.4:b015"
+      ],
+      "evidence": {
+        "firmware_sources": [
+          "common/local_auth.c",
+          "common/config-commit-mico36.patch",
+          "A1/config_legacy.h"
+        ],
+        "firmware_source_sha256": {
+          "common/local_auth.c": "853ee7649cebe7e50d1ffbec03d958952b8d0116366b30968dcc4499cd41befb",
+          "common/config-commit-mico36.patch": "e6bf17c31baa258a0da5756922506758ac67783ab744f443f34ba5dd75f59457",
+          "A1/config_legacy.h": "37a3a4e3d3d4a4587203a311bba6245742cfa9f976742fa79c41d7fd61fb6782"
+        },
+        "review_basis": "Author reviewed the selected implementation and existing host/device evidence; final CI, publication and release-tag hardware acceptance remain separate."
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root",
+        "reviewed_utc": "2026-10-30T10:20:32.649364+00:00",
+        "reason": "Author checked both languages against implementation and verification limits; independent review is not claimed.",
+        "reviewed_content_sha256": "ec83dccdffbec3edde31632a3e058b96595538361896050a81ff97cf250903ae"
+      }
+    },
+    {
+      "change_id": "compact-builds-and-hostnames",
+      "version": "1.0.0-rc.4",
+      "type": "improvement",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1",
+          "m1",
+          "tc1",
+          "daikin"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources",
+          "hub"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "精简资源、固定工具链与 iotcloud 主机名",
+        "en": "Trim resources, pin compilers and use iotcloud hostnames"
+      },
+      "description": {
+        "zh-CN": "配套前端按设备能力裁剪，精简未用资源及格式化依赖；MXCHIP 发布构建使用固定 GCC14 编译器及原 GCC5 运行库，S30 使用 GCC5。DHCP 主机名使用 iotcloud、真实型号及本机有效工厂 MAC 尾号，A1/M1/TC1 协议身份统一为 openiot。容量收益不等同于 P95 或稳定性收益。",
+        "en": "The matching frontend is trimmed by device capability and unused resources and formatting dependencies are reduced. MXCHIP release builds use pinned GCC14 with the existing GCC5 runtime; S30 uses GCC5. DHCP hostnames include iotcloud, the actual model and a valid factory-MAC suffix. A1/M1/TC1 protocol identities use openiot. Size savings alone do not establish P95 or stability improvements."
+      },
+      "ota_summary": {
+        "zh-CN": "配套前端按设备能力裁剪，精简未用资源及格式化依赖；MXCHIP 发布构建使用固定 GCC14 编译器及原 GCC5 运行库，S30 使用 GCC5。DHCP 主机名使用 iotcloud、真实型号及本机有效工厂 MAC 尾号，A1/M1/TC1 协议身份统一为 openiot。容量收益不等同于 P95 或稳定性收益。",
+        "en": "The matching frontend is trimmed by device capability and unused resources and formatting dependencies are reduced. MXCHIP release builds use pinned GCC14 with the existing GCC5 runtime; S30 uses GCC5. DHCP hostnames include iotcloud, the actual model and a valid factory-MAC suffix. A1/M1/TC1 protocol identities use openiot. Size savings alone do not establish P95 or stability improvements."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc.4:b017"
+      ],
+      "evidence": {
+        "firmware_sources": [
+          "common/device_hostname.h",
+          "tools/compiler_profile.py",
+          "frontend.lock.json"
+        ],
+        "firmware_source_sha256": {
+          "common/device_hostname.h": "cf8be70c860b03abd98e45b9e04f554d1116e1d6e80c8aaef8f6b0fb14e923da",
+          "tools/compiler_profile.py": "743db2f52345244fef79d0722d20985b058f12e0781ccb85a1560dc54148737b",
+          "frontend.lock.json": "df485f03a8c4d06dfdab81cc8cc09b97dd50dc66027c24b8231a71bd3dcb3a44"
+        },
+        "review_basis": "Author reviewed the selected implementation and existing host/device evidence; final CI, publication and release-tag hardware acceptance remain separate."
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root",
+        "reviewed_utc": "2026-10-30T10:20:32.649364+00:00",
+        "reason": "Author checked both languages against implementation and verification limits; independent review is not claimed.",
+        "reviewed_content_sha256": "51ddd6d97ac7686ba7fd4848fe47924e6ec4e5ef21b870e89c3fee91eb998728"
+      }
+    },
+    {
+      "change_id": "s30-v1b-native-support",
+      "version": "1.0.0-rc.4",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "s30-v1b"
+        ],
+        "variants": [
+          "full"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "新增 S30-V1B 计量插座与原厂免拆安装",
+        "en": "Add the S30-V1B metering socket and stock network installation"
+      },
+      "description": {
+        "zh-CN": "新增 ORVIBO S30-V1B（BL2028N/BK7231N/HLW8032）：复用公共网页与二进制 HTTP/MQTT/UDP，提供开关、功率/电压/电流/累计电量及持久化倍率设置。默认采用原厂分区布局，发布原生 RBL 和从 0x11000 写入的 STOCK_UA；原厂 2M.1220 已实测正常网络 OTA 首次安装，首次社区启动需重新配网。保留 S30M_V1B_ 热点前缀；灯语及 5 秒/10 秒松手恢复手势见操作说明。网页仅支持 URL OTA。",
+        "en": "Add ORVIBO S30-V1B (BL2028N/BK7231N/HLW8032) using the shared web UI and binary HTTP/MQTT/UDP services. It provides outlet control, power, voltage, current, energy and persistent meter multipliers. Native RBL and STOCK_UA images use the stock partition layout; write STOCK_UA at 0x11000. First network installation from stock 2M.1220 was physically verified; configure Wi-Fi again on community first boot. The AP retains S30M_V1B_. See the operation guide for LEDs and release-triggered 5/10-second recovery. Web OTA accepts a URL only."
+      },
+      "ota_summary": {
+        "zh-CN": "新增 ORVIBO S30-V1B（BL2028N/BK7231N/HLW8032）：复用公共网页与二进制 HTTP/MQTT/UDP，提供开关、功率/电压/电流/累计电量及持久化倍率设置。默认采用原厂分区布局，发布原生 RBL 和从 0x11000 写入的 STOCK_UA；原厂 2M.1220 已实测正常网络 OTA 首次安装，首次社区启动需重新配网。保留 S30M_V1B_ 热点前缀；灯语及 5 秒/10 秒松手恢复手势见操作说明。网页仅支持 URL OTA。",
+        "en": "Add ORVIBO S30-V1B (BL2028N/BK7231N/HLW8032) using the shared web UI and binary HTTP/MQTT/UDP services. It provides outlet control, power, voltage, current, energy and persistent meter multipliers. Native RBL and STOCK_UA images use the stock partition layout; write STOCK_UA at 0x11000. First network installation from stock 2M.1220 was physically verified; configure Wi-Fi again on community first boot. The AP retains S30M_V1B_. See the operation guide for LEDs and release-triggered 5/10-second recovery. Web OTA accepts a URL only."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc.4:b019"
+      ],
+      "evidence": {
+        "firmware_sources": [
+          "BL2028N/stock_layout.py",
+          "BL2028N/src/ph_meter.c",
+          "tools/s30_stock_ota.py",
+          "docs/public/s30-flash.md"
+        ],
+        "firmware_source_sha256": {
+          "BL2028N/stock_layout.py": "edd6a1a4fbb6899a38d361903569eb249ffbff8145a1e7ec87232c2bf6315fcd",
+          "BL2028N/src/ph_meter.c": "2eceb24d4f625a9257c9fcf8cd862642ef7a0191fc085bc1427a04f994e56e39",
+          "tools/s30_stock_ota.py": "9b8c84dd51f33d099777afe8ef08a5d7d9ecce0f0d0d585f91370154deb383fa",
+          "docs/public/s30-flash.md": "6cdab5f1931d01b6cbe1815dd8a41cd594ee82239c7ae9c3667da44bf63498cc"
+        },
+        "review_basis": "Author reviewed the selected implementation and existing host/device evidence; final CI, publication and release-tag hardware acceptance remain separate."
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root",
+        "reviewed_utc": "2026-10-30T10:20:32.649364+00:00",
+        "reason": "Author checked both languages against implementation and verification limits; independent review is not claimed.",
+        "reviewed_content_sha256": "0ff5d7afdd40b2aec5558bcc3845a89023e36be5f7f2504231dcd33c44139801"
+      }
     }
   ],
   "merges": []

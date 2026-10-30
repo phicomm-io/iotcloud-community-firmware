@@ -246,6 +246,7 @@ class ValidationReuseTests(unittest.TestCase):
             'Verify locked frontend dependency': 'frontend',
             'tc1 firmware variants': 'firmware', 'a1 firmware variants': 'firmware', 'm1 firmware variants': 'firmware',
             'DAIKIN ESP32 full firmware': 'esp', 'DAIKIN ESP32 hub firmware': 'esp',
+            'S30-V1B BK7231N firmware': 's30',
             'Lightweight release checks': 'release-checks',
             'Binding and automation host scenarios': 'feature-tests',
             'Validate complete test evidence': 'validation-evidence',

@@ -2,6 +2,20 @@
 
 This guide covers the **ORVIBO S30-V1B**, with a BL2028N module, BK7231N chip and HLW8032 meter. Network installation has been verified on stock **`2M.1220`**. UART remains available for backups, installation and recovery. The default layout retains this unit’s original bootloader and factory MAC/RF; **first installation starts with fresh community settings and requires Wi-Fi setup again**. See [S30-V1B operation](s30-guide) for use after installation. An identical enclosure does not establish compatibility with other S30 variants or modules.
 
+## RC4 downloads
+
+The current candidate is **v1.0.0-rc.4 (Beta)**. Select the file for your installation method:
+
+| Purpose | Release file |
+| --- | --- |
+| Stock network installation or community URL OTA | [BL2028N_OTA_1.0.0-rc.4.rbl](https://github.com/phicomm-io/iotcloud-community-firmware/releases/download/v1.0.0-rc.4/BL2028N_OTA_1.0.0-rc.4.rbl) |
+| UART installation preserving the stock bootloader; write at `0x11000` | [BL2028N_STOCK_UA_1.0.0-rc.4.bin](https://github.com/phicomm-io/iotcloud-community-firmware/releases/download/v1.0.0-rc.4/BL2028N_STOCK_UA_1.0.0-rc.4.bin) |
+| Checksums | [SHA256SUMS-S30](https://github.com/phicomm-io/iotcloud-community-firmware/releases/download/v1.0.0-rc.4/SHA256SUMS-S30) |
+
+Download names are fixed per release; the device reports the release version followed by its six-digit Git suffix.
+
+For an RBL-only download, run `grep "  BL2028N_OTA_1.0.0-rc.4.rbl$" SHA256SUMS-S30 | sha256sum -c -` in the same directory. On macOS use `shasum -a 256` and compare the matching checksum entry.
+
 ## Choose an installation method
 
 | Current state | Method | File |
@@ -22,9 +36,38 @@ The computer needs Python, `paho-mqtt`, a local HTTPS certificate and a **dedica
 
 The procedure redirects the stock device's CGW/cloud configuration to these test services. Community first boot uses fresh settings: stock accounts, Wi-Fi, MQTT, pairing and meter settings are not migrated. Record any settings that must be entered again.
 
+### Example local TLS MQTT service
+
+On Linux/macOS, install Python, OpenSSL and Mosquitto. Work in a dedicated temporary directory. Replace `192.168.1.10` with the computer's reachable LAN address, not the device address.
+
+```sh
+python3 -m venv .venv
+. .venv/bin/activate
+python3 -m pip install paho-mqtt==2.1.0
+OTA_HOST=192.168.1.10
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+  -keyout gateway-key.pem -out gateway-cert.pem \
+  -subj "/CN=$OTA_HOST" -addext "subjectAltName=IP:$OTA_HOST"
+mosquitto_passwd -c broker.passwd s30test
+chmod 600 gateway-key.pem broker.passwd
+```
+
+Enter a dedicated test password when prompted. Create `broker.conf`, replacing each file path below with its absolute path:
+
+```text
+listener 18892
+allow_anonymous false
+password_file /absolute/path/broker.passwd
+certfile /absolute/path/gateway-cert.pem
+keyfile /absolute/path/gateway-key.pem
+persistence false
+```
+
+In another terminal run `mosquitto -c broker.conf -v` as the current user. Set `mqtt.private.json` to this computer's IP, port `18892`, user `s30test` and the password you just created. Both `--mqtt-ca` and `--cert` may use `gateway-cert.pem`; `--key` uses `gateway-key.pem`. Keep the stock device connected to its existing Wi-Fi and allow the required device connections through the computer's firewall.
+
 ### Run the local installation tool
 
-Use [s30_stock_ota.py](https://github.com/phicomm-io/iotcloud-community-firmware/blob/hotfix/rc4-selected-integration/tools/s30_stock_ota.py), reviewed alongside the candidate firmware. The computer, stock device and broker IPv4 addresses must be mutually reachable. Allow TCP `15683` for HTTPS CGW, `8080` for the firmware download, and the broker's selected port. Certificates must include their service IP; `--mqtt-ca` verifies the broker certificate on the computer.
+Use [s30_stock_ota.py](https://github.com/phicomm-io/iotcloud-community-firmware/blob/v1.0.0-rc.4/tools/s30_stock_ota.py), reviewed alongside the candidate firmware. The computer, stock device and broker IPv4 addresses must be mutually reachable. Allow TCP `15683` for HTTPS CGW, `8080` for the firmware download, and the broker's selected port. Certificates must include their service IP; `--mqtt-ca` verifies the broker certificate on the computer.
 
 Prepare two private JSON files with mode `600`; do not commit or publish them:
 
@@ -38,17 +81,19 @@ Prepare two private JSON files with mode `600`; do not commit or publish them:
 
 MQTT usernames and passwords must each be 1–31 bytes. Keep addresses short and use dedicated test credentials; the tool does not exploit the identified stock length overflow.
 
-Obtain the matching RBL and `SHA256SUMS`, verify them, and replace every placeholder:
+Download the matching RBL and `SHA256SUMS-S30`, verify them, and replace every placeholder:
 
 ```sh
+mkdir -p tools
+curl --fail --location https://raw.githubusercontent.com/phicomm-io/iotcloud-community-firmware/v1.0.0-rc.4/tools/s30_stock_ota.py -o tools/s30_stock_ota.py
 chmod 600 wifi.private.json mqtt.private.json
-sha256sum -c SHA256SUMS
+grep "  BL2028N_OTA_1.0.0-rc.4.rbl$" SHA256SUMS-S30 | sha256sum -c -
 python3 tools/s30_stock_ota.py \
   --device <stock-device-IP> --device-id <this-unit-12-digit-factory-MAC> \
   --host <computer-LAN-IP> \
   --wifi-file wifi.private.json --mqtt-file mqtt.private.json \
-  --mqtt-ca broker-cert.pem --cert gateway-cert.pem --key gateway-key.pem \
-  --rbl 'BL2028N_OTA_<version>.rbl' --sha256 <published-file-SHA256>
+  --mqtt-ca gateway-cert.pem --cert gateway-cert.pem --key gateway-key.pem \
+  --rbl 'BL2028N_OTA_1.0.0-rc.4.rbl' --sha256 <published-file-SHA256>
 ```
 
 The tool configures local HTTPS CGW using CoAP `/qlink/netinfo`. Stock firmware retrieves the temporary TLS MQTT connection over HTTPS, receives a normal AndLink file command, and downloads the RBL. It does not access UART or write factory parameters. Returning to stock firmware and dual boot are not provided.
@@ -64,7 +109,7 @@ The physical test also completed a second community network OTA. Full readback c
 
 ## Disassembly and UART
 
-## Power and preparation
+### Power and preparation
 
 Unplug the socket from mains, disconnect the load and original power supply, and confirm power is off before opening it. **Keep mains disconnected whenever the enclosure is open, the computer UART is connected, or flashing is in progress.** Use a USB-to-TTL adapter with 3.3 V logic and a stable, separate, isolated 3.3 V DC supply. Do not apply 5 V to the module.
 
@@ -72,7 +117,7 @@ The adapter's 3.3 V output may not supply enough current when Wi-Fi starts, caus
 
 Obtain firmware and `SHA256SUMS` for this exact device and version, and verify the file first. Close serial applications such as minicom so that only the flashing tool owns the port. The examples use [bk7231tools](https://github.com/tuya-cloudcutter/bk7231tools#usage); replace `/dev/ttyUSB0` with the actual port.
 
-## Contact locations and wiring
+### Contact locations and wiring
 
 **Look directly at the PCB on the plug side.** At the **outer upper-right edge**, two contacts connect the power board to the MCU module: **the left contact is GND and the right contact is 3V3**. Use the board's **VTX / VRX** UART test points; some markings include a suffix, such as VTX1 / VRX1.
 
@@ -85,7 +130,7 @@ Obtain firmware and `SHA256SUMS` for this exact device and version, and verify t
 
 Left and right apply only to that viewing direction. Check orientation and contacts before wiring; turning the PCB over reverses the view. VTX/VRX describe the device's signal direction, so cross TX and RX.
 
-## Make a full backup first
+### Make a full backup first
 
 Start the tool and let it wait for a connection, then **cycle the module's 3.3 V power**, or briefly ground and release a positively identified CEN/RESET point. Keep the USB adapter connected. The socket's normal power button does not replace a chip reset.
 
@@ -100,7 +145,7 @@ cmp s30-stock-1.bin s30-stock-2.bin
 
 Both files must contain 2097152 bytes and have identical SHA-256 hashes. `cmp` must exit successfully with no output. Save both backups and hashes before writing. They contain this unit's MAC, RF parameters and possibly factory credentials; keep them private. Another unit's backup is not a substitute.
 
-## Select and write the image
+### Select and write the image
 
 The BL2028N unit validated here uses a **zero-key bootloader**. To retain that bootloader, use:
 
@@ -121,7 +166,7 @@ Writing the UA application image at `0x11000` retains the unit's bootloader, fac
 
 After the tool verifies the write, read the full Flash again and compare the written range with the UA file. Check that data outside that range, especially the bootloader and factory parameters, remains unchanged. On the validated unit, the RF/TLV sector is at `0x1e0000`; preserve its valid factory MAC. A completed transfer alone does not establish a working installation.
 
-## First boot and recovery
+### First boot and recovery
 
 1. After flashing, cycle the isolated 3.3 V supply and check for an AP named `S30M_V1B_` followed by the last six MAC digits in uppercase hexadecimal.
 2. Connect and open **http://192.168.0.1**. Follow the [operation guide](s30-guide), configure Wi-Fi, and confirm the model and version. Both the initial AP password and web administration password are empty.
@@ -130,3 +175,7 @@ After the tool verifies the write, read the full Flash again and compare the wri
 An isolated 3.3 V bench supply can verify boot, networking and the web interface. It does not establish load metering with the original metering circuit powered normally.
 
 For handshake failures, check port ownership, crossed TX/RX, common ground, contact reliability, supply and reset timing. If the flashed unit will not boot, retain the backup and complete tool log, then check image, offset and bootloader key format. An interrupted previous OTA may require version-specific cleanup of pending upgrade data; do not try repeated whole-chip erases or another unit's RF/MAC data.
+
+## Subsequent community URL OTA
+
+Download and verify the RBL above. In its directory, temporarily run `python3 -m http.server 8080 --bind <computer-LAN-IP>`. Enter `http://<computer-LAN-IP>:8080/BL2028N_OTA_1.0.0-rc.4.rbl` in the device's firmware update settings. Use a directly reachable, fixed-length HTTP download without redirects; a GitHub web page is not such a URL. Wait for reboot, verify the version, and stop the temporary HTTP service. This method also keeps the enclosure closed.
