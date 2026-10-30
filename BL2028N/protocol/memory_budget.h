@@ -1,0 +1,43 @@
+#pragma once
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include "../src/memory_policy.h"
+
+/* Reserve unmaterialized input and small dispatch scratch only. The JSON
+ * allocator checks the live heap on every allocation instead of assuming a
+ * full 12 KiB graph per request. No active-request count controls admission.
+ * Core/network headroom is a soft floor, not a closed-SDK heap partition. */
+/* MiCO release_log also defines DEBUG; product makefiles select this policy
+ * from BUILD_TYPE rather than the compiler's logging/assertion switches. */
+#if defined(PH_SERVICE_MEMORY_RESERVE)
+#define SERVICE_MEMORY_RESERVE PH_SERVICE_MEMORY_RESERVE
+#elif defined(PHICOMM_EMW3080_RELEASE_MEMORY) && PHICOMM_EMW3080_RELEASE_MEMORY
+#define SERVICE_MEMORY_RESERVE 8192u
+#else
+#define SERVICE_MEMORY_RESERVE 16384u
+#endif
+#define SERVICE_MEMORY_WORK 512u
+typedef struct {
+    uint32_t reserved, active, denied, waiting, minimum_free;
+    uint32_t json_live, json_peak, json_failed, json_denied;
+    uint32_t mqtt_pending, mqtt_peak, mqtt_overflow, mqtt_max_delay;
+} service_memory_state_t;
+static inline unsigned service_memory_cost(size_t input) {
+    return input <= 16384 ? SERVICE_MEMORY_WORK + (unsigned)input : 0;
+}
+static inline unsigned memory_budget_claim(service_memory_state_t *s, uint32_t free_bytes, size_t input) {
+    unsigned cost = service_memory_cost(input);
+    if (free_bytes < s->minimum_free) s->minimum_free = free_bytes;
+    if (!cost || free_bytes < SERVICE_MEMORY_RESERVE ||
+        cost > free_bytes - SERVICE_MEMORY_RESERVE ||
+        s->reserved > free_bytes - SERVICE_MEMORY_RESERVE - cost) {
+        if (s->denied != UINT32_MAX) s->denied++;
+        return 0;
+    }
+    s->reserved += cost; s->active++;
+    return cost;
+}
+static inline void memory_budget_release(service_memory_state_t *s, unsigned cost) {
+    if (cost && cost <= s->reserved && s->active) { s->reserved -= cost; s->active--; }
+}

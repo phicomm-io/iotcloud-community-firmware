@@ -1,0 +1,336 @@
+--- a/web/index.html
++++ b/web/index.html
+@@ -2,33 +2,36 @@
+ <html lang="zh-CN">
+ <head>
+ <meta name="referrer" content="no-referrer"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+-<title>TC1 智能插座</title>
+-<style>/* @include style.css */</style>
++<title>iotcloud · S30-V1B</title>
++<script>/* @include appearance.js */</script>
++<style>/* @include style.css */
++.s30-home .tiles{grid-template-columns:minmax(0,1fr)}</style>
+ </head>
+ <body>
+-<main id="homePage" class="home tc1-home">
++<main id="homePage" class="home tc1-home s30-home">
+  <section class="card" style="grid-area:sockets">
+   <div class="card-head">
+    <div><h2 data-i18n="tc1.sockets"></h2><p class="help" id="onCount"></p></div>
+    <div class="row" style="gap:8px"><button id="allOn" class="btn" type="button" data-i18n="tc1.all_on"></button><button id="allOff" class="btn" type="button" data-i18n="tc1.all_off"></button></div>
+   </div>
+   <div class="tiles" id="tiles"></div>
+-  <p class="help" style="margin-top:12px" data-i18n="tc1.output_hint"></p>
++  <p class="help" style="margin-top:12px" data-i18n="s30.output_hint"></p>
+  </section>
+  <section class="card" style="grid-area:power">
+-  <div class="card-head"><h2 data-i18n="tc1.power"></h2><span class="dot ok live"></span></div>
++  <div class="card-head"><h2 data-i18n="tc1.power"></h2><span id="meterLive" class="dot live"></span></div>
+   <div class="stat" id="watts">—<small>W</small></div>
++  <p id="meterStatus" class="help"></p>
+   <svg id="spark" class="spark" viewBox="0 0 300 64" preserveAspectRatio="none" aria-hidden="true"></svg>
+   <div class="row between help"><span id="sparkRange"></span><span data-i18n="tc1.recent"></span></div>
+   <dl class="summary" style="margin-top:14px">
+-   <div><dt data-i18n="tc1.energy"></dt><dd class="num" id="energy">—</dd></div>
++   <div><dt data-i18n="s30.energy"></dt><dd class="num" id="energy">—</dd></div>
+    <div><dt data-i18n="tc1.peak"></dt><dd class="num" id="peak">—</dd></div>
+   </dl>
+  </section>
+  <section class="card" style="grid-area:panel">
+   <div class="card-head"><h2 data-i18n="a1.panel"></h2></div>
+-  <label class="switch"><span class="text"><b data-i18n="a1.child_lock"></b><span data-i18n="tc1.lock_desc"></span></span><input type="checkbox" role="switch" id="childLock"></label>
+-  <label class="switch"><span class="text"><b data-i18n="tc1.led"></b><span data-i18n="tc1.led_desc"></span></span><input type="checkbox" role="switch" id="ledEnabled"></label>
++  <label class="switch"><span class="text"><b data-i18n="a1.child_lock"></b><span data-i18n="s30.lock_desc"></span></span><input type="checkbox" role="switch" id="childLock"></label>
++  <label class="switch"><span class="text"><b data-i18n="tc1.led"></b><span data-i18n="s30.led_desc"></span></span><input type="checkbox" role="switch" id="ledEnabled"></label>
+  </section>
+ </main>
+ 
+@@ -39,14 +42,14 @@
+    <div><h2 class="page-title" data-i18n="nav.general"></h2><p class="page-lead" data-i18n="gen.lead"></p></div>
+    <div data-slot="name"></div>
+    <section class="card">
+-    <div class="card-head"><div><h2 data-i18n="tc1.names"></h2><p class="help" data-i18n="tc1.names_desc"></p></div></div>
++    <div class="card-head"><div><h2 data-i18n="tc1.names"></h2><p class="help" data-i18n="s30.names_desc"></p></div></div>
+     <form id="socketNamesForm"><div class="fields" id="nameFields"></div>
+      <div class="form-actions"><button class="btn primary" type="submit" data-i18n="common.save"></button></div></form>
+    </section>
+    <section class="card">
+     <div class="card-head"><h2 data-i18n="a1.panel"></h2></div>
+-    <label class="switch"><span class="text"><b data-i18n="a1.child_lock"></b><span data-i18n="tc1.lock_desc"></span></span><input type="checkbox" role="switch" id="childLockDevice"></label>
+-    <label class="switch"><span class="text"><b data-i18n="tc1.led"></b><span data-i18n="tc1.led_desc"></span></span><input type="checkbox" role="switch" id="ledEnabledDevice"></label>
++    <label class="switch"><span class="text"><b data-i18n="a1.child_lock"></b><span data-i18n="s30.lock_desc"></span></span><input type="checkbox" role="switch" id="childLockDevice"></label>
++    <label class="switch"><span class="text"><b data-i18n="tc1.led"></b><span data-i18n="s30.led_desc"></span></span><input type="checkbox" role="switch" id="ledEnabledDevice"></label>
+    </section>
+    <section class="card">
+     <div class="card-head"><h2 data-i18n="tc1.metering"></h2></div>
+@@ -56,20 +59,24 @@
+      <p class="help" data-i18n="tc1.report_help"></p></form>
+     <details class="more"><summary data-i18n="tc1.calibration"></summary>
+      <div class="banner warn"><span data-i18n="tc1.coef_warn"></span></div>
+-     <form id="coefForm" class="field"><span data-i18n="tc1.coef"></span>
+-      <div class="row"><span class="input-unit grow"><input id="coef" type="number" min="100" max="10000" required><em>×0.01</em></span>
+-       <button class="btn" type="submit" data-i18n="common.save"></button></div></form>
++     <form id="coefForm" class="stack"><div class="fields">
++      <label class="field"><span data-i18n="s30.voltage_coef"></span><input id="voltageCoef" type="number" min="0.001" max="100" step="0.001" required></label>
++      <label class="field"><span data-i18n="s30.current_coef"></span><input id="currentCoef" type="number" min="0.001" max="100" step="0.001" required></label>
++      <label class="field"><span data-i18n="s30.power_coef"></span><input id="powerCoef" type="number" min="0.001" max="100" step="0.001" required></label>
++     </div><div class="form-actions"><button class="btn" type="submit" data-i18n="common.save"></button></div></form>
+     </details>
+    </section>
++   <section class="card"><div class="card-head"><h2 data-i18n="s30.boot_power"></h2></div>
++    <form id="bootForm" class="stack"><label class="switch"><span class="text"><b data-i18n="s30.boot_on"></b></span><input type="checkbox" role="switch" id="bootPower"></label>
++     <div class="form-actions"><button class="btn primary" type="submit" data-i18n="common.save"></button></div></form></section>
+    <div data-slot="auth"></div>
+   </div>
+-  <div data-settings-page="schedule" class="stack"></div>
+-  <div data-settings-page="buttons" class="stack"></div>
+  </div>
+ </div>
+ 
+-<footer class="copyright">Copyright &copy; Phicomm Community · <a href="https://github.com/phicomm-io/iotcloud-community-firmware" target="_blank" rel="noopener noreferrer" data-i18n="footer.firmware"></a> · <a href="https://phicomm-io.github.io" target="_blank" rel="noopener noreferrer" data-i18n="footer.website"></a></footer>
++<footer class="copyright">Copyright &copy; iotcloud · <a href="https://github.com/phicomm-io/phicomm-community-firmware" target="_blank" rel="noopener noreferrer" data-i18n="footer.firmware"></a> · <a href="https://phicomm-io.github.io" target="_blank" rel="noopener noreferrer" data-i18n="footer.website"></a></footer>
+ <script>/* @include i18n.js */</script>
++<script>/* @include wire.js */</script>
+ <script>/* @include service.js */</script>
+ <script>/* @include provision.js */</script>
+ <script>/* @include ui.js */</script>
+--- a/web/page.js
++++ b/web/page.js
+@@ -1,15 +1,14 @@
+-/* TC1 smart power strip page: six socket tiles, power trend and the metering
+- * settings the strip alone has. */
++/* S30-V1B: shared socket page with one outlet and HLW8032 metering. */
+ (()=>{
+ 'use strict';
+ const {t}=I18N;
+ const {$,h,icon,toast,run,onSubmit,switchRow,summary,card,pageHead,seg}=UI;
+ const pendingSockets=new Map();
+-const names=()=>(UI.state&&UI.state.socket_names)||Array.from({length:6},(_,i)=>t('tc1.socket_n',{n:i+1}));
++const names=()=>(UI.state&&UI.state.socket_names)||Array.from({length:1},(_,i)=>t('tc1.socket_n',{n:i+1}));
+ 
+ /* ---------- Home: sockets ---------- */
+ const tiles=[];
+-for(let i=0;i<6;i++){
++for(let i=0;i<1;i++){
+  const name=h('b',{class:'name'}),state=h('span',{class:'state'});
+  const tile=h('button',{type:'button',class:'tile',id:'socket'+i,'aria-pressed':'false'},
+   h('span',{class:'tile-top'},icon('plug'),h('span',{class:'idx num'},String(i+1))),name,state);
+@@ -43,10 +42,10 @@
+ }
+ function renderSockets(s){
+  lock();
+- const states=Array.from(s.socket_states||[0,0,0,0,0,0]);
++ const states=Array.from(s.socket_states||[false]);
+  for(const [key,on] of pendingSockets){if(key==='all')states.fill(on);else states[key]=on;}
+  UI.state={...s,socket_states:states};
+- $('onCount').textContent=t('tc1.on_count',{n:states.filter(Boolean).length});
++ $('onCount').textContent=t('s30.on_count',{n:states.filter(Boolean).length});
+  states.forEach((v,i)=>{const x=tiles[i];x.tile.setAttribute('aria-pressed',String(!!v));
+   x.name.textContent=(s.socket_names||[])[i]||t('tc1.socket_n',{n:i+1});x.state.textContent=t(v?'tc1.on':'tc1.off')+(pendingSockets.has(i)||pendingSockets.has('all')?' · '+t('control.syncing'):'');});
+  for(const id of ['childLock','childLockDevice'])$(id).checked=!!s.child_lock;
+@@ -57,13 +56,19 @@
+ 
+ /* ---------- Home: power trend ---------- */
+ const powerHistory=[];
++let meterStatusKey='s30.no_sample';
+ async function pollPower(){
+  try{
+   if(document.hidden||$('homePage').hidden)return;
+   const p=await api('/power');
+-  $('watts').firstChild.textContent=Number(p.power_watts||0).toFixed(1);
++  const valid=typeof p.power_watts==='number'&&Number.isFinite(p.power_watts);
++  $('watts').firstChild.textContent=valid?p.power_watts.toFixed(1):'—';
++  meterStatusKey=!p.metering?.valid?'s30.no_sample':p.metering.calibrated?'s30.calibrated':'s30.uncalibrated';
++  $('meterStatus').textContent=t(meterStatusKey);
++  document.querySelector('#meterLive').classList.toggle('ok',!!p.metering?.valid);
+   $('energy').textContent=(p.energy_kwh<1?(p.energy_kwh*1000).toFixed(1)+' Wh':p.energy_kwh.toFixed(3)+' kWh');
+-  powerHistory.push(Number(p.power_watts)||0);if(powerHistory.length>60)powerHistory.shift();
++  if(!valid)return;
++  powerHistory.push(p.power_watts);if(powerHistory.length>60)powerHistory.shift();
+   const values=powerHistory;
+   const max=Math.max(...values,1),min=Math.min(...values),top=max*1.25;
+   $('peak').textContent=max+' W';$('sparkRange').textContent=min+'–'+max+' W';
+@@ -74,39 +79,41 @@
+ }
+ 
+ /* ---------- Settings: general ---------- */
+-const nameInputs=Array.from({length:6},(_,i)=>h('input',{maxLength:63,required:true}));
++const nameInputs=Array.from({length:1},(_,i)=>h('input',{maxLength:63,required:true}));
+ $('nameFields').append(...nameInputs.map((input,i)=>h('label',{class:'field'},h('span',{},t('tc1.socket_n',{n:i+1})),input)));
+ UI.onSubmit($('socketNamesForm'),async()=>{
+  const s=UI.state;
+- for(let i=0;i<6;i++)if(nameInputs[i].value!==s.socket_names[i])await api('/socketNames',{index:i,name:nameInputs[i].value});
++ for(let i=0;i<1;i++)if(nameInputs[i].value!==s.socket_names[i])await api('/socketNames',{index:i,name:nameInputs[i].value});
+ },'common.saved');
+ UI.onSubmit($('reportForm'),()=>api('/mqtt/report/freq',{seconds:Number($('reportSeconds').value)}));
+-UI.onSubmit($('coefForm'),()=>api('/power/coefficient',String($('coef').value)));
++UI.onSubmit($('coefForm'),()=>command('config.set',{section:'meter',values:{voltage_coefficient:Number($('voltageCoef').value),current_coefficient:Number($('currentCoef').value),power_coefficient:Number($('powerCoef').value)}}));
++UI.onSubmit($('bootForm'),()=>command('config.set',{section:'device',values:{power_on:$('bootPower').checked}}));
+ let initialized=false;
+ 
+ UI.start({
+- model:'TC1',kindKey:'kind.tc1',icon:'plug',mqttHostMax:127,factoryReset:false,
+- otaName:'phicomm_tc1_a1.ota.bin.signed',haHintKey:'mqtt.ha_tc1',otaHintKey:'fw.hint_tc1',buttonHintKey:'sys.hint_tc1',
+- scheduleLead:'sch.lead_tc1',interval:3000,hasButtons:true,
+- groups:[['grp.network',['network','mqtt']],['grp.device',['device']],['grp.auto',['schedule','buttons']],['grp.system',['firmware','diagnostics','logs','maintenance']]],
+- nav:{network:'nav.wifi',mqtt:'nav.mqtt',device:'nav.general',schedule:'nav.schedule',buttons:'nav.buttons',firmware:'nav.firmware',diagnostics:'nav.diagnostics',logs:'nav.logs',maintenance:'nav.maintenance'},
++ model:'S30-V1B',kindKey:'kind.s30',icon:'plug',mqttHostMax:127,mqttPasswordMax:127,factoryReset:true,
++ otaName:'BL2028N_OTA.rbl',haHintKey:'s30.ha_hint',otaHintKey:'s30.ota_hint',buttonHintKey:'s30.button_hint',
++ interval:3000,
++ groups:[['grp.network',['network','mqtt']],['grp.device',['device']],['grp.system',['firmware','diagnostics','maintenance']]],
++ nav:{network:'nav.wifi',mqtt:'nav.mqtt',device:'nav.general',firmware:'nav.firmware',diagnostics:'nav.diagnostics',maintenance:'nav.maintenance'},
+  pages:{device:{}},
+- diagGroups:[['diag.g_sockets',['socket_names','socket_states','child_lock','led_enabled']],
+-  ['diag.g_power',['report_seconds','powerCoefficientX100']],
+-  ['diag.g_time',['time_synced','utc_time']],['diag.g_lan',['mask','gateway']]],
+- healthChecks:s=>[['diag.c_clock',s.time_synced?'ok':'warn',t(s.time_synced?'s.synced':'s.syncing')],
+-  ['diag.c_memory',s.free_memory>16384?'ok':'warn',(Math.round((s.free_memory||0)/1024))+' KB']],
+- chips:s=>s.time_synced?[]:[h('span',{class:'chip'},h('span',{class:'dot warn'}),h('span',{i18n:'chip.clock'}))],
++ diagGroups:[['diag.g_sockets',['socket_names','socket_states','child_lock','led_enabled','power_on']],
++  ['diag.g_power',['report_seconds','voltage_coefficient','current_coefficient','power_coefficient','metering']]],
++ healthChecks:s=>[['diag.c_memory',s.free_memory>16384?'ok':'warn',(Math.round((s.free_memory||0)/1024))+' KB']],
+  onStatus:s=>{
+   renderSockets(s);
++  if(s.name==='S30-V1B')$('title').textContent='S30-V1B';
+   if(!initialized){nameInputs.forEach((x,i)=>x.value=(s.socket_names||[])[i]||'');
+-   $('reportSeconds').value=s.report_seconds;$('coef').value=s.powerCoefficientX100;initialized=true;}
++   $('reportSeconds').value=s.report_seconds;
++   $('voltageCoef').value=s.voltage_coefficient;$('currentCoef').value=s.current_coefficient;$('powerCoef').value=s.power_coefficient;
++   $('bootPower').checked=!!s.power_on;initialized=true;}
+  }
+ });
+ I18N.onChange(()=>{
+  nameInputs.forEach((x,i)=>{x.previousSibling.textContent=t('tc1.socket_n',{n:i+1});});
+- tiles.forEach((x,i)=>{x.tile.nextSibling.setAttribute('aria-label',t('tc1.rename'));
+-  if(UI.state)x.name.textContent=(UI.state.socket_names||[])[i]||t('tc1.socket_n',{n:i+1});});
++ tiles.forEach(x=>x.tile.nextSibling.setAttribute('aria-label',t('tc1.rename')));
++ if(UI.state)renderSockets(UI.state);
++ $('meterStatus').textContent=t(meterStatusKey);
+ });
+ pollPower();
+ })();
+--- a/web/shared/i18n.js
++++ b/web/shared/i18n.js
+@@ -4,6 +4,26 @@
+ (()=>{
+ 'use strict';
+ const D={
++"kind.s30":["Smart metering socket","电量计量插座"],
++"s30.on_count":["{n} of 1 on","1 路中 {n} 路通电"],
++"s30.ha_hint":["Home Assistant creates one outlet, voltage, current, power, energy and meter-validity entities.","Home Assistant 会创建一路插座、电压、电流、功率、累计电量和计量有效性实体。"],
++"s30.output_hint":["Shows the outlet setting; check the load to confirm power.","显示插座的输出设定，实际供电请以负载为准。"],
++"s30.lock_desc":["Disables the outlet button","锁定机身按键"],
++"s30.led_desc":["Status light on the outlet","机身状态指示灯"],
++"s30.names_desc":["Shown on this device page","显示在设备页面中"],
++"s30.energy":["Total energy","累计电量"],
++"s30.wifi_hint":["Saving restarts the device on the selected network. Hold the button for 5–10 seconds and release to clear Wi-Fi if needed.","保存后设备将重启并连接所选网络。如需清除 Wi-Fi，按住按键 5 至不足 10 秒后松开。"],
++"s30.wifi_saved":["Wi-Fi saved; restarting…","Wi-Fi 已保存，正在重启…"],
++"s30.voltage_coef":["Voltage multiplier","电压倍率"],
++"s30.current_coef":["Current multiplier","电流倍率"],
++"s30.power_coef":["Power multiplier","功率倍率"],
++"s30.boot_power":["Power after startup","上电输出"],
++"s30.boot_on":["Turn the outlet on after startup","上电后开启插座"],
++"s30.no_sample":["Waiting for a fresh meter sample","等待有效计量数据"],
++"s30.calibrated":["Meter calibration saved","已保存计量校准"],
++"s30.uncalibrated":["Meter uses default calibration","计量使用默认校准值"],
++"s30.ota_hint":["Enter an HTTP URL for this device's .rbl firmware.","填写本设备 .rbl 固件的 HTTP 下载地址。"],
++"s30.button_hint":["Release after 5–10 seconds to reset Wi-Fi; release after 10 seconds to reset the device.","按住 5 至不足 10 秒后松开重置 Wi-Fi；按住至少 10 秒后松开重置设备。"],
+ "display.title":["User readings on the device screen", "设备屏幕用户读数"],
+ "display.help":["Configure both positions independently. Double-press switches the original pair and your pair together. Missing, expired or out-of-range data restores only that position’s original reading.", "两个位置可分别配置。双击会整体切换原始两路与用户两路；缺失、过期或超出显示范围的数据，只恢复对应位置的原始读数。"],
+ "display.glass_help":["The screen has three digits per position. Only the original PM2.5 or formaldehyde metric at ÷1 keeps its original label and unit. Other units such as W, °C and % are hidden. Choose decimal places and scaling to fit the value.", "每个位置只有三位数字。只有原位置显示原 PM2.5 或甲醛数据且倍率为 ÷1 时，才保留原名称与单位；W、°C、% 等其他单位不会显示。请设置小数位和倍率，使读数能放入三位数字。"],
+--- a/web/shared/service.js
++++ b/web/shared/service.js
+@@ -1,14 +1,7 @@
+-// Probe a read before choosing a binary request; never retry a mutation.
+-let deviceWireFormat=null,deviceWireProbe=null;
++// Product capability: binary-only transport; mutations are never retried.
+ async function deviceWire(){
+- if(!globalThis.PhWire)return 'json';
+- if(deviceWireFormat)return deviceWireFormat;
+- if(!deviceWireProbe)deviceWireProbe=(async()=>{
+-  const c=new AbortController(),timer=setTimeout(()=>c.abort(),5000);
+-  try{const r=await fetch('/api/v1/info',{headers:{Accept:'application/msgpack'},cache:'no-store',signal:c.signal});
+-   return deviceWireFormat=r.ok&&r.headers?.get('Content-Type')?.startsWith('application/msgpack')?'msgpack':'json';
+-  }catch{return 'json';}finally{clearTimeout(timer);deviceWireProbe=null;}
+- })();return deviceWireProbe;
++ if(!globalThis.PhWire)throw Error('MessagePack codec unavailable');
++ return 'msgpack';
+ }
+ async function command(action,params={}){
+  const request={action,params};
+@@ -16,8 +9,8 @@
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),20000);
+  try{
+  const format=await deviceWire();
+- const response=await fetch('/api/v1/command',{method:'POST',signal:controller.signal,headers:{'Content-Type':globalThis.PhWire?PhWire.wireMime(format):'application/json',Accept:globalThis.PhWire?PhWire.wireMime(format):'application/json'},body:globalThis.PhWire?PhWire.encodeWire(request,format):JSON.stringify(request),cache:'no-store'});
+- const reply=globalThis.PhWire?await PhWire.decodeResponse(response):await response.json();
++ const response=await fetch('/api/v1/command',{method:'POST',signal:controller.signal,headers:{'Content-Type':PhWire.wireMime(format),Accept:PhWire.wireMime(format)},body:PhWire.encodeWire(request,format),cache:'no-store'});
++ const reply=await PhWire.decodeResponse(response);
+  if(!response.ok||!['ok','accepted'].includes(reply.code)){const key='error.'+reply.code;const error=Error(globalThis.I18N?.has(key)?I18N.t(key):reply.message||reply.code||('HTTP '+response.status));error.code=reply.code;throw error;}
+  if(!action.endsWith('.get'))globalThis.UI?.invalidateStatus?.();
+  return reply.data||{};
+--- a/web/shared/ui.js
++++ b/web/shared/ui.js
+@@ -274,7 +274,7 @@
+  const form=h('form',{id:'wifiForm',class:'stack'},
+   h('label',{class:'field'},h('span',{i18n:'wifi.ssid'}),h('div',{class:'row'},h('div',{class:'grow'},ssid),scanBtn)),list,
+   h('label',{class:'field'},h('span',{i18n:'wifi.password'}),pass),open,
+-  h('div',{class:'form-actions'},h('button',{class:'btn primary',type:'submit'},h('span',{i18n:'wifi.save'}))),info('wifi.hint'));
++  h('div',{class:'form-actions'},h('button',{class:'btn primary',type:'submit'},h('span',{i18n:'wifi.save'}))),info(UI.caps?.wifi_trial===false?'s30.wifi_hint':'wifi.hint'));
+  open.querySelector('input').onchange=e=>{pass.disabled=e.target.checked;};
+  scanBtn.onclick=()=>run(scanBtn,()=>scanNetworks(net=>{
+   list.replaceChildren(...net.slice().sort((a,b)=>b.rssi-a.rssi).map(n=>h('button',{type:'button',class:'item',style:'cursor:pointer;text-align:left;font:inherit;color:inherit;width:100%',
+@@ -283,7 +283,7 @@
+   list.hidden=false;
+   if(!net.length)throw Error(t('wifi.none'));
+  }),null);
+- onSubmit(form,()=>api('/wifi/config',{ssid:ssid.value,password:pass.value,open_network:open.querySelector('input').checked}),'wifi.verifying');
++ onSubmit(form,()=>api('/wifi/config',{ssid:ssid.value,password:pass.value,open_network:open.querySelector('input').checked}),UI.caps?.wifi_trial===false?'s30.wifi_saved':'wifi.verifying');
+  return {el:h('div',{class:'stack'},pageHead('nav.wifi','wifi.lead'),sum,card('wifi.change',null,form)),
+   status(s){sum.replaceChildren(summary([['wifi.status',s.wifi_connected?t('state.connected'):s.ap_active?t('state.hotspot'):t('state.connecting'),s.wifi_connected?'ok':s.ap_active?'warn':'bad'],
+    ['wifi.ssid',s.ssid||'—'],['wifi.ip',s.ip||'—'],s.ap_active?['wifi.ap',s.ap_name]:['wifi.saved_password',t(s.wifi_password_set?'common.yes':'common.no')]]));},
+@@ -339,7 +339,7 @@
+  const host=h('input',{id:'mqttHost',maxLength:dev.mqttHostMax||127,placeholder:t('mqtt.host_ph')});
+  const port=h('input',{id:'mqttPort',type:'number',min:1,max:65535,required:true,value:'1883'});
+  const user=h('input',{id:'mqttUser',maxLength:63,autocomplete:'off'});
+- const pass=h('input',{id:'mqttPassword',type:'password',maxLength:256,autocomplete:'new-password',placeholder:t('mqtt.pass_ph')});
++ const pass=h('input',{id:'mqttPassword',type:'password',maxLength:dev.mqttPasswordMax||256,autocomplete:'new-password',placeholder:t('mqtt.pass_ph')});
+  const protocol=dev.model==='TC1'?h('select',{id:'mqttMode'},h('option',{value:'tmcp'},'TMCP (v2)'),h('option',{value:'legacy'},'Legacy (v1)')):null;
+  const clear=switchRow('clearMqttPassword','mqtt.clear','mqtt.clear_desc');
+  const imported=mqttImportPanel(dev,{host,port,user,pass,protocol,clear:clear.querySelector('input')});
+@@ -402,7 +402,7 @@
+  const full=!!UI.caps?.config_backup;
+  const download=h('button',{class:'btn',type:'button'},h('span',{i18n:full?'backup.download':'backup.public'}));
+  download.onclick=()=>run(download,async()=>{
+-  if(!full){downloadFile(JSON.stringify({schema:1,partial:true,model:UI.caps.model,config:await command('config.get')},null,2),'phicomm-public-settings.json','application/json');return;}
++  if(!full){downloadFile(PhWire.encodeWire({schema:1,partial:true,model:UI.caps.model,config:await command('config.get')},'msgpack'),'iotcloud-public-settings.msgpack','application/msgpack');return;}
+   const response=await fetch('/api/v1/config/backup',{cache:'no-store',credentials:'same-origin'});if(!response.ok)throw Error(t('backup.failed'));
+   downloadFile(await response.arrayBuffer(),'phicomm-'+String(UI.caps.model||'device').toLowerCase()+'-config.phcb');
+  });
+@@ -491,13 +491,15 @@
+   file.accept=selected?'.signed':'.bin,.raw,.signed';
+  }
+  conversionInput?.addEventListener('change',conversionMode);
+- const url=h('input',{id:'otaUrl',type:'url',maxLength:499,required:true,placeholder:'https://…/'+dev.otaName});
++ const url=h('input',{id:'otaUrl',type:'url',maxLength:UI.caps?.ota_url_max||499,required:true,placeholder:(UI.caps?.ota_upload===false?'http://…/':'https://…/')+dev.otaName});
+  const fileForm=h('form',{id:'fileForm',class:'stack'},h('label',{class:'field'},h('span',{},t('fw.file',{m:dev.model})),file),
+   h('details',{class:'more'},h('summary',{i18n:'common.advanced'}),unsigned,...(conversion?[conversion]:[])),
+   h('div',{class:'form-actions'},h('button',{class:'btn primary',type:'submit'},h('span',{i18n:'fw.upload'}))));
+  const urlForm=h('form',{id:'urlForm',class:'stack',hidden:true},h('label',{class:'field'},h('span',{i18n:'fw.url'}),url),
+   h('div',{class:'form-actions'},h('button',{class:'btn primary',type:'submit'},h('span',{i18n:'fw.download'}))));
+- const picker=seg([['file','fw.tab_file'],['url','fw.tab_url']],v=>{fileForm.hidden=v!=='file';urlForm.hidden=v!=='url';});picker.set('file');picker.hidden=!UI.caps?.actions?.includes('ota.start');
++ const pickInstall=v=>{fileForm.hidden=v!=='file';urlForm.hidden=v!=='url';};
++ const picker=seg([['file','fw.tab_file'],['url','fw.tab_url']],pickInstall),initialInstall=UI.caps?.ota_upload===false?'url':'file';
++ picker.set(initialInstall);pickInstall(initialInstall);picker.hidden=UI.caps?.ota_upload===false||!UI.caps?.actions?.includes('ota.start');
+  // Upload streams raw bytes; the request is synchronous up to send(), like the old page.
+  let uploading=false;
+  fileForm.addEventListener('submit',e=>{
+@@ -524,7 +526,7 @@
+  return {el:h('div',{class:'stack'},pageHead('nav.firmware','fw.lead'),sum,...(mcu?[mcu.el]:[]),card('fw.compare_title',null,h('p',{class:'help',i18n:'fw.compare_help'}),comparison),online,
+   card('fw.install',null,picker,h('div',{style:'margin-top:16px'},fileForm,urlForm),h('div',{class:'stack',style:'margin-top:20px'},prog,state,cancel),info(dev.otaHintKey))),
+   status(s){identity=s;comparisonLink();if(mcu)mcu.refresh().catch(()=>{});sum.replaceChildren(summary([['fw.version',h('span',{class:'num'},s.version||'—')],['fw.state',t('s.'+(s.ota_state||'idle'))],s.ota_error?['fw.error',h('span',{class:'badge bad'},s.ota_error)]:null]));
+-   cancel.hidden=!s.ota_active||s.ota_mode==='committing';
++   cancel.hidden=!UI.caps?.actions?.includes('ota.cancel')||!s.ota_active||s.ota_mode==='committing';
+    if(s.ota_active){prog.value=s.ota_progress;state.textContent=t('fw.progress',{p:s.ota_progress});}}};
+ }
+ function diagValue(k,v){

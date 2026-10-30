@@ -1,0 +1,17 @@
+{
+  "repository": "phicomm-io/phicomm-community-frontend",
+  "commit": "b2232084f2e6c9663d741f19652806054924e6bd",
+  "source_dirty": true,
+  "path": "common/web",
+  "sha256": {
+    "appearance.js": "afdf9672e22338b82d1ac7ffa944e33cade436e4bd00b3a57ca8e45d710fb352",
+    "automation.js": "ca7a3c75e985d2fcb29c72ad46bcf14550e682c582a6005fd984d1781f998222",
+    "i18n.js": "38ba4ac7f5c21e7cb182b8c7fde56e00ea8c79ff4793f1a6ac3dcede5ece5c09",
+    "provision.js": "f8a4d2e54b0ba8eaadd625ff3b8d956e7a312218f0f6df97a4385cf83a44dd95",
+    "service.js": "2332e6ae9ad1bf7d9dd5dec8de435ef0153bcabd4eb712698ac3681ba769d239",
+    "style.css": "bf4c3a57ee82e356142bc6915eb88a58b93ac35fe26f0f018a752721bc725389",
+    "ui.js": "994f7a7972edf1340b46148cef86923fdccbf19fe86e9066c1f634fd0aec811a",
+    "wire.js": "b4638a695f4009bfdb2849aed3b445fc954545ae152834177486f74c300de491"
+  },
+  "adaptations": "Binary-only shared transport, single-outlet/HLW8032 product page, honest capability gating and storage bounds. See frontend-openbeken.patch."
+}

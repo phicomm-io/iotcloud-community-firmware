@@ -19,7 +19,10 @@ TC1 的 A1 硬件版本与 A1 空气净化器是不同产品，固件不能混�
 
 **M1 的 Wi-Fi 模块与传感器主控分别升级。** [GPL-3.0 开源主控](https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20)推荐用于原厂 **11.x**；原厂 **17.1.2.3 / 17.x** 差异较大，尚待分析，暂不建议迁移。按实际读到的主控版本判断，未知版本不作推测。普通 Wi-Fi OTA 不更新主控，基本空气读数无需另刷主控。详见[主控兼容说明](https://phicomm-io.github.io/guides/m1-mcu-firmware.html)。
 
+新增开发目标 [BL2028N / ORVIBO S30-V1B](BL2028N/README.md)：使用 OpenBeken / BK7231N、HLW8032 计量及二进制 MQTT/HTTP/UDP 协议，单独构建；当前待实机验收，镜像与升级格式见该目录说明。
+
 ## 安装与更新
+
 
 1. 阅读[刷机前准备](https://phicomm-io.github.io/guides/flash-prep.html)，确认硬件、备份、供电和恢复方式。
 2. 从[现有下载](https://phicomm-io.github.io/#releases)选择机型与变体，核对 `SHA256SUMS`，按对应教程安装。
@@ -55,7 +58,10 @@ Apple 家庭采用 `hub` 的实验性 HomeKit HAP 桥接，配对、控制和重
 | [iotcloud-community-protocols](https://github.com/phicomm-io/iotcloud-community-protocols) | 跨仓库开发约定 |
 | [phicomm_m1_mcu_atsamd20](https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20) | M1 传感器主控 |
 
+新增设备和后续开发遵循 [统一设备开发规范](AGENTS.md)，包括项目与协议标识、统一前端、版本规则、配网及重置手势。
+
 按[构建依赖](docs/public/build-deps.md)准备 Linux 工具链与 SDK，然后执行：
+
 
 ```sh
 python3 -m pip install -r requirements-build.txt
