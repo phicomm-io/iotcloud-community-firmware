@@ -517,6 +517,26 @@
     {
       "id": 129,
       "path": "http_snapshot.allocation_failed"
+    },
+    {
+      "id": 130,
+      "path": "metering.received_bytes"
+    },
+    {
+      "id": 131,
+      "path": "metering.frames"
+    },
+    {
+      "id": 132,
+      "path": "metering.bad_frames"
+    },
+    {
+      "id": 133,
+      "path": "metering.discontinuities"
+    },
+    {
+      "id": 134,
+      "path": "status_cache_builds"
     }
   ]
 }
