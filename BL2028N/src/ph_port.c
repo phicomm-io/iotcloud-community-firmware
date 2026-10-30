@@ -38,7 +38,7 @@ extern void OTA_RequestDownloadFromHTTP(const char *);
 #define PH_RED_ACTIVE 1
 #endif
 #ifndef PH_BLUE_ACTIVE
-#define PH_BLUE_ACTIVE 0
+#define PH_BLUE_ACTIVE 1
 #endif
 #ifndef PH_BUTTON_ACTIVE
 #define PH_BUTTON_ACTIVE 0
