@@ -18,6 +18,13 @@ case "$variant" in
 esac
 export PHICOMM_FULL_RESOURCES A1_FRESH_AIR
 export PHICOMM_WEB_OUTPUT_DIR="$project_dir/build/a1${variant_suffix}-web"
+build_type="${PHICOMM_A1_BUILD_TYPE:-release}"
+case "$build_type" in
+    release|release_log) ;;
+    *) echo "Unsupported A1 SDK build type: $build_type" >&2; exit 1 ;;
+esac
+export PHICOMM_A1_BUILD_TYPE="$build_type"
+echo "A1 SDK build type: $build_type"
 
 sdk_dir="${A1_SDK_DIR:-$project_dir/build/a1-sdk/mico-os}"
 shared_tools="${PHICOMM_TOOLS_HOME:-${XDG_CACHE_HOME:-$HOME/.cache}/phicomm}"
@@ -27,6 +34,8 @@ tools_dir="${A1_TOOLS_DIR:-$shared_tools/profiles/gcc$compiler_major}"
 workspace="$project_dir/build/a1${variant_suffix}-workspace"
 sdk_commit="$(python3 "$project_dir/tools/prepare_sdk.py" --commit)"
 target=A1@MK3080B@moc
+if [[ "$build_type" == release ]]; then target+=@release; fi
+export PHICOMM_A1_BUILD_TARGET="$target"
 mkdir -p "$tools_dir" "$workspace" "$(dirname "$sdk_dir")"
 
 python3 "$project_dir/tools/prepare_sdk.py" "$sdk_dir"
