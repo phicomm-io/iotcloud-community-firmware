@@ -12,6 +12,8 @@ const D={
 "s30.led_desc":["Status light on the outlet","机身状态指示灯"],
 "s30.names_desc":["Shown on this device page","显示在设备页面中"],
 "s30.energy":["Total energy","累计电量"],
+"s30.voltage":["Voltage","电压"],
+"s30.current":["Current","电流"],
 "s30.wifi_hint":["Saving restarts the device on the selected network. Hold the button for 5–10 seconds and release to clear Wi-Fi if needed.","保存后设备将重启并连接所选网络。如需清除 Wi-Fi，按住按键 5 至不足 10 秒后松开。"],
 "s30.wifi_saved":["Wi-Fi saved; restarting…","Wi-Fi 已保存，正在重启…"],
 "s30.voltage_coef":["Voltage multiplier","电压倍率"],

@@ -1,11 +1,11 @@
 {
   "lab": {
-    "head": "ffb5e54b93698cba5324b90ca7643b27a761852e",
+    "head": "dc3a36f0a52ac00fab849709e079b927a6346c8a",
     "dirty": false,
     "scope": "listed upstream source paths"
   },
   "frontend": {
-    "head": "7c6f9a9bacfb62cd5e54740f7e0d8087b8ffef5b",
+    "head": "b099af584325fa9ef040806d1b5de7ee7c0de80d",
     "dirty": false,
     "scope": "listed upstream source paths"
   },
@@ -228,8 +228,8 @@
     },
     "web/shared/i18n.js": {
       "source": "frontend/common/web/i18n.js",
-      "upstream_sha256": "ac7ca882f549824fca1471470904e6def4860bb7b8890c262f9be5e73dd39da9",
-      "sha256": "ac7ca882f549824fca1471470904e6def4860bb7b8890c262f9be5e73dd39da9"
+      "upstream_sha256": "bef05b39aa91b32e4aaf555349c5bddd686a0f6925acd3ca4d17efc4589690b3",
+      "sha256": "bef05b39aa91b32e4aaf555349c5bddd686a0f6925acd3ca4d17efc4589690b3"
     },
     "web/shared/service.js": {
       "source": "frontend/common/web/service.js",
@@ -309,13 +309,13 @@
     },
     "web/index.html": {
       "source": "frontend/S30/web/index.html",
-      "upstream_sha256": "a016267aafd5f03bb6435cbb316b28e6a1d69d39c3dbccdb1af1fd5cd8b3b14c",
-      "sha256": "a016267aafd5f03bb6435cbb316b28e6a1d69d39c3dbccdb1af1fd5cd8b3b14c"
+      "upstream_sha256": "b6de6fcb3d835e4d1f53f84e788c26adb9d14271a48f700319467b921f6c5a8c",
+      "sha256": "b6de6fcb3d835e4d1f53f84e788c26adb9d14271a48f700319467b921f6c5a8c"
     },
     "web/page.js": {
       "source": "frontend/S30/web/page.js",
-      "upstream_sha256": "8635af36b2b3b5800e8ab20e809d5ef5efa108ff1f65d0b660f5eccca3c87cec",
-      "sha256": "8635af36b2b3b5800e8ab20e809d5ef5efa108ff1f65d0b660f5eccca3c87cec"
+      "upstream_sha256": "6971f2f5b15467713ec335dd88db7a80a25a4764f1e2dbb2291dfdf7951f297b",
+      "sha256": "6971f2f5b15467713ec335dd88db7a80a25a4764f1e2dbb2291dfdf7951f297b"
     },
     "protocol/udp/packet.h": {
       "source": "common/feature_wire.inc",
@@ -357,8 +357,8 @@
     "web/frontend-openbeken.patch": "95449ee17d4538deda6bb72717e4a5f88272060d32f3d2fdd0bacc796796f426"
   },
   "source_snapshot": {
-    "file": "shared-source-snapshot-7c6f9a9.tar.gz",
-    "sha256": "94662121b95e556f0764e709d292e4b71bbf977619b697ae9548e27760974140",
+    "file": "shared-source-snapshot-b099af5.tar.gz",
+    "sha256": "809d42290004a4234f5aee1aa346cef889a96498eb1eec011a2050a7f0bcedb3",
     "entries": 68
   },
   "auth_bundle_sources": {

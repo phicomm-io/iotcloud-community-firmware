@@ -61,6 +61,10 @@ async function pollPower(){
  try{
   if(document.hidden||$('homePage').hidden)return;
   const p=await api('/power');
+  for(const [key,bit,digits,unit] of [['voltage',1,1,'V'],['current',2,3,'A']]){
+   const v=p.metering?.[key],fields=p.metering?.valid_fields;
+   $(key).textContent=typeof v==='number'&&Number.isFinite(v)&&v>=0&&(fields===undefined||!!(fields&bit))?v.toFixed(digits)+' '+unit:'—';
+  }
   const valid=typeof p.power_watts==='number'&&Number.isFinite(p.power_watts);
   $('watts').firstChild.textContent=valid?p.power_watts.toFixed(1):'—';
   meterStatusKey=!p.metering?.valid?'s30.no_sample':p.metering.calibrated?'s30.calibrated':'s30.uncalibrated';

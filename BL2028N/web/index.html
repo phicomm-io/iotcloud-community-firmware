@@ -23,6 +23,8 @@
   <svg id="spark" class="spark" viewBox="0 0 300 64" preserveAspectRatio="none" aria-hidden="true"></svg>
   <div class="row between help"><span id="sparkRange"></span><span data-i18n="tc1.recent"></span></div>
   <dl class="summary" style="margin-top:14px">
+   <div><dt data-i18n="s30.voltage"></dt><dd class="num" id="voltage">—</dd></div>
+   <div><dt data-i18n="s30.current"></dt><dd class="num" id="current">—</dd></div>
    <div><dt data-i18n="s30.energy"></dt><dd class="num" id="energy">—</dd></div>
    <div><dt data-i18n="tc1.peak"></dt><dd class="num" id="peak">—</dd></div>
   </dl>
@@ -59,9 +61,9 @@
     <details class="more"><summary data-i18n="tc1.calibration"></summary>
      <div class="banner warn"><span data-i18n="tc1.coef_warn"></span></div>
      <form id="coefForm" class="stack"><div class="fields">
-      <label class="field"><span data-i18n="s30.voltage_coef"></span><input id="voltageCoef" type="number" min="0.001" max="100" step="0.001" required></label>
-      <label class="field"><span data-i18n="s30.current_coef"></span><input id="currentCoef" type="number" min="0.001" max="100" step="0.001" required></label>
-      <label class="field"><span data-i18n="s30.power_coef"></span><input id="powerCoef" type="number" min="0.001" max="100" step="0.001" required></label>
+      <label class="field"><span data-i18n="s30.voltage_coef"></span><input id="voltageCoef" type="number" min="0.001" max="100" step="any" required></label>
+      <label class="field"><span data-i18n="s30.current_coef"></span><input id="currentCoef" type="number" min="0.001" max="100" step="any" required></label>
+      <label class="field"><span data-i18n="s30.power_coef"></span><input id="powerCoef" type="number" min="0.001" max="100" step="any" required></label>
      </div><div class="form-actions"><button class="btn" type="submit" data-i18n="common.save"></button></div></form>
     </details>
    </section>
