@@ -125,11 +125,12 @@ int main() {
     const std::string pair="/api/hub/lan/pair",unpair="/api/hub/lan/unpair",status=pair+"/aabbccddeeff";
     const std::string valid=R"({"peer":"aabbccddeeff","ip":"192.0.2.1","password":"pair-secret","scopes":1})";
     unsigned calls=0;std::string lastOp;
+    std::string statusPhase="paired",statusCode="ok";
     assert(service.handle(Request("POST",pair,valid,token),3).status==503);
     service.lanOperation=[&](const std::string &op,JsonObjectConst in,JsonObject out)->const char*{
       ++calls;lastOp=op;assert(in["peer"]=="aabbccddeeff");
       if(op=="pair"){assert(in["password"]=="pair-secret"&&in["scopes"]==1);out["phase"]="queued";return "accepted";}
-      if(op=="status"){out["phase"]="paired";return "ok";}
+      if(op=="status"){out["phase"]=statusPhase;out["code"]=statusCode;return "ok";}
       assert(op=="unpair");return "accepted";
     };
     assert(service.handle(Request("POST",pair,valid),3).status==401);
@@ -146,18 +147,32 @@ int main() {
     assert(service.handle(Request("GET",pair+"/unknown","",token),3).status==400);
     assert(calls==0);
     auto accepted=service.handle(Request("POST",pair,valid,token),3);
-    assert(accepted.status==202&&lastOp=="pair"&&calls==1);
+    DynamicJsonDocument pairAccepted(256);
+    assert(accepted.status==202&&lastOp=="pair"&&calls==1&&!deserializeJson(pairAccepted,accepted.body));
+    assert(pairAccepted["code"]=="accepted");
     assert(accepted.body.find("pair-secret")==std::string::npos&&accepted.body.find("password")==std::string::npos);
     auto current=service.handle(Request("GET",status,"",token),3);
-    assert(current.status==200&&lastOp=="status"&&current.body.find("paired")!=std::string::npos);
+    DynamicJsonDocument pairStatus(512);
+    assert(current.status==200&&lastOp=="status"&&!deserializeJson(pairStatus,current.body));
+    assert(pairStatus["phase"]=="paired"&&pairStatus["code"]=="ok"&&pairStatus["operation_code"]=="ok");
+    statusPhase="failed";statusCode="storage_error";
+    current=service.handle(Request("GET",status,"",token),3);
+    assert(current.status==200&&!deserializeJson(pairStatus,current.body));
+    assert(pairStatus["phase"]=="failed"&&pairStatus["code"]=="storage_error"&&pairStatus["operation_code"]=="ok");
+    statusPhase="paired";statusCode="ok";
     assert(service.handle(Request("POST",unpair,R"({"peer":"aabbccddeeff"})",token),3).status==202&&lastOp=="unpair");
     const unsigned before=calls;
     assert(service.handle(Request("DELETE",pair,valid,token),3).status==405&&calls==before);
+    auto invalidAction=service.handle(Request("GET",unpair,"",token),3);
+    assert(invalidAction.status==405&&invalidAction.body.find("method_not_allowed")!=std::string::npos&&calls==before);
     for(const auto &code:{"busy","invalid_params","auth_required","migration_required","storage_error","unexpected"}){
       service.lanOperation=[&](const std::string &,JsonObjectConst,JsonObject)->const char*{return code;};
       auto result=service.handle(Request("POST",pair,valid,token),3);
       const int expected=std::string(code)=="invalid_params"?400:std::string(code)=="auth_required"?403:std::string(code)=="migration_required"?409:std::string(code)=="unexpected"?500:503;
       assert(result.status==expected);
+      DynamicJsonDocument errorReply(256);
+      const char *expectedCode=std::string(code)=="unexpected"?"internal_error":code;
+      assert(!deserializeJson(errorReply,result.body)&&errorReply["code"]==expectedCode);
     }
     service.lanOperation=nullptr;
   }

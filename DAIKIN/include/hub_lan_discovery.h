@@ -22,7 +22,7 @@ public:
     auto get=[&](const char *key)->std::string{auto it=txt.find(key);return it==txt.end()?"":it->second;};
     const auto id=get("id"),model=get("model"),variant=get("variant"),firmware=get("firmware");
     if(get("lan_wire")!="4"||get("codec")!="msgpack"||!identity(id)||
-       (model!="a1"&&model!="m1"&&model!="tc1"&&model!="daikin")||!ascii(variant,32)||!ascii(firmware,64)||ip.empty()||!port)return false;
+       (model!="a1"&&model!="m1"&&model!="tc1"&&model!="daikin"&&model!="s30-v1b")||!ascii(variant,32)||!ascii(firmware,64)||ip.empty()||!port)return false;
     Peer *slot=nullptr;
     for(auto &p:peers){if(p.id==id){slot=&p;break;}if((p.id.empty()||!p.online(now))&&!slot)slot=&p;}
     if(!slot)return false;

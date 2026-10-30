@@ -21,7 +21,7 @@ static uint32_t now=1;static uint32_t millis(){return now;}
 static void esp_fill_random(void*p,size_t n){static uint8_t counter;for(size_t i=0;i<n;i++)static_cast<uint8_t*>(p)[i]=++counter;}
 static void updatePassword(){strncpy(webPassword,config["auth"]["password"]|"",32);webPassword[32]=0;}
 static bool hubRestartPending(){return false;}
-enum {PT_BLOB,PT_INVALID};
+enum {PT_BLOB,PT_STR,PT_INVALID};
 struct Preferences {
  std::map<std::string,std::string> values;enum Mode{OK,FAIL_OLD,FAIL_NEW,FAIL_UNKNOWN} mode=OK;
  int getType(const char*k){return values.count(k)?PT_BLOB:PT_INVALID;}
@@ -29,6 +29,7 @@ struct Preferences {
  size_t getBytesLength(const char*k){return values[k].size();}
  size_t getBytes(const char*k,void*p,size_t n){auto&s=values[k];if(n>s.size())return 0;memcpy(p,s.data(),n);return n;}
  size_t putBytes(const char*k,const void*p,size_t n){if(mode==FAIL_OLD)return 0;if(mode==FAIL_UNKNOWN){values[k]="corrupt";return 0;}values[k].assign(static_cast<const char*>(p),n);return mode==FAIL_NEW?0:n;}
+ bool remove(const char*k){return values.erase(k)!=0;}
 } prefs;
 static String legacy="{}";static String loadLegacyConfigText(){return legacy;}
 struct nvs_stats_t{size_t total_entries=10000,free_entries=10000,used_entries=0;};
@@ -59,6 +60,35 @@ static void compactCodec(){
  for(size_t cut=0;cut<raw.size();cut++){prefs.values[authConfigKey]=raw.substr(0,cut);assert(loadAuthConfigText()=="invalid");}
  h.length=UINT32_MAX;memcpy(&raw[0],&h,sizeof(h));prefs.values[authConfigKey]=raw;assert(loadAuthConfigText()=="invalid");prefs.values=previous;
 }
+#ifdef IOTCLOUD_HUB
+static void retirementTrust(){
+ prefs.mode=Preferences::OK;prefs.values.clear();legacy="{}";boot();
+ DynamicJsonDocument next(configCapacity);next.set(config);next["device"]["name"]="authority";assert(saveConfig(next));
+ const std::string authority=prefs.values[authConfigKey];
+ prefs.values["config"]="retained-legacy";prefs.values["config_hub"]="retained-hub";prefs.values["untouched"]="user-data";
+ // A different generation has not been validated, even if another writer
+ // replaced it with a structurally valid blob. It cannot authorize cleanup.
+ auto replacement=authority;replacement.back()^=1;prefs.values[authConfigKey]=replacement;
+ next=DynamicJsonDocument(configCapacity);next.set(config);assert(saveConfig(next));
+ assert(prefs.values["config"]=="retained-legacy"&&prefs.values["config_hub"]=="retained-hub");
+ next=DynamicJsonDocument(configCapacity);next.set(config);assert(saveConfig(next));
+ assert(!prefs.isKey("config")&&!prefs.isKey("config_hub")&&prefs.values["untouched"]=="user-data");
+ // Corrupt primary authorities never fall back to readable legacy credentials
+ // and never grant permission to remove those legacy keys.
+ for(unsigned corruption=0;corruption<5;corruption++){
+  std::string raw=authority;AuthConfigHeader h;memcpy(&h,raw.data(),sizeof(h));
+  if(corruption==0)raw.resize(sizeof(h)-1);
+  if(corruption==1){h.version=99;memcpy(&raw[0],&h,sizeof(h));}
+  if(corruption==2){h.reserved=1;memcpy(&raw[0],&h,sizeof(h));}
+  if(corruption==3)raw[sizeof(h)]=13; // impossible local pairing count
+  if(corruption==4){h.version=1;h.length=1;raw.resize(sizeof(h)+sizeof(ph_auth_store)+1);memcpy(&raw[0],&h,sizeof(h));ph_auth_store empty;ph_auth_store_empty(&empty);memcpy(&raw[sizeof(h)],&empty,sizeof(empty));raw.back()='[';}
+  prefs.values.clear();prefs.values[authConfigDefaultKey]=raw;prefs.values["config"]="readable-legacy";prefs.values["config_hub"]="readable-legacy-hub";
+  legacy="{\"auth\":{\"password\":\"obsolete\"}}";assert(loadAuthConfigText()=="invalid"&&loadedAuthStore.count==0&&loadedAuthStore.remote_count==0);
+  const auto before=prefs.values;configRecovery=true;next=DynamicJsonDocument(configCapacity);next.set(config);assert(!saveConfig(next)&&prefs.values==before);
+ }
+ puts("combined authority hash guard, stale-key cleanup, corrupt v1/v3 fail-closed PASS");
+}
+#endif
 int main(){
  compactCodec();
  (void)hubRestartPending;boot();char key[33],remote[33],token[33];
@@ -80,5 +110,8 @@ int main(){
  const std::string oldJson="{\"_version\":1,\"auth\":{\"password\":\"adminfjr\"}}";AuthConfigHeader blobHeader{authConfigMagic,1,0,uint32_t(oldJson.size())};ph_auth_store oldStore;ph_auth_store_empty(&oldStore);oldStore.count=oldStore.remote_count=1;strcpy(oldStore.pairs[0].peer,"aabbccddee11");strcpy(oldStore.remote[0].peer,"aabbccddee12");memset(oldStore.pairs[0].key,0x6b,16);memset(oldStore.remote[0].key,0x6b,16);oldStore.pairs[0].scopes=oldStore.remote[0].scopes=2;std::string oldBlob(sizeof(blobHeader)+sizeof(oldStore)+oldJson.size(),0);memcpy(&oldBlob[0],&blobHeader,sizeof(blobHeader));memcpy(&oldBlob[sizeof(blobHeader)],&oldStore,sizeof(oldStore));memcpy(&oldBlob[sizeof(blobHeader)+sizeof(oldStore)],oldJson.data(),oldJson.size());prefs.values[authConfigKey]=oldBlob;boot();assert(String(webPassword)=="adminfjr");next=DynamicJsonDocument(16384);next.set(config);assert(saveConfig(next));memcpy(&blobHeader,prefs.values[authConfigKey].data(),sizeof(blobHeader));assert(blobHeader.version==3);boot();assert(String(webPassword)=="adminfjr");assert(ph_auth_pair_resume(&localAuth,"aabbccddee11","6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b",token));assert(ph_auth_remote_get(&localAuth,"aabbccddee12",remote,&scopes)&&!strcmp(remote,"6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b"));
  // Previously released v2 fixed-auth MessagePack remains readable.
  String packed;assert(serializeWireMP(config,packed));AuthConfigHeader v2{authConfigMagic,2,0,uint32_t(packed.size())};std::string v2Blob(sizeof(v2)+sizeof(localAuth.store)+packed.size(),0);memcpy(&v2Blob[0],&v2,sizeof(v2));memcpy(&v2Blob[sizeof(v2)],&localAuth.store,sizeof(localAuth.store));memcpy(&v2Blob[sizeof(v2)+sizeof(localAuth.store)],packed.data(),packed.size());prefs.values[authConfigKey]=v2Blob;boot();assert(String(webPassword)=="adminfjr"&&localAuth.store.count==1&&localAuth.store.remote_count==1);next=DynamicJsonDocument(16384);next.set(config);assert(saveConfig(next));memcpy(&v2,prefs.values[authConfigKey].data(),sizeof(v2));assert(v2.version==3);
+#ifdef IOTCLOUD_HUB
+ retirementTrust();
+#endif
  puts("production atomic config/pair storage PASS");
 }

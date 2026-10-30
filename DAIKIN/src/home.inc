@@ -39,8 +39,8 @@ static bool homeControl(size_t device,iotcloud::HubHome::Control control,unsigne
   }while(uint32_t(millis()-began)<2500);
   hubHome.finish();return false;
 }
-// TC1 has no per-outlet appliance-insertion sensor. Switch services expose
-// the six measured relay states without inventing OutletInUse readings.
+// Relay state uses a Switch service; TC1 and S30-V1B do not report an
+// appliance-insertion sensor for an OutletInUse characteristic.
 struct HomeOutlet:Service::Switch{
   size_t device;unsigned channel;SpanCharacteristic *on;
   HomeOutlet(size_t d,unsigned c):device(d),channel(c){
@@ -169,7 +169,7 @@ static void homeInit(){
   using Home=iotcloud::HubHome;
   for(size_t i=0;i<hubHome.size;i++){
     const auto &d=hubHome.devices[i];homeAccessory(d.aid,d.model.c_str(),d.mac.c_str(),d.name.c_str());
-    if(d.model=="tc1")for(unsigned c=0;c<6;c++)new HomeOutlet(i,c);
+    if(d.outletCount())for(unsigned c=0;c<d.outletCount();c++)new HomeOutlet(i,c);
     else if(d.model=="a1"){new HomeFan(i);new HomeLight(i);}
     else{new HomeSensor(i,Home::Temperature);new HomeSensor(i,Home::Humidity);new HomeSensor(i,Home::CO2);new HomeSensor(i,Home::PM25);if(d.model=="daikin")new HomeSensor(i,Home::PM10);}
   }
