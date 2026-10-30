@@ -21,6 +21,8 @@ extern void set_printf_port(unsigned char);
 #include "factory_mac.h"
 #include "boot_trace.h"
 #include "memory_policy.h"
+#include "../protocol/httpd/http.h"
+#include "../protocol/diagnostics_ids.h"
 extern void OTA_RequestDownloadFromHTTP(const char *);
 #include <errno.h>
 #include <stdio.h>
@@ -167,12 +169,34 @@ static void network_info(void *unused, ph_writer *w) {
     phw_text(w,"mqtt_host",CFG_GetMQTTHost());phw_int(w,"mqtt_port",CFG_GetMQTTPort());
     phw_text(w,"mqtt_user",CFG_GetMQTTUserName());phw_text(w,"mqtt_topic_mode","tmcp");
     phw_bool(w,"mqtt_password_set",*CFG_GetMQTTPass()!=0);phw_bool(w,"web_password_set",*CFG_GetWebPassword()!=0);
-    phw_bool(w,"storage_ready",lfs_present()!=0);phw_u32(w,"free_memory",xPortGetFreeHeapSize());
+    phw_bool(w,"storage_ready",lfs_present()!=0);
     int done=OTA_GetProgress(),total=OTA_GetTotalBytes();
     uint32_t progress=done>0&&total>0?(uint32_t)((uint64_t)done*100/total):0;
     if(progress>100)progress=100;
     phw_bool(w,"ota_active",bl_ota_pending);phw_text(w,"ota_state",done>=0?(progress==100?"rebooting":"downloading"):*ota_url?"pending":ota_failed?"failed":"idle");
     phw_u32(w,"ota_progress",progress);
+}
+static uint32_t network_stamp(void *unused) {
+    (void)unused;uint32_t h=2166136261u;
+    const unsigned char *p=(const unsigned char*)HAL_GetMyIPString();
+    while(*p)h=(h^*p++)*16777619u;
+    uint32_t flags=((uint32_t)HAL_GetWifiStrength()&255u)^(Main_IsConnectedToWiFi()?1u<<9:0)^
+        (Main_IsOpenAccessPointMode()?1u<<10:0)^(scan_state<<11)^(bl_mqtt_status<<14)^
+        (bl_ota_pending?1u<<18:0)^(ota_failed?1u<<19:0)^(*ota_url?1u<<20:0)^
+        (lfs_present()?1u<<21:0)^(*CFG_GetWebPassword()?1u<<22:0);
+    int done=OTA_GetProgress(),total=OTA_GetTotalBytes();
+    uint32_t progress=done>0&&total>0?(uint32_t)((uint64_t)done*100/total):0;
+    return h^flags^(progress<<24)^(done>=0?1u<<23:0);
+}
+static void diagnostics(void *unused,ph_writer *w) {
+    (void)unused;ph_http_diagnostics h=ph_http_snapshot();
+    ph_diag_uint(w,PH_DIAG_FREE_MEMORY,xPortGetFreeHeapSize());
+    ph_diag_uint(w,PH_DIAG_HTTP_ACCEPT_OK,h.accepted);
+    ph_diag_uint(w,PH_DIAG_HTTP_ACCEPT_QUEUE_OK,h.queued);
+    ph_diag_uint(w,PH_DIAG_HTTP_ACCEPT_QUEUE_REJECT,h.rejected);
+    ph_diag_uint(w,PH_DIAG_HTTP_ACCEPT_QUEUE_CAPACITY,PH_HTTP_WAIT_SLOTS);
+    ph_diag_uint(w,PH_DIAG_HTTP_ACCEPT_BUSY_SEND_OK,h.busy_sent);
+    ph_diag_uint(w,PH_DIAG_HTTP_ACCEPT_BUSY_SEND_FAIL,h.busy_failed);
     bl_mqtt_diagnostics(w);
 }
 void PH_BL_Tick(void) {
@@ -352,7 +376,7 @@ void PH_BL_Init(int safe_mode) {
  snprintf(mac,sizeof(mac),"%02x%02x%02x%02x%02x%02x",bytes[0],bytes[1],bytes[2],bytes[3],bytes[4],bytes[5]);
  uint32_t boot=0;if(!random_bytes(NULL,(uint8_t*)&boot,sizeof(boot))||!boot)return;
  PH_BOOT_STAGE("random-ready");
- ph_device_ops ops={NULL,now,save,set_relay,reboot,network_info,platform_action};
+ ph_device_ops ops={NULL,now,save,set_relay,reboot,network_info,platform_action,diagnostics,network_stamp};
  if(!ph_device_init(&bl_device,&ops,&settings,mac,USER_SW_VER,boot))return;
  PH_BOOT_STAGE("device-ready");
  /* Recovery starts with the relay off without erasing the saved boot policy. */

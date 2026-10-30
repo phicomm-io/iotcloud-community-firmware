@@ -1,10 +1,13 @@
 #include "platform_host.h"
 #include "factory_mac.h"
+#include "../protocol/httpd/http.h"
 #include <assert.h>
 #include <string.h>
 #include <stdlib.h>
 #include <time.h>
 lfs_t lfs;
+/* Unit tests omit the socket service; network tests link its real snapshot. */
+__attribute__((weak)) ph_http_diagnostics ph_http_snapshot(void){ph_http_diagnostics d={0};return d;}
 int mounted;
 char store_dir[1024];
 char mqtt_host[128]="127.0.0.1",mqtt_user[65]="test-user",mqtt_pass[128]="test-pass",web_password[33]="secret";

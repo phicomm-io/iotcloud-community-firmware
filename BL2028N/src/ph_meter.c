@@ -53,13 +53,10 @@ void ph_meter_write(const ph_meter *m, ph_writer *w, uint32_t t, bool calibrated
     unsigned fields=ph_meter_fields(m,t);
     phw_begin(w,"metering",false);phw_text(w,"chip","HLW8032");phw_bool(w,"calibrated",calibrated);
     phw_bool(w,"valid",fields==7);phw_u32(w,"valid_fields",fields);
-    if(m->frames)phw_u32(w,"age_ms",t-m->frame_at);else phw_null(w,"age_ms");
     const char *keys[]={"voltage","current","active_power"};
     for(unsigned i=0;i<3;++i){if(fields&(1u<<i))phw_number(w,keys[i],m->value[i]);else phw_null(w,keys[i]);}
     double apparent=m->value[0]*m->value[1];
     if((fields&3)==3)phw_number(w,"apparent_power",apparent);else phw_null(w,"apparent_power");
     if(fields==7 && apparent>0)phw_number(w,"power_factor",fmin(m->value[2]/apparent,1));else phw_null(w,"power_factor");
-    phw_number(w,"energy_kwh",m->energy_kwh);phw_u32(w,"received_bytes",m->received_bytes);
-    phw_u32(w,"frames",m->frames);phw_u32(w,"bad_frames",m->bad_frames);
-    phw_u32(w,"discontinuities",m->discontinuities);phw_end(w);
+    phw_number(w,"energy_kwh",m->energy_kwh);phw_end(w);
 }

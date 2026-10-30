@@ -1,17 +1,17 @@
 {
-  "source": "phicomm-messagepack-lab/firmware-json-trim/common",
-  "git_head": "7ec8667835c5fc62f47a9d481ddb174ffc2939c9",
-  "note": "Snapshot of the uncommitted typed protocol implementation; each file pinned by SHA-256. Portable allocator and numeric adapters live alongside it.",
+  "source": "phicomm-community-firmware/common",
+  "git_head": "d68cd83d0d70c5e5e37a61fb397bf145fa213c37",
+  "note": "Clean shared inputs with portable binary-only adaptations recorded in lab-openbeken.patch.",
   "files": {
     "typed_wire.h": "489a66a757f93d4a3a474dfa846e8185068d72093bb60dfc67e010b14424056c",
-    "typed_wire.inc": "ce954e08e8dca40d7487d436fbc370fe19887f3eadf1b5a231778318831e999a",
+    "typed_wire.inc": "e7228ae882d60460ffd6bc92c98af2f398e9abef40e0e1216deed571de783e5e",
     "wire_format.h": "7574eae2abc26370b6466e8c90d9bfc275eb5eac15c6713dd495b9a5bc563c0d",
     "wire_primitives.inc": "e2386e48b4fbeb86d659629d7e18e42dc3570fa3d3913ab4275de5b657e33363",
     "binary_reader.h": "eaffea0bdece20ee6e29f819e96bf42c05603339316a03fe9e10e3d1b1c70b79",
     "binary_reader.inc": "a27d7a0218f97a864baac97c7c650383d8b751cc11679cbce5041e19f308f424",
     "status_request.h": "81116ffaa7756bce9f02e198b75f4b84c2eaf419bc3dbf9fb68c9e3e19012154",
     "local_auth.h": "7424b7df561de9962a7ed8e7a56ecbfb9b9c80a5b621099e5c11cc18af26e9fa",
-    "local_auth.c": "2d1b6b6da593690c6c3eafcf50422985b2210a39b3b74c07f9d655e286ea6e89",
+    "local_auth.c": "7fa17abf944d50de23491e4db6698240684310f85430b5eb2a8518870428dd30",
     "json_number_checked.h": "6d01c4fd18cc9db739ed4918d2c18628182a7179ba2a92c7f21c1f3718c3cd43"
   },
   "adaptations": {

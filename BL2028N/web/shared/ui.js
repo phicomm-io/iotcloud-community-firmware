@@ -6,6 +6,9 @@
 (()=>{
 'use strict';
 const {t}=I18N;
+// Native builds specialize only the product; optional capabilities stay live.
+const PRODUCT=/* @device-product */null;
+const mayM1=PRODUCT===null||PRODUCT==='m1';
 const $=id=>document.getElementById(id);
 // Remove the non-secret handshake fragment before any async device requests.
 let importTicket=null,importInvalid=false;
@@ -41,10 +44,8 @@ const ICONS={
  plus:'<path d="M12 5v14M5 12h14"/>',
  link:'<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>',
  external:'<path d="M14 3h7v7M10 14 21 3M21 14v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h6"/>',
- copy:'<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
  info:'<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>',
  alert:'<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01"/>',
- moon:'<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>',
  clock:'<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
  auto:'<path d="M21 12a9 9 0 0 1-15 6.7L3 16M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M3 21v-5h5"/>'
 };
@@ -61,7 +62,8 @@ async function run(button,fn,okKey='toast.accepted'){
  catch(e){toast(e.message||String(e),true);}
  finally{if(button){button.disabled=false;button.removeAttribute('aria-busy');}}
 }
-function onSubmit(form,fn,okKey){form.addEventListener('submit',e=>{e.preventDefault();run(form.querySelector('button[type=submit],button:not([type])'),fn,okKey);});}
+function saveDraft(node,fn){return async()=>{const box=node.closest?.('[data-settings-page]'),version=box?.dataset.editVersion;const result=await fn();if(box?.dataset.editVersion===version)delete node.dataset.dirty;return result;};}
+function onSubmit(form,fn,okKey){form.dataset.preserveDraft='1';form.addEventListener('submit',e=>{e.preventDefault();run(form.querySelector('button[type=submit],button:not([type])'),saveDraft(form,fn),okKey);});}
 function confirmDialog({title,body,ok,danger}){
  if(typeof document.body.append!=='function'||!document.createElement('dialog').showModal)return Promise.resolve(window.confirm(title+'\n'+body));
  return new Promise(resolve=>{
@@ -75,6 +77,7 @@ function confirmDialog({title,body,ok,danger}){
 }
 
 /* ---------- Controls ---------- */
+function fieldRow(titleKey,...controls){return h('label',{class:'field'},h('span',{i18n:titleKey}),...controls);}
 function switchRow(id,titleKey,descKey){
  return h('label',{class:'switch'},h('span',{class:'text'},h('b',{i18n:titleKey}),descKey&&h('span',{i18n:descKey})),h('input',{type:'checkbox',role:'switch',id}));
 }
@@ -96,7 +99,7 @@ function daysPicker(name,mask=127){
  return box;
 }
 function presetDays(picker){
- return h('div',{class:'row small'},[[127,'day.every'],[31,'day.weekdays'],[96,'day.weekends']].map(([m,k])=>h('button',{type:'button',class:'btn ghost',style:'min-height:28px;padding:2px 8px',onclick:()=>picker.setMask(m)},h('span',{i18n:k}))));
+ return h('div',{class:'row small'},[[127,'day.every'],[31,'day.weekdays'],[96,'day.weekends']].map(([m,k])=>h('button',{type:'button',class:'btn ghost',style:'min-height:28px;padding:2px 8px',onclick:()=>{picker.setMask(m);picker.dispatchEvent(new Event('change',{bubbles:true}));}},h('span',{i18n:k}))));
 }
 function daysText(mask){
  if(!mask)return t('day.once');if(mask===127)return t('day.every');if(mask===31)return t('day.weekdays');if(mask===96)return t('day.weekends');
@@ -109,7 +112,7 @@ function summary(items){return h('dl',{class:'summary'},items.filter(Boolean).ma
 function card(titleKey,leadKey,...body){return h('section',{class:'card'},h('div',{class:'card-head'},h('div',{},h('h2',{i18n:titleKey}),leadKey&&h('p',{class:'help',i18n:leadKey}))),...body);}
 function info(key){return h('details',{class:'info'},h('summary',{},icon('info'),h('span',{i18n:'common.more_info'})),h('p',{i18n:key}));}
 function pageHead(titleKey,leadKey){return h('div',{},h('h2',{class:'page-title',i18n:titleKey}),h('p',{class:'page-lead',i18n:leadKey}));}
-function saveBar(fn,label='common.save'){const b=h('button',{type:'button',class:'btn primary'},h('span',{i18n:label}));b.onclick=()=>run(b,fn);return h('div',{class:'form-actions'},b);}
+function saveBar(fn,label='common.save'){const b=h('button',{type:'button',class:'btn primary'},h('span',{i18n:label}));b.onclick=()=>run(b,saveDraft(b.closest('[data-settings-page]')||b,fn));return h('div',{class:'form-actions'},b);}
 function num(model,key,{min,max,step='any',unit,width}={}){
  const input=h('input',{type:'number',value:model[key],min,max,step,style:width?'width:'+width:null,oninput:e=>{if(e.target.value!==''&&Number.isFinite(+e.target.value))model[key]=+e.target.value;}});
  return unit?h('span',{class:'input-unit'},input,h('em',{},unit)):input;
@@ -152,23 +155,62 @@ const TZ=[-720,-660,-600,-540,-480,-420,-360,-300,-240,-210,-180,-120,-60,0,60,1
 function tzLabel(m){const sg=m<0?'−':'+',a=Math.abs(m);return 'UTC'+sg+String(Math.floor(a/60)).padStart(2,'0')+':'+String(a%60).padStart(2,'0')+(m===480?' · '+t('tz.cn'):'');}
 
 /* ---------- Header, navigation, banners ---------- */
-const UI=window.UI={$,h,icon,toast,run,onSubmit,confirm:confirmDialog,switchRow,seg,daysPicker,presetDays,daysText,hhmm,toMinutes,duration,summary,card,info,pageHead,saveBar,num,flag,slider,normalizeMac,prettyMac,clone,AIR,grade,airScale,tzLabel,state:null,caps:null,pages:{},device:null,clockCard,maintenancePage,scanNetworks};
+let resetPending=false,resetAccepted=false,resetGeneration=0,resetUptime,resetSawPending=false;
+const UI=window.UI={$,h,fieldRow,saveDraft,icon,toast,run,onSubmit,confirm:confirmDialog,switchRow,seg,daysPicker,presetDays,daysText,hhmm,toMinutes,duration,summary,card,info,pageHead,saveBar,num,flag,slider,normalizeMac,prettyMac,clone,AIR,grade,airScale,tzLabel,state:null,caps:null,pages:{},device:null,clockCard,maintenancePage,scanNetworks};
 // Keep requested output visible until a fresh read confirms it. Polls may still
 // contain the pre-write state while the device applies an accepted command.
 let pendingControl=null;
+const controlObservers=new Set();
 // Partial reads retain slow fields; null explicitly invalidates a measurement.
 UI.acceptStatus=(s,partial=false)=>{
  const merged=partial?{...UI.confirmed,...s}:s;
  if(partial&&s.scd40&&UI.confirmed?.scd40)merged.scd40={...UI.confirmed.scd40,...s.scd40};
- UI.confirmed=merged;UI.state=pendingControl?{...merged,...pendingControl}:merged;return UI.state;
+ UI.confirmed=merged;UI.state=pendingControl?{...merged,...pendingControl}:merged;
+ for(const observe of controlObservers)observe(merged);
+ return UI.state;
 };
-let fullGeneration=1,loadedGeneration=0,lastFullAt=0;
+function diagnosticSnapshot(reply){
+ if(!reply||reply.schema!==diagnosticSchema||!Array.isArray(reply.fields))throw Error('Invalid diagnostics schema');
+ const out={},seen=new Set();
+ for(const pair of reply.fields){
+  if(!Array.isArray(pair)||pair.length!==2||!Number.isInteger(pair[0]))throw Error('Invalid diagnostics field');
+  const path=diagnosticFields[String(pair[0])];
+  if(!path||pair[1]===undefined)continue;
+  if(seen.has(pair[0]))throw Error('Duplicate diagnostics field');
+  seen.add(pair[0]);
+  const keys=path.split('.');let cursor=out;
+  for(const key of keys.slice(0,-1))cursor=cursor[key]||(cursor[key]={});
+  cursor[keys.at(-1)]=pair[1];
+ }
+ return out;
+}
+function mergeDiagnostic(base,extra){
+ const out={...base};
+ for(const [key,value] of Object.entries(extra))out[key]=value&&typeof value==='object'&&!Array.isArray(value)?mergeDiagnostic(base[key]&&typeof base[key]==='object'?base[key]:{},value):value;
+ return out;
+}
+let fullGeneration=1,loadedGeneration=0,capabilityGeneration=0,lastFullAt=0;
 UI.invalidateStatus=()=>{fullGeneration++;};
 UI.activePage=()=>/^settings\/([a-z]+)$/.exec(UI.embeddedRoute??location.hash.slice(1))?.[1]||null;
 UI.statusParams=()=>{
+ if(UI.caps?.config_recovery||resetPending)return {};
  const page=UI.activePage(),ttl=page==='diagnostics'?5000:['network','mqtt','device','firmware'].includes(page)?10000:30000;
  return UI.caps?.status_views?.includes('live')&&loadedGeneration===fullGeneration&&Date.now()-lastFullAt<ttl?{view:'live'}:{};
 };
+// Three additional reads at most. Slower application work can still be
+// confirmed by ordinary 5-second polling, without extending the read burst.
+UI.confirmStatus=matches=>new Promise(resolve=>{
+ let settled=false,reads=0,timer;
+ const stop=()=>finish(null);
+ const finish=value=>{if(settled)return;settled=true;clearTimeout(timer);clearTimeout(deadline);controlObservers.delete(observe);window.removeEventListener('pagehide',stop);resolve(value);};
+ const observe=s=>{if(matches(s))finish(s);};controlObservers.add(observe);
+ const deadline=setTimeout(stop,12000);window.addEventListener('pagehide',stop,{once:true});
+ async function read(){
+  await UI.reload({priority:1}).catch(()=>{});
+  if(!settled&&++reads<3)timer=setTimeout(read,reads===1?250:750);
+ }
+ read();
+});
 UI.control=async(action,params,patch)=>{
  if(!patch||typeof patch!=='object'||Array.isArray(patch)||!Object.keys(patch).length)throw Error(t('error.invalid_params'));
  if(pendingControl){UI.device.onStatus?.(UI.state);throw Error(t('control.pending'));}
@@ -179,12 +221,8 @@ UI.control=async(action,params,patch)=>{
  const matches=s=>s&&Object.entries(patch).every(([k,v])=>Object.hasOwn(s,k)&&(Array.isArray(v)?Array.isArray(s[k])&&v.length===s[k].length&&v.every((x,i)=>!!x===!!s[k][i]):typeof v==='boolean'?!!s[k]===v:s[k]===v));
  try{
   try{await command(action,params);}catch(e){sendError=e;if(e.code&&!['timeout','offline'].includes(e.code))throw e;}
-  const until=Date.now()+20000;
-  do{
-   last=await UI.reload();
-   if(matches(last))return last;
-   await new Promise(resolve=>setTimeout(resolve,750));
-  }while(Date.now()<until);
+  last=await UI.confirmStatus(matches);
+  if(last)return last;
   throw Error(t('control.unconfirmed')+(sendError?' · '+sendError.message:''));
  }finally{
   pendingControl=null;UI.controlBusy=false;UI.state=UI.confirmed||UI.state;render();
@@ -200,7 +238,7 @@ function header(dev){
  theme.value=saved;apply(saved);theme.onchange=()=>{apply(theme.value);try{localStorage.setItem('phicomm.appearance',theme.value);}catch{}};
  return h('header',{class:'topbar'},
   h('div',{class:'brand'},h('div',{class:'logo'},icon(dev.icon)),h('div',{class:'grow'},h('div',{class:'kind','data-i18n':dev.kindKey},t(dev.kindKey)),h('h1',{id:'title'},dev.model))),
-  h('div',{class:'prefs'},lang,theme),
+  h('div',{class:'prefs'},lang,theme,globalThis.DeviceSession&&h('button',{type:'button',class:'btn',onclick:()=>DeviceSession.logout().catch(e=>toast(e.message,true))},I18N.lang==='en'?'Sign out':'退出登录')),
   h('div',{class:'chips',id:'chips'}));
 }
 function chip(dotCls,labelKey,value){return h('span',{class:'chip'},h('span',{class:'dot '+dotCls}),h('span',{i18n:labelKey}),value!=null&&h('b',{},value));}
@@ -208,13 +246,14 @@ function renderChips(s){
  const c=$('chips');if(!c)return;
  const wifi=s.wifi_connected?chip('ok','chip.wifi',s.ssid+' · '+s.ip):s.ap_active?chip('warn','chip.hotspot',s.ap_name):chip('bad','chip.wifi',t('state.connecting'));
  const mq=!s.mqtt_host?chip('','chip.mqtt',t('state.off')):s.mqtt_connected?chip('ok','chip.mqtt',t('state.ready')):chip('warn','chip.mqtt',t('s.'+(s.mqtt_status||'connecting')));
- c.replaceChildren(wifi,mq,h('span',{class:'chip'},h('span',{i18n:'chip.firmware'}),h('b',{class:'num'},s.version||'—')),...(UI.device.model==='M1'?[h('span',{class:'chip'},h('span',{i18n:'mcu.version'}),h('b',{class:'num'},mcuVersion?.version_received?mcuVersion.version:t('mcu.unknown')))]:[]),...(UI.device.chips?UI.device.chips(s):[]));
+ c.replaceChildren(wifi,mq,h('span',{class:'chip'},h('span',{i18n:'chip.firmware'}),h('b',{class:'num'},s.version||'—')),...(mayM1&&UI.device.model==='M1'?[h('span',{class:'chip'},h('span',{i18n:'mcu.version'}),h('b',{class:'num'},mcuVersion?.version_received?mcuVersion.version:t('mcu.unknown')))]:[]),...(UI.device.chips?UI.device.chips(s):[]));
 }
 function renderBanners(s,lost){
  const b=$('banners');if(!b)return;b.replaceChildren();
  const add=(cls,ic,text)=>b.append(h('div',{class:'banner '+cls,role:cls==='bad'?'alert':null},icon(ic),h('span',{},text)));
  if(lost){add('bad','alert',t('banner.lost'));return;}
  if(UI.caps?.config_recovery)add('warn','alert',t('recovery.hint'));
+ if(resetPending)add('info','auto',t('toast.resetting'));
  if(s.ota_active)add('info','auto',t('banner.ota',{p:s.ota_progress}));
  if(s.reboot_pending)add('info','auto',t('banner.rebooting'));
  if(s.mqtt_cleanup_warning)add('warn','alert',t('banner.cleanup'));
@@ -230,9 +269,10 @@ function buildNav(dev){
   for(const a of links)side.append(a);
  }
 }
-let routeGeneration=0;
+let routeGeneration=0;let routeRead=null;
 function showRoute(){
  const generation=++routeGeneration;
+ routeRead?.abort();routeRead=new AbortController();
  const m=/^settings\/([a-z]+)$/.exec(UI.embeddedRoute??location.hash.slice(1));
  const page=m&&document.querySelector('[data-settings-page="'+m[1]+'"]')?m[1]:m?(UI.device.groups.flatMap(g=>g[1]).find(k=>UI.pages[k])||null):null;
  $('homePage').hidden=!!page;$('settingsPage').hidden=!page;
@@ -242,7 +282,7 @@ function showRoute(){
  // A slow status refresh must not launch reads for tabs already left behind.
  if(page)UI.reload({full:true}).then(()=>{if(generation===routeGeneration)afterShow(page);});else afterShow(page);
 }
-const showingPages=new Set();
+const showingPages=new Map();
 async function afterShow(page){
  if(!page)return;
  const active=document.querySelector('.side a[aria-current]'),side=$('side');
@@ -252,10 +292,15 @@ async function afterShow(page){
   if(item.left<menu.left)side.scrollLeft+=item.left-menu.left;
   else if(item.right>menu.right)side.scrollLeft+=item.right-menu.right;
  }
- const p=UI.pages[page];if(!p?.show||showingPages.has(page))return;
+ const p=UI.pages[page],signal=routeRead?.signal;if(!p?.show||signal?.aborted||showingPages.get(page)===signal)return;
  const box=document.querySelector('[data-settings-page="'+page+'"]');
- box?.querySelector('.page-load-error')?.remove();showingPages.add(page);
- try{await p.show();}catch(e){const retry=h('button',{class:'btn',type:'button',onclick:()=>afterShow(page)},t('common.retry'));box?.prepend(h('div',{class:'banner warn page-load-error',role:'alert'},h('span',{},e.message),retry));}finally{showingPages.delete(page);}
+ if(box?.matches('[data-dirty="1"]')||box?.querySelector('[data-dirty="1"]'))return;
+ box?.querySelector('.page-load-error')?.remove();showingPages.set(page,signal);
+ if(['light','linkage','freshair','night'].includes(page))box.dataset.preserveDraft='1';
+ const edit=event=>{const draft=event.target.closest('[data-preserve-draft]');if(!draft)return;box.dataset.editVersion=String(1+Number(box.dataset.editVersion||0));draft.dataset.dirty='1';};
+ if(box&&!box.dataset.trackEdits){box.dataset.trackEdits='1';box.addEventListener('input',edit,true);box.addEventListener('change',edit,true);box.addEventListener('click',event=>{if(event.target.closest('.seg button'))edit(event);},true);}
+ const version=box?.dataset.editVersion;
+ try{await p.show({signal,current:()=>!signal?.aborted&&box?.dataset.editVersion===version});}catch(e){if(signal?.aborted||e.name==='AbortError')return;const retry=h('button',{class:'btn',type:'button',onclick:()=>afterShow(page)},t('common.retry'));box?.prepend(h('div',{class:'banner warn page-load-error',role:'alert'},h('span',{},e.message),retry));}finally{if(showingPages.get(page)===signal)showingPages.delete(page);}
 }
 /* Wi-Fi scan is shared: start, poll, and hand the sorted list to a callback. */
 async function scanNetworks(onList){
@@ -272,9 +317,9 @@ function wifiPage(){
  const open=switchRow('openNetwork','wifi.open');
  const scanBtn=h('button',{type:'button',class:'btn',id:'scan'},icon('auto'),h('span',{i18n:'wifi.scan'}));
  const form=h('form',{id:'wifiForm',class:'stack'},
-  h('label',{class:'field'},h('span',{i18n:'wifi.ssid'}),h('div',{class:'row'},h('div',{class:'grow'},ssid),scanBtn)),list,
-  h('label',{class:'field'},h('span',{i18n:'wifi.password'}),pass),open,
-  h('div',{class:'form-actions'},h('button',{class:'btn primary',type:'submit'},h('span',{i18n:'wifi.save'}))),info(UI.caps?.wifi_trial===false?'s30.wifi_hint':'wifi.hint'));
+  fieldRow('wifi.ssid',h('div',{class:'row'},h('div',{class:'grow'},ssid),scanBtn)),list,
+  fieldRow('wifi.password',pass),open,
+  h('div',{class:'form-actions'},h('button',{class:'btn primary',type:'submit'},h('span',{i18n:'wifi.save'}))),info('wifi.hint'));
  open.querySelector('input').onchange=e=>{pass.disabled=e.target.checked;};
  scanBtn.onclick=()=>run(scanBtn,()=>scanNetworks(net=>{
   list.replaceChildren(...net.slice().sort((a,b)=>b.rssi-a.rssi).map(n=>h('button',{type:'button',class:'item',style:'cursor:pointer;text-align:left;font:inherit;color:inherit;width:100%',
@@ -283,7 +328,7 @@ function wifiPage(){
   list.hidden=false;
   if(!net.length)throw Error(t('wifi.none'));
  }),null);
- onSubmit(form,()=>api('/wifi/config',{ssid:ssid.value,password:pass.value,open_network:open.querySelector('input').checked}),UI.caps?.wifi_trial===false?'s30.wifi_saved':'wifi.verifying');
+ onSubmit(form,()=>api('/wifi/config',{ssid:ssid.value,password:pass.value,open_network:open.querySelector('input').checked}),'wifi.verifying');
  return {el:h('div',{class:'stack'},pageHead('nav.wifi','wifi.lead'),sum,card('wifi.change',null,form)),
   status(s){sum.replaceChildren(summary([['wifi.status',s.wifi_connected?t('state.connected'):s.ap_active?t('state.hotspot'):t('state.connecting'),s.wifi_connected?'ok':s.ap_active?'warn':'bad'],
    ['wifi.ssid',s.ssid||'—'],['wifi.ip',s.ip||'—'],s.ap_active?['wifi.ap',s.ap_name]:['wifi.saved_password',t(s.wifi_password_set?'common.yes':'common.no')]]));},
@@ -340,14 +385,14 @@ function mqttPage(dev){
  const port=h('input',{id:'mqttPort',type:'number',min:1,max:65535,required:true,value:'1883'});
  const user=h('input',{id:'mqttUser',maxLength:63,autocomplete:'off'});
  const pass=h('input',{id:'mqttPassword',type:'password',maxLength:dev.mqttPasswordMax||256,autocomplete:'new-password',placeholder:t('mqtt.pass_ph')});
- const protocol=dev.model==='TC1'?h('select',{id:'mqttMode'},h('option',{value:'tmcp'},'TMCP (v2)'),h('option',{value:'legacy'},'Legacy (v1)')):null;
+ const protocol=(PRODUCT===null||PRODUCT==='tc1')&&dev.model==='TC1'?h('select',{id:'mqttMode'},h('option',{value:'tmcp'},'TMCP (v2)'),h('option',{value:'legacy'},'Legacy (v1)')):null;
  const clear=switchRow('clearMqttPassword','mqtt.clear','mqtt.clear_desc');
  const imported=mqttImportPanel(dev,{host,port,user,pass,protocol,clear:clear.querySelector('input')});
  const form=h('form',{id:'mqttForm',class:'stack'},
   h('div',{class:'fields',style:'grid-template-columns:minmax(0,3fr) minmax(90px,1fr)'},
-   h('label',{class:'field'},h('span',{i18n:'mqtt.host'}),host),h('label',{class:'field'},h('span',{i18n:'mqtt.port'}),port)),
-  h('div',{class:'fields'},h('label',{class:'field'},h('span',{i18n:'mqtt.user'}),user),h('label',{class:'field'},h('span',{i18n:'mqtt.password'}),pass)),
-  h('details',{class:'more'},h('summary',{i18n:'common.advanced'}),...(protocol?[h('label',{class:'field'},h('span',{i18n:'mqtt.mode'}),protocol)]:[]),clear),info(dev.haHintKey),
+   fieldRow('mqtt.host',host),fieldRow('mqtt.port',port)),
+  h('div',{class:'fields'},fieldRow('mqtt.user',user),fieldRow('mqtt.password',pass)),
+  h('details',{class:'more'},h('summary',{i18n:'common.advanced'}),...(protocol?[fieldRow('mqtt.mode',protocol)]:[]),clear),info(dev.haHintKey),
   h('div',{class:'form-actions'},h('button',{class:'btn primary',type:'submit'},h('span',{i18n:'common.save'}))));
  onSubmit(form,()=>{
   imported.guard?.();
@@ -402,8 +447,8 @@ function backupCard(){
  const full=!!UI.caps?.config_backup;
  const download=h('button',{class:'btn',type:'button'},h('span',{i18n:full?'backup.download':'backup.public'}));
  download.onclick=()=>run(download,async()=>{
-  if(!full){downloadFile(PhWire.encodeWire({schema:1,partial:true,model:UI.caps.model,config:await command('config.get')},'msgpack'),'iotcloud-public-settings.msgpack','application/msgpack');return;}
-  const response=await fetch('/api/v1/config/backup',{cache:'no-store',credentials:'same-origin'});if(!response.ok)throw Error(t('backup.failed'));
+  if(!full){downloadFile(JSON.stringify({schema:1,partial:true,model:UI.caps.model,config:await command('config.get')},null,2),'phicomm-public-settings.json','application/json');return;}
+  const response=await deviceFetch('/api/v1/config/backup',{cache:'no-store',credentials:'same-origin'});if(!response.ok)throw Error(t('backup.failed'));
   downloadFile(await response.arrayBuffer(),'phicomm-'+String(UI.caps.model||'device').toLowerCase()+'-config.phcb');
  });
  const file=h('input',{type:'file',accept:'.phcb,.json',required:true});
@@ -411,13 +456,13 @@ function backupCard(){
  onSubmit(form,async()=>{
   if(!file.files?.[0]||file.files[0].size>16384)throw Error(t('backup.failed'));
   if(!await confirmDialog({title:t('backup.restore'),body:t('backup.confirm'),ok:t('backup.restore'),danger:true}))return;
-  const response=await fetch('/api/v1/config/restore',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:await file.files[0].arrayBuffer(),credentials:'same-origin'});
+  const response=await deviceFetch('/api/v1/config/restore',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:await file.files[0].arrayBuffer(),credentials:'same-origin'});
   if(response.status!==202)throw Error(t('backup.failed'));toast(t('backup.restoring'));
  });
  return card('backup.title',null,h('p',{class:'help',i18n:full?'backup.hint':'backup.partial'}),download,form);
 }
 function firmwarePage(dev){
- const mcu=dev.model==='M1'?mcuVersionPanel():null;
+ const mcu=mayM1&&dev.model==='M1'?mcuVersionPanel():null;
  const comparison=h('a',{id:'otaCompare',class:'btn',target:'_blank',rel:'noopener noreferrer'},h('span',{i18n:'fw.compare'}),icon('external'));
  let identity=null,targetVersion=null;
  function comparisonLink(){
@@ -485,26 +530,32 @@ function firmwarePage(dev){
  const conversion=conversionSupported?switchRow('hubConversion','fw.convert_hub','fw.convert_hub_help'):null;
  const conversionInput=conversion?.querySelector('input'),unsignedInput=unsigned.querySelector('input');
  function conversionMode(){
-  const selected=!!conversionInput?.checked;
+  const selected=UI.caps?.ota_variant_conversion==='full-to-hub'&&!!conversionInput?.checked;
   if(selected)unsignedInput.checked=false;
   unsignedInput.disabled=selected;
   file.accept=selected?'.signed':'.bin,.raw,.signed';
  }
  conversionInput?.addEventListener('change',conversionMode);
- const url=h('input',{id:'otaUrl',type:'url',maxLength:UI.caps?.ota_url_max||499,required:true,placeholder:(UI.caps?.ota_upload===false?'http://…/':'https://…/')+dev.otaName});
+ const url=h('input',{id:'otaUrl',type:'url',maxLength:UI.caps?.ota_url_max||499,required:true,placeholder:'https://…/'+dev.otaName});
  const fileForm=h('form',{id:'fileForm',class:'stack'},h('label',{class:'field'},h('span',{},t('fw.file',{m:dev.model})),file),
   h('details',{class:'more'},h('summary',{i18n:'common.advanced'}),unsigned,...(conversion?[conversion]:[])),
   h('div',{class:'form-actions'},h('button',{class:'btn primary',type:'submit'},h('span',{i18n:'fw.upload'}))));
- const urlForm=h('form',{id:'urlForm',class:'stack',hidden:true},h('label',{class:'field'},h('span',{i18n:'fw.url'}),url),
+ const urlForm=h('form',{id:'urlForm',class:'stack',hidden:true},fieldRow('fw.url',url),
   h('div',{class:'form-actions'},h('button',{class:'btn primary',type:'submit'},h('span',{i18n:'fw.download'}))));
- const pickInstall=v=>{fileForm.hidden=v!=='file';urlForm.hidden=v!=='url';};
- const picker=seg([['file','fw.tab_file'],['url','fw.tab_url']],pickInstall),initialInstall=UI.caps?.ota_upload===false?'url':'file';
- picker.set(initialInstall);pickInstall(initialInstall);picker.hidden=UI.caps?.ota_upload===false||!UI.caps?.actions?.includes('ota.start');
+ const picker=seg([['file','fw.tab_file'],['url','fw.tab_url']],v=>{fileForm.hidden=v!=='file';urlForm.hidden=v!=='url';});
+ function installCapabilities(caps){
+  const urlOnly=caps?.ota_upload===false;
+  picker.set(urlOnly?'url':'file');
+  fileForm.hidden=urlOnly;urlForm.hidden=!urlOnly;
+  picker.hidden=urlOnly||!caps?.actions?.includes('ota.start');
+ }
+ installCapabilities(UI.caps);
  // Upload streams raw bytes; the request is synchronous up to send(), like the old page.
  let uploading=false;
  fileForm.addEventListener('submit',e=>{
-  e.preventDefault();const f=file.files&&file.files[0];if(!f||uploading)return;
+  e.preventDefault();if(UI.identityChanged){toast(I18N.lang==='en'?'Refresh this page before uploading.':'请刷新页面后再上传。',true);return;}const f=file.files&&file.files[0];if(!f||uploading)return;
   const rescue=unsignedInput.checked,convert=!!conversionInput?.checked;
+  if(convert&&UI.caps?.ota_variant_conversion!=='full-to-hub'){toast(t('error.unsupported'),true);return;}
   if(convert){
    if(rescue||!f.name?.endsWith('.signed')){toast(t('fw.convert_hub_signed'),true);return;}
    if(!window.confirm(t('fw.convert_hub_confirm')))return;
@@ -512,10 +563,14 @@ function firmwarePage(dev){
   if(rescue&&!window.confirm(t('fw.unsigned_confirm')))return;
   uploading=true;prog.value=0;
   const xhr=window.createDeviceUpload?window.createDeviceUpload():new XMLHttpRequest();xhr.open('POST',convert?'/api/v1/ota/convert':rescue?'/api/v1/ota/upload-unsigned':'/api/v1/ota/upload');
-  xhr.setRequestHeader('Content-Type','application/octet-stream');xhr.timeout=310000;
+  const authorization=globalThis.DeviceSession?.headers().Authorization;xhr.setRequestHeader('Content-Type','application/octet-stream');for(const [name,value] of Object.entries(globalThis.DeviceSession?.headers()||{}))xhr.setRequestHeader(name,value);xhr.timeout=310000;if(globalThis.DeviceSession){xhr.responseType='arraybuffer';xhr.setRequestHeader('Accept',DeviceSession.wire.headers().Accept);}
   if(convert){xhr.setRequestHeader('X-IoTCloud-Target-Variant','hub');xhr.setRequestHeader('X-IoTCloud-Confirm','full-to-hub');}
   xhr.upload.onprogress=ev=>{if(ev.lengthComputable){prog.value=ev.loaded/ev.total*100;state.textContent=t('fw.uploading',{p:Math.round(ev.loaded/ev.total*100)});}};
-  xhr.onload=()=>{const ok=xhr.status===202;state.textContent=ok?t('fw.verify_ok'):t('fw.failed',{e:xhr.responseText});toast(state.textContent,!ok);};
+  xhr.onload=async()=>{
+   globalThis.DeviceSession?.observe(xhr.status,authorization);const ok=xhr.status===202;let detail='';
+   if(!ok)try{if(globalThis.DeviceSession&&xhr.response!==undefined&&xhr.response!==null){const reply=await DeviceSession.wire.decodeResponse(new Response(xhr.response,{status:xhr.status,headers:{'Content-Type':xhr.getResponseHeader?.('Content-Type')||DeviceSession.wire.headers().Accept}}));detail=reply.message||reply.code||'';}else detail=xhr.responseText||'';}catch{detail='HTTP '+xhr.status;}
+   state.textContent=ok?t('fw.verify_ok'):t('fw.failed',{e:detail});toast(state.textContent,!ok);
+  };
   xhr.onerror=()=>toast(t('fw.upload_lost'),true);
   xhr.ontimeout=()=>toast(t('fw.upload_timeout'),true);
   xhr.onloadend=()=>{uploading=false;};
@@ -525,6 +580,7 @@ function firmwarePage(dev){
  const fileLabel=fileForm.querySelector('.field>span');I18N.onChange(()=>{fileLabel.textContent=t('fw.file',{m:dev.model});});
  return {el:h('div',{class:'stack'},pageHead('nav.firmware','fw.lead'),sum,...(mcu?[mcu.el]:[]),card('fw.compare_title',null,h('p',{class:'help',i18n:'fw.compare_help'}),comparison),online,
   card('fw.install',null,picker,h('div',{style:'margin-top:16px'},fileForm,urlForm),h('div',{class:'stack',style:'margin-top:20px'},prog,state,cancel),info(dev.otaHintKey))),
+  capabilities(caps){if(conversion&&caps.ota_variant_conversion!=='full-to-hub'){conversionInput.checked=false;conversion.remove();conversionMode();}online.hidden=!caps.actions?.includes('ota.sources.get');installCapabilities(caps);},
   status(s){identity=s;comparisonLink();if(mcu)mcu.refresh().catch(()=>{});sum.replaceChildren(summary([['fw.version',h('span',{class:'num'},s.version||'—')],['fw.state',t('s.'+(s.ota_state||'idle'))],s.ota_error?['fw.error',h('span',{class:'badge bad'},s.ota_error)]:null]));
    cancel.hidden=!UI.caps?.actions?.includes('ota.cancel')||!s.ota_active||s.ota_mode==='committing';
    if(s.ota_active){prog.value=s.ota_progress;state.textContent=t('fw.progress',{p:s.ota_progress});}}};
@@ -595,31 +651,41 @@ function maintenancePage(dev){
  const reboot=h('button',{type:'button',class:'btn'},h('span',{i18n:'sys.reboot'}));
  reboot.onclick=async()=>{if(await confirmDialog({title:t('sys.reboot_q',{m:dev.model}),body:t('sys.reboot_body'),ok:t('sys.reboot')}))run(reboot,()=>api('/reboot',{}),'toast.rebooting');};
  const items=[h('div',{class:'item'},h('div',{class:'grow'},h('b',{i18n:'sys.reboot'}),h('span',{i18n:'sys.reboot_desc'})),reboot)];
+ let reset;
  if(dev.factoryReset||UI.caps?.config_recovery){
-  const reset=h('button',{type:'button',class:'btn danger'},h('span',{i18n:'sys.reset'}));
-  reset.onclick=async()=>{if(await confirmDialog({title:t('sys.reset_q'),body:t(UI.caps?.config_recovery?'recovery.confirm':'sys.reset_body'),ok:t('sys.reset'),danger:true}))run(reset,()=>api('/device/reset',{full:true}),'toast.resetting');};
+  reset=h('button',{type:'button',class:'btn danger'},h('span',{i18n:'sys.reset'}));
+  reset.onclick=async()=>{
+   if(resetPending||!await confirmDialog({title:t('sys.reset_q'),body:t(UI.caps?.config_recovery?'recovery.confirm':'sys.reset_body'),ok:t('sys.reset'),danger:true})||resetPending)return;
+   resetPending=true;resetAccepted=false;resetGeneration++;resetUptime=UI.confirmed?.uptime_seconds;resetSawPending=false;
+   await run(reset,async()=>{
+    try{const result=await api('/device/reset',{full:true});resetAccepted=true;resetGeneration++;return result;}
+    catch(e){resetPending=false;throw e;}
+   },'toast.resetting');
+   reset.disabled=resetPending;
+  };
   items.push(h('div',{class:'item'},h('div',{class:'grow'},h('b',{i18n:'sys.reset'}),h('span',{i18n:'sys.reset_desc'})),reset));
  }
- return h('div',{class:'stack'},pageHead('nav.maintenance','sys.lead'),backupCard(),
+ return {el:h('div',{class:'stack'},pageHead('nav.maintenance','sys.lead'),backupCard(),
   h('section',{class:'card danger-zone'},h('div',{class:'list'},items),
-   h('p',{class:'help',style:'margin-top:12px',i18n:dev.buttonHintKey},t(dev.buttonHintKey))));
+   h('p',{class:'help',style:'margin-top:12px',i18n:dev.buttonHintKey},t(dev.buttonHintKey)))),
+  status(){if(reset)reset.disabled=resetPending;}};
 }
 /* Slots shared by every "General" page. */
 function nameCard(){
  const input=h('input',{id:'deviceName',maxLength:63}),meta=h('div');
- const form=h('form',{id:'nameForm',class:'stack'},h('label',{class:'field'},h('span',{i18n:'gen.name'}),
+ const form=h('form',{id:'nameForm',class:'stack'},fieldRow('gen.name',
   h('div',{class:'row'},h('div',{class:'grow'},input),h('button',{class:'btn primary',type:'submit'},h('span',{i18n:'common.save'}))),
   h('button',{class:'btn ghost',type:'button',onclick:e=>run(e.currentTarget,async()=>{await api('/deviceName',{name:''});await UI.reload();input.value=UI.state?.name||'';},'common.saved')},h('span',{i18n:'gen.default_name'}))),meta);
  onSubmit(form,()=>{if(new TextEncoder().encode(input.value).length>63)throw Error(t('gen.name_long'));return api('/deviceName',{name:input.value});});
  const language=h('select',{id:'deviceLanguage'},h('option',{value:'zh-CN'},'简体中文'),h('option',{value:'en'},'English'));
- const languageForm=h('form',{class:'stack',hidden:!UI.caps?.device_language},h('label',{class:'field'},h('span',{i18n:'gen.language'}),language),info('gen.language_help'),h('button',{class:'btn',type:'submit'},h('span',{i18n:'common.save'})));
+ const languageForm=h('form',{class:'stack',hidden:!UI.caps?.device_language},fieldRow('gen.language',language),info('gen.language_help'),h('button',{class:'btn',type:'submit'},h('span',{i18n:'common.save'})));
  onSubmit(languageForm,()=>command('config.set',{section:'device',values:{language:language.value}}));
  return {el:card('gen.identity',null,form,languageForm),init(s){input.value=s.name||'';language.value=s.language||'zh-CN';},status(s){meta.replaceChildren(summary([['gen.device_id',h('span',{class:'num'},prettyMac(s.device_id))],['gen.uptime',duration(s.uptime_seconds||0)]]));}};
 }
 function authCard(){
  const input=h('input',{id:'webPassword',type:'password',maxLength:32,autocomplete:'new-password',placeholder:t('auth.ph')});
  const state=h('span',{class:'badge'});
- const form=h('form',{id:'authForm',class:'stack'},h('label',{class:'field'},h('span',{i18n:'auth.password'}),input,h('p',{class:'help',i18n:'auth.help'})),
+ const form=h('form',{id:'authForm',class:'stack'},fieldRow('auth.password',input,h('p',{class:'help',i18n:'auth.help'})),
   h('div',{class:'form-actions'},h('button',{class:'btn primary',type:'submit'},h('span',{i18n:'auth.set'}))));
  onSubmit(form,()=>{if(input.value&&!/^[\x20-\x7e]{8,32}$/.test(input.value))throw Error(t('auth.invalid'));return api('/auth/password',{password:input.value});});
  const c=card('auth.title','auth.lead',form);c.querySelector('.card-head').append(state);
@@ -629,40 +695,68 @@ function clockCard({load,save,status}){
  const sum=h('div'),tz=h('select'),ntp=h('input',{maxLength:63,required:true,placeholder:'ntp1.aliyun.com'});
  const fill=()=>{const v=tz.value;tz.replaceChildren(...TZ.map(m=>h('option',{value:m},tzLabel(m))));tz.value=v;};fill();I18N.onChange(fill);
  const form=h('form',{class:'stack'},h('div',{class:'fields'},
-   h('label',{class:'field'},h('span',{i18n:'clock.tz'}),tz),h('label',{class:'field'},h('span',{i18n:'clock.ntp'}),ntp)),
+   fieldRow('clock.tz',tz),fieldRow('clock.ntp',ntp)),
   info('clock.hint'),h('div',{class:'form-actions'},h('button',{class:'btn primary',type:'submit'},h('span',{i18n:'common.save'}))));
  onSubmit(form,()=>save({timezone_minutes:Number(tz.value),ntp_host:ntp.value.trim()}));
  return {el:card('clock.title',null,sum,h('div',{style:'margin-top:16px'},form)),
-  async show(){const c=await load();if(!c)return;tz.value=String(c.timezone_minutes||480);ntp.value=c.ntp_host||'';},
+  async show(options={}){const c=await load(options);if(!c||options.current&&!options.current())return;tz.value=String(c.timezone_minutes||480);ntp.value=c.ntp_host||'';},
   status(s){sum.replaceChildren(summary(status(s)));}};
 }
 
 /* ---------- Boot ---------- */
-let initialized=false,failures=0,lastSuccess=0,loading=null;
+let initialized=false,failures=0,lastSuccess=0,loading=null,loadingGeneration=0;
 let stopped=false,pollingStarted=false,pollTimer=null,pollGeneration=0;
 const lockedControls=new Map();
-function lockHome(){if(!UI.embedded)return;for(const el of document.querySelectorAll('#homePage button,#homePage input,#homePage select')){if(!lockedControls.has(el))lockedControls.set(el,el.disabled);el.disabled=true;}}
-function unlockHome(){for(const [el,disabled] of lockedControls)el.disabled=disabled;lockedControls.clear();}
-async function load(){
- const lifecycle=pollGeneration;
+function lockHome(){if(!UI.embedded)return;const home=$('homePage');if(home)home.inert=true;for(const el of document.querySelectorAll('#homePage button,#homePage input,#homePage select')){if(!lockedControls.has(el))lockedControls.set(el,el.disabled);el.disabled=true;}}
+function unlockHome(){if(UI.embedded){const home=$('homePage');if(home)home.inert=false;}for(const [el,disabled] of lockedControls)el.disabled=disabled;lockedControls.clear();}
+async function load(priority){
+ const lifecycle=pollGeneration,resetVersion=resetGeneration;
  try{
   const params=UI.statusParams(),generation=fullGeneration;
-  const raw=await command('status.get',params);
+  const raw=await command('status.get',params,{priority});
   if(stopped||lifecycle!==pollGeneration)return null;
   failures=0;lastSuccess=Date.now();unlockHome();
   if(!params.view&&!raw.ota_mode){lastFullAt=Date.now();loadedGeneration=generation;}
   if(raw.ota_active&&raw.ota_mode){UI.pages.firmware?.status(raw);return raw;}
+  if((!params.view&&(!UI.caps?.business_status||capabilityGeneration!==generation))||UI.caps?.config_recovery||resetPending){
+   const caps=await command('capabilities.get',{}, {priority}),config=await command('config.get',{}, {priority});
+   if(stopped||lifecycle!==pollGeneration||resetVersion!==resetGeneration)return null;
+   const wasRecovery=!!UI.caps?.config_recovery;
+   UI.acceptCapabilities(caps);
+   capabilityGeneration=generation;
+   if(UI.identityChanged)return null;
+   UI.caps.config_recovery=!!UI.caps.config_recovery||config.migration_state==='confirmation_required';
+   if(resetPending&&raw.reboot_pending)resetSawPending=true;
+   if(wasRecovery&&!UI.caps.config_recovery&&!raw.reboot_pending)initialized=false;
+   const restarted=resetSawPending||(Number.isFinite(resetUptime)&&raw.uptime_seconds<resetUptime);
+   if(resetAccepted&&!raw.reboot_pending&&(!UI.caps.config_recovery||restarted)){
+    resetPending=resetAccepted=false;
+    if(!UI.caps.config_recovery)initialized=false;
+    toast(t(UI.caps.config_recovery?'recovery.unconfirmed':'recovery.ready'),!!UI.caps.config_recovery);
+   }
+  }
+  if(generation!==fullGeneration)return null;
   const s=UI.acceptStatus(raw,params.view==='live');
-  readMcuVersion().catch(()=>{});
+  if(mayM1)readMcuVersion().catch(()=>{});
   $('title').textContent=UI.device.model+' '+(s.name||'');
   renderChips(s);renderBanners(s,false);
   if(!initialized){for(const p of Object.values(UI.pages))if(p.init)p.init(s);initialized=true;}
-  for(const [key,p] of Object.entries(UI.pages))if(p.status&&(key===UI.activePage()||key.startsWith('slot_')&&UI.activePage()==='device'))p.status(s);
+  let diagnosticState=s;
+  if((UI.activePage()==='diagnostics'||UI.device.diagnosticPages?.includes(UI.activePage()))&&UI.caps?.actions?.includes('diagnostics.get')){
+   const routeGenerationAtRead=routeGeneration,signal=routeRead?.signal;
+   try{
+    const reply=await command('diagnostics.get',{},signal?{signal}:{});
+    if(stopped||lifecycle!==pollGeneration||routeGenerationAtRead!==routeGeneration)return null;
+    diagnosticState=mergeDiagnostic(s,diagnosticSnapshot(reply));
+   }catch(error){if(error?.name==='AbortError')return null;}
+  }
+  for(const [key,p] of Object.entries(UI.pages))if(p.status&&(key==='diagnostics'?key===UI.activePage():key===UI.activePage()||key.startsWith('slot_')&&UI.activePage()==='device'))p.status(key==='diagnostics'?diagnosticState:s);
   if(UI.device.onStatus)UI.device.onStatus(s);
+  if(diagnosticState!==s&&UI.device.diagnosticStatus)UI.device.diagnosticStatus(s,diagnosticState);
   return raw;
  }catch(e){if(!stopped&&lifecycle===pollGeneration&&++failures>=3&&(!lastSuccess||Date.now()-lastSuccess>=30000)){lockHome();renderBanners(null,true);}return null;}
 }
-function pollLoad(){if(stopped)return Promise.resolve(null);if(!loading)loading=load().finally(()=>{loading=null;});return loading;}
+function pollLoad(priority=2){if(stopped)return Promise.resolve(null);if(!loading){loadingGeneration=fullGeneration;loading=load(priority).finally(()=>{loading=null;});}return loading;}
 window.addEventListener('pagehide',()=>{stopped=true;pollGeneration++;clearTimeout(pollTimer);pollTimer=null;});
 async function refreshStatus(generation=pollGeneration,resuming=false){
  if(stopped||generation!==pollGeneration)return;
@@ -676,15 +770,33 @@ async function refreshStatus(generation=pollGeneration,resuming=false){
  if(!stopped&&generation===pollGeneration)pollTimer=setTimeout(function refresh(){
   if(generation===pollGeneration)pollTimer=null;
   return refreshStatus(generation);
- },UI.activePage()?(UI.activePage()==='diagnostics'?5000:10000):(UI.device.interval||2000));
+ },UI.device.interval||5000);
 }
 window.addEventListener('pageshow',()=>{
  if(!stopped)return;
  stopped=false;UI.invalidateStatus();
  if(pollingStarted)refreshStatus(pollGeneration,true);
 });
-UI.reload=async({full=false}={})=>{if(full)UI.invalidateStatus();if(loading)await loading;return pollLoad();};
+let fullReload=null;
+UI.reload=({full=false,priority=2}={})=>{
+ if(full)UI.invalidateStatus();
+ if(!loading||loadingGeneration===fullGeneration)return loading||pollLoad(priority);
+ if(!fullReload)fullReload=(async()=>{await loading;return pollLoad(priority);})().finally(()=>{fullReload=null;});
+ return fullReload;
+};
 document.addEventListener('visibilitychange',()=>{if(UI.device&&!document.hidden&&!stopped)UI.reload({full:true});});
+const capabilityIdentity=value=>value?.device_id&&value?.model&&value?.firmware_version&&(value.variant||value.firmware_variant)?[String(value.device_id).replace(/[:-]/g,'').toLowerCase(),value.model,value.firmware_version,value.variant||value.firmware_variant].join('/') : '';
+UI.invalidateIdentity=identity=>{
+ const previous=capabilityIdentity(UI.caps),next=capabilityIdentity(identity);
+ if(previous&&next&&previous!==next&&!UI.identityChanged){
+  UI.identityChanged=true;UI.identityGeneration=(UI.identityGeneration||0)+1;
+  routeGeneration++;routeRead?.abort();pollGeneration++;
+  for(const id of ['homePage','settingsPage']){const box=$(id);if(box){box.inert=true;box.setAttribute('inert','');}}
+  const en=I18N.lang==='en';
+  $('banners').replaceChildren(h('div',{class:'banner warn',role:'alert'},h('p',{},en?'Device firmware changed. Unsaved contents are preserved. Refresh to load the new controls.':'设备固件已变更。未保存内容已保留，请刷新以加载新界面。'),h('button',{class:'btn',type:'button',onclick:()=>location.reload()},en?'Refresh page':'刷新页面')));
+ }
+};
+UI.acceptCapabilities=caps=>{UI.invalidateIdentity(caps);UI.caps={...caps};UI.pages.firmware?.capabilities?.(UI.caps);};
 UI.showRoute=showRoute;
 UI.start=async dev=>{
  UI.device=dev;lockHome();
@@ -694,7 +806,7 @@ UI.start=async dev=>{
    h('a',{href:'#home','data-tab':'home'},icon('home'),h('span',{i18n:'nav.home'})),
    h('a',{href:'#settings/'+first,'data-tab':'settings'},icon('sliders'),h('span',{i18n:'nav.settings'}))),
   h('div',{id:'banners'}));
- UI.caps=await command('capabilities.get').catch(()=>({actions:[]}));
+ UI.caps=await command('capabilities.get').catch(()=>({actions:[]}));capabilityGeneration=fullGeneration;
  if(dev.capabilities)dev.capabilities(UI.caps);
  if(!UI.embedded&&UI.caps.model==='daikin'&&UI.caps.firmware_variant==='hub'){
   const tabs=document.querySelector('.tabs');tabs.classList.add('hub-tabs');

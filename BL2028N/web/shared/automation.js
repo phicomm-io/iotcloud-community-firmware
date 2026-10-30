@@ -4,17 +4,25 @@
 (()=>{
 'use strict';
 const {t}=I18N;
-const {h,icon,toast,run,switchRow,seg,daysPicker,presetDays,daysText,hhmm,toMinutes,info,card,pageHead,slider,clone}=UI;
+// null keeps the shared/cloud implementation; the native packer specializes
+// only the immutable product upper bound, never optional hardware capabilities.
+const PRODUCT=/* @device-product */null;
+const a1=PRODUCT===null||PRODUCT==='a1',m1=PRODUCT===null||PRODUCT==='m1',tc1=PRODUCT===null||PRODUCT==='tc1';
+const {h,fieldRow,icon,toast,run,switchRow,seg,daysPicker,presetDays,daysText,hhmm,toMinutes,info,card,pageHead,slider,clone}=UI;
 
 /* Action kinds a schedule or button event can run, keyed by action name. */
 const ACTIONS={
- 'fan.panel':'op.fan_panel','fan.mode.set':'auto.mode','fan.mode.toggle':'auto.toggle','outlet.set':'op.outlet','fan.set':'op.fan','light.set':'op.light',
- 'child_lock.set':'op.child_lock','indicator.set':'op.indicator',
- 'display.set':'op.display','system.reboot':'op.reboot','wake_alarm.start':'wake.title',
- 'light_effect.next':'op.effect_next','light_effect.select':'op.effect_select',
- 'filter.reset':'op.filter_reset','light_always.set':'op.light_always'};
+ ...(a1?{'fan.panel':'op.fan_panel','fan.mode.set':'auto.mode','fan.mode.toggle':'auto.toggle'}:{}),
+ ...(tc1?{'outlet.set':'op.outlet'}:{}),
+ ...(a1?{'fan.set':'op.fan','light.set':'op.light'}:{}),
+ ...(a1||tc1?{'child_lock.set':'op.child_lock'}:{}),
+ ...(tc1?{'indicator.set':'op.indicator'}:{}),
+ ...(m1?{'display.set':'op.display'}:{}),
+ 'system.reboot':'op.reboot',
+ ...(m1?{'wake_alarm.start':'wake.title'}:{}),
+ ...(a1?{'light_effect.next':'op.effect_next','light_effect.select':'op.effect_select','filter.reset':'op.filter_reset','light_always.set':'op.light_always'}:{})};
 const actKey=a=>ACTIONS[a]||'op.none';
-const sel=(parent,labelKey,options)=>{const s=h('select',{},options.map(([v,k])=>h('option',{value:v},typeof k==='function'?k():t(k))));parent.append(h('label',{class:'field'},h('span',{i18n:labelKey}),s));return s;};
+const sel=(parent,labelKey,options)=>{const s=h('select',{},options.map(([v,k])=>h('option',{value:v},typeof k==='function'?k():t(k))));parent.append(fieldRow(labelKey,s));return s;};
 
 /* Shared action editor: one control group per supported action. */
 function actionEditor(host,{keys=false}={}){
@@ -31,12 +39,12 @@ function actionEditor(host,{keys=false}={}){
   current=a;fields.replaceChildren();read=()=>({});
   if(a==='none'||!a)return;
   const parts=[];
-  if(a==='outlet.set'){
+  if(tc1&&a==='outlet.set'){
    const index=sel(fields,'op.target',[['all','op.all'],...[0,1,2,3,4,5].map(i=>[String(i),()=>t('tc1.socket_n',{n:i+1})])]);
    if(params.index!=null)index.value=String(params.index);
    parts.push(()=>index.value==='all'?{}:{index:Number(index.value)});
   }
-  if(a==='fan.mode.set'){const mode=sel(fields,'auto.mode',[['manual','auto.manual'],['auto','auto.auto']]);mode.value=params.mode||'manual';parts.push(()=>({mode:mode.value}));}
+  if(a1&&a==='fan.mode.set'){const mode=sel(fields,'auto.mode',[['manual','auto.manual'],['auto','auto.auto']]);mode.value=params.mode||'manual';parts.push(()=>({mode:mode.value}));}
   const switchable=['outlet.set','fan.set','light.set','child_lock.set','indicator.set','light_always.set'].includes(a);
   if(switchable){
    const values=keys&&(['outlet.set','fan.set'].includes(a)||caps.model==='a1')?['on','off','toggle']:['on','off'];
@@ -45,14 +53,14 @@ function actionEditor(host,{keys=false}={}){
    const field=['outlet.set','fan.set'].includes(a)?'on':'enabled';
    parts.push(()=>on.value==='toggle'?{toggle:true}:{[field]:on.value==='on'});
   }
-  if(a==='light_effect.select'){
+  if(a1&&a==='light_effect.select'){
    const effect=sel(fields,'op.effect_select',Array.from({length:5},(_,i)=>[String(i),'a1.effect.'+i]));
    effect.value=String(params.effect||0);parts.push(()=>({effect:Number(effect.value)}));
   }
-  if(a==='filter.reset')fields.append(info('filter.reset_hint'));
-  if(a==='wake_alarm.start'){
+  if(a1&&a==='filter.reset')fields.append(info('filter.reset_hint'));
+  if(m1&&a==='wake_alarm.start'){
    const duration=h('input',{type:'number',min:1,max:180,step:1,value:params.duration_seconds??60,required:true,'data-wake-duration':''});
-   fields.append(h('label',{class:'field'},h('span',{i18n:'wake.duration'}),duration),info('wake.hint'));
+   fields.append(fieldRow('wake.duration',duration),info('wake.hint'));
    parts.push(()=>{const n=Number(duration.value);if(!Number.isInteger(n)||n<1||n>180)throw Error(t('wake.invalid'));return {duration_seconds:n};});
    const tone=h('select',{'data-wake-tone':''},...[0,1,2,3,4,5].map(id=>h('option',{value:id,i18n:'wake.tone.'+id})));
    tone.value=String(params.tone??0);
@@ -60,7 +68,7 @@ function actionEditor(host,{keys=false}={}){
     if(!UI.m1ToneSupported)throw Error(t('wake.tone_unavailable'));
     const id=Number(tone.value);if(id===5){if(!UI.m1MusicPresent)throw Error(t('wake.tone_unavailable'));return command('music.play');}return command('wake_alarm.start',id?{duration_seconds:1,tone:id}:{duration_seconds:3});
    },null)});
-   const toneField=h('div',{class:'stack','data-wake-tone-field':''},h('label',{class:'field'},h('span',{i18n:'wake.tone'}),tone),preview);
+   const toneField=h('div',{class:'stack','data-wake-tone-field':''},fieldRow('wake.tone',tone),preview);
    function updateTones(){toneField.hidden=UI.m1ToneSupported!==true;tone.querySelector('[value="5"]').hidden=UI.m1MusicPresent!==true;}
    updateTones();window.addEventListener('m1-tone-capability',updateTones);
    // Remove the listener when a different action replaces these fields.
@@ -73,12 +81,12 @@ function actionEditor(host,{keys=false}={}){
     return id?{tone:id}:{};
    });
   }
-  if(a==='fan.set'){
+  if(a1&&a==='fan.set'){
    const m={speed:params.speed||60},[out,range]=slider(m,'speed',{min:1});
    fields.append(h('div',{class:null},h('div',{class:'row between'},h('span',{class:'label',i18n:'op.speed'}),out)),range);
    parts.push(()=>({speed:Number(m.speed)}));
   }
-  if(a==='light.set'||a==='display.set'){
+  if(a1&&a==='light.set'||m1&&a==='display.set'){
    const step=a==='display.set'?25:1,m={brightness:params.brightness!=null?params.brightness:100};
    const [out,range]=slider(m,'brightness',{min:0,max:100,step,fmt:v=>v+'%'});
    fields.append(h('div',{class:null},h('div',{class:'row between'},h('span',{class:'label',i18n:'op.brightness'}),out)),range);
@@ -113,10 +121,10 @@ function schedulePage(dev){
  const days=daysPicker('sdays',127),time=h('input',{type:'time',value:'08:00'}),at=h('input',{type:'datetime-local',value:timeValue()});
  const weekly=h('div',{class:'field'},h('div',{class:'row between'},h('span',{class:'label',i18n:'sch.repeat'}),presetDays(days)),days);
  const once=h('label',{class:'field',hidden:true},h('span',{i18n:'sch.when'}),at);
- const minute=h('label',{class:'field'},h('span',{i18n:'sch.time'}),time);
+ const minute=fieldRow('sch.time',time);
  const editorHost=h('div',{class:'stack'});
  const hours=h('input',{type:'number',min:0,max:24,step:1,value:0,'aria-label':t('sch.hours')}),minutes=h('input',{type:'number',min:0,max:59,step:1,value:30,'aria-label':t('sch.minutes')});
- const countdown=h('div',{class:'stack',hidden:true},h('div',{class:'fields'},h('label',{class:'field'},h('span',{i18n:'sch.hours'}),hours),h('label',{class:'field'},h('span',{i18n:'sch.minutes'}),minutes)),info('sch.countdown_hint'));
+ const countdown=h('div',{class:'stack',hidden:true},h('div',{class:'fields'},fieldRow('sch.hours',hours),fieldRow('sch.minutes',minutes)),info('sch.countdown_hint'));
  function syncTrigger(){const mode=trigger.value;weekly.hidden=mode!=='weekly';once.hidden=mode!=='once';minute.hidden=mode!=='weekly';countdown.hidden=mode!=='countdown';hours.disabled=minutes.disabled=mode!=='countdown';editorHost.hidden=mode==='countdown';}
 
  const editor=actionEditor(editorHost);
@@ -133,8 +141,8 @@ function schedulePage(dev){
     h('button',{type:'button',class:'btn ghost',onclick:ev=>run(ev.currentTarget,()=>command('schedules.enable',{id:x.id,enabled:!x.enabled}).then(load),null)},h('span',{i18n:x.trigger==='countdown'?(x.enabled?'sch.cancel':'sch.restart'):(x.enabled?'sch.disable':'sch.enable')})),
     h('button',{type:'button',class:'btn ghost icon','aria-label':t('common.delete'),onclick:ev=>run(ev.currentTarget,()=>command('schedules.delete',{id:x.id}).then(load),'common.deleted')},icon('trash'))));
  }
- async function load(){
-  const d=await command('schedules.get',{offset,limit:8});tasks=d.items.map(x=>({...x,received:performance.now()}));
+ async function load(options={}){
+  const d=await command('schedules.get',{offset,limit:8},options);if(options.current&&!options.current())return;tasks=d.items.map(x=>({...x,received:performance.now()}));
   listBox.replaceChildren(
    tasks.length?h('div',{class:'list'},tasks.map(row)):h('div',{class:'empty'},t('sch.empty')),
    h('div',{class:'row between'},h('span',{class:'help'},t('sch.used',{a:d.count,b:d.capacity})),
@@ -143,17 +151,18 @@ function schedulePage(dev){
      h('button',{type:'button',class:'btn ghost',onclick:()=>run(null,()=>{offset=d.next;return load();},null),disabled:offset+8>=d.count},h('span',{i18n:'common.next'})))));
   banner.hidden=!(UI.state&&UI.state.time_synced===false);
  }
- function reset(){editing=0;enabled.querySelector('input').checked=true;trigger.set('weekly');syncTrigger();days.setMask(127);time.value='08:00';at.value=timeValue();editor.set('none');hours.value=0;minutes.value=30;labelSave();}
+ function reset(){delete form.dataset.dirty;editing=0;enabled.querySelector('input').checked=true;trigger.set('weekly');syncTrigger();days.setMask(127);time.value='08:00';at.value=timeValue();editor.set('none');hours.value=0;minutes.value=30;labelSave();}
  function edit(x){
   editing=x.id;enabled.querySelector('input').checked=!!x.enabled;trigger.set(x.trigger);syncTrigger();
   days.setMask(x.days);time.value=hhmm(x.minute);at.value=x.trigger==='once'?atValue(x.at):timeValue();hours.value=Math.floor((x.seconds||0)/3600);minutes.value=Math.floor((x.seconds||0)%3600/60);editor.set(x.action,x.params);labelSave();
-  box.scrollIntoView({block:'start'});
+  form.dispatchEvent(new Event('change',{bubbles:true}));box.scrollIntoView({block:'start'});
  }
  const banner=h('div',{class:'banner warn',hidden:true},icon('clock'),h('span',{i18n:'sch.no_clock'}));
  const form=h('form',{class:'subcard stack'},h('h3',{i18n:'sch.new'}),trigger,weekly,once,minute,countdown,editorHost,enabled,
   h('div',{class:'form-actions'},save,
    h('button',{type:'button',class:'btn ghost',onclick:reset},h('span',{i18n:'sch.reset'}))));
- form.addEventListener('submit',e=>{e.preventDefault();run(save,async()=>{
+ form.dataset.preserveDraft='1';
+ form.addEventListener('submit',e=>{e.preventDefault();run(save,UI.saveDraft(form,async()=>{
   const a=trigger.value==='countdown'?{action:'fan.set',params:{on:false}}:editor.get();
   if(a.action==='none')throw Error(t('sch.pick_action'));
   const task={enabled:enabled.querySelector('input').checked,trigger:trigger.value,...a};
@@ -168,12 +177,13 @@ function schedulePage(dev){
    if(task.at<1577836800||task.at>2147483647)throw Error(t('sch.date_range'));
    if(task.at<=Math.floor(Date.now()/1000))throw Error(t('sch.future'));
   }
-  await command('schedules.put',task);reset();await load();toast(t('sch.added'));
- },null);});
+  const version=form.closest('[data-settings-page]')?.dataset.editVersion;
+  await command('schedules.put',task);if(form.closest('[data-settings-page]')?.dataset.editVersion===version)reset();await load();toast(t('sch.added'));
+ }),null);});
  enabled.querySelector('input').checked=true;trigger.set('weekly');syncTrigger();
  box.append(form,info('sch.hint'));
  return {el:h('div',{class:'stack'},pageHead(dev.nav?.schedule||'nav.schedule',dev.scheduleLead),banner,card('sch.list',null,listBox,box)),
-  async show(){if(!UI.state)await UI.reload();await load();},
+  async show(options={}){if(!UI.state)await UI.reload();await load(options);},
   status(){if(!box.isConnected||box.closest('[data-settings-page]')?.hidden)return;
    for(const x of tasks.filter(x=>x.trigger==='countdown')){const label=listBox.querySelector('[data-countdown-id="'+x.id+'"]');if(label)label.textContent=when(x);}
    if(tasks.some(x=>x.trigger==='countdown'&&x.enabled))run(null,load,null);
@@ -183,8 +193,8 @@ function schedulePage(dev){
 /* ---------- Custom button events ---------- */
 function buttonsPage(dev){
  const listBox=h('div',{class:'stack'}),keyHost=h('div',{class:'fields'});
- const keyIds=dev.model==='A1'?(UI.caps.button_keys?.includes('combination')?[0,1,2]:[0,1]):[0];
- const keyName=k=>t(dev.model==='A1'?['btn.key_power','btn.key_wifi','btn.key_both'][Number(k)]:'btn.key_fn');
+ const keyIds=(PRODUCT===null?dev.model==='A1':a1)?(UI.caps.button_keys?.includes('combination')?[0,1,2]:[0,1]):[0];
+ const keyName=k=>t((PRODUCT===null?dev.model==='A1':a1)?['btn.key_power','btn.key_wifi','btn.key_both'][Number(k)]:'btn.key_fn');
  const key=sel(keyHost,'btn.key',keyIds.map(k=>[String(k),()=>keyName(k)]));
  const count=h('input',{type:'number',min:1,max:30,value:1,required:true});
  const countLabel=h('span',{},t('btn.click_count'));
@@ -216,7 +226,7 @@ function buttonsPage(dev){
  function edit(v){
   key.value=String(v.key);kind.set(v.seconds?'seconds':'clicks');count.max=v.seconds?4:30;
   countLabel.textContent=t(v.seconds?'btn.hold_count':'btn.click_count');count.value=v.seconds||v.clicks;
-  editor.set(v.action,v.params);preview();editorCard.scrollIntoView({block:'nearest',behavior:'smooth'});count.focus();
+  editor.set(v.action,v.params);preview();editorCard.dispatchEvent(new Event('change',{bubbles:true}));editorCard.scrollIntoView({block:'nearest',behavior:'smooth'});count.focus();
  }
  function row(v){
   return h('div',{class:'button-mapping'},h('b',{class:'button-gesture'},gesture(v)),
@@ -226,9 +236,10 @@ function buttonsPage(dev){
      await command('buttons.set',{key:v.key,...(v.seconds?{seconds:v.seconds}:{clicks:v.clicks}),action:'none',params:{}});await load();
     },'common.deleted')},t('common.delete'))));
  }
- async function load(){
+ async function load(options={}){
   const items=[];let offset=0,capacity=68;
-  do{const page=await command('buttons.get',{offset,limit:8});items.push(...page.items);capacity=page.capacity||capacity;if(page.next==null||page.next<=offset)break;offset=page.next;}while(offset<capacity);
+  do{const page=await command('buttons.get',{offset,limit:8},options);items.push(...page.items);capacity=page.capacity||capacity;if(page.next==null||page.next<=offset)break;offset=page.next;}while(offset<capacity);
+  if(options.current&&!options.current())return;
   listBox.replaceChildren();
   for(const k of keyIds){
    const groups=[];
@@ -248,32 +259,33 @@ function buttonsPage(dev){
  const save=h('button',{type:'submit',class:'btn primary'},t('common.save'));
  editorCard.append(h('h2',{i18n:'btn.edit'}),keyHost,editorHost,previewBox,h('div',{class:'form-actions'},save));
  editorCard.addEventListener('input',preview);editorCard.addEventListener('change',preview);editorCard.addEventListener('click',()=>preview());
+ editorCard.dataset.preserveDraft='1';
  editorCard.addEventListener('submit',e=>{e.preventDefault();if(!editorCard.reportValidity())return;
-  run(save,async()=>{const a=editor.get();if(a.action==='none')throw Error(t('btn.pick_action'));
-   await command('buttons.set',{...selected(),...a});await load();},'common.saved');
+  run(save,UI.saveDraft(editorCard,async()=>{const a=editor.get();if(a.action==='none')throw Error(t('btn.pick_action'));
+   await command('buttons.set',{...selected(),...a});await load();}),'common.saved');
  });
  let filterStatus,filterHours;
  function filterCards(){
-  if(dev.model!=='A1'||!UI.caps.actions.includes('filter.get'))return [];
+  if(!a1||dev.model!=='A1'||!UI.caps.actions.includes('filter.get'))return [];
   filterStatus=h('p',{'data-filter-status':''});filterHours=h('input',{type:'number',min:1,max:20000,required:true,'data-filter-hours':''});
-  const form=h('form',{class:'stack'},filterStatus,info('filter.hint'),h('label',{class:'field'},h('span',{i18n:'filter.lifetime'}),filterHours),
+  const form=h('form',{class:'stack'},filterStatus,info('filter.hint'),fieldRow('filter.lifetime',filterHours),
    h('div',{class:'form-actions'},h('button',{type:'submit',class:'btn primary'},t('common.save')),
     h('button',{type:'button',class:'btn ghost',onclick:e=>run(e.currentTarget,async()=>{if(!window.confirm(t('filter.reset_confirm')))return;await command('filter.reset',{});await loadFilter();},null)},t('op.filter_reset'))));
-  form.addEventListener('submit',e=>{e.preventDefault();if(!form.reportValidity())return;run(null,async()=>{await command('filter.set',{lifetime_hours:Number(filterHours.value)});await loadFilter();},'common.saved');});
+  form.dataset.preserveDraft='1';form.addEventListener('submit',e=>{e.preventDefault();if(!form.reportValidity())return;run(null,UI.saveDraft(form,async()=>{await command('filter.set',{lifetime_hours:Number(filterHours.value)});await loadFilter();}),'common.saved');});
   return [card('filter.title',null,form)];
  }
- async function loadFilter(){if(!filterStatus)return;const f=await command('filter.get');filterHours.value=f.lifetime_hours;filterStatus.textContent=t('filter.status',{used:(f.used_seconds/3600).toFixed(1),remaining:f.remaining_percent});}
+ async function loadFilter(options={}){if(!filterStatus)return;const f=await command('filter.get',{},options);if(options.current&&!options.current())return;filterHours.value=f.lifetime_hours;filterStatus.textContent=t('filter.status',{used:(f.used_seconds/3600).toFixed(1),remaining:f.remaining_percent});}
  preview();
  return {el:h('div',{class:'stack'},pageHead('nav.buttons','btn.lead'),card('btn.current',null,listBox),
   card('btn.recovery',null,h('div',{class:'button-mapping'},h('b',{},t('btn.hold_full',{n:5})),h('span',{},t('btn.reset_wifi'))),
-   h('div',{class:'button-mapping'},h('b',{},t('btn.hold_full',{n:10})),h('span',{},t('op.10'))),info(dev.model==='A1'?'btn.reset_note_a1':'btn.reset_note')),editorCard,...filterCards()),
-  async show(){await load();await loadFilter();preview();}};
+   h('div',{class:'button-mapping'},h('b',{},t('btn.hold_full',{n:10})),h('span',{},t('op.10'))),info((PRODUCT===null?dev.model==='A1':a1)?'btn.reset_note_a1':'btn.reset_note')),editorCard,...filterCards()),
+  async show(options={}){await load(options);await loadFilter(options);if(!options.current||options.current())preview();}};
 }
 
 /* ---------- Night mode ---------- */
 function nightPage(dev){
  const modern=UI.caps?.actions?.includes('fan.mode.set');
- const isM1=dev.model==='M1',list=h('div',{class:'stack'});
+ const isM1=PRODUCT===null?dev.model==='M1':m1,list=h('div',{class:'stack'});
  let model=[];
  function window(cfg,i){
   const days=daysPicker('ndays'+i,cfg.days),start=h('input',{type:'time',value:hhmm(cfg.start)}),end=h('input',{type:'time',value:hhmm(cfg.end)});
@@ -289,9 +301,9 @@ function nightPage(dev){
   const extra=isM1?[]:[fan,h('div',{class:'field'},h('div',{class:'row between'},h('span',{class:'label',i18n:'night.fan_max'}),fOut)),fRange,...(modern?automatic:[block])];
   const field=h('fieldset',{},h('legend',{},t('night.period',{n:i+1})),
    h('div',{class:'field'},h('div',{class:'row between'},h('span',{class:'label',i18n:'sch.repeat'}),presetDays(days)),days),
-   h('div',{class:'fields'},h('label',{class:'field'},h('span',{i18n:'night.start'}),start),h('label',{class:'field'},h('span',{i18n:'night.end'}),end)),
+   h('div',{class:'fields'},fieldRow('night.start',start),fieldRow('night.end',end)),
    dim,h('div',{class:'field'},h('div',{class:'row between'},h('span',{class:'label',i18n:'night.light_max'}),bOut)),bRange,...extra,
-   h('div',{class:'form-actions'},h('button',{type:'button',class:'btn ghost',onclick:()=>{model.splice(i,1);draw();}},icon('trash'),h('span',{i18n:'common.delete'}))));
+   h('div',{class:'form-actions'},h('button',{type:'button',class:'btn ghost',onclick:()=>{model.splice(i,1);draw();list.dispatchEvent(new Event('change',{bubbles:true}));}},icon('trash'),h('span',{i18n:'common.delete'}))));
   // One listener writes the whole window back, so no control can drift.
   const collect=()=>{
    cfg.days=days.mask();cfg.start=toMinutes(start.value);cfg.end=toMinutes(end.value);
@@ -306,12 +318,12 @@ function nightPage(dev){
  }
  const add=h('button',{type:'button',class:'btn'},icon('plus'),h('span',{i18n:'night.add_btn'}));
  add.onclick=()=>run(add,async()=>{if(model.length>=4)throw Error(t('common.max',{n:4}));
-  model.push({days:127,fan:isM1?0:1,light:1,max_speed:30,min_speed:0,fallback_speed:30,brightness:0,block_start:0,start:1320,end:420});draw();},null);
+  model.push({days:127,fan:isM1?0:1,light:1,max_speed:30,min_speed:0,fallback_speed:30,brightness:0,block_start:0,start:1320,end:420});draw();list.dispatchEvent(new Event('change',{bubbles:true}));},null);
  const save=h('button',{type:'button',class:'btn primary'},h('span',{i18n:'common.save'}));
- save.onclick=()=>run(save,async()=>{await command('night.set',{windows:model});toast(t('common.saved'));});
+ save.onclick=()=>run(save,UI.saveDraft(save.closest('[data-settings-page]')||save,async()=>{await command('night.set',{windows:model});toast(t('common.saved'));}));
  return {el:h('div',{class:'stack'},pageHead('nav.sleep','night.lead'),card('night.list',null,list,
   info('night.hint'),h('div',{class:'form-actions'},add,save))),
-  async show(){model=clone((await command('night.get')).windows||[]);draw();}};
+  async show(options={}){const value=await command('night.get',{},options);if(options.current&&!options.current())return;model=clone(value.windows||[]);draw();}};
 }
 
 window.automationPages=dev=>{
@@ -319,7 +331,7 @@ window.automationPages=dev=>{
  const pages={};
  if(!caps.length||caps.includes('schedules.get'))pages.schedule=schedulePage(dev);
  if(caps.includes('buttons.set')&&dev.hasButtons)pages.buttons=buttonsPage(dev);
- if(caps.includes('night.get'))pages.night=nightPage(dev);
+ if((a1||m1)&&caps.includes('night.get'))pages.night=nightPage(dev);
  return pages;
 };
 })();

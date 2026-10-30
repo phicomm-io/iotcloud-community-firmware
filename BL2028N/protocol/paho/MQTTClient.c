@@ -27,6 +27,12 @@ __attribute__((weak)) int mqtt_buffer_allocation_permit(Client *c, size_t bytes)
     return 0;
 }
 
+/* Required allocation failures are reported separately from socket I/O. */
+__attribute__((weak)) void mqtt_buffer_allocation_failed(Client *c, int admitted)
+{
+    (void)c; (void)admitted;
+}
+
 /* The pinned platform realloc does not release shrinking blocks and copies the
  * requested new size on growth. Never use it for protocol buffer storage. */
 static int mqtt_buffer_resize(Client *c, unsigned char **buffer, size_t *capacity,
@@ -38,11 +44,15 @@ static int mqtt_buffer_resize(Client *c, unsigned char **buffer, size_t *capacit
         return 0;
     if (*buffer && bytes == *capacity)
         return 1;
-    if (!mqtt_buffer_allocation_permit(c, bytes))
+    if (!mqtt_buffer_allocation_permit(c, bytes)) {
+        if (bytes > *capacity) mqtt_buffer_allocation_failed(c, 0);
         return 0;
+    }
     next = (unsigned char *)malloc(bytes);
-    if (!next)
+    if (!next) {
+        if (bytes > *capacity) mqtt_buffer_allocation_failed(c, 1);
         return 0;
+    }
     if (preserve)
         memcpy(next, *buffer, preserve);
     free(*buffer);
@@ -403,6 +413,7 @@ int cycle(Client* c, Timer* timer)
   // read the socket, see what work is due
   memset((void*)(c->readbuf), '\0', c->readbuf_size);
   packet_type = readPacket(c, timer);  // return 0 means no data, else packet_type > =1, error < 0
+  if (packet_type < 0) { rc = packet_type; goto exit; }
 
   /* Completing an incoming packet may outlive the idle yield deadline.
    * Its protocol acknowledgement needs its own bounded send deadline. */
@@ -581,7 +592,7 @@ int waitfor(Client* c, int packet_type, Timer* timer)
 
         rc = cycle(c, timer);
     }
-    while ((rc != packet_type) && (MQTT_FAILURE != rc));
+    while ((rc != packet_type) && rc >= 0);
 
     return rc;
 }
@@ -623,7 +634,7 @@ int MQTTConnect(Client* c, MQTTPacket_connectData* options)
       goto exit; // there was a problem
 
     // this will be a blocking call, wait for the connack
-    if (waitfor(c, CONNACK, &connect_timer) == CONNACK)
+    if ((rc = waitfor(c, CONNACK, &connect_timer)) == CONNACK)
     {
         unsigned char connack_rc = 255;
         char sessionPresent = 0;
@@ -636,7 +647,7 @@ int MQTTConnect(Client* c, MQTTPacket_connectData* options)
     }
     else{
       mqtt_client_log("ERROR: MQTTConnect: no response!");
-      rc = MQTT_FAILURE;
+      if (rc >= 0) rc = MQTT_FAILURE;
     }
 
 exit:
@@ -668,7 +679,9 @@ int MQTTSubscribe(Client* c, const char* topicFilter, enum QoS qos, messageHandl
     packet = getNextPacketId(c);
     int len = MQTTSerialize_subscribe(c->buf, c->buf_size, 0, packet, 1, &topic, (int *)&qos);
     if (len <= 0 || sendPacket(c, len, &timer) != MQTT_SUCCESS) return MQTT_FAILURE;
-    if (waitfor(c, SUBACK, &timer) != SUBACK ||
+    int received = waitfor(c, SUBACK, &timer);
+    if (received < 0) return received;
+    if (received != SUBACK ||
         c->readbuf[0] != 0x90 || c->readbuf[1] != 3 ||
         MQTTDeserialize_suback(&acknowledged, 1, &count, &granted, c->readbuf, c->readbuf_size) != 1 ||
         count != 1 || acknowledged != packet || granted < 0 || granted > qos) return MQTT_FAILURE;
@@ -788,32 +801,42 @@ int MQTTPublish(Client* c, const char* topicName, MQTTMessage* message)
         goto exit; // there was a problem
     }
 
+    /* Serialization is complete. Prefer a small ACK workspace, but retain
+     * the already-owned TX buffer if shrink admission/allocation fails.
+     * Network send may consume heap after preflight. Never create a new
+     * mandatory allocation after bytes are on the wire: PUBACK/heartbeat
+     * must still be processed with storage that is already available. */
+    if (c->buf_size > DEFAULT_SENDBUF_SIZE)
+        (void)mqtt_buffer_resize(c, &c->buf, &c->buf_size, DEFAULT_SENDBUF_SIZE, 0);
+
     if (message->qos == QOS1)
     {
-        if (waitfor(c, PUBACK, &timer) == PUBACK)
+        if ((rc = waitfor(c, PUBACK, &timer)) == PUBACK)
         {
             unsigned short mypacketid;
             unsigned char dup, type;
             if (MQTTDeserialize_ack(&type, &dup, &mypacketid, c->readbuf, c->readbuf_size) != 1 ||
                 type != PUBACK || mypacketid != message->id)
                 rc = MQTT_FAILURE;
+            else rc = MQTT_SUCCESS;
         }
         else{
-            rc = MQTT_SOCKET_ERR;  // MQTT connect error
+            if (rc >= 0) rc = MQTT_FAILURE;  // preserve terminal receive errors
         }
     }
     else if (message->qos == QOS2)
     {
-        if (waitfor(c, PUBCOMP, &timer) == PUBCOMP)
+        if ((rc = waitfor(c, PUBCOMP, &timer)) == PUBCOMP)
         {
             unsigned short mypacketid;
             unsigned char dup, type;
             if (MQTTDeserialize_ack(&type, &dup, &mypacketid, c->readbuf, c->readbuf_size) != 1 ||
                 type != PUBACK || mypacketid != message->id)
                 rc = MQTT_FAILURE;
+            else rc = MQTT_SUCCESS;
         }
         else{
-            rc = MQTT_SOCKET_ERR;  // MQTT connect error
+            if (rc >= 0) rc = MQTT_FAILURE;  // preserve terminal receive errors
         }
     }
 

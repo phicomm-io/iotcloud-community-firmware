@@ -139,6 +139,27 @@ def overlay(app, sdk, run, boot_trace=False):
         '            if (errno == EINTR) continue;\n'
         '            err_code = -2; break;\n'
         '        }')
+    # A zero-byte deadline is not a successful empty response. Propagate it
+    # through header parsing as well as body reads so the native worker emits
+    # error -> end and releases the OTA reservation instead of spinning.
+    http='src/httpclient/http_client.c'
+    replace(http,'        //timeout\n        return 0;',
+        '        /* The read deadline expired without data. */\n'
+        '        return ERROR_NET_TIMEOUT;')
+    replace(http,'                if (ret == ERROR_HTTP_CONN) {\n'
+        '                    return ret;\n'
+        '                } else {\n'
+        '                    continue;\n'
+        '                }\n'
+        '            } else {\n'
+        '                ADDLOG_DEBUG(LOG_FEATURE_HTTP_CLIENT, "header len > chunksize");',
+        '                if (ret < 0) {\n'
+        '                    return ret;\n'
+        '                } else {\n'
+        '                    continue;\n'
+        '                }\n'
+        '            } else {\n'
+        '                ADDLOG_DEBUG(LOG_FEATURE_HTTP_CLIENT, "header len > chunksize");')
     timer='src/httpclient/utils_timer.c'
     replace(timer,'    return hal_machw_time()/1000;','    return rtos_get_time();')
     replace(timer,'\tint t = hal_machw_time();\n\treturn (t < (int)(t_end * 1000)) ? 1 : 0;',
@@ -306,7 +327,7 @@ def main():
         (sdk/'apps'/APP_NAME).unlink(missing_ok=True)
         (sdk/'apps'/APP_NAME).symlink_to(app,target_is_directory=True)
         # Restore only files that this overlay owns before applying updated hooks.
-        for rel in ['src/user_main.c','src/new_cfg.c','src/hal/bk7231/hal_main_bk7231.c','src/hal/bk7231/hal_wifi_bk7231.c','src/hal/bk7231/hal_ota_bk7231.c','src/httpclient/utils_net.c','src/httpclient/utils_timer.c','src/cmnds/cmd_tasmota.c','src/httpserver/new_http.c','src/httpserver/http_tcp_server.c','src/httpserver/http_fns.c','components.mk']:
+        for rel in ['src/user_main.c','src/new_cfg.c','src/hal/bk7231/hal_main_bk7231.c','src/hal/bk7231/hal_wifi_bk7231.c','src/hal/bk7231/hal_ota_bk7231.c','src/httpclient/http_client.c','src/httpclient/utils_net.c','src/httpclient/utils_timer.c','src/cmnds/cmd_tasmota.c','src/httpserver/new_http.c','src/httpserver/http_tcp_server.c','src/httpserver/http_fns.c','components.mk']:
             shutil.copy2(APP_CACHE/rel,app/rel)
             if rel.endswith('.c'):
                 (app/Path(rel).with_suffix('.o')).unlink(missing_ok=True)

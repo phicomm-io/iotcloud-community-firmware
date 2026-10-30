@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Independent Python MessagePack/CBOR clients drive sanitized product C code."""
 import argparse
+import json
 import math
 import os
 from pathlib import Path
@@ -13,6 +14,9 @@ import cbor2
 PACK={1:lambda x:msgpack.packb(x,use_bin_type=True),2:cbor2.dumps}
 UNPACK={1:lambda x:msgpack.unpackb(x,raw=False),2:cbor2.loads}
 HOST=None
+DIAGNOSTICS = {item['path']: item['id'] for item in json.loads(
+    (Path(__file__).resolve().parents[2] / 'common/diagnostics-schema.json').read_text()
+)['fields']}
 
 class Core(unittest.TestCase):
     @classmethod
@@ -34,6 +38,12 @@ class Core(unittest.TestCase):
         result=self.call(f'C {i} {o} {int(auth)} {int(admin)} {raw.hex()}')
         return UNPACK[o](result)
     def query(self,action='status.get',f=1):return UNPACK[f](self.call(f'Q {f} {action}'))
+    def diagnostics(self):
+        reply=self.query('diagnostics.get')
+        self.assertEqual(reply['schema'],1)
+        values=dict(reply['fields'])
+        self.assertEqual(len(values),len(reply['fields']))
+        return {path:values[id] for path,id in DIAGNOSTICS.items() if id in values}
     def packet(self,op,body=None,token='',id=1,boot=777,dst='aabbccddeeff',f=1,**extra):
         p={'v':2,'src':'001122334455','dst':dst,'boot':boot,'id':id,'op':op,'token':token,'body':body or {}}
         p.update(extra);r=self.call('U '+PACK[f](p).hex())
@@ -161,21 +171,41 @@ class Core(unittest.TestCase):
     def meter(self,**kw):return self.mp('M '+self.frame(**kw).hex())['metering']
     def test_meter_frames_checksum_freshness(self):
         m=self.meter();self.assertTrue(m['valid']);self.assertAlmostEqual(m['voltage'],229.9992);self.assertEqual(m['current'],1)
-        self.assertEqual(m['received_bytes'],24)
+        self.assertNotIn('received_bytes',m)
+        self.assertEqual(self.diagnostics()['metering.received_bytes'],24)
         self.assertFalse(m['calibrated']);self.assertEqual(m['energy_kwh'],0)
-        bad=self.frame();bad[-1]^=1;m=self.mp('M '+bad.hex())['metering'];self.assertEqual(m['frames'],1)
-        m=self.mp('M '+(b'noise'+self.frame(pulse=2)).hex())['metering'];self.assertEqual(m['frames'],2);self.assertGreater(m['bad_frames'],0)
+        bad=self.frame();bad[-1]^=1;self.mp('M '+bad.hex());self.assertEqual(self.diagnostics()['metering.frames'],1)
+        self.mp('M '+(b'noise'+self.frame(pulse=2)).hex());diag=self.diagnostics();self.assertEqual(diag['metering.frames'],2);self.assertGreater(diag['metering.bad_frames'],0)
         self.mp('T 15000');m=self.query()['metering'];self.assertFalse(m['valid']);self.assertIsNone(m['active_power'])
         m=self.meter(flags=0);self.assertFalse(m['valid'])
     def test_meter_energy_rollover_and_faults(self):
         self.meter(pulse=131071);self.mp('T 10050');m=self.meter(pulse=0)
         self.assertAlmostEqual(m['energy_kwh'],122340*1.88/3.6e12)
-        self.mp('T 10100');m=self.meter(pulse=50000);self.assertEqual(m['discontinuities'],1)
+        self.mp('T 10100');m=self.meter(pulse=50000);self.assertEqual(self.diagnostics()['metering.discontinuities'],1)
         saved=m['energy_kwh'];self.assertEqual(self.command('indicator.set',{'enabled':False})['code'],'accepted')
         self.mp('X');self.assertAlmostEqual(self.query()['metering']['energy_kwh'],saved)
         m=self.meter(state=0xaa);self.assertFalse(m['valid'])
         m=self.meter(state=0xf2);self.assertTrue(m['valid']);self.assertEqual(m['active_power'],0)
         m=self.meter(measures=(0,1000,1000));self.assertIsNone(m['voltage'])
+    def test_business_cache_hits_mutations_and_meter_expiry(self):
+        initial=self.query();builds=self.diagnostics()['status_cache_builds']
+        self.mp('T 10100')
+        self.assertEqual(self.query(),initial)
+        self.assertEqual(self.query(f=2),initial)
+        self.assertEqual(self.diagnostics()['status_cache_builds'],builds)
+        self.assertNotIn('uptime_seconds',initial)
+        self.assertEqual(self.command('outlet.set',{'on':True})['code'],'accepted')
+        self.assertTrue(self.query()['power'])
+        self.assertGreater(self.diagnostics()['status_cache_builds'],builds)
+        self.assertTrue(self.meter()['valid'])
+        fresh=self.query();builds=self.diagnostics()['status_cache_builds']
+        self.mp('T 10200');self.assertEqual(self.query(f=2),fresh)
+        self.assertEqual(self.diagnostics()['status_cache_builds'],builds)
+        self.mp('T 15100')
+        expired=self.query();self.assertFalse(expired['metering']['valid'])
+        self.assertIsNone(expired['metering']['active_power'])
+        self.assertGreater(self.diagnostics()['status_cache_builds'],builds)
+        self.assertEqual(self.query(f=2),expired)
     def test_malformed_corpus(self):
         rng=random.Random(8032)
         for _ in range(1500):

@@ -343,3 +343,7 @@ pre{overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;bac
 .m1-metrics .stat{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px}
 .m1-metrics .stat small{margin-left:0}
 @media(max-width:760px){.m1-metrics .metric .stat{padding-top:8px}}
+
+/* Keep language, appearance and session controls aligned on narrow screens. */
+.prefs{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.prefs select,.prefs button{height:32px;min-height:32px;width:auto;white-space:nowrap;flex-shrink:0}

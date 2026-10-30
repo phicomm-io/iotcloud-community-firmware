@@ -25,11 +25,11 @@ static bool request_line(ph_http_parser *p)
     return copy(p->request.method, sizeof(p->request.method), method) &&
            copy(p->request.path, sizeof(p->request.path), path);
 }
-/* Exact media types with optional parameters; q-lists are left to JSON legacy
- * handling. A client requests one explicit binary representation. */
+/* Recognize binary discovery's ordered Accept alternatives as well as one
+ * explicit business representation. Content-Type remains a single type. */
 static int media_format(const char *s)
 {
-    size_t n=strcspn(s,"; \t");
+    size_t n=strcspn(s,";, \t");
     if(n==19 && !strncasecmp(s,"application/msgpack",n))return PH_WIRE_MSGPACK;
     if(n==16 && !strncasecmp(s,"application/cbor",n))return PH_WIRE_CBOR;
     if(n==16 && !strncasecmp(s,"application/json",n))return PH_WIRE_JSON;
@@ -57,7 +57,7 @@ static bool header_line(ph_http_parser *p)
         r->length = n; r->have_length = true;
     } else if (!strcasecmp(p->line, "Content-Type")) {
         if(r->have_type)return false;
-        int f=media_format(value);r->have_type=f<0?2:1;
+        int f=strchr(value,',')?-1:media_format(value);r->have_type=f<0?2:1;
         r->content_format=f<0?PH_WIRE_JSON:(ph_wire_format)f;
     } else if (!strcasecmp(p->line, "Accept")) {
         if(r->have_accept)return false;

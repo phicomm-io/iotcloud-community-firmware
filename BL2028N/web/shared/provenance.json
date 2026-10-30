@@ -1,17 +1,17 @@
 {
   "repository": "phicomm-io/phicomm-community-frontend",
-  "commit": "b2232084f2e6c9663d741f19652806054924e6bd",
-  "source_dirty": true,
+  "commit": "5ba16da4681850b3206ab8efa90e3fd903392816",
+  "source_dirty": false,
   "path": "common/web",
   "sha256": {
     "appearance.js": "afdf9672e22338b82d1ac7ffa944e33cade436e4bd00b3a57ca8e45d710fb352",
-    "automation.js": "ca7a3c75e985d2fcb29c72ad46bcf14550e682c582a6005fd984d1781f998222",
-    "i18n.js": "38ba4ac7f5c21e7cb182b8c7fde56e00ea8c79ff4793f1a6ac3dcede5ece5c09",
+    "automation.js": "f7e242efc045a52dd8895f6e8a55eb43d8d61a82c4084bb7f37f5662cf0936f2",
+    "diagnostics-schema.js": "89c47f5cbe3dbc9e1f4216e239be44b40f18b23dc1448f649ca5a191d14d24c1",
+    "i18n.js": "ac7ca882f549824fca1471470904e6def4860bb7b8890c262f9be5e73dd39da9",
     "provision.js": "f8a4d2e54b0ba8eaadd625ff3b8d956e7a312218f0f6df97a4385cf83a44dd95",
-    "service.js": "2332e6ae9ad1bf7d9dd5dec8de435ef0153bcabd4eb712698ac3681ba769d239",
-    "style.css": "bf4c3a57ee82e356142bc6915eb88a58b93ac35fe26f0f018a752721bc725389",
-    "ui.js": "994f7a7972edf1340b46148cef86923fdccbf19fe86e9066c1f634fd0aec811a",
-    "wire.js": "b4638a695f4009bfdb2849aed3b445fc954545ae152834177486f74c300de491"
+    "service.js": "f2dd2a3891cfd6b678767cc7dea324034fa363f833c9b81db8b4bb04aa1e265b",
+    "style.css": "a7169a9855b43394772a1ecb7445e79dbef9cc9ff6af9a9b8b9d254c83c887f3",
+    "ui.js": "f3875cc24c90a04ce40e4b2aa42b264a4806dbd67e9ce22cd8784d561b746d63"
   },
-  "adaptations": "Binary-only shared transport, single-outlet/HLW8032 product page, honest capability gating and storage bounds. See frontend-openbeken.patch."
+  "adaptations": "Shared binary auth, serialized reads, diagnostics and product capability gates; see frontend-openbeken.patch and lab-shared-source.json."
 }

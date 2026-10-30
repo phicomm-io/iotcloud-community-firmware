@@ -93,13 +93,13 @@ let initialized=false;
 UI.start({
  model:'S30-V1B',kindKey:'kind.s30',icon:'plug',mqttHostMax:127,mqttPasswordMax:127,factoryReset:true,
  otaName:'BL2028N_OTA.rbl',haHintKey:'s30.ha_hint',otaHintKey:'s30.ota_hint',buttonHintKey:'s30.button_hint',
- interval:3000,
+ interval:5000,
  groups:[['grp.network',['network','mqtt']],['grp.device',['device']],['grp.system',['firmware','diagnostics','maintenance']]],
  nav:{network:'nav.wifi',mqtt:'nav.mqtt',device:'nav.general',firmware:'nav.firmware',diagnostics:'nav.diagnostics',maintenance:'nav.maintenance'},
  pages:{device:{}},
  diagGroups:[['diag.g_sockets',['socket_names','socket_states','child_lock','led_enabled','power_on']],
   ['diag.g_power',['report_seconds','voltage_coefficient','current_coefficient','power_coefficient','metering']]],
- healthChecks:s=>[['diag.c_memory',s.free_memory>16384?'ok':'warn',(Math.round((s.free_memory||0)/1024))+' KB']],
+ healthChecks:s=>Object.hasOwn(s,'free_memory')?[['diag.c_memory',s.free_memory>=8192?'ok':'warn',Math.round(s.free_memory/1024)+' KB']]:[],
  onStatus:s=>{
   renderSockets(s);
   if(s.name==='S30-V1B')$('title').textContent='S30-V1B';

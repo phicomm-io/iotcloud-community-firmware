@@ -24,6 +24,7 @@ const D={
 "s30.uncalibrated":["Meter uses default calibration","计量使用默认校准值"],
 "s30.ota_hint":["Enter an HTTP URL for this device's .rbl firmware.","填写本设备 .rbl 固件的 HTTP 下载地址。"],
 "s30.button_hint":["Release after 5–10 seconds to reset Wi-Fi; release after 10 seconds to reset the device.","按住 5 至不足 10 秒后松开重置 Wi-Fi；按住至少 10 秒后松开重置设备。"],
+
 "display.title":["User readings on the device screen", "设备屏幕用户读数"],
 "display.help":["Configure both positions independently. Double-press switches the original pair and your pair together. Missing, expired or out-of-range data restores only that position’s original reading.", "两个位置可分别配置。双击会整体切换原始两路与用户两路；缺失、过期或超出显示范围的数据，只恢复对应位置的原始读数。"],
 "display.glass_help":["The screen has three digits per position. Only the original PM2.5 or formaldehyde metric at ÷1 keeps its original label and unit. Other units such as W, °C and % are hidden. Choose decimal places and scaling to fit the value.", "每个位置只有三位数字。只有原位置显示原 PM2.5 或甲醛数据且倍率为 ÷1 时，才保留原名称与单位；W、°C、% 等其他单位不会显示。请设置小数位和倍率，使读数能放入三位数字。"],
@@ -160,6 +161,8 @@ const D={
 "recovery.hint":["The saved configuration cannot be migrated. Original data is retained. Confirm clearing it to configure the device again.", "原配置无法迁移，原始数据已保留。请明确确认清空后重新配网。"],
 "recovery.clear":["Clear configuration and set up again", "清空配置并重新设置"],
 "recovery.confirm":["Clear all saved settings, including Wi-Fi and MQTT credentials? This cannot be undone.", "清空包括 Wi-Fi、MQTT 密码在内的所有配置？此操作无法撤销。"],
+"recovery.ready":["Configuration cleared. You can set up the device again.", "配置已清空，可以重新配网。"],
+"recovery.unconfirmed":["The device restarted but still requires configuration recovery. Clearing was not confirmed; reconnect and try again.", "设备已重启，但仍需恢复配置。清空结果未确认，请重新连接后重试。"],
 "fw.notes_unavailable":["The browser could not load a verified upgrade comparison. Open the comparison page or retry.", "浏览器暂时无法加载已校验的升级差异，请打开对比页面或重试。"],
 "fw.notes_confirm":["Upgrade differences are unavailable. Continue with the upgrade anyway?", "暂时无法查看升级差异，仍确认继续升级？"],
 "fw.convert_hub":["Switch to hub firmware", "切换为中枢版本"],
@@ -420,7 +423,7 @@ const D={
 'common.copy':['Copy','复制'],'common.copied':['Copied','已复制'],'common.advanced':['Advanced','高级'],'common.more_info':['Details','说明'],
 'common.prev':['Previous','上一页'],'common.next':['Next','下一页'],'common.yes':['Yes','是'],'common.no':['No','否'],'common.saving':['Saving…','保存中…'],'common.saved':['Saved','已保存'],'common.max':['Up to {n} items','最多 {n} 项'],
 'unit.s':['s','秒'],'time.dh':['{d} d {h} h','{d} 天 {h} 小时'],'time.hm':['{h} h {m} min','{h} 小时 {m} 分'],'time.m':['{m} min','{m} 分钟'],
-'toast.accepted':['Request accepted','设备已接受请求'],'toast.rebooting':['Restarting… reconnect in about 20 s','正在重启，约 20 秒后重新连接'],'toast.resetting':['Settings cleared. The device is restarting.','配置已清除，设备正在重启'],
+'toast.accepted':['Request accepted','设备已接受请求'],'toast.rebooting':['Restarting… reconnect in about 20 s','正在重启，约 20 秒后重新连接'],'toast.resetting':['Clear request accepted. Waiting for restart; reconnect to the device hotspot if disconnected.','清空请求已接受，等待设备重启；连接断开后请重新连接设备热点。'],
 'pref.lang_auto':['Auto','自动'],'pref.theme_system':['System','跟随系统'],'pref.theme_light':['Light','浅色'],'pref.theme_dark':['Dark','深色'],
 
 /* kinds and navigation */
@@ -665,9 +668,7 @@ const D={
 'd.ntp_screen_queued':['Screen time queued','屏幕时间已入队'],'d.ntp_last_success':['Last sync','最近成功校时'],'d.ntp_next_seconds':['Next sync in (s)','下次校时（秒后）'],'d.timezone_minutes':['UTC offset (min)','时区（UTC 分钟差）'],
 'd.led_visible':['Light showing','灯环显示中'],'d.led_always_on':['Always on','常亮'],'d.brightness':['Brightness','亮度'],'d.red':['Red','红'],'d.green':['Green','绿'],'d.blue':['Blue','蓝'],
 'd.config_dirty':['Saving settings','设置保存中'],'d.save_error':['Save error','保存错误'],'d.reboot_pending':['Restart pending','等待重启'],
-'d.report_seconds':['Report interval (s)','上报间隔（秒）'],'d.powerCoefficientX100':['Power coefficient (×100)','功率系数（×100）'],'d.mask':['Subnet mask','子网掩码'],'d.gateway':['Gateway','网关']
-};
-Object.assign(D,{
+'d.report_seconds':['Report interval (s)','上报间隔（秒）'],'d.powerCoefficientX100':['Power coefficient (×100)','功率系数（×100）'],'d.mask':['Subnet mask','子网掩码'],'d.gateway':['Gateway','网关'],
  'gen.language':['Device language','设备语言'],
  'gen.language_help':['Controls MQTT entity names. Your browser language is set separately.','控制 MQTT 通告的实体名称，浏览器显示语言单独设置。'],
  'mcu.version':['Sensor MCU firmware','传感器 MCU 固件'],
@@ -678,7 +679,7 @@ Object.assign(D,{
  'mcu.stock17':['Factory 17.x (including 17.1.2.3) differs substantially. Keep the factory MCU until a 17.x image has been obtained and analyzed.','原厂 17.x（包括 17.1.2.3）差异较大，请先保留原厂 MCU，等取得 17.x 固件并完成分析后再考虑刷入。'],
  'mcu.unverified':['This MCU version has not been verified. Keep its original version text when reporting an issue.','此 MCU 版本尚未验证，反馈问题时请保留完整的原始版本号。'],
  'common.retry':['Retry','重试']
-});
+};
 const KEY='phicomm.language';
 let preference='auto';try{preference=localStorage.getItem(KEY)||'auto';}catch{}
 const detect=()=>{for(const l of navigator.languages||[navigator.language||'en']){const s=l.toLowerCase();if(s.startsWith('zh'))return 'zh-CN';if(s.startsWith('en'))return 'en';}return 'en';};

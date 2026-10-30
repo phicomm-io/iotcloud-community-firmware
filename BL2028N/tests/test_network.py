@@ -2,7 +2,7 @@
 """Real sockets through the production shared HTTP/Paho MQTT/UDP owners."""
 import argparse,base64,gzip,http.client,json,socket,subprocess,threading,time,unittest
 from pathlib import Path
-from test_protocols import PACK,UNPACK
+from test_protocols import PACK,UNPACK,DIAGNOSTICS
 
 def receive(s,n):
  d=b''
@@ -117,19 +117,20 @@ class Network(unittest.TestCase):
   c=http.client.HTTPConnection('127.0.0.1',cls.port,timeout=8);c.request(method,path,body,headers or {});r=c.getresponse();result=r.status,dict(r.getheaders()),r.read();c.close();return result
  @classmethod
  def login(cls,password):
-  s,_,b=cls.http('POST','/api/v1/auth/login',PACK[1]({'password':password}),{'Content-Type':'application/msgpack'});assert s==200,(s,b);return UNPACK[1](b)['token']
+  s,_,b=cls.http('POST','/api/v1/auth/login',PACK[1]({'password':password}),{'Content-Type':'application/msgpack'});assert s==200,(s,b);return UNPACK[1](b)['data']['token']
  def api(self,path='status',f=1,body=None):
   mime='application/msgpack' if f==1 else 'application/cbor';h={'Accept':mime,'Authorization':'Bearer '+self.token}
   if body is not None:h['Content-Type']=mime
-  s,_,b=self.http('POST' if body is not None else 'GET','/api/v1/'+path,PACK[f](body) if body is not None else None,h);self.assertEqual(s,200,(path,b));return UNPACK[f](b)
+  s,_,b=self.http('POST' if body is not None else 'GET','/api/v1/'+path,PACK[f](body) if body is not None else None,h);self.assertEqual(s,200,(path,b));reply=UNPACK[f](b);return reply if body is not None else reply['data']
  def command(self,action,params={},id=None,f=1):
   b={'action':action,'params':params}
   if id:b['request_id']=id
   return self.api('command',f,b)
  def test_01_auth_binary_and_json_rejection(self):
+  s,_,b=self.http('GET','/api/v1/info',headers={'Accept':'application/msgpack, application/json'});self.assertEqual(s,200);self.assertEqual(UNPACK[1](b)['data']['default_wire_format'],'msgpack')
   s,_,b=self.http('GET','/api/v1/auth/status');self.assertEqual(UNPACK[1](b),{'password_required':True,'authenticated':False})
   basic='Basic '+base64.b64encode(b'admin:secret').decode()
-  s,_,b=self.http('GET','/api/v1/status',headers={'Authorization':basic});self.assertEqual(s,200);self.assertEqual(UNPACK[1](b)['model'],'s30-v1b')
+  s,_,b=self.http('GET','/api/v1/status',headers={'Authorization':basic});self.assertEqual(s,200);self.assertEqual(UNPACK[1](b)['data']['model'],'s30-v1b')
   s,_,_=self.http('GET','/api/v1/status');self.assertEqual(s,401)
   s,_,_=self.http('GET','/api/v1/status',headers={'Accept':'application/json','Authorization':basic});self.assertEqual(s,406)
   s,_,_=self.http('POST','/api/v1/auth/login',b'{"password":"secret"}',{'Content-Type':'application/json'});self.assertEqual(s,415)
@@ -149,10 +150,31 @@ class Network(unittest.TestCase):
  def test_03_shared_web_and_disabled_legacy(self):
   for p in ('/api/cmnd','/api/state','/cfg_pins','/cfg_wifi_set?ssid=test','/cm?cmnd=Power%20ON'):
    self.assertEqual(self.http('GET',p)[0],404,p)
-  self.assertEqual(self.http('GET','/')[0],401)
+  self.assertEqual(self.http('GET','/')[0],200)
   s,h,b=self.http('GET','/',headers={'Authorization':'Bearer '+self.token});self.assertEqual(s,200);self.assertEqual(h['Content-Encoding'],'gzip')
   html=gzip.decompress(b).decode();self.assertIn('data-settings-page="device"',html);self.assertIn('function mqttPage(',html);self.assertIn('UI.start({',html);self.assertNotIn('href="/cfg_',html)
   self.assertEqual(self.api('capabilities')['wire_formats'],['msgpack','cbor'])
+ def test_03_two_waiting_requests_and_binary_overload(self):
+  body=PACK[1]({'action':'status.get','params':{}})
+  active=socket.create_connection(('127.0.0.1',self.port),timeout=3)
+  queued=[]
+  try:
+   active.sendall((f'POST /api/v1/command HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/msgpack\r\nAuthorization: Bearer {self.token}\r\nContent-Length: {len(body)}\r\n\r\n').encode()+body[:2])
+   time.sleep(.04)
+   for _ in range(3):
+    s=socket.create_connection(('127.0.0.1',self.port),timeout=3);queued.append(s)
+    s.sendall((f'GET /api/v1/status HTTP/1.1\r\nHost: localhost\r\nAccept: application/cbor\r\nAuthorization: Bearer {self.token}\r\n\r\n').encode());time.sleep(.04)
+   r=http.client.HTTPResponse(queued[2]);r.begin();self.assertEqual(r.status,503)
+   self.assertEqual(r.getheader('Content-Type'),'application/cbor');self.assertEqual(UNPACK[2](r.read())['code'],'busy')
+   active.sendall(body[2:]);r=http.client.HTTPResponse(active);r.begin();self.assertEqual(r.status,200);r.read()
+   for s in queued[:2]:
+    r=http.client.HTTPResponse(s);r.begin();self.assertEqual(r.status,200);self.assertEqual(UNPACK[2](r.read())['code'],'ok')
+  finally:
+   active.close()
+   for s in queued:s.close()
+  d=dict(self.api('diagnostics')['fields'])
+  self.assertEqual(d[DIAGNOSTICS['http_accept_queue_capacity']],2)
+  self.assertGreaterEqual(d[DIAGNOSTICS['http_accept_queue_ok']],2)
  def test_04_mqtt_ha_retained_and_commands(self):
   self.assertEqual(self.broker.root,'phicomm/v2/u_746573742d75736572/s30-v1b/aabbccddeeff')
   for key in ('outlet_0','voltage','current','power','energy','meter_valid'):

@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <limits.h>
+#include "../protocol/diagnostics_ids.h"
 bool ph_binary_format(ph_wire_format f) { return f == PH_WIRE_MSGPACK || f == PH_WIRE_CBOR; }
 void ph_settings_default(ph_settings *s) {
     memset(s, 0, sizeof(*s)); s->magic = PH_STORE_MAGIC; s->indicator = 1; s->report_seconds=30; strcpy(s->name,"S30-V1B"); strcpy(s->socket_name,"S30-V1B");
@@ -53,9 +54,12 @@ static void identity(ph_device *d, ph_writer *w) {
     phw_text(w, "device_id", d->mac); phw_text(w, "mac", d->mac);
     phw_text(w, "firmware_version", d->version); phw_text(w, "version", d->version);
     phw_text(w, "protocol", "openiot");phw_text(w, "command_protocol", "tmcp"); phw_u32(w, "protocol_version", 2);
+    phw_u32(w,"api_version",1);phw_u32(w,"wire_version",1);
+    phw_text(w,"variant","full");phw_text(w,"default_wire_format","msgpack");
+    phw_begin(w,"wire_formats",true);phw_text(w,NULL,"msgpack");phw_text(w,NULL,"cbor");phw_end(w);
 }
-void ph_status(ph_device *d, ph_writer *w) {
-    identity(d, w); phw_u32(w, "uptime_seconds", d->ops.now(d->ops.user)/1000);
+static void status_build(ph_device *d, ph_writer *w) {
+    identity(d, w);
     phw_u32(w, "boot", d->boot); phw_u32(w, "sequence", d->sequence);
     phw_u32(w, "revision", d->settings.revision); phw_bool(w, "power", d->relay);
     phw_begin(w, "socket_states", true); phw_bool(w, NULL, d->relay); phw_end(w);
@@ -70,10 +74,38 @@ void ph_status(ph_device *d, ph_writer *w) {
     ph_meter_write(&d->meter,w,d->ops.now(d->ops.user),d->settings.calibrated);
     if (d->ops.network_info) d->ops.network_info(d->ops.user, w);
 }
-static const char *actions[] = {"info.get", "status.get", "capabilities.get", "config.get", "config.set", "power.get", "outlet.set", "indicator.set", "child_lock.set", "system.reboot", "system.reset", "wifi.scan", "wifi.scan.get", "ota.start"};
-void ph_capabilities(ph_writer *w) {
-    phw_text(w, "model", PH_MODEL);phw_text(w, "project", "iotcloud");phw_text(w, "mqtt_protocol", "openiot");phw_text(w, "command_protocol", "tmcp"); phw_u32(w, "mqtt_protocol_version", 2);
-    phw_begin(w, "wire_formats", true); phw_text(w, NULL, "msgpack"); phw_text(w, NULL, "cbor"); phw_end(w);
+void ph_status(ph_device *d,ph_writer *w) {
+    unsigned fields=ph_meter_fields(&d->meter,d->ops.now(d->ops.user));
+    uint32_t network=d->ops.network_stamp?d->ops.network_stamp(d->ops.user):0;
+    /* A caller without a change observer uses the uncached business emitter. */
+    if(d->ops.network_info&&!d->ops.network_stamp){status_build(d,w);return;}
+    if(!d->status_size||d->cache_sequence!=d->sequence||d->cache_frames!=d->meter.frames||d->cache_fields!=fields||d->cache_network!=network){
+        ph_writer cached;struct printbuf buffer;
+        phw_init_fixed(&cached,PH_WIRE_MSGPACK,&buffer,d->status_cache,sizeof(d->status_cache));
+        phw_begin(&cached,NULL,false);status_build(d,&cached);phw_end(&cached);
+        d->status_size=phw_finish_fixed(&cached);
+        d->cache_sequence=d->sequence;d->cache_frames=d->meter.frames;d->cache_fields=fields;d->cache_network=network;++d->cache_builds;
+        if(!d->status_size){status_build(d,w);return;}
+    }
+    phw_cached_fields(w,d->status_cache,d->status_size);
+}
+void ph_diag_uint(ph_writer *w,unsigned id,uint32_t value){phw_begin(w,NULL,true);phw_u32(w,NULL,id);phw_u32(w,NULL,value);phw_end(w);}
+void ph_diag_int(ph_writer *w,unsigned id,int32_t value){phw_begin(w,NULL,true);phw_u32(w,NULL,id);phw_i32(w,NULL,value);phw_end(w);}
+void ph_diagnostics(ph_device *d,ph_writer *w) {
+    phw_u32(w,"schema",PH_DIAGNOSTICS_SCHEMA);phw_begin(w,"fields",true);
+    ph_diag_uint(w,PH_DIAG_UPTIME_MS,d->ops.now(d->ops.user));
+    ph_diag_uint(w,PH_DIAG_UPTIME_SECONDS,d->ops.now(d->ops.user)/1000);
+    ph_diag_uint(w,PH_DIAG_METERING_RECEIVED_BYTES,d->meter.received_bytes);
+    ph_diag_uint(w,PH_DIAG_METERING_FRAMES,d->meter.frames);
+    ph_diag_uint(w,PH_DIAG_METERING_BAD_FRAMES,d->meter.bad_frames);
+    ph_diag_uint(w,PH_DIAG_METERING_DISCONTINUITIES,d->meter.discontinuities);
+    ph_diag_uint(w,PH_DIAG_STATUS_CACHE_BUILDS,d->cache_builds);
+    if(d->ops.diagnostics)d->ops.diagnostics(d->ops.user,w);
+    phw_end(w);
+}
+static const char *actions[] = {"info.get", "status.get", "capabilities.get", "diagnostics.get", "config.get", "config.set", "power.get", "outlet.set", "indicator.set", "child_lock.set", "system.reboot", "system.reset", "wifi.scan", "wifi.scan.get", "ota.start"};
+void ph_capabilities(ph_device *d,ph_writer *w) {
+    identity(d,w);phw_text(w, "mqtt_protocol", "openiot");phw_u32(w, "mqtt_protocol_version", 2);
     phw_begin(w, "actions", true);
     for (unsigned i = 0; i < sizeof(actions)/sizeof(*actions); ++i) phw_text(w, NULL, actions[i]);
     phw_end(w); phw_u32(w, "outlet_count", 1); phw_u32(w, "udp_port", 11288);
@@ -93,7 +125,8 @@ size_t ph_query(ph_device *d, const char *action, ph_wire_format f, void *out, s
     phw_begin(&w, NULL, false);
     if (!strcmp(action, "status.get")) ph_status(d, &w);
     else if (!strcmp(action, "info.get")) identity(d, &w);
-    else if (!strcmp(action, "capabilities.get")) ph_capabilities(&w);
+    else if (!strcmp(action, "capabilities.get")) ph_capabilities(d,&w);
+    else if (!strcmp(action, "diagnostics.get")) ph_diagnostics(d,&w);
     else if (!strcmp(action, "config.get")) config(d, &w);
     else return 0;
     phw_end(&w); return phw_finish_fixed(&w);
@@ -130,9 +163,10 @@ static const char *execute(ph_device *d, const char *action, const ph_value *p, 
         if (phv_get(p, "view", &v) && !phv_equal_text(&v, "full") && !phv_equal_text(&v, "live")) return "invalid_params";
         ph_status(d, w); return "ok";
     }
-    if (!strcmp(action, "capabilities.get") || !strcmp(action, "info.get") || !strcmp(action, "config.get") || !strcmp(action, "power.get")) {
+    if (!strcmp(action, "capabilities.get") || !strcmp(action,"diagnostics.get") || !strcmp(action, "info.get") || !strcmp(action, "config.get") || !strcmp(action, "power.get")) {
         if (p->count) return "invalid_params";
-        if (!strcmp(action, "capabilities.get")) ph_capabilities(w);
+        if (!strcmp(action, "capabilities.get")) ph_capabilities(d,w);
+        else if (!strcmp(action,"diagnostics.get")) ph_diagnostics(d,w);
         else if (!strcmp(action, "info.get")) identity(d, w);
         else if (!strcmp(action, "config.get")) config(d, w);
         else {
@@ -224,6 +258,7 @@ size_t ph_command(ph_device *d, const void *bytes, size_t n, ph_wire_format inpu
     phw_init_fixed(&w, PH_WIRE_MSGPACK, &b, data, mutation ? sizeof(d->receipts[0].data) : sizeof(data)); phw_begin(&w, NULL, false);
     code = execute(d, action, &params, &w, admin); phw_end(&w); data_n = phw_finish_fixed(&w);
     if (!data_n) return 0;
+    if(mutation&&!strcmp(code,"accepted"))d->status_size=0;
     if (mutation && strcmp(code, "busy") && strcmp(code, "unauthorized")) {
         ph_receipt *r = &d->receipts[d->next_receipt++ % 8];
         strcpy(r->id, id); strcpy(r->action, action); memcpy(r->params, canonical, canonical_n); r->params_len = canonical_n;
@@ -233,8 +268,9 @@ response:
     phw_init_fixed(&w, output, &b, out, capacity); phw_begin(&w, NULL, false);
     if (identifier(id)) phw_text(&w, "request_id", id);
     phw_text(&w, "code", code); phw_text(&w, "message", code);
-    if (data_n && phv_parse(PH_WIRE_MSGPACK, data, data_n, &root)) phw_value(&w, "data", &root);
-    else { phw_begin(&w, "data", false); phw_end(&w); }
+    phw_begin(&w, "data", false);
+    if (data_n) phw_cached_fields(&w, data, data_n);
+    phw_end(&w);
     phw_end(&w); return phw_finish_fixed(&w);
 }
 bool ph_local_toggle(ph_device *d) {

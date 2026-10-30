@@ -7,8 +7,11 @@
 #ifndef PH_HTTP_CLIENT_SLOTS
 #define PH_HTTP_CLIENT_SLOTS 4
 #endif
-#ifndef PH_HTTP_QUEUE_ALL
-#define PH_HTTP_QUEUE_ALL 0
+#ifndef PH_HTTP_WAIT_SLOTS
+#define PH_HTTP_WAIT_SLOTS 2
+#endif
+#if PH_HTTP_WAIT_SLOTS < 1 || PH_HTTP_WAIT_SLOTS >= PH_HTTP_CLIENT_SLOTS
+#error HTTP waiting slots must fit behind the active connection
 #endif
 #define PH_HTTP_STACK_BYTES 12288u
 #define PH_HTTP_HEADER_BYTES 4096u

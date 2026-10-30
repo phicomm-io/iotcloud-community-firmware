@@ -40,8 +40,14 @@ const url=process.argv[2],run=process.argv[3];
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Mobile page overflows');
   for(let i=0;i<6;i++){await page.reload();await page.waitForFunction(()=>globalThis.UI?.state?.socket_states?.length===1);}
   assert.equal(await page.locator('#themePick').inputValue(),'dark');
-  assert.ok(!requests.some(r=>r.url.includes('/auth/login')),'Empty password must not allocate sessions');
-  for(const r of requests){assert.equal(r.headers.accept,'application/msgpack');if(r.method==='POST')assert.equal(r.headers['content-type'],'application/msgpack');}
+  const loginRequests=requests.filter(r=>r.url.includes('/auth/login'));
+  assert.ok(loginRequests.length<=7,'Probe empty-password policy at most once per document');
+  assert.ok(requests.every(r=>!r.headers.authorization),'Sessionless pages must not send stale credentials');
+  for(const r of requests){
+   const discovery=new URL(r.url).pathname==='/api/v1/info';
+   assert.equal(r.headers.accept,discovery?'application/msgpack, application/json':'application/msgpack');
+   if(r.method==='POST')assert.equal(r.headers['content-type'],'application/msgpack');
+  }
   assert.deepEqual(errors,[]);
   fs.writeFileSync(path.join(run,'browser-result.json'),JSON.stringify({status:'PASS',actual_shared_http:true,api_mocks:false,empty_password_reloads:6,desktop_mobile:true,languages:['zh-CN','en'],forms:['mqtt','name','socket_name','report','meter','power_on','child_lock','indicator'],page_errors:errors,request_count:requests.length},null,2)+'\n');
   console.log('PASS: shared frontend on real HTTP, all product forms, empty auth, mobile, theme, metering validity');

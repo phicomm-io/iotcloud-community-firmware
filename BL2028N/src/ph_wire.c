@@ -10,6 +10,24 @@
 #include "../protocol/binary_reader.inc"
 #include "../protocol/typed_wire.inc"
 
+/* Only device-owned maps from the fixed writer enter here. A MessagePack
+ * reader copies the encoded fields without parsing or rebuilding the map;
+ * CBOR readers use the same validated borrowed-value transcoder. */
+void phw_cached_fields(ph_writer *w,const void *data,size_t size) {
+ const unsigned char *p=data;
+ if(!w->depth||w->arrays[w->depth-1]||size<3||p[0]!=0xde){w->failed=true;return;}
+ unsigned count=((unsigned)p[1]<<8)|p[2];
+ if(w->format==PH_WIRE_MSGPACK){
+  unsigned d=w->depth-1;
+  if((unsigned)w->counts[d]+count>UINT16_MAX){w->failed=true;return;}
+  w->counts[d]+=count;phw_bytes(w,p+3,size-3);
+ } else {
+  ph_value root,value;ph_iterator it;char key[128];
+  if(!phv_parse(PH_WIRE_MSGPACK,p,size,&root)||!phv_iter(&root,&it)){w->failed=true;return;}
+  while(phv_next(&it,key,&value))phw_value(w,key,&value);
+ }
+}
+
 /* Shared MQTT admission uses this before allocating a command queue entry. */
 bool ph_binary_request_id(const void *bytes,size_t n,char id[65]) {
     ph_value root,v;id[0]=0;ph_wire_format f=ph_wire_detect(bytes,n);

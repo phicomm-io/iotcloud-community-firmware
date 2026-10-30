@@ -108,7 +108,7 @@ static bool random_bytes(void *p,uint8_t *out,size_t n){(void)p;while(n--){rando
 static bool auth_save(void *p,const ph_auth_store *s){ph_settings next=d.settings;next.auth=*s;next.energy_kwh=d.meter.energy_kwh;if(!persist(p,&next))return false;d.settings=next;return true;}
 static void reset(bool reload){
     ph_settings s;if(reload)s=disk;else{ph_settings_default(&s);disk=s;}
-    ph_device_ops ops={NULL,tick,persist,relay,reboot,NULL,NULL};
+    ph_device_ops ops={NULL,tick,persist,relay,reboot,NULL,NULL,NULL,NULL};
     assert(ph_device_init(&d,&ops,&s,"aabbccddeeff","host-test",123));
     ph_auth_ops ao={NULL,tick,random_bytes,NULL,NULL,password,auth_save};
     assert(ph_auth_init(&auth,&ao,&d.settings.auth));memset(&udp,0,sizeof(udp));

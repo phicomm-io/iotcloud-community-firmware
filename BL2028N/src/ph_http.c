@@ -59,7 +59,6 @@ static ph_http_action begin(ph_http_exchange *x) {
  bool home=route_is(r,"/")||route_is(r,"/index.html");
  if(home) {
   if(strcmp(r->method,"GET")&&strcmp(r->method,"HEAD"))return fail(x,405,"method_not_allowed");
-  if(!authenticated){x->response.realm="iotcloud";return fail(x,401,"unauthorized");}
   x->response.status=200;x->response.type="text/html; charset=utf-8";x->response.body=ph_web;x->response.length=sizeof(ph_web);
   x->response.gzip=true;x->response.suppress_body=!strcmp(r->method,"HEAD");return PH_HTTP_REPLY;
  }
@@ -71,12 +70,23 @@ static ph_http_action begin(ph_http_exchange *x) {
   response(x,200,phw_finish_fixed(&w));return PH_HTTP_REPLY;
  }
  bool login=route_is(r,"/api/v1/auth/login");
- if(!authenticated&&!login){x->response.realm="iotcloud";return fail(x,401,"unauthorized");}
+ bool info=route_is(r,"/api/v1/info")&&!strcmp(r->method,"GET");
+ if(!authenticated&&!login&&!info)return fail(x,401,"unauthorized");
  if(!strcmp(r->method,"GET")) {
   const char *action=route_is(r,"/api/v1/info")?"info.get":route_is(r,"/api/v1/status")?"status.get":
-   route_is(r,"/api/v1/capabilities")?"capabilities.get":route_is(r,"/api/v1/config")?"config.get":NULL;
+   route_is(r,"/api/v1/capabilities")?"capabilities.get":route_is(r,"/api/v1/config")?"config.get":
+   route_is(r,"/api/v1/diagnostics")?"diagnostics.get":NULL;
   if(!action)return fail(x,404,"not_found");
-  bl_lock();size_t n=ph_query(&bl_device,action,format,output,sizeof(output));bl_unlock();
+  ph_writer w;struct printbuf b;phw_init_fixed(&w,format,&b,output,sizeof(output));
+  phw_begin(&w,NULL,false);phw_text(&w,"code","ok");phw_text(&w,"message","ok");phw_begin(&w,"data",false);
+  bl_lock();
+  if(!strcmp(action,"info.get")){
+   unsigned char bytes[768];size_t k=ph_query(&bl_device,action,PH_WIRE_MSGPACK,bytes,sizeof(bytes));
+   if(k)phw_cached_fields(&w,bytes,k);else w.failed=true;
+  }else if(!strcmp(action,"capabilities.get"))ph_capabilities(&bl_device,&w);
+  else if(!strcmp(action,"diagnostics.get"))ph_diagnostics(&bl_device,&w);
+  else ph_status(&bl_device,&w);
+  bl_unlock();phw_end(&w);phw_end(&w);size_t n=phw_finish_fixed(&w);
   if(!n)return fail(x,503,"busy");response(x,200,n);return PH_HTTP_REPLY;
  }
  if(strcmp(r->method,"POST"))return fail(x,405,"method_not_allowed");
@@ -109,7 +119,9 @@ static void complete(ph_http_exchange *x) {
  bl_unlock();memset(password,0,sizeof(password));
  if(!ok){fail(x,401,"unauthorized");return;}
  ph_writer w;struct printbuf b;phw_init_fixed(&w,format,&b,output,sizeof(output));phw_begin(&w,NULL,false);
- phw_text(&w,"token",token);phw_text(&w,"token_type","Bearer");phw_u32(&w,"expires_in",PH_AUTH_IDLE_MS/1000);phw_end(&w);
+ phw_text(&w,"code","ok");phw_begin(&w,"data",false);
+ phw_text(&w,"token",token);phw_text(&w,"token_type","Bearer");phw_u32(&w,"expires_in",PH_AUTH_IDLE_MS/1000);
+ phw_bool(&w,"password_required",*CFG_GetWebPassword()!=0);phw_end(&w);phw_end(&w);
  response(x,200,phw_finish_fixed(&w));memset(token,0,sizeof(token));
 }
 static void release(ph_http_exchange *x,bool sent) {(void)x;(void)sent;memset(input,0,used);used=0;}

@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "port_internal.h"
+#include "../protocol/diagnostics_ids.h"
 #include "port.h"
 #include "ha_number.h"
 #include "boot_trace.h"
@@ -13,8 +14,8 @@ static Client client;
 static ph_os_thread owner_thread;
 static ph_mqtt_startup startup;
 static char host[128],user[64],password[128],client_id[192],availability[256],command_topic[256],ha_topic[256];
-static unsigned port,discovery,publication,last_fields;
-static uint32_t sent_at,last_sequence,ha_serial;
+static unsigned port,discovery,publication,last_fields[2];
+static uint32_t sent_at[2],last_sequence[2],ha_serial;
 static int application_error;
 static bool initialized;
 static void command_arrived(MessageData *);
@@ -121,20 +122,19 @@ static int publish_cycle(void *unused) {
   rc=ph_mqtt_publish_bytes(topic,bytes,n,true);if(rc!=MQTT_SUCCESS)return rc;++discovery;
  }
  bl_lock();uint32_t sequence=bl_device.sequence;unsigned fields=ph_meter_fields(&bl_device.meter,ph_os_now());unsigned seconds=bl_device.settings.report_seconds;bl_unlock();
- if(publication>=2) {
-  if(sequence==last_sequence&&fields==last_fields&&(uint32_t)(ph_os_now()-sent_at)<seconds*1000u)return MQTT_SUCCESS;
-  publication=0;
- }
- while(publication<2) {
-  if(!publication){bl_lock();n=ph_query(&bl_device,"status.get",PH_WIRE_MSGPACK,bytes,sizeof(bytes));bl_unlock();mqtt_leaf(&account,"state",topic,sizeof(topic));}
+ for(unsigned channel=0;channel<2;++channel) {
+  if((publication&(1u<<channel))&&sequence==last_sequence[channel]&&fields==last_fields[channel]&&
+     (uint32_t)(ph_os_now()-sent_at[channel])<seconds*1000u)continue;
+  if(!channel){bl_lock();n=ph_query(&bl_device,"status.get",PH_WIRE_MSGPACK,bytes,sizeof(bytes));bl_unlock();mqtt_leaf(&account,"state",topic,sizeof(topic));}
   else {n=ha_state((char*)bytes,sizeof(bytes));mqtt_leaf(&account,"ha/state",topic,sizeof(topic));}
   if(!n)return MQTT_FAILURE;
-  rc=ph_mqtt_publish_bytes(topic,bytes,n,true);if(rc!=MQTT_SUCCESS)return rc;++publication;
+  rc=ph_mqtt_publish_bytes(topic,bytes,n,true);if(rc!=MQTT_SUCCESS)return rc;
+  publication|=1u<<channel;last_sequence[channel]=sequence;last_fields[channel]=fields;sent_at[channel]=ph_os_now();
  }
- last_sequence=sequence;last_fields=fields;sent_at=ph_os_now();return MQTT_SUCCESS;
+ return MQTT_SUCCESS;
 }
 static int initial(void *unused) {discovery=publication=0;application_error=0;return publish_cycle(unused);}
-static bool initial_ready(void *unused) {(void)unused;return discovery==6&&publication==2;}
+static bool initial_ready(void *unused) {(void)unused;return discovery==6&&publication==3;}
 static void closing(void *unused,bool connected,int rc) {(void)unused;(void)connected;(void)rc;bl_lock();bl_mqtt_status=MQTT_DISCONNECTED;bl_unlock();memset(password,0,sizeof(password));}
 static void event(void *unused,unsigned state,int rc) {
  (void)unused;unsigned status=state==PH_MQTT_READY?MQTT_READY:state==PH_MQTT_CONNECTING?MQTT_CONNECTING:
@@ -157,7 +157,6 @@ void bl_mqtt_start(void) {
 }
 void bl_mqtt_diagnostics(ph_writer *w) {
  ph_mqtt_diagnostics d={0};if(ph_os_load(&initialized))ph_mqtt_snapshot(&d);
- phw_u32(w,"mqtt_errors",d.errors);phw_int(w,"mqtt_last_error",d.last_error);
- phw_u32(w,"mqtt_queue_bytes",d.bytes);phw_u32(w,"mqtt_queue_peak",d.peak_bytes);
- phw_u32(w,"mqtt_reconnects",d.reconnects);phw_u32(w,"mqtt_owner_faults",d.owner_faults);
+ ph_diag_uint(w,PH_DIAG_MQTT_ERRORS,d.errors);ph_diag_int(w,PH_DIAG_MQTT_LAST_ERROR,d.last_error);
+ ph_diag_uint(w,PH_DIAG_SERVICE_MEMORY_MQTT_PENDING,d.bytes);ph_diag_uint(w,PH_DIAG_SERVICE_MEMORY_MQTT_PEAK,d.peak_bytes);
 }
