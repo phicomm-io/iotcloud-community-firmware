@@ -87,6 +87,10 @@ static void binding_limits_and_install_mapping(void){
  samples[0].valid=true;samples[0].value[2]=42;peers[0].authorized=true;strcpy(peers[0].ip,"10.0.0.1");feature_config_t next=stored;feature_peer_t swap=next.peers[0];next.peers[0]=next.peers[1];next.peers[1]=swap;
  assert(install_config(&next)&&samples[1].valid&&samples[1].value[2]==42&&peers[1].authorized&&!strcmp(peers[1].ip,"10.0.0.1"));
  next=stored;next.peers[1].token[0]^=1;assert(install_config(&next)&&!samples[1].valid&&!peers[1].authorized);
+ /* Storage errors must emit exactly one valid result, not two MP roots. */
+ ph_value empty=obj("{}");ph_writer failed;const char *code;assert(phw_init(&failed,PH_WIRE_MSGPACK));
+ fail_save=true;assert(feature_mp("light_effect.next",&empty,&failed,&code)&&!strcmp(code,"storage_error"));
+ ph_buf *failure=phw_take(&failed);assert(failure);ph_value decoded;assert(phv_parse(PH_WIRE_MSGPACK,failure->buf,failure->len,&decoded));ph_buf_free(failure);fail_save=false;
  before=configuration;next=stored;next.linkage.fixed_speed=99;fail_save=true;assert(!install_config(&next)&&!memcmp(&before,&configuration,sizeof(before)));fail_save=false;
 }
 static void internal_values(void) {

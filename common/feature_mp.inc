@@ -64,7 +64,7 @@ bool feature_domain_get_mp(const char *d,ph_writer *w){
 }
 static void feature_result_mp(ph_writer *w,int status,unsigned revision,const ph_value *p){
  phw_begin(w,NULL,false);phw_uint(w,"code",status);phw_uint(w,"revision",revision);
- phw_text(w,"message",status==200?"Saved":status==409?"Revision conflict, binding required, or persistence unavailable":"Invalid configuration");
+ phw_text(w,"message",status==200?"Saved":status==409?"Revision conflict":status>=500?"Persistence unavailable":"Invalid configuration");
  ph_value request;if(p&&phv_get(p,"request_id",&request))phw_value(w,"request_id",&request);phw_end(w);
 }
 int feature_domain_set_mp(const char *d,const ph_value *p,ph_writer *w){
@@ -84,7 +84,11 @@ int feature_domain_set_mp(const char *d,const ph_value *p,ph_writer *w){
  }
 #endif
  if(!feature_config_decode_mp(c,d,p)){status=400;goto done;}
- if(!install_config(c))status=409;else group_broadcast_config_mp(d,p);
+ if(!install_config(c)){
+  /* A failed commit may race another writer. Distinguish its new revision
+   * from allocation/Flash failure without publishing the uncommitted copy. */
+  unsigned expected=c->revision;feature_config_get(c);status=c->revision!=expected?409:500;
+ }else group_broadcast_config_mp(d,p);
  done:feature_result_mp(w,status,c->revision,p);free(c);return status;
 }
 bool feature_ntp_set_mp(const char *host,const char **code){
@@ -97,7 +101,7 @@ bool feature_mp(const char *action,const ph_value *p,ph_writer *w,const char **c
   bool next=!strcmp(action,"light_effect.next");ph_value effect;int64_t n=255;
   *code="invalid_params";
   if(!p||!phv_keys(p,next?"":"|effect|")||(!next&&(!phv_get(p,"effect",&effect)||!phv_int(&effect,&n)||n<0||n>5))){phw_begin(w,NULL,false);phw_end(w);return true;}
-  int rc=feature_light_select_mp((unsigned)n,w);*code=rc<300?"accepted":rc==409?"busy":rc>=500?"storage_error":"invalid_params";
+  int rc=feature_light_select_mp((unsigned)n,w);*code=rc<300?"accepted":rc==409?"conflict":rc>=500?"storage_error":"invalid_params";
   if(rc>=500||rc==400){phw_begin(w,NULL,false);phw_end(w);}return true;
  }
 #endif
@@ -119,6 +123,6 @@ bool feature_mp(const char *action,const ph_value *p,ph_writer *w,const char **c
  if(!domain)return false;
  *code="invalid_params";
  if(!set){if(!p||!phv_keys(p,"")){phw_begin(w,NULL,false);phw_end(w);}else{*code="ok";if(!feature_domain_get_mp(domain,w)){*code="busy";/* Allocation failed before output. */if(!w->failed){phw_begin(w,NULL,false);phw_end(w);}}}}
- else{int rc=feature_domain_set_mp(domain,p,w);*code=rc<300?"accepted":rc==409?"busy":rc>=500?"storage_error":"invalid_params";}
+ else{int rc=feature_domain_set_mp(domain,p,w);*code=rc<300?"accepted":rc==409?"conflict":rc>=500?"storage_error":"invalid_params";}
  return true;
 }

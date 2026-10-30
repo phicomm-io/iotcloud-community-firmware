@@ -439,7 +439,7 @@ int feature_light_select_mp(unsigned effect,ph_writer *response) {
    if(n&&phv_parse(PH_WIRE_MSGPACK,bytes,n,&v))group_broadcast_config_mp("light",&v);
   }
  }
- int status=ok?200:409;if(response)feature_result_mp(response,status,revision,NULL);return status;
+ int status=ok?200:500;if(ok&&response)feature_result_mp(response,status,revision,NULL);return status;
 }
 unsigned feature_light_cap(unsigned brightness) {
   lock();
