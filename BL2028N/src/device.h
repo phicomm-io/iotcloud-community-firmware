@@ -5,6 +5,7 @@
 #define PH_MODEL "s30-v1b"
 #define PH_INPUT_MAX 1200u
 #define PH_OUTPUT_MAX 4096u
+#define PH_STATUS_CACHE_MAX 2048u
 #define PH_STORE_MAGIC UINT32_C(0x324c4250)
 typedef struct {
     uint32_t magic, revision;
@@ -40,7 +41,7 @@ typedef struct {
     ph_meter meter;
     ph_receipt receipts[8];
     unsigned next_receipt;
-    unsigned char status_cache[2048];
+    unsigned char *status_cache;
     size_t status_size;
     uint32_t cache_sequence,cache_frames,cache_network,cache_builds;
     unsigned cache_fields;
@@ -50,6 +51,9 @@ void ph_settings_default(ph_settings *);
 bool ph_settings_valid(const ph_settings *);
 bool ph_device_init(ph_device *, const ph_device_ops *, const ph_settings *, const char *, const char *, uint32_t);
 /* Caller serializes state access; all views and output buffers are borrowed. */
+/* Release the optional cache before reinitializing or disposing an initialized device. */
+void ph_status_cache_release(ph_device *);
+void ph_device_set_maintenance(ph_device *, bool);
 size_t ph_command(ph_device *, const void *, size_t, ph_wire_format, ph_wire_format,
                   bool authorized, bool admin, void *, size_t);
 size_t ph_query(ph_device *, const char *, ph_wire_format, void *, size_t);

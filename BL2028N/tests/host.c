@@ -109,6 +109,7 @@ static bool auth_save(void *p,const ph_auth_store *s){ph_settings next=d.setting
 static void reset(bool reload){
     ph_settings s;if(reload)s=disk;else{ph_settings_default(&s);disk=s;}
     ph_device_ops ops={NULL,tick,persist,relay,reboot,NULL,NULL,NULL,NULL};
+    ph_status_cache_release(&d);
     assert(ph_device_init(&d,&ops,&s,"aabbccddeeff","host-test",123));
     ph_auth_ops ao={NULL,tick,random_bytes,NULL,NULL,password,auth_save};
     assert(ph_auth_init(&auth,&ao,&d.settings.auth));memset(&udp,0,sizeof(udp));
@@ -143,5 +144,5 @@ int main(void){
         else abort();
         hex(out,n);fflush(stdout);
     }
-    free(line);return 0;
+    ph_status_cache_release(&d);free(line);return 0;
 }

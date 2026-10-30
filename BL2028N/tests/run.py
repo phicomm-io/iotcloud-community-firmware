@@ -17,6 +17,8 @@ def main():
  core=[ROOT/'src'/('ph_'+n+'.c') for n in ('device','meter','udp','wire')]+[ROOT/'protocol/local_auth.c']
  command(flags+[HERE/'host.c']+core+['-lm','-o',run/'host-tests'],'host-compiler.log')
  command([sys.executable,HERE/'test_protocols.py',run/'host-tests'],'host-tests.log')
+ command(flags+[HERE/'cache.c']+core+['-Wl,--wrap=malloc,--wrap=free','-lm','-o',run/'cache-test'],'cache-compiler.log')
+ command([run/'cache-test'],'cache.log')
  if a.stock_backup:
   command(flags+['-I',ROOT/'src',HERE/'factory_mac.c','-o',run/'factory-mac-test'],'factory-compiler.log')
   command([run/'factory-mac-test',a.stock_backup],'factory-mac.log')

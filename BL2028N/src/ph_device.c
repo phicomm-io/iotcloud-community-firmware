@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "device.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <limits.h>
 #include "../protocol/diagnostics_ids.h"
@@ -74,18 +75,28 @@ static void status_build(ph_device *d, ph_writer *w) {
     ph_meter_write(&d->meter,w,d->ops.now(d->ops.user),d->settings.calibrated);
     if (d->ops.network_info) d->ops.network_info(d->ops.user, w);
 }
+void ph_status_cache_release(ph_device *d) {
+    free(d->status_cache);d->status_cache=NULL;d->status_size=0;
+}
+void ph_device_set_maintenance(ph_device *d,bool enabled) {
+    d->maintenance=enabled;
+    if(enabled)ph_status_cache_release(d);
+}
 void ph_status(ph_device *d,ph_writer *w) {
     unsigned fields=ph_meter_fields(&d->meter,d->ops.now(d->ops.user));
     uint32_t network=d->ops.network_stamp?d->ops.network_stamp(d->ops.user):0;
-    /* A caller without a change observer uses the uncached business emitter. */
-    if(d->ops.network_info&&!d->ops.network_stamp){status_build(d,w);return;}
+    /* OTA reclaims this optional cache. Polling must not allocate it again
+     * while the downloader needs its stack, receive and flash buffers. */
+    if(d->maintenance||(d->ops.network_info&&!d->ops.network_stamp)){status_build(d,w);return;}
+    if(!d->status_cache)d->status_cache=malloc(PH_STATUS_CACHE_MAX);
+    if(!d->status_cache){status_build(d,w);return;}
     if(!d->status_size||d->cache_sequence!=d->sequence||d->cache_frames!=d->meter.frames||d->cache_fields!=fields||d->cache_network!=network){
         ph_writer cached;struct printbuf buffer;
-        phw_init_fixed(&cached,PH_WIRE_MSGPACK,&buffer,d->status_cache,sizeof(d->status_cache));
+        phw_init_fixed(&cached,PH_WIRE_MSGPACK,&buffer,d->status_cache,PH_STATUS_CACHE_MAX);
         phw_begin(&cached,NULL,false);status_build(d,&cached);phw_end(&cached);
         d->status_size=phw_finish_fixed(&cached);
         d->cache_sequence=d->sequence;d->cache_frames=d->meter.frames;d->cache_fields=fields;d->cache_network=network;++d->cache_builds;
-        if(!d->status_size){status_build(d,w);return;}
+        if(!d->status_size){ph_status_cache_release(d);status_build(d,w);return;}
     }
     phw_cached_fields(w,d->status_cache,d->status_size);
 }

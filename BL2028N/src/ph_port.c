@@ -246,7 +246,7 @@ static const char *platform_action(void *unused,const char *action,const ph_valu
  if(!strcmp(action,"ota.start")) {
   if(p->count!=1||!get_text(p,"url",a,sizeof(a))||strncmp(a,"http://",7)||strpbrk(a,"\r\n\t ")||strlen(a)<12)return "invalid_params";
   if(bl_ota_pending||OTA_GetProgress()>=0||reboot_pending||reset_requested||scan_state)return "busy";
-  strcpy(ota_url,a);ota_at=now(NULL)+1500;bl_ota_pending=true;bl_device.maintenance=true;ota_failed=false;return "accepted";
+  strcpy(ota_url,a);ota_at=now(NULL)+1500;bl_ota_pending=true;ph_device_set_maintenance(&bl_device,true);ota_failed=false;return "accepted";
  }
  if(strcmp(action,"config.set"))return "unsupported";
  if(!get_text(p,"section",section,sizeof(section))||!phv_get(p,"values",&values)||values.kind!=PHV_MAP)return "invalid_params";
@@ -315,10 +315,10 @@ static void network_thread(beken_thread_arg_t arg) {
     if(bl_mqtt_quiescent&&xPortGetFreeHeapSize()>=PH_OTA_START_HEAP) {
      strcpy(url,ota_url);ota_url[0]=0;
     } else if((uint32_t)(t-ota_at)>=10000) {
-     ota_url[0]=0;bl_ota_pending=false;bl_device.maintenance=false;ota_failed=true;
+     ota_url[0]=0;bl_ota_pending=false;ph_device_set_maintenance(&bl_device,false);ota_failed=true;
     }
    } else if(!*ota_url&&OTA_GetProgress()<0) {
-    bl_ota_pending=false;bl_device.maintenance=false;ota_failed=true;
+    bl_ota_pending=false;ph_device_set_maintenance(&bl_device,false);ota_failed=true;
    }
   }
   bool upgrading=bl_ota_pending;
