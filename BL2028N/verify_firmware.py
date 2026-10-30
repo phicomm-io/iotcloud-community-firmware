@@ -26,6 +26,12 @@ def fnv1a(data):
     for byte in data:value=((value^byte)*16777619)&0xffffffff
     return value
 
+def c_string(field):
+    # The native RBL packager writes C strings into fixed-width fields. Bytes
+    # after the terminator are not part of the value and may contain 0xff.
+    assert b'\0' in field, 'Unterminated RBL string field'
+    return field.split(b'\0', 1)[0].decode('ascii')
+
 def crc_blocks(encoded):
     assert len(encoded)%34==0
     decoded=[]
@@ -70,7 +76,7 @@ def main():
         payload=partition(ua,b'app')
         code_length=(len(raw)+15)//32*32+16
         assert len(payload)==code_length
-        assert crc_blocks(ua[-102:])[28:52].rstrip(b'\0').decode()==v
+        assert c_string(crc_blocks(ua[-102:])[28:52])==v
         coefficients=(0x510fb093,0xa3cbeadc,0x5993a17e,0xc7adeb03) if flavor=='BK7231N' else (0,0,0,0)
         cipher=BekenCodeCipher(coefficients)
         assert bytes(cipher.decrypt(cipher.pad(payload),stream_start_offset=0x10000)[:code_length])==raw.ljust(code_length,b'\xff')
@@ -79,7 +85,7 @@ def main():
     rbl=(folder/f'BL2028N_OTA_{v}.rbl').read_bytes();ug=(folder/f'BL2028N_UG_{v}.bin').read_bytes()
     magic,algorithm,_,stamp,name,version,sn,payload_crc,fnv,raw_n,package_n,header_crc=struct.unpack('<4sHHI16s24s24sIIIII',rbl[:96])
     assert magic==b'RBL\0' and algorithm==0x102 and name.startswith(b'app\0')
-    assert version.rstrip(b'\0').decode()==v
+    assert c_string(version)==v
     assert zlib.crc32(rbl[:92])==header_crc and zlib.crc32(rbl[96:])==payload_crc
     assert len(rbl)==96+package_n and raw_n==len(raw)
     assert fnv1a(raw)==fnv
