@@ -69,6 +69,57 @@ class Core(unittest.TestCase):
                 self.assertEqual(reply['code'],'accepted');self.assertTrue(reply['data']['on'])
                 status=self.query(f=o);self.assertTrue(status['power']);self.assertEqual(status['mac'],'aabbccddeeff')
                 self.assertEqual(status['metering']['voltage'],None)
+    def test_power_on_off_and_restore_survive_reboots_and_failed_save(self):
+        for mode,expected in [('on',True),('off',False),('restore',False)]:
+            self.assertEqual(self.command('config.set',{'section':'device','values':{'power_on_mode':mode}},rid=mode)['code'],'accepted')
+            self.mp('X');self.assertEqual(self.query()['power'],expected);self.assertEqual(self.query()['power_on_mode'],mode)
+        self.assertEqual(self.command('outlet.set',{'on':True},rid='on-restore')['code'],'accepted')
+        self.mp('X');self.assertTrue(self.query()['power'])
+        self.mp('F 1');self.assertEqual(self.command('outlet.set',{'on':False},rid='off-failed')['code'],'storage_error')
+        self.assertTrue(self.query()['power']);self.mp('F 0');self.mp('X');self.assertTrue(self.query()['power'])
+        self.assertEqual(self.command('outlet.set',{'on':False},rid='off-restored')['code'],'accepted')
+        self.mp('X');self.assertFalse(self.query()['power'])
+        for values in ({'power_on_mode':'invalid'},{'power_on_mode':True},{'power_on_mode':'on','power_on':False}):
+            self.assertEqual(self.command('config.set',{'section':'device','values':values},rid=str(values))['code'],'invalid_params')
+    def power_rule(self,**kw):
+        p=dict(enabled=True,trigger='power',comparison='above',power_milliwatts=100000,seconds=2,action='outlet.set',params={'on':True})
+        p.update(kw)
+        return p
+    def poll_power(self,at,**sample):
+        self.mp(f'T {at}');self.meter(**sample);return self.mp('P')
+    def test_power_rules_monotonic_continuity_once_busy_and_manual_priority(self):
+        result=self.command('schedules.put',self.power_rule());self.assertEqual(result['code'],'accepted');id=result['data']['id']
+        self.assertFalse(self.poll_power(10000)['relay']);self.assertFalse(self.poll_power(11000)['relay'])
+        self.assertTrue(self.poll_power(12000)['relay']);writes=self.mp('S')['writes']
+        self.poll_power(13000);self.assertEqual(self.mp('S')['writes'],writes)
+        # Missing/stale meter data breaks a pending duration; it does not rearm a fired rule.
+        self.mp('T 20000');self.mp('P');self.poll_power(21000);self.assertEqual(self.mp('S')['writes'],writes)
+        # Physical control wins even though the original condition still holds.
+        self.mp('L');self.assertFalse(self.query()['power']);self.poll_power(22000);self.poll_power(23000);self.assertFalse(self.query()['power'])
+        self.poll_power(24000,state=0xf2);self.poll_power(25000);self.poll_power(26000);self.assertTrue(self.poll_power(27000)['relay'])
+        self.assertEqual(self.command('schedules.enable',{'id':id,'enabled':False},rid='disable')['code'],'accepted')
+        self.assertEqual(self.command('outlet.set',{'on':False},rid='off')['code'],'accepted')
+        self.poll_power(28000);self.assertFalse(self.query()['power'])
+        # Rule replacement cancels the old timer. An interruption cannot count as sustained load.
+        self.assertEqual(self.command('schedules.put',self.power_rule(id=id),rid='replace')['code'],'accepted')
+        self.poll_power(29000);self.mp('T 35000');self.mp('P');self.poll_power(36000);self.poll_power(37000);self.assertTrue(self.poll_power(38000)['relay'])
+        # Immediate below-threshold action retries a transient storage error without latching success.
+        self.assertEqual(self.command('config.set',{'section':'device','values':{'power_on_mode':'restore'}},rid='policy')['code'],'accepted')
+        self.assertEqual(self.command('schedules.put',self.power_rule(id=id,comparison='below',power_milliwatts=1,seconds=0,params={'on':False}),rid='below')['code'],'accepted')
+        self.mp('F 1');self.assertTrue(self.poll_power(39000,state=0xf2)['relay'])
+        self.mp('F 0');self.assertFalse(self.poll_power(40000,state=0xf2)['relay'])
+        self.mp('X');self.assertFalse(self.query()['power'])
+        listed=self.command('schedules.get',{},rid='list')['data'];self.assertEqual(listed['count'],1);self.assertEqual(listed['items'][0]['comparison'],'below')
+    def test_power_rule_validation_capacity_and_persistence_rollback(self):
+        for changes in ({'comparison':'equal'},{'seconds':True},{'seconds':604801},{'power_milliwatts':-1},{'power_milliwatts':25000001},{'action':'system.reboot'},{'params':{'toggle':True}},{'params':{'index':1,'on':False}},{'trigger':'weekly'}):
+            self.assertEqual(self.command('schedules.put',self.power_rule(**changes),rid=str(changes))['code'],'invalid_params')
+        self.mp('F 1');self.assertEqual(self.command('schedules.put',self.power_rule(),rid='failed')['code'],'storage_error');self.mp('F 0')
+        for i in range(8):self.assertEqual(self.command('schedules.put',self.power_rule(seconds=i),rid='rule-'+str(i))['code'],'accepted')
+        self.assertEqual(self.command('schedules.put',self.power_rule(),rid='overflow')['code'],'capacity')
+        self.mp('X');items=self.command('schedules.get',{},rid='get')['data']['items'];self.assertEqual(len(items),8)
+        self.mp('F 1');self.assertEqual(self.command('schedules.delete',{'id':items[0]['id']},rid='delete-failed')['code'],'storage_error');self.mp('F 0')
+        self.assertEqual(self.command('schedules.delete',{'id':items[0]['id']},rid='delete')['code'],'accepted')
+        self.assertEqual(self.command('schedules.put',self.power_rule(),rid='reuse')['code'],'accepted')
     def test_idempotency_and_conflict(self):
         first=self.command('config.set',{'section':'device','values':{'name':'Desk'}},i=1)
         before=self.mp('S');second=self.command('config.set',{'values':{'name':'Desk'},'section':'device'},i=2,o=2)

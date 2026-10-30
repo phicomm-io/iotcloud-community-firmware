@@ -260,27 +260,41 @@ function renderBanners(s,lost){
  if(s.save_error)add('bad','alert',t('banner.save_error',{e:s.save_error}));
  if(s.ap_active&&!s.wifi_connected)add('warn','wifi',t('banner.hotspot',{n:s.ap_name}));
 }
+function settingsAvailable(key){return !!UI.pages[key]&&(!UI.caps?.hub_remote||key==='diagnostics'&&UI.caps.actions?.includes('diagnostics.get'));}
 function buildNav(dev){
  const side=$('side');side.replaceChildren();
  for(const [groupKey,keys] of dev.groups){
-  const links=keys.filter(k=>UI.pages[k]).map(k=>h('a',{href:'#settings/'+k,'data-i18n':dev.nav[k]},t(dev.nav[k])));
+  const links=keys.filter(settingsAvailable).map(k=>h('a',{href:'#settings/'+k,'data-i18n':dev.nav[k]},t(dev.nav[k])));
   if(!links.length)continue;
   side.append(h('div',{class:'group','data-i18n':groupKey},t(groupKey)));
   for(const a of links)side.append(a);
  }
+}
+function applySettingsAccess(){
+ if(!UI.embedded&&UI.caps?.model==='daikin'&&UI.caps.firmware_variant==='hub'){
+  const tabs=document.querySelector('.tabs');
+  if(tabs&&!tabs.querySelector('.hub-management-entry')){
+   tabs.classList.add('hub-tabs');
+   tabs.append(h('a',{class:'hub-management-entry',href:'/iotcloud/#/'},icon('link'),h('span',{i18n:'nav.hub'})));
+  }
+ }
+ if(!UI.caps?.hub_remote)return;
+ for(const [key,page] of Object.entries(UI.pages))if(key.startsWith('slot_')){page.el.remove();delete UI.pages[key];}
+ const link=document.querySelector('.tabs [data-tab="settings"]');
+ if(link){link.hidden=!settingsAvailable('diagnostics');link.href='#settings/diagnostics';}
 }
 let routeGeneration=0;let routeRead=null;
 function showRoute(){
  const generation=++routeGeneration;
  routeRead?.abort();routeRead=new AbortController();
  const m=/^settings\/([a-z]+)$/.exec(UI.embeddedRoute??location.hash.slice(1));
- const page=m&&document.querySelector('[data-settings-page="'+m[1]+'"]')?m[1]:m?(UI.device.groups.flatMap(g=>g[1]).find(k=>UI.pages[k])||null):null;
+ const page=m&&settingsAvailable(m[1])?m[1]:m?(UI.device.groups.flatMap(g=>g[1]).find(settingsAvailable)||null):null;
  $('homePage').hidden=!!page;$('settingsPage').hidden=!page;
  document.querySelectorAll('[data-settings-page]').forEach(p=>{p.hidden=p.dataset.settingsPage!==page;});
  document.querySelectorAll('.tabs a').forEach(a=>{const on=a.dataset.tab===(page?'settings':'home');if(on)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
  document.querySelectorAll('.side a').forEach(a=>{if(a.hash==='#settings/'+page)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
  // A slow status refresh must not launch reads for tabs already left behind.
- if(page)UI.reload({full:true}).then(()=>{if(generation===routeGeneration)afterShow(page);});else afterShow(page);
+ if(page)UI.reload({full:true,priority:1}).then(()=>{if(generation===routeGeneration)afterShow(page);});else afterShow(page);
 }
 const showingPages=new Map();
 async function afterShow(page){
@@ -698,13 +712,16 @@ function clockCard({load,save,status}){
    fieldRow('clock.tz',tz),fieldRow('clock.ntp',ntp)),
   info('clock.hint'),h('div',{class:'form-actions'},h('button',{class:'btn primary',type:'submit'},h('span',{i18n:'common.save'}))));
  onSubmit(form,()=>save({timezone_minutes:Number(tz.value),ntp_host:ntp.value.trim()}));
- return {el:card('clock.title',null,sum,h('div',{style:'margin-top:16px'},form)),
-  async show(options={}){const c=await load(options);if(!c||options.current&&!options.current())return;tz.value=String(c.timezone_minutes||480);ntp.value=c.ntp_host||'';},
-  status(s){sum.replaceChildren(summary(status(s)));}};
+ const panel=card('clock.title',null,sum,h('div',{style:'margin-top:16px'},form));
+ const supported=()=>!Array.isArray(UI.caps?.actions)||UI.caps.actions.includes('time.get');
+ return {el:panel,
+  async show(options={}){if(!supported())return;const c=await load(options);if(!c||options.current&&!options.current())return;tz.value=String(c.timezone_minutes??480);ntp.value=c.ntp_host||'';},
+  status(s){panel.hidden=!supported();form.hidden=!UI.caps?.actions?.includes('time.set');if(!panel.hidden)sum.replaceChildren(summary(status(s)));}};
 }
 
 /* ---------- Boot ---------- */
-let initialized=false,failures=0,lastSuccess=0,loading=null,loadingGeneration=0;
+let initialized=false,capabilitiesPending=false,failures=0,lastSuccess=0,loading=null,loadingGeneration=0;
+const pendingPageInit=new Set();
 let stopped=false,pollingStarted=false,pollTimer=null,pollGeneration=0;
 const lockedControls=new Map();
 function lockHome(){if(!UI.embedded)return;const home=$('homePage');if(home)home.inert=true;for(const el of document.querySelectorAll('#homePage button,#homePage input,#homePage select')){if(!lockedControls.has(el))lockedControls.set(el,el.disabled);el.disabled=true;}}
@@ -719,13 +736,26 @@ async function load(priority){
   if(!params.view&&!raw.ota_mode){lastFullAt=Date.now();loadedGeneration=generation;}
   if(raw.ota_active&&raw.ota_mode){UI.pages.firmware?.status(raw);return raw;}
   if((!params.view&&(!UI.caps?.business_status||capabilityGeneration!==generation))||UI.caps?.config_recovery||resetPending){
-   const caps=await command('capabilities.get',{}, {priority}),config=await command('config.get',{}, {priority});
+   const caps=await command('capabilities.get',{}, {priority});
    if(stopped||lifecycle!==pollGeneration||resetVersion!==resetGeneration)return null;
    const wasRecovery=!!UI.caps?.config_recovery;
    UI.acceptCapabilities(caps);
    capabilityGeneration=generation;
    if(UI.identityChanged)return null;
-   UI.caps.config_recovery=!!UI.caps.config_recovery||config.migration_state==='confirmation_required';
+   if(capabilitiesPending){
+    capabilitiesPending=false;
+    UI.device.capabilities?.(UI.caps);
+    mountDevicePages(UI.device);
+    buildNav(UI.device);applySettingsAccess();showRoute();
+   }
+   // Ordinary status does not depend on configuration access. Paired LAN
+   // control intentionally excludes config.get; recovery still verifies it.
+   if(wasRecovery||UI.caps.config_recovery||resetPending){
+    UI.caps.config_recovery=wasRecovery||!!caps.config_recovery;
+    const config=await command('config.get',{}, {priority});
+    if(stopped||lifecycle!==pollGeneration||resetVersion!==resetGeneration)return null;
+    UI.caps.config_recovery=!!caps.config_recovery||config.migration_state==='confirmation_required';
+   }
    if(resetPending&&raw.reboot_pending)resetSawPending=true;
    if(wasRecovery&&!UI.caps.config_recovery&&!raw.reboot_pending)initialized=false;
    const restarted=resetSawPending||(Number.isFinite(resetUptime)&&raw.uptime_seconds<resetUptime);
@@ -741,6 +771,8 @@ async function load(priority){
   $('title').textContent=UI.device.model+' '+(s.name||'');
   renderChips(s);renderBanners(s,false);
   if(!initialized){for(const p of Object.values(UI.pages))if(p.init)p.init(s);initialized=true;}
+  else for(const p of pendingPageInit)if(p.init)p.init(s);
+  pendingPageInit.clear();
   let diagnosticState=s;
   if((UI.activePage()==='diagnostics'||UI.device.diagnosticPages?.includes(UI.activePage()))&&UI.caps?.actions?.includes('diagnostics.get')){
    const routeGenerationAtRead=routeGeneration,signal=routeRead?.signal;
@@ -765,7 +797,7 @@ async function refreshStatus(generation=pollGeneration,resuming=false){
   // required full read; its former loop cannot schedule another timer.
   if(resuming&&loading)await loading;
   if(stopped||generation!==pollGeneration)return;
-  await pollLoad();
+  await pollLoad(initialized?2:1);
  }
  if(!stopped&&generation===pollGeneration)pollTimer=setTimeout(function refresh(){
   if(generation===pollGeneration)pollTimer=null;
@@ -808,6 +840,18 @@ UI.invalidateIdentity=identity=>{
 };
 UI.acceptCapabilities=caps=>{UI.invalidateIdentity(caps);UI.caps={...caps};UI.pages.firmware?.capabilities?.(UI.caps);};
 UI.showRoute=showRoute;
+function mountDevicePages(dev){
+ const previous=new Set(Object.keys(UI.pages)),pages=$('pages');
+ if(!capabilitiesPending)Object.assign(UI.pages,window.automationPages(dev));
+ for(const [key,p] of Object.entries(dev.pages))UI.pages[key]=Object.assign(UI.pages[key]||{},p);
+ for(const [key,p] of Object.entries(UI.pages)){
+  if(key.startsWith('slot_'))continue;
+  let box=document.querySelector('[data-settings-page="'+key+'"]');
+  if(!box){box=h('div',{'data-settings-page':key,hidden:true});pages.append(box);}
+  if(p.el&&p.el.parentNode!==box)box.append(p.el);
+ }
+ for(const [key,page] of Object.entries(UI.pages))if(!previous.has(key))pendingPageInit.add(page);
+}
 UI.start=async dev=>{
  UI.device=dev;lockHome();
  const first=dev.groups.flatMap(g=>g[1])[0];
@@ -816,28 +860,16 @@ UI.start=async dev=>{
    h('a',{href:'#home','data-tab':'home'},icon('home'),h('span',{i18n:'nav.home'})),
    h('a',{href:'#settings/'+first,'data-tab':'settings'},icon('sliders'),h('span',{i18n:'nav.settings'}))),
   h('div',{id:'banners'}));
- UI.caps=await command('capabilities.get').catch(()=>({actions:[]}));capabilityGeneration=fullGeneration;
- if(dev.capabilities)dev.capabilities(UI.caps);
- if(!UI.embedded&&UI.caps.model==='daikin'&&UI.caps.firmware_variant==='hub'){
-  const tabs=document.querySelector('.tabs');tabs.classList.add('hub-tabs');
-  tabs.append(h('a',{class:'hub-management-entry',href:'/iotcloud/#/'},icon('link'),h('span',{i18n:'nav.hub'})));
- }
+ UI.caps=await command('capabilities.get').catch(()=>{capabilitiesPending=true;return {actions:[]};});capabilityGeneration=fullGeneration;
+ if(!capabilitiesPending)dev.capabilities?.(UI.caps);
  const pages=$('pages');
  // Pages the framework builds for every product.
  const builders={network:wifiPage,mqtt:mqttPage,firmware:firmwarePage,diagnostics:diagnosticsPage,maintenance:maintenancePage,logs:logsPage};
  for(const [key,build] of Object.entries(builders)){const p=build(dev);UI.pages[key]=p;pages.append(h('div',{'data-settings-page':key,hidden:true},p.el));}
- // Automation pages, when the device advertises the capability.
- Object.assign(UI.pages,window.automationPages(dev));
- // Product pages: the product supplies show()/status(); the markup is either
- // already in the document or appended below.
- for(const [key,p] of Object.entries(dev.pages))UI.pages[key]=Object.assign(UI.pages[key]||{},p);
- for(const [key,p] of Object.entries(UI.pages)){
-  let box=document.querySelector('[data-settings-page="'+key+'"]');
-  if(!box){box=h('div',{'data-settings-page':key,hidden:true});pages.append(box);}
-  if(p.el)box.append(p.el);
- }
- for(const slot of document.querySelectorAll('[data-slot]')){const p=slot.dataset.slot==='name'?nameCard():authCard();UI.pages['slot_'+slot.dataset.slot]=p;slot.replaceWith(p.el);}
- buildNav(dev);
+ // Capability pages may be installed once a failed first handshake recovers.
+ mountDevicePages(dev);
+ for(const slot of document.querySelectorAll('[data-slot]')){if(UI.caps?.hub_remote){slot.remove();continue;}const p=slot.dataset.slot==='name'?nameCard():authCard();UI.pages['slot_'+slot.dataset.slot]=p;slot.replaceWith(p.el);}
+ buildNav(dev);applySettingsAccess();
  window.addEventListener('hashchange',showRoute);showRoute();
  I18N.apply();
  I18N.onChange(()=>{if(UI.state){renderChips(UI.state);renderBanners(UI.state,false);for(const p of Object.values(UI.pages))if(p.status)p.status(UI.state);}});

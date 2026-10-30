@@ -8577,14 +8577,3 @@
      phw_int(&w,"protocol_version",2);phw_text(&w,"version","v2");
      phw_int(&w,"wire_version",1);phw_begin(&w,"wire_formats",true);
      phw_text(&w,NULL,"msgpack");phw_end(&w);phw_text(&w,"default_wire_format","msgpack");
---- a/common/lan_policy.h
-+++ b/common/lan_policy.h
-@@ -9,7 +9,7 @@
-         "power.get","filter.get","alarm.get","wake_alarm.get","mcu.version.get",
-         "fan.set","fan.mode.set","fan.mode.toggle","light.set","child_lock.set",
-         "light_always.set","light_effect.select","light_effect.next",
--        "outlet.set","indicator.set","display.set","buzzer.set",
-+        "outlet.set","indicator.set","display.set","buzzer.set","name.set",
-         "wake_alarm.start","wake_alarm.stop",
-         "fresh_air.config.get","fresh_air.linkage.get","fresh_air.set",NULL
-     };

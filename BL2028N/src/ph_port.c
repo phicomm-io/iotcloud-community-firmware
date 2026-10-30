@@ -122,30 +122,41 @@ typedef struct {
     uint32_t magic,size,crc;ph_settings settings;
     uint32_t credential_magic;char password[33];uint8_t reserved[3];
 } disk_record;
-/* PBL3 is a fixed disk ABI. A later auth/settings expansion needs another
+/* PBL4 is a fixed disk ABI. A later auth/settings expansion needs another
  * explicit importer rather than silently reinterpreting this record. */
-typedef char ph_store_v3_auth_size[(sizeof(ph_auth_store)==780)?1:-1];
-typedef char ph_store_v3_settings_size[(sizeof(ph_settings)==960)?1:-1];
-typedef char ph_store_v3_record_size[(sizeof(disk_record)==1016)?1:-1];
-typedef char ph_store_v3_auth_offset[(offsetof(ph_settings,auth)==48)?1:-1];
-typedef char ph_store_v3_report_offset[(offsetof(ph_settings,report_seconds)==828)?1:-1];
-typedef char ph_store_v3_name_offset[(offsetof(ph_settings,name)==832)?1:-1];
-typedef char ph_store_v3_socket_offset[(offsetof(ph_settings,socket_name)==896)?1:-1];
-typedef char ph_store_v3_payload_offset[(offsetof(disk_record,settings)==16)?1:-1];
-typedef char ph_store_v3_credential_offset[(offsetof(disk_record,credential_magic)==976)?1:-1];
-typedef char ph_store_v3_password_offset[(offsetof(disk_record,password)==980)?1:-1];
+typedef char ph_store_v4_auth_size[(sizeof(ph_auth_store)==780)?1:-1];
+typedef char ph_store_v4_settings_size[(sizeof(ph_settings)==1096)?1:-1];
+typedef char ph_store_v4_record_size[(sizeof(disk_record)==1152)?1:-1];
+typedef char ph_store_v4_auth_offset[(offsetof(ph_settings,auth)==48)?1:-1];
+typedef char ph_store_v4_report_offset[(offsetof(ph_settings,report_seconds)==828)?1:-1];
+typedef char ph_store_v4_name_offset[(offsetof(ph_settings,name)==832)?1:-1];
+typedef char ph_store_v4_socket_offset[(offsetof(ph_settings,socket_name)==896)?1:-1];
+typedef char ph_store_v4_payload_offset[(offsetof(disk_record,settings)==16)?1:-1];
+typedef char ph_store_v4_credential_offset[(offsetof(disk_record,credential_magic)==1112)?1:-1];
+typedef char ph_store_v4_password_offset[(offsetof(disk_record,password)==1116)?1:-1];
 static bool password_value_valid(const char *p) {
     if(!p)return false;size_t n=0;
     for(;n<33&&p[n];++n)if((unsigned char)p[n]<32||(unsigned char)p[n]>126)return false;
     return n<=32&&(!n||n>=8);
 }
-static bool record_credential_valid(const disk_record *r) {
-    if(r->reserved[0]||r->reserved[1]||r->reserved[2])return false;
-    if(r->credential_magic==PH_CREDENTIAL_MAGIC)
-        return memchr(r->password,0,sizeof(r->password))&&password_value_valid(r->password);
-    if(r->credential_magic)return false;
-    for(unsigned i=0;i<sizeof(r->password);++i)if(r->password[i])return false;
+static bool credential_fields_valid(uint32_t magic,const char password[33],const uint8_t reserved[3]) {
+    if(reserved[0]||reserved[1]||reserved[2])return false;
+    if(magic==PH_CREDENTIAL_MAGIC)
+        return memchr(password,0,33)&&password_value_valid(password);
+    if(magic)return false;
+    for(unsigned i=0;i<33;++i)if(password[i])return false;
     return true;
+}
+static bool record_credential_valid(const disk_record *r) {
+    return credential_fields_valid(r->credential_magic,r->password,r->reserved);
+}
+static void import_credential(uint32_t magic,const char password[33]) {
+    credential_owned=magic==PH_CREDENTIAL_MAGIC;
+    memset(committed_password,0,sizeof(committed_password));
+    if(credential_owned) {
+        memcpy(committed_password,password,sizeof(committed_password));
+        PH_BL_SetWebPasswordMemory(committed_password);
+    }
 }
 static void import_auth(ph_auth_store *to,const ph_store_old_auth *from) {
     ph_auth_store_empty(to);to->magic=from->magic;to->version=from->version;to->count=from->count;
@@ -176,25 +187,33 @@ static bool save(void *unused, const ph_settings *s) {
     (void)unused;return save_record(s,NULL,s->energy_kwh,committed_password,credential_owned);
 }
 static bool load(ph_settings *s) {
-    union {disk_record current;ph_store_v1_record v1;ph_store_v2_record v2;} r;
+    union {disk_record current;ph_store_v1_record v1;ph_store_v2_record v2;ph_store_v3_record v3;} r;
     lfs_file_t f;
     if(!lfs_present() || lfs_file_open(&lfs,&f,".phicomm",LFS_O_RDONLY)<0)return false;
     lfs_soff_t size=lfs_file_size(&lfs,&f);bool ok=false,migrated=false;
-    if((size==sizeof(disk_record)||size==sizeof(ph_store_v1_record)||size==sizeof(ph_store_v2_record)) &&
+    if((size==sizeof(disk_record)||size==sizeof(ph_store_v1_record)||size==sizeof(ph_store_v2_record)||size==sizeof(ph_store_v3_record)) &&
        size<=sizeof(r) && lfs_file_read(&lfs,&f,&r,(size_t)size)==size && r.current.size==size) {
         if(r.current.magic==PH_STORE_MAGIC&&size==sizeof(disk_record)) {
             ok=r.current.crc==crc32(&r.current.settings,sizeof(r.current)-offsetof(disk_record,settings))&&
                ph_settings_valid(&r.current.settings)&&record_credential_valid(&r.current);
             if(ok) {
-                *s=r.current.settings;credential_owned=r.current.credential_magic==PH_CREDENTIAL_MAGIC;
-                memset(committed_password,0,sizeof(committed_password));
-                if(credential_owned) {
-                    memcpy(committed_password,r.current.password,sizeof(committed_password));
-                    PH_BL_SetWebPasswordMemory(committed_password);
-                }
+                *s=r.current.settings;import_credential(r.current.credential_magic,r.current.password);
             }
+        } else if(r.current.magic==PH_STORE_V3_MAGIC&&size==sizeof(ph_store_v3_record)&&
+                  r.v3.settings.magic==PH_STORE_V3_MAGIC&&r.v3.settings.power_on<=1&&
+                  r.v3.crc==crc32(&r.v3.settings,sizeof(r.v3)-offsetof(ph_store_v3_record,settings))&&
+                  credential_fields_valid(r.v3.credential_magic,r.v3.password,r.v3.reserved)) {
+            const ph_store_v3_settings *old=&r.v3.settings;ph_settings_default(s);
+            s->revision=old->revision;s->child_lock=old->child_lock;s->indicator=old->indicator;
+            s->power_on=old->power_on;s->calibrated=old->calibrated;
+            memcpy(s->coefficients,old->coefficients,sizeof(s->coefficients));s->energy_kwh=old->energy_kwh;
+            /* Frozen source layout is checked independently of current auth. */
+            memcpy(&s->auth,&old->auth,sizeof(old->auth));s->report_seconds=old->report_seconds;
+            memcpy(s->name,old->name,sizeof(s->name));memcpy(s->socket_name,old->socket_name,sizeof(s->socket_name));
+            ok=ph_settings_valid(s);migrated=ok;
+            if(ok)import_credential(r.v3.credential_magic,r.v3.password);
         } else if(r.current.magic==PH_STORE_V2_MAGIC&&size==sizeof(ph_store_v2_record)&&
-                  r.v2.settings.magic==PH_STORE_V2_MAGIC&&r.v2.crc==crc32(&r.v2.settings,sizeof(r.v2.settings))) {
+                  r.v2.settings.magic==PH_STORE_V2_MAGIC&&r.v2.settings.power_on<=1&&r.v2.crc==crc32(&r.v2.settings,sizeof(r.v2.settings))) {
             const ph_store_v2_settings *old=&r.v2.settings;ph_settings_default(s);
             s->revision=old->revision;s->child_lock=old->child_lock;s->indicator=old->indicator;
             s->power_on=old->power_on;s->calibrated=old->calibrated;
@@ -203,7 +222,7 @@ static bool load(ph_settings *s) {
             memcpy(s->name,old->name,sizeof(s->name));memcpy(s->socket_name,old->socket_name,sizeof(s->socket_name));
             ok=ph_settings_valid(s);migrated=ok;
         } else if(r.current.magic==PH_STORE_V1_MAGIC&&size==sizeof(ph_store_v1_record)&&
-                  r.v1.settings.magic==PH_STORE_V1_MAGIC&&r.v1.crc==crc32(&r.v1.settings,sizeof(r.v1.settings))) {
+                  r.v1.settings.magic==PH_STORE_V1_MAGIC&&r.v1.settings.power_on<=1&&r.v1.crc==crc32(&r.v1.settings,sizeof(r.v1.settings))) {
             const ph_store_v1_settings *old=&r.v1.settings;ph_settings_default(s);
             s->revision=old->revision;s->child_lock=old->child_lock;s->indicator=old->indicator;
             s->power_on=old->power_on;s->calibrated=old->calibrated;
@@ -216,7 +235,7 @@ static bool load(ph_settings *s) {
      * atomic-save failure keeps the old record intact; use corrected defaults
      * for this boot and retry next boot, without discarding any settings. */
     if(ok) {
-        if(migrated){credential_owned=false;memset(committed_password,0,sizeof(committed_password));}
+        if(migrated&&r.current.magic!=PH_STORE_V3_MAGIC){credential_owned=false;memset(committed_password,0,sizeof(committed_password));}
         if(ph_settings_migrate_meter_defaults(s))migrated=true;if(migrated)(void)save(NULL,s);
     }
     return ok;
@@ -266,9 +285,16 @@ static void set_relay(void *unused, bool on) { (void)unused; HAL_PIN_SetOutputVa
 static void reboot(void *unused) { (void)unused; reboot_pending=true; reboot_at=now(NULL)+3000; }
 /* Caller holds the product mutex. Checkpoint without wearing flash per frame. */
 static bool checkpoint(uint32_t t, bool force) {
-    if(!force && (uint32_t)(t-energy_saved_at)<300000)return true;
-    if(bl_device.settings.energy_kwh==bl_device.meter.energy_kwh){energy_saved_at=t;return true;}
-    if(!save_record(&bl_device.settings,NULL,bl_device.meter.energy_kwh,committed_password,credential_owned))return false;
+    static uint32_t attempted_at;static bool attempted;
+    bool relay_dirty=bl_device.settings.power_on==PH_BOOT_RESTORE&&bl_device.settings.last_relay!=bl_device.relay;
+    if(!force&&!relay_dirty&&(uint32_t)(t-energy_saved_at)<300000)return true;
+    if(!relay_dirty&&bl_device.settings.energy_kwh==bl_device.meter.energy_kwh){energy_saved_at=t;return true;}
+    if(!force&&attempted&&(uint32_t)(t-attempted_at)<1000)return false;
+    attempted=true;attempted_at=t;
+    uint8_t saved=bl_device.settings.last_relay;
+    if(bl_device.settings.power_on==PH_BOOT_RESTORE)bl_device.settings.last_relay=bl_device.relay;
+    bool ok=save_record(&bl_device.settings,NULL,bl_device.meter.energy_kwh,committed_password,credential_owned);
+    if(!ok){bl_device.settings.last_relay=saved;return false;}
     bl_device.settings.energy_kwh=bl_device.meter.energy_kwh;energy_saved_at=t;return true;
 }
 static void network_info(void *unused, ph_writer *w) {
@@ -490,6 +516,7 @@ static void network_thread(beken_thread_arg_t arg) {
   if(!bl_ota_pending&&(int32_t)(t-reboot_at)>=0) {
    restart=reboot_pending;reset=reset_requested;reset_requested=0;
   }
+  if(!reset&&!restart&&!bl_ota_pending)ph_power_poll(&bl_device);
   checkpoint(t,restart||reset==1);
   if(reset==2&&!factory_reset_record())reset=0;
   if(bl_ota_pending) {
@@ -577,7 +604,7 @@ void PH_BL_Init(int safe_mode) {
  PH_BOOT_RESULT("storage-mounted",lfs_present());
  ph_settings settings;if(!load(&settings))ph_settings_default(&settings);
  PH_BOOT_STAGE("settings-loaded");
- bool power_on=settings.power_on;
+ uint8_t power_on=settings.power_on;
  safe_boot=safe_mode!=0;
  if(safe_boot)settings.power_on=false;
  char mac[13];unsigned char bytes[6];WiFI_GetMacAddress((char*)bytes);

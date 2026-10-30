@@ -27,11 +27,14 @@ def main():
     args = parser.parse_args()
     frontend = args.frontend_root.resolve()
     old = args.historical_snapshot.read_bytes()
-    if digest(old) != HISTORICAL_SHA:
-        raise SystemExit('Historical shared-source snapshot checksum mismatch')
-    historical = tarfile.open(fileobj=io.BytesIO(old), mode='r:gz')
     manifest_path = HERE / 'protocol/lab-shared-source.json'
     manifest = json.loads(manifest_path.read_text())
+    # A current pinned snapshot contains the same historical Paho inputs. It is
+    # also a verified base; never require retaining every ancestor tarball.
+    snapshot_sha = digest(old)
+    if snapshot_sha not in {HISTORICAL_SHA, manifest.get('source_snapshot', {}).get('sha256')}:
+        raise SystemExit('Shared-source snapshot checksum mismatch')
+    historical = tarfile.open(fileobj=io.BytesIO(old), mode='r:gz')
     manifest['files'].pop('web/shared/wire.js', None)
     manifest.pop('wire_bundle_sha256', None)
     manifest['files']['protocol/diagnostics_ids.h'] = {'source': 'common/diagnostics_ids.h'}
@@ -55,7 +58,7 @@ def main():
             raw = historical.extractfile(name).read()
             snapshot[name] = raw
             base = raw.split(b'static bool feature_parse(')[0] if item.get('extraction') else raw
-            item['historical_source_snapshot_sha256'] = HISTORICAL_SHA
+            item['historical_source_snapshot_sha256'] = snapshot_sha
         else:
             base = (FIRMWARE / source).read_bytes()
             snapshot['lab/' + source] = base

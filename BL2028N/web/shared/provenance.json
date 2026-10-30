@@ -1,17 +1,17 @@
 {
   "repository": "phicomm-io/phicomm-community-frontend",
-  "commit": "4d33198e3eb31664ba7fe2999175c29f6068465f",
+  "commit": "13a81517b09a19263cd7f69f42d6ba5594e1f9c1",
   "source_dirty": false,
   "path": "common/web",
   "sha256": {
     "appearance.js": "afdf9672e22338b82d1ac7ffa944e33cade436e4bd00b3a57ca8e45d710fb352",
-    "automation.js": "f7e242efc045a52dd8895f6e8a55eb43d8d61a82c4084bb7f37f5662cf0936f2",
+    "automation.js": "b06b785bc1e37fc5cc52a771be0fcf529d9c40045b9dafb5afb19e9cd45466f2",
     "diagnostics-schema.js": "89c47f5cbe3dbc9e1f4216e239be44b40f18b23dc1448f649ca5a191d14d24c1",
-    "i18n.js": "bef05b39aa91b32e4aaf555349c5bddd686a0f6925acd3ca4d17efc4589690b3",
+    "i18n.js": "7d5abe73e5d292351c03c94c3b35792f2a6ce9d60967d3af59c6c2c934515796",
     "provision.js": "f8a4d2e54b0ba8eaadd625ff3b8d956e7a312218f0f6df97a4385cf83a44dd95",
-    "service.js": "f2dd2a3891cfd6b678767cc7dea324034fa363f833c9b81db8b4bb04aa1e265b",
-    "style.css": "a7169a9855b43394772a1ecb7445e79dbef9cc9ff6af9a9b8b9d254c83c887f3",
-    "ui.js": "853e23136ecbc4f22849599d5744ca0fea39ba53e7f44ce70eb9be38b680f889"
+    "service.js": "4b63085eceba274c371f79b681fa14471e42f769b7b7bbfefbb91777482248a8",
+    "style.css": "55bf48816dd8c455d519634e2273b0b1a23e1a13088c943e81ce6cb5c7a509fe",
+    "ui.js": "ad4bcb6e7927fe3902ebea40df3cb44d98c2e3a9a5749f482d9dc3e242195afd"
   },
   "adaptations": "Shared binary auth, serialized reads, diagnostics and product capability gates; see frontend-openbeken.patch and lab-shared-source.json."
 }

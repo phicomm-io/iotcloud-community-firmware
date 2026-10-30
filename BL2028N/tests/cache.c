@@ -27,6 +27,32 @@ int main(void) {
     unsigned char expected[2][PH_OUTPUT_MAX],actual[PH_OUTPUT_MAX];size_t sizes[2];
     for(unsigned f=1;f<=2;++f){sizes[f-1]=ph_query(&d,"status.get",f,expected[f-1],sizeof(actual));assert(sizes[f-1]);}
     assert(allocations==1&&attempts==1&&d.cache_builds==1);
+    ph_status_cache_suspend(&d,true);
+    assert(!cache&&!d.status_cache&&allocations==releases);
+    unsigned pending_attempts=attempts;
+    for(unsigned i=0;i<10;++i)for(unsigned f=1;f<=2;++f){
+        size_t n=ph_query(&d,"status.get",f,actual,sizeof(actual));
+        assert(n==sizes[f-1]&&!memcmp(actual,expected[f-1],n));
+    }
+    assert(attempts==pending_attempts); /* HTTP cannot reclaim a pending receipt's headroom. */
+    ph_status_cache_suspend(&d,false);
+    assert(ph_query(&d,"status.get",PH_WIRE_MSGPACK,actual,sizeof(actual))==sizes[0]);
+    assert(cache&&allocations==releases+1);
+    /* Ordinary MQTT bootstrap must also be able to reclaim the cache. Keep
+     * hysteresis so each HTTP read cannot take back the sender's reserve. */
+    const size_t reserve=8192u+PH_OUTPUT_MAX+32u;
+    ph_status_cache_budget(&d,reserve-1,reserve);
+    assert(d.cache_suspended&&!cache);
+    pending_attempts=attempts;
+    for(unsigned i=0;i<10;++i){
+        ph_status_cache_budget(&d,reserve+PH_STATUS_CACHE_MAX-1,reserve);
+        assert(ph_query(&d,"status.get",PH_WIRE_MSGPACK,actual,sizeof(actual))==sizes[0]);
+        assert(d.cache_suspended&&!cache&&attempts==pending_attempts);
+    }
+    ph_status_cache_budget(&d,reserve+PH_STATUS_CACHE_MAX,reserve);
+    assert(!d.cache_suspended);
+    assert(ph_query(&d,"status.get",PH_WIRE_MSGPACK,actual,sizeof(actual))==sizes[0]);
+    assert(cache&&allocations==releases+1);
     for(unsigned cycle=0;cycle<100;++cycle){
         ph_device_set_maintenance(&d,true);
         assert(!cache&&!d.status_cache&&!d.status_size&&allocations==releases);

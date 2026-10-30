@@ -8,12 +8,13 @@ const {t}=I18N;
 // only the immutable product upper bound, never optional hardware capabilities.
 const PRODUCT=/* @device-product */null;
 const a1=PRODUCT===null||PRODUCT==='a1',m1=PRODUCT===null||PRODUCT==='m1',tc1=PRODUCT===null||PRODUCT==='tc1';
+const sockets=tc1||PRODUCT==='s30-v1b';
 const {h,fieldRow,icon,toast,run,switchRow,seg,daysPicker,presetDays,daysText,hhmm,toMinutes,info,card,pageHead,slider,clone}=UI;
 
 /* Action kinds a schedule or button event can run, keyed by action name. */
 const ACTIONS={
  ...(a1?{'fan.panel':'op.fan_panel','fan.mode.set':'auto.mode','fan.mode.toggle':'auto.toggle'}:{}),
- ...(tc1?{'outlet.set':'op.outlet'}:{}),
+ ...(sockets?{'outlet.set':'op.outlet'}:{}),
  ...(a1?{'fan.set':'op.fan','light.set':'op.light'}:{}),
  ...(a1||tc1?{'child_lock.set':'op.child_lock'}:{}),
  ...(tc1?{'indicator.set':'op.indicator'}:{}),
@@ -25,8 +26,8 @@ const actKey=a=>ACTIONS[a]||'op.none';
 const sel=(parent,labelKey,options)=>{const s=h('select',{},options.map(([v,k])=>h('option',{value:v},typeof k==='function'?k():t(k))));parent.append(fieldRow(labelKey,s));return s;};
 
 /* Shared action editor: one control group per supported action. */
-function actionEditor(host,{keys=false}={}){
- const caps=UI.caps||{},available=Object.keys(ACTIONS).filter(a=>(caps.actions||[]).includes(a)&&(!keys||a!=='wake_alarm.start')&&(keys||!['light_effect.next','light_effect.select','filter.reset','fan.mode.toggle','fan.panel'].includes(a)));
+function actionEditor(host,{keys=false,only=null}={}){
+ const caps=UI.caps||{},available=Object.keys(ACTIONS).filter(a=>(!only||only.includes(a))&&(caps.actions||[]).includes(a)&&(!keys||a!=='wake_alarm.start')&&(keys||!['light_effect.next','light_effect.select','filter.reset','fan.mode.toggle','fan.panel'].includes(a)));
  const box=h('div',{class:'stack'}),fields=h('div',{class:'stack'});
  const options=[...(keys?[['none','op.none']]:[]),...available.map(a=>[a,actKey(a)])];
  const pick=keys?sel(host,'btn.action',options):seg(options,v=>draw(v),{full:true});
@@ -39,8 +40,8 @@ function actionEditor(host,{keys=false}={}){
   current=a;fields.replaceChildren();read=()=>({});
   if(a==='none'||!a)return;
   const parts=[];
-  if(tc1&&a==='outlet.set'){
-   const index=sel(fields,'op.target',[['all','op.all'],...[0,1,2,3,4,5].map(i=>[String(i),()=>t('tc1.socket_n',{n:i+1})])]);
+  if(sockets&&a==='outlet.set'&&(caps.outlet_count??6)>1){
+   const index=sel(fields,'op.target',[['all','op.all'],...Array.from({length:caps.outlet_count??6},(_,i)=>[String(i),()=>t('tc1.socket_n',{n:i+1})])]);
    if(params.index!=null)index.value=String(params.index);
    parts.push(()=>index.value==='all'?{}:{index:Number(index.value)});
   }
@@ -113,11 +114,12 @@ function schedulePage(dev){
  const atValue=sec=>new Date((sec+tz())*1000).toISOString().slice(0,16);
  const atText=sec=>atValue(sec).replace('T',' ');
  const duration=sec=>{sec=Math.max(0,Math.ceil(sec));return String(Math.floor(sec/3600)).padStart(2,'0')+':'+String(Math.floor(sec/60)%60).padStart(2,'0')+':'+String(sec%60).padStart(2,'0');};
- const when=x=>x.trigger==='countdown'?duration(x.enabled?Math.max(0,x.remaining_seconds-(performance.now()-x.received)/1000):x.seconds):x.trigger==='once'?atText(x.at):hhmm(x.minute);
+ const when=x=>x.trigger==='power'?t('sch.power_summary',{comparison:t('sch.'+x.comparison),watts:x.power_milliwatts/1000,seconds:x.seconds}):x.trigger==='countdown'?duration(x.enabled?Math.max(0,x.remaining_seconds-(performance.now()-x.received)/1000):x.seconds):x.trigger==='once'?atText(x.at):hhmm(x.minute);
  const timeValue=()=>{const d=new Date(Date.now()+tz()*1000+86400000);return d.toISOString().slice(0,16);};
 
  const enabled=switchRow(null,'sch.enabled_row');
- const trigger=seg([['weekly','sch.weekly'],['once','day.once'],...(UI.caps.schedule_countdown?[['countdown','sch.countdown']]:[])],v=>syncTrigger(),{full:true});
+ const modes=UI.caps.schedule_triggers||['weekly','once',...(UI.caps.schedule_countdown?['countdown']:[])];
+ const trigger=seg(modes.map(v=>[v,v==='power'?'sch.power':v==='weekly'?'sch.weekly':v==='countdown'?'sch.countdown':'day.once']),v=>syncTrigger(),{full:true});
  const days=daysPicker('sdays',127),time=h('input',{type:'time',value:'08:00'}),at=h('input',{type:'datetime-local',value:timeValue()});
  const weekly=h('div',{class:'field'},h('div',{class:'row between'},h('span',{class:'label',i18n:'sch.repeat'}),presetDays(days)),days);
  const once=h('label',{class:'field',hidden:true},h('span',{i18n:'sch.when'}),at);
@@ -125,7 +127,15 @@ function schedulePage(dev){
  const editorHost=h('div',{class:'stack'});
  const hours=h('input',{type:'number',min:0,max:24,step:1,value:0,'aria-label':t('sch.hours')}),minutes=h('input',{type:'number',min:0,max:59,step:1,value:30,'aria-label':t('sch.minutes')});
  const countdown=h('div',{class:'stack',hidden:true},h('div',{class:'fields'},fieldRow('sch.hours',hours),fieldRow('sch.minutes',minutes)),info('sch.countdown_hint'));
- function syncTrigger(){const mode=trigger.value;weekly.hidden=mode!=='weekly';once.hidden=mode!=='once';minute.hidden=mode!=='weekly';countdown.hidden=mode!=='countdown';hours.disabled=minutes.disabled=mode!=='countdown';editorHost.hidden=mode==='countdown';}
+ const powerHost=h('div',{class:'stack',hidden:true});
+ const comparison=sel(powerHost,'sch.power_condition',[['below','sch.below'],['above','sch.above']]);comparison.dataset.powerComparison='';
+ const watts=h('input',{type:'number',min:0,max:25000,step:0.001,value:5,required:true,'data-power-watts':''});
+ const seconds=h('input',{type:'number',min:0,max:604800,step:1,value:600,required:true,'data-power-seconds':''});
+ powerHost.append(fieldRow('sch.power_watts',watts),fieldRow('sch.power_seconds',seconds),info('sch.power_hint'));
+ if((UI.caps.outlet_count??1)>1)powerHost.append(info('sch.power_total'));
+ const powerActionHost=h('div',{class:'stack','data-power-action':''});powerHost.append(powerActionHost);
+ const powerEditor=modes.includes('power')?actionEditor(powerActionHost,{only:['outlet.set']}):null;
+ function syncTrigger(){const mode=trigger.value;weekly.hidden=mode!=='weekly';once.hidden=mode!=='once';minute.hidden=mode!=='weekly';countdown.hidden=mode!=='countdown';hours.disabled=minutes.disabled=mode!=='countdown';editorHost.hidden=mode==='countdown'||mode==='power';powerHost.hidden=mode!=='power';watts.disabled=seconds.disabled=mode!=='power';}
 
  const editor=actionEditor(editorHost);
  const save=h('button',{type:'submit',class:'btn primary'});
@@ -133,7 +143,7 @@ function schedulePage(dev){
  labelSave();
  function row(x){
   return h('div',{class:'item schedule-task'},h('b',{class:'time num','data-countdown-id':x.trigger==='countdown'?x.id:null},when(x)),
-   h('div',{class:'grow'},h('b',{},t(actKey(x.action))+(x.trigger==='weekly'?' · '+daysText(x.days):' · '+t(x.trigger==='countdown'?'sch.countdown':'day.once'))),
+   h('div',{class:'grow'},h('b',{},t(actKey(x.action))+(x.trigger==='weekly'?' · '+daysText(x.days):' · '+t(x.trigger==='power'?'sch.power':x.trigger==='countdown'?'sch.countdown':'day.once'))),
     h('span',{},t('sch.state.'+(x.state||'waiting'))+(x.enabled?'':' · '+t('sch.off')))),
    h('span',{class:'badge '+(x.enabled?'ok':'')},t(x.enabled?'sch.enabled':'sch.disabled')),
    h('div',{class:'row',style:'gap:4px'},
@@ -149,25 +159,29 @@ function schedulePage(dev){
     h('div',{class:'row',style:'gap:4px'},
      h('button',{type:'button',class:'btn ghost',onclick:()=>run(null,()=>{offset=Math.max(0,offset-8);return load();},null)},h('span',{i18n:'common.prev'})),
      h('button',{type:'button',class:'btn ghost',onclick:()=>run(null,()=>{offset=d.next;return load();},null),disabled:offset+8>=d.count},h('span',{i18n:'common.next'})))));
-  banner.hidden=!(UI.state&&UI.state.time_synced===false);
+  banner.hidden=!modes.some(v=>v==='weekly'||v==='once')||!(UI.state&&UI.state.time_synced===false);
  }
- function reset(){delete form.dataset.dirty;editing=0;enabled.querySelector('input').checked=true;trigger.set('weekly');syncTrigger();days.setMask(127);time.value='08:00';at.value=timeValue();editor.set('none');hours.value=0;minutes.value=30;labelSave();}
+ function reset(){delete form.dataset.dirty;editing=0;enabled.querySelector('input').checked=true;trigger.set(modes[0]);syncTrigger();days.setMask(127);time.value='08:00';at.value=timeValue();editor.set('none');powerEditor?.set('outlet.set',{on:false});comparison.value='below';watts.value=5;seconds.value=600;hours.value=0;minutes.value=30;labelSave();}
  function edit(x){
   editing=x.id;enabled.querySelector('input').checked=!!x.enabled;trigger.set(x.trigger);syncTrigger();
-  days.setMask(x.days);time.value=hhmm(x.minute);at.value=x.trigger==='once'?atValue(x.at):timeValue();hours.value=Math.floor((x.seconds||0)/3600);minutes.value=Math.floor((x.seconds||0)%3600/60);editor.set(x.action,x.params);labelSave();
+  days.setMask(x.days??127);time.value=hhmm(x.minute??480);at.value=x.trigger==='once'?atValue(x.at):timeValue();hours.value=Math.floor((x.seconds||0)/3600);minutes.value=Math.floor((x.seconds||0)%3600/60);editor.set(x.action,x.params);
+  if(x.trigger==='power'){comparison.value=x.comparison;watts.value=x.power_milliwatts/1000;seconds.value=x.seconds;powerEditor.set(x.action,x.params);}labelSave();
   form.dispatchEvent(new Event('change',{bubbles:true}));box.scrollIntoView({block:'start'});
  }
  const banner=h('div',{class:'banner warn',hidden:true},icon('clock'),h('span',{i18n:'sch.no_clock'}));
- const form=h('form',{class:'subcard stack'},h('h3',{i18n:'sch.new'}),trigger,weekly,once,minute,countdown,editorHost,enabled,
+ const form=h('form',{class:'subcard stack'},h('h3',{i18n:'sch.new'}),trigger,weekly,once,minute,countdown,...(powerEditor?[powerHost]:[]),editorHost,enabled,
   h('div',{class:'form-actions'},save,
    h('button',{type:'button',class:'btn ghost',onclick:reset},h('span',{i18n:'sch.reset'}))));
  form.dataset.preserveDraft='1';
  form.addEventListener('submit',e=>{e.preventDefault();run(save,UI.saveDraft(form,async()=>{
-  const a=trigger.value==='countdown'?{action:'fan.set',params:{on:false}}:editor.get();
+  const a=trigger.value==='power'?powerEditor.get():trigger.value==='countdown'?{action:'fan.set',params:{on:false}}:editor.get();
   if(a.action==='none')throw Error(t('sch.pick_action'));
   const task={enabled:enabled.querySelector('input').checked,trigger:trigger.value,...a};
   if(editing)task.id=editing;
-  if(trigger.value==='countdown'){const h=Number(hours.value),m=Number(minutes.value);task.seconds=h*3600+m*60;if(!Number.isInteger(h)||!Number.isInteger(m)||h<0||m<0||m>59||task.seconds<60||task.seconds>86400)throw Error(t('sch.duration_invalid'));}
+  if(trigger.value==='power'){
+   const w=Number(watts.value),s=Number(seconds.value);task.power_milliwatts=Math.round(w*1000);task.seconds=s;task.comparison=comparison.value;
+   if(!watts.value.trim()||!seconds.value.trim()||!Number.isFinite(w)||w<0||w>25000||!Number.isInteger(s)||s<0||s>604800)throw Error(t('sch.power_invalid'));
+  }else if(trigger.value==='countdown'){const h=Number(hours.value),m=Number(minutes.value);task.seconds=h*3600+m*60;if(!Number.isInteger(h)||!Number.isInteger(m)||h<0||m<0||m>59||task.seconds<60||task.seconds>86400)throw Error(t('sch.duration_invalid'));}
   else if(trigger.value==='weekly'){const d=days.mask();if(!d)throw Error(t('sch.pick_day'));task.days=d;task.minute=toMinutes(time.value);}
   else{
    // datetime-local contains device wall time, not browser-local time. Parse as
@@ -180,8 +194,8 @@ function schedulePage(dev){
   const version=form.closest('[data-settings-page]')?.dataset.editVersion;
   await command('schedules.put',task);if(form.closest('[data-settings-page]')?.dataset.editVersion===version)reset();await load();toast(t('sch.added'));
  }),null);});
- enabled.querySelector('input').checked=true;trigger.set('weekly');syncTrigger();
- box.append(form,info('sch.hint'));
+ enabled.querySelector('input').checked=true;trigger.set(modes[0]);syncTrigger();powerEditor?.set('outlet.set',{on:false});
+ box.append(form,...(modes.some(v=>v==='weekly'||v==='once')?[info('sch.hint')]:[]));
  return {el:h('div',{class:'stack'},pageHead(dev.nav?.schedule||'nav.schedule',dev.scheduleLead),banner,card('sch.list',null,listBox,box)),
   async show(options={}){if(!UI.state)await UI.reload();await load(options);},
   status(){if(!box.isConnected||box.closest('[data-settings-page]')?.hidden)return;

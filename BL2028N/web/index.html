@@ -68,7 +68,8 @@
     </details>
    </section>
    <section class="card"><div class="card-head"><h2 data-i18n="s30.boot_power"></h2></div>
-    <form id="bootForm" class="stack"><label class="switch"><span class="text"><b data-i18n="s30.boot_on"></b></span><input type="checkbox" role="switch" id="bootPower"></label>
+    <form id="bootForm" class="stack"><label class="field"><span data-i18n="s30.boot_power"></span><select id="bootPower"><option value="off" data-i18n="op.off"></option><option value="on" data-i18n="op.on"></option><option value="restore" data-i18n="s30.boot_restore"></option></select></label>
+     <p class="help" data-i18n="s30.boot_hint"></p>
      <div class="form-actions"><button class="btn primary" type="submit" data-i18n="common.save"></button></div></form></section>
    <div data-slot="auth"></div>
   </div>

@@ -324,6 +324,8 @@ def overlay(app, sdk, run, boot_trace=False, stock_layout=True):
     target=app/'src/phicomm'
     shutil.rmtree(target,ignore_errors=True)
     shutil.copytree(HERE/'src',target/'src',dirs_exist_ok=True)
+    # Pure fixed-width business logic, shared with TC1; no foreign RTOS/runtime.
+    shutil.copy2(HERE.parent/'common/power_trigger.h',target/'src/power_trigger.h')
     shutil.copytree(HERE/'protocol',target/'protocol',dirs_exist_ok=True)
     shutil.copytree(HERE/'common',target/'common',dirs_exist_ok=True)
     # This SDK flattens object names into Debug/obj. Preserve both shared cores.
@@ -414,6 +416,7 @@ def package(run, version, log, metadata, boot_trace=False, stock_layout=True):
     shutil.copy2(sdk/'platforms/bk7231n/bk7231n_os/tuya.map',run/'linker.map')
     (dest/'SHA256SUMS').write_text(''.join(f'{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}\n' for p in sorted(dest.iterdir()) if p.suffix in ['.bin','.rbl']))
     inputs={str(p.relative_to(HERE)):hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(HERE.rglob('*')) if p.is_file() and '__pycache__' not in str(p)}
+    inputs['../common/power_trigger.h']=hashlib.sha256((HERE.parent/'common/power_trigger.h').read_bytes()).hexdigest()
     project_head=subprocess.check_output(['git','rev-parse','HEAD'],cwd=HERE,text=True).strip()
     branch=subprocess.check_output(['git','branch','--show-current'],cwd=HERE,text=True).strip()
     dirty=bool(subprocess.check_output(['git','status','--porcelain'],cwd=HERE,text=True))

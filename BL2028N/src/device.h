@@ -2,11 +2,13 @@
 #pragma once
 #include "../protocol/typed_wire.h"
 #include "meter.h"
+#include "power_trigger.h"
 #define PH_MODEL "s30-v1b"
 #define PH_INPUT_MAX 1200u
 #define PH_OUTPUT_MAX 4096u
 #define PH_STATUS_CACHE_MAX 2048u
-#define PH_STORE_MAGIC UINT32_C(0x334c4250)
+#define PH_STORE_MAGIC UINT32_C(0x344c4250)
+enum { PH_BOOT_OFF, PH_BOOT_ON, PH_BOOT_RESTORE };
 typedef struct {
     uint32_t magic, revision;
     uint8_t child_lock, indicator, power_on, calibrated;
@@ -14,6 +16,9 @@ typedef struct {
     ph_auth_store auth;
     uint32_t report_seconds;
     char name[64], socket_name[64];
+    uint16_t power_next_id;
+    uint8_t last_relay, reserved;
+    ph_power_rule power_rules[PH_POWER_RULES_MAX];
 } ph_settings;
 typedef struct {
     void *user;
@@ -46,6 +51,9 @@ typedef struct {
     size_t status_size;
     uint32_t cache_sequence,cache_frames,cache_network,cache_builds;
     unsigned cache_fields;
+    ph_power_trigger power_triggers[PH_POWER_RULES_MAX];
+    uint32_t power_polled_at;
+    bool power_polled;
 } ph_device;
 bool ph_binary_format(ph_wire_format);
 void ph_settings_default(ph_settings *);
@@ -75,4 +83,6 @@ void ph_diag_uint(ph_writer *, unsigned, uint32_t);
 void ph_diag_int(ph_writer *, unsigned, int32_t);
 void phw_cached_fields(ph_writer *, const void *, size_t);
 bool ph_local_toggle(ph_device *);
+/* Worker tick: caller holds the same product mutex as command dispatch. */
+void ph_power_poll(ph_device *);
 bool ph_topic_root(const char *username, const char *mac, char *, size_t);

@@ -11,12 +11,17 @@ void ph_settings_default(ph_settings *s) {
     s->coefficients[0]=PH_METER_DEFAULT_VOLTAGE_COEFFICIENT;
     s->coefficients[1]=PH_METER_DEFAULT_CURRENT_COEFFICIENT;
     s->coefficients[2]=PH_METER_DEFAULT_POWER_COEFFICIENT;
-    ph_auth_store_empty(&s->auth);
+    s->power_next_id=1;ph_auth_store_empty(&s->auth);
 }
 bool ph_settings_valid(const ph_settings *s) {
-    return s && s->magic == PH_STORE_MAGIC && s->revision <= INT32_MAX &&
+    if(!s || !s->power_next_id || s->last_relay>1 || s->reserved)return false;
+    for(unsigned i=0;i<PH_POWER_RULES_MAX;i++)if(s->power_rules[i].id){
+        if(!ph_power_rule_valid(&s->power_rules[i],1))return false;
+        for(unsigned j=0;j<i;j++)if(s->power_rules[j].id==s->power_rules[i].id)return false;
+    }
+    return s->magic == PH_STORE_MAGIC && s->revision <= INT32_MAX &&
         s->report_seconds>=1 && s->report_seconds<=3600 && memchr(s->name,0,sizeof(s->name)) && memchr(s->socket_name,0,sizeof(s->socket_name)) &&
-        s->child_lock <= 1 && s->indicator <= 1 && s->power_on <= 1 &&
+        s->child_lock <= 1 && s->indicator <= 1 && s->power_on <= PH_BOOT_RESTORE &&
         s->calibrated <= 1 && isfinite(s->energy_kwh) && s->energy_kwh>=0 && s->energy_kwh<=1e9 &&
         isfinite(s->coefficients[0]) && s->coefficients[0]>=0.001 && s->coefficients[0]<=100 &&
         isfinite(s->coefficients[1]) && s->coefficients[1]>=0.001 && s->coefficients[1]<=100 &&
@@ -57,7 +62,8 @@ bool ph_device_init(ph_device *d, const ph_device_ops *ops, const ph_settings *s
     if (s && ph_settings_valid(s)) d->settings = *s; else ph_settings_default(&d->settings);
     strcpy(d->mac, mac); strcpy(d->version, version); d->boot = boot;
     ph_meter_init(&d->meter,d->settings.energy_kwh);
-    d->relay = d->settings.power_on; d->ops.relay(d->ops.user, d->relay); return true;
+    d->relay = d->settings.power_on==PH_BOOT_RESTORE?d->settings.last_relay:d->settings.power_on==PH_BOOT_ON;
+    d->ops.relay(d->ops.user, d->relay); return true;
 }
 static void identity(ph_device *d, ph_writer *w) {
     phw_text(w, "name", d->settings.name);
@@ -78,7 +84,8 @@ static void status_build(ph_device *d, ph_writer *w) {
     phw_begin(w, "socket_states", true); phw_bool(w, NULL, d->relay); phw_end(w);
     phw_begin(w, "socket_names", true); phw_text(w, NULL, d->settings.socket_name); phw_end(w);
     phw_bool(w,"led_enabled",d->settings.indicator); phw_u32(w,"report_seconds",d->settings.report_seconds);
-    phw_bool(w,"power_on",d->settings.power_on);
+    phw_bool(w,"power_on",d->settings.power_on==PH_BOOT_ON);
+    phw_text(w,"power_on_mode",d->settings.power_on==PH_BOOT_RESTORE?"restore":d->settings.power_on==PH_BOOT_ON?"on":"off");
     phw_number(w,"voltage_coefficient",d->settings.coefficients[0]);
     phw_number(w,"current_coefficient",d->settings.coefficients[1]);
     phw_number(w,"power_coefficient",d->settings.coefficients[2]);
@@ -136,12 +143,15 @@ void ph_diagnostics(ph_device *d,ph_writer *w) {
     if(d->ops.diagnostics)d->ops.diagnostics(d->ops.user,w);
     phw_end(w);
 }
-static const char *actions[] = {"info.get", "status.get", "capabilities.get", "diagnostics.get", "config.get", "config.set", "name.set", "power.get", "outlet.set", "indicator.set", "child_lock.set", "system.reboot", "system.reset", "wifi.scan", "wifi.scan.get", "ota.start"};
+static const char *actions[] = {"info.get", "status.get", "capabilities.get", "diagnostics.get", "config.get", "config.set", "name.set", "power.get", "outlet.set", "indicator.set", "child_lock.set", "system.reboot", "system.reset", "wifi.scan", "wifi.scan.get", "ota.start", "schedules.get", "schedules.put", "schedules.enable", "schedules.delete"};
 void ph_capabilities(ph_device *d,ph_writer *w) {
     identity(d,w);phw_text(w, "mqtt_protocol", "openiot");phw_u32(w, "mqtt_protocol_version", 2);
     phw_begin(w, "actions", true);
     for (unsigned i = 0; i < sizeof(actions)/sizeof(*actions); ++i) phw_text(w, NULL, actions[i]);
     phw_end(w); phw_u32(w, "outlet_count", 1); phw_u32(w, "udp_port", 11288);
+    phw_begin(w,"power_on_modes",true);phw_text(w,NULL,"off");phw_text(w,NULL,"on");phw_text(w,NULL,"restore");phw_end(w);
+    phw_begin(w,"schedule_triggers",true);phw_text(w,NULL,"power");phw_end(w);
+    phw_u32(w,"power_schedule_capacity",PH_POWER_RULES_MAX);
     phw_bool(w, "local_auth", true); phw_bool(w, "power_metering_supported", true);
     phw_text(w,"metering_chip","HLW8032");
     phw_bool(w,"ota_upload",false); phw_bool(w,"config_backup",false); phw_bool(w,"config_recovery",false);
@@ -189,6 +199,93 @@ static size_t canonical_params(const ph_value *p, void *out, size_t size) {
     }
     phw_end(&w);return phw_finish_fixed(&w);
 }
+static bool integer(const ph_value *p,const char *key,int64_t *out,int64_t lo,int64_t hi){
+    ph_value v;return phv_get(p,key,&v)&&phv_int(&v,out)&&*out>=lo&&*out<=hi;
+}
+static bool persist(ph_device *d,ph_settings *next){
+    if(next->revision==INT32_MAX)return false;
+    ++next->revision;next->energy_kwh=d->meter.energy_kwh;
+    if(next->power_on==PH_BOOT_RESTORE)next->last_relay=d->relay;
+    if(!d->ops.save(d->ops.user,next))return false;
+    d->settings=*next;++d->sequence;return true;
+}
+/* This direct business path is shared by transport commands and local rules. */
+static __attribute__((noinline)) const char *outlet_set(ph_device *d,bool on){
+    if(d->local_hold&&(uint32_t)(d->ops.now(d->ops.user)-d->local_at)<1500u)return "busy";
+    if(d->relay==on)return "accepted";
+    if(d->settings.power_on==PH_BOOT_RESTORE){
+        ph_settings next=d->settings;next.last_relay=on;next.energy_kwh=d->meter.energy_kwh;
+        if(!d->ops.save(d->ops.user,&next))return "storage_error";
+        d->settings=next;
+    }
+    d->relay=on;++d->sequence;d->ops.relay(d->ops.user,on);return "accepted";
+}
+static void power_rule_fields(ph_device *d,unsigned slot,ph_writer *w){
+    const ph_power_rule *r=&d->settings.power_rules[slot];
+    phw_u32(w,"id",r->id);phw_bool(w,"enabled",r->enabled);phw_text(w,"trigger","power");
+    phw_text(w,"comparison",r->comparison==PH_POWER_ABOVE?"above":"below");
+    phw_u32(w,"power_milliwatts",r->power_milliwatts);phw_u32(w,"seconds",r->seconds);
+    phw_text(w,"state",d->power_triggers[slot].fired?"executed":"waiting");
+    phw_text(w,"action","outlet.set");phw_begin(w,"params",false);
+    phw_bool(w,"on",r->on);if(r->target!=255)phw_u32(w,"index",r->target);phw_end(w);
+}
+static __attribute__((noinline)) const char *power_schedules(ph_device *d,const char *action,const ph_value *p,ph_writer *w){
+    int64_t id=0,n;ph_value v;bool enabled;
+    if(!strcmp(action,"schedules.get")){
+        int64_t offset=0,limit=8;
+        if(!phv_keys(p,"|offset||limit|") || (phv_get(p,"offset",&v)&&!integer(p,"offset",&offset,0,PH_POWER_RULES_MAX)) ||
+           (phv_get(p,"limit",&v)&&!integer(p,"limit",&limit,1,8)))return "invalid_params";
+        unsigned count=0,next=PH_POWER_RULES_MAX;for(unsigned i=0;i<PH_POWER_RULES_MAX;i++)count+=d->settings.power_rules[i].id!=0;
+        phw_begin(w,"items",true);
+        for(unsigned i=(unsigned)offset;i<PH_POWER_RULES_MAX&&limit;i++)if(d->settings.power_rules[i].id){
+            phw_begin(w,NULL,false);power_rule_fields(d,i,w);phw_end(w);--limit;next=i+1;
+        }
+        phw_end(w);phw_u32(w,"next",next);phw_u32(w,"count",count);phw_u32(w,"capacity",PH_POWER_RULES_MAX);return "ok";
+    }
+    ph_settings next=d->settings;int slot=-1;
+    if(phv_get(p,"id",&v)&&!integer(p,"id",&id,1,65535))return "invalid_params";
+    for(unsigned i=0;i<PH_POWER_RULES_MAX;i++)if(id?next.power_rules[i].id==id:!next.power_rules[i].id){slot=(int)i;break;}
+    if(!strcmp(action,"schedules.put")){
+        ph_power_rule r;memset(&r,0,sizeof(r));r.target=255;
+        if(!phv_keys(p,"|id||enabled||trigger||comparison||power_milliwatts||seconds||action||params|") ||
+           !boolean(p,"enabled",&enabled) || !phv_get(p,"trigger",&v)||!phv_equal_text(&v,"power"))return "invalid_params";
+        r.enabled=enabled;
+        if(!phv_get(p,"comparison",&v))return "invalid_params";
+        if(phv_equal_text(&v,"above"))r.comparison=PH_POWER_ABOVE;
+        else if(phv_equal_text(&v,"below"))r.comparison=PH_POWER_BELOW;else return "invalid_params";
+        if(!integer(p,"power_milliwatts",&n,0,PH_POWER_LIMIT_MW))return "invalid_params";r.power_milliwatts=(uint32_t)n;
+        if(!integer(p,"seconds",&n,0,PH_POWER_DURATION_MAX))return "invalid_params";r.seconds=(uint32_t)n;
+        if(!phv_get(p,"action",&v)||!phv_equal_text(&v,"outlet.set")||!phv_get(p,"params",&v)||v.kind!=PHV_MAP)return "invalid_params";
+        if(!phv_keys(&v,"|index||on|")||!boolean(&v,"on",&enabled))return "invalid_params";r.on=enabled;
+        ph_value index;if(phv_get(&v,"index",&index)){if(!integer(&v,"index",&n,0,0))return "invalid_params";r.target=0;}
+        if(slot<0)return id?"not_found":"capacity";
+        if(!id){bool used;do{id=next.power_next_id++;if(!next.power_next_id)next.power_next_id=1;used=false;
+            for(unsigned i=0;i<PH_POWER_RULES_MAX;i++)used|=next.power_rules[i].id==id;
+        }while(used);}
+        r.id=(uint16_t)id;next.power_rules[slot]=r;
+    }else if(!strcmp(action,"schedules.enable")||!strcmp(action,"schedules.delete")){
+        bool enable=!strcmp(action,"schedules.enable");
+        if(!id||!phv_keys(p,enable?"|id||enabled|":"|id|")||(enable&&!boolean(p,"enabled",&enabled)))return "invalid_params";
+        if(slot<0)return "not_found";
+        if(enable)next.power_rules[slot].enabled=enabled;else memset(&next.power_rules[slot],0,sizeof(next.power_rules[slot]));
+    }else return "unsupported";
+    if(!persist(d,&next))return "storage_error";
+    memset(&d->power_triggers[slot],0,sizeof(d->power_triggers[slot]));
+    if(!strcmp(action,"schedules.put"))power_rule_fields(d,(unsigned)slot,w);
+    return "accepted";
+}
+void ph_power_poll(ph_device *d){
+    uint32_t now=d->ops.now(d->ops.user);
+    if(d->power_polled&&(uint32_t)(now-d->power_polled_at)<1000u)return;
+    bool continuous=!d->power_polled||(uint32_t)(now-d->power_polled_at)<3000u;
+    d->power_polled=true;d->power_polled_at=now;
+    bool valid=continuous&&!d->maintenance&&(ph_meter_fields(&d->meter,now)&4)!=0;
+    uint32_t mw=valid?(uint32_t)(d->meter.value[2]*1000.0+0.5):0;
+    for(unsigned i=0;i<PH_POWER_RULES_MAX;i++){
+        const ph_power_rule *r=&d->settings.power_rules[i];
+        if(r->id&&ph_power_trigger_due(&d->power_triggers[i],r,now,valid,mw)&&!strcmp(outlet_set(d,r->on),"accepted"))ph_power_trigger_commit(&d->power_triggers[i]);
+    }
+}
 /* Keep the settings snapshot out of read-only and platform-action call
  * chains. In particular, password commits do not need a second auth store. */
 static __attribute__((noinline)) const char *execute_settings(ph_device *d,const char *section,
@@ -200,12 +297,18 @@ static __attribute__((noinline)) const char *execute_settings(ph_device *d,const
     } else {
         if(!strcmp(section,"device")||!strcmp(section,"name.set")) {
             if(!strcmp(section,"name.set")&&(!phv_keys(values,"|name|")||!phv_get(values,"name",&v)||v.kind!=PHV_TEXT||!v.size))return "invalid_params";
-            if(!values->count || !phv_keys(values,"|name||power_on|"))return "invalid_params";
+            if(!values->count || !phv_keys(values,"|name||power_on||power_on_mode|"))return "invalid_params";
             if(phv_get(values,"name",&v)) {
                 if(!phv_text(&v,next.name,sizeof(next.name)))return "invalid_params";
                 if(!*next.name)strcpy(next.name,"S30-V1B");
             }
             if(phv_get(values,"power_on",&v)){if(!phv_bool(&v,&on))return "invalid_params";next.power_on=on;}
+            if(phv_get(values,"power_on_mode",&v)) {
+                ph_value old;if(phv_get(values,"power_on",&old))return "invalid_params";
+                if(phv_equal_text(&v,"off"))next.power_on=PH_BOOT_OFF;
+                else if(phv_equal_text(&v,"on"))next.power_on=PH_BOOT_ON;
+                else if(phv_equal_text(&v,"restore"))next.power_on=PH_BOOT_RESTORE;else return "invalid_params";
+            }
         } else if(!strcmp(section,"socket")) {
             int64_t index;
             if(values->count!=2 || !phv_keys(values,"|index||name|") ||
@@ -227,6 +330,7 @@ static __attribute__((noinline)) const char *execute_settings(ph_device *d,const
     if (next.revision == INT32_MAX) return "busy";
     ++next.revision;
     next.energy_kwh=d->meter.energy_kwh;
+    if(next.power_on==PH_BOOT_RESTORE)next.last_relay=d->relay;
     if (!d->ops.save(d->ops.user, &next)) return "storage_error";
     d->settings = next;
     /* Recompute fresh samples immediately when calibration changes. */
@@ -259,12 +363,13 @@ static const char *execute(ph_device *d, const char *action, const ph_value *p, 
         int64_t index;
         if (!phv_keys(p, "|index||on|") || !boolean(p, "on", &on) ||
             (phv_get(p, "index", &v) && (!phv_int(&v, &index) || index != 0))) return "invalid_params";
-        if (d->local_hold && (uint32_t)(d->ops.now(d->ops.user)-d->local_at) < 1500u) return "busy";
-        d->relay = on; ++d->sequence; d->ops.relay(d->ops.user, on); phw_bool(w, "on", on); return "accepted";
+        const char *code=outlet_set(d,on);if(!strcmp(code,"accepted"))phw_bool(w,"on",on);return code;
     }
+    if(!strcmp(action,"schedules.get"))return power_schedules(d,action,p,w);
     if (!strcmp(action,"wifi.scan.get"))return d->ops.platform_action?d->ops.platform_action(d->ops.user,action,p,w,admin):"unsupported";
     if (!admin && !(control&&(!strcmp(action,"indicator.set")||!strcmp(action,"child_lock.set")||!strcmp(action,"name.set")))) return "unauthorized";
     if(!strcmp(action,"name.set"))return execute_settings(d,action,p,w);
+    if(!strncmp(action,"schedules.",10))return power_schedules(d,action,p,w);
     if (!strcmp(action, "system.reboot")) {
         if (p->count) return "invalid_params";
         if (!d->ops.reboot) return "unsupported";
@@ -373,5 +478,6 @@ size_t ph_command_context(ph_device *d,const char *action,const ph_value *params
 bool ph_local_toggle(ph_device *d) {
     if (d->settings.child_lock || d->maintenance) return false;
     d->relay = !d->relay; d->local_at = d->ops.now(d->ops.user); d->local_hold = true;
+    for(unsigned i=0;i<PH_POWER_RULES_MAX;i++)ph_power_trigger_override(&d->power_triggers[i]);
     ++d->sequence; d->ops.relay(d->ops.user, d->relay); return true;
 }

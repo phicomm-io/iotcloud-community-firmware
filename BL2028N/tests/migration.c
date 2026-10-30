@@ -171,9 +171,53 @@ static void ota_checkpoint_tests(void) {
  bl_ota_pending=false;ota_url[0]=0;ph_device_set_maintenance(&bl_device,false);
  puts("PASS: OTA commits current energy before acceptance and leaves maintenance off on persistence failure");
 }
+static void v3_migration_tests(void) {
+ ph_store_v3_record old;memset(&old,0,sizeof(old));
+ old.magic=old.settings.magic=PH_STORE_V3_MAGIC;old.size=sizeof(old);
+ old.settings.revision=33;old.settings.indicator=1;old.settings.power_on=1;old.settings.calibrated=1;
+ old.settings.coefficients[0]=1.25;old.settings.coefficients[1]=2.5;old.settings.coefficients[2]=3.75;
+ old.settings.energy_kwh=123.5;old.settings.report_seconds=7;strcpy(old.settings.name,"Desk");strcpy(old.settings.socket_name,"Printer");
+ old.settings.auth.magic=PH_AUTH_STORE_MAGIC;old.settings.auth.version=PH_AUTH_STORE_VERSION;
+ old.settings.auth.count=old.settings.auth.remote_count=12;
+ for(unsigned i=0;i<12;++i) {
+  ph_store_old_pair *a=&old.settings.auth.pairs[i],*b=&old.settings.auth.remote[i];
+  snprintf(a->peer,sizeof(a->peer),"22334455%04x",i);snprintf(b->peer,sizeof(b->peer),"66778899%04x",i);
+  memset(a->key,i+1,16);memset(b->key,i+33,16);a->scopes=b->scopes=1+i%7;
+ }
+ old.credential_magic=PH_CREDENTIAL_MAGIC;strcpy(old.password,"test-admin-password");
+ old.crc=crc32(&old.settings,sizeof(old)-offsetof(ph_store_v3_record,settings));
+ for(unsigned stage=1;stage<=5;++stage) {
+  write_bytes(&old,sizeof(old));fail_stage=stage;ph_settings actual;assert(load(&actual));
+  assert(actual.magic==PH_STORE_MAGIC&&actual.power_next_id==1&&!actual.last_relay);
+  assert(actual.auth.count==12&&actual.auth.remote_count==12&&!memcmp(&actual.auth,&old.settings.auth,sizeof(actual.auth)));
+  assert(actual.revision==33&&actual.report_seconds==7&&actual.energy_kwh==123.5&&!strcmp(actual.name,"Desk")&&!strcmp(actual.socket_name,"Printer"));
+  assert(credential_owned&&!strcmp(committed_password,old.password)&&!strcmp(CFG_GetWebPassword(),old.password));
+  assert_old_file((const unsigned char *)&old,sizeof(old));fail_stage=0;
+  assert(load(&actual));ph_settings reread;assert(load(&reread)&&!memcmp(&reread,&actual,sizeof(actual)));
+  disk_record current;assert(read_bytes((unsigned char *)&current,sizeof(current))==sizeof(current));
+  assert(current.magic==PH_STORE_MAGIC&&current.credential_magic==PH_CREDENTIAL_MAGIC&&!strcmp(current.password,old.password));
+ }
+ old.password[0]=1;old.crc=crc32(&old.settings,sizeof(old)-offsetof(ph_store_v3_record,settings));
+ write_bytes(&old,sizeof(old));ph_settings actual;assert(!load(&actual));assert_old_file((const unsigned char *)&old,sizeof(old));
+ puts("PASS: frozen rc.5 v3 imports inbound/outbound pairs, password, names, calibration and energy; five failed-save stages preserve old bytes and retry to v4");
+}
+static void restore_policy_tests(void) {
+ ph_settings input,actual;ph_settings_default(&input);input.power_on=PH_BOOT_RESTORE;input.last_relay=0;
+ input.power_rules[0]=(ph_power_rule){.id=1,.enabled=1,.comparison=PH_POWER_BELOW,.power_milliwatts=5000,.seconds=600,.target=255,.on=0};input.power_next_id=2;
+ assert(save(NULL,&input)&&load(&actual)&&!memcmp(&input,&actual,sizeof(input)));
+ ph_device_ops ops={NULL,now,save,set_relay,reboot,network_info,platform_action,diagnostics,network_stamp};
+ assert(ph_device_init(&bl_device,&ops,&actual,"aabbccddeeff","1.0.0-rc.5-test",99)&&!bl_device.relay);
+ assert(ph_local_toggle(&bl_device)&&bl_device.relay);assert(checkpoint(1000,true));
+ assert(load(&actual)&&actual.last_relay&&actual.power_on==PH_BOOT_RESTORE);
+ assert(ph_device_init(&bl_device,&ops,&actual,"aabbccddeeff","1.0.0-rc.5-test",100)&&bl_device.relay);
+ assert(ph_local_toggle(&bl_device)&&!bl_device.relay);fail_stage=2;
+ assert(!checkpoint(2000,true));assert(load(&actual)&&actual.last_relay);
+ fail_stage=0;assert(checkpoint(3000,true));assert(load(&actual)&&!actual.last_relay);
+ puts("PASS: rules and restore policy roundtrip; local relay checkpoint survives reboot and failed writes retry");
+}
 int main(int argc,char **argv) {
  assert(argc==2);snprintf(store_dir,sizeof(store_dir),"%s",argv[1]);mkdir(store_dir,0700);init_lfs(1);
- fixture_migration_tests();rejection_tests();meter_default_migration_tests();current_record_tests();ota_checkpoint_tests();
+ fixture_migration_tests();rejection_tests();meter_default_migration_tests();current_record_tests();ota_checkpoint_tests();v3_migration_tests();restore_policy_tests();
  write_bytes(s30_legacy_v2,sizeof(s30_legacy_v2));PH_BL_Init(1);
  assert(bl_ready&&safe_boot&&!bl_device.relay&&bl_device.settings.power_on);assert_imported(&bl_device.settings,2);
  puts("PASS: safe boot retains saved policy and all migrated settings with relay off");

@@ -4,6 +4,7 @@
 #include "port.h"
 #include "ha_number.h"
 #include "boot_trace.h"
+#include "sensor.h"
 #include "../protocol/mqtt/session.h"
 #include "../protocol/busy_reply.h"
 #include "../protocol/memory_budget.h"
@@ -22,6 +23,9 @@ static int application_error;
 static uint32_t sensor_retry_at;
 static bool sensor_subscribed;
 static bool initialized;
+/* Sensor publication has its own cursor and starts with retained descriptors. */
+static uint32_t sensor_sequence,sensor_at,sensor_wait;
+static bool sensor_metadata,sensor_started;
 /* Storage belongs to the already-reserved owner stack. It remains alive across
  * deferred receipt retries; native/HA publication must wait for that receipt. */
 static unsigned char *workspace;
@@ -171,6 +175,22 @@ static size_t ha_state(char *out,size_t cap) {
  int n=snprintf(out,cap,"{\"on\":\"%s\",\"voltage\":%s,\"current\":%s,\"power_watts\":%s,\"energy_kwh\":%s,\"meter_valid\":\"%s\",\"version\":\"%s\"}",on?"ON":"OFF",numbers[0],numbers[1],numbers[2],numbers[3],fields==7?"ON":"OFF",bl_device.version);
  return n>0&&(size_t)n<cap?(size_t)n:0;
 }
+static int sensor_cycle(void *bytes,size_t capacity,char *topic,size_t topic_capacity){
+ uint32_t now=ph_os_now();
+ if(sensor_started&&(uint32_t)(now-sensor_at)<sensor_wait)return MQTT_SUCCESS;
+ sensor_started=true;sensor_at=now;sensor_wait=1000;
+ bool metadata=!sensor_metadata;uint32_t sequence=sensor_sequence+1u;if(!sequence)sequence=1;
+ if(!mqtt_aux(&account,"sensor",account.mac,topic,topic_capacity)||
+    !mqtt_format(topic+strlen(topic),topic_capacity-strlen(topic),metadata?"/metadata":"/state"))return MQTT_FAILURE;
+ ph_writer w;struct printbuf buffer;
+ if(!phw_init_fixed(&w,PH_WIRE_MSGPACK,&buffer,bytes,capacity))return MQTT_FAILURE;
+ bl_lock();if(metadata)ph_meter_sensor_metadata(&bl_device,&w);else ph_meter_sensor_state(&bl_device,&w,sequence,now);bl_unlock();
+ size_t n=phw_finish_fixed(&w);if(!n)return MQTT_FAILURE;
+ if(!publish_room(topic,n))return PH_MQTT_MORE;
+ int rc=ph_mqtt_publish_bytes(topic,bytes,n,metadata);
+ if(rc==MQTT_SUCCESS){if(metadata){sensor_metadata=true;sensor_started=false;}else{sensor_sequence=sequence;sensor_wait=5000;}}
+ return rc;
+}
 static int publish_cycle(void *unused) {
  (void)unused;if(application_error<0)return application_error;
  if(ph_mqtt_receipt_pending())return PH_MQTT_MORE;
@@ -201,17 +221,23 @@ static int publish_cycle(void *unused) {
   rc=ph_mqtt_publish_bytes(topic,bytes,n,true);if(rc!=MQTT_SUCCESS)return rc;
   publication|=1u<<channel;last_sequence[channel]=sequence;last_fields[channel]=fields;sent_at[channel]=ph_os_now();
  }
+ rc=sensor_cycle(bytes,PH_OUTPUT_MAX,topic,sizeof(topic));
+ if(rc!=MQTT_SUCCESS)return rc;
  return waiting?PH_MQTT_MORE:MQTT_SUCCESS;
 }
-static int initial(void *unused) {discovery=publication=0;application_error=0;sensor_subscribed=false;sensor_retry_at=ph_os_now();return publish_cycle(unused);}
+static int initial(void *unused) {discovery=publication=0;application_error=0;sensor_metadata=sensor_started=false;sensor_subscribed=false;sensor_retry_at=ph_os_now();return publish_cycle(unused);}
 /* Optional discovery/full-state packets can wait for heap recovery while the
  * subscribed connection and its compact HA state are already operational. */
 static bool initial_ready(void *unused) {(void)unused;return (publication&2u)!=0;}
 static void closing(void *unused,bool connected,int rc) {(void)unused;(void)connected;(void)rc;cache_budget();sensor_subscribed=false;sensor_retry_at=0;bl_lock();bl_mqtt_status=MQTT_DISCONNECTED;memset(bl_auth.mqtt,0,sizeof(bl_auth.mqtt));bl_unlock();memset(password,0,sizeof(password));}
 static void event(void *unused,unsigned state,int rc) {
- (void)unused;unsigned status=state==PH_MQTT_READY?MQTT_READY:state==PH_MQTT_CONNECTING?MQTT_CONNECTING:
-  (rc==4||rc==5)?MQTT_AUTH_FAILED:MQTT_DISCONNECTED;
- bl_lock();bl_mqtt_status=status;if(state==PH_MQTT_STOPPED)bl_mqtt_quiescent=true;bl_unlock();
+ (void)unused;bl_lock();
+ if(state==PH_MQTT_READY)bl_mqtt_status=MQTT_READY;
+ else if(state==PH_MQTT_CONNECTING)bl_mqtt_status=MQTT_CONNECTING;
+ else if(state==PH_MQTT_SUBSCRIBE_ERROR&&rc==MQTT_SUBSCRIPTION_REJECTED)bl_mqtt_status=MQTT_WAITING_ACL;
+ else if(state==PH_MQTT_CONNECT_ERROR&&(rc==4||rc==5))bl_mqtt_status=MQTT_AUTH_FAILED;
+ else if(state!=PH_MQTT_STOPPED||(bl_mqtt_status!=MQTT_WAITING_ACL&&bl_mqtt_status!=MQTT_AUTH_FAILED))bl_mqtt_status=MQTT_DISCONNECTED;
+ if(state==PH_MQTT_STOPPED)bl_mqtt_quiescent=true;bl_unlock();
 }
 static void owner(beken_thread_arg_t arg) {
  unsigned char storage[PH_OUTPUT_MAX];workspace=storage;

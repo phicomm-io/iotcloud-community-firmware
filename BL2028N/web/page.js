@@ -91,15 +91,15 @@ UI.onSubmit($('socketNamesForm'),async()=>{
 },'common.saved');
 UI.onSubmit($('reportForm'),()=>api('/mqtt/report/freq',{seconds:Number($('reportSeconds').value)}));
 UI.onSubmit($('coefForm'),()=>command('config.set',{section:'meter',values:{voltage_coefficient:Number($('voltageCoef').value),current_coefficient:Number($('currentCoef').value),power_coefficient:Number($('powerCoef').value)}}));
-UI.onSubmit($('bootForm'),()=>command('config.set',{section:'device',values:{power_on:$('bootPower').checked}}));
+UI.onSubmit($('bootForm'),()=>command('config.set',{section:'device',values:UI.caps.power_on_modes?{power_on_mode:$('bootPower').value}:{power_on:$('bootPower').value==='on'}}));
 let initialized=false;
 
 UI.start({
  model:'S30-V1B',kindKey:'kind.s30',icon:'plug',mqttHostMax:127,mqttPasswordMax:127,factoryReset:true,
  otaName:'BL2028N_OTA.rbl',haHintKey:'s30.ha_hint',otaHintKey:'s30.ota_hint',buttonHintKey:'s30.button_hint',
  interval:5000,
- groups:[['grp.network',['network','mqtt']],['grp.device',['device']],['grp.system',['firmware','diagnostics','maintenance']]],
- nav:{network:'nav.wifi',mqtt:'nav.mqtt',device:'nav.general',firmware:'nav.firmware',diagnostics:'nav.diagnostics',maintenance:'nav.maintenance'},
+ groups:[['grp.network',['network','mqtt']],['grp.device',['device']],['grp.auto',['schedule']],['grp.system',['firmware','diagnostics','maintenance']]],
+ nav:{network:'nav.wifi',mqtt:'nav.mqtt',device:'nav.general',schedule:'nav.schedule',firmware:'nav.firmware',diagnostics:'nav.diagnostics',maintenance:'nav.maintenance'},
  pages:{device:{}},
  diagGroups:[['diag.g_sockets',['socket_names','socket_states','child_lock','led_enabled','power_on']],
   ['diag.g_power',['report_seconds','voltage_coefficient','current_coefficient','power_coefficient','metering']]],
@@ -110,7 +110,8 @@ UI.start({
   if(!initialized){nameInputs.forEach((x,i)=>x.value=(s.socket_names||[])[i]||'');
    $('reportSeconds').value=s.report_seconds;
    $('voltageCoef').value=s.voltage_coefficient;$('currentCoef').value=s.current_coefficient;$('powerCoef').value=s.power_coefficient;
-   $('bootPower').checked=!!s.power_on;initialized=true;}
+   $('bootPower').value=s.power_on_mode||(s.power_on?'on':'off');
+   $('bootPower').querySelector('[value="restore"]').hidden=!(UI.caps.power_on_modes||[]).includes('restore');initialized=true;}
  }
 });
 I18N.onChange(()=>{

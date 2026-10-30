@@ -11,7 +11,7 @@ def main():
  verify_sources()
  p=argparse.ArgumentParser(description=__doc__);p.add_argument('--run-dir',type=Path,required=True);p.add_argument('--stock-backup',type=Path);a=p.parse_args();run=a.run_dir.resolve();run.mkdir(parents=True,exist_ok=True)
  clang=shutil.which('clang');assert clang
- flags=[clang,'-std=c99','-g','-O1','-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-Wno-sign-compare','-fsanitize=address,undefined','-fno-omit-frame-pointer']
+ flags=[clang,'-std=c99','-g','-O1','-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-Wno-sign-compare','-fsanitize=address,undefined','-fno-omit-frame-pointer','-I',str(ROOT.parent/'common')]
  def command(argv,name):
   with (run/name).open('w') as log:subprocess.run(list(map(str,argv)),stdout=log,stderr=subprocess.STDOUT,check=True)
  core=[ROOT/'src'/('ph_'+n+'.c') for n in ('device','meter','udp','wire')]+[ROOT/'protocol/local_auth.c']

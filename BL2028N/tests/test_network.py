@@ -43,12 +43,12 @@ def lan_pair_resume(sock,password,peer='001122334455',boot=888):
 class Broker:
  def __init__(self):
   self.listener=socket.socket();self.listener.bind(('127.0.0.1',0));self.listener.listen(3)
-  self.port=self.listener.getsockname()[1];self.messages=[];self.acks=set();self.subscriptions=set();self.subscription_events=[];self.cv=threading.Condition();self.lock=threading.Lock();self.error=None;self.sock=None;self.stopping=False;self.root='';self.connections=0
+  self.port=self.listener.getsockname()[1];self.messages=[];self.acks=set();self.subscriptions=set();self.subscription_events=[];self.cv=threading.Condition();self.lock=threading.Lock();self.error=None;self.sock=None;self.stopping=False;self.root='';self.connections=0;self.deny_subscriptions=False
   self.thread=threading.Thread(target=self.run,daemon=True);self.thread.start()
  def send(self,data):
   with self.lock:self.sock.sendall(data)
  def suback(self,topic,identifier):
-  return b'\x90\x03'+identifier+b'\x01'
+  return b'\x90\x03'+identifier+(b'\x80' if self.deny_subscriptions else b'\x01')
  def run(self):
   try:
    while not self.stopping:
@@ -116,6 +116,10 @@ class Broker:
    except OSError:pass
    self.sock.close()
   self.listener.close();self.thread.join(3)
+ def disconnect(self):
+  if self.sock:
+   try:self.sock.shutdown(socket.SHUT_RDWR)
+   except OSError:pass
 
 class Network(unittest.TestCase):
  @classmethod
@@ -225,9 +229,23 @@ class Network(unittest.TestCase):
   for key in ('outlet_0','voltage','current','power','energy','meter_valid'):
    _,p,r=self.broker.wait('_'+key+'/config');self.assertTrue(r);cfg=json.loads(p);self.assertEqual(cfg['device']['model'],'S30-V1B');self.assertIn('u_746573742d75736572',cfg['unique_id'])
   _,p,_=self.broker.wait('/ha/state');self.assertIsNone(json.loads(p)['voltage'])
-  _,p,_=self.broker.wait('/state',lambda p:p[:1] not in (b'{',));self.assertEqual(UNPACK[1](p)['protocol'],'openiot')
+  _,p,_=self.broker.wait('/state',lambda p:p[:1]!=b'{' and decode(p).get('protocol')=='openiot');self.assertEqual(UNPACK[1](p)['protocol'],'openiot')
+  self.broker.publish('command',PACK[1]({'request_id':'mqtt-full-status','action':'status.get','params':{}}),41)
+  _,p,r=self.broker.wait('/result',lambda p:UNPACK[1](p).get('request_id')=='mqtt-full-status')
+  result=UNPACK[1](p);self.assertFalse(r);self.assertEqual(result['code'],'ok');self.assertEqual(result['data']['model'],'s30-v1b');self.broker.ack(41)
+  sensor='phicomm/v2/u_746573742d75736572/sensor/aabbccddeeff'
+  topic,p,retained=self.broker.wait(sensor+'/metadata');self.assertTrue(retained)
+  metadata=UNPACK[1](p);self.assertEqual(metadata['schema'],3)
+  self.assertEqual(metadata['device_id'],'aabbccddeeff')
+  self.assertEqual({key:field['unit'] for key,field in metadata['fields'].items()},dict(voltage='V',current='A',power='W',energy='kWh'))
+  topic,p,retained=self.broker.wait(sensor+'/state');self.assertFalse(retained)
+  sample=UNPACK[1](p);self.assertEqual(sample['schema'],3)
+  self.assertEqual(sample['boot'],metadata['boot']);self.assertEqual(sample['descriptor_revision'],metadata['descriptor_revision'])
+  self.assertGreater(sample['sequence'],0)
+  for field in sample['sensors'].values():self.assertFalse(field['valid']);self.assertIsNone(field['value'])
+  _,p,retained=self.broker.wait(sensor+'/state',lambda p:UNPACK[1](p)['sequence']>sample['sequence']);self.assertFalse(retained)
   self.broker.publish('command',PACK[2]({'request_id':'mqtt-off','action':'outlet.set','params':{'on':False}}),42,fragment=True)
-  _,p,r=self.broker.wait('/result',lambda p:UNPACK[2](p).get('request_id')=='mqtt-off');self.assertFalse(r);self.assertEqual(UNPACK[2](p)['code'],'accepted');self.broker.ack(42);self.assertFalse(self.api()['power'])
+  _,p,r=self.broker.wait('/result',lambda p:decode(p).get('request_id')=='mqtt-off');self.assertFalse(r);self.assertEqual(UNPACK[2](p)['code'],'accepted');self.broker.ack(42);self.assertFalse(self.api()['power'])
   self.broker.publish('command',PACK[1]({'request_id':'retained-on','action':'outlet.set','params':{'on':True}}),43,retained=True);self.broker.ack(43);self.assertFalse(self.api()['power'])
   self.broker.publish('command',b'{"action":"outlet.set","params":{"on":true}}',44);self.broker.ack(44);self.assertFalse(self.api()['power'])
   self.broker.publish('ha/set',b'ON',45);self.broker.ack(45)
@@ -300,6 +318,8 @@ class Network(unittest.TestCase):
    self.assertEqual(lan_exchange(s,old)['code'],'auth_required')
    self.sensor_grant(old['src'],old['boot'],old['token'],1031)
    self.assertEqual(self.lan_result(s,old)['code'],'ok')
+  _,p,retained=self.broker.wait('phicomm/v2/u_6e6578742d75736572/sensor/aabbccddeeff/metadata');self.assertTrue(retained);self.assertEqual(UNPACK[1](p)['schema'],3)
+  _,p,retained=self.broker.wait('phicomm/v2/u_6e6578742d75736572/sensor/aabbccddeeff/state');self.assertFalse(retained);self.assertGreater(UNPACK[1](p)['sequence'],1)
  def test_06_password_change_and_empty_password(self):
   self.assertEqual(self.command('config.set',{'section':'auth','values':{'password':'new-password'}},'password-new')['code'],'accepted')
   self.assertEqual(self.http('GET','/api/v1/status',headers={'Authorization':'Bearer '+self.token})[0],401)
@@ -352,6 +372,24 @@ class Network(unittest.TestCase):
    s.settimeout(2);s.sendto(PACK[1](discovery),('127.0.0.1',11288))
    self.assertEqual(UNPACK[1](s.recv(4096))['code'],'ok')
   self.assertEqual(self.command('outlet.set',{'on':power},'after-ota')['code'],'accepted')
+ def test_09_denied_subscription_is_visible_and_recovers(self):
+  self.broker.deny_subscriptions=True;self.broker.disconnect()
+  try:
+   end=time.monotonic()+20
+   while time.monotonic()<end:
+    state=self.api()
+    if state['mqtt_status']=='waiting_acl':break
+    time.sleep(.1)
+   self.assertEqual(state['mqtt_status'],'waiting_acl');self.assertFalse(state['mqtt_connected'])
+   diag=dict(self.api('diagnostics')['fields'])
+   self.assertEqual(diag[DIAGNOSTICS['mqtt_last_error']],-4)
+  finally:self.broker.deny_subscriptions=False
+  end=time.monotonic()+20
+  while time.monotonic()<end:
+   state=self.api()
+   if state['mqtt_status']=='ready':break
+   time.sleep(.1)
+  self.assertEqual(state['mqtt_status'],'ready');self.assertTrue(state['mqtt_connected'])
 
 if __name__=='__main__':
  p=argparse.ArgumentParser();p.add_argument('host',type=Path);p.add_argument('run',type=Path);a,rest=p.parse_known_args();HOST=a.host.resolve();RUN=a.run.resolve();unittest.main(argv=[__file__]+rest,verbosity=2)
