@@ -54,6 +54,18 @@ def check_tc1_ota_numeric(frames, budget):
 # independent HA and OTA gates. Native HTTP command/status paths use neither.
 HTTP_BUDGET=12288
 HTTP_RESERVE=3072
+HTTP_MODEL_BUDGETS={'A1':9216,'M1':12288,'TC1':8192}
+
+
+def model_http_budget(root,model):
+    constants={'A1':'PH_HTTP_A1_STACK_BYTES','M1':'PH_HTTP_DEFAULT_STACK_BYTES',
+               'TC1':'PH_HTTP_TC1_STACK_BYTES'}
+    if model not in constants:raise ValueError('Unknown HTTP model: '+model)
+    source=(Path(root)/'common/httpd/http.h').read_text()
+    match=re.search(r'#define '+constants[model]+r' (\d+)u',source)
+    if not match or int(match.group(1))!=HTTP_MODEL_BUDGETS[model]:
+        raise ValueError('HTTP model stack must match audited budget: '+model)
+    return int(match.group(1))
 
 
 def linked_symbols(output):
@@ -106,13 +118,13 @@ def read_frames(modules,model):
 
 def http_paths(frames,model,symbols=None):
     try:
-        from .status_stack import emitted, status_paths, diagnostic_paths, writer_paths
+        from .status_stack import emitted, status_paths, diagnostic_paths, writer_paths, feature_read_paths
     except ImportError:
-        from status_stack import emitted, status_paths, diagnostic_paths, writer_paths
+        from status_stack import emitted, status_paths, diagnostic_paths, writer_paths, feature_read_paths
     if model not in ('A1','M1','TC1'):raise ValueError('Unknown HTTP model: '+model)
     extra=lambda names:emitted(frames,names,symbols)
     owner=['owner','ph_http_server_step']
-    get=owner+extra(['acquire','action'])+['begin','prepare','ph_http_query','service_query_mp','service_command_mp']
+    get=owner+extra(['acquire','action'])+['begin','prepare','ph_http_query','service_query_mp']
     post=owner+extra(['read_body'])+['complete','ph_http_command_mp','service_command_mp']
     paths={}
     for label,prefix in [('GET',get),('POST',post)]:
@@ -123,6 +135,7 @@ def http_paths(frames,model,symbols=None):
             paths['HTTP '+label+' decode '+api]=(HTTP_RESERVE,decode+[api]+extra(['phv_iter','phv_child_reader','phv_next','phv_scan','phv_duplicate','phv_skip_validated','phv_head','binary_token','binary_take','ph_wire_utf8']))
         dispatch=prefix+['mp_dispatch']
         for key,(names,reserve) in diagnostic_paths(frames,model,'HTTP '+label+' diagnostics',dispatch,HTTP_RESERVE,symbols).items():paths[key]=(reserve,names)
+        for key,(names,reserve) in feature_read_paths(frames,model,'HTTP '+label+' feature config',dispatch,HTTP_RESERVE,symbols).items():paths[key]=(reserve,names)
         status=dispatch+['mp_cached','service_product_status_mp']
         for key,(names,reserve) in status_paths(frames,model,'HTTP '+label+' full status',status,HTTP_RESERVE,symbols=symbols).items():paths[key]=(reserve,names)
         cached=dispatch+['mp_envelope','phw_cached_value']+extra(['phw_prefix','phw_quote','phw_head','phw_bytes'])
@@ -163,8 +176,9 @@ def http_paths(frames,model,symbols=None):
     return paths
 
 
-def validate_paths(paths,frames,budget=HTTP_BUDGET):
-    if budget!=HTTP_BUDGET:raise ValueError('HTTP stack budget must remain 12288 bytes')
+def validate_paths(paths,frames,budget=HTTP_BUDGET,model=None):
+    expected=HTTP_MODEL_BUDGETS[model] if model is not None else HTTP_BUDGET
+    if budget!=expected:raise ValueError('HTTP stack budget must remain '+str(expected)+' bytes')
     for label,(reserve,names) in paths.items():
         if reserve<HTTP_RESERVE:raise ValueError(label+': insufficient SDK/crypto reserve')
         unbounded=set(names)&getattr(frames,'unbounded',{}).keys()
@@ -212,11 +226,11 @@ def check(modules,model,nm,elf):
     check_symbols(symbols)
     frames=read_frames(modules,model)
     root=Path(__file__).resolve().parents[1]
-    budget=int(re.search(r'#define PH_HTTP_STACK_BYTES (\d+)u',(root/'common/httpd/http.h').read_text()).group(1))
+    budget=model_http_budget(root,model)
     paths=http_paths(frames,model,symbols)
     from check_mqtt_core import context_frames, check as check_mqtt
     context_frames(names for reserve,names in paths.values())
-    validate_paths(paths,frames,budget)
+    validate_paths(paths,frames,budget,model)
     check_mqtt(frames,model)
     if model=='TC1':
         source=(root/'TC1/ota_server/ota_server.c').read_text()

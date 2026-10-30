@@ -101,3 +101,23 @@ def diagnostic_paths(frames,model,label,prefix,reserve,symbols=None):
         paths.update(writer_paths(frames,label+' '+helper+' value',call,reserve,
                                   symbols,kinds={kind},finalize=False))
     return paths
+
+
+def feature_read_paths(frames,model,label,prefix,reserve,symbols=None):
+    """Frozen config sizing and writing are siblings, never two snapshots."""
+    if model not in ('A1','M1'):return {}
+    actual=emitted(frames,['feature_domain_get_mp'],symbols)
+    if not actual:return {}
+    owner=prefix+['service_product_mp','feature_mp']+actual
+    schema=owner+emitted(frames,['feature_domain_config_mp','feature_config_fields_mp',
+        'linkage_encode_mp','encode_fields_mp','feature_light_speed'],symbols)
+    paths=writer_paths(frames,label+' fields',schema,reserve,symbols)
+    live=owner+emitted(frames,['feature_domain_live_mp','feature_average_fields_mp'],symbols)
+    paths.update(writer_paths(frames,label+' live fields',live,reserve,symbols))
+    for aggregate in ['feature_aggregate','feature_co2_aggregate']:
+        tail=emitted(frames,[aggregate],symbols)
+        if tail:paths[label+' live '+aggregate]=(live+tail,reserve)
+    for name,tail in [('freeze init',['phw_init_fixed']),('freeze copy',['phw_cached_value']+emitted(frames,['phw_prefix','phw_bytes'],symbols)+['ph_buf_reserve','ph_wire_malloc']),('measure init',['phw_init_measure']),('measure finish',['phw_finish_fixed']),
+                      ('exact reserve',['ph_buf_reserve','ph_wire_malloc'])]:
+        paths[label+' '+name]=(owner+tail,reserve)
+    return paths

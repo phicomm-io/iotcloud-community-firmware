@@ -18,7 +18,14 @@ void ph_http_wire_take(ph_http_product *p,ph_http_exchange *x,ph_buf *wire)
 void ph_http_command_mp(ph_http_product *p,ph_http_exchange *x,const void *request,size_t length)
 {ph_http_wire_take(p,x,service_command_mp(request,length));}
 void ph_http_query(ph_http_product *p,ph_http_exchange *x,const char *action)
-{ph_http_wire_take(p,x,service_query_mp(action));}
+{
+ ph_http_wire_take(p,x,service_query_mp(action));
+ /* Small error envelope only: normal cached status never incurs a decode.
+  * Return HTTP 503 for a temporary service refusal. */
+ if(p->wire&&p->wire->len<128){ph_value root,code;
+  if(phv_parse(PH_WIRE_MSGPACK,p->wire->buf,p->wire->len,&root)&&phv_get(&root,"code",&code)&&phv_equal_text(&code,"busy"))x->response.status=503;
+ }
+}
 void ph_http_message(ph_http_product *p,ph_http_exchange *x,unsigned status,const char *text)
 {
  ph_writer w;ph_buf storage;

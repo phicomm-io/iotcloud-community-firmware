@@ -33,6 +33,16 @@ class LanStackGate(unittest.TestCase):
   frames,paths=self.fixture('TC1');frames.unbounded['tc1_lan_worker']='dynamic'
   with self.assertRaisesRegex(ValueError,'unbounded'):validate_lan_paths(paths,frames)
 
+ def test_tc1_smaller_budget_is_checked_without_reducing_reserve(self):
+  frames,paths=self.fixture('TC1')
+  with contextlib.redirect_stdout(io.StringIO()):validate_lan_paths(paths,frames,8192)
+  frames['tc1_lan_worker']=6500
+  with contextlib.redirect_stdout(io.StringIO()),self.assertRaisesRegex(ValueError,'>8192'):
+   validate_lan_paths(paths,frames,8192)
+  # The same frames fit the old 12 KiB allocation: the gate must use TC1's
+  # actual smaller allocation, rather than quietly checking the old ceiling.
+  with contextlib.redirect_stdout(io.StringIO()):validate_lan_paths(paths,frames,12288)
+
  def test_all_products_collect_sdk_stack_frames(self):
   root=Path(__file__).resolve().parents[1]
   for model in ('A1','M1','TC1'):

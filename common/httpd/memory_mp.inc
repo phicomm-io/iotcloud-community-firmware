@@ -4,10 +4,12 @@ static void memory_response(ph_http_exchange *x)
  const micoMemInfo_t *memory=MicoGetMemoryInfo();
  if(!memory){ph_http_message(&product,x,503,"unavailable");return;}
  micoMemInfo_t m=*memory;service_memory_state_t b;service_memory_snapshot(&b);
- ph_writer w;if(!phw_init(&w,PH_WIRE_MSGPACK)){ph_http_busy(x);return;}
+ ph_writer w;if(!phw_init(&w,PH_WIRE_MSGPACK)){
+  goto emergency;
+ }
  phw_begin(&w,NULL,false);phw_text(&w,"code","ok");phw_begin(&w,"data",false);
  phw_int(&w,"free_memory",m.free_memory);phw_int(&w,"allocated_memory",m.allocted_memory);phw_int(&w,"free_memory_chunks",m.num_of_chunks);phw_u32(&w,"uptime_ms",mico_rtos_get_time());
- phw_u32(&w,"memory_reserve",SERVICE_MEMORY_RESERVE);phw_u32(&w,"memory_reserved",b.reserved);phw_u32(&w,"memory_active",b.active);phw_u32(&w,"memory_waiting",b.waiting);phw_u32(&w,"memory_denied",b.denied);phw_u32(&w,"minimum_sampled_free",b.minimum_free);
+ phw_u32(&w,"http_core_stack_bytes",PH_HTTP_STACK_BYTES);phw_u32(&w,"memory_reserve",SERVICE_MEMORY_RESERVE);phw_u32(&w,"memory_reserved",b.reserved);phw_u32(&w,"memory_active",b.active);phw_u32(&w,"memory_waiting",b.waiting);phw_u32(&w,"memory_denied",b.denied);phw_u32(&w,"minimum_sampled_free",b.minimum_free);
  phw_u32(&w,"json_live_blocks",b.json_live);phw_u32(&w,"json_peak_blocks",b.json_peak);phw_u32(&w,"json_alloc_failures",b.json_failed);phw_u32(&w,"json_guard_denied",b.json_denied);
  phw_u32(&w,"wire_alloc_failures",b.wire_alloc_failed);phw_u32(&w,"wire_guard_denied",b.wire_guard_denied);
  phw_u32(&w,"mqtt_pending",b.mqtt_pending);phw_u32(&w,"mqtt_peak",b.mqtt_peak);phw_u32(&w,"mqtt_overflow",b.mqtt_overflow);phw_u32(&w,"mqtt_max_delay_ms",b.mqtt_max_delay);
@@ -19,5 +21,22 @@ static void memory_response(ph_http_exchange *x)
 #ifdef PH_HTTP_MEMORY_EXTRA
  PH_HTTP_MEMORY_EXTRA(&w);
 #endif
- ph_mqtt_diag_write_mp(&w,true);phw_end(&w);phw_end(&w);ph_http_wire_take(&product,x,phw_take(&w));
+ ph_mqtt_diag_write_mp(&w,true);phw_end(&w);phw_end(&w);
+ ph_buf *out=phw_take(&w);if(out){ph_http_wire_take(&product,x,out);return;}
+emergency:;
+  /* Diagnostics must remain readable when ordinary binary allocations are
+   * denied. Reuse HTTP-owned scratch without consuming the RTOS reserve. */
+  ph_buf fixed;phw_init_fixed(&w,PH_WIRE_MSGPACK,&fixed,product.scalar,sizeof(product.scalar));
+  phw_begin(&w,NULL,false);phw_text(&w,"code","ok");phw_begin(&w,"data",false);
+  phw_bool(&w,"low_memory",true);phw_int(&w,"free_memory",m.free_memory);
+  phw_int(&w,"allocated_memory",m.allocted_memory);phw_int(&w,"free_memory_chunks",m.num_of_chunks);
+  phw_u32(&w,"http_core_stack_bytes",PH_HTTP_STACK_BYTES);phw_u32(&w,"memory_reserve",SERVICE_MEMORY_RESERVE);phw_u32(&w,"uptime_ms",mico_rtos_get_time());
+  phw_u32(&w,"memory_denied",b.denied);phw_u32(&w,"wire_guard_denied",b.wire_guard_denied);
+#ifdef PH_HTTP_MEMORY_EXTRA
+  PH_HTTP_MEMORY_EXTRA(&w);
+#endif
+  phw_end(&w);phw_end(&w);size_t n=phw_finish_fixed(&w);
+  if(!n){ph_http_busy(x);return;}
+  x->response.status=200;x->response.type="application/msgpack";
+  x->response.body=product.scalar;x->response.length=n;return;
 }

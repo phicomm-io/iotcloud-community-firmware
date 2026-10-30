@@ -29,9 +29,9 @@ def context_frames(paths):
 def check(frames,model):
     """Native MP only. Explicit public frames; bounded HA recursion is separate."""
     try:
-        from .status_stack import emitted, status_paths, diagnostic_paths, writer_paths
+        from .status_stack import emitted, status_paths, diagnostic_paths, writer_paths, feature_read_paths
     except ImportError:
-        from status_stack import emitted, status_paths, diagnostic_paths, writer_paths
+        from status_stack import emitted, status_paths, diagnostic_paths, writer_paths, feature_read_paths
     source=(Path(__file__).resolve().parents[1]/('TC1/mqtt_server/user_mqtt_client.c' if model=='TC1' else model+'/mqtt.c')).read_text()
     budget=int(re.search(r'mqtt_thread_stack_size = (0x[0-9a-fA-F]+|[0-9]+)',source).group(1),0) if model=='TC1' else int(re.search(r'mqtt_worker,\s*(\d+),',source).group(1))
     reserve=3072 if model=='TC1' else 4096
@@ -50,12 +50,15 @@ def check(frames,model):
     paths['MQTT result receipt']=(incoming+['service_mqtt_input','ph_mqtt_receipt_send_bytes']+extra(['receipt_retry','publish_owned'])+transport,reserve)
     decode=['phv_parse']+extra(['phv_scan','phv_duplicate','phv_head','phv_skip_validated','binary_token','binary_take','ph_wire_utf8'])
     paths['MQTT input decode']=(incoming+['service_mqtt_input','service_mqtt_command_mp']+extra(['mp_decode'])+decode,reserve)
+    paths['MQTT read admission decode']=(incoming+['service_mqtt_input','service_readonly_mp']+extra(['mp_decode'])+decode,reserve)
+    paths['MQTT read result credit']=(incoming+['service_mqtt_input','ph_mqtt_query_consumed']+extra(['ph_mqtt_credit_replace','ph_mqtt_is_owner','current','mutex_lock']),reserve)
+    paths.update(feature_read_paths(frames,model,'MQTT feature config',dispatch,reserve))
     for helper in ('service_product_mp','service_product_capabilities_mp','service_product_info_mp'):
         prefix=dispatch+[helper]+extra(['tc1_product_inner_mp'] if model=='TC1' else ['smp_config','smp_control'])
         paths.update(writer_paths(frames,'MQTT '+helper,prefix,reserve))
         paths['MQTT '+helper+' validation']=(prefix+['phv_get']+extra(['phv_scan','phv_iter','phv_next','phv_duplicate','phv_head','phv_skip_validated','binary_token','binary_take']),reserve)
     paths.update(diagnostic_paths(frames,model,'MQTT command diagnostics',dispatch,reserve))
-    periodic=cycle+extra(['states_step','states','snapshot_step'])+['service_mqtt_snapshot']+extra(['publish_query'])+['service_query_mp','service_command_mp','mp_dispatch']
+    periodic=cycle+extra(['states_step','states','snapshot_step'])+['service_mqtt_snapshot']+extra(['publish_query'])+['service_query_mp','mp_dispatch']
     for label,prefix in [('command',dispatch),('periodic',periodic)]:
         paths.update(status_paths(frames,model,'MQTT '+label+' status',prefix+['mp_cached','service_product_status_mp'],reserve))
         paths['MQTT '+label+' cache']=(prefix+['mp_envelope','phw_cached_value']+extra(['phw_prefix','phw_bytes'])+['ph_buf_reserve','ph_wire_malloc'],reserve)
@@ -121,6 +124,7 @@ def check(frames,model):
             # Owner lookup and live-heap admission are sequential sibling tails;
             # Paho/helper/allocator interiors stay in the unchanged SDK reserve.
             storage = retained + ['mqtt_buffer_allocation_permit']
+            paths['MQTT '+label+' buffer failure owner'] = (retained + ['mqtt_buffer_allocation_failed','ph_mqtt_owner','current','mutex_lock'], reserve)
             paths['MQTT '+label+' buffer owner'] = (storage + ['ph_mqtt_owner','current','mutex_lock'], reserve)
             paths['MQTT '+label+' buffer heap'] = (storage + (['permit'] if 'permit' in frames else []), reserve)
         if label == 'client init': continue  # allocation only, no socket callbacks

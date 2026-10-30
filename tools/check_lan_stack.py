@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Actual LAN owner paths; fixed 12 KiB tasks and 2 KiB SDK/crypto reserve.
+"""Actual LAN owner paths; product-bounded tasks and 2 KiB SDK/crypto reserve.
 
 This is a conservative static bound, not a physical button/RTOS watermark.
 Capture and encoding are sequential tails of one owned response construction.
@@ -9,11 +9,11 @@ import re
 import subprocess
 import sys
 try:
- from .status_stack import emitted,status_paths,diagnostic_paths,writer_paths
+ from .status_stack import emitted,status_paths,diagnostic_paths,writer_paths,feature_read_paths
  from .check_worker_stack import read_worker_frames
  from .check_http_core import linked_symbols
 except ImportError:
- from status_stack import emitted,status_paths,diagnostic_paths,writer_paths
+ from status_stack import emitted,status_paths,diagnostic_paths,writer_paths,feature_read_paths
  from check_worker_stack import read_worker_frames
  from check_http_core import linked_symbols
 LAN_BUDGET=12288
@@ -65,6 +65,7 @@ def lan_paths(frames,model,symbols=None):
  add('receipt namespace digest',service+sha)
  add('receipt digest',dispatch+sha)
  paths.update(status_paths(frames,model,'LAN full status',dispatch+['mp_cached','service_product_status_mp'],LAN_RESERVE,symbols=symbols))
+ paths.update(feature_read_paths(frames,model,'LAN feature config',dispatch,LAN_RESERVE,symbols))
  paths.update(diagnostic_paths(frames,model,'LAN diagnostics',dispatch,LAN_RESERVE,symbols))
  for helper in ('service_product_capabilities_mp','service_product_info_mp','service_product_mp'):
   paths.update(writer_paths(frames,'LAN '+helper,dispatch+[helper],LAN_RESERVE,symbols))
@@ -92,7 +93,7 @@ def lan_paths(frames,model,symbols=None):
  return paths
 
 def validate_lan_paths(paths,frames,budget=LAN_BUDGET):
- if budget!=LAN_BUDGET:raise ValueError('LAN task budget must remain 12288 bytes')
+ if budget not in (8192,LAN_BUDGET):raise ValueError('LAN task budget must be 8192 or 12288 bytes')
  for label,(names,reserve) in paths.items():
   if reserve!=LAN_RESERVE:raise ValueError('LAN SDK/crypto reserve must remain 2048 bytes')
   missing=set(names)-frames.keys()
@@ -108,6 +109,7 @@ def check(modules,model,nm,elf):
  header=root/('TC1/lan.h' if model=='TC1' else 'common/phicomm_features.h')
  macro='TC1_LAN_STACK_SIZE' if model=='TC1' else 'FEATURE_WORKER_STACK_SIZE'
  budget=int(re.search(r'#define '+macro+r' (\d+)u',header.read_text()).group(1))
+ if budget!=(8192 if model=='TC1' else LAN_BUDGET):raise ValueError('Unexpected product LAN task budget')
  frames=read_worker_frames(Path(modules)/model)
  symbols=linked_symbols(subprocess.check_output([nm,'--defined-only',elf],text=True))
  add_sha_utils_frames(frames,Path(modules),symbols)

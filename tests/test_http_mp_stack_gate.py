@@ -5,10 +5,27 @@ from pathlib import Path
 import tempfile
 import unittest
 from tools.check_http_core import (HTTP_BUDGET, HTTP_RESERVE, check_symbols,
-    http_paths, linked_symbols, read_frames, validate_paths, check_tc1_ota_decimal, check_tc1_ota_progress)
+    HTTP_MODEL_BUDGETS, model_http_budget, http_paths, linked_symbols, read_frames,
+    validate_paths, check_tc1_ota_decimal, check_tc1_ota_progress)
 from tools.status_stack import status_paths, diagnostic_paths
 
 class HTTPMessagePackStackGate(unittest.TestCase):
+    def test_model_stack_budgets_keep_reserve_and_reject_oversized_paths(self):
+        root=Path(__file__).resolve().parents[1]
+        for model,budget in HTTP_MODEL_BUDGETS.items():
+            self.assertEqual(model_http_budget(root,model),budget)
+            frames={'capture':budget-HTTP_RESERVE}
+            paths={'capture':(HTTP_RESERVE,['capture'])}
+            with redirect_stdout(io.StringIO()):validate_paths(paths,frames,budget,model)
+            frames['capture']+=1
+            with self.assertRaisesRegex(ValueError,'>'+str(budget)):
+                validate_paths(paths,frames,budget,model)
+            if budget!=HTTP_BUDGET:
+                with self.assertRaisesRegex(ValueError,'budget must remain'):
+                    validate_paths(paths,frames,HTTP_BUDGET,model)
+            with self.assertRaisesRegex(ValueError,'insufficient SDK'):
+                validate_paths({'capture':(HTTP_RESERVE-1,[])},{},budget,model)
+
     def fixture(self,model='A1'):
         # First discover required public/noinline frames. Emit all known
         # private helpers as a separate second pass, simulating un-inlining.

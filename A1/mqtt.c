@@ -721,7 +721,11 @@ static void mqtt_worker(mico_thread_arg_t arg) {
 OSStatus a1_mqtt_start(void)
 {
     uint32_t generation=ph_mqtt_startup_prepare(&mqtt_startup);
+    /* GCC stack gates include a 4 KiB SDK/RTOS reserve. Keep this allocation
+     * at 12 KiB: live startup can lack a contiguous 16 KiB heap block. */
     OSStatus rc=mico_rtos_create_thread(&mqtt_owner_thread,MICO_APPLICATION_PRIORITY,
-        "a1_mqtt",mqtt_worker,16384,generation);
-    ph_mqtt_startup_publish(&mqtt_startup,generation,rc==kNoErr);return rc;
+        "a1_mqtt",mqtt_worker,12288,generation);
+    ph_mqtt_startup_publish(&mqtt_startup,generation,rc==kNoErr);
+    if(rc!=kNoErr)mqtt_error("thread",rc);
+    return rc;
 }
