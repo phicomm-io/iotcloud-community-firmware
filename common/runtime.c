@@ -519,16 +519,20 @@ unsigned feature_mqtt_filters(char filters[][FEATURE_TOPIC_MAX], unsigned capaci
   mqtt_account_t a=mqtt_snapshot();unsigned n=0;
   feature_config_t *c=malloc(sizeof(*c));if(!c)return FEATURE_MQTT_FILTER_ERROR;feature_config_get(c);
 #ifdef FEATURE_DEVICE_A1
-  unsigned required=2u+(c->peer_count || c->group[0] ? 1u : 0u)+(c->peer_count?1u:0u);
+  unsigned required=3;
 #else
   unsigned required=1;
 #endif
   if(capacity<required){free(c);return FEATURE_MQTT_FILTER_ERROR;}
+  memset(filters,0,capacity*sizeof(*filters));
 #ifdef FEATURE_DEVICE_A1
   mqtt_link_topic(&a,"a1",LOCAL_ID,"+","request",filters[n++],FEATURE_TOPIC_MAX);
   mqtt_aux(&a,"address","+",filters[n++],FEATURE_TOPIC_MAX);
-  if(c->peer_count || c->group[0]) {char root[FEATURE_TOPIC_MAX];root_for(c,0,root);mqtt_format(filters[n++],FEATURE_TOPIC_MAX,"%s/#",root);}
-  if(c->peer_count)mqtt_aux(&a,"sensor","+/+",filters[n++],FEATURE_TOPIC_MAX);
+  /* Keep the own/group linkage subscription stable across peer edits.
+   * First/last sensor binding must not disconnect MQTT session grants. */
+  {char root[FEATURE_TOPIC_MAX];root_for(c,0,root);mqtt_format(filters[n++],FEATURE_TOPIC_MAX,"%s/#",root);}
+  /* Sensor samples use LAN UDP; MQTT only publishes the session grant.
+   * A broad sensor subscription is unnecessary and may be denied by ACLs. */
 #else
   char leaf[32];snprintf(leaf,sizeof(leaf),"%s/command",LOCAL_ID);
   mqtt_aux(&a,"sensor",leaf,filters[n++],FEATURE_TOPIC_MAX);
