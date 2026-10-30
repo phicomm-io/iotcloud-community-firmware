@@ -155,8 +155,8 @@ static void homeInit(){
   else if(result!=ESP_OK||strlen(homeSetupId)!=4||strspn(homeSetupId,"0123456789abcdef")!=4){nvs_close(metadata);return;}
   nvs_close(metadata);
   if(!homeSpan.iotcloudStorage(homeStorage.partition.label))return;
-  homeSpan.setLogLevel(-1).setPortNum(51826).setHostNameSuffix(deviceId.c_str()).setQRID(homeSetupId);
-  homeSpan.begin(Category::Bridges,"IoTCloud Hub","daikin-","IoTCloud Hub");
+  homeSpan.setLogLevel(-1).setPortNum(51826).setHostNameSuffix(deviceId.substring(6).c_str()).setQRID(homeSetupId);
+  homeSpan.begin(Category::Bridges,"IoTCloud Hub",deviceHostname.substring(0,deviceHostname.length()-6).c_str(),"IoTCloud Hub");
   if(!homeSpan.iotcloudStorageHealthy()){homeSpan.iotcloudStop();return;}
   // Generate the SRP verifier once. Fail closed if its atomic NVS write failed.
   nvs_handle srp=0;if(nvs_open_from_partition(homeStorage.partition.label,"SRP",NVS_READWRITE,&srp)!=ESP_OK){homeSpan.iotcloudStop();return;}

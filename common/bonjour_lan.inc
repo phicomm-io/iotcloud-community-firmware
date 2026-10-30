@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "bonjour_lan.h"
 #include "lan_wire_v4.h"
+#include "device_hostname.h"
 #include <string.h>
 #include <stdio.h>
 /* MiCO's mDNS API encodes TXT as dot-delimited labels, escaping dot/slash.
@@ -36,11 +37,11 @@ static bool bonjour_lan_registered;
 static bool bonjour_lan_start(const char *id,const char *model,const char *variant,const char *firmware)
 {
     if(bonjour_lan_registered){mdns_resume_record(LAN_V4_MDNS_NAME,Station);return true;}
-    char txt[384],host[40],instance[40];
+    char txt[384],host[48],instance[40];
     if(!bonjour_lan_txt(txt,sizeof(txt),id,model,variant,firmware,LAN_V4_PORT))return false;
-    int a=snprintf(host,sizeof(host),"openiot-%s.local.",id);
-    int b=snprintf(instance,sizeof(instance),"openiot-%s-%s",model,id);
-    if(a<0||(size_t)a>=sizeof(host)||b<0||(size_t)b>=sizeof(instance))return false;
+    if(!ph_device_hostname(instance,sizeof(instance),model,id))return false;
+    int a=snprintf(host,sizeof(host),"%s.local.",instance);
+    if(a<0||(size_t)a>=sizeof(host))return false;
     mdns_init_t init;memset(&init,0,sizeof(init));init.service_name=LAN_V4_MDNS_NAME;
     init.host_name=host;init.instance_name=instance;init.txt_record=txt;init.service_port=LAN_V4_PORT;
     bonjour_lan_registered=mdns_add_record(init,Station,120)==kNoErr;

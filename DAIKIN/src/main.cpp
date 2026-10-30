@@ -70,7 +70,7 @@ static int commandSubId=-1;
 static bool sgpReady=false;
 static uint32_t sgpSince=0, nextSample=0, nextSgp=0, nextPublish=0, connectAt=0;
 static volatile uint32_t rebootAt=0;
-static String deviceId, apName, mqttRoot;
+static String deviceId, apName, mqttRoot, deviceHostname;
 static portMUX_TYPE mqttMux=portMUX_INITIALIZER_UNLOCKED;
 static char mqttPending[4097];
 static volatile bool mqttQueued=false;
@@ -194,6 +194,7 @@ static void startAccessPoint(){
   WiFi.softAP(apName.c_str());
 }
 static void startWifi(){
+  WiFi.setHostname(deviceHostname.c_str());
   WiFi.mode(WIFI_AP_STA);
   // Recovery AP remains available when the saved station is unreachable.
   startAccessPoint();
@@ -240,6 +241,7 @@ void setup(){
   updatePassword();initLocalAuth();indicator=config["indicator"]|false;
   customLightSettings=daikin::readLightSettings(config["indicator_rules"],lightSettings);
   WiFi.mode(WIFI_AP_STA);deviceId=WiFi.macAddress();deviceId.replace(":","");deviceId.toLowerCase();
+  deviceHostname="iotcloud-daikin-"+String(DAIKIN_TARGET)+"-"+deviceId.substring(6);deviceHostname.toLowerCase();
   apName="BRY88AX151K-AP-"+deviceId.substring(6);apName.toUpperCase();
   startWifi();
   pmBus.begin(23,22,100000);thBus.begin(19,21,100000);pmBus.setTimeOut(50);thBus.setTimeOut(50);
@@ -321,7 +323,7 @@ void loop(){
   pollIndicators(now);
   // Close initial recovery AP after station has been stable for two minutes.
   static uint32_t connectedSince=0;
-  if(WiFi.status()==WL_CONNECTED){if(!connectedSince){connectedSince=now;if(MDNS.begin(("daikin-"+deviceId).c_str())){MDNS.addService("http","tcp",80);advertiseLanBusiness();}}if(!configRecovery&&uint32_t(now-connectedSince)>120000&&uint32_t(now-connectAt)>120000)WiFi.softAPdisconnect(true);}
+  if(WiFi.status()==WL_CONNECTED){if(!connectedSince){connectedSince=now;if(MDNS.begin(deviceHostname.c_str())){MDNS.addService("http","tcp",80);advertiseLanBusiness();}}if(!configRecovery&&uint32_t(now-connectedSince)>120000&&uint32_t(now-connectAt)>120000)WiFi.softAPdisconnect(true);}
   else{if(connectedSince){
 #ifdef IOTCLOUD_HUB
     hubLanMdnsEnding();

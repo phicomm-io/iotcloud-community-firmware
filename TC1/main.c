@@ -1,6 +1,7 @@
 #include "../common/service.h"
 
 #include "../common/backup.h"
+#include "../common/device_hostname_mico.h"
 static bool config_recovery, config_commit_uncertain;
 bool device_config_recovery(void) { return config_recovery || config_commit_uncertain; }
 void device_config_recovery_set(bool recovery) { config_recovery=recovery || config_commit_uncertain; }
@@ -231,6 +232,7 @@ int application_start(void) {
     mico_wlan_get_mac_address(mac);
     sprintf(str_mac, "%02X%02X%02X%02X%02X%02X",
             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);tc1_log("str_mac[%s]", str_mac);
+    require_action(ph_device_hostname_mico("tc1",str_mac),exit,err=kNotPreparedErr);
 
     bool open_ap = false;
     MicoGpioInitialize((mico_gpio_t) Button, INPUT_PULL_UP);

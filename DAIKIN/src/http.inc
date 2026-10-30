@@ -252,7 +252,7 @@ static esp_err_t hubApiHandler(httpd_req_t *req){
   char host[96]={},origin[128]={},authorization[100]={};
   if(httpd_req_get_hdr_value_str(req,"Host",host,sizeof(host))!=ESP_OK)return jsonResponse(req,"400 Bad Request","{\"code\":\"invalid_params\"}");
   String hostname=host;int colon=hostname.indexOf(':');if(colon>=0)hostname=hostname.substring(0,colon);
-  if(hostname!=WiFi.localIP().toString()&&hostname!=WiFi.softAPIP().toString()&&hostname!="daikin-"+deviceId+".local")return jsonResponse(req,"403 Forbidden","{\"code\":\"unauthorized\"}");
+  if(hostname!=WiFi.localIP().toString()&&hostname!=WiFi.softAPIP().toString()&&hostname!=deviceHostname+".local")return jsonResponse(req,"403 Forbidden","{\"code\":\"unauthorized\"}");
   bool get=req->method==HTTP_GET;
   if(!get&&httpd_req_get_hdr_value_len(req,"Origin")&&
     (httpd_req_get_hdr_value_str(req,"Origin",origin,sizeof(origin))!=ESP_OK||String(origin)!="http://"+String(host)))return jsonResponse(req,"403 Forbidden","{\"code\":\"unauthorized\"}");
