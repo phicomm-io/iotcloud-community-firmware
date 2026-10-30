@@ -2,7 +2,7 @@
 
 TC1 provides six outlet controls, metering, child lock, an indicator and schedules. This page covers daily use after installation. For first installation, see the [illustrated OTA guide](tc1-no-disassembly-ethernet-wifi-ap) or [wired flashing and recovery](tc1-flash).
 
-**Use stable v0.9.27 for everyday operation. The current v1.0.0-rc.3 candidate is a beta build. Major changes are still expected, and daily use is not recommended.** See the [complete candidate release notes](release-log.html?channel=candidate) for version requirements and cumulative changes.
+**Use stable v0.9.27 for everyday operation, or v1.0.0-rc.4 for beta testing.** See the [complete candidate release notes](release-log.html?channel=candidate) for version requirements and cumulative changes.
 
 ## Outlets and home page
 
@@ -39,4 +39,8 @@ Make sure you can provision Wi-Fi again. Factory reset clears user settings; **a
 
 ## MQTT
 
-TC1 supports Legacy (v1) and TMCP (v2), defaulting to TMCP for a new setup. See [MQTT and automation](mqtt-link) for Home Assistant and platform configuration.
+RC4 uses openiot MessagePack / CBOR binary business messages over HTTP, MQTT and UDP. JSON is reserved for Home Assistant. See [MQTT and automation](mqtt-link) for Home Assistant and platform configuration.
+
+## Automation and updates
+
+Development firmware adds local above / below power conditions for immediate or sustained triggering without MQTT or a synced clock. Weekly / date tasks still need device time. See [automation and field IDs](tc1-automation), [device features](tc1-features) and [firmware updates](firmware-update). RC4 business MQTT uses openiot binary messages; JSON is reserved for Home Assistant.

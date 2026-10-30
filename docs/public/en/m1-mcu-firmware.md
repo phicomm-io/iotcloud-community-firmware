@@ -13,9 +13,9 @@ MCU means microcontroller. M1 contains two; their firmware and version numbers a
 | Wi-Fi MCU / Wi-Fi module | EMW3080: Wi-Fi, local web interface and MQTT | Ordinary web firmware update; M1 Wi-Fi package |
 | Sensor controller / controller MCU | ATSAMD20G18A: communicates with built-in sensors and drives the screen, button and buzzer | Computer script through the API; `m1-mcu-ota.bin` with its matching JSON |
 
-**“Controller” on this page means the sensor controller.** Updating Wi-Fi to v1.0.0-rc.3 does not update this controller. To reduce the risk of beginners flashing the wrong image and making the device unusable, controller flashing has no WebUI upload button. Use the [API-based network update guide](m1-mcu-update); the script handles the API exchange and verification.
+**“Controller” means the sensor MCU, updated separately from the Wi-Fi module.** Use the computer script in the [controller network update guide](m1-mcu-update) for API communication and verification.
 
-**Use stable Wi-Fi firmware v0.9.27 for everyday operation. RC releases are beta builds. Major changes are still expected, and daily use is not recommended.** To test v1 features, install **Wi-Fi v1.0.0-rc.3 and sensor controller v1.0.0-rc separately** for dual-region user readings, double-click actions and PM2.5 smoothing. Older features retain their minimum compatibility requirements: four tones and custom RTTTL music require controller v0.9.3 or newer; particle details and raw sensor frames require the capabilities published in controller v0.9.4. CO₂ on the physical screen requires controller v0.9.2 or newer and valid CO₂ data. Basic PM2.5, formaldehyde, temperature and humidity readings do not require this additional flash.
+**Use stable Wi-Fi firmware v0.9.27 for everyday operation; RC builds are for beta testing.** To test v1 features, install **Wi-Fi v1.0.0-rc.3 and sensor controller v1.0.0-rc separately** for dual-region user readings, double-click actions and PM2.5 smoothing. Older features retain their minimum compatibility requirements: four tones and custom RTTTL music require controller v0.9.3 or newer; particle details and raw sensor frames require the capabilities published in controller v0.9.4. CO₂ on the physical screen requires controller v0.9.2 or newer and valid CO₂ data. Basic PM2.5, formaldehyde, temperature and humidity readings do not require this additional flash.
 
 [Source](https://github.com/phicomm-io/phicomm_m1_mcu_atsamd20) · [Controller releases and downloads]({{SITE_URL}}#m1-mcu-releases) · [M1 operation](m1-guide)
 [Network update guide](m1-mcu-update)
@@ -38,7 +38,7 @@ Custom pollutant thresholds control indicator colors, with configuration readbac
 
 ## Downloads and requirements
 
-The download for testing v1 features is **controller v1.0.0-rc, a beta release candidate / prerelease**; stable v1.0.0 is not yet available. Use the image from that Release, reporting `1.0.0-rc-97a03b`. Obtain the pinned buffering-aware tools through the [network update guide](m1-mcu-update), rather than the older tools in the RC tag. Network migration from stock 11.x requires companion Wi-Fi v1.0.0-rc.3 and a check of its `mcu_ota_max_bytes` buffering capability.
+Use **controller v1.0.0-rc (beta)** to test v1 features. Use the image from that Release, reporting `1.0.0-rc-97a03b`. Obtain the pinned buffering-aware tools through the [network update guide](m1-mcu-update), rather than the older tools in the RC tag. Network migration from stock 11.x requires companion Wi-Fi v1.0.0-rc.3 and a check of its `mcu_ota_max_bytes` buffering capability.
 
 Older compatibility requirements remain: controllers already running community firmware can use Wi-Fi v0.9.26 or newer for network updates and complete-frame queries. Web music, tone controls and particle details require at least Wi-Fi v0.9.27 and matching controller capabilities. These minimum versions do not replace the buffered-upgrade requirement for stock 11.x. The download section lists all public controller releases, including prereleases, separately from Wi-Fi firmware. Update the two MCUs separately.
 

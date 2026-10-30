@@ -244,10 +244,11 @@ test('candidate download links reject foreign or traversal paths and require a s
   }finally{p.close();}
 });
 
-async function controllerHomepage({locale='zh',releases=[],fallback=false,candidateError=null,candidateSnapshot=null}={}) {
+async function controllerHomepage({locale='zh',releases=[],fallback=false,candidateError=null,candidateSnapshot=null,nativeCatalog=null}={}) {
   const root=require('node:path').resolve(__dirname,'..'),calls=[],f=CandidateUI.fixture();
   const dom=new JSDOM(readFileSync(root+'/site/'+(locale==='en'?'index-en.html':'index.html'),'utf8'),
     {url:'https://phicomm-io.github.io/'+(locale==='en'?'en/':''),runScripts:'outside-only'});
+  if(nativeCatalog){const node=dom.window.document.createElement('script');node.id='native-downloads';node.type='application/json';node.textContent=JSON.stringify(nativeCatalog);dom.window.document.head.append(node);}
   Object.assign(dom.window,{ReleaseNotes:Notes,ReleaseNotesClient:{snapshot:async(_source,options={})=>{if(options.channel==='candidate'){if(candidateError)throw candidateError;return candidateSnapshot||f.candidate;}return f.stable;}},AbortController,
     fetch:async url=>{calls.push(String(url));return {ok:!fallback||calls.length>1,status:503,json:async()=>releases};}});
   try {
@@ -307,9 +308,18 @@ test('homepage lists all ten RC targets separately from stable, including after 
     try {
       const d=p.dom.window.document,area=d.getElementById('candidate-releases');
       assert.match(area.querySelector('h3').textContent,/v1\.0\.0-rc/);
-      assert.match(area.querySelector('.tag').textContent,locale==='en'?/Beta.*Not recommended/:/Beta.*不建议使用/);
+      assert.match(area.querySelector('.tag').textContent,/Beta.*RC/);
       assert.equal(area.querySelectorAll('a[href$=".ota.bin.signed"]').length,10);
-      assert.equal(area.querySelectorAll('.downloads tr').length,11);
+      assert.deepEqual([...area.querySelectorAll('[data-download-model]')].map(n=>n.dataset.downloadModel),['m1','a1','tc1','daikin']);
+      assert.equal(area.querySelectorAll('dialog').length,4);
+      for(const card of area.querySelectorAll('[data-download-model]')){
+        const button=card.querySelector('button'),dialog=card.querySelector('dialog');
+        assert.equal(button.getAttribute('aria-controls'),dialog.id);
+        assert.ok(dialog.getAttribute('aria-labelledby'));
+        assert.equal(dialog.open,false);button.click();assert.equal(dialog.open,true);
+        assert.ok(dialog.querySelectorAll('.firmware-variant').length>=1);
+        dialog.querySelector('button').click();assert.equal(dialog.open,false);
+      }
       assert.ok([...area.querySelectorAll('a')].every(a=>a.origin==='https://phicomm-io.github.io'));
       assert.match(d.querySelector('#latest h3').textContent,/^v0\.9\.27/);
       assert.ok(!d.getElementById('archive').textContent.includes('v1.0.0-rc'));
@@ -333,6 +343,33 @@ test('candidate catalog failure leaves stable downloads usable and displays no u
   }
 });
 
+test('S30 native downloads appear only for the matching RC, with installation-specific file guidance',async()=>{
+  const nativeCatalog=JSON.parse(readFileSync(require('node:path').resolve(__dirname,'../site/native-downloads.json'),'utf8'));
+  for(const locale of ['zh','en']) {
+    const f=CandidateUI.fixture();CandidateUI.appendCandidate(f.candidate,'1.0.0-rc.4','1.0.0-rc',107);
+    const p=await controllerHomepage({locale,candidateSnapshot:f.candidate,nativeCatalog});
+    try {
+      const d=p.dom.window.document,area=d.getElementById('candidate-releases');
+      assert.equal(area.querySelectorAll('[data-download-model]').length,5);
+      const card=area.querySelector('[data-download-model="s30"]'),dialog=card.querySelector('dialog');
+      card.querySelector('button').click();assert.equal(dialog.open,true);
+      assert.equal(dialog.querySelectorAll('.firmware-file').length,2);
+      assert.equal(dialog.querySelectorAll('a[href$=".ota.bin.signed"],a[href$=".all.bin"]').length,0);
+      assert.match(dialog.textContent,/0x11000/);assert.match(dialog.textContent,/HTTP/);
+      for(const row of dialog.querySelectorAll('.firmware-file')){
+        assert.match(row.textContent,/SHA-256: [a-f0-9]{64}/);
+        assert.equal(row.querySelector('a').origin,'https://github.com');
+        assert.ok(row.querySelector('a').pathname.includes('/v1.0.0-rc.4/'));
+      }
+      assert.ok(dialog.querySelector('a[href*="s30-flash.html"]'));
+      dialog.querySelector('button').click();assert.equal(dialog.open,false);
+    }finally{p.close();}
+    const newer=multipleCandidates(),other=await controllerHomepage({locale,candidateSnapshot:newer.candidate,nativeCatalog});
+    try{assert.equal(other.dom.window.document.querySelectorAll('#candidate-releases [data-download-model="s30"]').length,0);}
+    finally{other.close();}
+  }
+});
+
 function multipleCandidates() {
   const f=CandidateUI.fixture();
   CandidateUI.appendCandidate(f.candidate,'1.0.0-rc.1','1.0.0-rc',103);
@@ -347,9 +384,9 @@ test('homepage displays only the latest numeric RC and explains Beta stability i
       const d=p.dom.window.document,area=d.getElementById('candidate-releases');
       assert.equal(area.children.length,1);assert.match(area.querySelector('h3').textContent,/v1\.0\.0-rc\.10/);
       assert.equal(area.querySelectorAll('a[href$=".ota.bin.signed"]').length,10);
-      assert.ok([...area.querySelectorAll('a')].every(a=>a.pathname.includes('/v1.0.0-rc.10/')));
-      assert.match(d.getElementById('candidate-release-status').textContent,locale==='en'?/beta.*Major changes.*not recommended/:/Beta.*较大改动.*不建议使用/);
-      assert.match(d.querySelector('.version-note').textContent,locale==='en'?/beta.*Major changes.*not recommended/:/Beta.*较大改动.*不建议使用/);
+      assert.ok([...area.querySelectorAll('a')].filter(a=>a.pathname.startsWith('/releases/')).every(a=>a.pathname.includes('/v1.0.0-rc.10/')));
+      assert.match(d.getElementById('candidate-release-status').textContent,locale==='en'?/beta testing/:/Beta 测试/);
+      assert.match(d.querySelector('.version-note').textContent,locale==='en'?/beta testing/:/Beta 测试/);
       assert.match(d.querySelector('#latest h3').textContent,/^v0\.9\.27/);
     }finally{p.close();}
   }
@@ -363,7 +400,7 @@ test('candidate comparison hides old RC choices while accepting an installed old
       assert.equal(p.field('from').value,'1.0.0-rc.1');assert.equal(p.app.dataset.reportState,'complete');
       assert.ok(p.field('result').querySelector('.notes-target a').pathname.includes('/v1.0.0-rc.10/'));
       assert.ok([...p.field('candidate-downloads').querySelectorAll('a')].filter(a=>a.pathname.startsWith('/releases/')).every(a=>a.pathname.includes('/v1.0.0-rc.10/')));
-      assert.match(p.field('candidate-status').textContent,locale==='en'?/beta.*Major changes.*not recommended/:/Beta.*较大改动.*不建议使用/);
+      assert.match(p.field('candidate-status').textContent,locale==='en'?/beta testing/:/Beta 测试/);
     }finally{p.close();}
   }
 });

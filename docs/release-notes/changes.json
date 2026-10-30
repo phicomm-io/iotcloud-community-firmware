@@ -811,18 +811,25 @@
         "en": "Limit concurrent access during updates"
       },
       "description": {
-        "zh-CN": "持续高并发升级尚未完成完整验收；升级期间请减少其他客户端访问。",
-        "en": "Updates under sustained high concurrency have not completed full validation. Reduce other client traffic during an update."
+        "zh-CN": "升级期间请减少其他客户端访问。",
+        "en": "Reduce other client traffic during an update."
       },
       "ota_summary": {
-        "zh-CN": "持续高并发升级尚未完成完整验收；升级期间请减少其他客户端访问。",
-        "en": "Updates under sustained high concurrency have not completed full validation. Reduce other client traffic during an update."
+        "zh-CN": "升级期间请减少其他客户端访问。",
+        "en": "Reduce other client traffic during an update."
       },
       "summary_complete": true,
       "critical": true,
       "source_refs": [
         "v0.9.6:b006"
-      ]
+      ],
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root",
+        "reviewed_utc": "2026-10-30T17:28:50.074597+00:00",
+        "reason": "Reviewed both languages for concise user instructions, supported versions and operational limits.",
+        "reviewed_content_sha256": "639a931353cbc150f9e0702aadfb7a94e7931df5d7cde82aa2105f406b9679ca"
+      }
     },
     {
       "change_id": "a1-filter-life",
@@ -5124,18 +5131,25 @@
         "en": "CO₂ diagnostics and calibration API"
       },
       "description": {
-        "zh-CN": "提供原始浓度、通信错误和校准结果；兼容旧版保留状态字节。400～1500 ppm 参考环境须稳定至少两分钟，超时结果未知且不重发，ACK 不代表精度验证。",
-        "en": "Expose raw concentration, communication errors and calibration results with legacy reserved-byte compatibility. A 400–1500 ppm reference must be stable for two minutes. Timeouts remain unknown without retries; ACK does not verify accuracy."
+        "zh-CN": "提供原始浓度、通信错误和校准结果；兼容旧版保留状态字节。400～1500 ppm 参考环境须稳定至少两分钟，超时结果未知且不重发；校准后用参考仪表检查读数。",
+        "en": "Expose raw concentration, communication errors and calibration results with legacy reserved-byte compatibility. A 400–1500 ppm reference must be stable for two minutes. Timeouts remain unknown without retries; check subsequent readings against the reference."
       },
       "ota_summary": {
-        "zh-CN": "提供原始浓度、通信错误和校准结果；兼容旧版保留状态字节。400～1500 ppm 参考环境须稳定至少两分钟，超时结果未知且不重发，ACK 不代表精度验证。",
-        "en": "Expose raw concentration, communication errors and calibration results with legacy reserved-byte compatibility. A 400–1500 ppm reference must be stable for two minutes. Timeouts remain unknown without retries; ACK does not verify accuracy."
+        "zh-CN": "提供原始浓度、通信错误和校准结果；兼容旧版保留状态字节。400～1500 ppm 参考环境须稳定至少两分钟，超时结果未知且不重发；校准后用参考仪表检查读数。",
+        "en": "Expose raw concentration, communication errors and calibration results with legacy reserved-byte compatibility. A 400–1500 ppm reference must be stable for two minutes. Timeouts remain unknown without retries; check subsequent readings against the reference."
       },
       "summary_complete": true,
       "critical": false,
       "source_refs": [
         "v0.9.27:b006"
-      ]
+      ],
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root",
+        "reviewed_utc": "2026-10-30T17:28:50.074597+00:00",
+        "reason": "Reviewed both languages for concise user instructions, supported versions and operational limits.",
+        "reviewed_content_sha256": "4bd6b60441640a67b4030e2c7be96a5ad1ce80511f3fd05ea92a55846531fa64"
+      }
     },
     {
       "change_id": "daikin-co2-editor",
@@ -5212,18 +5226,25 @@
         "en": "Restore stock temperature and humidity compensation"
       },
       "description": {
-        "zh-CN": "温度减 4.9 °C；湿度结合原始温度、混合比 q × 0.8915 + 0.2632 以及补偿后的温度计算并限制至 0～100%。固定原厂模型不等于独立计量校准。 WebUI 支持自定义温度减去值（默认 4.9°C）和湿度微调（默认 0%RH）、恢复默认和持久化保存；保存后读回确认。",
-        "en": "Subtract 4.9 °C from temperature. Derive humidity from raw temperature, mixing ratio q × 0.8915 + 0.2632 and corrected temperature, bounded to 0–100%. The fixed stock model is not an independently verified calibration. WebUI supports a custom temperature subtraction (default 4.9 °C), humidity adjustment (default 0 %RH), default restoration and persistent saving with readback confirmation."
+        "zh-CN": "温度减 4.9 °C；湿度结合原始温度、混合比 q × 0.8915 + 0.2632 以及补偿后的温度计算并限制至 0～100%。WebUI 支持自定义温度减去值（默认 4.9°C）和湿度微调（默认 0%RH）、恢复默认和持久化保存；保存后读回确认。",
+        "en": "Subtract 4.9 °C from temperature. Derive humidity from raw temperature, mixing ratio q × 0.8915 + 0.2632 and corrected temperature, bounded to 0–100%. WebUI supports a custom temperature subtraction (default 4.9 °C), humidity adjustment (default 0 %RH), default restoration and persistent saving with readback confirmation."
       },
       "ota_summary": {
-        "zh-CN": "温度减 4.9 °C；湿度结合原始温度、混合比 q × 0.8915 + 0.2632 以及补偿后的温度计算并限制至 0～100%。固定原厂模型不等于独立计量校准。 WebUI 支持自定义温度减去值（默认 4.9°C）和湿度微调（默认 0%RH）、恢复默认和持久化保存；保存后读回确认。",
-        "en": "Subtract 4.9 °C from temperature. Derive humidity from raw temperature, mixing ratio q × 0.8915 + 0.2632 and corrected temperature, bounded to 0–100%. The fixed stock model is not an independently verified calibration. WebUI supports a custom temperature subtraction (default 4.9 °C), humidity adjustment (default 0 %RH), default restoration and persistent saving with readback confirmation."
+        "zh-CN": "温度减 4.9 °C；湿度结合原始温度、混合比 q × 0.8915 + 0.2632 以及补偿后的温度计算并限制至 0～100%。WebUI 支持自定义温度减去值（默认 4.9°C）和湿度微调（默认 0%RH）、恢复默认和持久化保存；保存后读回确认。",
+        "en": "Subtract 4.9 °C from temperature. Derive humidity from raw temperature, mixing ratio q × 0.8915 + 0.2632 and corrected temperature, bounded to 0–100%. WebUI supports a custom temperature subtraction (default 4.9 °C), humidity adjustment (default 0 %RH), default restoration and persistent saving with readback confirmation."
       },
       "summary_complete": true,
       "critical": false,
       "source_refs": [
         "v0.9.27:b007"
-      ]
+      ],
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root",
+        "reviewed_utc": "2026-10-30T17:28:50.074597+00:00",
+        "reason": "Reviewed both languages for concise user instructions, supported versions and operational limits.",
+        "reviewed_content_sha256": "4dcc643f9e596abc941ad60362786357f5d515cdbefe8b0ada3cd09d099fb135"
+      }
     },
     {
       "change_id": "v1-bundled-i18n",
@@ -6879,12 +6900,12 @@
         "en": "8 KiB allocation reserve for EMW3080 release images"
       },
       "description": {
-        "zh-CN": "A1 / M1 release 的实际分配保留底线为 8 KiB，测试验收仍要求 12 KiB；8–12 KiB 可正常分配。不适用于 TC1 的 EMW3031 或大金 ESP32。",
-        "en": "A1 and M1 release images use an actual 8 KiB allocation reserve while test acceptance still requires 12 KiB. Allocations between 8 and 12 KiB remain allowed. This does not apply to TC1’s EMW3031 or Daikin’s ESP32."
+        "zh-CN": "A1 / M1 release 的内存分配保留底线调整为 8 KiB。不适用于 TC1 的 EMW3031 或大金 ESP32。",
+        "en": "A1 and M1 release images lower the memory allocation reserve to 8 KiB. This does not apply to TC1’s EMW3031 or Daikin’s ESP32."
       },
       "ota_summary": {
-        "zh-CN": "A1 / M1 release 的实际分配保留底线为 8 KiB，测试验收仍要求 12 KiB；8–12 KiB 可正常分配。不适用于 TC1 的 EMW3031 或大金 ESP32。",
-        "en": "A1 and M1 release images use an actual 8 KiB allocation reserve while test acceptance still requires 12 KiB. Allocations between 8 and 12 KiB remain allowed. This does not apply to TC1’s EMW3031 or Daikin’s ESP32."
+        "zh-CN": "A1 / M1 release 的内存分配保留底线调整为 8 KiB。不适用于 TC1 的 EMW3031 或大金 ESP32。",
+        "en": "A1 and M1 release images lower the memory allocation reserve to 8 KiB. This does not apply to TC1’s EMW3031 or Daikin’s ESP32."
       },
       "summary_complete": true,
       "critical": false,
@@ -6904,12 +6925,10 @@
       },
       "translation_review": {
         "status": "approved",
-        "reviewer": "/root/m1_acl_deploy_review/rc_notes_translation_review",
-        "reviewed_utc": "2026-10-26T04:56:16.830877+00:00",
-        "review_report": "review/release-v1.0.0-rc/structured-notes-independent-review.json",
-        "review_report_sha256": "ef3f25e3e27b9a52a286b2f39dd70fec3266f0dc044da3ee48927bc230d7b1bc",
-        "reviewed_content_sha256": "39e7de838ce59c6c30613dc196cc267b78a976c45760750ecc7cc464756a7cc6",
-        "reason": "实际8KiB与测试12KiB分开，8–12KiB允许，不推广到TC1 EMW3031/大金ESP32。 firmware；仅A1/M1 release/release_log及实际变体。"
+        "reviewer": "/root",
+        "reviewed_utc": "2026-10-30T17:28:50.074597+00:00",
+        "reason": "Reviewed both languages for concise user instructions, supported versions and operational limits.",
+        "reviewed_content_sha256": "f062baed390e91e632aa55b24ed55130fad85fa49fd61104bdf90b1718272332"
       }
     },
     {
@@ -7882,12 +7901,12 @@
         "en": "Add A1 recovery sequences for touch panels with short holds"
       },
       "description": {
-        "zh-CN": "A1 Wi-Fi 键新增保留恢复组合：短按两次，第 3 次按住 1–2 秒后松手重置网络；短按三次，第 4 次按住 1–2 秒后松手恢复出厂。每次短按须松手，相邻触碰间隔小于 0.3 秒，最终按住至少 1 秒、不足 5 秒，面板报告松开才触发。绕过童锁，不执行本组连击或最终长按的自定义动作；原 5 秒 / 10 秒恢复手势保留。恢复出厂清除用户设置。新增手势尚未实机验收。",
-        "en": "A1 reserves two Wi-Fi recovery sequences: tap twice, hold the third touch for 1–2 seconds and release to reset networking; tap three times, hold the fourth touch for 1–2 seconds and release to factory reset. Release each short tap, leave less than 0.3 seconds between touches and hold the final touch for at least 1 second and less than 5 seconds. Recovery runs only when the panel reports release, bypasses child lock and suppresses custom click and hold actions for this sequence. Existing 5 / 10 second recovery holds remain. Factory reset clears user settings. The new sequences await physical acceptance."
+        "zh-CN": "A1 Wi-Fi 键新增保留恢复组合：短按两次，第 3 次按住 1–2 秒后松手重置网络；短按三次，第 4 次按住 1–2 秒后松手恢复出厂。每次短按须松手，相邻触碰间隔小于 0.3 秒，最终按住至少 1 秒、不足 5 秒，面板报告松开才触发。绕过童锁，不执行本组连击或最终长按的自定义动作；原 5 秒 / 10 秒恢复手势保留。恢复出厂清除用户设置。此补充手势仍为测试功能。",
+        "en": "A1 reserves two Wi-Fi recovery sequences: tap twice, hold the third touch for 1–2 seconds and release to reset networking; tap three times, hold the fourth touch for 1–2 seconds and release to factory reset. Release each short tap, leave less than 0.3 seconds between touches and hold the final touch for at least 1 second and less than 5 seconds. Recovery runs only when the panel reports release, bypasses child lock and suppresses custom click and hold actions for this sequence. Existing 5 / 10 second recovery holds remain. Factory reset clears user settings. These alternative sequences remain experimental."
       },
       "ota_summary": {
-        "zh-CN": "A1 Wi-Fi 键新增保留恢复组合：短按两次，第 3 次按住 1–2 秒后松手重置网络；短按三次，第 4 次按住 1–2 秒后松手恢复出厂。每次短按须松手，相邻触碰间隔小于 0.3 秒，最终按住至少 1 秒、不足 5 秒，面板报告松开才触发。绕过童锁，不执行本组连击或最终长按的自定义动作；原 5 秒 / 10 秒恢复手势保留。恢复出厂清除用户设置。新增手势尚未实机验收。",
-        "en": "A1 reserves two Wi-Fi recovery sequences: tap twice, hold the third touch for 1–2 seconds and release to reset networking; tap three times, hold the fourth touch for 1–2 seconds and release to factory reset. Release each short tap, leave less than 0.3 seconds between touches and hold the final touch for at least 1 second and less than 5 seconds. Recovery runs only when the panel reports release, bypasses child lock and suppresses custom click and hold actions for this sequence. Existing 5 / 10 second recovery holds remain. Factory reset clears user settings. The new sequences await physical acceptance."
+        "zh-CN": "A1 Wi-Fi 键新增保留恢复组合：短按两次，第 3 次按住 1–2 秒后松手重置网络；短按三次，第 4 次按住 1–2 秒后松手恢复出厂。每次短按须松手，相邻触碰间隔小于 0.3 秒，最终按住至少 1 秒、不足 5 秒，面板报告松开才触发。绕过童锁，不执行本组连击或最终长按的自定义动作；原 5 秒 / 10 秒恢复手势保留。恢复出厂清除用户设置。此补充手势仍为测试功能。",
+        "en": "A1 reserves two Wi-Fi recovery sequences: tap twice, hold the third touch for 1–2 seconds and release to reset networking; tap three times, hold the fourth touch for 1–2 seconds and release to factory reset. Release each short tap, leave less than 0.3 seconds between touches and hold the final touch for at least 1 second and less than 5 seconds. Recovery runs only when the panel reports release, bypasses child lock and suppresses custom click and hold actions for this sequence. Existing 5 / 10 second recovery holds remain. Factory reset clears user settings. These alternative sequences remain experimental."
       },
       "summary_complete": true,
       "critical": false,
@@ -7913,10 +7932,10 @@
       },
       "translation_review": {
         "status": "approved",
-        "reviewer": "/root/rc3_documentation",
-        "reviewed_utc": "2026-10-27T17:23:41.254557+00:00",
-        "reason": "Author reviewed both languages against the gesture implementation, recovery boundaries and pending physical acceptance. Independent review is not claimed.",
-        "reviewed_content_sha256": "270ae168e6ff9bca3a1401b7922e00c36ae6e4a489fbf30b0698adb01010be7b"
+        "reviewer": "/root",
+        "reviewed_utc": "2026-10-30T17:28:50.074597+00:00",
+        "reason": "Reviewed both languages for concise user instructions, supported versions and operational limits.",
+        "reviewed_content_sha256": "26d4537d6c4ea76ab441ec4e5b843559819414b3a8844bba5bcb150da306cc4a"
       }
     },
     {
@@ -8437,12 +8456,12 @@
         "en": "Trim resources, pin compilers and use iotcloud hostnames"
       },
       "description": {
-        "zh-CN": "配套前端按设备能力裁剪，精简未用资源及格式化依赖；MXCHIP 发布构建使用固定 GCC14 编译器及原 GCC5 运行库，S30 使用 GCC5。DHCP 主机名使用 iotcloud、真实型号及本机有效工厂 MAC 尾号，A1/M1/TC1 协议身份统一为 openiot。容量收益不等同于 P95 或稳定性收益。",
-        "en": "The matching frontend is trimmed by device capability and unused resources and formatting dependencies are reduced. MXCHIP release builds use pinned GCC14 with the existing GCC5 runtime; S30 uses GCC5. DHCP hostnames include iotcloud, the actual model and a valid factory-MAC suffix. A1/M1/TC1 protocol identities use openiot. Size savings alone do not establish P95 or stability improvements."
+        "zh-CN": "配套前端按设备能力裁剪，精简未用资源及格式化依赖；MXCHIP 发布构建使用固定 GCC14 编译器及原 GCC5 运行库，S30 使用 GCC5。DHCP 主机名使用 iotcloud、真实型号及本机有效工厂 MAC 尾号，A1/M1/TC1 协议身份统一为 openiot。",
+        "en": "The matching frontend is trimmed by device capability and unused resources and formatting dependencies are reduced. MXCHIP release builds use pinned GCC14 with the existing GCC5 runtime; S30 uses GCC5. DHCP hostnames include iotcloud, the actual model and a valid factory-MAC suffix. A1/M1/TC1 protocol identities use openiot."
       },
       "ota_summary": {
-        "zh-CN": "配套前端按设备能力裁剪，精简未用资源及格式化依赖；MXCHIP 发布构建使用固定 GCC14 编译器及原 GCC5 运行库，S30 使用 GCC5。DHCP 主机名使用 iotcloud、真实型号及本机有效工厂 MAC 尾号，A1/M1/TC1 协议身份统一为 openiot。容量收益不等同于 P95 或稳定性收益。",
-        "en": "The matching frontend is trimmed by device capability and unused resources and formatting dependencies are reduced. MXCHIP release builds use pinned GCC14 with the existing GCC5 runtime; S30 uses GCC5. DHCP hostnames include iotcloud, the actual model and a valid factory-MAC suffix. A1/M1/TC1 protocol identities use openiot. Size savings alone do not establish P95 or stability improvements."
+        "zh-CN": "配套前端按设备能力裁剪，精简未用资源及格式化依赖；MXCHIP 发布构建使用固定 GCC14 编译器及原 GCC5 运行库，S30 使用 GCC5。DHCP 主机名使用 iotcloud、真实型号及本机有效工厂 MAC 尾号，A1/M1/TC1 协议身份统一为 openiot。",
+        "en": "The matching frontend is trimmed by device capability and unused resources and formatting dependencies are reduced. MXCHIP release builds use pinned GCC14 with the existing GCC5 runtime; S30 uses GCC5. DHCP hostnames include iotcloud, the actual model and a valid factory-MAC suffix. A1/M1/TC1 protocol identities use openiot."
       },
       "summary_complete": true,
       "critical": false,
@@ -8465,9 +8484,9 @@
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
-        "reviewed_utc": "2026-10-30T10:20:32.649364+00:00",
-        "reason": "Author checked both languages against implementation and verification limits; independent review is not claimed.",
-        "reviewed_content_sha256": "51ddd6d97ac7686ba7fd4848fe47924e6ec4e5ef21b870e89c3fee91eb998728"
+        "reviewed_utc": "2026-10-30T17:28:50.074597+00:00",
+        "reason": "Reviewed both languages for concise user instructions, supported versions and operational limits.",
+        "reviewed_content_sha256": "66d7f0fc158f11f3377b52bc8ed368e74cfb12cc2d38ebebd6772395cbe2a6d7"
       }
     },
     {

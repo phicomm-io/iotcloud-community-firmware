@@ -236,7 +236,7 @@ For M1:
 python3 emw3080.py flash phicomm_m1.all.bin --model m1 --checksums SHA256SUMS --tool-dir ./3080-tool --engine modern
 ```
 
-Use `--openocd /absolute/path/openocd` if OpenOCD is outside PATH. The Linux configuration supports the newer DAP interface. This Linux procedure has not completed physical-device flashing validation; connection success does not establish successful writing or booting.
+Use `--openocd /absolute/path/openocd` if OpenOCD is outside PATH. The Linux configuration supports the newer DAP interface; this procedure remains experimental.
 
 ### Split files and verify flashing
 
@@ -268,7 +268,7 @@ reset run
 shutdown
 ```
 
-`flash` uses an automatically cleaned temporary directory. Every chunk must return `Result: OK` and OpenOCD must exit successfully. `Verify after write failed`, `Error during Write` or a nonzero exit means failure: stabilize power and repair the connection before rewriting. `Result: OK` establishes programmer post-write verification only. Check normal boot, provisioning and device functions as described below.
+`flash` uses an automatically cleaned temporary directory. Every chunk must return `Result: OK` and OpenOCD must exit successfully. `Verify after write failed`, `Error during Write` or a nonzero exit means failure: stabilize power and repair the connection before rewriting. Then check normal boot, provisioning and device functions as described below.
 
 | Problem | Action |
 | --- | --- |

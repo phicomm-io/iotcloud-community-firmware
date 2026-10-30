@@ -30,25 +30,65 @@ function reviewedNotes(release, manifest) {
   }
   return note;
 }
-function releaseCard(release, latest, snapshot, candidate = false) {
-  const box = el(latest || candidate ? 'article' : 'details'); box.className = 'release';
-  const head = el(latest || candidate ? 'h3' : 'summary', release.tag); box.append(head);
-  if (latest || candidate) { const badge = el('span', candidate ? t('Beta（RC）· 不建议使用', 'Beta (RC) · Not recommended') : t('稳定最新版', 'Latest stable')); badge.className = 'tag'; head.append(badge); }
-  const table = el('table'); table.className = 'downloads';
-  const tr = el('tr'); for (const text of [t('型号', 'Model'), t('固件下载', 'Firmware')]) tr.append(el('th', text)); table.append(tr);
-  for (const [model, original] of Object.entries(release.models)) {
-    for (const [variant, value] of [['full', original], ...Object.entries(original.variants || {})]) {
-      const row = el('tr'); row.append(el('td', model.toUpperCase() + ' · ' + (variantLabels[variant] || variant)));
-      const cell = el('td');
-      for (const [kind, label] of [['signed', t('签名 OTA', 'Signed OTA')], ['raw', t('原始 OTA', 'Raw OTA')], ['full', t('完整镜像', 'Full image')]]) if (value.downloads[kind]) cell.append(link(label, value.downloads[kind].path, snapshot.source));
-      row.append(cell); table.append(row);
-    }
+const modelNames = {m1: 'M1', a1: 'A1', tc1: 'TC1', daikin: 'DAIKIN', s30: 'S30-V1B'};
+const variantDescriptions = {
+ full: t('完整本地网页，适合常规使用。', 'Complete local web interface for normal use.'),
+ 'no-frontend-resources': t('仅保留配网页，节省设备存储；日常管理使用平台。', 'Keeps the Wi-Fi setup page and saves flash; use the platform for daily management.'),
+ 'fresh-air': t('A1 外接新风风机适配，包含完整网页；普通 A1 无需选择。', 'A1 external fresh-air fan support with the full web interface.'),
+ 'fresh-air-no-frontend-resources': t('A1 新风功能，仅保留配网页。', 'A1 fresh-air support with only the setup page.'),
+ hub: t('大金中枢功能，需要按中枢说明配置。', 'DAIKIN hub functions; follow the hub setup guide.')
+};
+const fileTypes = {
+ signed: [t('签名 OTA', 'Signed OTA'), t('已安装社区固件的日常升级包，由设备校验签名。', 'Normal update for community firmware; the device checks its signature.')],
+ raw: [t('原始 OTA', 'Raw OTA'), t('原厂迁移或教程明确要求的应用包；不是全片镜像。', 'Application image for stock migration or instructions that explicitly require it; not a full flash image.')],
+ full: [t('完整镜像', 'Full image'), t('有线首次安装或恢复使用，不能在网页当作 OTA 上传。', 'For wired installation or recovery; never upload it as a web OTA package.')],
+ rbl: ['RBL', t('S30-V1B 原厂免拆安装或社区 URL OTA；设备主动通过 HTTP 下载。', 'S30-V1B stock network installation or community URL OTA; downloaded by the device over HTTP.')],
+ stock_ua: ['STOCK_UA', t('S30-V1B 串口安装，从 0x11000 写入，保留本机原厂启动器；不能用于网页 OTA。', 'S30-V1B serial installation at 0x11000, preserving its stock bootloader; not for web OTA.')]
+};
+let dialogSequence = 0;
+function deviceDownload(model, release, variants, snapshot, native = false) {
+ const name=modelNames[model]||model.toUpperCase(),card=el('article');card.className='firmware-device';card.dataset.downloadModel=model;
+ card.append(el('h4',name),el('p',release.tag));
+ const button=el('button',t('下载', 'Download'));button.type='button';button.className='btn';button.setAttribute('aria-haspopup','dialog');
+ const dialog=el('dialog');dialog.className='firmware-dialog';dialog.id='firmware-download-'+(++dialogSequence);button.setAttribute('aria-controls',dialog.id);
+ const header=el('div');header.className='firmware-dialog-head';
+ const heading=el('h2',name+' · '+release.tag);heading.id=dialog.id+'-title';dialog.setAttribute('aria-labelledby',heading.id);
+ const close=el('button',t('关闭', 'Close'));close.type='button';close.className='btn ghost';
+ close.addEventListener('click',()=>typeof dialog.close==='function'?dialog.close():dialog.removeAttribute('open'));
+ header.append(heading,close);dialog.append(header,el('p',t('先核对设备、固件变体与刷机方式，再选择文件类型。', 'Check the device, firmware variant and installation method before choosing a file.')));
+ for(const [variant,value] of variants){
+  const section=el('section');section.className='firmware-variant';section.dataset.variant=variant;
+  section.append(el('h3',variantLabels[variant]||variant),el('p',variantDescriptions[variant]||t('本设备原生固件。', 'Native firmware for this device.')));
+  for(const [kind,info] of Object.entries(fileTypes)){
+   const file=value.downloads[kind];if(!file)continue;
+   const row=el('div');row.className='firmware-file';
+   row.append(link(t('下载 ', 'Download ')+info[0],file.path,native?'':snapshot.source),el('p',info[1]),el('code',file.path.split('/').pop()));
+   if(file.size)row.append(el('small',file.size.toLocaleString(language)+' B'));
+   if(file.sha256)row.append(el('small','SHA-256: '+file.sha256));
+   section.append(row);
   }
-  const notes = el('details'); notes.className = 'release-notes';
-  notes.append(el('summary', t('本版变化', 'Changes in this release')), reviewedNotes(release, snapshot.manifest));
-  box.append(table, link(t('SHA256 校验文件', 'SHA256 checksums'), `/releases/${release.tag}/SHA256SUMS`, snapshot.source),
-    link(t('原始单版本说明 ↗', 'Original release notes ↗'), release.notes, snapshot.source), notes);
-  return box;
+  dialog.append(section);
+ }
+ const slug=model==='s30'?'s30-flash':model==='daikin'?'daikin-guide':model+'-flash';
+ const guide=el('a',t('刷机说明', 'Installation guide'));guide.href=new URL('guides/'+(english?'en/':'')+slug+'.html',siteBase);dialog.append(guide);
+ if(native&&variants[0][1].checksums)dialog.append(link(t('SHA256 校验文件', 'SHA256 checksums'),variants[0][1].checksums,''));
+ button.addEventListener('click',()=>{if(typeof dialog.showModal==='function')dialog.showModal();else dialog.setAttribute('open','');});
+ dialog.addEventListener('close',()=>button.focus());card.append(button,dialog);return card;
+}
+function releaseCard(release, latest, snapshot, candidate = false) {
+ const box=el(latest||candidate?'article':'details');box.className='release';
+ const head=el(latest||candidate?'h3':'summary',release.tag);box.append(head);
+ if(latest||candidate){const badge=el('span',candidate?t('Beta（RC）','Beta (RC)'):t('稳定最新版','Latest stable'));badge.className='tag';head.append(badge);}
+ const devices=el('div');devices.className='firmware-devices';
+ for(const [model,original] of Object.entries(release.models))devices.append(deviceDownload(model,release,[['full',original],...Object.entries(original.variants||{})],snapshot));
+ const nativeNode=document.getElementById('native-downloads');
+ if(candidate&&nativeNode){
+  const native=JSON.parse(nativeNode.textContent).releases.find(r=>r.tag===release.tag);
+  if(native)for(const [model,value] of Object.entries(native.models))devices.append(deviceDownload(model,release,[['full',value]],snapshot,true));
+ }
+ const notes=el('details');notes.className='release-notes';notes.append(el('summary',t('本版变化','Changes in this release')),reviewedNotes(release,snapshot.manifest));
+ box.append(devices,link(t('SHA256 校验文件','SHA256 checksums'),`/releases/${release.tag}/SHA256SUMS`,snapshot.source),link(t('原始单版本说明 ↗','Original release notes ↗'),release.notes,snapshot.source),notes);
+ return box;
 }
 async function loadCatalog() {
   const epoch = ++generation; active?.abort(); active = new AbortController();
@@ -82,7 +122,7 @@ async function loadCandidateCatalog() {
     target.replaceChildren();
     for (const release of candidates) target.append(releaseCard(release, false, snapshot, true));
     message.textContent = candidates.length
-      ? t('RC 实际属于 Beta 测试版本，后续仍会有较大改动，不建议使用。', 'RC releases are beta builds. Major changes are still expected; using them is not recommended.')
+      ? t('RC 用于 Beta 测试。', 'RC builds are for beta testing.')
       : t('目前没有可用候选版。', 'No release candidate is currently available.');
   } catch (error) {
     target.replaceChildren();

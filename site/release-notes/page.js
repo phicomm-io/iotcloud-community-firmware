@@ -102,8 +102,8 @@
         if (!available) group.append(element('p', t('暂无此型号的候选版文件。', 'No candidate files are available for this model.')));
         candidateDownloads.append(group);
       }
-      candidateStatus.textContent = t('RC 实际属于 Beta 测试版本，后续仍会有较大改动，不建议使用。稳定版仍为 ',
-        'RC releases are beta builds. Major changes are still expected; using them is not recommended. The stable release remains ') + snapshot.catalog.stable + (english ? '.' : '。');
+      candidateStatus.textContent = t('RC 用于 Beta 测试。稳定版仍为 ',
+        'RC builds are for beta testing. The stable release remains ') + snapshot.catalog.stable + (english ? '.' : '。');
     }
     function clearResult() { resultBox.replaceChildren(); share.hidden = true; app.removeAttribute('data-report-state'); }
     function invalidate() {

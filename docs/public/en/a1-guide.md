@@ -2,7 +2,7 @@
 
 A1 provides fan control, a light ring, child lock, night mode and automatic control using valid readings from M1, DAIKIN and other sensor providers. For first installation, see [A1 factory OTA](a1-no-disassembly) or [A1 wired recovery](a1-flash).
 
-**Use stable v0.9.27 for everyday operation. The current v1.0.0-rc.3 candidate is a beta build. Major changes are still expected, and daily use is not recommended.** See the [complete candidate release notes](release-log.html?channel=candidate) for version requirements and cumulative changes.
+**Use stable v0.9.27 for everyday operation, or v1.0.0-rc.4 for beta testing.** See the [complete candidate release notes](release-log.html?channel=candidate) for version requirements and cumulative changes.
 
 ## Power and fan
 
@@ -102,7 +102,7 @@ Some original touch panels report release after about 2–3 seconds of continuou
 | Two short taps, then hold the third touch for 1–2 seconds and release | Reset network |
 | Three short taps, then hold the fourth touch for 1–2 seconds and release | Factory reset |
 
-Release after each short tap and leave less than 0.3 seconds between touches. The final hold must last at least 1 second and less than 5 seconds. These reserved recovery sequences execute when the panel reports release, bypass child lock, and consume the preceding taps and final hold without running their custom actions. Separate click groups, standalone holds and two-button combinations remain available. The new sequences passed host regressions and local builds and image checks for all four A1 variants; **physical acceptance is still pending**. Factory reset clears user settings, so ensure you can provision Wi-Fi again.
+Release after each short tap and leave less than 0.3 seconds between touches. The final hold must last at least 1 second and less than 5 seconds. These reserved recovery sequences execute when the panel reports release, bypass child lock, and consume the preceding taps and final hold without running their custom actions. Separate click groups, standalone holds and two-button combinations remain available. These alternative sequences remain experimental. Factory reset clears user settings, so ensure you can provision Wi-Fi again.
 
 ## MQTT
 

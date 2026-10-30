@@ -1,6 +1,6 @@
 # Before flashing
 
-Read these common requirements before following a model-specific guide. The individual guides describe wiring points and differences between products.
+Before the first installation, check the power requirements and firmware type, then follow the wiring instructions for your model.
 
 For OTA migration, keep the normal power supply as described in the model's guide. The wiring and independent-supply requirements below apply when opening a device and connecting a programmer.
 
@@ -34,7 +34,7 @@ The TC1 A1 hardware revision and the A1 air purifier are different products. Dow
 | `.ota.bin.signed` | Signed OTA update package | No, only devices already running this firmware |
 | `.ota.bin.raw` | Native OTA image | Use the full image for the matching product; M1 requires 0.9.21 or newer. Follow the product's guide |
 
-**Community web updates use `.ota.bin.signed`; factory migration follows the model-specific guide. Never upload `.all.bin` or `.usr.bin` as OTA.** Verify downloads against `SHA256SUMS` from the same release.
+**A1, M1, TC1 and DAIKIN community web updates use `.ota.bin.signed`; factory migration follows the model-specific guide.** S30-V1B uses separate RBL / STOCK_UA files; see [S30 installation](s30-flash). Verify downloads against `SHA256SUMS` from the same release.
 
 ## Wiring and instructions
 
