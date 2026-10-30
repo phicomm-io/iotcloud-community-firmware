@@ -1,7 +1,14 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <cassert>
+#include <thread>
 #include "wire_mp.h"
+#include "http_read_snapshot.h"
+#include "auth_storage_diagnostics.h"
+extern "C" {
+#include "typed_wire.h"
+}
+static AuthStorageDiagnostics authStorageSnapshot(){return {};}
 ARDUINOJSON_BEGIN_PRIVATE_NAMESPACE
 namespace string_traits_impl {template <> struct has_length<::String, void> : true_type {};}
 ARDUINOJSON_END_PRIVATE_NAMESPACE
@@ -46,7 +53,8 @@ struct {
   int RSSI() const { return -42; }
   unsigned getMode() const { return 1; }
 } WiFi;
-static int digitalRead(int) { return 1; }
+static void (*duringStateBuild)()=nullptr;
+static int digitalRead(int) { if(duringStateBuild)duringStateBuild();return 1; }
 static void digitalWrite(unsigned, bool) {}
 static unsigned esp_reset_reason() { return 1; }
 struct Partition { const char *label; unsigned type, subtype, address, size; };
@@ -64,8 +72,71 @@ static int mqttLastEvent = 1, mqttErrorType = 0, mqttSocketError = 0;
 static bool mqttConnected = true;
 #include "indicators.inc"
 #include "state.inc"
+#include "public_read.inc"
+
+static void httpReads(){
+ String original;
+ assert(businessReadSnapshot.copy(original,false,clockMs));
+ DynamicJsonDocument request(512),reply(8192);
+ for(const char *action:{"status.get","config.get"}){
+  request.clear();request["action"]=action;request["request_id"]="read-01";request.createNestedObject("params");
+  String body,out;serializeWireMP(request,body);
+  assert(publicReadCommand(body,out));assert(!deserializeMsgPack(reply,out.c_str(),out.length()));
+  if(reply["code"]!="ok"||reply["request_id"]!="read-01"||reply["data"]["name"]!=config["device"]["name"]){
+   std::string dump;serializeJson(reply,dump);fprintf(stderr,"%s\n",dump.c_str());
+  }
+  assert(reply["code"]=="ok"&&reply["request_id"]=="read-01"&&reply["data"]["name"]==config["device"]["name"]);
+  assert(!reply["data"].containsKey("wifi")&&!reply["data"].containsKey("mqtt"));
+ }
+ request["action"]="indicator.set";String body,out;serializeWireMP(request,body);assert(!publicReadCommand(body,out));
+ request["action"]="status.get";request["params"]["unexpected"]=true;body="";serializeWireMP(request,body);assert(!publicReadCommand(body,out));
+ request["params"].clear();request["request_id"]="";body="";serializeWireMP(request,body);assert(!publicReadCommand(body,out));
+ request["request_id"]="valid";request["unexpected"]=true;body="";serializeWireMP(request,body);assert(!publicReadCommand(body,out));
+ request.remove("unexpected");body="";serializeWireMP(request,body);body.concat("\0",1);assert(!publicReadCommand(body,out));
+ // Copy lifetime, invalidation and a bounded lease including the clock wrap.
+ invalidateBusinessStatusCache();String copy;assert(!businessReadSnapshot.copy(copy,false,clockMs));
+ request["params"].to<JsonObject>();request["request_id"]="busy-id";body="";serializeWireMP(request,body);out="";
+ assert(publicReadCommand(body,out));assert(!deserializeJson(reply,out));
+ assert(reply["code"]=="busy"&&reply["request_id"]=="busy-id");
+ assert(pollBusinessStatusCache(clockMs));assert(businessReadSnapshot.copy(copy,false,clockMs));
+}
+
+static void concurrentCopies(){
+ HttpReadSnapshot cache;assert(cache.begin());
+ String data("initial"),envelope("envelope");assert(cache.publish(std::move(data),std::move(envelope),UINT32_MAX-1000));
+ String before;assert(cache.copy(before,false,999));assert(!cache.copy(before,false,1000));
+ // HTTP captures now before entering copy(); the owner may refresh between
+ // that capture and the atomic load. A newer publication is still fresh.
+ cache.refresh(1001);assert(cache.copy(before,false,1000));
+ assert(!cache.copy(before,false,3002));
+ cache.refresh(1);assert(cache.copy(before,false,UINT32_MAX));
+ assert(!cache.copy(before,false,2002));
+ // A reader briefly holding the publication lock cannot invalidate an older
+ // complete snapshot merely by overlapping a replacement attempt.
+ snapshotMutex.lock();String pending("pending"),pendingHttp("http");
+ assert(!cache.publish(std::move(pending),std::move(pendingHttp),1));snapshotMutex.unlock();
+ assert(cache.copy(before,false,2)&&before=="initial");
+ String limited("limited"),limitedHttp("http");assert(cache.publish(std::move(limited),std::move(limitedHttp),100,1000));
+ assert(cache.copy(before,false,1099));cache.refresh(1100);assert(!cache.copy(before,false,1100));
+ String initial("initial"),initialHttp("envelope");assert(cache.publish(std::move(initial),std::move(initialHttp),1));
+ assert(cache.copy(before,false,1)&&before=="initial");
+ std::atomic<bool> done{false};std::atomic<unsigned> successes{0};
+ std::thread reader([&](){while(!done.load()){
+  String value;if(cache.copy(value,false,5000)){
+   assert(value.length()==512);for(unsigned i=1;i<value.length();i++)assert(value[i]==value[0]);++successes;
+  }std::this_thread::yield();
+ }});
+ for(unsigned i=0;i<10000;i++){
+  char bytes[513];memset(bytes,'a'+i%26,512);bytes[512]=0;
+  String value(bytes),http("envelope");cache.publish(std::move(value),std::move(http),5000);
+  if(!(i%100))std::this_thread::yield();
+ }
+ done.store(true);reader.join();assert(successes>0&&before=="initial");
+ cache.invalidate();String missing;assert(!cache.copy(missing,false,5000));
+}
 
 int main(){
+ assert(businessReadSnapshot.begin());
  config["hub"]["username"]="owner";config["device"]["name"]="initial";
  co2Module.warmed=true;co2Module.received=true;co2Module.measuredAt=clockMs;
  for(auto &s:readings)s.set(42,clockMs);
@@ -81,6 +152,11 @@ int main(){
  doc.clear();state(doc.to<JsonObject>());assert(doc["sensors"]["pm25"]["valid"]==false);
  readings[PM25].set(51,clockMs);assert(pollBusinessStatusCache(clockMs));
  doc.clear();state(doc.to<JsonObject>());assert(doc["sensors"]["pm25"]["value"]==51);
+ // Both the source check and JSON construction call digitalRead(). The old
+ // publication must remain available throughout an ordinary sensor refresh.
+ readings[PM25].set(52,clockMs);
+ duringStateBuild=[](){String previous;assert(businessReadSnapshot.copy(previous,false,clockMs));};
+ assert(pollBusinessStatusCache(clockMs));duringStateBuild=nullptr;
  config["device"]["name"]="changed";invalidateBusinessStatusCache();
  doc.clear();state(doc.to<JsonObject>());assert(doc["name"]=="changed");
  clockMs=100000;co2Module.warmed=false;assert(pollBusinessStatusCache(clockMs));unsigned warm=businessStatusBuilds;
@@ -92,4 +168,5 @@ int main(){
  assert(pair.size()==2&&pair[0].is<unsigned>());if(pair[0]==PH_DIAG_MQTT_ERROR_TYPE){assert(pair[1]==0);zero=true;}}
  assert(zero);co2Module.received=false;doc.clear();diagnostics(doc.to<JsonObject>());
  for(JsonArrayConst pair:doc["fields"].as<JsonArrayConst>())assert(pair[0]!=PH_DIAG_CO2_DIAGNOSTICS_RAW_PPM);
+ httpReads();concurrentCopies();
 }

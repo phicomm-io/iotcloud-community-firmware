@@ -8,6 +8,11 @@ static mp_receipt mp_receipts[8];
 static unsigned mp_receipt_next;
 static uint32_t mp_generation[2]={1,1};
 static struct { uint32_t generation,clock_second; ph_buf *payload; } mp_cache[2];
+uint32_t service_cache_revision(void)
+{
+    if(!ready)return 0;
+    mico_rtos_lock_mutex(&service_lock);uint32_t n=mp_generation[0];mico_rtos_unlock_mutex(&service_lock);return n;
+}
 
 void service_cache_changed(unsigned mask)
 {
@@ -198,9 +203,24 @@ ph_buf *service_mqtt_command_mp(const void *data,size_t length)
 {mp_request r;if(!mp_decode(data,length,&r))return service_error_mp(r.id,"invalid_params");return mp_dispatch(&r,data,length,true,NULL,NULL);}
 ph_buf *service_query_mp(const char *action)
 {
-    ph_writer w;if(!action||!phw_init(&w,PH_WIRE_MSGPACK))return NULL;
-    phw_begin(&w,NULL,false);phw_text(&w,"action",action);phw_begin(&w,"params",false);phw_end(&w);phw_end(&w);
-    ph_buf *request=phw_take(&w);if(!request)return NULL;
-    ph_buf *response=service_command_mp(request->buf,request->len);ph_buf_free(request);return response;
+    static const unsigned char empty_map=0x80;
+    mp_request r={0};
+    if(!action||!identifier(action,sizeof(r.action)))return NULL;
+    size_t n=strlen(action);if(n<=4||strcmp(action+n-4,".get"))return NULL;
+    strcpy(r.action,action);
+    if(!phv_parse(PH_WIRE_MSGPACK,&empty_map,1,&r.params))return NULL;
+    /* Internal queries already have typed parameters. Do not serialize and
+     * parse a synthetic request just to enter the same dispatcher. */
+    return mp_dispatch(&r,NULL,0,false,NULL,NULL);
+}
+bool service_readonly_mp(const void *data,size_t length)
+{
+    mp_request r;if(!mp_decode(data,length,&r))return false;
+    /* Only reviewed, side-effect-free reads may charge their actual reply
+     * after execution. A future action ending in .get may start network work
+     * (for example an OTA check); it must keep write-style pre-admission. */
+    return !strcmp(r.action,"status.get")||!strcmp(r.action,"capabilities.get")||
+        !strcmp(r.action,"diagnostics.get")||!strcmp(r.action,"info.get")||
+        !strcmp(r.action,"config.get")||!strcmp(r.action,"logs.get");
 }
 #include "service_lan.inc"

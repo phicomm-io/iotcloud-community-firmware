@@ -10,6 +10,7 @@
 #include <memory>
 #include <atomic>
 #include <freertos/semphr.h>
+#include "http_read_snapshot.h"
 extern "C" {
 #include "../../common/local_auth.h"
 #include "../../common/typed_wire.h"
@@ -227,6 +228,7 @@ static void pollLocalControls(uint32_t now){
 }
 void setup(){
   Serial.begin(115200);
+  businessReadSnapshot.begin();
   if(!prefs.begin("daikin",false)){Serial.println("NVS unavailable");while(true)delay(1000);}
   {
     String text=loadAuthConfigText();

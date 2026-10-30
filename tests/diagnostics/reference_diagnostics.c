@@ -1,4 +1,4 @@
-/* Frozen cc9ca4af diagnostics byte oracle; model branches intentionally unpruned. */
+/* Unpruned diagnostics byte oracle; append-only migration fields added below. */
 #include "common/device_status.h"
 /* On-demand diagnostics. Stable IDs are generated from diagnostics-schema.json.
  * Pairs keep numeric IDs without relaxing the string-map request parser. */
@@ -89,6 +89,12 @@ void reference_device_diagnostics_mp(ph_writer *w,const device_status_t *s,const
 #ifdef PHICOMM_BEMFA
  if(s->model!=DEVICE_M1){reference_diagnostic_field(w,PH_DIAG_BEMFA_LAST_ERROR);phw_i32(w,NULL,s->network.bemfa_last_error);phw_end(w);}
 #endif
+ if(s->model==DEVICE_TC1){
+  reference_diagnostic_field(w,PH_DIAG_CONFIG_RECOVERY);phw_bool(w,NULL,f->model.tc1.config_recovery);phw_end(w);
+  reference_diagnostic_field(w,PH_DIAG_CONFIG_SOURCE_VERSION);phw_u32(w,NULL,f->model.tc1.config_source_version);phw_end(w);
+  reference_diagnostic_field(w,PH_DIAG_CONFIG_AUTH_MAGIC);phw_u32(w,NULL,f->model.tc1.config_auth_magic);phw_end(w);
+  reference_diagnostic_field(w,PH_DIAG_CONFIG_AUTH_VERSION);phw_u32(w,NULL,f->model.tc1.config_auth_version);phw_end(w);
+ }
  if(f->service_memory_valid){
   reference_diagnostic_field(w,PH_DIAG_SERVICE_MEMORY_RESERVED);phw_u32(w,NULL,f->service_memory.reserved);phw_end(w);
   reference_diagnostic_field(w,PH_DIAG_SERVICE_MEMORY_ACTIVE);phw_u32(w,NULL,f->service_memory.active);phw_end(w);

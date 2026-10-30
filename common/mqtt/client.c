@@ -1025,6 +1025,14 @@ bool ph_mqtt_input_admit(void) {
         ph_mqtt_credit_replace(&ctx->core,PH_MQTT_RECEIPT_BYTES);
 }
 bool ph_mqtt_input_consumed(void) { return ctx_ph_mqtt_input_consumed(&primary_port); }
+bool ph_mqtt_query_consumed(size_t reply_bytes) {
+    port_state *ctx=&primary_port;
+    if (!ctx_ph_mqtt_owner(ctx) || !ctx->core.dispatch_depth || ctx->core.protocol_depth)
+        return false;
+    ph_mqtt_item_release(&ctx->core, ctx->core.inflight[PH_MQTT_COMMAND]);
+    return reply_bytes && reply_bytes <= PH_MQTT_RECEIPT_BYTES &&
+        ph_mqtt_credit_replace(&ctx->core, reply_bytes);
+}
 #ifdef PHICOMM_BEMFA
 bool bm_input_consumed(void) { return ctx_ph_mqtt_input_consumed(secondary_port); }
 #endif

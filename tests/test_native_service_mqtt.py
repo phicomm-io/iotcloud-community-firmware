@@ -75,6 +75,11 @@ class NativeServicePaho(unittest.TestCase):
     def test_actual_service_dispatch(self):
         self.run_actual_service()
 
+    def test_read_credit_preserves_write_admission_and_borrowed_lifetime(self):
+        self._compile_fixture(defines=['-DREAD_QUERY_FIXTURE'])
+        with self.assertRaises(subprocess.CalledProcessError):
+            self._compile_fixture(defines=['-DREAD_QUERY_FIXTURE','-DLEGACY_READ_CREDIT'])
+
     def test_large_service_receipt_during_dispatch(self):
         self.run_large_receipt_during_dispatch()
 

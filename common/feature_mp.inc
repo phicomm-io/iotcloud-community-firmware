@@ -14,8 +14,18 @@ static void feature_average_fields_mp(ph_writer *w,const feature_sample_t *curre
  if(!complete){phw_begin(w,"fields",false);for(unsigned i=0;i<4;i++)phw_bool(w,keys[i],n&&isfinite(mean[i]));phw_bool(w,"co2",nc!=0);phw_end(w);}
 }
 #endif
-bool feature_domain_get_mp(const char *d,ph_writer *w){
- feature_config_t *c=malloc(sizeof(*c));if(!c)return false;feature_config_get(c);
+/* Pure configuration projection shared by the bounded stack fast path and
+ * the measured-allocation fallback. Both use one frozen config snapshot. */
+static bool feature_domain_config_mp(const feature_config_t *c,const char *d,ph_writer *w){
+ phw_begin(w,NULL,false);
+#ifndef FEATURE_DEVICE_A1
+ if(strcmp(d,"binding"))
+#endif
+ if(!feature_config_fields_mp(c,d,w)){phw_end(w);return false;}
+ if(!strcmp(d,"binding")){phw_text(w,"sensor_transport","lan");phw_uint(w,"session_protocol",3);phw_uint(w,"max_peers",FEATURE_MAX_PEERS);}
+ phw_end(w);return !w->failed;
+}
+static bool feature_domain_live_mp(const feature_config_t *c,const char *d,ph_writer *w){
  phw_begin(w,NULL,false);
 #ifdef FEATURE_DEVICE_A1
  if(!strcmp(d,"average")){
@@ -53,14 +63,51 @@ bool feature_domain_get_mp(const char *d,ph_writer *w){
   phw_uint(w,"max_sessions",FEATURE_MAX_PEERS);
 #endif
   phw_text(w,"linkage_status",!c->linkage.enabled?"disabled":data_valid?"active":"sensor_failed");unlock();
- }else{
-#ifndef FEATURE_DEVICE_A1
-  if(strcmp(d,"binding"))
-#endif
-  if(!feature_config_fields_mp(c,d,w)){free(c);phw_end(w);return false;}
  }
- if(!strcmp(d,"binding")){phw_text(w,"sensor_transport","lan");phw_uint(w,"session_protocol",3);phw_uint(w,"max_peers",FEATURE_MAX_PEERS);}
- phw_end(w);free(c);return !w->failed;
+ phw_end(w);return !w->failed;
+}
+bool feature_domain_get_mp(const char *d,ph_writer *w){
+ feature_config_t *c=malloc(sizeof(*c));if(!c)return false;feature_config_get(c);
+ if(strcmp(d,"status")
+#ifdef FEATURE_DEVICE_A1
+    && strcmp(d,"average")
+#endif
+ ){
+  /* Common settings fit on the audited task stack. Freeze their bytes first,
+   * then release the config copy before touching the protected heap.
+   * Larger optional configurations retain the measured allocation fallback. */
+  if(w->depth<=PHW_DEPTH-5){
+   char bytes[1024];ph_writer frozen;ph_buf packed;
+   if(phw_init_fixed(&frozen,PH_WIRE_MSGPACK,&packed,bytes,sizeof(bytes)) &&
+      feature_domain_config_mp(c,d,&frozen) && phw_finish_fixed(&frozen)){
+    free(c);
+    if(!w->fixed && !w->depth && w->wire && !w->wire->len &&
+       !ph_buf_reserve(w->wire,packed.len+1)){w->failed=true;return false;}
+    /* Self-generated config maps have at most five container levels. */
+    phw_cached_value(w,NULL,&packed,5);return !w->failed;
+   }
+  }
+  if(!w->fixed && !w->depth && w->wire && !w->wire->len){
+   ph_writer measure;ph_buf measured;
+   if(!phw_init_measure(&measure,PH_WIRE_MSGPACK,&measured) ||
+      !feature_domain_config_mp(c,d,&measure) || !phw_finish_fixed(&measure) ||
+      !ph_buf_reserve(w->wire,measured.len+1)){w->failed=true;free(c);return false;}
+  }
+  bool ok=feature_domain_config_mp(c,d,w);free(c);return ok;
+ }
+ /* Freeze live linkage state before wire allocation too: retaining the full
+  * feature config while growing a small result needlessly trips heap guards. */
+ if(w->depth<=PHW_DEPTH-5){
+  char bytes[1024];ph_writer frozen;ph_buf packed;
+  if(phw_init_fixed(&frozen,PH_WIRE_MSGPACK,&packed,bytes,sizeof(bytes)) &&
+     feature_domain_live_mp(c,d,&frozen) && phw_finish_fixed(&frozen)){
+   free(c);
+   if(!w->fixed && !w->depth && w->wire && !w->wire->len &&
+      !ph_buf_reserve(w->wire,packed.len+1)){w->failed=true;return false;}
+   phw_cached_value(w,NULL,&packed,5);return !w->failed;
+  }
+ }
+ bool ok=feature_domain_live_mp(c,d,w);free(c);return ok;
 }
 static void feature_result_mp(ph_writer *w,int status,unsigned revision,const ph_value *p){
  phw_begin(w,NULL,false);phw_uint(w,"code",status);phw_uint(w,"revision",revision);

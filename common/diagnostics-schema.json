@@ -457,6 +457,66 @@
     {
       "id": 114,
       "path": "service_memory.wire_guard_denied"
+    },
+    {
+      "id": 115,
+      "path": "storage.nvs_free_entries"
+    },
+    {
+      "id": 116,
+      "path": "storage.nvs_used_entries"
+    },
+    {
+      "id": 117,
+      "path": "storage.nvs_total_entries"
+    },
+    {
+      "id": 118,
+      "path": "storage.required_entries"
+    },
+    {
+      "id": 119,
+      "path": "storage.old_blob_bytes"
+    },
+    {
+      "id": 120,
+      "path": "storage.new_blob_bytes"
+    },
+    {
+      "id": 121,
+      "path": "storage.last_error"
+    },
+    {
+      "id": 122,
+      "path": "config.recovery"
+    },
+    {
+      "id": 123,
+      "path": "config.source_version"
+    },
+    {
+      "id": 124,
+      "path": "config.auth_magic"
+    },
+    {
+      "id": 125,
+      "path": "config.auth_version"
+    },
+    {
+      "id": 126,
+      "path": "http_snapshot.unavailable"
+    },
+    {
+      "id": 127,
+      "path": "http_snapshot.expired"
+    },
+    {
+      "id": 128,
+      "path": "http_snapshot.contended"
+    },
+    {
+      "id": 129,
+      "path": "http_snapshot.allocation_failed"
     }
   ]
 }

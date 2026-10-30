@@ -22,8 +22,9 @@ int service_mqtt_input(service_mqtt_sender sender,const mqtt_account_t *scope,co
     char busy[SERVICE_BUSY_BYTES];size_t busy_length=mqtt_busy_wire(payload,length,busy);
     /* Execute while the ingress entry is borrowed. Returned bytes own every
      * value, including request_id; release the queue entry only afterwards. */
-    ph_buf *wire=ph_mqtt_input_admit()?service_mqtt_command_mp(payload,length):NULL;
-    bool consumed=ph_mqtt_input_consumed();
+    bool query=service_readonly_mp(payload,length);
+    ph_buf *wire=(query||ph_mqtt_input_admit())?service_mqtt_command_mp(payload,length):NULL;
+    bool consumed=query?ph_mqtt_query_consumed(wire?wire->len:busy_length):ph_mqtt_input_consumed();
     if(!consumed){ph_buf_free(wire);wire=NULL;}
     return ph_mqtt_receipt_send_bytes(&target,wire?wire->buf:busy,wire?wire->len:busy_length,wire,receipt_release);
 }

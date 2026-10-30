@@ -28,6 +28,7 @@ static esp_err_t logoutHandler(httpd_req_t *req){char header[80]={};if(!localAut
 // HTTP handlers run on the server task; application work is queued below.
 static portMUX_TYPE webMux=portMUX_INITIALIZER_UNLOCKED;
 static volatile bool webPending=false,webDone=true;
+static volatile bool otaActive=false;
 static String webBody,webResult;
 static unsigned webOperation=0;
 static ph_auth_context webAuthContext;
@@ -42,13 +43,39 @@ static esp_err_t rootHandler(httpd_req_t *req){
   httpd_resp_set_type(req,"text/html; charset=utf-8");httpd_resp_set_hdr(req,"Content-Encoding","gzip");
   return httpd_resp_send(req,(const char*)web_data,sizeof(web_data));
 }
+// A strict borrowed parameter view selects only two public, side-effect-free
+// reads. The owned response is complete before the request buffer can expire.
+static bool publicReadCommand(const String &body,String &response){
+  ph_value root,action,params,id;char requestId[65]={};
+  if(!phv_parse(PH_WIRE_MSGPACK,body.c_str(),body.length(),&root)||
+     !phv_keys(&root,"|request_id||action||params|")||
+     !phv_get(&root,"action",&action)||
+     (!phv_equal_text(&action,"status.get")&&!phv_equal_text(&action,"config.get"))||
+     !phv_get(&root,"params",&params)||params.kind!=PHV_MAP||!phv_keys(&params,""))return false;
+  if(phv_get(&root,"request_id",&id)&&(!phv_text(&id,requestId,sizeof(requestId))||!requestId[0]))return false;
+  auto busy=[&](){StaticJsonDocument<256> error;error["code"]="busy";if(*requestId)error["request_id"]=requestId;response="";serializeJson(error,response);};
+  String data;
+  if(!businessReadSnapshot.copy(data,false,millis())){busy();return true;}
+  ph_writer writer;
+  if(!phw_init_capacity(&writer,PH_WIRE_MSGPACK,data.length()+160)){busy();return true;}
+  ph_buf cached={const_cast<char*>(data.c_str()),data.length(),data.length()+1};
+  phw_begin(&writer,nullptr,false);if(*requestId)phw_text(&writer,"request_id",requestId);
+  phw_text(&writer,"code","ok");phw_text(&writer,"message","ok");
+  phw_cached_value(&writer,"data",&cached,8);phw_end(&writer);
+  ph_buf *wire=phw_take(&writer);
+  if(!wire||!response.reserve(wire->len)||!response.concat(wire->buf,wire->len))busy();
+  ph_buf_free(wire);return true;
+}
 static esp_err_t commandHandler(httpd_req_t *req){
   if(!authorized(req))return ESP_OK;
-  if(webPending||!webDone)return jsonResponse(req,"503 Service Unavailable","{\"code\":\"busy\",\"message\":\"Command still pending\"}");
   if(req->content_len<=0||req->content_len>4096)return jsonResponse(req,"413 Payload Too Large","{\"code\":\"invalid_params\",\"message\":\"Command too large\"}");
   char type[64];if(httpd_req_get_hdr_value_str(req,"Content-Type",type,sizeof(type))!=ESP_OK||strcmp(type,"application/msgpack"))return jsonResponse(req,"415 Unsupported Media Type","{\"code\":\"invalid_params\",\"message\":\"Expected MessagePack\"}");
-  String body;body.reserve(req->content_len);char buffer[513];int left=req->content_len;
-  while(left){int n=httpd_req_recv(req,buffer,min(left,512));if(n<=0)return ESP_FAIL;buffer[n]=0;body.concat(buffer,n);left-=n;}
+  String body;if(!body.reserve(req->content_len))return jsonResponse(req,"503 Service Unavailable","{\"code\":\"busy\"}");char buffer[513];int left=req->content_len;
+  while(left){int n=httpd_req_recv(req,buffer,min(left,512));if(n<=0)return ESP_FAIL;buffer[n]=0;if(!body.concat(buffer,n))return jsonResponse(req,"503 Service Unavailable","{\"code\":\"busy\"}");left-=n;}
+  String response;
+  if(!authorized(req))return ESP_OK; // Recheck after receiving the body.
+  if(!otaActive&&publicReadCommand(body,response))return jsonResponse(req,response.startsWith("{")?"503 Service Unavailable":"200 OK",response);
+  if(webPending||!webDone)return jsonResponse(req,"503 Service Unavailable","{\"code\":\"busy\",\"message\":\"Command still pending\"}");
   if(!captureWebAuthorization(req))return ESP_OK;
   webOperation=0;webBody=body;webDone=false;
   portENTER_CRITICAL(&webMux);webPending=true;portEXIT_CRITICAL(&webMux);
@@ -120,7 +147,6 @@ static esp_err_t backupHandler(httpd_req_t *req){
   if(webResult.startsWith("{\"code\":\"busy\""))return jsonResponse(req,"503 Service Unavailable",webResult);
   return jsonResponse(req,webResult.indexOf("accepted")>=0?"202 Accepted":"400 Bad Request",webResult);
 }
-static volatile bool otaActive=false;
 struct OtaFlash {const esp_partition_t *partition;esp_ota_handle_t handle;size_t work;};
 static bool otaErase(void *context){
   auto *f=(OtaFlash*)context;
@@ -204,12 +230,9 @@ static esp_err_t infoHandler(httpd_req_t *req){
 }
 static esp_err_t statusHandler(httpd_req_t *req){
   if(!authorized(req))return ESP_OK;
-  if(webPending||!webDone)return jsonResponse(req,"503 Service Unavailable","{\"code\":\"busy\"}");
-  if(!captureWebAuthorization(req))return ESP_OK;
-  webBody="";webOperation=4;webDone=false;
-  portENTER_CRITICAL(&webMux);webPending=true;portEXIT_CRITICAL(&webMux);
-  uint32_t started=millis();while(!webDone){if(uint32_t(millis()-started)>=10000)return jsonResponse(req,"503 Service Unavailable","{\"code\":\"timeout\"}");delay(1);}
-  return jsonResponse(req,webResult.startsWith("{\"code\":\"busy\"")?"503 Service Unavailable":"200 OK",webResult);
+  String response;
+  if(otaActive||!businessReadSnapshot.copy(response,true,millis()))return jsonResponse(req,"503 Service Unavailable","{\"code\":\"busy\"}");
+  return jsonResponse(req,"200 OK",response);
 }
 static esp_err_t optionsHandler(httpd_req_t *req){httpd_resp_set_hdr(req,"Access-Control-Allow-Origin","*");httpd_resp_set_hdr(req,"Access-Control-Allow-Methods","GET, POST, OPTIONS");httpd_resp_set_hdr(req,"Access-Control-Allow-Headers","Content-Type, Authorization, X-IoTCloud-Target-Variant, X-IoTCloud-Confirm");return httpd_resp_send(req,nullptr,0);}
 

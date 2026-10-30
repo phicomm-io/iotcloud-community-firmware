@@ -271,9 +271,19 @@ bool feature_is_coordinator(void) {
 }
 void feature_local_sample(const feature_sample_t *s) {
   lock();
+  /* A scheduler tick is not a new sample. Compare named fields rather than
+   * struct padding, preserving validity, per-field freshness and boot/seq. */
+  bool changed=memcmp(local_sample.value,s->value,sizeof(s->value))||
+    local_sample.sequence!=s->sequence||local_sample.boot!=s->boot||
+    local_sample.received_ms!=s->received_ms||local_sample.age_ms!=s->age_ms||
+    local_sample.valid!=s->valid||memcmp(&local_sample.co2,&s->co2,sizeof(s->co2))||
+    local_sample.co2_received_ms!=s->co2_received_ms||local_sample.co2_age_ms!=s->co2_age_ms||
+    local_sample.co2_supported!=s->co2_supported||local_sample.co2_valid!=s->co2_valid||
+    local_sample.fields!=s->fields||local_sample.partial!=s->partial||
+    memcmp(local_sample.field_age_ms,s->field_age_ms,sizeof(s->field_age_ms));
   local_sample = *s;
   unlock();
-  service_cache_changed(SERVICE_CACHE_STATUS);
+  if(changed)service_cache_changed(SERVICE_CACHE_STATUS);
 }
 #ifdef FEATURE_DEVICE_A1
 void feature_values_snapshot(feature_values_t *out) {

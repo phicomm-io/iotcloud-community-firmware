@@ -55,6 +55,17 @@ class NativePublish(unittest.TestCase):
 #define log_e(...) ((void)0)
 #define log_w(...) ((void)0)
 ''')
+        (temp / 'freertos').mkdir()
+        (temp / 'freertos/semphr.h').write_text('''#pragma once
+#include <mutex>
+#include <chrono>
+typedef std::timed_mutex *SemaphoreHandle_t;
+static const int pdTRUE=1;
+static std::timed_mutex snapshotMutex;
+static inline SemaphoreHandle_t xSemaphoreCreateMutex(){return &snapshotMutex;}
+static inline int xSemaphoreTake(SemaphoreHandle_t m,unsigned ticks){return ticks?m->try_lock_for(std::chrono::milliseconds(ticks)):m->try_lock();}
+static inline void xSemaphoreGive(SemaphoreHandle_t m){m->unlock();}
+''')
         # Numeric constructors are unused and removed by gc-sections. Keep
         # declarations for parsing the unchanged SDK translation unit.
         (temp / 'stdlib_noniso.h').write_text('''#pragma once
@@ -67,9 +78,15 @@ char *dtostrf(double,int,unsigned int,char*);
 ''')
         src = ROOT / 'DAIKIN/src'
         (temp / 'state.inc').write_text('#include "diagnostics_ids.h"\n' + section(src / 'commands.inc', 'static void otaPartitionStatus(', 'static const char *actions'))
+        (temp / 'public_read.inc').write_text(section(src / 'http.inc', 'static bool publicReadCommand(', 'static esp_err_t commandHandler('))
         shutil.copyfile(src / 'diagnostics_ids.h', temp / 'diagnostics_ids.h')
         shutil.copyfile(src / 'indicators.inc', temp / 'indicators.inc')
         cls.binary = temp / 'native-publish'
+        objects=[]
+        for name in ('typed_wire','wire_buffer'):
+            obj=temp/(name+'.o');objects.append(str(obj))
+            subprocess.run(['cc','-std=gnu99','-g','-O1','-fsanitize=address,undefined','-fno-pie',
+                '-c',str(ROOT/'common'/(name+'.c')),'-o',str(obj)],check=True)
         subprocess.run([
             'c++', '-std=c++11', '-g', '-O1', '-Wall', '-Wextra', '-Werror',
             '-Wno-deprecated-copy', '-Wno-unused-function', '-Wno-sign-compare',
@@ -78,9 +95,9 @@ char *dtostrf(double,int,unsigned int,char*);
             '-DARDUINOJSON_ENABLE_ARDUINO_STRING=1',
             '-DARDUINOJSON_ENABLE_ARDUINO_STREAM=0', '-DARDUINOJSON_ENABLE_ARDUINO_PRINT=0',
             '-DARDUINOJSON_ENABLE_PROGMEM=0', '-DIOTCLOUD_HUB=1',
-            '-I' + str(temp), '-I' + str(ROOT / 'DAIKIN/include'), '-I' + str(codec),
+            '-I' + str(temp), '-I' + str(ROOT / 'DAIKIN/include'), '-I' + str(codec), '-I'+str(ROOT/'common'),
             str(ROOT / 'DAIKIN/tests/hub/status_cache.cpp'), str(temp / 'WString.cpp'),
-            '-Wl,--gc-sections',
+            *objects, '-Wl,--gc-sections', '-pthread',
             '-o', str(cls.binary)], check=True)
 
     def scenario(self, name):

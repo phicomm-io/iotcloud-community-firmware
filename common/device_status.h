@@ -108,7 +108,8 @@ typedef struct {
         } m1;
         struct { char mask[16], gateway[16], socket_names[6][64];
             bool modern, time_synced; unsigned report_seconds, power_coefficient;
-            int32_t utc_time; } tc1;
+            int32_t utc_time; bool config_recovery;
+            uint32_t config_source_version, config_auth_magic, config_auth_version; } tc1;
     } model;
 } device_status_full_t;
 

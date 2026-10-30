@@ -59,7 +59,8 @@ static void buildBusinessState(JsonObject out,uint32_t now){
     if(readings[i].received)s["age_ms"]=uint32_t(now-readings[i].at);else s["age_ms"]=nullptr;
   }
 }
-// Owned cache is accessed only by the application loop, never SDK callbacks.
+// The document/source key belong to the application loop. HTTP copies the
+// immutable encoded publication through HttpReadSnapshot, never this document.
 // Source keys compare exact typed values; no business JSON is built on a hit.
 struct BusinessStatusKey {
   struct Sample {float value;uint32_t at;bool received,present,valid;};
@@ -81,8 +82,8 @@ static bool businessStatusInvalid=true,businessStatusReady=false;
 static unsigned businessStatusBuilds=0;
 static BusinessStatusKey businessStatusKey;
 static DynamicJsonDocument businessStatusDocument(4096);
-static String businessStatusWire,businessStatusHttpWire;
-static void invalidateBusinessStatusCache(){businessStatusInvalid=true;}
+static HttpReadSnapshot businessReadSnapshot;
+static void invalidateBusinessStatusCache(){businessStatusInvalid=true;businessReadSnapshot.invalidate();}
 static BusinessStatusKey businessStatusSource(uint32_t now){
   BusinessStatusKey key={};
   for(unsigned i=0;i<SENSOR_COUNT;i++){auto &s=key.samples[i];const auto &r=readings[i];s.value=r.value;s.at=r.at;s.received=r.received;s.present=sensorPresent(i);s.valid=r.valid(now);}
@@ -101,22 +102,35 @@ static BusinessStatusKey businessStatusSource(uint32_t now){
 }
 static bool pollBusinessStatusCache(uint32_t now){
   const BusinessStatusKey next=businessStatusSource(now);
-  if(businessStatusReady&&!businessStatusInvalid&&next==businessStatusKey)return true;
-  // Invalidate before rebuilding so OOM never serves a known-stale valid sample.
-  businessStatusReady=false;businessStatusWire="";businessStatusHttpWire="";
+  if(businessStatusReady&&!businessStatusInvalid&&next==businessStatusKey){businessReadSnapshot.refresh(now);return true;}
+  // Ordinary updates replace a complete publication only after encoding.
+  // A known-invalid sample is different: stop publishing its old valid flag
+  // immediately. Configuration changes invalidate explicitly at commit time.
+  uint32_t freshFor=0x7fffffffu;
+  for(unsigned i=0;i<SENSOR_COUNT;i++){
+    if(businessStatusKey.samples[i].valid&&!next.samples[i].valid)businessReadSnapshot.invalidate();
+    if(next.samples[i].valid)freshFor=std::min(freshFor,20000u-uint32_t(now-next.samples[i].at));
+  }
+  businessStatusReady=false;
   businessStatusDocument.clear();buildBusinessState(businessStatusDocument.to<JsonObject>(),now);
   if(businessStatusDocument.overflowed())return false;
   String wire,http;
   const size_t n=measureMsgPack(businessStatusDocument);
   if(!wire.reserve(n)||serializeWireMP(businessStatusDocument,wire)!=n)return false;
-  DynamicJsonDocument envelope(4096);envelope["code"]="ok";envelope["data"]=businessStatusDocument.as<JsonObjectConst>();
-  const size_t m=measureMsgPack(envelope);
-  if(envelope.overflowed()||!http.reserve(m)||serializeWireMP(envelope,http)!=m)return false;
-  businessStatusWire=std::move(wire);businessStatusHttpWire=std::move(http);
+  // Reuse the encoded value instead of copying the object tree and encoding
+  // the same business data a second time for GET /status.
+  ph_writer envelope;if(!phw_init_capacity(&envelope,PH_WIRE_MSGPACK,n+64))return false;
+  ph_buf cached={const_cast<char*>(wire.c_str()),wire.length(),wire.length()+1};
+  phw_begin(&envelope,nullptr,false);phw_text(&envelope,"code","ok");
+  phw_cached_value(&envelope,"data",&cached,8);phw_end(&envelope);
+  ph_buf *encoded=phw_take(&envelope);
+  const bool complete=encoded&&http.reserve(encoded->len)&&http.concat(encoded->buf,encoded->len);
+  ph_buf_free(encoded);if(!complete)return false;
+  if(!businessReadSnapshot.publish(std::move(wire),std::move(http),now,freshFor==0x7fffffffu?0:freshFor))return false;
   businessStatusKey=next;businessStatusInvalid=false;businessStatusReady=true;++businessStatusBuilds;return true;
 }
-static const String &cachedBusinessState(){return businessStatusWire;}
-static const String &cachedHttpStatus(){return businessStatusHttpWire;}
+static const String &cachedBusinessState(){return businessReadSnapshot.data();}
+static const String &cachedHttpStatus(){return businessReadSnapshot.envelope();}
 static void state(JsonObject out){
   // Bootstrap is allowed before the first loop; normal reads only copy cache.
   if((!businessStatusReady||businessStatusInvalid)&&!pollBusinessStatusCache(millis()))return;
@@ -129,11 +143,20 @@ template<class T> static void diagnosticField(JsonArray fields,unsigned id,const
 static void diagnostics(JsonObject out){
   const uint32_t now=millis();out["schema"]=PH_DIAGNOSTICS_SCHEMA;
   JsonArray fields=out.createNestedArray("fields");
+  const auto storage=authStorageSnapshot();
+  if(storage.attempted)diagnosticField(fields,PH_DIAG_STORAGE_LAST_ERROR,unsigned(storage.error));
+  if(storage.sizes){diagnosticField(fields,PH_DIAG_STORAGE_OLD_BLOB_BYTES,storage.oldBytes);diagnosticField(fields,PH_DIAG_STORAGE_NEW_BLOB_BYTES,storage.newBytes);}
+  if(storage.required)diagnosticField(fields,PH_DIAG_STORAGE_REQUIRED_ENTRIES,storage.requiredEntries);
+  if(storage.stats){diagnosticField(fields,PH_DIAG_STORAGE_NVS_FREE_ENTRIES,storage.freeEntries);diagnosticField(fields,PH_DIAG_STORAGE_NVS_USED_ENTRIES,storage.usedEntries);diagnosticField(fields,PH_DIAG_STORAGE_NVS_TOTAL_ENTRIES,storage.totalEntries);}
   diagnosticField(fields,PH_DIAG_UPTIME_SECONDS,now/1000);
   diagnosticField(fields,PH_DIAG_FREE_MEMORY,ESP.getFreeHeap());
   diagnosticField(fields,PH_DIAG_MINIMUM_FREE_MEMORY,ESP.getMinFreeHeap());
   diagnosticField(fields,PH_DIAG_MAX_FREE_BLOCK,ESP.getMaxAllocHeap());
   diagnosticField(fields,PH_DIAG_RESET_REASON,unsigned(esp_reset_reason()));
+  diagnosticField(fields,PH_DIAG_HTTP_SNAPSHOT_UNAVAILABLE,businessReadSnapshot.unavailable());
+  diagnosticField(fields,PH_DIAG_HTTP_SNAPSHOT_EXPIRED,businessReadSnapshot.expired());
+  diagnosticField(fields,PH_DIAG_HTTP_SNAPSHOT_CONTENDED,businessReadSnapshot.contended());
+  diagnosticField(fields,PH_DIAG_HTTP_SNAPSHOT_ALLOCATION_FAILED,businessReadSnapshot.allocationFailed());
   diagnosticField(fields,PH_DIAG_OTA_SIGNATURE_VERIFIED,prefs.getBool("ota_signed",false));
   diagnosticField(fields,PH_DIAG_MQTT_LAST_EVENT,int(mqttLastEvent));
   diagnosticField(fields,PH_DIAG_MQTT_ERROR_TYPE,int(mqttErrorType));

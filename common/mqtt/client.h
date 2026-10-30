@@ -49,6 +49,9 @@ bool ph_mqtt_work_pending(void);
  * ingress. Refusal must precede business mutations. */
 bool ph_mqtt_input_admit(void);
 bool ph_mqtt_input_consumed(void);
+/* Pure read only: release borrowed input, then charge the actual owned reply.
+ * Mutations must keep using upfront worst-case receipt admission. */
+bool ph_mqtt_query_consumed(size_t reply_bytes);
 void ph_mqtt_outgoing(int(*)(const ph_mqtt_item *));
 bool ph_mqtt_owner(void);
 void ph_mqtt_owner_end(void);

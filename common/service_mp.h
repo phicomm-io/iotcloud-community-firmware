@@ -26,6 +26,8 @@ ph_buf *service_mqtt_command_mp(const void *data, size_t length);
 ph_buf *service_lan_command_mp(const void *data,size_t length,const ph_auth_context *);
 ph_buf *service_lan_try_command_mp(const void *,size_t,const ph_auth_context *,bool *admitted);
 ph_buf *service_query_mp(const char *action);
+/* Same validated .get classification as dispatch; never admits a mutation. */
+bool service_readonly_mp(const void *,size_t);
 ph_buf *service_error_mp(const char *request_id, const char *code);
 
 /* Product emits exactly one data value (usually a map). Returning false means
@@ -48,3 +50,5 @@ bool service_product_ota_start(const char *url);
 enum { SERVICE_CACHE_STATUS = 1, SERVICE_CACHE_CAPABILITIES = 2,
        SERVICE_CACHE_ALL = 3 };
 void service_cache_changed(unsigned mask);
+/* Cheap version only: never captures, allocates, or acknowledges a channel. */
+uint32_t service_cache_revision(void);

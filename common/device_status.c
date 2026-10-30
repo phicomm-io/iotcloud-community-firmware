@@ -433,6 +433,14 @@ void device_diagnostics_mp(ph_writer *w,const device_status_t *s,const device_st
  if(s->model!=DEVICE_M1){diagnostic_i32(w,PH_DIAG_BEMFA_LAST_STAGE,s->network.bemfa_last_stage);}
  if(s->model!=DEVICE_M1){diagnostic_i32(w,PH_DIAG_BEMFA_LAST_ERROR,s->network.bemfa_last_error);}
 #endif
+#if !defined(PHICOMM_STATUS_MODEL) || PHICOMM_STATUS_MODEL == 2
+ if(s->model==DEVICE_TC1){
+  diagnostic_bool(w,PH_DIAG_CONFIG_RECOVERY,f->model.tc1.config_recovery);
+  diagnostic_u32(w,PH_DIAG_CONFIG_SOURCE_VERSION,f->model.tc1.config_source_version);
+  diagnostic_u32(w,PH_DIAG_CONFIG_AUTH_MAGIC,f->model.tc1.config_auth_magic);
+  diagnostic_u32(w,PH_DIAG_CONFIG_AUTH_VERSION,f->model.tc1.config_auth_version);
+ }
+#endif
  if(f->service_memory_valid){
   diagnostic_u32(w,PH_DIAG_SERVICE_MEMORY_RESERVED,f->service_memory.reserved);
   diagnostic_u32(w,PH_DIAG_SERVICE_MEMORY_ACTIVE,f->service_memory.active);
