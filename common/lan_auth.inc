@@ -1,7 +1,9 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Included by product main, once. Synchronous borrowed views only. */
+#ifndef PH_LAN_AUTH_TYPES_PROVIDED
 #include "local_auth.h"
 #include "typed_wire.h"
+#endif
 #include <string.h>
 static void lan_auth_hex(const uint8_t bytes[16],char text[33])
 {
