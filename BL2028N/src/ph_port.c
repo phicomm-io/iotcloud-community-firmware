@@ -188,7 +188,7 @@ void PH_BL_Tick(void) {
     else if(event==PH_BUTTON_RESET)reset_requested=2;
     ph_indicator lights=ph_indicator_state(t,bl_device.settings.indicator,
         bl_device.relay,*CFG_GetWiFiSSID()||*CFG_GetWiFiSSID2(),Main_IsConnectedToWiFi(),
-        *CFG_GetMQTTHost()!=0,bl_mqtt_status==MQTT_READY,button.down,(uint32_t)(t-button.pressed));
+        *CFG_GetMQTTHost()!=0,bl_mqtt_status==MQTT_READY,button.down&&button.raw,(uint32_t)(t-button.pressed));
     HAL_PIN_SetOutputValue(RED_PIN,lights.red?PH_RED_ACTIVE:!PH_RED_ACTIVE);
     HAL_PIN_SetOutputValue(BLUE_PIN,lights.blue?PH_BLUE_ACTIVE:!PH_BLUE_ACTIVE);
     unlock();

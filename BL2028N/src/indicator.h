@@ -8,11 +8,13 @@ static inline ph_indicator ph_indicator_state(uint32_t now, bool enabled,
         bool relay, bool wifi_configured, bool wifi_connected,
         bool mqtt_configured, bool mqtt_ready, bool button_down, uint32_t held) {
     ph_indicator state = {false, false};
-    /* Recovery feedback remains visible even when normal indicators are off. */
-    if (button_down && held >= 5000) {
-        bool factory = held >= 10000;
-        state.blue = (now / (factory ? 100u : 250u)) & 1u;
-        state.red = factory && state.blue;
+    /* Match TC1 key_hold_feedback: one 160 ms pulse per complete second,
+     * measured from this press rather than the global uptime. Recovery
+     * feedback remains visible even when normal indicators are off. */
+    if (button_down) {
+        bool pulse = held >= 1000u && held % 1000u < 160u;
+        state.blue = pulse && (held < 5000u || held >= 10000u);
+        state.red = pulse && held >= 5000u;
         return state;
     }
     if (!enabled) return state;

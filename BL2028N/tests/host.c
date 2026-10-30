@@ -5,6 +5,7 @@
 #include "../src/button.h"
 #include "../src/ota_guard.h"
 #include "../src/indicator.h"
+#include "../../common/gesture.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -36,13 +37,39 @@ static void indicator_tests(void) {
     assert(!a.red&&a.blue);
     a=ph_indicator_state(500,false,true,false,false,true,false,false,0);
     assert(!a.red&&!a.blue);
-    /* Boundary and priority: recovery bypasses disabled normal indicators. */
-    a=ph_indicator_state(250,true,true,true,true,true,true,true,4999);assert(!a.red&&a.blue);
-    a=ph_indicator_state(250,false,true,true,true,true,false,true,5000);assert(!a.red&&a.blue);
-    b=ph_indicator_state(500,false,true,true,true,true,false,true,9999);assert(!b.red&&!b.blue);
-    a=ph_indicator_state(100,false,false,false,false,false,false,true,10000);assert(a.red&&a.blue);
-    b=ph_indicator_state(200,false,false,false,false,false,false,true,20000);assert(!b.red&&!b.blue);
-    a=ph_indicator_state(100,false,false,false,false,false,false,false,10000);assert(!a.red&&!a.blue);
+    /* The actual TC1 helper is the cadence reference. Non-aligned press times
+     * and RTOS wrap must still give exactly one 160 ms pulse each second. */
+    const uint32_t origins[]={37,1250,UINT32_MAX-3000};
+    for(unsigned i=0;i<sizeof(origins)/sizeof(*origins);++i)for(unsigned enabled=0;enabled<2;++enabled){
+        key_gesture_t gesture={0};gesture.stable=gesture.candidate=true;gesture.pressed_at=origins[i];
+        unsigned pulses=0,on_samples=0;bool previous=false;
+        for(uint32_t held=0;held<13000;++held){
+            uint32_t t=origins[i]+held;
+            ph_indicator s=ph_indicator_state(t,enabled,true,false,false,true,false,true,held);
+            bool on=s.red||s.blue;
+            assert(on==key_hold_feedback(&gesture,t));
+            if(on){
+                assert(s.red==(held>=5000u));
+                assert(s.blue==(held<5000u||held>=10000u));
+                ++on_samples;
+            }
+            if(on&&!previous)++pulses;
+            previous=on;
+        }
+        assert(pulses==12&&on_samples==12*160);
+    }
+    /* Exact pulse/threshold edges and immediate return to the output state. */
+    const uint32_t edges[]={999,1000,1159,1160,4999,5000,5159,5160,9999,10000,10159,10160};
+    const unsigned masks[]={0,2,2,0,0,1,1,0,0,3,3,0};
+    for(unsigned i=0;i<sizeof(edges)/sizeof(*edges);++i){
+        a=ph_indicator_state(17+edges[i],false,true,true,true,true,false,true,edges[i]);
+        assert(((unsigned)a.red|((unsigned)a.blue<<1))==masks[i]);
+    }
+    for(unsigned relay=0;relay<2;++relay){
+        a=ph_indicator_state(1234,true,relay,true,true,false,false,false,10000);
+        assert(!a.red&&a.blue==(bool)relay);
+    }
+    a=ph_indicator_state(1234,false,true,true,true,false,false,false,10000);assert(!a.red&&!a.blue);
 }
 static void ota_tests(void) {
     unsigned char data[128]={'R','B','L',0};ph_ota_guard g={0};
