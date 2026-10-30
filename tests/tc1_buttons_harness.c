@@ -127,6 +127,7 @@ void UserLedSet(char on);
 void UserLedRefresh(void);
 bool RelayOut(void);
 #include "TC1/control.c"
+bool PowerLocalSampleRead(uint32_t *mw){(void)mw;return false;}
 #undef malloc
 
 static void MicoGpioOutputHigh(unsigned pin) { assert(!state_locked); gpio_state[pin] = true; }
@@ -250,6 +251,21 @@ static void control_failures(void) {
     tap(); sockets(false);
     sample(true, 5200); sample(false, 600); assert(recoveries == 1);
     sample(true, 10200); sample(false, 600); assert(recoveries == 2);
+    /* Typed power rules share native admission and rollback, with no allocator
+     * or MQTT dependency. An edit after snapshot invalidates the old action. */
+    config.automation.tasks[0]=(automation_task_t){.id=77,.once=3,.enabled=1,.days=0,.at=100000,.last=10,
+        .action={.kind=AUTO_OUTLET,.target=2,.value=1}};
+    ph_power_rule rule,selected[PH_POWER_RULES_MAX];unsigned count;
+    assert(tc1_automation_load_power_rules(selected,&count)&&count==1);rule=selected[0];
+    test_now+=1500;fail_save=true;assert(!tc1_automation_power_execute(&rule));sockets(false);fail_save=false;
+    assert(tc1_automation_power_execute(&rule));assert(config.socket_status[2]&&gpio_state[relay[2]]);
+    config.automation.tasks[0].action.value=0;
+    assert(!tc1_automation_power_execute(&rule));assert(config.socket_status[2]);
+    assert(tc1_power_rule_from_task(&config.automation.tasks[0],&rule));
+    reserved=true;assert(!tc1_automation_power_execute(&rule));reserved=false;
+    ota_active=true;assert(!tc1_automation_power_execute(&rule));ota_active=false;
+    assert(tc1_automation_power_execute(&rule));sockets(false);
+    automation_power_manual_override();assert(power_states[0].rule.id==77&&power_states[0].trigger.fired);
     assert(!state_locked && !reserved && !product_calls && !allocation_attempts);
     assert(config.unrelated == 0x1234abcd);
     puts("PASS TC1 admission, persistence rollback, schedules, reboot and fixed recovery");

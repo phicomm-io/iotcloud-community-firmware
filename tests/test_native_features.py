@@ -33,6 +33,9 @@ class NativeFeatures(unittest.TestCase):
     def test_config_all_six_domains(self):
         self.compile_run('tests/test_config_mp.c')
 
+    def test_power_trigger_continuity_rearm_busy_and_tick_wrap(self):
+        self.compile_run('tests/test_power_trigger.c')
+
     def test_feature_business_cas_rollback_reads(self):
         self.compile_run('tests/test_feature_mp.c')
 
@@ -40,7 +43,7 @@ class NativeFeatures(unittest.TestCase):
         self.compile_run('tests/test_fresh_air_mp.c')
 
     def test_automation_existing_scheduler_and_button_matrix(self):
-        sources = [(ROOT / p).read_text() for p in ('tests/test_automation.c', 'tests/countdown_scenarios.inc')]
+        sources = [(ROOT / p).read_text() for p in ('tests/test_automation.c', 'tests/countdown_scenarios.inc', 'tests/power_rule_scenarios.inc')]
         for model, defines, macros in (
             ('A1', ['FEATURE_DEVICE_A1'], dict(CONTROL='fan.set', CONTROL_PARAMS='"on":true,"speed":50', KEY='1')),
             ('M1', [], dict(CONTROL='display.set', CONTROL_PARAMS='"brightness":50', KEY='0')),

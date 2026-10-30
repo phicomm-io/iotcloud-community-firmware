@@ -10,6 +10,9 @@ bool a1_automation_execute(const automation_action_t*a,bool b){(void)a;(void)b;r
 #elif defined(AUTOMATION_TC1)
 bool tc1_automation_execute(const automation_action_t*a,bool b){(void)a;(void)b;return true;}
 bool tc1_automation_load_button(unsigned key,unsigned slot,automation_action_t*a){*a=persisted.buttons[key][slot];return true;}
+bool tc1_automation_load_power_rules(ph_power_rule out[PH_POWER_RULES_MAX],unsigned *count){(void)out;*count=0;return true;}
+bool tc1_automation_power_sample(uint32_t *out){(void)out;return false;}
+bool tc1_automation_power_execute(const ph_power_rule *r){(void)r;return false;}
 #else
 bool m1_automation_execute(const automation_action_t*a,bool b){(void)a;(void)b;return true;}
 #endif

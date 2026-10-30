@@ -46,6 +46,8 @@ void service_product_capabilities_mp(ph_writer *out,const char *const *extra,boo
     else for(unsigned i=0;actions[i];i++)phw_text(out,NULL,actions[i]);
     if(extra)for(unsigned i=0;extra[i];i++)phw_text(out,NULL,extra[i]);phw_end(out);
     phw_begin(out,"status_views",true);phw_text(out,NULL,"full");phw_end(out);
+    phw_int(out,"outlet_count",SOCKET_NUM);phw_int(out,"power_schedule_capacity",PH_POWER_RULES_MAX);
+    phw_begin(out,"schedule_triggers",true);phw_text(out,NULL,"weekly");phw_text(out,NULL,"once");phw_text(out,NULL,"power");phw_end(out);
     phw_text(out,"device_language","zh-CN,en");phw_int(out,"name_max_bytes",maxNameLen-1);phw_int(out,"config_backup",1);phw_int(out,"diagnostics_schema",PH_DIAGNOSTICS_SCHEMA);phw_bool(out,"business_status",true);
     phw_bool(out,"config_recovery",device_config_recovery());phw_bool(out,"dual_mqtt",true);phw_end(out);
 }

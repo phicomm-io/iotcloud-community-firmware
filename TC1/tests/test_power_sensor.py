@@ -76,6 +76,9 @@ class PowerSensor(unittest.TestCase):
     def test_interrupt_snapshot_never_mixes_value_and_timestamp(self):
         self.scenario('concurrent')
 
+    def test_local_rules_count_pulses_zero_load_and_survive_mqtt_invalidation(self):
+        self.scenario('local')
+
     def test_actual_sdk_clock_is_not_reentered_from_the_typed_reader(self):
         build = Path(self.temp.name)
         sdk = Path(os.environ.get('TC1_SDK_DIR', ROOT / 'build/tc1-sdk-3.6.4/mico-os'))

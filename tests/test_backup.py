@@ -8,6 +8,42 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 
 class BackupTest(unittest.TestCase):
+    def test_power_rules_restore_limits_and_model_scope(self):
+        source = r'''
+#include <assert.h>
+#include <string.h>
+#include "common/backup_validation.h"
+int main(void){
+    automation_storage_t c={0};c.magic=AUTOMATION_MAGIC;
+    assert(ph_backup_automation_valid(&c));
+    automation_task_t *t=&c.tasks[0];
+    *t=(automation_task_t){.id=1,.enabled=1,.once=3,.days=1,.at=5000,.last=600,
+        .action={.kind=AUTO_OUTLET,.target=255,.value=0}};
+#ifdef AUTOMATION_TC1
+    assert(sizeof(*t)==24 && ph_backup_automation_valid(&c));
+    t->last=PH_POWER_DURATION_MAX+1u;assert(!ph_backup_automation_valid(&c));t->last=600;
+    t->action.target=6;assert(!ph_backup_automation_valid(&c));t->action.target=255;
+    t->action.value=2;assert(!ph_backup_automation_valid(&c));t->action.value=0;
+    t->at=PH_POWER_LIMIT_MW+1u;assert(!ph_backup_automation_valid(&c));t->at=5000;
+    for(unsigned i=1;i<PH_POWER_RULES_MAX;i++){c.tasks[i]=*t;c.tasks[i].id=i+1;}
+    assert(ph_backup_automation_valid(&c));
+    c.tasks[7].id=1;assert(!ph_backup_automation_valid(&c));c.tasks[7].id=8;
+    c.tasks[8]=*t;c.tasks[8].id=9;assert(!ph_backup_automation_valid(&c));
+#else
+    assert(!ph_backup_automation_valid(&c));
+#endif
+    return 0;
+}
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            file, binary = Path(directory)/'power.c', Path(directory)/'power'
+            file.write_text(source)
+            for defines in ([], ['-DAUTOMATION_TC1']):
+                subprocess.run([os.environ.get('CC','cc'), '-std=c99', '-Wall', '-Wextra', '-Werror',
+                                '-fsanitize=address,undefined','-fno-omit-frame-pointer','-no-pie',
+                                '-I',str(ROOT),*defines,str(file),'-o',str(binary)],check=True)
+                subprocess.run([str(binary)],check=True)
+
     def test_roundtrip_corruption_and_scope(self):
         source = r'''
 #include <assert.h>

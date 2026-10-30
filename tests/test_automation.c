@@ -26,6 +26,16 @@ bool m1_automation_execute(const automation_action_t*a,bool button){(void)button
 void service_event(const char*a,const char*b,const char*c){(void)a;(void)b;(void)c;}
 #ifdef AUTOMATION_TC1
 bool tc1_automation_load_button(unsigned key,unsigned slot,automation_action_t *out){*out=stored.buttons[key][slot];return true;}
+static bool power_valid;static uint32_t power_mw;
+bool tc1_automation_power_sample(uint32_t *out){*out=power_mw;return power_valid;}
+bool tc1_automation_load_power_rules(ph_power_rule out[PH_POWER_RULES_MAX],unsigned *count){
+ *count=0;for(unsigned i=0;i<AUTOMATION_TASKS;i++)if(stored.tasks[i].id&&stored.tasks[i].once==3){
+  if(*count==PH_POWER_RULES_MAX||!tc1_power_rule_from_task(&stored.tasks[i],&out[*count]))return false;++*count;
+ }return true;
+}
+bool tc1_automation_power_execute(const ph_power_rule *r){
+ if(busy)return false;assert(calls<16);order[calls++]=r->target;return true;
+}
 bool tc1_automation_execute(const automation_action_t *a,bool button){
  (void)button;if(!a->kind)return true;if(busy)return false;
  assert(calls<16);order[calls++]=a->kind==AUTO_REBOOT?AUTO_REBOOT:AUTO_FAN;return true;
@@ -121,6 +131,9 @@ int main(void){automation_defaults(&stored);
  CHECK("{\"action\":\"buttons.get\",\"params\":{\"limit\":9}}","invalid_params");
 #ifdef FEATURE_DEVICE_A1
 #include "countdown_scenarios.inc"
+#endif
+#ifdef AUTOMATION_TC1
+#include "power_rule_scenarios.inc"
 #endif
 
 #if !defined(FEATURE_DEVICE_A1) && !defined(AUTOMATION_TC1)

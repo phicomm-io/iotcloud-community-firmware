@@ -34,9 +34,9 @@ static ph_mqtt_publication native_publication;
 static void (*power_irq)(void *);
 static uint64_t mico_nanosecond_clock_value(void) { return clock_ns; }
 static uint32_t mico_rtos_get_time(void) { return now_ms; }
-static void MicoGpioInitialize(unsigned pin,unsigned mode) { assert(pin==POWER && mode==INPUT_PULL_UP); }
-static void MicoGpioEnableIRQ(unsigned pin,unsigned mode,void (*handler)(void *),void *arg) {
-    assert(pin==POWER && mode==IRQ_TRIGGER_FALLING_EDGE && !arg);power_irq=handler;
+static int MicoGpioInitialize(unsigned pin,unsigned mode) { assert(pin==POWER && mode==INPUT_PULL_UP);return 0; }
+static int MicoGpioEnableIRQ(unsigned pin,unsigned mode,void (*handler)(void *),void *arg) {
+    assert(pin==POWER && mode==IRQ_TRIGGER_FALLING_EDGE && !arg);power_irq=handler;return 0;
 }
 static int MicoRandomNumberRead(uint8_t *out,size_t n) {
     assert(n==sizeof(random_value));++random_calls;
@@ -124,6 +124,29 @@ static void concurrent(void) {
     }
     assert(!pthread_join(thread,NULL));
 }
+static void local_rules_reader(void) {
+    uint32_t mw=99;now_ms=1000;power_session_pulses=0;PowerInit();
+    assert(!PowerLocalSampleRead(&mw));
+    for(unsigned i=1;i<=5;i++){
+        now_ms=1000+i*1000;power_session_pulses+=10;
+        assert(PowerLocalSampleRead(&mw)==(i==5));
+    }
+    assert(mw==17100); // 10 pulses/s * 1.71 W, without MQTT/IRQ snapshot state.
+    PowerSampleInvalidate();now_ms+=1000;power_session_pulses+=10;
+    assert(PowerLocalSampleRead(&mw)&&mw==17100);
+    for(unsigned i=0;i<5;i++){now_ms+=1000;assert(PowerLocalSampleRead(&mw));}
+    assert(!mw); // A genuine observed zero load is valid.
+    now_ms+=3000;assert(!PowerLocalSampleRead(&mw));
+    for(unsigned i=1;i<=5;i++){now_ms+=1000;assert(PowerLocalSampleRead(&mw)==(i==5));}
+    assert(!mw);
+    config.power_coefficient_x100=2000;now_ms+=1000;power_session_pulses+=10;
+    assert(!PowerLocalSampleRead(&mw));
+    for(unsigned i=1;i<=5;i++){now_ms+=1000;power_session_pulses+=10;assert(PowerLocalSampleRead(&mw)==(i==5));}
+    assert(mw==20000);
+    now_ms=UINT32_MAX-2000;power_session_pulses=UINT32_MAX-20;PowerInit();
+    for(unsigned i=1;i<=5;i++){now_ms+=1000;power_session_pulses+=10;assert(PowerLocalSampleRead(&mw)==(i==5));}
+    assert(mw==20000); // Both tick and pulse counter rollover.
+}
 static void payload(void) {
     account_set("test");sample();cycle();assert(sends==1 && random_calls==1);
     next_feed();assert(sends==2 && random_calls==1);
@@ -195,6 +218,7 @@ int main(int argc,char **argv) {
     assert(argc==2);
     if(!strcmp(argv[1],"reader"))reader();
     else if(!strcmp(argv[1],"concurrent"))concurrent();
+    else if(!strcmp(argv[1],"local"))local_rules_reader();
     else if(!strcmp(argv[1],"payload"))payload();
     else if(!strcmp(argv[1],"counters"))counters();
     else if(!strcmp(argv[1],"backoff"))backoff();

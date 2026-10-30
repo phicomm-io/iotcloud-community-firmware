@@ -8,6 +8,27 @@ static mico_mutex_t automation_lock;
 static bool automation_ready;
 static uint32_t previous, highwater, previous_ms;
 static bool armed;
+static void auto_init(void);
+#ifdef AUTOMATION_TC1
+typedef struct {ph_power_rule rule;ph_power_trigger trigger;} auto_power_state;
+static auto_power_state power_states[PH_POWER_RULES_MAX];
+static void auto_power_reset(unsigned id){
+ for(unsigned i=0;i<PH_POWER_RULES_MAX;i++)if(power_states[i].rule.id==id)memset(&power_states[i],0,sizeof(power_states[i]));
+}
+void automation_power_manual_override(void){
+ auto_init();if(!automation_ready)return;
+ mico_rtos_lock_mutex(&automation_lock);
+ ph_power_rule rules[PH_POWER_RULES_MAX];unsigned count=0;
+ /* A key can precede the first worker tick. Own configured rules here too,
+  * so that an unseen condition cannot undo the user's choice on that tick. */
+ if(tc1_automation_load_power_rules(rules,&count)){
+  memset(power_states,0,sizeof(power_states));
+  for(unsigned i=0;i<count;i++)power_states[i].rule=rules[i];
+ }
+ for(unsigned i=0;i<PH_POWER_RULES_MAX;i++)ph_power_trigger_override(&power_states[i].trigger);
+ mico_rtos_unlock_mutex(&automation_lock);
+}
+#endif
 #ifdef FEATURE_DEVICE_A1
 typedef struct { uint16_t id; uint32_t started; } auto_countdown_t;
 static auto_countdown_t countdowns[AUTOMATION_TASKS];
@@ -113,8 +134,10 @@ static void auto_action_fields_mp(ph_writer *w,const automation_action_t *a){
 }
 static void auto_task_fields_mp(ph_writer *w,const automation_task_t *t){
  auto_action_fields_mp(w,&t->action);phw_uint(w,"id",t->id);phw_bool(w,"enabled",t->enabled);
- phw_text(w,"trigger",t->once==2?"countdown":t->once?"once":"weekly");
- phw_uint(w,"days",t->days);phw_uint(w,"minute",t->minute);phw_uint(w,"at",t->at);phw_uint(w,"last",t->last);
+ phw_text(w,"trigger",t->once==3?"power":t->once==2?"countdown":t->once?"once":"weekly");
+ if(t->once==3){
+  phw_text(w,"comparison",t->days==0?"above":"below");phw_uint(w,"power_milliwatts",t->at);phw_uint(w,"seconds",t->last);
+ }else{phw_uint(w,"days",t->days);phw_uint(w,"minute",t->minute);phw_uint(w,"at",t->at);phw_uint(w,"last",t->last);}
  const char *states[]={"waiting","executed","missed","busy","migration_disabled","cancelled"};phw_text(w,"state",states[t->state<=AUTO_CANCELLED?t->state:0]);
 #ifdef FEATURE_DEVICE_A1
  if(t->once==2){phw_uint(w,"seconds",t->at);phw_uint(w,"remaining_seconds",auto_remaining(t));}
@@ -142,12 +165,24 @@ bool automation_mp(const char *name,const ph_value *params,ph_writer *w,const ch
   }
   phw_end(w);phw_uint(w,"next",index);phw_uint(w,"capacity",capacity);phw_uint(w,"count",count);*code="ok";
  }else if(!strcmp(name,"schedules.put")){
-  if(!auto_only(p,"|id||enabled||trigger||days||minute||at||seconds||action||params|"))goto done;
+  if(!auto_only(p,"|id||enabled||trigger||days||minute||at||seconds||action||params||comparison||power_milliwatts|"))goto done;
   if(auto_has(auto_get(p,"id"))&&!auto_integer(p,"id",&id,1,65535))goto done;
   for(unsigned i=0;i<AUTOMATION_TASKS;i++){if(id&&c->tasks[i].id==id){slot=i;break;}if(!id&&!c->tasks[i].id&&slot<0)slot=i;}
   if(slot<0){*code=id?"not_found":"capacity";goto done;}
   automation_task_t task;memset(&task,0,sizeof(task));task.id=id;
   if(!auto_flag(p,"enabled",&task.enabled))goto done;ph_value trigger=auto_get(p,"trigger");
+#ifdef AUTOMATION_TC1
+  if(phv_equal_text(&trigger,"power")){
+   if(!auto_only(p,"|id||enabled||trigger||comparison||power_milliwatts||seconds||action||params|"))goto done;
+   unsigned count=0;for(unsigned i=0;i<AUTOMATION_TASKS;i++)if(c->tasks[i].once==3&&c->tasks[i].id&&c->tasks[i].id!=id)count++;
+   if(count>=PH_POWER_RULES_MAX){*code="capacity";goto done;}
+   task.once=3;ph_value comparison=auto_get(p,"comparison");
+   if(phv_equal_text(&comparison,"above"))task.days=PH_POWER_ABOVE;
+   else if(phv_equal_text(&comparison,"below"))task.days=PH_POWER_BELOW;else goto done;
+   if(!auto_integer(p,"power_milliwatts",&index,0,PH_POWER_LIMIT_MW))goto done;task.at=(uint32_t)index;
+   if(!auto_integer(p,"seconds",&index,0,PH_POWER_DURATION_MAX))goto done;task.last=(uint32_t)index;
+  }else
+#endif
 #ifdef FEATURE_DEVICE_A1
   if(phv_equal_text(&trigger,"countdown")){task.once=2;if(!auto_integer(p,"seconds",&index,1,AUTOMATION_COUNTDOWN_MAX))goto done;task.at=index;}
   else
@@ -155,7 +190,9 @@ bool automation_mp(const char *name,const ph_value *params,ph_writer *w,const ch
   if(phv_equal_text(&trigger,"once")){task.once=1;if(!auto_integer(p,"at",&index,1577836800,2147483647))goto done;task.at=index;}
   else if(phv_equal_text(&trigger,"weekly")){if(!auto_integer(p,"days",&index,1,127))goto done;task.days=index;if(!auto_integer(p,"minute",&index,0,1439))goto done;task.minute=index;}
   else goto done;
+  if(task.once!=3&&(auto_has(auto_get(p,"comparison"))||auto_has(auto_get(p,"power_milliwatts"))))goto done;
   if(!auto_action_parse(p,&task.action,false,false)||task.action.kind==AUTO_NONE)goto done;
+  if(task.once==3&&(task.action.kind!=AUTO_OUTLET||task.action.value>1))goto done;
   if(task.once==2&&(task.action.kind!=AUTO_FAN||task.action.value!=0||task.action.speed))goto done;
   if(!id){for(unsigned tries=0;tries<65535;tries++){id=c->next_id++;if(!id)continue;bool used=false;for(unsigned i=0;i<AUTOMATION_TASKS;i++)used|=c->tasks[i].id==id;if(!used)break;}task.id=id;}
   c->tasks[slot]=task;task_output=true;save=true;
@@ -180,6 +217,9 @@ bool automation_mp(const char *name,const ph_value *params,ph_writer *w,const ch
   automation_action_t action;if(!auto_action_parse(p,&action,true,false))goto done;c->buttons[key][clicks?clicks-1:seconds+29]=action;save=true;
  }else *code="unsupported";
  if(save){c->revision++;*code=automation_save(c)?"accepted":"storage_error";
+#ifdef AUTOMATION_TC1
+  if(!strcmp(*code,"accepted")&&slot>=0)auto_power_reset((unsigned)id);
+#endif
 #ifdef FEATURE_DEVICE_A1
   if(!strcmp(*code,"accepted")&&slot>=0){automation_task_t *t=&c->tasks[slot];countdowns[slot].id=0;if(t->id&&t->once==2&&t->enabled){countdowns[slot].id=t->id;countdowns[slot].started=mico_rtos_get_time();}}
 #endif
@@ -242,8 +282,47 @@ static void auto_countdown_poll(void) {
  free(c);
 }
 #endif
+/* A small selected-rule snapshot, not a 128-schedule configuration allocation.
+ * Execution rechecks the exact rule while holding the business write gate. */
+#ifdef AUTOMATION_TC1
+static void auto_power_poll(void){
+ static uint32_t last_poll;static bool polled;
+ uint32_t now=mico_rtos_get_time();if(polled&&(uint32_t)(now-last_poll)<1000u)return;
+ polled=true;last_poll=now;
+ ph_power_rule rules[PH_POWER_RULES_MAX];unsigned count=0;uint32_t mw=0;
+ bool sample=tc1_automation_power_sample(&mw);
+ mico_rtos_lock_mutex(&automation_lock);
+ if(!tc1_automation_load_power_rules(rules,&count)){
+  for(unsigned i=0;i<PH_POWER_RULES_MAX;i++)power_states[i].trigger.timing=false;
+  mico_rtos_unlock_mutex(&automation_lock);return;
+ }
+ for(unsigned i=0;i<PH_POWER_RULES_MAX;i++){
+  bool found=false;for(unsigned j=0;j<count;j++)found|=rules[j].id==power_states[i].rule.id;
+  if(!found)memset(&power_states[i],0,sizeof(power_states[i]));
+ }
+ mico_rtos_unlock_mutex(&automation_lock);
+ for(unsigned j=0;j<count;j++){
+  mico_rtos_lock_mutex(&automation_lock);int slot=-1;
+  for(unsigned i=0;i<PH_POWER_RULES_MAX;i++)if(power_states[i].rule.id==rules[j].id){slot=(int)i;break;}
+  if(slot<0)for(unsigned i=0;i<PH_POWER_RULES_MAX;i++)if(!power_states[i].rule.id){slot=(int)i;break;}
+  if(slot<0){mico_rtos_unlock_mutex(&automation_lock);break;}
+  auto_power_state *s=&power_states[slot];
+  if(memcmp(&s->rule,&rules[j],sizeof(s->rule))){memset(s,0,sizeof(*s));s->rule=rules[j];}
+  bool due=ph_power_trigger_due(&s->trigger,&s->rule,now,sample,mw);
+  mico_rtos_unlock_mutex(&automation_lock);if(!due)continue;
+  bool ok=tc1_automation_power_execute(&rules[j]);
+  mico_rtos_lock_mutex(&automation_lock);
+  if(ok&&!memcmp(&s->rule,&rules[j],sizeof(s->rule)))ph_power_trigger_commit(&s->trigger);
+  mico_rtos_unlock_mutex(&automation_lock);
+  if(ok)service_event("info","schedule","executed");
+ }
+}
+#endif
 void automation_poll(bool valid){
  auto_init();
+#ifdef AUTOMATION_TC1
+ auto_power_poll();
+#endif
 #ifdef FEATURE_DEVICE_A1
  auto_countdown_poll();
 #endif
@@ -257,7 +336,7 @@ void automation_poll(bool valid){
   for(unsigned count=0;count<AUTOMATION_TASKS;count++){
    mico_rtos_lock_mutex(&automation_lock);automation_load(c);int selected=-1;unsigned id=65536;uint32_t occurrence=0;
    for(unsigned i=0;i<AUTOMATION_TASKS;i++){
-    automation_task_t *t=&c->tasks[i];if(t->once==2 || !t->id || !t->enabled || t->id<=last_id || t->id>=id || ((t->action.kind==AUTO_REBOOT)!=(pass==1)))continue;
+    automation_task_t *t=&c->tasks[i];if(t->once>=2 || !t->id || !t->enabled || t->id<=last_id || t->id>=id || ((t->action.kind==AUTO_REBOOT)!=(pass==1)))continue;
     uint32_t at=t->at;
     if(!t->once){int64_t local=(int64_t)now+c->timezone*60;int64_t day=local/86400;unsigned weekday=(day+3)%7;if(!(t->days&(1u<<weekday)))continue;at=day*86400+t->minute*60-c->timezone*60;}
     if(at>now || at<=t->last || (!t->once && (at<=previous || at<=highwater)))continue;

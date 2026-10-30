@@ -57,6 +57,37 @@ void PowerSampleRead(tc1_power_sample_t *out) {
     }
 }
 
+/* One local automation reader. Count CF pulses even at zero load, instead of
+ * treating the MQTT sample's session invalidation or lack of a new IRQ as a
+ * stale network sensor. A five-interval average limits pulse quantization.
+ * An interrupted worker interval cancels continuity, never invents zero load. */
+static struct {
+    uint32_t at,count,pulses[5],elapsed[5];
+    unsigned used,cursor;
+    uint16_t coefficient;
+    bool ready;
+} local_power;
+bool PowerLocalSampleRead(uint32_t *milliwatts) {
+    if(!milliwatts||!local_power.ready)return false;
+    uint32_t now=mico_rtos_get_time(),count=__atomic_load_n(&power_session_pulses,__ATOMIC_RELAXED);
+    uint32_t elapsed=now-local_power.at,delta=count-local_power.count;
+    uint16_t coefficient=user_config->power_coefficient_x100;
+    if(elapsed<1000)return false;
+    local_power.at=now;local_power.count=count;
+    if(elapsed>=3000||coefficient!=local_power.coefficient){
+        local_power.used=local_power.cursor=0;local_power.coefficient=coefficient;return false;
+    }
+    unsigned slot=local_power.cursor++%5;
+    local_power.pulses[slot]=delta;local_power.elapsed[slot]=elapsed;
+    if(local_power.used<5)++local_power.used;
+    if(local_power.used<5)return false;
+    uint64_t pulses=0;uint32_t duration=0;
+    for(unsigned i=0;i<5;i++){pulses+=local_power.pulses[i];duration+=local_power.elapsed[i];}
+    uint64_t mw=(pulses*coefficient*1000u+duration/2u)/duration;
+    if(coefficient<POWER_COEFFICIENT_MIN_X100||coefficient>POWER_COEFFICIENT_MAX_X100||mw>25000000u)return false;
+    *milliwatts=(uint32_t)mw;return true;
+}
+
 float GetPowerCoefficient(void) {
     return (float) user_config->power_coefficient_x100 / POWER_COEFFICIENT_SCALE;
 }
@@ -129,7 +160,10 @@ static void PowerIrqHandler(void *arg) {
 
 void PowerInit(void) {
     power_log("PowerInit");
-    MicoGpioInitialize(POWER, INPUT_PULL_UP);
-    MicoGpioEnableIRQ(POWER, IRQ_TRIGGER_FALLING_EDGE, PowerIrqHandler, NULL);
+    memset(&local_power,0,sizeof(local_power));
+    if(MicoGpioInitialize(POWER, INPUT_PULL_UP)!=kNoErr ||
+       MicoGpioEnableIRQ(POWER, IRQ_TRIGGER_FALLING_EDGE, PowerIrqHandler, NULL)!=kNoErr)return;
+    local_power.at=mico_rtos_get_time();local_power.count=__atomic_load_n(&power_session_pulses,__ATOMIC_RELAXED);
+    local_power.coefficient=user_config->power_coefficient_x100;local_power.ready=true;
 }
 
