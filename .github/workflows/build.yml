@@ -454,7 +454,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential clang libssl-dev bzip2 libc6-i386 libtinfo5
-          python3 -m pip install -r requirements-build.txt -r BL2028N/requirements-build.txt
+          python3 -m pip install -r requirements-build.txt -r BL2028N/requirements-build.txt -r BL2028N/requirements-test.txt
       - name: Prepare shared GCC5 tools
         run: python3 tools/prepare_toolchain.py --profile gcc5 --github-env "$GITHUB_ENV"
       - name: Build and verify stock-layout native firmware
