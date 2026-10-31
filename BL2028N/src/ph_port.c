@@ -167,17 +167,22 @@ static void import_auth(ph_auth_store *to,const ph_store_old_auth *from) {
         memcpy(to->pairs[i].reserved,from->pairs[i].reserved,sizeof(from->pairs[i].reserved));
     }
 }
-/* auth/energy overrides avoid another full settings snapshot on the owner
- * stack. All callers serialize through bl_lock, or run before task startup. */
+/* Migration already holds the loaded record and settings on the 4 KiB app
+ * stack. QuickTick also saves from a 2 KiB stack. Keep the temporary disk
+ * record off both stacks; allocation failure leaves the committed file intact.
+ * All callers serialize through bl_lock, or run before task startup. */
 static bool save_record(const ph_settings *s,const ph_auth_store *auth,double energy,const char *password,bool owned) {
     if (!lfs_present() || !ph_settings_valid(s)) return false;
-    disk_record r; memset(&r,0,sizeof(r)); r.magic=PH_STORE_MAGIC; r.size=sizeof(r); r.settings=*s;
-    if(auth)r.settings.auth=*auth;r.settings.energy_kwh=energy;
-    if(owned) {if(!password_value_valid(password))return false;r.credential_magic=PH_CREDENTIAL_MAGIC;memcpy(r.password,password,strlen(password)+1);}
-    if(!ph_settings_valid(&r.settings))return false;
-    r.crc=crc32(&r.settings,sizeof(r)-offsetof(disk_record,settings)); lfs_file_t f;
-    if(lfs_file_open(&lfs,&f,".phicomm.tmp",LFS_O_WRONLY|LFS_O_CREAT|LFS_O_TRUNC)<0)return false;
-    bool ok=lfs_file_write(&lfs,&f,&r,sizeof(r))==(lfs_ssize_t)sizeof(r);
+    if(owned&&!password_value_valid(password))return false;
+    disk_record *r=malloc(sizeof(*r));if(!r)return false;
+    memset(r,0,sizeof(*r));r->magic=PH_STORE_MAGIC;r->size=sizeof(*r);r->settings=*s;
+    if(auth)r->settings.auth=*auth;r->settings.energy_kwh=energy;
+    if(owned) {r->credential_magic=PH_CREDENTIAL_MAGIC;memcpy(r->password,password,strlen(password)+1);}
+    if(!ph_settings_valid(&r->settings)){free(r);return false;}
+    r->crc=crc32(&r->settings,sizeof(*r)-offsetof(disk_record,settings));lfs_file_t f;
+    if(lfs_file_open(&lfs,&f,".phicomm.tmp",LFS_O_WRONLY|LFS_O_CREAT|LFS_O_TRUNC)<0){free(r);return false;}
+    bool ok=lfs_file_write(&lfs,&f,r,sizeof(*r))==(lfs_ssize_t)sizeof(*r);
+    free(r);
     if(ok)ok=lfs_file_sync(&lfs,&f)==0;
     if(lfs_file_close(&lfs,&f)<0)ok=false;
     if(ok)ok=lfs_rename(&lfs,".phicomm.tmp",".phicomm")==0;

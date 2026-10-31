@@ -12,6 +12,7 @@ import sys
 import zlib
 from verify_firmware import crc16,crc_blocks
 from source_provenance import verify_sources
+from check_stack import verify_stack
 
 HERE = Path(__file__).resolve().parent
 CACHE = Path(os.environ.get('PHICOMM_TOOLS_HOME', Path.home()/'.cache/phicomm'))
@@ -472,6 +473,7 @@ def main():
     with (run/'build.log').open('wb') as log:
         command(['make','-f','application.mk',f'-j{args.jobs}',f'APP_BIN_NAME={APP_NAME}',f'USER_SW_VER={version}',f'APP_VERSION={version}','TARGET_PLATFORM=bk7231n','OBK_VARIANT=0','CFG_USE_MQTT_TLS=0',f'ARM_GCC_TOOLCHAIN={gcc.parent}'],osdir,log)
         package(run,version,log,metadata,args.boot_trace,args.stock_layout)
+    verify_stack(run,version,gcc)
     command([sys.executable,HERE/'verify_firmware.py','--run-dir',run])
     if not args.keep_build:shutil.rmtree(run/'build')
     print(f'Firmware and checksums: {run}/firmware')
