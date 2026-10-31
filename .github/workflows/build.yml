@@ -306,7 +306,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential libssl-dev
-          python3 -m pip install platformio==6.2.0 cryptography==46.0.3 -r requirements-build.txt
+          python3 -m pip install platformio==6.2.0 cryptography==46.0.3 msgpack==1.1.2 -r requirements-build.txt
       - name: Build universal image and enforce stock OTA resource budgets
         env:
           PHICOMM_FRONTEND_ARCHIVE: ${{ github.workspace }}/build/ci-frontend/frontend.tar.gz
