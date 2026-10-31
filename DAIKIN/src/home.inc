@@ -245,7 +245,9 @@ static void homeChanged(){
     if(homeStarted||homeEnabled())rebootAt=millis()+1500;
   }
 }
-static void pollHome(uint32_t now){
+// Keep HAP receive/decryption buffers out of loop's persistent UDP call stack.
+// LTO otherwise inlines this cold path even when HomeKit is disabled at runtime.
+static void __attribute__((noinline)) pollHome(uint32_t now){
   hubHome.tick(now);
   if(!homeHealthy()||otaActive)return;
   if(due(now,homeNextQuery)){homeNextQuery=now+1000;hubHome.refresh();}
