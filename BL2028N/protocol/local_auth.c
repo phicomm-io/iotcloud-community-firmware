@@ -1,4 +1,5 @@
 #include "local_auth.h"
+#include "httpd/basic.h"
 #include <string.h>
 static void ph_auth_private_lock(ph_auth_state *s) {
     char p[33]={0};
@@ -7,6 +8,7 @@ static void ph_auth_private_lock(ph_auth_state *s) {
         memset(s->http,0,sizeof(s->http));
         memset(s->local,0,sizeof(s->local));
         ph_auth_store_empty(&s->store);
+        memset(s->unpair,0,sizeof(s->unpair));
         if(!++s->credential_epoch)++s->credential_epoch;
         memcpy(s->credential,p,sizeof(p));
     }
@@ -52,19 +54,37 @@ static void ph_auth_private_hex(const uint8_t*p,char*out) {
     }
     out[32]=0;
 }
+const ph_auth_store *ph_auth_store_empty_value(void) {
+    static const ph_auth_store empty={.magic=PH_AUTH_STORE_MAGIC,.version=PH_AUTH_STORE_VERSION};
+    return &empty;
+}
 void ph_auth_store_empty(ph_auth_store*p) {
     memset(p,0,sizeof(*p));
     p->magic=PH_AUTH_STORE_MAGIC;
     p->version=PH_AUTH_STORE_VERSION;
 }
-bool ph_auth_store_valid(const ph_auth_store*p) {
+static bool ph_auth_private_records_valid(const ph_auth_pair_record *records,unsigned count) {
     unsigned i,j;
-    if(!p||p->magic!=PH_AUTH_STORE_MAGIC||p->version!=PH_AUTH_STORE_VERSION||p->count>PH_AUTH_PAIR_SLOTS)return false;
-    for(i=0;i<p->count;i++) {
-        const ph_auth_pair_record*r=&p->pairs[i];
+    if(count>PH_AUTH_PAIR_SLOTS)return false;
+    for(i=0;i<count;i++) {
+        const ph_auth_pair_record*r=&records[i];
         if(!memchr(r->peer,0,sizeof(r->peer))||!ph_auth_private_peer_ok(r->peer)||!ph_auth_private_nonzero(r->key)||!r->scopes||(r->scopes&~(PH_AUTH_SCOPE_CONTROL|PH_AUTH_SCOPE_SENSOR|PH_AUTH_SCOPE_GROUP))||r->reserved[0]||r->reserved[1])return false;
-        for(j=0;j<i;j++)if(!strcmp(p->pairs[j].peer,r->peer))return false;
+        for(j=0;j<i;j++)if(!strcmp(records[j].peer,r->peer))return false;
     }
+    return true;
+}
+bool ph_auth_store_valid(const ph_auth_store*p) {
+    return p&&p->magic==PH_AUTH_STORE_MAGIC&&p->version==PH_AUTH_STORE_VERSION&&!p->reserved&&
+        ph_auth_private_records_valid(p->pairs,p->count)&&
+        ph_auth_private_records_valid(p->remote,p->remote_count);
+}
+bool ph_auth_store_migrate_legacy(ph_auth_store *p) {
+    if(!p||p->magic!=PH_AUTH_STORE_MAGIC||p->version!=PH_AUTH_STORE_VERSION||
+       !ph_auth_private_records_valid(p->pairs,p->count))return false;
+    const size_t offset=offsetof(ph_auth_store,remote_count);
+    const uint8_t *tail=(const uint8_t *)p+offset;
+    for(size_t i=0;i<sizeof(*p)-offset;i++)if(tail[i]!=255)return false;
+    memset((uint8_t *)p+offset,0,sizeof(*p)-offset);
     return true;
 }
 bool ph_auth_init(ph_auth_state*s,const ph_auth_ops*o,const ph_auth_store*p) {
@@ -107,6 +127,7 @@ static bool ph_auth_private_fresh(ph_auth_state*s,uint8_t t[16]) {
     return true;
 }
 static void ph_auth_private_install(ph_auth_state*s,ph_auth_session*r,const uint8_t*t,const char*peer,unsigned scopes) {
+    for(unsigned i=0;i<PH_AUTH_PAIR_SLOTS;i++)if(r==&s->local[i])s->local_boot[i]=0;
     memset(r,0,sizeof(*r));
     memcpy(r->token,t,16);
     r->born=r->last=s->ops.now(s->ops.user);
@@ -116,26 +137,41 @@ static void ph_auth_private_install(ph_auth_state*s,ph_auth_session*r,const uint
     r->scopes=(uint8_t)scopes;
     if(peer)strcpy(r->peer,peer);
 }
-bool ph_auth_http_login(ph_auth_state*s,const char*p,char out[33]) {
+ph_auth_login_result ph_auth_http_login_result(ph_auth_state*s,const char*p,char out[33]) {
     unsigned i;
     uint8_t t[16];
-    bool ok=false;
+    ph_auth_login_result result=PH_AUTH_LOGIN_DENIED;
     ph_auth_private_lock(s);
-    if(ph_auth_private_password_ok(s,p)&&ph_auth_private_fresh(s,t)) {
-        uint32_t now=s->ops.now(s->ops.user);
-        unsigned slot=0;
-        for(i=0;i<PH_AUTH_HTTP_SLOTS;i++) {
-            if(!ph_auth_private_alive(&s->http[i],now)){slot=i;break;}
-            if((uint32_t)(now-s->http[i].last)>(uint32_t)(now-s->http[slot].last))slot=i;
+    if(ph_auth_private_password_ok(s,p)) {
+        if(!s->credential[0]) {
+            out[0]=0;
+            result=PH_AUTH_LOGIN_OK;
+            goto done;
         }
-        /* A valid password can replace the least recently used HTTP session.
-         * Reloading pages must not lock out the owner for the idle timeout. */
-        ph_auth_private_install(s,&s->http[slot],t,0,PH_AUTH_SCOPE_ALL);
-        ph_auth_private_hex(t,out);
-        ok=true;
+        result=PH_AUTH_LOGIN_BUSY;
+        if(!ph_auth_private_fresh(s,t))goto done;
+        uint32_t now=s->ops.now(s->ops.user);
+        for(i=0;i<PH_AUTH_HTTP_SLOTS;i++)if(!ph_auth_private_alive(&s->http[i],now)) {
+            ph_auth_private_install(s,&s->http[i],t,0,PH_AUTH_SCOPE_ALL);
+            ph_auth_private_hex(t,out);
+            result=PH_AUTH_LOGIN_OK;
+            break;
+        }
     }
+done:
+    if(result!=PH_AUTH_LOGIN_OK)out[0]=0;
+    memset(t,0,sizeof(t));
     ph_auth_private_unlock(s);
-    return ok;
+    return result;
+}
+bool ph_auth_http_login(ph_auth_state*s,const char*p,char out[33]) {
+    return ph_auth_http_login_result(s,p,out)==PH_AUTH_LOGIN_OK;
+}
+bool ph_auth_password_is_set(ph_auth_state*s) {
+    ph_auth_private_lock(s);
+    bool set=s->credential[0]!=0;
+    ph_auth_private_unlock(s);
+    return set;
 }
 static void ph_auth_private_ctx(ph_auth_state*s,ph_auth_context*c,ph_auth_source source,unsigned slot,ph_auth_session*r) {
     memset(c,0,sizeof(*c));
@@ -143,6 +179,7 @@ static void ph_auth_private_ctx(ph_auth_state*s,ph_auth_context*c,ph_auth_source
     c->source=source;
     c->slot=(uint8_t)slot;
     c->generation=r->generation;
+    c->credential_epoch=s->credential_epoch;
     c->scopes=r->scopes;
     memcpy(c->peer,r->peer,sizeof(c->peer));
 }
@@ -154,16 +191,25 @@ static int ph_auth_private_http_find(ph_auth_state*s,const char*a) {
     return -1;
 }
 bool ph_auth_http_check(ph_auth_state*s,const char*a,ph_auth_context*c) {
-    int i;
+    bool ok=false;
     memset(c,0,sizeof(*c));
     ph_auth_private_lock(s);
-    i=ph_auth_private_http_find(s,a);
-    if(i>=0) {
-        s->http[i].last=s->ops.now(s->ops.user);
-        ph_auth_private_ctx(s,c,PH_AUTH_HTTP,(unsigned)i,&s->http[i]);
+    if(!s->credential[0]||ph_http_basic_match(a,"admin",s->credential)) {
+        c->owner=s;
+        c->source=s->credential[0]?PH_AUTH_HTTP_BASIC:PH_AUTH_HTTP_OPEN;
+        c->credential_epoch=s->credential_epoch;
+        c->scopes=PH_AUTH_SCOPE_ALL;
+        ok=true;
+    } else {
+        int i=ph_auth_private_http_find(s,a);
+        if(i>=0) {
+            s->http[i].last=s->ops.now(s->ops.user);
+            ph_auth_private_ctx(s,c,PH_AUTH_HTTP,(unsigned)i,&s->http[i]);
+            ok=true;
+        }
     }
     ph_auth_private_unlock(s);
-    return i>=0;
+    return ok;
 }
 bool ph_auth_http_logout(ph_auth_state*s,const char*a) {
     int i;
@@ -200,7 +246,9 @@ bool ph_auth_pair(ph_auth_state*s,const char*p,const char*peer,unsigned scopes,c
             r->scopes=(uint8_t)scopes;
             if(i==next.count)next.count++;
             if(ph_auth_private_save(s,&next)) {
-                memset(&s->local[i],0,sizeof(s->local[i]));
+                /* Sessions are identified by peer, not by a mutable store index. */
+                for(unsigned slot=0;slot<PH_AUTH_PAIR_SLOTS;slot++)
+                    if(!strcmp(s->local[slot].peer,peer))memset(&s->local[slot],0,sizeof(s->local[slot]));
                 ph_auth_private_hex(t,out);
                 ok=true;
             }
@@ -216,22 +264,48 @@ bool ph_auth_pair_resume(ph_auth_state*s,const char*peer,const char*key,char out
     if(!ph_auth_private_peer_ok(peer)||!ph_auth_token_decode(key,k))return false;
     ph_auth_private_lock(s);
     for(i=0;i<s->store.count;i++)if(!strcmp(peer,s->store.pairs[i].peer)&&ph_auth_private_eq(k,s->store.pairs[i].key,16)) {
-        /* Only reuse this boot's live local session after checking its durable key.
-         * A handshake retry never extends the idle or absolute session lifetime. */
-        ph_auth_session*r=&s->local[i];
-        if(ph_auth_private_alive(r,s->ops.now(s->ops.user))&&
-           !strcmp(r->peer,peer)&&r->scopes==s->store.pairs[i].scopes) {
-            ph_auth_private_hex(r->token,out);
-            ok=true;
-        } else if(ph_auth_private_fresh(s,t)) {
-            ph_auth_private_install(s,&s->local[i],t,peer,s->store.pairs[i].scopes);
-            ph_auth_private_hex(t,out);
-            ok=true;
+        /* Session slots stay independent of the compact durable record table.
+         * Preserve other peers and already captured slot/generation contexts. */
+        uint32_t now=s->ops.now(s->ops.user);unsigned available=PH_AUTH_PAIR_SLOTS;
+        for(unsigned slot=0;slot<PH_AUTH_PAIR_SLOTS;slot++) {
+            ph_auth_session *r=&s->local[slot];
+            if(!ph_auth_private_alive(r,now)) {
+                if(available==PH_AUTH_PAIR_SLOTS)available=slot;
+            } else if(!strcmp(r->peer,peer)&&r->scopes==s->store.pairs[i].scopes) {
+                ph_auth_private_hex(r->token,out);ok=true;break;
+            }
+        }
+        if(!ok&&available<PH_AUTH_PAIR_SLOTS&&ph_auth_private_fresh(s,t)) {
+            ph_auth_private_install(s,&s->local[available],t,peer,s->store.pairs[i].scopes);
+            ph_auth_private_hex(t,out);ok=true;
         }
         break;
     }
     ph_auth_private_unlock(s);
     return ok;
+}
+bool ph_auth_pair_resume_boot(ph_auth_state*s,const char*peer,const char*key,uint32_t boot,char out[33]) {
+    uint8_t decoded[16],token[16]={0};bool ok=false;
+    if(!s||!out||!boot||!ph_auth_private_peer_ok(peer)||!ph_auth_token_decode(key,decoded))return false;
+    ph_auth_private_lock(s);
+    for(unsigned i=0;i<s->store.count;i++)if(!strcmp(s->store.pairs[i].peer,peer)&&ph_auth_private_eq(decoded,s->store.pairs[i].key,16)) {
+        unsigned available=PH_AUTH_PAIR_SLOTS;uint32_t now=s->ops.now(s->ops.user);
+        for(unsigned j=0;j<PH_AUTH_PAIR_SLOTS;j++) {
+            ph_auth_session *r=&s->local[j];bool alive=ph_auth_private_alive(r,now);
+            if(alive&&!strcmp(r->peer,peer)&&r->scopes==s->store.pairs[i].scopes) {
+                if(s->local_boot[j]==boot){ph_auth_private_hex(r->token,out);ok=true;goto finish_boot;}
+                available=j;break;
+            }
+            if(!alive&&available==PH_AUTH_PAIR_SLOTS)available=j;
+        }
+        if(available<PH_AUTH_PAIR_SLOTS&&ph_auth_private_fresh(s,token)) {
+            ph_auth_private_install(s,&s->local[available],token,peer,s->store.pairs[i].scopes);
+            s->local_boot[available]=boot;ph_auth_private_hex(token,out);ok=true;
+        }
+        break;
+    }
+finish_boot:
+    memset(decoded,0,sizeof(decoded));memset(token,0,sizeof(token));ph_auth_private_unlock(s);return ok;
 }
 bool ph_auth_pair_remove(ph_auth_state*s,const char*peer) {
     ph_auth_store next;
@@ -244,13 +318,69 @@ bool ph_auth_pair_remove(ph_auth_state*s,const char*peer) {
         memmove(&next.pairs[i],&next.pairs[i+1],(next.count-i-1)*sizeof(next.pairs[0]));
         memset(&next.pairs[--next.count],0,sizeof(next.pairs[0]));
         if(ph_auth_private_save(s,&next)) {
-            memset(s->local,0,sizeof(s->local));
+            for(unsigned slot=0;slot<PH_AUTH_PAIR_SLOTS;slot++)
+                if(!strcmp(s->local[slot].peer,peer))memset(&s->local[slot],0,sizeof(s->local[slot]));
             ok=true;
         }
         break;
     }
     ph_auth_private_unlock(s);
     return ok;
+}
+static bool ph_auth_private_unpair(ph_auth_state*s,const char*peer,const uint8_t decoded[16]) {
+    ph_auth_store next;unsigned i,j;bool ok=false;
+    for(i=0;i<PH_AUTH_PAIR_SLOTS;i++) {
+        ph_auth_session *r=&s->local[i];
+        if(!ph_auth_private_alive(r,s->ops.now(s->ops.user))||strcmp(peer,r->peer)||
+           !ph_auth_private_eq(decoded,r->token,16))continue;
+        next=s->store;
+        for(j=0;j<next.count;j++)if(!strcmp(peer,next.pairs[j].peer)) {
+            memmove(&next.pairs[j],&next.pairs[j+1],(next.count-j-1)*sizeof(next.pairs[0]));
+            memset(&next.pairs[--next.count],0,sizeof(next.pairs[0]));
+            ok=ph_auth_private_save(s,&next);
+            /* Revoke this peer only. Independent slots keep unrelated peers'
+             * tokens and captured contexts stable across durable compaction. */
+            if(ok)for(unsigned slot=0;slot<PH_AUTH_PAIR_SLOTS;slot++)
+                if(!strcmp(s->local[slot].peer,peer))memset(&s->local[slot],0,sizeof(s->local[slot]));
+            break;
+        }
+        break;
+    }
+    return ok;
+}
+bool ph_auth_pair_unpair(ph_auth_state*s,const char*peer,const char*token) {
+    uint8_t decoded[16];bool ok;
+    if(!s||!ph_auth_private_peer_ok(peer)||!ph_auth_token_decode(token,decoded))return false;
+    ph_auth_private_lock(s);ok=ph_auth_private_unpair(s,peer,decoded);
+    memset(decoded,0,sizeof(decoded));ph_auth_private_unlock(s);return ok;
+}
+bool ph_auth_pair_unpair_request(ph_auth_state*s,const char*peer,const char*token,
+                                const char*ip,const uint8_t nonce[16]) {
+    uint8_t decoded[16];bool ok=false;unsigned slot=0;uint32_t oldest=0;
+    if(!s||!ip||!ip[0]||strlen(ip)>=sizeof(s->unpair[0].ip)||!nonce||
+       !ph_auth_private_peer_ok(peer)||!ph_auth_token_decode(token,decoded))return false;
+    ph_auth_private_lock(s);
+    uint32_t now=s->ops.now(s->ops.user);
+    for(unsigned i=0;i<PH_AUTH_UNPAIR_RECEIPTS;i++) {
+        ph_auth_unpair_receipt*r=&s->unpair[i];
+        if(r->active&&(r->epoch!=s->credential_epoch||
+           (uint32_t)(now-r->born)>=PH_AUTH_UNPAIR_RECEIPT_MS))memset(r,0,sizeof(*r));
+        if(r->active&&!strcmp(r->peer,peer)&&!strcmp(r->ip,ip)&&
+           ph_auth_private_eq(r->token,decoded,16)&&ph_auth_private_eq(r->nonce,nonce,16)) {
+            ok=true;goto done; /* Do not extend the original receipt lifetime. */
+        }
+        uint32_t age=r->active?(uint32_t)(now-r->born):UINT32_MAX;
+        if(age>=oldest){oldest=age;slot=i;}
+    }
+    ok=ph_auth_private_unpair(s,peer,decoded);
+    if(ok) {
+        ph_auth_unpair_receipt*r=&s->unpair[slot];memset(r,0,sizeof(*r));
+        r->active=1;r->epoch=s->credential_epoch;r->born=now;
+        memcpy(r->token,decoded,16);memcpy(r->nonce,nonce,16);
+        strcpy(r->peer,peer);strcpy(r->ip,ip);
+    }
+done:
+    memset(decoded,0,sizeof(decoded));ph_auth_private_unlock(s);return ok;
 }
 bool ph_auth_udp_check(ph_auth_state*s,const char*peer,const char*token,ph_auth_context*c) {
     uint8_t t[16];
@@ -307,10 +437,35 @@ bool ph_auth_password_changed(ph_auth_state*s) {
     ph_auth_store_empty(&next);
     ph_auth_private_lock(s);
     ok=ph_auth_private_save(s,&next);
-    /* Fail closed even if durable write fails; caller must reject password change. */
+    /* This is the revoke phase BEFORE persisting a replacement password.
+     * On failure the caller must retain the old durable password. Reboot may
+     * reload the old pairs, so false must never be reported as revocation. */
+    if(!ok)ph_auth_store_empty(&s->store);
+    memset(s->unpair,0,sizeof(s->unpair));
     if(!++s->credential_epoch)++s->credential_epoch;
     memset(s->http,0,sizeof(s->http));
     memset(s->local,0,sizeof(s->local));
+    ph_auth_private_unlock(s);
+    return ok;
+}
+bool ph_auth_credential_commit(ph_auth_state*s,const char*password,bool force,
+                               ph_auth_commit_fn commit,void*user) {
+    const ph_auth_store *next;
+    bool changed,ok;
+    if(!s||!password||strlen(password)>32||!commit)return false;
+    ph_auth_private_lock(s);
+    changed=force||strcmp(password,s->credential)!=0;
+    next=changed?ph_auth_store_empty_value():&s->store;
+    ok=commit(user,next);
+    if(ok&&changed) {
+        s->store=*next;
+        memset(s->http,0,sizeof(s->http));
+        memset(s->local,0,sizeof(s->local));
+        memset(s->credential,0,sizeof(s->credential));
+        memcpy(s->credential,password,strlen(password));
+        memset(s->unpair,0,sizeof(s->unpair));
+        if(!++s->credential_epoch)++s->credential_epoch;
+    }
     ph_auth_private_unlock(s);
     return ok;
 }
@@ -322,6 +477,10 @@ bool ph_auth_context_valid(const ph_auth_context*c,unsigned required) {
     ph_auth_private_lock(s);
     if(c->source==PH_AUTH_MQTT||c->source==PH_AUTH_INTERNAL) {
         ok=c->scopes==PH_AUTH_SCOPE_ALL;
+    }
+    else if(c->source==PH_AUTH_HTTP_OPEN||c->source==PH_AUTH_HTTP_BASIC) {
+        ok=c->credential_epoch==s->credential_epoch&&c->scopes==PH_AUTH_SCOPE_ALL&&
+            (c->source==PH_AUTH_HTTP_OPEN?!s->credential[0]:s->credential[0]!=0);
     }
     else {
         if(c->source==PH_AUTH_HTTP&&c->slot<PH_AUTH_HTTP_SLOTS)r=&s->http[c->slot];
@@ -335,6 +494,7 @@ bool ph_auth_context_valid(const ph_auth_context*c,unsigned required) {
 }
 void ph_auth_local_revoke(ph_auth_state*s,const ph_auth_store*p) {
     ph_auth_private_lock(s);
+    memset(s->unpair,0,sizeof(s->unpair));
     if(!++s->credential_epoch)++s->credential_epoch;
     memset(s->http,0,sizeof(s->http));
     memset(s->local,0,sizeof(s->local));
@@ -371,7 +531,9 @@ bool ph_auth_pair_store_epoch(ph_auth_state*s,const char*peer,const char*key,uns
         r->scopes=(uint8_t)scopes;
         if(i==next.count)next.count++;
         if(ph_auth_private_save(s,&next)) {
-            memset(&s->local[i],0,sizeof(s->local[i]));
+            /* Sessions are identified by peer, not by a mutable store index. */
+                for(unsigned slot=0;slot<PH_AUTH_PAIR_SLOTS;slot++)
+                    if(!strcmp(s->local[slot].peer,peer))memset(&s->local[slot],0,sizeof(s->local[slot]));
             ok=true;
         }
     }
@@ -411,4 +573,41 @@ bool ph_auth_pair_peer(ph_auth_state*s,unsigned index,char peer[13],unsigned*sco
     if(found){memcpy(peer,s->store.pairs[index].peer,13);*scopes=s->store.pairs[index].scopes;}
     ph_auth_private_unlock(s);
     return found;
+}
+
+bool ph_auth_remote_get(ph_auth_state*s,const char*peer,char key[33],unsigned*scopes) {
+    if(!s||!peer||!key||!scopes)return false;
+    bool ok=false;ph_auth_private_lock(s);
+    for(unsigned i=0;i<s->store.remote_count;i++)if(!strcmp(peer,s->store.remote[i].peer)) {
+        ph_auth_private_hex(s->store.remote[i].key,key);*scopes=s->store.remote[i].scopes;ok=true;break;
+    }
+    ph_auth_private_unlock(s);return ok;
+}
+bool ph_auth_remote_store(ph_auth_state*s,const char*peer,const char*key,unsigned scopes,uint32_t epoch) {
+    uint8_t decoded[16];
+    if(!s||!ph_auth_private_peer_ok(peer)||!ph_auth_token_decode(key,decoded)||!scopes||
+       (scopes&~(PH_AUTH_SCOPE_CONTROL|PH_AUTH_SCOPE_SENSOR|PH_AUTH_SCOPE_GROUP)))return false;
+    bool ok=false;ph_auth_private_lock(s);
+    if(!epoch||epoch!=s->credential_epoch)goto done;
+    ph_auth_store next=s->store;unsigned i;
+    for(i=0;i<next.remote_count;i++)if(!strcmp(peer,next.remote[i].peer))break;
+    if(i==PH_AUTH_PAIR_SLOTS)goto done;
+    if(i<next.remote_count&&next.remote[i].scopes==scopes&&
+       ph_auth_private_eq(next.remote[i].key,decoded,16)){ok=true;goto done;}
+    if(i==next.remote_count)++next.remote_count;
+    memset(&next.remote[i],0,sizeof(next.remote[i]));strcpy(next.remote[i].peer,peer);
+    memcpy(next.remote[i].key,decoded,16);next.remote[i].scopes=(uint8_t)scopes;
+    ok=ph_auth_private_save(s,&next);
+ done:
+    memset(decoded,0,sizeof(decoded));ph_auth_private_unlock(s);return ok;
+}
+bool ph_auth_remote_remove(ph_auth_state*s,const char*peer) {
+    if(!s||!peer)return false;
+    bool ok=false;ph_auth_private_lock(s);ph_auth_store next=s->store;
+    for(unsigned i=0;i<next.remote_count;i++)if(!strcmp(peer,next.remote[i].peer)) {
+        memmove(&next.remote[i],&next.remote[i+1],(next.remote_count-i-1)*sizeof(next.remote[0]));
+        memset(&next.remote[--next.remote_count],0,sizeof(next.remote[0]));
+        ok=ph_auth_private_save(s,&next);break;
+    }
+    ph_auth_private_unlock(s);return ok;
 }

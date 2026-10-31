@@ -37,7 +37,7 @@ void service_product_info_mp(ph_writer *out)
 }
 void service_product_capabilities_mp(ph_writer *out,const char *const *extra,bool restricted)
 {
-    static const char *const actions[]={"time.get","time.set","power.get","status.get","diagnostics.get","capabilities.get","config.get","logs.get","schedules.get","schedules.put","schedules.delete","schedules.enable","buttons.get","buttons.set","config.set","wifi.scan","wifi.scan.get","ota.start","system.reset","system.reboot","outlet.set","indicator.set","child_lock.set",NULL};
+    static const char *const actions[]={"time.get","time.set","power.get","status.get","diagnostics.get","capabilities.get","config.get","logs.get","schedules.get","schedules.put","schedules.delete","schedules.enable","buttons.get","buttons.set","config.set","name.set","wifi.scan","wifi.scan.get","ota.start","system.reset","system.reboot","outlet.set","indicator.set","child_lock.set",NULL};
     phw_begin(out,NULL,false);phw_text(out,"model","tc1");phw_text(out,"device_id",str_mac);
     phw_text(out,"firmware_version",VERSION);phw_text(out,"variant",PHICOMM_FIRMWARE_VARIANT);phw_text(out,"mqtt_protocol","tmcp");
     phw_int(out,"mqtt_protocol_version",2);phw_int(out,"protocol",2);
@@ -46,7 +46,7 @@ void service_product_capabilities_mp(ph_writer *out,const char *const *extra,boo
     else for(unsigned i=0;actions[i];i++)phw_text(out,NULL,actions[i]);
     if(extra)for(unsigned i=0;extra[i];i++)phw_text(out,NULL,extra[i]);phw_end(out);
     phw_begin(out,"status_views",true);phw_text(out,NULL,"full");phw_end(out);
-    phw_text(out,"device_language","zh-CN,en");phw_int(out,"config_backup",1);phw_int(out,"diagnostics_schema",PH_DIAGNOSTICS_SCHEMA);phw_bool(out,"business_status",true);
+    phw_text(out,"device_language","zh-CN,en");phw_int(out,"name_max_bytes",maxNameLen-1);phw_int(out,"config_backup",1);phw_int(out,"diagnostics_schema",PH_DIAGNOSTICS_SCHEMA);phw_bool(out,"business_status",true);
     phw_bool(out,"config_recovery",device_config_recovery());phw_bool(out,"dual_mqtt",true);phw_end(out);
 }
 #include "service_mp.inc"

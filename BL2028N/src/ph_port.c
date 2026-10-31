@@ -14,13 +14,20 @@ extern void set_printf_port(unsigned char);
 #endif
 #include "port.h"
 #include "device.h"
+#ifdef PH_S30_LAN_V4
+#include "ph_lan_v4.h"
+#include "ph_mdns.h"
+#include "ph_sha256.h"
+#else
 #include "udp.h"
+#endif
 #include "button.h"
 #include "indicator.h"
 #include "port_internal.h"
 #include "factory_mac.h"
 #include "boot_trace.h"
 #include "memory_policy.h"
+#include "storage_legacy.h"
 #include "../protocol/httpd/http.h"
 #include "../protocol/diagnostics_ids.h"
 extern void OTA_RequestDownloadFromHTTP(const char *);
@@ -58,18 +65,32 @@ ph_auth_state bl_auth;
 volatile bool bl_ready;
 unsigned bl_mqtt_status;
 bool bl_ota_pending, bl_mqtt_quiescent=true;
+#ifdef PH_S30_LAN_V4
+static ph_lan_v4 udp_state;
+#else
 static ph_udp_state udp_state;
+#endif
 static beken_mutex_t mutex;
 static unsigned reset_requested;
 static uint32_t reboot_at, energy_saved_at, ota_at;
 static bool reboot_pending, ota_failed;
 static char ota_url[128];
+#ifdef PH_S30_LAN_V4
+/* One synchronous network owner; parsed views expire before this buffer is
+ * reused as the reply frame, and no owner writes it between unlock/sendto. */
+static unsigned char udp_in[LAN_V4_FRAME_MAX+1];
+#else
 static unsigned char udp_in[PH_INPUT_MAX+1],udp_out[PH_OUTPUT_MAX];
+#endif
 static int udp_fd=-1;
 static unsigned scan_state,scan_count;
 static uint32_t scan_at;
 static volatile bool scan_done;
 static bool safe_boot;
+/* A password transaction is authoritative in the same atomic product record
+ * as its grants. Legacy records keep using the framework's existing value. */
+static bool credential_owned;
+static char committed_password[33];
 static struct {char ssid[33];int rssi,security;} networks[20];
 void bl_lock(void) { rtos_lock_mutex(&mutex); }
 void bl_unlock(void) { rtos_unlock_mutex(&mutex); }
@@ -93,17 +114,54 @@ static uint32_t crc32(const void *data, size_t n) {
     while(n--) { crc ^= *p++; for(unsigned k=0;k<8;++k) crc=(crc>>1)^((crc&1)?UINT32_C(0xedb88320):0); }
     return ~crc;
 }
-typedef struct { uint32_t magic,size,crc; ph_settings settings; } disk_record;
-/* Explicit v1 layout; retain metering calibration, grants and power-on policy. */
+#define PH_CREDENTIAL_MAGIC UINT32_C(0x31445750)
 typedef struct {
- uint32_t magic,revision;uint8_t child_lock,indicator,power_on,calibrated;
- double coefficients[3],energy_kwh;ph_auth_store auth;
-} legacy_settings;
-typedef struct {uint32_t magic,size,crc;legacy_settings settings;} legacy_record;
-static bool save(void *unused, const ph_settings *s) {
-    (void)unused; if (!lfs_present() || !ph_settings_valid(s)) return false;
+    uint32_t magic,size,crc;ph_settings settings;
+    uint32_t credential_magic;char password[33];uint8_t reserved[3];
+} disk_record;
+/* PBL3 is a fixed disk ABI. A later auth/settings expansion needs another
+ * explicit importer rather than silently reinterpreting this record. */
+typedef char ph_store_v3_auth_size[(sizeof(ph_auth_store)==780)?1:-1];
+typedef char ph_store_v3_settings_size[(sizeof(ph_settings)==960)?1:-1];
+typedef char ph_store_v3_record_size[(sizeof(disk_record)==1016)?1:-1];
+typedef char ph_store_v3_auth_offset[(offsetof(ph_settings,auth)==48)?1:-1];
+typedef char ph_store_v3_report_offset[(offsetof(ph_settings,report_seconds)==828)?1:-1];
+typedef char ph_store_v3_name_offset[(offsetof(ph_settings,name)==832)?1:-1];
+typedef char ph_store_v3_socket_offset[(offsetof(ph_settings,socket_name)==896)?1:-1];
+typedef char ph_store_v3_payload_offset[(offsetof(disk_record,settings)==16)?1:-1];
+typedef char ph_store_v3_credential_offset[(offsetof(disk_record,credential_magic)==976)?1:-1];
+typedef char ph_store_v3_password_offset[(offsetof(disk_record,password)==980)?1:-1];
+static bool password_value_valid(const char *p) {
+    if(!p)return false;size_t n=0;
+    for(;n<33&&p[n];++n)if((unsigned char)p[n]<32||(unsigned char)p[n]>126)return false;
+    return n<=32&&(!n||n>=8);
+}
+static bool record_credential_valid(const disk_record *r) {
+    if(r->reserved[0]||r->reserved[1]||r->reserved[2])return false;
+    if(r->credential_magic==PH_CREDENTIAL_MAGIC)
+        return memchr(r->password,0,sizeof(r->password))&&password_value_valid(r->password);
+    if(r->credential_magic)return false;
+    for(unsigned i=0;i<sizeof(r->password);++i)if(r->password[i])return false;
+    return true;
+}
+static void import_auth(ph_auth_store *to,const ph_store_old_auth *from) {
+    ph_auth_store_empty(to);to->magic=from->magic;to->version=from->version;to->count=from->count;
+    for(unsigned i=0;i<12;++i) {
+        memcpy(to->pairs[i].peer,from->pairs[i].peer,sizeof(from->pairs[i].peer));
+        memcpy(to->pairs[i].key,from->pairs[i].key,sizeof(from->pairs[i].key));
+        to->pairs[i].scopes=from->pairs[i].scopes;
+        memcpy(to->pairs[i].reserved,from->pairs[i].reserved,sizeof(from->pairs[i].reserved));
+    }
+}
+/* auth/energy overrides avoid another full settings snapshot on the owner
+ * stack. All callers serialize through bl_lock, or run before task startup. */
+static bool save_record(const ph_settings *s,const ph_auth_store *auth,double energy,const char *password,bool owned) {
+    if (!lfs_present() || !ph_settings_valid(s)) return false;
     disk_record r; memset(&r,0,sizeof(r)); r.magic=PH_STORE_MAGIC; r.size=sizeof(r); r.settings=*s;
-    r.crc=crc32(&r.settings,sizeof(r.settings)); lfs_file_t f;
+    if(auth)r.settings.auth=*auth;r.settings.energy_kwh=energy;
+    if(owned) {if(!password_value_valid(password))return false;r.credential_magic=PH_CREDENTIAL_MAGIC;memcpy(r.password,password,strlen(password)+1);}
+    if(!ph_settings_valid(&r.settings))return false;
+    r.crc=crc32(&r.settings,sizeof(r)-offsetof(disk_record,settings)); lfs_file_t f;
     if(lfs_file_open(&lfs,&f,".phicomm.tmp",LFS_O_WRONLY|LFS_O_CREAT|LFS_O_TRUNC)<0)return false;
     bool ok=lfs_file_write(&lfs,&f,&r,sizeof(r))==(lfs_ssize_t)sizeof(r);
     if(ok)ok=lfs_file_sync(&lfs,&f)==0;
@@ -111,45 +169,95 @@ static bool save(void *unused, const ph_settings *s) {
     if(ok)ok=lfs_rename(&lfs,".phicomm.tmp",".phicomm")==0;
     return ok;
 }
+static bool save(void *unused, const ph_settings *s) {
+    (void)unused;return save_record(s,NULL,s->energy_kwh,committed_password,credential_owned);
+}
 static bool load(ph_settings *s) {
-    disk_record r; lfs_file_t f;
+    union {disk_record current;ph_store_v1_record v1;ph_store_v2_record v2;} r;
+    lfs_file_t f;
     if(!lfs_present() || lfs_file_open(&lfs,&f,".phicomm",LFS_O_RDONLY)<0)return false;
-    lfs_soff_t size=lfs_file_size(&lfs,&f);bool ok=false;
-    if(size==sizeof(r)) {
-        ok=lfs_file_read(&lfs,&f,&r,sizeof(r))==sizeof(r) && r.magic==PH_STORE_MAGIC &&
-           r.size==sizeof(r) && r.crc==crc32(&r.settings,sizeof(r.settings)) && ph_settings_valid(&r.settings);
-        if(ok)*s=r.settings;
-    } else if(size==sizeof(legacy_record)) {
-        legacy_record old;
-        if(lfs_file_read(&lfs,&f,&old,sizeof(old))==sizeof(old) && old.magic==UINT32_C(0x314c4250) &&
-           old.size==sizeof(old) && old.settings.magic==old.magic && old.crc==crc32(&old.settings,sizeof(old.settings))) {
-            ph_settings_default(s);s->revision=old.settings.revision;
-            s->child_lock=old.settings.child_lock;s->indicator=old.settings.indicator;
-            s->power_on=old.settings.power_on;s->calibrated=old.settings.calibrated;
-            memcpy(s->coefficients,old.settings.coefficients,sizeof(s->coefficients));
-            s->energy_kwh=old.settings.energy_kwh;s->auth=old.settings.auth;ok=ph_settings_valid(s);
+    lfs_soff_t size=lfs_file_size(&lfs,&f);bool ok=false,migrated=false;
+    if((size==sizeof(disk_record)||size==sizeof(ph_store_v1_record)||size==sizeof(ph_store_v2_record)) &&
+       size<=sizeof(r) && lfs_file_read(&lfs,&f,&r,(size_t)size)==size && r.current.size==size) {
+        if(r.current.magic==PH_STORE_MAGIC&&size==sizeof(disk_record)) {
+            ok=r.current.crc==crc32(&r.current.settings,sizeof(r.current)-offsetof(disk_record,settings))&&
+               ph_settings_valid(&r.current.settings)&&record_credential_valid(&r.current);
+            if(ok) {
+                *s=r.current.settings;credential_owned=r.current.credential_magic==PH_CREDENTIAL_MAGIC;
+                memset(committed_password,0,sizeof(committed_password));
+                if(credential_owned) {
+                    memcpy(committed_password,r.current.password,sizeof(committed_password));
+                    PH_BL_SetWebPasswordMemory(committed_password);
+                }
+            }
+        } else if(r.current.magic==PH_STORE_V2_MAGIC&&size==sizeof(ph_store_v2_record)&&
+                  r.v2.settings.magic==PH_STORE_V2_MAGIC&&r.v2.crc==crc32(&r.v2.settings,sizeof(r.v2.settings))) {
+            const ph_store_v2_settings *old=&r.v2.settings;ph_settings_default(s);
+            s->revision=old->revision;s->child_lock=old->child_lock;s->indicator=old->indicator;
+            s->power_on=old->power_on;s->calibrated=old->calibrated;
+            memcpy(s->coefficients,old->coefficients,sizeof(s->coefficients));s->energy_kwh=old->energy_kwh;
+            import_auth(&s->auth,&old->auth);s->report_seconds=old->report_seconds;
+            memcpy(s->name,old->name,sizeof(s->name));memcpy(s->socket_name,old->socket_name,sizeof(s->socket_name));
+            ok=ph_settings_valid(s);migrated=ok;
+        } else if(r.current.magic==PH_STORE_V1_MAGIC&&size==sizeof(ph_store_v1_record)&&
+                  r.v1.settings.magic==PH_STORE_V1_MAGIC&&r.v1.crc==crc32(&r.v1.settings,sizeof(r.v1.settings))) {
+            const ph_store_v1_settings *old=&r.v1.settings;ph_settings_default(s);
+            s->revision=old->revision;s->child_lock=old->child_lock;s->indicator=old->indicator;
+            s->power_on=old->power_on;s->calibrated=old->calibrated;
+            memcpy(s->coefficients,old->coefficients,sizeof(s->coefficients));s->energy_kwh=old->energy_kwh;
+            import_auth(&s->auth,&old->auth);ok=ph_settings_valid(s);migrated=ok;
         }
     }
     lfs_file_close(&lfs,&f);
     /* Normalize before safe-mode changes the in-memory relay policy. An
      * atomic-save failure keeps the old record intact; use corrected defaults
      * for this boot and retry next boot, without discarding any settings. */
-    if(ok && ph_settings_migrate_meter_defaults(s)) (void)save(NULL,s);
+    if(ok) {
+        if(migrated){credential_owned=false;memset(committed_password,0,sizeof(committed_password));}
+        if(ph_settings_migrate_meter_defaults(s))migrated=true;if(migrated)(void)save(NULL,s);
+    }
     return ok;
 }
 static bool auth_save(void *unused, const ph_auth_store *store) {
-    ph_settings next=bl_device.settings; next.auth=*store;next.energy_kwh=bl_device.meter.energy_kwh;
-    if(!save(unused,&next))return false;
-    bl_device.settings=next; return true;
+    (void)unused;
+    if(!save_record(&bl_device.settings,store,bl_device.meter.energy_kwh,committed_password,credential_owned))return false;
+    bl_device.settings.auth=*store;bl_device.settings.energy_kwh=bl_device.meter.energy_kwh;return true;
 }
 static bool password(void *unused, char out[33]) {
     (void)unused; const char *p=CFG_GetWebPassword(); size_t n=strlen(p);
     if(n>32)return false; memcpy(out,p,n+1); return true;
 }
-int PH_BL_PasswordChanged(void) {
-    if(!bl_ready)return 1;
-    lock(); bool ok=ph_auth_password_changed(&bl_auth); memset(&udp_state,0,sizeof(udp_state)); unlock();
+static bool credential_commit(void *password,const ph_auth_store *store) {
+    const char *next=password;
+    if(!save_record(&bl_device.settings,store,bl_device.meter.energy_kwh,next,true))return false;
+    /* The durable record now owns both values. A reset or an unreported SDK
+     * save failure restores this exact password before auth initialization. */
+    PH_BL_SetWebPasswordMemory(next);memset(committed_password,0,sizeof(committed_password));
+    memcpy(committed_password,next,strlen(next)+1);credential_owned=true;
+    bl_device.settings.auth=*store;bl_device.settings.energy_kwh=bl_device.meter.energy_kwh;
+    return true;
+}
+static bool web_password_set_locked(const char *next) {
+    if(!password_value_valid(next))return false;
+    if(!strcmp(CFG_GetWebPassword(),next))return true;
+    bool ok=ph_auth_credential_commit(&bl_auth,next,false,credential_commit,(void *)next);
+    if(ok) {
+        /* This product revokes its broker-issued read grants together with
+         * local credentials. A failed/no-op commit leaves them intact. */
+        memset(bl_auth.mqtt,0,sizeof(bl_auth.mqtt));
+#ifdef PH_S30_LAN_V4
+        ph_lan_v4_revoke(&udp_state);
+#else
+        memset(&udp_state,0,sizeof(udp_state));
+#endif
+    }
     return ok;
+}
+int PH_BL_WebPasswordSet(const char *next) {
+    if(!next||strlen(next)>32)return 0;
+    if(!bl_ready){PH_BL_SetWebPasswordMemory(next);return 1;}
+    lock();bool ok=web_password_set_locked(next);unlock();
+    if(ok)CFG_Save_IfThereArePendingChanges();return ok;
 }
 static void set_relay(void *unused, bool on) { (void)unused; HAL_PIN_SetOutputValue(RELAY_PIN,on?PH_RELAY_ACTIVE:!PH_RELAY_ACTIVE); }
 static void reboot(void *unused) { (void)unused; reboot_pending=true; reboot_at=now(NULL)+3000; }
@@ -157,9 +265,8 @@ static void reboot(void *unused) { (void)unused; reboot_pending=true; reboot_at=
 static bool checkpoint(uint32_t t, bool force) {
     if(!force && (uint32_t)(t-energy_saved_at)<300000)return true;
     if(bl_device.settings.energy_kwh==bl_device.meter.energy_kwh){energy_saved_at=t;return true;}
-    ph_settings next=bl_device.settings;next.energy_kwh=bl_device.meter.energy_kwh;
-    if(!save(NULL,&next))return false;
-    bl_device.settings=next;energy_saved_at=t;return true;
+    if(!save_record(&bl_device.settings,NULL,bl_device.meter.energy_kwh,committed_password,credential_owned))return false;
+    bl_device.settings.energy_kwh=bl_device.meter.energy_kwh;energy_saved_at=t;return true;
 }
 static void network_info(void *unused, ph_writer *w) {
     (void)unused; phw_text(w,"ip",HAL_GetMyIPString()); phw_int(w,"rssi",HAL_GetWifiStrength());
@@ -274,9 +381,7 @@ static const char *platform_action(void *unused,const char *action,const ph_valu
  } else if(!strcmp(section,"auth")) {
   if(values.count!=1||!get_text(&values,"password",a,33)||(*a&&strlen(a)<8))return "invalid_params";
   for(const char *s=a;*s;++s)if((unsigned char)*s<32||(unsigned char)*s>126)return "invalid_params";
-  /* Native CFG calls the durable grant revocation hook with its own lock. */
-  unlock();CFG_SetWebPassword(a);lock();
-  if(strcmp(CFG_GetWebPassword(),a))return "storage_error";
+  if(!web_password_set_locked(a))return "storage_error";
  } else return "unsupported";
  memset(a,0,sizeof(a));memset(b,0,sizeof(b));memset(c,0,sizeof(c));
  CFG_Save_IfThereArePendingChanges();return "accepted";
@@ -301,6 +406,35 @@ static void scan_step(uint32_t t) {
   scan_state=0;
  }
 }
+#ifdef PH_S30_LAN_V4
+static size_t lan_free_heap(void *unused) {(void)unused;return xPortGetFreeHeapSize();}
+static bool lan_digest(void *unused,const void *bytes,size_t n,uint8_t out[32]) {
+ (void)unused;return PH_BL_Sha256(bytes,n,out);
+}
+static size_t lan_dispatch(void *unused,const ph_lan_v4_request *request,const ph_auth_context *context,
+                           void *output,size_t capacity,bool *admitted) {
+ (void)unused;
+ return ph_command_context(&bl_device,request->action,&request->params,request->id,
+                            request->receipt_key,context,PH_WIRE_MSGPACK,output,capacity,admitted);
+}
+#endif
+bool bl_sensor_grant(const char *peer,const char *token,uint32_t boot) {
+#ifdef PH_S30_LAN_V4
+ return ph_lan_v4_sensor_grant(&udp_state,peer,token,boot);
+#else
+ (void)peer;(void)token;(void)boot;return false;
+#endif
+}
+static __attribute__((noinline)) bool factory_reset_record(void) {
+ ph_settings defaults;ph_settings_default(&defaults);
+ if(!save_record(&defaults,NULL,defaults.energy_kwh,NULL,false))return false;
+ memset(bl_auth.mqtt,0,sizeof(bl_auth.mqtt));
+#ifdef PH_S30_LAN_V4
+ ph_lan_v4_revoke(&udp_state);
+#endif
+ credential_owned=false;memset(committed_password,0,sizeof(committed_password));
+ bl_device.settings=defaults;set_relay(NULL,false);return true;
+}
 static void network_thread(beken_thread_arg_t arg) {
  (void)arg;
  PH_BOOT_STAGE("lan-thread");
@@ -311,11 +445,7 @@ static void network_thread(beken_thread_arg_t arg) {
    restart=reboot_pending;reset=reset_requested;reset_requested=0;
   }
   checkpoint(t,restart||reset==1);
-  if(reset==2) {
-   ph_settings defaults;ph_settings_default(&defaults);
-   if(!save(NULL,&defaults))reset=0;
-   else {bl_device.settings=defaults;set_relay(NULL,false);}
-  }
+  if(reset==2&&!factory_reset_record())reset=0;
   if(bl_ota_pending) {
    if(*ota_url&&(int32_t)(t-ota_at)>=0) {
     /* The shared owner delivers its captured command receipt before closing.
@@ -330,6 +460,9 @@ static void network_thread(beken_thread_arg_t arg) {
    }
   }
   bool upgrading=bl_ota_pending;
+#ifdef PH_S30_LAN_V4
+  if(upgrading)ph_lan_v4_pause(&udp_state);else ph_lan_v4_poll(&udp_state);
+#endif
   unlock();
   if(reset) {
    if(reset==2){CFG_SetDefaultConfig();CFG_SetMQTTUserName("");CFG_SetMQTTPass("");CFG_SetDeviceName("S30-V1B");}
@@ -338,6 +471,9 @@ static void network_thread(beken_thread_arg_t arg) {
   }
   if(restart)HAL_RebootModule();
   if(upgrading) {
+#ifdef PH_S30_LAN_V4
+   PH_BL_MdnsPoll(false);
+#endif
    if(udp_fd>=0){close(udp_fd);udp_fd=-1;}
    if(*url)OTA_RequestDownloadFromHTTP(url);
    rtos_delay_milliseconds(100);continue;
@@ -349,15 +485,35 @@ static void network_thread(beken_thread_arg_t arg) {
     a.sin_addr.s_addr=htonl(INADDR_LOOPBACK);
 #endif
     if(bind(udp_fd,(struct sockaddr*)&a,sizeof(a))){close(udp_fd);udp_fd=-1;}}
+#ifdef PH_S30_LAN_V4
+   if(udp_fd<0){lock();ph_lan_v4_pause(&udp_state);unlock();}
+#endif
   }
+#ifdef PH_S30_LAN_V4
+  PH_BL_MdnsPoll(udp_fd>=0&&Main_IsConnectedToWiFi());
+#endif
   fd_set reads;FD_ZERO(&reads);if(udp_fd>=0)FD_SET(udp_fd,&reads);
   struct timeval delay={0,100000};int events=select(udp_fd+1,&reads,NULL,NULL,&delay);
   if(events>0&&udp_fd>=0&&FD_ISSET(udp_fd,&reads)) {
    struct sockaddr_in remote;socklen_t size=sizeof(remote);
    int n=recvfrom(udp_fd,udp_in,sizeof(udp_in),0,(struct sockaddr*)&remote,&size);
+#ifdef PH_S30_LAN_V4
+   if(n>0&&n<=LAN_V4_FRAME_MAX) {
+    char source[16];
+    if(inet_ntop(AF_INET,&remote.sin_addr,source,sizeof(source))) {
+     lock();
+     /* A response is independently allocated by the adapter before dispatch.
+      * Reclaim optional cache bytes before that admission, not inside it. */
+     ph_status_cache_suspend(&bl_device,true);
+     size_t k=ph_lan_v4_feed(&udp_state,udp_in,(size_t)n,source,ntohs(remote.sin_port),udp_in,LAN_V4_FRAME_MAX);
+     unlock();if(k)sendto(udp_fd,udp_in,k,0,(struct sockaddr*)&remote,size);
+    }
+   }
+#else
    if(n>0&&n<=PH_INPUT_MAX){lock();size_t k=ph_udp_handle(&udp_state,&bl_device,&bl_auth,udp_in,n,udp_out,sizeof(udp_out));unlock();
     /* The lab's LAN transport listens and replies on the shared service port. */
     remote.sin_port=htons(11288);if(k)sendto(udp_fd,udp_out,k,0,(struct sockaddr*)&remote,size);}
+#endif
   }
  }
 }
@@ -392,6 +548,11 @@ void PH_BL_Init(int safe_mode) {
  ph_auth_ops ao={NULL,now,random_bytes,NULL,NULL,password,auth_save};
  if(!ph_auth_init(&bl_auth,&ao,&bl_device.settings.auth))return;
  PH_BOOT_STAGE("auth-ready");
+#ifdef PH_S30_LAN_V4
+ ph_lan_v4_ops lan_ops={NULL,now,lan_free_heap,lan_digest,lan_dispatch};
+ if(!ph_lan_v4_init(&udp_state,bl_device.mac,bl_device.boot,&bl_auth,&lan_ops)||
+    !PH_BL_MdnsInit(PH_BL_HostName(),bl_device.mac,"full",bl_device.version))return;
+#endif
  UART_InitReceiveRingBufferEx(METER_UART_PORT,512);
  PH_BOOT_RESULT("meter-buffer",UART_GetReceiveRingBufferSizeEx(METER_UART_PORT));
  if(UART_GetReceiveRingBufferSizeEx(METER_UART_PORT)!=512){set_relay(NULL,false);return;}

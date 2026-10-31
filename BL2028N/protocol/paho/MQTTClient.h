@@ -35,7 +35,7 @@
 #define MAX_SIZE_PASSWORD  (12+1)
 
 // all failure return codes must be negative
-enum returnCode { MQTT_SOCKET_ERR = -3, MQTT_BUFFER_OVERFLOW = -2, MQTT_FAILURE = -1, MQTT_SUCCESS = 0 };
+enum returnCode { MQTT_SUBSCRIPTION_REJECTED = -4, MQTT_SOCKET_ERR = -3, MQTT_BUFFER_OVERFLOW = -2, MQTT_FAILURE = -1, MQTT_SUCCESS = 0 };
 enum QoS { QOS0, QOS1, QOS2 };
 
 struct MQTTMessage

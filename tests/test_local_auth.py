@@ -9,6 +9,17 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class LocalAuthTest(unittest.TestCase):
+    def test_shared_basic_matcher(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            binary = Path(temporary) / 'http_basic'
+            subprocess.run([
+                os.environ.get('CC', 'cc'), '-std=c99', '-Wall', '-Wextra', '-Werror',
+                '-fsanitize=address,undefined', '-fno-omit-frame-pointer', '-no-pie', '-g',
+                str(ROOT / 'tests/local_auth/test_http_basic.c'),
+                str(ROOT / 'common/httpd/parser.c'), '-o', str(binary),
+            ], check=True)
+            subprocess.run([str(binary)], check=True)
+
     def test_sessions_pairing_and_concurrent_admission(self):
         with tempfile.TemporaryDirectory() as temporary:
             binary = Path(temporary) / 'local_auth'

@@ -7,7 +7,7 @@ class HubLifecycle(unittest.TestCase):
   with tempfile.TemporaryDirectory() as directory:
    p=Path(directory);source=(ROOT/'DAIKIN/src/hub.inc').read_text()
    def section(start,end): return source[source.index(start):source.index(end,source.index(start))]
-   (p/'globals.inc').write_text(section('static bool hubReload','static String hubHex('))
+   (p/'globals.inc').write_text(section('static bool hubReload','static std::string hubRandom('))
    (p/'capture.inc').write_text(section('static bool hubCapture(','static void hubConfigureUpstream('))
    (p/'lifecycle.inc').write_text(section('static void hubResetInbox()','static bool hubReady()'))
    (p/'reload.inc').write_text(section('static void pollHub(uint32_t now) {','  hubRelay.tick(now);')+'\n(void)now;\n}\n')

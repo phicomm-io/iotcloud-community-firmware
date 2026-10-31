@@ -4,17 +4,17 @@ This guide covers the **ORVIBO S30-V1B**, with a BL2028N module, BK7231N chip an
 
 ## RC4 downloads
 
-The current candidate is **v1.0.0-rc.4 (Beta)**. Select the file for your installation method:
+The current candidate is **v1.0.0-rc.5 (Beta)**. Select the file for your installation method:
 
 | Purpose | Release file |
 | --- | --- |
-| Stock network installation or community URL OTA | [BL2028N_OTA_1.0.0-rc.4.rbl](https://github.com/phicomm-io/iotcloud-community-firmware/releases/download/v1.0.0-rc.4/BL2028N_OTA_1.0.0-rc.4.rbl) |
-| UART installation preserving the stock bootloader; write at `0x11000` | [BL2028N_STOCK_UA_1.0.0-rc.4.bin](https://github.com/phicomm-io/iotcloud-community-firmware/releases/download/v1.0.0-rc.4/BL2028N_STOCK_UA_1.0.0-rc.4.bin) |
-| Checksums | [SHA256SUMS-S30](https://github.com/phicomm-io/iotcloud-community-firmware/releases/download/v1.0.0-rc.4/SHA256SUMS-S30) |
+| Stock network installation or community URL OTA | [BL2028N_OTA_1.0.0-rc.5.rbl](https://github.com/phicomm-io/iotcloud-community-firmware/releases/download/v1.0.0-rc.5/BL2028N_OTA_1.0.0-rc.5.rbl) |
+| UART installation preserving the stock bootloader; write at `0x11000` | [BL2028N_STOCK_UA_1.0.0-rc.5.bin](https://github.com/phicomm-io/iotcloud-community-firmware/releases/download/v1.0.0-rc.5/BL2028N_STOCK_UA_1.0.0-rc.5.bin) |
+| Checksums | [SHA256SUMS-S30](https://github.com/phicomm-io/iotcloud-community-firmware/releases/download/v1.0.0-rc.5/SHA256SUMS-S30) |
 
 Download names are fixed per release; the device reports the release version followed by its six-digit Git suffix.
 
-For an RBL-only download, run `grep "  BL2028N_OTA_1.0.0-rc.4.rbl$" SHA256SUMS-S30 | sha256sum -c -` in the same directory. On macOS use `shasum -a 256` and compare the matching checksum entry.
+For an RBL-only download, run `grep "  BL2028N_OTA_1.0.0-rc.5.rbl$" SHA256SUMS-S30 | sha256sum -c -` in the same directory. On macOS use `shasum -a 256` and compare the matching checksum entry.
 
 ## Choose an installation method
 
@@ -66,7 +66,7 @@ In another terminal run `mosquitto -c broker.conf -v` as the current user. Set `
 
 ### Run the local installation tool
 
-Use [s30_stock_ota.py](https://github.com/phicomm-io/iotcloud-community-firmware/blob/v1.0.0-rc.4/tools/s30_stock_ota.py), reviewed alongside the candidate firmware. The computer, stock device and broker IPv4 addresses must be mutually reachable. Allow TCP `15683` for HTTPS CGW, `8080` for the firmware download, and the broker's selected port. Certificates must include their service IP; `--mqtt-ca` verifies the broker certificate on the computer.
+Use [s30_stock_ota.py](https://github.com/phicomm-io/iotcloud-community-firmware/blob/v1.0.0-rc.5/tools/s30_stock_ota.py), reviewed alongside the candidate firmware. The computer, stock device and broker IPv4 addresses must be mutually reachable. Allow TCP `15683` for HTTPS CGW, `8080` for the firmware download, and the broker's selected port. Certificates must include their service IP; `--mqtt-ca` verifies the broker certificate on the computer.
 
 Prepare two private JSON files with mode `600`; do not commit or publish them:
 
@@ -84,15 +84,15 @@ Download the matching RBL and `SHA256SUMS-S30`, verify them, and replace every p
 
 ```sh
 mkdir -p tools
-curl --fail --location https://raw.githubusercontent.com/phicomm-io/iotcloud-community-firmware/v1.0.0-rc.4/tools/s30_stock_ota.py -o tools/s30_stock_ota.py
+curl --fail --location https://raw.githubusercontent.com/phicomm-io/iotcloud-community-firmware/v1.0.0-rc.5/tools/s30_stock_ota.py -o tools/s30_stock_ota.py
 chmod 600 wifi.private.json mqtt.private.json
-grep "  BL2028N_OTA_1.0.0-rc.4.rbl$" SHA256SUMS-S30 | sha256sum -c -
+grep "  BL2028N_OTA_1.0.0-rc.5.rbl$" SHA256SUMS-S30 | sha256sum -c -
 python3 tools/s30_stock_ota.py \
   --device <stock-device-IP> --device-id <this-unit-12-digit-factory-MAC> \
   --host <computer-LAN-IP> \
   --wifi-file wifi.private.json --mqtt-file mqtt.private.json \
   --mqtt-ca gateway-cert.pem --cert gateway-cert.pem --key gateway-key.pem \
-  --rbl 'BL2028N_OTA_1.0.0-rc.4.rbl' --sha256 <published-file-SHA256>
+  --rbl 'BL2028N_OTA_1.0.0-rc.5.rbl' --sha256 <published-file-SHA256>
 ```
 
 The tool configures local HTTPS CGW using CoAP `/qlink/netinfo`. Stock firmware retrieves the temporary TLS MQTT connection over HTTPS, receives an AndLink file command, and downloads the RBL.

@@ -382,7 +382,7 @@ void device_diagnostics_mp(ph_writer *w,const device_status_t *s,const device_st
  if(s->model!=DEVICE_TC1){diagnostic_i32(w,PH_DIAG_HTTP_ACCEPT_BUSY_SEND_BYTES,(int)f->http.busy_bytes);}
  if(s->model!=DEVICE_TC1){diagnostic_i32(w,PH_DIAG_HTTP_ACCEPT_OVERFLOW_CLOSE,(int)f->http.rejected);}
  if(s->model!=DEVICE_TC1){diagnostic_i32(w,PH_DIAG_HTTP_ACCEPT_QUEUE_CAPACITY,PH_HTTP_WAIT_SLOTS);}
- if(s->model!=DEVICE_TC1){diagnostic_i32(w,PH_DIAG_HTTP_TCP_LIMIT_REQUESTED,PH_HTTP_WAIT_SLOTS+1);}
+ if(s->model!=DEVICE_TC1){diagnostic_i32(w,PH_DIAG_HTTP_TCP_LIMIT_REQUESTED,PH_HTTP_CLIENT_SLOTS);}
  if(s->model!=DEVICE_TC1){diagnostic_i32(w,PH_DIAG_HTTP_TCP_LIMIT_SET_RC,f->http.set_rc);}
  if(s->model!=DEVICE_TC1){diagnostic_i32(w,PH_DIAG_HTTP_TCP_LIMIT_SET_ERRNO,f->http.set_errno);}
  if(s->model!=DEVICE_TC1){diagnostic_i32(w,PH_DIAG_HTTP_TCP_LIMIT_GET_RC,f->http.limit_get_rc);}

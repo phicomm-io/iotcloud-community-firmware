@@ -20,14 +20,15 @@
 #define IRQ_TRIGGER_FALLING_EDGE 0
 #define POWER 15
 #define power_log(...) ((void)0)
-static struct { uint16_t power_coefficient_x100; uint32_t p_count_1_day_ago; } config={1710,0}, *user_config=&config;
+static struct { uint16_t power_coefficient_x100; uint32_t p_count_1_day_ago; int mqtt_report_freq; } config={1710,0,2}, *user_config=&config;
 static uint64_t clock_ns;
 static uint32_t now_ms, random_value=UINT32_MAX;
 static bool random_failure, allocation_failure, current_session=true, ota_active;
 static unsigned random_calls, sends, attempts, powers, statuses,capabilities;
 static int send_result,synchronous_error;
 static mqtt_account_t account;
-static bool power_pending,power_turn,rediscover,cleanup_pending;
+static bool power_pending,power_turn,power_report_started,rediscover,cleanup_pending;
+static uint32_t power_report_at;
 static unsigned ha_refresh_pending,discovery_index=12,state_index=10,publication_cursor;
 static ph_mqtt_publication native_publication;
 static void (*power_irq)(void *);
@@ -174,6 +175,22 @@ static void bounds(void) {
     account_set(user);cycle();assert(sends==1); // initial zero remains invalid, maximum account key fits
     now_ms+=5000;power_sample_commit(0,now_ms);feed_at(now_ms);assert(sends==2);
 }
+static void report_cadence(void) {
+    for(unsigned i=0;i<4;i++) {
+        static const int seconds[]={0,-1,3601,2};
+        config.mqtt_report_freq=seconds[i];power_report_started=false;power_pending=false;now_ms=100;
+        power_report_poll();assert(power_pending);power_pending=false;
+        now_ms=2099;power_report_poll();assert(!power_pending);
+        now_ms=2100;power_report_poll();assert(power_pending);
+    }
+    config.mqtt_report_freq=3600;power_report_started=false;power_pending=false;now_ms=UINT32_MAX-500;
+    power_report_poll();assert(power_pending);power_pending=false;
+    now_ms+=3599999;power_report_poll();assert(!power_pending);
+    now_ms++;power_report_poll();assert(power_pending);power_pending=false;
+    /* Reconnection restarts the owner deadline even at the same clock tick. */
+    account_set("test");assert(!session_initial(NULL));assert(!power_report_started);
+    power_report_poll();assert(power_pending);
+}
 int main(int argc,char **argv) {
     assert(argc==2);
     if(!strcmp(argv[1],"reader"))reader();
@@ -184,6 +201,7 @@ int main(int argc,char **argv) {
     else if(!strcmp(argv[1],"failures"))failures();
     else if(!strcmp(argv[1],"gates"))gates();
     else if(!strcmp(argv[1],"fairness"))fairness();
+    else if(!strcmp(argv[1],"report"))report_cadence();
     else {assert(!strcmp(argv[1],"bounds"));bounds();}
     return 0;
 }

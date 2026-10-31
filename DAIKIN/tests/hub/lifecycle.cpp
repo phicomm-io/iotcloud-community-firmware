@@ -12,7 +12,7 @@ using String=std::string;using esp_mqtt_client_handle_t=void*;using QueueHandle_
 static std::deque<HubMessage> queue;
 static std::vector<std::string> events;
 static bool mqttRestart=false,wifiRestart=false,configRecovery=false;
-static String hubHttpToken="owner-session";
+struct HttpCommand{void cancel(const char*){events.push_back("http-cancel");}} hubHttpCommand;
 static iotcloud::HubLanClient client;
 static unsigned sent=0,completed=0;
 static void hubLanReset(){events.push_back("udp-reset");client.reset();}
@@ -78,8 +78,8 @@ int main(){
  lan_v4_packet packet={};packet.op=LAN_V4_RESULT;strcpy(packet.src,"02c400000002");strcpy(packet.dst,"02c400000001");packet.id=first;packet.request_boot=7;assert(!client.receive(packet,"10.0.0.2",11288,1001));
  events.clear();seedInbox();begin();assert(client.lastId>first);epoch=hubEpoch;hubDeviceBus.dispatch=noop;hubReload=hubBirth=hubCredentials=wifiRestart=true;hubRestoreChanged();
  assert(hubRestoring&&!client.busy()&&client.lastId>first&&hubEpoch==epoch+1&&queue.empty()&&!hubMessages[0]&&!hubMessages[1]);
- assert(!hubDeviceBus.dispatch&&hubHttpToken.empty()&&hubRemoteTopics.empty()&&!hubReload&&!hubBirth&&!hubCredentials&&!wifiRestart&&!mqttRestart);
- assert(index("home-quiesce")<index("udp-reset")&&index("sessions-clear")<index("udp-reset")&&index("mqtt-join")<index("inbox-reset")&&index("bemfa-join")<index("inbox-reset"));
+ assert(!hubDeviceBus.dispatch&&hubRemoteTopics.empty()&&!hubReload&&!hubBirth&&!hubCredentials&&!wifiRestart&&!mqttRestart);
+ assert(index("home-quiesce")<index("udp-reset")&&index("http-cancel")<index("udp-reset")&&index("mqtt-join")<index("inbox-reset")&&index("bemfa-join")<index("inbox-reset"));
  Event event;event.topic="up";event.topic_len=2;event.total_data_len=event.data_len=1;event.data="x";assert(!hubCapture(&event,0));assert(!hubCapture(&event,1));sends=sent;client.tick(2000);pollHub(2000);assert(sent==sends&&queue.empty()&&completed==0);
  puts("production UDP lifecycle PASS: restore/reload cancellation, monotonic IDs, stale results, joined source generations/inbox retirement");
 }

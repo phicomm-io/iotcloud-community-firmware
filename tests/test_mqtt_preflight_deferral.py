@@ -63,7 +63,7 @@ int main(void){
 #include <stddef.h>
 #define MQTT_SUCCESS 0
 static struct {unsigned mode;} account={1};
-static bool cleanup_pending,power_sensor_metadata,power_sensor_started;
+static bool cleanup_pending,power_sensor_metadata,power_sensor_started,power_report_started;
 static unsigned discovery_index,state_index,publication_cursor;
 static unsigned invalidations;
 static void PowerSampleInvalidate(void){invalidations++;}
@@ -73,12 +73,14 @@ static int service_mqtt_capabilities(int(*s)(const char*,const void*,size_t,bool
  (void)s;(void)a;
  /* A retryable first capability send must already have installed all cursors. */
  assert(cleanup_pending&&!discovery_index&&!state_index&&!publication_cursor&&!synchronous_error);
+ assert(!power_sensor_metadata&&!power_sensor_started&&!power_report_started);
  return cap_rc;
 }
 /* BODY */
 int main(void){
  for(cap_rc=0;cap_rc<=3;cap_rc++){
   cleanup_pending=false;discovery_index=state_index=publication_cursor=9;synchronous_error=-1;
+  power_sensor_metadata=power_sensor_started=power_report_started=true;
   assert(session_initial(0)==cap_rc);
   assert(invalidations==(unsigned)cap_rc+1);
  }

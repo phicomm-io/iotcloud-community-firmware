@@ -3,8 +3,8 @@ static esp_err_t jsonResponse(httpd_req_t *req,const char *status,const String &
   httpd_resp_set_hdr(req,"X-Content-Type-Options","nosniff");
   if(body.startsWith("{")||body.startsWith("[")){
     String wire;
-    if(body.length()<384){StaticJsonDocument<768> doc;if(deserializeJson(doc,body))return ESP_FAIL;if(!serializeWireMP(doc,wire)){httpd_resp_set_status(req,"503 Service Unavailable");return httpd_resp_send(req,"\x81\xa4" "code" "\xa4" "busy",11);}}
-    else {DynamicJsonDocument doc(12288);if(deserializeJson(doc,body)){httpd_resp_set_status(req,"503 Service Unavailable");return httpd_resp_send(req,"\x81\xa4" "code" "\xa4" "busy",11);}if(!serializeWireMP(doc,wire)){httpd_resp_set_status(req,"503 Service Unavailable");return httpd_resp_send(req,"\x81\xa4" "code" "\xa4" "busy",11);}}
+    if(body.length()<384){StaticJsonDocument<768> doc;if(deserializeJson(doc,body.c_str(),body.length()))return ESP_FAIL;if(!serializeWireMP(doc,wire)){httpd_resp_set_status(req,"503 Service Unavailable");return httpd_resp_send(req,"\x81\xa4" "code" "\xa4" "busy",11);}}
+    else {DynamicJsonDocument doc(12288);if(deserializeJson(doc,body.c_str(),body.length())){httpd_resp_set_status(req,"503 Service Unavailable");return httpd_resp_send(req,"\x81\xa4" "code" "\xa4" "busy",11);}if(!serializeWireMP(doc,wire)){httpd_resp_set_status(req,"503 Service Unavailable");return httpd_resp_send(req,"\x81\xa4" "code" "\xa4" "busy",11);}}
     return httpd_resp_send(req,wire.c_str(),wire.length());
   }
   return httpd_resp_send(req,body.c_str(),body.length());
@@ -13,18 +13,28 @@ static bool authorized(httpd_req_t *req);
 // HTTP and LAN share the credential epoch; restore revokes even unchanged passwords.
 static String currentWebPassword(){char password[33];portENTER_CRITICAL(&authMux);memcpy(password,webPassword,sizeof(password));portEXIT_CRITICAL(&authMux);return String(password);}
 static bool requestAuthorization(httpd_req_t *req,char header[80]){return httpd_req_get_hdr_value_str(req,"Authorization",header,80)==ESP_OK;}
-static bool authorized(httpd_req_t *req){char header[80]={};ph_auth_context context;if(!configRecovery&&localAuthReady&&requestAuthorization(req,header)&&ph_auth_http_check(&localAuth,header,&context))return true;jsonResponse(req,"401 Unauthorized","{\"code\":\"unauthorized\"}");return false;}
+static bool authorized(httpd_req_t *req){char header[80]={};ph_auth_context context;if(!configRecovery&&localAuthReady&&(requestAuthorization(req,header),ph_auth_http_check(&localAuth,header,&context)))return true;jsonResponse(req,"401 Unauthorized","{\"code\":\"unauthorized\"}");return false;}
 static esp_err_t loginHandler(httpd_req_t *req){
   char type[64]={};
   if(httpd_req_get_hdr_value_str(req,"Content-Type",type,sizeof(type))!=ESP_OK||strcmp(type,"application/msgpack"))return jsonResponse(req,"415 Unsupported Media Type","{\"code\":\"invalid_params\"}");
   if(req->content_len<=0||req->content_len>128)return jsonResponse(req,"400 Bad Request","{\"code\":\"invalid_params\"}");
   char body[128];int left=req->content_len,read=0;while(left){int n=httpd_req_recv(req,body+read,left);if(n<=0)return ESP_FAIL;read+=n;left-=n;}
-  ph_value root,value;char password[33]={};if(!phv_parse(PH_WIRE_MSGPACK,body,read,&root)||!phv_keys(&root,"|password|")||!phv_get(&root,"password",&value)||!phv_text(&value,password,sizeof(password)))return jsonResponse(req,"400 Bad Request","{\"code\":\"invalid_params\"}");
+  ph_value root,value;char password[33]={};if(!phv_parse(PH_WIRE_MSGPACK,body,read,&root)||!phv_keys(&root,"|password||username|")||
+     (phv_get(&root,"username",&value)&&!phv_equal_text(&value,"admin"))||!phv_get(&root,"password",&value)||!phv_text(&value,password,sizeof(password)))return jsonResponse(req,"400 Bad Request","{\"code\":\"invalid_params\"}");
   char token[33]={};auto result=localAuthReady&&!configRecovery?ph_auth_http_login_result(&localAuth,password,token):PH_AUTH_LOGIN_BUSY;memset(password,0,sizeof(password));
   if(result!=PH_AUTH_LOGIN_OK)return jsonResponse(req,result==PH_AUTH_LOGIN_BUSY?"503 Service Unavailable":"401 Unauthorized",result==PH_AUTH_LOGIN_BUSY?"{\"code\":\"busy\"}":"{\"code\":\"unauthorized\"}");
-  DynamicJsonDocument reply(768);reply["code"]="ok";reply["data"]["token"]=token;reply["data"]["expires_in"]=1800;String wire;serializeWireMP(reply,wire);memset(token,0,sizeof(token));return jsonResponse(req,"200 OK",wire);
+  if(*token)httpd_resp_set_hdr(req,"X-IotCloud-Session",token);
+  // The login result owns this decision. A later password change must not
+  // turn a stateless result into a purported authenticated session.
+  DynamicJsonDocument reply(768);reply["code"]="ok";reply["data"]["token"]=token;reply["data"]["password_required"]=*token!=0;reply["data"]["expires_in"]=1800;String wire;serializeWireMP(reply,wire);memset(token,0,sizeof(token));return jsonResponse(req,"200 OK",wire);
 }
-static esp_err_t logoutHandler(httpd_req_t *req){char header[80]={};if(!localAuthReady||!requestAuthorization(req,header)||!ph_auth_http_logout(&localAuth,header))return jsonResponse(req,"401 Unauthorized","{\"code\":\"unauthorized\"}");return jsonResponse(req,"200 OK","{\"code\":\"ok\"}");}
+static esp_err_t logoutHandler(httpd_req_t *req){
+  char header[80]={};ph_auth_context context;
+  requestAuthorization(req,header);
+  if(configRecovery||!localAuthReady||!ph_auth_http_check(&localAuth,header,&context))return jsonResponse(req,"401 Unauthorized","{\"code\":\"unauthorized\"}");
+  if(context.source==PH_AUTH_HTTP&&!ph_auth_http_logout(&localAuth,header))return jsonResponse(req,"401 Unauthorized","{\"code\":\"unauthorized\"}");
+  return jsonResponse(req,"200 OK","{\"code\":\"ok\"}");
+}
 // HTTP handlers run on the server task; application work is queued below.
 static portMUX_TYPE webMux=portMUX_INITIALIZER_UNLOCKED;
 static volatile bool webPending=false,webDone=true;
@@ -33,11 +43,12 @@ static String webBody,webResult;
 static unsigned webOperation=0;
 static ph_auth_context webAuthContext;
 static bool webAuthRequired=false;
-static bool captureWebAuthorization(httpd_req_t *req){char header[80]={};if(configRecovery||!localAuthReady||!requestAuthorization(req,header)||!ph_auth_http_check(&localAuth,header,&webAuthContext)){jsonResponse(req,"401 Unauthorized","{\"code\":\"unauthorized\"}");return false;}webAuthRequired=true;return true;}
+static bool captureWebAuthorization(httpd_req_t *req){char header[80]={};if(configRecovery||!localAuthReady||!(requestAuthorization(req,header),ph_auth_http_check(&localAuth,header,&webAuthContext))){jsonResponse(req,"401 Unauthorized","{\"code\":\"unauthorized\"}");return false;}webAuthRequired=true;return true;}
 #ifdef IOTCLOUD_HUB
 static iotcloud::HubService::Request hubHttpRequest("","");
 static int hubHttpStatus=200;
-static String hubHttpToken;
+static bool hubHttpDeferred=false;
+static iotcloud::HubHttpCommand hubHttpCommand;
 #endif
 static esp_err_t rootHandler(httpd_req_t *req){
   httpd_resp_set_type(req,"text/html; charset=utf-8");httpd_resp_set_hdr(req,"Content-Encoding","gzip");
@@ -109,7 +120,7 @@ static String backupExecute(){
     // document after NoMemory, releasing each previous pool before allocating.
     DynamicJsonDocument backup(capacity);
     if(!backup.capacity())return "{\"code\":\"busy\"}";
-    auto error=deserializeJson(backup,webBody);
+    auto error=deserializeJson(backup,webBody.c_str(),webBody.length());
     if(error==DeserializationError::NoMemory){
       if(capacity==limit)return "{\"code\":\"busy\"}";
       capacity=capacity>limit-1024?limit:capacity+1024;continue;
@@ -225,7 +236,7 @@ static esp_err_t infoHandler(httpd_req_t *req){
   data["api_version"]=1;data["model"]="daikin";data["firmware_variant"]=DAIKIN_VARIANT;
   data["version"]=version;data["device_id"]=deviceId;data["mac"]=deviceId;
   data["api_version"]=1;data["model"]="daikin";data["variant"]=DAIKIN_VARIANT;data["device_id"]=deviceId;data["fw"]=version;data["firmware_version"]=version;
-  data["auth"]="bearer";data["password_set"]=currentWebPassword().length()>0;data["auth_required"]=true;data["wire_version"]=1;data.createNestedArray("wire_formats").add("msgpack");data["default_wire_format"]="msgpack";
+  data["auth"]="bearer";data["password_set"]=currentWebPassword().length()>0;data["auth_required"]=currentWebPassword().length()>0;data["wire_version"]=1;data.createNestedArray("wire_formats").add("msgpack");data["default_wire_format"]="msgpack";
   String body;serializeWireMP(reply,body);return jsonResponse(req,"200 OK",body);
 }
 static esp_err_t statusHandler(httpd_req_t *req){
@@ -249,7 +260,7 @@ static esp_err_t hubAssetsHandler(httpd_req_t *req){
 static esp_err_t hubApiHandler(httpd_req_t *req){
   if(req->method==HTTP_OPTIONS){httpd_resp_set_status(req,"403 Forbidden");return httpd_resp_send(req,nullptr,0);}
   if(webPending||!webDone)return jsonResponse(req,"503 Service Unavailable","{\"code\":\"busy\"}");
-  char host[96]={},origin[128]={},authorization[100]={};
+  char host[96]={},origin[128]={};
   if(httpd_req_get_hdr_value_str(req,"Host",host,sizeof(host))!=ESP_OK)return jsonResponse(req,"400 Bad Request","{\"code\":\"invalid_params\"}");
   String hostname=host;int colon=hostname.indexOf(':');if(colon>=0)hostname=hostname.substring(0,colon);
   if(hostname!=WiFi.localIP().toString()&&hostname!=WiFi.softAPIP().toString()&&hostname!=deviceHostname+".local")return jsonResponse(req,"403 Forbidden","{\"code\":\"unauthorized\"}");
@@ -257,29 +268,27 @@ static esp_err_t hubApiHandler(httpd_req_t *req){
   if(!get&&httpd_req_get_hdr_value_len(req,"Origin")&&
     (httpd_req_get_hdr_value_str(req,"Origin",origin,sizeof(origin))!=ESP_OK||String(origin)!="http://"+String(host)))return jsonResponse(req,"403 Forbidden","{\"code\":\"unauthorized\"}");
   String path=req->uri;if(path.indexOf('?')>=0)return jsonResponse(req,"400 Bad Request","{\"code\":\"invalid_params\"}");
-  bool setupAuthorized=false;
-  if(path=="/api/hub/setup"){
-    if(!authorized(req))return ESP_OK;
-    // authorized() permits an unset Web password and verifies an existing one.
-    setupAuthorized=true;
-  }
-  if(req->content_len>12288||req->content_len<0)return jsonResponse(req,"413 Payload Too Large","{\"code\":\"invalid_params\"}");
+  if(path=="/api/auth/login"&&req->method==HTTP_POST)return loginHandler(req);
+  if(path=="/api/auth/logout"&&req->method==HTTP_POST)return logoutHandler(req);
+  if(!authorized(req))return ESP_OK;
+  const bool deviceCommand=path.startsWith("/api/hub/devices/");
+  if(req->content_len>(deviceCommand?int(LAN_V4_REQUEST_MAX):12288)||req->content_len<0)return jsonResponse(req,"413 Payload Too Large","{\"code\":\"invalid_params\"}");
   if(!get&&req->method!=HTTP_DELETE){char type[64]={};if(httpd_req_get_hdr_value_str(req,"Content-Type",type,sizeof(type))!=ESP_OK||strcmp(type,"application/msgpack"))return jsonResponse(req,"415 Unsupported Media Type","{\"code\":\"invalid_params\"}");}
-  String body;body.reserve(req->content_len);char buffer[513];int left=req->content_len;
-  while(left){int n=httpd_req_recv(req,buffer,min(left,512));if(n<=0)return ESP_FAIL;buffer[n]=0;body.concat(buffer,n);left-=n;}
-  if(body.length()){
+  String body;if(!body.reserve(req->content_len))return jsonResponse(req,"503 Service Unavailable","{\"code\":\"busy\"}");char buffer[513];int left=req->content_len;
+  while(left){int n=httpd_req_recv(req,buffer,min(left,512));if(n<=0)return ESP_FAIL;buffer[n]=0;if(!body.concat(buffer,n))return jsonResponse(req,"503 Service Unavailable","{\"code\":\"busy\"}");left-=n;}
+  // Device commands retain the exact binary contract, including binary values
+  // and duplicate-field rejection by the common typed-wire parser.
+  if(body.length()&&!deviceCommand){
     DynamicJsonDocument decoded(24576);if(deserializeMsgPack(decoded,body.c_str(),body.length())||!decoded.is<JsonObject>())return jsonResponse(req,"400 Bad Request","{\"code\":\"invalid_params\"}");
     String internal;serializeJson(decoded,internal);body=std::move(internal);
   }
-  std::string token;
-  if(httpd_req_get_hdr_value_str(req,"Authorization",authorization,sizeof(authorization))==ESP_OK&&!strncmp(authorization,"Bearer ",7))token=authorization+7;
-  hubHttpRequest=iotcloud::HubService::Request(get?"GET":req->method==HTTP_POST?"POST":req->method==HTTP_PUT?"PUT":"DELETE",path.c_str(),std::string(body.c_str(),body.length()),token,hostname.c_str(),setupAuthorized);
-  webAuthRequired=false;if(setupAuthorized&&!captureWebAuthorization(req))return ESP_OK;
-  webOperation=3;webDone=false;hubHttpToken="";
+  if(!captureWebAuthorization(req))return ESP_OK;
+  hubHttpRequest=iotcloud::HubService::Request(get?"GET":req->method==HTTP_POST?"POST":req->method==HTTP_PUT?"PUT":"DELETE",path.c_str(),std::string(body.c_str(),body.length()),true,hostname.c_str());
+  webOperation=3;webDone=false;hubHttpDeferred=false;
   portENTER_CRITICAL(&webMux);webPending=true;portEXIT_CRITICAL(&webMux);
-  uint32_t started=millis();while(!webDone){if(uint32_t(millis()-started)>=10000)return jsonResponse(req,"503 Service Unavailable","{\"code\":\"timeout\"}");delay(1);}
+  uint32_t started=millis();while(!webDone){if(uint32_t(millis()-started)>=12000)return jsonResponse(req,"503 Service Unavailable","{\"code\":\"timeout\"}");delay(1);}
+  if(!localAuthContextValid(&webAuthContext))return jsonResponse(req,"401 Unauthorized","{\"code\":\"unauthorized\"}");
   const char *status=hubHttpStatus==200?"200 OK":hubHttpStatus==201?"201 Created":hubHttpStatus==202?"202 Accepted":hubHttpStatus==400?"400 Bad Request":hubHttpStatus==401?"401 Unauthorized":hubHttpStatus==403?"403 Forbidden":hubHttpStatus==404?"404 Not Found":hubHttpStatus==405?"405 Method Not Allowed":hubHttpStatus==409?"409 Conflict":hubHttpStatus==429?"429 Too Many Requests":"503 Service Unavailable";
-  if(hubHttpToken.length())httpd_resp_set_hdr(req,"X-IotCloud-Session",hubHttpToken.c_str());
   return jsonResponse(req,status,webResult);
 }
 static void registerHubHttp(){

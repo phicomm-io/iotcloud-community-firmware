@@ -169,8 +169,10 @@ public:
     unsigned channel = map["channel"];
     bool on = value != "off";
     auto params = out.createNestedObject("params");
-    if (model == "tc1") {
-      if (value != "on" && value != "off")
+    if (model == "tc1" || model == "s30-v1b") {
+      if (!map["channel"].is<unsigned>() ||
+          channel > (model == "tc1" ? 5u : 0u) ||
+          (value != "on" && value != "off"))
         return false;
       out["action"] = "outlet.set";
       params["index"] = channel;
@@ -207,6 +209,14 @@ public:
   static std::string report(JsonObjectConst m, JsonObjectConst state) {
     std::string model = m["device"]["model"] | "";
     unsigned channel = m["channel"];
+    if (model == "s30-v1b") {
+      if (!m["channel"].is<unsigned>() || channel != 0 ||
+          !singleOutletState(state) ||
+          (!state["device_id"].isNull() && !m["device"]["mac"].isNull() &&
+           state["device_id"] != m["device"]["mac"]))
+        return {};
+      return state["socket_states"][0].as<bool>() ? "on" : "off";
+    }
     if (model == "tc1") {
       auto v = state["socket_states"][channel];
       if (!v.is<unsigned>() || v.as<unsigned>() > 1)
@@ -273,6 +283,11 @@ private:
   std::array<Device, HubService::Devices + 1> devices;
   std::array<Report, HubService::Mappings> reported;
   unsigned echoSlot = 0;
+  static bool singleOutletState(JsonObjectConst state) {
+    auto outlets = state["socket_states"].as<JsonArrayConst>();
+    return outlets.size() == 1 && outlets[0].is<bool>() &&
+           (state["model"].isNull() || state["model"] == "s30-v1b");
+  }
   std::string base(JsonObjectConst d) const {
     return service.prefix() + std::string(d["model"] | "") + "/" +
            std::string(d["mac"] | "");
@@ -345,6 +360,12 @@ private:
         if (body.size() > HubDeviceBus::Packet || hubWire.decode(state, topic.substr(0,topic.size()-6), body) ||
             !state.is<JsonObject>())
           return;
+        if (saved["model"] == "s30-v1b" &&
+            (!singleOutletState(state.as<JsonObjectConst>()) ||
+             (!state["device_id"].isNull() && state["device_id"] != saved["mac"]))) {
+          slot->seen = false;
+          return;
+        }
         if (saved["model"] == "a1" &&
             (slot->freshAir || state.containsKey("fresh_air_on") ||
              state.containsKey("fresh_air_speed"))) {

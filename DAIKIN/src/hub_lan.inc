@@ -68,14 +68,30 @@ static bool hubLanRouteConfirmed(const iotcloud::HubLanDiscovery::Peer &peer){
     if(entry["peer"]==peer.id&&entry["ip"]==peer.ip)return true;
   return false;
 }
-static void hubLanReset(){hubLanQueue.clear();hubLanClient.reset();}
+static void hubLanReset(){hubHttpCommand.cancel("cancelled");hubLanQueue.clear();hubLanClient.reset();}
+static void hubDeviceMetadata(JsonObject row){
+  const std::string id=row["mac"]|"";
+  row["wire_version"]=1;row["default_wire_format"]="msgpack";
+  row.createNestedArray("wire_formats").add("msgpack");
+  if(id==deviceId.c_str()){
+    row["firmware_variant"]=DAIKIN_VARIANT;row["firmware_version"]=version;
+    row["online"]=true;row["paired"]=true;row["route_confirmed"]=true;
+    row["ip"]=WiFi.localIP().toString();return;
+  }
+  row["online"]=false;row["paired"]=hubLanPaired(id);row["route_confirmed"]=false;
+  for(const auto &peer:hubLanDiscovery.peers)if(peer.id==id){
+    row["model"]=peer.model;row["firmware_variant"]=peer.variant;row["firmware_version"]=peer.firmware;
+    row["online"]=peer.online(millis());row["route_confirmed"]=hubLanRouteConfirmed(peer);row["ip"]=peer.ip;break;
+  }
+}
 static void hubLanObserveDiscovery(const iotcloud::HubLanDiscovery::Peer &peer){
   DynamicJsonDocument doc(1024);doc["schema"]=2;doc["model"]=peer.model;doc["protocol"]="tmcp";doc["protocol_version"]=2;doc["version"]="v2";
   doc["device_id"]=peer.id;doc["firmware_version"]=peer.firmware;doc["variant"]=peer.variant;doc["wire_version"]=1;doc["default_wire_format"]="msgpack";doc.createNestedArray("wire_formats").add("msgpack");
   std::string bytes;serializeMsgPack(doc,bytes);iotcloud::hubWire.observe(hubService.prefix()+"discovery/"+peer.id,bytes);
 }
-static const char *hubLanStart(const std::string &route,const std::string &body,bool retain){
+static const char *hubLanStart(const std::string &route,const std::string &body,bool retain,iotcloud::HubLanClient::Guard guard=iotcloud::HubLanClient::Guard()){
   if(retain||body.size()>LAN_V4_REQUEST_MAX)return "invalid_params";
+  if(guard&&!guard())return "unauthorized";
   if(!hubReady()||otaActive){hubLanWaitReason="not_ready";return "busy";}
   if(hubLanClient.busy()){hubLanWaitReason="inflight";return "busy";}
   if(!hubAllocationReady(body.size()+LAN_V4_RESPONSE_MAX+4096)){hubLanWaitReason="heap";return "busy";}
@@ -92,7 +108,7 @@ static const char *hubLanStart(const std::string &route,const std::string &body,
     ph_value requestId;char id[65]={};
     if(phv_get(&root,"request_id",&requestId)&&!phv_text(&requestId,id,sizeof(id))){memset(token,0,sizeof(token));return "invalid_params";}
     const bool status=phv_equal_text(&action,"status.get");
-    const bool started=hubLanClient.begin(deviceId.c_str(),hubLanBoot,peer.id,peer.ip,peer.port,token,route,body,now);
+    const bool started=hubLanClient.begin(deviceId.c_str(),hubLanBoot,peer.id,peer.ip,peer.port,token,route,body,now,std::move(guard));
     if(started){hubLanWaitReason="inflight";hubLanRequestStatus=status;hubLanRequestId=id;}
     memset(token,0,sizeof(token));return started?nullptr:"busy";
   }
@@ -100,6 +116,9 @@ static const char *hubLanStart(const std::string &route,const std::string &body,
 }
 // A transport failure is a correlated result, not a silent lost command.
 static void hubLanFailed(const std::string &route,const std::string &body,const char *reason){
+  if(hubHttpCommand.matches(route,body)){
+    hubHttpCommand.failed(route,body,reason);return;
+  }
   ph_value root,id;char requestId[65]={};
   if(route.size()<8||route.compare(route.size()-8,8,"/command")||!phv_parse(PH_WIRE_MSGPACK,body.data(),body.size(),&root)||
      !phv_get(&root,"request_id",&id)||!phv_text(&id,requestId,sizeof(requestId)))return;
@@ -151,6 +170,7 @@ static void initHubLan(){
   hubLanClient.complete=[](const std::string &command,const void *bytes,size_t length){
     if(!hubReady()||command.size()<8)return;
     const bool status=hubLanRequestStatus;const std::string expectedId=hubLanRequestId;
+    if(hubHttpCommand.expects(command,expectedId))hubHttpCommand.complete(command,bytes,length);
     iotcloud::routeHubLanResult(hubDeviceBus,command,bytes,length,status,expectedId);
   };
   hubService.lanOperation=[](const std::string &op,JsonObjectConst input,JsonObject output)->const char*{
@@ -168,7 +188,7 @@ static void pollHubLan(uint32_t now){
   pollSessions();pollLanPairing();hubLanClient.tick(now);hubLanDiscover(now);
   if(!hubReady())return;
   now=millis(); // Commands may have been enqueued after the loop timestamp.
-  hubLanQueue.poll(now,hubLanClient.busy(),[](const std::string &route,const std::string &body){return hubLanStart(route,body,false);},hubLanFailed);
+  hubLanQueue.pollGuarded(now,hubLanClient.busy(),[](const std::string &route,const std::string &body,const iotcloud::HubLanQueue::Guard &guard){return hubLanStart(route,body,false,guard);},hubLanFailed);
   if(hubLanClient.busy()||hubLanQueue.size())return;
   for(size_t i=0;i<hubLanDiscovery.peers.size();i++){
     const auto &peer=hubLanDiscovery.peers[i];
@@ -180,4 +200,63 @@ static void pollHubLan(uint32_t now){
     request["request_id"]=std::string("lan-")+std::to_string(hubLanBoot)+"-"+std::to_string(hubLanClient.lastId+1);
     std::string body;serializeMsgPack(request,body);hubLanStart(hubService.prefix()+peer.model+"/"+peer.id+"/command",body,false);break;
   }
+}
+// Return true for this route, including all terminal admission errors.
+static bool hubHttpCommandStart(){
+  const std::string prefix="/api/hub/devices/",suffix="/command";
+  const auto &request=hubHttpRequest;const auto &path=request.path;
+  if(path.compare(0,prefix.size(),prefix))return false;
+  auto error=[&](int status,const char *code,const std::string &id){
+    DynamicJsonDocument reply(256);reply["code"]=code;if(!id.empty())reply["request_id"]=id;
+    std::string text;serializeJson(reply,text);hubHttpStatus=status;webResult=text.c_str();
+  };
+  if(path.size()!=prefix.size()+12+suffix.size()||path.compare(path.size()-suffix.size(),suffix.size(),suffix)){
+    error(404,"not_found","");return true;
+  }
+  const std::string id=path.substr(prefix.size(),12);
+  if(!iotcloud::HubLanDiscovery::identity(id)){error(400,"invalid_params","");return true;}
+  if(request.method!="POST"){error(405,"method_not_allowed","");return true;}
+  // Keep original MessagePack bytes through HTTP -> queue -> UDP.
+  const std::string &body=request.body;std::string requestId;
+  if(!iotcloud::HubHttpCommand::parse(body,requestId)){error(400,"invalid_params","");return true;}
+  const ph_auth_context context=webAuthContext;const uint32_t admitted=millis();
+  iotcloud::HubHttpCommand::Guard guard=[context](){return localAuthContextValid(&context);};
+  if(!guard()){error(401,"unauthorized",requestId);return true;}
+  // Keep the aggregate budget/reserve. It spans separate response buffers,
+  // not one contiguous allocation. The largest is the bounded state writer:
+  // PHW_MAX_BYTES plus its NUL and conservative alignment/allocator slack.
+  if(!hubReady()||otaActive||!hubAllocationReady(body.size()+2*LAN_V4_RESPONSE_MAX+4096,PHW_MAX_BYTES+32)){
+    error(503,"busy",requestId);return true;
+  }
+  if(id==deviceId.c_str()){
+    const std::string route=hubService.prefix()+"daikin/"+id+"/command";
+    const char *reason=hubHttpCommand.begin(route,body,guard,admitted);
+    if(reason){error(!strcmp(reason,"conflict")?409:503,reason,requestId);return true;}
+    // Local execution is already on loop(), with the common HTTP context.
+    const String result=execute(String(body.data(),body.size()));
+    hubHttpCommand.complete(route,result.c_str(),result.length());hubHttpDeferred=true;return true;
+  }
+  const auto *peer=hubLanDiscovery.find(id,millis());
+  if(!peer){error(503,"offline",requestId);return true;}
+  if(!hubLanRegistered(*peer)){error(403,"not_registered",requestId);return true;}
+  if(!hubLanPaired(id)){error(403,"auth_required",requestId);return true;}
+  if(!hubLanRouteConfirmed(*peer)){error(409,"route_changed",requestId);return true;}
+  const std::string route=hubService.prefix()+peer->model+"/"+id+"/command";
+  const char *reason=hubHttpCommand.begin(route,body,guard,admitted);
+  if(reason){error(!strcmp(reason,"unauthorized")?401:!strcmp(reason,"conflict")?409:!strcmp(reason,"invalid_params")?400:503,reason,requestId);return true;}
+  hubHttpDeferred=true;
+  if(!hubLanQueue.push(route,body,admitted,guard))hubHttpCommand.failed(route,body,"busy");
+  return true;
+}
+static void pollHubHttpCommand(uint32_t now){
+  if(!hubHttpDeferred)return;
+  hubHttpCommand.tick(now);
+  std::string bytes;int status;
+  if(!hubHttpCommand.take(bytes,status))return;
+  hubHttpStatus=status;
+  webResult="";
+  if(!webResult.reserve(bytes.size())||!webResult.concat(bytes.data(),bytes.size())){
+    hubHttpStatus=503;webResult="{\"code\":\"busy\"}";
+  }
+  portENTER_CRITICAL(&webMux);hubHttpDeferred=false;webDone=true;portEXIT_CRITICAL(&webMux);
 }

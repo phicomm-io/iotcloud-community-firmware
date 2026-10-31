@@ -37,6 +37,13 @@ int main(){
  p.op=LAN_V4_ACK;input(p);assert(!strcmp(result().code,"acked")&&!lanBusinessServer.response);
  p.op=LAN_V4_COMMAND;p.id=2;request["action"]="system.reset";body="";serializeWireMP(request,body);p.body=body.c_str();p.body_length=body.length();input(p);auto denied=result();assert(calls==1&&!strcmp(denied.code,"ok"));
  DynamicJsonDocument envelope(512);assert(!deserializeMsgPack(envelope,denied.body,denied.body_length));assert(envelope["code"]=="unauthorized"&&envelope["request_id"]=="r1");
- input(p);assert(calls==1);otaActive=true;pollLanBusiness();assert(!lanBusinessServer.response);p.id=3;input(p);assert(!strcmp(result().code,"busy"));
+ input(p);assert(calls==1);
+ p.op=LAN_V4_ACK;p.body=nullptr;p.body_length=0;input(p);assert(!lanBusinessServer.response);
+ p.op=LAN_V4_COMMAND;p.id=3;request["action"]="name.set";request["params"]["name"]="new name";
+ body="";serializeWireMP(request,body);p.body=body.c_str();p.body_length=body.length();input(p);assert(calls==2);
+ p.op=LAN_V4_ACK;p.body=nullptr;p.body_length=0;input(p);p.op=LAN_V4_COMMAND;p.id=4;request["action"]="config.set";
+ body="";serializeWireMP(request,body);p.body=body.c_str();p.body_length=body.length();input(p);
+ denied=result();envelope.clear();assert(!deserializeMsgPack(envelope,denied.body,denied.body_length));assert(calls==2&&envelope["code"]=="unauthorized");
+ otaActive=true;pollLanBusiness();assert(!lanBusinessServer.response);p.id=5;input(p);assert(!strcmp(result().code,"busy"));
  otaActive=false;credentialsValid=false;input(p);assert(!strcmp(result().code,"auth_required"));pollLanBusiness();assert(!lanBusinessServer.response);
 }

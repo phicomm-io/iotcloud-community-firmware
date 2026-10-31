@@ -1,6 +1,48 @@
 # Release Log
 
-English translation of the published release history. Historical validation statements apply to the release named in each section, not to later firmware. Release notes are authored in the Wiki and frozen into the source repository before tagging.
+Features, fixes and upgrade requirements for each release.
+
+## v1.0.0-rc.5
+
+**RC builds are Beta releases; the stable channel remains v0.9.27.** This candidate fixes authentication, transport and web issues found during rc.4 qualification. Back up settings before upgrading, and update the matching frontend with device firmware.
+
+### Shared device and hub authentication
+
+The DAIKIN hub uses the device WebUI administration password and session instead of a separate account password. With no password it opens directly. Refreshing or switching between the control and hub pages in the same tab reuses the session; sign-out and password changes clear it. Existing hub usernames, devices, pairing and forwarding settings are retained. The old hub password is retired, while the username remains the topic namespace. UDP pairing and external MQTT broker authentication remain separate.
+
+### Hub device state, power and HomeKit readings
+
+The hub reads paired-device state and sends controls over HTTP-to-UDP; the browser only needs to reach the hub. TC1 list cards no longer briefly hide power when a new reading arrives, and hide expired meter readings. M1 prioritizes the initial state and restores supported controls after a failed first capability read. HomeKit uses M1 sensor-validity flags for temperature, humidity and PM2.5. Requests are serialized and coalesced, with device identity and response-ID checks. Stale replies cannot replace another device, and issued writes are never automatically replayed. Remote pages expose supported controls and diagnostics. Use the target device’s local page for network settings, authentication, automation, upgrades and backups.
+
+### Device names and HomeKit synchronization
+
+Devices expose a dedicated name.set command that changes only the name. The hub publishes confirmed device names to HomeKit. Clients that write ConfiguredName can rename the device; the displayed name updates after persistence and readback succeed. Both the hub and target device need rc.5 for two-way synchronization. Existing pairings and device identities are retained. Ordinary renames in Apple Home are client-local aliases and are not sent to the hub as device rename commands.
+
+### HTTP authorization and control receipts
+
+HTTP checks credentials again while queued, at execution and at reply delivery. Requests cannot retain old permissions after sign-out, expiry or a password change. Control receipts use bounded reservations, and TC1 prepares reply space before execution. Packet reception, local buttons and MQTT heartbeats keep their own scheduling. A1/M1 diagnostics report the actual requested TCP connection limit.
+
+Fix hub restarts caused by excessive main-loop stack use when processing HomeKit data.
+
+### TC1 MQTT and S30 binary LAN fixes
+
+TC1 periodic telemetry runs on the MQTT owner thread to reduce contention. S30 uses the shared typed UDP v4 parser, password pairing, atomic authentication persistence and bounded receipts. A rejected optional SENSOR subscription no longer disconnects the main MQTT connection and retries with backoff. The cloud backend permits the exact S30 SENSOR command topic while rejecting cross-account and wildcard subscriptions.
+
+### Consistent hub pairing storage and routing
+
+The hub commits pairing credentials and the confirmed UDP route together. Failed storage does not activate a route, and temporary password writes are removed. Legacy configuration storage is reclaimed while retaining valid settings and pairing data.
+
+### Web state and UTC settings
+
+Fix stale snapshots after a state-generation change, and fetch the corresponding complete state after saving settings. A UTC offset of zero displays and saves correctly instead of becoming UTC+8.
+
+### Limitations
+
+- M1 and TC1 may still return busy with many concurrent pages; extreme concurrency can also reset M1 connections. Keep ordinary status reads near five seconds. The complete S30 sensor publisher needed for independent M1 remote-display input is not yet available.
+- The hub may also return busy while querying several devices in succession. The page keeps existing content and updates it after a subsequent read succeeds.
+- S30 uses native RBL/STOCK_UA files. Other models require the matching signed OTA image and variant. An M1 Wi-Fi update does not update its sensor controller. HomeKit bridging remains experimental.
+
+[RC5 downloads and checksums](https://github.com/phicomm-io/iotcloud-community-firmware/releases/tag/v1.0.0-rc.5) · [Device installation and operation guides](https://phicomm-io.github.io/en/)
 
 ## v1.0.0-rc.4
 

@@ -10,21 +10,41 @@ class LanStackGate(unittest.TestCase):
  def fixture(self,model):
   paths=lan_paths({},model);frames=StackFrames();frames.update({n:16 for names,r in paths.values() for n in names})
   frames.update({n:16 for n in ('lan_business_input','lan_business_dispatch','lv4_emit','service_command_enter','service_lan_context_valid','runtime_metrics_capture','device_status_visit','emit_string','phv_scan','phv_next','phw_prefix','phw_bytes','bonjour_lan_start','bonjour_lan_field','SHA256Input','SHA224_256ProcessMessageBlock')})
+  frames.update({n:16 for n in ('mp_dispatch','keys','number','boolparam','strparam','tc1_mp_get','tc1_mp_has','mp_receipt_save','mp_receipt_copy','mp_receipt_release','mp_receipt_difference','mp_receipt_apply')})
   return frames,lan_paths(frames,model,frames)
  def test_all_models_include_full_business_auth_and_fragment_chain(self):
   for model in ('A1','M1','TC1'):
    frames,paths=self.fixture(model)
    with contextlib.redirect_stdout(io.StringIO()):validate_lan_paths(paths,frames)
    names={n for ns,r in paths.values() for n in ns}
-   self.assertTrue({'lan_v4_server_input','service_lan_try_command_mp','mp_dispatch','device_status_mp','service_product_diagnostics_mp','device_diagnostics_mp','service_memory_snapshot',model.lower()+'_diagnostics_capture','ph_auth_pair_resume_boot','phw_bytes_value'}<=names)
+   self.assertTrue({'lan_v4_server_input','service_lan_try_command_mp','mp_dispatch_authenticated','device_status_mp','service_product_diagnostics_mp','device_diagnostics_mp','service_memory_snapshot',model.lower()+'_diagnostics_capture','ph_auth_pair_resume_boot','phw_bytes_value'}<=names)
  def test_missing_auth_dispatch_status_diagnostics_or_fragment_fails(self):
   for model in ('A1','M1','TC1'):
-   for name in ('lan_v4_server_input','service_lan_try_command_mp','mp_dispatch',model.lower()+'_status_capture',model.lower()+'_diagnostics_capture','device_diagnostics_mp','service_memory_snapshot','ph_auth_context_valid','phw_bytes_value','bonjour_lan_txt'):
+   for name in ('lan_v4_server_input','service_lan_try_command_mp','mp_dispatch_authenticated',model.lower()+'_status_capture',model.lower()+'_diagnostics_capture','device_diagnostics_mp','service_memory_snapshot','ph_auth_context_valid','phw_bytes_value','bonjour_lan_txt'):
     frames,paths=self.fixture(model);del frames[name]
     with self.subTest(model=model,name=name),self.assertRaisesRegex(ValueError,'missing actual .su'):
      with contextlib.redirect_stdout(io.StringIO()):validate_lan_paths(paths,frames)
  def test_uninlined_helper_without_su_fails(self):
   with self.assertRaisesRegex(ValueError,'Emitted helper missing'):lan_paths({},'A1',{'lv4_emit':1})
+ def test_tc1_control_and_generic_frames_are_required_separate_branches(self):
+  frames,paths=self.fixture('TC1')
+  generic=paths['LAN business generic string'][0];control=paths['LAN business control number scan'][0]
+  self.assertIn('tc1_product_inner_mp',generic);self.assertNotIn('tc1_control_mp',generic)
+  self.assertIn('tc1_control_mp',control);self.assertNotIn('tc1_product_inner_mp',control)
+  self.assertEqual(control.count('phv_get'),1);self.assertNotIn('boolparam',control)
+  metadata=paths['LAN service_product_info_mp string'][0]
+  self.assertFalse(set(metadata)&{'tc1_product_inner_mp','tc1_control_mp'})
+  for name in ('tc1_control_mp','tc1_product_inner_mp','mp_dispatch_authenticated'):
+   absent=dict(frames);del absent[name]
+   with self.subTest(name=name),contextlib.redirect_stdout(io.StringIO()),self.assertRaisesRegex(ValueError,'missing actual .su'):
+    validate_lan_paths(paths,absent,8192)
+   oversized=dict(frames);oversized[name]=6200
+   with self.subTest(name=name),contextlib.redirect_stdout(io.StringIO()),self.assertRaisesRegex(ValueError,'>8192'):
+    validate_lan_paths(paths,oversized,8192)
+  for name in ('mp_dispatch','mp_receipt_save','mp_receipt_copy','mp_receipt_difference','mp_receipt_apply'):
+   absent=dict(frames);del absent[name]
+   with self.subTest(name=name),self.assertRaisesRegex(ValueError,'Emitted helper missing'):
+    lan_paths(absent,'TC1',frames)
  def test_budget_reserve_and_dynamic_frames_cannot_be_weakened(self):
   frames,paths=self.fixture('A1');frames['a1_diagnostics_capture']=12000
   with contextlib.redirect_stdout(io.StringIO()),self.assertRaisesRegex(ValueError,'>12288'):validate_lan_paths(paths,frames)

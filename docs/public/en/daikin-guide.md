@@ -2,7 +2,7 @@
 
 The ESP32 / 4 MB Flash board uses one universal image that detects PM2005 / PM2105 and the optional formaldehyde module. Its web interface shares M1 reading cards, comfort scales and linked-device information, with local access, IoTCloud and Home Assistant support.
 
-**Use stable v0.9.27 for everyday operation, or v1.0.0-rc.4 for beta testing.** See the [complete candidate release notes](release-log.html?channel=candidate) for version requirements and cumulative changes.
+**Use stable v0.9.27 for everyday operation, or v1.0.0-rc.5 for beta testing.** See the [complete candidate release notes](release-log.html?channel=candidate) for version requirements and cumulative changes.
 
 ## Readings and controls
 
@@ -23,7 +23,7 @@ The Wi-Fi lamp indicates system status: three long and three short pulses when u
 
 ## First installation
 
-Choose a release that **explicitly includes DAIKIN** on the [downloads page](../../index.html#releases). Do not substitute another model's image when an older archive lists only Phicomm devices. Existing 0.9.x archives provide the full image only. The current v1.0.0-rc.4 also provides a separate `hub` variant as a beta prerelease.
+Choose a release that **explicitly includes DAIKIN** on the [downloads page](../../index.html#releases). Do not substitute another model's image when an older archive lists only Phicomm devices. Existing 0.9.x archives provide the full image only. The current v1.0.0-rc.5 also provides a separate `hub` variant as a beta prerelease.
 
 1. Confirm the ESP32 / 4 MB Flash board and wiring, then back up the entire original Flash. Keep that backup private because it contains network credentials.
 2. Hold GPIO0 / BOOT0 low while powering on to enter the ESP32 bootloader. Use ESPTool to write `daikin_BRY88AX151K.all.bin` at **0x0**. Never upload the factory image through web OTA.
@@ -54,13 +54,17 @@ A1 offers automation sources according to currently valid data, independently of
 
 The hub discovers devices through mDNS, communicates over paired UDP, and forwards upstream MQTT and Bemfa messages. Local Home Assistant and MQTT clients use an external broker. The full edition remains a sensor device.
 
-Select **Hub management** on the device page, or open `http://DEVICE-IP/iotcloud/#/`. Create a local account: usernames contain 3–32 ASCII letters, digits or underscores, and passwords contain 8–63 bytes. The device web administration password is optional; if one is already configured, enter it to authorize account creation. After login, manage devices, upstream forwarding, Bemfa mappings and Apple Home.
+Select **Hub management** on the device page, or open `http://DEVICE-IP/iotcloud/#/`. The hub uses the device web administration password and session. With no password, it opens directly. With a password, sign in once; switching between the control and hub pages in the same tab reuses the session. Change the password in device settings, and select **Sign out** to end the session.
 
-The DAIKIN itself appears automatically in the hub device list.
+After upgrading to rc.5, the separate hub password is retired. The existing hub username, device list, forwarding and pairing settings are retained. The hub username remains the topic namespace. Configure UDP device-pairing passwords and external MQTT broker credentials separately.
+
+The DAIKIN itself appears automatically in the hub device list. Paired-device parameters and controls use the hub UDP transport, so the browser only needs to reach the hub. TC1 cards show power and hide expired meter readings. Remote pages expose supported controls and diagnostics. Open the target device’s local page for network settings, administration passwords, automation, upgrades and backups.
 
 In Hub management, select a discovered LAN device, check its model, ID and IP, and pair using that device's management password. Confirm and pair again if its IP changes. Move devices previously connected to the hub's embedded broker to an external broker.
 
 Apple Home uses experimental HAP bridging, off by default. Enable it under **Apple Home** to obtain the pairing code. Matter is unavailable.
+
+Device names synchronize to HomeKit. A client that writes ConfiguredName can rename the device through the hub, with persistence and readback confirmation. Upgrade both the hub and target device to rc.5. Names follow each device’s UTF-8 byte limit: 31 bytes for TC1, 63 for A1, M1, DAIKIN and S30. Pairings and device identities are retained. Ordinary Apple Home renames are client-local aliases; use device settings when you want to change the shared device name.
 
 ### Switch from full to hub
 
@@ -69,6 +73,6 @@ Only newer `full` firmware that advertises this operation provides the conversio
 1. Open the device on your LAN. A web administration password is optional; if one is configured, use it to authenticate.
 2. Open **Settings → Firmware → Advanced**, select the matching signed `hub` OTA file and enable **Switch to hub firmware**. This option cannot be combined with unsigned recovery.
 3. Select **Upload and install**, review the confirmation and explicitly approve the conversion. Wi-Fi, MQTT and the web administration password are retained.
-4. Reopen the device after restart, confirm its variant is `hub`, select **Hub management**, and create the first local account. If a web administration password is configured, enter it to authorize setup. HomeKit is off by default; enable it separately when needed.
+4. Reopen the device after restart, confirm its variant is `hub`, select **Hub management**, and reuse the same web administration session if a password is configured. HomeKit is off by default; enable it separately when needed.
 
 Normal signed updates and unsigned recovery still accept only the current variant. Direct OTA from `hub → full` is unsupported.

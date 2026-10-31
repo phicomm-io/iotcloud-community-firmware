@@ -39,7 +39,7 @@ void reference_device_diagnostics_mp(ph_writer *w,const device_status_t *s,const
  if(s->model!=DEVICE_TC1){reference_diagnostic_field(w,PH_DIAG_HTTP_ACCEPT_BUSY_SEND_BYTES);phw_i32(w,NULL,(int)f->http.busy_bytes);phw_end(w);}
  if(s->model!=DEVICE_TC1){reference_diagnostic_field(w,PH_DIAG_HTTP_ACCEPT_OVERFLOW_CLOSE);phw_i32(w,NULL,(int)f->http.rejected);phw_end(w);}
  if(s->model!=DEVICE_TC1){reference_diagnostic_field(w,PH_DIAG_HTTP_ACCEPT_QUEUE_CAPACITY);phw_i32(w,NULL,PH_HTTP_WAIT_SLOTS);phw_end(w);}
- if(s->model!=DEVICE_TC1){reference_diagnostic_field(w,PH_DIAG_HTTP_TCP_LIMIT_REQUESTED);phw_i32(w,NULL,PH_HTTP_WAIT_SLOTS+1);phw_end(w);}
+ if(s->model!=DEVICE_TC1){reference_diagnostic_field(w,PH_DIAG_HTTP_TCP_LIMIT_REQUESTED);phw_i32(w,NULL,PH_HTTP_CLIENT_SLOTS);phw_end(w);}
  if(s->model!=DEVICE_TC1){reference_diagnostic_field(w,PH_DIAG_HTTP_TCP_LIMIT_SET_RC);phw_i32(w,NULL,f->http.set_rc);phw_end(w);}
  if(s->model!=DEVICE_TC1){reference_diagnostic_field(w,PH_DIAG_HTTP_TCP_LIMIT_SET_ERRNO);phw_i32(w,NULL,f->http.set_errno);phw_end(w);}
  if(s->model!=DEVICE_TC1){reference_diagnostic_field(w,PH_DIAG_HTTP_TCP_LIMIT_GET_RC);phw_i32(w,NULL,f->http.limit_get_rc);phw_end(w);}

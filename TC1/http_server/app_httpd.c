@@ -86,7 +86,7 @@ static bool route_matches(const char *path,const char *route)
 }
 static ph_http_action prepare(ph_http_exchange *x)
 {
-    if(operation!=AUTH && !http_auth_authorized(x->request->authorization)){
+    if(operation!=AUTH && !http_auth_authorized(&product,x->request->authorization)){
         http_auth_reply(&product,x,401,"unauthorized",NULL);return PH_HTTP_REPLY;
     }
     if(operation==UPLOAD) {
@@ -100,7 +100,13 @@ static ph_http_action prepare(ph_http_exchange *x)
         x->body_idle_ms=15000;x->body_total_ms=300000;
         return PH_HTTP_READ_BODY;
     }
-    ph_http_action a=ph_http_claim(&product,x,operation==BACKUP?device_backup_size():operation==QUERY?0:x->request->length,operation==AUTH || operation==COMMAND || operation==BACKUP || operation==RESTORE);
+    ph_http_action a;
+#if defined(PHICOMM_STATUS_MODEL) && PHICOMM_STATUS_MODEL == 2
+    if(operation==COMMAND && x->request->length && x->request->length<=SERVICE_HTTP_CONTROL_INPUT)
+        a=ph_http_control_claim(&product,x,x->request->length);
+    else
+#endif
+    a=ph_http_claim(&product,x,operation==BACKUP?device_backup_size():operation==QUERY?0:x->request->length,operation==AUTH || operation==COMMAND || operation==BACKUP || operation==RESTORE);
     if(a==PH_HTTP_REPLY && product.claim && operation==QUERY)
         ph_http_query(&product,x,query_action);
     if(a==PH_HTTP_READ_BODY && operation==BACKUP){
@@ -139,7 +145,7 @@ static ph_http_action begin(ph_http_exchange *x)
         if(strcmp(r->method,"POST")||!r->length||r->length>256){http_auth_reply(&product,x,400,"invalid_request",NULL);return PH_HTTP_REPLY;}
         operation=AUTH;return prepare(x);
     }
-    if(!asset && !http_auth_authorized(r->authorization)){
+    if(!asset && !http_auth_authorized(&product,r->authorization)){
         http_auth_reply(&product,x,401,"unauthorized",NULL);return PH_HTTP_REPLY;
     }
     if(backup || restore){
@@ -188,7 +194,7 @@ static bool body_chunk(ph_http_exchange *x,const void *data,size_t n)
 static void complete(ph_http_exchange *x)
 {
     if(operation==AUTH){http_auth_complete(&product,x);return;}
-    if(!http_auth_authorized(x->request->authorization)){
+    if(!http_auth_authorized(&product,x->request->authorization)){
         http_auth_reply(&product,x,401,"unauthorized",NULL);return;
     }
     if(operation==UPLOAD) {
@@ -196,6 +202,9 @@ static void complete(ph_http_exchange *x)
         ph_http_message(&product,x,upload_verified?202:400,upload_verified?"文件校验通过，设备正在重启":"OTA rejected");return;
     }
     if(operation==RESTORE){const char *code=device_backup_import(product.body,product.used);ph_http_message(&product,x,!strcmp(code,"accepted")?202:!strcmp(code,"busy")?409:400,code);return;}
+#if defined(PHICOMM_STATUS_MODEL) && PHICOMM_STATUS_MODEL == 2
+    if(product.control_credit && ph_http_control_command(&product,x))return;
+#endif
     ph_http_command_mp(&product,x,product.body,product.used);
     /* Request is borrowed synchronously; response owns all output bytes. */
 }

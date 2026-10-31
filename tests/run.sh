@@ -48,7 +48,7 @@ python3 -m unittest tests.test_memory_admission.MemoryAdmission.test_budget_over
 python3 -m unittest tests.test_host_rng tests.test_m1_barometer tests.test_m1_barometer_captures tests.test_numeric_feed tests.test_a1_filter_storage tests.test_m1_boot_config
 python3 -m unittest tests.test_mqtt_stack_budget tests.test_mqtt_http_mixed tests.test_mixed_report tests.test_a1_mqtt_progress
 # Actual TC1 SDK capture and admission, not the generic status oracle alone.
-python3 -m unittest tests.test_typed_tc1_status tests.test_tc1_status_dispatch
+python3 -m unittest tests.test_typed_tc1_status tests.test_tc1_status_dispatch tests.test_device_names
 python3 -m unittest tests.test_native_status_arm tests.test_mqtt_discovery_budget.DiscoveryBudget.test_actual_arm_discovery_retry_exclusion_and_recovery
 python3 -m unittest tests.test_ota_fetch
 python3 -m unittest discover -s A1/tests -p test_fan_sensor.py

@@ -34,58 +34,42 @@ int main() {
     assert(n <= sizeof(b) && RAND_bytes(b, n) == 1);
     return hex(b, n);
   };
-  service.derive = [](const std::string &password, const std::string &salt) {
-    uint8_t hash[32];
-    assert(PKCS5_PBKDF2_HMAC(password.data(), password.size(),
-                             (const unsigned char *)salt.data(), salt.size(),
-                             10000, EVP_sha256(), sizeof(hash), hash));
-    return hex(hash, sizeof(hash));
-  };
   using Request = iotcloud::HubService::Request;
   {
-    // HTTP authorizes an unset Web password too. The hub still requires its
-    // own credentials and does not create or change a device Web password.
     DynamicJsonDocument openConfig(1024);
     iotcloud::HubService open(openConfig);
-    open.randomHex = service.randomHex;
-    open.derive = service.derive;
-    open.store = [&](DynamicJsonDocument &next) { openConfig = std::move(next); return true; };
-    assert(open.handle(Request("POST", "/api/hub/setup",
-        R"({"username":"owner","password":"owner-password"})", "", "", true), 0).status == 201);
-    assert(openConfig["auth"]["password"].isNull() &&
-           open.authenticate("owner", "owner-password", 1));
-    assert(open.handle(Request("GET", "/api/devices"), 1).status == 401);
+    open.randomHex=service.randomHex;
+    open.store=[&](DynamicJsonDocument &next){openConfig=std::move(next);return true;};
+    assert(open.initializeIdentity()&&open.user()=="admin");
+    assert(openConfig["auth"]["password"].isNull()&&openConfig["hub"]["schema"]==2);
+    assert(open.handle(Request("GET","/api/devices"),1).status==401);
+    assert(open.handle(Request("GET","/api/devices","",true),1).status==200);
+    assert(open.initializeIdentity());
   }
-  assert(
-      service
-          .handle(Request("GET", "/api/register/status", "", "", "192.168.1.2"),
-                  0)
-          .body.find("\"lan_protocol\":4") != std::string::npos);
-  auto setup = Request("POST", "/api/hub/setup",
-                       R"({"username":"local","password":"local-password"})");
-  assert(service.handle(setup, 0).status == 403 && writes == 0);
-  setup.setupAuthorized = true;
-  fail = true;
-  assert(service.handle(setup, 0).status == 503 && !service.ready() &&
-         writes == 0);
-  fail = false;
-  assert(service.handle(setup, 0).status == 201 && service.ready() &&
-         writes == 1);
-  assert(service.handle(setup, 0).status == 409 && writes == 1);
-  assert(iotcloud::HubService::valid(config["hub"]));
-  assert(service.authenticate("local", "local-password", 1));
-  assert(!service.authenticate("cloud", "local-password", 1));
-  auto login = service.handle(
-      Request("POST", "/api/auth/login",
-              R"({"username":"local","password":"local-password"})"),
-      2);
-  assert(login.status == 200 && login.token.size() == 64);
-  std::string token = login.token;
+  // A valid legacy namespace migrates atomically, preserving nested business
+  // settings and the independent device Web/broker credentials.
+  config=DynamicJsonDocument(16384);
+  config["auth"]["password"]="device-web-password";
+  config["mqtt"]["password"]="upstream-password";
+  auto old=config.createNestedObject("hub");old["schema"]=1;old["username"]="local";
+  old["salt"]=std::string(32,'1');old["password_hash"]=std::string(64,'2');
+  old["mqtt_salt"]=std::string(32,'3');old["mqtt_hash"]=std::string(64,'4');
+  old["mqtt_password_separate"]=true;old["instance"]=std::string(32,'5');old.createNestedArray("devices");
+  old["homekit"]["enabled"]=false;
+  std::string before;serializeJson(config,before);fail=true;
+  assert(!service.initializeIdentity()&&writes==0);
+  std::string after;serializeJson(config,after);assert(before==after);
+  fail=false;assert(service.initializeIdentity()&&service.ready()&&writes==1&&drops==0);
+  assert(config["hub"]["schema"]==2&&service.user()=="local"&&
+         config["hub"]["instance"]==std::string(32,'5')&&config["hub"]["homekit"]["enabled"]==false);
+  for(const char *key:{"salt","password_hash","mqtt_salt","mqtt_hash","mqtt_password_separate"})assert(!config["hub"].containsKey(key));
+  assert(config["auth"]["password"]=="device-web-password"&&config["mqtt"]["password"]=="upstream-password");
+  assert(service.initializeIdentity()&&writes==1&&iotcloud::HubService::valid(config["hub"]));
+  assert(service.handle(Request("GET","/api/register/status"),0).body.find("\"setup_required\":false")!=std::string::npos);
+  const bool token=true;
   DynamicJsonDocument response(1024);
-  assert(!deserializeJson(response, login.body) &&
-         response["username"] == "local" && response["is_admin"] == false);
-  assert(service.handle(Request("GET", "/api/auth/me", "", token), 3).status ==
-         200);
+  auto me=service.handle(Request("GET","/api/auth/me","",token),3);
+  assert(me.status==200&&!deserializeJson(response,me.body)&&response["username"]=="local"&&response["auth"]=="webui");
   // Derived LAN inventory is owner-only and carries no transport credentials.
   {
     const std::string path="/api/hub/lan";
@@ -103,8 +87,7 @@ int main() {
         d["code"]=i?"ok":"incompatible";
       }
     };
-    for(const auto &key:{std::string(),std::string(64,'x')})
-      assert(service.handle(Request("GET",path,"",key),3).status==401);
+    assert(service.handle(Request("GET",path,"",false),3).status==401);
     assert(calls==0);
     auto full=service.handle(Request("GET",path,"",token),3);
     assert(full.status==200&&!deserializeJson(lan,full.body)&&calls==1);
@@ -125,11 +108,12 @@ int main() {
     const std::string pair="/api/hub/lan/pair",unpair="/api/hub/lan/unpair",status=pair+"/aabbccddeeff";
     const std::string valid=R"({"peer":"aabbccddeeff","ip":"192.0.2.1","password":"pair-secret","scopes":1})";
     unsigned calls=0;std::string lastOp;
+    std::string statusPhase="paired",statusCode="ok";
     assert(service.handle(Request("POST",pair,valid,token),3).status==503);
     service.lanOperation=[&](const std::string &op,JsonObjectConst in,JsonObject out)->const char*{
       ++calls;lastOp=op;assert(in["peer"]=="aabbccddeeff");
       if(op=="pair"){assert(in["password"]=="pair-secret"&&in["scopes"]==1);out["phase"]="queued";return "accepted";}
-      if(op=="status"){out["phase"]="paired";return "ok";}
+      if(op=="status"){out["phase"]=statusPhase;out["code"]=statusCode;return "ok";}
       assert(op=="unpair");return "accepted";
     };
     assert(service.handle(Request("POST",pair,valid),3).status==401);
@@ -146,18 +130,32 @@ int main() {
     assert(service.handle(Request("GET",pair+"/unknown","",token),3).status==400);
     assert(calls==0);
     auto accepted=service.handle(Request("POST",pair,valid,token),3);
-    assert(accepted.status==202&&lastOp=="pair"&&calls==1);
+    DynamicJsonDocument pairAccepted(256);
+    assert(accepted.status==202&&lastOp=="pair"&&calls==1&&!deserializeJson(pairAccepted,accepted.body));
+    assert(pairAccepted["code"]=="accepted");
     assert(accepted.body.find("pair-secret")==std::string::npos&&accepted.body.find("password")==std::string::npos);
     auto current=service.handle(Request("GET",status,"",token),3);
-    assert(current.status==200&&lastOp=="status"&&current.body.find("paired")!=std::string::npos);
+    DynamicJsonDocument pairStatus(512);
+    assert(current.status==200&&lastOp=="status"&&!deserializeJson(pairStatus,current.body));
+    assert(pairStatus["phase"]=="paired"&&pairStatus["code"]=="ok"&&pairStatus["operation_code"]=="ok");
+    statusPhase="failed";statusCode="storage_error";
+    current=service.handle(Request("GET",status,"",token),3);
+    assert(current.status==200&&!deserializeJson(pairStatus,current.body));
+    assert(pairStatus["phase"]=="failed"&&pairStatus["code"]=="storage_error"&&pairStatus["operation_code"]=="ok");
+    statusPhase="paired";statusCode="ok";
     assert(service.handle(Request("POST",unpair,R"({"peer":"aabbccddeeff"})",token),3).status==202&&lastOp=="unpair");
     const unsigned before=calls;
     assert(service.handle(Request("DELETE",pair,valid,token),3).status==405&&calls==before);
+    auto invalidAction=service.handle(Request("GET",unpair,"",token),3);
+    assert(invalidAction.status==405&&invalidAction.body.find("method_not_allowed")!=std::string::npos&&calls==before);
     for(const auto &code:{"busy","invalid_params","auth_required","migration_required","storage_error","unexpected"}){
       service.lanOperation=[&](const std::string &,JsonObjectConst,JsonObject)->const char*{return code;};
       auto result=service.handle(Request("POST",pair,valid,token),3);
       const int expected=std::string(code)=="invalid_params"?400:std::string(code)=="auth_required"?403:std::string(code)=="migration_required"?409:std::string(code)=="unexpected"?500:503;
       assert(result.status==expected);
+      DynamicJsonDocument errorReply(256);
+      const char *expectedCode=std::string(code)=="unexpected"?"internal_error":code;
+      assert(!deserializeJson(errorReply,result.body)&&errorReply["code"]==expectedCode);
     }
     service.lanOperation=nullptr;
   }
@@ -183,23 +181,12 @@ int main() {
       return json;
     };
     const std::string home = "/api/hub/homekit", pairing = home + "/pairing";
-    DynamicJsonDocument foreignConfig(16384);
-    foreignConfig.set(config);
-    foreignConfig["hub"]["username"] = "foreign";
-    iotcloud::HubService foreign(foreignConfig);
-    foreign.derive = service.derive;
-    foreign.randomHex = service.randomHex;
-    auto foreignLogin = foreign.handle(Request("POST", "/api/auth/login",
-        R"({"username":"foreign","password":"local-password"})"), 3);
-    assert(foreignLogin.status == 200);
     auto beforeConfig = snapshot();
     unsigned beforeWrites = writes, beforeDrops = drops;
-    for (const auto &key : {std::string(), std::string(64, 'x'), foreignLogin.token}) {
-      assert(service.handle(Request("GET", home, "", key), 3).status == 401);
-      assert(service.handle(Request("PUT", home, R"({"enabled":true})", key), 3).status == 401);
-      assert(service.handle(Request("DELETE", pairing, R"({"confirm":true})", key), 3).status == 401);
-    }
-    assert(service.handle(Request("PUT", home, R"({"enabled":true})", "", "", true), 3).status == 401);
+    assert(service.handle(Request("GET", home, "", false), 3).status == 401);
+    assert(service.handle(Request("PUT", home, R"({"enabled":true})", false), 3).status == 401);
+    assert(service.handle(Request("DELETE", pairing, R"({"confirm":true})", false), 3).status == 401);
+    assert(service.handle(Request("PUT", home, R"({"enabled":true})", false), 3).status == 401);
     assert(statusCalls == 0 && resetCalls == 0 && writes == beforeWrites &&
            homeChanges == 0 && snapshot() == beforeConfig);
     auto status = service.handle(Request("GET", home, "", token), 3);
@@ -261,11 +248,7 @@ int main() {
     legacyConfig.set(config);
     legacyConfig["hub"].remove("instance");
     iotcloud::HubService legacy(legacyConfig);
-    legacy.derive = service.derive;
     legacy.randomHex = service.randomHex;
-    auto legacyLogin = legacy.handle(Request("POST", "/api/auth/login",
-        R"({"username":"local","password":"local-password"})"), 3);
-    assert(legacyLogin.status == 200);
     bool legacyFail = true;
     unsigned legacyChanges = 0;
     legacy.store = [&](DynamicJsonDocument &next) {
@@ -274,7 +257,7 @@ int main() {
       return true;
     };
     legacy.changed = [&](bool) { legacyChanges++; };
-    auto legacyEnable = Request("PUT", home, R"({"enabled":true})", legacyLogin.token);
+    auto legacyEnable = Request("PUT", home, R"({"enabled":true})", true);
     legacy.randomHex = [](size_t) { return std::string(32, 'x'); };
     assert(legacy.handle(legacyEnable, 3).status == 503);
     legacy.randomHex = service.randomHex;
@@ -423,12 +406,8 @@ int main() {
            iotcloud::HubService::valid(responseConfig["hub"]));
     responseConfig.shrinkToFit();
     iotcloud::HubService responseService(responseConfig);
-    responseService.derive = service.derive;
     responseService.randomHex = service.randomHex;
-    auto session = responseService.handle(Request("POST", "/api/auth/login",
-        R"({"username":"local","password":"local-password"})"), 8);
-    assert(session.status == 200);
-    const Request query("GET", "/api/hub/bridge", "", session.token);
+    const Request query("GET", "/api/hub/bridge", "", true);
     auto result = responseService.handle(query, 8);
     DynamicJsonDocument decoded(16384);
     assert(result.status == 200 && !deserializeJson(decoded, result.body) &&
@@ -481,59 +460,23 @@ int main() {
     assert(!maximum.overflowed() && iotcloud::HubService::valid(maximum["hub"]));
     iotcloud::HubService large(maximum);
     large.localMac = service.localMac;
-    large.derive = service.derive;
     large.randomHex = service.randomHex;
-    auto auth = large.handle(Request("POST", "/api/auth/login",
-        R"({"username":"abcdefghijklmnopqrstuvwxyz012345","password":"local-password"})"), 8);
-    assert(auth.status == 200 && !auth.token.empty());
-    auto all = large.handle(Request("GET", "/api/devices", "", auth.token), 8);
+    auto all = large.handle(Request("GET", "/api/devices", "", true), 8);
     assert(all.status == 200 && !deserializeJson(devices, all.body) && devices.size() == 13);
     for (JsonObjectConst d : devices.as<JsonArrayConst>()) assert(d["username"] == owner);
   }
-  // Failed storage leaves credentials, sessions, routes and the running broker
-  // alone.
-  fail = true;
-  unsigned before = drops;
-  auto change = Request(
-      "POST", "/api/auth/mqtt-password",
-      R"({"current_password":"local-password","password":"mqtt-password"})",
-      token);
-  assert(service.handle(change, 9).status == 503 &&
-         service.authenticate("local", "local-password", 10) &&
-         drops == before);
-  assert(service.handle(Request("GET", "/api/auth/me", "", token), 10).status ==
-         200);
-  fail = false;
-  assert(service.handle(change, 11).status == 200 && drops == before + 1);
-  assert(service.authenticate("local", "mqtt-password", 12) &&
-         !service.authenticate("local", "local-password", 12));
-  assert(service.handle(Request("GET", "/api/auth/me", "", token), 12).status ==
-         200);
-  for (unsigned i = 0; i < 5; i++)
-    service.handle(Request("POST", "/api/auth/login",
-                           R"({"username":"local","password":"wrong"})"),
-                   20 + i);
-  assert(service
-             .handle(
-                 Request("POST", "/api/auth/login",
-                         R"({"username":"local","password":"local-password"})"),
-                 26)
-             .status == 429);
-  login = service.handle(
-      Request("POST", "/api/auth/login",
-              R"({"username":"local","password":"local-password"})"),
-      31026);
-  assert(login.status == 200);
-  assert(service
-             .handle(Request("GET", "/api/auth/me", "", login.token),
-                     43200001 + 31026)
-             .status == 401);
-  assert(service.handle(Request("GET", "/api/hub/homekit", "", login.token),
-                        43200001 + 31026).status == 401);
+  // Obsolete independent credentials have no mutation path.
+  const unsigned unchanged=writes;
+  const auto webPassword=config["auth"]["password"].as<std::string>();
+  const auto mqttPassword=config["mqtt"]["password"].as<std::string>();
+  for(const char *path:{"/api/hub/setup","/api/auth/login","/api/auth/password","/api/auth/mqtt-password","/api/auth/logout"})
+    assert(service.handle(Request("POST",path,"{}",true),9).status==404);
+  assert(writes==unchanged&&config["auth"]["password"]==webPassword&&config["mqtt"]["password"]==mqttPassword);
+  assert(service.handle(Request("GET","/api/auth/me","",false),10).status==401);
   // A foreign/new schema cannot be silently restored or treated as no account.
   DynamicJsonDocument corrupt(16384);
   corrupt.set(config);
-  corrupt["hub"]["schema"] = 2;
+  corrupt["hub"]["schema"] = 3;
   assert(!iotcloud::HubService::valid(corrupt["hub"]));
   corrupt.set(config);
   corrupt["hub"]["mqtt_hash"] = "invalid";

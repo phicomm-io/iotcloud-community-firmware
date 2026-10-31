@@ -115,13 +115,18 @@ def main():
     else:assert ota_start+rounded<ota_end
     elf=run/f'OpenBK7231N_{v}.axf'
     symbols=subprocess.check_output([CACHE/'gcc5/bin/arm-none-eabi-nm',elf],text=True)
-    for symbol in ('PH_BL_Init','PH_BL_Tick','PH_BL_StartHTTP','PH_BL_FactoryMac','ph_command','ph_meter_byte','ph_udp_handle','ph_http_server_step','ph_mqtt_session_run','ph_mqtt_core_init','MQTTConnect'):
+    for symbol in ('PH_BL_Init','PH_BL_Tick','PH_BL_StartHTTP','PH_BL_FactoryMac',
+                   'PH_BL_CopyLocalIPAddress','ph_command','ph_command_context','ph_meter_byte',
+                   'ph_lan_v4_feed','ph_lan_v4_sensor_grant','ph_lan_v4_revoke',
+                   'PH_BL_MdnsInit','PH_BL_MdnsPoll','mdns_resp_init_checked',
+                   'ph_s30_InitSha256','ph_s30_Sha256Update','ph_s30_Sha256Final',
+                   'ph_http_server_step','ph_mqtt_session_run','ph_mqtt_core_init','MQTTConnect'):
         assert any(line.endswith(' T '+symbol) or line.endswith(' t '+symbol) for line in symbols.splitlines()),symbol
-    for forbidden in ('cJSON_','json_object','cmnd_JsonCommand','mico_rtos','esphome','Arduino'):
+    for forbidden in ('ph_udp_handle','ph_binary_parse','cJSON_','json_object','cmnd_JsonCommand','mico_rtos','esphome','Arduino'):
         assert forbidden not in symbols,forbidden
     size=subprocess.check_output([CACHE/'gcc5/bin/arm-none-eabi-size',elf],text=True)
     (run/'size.log').write_text(size)
-    result={'status':'PASS','source_hashes':'PASS','firmware_sha256':'PASS','qio_ua_layout_and_crc':'PASS','n_and_zero_key_cipher_roundtrip':'PASS','deterministic_application_padding':'PASS','rbl_crc_fnv_aes_gzip_roundtrip':'PASS','ug_header':'PASS','ota_preserves_default_littlefs':'PASS','required_symbols':'PASS','no_legacy_json_or_other_framework_symbols':'PASS','sizes':sizes,'hardware_verified':False}
+    result={'status':'PASS','source_hashes':'PASS','firmware_sha256':'PASS','qio_ua_layout_and_crc':'PASS','n_and_zero_key_cipher_roundtrip':'PASS','deterministic_application_padding':'PASS','rbl_crc_fnv_aes_gzip_roundtrip':'PASS','ug_header':'PASS','ota_preserves_default_littlefs':'PASS','required_symbols':'PASS','typed_lan_v4_mdns_sha256_symbols':'PASS','no_legacy_json_or_other_framework_symbols':'PASS','sizes':sizes,'hardware_verified':False}
     if stock_layout:
         for key in ['qio_ua_layout_and_crc','n_and_zero_key_cipher_roundtrip','deterministic_application_padding']:
             result[key]='NOT_EMITTED: preserves the device stock bootloader'

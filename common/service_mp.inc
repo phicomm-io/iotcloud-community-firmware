@@ -3,11 +3,19 @@
 #include "service_mp.h"
 
 typedef struct { char id[65],receipt_key[65],action[48]; ph_value params; } mp_request;
-typedef struct { char id[65]; unsigned char digest[32]; ph_buf *response; bool lan; } mp_receipt;
+/* Receipt bytes never escape command_lock. Similar frozen replies share one
+ * complete base plus literal byte differences, not mutable product state.
+ * A base is always complete: references never form chains. */
+typedef struct mp_receipt_frame {
+    struct mp_receipt_frame *base;
+    uint16_t references,length,encoded;
+    unsigned char bytes[];
+} mp_receipt_frame;
+typedef struct { char id[65]; unsigned char digest[32]; mp_receipt_frame *response; bool lan; } mp_receipt;
 static mp_receipt mp_receipts[8];
 static unsigned mp_receipt_next;
 static uint32_t mp_generation[2]={1,1};
-static struct { uint32_t generation,clock_second; ph_buf *payload; } mp_cache[2];
+static struct { uint32_t generation,freshness; ph_buf *payload; } mp_cache[2];
 uint32_t service_cache_revision(void)
 {
     if(!ready)return 0;
@@ -31,13 +39,75 @@ static bool mp_cache_evict(void)
     service_command_leave();
     return freed;
 }
-static ph_buf *mp_copy(const ph_buf *src)
+static unsigned mp_receipt_u16(const unsigned char *p){return (unsigned)p[0]|(unsigned)p[1]<<8;}
+static void mp_receipt_put_u16(unsigned char *p,unsigned n){p[0]=(unsigned char)n;p[1]=(unsigned char)(n>>8);}
+static void mp_receipt_apply(unsigned char *out,const mp_receipt_frame *frame)
 {
-    if(!src)return NULL;
-    ph_buf *copy=ph_buf_new(src->len+1);
+    for(unsigned i=0;i<frame->encoded;){
+        unsigned offset=mp_receipt_u16(frame->bytes+i),n=mp_receipt_u16(frame->bytes+i+2);i+=4;
+        memcpy(out+offset,frame->bytes+i,n);i+=n;
+    }
+}
+/* Remove the table reference before releasing. Promote the last dependent
+ * in place so an orphaned base cannot retain a second full-sized allocation.
+ * Transport replies are independent copies and never borrow these bytes. */
+static void mp_receipt_release(mp_receipt_frame *frame)
+{
+    if(!frame)return;
+    mp_receipt_frame *base=frame->base?frame->base:frame;
+    if(frame->base)ph_wire_free(frame);
+    if(!--base->references){ph_wire_free(base);return;}
+    if(base->references==1)for(unsigned i=0;i<8;i++){
+        mp_receipt_frame *last=mp_receipts[i].response;
+        if(last&&last->base==base){
+            mp_receipt_apply(base->bytes,last);mp_receipts[i].response=base;ph_wire_free(last);break;
+        }
+    }
+}
+static unsigned mp_receipt_difference(const ph_buf *wire,const mp_receipt_frame *base,unsigned char *out)
+{
+    unsigned encoded=0,n=(unsigned)wire->len;
+    for(unsigned i=0;i<n;){
+        if((unsigned char)wire->buf[i]==base->bytes[i]){i++;continue;}
+        unsigned start=i++;
+        while(i<n&&(unsigned char)wire->buf[i]!=base->bytes[i])i++;
+        unsigned count=i-start;
+        /* Poor sharing keeps the compact, single-allocation complete frame.
+         * This also bounds sizing work for unrelated replies. */
+        if(encoded+4+count>=n/2-sizeof(mp_receipt_frame))return n;
+        if(out){mp_receipt_put_u16(out+encoded,start);mp_receipt_put_u16(out+encoded+2,count);memcpy(out+encoded+4,wire->buf+start,count);}
+        encoded+=4+count;
+    }
+    return encoded;
+}
+static mp_receipt_frame *mp_receipt_save(const ph_buf *wire)
+{
+    if(!wire||wire->len>PHW_MAX_BYTES)return NULL;
+    mp_receipt_frame *base=NULL,*seen[8];unsigned seen_count=0,encoded=(unsigned)wire->len;
+    if(wire->len>=256)for(unsigned i=0;i<8;i++){
+        mp_receipt_frame *candidate=mp_receipts[i].response;
+        if(!candidate)continue;
+        if(candidate->base)candidate=candidate->base;
+        if(candidate->length!=wire->len)continue;
+        bool duplicate=false;for(unsigned j=0;j<seen_count;j++)if(seen[j]==candidate)duplicate=true;
+        if(duplicate)continue;seen[seen_count++]=candidate;
+        unsigned cost=mp_receipt_difference(wire,candidate,NULL);
+        if(cost<wire->len/2){base=candidate;encoded=cost;break;}
+    }
+    mp_receipt_frame *frame=ph_wire_malloc(sizeof(*frame)+encoded);
+    if(!frame)return NULL;
+    frame->base=base;frame->references=1;frame->length=(uint16_t)wire->len;frame->encoded=(uint16_t)encoded;
+    if(base){mp_receipt_difference(wire,base,frame->bytes);base->references++;}
+    else memcpy(frame->bytes,wire->buf,wire->len);
+    return frame;
+}
+static ph_buf *mp_receipt_copy(const mp_receipt_frame *frame)
+{
+    ph_buf *copy=ph_buf_new((size_t)frame->length+1);
     if(!copy)return NULL;
-    memcpy(copy->buf,src->buf,src->len);copy->len=src->len;copy->buf[copy->len]=0;
-    return copy;
+    memcpy(copy->buf,frame->base?frame->base->bytes:frame->bytes,frame->length);
+    if(frame->base)mp_receipt_apply((unsigned char *)copy->buf,frame);
+    copy->len=frame->length;copy->buf[copy->len]=0;return copy;
 }
 static const char *mp_message(const char *code)
 {
@@ -103,12 +173,12 @@ static bool update_command_mp(const char *,const ph_value *,ph_writer *,const ch
 static void mp_empty(ph_writer *w){phw_begin(w,NULL,false);phw_end(w);}
 static ph_buf *mp_cached(unsigned index)
 {
-    uint32_t generation,clock_second=mico_rtos_get_time()/1000u;
+    uint32_t generation,freshness=index?(uint32_t)device_config_recovery():mico_rtos_get_time()/1000u;
     mico_rtos_lock_mutex(&service_lock);generation=mp_generation[index];mico_rtos_unlock_mutex(&service_lock);
     /* Status contains ages/countdowns/uptime: elapsed seconds are real changes,
      * even without an external event. Capabilities remain purely event-driven. */
     if(mp_cache[index].payload && mp_cache[index].generation==generation &&
-       (index || mp_cache[index].clock_second==clock_second))return mp_cache[index].payload;
+       mp_cache[index].freshness==freshness)return mp_cache[index].payload;
     ph_writer w;
     ph_buf *previous=mp_cache[index].payload;
     /* Every reference stays under command_lock; no transport borrows cache
@@ -120,7 +190,7 @@ static ph_buf *mp_cached(unsigned index)
     if(index==0)service_product_status_mp(&w);
     else service_product_capabilities_mp(&w,update_capability_names,false);
     ph_buf *next=phw_take(&w);if(!next)return NULL;
-    mp_cache[index].payload=next;mp_cache[index].generation=generation;mp_cache[index].clock_second=clock_second;
+    mp_cache[index].payload=next;mp_cache[index].generation=generation;mp_cache[index].freshness=freshness;
     return next;
 }
 /* A build without local-auth integration must fail closed for the LAN API. */
@@ -131,7 +201,7 @@ static bool service_lan_context_valid(const ph_auth_context *context)
         (context->source==PH_AUTH_UDP_PAIR||context->source==PH_AUTH_UDP_MQTT)&&
         ph_auth_context_valid(context,PH_AUTH_SCOPE_CONTROL);
 }
-static ph_buf *mp_dispatch(mp_request *r,const void *raw,size_t length,bool mqtt,const ph_auth_context *lan,bool *admitted)
+static ph_buf *mp_dispatch_authenticated(mp_request *r,const void *raw,size_t length,bool mqtt,const ph_auth_context *lan,bool *admitted,const ph_auth_context *http)
 {
     const char *action=r->action,*code="invalid_params";const ph_value *p=&r->params;
     bool query=strlen(action)>4&&!strcmp(action+strlen(action)-4,".get");
@@ -145,10 +215,13 @@ static ph_buf *mp_dispatch(mp_request *r,const void *raw,size_t length,bool mqtt
     unsigned char digest[32];
     if(receipt){SHA256Context sha;if(SHA256Reset(&sha)||SHA256Input(&sha,raw,length)||SHA256Result(&sha,digest))return service_error_mp(r->id,"busy");}
     if(!service_command_enter(lan==NULL)){if(admitted)*admitted=false;return service_error_mp(r->id,"busy");}
+    if(http&&(!ph_auth_context_valid||
+       (http->source!=PH_AUTH_HTTP&&http->source!=PH_AUTH_HTTP_OPEN&&http->source!=PH_AUTH_HTTP_BASIC)||
+       !ph_auth_context_valid(http,PH_AUTH_SCOPE_ADMIN))){service_command_leave();return service_error_mp(r->id,"unauthorized");}
     if(lan&&!service_lan_context_valid(lan)){service_command_leave();return service_error_mp(r->id,"auth_required");}
     const char *receipt_key=r->receipt_key[0]?r->receipt_key:r->id;
     if(receipt)for(unsigned i=0;i<8;i++)if(mp_receipts[i].lan==(lan!=NULL)&&!strcmp(mp_receipts[i].id,receipt_key)){
-        ph_buf *response=!memcmp(mp_receipts[i].digest,digest,32)?(mp_receipts[i].response?mp_copy(mp_receipts[i].response):service_error_mp(r->id,"busy")):service_error_mp(r->id,"conflict");
+        ph_buf *response=!memcmp(mp_receipts[i].digest,digest,32)?(mp_receipts[i].response?mp_receipt_copy(mp_receipts[i].response):service_error_mp(r->id,"busy")):service_error_mp(r->id,"conflict");
         service_command_leave();return response;
     }
     ph_buf *payload=NULL,*response=NULL;bool owned=false,active=ota_job_active(),record_receipt=receipt;
@@ -192,16 +265,24 @@ static ph_buf *mp_dispatch(mp_request *r,const void *raw,size_t length,bool mqtt
     if(!payload && !w.wire && !phw_init(&w,PH_WIRE_MSGPACK)){service_command_leave();return NULL;}
     if(!payload){if(!w.depth && !w.wire->len)mp_empty(&w);payload=phw_take(&w);owned=true;}else phw_discard(&w);
     response=payload?mp_envelope(r->id,code,payload):NULL;if(owned)ph_buf_free(payload);
-    if(record_receipt){mp_receipt *saved=&mp_receipts[mp_receipt_next++%8];ph_buf_free(saved->response);memset(saved,0,sizeof(*saved));strcpy(saved->id,receipt_key);memcpy(saved->digest,digest,32);saved->response=mp_copy(response);saved->lan=lan!=NULL;}
+    if(record_receipt){mp_receipt *saved=&mp_receipts[mp_receipt_next++%8];mp_receipt_frame *previous=saved->response;saved->response=NULL;mp_receipt_release(previous);memset(saved,0,sizeof(*saved));strcpy(saved->id,receipt_key);memcpy(saved->digest,digest,32);saved->response=mp_receipt_save(response);saved->lan=lan!=NULL;}
     service_command_leave();
-    if(!query){service_cache_changed(SERVICE_CACHE_ALL);service_event(!strcmp(code,"accepted")||!strcmp(code,"ok")?"info":"warn","command",!strcmp(code,"accepted")||!strcmp(code,"ok")?"accepted":"rejected");}
+    /* Command events refresh status for both accepted and rejected writes.
+     * Capabilities change only through their authoritative invalidation or
+     * recovery flag, not through a display value/failed write. OTA reads use
+     * their separate restricted path above. */
+    if(!query)service_event(!strcmp(code,"accepted")||!strcmp(code,"ok")?"info":"warn","command",!strcmp(code,"accepted")||!strcmp(code,"ok")?"accepted":"rejected");
     return response;
 }
+static ph_buf *mp_dispatch(mp_request *r,const void *raw,size_t length,bool mqtt,const ph_auth_context *lan,bool *admitted)
+{return mp_dispatch_authenticated(r,raw,length,mqtt,lan,admitted,NULL);}
 ph_buf *service_command_mp(const void *data,size_t length)
 {mp_request r;if(!mp_decode(data,length,&r))return service_error_mp(r.id,"invalid_params");return mp_dispatch(&r,data,length,false,NULL,NULL);}
+ph_buf *service_http_command_mp(const void *data,size_t length,const ph_auth_context *context)
+{mp_request r;if(!mp_decode(data,length,&r))return service_error_mp(r.id,"invalid_params");if(!context)return service_error_mp(r.id,"unauthorized");return mp_dispatch_authenticated(&r,data,length,false,NULL,NULL,context);}
 ph_buf *service_mqtt_command_mp(const void *data,size_t length)
 {mp_request r;if(!mp_decode(data,length,&r))return service_error_mp(r.id,"invalid_params");return mp_dispatch(&r,data,length,true,NULL,NULL);}
-ph_buf *service_query_mp(const char *action)
+static ph_buf *mp_query(const char *action,const ph_auth_context *http)
 {
     static const unsigned char empty_map=0x80;
     mp_request r={0};
@@ -211,8 +292,11 @@ ph_buf *service_query_mp(const char *action)
     if(!phv_parse(PH_WIRE_MSGPACK,&empty_map,1,&r.params))return NULL;
     /* Internal queries already have typed parameters. Do not serialize and
      * parse a synthetic request just to enter the same dispatcher. */
-    return mp_dispatch(&r,NULL,0,false,NULL,NULL);
+    return mp_dispatch_authenticated(&r,NULL,0,false,NULL,NULL,http);
 }
+ph_buf *service_query_mp(const char *action){return mp_query(action,NULL);}
+ph_buf *service_http_query_mp(const char *action,const ph_auth_context *context)
+{return context?mp_query(action,context):service_error_mp(NULL,"unauthorized");}
 bool service_readonly_mp(const void *data,size_t length)
 {
     mp_request r;if(!mp_decode(data,length,&r))return false;
@@ -224,3 +308,6 @@ bool service_readonly_mp(const void *data,size_t length)
         !strcmp(r.action,"config.get")||!strcmp(r.action,"logs.get");
 }
 #include "service_lan.inc"
+#if defined(PHICOMM_STATUS_MODEL) && PHICOMM_STATUS_MODEL == 2
+#include "service_http_control.inc"
+#endif

@@ -1,4 +1,5 @@
 #include "local_auth.h"
+#include "httpd/basic.h"
 #include <string.h>
 static void ph_auth_private_lock(ph_auth_state *s) {
     char p[33]={0};
@@ -142,6 +143,11 @@ ph_auth_login_result ph_auth_http_login_result(ph_auth_state*s,const char*p,char
     ph_auth_login_result result=PH_AUTH_LOGIN_DENIED;
     ph_auth_private_lock(s);
     if(ph_auth_private_password_ok(s,p)) {
+        if(!s->credential[0]) {
+            out[0]=0;
+            result=PH_AUTH_LOGIN_OK;
+            goto done;
+        }
         result=PH_AUTH_LOGIN_BUSY;
         if(!ph_auth_private_fresh(s,t))goto done;
         uint32_t now=s->ops.now(s->ops.user);
@@ -153,6 +159,7 @@ ph_auth_login_result ph_auth_http_login_result(ph_auth_state*s,const char*p,char
         }
     }
 done:
+    if(result!=PH_AUTH_LOGIN_OK)out[0]=0;
     memset(t,0,sizeof(t));
     ph_auth_private_unlock(s);
     return result;
@@ -172,6 +179,7 @@ static void ph_auth_private_ctx(ph_auth_state*s,ph_auth_context*c,ph_auth_source
     c->source=source;
     c->slot=(uint8_t)slot;
     c->generation=r->generation;
+    c->credential_epoch=s->credential_epoch;
     c->scopes=r->scopes;
     memcpy(c->peer,r->peer,sizeof(c->peer));
 }
@@ -183,16 +191,25 @@ static int ph_auth_private_http_find(ph_auth_state*s,const char*a) {
     return -1;
 }
 bool ph_auth_http_check(ph_auth_state*s,const char*a,ph_auth_context*c) {
-    int i;
+    bool ok=false;
     memset(c,0,sizeof(*c));
     ph_auth_private_lock(s);
-    i=ph_auth_private_http_find(s,a);
-    if(i>=0) {
-        s->http[i].last=s->ops.now(s->ops.user);
-        ph_auth_private_ctx(s,c,PH_AUTH_HTTP,(unsigned)i,&s->http[i]);
+    if(!s->credential[0]||ph_http_basic_match(a,"admin",s->credential)) {
+        c->owner=s;
+        c->source=s->credential[0]?PH_AUTH_HTTP_BASIC:PH_AUTH_HTTP_OPEN;
+        c->credential_epoch=s->credential_epoch;
+        c->scopes=PH_AUTH_SCOPE_ALL;
+        ok=true;
+    } else {
+        int i=ph_auth_private_http_find(s,a);
+        if(i>=0) {
+            s->http[i].last=s->ops.now(s->ops.user);
+            ph_auth_private_ctx(s,c,PH_AUTH_HTTP,(unsigned)i,&s->http[i]);
+            ok=true;
+        }
     }
     ph_auth_private_unlock(s);
-    return i>=0;
+    return ok;
 }
 bool ph_auth_http_logout(ph_auth_state*s,const char*a) {
     int i;
@@ -460,6 +477,10 @@ bool ph_auth_context_valid(const ph_auth_context*c,unsigned required) {
     ph_auth_private_lock(s);
     if(c->source==PH_AUTH_MQTT||c->source==PH_AUTH_INTERNAL) {
         ok=c->scopes==PH_AUTH_SCOPE_ALL;
+    }
+    else if(c->source==PH_AUTH_HTTP_OPEN||c->source==PH_AUTH_HTTP_BASIC) {
+        ok=c->credential_epoch==s->credential_epoch&&c->scopes==PH_AUTH_SCOPE_ALL&&
+            (c->source==PH_AUTH_HTTP_OPEN?!s->credential[0]:s->credential[0]!=0);
     }
     else {
         if(c->source==PH_AUTH_HTTP&&c->slot<PH_AUTH_HTTP_SLOTS)r=&s->http[c->slot];

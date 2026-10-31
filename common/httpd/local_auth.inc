@@ -3,21 +3,27 @@
 #include "../local_auth.h"
 #include "../typed_wire.h"
 
+/* The HTTP owner holds one product lease through admission, body and dispatch.
+ * Retain its original authorization; never reauthenticate a waiting request
+ * against credentials installed by a later restore/password transaction. */
 static void http_auth_reply(ph_http_product *p,ph_http_exchange *x,unsigned status,
                             const char *code,const char *token)
 {
     ph_writer w;ph_buf b;
     phw_init_fixed(&w,PH_WIRE_MSGPACK,&b,p->scalar,sizeof(p->scalar));
     phw_begin(&w,NULL,false);phw_text(&w,"code",code);
-    if(token){phw_begin(&w,"data",false);phw_text(&w,"token",token);phw_end(&w);}
+    if(token){phw_begin(&w,"data",false);phw_text(&w,"token",token);
+        phw_bool(&w,"password_required",token[0]!=0);phw_end(&w);}
     phw_end(&w);
     x->response.status=status;x->response.type="application/msgpack";
     x->response.body=p->scalar;x->response.length=phw_finish_fixed(&w);
 }
-static bool http_auth_authorized(const char *authorization)
+static bool http_auth_authorized(ph_http_product *p,const char *authorization)
 {
-    ph_auth_context context;ph_auth_state *s=device_local_auth();
-    return s&&ph_auth_http_check(s,authorization,&context);
+    ph_auth_state *s=device_local_auth();
+    if(p->auth.owner)
+        return s==p->auth.owner&&ph_auth_context_valid(&p->auth,PH_AUTH_SCOPE_ADMIN);
+    return s&&ph_auth_http_check(s,authorization,&p->auth);
 }
 static bool http_auth_route(const char *path)
 {

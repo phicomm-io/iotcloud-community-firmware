@@ -12,6 +12,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from DAIKIN.tests.arduinojson import codec_source
 
 ROOT = Path(__file__).resolve().parents[2]
 PIO = Path(os.environ.get('PLATFORMIO_CORE_DIR', str(Path.home() / '.platformio')))
@@ -48,6 +49,7 @@ class HubConfigStorage(unittest.TestCase):
         subprocess.run(['cc','-fsanitize=address,undefined','-fno-pie','-c',str(ROOT/'common/local_auth.c'),'-o',str(temp/'auth.o')],check=True)
         prefs = ARDUINO / 'libraries/Preferences/src/Preferences.cpp'
         methods = [
+            ('bool Preferences::remove(const char * key)', '/*\n * Put a key value'),
             ('size_t Preferences::putString(const char* key, const char* value)', 'PreferenceType Preferences::getType('),
             ('PreferenceType Preferences::getType(', '/*\n * Get a key value'),
             ('String Preferences::getString(const char* key, const String defaultValue)', 'size_t Preferences::freeEntries('),
@@ -65,7 +67,7 @@ class HubConfigStorage(unittest.TestCase):
             '#pragma once\n#include "esp_err.h"\n#define SPI_FLASH_SEC_SIZE 4096\n'
             '#define ESP_ERR_FLASH_OP_FAIL (ESP_ERR_FLASH_BASE+1)\n'
             '#define ESP_ERR_FLASH_OP_TIMEOUT (ESP_ERR_FLASH_BASE+2)\n')
-        codec = ROOT / 'DAIKIN/.pio/libdeps/bry88ab-hub/ArduinoJson/src'
+        codec = codec_source()
         includes = [temp, ROOT/'common', ROOT / 'DAIKIN/include', codec, nvs / 'src', nvs / 'include',
                     nvs / 'private_include', sdk / 'components/esp_rom/include',
                     sdk / 'components/esp_rom/include/linux', sdk / 'components/log/include',
@@ -99,12 +101,29 @@ class HubConfigStorage(unittest.TestCase):
         # A real power loss discards the whole heap. Throwing from the NOR shim
         # instead abandons IDF's local non-RAII temporary list; that host-only
         # artifact must not be mistaken for an ordinary-operation firmware leak.
-        leaks = '0' if name in ('power','migration') else '1'
-        subprocess.run([str(self.binary[variant]), name], check=True, timeout=90,
+        leaks = '0' if name in ('power','migration','live-reclaim-power','live-legacy','route-power','hub-schema') else '1'
+        timeout = 300 if name in ('live-reclaim-power', 'live-legacy') else 90
+        subprocess.run([str(self.binary[variant]), name], check=True, timeout=timeout,
                        env={**{k:v for k,v in os.environ.items() if k!='DAIKIN_NVS_NO_PAIRS'}, **({'DAIKIN_NVS_NO_PAIRS':'1'} if no_pairs else {}), 'ASAN_OPTIONS': 'detect_leaks=' + leaks,'DAIKIN_NVS_PAGES':str(pages)})
 
     def test_authority_key_type_and_precedence(self):
         self.scenario("authority",pages=4)
+
+    def test_hub_schema_migration_preserves_all_authority_at_every_nor_byte(self):
+        for pages in (4, 5): self.scenario('hub-schema', pages=pages)
+
+    def test_outbound_route_and_key_atomic_at_every_nor_byte(self):
+        for variant in ('hub', 'full'):
+            for pages in (4,5): self.scenario('route-power',variant,pages=pages)
+
+    def test_live_16k_reclaim_pair_and_six_existing_routes(self):
+        self.scenario('live-reclaim',pages=4)
+
+    def test_live_16k_reclaim_and_gc_power_cuts(self):
+        self.scenario('live-reclaim-power',pages=4)
+
+    def test_live_16k_old_combined_versions_migrate_atomically(self):
+        self.scenario('live-legacy',pages=4)
 
     def test_live_equivalent_first_authority_migration_power_cuts(self):
         self.scenario("migration","v2",pages=4)

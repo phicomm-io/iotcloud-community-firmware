@@ -7,6 +7,87 @@ static bool keys(const ph_value *p,const char *allowed){return phv_keys(p,allowe
 static bool boolparam(const ph_value *p,const char *key,bool *value){ph_value v;return phv_get(p,key,&v)&&phv_bool(&v,value);}
 static bool number(const ph_value *p,const char *key,int *out,int lo,int hi){ph_value v;int64_t n;if(!phv_get(p,key,&v)||!phv_int(&v,&n)||n<lo||n>hi)return false;*out=(int)n;return true;}
 static bool strparam(const ph_value *p,const char *key,char *out,size_t capacity,bool required){ph_value v;if(!phv_get(p,key,&v))return !required;return phv_text(&v,out,capacity);}
+/* These mutually exclusive string buffers must not remain below Bemfa's
+ * transactional validator or any other product branch. */
+static __attribute__((noinline)) void tc1_ota_start_mp(const ph_value *p,const char **code)
+{
+    char url[512];
+    if(keys(p,"|url|") && strparam(p,"url",url,sizeof(url),true))
+        *code=ota_server_start(url,NULL,NULL)==kNoErr?"accepted":"busy";
+}
+static __attribute__((noinline)) bool tc1_mqtt_config_mp(const ph_value *v)
+{
+    char host[sizeof(user_config->mqtt_host)],user[64],password[257],protocol[8];int port;
+    strcpy(protocol,"tmcp");strcpy(password,user_config->mqtt_password);
+    bool enabled=user_config->bemfa.mqtt_enabled;
+    bool toggle=!tc1_mp_has(v,"enabled") || boolparam(v,"enabled",&enabled);
+    /* Zero is the factory sentinel for unconfigured MQTT. */
+    bool valid=toggle && keys(v,"|host||port||user||password||protocol||enabled|") && strparam(v,"host",host,sizeof(host),true) && strparam(v,"user",user,sizeof(user),true) && strparam(v,"password",password,sizeof(password),false) && number(v,"port",&port,0,65535) && (port || !host[0]) && strparam(v,"protocol",protocol,sizeof(protocol),false) && !strcmp(protocol,"tmcp");
+    if(valid){tc1_status_lock();user_config->bemfa.mqtt_enabled=enabled;user_config->bemfa.revision++;tc1_status_unlock();strcpy(user_config->mqtt_host,host);strcpy(user_config->mqtt_user,user);strcpy(user_config->mqtt_password,password);user_config->mqtt_port=port;user_config->mqtt_topic_mode=!strcmp(protocol,"tmcp");}
+    return valid;
+}
+/* Ordinary controls change only a few bytes. Keep their rollback on the
+ * stack, rather than borrowing heap for saved schedules and authentication.
+ * The dispatcher already owns command admission; config reservation still
+ * excludes OTA, restore and Wi-Fi trials through persistence and rollback. */
+static __attribute__((noinline)) bool tc1_control_mp(const char *action,const ph_value *p,const char **code)
+{
+    enum { OUTLET, INDICATOR, CHILD_LOCK } kind;
+    if(!strcmp(action,"outlet.set"))kind=OUTLET;
+    else if(!strcmp(action,"indicator.set"))kind=INDICATOR;
+    else if(!strcmp(action,"child_lock.set"))kind=CHILD_LOCK;
+    else return false;
+    bool enabled;int index=-1;
+    bool valid=kind==OUTLET ? keys(p,"|index||on|") && boolparam(p,"on",&enabled) &&
+        (!tc1_mp_has(p,"index") || number(p,"index",&index,0,SOCKET_NUM-1)) :
+        keys(p,"|enabled|") && boolparam(p,"enabled",&enabled);
+    if(!valid){*code="invalid_params";return true;}
+    if(!tc1_config_reserve()){*code="busy";return true;}
+
+    char old_sockets[SOCKET_NUM],old_child;int old_led,old_lock;
+    tc1_status_lock();
+    memcpy(old_sockets,user_config->socket_status,sizeof(old_sockets));
+    old_led=user_config->power_led_enabled;old_child=user_config->user[0];old_lock=childLockEnabled;
+    tc1_status_unlock();
+    bool changed=false;
+    if(kind==OUTLET){
+        for(unsigned i=0;i<SOCKET_NUM;i++)if((index<0 || i==(unsigned)index) && old_sockets[i]!=enabled){
+            UserRelaySet(i,enabled);changed=true;
+        }
+    }else if(kind==INDICATOR){
+        changed=old_led!=enabled;
+        if(changed){tc1_status_lock();user_config->power_led_enabled=enabled;tc1_status_unlock();UserLedSet(RelayOut() && enabled);}
+    }else{
+        changed=old_child!=enabled || old_lock!=enabled;
+        if(changed){tc1_status_lock();user_config->user[0]=enabled;childLockEnabled=enabled;tc1_status_unlock();}
+    }
+    bool saved=!changed || mico_system_context_update(sys_config)==kNoErr;
+    if(!saved){
+        if(kind==OUTLET){
+            for(unsigned i=0;i<SOCKET_NUM;i++)if((index<0 || i==(unsigned)index) && old_sockets[i]!=enabled)UserRelaySet(i,old_sockets[i]);
+        }else if(kind==INDICATOR){
+            tc1_status_lock();user_config->power_led_enabled=old_led;tc1_status_unlock();
+            UserLedSet(RelayOut() && old_led);
+        }else{
+            tc1_status_lock();user_config->user[0]=old_child;childLockEnabled=old_lock;tc1_status_unlock();
+        }
+    }else UserMqttRefreshState(false);
+    tc1_config_release();*code=saved?"accepted":"storage_error";return true;
+}
+static __attribute__((noinline)) bool tc1_name_mp(const ph_value *p,ph_writer *out,const char **code)
+{
+    *code="invalid_params";
+    char name[maxNameLen],old[maxNameLen];
+    if(!keys(p,"|name|")||!strparam(p,"name",name,sizeof(name),true)||!name[0])return true;
+    if(!tc1_config_reserve()){*code="busy";return true;}
+    strcpy(old,sys_config->micoSystemConfig.name);
+    bool changed=strcmp(old,name)!=0,saved=true;
+    if(changed){strcpy(sys_config->micoSystemConfig.name,name);saved=mico_system_context_update(sys_config)==kNoErr;}
+    if(!saved)strcpy(sys_config->micoSystemConfig.name,old);
+    if(saved&&changed)UserMqttRefreshState(true);
+    tc1_config_release();*code=saved?"accepted":"storage_error";
+    phw_begin(out,NULL,false);if(saved)phw_text(out,"name",name);phw_end(out);return true;
+}
 static __attribute__((noinline)) bool tc1_product_inner_mp(const char *action,const ph_value *p,ph_writer *out,const char **code){
     *code="invalid_params";
     if(!strcmp(action,"config.get")){
@@ -35,7 +116,7 @@ static __attribute__((noinline)) bool tc1_product_inner_mp(const char *action,co
         if(!WifiScanMp(out))*code="busy";else *code="ok";
         return true;
     }
-    if(!strcmp(action,"ota.start")){char url[512];if(!keys(p,"|url|") || !strparam(p,"url",url,sizeof(url),true))return true;*code=ota_server_start(url,NULL,NULL)==kNoErr?"accepted":"busy";return true;}
+    if(!strcmp(action,"ota.start")){tc1_ota_start_mp(p,code);return true;}
     if(!strcmp(action,"config.set")){
         ph_value section_value=tc1_mp_get(p,"section"),values=tc1_mp_get(p,"values");
         const ph_value *section=&section_value,*v=&values;
@@ -49,6 +130,7 @@ static __attribute__((noinline)) bool tc1_product_inner_mp(const char *action,co
             if(!strparam(v,"password",password,sizeof(password),false))return true;*code=WifiConnect(ssid,password)?"accepted":"busy";return true;
         }
     }
+    if(!strcmp(action,"name.set"))return tc1_name_mp(p,out,code);
     if(!strcmp(action,"system.reset")){
         bool full;if(!keys(p,"|full|")||!boolparam(p,"full",&full))return true;
         if(!tc1_auth_reset(full)){*code="storage_error";return true;}
@@ -58,16 +140,8 @@ static __attribute__((noinline)) bool tc1_product_inner_mp(const char *action,co
     if(!tc1_config_reserve()){*code="busy";return true;}
     user_config_t *before=malloc(sizeof(*before));if(!before){tc1_config_release();*code="busy";return true;}*before=*user_config;
     char old_name[maxNameLen];strcpy(old_name,sys_config->micoSystemConfig.name);
-    bool valid=false,enabled=false,saved=true;int index=0;
-    if(!strcmp(action,"outlet.set")){
-        valid=keys(p,"|index||on|") && boolparam(p,"on",&enabled);
-        if(tc1_mp_has(p,"index"))valid=valid && number(p,"index",&index,0,5);else index=-1;
-        if(valid){if(index<0)UserRelaySetAll(enabled);else UserRelaySet(index,enabled);}
-    }else if(!strcmp(action,"indicator.set")){
-        valid=keys(p,"|enabled|") && boolparam(p,"enabled",&enabled);if(valid){user_config->power_led_enabled=enabled;UserLedSet(RelayOut() && enabled);}
-    }else if(!strcmp(action,"child_lock.set")){
-        valid=keys(p,"|enabled|") && boolparam(p,"enabled",&enabled);if(valid){user_config->user[0]=enabled;childLockEnabled=enabled;}
-    }else if(!strcmp(action,"system.reboot")){
+    bool valid=false,saved=true;int index=0;
+    if(!strcmp(action,"system.reboot")){
         valid=keys(p,"");if(valid){saved=mico_rtos_create_thread(NULL,MICO_APPLICATION_PRIORITY,"reboot",reboot_worker,1024,0)==kNoErr;*code=saved?"accepted":"busy";free(before);if(!saved)tc1_config_release();return true;}
     }else if(!strcmp(action,"wifi.scan")){
         valid=keys(p,"");if(valid){saved=WifiScanStart()==kNoErr;*code=saved?"accepted":"busy";free(before);tc1_config_release();return true;}
@@ -82,15 +156,13 @@ static __attribute__((noinline)) bool tc1_product_inner_mp(const char *action,co
             else if(!strcmp(s,"socket")){char name[SOCKET_NAME_LENGTH];valid=keys(v,"|index||name|") && number(v,"index",&index,0,5) && strparam(v,"name",name,sizeof(name),true) && name[0];if(valid)strcpy(user_config->socket_names[index],name);}
             else if(!strcmp(s,"meter")){int n;valid=keys(v,"|coefficient_x100|") && number(v,"coefficient_x100",&n,POWER_COEFFICIENT_MIN_X100,POWER_COEFFICIENT_MAX_X100);if(valid)user_config->power_coefficient_x100=n;}
             else if(!strcmp(s,"report")){int n;valid=keys(v,"|seconds|") && number(v,"seconds",&n,1,3600);if(valid)user_config->mqtt_report_freq=n;}
-            else if(!strcmp(s,"bemfa")){bemfa_config_t next;bemfa_config_get(&next);valid=bemfa_config_values_mp(&next,v,true);if(valid){tc1_status_lock();user_config->bemfa=next;tc1_status_unlock();}}
-            else if(!strcmp(s,"mqtt")){
-                char host[sizeof(user_config->mqtt_host)],user[64],password[257],protocol[8];int port;strcpy(protocol,"tmcp");strcpy(password,user_config->mqtt_password);
-                bool enabled=user_config->bemfa.mqtt_enabled;
-                bool toggle=!tc1_mp_has(v,"enabled") || boolparam(v,"enabled",&enabled);
-                /* Zero is the factory sentinel for unconfigured MQTT. */
-                valid=toggle && keys(v,"|host||port||user||password||protocol||enabled|") && strparam(v,"host",host,sizeof(host),true) && strparam(v,"user",user,sizeof(user),true) && strparam(v,"password",password,sizeof(password),false) && number(v,"port",&port,0,65535) && (port || !host[0]) && strparam(v,"protocol",protocol,sizeof(protocol),false) && !strcmp(protocol,"tmcp");
-                if(valid){tc1_status_lock();user_config->bemfa.mqtt_enabled=enabled;user_config->bemfa.revision++;tc1_status_unlock();strcpy(user_config->mqtt_host,host);strcpy(user_config->mqtt_user,user);strcpy(user_config->mqtt_password,password);user_config->mqtt_port=port;user_config->mqtt_topic_mode=!strcmp(protocol,"tmcp");}
+            else if(!strcmp(s,"bemfa")){
+                /* The validator commits only a fully valid snapshot. The
+                 * transaction's existing backup supplies persistence rollback;
+                 * do not keep a second 592-byte Bemfa snapshot on this stack. */
+                tc1_status_lock();valid=bemfa_config_values_mp(&user_config->bemfa,v,true);tc1_status_unlock();
             }
+            else if(!strcmp(s,"mqtt")){valid=tc1_mqtt_config_mp(v);}
         }
     }else{*code="unsupported";free(before);tc1_config_release();return true;}
 finish:
@@ -108,11 +180,12 @@ finish:
 
 bool service_product_mp(const char *action,const ph_value *params,ph_writer *out,const char **code)
 {
-    static const char *const actions[]={"config.get","power.get","time.get","wifi.scan.get","ota.start","config.set","outlet.set","indicator.set","child_lock.set","system.reboot","system.reset","wifi.scan","time.set",NULL};
+    static const char *const actions[]={"config.get","power.get","time.get","wifi.scan.get","ota.start","config.set","name.set","outlet.set","indicator.set","child_lock.set","system.reboot","system.reset","wifi.scan","time.set",NULL};
     unsigned i;for(i=0;actions[i];i++)if(!strcmp(actions[i],action))break;
     if(!actions[i])return false;
     unsigned depth=out->depth;size_t length=out->wire->len;
-    bool handled=tc1_product_inner_mp(action,params,out,code);
+    bool handled=tc1_control_mp(action,params,code);
+    if(!handled)handled=tc1_product_inner_mp(action,params,out,code);
     if(out->depth==depth && out->wire->len==length){phw_begin(out,NULL,false);phw_end(out);}
     return handled;
 }

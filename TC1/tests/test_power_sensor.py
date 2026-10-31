@@ -31,7 +31,8 @@ class PowerSensor(unittest.TestCase):
         cls.power = '\n'.join(line for line in (ROOT / 'TC1/user_power.c').read_text().splitlines()
                               if not line.startswith('#include'))
         publisher = source[source.index('/* sensor-values-v1'):source.index('static bool power_requested(')]
-        (build / 'production.inc').write_text(cls.power + '\n' + publisher + '\n' +
+        (build / 'production.inc').write_text(cls.power + '\n' +
+            function(source, 'static void power_report_poll(') + '\n' + publisher + '\n' +
             function(source, 'static bool power_requested(') + '\n' +
             function(source, 'static int session_initial(') + '\n' +
             function(source, 'static int session_cycle('))
@@ -136,6 +137,9 @@ class PowerSensor(unittest.TestCase):
 
     def test_slow_sends_cannot_starve_original_status_or_power(self):
         self.scenario('fairness')
+
+    def test_owner_report_frequency_fallback_wrap_and_reconnect(self):
+        self.scenario('report')
 
     def test_maximum_account_key_and_initial_zero_are_bounded(self):
         messages = self.scenario('bounds')

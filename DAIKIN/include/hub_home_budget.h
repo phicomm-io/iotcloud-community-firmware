@@ -9,7 +9,7 @@ namespace iotcloud {
 // bytes of allocator allowance; strings include both value and newValue.
 class HomeGraphBudget {
 public:
-  enum Kind { Invalid, M1, TC1, A1, Daikin };
+  enum Kind { Invalid, M1, TC1, A1, Daikin, S30V1B };
   struct Sizes {
     size_t accessory, characteristic, information, sensor, outlet, fan, light, pointer;
   };
@@ -29,32 +29,34 @@ public:
   static Kind kind(const char *model) {
     if (!model) return Invalid;
     return !std::strcmp(model, "m1") ? M1 : !std::strcmp(model, "tc1") ? TC1 :
-           !std::strcmp(model, "a1") ? A1 : !std::strcmp(model, "daikin") ? Daikin : Invalid;
+           !std::strcmp(model, "a1") ? A1 : !std::strcmp(model, "daikin") ? Daikin :
+           !std::strcmp(model, "s30-v1b") ? S30V1B : Invalid;
   }
   bool device(Kind model) {
-    if (finished || model < M1 || model > Daikin || devices >= 13) return valid = false;
+    if (finished || model < M1 || model > S30V1B || devices >= 13) return valid = false;
     ++devices;
-    const size_t length = model == Daikin ? 6 : model == TC1 ? 3 : 2;
-    information(model == TC1 ? 7 : model == A1 ? 3 : model == Daikin ? 6 : 5,
-                length + 7, length);
+    const size_t length = model == S30V1B ? 7 : model == Daikin ? 6 : model == TC1 ? 3 : 2;
+    information(model == TC1 ? 7 : model == S30V1B ? 2 : model == A1 ? 3 : model == Daikin ? 6 : 5,
+                63, length); // Names can change without rebuilding this graph.
     // The owner name is at most 32 bytes. Its hexadecimal MQTT user key plus
     // topic/model/MAC fits 97 characters; libstdc++ growth fits this allowance.
     block(256);
-    if (model == TC1) {
-      for (unsigned i = 0; i < 6; ++i) {
-        service(sizes.outlet, 2, 2);
+    if (model == TC1 || model == S30V1B) {
+      for (unsigned i = 0; i < (model == TC1 ? 6u : 1u); ++i) {
+        service(sizes.outlet, i ? 2 : 3, 2);
         text(8); // "Outlet 1" through "Outlet 6".
       }
     } else if (model == A1) {
-      service(sizes.fan, 2, 8);
+      service(sizes.fan, 3, 8);
       service(sizes.light, 2, 8);
     } else {
-      service(sizes.sensor, 3, 2); // Temperature.
+      service(sizes.sensor, 4, 3); // Temperature + ConfiguredName.
       service(sizes.sensor, 3, 2); // Humidity.
       service(sizes.sensor, 4, 4); // CO2 (optional vector rounds 3 to 4).
       service(sizes.sensor, 4, 4); // PM2.5.
       if (model == Daikin) service(sizes.sensor, 4, 4); // PM10.
     }
+    text(63); // Primary-service ConfiguredName: value and pending newValue.
     return valid;
   }
   bool fits(size_t available, size_t blockSize) {

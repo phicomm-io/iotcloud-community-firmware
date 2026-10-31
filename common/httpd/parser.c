@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "http.h"
+#include "basic.h"
 #include <string.h>
 #include <strings.h>
 
@@ -80,24 +81,5 @@ int ph_http_parser_feed(ph_http_parser *p, unsigned char c)
 }
 bool ph_http_basic(const char *authorization, const char *user, const char *password)
 {
-    if (!password[0]) return true;
-    static const char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    char raw[72], expected[104] = "Basic ";
-    size_t u = strlen(user), p = strlen(password);
-    if (u + p + 1 >= sizeof(raw)) return false;
-    memcpy(raw, user, u); raw[u] = ':'; memcpy(raw + u + 1, password, p);
-    size_t n = u + p + 1, pos = 6;
-    for (size_t i = 0; i < n; i += 3) {
-        uint32_t v = (uint32_t)(unsigned char)raw[i] << 16;
-        if (i+1 < n) v |= (uint32_t)(unsigned char)raw[i+1] << 8;
-        if (i+2 < n) v |= (unsigned char)raw[i+2];
-        expected[pos++] = alphabet[v>>18]; expected[pos++] = alphabet[(v>>12)&63];
-        expected[pos++] = i+1<n ? alphabet[(v>>6)&63] : '=';
-        expected[pos++] = i+2<n ? alphabet[v&63] : '=';
-    }
-    expected[pos] = 0;
-    if (strlen(authorization) != pos) return false;
-    unsigned diff = 0;
-    for (size_t i=0; i<pos; ++i) diff |= (unsigned char)authorization[i] ^ (unsigned char)expected[i];
-    return diff == 0;
+    return ph_http_basic_match(authorization, user, password);
 }

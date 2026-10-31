@@ -25,6 +25,9 @@ int ph_mqtt_client_deinit(Client *);
 int ph_mqtt_connect(Client *, MQTTPacket_connectData *);
 int ph_mqtt_disconnect(Client *);
 int ph_mqtt_subscribe(Client *, const char *, enum QoS, messageHandler);
+/* Explicit opt-in for product-owned optional subscriptions. Only a validated
+ * broker SUBACK 0x80 is nonfatal; transport/allocation errors remain fatal. */
+int ph_mqtt_subscribe_optional(Client *, const char *, enum QoS, messageHandler);
 int ph_mqtt_yield(Client *, int);
 int ph_mqtt_publish(Client *, const char *, MQTTMessage *);
 /* Primary MQTT owner only; binary bytes retain their explicit length. */

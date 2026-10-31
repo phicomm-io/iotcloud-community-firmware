@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from DAIKIN.tests.arduinojson import codec_source
 
 ROOT = Path(__file__).resolve().parents[2]
 PIO = Path(os.environ.get('PLATFORMIO_CORE_DIR', str(Path.home() / '.platformio')))
@@ -29,7 +30,7 @@ class NativePublish(unittest.TestCase):
         cls.addClassCleanup(cls.temp.cleanup)
         temp = Path(cls.temp.name)
         core = ARDUINO / 'cores/esp32'
-        codec = ROOT / 'DAIKIN/.pio/libdeps/bry88ab-hub/ArduinoJson/src'
+        codec = codec_source()
         if not (core / 'WString.cpp').is_file() or not (codec / 'ArduinoJson.h').is_file():
             raise RuntimeError('Install the production PlatformIO hub dependencies first')
         version = (codec / 'ArduinoJson/version.hpp').read_text()

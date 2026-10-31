@@ -41,7 +41,7 @@ static bool phv_skip_one(phv_reader *r,ph_value *v,unsigned depth){return phv_sc
 static __attribute__((noinline)) bool phv_head(phv_reader *r,ph_value *v){
  memset(v,0,sizeof(*v));v->kind=PHV_MISSING;v->format=r->format;
  if(++r->nodes>PH_BINARY_NODES)return false;if(!r->format)phv_ws(r);if(r->p==r->end)return false;v->begin=r->p;
- if(r->format){binary_reader b={.p=r->p,.end=r->end,.f=r->format};binary_item item={0};if(!binary_token(&b,&item))return false;r->p=b.p;v->kind=item.kind;if(item.kind==PHV_REAL)v->real=item.real;else v->count=item.n;v->text=item.text;v->size=item.kind==PHV_TEXT?(size_t)item.n:0;}
+ if(r->format){binary_reader b={.p=r->p,.end=r->end,.f=r->format};binary_item item={0};if(!binary_token(&b,&item))return false;r->p=b.p;v->kind=item.kind;if(item.kind==PHV_REAL)v->real=item.real;else v->count=item.n;v->text=item.text;v->size=(item.kind==PHV_TEXT||item.kind==PHV_BYTES)?(size_t)item.n:0;}
  else {
   unsigned c=*r->p;
   if(c=='"'){if(!phv_json_string(r,v))return false;}
@@ -82,7 +82,7 @@ static __attribute__((noinline)) bool phv_skip_validated(phv_reader *r,ph_value 
  memset(v,0,sizeof(*v));v->format=r->format;v->begin=r->p;
  if(r->format){
   binary_reader b={.p=r->p,.end=r->end,.f=r->format};binary_item item={0};
-  if(!binary_token(&b,&item))return false;v->kind=item.kind;v->text=item.text;v->size=item.kind==PHV_TEXT?(size_t)item.n:0;
+  if(!binary_token(&b,&item))return false;v->kind=item.kind;v->text=item.text;v->size=(item.kind==PHV_TEXT||item.kind==PHV_BYTES)?(size_t)item.n:0;
   unsigned pending=item.kind==PHV_MAP?(unsigned)item.n*2:item.kind==PHV_ARRAY?(unsigned)item.n:0;
   while(pending){if(!binary_token(&b,&item))return false;pending--;if(item.kind==PHV_MAP)pending+=(unsigned)item.n*2;else if(item.kind==PHV_ARRAY)pending+=(unsigned)item.n;}
   r->p=b.p;
@@ -134,6 +134,7 @@ static bool phv_scan(phv_reader *r,ph_value *v,unsigned depth,bool validate){
 }
 
 bool phv_parse(ph_wire_format format,const void *bytes,size_t size,ph_value *out){if(!out)return false;memset(out,0,sizeof(*out));out->kind=PHV_MISSING;if(!bytes||!size||size>PH_BINARY_BYTES||(format!=PH_WIRE_MSGPACK&&format!=PH_WIRE_CBOR))return false;phv_reader r={bytes,(const unsigned char *)bytes+size,format,0};if(!phv_scan(&r,out,0,true))return false;if(!format)phv_ws(&r);return r.p==r.end;}
+bool phv_bytes(const ph_value *v,const void **bytes,size_t *size){if(!v||v->kind!=PHV_BYTES||!bytes||!size)return false;*bytes=v->text;*size=v->size;return true;}
 bool phv_text(const ph_value *v,char *text,size_t capacity){if(!v||v->kind!=PHV_TEXT||!text||!capacity)return false;if(!v->format)return phv_unquote(v->text,v->text+v->size,text,capacity,NULL);if(v->size>=capacity)return false;memcpy(text,v->text,v->size);text[v->size]=0;return true;}
 bool phv_equal_text(const ph_value *v,const char *text){
  if(!v||v->kind!=PHV_TEXT||!text)return false;if(v->format)return strlen(text)==v->size&&!memcmp(v->text,text,v->size);
@@ -174,6 +175,7 @@ static void phw_prefix(ph_writer *w,const char *key){if(w->failed)return;if(w->r
 void phw_begin(ph_writer *w,const char *key,bool array){phw_prefix(w,key);if(w->failed)return;if(w->depth>=PHW_DEPTH){w->failed=true;return;}unsigned d=w->depth++;w->arrays[d]=array;w->counts[d]=0;w->starts[d]=(size_t)w->wire->bpos;if(w->format){unsigned char b[3]={w->format==PH_WIRE_CBOR?(array?0x99:0xb9):(array?0xdc:0xde),0,0};phw_bytes(w,b,3);}else phw_bytes(w,array?"[":"{",1);}
 void phw_end(ph_writer *w){if(w->failed)return;if(!w->depth){w->failed=true;return;}unsigned d=--w->depth;if(w->format){size_t p=w->starts[d];if(w->wire->buf){w->wire->buf[p+1]=(char)(w->counts[d]>>8);w->wire->buf[p+2]=(char)w->counts[d];}}else phw_bytes(w,w->arrays[d]?"]":"}",1);}
 void phw_text_n(ph_writer *w,const char *key,const char *text,size_t size){phw_prefix(w,key);if(!text){w->failed=true;return;}phw_quote(w,text,size);}
+void phw_bytes_value(ph_writer *w,const char *key,const void *bytes,size_t size){phw_prefix(w,key);if(!w->format||(!bytes&&size)){w->failed=true;return;}phw_head(w,PHV_BYTES,size);phw_bytes(w,bytes,size);}
 void phw_text(ph_writer *w,const char *key,const char *text){if(!text){w->failed=true;return;}phw_text_n(w,key,text,strlen(text));}
 static void phw_digits(ph_writer *w,uint64_t n,bool negative){char b[24];unsigned count=0;do{b[count++]=(char)('0'+n%10);n/=10;}while(n);if(negative)b[count++]='-';for(unsigned i=0;i<count/2;i++){char c=b[i];b[i]=b[count-1-i];b[count-1-i]=c;}phw_bytes(w,b,count);}
 void phw_uint(ph_writer *w,const char *key,uint64_t n){phw_prefix(w,key);if(n>PH_BINARY_SAFE){w->failed=true;return;}if(w->format)phw_head(w,0,n);else phw_digits(w,n,false);}
@@ -198,6 +200,7 @@ static void phw_visit(ph_writer *w,const char *key,const ph_value *v,bool canoni
    case PHV_REAL:phw_number(w,key,current.real);break;
    case PHV_FALSE:case PHV_TRUE:phw_bool(w,key,current.kind==PHV_TRUE);break;
    case PHV_NULL:phw_null(w,key);break;
+   case PHV_BYTES:phw_bytes_value(w,key,current.text,current.size);break;
    case PHV_TEXT:
     if(current.format)phw_text_n(w,key,(const char *)current.text,current.size);
     else {size_t n;if(!phv_unquote(current.text,current.text+current.size,NULL,0,&n)){w->failed=true;return;}

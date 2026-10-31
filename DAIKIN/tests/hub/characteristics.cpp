@@ -2,6 +2,7 @@
 // The two methods under test are extracted verbatim from HomeSpan.cpp. Only
 // their SDK/service dependencies are replaced; parsing and PASS 1/2 are real.
 #include "IoTCloudValues.h"
+#include "IoTCloudJson.h"
 #include <algorithm>
 #include <cassert>
 #include <cstdio>
@@ -18,7 +19,6 @@ static unsigned long millis(){return 100;}
 static int nvs_set_u64(unsigned,const char *,uint64_t){assert(false);return 0;}
 static int nvs_set_str(unsigned,const char *,const char *){assert(false);return 0;}
 static int nvs_commit(unsigned){assert(false);return 0;}
-static char *stripBackslash(char *text){return text;}
 struct HAPClient {};
 struct SpanService {
   unsigned calls=0;
@@ -41,6 +41,7 @@ struct SpanCharacteristic {
   SpanService *service;
   char *nvsKey=nullptr,*validValues=nullptr;
   uint8_t updateFlag=0;
+  uint8_t iotcloudStringLimit=0;
   unsigned long updateTime=0;
   SpanCharacteristic(FORMAT type,SpanService &owner,uint32_t id):iid(id),format(type),service(&owner){}
   ~SpanCharacteristic(){if(format>=STRING){free(value.STRING);free(newValue.STRING);}}
@@ -96,6 +97,7 @@ struct Span {
     return nullptr;
   }
   int updateCharacteristics(char *,SpanBuf *,int);
+  int countCharacteristics(char *);
 } homeSpan;
 #include "characteristic-methods.inc"
 
@@ -234,5 +236,42 @@ int main(){
   assert(request(row(30," \"new name\" "),rows) && rows[0].status==StatusCode::OK);
   assert(!strcmp(label.value.STRING,"new name") && !label.updateFlag);
   assert(load(label,"unquoted")==StatusCode::InvalidValue && !strcmp(label.value.STRING,"new name"));
+  for(const auto &name: {std::string("卧室, M1: [客厅] {温度} \"aid\" \\ name"),
+                        std::string("温度😀"),std::string(63,'a')}){
+    rows=std::vector<SpanBuf>(1);
+    assert(request(row(30,homeJsonQuote<std::string>(name.c_str())),rows));
+    assert(rows[0].status==StatusCode::OK && label.value.STRING==name);
+  }
+  assert(load(label,"\"\\u4e2d\\u6587\\ud83d\\ude00\"")==StatusCode::TBD);
+  assert(!strcmp(label.newValue.STRING,"中文😀"));label.updateFlag=0;
+  assert(load(label,"\"\\\"\\\\\\/\\b\\f\\n\\r\\t\"")==StatusCode::TBD);
+  assert(!strcmp(label.newValue.STRING,"\"\\/\b\f\n\r\t"));label.updateFlag=0;
+  for(const auto &bad:{std::string("\"\\u0000\""),std::string("\"\\ud800\""),
+      std::string("\"\\ud800\\u0041\""),std::string("\"\\udc00\""),
+      std::string("\"\\u12\""),std::string("\"\\q\""),std::string("\"abc\\\""),
+      std::string("\"a\n\""),std::string("\"\xc0\xaf\""),std::string("\"\xed\xa0\x80\"")}){
+    const std::string old=label.newValue.STRING;
+    assert(load(label,bad)==StatusCode::InvalidValue && label.newValue.STRING==old && !label.updateFlag);
+  }
+  const unsigned oldTextCalls=textService.calls,oldCommands=commands;
+  for(const auto &bad:{"\"truncated", "\"\\q\"", "\"a\" junk", "[1]", "{\"a\":1}"}){
+    rows=std::vector<SpanBuf>(1);assert(!request(row(30,bad),rows));
+    assert(textService.calls==oldTextCalls && commands==oldCommands && !label.updateFlag);
+  }
+  // A late malformed row must not dispatch an earlier, valid control.
+  rows=std::vector<SpanBuf>(2);
+  assert(!request(row(10,"0")+","+row(30,"\"\\q\""),rows));
+  assert(commands==oldCommands && active.value.UINT8==1 && !active.updateFlag);
+  textService.action=[](){return false;};
+  const std::string beforeName=label.value.STRING;
+  rows=std::vector<SpanBuf>(1);
+  assert(request(row(30,"\"rejected\""),rows) && rows[0].status==StatusCode::Unable);
+  assert(label.value.STRING==beforeName && label.newValue.STRING==beforeName && !label.updateFlag);
+  label.iotcloudStringLimit=31;
+  for(const auto &bad:{std::string(),std::string(32,'x'),std::string(8000,'x'),std::string("中中中中中中中中中中中")}){
+    assert(load(label,homeJsonQuote<std::string>(bad.c_str()))==StatusCode::InvalidValue);
+    assert(label.newValue.STRING==beforeName && !label.updateFlag);
+  }
+  assert(load(label,homeJsonQuote<std::string>(std::string(31,'x').c_str()))==StatusCode::TBD);
   puts("HAP characteristic validation and service dispatch passed");
 }

@@ -17,7 +17,7 @@
 
 
 #define HTTP_PENDING_CLIENTS PH_HTTP_WAIT_SLOTS
-#define HTTP_TCP_CLIENT_LIMIT 4
+#define HTTP_TCP_CLIENT_LIMIT PH_HTTP_CLIENT_SLOTS
 #define http_diag_t ph_http_diagnostics
 #define http_diag_snapshot ph_http_snapshot
 static ph_http_product product;
@@ -71,7 +71,7 @@ cancel:
 
 static ph_http_action prepare(ph_http_exchange *x)
 {
-    if(operation!=AUTH && !http_auth_authorized(x->request->authorization)){
+    if(operation!=AUTH && !http_auth_authorized(&product,x->request->authorization)){
         http_auth_reply(&product,x,401,"unauthorized",NULL);return PH_HTTP_REPLY;
     }
     if(operation==MCU_BULK) {
@@ -113,7 +113,7 @@ static ph_http_action begin(ph_http_exchange *x)
         operation=AUTH;return prepare(x);
     }
     bool asset=!strcmp(r->path,"/")||!strcmp(r->path,"/index.html")||!strcmp(r->path,"/favicon.ico");
-    if(!asset && !http_auth_authorized(r->authorization)){
+    if(!asset && !http_auth_authorized(&product,r->authorization)){
         http_auth_reply(&product,x,401,"unauthorized",NULL);return PH_HTTP_REPLY;
     }
     if(strncmp(r->path,"/api/v1/",8) && strcmp(r->path,"/") && strcmp(r->path,"/index.html") && strcmp(r->path,"/favicon.ico")) {
@@ -192,7 +192,7 @@ static bool body_chunk(ph_http_exchange *x,const void *data,size_t n)
 }
 static void complete(ph_http_exchange *x)
 {
-    if(operation!=AUTH && !http_auth_authorized(x->request->authorization)){
+    if(operation!=AUTH && !http_auth_authorized(&product,x->request->authorization)){
         http_auth_reply(&product,x,401,"unauthorized",NULL);return;
     }
     if(operation==AUTH){http_auth_complete(&product,x);return;}

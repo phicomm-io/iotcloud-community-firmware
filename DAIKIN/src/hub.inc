@@ -9,9 +9,12 @@ static size_t hubByteHeap() {
 static size_t hubByteBlock() {
   return heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
 }
+static bool hubAllocationReady(size_t total, size_t largest) {
+  return total <= size_t(-1) - 16384 && hubByteHeap() > total + 16384 &&
+         hubByteBlock() > largest;
+}
 static bool hubAllocationReady(size_t n) {
-  return n <= size_t(-1) - 16384 && hubByteHeap() > n + 16384 &&
-         hubByteBlock() > n;
+  return hubAllocationReady(n, n);
 }
 static bool hubReload = false, hubCredentials = false, hubBirth = false;
 static std::atomic<bool> hubRestoring{false};
@@ -32,46 +35,12 @@ struct HubMessage {
 // completed messages; idle sources do not need permanent working buffers.
 static std::unique_ptr<HubMessage> hubMessages[2];
 static QueueHandle_t hubInbox = nullptr;
-static String hubHex(const uint8_t *data, size_t n) {
-  String s;
-  s.reserve(n * 2);
-  for (size_t i = 0; i < n; i++) {
-    s += "0123456789abcdef"[data[i] >> 4];
-    s += "0123456789abcdef"[data[i] & 15];
-  }
-  return s;
-}
 static std::string hubRandom(size_t n) {
-  if (n > 32)
-    return {};
-  uint8_t bytes[32];
-  esp_fill_random(bytes, n);
-  String hex = hubHex(bytes, n);
-  memset(bytes, 0, sizeof(bytes));
-  return std::string(hex.c_str());
-}
-static std::string hubDerive(const std::string &password,
-                             const std::string &salt) {
-  uint8_t digest[32];
-#if MBEDTLS_VERSION_MAJOR >= 3
-  bool ok = mbedtls_pkcs5_pbkdf2_hmac_ext(MBEDTLS_MD_SHA256,
-      (const uint8_t *)password.data(), password.size(),
-      (const uint8_t *)salt.data(), salt.size(),
-      10000, sizeof(digest), digest) == 0;
-#else
-  mbedtls_md_context_t ctx;
-  mbedtls_md_init(&ctx);
-  bool ok = mbedtls_md_setup(&ctx, mbedtls_md_info_from_type(MBEDTLS_MD_SHA256),
-                             1) == 0 &&
-            mbedtls_pkcs5_pbkdf2_hmac(&ctx, (const uint8_t *)password.data(),
-                                      password.size(),
-                                      (const uint8_t *)salt.data(), salt.size(),
-                                      10000, sizeof(digest), digest) == 0;
-  mbedtls_md_free(&ctx);
-#endif
-  String result = ok ? hubHex(digest, sizeof(digest)) : String("");
-  memset(digest, 0, sizeof(digest));
-  return std::string(result.c_str());
+  if (n > 32) return {};
+  uint8_t bytes[32];esp_fill_random(bytes,n);
+  std::string text;text.reserve(n*2);
+  for(size_t i=0;i<n;++i){text += "0123456789abcdef"[bytes[i]>>4];text += "0123456789abcdef"[bytes[i]&15];}
+  memset(bytes,0,sizeof(bytes));return text;
 }
 static bool hubCapture(esp_mqtt_event_handle_t event, unsigned source) {
   if (!event || hubRestoring || !hubInbox || source > 1) return false;
@@ -222,8 +191,7 @@ static void hubRestoreChanged() {
   // synchronously; no callback or next loop iteration may use its sessions.
   hubRestoring = true;
   homeQuiesce();
-  hubService.clearSessions();
-  hubHttpToken = "";
+  hubHttpCommand.cancel("restart_required");
   hubDeviceBus.dispatch = nullptr;
   hubLanReset();
   stopMqtt();
@@ -240,25 +208,22 @@ static void hubApiExecute() {
   if (hubRestoring) {
     hubHttpStatus = 503;
     webResult = "{\"code\":\"restart_required\"}";
-    hubHttpToken = "";
     return;
   }
   if (configRecovery) {
     hubHttpStatus = 409;
     webResult = "{\"code\":\"migration_required\"}";
-    hubHttpToken = "";
     return;
   }
+  if(hubHttpCommandStart())return;
   if (hubByteHeap() < hubService.workingMemory(hubHttpRequest) ||
       hubByteBlock() < hubService.largestAllocation(hubHttpRequest)) {
     hubHttpStatus = 503;
     webResult = "{\"code\":\"busy\"}";
-    hubHttpToken = "";
     return;
   }
   auto reply = hubService.handle(hubHttpRequest, millis());
   hubHttpStatus = reply.status;
-  hubHttpToken = reply.token.c_str();
   webResult = reply.body.c_str();
 }
 static void hubLocalPublish(const String &topic, const String &body,
@@ -304,16 +269,17 @@ static void hubInit() {
   hubService.localMac = deviceId.c_str();
   hubService.homeStatus = homeStatus;
   hubService.lanStatus = hubLanStatus;
+  hubService.deviceMetadata = hubDeviceMetadata;
   hubService.homeReset = homeReset;
   hubHome.randomHex = hubRandom;
   hubService.randomHex = hubRandom;
-  hubService.derive = hubDerive;
   hubService.store = saveConfig;
   hubService.changed = [](bool credentials) {
     hubReload = true;
     hubCredentials |= credentials;
   };
   hubService.bemfaStatus = []() { return hubRelay.status; };
+  if(!configRecovery&&!hubService.initializeIdentity())configRecovery=true;
   hubDeviceBus.dispatch = [](const std::string &topic,const std::string &body,
                               bool retain,iotcloud::HubDeviceBus::Origin origin) {
     if(hubRestoring || configRecovery)return false;

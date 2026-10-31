@@ -1,43 +1,58 @@
-#define main cache_fixture_main
-#include "status_cache.cpp"
+#define main auth_storage_fixture_main
+#include "../auth_storage.cpp"
 #undef main
-static bool localAuthReady=true,storageOkay=true;
-static const size_t configCapacity=16384;
-static const unsigned LC_PAIR=1,LC_RESUME=2,LC_READY=3,LC_FAILED=4,LC_UNPAIR=5,LC_SLOTS=12;
-struct lc_job{unsigned phase=LC_READY;};
-struct {}lanClient,lanOps;
-static lc_job job;
-static unsigned saves=0,starts=0;
-static std::string startedIP;
-static void initLanClient(){}
-struct IPAddress{bool fromString(const char *ip){return ip&&(!strcmp(ip,"192.0.2.10")||!strcmp(ip,"192.0.2.20"));}};
-static bool lc_peer(const char *peer){return peer&&strlen(peer)==12;}
-static lc_job *lc_find(decltype(lanClient)*,const char *,bool){return &job;}
-static bool saveConfig(DynamicJsonDocument &candidate){
- ++saves;if(!storageOkay)return false;return config.set(candidate);
+#include <arpa/inet.h>
+struct IPAddress{bool fromString(const char *ip){in_addr address;return ip&&inet_pton(AF_INET,ip,&address)==1;}};
+static bool knownFields(JsonObjectConst object,const char *allowed){
+ for(JsonPairConst entry:object){const std::string key=std::string("|")+entry.key().c_str()+"|";if(!strstr(allowed,key.c_str()))return false;}return true;
 }
-static bool lc_start(decltype(lanClient)*,decltype(lanOps)*,const char *peer,const char *ip,const char *password,unsigned scopes,const char **code){
- // The persistence hook must have succeeded before the pairing machine starts.
- assert(config["lan_peers"][0]["peer"]==peer&&config["lan_peers"][0]["ip"]==ip);
- assert(!strcmp(password,"host-test-password")&&scopes==1);
- ++starts;startedIP=ip;*code="accepted";return true;
+static bool validSection(const String&,JsonObjectConst){return true;}
+namespace iotcloud{struct HubService{static bool valid(JsonVariantConst){return true;}};}
+#include "route-valid.inc"
+static const char *TC1="aabbccddee01",*S30="aabbccddee02",*KEY="1234567890abcdef1234567890abcdef";
+static std::string configSnapshot(){std::string text;serializeJson(config,text);return text;}
+static bool pairStore(const char *peer,const char *ip,const char *key=KEY){
+ lanPairRoutePeer=peer;lanPairRouteIP=ip;
+ const bool result=ph_auth_remote_store(&localAuth,peer,key,PH_AUTH_SCOPE_CONTROL,ph_auth_credential_epoch(&localAuth));
+ lanPairRoutePeer=nullptr;lanPairRouteIP=nullptr;return result;
 }
-#include "pair-route.inc"
+static void setup(){
+ prefs.values.clear();prefs.mode=Preferences::OK;legacy="{}";boot();
+ DynamicJsonDocument next(configCapacity);next.set(config);auto fixed=next.createNestedArray("lan_peers").createNestedObject();fixed["peer"]=TC1;fixed["ip"]="192.0.2.10";assert(saveConfig(next));
+ assert(ph_auth_remote_store(&localAuth,TC1,KEY,PH_AUTH_SCOPE_CONTROL,ph_auth_credential_epoch(&localAuth)));
+}
 int main(){
- auto peers=config.createNestedArray("lan_peers");auto peer=peers.createNestedObject();
- peer["peer"]="001122334455";peer["ip"]="192.0.2.10";
- const char *code=nullptr;
- assert(lanPairStart("001122334455","192.0.2.20","host-test-password",1,&code));
- assert(saves==1&&starts==1&&startedIP=="192.0.2.20"&&!strcmp(code,"accepted"));
- assert(config["lan_peers"].size()==1);std::string text;serializeJson(config,text);
- assert(text.find("host-test-password")==std::string::npos&&text.find("password")==std::string::npos);
- storageOkay=false;
- assert(!lanPairStart("001122334455","192.0.2.10","host-test-password",1,&code));
- assert(saves==2&&starts==1&&!strcmp(code,"storage_error")&&config["lan_peers"][0]["ip"]=="192.0.2.20");
- storageOkay=true;
- for(unsigned phase:{LC_PAIR,LC_RESUME,LC_UNPAIR}){
- job.phase=phase;
- assert(!lanPairStart("001122334455","192.0.2.10","host-test-password",1,&code));
- assert(saves==2&&starts==1&&!strcmp(code,"busy")&&config["lan_peers"][0]["ip"]=="192.0.2.20");
- }
+ setup();const auto original=configSnapshot();const ph_auth_store originalStore=localAuth.store;
+ assert(pairStore(S30,"192.0.2.20"));assert(lanRouteMatches(S30,"192.0.2.20")&&config["lan_peers"][1]["pair_created"]==true);
+ assert(validConfig(config.as<JsonObjectConst>()));boot();assert(lanRouteMatches(S30,"192.0.2.20"));
+ assert(ph_auth_remote_remove(&localAuth,S30));assert(configSnapshot()==original&&!memcmp(&localAuth.store,&originalStore,sizeof(originalStore)));
+ boot();assert(configSnapshot()==original&&!memcmp(&localAuth.store,&originalStore,sizeof(originalStore)));
+ puts("authenticated new pin+key -> reboot -> unpair: exact old config+TC1 table PASS");
+ // Old imported fixed-IP pins remain after explicit update and revocation.
+ assert(pairStore(TC1,"192.0.2.30","abcdef1234567890abcdef1234567890"));
+ assert(config["lan_peers"].size()==1&&!config["lan_peers"][0].containsKey("pair_created"));
+ assert(ph_auth_remote_remove(&localAuth,TC1));assert(lanRouteMatches(TC1,"192.0.2.30"));
+ puts("old fixed pin update and unpair preserve imported pin semantics PASS");
+ setup();const auto before=prefs.values;const auto beforeConfig=configSnapshot();const auto beforeStore=localAuth.store;
+ prefs.mode=Preferences::FAIL_OLD;assert(!pairStore(S30,"192.0.2.20"));
+ assert(configSnapshot()==beforeConfig&&!memcmp(&localAuth.store,&beforeStore,sizeof(beforeStore))&&prefs.values==before&&configRecovery);
+ prefs.mode=Preferences::OK;boot();assert(!lanRouteMatches(S30,"192.0.2.20"));assert(!lanRouteRecord(localAuth.store,S30));
+ // An uncertain write may reload a complete new generation, never half.
+ prefs.mode=Preferences::FAIL_NEW;assert(!pairStore(S30,"192.0.2.20"));
+ assert(configSnapshot()==beforeConfig&&!memcmp(&localAuth.store,&beforeStore,sizeof(beforeStore))&&configRecovery);
+ prefs.mode=Preferences::OK;boot();assert(lanRouteMatches(S30,"192.0.2.20")&&lanRouteRecord(localAuth.store,S30));
+ const auto pairedConfig=configSnapshot();const auto pairedStore=localAuth.store;const auto pairedBytes=prefs.values;
+ prefs.mode=Preferences::FAIL_OLD;assert(!ph_auth_remote_remove(&localAuth,S30));
+ assert(configSnapshot()==pairedConfig&&!memcmp(&localAuth.store,&pairedStore,sizeof(pairedStore))&&prefs.values==pairedBytes);
+ prefs.mode=Preferences::OK;boot();assert(ph_auth_remote_remove(&localAuth,S30));assert(configSnapshot()==beforeConfig);
+ puts("NVS failed save/revoke keep both RAM parts old; reload sees whole generation PASS");
+ // Staged routing cannot bleed into an unrelated inbound-pair write.
+ setup();lanPairRoutePeer=S30;lanPairRouteIP="192.0.2.20";char key[33];
+ assert(ph_auth_pair(&localAuth,"","aabbccddee03",PH_AUTH_SCOPE_SENSOR,key));
+ lanPairRoutePeer=nullptr;lanPairRouteIP=nullptr;assert(!lanRouteMatches(S30,"192.0.2.20"));
+ DynamicJsonDocument imported(2048);auto peer=imported.createNestedArray("lan_peers").createNestedObject();peer["peer"]=S30;peer["ip"]="192.0.2.20";
+ assert(validConfig(imported.as<JsonObjectConst>()));peer["pair_created"]=true;assert(validConfig(imported.as<JsonObjectConst>()));
+ for(const char *wire:{"false","1","\"true\"","null"}){DynamicJsonDocument value(128);assert(!deserializeJson(value,wire));peer["pair_created"].set(value.as<JsonVariantConst>());assert(!validConfig(imported.as<JsonObjectConst>()));}
+ peer["pair_created"]=true;peer["unexpected"]=true;assert(!validConfig(imported.as<JsonObjectConst>()));
+ puts("old two-field imports and true marker accepted; malformed marker/fields denied PASS");
 }

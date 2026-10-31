@@ -2,7 +2,7 @@
 
 TC1 智能排插固件提供六路插座开关、计量、童锁、指示灯和定时任务。本文介绍安装后的日常操作；首次安装见[免拆图文教程](tc1-no-disassembly-ethernet-wifi-ap)或[有线刷机与恢复](tc1-flash)。
 
-**日常使用选择稳定版 v0.9.27；v1.0.0-rc.4 用于 Beta 测试。** 版本要求与累计变化见[候选版完整更新记录](release-log.html?channel=candidate)。
+**日常使用选择稳定版 v0.9.27；v1.0.0-rc.5 用于 Beta 测试。** 版本要求与累计变化见[候选版完整更新记录](release-log.html?channel=candidate)。
 
 ## 首页与插座控制
 

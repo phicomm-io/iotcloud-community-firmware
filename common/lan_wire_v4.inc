@@ -87,7 +87,7 @@ bool lan_v4_encode(ph_writer *w,const lan_v4_packet *p)
     phw_end(w);return !w->failed;
 }
 void lan_v4_server_release(lan_v4_server *s)
-{if(s){ph_buf_free(s->response);s->response=NULL;s->response_id=0;}}
+{if(s){PH_LAN_V4_BUFFER_FREE(s->response);s->response=NULL;s->response_id=0;}}
 void lan_v4_server_expire(lan_v4_server *s,const lan_v4_ops *o)
 {
     if(s->response&&(uint32_t)(o->now(o->user)-s->response_at)>=LAN_V4_RESPONSE_MS)lan_v4_server_release(s);
@@ -103,11 +103,11 @@ static bool lv4_emit(lan_v4_server *s,const lan_v4_ops *o,const lan_v4_packet *p
     strcpy(reply.src,o->local);strcpy(reply.dst,p->src);reply.boot=o->boot;reply.request_boot=p->boot;reply.id=p->id;
     memcpy(reply.token,p->token,16);strcpy(reply.code,code);
     if(!strcmp(code,"ok")){
-        reply.size=(uint16_t)s->response->len;reply.total=(reply.size+LAN_V4_CHUNK-1)/LAN_V4_CHUNK;reply.part=(uint16_t)part;
-        size_t offset=part*LAN_V4_CHUNK;if(offset>=s->response->len)return false;
-        reply.body=s->response->buf+offset;reply.body_length=s->response->len-offset;if(reply.body_length>LAN_V4_CHUNK)reply.body_length=LAN_V4_CHUNK;
+        reply.size=(uint16_t)PH_LAN_V4_BUFFER_LENGTH(s->response);reply.total=(reply.size+LAN_V4_CHUNK-1)/LAN_V4_CHUNK;reply.part=(uint16_t)part;
+        size_t offset=part*LAN_V4_CHUNK;if(offset>=PH_LAN_V4_BUFFER_LENGTH(s->response))return false;
+        reply.body=s->response->buf+offset;reply.body_length=PH_LAN_V4_BUFFER_LENGTH(s->response)-offset;if(reply.body_length>LAN_V4_CHUNK)reply.body_length=LAN_V4_CHUNK;
     }
-    ph_writer w;ph_buf b;
+    ph_writer w;PH_LAN_V4_BUFFER b;
     if(cap>LAN_V4_FRAME_MAX)cap=LAN_V4_FRAME_MAX;
     if(!phw_init_fixed(&w,PH_WIRE_MSGPACK,&b,scratch,cap)||!lan_v4_encode(&w,&reply))return false;
     size_t length=phw_finish_fixed(&w);return length&&o->send(o->user,ip,port,scratch,length);
@@ -135,7 +135,7 @@ bool lan_v4_server_input(lan_v4_server *s,const lan_v4_ops *o,const lan_v4_packe
         if(!r->used||r->last_id!=p->id)return lv4_emit(s,o,p,ip,port,"expired",0,scratch,capacity);
         if(p->op==LAN_V4_ACK){if(s->response&&s->response_slot==slot&&s->response_id==p->id)lan_v4_server_release(s);return lv4_emit(s,o,p,ip,port,"acked",0,scratch,capacity);}
         if(!s->response||s->response_slot!=slot||s->response_id!=p->id)return lv4_emit(s,o,p,ip,port,"expired",0,scratch,capacity);
-        if(p->part>=(s->response->len+LAN_V4_CHUNK-1)/LAN_V4_CHUNK)return lv4_emit(s,o,p,ip,port,"invalid_params",0,scratch,capacity);
+        if(p->part>=(PH_LAN_V4_BUFFER_LENGTH(s->response)+LAN_V4_CHUNK-1)/LAN_V4_CHUNK)return lv4_emit(s,o,p,ip,port,"invalid_params",0,scratch,capacity);
         return lv4_emit(s,o,p,ip,port,"ok",p->part,scratch,capacity);
     }
     uint8_t digest[32];if(!o->digest(o->user,p->body,p->body_length,digest))return lv4_emit(s,o,p,ip,port,"busy",0,scratch,capacity);
@@ -148,13 +148,13 @@ bool lan_v4_server_input(lan_v4_server *s,const lan_v4_ops *o,const lan_v4_packe
     /* A new id from this owner implicitly releases its previous response.
      * Never construct a second full response while retaining the first. */
     lan_v4_server_release(s);
-    bool admitted=true;ph_buf *response=o->dispatch(o->user,p->body,p->body_length,&context,&admitted);
-    if(!admitted){ph_buf_free(response);return lv4_emit(s,o,p,ip,port,"busy",0,scratch,capacity);}
+    bool admitted=true;PH_LAN_V4_BUFFER *response=o->dispatch(o->user,p->body,p->body_length,&context,&admitted);
+    if(!admitted){PH_LAN_V4_BUFFER_FREE(response);return lv4_emit(s,o,p,ip,port,"busy",0,scratch,capacity);}
     /* Commit the high-water mark even if encoding/IO fails after a mutation. */
     r->used=true;r->context=context;r->boot=p->boot;r->last_id=p->id;
     memcpy(r->token,p->token,16);memcpy(r->digest,digest,32);
     if(!response)return lv4_emit(s,o,p,ip,port,"expired",0,scratch,capacity);
-    if(!response->len||response->len>LAN_V4_RESPONSE_MAX){ph_buf_free(response);return lv4_emit(s,o,p,ip,port,"too_large",0,scratch,capacity);}
+    if(!PH_LAN_V4_BUFFER_LENGTH(response)||PH_LAN_V4_BUFFER_LENGTH(response)>LAN_V4_RESPONSE_MAX){PH_LAN_V4_BUFFER_FREE(response);return lv4_emit(s,o,p,ip,port,"too_large",0,scratch,capacity);}
     s->response=response;s->response_at=o->now(o->user);s->response_id=p->id;s->response_slot=slot;
     return lv4_emit(s,o,p,ip,port,"ok",0,scratch,capacity);
 }

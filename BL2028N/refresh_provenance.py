@@ -36,6 +36,9 @@ def main():
     manifest.pop('wire_bundle_sha256', None)
     manifest['files']['protocol/diagnostics_ids.h'] = {'source': 'common/diagnostics_ids.h'}
     manifest['files']['protocol/mqtt/discovery_mp.h'] = {'source': 'common/mqtt/discovery_mp.h'}
+    manifest['files']['protocol/httpd/basic.h'] = {'source': 'common/httpd/basic.h'}
+    for name in ('lan_policy.h', 'lan_auth.inc', 'lan_wire_v4.h', 'lan_wire_v4.inc'):
+        manifest['files']['common/' + name] = {'source': 'common/' + name}
     manifest['files']['web/index.html'] = {'source': 'frontend/S30/web/index.html'}
     manifest['files']['web/page.js'] = {'source': 'frontend/S30/web/page.js'}
     manifest['files']['web/shared/diagnostics-schema.js'] = {'source': 'frontend/common/web/diagnostics-schema.js'}
@@ -62,7 +65,8 @@ def main():
         item['sha256'] = digest(adapted)
         if item.get('extraction'):
             item['base_sha256'] = digest(base)
-        patches[dest.split('/')[0]].extend(difflib.unified_diff(
+        patch_group = 'web' if dest.startswith('web/') else 'protocol'
+        patches[patch_group].extend(difflib.unified_diff(
             base.decode().splitlines(True), adapted.decode().splitlines(True),
             fromfile='a/' + dest, tofile='b/' + dest))
     # The auth bundle carries the actual binary codec and device discovery.
@@ -88,6 +92,8 @@ def main():
         raw = ''.join(patches[key]).encode()
         (HERE / rel).write_bytes(raw)
         manifest['adaptation_patch_sha256'][rel] = digest(raw)
+    for path in sorted((HERE / 'patches').glob('*.patch')):
+        manifest['adaptation_patch_sha256'][str(path.relative_to(HERE))] = digest(path.read_bytes())
     archive = io.BytesIO()
     with gzip.GzipFile(fileobj=archive, mode='wb', mtime=0) as compressed:
         with tarfile.open(fileobj=compressed, mode='w') as tar:

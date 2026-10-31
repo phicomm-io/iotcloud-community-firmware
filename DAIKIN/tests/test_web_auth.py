@@ -50,22 +50,25 @@ static int httpd_req_recv(httpd_req_t *req,char *out,int n){int count=std::min(n
 static ph_auth_state localAuth;static bool localAuthReady=true,configRecovery=false;
 #include "auth.inc"
 static httpd_req_t login(const char *password){httpd_req_t req;DynamicJsonDocument doc(512);doc["password"]=password;serializeMsgPack(doc,req.body);req.content_len=req.body.size();req.headers["Content-Type"]="application/msgpack";loginHandler(&req);assert(type=="application/msgpack");return req;}
-static std::string token(){DynamicJsonDocument doc(512);assert(!deserializeMsgPack(doc,response));return doc["data"]["token"]|"";}
+static std::string token(){DynamicJsonDocument doc(512);assert(!deserializeMsgPack(doc,response));std::string value=doc["data"]["token"]|"";assert(doc["data"]["password_required"].is<bool>()&&doc["data"]["password_required"].as<bool>()==!value.empty());return value;}
 int main(){
  (void)currentWebPassword;(void)millis;
  ph_auth_ops ops={};ops.now=[](void*){return clockMs;};ops.password=[](void*,char out[33]){strcpy(out,webPassword);return true;};ops.random=[](void*,uint8_t*out,size_t n){for(size_t i=0;i<n;i++)out[i]=uint8_t(++randomValue);return true;};ph_auth_store store;ph_auth_store_empty(&store);assert(ph_auth_init(&localAuth,&ops,&store));
- login("");assert(status=="200 OK");auto first=token();assert(first.size()==32);httpd_req_t auth;auth.headers["Authorization"]="Bearer "+first;assert(authorized(&auth));
- for(unsigned i=0;i<3;i++){login("");assert(status=="200 OK");}
- login("");assert(status=="503 Service Unavailable");assert(authorized(&auth));
+ httpd_req_t auth;assert(authorized(&auth));auth.headers["Authorization"]="Bearer stale";
+ for(unsigned i=0;i<8;i++){login("");assert(status=="200 OK"&&token().empty()&&authorized(&auth));}
+ for(const auto &slot:localAuth.http)assert(!slot.active);
+ logoutHandler(&auth);assert(status=="200 OK");
+ strcpy(webPassword,"adminfjr");assert(ph_auth_credential_commit(&localAuth,webPassword,false,[](void*,const ph_auth_store*){return true;},nullptr));assert(!authorized(&auth));login("");assert(status=="401 Unauthorized");
+ login("adminfjr");assert(status=="200 OK");auto first=token();assert(first.size()==32);auth.headers["Authorization"]="Bearer "+first;assert(authorized(&auth));
+ for(unsigned i=0;i<3;i++){login("adminfjr");assert(status=="200 OK");}
+ login("adminfjr");assert(status=="503 Service Unavailable");assert(authorized(&auth));
  logoutHandler(&auth);assert(status=="200 OK");assert(!authorized(&auth));
- login("");assert(status=="200 OK");auth.headers["Authorization"]="Bearer "+token();
- strcpy(webPassword,"adminfjr");assert(!authorized(&auth));login("");assert(status=="401 Unauthorized");
  login("adminfjr");assert(status=="200 OK");auth.headers["Authorization"]="Bearer "+token();assert(authorized(&auth));
  clockMs+=1800000;assert(!authorized(&auth));
  login("adminfjr");assert(status=="200 OK");auth.headers["Authorization"]="Bearer "+token();
  for(unsigned i=0;i<47;i++){clockMs+=1799999;assert(authorized(&auth));}clockMs+=1799999;assert(authorized(&auth));clockMs+=100;assert(!authorized(&auth));
  auto req=login("adminfjr");req.offset=0;req.body="{\"password\":\"adminfjr\"}";req.content_len=req.body.size();loginHandler(&req);assert(status=="400 Bad Request");
- req.headers["Authorization"]="Basic YWRtaW46YWRtaW5manI=";assert(!authorized(&req));
+ req.headers["Authorization"]="Basic YWRtaW46YWRtaW5manI=";assert(authorized(&req));
 }
 ''')
    objects=[]

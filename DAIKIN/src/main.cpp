@@ -33,6 +33,7 @@ extern "C" {
 #include "hub_lan_client.h"
 #include "hub_lan_queue.h"
 #include "hub_lan_result.h"
+#include "hub_http_command.h"
 #include <mdns.h>
 #include "hub_relay.h"
 #include "hub_home.h"
@@ -98,6 +99,7 @@ static void pollHome(uint32_t);
 static bool hubReady();
 static void pollLocalControls(uint32_t);
 static bool hubAllocationReady(size_t);
+static bool hubAllocationReady(size_t,size_t);
 static size_t hubByteHeap();
 static size_t hubByteBlock();
 static bool hubLanSend(const std::string &,const std::string &,bool);
@@ -233,7 +235,7 @@ void setup(){
   if(!prefs.begin("daikin",false)){Serial.println("NVS unavailable");while(true)delay(1000);}
   {
     String text=loadAuthConfigText();
-    if(deserializeJson(config,text)||!config.is<JsonObject>()||!validConfig(config.as<JsonObjectConst>())){
+    if(deserializeJson(config,text.c_str(),text.length())||!config.is<JsonObject>()||!validConfig(config.as<JsonObjectConst>())){
       configRecovery=true;config.clear();config.to<JsonObject>();Serial.println("Configuration recovery required");
     }
   }
@@ -293,10 +295,16 @@ void loop(){
 #endif
     }else{
 #ifdef IOTCLOUD_HUB
-    if(webOperation==3){if(otaActive){hubHttpStatus=503;hubHttpToken="";webResult="{\"code\":\"busy\"}";}else hubApiExecute();}else
+    if(webOperation==3){if(otaActive){hubHttpStatus=503;webResult="{\"code\":\"busy\"}";}else hubApiExecute();}else
 #endif
     if(webOperation==4){if(businessStatusReady)webResult=cachedHttpStatus();else webResult="{\"code\":\"busy\"}";}else webResult=otaActive?"{\"code\":\"busy\",\"message\":\"OTA active\"}":webOperation?backupExecute():execute(webBody);}
-    portENTER_CRITICAL(&webMux);webPending=false;webDone=true;portEXIT_CRITICAL(&webMux);}
+    portENTER_CRITICAL(&webMux);webPending=false;
+#ifdef IOTCLOUD_HUB
+    webDone=!hubHttpDeferred;
+#else
+    webDone=true;
+#endif
+    portEXIT_CRITICAL(&webMux);}
   if(mqttQueued){String body(mqttPending,mqttReceived);bool sensor=mqttSensorCommand;portENTER_CRITICAL(&mqttMux);mqttQueued=false;portEXIT_CRITICAL(&mqttMux);if(!otaActive){if(sensor)sessionGrant(body);else if(!sessionGrant(body))publish(mqttRoot+"/result",execute(body),false);}}
   if(mqttOnline){mqttOnline=false;
     DynamicJsonDocument doc(1024);capabilities(doc.to<JsonObject>());String text;serializeWireMP(doc,text);publish(mqttRoot+"/capabilities",text);publish(mqttRoot+"/availability","online");
@@ -311,7 +319,7 @@ void loop(){
   static bool previousHcho=false,previousPm10=false;
   if(previousHcho!=hchoPresent||previousPm10!=sensorPresent(PM10)){previousHcho=hchoPresent;previousPm10=sensorPresent(PM10);haBirth=true;}
   #ifdef IOTCLOUD_HUB
-  pollHub(now);
+  pollHub(now);pollHubHttpCommand(millis());
   const bool outputReady=mqttConnected||hubReady();
 #else
   const bool outputReady=mqttConnected;

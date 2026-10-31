@@ -78,6 +78,10 @@ python3 -m esptool --chip esp32 --port PORT write_flash 0 build/daikin-release/d
 
 `POST /api/v1/command` 使用 `{request_id?,action,params}` / `{request_id?,code,message,data}`，写请求需非空 request_id。支持 status/config/capabilities 查询、设备名称、网页密码、Wi-Fi/MQTT 设置、Wi-Fi 扫描、指示灯、重启与恢复出厂。最近八个写请求在本次启动中去重。串口 115200 也接受每行一个相同 JSON 请求，可用于本地诊断和配网；不会回显密码。
 
+Hub 变体的 `/iotcloud/` 管理页与设备设置共用 WebUI 管理密码和会话：未设置密码时直接访问且不创建登录会话；设置后支持 `admin` Basic 与 32 位十六进制 Bearer。`/api/auth/login`、`/api/auth/logout` 是同一鉴权的别名，Hub 不再有独立账户或密码。升级保留原 `hub.username` 路由命名空间、设备、转发、配对与 HomeKit 配置；首次使用自动建立 `admin` 命名空间。UDP 配对和外部 MQTT broker 认证继续独立生效。
+
+Hub 已注册、已配对并确认当前 IP 的设备可通过 `POST /api/hub/devices/<12位小写MAC>/command` 读取或控制，HTTP 请求和响应均为 MessagePack：`{action,params,request_id}` → `{code,data,request_id}`。原始业务请求经 UDP v4 转发，`status.get` 与 `capabilities.get` 返回设备完整响应；中枢本机也可使用同一接口。一次仅等待一个 HTTP 命令，其余请求返回 `busy`；等待上限 12 秒。排队、发送及返回结果前重新核验 WebUI 会话。写操作超时后先读取状态再决定下一次操作；写请求 ID 在 120 秒内禁止重新提交，读取状态不会挤掉写入记录。中枢最多同时保留 128 条有效写记录，满额时在执行前返回 `busy`，过期后回收。
+
 通过账号内 MQTT 的 `sensor/<mac>/command` 授权、UDP 11288 读取及五秒周期共享 MQTT 测量，为 A1 提供 LAN 优先、MQTT 备用的数据。会话仅在 RAM 保存；授权本身不显示已连接，实际读取后才显示在线状态。
 
 产品管理主题为 `phicomm/v2/<user_key>/daikin/<mac>/...`，使用 TMCP v2，拒绝 retained 命令，QoS1；配置不返回密码。提供 HA 传感器发现。现有云平台和 Broker ACL 必须允许新型号及下述通用传感器主题，不能根据本地固件构建结果推断生产平台已支持。

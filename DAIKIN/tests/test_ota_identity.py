@@ -15,6 +15,7 @@ import tempfile
 import unittest
 
 from cryptography.hazmat.primitives.asymmetric import ec
+from DAIKIN.tests.arduinojson import codec_source
 
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('ota_package', ROOT / 'tools/ota/package.py')
@@ -550,11 +551,7 @@ class VariantHttpSurface(unittest.TestCase):
         main = (ROOT / 'DAIKIN/src/main.cpp').read_text()
         registration = '#ifndef IOTCLOUD_HUB\n    httpd_uri_t convert=' + main.split(
             '#ifndef IOTCLOUD_HUB\n    httpd_uri_t convert=', 1)[1].split('#endif', 1)[0] + '#endif\n'
-        includes = [ROOT / 'DAIKIN/.pio/libdeps/bry88ab-hub/ArduinoJson/src',
-                    ROOT / 'DAIKIN/.pio/libdeps/bry88ab/ArduinoJson/src']
-        codec = next((path for path in includes if (path / 'ArduinoJson.h').exists()), None)
-        if codec is None:
-            raise RuntimeError('Build one DAIKIN PlatformIO target to fetch the pinned ArduinoJson dependency')
+        codec = codec_source()
         with tempfile.TemporaryDirectory(prefix='daikin-ota-surface-') as temporary:
             directory = Path(temporary)
             (directory / 'capabilities.inc').write_text(capabilities)

@@ -7,6 +7,9 @@
 #include <cstdio>
 #include <string>
 #include <cmath>
+static bool failJsonAllocation=false;
+extern "C" void *__real_malloc(size_t);
+extern "C" void *__wrap_malloc(size_t size){return failJsonAllocation?nullptr:__real_malloc(size);}
 extern "C" {
 #include "local_auth.h"
 #include "typed_wire.h"
@@ -33,6 +36,9 @@ static String deviceId="9c9c1ff76748";static constexpr size_t configCapacity=163
 static DynamicJsonDocument config(configCapacity);static bool configRecovery=false,saveFailed=false;
 static char currentPassword[33]={};static ph_auth_state localAuth;static bool localAuthReady=true;static ph_auth_store persisted;
 static bool saveConfig(DynamicJsonDocument &d){if(saveFailed)return false;config.set(d);return true;}
+// Flash edge only: route + trailer publish atomically, as production NVS does.
+static bool persistAuthConfig(DynamicJsonDocument &d,const ph_auth_store *store){if(saveFailed)return false;config.set(d);persisted=*store;return true;}
+#include "../src/lan_route_storage.inc"
 static ph_auth_state *activeAuth=&localAuth;
 extern "C" ph_auth_state *device_local_auth(){return activeAuth;}
 enum Sensor {PM25,CO2,TEMPERATURE,HUMIDITY,TVOC,HCHO,PM10,SENSOR_COUNT};
@@ -68,7 +74,7 @@ static std::string deliver(const std::string &packet){sensorUdp.incoming=packet;
 static String grant(const char *token){char bytes[256];uint8_t raw[16];assert(ph_auth_token_decode(token,raw));ph_buf buffer;ph_writer writer;assert(phw_init_fixed(&writer,PH_WIRE_MSGPACK,&buffer,bytes,sizeof(bytes)));phw_begin(&writer,nullptr,false);phw_text(&writer,"action","sensor.session.set");phw_begin(&writer,"params",false);phw_uint(&writer,"v",3);phw_text(&writer,"a1","aabbccddee01");phw_u32(&writer,"boot",UINT32_MAX);phw_bytes_value(&writer,"token",raw,16);phw_end(&writer);phw_end(&writer);return String(bytes,phw_finish_fixed(&writer));}
 static std::string secretReply(const std::string &wire,const char *key){ph_value root,v;const void*bytes;size_t n;assert(phv_parse(PH_WIRE_MSGPACK,wire.data(),wire.size(),&root));assert(phv_get(&root,"code",&v)&&phv_equal_text(&v,"ok"));assert(phv_get(&root,key,&v)&&phv_bytes(&v,&bytes,&n)&&n==16);char out[33];lan_auth_hex(static_cast<const uint8_t*>(bytes),out);return out;}
 int main(){
- ph_auth_store_empty(&persisted);ph_auth_ops ops={};ops.now=[](void*){return now;};ops.random=[](void*,uint8_t*b,size_t n){esp_fill_random(b,n);return true;};ops.password=[](void*,char out[33]){strcpy(out,currentPassword);return true;};ops.save=[](void*,const ph_auth_store*s){if(saveFailed)return false;persisted=*s;return true;};assert(ph_auth_init(&localAuth,&ops,&persisted));
+ ph_auth_store_empty(&persisted);ph_auth_ops ops={};ops.now=[](void*){return now;};ops.random=[](void*,uint8_t*b,size_t n){esp_fill_random(b,n);return true;};ops.password=[](void*,char out[33]){strcpy(out,currentPassword);return true;};ops.save=[](void*,const ph_auth_store*s){return activeAuth==&localAuth?persistLanPairingStore(s):!saveFailed;};assert(ph_auth_init(&localAuth,&ops,&persisted));
  sensorBoot=UINT32_MAX;for(auto &r:readings){r.received=true;r.at=now;}readings[TEMPERATURE].value=-3.125f;readings[HUMIDITY].value=45.5f;readings[PM25].value=12.125f;readings[HCHO].value=.123f;readings[CO2].value=625;
  lan_packet read={};read.op=LAN_READ;strcpy(read.src,"aabbccddee01");strcpy(read.dst,deviceId.c_str());read.boot=UINT32_MAX;read.id=0x80000000;memset(read.token,0xab,16);
  assert(deliver(R"({"v":2,"op":"read","src":"aabbccddee01","token":"abababababababababababababababab"})").empty());assert(deliver(R"({"op":"auth_pair","src":"aabbccddee01","password":""})").empty());
@@ -99,6 +105,35 @@ int main(){
  // Reboot destroys RAM token, reloads remote key and resumes automatically.
  lanClient=lc_state();pollLanPairing();assert(lc_find(&lanClient,"aabbccddee03",false)->phase==LC_RESUME);request=sensorUdp.outgoing;response=remoteReply(remoteAuth,request);deliver(response);assert(lc_find(&lanClient,"aabbccddee03",false)->phase==LC_READY);
  assert(lanUnpairStart("aabbccddee03",&code));pollLanPairing();request=sensorUdp.outgoing;response=remoteReply(remoteAuth,request);/* drop first successful ACK */now+=1000;pollLanPairing();assert(sensorUdp.outgoing==request);response=remoteReply(remoteAuth,sensorUdp.outgoing);deliver(response);assert(!ph_auth_remote_get(&localAuth,"aabbccddee03",remoteKey,&scopes));assert(!strcmp(lc_find(&lanClient,"aabbccddee03",false)->code,"unpaired"));
+ // Rejected/unfinished sender attempts never persist a route or local key.
+ const auto originalStore=localAuth.store;std::string originalConfig;serializeJson(config,originalConfig);
+ auto unchanged=[&](){std::string text;serializeJson(config,text);assert(text==originalConfig&&!memcmp(&localAuth.store,&originalStore,sizeof(originalStore)));};
+ lanClient=lc_state();assert(lanPairStart("aabbccddee03","10.0.0.3","wrong-password",1,&code));unchanged();pollLanPairing();
+ response=remoteReply(remoteAuth,sensorUdp.outgoing);deliver(response);assert(!strcmp(lc_find(&lanClient,"aabbccddee03",false)->code,"auth_required"));unchanged();
+ lanClient=lc_state();assert(lanPairStart("aabbccddee03","10.0.0.3","adminfjr",1,&code));
+ assert(!lanPairStart("aabbccddee03","10.0.0.4","adminfjr",1,&code)&&!strcmp(code,"busy"));
+ for(unsigned i=0;i<4;i++){pollLanPairing();now+=1000;}assert(!strcmp(lc_find(&lanClient,"aabbccddee03",false)->code,"timeout"));unchanged();
+ for(bool oom:{true,false}){
+  lanClient=lc_state();assert(lanPairStart("aabbccddee03","10.0.0.3","adminfjr",1,&code));pollLanPairing();response=remoteReply(remoteAuth,sensorUdp.outgoing);
+  failJsonAllocation=oom;saveFailed=!oom;deliver(response);failJsonAllocation=false;saveFailed=false;
+  assert(!strcmp(lc_find(&lanClient,"aabbccddee03",false)->code,"storage_error"));unchanged();
+ }
+ lanClient=lc_state();initLanClient();auto random=lanOps.random;lanOps.random=[](uint8_t[16]){return false;};
+ assert(!lanPairStart("aabbccddee03","10.0.0.3","adminfjr",1,&code)&&!strcmp(code,"busy"));lanOps.random=random;unchanged();
+ puts("wrong password/timeout/admission/OOM/durable failure: zero local pin/key PASS");
+ // Successful same-key re-pair updates the explicitly selected fixed address.
+ lanClient=lc_state();assert(lanPairStart("aabbccddee03","10.0.0.3","adminfjr",1,&code));pollLanPairing();deliver(remoteReply(remoteAuth,sensorUdp.outgoing));pollLanPairing();deliver(remoteReply(remoteAuth,sensorUdp.outgoing));
+ assert(lanRouteMatches("aabbccddee03","10.0.0.3"));config["lan_peers"][0].remove("pair_created");
+ assert(ph_auth_remote_get(&localAuth,"aabbccddee03",remoteKey,&scopes));const std::string unchangedKey=remoteKey;
+ assert(lanPairStart("aabbccddee03","10.0.0.4","wrong-password",1,&code));pollLanPairing();sensorUdp.remote.address="10.0.0.4";deliver(remoteReply(remoteAuth,sensorUdp.outgoing));
+ assert(!strcmp(lc_find(&lanClient,"aabbccddee03",false)->code,"auth_required")&&lanRouteMatches("aabbccddee03","10.0.0.3"));
+ assert(ph_auth_remote_get(&localAuth,"aabbccddee03",remoteKey,&scopes)&&unchangedKey==remoteKey);
+ assert(lanPairStart("aabbccddee03","10.0.0.4","adminfjr",1,&code));pollLanPairing();
+ assert(!strcmp(lc_find(&lanClient,"aabbccddee03",false)->ip,"10.0.0.4"));sensorUdp.remote.address="10.0.0.4";deliver(remoteReply(remoteAuth,sensorUdp.outgoing));
+ assert(lanRouteMatches("aabbccddee03","10.0.0.4"));assert(ph_auth_remote_get(&localAuth,"aabbccddee03",remoteKey,&scopes)&&unchangedKey==remoteKey);
+ pollLanPairing();deliver(remoteReply(remoteAuth,sensorUdp.outgoing));assert(lanUnpairStart("aabbccddee03",&code));pollLanPairing();deliver(remoteReply(remoteAuth,sensorUdp.outgoing));
+ assert(lanRouteMatches("aabbccddee03","10.0.0.4")&&!config["lan_peers"][0].containsKey("pair_created"));
+ puts("in-flight selected IP survives poll; same-key no-op persists new fixed pin PASS");
  configRecovery=true;assert(deliver(encode(read)).empty());assert(deliver(pair).empty());assert(deliver(authPacket("auth_resume",peer,"key",key.c_str())).empty());configRecovery=false;
  puts("production DAIKIN native v3/auth pairing interop PASS");
 }

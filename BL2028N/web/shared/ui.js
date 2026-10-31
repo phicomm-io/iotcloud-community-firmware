@@ -781,7 +781,17 @@ let fullReload=null;
 UI.reload=({full=false,priority=2}={})=>{
  if(full)UI.invalidateStatus();
  if(!loading||loadingGeneration===fullGeneration)return loading||pollLoad(priority);
- if(!fullReload)fullReload=(async()=>{await loading;return pollLoad(priority);})().finally(()=>{fullReload=null;});
+ if(!fullReload)fullReload=(async()=>{
+  const lifecycle=pollGeneration;let pending=loading;
+  try{for(;;){
+   const generation=loadingGeneration,result=await pending;
+   if(stopped||lifecycle!==pollGeneration)return null;
+   if(generation===fullGeneration)return result;
+   // A catch-up can itself be invalidated. Read again only for a newer
+   // generation; a failure in the current generation still settles null.
+   pending=pollLoad(priority);
+  }}finally{fullReload=null;}
+ })();
  return fullReload;
 };
 document.addEventListener('visibilitychange',()=>{if(UI.device&&!document.hidden&&!stopped)UI.reload({full:true});});
