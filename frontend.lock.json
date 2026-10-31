@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "repository": "phicomm-io/iotcloud-community-frontend",
-  "commit": "e72daa27ac8c5ec562bd4e7eac85b88e28eed70e",
-  "release": "frontend-e72daa27ac8c5ec562bd4e7eac85b88e28eed70e",
+  "commit": "a6f2f3290615054c37809d3bfddfe31ea77abf66",
+  "release": "frontend-a6f2f3290615054c37809d3bfddfe31ea77abf66",
   "asset": "frontend.tar.gz",
-  "sha256": "63b090fc23f3bc1b655cbc72f798f2fb71a64854c06c9045c62846ff6e40f55f"
+  "sha256": "d665e6d9d1b8bb7f6b9e8c7e8759144f40e4ed026fd55998031ad7ce072c7400"
 }

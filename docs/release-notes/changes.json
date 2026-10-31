@@ -8671,7 +8671,7 @@
           "DAIKIN/src/hub_lan.inc": "405143d2ae7781d073e985af0b462b71077aae0d008fc6d482ba775c56012c26",
           "DAIKIN/include/hub_http_command.h": "abf45e7fcd87f8aedf51c539f9c77fd23694e2b6e318c274500b94d3a1e969c7",
           "DAIKIN/include/hub_home.h": "598a85a9c7a1aede6c33b802c659f01a9c2d672f08075ce00f9e45229f0fff46",
-          "frontend.lock.json": "db540c12959e49e7a93f925a821acbddd9a00a8db61fcc05b553d973cf63f64a"
+          "frontend.lock.json": "79a8e18e41dd1cbeeb1817f928d345f9380885cc0a083a87adb371f71ba62b7e"
         },
         "review_basis": "Author checked implementation scope and retained RC4 qualification results; RC5 checks are recorded in its release run."
       },
@@ -8941,7 +8941,7 @@
           "frontend.lock.json"
         ],
         "firmware_source_sha256": {
-          "frontend.lock.json": "db540c12959e49e7a93f925a821acbddd9a00a8db61fcc05b553d973cf63f64a"
+          "frontend.lock.json": "79a8e18e41dd1cbeeb1817f928d345f9380885cc0a083a87adb371f71ba62b7e"
         },
         "review_basis": "Author checked implementation scope and retained RC4 qualification results; RC5 checks are recorded in its release run."
       },
@@ -9021,7 +9021,7 @@
           "BL2028N/src/ph_device.c": "0ff6578dba487761cd2711fe5f4d82f98894ab0c9d0f9d0a99ede2ffd19e79b7",
           "DAIKIN/include/device_name.h": "dc8e4d8e7748a1bf581ba9d367c9209dab7758a3db6683a35c383d2f6a59b127",
           "DAIKIN/include/hub_home.h": "598a85a9c7a1aede6c33b802c659f01a9c2d672f08075ce00f9e45229f0fff46",
-          "DAIKIN/src/home.inc": "3facdbe30c876c4c681b83ed6a362256ecfa348808118ad26301d044bab7d19e",
+          "DAIKIN/src/home.inc": "df6bea01496058f1a51c6eaf98453e95b1c1436114eab7ba94fbad8c63c7efba",
           "DAIKIN/lib/HomeSpan/src/HomeSpan.cpp": "aa3aca47fc66c2ea2c4af86f2b38103d7233f35ec3fdef13a7f707c0b126c9fc",
           "DAIKIN/lib/HomeSpan/src/IoTCloudJson.h": "99effdcfd7acfb05b369d7691bc5fbadbdb1c8f1650337add2eb75c6015a33dc"
         },
