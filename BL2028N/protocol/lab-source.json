@@ -1,6 +1,6 @@
 {
   "source": "phicomm-community-firmware/common",
-  "git_head": "419883541b1a9148d131cc9c5619c4e75a47bdd5",
+  "git_head": "7d8684e7d5bb744bbf10a9fd414c64349214b1b8",
   "note": "Clean shared inputs with portable binary-only adaptations recorded in lab-openbeken.patch.",
   "files": {
     "typed_wire.h": "7f865471a07e31254a6d5f3b76437a54fa19c7e4a39d8532f2ba20c78c0379ae",
@@ -14,7 +14,8 @@
     "local_auth.c": "f024a90cacf93932b50002d05d69418dec65e259386ae392ecd44e1995d8d7ba",
     "json_number_checked.h": "6d01c4fd18cc9db739ed4918d2c18628182a7179ba2a92c7f21c1f3718c3cd43",
     "sensor_field.h": "38c559b580ff3fd7a3ca3f954b6dfd1f9c40a1d71293355cc0cbc524b93e0600",
-    "sensor_mp.h": "81c2a63b5e91666d3497974097d74e135faca704652578a34cddcd14a34a5bed"
+    "sensor_mp.h": "81c2a63b5e91666d3497974097d74e135faca704652578a34cddcd14a34a5bed",
+    "power_trigger.h": "53dd46e9f564b304c5525f9b6138d6b62822c21cf00da8bb9503bc320b48946b"
   },
   "adaptations": {
     "local_auth.c": "Valid-password HTTP login replaces the least recently used session when all four slots are occupied; other transports retain the lab policy.",

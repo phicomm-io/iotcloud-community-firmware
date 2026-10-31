@@ -1,3 +1,13 @@
+--- a/web/shared/i18n.js
++++ b/web/shared/i18n.js
+@@ -393,7 +393,6 @@
+ 'fw.cancel':['Cancel download','终止下载'],'fw.cancelling':['Cancelling; services will resume shortly.','正在终止，稍后恢复正常服务。'],'fw.online':['Online updates','在线更新'],'fw.check':['Check for updates','检查更新'],'fw.install_online':['Download and install','下载并安装'],'fw.notes':['Release notes','发布说明'],
+ 'fw.sources_help':['Choose a source to check its latest version.','选择更新来源，检查最新版本。'],'fw.source_github':['GitHub Pages (HTTPS)','GitHub Pages（HTTPS）'],'fw.source_cn':['China mirror (HTTP)','境内镜像（HTTP）'],'fw.source_global':['Global mirror (HTTP)','境外镜像（HTTP）'],
+ 'fw.check_idle':['Choose a source and check','选择来源后检查更新'],'fw.check_checking':['Checking…','正在检查…'],'fw.check_available':['Update available','发现新版本'],'fw.check_up_to_date':['Already up to date','当前已是最新版本'],'fw.check_failed':['Update check failed; try another source','检查失败，请重试或切换来源'],'fw.confirm_online':['Install this signed update and restart the device?','安装此签名更新并重启设备？'],
+-'fw.version_path_help':['For stable updates, update 0.9.x to 1.0.0 before installing later versions. RC test releases use a separate channel.','稳定版升级路径：0.9.x 先升级到 1.0.0，再升级后续版本。RC 测试版使用独立渠道。'],
+ /* Application watchdog diagnostics (A1/M1). */
+ 'diag.g_watchdog':['Restart & watchdog','复位与看门狗'],
+ 'diag.c_watchdog':['Watchdog','看门狗'],
 --- a/web/shared/service.js
 +++ b/web/shared/service.js
 @@ -1,3 +1,31 @@

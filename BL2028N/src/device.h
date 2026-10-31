@@ -2,7 +2,7 @@
 #pragma once
 #include "../protocol/typed_wire.h"
 #include "meter.h"
-#include "power_trigger.h"
+#include "../protocol/power_trigger.h"
 #define PH_MODEL "s30-v1b"
 #define PH_INPUT_MAX 1200u
 #define PH_OUTPUT_MAX 4096u

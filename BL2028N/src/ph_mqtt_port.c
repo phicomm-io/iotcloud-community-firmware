@@ -229,7 +229,7 @@ static int initial(void *unused) {discovery=publication=0;application_error=0;se
 /* Optional discovery/full-state packets can wait for heap recovery while the
  * subscribed connection and its compact HA state are already operational. */
 static bool initial_ready(void *unused) {(void)unused;return (publication&2u)!=0;}
-static void closing(void *unused,bool connected,int rc) {(void)unused;(void)connected;(void)rc;cache_budget();sensor_subscribed=false;sensor_retry_at=0;bl_lock();bl_mqtt_status=MQTT_DISCONNECTED;memset(bl_auth.mqtt,0,sizeof(bl_auth.mqtt));bl_unlock();memset(password,0,sizeof(password));}
+static void closing(void *unused,bool connected,int rc) {(void)unused;(void)connected;(void)rc;cache_budget();sensor_subscribed=false;sensor_retry_at=0;bl_lock();memset(bl_auth.mqtt,0,sizeof(bl_auth.mqtt));bl_unlock();memset(password,0,sizeof(password));}
 static void event(void *unused,unsigned state,int rc) {
  (void)unused;bl_lock();
  if(state==PH_MQTT_READY)bl_mqtt_status=MQTT_READY;

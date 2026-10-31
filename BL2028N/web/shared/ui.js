@@ -504,7 +504,7 @@ function firmwarePage(dev){
    const data=await command('ota.check.get');last=data;
    targetVersion=['available','up_to_date'].includes(data.state)?data.version:null;comparisonLink();
    latest.textContent=t('fw.check_'+data.state)+(data.version?' · '+data.version:'')+(data.error?' · '+data.error:'');
-   install.hidden=!data.version||data.state==='failed';notes.hidden=!targetVersion;
+   install.hidden=!data.version||data.available!==true||data.state!=='available';notes.hidden=!targetVersion;
    if(data.busy||data.state==='checking')timer=setTimeout(()=>poll().catch(e=>{latest.textContent=e.message;busy(false);}),1000);
    else busy(false);
   }
@@ -529,11 +529,12 @@ function firmwarePage(dev){
   }
   notes.onclick=()=>run(notes,readComparison);
   install.onclick=()=>run(install,async()=>{
+   if(!last?.version||last.available!==true||last.state!=='available')return;
    if(!await readComparison()&&!window.confirm(t('fw.notes_confirm')))return;
    if(!window.confirm(t('fw.confirm_online')))return;await command('ota.install');toast(t('fw.url_started'));
   });
   command('ota.sources.get').then(data=>{for(const id of data.sources){const button=h('button',{class:'btn',type:'button','data-source':id},t('fw.source_'+id));button.onclick=()=>run(button,()=>check(id));buttons.push(button);sources.append(button);}}).catch(()=>{online.hidden=true;});
-  online.append(h('h2',{i18n:'fw.online'}),h('p',{class:'help',i18n:'fw.sources_help'}),sources,latest,h('div',{class:'row'},install,notes),notesText);
+  online.append(h('h2',{i18n:'fw.online'}),h('p',{class:'help',i18n:'fw.sources_help'}),h('p',{class:'help',i18n:'fw.version_path_help'}),sources,latest,h('div',{class:'row'},install,notes),notesText);
  }
  const cancel=h('button',{class:'btn',type:'button',hidden:true,i18n:'fw.cancel'});
  cancel.onclick=()=>run(cancel,async()=>{await command('ota.cancel');toast(t('fw.cancelling'));});

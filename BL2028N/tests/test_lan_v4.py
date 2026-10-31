@@ -150,7 +150,9 @@ class LanV4(unittest.TestCase):
         self.assertEqual(self.remote(internal_key,'outlet.set',{'on':False})['code'],'accepted')
         self.assertEqual(self.counters()['relay'],2)
         peer='02ffeedd0002';other=self.resume(self.pair(peer),peer)
-        reply,_=self.result(self.command(other,action='outlet.set',params={'on':False},rid=rid,peer=peer))
+        # Move the relay again so this proves a distinct peer executes its own
+        # receipt; an idempotent OFF no longer writes the physical relay.
+        reply,_=self.result(self.command(other,action='outlet.set',params={'on':True},rid=rid,peer=peer))
         self.assertEqual(reply['code'],'accepted');self.assertEqual(self.counters()['relay'],3)
         conflict,_=self.result(self.command(token,id=3,action='outlet.set',params={'on':False},rid=rid))
         self.assertEqual(conflict['code'],'conflict');self.assertEqual(self.counters()['relay'],3)

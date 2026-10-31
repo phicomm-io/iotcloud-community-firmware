@@ -1,6 +1,6 @@
 {
   "repository": "phicomm-io/phicomm-community-frontend",
-  "commit": "13a81517b09a19263cd7f69f42d6ba5594e1f9c1",
+  "commit": "abae66035aae956701f04776d80d2738211aea06",
   "source_dirty": false,
   "path": "common/web",
   "sha256": {
@@ -11,7 +11,7 @@
     "provision.js": "f8a4d2e54b0ba8eaadd625ff3b8d956e7a312218f0f6df97a4385cf83a44dd95",
     "service.js": "4b63085eceba274c371f79b681fa14471e42f769b7b7bbfefbb91777482248a8",
     "style.css": "55bf48816dd8c455d519634e2273b0b1a23e1a13088c943e81ce6cb5c7a509fe",
-    "ui.js": "ad4bcb6e7927fe3902ebea40df3cb44d98c2e3a9a5749f482d9dc3e242195afd"
+    "ui.js": "bcbda90b983b67209994242cf862114c131947cb9545e6406f25215bf99d407b"
   },
   "adaptations": "Shared binary auth, serialized reads, diagnostics and product capability gates; see frontend-openbeken.patch and lab-shared-source.json."
 }
