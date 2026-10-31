@@ -35,7 +35,7 @@ static String legacy="{}";static String loadLegacyConfigText(){return legacy;}
 struct nvs_stats_t{size_t total_entries=10000,free_entries=10000,used_entries=0;};
 static const int ESP_OK=0;static int nvs_get_stats(const char*,nvs_stats_t*s){*s=nvs_stats_t();return ESP_OK;}
 #include "../src/auth_storage.inc"
-static bool webPending=false,webDone=false,webAuthRequired=false,otaActive=false;static ph_auth_context webAuthContext;static int webMux=0,webOperation=0,hubHttpStatus=0;static String webResult,webBody,hubHttpToken;static char httpStatusBody[4096];static unsigned dispatched=0;
+static bool webPending=false,webDone=false,webAuthRequired=false,otaActive=false,hubHttpDeferred=false;static ph_auth_context webAuthContext;static int webMux=0,webOperation=0,hubHttpStatus=0;static String webResult,webBody;static char httpStatusBody[4096];static unsigned dispatched=0;
 static String execute(const String&){++dispatched;return "executed";}static String backupExecute(){++dispatched;return "backup";}static void hubApiExecute(){++dispatched;}static bool mqttStateJson(String&,char*,int,bool){++dispatched;return true;}
 static unsigned invalidations=0;static void invalidateBusinessStatusCache(){++invalidations;}static bool businessStatusReady=false;static String cachedHttpStatus(){return "cached";}
 #include "transaction.inc"

@@ -20,22 +20,24 @@ public:
   using Failed=std::function<void(const std::string&,const std::string&,const char*)>;
   Send send;Complete complete;Failed failed;
   using Authorize=std::function<bool(const std::string &,const std::string &,uint16_t,const uint8_t *)>;
+  using Guard=std::function<bool()>;
   Authorize authorize;
   const char *lastCode="idle";
   uint32_t lastId=0;
   bool busy()const{return pending.used;}
   ~HubLanClient(){reset();}
   void reset(){ph_buf_free(pending.response);pending=Pending();lastCode="cancelled";}
-  bool begin(const char *local,uint32_t boot,const std::string &peer,const std::string &ip,uint16_t port,const uint8_t token[16],const std::string &route,const std::string &body,uint32_t now){
+  bool begin(const char *local,uint32_t boot,const std::string &peer,const std::string &ip,uint16_t port,const uint8_t token[16],const std::string &route,const std::string &body,uint32_t now,Guard guard=Guard()){
     if(busy()||!boot||!local||strlen(local)!=12||peer.size()!=12||ip.empty()||!port||body.empty()||body.size()>LAN_V4_REQUEST_MAX||lastId==UINT32_MAX)return false;
-    if(!authorize||!authorize(peer,ip,port,token))return false;
+    if((guard&&!guard())||!authorize||!authorize(peer,ip,port,token))return false;
     Pending next;next.used=true;next.local=local;next.boot=boot;next.peer=peer;next.ip=ip;next.port=port;next.route=route;next.body=body;next.id=++lastId;next.started=now;std::memcpy(next.token,token,16);
-    pending=std::move(next);lastCode="pending";
+    next.guard=std::move(guard);pending=std::move(next);lastCode="pending";
     // A failed send is indeterminate: retain the exact admitted ID for retries.
     transmit(now);return true;
   }
   bool receive(const lan_v4_packet &packet,const std::string &ip,uint16_t port,uint32_t now){
     if(!busy()||packet.op!=LAN_V4_RESULT||ip!=pending.ip||port!=pending.port||packet.src!=pending.peer||packet.dst!=pending.local||packet.id!=pending.id||packet.request_boot!=pending.boot||std::memcmp(packet.token,pending.token,16))return false;
+    if(pending.guard&&!pending.guard()){fail("unauthorized");return true;}
     if(!authorize||!authorize(pending.peer,pending.ip,pending.port,pending.token)){fail("auth_required");return true;}
     if(std::strcmp(packet.code,"ok")){
       if(!std::strcmp(packet.code,"busy")){lastCode="busy";return true;}
@@ -67,6 +69,7 @@ public:
   }
   void tick(uint32_t now){
     if(!busy())return;
+    if(pending.guard&&!pending.guard()){fail("unauthorized");return;}
     if(!authorize||!authorize(pending.peer,pending.ip,pending.port,pending.token)){fail("auth_required");return;}
     if(uint32_t(now-pending.started)>=LAN_V4_RESPONSE_MS){fail("timeout");return;}
     if(uint32_t(now-pending.sent)>=400&&pending.attempts<4)transmit(now);
@@ -76,7 +79,7 @@ private:
     bool used=false;std::string local,peer,ip,route,body;
     uint16_t port=0,nextPart=0,total=0,size=0;
     uint8_t token[16]={};uint32_t boot=0,deviceBoot=0,id=0,started=0,sent=0;
-    unsigned attempts=0;ph_buf *response=nullptr;
+    unsigned attempts=0;ph_buf *response=nullptr;Guard guard;
   } pending;
   void fail(const char *code){
     const std::string route=std::move(pending.route),body=std::move(pending.body);

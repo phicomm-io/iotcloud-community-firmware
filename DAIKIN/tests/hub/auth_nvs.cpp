@@ -153,16 +153,13 @@ if(!getenv("DAIKIN_NVS_NO_PAIRS"))fillPairs();
 iotcloud::HubService service(config);
   service.store = saveConfig;
   service.randomHex = [](size_t n) { return std::string(n * 2, 'a'); };
-  service.derive = [](const std::string &, const std::string &) { return std::string(64, 'b'); };
   using R = iotcloud::HubService::Request;
-  const std::string credentials = R"({"username":"local","password":"local-password"})";
-  assert(service.handle(R("POST", "/api/hub/setup", credentials, "", "", true), 0).status == 201);
-  auto login = service.handle(R("POST", "/api/auth/login", credentials), 1); assert(login.status == 200);
+  assert(service.initializeIdentity());
   for (unsigned i = 0; i < 12; i++) {
     DynamicJsonDocument body(1024); char mac[13]; snprintf(mac, sizeof(mac), "aabbccdd%04x", i + 1);
     body["mac"] = std::string(mac); body["model"] = i == 0 ? "tc1" : i == 1 ? "a1" : "m1"; body["version"] = "v2";
     std::string request; serializeJson(body, request);
-    assert(service.handle(R("POST", "/api/devices", request, login.token), i + 2).status == 201);
+    assert(service.handle(R("POST", "/api/devices", request, true), i + 2).status == 201);
     assert(config.capacity() < 16384 && iotcloud::HubService::valid(config["hub"]));
     auto expected = snapshot(); boot(nor); assert(loadAuthConfigText() == expected); intact();
   }
@@ -174,11 +171,11 @@ iotcloud::HubService service(config);
     map["topic"] = std::string("lab") + std::to_string(i) + (device == 0 ? "001" : channel ? "002" : "003");
   }
   std::string request; serializeJson(body, request);
-  auto reply = service.handle(R("PUT", "/api/integrations/bemfa", request, login.token), 20);
+  auto reply = service.handle(R("PUT", "/api/integrations/bemfa", request, true), 20);
   assert(reply.status == 200);
   // Keeping the key must copy it before move-assignment releases the old pool.
   body["api_key"] = ""; request.clear(); serializeJson(body, request);
-  assert(service.handle(R("PUT", "/api/integrations/bemfa", request, login.token), 21).status == 200);
+  assert(service.handle(R("PUT", "/api/integrations/bemfa", request, true), 21).status == 200);
   assert(config["hub"]["bemfa"]["api_key"] == "test-api-key-1234");
   body.clear(); body["enabled"] = true; maps = body.createNestedArray("mappings");
   for (unsigned i = 0; i < 8; i++) {
@@ -188,7 +185,7 @@ iotcloud::HubService service(config);
     map["retain"] = false; map["allow_retained"] = false;
   }
   request.clear(); serializeJson(body, request);
-  assert(service.handle(R("PUT", "/api/hub/bridge", request, login.token), 22).status == 200);
+  assert(service.handle(R("PUT", "/api/hub/bridge", request, true), 22).status == 200);
   auto expected = snapshot(); boot(nor); assert(loadAuthConfigText() == expected); intact();
   printf("matrix pages=%zu codec=%s typical_json=%zu blob=%zu pairs=%u+%u PASS\n",nor.bytes.size()/4096,
 #ifdef DAIKIN_BASELINE
@@ -465,9 +462,38 @@ static void routePower(){
   printf("route %s pages%zu: %zu NOR power cuts + %zu I/O failures, whole pin/key and original peer preserved PASS\n",remove?"unpair":"pair",before.bytes.size()/4096,work+1,work+1);
  }
 }
+static void hubSchemaMigration(){
+ Nor before;seed(before);boot(before);
+ DynamicJsonDocument legacy(configCapacity);legacy["_version"]=1;legacy["auth"]["password"]="web-password";
+ legacy["mqtt"]["host"]="external-broker";legacy["mqtt"]["user"]="external-user";legacy["mqtt"]["password"]="external-password";
+ auto hub=legacy.createNestedObject("hub");hub["schema"]=1;hub["username"]="existing_owner";
+ hub["salt"]=hub["mqtt_salt"]=std::string(32,'a');hub["password_hash"]=hub["mqtt_hash"]=std::string(64,'b');hub["mqtt_password_separate"]=true;
+ hub["instance"]=std::string(32,'c');hub["homekit"]["enabled"]=false;
+ auto d=hub.createNestedArray("devices").createNestedObject();d["mac"]="aabbccddee01";d["model"]="tc1";d["version"]="v2";d["status"]="active";d["username"]="existing_owner";
+ auto route=hub["bridge"]["mappings"].to<JsonArray>().createNestedObject();hub["bridge"]["enabled"]=true;
+ route["direction"]="out";route["local_topic"]="local/state";route["remote_topic"]="external/state";route["retain"]=false;route["allow_retained"]=false;
+ hub["bemfa"]["enabled"]=true;hub["bemfa"]["api_key"]="fixture-api-key-0123";auto mapping=hub["bemfa"]["mappings"].to<JsonArray>().createNestedObject();mapping["device"]=d;mapping["channel"]=0;mapping["topic"]="socket001";
+ legacy["lan_peers"][0]["peer"]="aabbccddee01";legacy["lan_peers"][0]["ip"]="192.0.2.10";
+ assert(iotcloud::HubService::valid(hub)&&saveConfig(legacy));char key[33];
+ assert(ph_auth_pair(&localAuth,"web-password","aabbccddee01",7,key));
+ assert(ph_auth_remote_store(&localAuth,"aabbccddee01",key,7,ph_auth_credential_epoch(&localAuth)));
+ auto migrate=[](){iotcloud::HubService service(config);service.store=saveConfig;service.randomHex=[](size_t n){return std::string(n*2,'d');};return service.initializeIdentity();};
+ const auto image=before.bytes;const auto oldConfig=snapshot();const auto oldStore=localAuth.store;
+ before.fail=true;assert(!migrate()&&snapshot()==oldConfig&&before.bytes==image&&!memcmp(&localAuth.store,&oldStore,sizeof(oldStore)));before.fail=false;
+ boot(before);before.work=0;assert(migrate());const size_t work=before.work;const auto newConfig=snapshot();
+ assert(config["hub"]["schema"]==2&&config["hub"]["username"]=="existing_owner"&&config["hub"]["homekit"]["enabled"]==false);
+ assert(!memcmp(&localAuth.store,&oldStore,sizeof(oldStore))&&config["auth"]["password"]=="web-password"&&config["mqtt"]["password"]=="external-password");
+ for(bool powerCut:{false,true})for(size_t cut=0;cut<=work;cut++){
+  Nor nor;nor.bytes=image;boot(nor);if(powerCut)nor.cut=cut;else nor.failAfter=cut;
+  try{migrate();}catch(const PowerLoss&){assert(powerCut);}nor.cut=nor.failAfter=-1;boot(nor);
+  const auto actual=snapshot();assert(actual==oldConfig||actual==newConfig);assert(!memcmp(&localAuth.store,&oldStore,sizeof(oldStore)));intact();
+ }
+ printf("schema1->2 pages%zu: %zu NOR power cuts + %zu I/O failures; exact old/new namespace/devices/bridge/Bemfa/HomeKit/route + both pair tables and external/Web credentials PASS\n",before.bytes.size()/4096,work+1,work+1);
+}
 #endif
 int main(int argc,char**argv){assert(argc==2);std::string test=argv[1];
 #if !defined(DAIKIN_FIXED_AUTH_V2) && !defined(DAIKIN_BASELINE)
 if(test=="route-power"){routePower();return 0;}
+if(test=="hub-schema"){hubSchemaMigration();return 0;}
 #endif
 if(test=="authority")authority();else if(test=="live-reclaim")liveReclaim(false);else if(test=="live-reclaim-power")liveReclaim(true);else if(test=="live-legacy")liveLegacy();else if(test=="migration")migration(true);else if(test=="dual-key")dualKey();else if(test=="valid-budget")validBudget();else if(test=="budget")budget();else if(test=="power"){power(false);power(true);}else if(test=="failure")failure();else abort();}

@@ -8,29 +8,30 @@ namespace iotcloud {
 // service.
 class HubService {
 public:
-  static constexpr size_t Devices = 12, Routes = 8, Mappings = 8, Sessions = 4,
+  static constexpr size_t Devices = 12, Routes = 8, Mappings = 8,
                           ConfigCapacity = 16384;
   struct Reply {
     int status = 200;
-    std::string body = "{}", token;
+    std::string body = "{}";
   };
   struct Request {
-    std::string method, path, body, token, host;
-    bool setupAuthorized = false;
+    std::string method, path, body, host;
+    // The HTTP adapter captures and revalidates common ph_auth before dispatch.
+    bool webAuthorized = false;
     Request(std::string m, std::string p, std::string b = "",
-            std::string t = "", std::string h = "", bool setup = false)
+            bool authorized = false, std::string h = "")
         : method(std::move(m)), path(std::move(p)), body(std::move(b)),
-          token(std::move(t)), host(std::move(h)), setupAuthorized(setup) {}
+          host(std::move(h)), webAuthorized(authorized) {}
   };
   std::function<bool(DynamicJsonDocument &)> store;
   std::function<std::string(size_t)> randomHex;
-  std::function<std::string(const std::string &, const std::string &)> derive;
   std::function<void(bool)>
-      changed; // true: credentials changed, drop sessions/connections.
+      changed; // true: namespace/identity changed; retire old connections.
   std::function<std::string()> bemfaStatus;
   std::function<void(JsonObject)> homeStatus;
   // Owner-authenticated, derived LAN inventory only; never serialize peer keys.
   std::function<void(JsonObject)> lanStatus;
+  std::function<void(JsonObject)> deviceMetadata;
   // Synchronous borrow: asynchronous operations must copy input before return.
   std::function<const char *(const std::string &,JsonObjectConst,JsonObject)> lanOperation;
   std::function<bool()> homeReset;
@@ -55,15 +56,6 @@ public:
   bool allowed(const std::string &topic, bool) const {
     return ready() && (topic.compare(0, 11, "phicomm/v2/") ||
                        topic.compare(0, prefix().size(), prefix()) == 0);
-  }
-  bool authenticate(const std::string &username, const std::string &password,
-                    uint32_t now) {
-    if (!ready() || username != user() || password.size() > 128 ||
-        throttled(now))
-      return false;
-    bool ok = verify(password, "mqtt_salt", "mqtt_hash");
-    record(ok, now);
-    return ok;
   }
   static bool fields(JsonObjectConst object, const char *names) {
     if (object.isNull())
@@ -194,16 +186,18 @@ public:
   }
   static bool valid(JsonVariantConst value) {
     if (value.isNull())
-      return true; // Upgrading a normal device starts with no local account.
+      return true; // Hub startup supplies the stable local namespace.
     JsonObjectConst h = value.as<JsonObjectConst>();
-    if (!fields(h, "|schema||username||salt||password_hash||mqtt_salt||mqtt_"
-                   "hash||mqtt_password_separate||devices||bridge||bemfa||homekit||instance|") ||
-        !h["schema"].is<unsigned>() || h["schema"] != 1 ||
-        !nameValid(h["username"]) || !hex(h["salt"], 32) ||
-        !hex(h["password_hash"], 64) || !hex(h["mqtt_salt"], 32) ||
-        !hex(h["mqtt_hash"], 64) || !h["mqtt_password_separate"].is<bool>() ||
-        !h["devices"].is<JsonArrayConst>())
-      return false;
+    const bool legacy = h["schema"] == 1;
+    const char *allowed = legacy
+        ? "|schema||username||salt||password_hash||mqtt_salt||mqtt_hash||mqtt_password_separate||devices||bridge||bemfa||homekit||instance|"
+        : "|schema||username||devices||bridge||bemfa||homekit||instance|";
+    if (!fields(h, allowed) || !h["schema"].is<unsigned>() ||
+        (!legacy && h["schema"] != 2) || !nameValid(h["username"]) ||
+        !h["devices"].is<JsonArrayConst>()) return false;
+    if (legacy && (!hex(h["salt"],32) || !hex(h["password_hash"],64) ||
+        !hex(h["mqtt_salt"],32) || !hex(h["mqtt_hash"],64) ||
+        !h["mqtt_password_separate"].is<bool>())) return false;
     auto devices = h["devices"].as<JsonArrayConst>();
     if (devices.size() > Devices)
       return false;
@@ -222,6 +216,25 @@ public:
       return false;
     return bridgeValid(h["bridge"], h["username"] | "") &&
            bemfaValid(h["bemfa"], devices);
+  }
+  bool initializeIdentity() {
+    if (!valid(config["hub"])) return false;
+    if (config["hub"]["schema"] == 2) return true;
+    const size_t capacity = std::min<size_t>(size_t(ConfigCapacity), config.memoryUsage()+1024);
+    DynamicJsonDocument next(capacity);
+    if (!next.capacity() || !next.set(config)) return false;
+    auto hub = next["hub"].as<JsonObject>();
+    if (hub.isNull()) {
+      hub = next.createNestedObject("hub");
+      hub["username"] = "admin";
+      hub["instance"] = randomHex ? randomHex(16) : "";
+      if (!hex(hub["instance"],32)) return false;
+      hub.createNestedArray("devices");
+    }
+    hub["schema"] = 2;
+    for (const auto *key : {"salt","password_hash","mqtt_salt","mqtt_hash","mqtt_password_separate"})
+      hub.remove(key);
+    return commit(next, false);
   }
   size_t workingMemory(const Request &request) const {
     return inputCapacity(request) + outputCapacity(request) + responseCapacity(request) +
@@ -247,7 +260,8 @@ public:
     if (path == "/api/register/status" && get) {
       output["enabled"] = false;
       output["hub"] = true;
-      output["setup_required"] = !ready();
+      output["setup_required"] = false;
+      output["auth"] = "webui";
       output["lan_protocol"] = 4;
       output["lan_codec"] = "msgpack";
       output["lan_discovery"] = "mdns";
@@ -261,68 +275,9 @@ public:
       output["enabled"] = false;
       return json(output);
     }
-    if (path == "/api/hub/setup" && request.method == "POST") {
-      if (ready())
-        return fail(409, "hub_already_configured");
-      if (!request.setupAuthorized)
-        return fail(403, "unauthorized");
-      if (!fields(input.as<JsonObjectConst>(), "|username||password|") ||
-          !nameValid(input["username"]) || !string(input["password"], 63, 8))
-        return fail(400, "invalid_params");
-      DynamicJsonDocument next(candidateCapacity(request));
-      next.set(config);
-      auto h = next.createNestedObject("hub");
-      h["schema"] = 1;
-      h["username"] = input["username"];
-      h["instance"] = randomHex ? randomHex(16) : "";
-      h["mqtt_password_separate"] = false;
-      h.createNestedArray("devices");
-      if (!password(h, input["password"].as<std::string>(), false) ||
-          !password(h, input["password"].as<std::string>(), true))
-        return fail(503, "storage_error");
-      if (!commit(next, true))
-        return fail(503, "storage_error");
-      output["code"] = "accepted";
-      return json(output, 201);
-    }
-    if (path == "/api/auth/login" && request.method == "POST") {
-      if (throttled(now))
-        return fail(429, "hub_rate_limited");
-      bool ok =
-          ready() && input["username"] == user() &&
-          string(input["password"], 128) &&
-          verify(input["password"].as<std::string>(), "salt", "password_hash");
-      record(ok, now);
-      if (!ok)
-        return fail(401, "unauthorized");
-      auto token = randomHex ? randomHex(32) : "";
-      if (token.size() != 64)
-        return fail(503, "internal_error");
-      size_t slot = sessionSlot++ % Sessions;
-      for (size_t i = 0; i < Sessions; i++)
-        if (!session[i].used) {
-          slot = i;
-          break;
-        }
-      session[slot].used = true;
-      session[slot].token = token;
-      session[slot].at = now;
-      account(output);
-      auto reply = json(output);
-      reply.token = token;
-      return reply;
-    }
-    if (!authorized(request.token, now))
-      return fail(401, "unauthorized");
+    if (!request.webAuthorized) return fail(401, "unauthorized");
     if (path == "/api/auth/me" && get) {
       account(output);
-      return json(output);
-    }
-    if (path == "/api/auth/logout" && request.method == "POST") {
-      for (auto &s : session)
-        if (constant(s.token, request.token))
-          s = Session();
-      output["code"]="ok";
       return json(output);
     }
     const std::string lanPairPrefix="/api/hub/lan/pair/";
@@ -413,33 +368,6 @@ public:
       output["restart_required"] = true;
       return json(output, 202);
     }
-    if ((path == "/api/auth/password" || path == "/api/auth/mqtt-password") &&
-        request.method == "POST") {
-      if (!string(input["current_password"], 128) ||
-          !string(input["password"], 63, 8))
-        return fail(400, "invalid_params");
-      if (throttled(now))
-        return fail(429, "hub_rate_limited");
-      bool ok = verify(input["current_password"].as<std::string>(), "salt",
-                       "password_hash");
-      record(ok, now);
-      if (!ok)
-        return fail(403, "unauthorized");
-      bool mqtt = path == "/api/auth/mqtt-password";
-      DynamicJsonDocument next(candidateCapacity(request));
-      next.set(config);
-      auto h = next["hub"].as<JsonObject>();
-      if (!password(h, input["password"].as<std::string>(), mqtt))
-        return fail(503, "storage_error");
-      if (mqtt)
-        h["mqtt_password_separate"] = true;
-      else if (!h["mqtt_password_separate"].as<bool>() &&
-               !password(h, input["password"].as<std::string>(), true))
-        return fail(503, "storage_error");
-      if (!commit(next, true, !mqtt))
-        return fail(503, "storage_error");
-      return json(output);
-    }
     if (path == "/api/devices") {
       if (get) {
         auto devices = output.to<JsonArray>();
@@ -451,10 +379,12 @@ public:
           self["status"] = "active";
           self["username"] = user();
           self["self"] = true;
+          if (deviceMetadata) deviceMetadata(self);
         }
         for (JsonObjectConst device : config["hub"]["devices"].as<JsonArrayConst>())
           if (localMac.empty() || device["mac"] != localMac)
-            devices.add(device);
+            { auto row = devices.createNestedObject(); row.set(device);
+              if (deviceMetadata) deviceMetadata(row); }
         return json(output);
       }
       if (request.method != "POST")
@@ -546,7 +476,7 @@ public:
       if (!commit(next, false))
         return fail(503, "storage_error");
       return handle(
-          Request{"GET", path, "", request.token, request.host, false}, now);
+          Request{"GET", path, "", request.webAuthorized, request.host}, now);
     }
     if (path == "/api/integrations/bemfa") {
       if (get) {
@@ -582,13 +512,9 @@ public:
       if (!commit(next, false))
         return fail(503, "storage_error");
       return handle(
-          Request{"GET", path, "", request.token, request.host, false}, now);
+          Request{"GET", path, "", request.webAuthorized, request.host}, now);
     }
     return fail(404, "not_found");
-  }
-  void clearSessions() {
-    for (auto &s : session)
-      s = Session();
   }
   static bool command(const std::string &topic) {
     return suffix(topic, "/command") || suffix(topic, "/set");
@@ -613,8 +539,7 @@ private:
     return json(output,status);
   }
   static bool needsCandidate(const Request &request) {
-    return request.method != "GET" && request.path != "/api/auth/login" &&
-           request.path != "/api/auth/logout" &&
+    return request.method != "GET" &&
            request.path != "/api/hub/lan/pair" &&
            request.path != "/api/hub/lan/unpair" &&
            request.path != "/api/hub/homekit/pairing";
@@ -626,7 +551,7 @@ private:
   }
   size_t candidateCapacity(const Request &request) const {
     // Copy the compact current pool plus the request's bounded input pool.
-    // The margin covers generated account hashes, owner/device metadata and
+    // The margin covers namespace/device metadata and
     // new object slots. Small edits must remain possible with HAP running,
     // even when no contiguous maximum-size config buffer is available.
     return std::min<size_t>(size_t(ConfigCapacity),
@@ -642,11 +567,11 @@ private:
     return value;
   }
   size_t outputCapacity(const Request &request) const {
-    if (request.method == "GET" && request.path == "/api/hub/lan") return 8192;
+    if (request.method == "GET" && (request.path == "/api/hub/lan" || request.path == "/api/devices")) return 8192;
     return std::max<size_t>(2048, responseValue(request).memoryUsage() + 1024);
   }
   size_t responseCapacity(const Request &request) const {
-    if (request.method == "GET" && request.path == "/api/hub/lan") return 8192;
+    if (request.method == "GET" && (request.path == "/api/hub/lan" || request.path == "/api/devices")) return 8192;
     // Repeated JSON strings share pool storage, while escaped strings expand
     // on the wire. Budget the serialized bytes separately from the JSON pool.
     // The margin covers bridge MQTT metadata (127-byte host, 63-byte user,
@@ -654,60 +579,9 @@ private:
     return std::max<size_t>(2048, measureJson(responseValue(request)) + 1536);
   }
   DynamicJsonDocument &config;
-  struct Session {
-    bool used = false;
-    std::string token;
-    uint32_t at = 0;
-  };
-  std::array<Session, Sessions> session;
-  unsigned sessionSlot = 0, failures = 0;
-  uint32_t failureAt = 0;
   static bool suffix(const std::string &value, const std::string &end) {
     return value.size() >= end.size() &&
            value.compare(value.size() - end.size(), end.size(), end) == 0;
-  }
-  static bool constant(const std::string &a, const std::string &b) {
-    size_t diff = a.size() ^ b.size();
-    for (size_t i = 0; i < a.size(); i++)
-      diff |= uint8_t(a[i]) ^ (i < b.size() ? uint8_t(b[i]) : 0);
-    return !diff;
-  }
-  bool throttled(uint32_t now) const {
-    return failures >= 5 && uint32_t(now - failureAt) < 30000;
-  }
-  void record(bool ok, uint32_t now) {
-    if (ok || uint32_t(now - failureAt) >= 30000)
-      failures = 0;
-    if (!ok) {
-      failures++;
-      failureAt = now;
-    }
-  }
-  bool verify(const std::string &pass, const char *salt,
-              const char *hash) const {
-    return derive && constant(derive(pass, config["hub"][salt] | ""),
-                              config["hub"][hash] | "");
-  }
-  bool password(JsonObject hub, const std::string &pass, bool mqtt) {
-    auto salt = randomHex ? randomHex(16) : "";
-    auto hash = derive ? derive(pass, salt) : "";
-    if (salt.size() != 32 || hash.size() != 64)
-      return false;
-    hub[mqtt ? "mqtt_salt" : "salt"] = salt;
-    hub[mqtt ? "mqtt_hash" : "password_hash"] = hash;
-    return true;
-  }
-  bool authorized(const std::string &token, uint32_t now) {
-    if (token.size() != 64)
-      return false;
-    for (auto &s : session)
-      if (s.used) {
-        if (uint32_t(now - s.at) > 43200000)
-          s = Session();
-        else if (constant(s.token, token))
-          return true;
-      }
-    return false;
   }
   static bool keyValid(JsonVariantConst key) {
     if (!string(key, 128, 16))
@@ -723,12 +597,9 @@ private:
            a["username"] == b["username"] && a["version"] == b["version"] &&
            b["status"] == "active";
   }
-  bool commit(DynamicJsonDocument &next, bool credentials,
-              bool invalidateSessions = true) {
+  bool commit(DynamicJsonDocument &next, bool credentials) {
     if (next.overflowed() || !valid(next["hub"]) || !store || !store(next))
       return false;
-    if (credentials && invalidateSessions)
-      clearSessions();
     if (changed)
       changed(credentials);
     return true;
@@ -738,7 +609,9 @@ private:
     out["mqtt_username"] = user();
     out["is_admin"] = false;
     out["hub"] = true;
-    out["mqtt_password_separate"] = config["hub"]["mqtt_password_separate"];
+    out["auth"] = "webui";
+    out["password_set"] = strlen(config["auth"]["password"] | "") > 0;
+    out["auth_required"] = out["password_set"];
     out.createNestedArray("aliases");
   }
   static Reply fail(int status, const char *code) {

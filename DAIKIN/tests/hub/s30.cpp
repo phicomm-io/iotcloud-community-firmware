@@ -12,7 +12,7 @@ using Home = iotcloud::HubHome;
 using Service = iotcloud::HubService;
 using Origin = iotcloud::HubDeviceBus::Origin;
 static const char *id = "02c400000001", *own = "02c400000002";
-static const std::string prefix = "phicomm/v2/u_6f776e6572/";
+static const std::string prefix = "phicomm/v2/u_61646d696e/";
 static const std::string base = prefix + "s30-v1b/" + id;
 
 static std::string pack(const JsonDocument &doc) {
@@ -82,27 +82,10 @@ static void discovery() {
   assert(wire.binary(base)); // Legacy discovery cannot downgrade the new model.
 }
 
-static std::string account(Service &service) {
-  using Request = Service::Request;
-  auto setup = Request("POST", "/api/hub/setup",
-      R"({"username":"owner","password":"owner-password"})", "", "", true);
-  assert(service.handle(setup, 1).status == 201);
-  auto login = service.handle(Request("POST", "/api/auth/login",
-      R"({"username":"owner","password":"owner-password"})"), 2);
-  assert(login.status == 200 && login.token.size() == 64);
-  return login.token;
-}
+static bool account(Service &service) {assert(service.initializeIdentity());return true;}
 static void registration(DynamicJsonDocument &config, Service &service) {
   service.store = [&](DynamicJsonDocument &next) { config = std::move(next); return true; };
   service.randomHex = [](size_t n) { return std::string(n * 2, 'a'); };
-  service.derive = [](const std::string &password, const std::string &salt) {
-    const std::string input = password + salt;
-    uint8_t digest[32];
-    SHA256(reinterpret_cast<const unsigned char *>(input.data()), input.size(), digest);
-    std::string out;
-    for (uint8_t c : digest) { out += "0123456789abcdef"[c >> 4]; out += "0123456789abcdef"[c & 15]; }
-    return out;
-  };
   const auto token = account(service);
   using Request = Service::Request;
   const std::string device = R"({"mac":"02c400000001","model":"s30-v1b","version":"v2"})";
