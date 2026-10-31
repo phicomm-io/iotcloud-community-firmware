@@ -73,9 +73,26 @@ def collect(archive, fetch=download):
         path = archive / 'releases' / name
         if path.is_file():
             tags.update(r['tag'] for r in json.loads(path.read_bytes())['releases'])
-    releases = [collect_release(tag, archive, fetch) for tag in
-                sorted(tags, key=version_key, reverse=True)
-                if version_key(tag) >= version_key('v1.0.0-rc.4')]
+    # Older GitHub candidates may have been withdrawn while their immutable
+    # images remain in Pages. The reviewed source catalog pins those bytes.
+    historical = json.loads((Path(__file__).resolve().parents[2] /
+                             'site/native-downloads.json').read_bytes())
+    known = {r['tag']: r for r in historical['releases']}
+    releases = []
+    for tag in sorted(tags, key=version_key, reverse=True):
+        if version_key(tag) < version_key('v1.0.0-rc.4'):
+            continue
+        pinned = known.get(tag)
+        if pinned:
+            for record in pinned['models']['s30']['downloads'].values():
+                path = archive / 'releases' / tag / record['path'].rsplit('/', 1)[1]
+                if (not path.is_file() or path.stat().st_size != record['size'] or
+                        hashlib.sha256(path.read_bytes()).hexdigest() != record['sha256']):
+                    break
+            else:
+                releases.append(pinned)
+                continue
+        releases.append(collect_release(tag, archive, fetch))
     output = archive / 'releases/native-downloads.json'
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps({'schema': 1, 'releases': releases}, indent=2) + '\n')

@@ -279,7 +279,7 @@ test('the real homepage reads strict MCU RC tags, orders candidates numerically 
       assert.match(document.querySelector('#latest h3').textContent,/^v0\.9\.27/);
       assert.ok(!document.querySelector('#latest').textContent.includes('-rc'));
       const candidates=[...document.querySelectorAll('.device-grid .card-links a')].filter(a=>a.search.includes('channel=candidate'));
-      assert.deepEqual(candidates.map(a=>new URL(a.href).searchParams.get('model')),['tc1','m1','a1','daikin']);
+      assert.deepEqual(candidates.map(a=>new URL(a.href).searchParams.get('model')),['tc1','m1','a1','s30','daikin']);
       assert.ok(candidates.every(a=>a.hash==='#notes-candidate-'+new URL(a.href).searchParams.get('model')));
       assert.ok(candidates.every(a=>a.pathname==='/guides/'+(locale==='en'?'en/':'')+'release-log.html'));
       assert.ok([...document.querySelectorAll('.quick-links a')].every(a=>a.classList.contains('btn')));
@@ -345,8 +345,8 @@ test('candidate catalog failure leaves stable downloads usable and displays no u
 
 test('S30 native downloads appear only for the matching RC, with installation-specific file guidance',async()=>{
   const nativeCatalog=JSON.parse(readFileSync(require('node:path').resolve(__dirname,'../site/native-downloads.json'),'utf8'));
-  for(const locale of ['zh','en']) {
-    const f=CandidateUI.fixture();CandidateUI.appendCandidate(f.candidate,'1.0.0-rc.4','1.0.0-rc',107);
+  for(const locale of ['zh','en']) for(const tag of ['v1.0.0-rc.4','v1.0.0-rc.5']) {
+    const f=CandidateUI.fixture();CandidateUI.appendCandidate(f.candidate,tag.slice(1),'1.0.0-rc',107);
     const p=await controllerHomepage({locale,candidateSnapshot:f.candidate,nativeCatalog});
     try {
       const d=p.dom.window.document,area=d.getElementById('candidate-releases');
@@ -359,7 +359,7 @@ test('S30 native downloads appear only for the matching RC, with installation-sp
       for(const row of dialog.querySelectorAll('.firmware-file')){
         assert.match(row.textContent,/SHA-256: [a-f0-9]{64}/);
         assert.equal(row.querySelector('a').origin,'https://github.com');
-        assert.ok(row.querySelector('a').pathname.includes('/v1.0.0-rc.4/'));
+        assert.ok(row.querySelector('a').pathname.includes('/'+tag+'/'));
       }
       assert.ok(dialog.querySelector('a[href*="s30-flash.html"]'));
       dialog.querySelector('button').click();assert.equal(dialog.open,false);
