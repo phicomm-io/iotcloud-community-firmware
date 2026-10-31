@@ -1,13 +1,13 @@
 {
   "repository": "phicomm-io/phicomm-community-frontend",
-  "commit": "abae66035aae956701f04776d80d2738211aea06",
+  "commit": "b30e7aa352ed612b02bf6680dc03e335f72c8ae0",
   "source_dirty": false,
   "path": "common/web",
   "sha256": {
     "appearance.js": "afdf9672e22338b82d1ac7ffa944e33cade436e4bd00b3a57ca8e45d710fb352",
     "automation.js": "b06b785bc1e37fc5cc52a771be0fcf529d9c40045b9dafb5afb19e9cd45466f2",
     "diagnostics-schema.js": "89c47f5cbe3dbc9e1f4216e239be44b40f18b23dc1448f649ca5a191d14d24c1",
-    "i18n.js": "7d5abe73e5d292351c03c94c3b35792f2a6ce9d60967d3af59c6c2c934515796",
+    "i18n.js": "e612ae367edfd7239d84d542f081967708e17a3e51f08c9f81ba10af61ac27ae",
     "provision.js": "f8a4d2e54b0ba8eaadd625ff3b8d956e7a312218f0f6df97a4385cf83a44dd95",
     "service.js": "4b63085eceba274c371f79b681fa14471e42f769b7b7bbfefbb91777482248a8",
     "style.css": "55bf48816dd8c455d519634e2273b0b1a23e1a13088c943e81ce6cb5c7a509fe",

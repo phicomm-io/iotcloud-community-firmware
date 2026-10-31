@@ -1,11 +1,11 @@
 {
   "lab": {
-    "head": "7d8684e7d5bb744bbf10a9fd414c64349214b1b8",
+    "head": "cc7b0df3398e1f3d74f326c5843b7cea81e69a1e",
     "dirty": false,
     "scope": "listed upstream source paths"
   },
   "frontend": {
-    "head": "abae66035aae956701f04776d80d2738211aea06",
+    "head": "b30e7aa352ed612b02bf6680dc03e335f72c8ae0",
     "dirty": false,
     "scope": "listed upstream source paths"
   },
@@ -229,7 +229,7 @@
     "web/shared/i18n.js": {
       "source": "frontend/common/web/i18n.js",
       "upstream_sha256": "e612ae367edfd7239d84d542f081967708e17a3e51f08c9f81ba10af61ac27ae",
-      "sha256": "7d5abe73e5d292351c03c94c3b35792f2a6ce9d60967d3af59c6c2c934515796"
+      "sha256": "e612ae367edfd7239d84d542f081967708e17a3e51f08c9f81ba10af61ac27ae"
     },
     "web/shared/service.js": {
       "source": "frontend/common/web/service.js",
@@ -394,7 +394,7 @@
   },
   "adaptation_patch_sha256": {
     "protocol/lab-openbeken.patch": "e3ff45d2ed9ba63d2d2dbf56fc2832db3d9574458512c0296637acb43553de75",
-    "web/frontend-openbeken.patch": "bc395b532eede5a8c41d61b6f1deef7d1b2d3eb8dc57f34064131b7163d0c2d3",
+    "web/frontend-openbeken.patch": "27221b192fd2033461c10d1a0e79106edead3ef7adc0289f94b57b6838922fdf",
     "patches/mdns-init-checked.patch": "d13b6c9d2c92aa4ea9b121a62398d3063f20a796512dae82f6f8bd82bc0b2d83"
   },
   "source_snapshot": {
