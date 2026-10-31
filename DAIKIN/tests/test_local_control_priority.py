@@ -12,7 +12,7 @@ def function(path,start):
 class LocalControlPriority(unittest.TestCase):
  def test_button_and_sensor_pumps_during_actual_hap_wait(self):
   local=function(ROOT/'src/main.cpp','static void pollLocalControls(uint32_t now){')
-  home=function(ROOT/'src/home.inc','static bool homeControl(size_t device,')
+  home=function(ROOT/'src/home.inc','static bool homeAwaitControl(){')+'\n'+function(ROOT/'src/home.inc','static bool homeControl(size_t device,')
   source=r'''
 #include <cassert>
 #include <cstddef>

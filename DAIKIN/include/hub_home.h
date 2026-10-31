@@ -12,7 +12,7 @@ class HubHome {
 public:
   static constexpr size_t Capacity = HubService::Devices + 1;
   enum Metric { Temperature, Humidity, PM25, PM10, CO2, TVOC, MetricCount };
-  enum Control { Outlet, FanOn, FanSpeed, LightOn, LightBrightness };
+  enum Control { Outlet, FanOn, FanSpeed, LightOn, LightBrightness, Name };
   struct Value {
     double number = 0;
     uint32_t at = 0;
@@ -23,8 +23,10 @@ public:
   };
   struct Device {
     std::string model, mac, base, name, query;
-    uint32_t aid = 0, at = 0, sequence = 0, queriedAt = 0;
+    uint32_t aid = 0, at = 0, sequence = 0, queriedAt = 0, nameCapabilitiesAt = 0;
     bool seen = false, online = false, offline = false, controls = false;
+    bool nameCapabilitiesKnown = false, queryCapabilities = false;
+    uint8_t nameMax = 0;
     bool outlets[6] = {}, fan = false, light = false, freshAir = false;
     unsigned speed = 0, brightness = 0;
     std::array<Value, MetricCount> values;
@@ -33,6 +35,10 @@ public:
     }
     bool reachable(uint32_t now) const {
       return online && seen && uint32_t(now - at) < 30000;
+    }
+    bool nameWritable(uint32_t now) const {
+      return reachable(now) && nameMax && nameCapabilitiesKnown &&
+             uint32_t(now - nameCapabilitiesAt) < 120000;
     }
   };
   std::array<Device, Capacity> devices;
@@ -103,11 +109,24 @@ public:
             }
             pending.failed = !accepted;
           }
-          if (d.query.empty() || doc["request_id"] != d.query ||
-              doc["code"] != "ok" || !doc["data"].is<JsonObject>())
+          if (d.query.empty() || doc["request_id"] != d.query)
             return;
           d.query.clear();
-          state(d, doc["data"]);
+          if (d.queryCapabilities) {
+            d.nameCapabilitiesKnown = true;
+            d.nameCapabilitiesAt = clock;
+            d.nameMax = 0;
+            auto data = doc["data"].as<JsonObjectConst>();
+            if (doc["code"] == "ok" && data["model"] == d.model &&
+                canonicalMac(data["device_id"]) == d.mac &&
+                data["name_max_bytes"].is<unsigned>() &&
+                data["name_max_bytes"].as<unsigned>() >= 1 &&
+                data["name_max_bytes"].as<unsigned>() <= (d.model == "tc1" ? 31u : 63u)) {
+              for (JsonVariantConst action : data["actions"].as<JsonArrayConst>())
+                if (action == "name.set") d.nameMax = data["name_max_bytes"];
+            }
+          } else if (doc["code"] == "ok" && doc["data"].is<JsonObject>())
+            state(d, doc["data"]);
         } else
           state(d, doc.as<JsonObjectConst>());
         return;
@@ -119,10 +138,13 @@ public:
   void refresh() {
     for (size_t n = 0; n < size; n++) {
       auto &d = devices[queryCursor++ % size];
-      if (uint32_t(clock - d.queriedAt) < 10000 ||
-          (d.seen && uint32_t(clock - d.at) < 5000))
+      if (uint32_t(clock - d.queriedAt) < 10000)
         continue;
-      query(d);
+      const bool capabilities = d.reachable(clock) &&
+          (!d.nameCapabilitiesKnown || uint32_t(clock - d.nameCapabilitiesAt) >= 60000);
+      if (!capabilities && d.seen && uint32_t(clock - d.at) < 5000)
+        continue;
+      query(d, capabilities);
       break;
     }
   }
@@ -193,6 +215,26 @@ public:
     return pending.used &&
            (pending.failed || (pending.acked && confirmed()));
   }
+  bool beginName(size_t index, const std::string &name) {
+    if (pending.used || index >= size) return false;
+    const auto &d = devices[index];
+    if (!d.nameWritable(clock) || name.empty() || name.size() > d.nameMax ||
+        !HubDeviceBus::utf8(name)) return false;
+    DynamicJsonDocument request(512);
+    pending = Pending();
+    pending.id = identifier();
+    if (pending.id.empty()) return false;
+    pending.used = true; pending.device = index; pending.control = Name;
+    pending.name = name; pending.sequence = d.sequence;
+    request["action"] = "name.set";
+    request["request_id"] = pending.id;
+    request["params"]["name"] = name;
+    std::string body; hubWire.encode(request, d.base, body);
+    if (!bus.publish(d.base + "/command", body, false, HubDeviceBus::Origin::Internal)) {
+      pending = Pending(); return false;
+    }
+    return true;
+  }
   bool finish() {
     bool ok = pending.used && !pending.failed && pending.acked && confirmed();
     pending = Pending();
@@ -210,7 +252,7 @@ private:
     unsigned channel = 0;
     double desired = 0;
     uint32_t sequence = 0;
-    std::string id;
+    std::string id, name;
   } pending;
   bool add(const std::string &model, const std::string &mac,
            const std::string &prefix) {
@@ -237,16 +279,18 @@ private:
     auto id = randomHex ? randomHex(12) : "";
     return id.size() == 24 ? "hub_home_" + id : "";
   }
-  void query(Device &d) {
+  void query(Device &d, bool capabilities = false) {
     d.queriedAt = clock;
+    d.queryCapabilities = capabilities;
     d.query = identifier();
+    const char *action = capabilities ? "capabilities.get" : "status.get";
     std::string body;
     if(hubWire.binary(d.base)){
-      body="\x83\xa6" "action" "\xaa" "status.get" "\xaa" "request_id";
+      body="\x83\xa6" "action";body.push_back(char(0xa0|strlen(action)));body+=action;body+="\xaa" "request_id";
       if(d.query.size()<32)body.push_back(char(0xa0|d.query.size()));
       else {body.push_back(char(0xd9));body.push_back(char(d.query.size()));}
       body+=d.query;body+="\xa6" "params" "\x80";
-    }else body="{\"action\":\"status.get\",\"request_id\":\""+d.query+"\",\"params\":{}}";
+    }else body="{\"action\":\""+std::string(action)+"\",\"request_id\":\""+d.query+"\",\"params\":{}}";
     if (!d.query.empty() && !bus.publish(d.base + "/command",body,
                         false, HubDeviceBus::Origin::Internal))
       d.query.clear();
@@ -356,6 +400,7 @@ private:
     case LightBrightness:
       return !pending.power ? !d.light
           : d.light && d.brightness == unsigned((pending.desired * 255 + 50) / 100);
+    case Name: return d.name == pending.name;
     }
     return false;
   }

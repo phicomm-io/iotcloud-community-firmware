@@ -667,6 +667,7 @@ class SpanCharacteristic{
   void *operator new(size_t size){return(HS_MALLOC(size));}                                   // override new operator to use PSRAM when available
 
   bool iotcloudAvailable=true; // Read status for bridged devices.
+  uint8_t iotcloudStringLimit=0; // Optional UTF-8 byte bound, checked before allocation.
   template <class T=int> T getVal(){return(uvGet<T>(value));}                                 // gets the value for numeric-based Characteristics
   char *getString(){return(getStringGeneric(value));}                                         // gets the value for string-based Characteristics
   size_t getData(uint8_t *data, size_t len){return(getDataGeneric(data,len,value));}          // gets the value for data-based Characteristics

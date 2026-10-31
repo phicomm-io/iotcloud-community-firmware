@@ -21,7 +21,7 @@ static ph_buf *lanBusinessDispatch(void *,const void *data,size_t length,const p
   ph_value root={},action,id;bool allowed=false;
   if(phv_parse(PH_WIRE_MSGPACK,data,length,&root)&&phv_get(&root,"action",&action))
     allowed=phv_equal_text(&action,"status.get")||phv_equal_text(&action,"capabilities.get")||
-      phv_equal_text(&action,"indicator.set")||phv_equal_text(&action,"co2.calibrate");
+      phv_equal_text(&action,"indicator.set")||phv_equal_text(&action,"co2.calibrate")||phv_equal_text(&action,"name.set");
   if(!allowed){
     // CONTROL never inherits ADMIN. Echo a valid request id without borrowing it.
     DynamicJsonDocument reply(512);reply["code"]="unauthorized";

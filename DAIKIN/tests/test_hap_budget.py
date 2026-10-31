@@ -72,7 +72,7 @@ int main() {
   const B::Sizes target{20, 128, 76, 100, 88, 88, 88, 4};
   B graph(target);
   assert(graph.device(B::Daikin) && graph.device(B::M1) && graph.device(B::TC1) && graph.device(B::A1));
-  assert(graph.accessories == 5 && graph.services == 22 && graph.characteristics == 78);
+  assert(graph.accessories == 5 && graph.services == 22 && graph.characteristics == 82);
   assert(graph.fits(70000, 24000));
   const auto needed = graph.bytes;
   assert(needed > B::BusinessReserve + B::Bootstrap);
@@ -84,9 +84,9 @@ int main() {
   assert(B::kind("s30-v1b") == B::S30V1B && B::kind("s30") == B::Invalid);
   assert(single.device(B::S30V1B) && strip.device(B::TC1));
   assert(single.accessories == 2 && single.services == 3 &&
-         single.characteristics == 14 && single.loops == 1);
+         single.characteristics == 15 && single.loops == 1);
   assert(strip.accessories == 2 && strip.services == 8 &&
-         strip.characteristics == 24 && strip.loops == 6);
+         strip.characteristics == 25 && strip.loops == 6);
   assert(single.bytes < strip.bytes && single.fits(70000, 24000));
   assert(!single.device(B::S30V1B)); // Finished budgets cannot change the graph.
 

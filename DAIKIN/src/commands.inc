@@ -1,4 +1,5 @@
 #include "diagnostics_ids.h"
+#include "device_name.h"
 static void otaPartitionStatus(JsonObject out){
   // Report the table installed on this device, independently of the build CSV.
   const auto *running=esp_ota_get_running_partition();
@@ -186,12 +187,13 @@ static void diagnostics(JsonObject out){
   diagnosticField(fields,PH_DIAG_HUB_MIN_BYTE_HEAP,heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));
 #endif
 }
-static const char *actions[]={"status.get","diagnostics.get","config.get","capabilities.get","binding.status.get","lan.pair","lan.pair.get","lan.unpair","config.set","wifi.scan","wifi.scan.get","indicator.set","co2.calibrate","system.reboot","system.reset"};
+static const char *actions[]={"status.get","diagnostics.get","config.get","capabilities.get","binding.status.get","lan.pair","lan.pair.get","lan.unpair","config.set","name.set","wifi.scan","wifi.scan.get","indicator.set","co2.calibrate","system.reboot","system.reset"};
 static void capabilities(JsonObject out){
   out["device_id"]=deviceId;out["model"]="daikin";out["firmware_version"]=version;out["variant"]=DAIKIN_VARIANT;out["firmware_variant"]=DAIKIN_VARIANT;out["hardware_model"]="BRY88AX151K";out["protocol"]=2;
   out["config_backup"]=1;out["config_recovery"]=configRecovery;out["device_language"]="zh-CN,en";out["mqtt_protocol"]="tmcp";out["mqtt_protocol_version"]=2;
   out["formaldehyde_present"]=hchoPresent;out["sensor_session_protocol"]=3;out["sensor_schema"]=3;
   out["indicator_rules_supported"]=true;
+  out["name_max_bytes"]=63;
 #ifndef IOTCLOUD_HUB
   out["ota_variant_conversion"]="full-to-hub";
 #endif
@@ -319,9 +321,13 @@ static String execute(const String &body,bool binary=true){
 #endif
         rebootAt=millis()+1000;code="accepted";
       }
-    }else if(action=="config.set"){
-      String section=params["section"]|"";JsonObjectConst values=params["values"];
-      bool valid=knownFields(params,"|section||values|")&&values&&!values.isNull()&&values.size()>0;
+    }else if(action=="config.set"||action=="name.set"){
+      const bool rename=action=="name.set";
+      String section=rename?"device":params["section"]|"";JsonObjectConst values=rename?params:params["values"].as<JsonObjectConst>();
+      ph_value checked;
+      bool valid=rename?(params.size()==1&&params.begin()->key().size()==4&&params.containsKey("name")&&iotcloud::deviceName(params["name"])&&
+          (!binary||phv_parse(PH_WIRE_MSGPACK,body.c_str(),body.length(),&checked))):
+          (knownFields(params,"|section||values|")&&values&&!values.isNull()&&values.size()>0);
       valid=valid&&validSection(section,values);
       if(!valid)code="invalid_params";
       else{
@@ -331,7 +337,7 @@ static String execute(const String &body,bool binary=true){
         // otherwise outlive the request document after config.set(candidate).
         for(JsonPairConst kv:values){const char *key=kv.key().c_str();if(section=="mqtt"&&!strcmp(key,"username"))key="user";candidate[section][String(key)]=kv.value();}
         if(!saveConfig(candidate))code="storage_error";
-        else{code="accepted";if(section=="mqtt"||section=="device")mqttRestart=true;if(section=="wifi")wifiRestart=true;
+        else{code="accepted";if(rename)data["name"]=config["device"]["name"];if(section=="mqtt"||section=="device")mqttRestart=true;if(section=="wifi")wifiRestart=true;
 #ifdef IOTCLOUD_HUB
           if(section=="mqtt")hubUpstreamChanged();
 #endif

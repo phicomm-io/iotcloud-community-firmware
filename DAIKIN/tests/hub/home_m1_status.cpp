@@ -24,13 +24,19 @@ struct SpanCharacteristic {
   template<class T=int> T getVal()const{return T(value);}
   template<class T> void setVal(T next){value=next;}
   void setRange(double,double,double){}
+  unsigned getIID()const{return 1;}
 };
 struct SpanService {
   std::string type;
   SpanService(const char *type,const char*):type(type){}
   virtual ~SpanService(){}
   virtual void loop(){}
+  virtual bool update(){return true;}
 };
+using boolean=bool;
+static void homeAttachName(size_t,unsigned){}
+static bool homeNameUpdated(size_t){return false;}
+static bool homeRename(size_t){return false;}
 #define REQ(name) ((void)0)
 #define OPT(name) ((void)0)
 namespace Characteristic {

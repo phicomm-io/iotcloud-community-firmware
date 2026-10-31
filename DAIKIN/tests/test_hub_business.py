@@ -32,5 +32,8 @@ class HubBusiness(unittest.TestCase):
     def test_homekit_model_ack_then_state(self):
         self.scenario('home')
 
+    def test_homekit_names_capabilities_and_confirmation(self):
+        self.scenario('home_names')
+
     def test_cloud_routes_and_bemfa(self):
         self.scenario('relay')

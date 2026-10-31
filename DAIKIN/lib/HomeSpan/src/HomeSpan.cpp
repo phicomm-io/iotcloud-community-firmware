@@ -43,6 +43,7 @@
 #include "HomeSpan.h"
 #include "HAP.h"
 #include "IoTCloudValues.h"
+#include "IoTCloudJson.h"
 #include <algorithm>
 
 const __attribute__((section(".rodata_custom_desc"))) SpanPartition spanPartition = {HOMESPAN_MAGIC_COOKIE,0};
@@ -409,16 +410,7 @@ SpanCharacteristic *Span::find(uint32_t aid, uint32_t iid){
 ///////////////////////////////
 
 int Span::countCharacteristics(char *buf){
-
-  int nObj=0;
-  
-  const char tag[]="\"aid\"";
-  while((buf=strstr(buf,tag))){         // count number of characteristic objects in PUT JSON request
-    nObj++;
-    buf+=strlen(tag);
-  }
-
-  return(nObj);
+  return iotcloud::homeJsonRows(buf,false,[](int,unsigned,char *){return true;});
 }
 
 ///////////////////////////////
@@ -427,89 +419,29 @@ int Span::updateCharacteristics(char *buf, SpanBuf *pObj, int capacity){
 
   if(capacity<1 || capacity>32)return 0;
 
-  int nObj=0;
-  char *p1;
-  int cFound=0;
+  // Validate the complete envelope before terminating borrowed scalar tokens.
+  if(countCharacteristics(buf)!=capacity)return 0;
   boolean twFail=false;
-  
-  while(char *t1=strtok_r(buf,"{",&p1)){           // parse 'buf' and extract objects into 'pObj' unless NULL
-   buf=NULL;
-    char *p2;
-    int okay=0;
-    
-    while(char *t2=strtok_r(t1,"}[]:, \"\t\n\r",&p2)){
-
-      if(!cFound){                                 // first token found
-        if(strcmp(t2,"characteristics")){
-          LOG0("\n*** ERROR:  Problems parsing JSON - initial \"characteristics\" tag not found\n\n");
-          return(0);
-        }
-        cFound=1;
+  const int nObj=iotcloud::homeJsonRows(buf,true,[&](int row,unsigned key,char *value){
+    uint64_t id;
+    switch(key){
+      case 0:
+      case 1:
+        if(!iotcloud::homeParseUnsigned(value,1,UINT32_MAX,id))return false;
+        if(key==0)pObj[row].aid=uint32_t(id);else pObj[row].iid=uint32_t(id);
         break;
-      }
-      
-      t1=NULL;
-      if(nObj>=capacity)return 0;
-      char *t3;
-      if(!strcmp(t2,"aid") && (t3=strtok_r(t1,"}[]:, \"\t\n\r",&p2))){
-        uint64_t id;
-        if((okay&1) || !iotcloud::homeParseUnsigned(t3,1,UINT32_MAX,id))return 0;
-        pObj[nObj].aid=uint32_t(id);
-        okay|=1;
-      } else 
-      if(!strcmp(t2,"iid") && (t3=strtok_r(t1,"}[]:, \"\t\n\r",&p2))){
-        uint64_t id;
-        if((okay&2) || !iotcloud::homeParseUnsigned(t3,1,UINT32_MAX,id))return 0;
-        pObj[nObj].iid=uint32_t(id);
-        okay|=2;
-      } else 
-      if(!strcmp(t2,"value") && (t3=strtok_r(t1,"}[]:,",&p2))){
-        if(okay&4)return 0;
-        // Preserve quotes so a JSON string cannot be coerced into a number.
-        pObj[nObj].val=t3;
-        okay|=4;
-      } else 
-      if(!strcmp(t2,"ev") && (t3=strtok_r(t1,"}[]:, \"\t\n\r",&p2))){
-        if(okay&8)return 0;
-        pObj[nObj].ev=t3;
-        okay|=8;
-      } else 
-      if(!strcmp(t2,"r") && (t3=strtok_r(t1,"}[]:, \"\t\n\r",&p2))){
-        if((okay&16) || !iotcloud::homeParseBool(t3,pObj[nObj].wr))return 0;
-        okay|=16;
-      } else 
-      if(!strcmp(t2,"pid") && (t3=strtok_r(t1,"}[]:, \"\t\n\r",&p2))){        
-        uint64_t pid;
-        if((okay&32) || !iotcloud::homeParseUnsigned(t3,1,UINT64_MAX,pid))return 0;
-        okay|=32;
-        if(!TimedWrites.count(pid)){
-          LOG0("\n*** ERROR:  Timed Write PID not found\n\n");
-          twFail=true;
-        } else        
-        if(millis()>TimedWrites[pid]){
-          LOG0("\n*** ERROR:  Timed Write Expired\n\n");
-          twFail=true;
-        }        
-      } else {
-        LOG0("\n*** ERROR:  Problems parsing JSON characteristics object - unexpected property \"%s\"\n\n",t2);
-        return(0);
-      }
-    } // parse property tokens
-
-    if(!t1){                                                                  // at least one token was found that was not initial "characteristics"
-      if((okay&15)==7 || (okay&15)==11 || (okay&15)==15){                      // all required properties found
-        if(!pObj[nObj].val)                                                   // if value is NOT being updated
-          pObj[nObj].wr=false;                                                // ignore any request for write-response
-        nObj++;                                                               // increment number of characteristic objects found        
-      } else {
-        LOG0("\n*** ERROR:  Problems parsing JSON characteristics object - missing required properties\n\n");
-        return(0);
-      }
+      case 2:pObj[row].val=value;break;
+      case 3:pObj[row].ev=value;break;
+      case 4:if(!iotcloud::homeParseBool(value,pObj[row].wr))return false;break;
+      case 5:
+        if(!iotcloud::homeParseUnsigned(value,1,UINT64_MAX,id))return false;
+        if(!TimedWrites.count(id) || millis()>TimedWrites[id])twFail=true;
+        break;
     }
-      
-  } // parse objects
-
+    return true;
+  });
   if(nObj!=capacity)return 0;
+  for(int i=0;i<nObj;++i)if(!pObj[i].val)pObj[i].wr=false;
   // Each characteristic owns one pending value. Reject aliases before PASS 1
   // so a second row cannot replace or revive a previously rejected write.
   for(int i=0;i<nObj;++i)
@@ -977,7 +909,7 @@ String SpanCharacteristic::uvPrint(UVal &u){
     case FORMAT::STRING:
     case FORMAT::DATA:
     case FORMAT::TLV_ENC:
-      return(String("\"") + String(u.STRING) + String("\""));        
+      return(iotcloud::homeJsonQuote<String>(u.STRING));        
   } // switch
   return(String());       // included to prevent compiler warnings
 }
@@ -1286,11 +1218,9 @@ StatusCode SpanCharacteristic::loadUpdate(char *val, char *ev, boolean wr){
     case STRING:
     case DATA:
     case TLV_ENC:{
-      const char *begin,*end;
-      if(!iotcloud::homeValueBounds(val,begin,end) || end-begin<2 || *begin!='"' || end[-1]!='"')
-        return(StatusCode::InvalidValue);
-      *const_cast<char *>(end-1)='\0';
-      uvSet(newValue,(const char *)stripBackslash(const_cast<char *>(begin+1)));
+      const char *decoded=iotcloud::homeJsonString(val);
+      if(!decoded || (iotcloudStringLimit && (!*decoded || strlen(decoded)>iotcloudStringLimit)))return(StatusCode::InvalidValue);
+      uvSet(newValue,decoded);
       break;
     }
 
