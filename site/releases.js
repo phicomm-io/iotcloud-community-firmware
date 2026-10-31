@@ -82,9 +82,9 @@ function releaseCard(release, latest, snapshot, candidate = false) {
  const devices=el('div');devices.className='firmware-devices';
  for(const [model,original] of Object.entries(release.models))devices.append(deviceDownload(model,release,[['full',original],...Object.entries(original.variants||{})],snapshot));
  const nativeNode=document.getElementById('native-downloads');
- if(candidate&&nativeNode){
+ if(nativeNode){
   const native=JSON.parse(nativeNode.textContent).releases.find(r=>r.tag===release.tag);
-  if(native)for(const [model,value] of Object.entries(native.models))devices.append(deviceDownload(model,release,[['full',value]],snapshot,true));
+  if(native)for(const [model,value] of Object.entries(native.models))if(!release.models[model])devices.append(deviceDownload(model,release,[['full',value]],snapshot,true));
  }
  const notes=el('details');notes.className='release-notes';notes.append(el('summary',t('本版变化','Changes in this release')),reviewedNotes(release,snapshot.manifest));
  box.append(devices,link(t('SHA256 校验文件','SHA256 checksums'),`/releases/${release.tag}/SHA256SUMS`,snapshot.source),link(t('原始单版本说明 ↗','Original release notes ↗'),release.notes,snapshot.source),notes);

@@ -20,6 +20,7 @@ sys.path.insert(0, str(ROOT / 'tools/release'))
 from pages import ALIASES, DEVICE_SECTIONS, GROUPS, PAGES, PARENTS, SITE_URL, EN_GROUPS, EN_PAGES, validate_translations  # noqa: E402
 from demo_navigation import add_navigation
 from public_links import expand_public_links, PUBLIC_LINKS
+from release_version import version_key
 from seo import EN_INDEX_TITLE, EN_INDEX_DESCRIPTION, guide_metadata, metadata, write_discovery  # noqa: E402
 
 EXTENSIONS = ['tables', 'fenced_code', 'attr_list', 'toc']
@@ -171,8 +172,20 @@ def docs_index(language="zh", base="guides/"):
 def native_downloads(archive=None, formal=False):
     """Publish only explicit native images, with hashes checked in formal builds."""
     catalog = json.loads((HERE / 'native-downloads.json').read_text())
+    retained = archive / 'releases/native-downloads.json' if archive else None
+    if retained and retained.is_file():
+        catalog = json.loads(retained.read_text())
     if catalog.get('schema') != 1:
         raise ValueError('Unsupported native download catalog')
+    if formal:
+        expected = set()
+        for name in ('index.json', 'candidates.json'):
+            path = archive / 'releases' / name
+            if path.is_file():
+                expected.update(r['tag'] for r in json.loads(path.read_text())['releases']
+                                if version_key(r['tag']) >= version_key('v1.0.0-rc.4'))
+        if expected - {r['tag'] for r in catalog['releases']}:
+            raise ValueError('Native S30 downloads missing for a published release')
     for release in catalog['releases']:
         tag = release['tag']
         if not re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+(?:-rc(?:\.[0-9]+)?)?', tag):

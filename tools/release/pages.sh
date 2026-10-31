@@ -47,6 +47,7 @@ if [[ "$mode" != build && "${PHICOMM_PAGES_INCLUDE_CANDIDATES:-}" == 1 ]]; then
  python3 tools/release/archive_pages.py "$target/archive" --include-candidates --candidates-r2
 fi
 python3 tools/release/archive_pages.py "$target/archive" --existing
+python3 tools/release/native_pages.py "$target/archive"
 python3 tests/test_site_docs.py
 python3 site/build.py build/pages --archive "$target/archive" --formal
 if [[ "$mode" == build ]]; then
