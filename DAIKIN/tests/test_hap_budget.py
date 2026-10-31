@@ -4,6 +4,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from DAIKIN.tests.arduinojson import codec_source
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -79,6 +80,21 @@ int main() {
   assert(graph.fits(needed, B::MinimumBlock));
   assert(graph.bytes == needed && !graph.fits(200000, B::MinimumBlock - 1));
 
+  B single(target), strip(target);
+  assert(B::kind("s30-v1b") == B::S30V1B && B::kind("s30") == B::Invalid);
+  assert(single.device(B::S30V1B) && strip.device(B::TC1));
+  assert(single.accessories == 2 && single.services == 3 &&
+         single.characteristics == 14 && single.loops == 1);
+  assert(strip.accessories == 2 && strip.services == 8 &&
+         strip.characteristics == 24 && strip.loops == 6);
+  assert(single.bytes < strip.bytes && single.fits(70000, 24000));
+  assert(!single.device(B::S30V1B)); // Finished budgets cannot change the graph.
+
+  clear(); add("s30-v1b", 1);
+  const auto singleBoundary = minimum();
+  freeByte = singleBoundary - 1; assert(!homeMemoryReady());
+  freeByte = singleBoundary; assert(homeMemoryReady());
+
   clear(); add("m1", 1); add("tc1", 2); add("a1", 3);
   assert(homeMemoryReady()); // Existing three-model + own-device baseline.
   const auto boundary = minimum();
@@ -90,7 +106,7 @@ int main() {
   homeInit(); assert(!construction && !std::strcmp(homeError, "busy"));
   enabled = false; homeInit(); assert(!construction);
 
-  for (const auto *model : {"m1", "tc1", "daikin"}) {
+  for (const auto *model : {"m1", "tc1", "daikin", "s30-v1b"}) {
     clear();
     for (unsigned i = 1; i <= 12; ++i) add(model, i);
     assert(!homeMemoryReady()); // Legal registration capacity, insufficient heap.
@@ -120,7 +136,7 @@ int main() {
                         &huge.outlet, &huge.fan, &huge.light, &huge.pointer};
     *members[field] = size_t(-1);
     B overflow(huge);
-    overflow.device(B::Daikin); overflow.device(B::TC1); overflow.device(B::A1);
+    overflow.device(B::Daikin); overflow.device(B::TC1); overflow.device(B::A1); overflow.device(B::S30V1B);
     assert(!overflow.fits(size_t(-1), size_t(-1)));
   }
   std::printf("HAP startup graph budget/preflight passed (target baseline need %zu bytes)\n", needed);
@@ -147,7 +163,7 @@ class HapBudget(unittest.TestCase):
                 'c++', '-std=c++11', '-g', '-Wall', '-Wextra', '-Werror',
                 '-fsanitize=address,undefined', '-fno-omit-frame-pointer', '-fno-pie', '-no-pie',
                 '-I' + str(ROOT / 'include'), '-I' + str(build),
-                '-I' + str(ROOT / '.pio/libdeps/bry88ab-hub/ArduinoJson/src'),
+                '-I' + str(codec_source()),
                 str(fixture), '-o', str(binary)], check=True)
             subprocess.run([str(binary)], check=True, timeout=15,
                            env={**os.environ, 'ASAN_OPTIONS': 'detect_leaks=1'})

@@ -127,7 +127,7 @@ static __attribute__((noinline)) int ctx_ph_mqtt_client_init(port_state *ctx, Cl
 static __attribute__((noinline)) int ctx_ph_mqtt_client_deinit(port_state *ctx, Client *c);
 static __attribute__((noinline)) int ctx_ph_mqtt_connect(port_state *ctx, Client *c, MQTTPacket_connectData *data);
 static __attribute__((noinline)) int ctx_ph_mqtt_disconnect(port_state *ctx, Client *c);
-static __attribute__((noinline)) int ctx_ph_mqtt_subscribe(port_state *ctx, Client *c, const char *filter, enum QoS qos, messageHandler handler);
+static __attribute__((noinline)) int ctx_ph_mqtt_subscribe(port_state *ctx, Client *c, const char *filter, enum QoS qos, messageHandler handler, bool optional);
 static __attribute__((noinline)) int ctx_ph_mqtt_yield(port_state *ctx, Client *c, int timeout);
 static __attribute__((noinline)) int ctx_ph_mqtt_resource_ready(port_state *ctx);
 static __attribute__((noinline)) void ctx_ph_mqtt_resource_round_end(port_state *ctx, bool complete);
@@ -568,7 +568,7 @@ static __attribute__((noinline)) int ctx_ph_mqtt_disconnect(port_state *ctx, Cli
     return end(ctx, PH_MQTT_ERROR_SESSION, MQTTDisconnect(c));
 }
 
-static __attribute__((noinline)) int ctx_ph_mqtt_subscribe(port_state *ctx, Client *c, const char *filter, enum QoS qos, messageHandler handler) {
+static __attribute__((noinline)) int ctx_ph_mqtt_subscribe(port_state *ctx, Client *c, const char *filter, enum QoS qos, messageHandler handler, bool optional) {
     if (!filter || !handler || !begin(ctx, c, PH_MQTT_ERROR_SUBSCRIBE))
         return MQTT_FAILURE;
     unsigned at = 0;
@@ -595,6 +595,12 @@ static __attribute__((noinline)) int ctx_ph_mqtt_subscribe(port_state *ctx, Clie
             ph_mqtt_discard_route(&ctx->core, at);
             memset(&ctx->subscriptions[at], 0, sizeof(ctx->subscriptions[at]));
         }
+    }
+    if (optional && rc == MQTT_SUBSCRIPTION_REJECTED) {
+        /* Finish the protocol scope without latching an optional ACL refusal
+         * as the session's fatal cause. A concurrently latched failure wins. */
+        int completed = end(ctx, PH_MQTT_ERROR_SUBSCRIBE, MQTT_SUCCESS);
+        return completed == MQTT_SUCCESS ? MQTT_SUBSCRIPTION_REJECTED : completed;
     }
     return end(ctx, PH_MQTT_ERROR_SUBSCRIBE, rc);
 }
@@ -994,9 +1000,10 @@ int ph_mqtt_disconnect(Client *c) { return ctx_ph_mqtt_disconnect(&primary_port,
 #ifdef PHICOMM_BEMFA
 int bm_disconnect(Client *c) { return ctx_ph_mqtt_disconnect(secondary_port, c); }
 #endif
-int ph_mqtt_subscribe(Client *c, const char *filter, enum QoS qos, messageHandler handler) { return ctx_ph_mqtt_subscribe(&primary_port, c, filter, qos, handler); }
+int ph_mqtt_subscribe(Client *c, const char *filter, enum QoS qos, messageHandler handler) { return ctx_ph_mqtt_subscribe(&primary_port, c, filter, qos, handler, false); }
+int ph_mqtt_subscribe_optional(Client *c, const char *filter, enum QoS qos, messageHandler handler) { return ctx_ph_mqtt_subscribe(&primary_port, c, filter, qos, handler, true); }
 #ifdef PHICOMM_BEMFA
-int bm_subscribe(Client *c, const char *filter, enum QoS qos, messageHandler handler) { return ctx_ph_mqtt_subscribe(secondary_port, c, filter, qos, handler); }
+int bm_subscribe(Client *c, const char *filter, enum QoS qos, messageHandler handler) { return ctx_ph_mqtt_subscribe(secondary_port, c, filter, qos, handler, false); }
 #endif
 int ph_mqtt_yield(Client *c, int timeout) { return ctx_ph_mqtt_yield(&primary_port, c, timeout); }
 #ifdef PHICOMM_BEMFA

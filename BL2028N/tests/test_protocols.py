@@ -76,6 +76,25 @@ class Core(unittest.TestCase):
         self.assertEqual(self.command('config.set',{'section':'device','values':{'name':'Other'}})['code'],'conflict')
         self.assertEqual(self.command('config.set',{'section':'device','values':{'name':'Other'}},rid='new')['code'],'accepted')
         self.assertEqual(self.query('config.get')['name'],'Other')
+    def test_direct_query_response_parity(self):
+        self.assertEqual(self.command('config.set',{'section':'device','values':{'name':'N'*63}},rid='long-name')['code'],'accepted')
+        self.meter()
+        for action in ('status.get','config.get','capabilities.get','info.get','power.get','diagnostics.get'):
+            if action=='power.get':
+                status=self.query();meter=status['metering']
+                expected={'on':status['power'],'metering_supported':True,'power_watts':meter['active_power'],'energy_kwh':meter['energy_kwh'],'metering':meter}
+            else:expected=self.query(action)
+            for i in (1,2):
+                for o in (1,2):
+                    reply=self.command(action,{},rid='direct-query',i=i,o=o)
+                    self.assertEqual(reply['request_id'],'direct-query')
+                    self.assertEqual(reply['code'],'ok')
+                    self.assertEqual(reply['data'],expected)
+        for f in (1,2):
+            reply=self.command('status.get',{'unknown':0},i=f,o=f)
+            self.assertEqual(reply['code'],'invalid_params');self.assertEqual(reply['data'],{})
+            reply=self.command('status.get',{},i=f,o=f,auth=False)
+            self.assertEqual(reply['code'],'unauthorized');self.assertEqual(reply['data'],{})
     def test_failure_is_atomic(self):
         before=self.query('config.get');self.mp('F 1')
         self.assertEqual(self.command('config.set',{'section':'device','values':{'power_on':True}})['code'],'storage_error')
@@ -91,13 +110,13 @@ class Core(unittest.TestCase):
         self.assertEqual(self.command('child_lock.set',{'enabled':True},rid='lock')['code'],'accepted')
         self.mp('L');self.assertFalse(self.query()['power'])
     def test_strict_inputs(self):
-        for params in ({'on':1},{'on':'true'},{'on':True,'index':1},{'on':True,'unknown':0}):
+        for params in ({'on':1},{'on':'true'},{'on':b'\0\xff'},{'on':True,'index':1},{'on':True,'unknown':0}):
             self.assertEqual(self.command('outlet.set',params,rid='bad-'+str(len(str(params))))['code'],'invalid_params')
         self.assertFalse(self.query()['power'])
-        for f,raw in [(0,b'{}'),(1,b'\x82\xa1a\xc3\xa1a\xc2'),(2,b'\xa2\x61a\xf5\x61a\xf4'),(1,b'\x81\xa1a\xcb'+bytes.fromhex('7ff0000000000000')),(2,b'\xbf\xff'),(1,b'\x81\xa1a\xc4\x01x'),(1,b'\x81\xa1a\xa1\xff')]:
+        for f,raw in [(0,b'{}'),(1,b'\x82\xa1a\xc3\xa1a\xc2'),(2,b'\xa2\x61a\xf5\x61a\xf4'),(1,b'\x81\xa1a\xcb'+bytes.fromhex('7ff0000000000000')),(2,b'\xbf\xff'),(1,b'\x81\xa1a\xa1\xff')]:
             self.assertEqual(self.call(f'V {f} {raw.hex()}'),b'\0')
         for f in (1,2):
-            for obj in ({'k':None},{'k':True},{'k':-9007199254740991},{'k':9007199254740991},{'文本':'电量'}):
+            for obj in ({'k':None},{'k':True},{'k':b'\0\xff'},{'k':-9007199254740991},{'k':9007199254740991},{'文本':'电量'}):
                 self.assertEqual(self.call(f'V {f} {PACK[f](obj).hex()}'),b'\1')
         for f in (1,2):
             self.assertEqual(self.call(f'V {f} {PACK[f]({"k":9007199254740992}).hex()}'),b'\0')
@@ -108,19 +127,22 @@ class Core(unittest.TestCase):
         self.assertEqual(self.call('B '+token),b'\1')
         self.assertEqual(self.call('O '+token),b'\1');self.assertEqual(self.call('B '+token),b'\0')
         token=self.call('H secret').decode();self.mp('T 1810000');self.assertEqual(self.call('B '+token),b'\0')
-    def test_http_sessions_replace_stale_tabs(self):
+    def test_http_session_capacity_and_expired_slot_reuse(self):
         tokens=[]
         for i in range(4):
             self.mp('T '+str(10000+i*100));tokens.append(self.call('H secret').decode())
         self.mp('T 10500');self.assertEqual(self.call('B '+tokens[0]),b'\1')
         self.assertEqual(self.call('H wrong'),b'')
         self.assertTrue(all(self.call('B '+t)==b'\1' for t in tokens))
-        # Make the second session least recently used after the validity checks.
+        # A busy login must retain even the least recently used active slot.
         self.mp('T 10600')
         for t in (tokens[0],tokens[2],tokens[3]):self.assertEqual(self.call('B '+t),b'\1')
+        self.assertEqual(self.call('H secret'),b'')
+        self.assertTrue(all(self.call('B '+t)==b'\1' for t in tokens))
+        self.mp('T 1811000')
+        self.assertTrue(all(self.call('B '+t)==b'\0' for t in tokens))
         fresh=self.call('H secret').decode();self.assertEqual(len(fresh),32)
-        self.assertEqual(self.call('B '+tokens[1]),b'\0')
-        for t in (tokens[0],tokens[2],tokens[3],fresh):self.assertEqual(self.call('B '+t),b'\1')
+        self.assertEqual(self.call('B '+fresh),b'\1')
     def test_udp_pair_resume_restart_revoke(self):
         for f in (1,2):
             key,token=self.paired(f)

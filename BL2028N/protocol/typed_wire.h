@@ -10,6 +10,7 @@
 #define PHV_MISSING 255u
 #define PHV_UINT 0u
 #define PHV_NEG 1u
+#define PHV_BYTES 2u
 #define PHV_TEXT 3u
 #define PHV_ARRAY 4u
 #define PHV_MAP 5u
@@ -30,6 +31,7 @@ bool phv_iter(const ph_value *,ph_iterator *);
 bool phv_next(ph_iterator *,char key[128],ph_value *);
 bool phv_pair(const ph_value *,unsigned,char key[128],ph_value *);
 bool phv_text(const ph_value *,char *,size_t);
+bool phv_bytes(const ph_value *,const void **,size_t *);
 bool phv_equal_text(const ph_value *,const char *);
 bool phv_int(const ph_value *,int64_t *);
 bool phv_number(const ph_value *,double *);
@@ -52,6 +54,7 @@ void phw_begin(ph_writer *,const char *key,bool array);
 void phw_end(ph_writer *);
 void phw_text(ph_writer *,const char *key,const char *);
 void phw_text_n(ph_writer *,const char *key,const char *,size_t);
+void phw_bytes_value(ph_writer *,const char *key,const void *,size_t);
 void phw_int(ph_writer *,const char *key,int64_t);
 void phw_uint(ph_writer *,const char *key,uint64_t);
 void phw_i32(ph_writer *,const char *key,int32_t);

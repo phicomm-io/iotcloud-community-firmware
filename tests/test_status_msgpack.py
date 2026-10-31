@@ -91,7 +91,7 @@ static void check(device_status_t *s,device_status_full_t *f){
   json_object *old=parent?json_object_object_get(parent,leaf):NULL;
   bool present=false;if(parent){json_object_object_foreach(parent,k,v){(void)v;if(!strcmp(k,leaf))present=true;}}
   if(present){
-   if(!strcmp(path,"http_tcp_limit_requested")){assert(value.count==PH_HTTP_WAIT_SLOTS+1);}
+   if(!strcmp(path,"http_tcp_limit_requested")){assert(value.count==PH_HTTP_CLIENT_SLOTS);}
    else same(&value,old);
    if(strcmp(path,"uptime_seconds"))json_object_object_del(parent,leaf);
   }

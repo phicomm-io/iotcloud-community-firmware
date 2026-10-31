@@ -35,10 +35,36 @@ static bool authStoreDecode(const uint8_t *in,size_t n,ph_auth_store &store){
   return ph_auth_store_valid(&store);
 }
 static const char *authConfigKey=authConfigDefaultKey;
+#ifdef IOTCLOUD_HUB
+// Legacy keys may be retired only while the exact combined generation that was
+// fully decoded (or written and read back) remains authoritative.
+static bool authConfigAuthorityValid=false;
+static size_t authConfigAuthorityBytes=0;
+static uint8_t authConfigAuthorityHash[32];
+static bool authConfigRememberAuthority(const uint8_t *bytes,size_t size){
+  authConfigAuthorityValid=mbedtls_sha256_ret(bytes,size,authConfigAuthorityHash,0)==0;
+  authConfigAuthorityBytes=size;return authConfigAuthorityValid;
+}
+static bool authConfigRetireLegacy(size_t size,const uint8_t hash[32]){
+  if(!authConfigAuthorityValid||size!=authConfigAuthorityBytes||memcmp(hash,authConfigAuthorityHash,32))return true;
+  for(const char *key:{"config","config_hub"}){
+    if(!strcmp(key,authConfigKey))continue;
+    // IDF can retain a string and a blob with the same key after a type change.
+    // Both are obsolete here; never erase the selected combined authority.
+    for(unsigned generation=0;generation<2&&prefs.isKey(key);generation++){
+      const auto type=prefs.getType(key);
+      if((type!=PT_STR&&type!=PT_BLOB)||!prefs.remove(key))return false;
+    }
+    if(prefs.isKey(key))return false;
+  }
+  return true;
+}
+#endif
 static String loadLegacyConfigText();
 static String loadAuthConfigText(){
   ph_auth_store_empty(&loadedAuthStore);authConfigKey=authConfigDefaultKey;
 #ifdef IOTCLOUD_HUB
+  authConfigAuthorityValid=false;
   // Only reuse an existing BLOB key: NVS string->blob can retain both types.
   // Existing combined authority always wins, including corrupt data.
   if(!prefs.isKey(authConfigKey)&&prefs.getType("config_hub")==PT_BLOB)authConfigKey="config_hub";
@@ -56,12 +82,17 @@ static String loadAuthConfigText(){
   const size_t storeLength=size-sizeof(header)-header.length;ph_auth_store store;
   if(header.version==3){if(!authStoreDecode(bytes.get()+sizeof(header),storeLength,store))return "invalid";}
   else {if(storeLength!=sizeof(store))return "invalid";memcpy(&store,bytes.get()+sizeof(header),sizeof(store));if(!ph_auth_store_valid(&store))return "invalid";}
-  loadedAuthStore=store;bytes[size]=0;
+  bytes[size]=0;
   const char *payload=reinterpret_cast<char*>(bytes.get()+sizeof(header)+storeLength);
-  if(header.version==1)return String(payload,header.length);
-  DynamicJsonDocument decoded(configCapacity);if(deserializeMsgPack(decoded,payload,header.length)||!decoded.is<JsonObject>()||decoded.overflowed())return "invalid";
+  DynamicJsonDocument decoded(configCapacity);
+  const auto error=header.version==1?deserializeJson(decoded,payload,header.length):deserializeMsgPack(decoded,payload,header.length);
+  if(error||!decoded.is<JsonObject>()||decoded.overflowed())return "invalid";
   const size_t jsonLength=measureJson(decoded);if(jsonLength>authConfigLimit)return "invalid";
-  String text;if(!text.reserve(jsonLength)||serializeJson(decoded,text)!=jsonLength||text.length()!=jsonLength)return "invalid";return text;
+  String text;if(!text.reserve(jsonLength)||serializeJson(decoded,text)!=jsonLength||text.length()!=jsonLength)return "invalid";
+#ifdef IOTCLOUD_HUB
+  if(!authConfigRememberAuthority(bytes.get(),size))return "invalid";
+#endif
+  loadedAuthStore=store;return text;
 }
 static bool persistAuthConfig(DynamicJsonDocument &candidate,const ph_auth_store *store){
   AuthStorageDiagnostics attempt={};attempt.attempted=true;
@@ -86,6 +117,12 @@ static bool persistAuthConfig(DynamicJsonDocument &candidate,const ph_auth_store
   if(oldSize){if(prefs.getBytes(authConfigKey,verify.get(),oldSize)!=oldSize){configRecovery=true;return finish(AuthStorageError::old_read_failed);}if(mbedtls_sha256_ret(verify.get(),oldSize,oldHash,0)){configRecovery=true;return finish(AuthStorageError::old_read_failed);}}
   const AuthConfigHeader header{authConfigMagic,3,0,uint32_t(storedLength)};
   memcpy(bytes.get(),&header,sizeof(header));authStoreEncode(bytes.get()+sizeof(header),*store);memcpy(bytes.get()+sizeof(header)+storeLength,text.c_str(),storedLength);
+#ifdef IOTCLOUD_HUB
+  // The old combined blob still contains all settings and both pairing tables.
+  // Retiring only its superseded legacy copies releases live entries before GC;
+  // a cut or failure here leaves that combined generation authoritative.
+  if(oldSize&&!authConfigRetireLegacy(oldSize,oldHash)){configRecovery=true;return finish(AuthStorageError::write_failed);}
+#endif
   // Keep one GC page plus a complete new blob generation before touching flash.
   // Every physical page can contribute at most one new split-blob chunk.
   nvs_stats_t stats={};if(nvs_get_stats(nullptr,&stats)!=ESP_OK)return finish(AuthStorageError::stats_failed);
@@ -106,20 +143,19 @@ static bool persistAuthConfig(DynamicJsonDocument &candidate,const ph_auth_store
     if(!unchanged)configRecovery=true;
     return finish(AuthStorageError::verify_failed);
   }
+#ifdef IOTCLOUD_HUB
+  authConfigRememberAuthority(bytes.get(),size);
+#endif
   if(&candidate!=&config){config=std::move(candidate);config.shrinkToFit();}
   updatePassword();return finish(AuthStorageError::ok);
 }
+#include "lan_route_storage.inc"
 static void initLocalAuth(){
   localAuthMutex=xSemaphoreCreateMutex();if(!localAuthMutex){configRecovery=true;return;}
   ph_auth_ops ops={};ops.now=[](void*)->uint32_t{return millis();};ops.random=[](void*,uint8_t *bytes,size_t n){esp_fill_random(bytes,n);return true;};
   ops.lock=[](void*){xSemaphoreTake(localAuthMutex,portMAX_DELAY);};ops.unlock=[](void*){xSemaphoreGive(localAuthMutex);};
   ops.password=[](void*,char out[33]){portENTER_CRITICAL(&authMux);memcpy(out,webPassword,33);portEXIT_CRITICAL(&authMux);return true;};
-  ops.save=[](void*,const ph_auth_store *store){
-    if(config["_version"]==1)return persistAuthConfig(config,store);
-    // A fresh empty config was shrinkToFit'd at boot and has no room even
-    // for _version. Grow a candidate rather than poisoning the live document.
-    DynamicJsonDocument candidate(std::min(configCapacity,config.memoryUsage()+1024));if(!candidate.set(config))return false;return persistAuthConfig(candidate,store);
-  };
+  ops.save=[](void*,const ph_auth_store *store){return persistLanPairingStore(store);};
   localAuthReady=ph_auth_init(&localAuth,&ops,&loadedAuthStore);if(!localAuthReady)configRecovery=true;
 }
 extern "C" ph_auth_state *device_local_auth(){return localAuthReady&&!configRecovery?&localAuth:nullptr;}

@@ -82,6 +82,7 @@ def check_symbols(symbols):
     required=('ph_http_server_step','ph_http_parser_feed','ph_http_start',
               'ph_mqtt_session_run','ph_mqtt_poll','ph_mqtt_enqueue_generation',
               'service_command_mp','service_query_mp','service_product_mp',
+              'service_http_command_mp','service_http_query_mp',
               'service_product_status_mp','service_product_diagnostics_mp','device_diagnostics_mp','phv_parse',
               'phw_cached_value','phw_number','ph_buf_reserve')
     for name in required:
@@ -116,6 +117,86 @@ def read_frames(modules,model):
     return frames
 
 
+def dispatch_frames(frames,symbols=None,wrapper=True):
+    try:
+        from .status_stack import emitted
+    except ImportError:
+        from status_stack import emitted
+    # HTTP and internal queries enter the authenticated implementation directly.
+    # The legacy LAN/MQTT wrapper may inline; its body is never a sibling sum.
+    return (emitted(frames,['mp_dispatch'],symbols) if wrapper else [])+['mp_dispatch_authenticated']
+
+
+def receipt_paths(frames,label,prefix,reserve,symbols=None):
+    try:
+        from .status_stack import emitted
+    except ImportError:
+        from status_stack import emitted
+    extra=lambda names:emitted(frames,names,symbols)
+    save=prefix+extra(['mp_receipt_save'])
+    replay=prefix+extra(['mp_receipt_copy'])
+    release=prefix+extra(['mp_receipt_release'])
+    # Release, save and replay are distinct calls. Difference construction and
+    # allocation also return before one another; bases do not form chains.
+    return {
+        label+' save allocation':(save+['ph_wire_malloc'],reserve),
+        label+' save difference':(save+extra(['mp_receipt_difference','mp_receipt_put_u16']),reserve),
+        label+' replay allocation':(replay+['ph_buf_new','ph_wire_malloc'],reserve),
+        label+' replay apply':(replay+extra(['mp_receipt_apply','mp_receipt_u16']),reserve),
+        label+' release apply':(release+extra(['mp_receipt_apply','mp_receipt_u16']),reserve),
+        label+' release free':(release+['ph_wire_free'],reserve),
+    }
+
+
+def tc1_product_paths(frames,label,prefix,reserve,symbols=None):
+    """TC1 controls and string-heavy branches retain only their own scratch."""
+    try:
+        from .status_stack import emitted,writer_paths
+    except ImportError:
+        from status_stack import emitted,writer_paths
+    extra=lambda names:emitted(frames,names,symbols)
+    product=prefix+['service_product_mp']
+    generic=product+['tc1_product_inner_mp'];control=product+['tc1_control_mp']
+    paths=writer_paths(frames,label+' generic',generic,reserve,symbols,finalize=False)
+    # Empty control results are written by the caller after the control helper
+    # returns, so neither business helper is retained for this writer.
+    paths.update(writer_paths(frames,label+' result',product,reserve,symbols,
+                              kinds={'begin'},finalize=False))
+    paths.update(writer_paths(frames,label+' bemfa fields',generic+['bemfa_config_mp_fields'],
+                              reserve,symbols,kinds={'string','bool','begin'},finalize=False))
+    head=extra(['phv_head','binary_token','binary_take','ph_wire_utf8'])
+    def lookup(branch,owner,helper,api):
+        call=owner+extra([helper])+[api]
+        # Iterator setup and walking are sequential; each repeated field lookup
+        # has returned before the next one. phv_scan is iterative, not recursive.
+        key=label+' '+branch+' '+(helper or api)
+        paths[key+' iterator']=(call+['phv_iter']+extra(['phv_child_reader'])+head,reserve)
+        paths[key+' scan']=(call+['phv_next']+extra(['phv_scan'])+head,reserve)
+    for branch,owner,helpers in [
+        ('control',control,['keys','boolparam','tc1_mp_has','number']),
+        ('generic',generic,['keys','boolparam','tc1_mp_has','number','strparam','tc1_mp_get']),
+        ('mqtt config',generic+['tc1_mqtt_config_mp'],['keys','boolparam','tc1_mp_has','number','strparam']),
+        ('ota start',generic+['tc1_ota_start_mp'],['keys','strparam'])]:
+        for helper in helpers:lookup(branch,owner,helper,'phv_keys' if helper=='keys' else 'phv_get')
+    bemfa=generic+['bemfa_config_values_mp']
+    for api in ['phv_keys','phv_get','phv_at']:lookup('bemfa',bemfa,'',api)
+    paths[label+' mqtt config status lock']=(generic+['tc1_mqtt_config_mp','tc1_status_lock'],reserve)
+    # URL parsing and OTA reservation return before a worker is created. The
+    # worker's transfer scratch belongs to its own existing stack budget.
+    ota=generic+['tc1_ota_start_mp','ota_server_start']
+    for branch,tail in [('URL',['ota_url_valid']+extra(['parse_url'])),
+                        ('claim',['ota_job_claim']),('reservation',['tc1_ota_reserve']),
+                        ('abort',['tc1_ota_abort']),('release',['ota_job_release']+extra(['job_phase']))]:
+        paths[label+' ota start '+branch]=(ota+tail,reserve)
+    for name,tail in [
+        ('reservation',['tc1_config_reserve']),('release',['tc1_config_release']),
+        ('status lock',['tc1_status_lock']),('HA refresh',['UserMqttRefreshState']),
+        ('relay state',['UserRelaySet','RelayOut']),('relay LED',['UserRelaySet','UserLedSet','UserLedRefresh']),
+        ('relay lock',['UserRelaySet','tc1_status_lock']),('LED',['UserLedSet','UserLedRefresh'])]:
+        paths[label+' control '+name]=(control+tail,reserve)
+    return paths
+
+
 def http_paths(frames,model,symbols=None):
     try:
         from .status_stack import emitted, status_paths, diagnostic_paths, writer_paths, feature_read_paths
@@ -124,36 +205,45 @@ def http_paths(frames,model,symbols=None):
     if model not in ('A1','M1','TC1'):raise ValueError('Unknown HTTP model: '+model)
     extra=lambda names:emitted(frames,names,symbols)
     owner=['owner','ph_http_server_step']
-    get=owner+extra(['acquire','action'])+['begin','prepare','ph_http_query','service_query_mp']
-    post=owner+extra(['read_body'])+['complete','ph_http_command_mp','service_command_mp']
+    get_callback=owner+extra(['acquire','action'])+['begin','prepare','ph_http_query']
+    post_callback=owner+extra(['read_body'])+['complete','ph_http_command_mp']
+    get=get_callback+['service_http_query_mp']+extra(['mp_query'])
+    post=post_callback+['service_http_command_mp']
     paths={}
     for label,prefix in [('GET',get),('POST',post)]:
         # Decode returns before business dispatch. Iterator scans are iterative,
         # not recursive: charge its complete bounded local traversal once.
-        decode=prefix+extra(['mp_decode'])
-        for api in ['phv_parse','phv_keys','phv_get']:
+        decode=prefix+extra(['mp_decode'] if label=='POST' else [])
+        for api in (['phv_parse','phv_keys','phv_get'] if label=='POST' else ['phv_parse']):
             paths['HTTP '+label+' decode '+api]=(HTTP_RESERVE,decode+[api]+extra(['phv_iter','phv_child_reader','phv_next','phv_scan','phv_duplicate','phv_skip_validated','phv_head','binary_token','binary_take','ph_wire_utf8']))
-        dispatch=prefix+['mp_dispatch']
+        dispatch=prefix+dispatch_frames(frames,symbols,wrapper=False)
         for key,(names,reserve) in diagnostic_paths(frames,model,'HTTP '+label+' diagnostics',dispatch,HTTP_RESERVE,symbols).items():paths[key]=(reserve,names)
         for key,(names,reserve) in feature_read_paths(frames,model,'HTTP '+label+' feature config',dispatch,HTTP_RESERVE,symbols).items():paths[key]=(reserve,names)
         status=dispatch+['mp_cached','service_product_status_mp']
         for key,(names,reserve) in status_paths(frames,model,'HTTP '+label+' full status',status,HTTP_RESERVE,symbols=symbols).items():paths[key]=(reserve,names)
         cached=dispatch+['mp_envelope','phw_cached_value']+extra(['phw_prefix','phw_quote','phw_head','phw_bytes'])
         paths['HTTP '+label+' cached status copy']=(HTTP_RESERVE,cached+['ph_buf_reserve','ph_wire_malloc'])
-        paths['HTTP '+label+' receipt copy']=(HTTP_RESERVE,dispatch+extra(['mp_copy'])+['ph_buf_new','ph_wire_malloc'])
+        for key,(names,reserve) in receipt_paths(frames,'HTTP '+label+' receipt',dispatch,HTTP_RESERVE,symbols).items():paths[key]=(reserve,names)
         for key,(names,reserve) in writer_paths(frames,'HTTP '+label+' envelope',dispatch+['mp_envelope'],HTTP_RESERVE,symbols).items():paths[key]=(reserve,names)
-        for helper in ('service_product_mp','service_product_capabilities_mp','service_product_info_mp'):
+        for helper in (('service_product_capabilities_mp','service_product_info_mp') if model=='TC1' else ('service_product_mp','service_product_capabilities_mp','service_product_info_mp')):
             for key,(names,reserve) in writer_paths(frames,'HTTP '+label+' '+helper,dispatch+[helper],HTTP_RESERVE,symbols).items():paths[key]=(reserve,names)
         # Typed product helpers retain configuration/scan scratch while walking
         # nested parameter values. Their validation tails are distinct from the
         # top-level envelope parser, and must not disappear from the bound.
         business=dispatch+['service_product_mp']+extra(['smp_config','smp_control',
                   'smp_music','smp_text','smp_int','smp_has'])
-        paths['HTTP '+label+' business parameter validation']=(HTTP_RESERVE,
-            business+['phv_get']+extra(['phv_iter','phv_child_reader','phv_next',
-            'phv_scan','phv_duplicate','phv_skip_validated','phv_head',
-            'binary_token','binary_take','ph_wire_utf8']))
+        if model=='TC1':
+            for key,(names,reserve) in tc1_product_paths(frames,'HTTP '+label+' business',dispatch,HTTP_RESERVE,symbols).items():paths[key]=(reserve,names)
+        else:
+            paths['HTTP '+label+' business parameter validation']=(HTTP_RESERVE,
+                business+['phv_get']+extra(['phv_iter','phv_child_reader','phv_next',
+                'phv_scan','phv_duplicate','phv_skip_validated','phv_head',
+                'binary_token','binary_take','ph_wire_utf8']))
         paths['HTTP '+label+' logs']=(HTTP_RESERVE,dispatch+extra(['mp_logs'])+['phw_text']+extra(['phw_text_n','phw_prefix','phw_quote','phw_bytes'])+['ph_buf_reserve','ph_wire_malloc'])
+    for label,callback in [('GET',get_callback),('POST',post_callback)]:
+        # Product error-envelope inspection runs after service dispatch returns.
+        for api in ['phv_parse','phv_get']:
+            paths['HTTP '+label+' service status '+api]=(HTTP_RESERVE,callback+extra(['ph_http_service_status'])+[api]+extra(['phv_iter','phv_child_reader','phv_next','phv_scan','phv_duplicate','phv_skip_validated','phv_head','binary_token','binary_take','ph_wire_utf8']))
     admission=owner+extra(['acquire','action'])+['begin','prepare','ph_http_claim','service_memory_claim']
     paths['HTTP admission']=(HTTP_RESERVE,admission)
     paths['HTTP admission cache reclaim']=(HTTP_RESERVE,admission+extra(['mp_cache_evict'])+['ph_buf_free','ph_wire_free'])
@@ -166,13 +256,43 @@ def http_paths(frames,model,symbols=None):
     paths['HTTP OTA validation']=(4096,owner+extra(['read_body'])+['complete',('tc1_ota_verify' if model=='TC1' else model.lower()+'_ota_finish'),'signed_ota_finish'])
     if model=='M1':paths['HTTP MCU exchange']=(HTTP_RESERVE,owner+extra(['read_body'])+['complete','m1_mcu_exchange'])
     if model=='TC1':
+        # Small controls prepare physical output/receipt storage before BODY.
+        # This entry bypasses mp_dispatch_authenticated, but retains its own
+        # decoded request, digest and fixed writer across the actual callee.
+        credit=owner+extra(['read_body'])+['complete','ph_http_control_command','service_http_control_mp']
+        decode=credit+extra(['mp_decode'])
+        for api in ['phv_parse','phv_keys','phv_get']:
+            paths['HTTP credited control decode '+api]=(HTTP_RESERVE,decode+[api]+extra([
+                'phv_iter','phv_child_reader','phv_next','phv_scan','phv_duplicate',
+                'phv_skip_validated','phv_head','binary_token','binary_take','ph_wire_utf8']))
+        reply=credit+extra(['mp_control_reply'])
+        paths['HTTP credited control reply init']=(HTTP_RESERVE,reply+['phw_init_fixed'])
+        paths['HTTP credited control reply finish']=(HTTP_RESERVE,reply+['phw_finish_fixed'])
+        paths['HTTP credited control reply end']=(HTTP_RESERVE,reply+['phw_end'])
+        for key,(names,reserve) in writer_paths(frames,'HTTP credited control reply',reply,
+                HTTP_RESERVE,symbols,kinds={'begin','string'},finalize=False).items():
+            # The fixed writer cannot grow; its byte primitive is still charged.
+            if not key.endswith(' growth'):paths[key]=(reserve,names)
+        for key,(names,reserve) in tc1_product_paths(frames,'HTTP credited control business',
+                credit,HTTP_RESERVE,symbols).items():paths[key]=(reserve,names)
+        paths['HTTP credited control receipt apply']=(HTTP_RESERVE,credit+extra(['mp_receipt_apply','mp_receipt_u16']))
+        paths['HTTP credited control receipt release']=(HTTP_RESERVE,credit+extra(['mp_receipt_release'])+['ph_wire_free'])
+        paths['HTTP credited control event']=(HTTP_RESERVE,credit+['service_event'])
+        prepare=owner+extra(['acquire','action'])+['begin','prepare','ph_http_control_claim']
+        claim=prepare+['ph_http_claim','service_memory_claim']
+        paths['HTTP control credit admission']=(HTTP_RESERVE,claim)
+        paths['HTTP control credit cache reclaim']=(HTTP_RESERVE,claim+extra(['mp_cache_evict'])+['ph_buf_free','ph_wire_free'])
+        paths['HTTP control credit body allocation']=(HTTP_RESERVE,prepare+['ph_http_claim','ph_wire_malloc'])
+        paths['HTTP control credit receipt allocation']=(HTTP_RESERVE,prepare+['service_http_control_credit','ph_wire_malloc'])
+        paths['HTTP control credit release']=(HTTP_RESERVE,owner+extra(['close_slot'])+['release',
+            'ph_http_product_release','service_http_control_credit_free','ph_wire_free'])
         paths['HTTP OTA MD5 validation']=(4096,owner+extra(['read_body'])+['complete','tc1_ota_verify','md5_range'])
         paths['HTTP OTA activation']=(4096,owner+extra(['close_slot'])+['release','tc1_ota_activate']+extra(['send_part']))
     else:paths['HTTP OTA recovery']=(4096,owner+['admission','ota_job_poll','feature_resume_step'])
     if model=='A1':
-        control=post+['mp_dispatch','service_product_mp']+extra(['smp_control'])+['a1_control_apply']+extra(['control_broadcast','panel_state','a1_control_light_percent'])
+        control=post+dispatch_frames(frames,symbols,wrapper=False)+['service_product_mp']+extra(['smp_control'])+['a1_control_apply']+extra(['control_broadcast','panel_state','a1_control_light_percent'])
         paths['HTTP control persistence']=(HTTP_RESERVE,control+['feature_fan_apply']+extra(['install_config'])+['feature_config_save'])
-        paths['HTTP light effect persistence']=(HTTP_RESERVE,post+['mp_dispatch','service_product_mp','feature_mp','feature_light_select_mp']+extra(['install_config'])+['feature_config_save'])
+        paths['HTTP light effect persistence']=(HTTP_RESERVE,post+dispatch_frames(frames,symbols,wrapper=False)+['service_product_mp','feature_mp','feature_light_select_mp']+extra(['install_config'])+['feature_config_save'])
     return paths
 
 
@@ -231,7 +351,7 @@ def check(modules,model,nm,elf):
     from check_mqtt_core import context_frames, check as check_mqtt
     context_frames(names for reserve,names in paths.values())
     validate_paths(paths,frames,budget,model)
-    check_mqtt(frames,model)
+    check_mqtt(frames,model,symbols)
     if model=='TC1':
         source=(root/'TC1/ota_server/ota_server.c').read_text()
         ota_budget=int(re.search(r'download_worker,(\d+),',source).group(1))

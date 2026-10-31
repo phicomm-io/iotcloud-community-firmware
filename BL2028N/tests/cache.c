@@ -50,7 +50,21 @@ int main(void) {
     assert(!cache&&allocations==releases);
     assert(ph_device_init(&d,&ops,NULL,"aabbccddeeff","cache-test",456));
     assert(ph_query(&d,"status.get",PH_WIRE_CBOR,actual,sizeof(actual)));
+    unsigned before=attempts;
+    ph_status_cache_suspend(&d,true);
+    assert(!d.maintenance&&d.cache_suspended&&!d.status_cache);
+    ph_device_set_maintenance(&d,false);
+    for(unsigned poll=0;poll<20;++poll)assert(ph_query(&d,"status.get",PH_WIRE_MSGPACK,actual,sizeof(actual)));
+    assert(attempts==before); /* HTTP/OTA completion cannot reclaim pending MQTT memory. */
+    ph_status_cache_budget(&d,8192u+PH_STATUS_CACHE_MAX-1,8192u);
+    assert(d.cache_suspended);
+    ph_status_cache_budget(&d,8192u+PH_STATUS_CACHE_MAX,8192u);
+    assert(!d.cache_suspended);
+    assert(ph_query(&d,"status.get",PH_WIRE_MSGPACK,actual,sizeof(actual)));
+    assert(attempts==before+1&&d.status_cache);
+    ph_status_cache_budget(&d,8192u,8192u);assert(!d.cache_suspended&&d.status_cache);
+    ph_status_cache_budget(&d,8191u,8192u);assert(d.cache_suspended&&!d.status_cache);
     ph_status_cache_release(&d);assert(allocations==releases);
-    puts("PASS: cached/uncached MessagePack and CBOR, 100 OTA reclamation cycles, OOM fallback and reinitialization");
+    puts("PASS: cached/uncached MessagePack and CBOR, 100 OTA reclamation cycles, OOM fallback, MQTT suspension/budget boundaries and reinitialization");
     return 0;
 }

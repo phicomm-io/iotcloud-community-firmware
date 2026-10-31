@@ -6,7 +6,7 @@
 #include "../../common/typed_wire.h"
 #include "../../common/local_auth.h"
 #include "../../common/httpd/http.h"
-typedef struct {char *body;size_t used;char scalar[1536];} ph_http_product;
+typedef struct {char *body;size_t used;ph_auth_context auth;char scalar[1536];} ph_http_product;
 static struct {char password[33];ph_auth_store store;} config,disk;
 static mico_mutex_t config_mutex;
 static bool recovery,fail_write;
@@ -35,7 +35,7 @@ static ph_value decode(ph_http_exchange *x){ph_value v;assert(!strcmp(x->respons
 static void code(ph_http_exchange *x,unsigned status,const char *expected){ph_value v=decode(x),c;assert(x->response.status==status&&phv_get(&v,"code",&c)&&phv_equal_text(&c,expected));}
 static void login(ph_http_product *p,ph_http_exchange *x,const char *pw,char token[33]){
     ph_buf *b=request("password",pw);p->body=b->buf;p->used=b->len;http_auth_complete(p,x);
-    ph_value v=decode(x),data,t;if(phv_get(&v,"data",&data)){assert(phv_get(&data,"token",&t)&&phv_text(&t,token,33));}
+    ph_value v=decode(x),data,t,required;if(phv_get(&v,"data",&data)){assert(phv_get(&data,"token",&t)&&phv_text(&t,token,33));assert(phv_get(&data,"password_required",&required)&&required.kind==(token[0]?PHV_TRUE:PHV_FALSE));}
     ph_buf_free(b);
 }
 static bool commit(void *p,const ph_auth_store *store){
@@ -43,27 +43,44 @@ static bool commit(void *p,const ph_auth_store *store){
     __typeof__(config) old=config;strcpy(config.password,p);config.store=*store;
     bool ok=persist(&config)==0;if(!ok)config=old;mico_rtos_unlock_mutex(&config_mutex);return ok;
 }
+static ph_http_product auth_product;
+static bool authorized(const char *header){memset(&auth_product,0,sizeof(auth_product));return http_auth_authorized(&auth_product,header);}
 static void test_http(void){
-    ph_http_product p={0};ph_http_request r={0};ph_http_exchange x={0};x.request=&r;strcpy(r.path,"/api/v1/auth/login");char token[33]={0},saved[33],a[40];
+    ph_http_product p={0};ph_http_request r={0};ph_http_exchange x={0};x.request=&r;
+    strcpy(r.path,"/api/v1/auth/login");char token[33]={0},saved[33],a[40];
     assert(http_auth_route(r.path)&&!http_auth_route("/api/v1/config"));
     login(&p,&x,"wrong",token);code(&x,401,"unauthorized");
-    login(&p,&x,"",token);code(&x,200,"ok");strcpy(saved,token);snprintf(a,sizeof(a),"Bearer %s",token);
-    assert(http_auth_authorized(a)&&!http_auth_authorized("Basic YWRtaW46"));
+    for(unsigned i=0;i<12;i++){login(&p,&x,"",token);code(&x,200,"ok");assert(!token[0]);}
+    for(unsigned i=0;i<PH_AUTH_HTTP_SLOTS;i++)assert(!local_auth.http[i].active);
+    assert(authorized(NULL)&&authorized("")&&authorized("Basic YWRtaW46")&&authorized("Bearer obsolete"));
     http_auth_info(&p,&x);code(&x,200,"ok");ph_value root=decode(&x),data,v;
     assert(phv_get(&root,"data",&data)&&phv_get(&data,"password_set",&v)&&v.kind==PHV_FALSE);
     assert(!phv_get(&data,"ssid",&v)&&!phv_get(&data,"mqtt_password",&v));
     assert(phv_get(&data,"wire_formats",&v)&&v.kind==PHV_ARRAY);
-    for(unsigned i=1;i<4;i++){login(&p,&x,"",token);code(&x,200,"ok");}
-    login(&p,&x,"",token);code(&x,503,"busy");login(&p,&x,"wrong",token);code(&x,401,"unauthorized");
-    assert(http_auth_authorized(a));
-    strcpy(r.path,"/api/v1/auth/logout");strcpy(r.authorization,a);ph_buf *empty=request(NULL,NULL);p.body=empty->buf;p.used=empty->len;
-    http_auth_complete(&p,&x);code(&x,200,"ok");assert(!http_auth_authorized(a));http_auth_complete(&p,&x);code(&x,401,"unauthorized");ph_buf_free(empty);
-    strcpy(r.path,"/api/v1/auth/login");login(&p,&x,"",token);code(&x,200,"ok");
     assert(ph_auth_credential_commit(device_local_auth(),"adminfjr",false,commit,"adminfjr"));
-    login(&p,&x,"",token);code(&x,401,"unauthorized");login(&p,&x,"adminfjr",token);code(&x,200,"ok");
-    snprintf(a,sizeof(a),"Bearer %s",token);now_ms+=PH_AUTH_IDLE_MS;assert(!http_auth_authorized(a));
-    const char json[]="{\"password\":\"adminfjr\"}";p.body=(char *)json;p.used=sizeof(json)-1;http_auth_complete(&p,&x);code(&x,400,"invalid_request");
-    (void)saved;
+    assert(!http_auth_authorized(&auth_product,"Bearer obsolete")); /* original open context */
+    assert(!authorized(NULL)&&!authorized("")&&!authorized("Basic YWRtaW46"));
+    assert(authorized("Basic YWRtaW46YWRtaW5manI="));
+    unsigned generation=local_auth.generation;
+    assert(ph_auth_credential_commit(device_local_auth(),"adminfjr",true,commit,"adminfjr"));
+    assert(!http_auth_authorized(&auth_product,"Basic YWRtaW46YWRtaW5manI=")); /* same-password restore */
+    assert(authorized("Basic YWRtaW46YWRtaW5manI=")&&local_auth.generation==generation);
+    login(&p,&x,"",token);code(&x,401,"unauthorized");
+    login(&p,&x,"adminfjr",token);code(&x,200,"ok");strcpy(saved,token);
+    snprintf(a,sizeof(a),"Bearer %s",saved);
+    for(unsigned i=1;i<PH_AUTH_HTTP_SLOTS;i++){login(&p,&x,"adminfjr",token);code(&x,200,"ok");}
+    login(&p,&x,"adminfjr",token);code(&x,503,"busy");
+    login(&p,&x,"wrong",token);code(&x,401,"unauthorized");
+    assert(authorized(a)&&authorized("Basic YWRtaW46YWRtaW5manI="));
+    strcpy(r.path,"/api/v1/auth/logout");strcpy(r.authorization,a);
+    ph_buf *empty=request(NULL,NULL);p.body=empty->buf;p.used=empty->len;
+    http_auth_complete(&p,&x);code(&x,200,"ok");assert(!authorized(a));
+    http_auth_complete(&p,&x);code(&x,401,"unauthorized");ph_buf_free(empty);
+    strcpy(r.path,"/api/v1/auth/login");login(&p,&x,"adminfjr",token);code(&x,200,"ok");
+    snprintf(a,sizeof(a),"Bearer %s",token);assert(authorized(a));
+    now_ms+=PH_AUTH_IDLE_MS;assert(!http_auth_authorized(&auth_product,a)&&!authorized(a));
+    const char json[]="{\"password\":\"adminfjr\"}";p.body=(char *)json;p.used=sizeof(json)-1;
+    http_auth_complete(&p,&x);code(&x,400,"invalid_request");
 }
 static void test_lan(void){
     ph_writer request,reply;ph_value parsed,v;uint8_t nonce[16]={1};ph_buf b;unsigned char response[256];
@@ -133,6 +150,6 @@ int main(void){
     memset(&config,0,sizeof(config));memset(&config.store,255,sizeof(config.store));
     assert(device_local_auth_init()&&writes==1&&ph_auth_store_valid(&disk.store)&&!disk.password[0]);
     test_http();test_lan();test_inbound_only_migration();test_unknown_trailer_recovery();assert(!local_auth_mutex&&!config_mutex);
-    puts("MP auth: empty auto-token, 401/503, logout/expiry/change, public info and local UDP scopes PASS");
+    puts("MP auth: open HTTP without sessions, admin Basic, 401/503, logout/expiry/change/restore, public info and UDP scopes PASS");
     return 0;
 }

@@ -31,6 +31,10 @@ int ph_host_http_port;
 bool Main_IsOpenAccessPointMode(void){return false;}
 bool Main_IsConnectedToWiFi(void){return true;}
 const char *HAL_GetMyIPString(void){return "127.0.0.1";}
+int PH_BL_CopyLocalIPAddress(char *out,size_t capacity){
+ const char *ip=HAL_GetMyIPString();size_t n=strlen(ip);
+ if(!out||n>=capacity)return 0;memcpy(out,ip,n+1);return 1;
+}
 int HAL_GetWifiStrength(void){return -42;}
 void WiFI_GetMacAddress(char *out){const unsigned char mac[]={0xaa,0xbb,0xcc,0xdd,0xee,0xff};memcpy(out,mac,6);}
 const char *PH_BL_HostName(void){static char name[32];unsigned char mac[6];WiFI_GetMacAddress((char*)mac);ph_mac_host_name(name,mac);return name;}
@@ -49,8 +53,9 @@ int lfs_file_sync(lfs_t *fs,lfs_file_t *f){(void)fs;return fflush(f->file);}
 int lfs_file_close(lfs_t *fs,lfs_file_t *f){(void)fs;return fclose(f->file);}
 int lfs_rename(lfs_t *fs,const char *a,const char *b){(void)fs;char src[1200],dst[1200];snprintf(src,sizeof(src),"%s/%s",store_dir,a);snprintf(dst,sizeof(dst),"%s/%s",store_dir,b);return rename(src,dst);}
 const char *CFG_GetWebPassword(void){return web_password;}
-int PH_BL_PasswordChanged(void);
-void CFG_SetWebPassword(const char *p){char old[33];strcpy(old,web_password);snprintf(web_password,sizeof(web_password),"%s",p);if(!PH_BL_PasswordChanged())strcpy(web_password,old);}
+int PH_BL_WebPasswordSet(const char *);
+void PH_BL_SetWebPasswordMemory(const char *p){snprintf(web_password,sizeof(web_password),"%s",p);}
+void CFG_SetWebPassword(const char *p){(void)PH_BL_WebPasswordSet(p);}
 void CFG_SetDefaultConfig(void){mqtt_host[0]=mqtt_user[0]=mqtt_pass[0]=web_password[0]=0;}
 void CFG_SetDeviceName(const char *p){snprintf(device_name,sizeof(device_name),"%s",p);}
 const char *CFG_GetWiFiSSID(void){return wifi_ssid;}

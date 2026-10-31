@@ -20,4 +20,6 @@ void bl_lock(void);
 void bl_unlock(void);
 void bl_mqtt_start(void);
 void bl_mqtt_diagnostics(ph_writer *);
+/* Broker adapter only; caller holds bl_lock and supplies the validated boot. */
+bool bl_sensor_grant(const char *peer,const char *token,uint32_t boot);
 size_t bl_error(void *,size_t,ph_wire_format,const char *);

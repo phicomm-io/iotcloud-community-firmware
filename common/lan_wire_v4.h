@@ -1,7 +1,20 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #pragma once
+/* Ports with a frozen typed-buffer ABI provide the same typed/auth interface
+ * before this header. The parser and replay state machine remain shared. */
+#ifndef PH_LAN_V4_TYPES_PROVIDED
 #include "typed_wire.h"
 #include "local_auth.h"
+#endif
+#ifndef PH_LAN_V4_BUFFER
+#define PH_LAN_V4_BUFFER ph_buf
+#endif
+#ifndef PH_LAN_V4_BUFFER_LENGTH
+#define PH_LAN_V4_BUFFER_LENGTH(b) ((b)->len)
+#endif
+#ifndef PH_LAN_V4_BUFFER_FREE
+#define PH_LAN_V4_BUFFER_FREE(b) ph_buf_free(b)
+#endif
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -41,7 +54,7 @@ typedef struct {
 } lan_v4_session;
 typedef struct {
     lan_v4_session sessions[LAN_V4_SESSIONS];
-    ph_buf *response; /* Exactly one independently owned response, no copy. */
+    PH_LAN_V4_BUFFER *response; /* Exactly one independently owned response, no copy. */
     uint32_t response_at,response_id;
     unsigned response_slot;
 } lan_v4_server;
@@ -54,7 +67,7 @@ typedef struct {
     bool (*digest)(void *,const void *,size_t,uint8_t[32]);
     /* Set admitted=false only when no service call/side effect took place.
      * An admitted NULL is indeterminate: its id is burned, never re-executed. */
-    ph_buf *(*dispatch)(void *,const void *,size_t,const ph_auth_context *,bool *admitted);
+    PH_LAN_V4_BUFFER *(*dispatch)(void *,const void *,size_t,const ph_auth_context *,bool *admitted);
     bool (*send)(void *,const char *,uint16_t,const void *,size_t);
     void *user;
 } lan_v4_ops;

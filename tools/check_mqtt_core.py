@@ -26,21 +26,23 @@ def context_frames(paths):
             expanded.append('ctx_ph_mqtt_owner')
         names[:]=expanded
 
-def check(frames,model):
+def mqtt_paths(frames,model,symbols=None):
     """Native MP only. Explicit public frames; bounded HA recursion is separate."""
     try:
         from .status_stack import emitted, status_paths, diagnostic_paths, writer_paths, feature_read_paths
+        from .check_http_core import dispatch_frames,receipt_paths,tc1_product_paths
     except ImportError:
         from status_stack import emitted, status_paths, diagnostic_paths, writer_paths, feature_read_paths
+        from check_http_core import dispatch_frames,receipt_paths,tc1_product_paths
     source=(Path(__file__).resolve().parents[1]/('TC1/mqtt_server/user_mqtt_client.c' if model=='TC1' else model+'/mqtt.c')).read_text()
     budget=int(re.search(r'mqtt_thread_stack_size = (0x[0-9a-fA-F]+|[0-9]+)',source).group(1),0) if model=='TC1' else int(re.search(r'mqtt_worker,\s*(\d+),',source).group(1))
     reserve=3072 if model=='TC1' else 4096
     worker='MqttClientThread' if model=='TC1' else 'mqtt_worker'
     callback='MessageArrived' if model=='TC1' else 'command' if model=='A1' else 'native_command'
-    extra=lambda names:emitted(frames,names)
+    extra=lambda names:emitted(frames,names,symbols)
     owner=[worker,'ph_mqtt_session_run'];cycle=owner+['session_cycle']
     incoming=owner+['ph_mqtt_poll',callback]
-    dispatch=incoming+['service_mqtt_input','service_mqtt_command_mp','mp_dispatch']
+    dispatch=incoming+['service_mqtt_input','service_mqtt_command_mp']+dispatch_frames(frames,symbols)
     paths={}
     transport=['ph_mqtt_publish','ingress','ph_mqtt_enqueue_route','ph_mqtt_enqueue_generation']
     for name,tail in [('connect',['open_session','ph_mqtt_connect']),('subscribe',['subscribe_plan','ph_mqtt_subscribe']),('yield',['ph_mqtt_yield'])]:
@@ -53,19 +55,24 @@ def check(frames,model):
     paths['MQTT read admission decode']=(incoming+['service_mqtt_input','service_readonly_mp']+extra(['mp_decode'])+decode,reserve)
     paths['MQTT read result credit']=(incoming+['service_mqtt_input','ph_mqtt_query_consumed']+extra(['ph_mqtt_credit_replace','ph_mqtt_is_owner','current','mutex_lock']),reserve)
     paths.update(feature_read_paths(frames,model,'MQTT feature config',dispatch,reserve))
-    for helper in ('service_product_mp','service_product_capabilities_mp','service_product_info_mp'):
-        prefix=dispatch+[helper]+extra(['tc1_product_inner_mp'] if model=='TC1' else ['smp_config','smp_control'])
+    for helper in (('service_product_capabilities_mp','service_product_info_mp') if model=='TC1' else ('service_product_mp','service_product_capabilities_mp','service_product_info_mp')):
+        prefix=dispatch+[helper]+extra(['smp_config','smp_control'] if helper=='service_product_mp' else [])
         paths.update(writer_paths(frames,'MQTT '+helper,prefix,reserve))
         paths['MQTT '+helper+' validation']=(prefix+['phv_get']+extra(['phv_scan','phv_iter','phv_next','phv_duplicate','phv_head','phv_skip_validated','binary_token','binary_take']),reserve)
+    if model=='TC1':paths.update(tc1_product_paths(frames,'MQTT business',dispatch,reserve,symbols))
+    paths.update(receipt_paths(frames,'MQTT receipt',dispatch,reserve,symbols))
     paths.update(diagnostic_paths(frames,model,'MQTT command diagnostics',dispatch,reserve))
-    periodic=cycle+extra(['states_step','states','snapshot_step'])+['service_mqtt_snapshot']+extra(['publish_query'])+['service_query_mp','mp_dispatch']
+    periodic=cycle+extra(['states_step','states','snapshot_step'])+['service_mqtt_snapshot']+extra(['publish_query'])+['service_query_mp']+extra(['mp_query'])+dispatch_frames(frames,symbols,wrapper=False)
     for label,prefix in [('command',dispatch),('periodic',periodic)]:
         paths.update(status_paths(frames,model,'MQTT '+label+' status',prefix+['mp_cached','service_product_status_mp'],reserve))
         paths['MQTT '+label+' cache']=(prefix+['mp_envelope','phw_cached_value']+extra(['phw_prefix','phw_bytes'])+['ph_buf_reserve','ph_wire_malloc'],reserve)
     # HA owns a fixed 1536-byte bridge until its synchronous command returns.
     ha=incoming+extra(['ha_command_input'])
     paths['HA input grammar']=(ha+extra(['ha_command_pack'])+['hac_value']*8+extra(['hac_string','hac_u16','hac_ws'])+['phw_text']+extra(['phw_text_n','phw_prefix','phw_quote','phw_bytes']),reserve)
-    paths['HA command business']=(ha+['service_command_mp','mp_dispatch','service_product_mp']+extra(['tc1_product_inner_mp','smp_config','smp_control'])+['phv_get']+extra(['phv_scan','phv_iter','phv_next','phv_duplicate','phv_head','binary_token']),reserve)
+    ha_dispatch=ha+['service_command_mp']+dispatch_frames(frames,symbols)
+    if model=='TC1':paths.update(tc1_product_paths(frames,'HA business',ha_dispatch,reserve,symbols))
+    else:paths['HA command business']=(ha_dispatch+['service_product_mp']+extra(['smp_config','smp_control'])+['phv_get']+extra(['phv_scan','phv_iter','phv_next','phv_duplicate','phv_head','binary_token']),reserve)
+    paths.update(receipt_paths(frames,'HA receipt',ha_dispatch,reserve,symbols))
     if model=='TC1':
         power=cycle+extra(['snapshot_step'])+['UserMqttHassPower']
         decimal=['ph_decimal_format_float32','pd_format']+extra(['pd_mul','pd_word','pd_bits','pd_shift','pd_cmp'])
@@ -75,7 +82,7 @@ def check(frames,model):
         paths['HA discovery']=(cycle+extra(['discovery','discovery_build','filter_discovery'])+extra(['publish'])+transport,reserve)
     # The HA bridge retains owner scratch while executing; a status request
     # still traverses the same direct sink and must fit without JSON scratch.
-    paths.update(status_paths(frames,model,'HA status',ha+['service_command_mp','mp_dispatch','mp_cached','service_product_status_mp'],reserve))
+    paths.update(status_paths(frames,model,'HA status',ha_dispatch+['mp_cached','service_product_status_mp'],reserve))
     if model in ('A1','TC1'):
         root=['owner','bemfa_poll']
         paths['Bemfa owned POD dispatch']=(['owner','bemfa_dispatch',model.lower()+'_automation_execute']+extra(['a1_control_apply','feature_fan_apply','install_config','feature_config_save','tc1_config_commit_reserved']),reserve)
@@ -140,7 +147,14 @@ def check(frames,model):
 
     # Expand every explicit context wrapper without changing SDK reserve.
     context_frames(names for names,_ in paths.values())
+    return paths,budget
+
+
+def check(frames,model,symbols=None):
+    paths,budget=mqtt_paths(frames,model,symbols)
     for label,(names,spare) in paths.items():
+        unbounded=set(names)&getattr(frames,'unbounded',{}).keys()
+        if unbounded:raise ValueError(f'{label}: unbounded/nonstatic actual .su frames {sorted(unbounded)}')
         missing=set(names)-frames.keys()
         if missing:raise ValueError(f'{label}: missing actual .su frames {sorted(missing)}')
         size=sum(frames[n] for n in names)

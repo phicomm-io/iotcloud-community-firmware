@@ -76,7 +76,9 @@ int main(void){
 
     def test_power_status_fairness(self):
         source=(ROOT/'TC1/mqtt_server/user_mqtt_client.c').read_text()
-        functions=extract(source,'static bool power_requested(')+'\n'+extract(source,'static int session_cycle(')
+        functions='\n'.join(extract(source,s) for s in (
+            'static void power_report_poll(', 'static bool power_requested(',
+            'static int session_cycle('))
         fixture=r'''
 #include <assert.h>
 #include <stdbool.h>
@@ -85,7 +87,9 @@ int main(void){
 #define MQTT_SUCCESS 0
 #define PH_MQTT_MORE 3
 static struct{int mode;char base[8];}account={1,"base"};
-static bool power_pending,power_turn,rediscover;
+static bool power_pending,power_turn,power_report_started,rediscover;
+static uint32_t power_report_at;
+static struct{int mqtt_report_freq;}config={2},*user_config=&config;
 static unsigned ha_refresh_pending;
 #include "common/mqtt/publication.h"
 static ph_mqtt_publication status_publication;

@@ -240,7 +240,9 @@ static bool validConfig(JsonObjectConst candidate){
     if(section=="_version")continue;
     if(section=="lan_peers"){
       JsonArrayConst peers=kv.value().as<JsonArrayConst>();if(peers.isNull()||peers.size()>12)return false;
-      for(JsonObjectConst peer:peers){IPAddress address;if(peer.size()!=2||!knownFields(peer,"|peer||ip|")||!peer["peer"].is<const char*>()||!lc_peer(peer["peer"])||!address.fromString(peer["ip"]|""))return false;}
+      for(JsonObjectConst peer:peers){IPAddress address;if(peer.size()<2||peer.size()>3||!knownFields(peer,"|peer||ip||pair_created|")||!peer["peer"].is<const char*>()||!lc_peer(peer["peer"])||!address.fromString(peer["ip"]|""))return false;
+        if(peer.containsKey("pair_created")&&(!peer["pair_created"].is<bool>()||!peer["pair_created"].as<bool>()))return false;
+      }
       continue;
     }
 #ifdef IOTCLOUD_HUB

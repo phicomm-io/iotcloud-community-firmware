@@ -106,7 +106,7 @@ public:
            hex(d["mac"], 12) && d["mac"] != "000000000000" &&
            d["mac"] != "ffffffffffff" &&
            (model == "tc1" || model == "m1" || model == "a1" ||
-            model == "daikin") &&
+            model == "daikin" || model == "s30-v1b") &&
            d["version"] == "v2" && d["status"] == "active" &&
            nameValid(d["username"]);
   }
@@ -165,10 +165,10 @@ public:
       auto d = m["device"].as<JsonObjectConst>();
       std::string model = d["model"] | "", topic = m["topic"] | "";
       unsigned channel = m["channel"];
-      if ((model != "tc1" && model != "a1") ||
-          channel > (model == "tc1" ? 5u : 1u))
+      if ((model != "tc1" && model != "a1" && model != "s30-v1b") ||
+          channel > (model == "tc1" ? 5u : model == "s30-v1b" ? 0u : 1u))
         return false;
-      std::string suffix = model == "tc1" ? "001" : channel ? "002" : "003";
+      std::string suffix = model == "tc1" || model == "s30-v1b" ? "001" : channel ? "002" : "003";
       if (topic.compare(topic.size() - 3, 3, suffix))
         return false;
       for (char c : topic)
@@ -605,7 +605,11 @@ private:
     else if(code=="invalid_params") status=400;
     else if(code=="auth_required"||code=="unauthorized"||code=="forbidden") status=403;
     else if(code=="migration_required") status=409;
-    output["code"]=status==500?"internal_error":code;
+    if(op=="status"&&code=="ok"){
+      // HTTP 200 reports a successful read; keep the pairing task's own code.
+      output["operation_code"]="ok";
+      if(!output.containsKey("code"))output["code"]="ok";
+    }else output["code"]=status==500?"internal_error":code;
     return json(output,status);
   }
   static bool needsCandidate(const Request &request) {

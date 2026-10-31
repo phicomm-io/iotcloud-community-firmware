@@ -6,6 +6,7 @@
 #include "boot_trace.h"
 #include "../protocol/mqtt/session.h"
 #include "../protocol/busy_reply.h"
+#include "../protocol/memory_budget.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -14,45 +15,79 @@ static Client client;
 static ph_os_thread owner_thread;
 static ph_mqtt_startup startup;
 static char host[128],user[64],password[128],client_id[192],availability[256],command_topic[256],ha_topic[256];
+static char sensor_topic[192];
 static unsigned port,discovery,publication,last_fields[2];
 static uint32_t sent_at[2],last_sequence[2],ha_serial;
 static int application_error;
+static uint32_t sensor_retry_at;
+static bool sensor_subscribed;
 static bool initialized;
+/* Storage belongs to the already-reserved owner stack. It remains alive across
+ * deferred receipt retries; native/HA publication must wait for that receipt. */
+static unsigned char *workspace;
+static void workspace_release(void *unused) {(void)unused;}
+static void cache_budget(void) {
+ bool pending=ph_mqtt_receipt_pending();
+ bl_lock();
+ if(pending)ph_status_cache_suspend(&bl_device,true);
+ else ph_status_cache_budget(&bl_device,ph_os_free_heap(),SERVICE_MEMORY_RESERVE+PH_OUTPUT_MAX+32u);
+ bl_unlock();
+}
 static void command_arrived(MessageData *);
 static void ha_arrived(MessageData *);
 static void ha_birth(MessageData *);
+static void sensor_grant_arrived(MessageData *);
 static bool accept_message(MessageData *d,messageHandler handler) {
  if(!d||!d->message||!d->message->payload||!d->message->payloadlen)return false;
  MQTTMessage *m=d->message;
  if(handler==ha_birth)return m->payloadlen==6&&!memcmp(m->payload,"online",6);
  if(m->retained||m->payloadlen>PH_INPUT_MAX)return false;
+ /* Reclaim before the shared ingress allocation, including input delivered
+  * during a PUBACK wait. Never release or borrow Paho's receive storage. */
+ cache_budget();
  if(handler==ha_arrived)return (m->payloadlen==2&&!memcmp(m->payload,"ON",2))||(m->payloadlen==3&&!memcmp(m->payload,"OFF",3));
+ if(handler==sensor_grant_arrived)return ph_wire_detect(m->payload,m->payloadlen)==PH_WIRE_MSGPACK;
  return handler==command_arrived&&ph_binary_format(ph_wire_detect(m->payload,m->payloadlen));
+}
+static void busy_reply(const mqtt_target_t *target,const void *input,size_t n,ph_wire_format f) {
+ unsigned char busy[SERVICE_BUSY_BYTES];char id[65];service_busy_id(input,n,id);
+ ph_writer w;struct printbuf b;phw_init_fixed(&w,f,&b,busy,sizeof(busy));phw_begin(&w,NULL,false);
+ if(*id)phw_text(&w,"request_id",id);phw_text(&w,"code","busy");phw_text(&w,"message","busy");
+ phw_begin(&w,"data",false);phw_end(&w);phw_end(&w);size_t k=phw_finish_fixed(&w);
+ int rc=k?ph_mqtt_receipt_send_bytes(target,busy,k,NULL,NULL):MQTT_FAILURE;if(rc<0)application_error=rc;
+}
+static bool publish_room(const char *topic,size_t n) {
+ /* Match the common sender's whole-packet admission, including allocator
+  * overhead. This is an early check; Paho retains its fallible live check. */
+ return ph_os_free_heap()>=SERVICE_MEMORY_RESERVE+strlen(topic)+n+9u+64u;
+}
+static bool result_room(const mqtt_target_t *target,size_t n) {
+ char topic[MQTT_TOPIC_MAX];
+ return mqtt_target_leaf(target,"result",topic,sizeof(topic))&&publish_room(topic,n);
 }
 static void handle_command(const void *bytes,size_t n,ph_wire_format f) {
  /* Copy borrowed input and capture its namespace before releasing ingress.
   * Reserve a result before mutating GPIO/configuration, as on other models. */
  unsigned char input[PH_INPUT_MAX];if(n>sizeof(input))return;memcpy(input,bytes,n);
  mqtt_target_t target;mqtt_target_set(&target,&account);
- unsigned char *out=malloc(PH_OUTPUT_MAX);
+ bl_lock();ph_status_cache_suspend(&bl_device,true);bl_unlock();
+ /* Input has been copied. Release its heap block before executing or sending;
+  * the complete fixed result buffer is already reserved on the owner stack. */
  bool credit=ph_mqtt_input_consumed();
- if(!out||!credit) {
-  free(out);unsigned char busy[SERVICE_BUSY_BYTES];char id[65];service_busy_id(input,n,id);
-  ph_writer w;struct printbuf b;phw_init_fixed(&w,f,&b,busy,sizeof(busy));phw_begin(&w,NULL,false);
-  if(*id)phw_text(&w,"request_id",id);phw_text(&w,"code","busy");phw_text(&w,"message","busy");
-  phw_begin(&w,"data",false);phw_end(&w);phw_end(&w);size_t k=phw_finish_fixed(&w);
-  int rc=ph_mqtt_receipt_send_bytes(&target,busy,k,NULL,NULL);if(rc<0)application_error=rc;return;
+ /* Mutations write at most one fixed receipt data object plus the envelope.
+  * Reserve its serialized send headroom before GPIO/Flash can change. */
+ if(!credit||!result_room(&target,sizeof(bl_device.receipts[0].data)+SERVICE_BUSY_BYTES)) {
+  busy_reply(&target,input,n,f);memset(input,0,n);return;
  }
- bl_lock();size_t k=ph_command(&bl_device,input,n,f,f,true,true,out,PH_OUTPUT_MAX);bl_unlock();
+ bl_lock();size_t k=ph_command(&bl_device,input,n,f,f,true,true,workspace,PH_OUTPUT_MAX);bl_unlock();
+ if(!k){memset(input,0,n);application_error=MQTT_FAILURE;return;}
+ /* A large read may exceed current wire headroom. Its correlated busy fits
+  * the pre-reserved mutation bound; keep completed mutation results intact. */
+ if(k>sizeof(bl_device.receipts[0].data)+SERVICE_BUSY_BYTES&&!result_room(&target,k)) {
+  busy_reply(&target,input,n,f);memset(input,0,n);return;
+ }
  memset(input,0,n);
- if(!k){free(out);application_error=MQTT_FAILURE;return;}
- /* The BK allocator's realloc never shrinks a block. Keeping a 4 KiB
-  * reservation for a small receipt otherwise blocks the common sender's
-  * live-heap admission until the native low-memory guard reboots the board.
-  * Keep the original reservation if this optional compaction cannot allocate. */
- unsigned char *compact=malloc(k);
- if(compact){memcpy(compact,out,k);free(out);out=compact;}
- int rc=ph_mqtt_receipt_send_bytes(&target,out,k,out,free);if(rc<0)application_error=rc;
+ int rc=ph_mqtt_receipt_send_bytes(&target,workspace,k,workspace,workspace_release);if(rc<0)application_error=rc;
 }
 static void command_arrived(MessageData *d) {handle_command(d->message->payload,d->message->payloadlen,ph_wire_detect(d->message->payload,d->message->payloadlen));}
 static void ha_arrived(MessageData *d) {
@@ -63,6 +98,26 @@ static void ha_arrived(MessageData *d) {
  size_t n=phw_finish_fixed(&w);handle_command(bytes,n,PH_WIRE_MSGPACK);
 }
 static void ha_birth(MessageData *d) {(void)d;discovery=0;}
+/* The existing broker-only grant is intentionally separate from the TMCP
+ * admin command route. Its exact account/device topic is subscribed below;
+ * neither HTTP nor a UDP command can install a grant. */
+static void sensor_grant_arrived(MessageData *d) {
+ ph_value root,action,params,value;char peer[13],token[33];const void *raw;size_t bytes;
+ int64_t version,boot;
+ if(!d||!d->message||d->message->retained||!d->topicName||!MQTTPacket_equals(d->topicName,sensor_topic)||
+    !phv_parse(PH_WIRE_MSGPACK,d->message->payload,d->message->payloadlen,&root)||root.kind!=PHV_MAP||
+    !phv_keys(&root,"|action||params|")||!phv_get(&root,"action",&action)||!phv_equal_text(&action,"sensor.session.set")||
+    !phv_get(&root,"params",&params)||params.kind!=PHV_MAP||!phv_keys(&params,"|v||a1||boot||token|")||
+    !phv_get(&params,"v",&value)||!phv_int(&value,&version)||version!=3||
+    !phv_get(&params,"boot",&value)||!phv_int(&value,&boot)||boot<1||(uint64_t)boot>UINT32_MAX||
+    !phv_get(&params,"a1",&value)||!phv_text(&value,peer,sizeof(peer))||strlen(peer)!=12||
+    !strcmp(peer,bl_device.mac)||!phv_get(&params,"token",&value)||!phv_bytes(&value,&raw,&bytes)||bytes!=16)return;
+ for(unsigned i=0;i<12;++i)if(!((peer[i]>='0'&&peer[i]<='9')||(peer[i]>='a'&&peer[i]<='f')))return;
+ static const char hex[]="0123456789abcdef";
+ unsigned bits=0;for(unsigned i=0;i<16;++i){unsigned v=((const uint8_t *)raw)[i];bits|=v;token[2*i]=hex[v>>4];token[2*i+1]=hex[v&15];}token[32]=0;
+ if(bits){bl_lock();if(!bl_ota_pending)(void)bl_sensor_grant(peer,token,(uint32_t)boot);bl_unlock();}
+ memset(token,0,sizeof(token));
+}
 static bool session_valid(void *unused) {
  (void)unused;bl_lock();bool valid=!bl_ota_pending&&Main_IsConnectedToWiFi()&&!PH_BL_MqttTlsEnabled()&&port==(unsigned)CFG_GetMQTTPort()&&
  !strcmp(host,CFG_GetMQTTHost())&&!strcmp(user,CFG_GetMQTTUserName())&&!strcmp(password,CFG_GetMQTTPass());bl_unlock();return valid;
@@ -79,6 +134,8 @@ static int prepare(void *unused,ph_mqtt_connection *spec) {
  bl_unlock();
  mqtt_identity(&account,"",client_id,sizeof(client_id));mqtt_leaf(&account,"availability",availability,sizeof(availability));
  mqtt_leaf(&account,"command",command_topic,sizeof(command_topic));mqtt_leaf(&account,"ha/set",ha_topic,sizeof(ha_topic));
+ char leaf[32];snprintf(leaf,sizeof(leaf),"%s/command",account.mac);
+ if(!mqtt_aux(&account,"sensor",leaf,sensor_topic,sizeof(sensor_topic)))return PH_MQTT_PREPARE_WAIT;
  *spec=(ph_mqtt_connection){&account,host,user,password,client_id,availability,port,3000,NULL,bl_device.version,"full"};return PH_MQTT_PREPARE_READY;
 }
 static bool subscription(void *unused,unsigned i,ph_mqtt_subscription *s) {
@@ -116,32 +173,48 @@ static size_t ha_state(char *out,size_t cap) {
 }
 static int publish_cycle(void *unused) {
  (void)unused;if(application_error<0)return application_error;
- char topic[512];unsigned char bytes[PH_OUTPUT_MAX];size_t n;int rc;
+ if(ph_mqtt_receipt_pending())return PH_MQTT_MORE;
+ cache_budget();
+ if(!sensor_subscribed&&(int32_t)(ph_os_now()-sensor_retry_at)>=0) {
+  int sub=ph_mqtt_subscribe_optional(&client,sensor_topic,QOS1,sensor_grant_arrived);
+  if(sub==MQTT_SUCCESS)sensor_subscribed=true;
+  else if(sub==MQTT_SUBSCRIPTION_REJECTED)sensor_retry_at=ph_os_now()+60000u;
+  else return sub;
+ }
+ char topic[512];unsigned char *bytes=workspace;size_t n;int rc;bool waiting=false;
  while(discovery<6) {
-  n=ha_discovery(discovery,(char*)bytes,sizeof(bytes),topic,sizeof(topic));if(!n)return MQTT_FAILURE;
+  n=ha_discovery(discovery,(char*)bytes,PH_OUTPUT_MAX,topic,sizeof(topic));if(!n)return MQTT_FAILURE;
+  if(!publish_room(topic,n)){waiting=true;break;}
   rc=ph_mqtt_publish_bytes(topic,bytes,n,true);if(rc!=MQTT_SUCCESS)return rc;++discovery;
  }
  bl_lock();uint32_t sequence=bl_device.sequence;unsigned fields=ph_meter_fields(&bl_device.meter,ph_os_now());unsigned seconds=bl_device.settings.report_seconds;bl_unlock();
  for(unsigned channel=0;channel<2;++channel) {
   if((publication&(1u<<channel))&&sequence==last_sequence[channel]&&fields==last_fields[channel]&&
      (uint32_t)(ph_os_now()-sent_at[channel])<seconds*1000u)continue;
-  if(!channel){bl_lock();n=ph_query(&bl_device,"status.get",PH_WIRE_MSGPACK,bytes,sizeof(bytes));bl_unlock();mqtt_leaf(&account,"state",topic,sizeof(topic));}
-  else {n=ha_state((char*)bytes,sizeof(bytes));mqtt_leaf(&account,"ha/state",topic,sizeof(topic));}
+  if(!channel){bl_lock();n=ph_query(&bl_device,"status.get",PH_WIRE_MSGPACK,bytes,PH_OUTPUT_MAX);bl_unlock();mqtt_leaf(&account,"state",topic,sizeof(topic));}
+  else {n=ha_state((char*)bytes,PH_OUTPUT_MAX);mqtt_leaf(&account,"ha/state",topic,sizeof(topic));}
   if(!n)return MQTT_FAILURE;
+  /* Telemetry remains reproducible from device state. Do not create a shared
+   * deferred-send episode for a known oversized state packet: small HA/state
+   * updates and correlated command results can still make progress. */
+  if(!publish_room(topic,n)){waiting=true;continue;}
   rc=ph_mqtt_publish_bytes(topic,bytes,n,true);if(rc!=MQTT_SUCCESS)return rc;
   publication|=1u<<channel;last_sequence[channel]=sequence;last_fields[channel]=fields;sent_at[channel]=ph_os_now();
  }
- return MQTT_SUCCESS;
+ return waiting?PH_MQTT_MORE:MQTT_SUCCESS;
 }
-static int initial(void *unused) {discovery=publication=0;application_error=0;return publish_cycle(unused);}
-static bool initial_ready(void *unused) {(void)unused;return discovery==6&&publication==3;}
-static void closing(void *unused,bool connected,int rc) {(void)unused;(void)connected;(void)rc;bl_lock();bl_mqtt_status=MQTT_DISCONNECTED;bl_unlock();memset(password,0,sizeof(password));}
+static int initial(void *unused) {discovery=publication=0;application_error=0;sensor_subscribed=false;sensor_retry_at=ph_os_now();return publish_cycle(unused);}
+/* Optional discovery/full-state packets can wait for heap recovery while the
+ * subscribed connection and its compact HA state are already operational. */
+static bool initial_ready(void *unused) {(void)unused;return (publication&2u)!=0;}
+static void closing(void *unused,bool connected,int rc) {(void)unused;(void)connected;(void)rc;cache_budget();sensor_subscribed=false;sensor_retry_at=0;bl_lock();bl_mqtt_status=MQTT_DISCONNECTED;memset(bl_auth.mqtt,0,sizeof(bl_auth.mqtt));bl_unlock();memset(password,0,sizeof(password));}
 static void event(void *unused,unsigned state,int rc) {
  (void)unused;unsigned status=state==PH_MQTT_READY?MQTT_READY:state==PH_MQTT_CONNECTING?MQTT_CONNECTING:
   (rc==4||rc==5)?MQTT_AUTH_FAILED:MQTT_DISCONNECTED;
  bl_lock();bl_mqtt_status=status;if(state==PH_MQTT_STOPPED)bl_mqtt_quiescent=true;bl_unlock();
 }
 static void owner(beken_thread_arg_t arg) {
+ unsigned char storage[PH_OUTPUT_MAX];workspace=storage;
  PH_BOOT_STAGE("mqtt-thread");
  if(!ph_mqtt_startup_wait(&startup,(uint32_t)arg)||!ph_mqtt_owner_init(&account,PH_INPUT_MAX,&owner_thread,accept_message)){rtos_delete_thread(NULL);return;}
  ph_os_store(&initialized,true);

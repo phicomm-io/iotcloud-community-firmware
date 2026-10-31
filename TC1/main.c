@@ -160,19 +160,6 @@ void schedule_p_count_task(mico_thread_arg_t arg) {
     }
 }
 
-void reportMqttPowerInfoThread() {
-    while (1) {
-        UserMqttHassPower();
-        int freq = user_config->mqtt_report_freq;
-
-        if (freq == 0) {
-            freq = 2;
-        }
-
-        mico_thread_msleep(1000 * freq);
-    }
-}
-
 int application_start(void) {
     if(!tc1_status_guard_init())return kNoMemoryErr;
     service_init();
@@ -296,12 +283,6 @@ int application_start(void) {
                                   (mico_thread_function_t) schedule_p_count_task,
                                   0x800, 0);
     require_noerr_string(err, exit, "ERROR: Unable to start the p_count thread.");
-
-    err = mico_rtos_create_thread(NULL, MICO_APPLICATION_PRIORITY, "mqtt_power_report",
-                                  (mico_thread_function_t) reportMqttPowerInfoThread,
-                                  0x1000, 0);
-    require_noerr_string(err, exit, "ERROR: Unable to start the mqtt_power_report thread.");
-
 
     while (1) {
         ota_job_poll();

@@ -6,7 +6,7 @@
 #define PH_INPUT_MAX 1200u
 #define PH_OUTPUT_MAX 4096u
 #define PH_STATUS_CACHE_MAX 2048u
-#define PH_STORE_MAGIC UINT32_C(0x324c4250)
+#define PH_STORE_MAGIC UINT32_C(0x334c4250)
 typedef struct {
     uint32_t magic, revision;
     uint8_t child_lock, indicator, power_on, calibrated;
@@ -28,6 +28,7 @@ typedef struct {
 } ph_device_ops;
 typedef struct {
     char id[65], action[40];
+    uint8_t domain;
     unsigned char params[512], data[512];
     size_t params_len, data_len;
     const char *code;
@@ -37,7 +38,7 @@ typedef struct {
     ph_device_ops ops;
     char mac[13], version[64];
     uint32_t boot, sequence, local_at;
-    bool relay, local_hold, maintenance;
+    bool relay, local_hold, maintenance, cache_suspended;
     ph_meter meter;
     ph_receipt receipts[8];
     unsigned next_receipt;
@@ -54,9 +55,18 @@ bool ph_device_init(ph_device *, const ph_device_ops *, const ph_settings *, con
 /* Caller serializes state access; all views and output buffers are borrowed. */
 /* Release the optional cache before reinitializing or disposing an initialized device. */
 void ph_status_cache_release(ph_device *);
+/* Independent of OTA maintenance; caller holds the product state lock. */
+void ph_status_cache_suspend(ph_device *, bool);
+void ph_status_cache_budget(ph_device *, size_t available, size_t reserve);
 void ph_device_set_maintenance(ph_device *, bool);
 size_t ph_command(ph_device *, const void *, size_t, ph_wire_format, ph_wire_format,
                   bool authorized, bool admin, void *, size_t);
+/* LAN v4 only: typed views expire on return. receipt_key is the adapter's
+ * peer/session hash; response IDs always retain request_id. Caller holds the
+ * product/auth lock and owns the reserved response before admission. */
+size_t ph_command_context(ph_device *,const char *action,const ph_value *params,
+                          const char *request_id,const char *receipt_key,
+                          const ph_auth_context *,ph_wire_format,void *,size_t,bool *admitted);
 size_t ph_query(ph_device *, const char *, ph_wire_format, void *, size_t);
 void ph_status(ph_device *, ph_writer *);
 void ph_capabilities(ph_device *, ph_writer *);

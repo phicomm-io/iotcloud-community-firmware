@@ -20,6 +20,23 @@ void service_memory_snapshot(service_memory_state_t *out);
  * independently owned; release it with ph_buf_free(), after transport IO. All
  * asynchronous business adapters must copy the validated typed parameters. */
 ph_buf *service_command_mp(const void *data, size_t length);
+/* HTTP retains its original admin context across waits. Recheck it after the
+ * blocking command admission, before receipts, cache reads or mutation. */
+ph_buf *service_http_command_mp(const void *,size_t,const ph_auth_context *);
+ph_buf *service_http_query_mp(const char *,const ph_auth_context *);
+#if defined(PHICOMM_STATUS_MODEL) && PHICOMM_STATUS_MODEL == 2
+/* TC1's three small controls have an empty data map. Materialize the receipt
+ * before reading their request; the reply uses the HTTP owner's scalar.
+ * Other actions keep the ordinary dispatcher. A consumed credit belongs to
+ * the existing receipt table, otherwise the HTTP owner releases it. */
+#define SERVICE_HTTP_CONTROL_INPUT 256u
+#define SERVICE_HTTP_CONTROL_REPLY 160u
+void *service_http_control_credit(void);
+void service_http_control_credit_free(void *);
+bool service_http_control_mp(const void *,size_t,const ph_auth_context *,
+                             void **credit,void *reply,size_t,size_t *length,
+                             unsigned *status);
+#endif
 ph_buf *service_mqtt_command_mp(const void *data, size_t length);
 /* Authenticated UDP business only; fixed allowlist excludes administration.
  * Context is checked again under the command mutex before receipts/mutation. */

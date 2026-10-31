@@ -28,6 +28,9 @@ public:
     bool outlets[6] = {}, fan = false, light = false, freshAir = false;
     unsigned speed = 0, brightness = 0;
     std::array<Value, MetricCount> values;
+    unsigned outletCount() const {
+      return model == "tc1" ? 6 : model == "s30-v1b" ? 1 : 0;
+    }
     bool reachable(uint32_t now) const {
       return online && seen && uint32_t(now - at) < 30000;
     }
@@ -138,7 +141,7 @@ public:
     DynamicJsonDocument request(512);
     auto params = request.createNestedObject("params");
     if (control == Outlet) {
-      if (d.model != "tc1" || channel > 5 || (desired != 0 && desired != 1))
+      if (channel >= d.outletCount() || (desired != 0 && desired != 1))
         return false;
       request["action"] = "outlet.set";
       params["index"] = channel;
@@ -212,7 +215,8 @@ private:
   bool add(const std::string &model, const std::string &mac,
            const std::string &prefix) {
     if (size >= Capacity || mac.size() != 12 ||
-        (model != "tc1" && model != "a1" && model != "m1" && model != "daikin"))
+        (model != "tc1" && model != "a1" && model != "m1" && model != "daikin" &&
+         model != "s30-v1b"))
       return false;
     uint32_t aid = 2166136261u;
     for (uint8_t c : model + "/" + mac)
@@ -263,14 +267,15 @@ private:
         (!doc["device_id"].isNull() && canonicalMac(doc["device_id"]) != d.mac))
       return;
     bool valid = false;
-    if (d.model == "tc1") {
+    if (d.outletCount()) {
       auto outlets = doc["socket_states"].as<JsonArrayConst>();
-      valid = outlets.size() == 6;
+      valid = outlets.size() == d.outletCount();
       for (JsonVariantConst v : outlets)
-        valid &= v.is<unsigned>() && v.as<unsigned>() <= 1;
+        valid &= d.model == "s30-v1b" ? v.is<bool>()
+                                    : v.is<unsigned>() && v.as<unsigned>() <= 1;
       if (valid)
-        for (size_t i = 0; i < 6; i++)
-          d.outlets[i] = outlets[i] == 1;
+        for (size_t i = 0; i < d.outletCount(); i++)
+          d.outlets[i] = outlets[i].as<bool>();
       d.controls = valid;
     } else if (d.model == "a1") {
       // New-air variants report the independent fan's applied output. Its
