@@ -8612,9 +8612,9 @@
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
-        "reviewed_utc": "2026-10-31T06:03:29.005553+00:00",
-        "reason": "Reviewed matching device scopes, version conditions, persistence/readback, and the Apple Home alias boundary in both languages.",
-        "reviewed_content_sha256": "6c254cef75c4f67b2eea60eb4d26543c83758ec338d1a6240ff00ade1495284e"
+        "reviewed_utc": "2026-10-31T08:28:38.374920+00:00",
+        "reason": "Reviewed matching device scopes, version conditions, behavior and instructions in both languages.",
+        "reviewed_content_sha256": "3b794917b56cc048f1daf28c3b109e4ae09d71687271a248505c9ceb05f99937"
       }
     },
     {
@@ -8648,12 +8648,12 @@
         "en": "Hub device state, power and HomeKit readings"
       },
       "description": {
-        "zh-CN": "中枢网页通过 HTTP→UDP 读取已配对设备状态并发送控制，浏览器只需访问中枢。TC1 列表补齐功率，计量数据过期时隐藏读数；M1 优先读取首屏状态，初始能力读取失败后恢复可用控件。HomeKit 按 M1 实际传感器有效位更新温湿度与 PM2.5。请求串行合并并校验设备身份与响应编号，过期响应不会覆盖新设备，已发出的写操作不自动重放。远端页面提供已实现的控制与诊断；网络、认证、自动化、升级及备份从目标设备本地网页操作。",
-        "en": "The hub reads paired-device state and sends controls over HTTP-to-UDP; the browser only needs to reach the hub. TC1 list cards show power and hide expired meter readings. M1 prioritizes the initial state and restores supported controls after a failed first capability read. HomeKit uses M1 sensor-validity flags for temperature, humidity and PM2.5. Requests are serialized and coalesced, with device identity and response-ID checks. Stale replies cannot replace another device, and issued writes are never automatically replayed. Remote pages expose supported controls and diagnostics. Use the target device’s local page for network settings, authentication, automation, upgrades and backups."
+        "zh-CN": "中枢网页通过 HTTP→UDP 读取已配对设备状态并发送控制，浏览器只需访问中枢。TC1 列表补齐功率，新读数到达时不再短暂显示空白，计量数据过期时隐藏读数；M1 优先读取首屏状态，初始能力读取失败后恢复可用控件。HomeKit 按 M1 实际传感器有效位更新温湿度与 PM2.5。请求串行合并并校验设备身份与响应编号，过期响应不会覆盖新设备，已发出的写操作不自动重放。远端页面提供已实现的控制与诊断；网络、认证、自动化、升级及备份从目标设备本地网页操作。",
+        "en": "The hub reads paired-device state and sends controls over HTTP-to-UDP; the browser only needs to reach the hub. TC1 list cards no longer briefly hide power when a new reading arrives, and hide expired meter readings. M1 prioritizes the initial state and restores supported controls after a failed first capability read. HomeKit uses M1 sensor-validity flags for temperature, humidity and PM2.5. Requests are serialized and coalesced, with device identity and response-ID checks. Stale replies cannot replace another device, and issued writes are never automatically replayed. Remote pages expose supported controls and diagnostics. Use the target device’s local page for network settings, authentication, automation, upgrades and backups."
       },
       "ota_summary": {
-        "zh-CN": "中枢网页通过 HTTP→UDP 读取已配对设备状态并发送控制，浏览器只需访问中枢。TC1 列表补齐功率，计量数据过期时隐藏读数；M1 优先读取首屏状态，初始能力读取失败后恢复可用控件。HomeKit 按 M1 实际传感器有效位更新温湿度与 PM2.5。请求串行合并并校验设备身份与响应编号，过期响应不会覆盖新设备，已发出的写操作不自动重放。远端页面提供已实现的控制与诊断；网络、认证、自动化、升级及备份从目标设备本地网页操作。",
-        "en": "The hub reads paired-device state and sends controls over HTTP-to-UDP; the browser only needs to reach the hub. TC1 list cards show power and hide expired meter readings. M1 prioritizes the initial state and restores supported controls after a failed first capability read. HomeKit uses M1 sensor-validity flags for temperature, humidity and PM2.5. Requests are serialized and coalesced, with device identity and response-ID checks. Stale replies cannot replace another device, and issued writes are never automatically replayed. Remote pages expose supported controls and diagnostics. Use the target device’s local page for network settings, authentication, automation, upgrades and backups."
+        "zh-CN": "中枢网页通过 HTTP→UDP 读取已配对设备状态并发送控制，浏览器只需访问中枢。TC1 列表补齐功率，新读数到达时不再短暂显示空白，计量数据过期时隐藏读数；M1 优先读取首屏状态，初始能力读取失败后恢复可用控件。HomeKit 按 M1 实际传感器有效位更新温湿度与 PM2.5。请求串行合并并校验设备身份与响应编号，过期响应不会覆盖新设备，已发出的写操作不自动重放。远端页面提供已实现的控制与诊断；网络、认证、自动化、升级及备份从目标设备本地网页操作。",
+        "en": "The hub reads paired-device state and sends controls over HTTP-to-UDP; the browser only needs to reach the hub. TC1 list cards no longer briefly hide power when a new reading arrives, and hide expired meter readings. M1 prioritizes the initial state and restores supported controls after a failed first capability read. HomeKit uses M1 sensor-validity flags for temperature, humidity and PM2.5. Requests are serialized and coalesced, with device identity and response-ID checks. Stale replies cannot replace another device, and issued writes are never automatically replayed. Remote pages expose supported controls and diagnostics. Use the target device’s local page for network settings, authentication, automation, upgrades and backups."
       },
       "summary_complete": true,
       "critical": false,
@@ -8671,16 +8671,16 @@
           "DAIKIN/src/hub_lan.inc": "405143d2ae7781d073e985af0b462b71077aae0d008fc6d482ba775c56012c26",
           "DAIKIN/include/hub_http_command.h": "abf45e7fcd87f8aedf51c539f9c77fd23694e2b6e318c274500b94d3a1e969c7",
           "DAIKIN/include/hub_home.h": "598a85a9c7a1aede6c33b802c659f01a9c2d672f08075ce00f9e45229f0fff46",
-          "frontend.lock.json": "79a8e18e41dd1cbeeb1817f928d345f9380885cc0a083a87adb371f71ba62b7e"
+          "frontend.lock.json": "9381a32b58f9d539e052d43016c865a675e405c494fc83294265591083de43ae"
         },
         "review_basis": "Author checked implementation scope and retained RC4 qualification results; RC5 checks are recorded in its release run."
       },
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
-        "reviewed_utc": "2026-10-31T06:03:29.005553+00:00",
-        "reason": "Reviewed matching device scopes, version conditions, persistence/readback, and the Apple Home alias boundary in both languages.",
-        "reviewed_content_sha256": "ff9466cc9179cae0539b17f1de15463c0e4a091b59bf0a2dec33be1399450ed1"
+        "reviewed_utc": "2026-10-31T08:28:38.374958+00:00",
+        "reason": "Reviewed matching device scopes, version conditions, behavior and instructions in both languages.",
+        "reviewed_content_sha256": "0de099c89b4155dcc9160af7fc5db02146f603f69ab42d4f0b71989c6ad8fdfc"
       }
     },
     {
@@ -8750,9 +8750,9 @@
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
-        "reviewed_utc": "2026-10-31T06:03:29.005553+00:00",
-        "reason": "Reviewed matching device scopes, version conditions, persistence/readback, and the Apple Home alias boundary in both languages.",
-        "reviewed_content_sha256": "12510f67d3619f7aa562f77478549c04da14b5156c0125615d08ebf6b6193731"
+        "reviewed_utc": "2026-10-31T08:28:38.374980+00:00",
+        "reason": "Reviewed matching device scopes, version conditions, behavior and instructions in both languages.",
+        "reviewed_content_sha256": "ffbf3c7854ee07c62e338114227b4200d3cf2e2dcf943fc524b1a0a8f99dc92d"
       }
     },
     {
@@ -8798,7 +8798,7 @@
       "summary_complete": true,
       "critical": false,
       "source_refs": [
-        "v1.0.0-rc.5:b011"
+        "v1.0.0-rc.5:b012"
       ],
       "evidence": {
         "firmware_sources": [
@@ -8816,9 +8816,9 @@
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
-        "reviewed_utc": "2026-10-31T06:03:29.005553+00:00",
-        "reason": "Reviewed matching device scopes, version conditions, persistence/readback, and the Apple Home alias boundary in both languages.",
-        "reviewed_content_sha256": "232fda1e599cd4b08247097185553fc1ad75f9bf7a0a933bf6c524a1aab738b5"
+        "reviewed_utc": "2026-10-31T08:28:38.374993+00:00",
+        "reason": "Reviewed matching device scopes, version conditions, behavior and instructions in both languages.",
+        "reviewed_content_sha256": "5cadb48e02d1d569db72472ff2d7df9df56977d551a1cb7bfa2341c7065af3fc"
       }
     },
     {
@@ -8862,7 +8862,7 @@
       "summary_complete": true,
       "critical": false,
       "source_refs": [
-        "v1.0.0-rc.5:b013"
+        "v1.0.0-rc.5:b014"
       ],
       "evidence": {
         "firmware_sources": [
@@ -8880,9 +8880,9 @@
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
-        "reviewed_utc": "2026-10-31T06:03:29.005553+00:00",
-        "reason": "Reviewed matching device scopes, version conditions, persistence/readback, and the Apple Home alias boundary in both languages.",
-        "reviewed_content_sha256": "bb5f42fba93187ad68f4b3953b5ea97c5dbe9a5e8f392dedc0745cfc7cd7986c"
+        "reviewed_utc": "2026-10-31T08:28:38.375004+00:00",
+        "reason": "Reviewed matching device scopes, version conditions, behavior and instructions in both languages.",
+        "reviewed_content_sha256": "ea3ffe6e89b1265a95e9185738a6eec49207e883ddbbd17eeb826075c006b4c3"
       }
     },
     {
@@ -8934,23 +8934,23 @@
       "summary_complete": true,
       "critical": false,
       "source_refs": [
-        "v1.0.0-rc.5:b015"
+        "v1.0.0-rc.5:b016"
       ],
       "evidence": {
         "firmware_sources": [
           "frontend.lock.json"
         ],
         "firmware_source_sha256": {
-          "frontend.lock.json": "79a8e18e41dd1cbeeb1817f928d345f9380885cc0a083a87adb371f71ba62b7e"
+          "frontend.lock.json": "9381a32b58f9d539e052d43016c865a675e405c494fc83294265591083de43ae"
         },
         "review_basis": "Author checked implementation scope and retained RC4 qualification results; RC5 checks are recorded in its release run."
       },
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
-        "reviewed_utc": "2026-10-31T06:03:29.005553+00:00",
-        "reason": "Reviewed matching device scopes, version conditions, persistence/readback, and the Apple Home alias boundary in both languages.",
-        "reviewed_content_sha256": "09c4e7ca140221d66f468c7347ca56c05ddcd4198afed70ffd67dd80e10b6725"
+        "reviewed_utc": "2026-10-31T08:28:38.375013+00:00",
+        "reason": "Reviewed matching device scopes, version conditions, behavior and instructions in both languages.",
+        "reviewed_content_sha256": "210ff3076742c0b1fe18db5738e1aefbac6a94bd960c98b7fe12ec54c975645a"
       }
     },
     {
@@ -9030,9 +9030,70 @@
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
-        "reviewed_utc": "2026-10-31T06:03:29.005553+00:00",
-        "reason": "Reviewed matching device scopes, version conditions, persistence/readback, and the Apple Home alias boundary in both languages.",
-        "reviewed_content_sha256": "b97df8d410f993be7fcbbc9ecb871ecea9d2478fb0cbb68c8a9cd9cb3f53b6dd"
+        "reviewed_utc": "2026-10-31T08:28:38.375021+00:00",
+        "reason": "Reviewed matching device scopes, version conditions, behavior and instructions in both languages.",
+        "reviewed_content_sha256": "20a64cfbb1fbdde4a3236c14b9692e5fd9fa22e1f8f3d5c2e3a6a6e8d8d19b6a"
+      }
+    },
+    {
+      "change_id": "hub-homekit-stack-restart",
+      "version": "1.0.0-rc.5",
+      "type": "bugfix",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "daikin"
+        ],
+        "variants": [
+          "hub"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "修复中枢 HomeKit 处理时重启",
+        "en": "Fix hub restarts while processing HomeKit data"
+      },
+      "description": {
+        "zh-CN": "修复中枢处理 HomeKit 数据时主循环栈占用过大导致的重启。",
+        "en": "Fix hub restarts caused by excessive main-loop stack use when processing HomeKit data."
+      },
+      "ota_summary": {
+        "zh-CN": "修复中枢处理 HomeKit 数据时主循环栈占用过大导致的重启。",
+        "en": "Fix hub restarts caused by excessive main-loop stack use when processing HomeKit data."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc.5:b010"
+      ],
+      "evidence": {
+        "firmware_sources": [
+          "DAIKIN/src/home.inc",
+          "tools/release/check_esp_budget.py"
+        ],
+        "firmware_source_sha256": {
+          "DAIKIN/src/home.inc": "df6bea01496058f1a51c6eaf98453e95b1c1436114eab7ba94fbad8c63c7efba",
+          "tools/release/check_esp_budget.py": "065ae91a09b98b470b9aa68146f06d43c7865b02bdd569efef3b4b91b519fcfb"
+        }
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root",
+        "reviewed_utc": "2026-10-31T08:28:38.375033+00:00",
+        "reason": "Reviewed matching device scopes, version conditions, behavior and instructions in both languages.",
+        "reviewed_content_sha256": "7c1522147c0ac2358aba6e8fc8b645de78b8f8882ec3b054029ef981cc4e7f84"
       }
     }
   ],

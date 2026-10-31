@@ -1,6 +1,6 @@
 # Release Log
 
-English translation of the published release history. Historical validation statements apply to the release named in each section, not to later firmware. Release notes are authored in the Wiki and frozen into the source repository before tagging.
+Features, fixes and upgrade requirements for each release.
 
 ## v1.0.0-rc.5
 
@@ -12,7 +12,7 @@ The DAIKIN hub uses the device WebUI administration password and session instead
 
 ### Hub device state, power and HomeKit readings
 
-The hub reads paired-device state and sends controls over HTTP-to-UDP; the browser only needs to reach the hub. TC1 list cards show power and hide expired meter readings. M1 prioritizes the initial state and restores supported controls after a failed first capability read. HomeKit uses M1 sensor-validity flags for temperature, humidity and PM2.5. Requests are serialized and coalesced, with device identity and response-ID checks. Stale replies cannot replace another device, and issued writes are never automatically replayed. Remote pages expose supported controls and diagnostics. Use the target device’s local page for network settings, authentication, automation, upgrades and backups.
+The hub reads paired-device state and sends controls over HTTP-to-UDP; the browser only needs to reach the hub. TC1 list cards no longer briefly hide power when a new reading arrives, and hide expired meter readings. M1 prioritizes the initial state and restores supported controls after a failed first capability read. HomeKit uses M1 sensor-validity flags for temperature, humidity and PM2.5. Requests are serialized and coalesced, with device identity and response-ID checks. Stale replies cannot replace another device, and issued writes are never automatically replayed. Remote pages expose supported controls and diagnostics. Use the target device’s local page for network settings, authentication, automation, upgrades and backups.
 
 ### Device names and HomeKit synchronization
 
@@ -21,6 +21,8 @@ Devices expose a dedicated name.set command that changes only the name. The hub 
 ### HTTP authorization and control receipts
 
 HTTP checks credentials again while queued, at execution and at reply delivery. Requests cannot retain old permissions after sign-out, expiry or a password change. Control receipts use bounded reservations, and TC1 prepares reply space before execution. Packet reception, local buttons and MQTT heartbeats keep their own scheduling. A1/M1 diagnostics report the actual requested TCP connection limit.
+
+Fix hub restarts caused by excessive main-loop stack use when processing HomeKit data.
 
 ### TC1 MQTT and S30 binary LAN fixes
 
@@ -37,6 +39,7 @@ Fix stale snapshots after a state-generation change, and fetch the corresponding
 ### Limitations
 
 - M1 and TC1 may still return busy with many concurrent pages; extreme concurrency can also reset M1 connections. Keep ordinary status reads near five seconds. The complete S30 sensor publisher needed for independent M1 remote-display input is not yet available.
+- The hub may also return busy while querying several devices in succession. The page keeps existing content and updates it after a subsequent read succeeds.
 - S30 uses native RBL/STOCK_UA files. Other models require the matching signed OTA image and variant. An M1 Wi-Fi update does not update its sensor controller. HomeKit bridging remains experimental.
 
 [RC5 downloads and checksums](https://github.com/phicomm-io/iotcloud-community-firmware/releases/tag/v1.0.0-rc.5) · [Device installation and operation guides](https://phicomm-io.github.io/en/)
