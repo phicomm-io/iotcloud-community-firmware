@@ -8605,7 +8605,7 @@
         ],
         "firmware_source_sha256": {
           "DAIKIN/include/hub_service.h": "41301e800e3b8170aff24a92a60df980e6f54d9d0da20f8808ddc52d289acf20",
-          "DAIKIN/src/http.inc": "c1706c183851f024cb5e8835953f9e8e17e99051cf917d87cb4b24d595ce77d8"
+          "DAIKIN/src/http.inc": "de89a89bd9a7298729f23060f97b0a006dae4d453bdf5b37f1b9136495a4fd80"
         },
         "review_basis": "Author checked implementation scope and retained RC4 qualification results; RC5 checks are recorded in its release run."
       },
