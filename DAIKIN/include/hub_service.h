@@ -254,7 +254,7 @@ public:
     if ((inputCapacity(request) && !input.capacity()) || !output.capacity())
       return fail(503, "busy");
     if (!get && !(request.method == "DELETE" && request.body.empty()) &&
-        (request.body.empty() || deserializeJson(input, request.body) ||
+        (request.body.empty() || deserializeJson(input, request.body.c_str(), request.body.size()) ||
          !input.is<JsonObject>()))
       return fail(400, "invalid_params");
     if (path == "/api/register/status" && get) {

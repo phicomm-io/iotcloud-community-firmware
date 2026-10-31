@@ -235,7 +235,7 @@ void setup(){
   if(!prefs.begin("daikin",false)){Serial.println("NVS unavailable");while(true)delay(1000);}
   {
     String text=loadAuthConfigText();
-    if(deserializeJson(config,text)||!config.is<JsonObject>()||!validConfig(config.as<JsonObjectConst>())){
+    if(deserializeJson(config,text.c_str(),text.length())||!config.is<JsonObject>()||!validConfig(config.as<JsonObjectConst>())){
       configRecovery=true;config.clear();config.to<JsonObject>();Serial.println("Configuration recovery required");
     }
   }

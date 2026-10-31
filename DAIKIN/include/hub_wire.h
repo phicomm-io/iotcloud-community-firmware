@@ -22,7 +22,9 @@ public:
     auto at=topic.find("/discovery/");if(at==std::string::npos||body.size()>1024)return;
     DynamicJsonDocument doc(2048);
     bool mp=!body.empty()&&((uint8_t(body[0])&0xf0)==0x80||uint8_t(body[0])==0xde);
-    auto error=mp?deserializeMsgPack(doc,body):deserializeJson(doc,body);
+    // Share the bounded const-input parser used by HTTP/config storage instead
+    // of instantiating another complete parser for std::string readers.
+    auto error=mp?deserializeMsgPack(doc,body.c_str(),body.size()):deserializeJson(doc,body.c_str(),body.size());
     if(error||!doc.is<JsonObject>()||doc["protocol"]!="tmcp"||doc["protocol_version"]!=2)return;
     std::string mac=doc["device_id"]|topic.substr(at+11).c_str(),model=doc["model"]|"";
     if(mac.size()!=12||mac=="000000000000"||mac=="ffffffffffff"||mac.find_first_not_of("0123456789abcdef")!=std::string::npos||mac!=topic.substr(at+11)||(model!="a1"&&model!="m1"&&model!="tc1"&&model!="daikin"&&model!="s30-v1b"))return;
@@ -32,7 +34,7 @@ public:
     Entry *slot=nullptr;for(auto &d:devices){if(d.base==base){slot=&d;break;}if(d.base.empty()&&!slot)slot=&d;}
     if(slot){slot->base=base;slot->binary=binary;}
   }
-  DeserializationError decode(JsonDocument &doc,const std::string &base,const std::string &body)const{auto error=binary(base)?deserializeMsgPack(doc,body):deserializeJson(doc,body);return error?error:doc.is<JsonObject>()?DeserializationError::Ok:DeserializationError::InvalidInput;}
+  DeserializationError decode(JsonDocument &doc,const std::string &base,const std::string &body)const{auto error=binary(base)?deserializeMsgPack(doc,body.c_str(),body.size()):deserializeJson(doc,body.c_str(),body.size());return error?error:doc.is<JsonObject>()?DeserializationError::Ok:DeserializationError::InvalidInput;}
   void encode(const JsonDocument &doc,const std::string &base,std::string &body)const{if(binary(base))serializeMsgPack(doc,body);else serializeJson(doc,body);}
 };
 static HubWire hubWire;

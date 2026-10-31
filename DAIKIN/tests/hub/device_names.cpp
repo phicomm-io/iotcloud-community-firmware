@@ -49,6 +49,18 @@ static DynamicJsonDocument call(const std::string &name,bool extra=false,const c
   DynamicJsonDocument reply(12000);assert(!deserializeMsgPack(reply,result.c_str(),result.length()));return reply;
 }
 int main(){
+  // Exercise the real Arduino String reader used by boot/backup/HTTP and the
+  // old JSON dispatcher. Explicit const-byte bounds must keep its semantics.
+  for(const auto &bytes:{std::string(),std::string("{}\0extra",8),
+      std::string("{\"name\":\"a\0b\"}",14),std::string("{\"n\":1}tail"),
+      std::string("{\"name\":\"a\\u0000b\"}"),std::string("{\"n\":1.25e2}"),
+      std::string("{\"n\":1"),std::string("{\"name\":\"客厅\"}")}){
+    const String input(bytes.data(),bytes.size());DynamicJsonDocument oldReader(512),bounded(512);
+    const auto oldError=deserializeJson(oldReader,input);
+    const auto boundedError=deserializeJson(bounded,input.c_str(),input.length());
+    assert(oldError==boundedError&&input.length()==bytes.size()&&!memcmp(input.c_str(),bytes.data(),bytes.size()));
+    if(!oldError){String before,after;serializeJson(oldReader,before);serializeJson(bounded,after);assert(before==after);}
+  }
   config.clear();config["device"]["name"]="original";config["device"]["language"]="zh-CN";
   config["mqtt"]["host"]="broker";config["auth"]["password"]="unchanged";config["lan_peers"][0]["peer"]="02c400000001";
   const std::string name="卧室, DAIKIN: [温度] {计量} \"name\" \\ 😀";

@@ -37,3 +37,6 @@ class HubBusiness(unittest.TestCase):
 
     def test_cloud_routes_and_bemfa(self):
         self.scenario('relay')
+
+    def test_bounded_codec_readers_preserve_binary_and_legacy_inputs(self):
+        self.scenario('wire_readers')

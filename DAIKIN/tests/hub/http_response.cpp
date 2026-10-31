@@ -21,6 +21,7 @@ int main(){
  // Exercise the dynamic-document path too, including binary NUL-safe writing.
  String large="[";for(unsigned i=0;i<80;i++){if(i)large+=",";large+="{\"value\":0}";}large+="]";r={};assert(jsonResponse(&r,"200 OK",large)==ESP_OK);d=decode(r);assert(d.is<JsonArray>()&&d.size()==80&&d[79]["value"]==0);
  r={};assert(jsonResponse(&r,"503 Service Unavailable","{\"code\":\"busy\"}")==ESP_OK);d=decode(r);assert(r.status=="503 Service Unavailable"&&d["code"]=="busy");
+ r={};assert(jsonResponse(&r,"200 OK","{\"name\":\"a\\u0000b\"}")==ESP_OK);d=decode(r);assert(d["name"].as<JsonString>().size()==3);
  // An already encoded response must be passed through unchanged.
  String encoded;serializeWireMP(d,encoded);r={};assert(jsonResponse(&r,"503 Service Unavailable",encoded)==ESP_OK);assert(r.body==encoded);
  r={};assert(jsonResponse(&r,"200 OK","[")==ESP_FAIL&&r.body.empty());

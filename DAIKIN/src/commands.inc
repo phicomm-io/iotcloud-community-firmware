@@ -258,7 +258,7 @@ static bool validConfig(JsonObjectConst candidate){
 static String execute(const String &body,bool binary=true){
   DynamicJsonDocument request(6144),reply(8192);
   const char *code="ok",*message="ok";
-  if((binary?deserializeMsgPack(request,body.c_str(),body.length()):deserializeJson(request,body))||!request.is<JsonObject>()||!request["action"].is<const char*>()||
+  if((binary?deserializeMsgPack(request,body.c_str(),body.length()):deserializeJson(request,body.c_str(),body.length()))||!request.is<JsonObject>()||!request["action"].is<const char*>()||
      !request["params"].is<JsonObject>()||!knownFields(request.as<JsonObjectConst>(),"|request_id||action||params|")){
     reply["code"]="invalid_params";reply["message"]="Invalid command envelope";String text;if(binary)serializeWireMP(reply,text);else serializeJson(reply,text);return text;
   }
