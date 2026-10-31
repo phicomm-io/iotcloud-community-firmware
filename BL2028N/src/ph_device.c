@@ -136,7 +136,7 @@ void ph_diagnostics(ph_device *d,ph_writer *w) {
     if(d->ops.diagnostics)d->ops.diagnostics(d->ops.user,w);
     phw_end(w);
 }
-static const char *actions[] = {"info.get", "status.get", "capabilities.get", "diagnostics.get", "config.get", "config.set", "power.get", "outlet.set", "indicator.set", "child_lock.set", "system.reboot", "system.reset", "wifi.scan", "wifi.scan.get", "ota.start"};
+static const char *actions[] = {"info.get", "status.get", "capabilities.get", "diagnostics.get", "config.get", "config.set", "name.set", "power.get", "outlet.set", "indicator.set", "child_lock.set", "system.reboot", "system.reset", "wifi.scan", "wifi.scan.get", "ota.start"};
 void ph_capabilities(ph_device *d,ph_writer *w) {
     identity(d,w);phw_text(w, "mqtt_protocol", "openiot");phw_u32(w, "mqtt_protocol_version", 2);
     phw_begin(w, "actions", true);
@@ -145,7 +145,7 @@ void ph_capabilities(ph_device *d,ph_writer *w) {
     phw_bool(w, "local_auth", true); phw_bool(w, "power_metering_supported", true);
     phw_text(w,"metering_chip","HLW8032");
     phw_bool(w,"ota_upload",false); phw_bool(w,"config_backup",false); phw_bool(w,"config_recovery",false);
-    phw_u32(w,"mqtt_password_max",127);
+    phw_u32(w,"mqtt_password_max",127);phw_u32(w,"name_max_bytes",sizeof(d->settings.name)-1);
     phw_u32(w,"ota_url_max",127);phw_bool(w,"wifi_trial",false);
     phw_begin(w,"status_views",true);phw_text(w,NULL,"full");phw_text(w,NULL,"live");phw_end(w);
 }
@@ -198,7 +198,8 @@ static __attribute__((noinline)) const char *execute_settings(ph_device *d,const
         if (!phv_keys(values, "|enabled|") || !boolean(values, "enabled", &on)) return "invalid_params";
         if (!strcmp(section, "indicator.set")) next.indicator = on; else next.child_lock = on;
     } else {
-        if(!strcmp(section,"device")) {
+        if(!strcmp(section,"device")||!strcmp(section,"name.set")) {
+            if(!strcmp(section,"name.set")&&(!phv_keys(values,"|name|")||!phv_get(values,"name",&v)||v.kind!=PHV_TEXT||!v.size))return "invalid_params";
             if(!values->count || !phv_keys(values,"|name||power_on|"))return "invalid_params";
             if(phv_get(values,"name",&v)) {
                 if(!phv_text(&v,next.name,sizeof(next.name)))return "invalid_params";
@@ -230,7 +231,9 @@ static __attribute__((noinline)) const char *execute_settings(ph_device *d,const
     d->settings = next;
     /* Recompute fresh samples immediately when calibration changes. */
     for(unsigned i=0;i<3;++i){d->meter.value[i]=d->meter.raw[i]*next.coefficients[i];if(d->meter.value[i]>(i==0?500:i==1?100:25000))d->meter.fields&=~(1u<<i);}
-    ++d->sequence; phw_u32(w,"revision",next.revision); return "accepted";
+    ++d->sequence; phw_u32(w,"revision",next.revision);
+    if(!strcmp(section,"name.set"))phw_text(w,"name",next.name);
+    return "accepted";
 }
 static const char *execute(ph_device *d, const char *action, const ph_value *p, ph_writer *w, bool admin,bool control) {
     bool on; ph_value v;
@@ -260,7 +263,8 @@ static const char *execute(ph_device *d, const char *action, const ph_value *p, 
         d->relay = on; ++d->sequence; d->ops.relay(d->ops.user, on); phw_bool(w, "on", on); return "accepted";
     }
     if (!strcmp(action,"wifi.scan.get"))return d->ops.platform_action?d->ops.platform_action(d->ops.user,action,p,w,admin):"unsupported";
-    if (!admin && !(control&&(!strcmp(action,"indicator.set")||!strcmp(action,"child_lock.set")))) return "unauthorized";
+    if (!admin && !(control&&(!strcmp(action,"indicator.set")||!strcmp(action,"child_lock.set")||!strcmp(action,"name.set")))) return "unauthorized";
+    if(!strcmp(action,"name.set"))return execute_settings(d,action,p,w);
     if (!strcmp(action, "system.reboot")) {
         if (p->count) return "invalid_params";
         if (!d->ops.reboot) return "unsupported";
@@ -348,7 +352,7 @@ size_t ph_command_context(ph_device *d,const char *action,const ph_value *params
                           const char *id,const char *receipt_key,const ph_auth_context *context,
                           ph_wire_format output,void *out,size_t capacity,bool *admitted) {
     static const char *const allowed[]={"status.get","info.get","capabilities.get","diagnostics.get",
-                                       "power.get","outlet.set","indicator.set","child_lock.set"};
+                                       "power.get","outlet.set","indicator.set","child_lock.set","name.set"};
     if(admitted)*admitted=false;
     if(!d||!admitted||!action||!params||!id||!receipt_key||!out||
        !ph_binary_format(output)||capacity<PH_OUTPUT_MAX)return 0;

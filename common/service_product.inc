@@ -43,7 +43,7 @@
 #define DEVICE_VERSION M1_VERSION
 #endif
 #include "device_status.h"
-static const char *const svc_capability_actions[]={"lan.pair","lan.pair.get","schedules.get","schedules.put","schedules.delete","schedules.enable","buttons.get","status.get","diagnostics.get","capabilities.get","config.get","logs.get","config.set","wifi.scan","wifi.scan.get","binding.status.get","system.reboot","system.reset","ota.start","night.get","night.set","time.get","time.set","binding.get",
+static const char *const svc_capability_actions[]={"lan.pair","lan.pair.get","schedules.get","schedules.put","schedules.delete","schedules.enable","buttons.get","status.get","diagnostics.get","capabilities.get","config.get","logs.get","config.set","name.set","wifi.scan","wifi.scan.get","binding.status.get","system.reboot","system.reset","ota.start","night.get","night.set","time.get","time.set","binding.get",
 #ifdef FEATURE_DEVICE_A1
     "binding.set",
 #endif

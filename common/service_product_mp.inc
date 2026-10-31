@@ -42,7 +42,7 @@ void service_product_capabilities_mp(ph_writer *w,const char *const *extra,bool 
   phw_u32(w,"wire_version",1);phw_begin(w,"wire_formats",true);phw_text(w,NULL,"msgpack");phw_end(w);phw_text(w,"default_wire_format","msgpack");
   phw_begin(w,"status_views",true);phw_text(w,NULL,"full");phw_end(w);phw_text(w,"device_language","zh-CN,en");
   phw_u32(w,"diagnostics_schema",PH_DIAGNOSTICS_SCHEMA);phw_bool(w,"business_status",true);
-  phw_u32(w,"config_backup",1);phw_bool(w,"config_recovery",device_config_recovery());
+  phw_u32(w,"config_backup",1);phw_bool(w,"config_recovery",device_config_recovery());phw_u32(w,"name_max_bytes",sizeof(((CONFIG *)0)->name)-1);
 #ifndef FEATURE_DEVICE_A1
   phw_u32(w,"sensor_session_protocol",2);phw_u32(w,"sensor_schema",3);phw_u32(w,"sensor_alarm_config_schema",1);phw_u32(w,"mcu_ota_max_bytes",32768);
 #else
@@ -243,6 +243,18 @@ static bool smp_config(const ph_value *p,ph_writer *w,const char **code)
  *code=ok?"accepted":"storage_error";smp_empty(w);return true;
 invalid:*code="invalid_params";smp_empty(w);return true;
 }
+static __attribute__((noinline)) bool smp_name(const ph_value *p,ph_writer *w,const char **code)
+{
+ CONFIG c;ph_value value;
+ if(!phv_keys(p,"|name|")||!phv_get(p,"name",&value)||value.kind!=PHV_TEXT||!value.size||value.size>=sizeof(c.name)){
+  *code="invalid_params";smp_empty(w);return true;
+ }
+ GET_CONFIG(&c);
+ if(!phv_text(&value,c.name,sizeof(c.name))){*code="invalid_params";smp_empty(w);return true;}
+ bool saved=SAVE_DEVICE_CONFIG(&c,device_language_get());
+ *code=saved?"accepted":"storage_error";
+ phw_begin(w,NULL,false);if(saved)phw_text(w,"name",c.name);phw_end(w);return true;
+}
 #ifndef FEATURE_DEVICE_A1
 extern bool m1_display_mp(const char *,const ph_value *,ph_writer *,const char **);
 extern bool m1_co2_source_mp(const char *,const ph_value *,ph_writer *,const char **);
@@ -301,6 +313,7 @@ bool service_product_mp(const char *action,const ph_value *p,ph_writer *w,const 
   phw_end(w);*code="ok";return true;
  }
  if(!strcmp(action,"config.set"))return smp_config(p,w,code);
+ if(!strcmp(action,"name.set"))return smp_name(p,w,code);
  if(!strcmp(action,"wifi.scan.get")){
   if(!phv_keys(p,""))goto invalid;STATE state;GET_STATE(&state);phw_begin(w,NULL,false);phw_bool(w,"scanning",state.scan_busy);phw_begin(w,"networks",true);
   for(unsigned i=0;i<state.scan_count;i++){phw_begin(w,NULL,false);phw_text(w,"ssid",state.scan[i].ssid);phw_int(w,"rssi",state.scan[i].rssi);phw_end(w);}phw_end(w);phw_end(w);*code="ok";return true;

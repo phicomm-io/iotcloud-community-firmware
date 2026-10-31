@@ -181,10 +181,10 @@ class LanV4(unittest.TestCase):
         for id,action in enumerate(('status.get','info.get','capabilities.get','diagnostics.get','power.get'),1):
             reply,_=self.result(self.command(token,id=id,action=action));self.assertEqual(reply['code'],'ok')
         for id,action,params in ((6,'outlet.set',{'on':True}),(7,'indicator.set',{'enabled':False}),
-                                 (8,'child_lock.set',{'enabled':True}),(9,'config.set',{})):
+                                 (8,'child_lock.set',{'enabled':True}),(9,'config.set',{}),(10,'name.set',{'name':'Forbidden'})):
             reply,_=self.result(self.command(token,id=id,action=action,params=params))
             self.assertEqual(reply['code'],'unsupported' if action=='config.set' else 'unauthorized')
-        status,_=self.result(self.command(token,id=10))
+        status,_=self.result(self.command(token,id=11))
         self.assertEqual((status['data']['socket_states'],status['data']['indicator'],status['data']['child_lock']),([False],True,False))
         self.assertEqual(self.counters()['relay'],0)
         # MQTT closure revokes only MQTT credentials/results. Local pairing
@@ -193,7 +193,7 @@ class LanV4(unittest.TestCase):
         prior=self.command(local,peer=peer,action='outlet.set',params={'on':True})
         self.result(prior);self.assertEqual(self.counters()['relay'],1)
         self.assertEqual(self.console('MQTT_CLOSE'),'MQTT_CLOSE OK')
-        self.assertEqual(self.exchange(self.command(token,id=11))['code'],'auth_required')
+        self.assertEqual(self.exchange(self.command(token,id=12))['code'],'auth_required')
         self.assertEqual(self.exchange(prior)['code'],'expired');self.assertEqual(self.counters()['relay'],1)
         self.result(self.command(local,id=2,peer=peer))
         # Explicit CONTROL injection is a core fixture only; the product's
@@ -202,6 +202,26 @@ class LanV4(unittest.TestCase):
         self.assertEqual(self.console('GRANT '+self.peer+' '+token.hex()+' 1'),'GRANT OK')
         reply,_=self.result(self.command(token,action='outlet.set',params={'on':False}))
         self.assertEqual(reply['code'],'accepted');self.assertEqual(self.counters()['relay'],2)
+    def test_control_name_write_readback_replay_and_scope(self):
+        token=self.resume(self.pair())
+        name='客厅, Desk: [1] \\灯'
+        request=self.command(token,action='name.set',params={'name':name},rid='rename')
+        reply,_=self.result(request)
+        self.assertEqual((reply['code'],reply['data']['name']),('accepted',name))
+        status,_=self.result(self.command(token,id=2))
+        self.assertEqual(status['data']['name'],name)
+        revision=status['data']['revision']
+        repeated,_=self.result(self.command(token,id=3,action='name.set',params={'name':name},rid='rename'))
+        self.assertEqual(repeated,reply)
+        conflict,_=self.result(self.command(token,id=4,action='name.set',params={'name':'Other'},rid='rename'))
+        self.assertEqual(conflict['code'],'conflict')
+        invalid,_=self.result(self.command(token,id=5,action='name.set',params={'name':'x'*64}))
+        self.assertEqual(invalid['code'],'invalid_params')
+        forbidden,_=self.result(self.command(token,id=6,action='config.set',params={'section':'device','values':{'name':'Other'}}))
+        self.assertEqual(forbidden['code'],'unsupported')
+        status,_=self.result(self.command(token,id=7))
+        self.assertEqual((status['data']['name'],status['data']['revision']),(name,revision))
+        self.assertEqual(self.counters()['relay'],0)
 
 def main():
     global RUN

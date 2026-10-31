@@ -9,7 +9,7 @@ static inline bool ph_lan_action_allowed(const char *action)
         "power.get","filter.get","alarm.get","wake_alarm.get","mcu.version.get",
         "fan.set","fan.mode.set","fan.mode.toggle","light.set","child_lock.set",
         "light_always.set","light_effect.select","light_effect.next",
-        "outlet.set","indicator.set","display.set","buzzer.set",
+        "outlet.set","indicator.set","display.set","buzzer.set","name.set",
         "wake_alarm.start","wake_alarm.stop",
         "fresh_air.config.get","fresh_air.linkage.get","fresh_air.set",NULL
     };

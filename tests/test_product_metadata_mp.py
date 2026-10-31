@@ -18,6 +18,8 @@ class ProductMetadata(unittest.TestCase):
 #include "common/diagnostics_ids.h"
 static bool recovery;
 bool device_config_recovery(void){return recovery;}
+typedef struct {char name[64];} product_config;
+#define CONFIG product_config
 #define DEVICE_ID "aabbccddeeff"
 #define DEVICE_VERSION "1.0.0-rc.4-abcdef"
 static long budget=-1,live;

@@ -74,6 +74,20 @@ static __attribute__((noinline)) bool tc1_control_mp(const char *action,const ph
     }else UserMqttRefreshState(false);
     tc1_config_release();*code=saved?"accepted":"storage_error";return true;
 }
+static __attribute__((noinline)) bool tc1_name_mp(const ph_value *p,ph_writer *out,const char **code)
+{
+    *code="invalid_params";
+    char name[maxNameLen],old[maxNameLen];
+    if(!keys(p,"|name|")||!strparam(p,"name",name,sizeof(name),true)||!name[0])return true;
+    if(!tc1_config_reserve()){*code="busy";return true;}
+    strcpy(old,sys_config->micoSystemConfig.name);
+    bool changed=strcmp(old,name)!=0,saved=true;
+    if(changed){strcpy(sys_config->micoSystemConfig.name,name);saved=mico_system_context_update(sys_config)==kNoErr;}
+    if(!saved)strcpy(sys_config->micoSystemConfig.name,old);
+    if(saved&&changed)UserMqttRefreshState(true);
+    tc1_config_release();*code=saved?"accepted":"storage_error";
+    phw_begin(out,NULL,false);if(saved)phw_text(out,"name",name);phw_end(out);return true;
+}
 static __attribute__((noinline)) bool tc1_product_inner_mp(const char *action,const ph_value *p,ph_writer *out,const char **code){
     *code="invalid_params";
     if(!strcmp(action,"config.get")){
@@ -116,6 +130,7 @@ static __attribute__((noinline)) bool tc1_product_inner_mp(const char *action,co
             if(!strparam(v,"password",password,sizeof(password),false))return true;*code=WifiConnect(ssid,password)?"accepted":"busy";return true;
         }
     }
+    if(!strcmp(action,"name.set"))return tc1_name_mp(p,out,code);
     if(!strcmp(action,"system.reset")){
         bool full;if(!keys(p,"|full|")||!boolparam(p,"full",&full))return true;
         if(!tc1_auth_reset(full)){*code="storage_error";return true;}
@@ -165,7 +180,7 @@ finish:
 
 bool service_product_mp(const char *action,const ph_value *params,ph_writer *out,const char **code)
 {
-    static const char *const actions[]={"config.get","power.get","time.get","wifi.scan.get","ota.start","config.set","outlet.set","indicator.set","child_lock.set","system.reboot","system.reset","wifi.scan","time.set",NULL};
+    static const char *const actions[]={"config.get","power.get","time.get","wifi.scan.get","ota.start","config.set","name.set","outlet.set","indicator.set","child_lock.set","system.reboot","system.reset","wifi.scan","time.set",NULL};
     unsigned i;for(i=0;actions[i];i++)if(!strcmp(actions[i],action))break;
     if(!actions[i])return false;
     unsigned depth=out->depth;size_t length=out->wire->len;
