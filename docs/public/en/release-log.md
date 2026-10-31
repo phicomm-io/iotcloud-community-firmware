@@ -10,9 +10,9 @@ English translation of the published release history. Historical validation stat
 
 The DAIKIN hub uses the device WebUI administration password and session instead of a separate account password. With no password it opens directly. Refreshing or switching between the control and hub pages in the same tab reuses the session; sign-out and password changes clear it. Existing hub usernames, devices, pairing and forwarding settings are retained. The old hub password is retired, while the username remains the topic namespace. UDP pairing and external MQTT broker authentication remain separate.
 
-### Read paired devices through the hub
+### Hub device state, power and HomeKit readings
 
-The hub page uses an HTTP-to-UDP transport to read paired-device state, open settings and send controls. The browser only needs to reach the hub. Requests are serialized and coalesced; device identity and response IDs are checked before updating the page. Stale reads cannot replace the selected device, and issued writes are never automatically replayed. Use the target device’s local page for firmware uploads and raw backups.
+The hub reads paired-device state and sends controls over HTTP-to-UDP; the browser only needs to reach the hub. TC1 list cards show power and hide expired meter readings. M1 prioritizes the initial state and restores supported controls after a failed first capability read. HomeKit uses M1 sensor-validity flags for temperature, humidity and PM2.5. Requests are serialized and coalesced, with device identity and response-ID checks. Stale replies cannot replace another device, and issued writes are never automatically replayed. Remote pages expose supported controls and diagnostics. Use the target device’s local page for network settings, authentication, automation, upgrades and backups.
 
 ### HTTP authorization and control receipts
 

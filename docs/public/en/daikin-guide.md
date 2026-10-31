@@ -58,7 +58,7 @@ Select **Hub management** on the device page, or open `http://DEVICE-IP/iotcloud
 
 After upgrading to rc.5, the separate hub password is retired. The existing hub username, device list, forwarding and pairing settings are retained. The hub username remains the topic namespace. Configure UDP device-pairing passwords and external MQTT broker credentials separately.
 
-The DAIKIN itself appears automatically in the hub device list. Paired devices expose their parameters and controls through the hub UDP transport; the browser only needs to reach the hub. Open the target device’s local page for firmware uploads and raw backups.
+The DAIKIN itself appears automatically in the hub device list. Paired-device parameters and controls use the hub UDP transport, so the browser only needs to reach the hub. TC1 cards show power and hide expired meter readings. Remote pages expose supported controls and diagnostics. Open the target device’s local page for network settings, administration passwords, automation, upgrades and backups.
 
 In Hub management, select a discovered LAN device, check its model, ID and IP, and pair using that device's management password. Confirm and pair again if its IP changes. Move devices previously connected to the hub's embedded broker to an external broker.
 

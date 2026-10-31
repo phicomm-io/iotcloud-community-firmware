@@ -8621,7 +8621,7 @@
       "change_id": "hub-device-http-udp-transport",
       "version": "1.0.0-rc.5",
       "type": "feature",
-      "component": "bundled_web",
+      "component": "firmware",
       "scope": {
         "models": [
           "daikin"
@@ -8644,16 +8644,16 @@
         "state": "active"
       },
       "title": {
-        "zh-CN": "中枢显示已配对设备的参数",
-        "en": "Read paired devices through the hub"
+        "zh-CN": "中枢设备参数、功率与 HomeKit 读数",
+        "en": "Hub device state, power and HomeKit readings"
       },
       "description": {
-        "zh-CN": "中枢网页通过 HTTP→UDP 通路读取已配对设备状态、打开设置及发送控制；浏览器无需逐台直连设备或连接中枢内置 MQTT。请求串行合并，设备身份及响应编号匹配后才更新页面，过期读取不会覆盖新设备内容，已发出的写操作不自动重放。远端设备的固件上传及原始备份仍从目标设备本地网页操作。",
-        "en": "The hub page uses an HTTP-to-UDP transport to read paired-device state, open settings and send controls. The browser only needs to reach the hub. Requests are serialized and coalesced; device identity and response IDs are checked before updating the page. Stale reads cannot replace the selected device, and issued writes are never automatically replayed. Use the target device’s local page for firmware uploads and raw backups."
+        "zh-CN": "中枢网页通过 HTTP→UDP 读取已配对设备状态并发送控制，浏览器只需访问中枢。TC1 列表补齐功率，计量数据过期时隐藏读数；M1 优先读取首屏状态，初始能力读取失败后恢复可用控件。HomeKit 按 M1 实际传感器有效位更新温湿度与 PM2.5。请求串行合并并校验设备身份与响应编号，过期响应不会覆盖新设备，已发出的写操作不自动重放。远端页面提供已实现的控制与诊断；网络、认证、自动化、升级及备份从目标设备本地网页操作。",
+        "en": "The hub reads paired-device state and sends controls over HTTP-to-UDP; the browser only needs to reach the hub. TC1 list cards show power and hide expired meter readings. M1 prioritizes the initial state and restores supported controls after a failed first capability read. HomeKit uses M1 sensor-validity flags for temperature, humidity and PM2.5. Requests are serialized and coalesced, with device identity and response-ID checks. Stale replies cannot replace another device, and issued writes are never automatically replayed. Remote pages expose supported controls and diagnostics. Use the target device’s local page for network settings, authentication, automation, upgrades and backups."
       },
       "ota_summary": {
-        "zh-CN": "中枢网页通过 HTTP→UDP 通路读取已配对设备状态、打开设置及发送控制；浏览器无需逐台直连设备或连接中枢内置 MQTT。请求串行合并，设备身份及响应编号匹配后才更新页面，过期读取不会覆盖新设备内容，已发出的写操作不自动重放。远端设备的固件上传及原始备份仍从目标设备本地网页操作。",
-        "en": "The hub page uses an HTTP-to-UDP transport to read paired-device state, open settings and send controls. The browser only needs to reach the hub. Requests are serialized and coalesced; device identity and response IDs are checked before updating the page. Stale reads cannot replace the selected device, and issued writes are never automatically replayed. Use the target device’s local page for firmware uploads and raw backups."
+        "zh-CN": "中枢网页通过 HTTP→UDP 读取已配对设备状态并发送控制，浏览器只需访问中枢。TC1 列表补齐功率，计量数据过期时隐藏读数；M1 优先读取首屏状态，初始能力读取失败后恢复可用控件。HomeKit 按 M1 实际传感器有效位更新温湿度与 PM2.5。请求串行合并并校验设备身份与响应编号，过期响应不会覆盖新设备，已发出的写操作不自动重放。远端页面提供已实现的控制与诊断；网络、认证、自动化、升级及备份从目标设备本地网页操作。",
+        "en": "The hub reads paired-device state and sends controls over HTTP-to-UDP; the browser only needs to reach the hub. TC1 list cards show power and hide expired meter readings. M1 prioritizes the initial state and restores supported controls after a failed first capability read. HomeKit uses M1 sensor-validity flags for temperature, humidity and PM2.5. Requests are serialized and coalesced, with device identity and response-ID checks. Stale replies cannot replace another device, and issued writes are never automatically replayed. Remote pages expose supported controls and diagnostics. Use the target device’s local page for network settings, authentication, automation, upgrades and backups."
       },
       "summary_complete": true,
       "critical": false,
@@ -8663,20 +8663,24 @@
       "evidence": {
         "firmware_sources": [
           "DAIKIN/src/hub_lan.inc",
-          "DAIKIN/include/hub_http_command.h"
+          "DAIKIN/include/hub_http_command.h",
+          "DAIKIN/include/hub_home.h",
+          "frontend.lock.json"
         ],
         "firmware_source_sha256": {
-          "DAIKIN/src/hub_lan.inc": "0ca4437c1fcd1314de02e0b0cedacad54a223630d2521f0926a7055755b4e7d6",
-          "DAIKIN/include/hub_http_command.h": "ce821287be3d8d4d6db1e12897fbc71f53aa3f2d1aeb49389c25141d4e4a13cb"
+          "DAIKIN/src/hub_lan.inc": "405143d2ae7781d073e985af0b462b71077aae0d008fc6d482ba775c56012c26",
+          "DAIKIN/include/hub_http_command.h": "abf45e7fcd87f8aedf51c539f9c77fd23694e2b6e318c274500b94d3a1e969c7",
+          "DAIKIN/include/hub_home.h": "78e81bc481ddd55afcd9f8c356e59d136537d036115fc02784649b0d7b8ce1f2",
+          "frontend.lock.json": "62a610f777f37aaf0ca7592d80421f532b677b48c07802907f5265749a662856"
         },
         "review_basis": "Author checked implementation scope and retained RC4 qualification results; RC5 checks are recorded in its release run."
       },
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
-        "reviewed_utc": "2026-10-31T03:49:28.166422+00:00",
-        "reason": "Checked model, authentication, migration and transport conditions in both languages.",
-        "reviewed_content_sha256": "0aa0193458c47d917ac7427cf732e2b88c2ad625b29e63a9108fc9c07ab6309f"
+        "reviewed_utc": "2026-10-31T05:23:09.410220+00:00",
+        "reason": "Checked device scope, LAN settings limits, power expiry, M1 recovery and HomeKit validity behavior in both languages.",
+        "reviewed_content_sha256": "32db7e3746f38e1693ce7f9c8688e7a08612dd5ab1922c709eedd6fbe82fdc58"
       }
     },
     {
@@ -8867,7 +8871,7 @@
           "DAIKIN/src/lan_route_storage.inc"
         ],
         "firmware_source_sha256": {
-          "DAIKIN/src/hub_lan.inc": "0ca4437c1fcd1314de02e0b0cedacad54a223630d2521f0926a7055755b4e7d6",
+          "DAIKIN/src/hub_lan.inc": "405143d2ae7781d073e985af0b462b71077aae0d008fc6d482ba775c56012c26",
           "DAIKIN/src/auth_storage.inc": "f61019deb13475cb9ff49aad2cbf332708c37688e7f79e815013f491799810b1",
           "DAIKIN/src/lan_route_storage.inc": "2ed32658cbffc8a99d2614df4664dabcbc68725a245ce5ca799f999bba16563d"
         },
