@@ -344,8 +344,12 @@ test('candidate catalog failure leaves stable downloads usable and displays no u
 });
 
 test('S30 native downloads appear only for the matching RC, with installation-specific file guidance',async()=>{
-  const nativeCatalog=JSON.parse(readFileSync(require('node:path').resolve(__dirname,'../site/native-downloads.json'),'utf8'));
+  const retained=JSON.parse(readFileSync(require('node:path').resolve(__dirname,'../site/native-downloads.json'),'utf8'));
+  const historical=retained.releases.find(release=>release.tag==='v1.0.0-rc.4');
   for(const locale of ['zh','en']) for(const tag of ['v1.0.0-rc.4','v1.0.0-rc.5']) {
+    // New candidates receive this catalog from their verified native build;
+    // they do not need a source-file entry pinned before publication.
+    const nativeCatalog={schema:1,releases:[JSON.parse(JSON.stringify(historical).replaceAll('1.0.0-rc.4',tag.slice(1)))]};
     const f=CandidateUI.fixture();CandidateUI.appendCandidate(f.candidate,tag.slice(1),'1.0.0-rc',107);
     const p=await controllerHomepage({locale,candidateSnapshot:f.candidate,nativeCatalog});
     try {
