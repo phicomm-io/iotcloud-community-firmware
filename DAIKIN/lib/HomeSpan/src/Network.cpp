@@ -386,7 +386,7 @@ int Network::getFormValue(char *formData, const char *tag, char *value, int maxS
   while(*v!='\0' && *v!='&' && len<maxSize){      // copy the value until null, '&', or maxSize is reached
     if(*v=='%'){                                  // this is an escaped character of form %XX
       v++;
-      sscanf(v,"%2x",(unsigned int *)value++);
+      IOTCLOUD_HAP_SCAN(v,"%2x",(unsigned int *)value++);
       v+=2;
     } else {
       *value++=(*v=='+'?' ':*v);                  // HTML Forms use '+' for spaces (and '+' signs are escaped)

@@ -230,7 +230,7 @@ void Span::checkConnect(){
 Span& Span::setQRID(const char *id){
   
   char tBuf[5]={};
-  sscanf(id,"%4[0-9A-Za-z]",tBuf);
+  IOTCLOUD_HAP_SCAN(id,"%4[0-9A-Za-z]",tBuf);
   
   if(strlen(id)==4 && strlen(tBuf)==4){
     sprintf(qrID,"%s",id);
@@ -305,7 +305,7 @@ Span& Span::setPairingCode(const char *s, boolean progCall){
    
   char setupCode[10]={};
 
-  sscanf(s," %9[0-9]",setupCode);
+  IOTCLOUD_HAP_SCAN(s," %9[0-9]",setupCode);
 
   if(strlen(setupCode)!=8){
     LOG0("\n*** Invalid request to change Setup Code to '%s'.  Code must be exactly 8 digits.\n\n",s);
@@ -634,7 +634,7 @@ boolean Span::printfAttributes(char **ids, int numIDs, int flags){
 
   for(int i=0;i<numIDs;i++){              // PASS 1: loop over all ids requested to check status codes - only errors are if characteristic not found, or not readable
     aid=iid=0;
-    sscanf(ids[i],"%u.%u",&aid,&iid);     // parse aid and iid
+    IOTCLOUD_HAP_SCAN(ids[i],"%u.%u",&aid,&iid);     // parse aid and iid
     Characteristics[i]=find(aid,iid);     // find matching chararacteristic
     
     if(Characteristics[i]){                                         // if found
@@ -660,7 +660,7 @@ boolean Span::printfAttributes(char **ids, int numIDs, int flags){
       Characteristics[i]->printfAttributes(flags);                  // get JSON attributes for characteristic (may or may not include status=0 attribute)
     else{                                                           // else create JSON status attribute based on requested aid/iid
       aid=iid=0;
-    sscanf(ids[i],"%u.%u",&aid,&iid);                             
+    IOTCLOUD_HAP_SCAN(ids[i],"%u.%u",&aid,&iid);                             
       hapOut << "{\"iid\":" << iid << ",\"aid\":" << aid << ",\"status\":" << (int)status[i] << "}";     
     }
       
@@ -1644,7 +1644,7 @@ boolean SpanOTA::auth;
 
 SpanPoint::SpanPoint(const char *macAddress, int sendSize, int receiveSize, int queueDepth, boolean useAPaddress){
 
-  if(sscanf(macAddress,"%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",peerInfo.peer_addr,peerInfo.peer_addr+1,peerInfo.peer_addr+2,peerInfo.peer_addr+3,peerInfo.peer_addr+4,peerInfo.peer_addr+5)!=6){
+  if(IOTCLOUD_HAP_SCAN(macAddress,"%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",peerInfo.peer_addr,peerInfo.peer_addr+1,peerInfo.peer_addr+2,peerInfo.peer_addr+3,peerInfo.peer_addr+4,peerInfo.peer_addr+5)!=6){
     LOG0("\nFATAL ERROR!  Can't create new SpanPoint(\"%s\") - Invalid MAC Address ***\n",macAddress);
     LOG0("\n=== PROGRAM HALTED ===");
     while(1);

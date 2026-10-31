@@ -55,6 +55,7 @@
 #include "Characteristics.h"
 #include "TLV8.h"
 #include "IoTCloudNVS.h"
+#include "IoTCloudScan.h"
 
 using std::vector;
 using std::unordered_map;
@@ -305,10 +306,10 @@ class Span{
 
   static boolean invalidUUID(const char *uuid){
     int x=0;
-    sscanf(uuid,"%*8[0-9a-fA-F]%n",&x);       // check for short-form of UUID
+    IOTCLOUD_HAP_SCAN(uuid,"%*8[0-9a-fA-F]%n",&x);       // check for short-form of UUID
     if(strlen(uuid)==x && uuid[0]!='0')
       return(false);
-    sscanf(uuid,"%*8[0-9a-fA-F]-%*4[0-9a-fA-F]-%*4[0-9a-fA-F]-%*4[0-9a-fA-F]-%*12[0-9a-fA-F]%n",&x);
+    IOTCLOUD_HAP_SCAN(uuid,"%*8[0-9a-fA-F]-%*4[0-9a-fA-F]-%*4[0-9a-fA-F]-%*4[0-9a-fA-F]-%*12[0-9a-fA-F]%n",&x);
     return(strlen(uuid)!=36 || x!=36);
   }
   
@@ -629,7 +630,7 @@ class SpanCharacteristic{
     if(nvsStore){
       nvsKey=(char *)HS_MALLOC(16);
       uint16_t t;
-      sscanf(type,"%hx",&t);
+      IOTCLOUD_HAP_SCAN(type,"%hx",&t);
       sprintf(nvsKey,"%04X%08X%03X",t,aid,iid&0xFFF);
       size_t len;    
 

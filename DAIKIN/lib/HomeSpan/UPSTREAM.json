@@ -23,7 +23,8 @@
     "Use the complete 64-bit HAP record nonce counter and close the session instead of reusing a nonce on exhaustion.",
     "Replace iostream/locale serialization with a narrow byte writer while preserving decimal JSON, binary TLVs and 1024-byte encrypted record boundaries.",
     "Skip empty output frames, close sessions after encryption or short-write failures, and retain SHA-384 count/send behavior.",
-    "Match TLV malloc/realloc buffers with a free deleter and keep owning HAP output objects noncopyable."
+    "Match TLV malloc/realloc buffers with a free deleter and keep owning HAP output objects noncopyable.",
+    "Use newlib siscanf for the eleven integer/character-only input formats, sharing the scanner already linked by ESP-IDF; retain the host libc backend for host fixtures."
   ],
   "integration_storage": {
     "layout": "Existing 4 MiB Flash dual-OTA table is retained",
@@ -36,6 +37,12 @@
     "DAIKIN/tests/hub/http.cpp",
     "DAIKIN/tests/hub/storage.cpp",
     "DAIKIN/tests/test_hap_characteristics.py",
-    "DAIKIN/tests/test_hap_output.py"
-  ]
+    "DAIKIN/tests/test_hap_output.py",
+    "DAIKIN/tests/test_hap_scan.py"
+  ],
+  "scan_backend": {
+    "target": "newlib siscanf from the pinned ESP32 GCC 8.4.0 toolchain; no new library copy",
+    "semantics": "Same sscanf conversions and return values except floating-point conversions, which none of the eleven literal formats use",
+    "reference": "https://sourceware.org/newlib/libc.html#siscanf"
+  }
 }
