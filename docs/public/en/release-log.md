@@ -14,6 +14,10 @@ The DAIKIN hub uses the device WebUI administration password and session instead
 
 The hub reads paired-device state and sends controls over HTTP-to-UDP; the browser only needs to reach the hub. TC1 list cards show power and hide expired meter readings. M1 prioritizes the initial state and restores supported controls after a failed first capability read. HomeKit uses M1 sensor-validity flags for temperature, humidity and PM2.5. Requests are serialized and coalesced, with device identity and response-ID checks. Stale replies cannot replace another device, and issued writes are never automatically replayed. Remote pages expose supported controls and diagnostics. Use the target device’s local page for network settings, authentication, automation, upgrades and backups.
 
+### Device names and HomeKit synchronization
+
+Devices expose a dedicated name.set command that changes only the name. The hub publishes confirmed device names to HomeKit. Clients that write ConfiguredName can rename the device; the displayed name updates after persistence and readback succeed. Both the hub and target device need rc.5 for two-way synchronization. Existing pairings and device identities are retained. Ordinary renames in Apple Home are client-local aliases and are not sent to the hub as device rename commands.
+
 ### HTTP authorization and control receipts
 
 HTTP checks credentials again while queued, at execution and at reply delivery. Requests cannot retain old permissions after sign-out, expiry or a password change. Control receipts use bounded reservations, and TC1 prepares reply space before execution. Packet reception, local buttons and MQTT heartbeats keep their own scheduling. A1/M1 diagnostics report the actual requested TCP connection limit.

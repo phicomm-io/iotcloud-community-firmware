@@ -8604,17 +8604,17 @@
           "DAIKIN/src/http.inc"
         ],
         "firmware_source_sha256": {
-          "DAIKIN/include/hub_service.h": "3e93765d749e2735b3f213342be214b1bbdbe44c6e2a7f037deedf63f8f07e03",
-          "DAIKIN/src/http.inc": "b25e6451c5ed41acf0e51435b7059dd01b454f2d5c019d6811ae20c99b73b718"
+          "DAIKIN/include/hub_service.h": "41301e800e3b8170aff24a92a60df980e6f54d9d0da20f8808ddc52d289acf20",
+          "DAIKIN/src/http.inc": "c1706c183851f024cb5e8835953f9e8e17e99051cf917d87cb4b24d595ce77d8"
         },
         "review_basis": "Author checked implementation scope and retained RC4 qualification results; RC5 checks are recorded in its release run."
       },
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
-        "reviewed_utc": "2026-10-31T03:49:28.166315+00:00",
-        "reason": "Checked model, authentication, migration and transport conditions in both languages.",
-        "reviewed_content_sha256": "3b794917b56cc048f1daf28c3b109e4ae09d71687271a248505c9ceb05f99937"
+        "reviewed_utc": "2026-10-31T06:03:29.005553+00:00",
+        "reason": "Reviewed matching device scopes, version conditions, persistence/readback, and the Apple Home alias boundary in both languages.",
+        "reviewed_content_sha256": "6c254cef75c4f67b2eea60eb4d26543c83758ec338d1a6240ff00ade1495284e"
       }
     },
     {
@@ -8670,17 +8670,17 @@
         "firmware_source_sha256": {
           "DAIKIN/src/hub_lan.inc": "405143d2ae7781d073e985af0b462b71077aae0d008fc6d482ba775c56012c26",
           "DAIKIN/include/hub_http_command.h": "abf45e7fcd87f8aedf51c539f9c77fd23694e2b6e318c274500b94d3a1e969c7",
-          "DAIKIN/include/hub_home.h": "78e81bc481ddd55afcd9f8c356e59d136537d036115fc02784649b0d7b8ce1f2",
-          "frontend.lock.json": "62a610f777f37aaf0ca7592d80421f532b677b48c07802907f5265749a662856"
+          "DAIKIN/include/hub_home.h": "598a85a9c7a1aede6c33b802c659f01a9c2d672f08075ce00f9e45229f0fff46",
+          "frontend.lock.json": "db540c12959e49e7a93f925a821acbddd9a00a8db61fcc05b553d973cf63f64a"
         },
         "review_basis": "Author checked implementation scope and retained RC4 qualification results; RC5 checks are recorded in its release run."
       },
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
-        "reviewed_utc": "2026-10-31T05:23:09.410220+00:00",
-        "reason": "Checked device scope, LAN settings limits, power expiry, M1 recovery and HomeKit validity behavior in both languages.",
-        "reviewed_content_sha256": "32db7e3746f38e1693ce7f9c8688e7a08612dd5ab1922c709eedd6fbe82fdc58"
+        "reviewed_utc": "2026-10-31T06:03:29.005553+00:00",
+        "reason": "Reviewed matching device scopes, version conditions, persistence/readback, and the Apple Home alias boundary in both languages.",
+        "reviewed_content_sha256": "ff9466cc9179cae0539b17f1de15463c0e4a091b59bf0a2dec33be1399450ed1"
       }
     },
     {
@@ -8732,7 +8732,7 @@
       "summary_complete": true,
       "critical": true,
       "source_refs": [
-        "v1.0.0-rc.5:b007"
+        "v1.0.0-rc.5:b009"
       ],
       "evidence": {
         "firmware_sources": [
@@ -8750,9 +8750,9 @@
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
-        "reviewed_utc": "2026-10-31T03:49:28.166527+00:00",
-        "reason": "Checked model, authentication, migration and transport conditions in both languages.",
-        "reviewed_content_sha256": "ffbf3c7854ee07c62e338114227b4200d3cf2e2dcf943fc524b1a0a8f99dc92d"
+        "reviewed_utc": "2026-10-31T06:03:29.005553+00:00",
+        "reason": "Reviewed matching device scopes, version conditions, persistence/readback, and the Apple Home alias boundary in both languages.",
+        "reviewed_content_sha256": "12510f67d3619f7aa562f77478549c04da14b5156c0125615d08ebf6b6193731"
       }
     },
     {
@@ -8798,7 +8798,7 @@
       "summary_complete": true,
       "critical": false,
       "source_refs": [
-        "v1.0.0-rc.5:b009"
+        "v1.0.0-rc.5:b011"
       ],
       "evidence": {
         "firmware_sources": [
@@ -8816,9 +8816,9 @@
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
-        "reviewed_utc": "2026-10-31T03:49:28.166571+00:00",
-        "reason": "Checked model, authentication, migration and transport conditions in both languages.",
-        "reviewed_content_sha256": "5cadb48e02d1d569db72472ff2d7df9df56977d551a1cb7bfa2341c7065af3fc"
+        "reviewed_utc": "2026-10-31T06:03:29.005553+00:00",
+        "reason": "Reviewed matching device scopes, version conditions, persistence/readback, and the Apple Home alias boundary in both languages.",
+        "reviewed_content_sha256": "232fda1e599cd4b08247097185553fc1ad75f9bf7a0a933bf6c524a1aab738b5"
       }
     },
     {
@@ -8862,7 +8862,7 @@
       "summary_complete": true,
       "critical": false,
       "source_refs": [
-        "v1.0.0-rc.5:b011"
+        "v1.0.0-rc.5:b013"
       ],
       "evidence": {
         "firmware_sources": [
@@ -8880,9 +8880,9 @@
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
-        "reviewed_utc": "2026-10-31T03:49:28.166622+00:00",
-        "reason": "Checked model, authentication, migration and transport conditions in both languages.",
-        "reviewed_content_sha256": "ea3ffe6e89b1265a95e9185738a6eec49207e883ddbbd17eeb826075c006b4c3"
+        "reviewed_utc": "2026-10-31T06:03:29.005553+00:00",
+        "reason": "Reviewed matching device scopes, version conditions, persistence/readback, and the Apple Home alias boundary in both languages.",
+        "reviewed_content_sha256": "bb5f42fba93187ad68f4b3953b5ea97c5dbe9a5e8f392dedc0745cfc7cd7986c"
       }
     },
     {
@@ -8934,23 +8934,105 @@
       "summary_complete": true,
       "critical": false,
       "source_refs": [
-        "v1.0.0-rc.5:b013"
+        "v1.0.0-rc.5:b015"
       ],
       "evidence": {
         "firmware_sources": [
           "frontend.lock.json"
         ],
         "firmware_source_sha256": {
-          "frontend.lock.json": "62a610f777f37aaf0ca7592d80421f532b677b48c07802907f5265749a662856"
+          "frontend.lock.json": "db540c12959e49e7a93f925a821acbddd9a00a8db61fcc05b553d973cf63f64a"
         },
         "review_basis": "Author checked implementation scope and retained RC4 qualification results; RC5 checks are recorded in its release run."
       },
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
-        "reviewed_utc": "2026-10-31T03:49:28.166654+00:00",
-        "reason": "Checked model, authentication, migration and transport conditions in both languages.",
-        "reviewed_content_sha256": "210ff3076742c0b1fe18db5738e1aefbac6a94bd960c98b7fe12ec54c975645a"
+        "reviewed_utc": "2026-10-31T06:03:29.005553+00:00",
+        "reason": "Reviewed matching device scopes, version conditions, persistence/readback, and the Apple Home alias boundary in both languages.",
+        "reviewed_content_sha256": "09c4e7ca140221d66f468c7347ca56c05ddcd4198afed70ffd67dd80e10b6725"
+      }
+    },
+    {
+      "change_id": "device-name-homekit-sync",
+      "version": "1.0.0-rc.5",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1",
+          "m1",
+          "tc1",
+          "daikin",
+          "s30-v1b"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources",
+          "hub"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "设备名称与 HomeKit 同步",
+        "en": "Device names and HomeKit synchronization"
+      },
+      "description": {
+        "zh-CN": "设备提供独立的 name.set 命令，只修改名称。中枢将设备确认的名称同步到 HomeKit；支持写入 ConfiguredName 的客户端可反向修改设备名称，保存成功并读取确认后更新显示。双向同步需要中枢和目标设备均升级到 rc.5，现有配对与设备标识保持。Apple 家庭的普通重命名属于客户端本地别名，不会作为改名命令发送给中枢。",
+        "en": "Devices expose a dedicated name.set command that changes only the name. The hub publishes confirmed device names to HomeKit. Clients that write ConfiguredName can rename the device; the displayed name updates after persistence and readback succeed. Both the hub and target device need rc.5 for two-way synchronization. Existing pairings and device identities are retained. Ordinary renames in Apple Home are client-local aliases and are not sent to the hub as device rename commands."
+      },
+      "ota_summary": {
+        "zh-CN": "设备提供独立的 name.set 命令，只修改名称。中枢将设备确认的名称同步到 HomeKit；支持写入 ConfiguredName 的客户端可反向修改设备名称，保存成功并读取确认后更新显示。双向同步需要中枢和目标设备均升级到 rc.5，现有配对与设备标识保持。Apple 家庭的普通重命名属于客户端本地别名，不会作为改名命令发送给中枢。",
+        "en": "Devices expose a dedicated name.set command that changes only the name. The hub publishes confirmed device names to HomeKit. Clients that write ConfiguredName can rename the device; the displayed name updates after persistence and readback succeed. Both the hub and target device need rc.5 for two-way synchronization. Existing pairings and device identities are retained. Ordinary renames in Apple Home are client-local aliases and are not sent to the hub as device rename commands."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc.5:b007"
+      ],
+      "evidence": {
+        "firmware_sources": [
+          "common/service_product_mp.inc",
+          "TC1/service_mp.inc",
+          "BL2028N/src/ph_device.c",
+          "DAIKIN/include/device_name.h",
+          "DAIKIN/include/hub_home.h",
+          "DAIKIN/src/home.inc",
+          "DAIKIN/lib/HomeSpan/src/HomeSpan.cpp",
+          "DAIKIN/lib/HomeSpan/src/IoTCloudJson.h"
+        ],
+        "firmware_source_sha256": {
+          "common/service_product_mp.inc": "11816e44291f447230f8a6cbadb956cdfe119ce429985eed5176455e6f418015",
+          "TC1/service_mp.inc": "a9d38ae70d5f9a858b4a50bdc24b5a9e38c1666a115ec7961aa3c640e5fc5c8f",
+          "BL2028N/src/ph_device.c": "0ff6578dba487761cd2711fe5f4d82f98894ab0c9d0f9d0a99ede2ffd19e79b7",
+          "DAIKIN/include/device_name.h": "dc8e4d8e7748a1bf581ba9d367c9209dab7758a3db6683a35c383d2f6a59b127",
+          "DAIKIN/include/hub_home.h": "598a85a9c7a1aede6c33b802c659f01a9c2d672f08075ce00f9e45229f0fff46",
+          "DAIKIN/src/home.inc": "3facdbe30c876c4c681b83ed6a362256ecfa348808118ad26301d044bab7d19e",
+          "DAIKIN/lib/HomeSpan/src/HomeSpan.cpp": "aa3aca47fc66c2ea2c4af86f2b38103d7233f35ec3fdef13a7f707c0b126c9fc",
+          "DAIKIN/lib/HomeSpan/src/IoTCloudJson.h": "99effdcfd7acfb05b369d7691bc5fbadbdb1c8f1650337add2eb75c6015a33dc"
+        },
+        "review_basis": "Checked narrow name writes, persistence failures, LAN scope and HAP identity preservation."
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root",
+        "reviewed_utc": "2026-10-31T06:03:29.005553+00:00",
+        "reason": "Reviewed matching device scopes, version conditions, persistence/readback, and the Apple Home alias boundary in both languages.",
+        "reviewed_content_sha256": "b97df8d410f993be7fcbbc9ecb871ecea9d2478fb0cbb68c8a9cd9cb3f53b6dd"
       }
     }
   ],

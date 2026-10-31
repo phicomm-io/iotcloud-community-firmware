@@ -64,6 +64,8 @@ In Hub management, select a discovered LAN device, check its model, ID and IP, a
 
 Apple Home uses experimental HAP bridging, off by default. Enable it under **Apple Home** to obtain the pairing code. Matter is unavailable.
 
+Device names synchronize to HomeKit. A client that writes ConfiguredName can rename the device through the hub, with persistence and readback confirmation. Upgrade both the hub and target device to rc.5. Names follow each device’s UTF-8 byte limit: 31 bytes for TC1, 63 for A1, M1, DAIKIN and S30. Pairings and device identities are retained. Ordinary Apple Home renames are client-local aliases; use device settings when you want to change the shared device name.
+
 ### Switch from full to hub
 
 Only newer `full` firmware that advertises this operation provides the conversion option. The image must fit the device's actual OTA slot. Use local HTTP and a real signed `hub` OTA file; 0.9.x full images do not provide this feature.

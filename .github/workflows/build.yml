@@ -382,6 +382,7 @@ jobs:
         if: matrix.variant == 'hub' && needs.frontend.outputs.reuse-heavy-validation != 'true'
         run: |
           python3 -m unittest discover -s DAIKIN/tests -p 'test_hap*.py'
+          python3 -m unittest DAIKIN.tests.test_device_names DAIKIN.tests.test_home_name_graph
           python3 DAIKIN/tests/test_frontend_prepare.py
       - name: Identify exact frontend source for hub integration tests
         if: matrix.variant == 'hub' && needs.frontend.outputs.reuse-heavy-validation != 'true'
