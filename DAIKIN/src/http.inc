@@ -26,7 +26,10 @@ static esp_err_t loginHandler(httpd_req_t *req){
   if(*token)httpd_resp_set_hdr(req,"X-IotCloud-Session",token);
   // The login result owns this decision. A later password change must not
   // turn a stateless result into a purported authenticated session.
-  DynamicJsonDocument reply(768);reply["code"]="ok";reply["data"]["token"]=token;reply["data"]["password_required"]=*token!=0;reply["data"]["expires_in"]=1800;String wire;serializeWireMP(reply,wire);memset(token,0,sizeof(token));return jsonResponse(req,"200 OK",wire);
+  DynamicJsonDocument reply(768);reply["code"]="ok";reply["data"]["token"]=token;reply["data"]["password_required"]=*token!=0;reply["data"]["expires_in"]=1800;String wire;serializeWireMP(reply,wire);
+  // IDF borrows the token header until httpd_resp_send finishes.
+  const esp_err_t sent=jsonResponse(req,"200 OK",wire);
+  memset(token,0,sizeof(token));return sent;
 }
 static esp_err_t logoutHandler(httpd_req_t *req){
   char header[80]={};ph_auth_context context;

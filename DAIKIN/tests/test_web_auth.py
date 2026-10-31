@@ -13,6 +13,7 @@ class Auth(unittest.TestCase):
 #include <ArduinoJson.h>
 #include <string>
 #include <map>
+#include <vector>
 #include <cstring>
 #include <cassert>
 #include <cstdio>
@@ -39,12 +40,13 @@ static char webPassword[33]="";static int authMux=0;
 static uint32_t clockMs=100,randomValue=0;
 static uint32_t millis(){return clockMs;}
 
-struct httpd_req_t{int content_len=0,offset=0;std::string body;std::map<std::string,std::string> headers;};
+struct httpd_req_t{int content_len=0,offset=0;std::string body;std::map<std::string,std::string> headers,sentHeaders;std::vector<std::pair<const char*,const char*>> responseHeaders;};
 static std::string response,type,status;
-static int httpd_resp_set_hdr(httpd_req_t*,const char*,const char*){return 0;}
+// IDF borrows both strings until send; copying here hides handler lifetime bugs.
+static int httpd_resp_set_hdr(httpd_req_t *req,const char *name,const char *value){req->responseHeaders.emplace_back(name,value);return 0;}
 static int httpd_resp_set_status(httpd_req_t*,const char *s){status=s;return 0;}
 static int httpd_resp_set_type(httpd_req_t*,const char *s){type=s;return 0;}
-static int httpd_resp_send(httpd_req_t*,const char *p,size_t n){response.assign(p,n);return 0;}
+static int httpd_resp_send(httpd_req_t *req,const char *p,size_t n){req->sentHeaders.clear();for(const auto &header:req->responseHeaders)req->sentHeaders[header.first]=header.second;req->responseHeaders.clear();response.assign(p,n);return 0;}
 static int httpd_req_get_hdr_value_str(httpd_req_t *req,const char *name,char *out,size_t n){auto it=req->headers.find(name);if(it==req->headers.end()||it->second.size()>=n)return -1;memcpy(out,it->second.c_str(),it->second.size()+1);return 0;}
 static int httpd_req_recv(httpd_req_t *req,char *out,int n){int count=std::min(n,req->content_len-req->offset);memcpy(out,req->body.data()+req->offset,count);req->offset+=count;return count;}
 static ph_auth_state localAuth;static bool localAuthReady=true,configRecovery=false;
@@ -55,13 +57,13 @@ int main(){
  (void)currentWebPassword;(void)millis;
  ph_auth_ops ops={};ops.now=[](void*){return clockMs;};ops.password=[](void*,char out[33]){strcpy(out,webPassword);return true;};ops.random=[](void*,uint8_t*out,size_t n){for(size_t i=0;i<n;i++)out[i]=uint8_t(++randomValue);return true;};ph_auth_store store;ph_auth_store_empty(&store);assert(ph_auth_init(&localAuth,&ops,&store));
  httpd_req_t auth;assert(authorized(&auth));auth.headers["Authorization"]="Bearer stale";
- for(unsigned i=0;i<8;i++){login("");assert(status=="200 OK"&&token().empty()&&authorized(&auth));}
+ for(unsigned i=0;i<8;i++){auto open=login("");assert(status=="200 OK"&&token().empty()&&!open.sentHeaders.count("X-IotCloud-Session")&&authorized(&auth));}
  for(const auto &slot:localAuth.http)assert(!slot.active);
  logoutHandler(&auth);assert(status=="200 OK");
- strcpy(webPassword,"adminfjr");assert(ph_auth_credential_commit(&localAuth,webPassword,false,[](void*,const ph_auth_store*){return true;},nullptr));assert(!authorized(&auth));login("");assert(status=="401 Unauthorized");
- login("adminfjr");assert(status=="200 OK");auto first=token();assert(first.size()==32);auth.headers["Authorization"]="Bearer "+first;assert(authorized(&auth));
- for(unsigned i=0;i<3;i++){login("adminfjr");assert(status=="200 OK");}
- login("adminfjr");assert(status=="503 Service Unavailable");assert(authorized(&auth));
+ strcpy(webPassword,"adminfjr");assert(ph_auth_credential_commit(&localAuth,webPassword,false,[](void*,const ph_auth_store*){return true;},nullptr));assert(!authorized(&auth));auto invalid=login("");assert(status=="401 Unauthorized"&&!invalid.sentHeaders.count("X-IotCloud-Session"));
+ auto firstLogin=login("adminfjr");assert(status=="200 OK");auto first=token();assert(first.size()==32&&first.find_first_not_of("0123456789abcdef")==std::string::npos&&firstLogin.sentHeaders.at("X-IotCloud-Session")==first);auth.headers["Authorization"]="Bearer "+first;assert(authorized(&auth));
+ for(unsigned i=0;i<3;i++){auto next=login("adminfjr");assert(status=="200 OK"&&next.sentHeaders.at("X-IotCloud-Session")==token());}
+ auto full=login("adminfjr");assert(status=="503 Service Unavailable"&&!full.sentHeaders.count("X-IotCloud-Session"));assert(authorized(&auth));
  logoutHandler(&auth);assert(status=="200 OK");assert(!authorized(&auth));
  login("adminfjr");assert(status=="200 OK");auth.headers["Authorization"]="Bearer "+token();assert(authorized(&auth));
  clockMs+=1800000;assert(!authorized(&auth));
@@ -69,6 +71,7 @@ int main(){
  for(unsigned i=0;i<47;i++){clockMs+=1799999;assert(authorized(&auth));}clockMs+=1799999;assert(authorized(&auth));clockMs+=100;assert(!authorized(&auth));
  auto req=login("adminfjr");req.offset=0;req.body="{\"password\":\"adminfjr\"}";req.content_len=req.body.size();loginHandler(&req);assert(status=="400 Bad Request");
  req.headers["Authorization"]="Basic YWRtaW46YWRtaW5manI=";assert(authorized(&req));
+ puts("Production auth handlers PASS: borrowed response headers captured at send match 32hex body tokens; stateless/no slots, wrong password, session capacity, logout, expiry and Basic");
 }
 ''')
    objects=[]
