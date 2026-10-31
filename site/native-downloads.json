@@ -2,27 +2,6 @@
   "schema": 1,
   "releases": [
     {
-      "tag": "v1.0.0-rc.5",
-      "source_commit": "40dabaf723800a767749202826fd81692387fa03",
-      "models": {
-        "s30": {
-          "checksums": "https://github.com/phicomm-io/iotcloud-community-firmware/releases/download/v1.0.0-rc.5/SHA256SUMS-S30",
-          "downloads": {
-            "rbl": {
-              "path": "https://github.com/phicomm-io/iotcloud-community-firmware/releases/download/v1.0.0-rc.5/BL2028N_OTA_1.0.0-rc.5.rbl",
-              "sha256": "f67abb36229c31a88d70a3f4b092745ff83d32ce4757e1b7e2ea16ae230fef80",
-              "size": 489472
-            },
-            "stock_ua": {
-              "path": "https://github.com/phicomm-io/iotcloud-community-firmware/releases/download/v1.0.0-rc.5/BL2028N_STOCK_UA_1.0.0-rc.5.bin",
-              "sha256": "b21bd3742009d0794d686019e8f2cb728790683e205e9c2295ea0b0b280d62a8",
-              "size": 1183744
-            }
-          }
-        }
-      }
-    },
-    {
       "tag": "v1.0.0-rc.4",
       "source_commit": "c11e58dd568df82fc02293931ae15101c4f27cb2",
       "models": {

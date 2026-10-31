@@ -4,7 +4,7 @@ The **ORVIBO S30-V1B** single-outlet meter uses BL2028N / BK7231N and HLW8032. S
 
 ## Power restoration: off / on / restore
 
-Published RC4 supports off and on. Restore requires the matching development firmware.
+The reissued RC5 supports off, on and restore. Earlier RC4 builds support off and on.
 
 In Settings → General → Power-on policy, choose:
 

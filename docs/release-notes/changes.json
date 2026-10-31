@@ -8612,8 +8612,8 @@
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
-        "reviewed_utc": "2026-10-31T08:28:38.374920+00:00",
-        "reason": "Reviewed matching device scopes, version conditions, behavior and instructions in both languages.",
+        "reviewed_utc": "2026-10-31T11:33:23.808048+00:00",
+        "reason": "Reviewed device scope, behavior, version requirements and both languages.",
         "reviewed_content_sha256": "3b794917b56cc048f1daf28c3b109e4ae09d71687271a248505c9ceb05f99937"
       }
     },
@@ -8678,8 +8678,8 @@
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
-        "reviewed_utc": "2026-10-31T08:28:38.374958+00:00",
-        "reason": "Reviewed matching device scopes, version conditions, behavior and instructions in both languages.",
+        "reviewed_utc": "2026-10-31T11:33:23.808793+00:00",
+        "reason": "Reviewed device scope, behavior, version requirements and both languages.",
         "reviewed_content_sha256": "0de099c89b4155dcc9160af7fc5db02146f603f69ab42d4f0b71989c6ad8fdfc"
       }
     },
@@ -8750,8 +8750,8 @@
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
-        "reviewed_utc": "2026-10-31T08:28:38.374980+00:00",
-        "reason": "Reviewed matching device scopes, version conditions, behavior and instructions in both languages.",
+        "reviewed_utc": "2026-10-31T11:33:23.808925+00:00",
+        "reason": "Reviewed device scope, behavior, version requirements and both languages.",
         "reviewed_content_sha256": "ffbf3c7854ee07c62e338114227b4200d3cf2e2dcf943fc524b1a0a8f99dc92d"
       }
     },
@@ -8809,15 +8809,15 @@
         "firmware_source_sha256": {
           "TC1/mqtt_server/user_mqtt_client.c": "7192dbb7fb7249c08148d5e4751da6e67b999d3e80a4b4629ff5c9f75be72ea6",
           "BL2028N/src/ph_lan_v4.c": "aeb972e15cb2cde649d5ee18b5705a2c2e9f56ee7b9d29a1c6a558b33531b186",
-          "BL2028N/src/ph_mqtt_port.c": "ce2e5dd8c95f8838ba4859adddea237f7444ed0dd94416a387958a7ab7ba4fdf"
+          "BL2028N/src/ph_mqtt_port.c": "716c9bbd7f313ea5fc21ffb528efdef32ff900386ff917b64bda195e573bc1fd"
         },
         "review_basis": "Author checked implementation scope and retained RC4 qualification results; RC5 checks are recorded in its release run."
       },
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
-        "reviewed_utc": "2026-10-31T08:28:38.374993+00:00",
-        "reason": "Reviewed matching device scopes, version conditions, behavior and instructions in both languages.",
+        "reviewed_utc": "2026-10-31T11:33:23.809018+00:00",
+        "reason": "Reviewed device scope, behavior, version requirements and both languages.",
         "reviewed_content_sha256": "5cadb48e02d1d569db72472ff2d7df9df56977d551a1cb7bfa2341c7065af3fc"
       }
     },
@@ -8880,8 +8880,8 @@
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
-        "reviewed_utc": "2026-10-31T08:28:38.375004+00:00",
-        "reason": "Reviewed matching device scopes, version conditions, behavior and instructions in both languages.",
+        "reviewed_utc": "2026-10-31T11:33:23.809406+00:00",
+        "reason": "Reviewed device scope, behavior, version requirements and both languages.",
         "reviewed_content_sha256": "ea3ffe6e89b1265a95e9185738a6eec49207e883ddbbd17eeb826075c006b4c3"
       }
     },
@@ -8948,8 +8948,8 @@
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
-        "reviewed_utc": "2026-10-31T08:28:38.375013+00:00",
-        "reason": "Reviewed matching device scopes, version conditions, behavior and instructions in both languages.",
+        "reviewed_utc": "2026-10-31T11:33:23.809445+00:00",
+        "reason": "Reviewed device scope, behavior, version requirements and both languages.",
         "reviewed_content_sha256": "210ff3076742c0b1fe18db5738e1aefbac6a94bd960c98b7fe12ec54c975645a"
       }
     },
@@ -9018,7 +9018,7 @@
         "firmware_source_sha256": {
           "common/service_product_mp.inc": "11816e44291f447230f8a6cbadb956cdfe119ce429985eed5176455e6f418015",
           "TC1/service_mp.inc": "a9d38ae70d5f9a858b4a50bdc24b5a9e38c1666a115ec7961aa3c640e5fc5c8f",
-          "BL2028N/src/ph_device.c": "0ff6578dba487761cd2711fe5f4d82f98894ab0c9d0f9d0a99ede2ffd19e79b7",
+          "BL2028N/src/ph_device.c": "8ca272305cc199d2b0c8b1e2ff5e84d771924a3951789a2b76a9bbd468e0839f",
           "DAIKIN/include/device_name.h": "dc8e4d8e7748a1bf581ba9d367c9209dab7758a3db6683a35c383d2f6a59b127",
           "DAIKIN/include/hub_home.h": "598a85a9c7a1aede6c33b802c659f01a9c2d672f08075ce00f9e45229f0fff46",
           "DAIKIN/src/home.inc": "df6bea01496058f1a51c6eaf98453e95b1c1436114eab7ba94fbad8c63c7efba",
@@ -9030,8 +9030,8 @@
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
-        "reviewed_utc": "2026-10-31T08:28:38.375021+00:00",
-        "reason": "Reviewed matching device scopes, version conditions, behavior and instructions in both languages.",
+        "reviewed_utc": "2026-10-31T11:33:23.810494+00:00",
+        "reason": "Reviewed device scope, behavior, version requirements and both languages.",
         "reviewed_content_sha256": "20a64cfbb1fbdde4a3236c14b9692e5fd9fa22e1f8f3d5c2e3a6a6e8d8d19b6a"
       }
     },
@@ -9091,9 +9091,270 @@
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
-        "reviewed_utc": "2026-10-31T08:28:38.375033+00:00",
-        "reason": "Reviewed matching device scopes, version conditions, behavior and instructions in both languages.",
+        "reviewed_utc": "2026-10-31T11:33:23.810718+00:00",
+        "reason": "Reviewed device scope, behavior, version requirements and both languages.",
         "reviewed_content_sha256": "7c1522147c0ac2358aba6e8fc8b645de78b8f8882ec3b054029ef981cc4e7f84"
+      }
+    },
+    {
+      "change_id": "s30-power-and-sensor",
+      "version": "1.0.0-rc.5",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "s30"
+        ],
+        "variants": [
+          "full"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "S30 来电保持、功率规则与 M1 远程读数",
+        "en": "S30 power restoration, power rules and M1 readings"
+      },
+      "description": {
+        "zh-CN": "S30 增加来电关闭／开启／保持和最多 8 条本地功率规则；功率严格高于或低于阈值、持续指定秒数后开关，0 秒为立即触发。规则无需 MQTT 或校时，本地按键优先。S30 通过 MessagePack schema 3 发布电压、电流、功率和累计电量的字段描述与数值；同一外部 broker、同一账户的 M1 可独立订阅显示，网页可关闭。保持恢复最近一次已保存的输出，规则计时不跨重启恢复。",
+        "en": "S30 adds off, on and restore power-on modes and up to eight local power rules. Power strictly above or below a threshold for the specified number of seconds triggers switching; zero seconds means immediate triggering. Rules need neither MQTT nor a synced clock, and local buttons take priority. MessagePack schema 3 publishes voltage, current, power and energy metadata and readings for M1 devices on the same external broker and account without an open web page. Restore uses the last saved output; rule timers restart after reboot."
+      },
+      "ota_summary": {
+        "zh-CN": "S30 增加来电关闭／开启／保持和最多 8 条本地功率规则；功率严格高于或低于阈值、持续指定秒数后开关，0 秒为立即触发。规则无需 MQTT 或校时，本地按键优先。S30 通过 MessagePack schema 3 发布电压、电流、功率和累计电量的字段描述与数值；同一外部 broker、同一账户的 M1 可独立订阅显示，网页可关闭。保持恢复最近一次已保存的输出，规则计时不跨重启恢复。",
+        "en": "S30 adds off, on and restore power-on modes and up to eight local power rules. Power strictly above or below a threshold for the specified number of seconds triggers switching; zero seconds means immediate triggering. Rules need neither MQTT nor a synced clock, and local buttons take priority. MessagePack schema 3 publishes voltage, current, power and energy metadata and readings for M1 devices on the same external broker and account without an open web page. Restore uses the last saved output; rule timers restart after reboot."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc.5:b018"
+      ],
+      "evidence": {
+        "firmware_sources": [
+          "BL2028N/src/ph_device.c",
+          "BL2028N/src/ph_meter.c",
+          "BL2028N/src/ph_mqtt_port.c",
+          "BL2028N/protocol/power_trigger.h"
+        ],
+        "firmware_source_sha256": {
+          "BL2028N/src/ph_device.c": "8ca272305cc199d2b0c8b1e2ff5e84d771924a3951789a2b76a9bbd468e0839f",
+          "BL2028N/src/ph_meter.c": "2eceb24d4f625a9257c9fcf8cd862642ef7a0191fc085bc1427a04f994e56e39",
+          "BL2028N/src/ph_mqtt_port.c": "716c9bbd7f313ea5fc21ffb528efdef32ff900386ff917b64bda195e573bc1fd",
+          "BL2028N/protocol/power_trigger.h": "53dd46e9f564b304c5525f9b6138d6b62822c21cf00da8bb9503bc320b48946b"
+        }
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root",
+        "reviewed_utc": "2026-10-31T11:33:23.810844+00:00",
+        "reason": "Reviewed device scope, behavior, version requirements and both languages.",
+        "reviewed_content_sha256": "ad0424072067963e684a993a5dc2a9b095e1cbac42678c3a3a7f9a557b0c1f64"
+      }
+    },
+    {
+      "change_id": "tc1-local-power-rules",
+      "version": "1.0.0-rc.5",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "tc1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "TC1 本地功率条件自动化",
+        "en": "TC1 local power-condition automation"
+      },
+      "description": {
+        "zh-CN": "TC1 增加最多 8 条总功率条件规则，可对单路或全部插座执行开／关，支持高于／低于阈值及立即／持续触发。条件连续满足期间只执行一次，条件解除后重新计时；无效采样中断计时，本地按键优先。原有定时任务与二进制备份格式保留。",
+        "en": "TC1 adds up to eight total-power rules targeting one or all outlets, with above/below thresholds and immediate or sustained triggering. Each continuous matching condition triggers once and rearms after the condition clears. Invalid samples interrupt timing, and local buttons take priority. Existing timed tasks and binary backup layouts are retained."
+      },
+      "ota_summary": {
+        "zh-CN": "TC1 增加最多 8 条总功率条件规则，可对单路或全部插座执行开／关，支持高于／低于阈值及立即／持续触发。条件连续满足期间只执行一次，条件解除后重新计时；无效采样中断计时，本地按键优先。原有定时任务与二进制备份格式保留。",
+        "en": "TC1 adds up to eight total-power rules targeting one or all outlets, with above/below thresholds and immediate or sustained triggering. Each continuous matching condition triggers once and rearms after the condition clears. Invalid samples interrupt timing, and local buttons take priority. Existing timed tasks and binary backup layouts are retained."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc.5:b020"
+      ],
+      "evidence": {
+        "firmware_sources": [
+          "TC1/timed_task/timed_task.c",
+          "TC1/service_mp.inc",
+          "common/power_trigger.h"
+        ],
+        "firmware_source_sha256": {
+          "TC1/timed_task/timed_task.c": "7b4f20de176dd7ef69c76fcc0193b2e0a2e37b9ac7145c443e381b46ea386ca2",
+          "TC1/service_mp.inc": "a9d38ae70d5f9a858b4a50bdc24b5a9e38c1666a115ec7961aa3c640e5fc5c8f",
+          "common/power_trigger.h": "53dd46e9f564b304c5525f9b6138d6b62822c21cf00da8bb9503bc320b48946b"
+        }
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root",
+        "reviewed_utc": "2026-10-31T11:33:23.810928+00:00",
+        "reason": "Reviewed device scope, behavior, version requirements and both languages.",
+        "reviewed_content_sha256": "f8a5336aeee3b713d5cc31121080cb125bab9e3ab9f1efc4847d8139ce09c4e3"
+      }
+    },
+    {
+      "change_id": "s30-wifi-storage-recovery",
+      "version": "1.0.0-rc.5",
+      "type": "bugfix",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "s30"
+        ],
+        "variants": [
+          "full"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "S30 Wi-Fi 扫描与配置升级",
+        "en": "S30 Wi-Fi scanning and settings migration"
+      },
+      "description": {
+        "zh-CN": "修复 S30 扫描结果长度、释放与 STA 状态处理，保存配置完成后才执行延迟重启。新配置使用独立 PBL4，自动读取已识别的 PBL1／2／3 布局，保留网络、管理密码、双向配对、名称、计量倍率和累计量。连接清理保留 MQTT 认证／ACL 失败原因，便于排查断连。",
+        "en": "Fix S30 scan-result bounds, allocation release and STA state handling, and defer reboot until settings are saved. The distinct PBL4 layout imports recognized PBL1/2/3 records while retaining networks, administration password, inbound and outbound pairing, names, meter multipliers and energy. MQTT cleanup retains authentication and ACL failure reasons for troubleshooting."
+      },
+      "ota_summary": {
+        "zh-CN": "修复 S30 扫描结果长度、释放与 STA 状态处理，保存配置完成后才执行延迟重启。新配置使用独立 PBL4，自动读取已识别的 PBL1／2／3 布局，保留网络、管理密码、双向配对、名称、计量倍率和累计量。连接清理保留 MQTT 认证／ACL 失败原因，便于排查断连。",
+        "en": "Fix S30 scan-result bounds, allocation release and STA state handling, and defer reboot until settings are saved. The distinct PBL4 layout imports recognized PBL1/2/3 records while retaining networks, administration password, inbound and outbound pairing, names, meter multipliers and energy. MQTT cleanup retains authentication and ACL failure reasons for troubleshooting."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc.5:b022"
+      ],
+      "evidence": {
+        "firmware_sources": [
+          "BL2028N/src/ph_port.c",
+          "BL2028N/src/storage_legacy.h",
+          "BL2028N/src/ph_mqtt_port.c",
+          "BL2028N/build.py"
+        ],
+        "firmware_source_sha256": {
+          "BL2028N/src/ph_port.c": "beb304272c8799595ca69853a9344e85551a523028ad8f978cbabe86118bdacb",
+          "BL2028N/src/storage_legacy.h": "86f114e90bb8cefa984071fa707deb919e1c961ebe4fc257cd54d3724353011d",
+          "BL2028N/src/ph_mqtt_port.c": "716c9bbd7f313ea5fc21ffb528efdef32ff900386ff917b64bda195e573bc1fd",
+          "BL2028N/build.py": "d00b3ea477994222f47961190fafc96fc7335a25f1ad1ea8c086d730e43133b2"
+        }
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root",
+        "reviewed_utc": "2026-10-31T11:33:23.811048+00:00",
+        "reason": "Reviewed device scope, behavior, version requirements and both languages.",
+        "reviewed_content_sha256": "84674cf33d7096aee4022450b622b9944408001c1fa706b6ebe1f3ea6cf572da"
+      }
+    },
+    {
+      "change_id": "web-ota-availability-guard",
+      "version": "1.0.0-rc.5",
+      "type": "bugfix",
+      "component": "bundled_web",
+      "scope": {
+        "models": [
+          "a1",
+          "m1",
+          "tc1",
+          "daikin",
+          "s30"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources",
+          "hub"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "网页在线升级按钮与版本路径",
+        "en": "Web update availability and upgrade path"
+      },
+      "description": {
+        "zh-CN": "在线升级仅在检查成功、版本明确且确有可用更新时显示安装按钮，点击时再次核对状态；已是最新版、检查失败或信息缺失时不会安装。保留升级差异确认，并提示 0.9.x 经 1.0.0 升级至后续稳定版的路径。",
+        "en": "Online updates show Install only after a successful check identifies an available version, and recheck availability on click. Up-to-date, failed or incomplete results cannot start installation. The change confirmation remains, with guidance to upgrade 0.9.x through 1.0.0 before later stable releases."
+      },
+      "ota_summary": {
+        "zh-CN": "在线升级仅在检查成功、版本明确且确有可用更新时显示安装按钮，点击时再次核对状态；已是最新版、检查失败或信息缺失时不会安装。保留升级差异确认，并提示 0.9.x 经 1.0.0 升级至后续稳定版的路径。",
+        "en": "Online updates show Install only after a successful check identifies an available version, and recheck availability on click. Up-to-date, failed or incomplete results cannot start installation. The change confirmation remains, with guidance to upgrade 0.9.x through 1.0.0 before later stable releases."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc.5:b024"
+      ],
+      "evidence": {
+        "firmware_sources": [
+          "frontend.lock.json"
+        ],
+        "firmware_source_sha256": {
+          "frontend.lock.json": "9381a32b58f9d539e052d43016c865a675e405c494fc83294265591083de43ae"
+        }
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root",
+        "reviewed_utc": "2026-10-31T11:33:23.811075+00:00",
+        "reason": "Reviewed device scope, behavior, version requirements and both languages.",
+        "reviewed_content_sha256": "5b433bedfe66bbb320817aa467ddda72f7e0f76cbd679f914527f5ec66936150"
       }
     }
   ],

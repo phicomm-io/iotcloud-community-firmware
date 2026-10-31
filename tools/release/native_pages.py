@@ -17,15 +17,15 @@ def download(url):
         return response.read()
 
 
-def collect_release(tag, archive, fetch=download):
+def collect_release(tag, archive, fetch=download, source_commit=None):
     version = parse_tag(tag).version
     folder = archive / 'releases' / tag
     prefix = PREFIX + tag + '/'
 
-    def read(name, expected=None):
+    def read(name, expected=None, refresh=False):
         path = folder / name
         body = path.read_bytes() if path.is_file() else b''
-        if not body or (expected and hashlib.sha256(body).hexdigest() != expected):
+        if refresh or not body or (expected and hashlib.sha256(body).hexdigest() != expected):
             body = fetch(prefix + name)
         if not body or (expected and hashlib.sha256(body).hexdigest() != expected):
             raise ValueError('Native release checksum mismatch: ' + name)
@@ -33,17 +33,27 @@ def collect_release(tag, archive, fetch=download):
         path.write_bytes(body)
         return body
 
-    sums = {}
-    for line in read('SHA256SUMS-S30').decode().splitlines():
-        match = re.fullmatch(r'([0-9a-f]{64})  ([A-Za-z0-9_.-]+)', line)
-        if not match or match[2] in sums:
-            raise ValueError('Invalid native release checksum list')
-        sums[match[2]] = match[1]
+    def checksums(refresh=False):
+        values = {}
+        for line in read('SHA256SUMS-S30', refresh=refresh).decode().splitlines():
+            match = re.fullmatch(r'([0-9a-f]{64})  ([A-Za-z0-9_.-]+)', line)
+            if not match or match[2] in values:
+                raise ValueError('Invalid native release checksum list')
+            values[match[2]] = match[1]
+        return values
+
+    sums = checksums()
     metadata = json.loads(read('build-s30.json', sums['build-s30.json']))
+    # An explicitly reissued RC keeps its tag but has a different source.
+    # Refresh retained assets only against that published catalog identity.
+    if source_commit and metadata.get('project_head') != source_commit:
+        sums = checksums(refresh=True)
+        metadata = json.loads(read('build-s30.json', sums['build-s30.json']))
     validation = json.loads(read('validation-s30.json', sums['validation-s30.json']))
     identity = metadata['version_metadata']
     commit = metadata['project_head']
     if (not re.fullmatch('[0-9a-f]{40}', commit) or
+            (source_commit is not None and source_commit != commit) or
             identity.get('git_commit') != commit or identity.get('base_version') != version or
             identity.get('git_tag') != tag or identity.get('dirty') is not False or
             metadata.get('dirty') is not False or
@@ -68,11 +78,15 @@ def collect_release(tag, archive, fetch=download):
 
 
 def collect(archive, fetch=download):
-    tags = set()
+    tags = {}
     for name in ('index.json', 'candidates.json'):
         path = archive / 'releases' / name
         if path.is_file():
-            tags.update(r['tag'] for r in json.loads(path.read_bytes())['releases'])
+            for release in json.loads(path.read_bytes())['releases']:
+                tag, commit = release['tag'], release.get('commit')
+                if tag in tags and tags[tag] != commit:
+                    raise ValueError('Conflicting native release catalog identity: ' + tag)
+                tags[tag] = commit
     # Older GitHub candidates may have been withdrawn while their immutable
     # images remain in Pages. The reviewed source catalog pins those bytes.
     historical = json.loads((Path(__file__).resolve().parents[2] /
@@ -83,7 +97,7 @@ def collect(archive, fetch=download):
         if version_key(tag) < version_key('v1.0.0-rc.4'):
             continue
         pinned = known.get(tag)
-        if pinned:
+        if pinned and (not tags[tag] or pinned['source_commit'] == tags[tag]):
             for record in pinned['models']['s30']['downloads'].values():
                 path = archive / 'releases' / tag / record['path'].rsplit('/', 1)[1]
                 if (not path.is_file() or path.stat().st_size != record['size'] or
@@ -92,7 +106,7 @@ def collect(archive, fetch=download):
             else:
                 releases.append(pinned)
                 continue
-        releases.append(collect_release(tag, archive, fetch))
+        releases.append(collect_release(tag, archive, fetch, tags[tag]))
     output = archive / 'releases/native-downloads.json'
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps({'schema': 1, 'releases': releases}, indent=2) + '\n')

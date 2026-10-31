@@ -4,7 +4,7 @@ Features, fixes and upgrade requirements for each release.
 
 ## v1.0.0-rc.5
 
-**RC builds are Beta releases; the stable channel remains v0.9.27.** This candidate fixes authentication, transport and web issues found during rc.4 qualification. Back up settings before upgrading, and update the matching frontend with device firmware.
+**RC builds are Beta releases; the stable channel remains v0.9.27.** This candidate fixes authentication, transport and web issues found during rc.4 qualification. The reissue also includes S30 power restoration, power automation and M1 readings, plus TC1 power rules. Back up settings before upgrading, and update the matching frontend with device firmware.
 
 ### Shared device and hub authentication
 
@@ -36,9 +36,25 @@ The hub commits pairing credentials and the confirmed UDP route together. Failed
 
 Fix stale snapshots after a state-generation change, and fetch the corresponding complete state after saving settings. A UTC offset of zero displays and saves correctly instead of becoming UTC+8.
 
+### S30 power restoration, power rules and M1 readings
+
+S30 adds off, on and restore power-on modes and up to eight local power rules. Power strictly above or below a threshold for the specified number of seconds triggers switching; zero seconds means immediate triggering. Rules need neither MQTT nor a synced clock, and local buttons take priority. MessagePack schema 3 publishes voltage, current, power and energy metadata and readings for M1 devices on the same external broker and account without an open web page. Restore uses the last saved output; rule timers restart after reboot.
+
+### TC1 local power-condition automation
+
+TC1 adds up to eight total-power rules targeting one or all outlets, with above/below thresholds and immediate or sustained triggering. Each continuous matching condition triggers once and rearms after the condition clears. Invalid samples interrupt timing, and local buttons take priority. Existing timed tasks and binary backup layouts are retained.
+
+### S30 Wi-Fi scanning and settings migration
+
+Fix S30 scan-result bounds, allocation release and STA state handling, and defer reboot until settings are saved. The distinct PBL4 layout imports recognized PBL1/2/3 records while retaining networks, administration password, inbound and outbound pairing, names, meter multipliers and energy. MQTT cleanup retains authentication and ACL failure reasons for troubleshooting.
+
+### Web update availability and upgrade path
+
+Online updates show Install only after a successful check identifies an available version, and recheck availability on click. Up-to-date, failed or incomplete results cannot start installation. The change confirmation remains, with guidance to upgrade 0.9.x through 1.0.0 before later stable releases.
+
 ### Limitations
 
-- M1 and TC1 may still return busy with many concurrent pages; extreme concurrency can also reset M1 connections. Keep ordinary status reads near five seconds. The complete S30 sensor publisher needed for independent M1 remote-display input is not yet available.
+- M1 and TC1 may still return busy with many concurrent pages; extreme concurrency can also reset M1 connections. Keep ordinary status reads near five seconds.
 - The hub may also return busy while querying several devices in succession. The page keeps existing content and updates it after a subsequent read succeeds.
 - S30 uses native RBL/STOCK_UA files. Other models require the matching signed OTA image and variant. An M1 Wi-Fi update does not update its sensor controller. HomeKit bridging remains experimental.
 

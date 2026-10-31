@@ -1,6 +1,6 @@
 # S30-V1B automation, linkage and remote display
 
-**Development firmware:** Local power rules and MQTT remote display on this page require the matching development build; the current RC4 download does not include them.
+**Version requirement:** Local power rules and MQTT remote display are included in the reissued RC5. Earlier RC4 downloads do not include them.
 
 ## Local power automation
 

@@ -43,4 +43,4 @@ RC4 uses openiot MessagePack / CBOR binary business messages over HTTP, MQTT and
 
 ## Automation and updates
 
-Development firmware adds local above / below power conditions for immediate or sustained triggering without MQTT or a synced clock. Weekly / date tasks still need device time. See [automation and field IDs](tc1-automation), [device features](tc1-features) and [firmware updates](firmware-update). RC4 business MQTT uses openiot binary messages; JSON is reserved for Home Assistant.
+The reissued RC5 adds local above / below power conditions for immediate or sustained triggering without MQTT or a synced clock. Weekly / date tasks still need device time. See [automation and field IDs](tc1-automation), [device features](tc1-features) and [firmware updates](firmware-update). RC4 business MQTT uses openiot binary messages; JSON is reserved for Home Assistant.

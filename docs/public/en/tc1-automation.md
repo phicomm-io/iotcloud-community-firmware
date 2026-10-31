@@ -2,7 +2,7 @@
 
 ## Local power automation
 
-**Development firmware:** The following power-condition rules require the matching development build and are not included in the current RC4 download. Remote display of the `power` field described below is already supported.
+**Version requirement:** Power-condition rules are included in the reissued RC5. Earlier RC4 builds do not include them. Remote display of the `power` field remains supported.
 
 In Settings → Schedules, select a power condition, **above / below a threshold**, a continuous duration and an explicit on / off action. For example, below 5 W for 600 seconds turns the outlet off. A duration of `0` triggers on a fresh matching reading; this is not cumulative energy in Wh. The limits are 0–25,000 W and 0–604,800 whole seconds, with at most eight power rules.
 

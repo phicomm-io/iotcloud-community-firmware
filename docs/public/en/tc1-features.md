@@ -14,4 +14,4 @@ Configure 1–30 clicks or a 1–4 second hold; holds of at least five seconds a
 
 ## Local power rules and remote readings
 
-Development firmware provides up to eight power rules target one or all outlets and use total strip power. The `power` field can feed M1 over the same external MQTT broker. See [automation and remote display](tc1-automation) for device IDs, units and setup.
+The reissued RC5 provides up to eight power rules targeting one or all outlets using total strip power. The `power` field can feed M1 over the same external MQTT broker. See [automation and remote display](tc1-automation) for device IDs, units and setup.

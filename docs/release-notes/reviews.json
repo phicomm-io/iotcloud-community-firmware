@@ -3441,27 +3441,27 @@
     },
     "v1.0.0-rc.5:b001": {
       "status": "excluded",
-      "reason": "Version conditions, headings, usage limits and download links remain in the original notes.",
+      "reason": "Heading, version requirement, usage limitation or download link.",
       "basis": [
         "v1.0.0-rc.5:b001"
       ],
       "change_refs": [],
-      "block_sha256": "dc54d911955b7e8856cc9d67d6555e2c2cd35456800970fc81492feb24377677",
-      "release_sha256": "413499b7010cadbed4858a6d31a9a8649542ce0f87b54bca4bbae21b3f5bba86"
+      "block_sha256": "3c42f2478c7b1628757cf56965b14b56b3c10395d7cc62dade5ddd1d78e49a4d",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
     },
     "v1.0.0-rc.5:b002": {
       "status": "excluded",
-      "reason": "Version conditions, headings, usage limits and download links remain in the original notes.",
+      "reason": "Heading, version requirement, usage limitation or download link.",
       "basis": [
         "v1.0.0-rc.5:b002"
       ],
       "change_refs": [],
       "block_sha256": "f8f9cec5002d837650cd81adcc96491eea87fa229313bdfc4fcbb11bae4e2bfd",
-      "release_sha256": "413499b7010cadbed4858a6d31a9a8649542ce0f87b54bca4bbae21b3f5bba86"
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
     },
     "v1.0.0-rc.5:b003": {
       "status": "approved",
-      "reason": "Checked implementation, device scope, matching bilingual wording and user-visible behavior.",
+      "reason": "Reviewed implementation, device scope and bilingual behavior.",
       "basis": [
         "v1.0.0-rc.5:b003"
       ],
@@ -3469,21 +3469,21 @@
         "hub-shared-web-auth@1.0.0-rc.5"
       ],
       "block_sha256": "73da06ee45f61207b0906c084c3081592cb7f0bb7e9b46e07c53ec0fc3b7b299",
-      "release_sha256": "413499b7010cadbed4858a6d31a9a8649542ce0f87b54bca4bbae21b3f5bba86"
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
     },
     "v1.0.0-rc.5:b004": {
       "status": "excluded",
-      "reason": "Version conditions, headings, usage limits and download links remain in the original notes.",
+      "reason": "Heading, version requirement, usage limitation or download link.",
       "basis": [
         "v1.0.0-rc.5:b004"
       ],
       "change_refs": [],
       "block_sha256": "15f3556899e359423359d96af8d09cd37499835eba7ce27112e4a7813f09a93f",
-      "release_sha256": "413499b7010cadbed4858a6d31a9a8649542ce0f87b54bca4bbae21b3f5bba86"
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
     },
     "v1.0.0-rc.5:b005": {
       "status": "approved",
-      "reason": "Checked implementation, device scope, matching bilingual wording and user-visible behavior.",
+      "reason": "Reviewed implementation, device scope and bilingual behavior.",
       "basis": [
         "v1.0.0-rc.5:b005"
       ],
@@ -3491,21 +3491,21 @@
         "hub-device-http-udp-transport@1.0.0-rc.5"
       ],
       "block_sha256": "ba77d6e99942264649db39e8362486a11c8098bd45d864bde1fae5508c74b284",
-      "release_sha256": "413499b7010cadbed4858a6d31a9a8649542ce0f87b54bca4bbae21b3f5bba86"
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
     },
     "v1.0.0-rc.5:b006": {
       "status": "excluded",
-      "reason": "Version conditions, headings, usage limits and download links remain in the original notes.",
+      "reason": "Heading, version requirement, usage limitation or download link.",
       "basis": [
         "v1.0.0-rc.5:b006"
       ],
       "change_refs": [],
       "block_sha256": "3917c70cab19da51546dc81e27fb1b3255910237a2ddb61c3146869de713b659",
-      "release_sha256": "413499b7010cadbed4858a6d31a9a8649542ce0f87b54bca4bbae21b3f5bba86"
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
     },
     "v1.0.0-rc.5:b007": {
       "status": "approved",
-      "reason": "Checked implementation, device scope, matching bilingual wording and user-visible behavior.",
+      "reason": "Reviewed implementation, device scope and bilingual behavior.",
       "basis": [
         "v1.0.0-rc.5:b007"
       ],
@@ -3513,21 +3513,21 @@
         "device-name-homekit-sync@1.0.0-rc.5"
       ],
       "block_sha256": "fbe1d0d7cc7957a15d941fbaaa447a484f7db64c1aaeeb316e39f77791324b59",
-      "release_sha256": "413499b7010cadbed4858a6d31a9a8649542ce0f87b54bca4bbae21b3f5bba86"
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
     },
     "v1.0.0-rc.5:b008": {
       "status": "excluded",
-      "reason": "Version conditions, headings, usage limits and download links remain in the original notes.",
+      "reason": "Heading, version requirement, usage limitation or download link.",
       "basis": [
         "v1.0.0-rc.5:b008"
       ],
       "change_refs": [],
       "block_sha256": "bb3031c1c74d138516d4d98267ee0b6f77d017ddd773791db2817035d28a9135",
-      "release_sha256": "413499b7010cadbed4858a6d31a9a8649542ce0f87b54bca4bbae21b3f5bba86"
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
     },
     "v1.0.0-rc.5:b009": {
       "status": "approved",
-      "reason": "Checked implementation, device scope, matching bilingual wording and user-visible behavior.",
+      "reason": "Reviewed implementation, device scope and bilingual behavior.",
       "basis": [
         "v1.0.0-rc.5:b009"
       ],
@@ -3535,11 +3535,11 @@
         "dispatch-auth-and-control-receipts@1.0.0-rc.5"
       ],
       "block_sha256": "6bac74ff0c59204b12c92cba73a8e0499cd00426d1e4385fe00c786399c2899b",
-      "release_sha256": "413499b7010cadbed4858a6d31a9a8649542ce0f87b54bca4bbae21b3f5bba86"
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
     },
     "v1.0.0-rc.5:b010": {
       "status": "approved",
-      "reason": "Checked implementation, device scope, matching bilingual wording and user-visible behavior.",
+      "reason": "Reviewed implementation, device scope and bilingual behavior.",
       "basis": [
         "v1.0.0-rc.5:b010"
       ],
@@ -3547,21 +3547,21 @@
         "hub-homekit-stack-restart@1.0.0-rc.5"
       ],
       "block_sha256": "760864f3d9914b5ec88c5bf059874e6d5de8545d35d515543a9b2cbf4625df0a",
-      "release_sha256": "413499b7010cadbed4858a6d31a9a8649542ce0f87b54bca4bbae21b3f5bba86"
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
     },
     "v1.0.0-rc.5:b011": {
       "status": "excluded",
-      "reason": "Version conditions, headings, usage limits and download links remain in the original notes.",
+      "reason": "Heading, version requirement, usage limitation or download link.",
       "basis": [
         "v1.0.0-rc.5:b011"
       ],
       "change_refs": [],
       "block_sha256": "6667b94e2a763caab1697996703f4d03a8e188e5643529e9ac7542d139c84f50",
-      "release_sha256": "413499b7010cadbed4858a6d31a9a8649542ce0f87b54bca4bbae21b3f5bba86"
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
     },
     "v1.0.0-rc.5:b012": {
       "status": "approved",
-      "reason": "Checked implementation, device scope, matching bilingual wording and user-visible behavior.",
+      "reason": "Reviewed implementation, device scope and bilingual behavior.",
       "basis": [
         "v1.0.0-rc.5:b012"
       ],
@@ -3569,21 +3569,21 @@
         "tc1-mqtt-and-s30-lan@1.0.0-rc.5"
       ],
       "block_sha256": "e22c123602743847ae690d7a94ad444cc639f56c9df6e6101b8bc0007600071f",
-      "release_sha256": "413499b7010cadbed4858a6d31a9a8649542ce0f87b54bca4bbae21b3f5bba86"
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
     },
     "v1.0.0-rc.5:b013": {
       "status": "excluded",
-      "reason": "Version conditions, headings, usage limits and download links remain in the original notes.",
+      "reason": "Heading, version requirement, usage limitation or download link.",
       "basis": [
         "v1.0.0-rc.5:b013"
       ],
       "change_refs": [],
       "block_sha256": "b2e3d47e98272f0932aabd86abb71d63ecb773a4e78b82cd69be17775bf27e70",
-      "release_sha256": "413499b7010cadbed4858a6d31a9a8649542ce0f87b54bca4bbae21b3f5bba86"
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
     },
     "v1.0.0-rc.5:b014": {
       "status": "approved",
-      "reason": "Checked implementation, device scope, matching bilingual wording and user-visible behavior.",
+      "reason": "Reviewed implementation, device scope and bilingual behavior.",
       "basis": [
         "v1.0.0-rc.5:b014"
       ],
@@ -3591,21 +3591,21 @@
         "hub-pair-route-atomic@1.0.0-rc.5"
       ],
       "block_sha256": "86642effb60961b9707b9850f7a44c599ade772b599039c97428609455ea9c1e",
-      "release_sha256": "413499b7010cadbed4858a6d31a9a8649542ce0f87b54bca4bbae21b3f5bba86"
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
     },
     "v1.0.0-rc.5:b015": {
       "status": "excluded",
-      "reason": "Version conditions, headings, usage limits and download links remain in the original notes.",
+      "reason": "Heading, version requirement, usage limitation or download link.",
       "basis": [
         "v1.0.0-rc.5:b015"
       ],
       "change_refs": [],
       "block_sha256": "db93c58ee0e2ea27e00434eb356e438c40e1235cffcf3ced1eedd6a4276e81b3",
-      "release_sha256": "413499b7010cadbed4858a6d31a9a8649542ce0f87b54bca4bbae21b3f5bba86"
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
     },
     "v1.0.0-rc.5:b016": {
       "status": "approved",
-      "reason": "Checked implementation, device scope, matching bilingual wording and user-visible behavior.",
+      "reason": "Reviewed implementation, device scope and bilingual behavior.",
       "basis": [
         "v1.0.0-rc.5:b016"
       ],
@@ -3613,57 +3613,145 @@
         "web-generation-and-utc@1.0.0-rc.5"
       ],
       "block_sha256": "0172f26564a990575f2ff5fb08936a1a7f8de5eb10ff6c6f9ea5f021f4798f7c",
-      "release_sha256": "413499b7010cadbed4858a6d31a9a8649542ce0f87b54bca4bbae21b3f5bba86"
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
     },
     "v1.0.0-rc.5:b017": {
       "status": "excluded",
-      "reason": "Version conditions, headings, usage limits and download links remain in the original notes.",
+      "reason": "Heading, version requirement, usage limitation or download link.",
       "basis": [
         "v1.0.0-rc.5:b017"
       ],
       "change_refs": [],
-      "block_sha256": "bbeeaee90bc0a5d2bcf4cf48f9d734017a35f692e352935df63faea4cd51fddc",
-      "release_sha256": "413499b7010cadbed4858a6d31a9a8649542ce0f87b54bca4bbae21b3f5bba86"
+      "block_sha256": "8b93101dd078f58f7904a6d78debfd7f831b24f96be153dd392b14d0fd4b5d54",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
     },
     "v1.0.0-rc.5:b018": {
-      "status": "excluded",
-      "reason": "Version conditions, headings, usage limits and download links remain in the original notes.",
+      "status": "approved",
+      "reason": "Reviewed implementation, device scope and bilingual behavior.",
       "basis": [
         "v1.0.0-rc.5:b018"
       ],
-      "change_refs": [],
-      "block_sha256": "dbcb9c4889c2afcac8ea85d5014e5c1cad32a09c4d2a22c0857b9a6b1839d5c0",
-      "release_sha256": "413499b7010cadbed4858a6d31a9a8649542ce0f87b54bca4bbae21b3f5bba86"
+      "change_refs": [
+        "s30-power-and-sensor@1.0.0-rc.5"
+      ],
+      "block_sha256": "833a6be73a330b66a760696c59213348f5a8f701e3e8f6e65088055905fdc72a",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
     },
     "v1.0.0-rc.5:b019": {
       "status": "excluded",
-      "reason": "Version conditions, headings, usage limits and download links remain in the original notes.",
+      "reason": "Heading, version requirement, usage limitation or download link.",
       "basis": [
         "v1.0.0-rc.5:b019"
       ],
       "change_refs": [],
-      "block_sha256": "756e240826e7ad4ddbf3b42ed8aa4bccd7eaa6b1a7ef880a4c624d9c797b04b9",
-      "release_sha256": "413499b7010cadbed4858a6d31a9a8649542ce0f87b54bca4bbae21b3f5bba86"
+      "block_sha256": "e40e1c253595baa23879912562aa55d2aa87b252e32a3c6ec65649b946a55b53",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
     },
     "v1.0.0-rc.5:b020": {
-      "status": "excluded",
-      "reason": "Version conditions, headings, usage limits and download links remain in the original notes.",
+      "status": "approved",
+      "reason": "Reviewed implementation, device scope and bilingual behavior.",
       "basis": [
         "v1.0.0-rc.5:b020"
       ],
-      "change_refs": [],
-      "block_sha256": "f681478a058b340931bd7e60d5a3ca9bf5f702ba2432e463aea6dc9870b18b96",
-      "release_sha256": "413499b7010cadbed4858a6d31a9a8649542ce0f87b54bca4bbae21b3f5bba86"
+      "change_refs": [
+        "tc1-local-power-rules@1.0.0-rc.5"
+      ],
+      "block_sha256": "e0dcf3d793740a0e85bc9d425dfe284a46c330fce3fe2b5639ff3436d86c2baa",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
     },
     "v1.0.0-rc.5:b021": {
       "status": "excluded",
-      "reason": "Version conditions, headings, usage limits and download links remain in the original notes.",
+      "reason": "Heading, version requirement, usage limitation or download link.",
       "basis": [
         "v1.0.0-rc.5:b021"
       ],
       "change_refs": [],
+      "block_sha256": "b2f2086b14034a213b8bc01966848cdd1087def155e1b34208d17eb1da530c5d",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
+    },
+    "v1.0.0-rc.5:b022": {
+      "status": "approved",
+      "reason": "Reviewed implementation, device scope and bilingual behavior.",
+      "basis": [
+        "v1.0.0-rc.5:b022"
+      ],
+      "change_refs": [
+        "s30-wifi-storage-recovery@1.0.0-rc.5"
+      ],
+      "block_sha256": "c15538f9cf88d3381b0557c23c2ae7e700560a453224503fc3bc2f6c7a11b339",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
+    },
+    "v1.0.0-rc.5:b023": {
+      "status": "excluded",
+      "reason": "Heading, version requirement, usage limitation or download link.",
+      "basis": [
+        "v1.0.0-rc.5:b023"
+      ],
+      "change_refs": [],
+      "block_sha256": "39785521ad64b302bf59080e9ab04dfb403c3ad33a31c1b825c9010dca1ce95c",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
+    },
+    "v1.0.0-rc.5:b024": {
+      "status": "approved",
+      "reason": "Reviewed implementation, device scope and bilingual behavior.",
+      "basis": [
+        "v1.0.0-rc.5:b024"
+      ],
+      "change_refs": [
+        "web-ota-availability-guard@1.0.0-rc.5"
+      ],
+      "block_sha256": "b4527cc5591499ae03b6c89b200f86408fa2d967c31e389a43e5538ec9de678c",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
+    },
+    "v1.0.0-rc.5:b025": {
+      "status": "excluded",
+      "reason": "Heading, version requirement, usage limitation or download link.",
+      "basis": [
+        "v1.0.0-rc.5:b025"
+      ],
+      "change_refs": [],
+      "block_sha256": "bbeeaee90bc0a5d2bcf4cf48f9d734017a35f692e352935df63faea4cd51fddc",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
+    },
+    "v1.0.0-rc.5:b026": {
+      "status": "excluded",
+      "reason": "Heading, version requirement, usage limitation or download link.",
+      "basis": [
+        "v1.0.0-rc.5:b026"
+      ],
+      "change_refs": [],
+      "block_sha256": "d9d86e8281e4e823889595da59ca08a2bfdf96ecb0853e189b371c8722ed1448",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
+    },
+    "v1.0.0-rc.5:b027": {
+      "status": "excluded",
+      "reason": "Heading, version requirement, usage limitation or download link.",
+      "basis": [
+        "v1.0.0-rc.5:b027"
+      ],
+      "change_refs": [],
+      "block_sha256": "756e240826e7ad4ddbf3b42ed8aa4bccd7eaa6b1a7ef880a4c624d9c797b04b9",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
+    },
+    "v1.0.0-rc.5:b028": {
+      "status": "excluded",
+      "reason": "Heading, version requirement, usage limitation or download link.",
+      "basis": [
+        "v1.0.0-rc.5:b028"
+      ],
+      "change_refs": [],
+      "block_sha256": "f681478a058b340931bd7e60d5a3ca9bf5f702ba2432e463aea6dc9870b18b96",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
+    },
+    "v1.0.0-rc.5:b029": {
+      "status": "excluded",
+      "reason": "Heading, version requirement, usage limitation or download link.",
+      "basis": [
+        "v1.0.0-rc.5:b029"
+      ],
+      "change_refs": [],
       "block_sha256": "9473ec7eeef919fbb18b94398185b011cf917d1cc20b82812ab5e557b203aaf2",
-      "release_sha256": "413499b7010cadbed4858a6d31a9a8649542ce0f87b54bca4bbae21b3f5bba86"
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
     }
   }
 }

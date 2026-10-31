@@ -14,7 +14,7 @@ The initial web administration password is empty, so pages open directly without
 
 The home page provides one outlet switch, voltage (V), current (A), active power (W) and accumulated energy. Iotcloud device cards and device details also show voltage and current from the same status data, without adding meter polling. A short button press also toggles output, and the blue LED follows output state. Child lock blocks short presses, while web control and long-press recovery remain available.
 
-Settings cover device and outlet names, power-on state, indicators, child lock, reporting interval, Wi-Fi, MQTT and administration password. The default power-on state is off. Published RC4 supports off and on; development firmware adds restoration of the last saved output state; see [power restoration](s30-features#power-restoration-off-on-restore). Remote switching may return busy for about 1.5 seconds after a short press to avoid immediately overriding local operation.
+Settings cover device and outlet names, power-on state, indicators, child lock, reporting interval, Wi-Fi, MQTT and administration password. The default power-on state is off. The reissued RC5 supports off, on and restoration of the last saved output state; earlier RC4 builds support off and on; see [power restoration](s30-features#power-restoration-off-on-restore). Remote switching may return busy for about 1.5 seconds after a short press to avoid immediately overriding local operation.
 
 ## Updates
 
