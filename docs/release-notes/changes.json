@@ -8671,7 +8671,7 @@
           "DAIKIN/src/hub_lan.inc": "405143d2ae7781d073e985af0b462b71077aae0d008fc6d482ba775c56012c26",
           "DAIKIN/include/hub_http_command.h": "abf45e7fcd87f8aedf51c539f9c77fd23694e2b6e318c274500b94d3a1e969c7",
           "DAIKIN/include/hub_home.h": "598a85a9c7a1aede6c33b802c659f01a9c2d672f08075ce00f9e45229f0fff46",
-          "frontend.lock.json": "9381a32b58f9d539e052d43016c865a675e405c494fc83294265591083de43ae"
+          "frontend.lock.json": "dd1de2d95105f9e3a9f043ba1a2dfc20277bdbe4b184c0ad53ab051b7f64a6bb"
         },
         "review_basis": "Author checked implementation scope and retained RC4 qualification results; RC5 checks are recorded in its release run."
       },
@@ -8941,7 +8941,7 @@
           "frontend.lock.json"
         ],
         "firmware_source_sha256": {
-          "frontend.lock.json": "9381a32b58f9d539e052d43016c865a675e405c494fc83294265591083de43ae"
+          "frontend.lock.json": "dd1de2d95105f9e3a9f043ba1a2dfc20277bdbe4b184c0ad53ab051b7f64a6bb"
         },
         "review_basis": "Author checked implementation scope and retained RC4 qualification results; RC5 checks are recorded in its release run."
       },
@@ -9346,7 +9346,7 @@
           "frontend.lock.json"
         ],
         "firmware_source_sha256": {
-          "frontend.lock.json": "9381a32b58f9d539e052d43016c865a675e405c494fc83294265591083de43ae"
+          "frontend.lock.json": "dd1de2d95105f9e3a9f043ba1a2dfc20277bdbe4b184c0ad53ab051b7f64a6bb"
         }
       },
       "translation_review": {
