@@ -10,6 +10,7 @@
 #include <cassert>
 #include <cstdio>
 #include <map>
+#include <vector>
 #include <sys/socket.h>
 #include <unistd.h>
 #include <netinet/in.h>
@@ -35,14 +36,16 @@ enum{HTTP_GET,HTTP_POST,HTTP_PUT,HTTP_DELETE,HTTP_OPTIONS};
 struct httpd_req_t{
  int method=HTTP_GET,content_len=0;const char*uri="/api/auth/me";
  std::map<std::string,std::string> headers,outHeaders;String input,body,status,type;size_t at=0;
+ std::vector<std::pair<const char*,const char*>> responseHeaders;
 };
 static int httpd_req_get_hdr_value_str(httpd_req_t*r,const char*k,char*out,size_t n){auto i=r->headers.find(k);if(i==r->headers.end()||i->second.size()>=n)return ESP_FAIL;memcpy(out,i->second.c_str(),i->second.size()+1);return ESP_OK;}
 static size_t httpd_req_get_hdr_value_len(httpd_req_t*r,const char*k){auto i=r->headers.find(k);return i==r->headers.end()?0:i->second.size();}
 static int httpd_req_recv(httpd_req_t*r,char*p,int n){size_t used=std::min(size_t(n),r->input.size()-r->at);memcpy(p,r->input.data()+r->at,used);r->at+=used;return used;}
-static void httpd_resp_set_hdr(httpd_req_t*r,const char*k,const char*v){r->outHeaders[k]=v;}
+// Match IDF: field/value are borrowed and consumed only by the send API.
+static void httpd_resp_set_hdr(httpd_req_t*r,const char*k,const char*v){r->responseHeaders.emplace_back(k,v);}
 static void httpd_resp_set_status(httpd_req_t*r,const char*v){r->status=v;}
 static void httpd_resp_set_type(httpd_req_t*r,const char*v){r->type=v;}
-static int httpd_resp_send(httpd_req_t*r,const char*p,size_t n){r->body.assign(p?p:"",n);return ESP_OK;}
+static int httpd_resp_send(httpd_req_t*r,const char*p,size_t n){r->outHeaders.clear();for(const auto &header:r->responseHeaders)r->outHeaders[header.first]=header.second;r->responseHeaders.clear();r->body.assign(p?p:"",n);return ESP_OK;}
 static uint32_t now=100;static uint32_t millis(){return now;}
 static std::function<void()> pump;static void delay(unsigned n){now+=n;if(pump)pump();}
 using portMUX_TYPE=int;
