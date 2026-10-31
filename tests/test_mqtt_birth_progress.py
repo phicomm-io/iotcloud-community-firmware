@@ -116,6 +116,8 @@ static bool service_mqtt_status_due(bool changed){(void)changed;return false;}
 static bool ota_job_active(void){return false;}
 static int ota_service(const char*x){(void)x;return 0;}
 static int power_sensor_cycle(bool *handled){*handled=false;return 0;}
+static unsigned power_report_polls;
+static void power_report_poll(void){power_report_polls++;}
 static unsigned mico_rtos_get_time(void){return 0;}
 static bool power_requested(void){return false;}
 static int service_mqtt_snapshot(int sender,void*x){(void)sender;(void)x;return 0;}
@@ -153,6 +155,7 @@ int main(void){
  calls=0;ha_refresh_pending=3;
  for(unsigned i=0;i<22;i++)assert(!session_cycle(0));
  assert(calls==22&&!ha_refresh_pending);
+ assert(power_report_polls>=22);
  for(unsigned i=0;i<22;i++)assert(trace[i]==i);
  return 0;
 }

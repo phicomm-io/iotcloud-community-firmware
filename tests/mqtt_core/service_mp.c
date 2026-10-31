@@ -112,7 +112,12 @@ static int command_mp(ph_buf *wire)
 
 static void clear_receipts(void)
 {
-    for(unsigned i=0;i<8;i++){ph_buf_free(mp_receipts[i].response);memset(&mp_receipts[i],0,sizeof(mp_receipts[i]));}
+    for(unsigned i=0;i<8;i++){
+        mp_receipt_frame *frame=mp_receipts[i].response;
+        mp_receipts[i].response=NULL;
+        mp_receipt_release(frame);
+        memset(&mp_receipts[i],0,sizeof(mp_receipts[i]));
+    }
     mp_receipt_next=0;
 }
 
