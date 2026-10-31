@@ -256,6 +256,36 @@ def http_paths(frames,model,symbols=None):
     paths['HTTP OTA validation']=(4096,owner+extra(['read_body'])+['complete',('tc1_ota_verify' if model=='TC1' else model.lower()+'_ota_finish'),'signed_ota_finish'])
     if model=='M1':paths['HTTP MCU exchange']=(HTTP_RESERVE,owner+extra(['read_body'])+['complete','m1_mcu_exchange'])
     if model=='TC1':
+        # Small controls prepare physical output/receipt storage before BODY.
+        # This entry bypasses mp_dispatch_authenticated, but retains its own
+        # decoded request, digest and fixed writer across the actual callee.
+        credit=owner+extra(['read_body'])+['complete','ph_http_control_command','service_http_control_mp']
+        decode=credit+extra(['mp_decode'])
+        for api in ['phv_parse','phv_keys','phv_get']:
+            paths['HTTP credited control decode '+api]=(HTTP_RESERVE,decode+[api]+extra([
+                'phv_iter','phv_child_reader','phv_next','phv_scan','phv_duplicate',
+                'phv_skip_validated','phv_head','binary_token','binary_take','ph_wire_utf8']))
+        reply=credit+extra(['mp_control_reply'])
+        paths['HTTP credited control reply init']=(HTTP_RESERVE,reply+['phw_init_fixed'])
+        paths['HTTP credited control reply finish']=(HTTP_RESERVE,reply+['phw_finish_fixed'])
+        paths['HTTP credited control reply end']=(HTTP_RESERVE,reply+['phw_end'])
+        for key,(names,reserve) in writer_paths(frames,'HTTP credited control reply',reply,
+                HTTP_RESERVE,symbols,kinds={'begin','string'},finalize=False).items():
+            # The fixed writer cannot grow; its byte primitive is still charged.
+            if not key.endswith(' growth'):paths[key]=(reserve,names)
+        for key,(names,reserve) in tc1_product_paths(frames,'HTTP credited control business',
+                credit,HTTP_RESERVE,symbols).items():paths[key]=(reserve,names)
+        paths['HTTP credited control receipt apply']=(HTTP_RESERVE,credit+extra(['mp_receipt_apply','mp_receipt_u16']))
+        paths['HTTP credited control receipt release']=(HTTP_RESERVE,credit+extra(['mp_receipt_release'])+['ph_wire_free'])
+        paths['HTTP credited control event']=(HTTP_RESERVE,credit+['service_event'])
+        prepare=owner+extra(['acquire','action'])+['begin','prepare','ph_http_control_claim']
+        claim=prepare+['ph_http_claim','service_memory_claim']
+        paths['HTTP control credit admission']=(HTTP_RESERVE,claim)
+        paths['HTTP control credit cache reclaim']=(HTTP_RESERVE,claim+extra(['mp_cache_evict'])+['ph_buf_free','ph_wire_free'])
+        paths['HTTP control credit body allocation']=(HTTP_RESERVE,prepare+['ph_http_claim','ph_wire_malloc'])
+        paths['HTTP control credit receipt allocation']=(HTTP_RESERVE,prepare+['service_http_control_credit','ph_wire_malloc'])
+        paths['HTTP control credit release']=(HTTP_RESERVE,owner+extra(['close_slot'])+['release',
+            'ph_http_product_release','service_http_control_credit_free','ph_wire_free'])
         paths['HTTP OTA MD5 validation']=(4096,owner+extra(['read_body'])+['complete','tc1_ota_verify','md5_range'])
         paths['HTTP OTA activation']=(4096,owner+extra(['close_slot'])+['release','tc1_ota_activate']+extra(['send_part']))
     else:paths['HTTP OTA recovery']=(4096,owner+['admission','ota_job_poll','feature_resume_step'])

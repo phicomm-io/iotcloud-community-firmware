@@ -39,7 +39,7 @@ class HTTPMessagePackStackGate(unittest.TestCase):
                      'mp_dispatch','mp_query','ph_http_service_status','mp_receipt_save',
                      'mp_receipt_copy','mp_receipt_release','mp_receipt_difference',
                      'mp_receipt_apply','mp_receipt_u16','mp_receipt_put_u16',
-                     'keys','number','boolparam','strparam','tc1_mp_get','tc1_mp_has']:
+                     'keys','number','boolparam','strparam','tc1_mp_get','tc1_mp_has','mp_control_reply']:
             frames[name]=16
         return frames,http_paths(frames,model,frames)
     def test_actual_mp_paths_and_unchanged_budget(self):
@@ -129,6 +129,28 @@ class HTTPMessagePackStackGate(unittest.TestCase):
         frames['mp_receipt_save']=5200
         with redirect_stdout(io.StringIO()),self.assertRaisesRegex(ValueError,'>8192'):
             validate_paths(paths,frames,8192,'TC1')
+    def test_tc1_control_credit_keeps_its_real_callees_and_fixed_output(self):
+        frames,paths=self.fixture('TC1')
+        control=paths['HTTP credited control business control number scan'][1]
+        self.assertTrue({'ph_http_control_command','service_http_control_mp',
+                         'service_product_mp','tc1_control_mp','phv_get','phv_scan'}<=set(control))
+        self.assertNotIn('mp_dispatch_authenticated',control)
+        self.assertTrue({'ph_http_control_claim','service_http_control_credit','ph_wire_malloc'}<=set(
+            paths['HTTP control credit receipt allocation'][1]))
+        for name in ['ph_http_control_command','service_http_control_mp','ph_http_control_claim',
+                     'service_http_control_credit','service_http_control_credit_free','phw_init_fixed',
+                     'phw_finish_fixed','phw_end']:
+            broken=dict(frames);del broken[name]
+            with self.subTest(missing=name),redirect_stdout(io.StringIO()),self.assertRaisesRegex(ValueError,'missing actual .su'):
+                validate_paths(paths,broken,8192,'TC1')
+            oversized=dict(frames);oversized[name]=8192
+            with self.subTest(oversized=name),redirect_stdout(io.StringIO()),self.assertRaisesRegex(ValueError,'>8192'):
+                validate_paths(paths,oversized,8192,'TC1')
+        broken=dict(frames);del broken['mp_control_reply']
+        with self.assertRaisesRegex(ValueError,'Emitted helper missing'):
+            http_paths(broken,'TC1',frames)
+        for model in ['A1','M1']:
+            self.assertFalse(any('credit' in label for label in http_paths({},model)))
     def test_tc1_string_helpers_keep_callers_and_exclusive_scratch_on_all_transports(self):
         from tools.check_http_core import StackFrames
         from tools.check_mqtt_core import mqtt_paths,check as check_mqtt

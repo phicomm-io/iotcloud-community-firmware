@@ -13,6 +13,9 @@ typedef struct {
  size_t used,capacity;
  ph_buf *wire;
  ph_auth_context auth;
+#if defined(PHICOMM_STATUS_MODEL) && PHICOMM_STATUS_MODEL == 2
+ void *control_credit;
+#endif
  char scalar[PH_HTTP_SCALAR_BYTES];
 } ph_http_product;
 void ph_http_product_init(ph_http_product *,ph_http_exchange *);
@@ -24,3 +27,7 @@ void ph_http_product_release(ph_http_product *);
 void ph_http_wire_take(ph_http_product *,ph_http_exchange *,ph_buf *);
 void ph_http_command_mp(ph_http_product *,ph_http_exchange *,const void *,size_t);
 void ph_http_query(ph_http_product *,ph_http_exchange *,const char *);
+#if defined(PHICOMM_STATUS_MODEL) && PHICOMM_STATUS_MODEL == 2
+ph_http_action ph_http_control_claim(ph_http_product *,ph_http_exchange *,size_t);
+bool ph_http_control_command(ph_http_product *,ph_http_exchange *);
+#endif

@@ -31,7 +31,10 @@ static void tc1_status_lock(void){assert(!state_locks);state_locks++;}
 static void tc1_status_unlock(void){assert(state_locks==1);state_locks--;}
 static bool device_config_recovery(void){return recovery;}
 static void device_config_recovery_set(bool b){recovery=b;}
-static int mico_system_context_update(void *p){assert(p==sys_config&&reserved&&!state_locks);writes++;return fail_storage?-1:0;}
+#ifndef TC1_PERSIST_OBSERVER
+#define TC1_PERSIST_OBSERVER() ((void)0)
+#endif
+static int mico_system_context_update(void *p){assert(p==sys_config&&reserved&&!state_locks);writes++;TC1_PERSIST_OBSERVER();return fail_storage?-1:0;}
 static int mico_system_context_restore(void *p){assert(p==sys_config);return fail_storage?-1:0;}
 static int mico_rtos_create_thread(void *p,int priority,const char *name,void(*fn)(int),unsigned stack,int arg){(void)p;(void)priority;(void)name;(void)fn;(void)stack;(void)arg;reboots++;return 0;}
 static void reboot_worker(int arg){(void)arg;}

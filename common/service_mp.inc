@@ -308,3 +308,6 @@ bool service_readonly_mp(const void *data,size_t length)
         !strcmp(r.action,"config.get")||!strcmp(r.action,"logs.get");
 }
 #include "service_lan.inc"
+#if defined(PHICOMM_STATUS_MODEL) && PHICOMM_STATUS_MODEL == 2
+#include "service_http_control.inc"
+#endif
