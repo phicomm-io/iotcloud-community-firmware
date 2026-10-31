@@ -1,7 +1,11 @@
 /* Actual v1/v2 importer, fixed old byte fixtures and atomic v3 failure paths. */
 #include <assert.h>
+#include <stdlib.h>
 #include "platform_host.h"
 static int fail_stage;
+static size_t record_allocations;
+static void *migration_malloc(size_t);
+static void migration_free(void *);
 static lfs_file_t *migration_output;
 static int migration_open(lfs_t *,lfs_file_t *,const char *,int);
 static lfs_ssize_t migration_write(lfs_t *,lfs_file_t *,const void *,size_t);
@@ -13,13 +17,24 @@ static int migration_rename(lfs_t *,const char *,const char *);
 #define lfs_file_sync migration_sync
 #define lfs_file_close migration_close
 #define lfs_rename migration_rename
+#define malloc migration_malloc
+#define free migration_free
 #include "../src/ph_port.c"
 #undef lfs_file_open
 #undef lfs_file_write
 #undef lfs_file_sync
 #undef lfs_file_close
 #undef lfs_rename
+#undef malloc
+#undef free
 #include "fixtures/s30-legacy-records.h"
+static void *migration_malloc(size_t n) {
+ assert(n==sizeof(disk_record));if(fail_stage==6)return NULL;
+ void *p=malloc(n);assert(p);++record_allocations;assert(record_allocations==1);return p;
+}
+static void migration_free(void *p) {
+ assert(p&&record_allocations==1);--record_allocations;free(p);
+}
 void bl_mqtt_start(void){}
 void bl_mqtt_diagnostics(ph_writer *w){(void)w;}
 static int migration_open(lfs_t *fs,lfs_file_t *f,const char *name,int flags) {
@@ -78,9 +93,9 @@ static void fixture_migration_tests(void) {
  for(unsigned version=1;version<=2;++version) {
   const unsigned char *fixture=version==1?s30_legacy_v1:s30_legacy_v2;
   size_t n=version==1?sizeof(s30_legacy_v1):sizeof(s30_legacy_v2);
-  for(unsigned stage=1;stage<=5;++stage) {
+  for(unsigned stage=1;stage<=6;++stage) {
    write_bytes(fixture,n);fail_stage=stage;ph_settings imported;assert(load(&imported));assert_imported(&imported,version);
-   assert_old_file(fixture,n); /* Every failed save stage leaves old bytes. */
+   assert_old_file(fixture,n);assert(!record_allocations); /* Every failed save stage leaves old bytes. */
    fail_stage=0;assert(load(&imported));assert_imported(&imported,version);
    unsigned char actual[sizeof(disk_record)];assert(read_bytes(actual,sizeof(actual))==sizeof(disk_record));
    disk_record r;memcpy(&r,actual,sizeof(r));assert(r.magic==PH_STORE_MAGIC&&r.size==sizeof(r)&&r.credential_magic==0);
@@ -88,7 +103,7 @@ static void fixture_migration_tests(void) {
   }
  }
  assert(!strcmp(CFG_GetWebPassword(),"kept-admin-password")&&!strcmp(CFG_GetWiFiSSID(),"kept-wifi")&&!strcmp(CFG_GetWiFiPass(),"kept-wifi-password")&&!strcmp(CFG_GetWiFiSSID2(),"kept-backup")&&!strcmp(CFG_GetMQTTUserName(),"kept-mqtt")&&!strcmp(CFG_GetMQTTPass(),"kept-mqtt-password"));
- puts("PASS: fixed v1/v2 bytes preserve full inbound pairs, calibration, energy, flags and v2 names/report; open/write/sync/close/rename failures retain old bytes and retry into v3; framework credentials unchanged");
+ puts("PASS: fixed v1/v2 bytes preserve pairs, calibration, energy, flags and v2 names/report; allocation/open/write/sync/close/rename failures retain old bytes and retry into v4; framework credentials unchanged");
 }
 static void rejection_tests(void) {
  unsigned char corrupt[sizeof(s30_legacy_v2)];ph_settings s;
@@ -186,20 +201,35 @@ static void v3_migration_tests(void) {
  }
  old.credential_magic=PH_CREDENTIAL_MAGIC;strcpy(old.password,"test-admin-password");
  old.crc=crc32(&old.settings,sizeof(old)-offsetof(ph_store_v3_record,settings));
- for(unsigned stage=1;stage<=5;++stage) {
+ for(unsigned stage=1;stage<=6;++stage) {
   write_bytes(&old,sizeof(old));fail_stage=stage;ph_settings actual;assert(load(&actual));
   assert(actual.magic==PH_STORE_MAGIC&&actual.power_next_id==1&&!actual.last_relay);
   assert(actual.auth.count==12&&actual.auth.remote_count==12&&!memcmp(&actual.auth,&old.settings.auth,sizeof(actual.auth)));
   assert(actual.revision==33&&actual.report_seconds==7&&actual.energy_kwh==123.5&&!strcmp(actual.name,"Desk")&&!strcmp(actual.socket_name,"Printer"));
   assert(credential_owned&&!strcmp(committed_password,old.password)&&!strcmp(CFG_GetWebPassword(),old.password));
-  assert_old_file((const unsigned char *)&old,sizeof(old));fail_stage=0;
+  assert_old_file((const unsigned char *)&old,sizeof(old));assert(!record_allocations);fail_stage=0;
   assert(load(&actual));ph_settings reread;assert(load(&reread)&&!memcmp(&reread,&actual,sizeof(actual)));
   disk_record current;assert(read_bytes((unsigned char *)&current,sizeof(current))==sizeof(current));
   assert(current.magic==PH_STORE_MAGIC&&current.credential_magic==PH_CREDENTIAL_MAGIC&&!strcmp(current.password,old.password));
  }
  old.password[0]=1;old.crc=crc32(&old.settings,sizeof(old)-offsetof(ph_store_v3_record,settings));
  write_bytes(&old,sizeof(old));ph_settings actual;assert(!load(&actual));assert_old_file((const unsigned char *)&old,sizeof(old));
- puts("PASS: frozen rc.5 v3 imports inbound/outbound pairs, password, names, calibration and energy; five failed-save stages preserve old bytes and retry to v4");
+ puts("PASS: frozen rc.5 v3 imports pairs, password, names, calibration and energy; six failed-save stages preserve old bytes and retry to v4 without leaking records");
+}
+static void save_failure_tests(void) {
+ ph_settings original,next;ph_settings_default(&original);original.energy_kwh=123.5;
+ next=original;next.revision++;strcpy(next.name,"Changed");
+ for(unsigned stage=1;stage<=6;++stage) {
+  fail_stage=0;assert(save(NULL,&original));
+  unsigned char before[sizeof(disk_record)];assert(read_bytes(before,sizeof(before))==sizeof(before));
+  fail_stage=stage;assert(!save(NULL,&next));assert(!record_allocations&&!migration_output);
+  assert_old_file(before,sizeof(before));
+  fail_stage=0;assert(save(NULL,&next));ph_settings actual;assert(load(&actual));
+  assert(!memcmp(&actual,&next,sizeof(actual))&&!record_allocations);
+ }
+ /* Invalid overrides must free their temporary record before returning. */
+ assert(!save_record(&original,NULL,-1,NULL,false)&&!record_allocations);
+ puts("PASS: current-record allocation and every I/O failure preserve committed bytes, release memory and recover on retry");
 }
 static void restore_policy_tests(void) {
  ph_settings input,actual;ph_settings_default(&input);input.power_on=PH_BOOT_RESTORE;input.last_relay=0;
@@ -217,8 +247,8 @@ static void restore_policy_tests(void) {
 }
 int main(int argc,char **argv) {
  assert(argc==2);snprintf(store_dir,sizeof(store_dir),"%s",argv[1]);mkdir(store_dir,0700);init_lfs(1);
- fixture_migration_tests();rejection_tests();meter_default_migration_tests();current_record_tests();ota_checkpoint_tests();v3_migration_tests();restore_policy_tests();
+ fixture_migration_tests();rejection_tests();meter_default_migration_tests();current_record_tests();ota_checkpoint_tests();v3_migration_tests();save_failure_tests();restore_policy_tests();
  write_bytes(s30_legacy_v2,sizeof(s30_legacy_v2));PH_BL_Init(1);
  assert(bl_ready&&safe_boot&&!bl_device.relay&&bl_device.settings.power_on);assert_imported(&bl_device.settings,2);
- puts("PASS: safe boot retains saved policy and all migrated settings with relay off");
+ assert(!record_allocations);puts("PASS: safe boot retains saved policy and all migrated settings with relay off");
 }
