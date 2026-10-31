@@ -222,7 +222,10 @@ static bool hubHttpCommandStart(){
   const ph_auth_context context=webAuthContext;const uint32_t admitted=millis();
   iotcloud::HubHttpCommand::Guard guard=[context](){return localAuthContextValid(&context);};
   if(!guard()){error(401,"unauthorized",requestId);return true;}
-  if(!hubReady()||otaActive||!hubAllocationReady(body.size()+2*LAN_V4_RESPONSE_MAX+4096)){
+  // Keep the aggregate budget/reserve. It spans separate response buffers,
+  // not one contiguous allocation. The largest is the bounded state writer:
+  // PHW_MAX_BYTES plus its NUL and conservative alignment/allocator slack.
+  if(!hubReady()||otaActive||!hubAllocationReady(body.size()+2*LAN_V4_RESPONSE_MAX+4096,PHW_MAX_BYTES+32)){
     error(503,"busy",requestId);return true;
   }
   if(id==deviceId.c_str()){

@@ -24,9 +24,21 @@ public:
        !phv_get(&root,"params",&params)||params.kind!=PHV_MAP||
        !phv_get(&root,"request_id",&request)||!phv_text(&request,requestText,sizeof(requestText))||!requestText[0]||strlen(requestText)!=request.size)return false;
     id=requestText;
-    if(readOnly)*readOnly=!strcmp(actionText,"status.get")||!strcmp(actionText,"capabilities.get")||
-      !strcmp(actionText,"config.get")||!strcmp(actionText,"diagnostics.get")||
-      !strcmp(actionText,"info.get")||!strcmp(actionText,"logs.get");
+    if(readOnly){
+      // Only audited queries bypass write receipts. Unknown actions, including
+      // unknown *.get names, keep replay protection until reviewed explicitly.
+      static const char *const queries[]={
+        "status.get","capabilities.get","config.get","diagnostics.get","info.get","logs.get",
+        "power.get","time.get","binding.status.get","binding.get","night.get","linkage.get",
+        "light_effect.get","sensors.average.get","wifi.scan.get","filter.get","alarm.get",
+        "wake_alarm.get","mcu.version.get","co2_source.get","co2_display.get","sensor_details.get",
+        "music.get","music.read","ota.status.get","ota.check.get","ota.sources.get","ota.notes.get",
+        "lan.pair.get","fresh_air.config.get","fresh_air.linkage.get","schedules.get","buttons.get",
+        "display_source.get","display_profile.get"
+      };
+      *readOnly=false;
+      for(const char *query:queries)if(!strcmp(actionText,query)){*readOnly=true;break;}
+    }
     return true;
   }
   const char *begin(const std::string &route,const std::string &body,Guard guard,uint32_t now) {

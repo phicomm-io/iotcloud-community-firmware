@@ -33,6 +33,7 @@ class HubHttpCommand(unittest.TestCase):
                 'lan-authorize.inc': section(lan, '  hubLanClient.authorize=[]', '  hubLanClient.send=[]'),
                 'http-command.inc': lan[lan.index('// Return true for this route,'):],
                 'hub-api.inc': section(hub, 'static void hubApiExecute()', 'static void hubLocalPublish('),
+                'heap-guards.inc': section(hub, 'static bool hubAllocationReady(', 'static bool hubReload'),
                 'http-dispatch.inc': section(main, '  if(webPending){', '  if(mqttQueued)'),
             }
             for name, text in parts.items():

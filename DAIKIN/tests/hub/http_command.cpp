@@ -65,8 +65,9 @@ static uint32_t hubLanBoot=81;static bool hubLanRequestStatus=false;static std::
 static const char*hubLanWaitReason="idle";
 static void initLanClient(){}
 static bool hubReady(){return !hubRestoring&&!configRecovery;}
-static bool hubAllocationReady(size_t){return heapReady;}
-static size_t hubByteHeap(){return 256000;}static size_t hubByteBlock(){return 128000;}
+static size_t byteHeap=256000,byteBlock=128000;
+static size_t hubByteHeap(){return heapReady?byteHeap:0;}static size_t hubByteBlock(){return heapReady?byteBlock:0;}
+#include "heap-guards.inc"
 #include "lan-gates.inc"
 #include "lan-start.inc"
 #include "lan-failed.inc"
@@ -128,15 +129,55 @@ static void init(){
 }
 static void receiptBounds(){
  iotcloud::HubHttpCommand pending;const std::string route="route/device/command";
+ const char *queries[]={"status.get","capabilities.get","config.get","diagnostics.get","info.get","logs.get",
+  "power.get","time.get","binding.status.get","binding.get","night.get","linkage.get","light_effect.get",
+  "sensors.average.get","wifi.scan.get","filter.get","alarm.get","wake_alarm.get","mcu.version.get",
+  "co2_source.get","co2_display.get","sensor_details.get","music.get","music.read","ota.status.get",
+  "ota.check.get","ota.sources.get","ota.notes.get","lan.pair.get","fresh_air.config.get",
+  "fresh_air.linkage.get","schedules.get","buttons.get","display_source.get","display_profile.get"};
+ std::string parsed;bool readOnly;
+ for(const char *action:queries){assert(iotcloud::HubHttpCommand::parse(command(action,"classification"),parsed,&readOnly)&&readOnly);}
+ for(const char *action:{"outlet.set","time.set","binding.set","binding.probe","linkage.set","filter.reset",
+    "alarm.set","music.begin","music.chunk","music.commit","music.play","music.stop","music.cancel",
+    "ota.check","ota.notes","ota.install","ota.cancel","lan.pair","lan.unpair","wifi.scan",
+    "co2.calibrate","system.reset","fresh_air.config.set","fresh_air.linkage.set","display_source.set",
+    "display_profile.set","display_data.set","schedules.put","schedules.delete","schedules.enable","buttons.set","future.get"}){
+   assert(iotcloud::HubHttpCommand::parse(command(action,"classification"),parsed,&readOnly)&&!readOnly);
+ }
  auto finish=[&](const std::string&id){auto bytes=pack("{\"code\":\"ok\",\"data\":{},\"request_id\":\""+id+"\"}");assert(pending.complete(route,bytes.data(),bytes.size()));std::string response;int status;assert(pending.take(response,status)&&status==200);};
  for(size_t i=0;i<iotcloud::HubHttpCommand::ReceiptCapacity;++i){const auto id="write-"+std::to_string(i);assert(!pending.begin(route,command("outlet.set",id),[]{return true;},100));finish(id);}
- for(unsigned i=0;i<300;++i){const auto id="read-"+std::to_string(i);assert(!pending.begin(route,command("status.get",id),[]{return true;},101));finish(id);}
+ for(unsigned i=0;i<300;++i){const auto id="read-"+std::to_string(i);assert(!pending.begin(route,command(queries[i%(sizeof(queries)/sizeof(*queries))],id),[]{return true;},101));finish(id);}
  assert(!strcmp(pending.begin(route,command("outlet.set","write-0"),[]{return true;},102),"conflict"));
  assert(!strcmp(pending.begin(route,command("outlet.set","overflow"),[]{return true;},102),"busy"));
  assert(!pending.begin(route,command("outlet.set","after-expiry"),[]{return true;},100+iotcloud::HubHttpCommand::ReceiptLifetime));finish("after-expiry");
  std::string id;auto nul=pack(R"({"action":"status.get","params":{},"request_id":"a\u0000b"})");assert(!iotcloud::HubHttpCommand::parse(nul,id));
  auto duplicate=command("status.get","duplicate");duplicate[0]=char(0x84);duplicate.append("\xa6" "action" "\xaa" "status.get",18);assert(!iotcloud::HubHttpCommand::parse(duplicate,id));
- puts("128 bounded write receipts survive 300 read requests; full admission busy, expiry reclaims; NUL/duplicate fields rejected PASS");
+ puts("128 bounded write receipts survive 300 mixed reads across 35 audited queries; mutations/unknown remain protected, full admission busy, expiry reclaims; NUL/duplicate fields rejected PASS");
+}
+static void heapAdmission(const std::string &bearer){
+ const size_t contiguous=PHW_MAX_BYTES+32;
+ assert(contiguous>PHW_MAX_BYTES+1&&contiguous>=((PHW_MAX_BYTES+1+15)&~size_t(15)));
+ assert(!hubAllocationReady(size_t(-1),1)); // Addition cannot wrap the reserve.
+ byteHeap=40000;byteBlock=16500;
+ assert(hubAllocationReady(21000,contiguous)&&!hubAllocationReady(21000));
+ for(const char *path:{"/api/hub/devices/02c400000002/command","/api/hub/devices/02c400000001/command"}){
+  registerPeer("tc1","standard");
+  const auto body=command("status.get","fragmented");const size_t budget=body.size()+2*LAN_V4_RESPONSE_MAX+4096;
+  // The production HTTP adapter admits both local and UDP commands under
+  // fragmentation once the full aggregate budget and largest block exist.
+  byteHeap=budget+16384+1;byteBlock=contiguous+1;
+  auto pass=request(path,HTTP_POST,body,bearer);hubApiHandler(&pass);assert(pass.status=="200 OK");
+  for(unsigned boundary=0;boundary<4;++boundary){
+   byteHeap=budget+16384+1;byteBlock=contiguous+1;
+   if(boundary<2)byteHeap=budget+16384-boundary;else byteBlock=contiguous-(boundary-2);
+   const auto peersBefore=peerCalls,localBefore=localCommands,framesBefore=sent;
+   auto rejected=request(path,HTTP_POST,body,bearer);hubApiHandler(&rejected);
+   assert(rejected.status=="503 Service Unavailable"&&decode(rejected)["code"]=="busy");
+   assert(peerCalls==peersBefore&&localCommands==localBefore&&sent==framesBefore);
+  }
+ }
+ byteHeap=256000;byteBlock=128000;
+ puts("HTTP heap admission PASS: aggregate + 16KiB reserve unchanged, NUL/alignment covered, exact free/block boundaries reject before local/UDP execution; fragmented heap accepted; one-argument guard unchanged");
 }
 int main(){receiptBounds();init();
  // Empty-password access ignores a stale Bearer without occupying a slot.
@@ -148,12 +189,14 @@ int main(){receiptBounds();init();
  auto me=request("/api/auth/me",HTTP_GET,"",bearer);hubApiHandler(&me);assert(me.status=="200 OK");
  auto basic=request("/api/auth/me",HTTP_GET,"","Basic YWRtaW46ZGV2aWNlLXBhc3N3b3Jk");hubApiHandler(&basic);assert(basic.status=="200 OK");
  auto host=request("/api/auth/me",HTTP_GET,"",bearer);host.headers["Host"]="attacker.invalid";hubApiHandler(&host);assert(host.status=="403 Forbidden");
+ heapAdmission(bearer);
+ const auto initialStates=states;
  const char *path="/api/hub/devices/02c400000001/command";
  for(const char *model:{"m1","a1","tc1","s30-v1b"}){
   registerPeer(model,"standard");const auto before=peerCalls;auto read=request(path,HTTP_POST,command("status.get",std::string(model)+"-status"),bearer);hubApiHandler(&read);d=decode(read);if(read.status!="200 OK"||peerCalls!=before+1){std::string diagnostic;serializeJson(d,diagnostic);fprintf(stderr,"HTTP read %s status=%s calls=%u sent=%u now=%u body=%s\n",model,read.status.c_str(),peerCalls,sent,now,diagnostic.c_str());}assert(read.status=="200 OK"&&d["request_id"]==std::string(model)+"-status"&&d["data"]["snapshot"].as<std::string>().size()==3100&&peerCalls==before+1);
   auto cap=request(path,HTTP_POST,command("capabilities.get",std::string(model)+"-cap"),bearer);hubApiHandler(&cap);d=decode(cap);assert(cap.status=="200 OK"&&d["data"]["capability"]=="fixture-full-contract");
  }
- assert(states==4);
+ assert(states==initialStates+4);
  sessionHeader=bearer;overlapAtQueue=true;auto bounded=request(path,HTTP_POST,command("status.get","overlap"),bearer);hubApiHandler(&bounded);assert(bounded.status=="200 OK"&&!overlapAtQueue);
  auto origin=request(path,HTTP_POST,command("outlet.set","bad-origin"),bearer);origin.headers["Origin"]="http://evil.invalid";const auto before=peerCalls;hubApiHandler(&origin);assert(origin.status=="403 Forbidden"&&peerCalls==before);
  auto write=request(path,HTTP_POST,command("outlet.set","unique-write"),bearer);hubApiHandler(&write);assert(write.status=="200 OK");auto repeat=request(path,HTTP_POST,command("outlet.set","unique-write"),bearer);hubApiHandler(&repeat);assert(repeat.status=="409 Conflict"&&peerCalls==before+1);

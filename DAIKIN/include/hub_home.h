@@ -262,6 +262,14 @@ private:
       out.at = clock - age;
     }
   }
+  static uint32_t sampleAge(JsonVariantConst value) {
+    // M1's shared encoder emits age_ms as binary64. Accept exact millisecond
+    // integers in either numeric encoding, before converting to uint32_t.
+    if (!value.is<double>()) return 20000;
+    const double age = value.as<double>();
+    return std::isfinite(age) && age >= 0 && age < 20000 &&
+                   age == double(uint32_t(age)) ? uint32_t(age) : 20000;
+  }
   void state(Device &d, JsonObjectConst doc) {
     if (d.offline || (!doc["model"].isNull() && doc["model"] != d.model) ||
         (!doc["device_id"].isNull() && canonicalMac(doc["device_id"]) != d.mac))
@@ -299,16 +307,18 @@ private:
       d.controls = valid;
     } else if (d.model == "m1") {
       valid = doc["sensor_valid"].is<bool>();
-      uint32_t age = doc["age_ms"].is<unsigned>()
-                         ? doc["age_ms"].as<unsigned>()
-                         : 20000;
-      bool climate = doc["climate_valid"] == true;
+      const uint32_t age = sampleAge(doc["age_ms"]);
+      const auto health = doc["sensor_health"];
+      const bool received = valid && doc["sensor_valid"].as<bool>();
+      const bool climate = received && health["climate_valid"].is<bool>() &&
+                           health["climate_valid"].as<bool>();
       value(d, Temperature, doc["temperature"], climate, -100, 100, age);
       value(d, Humidity, doc["humidity"], climate, 0, 100, age);
-      value(d, PM25, doc["pm25"], doc["pm25_valid"] == true, 0, 1000, age);
+      value(d, PM25, doc["pm25"], received && health["pm25_valid"].is<bool>() &&
+            health["pm25_valid"].as<bool>(), 0, 1000, age);
       auto co2 = doc["scd40"];
       value(d, CO2, co2["co2_ppm"], co2["valid"] == true, 1, 100000,
-            co2["age_ms"].is<unsigned>() ? co2["age_ms"].as<unsigned>() : 20000);
+            sampleAge(co2["age_ms"]));
     } else {
       valid = doc["sensors"].is<JsonObjectConst>();
       static const char *keys[] = {"temperature", "humidity", "pm25", "pm10",

@@ -9,9 +9,12 @@ static size_t hubByteHeap() {
 static size_t hubByteBlock() {
   return heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
 }
+static bool hubAllocationReady(size_t total, size_t largest) {
+  return total <= size_t(-1) - 16384 && hubByteHeap() > total + 16384 &&
+         hubByteBlock() > largest;
+}
 static bool hubAllocationReady(size_t n) {
-  return n <= size_t(-1) - 16384 && hubByteHeap() > n + 16384 &&
-         hubByteBlock() > n;
+  return hubAllocationReady(n, n);
 }
 static bool hubReload = false, hubCredentials = false, hubBirth = false;
 static std::atomic<bool> hubRestoring{false};

@@ -51,7 +51,7 @@ static void memoryTests(){
     assert(jsonLive==live&&jsonPeak<=live+1); // Retries never retain old pools.
   };
   const auto sensor=home.devices[1].base,control=home.devices[2].base;
-  const std::string m1=R"({"model":"m1","device_id":"112233445566","sensor_valid":true,"age_ms":1200,"climate_valid":true,"pm25_valid":true,"temperature":25.5,"humidity":43,"pm25":12,"scd40":{"valid":true,"co2_ppm":720,"age_ms":500}})";
+  const std::string m1=R"({"model":"m1","device_id":"112233445566","sensor_valid":true,"age_ms":1200,"sensor_health":{"climate_valid":true,"pm25_valid":true},"temperature":25.5,"humidity":43,"pm25":12,"scd40":{"valid":true,"co2_ppm":720,"age_ms":500}})";
   home.tick(50000);observe(sensor+"/state",m1,2548);
   const auto &device=home.devices[1];
   assert(device.reachable(50000)&&device.values[Home::Temperature].number==25.5&&device.values[Home::Temperature].fresh(50000));
@@ -160,13 +160,13 @@ int main() {
   home.tick(50000);
   const auto sensor = home.devices[2].base;
   home.observe(sensor + "/state",
-      R"({"model":"m1","sensor_valid":true,"age_ms":1200,"climate_valid":true,"pm25_valid":true,"temperature":25.5,"humidity":43,"pm25":12,"scd40":{"valid":true,"co2_ppm":720,"age_ms":500}})");
+      R"({"model":"m1","sensor_valid":true,"age_ms":1200,"sensor_health":{"climate_valid":true,"pm25_valid":true},"temperature":25.5,"humidity":43,"pm25":12,"scd40":{"valid":true,"co2_ppm":720,"age_ms":500}})");
   assert(home.devices[2].values[Home::Temperature].fresh(68000));
   assert(!home.devices[2].values[Home::Temperature].fresh(69000));
   assert(home.devices[2].values[Home::CO2].number == 720);
   assert(!home.begin(2, Home::FanOn, 0, 1));
   home.observe(sensor + "/state",
-      R"({"sensor_valid":false,"age_ms":21000,"climate_valid":false,"pm25_valid":false,"temperature":0,"humidity":0,"pm25":0})");
+      R"({"sensor_valid":false,"age_ms":21000,"sensor_health":{"climate_valid":false,"pm25_valid":false},"temperature":0,"humidity":0,"pm25":0})");
   assert(!home.devices[2].values[Home::Temperature].valid &&
          !home.devices[2].values[Home::CO2].valid);
   const auto daikin = home.devices[0].base;
