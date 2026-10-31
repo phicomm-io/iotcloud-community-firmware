@@ -8554,6 +8554,400 @@
         "reason": "Author checked both languages against implementation and verification limits; independent review is not claimed.",
         "reviewed_content_sha256": "0ff5d7afdd40b2aec5558bcc3845a89023e36be5f7f2504231dcd33c44139801"
       }
+    },
+    {
+      "change_id": "hub-shared-web-auth",
+      "version": "1.0.0-rc.5",
+      "type": "breaking",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "daikin"
+        ],
+        "variants": [
+          "hub"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "大金中枢共用网页认证",
+        "en": "Shared device and hub authentication"
+      },
+      "description": {
+        "zh-CN": "中枢不再单独设置账号密码，改用设备 WebUI 管理密码和会话；未设管理密码时直接进入。同一标签页刷新、切换控制页与中枢页复用有效会话，退出和密码变更清除会话。已有中枢用户名、设备列表、配对与转发设置保留；旧中枢密码停用，用户名继续作为主题命名空间。UDP 配对及外部 MQTT broker 认证继续独立配置。",
+        "en": "The DAIKIN hub uses the device WebUI administration password and session instead of a separate account password. With no password it opens directly. Refreshing or switching between the control and hub pages in the same tab reuses the session; sign-out and password changes clear it. Existing hub usernames, devices, pairing and forwarding settings are retained. The old hub password is retired, while the username remains the topic namespace. UDP pairing and external MQTT broker authentication remain separate."
+      },
+      "ota_summary": {
+        "zh-CN": "中枢不再单独设置账号密码，改用设备 WebUI 管理密码和会话；未设管理密码时直接进入。同一标签页刷新、切换控制页与中枢页复用有效会话，退出和密码变更清除会话。已有中枢用户名、设备列表、配对与转发设置保留；旧中枢密码停用，用户名继续作为主题命名空间。UDP 配对及外部 MQTT broker 认证继续独立配置。",
+        "en": "The DAIKIN hub uses the device WebUI administration password and session instead of a separate account password. With no password it opens directly. Refreshing or switching between the control and hub pages in the same tab reuses the session; sign-out and password changes clear it. Existing hub usernames, devices, pairing and forwarding settings are retained. The old hub password is retired, while the username remains the topic namespace. UDP pairing and external MQTT broker authentication remain separate."
+      },
+      "summary_complete": true,
+      "critical": true,
+      "source_refs": [
+        "v1.0.0-rc.5:b003"
+      ],
+      "evidence": {
+        "firmware_sources": [
+          "DAIKIN/include/hub_service.h",
+          "DAIKIN/src/http.inc"
+        ],
+        "firmware_source_sha256": {
+          "DAIKIN/include/hub_service.h": "3e93765d749e2735b3f213342be214b1bbdbe44c6e2a7f037deedf63f8f07e03",
+          "DAIKIN/src/http.inc": "b25e6451c5ed41acf0e51435b7059dd01b454f2d5c019d6811ae20c99b73b718"
+        },
+        "review_basis": "Author checked implementation scope and retained RC4 qualification results; RC5 checks are recorded in its release run."
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root",
+        "reviewed_utc": "2026-10-31T03:49:28.166315+00:00",
+        "reason": "Checked model, authentication, migration and transport conditions in both languages.",
+        "reviewed_content_sha256": "3b794917b56cc048f1daf28c3b109e4ae09d71687271a248505c9ceb05f99937"
+      }
+    },
+    {
+      "change_id": "hub-device-http-udp-transport",
+      "version": "1.0.0-rc.5",
+      "type": "feature",
+      "component": "bundled_web",
+      "scope": {
+        "models": [
+          "daikin"
+        ],
+        "variants": [
+          "hub"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "中枢显示已配对设备的参数",
+        "en": "Read paired devices through the hub"
+      },
+      "description": {
+        "zh-CN": "中枢网页通过 HTTP→UDP 通路读取已配对设备状态、打开设置及发送控制；浏览器无需逐台直连设备或连接中枢内置 MQTT。请求串行合并，设备身份及响应编号匹配后才更新页面，过期读取不会覆盖新设备内容，已发出的写操作不自动重放。远端设备的固件上传及原始备份仍从目标设备本地网页操作。",
+        "en": "The hub page uses an HTTP-to-UDP transport to read paired-device state, open settings and send controls. The browser only needs to reach the hub. Requests are serialized and coalesced; device identity and response IDs are checked before updating the page. Stale reads cannot replace the selected device, and issued writes are never automatically replayed. Use the target device’s local page for firmware uploads and raw backups."
+      },
+      "ota_summary": {
+        "zh-CN": "中枢网页通过 HTTP→UDP 通路读取已配对设备状态、打开设置及发送控制；浏览器无需逐台直连设备或连接中枢内置 MQTT。请求串行合并，设备身份及响应编号匹配后才更新页面，过期读取不会覆盖新设备内容，已发出的写操作不自动重放。远端设备的固件上传及原始备份仍从目标设备本地网页操作。",
+        "en": "The hub page uses an HTTP-to-UDP transport to read paired-device state, open settings and send controls. The browser only needs to reach the hub. Requests are serialized and coalesced; device identity and response IDs are checked before updating the page. Stale reads cannot replace the selected device, and issued writes are never automatically replayed. Use the target device’s local page for firmware uploads and raw backups."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc.5:b005"
+      ],
+      "evidence": {
+        "firmware_sources": [
+          "DAIKIN/src/hub_lan.inc",
+          "DAIKIN/include/hub_http_command.h"
+        ],
+        "firmware_source_sha256": {
+          "DAIKIN/src/hub_lan.inc": "0ca4437c1fcd1314de02e0b0cedacad54a223630d2521f0926a7055755b4e7d6",
+          "DAIKIN/include/hub_http_command.h": "ce821287be3d8d4d6db1e12897fbc71f53aa3f2d1aeb49389c25141d4e4a13cb"
+        },
+        "review_basis": "Author checked implementation scope and retained RC4 qualification results; RC5 checks are recorded in its release run."
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root",
+        "reviewed_utc": "2026-10-31T03:49:28.166422+00:00",
+        "reason": "Checked model, authentication, migration and transport conditions in both languages.",
+        "reviewed_content_sha256": "0aa0193458c47d917ac7427cf732e2b88c2ad625b29e63a9108fc9c07ab6309f"
+      }
+    },
+    {
+      "change_id": "dispatch-auth-and-control-receipts",
+      "version": "1.0.0-rc.5",
+      "type": "security",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "a1",
+          "m1",
+          "tc1",
+          "daikin",
+          "s30-v1b"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources",
+          "hub"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "HTTP 鉴权与控制回执",
+        "en": "HTTP authorization and control receipts"
+      },
+      "description": {
+        "zh-CN": "HTTP 在排队、业务执行和回复时重新核对认证，退出、密码变化或过期后，排队请求不能继续沿用旧权限。控制回执采用有限预留，TC1 在执行前准备回复空间，减少执行成功却无法确认的情况；收包、按钮与 MQTT 心跳保持独立调度。A1/M1 的连接上限诊断改为报告实际请求值。",
+        "en": "HTTP checks credentials again while queued, at execution and at reply delivery. Requests cannot retain old permissions after sign-out, expiry or a password change. Control receipts use bounded reservations, and TC1 prepares reply space before execution. Packet reception, local buttons and MQTT heartbeats keep their own scheduling. A1/M1 diagnostics report the actual requested TCP connection limit."
+      },
+      "ota_summary": {
+        "zh-CN": "HTTP 在排队、业务执行和回复时重新核对认证，退出、密码变化或过期后，排队请求不能继续沿用旧权限。控制回执采用有限预留，TC1 在执行前准备回复空间，减少执行成功却无法确认的情况；收包、按钮与 MQTT 心跳保持独立调度。A1/M1 的连接上限诊断改为报告实际请求值。",
+        "en": "HTTP checks credentials again while queued, at execution and at reply delivery. Requests cannot retain old permissions after sign-out, expiry or a password change. Control receipts use bounded reservations, and TC1 prepares reply space before execution. Packet reception, local buttons and MQTT heartbeats keep their own scheduling. A1/M1 diagnostics report the actual requested TCP connection limit."
+      },
+      "summary_complete": true,
+      "critical": true,
+      "source_refs": [
+        "v1.0.0-rc.5:b007"
+      ],
+      "evidence": {
+        "firmware_sources": [
+          "common/httpd/mico_port.c",
+          "common/local_auth.c",
+          "TC1/http_server/app_httpd.c"
+        ],
+        "firmware_source_sha256": {
+          "common/httpd/mico_port.c": "f720feb38b82563de942d9aa6e149420405a49abd8789c139bce56dc2949a49f",
+          "common/local_auth.c": "f024a90cacf93932b50002d05d69418dec65e259386ae392ecd44e1995d8d7ba",
+          "TC1/http_server/app_httpd.c": "ffe12b379c03d291b38ae3a6eded5fdda4976bdc50af43e3b4e14a7be2e23de9"
+        },
+        "review_basis": "Author checked implementation scope and retained RC4 qualification results; RC5 checks are recorded in its release run."
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root",
+        "reviewed_utc": "2026-10-31T03:49:28.166527+00:00",
+        "reason": "Checked model, authentication, migration and transport conditions in both languages.",
+        "reviewed_content_sha256": "ffbf3c7854ee07c62e338114227b4200d3cf2e2dcf943fc524b1a0a8f99dc92d"
+      }
+    },
+    {
+      "change_id": "tc1-mqtt-and-s30-lan",
+      "version": "1.0.0-rc.5",
+      "type": "bugfix",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "tc1",
+          "s30-v1b"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "TC1 MQTT 与 S30 二进制局域网修复",
+        "en": "TC1 MQTT and S30 binary LAN fixes"
+      },
+      "description": {
+        "zh-CN": "TC1 周期上报交由 MQTT owner 线程调度，避免额外上报线程与控制争用。S30 接入共享 UDP v4 的类型化解析、密码配对、原子认证保存及有界回执；可选 SENSOR 订阅被 broker 拒绝时不再断开主 MQTT 连接，并按退避重试。云后端补齐 S30 精确 SENSOR 命令主题 ACL，同时拒绝跨账户与通配符订阅。",
+        "en": "TC1 periodic telemetry runs on the MQTT owner thread to reduce contention. S30 uses the shared typed UDP v4 parser, password pairing, atomic authentication persistence and bounded receipts. A rejected optional SENSOR subscription no longer disconnects the main MQTT connection and retries with backoff. The cloud backend permits the exact S30 SENSOR command topic while rejecting cross-account and wildcard subscriptions."
+      },
+      "ota_summary": {
+        "zh-CN": "TC1 周期上报交由 MQTT owner 线程调度，避免额外上报线程与控制争用。S30 接入共享 UDP v4 的类型化解析、密码配对、原子认证保存及有界回执；可选 SENSOR 订阅被 broker 拒绝时不再断开主 MQTT 连接，并按退避重试。云后端补齐 S30 精确 SENSOR 命令主题 ACL，同时拒绝跨账户与通配符订阅。",
+        "en": "TC1 periodic telemetry runs on the MQTT owner thread to reduce contention. S30 uses the shared typed UDP v4 parser, password pairing, atomic authentication persistence and bounded receipts. A rejected optional SENSOR subscription no longer disconnects the main MQTT connection and retries with backoff. The cloud backend permits the exact S30 SENSOR command topic while rejecting cross-account and wildcard subscriptions."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc.5:b009"
+      ],
+      "evidence": {
+        "firmware_sources": [
+          "TC1/mqtt_server/user_mqtt_client.c",
+          "BL2028N/src/ph_lan_v4.c",
+          "BL2028N/src/ph_mqtt_port.c"
+        ],
+        "firmware_source_sha256": {
+          "TC1/mqtt_server/user_mqtt_client.c": "7192dbb7fb7249c08148d5e4751da6e67b999d3e80a4b4629ff5c9f75be72ea6",
+          "BL2028N/src/ph_lan_v4.c": "aeb972e15cb2cde649d5ee18b5705a2c2e9f56ee7b9d29a1c6a558b33531b186",
+          "BL2028N/src/ph_mqtt_port.c": "ce2e5dd8c95f8838ba4859adddea237f7444ed0dd94416a387958a7ab7ba4fdf"
+        },
+        "review_basis": "Author checked implementation scope and retained RC4 qualification results; RC5 checks are recorded in its release run."
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root",
+        "reviewed_utc": "2026-10-31T03:49:28.166571+00:00",
+        "reason": "Checked model, authentication, migration and transport conditions in both languages.",
+        "reviewed_content_sha256": "5cadb48e02d1d569db72472ff2d7df9df56977d551a1cb7bfa2341c7065af3fc"
+      }
+    },
+    {
+      "change_id": "hub-pair-route-atomic",
+      "version": "1.0.0-rc.5",
+      "type": "bugfix",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "daikin"
+        ],
+        "variants": [
+          "hub"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "中枢配对持久化与路由一致性",
+        "en": "Consistent hub pairing storage and routing"
+      },
+      "description": {
+        "zh-CN": "中枢将设备配对凭据与确认的 UDP 路由一起提交，存储失败时不提前启用路由，移除配对流程中的临时密码写入。修复旧配置占用存储导致的中枢写入失败，保留有效配置与配对数据。",
+        "en": "The hub commits pairing credentials and the confirmed UDP route together. Failed storage does not activate a route, and temporary password writes are removed. Legacy configuration storage is reclaimed while retaining valid settings and pairing data."
+      },
+      "ota_summary": {
+        "zh-CN": "中枢将设备配对凭据与确认的 UDP 路由一起提交，存储失败时不提前启用路由，移除配对流程中的临时密码写入。修复旧配置占用存储导致的中枢写入失败，保留有效配置与配对数据。",
+        "en": "The hub commits pairing credentials and the confirmed UDP route together. Failed storage does not activate a route, and temporary password writes are removed. Legacy configuration storage is reclaimed while retaining valid settings and pairing data."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc.5:b011"
+      ],
+      "evidence": {
+        "firmware_sources": [
+          "DAIKIN/src/hub_lan.inc",
+          "DAIKIN/src/auth_storage.inc",
+          "DAIKIN/src/lan_route_storage.inc"
+        ],
+        "firmware_source_sha256": {
+          "DAIKIN/src/hub_lan.inc": "0ca4437c1fcd1314de02e0b0cedacad54a223630d2521f0926a7055755b4e7d6",
+          "DAIKIN/src/auth_storage.inc": "f61019deb13475cb9ff49aad2cbf332708c37688e7f79e815013f491799810b1",
+          "DAIKIN/src/lan_route_storage.inc": "2ed32658cbffc8a99d2614df4664dabcbc68725a245ce5ca799f999bba16563d"
+        },
+        "review_basis": "Author checked implementation scope and retained RC4 qualification results; RC5 checks are recorded in its release run."
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root",
+        "reviewed_utc": "2026-10-31T03:49:28.166622+00:00",
+        "reason": "Checked model, authentication, migration and transport conditions in both languages.",
+        "reviewed_content_sha256": "ea3ffe6e89b1265a95e9185738a6eec49207e883ddbbd17eeb826075c006b4c3"
+      }
+    },
+    {
+      "change_id": "web-generation-and-utc",
+      "version": "1.0.0-rc.5",
+      "type": "bugfix",
+      "component": "bundled_web",
+      "scope": {
+        "models": [
+          "a1",
+          "m1",
+          "tc1",
+          "daikin",
+          "s30-v1b"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources",
+          "hub"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "网页状态与 UTC 时区",
+        "en": "Web state and UTC settings"
+      },
+      "description": {
+        "zh-CN": "修复状态代次更新后仍沿用旧快照的问题；设置保存后重新取得对应完整状态。UTC 时区的零分钟偏移按原值显示和保存，不再误变成 UTC+8。",
+        "en": "Fix stale snapshots after a state-generation change, and fetch the corresponding complete state after saving settings. A UTC offset of zero displays and saves correctly instead of becoming UTC+8."
+      },
+      "ota_summary": {
+        "zh-CN": "修复状态代次更新后仍沿用旧快照的问题；设置保存后重新取得对应完整状态。UTC 时区的零分钟偏移按原值显示和保存，不再误变成 UTC+8。",
+        "en": "Fix stale snapshots after a state-generation change, and fetch the corresponding complete state after saving settings. A UTC offset of zero displays and saves correctly instead of becoming UTC+8."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc.5:b013"
+      ],
+      "evidence": {
+        "firmware_sources": [
+          "frontend.lock.json"
+        ],
+        "firmware_source_sha256": {
+          "frontend.lock.json": "0dc53c9cf4b46702433d2016e28eb82c1851243460a60cd0031bbca03b956555"
+        },
+        "review_basis": "Author checked implementation scope and retained RC4 qualification results; RC5 checks are recorded in its release run."
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root",
+        "reviewed_utc": "2026-10-31T03:49:28.166654+00:00",
+        "reason": "Checked model, authentication, migration and transport conditions in both languages.",
+        "reviewed_content_sha256": "210ff3076742c0b1fe18db5738e1aefbac6a94bd960c98b7fe12ec54c975645a"
+      }
     }
   ],
   "merges": []

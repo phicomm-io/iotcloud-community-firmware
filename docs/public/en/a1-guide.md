@@ -2,7 +2,7 @@
 
 A1 provides fan control, a light ring, child lock, night mode and automatic control using valid readings from M1, DAIKIN and other sensor providers. For first installation, see [A1 factory OTA](a1-no-disassembly) or [A1 wired recovery](a1-flash).
 
-**Use stable v0.9.27 for everyday operation, or v1.0.0-rc.4 for beta testing.** See the [complete candidate release notes](release-log.html?channel=candidate) for version requirements and cumulative changes.
+**Use stable v0.9.27 for everyday operation, or v1.0.0-rc.5 for beta testing.** See the [complete candidate release notes](release-log.html?channel=candidate) for version requirements and cumulative changes.
 
 ## Power and fan
 

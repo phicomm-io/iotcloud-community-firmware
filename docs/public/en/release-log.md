@@ -2,6 +2,41 @@
 
 English translation of the published release history. Historical validation statements apply to the release named in each section, not to later firmware. Release notes are authored in the Wiki and frozen into the source repository before tagging.
 
+## v1.0.0-rc.5
+
+**RC builds are Beta releases; the stable channel remains v0.9.27.** This candidate fixes authentication, transport and web issues found during rc.4 qualification. Back up settings before upgrading, and update the matching frontend with device firmware.
+
+### Shared device and hub authentication
+
+The DAIKIN hub uses the device WebUI administration password and session instead of a separate account password. With no password it opens directly. Refreshing or switching between the control and hub pages in the same tab reuses the session; sign-out and password changes clear it. Existing hub usernames, devices, pairing and forwarding settings are retained. The old hub password is retired, while the username remains the topic namespace. UDP pairing and external MQTT broker authentication remain separate.
+
+### Read paired devices through the hub
+
+The hub page uses an HTTP-to-UDP transport to read paired-device state, open settings and send controls. The browser only needs to reach the hub. Requests are serialized and coalesced; device identity and response IDs are checked before updating the page. Stale reads cannot replace the selected device, and issued writes are never automatically replayed. Use the target device’s local page for firmware uploads and raw backups.
+
+### HTTP authorization and control receipts
+
+HTTP checks credentials again while queued, at execution and at reply delivery. Requests cannot retain old permissions after sign-out, expiry or a password change. Control receipts use bounded reservations, and TC1 prepares reply space before execution. Packet reception, local buttons and MQTT heartbeats keep their own scheduling. A1/M1 diagnostics report the actual requested TCP connection limit.
+
+### TC1 MQTT and S30 binary LAN fixes
+
+TC1 periodic telemetry runs on the MQTT owner thread to reduce contention. S30 uses the shared typed UDP v4 parser, password pairing, atomic authentication persistence and bounded receipts. A rejected optional SENSOR subscription no longer disconnects the main MQTT connection and retries with backoff. The cloud backend permits the exact S30 SENSOR command topic while rejecting cross-account and wildcard subscriptions.
+
+### Consistent hub pairing storage and routing
+
+The hub commits pairing credentials and the confirmed UDP route together. Failed storage does not activate a route, and temporary password writes are removed. Legacy configuration storage is reclaimed while retaining valid settings and pairing data.
+
+### Web state and UTC settings
+
+Fix stale snapshots after a state-generation change, and fetch the corresponding complete state after saving settings. A UTC offset of zero displays and saves correctly instead of becoming UTC+8.
+
+### Limitations
+
+- M1 and TC1 may still return busy with many concurrent pages; extreme concurrency can also reset M1 connections. Keep ordinary status reads near five seconds. The complete S30 sensor publisher needed for independent M1 remote-display input is not yet available.
+- S30 uses native RBL/STOCK_UA files. Other models require the matching signed OTA image and variant. An M1 Wi-Fi update does not update its sensor controller. HomeKit bridging remains experimental.
+
+[RC5 downloads and checksums](https://github.com/phicomm-io/iotcloud-community-firmware/releases/tag/v1.0.0-rc.5) · [Device installation and operation guides](https://phicomm-io.github.io/en/)
+
 ## v1.0.0-rc.4
 
 **RC releases are Beta builds. The stable channel remains on v0.9.27.** RC4 integrates the selected binary communication, cached state, hub and web optimizations and adds S30-V1B. Back up settings first. Device firmware, the M1 sensor controller, web frontend and cloud platform are released separately.

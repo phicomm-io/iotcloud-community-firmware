@@ -2,7 +2,7 @@
 
 A1 固件提供风机调速、灯环、童锁、夜间模式，以及使用 M1、DAIKIN 等检测仪有效数据的自动联动。本文介绍安装完成后的日常操作；首次安装见 [A1 原厂 OTA](a1-no-disassembly) 或 [A1 有线恢复](a1-flash)。
 
-**日常使用选择稳定版 v0.9.27；v1.0.0-rc.4 用于 Beta 测试。** 版本要求与累计变化见[候选版完整更新记录](release-log.html?channel=candidate)。
+**日常使用选择稳定版 v0.9.27；v1.0.0-rc.5 用于 Beta 测试。** 版本要求与累计变化见[候选版完整更新记录](release-log.html?channel=candidate)。
 
 ## 风机与开关
 

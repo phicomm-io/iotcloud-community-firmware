@@ -186,6 +186,12 @@
       "previous": "1.0.0-rc.3",
       "branch": "main",
       "channel": "candidate"
+    },
+    {
+      "version": "1.0.0-rc.5",
+      "previous": "1.0.0-rc.4",
+      "branch": "main",
+      "channel": "candidate"
     }
   ]
 }

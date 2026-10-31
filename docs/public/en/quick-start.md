@@ -2,7 +2,7 @@
 
 This project provides open-source firmware for discontinued IoT devices or devices whose cloud service providers have ended support. It supports the Phicomm TC1 power strip, M1 air quality monitor, A1 air purifier, DAIKIN BRY88AX151K air quality monitor and ORVIBO S30-V1B smart socket. It provides local web control, MQTT and Home Assistant integration. Firmware downloads are free; the manufacturer's cloud is not required.
 
-**v0.9.27 is the stable release. v1.0.0-rc.4 is for beta testing and adds S30-V1B support.** See the [complete cumulative candidate notes](release-log.html?channel=candidate). Downloads also retain the 0.9.x archive. M1 Wi-Fi and sensor-controller firmware update separately; the open-source controller is recommended for stock 11.x. Migration from 17.1.2.3 / 17.x is currently discouraged.
+**v0.9.27 is the stable release. v1.0.0-rc.5 is for beta testing and supports TC1, M1, A1, DAIKIN and S30-V1B.** See the [complete cumulative candidate notes](release-log.html?channel=candidate). Downloads also retain the 0.9.x archive. M1 Wi-Fi and sensor-controller firmware update separately; the open-source controller is recommended for stock 11.x. Migration from 17.1.2.3 / 17.x is currently discouraged.
 
 ## Identify your device
 

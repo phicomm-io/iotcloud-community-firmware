@@ -4,15 +4,15 @@
 
 ## RC4 文件下载
 
-当前候选版本为 **v1.0.0-rc.4（Beta）**。只下载与所选方法对应的文件：
+当前候选版本为 **v1.0.0-rc.5（Beta）**。只下载与所选方法对应的文件：
 
 | 用途 | 正式文件 |
 | --- | --- |
-| 原厂免拆安装、社区网页 URL OTA | [BL2028N_OTA_1.0.0-rc.4.rbl](https://github.com/phicomm-io/iotcloud-community-firmware/releases/download/v1.0.0-rc.4/BL2028N_OTA_1.0.0-rc.4.rbl) |
-| 保留原厂启动器的串口安装，从 `0x11000` 写入 | [BL2028N_STOCK_UA_1.0.0-rc.4.bin](https://github.com/phicomm-io/iotcloud-community-firmware/releases/download/v1.0.0-rc.4/BL2028N_STOCK_UA_1.0.0-rc.4.bin) |
-| 校验值 | [SHA256SUMS-S30](https://github.com/phicomm-io/iotcloud-community-firmware/releases/download/v1.0.0-rc.4/SHA256SUMS-S30) |
+| 原厂免拆安装、社区网页 URL OTA | [BL2028N_OTA_1.0.0-rc.5.rbl](https://github.com/phicomm-io/iotcloud-community-firmware/releases/download/v1.0.0-rc.5/BL2028N_OTA_1.0.0-rc.5.rbl) |
+| 保留原厂启动器的串口安装，从 `0x11000` 写入 | [BL2028N_STOCK_UA_1.0.0-rc.5.bin](https://github.com/phicomm-io/iotcloud-community-firmware/releases/download/v1.0.0-rc.5/BL2028N_STOCK_UA_1.0.0-rc.5.bin) |
+| 校验值 | [SHA256SUMS-S30](https://github.com/phicomm-io/iotcloud-community-firmware/releases/download/v1.0.0-rc.5/SHA256SUMS-S30) |
 
-例如仅下载 RBL 后，在同一目录运行 `grep "  BL2028N_OTA_1.0.0-rc.4.rbl$" SHA256SUMS-S30 | sha256sum -c -`；macOS 可用 `shasum -a 256`，与校验文件对应行核对。不要使用其它版本或其它设备的包。
+例如仅下载 RBL 后，在同一目录运行 `grep "  BL2028N_OTA_1.0.0-rc.5.rbl$" SHA256SUMS-S30 | sha256sum -c -`；macOS 可用 `shasum -a 256`，与校验文件对应行核对。不要使用其它版本或其它设备的包。
 
 下载文件名按发布版本固定；设备显示的版本还包含六位 Git 提交后缀。
 
@@ -66,7 +66,7 @@ persistence false
 
 ### 运行本地安装工具
 
-使用与候选固件一起审查的 [s30_stock_ota.py 工具](https://github.com/phicomm-io/iotcloud-community-firmware/blob/v1.0.0-rc.4/tools/s30_stock_ota.py)。本机、目标设备与临时 broker 的 IPv4 地址必须相互可达；放行本机 TCP `15683`（HTTPS CGW）、`8080`（固件 HTTP）及所选 broker 端口。证书须包含服务 IP，临时 broker 使用其对应证书，电脑用 `--mqtt-ca` 校验证书。
+使用与候选固件一起审查的 [s30_stock_ota.py 工具](https://github.com/phicomm-io/iotcloud-community-firmware/blob/v1.0.0-rc.5/tools/s30_stock_ota.py)。本机、目标设备与临时 broker 的 IPv4 地址必须相互可达；放行本机 TCP `15683`（HTTPS CGW）、`8080`（固件 HTTP）及所选 broker 端口。证书须包含服务 IP，临时 broker 使用其对应证书，电脑用 `--mqtt-ca` 校验证书。
 
 准备两个权限为 `600` 的私有 JSON 文件，不要提交到 Git 或公开：
 
@@ -84,15 +84,15 @@ MQTT 用户名、密码各限 1–31 字节，使用短地址和专用测试账�
 
 ```sh
 mkdir -p tools
-curl --fail --location https://raw.githubusercontent.com/phicomm-io/iotcloud-community-firmware/v1.0.0-rc.4/tools/s30_stock_ota.py -o tools/s30_stock_ota.py
+curl --fail --location https://raw.githubusercontent.com/phicomm-io/iotcloud-community-firmware/v1.0.0-rc.5/tools/s30_stock_ota.py -o tools/s30_stock_ota.py
 chmod 600 wifi.private.json mqtt.private.json
-grep "  BL2028N_OTA_1.0.0-rc.4.rbl$" SHA256SUMS-S30 | sha256sum -c -
+grep "  BL2028N_OTA_1.0.0-rc.5.rbl$" SHA256SUMS-S30 | sha256sum -c -
 python3 tools/s30_stock_ota.py \
   --device <原厂设备IP> --device-id <本机12位工厂MAC> \
   --host <电脑局域网IP> \
   --wifi-file wifi.private.json --mqtt-file mqtt.private.json \
   --mqtt-ca gateway-cert.pem --cert gateway-cert.pem --key gateway-key.pem \
-  --rbl 'BL2028N_OTA_1.0.0-rc.4.rbl' --sha256 <该文件公布的SHA256>
+  --rbl 'BL2028N_OTA_1.0.0-rc.5.rbl' --sha256 <该文件公布的SHA256>
 ```
 
 工具通过 CoAP `/qlink/netinfo` 配置本地 HTTPS CGW，原厂设备经 HTTPS 获取临时 TLS MQTT 连接，再接收 AndLink 文件命令并下载 RBL。
