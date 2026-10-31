@@ -8937,7 +8937,7 @@
           "frontend.lock.json"
         ],
         "firmware_source_sha256": {
-          "frontend.lock.json": "0dc53c9cf4b46702433d2016e28eb82c1851243460a60cd0031bbca03b956555"
+          "frontend.lock.json": "62a610f777f37aaf0ca7592d80421f532b677b48c07802907f5265749a662856"
         },
         "review_basis": "Author checked implementation scope and retained RC4 qualification results; RC5 checks are recorded in its release run."
       },
