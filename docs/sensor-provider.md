@@ -1,5 +1,15 @@
 # 通用环境数据提供者
 
+## RC5 接口
+
+RC5 使用 MessagePack schema3，分别发送保留的字段描述与非保留实时快照，字段描述包含 name/type/unit。设备、boot、descriptor_revision 一致时才消费数值；boot、descriptor_revision、sequence 为原生非零 uint32 计数器，不使用 JSON 的有符号映射。实现见 `common/sensor_mp.h` 与 `common/runtime_sensor_mp.inc`。
+
+中英文格式与代码示例见[设备接口与协议](public/device-api.md)。
+
+## 稳定版 0.9.27 接口
+
+以下 JSON 结构、会话 v2 与整数位模式说明适用于 0.9.27。
+
 设备角色与产品型号分离。消费者只绑定数据提供者的稳定身份，按字段、单位、有效性与新鲜度使用测量，不通过 `model=m1` 或 `model=daikin` 判断能否联动。
 
 TMCP 账号命名空间内的共享数据主题：

@@ -2,7 +2,7 @@
 
 [简体中文](README.md)
 
-Community firmware for TC1 power strips, M1 air monitors, A1 air purifiers and DAIKIN air monitors. Use the device's local web interface, MQTT, Home Assistant or IoTCloud. Local use does not require a platform account.
+Community firmware for TC1 power strips, M1 air monitors, A1 air purifiers, DAIKIN air monitors and ORVIBO S30-V1B metering sockets. Use the device's local web interface, MQTT, Home Assistant or IoTCloud. Local use does not require a platform account.
 
 **[Devices and features](https://phicomm-io.github.io/en/#devices) · [Install, update and downloads](https://phicomm-io.github.io/en/#install) · [Common questions](https://phicomm-io.github.io/en/#faq) · [Contribute](https://phicomm-io.github.io/en/#develop)**
 
@@ -14,6 +14,7 @@ Community firmware for TC1 power strips, M1 air monitors, A1 air purifiers and D
 | M1 air monitor | PM2.5, formaldehyde, temperature, humidity, brightness and A1 automation; matching open-source controller firmware adds particle details, CO₂ display and music | [Install](https://phicomm-io.github.io/guides/en/m1-no-disassembly.html) · [Use](https://phicomm-io.github.io/guides/en/m1-guide.html) |
 | A1 air purifier | Fan, automatic mode, filter, light ring, night mode and multiple sensor providers; a fresh-air variant is also available | [Install](https://phicomm-io.github.io/guides/en/a1-no-disassembly.html) · [Use](https://phicomm-io.github.io/guides/en/a1-guide.html) |
 | DAIKIN air monitor | PM2.5, PM10, CO₂, temperature, humidity, TVOC, optional formaldehyde and A1 automation | [Install and use](https://phicomm-io.github.io/guides/en/daikin-guide.html) |
+| ORVIBO S30-V1B metering socket | Single outlet, voltage / current / power / energy, power rules and power-on policy | [Install](docs/public/en/s30-flash.md) · [Use](docs/public/en/s30-guide.md) |
 
 TC1's A1 hardware revision and the A1 purifier are different products; their images are not interchangeable. TC1 A2 is unsupported. M1 / A1 require the original EMW3080B / MK3080B modules. Check the documented ESP32 / 4 MB Flash model for DAIKIN.
 
@@ -25,21 +26,21 @@ TC1's A1 hardware revision and the A1 purifier are different products; their ima
 2. Choose your model and variant from [existing downloads](https://phicomm-io.github.io/en/#releases), verify `SHA256SUMS` and follow its installation guide.
 3. Use [Quick start](https://phicomm-io.github.io/guides/en/quick-start.html) to set up Wi-Fi and open the device IP. Optionally connect [MQTT / Home Assistant](https://phicomm-io.github.io/guides/en/mqtt-link.html) or [IoTCloud](https://phicomm-io.github.io/guides/en/iotcloud-connect.html).
 
-Normal web updates on community firmware use the matching `.ota.bin.signed` package. A raw application `.ota.bin.raw` is only for migration or recovery procedures that explicitly accept it. The full `.all.bin` image is for wired installation and cannot be uploaded through web OTA. See [updates and recovery](https://phicomm-io.github.io/guides/en/firmware-update.html).
+Normal web updates on community firmware use the matching `.ota.bin.signed` package. A raw application `.ota.bin.raw` is only for migration or recovery procedures that explicitly accept it. The full `.all.bin` image is for wired installation and cannot be uploaded through web OTA. See [updates and recovery](https://phicomm-io.github.io/guides/en/firmware-update.html). S30-V1B uses its `.rbl` URL without signature verification or local file uploads; first installation follows the [network / UART guide](docs/public/en/s30-flash.md).
 
-The DAIKIN stock OTA layout has **`0x180000` (1.5 MiB)** application slots. Follow the [stock OTA guide](https://phicomm-io.github.io/guides/en/daikin-stock-ota.html) for the first migration to normal firmware. For the signed `full → hub` conversion in v1.0.0-rc.3, see the [hub guide](https://phicomm-io.github.io/guides/en/daikin-guide.html#switch-from-full-to-hub). It requires supporting firmware and an image that fits the device.
+The DAIKIN stock OTA layout has **`0x180000` (1.5 MiB)** application slots. Follow the [stock OTA guide](https://phicomm-io.github.io/guides/en/daikin-stock-ota.html) for the first migration to normal firmware. For the signed `full → hub` conversion in v1.0.0-rc.5, see the [hub guide](https://phicomm-io.github.io/guides/en/daikin-guide.html#switch-from-full-to-hub). It requires supporting firmware and an image that fits the device.
 
-## v1.0.0-rc.3 Beta candidate
+## v1.0.0-rc.5 Beta candidate
 
-**RC releases are beta builds. Major changes are still expected, and daily use is not recommended. Use stable [v0.9.27](https://phicomm-io.github.io/en/#releases) for everyday operation.** The current candidate is [v1.0.0-rc.3](https://github.com/phicomm-io/iotcloud-community-firmware/releases/tag/v1.0.0-rc.3). Its full notes retain the cumulative rc, rc.1 and rc.2 changes under their original versions; older candidates are no longer download entry points. Wi-Fi firmware, the M1 sensor controller, frontend and platform are released separately; check their matching requirements.
+**RC releases are beta builds. Major changes are still expected, and daily use is not recommended. Use stable [v0.9.27](https://phicomm-io.github.io/en/#releases) for everyday operation.** The current candidate is [v1.0.0-rc.5](https://github.com/phicomm-io/iotcloud-community-firmware/releases/tag/v1.0.0-rc.5). Interfaces and usage instructions use RC5 as their baseline. Wi-Fi firmware, the M1 sensor controller, frontend and platform are released separately; check their matching requirements.
 
 | Area | Candidate features |
 | --- | --- |
 | Use and updates | Chinese / English interfaces, device language, configuration backup and restore, migration recovery and upgrade comparisons |
 | M1 | Independent sources for the formaldehyde / PM2.5 positions: local sensors, TC1 power, A1 effective main-fan output (0–100%), DAIKIN CO₂ and other readings, or the API; double-press switches the original / user pair, with separate expiry fallback and threshold or fixed colors; steadier PM2.5 and separate over-threshold buzzer switches, off by default, independent of light thresholds, alarms and manual tones |
-| A1 recovery | rc.3 adds Wi-Fi touch sequences: two short taps, then hold the third touch for 1–2 seconds and release to reset networking; three short taps, then hold the fourth touch for 1–2 seconds and release to factory reset. Existing 5 / 10 second holds remain. The new sequences await physical acceptance |
-| DAIKIN `hub` | Separate hub variant: local accounts, TCP / WebSocket MQTT Broker, LAN Home Assistant, an upstream MQTT client and Bemfa forwarding, automatic local-device listing and an optional web password; normal firmware remains a sensor device |
-| Interfaces and recovery | Retain rc.1 generic numeric fields and M1 display-profile interfaces, plus the rc.2 M1 configuration and web recovery fixes. Custom clients need the current interfaces and matching frontend |
+| A1 recovery | Wi-Fi touch sequences: two short taps, then hold the third touch for 1–2 seconds and release to reset networking; three short taps, then hold the fourth touch for 1–2 seconds and release to factory reset. Existing 5 / 10 second holds remain. The new sequences await physical acceptance |
+| DAIKIN `hub` | Separate hub variant: local accounts, mDNS discovery, paired UDP device control, an upstream MQTT client and Bemfa forwarding, automatic local-device listing and an optional web password; normal firmware remains a sensor device |
+| Interfaces and recovery | MessagePack over HTTP / MQTT, separate sensor metadata and live values, M1 profile4 configuration, configuration backup and recovery |
 
 Apple Home uses experimental HomeKit HAP bridging on the hub. Pairing, controls and restart recovery await physical-device validation. Matter is not included.
 
@@ -70,3 +71,5 @@ User guide sources live in `docs/public/`; site layout sources live in `site/`. 
 ## License
 
 Project-maintained code uses [GPL-3.0](LICENSE). SDKs and third-party components retain their original copyright notices and terms. See the [third-party index](THIRD_PARTY_NOTICES.md).
+
+Interfaces and runnable examples: [RC5 / 0.9.27 integration guide](docs/public/en/device-api.md).

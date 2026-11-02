@@ -1,4 +1,13 @@
-# MQTT 协议与账号隔离
+# MQTT 配置与账号主题
+
+当前接口基线为 **RC5** 和 **0.9.27**，中英文主题、编码及调用示例见[设备接口与协议](public/device-api.md)（[English](public/en/device-api.md)）。
+
+RC5 的 TC1、M1、A1、DAIKIN、S30-V1B 均使用 openiot 协议的 TMCP v2 命令封装，设备发现、状态、能力和命令为 MessagePack；availability 为 online/offline 文本，Home Assistant 使用独立 JSON。Broker 账号范围、主题授权与设备网页密码分别管理。
+
+## 稳定版 0.9.27 JSON 接口
+
+以下说明仅适用于 0.9.27 的设备 MQTT / HTTP 接口；RC5 的 MessagePack 编码、schema3 传感器和公告字段使用上方接入指南。
+
 
 MQTT 协议只有两种：**TMCP（Tom MQTT Cloud Protocol，v2）** 和 **Legacy（v1）**。`community` 和 `account` 不再是协议版本名称。
 

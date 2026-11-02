@@ -2,7 +2,7 @@
 
 This guide covers the **ORVIBO S30-V1B**, with a BL2028N module, BK7231N chip and HLW8032 meter. Network installation has been verified on stock **`2M.1220`**. UART remains available for backups, installation and recovery. The default layout retains this unit’s original bootloader and factory MAC/RF; **first installation starts with fresh community settings and requires Wi-Fi setup again**. See [S30-V1B operation](s30-guide) for use after installation.
 
-## RC4 downloads
+## RC5 downloads
 
 The current candidate is **v1.0.0-rc.5 (Beta)**. Select the file for your installation method:
 

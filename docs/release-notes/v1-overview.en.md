@@ -1,8 +1,8 @@
-**v0.9.27 is the stable release; v1.0.0-rc.4 is the current beta.** This page summarizes current features; see the release notes for version history. Wi-Fi firmware, the M1 sensor controller, frontend and cloud platform are released separately. Updating one does not update the others.
+**v0.9.27 is the stable release; v1.0.0-rc.5 is the current beta.** This page summarizes current features; see the release notes for version history. Wi-Fi firmware, the M1 sensor controller, frontend and cloud platform are released separately. Updating one does not update the others.
 
 [Candidate downloads and release notes](release-log.html?channel=candidate) · [Choose an update image](firmware-update.html)
 
-#### RC4: communication, web interface and S30-V1B
+#### RC5: communication, web interface and S30-V1B
 
 - **Binary business interfaces.** HTTP, device MQTT and UDP default to MessagePack. Legacy JSON business paths are removed; compact JSON remains for Home Assistant. Use the matching frontend and a cloud platform supporting device discovery. Existing JSON scripts require changes.
 - **Separate business state and diagnostics.** Coalesce changes before encoding, reuse unchanged snapshots, and fetch shared numeric diagnostic fields on demand with `diagnostics.get`. MQTT and HA track delivery independently; command receipts are separate.
@@ -29,7 +29,7 @@
 - **Independent data for each region.** Configure local sensors, paired LAN devices or authorized MQTT sensors, or API / manual values for both formaldehyde and PM2.5 regions. Sources include external CO₂ and other sensors, DAIKIN readings, TC1 power and effective A1 main-fan output. Each region has its own expiry. Missing, expired, offline or invalid data restores only that region without changing physical acquisition or alarms.
 - **Formats and legends match the glass.** PM2.5 supports three integer digits up to 999. The formaldehyde region supports integer, automatic kilo scaling, two decimals, one decimal with a trailing zero, and fixed division by 1000. Its decimal point is fixed after the first digit. Native legends and units can be hidden separately; the glass still has only µg/m³ and mg/m³, with no new ppm, W or % symbols. Positive local / MQTT overflow is limited to the selected mode maximum.
 - **Nine lamp segments per region.** Red, green and yellow segments at each of three positions can be controlled independently, including multiple colors at one position. Alternatively, apply two thresholds to the original physical value before display conversion.
-- **Web configuration and raw API.** The full page configures sources, expiry, format, legend / unit visibility, lamps and double-press action for both regions, with a fixed-glass preview and MCU support / confirmation status. `display_profile.get/set` uses revision checks and accepts compact or colon-separated MACs in either case. Probe capabilities first; raw API / UART and defined configuration migration remain available; the former MQTT feed and HTTP display-profile shapes are replaced in RC.1. For regions configured as API inputs, `display_value.set` writes integer digits 0–999, the decimal point, legends and nine lamps directly, without scaling, rounding, clamping or threshold colors. Fractional / out-of-range digits and PM decimal points are rejected; TTL 0 clears only that region.
+- **Web configuration and raw API.** The full page configures sources, expiry, format, legend / unit visibility, lamps and double-press action for both regions, with a fixed-glass preview and MCU support / confirmation status. `display_profile.get/set` uses revision checks and accepts compact or colon-separated MACs in either case. Probe capabilities first; raw API / UART and defined configuration migration remain available, with separate schema 3 metadata and live snapshots. For regions configured as API inputs, `display_value.set` writes integer digits 0–999, the decimal point, legends and nine lamps directly, without scaling, rounding, clamping or threshold colors. Fractional / out-of-range digits and PM decimal points are rejected; TTL 0 clears only that region.
 - **Buffered controller image forwarding.** Supporting Wi-Fi firmware receives the complete image uploaded by the computer, then forwards it to the sensor MCU over UART. The existing per-frame HTTP bridge remains available. The controller updates independently; first check device capabilities and image requirements. Application OTA retains the stock Boot. See the [controller update guide](m1-mcu-update.html) for the stock 11.x tool, capacity and runtime requirements.
 
 [M1 operation](m1-guide.html) · [Controller features and version requirements](m1-mcu-firmware.html)
@@ -49,7 +49,7 @@ A1 publishes the main fan's effective **0–100%** output, including the fresh-a
 #### DAIKIN: a separate hub edition
 
 - **Independent hub image and console.** Adds device discovery, pairing, management and hub settings alongside sensor functions. The embedded `/iotcloud/#/` console configures upstream MQTT, Bemfa and HomeKit, without cloud email registration or GitHub login.
-- **mDNS and UDP replace the embedded Broker.** RC4 no longer hosts MQTT TCP 1883 or a WebSocket Broker. The hub discovers devices through mDNS, uses paired UDP communication and forwards upstream MQTT and Bemfa messages. Local Home Assistant and MQTT clients must use an external Broker; change old embedded-Broker connections.
+- **mDNS and UDP replace the embedded Broker.** The hub does not host MQTT TCP 1883 or a WebSocket Broker. The hub discovers devices through mDNS, uses paired UDP communication and forwards upstream MQTT and Bemfa messages. Local Home Assistant and MQTT clients must use an external Broker; change old embedded-Broker connections.
 - **Optional HomeKit HAP bridge.** Off by default, this experimental feature provides TC1's six Switches, A1 fan / light, and valid M1 / DAIKIN sensors. The hub’s own sensors are included automatically. **Matter is not included.**
 - **Explicit conversion to hub.** Supporting `full` firmware accepts a signed `hub` image that fits the installed slot, with explicit confirmation and retained network settings. Device Web passwords are optional; configured passwords require authentication. Ordinary OTA preserves variants; direct `hub → full` OTA is unsupported. Conversion does not enlarge OTA partitions: check the actual slot capacity.
 
@@ -59,19 +59,11 @@ A1 publishes the main fan's effective **0–100%** output, including the fresh-a
 
 Installation, updates, use and recovery guides remain grouped by M1 / A1 / TC1 / DAIKIN / S30-V1B. Bilingual [developer documentation](https://phicomm-io.github.io/iotcloud-community-protocols/en/) centralizes interfaces, protocols, configuration compatibility and examples. The v0.9.x artifacts and notes remain archived. CI, issue / PR templates, contribution rules and pinned cross-repository dependencies have been organized. Maintained code uses GPL-3.0; third-party notices remain applicable.
 
-#### Wi-Fi firmware v1.0.0-rc.1: generic fields and hub updates
+#### RC5 local power rules and recovery
 
-RC.1 adds the following changes to the original RC:
+- TC1 and S30-V1B can switch after power stays strictly above / below a threshold for a configured duration. Rules run locally using fresh measurements.
+- S30-V1B supports off, on and restore power-on policies; restore uses the saved output state.
+- A1 supports two short Wi-Fi taps followed by a hold-and-release to reset networking, or three short taps followed by a hold-and-release to factory reset. See [A1 recovery gestures](a1-guide.html#recovery-gestures).
+- M1 protects unsupported configuration layouts. Explicitly confirm clearing in the web recovery flow, then reboot and configure Wi-Fi again.
 
-- Devices publish sensor-data schema 2 with stable field IDs and `name/type/unit/value/valid/age_ms` descriptors. Current values use `number`; invalid readings use `null`, never a synthetic zero. TC1 power, effective A1 fan output and M1 / DAIKIN sensors follow the same contract.
-- M1 display-profile schema 4 binds a source by device + field ID + expected type/unit, without model adapters. Matching numeric fields can be added by source devices without a new model mapping. A new complete snapshot immediately revokes missing, invalid, mismatched or unsupported fields; an empty snapshot revokes all previous candidates. Saved bindings remain. Future field types are reserved and are not converted to numbers. Custom clients must migrate from RC interfaces and use the matching frontend.
-- The device Web password becomes optional for initial hub-owner setup and explicit full → hub conversion. Existing passwords still require Basic `admin` authentication; separate hub-account password requirements remain unchanged.
-- The management list automatically starts with a read-only local device, in addition to twelve user-registration slots. Legacy manual local entries are deduplicated in responses without persistent writes. Manual duplicate additions and deletion of the local device are rejected.
-- After restart, the console recovers through read-only requests. HTTP 401 from an expired session returns to login without replaying configuration writes or reboot requests.
-
-Use the [release notes](release-log.html?channel=candidate) for actual candidate availability and confirmed changes. IoTCloud platform versions are independent of Wi-Fi firmware versions.
-
-#### Retained rc.2 fixes and new rc.3 recovery sequences
-
-- **The rc.2 configuration and web recovery fixes remain.** With incompatible configuration, M1 no longer reports a network-only reset as a successful full clear. Full and minimal pages refresh recovery state, wait for restart after an explicitly confirmed clear and allow Wi-Fi setup to continue. The full Reboot and recovery page displays its controls. This adds no automatic migration for unknown third-party layouts.
-- **rc.3 adds A1 alternative recovery sequences.** For panels that report release after about 2–3 seconds of continuous contact, tap Wi-Fi twice, hold the third touch for 1–2 seconds and release to reset networking; tap three times, hold the fourth touch for 1–2 seconds and release to factory reset. Release each short tap, leave less than 0.3 seconds between touches and hold the final touch for at least 1 second and less than 5 seconds. Recovery runs on release and bypasses child lock. Existing 5 / 10 second recovery holds remain. These alternative sequences remain experimental; see [A1 recovery](a1-guide.html#recovery-gestures).
+See [device interfaces and protocols](device-api.html) for protocol versions and code examples for RC5 and stable 0.9.27.

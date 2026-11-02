@@ -32,10 +32,6 @@ Optionally enter a LAN address and read the device information once. The web man
 
 This table covers A1, M1, TC1 and DAIKIN. S30-V1B updates through an `.rbl` URL; see [S30 updates](s30-guide#updates).
 
-This table covers A1, M1, TC1 and DAIKIN. S30-V1B updates through an `.rbl` URL; see [S30 updates](s30-guide#updates).
-
-This table covers A1, M1, TC1 and DAIKIN. S30-V1B updates through an `.rbl` URL; see [S30 updates](s30-guide#updates).
-
 | File | Purpose |
 | --- | --- |
 | `.ota.bin.signed` | Signed OTA package for web upload and MQTT / URL installation; P-256 / SHA-256 signature verification is mandatory |

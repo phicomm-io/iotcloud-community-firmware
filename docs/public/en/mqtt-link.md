@@ -4,12 +4,12 @@ MQTT is optional: local device functions work without it. Configure a Broker add
 
 ## Protocol modes
 
-| Device | Supported mode |
+| Baseline | Device protocol |
 | --- | --- |
-| TC1 | Legacy (v1) and TMCP (v2); TMCP is the default for a new setup |
-| M1 / A1 / DAIKIN / S30-V1B | TMCP (v2) only; no Legacy selector |
+| **RC5** | TC1, M1, A1, DAIKIN and S30-V1B use the openiot protocol with TMCP v2 command envelopes and MessagePack HTTP / MQTT payloads |
+| **0.9.27** | JSON HTTP / TMCP; TC1 supports Legacy v1 or TMCP v2, M1 / A1 / DAIKIN use TMCP v2; S30-V1B is not included |
 
-M1 and A1 normalize old mode flags to TMCP at boot, retaining the Broker address, port and credentials. They do not switch back to old topics at runtime.
+Check the firmware version and encoding before integrating a custom client. See [device interfaces and protocols](device-api) for fields, topics and examples. Home Assistant uses its separate JSON messages.
 
 Device topics use `phicomm/v2/<scope>/<model>/<mac>/...`. A nonempty username maps to `u_<lowercase hexadecimal UTF-8 bytes>`; an empty username uses `local` with the same v2 protocol. Home Assistant discovery uses `homeassistant/<component>/<scope>/<model>_<mac>_<entity>/config`.
 
@@ -27,7 +27,7 @@ M1, DAIKIN and other providers measure, publish and answer authorized reads. Rul
 2. Use the same MQTT service and account. Update the platform to support generic sensor topics. A self-hosted Broker must permit measurements at `phicomm/v2/<scope>/sensor/<mac>/state` and session grants through its matching `command` topic.
 3. Confirm valid readings before enabling automation. A monitor lists an A1 as connected only after an actual successful read.
 
-Without an IP, A1 can broadcast on the LAN to find the specified MAC. Enter a reachable address across subnets or when broadcasts are restricted. A1 sends a session token through non-retained MQTT, then queries UDP every five seconds. LAN readings take priority; generic MQTT measurements can be used when LAN reads are unavailable. Existing M1 sessions remain compatible.
+Without an IP, A1 can broadcast on the LAN to find the specified MAC. Enter a reachable address across subnets or when broadcasts are restricted. A1 sends a session token through non-retained MQTT, then queries UDP every five seconds. LAN readings take priority; generic MQTT measurements can be used when LAN reads are unavailable.
 
 Tokens exist only in RAM. Each monitor supports four A1 sessions, expiring after thirty minutes idle. After a monitor restarts, A1 automatically reauthorizes through MQTT. Established sessions with continuing UDP reads survive a temporary MQTT outage.
 

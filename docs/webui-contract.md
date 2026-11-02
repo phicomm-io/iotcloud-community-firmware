@@ -1,117 +1,55 @@
 # WebUI 设计与接口约定
 
-TC1、A1、M1 的离线页面统一由 [前端仓库](https://github.com/phicomm-io/iotcloud-community-frontend) 构建。固件提交 `frontend.lock.json` 锁定完整 commit 的 Release 与 SHA-256，`tools/frontend_release.py` 下载校验全部文件，`tools/pack_frontend.py` 直接嵌入其中的确定性 gzip，不再从固件仓库展开前端源码。浏览器无需 CDN。公共样式、词表、服务层、设置页及产品 `page.js` 均在前端仓库维护。`common/web/page.py` 仅为已有工具保留命令兼容入口，输出锁定 Release 中的 HTML。
+当前基线为 **v1.0.0-rc.5**，稳定版接口基线为 **v0.9.27**。中英文的编码、主题、HTTP 路由、UDP 与 MCU 协议说明及可运行示例见[设备接口与协议](public/device-api.md)（[English](public/en/device-api.md)）。
 
-## 页面与词表
+## 公共前端
 
-- 标题显示设备类型与设备名称；一级导航为“首页”“设置”。首页展示设备的核心控制及测量值。
-- 设置采用相同导航与卡片/表单：Wi-Fi、MQTT、设备、固件升级、诊断。设备专用功能采用相同组件和操作反馈。
-- 固定使用“设备名称”“网络名称”“Broker 地址”“主题模式”“用户名”“密码”“访问认证”“网页密码”“童锁”“定时任务”“夜间模式”“按键事件”。网页认证用户名固定为 `admin`；MQTT 用户名独立可编辑。
-- 状态值由公共词表翻译，分组诊断与原始 JSON 同时提供；用户输入通过 `textContent` 呈现。
-- “请求已接受”表示接口接受，不等同于机械输出、物理按键或计量校准已验证。
+TC1、M1、A1、DAIKIN 与 ORVIBO S30-V1B 采用公共前端的样式、布局和导航，仅显示已实现的硬件能力。首页展示核心控制与测量，设置按网络、设备、自动化和维护组织。设备名称、型号和身份分别显示，不使用芯片名代替整机型号。
 
-## 公共 HTTP 定义
+`frontend.lock.json` 固定前端 Release、完整 commit 和 SHA-256；`tools/frontend_release.py` 校验下载，`tools/pack_frontend.py` 嵌入确定性 gzip 资源，离线页面不依赖 CDN。S30-V1B 的公共资源来源及适配校验见 `BL2028N/web/shared/provenance.json` 和该产品 README。
 
-普通查询和控制统一使用 `POST /api/v1/command`，`Content-Type: application/json`。请求为 `{request_id?, action, params}`，响应为 `{request_id?, code, message, data}`；成功码为 `ok` 或 `accepted`。输入须完整接收并通过类型、长度和参数校验后才生效。写命令使用唯一 request_id，重试保持相同请求；已用 ID 对应不同内容返回 conflict。具体可用动作由 `capabilities.get.actions` 提供。
+## HTTP 与鉴权
 
-| 动作 | 用途 |
+RC5 普通业务使用 MessagePack，MIME 为 `application/msgpack`；0.9.27 使用 JSON，MIME 为 `application/json`。两者的命令路径均为 `POST /api/v1/command`，请求解码后为 `{request_id?,action,params}`，响应为 `{request_id?,code,message,data}`。不要把调试终端打印的 JSON 当成 RC5 线上编码。
+
+未设置网页密码时直接访问，不占用会话；设置后支持 `admin` Basic，使用 token 的前端复用有效会话，退出、过期或密码变更后重新认证。密码查询只返回设置标记，表单省略密码表示保留，显式空字符串表示清除。MQTT / UDP 的授权独立于网页密码。
+
+HTTP 查询路径、签名 OTA、备份和主控桥接见[接口表](public/device-api.md#http-接入)。备份及固件上传使用各自二进制文件格式；S30-V1B 只提供 `.rbl` URL OTA，不显示未实现的上传或备份功能。
+
+## 能力与动作
+
+先调用 `capabilities.get`，按 `data.actions` 及容量字段创建控件。M1 的 Wi-Fi 版本与传感器主控版本分别读取；主控能力不足时隐藏或禁用相关操作。
+
+| 动作 | 用途与条件 |
 | --- | --- |
-| `status.get`, `config.get`, `capabilities.get` | 状态、脱敏设置、能力 |
-| `config.set` | `{section,values}`；device/auth/mqtt/wifi/ntp 及产品专用设置 |
-| `wifi.scan`, `wifi.scan.get` | 启动扫描、读取结果 |
-| `logs.get` | `{after,limit}`；分页读取公共 RAM 日志，最多 8 条/页 |
-| `schedules.get/put/delete/enable` | 稳定 ID 的任务查询、保存、删除、启停 |
-| `buttons.get/set` | 自定义按键映射；get 使用 offset/limit（最多 8 条），next/capacity/count；是否可写见能力列表 |
-| `system.reboot/reset`, `ota.start` | 重启、重置、签名 OTA URL |
-| `night.get/set`, `time.get/set` | 夜间模式（A1/M1）与时区 |
-| `binding.get/set`, `binding.status.get` | A1 数据源设置；A1/M1 会话状态（M1 不支持 set） |
-| `sensors.average.get` | A1 多 M1 实时平均值 |
-| `light_effect.next/select` | A1 轮换灯效或选择 `{effect:0..4}`，保留其他灯效配置 |
-| `light_always.set` | A1 灯环常亮 `{enabled:boolean}` |
-| `filter.get/set/reset` | A1 运行时间估算；set 接受额定寿命 `{lifetime_hours:1..20000}`；reset 清零用量 |
+| `status.get`、`config.get`、`capabilities.get` | 状态、脱敏配置、能力 |
+| `config.set` | `{section,values}`；按设备能力选择配置段 |
+| `wifi.scan`、`wifi.scan.get` | 发起扫描与读取结果 |
+| `logs.get` | `{after,limit}`；最多 8 条 / 页，`records` 与 `next/latest` 游标 |
+| `schedules.get/put/delete/enable` | 按稳定 ID 管理任务；TC1 / S30 的功率规则见设备指南 |
+| `buttons.get/set` | 分页按键映射，get 最多 8 条 / 页；按 next/capacity 继续 |
+| `system.reboot/reset`、`ota.start` | 重启、重置、URL 升级；重置范围按设备能力与指南确认 |
+| `night.get/set`、`time.get/set` | 夜间模式与时区，按机型提供 |
+| `binding.get/set`、`binding.status.get` | A1 数据源设置及会话状态，M1 不提供 binding.set |
+| `sensors.average.get` | A1 各有效字段的平均值，无有效样本为 null |
+| `filter.get/set/reset` | A1 运行时间估算；寿命 1–20000 小时，reset 保留寿命并清零用量 |
+| `display_profile.get/set`、`display_value.set` | RC5 M1 schema4 显示配置与原始显示写入；检查 MCU 能力 |
+| `diagnostics.get` | RC5 按需诊断；字段编号和业务状态分开 |
 
-A1 最多配置 4 台 M1；M1 最多保存 4 台 A1 的 RAM 会话，状态返回 `max_sessions:4`，不再接受 `binding.set`。`binding.get.data.max_peers` 返回 `4`；超过上限的 `binding.set` 返回 `invalid_params`，原绑定保持不变。升级旧的八条绑定配置时，只启用原顺序的前四条，Flash 存储布局不变。
+A1 最多绑定 4 台数据源，检测仪最多保留 4 台 A1 的 RAM 会话。任务时间按配置时区，时钟无效时不执行周循环 / 一次性任务；错过不补执行。单调时钟倒计时、功率条件按各自能力执行。
 
-文件 OTA 独立于 JSON 命令：`POST /api/v1/ota/upload` 上传签名原始字节流；仅显式选择未签名更新时使用 `/api/v1/ota/upload-unsigned`。两者仍校验产品镜像和写入结果。
+M1 MQTT 来源绑定设备 ID、字段 ID、预期类型和单位；字段描述与实时快照使用 schema3，显示配置 GET 使用 schema4，SET 不带 schema 或 runtime。revision 冲突时重读配置，由用户确认后再保存，不覆盖其他客户端修改。
 
-密码不通过查询返回。MQTT 用户名最多 63 UTF-8 字节，密码最多 256 字节，Broker 最多 127 字节。网页省略空白密码输入以保留旧值，显式清除则传空字符串。Wi-Fi 开放网络同样须显式确认。网页认证用户名固定 admin。
+## 操作反馈
 
-## 能力区别
+开关类控件先显示目标值及确认中，再下发一次设置命令。收到 `accepted` 后查询实际状态，达到目标再结束确认；设备拒绝或窗口内未确认时恢复最近读值并提示。旧轮询不得覆盖正在确认的目标，不自动重发开关命令。
 
-| 能力 | TC1 | A1 | M1 |
-| --- | --- | --- | --- |
-| 核心功能 | 六路插座、总开关、功率、电量 | 风机、RGB 灯环 | 空气参数、屏幕亮度 |
-| 统一命令、认证、重启、OTA、日志诊断 | 支持 | 支持 | 支持 |
-| 童锁 | 面板按键 | 电源/调速，配网键保留 | 不提供 |
-| 完整定时任务 | 128 项 | 8 项 | 8 项 |
-| 夜间模式 | 不提供 | 支持 | 支持 |
-| 自定义按键事件 | 默认无映射，点击 1–30 / 长按 1–4 秒 | 按键能力见 capabilities | 不提供自定义写入 |
+同设备、同参数的在途只读请求合并，状态轮询不叠加。一次失败保留上次状态；连续三次失败且距最后成功至少 30 秒后提示暂时无法更新，恢复成功清除提示。传感器字段仍按设备有效性和年龄失效，不能沿用旧读数冒充新鲜数据。
 
-任务支持周循环和一次性触发。时间按配置时区；失去时钟有效性时不执行；错过的触发不补执行。动作依据各产品能力校验，重启类动作最后执行。公共日志为 64 条 RAM 环，重启不保留，不包含密码。
+首页趋势为浏览器本次打开期间最多 60 个采样点，不是设备持久历史。TC1 / S30 功率、电量单位使用返回值定义；`diagnostics.get`、内存和日志页面按需读取，避免首页反复拉取完整诊断。
 
-A1 `capabilities.get.button_keys` 为 `power/wifi/combination`，对应 `buttons.set.key` 的 `0/1/2`。每键支持点击 1–30 次或长按 1–4 秒，共 102 个槽位；分页按返回的 `next/capacity` 继续。示例：`{"action":"buttons.set","params":{"key":2,"clicks":1,"action":"light_effect.next","params":{}}}`。`filter.reset` 同样使用空动作参数。A1 默认电源单击使用 `fan.panel`（空参数）：关机时开机，开机时仅提示当前模式与实际风量；电源长按 1–4 秒默认 `fan.set` / `{on:false}`，松手执行。`fan.panel` 仅用于按键映射，不用于定时任务，受童锁与升级忙状态限制。A1 开关动作可用 `{toggle:true}`，`light.set` 可省略 brightness 保留亮度。灯效轮换、指定灯效及滤芯清零只用于按键事件。童锁阻止普通按键动作，但允许配置的童锁动作解锁；Wi-Fi 单键的 5/10 秒恢复手势独立保留。
+## 版本与校验入口
 
-## TC1 资源与兼容边界
+RC5 实现入口：`common/service_mp.inc`、`common/service_product_mp.inc`、`common/httpd/`、`common/mqtt/`、`common/sensor_mp.h` 与 `common/lan_wire*.inc`。测试入口：`tests/test_service_mp.py`、`tests/test_http_product_mp.py`、`tests/test_native_mqtt.py`、`tests/test_sensor_mp.py`、`tests/test_native_udp_runtime.py`。公共前端锁定版本与 S30 适配另见各自来源记录。
 
-- 固定日志环代替逐条 `malloc/free`，保留条数由 100 调整为 64；固定快照减少诊断读取时的分配。
-- 遥测使用一次有界响应分配，按名称转义的最坏长度计算容量，避免 per-field JSON 对象堆；Wi-Fi 扫描最多保存 24 个网络，20 秒后退出扫描状态。
-- 定时表在启动时从持久化值重建链表，忽略保存的指针；增删/替换/执行均使用锁，空表和容量上限有回归测试。
-- 功率历史格式化有长度边界；长时间空载后的 IRQ 补记录循环最多处理环容量，计量系数与算法保持现有定义。
-- 网络校时采用单调时钟安排重试，成功后 1 小时，失败后 60 秒，避免整点重复与快速重试。
-- HTTP 与 MQTT 线程栈未凭推测缩小；没有物理按键、负载计量及长期耐久测试证据时，不宣称这些硬件边界已通过。
-
-网页重启与旧 `soft` 请求均先发送响应，再通过 SDK 重启；软件重启不再把打包镜像头当向量表直接跳转。
-
-## 当前统一接口补充
-
-新前端所有普通查询/设置通过 `POST /api/v1/command`，动作名见 `capabilities.get`；旧产品 HTTP 路径仅作兼容，不是新前端接口。HTTP v1 与 MQTT 的 TMCP(v2)/Legacy(v1) 独立编号。MQTT 主题、公告、版本字段和平均值结构以 [MQTT 协议约定](mqtt-account.md) 为准。
-
-A1 首页展示已绑定且新鲜的 M1 四项实时算术平均值；`sensors.average.get` 和 `binding.status.get.average` 同构。无有效采样显示破折号，不显示零值冒充数据。
-
-A1 的 `status.get.filter` 与 `filter.get` 同构：`{used_seconds,lifetime_hours,remaining_percent,replacement_due}`。额定寿命默认 4320 小时；`filter.set` 仅接受 `{lifetime_hours:整数}`，范围 1–20000，不清除计时。`filter.reset` 仅接受空参数，清零计时、保留额定寿命；成功落盘后返回 `accepted` 和更新后的滤芯状态，落盘失败返回 `storage_error` 并回滚。OTA、重启和 Wi-Fi 试连接期间返回 `busy`。这些动作只作用于当前 A1，不同步至群组。HTTP 和 MQTT 使用相同命令入口及 request_id 去重规则。
-
-计时依据风机已经施加的非零输出，精确累计秒数，不依赖网络校时或浏览器在线。百分比向上取整，耗尽后保持 0%；不超过 10% 时 `replacement_due=true`。每累计运行一小时、风机停止、正常重启/升级预留前保存；突发断电可能丢失最近不足一小时，闪存写入失败时的未保存区间可能更长（可从 `save_error` 诊断）。首次升级从零开始，网络重置保留，出厂恢复清零并恢复额定寿命默认值。旧固件无 `filter` 字段时前端隐藏卡片。
-
-日志查询使用 `logs.get`，列表字段为 `records`，游标为 `next/latest`。TC1 单插座控制仅发一个指定 index 的 `outlet.set`，全开/全关不带 index。功率接口返回 `power_watts` 和 `energy_kwh`；首页趋势是本浏览器本次打开期间最多 60 个采样点，不是持久历史。单个采样点的 SVG 坐标也必须有效。
-
-SDK 基础 Wi-Fi 扫描未提供安全类型时，网页不会推断为空密码网络；由用户显式选择开放网络，避免清除已保存的密码。
-
-## 控制反馈与通信容错
-
-开关类控件先展示目标状态并标记确认中，再下发一次设置命令。`accepted` 只代表请求已接收，必须重新查询设备状态，实读值与目标值一致后才能结束确认。确认期间，旧轮询不得覆盖目标状态；设备明确拒绝或在确认窗口内未达到目标时，恢复最近实读状态并提示未确认。不得自动重发开关命令。
-
-同一设备相同参数的在途查询由管理平台合并；状态轮询不并发叠加。一次查询失败保留上次状态，不立即判定设备离线。首页仅在连续三次失败且距最后成功至少 30 秒后提示暂时无法更新，恢复成功即清除提示。传感器是否有效仍遵循设备报告，不用放宽通信提示代替传感器有效性判断。
-
-回归：`node --test tests/test_web_control.cjs` 覆盖即时反馈、旧状态覆盖、拒绝回滚、未生效回滚和通信恢复。
-
-## A1 / M1 看门狗诊断
-
-`status.get` 新增 `reset_reason`（`watchdog` / `lockup` / `software` / `power_on` / `unknown`）、`reset_reason_raw`（SDK 原始位掩码）、`watchdog_enabled`、`watchdog_state`（`starting` / `healthy` / `fault`）、`watchdog_fault`（空字符串或故障槽名）。复位原因启动时读取一次，本次运行保持不变。
-
-诊断页按上述字段显示“看门狗与复位原因”。上次是 watchdog 复位时显示“上次因看门狗超时重启”；当前故障槽仅在等待硬件复位的短暂窗口内可读，不写 Flash。启动日志事件为 `{module:"system",event:"watchdog"}`，日志页补充对应说明。启动时重建日志，下一次上电会重新读取原因；此功能不提供持久故障历史。TC1 不发布上述字段。
-
-### A1 灯效速度与关闭倒计时
-
-`light_effect.get/set` 新增整数 `speed:1..10`，默认 `5`，影响呼吸和彩虹跑马灯。旧配置中的零值读取为 `5`；部分更新保留原速度。占用原保留字节，不移动现有 Flash 字段。
-
-A1 `capabilities.get.schedule_countdown:true` 时，`schedules.put` 可传 `{"enabled":true,"trigger":"countdown","seconds":1800,"action":"fan.set","params":{"on":false}}`。接口时长为整数 `1..86400` 秒；网页使用 1 分钟至 24 小时。不接受开机或设置风速。结果与列表返回 `seconds` 和 `remaining_seconds`，以设备单调时钟计时，不要求 NTP。禁用或删除取消计时，再次启用、编辑保存从完整时长开始；重启将活动记录置为 `cancelled`。到期先持久化停用，再执行一次关闭动作；设备忙标记 `busy`。共用原 8 项容量及固定大小存储，旧的每周/单次任务格式保留。
-
-## Firmware resources and browser LAN transport
-
-Authenticated `GET /api/v1/info` returns `model`, `device_id`, `version`, `api_version: 1`, `firmware_variant` (`full` or `no-frontend-resources`), `full_resources` and `bootstrap_ui`. Status and capabilities include the resource flags too. Official HTTPS platform origins receive explicit CORS headers, including on authentication errors; OPTIONS preflight precedes authentication and never runs a command. Other origins require an explicit build-time allowlist entry.
-
-Authenticated `GET /api/v1/memory` returns `{code:"ok",data:{free_memory,allocated_memory,free_memory_chunks,uptime_ms,memory_reserve,memory_reserved,memory_active,memory_waiting,memory_denied,minimum_sampled_free}}`. Memory sizes are bytes. The reserve is an admission target, and reserved bytes are estimates rather than additional allocated buffers. `minimum_sampled_free` is the lowest heap reading at admission/snapshot points since boot; it is not a continuous allocator watermark. `memory_denied` includes wait retries. This endpoint formats a fixed stack buffer and shares the HTTP worker, so it may be delayed under load; monitoring clients should keep one poll outstanding at a time.
-
-The embedded pages serialize command fetches through complete response bodies. Device HTTP queues retain bounded connection descriptors before body/JSON allocation. If admission fails, bodies up to 1024 bytes and bodyless queries may wait up to two seconds after dispatch; larger bodies are rejected promptly. Exhausted admission returns HTTP 503 `{code:"busy"}`. TCP capacity rejection can occur before an application response. MQTT uses four fixed reply slots with preallocated busy responses; a full queue drops excess commands while leaving the existing connection in place. Busy responses and transport failures do not trigger automatic replay of writes.
-
-Both variants retain HTTP APIs. The slim variant serves an offline setup page for Wi-Fi, MQTT and the web password; the full platform and standalone `/local/` static frontend provide full controls. Per-device LAN addresses are browser-local, scoped by node/account/device; credentials stay in page memory. LAN is selected only after authenticated model/MAC/status verification. Always-MQTT disables probing; unconfirmed LAN writes and uploads are not replayed over MQTT.
-
-Online OTA stays on `/ota/<model>/latest.json` for full resources and `/ota/<model>/no-frontend-resources/latest.json` for slim resources. Slim metadata must explicitly name the variant; old metadata without a variant is accepted only by full builds. OTA signatures retain the physical product model, and manual variant switching uses that model's signed package.
-
-### Status views
-
-TC1、A1、M1 的 `capabilities.get.status_views` 为 `["full","live"]`。`status.get` 的空参数及 `{view:"full"}` 保持完整状态；`{view:"live"}` 只构造实时传感器、控制、连接和升级状态，省略网络配置、HTTP/内存/看门狗诊断等慢字段。其他参数、类型或 view 值返回 `invalid_params`。旧的 HTTP 状态路径及 MQTT 自动上报仍使用完整状态。
-
-WebUI 首次读取完整状态；首页以 M1 1 秒、A1 2 秒、TC1 3 秒的间隔读取 live，每 30 秒更新完整状态。进入设置页面立即读取完整状态；诊断页每 5 秒、其他设置页每 10 秒刷新。网络/MQTT/设备/固件页的完整状态缓存为 10 秒。后台标签页暂停自动轮询，回到前台读取完整状态；设置成功后使完整状态缓存失效。不宣告 status_views 的旧固件继续使用完整读取。
-
-局部状态与已确认快照合并；缺失字段保留，明确的 null 覆盖旧值，SCD40 子对象逐字段合并。控制确认仍要求最新响应实际包含目标字段，不能用缓存确认操作。TC1 功率及 A1/M1 绑定状态保持独立查询，并在对应视图之外暂停。
+稳定版 0.9.27 的 JSON 结构从对应标签读取，不对 RC5 请求做自动编码回退。升级和型号 / 变体选择见[固件更新](public/firmware-update.md)。

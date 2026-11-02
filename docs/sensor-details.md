@@ -6,6 +6,8 @@ MCU 的 OP00 能力应答必须声明 sensor schema=1、种类数至少 7、块�
 
 ## HTTP / TMCP
 
+RC5 的请求和响应编码为 MessagePack，0.9.27 为 JSON。下列 JSON 片段用于展示解码后的字段结构，调用示例见[设备接口与协议](public/device-api.md)。
+
 - `POST /api/v1/command`，`{"action":"sensor_details.get","params":{}}`。
 - `GET /api/v1/sensor_details`，使用相同鉴权及服务分发。
 - `capabilities.get.actions` 中公开 `sensor_details.get`。旧 MCU 返回 `supported=false, available=false`；旧联网固件没有此 action，前端隐藏卡片。

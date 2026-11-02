@@ -7502,12 +7502,12 @@
         "en": "Publish generic numeric fields"
       },
       "description": {
-        "zh-CN": "设备以传感器数据 schema 2 发布任意字段 ID 及其名称、类型、单位、数值、有效标志和读数年龄（`name/type/unit/value/valid/age_ms`）。TC1 功率、A1 主风机生效输出、大金和 M1 的传感器读数均声明为 `number`；A1 输出为 0–100%，不是 RPM。无效数值使用 `null`，不以 0 代替。 本版传感器数据采用 schema 2、M1 显示配置采用 schema 4，不兼容 v1.0.0-rc 的对应旧接口；自定义调用方需按 RC1 协议调整，并使用配套前端。",
-        "en": "Devices publish arbitrary field IDs using sensor-data schema 2, with a name, type, unit, value, validity flag and reading age (`name/type/unit/value/valid/age_ms`). TC1 power, A1 effective main-fan output, and DAIKIN and M1 sensor readings declare `number`. A1 output is 0–100%, not RPM. Invalid values use `null` instead of a fabricated zero. Sensor data now uses schema 2 and M1 display profiles use schema 4, without compatibility with the corresponding v1.0.0-rc interfaces. Custom clients must follow the RC1 protocol and use the matching frontend."
+        "zh-CN": "设备以传感器数据 schema 2 发布任意字段 ID 及其名称、类型、单位、数值、有效标志和读数年龄（`name/type/unit/value/valid/age_ms`）。TC1 功率、A1 主风机生效输出、大金和 M1 的传感器读数均声明为 `number`；A1 输出为 0–100%，不是 RPM。无效数值使用 `null`，不以 0 代替。",
+        "en": "Devices publish arbitrary field IDs using sensor-data schema 2, with a name, type, unit, value, validity flag and reading age (`name/type/unit/value/valid/age_ms`). TC1 power, A1 effective main-fan output, and DAIKIN and M1 sensor readings declare `number`. A1 output is 0–100%, not RPM. Invalid values use `null` instead of a fabricated zero."
       },
       "ota_summary": {
-        "zh-CN": "设备以传感器数据 schema 2 发布任意字段 ID 及其名称、类型、单位、数值、有效标志和读数年龄（`name/type/unit/value/valid/age_ms`）。TC1 功率、A1 主风机生效输出、大金和 M1 的传感器读数均声明为 `number`；A1 输出为 0–100%，不是 RPM。无效数值使用 `null`，不以 0 代替。 本版传感器数据采用 schema 2、M1 显示配置采用 schema 4，不兼容 v1.0.0-rc 的对应旧接口；自定义调用方需按 RC1 协议调整，并使用配套前端。",
-        "en": "Devices publish arbitrary field IDs using sensor-data schema 2, with a name, type, unit, value, validity flag and reading age (`name/type/unit/value/valid/age_ms`). TC1 power, A1 effective main-fan output, and DAIKIN and M1 sensor readings declare `number`. A1 output is 0–100%, not RPM. Invalid values use `null` instead of a fabricated zero. Sensor data now uses schema 2 and M1 display profiles use schema 4, without compatibility with the corresponding v1.0.0-rc interfaces. Custom clients must follow the RC1 protocol and use the matching frontend."
+        "zh-CN": "设备以传感器数据 schema 2 发布任意字段 ID 及其名称、类型、单位、数值、有效标志和读数年龄（`name/type/unit/value/valid/age_ms`）。TC1 功率、A1 主风机生效输出、大金和 M1 的传感器读数均声明为 `number`；A1 输出为 0–100%，不是 RPM。无效数值使用 `null`，不以 0 代替。",
+        "en": "Devices publish arbitrary field IDs using sensor-data schema 2, with a name, type, unit, value, validity flag and reading age (`name/type/unit/value/valid/age_ms`). TC1 power, A1 effective main-fan output, and DAIKIN and M1 sensor readings declare `number`. A1 output is 0–100%, not RPM. Invalid values use `null` instead of a fabricated zero."
       },
       "summary_complete": true,
       "critical": true,
@@ -7563,10 +7563,10 @@
       },
       "translation_review": {
         "status": "approved",
-        "reviewer": "/root/public_pages",
-        "reviewed_utc": "2026-10-26T09:39:40.474241+00:00",
-        "reason": "Author reviewed both languages against the pinned schema2/schema4 contract and actual producer/consumer source. Model and variant scopes, number/null semantics, type/unit binding and old-RC migration agree. Independent review is not claimed.",
-        "reviewed_content_sha256": "5aa192caa036d93b952f9ed779f6f8d0dd81b5dfdd661a5af51673381733ab5e"
+        "reviewer": "/root",
+        "reviewed_utc": "2026-11-02T02:31:15.930613+00:00",
+        "reason": "Author reviewed both languages after removing intermediate RC compatibility guidance. Historical feature descriptions and scopes are retained.",
+        "reviewed_content_sha256": "79bd10172da0035aa5c0faa261f029b1b7f32ae3b538096aef3023f0684a1d54"
       }
     },
     {
@@ -7601,12 +7601,12 @@
         "en": "Select M1 numeric sources by device and field"
       },
       "description": {
-        "zh-CN": "M1 显示配置 schema 4 按“设备 + 字段”选择来源，不再按设备型号适配。来源设备增加数值字段后，无需新增型号映射；M1 仅接受类型和单位匹配的 `number`。缺失、无效或 `unknown` 等非数值字段不再沿用旧读数；协议保留未来类型扩展。 本版传感器数据采用 schema 2、M1 显示配置采用 schema 4，不兼容 v1.0.0-rc 的对应旧接口；自定义调用方需按 RC1 协议调整，并使用配套前端。",
-        "en": "M1 display-profile schema 4 selects a source by device and field, rather than adapting to its model. New numeric fields do not need another model mapping. M1 accepts only `number` fields matching the configured type and unit. Missing, invalid, `unknown` or other nonnumeric fields revoke the old reading; the protocol reserves future type extensions. Sensor data now uses schema 2 and M1 display profiles use schema 4, without compatibility with the corresponding v1.0.0-rc interfaces. Custom clients must follow the RC1 protocol and use the matching frontend."
+        "zh-CN": "M1 显示配置 schema 4 按“设备 + 字段”选择来源，不再按设备型号适配。来源设备增加数值字段后，无需新增型号映射；M1 仅接受类型和单位匹配的 `number`。缺失、无效或 `unknown` 等非数值字段不再沿用旧读数；协议保留未来类型扩展。",
+        "en": "M1 display-profile schema 4 selects a source by device and field, rather than adapting to its model. New numeric fields do not need another model mapping. M1 accepts only `number` fields matching the configured type and unit. Missing, invalid, `unknown` or other nonnumeric fields revoke the old reading; the protocol reserves future type extensions."
       },
       "ota_summary": {
-        "zh-CN": "M1 显示配置 schema 4 按“设备 + 字段”选择来源，不再按设备型号适配。来源设备增加数值字段后，无需新增型号映射；M1 仅接受类型和单位匹配的 `number`。缺失、无效或 `unknown` 等非数值字段不再沿用旧读数；协议保留未来类型扩展。 本版传感器数据采用 schema 2、M1 显示配置采用 schema 4，不兼容 v1.0.0-rc 的对应旧接口；自定义调用方需按 RC1 协议调整，并使用配套前端。",
-        "en": "M1 display-profile schema 4 selects a source by device and field, rather than adapting to its model. New numeric fields do not need another model mapping. M1 accepts only `number` fields matching the configured type and unit. Missing, invalid, `unknown` or other nonnumeric fields revoke the old reading; the protocol reserves future type extensions. Sensor data now uses schema 2 and M1 display profiles use schema 4, without compatibility with the corresponding v1.0.0-rc interfaces. Custom clients must follow the RC1 protocol and use the matching frontend."
+        "zh-CN": "M1 显示配置 schema 4 按“设备 + 字段”选择来源，不再按设备型号适配。来源设备增加数值字段后，无需新增型号映射；M1 仅接受类型和单位匹配的 `number`。缺失、无效或 `unknown` 等非数值字段不再沿用旧读数；协议保留未来类型扩展。",
+        "en": "M1 display-profile schema 4 selects a source by device and field, rather than adapting to its model. New numeric fields do not need another model mapping. M1 accepts only `number` fields matching the configured type and unit. Missing, invalid, `unknown` or other nonnumeric fields revoke the old reading; the protocol reserves future type extensions."
       },
       "summary_complete": true,
       "critical": false,
@@ -7644,10 +7644,10 @@
       },
       "translation_review": {
         "status": "approved",
-        "reviewer": "/root/public_pages",
-        "reviewed_utc": "2026-10-26T09:39:40.474241+00:00",
-        "reason": "Author reviewed both languages against the pinned schema2/schema4 contract and actual producer/consumer source. Model and variant scopes, number/null semantics, type/unit binding and old-RC migration agree. Independent review is not claimed.",
-        "reviewed_content_sha256": "db26b6858ec5198c21756b4f417eb5df945ddea320d665555865a3ad2446ba3b"
+        "reviewer": "/root",
+        "reviewed_utc": "2026-11-02T02:31:15.930629+00:00",
+        "reason": "Author reviewed both languages after removing intermediate RC compatibility guidance. Historical feature descriptions and scopes are retained.",
+        "reviewed_content_sha256": "6efa72b923cb475c1c1fe3f5bd78eef2226f864c9a3002bb0b2e412e98daa387"
       }
     },
     {

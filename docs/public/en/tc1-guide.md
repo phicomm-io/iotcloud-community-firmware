@@ -39,8 +39,8 @@ Make sure you can provision Wi-Fi again. Factory reset clears user settings; **a
 
 ## MQTT
 
-RC4 uses openiot MessagePack / CBOR binary business messages over HTTP, MQTT and UDP. JSON is reserved for Home Assistant. See [MQTT and automation](mqtt-link) for Home Assistant and platform configuration.
+RC5 uses openiot MessagePack binary business messages over HTTP, MQTT and UDP. JSON is reserved for Home Assistant. See [MQTT and automation](mqtt-link) for Home Assistant and platform configuration.
 
 ## Automation and updates
 
-The reissued RC5 adds local above / below power conditions for immediate or sustained triggering without MQTT or a synced clock. Weekly / date tasks still need device time. See [automation and field IDs](tc1-automation), [device features](tc1-features) and [firmware updates](firmware-update). RC4 business MQTT uses openiot binary messages; JSON is reserved for Home Assistant.
+RC5 adds local above / below power conditions for immediate or sustained triggering without MQTT or a synced clock. Weekly / date tasks still need device time. See [automation and field IDs](tc1-automation), [device features](tc1-features) and [firmware updates](firmware-update). RC5 business MQTT uses openiot binary messages; JSON is reserved for Home Assistant.

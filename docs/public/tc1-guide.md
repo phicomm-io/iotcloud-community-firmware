@@ -38,7 +38,7 @@ TC1 使用指示灯呈现连接状态。**连接正常后恢复业务指示灯�
 
 <span id="定时任务"></span>
 
-重新发布的 RC5 增加功率高于／低于阈值的立即或持续触发，使用本地总功率，不需要网络或校时；按周／按日期任务仍需要设备时间。具体参数、规则语义及供 M1 显示的 `power` 字段见 [自动化、联动与远程显示](tc1-automation)。
+RC5 增加功率高于／低于阈值的立即或持续触发，使用本地总功率，不需要网络或校时；按周／按日期任务仍需要设备时间。具体参数、规则语义及供 M1 显示的 `power` 字段见 [自动化、联动与远程显示](tc1-automation)。
 
 ### 日历定时
 
@@ -87,7 +87,7 @@ TC1 主按键保留恢复手势，在**松手时**执行：
 
 ## MQTT
 
-RC4 业务使用 `openiot` 二进制 MQTT；不提供旧 JSON 业务兼容层，JSON 仅供 Home Assistant。Home Assistant 接入与平台配置见 [MQTT 与联动](mqtt-link)。
+RC5 业务使用 `openiot` 二进制 MQTT；不提供旧 JSON 业务兼容层，JSON 仅供 Home Assistant。Home Assistant 接入与平台配置见 [MQTT 与联动](mqtt-link)。
 
 ## 升级
 

@@ -57,7 +57,7 @@ CO₂ defaults are 1500 ppm to start, 1000 ppm to idle and an 800–2000 ppm lin
 
 On A1, add each provider MAC and optional IP. Configure automatic speed range, offline speed, algorithm, debounce and minimum switching intervals, then select auto mode and turn on power. No manual A1 pairing identifier is needed on the monitor.
 
-A1 authorizes temporary sessions through the same MQTT account, prefers LAN UDP reads and can use generic MQTT measurements when LAN reads are unavailable. Existing M1 sessions remain compatible. PM2.5, formaldehyde, temperature and humidity expire after 15 seconds; CO₂ expires after 20 seconds. Replayed samples do not renew freshness. Each average includes only providers with valid data for that metric; absent data is `null`.
+A1 authorizes temporary sessions through the same MQTT account, prefers LAN UDP reads and can use generic MQTT measurements when LAN reads are unavailable.  PM2.5, formaldehyde, temperature and humidity expire after 15 seconds; CO₂ expires after 20 seconds. Replayed samples do not renew freshness. Each average includes only providers with valid data for that metric; absent data is `null`.
 
 Use updated firmware on both sides and Broker permissions for generic sensor topics. See [MQTT and automation](mqtt-link).
 
@@ -95,7 +95,7 @@ The Wi-Fi button performs recovery **on release**:
 
 A short pulse marks each full second held without changing saved lighting settings. It only indicates time; recovery never executes early. Recovery bypasses child lock. Ensure you can provision Wi-Fi again because factory reset clears user settings. A full reset is also available in the WebUI.
 
-Some original touch panels report release after about 2–3 seconds of continuous contact, preventing the longer holds above. **v1.0.0-rc.3 adds** these alternatives (unavailable in rc.2 and earlier):
+Some original touch panels report release after about 2–3 seconds of continuous contact, preventing the longer holds above. **RC5 supports** these alternatives:
 
 | Wi-Fi button gesture | Action |
 | --- | --- |

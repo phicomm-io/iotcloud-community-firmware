@@ -1,6 +1,6 @@
 # S30-V1B automation, linkage and remote display
 
-**Version requirement:** Local power rules and MQTT remote display are included in the reissued RC5. Earlier RC4 downloads do not include them.
+**Version requirement:** Local power rules and MQTT remote display are included in RC5.
 
 ## Local power automation
 
