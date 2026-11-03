@@ -35,7 +35,7 @@ static void *migration_malloc(size_t n) {
 static void migration_free(void *p) {
  assert(p&&record_allocations==1);--record_allocations;free(p);
 }
-void bl_mqtt_start(void){}
+bool bl_mqtt_start(void){return true;}
 void bl_mqtt_diagnostics(ph_writer *w){(void)w;}
 static int migration_open(lfs_t *fs,lfs_file_t *f,const char *name,int flags) {
  bool output=!strcmp(name,".phicomm.tmp");

@@ -1,6 +1,7 @@
 #include "platform_host.h"
 #include "factory_mac.h"
 #include "../protocol/httpd/http.h"
+#include "../src/memory_policy.h"
 #include <assert.h>
 #include <string.h>
 #include <stdlib.h>
@@ -17,16 +18,30 @@ uint32_t rtos_get_time(void){struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t)
 int rtos_init_mutex(beken_mutex_t *m){return pthread_mutex_init(m,NULL);}
 void rtos_lock_mutex(beken_mutex_t *m){pthread_mutex_lock(m);}
 void rtos_unlock_mutex(beken_mutex_t *m){pthread_mutex_unlock(m);}
-typedef struct {void (*fn)(beken_thread_arg_t);beken_thread_arg_t arg;} thread_start;
-static void *start_thread(void *p){thread_start s=*(thread_start*)p;free(p);s.fn(s.arg);return NULL;}
+/* The idle measurement already charges dedicated stacks. Return the deferred
+ * owner stack only while no MQTT thread owns it, including after OTA exit. */
+static size_t mqtt_stack_credit=PH_MQTT_STACK_BYTES;
+size_t ph_host_mqtt_stack_credit(void){return __atomic_load_n(&mqtt_stack_credit,__ATOMIC_SEQ_CST);}
+typedef struct {void (*fn)(beken_thread_arg_t);beken_thread_arg_t arg;bool mqtt;} thread_start;
+static void thread_cleanup(void *p){if(*(bool*)p)__atomic_store_n(&mqtt_stack_credit,PH_MQTT_STACK_BYTES,__ATOMIC_SEQ_CST);}
+static void *start_thread(void *p){
+ thread_start s=*(thread_start*)p;free(p);
+ pthread_cleanup_push(thread_cleanup,&s.mqtt);
+ s.fn(s.arg);
+ pthread_cleanup_pop(1);
+ return NULL;
+}
 int rtos_create_thread(beken_thread_t *handle,int priority,const char *name,void (*fn)(beken_thread_arg_t),int stack,beken_thread_arg_t arg){
- (void)priority;(void)name;(void)stack;pthread_t t;thread_start *s=malloc(sizeof(*s));if(!s)return -1;*s=(thread_start){fn,arg};
- int rc=pthread_create(handle?handle:&t,NULL,start_thread,s);if(rc)free(s);else pthread_detach(handle?*handle:t);return rc;
+ (void)priority;(void)stack;pthread_t t;bool mqtt=!strcmp(name,"openiot-mqtt");
+ thread_start *s=malloc(sizeof(*s));if(!s)return -1;*s=(thread_start){fn,arg,mqtt};
+ if(mqtt)__atomic_store_n(&mqtt_stack_credit,0,__ATOMIC_SEQ_CST);
+ int rc=pthread_create(handle?handle:&t,NULL,start_thread,s);
+ if(rc){free(s);if(mqtt)__atomic_store_n(&mqtt_stack_credit,PH_MQTT_STACK_BYTES,__ATOMIC_SEQ_CST);}else pthread_detach(handle?*handle:t);return rc;
 }
 void rtos_delete_thread(beken_thread_t *thread){(void)thread;pthread_exit(NULL);}
 void rtos_delay_milliseconds(unsigned ms){usleep(ms*1000u);}
 /* Measured idle DUT heap. An inherited 16 KiB MQTT reserve must fail here. */
-size_t xPortGetFreeHeapSize(void){return 13144;}
+size_t xPortGetFreeHeapSize(void){return 13144+ph_host_mqtt_stack_credit();}
 int ph_host_http_port;
 bool Main_IsOpenAccessPointMode(void){return false;}
 bool Main_IsConnectedToWiFi(void){return true;}

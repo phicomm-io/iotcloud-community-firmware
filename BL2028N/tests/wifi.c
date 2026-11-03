@@ -1,12 +1,16 @@
 /* Production scan/config state with adversarial SDK timing and byte SSIDs. */
 #include <assert.h>
 #include "../src/ph_port.c"
-void bl_mqtt_start(void){}
+static unsigned mqtt_starts;
+static bool mqtt_start_success=true,connected;
+bool bl_mqtt_start(void){++mqtt_starts;return mqtt_start_success;}
+bool __wrap_Main_IsConnectedToWiFi(void){return connected;}
 void bl_mqtt_diagnostics(ph_writer *w){(void)w;}
 static uint32_t clock_ms;
 static size_t heap_bytes=13144;
+static size_t reclaimable_cache;
 uint32_t __wrap_rtos_get_time(void){return clock_ms;}
-size_t __wrap_xPortGetFreeHeapSize(void){return heap_bytes;}
+size_t __wrap_xPortGetFreeHeapSize(void){return heap_bytes+(bl_device.status_cache?0:reclaimable_cache);}
 static unsigned starts;
 static bool probe_start;
 static void (*completion)(void *,uint8_t);
@@ -35,8 +39,17 @@ static void beacon(const unsigned char *ssid,unsigned n,int rssi){
 }
 static void scan_tests(void){
  heap_bytes=PH_SCAN_RUNNING_HEAP-1;assert(!strcmp(action("wifi.scan"),"busy"));assert(!scan_state);
- heap_bytes=13144;
+ /* Reset-device setup first builds a full status cache. The observed 10648
+  * free bytes must become admissible by reclaiming it, without lowering the
+  * station-init reserve. Truly low memory above still rejects the request. */
+ heap_bytes=10648;reclaimable_cache=PH_STATUS_CACHE_MAX;
+ bl_device.status_cache=malloc(PH_STATUS_CACHE_MAX);assert(bl_device.status_cache);
+ assert(__wrap_xPortGetFreeHeapSize()<PH_SCAN_START_HEAP);
  assert(!strcmp(action("wifi.scan"),"accepted"));
+ assert(!bl_device.status_cache&&bl_device.cache_suspended&&bl_scan_busy());
+ unsigned char status[PH_OUTPUT_MAX];
+ assert(ph_query(&bl_device,"status.get",PH_WIRE_MSGPACK,status,sizeof(status)));
+ assert(!bl_device.status_cache); /* Polling cannot steal the radio reserve. */
  scan_step(100);assert(starts==1);
  PH_BL_ScanResult(NULL,0,0);
  unsigned char malformed[40]={0};
@@ -51,9 +64,11 @@ static void scan_tests(void){
  unsigned char full[33];memset(full,'a',sizeof(full));beacon(full,33,-1);assert(scan_collect_count==20);
  beacon(full,32,-1);assert(scan_collect_count==20);
  scan_step(7100);assert(scan_state==3); /* Timeout never borrows SDK storage. */
+ assert(bl_scan_busy()&&bl_device.cache_suspended);
  assert(!strcmp(action("wifi.scan"),"busy")); /* No overlapping scan after timeout. */
  assert(completion);completion(NULL,0);scan_step(7200);
  assert(scan_state==0&&scan_count==20&&strlen(networks[0].ssid)==32&&networks[0].rssi==-1);
+ assert(!bl_scan_busy());
  assert(!strcmp(networks[1].ssid,"network-63")&&networks[1].rssi==-2);
  for(unsigned i=1;i<scan_count;++i)assert(networks[i-1].rssi>=networks[i].rssi);
  unsigned saved=scan_count;beacon((unsigned char*)"too-late",8,0);assert(scan_count==saved);completion(NULL,0);assert(scan_count==saved);
@@ -62,8 +77,10 @@ static void scan_tests(void){
  const unsigned char empty=0x80;ph_value p;assert(phv_parse(PH_WIRE_MSGPACK,&empty,1,&p));
  assert(!strcmp(platform_action(NULL,"wifi.scan.get",&p,&w,false),"ok"));phw_end(&w);
  size_t n=phw_finish_fixed(&w);assert(n&&phv_parse(PH_WIRE_MSGPACK,out,n,&p));
+ heap_bytes=PH_SCAN_START_HEAP+PH_STATUS_CACHE_MAX+64u;reclaimable_cache=0;
  probe_start=true;assert(!strcmp(action("wifi.scan"),"accepted"));scan_step(7300);
  assert(!scan_count&&!scan_collect_count);completion(NULL,0);scan_step(7400);assert(starts==2&&!scan_count);
+ assert(!bl_device.cache_suspended); /* Resume only with safe cache headroom. */
  puts("PASS: borrowed scan frames are copied into a bounded strongest-20 UTF-8 metadata list; invalid IE/SSID lengths rejected; no supplicant storage touched on timeout/completion; scan start leaves product mutex available");
 }
 static void config_test(void){
@@ -76,4 +93,26 @@ static void config_test(void){
  assert(!strcmp(CFG_GetWiFiSSID(),"test-network")&&!strcmp(CFG_GetWiFiPass(),"test-password"));
  puts("PASS: slow native config save completes before the reboot response grace starts");
 }
-int main(void){assert(!rtos_init_mutex(&mutex));scan_tests();config_test();}
+static void mqtt_start_test(void){
+ heap_bytes=PH_MQTT_START_HEAP;
+ CFG_SetMQTTHost("");connected=false;mqtt_step(0);assert(!mqtt_starts);
+ CFG_SetMQTTHost("broker.example");mqtt_step(100);assert(!mqtt_starts);
+ connected=true;bl_ota_pending=true;mqtt_step(200);assert(!mqtt_starts);
+ bl_ota_pending=false;scan_state=1;mqtt_step(250);assert(!mqtt_starts);scan_state=0;
+ heap_bytes=PH_MQTT_START_HEAP-1;mqtt_step(275);assert(!mqtt_starts);
+ heap_bytes=PH_MQTT_START_HEAP;
+ mqtt_start_success=false;mqtt_step(300);assert(mqtt_starts==1&&!mqtt_started);
+ mqtt_step(5299);assert(mqtt_starts==1); /* Bounded retry after allocation failure. */
+ mqtt_start_success=true;mqtt_step(5300);assert(mqtt_starts==2&&mqtt_started);
+ mqtt_step(10300);assert(mqtt_starts==2); /* Exactly one successful owner. */
+ bl_mqtt_stopped();assert(!mqtt_started);
+ mqtt_step(10301);assert(mqtt_starts==3&&mqtt_started); /* Restart after OTA cleanup. */
+ CFG_SetMQTTHost("");connected=false;heap_bytes=13144;
+ puts("PASS: MQTT owner stack is deferred until Wi-Fi, broker config and heap are ready; OTA/scan block startup; failed allocation retries after 5s without duplicate owners");
+}
+int main(void){
+ assert(!rtos_init_mutex(&mutex));
+ ph_device_ops ops={.now=now,.save=save,.relay=set_relay};
+ assert(ph_device_init(&bl_device,&ops,NULL,"aabbccddeeff","wifi-test",123));
+ mqtt_start_test();scan_tests();config_test();ph_status_cache_release(&bl_device);
+}

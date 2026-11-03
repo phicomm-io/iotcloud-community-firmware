@@ -33,7 +33,7 @@ static void workspace_release(void *unused) {(void)unused;}
 static void cache_budget(void) {
  bool pending=ph_mqtt_receipt_pending();
  bl_lock();
- if(pending)ph_status_cache_suspend(&bl_device,true);
+ if(pending||bl_scan_busy())ph_status_cache_suspend(&bl_device,true);
  else ph_status_cache_budget(&bl_device,ph_os_free_heap(),SERVICE_MEMORY_RESERVE+PH_OUTPUT_MAX+32u);
  bl_unlock();
 }
@@ -239,20 +239,27 @@ static void event(void *unused,unsigned state,int rc) {
  else if(state!=PH_MQTT_STOPPED||(bl_mqtt_status!=MQTT_WAITING_ACL&&bl_mqtt_status!=MQTT_AUTH_FAILED))bl_mqtt_status=MQTT_DISCONNECTED;
  if(state==PH_MQTT_STOPPED)bl_mqtt_quiescent=true;bl_unlock();
 }
+static bool owner_stop(void *unused) {
+ (void)unused;
+ /* An MQTT ota.start must deliver its captured receipt before teardown. */
+ if(ph_mqtt_receipt_pending())return false;
+ bl_lock();bool stop=bl_ota_pending||!*CFG_GetMQTTHost();bl_unlock();return stop;
+}
 static void owner(beken_thread_arg_t arg) {
  unsigned char storage[PH_OUTPUT_MAX];workspace=storage;
  PH_BOOT_STAGE("mqtt-thread");
- if(!ph_mqtt_startup_wait(&startup,(uint32_t)arg)||!ph_mqtt_owner_init(&account,PH_INPUT_MAX,&owner_thread,accept_message)){rtos_delete_thread(NULL);return;}
+ if(!ph_mqtt_startup_wait(&startup,(uint32_t)arg)||!ph_mqtt_owner_init(&account,PH_INPUT_MAX,&owner_thread,accept_message)){bl_mqtt_stopped();rtos_delete_thread(NULL);return;}
  ph_os_store(&initialized,true);
  PH_BOOT_STAGE("mqtt-initialized");
- ph_mqtt_session_hooks hooks={NULL,prepare,subscription,initial,publish_cycle,closing,event,NULL,initial_ready,session_valid};
- ph_mqtt_session_run(&client,&hooks);ph_mqtt_owner_end();rtos_delete_thread(NULL);
+ ph_mqtt_session_hooks hooks={NULL,prepare,subscription,initial,publish_cycle,closing,event,owner_stop,initial_ready,session_valid};
+ ph_mqtt_session_run(&client,&hooks);ph_mqtt_owner_end();workspace=NULL;bl_mqtt_stopped();rtos_delete_thread(NULL);
 }
-void bl_mqtt_start(void) {
+bool bl_mqtt_start(void) {
  uint32_t generation=ph_mqtt_startup_prepare(&startup);
- int rc=rtos_create_thread(&owner_thread,BEKEN_APPLICATION_PRIORITY,"openiot-mqtt",owner,16384,(beken_thread_arg_t)generation);
+ int rc=rtos_create_thread(&owner_thread,BEKEN_APPLICATION_PRIORITY,"openiot-mqtt",owner,PH_MQTT_STACK_BYTES,(beken_thread_arg_t)generation);
  PH_BOOT_RESULT("mqtt-created",rc);
  ph_mqtt_startup_publish(&startup,generation,rc==0);
+ return rc==0;
 }
 void bl_mqtt_diagnostics(ph_writer *w) {
  ph_mqtt_diagnostics d={0};if(ph_os_load(&initialized))ph_mqtt_snapshot(&d);

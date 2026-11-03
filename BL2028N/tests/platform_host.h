@@ -18,6 +18,7 @@ extern lfs_t lfs;
 extern char store_dir[1024];
 extern int mqtt_port;
 bool Main_IsConnectedToWiFi(void);
+size_t ph_host_mqtt_stack_credit(void);
 bool Main_IsOpenAccessPointMode(void);
 const char *HAL_GetMyIPString(void);
 int HAL_GetWifiStrength(void);

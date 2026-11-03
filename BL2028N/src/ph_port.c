@@ -84,6 +84,8 @@ static unsigned char udp_in[PH_INPUT_MAX+1],udp_out[PH_OUTPUT_MAX];
 #endif
 static int udp_fd=-1;
 static volatile unsigned scan_state;
+static bool mqtt_started,mqtt_attempted;
+static uint32_t mqtt_attempt_at;
 static unsigned scan_count,scan_collect_count;
 static uint32_t scan_at;
 static bool safe_boot;
@@ -370,6 +372,7 @@ void PH_BL_Tick(void) {
 static bool get_text(const ph_value *p,const char *key,char *out,size_t cap) {
  ph_value v;return phv_get(p,key,&v)&&phv_text(&v,out,cap);
 }
+bool bl_scan_busy(void) {return scan_state!=0;}
 static const char *platform_action(void *unused,const char *action,const ph_value *p,ph_writer *w,bool admin) {
  (void)unused;ph_value values,v;char section[24],a[128]={0},b[128]={0},c[128]={0};int64_t port;
  bool restart_after_save=false;
@@ -389,8 +392,15 @@ static const char *platform_action(void *unused,const char *action,const ph_valu
    * than overlap requests or free storage still owned by the SDK. */
   if(scan_state==3)return "busy";
   size_t start_heap=Main_IsConnectedToWiFi()?PH_SCAN_RUNNING_HEAP:PH_SCAN_START_HEAP;
-  if(!scan_state&&xPortGetFreeHeapSize()<start_heap)return "busy";
-  if(!scan_state){scan_state=1;scan_count=scan_collect_count=0;}return "accepted";
+  if(!scan_state) {
+   /* Setup reads status before scanning. Reclaim that optional cache before
+    * admitting station initialization, and keep it suspended until the SDK
+    * has finished using scan memory (including after a timeout). */
+   ph_status_cache_suspend(&bl_device,true);
+   if(xPortGetFreeHeapSize()<start_heap)return "busy";
+   scan_state=1;scan_count=scan_collect_count=0;
+  }
+  return "accepted";
  }
  if(!strcmp(action,"system.reset")) {
   bool full=false;
@@ -467,6 +477,7 @@ void PH_BL_ScanCompleted(void *context,uint8_t param) {
   for(unsigned i=0;i<scan_collect_count;++i)for(unsigned j=i+1;j<scan_collect_count;++j)
    if(networks[j].rssi>networks[i].rssi){scan_network tmp=networks[i];networks[i]=networks[j];networks[j]=tmp;}
   scan_count=scan_collect_count;scan_state=0;
+  ph_status_cache_budget(&bl_device,xPortGetFreeHeapSize(),PH_SERVICE_MEMORY_RESERVE+PH_OUTPUT_MAX+32u);
  }
  unlock();
 }
@@ -512,12 +523,27 @@ static __attribute__((noinline)) bool factory_reset_record(void) {
  credential_owned=false;memset(committed_password,0,sizeof(committed_password));
  bl_device.settings=defaults;set_relay(NULL,false);return true;
 }
+void bl_mqtt_stopped(void) {lock();mqtt_started=false;unlock();}
+static void mqtt_step(uint32_t t) {
+ /* An unconfigured AP has no broker work. Leave the 16 KiB owner stack
+  * available to setup scans, page transfers and OTA until it is useful. */
+ lock();
+ bool start=!mqtt_started&&(!mqtt_attempted||(uint32_t)(t-mqtt_attempt_at)>=5000u)&&
+  !bl_ota_pending&&!bl_scan_busy()&&Main_IsConnectedToWiFi()&&*CFG_GetMQTTHost();
+ if(start) {
+  ph_status_cache_suspend(&bl_device,true);
+  start=xPortGetFreeHeapSize()>=PH_MQTT_START_HEAP;
+ }
+ if(start){mqtt_started=true;mqtt_attempted=true;mqtt_attempt_at=t;}
+ unlock();
+ if(start&&!bl_mqtt_start())bl_mqtt_stopped();
+}
 static void network_thread(beken_thread_arg_t arg) {
  (void)arg;
  PH_BOOT_STAGE("lan-thread");
  for(;;) {
   uint32_t t=now(NULL);unsigned reset=0;char url[128]="";bool restart=false;
-  scan_step(t);lock();
+  scan_step(t);mqtt_step(t);lock();
   if(!bl_ota_pending&&(int32_t)(t-reboot_at)>=0) {
    restart=reboot_pending;reset=reset_requested;reset_requested=0;
   }
@@ -640,6 +666,5 @@ void PH_BL_Init(int safe_mode) {
  result=rtos_create_thread(NULL,BEKEN_APPLICATION_PRIORITY,"openiot-lan",network_thread,16384,0);
  PH_BOOT_RESULT("lan-created",result);
  if(result){bl_ready=false;set_relay(NULL,false);return;}
- bl_mqtt_start();
  PH_BOOT_STAGE("product-ready");
 }

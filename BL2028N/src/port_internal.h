@@ -18,7 +18,10 @@ extern unsigned bl_mqtt_status;
 extern bool bl_ota_pending, bl_mqtt_quiescent;
 void bl_lock(void);
 void bl_unlock(void);
-void bl_mqtt_start(void);
+/* Caller holds bl_lock; includes a timed-out scan still owned by the SDK. */
+bool bl_scan_busy(void);
+bool bl_mqtt_start(void);
+void bl_mqtt_stopped(void);
 void bl_mqtt_diagnostics(ph_writer *);
 /* Broker adapter only; caller holds bl_lock and supplies the validated boot. */
 bool bl_sensor_grant(const char *peer,const char *token,uint32_t boot);

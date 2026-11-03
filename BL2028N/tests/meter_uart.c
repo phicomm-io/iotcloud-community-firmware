@@ -2,7 +2,7 @@
 #include <assert.h>
 #include <math.h>
 #include "../src/ph_port.c"
-void bl_mqtt_start(void){}
+bool bl_mqtt_start(void){return true;}
 void bl_mqtt_diagnostics(ph_writer *w){(void)w;}
 static void u24(unsigned char *out,unsigned value){out[0]=value>>16;out[1]=value>>8;out[2]=value;}
 int main(int argc,char **argv){

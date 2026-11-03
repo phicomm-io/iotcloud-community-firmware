@@ -36,7 +36,7 @@ static size_t available(void) {
  if(bl_mqtt_status==MQTT_READY)connected_budget=true;
  /* Ambient low heap stays low across reconnect; releasing Paho/cache blocks
   * is what restores free bytes, not changing the logical connection state. */
- size_t budget=(connected_budget?idle+2u*charge(512)+charge(PH_STATUS_CACHE_MAX):13144u)+layout_credit;
+ size_t budget=(connected_budget?idle+2u*charge(512)+charge(PH_STATUS_CACHE_MAX):13144u)+layout_credit+ph_host_mqtt_stack_credit();
  unsigned now=ph_os_now();size_t pressure=(uint32_t)(now-pressure_at)<pressure_ms?pressure_left:0;
  size_t used=live+pressure,result=budget>used?budget-used:0;
  if(result<minimum)minimum=result;return result;

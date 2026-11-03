@@ -41,7 +41,7 @@ void __wrap_free(void *p){
  }
  __real_free(p);
 }
-void bl_mqtt_start(void){}
+bool bl_mqtt_start(void){return true;}
 void bl_mqtt_diagnostics(ph_writer *w){(void)w;}
 int __wrap_rtos_create_thread(beken_thread_t *t,int priority,const char *name,
  void (*fn)(beken_thread_arg_t),int stack,beken_thread_arg_t arg){
