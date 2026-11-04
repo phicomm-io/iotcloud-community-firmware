@@ -131,6 +131,33 @@ static bool reset_frame(reset_receipt_t *receipt,const uint8_t frame[20])
     return true;
 }
 
+/* NTP success only queues a command; the stock RTC may not be ready yet.
+ * Keep recovery independent of network availability and FIFO pressure. */
+static void screen_clock_sync(uint32_t now, bool force)
+{
+    static uint32_t next;
+    static bool attempted;
+    if (!force && attempted && (int32_t)(now - next) < 0) return;
+    mico_rtos_lock_mutex(&m1_lock);
+    bool ready = m1_state.ntp_synced && !m1_state.mcu_updating &&
+        !m1_state.ota_active && !m1_state.reboot_pending;
+    mico_rtos_unlock_mutex(&m1_lock);
+    if (!ready) return;
+    mico_utc_time_ms_t utc;
+    if (mico_time_get_utc_time_ms(&utc) != kNoErr || utc / 1000 < 1577836800u) return;
+    m1_config_t cfg;
+    m1_config_get(&cfg);
+    time_t local = (time_t)(utc / 1000) + cfg.timezone_minutes * 60;
+    struct tm t;
+    if (!gmtime_r(&local, &t) || t.tm_year < 120 || t.tm_year > 199) return;
+    uint8_t frame[12];
+    m1_clock_frame(frame, t.tm_year + 1900, t.tm_mon + 1, t.tm_mday,
+                   t.tm_hour, t.tm_min, t.tm_sec);
+    bool sent = transmit(frame);
+    attempted = true;
+    next = now + (sent ? 60000u : 1000u);
+}
+
 /* Outside the FIFO: retry persisted configuration even under queue pressure.
  * Successful send is not acknowledgement from the stock controller. */
 static void alarm_sync(void)
@@ -219,6 +246,7 @@ static void uart_worker(mico_thread_arg_t arg)
         uint32_t now = mico_rtos_get_time();
         m1_mcu_tick();
         mico_rtos_lock_mutex(&m1_lock);bool mcu_updating=m1_state.mcu_updating;mico_rtos_unlock_mutex(&m1_lock);
+        screen_clock_sync(now, false);
         if (!mcu_updating && (int32_t)(now - next_query) >= 0) {
             m1_query_frame(frame); transmit(frame); next_query = now + M1_POLL_MS;
         }
@@ -279,6 +307,9 @@ static void uart_worker(mico_thread_arg_t arg)
                     m1_state.brightness_requested = command.level;
                     mico_rtos_unlock_mutex(&m1_lock);
                 }
+            } else if (command.kind == 3) {
+                /* A queued timestamp can age while the MCU is updating. */
+                screen_clock_sync(now, true);
             } else transmit(command.frame);
         }
         /* Bounded receive work: noise cannot starve queries or queued commands. */
@@ -286,7 +317,10 @@ static void uart_worker(mico_thread_arg_t arg)
             uint8_t byte;
             if (MicoUartRecv(MICO_UART_1, &byte, 1, i ? 0 : 10) != kNoErr) break;
             if (!m1_decode_byte(&decoder, byte, frame)) continue;
-            if(frame[1]==0x17){version_attempts=0;next_version=mico_rtos_get_time();}
+            if(frame[1]==0x17){
+                version_attempts=0;next_version=mico_rtos_get_time();
+                screen_clock_sync(next_version, true);
+            }
             if(m1_button_rx(frame))continue;
             if(m1_mcu_rx(frame))continue;
             if(reset_frame(&reset_receipt,frame))continue;
