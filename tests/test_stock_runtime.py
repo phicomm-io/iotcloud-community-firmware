@@ -177,6 +177,8 @@ static int queue_pop(mico_queue_t *q,void *p,unsigned timeout){(void)q;(void)tim
 #define mico_rtos_pop_from_queue queue_pop
 void m1_barometer_tick(void){}
 void m1_scd40_tick(void);
+typedef uint64_t mico_utc_time_ms_t;
+static int mico_time_get_utc_time_ms(mico_utc_time_ms_t *utc){*utc=1704067200000ULL+now;return kNoErr;}
 #include "M1/uart.c"
 #include "M1/mcu.c"
 #include "M1/co2_source.c"
