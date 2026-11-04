@@ -66,7 +66,9 @@ In another terminal run `mosquitto -c broker.conf -v` as the current user. Set `
 
 ### Run the local installation tool
 
-Use [s30_stock_ota.py](https://github.com/phicomm-io/iotcloud-community-firmware/blob/v1.0.0-rc.5/tools/s30_stock_ota.py), reviewed alongside the candidate firmware. The computer, stock device and broker IPv4 addresses must be mutually reachable. Allow TCP `15683` for HTTPS CGW, `8080` for the firmware download, and the broker's selected port. Certificates must include their service IP; `--mqtt-ca` verifies the broker certificate on the computer.
+Use [s30_stock_ota.py](https://github.com/phicomm-io/iotcloud-community-firmware/blob/main/tools/s30_stock_ota.py), with corrected HTTP port handling and stock HTTPS response writes. The computer, stock device and broker IPv4 addresses must be mutually reachable. Allow TCP `15683` for HTTPS CGW, `80` for the firmware download, and the broker's selected port. Certificates must include their service IP; `--mqtt-ca` verifies the broker certificate on the computer.
+
+The stock downloader requires ordinary HTTP **port 80**. Write the URL as `http://computer-IP/s30.rbl`, with no explicit `:80` or other port. Port 80 must be available for the tool to listen on. HTTPS CGW and TLS MQTT keep their separate ports.
 
 Prepare two private JSON files with mode `600`; do not commit or publish them:
 
@@ -80,20 +82,29 @@ Prepare two private JSON files with mode `600`; do not commit or publish them:
 
 MQTT usernames and passwords must each be 1–31 bytes. Use short addresses and dedicated test credentials.
 
+On Linux, create a Python environment and run the tool with permission to bind port 80:
+
+```sh
+python3 -m venv .venv
+.venv/bin/python -m pip install paho-mqtt==2.1.0
+```
+
 Download the matching RBL and `SHA256SUMS-S30`, verify them, and replace every placeholder:
 
 ```sh
 mkdir -p tools
-curl --fail --location https://raw.githubusercontent.com/phicomm-io/iotcloud-community-firmware/v1.0.0-rc.5/tools/s30_stock_ota.py -o tools/s30_stock_ota.py
+curl --fail --location https://raw.githubusercontent.com/phicomm-io/iotcloud-community-firmware/main/tools/s30_stock_ota.py -o tools/s30_stock_ota.py
 chmod 600 wifi.private.json mqtt.private.json
 grep "  BL2028N_OTA_1.0.0-rc.5.rbl$" SHA256SUMS-S30 | sha256sum -c -
-python3 tools/s30_stock_ota.py \
+sudo .venv/bin/python tools/s30_stock_ota.py \
   --device <stock-device-IP> --device-id <this-unit-12-digit-factory-MAC> \
   --host <computer-LAN-IP> \
   --wifi-file wifi.private.json --mqtt-file mqtt.private.json \
   --mqtt-ca gateway-cert.pem --cert gateway-cert.pem --key gateway-key.pem \
   --rbl 'BL2028N_OTA_1.0.0-rc.5.rbl' --sha256 <published-file-SHA256>
 ```
+
+For an unconfigured stock unit, enter its `CMQLINK-590513-XXXX` AP. Reserve a target LAN IP for its factory **STA MAC** on the router and use that IP for `--device`. Connect the computer Wi-Fi to the stock AP while another interface keeps `--host` reachable on the target LAN; add `--provision-address 192.168.188.1`. The factory STA MAC differs from the AP BSSID. Set `wifi.private.json` to the 2.4 GHz network on this LAN.
 
 The tool configures local HTTPS CGW using CoAP `/qlink/netinfo`. Stock firmware retrieves the temporary TLS MQTT connection over HTTPS, receives an AndLink file command, and downloads the RBL.
 
@@ -104,7 +115,9 @@ The tool configures local HTTPS CGW using CoAP `/qlink/netinfo`. Stock firmware 
 3. Open the assigned LAN IP. Confirm `iotcloud · S30-V1B`, the selected version, outlet control and metering. An unset administration password must not trigger login.
 4. Stop the dedicated test broker and remove temporary certificates and credentials. Computer services are no longer needed; future upgrades use the community URL OTA interface.
 
-If no download or community AP appears, retain the tool errors and follow the UART backup/recovery procedure below.
+If MQTT reports `File` but no HTTP request arrives, check that the firmware URL omits the port and port 80 is reachable. An invalid URL can leave this stock firmware busy for about 10 minutes; keep power connected and wait before trying again. If CoAP has no reply, check for HTTPS bootstrap, boot, dmReport and MQTT activity before provisioning again. If the stock provisioning interface has stopped responding, re-enter the stock AP before running the tool. Do not reset during firmware download or installation.
+
+If the community AP is missing from a scan after startup, disconnect the computer Wi-Fi and scan again. If no download or community AP appears, retain the errors and follow the UART backup/recovery procedure below.
 
 ## Disassembly and UART
 

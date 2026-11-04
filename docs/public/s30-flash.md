@@ -66,7 +66,9 @@ persistence false
 
 ### 运行本地安装工具
 
-使用与候选固件一起审查的 [s30_stock_ota.py 工具](https://github.com/phicomm-io/iotcloud-community-firmware/blob/v1.0.0-rc.5/tools/s30_stock_ota.py)。本机、目标设备与临时 broker 的 IPv4 地址必须相互可达；放行本机 TCP `15683`（HTTPS CGW）、`8080`（固件 HTTP）及所选 broker 端口。证书须包含服务 IP，临时 broker 使用其对应证书，电脑用 `--mqtt-ca` 校验证书。
+使用已修正端口和原厂 HTTPS 回包方式的 [s30_stock_ota.py 工具](https://github.com/phicomm-io/iotcloud-community-firmware/blob/main/tools/s30_stock_ota.py)。本机、目标设备与临时 broker 的 IPv4 地址必须相互可达；放行本机 TCP `15683`（HTTPS CGW）、`80`（固件 HTTP）及所选 broker 端口。证书须包含服务 IP，临时 broker 使用其对应证书，电脑用 `--mqtt-ca` 校验证书。
+
+原厂下载器使用普通 HTTP **80 端口**，URL 写作 `http://电脑IP/s30.rbl`，不写 `:80` 或其他显式端口。电脑的 80 端口需空闲；工具会在本机监听该端口。HTTPS CGW 和 TLS MQTT 仍使用各自的端口。
 
 准备两个权限为 `600` 的私有 JSON 文件，不要提交到 Git 或公开：
 
@@ -80,20 +82,29 @@ persistence false
 
 MQTT 用户名、密码各限 1–31 字节，使用短地址和专用测试账号。
 
+Linux 示例使用独立 Python 环境，并以有权绑定 80 端口的用户运行工具：
+
+```sh
+python3 -m venv .venv
+.venv/bin/python -m pip install paho-mqtt==2.1.0
+```
+
 取得对应 `.rbl` 与 `SHA256SUMS-S30`，先校验，随后运行；替换全部占位符：
 
 ```sh
 mkdir -p tools
-curl --fail --location https://raw.githubusercontent.com/phicomm-io/iotcloud-community-firmware/v1.0.0-rc.5/tools/s30_stock_ota.py -o tools/s30_stock_ota.py
+curl --fail --location https://raw.githubusercontent.com/phicomm-io/iotcloud-community-firmware/main/tools/s30_stock_ota.py -o tools/s30_stock_ota.py
 chmod 600 wifi.private.json mqtt.private.json
 grep "  BL2028N_OTA_1.0.0-rc.5.rbl$" SHA256SUMS-S30 | sha256sum -c -
-python3 tools/s30_stock_ota.py \
+sudo .venv/bin/python tools/s30_stock_ota.py \
   --device <原厂设备IP> --device-id <本机12位工厂MAC> \
   --host <电脑局域网IP> \
   --wifi-file wifi.private.json --mqtt-file mqtt.private.json \
   --mqtt-ca gateway-cert.pem --cert gateway-cert.pem --key gateway-key.pem \
   --rbl 'BL2028N_OTA_1.0.0-rc.5.rbl' --sha256 <该文件公布的SHA256>
 ```
+
+原厂尚未配网时，先进入 `CMQLINK-590513-XXXX` 热点。为该设备的工厂 **STA MAC** 在目标路由器预留 IP，将其填入 `--device`；电脑用 Wi-Fi 连接原厂热点，同时通过另一网口保持 `--host` 地址可达，并在命令中加 `--provision-address 192.168.188.1`。工厂 STA MAC 与热点 BSSID 不同，不能直接照抄 BSSID。`wifi.private.json` 填安装时要使用的同一局域网 2.4 GHz 网络。
 
 工具通过 CoAP `/qlink/netinfo` 配置本地 HTTPS CGW，原厂设备经 HTTPS 获取临时 TLS MQTT 连接，再接收 AndLink 文件命令并下载 RBL。
 
@@ -104,7 +115,9 @@ python3 tools/s30_stock_ota.py \
 3. 设备联网后打开其新 IP，确认首页为 `iotcloud · S30-V1B`、版本与所选包一致，检查开关和计量。未设管理密码时直接进入，不应弹出登录框。
 4. 确认后停止专用测试 broker，删除临时证书和账号文件。无需保留电脑服务；后续升级使用社区网页的 URL OTA。
 
-若一直没有下载或社区热点，保留工具错误记录，按下文串口备份／恢复路径排查。
+若收到 MQTT `File` 回执却没有 HTTP 请求，先检查固件 URL 是否省略端口、80 端口是否可达。错误 URL 可能使本次原厂程序保持约 10 分钟的“升级忙”状态；保持供电，等待超时后再操作。CoAP 无回包时先查看是否已有 HTTPS bootstrap、boot、dmReport 和 MQTT 连接，避免重复配网。原厂接口已停止响应时，重新进入原厂配网热点后再运行；固件下载、安装期间不要重置设备。
+
+设备启动后若扫描不到社区热点，可让电脑断开当前 Wi-Fi 后重新扫描。仍无下载或社区热点时，保留错误记录，按下文串口备份／恢复路径排查。
 
 ## 拆机串口方式
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """S30-V1B 2M.1220: local CoAP/HTTPS/TLS-MQTT first installation.
 
-Requires an already networked stock unit, a dedicated TLS MQTT broker, openssl
+Requires a known target LAN IP, a dedicated TLS MQTT broker, openssl
 and paho-mqtt. No serial port, DNS interception or buffer overflow is used.
 An HTTP download proves delivery, not successful installation: confirm the new
 S30M_V1B_ hotspot and the community version in the browser afterwards.
@@ -65,11 +65,11 @@ def gateway_handler(device, reply):
             self.connection.settimeout(12)
             if len(self.rfile.read(length))!=length:
                 self.close_connection=True;return
-            self.send_response(200)
-            self.send_header('Content-Type','application/json')
-            self.send_header('Content-Length',str(len(reply)))
-            self.send_header('Connection','keep-alive')
-            self.end_headers();self.wfile.write(reply);self.wfile.flush()
+            # Keep headers and JSON in one TLS write, as used by the stock client.
+            self.connection.sendall(b'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n'
+                +b'Content-Length: '+str(len(reply)).encode()
+                +b'\r\nConnection: keep-alive\r\n\r\n'+reply)
+            print('Stock HTTPS: '+self.path,flush=True)
 
         def log_message(self,*args):pass
     return Gateway
@@ -92,7 +92,7 @@ def artifact_handler(device, data, downloaded):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--device',required=True,help='Already networked stock device IPv4 address')
+    p.add_argument('--device',required=True,help='Stock device target LAN IPv4 (reserve it before AP provisioning)')
     p.add_argument('--host',required=True,help='This computer IPv4 address reachable by the device')
     p.add_argument('--device-id',required=True,help='This unit factory MAC, 12 hexadecimal digits')
     p.add_argument('--wifi-file',type=Path,required=True,help='Private JSON: ssid/password')
@@ -103,10 +103,13 @@ def main():
     p.add_argument('--rbl',type=Path,required=True)
     p.add_argument('--sha256',required=True)
     p.add_argument('--https-port',type=int,default=15683)
-    p.add_argument('--http-port',type=int,default=8080)
+    p.add_argument('--http-port',type=int,choices=[80],default=80,
+                   help='Stock downloader requires port 80; omit the port in the URL')
+    p.add_argument('--provision-address',help='CoAP destination, e.g. 192.168.188.1 while connected to the stock AP')
     p.add_argument('--timeout',type=int,default=240)
     args=p.parse_args()
     device=str(ipaddress.IPv4Address(args.device));host=str(ipaddress.IPv4Address(args.host))
+    provision=str(ipaddress.IPv4Address(args.provision_address or device))
     identity=bytes.fromhex(args.device_id)
     if len(identity)!=6 or identity[0]&1 or not any(identity[3:]):
         p.error('Use the valid factory MAC of this unit')
@@ -124,7 +127,7 @@ def main():
                         'CGW':{'gwAddress2':f'https://{host}:{args.https_port}','user_key':secrets.token_hex(4)}},separators=(',',':')).encode()
     value={'respCode':1,'respCont':'SUCCESS','deviceId':identity.hex(),
            'mqttUrl':mqtt_url,'mqttUser':broker['username'],'mqttPassword':broker['password'],
-           'mqttClientId':'s30-install','mqttKeepalive':60,'timestamp':int(time.time()*1000)}
+           'mqttClientId':'s30-'+identity.hex(),'mqttKeepalive':60,'timestamp':int(time.time()*1000)}
     value.update({key:secrets.token_hex(4) for key in ['andlinkToken','gwToken','deviceToken','dmToken']})
     context=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.set_ciphers('DEFAULT:@SECLEVEL=0')
@@ -134,10 +137,10 @@ def main():
     downloaded=threading.Event()
     http=Server((host,args.http_port),artifact_handler(device,raw,downloaded))
     from paho.mqtt import client as mqtt
-    client=mqtt.Client(client_id='iotcloud-s30-flash',protocol=mqtt.MQTTv311)
+    client=mqtt.Client(client_id='iotcloud-s30-flash-'+identity.hex(),protocol=mqtt.MQTTv311)
     client.username_pw_set(broker['username'],broker['password'])
     client.tls_set(ca_certs=str(args.mqtt_ca))
-    topic='/device/s30-install/downward'
+    topic='/device/s30-'+identity.hex()+'/downward'
     connected=threading.Event()
     def on_connect(client,userdata,flags,rc):
         if rc==0:connected.set()
@@ -146,13 +149,13 @@ def main():
         for server in [gateway,http]:threading.Thread(target=server.serve_forever,daemon=True).start()
         client.connect(broker_host,port,60);client.loop_start()
         if not connected.wait(10):raise TimeoutError('Test TLS broker connection failed')
-        command=json.dumps({'function':'file','fileMode':0,'fileUrl':f'http://{host}:{args.http_port}/s30.rbl'},separators=(',',':')).encode()+b'\0'
+        command=json.dumps({'function':'file','fileMode':0,'fileUrl':f'http://{host}/s30.rbl'},separators=(',',':')).encode()+b'\0'
         client.publish(topic,command,qos=1,retain=True).wait_for_publish(timeout=10)
         with socket.socket(socket.AF_INET,socket.SOCK_DGRAM) as udp:
-            udp.settimeout(4);udp.sendto(coap_request(payload),(device,5683))
+            udp.settimeout(4);udp.sendto(coap_request(payload),(provision,5683))
             try:
                 response,peer=udp.recvfrom(2048)
-                if peer[0]!=device or len(response)<4 or response[1]>>5!=2:
+                if peer[0]!=provision or len(response)<4 or response[1]>>5!=2:
                     raise ValueError('Stock provisioning rejected')
             except TimeoutError:
                 print('No CoAP reply; waiting for the stock network download.',flush=True)
