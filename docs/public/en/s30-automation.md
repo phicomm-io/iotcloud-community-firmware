@@ -1,6 +1,14 @@
 # S30-V1B automation, linkage and remote display
 
-**Version requirement:** Local power rules and MQTT remote display are included in RC5.
+**Version requirement:** RC5 includes local power rules and MQTT remote display. Weekly / once schedules and Clock settings are subsequent main features that require new firmware containing this fix; published RC5 packages do not include calendar schedules.
+
+## Socket automation
+
+TC1 and S30-V1B use the same weekly, once and power triggers and `schedules.*` interface. Weekly / once schedules support outlet control, child lock, indicator and reboot; power rules support outlet control. TC1 can select one or all outlets; S30-V1B has one outlet.
+
+Set the time zone and NTP server in Settings → Clock and confirm synchronization, then select a weekly pattern or a single date and time in Settings → Schedules. Single dates use the device time zone. S30-V1B stores up to eight time rules and eight power rules together, with edit, disable and delete controls; changing the trigger preserves the rule ID.
+
+Time rules save their execution record before running the action. Rules survive reboot, which requires fresh clock synchronization. Unsynchronized clocks do not run time rules; moving the clock backwards does not repeat an executed occurrence, clock jumps do not replay past weekly actions, and expired single occurrences are marked missed. The physical button's short priority window also applies to scheduled outlet control. NTP defaults to `pool.ntp.org`, synchronizes hourly after success and retries after 60 seconds on failure, trying Aliyun, Tencent and public NTP pools. After synchronization, execution continues with MQTT disconnected and the browser closed.
 
 ## Local power automation
 
@@ -10,7 +18,7 @@ Comparison is strictly above or below; equality does not match. A rule fires onc
 
 Rules execute locally without a browser, cloud service, MQTT or NTP. Checks run once a second in addition to metering latency; this is not a circuit breaker, overload protector or precision timer. Rules persist, but an in-progress timer does not survive reboot.
 
-S30 uses its single outlet's active power and supports only on / off actions. It offers both threshold directions and immediate / sustained triggers, not calendar schedules. Meter data expires after about five seconds.
+Power rules use the single outlet's active power and support on / off actions with both threshold directions and immediate / sustained triggers. Meter data expires after about five seconds.
 
 ## Device IDs and field IDs
 

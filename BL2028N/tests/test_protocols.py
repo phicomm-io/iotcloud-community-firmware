@@ -120,6 +120,83 @@ class Core(unittest.TestCase):
         self.mp('F 1');self.assertEqual(self.command('schedules.delete',{'id':items[0]['id']},rid='delete-failed')['code'],'storage_error');self.mp('F 0')
         self.assertEqual(self.command('schedules.delete',{'id':items[0]['id']},rid='delete')['code'],'accepted')
         self.assertEqual(self.command('schedules.put',self.power_rule(),rid='reuse')['code'],'accepted')
+    def time_rule(self,**kw):
+        p=dict(enabled=True,trigger='once',at=1800000010,action='outlet.set',params={'on':True})
+        p.update(kw);return p
+    def tick_schedule(self,ms):
+        self.mp(f'T {ms}');return self.mp('P')
+    def test_socket_schedule_capabilities_clock_and_authorization(self):
+        caps=self.query('capabilities.get')
+        self.assertEqual(caps['schedule_triggers'],['weekly','once','power'])
+        self.assertIn('time.get',caps['actions']);self.assertIn('time.set',caps['actions'])
+        self.assertFalse(self.command('time.get',{})['data']['time_synced'])
+        self.assertIsNone(self.query()['utc_time'])
+        self.assertEqual(self.command('time.set',{'timezone_minutes':-300},admin=False)['code'],'unauthorized')
+        self.assertEqual(self.command('schedules.put',self.time_rule(),admin=False)['code'],'unauthorized')
+        for values in ({'timezone_minutes':True},{'timezone_minutes':841},{'timezone_minutes':-721},{'timezone_minutes':480,'ntp_host':'http://x'},{'timezone_minutes':480,'ntp_host':'x'*64}):
+            self.assertEqual(self.command('time.set',values,rid=str(values))['code'],'invalid_params')
+        values={'timezone_minutes':-300,'ntp_host':'clock.example.org'}
+        self.mp('F 1');self.assertEqual(self.command('time.set',values,rid='failed-clock')['code'],'storage_error');self.mp('F 0')
+        self.assertEqual(self.command('time.set',values,rid='clock')['code'],'accepted');self.mp('X')
+        self.assertEqual(self.command('time.get',{})['data']['timezone_minutes'],-300)
+        self.assertEqual(self.query()['ntp_host'],'clock.example.org')
+    def test_time_rules_once_no_clock_persist_then_execute_once_after_reboot(self):
+        for fmt in (1,2):
+            self.mp('R')
+            r=self.command('schedules.put',self.time_rule(),i=fmt,o=fmt);self.assertEqual(r['code'],'accepted')
+            self.tick_schedule(20000);self.assertFalse(self.query()['power'])
+            self.mp('X');self.assertEqual(self.command('schedules.get',{})['data']['count'],1)
+            self.mp('Z 1800000000');self.tick_schedule(20000);self.tick_schedule(30000);self.assertTrue(self.query()['power'])
+            task=self.command('schedules.get',{})['data']['items'][0]
+            self.assertEqual((task['enabled'],task['state'],task['last']),(False,'executed',1800000010))
+            self.assertEqual(self.command('outlet.set',{'on':False},rid='manual-off')['code'],'accepted')
+            self.mp('Z 1800000000');self.tick_schedule(31000);self.tick_schedule(42000);self.assertFalse(self.query()['power'])
+            self.mp('X');self.mp('Z 1800000000');self.tick_schedule(42000);self.tick_schedule(53000);self.assertFalse(self.query()['power'])
+    def test_weekly_timezone_midnight_rewind_jump_and_missed(self):
+        # Monday 2027-01-18 00:00 in UTC+8 is Sunday 16:00 UTC.
+        import datetime
+        at=int(datetime.datetime(2027,1,17,16,tzinfo=datetime.timezone.utc).timestamp())
+        weekly=dict(enabled=True,trigger='weekly',days=1,minute=0,action='outlet.set',params={'on':True})
+        self.assertEqual(self.command('schedules.put',weekly)['code'],'accepted')
+        self.mp(f'Z {at-2}');self.tick_schedule(10000);self.tick_schedule(12000);self.assertTrue(self.query()['power'])
+        self.command('outlet.set',{'on':False},rid='off');self.mp(f'Z {at-2}');self.tick_schedule(13000);self.tick_schedule(15000);self.assertFalse(self.query()['power'])
+        # A forward clock correction does not replay weekly occurrences.
+        self.mp(f'Z {at+86400*7}');self.tick_schedule(16000);self.tick_schedule(17000);self.assertFalse(self.query()['power'])
+        self.mp('R');self.command('schedules.put',self.time_rule(at=1800000010))
+        self.mp('Z 1800000100');self.tick_schedule(10000);self.tick_schedule(11000)
+        task=self.command('schedules.get',{})['data']['items'][0]
+        self.assertEqual((task['enabled'],task['state']),(False,'missed'));self.assertFalse(self.query()['power'])
+    def test_time_rule_validation_actions_mixed_pagination_and_conversion(self):
+        for changes in ({'days':1},{'minute':1},{'at':True},{'at':2147483648},{'trigger':'weekly','days':0},{'params':{'on':True,'index':1}},{'action':'fan.set'},{'params':{'toggle':True}}):
+            self.assertEqual(self.command('schedules.put',self.time_rule(**changes),rid=str(changes))['code'],'invalid_params')
+        for i in range(8):self.assertEqual(self.command('schedules.put',self.time_rule(at=1800000010+i),rid='t'+str(i))['code'],'accepted')
+        self.assertEqual(self.command('schedules.put',self.time_rule(),rid='full')['code'],'capacity')
+        for i in range(8):self.assertEqual(self.command('schedules.put',self.power_rule(seconds=i),rid='p'+str(i))['code'],'accepted')
+        a=self.command('schedules.get',{})['data'];b=self.command('schedules.get',{'offset':a['next']})['data']
+        self.assertEqual((a['count'],a['capacity'],a['next'],b['next']),(16,16,8,16))
+        self.assertEqual(len({x['id'] for x in a['items']+b['items']}),16)
+        id=a['items'][0]['id']
+        self.assertEqual(self.command('schedules.put',self.time_rule(id=id),rid='conversion-full')['code'],'capacity')
+        self.assertEqual(self.command('schedules.delete',{'id':b['items'][0]['id']},rid='free-time')['code'],'accepted')
+        self.assertEqual(self.command('schedules.put',self.time_rule(id=id),rid='conversion')['code'],'accepted')
+        self.mp('X');self.assertEqual(self.command('schedules.get',{})['data']['count'],15)
+        # Shared non-outlet actions run before reboot and persist their results.
+        self.mp('R')
+        for i,(action,params) in enumerate([('system.reboot',{}),('child_lock.set',{'enabled':True}),('indicator.set',{'enabled':False})]):
+            self.assertEqual(self.command('schedules.put',self.time_rule(action=action,params=params),rid='a'+str(i))['code'],'accepted')
+        self.mp('Z 1800000000');self.tick_schedule(10000);self.tick_schedule(20000)
+        self.assertTrue(self.query()['child_lock']);self.assertFalse(self.query()['indicator']);self.assertEqual(self.mp('S')['reboots'],1)
+    def test_time_rules_local_hold_save_failure_and_millisecond_wrap(self):
+        self.command('schedules.put',self.time_rule(at=1800000001,params={'on':False}))
+        self.mp('Z 1800000000');self.tick_schedule(10000);self.mp('L');self.tick_schedule(11000)
+        self.assertTrue(self.query()['power']);self.assertEqual(self.command('schedules.get',{})['data']['items'][0]['state'],'busy')
+        self.mp('R');self.command('schedules.put',self.time_rule())
+        self.mp('Z 1800000000');self.tick_schedule(10000);self.mp('F 1');self.tick_schedule(20000);self.assertFalse(self.query()['power'])
+        self.mp('F 0');self.tick_schedule(21000)
+        # Once records retry a failed durable commit, but never execute an expired occurrence.
+        self.assertFalse(self.query()['power']);self.assertEqual(self.command('schedules.get',{})['data']['items'][0]['state'],'missed')
+        self.mp('R');self.mp('T 4294962295');self.mp('Z 1800000000');self.command('schedules.put',self.time_rule())
+        self.mp('P');self.tick_schedule(4999);self.assertTrue(self.query()['power']);self.assertEqual(self.query()['utc_time'],1800000010)
     def test_idempotency_and_conflict(self):
         first=self.command('config.set',{'section':'device','values':{'name':'Desk'}},i=1)
         before=self.mp('S');second=self.command('config.set',{'values':{'name':'Desk'},'section':'device'},i=2,o=2)

@@ -328,6 +328,7 @@ def overlay(app, sdk, run, boot_trace=False, stock_layout=True):
     # Pure fixed-width business logic, shared with TC1; no foreign RTOS/runtime.
     shutil.copytree(HERE/'protocol',target/'protocol',dirs_exist_ok=True)
     shutil.copytree(HERE/'common',target/'common',dirs_exist_ok=True)
+    shutil.copy2(HERE.parent/'common/wall_schedule.h',target/'common/wall_schedule.h')
     # This SDK flattens object names into Debug/obj. Preserve both shared cores.
     for service in ('httpd','mqtt'):
         directory=target/'protocol'/service
@@ -416,6 +417,7 @@ def package(run, version, log, metadata, boot_trace=False, stock_layout=True):
     shutil.copy2(sdk/'platforms/bk7231n/bk7231n_os/tuya.map',run/'linker.map')
     (dest/'SHA256SUMS').write_text(''.join(f'{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}\n' for p in sorted(dest.iterdir()) if p.suffix in ['.bin','.rbl']))
     inputs={str(p.relative_to(HERE)):hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(HERE.rglob('*')) if p.is_file() and '__pycache__' not in str(p)}
+    inputs['../common/wall_schedule.h']=hashlib.sha256((HERE.parent/'common/wall_schedule.h').read_bytes()).hexdigest()
     project_head=subprocess.check_output(['git','rev-parse','HEAD'],cwd=HERE,text=True).strip()
     branch=subprocess.check_output(['git','branch','--show-current'],cwd=HERE,text=True).strip()
     dirty=bool(subprocess.check_output(['git','status','--porcelain'],cwd=HERE,text=True))

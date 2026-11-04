@@ -116,6 +116,7 @@ def main():
     elf=run/f'OpenBK7231N_{v}.axf'
     symbols=subprocess.check_output([CACHE/'gcc5/bin/arm-none-eabi-nm',elf],text=True)
     for symbol in ('PH_BL_Init','PH_BL_Tick','PH_BL_StartHTTP','PH_BL_FactoryMac',
+                   'ph_ntp_poll','ph_clock_sync','ph_schedule_poll',
                    'PH_BL_CopyLocalIPAddress','ph_command','ph_command_context','ph_meter_byte',
                    'ph_lan_v4_feed','ph_lan_v4_sensor_grant','ph_lan_v4_revoke',
                    'PH_BL_MdnsInit','PH_BL_MdnsPoll','mdns_resp_init_checked',

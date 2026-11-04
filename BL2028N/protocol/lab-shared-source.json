@@ -249,7 +249,7 @@
     "web/shared/automation.js": {
       "source": "frontend/common/web/automation.js",
       "upstream_sha256": "b06b785bc1e37fc5cc52a771be0fcf529d9c40045b9dafb5afb19e9cd45466f2",
-      "sha256": "b06b785bc1e37fc5cc52a771be0fcf529d9c40045b9dafb5afb19e9cd45466f2"
+      "sha256": "6a6dfc31a30ed79bbb64b4e1a4209c3153a604039a5b39a7e79f4319533848fe"
     },
     "protocol/typed_wire.h": {
       "source": "common/typed_wire.h",
@@ -315,7 +315,7 @@
     "web/page.js": {
       "source": "frontend/S30/web/page.js",
       "upstream_sha256": "2ac47b0f85931cabbdfe4130e9b8a2edcba8937d0adeff8e6663231e6da86aed",
-      "sha256": "2ac47b0f85931cabbdfe4130e9b8a2edcba8937d0adeff8e6663231e6da86aed"
+      "sha256": "366a5020d90c7f584075fc24463a89785f794d9f974135e3fd3c57df78202384"
     },
     "protocol/udp/packet.h": {
       "source": "common/feature_wire.inc",
@@ -394,7 +394,7 @@
   },
   "adaptation_patch_sha256": {
     "protocol/lab-openbeken.patch": "e3ff45d2ed9ba63d2d2dbf56fc2832db3d9574458512c0296637acb43553de75",
-    "web/frontend-openbeken.patch": "27221b192fd2033461c10d1a0e79106edead3ef7adc0289f94b57b6838922fdf",
+    "web/frontend-openbeken.patch": "095ff5f8457d2230d8019ef0a5f614c99c5f1804a0017a5ac1e7b742bd6a7404",
     "patches/mdns-init-checked.patch": "d13b6c9d2c92aa4ea9b121a62398d3063f20a796512dae82f6f8bd82bc0b2d83"
   },
   "source_snapshot": {

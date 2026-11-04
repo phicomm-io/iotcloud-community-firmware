@@ -11,10 +11,30 @@ void ph_settings_default(ph_settings *s) {
     s->coefficients[0]=PH_METER_DEFAULT_VOLTAGE_COEFFICIENT;
     s->coefficients[1]=PH_METER_DEFAULT_CURRENT_COEFFICIENT;
     s->coefficients[2]=PH_METER_DEFAULT_POWER_COEFFICIENT;
-    s->power_next_id=1;ph_auth_store_empty(&s->auth);
+    s->timezone=480;strcpy(s->ntp_host,"pool.ntp.org");s->power_next_id=1;ph_auth_store_empty(&s->auth);
+}
+static bool time_rule_valid(const ph_schedule_task *t) {
+    const ph_schedule_action *a=&t->action;
+    if(t->enabled>1||t->once>1||t->state>3||a->value>1||a->speed||a->red||a->green||a->blue||a->reserved)return false;
+    if(a->kind==PH_AUTO_OUTLET){if(a->target!=0&&a->target!=255)return false;}
+    else if(a->target||!(a->kind==PH_AUTO_CHILD_LOCK||a->kind==PH_AUTO_INDICATOR||a->kind==PH_AUTO_REBOOT)||
+            (a->kind==PH_AUTO_REBOOT&&a->value))return false;
+    return t->once?(!t->days&&!t->minute&&t->at>=1577836800u&&t->at<=INT32_MAX):
+        (t->days&&t->days<=127&&t->minute<1440&&!t->at);
+}
+static bool ntp_host_valid(const char *host) {
+    size_t n=0;for(;n<64&&host[n];++n){unsigned char c=host[n];
+        if(!((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='.'||c=='-'))return false;}
+    return n&&n<64;
 }
 bool ph_settings_valid(const ph_settings *s) {
     if(!s || !s->power_next_id || s->last_relay>1 || s->reserved)return false;
+    if(s->timezone< -720||s->timezone>840||s->time_reserved||!ntp_host_valid(s->ntp_host))return false;
+    for(unsigned i=0;i<PH_TIME_RULES_MAX;i++)if(s->time_rules[i].id){
+        if(!time_rule_valid(&s->time_rules[i]))return false;
+        for(unsigned j=0;j<i;j++)if(s->time_rules[j].id==s->time_rules[i].id)return false;
+        for(unsigned j=0;j<PH_POWER_RULES_MAX;j++)if(s->power_rules[j].id==s->time_rules[i].id)return false;
+    }
     for(unsigned i=0;i<PH_POWER_RULES_MAX;i++)if(s->power_rules[i].id){
         if(!ph_power_rule_valid(&s->power_rules[i],1))return false;
         for(unsigned j=0;j<i;j++)if(s->power_rules[j].id==s->power_rules[i].id)return false;
@@ -77,6 +97,22 @@ static void identity(ph_device *d, ph_writer *w) {
     phw_text(w,"variant","full");phw_text(w,"default_wire_format","msgpack");
     phw_begin(w,"wire_formats",true);phw_text(w,NULL,"msgpack");phw_text(w,NULL,"cbor");phw_end(w);
 }
+uint32_t ph_clock_utc(ph_device *d) {
+    /* Advance the anchor on every worker tick, so millisecond rollover never
+     * loses the accumulated UTC; keep subsecond remainder. */
+    uint32_t ms=d->ops.now(d->ops.user),elapsed=(uint32_t)(ms-d->utc_ms)/1000;
+    if(!d->clock_valid)return 0;
+    d->utc+=elapsed;d->utc_ms+=elapsed*1000u;return d->utc;
+}
+void ph_clock_sync(ph_device *d,uint32_t utc) {
+    if(utc<1577836800u||utc>INT32_MAX)return;
+    d->utc=utc;d->utc_ms=d->ops.now(d->ops.user);d->clock_valid=true;++d->sequence;
+}
+static void clock_fields(ph_device *d,ph_writer *w) {
+    phw_int(w,"timezone_minutes",d->settings.timezone);phw_text(w,"ntp_host",d->settings.ntp_host);
+    phw_bool(w,"time_synced",d->clock_valid);
+    if(d->clock_valid)phw_u32(w,"utc_time",ph_clock_utc(d));else phw_null(w,"utc_time");
+}
 static void status_build(ph_device *d, ph_writer *w) {
     identity(d, w);
     phw_u32(w, "boot", d->boot); phw_u32(w, "sequence", d->sequence);
@@ -112,6 +148,7 @@ void ph_device_set_maintenance(ph_device *d,bool enabled) {
     if(enabled)ph_status_cache_release(d);
 }
 void ph_status(ph_device *d,ph_writer *w) {
+    clock_fields(d,w);
     unsigned fields=ph_meter_fields(&d->meter,d->ops.now(d->ops.user));
     uint32_t network=d->ops.network_stamp?d->ops.network_stamp(d->ops.user):0;
     /* OTA reclaims this optional cache. Polling must not allocate it again
@@ -143,15 +180,15 @@ void ph_diagnostics(ph_device *d,ph_writer *w) {
     if(d->ops.diagnostics)d->ops.diagnostics(d->ops.user,w);
     phw_end(w);
 }
-static const char *actions[] = {"info.get", "status.get", "capabilities.get", "diagnostics.get", "config.get", "config.set", "name.set", "power.get", "outlet.set", "indicator.set", "child_lock.set", "system.reboot", "system.reset", "wifi.scan", "wifi.scan.get", "ota.start", "schedules.get", "schedules.put", "schedules.enable", "schedules.delete"};
+static const char *actions[] = {"info.get", "status.get", "capabilities.get", "diagnostics.get", "config.get", "config.set", "name.set", "power.get", "outlet.set", "indicator.set", "child_lock.set", "system.reboot", "system.reset", "wifi.scan", "wifi.scan.get", "ota.start", "schedules.get", "schedules.put", "schedules.enable", "schedules.delete", "time.get", "time.set"};
 void ph_capabilities(ph_device *d,ph_writer *w) {
     identity(d,w);phw_text(w, "mqtt_protocol", "openiot");phw_u32(w, "mqtt_protocol_version", 2);
     phw_begin(w, "actions", true);
     for (unsigned i = 0; i < sizeof(actions)/sizeof(*actions); ++i) phw_text(w, NULL, actions[i]);
     phw_end(w); phw_u32(w, "outlet_count", 1); phw_u32(w, "udp_port", 11288);
     phw_begin(w,"power_on_modes",true);phw_text(w,NULL,"off");phw_text(w,NULL,"on");phw_text(w,NULL,"restore");phw_end(w);
-    phw_begin(w,"schedule_triggers",true);phw_text(w,NULL,"power");phw_end(w);
-    phw_u32(w,"power_schedule_capacity",PH_POWER_RULES_MAX);
+    phw_begin(w,"schedule_triggers",true);phw_text(w,NULL,"weekly");phw_text(w,NULL,"once");phw_text(w,NULL,"power");phw_end(w);
+    phw_u32(w,"power_schedule_capacity",PH_POWER_RULES_MAX);phw_u32(w,"schedule_capacity",PH_POWER_RULES_MAX+PH_TIME_RULES_MAX);
     phw_bool(w, "local_auth", true); phw_bool(w, "power_metering_supported", true);
     phw_text(w,"metering_chip","HLW8032");
     phw_bool(w,"ota_upload",false); phw_bool(w,"config_backup",false); phw_bool(w,"config_recovery",false);
@@ -229,50 +266,136 @@ static void power_rule_fields(ph_device *d,unsigned slot,ph_writer *w){
     phw_text(w,"action","outlet.set");phw_begin(w,"params",false);
     phw_bool(w,"on",r->on);if(r->target!=255)phw_u32(w,"index",r->target);phw_end(w);
 }
-static __attribute__((noinline)) const char *power_schedules(ph_device *d,const char *action,const ph_value *p,ph_writer *w){
-    int64_t id=0,n;ph_value v;bool enabled;
+static const char *time_action_name(unsigned kind){
+    return kind==PH_AUTO_OUTLET?"outlet.set":kind==PH_AUTO_CHILD_LOCK?"child_lock.set":kind==PH_AUTO_INDICATOR?"indicator.set":"system.reboot";
+}
+static void time_rule_fields(const ph_schedule_task *t,ph_writer *w){
+    phw_u32(w,"id",t->id);phw_bool(w,"enabled",t->enabled);phw_text(w,"trigger",t->once?"once":"weekly");
+    phw_u32(w,"days",t->days);phw_u32(w,"minute",t->minute);phw_u32(w,"at",t->at);phw_u32(w,"last",t->last);
+    static const char *states[]={"waiting","executed","missed","busy"};phw_text(w,"state",states[t->state]);
+    phw_text(w,"action",time_action_name(t->action.kind));phw_begin(w,"params",false);
+    if(t->action.kind==PH_AUTO_OUTLET){phw_bool(w,"on",t->action.value);if(t->action.target!=255)phw_u32(w,"index",t->action.target);}
+    else if(t->action.kind!=PH_AUTO_REBOOT)phw_bool(w,"enabled",t->action.value);phw_end(w);
+}
+static bool parse_time_rule(const ph_value *p,ph_schedule_task *t){
+    ph_value v,params;int64_t n;bool value;
+    memset(t,0,sizeof(*t));
+    if(!phv_get(p,"trigger",&v))return false;
+    if(phv_equal_text(&v,"once")){
+        t->once=1;if(!phv_keys(p,"|id||enabled||trigger||at||action||params|")||!integer(p,"at",&n,1577836800,INT32_MAX))return false;t->at=n;
+    }else if(phv_equal_text(&v,"weekly")){
+        if(!phv_keys(p,"|id||enabled||trigger||days||minute||action||params|")||!integer(p,"days",&n,1,127))return false;t->days=n;
+        if(!integer(p,"minute",&n,0,1439))return false;t->minute=n;
+    }else return false;
+    if(!boolean(p,"enabled",&value))return false;t->enabled=value;
+    if(!phv_get(p,"action",&v)||!phv_get(p,"params",&params)||params.kind!=PHV_MAP)return false;
+    if(phv_equal_text(&v,"outlet.set")){
+        t->action.kind=PH_AUTO_OUTLET;t->action.target=255;
+        if(!phv_keys(&params,"|on||index|")||!boolean(&params,"on",&value))return false;t->action.value=value;
+        if(phv_get(&params,"index",&v)){if(!integer(&params,"index",&n,0,0))return false;t->action.target=0;}
+    }else if(phv_equal_text(&v,"indicator.set")||phv_equal_text(&v,"child_lock.set")){
+        t->action.kind=phv_equal_text(&v,"indicator.set")?PH_AUTO_INDICATOR:PH_AUTO_CHILD_LOCK;
+        if(!phv_keys(&params,"|enabled|")||!boolean(&params,"enabled",&value))return false;t->action.value=value;
+    }else if(phv_equal_text(&v,"system.reboot")){t->action.kind=PH_AUTO_REBOOT;if(params.count)return false;}
+    else return false;
+    return time_rule_valid(t);
+}
+static bool rule_id_used(const ph_settings *s,unsigned id){
+    for(unsigned i=0;i<PH_POWER_RULES_MAX;i++)if(s->power_rules[i].id==id)return true;
+    for(unsigned i=0;i<PH_TIME_RULES_MAX;i++)if(s->time_rules[i].id==id)return true;return false;
+}
+static __attribute__((noinline)) const char *schedules(ph_device *d,const char *action,const ph_value *p,ph_writer *w){
+    int64_t id=0,n;ph_value v;bool enabled=false;
     if(!strcmp(action,"schedules.get")){
         int64_t offset=0,limit=8;
-        if(!phv_keys(p,"|offset||limit|") || (phv_get(p,"offset",&v)&&!integer(p,"offset",&offset,0,PH_POWER_RULES_MAX)) ||
+        if(!phv_keys(p,"|offset||limit|")||(phv_get(p,"offset",&v)&&!integer(p,"offset",&offset,0,PH_POWER_RULES_MAX+PH_TIME_RULES_MAX))||
            (phv_get(p,"limit",&v)&&!integer(p,"limit",&limit,1,8)))return "invalid_params";
-        unsigned count=0,next=PH_POWER_RULES_MAX;for(unsigned i=0;i<PH_POWER_RULES_MAX;i++)count+=d->settings.power_rules[i].id!=0;
-        phw_begin(w,"items",true);
-        for(unsigned i=(unsigned)offset;i<PH_POWER_RULES_MAX&&limit;i++)if(d->settings.power_rules[i].id){
-            phw_begin(w,NULL,false);power_rule_fields(d,i,w);phw_end(w);--limit;next=i+1;
+        unsigned count=0,emitted=0;phw_begin(w,"items",true);
+        for(unsigned i=0;i<PH_POWER_RULES_MAX+PH_TIME_RULES_MAX;i++){
+            bool power=i<PH_POWER_RULES_MAX;unsigned slot=power?i:i-PH_POWER_RULES_MAX;
+            if(!(power?d->settings.power_rules[slot].id:d->settings.time_rules[slot].id))continue;
+            if(count++<(unsigned)offset||!limit)continue;
+            phw_begin(w,NULL,false);if(power)power_rule_fields(d,slot,w);else time_rule_fields(&d->settings.time_rules[slot],w);phw_end(w);--limit;++emitted;
         }
-        phw_end(w);phw_u32(w,"next",next);phw_u32(w,"count",count);phw_u32(w,"capacity",PH_POWER_RULES_MAX);return "ok";
+        phw_end(w);phw_u32(w,"next",(unsigned)offset+emitted);phw_u32(w,"count",count);phw_u32(w,"capacity",PH_POWER_RULES_MAX+PH_TIME_RULES_MAX);return "ok";
     }
-    ph_settings next=d->settings;int slot=-1;
     if(phv_get(p,"id",&v)&&!integer(p,"id",&id,1,65535))return "invalid_params";
-    for(unsigned i=0;i<PH_POWER_RULES_MAX;i++)if(id?next.power_rules[i].id==id:!next.power_rules[i].id){slot=(int)i;break;}
-    if(!strcmp(action,"schedules.put")){
-        ph_power_rule r;memset(&r,0,sizeof(r));r.target=255;
-        if(!phv_keys(p,"|id||enabled||trigger||comparison||power_milliwatts||seconds||action||params|") ||
-           !boolean(p,"enabled",&enabled) || !phv_get(p,"trigger",&v)||!phv_equal_text(&v,"power"))return "invalid_params";
-        r.enabled=enabled;
-        if(!phv_get(p,"comparison",&v))return "invalid_params";
-        if(phv_equal_text(&v,"above"))r.comparison=PH_POWER_ABOVE;
-        else if(phv_equal_text(&v,"below"))r.comparison=PH_POWER_BELOW;else return "invalid_params";
-        if(!integer(p,"power_milliwatts",&n,0,PH_POWER_LIMIT_MW))return "invalid_params";r.power_milliwatts=(uint32_t)n;
-        if(!integer(p,"seconds",&n,0,PH_POWER_DURATION_MAX))return "invalid_params";r.seconds=(uint32_t)n;
-        if(!phv_get(p,"action",&v)||!phv_equal_text(&v,"outlet.set")||!phv_get(p,"params",&v)||v.kind!=PHV_MAP)return "invalid_params";
-        if(!phv_keys(&v,"|index||on|")||!boolean(&v,"on",&enabled))return "invalid_params";r.on=enabled;
-        ph_value index;if(phv_get(&v,"index",&index)){if(!integer(&v,"index",&n,0,0))return "invalid_params";r.target=0;}
-        if(slot<0)return id?"not_found":"capacity";
-        if(!id){bool used;do{id=next.power_next_id++;if(!next.power_next_id)next.power_next_id=1;used=false;
-            for(unsigned i=0;i<PH_POWER_RULES_MAX;i++)used|=next.power_rules[i].id==id;
-        }while(used);}
-        r.id=(uint16_t)id;next.power_rules[slot]=r;
+    ph_settings next=d->settings;int power_slot=-1,time_slot=-1;
+    for(unsigned i=0;i<PH_POWER_RULES_MAX;i++)if(id&&next.power_rules[i].id==id)power_slot=i;
+    for(unsigned i=0;i<PH_TIME_RULES_MAX;i++)if(id&&next.time_rules[i].id==id)time_slot=i;
+    if(id&&power_slot<0&&time_slot<0)return "not_found";
+    bool put=!strcmp(action,"schedules.put"),power=false;
+    if(put){
+        if(!phv_get(p,"trigger",&v))return "invalid_params";power=phv_equal_text(&v,"power");
+        ph_power_rule r;ph_schedule_task t;
+        if(power){
+            memset(&r,0,sizeof(r));r.target=255;
+            if(!phv_keys(p,"|id||enabled||trigger||comparison||power_milliwatts||seconds||action||params|")||!boolean(p,"enabled",&enabled))return "invalid_params";r.enabled=enabled;
+            if(!phv_get(p,"comparison",&v))return "invalid_params";
+            if(phv_equal_text(&v,"above"))r.comparison=PH_POWER_ABOVE;else if(phv_equal_text(&v,"below"))r.comparison=PH_POWER_BELOW;else return "invalid_params";
+            if(!integer(p,"power_milliwatts",&n,0,PH_POWER_LIMIT_MW))return "invalid_params";r.power_milliwatts=n;
+            if(!integer(p,"seconds",&n,0,PH_POWER_DURATION_MAX))return "invalid_params";r.seconds=n;
+            if(!phv_get(p,"action",&v)||!phv_equal_text(&v,"outlet.set")||!phv_get(p,"params",&v)||v.kind!=PHV_MAP||!phv_keys(&v,"|index||on|")||!boolean(&v,"on",&enabled))return "invalid_params";r.on=enabled;
+            ph_value index;if(phv_get(&v,"index",&index)){if(!integer(&v,"index",&n,0,0))return "invalid_params";r.target=0;}
+            if(power_slot<0)for(unsigned i=0;i<PH_POWER_RULES_MAX;i++)if(!next.power_rules[i].id){power_slot=i;break;}
+            if(power_slot<0)return "capacity";
+        }else{
+            if(!parse_time_rule(p,&t))return "invalid_params";
+            if(time_slot<0)for(unsigned i=0;i<PH_TIME_RULES_MAX;i++)if(!next.time_rules[i].id){time_slot=i;break;}
+            if(time_slot<0)return "capacity";
+        }
+        if(!id){do{id=next.power_next_id++;if(!next.power_next_id)next.power_next_id=1;}while(rule_id_used(&next,id));}
+        if(power){r.id=id;next.power_rules[power_slot]=r;if(time_slot>=0)memset(&next.time_rules[time_slot],0,sizeof(t));}
+        else{t.id=id;next.time_rules[time_slot]=t;if(power_slot>=0)memset(&next.power_rules[power_slot],0,sizeof(r));}
     }else if(!strcmp(action,"schedules.enable")||!strcmp(action,"schedules.delete")){
         bool enable=!strcmp(action,"schedules.enable");
         if(!id||!phv_keys(p,enable?"|id||enabled|":"|id|")||(enable&&!boolean(p,"enabled",&enabled)))return "invalid_params";
-        if(slot<0)return "not_found";
-        if(enable)next.power_rules[slot].enabled=enabled;else memset(&next.power_rules[slot],0,sizeof(next.power_rules[slot]));
+        if(power_slot>=0){if(enable)next.power_rules[power_slot].enabled=enabled;else memset(&next.power_rules[power_slot],0,sizeof(ph_power_rule));}
+        else if(time_slot>=0){if(enable){next.time_rules[time_slot].enabled=enabled;next.time_rules[time_slot].state=0;}else memset(&next.time_rules[time_slot],0,sizeof(ph_schedule_task));}
+        else return "not_found";
     }else return "unsupported";
     if(!persist(d,&next))return "storage_error";
-    memset(&d->power_triggers[slot],0,sizeof(d->power_triggers[slot]));
-    if(!strcmp(action,"schedules.put"))power_rule_fields(d,(unsigned)slot,w);
+    if(power_slot>=0)memset(&d->power_triggers[power_slot],0,sizeof(ph_power_trigger));
+    if(put){if(power)power_rule_fields(d,power_slot,w);else time_rule_fields(&d->settings.time_rules[time_slot],w);}
     return "accepted";
+}
+static __attribute__((noinline)) const char *clock_set(ph_device *d,const ph_value *p,ph_writer *w){
+    ph_settings next=d->settings;int64_t zone;ph_value v;
+    if(!phv_keys(p,"|timezone_minutes||ntp_host|")||!integer(p,"timezone_minutes",&zone,-720,840))return "invalid_params";
+    next.timezone=zone;
+    if(phv_get(p,"ntp_host",&v)&&(!text_field(p,"ntp_host",next.ntp_host,sizeof(next.ntp_host))||!ntp_host_valid(next.ntp_host)))return "invalid_params";
+    if(!persist(d,&next))return "storage_error";clock_fields(d,w);return "accepted";
+}
+/* Wall schedules commit before execution, including reboot, just as TC1 does. */
+void ph_schedule_poll(ph_device *d){
+    uint32_t now=ph_clock_utc(d),ms=d->ops.now(d->ops.user);
+    if(d->maintenance||!d->clock_valid){d->clock_armed=false;return;}
+    if(!d->clock_armed||ph_schedule_jump(now,d->clock_previous,ms,d->clock_previous_ms)){
+        d->clock_previous=now;d->clock_previous_ms=ms;if(now>d->clock_highwater)d->clock_highwater=now;d->clock_armed=true;return;
+    }
+    d->clock_previous_ms=ms;if(now<=d->clock_previous){d->clock_previous=now;return;}
+    for(unsigned pass=0;pass<2;pass++){
+        unsigned last_id=0;
+        for(unsigned count=0;count<PH_TIME_RULES_MAX;count++){
+            int slot=-1;unsigned id=65536;uint32_t occurrence=0;
+            for(unsigned i=0;i<PH_TIME_RULES_MAX;i++){
+                const ph_schedule_task *t=&d->settings.time_rules[i];uint32_t at=ph_schedule_at(t,now,d->settings.timezone);
+                if(t->id<=last_id||t->id>=id||((t->action.kind==PH_AUTO_REBOOT)!=(pass==1))||!ph_schedule_due(t,at,now,d->clock_previous,d->clock_highwater))continue;
+                slot=i;id=t->id;occurrence=at;
+            }
+            if(slot<0)break;last_id=id;
+            ph_settings next=d->settings;ph_schedule_task *t=&next.time_rules[slot];ph_schedule_action a=t->action;
+            bool timely=ph_schedule_timely(occurrence,now,d->clock_highwater);t->last=occurrence;t->state=timely?1:2;if(t->once)t->enabled=0;
+            if(!persist(d,&next))break;
+            if(!timely)continue;
+            const char *code="accepted";
+            if(a.kind==PH_AUTO_OUTLET)code=outlet_set(d,a.value);
+            else if(a.kind==PH_AUTO_REBOOT){if(d->ops.reboot)d->ops.reboot(d->ops.user);else code="unsupported";}
+            else{next=d->settings;if(a.kind==PH_AUTO_INDICATOR)next.indicator=a.value;else next.child_lock=a.value;if(!persist(d,&next))code="storage_error";}
+            if(strcmp(code,"accepted")){next=d->settings;next.time_rules[slot].state=3;(void)persist(d,&next);}
+        }
+    }
+    d->clock_previous=now;if(now>d->clock_highwater)d->clock_highwater=now;
 }
 void ph_power_poll(ph_device *d){
     uint32_t now=d->ops.now(d->ops.user);
@@ -365,11 +488,13 @@ static const char *execute(ph_device *d, const char *action, const ph_value *p, 
             (phv_get(p, "index", &v) && (!phv_int(&v, &index) || index != 0))) return "invalid_params";
         const char *code=outlet_set(d,on);if(!strcmp(code,"accepted"))phw_bool(w,"on",on);return code;
     }
-    if(!strcmp(action,"schedules.get"))return power_schedules(d,action,p,w);
+    if(!strcmp(action,"time.get")){if(p->count)return "invalid_params";clock_fields(d,w);return "ok";}
+    if(!strcmp(action,"schedules.get"))return schedules(d,action,p,w);
     if (!strcmp(action,"wifi.scan.get"))return d->ops.platform_action?d->ops.platform_action(d->ops.user,action,p,w,admin):"unsupported";
     if (!admin && !(control&&(!strcmp(action,"indicator.set")||!strcmp(action,"child_lock.set")||!strcmp(action,"name.set")))) return "unauthorized";
+    if(!strcmp(action,"time.set"))return clock_set(d,p,w);
     if(!strcmp(action,"name.set"))return execute_settings(d,action,p,w);
-    if(!strncmp(action,"schedules.",10))return power_schedules(d,action,p,w);
+    if(!strncmp(action,"schedules.",10))return schedules(d,action,p,w);
     if (!strcmp(action, "system.reboot")) {
         if (p->count) return "invalid_params";
         if (!d->ops.reboot) return "unsupported";

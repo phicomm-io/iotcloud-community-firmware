@@ -327,7 +327,7 @@ void automation_poll(bool valid){
  auto_countdown_poll();
 #endif
  uint32_t now=(uint32_t)time(NULL),ms=mico_rtos_get_time();if(!valid || now<1577836800){armed=false;return;}
- bool jump=armed && ((int64_t)now-previous-(uint32_t)(ms-previous_ms)/1000>2 || (int64_t)now-previous-(uint32_t)(ms-previous_ms)/1000< -2);
+ bool jump=armed && ph_schedule_jump(now,previous,ms,previous_ms);
  if(!armed || jump){previous=now;previous_ms=ms;if(now>highwater)highwater=now;armed=true;return;}previous_ms=ms;if(now<=previous){previous=now;return;}
  automation_config_t *c=malloc(sizeof(*c));if(!c)return;
  /* Reboot runs last. Every due record is committed before its action. */
@@ -337,14 +337,13 @@ void automation_poll(bool valid){
    mico_rtos_lock_mutex(&automation_lock);automation_load(c);int selected=-1;unsigned id=65536;uint32_t occurrence=0;
    for(unsigned i=0;i<AUTOMATION_TASKS;i++){
     automation_task_t *t=&c->tasks[i];if(t->once>=2 || !t->id || !t->enabled || t->id<=last_id || t->id>=id || ((t->action.kind==AUTO_REBOOT)!=(pass==1)))continue;
-    uint32_t at=t->at;
-    if(!t->once){int64_t local=(int64_t)now+c->timezone*60;int64_t day=local/86400;unsigned weekday=(day+3)%7;if(!(t->days&(1u<<weekday)))continue;at=day*86400+t->minute*60-c->timezone*60;}
-    if(at>now || at<=t->last || (!t->once && (at<=previous || at<=highwater)))continue;
+    uint32_t at=ph_schedule_at(t,now,c->timezone);
+    if(!ph_schedule_due(t,at,now,previous,highwater))continue;
     selected=i;id=t->id;occurrence=at;
    }
    if(selected<0){mico_rtos_unlock_mutex(&automation_lock);break;}last_id=id;
    automation_task_t *t=&c->tasks[selected];automation_action_t action=t->action;t->last=occurrence;if(t->once)t->enabled=0;
-   bool timely=now-occurrence<=60 && occurrence>highwater;t->state=timely?AUTO_EXECUTED:AUTO_MISSED;c->revision++;bool saved=automation_save(c);mico_rtos_unlock_mutex(&automation_lock);
+   bool timely=ph_schedule_timely(occurrence,now,highwater);t->state=timely?AUTO_EXECUTED:AUTO_MISSED;c->revision++;bool saved=automation_save(c);mico_rtos_unlock_mutex(&automation_lock);
    if(!saved){service_event("error","schedule","storage_error");break;}
    if(!timely){service_event("warn","schedule","missed");continue;}
    bool ok=auto_execute(&action,false);service_event(ok?"info":"warn","schedule",ok?"executed":"busy");

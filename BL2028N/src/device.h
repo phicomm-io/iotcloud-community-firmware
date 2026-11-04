@@ -7,7 +7,10 @@
 #define PH_INPUT_MAX 1200u
 #define PH_OUTPUT_MAX 4096u
 #define PH_STATUS_CACHE_MAX 2048u
-#define PH_STORE_MAGIC UINT32_C(0x344c4250)
+#include "../common/wall_schedule.h"
+#define PH_STORE_MAGIC UINT32_C(0x354c4250)
+#define PH_TIME_RULES_MAX 8u
+enum { PH_AUTO_OUTLET=1, PH_AUTO_CHILD_LOCK=4, PH_AUTO_INDICATOR=5, PH_AUTO_REBOOT=7 };
 enum { PH_BOOT_OFF, PH_BOOT_ON, PH_BOOT_RESTORE };
 typedef struct {
     uint32_t magic, revision;
@@ -19,6 +22,10 @@ typedef struct {
     uint16_t power_next_id;
     uint8_t last_relay, reserved;
     ph_power_rule power_rules[PH_POWER_RULES_MAX];
+    int16_t timezone;
+    uint16_t time_reserved;
+    char ntp_host[64];
+    ph_schedule_task time_rules[PH_TIME_RULES_MAX];
 } ph_settings;
 typedef struct {
     void *user;
@@ -54,6 +61,8 @@ typedef struct {
     ph_power_trigger power_triggers[PH_POWER_RULES_MAX];
     uint32_t power_polled_at;
     bool power_polled;
+    bool clock_valid, clock_armed;
+    uint32_t utc, utc_ms, clock_previous, clock_highwater, clock_previous_ms;
 } ph_device;
 bool ph_binary_format(ph_wire_format);
 void ph_settings_default(ph_settings *);
@@ -86,3 +95,8 @@ bool ph_local_toggle(ph_device *);
 /* Worker tick: caller holds the same product mutex as command dispatch. */
 void ph_power_poll(ph_device *);
 bool ph_topic_root(const char *username, const char *mac, char *, size_t);
+
+/* Locked by the same owner as command dispatch. UTC is volatile until SNTP. */
+void ph_clock_sync(ph_device *,uint32_t utc);
+uint32_t ph_clock_utc(ph_device *);
+void ph_schedule_poll(ph_device *);

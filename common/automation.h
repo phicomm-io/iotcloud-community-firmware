@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "typed_wire.h"
+#include "wall_schedule.h"
 #ifdef AUTOMATION_TC1
 #include "power_trigger.h"
 #endif
@@ -27,13 +28,8 @@ enum { AUTO_WAITING, AUTO_EXECUTED, AUTO_MISSED, AUTO_BUSY, AUTO_MIGRATED_DISABL
  * The fixed Flash layout stays unchanged. A reboot cancels active countdowns. */
 #define AUTOMATION_COUNTDOWN_MAX 86400u
 /* Stable fixed-width Flash ABI: never stores pointers or JSON. */
-typedef struct { uint8_t kind, target, value, speed, red, green, blue, reserved; } automation_action_t;
-typedef struct {
-    uint16_t id, minute;
-    uint8_t enabled, days, once, state;
-    uint32_t at, last;
-    automation_action_t action;
-} automation_task_t;
+typedef ph_schedule_action automation_action_t;
+typedef ph_schedule_task automation_task_t;
 /* On-flash v4/v5 prefix remains fixed at two keys, including on A1. */
 typedef struct {
     uint32_t magic, revision;

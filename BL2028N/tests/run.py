@@ -14,6 +14,8 @@ def main():
  flags=[clang,'-std=c99','-g','-O1','-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-Wno-sign-compare','-fsanitize=address,undefined','-fno-omit-frame-pointer','-I',str(ROOT.parent/'common')]
  def command(argv,name):
   with (run/name).open('w') as log:subprocess.run(list(map(str,argv)),stdout=log,stderr=subprocess.STDOUT,check=True)
+ command(flags+['-D_DEFAULT_SOURCE','-DPH_HOST_TEST','-I',HERE,'-I',ROOT/'src',HERE/'ntp.c','-o',run/'ntp-test'],'ntp-compiler.log')
+ command([run/'ntp-test'],'ntp.log')
  core=[ROOT/'src'/('ph_'+n+'.c') for n in ('device','meter','udp','wire')]+[ROOT/'protocol/local_auth.c']
  command(flags+[HERE/'host.c']+core+['-lm','-o',run/'host-tests'],'host-compiler.log')
  command([sys.executable,HERE/'test_protocols.py',run/'host-tests'],'host-tests.log')
@@ -34,7 +36,7 @@ def main():
  for directory in ('protocol','protocol/httpd','protocol/mqtt','protocol/paho','protocol/paho/MQTTPacket'):sources+=list((ROOT/directory).glob('*.c'))
  sdk=Path.home()/'.cache/phicomm/openbeken/bk7231n-upstream/platforms/bk7231n/bk7231n_os/beken378/func/wolfssl'
  host_flags=['-D_DEFAULT_SOURCE','-DPH_HOST_TEST','-DPH_S30_LAN_V4','-DPH_HTTP_PORT=ph_host_http_port','-I',HERE,'-I',ROOT/'src','-I',run,'-I',sdk,'-Wno-unused-parameter','-Wno-missing-field-initializers','-Wno-unused-variable','-Wno-unused-function','-Wno-unused-but-set-variable','-Wno-parentheses-equality']
- lan=[ROOT/'src'/name for name in ('ph_lan_v4.c','ph_mdns.c','ph_sha256.c')]
+ lan=[ROOT/'src'/name for name in ('ph_lan_v4.c','ph_mdns.c','ph_sha256.c','ph_ntp.c')]
  command(flags+host_flags+[HERE/'migration.c',HERE/'platform_host.c']+core+lan+['-lm','-lpthread','-o',run/'migration-test'],'migration-compiler.log')
  command([run/'migration-test',run/'migration-storage'],'migration.log')
  command(flags+host_flags+[HERE/'wifi.c',HERE/'platform_host.c']+core+lan+['-Wl,--wrap=rtos_get_time,--wrap=xPortGetFreeHeapSize,--wrap=Main_IsConnectedToWiFi,--wrap=bk_wlan_scan_ap_reg_cb,--wrap=bk_wlan_start_scan,--wrap=sr_get_scan_results,--wrap=bk_wlan_get_scan_ap_result_numbers,--wrap=sr_release_scan_results,--wrap=CFG_Save_IfThereArePendingChanges','-lm','-lpthread','-o',run/'wifi-test'],'wifi-compiler.log')

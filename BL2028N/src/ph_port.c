@@ -28,6 +28,7 @@ extern void set_printf_port(unsigned char);
 #include "boot_trace.h"
 #include "memory_policy.h"
 #include "storage_legacy.h"
+#include "ntp.h"
 #include "../protocol/httpd/http.h"
 #include "../protocol/diagnostics_ids.h"
 extern void OTA_RequestDownloadFromHTTP(const char *);
@@ -124,18 +125,10 @@ typedef struct {
     uint32_t magic,size,crc;ph_settings settings;
     uint32_t credential_magic;char password[33];uint8_t reserved[3];
 } disk_record;
-/* PBL4 is a fixed disk ABI. A later auth/settings expansion needs another
- * explicit importer rather than silently reinterpreting this record. */
-typedef char ph_store_v4_auth_size[(sizeof(ph_auth_store)==780)?1:-1];
-typedef char ph_store_v4_settings_size[(sizeof(ph_settings)==1096)?1:-1];
-typedef char ph_store_v4_record_size[(sizeof(disk_record)==1152)?1:-1];
-typedef char ph_store_v4_auth_offset[(offsetof(ph_settings,auth)==48)?1:-1];
-typedef char ph_store_v4_report_offset[(offsetof(ph_settings,report_seconds)==828)?1:-1];
-typedef char ph_store_v4_name_offset[(offsetof(ph_settings,name)==832)?1:-1];
-typedef char ph_store_v4_socket_offset[(offsetof(ph_settings,socket_name)==896)?1:-1];
-typedef char ph_store_v4_payload_offset[(offsetof(disk_record,settings)==16)?1:-1];
-typedef char ph_store_v4_credential_offset[(offsetof(disk_record,credential_magic)==1112)?1:-1];
-typedef char ph_store_v4_password_offset[(offsetof(disk_record,password)==1116)?1:-1];
+/* PBL5 adds clock settings and fixed-width time rules after the v4 prefix. */
+typedef char ph_store_v5_settings_size[(sizeof(ph_settings)==1352)?1:-1];
+typedef char ph_store_v5_record_size[(sizeof(disk_record)==1408)?1:-1];
+typedef char ph_store_v5_payload_offset[(offsetof(disk_record,settings)==16)?1:-1];
 static bool password_value_valid(const char *p) {
     if(!p)return false;size_t n=0;
     for(;n<33&&p[n];++n)if((unsigned char)p[n]<32||(unsigned char)p[n]>126)return false;
@@ -193,12 +186,12 @@ static bool save_record(const ph_settings *s,const ph_auth_store *auth,double en
 static bool save(void *unused, const ph_settings *s) {
     (void)unused;return save_record(s,NULL,s->energy_kwh,committed_password,credential_owned);
 }
-static bool load(ph_settings *s) {
-    union {disk_record current;ph_store_v1_record v1;ph_store_v2_record v2;ph_store_v3_record v3;} r;
+static __attribute__((noinline)) bool load(ph_settings *s) {
+    union {disk_record current;ph_store_v1_record v1;ph_store_v2_record v2;ph_store_v3_record v3;ph_store_v4_record v4;} r;
     lfs_file_t f;
     if(!lfs_present() || lfs_file_open(&lfs,&f,".phicomm",LFS_O_RDONLY)<0)return false;
     lfs_soff_t size=lfs_file_size(&lfs,&f);bool ok=false,migrated=false;
-    if((size==sizeof(disk_record)||size==sizeof(ph_store_v1_record)||size==sizeof(ph_store_v2_record)||size==sizeof(ph_store_v3_record)) &&
+    if((size==sizeof(disk_record)||size==sizeof(ph_store_v1_record)||size==sizeof(ph_store_v2_record)||size==sizeof(ph_store_v3_record)||size==sizeof(ph_store_v4_record)) &&
        size<=sizeof(r) && lfs_file_read(&lfs,&f,&r,(size_t)size)==size && r.current.size==size) {
         if(r.current.magic==PH_STORE_MAGIC&&size==sizeof(disk_record)) {
             ok=r.current.crc==crc32(&r.current.settings,sizeof(r.current)-offsetof(disk_record,settings))&&
@@ -206,6 +199,15 @@ static bool load(ph_settings *s) {
             if(ok) {
                 *s=r.current.settings;import_credential(r.current.credential_magic,r.current.password);
             }
+        } else if(r.current.magic==PH_STORE_V4_MAGIC&&size==sizeof(ph_store_v4_record)&&
+                  r.v4.settings.magic==PH_STORE_V4_MAGIC&&
+                  r.v4.crc==crc32(&r.v4.settings,sizeof(r.v4)-offsetof(ph_store_v4_record,settings))&&
+                  credential_fields_valid(r.v4.credential_magic,r.v4.password,r.v4.reserved)) {
+            ph_settings_default(s);
+            /* Copy defined fields only; v4's tail padding is not v5 timezone. */
+            memcpy(s,&r.v4.settings,offsetof(ph_settings,timezone));s->magic=PH_STORE_MAGIC;
+            ok=ph_settings_valid(s);migrated=ok;
+            if(ok)import_credential(r.v4.credential_magic,r.v4.password);
         } else if(r.current.magic==PH_STORE_V3_MAGIC&&size==sizeof(ph_store_v3_record)&&
                   r.v3.settings.magic==PH_STORE_V3_MAGIC&&r.v3.settings.power_on<=1&&
                   r.v3.crc==crc32(&r.v3.settings,sizeof(r.v3)-offsetof(ph_store_v3_record,settings))&&
@@ -242,7 +244,7 @@ static bool load(ph_settings *s) {
      * atomic-save failure keeps the old record intact; use corrected defaults
      * for this boot and retry next boot, without discarding any settings. */
     if(ok) {
-        if(migrated&&r.current.magic!=PH_STORE_V3_MAGIC){credential_owned=false;memset(committed_password,0,sizeof(committed_password));}
+        if(migrated&&r.current.magic!=PH_STORE_V3_MAGIC&&r.current.magic!=PH_STORE_V4_MAGIC){credential_owned=false;memset(committed_password,0,sizeof(committed_password));}
         if(ph_settings_migrate_meter_defaults(s))migrated=true;if(migrated)(void)save(NULL,s);
     }
     return ok;
@@ -543,11 +545,19 @@ static void network_thread(beken_thread_arg_t arg) {
  PH_BOOT_STAGE("lan-thread");
  for(;;) {
   uint32_t t=now(NULL);unsigned reset=0;char url[128]="";bool restart=false;
-  scan_step(t);mqtt_step(t);lock();
+  scan_step(t);mqtt_step(t);
+  char clock_host[64];lock();memcpy(clock_host,bl_device.settings.ntp_host,sizeof(clock_host));
+  bool clock_enabled=Main_IsConnectedToWiFi()&&!bl_ota_pending&&!bl_scan_busy();unlock();
+#ifdef PH_HOST_TEST
+  /* Socket harnesses are deterministic and do not contact public clock
+   * servers. The SNTP owner has its own real-UDP test peer. */
+  clock_enabled=clock_enabled&&getenv("PH_HOST_NTP_NETWORK")!=NULL;
+#endif
+  ph_ntp_poll(clock_host,clock_enabled);lock();
   if(!bl_ota_pending&&(int32_t)(t-reboot_at)>=0) {
    restart=reboot_pending;reset=reset_requested;reset_requested=0;
   }
-  if(!reset&&!restart&&!bl_ota_pending)ph_power_poll(&bl_device);
+  if(!reset&&!restart&&!bl_ota_pending){ph_power_poll(&bl_device);ph_schedule_poll(&bl_device);}
   checkpoint(t,restart||reset==1);
   if(reset==2&&!factory_reset_record())reset=0;
   if(bl_ota_pending) {

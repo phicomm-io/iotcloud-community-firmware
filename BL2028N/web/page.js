@@ -98,9 +98,13 @@ UI.start({
  model:'S30-V1B',kindKey:'kind.s30',icon:'plug',mqttHostMax:127,mqttPasswordMax:127,factoryReset:true,
  otaName:'BL2028N_OTA.rbl',haHintKey:'s30.ha_hint',otaHintKey:'s30.ota_hint',buttonHintKey:'s30.button_hint',
  interval:5000,
- groups:[['grp.network',['network','mqtt']],['grp.device',['device']],['grp.auto',['schedule']],['grp.system',['firmware','diagnostics','maintenance']]],
- nav:{network:'nav.wifi',mqtt:'nav.mqtt',device:'nav.general',schedule:'nav.schedule',firmware:'nav.firmware',diagnostics:'nav.diagnostics',maintenance:'nav.maintenance'},
- pages:{device:{}},
+ groups:[['grp.network',['network','mqtt']],['grp.device',['device']],['grp.auto',['schedule','clock']],['grp.system',['firmware','diagnostics','maintenance']]],
+ nav:{network:'nav.wifi',mqtt:'nav.mqtt',device:'nav.general',schedule:'nav.schedule',clock:'clock.title',firmware:'nav.firmware',diagnostics:'nav.diagnostics',maintenance:'nav.maintenance'},
+ pages:{device:{},clock:UI.clockCard({
+  load:options=>command('time.get',{},options),
+  save:values=>command('time.set',values).then(()=>UI.reload()),
+  status:s=>[['clock.synced',t(s.time_synced?'s.synced':'s.syncing')],['clock.tz',UI.tzLabel(s.timezone_minutes??480)],['clock.ntp',s.ntp_host||'']]
+ })},
  diagGroups:[['diag.g_sockets',['socket_names','socket_states','child_lock','led_enabled','power_on']],
   ['diag.g_power',['report_seconds','voltage_coefficient','current_coefficient','power_coefficient','metering']]],
  healthChecks:s=>Object.hasOwn(s,'free_memory')?[['diag.c_memory',s.free_memory>=8192?'ok':'warn',Math.round(s.free_memory/1024)+' KB']]:[],

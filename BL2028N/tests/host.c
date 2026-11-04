@@ -133,7 +133,8 @@ int main(void){
         else if(line[0]=='F'){fail_save=atoi(s)!=0;n=stats(out);}
         else if(line[0]=='S')n=stats(out);
         else if(line[0]=='L'){ph_local_toggle(&d);n=stats(out);}
-        else if(line[0]=='P'){ph_power_poll(&d);n=stats(out);}
+        else if(line[0]=='P'){ph_power_poll(&d);ph_schedule_poll(&d);n=stats(out);}
+        else if(line[0]=='Z'){ph_clock_sync(&d,(uint32_t)strtoul(s,NULL,10));n=stats(out);}
         else if(line[0]=='C'){int a,b,c,e,used;assert(sscanf(s,"%d %d %d %d %n",&a,&b,&c,&e,&used)==4);size_t k=unhex(s+used,in,sizeof(in));n=ph_command(&d,in,k,a,b,c,e,out,sizeof(out));}
         else if(line[0]=='Q'){int f,used;assert(sscanf(s,"%d %n",&f,&used)==1);s+=used;s[strcspn(s,"\r\n")]=0;n=ph_query(&d,s,f,out,sizeof(out));}
         else if(line[0]=='U'){size_t k=unhex(s,in,sizeof(in));n=ph_udp_handle(&udp,&d,&auth,in,k,out,sizeof(out));}

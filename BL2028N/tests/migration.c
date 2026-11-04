@@ -186,6 +186,31 @@ static void ota_checkpoint_tests(void) {
  bl_ota_pending=false;ota_url[0]=0;ph_device_set_maintenance(&bl_device,false);
  puts("PASS: OTA commits current energy before acceptance and leaves maintenance off on persistence failure");
 }
+static void v4_migration_tests(void) {
+ ph_store_v4_record old;memset(&old,0,sizeof(old));
+ old.magic=old.settings.magic=PH_STORE_V4_MAGIC;old.size=sizeof(old);
+ old.settings.revision=81;old.settings.indicator=1;old.settings.child_lock=1;old.settings.power_on=2;old.settings.last_relay=1;
+ old.settings.calibrated=1;old.settings.coefficients[0]=1.25;old.settings.coefficients[1]=2.5;old.settings.coefficients[2]=3.75;
+ old.settings.energy_kwh=88.25;old.settings.report_seconds=17;strcpy(old.settings.name,"V4 desk");strcpy(old.settings.socket_name,"Printer");
+ old.settings.auth.magic=PH_AUTH_STORE_MAGIC;old.settings.auth.version=PH_AUTH_STORE_VERSION;old.settings.auth.remote_count=1;
+ strcpy(old.settings.auth.remote[0].peer,"001122334455");memset(old.settings.auth.remote[0].key,0x31,16);old.settings.auth.remote[0].scopes=7;
+ old.settings.power_next_id=91;
+ for(unsigned i=0;i<8;i++)old.settings.power_rules[i]=(ph_store_v4_power_rule){.id=83+i,.enabled=1,.comparison=i%2,.power_milliwatts=1234+i,.seconds=19+i,.target=255,.on=i%2};
+ old.credential_magic=PH_CREDENTIAL_MAGIC;strcpy(old.password,"v4-test-password");
+ old.crc=crc32(&old.settings,sizeof(old)-offsetof(ph_store_v4_record,settings));
+ for(unsigned stage=1;stage<=6;++stage){
+  write_bytes(&old,sizeof(old));fail_stage=stage;ph_settings actual;assert(load(&actual));
+  assert(actual.magic==PH_STORE_MAGIC&&actual.power_on==2&&actual.last_relay&&actual.child_lock&&actual.energy_kwh==88.25);
+  assert(actual.power_next_id==91&&!memcmp(actual.power_rules,old.settings.power_rules,sizeof(old.settings.power_rules)));
+  assert(actual.timezone==480&&!strcmp(actual.ntp_host,"pool.ntp.org"));
+  assert(!memcmp(&actual.auth,&old.settings.auth,sizeof(actual.auth))&&!strcmp(actual.socket_name,"Printer"));
+  for(unsigned i=0;i<PH_TIME_RULES_MAX;i++)assert(!actual.time_rules[i].id);
+  assert(credential_owned&&!strcmp(committed_password,old.password));assert_old_file((const unsigned char *)&old,sizeof(old));
+  fail_stage=0;ph_settings reread;assert(load(&reread)&&!memcmp(&reread,&actual,sizeof(actual)));assert(load(&reread)&&!memcmp(&reread,&actual,sizeof(actual)));
+ }
+ old.settings.power_rules[0].on=2;old.crc=crc32(&old.settings,sizeof(old)-offsetof(ph_store_v4_record,settings));write_bytes(&old,sizeof(old));ph_settings invalid;assert(!load(&invalid));
+ puts("PASS: frozen v4 ABI preserves eight power rules, restore state, credentials and auth; all six save failures retain source bytes and retry into v5");
+}
 static void v3_migration_tests(void) {
  ph_store_v3_record old;memset(&old,0,sizeof(old));
  old.magic=old.settings.magic=PH_STORE_V3_MAGIC;old.size=sizeof(old);
@@ -247,7 +272,7 @@ static void restore_policy_tests(void) {
 }
 int main(int argc,char **argv) {
  assert(argc==2);snprintf(store_dir,sizeof(store_dir),"%s",argv[1]);mkdir(store_dir,0700);init_lfs(1);
- fixture_migration_tests();rejection_tests();meter_default_migration_tests();current_record_tests();ota_checkpoint_tests();v3_migration_tests();save_failure_tests();restore_policy_tests();
+ fixture_migration_tests();rejection_tests();meter_default_migration_tests();current_record_tests();ota_checkpoint_tests();v3_migration_tests();v4_migration_tests();save_failure_tests();restore_policy_tests();
  write_bytes(s30_legacy_v2,sizeof(s30_legacy_v2));PH_BL_Init(1);
  assert(bl_ready&&safe_boot&&!bl_device.relay&&bl_device.settings.power_on);assert_imported(&bl_device.settings,2);
  assert(!record_allocations);puts("PASS: safe boot retains saved policy and all migrated settings with relay off");

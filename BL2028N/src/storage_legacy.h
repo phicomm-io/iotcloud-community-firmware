@@ -38,6 +38,24 @@ typedef struct {
     uint32_t magic,size,crc;ph_store_v3_settings settings;
     uint32_t credential_magic;char password[33];uint8_t reserved[3];
 } ph_store_v3_record;
+/* Frozen v4 power-rule ABI (bf43dab2), including the two padding bytes after
+ * rules. Never use the expanded current settings size when importing it. */
+#define PH_STORE_V4_MAGIC UINT32_C(0x344c4250)
+typedef struct {
+    uint16_t id;uint8_t enabled,comparison;uint32_t power_milliwatts,seconds;
+    uint8_t target,on;uint16_t reserved;
+} ph_store_v4_power_rule;
+typedef struct {
+    uint32_t magic,revision;uint8_t child_lock,indicator,power_on,calibrated;
+    double coefficients[3],energy_kwh;ph_store_v3_auth auth;
+    uint32_t report_seconds;char name[64],socket_name[64];
+    uint16_t power_next_id;uint8_t last_relay,reserved;
+    ph_store_v4_power_rule power_rules[8];
+} ph_store_v4_settings;
+typedef struct {
+    uint32_t magic,size,crc;ph_store_v4_settings settings;
+    uint32_t credential_magic;char password[33];uint8_t reserved[3];
+} ph_store_v4_record;
 #define PH_STORE_ABI_ASSERT(name,expression) typedef char ph_store_abi_##name[(expression)?1:-1]
 PH_STORE_ABI_ASSERT(v3_auth,sizeof(ph_store_v3_auth)==780);
 PH_STORE_ABI_ASSERT(v3,sizeof(ph_store_v3_settings)==960);
@@ -60,4 +78,11 @@ PH_STORE_ABI_ASSERT(auth_offset,offsetof(ph_store_v2_settings,auth)==48);
 PH_STORE_ABI_ASSERT(report,offsetof(ph_store_v2_settings,report_seconds)==440);
 PH_STORE_ABI_ASSERT(name,offsetof(ph_store_v2_settings,name)==444);
 PH_STORE_ABI_ASSERT(socket_name,offsetof(ph_store_v2_settings,socket_name)==508);
+
+
+PH_STORE_ABI_ASSERT(v4_settings,sizeof(ph_store_v4_settings)==1096);
+PH_STORE_ABI_ASSERT(v4_record,sizeof(ph_store_v4_record)==1152);
+PH_STORE_ABI_ASSERT(v4_credential,offsetof(ph_store_v4_record,credential_magic)==1112);
+PH_STORE_ABI_ASSERT(v4_rules,offsetof(ph_store_v4_settings,power_rules)==964);
+
 #undef PH_STORE_ABI_ASSERT
