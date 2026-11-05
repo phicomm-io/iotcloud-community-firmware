@@ -122,6 +122,16 @@ typedef char tc1_auth_prefix_check[offsetof(user_config_t,local_auth)==sizeof(us
 bool tc1_auth_password_save(const char *);
 bool tc1_auth_reset(bool full);
 
+/* Boot diagnostics: reset cause and whether Flash config was unusable. */
+typedef struct {
+    uint32_t reset_reason, button_edges;
+    bool defaults_at_boot, version_mismatch;
+} tc1_config_diag_t;
+void tc1_config_diag(tc1_config_diag_t *out);
+const char *tc1_reset_reason_text(uint32_t reason);
+/* SDK button callback hook: counts edges on the power-button pin. */
+void app_easylink_button_event(unsigned long_press);
+
 extern char rtc_init;
 extern uint32_t total_time;
 extern char str_mac[16];

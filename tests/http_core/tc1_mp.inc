@@ -3,6 +3,10 @@
 static struct {char *web_password;} config_fixture={password},*user_config=&config_fixture;
 
 static int get_last_reset_reason(void){return 1;}
+/* TC1 main.c diagnostics: same shape as main.h, no behaviour under test. */
+typedef struct {uint32_t reset_reason,button_edges;bool defaults_at_boot,version_mismatch;} tc1_config_diag_t;
+static void tc1_config_diag(tc1_config_diag_t*o){o->reset_reason=1;o->button_edges=0;o->defaults_at_boot=false;o->version_mismatch=false;}
+static const char *tc1_reset_reason_text(uint32_t reason){(void)reason;return "power_on";}
 static void tc1_http_trace_mp(ph_writer*w){phw_begin(w,NULL,false);phw_end(w);}
 static bool ota_job_claim(void){if(job)return false;job=true;return true;}
 static void ota_job_release(void){assert(job);job=false;}
