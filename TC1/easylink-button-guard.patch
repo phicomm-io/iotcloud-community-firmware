@@ -1,0 +1,103 @@
+--- a/MiCO/system/mico_system_power_daemon.c
++++ b/MiCO/system/mico_system_power_daemon.c
+@@ -25,11 +25,17 @@ static mico_timed_event_t _timed_sys_power_state_change;
+ 
+ extern system_context_t* sys_context;
+ 
++/* Product diagnostics: 0 = click, 1 = long press. No I/O, no RTOS calls. */
++WEAK void app_easylink_button_event(unsigned long_press) { UNUSED_PARAMETER(long_press); }
++
+ extern void sendNotifySYSWillPowerOff(void);
+ 
+ USED void PlatformEasyLinkButtonClickedCallback(void)
+ {
+-  system_log_trace();
++  /* Runs in the pin interrupt. EasyLink_BUTTON is this product's power key and
++   * the SDK would start its own autoconfig here; do nothing but count. */
++  app_easylink_button_event(0);
++  return;
+   
+   require_quiet( sys_context, exit );
+   
+@@ -57,6 +63,14 @@ exit:
+ USED void PlatformEasyLinkButtonLongPressedCallback(void)
+ {
+   system_log_trace();
++
++  /* The SDK erases PARAMETER_1 and PARAMETER_2 here and reboots. On this board
++   * the button GPIO is the product's power key and the 3 s timer never rechecks
++   * the pin, so one interference edge from relay arcing wiped Wi-Fi and all
++   * settings. Keep the signal for diagnostics, drop the erasing. */
++  system_log("EASYLINK BUTTON: long press on product pin, partitions kept");
++  app_easylink_button_event(1);
++  return;
+   mico_Context_t* context = NULL;
+   mico_logic_partition_t *partition = NULL;
+   
+--- a/libraries/drivers/keypad/gpio_button/button.c
++++ b/libraries/drivers/keypad/gpio_button/button.c
+@@ -18,6 +18,9 @@
+ #include "mico_platform.h"
+ #include "button.h"
+ 
++/* Product diagnostics hook, defined weakly by the SDK power daemon. */
++extern void app_easylink_button_event(unsigned long_press);
++
+ #define keys_log(M, ...) custom_log("USER_KEYS", M, ##__VA_ARGS__)
+ #define keys_log_trace() custom_log_trace("USER_KEYS")
+ 
+@@ -39,44 +42,20 @@ typedef struct _button_context_t{
+ 
+ static button_context_t context[5];
+ 
+-static void button_rising_irq_handler( void* arg );
+-static void button_rising_irq_handler( void* arg );
++/* The rising-edge handler and its re-arm are gone: nothing may re-enter the
++ * SDK button state machine from this pin. */
+ 
+ static void button_falling_irq_handler( void* arg )
+ {
+-    button_context_t *_context = arg;
+-#ifdef CONFIG_MX108
+-    if (_context->ignore == 1) {
+-      _context->ignore = 0;
+-      return;
+-    }
+-#endif
+-    MicoGpioEnableIRQ( _context->gpio, IRQ_TRIGGER_RISING_EDGE, button_rising_irq_handler, _context );
+-    _context->start_time = mico_rtos_get_time()+1;
+-    mico_rtos_start_timer(&_context->_user_button_timer);
+-}
+-static void button_rising_irq_handler( void* arg )
+-{
+-    button_context_t *_context = arg;
+-    int interval = -1;
+-    
+-#ifdef CONFIG_MX108  
+-    if (_context->ignore == 1) {
+-        _context->ignore = 0;
+-        return;
+-    }
+-#endif    
+-    interval = (int)mico_rtos_get_time() + 1 - _context->start_time ;
+-    if ( (_context->start_time  != 0) && interval > 50 && interval < _context->timeout){
+-      /* button clicked once */
+-      if( _context->pressed_func != NULL )
+-        (_context->pressed_func)();
+-    }
+-    MicoGpioEnableIRQ( _context->gpio, IRQ_TRIGGER_FALLING_EDGE, button_falling_irq_handler, _context );
+-    mico_rtos_stop_timer(&_context->_user_button_timer);
+-    _context->start_time  = 0;
++    (void)arg;
++
++    /* Count only. Re-arming the edge, reading the RTOS tick and starting the
++     * timer are kernel calls from interrupt context, and that timer ends in a
++     * long-press callback that erases the product's parameter partitions. A
++     * single interference edge from relay arcing used to do exactly that, so
++     * this handler must not reach the SDK button state machine at all. */
++    app_easylink_button_event(0);
+ }
+-
+ static void button_timeout_handler( void* arg )
+ {
+   button_context_t *_context = arg;
