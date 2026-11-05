@@ -1,0 +1,26 @@
+--- a/board/MK3031/platform.c
++++ b/board/MK3031/platform.c
+@@ -208,7 +208,6 @@
+ void init_platform( void )
+ {
+ #if defined (MOC) && (MOC == 1)
+-    button_init_t init;
+     extern int get_last_reset_reason(void);
+ 
+     if ( get_last_reset_reason() & LAST_RST_CAUSE_WDT )
+@@ -221,13 +220,8 @@
+     MicoGpioInitialize( (mico_gpio_t)MICO_RF_LED, OUTPUT_PUSH_PULL );
+     MicoGpioOutputHigh( (mico_gpio_t)MICO_RF_LED );
+ 
+-    //	Initialise EasyLink buttons
+-    init.gpio = EasyLink_BUTTON;
+-    init.pressed_func = PlatformEasyLinkButtonClickedCallback;
+-    init.long_pressed_func = PlatformEasyLinkButtonLongPressedCallback;
+-    init.long_pressed_timeout = RestoreDefault_TimeOut;
+-
+-    button_init( IOBUTTON_EASYLINK, init );
++    /* TC1 polls GPIO23 for its own reset gestures. Skip SDK EasyLink
++     * handling so a false long press cannot erase the configuration. */
+ 
+ #ifdef USE_MiCOKit_EXT
+   dc_motor_init( );
