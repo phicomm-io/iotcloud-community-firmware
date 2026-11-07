@@ -1,0 +1,224 @@
+{
+  "schema": 1,
+  "updated": "2026-11-07",
+  "files": [
+    {
+      "model": "m1",
+      "path": "assets/firmware/m1-mcu/m1-atsamd20g18a-stock-11.1.2.1.bin",
+      "label": {
+        "zh": "传感器主控 11.1.2.1",
+        "en": "Sensor controller 11.1.2.1"
+      },
+      "version": "11.1.2.1",
+      "format": "atsamd20-main-flash",
+      "address": "0x0",
+      "size": 262144,
+      "sha256": "6a8a9f72741e01d5ebc73467819079146553ec73339029eaf4cc49e8cbd1a7f9",
+      "image_size": 262144,
+      "image_sha256": "6a8a9f72741e01d5ebc73467819079146553ec73339029eaf4cc49e8cbd1a7f9"
+    },
+    {
+      "model": "m1",
+      "path": "assets/firmware/stock/m1-stock-14.2.4.1-kernel-app.bin",
+      "label": {
+        "zh": "联网模块 14.2.4.1 · 内核与应用",
+        "en": "Wi-Fi 14.2.4.1 · kernel and application"
+      },
+      "version": "14.2.4.1",
+      "format": "mico-kernel-application",
+      "size": 741376,
+      "sha256": "3d916ba30e224ef9ecbc630bfe41d337140256180fac66fcf0e36de86e8f40c9",
+      "image_size": 741376,
+      "image_sha256": "3d916ba30e224ef9ecbc630bfe41d337140256180fac66fcf0e36de86e8f40c9",
+      "address": "0x13000"
+    },
+    {
+      "model": "a1",
+      "path": "assets/firmware/stock/a1-stock-1.47-kernel-app.bin",
+      "label": {
+        "zh": "联网模块 1.47 · 内核与应用",
+        "en": "Wi-Fi 1.47 · kernel and application"
+      },
+      "version": "1.47",
+      "format": "mico-kernel-application",
+      "size": 741376,
+      "sha256": "cfbc630eb213dbe4333c8a10e51ea7796b0ad246acc257bb9499383e2fa490e9",
+      "image_size": 741376,
+      "image_sha256": "cfbc630eb213dbe4333c8a10e51ea7796b0ad246acc257bb9499383e2fa490e9",
+      "address": "0x13000"
+    },
+    {
+      "model": "tc1",
+      "path": "assets/firmware/stock/tc1-a1-stock-1.0.0.21.bin.gz",
+      "label": {
+        "zh": "原厂发布镜像 1.0.0.21",
+        "en": "Stock distribution image 1.0.0.21"
+      },
+      "version": "1.0.0.21",
+      "format": "mico-distribution-gzip",
+      "size": 1043889,
+      "sha256": "e1dacd09eebeeaf847f2136498132bd956a9e4a30787c879de668c9a7908a2d1",
+      "image_size": 2097152,
+      "image_sha256": "eedc365f72ed27f0ec4bfacd6fbf56d473a8010be57fc867efe6a95dcf0f24b5"
+    },
+    {
+      "model": "s30",
+      "path": "assets/firmware/stock/s30-v1b-stock-2M.1220-app-crc.bin",
+      "label": {
+        "zh": "2M.1220 · 含 CRC 的应用分区",
+        "en": "2M.1220 · application partition with CRC"
+      },
+      "version": "2M.1220",
+      "format": "bk7231n-physical-crc-application",
+      "size": 1183744,
+      "sha256": "0f0a21991df533d01c21cafba208255810bc1bdbe4161b95b5b2bb760fbba9b8",
+      "image_size": 1183744,
+      "image_sha256": "0f0a21991df533d01c21cafba208255810bc1bdbe4161b95b5b2bb760fbba9b8",
+      "address": "0x11000"
+    },
+    {
+      "model": "daikin",
+      "path": "assets/firmware/stock/daikin-bry88ab151k-stock-SensorKit2.app.bin",
+      "label": {
+        "zh": "G2 BRY88AB151K · SensorKit2 应用",
+        "en": "G2 BRY88AB151K · SensorKit2 application"
+      },
+      "version": "SensorKit2 1 (2020-01-16)",
+      "format": "esp32-application",
+      "size": 703952,
+      "sha256": "256fb6486ab07b60f983bbd94535311e74ef17f63db9a87fa511d1349064b83d",
+      "image_size": 703952,
+      "image_sha256": "256fb6486ab07b60f983bbd94535311e74ef17f63db9a87fa511d1349064b83d",
+      "address": "0x10000"
+    },
+    {
+      "model": "daikin",
+      "path": "assets/firmware/stock/daikin-bry88ab151k-stock.bootloader.bin",
+      "label": {
+        "zh": "G2 BRY88AB151K · 引导程序",
+        "en": "G2 BRY88AB151K · bootloader"
+      },
+      "version": "ESP-IDF v3.3 beta",
+      "format": "esp32-bootloader",
+      "size": 24704,
+      "sha256": "f8cb15df4af963ad2e6461daf73a4d77b67e19c04887c76b4d1f22b148a77aef",
+      "image_size": 24704,
+      "image_sha256": "f8cb15df4af963ad2e6461daf73a4d77b67e19c04887c76b4d1f22b148a77aef",
+      "address": "0x1000"
+    },
+    {
+      "model": "daikin",
+      "path": "assets/firmware/stock/daikin-bry88ab151k-stock.partition-table.bin",
+      "label": {
+        "zh": "G2 BRY88AB151K · 分区表",
+        "en": "G2 BRY88AB151K · partition table"
+      },
+      "version": "SensorKit2",
+      "format": "esp32-partition-table",
+      "size": 4096,
+      "sha256": "a28b436e4953abb7b05fe08382cf4a8e76f5e18aed37373263ac1ff968265960",
+      "image_size": 4096,
+      "image_sha256": "a28b436e4953abb7b05fe08382cf4a8e76f5e18aed37373263ac1ff968265960",
+      "address": "0x8000"
+    },
+    {
+      "model": "bry88bba15g",
+      "path": "assets/firmware/stock/daikin-g3-stock-esp32-V01.02.00.app.bin",
+      "label": {
+        "zh": "ESP32 V01.02.00 · 应用",
+        "en": "ESP32 V01.02.00 · application"
+      },
+      "version": "V01.02.00",
+      "format": "esp32-application",
+      "size": 1316416,
+      "sha256": "96e7a0058d1937e082bc216da2baee90a9abb349846077d40a64ee2ff9338697",
+      "image_size": 1316416,
+      "image_sha256": "96e7a0058d1937e082bc216da2baee90a9abb349846077d40a64ee2ff9338697",
+      "address": "0x10000"
+    },
+    {
+      "model": "bry88bba15g",
+      "path": "assets/firmware/stock/daikin-g3-stock-esp32.bootloader.bin",
+      "label": {
+        "zh": "ESP32 · 引导程序",
+        "en": "ESP32 · bootloader"
+      },
+      "version": "ESP-IDF v5.0.1",
+      "format": "esp32-bootloader",
+      "size": 25472,
+      "sha256": "74d47b6b88638e5489e87154c3274f345dad7cadd03d29610b71edc966c2634c",
+      "image_size": 25472,
+      "image_sha256": "74d47b6b88638e5489e87154c3274f345dad7cadd03d29610b71edc966c2634c",
+      "address": "0x1000"
+    },
+    {
+      "model": "bry88bba15g",
+      "path": "assets/firmware/stock/daikin-g3-stock-esp32.partition-table.bin",
+      "label": {
+        "zh": "ESP32 · 分区表",
+        "en": "ESP32 · partition table"
+      },
+      "version": "V01.02.00",
+      "format": "esp32-partition-table",
+      "size": 4096,
+      "sha256": "9bf014e2692d0e88f48fc30d7a9956f43ce24da034ad5d02db60028a7ce16ea1",
+      "image_size": 4096,
+      "image_sha256": "9bf014e2692d0e88f48fc30d7a9956f43ce24da034ad5d02db60028a7ce16ea1",
+      "address": "0x8000"
+    },
+    {
+      "model": "bry88bba15g",
+      "path": "assets/firmware/stock/daikin-g3-stock-screen-SV.04.00.04.00.app.bin",
+      "label": {
+        "zh": "屏幕 MCU SV.04.00.04.00 · 官方 OTA 应用",
+        "en": "Screen MCU SV.04.00.04.00 · vendor OTA application"
+      },
+      "version": "SV.04.00.04.00",
+      "format": "swm34s-application",
+      "size": 421888,
+      "sha256": "1d0b848af6195b39849260a3c9ff2a020d574ca9b98c2c2665d2278f349796c2",
+      "image_size": 421888,
+      "image_sha256": "1d0b848af6195b39849260a3c9ff2a020d574ca9b98c2c2665d2278f349796c2",
+      "address": "0x14000"
+    },
+    {
+      "model": "bry88bba15g",
+      "path": "assets/firmware/stock/daikin-g3-stock-screen-boot-80k.bin",
+      "label": {
+        "zh": "屏幕 MCU · 80 KiB 引导区备份",
+        "en": "Screen MCU · 80 KiB boot backup"
+      },
+      "version": "SV.04.00.01.00 board",
+      "format": "swm34s-boot-reference",
+      "size": 81920,
+      "sha256": "ccb9d414186c5ea47823badf5083f7ab5b1b61b02c6a8d0510af6ee31bebdf09",
+      "image_size": 81920,
+      "image_sha256": "ccb9d414186c5ea47823badf5083f7ab5b1b61b02c6a8d0510af6ee31bebdf09",
+      "address": "0x0"
+    },
+    {
+      "model": "bry88bba15g",
+      "path": "assets/firmware/stock/daikin-g3-stock-screen-resources-16m.bin.gz",
+      "label": {
+        "zh": "屏幕外部 NOR · 原厂资源",
+        "en": "Screen external NOR · stock resources"
+      },
+      "version": "Original resource dump",
+      "format": "spi-nor-full-gzip",
+      "size": 892778,
+      "sha256": "b4b361b6f58297bc6d5d0f96057ca60e3389c87508ab6a1f515d3bd00ec98c59",
+      "image_size": 16777216,
+      "image_sha256": "b56551e9853bbb7024b7846afa25fdd613b1fabc79bf8812eb6b09ee040cafc6",
+      "address": "0x0"
+    }
+  ],
+  "unavailable": [
+    {
+      "model": "daikin",
+      "label": {
+        "zh": "G1 BRY88AA151K 尚无经核验的原厂镜像；此处 G2 文件不适用",
+        "en": "No verified stock G1 BRY88AA151K image; the G2 files here do not apply"
+      }
+    }
+  ]
+}

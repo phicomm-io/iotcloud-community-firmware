@@ -1,10 +1,10 @@
 # Device interfaces and protocols
 
-This guide uses **v1.0.0-rc.5 (Beta)** and **v0.9.27 (stable)** as integration baselines. Check the model, running version and variant in the device WebUI before choosing an encoding and capabilities. The M1 sensor controller has its own version.
+This guide uses **v1.0.0-rc.6 (Beta)** and **v0.9.27 (stable)** as integration baselines. Check the model, running version and variant in the device WebUI before choosing an encoding and capabilities. The M1 sensor controller has its own version.
 
 ## Baselines and encoding
 
-| Item | RC5 | 0.9.27 |
+| Item | RC6 | 0.9.27 |
 | --- | --- | --- |
 | Devices | TC1, M1, A1, DAIKIN, ORVIBO S30-V1B | TC1, M1, A1, DAIKIN |
 | Ordinary HTTP commands | MessagePack, `application/msgpack` | JSON, `application/json` |
@@ -17,13 +17,13 @@ The project name is `iotcloud`, the device protocol is `openiot`, and TMCP ident
 
 S30-V1B also advertises CBOR support; these cross-device examples use the default MessagePack encoding.
 
-RC5 does not downgrade after a JSON request, timeout or `busy`. MQTT `availability` remains plain text `online` / `offline`; firmware uploads and configuration backups retain their own binary file formats.
+RC6 does not downgrade after a JSON request, timeout or `busy`. MQTT `availability` remains plain text `online` / `offline`; firmware uploads and configuration backups retain their own binary file formats.
 
 ## HTTP access
 
 Without a management password, access is open and creates no login session. With a password, Basic authentication accepts username `admin` and the device Web password. MQTT Broker credentials and UDP pairing credentials are managed separately. Use HTTP on a trusted LAN. Browser access across origins also requires the device's Origin / OPTIONS checks and browser local network permission.
 
-Common RC5 routes follow. Ordinary GET queries return data objects; POST commands return envelopes with `code/data`. Discover actions through `capabilities.get` → `data.actions`. Specialized routes also depend on model and variant.
+Common RC6 routes follow. Ordinary GET queries return data objects; POST commands return envelopes with `code/data`. Discover actions through `capabilities.get` → `data.actions`. Specialized routes also depend on model and variant.
 
 | Method and path | Result or purpose |
 | --- | --- |
@@ -41,7 +41,7 @@ Common RC5 routes follow. Ordinary GET queries return data objects; POST command
 
 S30-V1B uses `ota.start` with its `.rbl` URL. It has no local file upload, configuration backup / restore or MCU bridge. See [firmware updates](firmware-update) for package selection and upload steps on the other devices.
 
-These dictionaries show the decoded structure. RC5 transmits MessagePack bytes:
+These dictionaries show the decoded structure. RC6 transmits MessagePack bytes:
 
 ```python
 request = {"request_id": "read_001", "action": "status.get", "params": {}}
@@ -52,7 +52,7 @@ Use `code` to classify results: `ok` for a successful query and `accepted` for a
 
 ## Python query example
 
-Download the [query script](assets/examples/device_query.py). It only queries capabilities, status and redacted configuration, never retries automatically, and prompts for passwords. RC5 needs Python's `msgpack` package; 0.9.27 uses the standard library.
+Download the [query script](assets/examples/device_query.py). It only queries capabilities, status and redacted configuration, never retries automatically, and prompts for passwords. RC6 needs Python's `msgpack` package; 0.9.27 uses the standard library.
 
 ```sh
 python3 device_query.py http://192.168.1.100 --baseline rc5
@@ -91,9 +91,9 @@ curl --fail-with-body --max-time 10 -H 'Content-Type: application/json' \
 
 ## MQTT commands and discovery
 
-The RC5 device root is `phicomm/v2/<scope>/<model>/<device_id>`. Scope is `u_` plus lowercase hexadecimal UTF-8 username bytes, or `local` without a username. Device IDs are factory MAC addresses as 12 lowercase hexadecimal digits. Read the model segment from discovery, such as `tc1`, `m1`, `a1`, `daikin` or `s30-v1b`; do not infer it from the chip.
+The RC6 device root is `phicomm/v2/<scope>/<model>/<device_id>`. Scope is `u_` plus lowercase hexadecimal UTF-8 username bytes, or `local` without a username. Device IDs are factory MAC addresses as 12 lowercase hexadecimal digits. Read the model segment from discovery, such as `tc1`, `m1`, `a1`, `daikin` or `s30-v1b`; do not infer it from the chip.
 
-| Topic | Retain | RC5 payload |
+| Topic | Retain | RC6 payload |
 | --- | --- | --- |
 | `phicomm/v2/<scope>/discovery/<device_id>` | Yes | MessagePack schema 2 announcement with `wire_version:1`, `wire_formats:["msgpack"]`, `default_wire_format:"msgpack"` |
 | `<root>/availability` | Yes / LWT | Text `online` / `offline` |
@@ -113,7 +113,7 @@ Home Assistant uses `homeassistant/.../config` and the device's HA JSON topics. 
 
 ## Sensor field protocol
 
-RC5 schema 3 uses two MessagePack topics:
+RC6 schema 3 uses two MessagePack topics:
 
 - `phicomm/v2/<scope>/sensor/<device_id>/metadata`: retained field descriptors.
 - `phicomm/v2/<scope>/sensor/<device_id>/state`: non-retained complete live snapshots.
@@ -136,7 +136,7 @@ state = {
 
 ## UDP and MCU proto
 
-| Protocol | RC5 definition | Source |
+| Protocol | RC6 definition | Source |
 | --- | --- | --- |
 | Sensor LAN v3 | MessagePack `read/probe/sample/pong`, 16-byte bin token, integer measurements in fixed units | `common/lan_wire.h`, `common/lan_wire.inc` |
 | Business LAN v4 | UDP 11288, `_openiot._udp.local.`, `command/result/pull/ack`; inner command is a MessagePack bin | `common/lan_wire_v4.h`, `common/lan_wire_v4.inc` |
@@ -146,6 +146,6 @@ LAN v4 limits are 1200 bytes per frame, 1024 bytes per command body and 8192 byt
 
 ## Implementation and specification sources
 
-RC5 statements were checked against [fixed source c09a067a](https://github.com/phicomm-io/iotcloud-community-firmware/tree/c09a067afe577c721d49c113e0c8ce88afb1f951): `common/service_mp.inc` (commands), `common/service_product_mp.inc` (capabilities / identity), `common/mqtt/discovery_mp.h` (discovery), `common/sensor_mp.h` (schema 3) and `common/lan_wire*.inc` (UDP). For 0.9.27, use the [stable source](https://github.com/phicomm-io/phicomm-community-firmware/tree/v0.9.27).
+RC6 statements were checked against [fixed source b2477120](https://github.com/phicomm-io/iotcloud-community-firmware/tree/b2477120df5fa0b53a4bcb4cae480680bd66c460): `common/service_mp.inc` (commands), `common/service_product_mp.inc` (capabilities / identity), `common/mqtt/discovery_mp.h` (discovery), `common/sensor_mp.h` (schema 3) and `common/lan_wire*.inc` (UDP). For 0.9.27, use the [stable source](https://github.com/phicomm-io/phicomm-community-firmware/tree/v0.9.27).
 
-The [developer protocol repository](https://github.com/phicomm-io/iotcloud-community-protocols) provides contract indexes, schemas, vectors and generated types. `protocols.lock.json` pins a consumed revision; its historical JSON contracts do not replace the current RC5 binary implementation. Interface changes must update protocol definitions, positive / negative examples, generated artifacts and consumer locks together.
+The [developer protocol repository](https://github.com/phicomm-io/iotcloud-community-protocols) provides contract indexes, schemas, vectors and generated types. `protocols.lock.json` pins a consumed revision; its historical JSON contracts do not replace the current RC6 binary implementation. Interface changes must update protocol definitions, positive / negative examples, generated artifacts and consumer locks together.

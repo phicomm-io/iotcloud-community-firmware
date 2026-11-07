@@ -57,6 +57,19 @@ fi
 for entry in .github alpha; do
  if [[ -d "$target/public/$entry" ]]; then cp -a "$target/public/$entry" build/pages/; fi
 done
+# Retained Pages workflows must stage the illustrations generated with the site.
+python3 - <<'PY'
+from pathlib import Path
+workflow = Path('build/pages/.github/workflows/wiki-demo.yml')
+if workflow.is_file():
+ text = workflow.read_text()
+ anchor = '          if [ -d dakin_lvgl ]; then'
+ if 'if [ -d illustrations ]; then' not in text:
+  if anchor not in text:
+   raise ValueError('Pages staging step not found')
+  text = text.replace(anchor, '          if [ -d illustrations ]; then cp -a illustrations "$RUNNER_TEMP/public-site/"; fi\n' + anchor, 1)
+  workflow.write_text(text)
+PY
 if [[ -d "$target/public/tools" ]]; then
  python3 - "$target/public/tools" <<'PY'
 import shutil,sys

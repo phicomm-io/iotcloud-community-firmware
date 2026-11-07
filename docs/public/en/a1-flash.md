@@ -1,5 +1,7 @@
 # A1: wired installation and recovery
 
+Start at [Firmware & resources]({{SITE_URL}}en/#releases) and choose the latest compatible release for your device with its matching checksums. Pinned versions below are reproducible examples; stated minimum versions, stock versions and migration-tool requirements still apply.
+
 For the A1 with the original EMW3080B / MK3080B Wi-Fi module. Use only `A1` firmware files. For installation over Wi-Fi, see [A1 stock OTA](a1-no-disassembly).
 
 Read [Before flashing](flash-prep). Disconnect mains, original supplies and loads, use a stable independent **3.3 V** supply, and back up the complete Flash before writing. A full image overwrites the bootloader, original firmware and some settings.

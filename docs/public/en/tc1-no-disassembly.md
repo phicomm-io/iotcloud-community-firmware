@@ -1,5 +1,7 @@
 # TC1 OTA internals and custom images
 
+Start at [Firmware & resources]({{SITE_URL}}en/#releases) and choose the latest compatible release for your device with its matching checksums. Pinned versions below are reproducible examples; stated minimum versions, stock versions and migration-tool requirements still apply.
+
 **For TC1 A1 hardware (EMW3031 / MK3031) running stock firmware 1.0.0.26, 1.0.0.24 or 1.0.0.21.** Other stock versions, TC1 A2 and the A1 air purifier are not supported.
 
 This page covers factory OTA internals, image packaging and alternative network layouts. To install directly, follow the [illustrated OTA guide](tc1-no-disassembly-ethernet-wifi-ap), with prepared files and Windows / macOS / Linux steps.

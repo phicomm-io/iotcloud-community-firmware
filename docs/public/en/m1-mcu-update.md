@@ -1,5 +1,7 @@
 # Update the M1 controller over the network
 
+Start at [Firmware & resources]({{SITE_URL}}en/#releases) and choose the latest compatible release for your device with its matching checksums. Pinned versions below are reproducible examples; stated minimum versions, stock versions and migration-tool requirements still apply.
+
 You can update M1 controller firmware over the network **without J-Link or opening the case**. The current method uses a Python script on a computer that can reach M1 over the LAN.
 
 **This updates the ATSAMD20G18A sensor controller for sensors, the screen, buttons and buzzer.** Use the Python tool below. Ordinary web firmware updates only update the EMW3080 Wi-Fi module.
@@ -10,7 +12,7 @@ You can update M1 controller firmware over the network **without J-Link or openi
 
 ## 1. Check Wi-Fi firmware
 
-Stock 11.x controllers require community Wi-Fi firmware with **buffered image forwarding**. Check `data.mcu_ota_max_bytes` in `capabilities.get` or `/api/v1/capabilities`; the current limit is **32768**. For this RC5 procedure, use **M1 Wi-Fi v1.0.0-rc.5 with sensor controller v1.0.0-rc**. RC builds are for beta testing; use stable Wi-Fi v0.9.27 for everyday operation. Still check this capability before updating the sensor controller. The per-frame bridge introduced in v0.9.26 and the `1.0.0-39a5b0` build do not include this capability.
+Stock 11.x controllers require community Wi-Fi firmware with **buffered image forwarding**. Check `data.mcu_ota_max_bytes` in `capabilities.get` or `/api/v1/capabilities`; the current limit is **32768**. For this RC5 procedure, use **M1 Wi-Fi v1.0.0-rc.6 with sensor controller v1.0.0-rc**. RC builds are for beta testing; use stable Wi-Fi v0.9.27 for everyday operation. Still check this capability before updating the sensor controller. The per-frame bridge introduced in v0.9.26 and the `1.0.0-39a5b0` build do not include this capability.
 
 Stock 11.1.2.1 starts an approximately ten-second reset timer when receiving begins. Per-frame HTTP round trips can exceed that window. The new endpoint buffers the whole image on Wi-Fi first, then sends and acknowledges each UART block locally. The updated computer tool selects it automatically and refuses stock-controller upgrades through older Wi-Fi before sending any update frames. Controllers already running community firmware can still use the older per-frame bridge.
 

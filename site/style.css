@@ -112,6 +112,7 @@ p{margin:0}
 
 /* Device art */
 .art{height:150px;display:flex;align-items:center;justify-content:center;margin-bottom:20px}
+.art .device-illustration{display:block;max-width:100%;height:150px;object-fit:contain}
 .art .strip{display:flex;gap:8px;padding:16px 18px;border-radius:16px;background:var(--surface-muted);border:1px solid var(--border)}
 .art .strip i{width:22px;height:24px;border-radius:5px;border:1px solid var(--border);background:var(--surface)}
 .art .strip i.on{background:var(--accent-soft);border-color:var(--accent)}
@@ -138,6 +139,16 @@ p{margin:0}
 /* Releases */
 .release-toolbar{display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin-top:28px;font-size:14px}
 .release-toolbar label{display:inline-flex;align-items:center;gap:8px;color:var(--muted)}
+.download-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:24px 0 20px}
+.download-tabs [aria-selected="true"]{background:var(--text);color:var(--surface);border-color:var(--text)}
+[role="tabpanel"][hidden]{display:none}
+#stock-backup-index{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:16px}
+#stock-backup-index .card-links{flex-wrap:wrap}
+#stock-backup-index code{overflow-wrap:anywhere}
+.stock-files{list-style:none;padding:0;margin:16px 0 0;display:grid;gap:16px}
+.stock-files small{display:block;color:var(--muted);font-size:12px;margin-top:4px}
+.stock-files details{font-size:12px;margin-top:4px}
+.stock-files summary{cursor:pointer;color:var(--muted)}
 select{font:inherit;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-s);padding:8px;color:var(--text)}
 #release-status{color:var(--muted);font-size:14px}
 .release{margin:18px 0;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:22px;box-shadow:var(--shadow)}

@@ -20,6 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'site'))
 from pages import GROUPS, PAGES, PARENTS, SITE_URL, EN_GROUPS, EN_PAGES, validate_translations  # noqa: E402
+from public_links import expand_public_links  # noqa: E402
 
 # Public guide assets also work when the source repository or Wiki is private.
 WIKI_ASSETS = SITE_URL + 'guides/assets/'
@@ -39,7 +40,7 @@ def wiki_link_target(slug):
 def rewrite(text, language="zh"):
     page_by_slug = {slug: wiki for slug, _, _, wiki in (EN_PAGES if language == "en" else PAGES)}
     """Turn site link targets into Wiki link targets."""
-    text = text.replace('{{SITE_URL}}', SITE_URL)
+    text = expand_public_links(text.replace('{{SITE_URL}}', SITE_URL))
     # Wiki has no script support; retain every OS section as ordinary Markdown.
     text = re.sub(r'<!-- (?:os-picker|os:[\w ]+|/os) -->\n*', '', text)
 

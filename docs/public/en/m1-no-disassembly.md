@@ -1,5 +1,7 @@
 # M1: stock Wi-Fi setup and installation without disassembly
 
+Start at [Firmware & resources]({{SITE_URL}}en/#releases) and choose the latest compatible release for your device with its matching checksums. Pinned versions below are reproducible examples; stated minimum versions, stock versions and migration-tool requirements still apply.
+
 This guide updates only the M1 Wi-Fi module and retains the sensor controller. It covers two factory provisioning methods and two OTA methods. Prefer the official app for provisioning if available.
 
 Use the **full native M1 OTA image**, version **0.9.21 or newer**. The commands below use stable **v0.9.27**. Keep power connected throughout.

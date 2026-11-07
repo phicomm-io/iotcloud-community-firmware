@@ -1,10 +1,10 @@
 # 设备接口与协议
 
-本文以 **v1.0.0-rc.5（Beta）** 与 **v0.9.27（稳定版）** 为接入基线。先在设备网页确认型号、固件版本和变体，再选择编码与能力；M1 传感器主控有独立版本。
+本文以 **v1.0.0-rc.6（Beta）** 与 **v0.9.27（稳定版）** 为接入基线。先在设备网页确认型号、固件版本和变体，再选择编码与能力；M1 传感器主控有独立版本。
 
 ## 基线与编码
 
-| 项目 | RC5 | 0.9.27 |
+| 项目 | RC6 | 0.9.27 |
 | --- | --- | --- |
 | 设备 | TC1、M1、A1、DAIKIN、ORVIBO S30-V1B | TC1、M1、A1、DAIKIN |
 | HTTP 普通命令 | MessagePack，`application/msgpack` | JSON，`application/json` |
@@ -17,13 +17,13 @@
 
 S30-V1B 还声明 CBOR 支持；跨设备示例统一使用默认 MessagePack。
 
-RC5 不通过 JSON 请求、超时或 `busy` 自动降级。MQTT 的 `availability` 仍是文本 `online` / `offline`，固件上传和配置备份仍是各自的二进制文件流。
+RC6 不通过 JSON 请求、超时或 `busy` 自动降级。MQTT 的 `availability` 仍是文本 `online` / `offline`，固件上传和配置备份仍是各自的二进制文件流。
 
 ## HTTP 接入
 
 未设置管理密码时直接访问，不建立登录会话。设置后可使用 Basic 认证，用户名固定为 `admin`，密码为设备网页密码。MQTT Broker 凭据和 UDP 配对凭据分别管理。在可信局域网使用 HTTP；浏览器跨域还需通过设备的 Origin / OPTIONS 检查与浏览器本地网络权限。
 
-RC5 常用路径如下。普通 GET 查询返回数据对象；POST 命令返回带 `code/data` 的信封。具体动作以 `capabilities.get` 的 `data.actions` 为准，表中专用接口还需满足机型和变体条件。
+RC6 常用路径如下。普通 GET 查询返回数据对象；POST 命令返回带 `code/data` 的信封。具体动作以 `capabilities.get` 的 `data.actions` 为准，表中专用接口还需满足机型和变体条件。
 
 | 方法与路径 | 返回或用途 |
 | --- | --- |
@@ -41,7 +41,7 @@ RC5 常用路径如下。普通 GET 查询返回数据对象；POST 命令返回
 
 S30-V1B 通过 `ota.start` 使用本设备 `.rbl` URL，不提供本地文件上传、配置备份恢复或 MCU 桥接。其他设备的包名和上传流程见[固件更新](firmware-update)。
 
-下列字典是解码后的结构，RC5 在线发送的是 MessagePack 字节：
+下列字典是解码后的结构，RC6 在线发送的是 MessagePack 字节：
 
 ```python
 request = {"request_id": "read_001", "action": "status.get", "params": {}}
@@ -52,7 +52,7 @@ response = {"request_id": "read_001", "code": "ok", "message": "操作成功", "
 
 ## Python 查询示例
 
-下载[查询脚本](assets/examples/device_query.py)。它只提供能力、状态和脱敏配置查询，无自动重试，密码通过终端输入。RC5 需要 Python `msgpack` 包；0.9.27 只用标准库。
+下载[查询脚本](assets/examples/device_query.py)。它只提供能力、状态和脱敏配置查询，无自动重试，密码通过终端输入。RC6 需要 Python `msgpack` 包；0.9.27 只用标准库。
 
 ```sh
 python3 device_query.py http://192.168.1.100 --baseline rc5
@@ -91,9 +91,9 @@ curl --fail-with-body --max-time 10 -H 'Content-Type: application/json' \
 
 ## MQTT 命令与发现
 
-RC5 的设备根为 `phicomm/v2/<scope>/<model>/<device_id>`。`scope` 为 `u_` 加用户名 UTF-8 字节的小写十六进制，无用户名为 `local`；设备 ID 为原厂 MAC 的 12 位小写十六进制。型号段按公告读取，例如 `tc1`、`m1`、`a1`、`daikin`、`s30-v1b`，不要用芯片名称推导。
+RC6 的设备根为 `phicomm/v2/<scope>/<model>/<device_id>`。`scope` 为 `u_` 加用户名 UTF-8 字节的小写十六进制，无用户名为 `local`；设备 ID 为原厂 MAC 的 12 位小写十六进制。型号段按公告读取，例如 `tc1`、`m1`、`a1`、`daikin`、`s30-v1b`，不要用芯片名称推导。
 
-| 主题 | Retain | RC5 载荷 |
+| 主题 | Retain | RC6 载荷 |
 | --- | --- | --- |
 | `phicomm/v2/<scope>/discovery/<device_id>` | 是 | MessagePack 公告，schema 2，含 `wire_version:1`、`wire_formats:["msgpack"]`、`default_wire_format:"msgpack"` |
 | `<root>/availability` | 是 / LWT | 文本 `online` / `offline` |
@@ -113,7 +113,7 @@ Home Assistant 使用 `homeassistant/.../config` 及设备的 HA JSON 主题，�
 
 ## 传感器字段协议
 
-RC5 schema 3 使用两个 MessagePack 主题：
+RC6 schema 3 使用两个 MessagePack 主题：
 
 - `phicomm/v2/<scope>/sensor/<device_id>/metadata`：保留字段描述。
 - `phicomm/v2/<scope>/sensor/<device_id>/state`：非保留的完整实时快照。
@@ -136,7 +136,7 @@ state = {
 
 ## UDP 与 MCU proto
 
-| 协议 | RC5 定义 | 入口 |
+| 协议 | RC6 定义 | 入口 |
 | --- | --- | --- |
 | 传感器 LAN v3 | MessagePack 的 `read/probe/sample/pong`，16 字节 bin token；固定单位的整数测量 | `common/lan_wire.h`、`common/lan_wire.inc` |
 | 业务 LAN v4 | UDP 11288，`_openiot._udp.local.`；`command/result/pull/ack`，内层命令是 MessagePack bin | `common/lan_wire_v4.h`、`common/lan_wire_v4.inc` |
@@ -146,6 +146,6 @@ LAN v4 单帧最多 1200 字节，命令体最多 1024 字节，响应最多 819
 
 ## 实现与规范来源
 
-本页 RC5 内容按[固定源码 c09a067a](https://github.com/phicomm-io/iotcloud-community-firmware/tree/c09a067afe577c721d49c113e0c8ce88afb1f951)核对：`common/service_mp.inc`（命令）、`common/service_product_mp.inc`（能力 / 身份）、`common/mqtt/discovery_mp.h`（公告）、`common/sensor_mp.h`（schema 3）、`common/lan_wire*.inc`（UDP）。0.9.27 参照[稳定版源码](https://github.com/phicomm-io/phicomm-community-firmware/tree/v0.9.27)。
+本页 RC6 内容按[固定源码 b2477120](https://github.com/phicomm-io/iotcloud-community-firmware/tree/b2477120df5fa0b53a4bcb4cae480680bd66c460)核对：`common/service_mp.inc`（命令）、`common/service_product_mp.inc`（能力 / 身份）、`common/mqtt/discovery_mp.h`（公告）、`common/sensor_mp.h`（schema 3）、`common/lan_wire*.inc`（UDP）。0.9.27 参照[稳定版源码](https://github.com/phicomm-io/phicomm-community-firmware/tree/v0.9.27)。
 
-[开发协议仓库](https://github.com/phicomm-io/iotcloud-community-protocols)提供协议索引、Schema、测试向量与生成类型。消费版本由 `protocols.lock.json` 固定；其中的历史 JSON 合同不能代替 RC5 当前二进制实现。修改接口时同时维护协议定义、正反样例、生成物和消费锁文件。
+[开发协议仓库](https://github.com/phicomm-io/iotcloud-community-protocols)提供协议索引、Schema、测试向量与生成类型。消费版本由 `protocols.lock.json` 固定；其中的历史 JSON 合同不能代替 RC6 当前二进制实现。修改接口时同时维护协议定义、正反样例、生成物和消费锁文件。

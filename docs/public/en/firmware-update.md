@@ -1,14 +1,16 @@
 # Firmware updates
 
+Start at [Firmware & resources]({{SITE_URL}}en/#releases) and choose the latest compatible release for your device with its matching checksums. Pinned versions below are reproducible examples; stated minimum versions, stock versions and migration-tool requirements still apply.
+
 This page covers web OTA after community firmware is installed. Factory devices need their model-specific procedure, including [M1 factory Wi-Fi setup and installation](m1-no-disassembly) or [A1 factory Wi-Fi setup and installation](a1-no-disassembly). M1 first migration requires the full native OTA image from 0.9.21 or newer. Factory interfaces do not accept the community signature wrapper.
 
-**Use stable v0.9.27 for everyday operation, or v1.0.0-rc.5 for beta testing.** Before testing it, read the [complete cumulative notes](release-log.html?channel=candidate) and check the tag, model and variant. Candidates require a manual download and installation and do not replace the stable OTA channel.
+**Use stable v0.9.27 for everyday operation, or v1.0.0-rc.6 for beta testing.** Before testing it, read the [complete cumulative notes](release-log.html?channel=candidate) and check the tag, model and variant. RC6 supports candidate-channel checks and installation. Download manually when older firmware lacks that entry. Candidates do not replace the stable channel.
 
 **M1 has two MCUs.** This page updates the EMW3080 Wi-Fi module, not the ATSAMD20G18A sensor controller. Dual-region user readings and double-click actions require the companion open-source controller v1.0.0-rc. See [controller features](m1-mcu-firmware) for older features’ minimum versions and follow the separate [controller update steps](m1-mcu-update).
 
 ## Check for updates on the device
 
-Official A1, M1 and TC1 builds provide GitHub Pages HTTPS and domestic/international HTTP update sources. Choose a source in the firmware settings and check:
+RC6 builds for A1, M1, TC1 and Daikin provide GitHub Pages HTTPS and domestic/international HTTP update sources. Choose a source in the firmware settings and check:
 
 - The UI distinguishes **a new version**, **already up to date** and **network failure**.
 - Switch sources and retry if a network request fails.
@@ -59,8 +61,11 @@ If the WebUI is reachable, check the file, model, version and network, then retr
 
 ## Full and slim firmware
 
-DAIKIN BRY88AX151K provides ordinary `full` and separate `hub` images in v1.0.0-rc.5. Both detect PM2005 / PM2105 and the optional formaldehyde module. Use the local file procedure above; online checks and URL downloads are unavailable. Normal OTA must match the current variant. Use the [hub conversion procedure](daikin-guide#switch-from-full-to-hub) for `full → hub`; direct `hub → full` OTA is unsupported.
+DAIKIN BRY88AX151K provides ordinary `full` and separate `hub` images in v1.0.0-rc.6. Both detect PM2005 / PM2105 and the optional formaldehyde module. RC6 supports online checks, downloads and local files. G3 uses a separate model and update manifest. Normal OTA must match the current variant. Use the [hub conversion procedure](daikin-guide#switch-from-full-to-hub) for `full → hub`; direct `hub → full` OTA is unsupported.
 
 Default files include the complete device UI. Files containing `-no-frontend-resources` keep an offline setup page for Wi-Fi, initial MQTT settings and the web password, available through the device hotspot or LAN address. Use [local device management]({{SITE_URL}}local/) or IoTCloud for full controls and settings. Both share the same appearance. MQTT is not required to complete Wi-Fi setup.
 
 Online checks stay on the current firmware variant. To switch variants manually, select the signed package for the same physical product.
+
+
+For screen MCU/font updates and original programs, see the [G3 guide](daikin-g3-guide) and [stock backups](stock-backups).

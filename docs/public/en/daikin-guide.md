@@ -4,7 +4,16 @@ G1 has no formaldehyde expansion port; G2 adds this port. G3 adds a display and 
 
 The ESP32 / 4 MB Flash board uses one universal image that detects PM2005 / PM2105 and the optional formaldehyde module. Its web interface shares M1 reading cards, comfort scales and linked-device information, with local access, IoTCloud and Home Assistant support.
 
-**Use stable v0.9.27 for everyday operation, or v1.0.0-rc.5 for beta testing.** See the [complete candidate release notes](release-log.html?channel=candidate) for version requirements and cumulative changes.
+**Use stable v0.9.27 for everyday operation, or v1.0.0-rc.6 for beta testing.** See the [complete candidate release notes](release-log.html?channel=candidate) for version requirements and cumulative changes.
+
+
+| Generation | Model | Current image compatibility |
+| --- | --- | --- |
+| G1 | BRY88AA151K | Different pins and TVOC hardware; unsupported by the current BRY88AX151K image |
+| G2 | BRY88AB151K | Verified ESP32 / 4 MB board using the universal BRY88AX151K target |
+| G3 | BRY88BBA15G | Display-equipped; separate ESP32 and screen MCU images |
+
+See [stock backups](stock-backups#daikin-esp32-and-screen) for the original G2 UART backup and recovery formats.
 
 ## Readings and controls
 
@@ -25,7 +34,7 @@ The Wi-Fi lamp indicates system status: three long and three short pulses when u
 
 ## First installation
 
-Choose a release that **explicitly includes DAIKIN** on the [downloads page](../../index.html#releases). Do not substitute another model's image when an older archive lists only Phicomm devices. Existing 0.9.x archives provide the full image only. The current v1.0.0-rc.5 also provides a separate `hub` variant as a beta prerelease.
+Choose a release that **explicitly includes DAIKIN** on the [downloads page](../../index.html#releases). Do not substitute another model's image when an older archive lists only Phicomm devices. Existing 0.9.x archives provide the full image only. The current v1.0.0-rc.6 also provides a separate `hub` variant as a beta prerelease.
 
 1. Confirm the ESP32 / 4 MB Flash board and wiring, then back up the entire original Flash. Keep that backup private because it contains network credentials.
 2. Hold GPIO0 / BOOT0 low while powering on to enter the ESP32 bootloader. Use ESPTool to write `daikin_BRY88AX151K.all.bin` at **0x0**. Never upload the factory image through web OTA.
@@ -38,7 +47,7 @@ Use ESP32-compatible 3.3 V serial signals and avoid back-powering the device fro
 
 Historical releases may still use the `phicomm_daikin` prefix. Use the filenames listed on that release’s download page and in `SHA256SUMS`.
 
-Upload `daikin_BRY88AX151K.ota.bin.signed` from the firmware update page. The device verifies the project signature, target and image before installing; Wi-Fi and MQTT settings remain. Updates currently use manual files; URL downloads and slim packages are unavailable.
+Upload `daikin_BRY88AX151K.ota.bin.signed` from the firmware update page. The device verifies the project signature, target and image before installing; Wi-Fi and MQTT settings remain. RC6 supports online checks and downloads. If an older version lacks this entry, update with a local signed package first. G1/G2 do not use G3 screen, font or firmware files.
 
 An explicitly labelled unsigned recovery input accepts a trusted raw application image. Releases name it `daikin_BRY88AX151K.ota.bin.raw`; local builds use `daikin_BRY88AX151K.ota.bin`. If the web interface is unavailable, enter the BOOT0 bootloader again and restore the original backup or a complete image. See [Firmware updates](firmware-update).
 

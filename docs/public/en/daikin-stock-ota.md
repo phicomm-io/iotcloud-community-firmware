@@ -1,5 +1,7 @@
 # Daikin BRY88AB151K: migrate through stock OTA
 
+Start at [Firmware & resources]({{SITE_URL}}en/#releases) and choose the latest compatible release for your device with its matching checksums. Pinned versions below are reproducible examples; stated minimum versions, stock versions and migration-tool requirements still apply.
+
 Choose your computer’s operating system below. Checking the file and uploading will both show matching commands. On Windows, use PowerShell; on macOS or Linux, use Terminal. Without JavaScript, all commands remain visible.
 
 <!-- os-picker -->

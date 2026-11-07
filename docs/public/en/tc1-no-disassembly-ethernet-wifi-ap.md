@@ -1,5 +1,7 @@
 # TC1 illustrated OTA guide
 
+Start at [Firmware & resources]({{SITE_URL}}en/#releases) and choose the latest compatible release for your device with its matching checksums. Pinned versions below are reproducible examples; stated minimum versions, stock versions and migration-tool requirements still apply.
+
 The computer serves firmware over **Ethernet** and sends the trigger over **Wi-Fi**, while a router or AP supplies the OTA network. No case opening, soldering or Python installation is needed. Supports Windows, macOS and Linux.
 
 **For TC1 A1 hardware (EMW3031 / MK3031), stock firmware 1.0.0.26, 1.0.0.24 or 1.0.0.21.** Other stock versions, TC1 A2 and the A1 air purifier are outside this procedure.

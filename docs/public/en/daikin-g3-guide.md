@@ -1,14 +1,16 @@
-# Daikin air quality monitor (3rd generation)
+# G3 installation, updates and recovery
+
+[Screen layouts and appearance](daikin-g3-layout) · [Weather, reminders and API](daikin-g3-services) · [Startup and diagnostics](daikin-g3-diagnostics) · [Development resources](daikin-g3-development) · [Stock backups](stock-backups)
 
 G3 is the BRY88BBA15G with a display, an ESP32 network application and a separate screen MCU application. Its default device name is `DAIKIN G3`. Custom names are preserved.
 
 ## Identify the generation
 
-| Generation | Formaldehyde expansion port | Display | Download group |
-| --- | --- | --- | --- |
-| G1 | None | None | Daikin air quality monitor (1st/2nd generation) |
-| G2 | Added compared with G1 | None | Daikin air quality monitor (1st/2nd generation) |
-| G3 | Depends on the installed expansion module | Added display | Daikin air quality monitor (3rd generation) |
+| Generation | Model | Formaldehyde expansion port | Display | Download group |
+| --- | --- | --- | --- | --- |
+| G1 | BRY88AA151K | None | None | Daikin air quality monitor (1st/2nd generation) |
+| G2 | BRY88AB151K | Added compared with G1 | None | Daikin air quality monitor (1st/2nd generation) |
+| G3 | BRY88BBA15G | Depends on the installed expansion module | Added display | Daikin air quality monitor (3rd generation) |
 
 G1/G2 defaults to `DAIKIN G1/G2`. Generation labels identify the product; check the board before selecting firmware. The early BRY88AA151K has different pins and TVOC hardware from the universal BRY88AX151K target. A G1 label alone does not establish compatibility. See the [G1/G2 guide](daikin-guide) for supported boards and installation.
 
@@ -29,7 +31,7 @@ Local charts offer 32, 64, 128 or 256 points. Samples are collected every minute
 
 ## Downloads and updates
 
-The [G3 RC6 downloads](../../index.html#daikin-g3-downloads) provide signed ESP32 updates, a raw application for stock migration, the screen MCU application, an optional font and wireless migration tools. G1/G2 images are incompatible with G3.
+[Firmware & resources]({{SITE_URL}}en/#releases) offers the latest compatible G3 releases, including signed ESP32 updates, a raw application for stock migration, the screen MCU application, an optional font and wireless migration tools. G1/G2 images are incompatible with G3.
 
 ### Wireless migration from stock firmware
 

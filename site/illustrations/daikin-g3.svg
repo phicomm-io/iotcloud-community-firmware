@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="260" height="150" viewBox="0 0 260 150" fill="none">
+  <title>Daikin G3 air quality monitor</title>
+  <ellipse cx="131" cy="143" rx="53" ry="5" fill="#102B39" opacity=".08"/>
+  <rect x="87" y="3" width="87" height="138" rx="15" fill="#E3E9EC" stroke="#B6C4CC"/>
+  <rect x="84" y="3" width="87" height="136" rx="15" fill="#F8FAFB" stroke="#B6C4CC"/>
+  <rect x="96" y="13" width="63" height="106" rx="7" fill="#122C3C"/>
+  <path d="M102 20h17m3 0h17m3 0h11" stroke="#59717E" stroke-width="2" stroke-linecap="round"/>
+  <path d="M102 20h17" stroke="#6ED8C6" stroke-width="2" stroke-linecap="round"/>
+  <text x="127.5" y="47" fill="#F4FAFC" font-family="sans-serif" font-size="17" font-weight="600" text-anchor="middle">10:08</text>
+  <text x="127.5" y="59" fill="#9BB0BA" font-family="sans-serif" font-size="5.5" text-anchor="middle">AIR QUALITY</text>
+  <rect x="102" y="69" width="51" height="21" rx="4" fill="#234451"/>
+  <text x="107" y="77" fill="#B4CCD5" font-family="sans-serif" font-size="4.5">PM2.5</text>
+  <text x="147" y="84" fill="#6ED8C6" font-family="sans-serif" font-size="12" text-anchor="end">12</text>
+  <path d="m103 107 7-5 7 2 7-8 7 5 7-3 6 2 8-5" stroke="#6ED8C6" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+  <circle cx="127.5" cy="129" r="3" stroke="#B6C4CC"/>
+  <path d="M165 35v28m0 5v28" stroke="#C6D2D8" stroke-linecap="round"/>
+</svg>

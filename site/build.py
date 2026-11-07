@@ -208,6 +208,43 @@ def native_downloads(archive=None, formal=False):
     return json.dumps(catalog, ensure_ascii=False).replace('<', '\u003c')
 
 
+def stock_backups(language, guide_base):
+    """Render only catalogued, hash-verified stock components on both homes."""
+    import gzip
+    from pathlib import PurePosixPath
+    assets = ROOT / 'docs/public'
+    catalog = json.loads((assets / 'assets/firmware/stock/manifest.json').read_text())
+    if catalog['schema'] != 1:
+        raise ValueError('Unsupported stock backup manifest')
+    groups = {key: [] for key in ('tc1', 'm1', 'a1', 's30', 'daikin', 'bry88bba15g')}
+    names = {'tc1': 'TC1 A1', 'm1': 'M1', 'a1': 'A1', 's30': 'S30-V1B / S30M_V1B',
+             'daikin': 'DAIKIN G1 / G2', 'bry88bba15g': 'DAIKIN G3'}
+    seen = set()
+    for entry in catalog['files']:
+        path = PurePosixPath(entry['path'])
+        if (path.is_absolute() or '..' in path.parts or
+                not str(path).startswith('assets/firmware/') or str(path) in seen):
+            raise ValueError('Invalid stock backup path')
+        seen.add(str(path))
+        body = (assets / str(path)).read_bytes()
+        if len(body) != entry['size'] or hashlib.sha256(body).hexdigest() != entry['sha256']:
+            raise ValueError('Stock backup missing or mismatched: ' + str(path))
+        raw = gzip.decompress(body) if str(path).endswith('.gz') else body
+        if len(raw) != entry['image_size'] or hashlib.sha256(raw).hexdigest() != entry['image_sha256']:
+            raise ValueError('Stock backup image mismatched: ' + str(path))
+        label = html.escape(entry['label'][language])
+        checksum = html.escape(entry['sha256'])
+        groups[entry['model']].append(
+            f'<li><a href="{guide_base}{html.escape(str(path))}">{label}</a>'
+            f'<small>{entry["size"]:,} B</small><details><summary>SHA-256</summary>'
+            f'<code>{checksum}</code></details></li>')
+    for entry in catalog['unavailable']:
+        groups[entry['model']].append('<li class="muted small">' + html.escape(entry['label'][language]) + '</li>')
+    return ''.join(f'<article class="card" data-stock-model="{model}"><h4>{names[model]}</h4>'
+                   f'<ul class="stock-files">{"".join(files)}</ul></article>'
+                   for model, files in groups.items() if files)
+
+
 def rewrite_links(text):
     """Point inter-page links at the generated .html names.
 
@@ -336,6 +373,8 @@ def main():
 
     for name in ['style.css', 'theme.js', 'site.js', 'releases.js']:
         shutil.copyfile(HERE / name, out / name)
+    (out / 'illustrations').mkdir(exist_ok=True)
+    shutil.copyfile(HERE / 'illustrations/daikin-g3.svg', out / 'illustrations/daikin-g3.svg')
     # The standalone converter shares the exact APP1/RGB565 codec with device UI.
     import hashlib, json
     converter = ROOT / 'tools' / 'screen_wallpaper'
@@ -358,6 +397,9 @@ def main():
         if placeholder not in home:
             raise SystemExit(f'site/{source_name}: docs index container not found')
         home = home.replace(placeholder, f'<div class="doc-groups" id="docs-index">{docs_index(language, guide_base)}</div>')
+        stock_base = '../guides/' if language == 'en' else guide_base
+        home = home.replace('<div id="stock-backup-index"></div>',
+                            f'<div id="stock-backup-index">{stock_backups(language, stock_base)}</div>')
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text(home, encoding='utf-8')
 

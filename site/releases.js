@@ -30,7 +30,7 @@ function reviewedNotes(release, manifest) {
   }
   return note;
 }
-const modelNames = {m1: 'M1', a1: 'A1', tc1: 'TC1', daikin: t('大金空气质量检测（1/2代）', 'Daikin air quality monitor (1st/2nd generation)'), bry88bba15g: t('大金空气质量检测（3代）', 'Daikin air quality monitor (3rd generation)'), s30: 'S30-V1B'};
+const modelNames = {m1: 'M1', a1: 'A1', tc1: 'TC1', daikin: t('大金空气质量检测（1/2代）', 'Daikin air quality monitor (1st/2nd generation)'), bry88bba15g: t('大金空气质量检测（3代）', 'Daikin air quality monitor (3rd generation)'), s30: 'S30-V1B / S30M_V1B'};
 const variantDescriptions = {
  full: t('完整本地网页，适合常规使用。', 'Complete local web interface for normal use.'),
  'no-frontend-resources': t('仅保留配网页，节省设备存储；日常管理使用平台。', 'Keeps the Wi-Fi setup page and saves flash; use the platform for daily management.'),
@@ -45,6 +45,8 @@ const fileTypes = {
  rbl: ['RBL', t('S30-V1B 原厂免拆安装或社区 URL OTA；设备主动通过 HTTP 下载。', 'S30-V1B stock network installation or community URL OTA; downloaded by the device over HTTP.')],
  stock_ua: ['STOCK_UA', t('S30-V1B 串口安装，从 0x11000 写入，保留本机原厂启动器；不能用于网页 OTA。', 'S30-V1B serial installation at 0x11000, preserving its stock bootloader; not for web OTA.')]
 };
+const modelOrder = ['tc1', 'm1', 'a1', 's30', 'daikin', 'bry88bba15g'];
+const orderedModels = models => Object.entries(models).sort(([a], [b]) => (modelOrder.indexOf(a) < 0 ? 99 : modelOrder.indexOf(a)) - (modelOrder.indexOf(b) < 0 ? 99 : modelOrder.indexOf(b)));
 let dialogSequence = 0;
 function deviceDownload(model, release, variants, snapshot, native = false) {
  const name=modelNames[model]||model.toUpperCase(),card=el('article');card.className='firmware-device';card.dataset.downloadModel=model;
@@ -69,7 +71,6 @@ function deviceDownload(model, release, variants, snapshot, native = false) {
   }
   dialog.append(section);
  }
- if(model==='bry88bba15g')dialog.append(screenAssets(release,snapshot));
  const slug=model==='s30'?'s30-flash':model==='daikin'?'daikin-guide':model==='bry88bba15g'?'daikin-g3-guide':model+'-flash';
  const guide=el('a',t('刷机说明', 'Installation guide'));guide.href=new URL('guides/'+(english?'en/':'')+slug+'.html',siteBase);dialog.append(guide);
  if(native&&variants[0][1].checksums)dialog.append(link(t('SHA256 校验文件', 'SHA256 checksums'),variants[0][1].checksums,''));
@@ -90,12 +91,13 @@ function releaseCard(release, latest, snapshot, candidate = false) {
  const head=el(latest||candidate?'h3':'summary',release.tag);box.append(head);
  if(latest||candidate){const badge=el('span',candidate?t('Beta（RC）','Beta (RC)'):t('稳定最新版','Latest stable'));badge.className='tag';head.append(badge);}
  const devices=el('div');devices.className='firmware-devices';
- for(const [model,original] of Object.entries(release.models))devices.append(deviceDownload(model,release,[['full',original],...Object.entries(original.variants||{})],snapshot));
+ for(const [model,original] of orderedModels(release.models))devices.append(deviceDownload(model,release,[['full',original],...Object.entries(original.variants||{})],snapshot));
  const nativeNode=document.getElementById('native-downloads');
  if(nativeNode){
   const native=JSON.parse(nativeNode.textContent).releases.find(r=>r.tag===release.tag);
-  if(native)for(const [model,value] of Object.entries(native.models))if(!release.models[model])devices.append(deviceDownload(model,release,[['full',value]],snapshot,true));
+  if(native)for(const [model,value] of orderedModels(native.models))if(!release.models[model])devices.append(deviceDownload(model,release,[['full',value]],snapshot,true));
  }
+ [...devices.children].sort((a,b)=>modelOrder.indexOf(a.dataset.downloadModel)-modelOrder.indexOf(b.dataset.downloadModel)).forEach(card=>devices.append(card));
  const notes=el('details');notes.className='release-notes';notes.append(el('summary',t('本版变化','Changes in this release')),reviewedNotes(release,snapshot.manifest));
  box.append(devices,link(t('SHA256 校验文件','SHA256 checksums'),`/releases/${release.tag}/SHA256SUMS`,snapshot.source),link(t('原始单版本说明 ↗','Original release notes ↗'),release.notes,snapshot.source),notes);
  return box;
@@ -132,7 +134,7 @@ async function loadCandidateCatalog() {
     target.replaceChildren();
     for (const release of candidates) target.append(releaseCard(release, false, snapshot, true));
     const g3=document.getElementById('g3-release-assets');
-    if(g3){g3.replaceChildren();const release=candidates.find(r=>r.models.bry88bba15g);if(release)g3.append(deviceDownload('bry88bba15g',release,[['full',release.models.bry88bba15g]],snapshot),screenAssets(release,snapshot));}
+    if(g3){g3.replaceChildren();const release=candidates.find(r=>r.models.bry88bba15g);if(release)g3.append(el('p',release.tag),screenAssets(release,snapshot));}
     message.textContent = candidates.length
       ? t('RC 用于 Beta 测试。', 'RC builds are for beta testing.')
       : t('目前没有可用候选版。', 'No release candidate is currently available.');
@@ -146,6 +148,49 @@ async function loadCandidateCatalog() {
 source.addEventListener('change', loadCatalog);
 loadCatalog();
 loadCandidateCatalog();
+
+// Keep every community component under one download section. Without JS all
+// panels remain readable; old links also reveal the matching enhanced tab.
+function initDownloadTabs() {
+ const tabs=[...document.querySelectorAll('.download-tabs [role="tab"]')];
+ if(!tabs.length)return;
+ const panels=tabs.map(tab=>document.getElementById(tab.getAttribute('aria-controls')));
+ function select(index,focus=false){
+  tabs.forEach((tab,i)=>{
+   tab.setAttribute('aria-selected',String(i===index));tab.tabIndex=i===index?0:-1;
+   panels[i].hidden=i!==index;
+  });
+  if(focus)tabs[index].focus();
+ }
+ function revealHash(){
+  let id;try{id=decodeURIComponent(location.hash.slice(1));}catch{return;}
+  const target=document.getElementById(id);
+  const index=panels.findIndex(panel=>target&&(panel===target||panel.contains(target)));
+  if(index>=0){
+   select(index);if(target.tagName==='DETAILS')target.open=true;
+   requestAnimationFrame(()=>target.scrollIntoView({block:'start'}));
+  }
+ }
+ tabs.forEach((tab,index)=>{
+  tab.addEventListener('click',()=>select(index));
+  tab.addEventListener('keydown',event=>{
+   let next;
+   if(event.key==='ArrowRight')next=(index+1)%tabs.length;
+   if(event.key==='ArrowLeft')next=(index+tabs.length-1)%tabs.length;
+   if(event.key==='Home')next=0;
+   if(event.key==='End')next=tabs.length-1;
+   if(next===undefined)return;
+   event.preventDefault();select(next,true);
+  });
+ });
+ select(0);revealHash();window.addEventListener('hashchange',revealHash);
+ // A second click on the same hash still needs to reveal a hidden panel.
+ document.addEventListener('click',event=>{
+  const anchor=event.target.closest('a[href^="#"]');
+  if(anchor&&anchor.hash===location.hash)revealHash();
+ });
+}
+initDownloadTabs();
 
 // Controller releases include development previews: /releases/latest excludes them.
 // Keep this independent of the Wi-Fi catalog and mirror selector.

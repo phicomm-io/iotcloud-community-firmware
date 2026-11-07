@@ -1,6 +1,6 @@
 # 接入 IoTCloud
 
-IoTCloud 是 TC1 智能排插、M1 与 DAIKIN 空气检测仪、A1 空气净化器及 ORVIBO S30-V1B 智能插座的网页管理平台。设备接入后，可以在同一个页面查看在线状态、空气读数与排插功率，并远程使用设备支持的控制和设置。账号模式会保存设备列表，换手机或电脑登录同一节点、同一账号即可继续管理。
+IoTCloud 是 TC1 智能排插、M1 空气检测仪、A1 空气净化器、ORVIBO S30-V1B 智能插座及大金 G1/G2、G3 空气检测仪的网页管理平台。设备接入后，可以在同一个页面查看在线状态、空气读数与排插功率，并远程使用设备支持的控制和设置。账号模式会保存设备列表，换手机或电脑登录同一节点、同一账号即可继续管理。
 
 [打开 IoTCloud]({{SITE_URL}}iotcloud/) · [先体验模拟演示]({{SITE_URL}}demos/platform/)
 
@@ -64,7 +64,7 @@ IoTCloud 是 TC1 智能排插、M1 与 DAIKIN 空气检测仪、A1 空气净化�
 
 DAIKIN 详情显示独立的 PM2.5 / PM10 卡片、CO₂、温湿度与 TVOC 舒适度条；TVOC 建议参考为 ≤300 ppb。未安装甲醛模块时不显示甲醛卡片，联动设备区域显示实际已读取的 A1 会话。
 
-日常操作见 [TC1](tc1-guide)、[M1](m1-guide)、[A1](a1-guide)、[DAIKIN](daikin-guide)、[S30-V1B](s30-guide)；A1 的数据源授权和自动联动按 [MQTT 与联动](mqtt-link)单独配置。
+日常操作见 [TC1](tc1-guide)、[M1](m1-guide)、[A1](a1-guide)、[S30-V1B](s30-guide)、[大金 G1/G2](daikin-guide)、[G3](daikin-g3-guide)；A1 的数据源授权和自动联动按 [MQTT 与联动](mqtt-link)单独配置。
 
 ## 常见问题
 

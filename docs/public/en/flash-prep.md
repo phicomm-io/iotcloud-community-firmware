@@ -1,5 +1,7 @@
 # Before flashing
 
+Start at [Firmware & resources]({{SITE_URL}}en/#releases) and choose the latest compatible release for your device with its matching checksums. Pinned versions below are reproducible examples; stated minimum versions, stock versions and migration-tool requirements still apply.
+
 Before the first installation, check the power requirements and firmware type, then follow the wiring instructions for your model.
 
 For OTA migration, keep the normal power supply as described in the model's guide. The wiring and independent-supply requirements below apply when opening a device and connecting a programmer.

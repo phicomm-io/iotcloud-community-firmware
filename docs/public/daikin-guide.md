@@ -4,7 +4,16 @@ G1 没有甲醛扩展孔，G2 相比 G1 增加甲醛扩展孔；G3 增加屏幕�
 
 ESP32 / 4 MB Flash 版本使用同一份通用固件，自动识别 PM2005 / PM2105 和可选甲醛模块。网页与 M1 共用读数卡片、舒适度条和联动设备列表，支持本地访问、IoTCloud 与 Home Assistant。
 
-**日常使用选择稳定版 v0.9.27；v1.0.0-rc.5 用于 Beta 测试。** 版本要求与累计变化见[候选版完整更新记录](release-log.html?channel=candidate)。
+**日常使用选择稳定版 v0.9.27；v1.0.0-rc.6 用于 Beta 测试。** 版本要求与累计变化见[候选版完整更新记录](release-log.html?channel=candidate)。
+
+
+| 代际 | 型号 | 现有固件适配 |
+| --- | --- | --- |
+| G1 | BRY88AA151K | 引脚与 TVOC 硬件不同，不适用当前 BRY88AX151K 镜像 |
+| G2 | BRY88AB151K | 已验证 ESP32 / 4 MB 版本，使用 BRY88AX151K 通用目标 |
+| G3 | BRY88BBA15G | 带屏幕，独立 ESP32 与屏幕 MCU 镜像 |
+
+原厂 G2 串口备份及恢复格式见[原厂备份](stock-backups#大金-esp32-与屏幕)。
 
 ## 读数与操作
 
@@ -25,7 +34,7 @@ Wi-Fi 灯用于系统状态提示：未配网三长三短；Wi-Fi 断开快闪�
 
 ## 首次安装
 
-在[下载页](../index.html#releases)选择**明确包含 DAIKIN 的版本**。旧版归档只有斐讯设备时，不要上传其它型号镜像。已有 0.9.x 归档仅提供完整版；当前 v1.0.0-rc.5 另提供独立的 `hub` 中枢变体（Beta 预发布）。
+在[下载页](../index.html#releases)选择**明确包含 DAIKIN 的版本**。旧版归档只有斐讯设备时，不要上传其它型号镜像。已有 0.9.x 归档仅提供完整版；当前 v1.0.0-rc.6 另提供独立的 `hub` 中枢变体（Beta 预发布）。
 
 1. 确认 ESP32 / 4 MB Flash 与接线，完整备份原始 Flash；备份含有联网凭据，妥善保存。
 2. 将 GPIO0 / BOOT0 在上电时拉低，进入 ESP32 下载模式。使用 ESPTool 将 `daikin_BRY88AX151K.all.bin` 写入 **0x0**。不要以 factory 镜像执行网页 OTA。
@@ -38,7 +47,7 @@ Wi-Fi 灯用于系统状态提示：未配网三长三短；Wi-Fi 断开快闪�
 
 历史版本可能仍使用 `phicomm_daikin` 前缀，文件名以对应版本的下载页和 `SHA256SUMS` 为准。
 
-网页的固件更新页上传 `daikin_BRY88AX151K.ota.bin.signed`。设备验证本项目签名、目标型号与镜像后安装，Wi-Fi 和 MQTT 配置保留。当前通过手动文件更新，不提供 URL 下载或精简包。
+网页的固件更新页上传 `daikin_BRY88AX151K.ota.bin.signed`。设备验证本项目签名、目标型号与镜像后安装，Wi-Fi 和 MQTT 配置保留。RC6 支持在线检查与下载；已有旧版若没有该入口，先用本地签名包升级。G1/G2 不使用 G3 屏幕、字库或固件。
 
 页面另有明确标记的未签名救援入口，仅用于可信的原始应用镜像。发布文件名为 `daikin_BRY88AX151K.ota.bin.raw`，本地构建文件名为 `daikin_BRY88AX151K.ota.bin`。无法访问网页时，可重新进入 BOOT0 下载模式，恢复原始备份或安装完整镜像。详见[固件更新](firmware-update)。
 

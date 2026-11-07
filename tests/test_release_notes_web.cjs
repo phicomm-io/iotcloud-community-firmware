@@ -310,7 +310,7 @@ test('homepage lists all ten RC targets separately from stable, including after 
       assert.match(area.querySelector('h3').textContent,/v1\.0\.0-rc/);
       assert.match(area.querySelector('.tag').textContent,/Beta.*RC/);
       assert.equal(area.querySelectorAll('a[href$=".ota.bin.signed"]').length,10);
-      assert.deepEqual([...area.querySelectorAll('[data-download-model]')].map(n=>n.dataset.downloadModel),['m1','a1','tc1','daikin']);
+      assert.deepEqual([...area.querySelectorAll('[data-download-model]')].map(n=>n.dataset.downloadModel),['tc1','m1','a1','daikin']);
       assert.equal(area.querySelectorAll('dialog').length,4);
       for(const card of area.querySelectorAll('[data-download-model]')){
         const button=card.querySelector('button'),dialog=card.querySelector('dialog');

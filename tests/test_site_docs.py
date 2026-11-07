@@ -41,6 +41,16 @@ class ManifestTests(unittest.TestCase):
         orphans = sorted(on_disk - published)
         self.assertEqual(orphans, [], f'docs/public pages missing from site/pages.py: {orphans}')
 
+    def test_wiki_resolves_public_source_links(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('wiki_sync', ROOT / 'tools/release/wiki_sync.py')
+        wiki = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(wiki)
+        pages = wiki.expected_pages()
+        self.assertTrue(pages)
+        for name, text in pages.items():
+            self.assertNotRegex(text, r'\{\{[A-Z_]+\}\}', name)
+
     def test_group_shape(self):
         for group in GROUPS:
             self.assertEqual(len(group), 3, f'group must be (id, title, items): {group}')
@@ -221,7 +231,7 @@ class BuildTests(unittest.TestCase):
         from html import unescape
         from urllib.parse import unquote, urlsplit
 
-        devices = ('m1', 'a1', 'tc1', 's30', 'daikin')
+        devices = ('tc1', 'm1', 'a1', 's30', 'daikin', 'daikin-g3')
         for language in ('', 'en/'):
             home = self.out / (language + 'index.html')
             paths = [home, self.out / 'guides/en/index.html'] if language else [home]
@@ -232,7 +242,9 @@ class BuildTests(unittest.TestCase):
                 self.assertEqual([device for device, _ in entries], list(devices), path)
                 for device, entry in entries:
                     sections = re.findall(r'<section data-device-section="([^"]+)"[^>]*>(.*?)</section>', entry)
-                    self.assertEqual([name for name, _ in sections], ['install', 'common', 'automation', 'features'])
+                    expected = (['install', 'features', 'development'] if device == 'daikin-g3'
+                                else ['install', 'common', 'automation', 'features'])
+                    self.assertEqual([name for name, _ in sections], expected)
                     for name, section in sections:
                         links = re.findall(r'<a href="([^"]+)"', section)
                         self.assertTrue(links, f'{device}: empty {name}')
@@ -250,6 +262,44 @@ class BuildTests(unittest.TestCase):
                     for device in devices:
                         self.assertIn(f'href="#docs-{device}"', text)
                         self.assertIn(f'id="docs-{device}" open', text)
+
+    def test_stock_downloads_use_verified_components_and_reject_tampering(self):
+        import build
+        import json
+        from unittest.mock import patch
+        manifest = ROOT / 'docs/public/assets/firmware/stock/manifest.json'
+        catalog = json.loads(manifest.read_text())
+        self.assertEqual({entry['model'] for entry in catalog['files']},
+                         {'tc1', 'm1', 'a1', 's30', 'daikin', 'bry88bba15g'})
+        for language, base in [('zh', 'guides/'), ('en', '../guides/')]:
+            result = build.stock_backups(language, base)
+            for entry in catalog['files']:
+                self.assertIn(base + entry['path'], result)
+                self.assertIn(entry['sha256'], result)
+            home = (self.out / ('en/index.html' if language == 'en' else 'index.html')).read_text()
+            self.assertLess(home.index('id="releases"'), home.index('id="stock-backups"'))
+            self.assertIn(result, home)
+        original = Path.read_bytes
+        target = ROOT / 'docs/public' / catalog['files'][0]['path']
+        def corrupt(path):
+            body = original(path)
+            return bytes([body[0] ^ 1]) + body[1:] if path == target else body
+        with patch.object(Path, 'read_bytes', corrupt):
+            with self.assertRaisesRegex(ValueError, 'Stock backup missing or mismatched'):
+                build.stock_backups('zh', 'guides/')
+
+    def test_guide_links_reach_existing_local_anchors(self):
+        from html import unescape
+        from urllib.parse import unquote, urlsplit
+        for folder in ('guides', 'guides/en'):
+            for page in (self.out / folder).glob('*.html'):
+                for href in re.findall(r'href="([^"]+)"', page.read_text()):
+                    url = urlsplit(unescape(href))
+                    if url.scheme or url.netloc or not url.path.endswith('.html') or not url.fragment:
+                        continue
+                    target = page.parent / unquote(url.path)
+                    self.assertTrue(target.is_file(), f'{page.name}: {href}')
+                    self.assertIn(f'id="{unquote(url.fragment)}"', target.read_text(), f'{page.name}: {href}')
 
     def test_retired_combined_urls_reach_a_readable_device_chooser(self):
         for language in ('', 'en/'):

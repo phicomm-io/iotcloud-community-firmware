@@ -32,29 +32,34 @@ GROUPS = [
         ('tc1-features', 'TC1 特色功能', '六路命名、总功率计量、自定义按键与童锁', 'TC1-特色功能'),
     ]),
     ('daikin', '大金空气质量检测（1/2代）', [
-        ('daikin-guide', '大金空气质量检测（1/2代）', 'BRY88AX151K：通用 ESP32 固件、读数与 A1 联动', 'DAIKIN-功能与安装'),
+        ('daikin-guide', '大金空气质量检测（1/2代）', 'G1 BRY88AA151K / G2 BRY88AB151K：型号与兼容范围', 'DAIKIN-功能与安装'),
         ('daikin-stock-ota', 'DAIKIN 原厂 OTA 安装', 'BRY88AB151K：按键触发、配套发送器与实机迁移', 'DAIKIN-原厂OTA'),
         ('daikin-automation', 'DAIKIN 自动化、联动与远程显示', 'A1 传感器来源、M1 字段选择与中枢职责', 'DAIKIN-自动化与远程显示'),
     ]),
     ('daikin-g3', '大金空气质量检测（3代）', [
-        ('daikin-g3-guide', '大金空气质量检测（3代）', 'BRY88BBA15G：屏幕编排、ESP32 与屏幕 MCU 更新', 'DAIKIN-G3-功能与安装'),
+        ('daikin-g3-guide', 'G3 安装、更新与恢复', 'BRY88BBA15G：ESP32、屏幕 MCU、字库与免拆迁移', 'DAIKIN-G3-功能与安装'),
+        ('daikin-g3-layout', 'G3 屏幕编排与外观', '组合页、数值、图表、主题、壁纸、亮度与语言', 'DAIKIN-G3-屏幕编排'),
+        ('daikin-g3-services', 'G3 天气、提醒与外部数据', '天气提供商、位置、定时事项、API 推送与统计', 'DAIKIN-G3-天气与推送'),
+        ('daikin-g3-diagnostics', 'G3 启动、资源与显示诊断', '维护窗口、缺字、内存、模块控制与换页测量', 'DAIKIN-G3-诊断'),
+        ('daikin-g3-development', 'G3 架构、协议与开发资料', 'ESP32 / SWM34S 职责、串口协议和完整资料索引', 'DAIKIN-G3-开发资料'),
     ]),
     ('common', '通用设置与排查', [
         ('quick-start', '快速开始', '设备、配网与访问方式', '快速开始'),
         ('flash-prep', '刷机前准备', '供电与接线的通用要求、两个模块的下载接口', '刷机前准备'),
         ('firmware-update', '固件更新', '更新来源、包的选择与失败处理', '固件更新'),
+        ('stock-backups', '原厂备份与恢复', '全部设备的程序、主控、屏幕资源与校验', '原厂备份与恢复'),
         ('iotcloud-connect', '接入 IoTCloud', '注册账号、配置 MQTT 与确认设备上线', '接入-IotCloud'),
         ('mqtt-link', 'MQTT 与联动', 'MQTT 模式、管理平台与 A1 数据联动', 'MQTT与联动'),
         ('faq', '故障排查', '连接状态、灯语总则与常见问题', '故障排查'),
     ]),
-    ('s30', 'S30-V1B 计量插座', [
+    ('s30', 'S30-V1B / S30M_V1B 计量插座', [
         ('s30-flash', '免拆与串口刷机', '原厂网络 OTA、VTX / VRX、完整备份与应用镜像', 'S30-V1B-刷机'),
         ('s30-guide', 'S30-V1B 常见功能', '配网、日常使用、升级与恢复', 'S30-V1B-功能与操作'),
         ('s30-automation', 'S30-V1B 自动化、联动与远程显示', '开发版功率规则、MQTT 来源与计量字段 ID', 'S30-V1B-自动化与远程显示'),
         ('s30-features', 'S30-V1B 特色功能', '来电策略、计量校准、灯语与本地按键', 'S30-V1B-特色功能'),
     ]),
     ('dev', '开发与维护', [
-        ('device-api', '设备接口与协议', 'RC5 / 0.9.27、HTTP、MQTT、UDP 与示例代码', '设备接口与协议'),
+        ('device-api', '设备接口与协议', 'RC6 / 0.9.27、HTTP、MQTT、UDP 与示例代码', '设备接口与协议'),
         ('iotcloud-deploy', '自行部署 IoTCloud', '静态前端托管、独立后端与 MQTT 连接', 'IotCloud-部署'),
         ('build-deps', '构建依赖', '工具链、SDK 归档与本地构建', '构建依赖'),
         ('sources', '资源来源', '刷机图片与工具的来源与校验', '资源来源'),
@@ -62,7 +67,7 @@ GROUPS = [
     ]),
 ]
 
-GROUPS.sort(key=lambda group: ['m1', 'a1', 'tc1', 's30', 'daikin', 'daikin-g3', 'common', 'dev'].index(group[0]))
+GROUPS.sort(key=lambda group: ['tc1', 'm1', 'a1', 's30', 'daikin', 'daikin-g3', 'common', 'dev'].index(group[0]))
 
 # Product documentation uses the same sections on the home page and sidebar.
 # Each entry is (slug, Chinese anchor, English anchor, Chinese label, English label).
@@ -111,6 +116,16 @@ for device, install in {
         ('features', '特色功能', 'Device features', features),
     ]
 
+DEVICE_SECTIONS['daikin-g3'] = [
+    ('install', '安装与更新', 'Installation and updates', [
+        ('daikin-g3-guide', '', '', 'ESP32、屏幕 MCU 与字库', 'ESP32, screen MCU and fonts'),
+        ('stock-backups', '大金-esp32-与屏幕', 'daikin-esp32-and-screen', '原厂组件与恢复边界', 'Stock components and recovery')]),
+    ('features', '屏幕与服务', 'Screen and services', [
+        ('daikin-g3-layout', '', '', '', ''), ('daikin-g3-services', '', '', '', '')]),
+    ('development', '诊断与开发', 'Diagnostics and development', [
+        ('daikin-g3-diagnostics', '', '', '', ''), ('daikin-g3-development', '', '', '', '')]),
+]
+
 # A shared guide can appear under both products; build and sync it only once.
 PAGES = list({page[0]: page for _, _, items in GROUPS for page in items}.values())
 
@@ -129,8 +144,13 @@ SITE_URL = 'https://phicomm-io.github.io/'
 
 # English guides share the same slugs, ordering and asset collection.
 EN_TITLES = {
- 'daikin-g3-guide': ('Daikin air quality monitor (3rd generation)', 'BRY88BBA15G: layouts, resources, ESP32 and screen MCU updates'),
- 'device-api': ('Device interfaces and protocols', 'RC5 / 0.9.27, HTTP, MQTT, UDP and code examples'),
+ 'daikin-g3-guide': ('G3 installation, updates and recovery', 'BRY88BBA15G: ESP32, screen MCU, fonts and stock migration'),
+ 'daikin-g3-layout': ('G3 screen layouts and appearance', 'Composed pages, values, charts, themes, wallpapers, brightness and language'),
+ 'daikin-g3-services': ('G3 weather, reminders and external data', 'Weather providers, locations, schedules, API pushes and charts'),
+ 'daikin-g3-diagnostics': ('G3 startup, resource and display diagnostics', 'Recovery windows, fonts, memory, module control and page measurements'),
+ 'daikin-g3-development': ('G3 architecture, protocols and development resources', 'ESP32 / SWM34S roles, UART protocols and complete reference index'),
+ 'stock-backups': ('Stock backups and recovery', 'Programs, controllers, screen resources and checksums for all devices'),
+ 'device-api': ('Device interfaces and protocols', 'RC6 / 0.9.27, HTTP, MQTT, UDP and code examples'),
  'm1-mcu-update': ('Update the M1 controller over the network', 'Minimum Wi-Fi version, Python flashing and runtime verification'),
  'm1-mcu-firmware': ('M1 open-source controller firmware', 'Added capabilities, controller releases and stock backup'),
  'daikin-stock-ota': ('Daikin stock OTA migration', 'BRY88AB151K button gesture, sender and verified first boot'),
@@ -147,7 +167,7 @@ EN_TITLES = {
  'tc1-no-disassembly': ('OTA internals and custom images', 'Factory OTA, image packing and alternative network topologies'),
  'tc1-no-disassembly-ethernet-wifi-ap': ('Illustrated OTA installation', 'Ethernet, Wi-Fi and an AP: downloads and OS-specific instructions'),
  'm1-guide': ('M1 operation', 'Readings, brightness, icons and recovery'),
- 'daikin-guide': ('Daikin air quality monitor (1st/2nd generation)', 'BRY88AX151K: universal ESP32 firmware, readings and A1 automation'),
+ 'daikin-guide': ('Daikin air quality monitor (1st/2nd generation)', 'G1 BRY88AA151K / G2 BRY88AB151K: model and compatibility guide'),
  'a1-guide': ('A1 operation', 'Fan, ring, night mode and automation'),
  's30-flash': ('S30-V1B network and serial installation', 'Stock network OTA, UART test points, backups and application images'),
  's30-guide': ('S30-V1B common functions', 'Wi-Fi setup, daily use, updates and recovery'),
@@ -167,7 +187,7 @@ EN_TITLES = {
 }
 EN_GROUP_NAMES = {'m1': 'M1 air quality monitor', 'a1': 'A1 air purifier',
                   'tc1': 'TC1 power strip', 'daikin': 'Daikin air quality monitor (1st/2nd generation)', 'daikin-g3': 'Daikin air quality monitor (3rd generation)',
-                  's30': 'S30-V1B metering socket', 'common': 'Shared setup and troubleshooting', 'dev': 'Development and maintenance'}
+                  's30': 'S30-V1B / S30M_V1B metering socket', 'common': 'Shared setup and troubleshooting', 'dev': 'Development and maintenance'}
 EN_GROUPS = [(gid, EN_GROUP_NAMES[gid], [
     (slug, *EN_TITLES[slug], 'EN-' + slug) for slug, _, _, _ in items
 ]) for gid, _, items in GROUPS]

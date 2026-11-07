@@ -1,5 +1,7 @@
 # A1: stock Wi-Fi setup and installation without disassembly
 
+Start at [Firmware & resources]({{SITE_URL}}en/#releases) and choose the latest compatible release for your device with its matching checksums. Pinned versions below are reproducible examples; stated minimum versions, stock versions and migration-tool requirements still apply.
+
 For the A1 air purifier with an original EMW3080B / MK3080B module. **Factory LAN OTA is confirmed working.** This guide covers EasyLink provisioning, LAN upload and a DNS download path derived from stock firmware.
 
 Use the **full native A1 OTA image**. Commands below use stable **v0.9.27**. Keep power connected and the filter installed. For wired recovery see [A1 flashing](a1-flash).

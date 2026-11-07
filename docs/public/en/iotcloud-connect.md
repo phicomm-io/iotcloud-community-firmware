@@ -1,6 +1,6 @@
 # Connect devices to IoTCloud
 
-IoTCloud is a web management platform for the TC1 power strip, M1 and DAIKIN air quality monitors, A1 air purifier and ORVIBO S30-V1B smart socket. Connect devices to view online status, air readings and power usage in one place, and remotely use each device's supported controls and settings. Account mode saves the device list so you can continue from another phone or computer on the same node and account.
+IoTCloud is a web management platform for the TC1 power strip, M1 air quality monitor, A1 air purifier, ORVIBO S30-V1B smart socket and DAIKIN G1/G2 and G3 air quality monitors. Connect devices to view online status, air readings and power usage in one place, and remotely use each device's supported controls and settings. Account mode saves the device list so you can continue from another phone or computer on the same node and account.
 
 [Open IoTCloud]({{SITE_URL}}iotcloud/) · [Try the simulated demo]({{SITE_URL}}demos/platform/)
 
@@ -64,7 +64,7 @@ Confirm that platform MQTT is connected, the device card is online and readings 
 
 DAIKIN details show separate PM2.5 / PM10 cards, CO₂, temperature, humidity and TVOC scales, with a TVOC reference of ≤300 ppb. The formaldehyde card stays hidden without its module. The linked-device area shows A1 sessions that have actually read the monitor.
 
-See [TC1](tc1-guide), [M1](m1-guide), [A1](a1-guide), [DAIKIN](daikin-guide) and [S30-V1B](s30-guide) for daily operation. Configure A1 source authorization and automatic control separately using [MQTT and automation](mqtt-link).
+See [TC1](tc1-guide), [M1](m1-guide), [A1](a1-guide), [S30-V1B](s30-guide), [DAIKIN G1/G2](daikin-guide) and [G3](daikin-g3-guide) for daily operation. Configure A1 source authorization and automatic control separately using [MQTT and automation](mqtt-link).
 
 ## Troubleshooting
 
