@@ -51,6 +51,8 @@ ESP32: open Settings → Firmware update, choose a source, check the version, re
 
 Screen and font: open the device directly on the LAN and select Screen → Resources and updates → Online updates. Check available versions and install the application or font separately. The browser checks file size; ESP32 verifies the digest and staging before MCU installation. Cloud access supports controls and ESP32 updates; large screen uploads currently require a direct LAN connection.
 
+<a id="direct-uart-update"></a>
+
 The [direct UART update bundle](https://github.com/phicomm-io/iotcloud-community-firmware/releases/download/v1.0.0-rc.6/daikin_G3_direct-uart-af66ba22.tar.gz) contains ESP32 `1.0.0-rc.6-af66ba`, MCU `1.0.0-rc.6-468fc4`, scripts and checksums. First install its ESP32 raw application through the explicitly labelled unsigned rescue upload and verify the version, then install the screen application. This is a post-RC6 supplement; original RC6 downloads are unchanged.
 
 The new tool and paired ESP32 can send the complete `daikin_G3_screen.bin` directly to stock MCU firmware. A recovery-first step, boot backup and stock-version allowlist are no longer required. The new MCU application also removes its local boot MD5 allowlist. Extract the paired tools, install Python `msgpack`, then run:
