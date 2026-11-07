@@ -57,7 +57,7 @@ ESP32：打开“设置 → 固件更新”，选择更新源并检查版本，�
 
 ```sh
 python3 -m pip install msgpack
-python3 screen/flash_screen.py --url http://DEVICE_IP --image ../daikin_G3_screen.bin --mode install --log install.jsonl
+python3 screen/flash_screen.py --url http://DEVICE_IP --image daikin_G3_screen.bin --mode install --log install.jsonl
 ```
 
 工具自动选择原厂串口安装或社区 MCU 暂存／激活路径，保留型号、向量、长度、摘要及暂存回读检查。设置了管理密码时通过 `IOTCLOUD_AUTH=admin:密码` 提供。完成后日志应显示新会话和实际运行应用的 MD5。

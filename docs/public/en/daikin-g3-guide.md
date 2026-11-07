@@ -57,7 +57,7 @@ The new tool and paired ESP32 can send the complete `daikin_G3_screen.bin` direc
 
 ```sh
 python3 -m pip install msgpack
-python3 screen/flash_screen.py --url http://DEVICE_IP --image ../daikin_G3_screen.bin --mode install --log install.jsonl
+python3 screen/flash_screen.py --url http://DEVICE_IP --image daikin_G3_screen.bin --mode install --log install.jsonl
 ```
 
 The tool selects stock UART installation or community staging/activation automatically. Target, vectors, length, digests and staging readback are still checked. If an administration password is set, provide `IOTCLOUD_AUTH=admin:password`. Successful logs contain a new session and the running application's actual MD5.
