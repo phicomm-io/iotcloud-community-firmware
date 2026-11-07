@@ -48,7 +48,9 @@ static void g3OnlineWorker(void *opaque){
   }else{
     const esp_partition_t *partition=esp_ota_get_next_update_partition(nullptr);
     OtaFlash flash={partition,0,0};signed_ota verifier;uint8_t buffer[1024];
-    client=g3HttpOpen(result.url,&length);
+    // The application owner must keep polling the UART/power acknowledgement.
+    // Wait here in the worker, never in its command dispatcher.
+    if(screenModulePowerBegin())client=g3HttpOpen(result.url,&length);
     const size_t prefix=daikin::firmwarePrefixSize,initial=OTA_ENVELOPE_SIZE+prefix;
     ok=client&&partition&&length==result.size&&length>(int64_t)initial&&length-OTA_ENVELOPE_SIZE<=partition->size;
     if(ok)ok=g3HttpRead(client,buffer,initial)&&daikin::matchingFirmwarePrefix(buffer+OTA_ENVELOPE_SIZE,prefix,daikin_target,esp_ota_get_app_description()->project_name);
@@ -86,8 +88,7 @@ static const char *g3OnlineCommand(const String &action,JsonObjectConst params,J
   if(!install){const char *source=params["source"]|"";if(params.size()!=1||(strcmp(source,"github")&&strcmp(source,"cn")&&strcmp(source,"global")))return "invalid_params";strlcpy(g3Online.source,source,sizeof(g3Online.source));g3Online.available=false;}
   if(!g3OnlineResults)g3OnlineResults=xQueueCreate(1,sizeof(G3OnlineState));
   if(!g3OnlineResults||heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT)<24576)return "busy";
-  if(install&&!screenModulePowerBegin())return "busy";
   g3OnlineBusy=true;g3Online.busy=true;g3Online.install=install;g3Online.error[0]=0;strlcpy(g3Online.state,install?"downloading":"checking",sizeof(g3Online.state));if(install)otaActive=true;
-  if(xTaskCreate(g3OnlineWorker,"g3-online",8192,&g3Online,1,nullptr)!=pdPASS){g3Online.busy=g3OnlineBusy=false;otaActive=false;if(install)screenModulePowerEnd();strlcpy(g3Online.state,"error",sizeof(g3Online.state));return "busy";}
+  if(xTaskCreate(g3OnlineWorker,"g3-online",8192,&g3Online,1,nullptr)!=pdPASS){g3Online.busy=g3OnlineBusy=false;otaActive=false;strlcpy(g3Online.state,"error",sizeof(g3Online.state));return "busy";}
   return "accepted";
 }
