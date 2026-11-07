@@ -246,6 +246,7 @@ class ValidationReuseTests(unittest.TestCase):
             'Verify locked frontend dependency': 'frontend',
             'tc1 firmware variants': 'firmware', 'a1 firmware variants': 'firmware', 'm1 firmware variants': 'firmware',
             'DAIKIN ESP32 full firmware': 'esp', 'DAIKIN ESP32 hub firmware': 'esp',
+            'DAIKIN ESP32 g3 firmware': 'esp',
             'S30-V1B BK7231N firmware': 's30',
             'Lightweight release checks': 'release-checks',
             'Binding and automation host scenarios': 'feature-tests',
@@ -260,7 +261,7 @@ class ValidationReuseTests(unittest.TestCase):
                         r'(.*?)(?=^      - |\Z)', jobs['esp'], re.M | re.S)
         self.assertIsNotNone(ota)
         self.assertNotRegex(ota[1], r'(?m)^        if:')
-        self.assertIn('        variant: [full, hub]', jobs['esp'])
+        self.assertIn('        variant: [full, hub, g3]', jobs['esp'])
         for module in ('test_ota_identity.py', 'test_wire_msgpack.py', 'test_web_auth.py',
                        'test_lan_pairing.py', 'test_auth_storage.py', 'test_hub_mixed_devices.py'):
             self.assertIn("          python3 -m unittest discover -s DAIKIN/tests -p '" + module + "'", ota[1])

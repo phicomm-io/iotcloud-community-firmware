@@ -179,7 +179,7 @@ test('the default stable page hides candidates even if a combined snapshot is ac
     assert.ok(![...p.field('to').options].some(o=>o.value.includes('-rc')));assert.deepEqual(calls,[{source:'',channel:'stable'}]);
   }finally{p.close();}
 });
-test('explicit candidate selection uses the stable baseline, groups all four devices and shares the candidate channel', async()=>{
+test('explicit candidate selection uses the stable baseline, groups all product families and shares the candidate channel', async()=>{
   const f=CandidateUI.fixture(),calls=[],p=mounted({client:{snapshot:async(source,options)=>{calls.push({source,channel:options.channel});return f[options.channel];}}});
   try{await p.controller.ready;const stableHistory=p.app.querySelector('[data-notes-channel=stable]'),history=stableHistory.innerHTML;
     assert.equal(stableHistory.hidden,false);assert.equal(p.app.querySelector('[data-notes-channel=candidate]').hidden,true);
@@ -187,7 +187,7 @@ test('explicit candidate selection uses the stable baseline, groups all four dev
     assert.deepEqual(calls.at(-1),{source:'',channel:'candidate'});assert.equal(p.field('source').disabled,true);
     assert.deepEqual([...p.field('source').options].map(o=>o.value),['']);
     assert.equal(p.field('from').value,'0.9.27');assert.equal(p.field('to').value,'1.0.0-rc');assert.equal(p.field('candidates').hidden,false);
-    assert.deepEqual([...p.field('candidate-downloads').children].map(n=>n.id),['notes-candidate-m1','notes-candidate-a1','notes-candidate-tc1','notes-candidate-daikin']);
+    assert.deepEqual([...p.field('candidate-downloads').children].map(n=>n.id),['notes-candidate-m1','notes-candidate-a1','notes-candidate-tc1','notes-candidate-daikin','notes-candidate-bry88bba15g']);
     const links=[...p.field('candidate-downloads').querySelectorAll('a')];
     assert.equal(links.filter(a=>a.pathname.endsWith('.ota.bin.signed')).length,10);
     assert.ok(links.every(a=>!a.href.includes('phicomm.fjrcn.')));assert.equal(stableHistory.innerHTML,history);
