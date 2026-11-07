@@ -79,7 +79,7 @@ function deviceDownload(model, release, variants, snapshot, native = false) {
 }
 function screenAssets(release, snapshot) {
  const links=el('div');links.className='card-links';
- for(const [kind,label] of [['firmware',t('屏幕 MCU','Screen MCU')],['bootstrap',t('首次安装恢复镜像','First-install recovery image')],['font',t('32 px 中文字库','32 px Chinese font')],['migration',t('免拆迁移工具与教程','Wireless migration tools and guide')]]){
+ for(const [kind,label] of [['firmware',t('屏幕 MCU','Screen MCU')],['bootstrap',t('屏幕恢复镜像（可选）','Screen recovery image (optional)')],['font',t('32 px 中文字库','32 px Chinese font')],['migration',t('免拆迁移工具与教程','Wireless migration tools and guide')]]){
   const asset=release.screen?.[kind],prefix='/releases/'+release.tag+'/';
   if(!asset||typeof asset.path!=='string'||!asset.path.startsWith(prefix)||!/^[A-Za-z0-9_.-]+$/.test(asset.path.slice(prefix.length))||!Number.isSafeInteger(asset.size)||asset.size<=0||!/^[a-f0-9]{64}$/.test(asset.sha256))continue;
   links.append(link(label,asset.path,snapshot.source));
