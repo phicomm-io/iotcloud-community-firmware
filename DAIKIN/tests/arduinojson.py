@@ -8,7 +8,7 @@ def codec_source():
     override = os.environ.get('DAIKIN_ARDUINOJSON_SOURCE')
     candidates = ([Path(override)] if override else
                   [root/'.pio/libdeps'/name/'ArduinoJson/src'
-                   for name in ('bry88ab', 'bry88ab-hub')])
+                   for name in ('bry88ab', 'bry88ab-hub', 'bry88bba15g')])
     for path in candidates:
         if (path/'ArduinoJson.h').is_file():
             return path

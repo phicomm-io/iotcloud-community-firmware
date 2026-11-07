@@ -4,7 +4,7 @@ import os,subprocess,tempfile,unittest
 ROOT=Path(__file__).resolve().parents[2]
 class LanPairing(unittest.TestCase):
  def test_production_interop(self):
-  candidates=[Path(os.environ['DAIKIN_ARDUINOJSON_SOURCE'])] if os.environ.get('DAIKIN_ARDUINOJSON_SOURCE') else [ROOT/'DAIKIN/.pio/libdeps'/name/'ArduinoJson/src' for name in ('bry88ab','bry88ab-hub')]
+  candidates=[Path(os.environ['DAIKIN_ARDUINOJSON_SOURCE'])] if os.environ.get('DAIKIN_ARDUINOJSON_SOURCE') else [ROOT/'DAIKIN/.pio/libdeps'/name/'ArduinoJson/src' for name in ('bry88ab','bry88ab-hub','bry88bba15g')]
   codec=next((path for path in candidates if (path/'ArduinoJson.h').is_file()),None)
   if codec is None:raise RuntimeError('Build a DAIKIN target or set DAIKIN_ARDUINOJSON_SOURCE to the pinned ArduinoJson source')
   with tempfile.TemporaryDirectory() as directory:
