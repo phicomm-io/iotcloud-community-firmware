@@ -68,6 +68,8 @@ if workflow.is_file():
   if anchor not in text:
    raise ValueError('Pages staging step not found')
   text = text.replace(anchor, '          if [ -d illustrations ]; then cp -a illustrations "$RUNNER_TEMP/public-site/"; fi\n' + anchor, 1)
+  if "timeout: 1800000" not in text:
+   text = text.replace("        id: deployment", "        with:\n          timeout: 1800000\n        id: deployment")
   workflow.write_text(text)
 PY
 if [[ -d "$target/public/tools" ]]; then

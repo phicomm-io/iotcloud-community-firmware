@@ -51,6 +51,8 @@ ESP32：打开“设置 → 固件更新”，选择更新源并检查版本，�
 
 屏幕 MCU 与字库：在局域网直接打开设备网页，进入“屏幕 → 资源与升级 → 在线更新”。检查版本后分别下载并安装屏幕应用或字库；网页核对文件大小，ESP32 再校验哈希并暂存，完成后才请求 MCU 安装。当前远程云端通道支持控制和 ESP32 更新，屏幕大文件上传需要本地直连。
 
+[串口直装配套更新包](https://github.com/phicomm-io/iotcloud-community-firmware/releases/download/v1.0.0-rc.6/daikin_G3_direct-uart-af66ba22.tar.gz)（ESP32 `1.0.0-rc.6-af66ba`，MCU `1.0.0-rc.6-468fc4`）包含两份应用、脚本和校验清单。先通过网页明确标出的“未签名救援上传”更新包内 ESP32 raw 应用并核对版本，再执行屏幕安装。此包是 RC6 发布后的补充，原始 RC6 下载保持不变。
+
 新脚本与配套新 ESP32 可直接向原厂 MCU 发送完整的 `daikin_G3_screen.bin`，不要求先安装恢复镜像、引导备份或原厂版本白名单。新 MCU 应用也取消本地引导 MD5 白名单。解压配套工具，安装 Python 的 `msgpack` 后执行：
 
 ```sh
