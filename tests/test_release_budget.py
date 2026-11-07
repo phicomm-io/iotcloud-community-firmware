@@ -96,6 +96,21 @@ class EspBudgetTests(unittest.TestCase):
         self.assertTrue(report['passed'])
         self.assertNotIn('loop_stack_frame_bytes', report)
 
+    def test_g3_uses_its_factory_slot_and_screen_bridge_ram_budget(self):
+        report = self.measure_fixture(variant='g3', image_size=0x1e0000 - 32768,
+                                      capacity=0x1e0000, ram=104 * 1024)
+        self.assertEqual(report['model'], 'bry88bba15g')
+        self.assertEqual(report['ota_slot_bytes'], 0x1e0000)
+        self.assertEqual(report['static_ram_limit_bytes'], 104 * 1024)
+        self.assertTrue(report['stock_ota_compatible'])
+        for kwargs in ({'image_size': 0x1e0000 - 32768 + 1}, {'ram': 104 * 1024 + 1}):
+            with self.subTest(kwargs=kwargs), self.assertRaises(budget.BudgetError):
+                self.measure_fixture(variant='g3', capacity=0x1e0000, **kwargs)
+        # Selecting G3 must not relax either existing G1/G2 RAM limit.
+        for variant in ('full', 'hub'):
+            with self.subTest(variant=variant), self.assertRaises(budget.BudgetError):
+                self.measure_fixture(variant=variant, ram=96 * 1024 + 1)
+
     def test_hub_objdump_failure_preserves_measurements(self):
         for failure in (FileNotFoundError('missing objdump'), subprocess.CalledProcessError(1, 'objdump')):
             with self.subTest(failure=failure), self.assertRaises(budget.BudgetError) as error:

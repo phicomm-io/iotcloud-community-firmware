@@ -169,7 +169,7 @@ jobs:
           REF_TYPE: ${{ github.ref_type }}
         run: |
           python3 tools/prepare_toolchain.py --profile gcc14 --github-env "$GITHUB_ENV"
-          python3 -m unittest tests.test_compiler_profile
+          python3 -m unittest tests.test_compiler_profile tests.test_native_frontend_styles
           if [ "$REF_TYPE" = tag ]; then
             python3 tools/check_version.py --tag "$TAG_NAME"
           else
@@ -313,7 +313,7 @@ jobs:
         run: |
           DAIKIN/build.sh
           if [ "$PHICOMM_FIRMWARE_VARIANT" = g3 ]; then
-            python3 tools/release/check_esp_budget.py --variant full --layout wired \
+            python3 tools/release/check_esp_budget.py --variant g3 --layout stock \
               --build-dir DAIKIN/.pio/build/bry88bba15g --partitions BRY88BBA15G/partitions.csv \
               --output release/budget-daikin-g3.json
           else

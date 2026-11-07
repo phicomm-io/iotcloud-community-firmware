@@ -13,6 +13,8 @@ ROOT = Path(__file__).resolve().parents[2]
 FLASH_RESERVE = 32 * 1024
 STATIC_RAM_LIMIT = 96 * 1024
 STOCK_OTA_SLOT_BYTES = 0x180000
+G3_STATIC_RAM_LIMIT = 104 * 1024
+G3_STOCK_OTA_SLOT_BYTES = 0x1e0000
 HUB_LOOP_STACK_FRAME_LIMIT = 1024
 
 
@@ -69,6 +71,8 @@ def loop_stack_frame(disassembly):
 
 
 def measure(build, partitions, size_tool, variant, layout='stock', objdump_tool=None):
+    if variant not in ('full', 'hub', 'g3'):
+        raise ValueError('Unknown firmware variant')
     if layout not in ('stock', 'wired'):
         raise ValueError('Unknown OTA partition layout')
     build = Path(build)
@@ -81,22 +85,26 @@ def measure(build, partitions, size_tool, variant, layout='stock', objdump_tool=
     configured_capacity = ota_capacity(partitions)
     # An application OTA does not replace the installed partition table. The
     # stock migration path therefore retains its smaller slots indefinitely.
-    capacity = min(configured_capacity, STOCK_OTA_SLOT_BYTES) if layout == 'stock' else configured_capacity
+    # G3 has a different factory partition table and a resident screen bridge.
+    # Keep its measured RAM ceiling separate from the G1/G2 full/Hub budget.
+    stock_capacity = G3_STOCK_OTA_SLOT_BYTES if variant == 'g3' else STOCK_OTA_SLOT_BYTES
+    ram_limit = G3_STATIC_RAM_LIMIT if variant == 'g3' else STATIC_RAM_LIMIT
+    capacity = min(configured_capacity, stock_capacity) if layout == 'stock' else configured_capacity
     ram = static_ram(subprocess.check_output([str(size_tool), '-A', str(elf)], text=True))
-    report = dict(schema=1, model='daikin', firmware_variant=variant,
+    report = dict(schema=1, model='bry88bba15g' if variant == 'g3' else 'daikin', firmware_variant=variant,
                   application_bytes=len(image), application_sha256=hashlib.sha256(image).hexdigest(),
                   elf_sha256=hashlib.sha256(elf_body).hexdigest(), ota_layout=layout,
                   ota_slot_bytes=capacity, configured_ota_slot_bytes=configured_capacity,
-                  stock_ota_slot_bytes=STOCK_OTA_SLOT_BYTES,
-                  stock_ota_compatible=len(image) + FLASH_RESERVE <= min(configured_capacity, STOCK_OTA_SLOT_BYTES),
+                  stock_ota_slot_bytes=stock_capacity,
+                  stock_ota_compatible=len(image) + FLASH_RESERVE <= min(configured_capacity, stock_capacity),
                   wired_ota_compatible=len(image) + FLASH_RESERVE <= configured_capacity,
                   flash_reserve_bytes=FLASH_RESERVE, static_ram_bytes=ram,
-                  static_ram_limit_bytes=STATIC_RAM_LIMIT)
+                  static_ram_limit_bytes=ram_limit)
     errors = []
     if len(image) + FLASH_RESERVE > capacity:
         errors.append(f'{variant}: application {len(image)} + reserve {FLASH_RESERVE} exceeds {layout} OTA slot {capacity}')
-    if ram > STATIC_RAM_LIMIT:
-        errors.append(f'{variant}: static RAM {ram} exceeds budget {STATIC_RAM_LIMIT}')
+    if ram > ram_limit:
+        errors.append(f'{variant}: static RAM {ram} exceeds budget {ram_limit}')
     if variant == 'hub':
         report['loop_stack_frame_bytes'] = None
         report['loop_stack_frame_limit_bytes'] = HUB_LOOP_STACK_FRAME_LIMIT
@@ -122,18 +130,18 @@ def measure(build, partitions, size_tool, variant, layout='stock', objdump_tool=
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--variant', choices=['full', 'hub'], required=True)
+    parser.add_argument('--variant', choices=['full', 'hub', 'g3'], required=True)
     parser.add_argument('--build-dir', type=Path)
     parser.add_argument('--partitions', type=Path, default=ROOT / 'DAIKIN/partitions.csv')
     parser.add_argument('--layout', choices=['stock', 'wired'], default='stock',
-                        help='Stock migration keeps 0x180000 slots; wired uses the supplied partition CSV')
+                        help='Stock migration keeps the model factory slots; wired uses the supplied partition CSV')
     core = Path(os.environ.get('PLATFORMIO_CORE_DIR', Path.home() / '.platformio'))
     parser.add_argument('--size-tool', type=Path, default=core / 'packages/toolchain-xtensa-esp32/bin/xtensa-esp32-elf-size')
     parser.add_argument('--objdump-tool', type=Path,
                         help='Default: the Xtensa objdump beside --size-tool; required for the Hub loop frame gate')
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
-    build = args.build_dir or ROOT / 'DAIKIN/.pio/build' / ('bry88ab-hub' if args.variant == 'hub' else 'bry88ab')
+    build = args.build_dir or ROOT / 'DAIKIN/.pio/build' / {'full': 'bry88ab', 'hub': 'bry88ab-hub', 'g3': 'bry88bba15g'}[args.variant]
     failure = None
     try:
         report = measure(build, args.partitions, args.size_tool, args.variant, args.layout, args.objdump_tool)

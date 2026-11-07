@@ -70,7 +70,7 @@ print(json.dumps({lang:build.render_guide('release-log','Release Log','Releases'
             assert.ok(calls.every(value => !value.includes('/candidate/')));
             const history = await page.locator('[data-notes-channel=stable]').innerHTML();
             await page.locator('#notes-channel').selectOption('candidate');
-            await Playwright.expect(page.locator('#notes-candidate-downloads article')).toHaveCount(4);
+            await Playwright.expect(page.locator('#notes-candidate-downloads article')).toHaveCount(5);
             await Playwright.expect(page.locator('#notes-from')).toHaveValue('0.9.27');
             await Playwright.expect(page.locator('#notes-to')).toHaveValue('1.0.0-rc.4');
             await Playwright.expect(page.locator('#notes-to option')).toHaveCount(1);
@@ -121,7 +121,7 @@ print(json.dumps({lang:build.render_guide('release-log','Release Log','Releases'
             }
             assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
             assert.deepEqual(errors, []);
-            report.cases.push({browser: name, locale, width, stableDefault: true, explicitCandidateOnly: true, stableBaseline: '0.9.27', deviceGroups: 4,
+            report.cases.push({browser: name, locale, width, stableDefault: true, explicitCandidateOnly: true, stableBaseline: '0.9.27', deviceGroups: 5,
               syntheticSignedTargets: 10, candidateComparisonAndShare: true, stableHistoryUnchanged: true, unavailableCandidateFailsClosed: true, overflow: false});
           } finally {candidateAvailable = true; await context.close();}
         }

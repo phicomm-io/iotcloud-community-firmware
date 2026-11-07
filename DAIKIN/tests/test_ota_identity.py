@@ -97,6 +97,8 @@ static int fault,statusCode,erases,writes,reads,ends,activations,aborts,preferen
 static std::string response;
 static std::map<std::string,std::string> requestHeaders,responseHeaders;
 static daikin::FirmwareIdentity daikin_target;
+// This harness exercises G1/G2 full and Hub. G3 has its own signed OTA suite.
+static constexpr unsigned otaModel=4;
 struct Prefs {bool signedImage=false;void putBool(const char *key,bool value){if(strcmp(key,"ota_signed"))abort();signedImage=value;preferencesWrites++;}};
 static Prefs prefs;
 static char webPassword[33]={};
@@ -549,8 +551,9 @@ class VariantHttpSurface(unittest.TestCase):
         capabilities = 'static const char *actions[]=' + commands.split(
             'static const char *actions[]=', 1)[1].split('static bool knownFields(', 1)[0]
         main = (ROOT / 'DAIKIN/src/main.cpp').read_text()
-        registration = '#ifndef IOTCLOUD_HUB\n    httpd_uri_t convert=' + main.split(
-            '#ifndef IOTCLOUD_HUB\n    httpd_uri_t convert=', 1)[1].split('#endif', 1)[0] + '#endif\n'
+        guard = '#if !defined(IOTCLOUD_HUB) && !defined(IOTCLOUD_BRY88_SCREEN)\n'
+        registration = guard + '    httpd_uri_t convert=' + main.split(
+            guard + '    httpd_uri_t convert=', 1)[1].split('#endif', 1)[0] + '#endif\n'
         codec = codec_source()
         with tempfile.TemporaryDirectory(prefix='daikin-ota-surface-') as temporary:
             directory = Path(temporary)
@@ -562,6 +565,7 @@ class VariantHttpSurface(unittest.TestCase):
 #include <string>
 #include <vector>
 static const char *deviceId="9c9c1ff76748",*version="1.0.0-rc.4";
+static constexpr const char *hardwareModel="BRY88AX151K";
 static bool configRecovery=false,hchoPresent=false;
 #include "capabilities.inc"
 static std::vector<std::string> routes;
