@@ -445,7 +445,14 @@ static const char *screenServicesCommand(const String &action,
         d["low"] = day.low;
         d["high"] = day.high;
       }
-    if (screenWeatherSentSession == screenBridge.session && screenWeatherSentAt)
+    data["delivery"] = screenBridge.extended ? "community" : "factory";
+    if (!screenBridge.extended && screenWeatherStockSentAt) {
+      data["factory"] = screenWeatherStockLast;
+      data["factory_sent_age_ms"] = millis() - screenWeatherStockSentAt;
+    }
+    if (!screenBridge.extended && screenWeatherStockSentAt && screenWeatherStockSentValid)
+      data["last_sent_age_ms"] = millis() - screenWeatherStockSentAt;
+    else if (screenBridge.extended && screenWeatherSentSession == screenBridge.session && screenWeatherSentAt)
       data["last_sent_age_ms"] = millis() - screenWeatherSentAt;
     else
       data["last_sent_age_ms"] = nullptr;
@@ -506,6 +513,7 @@ static const char *screenServicesCommand(const String &action,
     }
     screenWeatherGeneration++;
     screenWeather = {};
+    screenWeatherStockPending = true;
     screenWeatherRetry = {};
     screenWeatherRefresh = true;
     screenWeatherError = "";

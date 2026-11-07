@@ -14,6 +14,7 @@ struct WeatherJob {
 };
 struct WeatherResult {
   screen_weather value;
+  uint8_t stockCode;
   uint32_t generation, stackFreeBytes, startHeap, startBlock, endHeap;
   bool valid;
   char error[32];
@@ -32,6 +33,41 @@ static const char *screenWeatherError = "not_configured";
 static char screenWeatherStage[24] = "idle";
 static int screenWeatherHttpStatus = 0, screenWeatherTlsError = 0;
 static uint32_t screenWeatherVerifyFlags = 0;
+static uint8_t screenWeatherStockCode = 0;
+static bool screenWeatherStockPending = true, screenWeatherStockSentValid = false;
+static uint32_t screenWeatherStockDue = 0, screenWeatherStockSentAt = 0;
+static String screenWeatherStockToken;
+static StaticJsonDocument<192> screenWeatherStockLast;
+static bool screenWeatherStockRequest(const String &token) {
+  screenWeatherStockToken = token;
+  screenWeatherStockPending = true;
+  // Let +pub:OK finish before delivering the subscription. Build the data at
+  // transmission time so a just-fetched observation cannot be overwritten by
+  // an earlier queued missing-value response.
+  screenWeatherStockDue = millis() + 1500;
+  return true;
+}
+static void screenWeatherStockPoll(uint32_t now) {
+  if (screenBridge.extended || !screenSession || screenMcuVersion.isEmpty() ||
+      !screenWeatherStockPending || !due(now, screenWeatherStockDue) ||
+      screenOtaActive()) return;
+  StaticJsonDocument<512> reply;
+  reply["code"] = 0;
+  reply["client_token"] = screenWeatherStockToken.length()
+                              ? screenWeatherStockToken : String("iotcloud-weather");
+  reply["timestamp"] = (int64_t)time(nullptr) * 1000;
+  JsonObject data = reply.createNestedObject("data");
+  bool valid = bry::weatherStockFields(screenWeather, screenWeatherStockCode, now, data);
+  String wire;
+  if (screenBuildDelivery(screenRoot() + "/mqtt/event_response/get_weather", reply, wire) &&
+      screenBusinessSend(wire.c_str(), wire.length())) {
+    screenWeatherStockLast.set(data);
+    screenWeatherStockSentValid = valid;
+    screenWeatherStockSentAt = now;
+    screenWeatherStockPending = false;
+    invalidateBusinessStatusCache();
+  }
+}
 class WeatherTLS : public WiFiClientSecure {
 public:
   uint32_t verifyFlags = 0;
@@ -233,6 +269,7 @@ static void screenWeatherWorker(void *argument) {
     if (fetched && bry::weatherCurrent(job->provider, doc.as<JsonVariantConst>(),
                                      result.value)) {
       result.valid = true;
+      result.stockCode = bry::weatherStockCode(job->provider, doc.as<JsonVariantConst>());
       if (!result.value.observed)
         result.value.observed = time(nullptr);
       if (job->label[0])
@@ -275,6 +312,8 @@ static void screenWeatherPoll(uint32_t now) {
       if (result.valid) {
         screenWeather = result.value;
         screenWeather.at = now;
+        screenWeatherStockCode = result.stockCode;
+        screenWeatherStockPending = true;
         screenWeatherSentAt = 0;
         screenWeatherSentSession = 0;
       }
@@ -285,8 +324,11 @@ static void screenWeatherPoll(uint32_t now) {
       invalidateBusinessStatusCache();
     }
   }
-  if (screenWeather.valid && now - screenWeather.at >= screenWeather.ttl)
+  if (screenWeather.valid && !screenWeather.expired && now - screenWeather.at >= screenWeather.ttl) {
     screenWeather.expired = true;
+    screenWeatherStockPending = true;
+  }
+  screenWeatherStockPoll(now);
   if (screenWeather.valid && !screenWeather.expired &&
       (screenBridge.capabilities & SCREEN_CAP_SERVICES) &&
       (screenWeatherSentSession != screenBridge.session ||

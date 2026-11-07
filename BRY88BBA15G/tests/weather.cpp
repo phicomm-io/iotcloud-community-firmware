@@ -145,6 +145,45 @@ int main() {
   json(fixture.c_str());doc["error"] = true;
   assert(!bry::weatherCurrent("openmeteo", doc.as<JsonVariantConst>(), w));
   assert(!bry::weatherForecast("openmeteo", doc.as<JsonVariantConst>(), w, 480));
+  // Raw provider condition codes select the stock gallery independently of
+  // localized descriptions. Missing codes must not become a sunny icon.
+  const char *providers[] = {"qweather", "seniverse", "openmeteo", "openweather"};
+  const int codes[][8] = {{100,102,104,302,405,501,502,503},
+                         {0,4,9,11,20,30,31,28},
+                         {0,2,3,95,73,45,-1,-1},
+                         {800,802,804,211,615,741,721,761}};
+  for (unsigned i = 0; i < 4; ++i) {
+    for (unsigned j = 0; j < 8; ++j) {
+      doc.clear();
+      if (codes[i][j] < 0) continue;
+      if (i == 0) doc["condition"]["code"] = std::to_string(codes[i][j]);
+      if (i == 1) doc["results"][0]["now"]["code"] = std::to_string(codes[i][j]);
+      if (i == 2) doc["current"]["weather_code"] = codes[i][j];
+      if (i == 3) doc["weather"][0]["id"] = codes[i][j];
+      assert(bry::weatherStockCode(providers[i], doc.as<JsonVariantConst>()) == j + 1);
+    }
+    for (const char *invalid : {"{}", R"({"condition":{"code":"999"},"results":[{"now":{"code":"99"}}],"current":{"weather_code":999},"weather":[{"id":999}]})"})
+      assert(!bry::weatherStockCode(providers[i], json(invalid)));
+  }
+  assert(!bry::weatherStockCode("qweather", json(R"({"condition":{"code":"100x"}})")));
+  assert(!bry::weatherStockCode("openmeteo", json(R"({"current":{"weather_code":1.5}})")));
+  w = {}; w.valid = true; w.at = UINT32_MAX - 99; w.ttl = 1000;
+  w.fields = 1 | 4; w.temperature = -2.6f; w.humidity = 83.6f;
+  StaticJsonDocument<192> stock;
+  assert(bry::weatherStockFields(w, 5, 100, stock.to<JsonObject>()));
+  assert(stock.size() == 4 && stock["temperature"] == -3 && stock["humidity"] == 84 &&
+         stock["pm25"] == -100 && stock["weatherCode"] == 5);
+  w.fields = 1; // Optional humidity stays unavailable.
+  assert(bry::weatherStockFields(w, 5, 100, stock.as<JsonObject>()));
+  assert(stock["humidity"] == 200);
+  assert(!bry::weatherStockFields(w, 5, 900, stock.as<JsonObject>()));
+  assert(stock["temperature"] == -100 && stock["humidity"] == 200 &&
+         stock["weatherCode"] == 0 && stock["pm25"] == -100);
+  w.expired = true;
+  assert(!bry::weatherStockFields(w, 5, 100, stock.as<JsonObject>()));
+  w = {};
+  assert(!bry::weatherStockFields(w, 1, 0, stock.as<JsonObject>()));
+  assert(!stock.overflowed());
   puts("weather: four schemas, actual Guangzhou keyless fixture, WMO codes, "
-       "dates, null/units/errors, filtered forecast in 12 KiB and MCU wire");
+       "dates, null/units/errors, filtered forecast in 12 KiB, MCU wire and stock fields/icons/expiry");
 }

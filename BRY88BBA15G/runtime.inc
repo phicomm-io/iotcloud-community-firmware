@@ -21,6 +21,7 @@ static bool screenExtendedLine(const uint8_t *, size_t);
 static String screenHex(const uint8_t *, size_t);
 static const char *screenApplySettings(JsonObjectConst, JsonObject);
 static void screenGetSettings(JsonObject);
+static bool screenWeatherStockRequest(const String &);
 static HardwareSerial screenUart(1);
 static bry::StockFrame stockFrame;
 static DynamicJsonDocument screenSnapshot(4096);
@@ -271,6 +272,8 @@ static bool screenPublication(const String &topic, const uint8_t *payload,
     if (topic.endsWith("/service_response/get_snapshot"))
       return true;
   }
+  if (topic.endsWith("/get_weather"))
+    return screenWeatherStockRequest(token);
   DynamicJsonDocument reply(1024);
   reply["code"] = 0;
   reply["client_token"] = token;
@@ -284,14 +287,6 @@ static bool screenPublication(const String &topic, const uint8_t *payload,
     // bind.
     route = screenRoot() + "/IPBOX/" + screenGateway +
             "/mqtt/event_response/login_ipbox";
-  } else if (topic.endsWith("/get_weather")) {
-    route = screenRoot() + "/mqtt/event_response/get_weather";
-    // Factory unavailable-value sentinels. Code 0 is outside the MCU's 1..8
-    // weather icon range (0x1eeb8..0x1ef02); no observation is synthesized.
-    data["temperature"] = -100;
-    data["humidity"] = 200;
-    data["pm25"] = -100;
-    data["weatherCode"] = 0;
   } else if (topic.endsWith("/get_filter_sensor3")) {
     data.createNestedArray("filter_infos");
     route = topic;

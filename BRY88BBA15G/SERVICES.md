@@ -342,8 +342,16 @@ ESP 上传先确认低电平，并每 15 秒续租一次 60 秒租约；失败�
 
 `screen.weather.get {}` returns redacted configuration and status, current
 metrics and available `days` (date, text, low/high in °C). `last_sent_age_ms`
-reports the last normalized UART enqueue for the current MCU session; it is not
-a screen rendering acknowledgement. `worker_stack_free_bytes` is the last
+reports the last normalized UART enqueue for the current community MCU session,
+or the last valid factory-weather UART write. It is not a screen rendering
+acknowledgement. `delivery` is `community` or `factory`. On the factory path,
+`factory` and `factory_sent_age_ms` expose the last written fields and their age:
+whole-degree `temperature`, whole-percent `humidity`, `pm25:-100` (outdoor PM2.5
+is not fetched) and `weatherCode` 1..8 (sun, partly cloudy, overcast, rain, snow,
+fog, haze, wind/dust), or 0 when unavailable. Missing temperature/humidity use
+the factory sentinels -100/200. Fresh fetches push updates; disabling weather
+or reaching the cache TTL clears the stock values. Three-day forecasts and
+location labels require the community MCU. `worker_stack_free_bytes` is the last
 worker's minimum free stack measured by ESP-IDF, in bytes.
 `screen.weather.set {enabled, provider, host, latitude, longitude, label,
 interval, key?, clear_key?, verify_tls?}` saves configuration. Omit key to keep the saved

@@ -35,15 +35,15 @@ G1/G2 的默认名称为 `DAIKIN G1/G2`。代际名称用于辨认产品；选�
 
 ### 从原厂免拆迁移
 
-下载并解压 `daikin_G3_migration.tar.gz`，按包内[中英文教程](https://github.com/phicomm-io/iotcloud-community-firmware/tree/main/tools/daikin_g3_migrate#readme)操作。需要一台有蓝牙的 Mac、同网段运行 Docker 的电脑，以及仅对本设备生效的 DNS 配置权限。
+下载并解压 `daikin_G3_migration.tar.gz`，按[最新中英文教程](https://github.com/phicomm-io/iotcloud-community-firmware/tree/main/tools/daikin_g3_migrate#readme)操作。需要有蓝牙的 Linux 或 Mac、设备能访问的 Docker 服务主机，以及仅对本设备生效的 DNS 配置权限。重新发布的 RC6 包含两种配网工具；旧包的 Linux 用户可另取教程目录中的 `provision_linux.py` 和 `wifi.example.json`。Linux 使用 BlueZ 与系统 Python 的 `python3-dbus`，也可通过 SSH 在附近主机运行。
 
-1. 用设备 MAC 和电脑的局域网 IP 创建临时服务；默认不提供更新。
-2. 短按背面网络键进入配网，用工具发送 Wi-Fi 和虚拟网关标识。不要长按复位。
-3. 只对该设备重定向教程列出的三个域名，确认日志中的关联与版本查询。
+1. 用实际 Wi-Fi STA MAC 和服务主机 IP 创建临时服务，配置仅本机的三个域名；默认不提供更新。蓝牙地址和虚拟网关 MAC 不能代替设备 STA MAC。
+2. 短按背面网络键进入配网，用工具发送 2.4 GHz Wi-Fi 和虚拟网关标识。不要长按复位。配网成功后蓝牙会关闭，需要重发时再次短按。
+3. 启动一个带 `--empty-gateway --weather-code 1` 的网关应答器，等待快照、天气、网关登录、滤网及错误查询均得到应答。原厂 `SV.04.00.01.00` 收到空天气会持续重试；天气码是临时占位，温湿度与 PM2.5 保留缺测标记。
 4. 校验 RC6 的 `daikin_BRY88BBA15G.ota.bin.raw`，显式启用升级后发送一次仅 ESP32 的升级命令。
 5. 重新打开设备网页，核对版本、联网和传感器读数，撤销临时 DNS 并停止服务。
 
-第一阶段保留原厂屏幕 MCU 和引导区。网络迁移依赖原厂下载流程仍可运行；不需要访问大金服务器。
+第一阶段保留原厂屏幕 MCU 和引导区。网络迁移依赖原厂下载流程仍可运行；不需要访问大金服务器。保留原厂 MCU 时也可配置[当前天气](daikin-g3-services)，再按下节升级社区屏幕。
 
 ### 社区版在线更新
 
@@ -74,4 +74,4 @@ python3 screen/flash_screen.py --url http://DEVICE_IP --image daikin_G3_screen.b
 
 `daikin_G3_zh32.iotfnt` 包含 6863 个字形，32 px、2 bpp 灰阶，在外部 SPI NOR 中保存并校验后缓存到 SDRAM。字库上传耗时较长，按网页进度等待提交完成。字库不随应用 OTA 重写。启动期间显示 LVGL 加载动画、字库进度和传感器就绪数量，仍可翻页；未连接传感器和失败资源会限时结束等待并降级。三个传感器串口独立使用中断缓冲，字库加载不阻塞收数。每次屏幕启动后会先显示内置精简字体，完整字库后台加载完成后自动刷新；加载期间，自定义地点或标题中的部分汉字可能暂时显示占位符。
 
-字库使用 SFC 硬件读取，并在分批读取时同步校验。当前真机的 1.64 MB 字库加载耗时约 14 秒；这是后台加载和校验的总耗时。硬件读取比较失败或控制器异常时退回 GPIO，NOR 不可用、数据损坏或读取超时再降级为内置字体和缺字占位；传感器、通信与恢复服务继续运行。屏幕 MCU 应用约占 196 KiB，412 KiB 应用分区余约 216 KiB。
+NOR 默认使用四线硬件 SFC，字库分批读取时同步校验。当前真机的 1.64 MB 字库加载耗时约 14 秒，包含后台调度和校验。只有 ESP32 在诊断启动窗口显式选择后，才使用单线 SFC 或 GPIO；硬件异常不会自动切换总线。NOR 不可用、数据损坏或读取超时时降级为内置字体和缺字占位；传感器、通信与恢复服务继续运行。屏幕 MCU 应用约占 196 KiB，412 KiB 应用分区余约 216 KiB。

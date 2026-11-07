@@ -29,7 +29,7 @@ def assets(tag,directory,lock=None):
     raw=io.BytesIO()
     with tarfile.open(fileobj=raw,mode='w') as archive:
         for file in sorted((ROOT/'tools/daikin_g3_migrate').iterdir()):
-            if not file.is_file() or file.suffix not in ('.py','.swift','.sh','.md','.plist'):continue
+            if not file.is_file() or file.suffix not in ('.py','.swift','.sh','.md','.plist','.json'):continue
             data=file.read_bytes();info=tarfile.TarInfo('daikin-g3-migrate/'+file.name);info.size=len(data);info.mode=0o755 if file.suffix in ('.py','.sh') else 0o644;archive.addfile(info,io.BytesIO(data))
         for name in ('flash_screen.py','backup_screen_boot.py'):
             data=(ROOT/'BRY88BBA15G/tools'/name).read_bytes()

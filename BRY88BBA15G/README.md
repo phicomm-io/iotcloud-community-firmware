@@ -5,6 +5,7 @@ BRY88BBA15G 的 ESP32 应用，复用 iotcloud 公共 HTTP、MessagePack、MQTT�
 ## RC6 行为
 
 - 保留原厂屏幕协议；社区屏幕只支持锁定的 RC6 协议：SCN3 9520 字节、诊断 V3、资源报告 V2。未声明社区能力时使用原厂消息。
+- 原厂 MCU 可接收四家天气提供商的当前温湿度与八类图标；新数据到达后主动更新，关闭或过期时恢复缺测。室外 PM2.5 未接入；地点标签与三天预报需社区 MCU。
 - UART1 TX=GPIO16、RX=GPIO17，115200 8N1。传感器由屏幕 MCU 管理。TVOC 数值为 ppb，也可按原厂等级显示；未确认的 HCHO 字段不发布有效值。
 - 页面支持时钟、数值、文字、图表、天气、提醒，支持主题、壁纸、标题隐藏、中英文、32–256 点本地历史和真实屏幕比例预览。
 - 亮度 0–100% 实时设置，支持供电／电池休眠和每周计划。启动最多 10%；OTA 保持低亮度。PD12 在启动和升级时关闭 AM1008L，业务就绪后恢复。
@@ -30,6 +31,8 @@ ctest --test-dir ~/.cache/phicomm/bry88-bridge-host --output-on-failure
 ```
 
 The G3 application reuses the common iotcloud/openiot networking and frontend. RC6 supports the factory MCU and only the pinned current community protocol (SCN3, diagnostic V3, resource report V2). Sensor data comes from the display MCU; TVOC supports ppb or factory grades.
+
+Stock MCUs receive current temperature, humidity and eight icon categories from all four weather providers. Fresh results update immediately; disabled/expired data clears to missing values. Outdoor PM2.5 is unavailable. Location labels and three-day forecasts require the community MCU.
 
 Compose clocks, values, text, charts, weather and reminders with themes, wallpaper, language, hidden headings and 32–256-point local history. Brightness is adjustable from 0–100%, with idle timers and weekly schedules. Startup is limited to 10%; OTA uses dimmed output. PD12 disables AM1008L during startup/OTA and restores it when business services are ready.
 

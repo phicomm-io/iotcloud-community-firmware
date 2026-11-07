@@ -35,15 +35,15 @@ Local charts offer 32, 64, 128 or 256 points. Samples are collected every minute
 
 ### Wireless migration from stock firmware
 
-Extract `daikin_G3_migration.tar.gz` and follow its [bilingual instructions](https://github.com/phicomm-io/iotcloud-community-firmware/tree/main/tools/daikin_g3_migrate#readme). You need a Bluetooth-capable Mac, a Docker host on the same LAN and DNS control restricted to this device.
+Extract `daikin_G3_migration.tar.gz` and follow the [current bilingual instructions](https://github.com/phicomm-io/iotcloud-community-firmware/tree/main/tools/daikin_g3_migrate#readme). You need a Bluetooth-capable Linux host or Mac, a Docker service host reachable by the detector and DNS control restricted to this device. The republished RC6 includes both provisioners; Linux users with an older package can download `provision_linux.py` and `wifi.example.json` from the instructions directory. Linux uses BlueZ and the system Python's `python3-dbus`, and can run on a nearby host over SSH.
 
-1. Prepare temporary services with the device MAC and the host LAN IP. Updates are initially disabled.
-2. Short-press the rear network button and send Wi-Fi settings plus a virtual gateway identity. Do not hold the reset button.
-3. Redirect only the three documented domains for this device and check association and version-query logs.
+1. Prepare temporary services with the actual Wi-Fi STA MAC and service host IP, then configure the three per-device DNS overrides. Updates are initially disabled. The BLE address and virtual gateway MAC are separate identities.
+2. Short-press the rear network button and send 2.4 GHz Wi-Fi settings plus a virtual gateway identity. Do not hold the reset button. Bluetooth closes after provisioning; short-press again before resending.
+3. Run one gateway responder with `--empty-gateway --weather-code 1`. Wait for snapshot, weather, gateway login, filter and error-query acknowledgements. Stock MCU `SV.04.00.01.00` keeps retrying empty weather responses; the temporary icon code completes that prerequisite while temperature, humidity and PM2.5 remain missing.
 4. Verify `daikin_BRY88BBA15G.ota.bin.raw`, explicitly enable the offer and send one ESP32-only update command.
 5. Open the rebooted device page, check version, networking and readings, then remove the temporary DNS rules and services.
 
-This first stage preserves the stock screen MCU and bootloader. It requires a working stock download path and does not use Daikin servers.
+This first stage preserves the stock screen MCU and bootloader. It requires a working stock download path and does not use Daikin servers. You can configure [current weather](daikin-g3-services) with the stock MCU before proceeding to the community screen upgrade below.
 
 ### Online updates on community firmware
 
@@ -74,4 +74,4 @@ The screen starts with minimal recovery services. By default, the ESP32 resumes 
 
 `daikin_G3_zh32.iotfnt` has 6863 glyphs at 32 px with 2 bpp grayscale. It is validated in external SPI NOR and cached in SDRAM. Uploading takes time; wait for the page to confirm the commit. Application updates do not rewrite the font. A nonblocking LVGL loading animation shows font progress and sensor readiness during startup. Paging remains available; missing sensors and failed resources leave the loading state after bounded waits. Three independent sensor UART interrupt queues preserve readings while the font loads. After each screen startup, internal subset fonts appear first. The full font loads in the background and refreshes the display when ready; some Chinese characters in custom locations or titles may temporarily appear as placeholders.
 
-Fonts use hardware SFC reads with incremental validation. The 1.64 MB font loaded in about 14 seconds on the tested device, including background scheduling and validation. A failed hardware comparison or controller error falls back to GPIO. Unavailable NOR, corrupt data or read timeouts then fall back to internal fonts and missing-glyph placeholders. Sensors, communication and recovery keep running. The screen application occupies about 196 KiB, leaving about 216 KiB in its 412 KiB partition.
+NOR uses quad hardware SFC by default, with incremental font validation. The 1.64 MB font loaded in about 14 seconds on the tested device, including background scheduling and validation. Single-line SFC or GPIO requires an explicit ESP32 selection during diagnostic startup; hardware failures never switch the bus automatically. Unavailable NOR, corrupt data or read timeouts fall back to internal fonts and missing-glyph placeholders. Sensors, communication and recovery keep running. The screen application occupies about 196 KiB, leaving about 216 KiB in its 412 KiB partition.

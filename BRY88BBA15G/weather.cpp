@@ -180,6 +180,73 @@ bool weatherCurrent(const char *provider, JsonVariantConst root,
   out = w;
   return true;
 }
+uint8_t weatherStockCode(const char *provider, JsonVariantConst root) {
+  // Stock gallery order: sun, sun/cloud, cloud, rain, snow, fog, haze,
+  // wind/dust (SV.04.00.04.00 table 0x6a368). Zero means unavailable.
+  JsonVariantConst value;
+  if (!strcmp(provider, "qweather")) value = root["condition"]["code"];
+  else if (!strcmp(provider, "seniverse")) value = root["results"][0]["now"]["code"];
+  else if (!strcmp(provider, "openmeteo")) value = root["current"]["weather_code"];
+  else if (!strcmp(provider, "openweather")) value = root["weather"][0]["id"];
+  else return 0;
+  float number;
+  if (!numeric(value, number, 0, 999) || number != floorf(number)) return 0;
+  const int code = (int)number;
+  if (!strcmp(provider, "qweather")) {
+    if (code == 100) return 1;
+    if (code >= 101 && code <= 103) return 2;
+    if (code == 104) return 3;
+    if ((code >= 300 && code <= 318) || code == 399) return 4;
+    if ((code >= 400 && code <= 410) || code == 499) return 5;
+    if (code == 500 || code == 501 || code == 509 || code == 510 ||
+        code == 514 || code == 515) return 6;
+    if (code == 502 || (code >= 511 && code <= 513)) return 7;
+    if (code == 503 || code == 504 || code == 507 || code == 508) return 8;
+  } else if (!strcmp(provider, "seniverse")) {
+    if (code <= 3) return 1;
+    if (code <= 8) return 2;
+    if (code == 9) return 3;
+    if (code <= 19) return 4;
+    if (code <= 25) return 5;
+    if (code == 30) return 6;
+    if (code == 31) return 7;
+    if ((code >= 26 && code <= 29) || (code >= 32 && code <= 36)) return 8;
+  } else if (!strcmp(provider, "openmeteo")) {
+    switch (code) {
+    case 0: return 1;
+    case 1: case 2: return 2;
+    case 3: return 3;
+    case 45: case 48: return 6;
+    case 51: case 53: case 55: case 56: case 57:
+    case 61: case 63: case 65: case 66: case 67:
+    case 80: case 81: case 82: case 95: case 96: case 97: case 99: return 4;
+    case 71: case 73: case 75: case 77: case 85: case 86: return 5;
+    }
+  } else if (!strcmp(provider, "openweather")) {
+    if (code == 800) return 1;
+    if (code == 801 || code == 802) return 2;
+    if (code == 803 || code == 804) return 3;
+    if ((code >= 200 && code <= 232) || (code >= 300 && code <= 321) ||
+        (code >= 500 && code <= 531)) return 4;
+    if (code >= 600 && code <= 622) return 5;
+    if (code == 701 || code == 741) return 6;
+    if (code == 711 || code == 721) return 7;
+    if (code == 731 || code == 751 || code == 761 || code == 762 ||
+        code == 771 || code == 781) return 8;
+  }
+  return 0;
+}
+bool weatherStockFields(const screen_weather &w, uint8_t code, uint32_t now,
+                        JsonObject data) {
+  const bool valid = w.valid && !w.expired && now - w.at < w.ttl;
+  // Factory fields are whole degrees/percent, not the sensor's tenths of °C.
+  data["temperature"] = valid && (w.fields & 1) ? (int)lroundf(w.temperature) : -100;
+  data["humidity"] = valid && (w.fields & 4) ? (int)lroundf(w.humidity) : 200;
+  // Weather providers do not supply outdoor PM2.5 here. Never reuse indoor PM.
+  data["pm25"] = -100;
+  data["weatherCode"] = valid ? code : 0;
+  return valid;
+}
 static bool day(weather_day &d, JsonVariantConst v, const char *date,
                 const char *text, JsonVariantConst low, JsonVariantConst high) {
   (void)v;

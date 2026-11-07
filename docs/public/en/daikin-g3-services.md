@@ -15,6 +15,10 @@ For Guangzhou, Guangdong, use latitude `23.1291`, longitude `113.2644` and label
 
 Server-certificate verification defaults to off and is saved per device; enable it explicitly when wanted. Requests still use HTTPS, and this switch does not alter firmware signature/hash checks. Normalized weather codes select icons and Chinese/English descriptions. Chinese city labels require the full font to finish loading.
 
+With the stock screen MCU, ESP32 converts current conditions from all four providers to the factory protocol: whole degrees Celsius, whole percent humidity and eight icon categories (sun, partly cloudy, overcast, rain, snow, fog, haze and wind/dust). Three-day forecasts and custom location labels require the community MCU. These interfaces do not fetch outdoor PM2.5; that field remains missing rather than using the indoor sensor. New data, disabled weather and expired caches update the stock screen without waiting for its next poll.
+
+In `screen.weather.get`, `delivery:factory` identifies the stock path. `factory` contains the four fields most recently written to UART and `factory_sent_age_ms` reports their age; `last_sent_age_ms` is set only after actual weather is sent. Check the stock weather page to confirm the displayed values.
+
 “Expired” means the cache has exceeded its validity period, not that the city was unrecognized. Check enablement, coordinates, key/host, device time, last error and retry countdown, then request a refresh. Failures preserve the previous content and back off for 30, 60, 120, 240 and 300 seconds. Workers never overlap; manual refresh also requires 15-second spacing.
 
 TLS needs byte-addressable heap and a contiguous block, so total ESP32 free memory alone is insufficient. Layout/resource uploads, OTA and weather have concurrency gates; memory pressure defers retries. See [memory diagnostics](daikin-g3-diagnostics#esp32-memory-and-weather).
