@@ -200,6 +200,8 @@ static void testUpdateStart() {
   screenRecovering = false;
 }
 static screen_guard guard;
+static unsigned diagnosticNor=3;
+static bool selectNor(void *,unsigned mode){diagnosticNor=mode;return true;}
 static bool bootRead(void *, uint32_t at, void *p, size_t n) {
   assert(at + n <= SCREEN_BOOT_BYTES);
   for (size_t i = 0; i < n; i++) ((uint8_t *)p)[i] = (at + i) * 137 ^ ((at + i) >> 8);
@@ -350,6 +352,13 @@ int main(int argc, char **argv) {
   assert(!strcmp(screenGuardRequest(GUARD_HOLD, 0, 0, status.to<JsonObject>()), "accepted"));
   pump(m);
   assert(guard.held && !strcmp(screenGuard.state, "complete"));
+  guard.nor_mode=selectNor;
+  for(unsigned mode:{1u,2u,3u}) {
+    assert(!strcmp(screenGuardRequest(GUARD_NOR_MODE,mode,0,status.to<JsonObject>()),"accepted"));
+    pump(m);
+    assert(diagnosticNor==mode&&guard.held&&!strcmp(screenGuard.state,"complete"));
+  }
+
   /* CRC telemetry cannot complete or change a pending request, and must not
    * survive a changed session, bad CRC, wrong size/version or age expiry. */
   uint8_t telemetry[54] = {SCREEN_GUARD_DIAGNOSTIC, 1};

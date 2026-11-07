@@ -83,6 +83,7 @@ typedef struct {
 void scene_defaults(screen_scene *);
 bool scene_validate(const screen_scene *);
 bool scene_requires_multi_units(const scene_item *);
+bool scene_requires_compact(const scene_item *);
 size_t scene_wire_size(const screen_scene *);
 bool scene_encode(const screen_scene *, uint8_t out[SCENE_BYTES]);
 bool scene_decode(screen_scene *, const uint8_t *, size_t);

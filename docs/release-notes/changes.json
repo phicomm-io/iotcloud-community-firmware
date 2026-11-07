@@ -9406,8 +9406,8 @@
           "BRY88BBA15G/screen-protocol.lock.json"
         ],
         "firmware_source_sha256": {
-          "BRY88BBA15G/screen_commands.inc": "2b07d4c7c15c1b578a5be3d8267caf4af256e011251f21503a7eacc909d84f15",
-          "BRY88BBA15G/screen-protocol.lock.json": "46177cda42cec004d66c6dc5609468d5021e536012db9a18b22ee2777020f32d"
+          "BRY88BBA15G/screen_commands.inc": "7e8cf3ed4a0ee5f7913157ccde8631b2b6b8c18e6cf3176f5c1c1753d7a0c1bd",
+          "BRY88BBA15G/screen-protocol.lock.json": "8d6b320cc24123b5758fd98ab8f27ab198cf381dfa3e11d9220d45c19c7b5e2e"
         }
       },
       "translation_review": {
@@ -9449,12 +9449,12 @@
         "en": "Screen composition, weather and reminders"
       },
       "description": {
-        "zh-CN": "网页可组合时钟、数值、文字、折线和堆叠图表、天气与提醒，按真实屏幕比例预览。支持六组主题、组件配色、壁纸、语言、亮度和每周调光计划；外部字库失败时降级显示，通信和恢复服务继续工作。",
-        "en": "Compose clocks, readings, text, line and stacked charts, weather and reminders with a preview at the real screen aspect ratio. Includes six themes, per-widget colors, wallpaper, language, brightness and weekly dimming. Font resource failures degrade display while communication and recovery services remain available."
+        "zh-CN": "网页可组合时钟、数值、文字、折线和堆叠图表、天气与提醒，按真实屏幕比例预览。支持六组主题、组件配色、壁纸、语言、亮度和每周调光计划；外部字库失败时降级显示，通信和恢复服务继续工作。新增布局（行 × 列）：天气 1×4、2×4，时钟 1×4，reading 1×2；网页预览与 MCU 同步。",
+        "en": "Compose clocks, readings, text, line and stacked charts, weather and reminders with a preview at the real screen aspect ratio. Includes six themes, per-widget colors, wallpaper, language, brightness and weekly dimming. Font resource failures degrade display while communication and recovery services remain available. New layouts (rows × columns): weather 1×4 and 2×4, clock 1×4, and reading 1×2, with matching WebUI and MCU rendering."
       },
       "ota_summary": {
-        "zh-CN": "网页可组合时钟、数值、文字、折线和堆叠图表、天气与提醒，按真实屏幕比例预览。支持六组主题、组件配色、壁纸、语言、亮度和每周调光计划；外部字库失败时降级显示，通信和恢复服务继续工作。",
-        "en": "Compose clocks, readings, text, line and stacked charts, weather and reminders with a preview at the real screen aspect ratio. Includes six themes, per-widget colors, wallpaper, language, brightness and weekly dimming. Font resource failures degrade display while communication and recovery services remain available."
+        "zh-CN": "网页可组合时钟、数值、文字、折线和堆叠图表、天气与提醒，按真实屏幕比例预览。支持六组主题、组件配色、壁纸、语言、亮度和每周调光计划；外部字库失败时降级显示，通信和恢复服务继续工作。新增布局（行 × 列）：天气 1×4、2×4，时钟 1×4，reading 1×2；网页预览与 MCU 同步。",
+        "en": "Compose clocks, readings, text, line and stacked charts, weather and reminders with a preview at the real screen aspect ratio. Includes six themes, per-widget colors, wallpaper, language, brightness and weekly dimming. Font resource failures degrade display while communication and recovery services remain available. New layouts (rows × columns): weather 1×4 and 2×4, clock 1×4, and reading 1×2, with matching WebUI and MCU rendering."
       },
       "summary_complete": true,
       "critical": false,
@@ -9467,16 +9467,16 @@
           "BRY88BBA15G/screen_commands.inc"
         ],
         "firmware_source_sha256": {
-          "frontend.lock.json": "7fac8f9fadefe2f00472521c503e4993449fda5b7cec12469dd1a8a77f5b7fcb",
-          "BRY88BBA15G/screen_commands.inc": "2b07d4c7c15c1b578a5be3d8267caf4af256e011251f21503a7eacc909d84f15"
+          "frontend.lock.json": "9e23ba07c785abefa3299d65a27dc2c8d571c7b259ba513b7f5ac41c1cfd6d6e",
+          "BRY88BBA15G/screen_commands.inc": "7e8cf3ed4a0ee5f7913157ccde8631b2b6b8c18e6cf3176f5c1c1753d7a0c1bd"
         }
       },
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
-        "reviewed_utc": "2026-11-07T11:51:50.394784+00:00",
-        "reason": "Reviewed implemented behavior, device scope and matching Chinese and English text.",
-        "reviewed_content_sha256": "2753b08b7383e1d2de98fd294ba86077aa0f3b0b6330d54f10e1f3899e3c785d"
+        "reviewed_utc": "2026-11-07T20:26:42.634804+00:00",
+        "reason": "Reviewed compact layout dimensions, quad SFC defaults and wallpaper sensor behavior in both languages.",
+        "reviewed_content_sha256": "019cf11ad6e578260ec08fcaff1a486176efa7c28d9bd1649503ee0361058e1c"
       }
     },
     {
@@ -9723,7 +9723,7 @@
           "site/index.html"
         ],
         "firmware_source_sha256": {
-          "frontend.lock.json": "7fac8f9fadefe2f00472521c503e4993449fda5b7cec12469dd1a8a77f5b7fcb",
+          "frontend.lock.json": "9e23ba07c785abefa3299d65a27dc2c8d571c7b259ba513b7f5ac41c1cfd6d6e",
           "site/index.html": "aafce24dfd05bb9eac7d8ef9d2500e02255cce38a135a6948364abaa91b86c54"
         }
       },
@@ -9734,6 +9734,69 @@
         "reason": "Reviewed implemented behavior, device scope and matching Chinese and English text.",
         "reviewed_content_sha256": "950503b1502714e8e827c4316a4af90c8a3f91d2a9f9bce6a301f8ca1e51edd6"
       }
+    },
+    {
+      "change_id": "g3-nor-wallpaper-sensors",
+      "component": "firmware",
+      "critical": false,
+      "description": {
+        "en": "NOR uses hardware quad SFC by default, with corrected wallpaper writes and readback. Single SFC or GPIO requires an explicit ESP32 command during diagnostic startup. Fixes the PM2.5/TVOC module remaining disabled after wallpaper uploads, which caused stale readings and blocked subsequent OTA uploads.",
+        "zh-CN": "NOR 默认使用四线硬件 SFC，修复壁纸写入与回读；单线 SFC 或 GPIO 仅在诊断启动时由 ESP32 显式选择。修复壁纸上传结束后 PM2.5/TVOC 模块未恢复、读数过期并阻止后续 OTA 的问题。"
+      },
+      "evidence": {
+        "firmware_source_sha256": {
+          "screen-release.lock.json": "62e6afde5d8c1c4faa15109163dccc7e6a93e23de558f0a9a07e301369c21d61",
+          "BRY88BBA15G/SERVICES.md": "429ef16a807c25e3853021abb7675642ef78a6f760d9da32939b0938afe4a68a",
+          "BRY88BBA15G/screen_commands.inc": "7e8cf3ed4a0ee5f7913157ccde8631b2b6b8c18e6cf3176f5c1c1753d7a0c1bd"
+        },
+        "firmware_sources": [
+          "screen-release.lock.json",
+          "BRY88BBA15G/SERVICES.md",
+          "BRY88BBA15G/screen_commands.inc"
+        ]
+      },
+      "lifecycle": {
+        "state": "active"
+      },
+      "ota_summary": {
+        "en": "NOR uses hardware quad SFC by default, with corrected wallpaper writes and readback. Single SFC or GPIO requires an explicit ESP32 command during diagnostic startup. Fixes the PM2.5/TVOC module remaining disabled after wallpaper uploads, which caused stale readings and blocked subsequent OTA uploads.",
+        "zh-CN": "NOR 默认使用四线硬件 SFC，修复壁纸写入与回读；单线 SFC 或 GPIO 仅在诊断启动时由 ESP32 显式选择。修复壁纸上传结束后 PM2.5/TVOC 模块未恢复、读数过期并阻止后续 OTA 的问题。"
+      },
+      "review_status": "approved",
+      "scope": {
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "models": [
+          "bry88bba15g"
+        ],
+        "variants": [
+          "full"
+        ]
+      },
+      "source_refs": [
+        "v1.0.0-rc.6:b009"
+      ],
+      "summary_complete": true,
+      "title": {
+        "en": "G3 NOR and wallpaper upload fixes",
+        "zh-CN": "G3 NOR 与壁纸上传修复"
+      },
+      "translation_review": {
+        "reason": "Reviewed compact layout dimensions, quad SFC defaults and wallpaper sensor behavior in both languages.",
+        "reviewed_content_sha256": "f46eae7734007bd40b8214ca2ff29f98cd93ad3a0598b3c97f04ab4134d8dbfc",
+        "reviewed_utc": "2026-11-07T20:26:42.634804+00:00",
+        "reviewer": "/root",
+        "status": "approved"
+      },
+      "type": "bugfix",
+      "version": "1.0.0-rc.6"
     }
   ],
   "merges": []

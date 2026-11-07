@@ -491,6 +491,7 @@ factory bootloader or bypass its power-on key gate.
 | `screen.recovery.get` | Reports availability, session, mode, remaining window, actual internal image MD5, activation support, exported byte count and inherited WDT CR/RSTVAL/CLKSEL/RSTSR |
 | `screen.recovery.hold` | Holds a normal startup window; asynchronous request/session |
 | `screen.recovery.resume` | Releases that hold; not supported in forced recovery or after normal startup |
+| `screen.recovery.nor.set` | Startup only: exactly one `mode`, `sfc_quad` (default), `sfc_single`, or `gpio`; selects the NOR bus for this boot and holds the window. Reset restores quad SFC; no automatic bus downgrade. |
 | `screen.recovery.enter` | Requests software reset into maintenance; async reply can be lost as the session changes |
 | `screen.boot.read` | `{offset,length}` within `[0,81920)`, length 1–256; async request/session |
 | `screen.boot.result.get` | `{request}`; state/result/offset/total, plus length/Base64 bytes/CRC32 on a completed read |

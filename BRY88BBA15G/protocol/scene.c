@@ -58,6 +58,10 @@ static bool utf8(const char *s, size_t cap, bool lines) {
   return i < cap;
 }
 bool scene_utf8(const char *s, size_t cap) { return utf8(s, cap, false); }
+bool scene_requires_compact(const scene_item *c) {
+  return c->h == 1 && ((c->type == SC_VALUE && c->w == 2) ||
+         (c->w == 4 && (c->type == SC_CLOCK || c->type == SC_WEATHER)));
+}
 bool scene_validate(const screen_scene *s) {
   if (!s || s->schema != 3 || !s->pages || s->pages > SCENE_PAGES || s->count > SCENE_ITEMS)
     return false;
@@ -84,7 +88,7 @@ bool scene_validate(const screen_scene *s) {
     if (s->schema == 3) {
       bool chart = c->type == SC_LINE || c->type == SC_BAR || c->type == SC_PIE;
       if (c->w < (chart ? 4 : 2) ||
-          c->h < (c->type == SC_VALUE && c->w == 4 ? 1 : 2) ||
+          c->h < ((c->type == SC_VALUE && c->w == 4) || scene_requires_compact(c) ? 1 : 2) ||
           c->chart > SC_CH_RING || c->series_count > SCENE_SERIES ||
           (c->hours && c->hours != 1 && c->hours != 6 && c->hours != 24) ||
           c->binding2 > SC_BIND_EXTERNAL || c->binding3 > SC_BIND_EXTERNAL ||

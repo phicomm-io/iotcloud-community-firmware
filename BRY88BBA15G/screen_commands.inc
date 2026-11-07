@@ -58,6 +58,18 @@ static const char *screenServicesCommand(const String &action,
     screenGuardStatus(data, false);
     return "ok";
   }
+  if (action == "screen.recovery.nor.set") {
+    if(params.size()!=1||!params["mode"].is<const char *>())return "invalid_params";
+    const char *mode=params["mode"];unsigned bus;
+    if(!strcmp(mode,"sfc_quad"))bus=GUARD_NOR_SFC_QUAD;
+    else if(!strcmp(mode,"sfc_single"))bus=GUARD_NOR_SFC_SINGLE;
+    else if(!strcmp(mode,"gpio"))bus=GUARD_NOR_GPIO;
+    else return "invalid_params";
+    if(screenGuard.mode==0)return "not_ready";
+    const char *result=screenGuardRequest(GUARD_NOR_MODE,bus,0,data);
+    if(!strcmp(result,"accepted"))screenStartupManual();
+    return result;
+  }
   if (action == "screen.recovery.hold" || action == "screen.recovery.resume" ||
       action == "screen.recovery.enter") {
     if (params.size())
@@ -145,6 +157,10 @@ static const char *screenServicesCommand(const String &action,
     scene_put32(p + 1, params["revision"]);
     if (!screenLayoutUpload.receive(&screenScene, p, sizeof(p), millis()))
       return "invalid_params";
+    if (!(screenBridge.capabilities & SCREEN_CAP_COMPACT_WIDGETS))
+      for(unsigned i=0;i<screenScene.count;i++)if(scene_requires_compact(&screenScene.item[i])) {
+        screenScene=*previous;return "unsupported";
+      }
     display_policy previousPolicy = screenDisplayPolicy;
     screenPolicyRemap(*previous, screenScene);
     if (!screenSave()) {

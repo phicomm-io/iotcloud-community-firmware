@@ -506,6 +506,10 @@ static void screenSync() {
     screenSyncDeadline = 0;
     return;
   }
+  if (!(screenBridge.capabilities & SCREEN_CAP_COMPACT_WIDGETS))
+    for(unsigned i=0;i<screenScene.count;i++)if(scene_requires_compact(&screenScene.item[i])) {
+      screenSyncError="responsive_unsupported";return;
+    }
   if (!screenSyncStep) {
     if (screenSceneAck == screenScene.revision)
       return;
