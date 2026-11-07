@@ -2,6 +2,42 @@
 
 Features, fixes and upgrade requirements for each release.
 
+## v1.0.0-rc.6
+
+**RC6 is a release candidate. The stable channel remains v0.9.27. Back up configuration; update ESP32 and screen MCU separately.**
+
+### Daikin G3 screen and sensor support
+
+Adds ESP32 firmware and a separate screen MCU release for BRY88BBA15G. Supports the stock MCU and current RC6 extensions, sensor readings, battery status, RTC synchronization, touch page navigation, PD12 module power control and an interruptible recovery window. Screen application updates preserve the stock bootloader.
+
+### Screen composition, weather and reminders
+
+Compose clocks, readings, text, line and stacked charts, weather and reminders with a preview at the real screen aspect ratio. Includes six themes, per-widget colors, wallpaper, language, brightness and weekly dimming. Font resource failures degrade display while communication and recovery services remain available. New layouts (rows × columns): weather 1×4 and 2×4, clock 1×4, and reading 1×2, with matching WebUI and MCU rendering.
+
+### Online updates for ESP32, screen and font
+
+ESP32 can check and install signed updates from GitHub, China and global mirrors; RC builds use a separate candidate channel. Screen applications and fonts can be checked, downloaded and verified from the LAN resource page; large screen uploads require direct LAN access. Wireless stock migration updates only ESP32 first and preserves the stock MCU. The new tool and ESP32 install complete screen applications directly without mandatory boot backup, a stock-version allowlist or recovery-first installation. The new MCU removes its boot MD5 allowlist and preserves the stock bootloader.
+
+### M1 clock recovery retries
+
+Retries transient MCU clock readback failures within a bound and schedules network time retries independently, reducing clock desynchronization after temporary communication failures.
+
+### S30 schedules, power automation and stock installation
+
+Aligns S30 socket schedules and power automation with TC1 and adds a stock OTA installer using HTTP port 80 with instructions. S30 continues to use native RBL/STOCK_UA images.
+
+### Shared WebUI and G3 demos
+
+Updates shared socket automation and power refresh, adds G3 layout, brightness, weather, reminder and online update settings, and provides screen design and device WebUI demos. Daikin downloads distinguish G1/G2 from the G3 display model.
+
+### G3 NOR and wallpaper upload fixes
+
+NOR uses hardware quad SFC by default, with corrected wallpaper writes and readback. Single SFC or GPIO requires an explicit ESP32 command during diagnostic startup. Fixes the PM2.5/TVOC module remaining disabled after wallpaper uploads, which caused stale readings and blocked subsequent OTA uploads.
+
+The stock bootloader is unchanged; a short power-key touch may still be needed after complete power loss. This release retains the current page-switching baseline and diagnostics; further performance work follows separately.
+
+[RC6 downloads](https://github.com/phicomm-io/iotcloud-community-firmware/releases/tag/v1.0.0-rc.6) · [G3 installation](https://phicomm-io.github.io/guides/en/daikin-g3-guide.html)
+
 ## v1.0.0-rc.5
 
 **RC builds are Beta releases; the stable channel remains v0.9.27.** This candidate fixes authentication, transport and web issues found during rc.4 qualification. The reissue also includes S30 power restoration, power automation and M1 readings, plus TC1 power rules. Back up settings before upgrading, and update the matching frontend with device firmware.
