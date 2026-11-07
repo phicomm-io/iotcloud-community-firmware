@@ -538,7 +538,9 @@ static void screenPoll(uint32_t now) {
       due(now, screenQueue[screenHead].at)) {
     const String &wire = screenQueue[screenHead].wire;
     if (screenBusinessSend(wire.c_str(), wire.length())) {
-      screenQueue[screenHead].wire = "";
+      // Arduino String retains its heap buffer on assignment from "". A
+      // null C string invalidates it, returning completed UART storage to TLS.
+      screenQueue[screenHead].wire = static_cast<const char *>(nullptr);
       screenHead = (screenHead + 1) % 12;
     }
   }

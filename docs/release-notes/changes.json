@@ -9467,7 +9467,7 @@
           "BRY88BBA15G/screen_commands.inc"
         ],
         "firmware_source_sha256": {
-          "frontend.lock.json": "ef38a323bc93ebaae873cdce6df8048e03f8fcd0e6b28e10ef4e65e756777a96",
+          "frontend.lock.json": "7fac8f9fadefe2f00472521c503e4993449fda5b7cec12469dd1a8a77f5b7fcb",
           "BRY88BBA15G/screen_commands.inc": "f008bf447bd5839230c62ff0f2ffea3afe621f347d2cf9c724b31ddeefaf4ba1"
         }
       },
@@ -9719,7 +9719,7 @@
           "site/index.html"
         ],
         "firmware_source_sha256": {
-          "frontend.lock.json": "ef38a323bc93ebaae873cdce6df8048e03f8fcd0e6b28e10ef4e65e756777a96",
+          "frontend.lock.json": "7fac8f9fadefe2f00472521c503e4993449fda5b7cec12469dd1a8a77f5b7fcb",
           "site/index.html": "2d0b555a3d8b0ad63fd6c0873cf3bb2a53a0bb61f8a6df84de02359e76d54148"
         }
       },

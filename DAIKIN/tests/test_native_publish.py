@@ -84,12 +84,13 @@ char *dtostrf(double,int,unsigned int,char*);
         shutil.copyfile(src / 'diagnostics_ids.h', temp / 'diagnostics_ids.h')
         shutil.copyfile(src / 'indicators.inc', temp / 'indicators.inc')
         cls.binary = temp / 'native-publish'
+        cls.screen_binary = temp / 'screen-publish'
         objects=[]
         for name in ('typed_wire','wire_buffer'):
             obj=temp/(name+'.o');objects.append(str(obj))
             subprocess.run(['cc','-std=gnu99','-g','-O1','-fsanitize=address,undefined','-fno-pie',
                 '-c',str(ROOT/'common'/(name+'.c')),'-o',str(obj)],check=True)
-        subprocess.run([
+        compile_command = [
             'c++', '-std=c++11', '-g', '-O1', '-Wall', '-Wextra', '-Werror',
             '-Wno-deprecated-copy', '-Wno-unused-function', '-Wno-sign-compare',
             '-fno-exceptions', '-ffunction-sections', '-fdata-sections',
@@ -100,7 +101,13 @@ char *dtostrf(double,int,unsigned int,char*);
             '-I' + str(temp), '-I' + str(ROOT / 'DAIKIN/include'), '-I' + str(codec), '-I'+str(ROOT/'common'),
             str(ROOT / 'DAIKIN/tests/hub/status_cache.cpp'), str(temp / 'WString.cpp'),
             *objects, '-Wl,--gc-sections', '-pthread',
-            '-o', str(cls.binary)], check=True)
+            '-o', str(cls.binary)]
+        subprocess.run(compile_command, check=True)
+        screen_command = [('-DIOTCLOUD_BRY88_SCREEN=1' if arg == '-DIOTCLOUD_HUB=1' else
+                           str(cls.screen_binary) if arg == str(cls.binary) else arg)
+                          for arg in compile_command]
+        screen_command.insert(1, '-Wno-unused-parameter')
+        subprocess.run(screen_command, check=True)
 
     def scenario(self, name):
         subprocess.run([str(self.binary), name], check=True, timeout=30,
@@ -109,6 +116,10 @@ char *dtostrf(double,int,unsigned int,char*);
 
     def test_production_event_cache_and_numbered_diagnostics(self):
         subprocess.run([str(self.binary)],check=True,timeout=30,
+            env={**os.environ,'ASAN_OPTIONS':'detect_leaks=1','UBSAN_OPTIONS':'halt_on_error=1'})
+
+    def test_g3_owned_status_survives_temporary_json_release(self):
+        subprocess.run([str(self.screen_binary)],check=True,timeout=30,
             env={**os.environ,'ASAN_OPTIONS':'detect_leaks=1','UBSAN_OPTIONS':'halt_on_error=1'})
 
 if __name__ == '__main__':

@@ -42,6 +42,10 @@ the scheduled retry after a 15-second minimum spacing and cannot overlap a worke
 TLS handshake and HTTP timeouts are six seconds. Certificate verification follows
 the configured setting, default false. A failed fetch keeps the previous cache.
 
+The G3 status encoder releases its 6 KiB JSON scratch pool after publishing the
+owned MessagePack snapshot. Completed delayed UART messages release their String
+buffers as well. These allocations are not retained between weather requests.
+
 An idle layout upload no longer reserves about 9.3 KiB of ESP RAM; storage is
 allocated only for an active transaction and freed on commit, invalidation or
 30 seconds without an accepted chunk. The weather configuration pool is 1536
@@ -52,6 +56,8 @@ fields 101–103 expose free/largest/minimum byte heap for this product.
 
 天气请求按可逐字节访问的内部堆判断是否启动；内存不足与失败都有退避，避免循环申请。
 手动刷新至少间隔 15 秒，握手与 HTTP 均有超时。默认关闭证书校验，失败保留旧天气。
+G3 状态编码的 6 KiB JSON 临时区在发布快照后释放，已发送的延迟串口消息也释放底层
+字符串缓冲，避免这些空闲占用阻止后续天气刷新。
 布局暂存区按需申请并限时释放；天气配置缩小后仍校验完整性再保存。运行开始/结束的
 堆统计用于定位分配失败，不等同于请求期间的最低内存峰值。
 

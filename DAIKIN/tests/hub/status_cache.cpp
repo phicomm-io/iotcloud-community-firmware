@@ -71,6 +71,10 @@ static const Partition *esp_partition_next(const Partition *p) { return p == &pa
 static void esp_partition_iterator_release(const Partition *) {}
 static int mqttLastEvent = 1, mqttErrorType = 0, mqttSocketError = 0;
 static bool mqttConnected = true;
+#ifdef IOTCLOUD_BRY88_SCREEN
+static bool mqttCommandReady = true;
+static void screenStatus(JsonObject out){out["sensor_source"]="screen_mcu";if(duringStateBuild)duringStateBuild();}
+#endif
 #include "indicators.inc"
 #include "state.inc"
 #include "public_read.inc"

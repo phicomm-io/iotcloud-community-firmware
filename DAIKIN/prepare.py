@@ -29,14 +29,14 @@ if local:
         spec = importlib.util.spec_from_file_location('development_frontend', source/'common/web/page.py')
         renderer = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(renderer)
-        data = gzip.compress(renderer.render_page(source/'DAIKIN/web/index.html', minify=True), mtime=0)
+        data = gzip.compress(renderer.render_page(source/'DAIKIN/web/index.html', minify=True, screen=screen), mtime=0)
     frontend = {'development': True,
                 'commit': subprocess.check_output(['git','-C',str(source),'rev-parse','HEAD'], text=True).strip(),
                 'dirty': bool(subprocess.check_output(['git','-C',str(source),'status','--porcelain'], text=True).strip())}
 else:
     bundle = fetch(root/'frontend.lock.json')
     if variant == 'full':
-        data = (bundle/'devices/daikin/index.html.gz').read_bytes()
+        data = (bundle/'devices'/('daikin-g3' if screen else 'daikin')/'index.html.gz').read_bytes()
     frontend = json.loads((root/'frontend.lock.json').read_text())
 if variant == 'hub':
     hub_root = source/'frontend/dist' if local else bundle/'hub'
@@ -57,7 +57,7 @@ out.mkdir(parents=True, exist_ok=True)
 env.Append(CPPPATH=[str(out)])
 metadata = resolve_version(root)
 if screen:
-    # Reuse the pinned full frontend and specialize its product label.
+    # Specialize the independently exported G3 frontend's product label.
     page = gzip.decompress(data).replace(b'BRY88AX151K', b'BRY88BBA15G').replace(b'BRY88AB151K', b'BRY88BBA15G').replace(b'DAIKIN G1/G2', b'DAIKIN G3')
     # This board has no discrete air-quality lamps or direct CM1106 controls.
     # Keep the shared page/layout, hide only the unsupported product controls.

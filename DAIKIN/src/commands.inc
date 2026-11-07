@@ -91,10 +91,7 @@ struct BusinessStatusKey {
 static bool businessStatusInvalid=true,businessStatusReady=false;
 static unsigned businessStatusBuilds=0;
 static BusinessStatusKey businessStatusKey;
-#ifdef IOTCLOUD_BRY88_SCREEN
-// MCU recovery diagnostics, settings and clock status share this publication.
-static DynamicJsonDocument businessStatusDocument(6144);
-#else
+#ifndef IOTCLOUD_BRY88_SCREEN
 static DynamicJsonDocument businessStatusDocument(4096);
 #endif
 static HttpReadSnapshot businessReadSnapshot;
@@ -133,6 +130,11 @@ static bool pollBusinessStatusCache(uint32_t now){
     if(next.samples[i].valid)freshFor=std::min(freshFor,20000u-uint32_t(now-next.samples[i].at));
   }
   businessStatusReady=false;
+#ifdef IOTCLOUD_BRY88_SCREEN
+  // Only the encoded publication survives this call. Release its scratch pool
+  // before weather admission; a resident 6 KiB pool can starve later TLS jobs.
+  DynamicJsonDocument businessStatusDocument(6144);
+#endif
   businessStatusDocument.clear();buildBusinessState(businessStatusDocument.to<JsonObject>(),now);
   if(businessStatusDocument.overflowed())return false;
   String wire,http;
@@ -155,7 +157,13 @@ static const String &cachedHttpStatus(){return businessReadSnapshot.envelope();}
 static void state(JsonObject out){
   // Bootstrap is allowed before the first loop; normal reads only copy cache.
   if((!businessStatusReady||businessStatusInvalid)&&!pollBusinessStatusCache(millis()))return;
+#ifdef IOTCLOUD_BRY88_SCREEN
+  DynamicJsonDocument decoded(6144);
+  const String &wire=cachedBusinessState();
+  if(!deserializeMsgPack(decoded,wire.c_str(),wire.length()))out.set(decoded.as<JsonObjectConst>());
+#else
   out.set(businessStatusDocument.as<JsonObjectConst>());
+#endif
 }
 // Only populated diagnostic fields are emitted. A false or zero value is data.
 template<class T> static void diagnosticField(JsonArray fields,unsigned id,const T &value){
