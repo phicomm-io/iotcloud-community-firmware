@@ -106,6 +106,7 @@ static void screenRequestSnapshot() {
 }
 static void screenStatus(JsonObject out) {
   out["hardware_model"] = "BRY88BBA15G";
+  out["cpu_frequency_mhz"] = getCpuFrequencyMhz();
   out["sensor_source"] = "screen_mcu";
   out["co2_warmup_seconds_remaining"] = nullptr;
   out.remove("co2_diagnostics");
