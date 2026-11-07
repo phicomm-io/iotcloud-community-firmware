@@ -46,6 +46,15 @@ The G3 status encoder releases its 6 KiB JSON scratch pool after publishing the
 owned MessagePack snapshot. Completed delayed UART messages release their String
 buffers as well. These allocations are not retained between weather requests.
 
+The 9,520-byte SCN3 wire cache uses unused 32-bit-only IRAM first, with aligned
+word accesses and byte-addressable chunks for UART/HTTP. A DRAM fallback preserves
+layout support if that allocation is unavailable. Encoding uses temporary byte
+scratch once per revision, then releases it; subsequent 512-byte sync packets
+reuse the cached bytes and CRC. Allocation failure leaves the previous cache
+intact and delays automatic retry by two seconds. `screen.status` reports
+`layout_cache_bytes` and `layout_cache_storage` (`iram`, `dram`, `unallocated`).
+Weather requests wait for active layout synchronization to finish.
+
 An idle layout upload no longer reserves about 9.3 KiB of ESP RAM; storage is
 allocated only for an active transaction and freed on commit, invalidation or
 30 seconds without an accepted chunk. The weather configuration pool is 1536
@@ -58,6 +67,10 @@ fields 101–103 expose free/largest/minimum byte heap for this product.
 手动刷新至少间隔 15 秒，握手与 HTTP 均有超时。默认关闭证书校验，失败保留旧天气。
 G3 状态编码的 6 KiB JSON 临时区在发布快照后释放，已发送的延迟串口消息也释放底层
 字符串缓冲，避免这些空闲占用阻止后续天气刷新。
+9,520 字节的布局编码缓存优先使用只能按 32 位访问的空闲 IRAM，通过对齐的整字读写
+与通信字节缓冲交换；申请失败可回退到 DRAM。每个布局版本只编码一次，临时区随后
+释放，后续串口分包复用缓存及 CRC。申请失败保留旧缓存，自动重试间隔为两秒。
+状态提供缓存大小及存储类型，天气请求等待正在进行的布局同步完成。
 布局暂存区按需申请并限时释放；天气配置缩小后仍校验完整性再保存。运行开始/结束的
 堆统计用于定位分配失败，不等同于请求期间的最低内存峰值。
 

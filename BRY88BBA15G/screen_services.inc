@@ -23,6 +23,7 @@ static uint32_t screenFlashConfigured = 0, screenFlashPhysical = 0;
 #include "protocol/wallpaper.h"
 #include "protocol/display_diag.h"
 #include "protocol/page_control.h"
+#include "scene_wire_cache.h"
 static screen_appearance screenAppearance;
 static uint32_t screenAppearanceAck,screenAppearanceSession,screenAppearanceSentAt;
 static unsigned screenAppearanceAttempts;
@@ -56,11 +57,11 @@ static constexpr size_t screenWeatherConfigBytes = 1536;
 static DynamicJsonDocument screenWeatherConfig(screenWeatherConfigBytes), screenSavedSettings(1024);
 static uint32_t screenSettingsSession = 0;
 static uint32_t screenSceneAck = 0, screenSceneSession = 0,
-                screenSyncOffset = 0, screenSyncDeadline = 0;
+                screenSyncOffset = 0, screenSyncDeadline = 0,
+                screenSyncRetryAt = 0;
 static unsigned screenSyncStep = 0;
 static uint32_t screenServicesAt = 0, screenNoticeId = 0x80000000u;
-static uint8_t screenSceneBytes[SCENE_BYTES];
-static bool screenSceneEncoded = false;
+static SceneWireCache<> screenSceneWire;
 static const char *screenSyncError = "";
 static void screenModuleReceive(const uint8_t *, size_t);
 static void screenDiagReceive(const uint8_t *, size_t);
@@ -203,6 +204,19 @@ static bool screenUnbase64(JsonVariantConst v, uint8_t *p, size_t cap,
   used = 0;
   return mbedtls_base64_decode(p, cap, &used, (const uint8_t *)s, n) == 0;
 }
+static String screenSceneBase64() {
+  String result;
+  const size_t total = (SCENE_BYTES + 2) / 3 * 4;
+  if (!result.reserve(total)) return String();
+  uint8_t input[192], output[257];
+  for (size_t at = 0; at < SCENE_BYTES; at += sizeof(input)) {
+    size_t count = min(sizeof(input), size_t(SCENE_BYTES - at)), used = 0;
+    if (!screenSceneWire.read(at, input, count) ||
+        mbedtls_base64_encode(output, sizeof(output), &used, input, count) ||
+        !result.concat((const char *)output, used)) return String();
+  }
+  return result;
+}
 static bool screenSave() {
   if (!screenStoreAvailable || !screenStoreMutex)
     return false;
@@ -211,11 +225,11 @@ static bool screenSave() {
     return false;
   }
   screenStorageError = "config_layout_encode";
-  if (!scene_encode(&screenScene, screenSceneBytes)) {
+  if (!screenSceneWire.prepare(screenScene)) {
     xSemaphoreGive(screenStoreMutex);
     return false;
   }
-  String layout = screenBase64(screenSceneBytes, scene_wire_size(&screenScene));
+  String layout = screenSceneBase64();
   // A String allocation failure must not commit an empty layout under a
   // valid record CRC. Keep the prior slot intact under TLS heap pressure.
   screenStorageError = "config_layout_allocation";
@@ -347,11 +361,13 @@ static void screenLoad() {
         if(!screenConfigStartupAuto(doc.as<JsonObjectConst>(),screenStartupAuto))
           screenConfigLoadError="invalid_startup_policy";
         size_t n;
-        if (screenUnbase64(doc["layout"], screenSceneBytes, SCENE_BYTES, n) &&
-            scene_decode(&screenScene, screenSceneBytes, n))
-          screenSceneEncoded = true;
-        else
-          screenConfigLoadError = "invalid_layout";
+        {
+          std::unique_ptr<uint8_t[]> layout(new (std::nothrow) uint8_t[SCENE_BYTES]);
+          if (!layout ||
+              !screenUnbase64(doc["layout"], layout.get(), SCENE_BYTES, n) ||
+              !scene_decode(&screenScene, layout.get(), n))
+            screenConfigLoadError = "invalid_layout";
+        }
         uint8_t policyBytes[DISPLAY_POLICY_BYTES];
         if (!doc["policy"].isNull() &&
             (!screenUnbase64(doc["policy"], policyBytes, sizeof(policyBytes), n) ||
@@ -475,7 +491,12 @@ static void screenSync() {
     screenSceneSession = screenBridge.session;
     screenSceneAck = 0;
     screenSyncStep = 0;
+    screenSyncDeadline = screenSyncRetryAt = 0;
     screenSyncError = "";
+  }
+  if (screenSyncRetryAt) {
+    if ((int32_t)(millis() - screenSyncRetryAt) < 0) return;
+    screenSyncRetryAt = 0;
   }
   if (screenSyncDeadline) {
     if ((int32_t)(millis() - screenSyncDeadline) < 0)
@@ -492,20 +513,25 @@ static void screenSync() {
     screenSyncOffset = 0;
   }
   screenSyncSize = SCENE_BYTES;
-  if (!scene_encode(&screenScene, screenSceneBytes)) return;
+  if (!screenSceneWire.prepare(screenScene)) {
+    screenSyncStep = 0;
+    screenSyncError = "layout_allocation";
+    screenSyncRetryAt = millis() + 2000;
+    return;
+  }
   uint8_t p[517];
   size_t n;
   if (screenSyncStep == 1) {
     p[0] = SC_MSG_BEGIN;
     scene_put32(p + 1, screenScene.revision);
     scene_put32(p + 5, screenSyncSize);
-    scene_put32(p + 9, scene_crc32(screenSceneBytes, screenSyncSize));
+    scene_put32(p + 9, screenSceneWire.crc());
     n = 13;
   } else if (screenSyncStep == 2) {
     p[0] = SC_MSG_CHUNK;
     scene_put32(p + 1, screenSyncOffset);
     n = min((uint32_t)512, screenSyncSize - screenSyncOffset);
-    memcpy(p + 5, screenSceneBytes + screenSyncOffset, n);
+    if (!screenSceneWire.read(screenSyncOffset, p + 5, n)) return;
     n += 5;
   } else {
     p[0] = SC_MSG_COMMIT;
@@ -568,6 +594,8 @@ static void screenServicesStatus(JsonObject s) {
                      : screenSceneAck == screenScene.revision ? "applied"
                                                               : "waiting";
   s["layout_error"] = screenSyncError;
+  s["layout_cache_bytes"] = screenSceneWire.size();
+  s["layout_cache_storage"] = screenSceneWire.storage();
   s["storage"] = screenStoreAvailable
                      ? (screenStore.owned ? "owned" : "available_blank")
                      : "unsupported_or_occupied";

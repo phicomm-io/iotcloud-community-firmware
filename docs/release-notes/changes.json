@@ -9406,7 +9406,7 @@
           "BRY88BBA15G/screen-protocol.lock.json"
         ],
         "firmware_source_sha256": {
-          "BRY88BBA15G/screen_commands.inc": "f008bf447bd5839230c62ff0f2ffea3afe621f347d2cf9c724b31ddeefaf4ba1",
+          "BRY88BBA15G/screen_commands.inc": "d046c9eaffd7466fdb6e27edb53faacb51c000134723dd89aec73813e9b721c5",
           "BRY88BBA15G/screen-protocol.lock.json": "46177cda42cec004d66c6dc5609468d5021e536012db9a18b22ee2777020f32d"
         }
       },
@@ -9468,7 +9468,7 @@
         ],
         "firmware_source_sha256": {
           "frontend.lock.json": "7fac8f9fadefe2f00472521c503e4993449fda5b7cec12469dd1a8a77f5b7fcb",
-          "BRY88BBA15G/screen_commands.inc": "f008bf447bd5839230c62ff0f2ffea3afe621f347d2cf9c724b31ddeefaf4ba1"
+          "BRY88BBA15G/screen_commands.inc": "d046c9eaffd7466fdb6e27edb53faacb51c000134723dd89aec73813e9b721c5"
         }
       },
       "translation_review": {

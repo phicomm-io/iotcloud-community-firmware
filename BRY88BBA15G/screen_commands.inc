@@ -95,17 +95,15 @@ static const char *screenServicesCommand(const String &action,
     unsigned total = scene_wire_size(&screenScene);
     if (at >= total || !n || n > 512)
       return "invalid_params";
-    /* The single owner already owns this encoded-scene buffer. Keeping a
-     * second 3120-byte automatic array reserves that stack on every command,
-     * including commit's nested atomic decoder on the 8 KiB loop task. */
-    uint8_t *bytes = screenSceneBytes;
-    scene_encode(&screenScene, bytes);
+    if (!screenSceneWire.prepare(screenScene)) return "busy";
     n = min(n, total - at);
+    uint8_t bytes[512];
+    if (!screenSceneWire.read(at, bytes, n)) return "busy";
     data["revision"] = screenScene.revision;
     data["total"] = total;
-    data["crc"] = scene_crc32(bytes, total);
+    data["crc"] = screenSceneWire.crc();
     data["offset"] = at;
-    data["bytes"] = screenBase64(bytes + at, n);
+    data["bytes"] = screenBase64(bytes, n);
     return "ok";
   }
   if (action == "screen.layout.begin") {
@@ -155,8 +153,8 @@ static const char *screenServicesCommand(const String &action,
     }
     screenSyncStep = 0;
     screenSyncDeadline = 0;
+    screenSyncRetryAt = 0;
     screenSceneAck = 0;
-    screenSceneEncoded = true;
     data["revision"] = screenScene.revision;
     return "accepted";
   }

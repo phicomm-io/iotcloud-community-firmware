@@ -115,6 +115,13 @@ target_compile_features(test_weather_memory PRIVATE cxx_std_11)
 target_compile_options(test_weather_memory PRIVATE -Wall -Wextra -Werror -UNDEBUG)
 add_test(NAME weather_memory COMMAND test_weather_memory)
 
+add_executable(test_scene_wire_cache tests/scene_wire_cache.cpp)
+target_include_directories(test_scene_wire_cache PRIVATE .)
+target_link_libraries(test_scene_wire_cache PRIVATE bry_bridge m)
+target_compile_features(test_scene_wire_cache PRIVATE cxx_std_11)
+target_compile_options(test_scene_wire_cache PRIVATE -Wall -Wextra -Werror -UNDEBUG)
+add_test(NAME scene_wire_cache COMMAND test_scene_wire_cache)
+
 add_executable(test_page_owner tests/page_owner.cpp)
 target_include_directories(test_page_owner PRIVATE . ${ARDUINOJSON_DIR})
 target_link_libraries(test_page_owner PRIVATE bry_bridge m)
