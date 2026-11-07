@@ -51,6 +51,9 @@ python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/http-retain
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/parameters-sdk.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/signed-ota-sdk.patch"
 python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" "$app_dir/no-unsigned-sdk-write.patch"
+# Diagnostic traces only: SDK button long press and monitor timeout still reboot.
+python3 "$project_dir/tools/apply_sdk_patch.py" "$sdk_dir" \
+    "$app_dir/easylink-button-guard.patch" "$app_dir/system-monitor-trace.patch"
 python3 "$project_dir/tools/install_tc1_native_sdk.py" "$sdk_dir"
 mkdir -p "$workspace"
 ln -sfn "$sdk_dir" "$workspace/mico-os"

@@ -64,6 +64,11 @@ static void tc1_memory_extra(ph_writer *w)
     static bool sampled;static int reason;
     if(!sampled){reason=get_last_reset_reason();sampled=true;}
     phw_int(w,"last_reset_reason",reason);
+    tc1_config_diag_t diag;tc1_config_diag(&diag);
+    phw_text(w,"last_reset_reason_text",tc1_reset_reason_text(diag.reset_reason));
+    phw_bool(w,"boot_defaults_applied",diag.defaults_at_boot);
+    phw_bool(w,"boot_version_mismatch",diag.version_mismatch);
+    phw_int(w,"button_edges_without_gesture",(int)diag.button_edges);
     extern void tc1_config_diagnostics_mp(ph_writer *);tc1_config_diagnostics_mp(w);
 }
 #define HTTP_AUTH_MODEL "tc1"

@@ -34,4 +34,4 @@ python3 tests/test_tc1_core.py
 
 python3 tests/test_tc1_wifi.py
 
-python3 -m unittest tests.test_tc1_sdk_migration tests.test_mico_network_close
+python3 -m unittest tests.test_tc1_button_guard tests.test_tc1_reset_fields tests.test_tc1_sdk_migration tests.test_mico_network_close

@@ -17,6 +17,46 @@ bool app_config_persist_allowed(void) { return !config_recovery && !config_commi
 static uint32_t config_source_version, config_auth_magic, config_auth_version;
 static uint16_t config_auth_count,config_auth_remote_count,config_auth_reserved;
 static bool config_auth_valid;
+
+/* Why the device restarted, and whether the parameter partitions were unusable
+ * at boot. Both are captured before the boot path can apply defaults or
+ * overwrite Flash, and never store credentials. */
+extern int get_last_reset_reason(void);
+static uint32_t boot_reset_reason;
+static bool config_load_done, defaults_during_load, version_mismatch_reset;
+
+/* MC200/MW3xx boot flags: VBAT, AV12, AV18, software, lockup, watchdog. */
+const char *tc1_reset_reason_text(uint32_t reason)
+{
+    if (reason & 0x20) return "watchdog";
+    if (reason & 0x10) return "lockup";
+    if (reason & 0x08) return "software";
+    if (reason & 0x04) return "power_av18";
+    if (reason & 0x02) return "power_av12";
+    if (reason & 0x01) return "power_vbat";
+    return "none";
+}
+
+static volatile uint32_t button_click_events, button_long_events;
+
+/* The SDK button callbacks share the power-button GPIO and run from the pin IRQ
+ * or its timer. They no longer start autoconfig or erase Flash; an edge here
+ * only means interference from relay switching reached that pin, so count it
+ * and keep the counters allocation- and lock-free. */
+void app_easylink_button_event(unsigned long_press)
+{
+    volatile uint32_t *counter = long_press ? &button_long_events : &button_click_events;
+    if (*counter != UINT32_MAX) ++*counter;
+}
+
+void tc1_config_diag(tc1_config_diag_t *out)
+{
+    if (!out) return;
+    out->reset_reason = boot_reset_reason;
+    out->defaults_at_boot = defaults_during_load;
+    out->version_mismatch = version_mismatch_reset;
+    out->button_edges = button_click_events + button_long_events;
+}
 #include <stddef.h>
 
 uint32_t app_config_legacy_size(void) { return sizeof(user_config_v12_t); }
@@ -95,6 +135,10 @@ static bool migratePowerCoefficient(void) {
 void appRestoreDefault_callback(void *const user_config_data, uint32_t size) {
     UNUSED_PARAMETER(size);
 
+    /* The SDK restores defaults while loading an unusable parameter partition,
+     * which also clears the saved Wi-Fi credentials. */
+    if (!config_load_done) defaults_during_load = true;
+
     mico_system_context_get()->micoSystemConfig.name[0] = 1; //鍦ㄤ笅娆￠噸鍚椂浣跨敤榛樿鍚嶇О
     mico_system_context_get()->micoSystemConfig.name[1] = 0;
 
@@ -166,6 +210,10 @@ int application_start(void) {
     WebLogInit();
     if(!tc1_ota_init())return kNoMemoryErr;
     int i;tc1_log("start version[%s]", VERSION);
+    boot_reset_reason=(uint32_t)get_last_reset_reason();
+    tc1_log("reset reason raw[0x%x] %s",(unsigned)boot_reset_reason,tc1_reset_reason_text(boot_reset_reason));
+    service_event("info","system",(boot_reset_reason&0x20)?"watchdog":(boot_reset_reason&0x10)?"lockup":
+                  (boot_reset_reason&0x08)?"software":"power_on");
 
     //char main_num=0;
     OSStatus err = kNoErr;
@@ -187,8 +235,10 @@ int application_start(void) {
     config_auth_remote_count=user_config->local_auth.remote_count;
     config_auth_reserved=user_config->local_auth.reserved;
     config_auth_valid=ph_auth_store_valid(&user_config->local_auth);
+    config_load_done=true;
+    if(defaults_during_load)tc1_log("WARNGIN: parameter partitions unusable at boot, defaults applied");
     if(user_config->version!=USER_CONFIG_VERSION) {
-        config_recovery=true;memset(user_config,0,sizeof(*user_config));
+        config_recovery=true;version_mismatch_reset=true;memset(user_config,0,sizeof(*user_config));
         appRestoreDefault_callback(user_config,sizeof(*user_config));
     }
     if (user_config->automation.magic != AUTOMATION_MAGIC) {
