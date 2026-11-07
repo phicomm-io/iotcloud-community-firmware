@@ -62,7 +62,7 @@ python3 trigger.py --device AABBCCDDEEFF --host 192.168.1.10 \
 
 Remove the three per-device DNS overrides and restore the original DHCP DNS. Stop and remove the temporary containers with `docker compose -f ./lab/compose.json down`. Remove the private lab directory and Wi-Fi plist when finished. Keep your factory backups separately.
 
-Community updates: **Settings → Firmware** checks the online ESP32 source. **Settings → Screen → Resources and update** checks/downloads the paired screen application and optional font, or accepts local files. Screen binary uploads require the browser to be connected directly to the detector on the LAN. Before the first stock-to-community MCU update, retain the 80 KiB boot backup and satisfy the explicit factory bootstrap gate described in the G3 guide. The updater validates NOR staging and leaves the existing boot region intact.
+Community updates: **Settings → Firmware** checks the online ESP32 source. **Settings → Screen → Resources and update** checks/downloads the paired screen application and optional font, or accepts local files. Screen binary uploads require the browser to be connected directly to the detector on the LAN. With the new paired ESP32 and tool, the complete MCU application can be installed directly on stock firmware; no boot backup, stock-version allowlist or recovery-first step is required. The updater validates NOR staging and leaves the existing boot region intact.
 
 中文步骤摘要：先启动无升级服务 → 短按背面网络键，用原生蓝牙工具配网并补齐虚拟网关 → 仅重定向本机三个域名并更新 DHCP DNS → 启动网关应答 → 校验 G3 raw 应用，显式启用并发送一次仅 ESP32 升级 → 核对社区网页版本与读数 → 撤销 DNS 和临时服务。不要使用 G1/G2 镜像、整片镜像或屏幕应用执行第一阶段迁移。
 
@@ -77,12 +77,20 @@ The tests use loopback HTTPS and temporary fixtures, without changing DNS or con
 ## Screen MCU / 屏幕 MCU
 
 The ESP32 migration preserves the stock MCU. For an optional screen migration,
-use the separate recovery image, back up the first 80 KiB twice, then install
-the full application. The package includes `screen/flash_screen.py` and
+the new paired ESP32 and `screen/flash_screen.py --mode install` send the complete
+application directly to stock firmware. Backup is optional; the new MCU also
+removes the boot MD5 allowlist. The package includes `screen/flash_screen.py` and
 `screen/backup_screen_boot.py`; they require Python `msgpack`.
-Follow the [G3 guide](https://phicomm-io.github.io/en/daikin-g3-guide/).
 
-ESP32 迁移保留原厂屏幕。若要更换屏幕固件，先安装独立恢复镜像、双读备份前
-80 KiB 引导区，再安装完整应用。包内附 `screen/flash_screen.py` 和
-`screen/backup_screen_boot.py`，依赖 Python `msgpack`。
-按 [G3 教程](https://phicomm-io.github.io/daikin-g3-guide/)执行。
+ESP32 迁移保留原厂屏幕。新脚本与配套 ESP32 可直接发送完整 MCU 应用，取消
+强制备份、原厂版本白名单和首装恢复镜像限制。新 MCU 也取消本地引导 MD5 白名单。
+原厂引导区不改写；串口安装仍依赖它的复制协议，其他引导需核对兼容性。
+已安装的旧 MCU 仍执行旧门控，新工具不能取消旧应用内部的检查。
+
+```sh
+python3 screen/flash_screen.py --url http://DEVICE_IP \
+  --image ../daikin_G3_screen.bin --mode install --log install.jsonl
+```
+
+See the [G3 guide](https://phicomm-io.github.io/guides/en/daikin-g3-guide.html) /
+[中文教程](https://phicomm-io.github.io/guides/zh/daikin-g3-guide.html).

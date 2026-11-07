@@ -430,36 +430,39 @@ readback before committing metadata. Returns hashes and `installable:false`;
 `screen.update.get` reports the runtime installation capability. Uploading alone
 never starts a transfer or installation.
 
-- `screen.update.get {}` reports artifact/transfer state.
+- `screen.update.get {}` reports artifact/transfer state. `ota.boot_backup_required`
+  is false; `ota.gate` is `factory_uart` on the original MCU, `ready` on a current
+  community MCU, or `staging_only_mcu` when activation is unavailable.
 - `screen.update.start {mode:"stage"}` works only with a community MCU or its
   recovery mode, preserving the stock UART flow and stopping after NOR readback.
 - `screen.update.cancel {}` stops staging.
 - `screen.update.install {sha256:"..."}` explicitly activates the staged image.
   It requires v3 maintenance and the exact uploaded SHA-256. The MCU rechecks
-  the application MD5, live reviewed-loader MD5 and erased source tail before
-  writing/read-verifying A1 and restarting. A verified matching backup remains
-  reusable with `flash_screen.py --reuse-boot-backup`; it keeps its original
-  session metadata. The current MCU verifies its loader locally without requiring
-  a new contiguous export on each application upgrade.
+  the application MD5 and erased source tail before writing/read-verifying A1
+  and restarting. The paired MCU no longer checks a boot MD5 allowlist. Backup
+  is optional; `flash_screen.py --boot-backup ... --reuse-boot-backup` can verify
+  an existing pair without changing its original session metadata.
 - Stock staging is blocked because stock firmware auto-installs. The explicit
   `screen.update.start {mode:"factory-bootstrap",sha256:"..."}` exception accepts
-  only the supported stock version and a matching recovery-only target image.
-  This first step relies on the existing loader before a boot backup is possible.
+  a complete target application or the optional recovery image, with the exact
+  uploaded SHA-256. Stock-version and recovery-only gates are removed. The
+  command explicitly starts an installation, using the existing factory loader.
 
 During the binary transfer, business UART messages are deferred. Weather,
 clock, layout and reminder traffic cannot enter the raw packet stream; delayed
 business queue entries are retained and resume after OTA.
 
-引导区不随应用升级而写入。安装脚本可用 `--reuse-boot-backup` 复用已有双份一致备份，
-保留原会话记录；MCU 每次仍在本地校验当前引导、应用摘要和复制尾区。
+引导区不随应用升级而写入。备份是可选操作；指定备份时仍检查双份内容一致，
+`--reuse-boot-backup` 保留原会话记录。新 MCU 只复核应用摘要与复制尾区，
+不再使用引导 MD5 白名单。已安装的旧 MCU 仍执行旧门控，替换后才生效。
 二进制 OTA 期间暂停天气等扩展消息及延迟业务队列，
 传输结束后再继续，避免业务文本进入按长度接收的原始数据包。
 
 Successful installation requires a new MCU session and `screen_image 1` MD5
 matching the actual internal application bytes. A completed transfer alone is
-not success. The recovered loader SHA-256 is
+not success. The inspected example loader SHA-256 is
 `ccb9d414186c5ea47823badf5083f7ab5b1b61b02c6a8d0510af6ee31bebdf09`.
-Its copy loop exceeds the application range; see the screen repository's
+This is a reference digest, not an allowlist. Its copy loop exceeds the application range; see the screen repository's
 `docs/BOOTLOADER-20261105.md`. Unknown copy-tail contents are preserved and block
 activation. MCU A/B rollback and power-loss installation recovery are not proven.
 
@@ -536,12 +539,13 @@ repeated after a lost response; the script preserves the partial file and stops.
 This interface cannot obtain the factory bootloader before first entering a
 community application. On this board the minimal application has booted, two
 matching loader reads were obtained, and the full application then installed.
-The flashing tool checks the known loader SHA and a matching backup report:
+The flashing tool selects the stock or community installation path automatically.
+It does not require a boot backup or known stock version:
 
 ```sh
 python3 BRY88BBA15G/tools/flash_screen.py --url http://DEVICE \
   --image full/screen_firmware.bin --mode install \
-  --boot-backup /path/to/new-backup --log /path/to/new-install.jsonl
+  --log /path/to/new-install.jsonl
 ```
 
 After normal business startup, `tools/verify_community_screen.py` checks the

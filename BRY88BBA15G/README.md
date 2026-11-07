@@ -16,7 +16,7 @@ BRY88BBA15G 的 ESP32 应用，复用 iotcloud 公共 HTTP、MessagePack、MQTT�
 
 保留原厂 NVS、otadata、分区表和两份应用槽。ESP32 OTA 只写备用应用及 otadata。屏幕应用安装不改引导区；检查精确目标、向量、摘要和 NOR 回读，再激活已有引导程序。未知非空资源区不擦除。物理掉电中断屏幕内部 Flash 搬运尚未验证。
 
-社区 MCU 可只读导出前 80 KiB。`tools/backup_screen_boot.py` 读取两遍，摘要一致后保存记录；原厂 MCU 没有这个接口。已有有效备份可以用 `tools/flash_screen.py --reuse-boot-backup` 复用。首次原厂迁移有显式 bootstrap 门控，详见教程。免拆 ESP32 迁移工具位于 [tools/daikin_g3_migrate](../tools/daikin_g3_migrate/README.md)。
+社区 MCU 可只读导出前 80 KiB。`tools/backup_screen_boot.py` 读取两遍，摘要一致后保存记录；原厂 MCU 没有这个接口。备份可选，已有有效备份可以用 `tools/flash_screen.py --reuse-boot-backup` 复用。新脚本与配套 ESP32 允许直接发送完整 MCU 应用，不要求原厂版本白名单或先装恢复镜像；新 MCU 应用也不再核对引导 MD5 白名单。原厂串口安装仍依赖已有引导的复制协议，其他引导需核对兼容性，详见教程。免拆 ESP32 迁移工具位于 [tools/daikin_g3_migrate](../tools/daikin_g3_migrate/README.md)。
 
 ## Build / 构建
 
@@ -35,4 +35,4 @@ Compose clocks, values, text, charts, weather and reminders with themes, wallpap
 
 Normal MCU maintenance resumes automatically after five seconds unless disabled or held. Fault recovery stays available. Optional NOR resources load into validated SDRAM caches and degrade on failure without a reset loop. ESP32 checks signed online updates through stable/candidate channels; the LAN resource page downloads and verifies screen/font updates. Large MCU uploads require direct LAN access.
 
-Application updates preserve both bootloaders and stock partitions. The factory power-on key gate remains unchanged. Community MCU boot reads are read-only and matching backups are reusable. First-time stock migration uses an explicit bootstrap gate; see the [English G3 guide](../docs/public/en/daikin-g3-guide.md). Power loss during the MCU's internal Flash copy remains untested.
+Application updates preserve both bootloaders and stock partitions. The factory power-on key gate remains unchanged. Community MCU boot reads are optional and read-only; matching backups are reusable. The new tool/ESP32 can send a complete application directly to stock firmware, without stock-version or recovery-only gates. The new MCU removes the boot MD5 allowlist. UART installation still depends on the existing factory copy contract; see the [English G3 guide](../docs/public/en/daikin-g3-guide.md). Power loss during the MCU's internal Flash copy remains untested.

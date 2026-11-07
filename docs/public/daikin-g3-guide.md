@@ -51,16 +51,18 @@ ESP32：打开“设置 → 固件更新”，选择更新源并检查版本，�
 
 屏幕 MCU 与字库：在局域网直接打开设备网页，进入“屏幕 → 资源与升级 → 在线更新”。检查版本后分别下载并安装屏幕应用或字库；网页核对文件大小，ESP32 再校验哈希并暂存，完成后才请求 MCU 安装。当前远程云端通道支持控制和 ESP32 更新，屏幕大文件上传需要本地直连。
 
-首次从原厂屏幕迁移需要分两步。下载页的 `daikin_G3_recovery.bin` 仅提供最小恢复服务，安装后黑屏是预期；`daikin_G3_screen.bin` 是完整界面。原厂 MCU 版本须为 `SV.04.00.01.00`，ESP32 已运行社区版。解压迁移工具，安装 Python 的 `msgpack` 后，在工具目录执行，替换设备地址：
+新脚本与配套新 ESP32 可直接向原厂 MCU 发送完整的 `daikin_G3_screen.bin`，不要求先安装恢复镜像、引导备份或原厂版本白名单。新 MCU 应用也取消本地引导 MD5 白名单。解压配套工具，安装 Python 的 `msgpack` 后执行：
 
 ```sh
 python3 -m pip install msgpack
-python3 screen/flash_screen.py --url http://DEVICE_IP --image ../daikin_G3_recovery.bin --mode factory-bootstrap --log bootstrap.jsonl
-python3 screen/backup_screen_boot.py --url http://DEVICE_IP --output boot-backup --hold
-python3 screen/flash_screen.py --url http://DEVICE_IP --image ../daikin_G3_screen.bin --mode install --boot-backup boot-backup --log install.jsonl
+python3 screen/flash_screen.py --url http://DEVICE_IP --image ../daikin_G3_screen.bin --mode install --log install.jsonl
 ```
 
-保留已有原厂备份；恢复镜像启动后会将前 80 KiB 引导区读取两次，工具确认内容和校验一致后才允许安装完整应用。设置了管理密码时，通过环境变量 `IOTCLOUD_AUTH=admin:密码` 提供。日志核对实际运行镜像的 MD5。后续未修改引导区可复用该备份，命令增加 `--reuse-boot-backup`；也可在网页保存引导区。应用包不能当作整片镜像，所有屏幕 OTA 均保留现有引导区。
+工具自动选择原厂串口安装或社区 MCU 暂存／激活路径，保留型号、向量、长度、摘要及暂存回读检查。设置了管理密码时通过 `IOTCLOUD_AUTH=admin:密码` 提供。完成后日志应显示新会话和实际运行应用的 MD5。
+
+保存引导备份是可选操作：社区 MCU 可使用 `screen/backup_screen_boot.py` 双读前 80 KiB；已有备份可配合 `--boot-backup 目录 --reuse-boot-backup` 检查复用。原厂 MCU 没有该读出接口。恢复镜像仍可用于最小服务诊断，安装后黑屏是预期，但不再是首次安装的必经步骤。
+
+RC6 初始发布包仍保留旧门控：指定原厂版本、先装恢复镜像和备份；这些放宽条件需要配套的新脚本与新 ESP32。已安装的旧 MCU 仍执行内部引导检查，需满足该版本条件才能更新，不能仅靠换脚本取消。所有屏幕 OTA 保留原厂引导区。原厂引导的复制范围需与目标硬件一致；应用包不能当作整片镜像，安装时保持稳定供电。
 
 屏幕启动时先开放最小恢复服务，ESP32 默认在 5 秒后自动继续启动。在“资源与升级”关闭“启动 5 秒后自动继续”，可保留完整的 30 秒窗口，设置断电后仍保留。“保持最小服务”优先于自动启动，也可随时“立即继续启动”；故障维护不会自动退出，仍需安装修复固件。通信和 OTA 先于业务界面启动。更新期间临时降到 10% 亮度，受显示上限约束，不改保存亮度；原厂引导安装重启时会短暂黑屏。当前固件保留原厂引导的开机门控，完全断电后可能需要短触正面按键；来电自动启动未修改引导实现。
 

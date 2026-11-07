@@ -51,16 +51,18 @@ ESP32: open Settings → Firmware update, choose a source, check the version, re
 
 Screen and font: open the device directly on the LAN and select Screen → Resources and updates → Online updates. Check available versions and install the application or font separately. The browser checks file size; ESP32 verifies the digest and staging before MCU installation. Cloud access supports controls and ESP32 updates; large screen uploads currently require a direct LAN connection.
 
-First migration from the stock screen requires two stages. Download `daikin_G3_recovery.bin` for minimal recovery services; a black display is expected after installation. `daikin_G3_screen.bin` provides the complete UI. The stock MCU must report `SV.04.00.01.00`, and the ESP32 must already run community firmware. Extract the migration tools, install Python `msgpack`, then run these commands from the tools directory, replacing the device address:
+The new tool and paired ESP32 can send the complete `daikin_G3_screen.bin` directly to stock MCU firmware. A recovery-first step, boot backup and stock-version allowlist are no longer required. The new MCU application also removes its local boot MD5 allowlist. Extract the paired tools, install Python `msgpack`, then run:
 
 ```sh
 python3 -m pip install msgpack
-python3 screen/flash_screen.py --url http://DEVICE_IP --image ../daikin_G3_recovery.bin --mode factory-bootstrap --log bootstrap.jsonl
-python3 screen/backup_screen_boot.py --url http://DEVICE_IP --output boot-backup --hold
-python3 screen/flash_screen.py --url http://DEVICE_IP --image ../daikin_G3_screen.bin --mode install --boot-backup boot-backup --log install.jsonl
+python3 screen/flash_screen.py --url http://DEVICE_IP --image ../daikin_G3_screen.bin --mode install --log install.jsonl
 ```
 
-Retain any existing stock backup. Once the recovery image runs, the backup tool reads the first 80 KiB twice. Full installation requires matching contents and checksums. If an administration password is set, provide it through `IOTCLOUD_AUTH=admin:password`. Logs verify the running image MD5. Reuse an unchanged bootloader backup by adding `--reuse-boot-backup` to later installation commands; the web UI can also save it. Application images are not full-chip dumps; screen OTA preserves the existing bootloader.
+The tool selects stock UART installation or community staging/activation automatically. Target, vectors, length, digests and staging readback are still checked. If an administration password is set, provide `IOTCLOUD_AUTH=admin:password`. Successful logs contain a new session and the running application's actual MD5.
+
+Boot backup is optional. A community MCU can export the first 80 KiB twice with `screen/backup_screen_boot.py`; verify an existing pair using `--boot-backup DIRECTORY --reuse-boot-backup`. The original MCU has no export interface. The recovery image remains available for minimal-service diagnostics, where a black display is expected, but is no longer required for first installation.
+
+The initial RC6 package retains the previous gates: a specified stock version, recovery-first installation and backup. The relaxed policy requires the new paired tool/ESP32. An already installed older MCU still enforces its internal boot checks until replaced; changing the script cannot bypass them. Screen OTA preserves the original boot region. Check the loader copy contract for other hardware, use stable power, and do not treat an application package as a full-chip image.
 
 The screen starts with minimal recovery services. By default, the ESP32 resumes startup after 5 seconds. Disable “Continue automatically after 5 seconds” in Resources & update to retain the complete 30-second window; the setting persists after power loss. Keep minimal services overrides automatic startup, and Start now ends a normal window immediately. Fault recovery never resumes automatically and requires repaired firmware. Communication and OTA start before the UI. OTA temporarily uses 10% brightness within the configured ceiling without changing saved settings. Application activation restarts the display. The factory bootloader's power-on gate is retained, so a short front-key press may be needed after complete power loss. Automatic startup has not been implemented by modifying the bootloader.
 

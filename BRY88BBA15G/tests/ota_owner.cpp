@@ -35,6 +35,7 @@ public:
   }
   bool operator==(const char *p) const { return s == p; }
   bool operator!=(const char *p) const { return s != p; }
+  bool operator!=(const String &p) const { return s != p.s; }
   const char *c_str() const { return s.c_str(); }
   size_t length() const { return s.size(); }
   friend String operator+(const String &a, const String &b) {
@@ -125,6 +126,79 @@ static String screenBase64(const uint8_t *p, size_t n) {
   return std::string(wire + 40, used - 42);
 }
 #include "../screen_guard.inc"
+static unsigned screenHead, screenTail;
+static struct { String wire; } screenQueue[12];
+static struct { bool active, pending; } screenWallpaper;
+static bool fontBusy, lockAvailable = true;
+static void *screenStoreMutex = &screenHead;
+#define pdTRUE 1
+static int xSemaphoreTake(void *, unsigned) { return lockAvailable; }
+static void xSemaphoreGive(void *) {}
+static bool screenFontBusy() { return fontBusy; }
+static String screenRoot() { return "test-device"; }
+static unsigned deliveries;
+static bool screenDelivery(const String &topic, JsonDocument &doc, unsigned attempts) {
+  assert(topic == "test-device/mqtt/service/ota" && !attempts);
+  assert(doc["data"]["upgrade_method"] == 1);
+  assert(doc["data"]["upgrade_info"][0]["device_type"] == "SENSOR3_MCU");
+  deliveries++;
+  return true;
+}
+static bool screenFields(JsonObjectConst params, const char *fields) {
+  for (JsonPairConst pair : params) {
+    std::string key = "|" + std::string(pair.key().c_str()) + "|";
+    if (!strstr(fields, key.c_str())) return false;
+  }
+  return true;
+}
+#include "../screen_update_start.inc"
+static void testUpdateStart() {
+  DynamicJsonDocument doc(256);
+  JsonObject params = doc.to<JsonObject>();
+  params["mode"] = "factory-bootstrap";
+  params["sha256"] = screenHex(screenImage.sha, 32);
+  /* A complete application has no recovery-only feature marker. No original
+   * version string or boot-export record participates in this start path. */
+  assert(screenImage.features == 0 && !screenGuardAvailable());
+  screenHead = 0;
+  screenTail = 2;
+  screenQueue[0].wire = "old-weather";
+  screenQueue[1].wire = "old-clock";
+  assert(!strcmp(screenUpdateStart(params), "accepted"));
+  assert(deliveries == 1 && screenImage.active && screenImage.bootstrap);
+  assert(screenHead == screenTail && !screenQueue[0].wire.length());
+  screenImage.active = false;
+  params["sha256"] = "wrong-digest";
+  assert(!strcmp(screenUpdateStart(params), "invalid_firmware"));
+  assert(deliveries == 1 && !screenImage.active);
+  params["sha256"] = screenHex(screenImage.sha, 32);
+  lockAvailable = false;
+  assert(!strcmp(screenUpdateStart(params), "busy"));
+  lockAvailable = true;
+  image[8192] ^= 1;
+  assert(!strcmp(screenUpdateStart(params), "invalid_firmware"));
+  image[8192] ^= 1;
+  fontBusy = true;
+  assert(!strcmp(screenUpdateStart(params), "busy"));
+  fontBusy = false;
+  params["unexpected"] = true;
+  assert(!strcmp(screenUpdateStart(params), "invalid_params"));
+  params.remove("unexpected");
+  params.remove("sha256");
+  params["mode"] = "stage";
+  assert(!strcmp(screenUpdateStart(params), "not_ready"));
+  /* Community staging uses its maintenance endpoint, never the stock trigger. */
+  assert(screenGuardAnnounce("3 12345678 0 1 30000 00000403 00001400 00003001 00000000"));
+  assert(!strcmp(screenUpdateStart(params), "accepted"));
+  assert(!screenImage.bootstrap && toMcu == "+screen_recover:1\r\n");
+  screenImage.active = false;
+  toMcu.clear();
+  params["mode"] = "factory-bootstrap";
+  params["sha256"] = screenHex(screenImage.sha, 32);
+  assert(!strcmp(screenUpdateStart(params), "invalid_firmware"));
+  screenGuard = {};
+  screenRecovering = false;
+}
 static screen_guard guard;
 static bool bootRead(void *, uint32_t at, void *p, size_t n) {
   assert(at + n <= SCREEN_BOOT_BYTES);
@@ -208,6 +282,7 @@ int main(int argc, char **argv) {
   screenImage.size = image.size();
   assert(screenHash(screenImage.md5, screenImage.sha));
   assert(screenImageVerify());
+  testUpdateStart();
   screen_maintenance m = {};
   m.send = fromMcu;
   m.line = other;

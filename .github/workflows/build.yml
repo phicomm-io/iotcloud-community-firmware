@@ -429,7 +429,7 @@ jobs:
         if: matrix.variant == 'g3'
         with:
           repository: phicomm-io/iotcloud-bry88bba15g-screenmcu
-          ref: 3467a5a4cb4ba6bb7c5d12ab6fd07534e2f2e7ca
+          ref: 468fc410dc19f3dffec48e539d7f414db179d5dc
           path: build/screen-source
       - uses: actions/checkout@v4
         if: matrix.variant == 'g3'
@@ -444,6 +444,7 @@ jobs:
           cmake --build build/g3-tests -j4
           ctest --test-dir build/g3-tests --output-on-failure
           python3 -m unittest discover -s tools/daikin_g3_migrate -p 'test_*.py'
+          python3 -m unittest discover -s BRY88BBA15G/tests -p 'test_*.py'
       - name: Collect ESP release assets
         run: |
           mkdir -p release

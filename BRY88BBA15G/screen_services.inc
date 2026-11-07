@@ -622,8 +622,9 @@ static void screenServicesStatus(JsonObject s) {
   ota["size"] = screenImage.size;
   ota["sha256"] = screenHex(screenImage.sha, 32);
   ota["recovery_image"] = bool(screenImage.features & 1);
-  ota["installable"] = screenGuardAvailable() && screenGuard.activation;
-  ota["gate"] = !screenGuardAvailable() ? "factory_bootstrap_required" :
+  ota["installable"] = !screenGuardAvailable() || screenGuard.activation;
+  ota["boot_backup_required"] = false;
+  ota["gate"] = !screenGuardAvailable() ? "factory_uart" :
                 !screenGuard.activation ? "staging_only_mcu" : "ready";
   screenGuardStatus(s.createNestedObject("recovery"), false);
   screenStartupGet(s.createNestedObject("startup"));
@@ -645,6 +646,7 @@ static void screenServicesInit() {
 #include "weather_net.inc"
 #include "screen_page.inc"
 #include "screen_diagnostics.inc"
+#include "screen_update_start.inc"
 #include "screen_commands.inc"
 // clang-format on
 static void screenServicesPoll(uint32_t now) {

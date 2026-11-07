@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Upload and test a BRY88BBA15G screen application through its ESP32.
 
-factory-bootstrap is restricted to the minimal recovery image and the known
-stock MCU version. install requires two matching boot-region backups;
---reuse-boot-backup permits their reuse across application resets. The MCU
-still validates the live bootloader, staged image and copy tail before activation.
+install sends a complete application through the stock or community UART path.
+Boot backups are optional; --reuse-boot-backup retains their original session.
+Image validation, staging readback and the community MCU's copy-tail checks
+remain active. The original boot region is not rewritten.
 IOTCLOUD_AUTH optionally supplies the existing HTTP administration credentials.
 """
 import argparse
@@ -19,10 +19,7 @@ import urllib.error
 import msgpack
 from backup_screen_boot import Device
 
-SUPPORTED_BOOT_SHA256 = "ccb9d414186c5ea47823badf5083f7ab5b1b61b02c6a8d0510af6ee31bebdf09"
-
-
-def validate_image(image, mode):
+def validate_image(image):
     data = image.read_bytes()
     if len(data) != 0x67000:
         raise ValueError("Expected the 421888-byte application, not a full flash image")
@@ -31,8 +28,6 @@ def validate_image(image, mode):
         raise ValueError("Invalid application vectors")
     if b"iotcloud-screen/BRY88BBA15G;application=0x14000;install=factory-uart;" not in data:
         raise ValueError("Wrong target or missing UART installation service")
-    if mode == "factory-bootstrap" and b"install=factory-uart;mode=recovery;" not in data:
-        raise ValueError("First installation only accepts the recovery-only image")
     return data
 
 
@@ -49,8 +44,7 @@ def validate_backup(directory, session, reuse=False):
     if (len(report.get("reads", [])) != 2 or digests[0] != digests[1]
             or any(r["sha256"] != digests[0] for r in report["reads"])):
         raise ValueError("Boot backup digest mismatch")
-    if digests[0] != SUPPORTED_BOOT_SHA256:
-        raise ValueError("Unrecognized bootloader: review its copy/erase contract before installation")
+    return digests[0]
 
 
 def main():
@@ -58,20 +52,18 @@ def main():
     p.add_argument("--url", required=True)
     p.add_argument("--image", type=Path, required=True)
     p.add_argument("--mode", choices=("stage", "factory-bootstrap", "install"), required=True)
-    p.add_argument("--boot-backup", type=Path)
+    p.add_argument("--boot-backup", type=Path, help="Optionally verify an existing pair of boot backups")
     p.add_argument("--reuse-boot-backup", action="store_true",
-                   help="Reuse a verified backup across application resets; MCU still validates live bootloader")
+                   help="Reuse a verified backup across application resets without changing its report")
     p.add_argument("--log", type=Path, required=True)
     p.add_argument("--upload-interval-ms", type=int, default=0,
                    help="Pause per uploaded KiB (0..1000 ms)")
     args = p.parse_args()
     if not 0 <= args.upload_interval_ms <= 1000:
         p.error("--upload-interval-ms must be 0..1000")
-    if args.mode == "install" and not args.boot_backup:
-        p.error("install requires --boot-backup from the current MCU session")
-    if args.reuse_boot_backup and (args.mode != "install" or not args.boot_backup):
-        p.error("--reuse-boot-backup requires install and --boot-backup")
-    image = validate_image(args.image, args.mode)
+    if args.reuse_boot_backup and not args.boot_backup:
+        p.error("--reuse-boot-backup requires --boot-backup")
+    image = validate_image(args.image)
     sha, md5 = hashlib.sha256(image).hexdigest(), hashlib.md5(image).hexdigest()
     device = Device(args.url)
     args.log.parent.mkdir(parents=True, exist_ok=True)
@@ -85,17 +77,22 @@ def main():
         if status.get("hardware_model") != "BRY88BBA15G":
             raise ValueError("Unexpected hardware model")
         recovery = device.command("screen.recovery.get")
-        if args.mode == "factory-bootstrap":
-            if recovery.get("available") or status["screen"]["mcu_version"] != "SV.04.00.01.00":
-                raise ValueError("Factory bootstrap requires the supported stock MCU")
-        elif args.mode == "install":
-            validate_backup(args.boot_backup, recovery.get("session"), args.reuse_boot_backup)
-            if not recovery.get("ota_activation") or (not args.reuse_boot_backup and recovery.get("boot_exported") != 0x14000):
-                raise ValueError("MCU installation service/boot export unavailable")
+        factory = not recovery.get("available")
+        if args.mode == "factory-bootstrap" and not factory:
+            raise ValueError("MCU already has community maintenance; use --mode install")
+        if factory and args.mode == "stage":
+            raise ValueError("Stock MCU auto-installs; use --mode install for direct installation")
+        if not factory and args.mode == "install" and not recovery.get("ota_activation"):
+            raise ValueError("MCU installation service unavailable")
+        if args.boot_backup:
+            backup_sha = validate_backup(args.boot_backup, recovery.get("session"), args.reuse_boot_backup)
             record("boot_backup", {"directory": str(args.boot_backup.resolve()),
                                    "reused": args.reuse_boot_backup,
-                                   "sha256": SUPPORTED_BOOT_SHA256,
+                                   "sha256": backup_sha,
                                    "mcu_session": recovery.get("session")})
+        record("installation_path", {"transport": "factory-uart" if factory else "community-maintenance",
+                                     "mcu_version": status.get("screen", {}).get("mcu_version"),
+                                     "boot_backup_required": False})
         headers = dict(device.headers, **{"Content-Type": "application/octet-stream",
                                         "X-IotCloud-Target": "BRY88BBA15G-screen"})
         def upload_chunks():
@@ -110,8 +107,8 @@ def main():
         record("upload", result)
         if result.get("code") != "ok" or result.get("data", {}).get("sha256") != sha:
             raise ValueError("ESP image readback/digest verification failed")
-        params = {"mode": "factory-bootstrap" if args.mode == "factory-bootstrap" else "stage"}
-        if args.mode == "factory-bootstrap": params["sha256"] = sha
+        params = {"mode": "factory-bootstrap" if factory else "stage"}
+        if factory: params["sha256"] = sha
         record("start", device.command("screen.update.start", params))
         deadline, last = time.monotonic() + 600, None
         while time.monotonic() < deadline:
@@ -127,7 +124,7 @@ def main():
             if progress != last:
                 record("progress", {"ota": ota, "recovery": recovery})
                 last = progress
-            if args.mode == "factory-bootstrap":
+            if factory:
                 if recovery.get("available") and recovery.get("image_md5") == md5:
                     record("verified_running", {"image_md5": md5, "session": recovery["session"]})
                     return
