@@ -62,11 +62,11 @@ def main():
 
     def layout():
         wire = bytearray()
-        for at in range(0, 3120, 512):
+        for at in range(0, 9520, 512):
             part = command("screen.layout.get", {"offset": at, "limit": 512})
-            assert part["total"] == 3120 and part["offset"] == at
+            assert part["total"] == 9520 and part["offset"] == at
             wire += base64.b64decode(part["bytes"], validate=True)
-        assert len(wire) == 3120 and wire[:4] == b"SCN2"
+        assert len(wire) == 9520 and wire[:4] == b"SCN3"
         assert zlib.crc32(wire) == part["crc"]
         return wire
 
@@ -80,7 +80,7 @@ def main():
     assert not before["screen"]["extension_supported"], "This acceptance scenario expects stock MCU"
     mcu_version = before["screen"]["mcu_version"]
     wire = layout()
-    command("screen.layout.get", {"offset": 3120, "limit": 512}, "invalid_params")
+    command("screen.layout.get", {"offset": 9520, "limit": 512}, "invalid_params")
     command("screen.reminders.get", {"offset": 8})
     command("screen.reminders.get", {"offset": 32}, "invalid_params")
     command("screen.weather.get")
@@ -155,7 +155,7 @@ def main():
     assert s["mcu_layout_revision"] == 0 and s["storage"] == "owned"
     events.append({"checkpoint": "after_reboot_and_cleanup", "status": after})
     save()
-    print("PASS live ESP: paginated SCN2, durable layout/rules, API notices, checked artifact upload, MCU gate, reboot and stock-MCU sensors")
+    print("PASS live ESP: paginated SCN3, durable layout/rules, API notices, checked artifact upload, MCU gate, reboot and stock-MCU sensors")
 
 
 if __name__ == "__main__":

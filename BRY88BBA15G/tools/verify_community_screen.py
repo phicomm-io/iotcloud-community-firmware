@@ -63,15 +63,15 @@ def main():
         wire = bytearray()
         part = command("screen.layout.get", {"offset": 0, "limit": 512})
         total, revision, crc = part["total"], part["revision"], part["crc"]
-        assert total in (3120, 9520)
+        assert total == 9520
         for offset in range(0, total, 512):
             if offset:
                 part = command("screen.layout.get", {"offset": offset, "limit": 512})
             assert part["offset"] == offset and part["total"] == total
             assert part["revision"] == revision and part["crc"] == crc
             wire.extend(base64.b64decode(part["bytes"], validate=True))
-        assert len(wire) == total and wire[:4] == (b"SCN3" if total == 9520 else b"SCN2")
-        stride = 288 if total == 9520 else 88
+        assert len(wire) == total and wire[:4] == b"SCN3"
+        stride = 288
         assert zlib.crc32(wire) == part["crc"]
         (args.evidence / "live-scene.bin").write_bytes(wire)
         weather = command("screen.weather.get")
