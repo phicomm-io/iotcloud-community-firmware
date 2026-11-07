@@ -1,4 +1,6 @@
-# DAIKIN 功能、安装与恢复
+# 大金空气质量检测（1/2代）
+
+G1 没有甲醛扩展孔，G2 相比 G1 增加甲醛扩展孔；G3 增加屏幕，使用独立固件，见[三代指南](daikin-g3-guide)。默认设备名为 `DAIKIN G1/G2`，自定义名称保留。下述板型限制仍适用。
 
 ESP32 / 4 MB Flash 版本使用同一份通用固件，自动识别 PM2005 / PM2105 和可选甲醛模块。网页与 M1 共用读数卡片、舒适度条和联动设备列表，支持本地访问、IoTCloud 与 Home Assistant。
 
@@ -42,7 +44,7 @@ Wi-Fi 灯用于系统状态提示：未配网三长三短；Wi-Fi 断开快闪�
 
 ## IoTCloud、Home Assistant 与 A1
 
-按[接入 IoTCloud](iotcloud-connect)填写同一节点的 MQTT 账号；设备以 **DAIKIN BRY88AX151K** 自动发现，平台提供与本地一致的读数卡片。Home Assistant 自动发现只发布实际具备的传感器。
+按[接入 IoTCloud](iotcloud-connect)填写同一节点的 MQTT 账号；设备以 **DAIKIN G1/G2** 自动发现，平台提供与本地一致的读数卡片。Home Assistant 自动发现只发布实际具备的传感器。
 
 在新版 A1 设置中添加本设备 MAC 和可选 IP。同账号 MQTT 自动建立读取授权，A1 优先通过局域网读取，网络读取不可用时使用 MQTT 数据。本设备的“联动的净化器”区域显示实际已读取的 A1；只有授权而没有读取时不会显示已连接。
 

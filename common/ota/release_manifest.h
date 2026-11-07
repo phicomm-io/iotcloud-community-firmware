@@ -18,7 +18,7 @@ static bool ph_release_hex(const char *text,size_t length)
 {if(strlen(text)!=length)return false;for(size_t i=0;i<length;i++)if(!isxdigit((unsigned char)text[i]))return false;return true;}
 static bool ph_release_manifest_parse(const void *data,size_t length,const char *model,const char *variant,ph_release_manifest *out)
 {
- ph_value root,v;int64_t n;char text[80],manifest_model[8],manifest_variant[48];
+ ph_value root,v;int64_t n;char text[80],manifest_model[16],manifest_variant[48];
  memset(out,0,sizeof(*out));
  if(!phv_parse(PH_WIRE_MSGPACK,data,length,&root)||root.kind!=PHV_MAP||
     !phv_keys(&root,"|schema||tag||version||commit||model||firmware_variant||path||size||sha256||release_log|")||

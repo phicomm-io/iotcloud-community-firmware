@@ -26,11 +26,11 @@ def downloads(directory, tag, stem, legacy=False):
     return files
 
 
-def verify_daikin_assets(directory, files, tag, commit, variant, keyring_path):
+def verify_daikin_assets(directory, files, tag, commit, variant, keyring_path, model="daikin"):
     from verify import verify
     signed = (directory / Path(files['signed']['path']).name).read_bytes()
     # Authenticate the envelope before reading the signed fixed-offset label.
-    verify(signed, 'daikin', tag, commit, variant, keyring_path)
+    verify(signed, model, tag, commit, variant, keyring_path)
     raw = (directory / Path(files['raw']['path']).name).read_bytes()
     if signed[192:] != raw:
         raise ValueError('DAIKIN raw image differs from authenticated signed payload')
@@ -53,14 +53,18 @@ def make(tag, commit, directory, notes, legacy=False, require_variants=False, ke
         raise ValueError('DAIKIN assets must use the daikin_BRY88AX151K prefix')
     include_slim = require_variants or any(directory.glob('*-no-frontend-resources.*'))
     for model, stem in STEMS.items():
+        if not variants_for(model, tag):
+            continue
+        if model == 'bry88bba15g' and not require_variants and not any(directory.glob(stem + '.*')):
+            continue
         if model == 'daikin':
             if legacy and not any(directory.glob(stem + '.*')):
                 stem = 'phicomm_daikin'
             if not require_variants and not any(directory.glob(stem + '.*')):
                 continue
         files = downloads(directory, tag, stem, legacy)
-        if model == 'daikin' and not tag.startswith('v0.'):
-            verify_daikin_assets(directory, files, tag, commit, 'full', keyring_path)
+        if model in ('daikin','bry88bba15g') and not tag.startswith('v0.'):
+            verify_daikin_assets(directory, files, tag, commit, 'full', keyring_path, model)
         item = {**files.get('signed', files['raw']), 'downloads': files, 'release_log': release['notes']}
         if not tag.startswith('v0.') or (model != 'daikin' and include_slim):
             item['firmware_variant'] = 'full'
@@ -82,11 +86,14 @@ def make(tag, commit, directory, notes, legacy=False, require_variants=False, ke
             if not required and not any(directory.glob(variant_stem + '.*')):
                 continue
             files = downloads(directory, tag, variant_stem, legacy)
-            if model == 'daikin' and not tag.startswith('v0.'):
-                verify_daikin_assets(directory, files, tag, commit, variant, keyring_path)
+            if model in ('daikin','bry88bba15g') and not tag.startswith('v0.'):
+                verify_daikin_assets(directory, files, tag, commit, variant, keyring_path, model)
             item.setdefault('variants', {})[variant] = {
                 **files.get('signed', files['raw']), 'firmware_variant': variant,
                 'downloads': files, 'release_log': release['notes']}
+    if (directory/'screen-update.json').exists():
+        from screen_assets import validate
+        release['screen']=validate(json.loads((directory/'screen-update.json').read_text()),directory,tag)
     (directory / 'notes.md').write_text(notes)
     (directory / 'index.html').write_text('<!doctype html><meta charset="utf-8"><title>' + tag +
                                          '</title><h1>' + tag + '</h1><pre>' + html.escape(notes) + '</pre>')

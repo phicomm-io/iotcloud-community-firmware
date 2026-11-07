@@ -1,3 +1,4 @@
+#include "product_name.h"
 static void publish(const String &topic,const String &text,bool retain=true){
   if(!topic||!topic.length()||!text)return;
 #ifdef IOTCLOUD_HUB
@@ -61,7 +62,7 @@ static void discovery(){
     doc["state_topic"]=mqttRoot+"/ha/state";doc["availability_topic"]=mqttRoot+"/availability";
     doc["value_template"]=String("{{ value_json.sensors.")+keys[i]+".value if value_json.sensors."+keys[i]+".valid else 'None' }}";
     doc["unit_of_measurement"]=units[i];if(*classes[i])doc["device_class"]=classes[i];doc["state_class"]="measurement";doc["expire_after"]=30;
-    JsonObject dev=doc.createNestedObject("device");dev["identifiers"]=encoded+"_daikin_"+deviceId;dev["name"]=config["device"]["name"]|"DAIKIN";dev["model"]="BRY88AX151K";dev["manufacturer"]="Daikin";dev["sw_version"]=version;
+    JsonObject dev=doc.createNestedObject("device");dev["identifiers"]=encoded+"_daikin_"+deviceId;dev["name"]=daikin::productName(config["device"]["name"].as<const char *>());dev["model"]=hardwareModel;dev["manufacturer"]="Daikin";dev["sw_version"]=version;
     String text;serializeJson(doc,text);publish(haRoot+keys[i]+"/config",text);
   }
 }

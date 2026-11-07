@@ -68,11 +68,11 @@
         .sort((a, b) => Notes.compareVersions(b.version, a.version)).slice(0, 1);
       if (!releases.length) throw {code: 'CANDIDATE_UNAVAILABLE', reason: 'No release candidate is available in this archive.'};
       for (const [model, label] of [['m1', t('M1 空气检测仪', 'M1 air quality monitor')], ['a1', t('A1 空气净化器', 'A1 air purifier')],
-        ['tc1', t('TC1 智能排插', 'TC1 power strip')], ['daikin', t('DAIKIN 大金检测仪', 'DAIKIN air quality monitor')]]) {
+        ['tc1', t('TC1 智能排插', 'TC1 power strip')], ['daikin', t('大金空气质量检测（1/2代）', 'Daikin air quality monitor (G1/G2)')], ['bry88bba15g', t('大金空气质量检测（3代）', 'Daikin air quality monitor (G3)')]]) {
         const group = element('article', null, 'notes-change'); group.id = 'notes-candidate-' + model;
         group.append(element('h3', label));
-        const guide = element('a', t('功能与使用指南', 'Operation guide')); guide.href = '/guides/' + (english ? 'en/' : '') + model + '-guide.html';
-        const demo = element('a', t('界面演示', 'Interface demo')); demo.href = '/demos/' + model + '/';
+        const guide = element('a', t('功能与使用指南', 'Operation guide')); guide.href = '/guides/' + (english ? 'en/' : '') + (model==='bry88bba15g'?'daikin-g3':model) + '-guide.html';
+        const demo = element('a', t('界面演示', 'Interface demo')); demo.href = '/demos/' + (model==='bry88bba15g'?'daikin-g3':model) + '/';
         const actions = element('p', null, 'notes-actions'); actions.append(guide, demo); group.append(actions);
         let available = false;
         for (const release of releases) {

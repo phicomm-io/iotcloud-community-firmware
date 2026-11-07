@@ -187,6 +187,9 @@ static esp_err_t uploadFirmware(httpd_req_t *req,bool signedImage,const daikin::
   static_assert(sizeof(esp_image_header_t)+sizeof(esp_image_segment_header_t)==daikin::firmwareDescriptorOffset,"Unexpected ESP image header layout");
   static_assert(sizeof(esp_app_desc_t)==256,"Unexpected ESP app descriptor layout");
   if(!partition||req->content_len<(int)prefix+envelope||req->content_len-envelope>(int)partition->size)return jsonResponse(req,"400 Bad Request","{\"code\":\"invalid_image\",\"message\":\"Invalid image size\"}");
+#ifdef IOTCLOUD_BRY88_SCREEN
+  if(g3OnlineBusy||otaActive||screenUploadBusy||screenImage.active||!screenModulePowerBegin())return jsonResponse(req,"503 Service Unavailable","{\"code\":\"busy\"}");
+#endif
   otaActive=true;uint8_t buffer[1024];int left=req->content_len-envelope;
   static_assert(sizeof(buffer)>=OTA_ENVELOPE_SIZE+daikin::firmwarePrefixSize,"OTA prefix buffer too small");
   OtaFlash flash={partition,0,0};signed_ota verifier;
@@ -198,11 +201,15 @@ static esp_err_t uploadFirmware(httpd_req_t *req,bool signedImage,const daikin::
   if(ok)ok=daikin::matchingFirmwarePrefix(buffer+envelope,prefix,expected,self->project_name);
   if(ok&&signedImage){
     signed_ota_io io={otaErase,otaWrite,otaRead,&flash};
-    ok=signed_ota_begin(&verifier,req->content_len,partition->size,4,1,io)&&signed_ota_write(&verifier,buffer,envelope);
+    ok=signed_ota_begin(&verifier,req->content_len,partition->size,otaModel,1,io)&&signed_ota_write(&verifier,buffer,envelope);
   }
   if(ok&&!signedImage)ok=otaErase(&flash);
   if(ok){ok=signedImage?signed_ota_write(&verifier,buffer+envelope,prefix):otaWrite(&flash,0,buffer,prefix);left-=prefix;}
-  while(ok&&left>0){int n=httpd_req_recv(req,(char*)buffer,min(left,512));if(n<=0){ok=false;break;}ok=signedImage?signed_ota_write(&verifier,buffer,n):otaWrite(&flash,0,buffer,n);left-=n;}
+  while(ok&&left>0){
+#ifdef IOTCLOUD_BRY88_SCREEN
+    if(!screenModulePowerHealthy()){ok=false;break;}
+#endif
+    int n=httpd_req_recv(req,(char*)buffer,min(left,512));if(n<=0){ok=false;break;}ok=signedImage?signed_ota_write(&verifier,buffer,n):otaWrite(&flash,0,buffer,n);left-=n;}
   if(ok&&signedImage)ok=signed_ota_finish(&verifier);
   // Verify the actual staged identity again after signature/digest validation.
   if(ok)ok=otaRead(&flash,0,buffer,prefix)&&daikin::matchingFirmwarePrefix(buffer,prefix,expected,self->project_name);
@@ -210,6 +217,9 @@ static esp_err_t uploadFirmware(httpd_req_t *req,bool signedImage,const daikin::
   if(flash.handle)esp_ota_abort(flash.handle);
   if(ok)ok=esp_ota_set_boot_partition(partition)==ESP_OK;
   otaActive=false;
+#ifdef IOTCLOUD_BRY88_SCREEN
+  if(!ok)screenModulePowerEnd(); // On success keep SET low until the restart.
+#endif
   if(!ok)return jsonResponse(req,"400 Bad Request","{\"code\":\"invalid_image\",\"message\":\"Signature, target, digest or flash validation failed\"}");
   prefs.putBool("ota_signed",signedImage);
   rebootAt=millis()+1500;
@@ -220,7 +230,7 @@ static esp_err_t uploadHandler(httpd_req_t *req){
   // Confirmation headers never change either ordinary upload route's target.
   return uploadFirmware(req,strcmp(req->uri,"/api/v1/ota/upload-unsigned")!=0,daikin_target);
 }
-#ifndef IOTCLOUD_HUB
+#if !defined(IOTCLOUD_HUB) && !defined(IOTCLOUD_BRY88_SCREEN)
 static esp_err_t convertHandler(httpd_req_t *req){
   if(!authorized(req))return ESP_OK;
   if(configRecovery)return jsonResponse(req,"409 Conflict","{\"code\":\"migration_required\"}");
@@ -236,6 +246,7 @@ static esp_err_t convertHandler(httpd_req_t *req){
 #endif
 static esp_err_t infoHandler(httpd_req_t *req){
   DynamicJsonDocument reply(1536);reply["code"]="ok";JsonObject data=reply.createNestedObject("data");
+  data["hardware_model"]=hardwareModel;
   data["api_version"]=1;data["model"]="daikin";data["firmware_variant"]=DAIKIN_VARIANT;
   data["version"]=version;data["device_id"]=deviceId;data["mac"]=deviceId;
   data["api_version"]=1;data["model"]="daikin";data["variant"]=DAIKIN_VARIANT;data["device_id"]=deviceId;data["fw"]=version;data["firmware_version"]=version;

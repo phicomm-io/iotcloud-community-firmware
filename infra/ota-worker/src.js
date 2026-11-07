@@ -6,12 +6,18 @@ export default {
     const path = new URL(request.url).pathname;
     try {
       let body, type = 'application/json; charset=utf-8', ttl = 60;
-      const current = path.match(/^\/ota\/v1\/(tc1|m1|a1|daikin)\/(full|no-frontend-resources|fresh-air|fresh-air-no-frontend-resources|hub)\/latest\.(json|msgpack)$/);
+      const candidate = path.startsWith('/ota/candidate/');
+      const candidateMatch = path.match(/^\/ota\/candidate\/(tc1|m1|a1|daikin|bry88bba15g)\/(full|no-frontend-resources|fresh-air|fresh-air-no-frontend-resources|hub)\/latest\.(json|msgpack)$/);
+      const current = candidateMatch || path.match(/^\/ota\/v1\/(tc1|m1|a1|daikin|bry88bba15g)\/(full|no-frontend-resources|fresh-air|fresh-air-no-frontend-resources|hub)\/latest\.(json|msgpack)$/);
       const latest = current || path.match(/^\/ota\/(tc1|m1|a1|daikin)(\/(?:no-frontend-resources|fresh-air|fresh-air-no-frontend-resources))?\/latest\.json$/);
       if (latest) {
-        const stable = await env.RELEASES.get('stable.json');
+        const stable = await env.RELEASES.get(candidate ? 'releases/candidates.json' : 'stable.json');
         if (!stable) return new Response('No stable release', {status:404,headers});
         let release = await stable.json();
+        if(candidate){
+          release=release.releases?.find(r=>r.channel==='candidate'&&r.prerelease===true&&r.models?.[current[1]]);
+          if(!release)return new Response('No matching candidate', {status:404,headers});
+        }
         const newer = release.version.split('.').map(Number);
         if (current && newer[0] < 1) return new Response('No v1 release', {status:404,headers});
         if (!current && (newer[0] > 1 || newer[0] === 1 && (newer[1] > 0 || newer[2] > 0))) {
@@ -22,6 +28,7 @@ export default {
         }
         const original = release.models[latest[1]];
         const variant = current ? current[2] : latest[2] ? latest[2].slice(1) : 'full';
+        if (latest[1] === 'bry88bba15g' && variant !== 'full') return new Response('Not found', {status:404,headers});
         if (variant === 'hub' && latest[1] !== 'daikin') return new Response('Not found', {status:404,headers});
         if (variant.startsWith('fresh-air') && latest[1] !== 'a1') return new Response('Not found', {status:404});
         if (latest[1] === 'daikin' && !['full','hub'].includes(variant)) return new Response('Not found', {status:404,headers});
@@ -30,7 +37,7 @@ export default {
         if (current && current[3] === 'msgpack') {
           const asset = release.device_manifests?.[`${latest[1]}/${variant}`]?.msgpack;
           if (!asset || !asset.path.startsWith(`/releases/${release.tag}/`) ||
-              !/^\/releases\/v\d+\.\d+\.\d+\/[A-Za-z0-9_.-]+\.latest\.msgpack$/.test(asset.path))
+              !/^\/releases\/v\d+\.\d+\.\d+(?:-rc(?:\.\d+)?)?\/[A-Za-z0-9_.-]+\.latest\.msgpack$/.test(asset.path))
             return new Response('Binary manifest unavailable', {status:404,headers});
           const object = await env.RELEASES.get(asset.path.slice(1));
           if (!object || object.size !== asset.size)
@@ -46,13 +53,13 @@ export default {
         const key = path.slice(1);
         const notesIndex = key === 'releases/notes/index.json';
         const notesManifest = /^releases\/notes\/manifest\.[a-f0-9]{64}\.json$/.test(key);
-        if (key !== 'releases/index.json' && !notesIndex && !notesManifest && !/^releases\/v\d+\.\d+\.\d+\/[A-Za-z0-9_.-]+$/.test(key))
+        if (key !== 'releases/index.json' && key !== 'releases/candidates.json' && !notesIndex && !notesManifest && !/^releases\/v\d+\.\d+\.\d+(?:-rc(?:\.\d+)?)?\/[A-Za-z0-9_.-]+$/.test(key))
           return new Response('Not found', {status:404,headers});
         const object = await env.RELEASES.get(key);
         if (!object) return new Response('Not found', {status:404,headers});
         object.writeHttpMetadata(new Headers());
         type = key.endsWith('.msgpack') ? 'application/msgpack' : key.endsWith('.json') ? type : key.endsWith('.md') ? 'text/plain; charset=utf-8' : key.endsWith('.html') ? 'text/html; charset=utf-8' : 'application/octet-stream';
-        ttl = key === 'releases/index.json' || notesIndex ? 60 : 31536000;
+        ttl = key === 'releases/index.json' || key === 'releases/candidates.json' || notesIndex ? 60 : 31536000;
         headers['Content-Length'] = String(object.size);
         headers.ETag = object.httpEtag;
         headers['Content-Type'] = type;

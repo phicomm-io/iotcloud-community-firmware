@@ -62,10 +62,11 @@ int main(int argc,char **argv) {
     def test_publisher_golden_and_owned_output(self):
         result = self.check((HERE/'release_manifest_mp/publisher.msgpack').read_bytes(),True)
         self.assertEqual(result,self.golden['version']+'\n'+self.golden['path']+'\n'+self.golden['release_log']+'\n378120\n')
-        for model in ['A1','M1','TC1']:
+        for model in ['A1','M1','TC1','bry88bba15g']:
             for variant in ['full','core','sensor-bme280']:
                 doc = dict(self.golden,model=model,firmware_variant=variant)
                 self.check(pack(doc),True,model,variant)
+        self.check(pack(dict(self.golden,model='daikin')),False,'bry88bba15g');self.check(pack(dict(self.golden,model='bry88bba15g')),False,'daikin');
         self.check(pack(self.golden),False,'M1');self.check(pack(self.golden),False,variant='core')
     def test_required_fields_types_and_limits(self):
         for key in self.golden:

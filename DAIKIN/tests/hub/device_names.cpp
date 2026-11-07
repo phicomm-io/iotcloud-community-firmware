@@ -1,5 +1,15 @@
 // Compile the production command dispatcher; only SDK and durable-save edges
 // are adapters. The existing auth-storage suite exercises that save edge.
+#include <cstdlib>
+#include <stdlib.h>
+static size_t jsonAllocationCount=0,jsonFailAt=0;
+static void *commandJsonAllocate(size_t n){return ++jsonAllocationCount==jsonFailAt?nullptr:std::malloc(n);}
+static void *commandJsonReallocate(void *p,size_t n){return std::realloc(p,n);}
+#define malloc commandJsonAllocate
+#define realloc commandJsonReallocate
+#include <ArduinoJson.h>
+#undef malloc
+#undef realloc
 #define WiFi statusWiFi
 #define main status_cache_main
 #include "status_cache.cpp"
@@ -90,5 +100,17 @@ int main(){
   DynamicJsonDocument caps(2048);capabilities(caps.to<JsonObject>());bool offered=false;
   for(JsonVariantConst action:caps["actions"].as<JsonArrayConst>())if(action=="name.set")offered=true;
   assert(offered&&caps["name_max_bytes"]==63);
+  // Exhaust either real ArduinoJson pool: the public binary/JSON envelopes
+  // must remain decodable and the mutation must never reach durable storage.
+  DynamicJsonDocument lowMemoryRequest(512);lowMemoryRequest["request_id"]="low_memory";
+  lowMemoryRequest["action"]="name.set";lowMemoryRequest["params"]["name"]="must not save";
+  for(bool binary:{true,false})for(unsigned fail=1;fail<=2;fail++){
+    String body;if(binary)serializeWireMP(lowMemoryRequest,body);else serializeJson(lowMemoryRequest,body);
+    const auto beforeSaves=saves;jsonFailAt=jsonAllocationCount+fail;
+    const String response=execute(body,binary);jsonFailAt=0;
+    DynamicJsonDocument denied(256);
+    assert(!(binary?deserializeMsgPack(denied,response.c_str(),response.length()):deserializeJson(denied,response.c_str(),response.length())));
+    assert(denied["code"]=="busy"&&denied.size()==1&&saves==beforeSaves);
+  }
   puts("Production DAIKIN name.set MP: UTF-8/byte bounds, exact persistence, storage rollback, receipt reuse and capability passed");
 }

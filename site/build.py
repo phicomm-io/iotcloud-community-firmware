@@ -336,6 +336,16 @@ def main():
 
     for name in ['style.css', 'theme.js', 'site.js', 'releases.js']:
         shutil.copyfile(HERE / name, out / name)
+    # The standalone converter shares the exact APP1/RGB565 codec with device UI.
+    import hashlib, json
+    converter = ROOT / 'tools' / 'screen_wallpaper'
+    codec_lock = json.loads((converter / 'codec.lock.json').read_text())
+    if hashlib.sha256((converter / 'codec.js').read_bytes()).hexdigest() != codec_lock['sha256']:
+        raise SystemExit('Wallpaper converter codec lock mismatch')
+    target = out / 'tools' / 'screen-wallpaper'
+    target.mkdir(parents=True, exist_ok=True)
+    for name in ('index.html', 'app.js', 'codec.js'):
+        shutil.copyfile(converter / name, target / name)
     (out / '.nojekyll').touch()
 
     for language, source_name, destination, guide_base in (
@@ -398,6 +408,8 @@ def main():
         shutil.rmtree(out / 'demos')
     shutil.copytree(bundle / 'demos', out / 'demos')
     add_navigation(out)
+    from screen_preview import build as build_screen_preview
+    build_screen_preview(ROOT,out)
     if not (bundle / 'local/index.html').is_file():
         raise SystemExit('Pinned frontend release has no standalone local console')
     if (out / 'local').exists():

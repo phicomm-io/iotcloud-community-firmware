@@ -1,3 +1,4 @@
+#include "product_name.h"
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <cassert>
@@ -27,7 +28,7 @@ static bool customLightSettings = false;
 static daikin::LightSettings lightSettings = daikin::defaultLightSettings();
 static bool sensorPresent(unsigned i) { return i == HCHO ? hchoPresent : i != PM10 || readings[PM10].received; }
 static daikin::CM1106 co2Module;
-static const char *pmModel = "PM2105", *version = "1.0.0-native-test";
+static const char *hardwareModel = "BRY88AB151K", *pmModel = "PM2105", *version = "1.0.0-native-test";
 static constexpr const char *DAIKIN_VARIANT = "hub";
 static String deviceId("aabbccddeeff"), apName("DAIKIN-Test"), mqttRoot, sensorRoot;
 static DynamicJsonDocument config(16384);

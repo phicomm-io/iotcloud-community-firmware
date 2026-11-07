@@ -178,7 +178,7 @@ class DeviceManifestTests(unittest.TestCase):
         with patch.object(publish.urllib.request, 'build_opener') as factory:
             factory.return_value.open.side_effect = response
             publish.smoke(stable)
-            self.assertEqual(sum('/latest.msgpack?' in url for url in visited), 20)
+            self.assertEqual(sum('/latest.msgpack?' in url for url in visited), 22)
             factory.return_value.open.side_effect = lambda request, **kwargs: io.BytesIO(b'bad') if '/latest.msgpack?' in request.full_url else response(request)
             with self.assertRaisesRegex(ValueError, 'Binary latest differs'):
                 publish.smoke(stable)

@@ -31,10 +31,13 @@ GROUPS = [
         ('tc1-automation', 'TC1 自动化、联动与远程显示', 'M1 显示 power 字段与开发版功率规则', 'TC1-自动化与远程显示'),
         ('tc1-features', 'TC1 特色功能', '六路命名、总功率计量、自定义按键与童锁', 'TC1-特色功能'),
     ]),
-    ('daikin', 'DAIKIN 大金检测仪', [
-        ('daikin-guide', 'DAIKIN 功能、安装与恢复', 'BRY88AX151K：通用 ESP32 固件、读数与 A1 联动', 'DAIKIN-功能与安装'),
+    ('daikin', '大金空气质量检测（1/2代）', [
+        ('daikin-guide', '大金空气质量检测（1/2代）', 'BRY88AX151K：通用 ESP32 固件、读数与 A1 联动', 'DAIKIN-功能与安装'),
         ('daikin-stock-ota', 'DAIKIN 原厂 OTA 安装', 'BRY88AB151K：按键触发、配套发送器与实机迁移', 'DAIKIN-原厂OTA'),
         ('daikin-automation', 'DAIKIN 自动化、联动与远程显示', 'A1 传感器来源、M1 字段选择与中枢职责', 'DAIKIN-自动化与远程显示'),
+    ]),
+    ('daikin-g3', '大金空气质量检测（3代）', [
+        ('daikin-g3-guide', '大金空气质量检测（3代）', 'BRY88BBA15G：屏幕编排、ESP32 与屏幕 MCU 更新', 'DAIKIN-G3-功能与安装'),
     ]),
     ('common', '通用设置与排查', [
         ('quick-start', '快速开始', '设备、配网与访问方式', '快速开始'),
@@ -59,7 +62,7 @@ GROUPS = [
     ]),
 ]
 
-GROUPS.sort(key=lambda group: ['m1', 'a1', 'tc1', 's30', 'daikin', 'common', 'dev'].index(group[0]))
+GROUPS.sort(key=lambda group: ['m1', 'a1', 'tc1', 's30', 'daikin', 'daikin-g3', 'common', 'dev'].index(group[0]))
 
 # Product documentation uses the same sections on the home page and sidebar.
 # Each entry is (slug, Chinese anchor, English anchor, Chinese label, English label).
@@ -126,6 +129,7 @@ SITE_URL = 'https://phicomm-io.github.io/'
 
 # English guides share the same slugs, ordering and asset collection.
 EN_TITLES = {
+ 'daikin-g3-guide': ('Daikin air quality monitor (3rd generation)', 'BRY88BBA15G: layouts, resources, ESP32 and screen MCU updates'),
  'device-api': ('Device interfaces and protocols', 'RC5 / 0.9.27, HTTP, MQTT, UDP and code examples'),
  'm1-mcu-update': ('Update the M1 controller over the network', 'Minimum Wi-Fi version, Python flashing and runtime verification'),
  'm1-mcu-firmware': ('M1 open-source controller firmware', 'Added capabilities, controller releases and stock backup'),
@@ -143,7 +147,7 @@ EN_TITLES = {
  'tc1-no-disassembly': ('OTA internals and custom images', 'Factory OTA, image packing and alternative network topologies'),
  'tc1-no-disassembly-ethernet-wifi-ap': ('Illustrated OTA installation', 'Ethernet, Wi-Fi and an AP: downloads and OS-specific instructions'),
  'm1-guide': ('M1 operation', 'Readings, brightness, icons and recovery'),
- 'daikin-guide': ('DAIKIN operation and installation', 'BRY88AX151K: universal ESP32 firmware, readings and A1 automation'),
+ 'daikin-guide': ('Daikin air quality monitor (1st/2nd generation)', 'BRY88AX151K: universal ESP32 firmware, readings and A1 automation'),
  'a1-guide': ('A1 operation', 'Fan, ring, night mode and automation'),
  's30-flash': ('S30-V1B network and serial installation', 'Stock network OTA, UART test points, backups and application images'),
  's30-guide': ('S30-V1B common functions', 'Wi-Fi setup, daily use, updates and recovery'),
@@ -162,7 +166,7 @@ EN_TITLES = {
  'release-log': ('Release Log', 'Release history and upgrade comparisons'),
 }
 EN_GROUP_NAMES = {'m1': 'M1 air quality monitor', 'a1': 'A1 air purifier',
-                  'tc1': 'TC1 power strip', 'daikin': 'DAIKIN air quality monitor',
+                  'tc1': 'TC1 power strip', 'daikin': 'Daikin air quality monitor (1st/2nd generation)', 'daikin-g3': 'Daikin air quality monitor (3rd generation)',
                   's30': 'S30-V1B metering socket', 'common': 'Shared setup and troubleshooting', 'dev': 'Development and maintenance'}
 EN_GROUPS = [(gid, EN_GROUP_NAMES[gid], [
     (slug, *EN_TITLES[slug], 'EN-' + slug) for slug, _, _, _ in items

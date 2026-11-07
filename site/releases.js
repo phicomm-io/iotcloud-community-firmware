@@ -30,7 +30,7 @@ function reviewedNotes(release, manifest) {
   }
   return note;
 }
-const modelNames = {m1: 'M1', a1: 'A1', tc1: 'TC1', daikin: 'DAIKIN', s30: 'S30-V1B'};
+const modelNames = {m1: 'M1', a1: 'A1', tc1: 'TC1', daikin: t('大金空气质量检测（1/2代）', 'Daikin air quality monitor (1st/2nd generation)'), bry88bba15g: t('大金空气质量检测（3代）', 'Daikin air quality monitor (3rd generation)'), s30: 'S30-V1B'};
 const variantDescriptions = {
  full: t('完整本地网页，适合常规使用。', 'Complete local web interface for normal use.'),
  'no-frontend-resources': t('仅保留配网页，节省设备存储；日常管理使用平台。', 'Keeps the Wi-Fi setup page and saves flash; use the platform for daily management.'),
@@ -69,11 +69,21 @@ function deviceDownload(model, release, variants, snapshot, native = false) {
   }
   dialog.append(section);
  }
- const slug=model==='s30'?'s30-flash':model==='daikin'?'daikin-guide':model+'-flash';
+ if(model==='bry88bba15g')dialog.append(screenAssets(release,snapshot));
+ const slug=model==='s30'?'s30-flash':model==='daikin'?'daikin-guide':model==='bry88bba15g'?'daikin-g3-guide':model+'-flash';
  const guide=el('a',t('刷机说明', 'Installation guide'));guide.href=new URL('guides/'+(english?'en/':'')+slug+'.html',siteBase);dialog.append(guide);
  if(native&&variants[0][1].checksums)dialog.append(link(t('SHA256 校验文件', 'SHA256 checksums'),variants[0][1].checksums,''));
  button.addEventListener('click',()=>{if(typeof dialog.showModal==='function')dialog.showModal();else dialog.setAttribute('open','');});
  dialog.addEventListener('close',()=>button.focus());card.append(button,dialog);return card;
+}
+function screenAssets(release, snapshot) {
+ const links=el('div');links.className='card-links';
+ for(const [kind,label] of [['firmware',t('屏幕 MCU','Screen MCU')],['bootstrap',t('首次安装恢复镜像','First-install recovery image')],['font',t('32 px 中文字库','32 px Chinese font')],['migration',t('免拆迁移工具与教程','Wireless migration tools and guide')]]){
+  const asset=release.screen?.[kind],prefix='/releases/'+release.tag+'/';
+  if(!asset||typeof asset.path!=='string'||!asset.path.startsWith(prefix)||!/^[A-Za-z0-9_.-]+$/.test(asset.path.slice(prefix.length))||!Number.isSafeInteger(asset.size)||asset.size<=0||!/^[a-f0-9]{64}$/.test(asset.sha256))continue;
+  links.append(link(label,asset.path,snapshot.source));
+ }
+ return links;
 }
 function releaseCard(release, latest, snapshot, candidate = false) {
  const box=el(latest||candidate?'article':'details');box.className='release';
@@ -121,6 +131,8 @@ async function loadCandidateCatalog() {
       .sort((a, b) => ReleaseNotes.compareVersions(b.version, a.version)).slice(0, 1);
     target.replaceChildren();
     for (const release of candidates) target.append(releaseCard(release, false, snapshot, true));
+    const g3=document.getElementById('g3-release-assets');
+    if(g3){g3.replaceChildren();const release=candidates.find(r=>r.models.bry88bba15g);if(release)g3.append(deviceDownload('bry88bba15g',release,[['full',release.models.bry88bba15g]],snapshot),screenAssets(release,snapshot));}
     message.textContent = candidates.length
       ? t('RC 用于 Beta 测试。', 'RC builds are for beta testing.')
       : t('目前没有可用候选版。', 'No release candidate is currently available.');

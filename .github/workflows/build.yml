@@ -271,7 +271,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: [full, hub]
+        variant: [full, hub, g3]
     env:
       PHICOMM_FIRMWARE_VARIANT: ${{ matrix.variant }}
     runs-on: >-
@@ -312,8 +312,14 @@ jobs:
           PHICOMM_FRONTEND_ARCHIVE: ${{ github.workspace }}/build/ci-frontend/frontend.tar.gz
         run: |
           DAIKIN/build.sh
-          python3 tools/release/check_esp_budget.py --variant "$PHICOMM_FIRMWARE_VARIANT" --layout stock \
-            --output "release/budget-daikin-$PHICOMM_FIRMWARE_VARIANT.json"
+          if [ "$PHICOMM_FIRMWARE_VARIANT" = g3 ]; then
+            python3 tools/release/check_esp_budget.py --variant full --layout wired \
+              --build-dir DAIKIN/.pio/build/bry88bba15g --partitions BRY88BBA15G/partitions.csv \
+              --output release/budget-daikin-g3.json
+          else
+            python3 tools/release/check_esp_budget.py --variant "$PHICOMM_FIRMWARE_VARIANT" --layout stock \
+              --output "release/budget-daikin-$PHICOMM_FIRMWARE_VARIANT.json"
+          fi
       - name: Preserve measured budgets on failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -419,10 +425,31 @@ jobs:
           # Browser API fixtures cover management UX; production UDP and HAP
           # business paths run separately above, not through a simulated broker.
           node tests/hub-lan-management.mjs
+      - uses: actions/checkout@v4
+        if: matrix.variant == 'g3'
+        with:
+          repository: phicomm-io/iotcloud-bry88bba15g-screenmcu
+          ref: 3467a5a4cb4ba6bb7c5d12ab6fd07534e2f2e7ca
+          path: build/screen-source
+      - uses: actions/checkout@v4
+        if: matrix.variant == 'g3'
+        with:
+          repository: DaveGamble/cJSON
+          ref: v1.7.19
+          path: build/cjson
+      - name: Test G3 bridge and stock MCU fallback
+        if: matrix.variant == 'g3'
+        run: |
+          cmake -S BRY88BBA15G -B build/g3-tests -DSCREEN_MCU_SOURCE="$PWD/build/screen-source" -DCJSON_DIR="$PWD/build/cjson" -DARDUINOJSON_DIR="$PWD/DAIKIN/.pio/libdeps/bry88bba15g/ArduinoJson/src"
+          cmake --build build/g3-tests -j4
+          ctest --test-dir build/g3-tests --output-on-failure
+          python3 -m unittest discover -s tools/daikin_g3_migrate -p 'test_*.py'
       - name: Collect ESP release assets
         run: |
           mkdir -p release
-          stem="$(python3 tools/release/products.py daikin "$PHICOMM_FIRMWARE_VARIANT")"
+          model=daikin; variant="$PHICOMM_FIRMWARE_VARIANT"
+          if [ "$variant" = g3 ]; then model=bry88bba15g; variant=full; fi
+          stem="$(python3 tools/release/products.py "$model" "$variant")"
           directory=build/daikin-release
           if [ "$PHICOMM_FIRMWARE_VARIANT" != full ]; then directory="build/daikin-$PHICOMM_FIRMWARE_VARIANT-release"; fi
           cp "$directory/$stem.all.bin" release/
@@ -563,8 +590,11 @@ jobs:
         run: |
           tag="v$(cat VERSION)"
           printf '%s\n' 'Release validation only; not published.' > release-dry-run.md
+          if [ "$tag" = "$(python3 -c 'import json;print(json.load(open("screen-release.lock.json"))["release"])')" ]; then
+            python3 tools/release/screen_assets.py "$tag" release
+          fi
           python3 tools/release/catalog.py "$tag" "$(git rev-parse HEAD)" release release-dry-run.md
-          (cd release && sha256sum *.bin *.rbl *.bin.raw *.bin.signed *.json *.msgpack notes.md index.html > SHA256SUMS && sha256sum -c SHA256SUMS)
+          (cd release && shopt -s nullglob && sha256sum *.bin *.rbl *.bin.raw *.bin.signed *.json *.msgpack *.iotfnt *.tar.gz notes.md index.html > SHA256SUMS && sha256sum -c SHA256SUMS)
       - uses: actions/upload-artifact@v4
         with:
           name: signed-release
@@ -615,9 +645,10 @@ jobs:
           TAG_NAME: ${{ github.ref_name }}
         run: |
           python3 tools/release/notes.py "$TAG_NAME" --output release-notes.md
+          python3 tools/release/screen_assets.py "$TAG_NAME" release
           python3 tools/release/catalog.py "$TAG_NAME" "$GITHUB_SHA" release release-notes.md
           (cd release && sha256sum -c SHA256SUMS)
-          (cd release && sha256sum *.bin *.rbl *.bin.raw *.bin.signed *.json *.msgpack notes.md index.html > SHA256SUMS && sha256sum -c SHA256SUMS)
+          (cd release && sha256sum *.bin *.rbl *.bin.raw *.bin.signed *.json *.msgpack *.iotfnt *.tar.gz notes.md index.html > SHA256SUMS && sha256sum -c SHA256SUMS)
       - name: Verify reviewed notes against staged signed firmware
         env:
           GH_TOKEN: ${{ github.token }}
@@ -661,6 +692,7 @@ jobs:
             gh release download "$TAG_NAME" --dir existing
             for file in release/*.bin* release/*.rbl release/SHA256SUMS; do cmp "$file" "existing/$(basename "$file")"; done
           fi
+          python3 tools/release/deploy_worker.py
           python3 tools/release/publish.py release
           gh release edit "$TAG_NAME" --draft=false --prerelease --latest=false
           python3 tools/release/publish.py release --candidate

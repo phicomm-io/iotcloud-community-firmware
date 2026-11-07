@@ -1,0 +1,17 @@
+{
+  "source": "Debian ca-certificates /etc/ssl/certs/ca-certificates.crt",
+  "source_sha256": "2e89522ad15c0874c0833ed8de5a93596acf34e6651eabbe41c5e823f11bc8e9",
+  "generator": "ESP-IDF v5.0.1 gen_crt_bundle.py",
+  "generator_sha256": "e8abcaf9bc077c3e4a18f7c350763eade39b926d90add6b27539ae12ad80eec7",
+  "bundle_sha256": "2592d18a6d6369d7ae1535d4e09ed5f2cf469661c4062891eb3c3207e58a5605",
+  "bytes": 55354,
+  "certificates": 120,
+  "openmeteo_pem": {
+    "source": "Debian ca-certificates /etc/ssl/certs/ca-certificates.crt",
+    "sha256": "0cd98d2dd7a71afe5e2e93673933f15254c5a41a9be4682f27ec582e72c52ce0",
+    "subjects": [
+      "CN=ISRG Root X1,O=Internet Security Research Group,C=US",
+      "CN=ISRG Root X2,O=Internet Security Research Group,C=US"
+    ]
+  }
+}

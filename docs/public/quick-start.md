@@ -57,3 +57,7 @@ WebUI 顶部可切换中文、英文及明暗主题。设置按**网络、设备
 - 远程集中管理设备：[接入 IoTCloud](iotcloud-connect)
 - 接入 Home Assistant 或配置 A1 环境数据联动：[MQTT 与联动](mqtt-link)
 - 遇到问题：[故障排查](faq)
+
+## 大金代际选择
+
+[1/2代（G1/G2）](daikin-guide)：G1 无甲醛扩展孔，G2 增加该孔。[3代（G3）](daikin-g3-guide)：增加屏幕，需分别选择联网与屏幕 MCU 固件。

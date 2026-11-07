@@ -54,9 +54,16 @@ if [[ "$mode" == build ]]; then
  echo "Built and verified build/pages against actual archived firmware."
  exit 0
 fi
-for entry in .github tools alpha; do
+for entry in .github alpha; do
  if [[ -d "$target/public/$entry" ]]; then cp -a "$target/public/$entry" build/pages/; fi
 done
+if [[ -d "$target/public/tools" ]]; then
+ python3 - "$target/public/tools" <<'PY'
+import shutil,sys
+shutil.copytree(sys.argv[1], 'build/pages/tools', dirs_exist_ok=True,
+                ignore=shutil.ignore_patterns('screen-wallpaper'))
+PY
+fi
 # Pages builds IotCloud from its own lock. Publish the same verified frontend
 # as these guides and device demos instead of retaining an older platform UI.
 if [[ -d build/pages/tools ]]; then

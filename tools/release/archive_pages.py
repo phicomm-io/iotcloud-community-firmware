@@ -119,6 +119,9 @@ def mirror(source, output, include_candidates=False, candidate_fetch=None):
                     assets[value['path']] = value
         for pair in release.get('device_manifests', {}).values():
             for value in pair.values(): assets[value['path']] = value
+        for kind in ('firmware','font','bootstrap','migration'):
+            if kind in release.get('screen',{}):
+                value=release['screen'][kind];assets[value['path']]=value
         manifest_bodies = {}
         for path, value in assets.items():
             validate_path(path)

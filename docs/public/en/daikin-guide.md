@@ -1,4 +1,6 @@
-# DAIKIN functions, installation and recovery
+# Daikin air quality monitor (1st/2nd generation)
+
+G1 has no formaldehyde expansion port; G2 adds this port. G3 adds a display and uses separate firmware; see the [G3 guide](daikin-g3-guide). The default name is `DAIKIN G1/G2`; custom names are preserved. Board restrictions below still apply.
 
 The ESP32 / 4 MB Flash board uses one universal image that detects PM2005 / PM2105 and the optional formaldehyde module. Its web interface shares M1 reading cards, comfort scales and linked-device information, with local access, IoTCloud and Home Assistant support.
 
@@ -42,7 +44,7 @@ An explicitly labelled unsigned recovery input accepts a trusted raw application
 
 ## IoTCloud, Home Assistant and A1
 
-Follow [Connect to IoTCloud](iotcloud-connect) using an MQTT account on the selected node. The device is discovered as **DAIKIN BRY88AX151K**, and the platform provides the same reading cards as its local interface. Home Assistant discovery publishes only sensors that are present.
+Follow [Connect to IoTCloud](iotcloud-connect) using an MQTT account on the selected node. The device is discovered as **DAIKIN G1/G2**, and the platform provides the same reading cards as its local interface. Home Assistant discovery publishes only sensors that are present.
 
 Add this device's MAC and optional IP in the updated A1 settings. MQTT under the same account grants reading sessions automatically. A1 prefers local reads and uses MQTT measurements when local reads are unavailable. The monitor's linked-purifier area shows A1 devices that have actually read it; a grant alone is not a connection.
 

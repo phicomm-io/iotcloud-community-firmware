@@ -14,10 +14,11 @@ spec.loader.exec_module(package)
 
 def verify_image(payload, model, variant):
     asset_stem(model, variant)
-    if model == 'daikin':
+    if model in ('daikin','bry88bba15g'):
+        target = b'BRY88BBA15G' if model == 'bry88bba15g' else b'BRY88AB151K'
         if (len(payload) < 352 or payload[0] != 0xe9 or
                 struct.unpack_from('<I', payload, 32)[0] != 0xabcd5432 or
-                payload[288:320] != b'BRY88AB151K'.ljust(32, b'\0') or
+                payload[288:320] != target.ljust(32, b'\0') or
                 payload[320:352] != ('PHICOMM-DAIKIN-1:' + variant).encode().ljust(32, b'\0')):
             raise ValueError('DAIKIN image hardware or firmware variant identity mismatch')
 
@@ -34,7 +35,7 @@ def verify(body, model, version, commit, variant=None, keyring_path=None):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('file', type=Path)
-    parser.add_argument('model', choices=['tc1', 'm1', 'a1', 'daikin'])
+    parser.add_argument('model', choices=['tc1', 'm1', 'a1', 'daikin', 'bry88bba15g'])
     parser.add_argument('version')
     parser.add_argument('commit')
     parser.add_argument('--variant', help='Also check the independently signed image variant identity')

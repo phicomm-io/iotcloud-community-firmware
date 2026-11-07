@@ -53,3 +53,7 @@ Theme preferences are stored locally in the browser and shared with the device U
 - [Connect to IoTCloud](iotcloud-connect) for remote device management.
 - [MQTT, Home Assistant and A1 sensor automation](mqtt-link).
 - [Troubleshooting](faq).
+
+## Daikin generation selection
+
+[G1/G2](daikin-guide): G1 has no formaldehyde expansion port; G2 adds it. [G3](daikin-g3-guide) adds a display and uses separate network and screen MCU applications.

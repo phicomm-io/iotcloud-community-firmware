@@ -1,0 +1,8 @@
+{
+  "repository": "phicomm-io/iotcloud-community-frontend",
+  "source": "DAIKIN/web/screen-appearance.js",
+  "base_commit": "43b6f062fee7ccc1485bf18c814545e7aa727436",
+  "state": "released",
+  "sha256": "5cb65fc3c6bbc8965b55ab984311738e993766db0ab37700e3a0314d84c8ecbf",
+  "commit": "e7d2cf3bed957eccccf20d3d4dc92591bdea2c4e"
+}

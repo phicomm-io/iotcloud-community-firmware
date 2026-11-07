@@ -4,6 +4,10 @@
 #include "wire_mp.h"
 #include <WiFi.h>
 #include <WiFiUdp.h>
+#ifdef IOTCLOUD_BRY88_SCREEN
+#include <WiFiClientSecure.h>
+#include <HTTPClient.h>
+#endif
 #include <Wire.h>
 #include <Preferences.h>
 #include <nvs.h>
@@ -128,6 +132,13 @@ static bool mqttRestart=false, wifiRestart=false;
 #include "build_info.h"
 #include "firmware_identity.h"
 static const char *version=DAIKIN_VERSION;
+#ifdef IOTCLOUD_BRY88_SCREEN
+static constexpr const char *hardwareModel="BRY88BBA15G";
+static constexpr unsigned otaModel=6;
+#else
+static constexpr const char *hardwareModel="BRY88AX151K";
+static constexpr unsigned otaModel=4;
+#endif
 extern "C" {
 extern const daikin::FirmwareIdentity daikin_target __attribute__((section(".rodata_custom_desc"),used)) = {
   DAIKIN_TARGET,"PHICOMM-DAIKIN-1:" DAIKIN_VARIANT
@@ -204,12 +215,26 @@ static void startWifi(){
   if(*ssid)WiFi.begin(ssid,config["wifi"]["password"]|"");
   connectAt=millis();
 }
+#ifdef IOTCLOUD_BRY88_SCREEN
+static bool g3OnlineBusy=false;
+#include "../../BRY88BBA15G/runtime.inc"
+#include "../../BRY88BBA15G/screen_services.inc"
+#else
 #include "sensors.inc"
+#endif
 #include "indicators.inc"
 #include "lan_pairing.inc"
 #include "sessions.inc"
+#ifdef IOTCLOUD_BRY88_SCREEN
+static const char *g3OnlineCommand(const String &,JsonObjectConst,JsonObject);
+static void g3OnlinePoll();
+#endif
 #include "commands.inc"
 #include "http.inc"
+#ifdef IOTCLOUD_BRY88_SCREEN
+#include "../../BRY88BBA15G/screen_http.inc"
+#include "../../BRY88BBA15G/online_ota.inc"
+#endif
 #include "lan_business.inc"
 #include "mqtt.inc"
 #ifdef IOTCLOUD_HUB
@@ -220,11 +245,13 @@ static void startWifi(){
 // Called by loop and by bounded HAP waits; never re-enters homeSpan.poll().
 static void pollLocalControls(uint32_t now){
   // GPIO34 reset key: hold >=5 s to reopen provisioning, retaining device settings.
+  #ifndef IOTCLOUD_BRY88_SCREEN
   static uint32_t pressedAt=0;static bool pressed=false,handled=false;
   if(digitalRead(34)==LOW){
     if(!pressed){pressed=true;handled=false;pressedAt=now;}
     else if(!handled&&!otaActive&&uint32_t(now-pressedAt)>=5000){handled=true;startWifi();}
   }else{pressed=false;handled=false;}
+  #endif
   pollIndicators(now);
   if(!otaActive)pollSensors(now);
   pollBusinessStatusCache(now);
@@ -232,7 +259,13 @@ static void pollLocalControls(uint32_t now){
 void setup(){
   Serial.begin(115200);
   businessReadSnapshot.begin();
-  if(!prefs.begin("daikin",false)){Serial.println("NVS unavailable");while(true)delay(1000);}
+  if(!prefs.begin(
+#ifdef IOTCLOUD_BRY88_SCREEN
+    "bry88-screen",
+#else
+    "daikin",
+#endif
+    false)){Serial.println("NVS unavailable");while(true)delay(1000);}
   {
     String text=loadAuthConfigText();
     if(deserializeJson(config,text.c_str(),text.length())||!config.is<JsonObject>()||!validConfig(config.as<JsonObjectConst>())){
@@ -244,14 +277,19 @@ void setup(){
   customLightSettings=daikin::readLightSettings(config["indicator_rules"],lightSettings);
   WiFi.mode(WIFI_AP_STA);deviceId=WiFi.macAddress();deviceId.replace(":","");deviceId.toLowerCase();
   deviceHostname="iotcloud-daikin-"+String(DAIKIN_TARGET)+"-"+deviceId.substring(6);deviceHostname.toLowerCase();
-  apName="BRY88AX151K-AP-"+deviceId.substring(6);apName.toUpperCase();
+  apName=String(hardwareModel)+"-AP-"+deviceId.substring(6);apName.toUpperCase();
+  #ifdef IOTCLOUD_BRY88_SCREEN
+  screenInit();
+  #endif
   startWifi();
+  #ifndef IOTCLOUD_BRY88_SCREEN
   pmBus.begin(23,22,100000);thBus.begin(19,21,100000);pmBus.setTimeOut(50);thBus.setTimeOut(50);
   co2Uart.begin(9600,SERIAL_8N1,16,17);hchoUart.begin(9600,SERIAL_8N1,5,18);
   for(int p:{4,25,32,33}){pinMode(p,OUTPUT);digitalWrite(p,LOW);}
   pinMode(34,INPUT); // External pull resistor is required on input-only GPIO34.
   const uint8_t hdcConfig[]={2,0x10,0};writeI2c(thBus,0x40,hdcConfig,3);
   const uint8_t hchoMode[]={0xff,1,0x78,0x41,0,0,0,0,0x46};hchoUart.write(hchoMode,9);
+  #endif
   httpd_config_t server=HTTPD_DEFAULT_CONFIG();server.stack_size=10240;server.recv_wait_timeout=10;server.max_uri_handlers=48;
   // Separate browser pages retain idle keep-alive sockets. Reclaim the oldest
   // idle connection when the fixed connection table fills.
@@ -266,9 +304,13 @@ void setup(){
     httpd_uri_t status={};status.uri="/api/v1/status";status.method=HTTP_GET;status.handler=statusHandler;httpd_register_uri_handler(web,&status);
     for(auto path:{"/api/v1/auth/login","/api/v1/auth/logout","/api/v1/info","/api/v1/status","/api/v1/command","/api/v1/ota/upload","/api/v1/ota/upload-unsigned","/api/v1/config/backup","/api/v1/config/restore"}){httpd_uri_t options={};options.uri=path;options.method=HTTP_OPTIONS;options.handler=optionsHandler;httpd_register_uri_handler(web,&options);}
     for(auto path:{"/api/v1/config/backup","/api/v1/config/restore"}){httpd_uri_t backup={};backup.uri=path;backup.method=strstr(path,"restore")?HTTP_POST:HTTP_GET;backup.handler=backupHandler;httpd_register_uri_handler(web,&backup);}
+#ifdef IOTCLOUD_BRY88_SCREEN
+    httpd_uri_t screenUpload={};screenUpload.uri="/api/v1/screen/ota/upload";screenUpload.method=HTTP_POST;screenUpload.handler=screenUploadHandler;httpd_register_uri_handler(web,&screenUpload);
+    screenUpload.method=HTTP_OPTIONS;screenUpload.handler=optionsHandler;httpd_register_uri_handler(web,&screenUpload);
+#endif
     httpd_uri_t cmd={};cmd.uri="/api/v1/command";cmd.method=HTTP_POST;cmd.handler=commandHandler;httpd_register_uri_handler(web,&cmd);
     for(auto path:{"/api/v1/ota/upload","/api/v1/ota/upload-unsigned"}){httpd_uri_t ota={};ota.uri=path;ota.method=HTTP_POST;ota.handler=uploadHandler;httpd_register_uri_handler(web,&ota);}
-#ifndef IOTCLOUD_HUB
+#if !defined(IOTCLOUD_HUB) && !defined(IOTCLOUD_BRY88_SCREEN)
     httpd_uri_t convert={};convert.uri="/api/v1/ota/convert";convert.method=HTTP_POST;convert.handler=convertHandler;httpd_register_uri_handler(web,&convert);
     convert.method=HTTP_OPTIONS;convert.handler=optionsHandler;httpd_register_uri_handler(web,&convert);
 #endif
@@ -280,7 +322,7 @@ void setup(){
   // Confirm local startup once the command server is available.
   if(web)esp_ota_mark_app_valid_cancel_rollback();
   if(!sensorBoot)sensorBoot=esp_random()|1;sensorUdp.begin(11288);
-  startMqtt();Serial.printf("DAIKIN BRY88AX151K %s %s\n",pmModel,deviceId.c_str());
+  startMqtt();Serial.printf("iotcloud %s %s %s\n",hardwareModel,version,deviceId.c_str());
 }
 void loop(){
   uint32_t now=millis();
@@ -349,5 +391,9 @@ void loop(){
     if(c=='\n'){if(!serialOverflow&&serialBody.length())Serial.println(otaActive?"{\"code\":\"busy\"}":execute(serialBody,false));serialBody="";serialOverflow=false;}
     else if(!serialOverflow){if(serialBody.length()<4096)serialBody+=c;else{serialBody="";serialOverflow=true;}}
   }
+  #ifdef IOTCLOUD_BRY88_SCREEN
+  g3OnlinePoll();
+  screenPoll(millis());
+  #endif
   delay(2);
 }

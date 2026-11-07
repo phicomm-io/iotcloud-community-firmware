@@ -18,6 +18,7 @@ static void sensorIndicatorModes(uint32_t now,daikin::LightMode (&modes)[3]){
   modes[2]=values[LightPM];
 }
 static void pollIndicators(uint32_t now){
+  #ifndef IOTCLOUD_BRY88_SCREEN
   static daikin::LightOutput outputs[3];
   static unsigned previousSystem=INDICATOR_UNCONFIGURED;
   static uint32_t systemSince=0;
@@ -26,6 +27,7 @@ static void pollIndicators(uint32_t now){
   unsigned mode=systemIndicatorMode();
   if(mode!=previousSystem){previousSystem=mode;systemSince=now;}
   digitalWrite(25,daikin::systemLightOn(mode,uint32_t(now-systemSince)));
+  #endif
 }
 static void indicatorStatus(JsonObject out,uint32_t now){
   out["indicator_rules_supported"]=true;

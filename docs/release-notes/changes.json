@@ -9356,6 +9356,380 @@
         "reason": "Reviewed device scope, behavior, version requirements and both languages.",
         "reviewed_content_sha256": "5b433bedfe66bbb320817aa467ddda72f7e0f76cbd679f914527f5ec66936150"
       }
+    },
+    {
+      "change_id": "g3-screen-platform",
+      "version": "1.0.0-rc.6",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "bry88bba15g"
+        ],
+        "variants": [
+          "full"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "大金 G3 屏幕与传感器支持",
+        "en": "Daikin G3 screen and sensor support"
+      },
+      "description": {
+        "zh-CN": "新增带屏幕 BRY88BBA15G 的 ESP32 固件与独立屏幕 MCU 发布。支持原厂 MCU 协议和当前 RC6 扩展协议、传感器读数、电池状态、RTC 授时、触摸换页、PD12 模块电源控制及可提前继续的恢复窗口。停止支持旧社区屏幕协议；屏幕应用升级保留引导区。",
+        "en": "Adds ESP32 firmware and a separate screen MCU release for BRY88BBA15G. Supports the stock MCU and current RC6 extensions, sensor readings, battery status, RTC synchronization, touch page navigation, PD12 module power control and an interruptible recovery window. Older community screen protocols are retired; screen application updates preserve the bootloader."
+      },
+      "ota_summary": {
+        "zh-CN": "新增带屏幕 BRY88BBA15G 的 ESP32 固件与独立屏幕 MCU 发布。支持原厂 MCU 协议和当前 RC6 扩展协议、传感器读数、电池状态、RTC 授时、触摸换页、PD12 模块电源控制及可提前继续的恢复窗口。停止支持旧社区屏幕协议；屏幕应用升级保留引导区。",
+        "en": "Adds ESP32 firmware and a separate screen MCU release for BRY88BBA15G. Supports the stock MCU and current RC6 extensions, sensor readings, battery status, RTC synchronization, touch page navigation, PD12 module power control and an interruptible recovery window. Older community screen protocols are retired; screen application updates preserve the bootloader."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc.6:b003"
+      ],
+      "evidence": {
+        "firmware_sources": [
+          "BRY88BBA15G/screen_commands.inc",
+          "BRY88BBA15G/screen-protocol.lock.json"
+        ],
+        "firmware_source_sha256": {
+          "BRY88BBA15G/screen_commands.inc": "f008bf447bd5839230c62ff0f2ffea3afe621f347d2cf9c724b31ddeefaf4ba1",
+          "BRY88BBA15G/screen-protocol.lock.json": "46177cda42cec004d66c6dc5609468d5021e536012db9a18b22ee2777020f32d"
+        }
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root",
+        "reviewed_utc": "2026-11-07T11:51:50.394703+00:00",
+        "reason": "Reviewed implemented behavior, device scope and matching Chinese and English text.",
+        "reviewed_content_sha256": "2a44d49285d622d83b68e3c83f8bb1a637bbe8f182ccb1418b9170cd4e9f1c20"
+      }
+    },
+    {
+      "change_id": "g3-layout-theme-weather",
+      "version": "1.0.0-rc.6",
+      "type": "feature",
+      "component": "bundled_web",
+      "scope": {
+        "models": [
+          "bry88bba15g"
+        ],
+        "variants": [
+          "full"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "可编排屏幕、天气与提醒",
+        "en": "Screen composition, weather and reminders"
+      },
+      "description": {
+        "zh-CN": "网页可组合时钟、数值、文字、折线和堆叠图表、天气与提醒，按真实屏幕比例预览。支持六组主题、组件配色、壁纸、语言、亮度和每周调光计划；外部字库失败时降级显示，通信和恢复服务继续工作。",
+        "en": "Compose clocks, readings, text, line and stacked charts, weather and reminders with a preview at the real screen aspect ratio. Includes six themes, per-widget colors, wallpaper, language, brightness and weekly dimming. Font resource failures degrade display while communication and recovery services remain available."
+      },
+      "ota_summary": {
+        "zh-CN": "网页可组合时钟、数值、文字、折线和堆叠图表、天气与提醒，按真实屏幕比例预览。支持六组主题、组件配色、壁纸、语言、亮度和每周调光计划；外部字库失败时降级显示，通信和恢复服务继续工作。",
+        "en": "Compose clocks, readings, text, line and stacked charts, weather and reminders with a preview at the real screen aspect ratio. Includes six themes, per-widget colors, wallpaper, language, brightness and weekly dimming. Font resource failures degrade display while communication and recovery services remain available."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc.6:b004"
+      ],
+      "evidence": {
+        "firmware_sources": [
+          "frontend.lock.json",
+          "BRY88BBA15G/screen_commands.inc"
+        ],
+        "firmware_source_sha256": {
+          "frontend.lock.json": "ef38a323bc93ebaae873cdce6df8048e03f8fcd0e6b28e10ef4e65e756777a96",
+          "BRY88BBA15G/screen_commands.inc": "f008bf447bd5839230c62ff0f2ffea3afe621f347d2cf9c724b31ddeefaf4ba1"
+        }
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root",
+        "reviewed_utc": "2026-11-07T11:51:50.394784+00:00",
+        "reason": "Reviewed implemented behavior, device scope and matching Chinese and English text.",
+        "reviewed_content_sha256": "db9fcfeeef27e5baa2dfe9efb1626f977bfe4c4974b07e8f6a01d6423d73cfab"
+      }
+    },
+    {
+      "change_id": "g3-online-update",
+      "version": "1.0.0-rc.6",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "bry88bba15g"
+        ],
+        "variants": [
+          "full"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "ESP32、屏幕和字库在线更新",
+        "en": "Online updates for ESP32, screen and font"
+      },
+      "description": {
+        "zh-CN": "ESP32 可从 GitHub、国内和国际镜像检查并安装签名更新，RC 构建使用独立候选通道。屏幕和字库可在局域网页资源页检查、下载并校验后安装；屏幕大文件上传需要本地直连。原厂免拆迁移工具先只更新 ESP32，保留原厂 MCU。",
+        "en": "ESP32 can check and install signed updates from GitHub, China and global mirrors; RC builds use a separate candidate channel. Screen applications and fonts can be checked, downloaded and verified from the LAN resource page; large screen uploads require direct LAN access. Wireless stock migration updates only ESP32 first and preserves the stock MCU."
+      },
+      "ota_summary": {
+        "zh-CN": "ESP32 可从 GitHub、国内和国际镜像检查并安装签名更新，RC 构建使用独立候选通道。屏幕和字库可在局域网页资源页检查、下载并校验后安装；屏幕大文件上传需要本地直连。原厂免拆迁移工具先只更新 ESP32，保留原厂 MCU。",
+        "en": "ESP32 can check and install signed updates from GitHub, China and global mirrors; RC builds use a separate candidate channel. Screen applications and fonts can be checked, downloaded and verified from the LAN resource page; large screen uploads require direct LAN access. Wireless stock migration updates only ESP32 first and preserves the stock MCU."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc.6:b005"
+      ],
+      "evidence": {
+        "firmware_sources": [
+          "BRY88BBA15G/online_ota.inc",
+          "tools/daikin_g3_migrate/README.md"
+        ],
+        "firmware_source_sha256": {
+          "BRY88BBA15G/online_ota.inc": "7750c152c95d72a2c2939dd6ed09ef37dd2604b914ac8cdf2dcbae6e82a51cc0",
+          "tools/daikin_g3_migrate/README.md": "59ff738796a3c8b352a9abef5c3709ba6ecb0c89018d4fe8403f27db3516b847"
+        }
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root",
+        "reviewed_utc": "2026-11-07T11:51:50.394845+00:00",
+        "reason": "Reviewed implemented behavior, device scope and matching Chinese and English text.",
+        "reviewed_content_sha256": "0c501854300b62680a0e5f48521e8807ac8dd00b6322b8c0ac684549388454de"
+      }
+    },
+    {
+      "change_id": "m1-clock-retry",
+      "version": "1.0.0-rc.6",
+      "type": "bugfix",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "m1"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "M1 校时恢复重试",
+        "en": "M1 clock recovery retries"
+      },
+      "description": {
+        "zh-CN": "主控时间读回暂时失败时有界重试，网络校时失败后独立安排重试，减少短暂通信异常造成的时间不同步。",
+        "en": "Retries transient MCU clock readback failures within a bound and schedules network time retries independently, reducing clock desynchronization after temporary communication failures."
+      },
+      "ota_summary": {
+        "zh-CN": "主控时间读回暂时失败时有界重试，网络校时失败后独立安排重试，减少短暂通信异常造成的时间不同步。",
+        "en": "Retries transient MCU clock readback failures within a bound and schedules network time retries independently, reducing clock desynchronization after temporary communication failures."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc.6:b006"
+      ],
+      "evidence": {
+        "firmware_sources": [
+          "M1/main.c",
+          "M1/mcu.c"
+        ],
+        "firmware_source_sha256": {
+          "M1/main.c": "f195a93ad3c36c35249ad379b1098cfabdbe1c37691cc8629d12c17f07e41c19",
+          "M1/mcu.c": "2d13eef0f6650a88c211940aff5ae6f9ff89dbddbe0dbe4e971c93c4eae6434e"
+        }
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root",
+        "reviewed_utc": "2026-11-07T11:51:50.394937+00:00",
+        "reason": "Reviewed implemented behavior, device scope and matching Chinese and English text.",
+        "reviewed_content_sha256": "56caaa4cb0072e5698ba77fb98ebaf9e3734870a1915e7e925223fcb3561431d"
+      }
+    },
+    {
+      "change_id": "s30-clock-automation-stock-ota",
+      "version": "1.0.0-rc.6",
+      "type": "improvement",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "s30"
+        ],
+        "variants": [
+          "full"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "S30 定时、功率自动化与原厂安装",
+        "en": "S30 schedules, power automation and stock installation"
+      },
+      "description": {
+        "zh-CN": "S30 的插座定时和功率自动化与 TC1 行为对齐，补齐原厂 HTTP 80 端口 OTA 安装工具及教程；继续使用原生 RBL/STOCK_UA 镜像。",
+        "en": "Aligns S30 socket schedules and power automation with TC1 and adds a stock OTA installer using HTTP port 80 with instructions. S30 continues to use native RBL/STOCK_UA images."
+      },
+      "ota_summary": {
+        "zh-CN": "S30 的插座定时和功率自动化与 TC1 行为对齐，补齐原厂 HTTP 80 端口 OTA 安装工具及教程；继续使用原生 RBL/STOCK_UA 镜像。",
+        "en": "Aligns S30 socket schedules and power automation with TC1 and adds a stock OTA installer using HTTP port 80 with instructions. S30 continues to use native RBL/STOCK_UA images."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc.6:b007"
+      ],
+      "evidence": {
+        "firmware_sources": [
+          "docs/public/s30-flash.md"
+        ],
+        "firmware_source_sha256": {
+          "docs/public/s30-flash.md": "01fb7a207e0fb9bd725f5c0a55fa0c68761e4bb1c86c23e12c2bdb2c7e5a5a62"
+        }
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root",
+        "reviewed_utc": "2026-11-07T11:51:50.394987+00:00",
+        "reason": "Reviewed implemented behavior, device scope and matching Chinese and English text.",
+        "reviewed_content_sha256": "c8056720890a7293561b79201195d963d423c8ee2258b379c6dc0248b889d0f6"
+      }
+    },
+    {
+      "change_id": "shared-power-web-demos",
+      "version": "1.0.0-rc.6",
+      "type": "improvement",
+      "component": "bundled_web",
+      "scope": {
+        "models": [
+          "a1",
+          "m1",
+          "tc1",
+          "daikin",
+          "bry88bba15g",
+          "s30"
+        ],
+        "variants": [
+          "full",
+          "no-frontend-resources",
+          "fresh-air",
+          "fresh-air-no-frontend-resources",
+          "hub"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "统一网页与 G3 演示",
+        "en": "Shared WebUI and G3 demos"
+      },
+      "description": {
+        "zh-CN": "更新公共网页的插座自动化和功率刷新，新增 G3 布局、亮度、天气、提醒与在线更新设置，提供屏幕设计和设备网页演示。大金下载分为 1/2 代与带屏幕 3 代。",
+        "en": "Updates shared socket automation and power refresh, adds G3 layout, brightness, weather, reminder and online update settings, and provides screen design and device WebUI demos. Daikin downloads distinguish G1/G2 from the G3 display model."
+      },
+      "ota_summary": {
+        "zh-CN": "更新公共网页的插座自动化和功率刷新，新增 G3 布局、亮度、天气、提醒与在线更新设置，提供屏幕设计和设备网页演示。大金下载分为 1/2 代与带屏幕 3 代。",
+        "en": "Updates shared socket automation and power refresh, adds G3 layout, brightness, weather, reminder and online update settings, and provides screen design and device WebUI demos. Daikin downloads distinguish G1/G2 from the G3 display model."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc.6:b008"
+      ],
+      "evidence": {
+        "firmware_sources": [
+          "frontend.lock.json",
+          "site/index.html"
+        ],
+        "firmware_source_sha256": {
+          "frontend.lock.json": "ef38a323bc93ebaae873cdce6df8048e03f8fcd0e6b28e10ef4e65e756777a96",
+          "site/index.html": "2d0b555a3d8b0ad63fd6c0873cf3bb2a53a0bb61f8a6df84de02359e76d54148"
+        }
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root",
+        "reviewed_utc": "2026-11-07T11:51:50.395043+00:00",
+        "reason": "Reviewed implemented behavior, device scope and matching Chinese and English text.",
+        "reviewed_content_sha256": "99348655b1a95615180ac25de8420dc0f2afb073e2a948efa1e0b81dc62c655f"
+      }
     }
   ],
   "merges": []

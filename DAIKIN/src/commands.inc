@@ -1,3 +1,4 @@
+#include "product_name.h"
 #include "diagnostics_ids.h"
 #include "device_name.h"
 static void otaPartitionStatus(JsonObject out){
@@ -21,8 +22,8 @@ static void otaPartitionStatus(JsonObject out){
 }
 static void buildBusinessState(JsonObject out,uint32_t now){
   out["snapshot_uptime_ms"]=now;
-  out["model"]="daikin";out["firmware_variant"]=DAIKIN_VARIANT;out["hardware_model"]="BRY88AX151K";out["pm_sensor"]=pmModel;
-  out["migration_state"]=configRecovery?"confirmation_required":"ready";out["language"]=config["device"]["language"]|"zh-CN";out["name"]=config["device"]["name"]|"DAIKIN";out["device_id"]=deviceId;out["version"]=version;
+  out["model"]="daikin";out["firmware_variant"]=DAIKIN_VARIANT;out["hardware_model"]=hardwareModel;out["pm_sensor"]=pmModel;
+  out["migration_state"]=configRecovery?"confirmation_required":"ready";out["language"]=config["device"]["language"]|"zh-CN";out["name"]=daikin::productName(config["device"]["name"].as<const char *>());out["device_id"]=deviceId;out["version"]=version;
   out["co2_warmup_seconds_remaining"]=!co2Module.warmed&&now<180000?(180000-now+999)/1000:0;
   JsonObject co2=out.createNestedObject("co2_diagnostics");
   co2["calibration_available"]=co2Module.canCalibrate(now);
@@ -35,7 +36,12 @@ static void buildBusinessState(JsonObject out,uint32_t now){
   JsonObject climate=out.createNestedObject("climate_compensation");
   climate["temperature_offset"]=config["climate"]["temperature_offset"]|4.9f;
   climate["humidity_offset"]=config["climate"]["humidity_offset"]|0.0f;
-  out["button_pressed"]=digitalRead(34)==LOW;
+  out["button_pressed"]=
+#ifdef IOTCLOUD_BRY88_SCREEN
+  false;
+#else
+  digitalRead(34)==LOW;
+#endif
   out["wifi_connected"]=WiFi.status()==WL_CONNECTED;out["ssid"]=config["wifi"]["ssid"]|"";
   out["ip"]=(WiFi.status()==WL_CONNECTED?WiFi.localIP():WiFi.softAPIP()).toString();out["rssi"]=WiFi.RSSI();
   out["ap_active"]=bool(WiFi.getMode()&WIFI_AP);out["ap_name"]=apName;
@@ -59,6 +65,9 @@ static void buildBusinessState(JsonObject out,uint32_t now){
     if(valid)s["value"]=readings[i].value;else s["value"]=nullptr;
     if(readings[i].received)s["age_ms"]=uint32_t(now-readings[i].at);else s["age_ms"]=nullptr;
   }
+#ifdef IOTCLOUD_BRY88_SCREEN
+  screenStatus(out);
+#endif
 }
 // The document/source key belong to the application loop. HTTP copies the
 // immutable encoded publication through HttpReadSnapshot, never this document.
@@ -82,7 +91,12 @@ struct BusinessStatusKey {
 static bool businessStatusInvalid=true,businessStatusReady=false;
 static unsigned businessStatusBuilds=0;
 static BusinessStatusKey businessStatusKey;
+#ifdef IOTCLOUD_BRY88_SCREEN
+// MCU recovery diagnostics, settings and clock status share this publication.
+static DynamicJsonDocument businessStatusDocument(6144);
+#else
 static DynamicJsonDocument businessStatusDocument(4096);
+#endif
 static HttpReadSnapshot businessReadSnapshot;
 static void invalidateBusinessStatusCache(){businessStatusInvalid=true;businessReadSnapshot.invalidate();}
 static BusinessStatusKey businessStatusSource(uint32_t now){
@@ -95,7 +109,13 @@ static BusinessStatusKey businessStatusSource(uint32_t now){
   key.pending=co2Module.pending();key.awaiting=co2Module.awaitingMeasurement;key.attempted=co2Module.attempted;
   key.wifiStatus=WiFi.status();key.wifiMode=WiFi.getMode();key.rssi=WiFi.RSSI();
   key.ip=(key.wifiStatus==WL_CONNECTED?WiFi.localIP():WiFi.softAPIP()).toString();
-  key.button=digitalRead(34)==LOW;key.mqtt=mqttConnected;key.hcho=hchoPresent;key.indicator=indicator;key.recovery=configRecovery;
+  key.button=
+#ifdef IOTCLOUD_BRY88_SCREEN
+  false;
+#else
+  digitalRead(34)==LOW;
+#endif
+key.mqtt=mqttConnected;key.hcho=hchoPresent;key.indicator=indicator;key.recovery=configRecovery;
 #ifdef IOTCLOUD_HUB
   key.hub=hubReady();
 #endif
@@ -162,6 +182,7 @@ static void diagnostics(JsonObject out){
   diagnosticField(fields,PH_DIAG_MQTT_LAST_EVENT,int(mqttLastEvent));
   diagnosticField(fields,PH_DIAG_MQTT_ERROR_TYPE,int(mqttErrorType));
   diagnosticField(fields,PH_DIAG_MQTT_SOCKET_ERROR,int(mqttSocketError));
+#ifndef IOTCLOUD_BRY88_SCREEN
   diagnosticField(fields,PH_DIAG_CO2_DIAGNOSTICS_PROTOCOL,"cm1106");
   diagnosticField(fields,PH_DIAG_CO2_DIAGNOSTICS_RECEIVED,co2Module.received);
   diagnosticField(fields,PH_DIAG_CO2_DIAGNOSTICS_FRESH,co2Module.fresh(now));
@@ -169,8 +190,7 @@ static void diagnostics(JsonObject out){
   diagnosticField(fields,PH_DIAG_CO2_DIAGNOSTICS_STATUS_FLAGS_SUPPORTED,co2Module.statusFlagsSupported);
   diagnosticField(fields,PH_DIAG_CO2_DIAGNOSTICS_FRAME_ERRORS,co2Module.errors);
   diagnosticField(fields,PH_DIAG_CO2_DIAGNOSTICS_RESPONSE_TIMEOUTS,co2Module.timeouts);
-  JsonArray partitionPair=fields.createNestedArray();partitionPair.add(PH_DIAG_OTA_PARTITIONS);
-  otaPartitionStatus(partitionPair.createNestedObject());
+
   if(co2Module.received){
     diagnosticField(fields,PH_DIAG_CO2_DIAGNOSTICS_RESERVED_RAW,co2Module.reserved);
     diagnosticField(fields,PH_DIAG_CO2_DIAGNOSTICS_RAW_PPM,co2Module.raw);
@@ -181,7 +201,10 @@ static void diagnostics(JsonObject out){
       for(unsigned i=0;i<7;i++)diagnosticField(fields,ids[i],bool(co2Module.status&(1<<i)));
     }
   }
-#ifdef IOTCLOUD_HUB
+#endif
+  JsonArray partitionPair=fields.createNestedArray();partitionPair.add(PH_DIAG_OTA_PARTITIONS);
+  otaPartitionStatus(partitionPair.createNestedObject());
+#if defined(IOTCLOUD_HUB) || defined(IOTCLOUD_BRY88_SCREEN)
   diagnosticField(fields,PH_DIAG_HUB_FREE_BYTE_HEAP,heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));
   diagnosticField(fields,PH_DIAG_HUB_LARGEST_BYTE_BLOCK,heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));
   diagnosticField(fields,PH_DIAG_HUB_MIN_BYTE_HEAP,heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));
@@ -189,21 +212,34 @@ static void diagnostics(JsonObject out){
 }
 static const char *actions[]={"status.get","diagnostics.get","config.get","capabilities.get","binding.status.get","lan.pair","lan.pair.get","lan.unpair","config.set","name.set","wifi.scan","wifi.scan.get","indicator.set","co2.calibrate","system.reboot","system.reset"};
 static void capabilities(JsonObject out){
-  out["device_id"]=deviceId;out["model"]="daikin";out["firmware_version"]=version;out["variant"]=DAIKIN_VARIANT;out["firmware_variant"]=DAIKIN_VARIANT;out["hardware_model"]="BRY88AX151K";out["protocol"]=2;
+  out["device_id"]=deviceId;out["model"]="daikin";out["firmware_version"]=version;out["variant"]=DAIKIN_VARIANT;out["firmware_variant"]=DAIKIN_VARIANT;out["hardware_model"]=hardwareModel;out["protocol"]=2;
   out["config_backup"]=1;out["config_recovery"]=configRecovery;out["device_language"]="zh-CN,en";out["mqtt_protocol"]="tmcp";out["mqtt_protocol_version"]=2;
   out["formaldehyde_present"]=hchoPresent;out["sensor_session_protocol"]=3;out["sensor_schema"]=3;
   out["indicator_rules_supported"]=true;
+#ifdef IOTCLOUD_BRY88_SCREEN
+  out["indicator_rules_supported"]=false;out["co2_calibration_supported"]=false;out["screen_settings_supported"]=true;
+#endif
   out["name_max_bytes"]=63;
-#ifndef IOTCLOUD_HUB
+#if !defined(IOTCLOUD_HUB) && !defined(IOTCLOUD_BRY88_SCREEN)
   out["ota_variant_conversion"]="full-to-hub";
 #endif
-  JsonArray a=out.createNestedArray("actions");for(auto name:actions)a.add(name);
+  JsonArray a=out.createNestedArray("actions");for(auto name:actions){
+#ifdef IOTCLOUD_BRY88_SCREEN
+  if(!strcmp(name,"co2.calibrate")||!strcmp(name,"indicator.set"))continue;
+#endif
+  a.add(name);}
+#ifdef IOTCLOUD_BRY88_SCREEN
+  for(auto name:{"ota.sources.get","ota.check","ota.check.get","ota.install","ota.status.get","screen.page.get","screen.page.set","screen.diagnostics.get","screen.diagnostics.start","screen.diagnostics.read","screen.diagnostics.stop","screen.settings.get","screen.settings.set","screen.appearance.get","screen.appearance.set","screen.font.get","screen.font.begin","screen.font.chunk","screen.font.commit","screen.font.cancel","screen.wallpaper.get","screen.wallpaper.begin","screen.wallpaper.chunk","screen.wallpaper.commit","screen.wallpaper.cancel","screen.layout.get","screen.layout.begin","screen.layout.chunk","screen.layout.commit","screen.data.push","screen.data.series","screen.display.get","screen.display.set","screen.resources.get","screen.module.get","screen.module.set","screen.reminders.get","screen.reminders.configure","screen.reminders.set","screen.reminders.delete","screen.reminders.push","screen.reminders.ack","screen.weather.get","screen.weather.set","screen.weather.refresh","screen.update.get","screen.update.start","screen.update.install","screen.update.cancel","screen.startup.get","screen.startup.set","screen.recovery.get","screen.recovery.hold","screen.recovery.resume","screen.recovery.enter","screen.boot.read","screen.boot.result.get"})a.add(name);
+#endif
 }
 static bool knownFields(JsonObjectConst obj,const char *allowed){
   for(JsonPairConst kv:obj){String needle=String("|")+kv.key().c_str()+"|";if(String(allowed).indexOf(needle)<0)return false;}return true;
 }
 static bool validText(JsonVariantConst v,size_t max){return v.is<const char*>()&&strlen(v.as<const char*>())<=max;}
 static bool validSection(const String &section,JsonObjectConst values) {
+#ifdef IOTCLOUD_BRY88_SCREEN
+      if(section=="climate"||section=="indicator_rules")return false;
+#endif
       bool valid=!values.isNull()&&values.size()>0;
       if(section=="device"){
         valid=valid&&knownFields(values,"|name||language|");
@@ -256,7 +292,20 @@ static bool validConfig(JsonObjectConst candidate){
   return true;
 }
 static String execute(const String &body,bool binary=true){
-  DynamicJsonDocument request(6144),reply(8192);
+  size_t requestCapacity=6144,replyCapacity=8192;
+#ifdef IOTCLOUD_BRY88_SCREEN
+  // These bounded reads need much less than a general config/command. Leave
+  // contiguous RAM for the concurrent weather TLS connection.
+  ph_value envelope,readAction;
+  if(binary&&phv_parse(PH_WIRE_MSGPACK,body.c_str(),body.length(),&envelope)&&
+     phv_get(&envelope,"action",&readAction)&&
+     (phv_equal_text(&readAction,"screen.weather.get")||phv_equal_text(&readAction,"screen.module.get")||phv_equal_text(&readAction,"screen.page.get")||phv_equal_text(&readAction,"screen.page.set")||phv_equal_text(&readAction,"screen.diagnostics.get")||phv_equal_text(&readAction,"screen.diagnostics.start")||phv_equal_text(&readAction,"screen.diagnostics.read")||phv_equal_text(&readAction,"screen.diagnostics.stop")||phv_equal_text(&readAction,"diagnostics.get"))){
+    requestCapacity=1024;replyCapacity=4096;
+  }
+#endif
+  DynamicJsonDocument request(requestCapacity),reply(replyCapacity);
+  // A failed JSON pool allocation must return a complete error envelope.
+  if(!request.capacity()||!reply.capacity())return binary?String("\x81\xa4" "code" "\xa4" "busy",11):String("{\"code\":\"busy\"}");
   const char *code="ok",*message="ok";
   if((binary?deserializeMsgPack(request,body.c_str(),body.length()):deserializeJson(request,body.c_str(),body.length()))||!request.is<JsonObject>()||!request["action"].is<const char*>()||
      !request["params"].is<JsonObject>()||!knownFields(request.as<JsonObjectConst>(),"|request_id||action||params|")){
@@ -278,13 +327,16 @@ static String execute(const String &body,bool binary=true){
   JsonObject data=reply.createNestedObject("data");
   if(!strcmp(code,"ok")){
     if(configRecovery&&!query&&action!="system.reset"&&action!="system.reboot"&&action!="wifi.scan")code="migration_required";
-    else if(query&&action!="lan.pair.get"&&params.size()!=0)code="invalid_params";
+    else if(query&&action!="lan.pair.get"&&action!="screen.layout.get"&&action!="screen.reminders.get"&&action!="screen.boot.result.get"&&params.size()!=0)code="invalid_params";
     else if(action=="lan.pair"){
       IPAddress ip;const char *peer=params["peer"]|"",*address=params["ip"]|"",*password=params["password"]|"";
       if(!knownFields(params,"|peer||ip||password||scopes|")||params.size()!=4||!params["password"].is<const char*>()||!params["scopes"].is<unsigned>()||!ip.fromString(address))code="invalid_params";
       else lanPairStart(peer,address,password,params["scopes"].as<unsigned>(),&code);
     }else if(action=="lan.unpair"){if(!knownFields(params,"|peer|")||params.size()!=1)code="invalid_params";else lanUnpairStart(params["peer"]|"",&code);
     }else if(action=="lan.pair.get"){if(!knownFields(params,"|peer|")||params.size()!=1||!lanPairStatus(params["peer"]|"",data))code="invalid_params";}
+#ifdef IOTCLOUD_BRY88_SCREEN
+    else if(action.startsWith("ota."))code=g3OnlineCommand(action,params,data);
+#endif
     else if(action=="status.get")state(data);
     else if(action=="diagnostics.get")diagnostics(data);
     else if(action=="binding.status.get")sessionStatus(data);
@@ -300,14 +352,35 @@ static String execute(const String &body,bool binary=true){
       JsonArray nets=data.createNestedArray("networks");
       for(int i=0;i<n&&i<24;i++){JsonObject net=nets.createNestedObject();net["ssid"]=WiFi.SSID(i);net["rssi"]=WiFi.RSSI(i);net["security"]=WiFi.encryptionType(i)==WIFI_AUTH_OPEN?0:1;}
     }else if(action=="indicator.set"){
+#ifdef IOTCLOUD_BRY88_SCREEN
+      code="unsupported_action";
+#else
       if(!knownFields(params,"|enabled|")||!params["enabled"].is<bool>())code="invalid_params";
       else{DynamicJsonDocument candidate(std::min(configCapacity,config.memoryUsage()+1024));candidate.set(config);candidate["indicator"]=params["enabled"];if(!saveConfig(candidate))code="storage_error";else{indicator=config["indicator"];data["enabled"]=indicator;}}
+
+#endif
     }else if(action=="co2.calibrate"){
       if(!knownFields(params,"|reference_ppm||reference_stable|")||params.size()!=2||
          !params["reference_ppm"].is<int>()||params["reference_ppm"].as<int>()<400||params["reference_ppm"].as<int>()>1500||
          !params["reference_stable"].is<bool>()||!params["reference_stable"].as<bool>())code="invalid_params";
+      #ifdef IOTCLOUD_BRY88_SCREEN
+      else {code="unsupported_action";}
+      #else
       else if(!co2Module.request(params["reference_ppm"].as<int>(),millis()))code="not_ready";
       else {readings[CO2].received=false;code="accepted";data["state"]="queued";data["reference_ppm"]=co2Module.target;}
+      #endif
+    }else if(action=="screen.settings.get"||action=="screen.settings.set"){
+#ifdef IOTCLOUD_BRY88_SCREEN
+      code=screenSettings(action,params,data);
+#else
+      code="unsupported_action";
+#endif
+    }else if(action.startsWith("screen.")){
+#ifdef IOTCLOUD_BRY88_SCREEN
+      code=screenServicesCommand(action,params,data);
+#else
+      code="unsupported_action";
+#endif
     }else if(action=="system.reboot"||action=="system.reset"){
       if(action=="system.reset" ? (!knownFields(params,"|full|")||(params.containsKey("full")&&!params["full"].is<bool>())) : params.size()!=0)code="invalid_params";
       else if(configRecovery&&action=="system.reset"&&!params["full"].as<bool>())code="migration_required";

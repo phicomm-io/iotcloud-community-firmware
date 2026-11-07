@@ -328,7 +328,7 @@ class CandidatePublicationTests(unittest.TestCase):
                     self.assertIn('--prerelease', args)
                     self.assertIn('--latest=false', args)
                 python = [args for command, *args in calls if command == 'python3']
-                self.assertEqual(python, [['tools/release/publish.py', 'release'], ['tools/release/publish.py', 'release', '--candidate']])
+                self.assertEqual(python, [['tools/release/deploy_worker.py'], ['tools/release/publish.py', 'release'], ['tools/release/publish.py', 'release', '--candidate']])
 
 
 if __name__ == '__main__':
