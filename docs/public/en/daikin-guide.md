@@ -1,6 +1,6 @@
 # Daikin air quality monitor (1st/2nd generation)
 
-G1 has no formaldehyde expansion port; G2 adds this port. G3 adds a display and uses separate firmware; see the [G3 guide](daikin-g3-guide). The default name is `DAIKIN G1/G2`; custom names are preserved. Board restrictions below still apply.
+G1 has no formaldehyde expansion port; G2 adds this port. G3 adds a display and uses separate firmware; see the [G3 guide](daikin-g3-guide). The default name is `DAIKIN G1/G2`; custom names are preserved. `BRY88AX151K` is the wildcard family name for `BRY88AA151K / BRY88AB151K`; X in download filenames does not identify a separate product.
 
 The ESP32 / 4 MB Flash board uses one universal image that detects PM2005 / PM2105 and the optional formaldehyde module. Its web interface shares M1 reading cards, comfort scales and linked-device information, with local access, IoTCloud and Home Assistant support.
 
@@ -9,7 +9,7 @@ The ESP32 / 4 MB Flash board uses one universal image that detects PM2005 / PM21
 
 | Generation | Model | Current image compatibility |
 | --- | --- | --- |
-| G1 | BRY88AA151K | Different pins and TVOC hardware; unsupported by the current BRY88AX151K image |
+| G1 | BRY88AA151K | Universal BRY88AX151K target; no G1 hardware validation in this run |
 | G2 | BRY88AB151K | Verified ESP32 / 4 MB board using the universal BRY88AX151K target |
 | G3 | BRY88BBA15G | Display-equipped; separate ESP32 and screen MCU images |
 
@@ -24,7 +24,7 @@ See [stock backups](stock-backups#daikin-esp32-and-screen) for the original G2 U
 - Comfort scales follow fresh readings. Stale values do not contribute to comfort ratings. TVOC uses the module's native ppb unit, with a ventilation reference of ≤300 ppb independent of custom indicator thresholds. Particulate display bands follow HJ 633—2026 table 3; these instantaneous readings are not a calculated AQI.
 - Configure the name, network, web password and indicators in Settings. Hold the rear button for five seconds to reopen the setup hotspot without clearing settings.
 
-The OLED and internal GPIO26 indicator are currently unused. BRY88AA151K has different wiring and ADC TVOC and is unsupported by this image.
+The OLED and internal GPIO26 indicator are currently unused. Existing hardware tests and the original UART backup use BRY88AB151K. Select stock AA/AB backups by their actual model.
 
 ## Indicator settings
 

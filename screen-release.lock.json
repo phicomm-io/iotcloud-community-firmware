@@ -1,13 +1,13 @@
 {
   "schema": 1,
   "repository": "phicomm-io/iotcloud-bry88bba15g-screenmcu",
-  "commit": "3467a5a4cb4ba6bb7c5d12ab6fd07534e2f2e7ca",
+  "commit": "468fc410dc19f3dffec48e539d7f414db179d5dc",
   "release": "v1.0.0-rc.6",
   "assets": {
     "firmware": {
       "asset": "screen_firmware.bin",
       "size": 421888,
-      "sha256": "4c788fcde9e6e724014bbff7c3e8e1834bf782940b106495716bb4e9e8412c73"
+      "sha256": "6e2273fee5b3221e09e472c1c3de0500acb1eb8ee5cdf3d50fdae573a2a028a2"
     },
     "font": {
       "asset": "screen_zh32.iotfnt",
@@ -17,7 +17,7 @@
     "bootstrap": {
       "asset": "screen_recovery.bin",
       "size": 421888,
-      "sha256": "6c666251c60ff1cb76952f5f943f6fd295dcdd641cb00476ef444a4b1adc89bb"
+      "sha256": "5755ac83b32f6593128cb481f8bfa9020552a3b6e0ffd04d69d77193f056daf5"
     }
   }
 }

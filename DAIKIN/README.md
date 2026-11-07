@@ -1,6 +1,6 @@
 # DAIKIN BRY88AX151K 空气检测仪通用固件
 
-为 DAIKIN BRY88AX151K 的 ESP32 / 4MB Flash 板构建通用固件（已测试 BRY88AB151K 接线），复用本项目锁定的离线前端公共组件、设置页及 HTTP 命令封装。PM2005 / PM2105 使用**同一个镜像**，按收到的 I²C 帧格式识别；甲醛模块运行时自动探测，无需构建开关。未验证 BRY88AA151K 的 ADC TVOC 和引脚差异，不能将它作为该型号的已验证固件。
+为 DAIKIN BRY88AX151K 的 ESP32 / 4MB Flash 板构建通用固件（已测试 BRY88AB151K 接线），复用本项目锁定的离线前端公共组件、设置页及 HTTP 命令封装。PM2005 / PM2105 使用**同一个镜像**，按收到的 I²C 帧格式识别；甲醛模块运行时自动探测，无需构建开关。`BRY88AX151K` 是 `BRY88AA151K / BRY88AB151K` 的统配名称；本次真机测试和原厂串口备份来自 BRY88AB151K。
 
 硬件资料参考 [daikin-air-sensor](https://github.com/louliangsheng/daikin-air-sensor/tree/9519f2916563a4f2d1718b2f0db825169192af82)，包括 UART/I²C 引脚和模块协议。这里重新实现驱动与网络服务，不依赖 ESPHome，也不复制上游第三方头文件。
 

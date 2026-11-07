@@ -9388,12 +9388,12 @@
         "en": "Daikin G3 screen and sensor support"
       },
       "description": {
-        "zh-CN": "新增带屏幕 BRY88BBA15G 的 ESP32 固件与独立屏幕 MCU 发布。支持原厂 MCU 协议和当前 RC6 扩展协议、传感器读数、电池状态、RTC 授时、触摸换页、PD12 模块电源控制及可提前继续的恢复窗口。停止支持旧社区屏幕协议；屏幕应用升级保留引导区。",
-        "en": "Adds ESP32 firmware and a separate screen MCU release for BRY88BBA15G. Supports the stock MCU and current RC6 extensions, sensor readings, battery status, RTC synchronization, touch page navigation, PD12 module power control and an interruptible recovery window. Older community screen protocols are retired; screen application updates preserve the bootloader."
+        "zh-CN": "新增带屏幕 BRY88BBA15G 的 ESP32 固件与独立屏幕 MCU 发布。支持原厂 MCU 协议和当前 RC6 扩展协议、传感器读数、电池状态、RTC 授时、触摸换页、PD12 模块电源控制及可提前继续的恢复窗口。屏幕应用升级保留原厂引导区。",
+        "en": "Adds ESP32 firmware and a separate screen MCU release for BRY88BBA15G. Supports the stock MCU and current RC6 extensions, sensor readings, battery status, RTC synchronization, touch page navigation, PD12 module power control and an interruptible recovery window. Screen application updates preserve the stock bootloader."
       },
       "ota_summary": {
-        "zh-CN": "新增带屏幕 BRY88BBA15G 的 ESP32 固件与独立屏幕 MCU 发布。支持原厂 MCU 协议和当前 RC6 扩展协议、传感器读数、电池状态、RTC 授时、触摸换页、PD12 模块电源控制及可提前继续的恢复窗口。停止支持旧社区屏幕协议；屏幕应用升级保留引导区。",
-        "en": "Adds ESP32 firmware and a separate screen MCU release for BRY88BBA15G. Supports the stock MCU and current RC6 extensions, sensor readings, battery status, RTC synchronization, touch page navigation, PD12 module power control and an interruptible recovery window. Older community screen protocols are retired; screen application updates preserve the bootloader."
+        "zh-CN": "新增带屏幕 BRY88BBA15G 的 ESP32 固件与独立屏幕 MCU 发布。支持原厂 MCU 协议和当前 RC6 扩展协议、传感器读数、电池状态、RTC 授时、触摸换页、PD12 模块电源控制及可提前继续的恢复窗口。屏幕应用升级保留原厂引导区。",
+        "en": "Adds ESP32 firmware and a separate screen MCU release for BRY88BBA15G. Supports the stock MCU and current RC6 extensions, sensor readings, battery status, RTC synchronization, touch page navigation, PD12 module power control and an interruptible recovery window. Screen application updates preserve the stock bootloader."
       },
       "summary_complete": true,
       "critical": false,
@@ -9406,7 +9406,7 @@
           "BRY88BBA15G/screen-protocol.lock.json"
         ],
         "firmware_source_sha256": {
-          "BRY88BBA15G/screen_commands.inc": "d046c9eaffd7466fdb6e27edb53faacb51c000134723dd89aec73813e9b721c5",
+          "BRY88BBA15G/screen_commands.inc": "2b07d4c7c15c1b578a5be3d8267caf4af256e011251f21503a7eacc909d84f15",
           "BRY88BBA15G/screen-protocol.lock.json": "46177cda42cec004d66c6dc5609468d5021e536012db9a18b22ee2777020f32d"
         }
       },
@@ -9415,7 +9415,7 @@
         "reviewer": "/root",
         "reviewed_utc": "2026-11-07T11:51:50.394703+00:00",
         "reason": "Reviewed implemented behavior, device scope and matching Chinese and English text.",
-        "reviewed_content_sha256": "2a44d49285d622d83b68e3c83f8bb1a637bbe8f182ccb1418b9170cd4e9f1c20"
+        "reviewed_content_sha256": "61ad473c4c933a32eb08bf50620cb967ee1fa10f3e5c7ec20dd8733a586ca154"
       }
     },
     {
@@ -9468,7 +9468,7 @@
         ],
         "firmware_source_sha256": {
           "frontend.lock.json": "7fac8f9fadefe2f00472521c503e4993449fda5b7cec12469dd1a8a77f5b7fcb",
-          "BRY88BBA15G/screen_commands.inc": "d046c9eaffd7466fdb6e27edb53faacb51c000134723dd89aec73813e9b721c5"
+          "BRY88BBA15G/screen_commands.inc": "2b07d4c7c15c1b578a5be3d8267caf4af256e011251f21503a7eacc909d84f15"
         }
       },
       "translation_review": {
@@ -9476,7 +9476,7 @@
         "reviewer": "/root",
         "reviewed_utc": "2026-11-07T11:51:50.394784+00:00",
         "reason": "Reviewed implemented behavior, device scope and matching Chinese and English text.",
-        "reviewed_content_sha256": "db9fcfeeef27e5baa2dfe9efb1626f977bfe4c4974b07e8f6a01d6423d73cfab"
+        "reviewed_content_sha256": "2753b08b7383e1d2de98fd294ba86077aa0f3b0b6330d54f10e1f3899e3c785d"
       }
     },
     {
@@ -9510,12 +9510,12 @@
         "en": "Online updates for ESP32, screen and font"
       },
       "description": {
-        "zh-CN": "ESP32 可从 GitHub、国内和国际镜像检查并安装签名更新，RC 构建使用独立候选通道。屏幕和字库可在局域网页资源页检查、下载并校验后安装；屏幕大文件上传需要本地直连。原厂免拆迁移工具先只更新 ESP32，保留原厂 MCU。",
-        "en": "ESP32 can check and install signed updates from GitHub, China and global mirrors; RC builds use a separate candidate channel. Screen applications and fonts can be checked, downloaded and verified from the LAN resource page; large screen uploads require direct LAN access. Wireless stock migration updates only ESP32 first and preserves the stock MCU."
+        "zh-CN": "ESP32 可从 GitHub、国内和国际镜像检查并安装签名更新，RC 构建使用独立候选通道。屏幕和字库可在局域网页资源页检查、下载并校验后安装；屏幕大文件上传需要本地直连。原厂免拆迁移工具先只更新 ESP32，保留原厂 MCU。新脚本与新 ESP32 支持直接安装完整屏幕应用，取消强制引导备份、原厂版本白名单和首装恢复镜像限制；新 MCU 取消引导 MD5 白名单，原厂引导区保留。",
+        "en": "ESP32 can check and install signed updates from GitHub, China and global mirrors; RC builds use a separate candidate channel. Screen applications and fonts can be checked, downloaded and verified from the LAN resource page; large screen uploads require direct LAN access. Wireless stock migration updates only ESP32 first and preserves the stock MCU. The new tool and ESP32 install complete screen applications directly without mandatory boot backup, a stock-version allowlist or recovery-first installation. The new MCU removes its boot MD5 allowlist and preserves the stock bootloader."
       },
       "ota_summary": {
-        "zh-CN": "ESP32 可从 GitHub、国内和国际镜像检查并安装签名更新，RC 构建使用独立候选通道。屏幕和字库可在局域网页资源页检查、下载并校验后安装；屏幕大文件上传需要本地直连。原厂免拆迁移工具先只更新 ESP32，保留原厂 MCU。",
-        "en": "ESP32 can check and install signed updates from GitHub, China and global mirrors; RC builds use a separate candidate channel. Screen applications and fonts can be checked, downloaded and verified from the LAN resource page; large screen uploads require direct LAN access. Wireless stock migration updates only ESP32 first and preserves the stock MCU."
+        "zh-CN": "ESP32 可从 GitHub、国内和国际镜像检查并安装签名更新，RC 构建使用独立候选通道。屏幕和字库可在局域网页资源页检查、下载并校验后安装；屏幕大文件上传需要本地直连。原厂免拆迁移工具先只更新 ESP32，保留原厂 MCU。新脚本与新 ESP32 支持直接安装完整屏幕应用，取消强制引导备份、原厂版本白名单和首装恢复镜像限制；新 MCU 取消引导 MD5 白名单，原厂引导区保留。",
+        "en": "ESP32 can check and install signed updates from GitHub, China and global mirrors; RC builds use a separate candidate channel. Screen applications and fonts can be checked, downloaded and verified from the LAN resource page; large screen uploads require direct LAN access. Wireless stock migration updates only ESP32 first and preserves the stock MCU. The new tool and ESP32 install complete screen applications directly without mandatory boot backup, a stock-version allowlist or recovery-first installation. The new MCU removes its boot MD5 allowlist and preserves the stock bootloader."
       },
       "summary_complete": true,
       "critical": false,
@@ -9525,19 +9525,23 @@
       "evidence": {
         "firmware_sources": [
           "BRY88BBA15G/online_ota.inc",
-          "tools/daikin_g3_migrate/README.md"
+          "tools/daikin_g3_migrate/README.md",
+          "BRY88BBA15G/screen_update_start.inc",
+          "BRY88BBA15G/tools/flash_screen.py"
         ],
         "firmware_source_sha256": {
           "BRY88BBA15G/online_ota.inc": "7750c152c95d72a2c2939dd6ed09ef37dd2604b914ac8cdf2dcbae6e82a51cc0",
-          "tools/daikin_g3_migrate/README.md": "59ff738796a3c8b352a9abef5c3709ba6ecb0c89018d4fe8403f27db3516b847"
+          "tools/daikin_g3_migrate/README.md": "fdf912b75a86e52edfa1bb6339e9dcb30a9ebef624bdcce0e2e6d720023eb2ae",
+          "BRY88BBA15G/screen_update_start.inc": "76656ad4e80139c1933db7ea9ce30ecbab9694656dcdf2317723c203ddccc984",
+          "BRY88BBA15G/tools/flash_screen.py": "ce3969095af0eaa42f255e006afb557aee667106e2d8a66fbc8579d415c457e3"
         }
       },
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
-        "reviewed_utc": "2026-11-07T11:51:50.394845+00:00",
-        "reason": "Reviewed implemented behavior, device scope and matching Chinese and English text.",
-        "reviewed_content_sha256": "0c501854300b62680a0e5f48521e8807ac8dd00b6322b8c0ac684549388454de"
+        "reviewed_utc": "2026-11-07T16:07:38.655777+00:00",
+        "reason": "Reviewed direct complete-application installation policy and both translations.",
+        "reviewed_content_sha256": "c7f3d1f20ce105f842fedd1ba0f036e2f43fdde6d97366dc562eb568d7b804d3"
       }
     },
     {
@@ -9599,7 +9603,7 @@
         "reviewer": "/root",
         "reviewed_utc": "2026-11-07T11:51:50.394937+00:00",
         "reason": "Reviewed implemented behavior, device scope and matching Chinese and English text.",
-        "reviewed_content_sha256": "56caaa4cb0072e5698ba77fb98ebaf9e3734870a1915e7e925223fcb3561431d"
+        "reviewed_content_sha256": "9f40df0fcb39d38475cd0d7660a075d4cabc74cf19facf07c0e2f707baa5aa7a"
       }
     },
     {
@@ -9650,7 +9654,7 @@
           "docs/public/s30-flash.md"
         ],
         "firmware_source_sha256": {
-          "docs/public/s30-flash.md": "01fb7a207e0fb9bd725f5c0a55fa0c68761e4bb1c86c23e12c2bdb2c7e5a5a62"
+          "docs/public/s30-flash.md": "7b37cb1189f6214cd576094f06ce62f76c778bf9564429f55c7576d7acd7f85c"
         }
       },
       "translation_review": {
@@ -9658,7 +9662,7 @@
         "reviewer": "/root",
         "reviewed_utc": "2026-11-07T11:51:50.394987+00:00",
         "reason": "Reviewed implemented behavior, device scope and matching Chinese and English text.",
-        "reviewed_content_sha256": "c8056720890a7293561b79201195d963d423c8ee2258b379c6dc0248b889d0f6"
+        "reviewed_content_sha256": "a6e74394226a168f78c43aae807d7c9e90c7db344835a5e948ba5f1d312f6151"
       }
     },
     {
@@ -9720,7 +9724,7 @@
         ],
         "firmware_source_sha256": {
           "frontend.lock.json": "7fac8f9fadefe2f00472521c503e4993449fda5b7cec12469dd1a8a77f5b7fcb",
-          "site/index.html": "2d0b555a3d8b0ad63fd6c0873cf3bb2a53a0bb61f8a6df84de02359e76d54148"
+          "site/index.html": "aafce24dfd05bb9eac7d8ef9d2500e02255cce38a135a6948364abaa91b86c54"
         }
       },
       "translation_review": {
@@ -9728,7 +9732,7 @@
         "reviewer": "/root",
         "reviewed_utc": "2026-11-07T11:51:50.395043+00:00",
         "reason": "Reviewed implemented behavior, device scope and matching Chinese and English text.",
-        "reviewed_content_sha256": "99348655b1a95615180ac25de8420dc0f2afb073e2a948efa1e0b81dc62c655f"
+        "reviewed_content_sha256": "950503b1502714e8e827c4316a4af90c8a3f91d2a9f9bce6a301f8ca1e51edd6"
       }
     }
   ],

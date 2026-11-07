@@ -149,7 +149,7 @@ source.addEventListener('change', loadCatalog);
 loadCatalog();
 loadCandidateCatalog();
 
-// Keep every community component under one download section. Without JS all
+// Keep firmware, resources and stock backups under one download section. Without JS all
 // panels remain readable; old links also reveal the matching enhanced tab.
 function initDownloadTabs() {
  const tabs=[...document.querySelectorAll('.download-tabs [role="tab"]')];

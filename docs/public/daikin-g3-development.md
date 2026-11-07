@@ -12,7 +12,7 @@ G3 使用两套独立工程：ESP32 负责网络、IoTCloud、网页、天气和
 | 网页与平台 | [统一前端]({{FRONTEND_URL}})、[IoTCloud]({{PLATFORM_URL}})、[通用设备协议](device-api) |
 | 使用与资源 | [编排](daikin-g3-layout)、[天气与推送](daikin-g3-services)、[诊断](daikin-g3-diagnostics)、[原厂备份](stock-backups) |
 
-RC6 的当前社区布局格式为 SCN3，9520 字节、288 字节组件记录；旧社区布局 ABI 不作为新实现的协商目标。未声明扩展能力的原厂 MCU 保留原厂通信路径。串口扩展仍包含会话、序号与 CRC；不要把网页 MessagePack、原厂串口 JSON 与扩展载荷混成一个协议。
+RC6 的当前社区布局格式为 SCN3，9520 字节、288 字节组件记录。未声明扩展能力的原厂 MCU 保留原厂通信路径。串口扩展仍包含会话、序号与 CRC；不要把网页 MessagePack、原厂串口 JSON 与扩展载荷混成一个协议。
 
 ## 板级职责与恢复边界
 

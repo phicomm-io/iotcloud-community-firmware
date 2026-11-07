@@ -53,7 +53,7 @@ Screen and font: open the device directly on the LAN and select Screen → Resou
 
 <a id="direct-uart-update"></a>
 
-The [direct UART update bundle](https://github.com/phicomm-io/iotcloud-community-firmware/releases/download/v1.0.0-rc.6/daikin_G3_direct-uart-af66ba22.tar.gz) contains ESP32 `1.0.0-rc.6-af66ba`, MCU `1.0.0-rc.6-468fc4`, scripts and checksums. First install its ESP32 raw application through the explicitly labelled unsigned rescue upload and verify the version, then install the screen application. This is a post-RC6 supplement; original RC6 downloads are unchanged.
+Download the matching RC6 ESP32, complete screen application and migration tools from the [G3 downloads](../../en/index.html#daikin-g3-downloads). Update ESP32 first, then install the screen application with the included new script.
 
 The new tool and paired ESP32 can send the complete `daikin_G3_screen.bin` directly to stock MCU firmware. A recovery-first step, boot backup and stock-version allowlist are no longer required. The new MCU application also removes its local boot MD5 allowlist. Extract the paired tools, install Python `msgpack`, then run:
 
@@ -66,7 +66,7 @@ The tool selects stock UART installation or community staging/activation automat
 
 Boot backup is optional. A community MCU can export the first 80 KiB twice with `screen/backup_screen_boot.py`; verify an existing pair using `--boot-backup DIRECTORY --reuse-boot-backup`. The original MCU has no export interface. The recovery image remains available for minimal-service diagnostics, where a black display is expected, but is no longer required for first installation.
 
-The initial RC6 package retains the previous gates: a specified stock version, recovery-first installation and backup. The relaxed policy requires the new paired tool/ESP32. An already installed older MCU still enforces its internal boot checks until replaced; changing the script cannot bypass them. Screen OTA preserves the original boot region. Check the loader copy contract for other hardware, use stable power, and do not treat an application package as a full-chip image.
+The republished RC6 includes the new tool, ESP32 and MCU application. An older installed MCU application still enforces its own boot check until replaced; migration must satisfy that older version’s conditions. All screen updates preserve the stock bootloader. Keep stable power and use application images only for the matching loader copy contract.
 
 The screen starts with minimal recovery services. By default, the ESP32 resumes startup after 5 seconds. Disable “Continue automatically after 5 seconds” in Resources & update to retain the complete 30-second window; the setting persists after power loss. Keep minimal services overrides automatic startup, and Start now ends a normal window immediately. Fault recovery never resumes automatically and requires repaired firmware. Communication and OTA start before the UI. OTA temporarily uses 10% brightness within the configured ceiling without changing saved settings. Application activation restarts the display. The factory bootloader's power-on gate is retained, so a short front-key press may be needed after complete power loss. Automatic startup has not been implemented by modifying the bootloader.
 

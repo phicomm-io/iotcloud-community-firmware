@@ -19,7 +19,7 @@ Published files contain shareable programs and resources. Regions containing Wi-
 | Daikin G3 screen MCU | Original first 80 KiB boot region | Two matching read-only backups; for comparison and offline recovery research; ordinary serial OTA preserves it |
 | Daikin G3 external SPI NOR | Stock screen resources | Decompresses to a full 16 MiB NOR image with animation, pictures and glyphs; not an MCU application |
 
-G1 is BRY88AA151K, G2 is BRY88AB151K and G3 is the screen-equipped BRY88BBA15G. No verified stock G1 image is available locally; G2 files cannot substitute for it. See the [G1/G2 guide](daikin-guide) for current community compatibility limits.
+G1 is BRY88AA151K, G2 is BRY88AB151K and G3 is the screen-equipped BRY88BBA15G. No verified stock G1 image is available locally; G2 files cannot substitute for it. `BRY88AX151K` is the wildcard name for AA/AB; see the [G1/G2 guide](daikin-guide) for community firmware.
 
 ## Download and verify
 

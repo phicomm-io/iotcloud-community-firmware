@@ -12,7 +12,7 @@ G3 has two independent projects. ESP32 owns networking, IoTCloud, the WebUI, wea
 | Web and platform | [Shared frontend]({{FRONTEND_URL}}), [IoTCloud]({{PLATFORM_URL}}), [device protocols](device-api) |
 | Operation | [Layouts](daikin-g3-layout), [weather and pushes](daikin-g3-services), [diagnostics](daikin-g3-diagnostics), [stock backups](stock-backups) |
 
-RC6 uses the current SCN3 layout ABI: 9520 bytes with 288-byte component records. Older community layout ABIs are not new negotiation targets. Stock MCUs without extensions retain the factory communication path. UART extensions still carry session, sequence and CRC framing; WebUI MessagePack, factory UART JSON and extended payloads are different layers.
+RC6 uses the current SCN3 layout ABI: 9520 bytes with 288-byte component records. Stock MCUs without extensions retain the factory communication path. UART extensions still carry session, sequence and CRC framing; WebUI MessagePack, factory UART JSON and extended payloads are different layers.
 
 ## Board responsibilities and recovery boundaries
 
