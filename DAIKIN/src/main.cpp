@@ -25,6 +25,9 @@ extern "C" {
 #include <esp_http_server.h>
 #include <esp_ota_ops.h>
 #include <esp_app_format.h>
+#include <esp_pm.h>
+#include <esp_wifi.h>
+#include <driver/uart.h>
 #include <mqtt_client.h>
 #include <mbedtls/base64.h>
 #ifdef IOTCLOUD_HUB
@@ -209,6 +212,7 @@ static void startAccessPoint(){
 static void startWifi(){
   WiFi.setHostname(deviceHostname.c_str());
   WiFi.mode(WIFI_AP_STA);
+  WiFi.setSleep(WIFI_PS_MIN_MODEM);
   // Recovery AP remains available when the saved station is unreachable.
   startAccessPoint();
   const char *ssid=config["wifi"]["ssid"]|"";
@@ -323,6 +327,17 @@ void setup(){
   if(web)esp_ota_mark_app_valid_cancel_rollback();
   if(!sensorBoot)sensorBoot=esp_random()|1;sensorUdp.begin(11288);
   startMqtt();Serial.printf("iotcloud %s %s %s\n",hardwareModel,version,deviceId.c_str());
+#ifdef IOTCLOUD_BRY88_SCREEN
+  // Keep console baud independent of APB when DFS selects the 10 MHz crystal.
+  Serial.flush();
+  uart_config_t console = {};
+  console.baud_rate=115200;console.data_bits=UART_DATA_8_BITS;
+  console.parity=UART_PARITY_DISABLE;console.stop_bits=UART_STOP_BITS_1;
+  console.flow_ctrl=UART_HW_FLOWCTRL_DISABLE;console.source_clk=UART_SCLK_REF_TICK;
+  ESP_ERROR_CHECK(uart_param_config(UART_NUM_0,&console));
+  const esp_pm_config_esp32_t power = {80,10,true};
+  ESP_ERROR_CHECK(esp_pm_configure(&power));
+#endif
 }
 void loop(){
   uint32_t now=millis();
@@ -399,6 +414,10 @@ void loop(){
   #ifdef IOTCLOUD_BRY88_SCREEN
   g3OnlinePoll();
   screenPoll(millis());
-  #endif
+  screenPowerPoll(millis(),otaActive||screenUploadBusy||screenOtaActive()||g3OnlineBusy);
+  // Tickless idle needs at least three idle ticks. UART RX is interrupt buffered.
+  delay(10);
+  #else
   delay(2);
+  #endif
 }

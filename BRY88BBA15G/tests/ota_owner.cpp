@@ -115,6 +115,9 @@ struct {
     return n;
   }
 } screenUart;
+static size_t screenUartWrite(const uint8_t *bytes, size_t size) {
+  return screenUart.write(bytes, size);
+}
 static bool screenGuardAnnounce(const String &);
 static bool screenGuardImageAnnounce(const String &);
 #include "../screen_ota.inc"

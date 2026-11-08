@@ -42,7 +42,13 @@ BRY88BBA15G 原厂 ESP32 `V01.02.00` 使用 ESP-IDF 5.0.1。其电源配置为�
 
 原厂 OTA 经 HTTPS 下载并通过 UART 与 MCU 协调。下载块长为 `0x800`，每轮 `vTaskDelay(2)`；`esp_ota_begin(next_partition, -1, ...)` 先擦除备用分区，下载后校验 MD5、结束 OTA 并切换启动分区。G3 使用这条路径，G1/G2 的 TCP 8555 工具不适用。
 
-社区 G3 固定运行于 80 MHz，当前 Arduino SDK 未启用动态电源管理与 tickless idle。上传每次至多写入 512 B，在线下载缓冲为 1024 B，每 16 KiB 主动让出执行，并随接收逐扇区擦除。启用原厂动态降频与轻睡眠还需要配套 SDK 配置。
+社区 G3 保留 Arduino 2.0.17 API，以 ESP-IDF 4.4.7 组件方式从源码构建 SDK，启用 `CONFIG_PM_ENABLE` 与 `CONFIG_FREERTOS_USE_TICKLESS_IDLE`，使用原厂的 10–80 MHz 动态调频和自动轻睡眠。G1/G2 的 SensorKit2 原厂启动代码选择 240 MHz，社区保持 240 MHz 及预编译 Arduino SDK。两种 ESP32 的 Wi-Fi 均使用 `WIFI_PS_MIN_MODEM`。
+
+G3 GPIO2 是屏幕 MCU 的唤醒输入。电平为高或正在升级时持有 APB 锁；UART 发送结束并经过至少 50 ms 通信尾期后释放发送锁。屏幕 UART 和调试 UART 使用 `REF_TICK`，保持降频后的波特率。主循环允许 10 ms 空闲，满足 tickless idle 的入睡条件。`diagnostics.get.power_management` 返回即时 PM 配置、唤醒输入、两把锁及最近唤醒原因；`status.get` 包含其缓存快照。实现依据见 [ESP-IDF 电源管理](https://docs.espressif.com/projects/esp-idf/en/v4.4.7/esp32/api-reference/system/power_management.html)。
+
+屏幕 MCU 原厂 `SV.04.00.04.00` 在 `0x4ef80` 执行 `WFI`，通信任务在约一秒后清低 PA5 唤醒输出。社区 MCU 在无串口待处理数据时等待中断，保留显示、SDRAM 和外设时钟；发送前先置高 PA5，结束一秒且 UART 空闲后清低。周期状态改为两秒，按键和命令仍即时响应。此次未调整 MCU 主频，也未移植原厂 FreeRTOS 的 tickless 时间补偿。反汇编依据与实现见屏幕工程的 `docs/POWER-MANAGEMENT.md`。
+
+上传每次至多写入 512 B，在线下载缓冲为 1024 B，每 16 KiB 主动让出执行，并随接收逐扇区擦除。启用休眠的 SDK 构建仍保留原有 OTA 目标标识、应用描述和原厂分区；整机电流需另行实测。
 
 屏幕启动先完成字库加载与校验，再开启传感器；三个传感器 UART 保留独立中断缓冲。升级时降低亮度并将 PD12 SET 拉低。ESP32 通过有界租期及匹配回执续约模块休眠，保持 UART owner 接收。Flash 写入期间可能丢失周期状态，因此已确认租期不依赖每次周期通告；回执年龄使用接收后的当前时间计算，避免旧循环时间戳产生无符号下溢。实现见[模块控制](https://github.com/phicomm-io/iotcloud-community-firmware/blob/v1.0.0-rc.6/BRY88BBA15G/screen_module.inc)。
 

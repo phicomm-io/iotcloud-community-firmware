@@ -125,7 +125,7 @@ static const char *screenGuardRequest(unsigned op, uint32_t offset, unsigned n,
   uint32_t request = ++screenGuard.sequence;
   size_t used = screen_link_encode(wire, sizeof(wire), screenGuard.session,
                                    request, p, sizeof(p));
-  if (!used || screenUart.write((const uint8_t *)wire, used) != used)
+  if (!used || screenUartWrite((const uint8_t *)wire, used) != used)
     return "busy";
   screenGuard.operation = op;
   screenGuard.offset = offset;

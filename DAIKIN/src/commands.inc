@@ -170,6 +170,9 @@ template<class T> static void diagnosticField(JsonArray fields,unsigned id,const
   JsonArray pair=fields.createNestedArray();pair.add(id);pair.add(value);
 }
 static void diagnostics(JsonObject out){
+#ifdef IOTCLOUD_BRY88_SCREEN
+  screenPowerStatus(out.createNestedObject("power_management"));
+#endif
   const uint32_t now=millis();out["schema"]=PH_DIAGNOSTICS_SCHEMA;
   JsonArray fields=out.createNestedArray("fields");
   const auto storage=authStorageSnapshot();

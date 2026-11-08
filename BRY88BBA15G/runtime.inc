@@ -6,6 +6,8 @@
 #include "stock_frame.h"
 #include <esp_wifi.h>
 #include <esp_sntp.h>
+#include <driver/gpio.h>
+#include <esp_sleep.h>
 #include <time.h>
 #include "screen_clock.inc"
 static void screenServicesStatus(JsonObject);
@@ -23,6 +25,27 @@ static const char *screenApplySettings(JsonObjectConst, JsonObject);
 static void screenGetSettings(JsonObject);
 static bool screenWeatherStockRequest(const String &);
 static HardwareSerial screenUart(1);
+static esp_pm_lock_handle_t screenWakeLock, screenTxLock;
+static bool screenWakeHeld=false, screenTxHeld=false;
+static uint32_t screenTxAt=0;
+// All UART writers run in the application owner, including binary MCU OTA.
+static size_t screenUartWrite(const uint8_t *bytes,size_t n) {
+  if(!screenTxHeld){ESP_ERROR_CHECK(esp_pm_lock_acquire(screenTxLock));screenTxHeld=true;}
+  size_t written=screenUart.write(bytes,n);
+  screenTxAt=millis();
+  return written;
+}
+static void screenPowerPoll(uint32_t now,bool updating) {
+  bool awake=digitalRead(2)==HIGH||updating;
+  if(awake!=screenWakeHeld){
+    ESP_ERROR_CHECK(awake?esp_pm_lock_acquire(screenWakeLock):esp_pm_lock_release(screenWakeLock));
+    screenWakeHeld=awake;
+  }
+  // Keep the factory response grace period and wait for physical TX to drain.
+  if(screenTxHeld&&uint32_t(now-screenTxAt)>=50&&uart_wait_tx_done(UART_NUM_1,0)==ESP_OK){
+    ESP_ERROR_CHECK(esp_pm_lock_release(screenTxLock));screenTxHeld=false;
+  }
+}
 static bry::StockFrame stockFrame;
 static DynamicJsonDocument screenSnapshot(4096);
 static uint32_t screenLastRx = 0, screenFrames = 0, screenDataAt = 0,
@@ -44,7 +67,7 @@ static bool screenSend(const String &line, uint32_t delayMs = 0) {
   if (line.length() > 3072)
     return false;
   if (!delayMs)
-    return screenUart.write((const uint8_t *)line.c_str(), line.length()) ==
+    return screenUartWrite((const uint8_t *)line.c_str(), line.length()) ==
            line.length();
   unsigned next = (screenTail + 1) % 12;
   if (next == screenHead)
@@ -104,9 +127,21 @@ static void screenRequestSnapshot() {
   doc.createNestedObject("data");
   screenDelivery(screenRoot() + "/mqtt/service/get_snapshot", doc, 0);
 }
+static void screenPowerStatus(JsonObject pm) {
+  esp_pm_config_esp32_t power = {};
+  ESP_ERROR_CHECK(esp_pm_get_configuration(&power));
+  pm["max_cpu_mhz"] = power.max_freq_mhz;
+  pm["min_cpu_mhz"] = power.min_freq_mhz;
+  pm["automatic_light_sleep"] = power.light_sleep_enable;
+  pm["mcu_wake_high"] = digitalRead(2)==HIGH;
+  pm["mcu_wake_lock"] = screenWakeHeld;
+  pm["uart_tx_lock"] = screenTxHeld;
+  pm["last_wakeup_cause"] = unsigned(esp_sleep_get_wakeup_cause());
+}
 static void screenStatus(JsonObject out) {
   out["hardware_model"] = "BRY88BBA15G";
   out["cpu_frequency_mhz"] = getCpuFrequencyMhz();
+  screenPowerStatus(out.createNestedObject("power_management"));
   out["sensor_source"] = "screen_mcu";
   out["co2_warmup_seconds_remaining"] = nullptr;
   out.remove("co2_diagnostics");
@@ -481,7 +516,17 @@ static void screenInit() {
   screenUart.setRxBufferSize(8192);
   screenUart.setTxBufferSize(2048);
   screenUart.begin(115200, SERIAL_8N1, 17, 16);
+  uart_config_t serial = {};
+  serial.baud_rate=115200;serial.data_bits=UART_DATA_8_BITS;
+  serial.parity=UART_PARITY_DISABLE;serial.stop_bits=UART_STOP_BITS_1;
+  serial.flow_ctrl=UART_HW_FLOWCTRL_DISABLE;serial.source_clk=UART_SCLK_REF_TICK;
+  ESP_ERROR_CHECK(uart_param_config(UART_NUM_1,&serial));
+  ESP_ERROR_CHECK(esp_pm_lock_create(ESP_PM_APB_FREQ_MAX,0,"sensor3",&screenWakeLock));
+  ESP_ERROR_CHECK(esp_pm_lock_create(ESP_PM_APB_FREQ_MAX,0,"uart_resp",&screenTxLock));
   pinMode(2, INPUT_PULLDOWN); // Original MCU wake line; never drive it.
+  ESP_ERROR_CHECK(gpio_sleep_sel_dis(GPIO_NUM_2));
+  ESP_ERROR_CHECK(gpio_wakeup_enable(GPIO_NUM_2,GPIO_INTR_HIGH_LEVEL));
+  ESP_ERROR_CHECK(esp_sleep_enable_gpio_wakeup());
   pmModel = "screen-mcu";
   // A management OTA resets only ESP32. The MCU can retain its connected state
   // and publish immediately without repeating mqtt_conn. The in-process owner

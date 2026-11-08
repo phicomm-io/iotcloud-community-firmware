@@ -8,7 +8,7 @@ static bool screenOtaActive() { return screenImage.active; }
  * length-driven receiver. Business writers must retry after OTA. */
 static bool screenBusinessSend(const char *bytes, size_t size) {
   return size <= 3072 && !screenImage.active &&
-         screenUart.write((const uint8_t *)bytes, size) == size;
+         screenUartWrite((const uint8_t *)bytes, size) == size;
 }
 static String screenHex(const uint8_t *p, size_t n) {
   String s;
@@ -161,7 +161,7 @@ static bool screenOtaCommand(const String &cmd, const String &arg) {
     // A trailing CR/LF overflows the stock MCU's 0x406-byte receive buffer.
     // Queue the whole packet in one write so task scheduling cannot insert
     // a receive-idle gap between the prefix and binary body.
-    if (screenUart.write(bytes, 5 + screenImage.chunk) != 5 + screenImage.chunk) {
+    if (screenUartWrite(bytes, 5 + screenImage.chunk) != 5 + screenImage.chunk) {
       screenImage.active = false;
       screenImage.state = "write_error";
       return true;
