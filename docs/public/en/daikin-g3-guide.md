@@ -1,6 +1,6 @@
 # G3 installation, updates and recovery
 
-[Layouts and appearance](daikin-g3-layout) · [Weather, reminders and API](daikin-g3-services) · [Startup and diagnostics](daikin-g3-diagnostics) · [Development](daikin-g3-development) · [Stock backups](stock-backups)
+[Flashing guide](daikin-g3-flash) · [Layouts and appearance](daikin-g3-layout) · [Weather, reminders and API](daikin-g3-services) · [Startup and diagnostics](daikin-g3-diagnostics) · [Development](daikin-g3-development) · [Stock backups](stock-backups)
 
 G3 is the BRY88BBA15G detector with a display. It has separate ESP32 networking and screen MCU firmware. The default name is `DAIKIN G3`; existing custom names are preserved.
 
@@ -22,7 +22,9 @@ This guide uses the current RC6 release, paired with screen MCU `1.0.0-rc.6-55e5
 
 ## Wireless migration from stock firmware
 
-Extract the current `daikin_G3_migration.tar.gz` and follow the [tool instructions](https://github.com/phicomm-io/iotcloud-community-firmware/tree/main/tools/daikin_g3_migrate#readme). You need a Bluetooth-equipped Linux host or Mac, a Docker service host reachable by the detector, and permission to configure DNS for this detector only. Linux uses BlueZ and the system Python `python3-dbus`; the nearby Bluetooth host can also be accessed over SSH.
+See [Flashing → Wireless ESP32 installation](daikin-g3-flash#wireless-esp32-installation) for Windows, Linux and macOS steps. The same guide covers serial installation and screen J-Link recovery.
+
+Extract the current `daikin_G3_migration.tar.gz`. You need a Bluetooth-equipped Linux host or Mac, a Docker service host reachable by the detector, and permission to configure DNS for this detector. Windows uses SSH to access a nearby Bluetooth Linux host.
 
 1. Prepare the temporary service with the detector's actual Wi-Fi STA MAC and the service host IP. Configure the three documented domains. The service initially offers no update.
 2. Short-press the rear network key and send the 2.4 GHz Wi-Fi and virtual gateway settings. Bluetooth closes after provisioning; short-press again to resend. A long press triggers reset.
@@ -51,11 +53,11 @@ Keep power connected and wait for **Screen firmware installed and running normal
 
 <a id="direct-uart-update"></a>
 
-For command-line installation, use the current migration bundle. Extract it, install Python `msgpack`, then run:
+For command-line installation, enter the extracted `daikin-g3-migrate` directory and place the screen image in its parent directory. Install Python `msgpack`, then run:
 
 ```sh
 python3 -m pip install msgpack
-python3 screen/flash_screen.py --url http://DEVICE_IP --image daikin_G3_screen.bin --mode install --log install.jsonl
+python3 screen/flash_screen.py --url http://DEVICE_IP --image ../daikin_G3_screen.bin --mode install --log install.jsonl
 ```
 
 If a management password is configured, supply `IOTCLOUD_AUTH=admin:PASSWORD` in the environment. Optional boot backup and recovery image instructions are in [Development](daikin-g3-development#installation-and-recovery).

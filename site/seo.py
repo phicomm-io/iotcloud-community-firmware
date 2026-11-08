@@ -19,6 +19,7 @@ PRODUCT_TITLES = {
     'm1-guide': '斐讯 M1 空气检测仪功能与操作',
     'daikin-guide': '大金空气质量检测（1/2代）功能与安装',
     'daikin-g3-guide': '大金空气质量检测（3代）屏幕、字库与升级',
+    'daikin-g3-flash': '大金 G3 刷机教程：ESP32 免拆与串口、屏幕 WebUI 与 J-Link',
     'a1-guide': '斐讯 A1 空气净化器功能与操作',
     'a1-flash': '斐讯 A1 有线刷机：免焊 J-Link 与串口恢复',
     'm1-flash': '斐讯 M1 有线刷机：串口 Bootloader 与 J-Link 恢复',

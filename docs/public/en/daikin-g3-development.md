@@ -30,6 +30,12 @@ The factory loader leaves PLL output enabled at handoff. Before changing divider
 
 Release sites may compress HTTP transfers. Browser `fetch` returns decoded data, while `Content-Length` may describe the compressed transfer. Online installation checks the actual application length, followed by ESP32 SHA-256 verification. See the [frontend fix](https://github.com/phicomm-io/iotcloud-community-frontend/commit/6034bf88ac3be09f3b849ca11f9e7d55fe0335d3) and its compressed, missing-length and truncated-response checks.
 
+### SWD tooling and write range
+
+User-facing Windows / Linux / macOS wiring and commands are in the [flashing guide](daikin-g3-flash#screen-mcu-installation-with-j-link). The screen uses STAR-MC1. [Synwit's J-Link plugin](https://github.com/Synwit-Co-Ltd/JFlash/blob/7dc3a294fbfc23b7e533006ad301354f597777a6/JLinkDevices.xml) defines `SWM341xE` with `JLINK_CORE_CORTEX_M33` and the internal Flash algorithm `SWM341xE.FLM`. A generic core name without the Flash algorithm is insufficient.
+
+The normal RC6 application is `0x67000` bytes, written to `[0x14000, 0x7b000)`. Preserve the first `0x14000` boot bytes, the trailing gap and configuration at `[0x7e000, 0x80000)`. Read two matching `0x80000`-byte SWD backups before writing; compare application readback with the published digest afterward. External NOR is outside this internal Flash operation.
+
 ## Power and OTA scheduling
 
 The stock BRY88BBA15G ESP32 `V01.02.00` uses ESP-IDF 5.0.1. Its power configuration sets an 80 MHz maximum, 10 MHz minimum and automatic light sleep. `sensor3` and `uart_resp` use APB frequency locks for communication. Configuration data at `0x3f4060d8` is passed to `esp_pm_configure` at `0x400d8e04`; the stock boot log confirms 80 MHz.

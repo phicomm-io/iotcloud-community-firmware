@@ -27,7 +27,7 @@
 | M1 | [原厂配网与免拆安装](m1-no-disassembly)，首次从 0.9.21 起 | [串口（推荐）/ J-Link](m1-flash) |
 | A1 空气净化器 | [原厂配网与免拆安装](a1-no-disassembly) | [免焊 J-Link（推荐）/ 串口](a1-flash) |
 | DAIKIN | BRY88AB151K 可用[原厂 OTA](daikin-stock-ota) | [ESP32 串口安装](daikin-guide#首次安装) |
-| 大金 G3 BRY88BBA15G | [原厂免拆迁移与屏幕安装](daikin-g3-guide) | [ESP32 / 屏幕恢复](daikin-g3-guide#社区版在线更新) |
+| 大金 G3 BRY88BBA15G | [原厂免拆安装](daikin-g3-flash#原厂免拆安装-esp32) | [ESP32 串口](daikin-g3-flash#串口安装-esp32) / [屏幕 WebUI](daikin-g3-flash#webui-安装屏幕-mcu) / [屏幕 J-Link](daikin-g3-flash#j-link-安装屏幕-mcu) |
 | S30-V1B | [原厂 2M.1220 网络安装](s30-flash#原厂免拆网络安装) | [串口安装与恢复](s30-flash#拆机串口方式) |
 
 ## 首次配网

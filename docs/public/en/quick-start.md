@@ -25,7 +25,7 @@ This project provides open-source firmware for discontinued IoT devices or devic
 | M1 | [Factory Wi-Fi setup and OTA installation](m1-no-disassembly), starting at 0.9.21 | [Serial (recommended) / J-Link](m1-flash) |
 | A1 air purifier | [Factory Wi-Fi setup and OTA installation](a1-no-disassembly) | [Solder-free J-Link (recommended) / serial](a1-flash) |
 | DAIKIN | BRY88AB151K supports [stock OTA](daikin-stock-ota) | [ESP32 serial installation](daikin-guide#first-installation) |
-| DAIKIN G3 BRY88BBA15G | [Stock migration and screen installation](daikin-g3-guide) | [ESP32/screen recovery](daikin-g3-guide#online-updates-on-community-firmware) |
+| DAIKIN G3 BRY88BBA15G | [Stock wireless installation](daikin-g3-flash#wireless-esp32-installation) | [ESP32 serial](daikin-g3-flash#serial-esp32-installation) / [Screen WebUI](daikin-g3-flash#screen-mcu-installation-through-webui) / [Screen J-Link](daikin-g3-flash#screen-mcu-installation-with-j-link) |
 | S30-V1B | [Stock 2M.1220 network installation](s30-flash#network-installation-from-stock-firmware) | [Serial installation and recovery](s30-flash#disassembly-and-uart) |
 
 ## First Wi-Fi setup

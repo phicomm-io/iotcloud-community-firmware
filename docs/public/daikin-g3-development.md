@@ -30,6 +30,12 @@ G3 使用两套独立工程：ESP32 负责网络、IoTCloud、网页、天气和
 
 发布站点可压缩 HTTP 传输，浏览器 `fetch` 返回解压后的数据；`Content-Length` 可能为压缩长度。在线安装按实际数据长度校验应用大小，再由 ESP32 校验 SHA-256。实现和压缩/无长度/截断响应检查见[前端修复](https://github.com/phicomm-io/iotcloud-community-frontend/commit/6034bf88ac3be09f3b849ca11f9e7d55fe0335d3)。
 
+### SWD 烧录工具与范围
+
+面向用户的 Windows / Linux / macOS 接线和命令统一放在[刷机教程](daikin-g3-flash#j-link-安装屏幕-mcu)。屏幕芯片为 STAR-MC1；[Synwit 官方 J-Link 插件](https://github.com/Synwit-Co-Ltd/JFlash/blob/7dc3a294fbfc23b7e533006ad301354f597777a6/JLinkDevices.xml)提供 `SWM341xE` 设备，使用 `JLINK_CORE_CORTEX_M33` 和内部 Flash 算法 `SWM341xE.FLM`。不要用不带 Flash 算法的通用内核名称代替设备配置。
+
+RC6 普通应用长度 `0x67000`，写入范围 `[0x14000, 0x7b000)`；前 `0x14000` 引导区、尾部空隙和 `[0x7e000, 0x80000)` 配置区保留。SWD 全量备份应读取两遍 `0x80000` 字节并比较；写后回读应用并核对发布摘要。外部 NOR 不属于本次内部 Flash 烧录范围。
+
 ## 电源与 OTA 调度
 
 BRY88BBA15G 原厂 ESP32 `V01.02.00` 使用 ESP-IDF 5.0.1。其电源配置为最高 80 MHz、最低 10 MHz、自动轻睡眠；`sensor3` 与 `uart_resp` 使用 APB 频率锁协调通信。配置数据位于 `0x3f4060d8`，由 `0x400d8e04` 传给 `esp_pm_configure`，原厂启动日志确认 80 MHz。

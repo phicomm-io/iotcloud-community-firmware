@@ -71,7 +71,7 @@ function deviceDownload(model, release, variants, snapshot, native = false) {
   }
   dialog.append(section);
  }
- const slug=model==='s30'?'s30-flash':model==='daikin'?'daikin-guide':model==='bry88bba15g'?'daikin-g3-guide':model+'-flash';
+ const slug=model==='s30'?'s30-flash':model==='daikin'?'daikin-guide':model==='bry88bba15g'?'daikin-g3-flash':model+'-flash';
  const guide=el('a',t('刷机说明', 'Installation guide'));guide.href=new URL('guides/'+(english?'en/':'')+slug+'.html',siteBase);dialog.append(guide);
  if(native&&variants[0][1].checksums)dialog.append(link(t('SHA256 校验文件', 'SHA256 checksums'),variants[0][1].checksums,''));
  button.addEventListener('click',()=>{if(typeof dialog.showModal==='function')dialog.showModal();else dialog.setAttribute('open','');});

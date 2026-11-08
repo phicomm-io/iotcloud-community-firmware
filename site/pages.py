@@ -37,6 +37,7 @@ GROUPS = [
         ('daikin-automation', 'DAIKIN 自动化、联动与远程显示', 'A1 传感器来源、M1 字段选择与中枢职责', 'DAIKIN-自动化与远程显示'),
     ]),
     ('daikin-g3', '大金空气质量检测（3代）', [
+        ('daikin-g3-flash', 'G3 免拆、串口与屏幕刷机', 'Windows / Linux / macOS：ESP32 免拆与串口、屏幕 WebUI 与 J-Link', 'DAIKIN-G3-刷机'),
         ('daikin-g3-guide', 'G3 安装、更新与恢复', 'BRY88BBA15G：ESP32、屏幕 MCU、字库与免拆迁移', 'DAIKIN-G3-功能与安装'),
         ('daikin-g3-layout', 'G3 屏幕编排与外观', '组合页、数值、图表、主题、壁纸、亮度与语言', 'DAIKIN-G3-屏幕编排'),
         ('daikin-g3-services', 'G3 天气、提醒与外部数据', '天气提供商、位置、定时事项、API 推送与统计', 'DAIKIN-G3-天气与推送'),
@@ -117,8 +118,12 @@ for device, install in {
     ]
 
 DEVICE_SECTIONS['daikin-g3'] = [
-    ('install', '安装与更新', 'Installation and updates', [
-        ('daikin-g3-guide', '', '', 'ESP32、屏幕 MCU 与字库', 'ESP32, screen MCU and fonts'),
+    ('install', '刷机', 'Flashing', [
+        ('daikin-g3-flash', '原厂免拆安装-esp32', 'wireless-esp32-installation', '原厂免拆安装 ESP32', 'Stock wireless ESP32 installation'),
+        ('daikin-g3-flash', '串口安装-esp32', 'serial-esp32-installation', '串口安装 ESP32', 'Serial ESP32 installation'),
+        ('daikin-g3-flash', 'webui-安装屏幕-mcu', 'screen-mcu-installation-through-webui', 'WebUI 安装屏幕 MCU', 'Screen MCU via WebUI'),
+        ('daikin-g3-flash', 'j-link-安装屏幕-mcu', 'screen-mcu-installation-with-j-link', 'J-Link 安装屏幕 MCU', 'Screen MCU via J-Link'),
+        ('daikin-g3-guide', '社区版在线更新', 'online-updates-on-community-firmware', '后续更新与字库', 'Updates and fonts'),
         ('stock-backups', '大金-esp32-与屏幕', 'daikin-esp32-and-screen', '原厂组件与恢复边界', 'Stock components and recovery')]),
     ('features', '屏幕与服务', 'Screen and services', [
         ('daikin-g3-layout', '', '', '', ''), ('daikin-g3-services', '', '', '', '')]),
@@ -144,6 +149,7 @@ SITE_URL = 'https://phicomm-io.github.io/'
 
 # English guides share the same slugs, ordering and asset collection.
 EN_TITLES = {
+ 'daikin-g3-flash': ('G3 wireless, serial and screen flashing', 'Windows / Linux / macOS: wireless and serial ESP32 installation, screen WebUI and J-Link'),
  'daikin-g3-guide': ('G3 installation, updates and recovery', 'BRY88BBA15G: ESP32, screen MCU, fonts and stock migration'),
  'daikin-g3-layout': ('G3 screen layouts and appearance', 'Composed pages, values, charts, themes, wallpapers, brightness and language'),
  'daikin-g3-services': ('G3 weather, reminders and external data', 'Weather providers, locations, schedules, API pushes and charts'),

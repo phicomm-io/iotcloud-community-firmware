@@ -1,6 +1,6 @@
 # G3 安装、更新与恢复
 
-[屏幕编排与外观](daikin-g3-layout) · [天气、提醒与 API](daikin-g3-services) · [启动与诊断](daikin-g3-diagnostics) · [开发资料](daikin-g3-development) · [原厂备份](stock-backups)
+[刷机教程](daikin-g3-flash) · [屏幕编排与外观](daikin-g3-layout) · [天气、提醒与 API](daikin-g3-services) · [启动与诊断](daikin-g3-diagnostics) · [开发资料](daikin-g3-development) · [原厂备份](stock-backups)
 
 G3 是带屏幕的 BRY88BBA15G，包含 ESP32 联网固件和独立的屏幕 MCU 固件。默认设备名为 `DAIKIN G3`；修改过的自定义名称会保留。
 
@@ -22,7 +22,9 @@ G1/G2 的安装与板型选择见[对应指南](daikin-guide)。G1/G2 镜像不�
 
 ## 从原厂免拆迁移
 
-解压当前 `daikin_G3_migration.tar.gz`，按[工具教程](https://github.com/phicomm-io/iotcloud-community-firmware/tree/main/tools/daikin_g3_migrate#readme)执行。需要带蓝牙的 Linux 或 Mac、设备可访问的 Docker 服务主机，以及仅对本设备配置 DNS 的权限。Linux 使用 BlueZ 与系统 Python 的 `python3-dbus`；也可通过 SSH 在设备附近的蓝牙主机运行。
+完整操作见[刷机教程 → 原厂免拆安装 ESP32](daikin-g3-flash#原厂免拆安装-esp32)，分别提供 Windows、Linux、macOS 步骤；串口安装和屏幕 J-Link 恢复也在同一教程。
+
+解压当前 `daikin_G3_migration.tar.gz`。需要带蓝牙的 Linux 或 Mac、设备可访问的 Docker 服务主机，以及仅对本设备配置 DNS 的权限。Windows 通过 SSH 操作附近的蓝牙 Linux 主机。
 
 1. 用设备实际 Wi-Fi STA MAC 和服务主机 IP 创建临时服务，配置教程中的三个域名；服务初始不提供更新。
 2. 短按背面网络键进入配网，发送 2.4 GHz Wi-Fi 和虚拟网关配置。配网后蓝牙会关闭，需要重发时再次短按；长按会触发复位。
@@ -51,11 +53,11 @@ G1/G2 的安装与板型选择见[对应指南](daikin-guide)。G1/G2 镜像不�
 
 <a id="direct-uart-update"></a>
 
-命令行可使用当前工具包内的安装脚本。解压工具后安装 Python `msgpack`，再执行：
+命令行可使用当前工具包内的安装脚本。进入解压后的 `daikin-g3-migrate` 目录，将屏幕镜像放在它的上一级，安装 Python `msgpack` 后执行：
 
 ```sh
 python3 -m pip install msgpack
-python3 screen/flash_screen.py --url http://DEVICE_IP --image daikin_G3_screen.bin --mode install --log install.jsonl
+python3 screen/flash_screen.py --url http://DEVICE_IP --image ../daikin_G3_screen.bin --mode install --log install.jsonl
 ```
 
 设置管理密码后，通过环境变量 `IOTCLOUD_AUTH=admin:密码` 提供认证。可选引导备份和恢复镜像用法见[开发资料](daikin-g3-development#安装与恢复)。
