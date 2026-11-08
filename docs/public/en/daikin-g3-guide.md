@@ -73,13 +73,13 @@ python3 screen/flash_screen.py --url http://DEVICE_IP --image daikin_G3_screen.b
 
 The tool selects stock UART installation or community staging/activation automatically. Target, vectors, length, digests and staging readback are still checked. If an administration password is set, provide `IOTCLOUD_AUTH=admin:password`. Successful logs contain a new session and the running application's actual MD5.
 
-Boot backup is optional. A community MCU can export the first 80 KiB twice with `screen/backup_screen_boot.py`; verify an existing pair using `--boot-backup DIRECTORY --reuse-boot-backup`. The original MCU has no export interface. The recovery image remains available for minimal-service diagnostics, where a black display is expected, but is no longer required for first installation.
+Boot backup is optional. A community MCU can export the first 80 KiB twice with `screen/backup_screen_boot.py`; verify an existing pair using `--boot-backup DIRECTORY --reuse-boot-backup`. The original MCU has no export interface. The recovery image remains available for minimal-service diagnostics, where a black display is expected, but is no longer required for first installation. Minimal recovery also supports a press of about 3 seconds to shut down and a new press of about 2 seconds to restart; power-key shutdown is disabled during firmware transfer.
 
 The republished RC6 includes the new tool, ESP32 and MCU application. An older installed MCU application still enforces its own boot check until replaced; migration must satisfy that older version’s conditions. All screen updates preserve the stock bootloader. Keep stable power and use application images only for the matching loader copy contract.
 
 The screen starts with minimal recovery services. By default, the ESP32 resumes startup after 5 seconds. Disable “Continue automatically after 5 seconds” in Resources & update to retain the complete 30-second window; the setting persists after power loss. Keep minimal services overrides automatic startup, and Start now ends a normal window immediately. Fault recovery never resumes automatically and requires repaired firmware. Communication and OTA start before the UI. OTA temporarily uses 10% brightness within the configured ceiling without changing saved settings. Application activation restarts the display.
 
-Short-press the front key to change pages or wake the display. Hold it for about 3 seconds to shut down, then release it. When USB keeps the MCU powered, hold it again for about 2 seconds to turn it on; the shutdown press cannot immediately restart it. Screen OTA preserves the factory boot region.
+Short-press the front key to change pages or wake the display. Hold it for about 3 seconds to shut down, including when starting from a sleeping display, then release it. When USB keeps the MCU powered, hold it again for about 2 seconds to turn it on; the shutdown press cannot immediately restart it. Screen OTA preserves the factory boot region.
 
 ## Optional high-resolution font
 

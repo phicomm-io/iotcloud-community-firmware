@@ -40,7 +40,7 @@ With the stock screen MCU, ESP32 converts real current weather into factory temp
 
 ### G3 startup and online update load
 
-ESP32 uses the factory 80 MHz limit and closes the recovery access point after Wi-Fi stabilizes. The screen finishes font loading before enabling sensors. Online OTA keeps MCU communication active while waiting for module power-off, fixing preparation failures.
+ESP32 uses the factory 80 MHz limit and closes the recovery access point after Wi-Fi stabilizes. The screen finishes font loading before enabling sensors. Online OTA keeps MCU communication active while waiting for module power-off, fixing preparation failures. Fixes false module-sleep aborts caused by missed periodic status or ACK timing during ESP32 flash writes. Consecutive OTA updates preserve sensor resumption after reboot.
 
 ### G3 charging and network icons
 
@@ -48,11 +48,11 @@ The battery icon shows a lightning mark while powered by USB. A Wi-Fi icon repla
 
 ### G3 long-press shutdown
 
-Fixes immediate restart after a long-press shutdown. Shutdown waits for key release; when USB keeps the MCU powered, a new press of about 2 seconds turns it on. Short-press paging and wake remain available.
+Fixes immediate restart after a long-press shutdown. Shutdown waits for key release; when USB keeps the MCU powered, a new press of about 2 seconds turns it on. Short-press paging and wake remain available. A sustained press from a sleeping display now shuts down instead of only waking it. Long-press shutdown and restart also work in minimal recovery with a black display; power-key shutdown is disabled during firmware transfer.
 
 ### G3 direct screen installation from the WebUI
 
-Both first installation from stock screen firmware and later community updates support online installation or file upload. One confirmation starts verification, transfer and activation; success appears after the new MCU starts normally.
+Both first installation from stock screen firmware and later community updates support online installation or file upload. One confirmation starts verification, transfer and activation; success appears after the new MCU starts normally. Fixes intermittent PLL locking after factory-loader handoff and the resulting low-clock SDRAM recovery. Update-message line breaks no longer appear as question marks.
 
 ### G3 live cloud readings
 

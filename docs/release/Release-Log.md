@@ -32,17 +32,17 @@
 - **G3 原厂天气与 Linux 迁移 / G3 stock weather and Linux migration**：保留原厂屏幕 MCU 时，ESP32 将真实当前天气转换为原厂温度、湿度和天气图标；室外 PM2.5 保留缺测。新增 Linux 蓝牙配网脚本，免拆迁移教程补齐实际 STA MAC、2.4 GHz Wi-Fi 和原厂网关应答步骤。修复 ESP32 以 80 MHz 运行时 TLS 握手超时导致的天气缺测。
   With the stock screen MCU, ESP32 converts real current weather into factory temperature, humidity and condition fields; outdoor PM2.5 remains missing. Adds Linux Bluetooth provisioning and documents the actual STA MAC, 2.4 GHz Wi-Fi and factory gateway responses for wireless migration. Fixes missing weather caused by TLS handshake timeouts with the ESP32 running at 80 MHz.
 
-- **G3 启动与在线升级负载 / G3 startup and online update load**：ESP32 使用与原厂一致的 80 MHz，Wi-Fi 稳定后关闭恢复热点。屏幕先完成字库加载再开启传感器；在线 OTA 等待模块断电时保持 MCU 通信，修复升级准备阶段的等待失败。
-  ESP32 uses the factory 80 MHz limit and closes the recovery access point after Wi-Fi stabilizes. The screen finishes font loading before enabling sensors. Online OTA keeps MCU communication active while waiting for module power-off, fixing preparation failures.
+- **G3 启动与在线升级负载 / G3 startup and online update load**：ESP32 使用与原厂一致的 80 MHz，Wi-Fi 稳定后关闭恢复热点。屏幕先完成字库加载再开启传感器；在线 OTA 等待模块断电时保持 MCU 通信，修复升级准备阶段的等待失败。修复 ESP32 写入 Flash 时因周期状态丢失或回执时间差而误中止模块休眠，支持正常屏幕运行时连续 OTA，更新后恢复传感器。
+  ESP32 uses the factory 80 MHz limit and closes the recovery access point after Wi-Fi stabilizes. The screen finishes font loading before enabling sensors. Online OTA keeps MCU communication active while waiting for module power-off, fixing preparation failures. Fixes false module-sleep aborts caused by missed periodic status or ACK timing during ESP32 flash writes. Consecutive OTA updates preserve sensor resumption after reboot.
 
 - **G3 充电与网络图标 / G3 charging and network icons**：电池图标在 USB 供电时显示闪电，联网圆点改为 Wi-Fi 图标，断网时显示斜线。修正外部供电与电池对应的熄屏时间选择，网页预览同步屏幕显示。修复拔掉 USB 后充电图标仍亮的问题。
   The battery icon shows a lightning mark while powered by USB. A Wi-Fi icon replaces the network dot and shows a slash while offline. Corrects the external-power and battery screen-timeout selection and keeps the WebUI preview aligned with the display. Fixes the charging icon remaining on after USB is disconnected.
 
-- **G3 长按关机 / G3 long-press shutdown**：修复长按关机后立即重新启动。关机后等待松键，USB 保持供电时需重新长按约 2 秒开机；短按切页和唤醒保持可用。
-  Fixes immediate restart after a long-press shutdown. Shutdown waits for key release; when USB keeps the MCU powered, a new press of about 2 seconds turns it on. Short-press paging and wake remain available.
+- **G3 长按关机 / G3 long-press shutdown**：修复长按关机后立即重新启动。关机后等待松键，USB 保持供电时需重新长按约 2 秒开机；短按切页和唤醒保持可用。从熄屏开始持续长按也可关机，不再只执行唤醒。最小维护黑屏状态下也支持长按关机和重新开机；传输固件时禁止按键关机。
+  Fixes immediate restart after a long-press shutdown. Shutdown waits for key release; when USB keeps the MCU powered, a new press of about 2 seconds turns it on. Short-press paging and wake remain available. A sustained press from a sleeping display now shuts down instead of only waking it. Long-press shutdown and restart also work in minimal recovery with a black display; power-key shutdown is disabled during firmware transfer.
 
-- **G3 屏幕网页直接安装 / G3 direct screen installation from the WebUI**：首次从原厂屏幕安装和后续社区屏幕升级均可直接选择在线安装或上传文件。一次确认后自动校验、传输并激活，确认新 MCU 正常启动后显示安装成功。
-  Both first installation from stock screen firmware and later community updates support online installation or file upload. One confirmation starts verification, transfer and activation; success appears after the new MCU starts normally.
+- **G3 屏幕网页直接安装 / G3 direct screen installation from the WebUI**：首次从原厂屏幕安装和后续社区屏幕升级均可直接选择在线安装或上传文件。一次确认后自动校验、传输并激活，确认新 MCU 正常启动后显示安装成功。修复原厂引导交接后偶发的 PLL 未重新锁定及低频启动后的 SDRAM 故障维护；更新提示换行不再显示为问号。
+  Both first installation from stock screen firmware and later community updates support online installation or file upload. One confirmation starts verification, transfer and activation; success appears after the new MCU starts normally. Fixes intermittent PLL locking after factory-loader handoff and the resulting low-clock SDRAM recovery. Update-message line breaks no longer appear as question marks.
 
 - **G3 云端实时读数 / G3 live cloud readings**：同时连接局域网和 MQTT 时，云端卡片和详情页使用较新的传感器读数，避免旧局域网快照使 G3 显示无数据。
   When LAN and MQTT are both connected, cloud cards and details use the newer sensor readings, preventing an older LAN snapshot from leaving G3 with no data.

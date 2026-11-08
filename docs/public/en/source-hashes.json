@@ -22,7 +22,7 @@
   "daikin-guide": "2989a1917e57beafe34e644aef8cb5d70747ca854ec0aafd23b552a7931135bf",
   "daikin-stock-ota": "4380c3330b3be4b4a26afaff5a0b7c347d3377ada9582efefd7520e1abad6347",
   "daikin-automation": "a0153fdbbe007d335aacd4a70e650aeb66fda235663b9635b5d786488a3036c5",
-  "daikin-g3-guide": "a54d58974ad1e17eac442498680df02568d9489e542aacee2a85dadc382f9e89",
+  "daikin-g3-guide": "7a7ca20e56b14203994a1807d911ea5fbb86a032c8b9d95f9f439f766fa062f3",
   "daikin-g3-layout": "0d92b6a11f21220b8dba11d63dacd9603d02d914c88a8c9b37352e26b2912fee",
   "daikin-g3-services": "c0177370105ae5a75a0ed4af419b6cddcc1ffaa29aab73655ad8d7bc9e03cada",
   "daikin-g3-diagnostics": "ffb167258cdc99815e20f942f67e395822e3ed2bad3449c0ff193da540b38173",
@@ -38,5 +38,5 @@
   "iotcloud-deploy": "c25b3001f9ef687fa2767573de5465238b492c1644456828e018ad5bf8593779",
   "build-deps": "f240b3fcc808738b078c17889139fcbe23292715193b2052a0a41004724885d4",
   "sources": "58ce2fe4fa93a2b171954d2ea44f3e10e36969e9d2e2f948fd5e715b5c50e2ad",
-  "release-log": "dcffd635ed9fc0563e6483ce888b89acb237b6ae3b0fadba01f3a03abccbb5cb"
+  "release-log": "47f189ef50722f47c1b58b5baf9148fda7139264c181f725c862c0201c0cbbea"
 }
