@@ -38,6 +38,21 @@ def safe_path(name):
     return path
 
 
+def download(lock):
+    # The release API avoids failures on GitHub's browser download redirect.
+    api = f"https://api.github.com/repos/{lock['repository']}/releases"
+    headers = {'User-Agent': 'phicomm-frontend-build', 'Accept': 'application/vnd.github+json'}
+    with urlopen(Request(f"{api}/tags/{lock['release']}", headers=headers), timeout=120) as response:
+        release = json.load(response)
+    assets = [asset for asset in release['assets']
+              if asset['name'] == lock['asset'] and asset['state'] == 'uploaded']
+    if release['draft'] or release['tag_name'] != lock['release'] or len(assets) != 1:
+        raise ValueError('Frontend release does not contain the published locked asset')
+    headers['Accept'] = 'application/octet-stream'
+    with urlopen(Request(f"{api}/assets/{assets[0]['id']}", headers=headers), timeout=120) as response:
+        return response.read()
+
+
 def unpack(data, lock, output):
     if hashlib.sha256(data).hexdigest() != lock['sha256']:
         raise ValueError('Frontend archive SHA-256 mismatch')
@@ -89,9 +104,7 @@ def fetch(lock_path, output=None, archive=None):
         elif cache.is_file():
             data = cache.read_bytes()
         else:
-            url = f"https://github.com/{lock['repository']}/releases/download/{lock['release']}/{lock['asset']}"
-            with urlopen(Request(url, headers={'User-Agent': 'phicomm-frontend-build'}), timeout=120) as response:
-                data = response.read()
+            data = download(lock)
         with tempfile.TemporaryDirectory(prefix='.frontend-', dir=output.parent) as temp:
             staged = Path(temp) / 'verified'
             unpack(data, lock, staged)

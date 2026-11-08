@@ -53,7 +53,7 @@ class FrontendDependencyTests(unittest.TestCase):
         return HTTPError('https://github.com/release', code, 'missing', {}, None)
 
     def test_release_is_verified_without_building_source(self):
-        with patch.object(prepare_frontend, 'urlopen', return_value=io.BytesIO(self.data)), \
+        with patch.object(prepare_frontend, 'download', return_value=self.data), \
                 patch.object(prepare_frontend, 'build_source') as build:
             result = prepare_frontend.prepare(self.lock_path, self.output, True)
         build.assert_not_called()
@@ -62,7 +62,7 @@ class FrontendDependencyTests(unittest.TestCase):
         self.assertEqual(json.loads(self.output.with_name('frontend.lock.json').read_text()), self.lock)
 
     def test_unpublished_release_requires_explicit_candidate_policy(self):
-        with patch.object(prepare_frontend, 'urlopen', side_effect=self.missing()), \
+        with patch.object(prepare_frontend, 'download', side_effect=self.missing()), \
                 patch.object(prepare_frontend, 'build_source') as build:
             with self.assertRaises(HTTPError):
                 prepare_frontend.prepare(self.lock_path, self.output)
@@ -72,7 +72,7 @@ class FrontendDependencyTests(unittest.TestCase):
     def test_only_404_can_select_candidate_source(self):
         for code in (401, 403, 429, 500, 503):
             with self.subTest(code=code), \
-                    patch.object(prepare_frontend, 'urlopen', side_effect=self.missing(code)), \
+                    patch.object(prepare_frontend, 'download', side_effect=self.missing(code)), \
                     patch.object(prepare_frontend, 'build_source') as build:
                 with self.assertRaises(HTTPError):
                     prepare_frontend.prepare(self.lock_path, self.output, True)
@@ -81,14 +81,14 @@ class FrontendDependencyTests(unittest.TestCase):
     def test_candidate_must_match_the_same_archive_hash(self):
         self.output.parent.mkdir()
         self.output.write_bytes(b'previous verified archive')
-        with patch.object(prepare_frontend, 'urlopen', side_effect=self.missing()), \
+        with patch.object(prepare_frontend, 'download', side_effect=self.missing()), \
                 patch.object(prepare_frontend, 'build_source', return_value=self.data + b'changed'):
             with self.assertRaisesRegex(ValueError, 'SHA-256 mismatch'):
                 prepare_frontend.prepare(self.lock_path, self.output, True)
         self.assertEqual(self.output.read_bytes(), b'previous verified archive')
 
     def test_exact_candidate_records_provenance_and_is_consumable(self):
-        with patch.object(prepare_frontend, 'urlopen', side_effect=self.missing()), \
+        with patch.object(prepare_frontend, 'download', side_effect=self.missing()), \
                 patch.object(prepare_frontend, 'build_source', return_value=self.data) as build:
             result = prepare_frontend.prepare(self.lock_path, self.output, True)
         self.assertEqual(build.call_args.args[0], self.lock)
@@ -104,7 +104,7 @@ class FrontendDependencyTests(unittest.TestCase):
         wrong_identity = self.archive(commit='9' * 40)
         self.lock['sha256'] = hashlib.sha256(wrong_identity).hexdigest()
         self.lock_path.write_text(json.dumps(self.lock))
-        with patch.object(prepare_frontend, 'urlopen', return_value=io.BytesIO(wrong_identity)):
+        with patch.object(prepare_frontend, 'download', return_value=wrong_identity):
             with self.assertRaisesRegex(ValueError, 'manifest commit/repository mismatch'):
                 prepare_frontend.prepare(self.lock_path, self.output)
         self.assertFalse(self.output.exists())
