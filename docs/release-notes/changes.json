@@ -9388,12 +9388,12 @@
         "en": "Daikin G3 screen and sensor support"
       },
       "description": {
-        "zh-CN": "新增带屏幕 BRY88BBA15G 的 ESP32 固件与独立屏幕 MCU 发布。支持原厂 MCU 协议和当前 RC6 扩展协议、传感器读数、电池状态、RTC 授时、触摸换页、PD12 模块电源控制及可提前继续的恢复窗口。屏幕应用升级保留原厂引导区。",
-        "en": "Adds ESP32 firmware and a separate screen MCU release for BRY88BBA15G. Supports the stock MCU and current RC6 extensions, sensor readings, battery status, RTC synchronization, touch page navigation, PD12 module power control and an interruptible recovery window. Screen application updates preserve the stock bootloader."
+        "zh-CN": "新增带屏幕 BRY88BBA15G 的 ESP32 固件与独立屏幕 MCU 发布。支持原厂 MCU 协议和当前 RC6 扩展协议、传感器读数、电池状态、RTC 授时、触摸换页、模块启停和启动维护窗口。",
+        "en": "Adds ESP32 firmware and a separate screen MCU release for BRY88BBA15G. Supports the stock MCU and current RC6 extensions, sensor readings, battery status, RTC synchronization, touch page navigation, module control and a startup maintenance window."
       },
       "ota_summary": {
-        "zh-CN": "新增带屏幕 BRY88BBA15G 的 ESP32 固件与独立屏幕 MCU 发布。支持原厂 MCU 协议和当前 RC6 扩展协议、传感器读数、电池状态、RTC 授时、触摸换页、PD12 模块电源控制及可提前继续的恢复窗口。屏幕应用升级保留原厂引导区。",
-        "en": "Adds ESP32 firmware and a separate screen MCU release for BRY88BBA15G. Supports the stock MCU and current RC6 extensions, sensor readings, battery status, RTC synchronization, touch page navigation, PD12 module power control and an interruptible recovery window. Screen application updates preserve the stock bootloader."
+        "zh-CN": "新增带屏幕 BRY88BBA15G 的 ESP32 固件与独立屏幕 MCU 发布。支持原厂 MCU 协议和当前 RC6 扩展协议、传感器读数、电池状态、RTC 授时、触摸换页、模块启停和启动维护窗口。",
+        "en": "Adds ESP32 firmware and a separate screen MCU release for BRY88BBA15G. Supports the stock MCU and current RC6 extensions, sensor readings, battery status, RTC synchronization, touch page navigation, module control and a startup maintenance window."
       },
       "summary_complete": true,
       "critical": false,
@@ -9413,9 +9413,9 @@
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
-        "reviewed_utc": "2026-11-07T11:51:50.394703+00:00",
-        "reason": "Reviewed implemented behavior, device scope and matching Chinese and English text.",
-        "reviewed_content_sha256": "61ad473c4c933a32eb08bf50620cb967ee1fa10f3e5c7ec20dd8733a586ca154"
+        "reviewed_utc": "2026-11-08T16:41:53.149379+00:00",
+        "reason": "Reviewed current RC6 behavior, paired installation steps and matching Chinese and English text.",
+        "reviewed_content_sha256": "1bd8b6ad1c514874fcad53261caea6b97267ef0affe251c963f9d1beff34165c"
       }
     },
     {
@@ -9467,15 +9467,15 @@
           "BRY88BBA15G/screen_commands.inc"
         ],
         "firmware_source_sha256": {
-          "frontend.lock.json": "1b0f230c3edf1144e2fe7f5d89c36fe75b86e1c2ea4e183793bf3a0f09474403",
+          "frontend.lock.json": "47589649240f795b3ff0699989c0ce352f1d69057e042e4cbe72bd47c1249c44",
           "BRY88BBA15G/screen_commands.inc": "5940425dd079a72a731a879211fccc9378dcefd831406bd2f69050cef57d3217"
         }
       },
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
-        "reviewed_utc": "2026-11-07T20:26:42.634804+00:00",
-        "reason": "Reviewed compact layout dimensions, quad SFC defaults and wallpaper sensor behavior in both languages.",
+        "reviewed_utc": "2026-11-08T16:41:53.149535+00:00",
+        "reason": "Reviewed current RC6 behavior, paired installation steps and matching Chinese and English text.",
         "reviewed_content_sha256": "019cf11ad6e578260ec08fcaff1a486176efa7c28d9bd1649503ee0361058e1c"
       }
     },
@@ -9510,12 +9510,12 @@
         "en": "Online updates for ESP32, screen and font"
       },
       "description": {
-        "zh-CN": "ESP32 可从 GitHub、国内和国际镜像检查并安装签名更新，RC 构建使用独立候选通道。屏幕和字库可在局域网页资源页检查、下载并校验后安装；屏幕大文件上传需要本地直连。原厂免拆迁移工具先只更新 ESP32，保留原厂 MCU。新脚本与新 ESP32 支持直接安装完整屏幕应用，取消强制引导备份、原厂版本白名单和首装恢复镜像限制；新 MCU 取消引导 MD5 白名单，原厂引导区保留。",
-        "en": "ESP32 can check and install signed updates from GitHub, China and global mirrors; RC builds use a separate candidate channel. Screen applications and fonts can be checked, downloaded and verified from the LAN resource page; large screen uploads require direct LAN access. Wireless stock migration updates only ESP32 first and preserves the stock MCU. The new tool and ESP32 install complete screen applications directly without mandatory boot backup, a stock-version allowlist or recovery-first installation. The new MCU removes its boot MD5 allowlist and preserves the stock bootloader."
+        "zh-CN": "ESP32 可从 GitHub、国内和国际镜像检查并安装签名更新，RC 构建使用独立候选通道。屏幕和字库可在局域网页资源页检查、下载并校验后安装；屏幕大文件上传需要本地直连。免拆迁移先更新 ESP32 并保留原厂屏幕，再按需直接安装社区屏幕应用，保留原厂引导区。安装工具与固件从当前 RC6 下载页配套获取，或使用更新的兼容版本。",
+        "en": "ESP32 can check and install signed updates from GitHub, China and global mirrors; RC builds use a separate candidate channel. Screen applications and fonts can be checked, downloaded and verified from the LAN resource page; large screen uploads require direct LAN access. Wireless migration updates ESP32 first while preserving the stock screen, then optionally installs the community screen application directly while preserving the stock boot region. Get matching tools and firmware from the current RC6 download page, or use a newer compatible release."
       },
       "ota_summary": {
-        "zh-CN": "ESP32 可从 GitHub、国内和国际镜像检查并安装签名更新，RC 构建使用独立候选通道。屏幕和字库可在局域网页资源页检查、下载并校验后安装；屏幕大文件上传需要本地直连。原厂免拆迁移工具先只更新 ESP32，保留原厂 MCU。新脚本与新 ESP32 支持直接安装完整屏幕应用，取消强制引导备份、原厂版本白名单和首装恢复镜像限制；新 MCU 取消引导 MD5 白名单，原厂引导区保留。",
-        "en": "ESP32 can check and install signed updates from GitHub, China and global mirrors; RC builds use a separate candidate channel. Screen applications and fonts can be checked, downloaded and verified from the LAN resource page; large screen uploads require direct LAN access. Wireless stock migration updates only ESP32 first and preserves the stock MCU. The new tool and ESP32 install complete screen applications directly without mandatory boot backup, a stock-version allowlist or recovery-first installation. The new MCU removes its boot MD5 allowlist and preserves the stock bootloader."
+        "zh-CN": "ESP32 可从 GitHub、国内和国际镜像检查并安装签名更新，RC 构建使用独立候选通道。屏幕和字库可在局域网页资源页检查、下载并校验后安装；屏幕大文件上传需要本地直连。免拆迁移先更新 ESP32 并保留原厂屏幕，再按需直接安装社区屏幕应用，保留原厂引导区。安装工具与固件从当前 RC6 下载页配套获取，或使用更新的兼容版本。",
+        "en": "ESP32 can check and install signed updates from GitHub, China and global mirrors; RC builds use a separate candidate channel. Screen applications and fonts can be checked, downloaded and verified from the LAN resource page; large screen uploads require direct LAN access. Wireless migration updates ESP32 first while preserving the stock screen, then optionally installs the community screen application directly while preserving the stock boot region. Get matching tools and firmware from the current RC6 download page, or use a newer compatible release."
       },
       "summary_complete": true,
       "critical": false,
@@ -9531,7 +9531,7 @@
         ],
         "firmware_source_sha256": {
           "BRY88BBA15G/online_ota.inc": "9c92c0d89f24952766c111e81f63f243eaadc0a4a3c3c4658b716c8427a4c418",
-          "tools/daikin_g3_migrate/README.md": "f1aa28d6ebfcd6ebf5441646d95253e03a48404669a0447ae54faa936fd4a411",
+          "tools/daikin_g3_migrate/README.md": "13649e1e3cb8af5b03b5cb363cf528742e4eb03fe68d88d30d20eed247b67e4e",
           "BRY88BBA15G/screen_update_start.inc": "76656ad4e80139c1933db7ea9ce30ecbab9694656dcdf2317723c203ddccc984",
           "BRY88BBA15G/tools/flash_screen.py": "200a6be3146e0827bc1758a0c1f1295838af00414488d5ce0fce4673ed9c3c34"
         }
@@ -9539,9 +9539,9 @@
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
-        "reviewed_utc": "2026-11-07T16:07:38.655777+00:00",
-        "reason": "Reviewed direct complete-application installation policy and both translations.",
-        "reviewed_content_sha256": "c7f3d1f20ce105f842fedd1ba0f036e2f43fdde6d97366dc562eb568d7b804d3"
+        "reviewed_utc": "2026-11-08T16:41:53.149607+00:00",
+        "reason": "Reviewed current RC6 behavior, paired installation steps and matching Chinese and English text.",
+        "reviewed_content_sha256": "7a71e11ab1a7fcdf7795c8a1b2825e61b51f372eef2b49ec3731deac400542cf"
       }
     },
     {
@@ -9601,9 +9601,9 @@
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
-        "reviewed_utc": "2026-11-07T11:51:50.394937+00:00",
-        "reason": "Reviewed implemented behavior, device scope and matching Chinese and English text.",
-        "reviewed_content_sha256": "9f40df0fcb39d38475cd0d7660a075d4cabc74cf19facf07c0e2f707baa5aa7a"
+        "reviewed_utc": "2026-11-08T16:41:53.149696+00:00",
+        "reason": "Reviewed current RC6 behavior, paired installation steps and matching Chinese and English text.",
+        "reviewed_content_sha256": "56caaa4cb0072e5698ba77fb98ebaf9e3734870a1915e7e925223fcb3561431d"
       }
     },
     {
@@ -9660,9 +9660,9 @@
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
-        "reviewed_utc": "2026-11-07T11:51:50.394987+00:00",
-        "reason": "Reviewed implemented behavior, device scope and matching Chinese and English text.",
-        "reviewed_content_sha256": "a6e74394226a168f78c43aae807d7c9e90c7db344835a5e948ba5f1d312f6151"
+        "reviewed_utc": "2026-11-08T16:41:53.149774+00:00",
+        "reason": "Reviewed current RC6 behavior, paired installation steps and matching Chinese and English text.",
+        "reviewed_content_sha256": "c8056720890a7293561b79201195d963d423c8ee2258b379c6dc0248b889d0f6"
       }
     },
     {
@@ -9723,16 +9723,16 @@
           "site/index.html"
         ],
         "firmware_source_sha256": {
-          "frontend.lock.json": "1b0f230c3edf1144e2fe7f5d89c36fe75b86e1c2ea4e183793bf3a0f09474403",
+          "frontend.lock.json": "47589649240f795b3ff0699989c0ce352f1d69057e042e4cbe72bd47c1249c44",
           "site/index.html": "aafce24dfd05bb9eac7d8ef9d2500e02255cce38a135a6948364abaa91b86c54"
         }
       },
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
-        "reviewed_utc": "2026-11-07T11:51:50.395043+00:00",
-        "reason": "Reviewed implemented behavior, device scope and matching Chinese and English text.",
-        "reviewed_content_sha256": "950503b1502714e8e827c4316a4af90c8a3f91d2a9f9bce6a301f8ca1e51edd6"
+        "reviewed_utc": "2026-11-08T16:41:53.149810+00:00",
+        "reason": "Reviewed current RC6 behavior, paired installation steps and matching Chinese and English text.",
+        "reviewed_content_sha256": "99348655b1a95615180ac25de8420dc0f2afb073e2a948efa1e0b81dc62c655f"
       }
     },
     {
@@ -9740,8 +9740,8 @@
       "component": "firmware",
       "critical": false,
       "description": {
-        "en": "NOR uses hardware quad SFC by default, with corrected wallpaper writes and readback. Single SFC or GPIO requires an explicit ESP32 command during diagnostic startup. Fixes the PM2.5/TVOC module remaining disabled after wallpaper uploads, which caused stale readings and blocked subsequent OTA uploads.",
-        "zh-CN": "NOR 默认使用四线硬件 SFC，修复壁纸写入与回读；单线 SFC 或 GPIO 仅在诊断启动时由 ESP32 显式选择。修复壁纸上传结束后 PM2.5/TVOC 模块未恢复、读数过期并阻止后续 OTA 的问题。"
+        "zh-CN": "修复壁纸上传失败，以及上传后 PM2.5/TVOC 读数未恢复、后续 OTA 受阻的问题。NOR 默认使用四线硬件 SFC。",
+        "en": "Fixes wallpaper upload failures and the PM2.5/TVOC readings failing to resume afterward, which also blocked later OTA uploads. NOR defaults to hardware quad SFC."
       },
       "evidence": {
         "firmware_source_sha256": {
@@ -9759,8 +9759,8 @@
         "state": "active"
       },
       "ota_summary": {
-        "en": "NOR uses hardware quad SFC by default, with corrected wallpaper writes and readback. Single SFC or GPIO requires an explicit ESP32 command during diagnostic startup. Fixes the PM2.5/TVOC module remaining disabled after wallpaper uploads, which caused stale readings and blocked subsequent OTA uploads.",
-        "zh-CN": "NOR 默认使用四线硬件 SFC，修复壁纸写入与回读；单线 SFC 或 GPIO 仅在诊断启动时由 ESP32 显式选择。修复壁纸上传结束后 PM2.5/TVOC 模块未恢复、读数过期并阻止后续 OTA 的问题。"
+        "zh-CN": "修复壁纸上传失败，以及上传后 PM2.5/TVOC 读数未恢复、后续 OTA 受阻的问题。NOR 默认使用四线硬件 SFC。",
+        "en": "Fixes wallpaper upload failures and the PM2.5/TVOC readings failing to resume afterward, which also blocked later OTA uploads. NOR defaults to hardware quad SFC."
       },
       "review_status": "approved",
       "scope": {
@@ -9789,9 +9789,9 @@
         "zh-CN": "G3 NOR 与壁纸上传修复"
       },
       "translation_review": {
-        "reason": "Reviewed compact layout dimensions, quad SFC defaults and wallpaper sensor behavior in both languages.",
-        "reviewed_content_sha256": "f46eae7734007bd40b8214ca2ff29f98cd93ad3a0598b3c97f04ab4134d8dbfc",
-        "reviewed_utc": "2026-11-07T20:26:42.634804+00:00",
+        "reason": "Reviewed current RC6 behavior, paired installation steps and matching Chinese and English text.",
+        "reviewed_content_sha256": "3cce647c5855e86f145ae6c9a14ea321be33c1b5455c1e8beb3d04dae98df5ff",
+        "reviewed_utc": "2026-11-08T16:41:53.149864+00:00",
         "reviewer": "/root",
         "status": "approved"
       },
@@ -9854,14 +9854,14 @@
           "BRY88BBA15G/weather_net.inc": "18cf62f6054fc1574f91a6f90074b33db20d8c27a334c2f4fa57a3913ae39993",
           "BRY88BBA15G/runtime.inc": "4c1eee9b3e9ccf764dd303db22723affc0b2705a196cef4f01801c234a92bef4",
           "tools/daikin_g3_migrate/provision_linux.py": "b3e0e74d66c49c5c1cc6cb9c6f74f1f3776820a76e15315cd35a8c6a4eee16a0",
-          "tools/daikin_g3_migrate/README.md": "f1aa28d6ebfcd6ebf5441646d95253e03a48404669a0447ae54faa936fd4a411"
+          "tools/daikin_g3_migrate/README.md": "13649e1e3cb8af5b03b5cb363cf528742e4eb03fe68d88d30d20eed247b67e4e"
         }
       },
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
-        "reason": "Author reviewed both languages against the implementation.",
-        "reviewed_utc": "2026-11-08T09:44:30.611514+00:00",
+        "reason": "Reviewed current RC6 behavior, paired installation steps and matching Chinese and English text.",
+        "reviewed_utc": "2026-11-08T16:41:53.149961+00:00",
         "reviewed_content_sha256": "89e1e613ecf70db4209d2a201f7e4393365bda48cc8badddbe92f45310f5cb3c"
       }
     },
@@ -9896,12 +9896,12 @@
         "en": "G3 startup and online update load"
       },
       "description": {
-        "zh-CN": "ESP32 使用与原厂一致的 80 MHz，Wi-Fi 稳定后关闭恢复热点。屏幕先完成字库加载再开启传感器；在线 OTA 等待模块断电时保持 MCU 通信，修复升级准备阶段的等待失败。修复 ESP32 写入 Flash 时因周期状态丢失或回执时间差而误中止模块休眠，支持正常屏幕运行时连续 OTA，更新后恢复传感器。",
-        "en": "ESP32 uses the factory 80 MHz limit and closes the recovery access point after Wi-Fi stabilizes. The screen finishes font loading before enabling sensors. Online OTA keeps MCU communication active while waiting for module power-off, fixing preparation failures. Fixes false module-sleep aborts caused by missed periodic status or ACK timing during ESP32 flash writes. Consecutive OTA updates preserve sensor resumption after reboot."
+        "zh-CN": "ESP32 使用 80 MHz，Wi-Fi 稳定后关闭恢复热点。屏幕先完成字库加载再开启传感器，降低初始化并发负载。修复 OTA 准备失败和上传中断；支持屏幕正常运行时连续更新，完成后恢复传感器。",
+        "en": "ESP32 uses 80 MHz and closes the recovery access point after Wi-Fi stabilizes. The screen loads fonts before enabling sensors to reduce concurrent startup load. Fixes OTA preparation failures and interrupted uploads. Consecutive updates work while the screen runs normally, with sensors resuming afterward."
       },
       "ota_summary": {
-        "zh-CN": "ESP32 使用与原厂一致的 80 MHz，Wi-Fi 稳定后关闭恢复热点。屏幕先完成字库加载再开启传感器；在线 OTA 等待模块断电时保持 MCU 通信，修复升级准备阶段的等待失败。修复 ESP32 写入 Flash 时因周期状态丢失或回执时间差而误中止模块休眠，支持正常屏幕运行时连续 OTA，更新后恢复传感器。",
-        "en": "ESP32 uses the factory 80 MHz limit and closes the recovery access point after Wi-Fi stabilizes. The screen finishes font loading before enabling sensors. Online OTA keeps MCU communication active while waiting for module power-off, fixing preparation failures. Fixes false module-sleep aborts caused by missed periodic status or ACK timing during ESP32 flash writes. Consecutive OTA updates preserve sensor resumption after reboot."
+        "zh-CN": "ESP32 使用 80 MHz，Wi-Fi 稳定后关闭恢复热点。屏幕先完成字库加载再开启传感器，降低初始化并发负载。修复 OTA 准备失败和上传中断；支持屏幕正常运行时连续更新，完成后恢复传感器。",
+        "en": "ESP32 uses 80 MHz and closes the recovery access point after Wi-Fi stabilizes. The screen loads fonts before enabling sensors to reduce concurrent startup load. Fixes OTA preparation failures and interrupted uploads. Consecutive updates work while the screen runs normally, with sensors resuming afterward."
       },
       "summary_complete": true,
       "critical": false,
@@ -9929,9 +9929,9 @@
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
-        "reason": "Author reviewed both languages against the implementation.",
-        "reviewed_utc": "2026-11-08T14:34:05.772476+00:00",
-        "reviewed_content_sha256": "81de31b88a431d5f5f5f41ec532845bc7df06a7f2e5fc0a7bcbb36b3ef6a3296"
+        "reason": "Reviewed current RC6 behavior, paired installation steps and matching Chinese and English text.",
+        "reviewed_utc": "2026-11-08T16:41:53.150087+00:00",
+        "reviewed_content_sha256": "b9be6778621108bbc7caf27a9be1b1db93da932f2329e948917c467fbd686a9a"
       }
     },
     {
@@ -9990,8 +9990,8 @@
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
-        "reason": "Author reviewed both languages against the implementation.",
-        "reviewed_utc": "2026-11-08T09:44:30.612082+00:00",
+        "reason": "Reviewed current RC6 behavior, paired installation steps and matching Chinese and English text.",
+        "reviewed_utc": "2026-11-08T16:41:53.150205+00:00",
         "reviewed_content_sha256": "22dbd08f9f67595ef15f5d080b8083fed2f86bb979bbf6de64016af7a593ba96"
       }
     },
@@ -10049,8 +10049,8 @@
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
-        "reason": "Author reviewed both languages against the implementation.",
-        "reviewed_utc": "2026-11-08T14:50:08.706428+00:00",
+        "reason": "Reviewed current RC6 behavior, paired installation steps and matching Chinese and English text.",
+        "reviewed_utc": "2026-11-08T16:41:53.150250+00:00",
         "reviewed_content_sha256": "e18405c954c43888d10843d43801c4c04f61a07140a12d249f04f1e4b6e74c44"
       }
     },
@@ -10085,12 +10085,12 @@
         "en": "G3 direct screen installation from the WebUI"
       },
       "description": {
-        "zh-CN": "首次从原厂屏幕安装和后续社区屏幕升级均可直接选择在线安装或上传文件。一次确认后自动校验、传输并激活，确认新 MCU 正常启动后显示安装成功。修复原厂引导交接后偶发的 PLL 未重新锁定及低频启动后的 SDRAM 故障维护；更新提示换行不再显示为问号。",
-        "en": "Both first installation from stock screen firmware and later community updates support online installation or file upload. One confirmation starts verification, transfer and activation; success appears after the new MCU starts normally. Fixes intermittent PLL locking after factory-loader handoff and the resulting low-clock SDRAM recovery. Update-message line breaks no longer appear as question marks."
+        "zh-CN": "首次从原厂屏幕安装和后续社区屏幕升级均可直接选择在线安装或上传文件。一次确认后自动校验、传输并激活，确认新 MCU 正常启动后显示安装成功。修复首次安装后偶发黑屏，以及在线下载误报参数无效的问题。更新提示的换行不再显示为问号。",
+        "en": "Both first installation from stock screen firmware and later community updates support online installation or file upload. One confirmation starts verification, transfer and activation; success appears after the new MCU starts normally. Fixes intermittent black screens after first installation and invalid-parameter errors during online downloads. Update-message line breaks no longer appear as question marks."
       },
       "ota_summary": {
-        "zh-CN": "首次从原厂屏幕安装和后续社区屏幕升级均可直接选择在线安装或上传文件。一次确认后自动校验、传输并激活，确认新 MCU 正常启动后显示安装成功。修复原厂引导交接后偶发的 PLL 未重新锁定及低频启动后的 SDRAM 故障维护；更新提示换行不再显示为问号。",
-        "en": "Both first installation from stock screen firmware and later community updates support online installation or file upload. One confirmation starts verification, transfer and activation; success appears after the new MCU starts normally. Fixes intermittent PLL locking after factory-loader handoff and the resulting low-clock SDRAM recovery. Update-message line breaks no longer appear as question marks."
+        "zh-CN": "首次从原厂屏幕安装和后续社区屏幕升级均可直接选择在线安装或上传文件。一次确认后自动校验、传输并激活，确认新 MCU 正常启动后显示安装成功。修复首次安装后偶发黑屏，以及在线下载误报参数无效的问题。更新提示的换行不再显示为问号。",
+        "en": "Both first installation from stock screen firmware and later community updates support online installation or file upload. One confirmation starts verification, transfer and activation; success appears after the new MCU starts normally. Fixes intermittent black screens after first installation and invalid-parameter errors during online downloads. Update-message line breaks no longer appear as question marks."
       },
       "summary_complete": true,
       "critical": false,
@@ -10103,16 +10103,16 @@
           "docs/public/daikin-g3-guide.md"
         ],
         "firmware_source_sha256": {
-          "frontend.lock.json": "1b0f230c3edf1144e2fe7f5d89c36fe75b86e1c2ea4e183793bf3a0f09474403",
-          "docs/public/daikin-g3-guide.md": "7a7ca20e56b14203994a1807d911ea5fbb86a032c8b9d95f9f439f766fa062f3"
+          "frontend.lock.json": "47589649240f795b3ff0699989c0ce352f1d69057e042e4cbe72bd47c1249c44",
+          "docs/public/daikin-g3-guide.md": "8b710ee861329806d394cbab69a672bc40f8f0f79bc4cc2eb55fbfe260a9b9d5"
         }
       },
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
-        "reason": "Author reviewed both languages against the implementation.",
-        "reviewed_utc": "2026-11-08T14:34:05.772605+00:00",
-        "reviewed_content_sha256": "7078d5fcb67fda1e4ea082dabc64be0d1b48281b57b12e559e06474ed3a63cb0"
+        "reason": "Reviewed current RC6 behavior, paired installation steps and matching Chinese and English text.",
+        "reviewed_utc": "2026-11-08T16:41:53.150281+00:00",
+        "reviewed_content_sha256": "1933b326536c1610d975b40fd90bf75e191ef1b39b1da53c44cd97b5ba58f2b6"
       }
     },
     {
@@ -10163,14 +10163,14 @@
           "frontend.lock.json"
         ],
         "firmware_source_sha256": {
-          "frontend.lock.json": "1b0f230c3edf1144e2fe7f5d89c36fe75b86e1c2ea4e183793bf3a0f09474403"
+          "frontend.lock.json": "47589649240f795b3ff0699989c0ce352f1d69057e042e4cbe72bd47c1249c44"
         }
       },
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
-        "reason": "Author reviewed both languages against the implementation.",
-        "reviewed_utc": "2026-11-08T09:44:30.613721+00:00",
+        "reason": "Reviewed current RC6 behavior, paired installation steps and matching Chinese and English text.",
+        "reviewed_utc": "2026-11-08T16:41:53.150322+00:00",
         "reviewed_content_sha256": "de340b32ec5d4fa44a9e23467c75836d3f3735bd43a44632838daae800fe2cfc"
       }
     }
