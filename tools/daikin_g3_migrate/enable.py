@@ -21,4 +21,6 @@ def main():
     try:enable(a.directory,a.device,a.firmware,a.version)
     except (ValueError,OSError,KeyError) as e:p.exit(2,str(e)+'\n')
     print('ESP32 offer enabled. Recreate only the HTTPS service; the broker certificate is unchanged.')
+    print('Recommended: current RC6 G3 firmware and its matching migration bundle, or a newer compatible release. https://phicomm-io.github.io/#daikin-g3-downloads')
+    print('建议使用当前 RC6 的配套 G3 固件和迁移工具包，或更新的兼容版本。')
 if __name__=='__main__':main()

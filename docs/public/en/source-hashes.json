@@ -22,15 +22,15 @@
   "daikin-guide": "2989a1917e57beafe34e644aef8cb5d70747ca854ec0aafd23b552a7931135bf",
   "daikin-stock-ota": "4380c3330b3be4b4a26afaff5a0b7c347d3377ada9582efefd7520e1abad6347",
   "daikin-automation": "a0153fdbbe007d335aacd4a70e650aeb66fda235663b9635b5d786488a3036c5",
-  "daikin-g3-guide": "7a7ca20e56b14203994a1807d911ea5fbb86a032c8b9d95f9f439f766fa062f3",
-  "daikin-g3-layout": "0d92b6a11f21220b8dba11d63dacd9603d02d914c88a8c9b37352e26b2912fee",
-  "daikin-g3-services": "c0177370105ae5a75a0ed4af419b6cddcc1ffaa29aab73655ad8d7bc9e03cada",
-  "daikin-g3-diagnostics": "ffb167258cdc99815e20f942f67e395822e3ed2bad3449c0ff193da540b38173",
-  "daikin-g3-development": "c540ac7bec092d228cd0642db9dcab92da0db57f087643a071b54cfc76883456",
+  "daikin-g3-guide": "8b710ee861329806d394cbab69a672bc40f8f0f79bc4cc2eb55fbfe260a9b9d5",
+  "daikin-g3-layout": "f4b47b9147a8bc1e7b93d6fcbd961b06bc0cf4576caeddfc4c0b1962adc965fc",
+  "daikin-g3-services": "9839537cd7fcf16bd4c82a9947d2ce2f58cf480edb06b3d53edba2db5dedb3f9",
+  "daikin-g3-diagnostics": "ad8380800139e784b1e393529a8c688900b9b6e725c3397d0fa0aab9121b0456",
+  "daikin-g3-development": "76ceba8012811ba53ccf03788ba51fc2c84cf5ed58b7f81ca6157ad5892226e4",
   "quick-start": "6cfc08376fef1d9da5c6633a3e26994fe647913a94d756c2870fc1d0ab74fd9a",
   "flash-prep": "23648370e8be39bd47fee54c52724ab5fabe8432cd6d83e2ef1384d89eef6c54",
   "firmware-update": "1bfcdec11ff93a6d0bed9ed8b15d8f10b15b9966b5681fccc4c4413779b69429",
-  "stock-backups": "ee5d561ae4b1a6b3373a9e578cd3fd62bf8fa0d91edeabd507565389eee46bb9",
+  "stock-backups": "40c24c39b77e19271f457eeb781090ee0e1614ac0184a570d7cb19ee6f2351b5",
   "iotcloud-connect": "7675d33007c257d06e41fe8ee033317dd4d822248a48f61e1400c70e9c3b4f45",
   "mqtt-link": "1ed41cd2413d7b7c890970764479c83e7f4f31d771a5633466cc68e65bd5bcb1",
   "faq": "0d5a370ca6203173b289ff0c3c696a1c4fe8b4468cade2b227d5f5a6492b8c29",
@@ -38,5 +38,5 @@
   "iotcloud-deploy": "c25b3001f9ef687fa2767573de5465238b492c1644456828e018ad5bf8593779",
   "build-deps": "f240b3fcc808738b078c17889139fcbe23292715193b2052a0a41004724885d4",
   "sources": "58ce2fe4fa93a2b171954d2ea44f3e10e36969e9d2e2f948fd5e715b5c50e2ad",
-  "release-log": "47f189ef50722f47c1b58b5baf9148fda7139264c181f725c862c0201c0cbbea"
+  "release-log": "216979f6421a378c5dcea295ca41eec8295f3944a82d61f70bf358ac8b14499b"
 }

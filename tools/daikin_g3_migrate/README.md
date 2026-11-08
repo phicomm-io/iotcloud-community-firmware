@@ -1,10 +1,12 @@
 # Daikin G3 wireless migration / 大金 G3 免拆迁移
 
-For **BRY88BBA15G / SENSOR3_ESP32**. First migrate only ESP32; the factory screen MCU remains usable. Tools emulate the stock gateway, MQTT and HTTPS services on your LAN. They never flash the MCU or a bootloader. Stock firmware/provisioning differences can prevent the migration; check the device version and readings after reboot.
+仅用于带屏幕的 **BRY88BBA15G / SENSOR3_ESP32**。先免拆更新 ESP32，保留原厂屏幕；随后可在设备网页直接安装社区屏幕 MCU。
 
-仅用于带屏幕的三代 BRY88BBA15G。先更新 ESP32，保留原厂屏幕；再按网页的屏幕更新流程迁移 MCU。设备必须正常启动并联网。准备 Python 3、OpenSSL、Docker Compose、可为单台设备指定 DNS 的路由器，以及有蓝牙的 Linux 或 Mac。Linux 使用 BlueZ 和 python3-dbus；macOS 还需 Xcode Command Line Tools。
+请从[下载页](https://phicomm-io.github.io/#daikin-g3-downloads)获取当前 RC6 的完整 `daikin_G3_migration.tar.gz` 与配套 G3 固件，或使用更新的兼容版本。不要混用不同发布的脚本、ESP32 和屏幕 MCU。校验同一发布的 `SHA256SUMS`。
 
-The republished RC6 archive contains both provisioners. Linux users with an older package can also download [`provision_linux.py`](provision_linux.py) and [`wifi.example.json`](wifi.example.json) from this directory. The instructions below include the stock weather prerequisite discovered during a second-device migration.
+For **BRY88BBA15G / SENSOR3_ESP32**. Migrate ESP32 first, preserving the stock screen. The device WebUI can then install the community screen MCU directly. Use the complete current RC6 migration bundle and matching G3 firmware from the [download page](https://phicomm-io.github.io/#daikin-g3-downloads), or a newer compatible release. Verify its `SHA256SUMS` and use tools and images from the same release.
+
+The detector must boot and connect to Wi-Fi. Prepare Python 3, OpenSSL, Docker Compose, per-device DNS control, and a Bluetooth-equipped Linux host or Mac. Linux uses BlueZ and `python3-dbus`; macOS also needs Xcode Command Line Tools. The temporary services emulate the factory gateway, MQTT and HTTPS endpoints on your LAN.
 
 ## 1. Prepare a temporary LAN service
 
@@ -35,7 +37,7 @@ chmod 600 /private/path/wifi.json
 ssh USER@BLUETOOTH_HOST '/usr/bin/python3 /path/provision_linux.py' < /private/path/wifi.json
 ```
 
-The tool selects the exact name/address, checks the BLUFi response and sends the factory custom message. A successful send still needs DHCP and gateway verification. The detector normally closes Bluetooth after Wi-Fi provisioning; short-press the network button again before resending. To send only the gateway MAC, set `"operation": "gateway"` in the private JSON.
+The tool selects the exact name/address, checks the BLUFi response and sends the factory custom message. Check DHCP and gateway association after provisioning. The detector normally closes Bluetooth after Wi-Fi provisioning; short-press the network button again before resending. To send only the gateway MAC, set `"operation": "gateway"` in the private JSON.
 
 ### macOS / CoreBluetooth
 
@@ -66,13 +68,13 @@ python3 local_gateway_responder.py --device AABBCCDDEEFF \
   --empty-gateway --weather-code 1 --seconds 600
 ```
 
-Run only one responder for this device. The host replies to the selected detector and reports no associated HVAC equipment. On stock MCU `SV.04.00.01.00`, an empty weather response keeps the device retrying weather and prevents it reaching gateway/OTA preparation. `--weather-code 1` supplies a temporary synthetic icon code; temperature, humidity and PM2.5 use missing-value sentinels. It is not a weather observation. The migration does not configure a real weather provider.
+Run only one responder for this device. The host replies to the selected detector and reports no associated HVAC equipment. On stock MCU `SV.04.00.01.00`, an empty weather response keeps the device retrying weather and prevents it reaching gateway/OTA preparation. `--weather-code 1` supplies a temporary synthetic icon code; temperature, humidity and PM2.5 use missing-value sentinels. Configure a real weather provider in the community WebUI after migration.
 
-Wait for acknowledgements for `snapshot_upload`, `get_weather`, `login_ipbox`, `get_filter_sensor3` and `get_error_sensor3` before triggering OTA. Confirm HTTPS traffic with `docker compose -f ./lab/compose.json logs -f https`. Successful MQTT association alone is not an upgrade; an artifact download must follow the next step.
+Wait for acknowledgements for `snapshot_upload`, `get_weather`, `login_ipbox`, `get_filter_sensor3` and `get_error_sensor3` before triggering OTA. Confirm HTTPS traffic with `docker compose -f ./lab/compose.json logs -f https`.
 
 ## 3. Offer and trigger ESP32 only
 
-Download the RC6 **G3 raw ESP32 application** `daikin_BRY88BBA15G.ota.bin.raw` and verify `SHA256SUMS`. Do not use a G1/G2 image, `all.bin`, `.signed`, or the MCU image. `V99.00.00` below is the tested temporary stock OTA target label, used consistently in both commands; after reboot the community firmware reports its own Git-derived RC6 identity.
+Download the current release’s **G3 raw ESP32 application** `daikin_BRY88BBA15G.ota.bin.raw` and verify `SHA256SUMS`. Do not use a G1/G2 image, `all.bin`, `.signed`, or the MCU image. `V99.00.00` below is the tested temporary stock OTA target label, used consistently in both commands; after reboot the community firmware reports its own Git-derived version.
 
 ```sh
 python3 enable.py --directory ./lab --device AABBCCDDEEFF \
@@ -88,9 +90,25 @@ python3 trigger.py --device AABBCCDDEEFF --host 192.168.1.10 \
 
 Remove the three per-device DNS overrides and restore the original DHCP DNS. Stop the gateway responder and remove the temporary containers with `docker compose -f ./lab/compose.json down`. Remove the private lab directory and Wi-Fi JSON/plist when finished. Keep your factory backups separately.
 
-Community updates: **Settings → Firmware** checks the online ESP32 source. **Settings → Screen → Resources and update** checks/downloads the paired screen application and optional font, or accepts local files. Screen binary uploads require the browser to be connected directly to the detector on the LAN. With the new paired ESP32 and tool, the complete MCU application can be installed directly on stock firmware; no boot backup, stock-version allowlist or recovery-first step is required. The updater validates NOR staging and leaves the existing boot region intact.
+Community updates: **Settings → Firmware** installs ESP32 updates. For the screen, update the paired ESP32 first, open the device directly on the LAN, then go to **Settings → Screen → Resources and update**. Choose **Check updates → Install screen update**, or select `daikin_G3_screen.bin` from the same release and choose **Upload and install**. Wait for **Screen firmware installed and running normally**, then check its version and sensor readings. The optional font is installed separately. Screen installation preserves the factory boot region and needs no preliminary boot backup or recovery image.
 
-中文步骤摘要：先启动无升级服务并配置仅本机的三个域名 → 短按背面网络键，用 Linux BlueZ 或 macOS 工具配网并补齐虚拟网关 → 启动一个带 `--weather-code 1 --empty-gateway` 的应答器，等待天气、网关登录、滤网和错误查询均得到应答 → 校验 G3 raw 应用，显式启用并发送一次仅 ESP32 升级 → 核对社区网页版本与读数 → 撤销 DNS 和临时服务。天气码仅为通过原厂前置流程的临时占位；温湿度和 PM2.5 是缺测值。配网成功后蓝牙会关闭，需要重发时再次短按网络键。
+中文步骤：创建临时服务与仅本设备的 DNS → 短按背面网络键，用 Linux 或 macOS 工具配网并配置虚拟网关 → 启动一个带 `--weather-code 1 --empty-gateway` 的应答器，等天气、网关登录、滤网及错误查询得到应答 → 校验当前发布的 G3 raw 应用，启用并发送一次 ESP32 更新 → 核对网页版本与读数 → 撤销 DNS 并停止临时服务。随后可在设备局域网页的“屏幕 → 资源与升级”在线安装或上传同版屏幕应用，等待正常启动。具体设置见[中文指南](https://phicomm-io.github.io/guides/daikin-g3-guide.html)。
+
+## Optional command-line screen installation / 可选命令行屏幕安装
+
+The bundle includes `screen/flash_screen.py` and `screen/backup_screen_boot.py`. Install Python `msgpack` before using them. With the paired ESP32 installed, this command installs the complete application on either stock or community MCU firmware:
+
+工具包中的脚本需要 Python `msgpack`。先更新配套 ESP32，再执行以下命令即可安装屏幕应用：
+
+```sh
+python3 -m pip install msgpack
+python3 screen/flash_screen.py --url http://DEVICE_IP \
+  --image ../daikin_G3_screen.bin --mode install --log install.jsonl
+```
+
+If configured, supply the management password through `IOTCLOUD_AUTH=admin:PASSWORD`. Optional backup and recovery details are in the [development guide](https://phicomm-io.github.io/guides/en/daikin-g3-development.html).
+
+设置了管理密码时通过环境变量 `IOTCLOUD_AUTH=admin:密码` 提供。可选引导备份与恢复镜像见[开发资料](https://phicomm-io.github.io/guides/daikin-g3-development.html)。
 
 ## Local checks
 
@@ -99,24 +117,3 @@ python3 -m unittest discover -s . -p 'test_*.py'
 ```
 
 The tests use loopback HTTPS and temporary fixtures, without changing DNS or contacting a detector.
-
-## Screen MCU / 屏幕 MCU
-
-The ESP32 migration preserves the stock MCU. For an optional screen migration,
-the new paired ESP32 and `screen/flash_screen.py --mode install` send the complete
-application directly to stock firmware. Backup is optional; the new MCU also
-removes the boot MD5 allowlist. The package includes `screen/flash_screen.py` and
-`screen/backup_screen_boot.py`; they require Python `msgpack`.
-
-ESP32 迁移保留原厂屏幕。新脚本与配套 ESP32 可直接发送完整 MCU 应用，取消
-强制备份、原厂版本白名单和首装恢复镜像限制。新 MCU 也取消本地引导 MD5 白名单。
-原厂引导区不改写；串口安装仍依赖它的复制协议，其他引导需核对兼容性。
-已安装的旧 MCU 仍执行旧门控，新工具不能取消旧应用内部的检查。
-
-```sh
-python3 screen/flash_screen.py --url http://DEVICE_IP \
-  --image ../daikin_G3_screen.bin --mode install --log install.jsonl
-```
-
-See the [G3 guide](https://phicomm-io.github.io/guides/en/daikin-g3-guide.html) /
-[中文教程](https://phicomm-io.github.io/guides/zh/daikin-g3-guide.html).

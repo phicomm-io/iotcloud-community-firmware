@@ -8,7 +8,7 @@ Features, fixes and upgrade requirements for each release.
 
 ### Daikin G3 screen and sensor support
 
-Adds ESP32 firmware and a separate screen MCU release for BRY88BBA15G. Supports the stock MCU and current RC6 extensions, sensor readings, battery status, RTC synchronization, touch page navigation, PD12 module power control and an interruptible recovery window. Screen application updates preserve the stock bootloader.
+Adds ESP32 firmware and a separate screen MCU release for BRY88BBA15G. Supports the stock MCU and current RC6 extensions, sensor readings, battery status, RTC synchronization, touch page navigation, module control and a startup maintenance window.
 
 ### Screen composition, weather and reminders
 
@@ -16,7 +16,7 @@ Compose clocks, readings, text, line and stacked charts, weather and reminders w
 
 ### Online updates for ESP32, screen and font
 
-ESP32 can check and install signed updates from GitHub, China and global mirrors; RC builds use a separate candidate channel. Screen applications and fonts can be checked, downloaded and verified from the LAN resource page; large screen uploads require direct LAN access. Wireless stock migration updates only ESP32 first and preserves the stock MCU. The new tool and ESP32 install complete screen applications directly without mandatory boot backup, a stock-version allowlist or recovery-first installation. The new MCU removes its boot MD5 allowlist and preserves the stock bootloader.
+ESP32 can check and install signed updates from GitHub, China and global mirrors; RC builds use a separate candidate channel. Screen applications and fonts can be checked, downloaded and verified from the LAN resource page; large screen uploads require direct LAN access. Wireless migration updates ESP32 first while preserving the stock screen, then optionally installs the community screen application directly while preserving the stock boot region. Get matching tools and firmware from the current RC6 download page, or use a newer compatible release.
 
 ### M1 clock recovery retries
 
@@ -32,7 +32,7 @@ Updates shared socket automation and power refresh, adds G3 layout, brightness, 
 
 ### G3 NOR and wallpaper upload fixes
 
-NOR uses hardware quad SFC by default, with corrected wallpaper writes and readback. Single SFC or GPIO requires an explicit ESP32 command during diagnostic startup. Fixes the PM2.5/TVOC module remaining disabled after wallpaper uploads, which caused stale readings and blocked subsequent OTA uploads.
+Fixes wallpaper upload failures and the PM2.5/TVOC readings failing to resume afterward, which also blocked later OTA uploads. NOR defaults to hardware quad SFC.
 
 ### G3 stock weather and Linux migration
 
@@ -40,7 +40,7 @@ With the stock screen MCU, ESP32 converts real current weather into factory temp
 
 ### G3 startup and online update load
 
-ESP32 uses the factory 80 MHz limit and closes the recovery access point after Wi-Fi stabilizes. The screen finishes font loading before enabling sensors. Online OTA keeps MCU communication active while waiting for module power-off, fixing preparation failures. Fixes false module-sleep aborts caused by missed periodic status or ACK timing during ESP32 flash writes. Consecutive OTA updates preserve sensor resumption after reboot.
+ESP32 uses 80 MHz and closes the recovery access point after Wi-Fi stabilizes. The screen loads fonts before enabling sensors to reduce concurrent startup load. Fixes OTA preparation failures and interrupted uploads. Consecutive updates work while the screen runs normally, with sensors resuming afterward.
 
 ### G3 charging and network icons
 
@@ -52,13 +52,13 @@ Fixes immediate restart after a long-press shutdown. Shutdown waits for key rele
 
 ### G3 direct screen installation from the WebUI
 
-Both first installation from stock screen firmware and later community updates support online installation or file upload. One confirmation starts verification, transfer and activation; success appears after the new MCU starts normally. Fixes intermittent PLL locking after factory-loader handoff and the resulting low-clock SDRAM recovery. Update-message line breaks no longer appear as question marks.
+Both first installation from stock screen firmware and later community updates support online installation or file upload. One confirmation starts verification, transfer and activation; success appears after the new MCU starts normally. Fixes intermittent black screens after first installation and invalid-parameter errors during online downloads. Update-message line breaks no longer appear as question marks.
 
 ### G3 live cloud readings
 
 When LAN and MQTT are both connected, cloud cards and details use the newer sensor readings, preventing an older LAN snapshot from leaving G3 with no data.
 
-Screen OTA preserves the factory boot region. Performance diagnostics remain available for further optimization.
+Known issue: An ESP32 task watchdog reset was previously observed while reading multiple screen configuration items. Its cause remains under investigation.
 
 [RC6 downloads](https://github.com/phicomm-io/iotcloud-community-firmware/releases/tag/v1.0.0-rc.6) · [G3 installation](https://phicomm-io.github.io/guides/en/daikin-g3-guide.html)
 

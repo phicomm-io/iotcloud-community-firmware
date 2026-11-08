@@ -24,6 +24,8 @@ def prepare(a):
     services={'mqtt':{'user':str(os.getuid())+':'+str(os.getgid()),'image':'eclipse-mosquitto:2.0.22','container_name':'iotcloud-g3-migration','ports':[a.address+':8883:8883'],'volumes':[str(a.output.resolve())+':/lab:ro'],'command':['mosquitto','-c','/lab/mosquitto.conf']},'https':{'image':'python:3.12-slim','ports':[a.address+':443:8443'],'volumes':[str(a.output.resolve())+':/lab:ro'],'command':args}}
     (a.output/'compose.json').write_text(json.dumps({'services':services},indent=2)+'\n')
     print('Prepared',a.output,'mode:', 'ESP32 update enabled' if a.enable_update else 'no update')
+    print('Use the current RC6 migration bundle and matching G3 firmware, or a newer compatible release: https://phicomm-io.github.io/#daikin-g3-downloads')
+    print('请使用当前 RC6 的完整迁移工具包与配套 G3 固件，或更新的兼容版本。')
 
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--address',required=True);p.add_argument('--device',required=True);p.add_argument('--output',type=Path,required=True);p.add_argument('--enable-update',action='store_true');p.add_argument('--firmware',type=Path);p.add_argument('--version');a=p.parse_args()

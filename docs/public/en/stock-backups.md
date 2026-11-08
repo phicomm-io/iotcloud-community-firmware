@@ -45,7 +45,7 @@ The original BRY88AB151K 4 MiB UART dump matches its restoration readback: SHA-2
 
 Both G2 and G3 ESP32 component addresses are bootloader `0x1000`, partition table `0x8000` and application `0x10000`. Use a matching model and partition set. Ordinary application recovery should preserve the device's bootloader, NVS, PHY and OTA-selection data; devices with two OTA slots also need their selected slot checked. These component files are not a one-click full restore. Community signed-upload interfaces do not automatically accept stock applications.
 
-G3 screen application, boot region and external NOR are three different files. Normal screen recovery uses the [serial OTA channel](daikin-g3-guide#online-updates-on-community-firmware), preserving the original bootloader. Stock NOR resources and community font/wallpaper storage use different layouts; do not overwrite the entire NOR during operation. The vendor SV.04.00.04.00 screen application paired with ESP32 V01.02.00 has not been tested on hardware in this run. Preserve the boot region when SWD recovery is unavailable.
+G3 screen application, boot region and external NOR are three different files. Normal screen recovery uses the [serial OTA channel](daikin-g3-guide#online-updates-on-community-firmware), preserving the original bootloader. Stock NOR resources and community font/wallpaper storage use different layouts; do not overwrite the entire NOR during operation. Preserve the boot region when SWD recovery is unavailable.
 
 ## Keep your own backup
 

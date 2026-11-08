@@ -15,11 +15,11 @@ The 480 × 854 portrait display uses a 4-column × 6-row grid, 16 px outer margi
 | Weather | Current conditions, icons, location and forecast fetched by ESP32 |
 | Reminder | Unread notices from schedules or API pushes |
 
-Square values place the title beside a smaller unit and scale the large reading with the component. A full-row 4 × 1 value places its title and unit on the left and the reading on the right. A 4 × 2 chart reserves the left column for title/value and the right three columns for plotting. Hide a fullscreen component's title to avoid repeating the page title and gain content space.
+Sizes use rows × columns. Weather supports 1×4 and 2×4, clocks 1×4 and readings 1×2. Square readings place the title beside a smaller unit and scale the reading with the component. A full-row 1×4 reading places its title and unit on the left and the reading on the right. A 2×4 chart reserves the left column for title/value and the right three columns for plotting. Hide a fullscreen component's title to keep the page title and gain content space.
 
 ## History and external data
 
-Local history samples every minute, with 1-, 6- or 24-hour ranges and 32, 64, 128 or 256 points. Short histories stretch across the plot; missing readings leave gaps. History lives in screen MCU RAM and starts accumulating again after a restart. Missing data is not zero.
+Local history samples every minute, with 1-, 6- or 24-hour ranges and 32, 64, 128 or 256 points. Short histories stretch across the plot; missing readings leave gaps. History lives in screen MCU RAM and starts accumulating again after a restart.
 
 External data supports three series of 32 points, each with a TTL. `null` means missing data; stacked plots require matching units and nonnegative values. See [weather, reminders and external data](daikin-g3-services) for configuration and push protocols.
 
@@ -27,11 +27,11 @@ External data supports three series of 32 points, each with a TTL. `null` means 
 
 Choose one of six complete themes or customize its colors. Background, title, value, unit and body colors can independently override the theme; reset restores inheritance. Wallpapers support presets and uploads. Cards overlay the image with adjustable background and edge opacity while text remains opaque.
 
-Use the [browser wallpaper converter]({{SITE_URL}}tools/screen-wallpaper/) to crop a local image to display dimensions and generate the required RGB565 / BWP resource, then upload it under Resources and updates. Conversion runs in the browser without submitting the original to an image service. Resources reside in external NOR and enter SDRAM after verification. Failures fall back to solid colors and built-in fonts while communication and OTA remain available.
+Use the [browser wallpaper converter]({{SITE_URL}}tools/screen-wallpaper/) to crop a local image to display dimensions and generate the required RGB565 / BWP resource, then upload it under Resources and updates. Conversion runs in the browser without submitting the original to an image service. Unavailable resources use a solid background.
 
 ## Brightness, sleep and language
 
-Display settings adjust live brightness and its limit, up to 100%. Configure separate external-power and battery idle timeouts; zero disables idle sleep. Choose idle brightness and a composed idle page. Higher brightness combined with module startup increases load, so validate it with your power supply.
+Display settings adjust live brightness and its limit, up to 100%. Configure separate external-power and battery idle timeouts; zero disables idle sleep. Choose idle brightness and a composed idle page.
 
 Up to eight weekly plans support overnight periods, using the start day's weekday. The first matching plan wins. Plans and reminders use a saved fixed timezone without automatic DST. The first short touch while asleep only wakes the screen; subsequent touches change pages.
 
@@ -39,4 +39,4 @@ Chinese/English settings translate built-in labels and weather descriptions. Dev
 
 ## Change pages through ESP32
 
-Display → Remote paging provides previous, next and go-to controls. Disabled pages are skipped; paging wakes the screen without rewriting the layout or sleep policy. Success requires an MCU reply with the actual page. Controls are disabled for stock MCUs without this capability.
+Display → Remote paging provides previous, next and go-to controls. Disabled pages are skipped; paging wakes the screen without rewriting the layout or sleep policy. The current page appears after success. Stock MCUs do not support remote paging, so their controls are disabled.
