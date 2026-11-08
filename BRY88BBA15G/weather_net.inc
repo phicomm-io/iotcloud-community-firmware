@@ -71,10 +71,26 @@ static void screenWeatherStockPoll(uint32_t now) {
 class WeatherTLS : public WiFiClientSecure {
 public:
   uint32_t verifyFlags = 0;
+  const char *failedStage = "http_request";
+  using WiFiClientSecure::connect;
+  int connect(const char *host, uint16_t port, int32_t timeout) override {
+    IPAddress address;
+    failedStage = "dns";
+    if (!WiFi.hostByName(host, address)) return 0;
+    failedStage = "tcp_connect";
+    _timeout = timeout;
+    // Keep the original hostname for SNI and certificate verification.
+    int connected = WiFiClientSecure::connect(address, port, host, _CA_cert,
+                                              _cert, _private_key);
+    if (connected) failedStage = "http_request";
+    return connected;
+  }
   void stop() override {
     // WiFiClientSecure tears down a failed handshake before returning to HTTP.
     // Preserve diagnostics before the failed TLS session is released.
     if (_lastError < 0 && !verifyFlags) {
+      if (sslclient->socket >= 0)
+        failedStage = sslclient->ssl_ctx.state > 0 ? "tls_handshake" : "tls_setup";
       uint32_t flags = mbedtls_ssl_get_verify_result(&sslclient->ssl_ctx);
       if (flags != UINT32_MAX) verifyFlags = flags;
     }
@@ -184,6 +200,7 @@ static bool weatherGet(const String &url, const WeatherJob &job,
   int code = http.GET();
   result.httpStatus = code;
   if (code < 0) {
+    bry::textCopy(result.stage, sizeof(result.stage), tls.failedStage);
     char tlsMessage[1];
     result.tlsError = tls.lastError(tlsMessage, sizeof(tlsMessage));
     result.verifyFlags = tls.verifyFlags;

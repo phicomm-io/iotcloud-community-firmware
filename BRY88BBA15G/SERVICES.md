@@ -353,6 +353,8 @@ the factory sentinels -100/200. Fresh fetches push updates; disabling weather
 or reaching the cache TTL clears the stock values. Three-day forecasts and
 location labels require the community MCU. `worker_stack_free_bytes` is the last
 worker's minimum free stack measured by ESP-IDF, in bytes.
+`request_stage` distinguishes DNS, TCP connection, TLS setup/handshake and HTTP
+failures so a connection timeout can be diagnosed without disabling HTTPS.
 `screen.weather.set {enabled, provider, host, latitude, longitude, label,
 interval, key?, clear_key?, verify_tls?}` saves configuration. Omit key to keep the saved
 secret; `clear_key:true` removes it. Reads only expose `key_set`. Coordinates are
