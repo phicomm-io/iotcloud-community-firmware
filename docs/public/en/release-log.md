@@ -34,6 +34,18 @@ Updates shared socket automation and power refresh, adds G3 layout, brightness, 
 
 NOR uses hardware quad SFC by default, with corrected wallpaper writes and readback. Single SFC or GPIO requires an explicit ESP32 command during diagnostic startup. Fixes the PM2.5/TVOC module remaining disabled after wallpaper uploads, which caused stale readings and blocked subsequent OTA uploads.
 
+### G3 stock weather and Linux migration
+
+With the stock screen MCU, ESP32 converts real current weather into factory temperature, humidity and condition fields; outdoor PM2.5 remains missing. Adds Linux Bluetooth provisioning and documents the actual STA MAC, 2.4 GHz Wi-Fi and factory gateway responses for wireless migration.
+
+### G3 startup and online update load
+
+ESP32 uses the factory 80 MHz limit and closes the recovery access point after Wi-Fi stabilizes. The screen finishes font loading before enabling sensors. Online OTA keeps MCU communication active while waiting for module power-off, fixing preparation failures.
+
+### G3 charging and network icons
+
+The battery icon shows a lightning mark while charging. A Wi-Fi icon replaces the network dot and shows a slash while offline. Corrects the external-power and battery screen-timeout selection and keeps the WebUI preview aligned with the display.
+
 The stock bootloader is unchanged; a short power-key touch may still be needed after complete power loss. This release retains the current page-switching baseline and diagnostics; further performance work follows separately.
 
 [RC6 downloads](https://github.com/phicomm-io/iotcloud-community-firmware/releases/tag/v1.0.0-rc.6) · [G3 installation](https://phicomm-io.github.io/guides/en/daikin-g3-guide.html)

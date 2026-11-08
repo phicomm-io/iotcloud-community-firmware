@@ -9406,8 +9406,8 @@
           "BRY88BBA15G/screen-protocol.lock.json"
         ],
         "firmware_source_sha256": {
-          "BRY88BBA15G/screen_commands.inc": "7e8cf3ed4a0ee5f7913157ccde8631b2b6b8c18e6cf3176f5c1c1753d7a0c1bd",
-          "BRY88BBA15G/screen-protocol.lock.json": "8d6b320cc24123b5758fd98ab8f27ab198cf381dfa3e11d9220d45c19c7b5e2e"
+          "BRY88BBA15G/screen_commands.inc": "5940425dd079a72a731a879211fccc9378dcefd831406bd2f69050cef57d3217",
+          "BRY88BBA15G/screen-protocol.lock.json": "5e02dac472633996e65254784348aadef0f5c1da86813a809ef55c0cedb3dcb2"
         }
       },
       "translation_review": {
@@ -9468,7 +9468,7 @@
         ],
         "firmware_source_sha256": {
           "frontend.lock.json": "9e23ba07c785abefa3299d65a27dc2c8d571c7b259ba513b7f5ac41c1cfd6d6e",
-          "BRY88BBA15G/screen_commands.inc": "7e8cf3ed4a0ee5f7913157ccde8631b2b6b8c18e6cf3176f5c1c1753d7a0c1bd"
+          "BRY88BBA15G/screen_commands.inc": "5940425dd079a72a731a879211fccc9378dcefd831406bd2f69050cef57d3217"
         }
       },
       "translation_review": {
@@ -9530,8 +9530,8 @@
           "BRY88BBA15G/tools/flash_screen.py"
         ],
         "firmware_source_sha256": {
-          "BRY88BBA15G/online_ota.inc": "7750c152c95d72a2c2939dd6ed09ef37dd2604b914ac8cdf2dcbae6e82a51cc0",
-          "tools/daikin_g3_migrate/README.md": "fdf912b75a86e52edfa1bb6339e9dcb30a9ebef624bdcce0e2e6d720023eb2ae",
+          "BRY88BBA15G/online_ota.inc": "9c92c0d89f24952766c111e81f63f243eaadc0a4a3c3c4658b716c8427a4c418",
+          "tools/daikin_g3_migrate/README.md": "f1aa28d6ebfcd6ebf5441646d95253e03a48404669a0447ae54faa936fd4a411",
           "BRY88BBA15G/screen_update_start.inc": "76656ad4e80139c1933db7ea9ce30ecbab9694656dcdf2317723c203ddccc984",
           "BRY88BBA15G/tools/flash_screen.py": "ce3969095af0eaa42f255e006afb557aee667106e2d8a66fbc8579d415c457e3"
         }
@@ -9745,9 +9745,9 @@
       },
       "evidence": {
         "firmware_source_sha256": {
-          "screen-release.lock.json": "62e6afde5d8c1c4faa15109163dccc7e6a93e23de558f0a9a07e301369c21d61",
-          "BRY88BBA15G/SERVICES.md": "429ef16a807c25e3853021abb7675642ef78a6f760d9da32939b0938afe4a68a",
-          "BRY88BBA15G/screen_commands.inc": "7e8cf3ed4a0ee5f7913157ccde8631b2b6b8c18e6cf3176f5c1c1753d7a0c1bd"
+          "screen-release.lock.json": "7355aa62d717fc7b3c05fff99a8b81f5f53f4788ca4c625897b8cd523aa208e8",
+          "BRY88BBA15G/SERVICES.md": "0b01048bd2da51f102f93e412634d69ca4aac1a92cdf326b7bd51ac0a88d7794",
+          "BRY88BBA15G/screen_commands.inc": "5940425dd079a72a731a879211fccc9378dcefd831406bd2f69050cef57d3217"
         },
         "firmware_sources": [
           "screen-release.lock.json",
@@ -9797,6 +9797,201 @@
       },
       "type": "bugfix",
       "version": "1.0.0-rc.6"
+    },
+    {
+      "change_id": "g3-stock-weather-linux",
+      "version": "1.0.0-rc.6",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "bry88bba15g"
+        ],
+        "variants": [
+          "full"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "G3 原厂天气与 Linux 迁移",
+        "en": "G3 stock weather and Linux migration"
+      },
+      "description": {
+        "zh-CN": "保留原厂屏幕 MCU 时，ESP32 将真实当前天气转换为原厂温度、湿度和天气图标；室外 PM2.5 保留缺测。新增 Linux 蓝牙配网脚本，免拆迁移教程补齐实际 STA MAC、2.4 GHz Wi-Fi 和原厂网关应答步骤。",
+        "en": "With the stock screen MCU, ESP32 converts real current weather into factory temperature, humidity and condition fields; outdoor PM2.5 remains missing. Adds Linux Bluetooth provisioning and documents the actual STA MAC, 2.4 GHz Wi-Fi and factory gateway responses for wireless migration."
+      },
+      "ota_summary": {
+        "zh-CN": "保留原厂屏幕 MCU 时，ESP32 将真实当前天气转换为原厂温度、湿度和天气图标；室外 PM2.5 保留缺测。新增 Linux 蓝牙配网脚本，免拆迁移教程补齐实际 STA MAC、2.4 GHz Wi-Fi 和原厂网关应答步骤。",
+        "en": "With the stock screen MCU, ESP32 converts real current weather into factory temperature, humidity and condition fields; outdoor PM2.5 remains missing. Adds Linux Bluetooth provisioning and documents the actual STA MAC, 2.4 GHz Wi-Fi and factory gateway responses for wireless migration."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc.6:b010"
+      ],
+      "evidence": {
+        "firmware_sources": [
+          "BRY88BBA15G/weather.cpp",
+          "BRY88BBA15G/weather_net.inc",
+          "BRY88BBA15G/runtime.inc",
+          "tools/daikin_g3_migrate/provision_linux.py",
+          "tools/daikin_g3_migrate/README.md"
+        ],
+        "firmware_source_sha256": {
+          "BRY88BBA15G/weather.cpp": "5b444cefc065ebc5a1435aceab5c40356160dcb068a62ccdd5b005f766f32d43",
+          "BRY88BBA15G/weather_net.inc": "9f3eca97ab64bfa0b8a582a6b9e7c11d49cf807a32969b755b7ef634f61f9500",
+          "BRY88BBA15G/runtime.inc": "4c1eee9b3e9ccf764dd303db22723affc0b2705a196cef4f01801c234a92bef4",
+          "tools/daikin_g3_migrate/provision_linux.py": "b3e0e74d66c49c5c1cc6cb9c6f74f1f3776820a76e15315cd35a8c6a4eee16a0",
+          "tools/daikin_g3_migrate/README.md": "f1aa28d6ebfcd6ebf5441646d95253e03a48404669a0447ae54faa936fd4a411"
+        }
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root",
+        "reason": "Author reviewed both languages against the implementation.",
+        "reviewed_utc": "2026-11-08T01:42:06.934697+00:00",
+        "reviewed_content_sha256": "8429f71d969f755631eb72e0658a71e57daa33ec097f8038357943d6366990ed"
+      }
+    },
+    {
+      "change_id": "g3-startup-online-power",
+      "version": "1.0.0-rc.6",
+      "type": "bugfix",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "bry88bba15g"
+        ],
+        "variants": [
+          "full"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "G3 启动与在线升级负载",
+        "en": "G3 startup and online update load"
+      },
+      "description": {
+        "zh-CN": "ESP32 使用与原厂一致的 80 MHz，Wi-Fi 稳定后关闭恢复热点。屏幕先完成字库加载再开启传感器；在线 OTA 等待模块断电时保持 MCU 通信，修复升级准备阶段的等待失败。",
+        "en": "ESP32 uses the factory 80 MHz limit and closes the recovery access point after Wi-Fi stabilizes. The screen finishes font loading before enabling sensors. Online OTA keeps MCU communication active while waiting for module power-off, fixing preparation failures."
+      },
+      "ota_summary": {
+        "zh-CN": "ESP32 使用与原厂一致的 80 MHz，Wi-Fi 稳定后关闭恢复热点。屏幕先完成字库加载再开启传感器；在线 OTA 等待模块断电时保持 MCU 通信，修复升级准备阶段的等待失败。",
+        "en": "ESP32 uses the factory 80 MHz limit and closes the recovery access point after Wi-Fi stabilizes. The screen finishes font loading before enabling sensors. Online OTA keeps MCU communication active while waiting for module power-off, fixing preparation failures."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc.6:b011"
+      ],
+      "evidence": {
+        "firmware_sources": [
+          "DAIKIN/platformio.ini",
+          "DAIKIN/src/main.cpp",
+          "BRY88BBA15G/runtime.inc",
+          "BRY88BBA15G/online_ota.inc",
+          "screen-release.lock.json"
+        ],
+        "firmware_source_sha256": {
+          "DAIKIN/platformio.ini": "af15480eccebd283949bb0bd1cb1bdeaa3c39922ee851f8124f105b86a596598",
+          "DAIKIN/src/main.cpp": "450f23fe9149b19a4c2791352204594b6b3ac829b10331ed7af225ad87a81bc9",
+          "BRY88BBA15G/runtime.inc": "4c1eee9b3e9ccf764dd303db22723affc0b2705a196cef4f01801c234a92bef4",
+          "BRY88BBA15G/online_ota.inc": "9c92c0d89f24952766c111e81f63f243eaadc0a4a3c3c4658b716c8427a4c418",
+          "screen-release.lock.json": "7355aa62d717fc7b3c05fff99a8b81f5f53f4788ca4c625897b8cd523aa208e8"
+        }
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root",
+        "reason": "Author reviewed both languages against the implementation.",
+        "reviewed_utc": "2026-11-08T01:42:06.934758+00:00",
+        "reviewed_content_sha256": "9873deb88135fd6520c84d2685e62ecba08bc2a156b7b6ed0260fb7ffece13e3"
+      }
+    },
+    {
+      "change_id": "g3-charging-network-icons",
+      "version": "1.0.0-rc.6",
+      "type": "bugfix",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "bry88bba15g"
+        ],
+        "variants": [
+          "full"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "G3 充电与网络图标",
+        "en": "G3 charging and network icons"
+      },
+      "description": {
+        "zh-CN": "电池图标在充电时显示闪电，联网圆点改为 Wi-Fi 图标，断网时显示斜线。修正外部供电与电池对应的熄屏时间选择，网页预览同步屏幕显示。",
+        "en": "The battery icon shows a lightning mark while charging. A Wi-Fi icon replaces the network dot and shows a slash while offline. Corrects the external-power and battery screen-timeout selection and keeps the WebUI preview aligned with the display."
+      },
+      "ota_summary": {
+        "zh-CN": "电池图标在充电时显示闪电，联网圆点改为 Wi-Fi 图标，断网时显示斜线。修正外部供电与电池对应的熄屏时间选择，网页预览同步屏幕显示。",
+        "en": "The battery icon shows a lightning mark while charging. A Wi-Fi icon replaces the network dot and shows a slash while offline. Corrects the external-power and battery screen-timeout selection and keeps the WebUI preview aligned with the display."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc.6:b012"
+      ],
+      "evidence": {
+        "firmware_sources": [
+          "screen-release.lock.json",
+          "BRY88BBA15G/screen-protocol.lock.json"
+        ],
+        "firmware_source_sha256": {
+          "screen-release.lock.json": "7355aa62d717fc7b3c05fff99a8b81f5f53f4788ca4c625897b8cd523aa208e8",
+          "BRY88BBA15G/screen-protocol.lock.json": "5e02dac472633996e65254784348aadef0f5c1da86813a809ef55c0cedb3dcb2"
+        }
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root",
+        "reason": "Author reviewed both languages against the implementation.",
+        "reviewed_utc": "2026-11-08T01:42:06.934785+00:00",
+        "reviewed_content_sha256": "dc7e9a3c9a39869ea196f85697e067e1ec86ce55bd80a333371d78f82d0a4205"
+      }
     }
   ],
   "merges": []
