@@ -49,11 +49,16 @@ This first stage preserves the stock screen MCU and bootloader. It requires a wo
 
 ESP32: open Settings → Firmware update, choose a source, check the version, read the changes and install. RC builds use a separate candidate channel. Installation verifies the model, signature, length and SHA-256. Custom raw applications use the explicitly labelled unsigned rescue upload.
 
-Screen and font: open the device directly on the LAN and select Screen → Resources and updates → Online updates. Check available versions and install the application or font separately. The browser checks file size; ESP32 verifies the digest and staging before MCU installation. Cloud access supports controls and ESP32 updates; large screen uploads currently require a direct LAN connection.
+Screen MCU: open the device directly on the LAN and select Screen → Resources and updates. Both the first installation from stock screen firmware and later community screen updates support either method:
+
+1. Online: click Check for updates, then Install screen update.
+2. File: get the matching `daikin_G3_screen.bin` from [G3 downloads](../../en/index.html#daikin-g3-downloads), select it and click Upload and install.
+
+The page automatically chooses factory installation or community staging/activation, verifies the firmware and completes installation. Wait for “Screen firmware installed and running”; this requires a new MCU session, a matching internal application digest and normal operation. Install the font separately online or by upload. Large screen uploads require a direct LAN connection.
 
 <a id="direct-uart-update"></a>
 
-Download the matching RC6 ESP32, complete screen application and migration tools from the [G3 downloads](../../en/index.html#daikin-g3-downloads). Update ESP32 first, then install the screen application with the included new script.
+Update ESP32 to the matching RC6 first, then use either WebUI method above. The download package also includes a command-line migration tool:
 
 The new tool and paired ESP32 can send the complete `daikin_G3_screen.bin` directly to stock MCU firmware. A recovery-first step, boot backup and stock-version allowlist are no longer required. The new MCU application also removes its local boot MD5 allowlist. Extract the paired tools, install Python `msgpack`, then run:
 

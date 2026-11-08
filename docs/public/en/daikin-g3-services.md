@@ -21,6 +21,8 @@ In `screen.weather.get`, `delivery:factory` identifies the stock path. `factory`
 
 “Expired” means the cache has exceeded its validity period, not that the city was unrecognized. Check enablement, coordinates, key/host, device time, last error and retry countdown, then request a refresh. Failures preserve the previous content and back off for 30, 60, 120, 240 and 300 seconds. Workers never overlap; manual refresh also requires 15-second spacing.
 
+With proxy DNS, the device's gateway must route returned virtual addresses to the proxy. If a weather domain resolves to `198.18.x.x` but those connections are not forwarded, the request cannot connect. Return real IP addresses for that weather domain, or configure the proxy route correctly, then retry.
+
 TLS needs byte-addressable heap and a contiguous block, so total ESP32 free memory alone is insufficient. Layout/resource uploads, OTA and weather have concurrency gates; memory pressure defers retries. See [memory diagnostics](daikin-g3-diagnostics#esp32-memory-and-weather).
 
 ## Reminders
