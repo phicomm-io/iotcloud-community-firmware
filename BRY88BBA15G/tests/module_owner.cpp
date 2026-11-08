@@ -73,7 +73,11 @@ int main() {
   assert(sent[2] == SCREEN_MODULE_LOW && scene_u32(sent.data()+8) == 60000);
   assert(!strcmp(call(),"busy"));
   auto first = screenModule.request;
-  delay(15000); delay(1);
+  delay(15000);
+  /* UART reception can timestamp the ACK after screenPoll captured now. */
+  screenModulePowerPoll(ms-1);
+  assert(screenModulePowerHealthy() && !screenPowerRequest);
+  delay(1);
   assert(screenModule.request == first+1 && screenModulePowerHealthy());
   /* A completed renewal remains valid when flash delays the next owner poll
    * past its ACK deadline and periodic guard announcements are missed. */

@@ -73,7 +73,7 @@ static void screenModulePowerPoll(uint32_t now) {
     }
     if (!strcmp(screenModule.state, "complete")) {
       if ((screenModule.flags & 7) != 5 ||
-          uint32_t(now - screenModule.at) >= screenModule.remaining) {
+          uint32_t(millis() - screenModule.at) >= screenModule.remaining) {
         screenPowerReady = false; screenPowerFailed = true; return;
       }
       screenPowerReady = true;

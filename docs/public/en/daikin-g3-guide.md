@@ -49,12 +49,16 @@ This first stage preserves the stock screen MCU and bootloader. It requires a wo
 
 ESP32: open Settings → Firmware update, choose a source, check the version, read the changes and install. RC builds use a separate candidate channel. Installation verifies the model, signature, length and SHA-256. Custom raw applications use the explicitly labelled unsigned rescue upload.
 
+The matching community screen temporarily puts the PM2.5 module to sleep during ESP32 OTA and resumes it after reboot. PM2.5 and TVOC readings may briefly be unavailable; confirm they refresh again after the update.
+
 Screen MCU: open the device directly on the LAN and select Screen → Resources and updates. Both the first installation from stock screen firmware and later community screen updates support either method:
 
 1. Online: click Check for updates, then Install screen update.
 2. File: get the matching `daikin_G3_screen.bin` from [G3 downloads](../../en/index.html#daikin-g3-downloads), select it and click Upload and install.
 
 The page automatically chooses factory installation or community staging/activation, verifies the firmware and completes installation. Wait for “Screen firmware installed and running”; this requires a new MCU session, a matching internal application digest and normal operation. Install the font separately online or by upload. Large screen uploads require a direct LAN connection.
+
+This revision fixes intermittent PLL locking after handoff from the factory loader, which could leave the MCU at a low clock speed and enter SDRAM fault recovery. Line breaks in the update message no longer appear as question marks.
 
 <a id="direct-uart-update"></a>
 
