@@ -55,7 +55,10 @@ static void screenModulePowerPoll(uint32_t now) {
     return;
   }
   if (screenPowerFailed) return;
-  if (screenImage.active || screenRecovering || !screenGuardAvailable() || screenGuard.mode) {
+  /* Flash writes can drop a periodic guard announcement. Once SET-low is
+   * acknowledged, the bounded lease and its renewal ACK own liveness. */
+  if (screenImage.active || screenRecovering || screenGuard.mode ||
+      (!screenPowerLeased && !screenGuardAvailable())) {
     screenPowerReady = false; screenPowerFailed = true; return;
   }
   if (screenPowerLeased && screenPowerSession != screenBridge.session) {
@@ -64,11 +67,13 @@ static void screenModulePowerPoll(uint32_t now) {
   if (screenPowerRequest) {
     if (screenModule.request != screenPowerRequest ||
         !strcmp(screenModule.state, "mcu_rejected") ||
-        (int32_t)(now - screenModule.deadline) >= 0) {
+        (strcmp(screenModule.state, "complete") &&
+         (int32_t)(now - screenModule.deadline) >= 0)) {
       screenPowerReady = false; screenPowerFailed = true; return;
     }
     if (!strcmp(screenModule.state, "complete")) {
-      if ((screenModule.flags & 7) != 5 || !screenModule.remaining) {
+      if ((screenModule.flags & 7) != 5 ||
+          uint32_t(now - screenModule.at) >= screenModule.remaining) {
         screenPowerReady = false; screenPowerFailed = true; return;
       }
       screenPowerReady = true;

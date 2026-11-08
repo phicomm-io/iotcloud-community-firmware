@@ -75,6 +75,13 @@ int main() {
   auto first = screenModule.request;
   delay(15000); delay(1);
   assert(screenModule.request == first+1 && screenModulePowerHealthy());
+  /* A completed renewal remains valid when flash delays the next owner poll
+   * past its ACK deadline and periodic guard announcements are missed. */
+  delay(15000);guardAvailable=false;ms+=3500;screenModulePowerPoll(ms);
+  assert(screenModulePowerHealthy() && !screenPowerRequest);
+  acknowledge=false;delay(15000);delay(3000);
+  assert(!screenModulePowerHealthy() && screenPowerFailed);
+  guardAvailable=true;
   screenModulePowerEnd(); delay(1);
   assert(!screenModulePowerHealthy() && sent[2] == SCREEN_MODULE_HIGH);
   /* No acknowledgement aborts the prepare within three seconds, then high. */
@@ -82,6 +89,11 @@ int main() {
   assert(!screenModulePowerBegin() && ms-start<=4000);
   delay(1);assert(sent[2]==SCREEN_MODULE_HIGH && !screenPowerLeased);
   acknowledge=true;
+  /* An expired SET-low status cannot stand in for a renewal ACK. */
+  assert(screenModulePowerBegin());delay(15000);
+  ms+=SCREEN_MODULE_MAX_MS;screenModulePowerPoll(ms);
+  assert(!screenModulePowerHealthy() && screenPowerFailed);
+  screenModulePowerEnd();delay(1);
   assert(screenModulePowerBegin());
   screenBridge.session++;delay(1);
   assert(!screenModulePowerHealthy() && screenPowerFailed);
