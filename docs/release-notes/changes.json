@@ -9915,7 +9915,8 @@
           "BRY88BBA15G/runtime.inc",
           "BRY88BBA15G/online_ota.inc",
           "screen-release.lock.json",
-          "BRY88BBA15G/screen_module.inc"
+          "BRY88BBA15G/screen_module.inc",
+          "BRY88BBA15G/bridge.c"
         ],
         "firmware_source_sha256": {
           "DAIKIN/platformio.ini": "af15480eccebd283949bb0bd1cb1bdeaa3c39922ee851f8124f105b86a596598",
@@ -9923,7 +9924,8 @@
           "BRY88BBA15G/runtime.inc": "4c1eee9b3e9ccf764dd303db22723affc0b2705a196cef4f01801c234a92bef4",
           "BRY88BBA15G/online_ota.inc": "9c92c0d89f24952766c111e81f63f243eaadc0a4a3c3c4658b716c8427a4c418",
           "screen-release.lock.json": "c07ae9ba56805ca355a2e6e43be1bff53654de96281d81653fb35a42371fdf6a",
-          "BRY88BBA15G/screen_module.inc": "391272a51e80e6e5f493d493ad2f62f33839d6fb522898b389be0ce8bc4ba08c"
+          "BRY88BBA15G/screen_module.inc": "391272a51e80e6e5f493d493ad2f62f33839d6fb522898b389be0ce8bc4ba08c",
+          "BRY88BBA15G/bridge.c": "aedd1803cbd84930f652ab65bc53c5a82127fa419a726c37eb7cf9ca236b7f7d"
         }
       },
       "translation_review": {

@@ -33,5 +33,16 @@ int main(void){
  n=screen_caps_offer(&peer,frame,sizeof(frame),457,supported);bry_bridge_feed(&b,frame,n);
  assert(!b.extended&&!b.capabilities&&!bry_bridge_send(&b,command,sizeof(command),SCREEN_CAP_MODULE_CONTROL));
  send_ok=true;bry_bridge_feed(&b,frame,n);assert(b.extended&&b.capabilities==supported);
+ /* A retained MCU session must recover even when the boot reset was lost. */
+ bry_bridge_reset(&b);sent_size=0;
+ bry_bridge_feed(&b,"screen_ext invalid\r\n",20);assert(!sent_size);
+ n=screen_link_encode(frame,sizeof(frame),457,1,"abc",3);
+ bry_bridge_feed(&b,frame,n);
+ const char reset[]="\r\n+screen_link_reset:1\r\n";
+ assert(sent_size==sizeof(reset)-1&&!memcmp(sent,reset,sent_size));
+ assert(!b.extended&&extensions==1); /* Stale payload was not delivered. */
+ n=screen_caps_offer(&peer,frame,sizeof(frame),458,supported);
+ bry_bridge_feed(&b,frame,n);
+ assert(b.extended&&b.session==458&&screen_caps_accept(&peer,sent,sent_size-2));
  puts("bridge: stock fallback, chunking, replay, session and overflow recovery passed");
 }

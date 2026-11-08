@@ -40,6 +40,8 @@ Community G3 runs at a fixed 80 MHz. Its current Arduino SDK has dynamic power m
 
 Screen startup completes font loading and verification before enabling sensors. The three sensor UARTs retain independent interrupt buffers. Updates dim the display and pull PD12 SET low. ESP32 renews module sleep through a bounded lease and matching acknowledgements while keeping the UART owner receiving. Flash writes can drop periodic status, so an acknowledged lease does not depend on every announcement. ACK age uses the current time after reception, avoiding unsigned underflow from a stale loop timestamp. See [module control](https://github.com/phicomm-io/iotcloud-community-firmware/blob/v1.0.0-rc.6/BRY88BBA15G/screen_module.inc).
 
+After an ESP32-only reboot, ESP32 requests fresh screen capability negotiation. If the startup request is lost, receiving an old-session extension frame with a valid CRC triggers another reset request, restoring capability, layout and display-policy synchronization without restarting the MCU. See the [UART bridge](https://github.com/phicomm-io/iotcloud-community-firmware/blob/v1.0.0-rc.6/BRY88BBA15G/bridge.c).
+
 ## Memory and resources
 
 SCN3 layouts occupy 9520 bytes with 288-byte component records. The UART cache prefers 32-bit IRAM with aligned word access, falling back to DRAM when allocation fails. `screen.status` fields `layout_cache_bytes` and `layout_cache_storage` report its size and `iram` / `dram` / `unallocated` location. Status-encoding scratch space and layout upload buffers are allocated on demand and released on completion or timeout.

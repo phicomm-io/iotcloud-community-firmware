@@ -222,6 +222,22 @@ int main(void) {
   page_request[8]=1;page_status[2]=99;
   assert(bry_bridge_send(&bridge,page_request,sizeof(page_request),SCREEN_CAP_PAGE_CONTROL));
   assert(page_status[2]==99); // Malformed direction request has no side effect/ACK.
+  /* Reproduce an ESP-only reboot with the initial reset line dropped. The MCU
+   * retains a ready session until its next valid report prompts negotiation. */
+  screen.model.ota=false;
+  unsigned reports=backlight_reports;
+  bry_bridge_reset(&bridge);
+  assert(screen.caps.ready&&screen.offered);
+  assert(screen_runtime_backlight(&screen,60,60,0,true));
+  assert(!screen.caps.ready&&!screen.offered&&!bridge.extended);
+  assert(backlight_reports==reports);
+  assert(screen_runtime_offer(&screen,0x56789abc));
+  assert(screen.caps.ready&&bridge.extended&&bridge.session==0x56789abc);
+  assert(screen_runtime_backlight(&screen,60,60,0,true));
+  assert(backlight_reports==reports+1);
+  scene_put32(clock+1,1793880060);
+  assert(bry_bridge_send(&bridge,clock,sizeof(clock),SCREEN_CAP_SERVICES));
+  assert(screen.clock_epoch==1793880060);
   puts("ESP to MCU: offer, ACK replay, atomic scenes, data, clock, "
        "reminders/DND, backlight telemetry, negotiated PD12 control/expiry, APP1 ACK/rejection, wallpaper query, failed TX, reboot and TTL passed");
 }

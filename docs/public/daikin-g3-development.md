@@ -40,6 +40,8 @@ BRY88BBA15G 原厂 ESP32 `V01.02.00` 使用 ESP-IDF 5.0.1。其电源配置为�
 
 屏幕启动先完成字库加载与校验，再开启传感器；三个传感器 UART 保留独立中断缓冲。升级时降低亮度并将 PD12 SET 拉低。ESP32 通过有界租期及匹配回执续约模块休眠，保持 UART owner 接收。Flash 写入期间可能丢失周期状态，因此已确认租期不依赖每次周期通告；回执年龄使用接收后的当前时间计算，避免旧循环时间戳产生无符号下溢。实现见[模块控制](https://github.com/phicomm-io/iotcloud-community-firmware/blob/v1.0.0-rc.6/BRY88BBA15G/screen_module.inc)。
 
+ESP32 单独重启后会请求屏幕重新协商扩展能力。如果启动请求丢失，收到带有效 CRC 的旧会话扩展帧时再次请求重置，恢复能力协商、布局和显示策略同步；无需重启 MCU。实现见[串口桥接](https://github.com/phicomm-io/iotcloud-community-firmware/blob/v1.0.0-rc.6/BRY88BBA15G/bridge.c)。
+
 ## 内存与资源
 
 SCN3 布局为 9520 字节、每组件 288 字节。串口缓存优先放入按 32 位访问的 IRAM，通过对齐字读写；分配失败时使用 DRAM。`screen.status` 的 `layout_cache_bytes` 和 `layout_cache_storage` 报告长度及 `iram` / `dram` / `unallocated`。状态编码临时区和布局上传缓冲按需申请，完成或超时后释放。

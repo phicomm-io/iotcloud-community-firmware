@@ -31,13 +31,20 @@ static void line(void *context, const char *p, size_t n) {
     return;
   }
   if (n >= 11 && !memcmp(p, "screen_ext ", 11)) {
-    if (!b->extended)
-      return;
     uint8_t payload[SCREEN_LINK_CHUNK];
     size_t length = sizeof(payload);
     uint32_t session, seq;
-    if (!screen_link_decode(p, n, &session, &seq, payload, &length) ||
-        session != b->session || seq <= b->last_sequence)
+    if (!screen_link_decode(p, n, &session, &seq, payload, &length))
+      return;
+    if (!b->extended) {
+      /* ESP-only OTA can leave the MCU in its previous session if the boot
+       * reset line was lost. A valid MCU frame requests a fresh offer. */
+      static const char reset[] = "\r\n+screen_link_reset:1\r\n";
+      if (b->send)
+        b->send(b->context, reset, sizeof(reset) - 1);
+      return;
+    }
+    if (session != b->session || seq <= b->last_sequence)
       return;
     b->last_sequence = seq;
     if (b->extension)
