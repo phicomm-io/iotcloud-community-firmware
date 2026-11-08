@@ -36,7 +36,7 @@ NOR uses hardware quad SFC by default, with corrected wallpaper writes and readb
 
 ### G3 stock weather and Linux migration
 
-With the stock screen MCU, ESP32 converts real current weather into factory temperature, humidity and condition fields; outdoor PM2.5 remains missing. Adds Linux Bluetooth provisioning and documents the actual STA MAC, 2.4 GHz Wi-Fi and factory gateway responses for wireless migration.
+With the stock screen MCU, ESP32 converts real current weather into factory temperature, humidity and condition fields; outdoor PM2.5 remains missing. Adds Linux Bluetooth provisioning and documents the actual STA MAC, 2.4 GHz Wi-Fi and factory gateway responses for wireless migration. Fixes missing weather caused by TLS handshake timeouts with the ESP32 running at 80 MHz.
 
 ### G3 startup and online update load
 
@@ -44,9 +44,21 @@ ESP32 uses the factory 80 MHz limit and closes the recovery access point after W
 
 ### G3 charging and network icons
 
-The battery icon shows a lightning mark while charging. A Wi-Fi icon replaces the network dot and shows a slash while offline. Corrects the external-power and battery screen-timeout selection and keeps the WebUI preview aligned with the display.
+The battery icon shows a lightning mark while powered by USB. A Wi-Fi icon replaces the network dot and shows a slash while offline. Corrects the external-power and battery screen-timeout selection and keeps the WebUI preview aligned with the display. Fixes the charging icon remaining on after USB is disconnected.
 
-The stock bootloader is unchanged; a short power-key touch may still be needed after complete power loss. This release retains the current page-switching baseline and diagnostics; further performance work follows separately.
+### G3 long-press shutdown
+
+Fixes immediate restart after a long-press shutdown. Shutdown waits for key release; when USB keeps the MCU powered, a new press of about 2 seconds turns it on. Short-press paging and wake remain available.
+
+### G3 direct screen installation from the WebUI
+
+Both first installation from stock screen firmware and later community updates support online installation or file upload. One confirmation starts verification, transfer and activation; success appears after the new MCU starts normally.
+
+### G3 live cloud readings
+
+When LAN and MQTT are both connected, cloud cards and details use the newer sensor readings, preventing an older LAN snapshot from leaving G3 with no data.
+
+Screen OTA preserves the factory boot region. Performance diagnostics remain available for further optimization.
 
 [RC6 downloads](https://github.com/phicomm-io/iotcloud-community-firmware/releases/tag/v1.0.0-rc.6) · [G3 installation](https://phicomm-io.github.io/guides/en/daikin-g3-guide.html)
 

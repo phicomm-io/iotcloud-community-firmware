@@ -9407,7 +9407,7 @@
         ],
         "firmware_source_sha256": {
           "BRY88BBA15G/screen_commands.inc": "5940425dd079a72a731a879211fccc9378dcefd831406bd2f69050cef57d3217",
-          "BRY88BBA15G/screen-protocol.lock.json": "5e02dac472633996e65254784348aadef0f5c1da86813a809ef55c0cedb3dcb2"
+          "BRY88BBA15G/screen-protocol.lock.json": "417e05c1ddc692bac33a4481e56aab5b23a3dc1717cfdc5f9dfd81c0d22311e9"
         }
       },
       "translation_review": {
@@ -9467,7 +9467,7 @@
           "BRY88BBA15G/screen_commands.inc"
         ],
         "firmware_source_sha256": {
-          "frontend.lock.json": "9e23ba07c785abefa3299d65a27dc2c8d571c7b259ba513b7f5ac41c1cfd6d6e",
+          "frontend.lock.json": "1b0f230c3edf1144e2fe7f5d89c36fe75b86e1c2ea4e183793bf3a0f09474403",
           "BRY88BBA15G/screen_commands.inc": "5940425dd079a72a731a879211fccc9378dcefd831406bd2f69050cef57d3217"
         }
       },
@@ -9723,7 +9723,7 @@
           "site/index.html"
         ],
         "firmware_source_sha256": {
-          "frontend.lock.json": "9e23ba07c785abefa3299d65a27dc2c8d571c7b259ba513b7f5ac41c1cfd6d6e",
+          "frontend.lock.json": "1b0f230c3edf1144e2fe7f5d89c36fe75b86e1c2ea4e183793bf3a0f09474403",
           "site/index.html": "aafce24dfd05bb9eac7d8ef9d2500e02255cce38a135a6948364abaa91b86c54"
         }
       },
@@ -9745,8 +9745,8 @@
       },
       "evidence": {
         "firmware_source_sha256": {
-          "screen-release.lock.json": "7355aa62d717fc7b3c05fff99a8b81f5f53f4788ca4c625897b8cd523aa208e8",
-          "BRY88BBA15G/SERVICES.md": "0b01048bd2da51f102f93e412634d69ca4aac1a92cdf326b7bd51ac0a88d7794",
+          "screen-release.lock.json": "625e462498797c299f362dca73321c5ca40225c7e97d93d7a3437e7e8fc517ce",
+          "BRY88BBA15G/SERVICES.md": "f158fd3ca87c636820c3f97df025d466ec0f2a99c3f848e011ccf19f85bf9a57",
           "BRY88BBA15G/screen_commands.inc": "5940425dd079a72a731a879211fccc9378dcefd831406bd2f69050cef57d3217"
         },
         "firmware_sources": [
@@ -9829,12 +9829,12 @@
         "en": "G3 stock weather and Linux migration"
       },
       "description": {
-        "zh-CN": "保留原厂屏幕 MCU 时，ESP32 将真实当前天气转换为原厂温度、湿度和天气图标；室外 PM2.5 保留缺测。新增 Linux 蓝牙配网脚本，免拆迁移教程补齐实际 STA MAC、2.4 GHz Wi-Fi 和原厂网关应答步骤。",
-        "en": "With the stock screen MCU, ESP32 converts real current weather into factory temperature, humidity and condition fields; outdoor PM2.5 remains missing. Adds Linux Bluetooth provisioning and documents the actual STA MAC, 2.4 GHz Wi-Fi and factory gateway responses for wireless migration."
+        "zh-CN": "保留原厂屏幕 MCU 时，ESP32 将真实当前天气转换为原厂温度、湿度和天气图标；室外 PM2.5 保留缺测。新增 Linux 蓝牙配网脚本，免拆迁移教程补齐实际 STA MAC、2.4 GHz Wi-Fi 和原厂网关应答步骤。修复 ESP32 以 80 MHz 运行时 TLS 握手超时导致的天气缺测。",
+        "en": "With the stock screen MCU, ESP32 converts real current weather into factory temperature, humidity and condition fields; outdoor PM2.5 remains missing. Adds Linux Bluetooth provisioning and documents the actual STA MAC, 2.4 GHz Wi-Fi and factory gateway responses for wireless migration. Fixes missing weather caused by TLS handshake timeouts with the ESP32 running at 80 MHz."
       },
       "ota_summary": {
-        "zh-CN": "保留原厂屏幕 MCU 时，ESP32 将真实当前天气转换为原厂温度、湿度和天气图标；室外 PM2.5 保留缺测。新增 Linux 蓝牙配网脚本，免拆迁移教程补齐实际 STA MAC、2.4 GHz Wi-Fi 和原厂网关应答步骤。",
-        "en": "With the stock screen MCU, ESP32 converts real current weather into factory temperature, humidity and condition fields; outdoor PM2.5 remains missing. Adds Linux Bluetooth provisioning and documents the actual STA MAC, 2.4 GHz Wi-Fi and factory gateway responses for wireless migration."
+        "zh-CN": "保留原厂屏幕 MCU 时，ESP32 将真实当前天气转换为原厂温度、湿度和天气图标；室外 PM2.5 保留缺测。新增 Linux 蓝牙配网脚本，免拆迁移教程补齐实际 STA MAC、2.4 GHz Wi-Fi 和原厂网关应答步骤。修复 ESP32 以 80 MHz 运行时 TLS 握手超时导致的天气缺测。",
+        "en": "With the stock screen MCU, ESP32 converts real current weather into factory temperature, humidity and condition fields; outdoor PM2.5 remains missing. Adds Linux Bluetooth provisioning and documents the actual STA MAC, 2.4 GHz Wi-Fi and factory gateway responses for wireless migration. Fixes missing weather caused by TLS handshake timeouts with the ESP32 running at 80 MHz."
       },
       "summary_complete": true,
       "critical": false,
@@ -9851,7 +9851,7 @@
         ],
         "firmware_source_sha256": {
           "BRY88BBA15G/weather.cpp": "5b444cefc065ebc5a1435aceab5c40356160dcb068a62ccdd5b005f766f32d43",
-          "BRY88BBA15G/weather_net.inc": "9f3eca97ab64bfa0b8a582a6b9e7c11d49cf807a32969b755b7ef634f61f9500",
+          "BRY88BBA15G/weather_net.inc": "18cf62f6054fc1574f91a6f90074b33db20d8c27a334c2f4fa57a3913ae39993",
           "BRY88BBA15G/runtime.inc": "4c1eee9b3e9ccf764dd303db22723affc0b2705a196cef4f01801c234a92bef4",
           "tools/daikin_g3_migrate/provision_linux.py": "b3e0e74d66c49c5c1cc6cb9c6f74f1f3776820a76e15315cd35a8c6a4eee16a0",
           "tools/daikin_g3_migrate/README.md": "f1aa28d6ebfcd6ebf5441646d95253e03a48404669a0447ae54faa936fd4a411"
@@ -9861,8 +9861,8 @@
         "status": "approved",
         "reviewer": "/root",
         "reason": "Author reviewed both languages against the implementation.",
-        "reviewed_utc": "2026-11-08T01:42:06.934697+00:00",
-        "reviewed_content_sha256": "8429f71d969f755631eb72e0658a71e57daa33ec097f8038357943d6366990ed"
+        "reviewed_utc": "2026-11-08T09:44:30.611514+00:00",
+        "reviewed_content_sha256": "89e1e613ecf70db4209d2a201f7e4393365bda48cc8badddbe92f45310f5cb3c"
       }
     },
     {
@@ -9921,7 +9921,7 @@
           "DAIKIN/src/main.cpp": "450f23fe9149b19a4c2791352204594b6b3ac829b10331ed7af225ad87a81bc9",
           "BRY88BBA15G/runtime.inc": "4c1eee9b3e9ccf764dd303db22723affc0b2705a196cef4f01801c234a92bef4",
           "BRY88BBA15G/online_ota.inc": "9c92c0d89f24952766c111e81f63f243eaadc0a4a3c3c4658b716c8427a4c418",
-          "screen-release.lock.json": "7355aa62d717fc7b3c05fff99a8b81f5f53f4788ca4c625897b8cd523aa208e8"
+          "screen-release.lock.json": "625e462498797c299f362dca73321c5ca40225c7e97d93d7a3437e7e8fc517ce"
         }
       },
       "translation_review": {
@@ -9963,12 +9963,12 @@
         "en": "G3 charging and network icons"
       },
       "description": {
-        "zh-CN": "电池图标在充电时显示闪电，联网圆点改为 Wi-Fi 图标，断网时显示斜线。修正外部供电与电池对应的熄屏时间选择，网页预览同步屏幕显示。",
-        "en": "The battery icon shows a lightning mark while charging. A Wi-Fi icon replaces the network dot and shows a slash while offline. Corrects the external-power and battery screen-timeout selection and keeps the WebUI preview aligned with the display."
+        "zh-CN": "电池图标在 USB 供电时显示闪电，联网圆点改为 Wi-Fi 图标，断网时显示斜线。修正外部供电与电池对应的熄屏时间选择，网页预览同步屏幕显示。修复拔掉 USB 后充电图标仍亮的问题。",
+        "en": "The battery icon shows a lightning mark while powered by USB. A Wi-Fi icon replaces the network dot and shows a slash while offline. Corrects the external-power and battery screen-timeout selection and keeps the WebUI preview aligned with the display. Fixes the charging icon remaining on after USB is disconnected."
       },
       "ota_summary": {
-        "zh-CN": "电池图标在充电时显示闪电，联网圆点改为 Wi-Fi 图标，断网时显示斜线。修正外部供电与电池对应的熄屏时间选择，网页预览同步屏幕显示。",
-        "en": "The battery icon shows a lightning mark while charging. A Wi-Fi icon replaces the network dot and shows a slash while offline. Corrects the external-power and battery screen-timeout selection and keeps the WebUI preview aligned with the display."
+        "zh-CN": "电池图标在 USB 供电时显示闪电，联网圆点改为 Wi-Fi 图标，断网时显示斜线。修正外部供电与电池对应的熄屏时间选择，网页预览同步屏幕显示。修复拔掉 USB 后充电图标仍亮的问题。",
+        "en": "The battery icon shows a lightning mark while powered by USB. A Wi-Fi icon replaces the network dot and shows a slash while offline. Corrects the external-power and battery screen-timeout selection and keeps the WebUI preview aligned with the display. Fixes the charging icon remaining on after USB is disconnected."
       },
       "summary_complete": true,
       "critical": false,
@@ -9981,16 +9981,195 @@
           "BRY88BBA15G/screen-protocol.lock.json"
         ],
         "firmware_source_sha256": {
-          "screen-release.lock.json": "7355aa62d717fc7b3c05fff99a8b81f5f53f4788ca4c625897b8cd523aa208e8",
-          "BRY88BBA15G/screen-protocol.lock.json": "5e02dac472633996e65254784348aadef0f5c1da86813a809ef55c0cedb3dcb2"
+          "screen-release.lock.json": "625e462498797c299f362dca73321c5ca40225c7e97d93d7a3437e7e8fc517ce",
+          "BRY88BBA15G/screen-protocol.lock.json": "417e05c1ddc692bac33a4481e56aab5b23a3dc1717cfdc5f9dfd81c0d22311e9"
         }
       },
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
         "reason": "Author reviewed both languages against the implementation.",
-        "reviewed_utc": "2026-11-08T01:42:06.934785+00:00",
-        "reviewed_content_sha256": "dc7e9a3c9a39869ea196f85697e067e1ec86ce55bd80a333371d78f82d0a4205"
+        "reviewed_utc": "2026-11-08T09:44:30.612082+00:00",
+        "reviewed_content_sha256": "22dbd08f9f67595ef15f5d080b8083fed2f86bb979bbf6de64016af7a593ba96"
+      }
+    },
+    {
+      "change_id": "g3-power-key-shutdown",
+      "version": "1.0.0-rc.6",
+      "type": "bugfix",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "bry88bba15g"
+        ],
+        "variants": [
+          "full"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "G3 长按关机",
+        "en": "G3 long-press shutdown"
+      },
+      "description": {
+        "zh-CN": "修复长按关机后立即重新启动。关机后等待松键，USB 保持供电时需重新长按约 2 秒开机；短按切页和唤醒保持可用。",
+        "en": "Fixes immediate restart after a long-press shutdown. Shutdown waits for key release; when USB keeps the MCU powered, a new press of about 2 seconds turns it on. Short-press paging and wake remain available."
+      },
+      "ota_summary": {
+        "zh-CN": "修复长按关机后立即重新启动。关机后等待松键，USB 保持供电时需重新长按约 2 秒开机；短按切页和唤醒保持可用。",
+        "en": "Fixes immediate restart after a long-press shutdown. Shutdown waits for key release; when USB keeps the MCU powered, a new press of about 2 seconds turns it on. Short-press paging and wake remain available."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc.6:b013"
+      ],
+      "evidence": {
+        "firmware_sources": [
+          "screen-release.lock.json"
+        ],
+        "firmware_source_sha256": {
+          "screen-release.lock.json": "625e462498797c299f362dca73321c5ca40225c7e97d93d7a3437e7e8fc517ce"
+        }
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root",
+        "reason": "Author reviewed both languages against the implementation.",
+        "reviewed_utc": "2026-11-08T09:44:30.613648+00:00",
+        "reviewed_content_sha256": "523ef986f5d93305a2673d0c23cf51265548ddaabeec7d81cfe22e1ff5c89c1c"
+      }
+    },
+    {
+      "change_id": "g3-web-direct-install",
+      "version": "1.0.0-rc.6",
+      "type": "bugfix",
+      "component": "bundled_web",
+      "scope": {
+        "models": [
+          "bry88bba15g"
+        ],
+        "variants": [
+          "full"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "G3 屏幕网页直接安装",
+        "en": "G3 direct screen installation from the WebUI"
+      },
+      "description": {
+        "zh-CN": "首次从原厂屏幕安装和后续社区屏幕升级均可直接选择在线安装或上传文件。一次确认后自动校验、传输并激活，确认新 MCU 正常启动后显示安装成功。",
+        "en": "Both first installation from stock screen firmware and later community updates support online installation or file upload. One confirmation starts verification, transfer and activation; success appears after the new MCU starts normally."
+      },
+      "ota_summary": {
+        "zh-CN": "首次从原厂屏幕安装和后续社区屏幕升级均可直接选择在线安装或上传文件。一次确认后自动校验、传输并激活，确认新 MCU 正常启动后显示安装成功。",
+        "en": "Both first installation from stock screen firmware and later community updates support online installation or file upload. One confirmation starts verification, transfer and activation; success appears after the new MCU starts normally."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc.6:b014"
+      ],
+      "evidence": {
+        "firmware_sources": [
+          "frontend.lock.json",
+          "docs/public/daikin-g3-guide.md"
+        ],
+        "firmware_source_sha256": {
+          "frontend.lock.json": "1b0f230c3edf1144e2fe7f5d89c36fe75b86e1c2ea4e183793bf3a0f09474403",
+          "docs/public/daikin-g3-guide.md": "a54d58974ad1e17eac442498680df02568d9489e542aacee2a85dadc382f9e89"
+        }
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root",
+        "reason": "Author reviewed both languages against the implementation.",
+        "reviewed_utc": "2026-11-08T09:44:30.613690+00:00",
+        "reviewed_content_sha256": "a563a2358cd81b60bae1643439cf98ef280c5012ad945509ff620ba85b434ea5"
+      }
+    },
+    {
+      "change_id": "g3-cloud-fresh-readings",
+      "version": "1.0.0-rc.6",
+      "type": "bugfix",
+      "component": "bundled_web",
+      "scope": {
+        "models": [
+          "bry88bba15g"
+        ],
+        "variants": [
+          "full"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "G3 云端实时读数",
+        "en": "G3 live cloud readings"
+      },
+      "description": {
+        "zh-CN": "同时连接局域网和 MQTT 时，云端卡片和详情页使用较新的传感器读数，避免旧局域网快照使 G3 显示无数据。",
+        "en": "When LAN and MQTT are both connected, cloud cards and details use the newer sensor readings, preventing an older LAN snapshot from leaving G3 with no data."
+      },
+      "ota_summary": {
+        "zh-CN": "同时连接局域网和 MQTT 时，云端卡片和详情页使用较新的传感器读数，避免旧局域网快照使 G3 显示无数据。",
+        "en": "When LAN and MQTT are both connected, cloud cards and details use the newer sensor readings, preventing an older LAN snapshot from leaving G3 with no data."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc.6:b015"
+      ],
+      "evidence": {
+        "firmware_sources": [
+          "frontend.lock.json"
+        ],
+        "firmware_source_sha256": {
+          "frontend.lock.json": "1b0f230c3edf1144e2fe7f5d89c36fe75b86e1c2ea4e183793bf3a0f09474403"
+        }
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root",
+        "reason": "Author reviewed both languages against the implementation.",
+        "reviewed_utc": "2026-11-08T09:44:30.613721+00:00",
+        "reviewed_content_sha256": "de340b32ec5d4fa44a9e23467c75836d3f3735bd43a44632838daae800fe2cfc"
       }
     }
   ],
