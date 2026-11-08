@@ -91,6 +91,7 @@ class DirectInstallTest(unittest.TestCase):
         self.uploaded = False
         self.bad_readback = False
         self.exports = 0
+        self.boot_modes = ['normal']
         owner = self
 
         class Device:
@@ -105,7 +106,10 @@ class DirectInstallTest(unittest.TestCase):
                 recovery = {'available': owner.community, 'session': 1,
                             'ota_activation': owner.community, 'boot_exported': 0}
                 if owner.installed or (owner.started and not owner.community):
-                    recovery.update(available=True, session=2, image_md5=owner.md5)
+                    mode = owner.boot_modes[0]
+                    if len(owner.boot_modes) > 1:
+                        owner.boot_modes.pop(0)
+                    recovery.update(available=True, session=2, image_md5=owner.md5, mode=mode)
                 if action == 'status.get':
                     return {'hardware_model': 'BRY88BBA15G', 'screen': {
                         'mcu_version': 'SV.42.99.01.00', 'recovery': recovery,
@@ -160,6 +164,24 @@ class DirectInstallTest(unittest.TestCase):
         self.assertIn(('screen.update.start', {'mode': 'stage'}), self.calls)
         self.assertIn(('screen.update.install', {'sha256': self.sha}), self.calls)
         self.assertTrue(self.installed)
+
+    def test_stock_matching_digest_waits_for_normal_startup(self):
+        self.boot_modes = ['window', 'normal']
+        with patch.object(flash_screen.time, 'sleep'):
+            self.run_tool()
+        records = [json.loads(line) for line in (self.directory / 'install.jsonl').read_text().splitlines()]
+        self.assertEqual(records[-1]['data']['mode'], 'normal')
+
+    def test_stock_matching_digest_does_not_accept_startup_fault(self):
+        self.boot_modes = ['fault_recovery']
+        with self.assertRaisesRegex(RuntimeError, 'failed to start normally'):
+            self.run_tool()
+
+    def test_community_matching_digest_does_not_accept_startup_fault(self):
+        self.community = True
+        self.boot_modes = ['fault_recovery']
+        with self.assertRaisesRegex(RuntimeError, 'failed to start normally'):
+            self.run_tool()
 
     def test_stage_only_on_stock_rejected_before_upload(self):
         with self.assertRaisesRegex(ValueError, 'auto-installs'):

@@ -120,14 +120,18 @@ def main():
                 continue
             screen = status["screen"]
             ota, recovery = screen["ota"], screen["recovery"]
-            progress = (ota["state"], ota["sent"], recovery.get("session"), recovery.get("image_md5"))
+            progress = (ota["state"], ota["sent"], recovery.get("session"),
+                        recovery.get("image_md5"), recovery.get("mode"))
             if progress != last:
                 record("progress", {"ota": ota, "recovery": recovery})
                 last = progress
             if factory:
                 if recovery.get("available") and recovery.get("image_md5") == md5:
-                    record("verified_running", {"image_md5": md5, "session": recovery["session"]})
-                    return
+                    if recovery.get("mode") == "fault_recovery":
+                        raise RuntimeError(f"Installed MCU failed to start normally: {recovery}")
+                    if recovery.get("mode") == "normal":
+                        record("verified_running", recovery)
+                        return
                 if ota["state"] == "artifact_ready":
                     raise RuntimeError("ESP restarted before the MCU completed its transfer")
             elif ota["state"] == "staged_verified":
@@ -151,8 +155,11 @@ def main():
                 continue
             if (recovery.get("available") and recovery.get("session") != previous_session
                     and recovery.get("image_md5") == md5):
-                record("verified_running", recovery)
-                return
+                if recovery.get("mode") == "fault_recovery":
+                    raise RuntimeError(f"Installed MCU failed to start normally: {recovery}")
+                if recovery.get("mode") == "normal":
+                    record("verified_running", recovery)
+                    return
             if recovery.get("state") in ("mcu_rejected", "invalid_response", "timeout"):
                 raise RuntimeError(f"MCU installation rejected: {recovery}")
             time.sleep(.4)

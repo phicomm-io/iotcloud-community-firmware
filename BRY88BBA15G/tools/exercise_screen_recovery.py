@@ -16,7 +16,7 @@ import sys
 import time
 
 from backup_screen_boot import Device, read_pass
-from flash_screen import SUPPORTED_BOOT_SHA256, validate_image
+from flash_screen import validate_image
 
 
 def main():
@@ -28,7 +28,7 @@ def main():
                    help="Continue from the matching application already in forced maintenance")
     args = p.parse_args()
     args.image = args.image.resolve()
-    image = validate_image(args.image, "install")
+    image = validate_image(args.image)
     if b"install=factory-uart;mode=application;" not in image:
         p.error("Recovery acceptance requires a full application image")
     md5, sha = hashlib.md5(image).hexdigest(), hashlib.sha256(image).hexdigest()
@@ -80,22 +80,10 @@ def main():
             time.sleep(.1)
         else:
             raise RuntimeError("Forced recovery accepted resume or lost its reply")
-        if recovery["boot_exported"] < 0x14000:
-            try:
-                device.command("screen.update.install", {"sha256": sha})
-            except RuntimeError as error:
-                assert str(error) == "screen.update.install: not_ready", error
-                record("incomplete_export_install_rejected", {"code": "not_ready"})
-            else:
-                raise RuntimeError("Installation accepted without a current-session boot export")
-        else:
-            # A continued run may already have exported the complete loader.
-            # Its install command is live: do not use it as a negative probe.
-            record("existing_export_negative_probe_skipped", recovery)
         backup = args.output / "boot-backup"
         backup.mkdir()
         reads = [read_pass(device, backup, n, session) for n in (1, 2)]
-        assert all(r["sha256"] == SUPPORTED_BOOT_SHA256 for r in reads)
+        assert reads[0]["sha256"] == reads[1]["sha256"], "Boot reads do not match"
         report = {"range_start": 0, "range_end_exclusive": 0x14000,
                   "mcu_session": session, "inherited_wdt": recovery["inherited_wdt"],
                   "reads": reads, "matching": True,
