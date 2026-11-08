@@ -44,6 +44,8 @@ BRY88BBA15G 原厂 ESP32 `V01.02.00` 使用 ESP-IDF 5.0.1。其电源配置为�
 
 社区 G3 保留 Arduino 2.0.17 API，以 ESP-IDF 4.4.7 组件方式从源码构建 SDK，启用 `CONFIG_PM_ENABLE` 与 `CONFIG_FREERTOS_USE_TICKLESS_IDLE`，使用原厂的 10–80 MHz 动态调频和自动轻睡眠。G1/G2 的 SensorKit2 原厂启动代码选择 240 MHz，社区保持 240 MHz 及预编译 Arduino SDK。两种 ESP32 的 Wi-Fi 均使用 `WIFI_PS_MIN_MODEM`。
 
+G3 实机复现了轻睡眠唤醒后的 `vTaskStepTick` 断言。构建在临时目录生成 PM 源码副本，移植 [Espressif 的有界 tick 补偿修复](https://github.com/espressif/esp-idf/commit/5a5ef9fb08aa48464487ddfe7d9e9fe4127f246d)：仅对不超过两个 tick 的超时限制补偿值，更大的超时仍触发原断言。构建先校验 SDK 源码摘要；SDK 升级时必须重新核对。该处理可能使 RTOS tick 略落后于实际时间，`esp_timer` 毫秒时基和屏幕时钟继续按实际时间运行。
+
 G3 GPIO2 是屏幕 MCU 的唤醒输入。电平为高或正在升级时持有 APB 锁；UART 发送结束并经过至少 50 ms 通信尾期后释放发送锁。屏幕 UART 和调试 UART 使用 `REF_TICK`，保持降频后的波特率。主循环允许 10 ms 空闲，满足 tickless idle 的入睡条件。`diagnostics.get.power_management` 返回即时 PM 配置、唤醒输入、两把锁及最近唤醒原因；`status.get` 包含其缓存快照。实现依据见 [ESP-IDF 电源管理](https://docs.espressif.com/projects/esp-idf/en/v4.4.7/esp32/api-reference/system/power_management.html)。
 
 屏幕 MCU 原厂 `SV.04.00.04.00` 在 `0x4ef80` 执行 `WFI`，通信任务在约一秒后清低 PA5 唤醒输出。社区 MCU 在无串口待处理数据时等待中断，保留显示、SDRAM 和外设时钟；发送前先置高 PA5，结束一秒且 UART 空闲后清低。周期状态改为两秒，按键和命令仍即时响应。此次未调整 MCU 主频，也未移植原厂 FreeRTOS 的 tickless 时间补偿。反汇编依据与实现见屏幕工程的 `docs/POWER-MANAGEMENT.md`。

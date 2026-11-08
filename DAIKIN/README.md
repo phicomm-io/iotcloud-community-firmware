@@ -52,6 +52,8 @@ GPIO25 独立指示系统状态，不受空气质量指示灯总开关影响：�
 
 G3 将 Arduino 2.0.17 作为 ESP-IDF 4.4.7 组件构建，SDK 参数来自 `sdkconfig.defaults`。预编译 Arduino SDK 未启用 PM，单独添加应用宏不能开启动态调频和自动轻睡眠。G1/G2 保留预编译 Arduino SDK。
 
+`CMakeLists.txt` 为 G3 移植有界的轻睡眠 tick 补偿修复，避免实机出现的 `vTaskStepTick` 断言。修复只作用于构建目录的 SDK 源码副本，并校验原始源码摘要。
+
 G1/G2 原厂 SensorKit2 的 `esp_clk_init` 在 `0x400d1f2e` 选择 240 MHz；社区普通版和 Hub 版保持该频率。G3 原厂使用 10–80 MHz 与自动轻睡眠，社区按该配置运行，通过 GPIO2 唤醒输入和 UART APB 锁协调屏幕通信。Wi-Fi 使用最小 modem sleep。串口时钟、屏幕 MCU 空闲等待及验证接口见 [G3 开发资料](../docs/public/daikin-g3-development.md#电源与-ota-调度)。
 
 G3 的项目名称保留 `arduino-lib-builder`，保持已安装固件检查的 OTA 应用描述；目标与变体描述继续固定在原偏移，分区布局保持原样。Hub 保留已有 LTO 构建，以容纳完整前端及原厂 OTA 余量。
