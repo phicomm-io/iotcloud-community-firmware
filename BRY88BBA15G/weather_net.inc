@@ -182,7 +182,7 @@ static bool weatherGet(const String &url, const WeatherJob &job,
   else if (!strcmp(job.provider, "openmeteo")) tls.setCACert(weatherOpenMeteoCa);
   else tls.setCACertBundle(weatherCaBundle);
   tls.setTimeout(6000);
-  tls.setHandshakeTimeout(6); // Arduino defaults to 120 seconds.
+  tls.setHandshakeTimeout(15); // Allow the 80 MHz G3 to finish TLS; default is 120 s.
   HTTPClient http;
   http.setConnectTimeout(6000);
   http.setTimeout(6000);
