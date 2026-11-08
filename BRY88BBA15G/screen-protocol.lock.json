@@ -48,6 +48,6 @@
     "protocol/display_diag.h": "protocol/display_diag.h",
     "protocol/page_control.h": "protocol/page_control.h"
   },
-  "commit": "6a924c50da94cc511b64cc894bcd661091032906",
+  "commit": "c95c03f5d65dcd015dc6baed00b32dd0f939aef9",
   "release": "v1.0.0-rc.6"
 }
