@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """S30 production HTTP/device integration with its synchronized auth snapshot."""
 import argparse
-import json
 from pathlib import Path
 import subprocess
 
@@ -31,12 +30,6 @@ def main():
         subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, check=True)
     result = subprocess.run([binary], capture_output=True, text=True, timeout=30)
     (run / 'test.log').write_text(result.stdout + result.stderr)
-    (run / 'result.json').write_text(json.dumps({
-        'status': 'PASS' if result.returncode == 0 else 'FAIL',
-        'synchronized_auth_snapshot': True,
-        'production_http_and_device': True, 'asan_ubsan': True,
-        'product_port_persistence': False, 'hardware_verified': False,
-    }, indent=2) + '\n')
     result.check_returncode()
     print(result.stdout, end='')
 

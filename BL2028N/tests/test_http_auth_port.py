@@ -46,17 +46,6 @@ def main():
     shutil.rmtree(storage, ignore_errors=True)
     result = subprocess.run([binary, storage], capture_output=True, text=True, timeout=30)
     (run / 'test.log').write_text(result.stdout + result.stderr)
-    (run / 'result.json').write_text(json.dumps({
-        'status': 'PASS' if result.returncode == 0 else 'FAIL',
-        'synchronized_auth_snapshot': True,
-        'production_http_device_port': True, 'host_lfs_and_sdk': True,
-        'production_lan_v4': True, 'retained_response_revocation': True,
-        'mqtt_sensor_grant_revocation': True,
-        'http_matrix_cases': 42, 'sdk_cases': 7,
-        'empty_recovery_cases': 2, 'same_boot_retry_cases': 1,
-        'sdk_commit': revision,
-        'asan_ubsan': True, 'hardware_verified': False,
-    }, indent=2) + '\n')
     result.check_returncode()
     print(result.stdout, end='')
 
