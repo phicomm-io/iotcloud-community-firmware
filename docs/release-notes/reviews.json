@@ -3761,7 +3761,7 @@
       ],
       "change_refs": [],
       "block_sha256": "b663d453d755ebc350efb0fb3bdb8a9e3e6d6f67648fcad0ca0e0cad3729e60c",
-      "release_sha256": "722d22df9722fbd1ec297034631f59f4b30c3d16bdf24fc50b5067e2ef74a11e"
+      "release_sha256": "a5d9bc8cb6ad736c24fa5265225d7b597cf127d4cab6db406184fbe10101c2e1"
     },
     "v1.0.0-rc.6:b002": {
       "status": "excluded",
@@ -3771,7 +3771,7 @@
       ],
       "change_refs": [],
       "block_sha256": "6f3c1e7ee7d908f9110ec0b2edef44459143e22886cca328c3958d53392f2614",
-      "release_sha256": "722d22df9722fbd1ec297034631f59f4b30c3d16bdf24fc50b5067e2ef74a11e"
+      "release_sha256": "a5d9bc8cb6ad736c24fa5265225d7b597cf127d4cab6db406184fbe10101c2e1"
     },
     "v1.0.0-rc.6:b003": {
       "status": "approved",
@@ -3783,7 +3783,7 @@
         "g3-screen-platform@1.0.0-rc.6"
       ],
       "block_sha256": "0a43594453f26c8b3c2152cc2c1e8e6f4c3826b6a10973558091c5edc29ed773",
-      "release_sha256": "722d22df9722fbd1ec297034631f59f4b30c3d16bdf24fc50b5067e2ef74a11e"
+      "release_sha256": "a5d9bc8cb6ad736c24fa5265225d7b597cf127d4cab6db406184fbe10101c2e1"
     },
     "v1.0.0-rc.6:b004": {
       "status": "approved",
@@ -3795,7 +3795,7 @@
         "g3-layout-theme-weather@1.0.0-rc.6"
       ],
       "block_sha256": "2e3147dce8e4bf67ab0eb14de7e9869c84404b3b25dcec84f5134fd11d673aa6",
-      "release_sha256": "722d22df9722fbd1ec297034631f59f4b30c3d16bdf24fc50b5067e2ef74a11e"
+      "release_sha256": "a5d9bc8cb6ad736c24fa5265225d7b597cf127d4cab6db406184fbe10101c2e1"
     },
     "v1.0.0-rc.6:b005": {
       "status": "approved",
@@ -3807,7 +3807,7 @@
         "g3-online-update@1.0.0-rc.6"
       ],
       "block_sha256": "0e65b3f4410baf7438bcba8105c1b9db004b0e39e36526bc4e911faad407e2d5",
-      "release_sha256": "722d22df9722fbd1ec297034631f59f4b30c3d16bdf24fc50b5067e2ef74a11e"
+      "release_sha256": "a5d9bc8cb6ad736c24fa5265225d7b597cf127d4cab6db406184fbe10101c2e1"
     },
     "v1.0.0-rc.6:b006": {
       "status": "approved",
@@ -3819,7 +3819,7 @@
         "m1-clock-retry@1.0.0-rc.6"
       ],
       "block_sha256": "4ab9cf1ba111ea59699ac82b79633a57580d2a9151b0efeec4ad7064036f7be3",
-      "release_sha256": "722d22df9722fbd1ec297034631f59f4b30c3d16bdf24fc50b5067e2ef74a11e"
+      "release_sha256": "a5d9bc8cb6ad736c24fa5265225d7b597cf127d4cab6db406184fbe10101c2e1"
     },
     "v1.0.0-rc.6:b007": {
       "status": "approved",
@@ -3831,7 +3831,7 @@
         "s30-clock-automation-stock-ota@1.0.0-rc.6"
       ],
       "block_sha256": "e86de3a4791909e88e82dc34425455d37e336101bc217b1c3507f24e7f9352be",
-      "release_sha256": "722d22df9722fbd1ec297034631f59f4b30c3d16bdf24fc50b5067e2ef74a11e"
+      "release_sha256": "a5d9bc8cb6ad736c24fa5265225d7b597cf127d4cab6db406184fbe10101c2e1"
     },
     "v1.0.0-rc.6:b008": {
       "status": "approved",
@@ -3843,7 +3843,7 @@
         "shared-power-web-demos@1.0.0-rc.6"
       ],
       "block_sha256": "d4cb259d5291d73595734f4dfa55daae9368ab4f232d44db35f16865532c0b49",
-      "release_sha256": "722d22df9722fbd1ec297034631f59f4b30c3d16bdf24fc50b5067e2ef74a11e"
+      "release_sha256": "a5d9bc8cb6ad736c24fa5265225d7b597cf127d4cab6db406184fbe10101c2e1"
     },
     "v1.0.0-rc.6:b009": {
       "status": "approved",
@@ -3855,7 +3855,7 @@
         "g3-nor-wallpaper-sensors@1.0.0-rc.6"
       ],
       "block_sha256": "2f4e58e1aaef4cf77e6ed0a023c7c0aa65621295af37f99ed4a654058c541582",
-      "release_sha256": "722d22df9722fbd1ec297034631f59f4b30c3d16bdf24fc50b5067e2ef74a11e"
+      "release_sha256": "a5d9bc8cb6ad736c24fa5265225d7b597cf127d4cab6db406184fbe10101c2e1"
     },
     "v1.0.0-rc.6:b010": {
       "status": "approved",
@@ -3867,7 +3867,7 @@
         "g3-stock-weather-linux@1.0.0-rc.6"
       ],
       "block_sha256": "0583bd31606bea8d4bd5808665434b8eda367e78c4ebad7317fb3f44d250d70d",
-      "release_sha256": "722d22df9722fbd1ec297034631f59f4b30c3d16bdf24fc50b5067e2ef74a11e"
+      "release_sha256": "a5d9bc8cb6ad736c24fa5265225d7b597cf127d4cab6db406184fbe10101c2e1"
     },
     "v1.0.0-rc.6:b011": {
       "status": "approved",
@@ -3878,8 +3878,8 @@
       "change_refs": [
         "g3-startup-online-power@1.0.0-rc.6"
       ],
-      "block_sha256": "cbc73286bc528dcfc162b6d1ff7f749cd01c4babb79b7783e2fbd63c9a161778",
-      "release_sha256": "722d22df9722fbd1ec297034631f59f4b30c3d16bdf24fc50b5067e2ef74a11e"
+      "block_sha256": "c62fddc1537138be429c18de983d87fe771481336df04832edad2d4af1ea7432",
+      "release_sha256": "a5d9bc8cb6ad736c24fa5265225d7b597cf127d4cab6db406184fbe10101c2e1"
     },
     "v1.0.0-rc.6:b012": {
       "status": "approved",
@@ -3891,27 +3891,7 @@
         "g3-charging-network-icons@1.0.0-rc.6"
       ],
       "block_sha256": "98ac771741e58710e2fa338487cb23a72dbb2762a5f71b369d433d6edf4052d3",
-      "release_sha256": "722d22df9722fbd1ec297034631f59f4b30c3d16bdf24fc50b5067e2ef74a11e"
-    },
-    "v1.0.0-rc.6:b016": {
-      "status": "excluded",
-      "reason": "Known issue retained as a usage limitation.",
-      "basis": [
-        "v1.0.0-rc.6:b016"
-      ],
-      "change_refs": [],
-      "block_sha256": "6dfefa39ebf557ad8f5633a2f43ede4afd664cad8be9304b91706a1c73ade8b0",
-      "release_sha256": "722d22df9722fbd1ec297034631f59f4b30c3d16bdf24fc50b5067e2ef74a11e"
-    },
-    "v1.0.0-rc.6:b017": {
-      "basis": [
-        "v1.0.0-rc.6:b017"
-      ],
-      "block_sha256": "04b81b8269225ffbcb3b28b81b5ca8a33b17b940bd67f01f783916974953586a",
-      "change_refs": [],
-      "reason": "Release channel, upgrade conditions or download link.",
-      "release_sha256": "722d22df9722fbd1ec297034631f59f4b30c3d16bdf24fc50b5067e2ef74a11e",
-      "status": "excluded"
+      "release_sha256": "a5d9bc8cb6ad736c24fa5265225d7b597cf127d4cab6db406184fbe10101c2e1"
     },
     "v1.0.0-rc.6:b013": {
       "status": "approved",
@@ -3923,7 +3903,7 @@
         "g3-power-key-shutdown@1.0.0-rc.6"
       ],
       "block_sha256": "958a005af4cdffe7433d2c509d73e8c5ff226c96f1ae7c89c35bbab222e55307",
-      "release_sha256": "722d22df9722fbd1ec297034631f59f4b30c3d16bdf24fc50b5067e2ef74a11e"
+      "release_sha256": "a5d9bc8cb6ad736c24fa5265225d7b597cf127d4cab6db406184fbe10101c2e1"
     },
     "v1.0.0-rc.6:b014": {
       "status": "approved",
@@ -3935,7 +3915,7 @@
         "g3-web-direct-install@1.0.0-rc.6"
       ],
       "block_sha256": "7f160ce42c289991cb9cfe1bcd9ed84c86c604f19adc280490649b8357138ed1",
-      "release_sha256": "722d22df9722fbd1ec297034631f59f4b30c3d16bdf24fc50b5067e2ef74a11e"
+      "release_sha256": "a5d9bc8cb6ad736c24fa5265225d7b597cf127d4cab6db406184fbe10101c2e1"
     },
     "v1.0.0-rc.6:b015": {
       "status": "approved",
@@ -3946,8 +3926,40 @@
       "change_refs": [
         "g3-cloud-fresh-readings@1.0.0-rc.6"
       ],
-      "block_sha256": "13ad550432cbabe9443c4caf0f2c61d44cdaeab032f061d56712cd8bbe1c2697",
-      "release_sha256": "722d22df9722fbd1ec297034631f59f4b30c3d16bdf24fc50b5067e2ef74a11e"
+      "block_sha256": "57594b78534b6928bfbdea5a490429c39bb55f2e72992739e16b5704badca15b",
+      "release_sha256": "a5d9bc8cb6ad736c24fa5265225d7b597cf127d4cab6db406184fbe10101c2e1"
+    },
+    "v1.0.0-rc.6:b017": {
+      "status": "excluded",
+      "reason": "Known issue retained as a usage limitation.",
+      "basis": [
+        "v1.0.0-rc.6:b017"
+      ],
+      "change_refs": [],
+      "block_sha256": "6dfefa39ebf557ad8f5633a2f43ede4afd664cad8be9304b91706a1c73ade8b0",
+      "release_sha256": "a5d9bc8cb6ad736c24fa5265225d7b597cf127d4cab6db406184fbe10101c2e1"
+    },
+    "v1.0.0-rc.6:b018": {
+      "basis": [
+        "v1.0.0-rc.6:b018"
+      ],
+      "block_sha256": "04b81b8269225ffbcb3b28b81b5ca8a33b17b940bd67f01f783916974953586a",
+      "change_refs": [],
+      "reason": "Release channel, upgrade conditions or download link.",
+      "release_sha256": "a5d9bc8cb6ad736c24fa5265225d7b597cf127d4cab6db406184fbe10101c2e1",
+      "status": "excluded"
+    },
+    "v1.0.0-rc.6:b016": {
+      "status": "approved",
+      "reason": "Author reviewed the implementation and matching Chinese and English behavior.",
+      "basis": [
+        "v1.0.0-rc.6:b016"
+      ],
+      "change_refs": [
+        "g3-sensor-calibration@1.0.0-rc.6"
+      ],
+      "block_sha256": "e2163bd8de519079b36bbcc7382ff413cca56992360b2908e632b68160129711",
+      "release_sha256": "a5d9bc8cb6ad736c24fa5265225d7b597cf127d4cab6db406184fbe10101c2e1"
     }
   }
 }

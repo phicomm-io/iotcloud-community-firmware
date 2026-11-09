@@ -40,7 +40,7 @@ With the stock screen MCU, ESP32 converts real current weather into factory temp
 
 ### G3 startup and online update load
 
-ESP32 uses 80 MHz and closes the recovery access point after Wi-Fi stabilizes. The screen loads fonts before enabling sensors to reduce concurrent startup load. Fixes OTA preparation failures and interrupted uploads. Consecutive updates work while the screen runs normally, with sensors resuming afterward.
+ESP32 follows the stock 10–80 MHz dynamic frequency and automatic light-sleep policy, closing the recovery access point after Wi-Fi stabilizes. The MCU waits in shallow sleep while idle and coordinates ESP32 wake. The screen loads fonts before enabling sensors to reduce concurrent startup load. Fixes OTA preparation failures and interrupted uploads. Consecutive updates work while the screen runs normally, with sensors resuming afterward.
 
 ### G3 charging and network icons
 
@@ -56,7 +56,11 @@ Both first installation from stock screen firmware and later community updates s
 
 ### G3 live cloud readings
 
-When LAN and MQTT are both connected, cloud cards and details use the newer sensor readings, preventing an older LAN snapshot from leaving G3 with no data.
+When LAN and MQTT are both connected, cloud cards and details use the newer sensor readings, preventing an older LAN snapshot from leaving G3 with no data. The G3 detail page is selected by hardware identity.
+
+### G3 sensor calibration
+
+Adds factory CO₂ 400 ppm and TVOC calibration controls. The WebUI explains warmup and reference conditions, reports sampling, command transmission and acknowledgement, and permits cancellation before transmission. Complete manufacturer conditions for TVOC calibration remain unpublished and are identified in the UI.
 
 Known issue: An ESP32 task watchdog reset was previously observed while reading multiple screen configuration items. Its cause remains under investigation.
 

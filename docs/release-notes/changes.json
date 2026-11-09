@@ -9406,7 +9406,7 @@
           "BRY88BBA15G/screen-protocol.lock.json"
         ],
         "firmware_source_sha256": {
-          "BRY88BBA15G/screen_commands.inc": "5940425dd079a72a731a879211fccc9378dcefd831406bd2f69050cef57d3217",
+          "BRY88BBA15G/screen_commands.inc": "ea118331bec2714dd64975bbee43c11b59e24661888b83a3f421dbf9c5050ea4",
           "BRY88BBA15G/screen-protocol.lock.json": "417e05c1ddc692bac33a4481e56aab5b23a3dc1717cfdc5f9dfd81c0d22311e9"
         }
       },
@@ -9467,8 +9467,8 @@
           "BRY88BBA15G/screen_commands.inc"
         ],
         "firmware_source_sha256": {
-          "frontend.lock.json": "47589649240f795b3ff0699989c0ce352f1d69057e042e4cbe72bd47c1249c44",
-          "BRY88BBA15G/screen_commands.inc": "5940425dd079a72a731a879211fccc9378dcefd831406bd2f69050cef57d3217"
+          "frontend.lock.json": "70ec7b09d1ba80d698828acee241f2858909498beb60001b9ca2232c38183f41",
+          "BRY88BBA15G/screen_commands.inc": "ea118331bec2714dd64975bbee43c11b59e24661888b83a3f421dbf9c5050ea4"
         }
       },
       "translation_review": {
@@ -9723,8 +9723,8 @@
           "site/index.html"
         ],
         "firmware_source_sha256": {
-          "frontend.lock.json": "47589649240f795b3ff0699989c0ce352f1d69057e042e4cbe72bd47c1249c44",
-          "site/index.html": "aafce24dfd05bb9eac7d8ef9d2500e02255cce38a135a6948364abaa91b86c54"
+          "frontend.lock.json": "70ec7b09d1ba80d698828acee241f2858909498beb60001b9ca2232c38183f41",
+          "site/index.html": "9bb0a4f685944f8609b0d17c7dcf4eafdc904d215d25974e7230dbad9a7ebb52"
         }
       },
       "translation_review": {
@@ -9745,9 +9745,9 @@
       },
       "evidence": {
         "firmware_source_sha256": {
-          "screen-release.lock.json": "c07ae9ba56805ca355a2e6e43be1bff53654de96281d81653fb35a42371fdf6a",
-          "BRY88BBA15G/SERVICES.md": "f158fd3ca87c636820c3f97df025d466ec0f2a99c3f848e011ccf19f85bf9a57",
-          "BRY88BBA15G/screen_commands.inc": "5940425dd079a72a731a879211fccc9378dcefd831406bd2f69050cef57d3217"
+          "screen-release.lock.json": "bf0a0184ea2af8b69cf6c0b3cdcbfd983e249932ab5a2be4246c594e773d5688",
+          "BRY88BBA15G/SERVICES.md": "227c7bacd7a4e75135a40d1a3619f70859a11aed016eeab912c6c5559bfbdbb4",
+          "BRY88BBA15G/screen_commands.inc": "ea118331bec2714dd64975bbee43c11b59e24661888b83a3f421dbf9c5050ea4"
         },
         "firmware_sources": [
           "screen-release.lock.json",
@@ -9852,7 +9852,7 @@
         "firmware_source_sha256": {
           "BRY88BBA15G/weather.cpp": "5b444cefc065ebc5a1435aceab5c40356160dcb068a62ccdd5b005f766f32d43",
           "BRY88BBA15G/weather_net.inc": "18cf62f6054fc1574f91a6f90074b33db20d8c27a334c2f4fa57a3913ae39993",
-          "BRY88BBA15G/runtime.inc": "4c1eee9b3e9ccf764dd303db22723affc0b2705a196cef4f01801c234a92bef4",
+          "BRY88BBA15G/runtime.inc": "702904ca938004f240e11e59ff22d2f6927838c32260228b657391a88d1680cd",
           "tools/daikin_g3_migrate/provision_linux.py": "b3e0e74d66c49c5c1cc6cb9c6f74f1f3776820a76e15315cd35a8c6a4eee16a0",
           "tools/daikin_g3_migrate/README.md": "13649e1e3cb8af5b03b5cb363cf528742e4eb03fe68d88d30d20eed247b67e4e"
         }
@@ -9896,12 +9896,12 @@
         "en": "G3 startup and online update load"
       },
       "description": {
-        "zh-CN": "ESP32 使用 80 MHz，Wi-Fi 稳定后关闭恢复热点。屏幕先完成字库加载再开启传感器，降低初始化并发负载。修复 OTA 准备失败和上传中断；支持屏幕正常运行时连续更新，完成后恢复传感器。",
-        "en": "ESP32 uses 80 MHz and closes the recovery access point after Wi-Fi stabilizes. The screen loads fonts before enabling sensors to reduce concurrent startup load. Fixes OTA preparation failures and interrupted uploads. Consecutive updates work while the screen runs normally, with sensors resuming afterward."
+        "zh-CN": "ESP32 按原厂使用 10–80 MHz 动态调频和自动轻睡眠，Wi-Fi 稳定后关闭恢复热点；MCU 空闲时浅层等待，并协调 ESP32 唤醒。屏幕先完成字库加载再开启传感器，降低初始化并发负载。修复 OTA 准备失败和上传中断；支持屏幕正常运行时连续更新，完成后恢复传感器。",
+        "en": "ESP32 follows the stock 10–80 MHz dynamic frequency and automatic light-sleep policy, closing the recovery access point after Wi-Fi stabilizes. The MCU waits in shallow sleep while idle and coordinates ESP32 wake. The screen loads fonts before enabling sensors to reduce concurrent startup load. Fixes OTA preparation failures and interrupted uploads. Consecutive updates work while the screen runs normally, with sensors resuming afterward."
       },
       "ota_summary": {
-        "zh-CN": "ESP32 使用 80 MHz，Wi-Fi 稳定后关闭恢复热点。屏幕先完成字库加载再开启传感器，降低初始化并发负载。修复 OTA 准备失败和上传中断；支持屏幕正常运行时连续更新，完成后恢复传感器。",
-        "en": "ESP32 uses 80 MHz and closes the recovery access point after Wi-Fi stabilizes. The screen loads fonts before enabling sensors to reduce concurrent startup load. Fixes OTA preparation failures and interrupted uploads. Consecutive updates work while the screen runs normally, with sensors resuming afterward."
+        "zh-CN": "ESP32 按原厂使用 10–80 MHz 动态调频和自动轻睡眠，Wi-Fi 稳定后关闭恢复热点；MCU 空闲时浅层等待，并协调 ESP32 唤醒。屏幕先完成字库加载再开启传感器，降低初始化并发负载。修复 OTA 准备失败和上传中断；支持屏幕正常运行时连续更新，完成后恢复传感器。",
+        "en": "ESP32 follows the stock 10–80 MHz dynamic frequency and automatic light-sleep policy, closing the recovery access point after Wi-Fi stabilizes. The MCU waits in shallow sleep while idle and coordinates ESP32 wake. The screen loads fonts before enabling sensors to reduce concurrent startup load. Fixes OTA preparation failures and interrupted uploads. Consecutive updates work while the screen runs normally, with sensors resuming afterward."
       },
       "summary_complete": true,
       "critical": false,
@@ -9916,24 +9916,28 @@
           "BRY88BBA15G/online_ota.inc",
           "screen-release.lock.json",
           "BRY88BBA15G/screen_module.inc",
-          "BRY88BBA15G/bridge.c"
+          "BRY88BBA15G/bridge.c",
+          "DAIKIN/CMakeLists.txt",
+          "DAIKIN/sdkconfig.defaults"
         ],
         "firmware_source_sha256": {
-          "DAIKIN/platformio.ini": "af15480eccebd283949bb0bd1cb1bdeaa3c39922ee851f8124f105b86a596598",
-          "DAIKIN/src/main.cpp": "450f23fe9149b19a4c2791352204594b6b3ac829b10331ed7af225ad87a81bc9",
-          "BRY88BBA15G/runtime.inc": "4c1eee9b3e9ccf764dd303db22723affc0b2705a196cef4f01801c234a92bef4",
+          "DAIKIN/platformio.ini": "dd5e5693126507a85a4c58bcf45c824ab6b647a9c3f7676c79c9431f9f7dcf20",
+          "DAIKIN/src/main.cpp": "78450013728c1806e2accd92bee2c6f8fb402a564332e112a2ffb99a825d937f",
+          "BRY88BBA15G/runtime.inc": "702904ca938004f240e11e59ff22d2f6927838c32260228b657391a88d1680cd",
           "BRY88BBA15G/online_ota.inc": "9c92c0d89f24952766c111e81f63f243eaadc0a4a3c3c4658b716c8427a4c418",
-          "screen-release.lock.json": "c07ae9ba56805ca355a2e6e43be1bff53654de96281d81653fb35a42371fdf6a",
+          "screen-release.lock.json": "bf0a0184ea2af8b69cf6c0b3cdcbfd983e249932ab5a2be4246c594e773d5688",
           "BRY88BBA15G/screen_module.inc": "391272a51e80e6e5f493d493ad2f62f33839d6fb522898b389be0ce8bc4ba08c",
-          "BRY88BBA15G/bridge.c": "aedd1803cbd84930f652ab65bc53c5a82127fa419a726c37eb7cf9ca236b7f7d"
+          "BRY88BBA15G/bridge.c": "aedd1803cbd84930f652ab65bc53c5a82127fa419a726c37eb7cf9ca236b7f7d",
+          "DAIKIN/CMakeLists.txt": "2cb96afb27342cac5458dc4d80b8b05aa61ea64fcdce3b2622773fb9ae3f77a5",
+          "DAIKIN/sdkconfig.defaults": "f8a5ce1e34c07a5239e44751754e98a680b8cb4250eaa7e9e572f745d14e9d7e"
         }
       },
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
         "reason": "Reviewed current RC6 behavior, paired installation steps and matching Chinese and English text.",
-        "reviewed_utc": "2026-11-08T16:41:53.150087+00:00",
-        "reviewed_content_sha256": "b9be6778621108bbc7caf27a9be1b1db93da932f2329e948917c467fbd686a9a"
+        "reviewed_utc": "2026-11-09T00:24:35.012828+00:00",
+        "reviewed_content_sha256": "c94f02da709e0a8da8ef2c937d4d6d37789c7936e6b38094f35e0a19f72153ad"
       }
     },
     {
@@ -9985,7 +9989,7 @@
           "BRY88BBA15G/screen-protocol.lock.json"
         ],
         "firmware_source_sha256": {
-          "screen-release.lock.json": "c07ae9ba56805ca355a2e6e43be1bff53654de96281d81653fb35a42371fdf6a",
+          "screen-release.lock.json": "bf0a0184ea2af8b69cf6c0b3cdcbfd983e249932ab5a2be4246c594e773d5688",
           "BRY88BBA15G/screen-protocol.lock.json": "417e05c1ddc692bac33a4481e56aab5b23a3dc1717cfdc5f9dfd81c0d22311e9"
         }
       },
@@ -10045,7 +10049,7 @@
           "screen-release.lock.json"
         ],
         "firmware_source_sha256": {
-          "screen-release.lock.json": "c07ae9ba56805ca355a2e6e43be1bff53654de96281d81653fb35a42371fdf6a"
+          "screen-release.lock.json": "bf0a0184ea2af8b69cf6c0b3cdcbfd983e249932ab5a2be4246c594e773d5688"
         }
       },
       "translation_review": {
@@ -10105,8 +10109,8 @@
           "docs/public/daikin-g3-guide.md"
         ],
         "firmware_source_sha256": {
-          "frontend.lock.json": "47589649240f795b3ff0699989c0ce352f1d69057e042e4cbe72bd47c1249c44",
-          "docs/public/daikin-g3-guide.md": "8b710ee861329806d394cbab69a672bc40f8f0f79bc4cc2eb55fbfe260a9b9d5"
+          "frontend.lock.json": "70ec7b09d1ba80d698828acee241f2858909498beb60001b9ca2232c38183f41",
+          "docs/public/daikin-g3-guide.md": "d960e5e81aa34dbcdb697d16df6f078b0eae545d32c255330cec9df510aae224"
         }
       },
       "translation_review": {
@@ -10148,12 +10152,12 @@
         "en": "G3 live cloud readings"
       },
       "description": {
-        "zh-CN": "同时连接局域网和 MQTT 时，云端卡片和详情页使用较新的传感器读数，避免旧局域网快照使 G3 显示无数据。",
-        "en": "When LAN and MQTT are both connected, cloud cards and details use the newer sensor readings, preventing an older LAN snapshot from leaving G3 with no data."
+        "zh-CN": "同时连接局域网和 MQTT 时，云端卡片和详情页使用较新的传感器读数，避免旧局域网快照使 G3 显示无数据；按硬件型号选择 G3 详情页。",
+        "en": "When LAN and MQTT are both connected, cloud cards and details use the newer sensor readings, preventing an older LAN snapshot from leaving G3 with no data. The G3 detail page is selected by hardware identity."
       },
       "ota_summary": {
-        "zh-CN": "同时连接局域网和 MQTT 时，云端卡片和详情页使用较新的传感器读数，避免旧局域网快照使 G3 显示无数据。",
-        "en": "When LAN and MQTT are both connected, cloud cards and details use the newer sensor readings, preventing an older LAN snapshot from leaving G3 with no data."
+        "zh-CN": "同时连接局域网和 MQTT 时，云端卡片和详情页使用较新的传感器读数，避免旧局域网快照使 G3 显示无数据；按硬件型号选择 G3 详情页。",
+        "en": "When LAN and MQTT are both connected, cloud cards and details use the newer sensor readings, preventing an older LAN snapshot from leaving G3 with no data. The G3 detail page is selected by hardware identity."
       },
       "summary_complete": true,
       "critical": false,
@@ -10165,15 +10169,80 @@
           "frontend.lock.json"
         ],
         "firmware_source_sha256": {
-          "frontend.lock.json": "47589649240f795b3ff0699989c0ce352f1d69057e042e4cbe72bd47c1249c44"
+          "frontend.lock.json": "70ec7b09d1ba80d698828acee241f2858909498beb60001b9ca2232c38183f41"
         }
       },
       "translation_review": {
         "status": "approved",
         "reviewer": "/root",
         "reason": "Reviewed current RC6 behavior, paired installation steps and matching Chinese and English text.",
-        "reviewed_utc": "2026-11-08T16:41:53.150322+00:00",
-        "reviewed_content_sha256": "de340b32ec5d4fa44a9e23467c75836d3f3735bd43a44632838daae800fe2cfc"
+        "reviewed_utc": "2026-11-09T00:24:35.013467+00:00",
+        "reviewed_content_sha256": "bae3fe79d6ecc59fd9d079660d3eda7c3c56782b2f44b43f7c8105693a5073f6"
+      }
+    },
+    {
+      "change_id": "g3-sensor-calibration",
+      "version": "1.0.0-rc.6",
+      "type": "feature",
+      "component": "firmware",
+      "scope": {
+        "models": [
+          "bry88bba15g"
+        ],
+        "variants": [
+          "full"
+        ],
+        "hardware": [
+          "*"
+        ],
+        "branches": [
+          "main"
+        ],
+        "channels": [
+          "candidate"
+        ]
+      },
+      "review_status": "approved",
+      "lifecycle": {
+        "state": "active"
+      },
+      "title": {
+        "zh-CN": "G3 传感器校准",
+        "en": "G3 sensor calibration"
+      },
+      "description": {
+        "zh-CN": "新增原厂 CO₂ 400 ppm 与 TVOC 校准入口。网页简要说明预热和参考环境条件，显示采样及发送、应答状态，发命令前可取消。TVOC 完整厂家校准条件尚未公开，页面同步说明。",
+        "en": "Adds factory CO₂ 400 ppm and TVOC calibration controls. The WebUI explains warmup and reference conditions, reports sampling, command transmission and acknowledgement, and permits cancellation before transmission. Complete manufacturer conditions for TVOC calibration remain unpublished and are identified in the UI."
+      },
+      "ota_summary": {
+        "zh-CN": "新增原厂 CO₂ 400 ppm 与 TVOC 校准入口。网页简要说明预热和参考环境条件，显示采样及发送、应答状态，发命令前可取消。TVOC 完整厂家校准条件尚未公开，页面同步说明。",
+        "en": "Adds factory CO₂ 400 ppm and TVOC calibration controls. The WebUI explains warmup and reference conditions, reports sampling, command transmission and acknowledgement, and permits cancellation before transmission. Complete manufacturer conditions for TVOC calibration remain unpublished and are identified in the UI."
+      },
+      "summary_complete": true,
+      "critical": false,
+      "source_refs": [
+        "v1.0.0-rc.6:b016"
+      ],
+      "evidence": {
+        "firmware_sources": [
+          "BRY88BBA15G/screen_calibration.inc",
+          "frontend.lock.json",
+          "screen-release.lock.json",
+          "docs/public/daikin-g3-services.md"
+        ],
+        "firmware_source_sha256": {
+          "BRY88BBA15G/screen_calibration.inc": "1840a72ba21434499ce3df3565345fbbd3c5823fcb0faa17da8c2c4d007ec4d4",
+          "frontend.lock.json": "70ec7b09d1ba80d698828acee241f2858909498beb60001b9ca2232c38183f41",
+          "screen-release.lock.json": "bf0a0184ea2af8b69cf6c0b3cdcbfd983e249932ab5a2be4246c594e773d5688",
+          "docs/public/daikin-g3-services.md": "f9b5f00d69d56746431c76f8e98bc7d71f338e34642b32a5362c13577ed6dce1"
+        }
+      },
+      "translation_review": {
+        "status": "approved",
+        "reviewer": "/root",
+        "reason": "Author reviewed both languages against the implementation.",
+        "reviewed_utc": "2026-11-09T00:24:35.015191+00:00",
+        "reviewed_content_sha256": "e1637bf707451a1c0f23becb26023aeea4bf1334e6eb17e514f713bce18ebeba"
       }
     }
   ],

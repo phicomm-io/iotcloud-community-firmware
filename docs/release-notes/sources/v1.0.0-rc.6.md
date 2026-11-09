@@ -26,8 +26,8 @@
 - **G3 原厂天气与 Linux 迁移 / G3 stock weather and Linux migration**：保留原厂屏幕 MCU 时，ESP32 将真实当前天气转换为原厂温度、湿度和天气图标；室外 PM2.5 保留缺测。新增 Linux 蓝牙配网脚本，免拆迁移教程补齐实际 STA MAC、2.4 GHz Wi-Fi 和原厂网关应答步骤。修复 ESP32 以 80 MHz 运行时 TLS 握手超时导致的天气缺测。
   With the stock screen MCU, ESP32 converts real current weather into factory temperature, humidity and condition fields; outdoor PM2.5 remains missing. Adds Linux Bluetooth provisioning and documents the actual STA MAC, 2.4 GHz Wi-Fi and factory gateway responses for wireless migration. Fixes missing weather caused by TLS handshake timeouts with the ESP32 running at 80 MHz.
 
-- **G3 启动与在线升级负载 / G3 startup and online update load**：ESP32 使用 80 MHz，Wi-Fi 稳定后关闭恢复热点。屏幕先完成字库加载再开启传感器，降低初始化并发负载。修复 OTA 准备失败和上传中断；支持屏幕正常运行时连续更新，完成后恢复传感器。
-  ESP32 uses 80 MHz and closes the recovery access point after Wi-Fi stabilizes. The screen loads fonts before enabling sensors to reduce concurrent startup load. Fixes OTA preparation failures and interrupted uploads. Consecutive updates work while the screen runs normally, with sensors resuming afterward.
+- **G3 启动与在线升级负载 / G3 startup and online update load**：ESP32 按原厂使用 10–80 MHz 动态调频和自动轻睡眠，Wi-Fi 稳定后关闭恢复热点；MCU 空闲时浅层等待，并协调 ESP32 唤醒。屏幕先完成字库加载再开启传感器，降低初始化并发负载。修复 OTA 准备失败和上传中断；支持屏幕正常运行时连续更新，完成后恢复传感器。
+  ESP32 follows the stock 10–80 MHz dynamic frequency and automatic light-sleep policy, closing the recovery access point after Wi-Fi stabilizes. The MCU waits in shallow sleep while idle and coordinates ESP32 wake. The screen loads fonts before enabling sensors to reduce concurrent startup load. Fixes OTA preparation failures and interrupted uploads. Consecutive updates work while the screen runs normally, with sensors resuming afterward.
 
 - **G3 充电与网络图标 / G3 charging and network icons**：电池图标在 USB 供电时显示闪电，联网圆点改为 Wi-Fi 图标，断网时显示斜线。修正外部供电与电池对应的熄屏时间选择，网页预览同步屏幕显示。修复拔掉 USB 后充电图标仍亮的问题。
   The battery icon shows a lightning mark while powered by USB. A Wi-Fi icon replaces the network dot and shows a slash while offline. Corrects the external-power and battery screen-timeout selection and keeps the WebUI preview aligned with the display. Fixes the charging icon remaining on after USB is disconnected.
@@ -38,8 +38,11 @@
 - **G3 屏幕网页直接安装 / G3 direct screen installation from the WebUI**：首次从原厂屏幕安装和后续社区屏幕升级均可直接选择在线安装或上传文件。一次确认后自动校验、传输并激活，确认新 MCU 正常启动后显示安装成功。修复首次安装后偶发黑屏，以及在线下载误报参数无效的问题。更新提示的换行不再显示为问号。
   Both first installation from stock screen firmware and later community updates support online installation or file upload. One confirmation starts verification, transfer and activation; success appears after the new MCU starts normally. Fixes intermittent black screens after first installation and invalid-parameter errors during online downloads. Update-message line breaks no longer appear as question marks.
 
-- **G3 云端实时读数 / G3 live cloud readings**：同时连接局域网和 MQTT 时，云端卡片和详情页使用较新的传感器读数，避免旧局域网快照使 G3 显示无数据。
-  When LAN and MQTT are both connected, cloud cards and details use the newer sensor readings, preventing an older LAN snapshot from leaving G3 with no data.
+- **G3 云端实时读数 / G3 live cloud readings**：同时连接局域网和 MQTT 时，云端卡片和详情页使用较新的传感器读数，避免旧局域网快照使 G3 显示无数据；按硬件型号选择 G3 详情页。
+  When LAN and MQTT are both connected, cloud cards and details use the newer sensor readings, preventing an older LAN snapshot from leaving G3 with no data. The G3 detail page is selected by hardware identity.
+
+- **G3 传感器校准 / G3 sensor calibration**：新增原厂 CO₂ 400 ppm 与 TVOC 校准入口。网页简要说明预热和参考环境条件，显示采样及发送、应答状态，发命令前可取消。TVOC 完整厂家校准条件尚未公开，页面同步说明。
+  Adds factory CO₂ 400 ppm and TVOC calibration controls. The WebUI explains warmup and reference conditions, reports sampling, command transmission and acknowledgement, and permits cancellation before transmission. Complete manufacturer conditions for TVOC calibration remain unpublished and are identified in the UI.
 
 已知问题：此前在读取多项屏幕配置时观察到过 ESP32 任务看门狗重启，原因仍在排查。
 Known issue: An ESP32 task watchdog reset was previously observed while reading multiple screen configuration items. Its cause remains under investigation.

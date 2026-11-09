@@ -26,7 +26,7 @@ G3 使用两套独立工程：ESP32 负责网络、IoTCloud、网页、天气和
 
 应用从 `0x14000` 开始，串口升级保留前 80 KiB 原厂引导区。字库、壁纸位于外部 NOR，独立于应用 OTA。可选工具 `backup_screen_boot.py` 对社区 MCU 的引导区双读并比较；已有备份可由安装工具的 `--boot-backup 目录 --reuse-boot-backup` 复用。原厂 MCU 不提供这个读出接口。恢复镜像只启动内部 SRAM 的最小服务，黑屏时仍可通信和升级。
 
-原厂引导交接时保留已启用的 PLL 输出。社区应用在改变分频前先等待晶振稳定、关闭 PLL 与输出，再配置并连续读取两次锁定状态；锁定有时限，失败保留低频 UART 恢复服务。该修复消除了已复现的低频启动后 SDRAM 初始化故障。实现见[时钟初始化](https://github.com/phicomm-io/iotcloud-bry88bba15g-screenmcu/blob/55e52f3e922f174b6c515279c8b3d742e42453ae/platform/swm34s/CMakeLists.txt)。
+原厂引导交接时保留已启用的 PLL 输出。社区应用在改变分频前先等待晶振稳定、关闭 PLL 与输出，再配置并连续读取两次锁定状态；锁定有时限，失败保留低频 UART 恢复服务。该修复消除了已复现的低频启动后 SDRAM 初始化故障。实现见[时钟初始化](https://github.com/phicomm-io/iotcloud-bry88bba15g-screenmcu/blob/98d6749cce55f5aa4fc356b2d55853f9fa415c21/platform/swm34s/CMakeLists.txt)。
 
 发布站点可压缩 HTTP 传输，浏览器 `fetch` 返回解压后的数据；`Content-Length` 可能为压缩长度。在线安装按实际数据长度校验应用大小，再由 ESP32 校验 SHA-256。实现和压缩/无长度/截断响应检查见[前端修复](https://github.com/phicomm-io/iotcloud-community-frontend/commit/6034bf88ac3be09f3b849ca11f9e7d55fe0335d3)。
 
@@ -66,7 +66,7 @@ SCN3 布局为 9520 字节、每组件 288 字节。串口缓存优先放入按 
 
 TLS 使用可逐字节访问的内部 DRAM。Open-Meteo 准入需要 72 KiB 字节堆及至少 24 KiB 连续块，其他提供商需要 84 KiB 字节堆。`screen.weather.get` 报告字节堆、最大连续块、worker 前后水位、尝试次数及退避状态。原厂通路标记 `delivery:factory`，`factory` 保存最近写入 UART 的温度、湿度、天气码和室外 PM2.5 字段，`factory_sent_age_ms` 为发送年龄。
 
-NOR 默认四线硬件 SFC，用于字库、壁纸与升级暂存的读写和回读。单线 SFC 或 GPIO 只由 ESP32 在诊断启动窗口显式选择，不自动切换。字库分批读取时校验，完成后缓存到 SDRAM；错误与超时使用内置字体和纯色背景。总线、资源加载和初始化顺序见[板级实现](https://github.com/phicomm-io/iotcloud-bry88bba15g-screenmcu/blob/55e52f3e922f174b6c515279c8b3d742e42453ae/platform/swm34s/board.c)与[启动实现](https://github.com/phicomm-io/iotcloud-bry88bba15g-screenmcu/blob/55e52f3e922f174b6c515279c8b3d742e42453ae/platform/swm34s/application.c)。
+NOR 默认四线硬件 SFC，用于字库、壁纸与升级暂存的读写和回读。单线 SFC 或 GPIO 只由 ESP32 在诊断启动窗口显式选择，不自动切换。字库分批读取时校验，完成后缓存到 SDRAM；错误与超时使用内置字体和纯色背景。总线、资源加载和初始化顺序见[板级实现](https://github.com/phicomm-io/iotcloud-bry88bba15g-screenmcu/blob/98d6749cce55f5aa4fc356b2d55853f9fa415c21/platform/swm34s/board.c)与[启动实现](https://github.com/phicomm-io/iotcloud-bry88bba15g-screenmcu/blob/98d6749cce55f5aa4fc356b2d55853f9fa415c21/platform/swm34s/application.c)。
 
 ## 显示测量
 
