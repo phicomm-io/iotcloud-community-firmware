@@ -566,7 +566,7 @@ static void screenInit() {
     nvs_close(handle);
   }
   screenServicesInit();
-  screenSend("+screen_link_reset:1\r\n");
+  screenSend("\r\n+screen_link_reset:1\r\n");
   Serial.printf("screen UART1 RX17 TX16 initialized; firmware %s\n", version);
 }
 static void pollSensors(uint32_t) { /* Samples arrive from the MCU, never probe

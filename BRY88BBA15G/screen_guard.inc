@@ -2,6 +2,7 @@
 #include "protocol/guard.h"
 struct ScreenGuard {
   bool activation = false;
+  bool linkReset = false;
   uint32_t exported = 0;
   uint32_t session = 0, sequence = 0, seen = 0, remaining = 0;
   uint32_t inheritedControl = 0, inheritedReset = 0, inheritedClock = 0,
@@ -42,6 +43,12 @@ static bool screenGuardAnnounce(const String &arg) {
   screenGuard.inheritedClock = clock;
   screenGuard.resetStatus = status;
   screenRecovering = mode != 0;
+  // The boot reset can arrive before the MCU starts its normal UART owner.
+  // Re-establish the link once its normal-service announcement is received.
+  if (!mode && !screenGuard.linkReset && !screenOtaActive()) {
+    if (screenBridge.extended || screenSend("\r\n+screen_link_reset:1\r\n"))
+      screenGuard.linkReset = true;
+  }
   invalidateBusinessStatusCache();
   return true;
 }
