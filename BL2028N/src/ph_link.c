@@ -90,7 +90,8 @@ void PH_BL_LinkPoll(bool ready)
     if(!changed&&polled&&(uint32_t)(now-last_poll)<1000u)return;
     uint32_t expected=0;ph_os_cas32(&pending,&expected,1u);if(expected)return;
     last_poll=now;polled=true;
-    if(tcpip_callback(update_in_tcpip,NULL)!=ERR_OK)ph_os_store(&pending,0u);
+    /* A full TCP/IP mailbox must not block the LAN owner under RX pressure. */
+    if(tcpip_try_callback(update_in_tcpip,NULL)!=ERR_OK)ph_os_store(&pending,0u);
 }
 
 bool PH_BL_LinkTakeRecovery(bool allowed)

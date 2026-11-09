@@ -12,7 +12,7 @@ static int arp_error,callback_error;
 static void (*queued)(void *);
 uint32_t rtos_get_time(void){return clock_ms;}
 void *net_get_sta_handle(void){return &station;}
-err_t tcpip_callback(void (*fn)(void *),void *arg)
+err_t tcpip_try_callback(void (*fn)(void *),void *arg)
 {
     assert(!in_tcpip&&!arg);if(callback_error)return callback_error;
     assert(!queued);queued=fn;callbacks++;return ERR_OK;

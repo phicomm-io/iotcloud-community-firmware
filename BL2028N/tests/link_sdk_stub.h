@@ -14,5 +14,5 @@ struct netif {ip4_addr_t ip,gateway;bool up,link;};
 #define ip4_addr_isany_val(a) (!(a).addr)
 #define ip4_addr_get_u32(p) ((p)->addr)
 void *net_get_sta_handle(void);
-err_t tcpip_callback(void (*)(void *),void *);
+err_t tcpip_try_callback(void (*)(void *),void *);
 err_t etharp_request(struct netif *,const ip4_addr_t *);
