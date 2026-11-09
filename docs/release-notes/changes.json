@@ -9852,7 +9852,7 @@
         "firmware_source_sha256": {
           "BRY88BBA15G/weather.cpp": "5b444cefc065ebc5a1435aceab5c40356160dcb068a62ccdd5b005f766f32d43",
           "BRY88BBA15G/weather_net.inc": "18cf62f6054fc1574f91a6f90074b33db20d8c27a334c2f4fa57a3913ae39993",
-          "BRY88BBA15G/runtime.inc": "702904ca938004f240e11e59ff22d2f6927838c32260228b657391a88d1680cd",
+          "BRY88BBA15G/runtime.inc": "21426b0b3c32fbb3a16e09ee028461fa753ee06fc0d222d8f92fb950973b60b3",
           "tools/daikin_g3_migrate/provision_linux.py": "b3e0e74d66c49c5c1cc6cb9c6f74f1f3776820a76e15315cd35a8c6a4eee16a0",
           "tools/daikin_g3_migrate/README.md": "13649e1e3cb8af5b03b5cb363cf528742e4eb03fe68d88d30d20eed247b67e4e"
         }
@@ -9923,7 +9923,7 @@
         "firmware_source_sha256": {
           "DAIKIN/platformio.ini": "dd5e5693126507a85a4c58bcf45c824ab6b647a9c3f7676c79c9431f9f7dcf20",
           "DAIKIN/src/main.cpp": "78450013728c1806e2accd92bee2c6f8fb402a564332e112a2ffb99a825d937f",
-          "BRY88BBA15G/runtime.inc": "702904ca938004f240e11e59ff22d2f6927838c32260228b657391a88d1680cd",
+          "BRY88BBA15G/runtime.inc": "21426b0b3c32fbb3a16e09ee028461fa753ee06fc0d222d8f92fb950973b60b3",
           "BRY88BBA15G/online_ota.inc": "9c92c0d89f24952766c111e81f63f243eaadc0a4a3c3c4658b716c8427a4c418",
           "screen-release.lock.json": "bf0a0184ea2af8b69cf6c0b3cdcbfd983e249932ab5a2be4246c594e773d5688",
           "BRY88BBA15G/screen_module.inc": "391272a51e80e6e5f493d493ad2f62f33839d6fb522898b389be0ce8bc4ba08c",
