@@ -24,6 +24,7 @@ static void screenRuleJson(JsonObject o, const reminder_rule &r) {
 static const char *screenServicesCommand(const String &action,
                                          JsonObjectConst params,
                                          JsonObject data) {
+  if(action.startsWith("screen.calibration."))return screenCalibrationCommand(action,params,data);
   if(action=="screen.page.get"||action=="screen.page.set")return screenPageCommand(action,params,data);
   if(action.startsWith("screen.diagnostics."))return screenDiagCommand(action,params,data);
   if(action=="screen.appearance.get") {

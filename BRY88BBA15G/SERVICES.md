@@ -311,6 +311,33 @@ height as LVGL, moving the title below thicker rails and preserving SCN3 bytes.
 Maximum 32 rules and 32 notices. Requires synchronized time; boot and large time
 jumps do not replay a backlog. Fixed timezones do not implement DST transitions.
 
+## Sensor calibration / 传感器校准
+
+Requires matching community ESP32 and MCU firmware. Supported sensors are CO₂
+(factory fixed 400 ppm reference) and TVOC (factory command). Temperature and
+humidity retain factory compensation; HCHO installation only acknowledges, and
+no manual PM2.5 calibration service was found.
+
+- `screen.calibration.get {}` returns `supported`, `available`, `pending`,
+  `co2`/`tvoc` (`ready`, `warmup_seconds`, `samples`, `state`) and `request`.
+- `screen.calibration.start {channel:"co2"|"tvoc",environment_confirmed:true}`
+  queues one existing factory service request after checking freshness, warm-up
+  and pending work. CO₂ needs 3 minutes, TVOC 5 minutes 20 seconds of continuous
+  valid operation. Sampling takes about 2 minutes; an unstable range ≥201
+  rejects the command. The MCU repeats readiness checks against actual samples.
+- `screen.calibration.cancel {}` cancels sampling before a command has been sent.
+- An accepted API response is a queue receipt. `request.state=accepted` is the
+  MCU service acknowledgement. Sensor state `command_sent` means the UART
+  accepted transmission; CO₂ `acknowledged` requires its checksum-valid reply.
+  Other terminal states: `failed`, `sensor_lost`, `cancelled`. TVOC completion
+  acknowledgement has not been verified. No automatic calibration retry occurs.
+
+CO₂ requires an independently confirmed 400 ppm environment, stable for at least
+2 minutes before starting and throughout sampling. TVOC uses clean, ventilated
+air without volatile contamination and stable readings; its complete command
+conditions were not found in public manufacturer documentation. Source analysis
+and primary references are in the MCU repository's `docs/SENSORS-CALIBRATION.md`.
+
 ## AM1008L / PD12
 
 `screen.module.get {}` returns the negotiated module-control status. With MCU

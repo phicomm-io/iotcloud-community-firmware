@@ -1,4 +1,6 @@
 /* Staging is available independently of display initialization. */
+static String screenOtaError;
+static const char *screenOtaErrorText() { return screenOtaError.c_str(); }
 static volatile bool screenUploadBusy = false, screenArtifactPending = false;
 static uint8_t screenArtifactHeader[BRY_IMAGE_HEADER_BYTES];
 static portMUX_TYPE screenImageMux = portMUX_INITIALIZER_UNLOCKED;
@@ -73,6 +75,10 @@ static void screenImportArtifact() {
   invalidateBusinessStatusCache();
 }
 static bool screenOtaCommand(const String &cmd, const String &arg) {
+  if (cmd == "screen_ota_error") {
+    if (screenImage.active && !screenOtaError.length() && arg.length() <= 128) screenOtaError = arg;
+    return true;
+  }
   if (cmd == "screen_image")
     return screenGuardImageAnnounce(arg);
   if (cmd == "screen_recovery") {
@@ -90,6 +96,7 @@ static bool screenOtaCommand(const String &cmd, const String &arg) {
       screenImage.offset = 0;
       screenImage.pending = false;
       screenImage.state = "waiting_for_start";
+      screenOtaError = "";
       /* Thirteen bounded 32-KiB erases can take up to 65 s on GPIO NOR. */
       screenImage.deadline = millis() + 90000;
       Serial.println("screen OTA metadata requested");

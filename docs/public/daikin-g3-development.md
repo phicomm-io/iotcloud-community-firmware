@@ -56,6 +56,10 @@ G3 GPIO2 是屏幕 MCU 的唤醒输入。电平为高或正在升级时持有 AP
 
 ESP32 单独重启后会请求屏幕重新协商扩展能力。如果启动请求丢失，收到带有效 CRC 的旧会话扩展帧时再次请求重置，恢复能力协商、布局和显示策略同步；无需重启 MCU。实现见[串口桥接](https://github.com/phicomm-io/iotcloud-community-firmware/blob/v1.0.0-rc.6/BRY88BBA15G/bridge.c)。
 
+## 校准接入
+
+社区 MCU 沿用原厂 CO₂ 400 ppm 和 TVOC 两条校准命令，补齐连续预热、有效样本、取消和结果状态。ESP32 通过已有原厂 JSON owner 接入，快照 `data.calibration.version=1` 标识支持。API、返回值和条件见 [SERVICES.md](https://github.com/phicomm-io/iotcloud-community-firmware/blob/main/BRY88BBA15G/SERVICES.md#sensor-calibration--传感器校准)，原厂分析及厂家资料见[校准开发说明](https://github.com/phicomm-io/iotcloud-bry88bba15g-screenmcu/blob/main/docs/SENSORS-CALIBRATION.md)。
+
 ## 内存与资源
 
 SCN3 布局为 9520 字节、每组件 288 字节。串口缓存优先放入按 32 位访问的 IRAM，通过对齐字读写；分配失败时使用 DRAM。`screen.status` 的 `layout_cache_bytes` 和 `layout_cache_storage` 报告长度及 `iram` / `dram` / `unallocated`。状态编码临时区和布局上传缓冲按需申请，完成或超时后释放。

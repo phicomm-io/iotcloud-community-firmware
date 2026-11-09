@@ -23,6 +23,7 @@ static bool screenExtendedLine(const uint8_t *, size_t);
 static String screenHex(const uint8_t *, size_t);
 static const char *screenApplySettings(JsonObjectConst, JsonObject);
 static void screenGetSettings(JsonObject);
+static bool screenCalibrationResponse(const String &, const String &, int);
 static bool screenWeatherStockRequest(const String &);
 static HardwareSerial screenUart(1);
 static esp_pm_lock_handle_t screenWakeLock, screenTxLock;
@@ -282,6 +283,7 @@ static bool screenPublication(const String &topic, const uint8_t *payload,
   String token = doc["client_token"] | "";
   if (!token.length() || token.length() > 128)
     return false;
+  if (screenCalibrationResponse(topic, token, doc["code"] | -1)) return true;
   if (topic.endsWith("/service_response/set")) {
     if (token == screenPendingToken) {
       screenPendingCode = doc["code"] | -1;

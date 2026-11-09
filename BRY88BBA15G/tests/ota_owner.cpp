@@ -270,6 +270,11 @@ static void pump(screen_maintenance &m) {
   }
 }
 int main(int argc, char **argv) {
+  assert(!strlen(screenOtaErrorText()));
+  screenImage.active=true;
+  assert(screenOtaCommand("screen_ota_error","sfc_erase 00780000 00000002"));
+  assert(!strcmp(screenOtaErrorText(),"sfc_erase 00780000 00000002"));
+  screenOtaError=""; screenImage.active=false;
   for (unsigned i = 0; i < image.size(); i++)
     image[i] = (i * 137) ^ 3;
   scene_put32(image.data(), 0x20010000);

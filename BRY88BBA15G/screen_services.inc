@@ -29,6 +29,7 @@ static uint32_t screenAppearanceAck,screenAppearanceSession,screenAppearanceSent
 static unsigned screenAppearanceAttempts;
 static const char *screenAppearanceError="";
 static void screenWeatherLanguageChanged();
+static const char *screenOtaErrorText();
 static void screenAppearanceGet(JsonObject,bool wire=false);
 static const char *screenAppearanceSet(JsonObjectConst,JsonObject);
 static void screenAppearancePoll();
@@ -589,6 +590,7 @@ static bool screenNotice(uint32_t id, const char *title, const char *text,
 #include "screen_guard.inc"
 #include "screen_startup.inc"
 #include "screen_module.inc"
+#include "screen_calibration.inc"
 static void screenServicesStatus(JsonObject s) {
   s["extension_supported"] = screenBridge.extended;
   s["capabilities"] = screenBridge.capabilities;
@@ -614,6 +616,7 @@ static void screenServicesStatus(JsonObject s) {
   screenResourceStatus(s.createNestedObject("resources"));
   screenAppearanceGet(s.createNestedObject("appearance"));
   screenModuleStatus(s.createNestedObject("module"));
+  screenCalibrationGet(s.createNestedObject("calibration"));
   screenPageStatus(s.createNestedObject("page"));
   screenPolicyGet(s.createNestedObject("display"));
   unsigned unread = 0;
@@ -622,6 +625,7 @@ static void screenServicesStatus(JsonObject s) {
   s["unread_reminders"] = unread;
   JsonObject ota = s.createNestedObject("ota");
   ota["state"] = screenImage.state;
+  ota["error"] = screenOtaErrorText();
   ota["sent"] = screenImage.offset;
   ota["size"] = screenImage.size;
   ota["sha256"] = screenHex(screenImage.sha, 32);

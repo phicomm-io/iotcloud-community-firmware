@@ -29,6 +29,17 @@ Up to 32 scheduled rules and 32 notices persist. Rules support a one-shot UTC ep
 
 Notices persist, including read acknowledgements. Wake policies obey DND, always wake or wake only for unread notices; individual rules may inherit the global policy. Titles allow 64 UTF-8 bytes and body text 127 bytes, counting bytes rather than characters.
 
+## Sensor calibration
+
+Update the matching ESP32 and community screen MCU firmware, then open Settings → Screen → Services → Sensor calibration. Select CO₂ or TVOC, prepare the environment described on the page, confirm it and start. Sampling takes about 2 minutes and can be cancelled before the command is sent.
+
+| Sensor | Conditions |
+| --- | --- |
+| CO₂ | 3 minutes of warm-up with fresh readings; confirm approximately 400 ppm with a reference meter or standard gas, keep it stable for at least 2 minutes before starting and throughout sampling |
+| TVOC | 5 minutes 20 seconds of continuous module operation with fresh readings; use clean, ventilated air without alcohol, perfume or cleaning vapours and wait for stable readings; this runs the factory command, whose complete conditions have not been published by the manufacturer |
+
+The page shows sampling progress and results. “Sent” means the command was transmitted. CO₂ “Acknowledged” means the sensor replied; compare subsequent readings against the reference. Temperature/humidity retain factory compensation. Formaldehyde and PM2.5 have no one-click calibration control.
+
 ## API and external charts
 
 Use authenticated `POST /api/v1/command`, `Content-Type: application/msgpack`, with `{request_id, action, params}`. Braces below describe objects before encoding; do not send them as JSON to this interface. MQTT/LAN share the business actions. Query capabilities first.

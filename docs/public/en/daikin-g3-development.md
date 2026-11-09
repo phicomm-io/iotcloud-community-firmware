@@ -56,6 +56,10 @@ Screen startup completes font loading and verification before enabling sensors. 
 
 After an ESP32-only reboot, ESP32 requests fresh screen capability negotiation. If the startup request is lost, receiving an old-session extension frame with a valid CRC triggers another reset request, restoring capability, layout and display-policy synchronization without restarting the MCU. See the [UART bridge](https://github.com/phicomm-io/iotcloud-community-firmware/blob/v1.0.0-rc.6/BRY88BBA15G/bridge.c).
 
+## Calibration integration
+
+The community MCU retains the factory CO₂ 400 ppm and TVOC commands and adds continuous warm-up, fresh-sample checks, cancellation and result reporting. ESP32 uses the existing factory JSON owner; snapshot `data.calibration.version=1` identifies support. See [SERVICES.md](https://github.com/phicomm-io/iotcloud-community-firmware/blob/main/BRY88BBA15G/SERVICES.md#sensor-calibration--传感器校准) for the API and [calibration development notes](https://github.com/phicomm-io/iotcloud-bry88bba15g-screenmcu/blob/main/docs/SENSORS-CALIBRATION.md) for factory analysis and manufacturer sources.
+
 ## Memory and resources
 
 SCN3 layouts occupy 9520 bytes with 288-byte component records. The UART cache prefers 32-bit IRAM with aligned word access, falling back to DRAM when allocation fails. `screen.status` fields `layout_cache_bytes` and `layout_cache_storage` report its size and `iram` / `dram` / `unallocated` location. Status-encoding scratch space and layout upload buffers are allocated on demand and released on completion or timeout.
