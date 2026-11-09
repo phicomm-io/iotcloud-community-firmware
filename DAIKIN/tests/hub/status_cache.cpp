@@ -74,6 +74,7 @@ static bool mqttConnected = true;
 #ifdef IOTCLOUD_BRY88_SCREEN
 static bool mqttCommandReady = true;
 static void screenStatus(JsonObject out){out["sensor_source"]="screen_mcu";if(duringStateBuild)duringStateBuild();}
+static void screenPowerStatus(JsonObject) {}
 #endif
 #include "indicators.inc"
 #include "state.inc"
