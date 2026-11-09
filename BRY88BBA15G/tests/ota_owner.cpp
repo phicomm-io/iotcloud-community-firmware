@@ -90,6 +90,7 @@ struct ScreenImage {
   const char *state = "empty";
 };
 static ScreenImage screenImage;
+static struct { bool extended = false; } screenBridge;
 static bool screenRecovering;
 static std::vector<uint8_t> image(BRY_IMAGE_LIMIT), nor(0x68000);
 static std::string toMcu, toEsp;
@@ -129,6 +130,26 @@ static String screenBase64(const uint8_t *p, size_t n) {
   return std::string(wire + 40, used - 42);
 }
 #include "../screen_guard.inc"
+static void testLinkReset() {
+  const char *normal = "3 12345678 0 0 30000 00000403 00001400 00003001 00000000";
+  screenImage.active = true;
+  assert(screenGuardAnnounce(normal) && !screenGuard.linkReset && toMcu.empty());
+  screenImage.active = false;
+  assert(screenGuardAnnounce(normal) && screenGuard.linkReset);
+  assert(toMcu == "\r\n+screen_link_reset:1\r\n");
+  toMcu.clear();
+  assert(screenGuardAnnounce(normal) && toMcu.empty());
+  screenGuard = {};
+  screenBridge.extended = true;
+  assert(screenGuardAnnounce(normal) && screenGuard.linkReset && toMcu.empty());
+  screenGuard = {};
+  screenBridge.extended = false;
+  assert(screenGuardAnnounce("3 12345678 0 1 30000 00000403 00001400 00003001 00000000"));
+  assert(!screenGuard.linkReset && toMcu.empty());
+  assert(screenGuardAnnounce(normal) && screenGuard.linkReset);
+  toMcu.clear();
+  screenGuard = {};
+}
 static unsigned screenHead, screenTail;
 static struct { String wire; } screenQueue[12];
 static struct { bool active, pending; } screenWallpaper;
@@ -270,6 +291,7 @@ static void pump(screen_maintenance &m) {
   }
 }
 int main(int argc, char **argv) {
+  testLinkReset();
   assert(!strlen(screenOtaErrorText()));
   screenImage.active=true;
   assert(screenOtaCommand("screen_ota_error","sfc_erase 00780000 00000002"));
