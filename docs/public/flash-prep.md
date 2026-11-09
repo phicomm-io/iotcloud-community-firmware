@@ -38,7 +38,7 @@
 | `.ota.bin.signed` | 签名 OTA 升级包 | 否，仅用于已运行本项目固件的设备 |
 | `.ota.bin.raw` | 原生 OTA 镜像 | 原厂迁移使用对应产品完整版；M1 至少 0.9.21，详见各自教程 |
 
-**A1、M1、TC1 和 DAIKIN 的社区网页更新使用 `.ota.bin.signed`；原厂迁移按机型指南选择。** S30-V1B 使用独立的 RBL／STOCK_UA 文件，见 [S30 刷机方法](s30-flash)。下载后按同版本 `SHA256SUMS` 校验。
+**A1、M1、TC1 和 DAIKIN 的社区网页更新使用 `.ota.bin.signed`；原厂迁移按机型指南选择。** S30M-V1B 使用独立的 RBL／STOCK_UA 文件，见 [S30 刷机方法](s30-flash)。下载后按同版本 `SHA256SUMS` 校验。
 
 ## 接线图与操作步骤
 

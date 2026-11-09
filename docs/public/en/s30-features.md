@@ -1,6 +1,6 @@
-# S30-V1B features
+# S30M-V1B features
 
-The **ORVIBO S30-V1B** single-outlet meter uses BL2028N / BK7231N and HLW8032. See [common functions](s30-guide) for operation and [automation and remote display](s30-automation) for power rules and M1 fields.
+The **ORVIBO S30M-V1B** single-outlet meter uses BL2028N / BK7231N and HLW8032. See [common functions](s30-guide) for operation and [automation and remote display](s30-automation) for power rules and M1 fields.
 
 ## Power restoration: off / on / restore
 

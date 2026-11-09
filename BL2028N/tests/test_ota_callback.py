@@ -17,6 +17,7 @@ STUBS = r'''
 #include <stdlib.h>
 #include <string.h>
 #include "ota_guard.h"
+#include "ph_sha256.h"
 typedef unsigned char UINT8;
 typedef unsigned int UINT32;
 typedef int PROTECT_TYPE;
@@ -112,11 +113,21 @@ int main(int argc,char **argv) {
     fail_alloc=1;begin(n,200);assert(chunk(rbl,2048)==1);end(0);fail_alloc=0;
     /* A fresh complete request succeeds after all the failure paths. */
     begin(n,200);
+    uint8_t digest[32];char hash[65];assert(PH_BL_Sha256(rbl,n,digest));
+    for(unsigned i=0;i<32;i++)sprintf(hash+2*i,"%02x",digest[i]);
+    assert(PH_BL_OTAHashSet(hash,n));
     for(unsigned offset=0;offset<n;){unsigned take=n-offset;if(take>2047)take=2047;
         assert(!chunk(rbl+offset,take));offset+=take;}
     end(1);assert(!memcmp(flash+START_ADR_OF_BK_PARTITION_OTA,rbl,n));
     assert(erases==(n+4095)/4096);
     for(unsigned i=n;i<((n+4095)&~4095u);++i)assert(flash[START_ADR_OF_BK_PARTITION_OTA+i]==255);
+    /* A complete RBL with a different manifest hash must stay online. */
+    begin(n,200);hash[0]=hash[0]=='0'?'1':'0';assert(PH_BL_OTAHashSet(hash,n));
+    for(unsigned offset=0;offset<n;){unsigned take=n-offset;if(take>2047)take=2047;
+        assert(!chunk(rbl+offset,take));offset+=take;}
+    end(0);
+    begin(n,200);assert(PH_BL_OTAHashSet(hash,n+1));assert(chunk(rbl,96)==1);end(0);
+    assert(PH_BL_OTAHashSet(NULL,0));
     /* Exercise the exact partition boundary independently of package hashes. */
     unsigned char *full=malloc(OTA_LIMIT);assert(full);
     memset(full,255,OTA_LIMIT);memcpy(full,rbl,n);begin(OTA_LIMIT,200);
@@ -124,7 +135,7 @@ int main(int argc,char **argv) {
         assert(!chunk(full+offset,take));offset+=take;}
     end(1);assert(!memcmp(flash+START_ADR_OF_BK_PARTITION_OTA,full,OTA_LIMIT));
     assert(erases==OTA_LIMIT/4096);free(full);
-    free(rbl);puts("PASS: native OTA callback: 7 rejection cases, complete RBL, retry and flash boundaries");return 0;
+    free(rbl);puts("PASS: native OTA callback: framing/hash/size rejection, complete RBL, retry and flash boundaries");return 0;
 }
 '''
 
@@ -154,11 +165,14 @@ def main():
     if not compiler:
         raise SystemExit('Host clang is required')
     executable = run/'ota-callback-tests'
+    (run/'sys_config.h').write_text('/* Host SHA256-only SDK config facade. */\n')
+    wolf = Path.home()/'.cache/phicomm/openbeken/bk7231n-upstream/platforms/bk7231n/bk7231n_os/beken378/func/wolfssl'
     with (run/'compiler.log').open('w') as log:
         subprocess.run([compiler, '-std=c99', '-g', '-O1', '-Wall', '-Wextra', '-Werror',
                         '-fsanitize=address,undefined', '-fno-omit-frame-pointer',
                         '-I', str(Path(__file__).resolve().parents[1]/'src'),
-                        str(run/'ota_callback.c'), '-o', str(executable)],
+                        '-DPH_S30_LAN_V4','-I',str(run),'-I',str(wolf),
+                        str(run/'ota_callback.c'),str(Path(__file__).resolve().parents[1]/'src/ph_sha256.c'), '-o', str(executable)],
                        stdout=log, stderr=subprocess.STDOUT, check=True)
     with (run/'test.log').open('w') as log:
         subprocess.run([str(executable), str(args.firmware.resolve())],

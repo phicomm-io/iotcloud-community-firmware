@@ -17,7 +17,6 @@ extern void set_printf_port(unsigned char);
 #ifdef PH_S30_LAN_V4
 #include "ph_lan_v4.h"
 #include "ph_mdns.h"
-#include "ph_sha256.h"
 #else
 #include "udp.h"
 #endif
@@ -32,6 +31,7 @@ extern void set_printf_port(unsigned char);
 #include "ntp.h"
 #include "../protocol/httpd/http.h"
 #include "../protocol/diagnostics_ids.h"
+#include "ph_sha256.h"
 extern void OTA_RequestDownloadFromHTTP(const char *);
 #include <errno.h>
 #include <stdio.h>
@@ -75,7 +75,7 @@ static ph_udp_state udp_state;
 static beken_mutex_t mutex;
 static unsigned reset_requested;
 static uint32_t reboot_at, energy_saved_at, ota_at;
-static bool reboot_pending, ota_failed;
+static bool reboot_pending, ota_failed,update_busy;
 static char ota_url[128];
 #ifdef PH_S30_LAN_V4
 /* One synchronous network owner; parsed views expire before this buffer is
@@ -246,7 +246,10 @@ static __attribute__((noinline)) bool load(ph_settings *s) {
      * for this boot and retry next boot, without discarding any settings. */
     if(ok) {
         if(migrated&&r.current.magic!=PH_STORE_V3_MAGIC&&r.current.magic!=PH_STORE_V4_MAGIC){credential_owned=false;memset(committed_password,0,sizeof(committed_password));}
-        if(ph_settings_migrate_meter_defaults(s))migrated=true;if(migrated)(void)save(NULL,s);
+        if(ph_settings_migrate_meter_defaults(s))migrated=true;
+        if(!strcmp(s->name,"S30-V1B")){strcpy(s->name,"S30M-V1B");migrated=true;}
+        if(!strcmp(s->socket_name,"S30-V1B")){strcpy(s->socket_name,"S30M-V1B");migrated=true;}
+        if(migrated)(void)save(NULL,s);
     }
     return ok;
 }
@@ -329,7 +332,7 @@ static void network_info(void *unused, ph_writer *w) {
     int done=OTA_GetProgress(),total=OTA_GetTotalBytes();
     uint32_t progress=done>0&&total>0?(uint32_t)((uint64_t)done*100/total):0;
     if(progress>100)progress=100;
-    phw_bool(w,"ota_active",bl_ota_pending);phw_text(w,"ota_state",done>=0?(progress==100?"rebooting":"downloading"):*ota_url?"pending":ota_failed?"failed":"idle");
+    phw_bool(w,"ota_active",bl_ota_pending);phw_text(w,"ota_state",update_busy?"pending":done>=0?(progress==100?"rebooting":"downloading"):*ota_url?"pending":ota_failed?"failed":"idle");
     phw_u32(w,"ota_progress",progress);
 }
 static uint32_t network_stamp(void *unused) {
@@ -382,6 +385,8 @@ void PH_BL_Tick(void) {
 static bool get_text(const ph_value *p,const char *key,char *out,size_t cap) {
  ph_value v;return phv_get(p,key,&v)&&phv_text(&v,out,cap);
 }
+#define PH_RELEASE_IMAGE_SUFFIX ".rbl"
+#include "update.inc"
 bool bl_scan_busy(void) {return scan_state!=0;}
 static const char *platform_action(void *unused,const char *action,const ph_value *p,ph_writer *w,bool admin) {
  (void)unused;ph_value values,v;char section[24],a[128]={0},b[128]={0},c[128]={0};int64_t port;
@@ -395,6 +400,7 @@ static const char *platform_action(void *unused,const char *action,const ph_valu
   phw_end(w);return "ok";
  }
  if(!admin)return "unauthorized";
+ if(!strncmp(action,"ota.",4)&&strcmp(action,"ota.start"))return update_action(action,p,w);
  if(!strcmp(action,"wifi.scan")) {
   if(p->count)return "invalid_params";
   if(bl_ota_pending)return "busy";
@@ -418,12 +424,8 @@ static const char *platform_action(void *unused,const char *action,const ph_valu
   reset_requested=full?2:1;reboot_at=now(NULL)+3000;return "accepted";
  }
  if(!strcmp(action,"ota.start")) {
-  if(p->count!=1||!get_text(p,"url",a,sizeof(a))||strncmp(a,"http://",7)||strpbrk(a,"\r\n\t ")||strlen(a)<12)return "invalid_params";
-  if(bl_ota_pending||OTA_GetProgress()>=0||reboot_pending||reset_requested||scan_state)return "busy";
-  /* The downloader reboots inside the SDK rather than our normal reboot
-   * path. Persist the latest energy before accepting and pausing services. */
-  if(!checkpoint(now(NULL),true))return "storage_error";
-  strcpy(ota_url,a);ota_at=now(NULL)+1500;bl_ota_pending=true;ph_device_set_maintenance(&bl_device,true);ota_failed=false;return "accepted";
+  if(p->count!=1||!get_text(p,"url",a,sizeof(a)))return "invalid_params";
+  return ota_start(a,NULL,0);
  }
  if(strcmp(action,"config.set"))return "unsupported";
  if(!get_text(p,"section",section,sizeof(section))||!phv_get(p,"values",&values)||values.kind!=PHV_MAP)return "invalid_params";
@@ -576,7 +578,8 @@ static void network_thread(beken_thread_arg_t arg) {
   if(!reset&&!restart&&!bl_ota_pending){ph_power_poll(&bl_device);ph_schedule_poll(&bl_device);}
   checkpoint(t,restart||reset==1);
   if(reset==2&&!factory_reset_record())reset=0;
-  if(bl_ota_pending) {
+  update_step(t);
+  if(bl_ota_pending&&!update_busy) {
    if(*ota_url&&(int32_t)(t-ota_at)>=0) {
     /* The shared owner delivers its captured command receipt before closing.
      * Wait for STOPPED (after buffer/socket teardown), with a bounded grace. */

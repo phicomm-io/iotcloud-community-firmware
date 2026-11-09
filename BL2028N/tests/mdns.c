@@ -24,7 +24,7 @@ err_t mdns_resp_init_checked(void)
 {assert(tcpip);checked++;return fault==1?ERR_MEM:fault==2?ERR_VAL:ERR_OK;}
 err_t mdns_resp_add_netif(struct netif *netif,const char *host,uint32_t ttl)
 {
-    assert(tcpip&&netif==&station&&!attached&&ttl==30);assert(!strcmp(host,"iotcloud-s30-v1b-c12345"));adds++;
+    assert(tcpip&&netif==&station&&!attached&&ttl==30);assert(!strcmp(host,"s30m-v1b-c12345"));adds++;
     if(fault==3)return ERR_MEM;attached=true;return ERR_OK;
 }
 err_t mdns_resp_remove_netif(struct netif *netif)
@@ -32,7 +32,7 @@ err_t mdns_resp_remove_netif(struct netif *netif)
 s8_t mdns_resp_add_service(struct netif *netif,const char *name,const char *type,enum mdns_sd_proto proto,
                          uint16_t port,uint32_t ttl,service_get_txt_fn_t fn,void *arg)
 {
-    assert(tcpip&&attached&&netif==&station&&!strcmp(name,"iotcloud-s30-v1b-c12345"));
+    assert(tcpip&&attached&&netif==&station&&!strcmp(name,"s30m-v1b-c12345"));
     assert(!strcmp(type,"_openiot")&&proto==DNSSD_PROTO_UDP&&port==11288&&ttl==30);services++;
     if(fault==4)return -1;memset(&service,0,sizeof(service));fn(&service,arg);return 0;
 }
@@ -47,12 +47,12 @@ static void poll_after(unsigned delay,bool ready)
 {now+=delay;PH_BL_MdnsPoll(ready);drain();}
 int main(void)
 {
-    assert(!PH_BL_MdnsInit("iotcloud-s30-v1b-000000","02aabb000000","full","v1.2.3-abcdef"));
+    assert(!PH_BL_MdnsInit("s30m-v1b-000000","02aabb000000","full","v1.2.3-abcdef"));
     assert(!PH_BL_MdnsInit("openbeken","02aabbc12345","full","v1.2.3-abcdef"));
-    assert(!PH_BL_MdnsInit("iotcloud-s30-v1b-c12345","03aabbc12345","full","v1.2.3-abcdef"));
-    char host[32]="iotcloud-s30-v1b-c12345",id[13]="02aabbc12345",version[64]="v1.2.3-abcdef-dirty";
+    assert(!PH_BL_MdnsInit("s30m-v1b-c12345","03aabbc12345","full","v1.2.3-abcdef"));
+    char host[32]="s30m-v1b-c12345",id[13]="02aabbc12345",version[64]="v1.2.3-abcdef-dirty";
     assert(PH_BL_MdnsInit(host,id,"full",version));memset(host,'x',strlen(host));memset(id,'x',strlen(id));memset(version,'x',strlen(version));
-    assert(!PH_BL_MdnsInit("iotcloud-s30-v1b-c12345","02aabbc12345","full","v1.2.3"));
+    assert(!PH_BL_MdnsInit("s30m-v1b-c12345","02aabbc12345","full","v1.2.3"));
     char txt[80];assert(PH_BL_MdnsTxt(0,txt,sizeof(txt))&&!strcmp(txt,"id=02aabbc12345"));
     assert(!PH_BL_MdnsTxt(0,txt,2));assert(!PH_BL_MdnsTxt(8,txt,sizeof(txt)));
     fault=1;PH_BL_MdnsPoll(true);for(unsigned i=0;i<100;i++)PH_BL_MdnsPoll(true);assert(queued==1);drain();assert(!PH_BL_MdnsActive());

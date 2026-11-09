@@ -217,7 +217,7 @@ def stock_backups(language, guide_base):
     if catalog['schema'] != 1:
         raise ValueError('Unsupported stock backup manifest')
     groups = {key: [] for key in ('tc1', 'm1', 'a1', 's30', 'daikin', 'bry88bba15g')}
-    names = {'tc1': 'TC1 A1', 'm1': 'M1', 'a1': 'A1', 's30': 'S30-V1B / S30M_V1B',
+    names = {'tc1': 'TC1 A1', 'm1': 'M1', 'a1': 'A1', 's30': 'S30M-V1B / S30M_V1B',
              'daikin': 'DAIKIN G1 / G2', 'bry88bba15g': 'DAIKIN G3'}
     seen = set()
     for entry in catalog['files']:

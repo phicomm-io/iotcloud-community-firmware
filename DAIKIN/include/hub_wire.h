@@ -4,7 +4,7 @@
 #include <array>
 #include <string>
 namespace iotcloud {
-// Legacy codec selection uses discovery; S30-V1B's product contract is binary
+// Legacy codec selection uses discovery; S30M-V1B's product contract is binary
 // only. Neither path changes codec in response to a failed write.
 class HubWire {
   struct Entry {std::string base;bool binary=false;};

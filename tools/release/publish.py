@@ -79,7 +79,7 @@ def smoke(release, bridge=None):
       for selected, current in channels:
         for model, original in selected['models'].items():
           for variant, entry in [('full',original), *original.get('variants',{}).items()]:
-            if not current and (variant == 'hub' or model == 'bry88bba15g'):continue
+            if not current and (variant == 'hub' or model in ('bry88bba15g','s30')):continue
             suffix = '' if variant == 'full' else '/' + variant
             path=f"/ota/v1/{model}/{variant}" if current else f"/ota/{model}{suffix}"
             url=f"{base}{path}/latest.json?release={selected['tag']}"

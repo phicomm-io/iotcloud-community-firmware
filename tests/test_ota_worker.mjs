@@ -75,3 +75,19 @@ test('G3 candidate binary updates stay separate from stable and reject other var
  const r=await worker.fetch(new Request('https://ota'+path),storage);assert.equal(r.status,200);assert.match(r.headers.get('Cache-Control'),/31536000/);
  candidate.models={};assert.equal((await worker.fetch(new Request('https://ota/ota/candidate/bry88bba15g/full/latest.msgpack'),storage)).status,404);
 });
+
+test('S30 native RBL metadata follows its channel and rejects signed-image variants',async()=>{
+ const tag='v1.0.0-rc.6',path=`/releases/${tag}/BL2028N.latest.msgpack`,data=Buffer.from('S30 metadata');
+ const release={tag,version:tag.slice(1),channel:'candidate',prerelease:true,
+  models:{s30:{path:`/releases/${tag}/BL2028N_OTA_${tag.slice(1)}.rbl`}},
+  device_manifests:{'s30/full':{msgpack:{path,size:data.length}}}};
+ const storage={RELEASES:{async get(key){
+  if(key==='releases/candidates.json')return {json:async()=>({releases:[release]})};
+  if(key===path.slice(1))return {body:data,size:data.length,httpEtag:'"s30"'};
+  return null;
+ }}};
+ const response=await worker.fetch(new Request('http://ota/ota/candidate/s30/full/latest.msgpack'),storage);
+ assert.equal(response.status,200);assert.deepEqual(Buffer.from(await response.arrayBuffer()),data);
+ for(const route of ['/ota/v1/s30/full/latest.msgpack','/ota/s30/latest.json','/ota/candidate/s30/hub/latest.msgpack'])
+  assert.equal((await worker.fetch(new Request('http://ota'+route),storage)).status,404);
+});

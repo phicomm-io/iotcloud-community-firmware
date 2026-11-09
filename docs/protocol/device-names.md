@@ -1,5 +1,10 @@
 # Device names
 
+Default names and device-page titles use the actual model: `TC1`, `M1`, `A1`,
+`BRY88AX151K`, `BRY88BBA15G`, or `S30M-V1B`. Custom names remain unchanged.
+DHCP and mDNS use the lowercase model plus the last six factory-MAC digits,
+such as `tc1-ddeeff` or `s30m-v1b-6ad83d`. Names do not depend on the user label.
+
 `name.set` changes the persistent shared device name. HTTP and MQTT use the
 existing command envelope; authenticated UDP requires CONTROL scope. SENSOR
 scope cannot rename a device. General `config.set` remains unavailable over UDP.
@@ -8,7 +13,7 @@ The MessagePack command map contains `action: "name.set"`, a unique
 `request_id`, and `params: {name: "…"}`. `params` permits only `name`, which must
 be a nonempty valid UTF-8 string without NUL bytes. `capabilities.get` advertises
 `name.set` in `actions` and the byte limit in `name_max_bytes`: TC1 accepts up to
-31 bytes; A1, M1, DAIKIN and S30-V1B accept up to 63 bytes. The existing transport
+31 bytes; A1, M1, DAIKIN and S30M-V1B accept up to 63 bytes. The existing transport
 authentication and write admission also apply to this command.
 
 Successful persistence returns `accepted`. Invalid names return
