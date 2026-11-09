@@ -182,6 +182,10 @@ python3 BL2028N/tests/run.py --run-dir /path/to/lab/private/tests --stock-backup
 
 主机测试在 ASan/UBSan 下直接编译产品与公共服务源，使用真实 TCP/Paho MQTT/UDP 和 Chromium，无 API mock；仅 HAL、RTOS、存储及 socket 平台绑定为 POSIX 替身。覆盖二进制协议、幂等/鉴权/重放、配置迁移、工厂 TLV、MQTT 回执/重连/retained、HTTP 预连接/分片、空密码重复刷新和完整前端表单/中英/手机布局，并保存页面录像和截图。
 
+STA 仍关联但下行单播失效时，连接事件本身不会触发重连。`ph_link.c` 在驱动向 lwIP 投递 IP/ARP 的边界区分单播、组播/广播和投递失败；单播静默 30 秒后，每隔 5 秒请求当前网关的 ARP 回应。连续 3 次成功提交探测且再等 5 秒仍没有单播，才由原生 Wi-Fi 线程停止 STA 并安排正常重连，不重启模块或改变继电器。扫描、OTA、配网 AP、无有效地址/网关时暂停，恢复动作至少间隔 5 分钟；内存或发送队列失败不计作探测成功。`status` 的 `wifi_link` 保存收包、探测、错误和恢复计数。此机制修复该类故障无法自恢复的问题，不代表已经确定闭源 WLAN 库内导致单播失效的具体原因。
+
+`test_link.py` 用 ASan/UBSan 覆盖安静网络、仅广播可用、恢复前重新收到单播、本地发送/回调队列失败、维护暂停、地址变化、冷却和时钟回绕，并编译实际 SDK RX 补丁验证 pbuf 所有权；`test_wifi_native.py` 验证实际原生恢复入口和正常重连状态。
+
 `test_startup.py` 编译实际原生启动函数，覆盖正常/安全模式及已配网/未配网四种路径的服务顺序；`test_http_timeout.py`、`test_ota_callback.py` 提取已覆盖的原生 OTA HTTP 客户端/回调测试真实套接字超时、错误和闪存边界；`test_logging_uart.py` 编译原生日志发送器和实际默认端口，检查 UART1/2 背压隔离；`test_ha_numbers.py` 使用实际 nanoprintf 测试 HA 数值。均接受 `--app-source <build/app> --run-dir <evidence>`。这些结果不能替代目标 RTOS、射频/联网、真实闪存、交流计量、继电器/按键及 OTA 重启验收。
 
 启动排障可在构建时加 `--boot-trace`：使用现有编程串口 UART1 TX/P11 输出原生日志、启动步骤、线程创建结果和剩余堆，日志串口为 4800 baud、8E1；HLW8032 独立使用 UART2 RX/P1，UART1 RX/P10 不接收计量。构建清单记录此选项，校验器核对镜像中的诊断标识。正式验收必须关闭该选项并重新验证，不能用诊断版本代替最终固件。

@@ -2,6 +2,7 @@
 #pragma once
 void PH_BL_Init(int safe_mode);
 void PH_BL_Tick(void);
+int PH_BL_TakeLinkRecovery(void);
 void PH_BL_StartHTTP(void);
 int PH_BL_FactoryMac(unsigned char out[6]);
 int PH_BL_WebPasswordSet(const char *);

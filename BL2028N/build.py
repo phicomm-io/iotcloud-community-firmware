@@ -25,6 +25,7 @@ SDK_MDNS_FILES = (
     'platforms/bk7231n/bk7231n_os/beken378/func/lwip_intf/lwip-2.1.3/src/apps/mdns/mdns.c',
     'platforms/bk7231n/bk7231n_os/beken378/func/lwip_intf/lwip-2.1.3/src/include/lwip/apps/mdns.h',
 )
+SDK_ETHERNETIF = 'platforms/bk7231n/bk7231n_os/beken378/func/lwip_intf/lwip-2.1.3/port/ethernetif.c'
 COPY_LOCAL_IP_FUNCTION = '''#ifndef PH_HOST_TEST
 #include "lwip/ip4_addr.h"
 #endif
@@ -93,7 +94,15 @@ def overlay(app, sdk, run, boot_trace=False, stock_layout=True):
         'int UART_PORT = UART2_PORT;\nint UART_PORT_INDEX = 1;',
         'int UART_PORT = UART1_PORT;\nint UART_PORT_INDEX = 0;')
     replace('src/user_main.c','void QuickTick(void* param)\n{','void QuickTick(void* param)\n{\n    PH_BL_Tick();')
-    replace('src/user_main.c','void Main_OnEverySecond()\n{','void Main_OnEverySecond()\n{\n    PH_BOOT_STAGE("second-enter");')
+    replace('src/user_main.c','void Main_OnEverySecond()\n{',
+        'void Main_OnEverySecond()\n{\n    PH_BOOT_STAGE("second-enter");\n'
+        '    if (PH_BL_TakeLinkRecovery()) {\n'
+        '        ADDLOGF_INFO("[S30 link] No unicast after gateway probes; reconnecting Wi-Fi");\n'
+        '        HAL_DisconnectFromWifi();\n'
+        '        g_bHasWiFiConnected = 0;\n'
+        '        g_connectToWiFi = 5;\n'
+        '        g_timeSinceLastPingReply = -1;\n'
+        '    }')
     replace('src/user_main.c','\tHAL_Run_WDT();\n#endif','\tHAL_Run_WDT();\n#endif\n    PH_BOOT_STAGE("second-done");')
     # The three dedicated service stacks reserve 44 KiB. The generic 25 kB
     # floor reboots this port after six healthy checks, before Wi-Fi settles.
@@ -286,6 +295,13 @@ def overlay(app, sdk, run, boot_trace=False, stock_layout=True):
         command(['patch','-p1','--batch','-i',mdns_patch],cwd=sdk,log=patch_log)
     with (run/'sdk-board.patch').open('a') as patch:
         patch.write(mdns_patch.read_text())
+    # Observe STA IP/ARP delivery at the driver/lwIP boundary. Save destination
+    # classification before input() transfers ownership of (and may free) p.
+    link_patch=HERE/'patches/link-rx.patch'
+    with (run/'sdk-link-patch.log').open('wb') as patch_log:
+        command(['patch','-p1','--batch','-i',link_patch],cwd=sdk,log=patch_log)
+    with (run/'sdk-board.patch').open('a') as patch:
+        patch.write(link_patch.read_text())
     # Password and grant changes share one authoritative atomic product record.
     replace('src/new_cfg.c','#include "new_cfg.h"','#include "new_cfg.h"\n#include "phicomm/src/port.h"')
     replace('src/new_cfg.c',
@@ -457,6 +473,7 @@ def main():
                          'platforms/bk7231n/bk7231n_os/beken378/driver/irda/irda.c',
                          'platforms/bk7231n/bk7231n_os/beken378/func/rwnx_intf/rw_msg_rx.c',
                          'platforms/bk7231n/bk7231n_os/beken378/os/FreeRTOSv9.0.0/FreeRTOS/Source/portable/MemMang/heap_4.c',
+                         SDK_ETHERNETIF,
                          *SDK_MDNS_FILES]:
             shutil.copy2(SDK_CACHE/relative,sdk/relative)
             (sdk/Path(relative).with_suffix('.o')).unlink(missing_ok=True)

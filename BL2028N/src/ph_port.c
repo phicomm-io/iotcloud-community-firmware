@@ -27,6 +27,7 @@ extern void set_printf_port(unsigned char);
 #include "factory_mac.h"
 #include "boot_trace.h"
 #include "memory_policy.h"
+#include "ph_link.h"
 #include "storage_legacy.h"
 #include "ntp.h"
 #include "../protocol/httpd/http.h"
@@ -309,6 +310,11 @@ static bool checkpoint(uint32_t t, bool force) {
 static void network_info(void *unused, ph_writer *w) {
     (void)unused; phw_text(w,"ip",HAL_GetMyIPString()); phw_int(w,"rssi",HAL_GetWifiStrength());
     phw_bool(w,"wifi_connected",Main_IsConnectedToWiFi());
+    ph_link_stats link=PH_BL_LinkSnapshot();
+    phw_begin(w,"wifi_link",false);
+    phw_u32(w,"unicast_rx",link.unicast_rx);phw_u32(w,"group_rx",link.group_rx);
+    phw_u32(w,"input_errors",link.input_errors);phw_u32(w,"probes",link.probes);
+    phw_u32(w,"probe_errors",link.probe_errors);phw_u32(w,"recoveries",link.recoveries);phw_end(w);
     phw_bool(w,"safe_mode",safe_boot);
     phw_bool(w,"mqtt_connected",bl_mqtt_status==MQTT_READY);
     phw_text(w,"mqtt_status",mqtt_status_name(bl_mqtt_status));
@@ -336,7 +342,9 @@ static uint32_t network_stamp(void *unused) {
         (lfs_present()?1u<<21:0)^(*CFG_GetWebPassword()?1u<<22:0);
     int done=OTA_GetProgress(),total=OTA_GetTotalBytes();
     uint32_t progress=done>0&&total>0?(uint32_t)((uint64_t)done*100/total):0;
-    return h^flags^(progress<<24)^(done>=0?1u<<23:0);
+    /* Link counters must age even if the meter is absent. Bound cache refresh
+     * to one second instead of invalidating it for every received packet. */
+    return h^flags^(progress<<24)^(done>=0?1u<<23:0)^(now(NULL)/1000u);
 }
 static void diagnostics(void *unused,ph_writer *w) {
     (void)unused;ph_http_diagnostics h=ph_http_snapshot();
@@ -526,6 +534,13 @@ static __attribute__((noinline)) bool factory_reset_record(void) {
  bl_device.settings=defaults;set_relay(NULL,false);return true;
 }
 void bl_mqtt_stopped(void) {lock();mqtt_started=false;unlock();}
+int PH_BL_TakeLinkRecovery(void) {
+ if(!bl_ready)return 0;
+ lock();
+ bool allowed=Main_IsConnectedToWiFi()&&!Main_IsOpenAccessPointMode()&&
+  !bl_ota_pending&&!bl_scan_busy()&&!reboot_pending&&!reset_requested;
+ bool recover=PH_BL_LinkTakeRecovery(allowed);unlock();return recover;
+}
 static void mqtt_step(uint32_t t) {
  /* An unconfigured AP has no broker work. Leave the 16 KiB owner stack
   * available to setup scans, page transfers and OTA until it is useful. */
@@ -548,6 +563,7 @@ static void network_thread(beken_thread_arg_t arg) {
   scan_step(t);mqtt_step(t);
   char clock_host[64];lock();memcpy(clock_host,bl_device.settings.ntp_host,sizeof(clock_host));
   bool clock_enabled=Main_IsConnectedToWiFi()&&!bl_ota_pending&&!bl_scan_busy();unlock();
+  PH_BL_LinkPoll(clock_enabled&&!Main_IsOpenAccessPointMode());
 #ifdef PH_HOST_TEST
   /* Socket harnesses are deterministic and do not contact public clock
    * servers. The SNTP owner has its own real-UDP test peer. */

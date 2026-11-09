@@ -33,7 +33,7 @@ def main():
                str(HERE / 'http_auth_port.c'), str(HERE / 'platform_host.c'),
                str(ROOT / 'src/ph_http.c'), str(ROOT / 'src/ph_device.c'),
                str(ROOT / 'src/ph_meter.c'), str(ROOT / 'src/ph_lan_v4.c'),
-               str(ROOT / 'src/ph_sha256.c'), str(ROOT / 'src/ph_ntp.c'),
+               str(ROOT / 'src/ph_sha256.c'), str(ROOT / 'src/ph_ntp.c'), str(ROOT / 'src/ph_link.c'),
                str(ROOT / 'src/ph_wire.c'), str(auth / 'local_auth.c'),
                '-Wl,--wrap=rtos_create_thread,--wrap=rtos_unlock_mutex',
                '-Wl,--wrap=PH_BL_SetWebPasswordMemory,--wrap=ph_command',
