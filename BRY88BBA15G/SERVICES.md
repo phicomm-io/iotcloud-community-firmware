@@ -404,6 +404,8 @@ Set it to true to enable verification. The WebUI exposes the same saved setting.
 Verified mode uses the provider's CA roots. No arbitrary URLs or
 redirects. Worker bounds response/decompression size, heap and timeout. Missing
 fields stay missing; results are normalized before UART transmission.
+TLS handshakes allow up to 30 seconds for Open-Meteo and 15 seconds for the other
+providers on the 80 MHz G3. TCP connect and HTTP I/O timeouts remain 6 seconds.
 Seniverse uses its DigiCert Global Root G2 PEM directly, avoiding an incompatible
 cross-signed chain path in the ESP32 certificate bundle callback while retaining
 hostname, expiry and signature verification. QWeather requests use `zh-hans` for
