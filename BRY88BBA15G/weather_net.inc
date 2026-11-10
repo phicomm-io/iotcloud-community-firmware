@@ -1,6 +1,8 @@
 /* Fetching is isolated from the sole screen UART owner. TLS is mandatory. */
 #include "weather_ca.h"
 #include "weather_openmeteo_ca.h"
+#include "weather_seniverse_ca.h"
+#include <errno.h>
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
 #include <esp32/rom/miniz.h>
@@ -20,7 +22,9 @@ struct WeatherResult {
   char error[32];
   char stage[24];
   int httpStatus, tlsError;
-  uint32_t verifyFlags;
+  uint32_t verifyFlags, connectMs;
+  int connectErrno;
+  char remoteIp[16];
 };
 static QueueHandle_t screenWeatherResults = nullptr;
 static bool screenWeatherBusy = false, screenWeatherRefresh = false;
@@ -33,6 +37,9 @@ static const char *screenWeatherError = "not_configured";
 static char screenWeatherStage[24] = "idle";
 static int screenWeatherHttpStatus = 0, screenWeatherTlsError = 0;
 static uint32_t screenWeatherVerifyFlags = 0;
+static uint32_t screenWeatherConnectMs = 0;
+static int screenWeatherConnectErrno = 0;
+static char screenWeatherRemoteIp[16] = {};
 static uint8_t screenWeatherStockCode = 0;
 static bool screenWeatherStockPending = true, screenWeatherStockSentValid = false;
 static uint32_t screenWeatherStockDue = 0, screenWeatherStockSentAt = 0;
@@ -71,17 +78,28 @@ static void screenWeatherStockPoll(uint32_t now) {
 class WeatherTLS : public WiFiClientSecure {
 public:
   uint32_t verifyFlags = 0;
+  uint32_t connectMs = 0;
+  int connectErrno = 0;
+  char remoteIp[16] = {};
   const char *failedStage = "http_request";
   using WiFiClientSecure::connect;
   int connect(const char *host, uint16_t port, int32_t timeout) override {
+    const uint32_t began = millis();
     IPAddress address;
     failedStage = "dns";
-    if (!WiFi.hostByName(host, address)) return 0;
+    if (!WiFi.hostByName(host, address)) {
+      connectMs = millis() - began;
+      return 0;
+    }
+    address.toString().toCharArray(remoteIp, sizeof(remoteIp));
     failedStage = "tcp_connect";
     _timeout = timeout;
     // Keep the original hostname for SNI and certificate verification.
+    errno = 0;
     int connected = WiFiClientSecure::connect(address, port, host, _CA_cert,
                                               _cert, _private_key);
+    connectErrno = connected ? 0 : errno;
+    connectMs = millis() - began;
     if (connected) failedStage = "http_request";
     return connected;
   }
@@ -175,11 +193,12 @@ static bool weatherGet(const String &url, const WeatherJob &job,
   if (!raw)
     return false;
   WeatherTLS tls;
-  // Use mbedTLS's chain builder for this cross-signed ISRG chain. The Arduino
-  // bundle callback can reject it before reaching its existing X1/X2 anchor.
-  // Verified mode keeps the hostname/time checks and uses two PEM roots.
+  // Cross-signed chains can make Arduino's bundle callback fail before it
+  // reaches an existing trust anchor. Use mbedTLS's chain builder with the
+  // pinned provider roots, retaining hostname, expiry and signature checks.
   if (!job.verifyTls) tls.setInsecure();
   else if (!strcmp(job.provider, "openmeteo")) tls.setCACert(weatherOpenMeteoCa);
+  else if (!strcmp(job.provider, "seniverse")) tls.setCACert(weatherSeniverseCa);
   else tls.setCACertBundle(weatherCaBundle);
   tls.setTimeout(6000);
   tls.setHandshakeTimeout(15); // Allow the 80 MHz G3 to finish TLS; default is 120 s.
@@ -199,6 +218,9 @@ static bool weatherGet(const String &url, const WeatherJob &job,
   strcpy(result.stage, "http_request");
   int code = http.GET();
   result.httpStatus = code;
+  result.connectMs = tls.connectMs;
+  result.connectErrno = tls.connectErrno;
+  bry::textCopy(result.remoteIp, sizeof(result.remoteIp), tls.remoteIp);
   if (code < 0) {
     bry::textCopy(result.stage, sizeof(result.stage), tls.failedStage);
     char tlsMessage[1];
@@ -224,16 +246,33 @@ static bool weatherGet(const String &url, const WeatherJob &job,
   if (encoding == "gzip") {
     strcpy(result.stage, "response_gzip");
     size_t decodedLimit = !strcmp(job.provider, "openmeteo") ? 4096 : 32768;
-    inflated.reset(new (std::nothrow) uint8_t[decodedLimit]);
-    if (!inflated || !weatherInflate(body, size, inflated.get(), decodedLimit, size))
+    // ISIZE is untrusted: bound it before allocating, then verify the complete
+    // stream, CRC and actual output length. Small current-weather responses
+    // must not consume a 32 KiB block needed by the JSON document afterwards.
+    size_t decodedSize = size >= 18 ? scene_u32(body + size - 4) : 0;
+    if (!decodedSize || decodedSize > decodedLimit) {
+      strcpy(result.stage, "response_gzip_limit");
+      return false;
+    }
+    inflated.reset(new (std::nothrow) uint8_t[decodedSize]);
+    if (!inflated) {
+      strcpy(result.stage, "response_gzip_alloc");
+      return false;
+    }
+    if (!weatherInflate(body, size, inflated.get(), decodedSize, size))
       return false;
     body = inflated.get();
+    raw.reset(); // The compressed input is no longer needed during JSON decode.
   } else if (encoding.length() && encoding != "identity") {
     strcpy(result.stage, "response_encoding");
     return false;
   }
   strcpy(result.stage, "response_json");
   doc = DynamicJsonDocument(!strcmp(job.provider, "openmeteo") ? 4096 : 12288);
+  if (!doc.capacity()) {
+    strcpy(result.stage, "response_json_alloc");
+    return false;
+  }
   return bry::weatherDecode(body, size, doc);
 }
 static void screenWeatherWorker(void *argument) {
@@ -244,16 +283,17 @@ static void screenWeatherWorker(void *argument) {
     result.startHeap=heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT);
     result.startBlock=heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT);
     String current, forecast;
-    const String language=job->english?"en":"zh-Hans";
     char coordinates[64];
     snprintf(coordinates, sizeof(coordinates), "%.2f/%.2f",
              (double)job->latitude, (double)job->longitude);
     if (!strcmp(job->provider, "qweather")) {
+      const char *language = job->english ? "en" : "zh-hans";
       String base = "https://" + String(job->host) + "/weather/v1/";
       current = base + "current/" + coordinates + "?lang="+language;
       forecast =
           base + "daily/" + coordinates + "?days=3&localTime=true&lang="+language;
     } else if (!strcmp(job->provider, "seniverse")) {
+      const char *language = job->english ? "en" : "zh-Hans";
       snprintf(coordinates, sizeof(coordinates), "%.4f:%.4f",
                (double)job->latitude, (double)job->longitude);
       String base = "https://api.seniverse.com/v3/weather/",
@@ -322,6 +362,9 @@ static void screenWeatherPoll(uint32_t now) {
       screenWeatherHttpStatus = result.httpStatus;
       screenWeatherTlsError = result.tlsError;
       screenWeatherVerifyFlags = result.verifyFlags;
+      screenWeatherConnectMs = result.connectMs;
+      screenWeatherConnectErrno = result.connectErrno;
+      bry::textCopy(screenWeatherRemoteIp, sizeof(screenWeatherRemoteIp), result.remoteIp);
       screenWeatherStackFree = result.stackFreeBytes;
       screenWeatherStartHeap=result.startHeap;screenWeatherStartBlock=result.startBlock;screenWeatherEndHeap=result.endHeap;
       if(result.valid&&!result.error[0])screenWeatherRetry.success(now,screenWeatherConfig["interval"]|900u);
@@ -398,6 +441,9 @@ static void screenWeatherPoll(uint32_t now) {
   strcpy(screenWeatherStage, "request_queued");
   screenWeatherHttpStatus = screenWeatherTlsError = 0;
   screenWeatherVerifyFlags = 0;
+  screenWeatherConnectMs = 0;
+  screenWeatherConnectErrno = 0;
+  screenWeatherRemoteIp[0] = 0;
   if (xTaskCreate(screenWeatherWorker, "weather", 8192, job, 1, nullptr) !=
       pdPASS) {
     delete job;

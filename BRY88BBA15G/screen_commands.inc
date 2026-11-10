@@ -411,6 +411,9 @@ static const char *screenServicesCommand(const String &action,
     data["http_status"] = screenWeatherHttpStatus;
     data["tls_error"] = screenWeatherTlsError;
     data["tls_verify_flags"] = screenWeatherVerifyFlags;
+    data["connect_ms"] = screenWeatherConnectMs;
+    data["connect_errno"] = screenWeatherConnectErrno;
+    data["remote_ip"] = screenWeatherRemoteIp;
     data["busy"] = screenWeatherBusy;
     data["retry_in_ms"] = screenWeatherRetry.remaining(millis());
     data["consecutive_failures"] = screenWeatherRetry.failures;

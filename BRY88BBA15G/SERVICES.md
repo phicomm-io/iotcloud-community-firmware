@@ -382,6 +382,10 @@ location labels require the community MCU. `worker_stack_free_bytes` is the last
 worker's minimum free stack measured by ESP-IDF, in bytes.
 `request_stage` distinguishes DNS, TCP connection, TLS setup/handshake and HTTP
 failures so a connection timeout can be diagnosed without disabling HTTPS.
+`remote_ip` is the last resolved server IPv4 address. `connect_ms` includes DNS,
+TCP and TLS setup for the last connection attempt; `connect_errno` samples errno
+after a failed connection and is supporting diagnostic information, not proof
+of which layer failed. These fields reset when a new fetch starts.
 `screen.weather.set {enabled, provider, host, latitude, longitude, label,
 interval, key?, clear_key?, verify_tls?}` saves configuration. Omit key to keep the saved
 secret; `clear_key:true` removes it. Reads only expose `key_set`. Coordinates are
@@ -400,13 +404,19 @@ Set it to true to enable verification. The WebUI exposes the same saved setting.
 Verified mode uses the provider's CA roots. No arbitrary URLs or
 redirects. Worker bounds response/decompression size, heap and timeout. Missing
 fields stay missing; results are normalized before UART transmission.
+Seniverse uses its DigiCert Global Root G2 PEM directly, avoiding an incompatible
+cross-signed chain path in the ESP32 certificate bundle callback while retaining
+hostname, expiry and signature verification. QWeather requests use `zh-hans` for
+Chinese; Seniverse uses `zh-Hans` according to its separate API convention.
 Open-Meteo uses Celsius, m/s, UTC Unix timestamps and the location's returned
 UTC offset for daily dates. Unknown WMO codes, missing required values and
 incompatible units are rejected. Its response and decode buffers are capped at
 4 KiB each. The other providers require a user's working key and plan.
 Gzip decoding allocates the ROM miniz decompressor on the heap: its 11 KiB state
 exceeds the worker's 8 KiB stack. Truncation, output limits, CRC and size are
-checked before JSON parsing. A failed layout base64 allocation aborts a config
+checked before JSON parsing. The output allocation follows the bounded gzip
+size, and the compressed input is released before allocating the JSON document.
+A failed layout base64 allocation aborts a config
 save instead of committing an empty layout during TLS memory pressure.
 Weather and diagnostics reads use bounded, smaller command documents while
 TLS runs. A failed command-document allocation returns a complete `busy`

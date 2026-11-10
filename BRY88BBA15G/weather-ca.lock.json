@@ -13,5 +13,12 @@
       "CN=ISRG Root X1,O=Internet Security Research Group,C=US",
       "CN=ISRG Root X2,O=Internet Security Research Group,C=US"
     ]
+  },
+  "seniverse_pem": {
+    "source": "Debian ca-certificates /etc/ssl/certs/DigiCert_Global_Root_G2.pem",
+    "sha256": "5d550643b6400d4341550a9b14aedd0b4fac33ae5deb7d8247b6b4f799c13306",
+    "subjects": [
+      "CN=DigiCert Global Root G2,OU=www.digicert.com,O=DigiCert Inc,C=US"
+    ]
   }
 }
