@@ -9,7 +9,7 @@ const url=process.argv[2],run=process.argv[3];
  page.on('request',q=>{if(q.url().includes('/api/v1/'))requests.push({url:q.url(),method:q.method(),headers:q.headers(),body:q.postDataBuffer()?.toString('base64')});});
  try{
   await page.goto(url);await page.waitForFunction(()=>globalThis.UI?.state?.socket_states?.length===1);
-  assert.equal(await page.title(),'iotcloud · S30-V1B');assert.equal(await page.locator('#socket0').count(),1);
+  assert.equal(await page.title(),'S30M-V1B');assert.equal(await page.locator('#socket0').count(),1);
   assert.equal(await page.locator('input[type=password]:visible').count(),0);
   await page.locator('#socket0').click();await page.waitForFunction(()=>UI.state.socket_states[0]===true&&document.getElementById('socket0').getAttribute('aria-busy')==='false');
   assert.match(await page.locator('#onCount').textContent(),/1 of 1/);
