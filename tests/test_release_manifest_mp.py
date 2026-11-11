@@ -36,6 +36,7 @@ class ReleaseManifestMP(unittest.TestCase):
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
+#include "common/typed_wire.h"
 #include "common/ota/release_manifest.h"
 int main(int argc,char **argv) {
  unsigned char bytes[20000];size_t length=fread(bytes,1,sizeof(bytes),stdin);

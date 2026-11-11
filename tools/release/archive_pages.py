@@ -20,7 +20,7 @@ from device_manifest import document, encoded, verify_manifests
 
 
 def write_latest(catalog, output):
-    """Small device manifests: follow stable, and expose signed images only."""
+    """Small device manifests: follow stable and select each model's OTA image."""
     stable = catalog.get('stable')
     release = next((r for r in catalog['releases'] if r['tag'] == stable), None)
     if stable and release is None:
@@ -38,7 +38,7 @@ def write_latest(catalog, output):
         if bridge.get('version') != '1.0.0' or bridge.get('prerelease') or bridge.get('channel', 'stable') != 'stable':
             raise ValueError('v1.0.0 bridge must be a stable release')
     for channel, selected in [('legacy', bridge), ('v1', release if version >= (1, 0, 0) else None)]:
-        for model, supported in MODEL_VARIANTS.items():
+        for model, supported in {**MODEL_VARIANTS, 's30': ('full',)}.items():
             item = selected.get('models', {}).get(model, {}) if selected else {}
             variants = dict(item.get('variants', {}))
             # Remove stale manifests too when rolling back to an older catalog.
@@ -51,8 +51,8 @@ def write_latest(catalog, output):
                     target.unlink(missing_ok=True)
                     target.with_suffix('.msgpack').unlink(missing_ok=True)
                     continue
-                signed = entry.get('downloads', {}).get('signed')
-                if not signed:
+                image = entry.get('downloads', {}).get('rbl' if model == 's30' else 'signed')
+                if not image or (model == 's30' and channel == 'legacy'):
                     target.unlink(missing_ok=True)
                     target.with_suffix('.msgpack').unlink(missing_ok=True)
                     continue
@@ -66,12 +66,12 @@ def write_candidate_latest(candidates, output):
     """Candidate pointers are isolated and never touch stable manifests."""
     from release_version import version_key
     selected = max(candidates, key=lambda r: version_key(r['tag'])) if candidates else None
-    for model, supported in MODEL_VARIANTS.items():
+    for model, supported in {**MODEL_VARIANTS, 's30': ('full',)}.items():
         original = selected.get('models', {}).get(model, {}) if selected else {}
         for variant in supported:
             entry = original if variant == 'full' else original.get('variants', {}).get(variant, {})
             folder = Path(output) / 'ota/candidate' / model / variant
-            if 'signed' not in entry.get('downloads', {}):
+            if ('rbl' if model == 's30' else 'signed') not in entry.get('downloads', {}):
                 for extension in ('json', 'msgpack'):
                     (folder / ('latest.' + extension)).unlink(missing_ok=True)
                 continue

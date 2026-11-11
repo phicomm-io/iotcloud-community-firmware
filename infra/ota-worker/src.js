@@ -7,8 +7,8 @@ export default {
     try {
       let body, type = 'application/json; charset=utf-8', ttl = 60;
       const candidate = path.startsWith('/ota/candidate/');
-      const candidateMatch = path.match(/^\/ota\/candidate\/(tc1|m1|a1|daikin|bry88bba15g)\/(full|no-frontend-resources|fresh-air|fresh-air-no-frontend-resources|hub)\/latest\.(json|msgpack)$/);
-      const current = candidateMatch || path.match(/^\/ota\/v1\/(tc1|m1|a1|daikin|bry88bba15g)\/(full|no-frontend-resources|fresh-air|fresh-air-no-frontend-resources|hub)\/latest\.(json|msgpack)$/);
+      const candidateMatch = path.match(/^\/ota\/candidate\/(tc1|m1|a1|daikin|bry88bba15g|s30)\/(full|no-frontend-resources|fresh-air|fresh-air-no-frontend-resources|hub)\/latest\.(json|msgpack)$/);
+      const current = candidateMatch || path.match(/^\/ota\/v1\/(tc1|m1|a1|daikin|bry88bba15g|s30)\/(full|no-frontend-resources|fresh-air|fresh-air-no-frontend-resources|hub)\/latest\.(json|msgpack)$/);
       const latest = current || path.match(/^\/ota\/(tc1|m1|a1|daikin)(\/(?:no-frontend-resources|fresh-air|fresh-air-no-frontend-resources))?\/latest\.json$/);
       if (latest) {
         const stable = await env.RELEASES.get(candidate ? 'releases/candidates.json' : 'stable.json');
@@ -28,7 +28,7 @@ export default {
         }
         const original = release.models[latest[1]];
         const variant = current ? current[2] : latest[2] ? latest[2].slice(1) : 'full';
-        if (latest[1] === 'bry88bba15g' && variant !== 'full') return new Response('Not found', {status:404,headers});
+        if (['bry88bba15g','s30'].includes(latest[1]) && variant !== 'full') return new Response('Not found', {status:404,headers});
         if (variant === 'hub' && latest[1] !== 'daikin') return new Response('Not found', {status:404,headers});
         if (variant.startsWith('fresh-air') && latest[1] !== 'a1') return new Response('Not found', {status:404});
         if (latest[1] === 'daikin' && !['full','hub'].includes(variant)) return new Response('Not found', {status:404,headers});

@@ -12,7 +12,7 @@ Published files contain shareable programs and resources. Regions containing Wi-
 | M1 Wi-Fi module | Stock 14.2.4.1 kernel and application | `0x13000..0xC8000`, 741376 bytes; requires the matching stock serial Bootloader MEMORYMAP |
 | M1 sensor controller | ATSAMD20G18A 11.1.2.1 | 256 KiB main Flash including boot and application; excludes User Row / fuses; not application OTA |
 | A1 Wi-Fi module | Stock 1.47 kernel and application | `0x13000..0xC8000`, 741376 bytes; preserve local boot and parameters; check the A1 partition map |
-| S30-V1B / S30M_V1B | Stock 2M.1220 application | Physical `0x11000..0x132000`, including BK7231N CRC bytes; UART recovery with the retained stock bootloader only |
+| S30M-V1B / S30M_V1B | Stock 2M.1220 application | Physical `0x11000..0x132000`, including BK7231N CRC bytes; UART recovery with the retained stock bootloader only |
 | Daikin G2 BRY88AB151K | SensorKit2 application, ESP32 bootloader and partition table | Extracted from the original UART dump; application metadata: `SensorKit2 / 1 / 2020-01-16` |
 | Daikin G3 BRY88BBA15G | ESP32 V01.02.00 application, bootloader and partition table | Extracted from two matching 8 MiB reads, excluding NVS, OTA selection and device configuration |
 | Daikin G3 screen MCU | Vendor OTA application SV.04.00.04.00 | 421888 bytes, application base `0x14000`; not a complete dump of the device's initial SV.04.00.01.00 |

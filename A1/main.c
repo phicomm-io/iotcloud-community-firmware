@@ -449,8 +449,9 @@ int application_start(void)
         migration_changed = true;
     }
     a1_config_get(&c);
-    if (!c.name[0]) {
-        snprintf(c.name, sizeof(c.name), "A1-%02X%02X", mac[4], mac[5]);
+    char previous_name[16];snprintf(previous_name,sizeof(previous_name),"A1-%02X%02X",mac[4],mac[5]);
+    if (!c.name[0] || !strcmp(c.name,previous_name)) {
+        strcpy(c.name, "A1");
         *a1_config = c; migration_changed = true;
     }
     config_initializing = false;
@@ -460,7 +461,7 @@ int application_start(void)
         appRestoreDefault_callback(a1_config, sizeof(app_storage_t));
         fresh_defaults(&((app_storage_t *)a1_config)->fresh_air);
         bemfa_defaults(&((app_storage_t *)a1_config)->bemfa, "a1", a1_id);
-        snprintf(a1_config->name, sizeof(a1_config->name), "A1-%02X%02X", mac[4], mac[5]);
+        strcpy(a1_config->name, "A1");
         filter_clock = (a1_filter_clock_t){0};
         service_event("error", "config", "migration_failed");
     }

@@ -91,6 +91,14 @@ def make(tag, commit, directory, notes, legacy=False, require_variants=False, ke
             item.setdefault('variants', {})[variant] = {
                 **files.get('signed', files['raw']), 'firmware_variant': variant,
                 'downloads': files, 'release_log': release['notes']}
+    if (directory/'build-s30.json').exists():
+        from native_pages import collect_release
+        native = collect_release(tag, directory, lambda url: (directory / url.rsplit('/', 1)[1]).read_bytes(),
+                                 commit, directory=directory)
+        files = {kind: dict(asset, path=f'/releases/{tag}/' + asset['path'].rsplit('/', 1)[1])
+                 for kind, asset in native['models']['s30']['downloads'].items()}
+        release['models']['s30'] = {**files['rbl'], 'downloads': files,
+                                    'firmware_variant': 'full', 'release_log': release['notes']}
     if (directory/'screen-update.json').exists():
         from screen_assets import validate
         release['screen']=validate(json.loads((directory/'screen-update.json').read_text()),directory,tag)

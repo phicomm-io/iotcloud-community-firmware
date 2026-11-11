@@ -85,7 +85,7 @@ static void assert_imported(const ph_settings *s,unsigned version) {
  if(version==2) {
   assert(s->report_seconds==37&&strlen(s->name)==63&&strlen(s->socket_name)==63);
   for(unsigned i=0;i<63;++i)assert(s->name[i]=='N'&&s->socket_name[i]=='S');
- } else assert(s->report_seconds==30&&!strcmp(s->name,"S30-V1B")&&!strcmp(s->socket_name,"S30-V1B"));
+ } else assert(s->report_seconds==30&&!strcmp(s->name,"S30M-V1B")&&!strcmp(s->socket_name,"S30M-V1B"));
 }
 static void fixture_migration_tests(void) {
  CFG_SetWiFiSSID("kept-wifi");CFG_SetWiFiPass("kept-wifi-password");CFG_SetWiFiSSID2("kept-backup");
@@ -270,9 +270,62 @@ static void restore_policy_tests(void) {
  fail_stage=0;assert(checkpoint(3000,true));assert(load(&actual)&&!actual.last_relay);
  puts("PASS: rules and restore policy roundtrip; local relay checkpoint survives reboot and failed writes retry");
 }
+static httprequest_t *metadata_request;
+int HTTPClient_Async_SendGeneric(httprequest_t *request){assert(!metadata_request);metadata_request=request;return 0;}
+static const char *online_command(const char *action,const char *source) {
+ unsigned char bytes[512],output[512];ph_writer w;struct printbuf b;
+ assert(phw_init_fixed(&w,PH_WIRE_MSGPACK,&b,bytes,sizeof(bytes)));
+ phw_begin(&w,NULL,false);if(source)phw_text(&w,"source",source);phw_end(&w);
+ ph_value params;assert(phv_parse(PH_WIRE_MSGPACK,bytes,phw_finish_fixed(&w),&params));
+ assert(phw_init_fixed(&w,PH_WIRE_MSGPACK,&b,output,sizeof(output)));phw_begin(&w,NULL,false);
+ return platform_action(NULL,action,&params,&w,true);
+}
+static void metadata_response(const char *model,bool truncate) {
+ unsigned char bytes[1024];ph_writer w;struct printbuf b;
+ assert(phw_init_fixed(&w,PH_WIRE_MSGPACK,&b,bytes,sizeof(bytes)));phw_begin(&w,NULL,false);
+ phw_u32(&w,"schema",1);phw_text(&w,"tag","v1.0.0-rc.6");phw_text(&w,"version","1.0.0-rc.6");
+ phw_text(&w,"model",model);phw_text(&w,"firmware_variant","full");phw_u32(&w,"size",500000);
+ phw_text(&w,"path","/releases/v1.0.0-rc.6/BL2028N_OTA_1.0.0-rc.6.rbl");
+ phw_text(&w,"release_log","/releases/v1.0.0-rc.6/notes.md");
+ phw_text(&w,"commit","aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+ phw_text(&w,"sha256","aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");phw_end(&w);
+ unsigned n=(unsigned)phw_finish_fixed(&w);assert(metadata_request);
+ httprequest_t *r=metadata_request;r->client.response_code=200;r->client_data.response_content_len=n;
+ for(unsigned at=0;at<n-(unsigned)truncate;) {
+  unsigned take=n-(unsigned)truncate-at;if(take>31)take=31;
+  memcpy(r->client_data.response_buf,bytes+at,take);r->client_data.response_buf_filled=take;r->state=1;
+  assert(!r->data_callback(r));at+=take;
+ }
+ r->state=2;r->client_data.response_buf_filled=0;assert(!r->data_callback(r));
+ os_free(r);metadata_request=NULL;
+}
+static void online_update_tests(void) {
+ assert(!rtos_init_mutex(&mutex));strcpy(bl_device.version,"1.0.0-rc.5-abcdef");
+ assert(!strcmp(online_command("ota.check","github"),"invalid_params"));
+ assert(!strcmp(online_command("ota.install",NULL),"invalid_params"));
+ assert(!strcmp(online_command("ota.check","cn"),"accepted"));
+ assert(bl_ota_pending&&bl_device.maintenance&&update_busy);
+ assert(!strcmp(ota_start("http://127.0.0.1/manual.rbl",NULL,0),"busy"));
+ bl_mqtt_quiescent=false;update_step(now(NULL));assert(!metadata_request);
+ bl_mqtt_quiescent=true;update_step(now(NULL));assert(metadata_request);
+ assert(strstr(metadata_request->url,"/s30/full/latest.msgpack"));
+ metadata_response("s30",false);
+ assert(!strcmp(update_state,"available")&&update_available&&!bl_ota_pending&&!bl_device.maintenance);
+ assert(!strcmp(online_command("ota.install",NULL),"accepted"));
+ assert(strstr(ota_url,"/BL2028N_OTA_1.0.0-rc.6.rbl")&&bl_ota_pending);
+ bl_ota_pending=false;ota_url[0]=0;ph_device_set_maintenance(&bl_device,false);assert(PH_BL_OTAHashSet(NULL,0));
+ for(unsigned i=0;i<2;i++) {
+  assert(!strcmp(online_command("ota.check","global"),"accepted"));update_step(now(NULL));
+  metadata_response(i?"s30":"tc1",i!=0);
+  assert(!strcmp(update_state,"failed")&&!update_available&&!bl_ota_pending&&!bl_device.maintenance);
+  assert(!strcmp(online_command("ota.install",NULL),"invalid_params"));
+ }
+ pthread_mutex_destroy(&mutex);
+ puts("PASS: online OTA reserves services, waits for MQTT, selects S30 RBL and rejects wrong-model/truncated metadata before allowing a retry");
+}
 int main(int argc,char **argv) {
  assert(argc==2);snprintf(store_dir,sizeof(store_dir),"%s",argv[1]);mkdir(store_dir,0700);init_lfs(1);
- fixture_migration_tests();rejection_tests();meter_default_migration_tests();current_record_tests();ota_checkpoint_tests();v3_migration_tests();v4_migration_tests();save_failure_tests();restore_policy_tests();
+ fixture_migration_tests();rejection_tests();meter_default_migration_tests();current_record_tests();ota_checkpoint_tests();v3_migration_tests();v4_migration_tests();save_failure_tests();restore_policy_tests();online_update_tests();
  write_bytes(s30_legacy_v2,sizeof(s30_legacy_v2));PH_BL_Init(1);
  assert(bl_ready&&safe_boot&&!bl_device.relay&&bl_device.settings.power_on);assert_imported(&bl_device.settings,2);
  assert(!record_allocations);puts("PASS: safe boot retains saved policy and all migrated settings with relay off");

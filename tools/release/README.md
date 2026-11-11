@@ -76,7 +76,9 @@ Historical immutable release directories are not regenerated or modified.
 
 Both files have the same flat schema-1 document: string fields `tag`, `version`,
 `commit`, `model`, `firmware_variant`, `path`, `sha256`, `release_log`, plus
-unsigned integer fields `schema` (1) and `size` (signed image length). Strings
+unsigned integer fields `schema` (1) and `size` (image length). S30/full uses
+`BL2028N.latest.json` and `BL2028N.latest.msgpack`, pointing to its native RBL
+image; it does not use the signed envelope or legacy bridge. Strings
 use UTF-8; MP uses standard string, map, and unsigned integer wire types. There
 are no extension types, floats, or numbered fields. Both documents must fit
 4096 bytes. Publication readback and archive validation compare both files to
@@ -85,7 +87,7 @@ the canonical document, not only to their self-reported hashes.
 The stable Worker can serve `/ota/v1/<model>/<variant>/latest.msgpack` from
 the indexed immutable asset selected by `stable.json`; older stable releases
 without an indexed binary manifest return 404. JSON and legacy bridge routes
-retain their existing behavior. The Worker continues to reject candidate URLs.
+retain their existing behavior. Candidate URLs use their independent selection.
 When explicitly generating a candidate Pages archive, separate
 `/ota/candidate/<model>/<variant>/latest.json` and `latest.msgpack` pointers
 select the highest candidate version. Removing a candidate catalog also removes

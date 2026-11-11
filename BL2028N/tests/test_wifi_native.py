@@ -29,7 +29,9 @@ enum {WIFI_STA_CONNECTING,WIFI_STA_DISCONNECTED,WIFI_STA_AUTH_FAILED,
 static int g_bHasWiFiConnected,g_connectToWiFi,g_secondsElapsed,g_timeSinceLastPingReply;
 static int g_newWiFiStatus,bSafeMode=1,DRV_SSDP_Active,DRV_MDNS_Active;
 static unsigned char g_wifi_bssid[6];static int g_wifi_channel;
-static void HAL_DisconnectFromWifi(void){}
+static unsigned disconnects;
+static void HAL_DisconnectFromWifi(void){disconnects++;}
+#define PH_BOOT_STAGE(...) ((void)0)
 static void HAL_GetWiFiBSSID(void *p){(void)p;}
 static void HAL_GetWiFiChannel(void *p){(void)p;}
 static const char *CFG_DeviceGroups_GetName(void){return "";}
@@ -47,6 +49,20 @@ int main(void){
  Main_OnWiFiStatusChange(WIFI_STA_AUTH_FAILED);assert(!g_bHasWiFiConnected&&g_connectToWiFi==5);
  puts("PASS: AP join/leave never changes STA connectivity or suppresses station retry");
 }
+'''
+LINK_CASES = r'''
+int main(void){
+ g_bHasWiFiConnected=1;g_connectToWiFi=0;g_timeSinceLastPingReply=10;
+ link_recovery_tick();assert(!disconnects&&g_bHasWiFiConnected&&g_connectToWiFi==0);
+ link_request=true;link_recovery_tick();
+ assert(disconnects==1&&!g_bHasWiFiConnected&&g_connectToWiFi==5&&g_timeSinceLastPingReply==-1);
+ link_recovery_tick();assert(disconnects==1);
+ puts("PASS: native owner consumes one recovery outside lwIP, stops STA and arms normal reconnect without reboot");
+}
+'''
+LINK_STUBS = r'''
+static bool link_request;
+static bool PH_BL_TakeLinkRecovery(void){bool take=link_request;link_request=false;return take;}
 '''
 SDK_STUBS = r'''
 #include <assert.h>
@@ -112,12 +128,16 @@ def main():
     run = args.run_dir.resolve()
     run.mkdir(parents=True, exist_ok=True)
     native = (args.app_source/'src/user_main.c').read_text()
+    recovery_start = native.index('    if (PH_BL_TakeLinkRecovery()) {',native.index('void Main_OnEverySecond()'))
+    recovery_end = native.index('\n    }',recovery_start)+len('\n    }')
     sdk = (args.sdk_source/'platforms/bk7231n/bk7231n_os/beken378/func/rwnx_intf/rw_msg_rx.c').read_text()
     start = sdk.index('    case SCANU_RESULT_IND:')
     end = sdk.index('    case SM_CONNECT_IND:', start)
     done = sdk.index('    case SCANU_START_CFM:')
     cases = {
         'wifi-events': WIFI_STUBS + function(native, 'void Main_OnWiFiStatusChange(int code)') + WIFI_CASES,
+        'wifi-link-recovery': WIFI_STUBS + LINK_STUBS + function(native, 'void Main_OnWiFiStatusChange(int code)') +
+            'static void link_recovery_tick(void){\n'+native[recovery_start:recovery_end]+'\n}\n'+LINK_CASES,
         'sdk-scan': SDK_STUBS + function(sdk, 'static void ph_scan_result_view(struct ke_msg *msg)') +
             function(sdk, 'UINT8 *sr_malloc_result_item(UINT32 vies_len)') +
             function(sdk, 'UINT8 *sr_malloc_shell(void)') +

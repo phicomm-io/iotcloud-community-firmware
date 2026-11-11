@@ -1,12 +1,12 @@
-# ORVIBO S30-V1B / BL2028N
+# ORVIBO S30M-V1B / BL2028N
 
-S30-V1B 单路计量插座，模块 BL2028N、芯片 BK7231N、计量 HLW8032。运行框架仅为 OpenBeken 和 BK7231N SDK/HAL/RTOS；公共协议与前端直接移植自 `phicomm-messagepack-lab`，不引入 MiCO、Arduino 或 ESPHome 运行时。对外项目名 `iotcloud`、协议名 `openiot`，命令封装为 TMCP v2。
+S30M-V1B 单路计量插座，模块 BL2028N、芯片 BK7231N、计量 HLW8032。运行框架仅为 OpenBeken 和 BK7231N SDK/HAL/RTOS；公共协议与前端直接移植自 `phicomm-messagepack-lab`，不引入 MiCO、Arduino 或 ESPHome 运行时。对外项目名 `iotcloud`、协议名 `openiot`，命令封装为 TMCP v2。
 
 用户说明：[免拆与串口刷机](../docs/public/s30-flash.md) · [功能与操作](../docs/public/s30-guide.md)。原厂 `2M.1220` 的免拆网络 OTA 已实测通过；串口可用于备份、首次安装或恢复。默认采用原厂免拆布局并保留本机启动器及工厂 MAC/RF，首次安装社区固件需重新配网。VTX/VRX 与电源触点见刷机说明。
 
 开发状态与接续入口：[工作记录](WORK_STATUS.md) · [原厂 OTA 静态分析](research/stock-ota.md)。当前集成已完成原厂 `2M.1220` → 社区网络 OTA、社区二次 OTA 和完整 Flash 回读；启动器及工厂参数保留。尚未合入 `main`，其它原厂版本未验证。实测见 [原厂免拆记录](research/stock-ota-live-test.md)。
 
-本版修复 SDK 读取错误工厂分区导致 MAC 尾部全零的问题，并接入实际公共 HTTPD、MQTT 服务和完整公共前端。2026-10-30 已在 S30-V1B 上验证工厂身份、DHCP hostname、公共网页、HTTP/MQTT/UDP、空密码/有密码鉴权及此前版本的 URL OTA 自动重启上线；此前覆盖的错误下载可恢复服务。用户已确认短按、红灯、输出开启时蓝灯常亮、长按恢复以及每秒一次、松手恢复的计时灯语。修正计量串口为 UART2 后，已在原电源及真实负载下连续采样验证电压、电流、功率与累计电量，30 次采样均有效、期间坏帧数未增长；默认系数尚未经过标准仪表校准，不声明计量精度。
+本版修复 SDK 读取错误工厂分区导致 MAC 尾部全零的问题，并接入实际公共 HTTPD、MQTT 服务和完整公共前端。2026-10-30 已在 S30M-V1B 上验证工厂身份、DHCP hostname、公共网页、HTTP/MQTT/UDP、空密码/有密码鉴权及此前版本的 URL OTA 自动重启上线；此前覆盖的错误下载可恢复服务。用户已确认短按、红灯、输出开启时蓝灯常亮、长按恢复以及每秒一次、松手恢复的计时灯语。修正计量串口为 UART2 后，已在原电源及真实负载下连续采样验证电压、电流、功率与累计电量，30 次采样均有效、期间坏帧数未增长；默认系数尚未经过标准仪表校准，不声明计量精度。
 
 ## 硬件与身份
 
@@ -19,13 +19,13 @@ S30-V1B 单路计量插座，模块 BL2028N、芯片 BK7231N、计量 HLW8032。
 | HLW8032 TX → RX | UART2 / P1，4800 baud、8E1；原厂固件计量接收使用 UART2 |
 | 拆机刷机 / 日志 | UART1，VRX / P10、VTX / P11；运行日志避开计量 UART2 |
 
-按键、灯及继电器编号依据 [Elektroda 讨论](https://www.elektroda.com/rtvforum/topic4179248.html)；整机型号按用户确认使用 S30-V1B。GPIO 极性已按实物反馈修正。计量串口依据本机原厂备份：`0x26d2c` 注册 UART2 回调，`0x2759c` 从 UART2 读取，`0x27524` 校验 HLW8032 的 24 字节、`0x5a` 标记及校验和（解码后的应用逻辑地址），并已通过实机收帧验证。此前 UART1/P10 的默认假设不适用于本板。独立 `diagnostics.get` / `GET /api/v1/diagnostics` 的共享编号字段分别记录收到的字节、校验通过的帧和失配窗口，用于区分无串口输入与帧格式错误。
+按键、灯及继电器编号依据 [Elektroda 讨论](https://www.elektroda.com/rtvforum/topic4179248.html)；整机型号按用户确认使用 S30M-V1B。GPIO 极性已按实物反馈修正。计量串口依据本机原厂备份：`0x26d2c` 注册 UART2 回调，`0x2759c` 从 UART2 读取，`0x27524` 校验 HLW8032 的 24 字节、`0x5a` 标记及校验和（解码后的应用逻辑地址），并已通过实机收帧验证。此前 UART1/P10 的默认假设不适用于本板。独立 `diagnostics.get` / `GET /api/v1/diagnostics` 的共享编号字段分别记录收到的字节、校验通过的帧和失配窗口，用于区分无串口输入与帧格式错误。
 
 本板原厂备份中的 RF/TLV 分区在 `0x1e0000`，SDK 默认 `0x1d0000` 不适用。构建覆盖层修正 RF 分区，并由 `ph_identity.c` 校验 TLV 边界和有效单播 MAC。每次加载配置后更新原生 CFG/Wi-Fi MAC，因此可修复旧版本保存的默认地址。固件不包含任何单台设备的硬编码 MAC，也不写 EFuse。
 
-配网热点为 `S30M_V1B_` 加原厂 MAC 后六位大写十六进制；默认 IP/网关 `192.168.0.1/24`，热点与管理密码初始为空。热点前缀保留用户指定拼写，整机型号始终为 S30-V1B。
+配网热点为 `S30M_V1B_` 加原厂 MAC 后六位大写十六进制；默认 IP/网关 `192.168.0.1/24`，热点与管理密码初始为空。热点前缀保留用户指定拼写，整机型号为 S30M-V1B。兼容现有平台的协议机型键和 MQTT 主题仍使用 `s30-v1b`，发布清单使用 `s30`。
 
-DHCP hostname 为 `iotcloud-s30-v1b-` 加原厂 MAC 后六位小写十六进制，由原厂身份生成，不使用旧配置中的 OpenBK 长短名称；尚未取得有效工厂地址时不生成带默认 MAC 的名称，也不启动无效名称的热点。该格式遵守 DHCP 主机名字符约束，AP 则保留产品前缀与大写后缀。
+DHCP hostname 为 `s30m-v1b-` 加原厂 MAC 后六位小写十六进制，由原厂身份生成，不使用旧配置中的 OpenBK 长短名称；尚未取得有效工厂地址时不生成带默认 MAC 的名称，也不启动无效名称的热点。该格式遵守 DHCP 主机名字符约束，AP 则保留产品前缀与大写后缀。
 
 RF 校准沿用 BK7231N SDK：启动校准、读取原厂发射功率表、温度及晶振等参数。实机诊断日志已确认校准完成、Flash 功率表及晶振参数读取成功；串口刷写后核对原厂 RF 扇区逐字节保留。没有通过仪器验证射频功率、频偏或接收灵敏度，不把正常联网当作射频精度验收。
 
@@ -78,6 +78,8 @@ HTTP、MQTT、UDP 业务仅接受 MessagePack / CBOR，JSON 仅用于 Home Assis
 | `system.reboot` | `{}` |
 | `system.reset` | `{full: bool}`，false 仅重置 Wi-Fi |
 | `ota.start` | `{url: "http://…/BL2028N_OTA.rbl"}`，URL 最多 127 字节 |
+| `ota.sources.get` / `ota.check.get` / `ota.install` | `{}`，查询更新源、查询检查结果或安装已检查的新版本 |
+| `ota.check` | `{source: "cn" / "global"}`，异步检查更新 |
 
 `config.set` 的 section/values 与公共前端保持一致：
 
@@ -91,7 +93,7 @@ HTTP、MQTT、UDP 业务仅接受 MessagePack / CBOR，JSON 仅用于 Home Assis
 | `mqtt` | `{host, port, user, password?, protocol?: "tmcp"}`；省略密码保留，空字符串清除 |
 | `auth` | `{password}`，空字符串清除，非空为 8–32 字节可打印 ASCII |
 
-状态提供公共前端所需的 `name`、`device_id`、`version`、`socket_states`、`socket_names`、`child_lock`、`led_enabled`、`power_on`、`report_seconds`、网络/诊断及计量字段。`capabilities.get` 如实声明单路插座、二进制格式、计量能力、URL OTA，禁用上传 OTA、配置恢复/备份、在线升级和自动化入口。
+状态提供公共前端所需的 `name`、`device_id`、`version`、`socket_states`、`socket_names`、`child_lock`、`led_enabled`、`power_on`、`report_seconds`、网络/诊断及计量字段。`capabilities.get` 声明单路插座、二进制格式、计量、URL OTA 和在线升级能力；不提供上传 OTA 或配置恢复/备份。
 
 ### HTTPD
 
@@ -131,7 +133,9 @@ BK SDK 随机数驱动在初始化时启用生成器，并在读取之间保持�
 
 ### OTA
 
-支持公共网页中的 URL 升级，使用本设备构建的 `.rbl`。收到命令后保留回执发送宽限，等待公共 MQTT owner 发送回执并释放 socket/缓冲区，再开始下载；同时暂停 UDP、扫描和新的配置/控制操作，HTTP 保留两个连接槽供状态读取。失败时恢复服务，成功后保持维护状态直到自动重启。重启后的继电器遵循保存的上电策略。
+公共网页支持在线检查与安装，也保留 URL 升级，均使用本设备构建的 `.rbl`。在线更新源为国内和全球 HTTP 镜像，不提供设备端 GitHub/TLS 下载。正式版查询 `/ota/v1/s30/full/latest.msgpack`，候选版查询独立的 `/ota/candidate/s30/full/latest.msgpack`；通道由公共版本构建规则决定。清单须匹配型号、变体、版本与原生 RBL 路径，只有更高版本可安装。安装时核对文件大小和 SHA-256，校验失败不重启。
+
+收到命令后保留回执发送宽限，等待公共 MQTT owner 发送回执并释放 socket/缓冲区，再开始下载。检查更新和下载期间暂停 UDP、扫描和新的配置/控制操作，HTTP 保留两个连接槽供状态读取。失败时恢复服务，成功后保持维护状态直到自动重启。重启后的继电器遵循保存的上电策略。
 
 HTTP 接收和 Flash 流缓冲区各为 512 字节，写入单位为 512 字节；每个 4 KiB 物理扇区只擦除一次。开始下载前至少保留 12 KiB 堆，升级期间继续使用正常的 8 KiB 低内存保护。实机验证了 MQTT 回执先送达、服务暂停、控制忙返回、三种失败下载恢复及随后完整升级重连。
 
@@ -143,7 +147,7 @@ HTTP 接收和 Flash 流缓冲区各为 512 字节，写入单位为 512 字节�
 
 计量依据 [HLW8032 Rev 1.5 手册](https://raw.githubusercontent.com/Khaalidi/HLW8032/master/Docs/DS_HLW8032_EN_Rev1.5.pdf)，实现 24 字节帧、校验、状态/更新位、5 秒有效期及 17 位 PF 脉冲计数。缺失/校验错误/无效寄存器使用 null，不用假零。PF 计数处理回绕及异常跳变重建基线。
 
-默认电压/电流/功率系数采用 S30-V1B 原厂 `2M.1220` 程序中提取的 `1.894288 / 1.0102 / 1.88835008906368`，见[原厂系数证据](research/stock-meter-coefficients.md)。这是型号换算系数，未发现独立的逐台计量校准记录，也未经过标准仪表精度验收。网页“设置 → 常规 → 计量校准”可分别设置 `0.001..100` 的有限数值，保留完整小数精度，保存后立即参与读数换算并持久化。`calibrated` 表示用户已保存过校准参数。
+默认电压/电流/功率系数采用 S30M-V1B 原厂 `2M.1220` 程序中提取的 `1.894288 / 1.0102 / 1.88835008906368`，见[原厂系数证据](research/stock-meter-coefficients.md)。这是型号换算系数，未发现独立的逐台计量校准记录，也未经过标准仪表精度验收。网页“设置 → 常规 → 计量校准”可分别设置 `0.001..100` 的有限数值，保留完整小数精度，保存后立即参与读数换算并持久化。`calibrated` 表示用户已保存过校准参数。
 
 升级仅自动替换 `calibrated=false` 且三项恰为旧默认值 `1.88 / 1 / 1.88` 的配置；已保存的校准参数、任何其它系数组合及累计电量保持。兼容 v1/v2 配置，迁移使用原子保存，保存失败不覆盖旧文件，后续启动重试。Wi-Fi 重置保留系数，恢复出厂设置恢复上述原厂型号系数。累计电量每 5 分钟、配置保存及正常重启前持久化，突然断电可能丢失最近 5 分钟。
 
@@ -181,6 +185,10 @@ python3 BL2028N/tests/run.py --run-dir /path/to/lab/private/tests --stock-backup
 ```
 
 主机测试在 ASan/UBSan 下直接编译产品与公共服务源，使用真实 TCP/Paho MQTT/UDP 和 Chromium，无 API mock；仅 HAL、RTOS、存储及 socket 平台绑定为 POSIX 替身。覆盖二进制协议、幂等/鉴权/重放、配置迁移、工厂 TLV、MQTT 回执/重连/retained、HTTP 预连接/分片、空密码重复刷新和完整前端表单/中英/手机布局，并保存页面录像和截图。
+
+STA 仍关联但下行单播失效时，连接事件本身不会触发重连。`ph_link.c` 在驱动向 lwIP 投递 IP/ARP 的边界区分单播、组播/广播和投递失败；单播静默 30 秒后，每隔 5 秒请求当前网关的 ARP 回应。连续 3 次成功提交探测且再等 5 秒仍没有单播，才由原生 Wi-Fi 线程停止 STA 并安排正常重连，不重启模块或改变继电器。扫描、OTA、配网 AP、无有效地址/网关时暂停，恢复动作至少间隔 5 分钟；内存或发送队列失败不计作探测成功。`status` 的 `wifi_link` 保存收包、探测、错误和恢复计数。此机制修复该类故障无法自恢复的问题，不代表已经确定闭源 WLAN 库内导致单播失效的具体原因。
+
+`test_link.py` 用 ASan/UBSan 覆盖安静网络、仅广播可用、恢复前重新收到单播、本地发送/回调队列失败、维护暂停、地址变化、冷却和时钟回绕，并编译实际 SDK RX 补丁验证 pbuf 所有权；`test_wifi_native.py` 验证实际原生恢复入口和正常重连状态。
 
 `test_startup.py` 编译实际原生启动函数，覆盖正常/安全模式及已配网/未配网四种路径的服务顺序；`test_http_timeout.py`、`test_ota_callback.py` 提取已覆盖的原生 OTA HTTP 客户端/回调测试真实套接字超时、错误和闪存边界；`test_logging_uart.py` 编译原生日志发送器和实际默认端口，检查 UART1/2 背压隔离；`test_ha_numbers.py` 使用实际 nanoprintf 测试 HA 数值。均接受 `--app-source <build/app> --run-dir <evidence>`。这些结果不能替代目标 RTOS、射频/联网、真实闪存、交流计量、继电器/按键及 OTA 重启验收。
 

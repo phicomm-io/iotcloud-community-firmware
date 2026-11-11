@@ -46,7 +46,7 @@ class FilterStorageTest(unittest.TestCase):
 #include <stddef.h>
 #include <math.h>
 /* Keep hostname formatting real; the RAM fixture has no MiCO network stack. */
-char *ph_mico_sethostname(char *name){assert(!strcmp(name,"iotcloud-a1-ddeeff"));return name;}
+char *ph_mico_sethostname(char *name){assert(!strcmp(name,"a1-ddeeff"));return name;}
 static feature_config_t configuration;
 static unsigned data_fields;
 static float aggregate[4];
@@ -89,7 +89,7 @@ static app_storage_t live;
 static void init(void){
  memset(&live,0,sizeof(live));memset(&a1_state,0,sizeof(a1_state));memset(&filter_clock,0,sizeof(filter_clock));memset(&stock_clock,0,sizeof(stock_clock));
  a1_config=&live.base;appRestoreDefault_callback(&live,sizeof(live));
- fresh_defaults(&live.fresh_air);bemfa_defaults(&live.bemfa,"a1","aabbccddeeff");strcpy(live.base.name,"A1-EEFF");
+ fresh_defaults(&live.fresh_air);bemfa_defaults(&live.bemfa,"a1","aabbccddeeff");strcpy(live.base.name,"A1");
  config_recovery=config_initializing=config_update_pending=false;
  save_at=0;writes=fail_write=sdk_write=0;now=0;
 }
@@ -181,6 +181,8 @@ int main(void){
  assert(!memcmp(&flash,&unsupported,sizeof(flash)) && !live.base.ssid[0]);
  init();writes=0;sdk_write=1;assert(migrate()==0 && writes==1 && app_config_persist_allowed());
  init();assert(migrate()==0 && writes==0 && app_config_persist_allowed());
+ init();strcpy(live.base.name,"A1-EEFF");assert(migrate()==0 && writes==1 && !strcmp(live.base.name,"A1"));
+ writes=0;assert(migrate()==0 && writes==0);
  puts("A1 persistence, Flash failure/retry, commands, resets, v1-v6 migration and foreign firmware startup: OK");
  /* v8 appends CO2 thresholds without moving or rewriting existing settings. */
  init();live.base.version=8;live.filter.used_seconds=789;live.automatic.fallback_speed=47;
@@ -259,6 +261,8 @@ int main(void){
  strcpy(stale.name,"stale-name");assert(!a1_device_config_save(&stale,PH_LANG_ZH));
  assert(writes==cas_writes && !memcmp(&live,&cas_before,sizeof(live)));
  assert(device_language_get()==PH_LANG_EN && !strcmp(flash.base.name,"newer-name"));
+ assert(!strcmp(cmd("config.set","{\"section\":\"device\",\"values\":{\"name\":\"\"}}"),"accepted"));
+ assert(!strcmp(flash.base.name,"A1"));
  puts("A1 persisted language: validation, atomic name rollback, restart, stale CAS and credential preservation OK");
  puts("A1 filter production persistence, Flash failure/retry, commands, resets and v1-v6 migration: OK");
 }

@@ -1,0 +1,25 @@
+--- a/platforms/bk7231n/bk7231n_os/beken378/func/lwip_intf/lwip-2.1.3/port/ethernetif.c
++++ b/platforms/bk7231n/bk7231n_os/beken378/func/lwip_intf/lwip-2.1.3/port/ethernetif.c
+@@ -94,2 +94,3 @@
+ extern int bmsg_tx_sender(struct pbuf *p, uint32_t vif_idx);
++extern void PH_BL_LinkRx(void *interface, bool group, bool accepted);
+     
+@@ -248,8 +249,13 @@
+ #endif /* PPPOE_SUPPORT */
+-        /* full packet send to tcpip_thread to process */
+-        if (netif->input(p, netif) != ERR_OK)    // ethernet_input
+         {
+-            LWIP_DEBUGF(NETIF_DEBUG, ("ethernetif_input: IP input error\r\n"));
+-            pbuf_free(p);
+-            p = NULL;
++            /* input takes ownership on success. Do not inspect p afterwards. */
++            bool group = (ethhdr->dest.addr[0] & 1) != 0;
++            err_t input_result = netif->input(p, netif);
++            PH_BL_LinkRx(netif, group, input_result == ERR_OK);
++            if (input_result != ERR_OK)
++            {
++                LWIP_DEBUGF(NETIF_DEBUG, ("ethernetif_input: IP input error\r\n"));
++                pbuf_free(p);
++                p = NULL;
++            }
+         }

@@ -21,7 +21,7 @@ static inline bool ph_mac_ap_name(char out[24],const unsigned char mac[6]) {
 }
 static inline bool ph_mac_host_name(char out[32],const unsigned char mac[6]) {
     out[0]=0;if(!ph_mac_valid(mac))return false;
-    snprintf(out,32,"iotcloud-s30-v1b-%02x%02x%02x",mac[3],mac[4],mac[5]);return true;
+    snprintf(out,32,"s30m-v1b-%02x%02x%02x",mac[3],mac[4],mac[5]);return true;
 }
 /* Beken calibration TLVs: header TLV\0, nested TXID, TXID_MAC(6).
  * Bound every nested item to its parent. Never scan code bytes for a MAC. */

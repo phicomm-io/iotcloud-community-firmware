@@ -162,7 +162,7 @@ static size_t ha_discovery(unsigned i,char *out,size_t cap,char *topic,size_t to
  if(!i)snprintf(extra,sizeof(extra),",\"command_topic\":\"%s\",\"payload_on\":\"ON\",\"payload_off\":\"OFF\",\"state_on\":\"ON\",\"state_off\":\"OFF\"",command);
  else if(i==5)strcpy(extra,",\"payload_on\":\"ON\",\"payload_off\":\"OFF\"");
  else snprintf(extra,sizeof(extra),",\"unit_of_measurement\":\"%s\",\"state_class\":\"%s\"",unit[i],i==4?"total_increasing":"measurement");
- int n=snprintf(out,cap,"{\"name\":\"%s\",\"unique_id\":\"%s\",\"object_id\":\"%s\",\"state_topic\":\"%s\",\"value_template\":\"{{ value_json.%s }}\",\"availability_topic\":\"%s\",\"device_class\":\"%s\",\"retain\":false%s,\"device\":{\"identifiers\":[\"%s\"],\"name\":\"S30-V1B\",\"manufacturer\":\"ORVIBO\",\"model\":\"S30-V1B\",\"sw_version\":\"%s\"}}",
+ int n=snprintf(out,cap,"{\"name\":\"%s\",\"unique_id\":\"%s\",\"object_id\":\"%s\",\"state_topic\":\"%s\",\"value_template\":\"{{ value_json.%s }}\",\"availability_topic\":\"%s\",\"device_class\":\"%s\",\"retain\":false%s,\"device\":{\"identifiers\":[\"%s\"],\"name\":\"S30M-V1B\",\"manufacturer\":\"ORVIBO\",\"model\":\"S30M-V1B\",\"sw_version\":\"%s\"}}",
  entity[i],unique,unique,state,key[i],availability,device_class[i],extra,device_id,bl_device.version);
  return n>0&&(size_t)n<cap?(size_t)n:0;
 }

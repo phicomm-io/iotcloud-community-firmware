@@ -32,7 +32,7 @@ Optionally enter a LAN address and read the device information once. The web man
 
 ## Choose the correct file
 
-This table covers A1, M1, TC1 and DAIKIN. S30-V1B updates through an `.rbl` URL; see [S30 updates](s30-guide#updates).
+This table covers A1, M1, TC1 and DAIKIN. S30M-V1B updates through an `.rbl` URL; see [S30 updates](s30-guide#updates).
 
 | File | Purpose |
 | --- | --- |

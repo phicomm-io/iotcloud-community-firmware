@@ -36,7 +36,7 @@ The TC1 A1 hardware revision and the A1 air purifier are different products. Dow
 | `.ota.bin.signed` | Signed OTA update package | No, only devices already running this firmware |
 | `.ota.bin.raw` | Native OTA image | Use the full image for the matching product; M1 requires 0.9.21 or newer. Follow the product's guide |
 
-**A1, M1, TC1 and DAIKIN community web updates use `.ota.bin.signed`; factory migration follows the model-specific guide.** S30-V1B uses separate RBL / STOCK_UA files; see [S30 installation](s30-flash). Verify downloads against `SHA256SUMS` from the same release.
+**A1, M1, TC1 and DAIKIN community web updates use `.ota.bin.signed`; factory migration follows the model-specific guide.** S30M-V1B uses separate RBL / STOCK_UA files; see [S30 installation](s30-flash). Verify downloads against `SHA256SUMS` from the same release.
 
 ## Wiring and instructions
 

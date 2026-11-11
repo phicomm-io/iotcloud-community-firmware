@@ -14,5 +14,5 @@ int PH_BL_FactoryMac(unsigned char out[6]) {
 const char *PH_BL_HostName(void) {
     if(!*host_name){unsigned char mac[6];PH_BL_FactoryMac(mac);}
     /* Never let the SDK synthesize an OpenBK name from a default MAC. */
-    return *host_name?host_name:"iotcloud-s30-v1b";
+    return *host_name?host_name:"s30m-v1b";
 }

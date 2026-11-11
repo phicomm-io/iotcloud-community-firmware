@@ -6,6 +6,10 @@
 #include <string.h>
 #include <stdlib.h>
 #include <time.h>
+#include "httpclient_host.h"
+void *os_malloc(size_t n){return malloc(n);}
+void os_free(void *p){free(p);}
+__attribute__((weak)) int HTTPClient_Async_SendGeneric(httprequest_t *r){(void)r;return -1;}
 lfs_t lfs;
 /* Unit tests omit the socket service; network tests link its real snapshot. */
 __attribute__((weak)) ph_http_diagnostics ph_http_snapshot(void){ph_http_diagnostics d={0};return d;}

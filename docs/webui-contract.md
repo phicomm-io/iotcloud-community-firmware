@@ -4,9 +4,9 @@
 
 ## 公共前端
 
-TC1、M1、A1、DAIKIN 与 ORVIBO S30-V1B 采用公共前端的样式、布局和导航，仅显示已实现的硬件能力。首页展示核心控制与测量，设置按网络、设备、自动化和维护组织。设备名称、型号和身份分别显示，不使用芯片名代替整机型号。
+TC1、M1、A1、DAIKIN 与 ORVIBO S30M-V1B 采用公共前端的样式、布局和导航，仅显示已实现的硬件能力。首页展示核心控制与测量，设置按网络、设备、自动化和维护组织。设备名称、型号和身份分别显示，不使用芯片名代替整机型号。
 
-`frontend.lock.json` 固定前端 Release、完整 commit 和 SHA-256；`tools/frontend_release.py` 校验下载，`tools/pack_frontend.py` 嵌入确定性 gzip 资源，离线页面不依赖 CDN。S30-V1B 的公共资源来源及适配校验见 `BL2028N/web/shared/provenance.json` 和该产品 README。
+`frontend.lock.json` 固定前端 Release、完整 commit 和 SHA-256；`tools/frontend_release.py` 校验下载，`tools/pack_frontend.py` 嵌入确定性 gzip 资源，离线页面不依赖 CDN。S30M-V1B 的公共资源来源及适配校验见 `BL2028N/web/shared/provenance.json` 和该产品 README。
 
 ## HTTP 与鉴权
 
@@ -14,7 +14,7 @@ RC5 普通业务使用 MessagePack，MIME 为 `application/msgpack`；0.9.27 使
 
 未设置网页密码时直接访问，不占用会话；设置后支持 `admin` Basic，使用 token 的前端复用有效会话，退出、过期或密码变更后重新认证。密码查询只返回设置标记，表单省略密码表示保留，显式空字符串表示清除。MQTT / UDP 的授权独立于网页密码。
 
-HTTP 查询路径、签名 OTA、备份和主控桥接见[接口表](public/device-api.md#http-接入)。备份及固件上传使用各自二进制文件格式；S30-V1B 只提供 `.rbl` URL OTA，不显示未实现的上传或备份功能。
+HTTP 查询路径、签名 OTA、备份和主控桥接见[接口表](public/device-api.md#http-接入)。备份及固件上传使用各自二进制文件格式；S30M-V1B 只提供 `.rbl` URL OTA，不显示未实现的上传或备份功能。
 
 ## 能力与动作
 

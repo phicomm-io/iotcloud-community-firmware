@@ -30,7 +30,11 @@ def pack(value):
 def document(release, model, variant, entry):
     return dict(schema=1, tag=release['tag'], version=release['version'],
                 commit=release['commit'], model=model, firmware_variant=variant,
-                **entry['downloads']['signed'], release_log=release['notes'])
+                **entry['downloads']['rbl' if model == 's30' else 'signed'], release_log=release['notes'])
+
+
+def manifest_stem(model, variant):
+    return 'BL2028N' if model == 's30' and variant == 'full' else asset_stem(model, variant)
 
 
 def encoded(document):
@@ -45,10 +49,10 @@ def write_release(release, directory):
     manifests = {}
     for model, original in release['models'].items():
         for variant, entry in [('full', original), *original.get('variants', {}).items()]:
-            if 'signed' not in entry['downloads']: continue
+            if ('rbl' if model == 's30' else 'signed') not in entry['downloads']: continue
             pair = {}
             for format, data in encoded(document(release, model, variant, entry)).items():
-                name = asset_stem(model, variant) + '.latest.' + format
+                name = manifest_stem(model, variant) + '.latest.' + format
                 target = Path(directory) / name
                 if target.exists() and target.read_bytes() != data:
                     raise ValueError('immutable device manifest conflict: ' + name)
@@ -69,7 +73,7 @@ def verify_manifests(release, fetch):
     expected_keys = set()
     for model, original in release['models'].items():
         for variant, entry in [('full', original), *original.get('variants', {}).items()]:
-            if 'signed' not in entry['downloads']:
+            if ('rbl' if model == 's30' else 'signed') not in entry['downloads']:
                 continue
             key = model + '/' + variant
             expected_keys.add(key)
@@ -78,7 +82,7 @@ def verify_manifests(release, fetch):
                 raise ValueError('Device manifest must index both formats: ' + key)
             for extension, expected in encoded(document(release, model, variant, entry)).items():
                 asset = pair[extension]
-                path = '/releases/' + release['tag'] + '/' + asset_stem(model, variant) + '.latest.' + extension
+                path = '/releases/' + release['tag'] + '/' + manifest_stem(model, variant) + '.latest.' + extension
                 if asset != dict(path=path, size=len(expected), sha256=hashlib.sha256(expected).hexdigest()):
                     raise ValueError('Device manifest metadata differs from canonical values: ' + key)
                 if fetch(path) != expected:

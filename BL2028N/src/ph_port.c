@@ -17,7 +17,6 @@ extern void set_printf_port(unsigned char);
 #ifdef PH_S30_LAN_V4
 #include "ph_lan_v4.h"
 #include "ph_mdns.h"
-#include "ph_sha256.h"
 #else
 #include "udp.h"
 #endif
@@ -27,10 +26,12 @@ extern void set_printf_port(unsigned char);
 #include "factory_mac.h"
 #include "boot_trace.h"
 #include "memory_policy.h"
+#include "ph_link.h"
 #include "storage_legacy.h"
 #include "ntp.h"
 #include "../protocol/httpd/http.h"
 #include "../protocol/diagnostics_ids.h"
+#include "ph_sha256.h"
 extern void OTA_RequestDownloadFromHTTP(const char *);
 #include <errno.h>
 #include <stdio.h>
@@ -74,7 +75,7 @@ static ph_udp_state udp_state;
 static beken_mutex_t mutex;
 static unsigned reset_requested;
 static uint32_t reboot_at, energy_saved_at, ota_at;
-static bool reboot_pending, ota_failed;
+static bool reboot_pending, ota_failed,update_busy;
 static char ota_url[128];
 #ifdef PH_S30_LAN_V4
 /* One synchronous network owner; parsed views expire before this buffer is
@@ -245,7 +246,10 @@ static __attribute__((noinline)) bool load(ph_settings *s) {
      * for this boot and retry next boot, without discarding any settings. */
     if(ok) {
         if(migrated&&r.current.magic!=PH_STORE_V3_MAGIC&&r.current.magic!=PH_STORE_V4_MAGIC){credential_owned=false;memset(committed_password,0,sizeof(committed_password));}
-        if(ph_settings_migrate_meter_defaults(s))migrated=true;if(migrated)(void)save(NULL,s);
+        if(ph_settings_migrate_meter_defaults(s))migrated=true;
+        if(!strcmp(s->name,"S30-V1B")){strcpy(s->name,"S30M-V1B");migrated=true;}
+        if(!strcmp(s->socket_name,"S30-V1B")){strcpy(s->socket_name,"S30M-V1B");migrated=true;}
+        if(migrated)(void)save(NULL,s);
     }
     return ok;
 }
@@ -309,6 +313,11 @@ static bool checkpoint(uint32_t t, bool force) {
 static void network_info(void *unused, ph_writer *w) {
     (void)unused; phw_text(w,"ip",HAL_GetMyIPString()); phw_int(w,"rssi",HAL_GetWifiStrength());
     phw_bool(w,"wifi_connected",Main_IsConnectedToWiFi());
+    ph_link_stats link=PH_BL_LinkSnapshot();
+    phw_begin(w,"wifi_link",false);
+    phw_u32(w,"unicast_rx",link.unicast_rx);phw_u32(w,"group_rx",link.group_rx);
+    phw_u32(w,"input_errors",link.input_errors);phw_u32(w,"probes",link.probes);
+    phw_u32(w,"probe_errors",link.probe_errors);phw_u32(w,"recoveries",link.recoveries);phw_end(w);
     phw_bool(w,"safe_mode",safe_boot);
     phw_bool(w,"mqtt_connected",bl_mqtt_status==MQTT_READY);
     phw_text(w,"mqtt_status",mqtt_status_name(bl_mqtt_status));
@@ -323,7 +332,7 @@ static void network_info(void *unused, ph_writer *w) {
     int done=OTA_GetProgress(),total=OTA_GetTotalBytes();
     uint32_t progress=done>0&&total>0?(uint32_t)((uint64_t)done*100/total):0;
     if(progress>100)progress=100;
-    phw_bool(w,"ota_active",bl_ota_pending);phw_text(w,"ota_state",done>=0?(progress==100?"rebooting":"downloading"):*ota_url?"pending":ota_failed?"failed":"idle");
+    phw_bool(w,"ota_active",bl_ota_pending);phw_text(w,"ota_state",update_busy?"pending":done>=0?(progress==100?"rebooting":"downloading"):*ota_url?"pending":ota_failed?"failed":"idle");
     phw_u32(w,"ota_progress",progress);
 }
 static uint32_t network_stamp(void *unused) {
@@ -336,7 +345,9 @@ static uint32_t network_stamp(void *unused) {
         (lfs_present()?1u<<21:0)^(*CFG_GetWebPassword()?1u<<22:0);
     int done=OTA_GetProgress(),total=OTA_GetTotalBytes();
     uint32_t progress=done>0&&total>0?(uint32_t)((uint64_t)done*100/total):0;
-    return h^flags^(progress<<24)^(done>=0?1u<<23:0);
+    /* Link counters must age even if the meter is absent. Bound cache refresh
+     * to one second instead of invalidating it for every received packet. */
+    return h^flags^(progress<<24)^(done>=0?1u<<23:0)^(now(NULL)/1000u);
 }
 static void diagnostics(void *unused,ph_writer *w) {
     (void)unused;ph_http_diagnostics h=ph_http_snapshot();
@@ -374,6 +385,8 @@ void PH_BL_Tick(void) {
 static bool get_text(const ph_value *p,const char *key,char *out,size_t cap) {
  ph_value v;return phv_get(p,key,&v)&&phv_text(&v,out,cap);
 }
+#define PH_RELEASE_IMAGE_SUFFIX ".rbl"
+#include "update.inc"
 bool bl_scan_busy(void) {return scan_state!=0;}
 static const char *platform_action(void *unused,const char *action,const ph_value *p,ph_writer *w,bool admin) {
  (void)unused;ph_value values,v;char section[24],a[128]={0},b[128]={0},c[128]={0};int64_t port;
@@ -387,6 +400,7 @@ static const char *platform_action(void *unused,const char *action,const ph_valu
   phw_end(w);return "ok";
  }
  if(!admin)return "unauthorized";
+ if(!strncmp(action,"ota.",4)&&strcmp(action,"ota.start"))return update_action(action,p,w);
  if(!strcmp(action,"wifi.scan")) {
   if(p->count)return "invalid_params";
   if(bl_ota_pending)return "busy";
@@ -410,12 +424,8 @@ static const char *platform_action(void *unused,const char *action,const ph_valu
   reset_requested=full?2:1;reboot_at=now(NULL)+3000;return "accepted";
  }
  if(!strcmp(action,"ota.start")) {
-  if(p->count!=1||!get_text(p,"url",a,sizeof(a))||strncmp(a,"http://",7)||strpbrk(a,"\r\n\t ")||strlen(a)<12)return "invalid_params";
-  if(bl_ota_pending||OTA_GetProgress()>=0||reboot_pending||reset_requested||scan_state)return "busy";
-  /* The downloader reboots inside the SDK rather than our normal reboot
-   * path. Persist the latest energy before accepting and pausing services. */
-  if(!checkpoint(now(NULL),true))return "storage_error";
-  strcpy(ota_url,a);ota_at=now(NULL)+1500;bl_ota_pending=true;ph_device_set_maintenance(&bl_device,true);ota_failed=false;return "accepted";
+  if(p->count!=1||!get_text(p,"url",a,sizeof(a)))return "invalid_params";
+  return ota_start(a,NULL,0);
  }
  if(strcmp(action,"config.set"))return "unsupported";
  if(!get_text(p,"section",section,sizeof(section))||!phv_get(p,"values",&values)||values.kind!=PHV_MAP)return "invalid_params";
@@ -526,6 +536,13 @@ static __attribute__((noinline)) bool factory_reset_record(void) {
  bl_device.settings=defaults;set_relay(NULL,false);return true;
 }
 void bl_mqtt_stopped(void) {lock();mqtt_started=false;unlock();}
+int PH_BL_TakeLinkRecovery(void) {
+ if(!bl_ready)return 0;
+ lock();
+ bool allowed=Main_IsConnectedToWiFi()&&!Main_IsOpenAccessPointMode()&&
+  !bl_ota_pending&&!bl_scan_busy()&&!reboot_pending&&!reset_requested;
+ bool recover=PH_BL_LinkTakeRecovery(allowed);unlock();return recover;
+}
 static void mqtt_step(uint32_t t) {
  /* An unconfigured AP has no broker work. Leave the 16 KiB owner stack
   * available to setup scans, page transfers and OTA until it is useful. */
@@ -548,6 +565,7 @@ static void network_thread(beken_thread_arg_t arg) {
   scan_step(t);mqtt_step(t);
   char clock_host[64];lock();memcpy(clock_host,bl_device.settings.ntp_host,sizeof(clock_host));
   bool clock_enabled=Main_IsConnectedToWiFi()&&!bl_ota_pending&&!bl_scan_busy();unlock();
+  PH_BL_LinkPoll(clock_enabled&&!Main_IsOpenAccessPointMode());
 #ifdef PH_HOST_TEST
   /* Socket harnesses are deterministic and do not contact public clock
    * servers. The SNTP owner has its own real-UDP test peer. */
@@ -560,7 +578,8 @@ static void network_thread(beken_thread_arg_t arg) {
   if(!reset&&!restart&&!bl_ota_pending){ph_power_poll(&bl_device);ph_schedule_poll(&bl_device);}
   checkpoint(t,restart||reset==1);
   if(reset==2&&!factory_reset_record())reset=0;
-  if(bl_ota_pending) {
+  update_step(t);
+  if(bl_ota_pending&&!update_busy) {
    if(*ota_url&&(int32_t)(t-ota_at)>=0) {
     /* The shared owner delivers its captured command receipt before closing.
      * Wait for STOPPED (after buffer/socket teardown), with a bounded grace. */

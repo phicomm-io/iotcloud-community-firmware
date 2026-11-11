@@ -17,9 +17,9 @@ def download(url):
         return response.read()
 
 
-def collect_release(tag, archive, fetch=download, source_commit=None):
+def collect_release(tag, archive, fetch=download, source_commit=None, *, directory=None):
     version = parse_tag(tag).version
-    folder = archive / 'releases' / tag
+    folder = directory if directory is not None else archive / 'releases' / tag
     prefix = PREFIX + tag + '/'
 
     def read(name, expected=None, refresh=False):

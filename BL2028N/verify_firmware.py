@@ -120,6 +120,7 @@ def main():
                    'PH_BL_CopyLocalIPAddress','ph_command','ph_command_context','ph_meter_byte',
                    'ph_lan_v4_feed','ph_lan_v4_sensor_grant','ph_lan_v4_revoke',
                    'PH_BL_MdnsInit','PH_BL_MdnsPoll','mdns_resp_init_checked',
+                   'PH_BL_LinkRx','PH_BL_LinkPoll','PH_BL_LinkTakeRecovery','PH_BL_TakeLinkRecovery',
                    'ph_s30_InitSha256','ph_s30_Sha256Update','ph_s30_Sha256Final',
                    'ph_http_server_step','ph_mqtt_session_run','ph_mqtt_core_init','MQTTConnect'):
         assert any(line.endswith(' T '+symbol) or line.endswith(' t '+symbol) for line in symbols.splitlines()),symbol

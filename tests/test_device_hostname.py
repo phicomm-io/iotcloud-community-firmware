@@ -20,7 +20,13 @@ char *mock_mico_hostname(char *name){retained=name;return name;}
 int main(void){
  char name[64];
  assert(ph_device_hostname(name,sizeof name,"tc1","AABBCCDDEEFF"));
- assert(!strcmp(name,"iotcloud-tc1-ddeeff"));
+ assert(!strcmp(name,"tc1-ddeeff"));
+ const char *supported[]={"tc1","m1","a1","bry88ax151k","bry88bba15g","s30m-v1b"};
+ for(unsigned i=0;i<sizeof supported/sizeof *supported;i++){
+  char expected[64];snprintf(expected,sizeof expected,"%s-ddeeff",supported[i]);
+  assert(ph_device_hostname(name,sizeof name,supported[i],"AABBCCDDEEFF")&&!strcmp(name,expected));
+ }
+ assert(ph_device_hostname(name,sizeof name,"tc1","AABBCCDDEEFF"));
  size_t n=strlen(name);
  for(size_t cap=1;cap<=n+1;cap++){
   char guarded[66];memset(guarded,0x5a,sizeof guarded);
@@ -32,9 +38,9 @@ int main(void){
  const char *models[]={"","A1","a1.","-a1","a1-","a1/else","a1 name"};
  for(unsigned i=0;i<sizeof models/sizeof *models;i++)assert(!ph_device_hostname(name,sizeof name,models[i],"aabbccddeeff"));
  assert(ph_device_hostname_mico("m1","aabbccddeeff"));
- assert(retained&&!strcmp(retained,"iotcloud-m1-ddeeff"));
+ assert(retained&&!strcmp(retained,"m1-ddeeff"));
  for(unsigned i=0;i<100;i++){volatile char overwrite[1000];memset((void*)overwrite,0,sizeof overwrite);}
- assert(!strcmp(retained,"iotcloud-m1-ddeeff"));
+ assert(!strcmp(retained,"m1-ddeeff"));
  puts("hostname factory validation, exact capacity and retained lifetime PASS");
 }
 '''

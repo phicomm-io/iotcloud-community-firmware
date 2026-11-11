@@ -3,6 +3,10 @@
 #include "../src/ph_port.c"
 static unsigned mqtt_starts;
 static bool mqtt_start_success=true,connected;
+static bool link_request,link_allowed;
+bool __wrap_PH_BL_LinkTakeRecovery(bool allowed){
+ link_allowed=allowed;if(!allowed||!link_request)return false;link_request=false;return true;
+}
 bool bl_mqtt_start(void){++mqtt_starts;return mqtt_start_success;}
 bool __wrap_Main_IsConnectedToWiFi(void){return connected;}
 void bl_mqtt_diagnostics(ph_writer *w){(void)w;}
@@ -110,9 +114,21 @@ static void mqtt_start_test(void){
  CFG_SetMQTTHost("");connected=false;heap_bytes=13144;
  puts("PASS: MQTT owner stack is deferred until Wi-Fi, broker config and heap are ready; OTA/scan block startup; failed allocation retries after 5s without duplicate owners");
 }
+static void link_recovery_test(void){
+ bl_ready=false;link_request=true;connected=true;
+ assert(!PH_BL_TakeLinkRecovery()&&link_request);
+ bl_ready=true;scan_state=1;assert(!PH_BL_TakeLinkRecovery()&&!link_allowed&&link_request);scan_state=0;
+ bl_ota_pending=true;assert(!PH_BL_TakeLinkRecovery()&&!link_allowed&&link_request);bl_ota_pending=false;
+ reboot_pending=true;assert(!PH_BL_TakeLinkRecovery()&&!link_allowed);reboot_pending=false;
+ reset_requested=1;assert(!PH_BL_TakeLinkRecovery()&&!link_allowed);reset_requested=0;
+ connected=false;assert(!PH_BL_TakeLinkRecovery()&&!link_allowed);connected=true;
+ assert(PH_BL_TakeLinkRecovery()&&link_allowed&&!link_request);assert(!PH_BL_TakeLinkRecovery());
+ bl_ready=false;connected=false;
+ puts("PASS: native recovery admission rechecks initialized STA, active SDK scan, OTA, reboot and reset immediately before reconnect");
+}
 int main(void){
  assert(!rtos_init_mutex(&mutex));
  ph_device_ops ops={.now=now,.save=save,.relay=set_relay};
  assert(ph_device_init(&bl_device,&ops,NULL,"aabbccddeeff","wifi-test",123));
- mqtt_start_test();scan_tests();config_test();ph_status_cache_release(&bl_device);
+ link_recovery_test();mqtt_start_test();scan_tests();config_test();ph_status_cache_release(&bl_device);
 }

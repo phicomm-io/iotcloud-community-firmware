@@ -1,4 +1,4 @@
-# S30-V1B common functions
+# S30M-V1B common functions
 
 Daily use, updates and recovery after installation. Choose stock network or UART installation in [flashing methods](s30-flash). See [device features](s30-features) for power restoration, LEDs and calibration, and [automation and field IDs](s30-automation) for power conditions and M1 display.
 
@@ -6,7 +6,7 @@ Daily use, updates and recovery after installation. Choose stock network or UART
 
 1. With no network configured, join `S30M_V1B_XXXXXX`. `XXXXXX` is the last six digits of the factory MAC in uppercase hexadecimal. The initial AP has no password.
 2. Open **http://192.168.0.1** and save an available **2.4 GHz Wi-Fi** network and its password in settings.
-3. After the device restarts and connects, return your phone or computer to the same LAN. Find the device's assigned IP in the router and open it in a browser. Its hostname is `iotcloud-s30-v1b-xxxxxx`, with the MAC suffix in lowercase.
+3. After the device restarts and connects, return your phone or computer to the same LAN. Find the device's assigned IP in the router and open it in a browser. Its hostname is `s30m-v1b-xxxxxx`, with the MAC suffix in lowercase.
 
 The initial web administration password is empty, so pages open directly without login. Authentication is required only after a management password is set; HTTP Basic clients use the username `admin`. This password is separate from Wi-Fi and MQTT credentials. A forgotten administration password requires a factory reset; a Wi-Fi reset preserves it.
 
@@ -20,9 +20,11 @@ Settings cover device and outlet names, power-on state, indicators, child lock, 
 
 <span id="firmware-updates"></span>
 
-After installing this firmware, enter an **HTTP download URL for this device's `.rbl` image** in the web upgrade settings. The device must be able to reach the URL directly. Obtain both image and matching checksums from a trusted source. During the update, MQTT, UDP, scanning and new control/configuration operations pause; HTTP status remains available. Failed downloads restore services; a successful update restarts automatically. The saved power-on policy applies after reboot, so first confirm that the load allows interruption and power restoration.
+On firmware with online updates, open **Settings → Firmware**, choose the China or global source, check for updates, read the release notes and confirm installation. Stable and candidate firmware use separate update channels. The device verifies the download size and SHA-256 and restores services if verification fails.
 
-Updates support URL downloads only. RBL images are unsigned: verify SHA-256 and use a trusted download source. Other devices’ `.ota.bin` packages are incompatible. For first installation and recovery, see [network and serial installation](s30-flash).
+You can also enter an **HTTP download URL for this device's `.rbl` image**. The device must be able to reach the URL directly. During the update, MQTT, UDP, scanning and new control/configuration operations pause; HTTP status remains available. Failed downloads restore services; a successful update restarts automatically. The saved power-on policy applies after reboot, so first confirm that the load allows interruption and power restoration.
+
+Local file uploads are unavailable. RBL images are unsigned: use a trusted download source and verify SHA-256 yourself before a manual URL update. Other devices’ `.ota.bin` packages are incompatible. For first installation and recovery, see [network and serial installation](s30-flash).
 
 Download the RBL and matching checksums to one directory and verify the image. Run `python3 -m http.server 8000 --bind 0.0.0.0` there, allow the port through the firewall, and enter `http://<computer-LAN-IP>:8000/BL2028N_OTA_<version>.rbl` on the device. Do not use `localhost` or a download description page. Stop the temporary server after the upgrade.
 
@@ -53,4 +55,4 @@ HTTP, MQTT and UDP business messages use the project's `openiot` MessagePack / C
 <span id="red-and-blue-indicators"></span>
 <span id="meter-readings"></span>
 
-LED and meter calibration details are in [S30-V1B features](s30-features).
+LED and meter calibration details are in [S30M-V1B features](s30-features).

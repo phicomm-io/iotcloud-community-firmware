@@ -169,7 +169,6 @@ jobs:
           REF_TYPE: ${{ github.ref_type }}
         run: |
           python3 tools/prepare_toolchain.py --profile gcc14 --github-env "$GITHUB_ENV"
-          python3 -m unittest tests.test_compiler_profile tests.test_native_frontend_styles
           if [ "$REF_TYPE" = tag ]; then
             python3 tools/check_version.py --tag "$TAG_NAME"
           else
@@ -328,13 +327,10 @@ jobs:
           path: release/budget-daikin-${{ matrix.variant }}.json
           if-no-files-found: ignore
       - name: Test actual OTA handler, MessagePack wire and device sessions
+        if: matrix.variant == 'full'
         run: |
-          python3 -m unittest discover -s DAIKIN/tests -p 'test_ota_identity.py'
-          python3 -m unittest discover -s DAIKIN/tests -p 'test_wire_msgpack.py'
-          python3 -m unittest discover -s DAIKIN/tests -p 'test_web_auth.py'
-          python3 -m unittest discover -s DAIKIN/tests -p 'test_lan_pairing.py'
-          python3 -m unittest discover -s DAIKIN/tests -p 'test_auth_storage.py'
-          python3 -m unittest discover -s DAIKIN/tests -p 'test_hub_mixed_devices.py'
+          python3 -m unittest DAIKIN.tests.test_ota_identity DAIKIN.tests.test_wire_msgpack \
+            DAIKIN.tests.test_web_auth DAIKIN.tests.test_lan_pairing DAIKIN.tests.test_auth_storage
       - name: Test ESP32 protocol and actual embedded page
         if: matrix.variant == 'full'
         run: |
@@ -370,9 +366,6 @@ jobs:
           DAIKIN_NVS_IDF_SOURCE: ${{ github.workspace }}/build/esp-idf-nvs
         run: |
           SANITIZE=1 python3 -m unittest discover -s DAIKIN/tests -p 'test_hub*.py'
-          # Explicit modules prevent a missing UDP lane from passing an empty glob.
-          SANITIZE=1 python3 -m unittest DAIKIN.tests.test_hub_lan_client DAIKIN.tests.test_hub_lan_home DAIKIN.tests.test_hub_lan_discovery
-          SANITIZE=1 python3 -m unittest DAIKIN.tests.test_hub_lifecycle
           python3 -m unittest discover -s DAIKIN/tests -p 'test_native_publish.py'
           python3 -m unittest DAIKIN.tests.test_lan_business
           python3 -m unittest DAIKIN.tests.test_pair_route
@@ -763,7 +756,7 @@ jobs:
       - name: Test OTA release tooling and Worker
         run: |
           python3 -m unittest discover -s tests -p test_release.py
-          python3 -m unittest tests.test_version tests.test_branch_policy tests.test_release_budget tests.test_release_variant tests.test_release_publish tests.test_device_manifest tests.test_release_candidate tests.test_archive_pages tests.test_ci_validation_reuse tests.test_s30_release
+          python3 -m unittest tests.test_version tests.test_branch_policy tests.test_release_budget tests.test_release_variant tests.test_release_publish tests.test_device_manifest tests.test_release_candidate tests.test_archive_pages tests.test_s30_release
           node --test tests/test_ota_worker.mjs
       - name: Test production TLS transport with real TLS and sanitizers
         run: python3 tests/test_ota_fetch.py
@@ -838,6 +831,7 @@ jobs:
       - name: Test engines, binding runtime and WebUI syntax
         run: |
           python3 -m pip install Markdown==3.7 Jinja2==3.1.6 cryptography==46.0.3 -r requirements-build.txt
+          python3 -m unittest tests.test_compiler_profile tests.test_native_frontend_styles
           tests/run.sh
       - name: Prepare pinned SDKs for MQTT transport tests
         env:

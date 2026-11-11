@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools/release'))
@@ -24,7 +25,7 @@ class S30ReleaseTests(unittest.TestCase):
         self.version = self.base + '-abc123'
         self.manifest = dict(version=self.version, project_head=self.commit, dirty=False,
             version_metadata=dict(version=self.version, base_version=self.base,
-                git_commit=self.commit, dirty=False),
+                git_commit=self.commit, git_tag='v' + self.base, dirty=False),
             flash_layout=dict(name='s30-v1b-stock-v1', bootloader_included=False))
         self.write_manifest()
         (self.run / 'firmware-validation.json').write_text(json.dumps(dict(status='PASS')))
@@ -69,6 +70,26 @@ class S30ReleaseTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             collect(self.run, self.out)
         self.assertFalse(self.out.exists())
+
+    def test_native_catalog_and_online_manifests_select_rbl_without_signed_wrapper(self):
+        import catalog
+        from archive_pages import write_candidate_latest, write_latest
+        from device_manifest import verify_manifests
+        collect(self.run, self.out)
+        with patch.object(catalog, 'STEMS', {}):
+            release = catalog.make('v' + self.base, self.commit, self.out, 'S30 update')
+        image = release['models']['s30']['downloads']['rbl']
+        self.assertEqual(image['path'], '/releases/v' + self.base + '/BL2028N_OTA_' + self.base + '.rbl')
+        self.assertEqual(image['sha256'], hashlib.sha256(self.bodies[Path(image['path']).name]).hexdigest())
+        verify_manifests(release, lambda path: (self.out / Path(path).name).read_bytes())
+        write_candidate_latest([release], self.out)
+        latest = self.out / 'ota/candidate/s30/full/latest.msgpack'
+        self.assertEqual(latest.read_bytes(), (self.out / 'BL2028N.latest.msgpack').read_bytes())
+        self.assertFalse((self.out / 'ota/v1/s30/full/latest.msgpack').exists())
+        write_latest({'stable': None, 'releases': []}, self.out)
+        self.assertTrue(latest.exists())
+        write_candidate_latest([], self.out)
+        self.assertFalse(latest.exists())
 
     def test_rejects_corrupt_or_unverified_native_image(self):
         validation = self.run / 'firmware-validation.json'

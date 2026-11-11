@@ -7,7 +7,7 @@
 #include "../protocol/diagnostics_ids.h"
 bool ph_binary_format(ph_wire_format f) { return f == PH_WIRE_MSGPACK || f == PH_WIRE_CBOR; }
 void ph_settings_default(ph_settings *s) {
-    memset(s, 0, sizeof(*s)); s->magic = PH_STORE_MAGIC; s->indicator = 1; s->report_seconds=30; strcpy(s->name,"S30-V1B"); strcpy(s->socket_name,"S30-V1B");
+    memset(s, 0, sizeof(*s)); s->magic = PH_STORE_MAGIC; s->indicator = 1; s->report_seconds=30; strcpy(s->name,"S30M-V1B"); strcpy(s->socket_name,"S30M-V1B");
     s->coefficients[0]=PH_METER_DEFAULT_VOLTAGE_COEFFICIENT;
     s->coefficients[1]=PH_METER_DEFAULT_CURRENT_COEFFICIENT;
     s->coefficients[2]=PH_METER_DEFAULT_POWER_COEFFICIENT;
@@ -87,14 +87,14 @@ bool ph_device_init(ph_device *d, const ph_device_ops *ops, const ph_settings *s
 }
 static void identity(ph_device *d, ph_writer *w) {
     phw_text(w, "name", d->settings.name);
-    phw_text(w, "model", PH_MODEL); phw_text(w, "hardware", "ORVIBO S30-V1B / BL2028N");
-    phw_text(w, "model_name", "S30-V1B");phw_text(w, "manufacturer", "ORVIBO");
+    phw_text(w, "model", PH_MODEL); phw_text(w, "hardware", "ORVIBO S30M-V1B / BL2028N");
+    phw_text(w, "model_name", "S30M-V1B");phw_text(w, "manufacturer", "ORVIBO");
     phw_text(w, "project", "iotcloud");phw_text(w, "chip", "BK7231N");phw_text(w, "module", "BL2028N");
     phw_text(w, "device_id", d->mac); phw_text(w, "mac", d->mac);
     phw_text(w, "firmware_version", d->version); phw_text(w, "version", d->version);
     phw_text(w, "protocol", "openiot");phw_text(w, "command_protocol", "tmcp"); phw_u32(w, "protocol_version", 2);
     phw_u32(w,"api_version",1);phw_u32(w,"wire_version",1);
-    phw_text(w,"variant","full");phw_text(w,"default_wire_format","msgpack");
+    phw_text(w,"variant","full");phw_text(w,"firmware_variant","full");phw_text(w,"default_wire_format","msgpack");
     phw_begin(w,"wire_formats",true);phw_text(w,NULL,"msgpack");phw_text(w,NULL,"cbor");phw_end(w);
 }
 uint32_t ph_clock_utc(ph_device *d) {
@@ -180,7 +180,7 @@ void ph_diagnostics(ph_device *d,ph_writer *w) {
     if(d->ops.diagnostics)d->ops.diagnostics(d->ops.user,w);
     phw_end(w);
 }
-static const char *actions[] = {"info.get", "status.get", "capabilities.get", "diagnostics.get", "config.get", "config.set", "name.set", "power.get", "outlet.set", "indicator.set", "child_lock.set", "system.reboot", "system.reset", "wifi.scan", "wifi.scan.get", "ota.start", "schedules.get", "schedules.put", "schedules.enable", "schedules.delete", "time.get", "time.set"};
+static const char *actions[] = {"info.get", "status.get", "capabilities.get", "diagnostics.get", "config.get", "config.set", "name.set", "power.get", "outlet.set", "indicator.set", "child_lock.set", "system.reboot", "system.reset", "wifi.scan", "wifi.scan.get", "ota.start", "ota.sources.get", "ota.check", "ota.check.get", "ota.install", "schedules.get", "schedules.put", "schedules.enable", "schedules.delete", "time.get", "time.set"};
 void ph_capabilities(ph_device *d,ph_writer *w) {
     identity(d,w);phw_text(w, "mqtt_protocol", "openiot");phw_u32(w, "mqtt_protocol_version", 2);
     phw_begin(w, "actions", true);
@@ -423,7 +423,7 @@ static __attribute__((noinline)) const char *execute_settings(ph_device *d,const
             if(!values->count || !phv_keys(values,"|name||power_on||power_on_mode|"))return "invalid_params";
             if(phv_get(values,"name",&v)) {
                 if(!phv_text(&v,next.name,sizeof(next.name)))return "invalid_params";
-                if(!*next.name)strcpy(next.name,"S30-V1B");
+                if(!*next.name)strcpy(next.name,"S30M-V1B");
             }
             if(phv_get(values,"power_on",&v)){if(!phv_bool(&v,&on))return "invalid_params";next.power_on=on;}
             if(phv_get(values,"power_on_mode",&v)) {

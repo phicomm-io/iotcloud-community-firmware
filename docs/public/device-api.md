@@ -6,7 +6,7 @@
 
 | 项目 | RC6 | 0.9.27 |
 | --- | --- | --- |
-| 设备 | TC1、M1、A1、DAIKIN、ORVIBO S30-V1B | TC1、M1、A1、DAIKIN |
+| 设备 | TC1、M1、A1、DAIKIN、ORVIBO S30M-V1B | TC1、M1、A1、DAIKIN |
 | HTTP 普通命令 | MessagePack，`application/msgpack` | JSON，`application/json` |
 | MQTT 设备业务 | MessagePack，TMCP v2 信封 | JSON；TC1 可选 Legacy v1 或 TMCP v2，其余为 TMCP v2 |
 | 传感器字段 | schema 3，描述与实时快照分开 | 按该版传感器 / 联动接口使用，不套用 schema 3 |
@@ -15,7 +15,7 @@
 
 项目名为 `iotcloud`，设备协议名为 `openiot`；TMCP 是命令封装的内部标识。HTTP 路径 `/api/v1`、TMCP `protocol_version:2`、二进制 `wire_version:1`、传感器 schema 和 MCU UART 版本各自独立。此处的 proto 指协议定义；设备接口不使用 Protobuf `.proto`。
 
-S30-V1B 还声明 CBOR 支持；跨设备示例统一使用默认 MessagePack。
+S30M-V1B 还声明 CBOR 支持；跨设备示例统一使用默认 MessagePack。
 
 RC6 不通过 JSON 请求、超时或 `busy` 自动降级。MQTT 的 `availability` 仍是文本 `online` / `offline`，固件上传和配置备份仍是各自的二进制文件流。
 
@@ -39,7 +39,7 @@ RC6 常用路径如下。普通 GET 查询返回数据对象；POST 命令返回
 | `POST /api/v1/mcu/exchange` | M1 原始 MCU 帧桥接，独立于 MessagePack 命令 |
 | `POST /api/v1/ota/convert` | 声明转换能力的 DAIKIN `full → hub`；按[中枢教程](daikin-guide#普通版切换为中枢)操作 |
 
-S30-V1B 通过 `ota.start` 使用本设备 `.rbl` URL，不提供本地文件上传、配置备份恢复或 MCU 桥接。其他设备的包名和上传流程见[固件更新](firmware-update)。
+S30M-V1B 通过 `ota.start` 使用本设备 `.rbl` URL，不提供本地文件上传、配置备份恢复或 MCU 桥接。其他设备的包名和上传流程见[固件更新](firmware-update)。
 
 下列字典是解码后的结构，RC6 在线发送的是 MessagePack 字节：
 
