@@ -6,8 +6,8 @@ MQTT is optional: local device functions work without it. Configure a Broker add
 
 | Baseline | Device protocol |
 | --- | --- |
-| **RC5** | TC1, M1, A1, DAIKIN and S30-V1B use the openiot protocol with TMCP v2 command envelopes and MessagePack HTTP / MQTT payloads |
-| **0.9.27** | JSON HTTP / TMCP; TC1 supports Legacy v1 or TMCP v2, M1 / A1 / DAIKIN use TMCP v2; S30-V1B is not included |
+| **RC5** | TC1, M1, A1, DAIKIN and S30M-V1B use the openiot protocol with TMCP v2 command envelopes and MessagePack HTTP / MQTT payloads |
+| **0.9.27** | JSON HTTP / TMCP; TC1 supports Legacy v1 or TMCP v2, M1 / A1 / DAIKIN use TMCP v2; S30M-V1B is not included |
 
 Check the firmware version and encoding before integrating a custom client. See [device interfaces and protocols](device-api) for fields, topics and examples. Home Assistant uses its separate JSON messages.
 

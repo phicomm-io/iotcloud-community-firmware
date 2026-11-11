@@ -498,8 +498,9 @@ int application_start(void)
     snprintf(m1_id, sizeof(m1_id), "%02x%02x%02x%02x%02x%02x",
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     if(!ph_device_hostname_mico("m1",m1_id))return kNotPreparedErr;
-    if (!c.name[0]) {
-        snprintf(c.name, sizeof(c.name), "M1-%02X%02X", mac[4], mac[5]);
+    char previous_name[16];snprintf(previous_name,sizeof(previous_name),"M1-%02X%02X",mac[4],mac[5]);
+    if (!c.name[0] || !strcmp(c.name,previous_name)) {
+        strcpy(c.name, "M1");
         if (!m1_config_save(&c)) return kUnknownErr;
     }
     snprintf(m1_state.ap_name, sizeof(m1_state.ap_name), "M1-AP-%s", m1_id + 6);

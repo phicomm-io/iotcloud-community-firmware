@@ -482,7 +482,7 @@ function firmwarePage(dev){
  function comparisonLink(){
   const path=I18N.lang==='en'?'guides/en/release-log.html':'guides/release-log.html';
   const link=new URL(path,'https://phicomm-io.github.io/');link.searchParams.set('view','compare');
-  const model=identity?.model||UI.caps?.model,variant=identity?.firmware_variant||UI.caps?.firmware_variant;
+  const model=dev.otaModel||identity?.model||UI.caps?.model,variant=identity?.firmware_variant||UI.caps?.firmware_variant;
   if(model&&variant&&identity?.version){
    for(const [key,value] of Object.entries({model,variant,from:identity.version,...(targetVersion?{to:targetVersion}:{})}))link.searchParams.set(key,value);
   }
@@ -522,7 +522,7 @@ function firmwarePage(dev){
     if(!identity?.version||!targetVersion)throw Error();
     await loadReleaseNotes();
     const snapshot=await ReleaseNotesClient.snapshot('https://phicomm-io.github.io');
-    const result=ReleaseNotes.compare(snapshot.manifest,{from:identity.version,to:targetVersion,model:String(identity.model||UI.caps.model).toLowerCase(),variant:identity.firmware_variant||UI.caps.firmware_variant||'full',locale:I18N.lang},snapshot.catalog);
+    const result=ReleaseNotes.compare(snapshot.manifest,{from:identity.version,to:targetVersion,model:String(dev.otaModel||identity.model||UI.caps.model).toLowerCase(),variant:identity.firmware_variant||UI.caps.firmware_variant||'full',locale:I18N.lang},snapshot.catalog);
     if(!result.ok||key!==[identity?.version,targetVersion,I18N.lang].join('/'))throw Error();
     notesText.textContent=[...result.upgrade_notices,...result.changes].map(row=>row.title+'\n'+row.description).join('\n\n')||t('fw.check_up_to_date');comparisonReady=key;return true;
    }catch{comparisonReady='';notesText.textContent=t('fw.notes_unavailable');return false;}
@@ -769,7 +769,7 @@ async function load(priority){
   if(generation!==fullGeneration)return null;
   const s=UI.acceptStatus(raw,params.view==='live');
   if(mayM1)readMcuVersion().catch(()=>{});
-  $('title').textContent=UI.device.model+' '+(s.name||'');
+  $('title').textContent=s.name||UI.device.model;
   renderChips(s);renderBanners(s,false);
   if(!initialized){for(const p of Object.values(UI.pages))if(p.init)p.init(s);initialized=true;}
   else for(const p of pendingPageInit)if(p.init)p.init(s);
@@ -854,7 +854,7 @@ function mountDevicePages(dev){
  for(const [key,page] of Object.entries(UI.pages))if(!previous.has(key))pendingPageInit.add(page);
 }
 UI.start=async dev=>{
- UI.device=dev;lockHome();
+ UI.device=dev;document.title=dev.model;lockHome();
  const first=dev.groups.flatMap(g=>g[1])[0];
  document.body.prepend(header(dev),
   h('nav',{class:'tabs','aria-label':'Main'},

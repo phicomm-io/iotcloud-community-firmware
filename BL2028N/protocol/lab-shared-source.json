@@ -239,7 +239,7 @@
     "web/shared/ui.js": {
       "source": "frontend/common/web/ui.js",
       "upstream_sha256": "bcbda90b983b67209994242cf862114c131947cb9545e6406f25215bf99d407b",
-      "sha256": "bcbda90b983b67209994242cf862114c131947cb9545e6406f25215bf99d407b"
+      "sha256": "d1dc1e1e23d2a4560ceb66c387bdb74f050aafd1197eb5fdeaab31aeef3ac9f1"
     },
     "web/shared/provision.js": {
       "source": "frontend/common/web/provision.js",
@@ -310,12 +310,12 @@
     "web/index.html": {
       "source": "frontend/S30/web/index.html",
       "upstream_sha256": "3617778b68cae4eda4b43fbe71f43853d3c0bb4accd84f93f04193a15a356495",
-      "sha256": "d70c1418caa1cc5cb6277832418e770fbc3cd2acb051fcc924a62e9fe6609b15"
+      "sha256": "5f17c353c788a628d36677b8d22371cf79806d53a00ab1a8cc306228beaf62bf"
     },
     "web/page.js": {
       "source": "frontend/S30/web/page.js",
       "upstream_sha256": "2ac47b0f85931cabbdfe4130e9b8a2edcba8937d0adeff8e6663231e6da86aed",
-      "sha256": "366a5020d90c7f584075fc24463a89785f794d9f974135e3fd3c57df78202384"
+      "sha256": "722134a9a3721dc928731a2dcd4e4828a026f7dab314dbbf98c2e4310a07ab47"
     },
     "protocol/udp/packet.h": {
       "source": "common/feature_wire.inc",
@@ -394,7 +394,7 @@
   },
   "adaptation_patch_sha256": {
     "protocol/lab-openbeken.patch": "e3ff45d2ed9ba63d2d2dbf56fc2832db3d9574458512c0296637acb43553de75",
-    "web/frontend-openbeken.patch": "095ff5f8457d2230d8019ef0a5f614c99c5f1804a0017a5ac1e7b742bd6a7404",
+    "web/frontend-openbeken.patch": "f66ad41c5a6a792bbddd7410fd757d40b82d518b833244a8d71e99cb3dcbde8b",
     "patches/mdns-init-checked.patch": "d13b6c9d2c92aa4ea9b121a62398d3063f20a796512dae82f6f8bd82bc0b2d83"
   },
   "source_snapshot": {

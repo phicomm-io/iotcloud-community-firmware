@@ -6,7 +6,7 @@ This guide uses **v1.0.0-rc.6 (Beta)** and **v0.9.27 (stable)** as integration b
 
 | Item | RC6 | 0.9.27 |
 | --- | --- | --- |
-| Devices | TC1, M1, A1, DAIKIN, ORVIBO S30-V1B | TC1, M1, A1, DAIKIN |
+| Devices | TC1, M1, A1, DAIKIN, ORVIBO S30M-V1B | TC1, M1, A1, DAIKIN |
 | Ordinary HTTP commands | MessagePack, `application/msgpack` | JSON, `application/json` |
 | MQTT device business | MessagePack, TMCP v2 envelopes | JSON; TC1 supports Legacy v1 or TMCP v2, others use TMCP v2 |
 | Sensor fields | Schema 3, separate descriptors and live snapshots | Use that release's sensor / automation interfaces; do not apply schema 3 |
@@ -15,7 +15,7 @@ This guide uses **v1.0.0-rc.6 (Beta)** and **v0.9.27 (stable)** as integration b
 
 The project name is `iotcloud`, the device protocol is `openiot`, and TMCP identifies the internal command envelope. HTTP `/api/v1`, TMCP `protocol_version:2`, binary `wire_version:1`, sensor schemas and MCU UART versions are independent. Here, proto means protocol definitions; device interfaces do not use Protobuf `.proto` files.
 
-S30-V1B also advertises CBOR support; these cross-device examples use the default MessagePack encoding.
+S30M-V1B also advertises CBOR support; these cross-device examples use the default MessagePack encoding.
 
 RC6 does not downgrade after a JSON request, timeout or `busy`. MQTT `availability` remains plain text `online` / `offline`; firmware uploads and configuration backups retain their own binary file formats.
 
@@ -39,7 +39,7 @@ Common RC6 routes follow. Ordinary GET queries return data objects; POST command
 | `POST /api/v1/mcu/exchange` | M1 raw MCU frame bridge, separate from MessagePack commands |
 | `POST /api/v1/ota/convert` | Capable DAIKIN `full → hub` conversion; follow the [hub guide](daikin-guide#switch-from-full-to-hub) |
 
-S30-V1B uses `ota.start` with its `.rbl` URL. It has no local file upload, configuration backup / restore or MCU bridge. See [firmware updates](firmware-update) for package selection and upload steps on the other devices.
+S30M-V1B uses `ota.start` with its `.rbl` URL. It has no local file upload, configuration backup / restore or MCU bridge. See [firmware updates](firmware-update) for package selection and upload steps on the other devices.
 
 These dictionaries show the decoded structure. RC6 transmits MessagePack bytes:
 

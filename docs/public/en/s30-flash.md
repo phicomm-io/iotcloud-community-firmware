@@ -1,8 +1,8 @@
-# S30-V1B network and serial installation
+# S30M-V1B network and serial installation
 
 Start at [Firmware & resources]({{SITE_URL}}en/#releases) and choose the latest compatible release for your device with its matching checksums. Pinned versions below are reproducible examples; stated minimum versions, stock versions and migration-tool requirements still apply.
 
-This guide covers the **ORVIBO S30-V1B**, with a BL2028N module, BK7231N chip and HLW8032 meter. Network installation has been verified on stock **`2M.1220`**. UART remains available for backups, installation and recovery. The default layout retains this unit’s original bootloader and factory MAC/RF; **first installation starts with fresh community settings and requires Wi-Fi setup again**. See [S30-V1B operation](s30-guide) for use after installation.
+This guide covers the **ORVIBO S30M-V1B**, with a BL2028N module, BK7231N chip and HLW8032 meter. Network installation has been verified on stock **`2M.1220`**. UART remains available for backups, installation and recovery. The default layout retains this unit’s original bootloader and factory MAC/RF; **first installation starts with fresh community settings and requires Wi-Fi setup again**. See [S30M-V1B operation](s30-guide) for use after installation.
 
 ## RC6 downloads
 
@@ -114,7 +114,7 @@ The tool configures local HTTPS CGW using CoAP `/qlink/netinfo`. Stock firmware 
 
 1. After complete HTTP delivery, keep power connected while the device installs and reboots.
 2. Join the community `S30M_V1B_XXXXXX` AP, open **http://192.168.0.1**, and configure Wi-Fi again.
-3. Open the assigned LAN IP. Confirm `iotcloud · S30-V1B`, the selected version, outlet control and metering. An unset administration password must not trigger login.
+3. Open the assigned LAN IP. Confirm `iotcloud · S30M-V1B`, the selected version, outlet control and metering. An unset administration password must not trigger login.
 4. Stop the dedicated test broker and remove temporary certificates and credentials. Computer services are no longer needed; future upgrades use the community URL OTA interface.
 
 If MQTT reports `File` but no HTTP request arrives, check that the firmware URL omits the port and port 80 is reachable. An invalid URL can leave this stock firmware busy for about 10 minutes; keep power connected and wait before trying again. If CoAP has no reply, check for HTTPS bootstrap, boot, dmReport and MQTT activity before provisioning again. If the stock provisioning interface has stopped responding, re-enter the stock AP before running the tool. Do not reset during firmware download or installation.

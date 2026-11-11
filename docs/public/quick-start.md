@@ -2,9 +2,9 @@
 
 下载时先到[固件与资源下载]({{SITE_URL}}#releases)选择该设备的最新兼容版本，并使用同版本校验清单。文中的固定版本用于可复现的操作示例；明确标出的最低版本、原厂版本和迁移工具条件仍需满足。
 
-本项目为已淘汰或云服务厂商停止服务的 IoT 设备提供开源固件，支持斐讯 TC1 智能排插、M1 空气检测仪、A1 空气净化器、ORVIBO S30-V1B 智能插座及大金 G1/G2、G3 空气检测仪，提供本地网页控制、MQTT 与 Home Assistant 接入。固件免费，无需厂商云服务。
+本项目为已淘汰或云服务厂商停止服务的 IoT 设备提供开源固件，支持斐讯 TC1 智能排插、M1 空气检测仪、A1 空气净化器、ORVIBO S30M-V1B 智能插座及大金 G1/G2、G3 空气检测仪，提供本地网页控制、MQTT 与 Home Assistant 接入。固件免费，无需厂商云服务。
 
-**v0.9.27 为稳定版；v1.0.0-rc.6 用于 Beta 测试，支持 TC1、M1、A1、大金 G1/G2、G3 和 S30-V1B / S30M_V1B。** 候选版完整累计变化见[更新记录](release-log.html?channel=candidate)，下载区同时保留 0.9.x 归档。M1 的 Wi-Fi 与传感器主控独立升级；原厂主控 11.x 推荐使用开源版，17.1.2.3 / 17.x 暂不建议迁移。
+**v0.9.27 为稳定版；v1.0.0-rc.6 用于 Beta 测试，支持 TC1、M1、A1、大金 G1/G2、G3 和 S30M-V1B / S30M_V1B。** 候选版完整累计变化见[更新记录](release-log.html?channel=candidate)，下载区同时保留 0.9.x 归档。M1 的 Wi-Fi 与传感器主控独立升级；原厂主控 11.x 推荐使用开源版，17.1.2.3 / 17.x 暂不建议迁移。
 
 ## 先确认你的设备
 
@@ -13,7 +13,7 @@
 | **TC1 智能排插** | 六路插座开关、计量、童锁、指示灯和定时任务 | A1 硬件版本，EMW3031。**不支持 A2 硬件** |
 | **M1 空气检测仪** | PM2.5、甲醛、温湿度读数和屏幕亮度设置 | 原装 EMW3080B / MK3080B，保留 ATSAMD20 |
 | **A1 空气净化器** | 风机、灯环、童锁、夜间模式和环境数据联动 | 原装 EMW3080B / MK3080B |
-| **ORVIBO S30-V1B** | 开关、电压、电流、功率、电量与来电开／关 | BL2028N / BK7231N，HLW8032 计量 |
+| **ORVIBO S30M-V1B** | 开关、电压、电流、功率、电量与来电开／关 | BL2028N / BK7231N，HLW8032 计量 |
 | **大金 G1/G2** | G1 BRY88AA151K；G2 BRY88AB151K，增加甲醛扩展孔 | 当前 BRY88AX151K 镜像适配 G2 ESP32 / 4 MB；G1 不适用 |
 | **大金 G3 BRY88BBA15G** | 空气质量、时钟、天气、提醒与自定义屏幕 | ESP32 / 8 MB + SWM34S 屏幕 MCU，两个独立应用 |
 
@@ -28,7 +28,7 @@
 | A1 空气净化器 | [原厂配网与免拆安装](a1-no-disassembly) | [免焊 J-Link（推荐）/ 串口](a1-flash) |
 | DAIKIN | BRY88AB151K 可用[原厂 OTA](daikin-stock-ota) | [ESP32 串口安装](daikin-guide#首次安装) |
 | 大金 G3 BRY88BBA15G | [原厂免拆安装](daikin-g3-flash#原厂免拆安装-esp32) | [ESP32 串口](daikin-g3-flash#串口安装-esp32) / [屏幕 WebUI](daikin-g3-flash#webui-安装屏幕-mcu) / [屏幕 J-Link](daikin-g3-flash#j-link-安装屏幕-mcu) |
-| S30-V1B | [原厂 2M.1220 网络安装](s30-flash#原厂免拆网络安装) | [串口安装与恢复](s30-flash#拆机串口方式) |
+| S30M-V1B | [原厂 2M.1220 网络安装](s30-flash#原厂免拆网络安装) | [串口安装与恢复](s30-flash#拆机串口方式) |
 
 ## 首次配网
 
@@ -42,7 +42,7 @@
 | M1 | `M1-AP-<MAC后六位>` | `http://192.168.0.1/` |
 | DAIKIN | `BRY88AX151K-AP-<MAC后六位大写>` | `http://192.168.0.1/` |
 | A1 空气净化器 | `A1-AP-<MAC后六位>` | `http://192.168.0.1/` |
-| S30-V1B | `S30M_V1B_<MAC后六位>` | `http://192.168.0.1/` |
+| S30M-V1B | `S30M_V1B_<MAC后六位>` | `http://192.168.0.1/` |
 
 各型号热点名称中的 MAC 后六位均为大写。旧版本的热点名称和配网地址可能不同，请核对所选 Release 的版本说明。
 
@@ -56,7 +56,7 @@ WebUI 顶部可切换中文、英文及明暗主题。设置按**网络、设备
 
 ## 下一步
 
-- 日常操作、灯语与按键：[TC1](tc1-guide) · [M1](m1-guide) · [A1](a1-guide) · [S30-V1B](s30-guide) · [大金 G1/G2](daikin-guide) · [G3](daikin-g3-guide)
+- 日常操作、灯语与按键：[TC1](tc1-guide) · [M1](m1-guide) · [A1](a1-guide) · [S30M-V1B](s30-guide) · [大金 G1/G2](daikin-guide) · [G3](daikin-g3-guide)
 - 更新固件：[固件更新](firmware-update)
 - 远程集中管理设备：[接入 IoTCloud](iotcloud-connect)
 - 接入 Home Assistant 或配置 A1 环境数据联动：[MQTT 与联动](mqtt-link)

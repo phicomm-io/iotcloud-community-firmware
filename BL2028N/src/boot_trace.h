@@ -17,7 +17,7 @@ static inline void ph_boot_start(void) {
     bk_uart_config_t config={4800,3,2,0,0,0};
     int result=bk_uart_initialize(BK_UART_1,&config,NULL);
     set_printf_port(1);
-    ph_boot_result("iotcloud S30-V1B app 4800E",result);
+    ph_boot_result("iotcloud S30M-V1B app 4800E",result);
 }
 #define PH_BOOT_START() ph_boot_start()
 #define PH_BOOT_RESULT(stage,result) ph_boot_result(stage,result)

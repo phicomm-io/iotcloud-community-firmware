@@ -25,6 +25,7 @@ SDK_MDNS_FILES = (
     'platforms/bk7231n/bk7231n_os/beken378/func/lwip_intf/lwip-2.1.3/src/apps/mdns/mdns.c',
     'platforms/bk7231n/bk7231n_os/beken378/func/lwip_intf/lwip-2.1.3/src/include/lwip/apps/mdns.h',
 )
+SDK_ETHERNETIF = 'platforms/bk7231n/bk7231n_os/beken378/func/lwip_intf/lwip-2.1.3/port/ethernetif.c'
 COPY_LOCAL_IP_FUNCTION = '''#ifndef PH_HOST_TEST
 #include "lwip/ip4_addr.h"
 #endif
@@ -50,7 +51,7 @@ int PH_BL_CopyLocalIPAddress(char *out, size_t capacity)
 }
 '''
 sys.path.insert(0,str(HERE.parent/'tools'))
-from check_version import resolve_version
+from check_version import resolve_version, ota_config
 
 def command(args, cwd=None, log=None):
     if log:
@@ -93,7 +94,15 @@ def overlay(app, sdk, run, boot_trace=False, stock_layout=True):
         'int UART_PORT = UART2_PORT;\nint UART_PORT_INDEX = 1;',
         'int UART_PORT = UART1_PORT;\nint UART_PORT_INDEX = 0;')
     replace('src/user_main.c','void QuickTick(void* param)\n{','void QuickTick(void* param)\n{\n    PH_BL_Tick();')
-    replace('src/user_main.c','void Main_OnEverySecond()\n{','void Main_OnEverySecond()\n{\n    PH_BOOT_STAGE("second-enter");')
+    replace('src/user_main.c','void Main_OnEverySecond()\n{',
+        'void Main_OnEverySecond()\n{\n    PH_BOOT_STAGE("second-enter");\n'
+        '    if (PH_BL_TakeLinkRecovery()) {\n'
+        '        ADDLOGF_INFO("[S30 link] No unicast after gateway probes; reconnecting Wi-Fi");\n'
+        '        HAL_DisconnectFromWifi();\n'
+        '        g_bHasWiFiConnected = 0;\n'
+        '        g_connectToWiFi = 5;\n'
+        '        g_timeSinceLastPingReply = -1;\n'
+        '    }')
     replace('src/user_main.c','\tHAL_Run_WDT();\n#endif','\tHAL_Run_WDT();\n#endif\n    PH_BOOT_STAGE("second-done");')
     # The three dedicated service stacks reserve 44 KiB. The generic 25 kB
     # floor reboots this port after six healthy checks, before Wi-Fi settles.
@@ -133,7 +142,7 @@ def overlay(app, sdk, run, boot_trace=False, stock_layout=True):
     # Native HTTP client has a whole-transfer timeout. Flash writes on this
     # board exceed its upstream 10 seconds; failed transfers still emit state 2.
     ota='src/hal/bk7231/hal_ota_bk7231.c'
-    replace(ota,'#include "../hal_ota.h"','#include "../hal_ota.h"\n#include "../../phicomm/src/ota_guard.h"\n#include "../../littlefs/our_lfs.h"')
+    replace(ota,'#include "../hal_ota.h"','#include "../hal_ota.h"\n#include "../../phicomm/src/ota_guard.h"\n#include "../../phicomm/src/ph_sha256.h"\n#include "../../littlefs/our_lfs.h"')
     replace(ota,'httprequest_t httprequest;',
         'httprequest_t httprequest;\nstatic ph_ota_guard ph_ota;\n'
         'static char *http_buf;\n'
@@ -158,8 +167,8 @@ def overlay(app, sdk, run, boot_trace=False, stock_layout=True):
         '      flash_ctrl(CMD_FLASH_ERASE_SECTOR, &addr);\n    }')
     replace(ota,'        addr += 1024;','        addr += SECTOR_SIZE;')
     replace(ota,'#define BUF_SIZE 2048','#define BUF_SIZE 512')
-    replace(ota,'    case 1: // data','    case 1: { // data\n      unsigned int lfs_size = CFG_GetLFS_Size();\n      unsigned int room = LFS_BLOCKS_END - START_ADR_OF_BK_PARTITION_OTA;\n      unsigned int limit = lfs_size < room ? (room - lfs_size) & ~4095u : 0;\n      if (!ph_ota_chunk(&ph_ota, request->client.response_code, client_data->response_content_len,\n          (unsigned char*)client_data->response_buf, client_data->response_buf_filled, limit)) return 1;')
-    replace(ota,'    case 2: // ended, write any remaining bytes to the sector','    }\n    case 2: // ended, write any remaining bytes to the sector\n      if (!ph_ota_complete(&ph_ota)) {\n        if (sector) {\n          unsigned int start = START_ADR_OF_BK_PARTITION_OTA;\n          os_free(sector); sector = NULL; sectorlen = 0;\n          flash_ctrl(CMD_FLASH_WRITE_ENABLE, NULL);\n          flash_ctrl(CMD_FLASH_ERASE_SECTOR, &start);\n        }\n        flash_protection_op(FLASH_XTX_16M_SR_WRITE_ENABLE, FLASH_UNPROTECT_LAST_BLOCK);\n        ph_ota_release_response(request);\n        OTA_ResetProgress();\n        addLogAdv(LOG_ERROR, LOG_FEATURE_OTA, "Incomplete OTA rejected; staying online");\n        return 0;\n      }')
+    replace(ota,'    case 1: // data','    case 1: { // data\n      unsigned int lfs_size = CFG_GetLFS_Size();\n      unsigned int room = LFS_BLOCKS_END - START_ADR_OF_BK_PARTITION_OTA;\n      unsigned int limit = lfs_size < room ? (room - lfs_size) & ~4095u : 0;\n      if (!PH_BL_OTAHashUpdate(client_data->response_buf, client_data->response_buf_filled, client_data->response_content_len)) ph_ota.failed = true;\n      if (!ph_ota_chunk(&ph_ota, request->client.response_code, client_data->response_content_len,\n          (unsigned char*)client_data->response_buf, client_data->response_buf_filled, limit)) return 1;')
+    replace(ota,'    case 2: // ended, write any remaining bytes to the sector','    }\n    case 2: // ended, write any remaining bytes to the sector\n      if (!ph_ota_complete(&ph_ota) || !PH_BL_OTAHashVerify()) {\n        if (sector) {\n          unsigned int start = START_ADR_OF_BK_PARTITION_OTA;\n          os_free(sector); sector = NULL; sectorlen = 0;\n          flash_ctrl(CMD_FLASH_WRITE_ENABLE, NULL);\n          flash_ctrl(CMD_FLASH_ERASE_SECTOR, &start);\n        }\n        flash_protection_op(FLASH_XTX_16M_SR_WRITE_ENABLE, FLASH_UNPROTECT_LAST_BLOCK);\n        ph_ota_release_response(request);\n        OTA_ResetProgress();\n        addLogAdv(LOG_ERROR, LOG_FEATURE_OTA, "Incomplete or mismatched OTA rejected; staying online");\n        return 0;\n      }')
     replace(ota,'      close_ota();\n      OTA_ResetProgress();',
         '      close_ota();\n      ph_ota_release_response(request);\n'
         '      /* Remain reserved while saving configuration and rebooting. */')
@@ -187,6 +196,8 @@ def overlay(app, sdk, run, boot_trace=False, stock_layout=True):
     # through header parsing as well as body reads so the native worker emits
     # error -> end and releases the OTA reservation instead of spinning.
     http='src/httpclient/http_client.c'
+    # Metadata parsing shares this native worker with the streaming downloader.
+    replace(http,'\t\t\t\t\t\t\t\t\t0x800,','\t\t\t\t\t\t\t\t\t6144,')
     # Per-255-byte logging is unnecessary for the public OTA progress counter.
     # Keep it available at debug level without pacing normal downloads on UART.
     replace(http,'    ADDLOG_INFO(LOG_FEATURE_HTTP_CLIENT, "httpclient_recv %u bytes has been read", *p_read_len);',
@@ -286,6 +297,13 @@ def overlay(app, sdk, run, boot_trace=False, stock_layout=True):
         command(['patch','-p1','--batch','-i',mdns_patch],cwd=sdk,log=patch_log)
     with (run/'sdk-board.patch').open('a') as patch:
         patch.write(mdns_patch.read_text())
+    # Observe STA IP/ARP delivery at the driver/lwIP boundary. Save destination
+    # classification before input() transfers ownership of (and may free) p.
+    link_patch=HERE/'patches/link-rx.patch'
+    with (run/'sdk-link-patch.log').open('wb') as patch_log:
+        command(['patch','-p1','--batch','-i',link_patch],cwd=sdk,log=patch_log)
+    with (run/'sdk-board.patch').open('a') as patch:
+        patch.write(link_patch.read_text())
     # Password and grant changes share one authoritative atomic product record.
     replace('src/new_cfg.c','#include "new_cfg.h"','#include "new_cfg.h"\n#include "phicomm/src/port.h"')
     replace('src/new_cfg.c',
@@ -329,6 +347,9 @@ def overlay(app, sdk, run, boot_trace=False, stock_layout=True):
     shutil.copytree(HERE/'protocol',target/'protocol',dirs_exist_ok=True)
     shutil.copytree(HERE/'common',target/'common',dirs_exist_ok=True)
     shutil.copy2(HERE.parent/'common/wall_schedule.h',target/'common/wall_schedule.h')
+    (target/'common/ota').mkdir(parents=True,exist_ok=True)
+    for name in ('release_manifest.h','version.h'):
+        shutil.copy2(HERE.parent/'common/ota'/name,target/'common/ota'/name)
     # This SDK flattens object names into Debug/obj. Preserve both shared cores.
     for service in ('httpd','mqtt'):
         directory=target/'protocol'/service
@@ -418,6 +439,8 @@ def package(run, version, log, metadata, boot_trace=False, stock_layout=True):
     (dest/'SHA256SUMS').write_text(''.join(f'{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}\n' for p in sorted(dest.iterdir()) if p.suffix in ['.bin','.rbl']))
     inputs={str(p.relative_to(HERE)):hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(HERE.rglob('*')) if p.is_file() and '__pycache__' not in str(p)}
     inputs['../common/wall_schedule.h']=hashlib.sha256((HERE.parent/'common/wall_schedule.h').read_bytes()).hexdigest()
+    for name in ('release_manifest.h','version.h'):
+        inputs['../common/ota/'+name]=hashlib.sha256((HERE.parent/'common/ota'/name).read_bytes()).hexdigest()
     project_head=subprocess.check_output(['git','rev-parse','HEAD'],cwd=HERE,text=True).strip()
     branch=subprocess.check_output(['git','branch','--show-current'],cwd=HERE,text=True).strip()
     dirty=bool(subprocess.check_output(['git','status','--porcelain'],cwd=HERE,text=True))
@@ -434,7 +457,7 @@ def main():
     parser.add_argument('--incremental',action='store_true')
     parser.add_argument('--keep-build',action='store_true')
     parser.add_argument('--boot-trace',action='store_true',help='Diagnostic UART1 TX/P11 log at 4800 8E1; disable for final acceptance')
-    parser.add_argument('--stock-layout',action='store_true',default=True,help='Default S30-V1B stock-bootloader layout (option retained for existing build scripts)')
+    parser.add_argument('--stock-layout',action='store_true',default=True,help='Default S30M-V1B stock-bootloader layout (option retained for existing build scripts)')
     args=parser.parse_args();run=args.run_dir.resolve();run.mkdir(parents=True,exist_ok=True)
     verify_sources()
     tag=args.tag or (os.environ.get('GITHUB_REF_NAME') if os.environ.get('GITHUB_REF_TYPE')=='tag' else None)
@@ -457,6 +480,7 @@ def main():
                          'platforms/bk7231n/bk7231n_os/beken378/driver/irda/irda.c',
                          'platforms/bk7231n/bk7231n_os/beken378/func/rwnx_intf/rw_msg_rx.c',
                          'platforms/bk7231n/bk7231n_os/beken378/os/FreeRTOSv9.0.0/FreeRTOS/Source/portable/MemMang/heap_4.c',
+                         SDK_ETHERNETIF,
                          *SDK_MDNS_FILES]:
             shutil.copy2(SDK_CACHE/relative,sdk/relative)
             (sdk/Path(relative).with_suffix('.o')).unlink(missing_ok=True)
@@ -468,6 +492,7 @@ def main():
         # generated dependencies must not retain deleted implementation files.
         for dep in (sdk/'platforms/bk7231n/bk7231n_os/Debug/obj').glob('*.d'):
             dep.unlink()
+    (run/'build/app/src/phicomm/src/update_config.h').write_text(ota_config(metadata))
     if args.prepare_only:return
     with (run/'compiler.log').open('wb') as log:
         command([gcc,'-v'],log=log)

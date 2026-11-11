@@ -2,7 +2,7 @@
 #pragma once
 #include "../protocol/typed_wire.h"
 #define PH_METER_FRESH_MS 5000u
-/* S30-V1B stock 2M.1220 meter constants, not per-unit calibration.
+/* S30M-V1B stock 2M.1220 meter constants, not per-unit calibration.
  * See research/stock-meter-coefficients.md for binary evidence. */
 #define PH_METER_DEFAULT_VOLTAGE_COEFFICIENT 1.894288
 #define PH_METER_DEFAULT_CURRENT_COEFFICIENT 1.0102

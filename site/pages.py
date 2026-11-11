@@ -53,11 +53,11 @@ GROUPS = [
         ('mqtt-link', 'MQTT 与联动', 'MQTT 模式、管理平台与 A1 数据联动', 'MQTT与联动'),
         ('faq', '故障排查', '连接状态、灯语总则与常见问题', '故障排查'),
     ]),
-    ('s30', 'S30-V1B / S30M_V1B 计量插座', [
+    ('s30', 'S30M-V1B 计量插座', [
         ('s30-flash', '免拆与串口刷机', '原厂网络 OTA、VTX / VRX、完整备份与应用镜像', 'S30-V1B-刷机'),
-        ('s30-guide', 'S30-V1B 常见功能', '配网、日常使用、升级与恢复', 'S30-V1B-功能与操作'),
-        ('s30-automation', 'S30-V1B 自动化、联动与远程显示', '开发版功率规则、MQTT 来源与计量字段 ID', 'S30-V1B-自动化与远程显示'),
-        ('s30-features', 'S30-V1B 特色功能', '来电策略、计量校准、灯语与本地按键', 'S30-V1B-特色功能'),
+        ('s30-guide', 'S30M-V1B 常见功能', '配网、日常使用、升级与恢复', 'S30-V1B-功能与操作'),
+        ('s30-automation', 'S30M-V1B 自动化、联动与远程显示', '开发版功率规则、MQTT 来源与计量字段 ID', 'S30-V1B-自动化与远程显示'),
+        ('s30-features', 'S30M-V1B 特色功能', '来电策略、计量校准、灯语与本地按键', 'S30-V1B-特色功能'),
     ]),
     ('dev', '开发与维护', [
         ('device-api', '设备接口与协议', 'RC6 / 0.9.27、HTTP、MQTT、UDP 与示例代码', '设备接口与协议'),
@@ -175,10 +175,10 @@ EN_TITLES = {
  'm1-guide': ('M1 operation', 'Readings, brightness, icons and recovery'),
  'daikin-guide': ('Daikin air quality monitor (1st/2nd generation)', 'G1 BRY88AA151K / G2 BRY88AB151K: model and compatibility guide'),
  'a1-guide': ('A1 operation', 'Fan, ring, night mode and automation'),
- 's30-flash': ('S30-V1B network and serial installation', 'Stock network OTA, UART test points, backups and application images'),
- 's30-guide': ('S30-V1B common functions', 'Wi-Fi setup, daily use, updates and recovery'),
- 's30-automation': ('S30-V1B automation and remote display', 'Development power rules and MQTT metering field IDs'),
- 's30-features': ('S30-V1B features', 'Power restoration, meter calibration, indicators and button'),
+ 's30-flash': ('S30M-V1B network and serial installation', 'Stock network OTA, UART test points, backups and application images'),
+ 's30-guide': ('S30M-V1B common functions', 'Wi-Fi setup, daily use, updates and recovery'),
+ 's30-automation': ('S30M-V1B automation and remote display', 'Development power rules and MQTT metering field IDs'),
+ 's30-features': ('S30M-V1B features', 'Power restoration, meter calibration, indicators and button'),
  'tc1-automation': ('TC1 automation and remote display', 'The power field for M1 and development power rules'),
  'tc1-features': ('TC1 features', 'Six outlets, total power, button mappings and child lock'),
  'm1-automation': ('M1 automation and remote display', 'Source device IDs, field IDs, two display regions and expiry'),
@@ -193,7 +193,7 @@ EN_TITLES = {
 }
 EN_GROUP_NAMES = {'m1': 'M1 air quality monitor', 'a1': 'A1 air purifier',
                   'tc1': 'TC1 power strip', 'daikin': 'Daikin air quality monitor (1st/2nd generation)', 'daikin-g3': 'Daikin air quality monitor (3rd generation)',
-                  's30': 'S30-V1B / S30M_V1B metering socket', 'common': 'Shared setup and troubleshooting', 'dev': 'Development and maintenance'}
+                  's30': 'S30M-V1B metering socket', 'common': 'Shared setup and troubleshooting', 'dev': 'Development and maintenance'}
 EN_GROUPS = [(gid, EN_GROUP_NAMES[gid], [
     (slug, *EN_TITLES[slug], 'EN-' + slug) for slug, _, _, _ in items
 ]) for gid, _, items in GROUPS]

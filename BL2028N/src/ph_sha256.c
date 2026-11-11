@@ -45,4 +45,34 @@ bool PH_BL_Sha256(const void *bytes,size_t n,uint8_t out[32]) {
  wc_Sha256Free(&context);ForceZero(&context,sizeof(context));return !rc;
 }
 
+static wc_Sha256 ota_hash;
+static uint32_t ota_size;
+static uint8_t ota_digest[32];
+bool PH_BL_OTAHashSet(const char *hex,uint32_t size) {
+ ota_size=0;
+ if(!hex)return true;
+ for(unsigned i=0;i<32;i++) {
+  unsigned value=0;
+  for(unsigned j=0;j<2;j++) {
+   unsigned char c=(unsigned char)hex[2*i+j];
+   if(c>='0'&&c<='9')c-='0';
+   else if(c>='a'&&c<='f')c=c-'a'+10;
+   else if(c>='A'&&c<='F')c=c-'A'+10;
+   else return false;
+   value=(value<<4)|c;
+  }
+  ota_digest[i]=(uint8_t)value;
+ }
+ if(wc_InitSha256(&ota_hash))return false;
+ ota_size=size;return true;
+}
+bool PH_BL_OTAHashUpdate(const void *bytes,size_t n,uint32_t total) {
+ return !ota_size||(total==ota_size&&wc_Sha256Update(&ota_hash,bytes,(word32)n)==0);
+}
+bool PH_BL_OTAHashVerify(void) {
+ if(!ota_size)return true;
+ uint8_t digest[32];bool ok=wc_Sha256Final(&ota_hash,digest)==0&&!memcmp(digest,ota_digest,32);
+ wc_Sha256Free(&ota_hash);ForceZero(&ota_hash,sizeof(ota_hash));ota_size=0;return ok;
+}
+
 #endif

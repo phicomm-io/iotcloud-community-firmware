@@ -30,7 +30,7 @@ function reviewedNotes(release, manifest) {
   }
   return note;
 }
-const modelNames = {m1: 'M1', a1: 'A1', tc1: 'TC1', daikin: t('大金空气质量检测（1/2代）', 'Daikin air quality monitor (1st/2nd generation)'), bry88bba15g: t('大金空气质量检测（3代）', 'Daikin air quality monitor (3rd generation)'), s30: 'S30-V1B / S30M_V1B'};
+const modelNames = {m1: 'M1', a1: 'A1', tc1: 'TC1', daikin: t('大金空气质量检测（1/2代）', 'Daikin air quality monitor (1st/2nd generation)'), bry88bba15g: t('大金空气质量检测（3代）', 'Daikin air quality monitor (3rd generation)'), s30: 'S30M-V1B / S30M_V1B'};
 const variantDescriptions = {
  full: t('完整本地网页，适合常规使用。', 'Complete local web interface for normal use.'),
  'no-frontend-resources': t('仅保留配网页，节省设备存储；日常管理使用平台。', 'Keeps the Wi-Fi setup page and saves flash; use the platform for daily management.'),
@@ -42,8 +42,8 @@ const fileTypes = {
  signed: [t('签名 OTA', 'Signed OTA'), t('已安装社区固件的日常升级包，由设备校验签名。', 'Normal update for community firmware; the device checks its signature.')],
  raw: [t('原始 OTA', 'Raw OTA'), t('原厂迁移或教程明确要求的应用包；不是全片镜像。', 'Application image for stock migration or instructions that explicitly require it; not a full flash image.')],
  full: [t('完整镜像', 'Full image'), t('有线首次安装或恢复使用，不能在网页当作 OTA 上传。', 'For wired installation or recovery; never upload it as a web OTA package.')],
- rbl: ['RBL', t('S30-V1B 原厂免拆安装或社区 URL OTA；设备主动通过 HTTP 下载。', 'S30-V1B stock network installation or community URL OTA; downloaded by the device over HTTP.')],
- stock_ua: ['STOCK_UA', t('S30-V1B 串口安装，从 0x11000 写入，保留本机原厂启动器；不能用于网页 OTA。', 'S30-V1B serial installation at 0x11000, preserving its stock bootloader; not for web OTA.')]
+ rbl: ['RBL', t('S30M-V1B 原厂免拆安装或社区 URL OTA；设备主动通过 HTTP 下载。', 'S30M-V1B stock network installation or community URL OTA; downloaded by the device over HTTP.')],
+ stock_ua: ['STOCK_UA', t('S30M-V1B 串口安装，从 0x11000 写入，保留本机原厂启动器；不能用于网页 OTA。', 'S30M-V1B serial installation at 0x11000, preserving its stock bootloader; not for web OTA.')]
 };
 const modelOrder = ['tc1', 'm1', 'a1', 's30', 'daikin', 'bry88bba15g'];
 const orderedModels = models => Object.entries(models).sort(([a], [b]) => (modelOrder.indexOf(a) < 0 ? 99 : modelOrder.indexOf(a)) - (modelOrder.indexOf(b) < 0 ? 99 : modelOrder.indexOf(b)));

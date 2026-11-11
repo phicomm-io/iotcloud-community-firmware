@@ -208,7 +208,7 @@ static bool smp_config(const ph_value *p,ph_writer *w,const char **code)
   uint8_t language=device_language_get();char tag[8];
   if(!phv_keys(&values,"|name||language|")||(!smp_has(&values,"name")&&!smp_has(&values,"language"))||!smp_text(&values,"name",c.name,sizeof(c.name),false))goto invalid;
   if(smp_has(&values,"language")&&(!smp_text(&values,"language",tag,sizeof(tag),true)||!ph_language_parse(tag,&language)))goto invalid;
-  if(!c.name[0]){unsigned suffix=(unsigned)strtoul(DEVICE_ID+8,NULL,16);snprintf(c.name,sizeof(c.name),DEVICE_NAME_PREFIX "-%04X",suffix);}
+  if(!c.name[0])strcpy(c.name,DEVICE_NAME_PREFIX);
   ok=SAVE_DEVICE_CONFIG(&c,language);
  }else if(!strcmp(section,"auth")){
   if(!phv_keys(&values,"|password|")||!smp_text(&values,"password",c.web_password,sizeof(c.web_password),true))goto invalid;

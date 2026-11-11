@@ -40,7 +40,7 @@ DAIKIN BRY88AX151K 在 v1.0.0-rc.6 提供 `full` 普通版和独立的 `hub` 中
 
 ## 选择正确的文件
 
-下表适用于 A1、M1、TC1 和 DAIKIN。S30-V1B 使用 `.rbl` URL 下载升级，步骤见 [S30 升级](s30-guide#升级)。
+下表适用于 A1、M1、TC1 和 DAIKIN。S30M-V1B 使用 `.rbl` URL 下载升级，步骤见 [S30 升级](s30-guide#升级)。
 
 | 文件 | 用途 |
 | --- | --- |

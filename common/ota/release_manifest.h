@@ -1,11 +1,14 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #pragma once
-#include "../typed_wire.h"
+/* Include the platform's typed_wire.h before this shared parser. */
 #include "version.h"
 #include <ctype.h>
+#ifndef PH_RELEASE_IMAGE_SUFFIX
+#define PH_RELEASE_IMAGE_SUFFIX ".signed"
+#endif
 /* Metadata is copied out before freeing the borrowed transfer buffer. Signed
  * firmware still performs its independent signature, hash and rollback checks. */
-typedef struct {char version[32],path[200],release_log[200];uint32_t size;} ph_release_manifest;
+typedef struct {char version[32],path[200],release_log[200],sha256[65];uint32_t size;} ph_release_manifest;
 static bool ph_release_path(const char *s)
 {
  if(strncmp(s,"/releases/v",11)||strlen(s)>=200||strstr(s,".."))return false;
@@ -29,9 +32,9 @@ static bool ph_release_manifest_parse(const void *data,size_t length,const char 
     !ph_release_text(&root,"firmware_variant",manifest_variant,sizeof(manifest_variant))||strcmp(manifest_variant,variant)||
     !ph_release_text(&root,"version",out->version,sizeof(out->version))||
     !ph_release_text(&root,"path",out->path,sizeof(out->path))||!ph_release_path(out->path)||
-    strlen(out->path)<=7||strcmp(out->path+strlen(out->path)-7,".signed")||
+    strlen(out->path)<=strlen(PH_RELEASE_IMAGE_SUFFIX)||strcmp(out->path+strlen(out->path)-strlen(PH_RELEASE_IMAGE_SUFFIX),PH_RELEASE_IMAGE_SUFFIX)||
     !ph_release_text(&root,"release_log",out->release_log,sizeof(out->release_log))||!ph_release_path(out->release_log)||
-    !ph_release_text(&root,"sha256",text,sizeof(text))||!ph_release_hex(text,64)||
+    !ph_release_text(&root,"sha256",out->sha256,sizeof(out->sha256))||!ph_release_hex(out->sha256,64)||
     !ph_release_text(&root,"commit",text,sizeof(text))||!ph_release_hex(text,40)||
     !ph_release_text(&root,"tag",text,sizeof(text))||text[0]!='v'||strcmp(text+1,out->version))return false;
  ph_ota_version_t version;return ph_ota_version_parse(out->version,&version);

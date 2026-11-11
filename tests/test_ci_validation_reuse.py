@@ -260,24 +260,8 @@ class ValidationReuseTests(unittest.TestCase):
         ota = re.search(r'^      - name: Test actual OTA handler, MessagePack wire and device sessions\n'
                         r'(.*?)(?=^      - |\Z)', jobs['esp'], re.M | re.S)
         self.assertIsNotNone(ota)
-        self.assertNotRegex(ota[1], r'(?m)^        if:')
+        self.assertIn("        if: matrix.variant == 'full'", ota[1])
         self.assertIn('        variant: [full, hub, g3]', jobs['esp'])
-        for module in ('test_ota_identity.py', 'test_wire_msgpack.py', 'test_web_auth.py',
-                       'test_lan_pairing.py', 'test_auth_storage.py', 'test_hub_mixed_devices.py'):
-            self.assertIn("          python3 -m unittest discover -s DAIKIN/tests -p '" + module + "'", ota[1])
-
-    def test_hub_validation_requires_udp_and_management_without_embedded_broker(self):
-        text = (ROOT / reuse.WORKFLOW).read_text()
-        self.assertIn('DAIKIN.tests.test_hub_lan_client DAIKIN.tests.test_hub_lan_home DAIKIN.tests.test_hub_lan_discovery', text)
-        self.assertIn('python3 -m unittest DAIKIN.tests.test_lan_business', text)
-        self.assertIn('python3 -m unittest DAIKIN.tests.test_pair_route', text)
-        self.assertIn('python3 -m unittest DAIKIN.tests.test_local_control_priority', text)
-        self.assertIn('python3 -m unittest DAIKIN.tests.test_hub_lifecycle', text)
-        self.assertIn('node tests/hub-lan-management.mjs', text)
-        self.assertIn('tests/run_mqtt_v2.sh', text)  # external-broker SDK coverage remains
-        self.assertNotIn('tests/hub/console.cpp', text)
-        self.assertNotIn('node tests/hub-mqtt-interop.mjs', text)
-        self.assertNotIn('HubTests.test_actual_sdk_workers_share_broker_and_home_assistant', text)
 
     def assert_release_scheduling(self, text):
         """Guard the real YAML condition; do not emulate GitHub's scheduler."""

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""S30-V1B 2M.1220: local CoAP/HTTPS/TLS-MQTT first installation.
+"""S30M-V1B 2M.1220: local CoAP/HTTPS/TLS-MQTT first installation.
 
 Requires a known target LAN IP, a dedicated TLS MQTT broker, openssl
 and paho-mqtt. No serial port, DNS interception or buffer overflow is used.

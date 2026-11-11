@@ -8,8 +8,8 @@
 
 | 基线 | 设备协议 |
 | --- | --- |
-| **RC5** | TC1、M1、A1、DAIKIN、S30-V1B 均使用 openiot 的 TMCP v2 命令封装，HTTP / MQTT 业务载荷为 MessagePack |
-| **0.9.27** | HTTP / TMCP 使用 JSON；TC1 可选择 Legacy v1 或 TMCP v2，M1 / A1 / DAIKIN 固定 TMCP v2；不含 S30-V1B |
+| **RC5** | TC1、M1、A1、DAIKIN、S30M-V1B 均使用 openiot 的 TMCP v2 命令封装，HTTP / MQTT 业务载荷为 MessagePack |
+| **0.9.27** | HTTP / TMCP 使用 JSON；TC1 可选择 Legacy v1 或 TMCP v2，M1 / A1 / DAIKIN 固定 TMCP v2；不含 S30M-V1B |
 
 自定义客户端先核对固件版本与编码，字段、主题和示例见[设备接口与协议](device-api)。Home Assistant 继续使用独立的 JSON 消息。
 

@@ -11,7 +11,7 @@
     "provision.js": "f8a4d2e54b0ba8eaadd625ff3b8d956e7a312218f0f6df97a4385cf83a44dd95",
     "service.js": "4b63085eceba274c371f79b681fa14471e42f769b7b7bbfefbb91777482248a8",
     "style.css": "55bf48816dd8c455d519634e2273b0b1a23e1a13088c943e81ce6cb5c7a509fe",
-    "ui.js": "bcbda90b983b67209994242cf862114c131947cb9545e6406f25215bf99d407b"
+    "ui.js": "d1dc1e1e23d2a4560ceb66c387bdb74f050aafd1197eb5fdeaab31aeef3ac9f1"
   },
   "adaptations": "Shared binary auth, serialized reads, diagnostics and product capability gates; see frontend-openbeken.patch and lab-shared-source.json."
 }

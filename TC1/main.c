@@ -247,12 +247,14 @@ int application_start(void) {
     bool config_updated = migrateCorruptedDefaultSocketNames();
     config_updated |= mqtt_extension;
     config_updated |= migratePowerCoefficient();
+    char previous_name[maxNameLen];
+    snprintf(previous_name,sizeof(previous_name),ZTC1_NAME,str_mac+8);
+    if (sys_config->micoSystemConfig.name[0] == 1 || !strcmp(sys_config->micoSystemConfig.name,previous_name)) {
+        strcpy(sys_config->micoSystemConfig.name, "TC1");
+        config_updated = true;
+    }
     if (config_updated) {
         mico_system_context_update(sys_config);
-    }
-
-    if (sys_config->micoSystemConfig.name[0] == 1) {
-        sprintf(sys_config->micoSystemConfig.name, ZTC1_NAME, str_mac + 8);
     }
 
     tc1_log("device name:%s",

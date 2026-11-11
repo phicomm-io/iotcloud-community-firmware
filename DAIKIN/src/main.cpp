@@ -4,6 +4,7 @@
 #include "wire_mp.h"
 #include <WiFi.h>
 #include <WiFiUdp.h>
+#include "../../common/device_hostname.h"
 #ifdef IOTCLOUD_BRY88_SCREEN
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
@@ -280,7 +281,10 @@ void setup(){
   updatePassword();initLocalAuth();indicator=config["indicator"]|false;
   customLightSettings=daikin::readLightSettings(config["indicator_rules"],lightSettings);
   WiFi.mode(WIFI_AP_STA);deviceId=WiFi.macAddress();deviceId.replace(":","");deviceId.toLowerCase();
-  deviceHostname="iotcloud-daikin-"+String(DAIKIN_TARGET)+"-"+deviceId.substring(6);deviceHostname.toLowerCase();
+  String hostnameModel=hardwareModel;hostnameModel.toLowerCase();
+  char hostname[64];
+  if(!ph_device_hostname(hostname,sizeof(hostname),hostnameModel.c_str(),deviceId.c_str())){Serial.println("Invalid factory MAC");while(true)delay(1000);}
+  deviceHostname=hostname;
   apName=String(hardwareModel)+"-AP-"+deviceId.substring(6);apName.toUpperCase();
   #ifdef IOTCLOUD_BRY88_SCREEN
   screenInit();
