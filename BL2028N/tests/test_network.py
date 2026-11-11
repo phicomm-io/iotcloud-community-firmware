@@ -227,7 +227,7 @@ class Network(unittest.TestCase):
   self.assertEqual(announcement,{'schema':2,'device_id':'aabbccddeeff','model':'s30-v1b','variant':'full','firmware_version':self.api('info')['firmware_version'],'protocol':'openiot','command_protocol':'tmcp','protocol_version':2,'version':'v2','wire_version':1,'wire_formats':['msgpack'],'default_wire_format':'msgpack'})
   (RUN/'mqtt-announcement.msgpack').write_bytes(payload)
   for key in ('outlet_0','voltage','current','power','energy','meter_valid'):
-   _,p,r=self.broker.wait('_'+key+'/config');self.assertTrue(r);cfg=json.loads(p);self.assertEqual(cfg['device']['model'],'S30-V1B');self.assertIn('u_746573742d75736572',cfg['unique_id'])
+   _,p,r=self.broker.wait('_'+key+'/config');self.assertTrue(r);cfg=json.loads(p);self.assertEqual(cfg['device']['model'],'S30M-V1B');self.assertIn('u_746573742d75736572',cfg['unique_id'])
   _,p,_=self.broker.wait('/ha/state');self.assertIsNone(json.loads(p)['voltage'])
   _,p,_=self.broker.wait('/state',lambda p:p[:1]!=b'{' and decode(p).get('protocol')=='openiot');self.assertEqual(UNPACK[1](p)['protocol'],'openiot')
   self.broker.publish('command',PACK[1]({'request_id':'mqtt-full-status','action':'status.get','params':{}}),41)
