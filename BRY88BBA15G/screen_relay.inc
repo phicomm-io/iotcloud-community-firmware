@@ -46,9 +46,12 @@ static void screenRelayWorker(void *) {
         const char *host = (const char *)job.bytes + 4;
         int connected = 0;
         if (tls) {
-          if (verify)
+          if (verify) {
+            // Arduino's setCACertBundle() does not clear setInsecure().
+            // Reset verification explicitly when reusing the socket worker.
+            secure.setCACert(nullptr);
             secure.setCACertBundle(weatherCaBundle);
-          else
+          } else
             secure.setInsecure();
           secure.setHandshakeTimeout(5);
           secure.setTimeout(1000);
